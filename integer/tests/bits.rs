@@ -1,6 +1,6 @@
 use dashu_int::{
     ibig,
-    ops::{AndNot, NextPowerOfTwo},
+    ops::{AndNot, PowerOfTwo},
     ubig, IBig,
 };
 

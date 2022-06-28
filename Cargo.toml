@@ -4,9 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+dashu-base = { path = "./base" }
+dashu-int = { path = "./integer" }
 
 [workspace]
 members = [
-    "traits",
+    "base",
     "integer",
 ]

@@ -1,6 +1,6 @@
 [package]
 name = "dashu-int"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["Jacob Zhong <cmpute@gmail.com>", "Tomek Czajka <tczajka@gmail.com>"]
 edition = "2021"
 description = "A big integer library with good performance"
@@ -19,6 +19,9 @@ default = ["std", "rand", "num-traits"]
 
 # Interface with the std library.
 std = []
+
+[dependencies.dashu-base]
+path = "../base"
 
 [dependencies.cfg-if]
 version = "1.0.0"

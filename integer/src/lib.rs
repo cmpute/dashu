@@ -88,7 +88,7 @@ mod memory;
 pub mod modular;
 mod mul;
 mod mul_ops;
-pub mod ops;
+pub mod ops; // TODO: make a "prelude" module public instead of this module
 mod parse;
 mod pow;
 mod primitive;
@@ -106,3 +106,9 @@ mod num_traits;
 
 #[cfg(feature = "serde")]
 mod serde;
+
+/// A verbose alias for [UBig]
+pub type Natural = UBig;
+
+/// A verbose alias for [IBig]
+pub type Integer = IBig;

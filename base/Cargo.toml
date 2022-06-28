@@ -1,4 +1,4 @@
 [package]
-name = "dashu-traits"
+name = "dashu-base"
 version = "0.1.0"
 edition = "2021"

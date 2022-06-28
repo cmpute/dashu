@@ -6,7 +6,7 @@ use crate::{
     helper_macros,
     ibig::IBig,
     math,
-    ops::{AndNot, NextPowerOfTwo, UnsignedAbs},
+    ops::{AndNot, PowerOfTwo, UnsignedAbs},
     primitive::{double_word, PrimitiveSigned, PrimitiveUnsigned, WORD_BITS_USIZE},
     sign::Sign::*,
     ubig::{Repr::*, UBig},
@@ -231,7 +231,7 @@ impl IBig {
     }
 }
 
-impl NextPowerOfTwo for UBig {
+impl PowerOfTwo for UBig {
     type Output = UBig;
 
     #[inline]
@@ -246,7 +246,7 @@ impl NextPowerOfTwo for UBig {
     }
 }
 
-impl NextPowerOfTwo for &UBig {
+impl PowerOfTwo for &UBig {
     type Output = UBig;
 
     #[inline]

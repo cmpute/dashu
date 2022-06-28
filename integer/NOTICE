@@ -24,6 +24,6 @@ SOFTWARE.
 
 
 - The modifications on the ibig
-1. The main types are renamed: `UBig` -> `Natural`, `IBig` -> `Integer`
+1. The small variant is changed to contains a double word integer.
 2. The internal buffer is exposed
 
