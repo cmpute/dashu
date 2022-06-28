@@ -1,4 +1,69 @@
 [package]
 name = "dashu-int"
 version = "0.1.0"
+authors = ["Jacob Zhong <cmpute@gmail.com>", "Tomek Czajka <tczajka@gmail.com>"]
 edition = "2021"
+description = "A big integer library with good performance"
+keywords = ["bigint", "bignum", "mathematics"]
+categories = ["mathematics", "no-std"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/cmpute/dashu"
+homepage = "https://github.com/cmpute/dashu"
+readme = "README.md"
+
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+default = ["std", "rand", "num-traits"]
+
+# Interface with the std library.
+std = []
+
+[dependencies.cfg-if]
+version = "1.0.0"
+
+[dependencies.static_assertions]
+version = "1.1"
+
+[dependencies.num-traits]
+optional = true
+version = "0.2.14"
+default-features = false
+
+[dependencies.rand]
+optional = true
+version = "0.8.3"
+default-features = false
+
+[dependencies.serde]
+optional = true
+version = "1.0.130"
+default-features = false
+features = ["derive"]
+
+[dev-dependencies.criterion]
+version = "0.3.4"
+features = ["html_reports"]
+
+[dev-dependencies.rand]
+version = "0.8.3"
+
+[dev-dependencies.serde_test]
+version = "1.0.130"
+
+[lib]
+bench = false
+
+[[test]]
+name = "random"
+required-features = ["rand"]
+
+[[test]]
+name = "serde"
+required-features = ["serde"]
+
+[[bench]]
+name = "benchmarks"
+required-features = ["rand"]
+harness = false
