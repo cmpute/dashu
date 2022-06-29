@@ -1,5 +1,6 @@
-- Following is the copy of the MIT license of ibig-rs
+Following is the copy of the MIT license of ibig-rs:
 
+```
 MIT License
 
 Copyright (c) 2020 Tomek Czajka
@@ -21,9 +22,12 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+```
 
+The modifications on the ibig:
 
-- The modifications on the ibig
-1. The small variant is changed to contains a double word integer.
-2. The internal buffer is exposed
+1. The `Small` variant of the UBig representation contains a double word integer instead of a single one.
+2. Operation traits are moved to the `dashu-base` crate.
+3. The trait `NextPowerOfTwo` is changed to `PowerOfTwo` with modified definition.
+4. The internal buffer is exposed
 

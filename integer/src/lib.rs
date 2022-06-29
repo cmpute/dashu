@@ -88,7 +88,7 @@ mod memory;
 pub mod modular;
 mod mul;
 mod mul_ops;
-pub mod ops; // TODO: make a "prelude" module public instead of this module
+pub mod ops;
 mod parse;
 mod pow;
 mod primitive;

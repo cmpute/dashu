@@ -1,4 +1,4 @@
-//! Trait definitions for operations on general numbers
+//! Trait definitions for operations on general numbers.
 
 /// Absolute value.
 ///
@@ -26,16 +26,23 @@ pub trait UnsignedAbs {
     fn unsigned_abs(self) -> Self::Output;
 }
 
-/// Next power of two.
-///
-/// # Examples
-/// ```
-/// # use dashu_base::NextPowerOfTwo;
-/// assert_eq!(5.next_power_of_two(), 8);
-/// ```
-pub trait PowerOfTwo {
-    type Output;
+macro_rules! impl_abs_ops_prim {
+    ($($signed:ty => $unsigned:ty;)*) => {$(
+        impl Abs for $signed {
+            type Output = $signed;
+            #[inline]
+            fn abs(self) -> Self::Output {
+                <$signed>::abs(self)
+            }
+        }
 
-    fn next_power_of_two(self) -> Self::Output;
-    // TODO: is_power_of_two(self)
+        impl UnsignedAbs for $signed {
+            type Output = $unsigned;
+            #[inline]
+            fn unsigned_abs(self) -> Self::Output {
+                <$signed>::unsigned_abs(self)
+            }
+        }
+    )*}
 }
+impl_abs_ops_prim!(i8 => u8; i16 => u16; i32 => u32; i64 => u64; i128 => u128; isize => usize;);

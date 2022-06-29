@@ -108,7 +108,6 @@ fn test_is_power_of_two() {
 #[test]
 fn test_next_power_of_two() {
     assert_eq!(ubig!(0).next_power_of_two(), ubig!(1));
-    assert_eq!((&ubig!(0)).next_power_of_two(), ubig!(1));
     assert_eq!(ubig!(16).next_power_of_two(), ubig!(16));
     assert_eq!(ubig!(17).next_power_of_two(), ubig!(32));
     assert_eq!(ubig!(_0xffffffff).next_power_of_two(), ubig!(_0x100000000));

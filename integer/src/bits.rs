@@ -232,7 +232,10 @@ impl IBig {
 }
 
 impl PowerOfTwo for UBig {
-    type Output = UBig;
+    #[inline]
+    fn is_power_of_two(&self) -> bool {
+        unimplemented!()
+    }
 
     #[inline]
     fn next_power_of_two(self) -> UBig {
@@ -243,15 +246,6 @@ impl PowerOfTwo for UBig {
             },
             Large(buffer) => UBig::next_power_of_two_large(buffer),
         }
-    }
-}
-
-impl PowerOfTwo for &UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn next_power_of_two(self) -> UBig {
-        self.clone().next_power_of_two()
     }
 }
 

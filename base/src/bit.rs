@@ -1,4 +1,6 @@
-//! Trait definitions for bitwise operations
+//! Trait definitions for bitwise operations.
+//!
+//! Most traits are only implemented for unsigned integers yet.
 
 /// Bitwise AND NOT operation.
 ///
@@ -7,7 +9,7 @@
 /// # Examples
 ///
 /// ```
-/// use dashu_base::bits::AndNot;
+/// use dashu_base::AndNot;
 /// assert_eq!((0xff as u32).and_not(0x1111 as u32), 0xee);
 /// ```
 pub trait AndNot<Rhs = Self> {
@@ -26,6 +28,21 @@ pub trait BitTest {
 
     /// Get the number of trailing zeros in the integer
     fn trailing_zeros(&self) -> Option<usize>;
+}
+
+/// Next power of two.
+///
+/// # Examples
+/// ```
+/// # use dashu_base::PowerOfTwo;
+///
+/// let n = 5u32;
+/// assert!(!n.is_power_of_two());
+/// assert_eq!(n.next_power_of_two(), 8);
+/// ```
+pub trait PowerOfTwo {
+    fn is_power_of_two(&self) -> bool;
+    fn next_power_of_two(self) -> Self;
 }
 
 macro_rules! impl_bit_ops_prim {
@@ -54,6 +71,17 @@ macro_rules! impl_bit_ops_prim {
                 } else {
                     Some(<$T>::trailing_zeros(*self) as usize)
                 }
+            }
+        }
+
+        impl PowerOfTwo for $T {
+            #[inline]
+            fn is_power_of_two(&self) -> bool {
+                <$T>::is_power_of_two(*self)
+            }
+            #[inline]
+            fn next_power_of_two(self) -> $T {
+                <$T>::next_power_of_two(self)
             }
         }
     )*}
