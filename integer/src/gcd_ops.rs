@@ -1,5 +1,6 @@
 //! Operators for finding greatest common divisor.
 
+use dashu_base::ring::{Gcd, ExtendedGcd};
 use crate::{
     arch::word::Word,
     buffer::Buffer,
@@ -22,7 +23,7 @@ impl UBig {
     #[inline]
     pub fn gcd(&self, rhs: &UBig) -> UBig {
         match (self.repr(), rhs.repr()) {
-            (Small(word0), Small(word1)) => UBig::gcd_word(*word0, *word1),
+            (Small(word0), Small(word1)) => UBig::from_word(word0.gcd(*word1)),
             (Small(word0), Large(buffer1)) => UBig::gcd_large_word(buffer1, *word0),
             (Large(buffer0), Small(word1)) => UBig::gcd_large_word(buffer0, *word1),
             (Large(buffer0), Large(buffer1)) => UBig::gcd_large(buffer0.clone(), buffer1.clone()),
@@ -42,7 +43,10 @@ impl UBig {
     #[inline]
     pub fn extended_gcd(&self, rhs: &UBig) -> (UBig, IBig, IBig) {
         match (self.clone().into_repr(), rhs.clone().into_repr()) {
-            (Small(word0), Small(word1)) => UBig::extended_gcd_word(word0, word1),
+            (Small(word0), Small(word1)) => {
+                let (g, s, t) = word0.gcd_ext(word1);
+                (UBig::from_word(g), s.into(), t.into())
+            }
             (Large(buffer0), Small(word1)) => UBig::extended_gcd_large_word(buffer0, word1),
             (Small(word0), Large(buffer1)) => {
                 let (g, s, t) = UBig::extended_gcd_large_word(buffer1, word0);
@@ -50,31 +54,6 @@ impl UBig {
             }
             (Large(buffer0), Large(buffer1)) => UBig::extended_gcd_large(buffer0, buffer1),
         }
-    }
-
-    /// Perform gcd on two `Word`s.
-    #[inline]
-    fn gcd_word(a: Word, b: Word) -> UBig {
-        if a == 0 || b == 0 {
-            if a == 0 && b == 0 {
-                UBig::panic_gcd_with_0();
-            }
-            return UBig::from_word(a | b);
-        }
-
-        UBig::from_word(gcd::gcd_word_by_word(a, b))
-    }
-
-    /// Perform extended gcd on two `Word`s.
-    #[inline]
-    fn extended_gcd_word(a: Word, b: Word) -> (UBig, IBig, IBig) {
-        if a == 0 && b == 0 {
-            UBig::panic_gcd_with_0();
-        }
-
-        // cases where a = 0 or b = 0 can be correctly handled by extended euclidean algorithm
-        let (r, s, t) = gcd::xgcd_word_by_word(a, b, false);
-        (UBig::from_word(r), IBig::from(s), IBig::from(t))
     }
 
     /// Perform gcd on a large number with a `Word`.
@@ -90,7 +69,7 @@ impl UBig {
             return UBig::from_word(rhs);
         }
 
-        UBig::from_word(gcd::gcd_word_by_word(small, rhs))
+        UBig::from_word(small.gcd(rhs))
     }
 
     /// Perform extended gcd on a large number with a `Word`.
@@ -106,7 +85,7 @@ impl UBig {
             return (UBig::from_word(rhs), IBig::from(0u8), IBig::from(1u8));
         }
 
-        let (r, s, t) = gcd::xgcd_word_by_word(rhs, rem, false);
+        let (r, s, t) = rhs.gcd_ext(rem);
         let new_t = -t * IBig::from(UBig::from(buffer)) + s;
         (UBig::from_word(r), IBig::from(t), new_t)
     }
@@ -137,10 +116,5 @@ impl UBig {
             IBig::from_sign_magnitude(lhs_sign, rhs.into()),
             IBig::from_sign_magnitude(rhs_sign, lhs.into()),
         )
-    }
-
-    #[inline]
-    fn panic_gcd_with_0() -> ! {
-        panic!("the greatest common divisor is not defined between zeros!")
     }
 }

@@ -2,3 +2,6 @@
 name = "dashu-base"
 version = "0.1.0"
 edition = "2021"
+
+[dev-dependencies.rand]
+version = "0.8.3"

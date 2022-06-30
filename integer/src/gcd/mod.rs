@@ -1,89 +1,12 @@
 //! Greatest Common Divisor
 use crate::{
-    arch::word::{SignedWord, Word},
+    arch::word::Word,
     memory::Memory,
     sign::Sign,
 };
 use alloc::alloc::Layout;
-use core::mem;
 
 mod binary;
-
-/// Single word gcd, requires a > 0 and b > 0
-pub(crate) fn gcd_word_by_word(mut a: Word, mut b: Word) -> Word {
-    debug_assert!(a > 0 && b > 0);
-
-    // find common factors of 2
-    let shift = (a | b).trailing_zeros();
-    a >>= a.trailing_zeros();
-    b >>= b.trailing_zeros();
-
-    // reduce by division if the difference between operands is large
-    let (za, zb) = (a.leading_zeros(), b.leading_zeros());
-    if za > zb.wrapping_add(4) {
-        let r = b % a;
-        if r == 0 {
-            return a << shift;
-        } else {
-            b = r >> r.trailing_zeros();
-        }
-    } else if zb > za.wrapping_add(4) {
-        let r = a % b;
-        if r == 0 {
-            return b << shift;
-        } else {
-            a = r >> r.trailing_zeros();
-        }
-    }
-
-    // the binary GCD algorithm
-    while a != b {
-        if a > b {
-            a -= b;
-            a >>= a.trailing_zeros();
-        } else {
-            b -= a;
-            b >>= b.trailing_zeros();
-        }
-    }
-    a << shift
-}
-
-/// Single extended word gcd
-///
-/// If bonly is set to true, then only the coefficient for b will be calculated,
-/// the coefficient for a will be 1. This is useful for modular inverse calculation
-///
-/// Binary GCD algorithm is slower in machine word than Euclidean's method
-pub(crate) fn xgcd_word_by_word(a: Word, b: Word, bonly: bool) -> (Word, SignedWord, SignedWord) {
-    if b > a {
-        debug_assert!(!bonly, "`bonly` option only make sense when a >= b");
-        let (r, s, t) = xgcd_word_by_word(b, a, false);
-        return (r, t, s);
-    }
-    if b == 1 {
-        // this shortcut eliminates the overflow when a = Word::Max and b = 1
-        return (1, 0, 1);
-    }
-
-    let (mut last_r, mut r) = (a, b);
-    let (mut last_s, mut s) = (1, 0);
-    let (mut last_t, mut t) = (0, 1);
-
-    while r > 0 {
-        let quo = last_r / r;
-        let new_r = last_r - quo * r;
-        last_r = mem::replace(&mut r, new_r);
-        if !bonly {
-            let new_s = last_s - quo as SignedWord * s;
-            last_s = mem::replace(&mut s, new_s);
-        }
-        let new_t = last_t - quo as SignedWord * t;
-        last_t = mem::replace(&mut t, new_t);
-    }
-
-    (last_r, last_s, last_t)
-}
 
 /// Greatest common divisor for two multi-digit integers
 ///

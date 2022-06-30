@@ -1,8 +1,8 @@
 //! Binary GCD algorithms (aka Stein's algorithm).
 
 use core::cmp::Ordering;
+use dashu_base::ring::Gcd;
 
-use super::gcd_word_by_word;
 use crate::{
     add,
     arch::word::Word,
@@ -75,7 +75,7 @@ pub(crate) fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word]) -> usize {
 
             // delegate to single word version when both numbers fit in single word
             if lhs_cur.len() == 1 && rhs_cur.len() == 1 {
-                let g = gcd_word_by_word(*lhs_cur.first().unwrap(), *rhs_cur.first().unwrap());
+                let g = lhs_cur.first().unwrap().gcd(*rhs_cur.first().unwrap());
                 *rhs_cur.first_mut().unwrap() = g;
                 break;
             }
