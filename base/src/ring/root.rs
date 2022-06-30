@@ -6,11 +6,11 @@ trait NormalizedRootRem : Sized {
 
     /// Square root with the normalized input such that highest or second
     /// highest bit are set. For internal use only.
-    fn normed_sqrt_rem(self) -> (Self::OutputRoot, Self);
+    fn normalized_sqrt_rem(self) -> (Self::OutputRoot, Self);
 
     /// Cubic root with the normalized input such that at least one of the
-    /// highest three bits are set.  For internal use only.
-    fn normed_cbrt_rem(self) -> (Self::OutputRoot, Self);
+    /// highest three bits are set. For internal use only.
+    fn normalized_cbrt_rem(self) -> (Self::OutputRoot, Self);
 }
 
 // Estimations of normalized 1/sqrt(x) with 9 bits precision. Specifically
@@ -47,7 +47,7 @@ fn wmul32_hi(a: u32, b: u32) -> u32 {
 impl NormalizedRootRem for u64 {
     type OutputRoot = u32;
 
-    fn normed_sqrt_rem(self) -> (u32, u64) {
+    fn normalized_sqrt_rem(self) -> (u32, u64) {
         // Use newton's method on 1/sqrt(n)
         // x_{i+1} = x_i * (3 - n*x_i^2) / 2
         debug_assert!(self.leading_zeros() <= 1);
@@ -91,49 +91,52 @@ impl NormalizedRootRem for u64 {
     }
 
     // note that the input should be normalized to 63 bits instead of 64
-    fn normed_cbrt_rem(self) -> (u32, u64) {
+    fn normalized_cbrt_rem(self) -> (u32, u64) {
         // Use newton's method on 1/sqrt(n)
         // x_{i+1} = x_i * (4 - n*x_i^3) / 3
-        debug_assert!(self.leading_zeros() >= 1 && self.leading_zeros() <= 4);
+        debug_assert!(self.leading_zeros() <= 2);
 
-        // step2: lookup initial estimation of 1/∛x. The lookup table uses the highest 6 bits
+        // step1: lookup initial estimation of 1/∛x. The lookup table uses the highest 6 bits up to 63rd.
+        // if the input is 64 bit, then shift it to 61 bit.
         // retrieved r ≈ ∛8 / ∛(n >> 57) * 0x200 = 1 / ∛(n >> 60) * 2^9 = 2^29 / ∛n.
-        let n32 = (self >> 32) as u32;
+        let adjust = self.leading_zeros() == 0;
+        let n32 = (self >> (32 + (adjust as u8) * 3)) as u32;
         let r = 0x100 | RCBRT_TAB[(n32 >> 25) as usize - 8] as u32; // 9bit int
         
-        // step3: first Newton iteration
+        // step2: first Newton iteration
         // r = 2^52 / ∛n
         let t = (4 << 23) - wmul32_hi(n32, r * r * r);
         let r = r * (t / 3); // 32bit
 
-        // step4: second Newton iteration
+        // step3: second Newton iteration
         // r = 2^48 / ∛n
         let t = (4 << 28) - wmul32_hi(r, wmul32_hi(r, wmul32_hi(r, n32)));
-        let r = wmul32_hi(r, t) / 3; // 28bit
+        let mut r = wmul32_hi(r, t) / 3; // 28bit
+        r >>= adjust as u8; // recover the adjustment if needed
 
         // step5: ∛x = x * (1/∛x)^2
-        let r = r - 1; // to make sure s is underestimate
-        let mut s = wmul32_hi(r, wmul32_hi(r, n32));
+        let r = r - 1; // to make sure c is an underestimate
+        let mut c = wmul32_hi(r, wmul32_hi(r, (self >> 32) as u32));
 
         // step6: fix the estimation error, at most 2 steps are needed
         // if we use more bits to estimate the initial guess, less steps can be required
-        let s2 = (s as u64) * (s as u64);
-        let mut e = self - s2 * (s as u64);
-        let mut elim = 3 * (s2 + s as u64) + 1;
+        let cc = (c as u64) * (c as u64);
+        let mut e = self - cc * (c as u64);
+        let mut elim = 3 * (cc + c as u64) + 1;
         while e >= elim {
-            s += 1;
+            c += 1;
             e -= elim;
-            elim += 6 * (s as u64);
+            elim += 6 * (c as u64);
         }
 
-        (s, e)
+        (c, e)
     }
 }
 
 impl NormalizedRootRem for u128 {
     type OutputRoot = u64;
 
-    fn normed_sqrt_rem(self) -> (u64, u128) {
+    fn normalized_sqrt_rem(self) -> (u64, u128) {
         debug_assert!(self.leading_zeros() <= 1);
         const HALF_BITS: u32 = u64::BITS / 2;
 
@@ -152,11 +155,11 @@ impl NormalizedRootRem for u128 {
         //         s -= 1
         //     }
         //
-        
+
         // step1: calculate sqrt on high parts
         let (n0, n1) = (self & u64::MAX as u128, self >> u64::BITS);
         let (n0, n1) = (n0 as u64, n1 as u64);
-        let (s1, r1) = n1.normed_sqrt_rem();
+        let (s1, r1) = n1.normalized_sqrt_rem();
 
         // step2: estimate the result with low parts
         // note that r1 <= 2*s1 < 2^(HALF_BITS + 1)
@@ -170,22 +173,57 @@ impl NormalizedRootRem for u128 {
         let mut s = (s1 as u64) << HALF_BITS | q;
         let r = (u << (HALF_BITS + 1)) + (n0 & (1 << (HALF_BITS + 1)) - 1);
         let q2 = q * q;
-        let mut cc = (u >> (HALF_BITS - 1)) as i8 - (r < q2) as i8; // carry bit
+        let mut borrow = (u >> (HALF_BITS - 1)) as i8 - (r < q2) as i8;
         let mut r = r.wrapping_sub(q2);
 
         // step3: adjustment
-        if cc < 0 {
+        if borrow < 0 {
             r = r.wrapping_add(s);
-            cc += (r < s) as i8;
+            borrow += (r < s) as i8;
             s -= 1;
             r = r.wrapping_add(s);
-            cc += (r < s) as i8;
+            borrow += (r < s) as i8;
         }
-        (s, (cc as u128) << u64::BITS | r as u128)
+        (s, (borrow as u128) << u64::BITS | r as u128)
     }
 
-    fn normed_cbrt_rem(self) -> (u64, u128) {
-        unimplemented!()
+    fn normalized_cbrt_rem(self) -> (u64, u128) {
+        debug_assert!(self.leading_zeros() <= 2);
+
+        // step1: calculate sqrt on high parts
+        // shift more bits when the input is 128 bits
+        let lo_bits: u32 = 63 + 3 * (self.leading_zeros() == 0) as u32;
+        let (n0, n1) = (self & ((1 << lo_bits) - 1), self >> lo_bits);
+        let (n0, n1) = (n0 as u64, n1 as u64);
+        let (c1, r1) = n1.normalized_cbrt_rem();
+
+        // step2: one newton step x_{k+1} = (n/x_k^2 + 2x_k) / 3
+        // with the inital guess of x being s1 << (LO_BITS / 3)
+        let root_shift: u32 = lo_bits / 3;
+        let c1 = c1 as u64;
+        let c = (c1 << root_shift) + (r1 << root_shift | n0 >> (2 * root_shift)) / (c1 * c1 * 3);
+
+        // step3: second newton steps, because the convergence for cubic root is only linear
+        let cc = (c as u128) * (c as u128);
+        let ed3 = ((self / cc) as i64 - c as i64) / 3; // ed3 = (n - c^2) / (3*c^3)
+        let c = (c as i64 + ed3) as u64; // here c is an overestimate (c >= result)
+        let mut c = c.min(6981463658331); // prevent overflowing when calculate c^3
+
+        // step3: adjustment
+        let cc = (c as u128) * (c as u128);
+        let ccc = cc * (c as u128);
+        if self >= ccc {
+            (c, self - ccc)
+        } else {
+            let mut e = ccc - self;
+            let mut elim = 3 * (cc - c as u128) + 1;
+            while e >= elim {
+                c -= 1;
+                e -= elim;
+                elim -= 6 * (c as u128);
+            }
+            (c - 1, elim - e)
+        }
     }
 }
 
@@ -200,7 +238,7 @@ impl RootRem for u64 {
 
         // normalize the input and call the normalized subroutine
         let shift = self.leading_zeros() & (u32::MAX - 1); // make sure shift is divisible by 2
-        let (root, mut rem) = (self << shift).normed_sqrt_rem();
+        let (root, mut rem) = (self << shift).normalized_sqrt_rem();
         let root = (root >> (shift / 2)) as u64;
         if shift != 0 {
             rem = self - root * root;
@@ -213,29 +251,10 @@ impl RootRem for u64 {
             return (0, 0);
         }
 
-        // the precomputed table only supports integer up to 63 bits, use ∛2 to fix 1 bit error
-        if self.leading_zeros() == 0 {
-            const CBRT2: u64 = 1385297844439; // 40bit estimation of floor(∛2), error < 2^-42
-            let (s, _) = Self::cbrt_rem(self >> 1); // s.bit_len() <= 20
-            let mut s = s * CBRT2 >> 40;
-
-            // fix the estimation, at most 2 steps are needed
-            let s2 = s * s;
-            let mut e = self - s2 * s;
-            let mut elim = 3 * (s2 + s) + 1;
-            while e >= elim {
-                s += 1;
-                e -= elim;
-                elim += 6 * (s as u64);
-            }
-
-            return (s, e)
-        }
-
         // normalize the input and call the normalized subroutine
-        let mut shift = self.leading_zeros() - 1;
-        shift -= shift % 3; // align to 63 bits
-        let (root, mut rem) = (self << shift).normed_cbrt_rem();
+        let mut shift = self.leading_zeros();
+        shift -= shift % 3; // make sure shift is divisible by 3
+        let (root, mut rem) = (self << shift).normalized_cbrt_rem();
         let root = (root >> (shift / 3)) as u64;
         if shift != 0 {
             rem = self - root * root * root;
@@ -264,7 +283,7 @@ impl RootRem for u128 {
 
         // normalize the input and call the normalized subroutine
         let shift = self.leading_zeros() & (u32::MAX - 1); // make sure shift is divisible by 2
-        let (root, mut rem) = (self << shift).normed_sqrt_rem();
+        let (root, mut rem) = (self << shift).normalized_sqrt_rem();
         let root = (root >> (shift / 2)) as u128;
         if shift != 0 {
             rem = self - root * root;
@@ -278,7 +297,15 @@ impl RootRem for u128 {
             return (0, 0);
         }
 
-        unimplemented!()
+        // normalize the input and call the normalized subroutine
+        let mut shift = self.leading_zeros();
+        shift -= shift % 3; // make sure shift is divisible by 3
+        let (root, mut rem) = (self << shift).normalized_cbrt_rem();
+        let root = (root >> (shift / 3)) as u128;
+        if shift != 0 {
+            rem = self - root * root * root;
+        }
+        (root as u128, rem)
     }
     
     #[inline]
@@ -296,6 +323,9 @@ mod tests {
 
     #[test]
     fn test_sqrt() {
+        assert_eq!(u64::MAX.sqrt_rem(), (u32::MAX as u64, (u32::MAX as u64) * 2));
+        assert_eq!(u128::MAX.sqrt_rem(), (u64::MAX as u128, (u64::MAX as u128) * 2));
+
         macro_rules! random_case {
             ($T:ty) => {
                 let n: $T = random();
@@ -314,12 +344,22 @@ mod tests {
 
     #[test]
     fn test_cbrt() {
+        assert_eq!(u64::MAX.cbrt_rem(), (2642245, 19889396695490));
+        assert_eq!(u128::MAX.cbrt_rem(), (6981463658331, 81751874631114922977532764));
+
+        macro_rules! random_case {
+            ($T:ty) => {
+                let n: $T = random();
+                let (root, rem) = n.cbrt_rem();
+                assert!(rem <= 3 * root * (root + 1), "cbrt({}) remainder too large", n);
+                assert_eq!(n, root * root * root + rem, "cbrt({}) != {}, {}", n, root, rem);
+            }
+        }
+
         const N: u32 = 10000;
         for _ in 0..N {
-            let n: u64 = random();
-            let (root, rem) = n.cbrt_rem();
-            assert!(rem <= 3 * root * (root + 1));
-            assert_eq!(n, root * root * root + rem, "cbrt({}) != {}, {}", n, root, rem);
+            random_case!(u64);
+            random_case!(u128);
         }
     }
 }

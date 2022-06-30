@@ -1,6 +1,6 @@
 #[inline]
 pub(crate) const fn assert_in_const_fn(val: bool) {
-    let _ = [(); 1][!val as usize];
+    [(); 1][!val as usize]
 }
 
 macro_rules! debug_assert_in_const_fn {
