@@ -1,10 +1,10 @@
-//! Divide and conquer division algorithm.
+//! Divide and conquer division algorithm. (aka. Burnikel-Ziegler division)
 
 use crate::{
     add,
     arch::word::{SignedWord, Word},
     div,
-    fast_divide::FastDivideNormalized,
+    fast_divide::FastDivideNormalized2,
     memory::Memory,
     mul,
     sign::Sign::*,
@@ -35,7 +35,7 @@ pub(crate) fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> Layout
 pub(crate) fn div_rem_in_place(
     lhs: &mut [Word],
     rhs: &[Word],
-    fast_div_rhs_top: FastDivideNormalized,
+    fast_div_rhs_top: FastDivideNormalized2,
     memory: &mut Memory,
 ) -> bool {
     assert!(lhs.len() > rhs.len() + div::MAX_LEN_SIMPLE && rhs.len() > div::MAX_LEN_SIMPLE);
@@ -67,7 +67,7 @@ pub(crate) fn div_rem_in_place(
 fn div_rem_in_place_same_len(
     lhs: &mut [Word],
     rhs: &[Word],
-    fast_div_rhs_top: FastDivideNormalized,
+    fast_div_rhs_top: FastDivideNormalized2,
     memory: &mut Memory,
 ) -> bool {
     let n = rhs.len();
@@ -77,10 +77,11 @@ fn div_rem_in_place_same_len(
     let n_lo = n / 2;
 
     // Divide lhs[n_lo..] by rhs, putting quotient in lhs[n+n_lo..] and remainder in lhs[n_lo..n+n_lo].
+    // This is a 3n/2n division.
     let overflow = div_rem_in_place_small_quotient(&mut lhs[n_lo..], rhs, fast_div_rhs_top, memory);
 
     // Divide lhs[..n+n_lo] by rhs, putting the rest of the quotient in lhs[n..n+n_lo] and remainder
-    // in lhs[..n].
+    // in lhs[..n]. This is also a 3n/2n division.
     let overflow_lo =
         div_rem_in_place_small_quotient(&mut lhs[..n + n_lo], rhs, fast_div_rhs_top, memory);
     assert!(!overflow_lo);
@@ -101,7 +102,7 @@ fn div_rem_in_place_same_len(
 fn div_rem_in_place_small_quotient(
     lhs: &mut [Word],
     rhs: &[Word],
-    fast_div_rhs_top: FastDivideNormalized,
+    fast_div_rhs_top: FastDivideNormalized2,
     memory: &mut Memory,
 ) -> bool {
     let n = rhs.len();
@@ -113,7 +114,7 @@ fn div_rem_in_place_small_quotient(
     }
     // Use top m words of the divisor to get a quotient approximation. It may be too large by at most 2.
     // Quotient is in lhs[n..], remainder in lhs[..n].
-    // This is 2m / m division.
+    // This is a 2m / m division.
     let mut q_overflow: SignedWord =
         div_rem_in_place_same_len(&mut lhs[n - m..], &rhs[n - m..], fast_div_rhs_top, memory)
             .into();

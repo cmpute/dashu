@@ -96,8 +96,7 @@ impl FastDivideSmall {
 ///
 /// Assumes quotient fits in a Word.
 ///
-/// Möller, Granlund, "Improved division by invariant integers"
-/// Algorithm 4.
+/// Möller, Granlund, "Improved division by invariant integers", Algorithm 4.
 #[derive(Clone, Copy)]
 pub(crate) struct FastDivideNormalized {
     // Top bit must be 1.
@@ -108,20 +107,24 @@ pub(crate) struct FastDivideNormalized {
 }
 
 impl FastDivideNormalized {
+    /// Calculate the inverse m > 0 of a normalized divisor (fit in a word), such that
+    /// 
+    /// (m + B) * divisor = B^2 - k for some 1 <= k <= divisor
+    /// 
+    #[inline]
+    pub(crate) const fn invert_word(divisor: Word) -> Word {
+        let (m, _hi) = split_double_word(DoubleWord::MAX / extend_word(divisor));
+        assert_in_const_fn(_hi == 1);
+        m
+    }
+
     /// Initialize from a given normalized divisor.
     ///
     /// divisor must have top bit of 1
     #[inline]
     pub(crate) const fn new(divisor: Word) -> Self {
         assert_in_const_fn(divisor.leading_zeros() == 0);
-        let (m, _hi) = split_double_word(DoubleWord::MAX / extend_word(divisor));
-        assert_in_const_fn(_hi == 1);
-
-        // Note:
-        // m > 0
-        // (m + B) * divisor = B^2 - k for some 1 <= k <= divisor
-
-        FastDivideNormalized { divisor, m }
+        Self { divisor, m: Self::invert_word(divisor) }
     }
 
     #[inline]
@@ -183,18 +186,15 @@ impl FastDivideNormalized {
         // In a branch-free way:
         // decrease = 0xffff.fff = -1 if r mod B > q0, 0 otherwise.
         let (_, decrease) = split_double_word(extend_word(q0).wrapping_sub(extend_word(r)));
-        let q = q.wrapping_add(decrease);
-        let r = r.wrapping_add(decrease & self.divisor);
+        let mut q = q.wrapping_add(decrease);
+        let mut r = r.wrapping_add(decrease & self.divisor);
 
         // At this point 0 <= r < B, i.e. 0 <= r < 2d.
-        // if r >= d { q += 1; r -= d; }
-        // In a branch-free way:
-        // increase = 0xffff.fff = -1 if r >= d, 0 otherwise
-        let (_, increase) =
-            split_double_word(extend_word(r).wrapping_sub(extend_word(self.divisor)));
-        let increase = !increase;
-        let q = q.wrapping_sub(increase);
-        let r = r.wrapping_sub(increase & self.divisor);
+        // the following fix step is unlikely to happen
+        if r > self.divisor {
+            q += 1;
+            r -= self.divisor;
+        }
 
         (q, r)
     }
@@ -203,6 +203,112 @@ impl FastDivideNormalized {
     pub(crate) const fn dummy() -> Self {
         FastDivideNormalized { divisor: 0, m: 0 }
     }
+}
+
+/// Divide a 3-Word by a prearranged DoubleWord divisor.
+///
+/// Assumes quotient fits in a Word.
+///
+/// Möller, Granlund, "Improved division by invariant integers"
+/// Algorithm 5.
+#[derive(Clone, Copy)]
+pub(crate) struct FastDivideNormalized2 {
+    // Top bit must be 1.
+    divisor: DoubleWord,
+
+    // floor ((B^3 - 1) / divisor) - B, where B = 2^WORD_BITS
+    m: Word,
+}
+
+
+impl FastDivideNormalized2 {
+    /// Calculate the inverse m > 0 of a normalized divisor (fit in a DoubleWord), such that
+    /// 
+    /// (m + B) * divisor = B^3 - k for some 1 <= k <= divisor
+    /// 
+    /// Möller, Granlund, "Improved division by invariant integers", Algorithm 6.
+    #[inline]
+    pub(crate) const fn invert_double_word(divisor: DoubleWord) -> Word {
+        let (d0, d1) = split_double_word(divisor);
+        let mut v = FastDivideNormalized::invert_word(d1);
+        // then B^2 - d1 <= (B + v)d1 < B^2
+
+        let (mut p, c) = d1.wrapping_mul(v).overflowing_add(d0);
+        if c {
+            v -= 1;
+            if p >= d1 {
+                v -= 1;
+                p -= d1;
+            }
+            p = p.wrapping_sub(d1);
+        }
+        // then B^2 - d1 <= (B + v)d1 + d0 < B^2
+
+        let (t0, t1) = split_double_word(extend_word(v) * extend_word(d0));
+        let (p, c) = p.overflowing_add(t1);
+        if c {
+            v -= 1;
+            if double_word(t0, p) >= divisor {
+                v -= 1;
+            }
+        }
+
+        v
+    }
+
+    /// Initialize from a given normalized divisor.
+    ///
+    /// divisor must have top bit of 1
+    #[inline]
+    pub(crate) const fn new(divisor: DoubleWord) -> Self {
+        assert_in_const_fn(divisor.leading_zeros() == 0);
+        Self { divisor, m: Self::invert_double_word(divisor) }
+    }
+
+    /// The input a is arranged as (lo, mi & hi)
+    /// The output is (a / divisor, a % divisor)
+    pub(crate) const fn div_rem(&self, a: (Word, DoubleWord)) -> (Word, DoubleWord) {
+        let (a0, a12) = a;
+        let (a1, a2) = split_double_word(a12);
+        let (d0, d1) = split_double_word(self.divisor);
+
+        let (q0, q1) = split_double_word(extend_word(self.m) * extend_word(a2) + a12);
+        let r1 = a1.wrapping_sub(q1.wrapping_mul(d1));
+        let t = extend_word(d0) * extend_word(q1);
+        let r = double_word(a0, r1).wrapping_sub(t).wrapping_sub(self.divisor);
+
+        // The first guess of quotient is q1 + 1
+        // if r1 >= q0 { r += d; } else { q1 += 1; }
+        // In a branch-free way:
+        // decrease = 0 if r1 >= q0, = 0xffff.fff = -1 otherwise
+        let (_, r1) = split_double_word(r);
+        let (_, decrease) =
+            split_double_word(extend_word(r1).wrapping_sub(extend_word(q0)));
+        let mut q1 = q1.wrapping_sub(decrease);
+        let mut r = r.wrapping_add(double_word(!decrease, !decrease) & self.divisor);
+
+        // the following fix step is unlikely to happen
+        if r >= self.divisor {
+            q1 += 1;
+            r -= self.divisor;
+        }
+
+        (q1, r)
+    }
+
+    // The following code could be when case double word is inlined in UBig
+    //
+    // /// Divdide a 4-word number with double word divisor
+    // /// 
+    // /// The input a is arranged as (lo, hi)
+    // /// The output is (a / divisor, a % divisor)
+    // pub fn div_rem_double(&self, a: (DoubleWord, DoubleWord)) -> (DoubleWord, DoubleWord) {
+    //     let (a01, a23) = a;
+    //     let (a0, a1) = split_double_word(a01);
+    //     let (q1, r1) = self.div_rem((a1, a23));
+    //     let (q0, r0) = self.div_rem((a0, r1));
+    //     (double_word(q0, q1), r0)
+    // }
 }
 
 #[cfg(test)]
@@ -228,6 +334,9 @@ mod tests {
 
     #[test]
     fn test_fast_divide_normalized() {
+        let fast_div = FastDivideNormalized::new(Word::MAX);
+        assert_eq!(fast_div.div_rem(0), (0, 0));
+
         let mut rng = StdRng::seed_from_u64(1);
         for _ in 0..1000000 {
             let d = rng.gen_range(Word::MAX / 2 + 1..=Word::MAX);
@@ -236,6 +345,28 @@ mod tests {
             let a = extend_word(q) * extend_word(d) + extend_word(r);
             let fast_div = FastDivideNormalized::new(d);
             assert_eq!(fast_div.div_rem(a), (q, r));
+        }
+    }
+
+    #[test]
+    fn test_fast_divide_normalized2() {
+        let d = DoubleWord::MAX;
+        let fast_div = FastDivideNormalized2::new(d);
+        assert_eq!(fast_div.div_rem((0, 0)), (0, 0));
+
+        let mut rng = StdRng::seed_from_u64(1);
+        for _ in 0..100000 {
+            let d = rng.gen_range(DoubleWord::MAX / 2 + 1..=DoubleWord::MAX);
+            let r = rng.gen_range(0..d);
+            let q = rng.gen();
+
+            let (d0, d1) = split_double_word(d);
+            let (r0, r1) = split_double_word(r);
+            let (a0, c) = split_double_word(extend_word(q) * extend_word(d0) + extend_word(r0));
+            let a12 = extend_word(q) * extend_word(d1) + extend_word(r1) + extend_word(c);
+
+            let fast_div = FastDivideNormalized2::new(d);
+            assert_eq!(fast_div.div_rem((a0, a12)), (q, r), "failed at {:?} / {}", (a0, a12), d);
         }
     }
 }

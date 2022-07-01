@@ -4,7 +4,7 @@ use crate::{
     arch::word::Word,
     assert::debug_assert_in_const_fn,
     cmp, div,
-    fast_divide::FastDivideNormalized,
+    fast_divide::{FastDivideNormalized, FastDivideNormalized2},
     math,
     ubig::{Repr, UBig},
 };
@@ -36,7 +36,7 @@ pub(crate) struct ModuloRingSmall {
 pub(crate) struct ModuloRingLarge {
     normalized_modulus: Vec<Word>,
     shift: u32,
-    fast_div_top: FastDivideNormalized,
+    fast_div_top: FastDivideNormalized2,
 }
 
 impl ModuloRing {
@@ -124,7 +124,7 @@ impl ModuloRingLarge {
         self.shift
     }
 
-    pub(crate) fn fast_div_top(&self) -> FastDivideNormalized {
+    pub(crate) fn fast_div_top(&self) -> FastDivideNormalized2 {
         self.fast_div_top
     }
 

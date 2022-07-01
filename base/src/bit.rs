@@ -18,7 +18,7 @@ pub trait AndNot<Rhs = Self> {
     fn and_not(self, rhs: Rhs) -> Self::Output;
 }
 
-/// This trait support bit testing for integers
+/// Common bit operations for integers
 pub trait BitTest {
     /// Get the minimum required number of bits to represent this integer
     fn bit_len(&self) -> usize;

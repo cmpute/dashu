@@ -55,7 +55,6 @@ impl NormalizedRootRem for u64 {
         // step1: lookup initial estimation of normalized 1/√n. The lookup table uses the highest 7 bits,
         // since the input is normalized, the lookup index must be larger than 2**(7-2) = 32.
         // then the retrieved r ≈ √32 / √(n >> 57) * 0x200 = 1 / √(n >> 62) / 2^9 = 2^40 / √n.
-        // the sqrt(32) in the nominator (effectively √2) will be eliminated by the odd shifting of n.
         let n32 = (self >> 32) as u32;
         let r = 0x100 | RSQRT_TAB[(n32 >> 25) as usize - 32] as u32; // 9 bits
         
@@ -314,7 +313,9 @@ impl RootRem for u128 {
     }
 }
 
-// TODO: forward sqrt to f64 if std enabled, don't forward cbrt
+// Further improvements (after we have a benchmark)
+// XXX: maybe forward sqrt to f64 if std enabled, don't forward cbrt
+// XXX: u128 can also use newton iteration on 1/sqrt and 1/cbrt
 
 #[cfg(test)]
 mod tests {

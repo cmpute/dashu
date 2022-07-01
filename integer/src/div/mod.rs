@@ -2,7 +2,7 @@
 
 use crate::{
     arch::word::Word,
-    fast_divide::FastDivideNormalized,
+    fast_divide::{FastDivideNormalized, FastDivideNormalized2},
     memory::{self, Memory},
     primitive::{double_word, extend_word},
     shift,
@@ -17,13 +17,14 @@ const MAX_LEN_SIMPLE: usize = 32;
 
 /// Normalize a large divisor.
 ///
-/// Returns (shift, fast division for the top word).
-pub(crate) fn normalize_large(words: &mut [Word]) -> (u32, FastDivideNormalized) {
+/// Returns (shift, fast division for the top words).
+pub(crate) fn normalize_large(words: &mut [Word]) -> (u32, FastDivideNormalized2) {
     assert!(words.len() >= 2);
     let shift = words.last().unwrap().leading_zeros();
     let overflow = shift::shl_in_place(words, shift);
-    assert!(overflow == 0);
-    (shift, FastDivideNormalized::new(*words.last().unwrap()))
+    debug_assert!(overflow == 0);
+    let top_words = double_word(words[words.len() - 2], words[words.len() - 1]);
+    (shift, FastDivideNormalized2::new(top_words))
 }
 
 /// words = words / rhs
@@ -130,7 +131,7 @@ pub(crate) fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> Layout
 pub(crate) fn div_rem_in_place(
     lhs: &mut [Word],
     rhs: &[Word],
-    fast_div_rhs_top: FastDivideNormalized,
+    fast_div_rhs_top: FastDivideNormalized2,
     memory: &mut Memory,
 ) -> bool {
     assert!(lhs.len() >= rhs.len() && rhs.len() >= 2);
