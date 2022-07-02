@@ -41,7 +41,7 @@ impl UBig {
     #[inline]
     pub fn bit(&self, n: usize) -> bool {
         match self.repr() {
-            Small(word) => n < WORD_BITS_USIZE && word & 1 << n != 0,
+            Single(word) => n < WORD_BITS_USIZE && word & 1 << n != 0,
             Large(buffer) => {
                 let idx = n / WORD_BITS_USIZE;
                 idx < buffer.len() && buffer[idx] & 1 << (n % WORD_BITS_USIZE) != 0
@@ -64,7 +64,7 @@ impl UBig {
     #[inline]
     pub fn set_bit(&mut self, n: usize) {
         match mem::take(self).into_repr() {
-            Small(word) => {
+            Single(word) => {
                 if n < WORD_BITS_USIZE {
                     *self = UBig::from_word(word | 1 << n)
                 } else {
@@ -110,7 +110,7 @@ impl UBig {
     #[inline]
     pub fn clear_bit(&mut self, n: usize) {
         match mem::take(self).into_repr() {
-            Small(word) => {
+            Single(word) => {
                 if n < WORD_BITS_USIZE {
                     *self = UBig::from_word(word & !(1 << n))
                 }
@@ -145,8 +145,8 @@ impl UBig {
     #[inline]
     pub fn trailing_zeros(&self) -> Option<usize> {
         match self.repr() {
-            Small(0) => None,
-            Small(word) => Some(word.trailing_zeros() as usize),
+            Single(0) => None,
+            Single(word) => Some(word.trailing_zeros() as usize),
             Large(buffer) => Some(trailing_zeros(buffer)),
         }
     }
@@ -177,7 +177,7 @@ impl UBig {
     #[inline]
     pub fn bit_len(&self) -> usize {
         match self.repr() {
-            Small(word) => math::bit_len(*word) as usize,
+            Single(word) => math::bit_len(*word) as usize,
             Large(buffer) => {
                 buffer.len() * WORD_BITS_USIZE - buffer.last().unwrap().leading_zeros() as usize
             }
@@ -197,7 +197,7 @@ impl UBig {
     #[inline]
     pub fn is_power_of_two(&self) -> bool {
         match self.repr() {
-            Small(word) => word.is_power_of_two(),
+            Single(word) => word.is_power_of_two(),
             Large(buffer) => UBig::is_power_of_two_large(buffer),
         }
     }
@@ -241,7 +241,7 @@ impl PowerOfTwo for UBig {
     #[inline]
     fn next_power_of_two(self) -> UBig {
         match self.into_repr() {
-            Small(word) => match word.checked_next_power_of_two() {
+            Single(word) => match word.checked_next_power_of_two() {
                 Some(p) => UBig::from_word(p),
                 None => UBig::from(double_word(0, 1)),
             },
@@ -291,9 +291,9 @@ impl BitAnd<UBig> for UBig {
     #[inline]
     fn bitand(self, rhs: UBig) -> UBig {
         match (self.into_repr(), rhs.into_repr()) {
-            (Small(word0), Small(word1)) => UBig::from_word(word0 & word1),
-            (Small(word0), Large(buffer1)) => UBig::from_word(word0 & buffer1.first().unwrap()),
-            (Large(buffer0), Small(word1)) => UBig::from_word(buffer0.first().unwrap() & word1),
+            (Single(word0), Single(word1)) => UBig::from_word(word0 & word1),
+            (Single(word0), Large(buffer1)) => UBig::from_word(word0 & buffer1.first().unwrap()),
+            (Large(buffer0), Single(word1)) => UBig::from_word(buffer0.first().unwrap() & word1),
             (Large(buffer0), Large(buffer1)) => {
                 if buffer0.len() <= buffer1.len() {
                     UBig::bitand_large(buffer0, &buffer1)
@@ -311,9 +311,9 @@ impl BitAnd<&UBig> for UBig {
     #[inline]
     fn bitand(self, rhs: &UBig) -> UBig {
         match (self.into_repr(), rhs.repr()) {
-            (Small(word0), Small(word1)) => UBig::from_word(word0 & word1),
-            (Small(word0), Large(buffer1)) => UBig::from_word(word0 & buffer1.first().unwrap()),
-            (Large(buffer0), Small(word1)) => UBig::from_word(buffer0.first().unwrap() & word1),
+            (Single(word0), Single(word1)) => UBig::from_word(word0 & word1),
+            (Single(word0), Large(buffer1)) => UBig::from_word(word0 & buffer1.first().unwrap()),
+            (Large(buffer0), Single(word1)) => UBig::from_word(buffer0.first().unwrap() & word1),
             (Large(buffer0), Large(buffer1)) => UBig::bitand_large(buffer0, buffer1),
         }
     }
@@ -334,9 +334,9 @@ impl BitAnd<&UBig> for &UBig {
     #[inline]
     fn bitand(self, rhs: &UBig) -> UBig {
         match (self.repr(), rhs.repr()) {
-            (Small(word0), Small(word1)) => UBig::from_word(word0 & word1),
-            (Small(word0), Large(buffer1)) => UBig::from_word(word0 & buffer1.first().unwrap()),
-            (Large(buffer0), Small(word1)) => UBig::from_word(buffer0.first().unwrap() & word1),
+            (Single(word0), Single(word1)) => UBig::from_word(word0 & word1),
+            (Single(word0), Large(buffer1)) => UBig::from_word(word0 & buffer1.first().unwrap()),
+            (Large(buffer0), Single(word1)) => UBig::from_word(buffer0.first().unwrap() & word1),
             (Large(buffer0), Large(buffer1)) => {
                 if buffer0.len() <= buffer1.len() {
                     UBig::bitand_large(buffer0.clone(), buffer1)
@@ -380,9 +380,9 @@ impl BitOr<UBig> for UBig {
     #[inline]
     fn bitor(self, rhs: UBig) -> UBig {
         match (self.into_repr(), rhs.into_repr()) {
-            (Small(word0), Small(word1)) => UBig::from_word(word0 | word1),
-            (Small(word0), Large(buffer1)) => UBig::bitor_large_word(buffer1, word0),
-            (Large(buffer0), Small(word1)) => UBig::bitor_large_word(buffer0, word1),
+            (Single(word0), Single(word1)) => UBig::from_word(word0 | word1),
+            (Single(word0), Large(buffer1)) => UBig::bitor_large_word(buffer1, word0),
+            (Large(buffer0), Single(word1)) => UBig::bitor_large_word(buffer0, word1),
             (Large(buffer0), Large(buffer1)) => {
                 if buffer0.len() >= buffer1.len() {
                     UBig::bitor_large(buffer0, &buffer1)
@@ -400,9 +400,9 @@ impl BitOr<&UBig> for UBig {
     #[inline]
     fn bitor(self, rhs: &UBig) -> UBig {
         match (self.into_repr(), rhs.repr()) {
-            (Small(word0), Small(word1)) => UBig::from_word(word0 | word1),
-            (Small(word0), Large(buffer1)) => UBig::bitor_large_word(buffer1.clone(), word0),
-            (Large(buffer0), Small(word1)) => UBig::bitor_large_word(buffer0, *word1),
+            (Single(word0), Single(word1)) => UBig::from_word(word0 | word1),
+            (Single(word0), Large(buffer1)) => UBig::bitor_large_word(buffer1.clone(), word0),
+            (Large(buffer0), Single(word1)) => UBig::bitor_large_word(buffer0, *word1),
             (Large(buffer0), Large(buffer1)) => UBig::bitor_large(buffer0, buffer1),
         }
     }
@@ -423,9 +423,9 @@ impl BitOr<&UBig> for &UBig {
     #[inline]
     fn bitor(self, rhs: &UBig) -> UBig {
         match (self.repr(), rhs.repr()) {
-            (Small(word0), Small(word1)) => UBig::from_word(word0 | word1),
-            (Small(word0), Large(buffer1)) => UBig::bitor_large_word(buffer1.clone(), *word0),
-            (Large(buffer0), Small(word1)) => UBig::bitor_large_word(buffer0.clone(), *word1),
+            (Single(word0), Single(word1)) => UBig::from_word(word0 | word1),
+            (Single(word0), Large(buffer1)) => UBig::bitor_large_word(buffer1.clone(), *word0),
+            (Large(buffer0), Single(word1)) => UBig::bitor_large_word(buffer0.clone(), *word1),
             (Large(buffer0), Large(buffer1)) => {
                 if buffer0.len() >= buffer1.len() {
                     UBig::bitor_large(buffer0.clone(), buffer1)
@@ -477,9 +477,9 @@ impl BitXor<UBig> for UBig {
     #[inline]
     fn bitxor(self, rhs: UBig) -> UBig {
         match (self.into_repr(), rhs.into_repr()) {
-            (Small(word0), Small(word1)) => UBig::from_word(word0 ^ word1),
-            (Small(word0), Large(buffer1)) => UBig::bitxor_large_word(buffer1, word0),
-            (Large(buffer0), Small(word1)) => UBig::bitxor_large_word(buffer0, word1),
+            (Single(word0), Single(word1)) => UBig::from_word(word0 ^ word1),
+            (Single(word0), Large(buffer1)) => UBig::bitxor_large_word(buffer1, word0),
+            (Large(buffer0), Single(word1)) => UBig::bitxor_large_word(buffer0, word1),
             (Large(buffer0), Large(buffer1)) => {
                 if buffer0.len() >= buffer1.len() {
                     UBig::bitxor_large(buffer0, &buffer1)
@@ -497,9 +497,9 @@ impl BitXor<&UBig> for UBig {
     #[inline]
     fn bitxor(self, rhs: &UBig) -> UBig {
         match (self.into_repr(), rhs.repr()) {
-            (Small(word0), Small(word1)) => UBig::from_word(word0 ^ word1),
-            (Small(word0), Large(buffer1)) => UBig::bitxor_large_word(buffer1.clone(), word0),
-            (Large(buffer0), Small(word1)) => UBig::bitxor_large_word(buffer0, *word1),
+            (Single(word0), Single(word1)) => UBig::from_word(word0 ^ word1),
+            (Single(word0), Large(buffer1)) => UBig::bitxor_large_word(buffer1.clone(), word0),
+            (Large(buffer0), Single(word1)) => UBig::bitxor_large_word(buffer0, *word1),
             (Large(buffer0), Large(buffer1)) => UBig::bitxor_large(buffer0, buffer1),
         }
     }
@@ -520,9 +520,9 @@ impl BitXor<&UBig> for &UBig {
     #[inline]
     fn bitxor(self, rhs: &UBig) -> UBig {
         match (self.repr(), rhs.repr()) {
-            (Small(word0), Small(word1)) => UBig::from_word(word0 ^ word1),
-            (Small(word0), Large(buffer1)) => UBig::bitxor_large_word(buffer1.clone(), *word0),
-            (Large(buffer0), Small(word1)) => UBig::bitxor_large_word(buffer0.clone(), *word1),
+            (Single(word0), Single(word1)) => UBig::from_word(word0 ^ word1),
+            (Single(word0), Large(buffer1)) => UBig::bitxor_large_word(buffer1.clone(), *word0),
+            (Large(buffer0), Single(word1)) => UBig::bitxor_large_word(buffer0.clone(), *word1),
             (Large(buffer0), Large(buffer1)) => {
                 if buffer0.len() >= buffer1.len() {
                     UBig::bitxor_large(buffer0.clone(), buffer1)
@@ -574,9 +574,9 @@ impl AndNot<UBig> for UBig {
     #[inline]
     fn and_not(self, rhs: UBig) -> UBig {
         match (self.into_repr(), rhs.into_repr()) {
-            (Small(word0), Small(word1)) => UBig::from_word(word0 & !word1),
-            (Small(word0), Large(buffer1)) => UBig::from_word(word0 & !buffer1.first().unwrap()),
-            (Large(buffer0), Small(word1)) => UBig::and_not_large_word(buffer0, word1),
+            (Single(word0), Single(word1)) => UBig::from_word(word0 & !word1),
+            (Single(word0), Large(buffer1)) => UBig::from_word(word0 & !buffer1.first().unwrap()),
+            (Large(buffer0), Single(word1)) => UBig::and_not_large_word(buffer0, word1),
             (Large(buffer0), Large(buffer1)) => UBig::and_not_large(buffer0, &buffer1),
         }
     }
@@ -588,9 +588,9 @@ impl AndNot<&UBig> for UBig {
     #[inline]
     fn and_not(self, rhs: &UBig) -> UBig {
         match (self.into_repr(), rhs.repr()) {
-            (Small(word0), Small(word1)) => UBig::from_word(word0 & !word1),
-            (Small(word0), Large(buffer1)) => UBig::from_word(word0 & !buffer1.first().unwrap()),
-            (Large(buffer0), Small(word1)) => UBig::and_not_large_word(buffer0, *word1),
+            (Single(word0), Single(word1)) => UBig::from_word(word0 & !word1),
+            (Single(word0), Large(buffer1)) => UBig::from_word(word0 & !buffer1.first().unwrap()),
+            (Large(buffer0), Single(word1)) => UBig::and_not_large_word(buffer0, *word1),
             (Large(buffer0), Large(buffer1)) => UBig::and_not_large(buffer0, buffer1),
         }
     }
@@ -602,9 +602,9 @@ impl AndNot<UBig> for &UBig {
     #[inline]
     fn and_not(self, rhs: UBig) -> UBig {
         match (self.repr(), rhs.into_repr()) {
-            (Small(word0), Small(word1)) => UBig::from_word(word0 & !word1),
-            (Small(word0), Large(buffer1)) => UBig::from_word(word0 & !buffer1.first().unwrap()),
-            (Large(buffer0), Small(word1)) => UBig::and_not_large_word(buffer0.clone(), word1),
+            (Single(word0), Single(word1)) => UBig::from_word(word0 & !word1),
+            (Single(word0), Large(buffer1)) => UBig::from_word(word0 & !buffer1.first().unwrap()),
+            (Large(buffer0), Single(word1)) => UBig::and_not_large_word(buffer0.clone(), word1),
             // TODO: Could reuse buffer1 in some cases.
             (Large(buffer0), Large(buffer1)) => UBig::and_not_large(buffer0.clone(), &buffer1),
         }
@@ -617,9 +617,9 @@ impl AndNot<&UBig> for &UBig {
     #[inline]
     fn and_not(self, rhs: &UBig) -> UBig {
         match (self.repr(), rhs.repr()) {
-            (Small(word0), Small(word1)) => UBig::from_word(word0 & !word1),
-            (Small(word0), Large(buffer1)) => UBig::from_word(word0 & !buffer1.first().unwrap()),
-            (Large(buffer0), Small(word1)) => UBig::and_not_large_word(buffer0.clone(), *word1),
+            (Single(word0), Single(word1)) => UBig::from_word(word0 & !word1),
+            (Single(word0), Large(buffer1)) => UBig::from_word(word0 & !buffer1.first().unwrap()),
+            (Large(buffer0), Single(word1)) => UBig::and_not_large_word(buffer0.clone(), *word1),
             (Large(buffer0), Large(buffer1)) => UBig::and_not_large(buffer0.clone(), buffer1),
         }
     }
@@ -923,7 +923,7 @@ impl UBig {
     #[inline]
     pub(crate) fn are_low_bits_nonzero(&self, n: usize) -> bool {
         match self.repr() {
-            Small(word) => {
+            Single(word) => {
                 let n = n.min(WORD_BITS_USIZE) as u32;
                 word & math::ones::<Word>(n) != 0
             }

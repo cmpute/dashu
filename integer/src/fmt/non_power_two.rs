@@ -22,7 +22,7 @@ impl InRadixFull<'_> {
     pub(crate) fn fmt_non_power_two(&self, f: &mut Formatter) -> fmt::Result {
         debug_assert!(radix::is_radix_valid(self.radix) && !self.radix.is_power_of_two());
         match self.magnitude.repr() {
-            Small(word) => {
+            Single(word) => {
                 let mut prepared = PreparedWord::new(*word, self.radix, 1);
                 self.format_prepared(f, &mut prepared)
             }

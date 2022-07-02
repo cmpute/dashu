@@ -1,27 +1,12 @@
 //! Unsigned big integer.
 
-use self::Repr::*;
 use crate::{
     arch::{ntt, word::Word},
-    buffer::Buffer,
+    buffer::{Buffer, Repr, StrongRepr, StrongReprRef},
     math,
     primitive::WORD_BITS_USIZE,
 };
 use core::slice;
-
-/// Internal representation of UBig.
-#[derive(Debug, Eq, Hash, PartialEq)]
-pub(crate) enum Repr {
-    /// A number that fits in a single Word.
-    Small(Word),
-    /// A number that does not fit in a single Word.
-    ///
-    /// The buffer has:
-    /// * length at least 2
-    /// * no leading zero
-    /// * compact capacity
-    Large(Buffer),
-}
 
 /// Unsigned big integer.
 ///
@@ -40,44 +25,46 @@ pub(crate) enum Repr {
 /// # Ok::<(), ParseError>(())
 /// ```
 #[derive(Eq, Hash, PartialEq)]
-pub struct UBig(Repr);
+pub struct UBig(pub(crate) Repr);
 
 impl UBig {
     /// Construct from one word.
+    // TODO: obselete this, use From and Into
     #[inline]
     pub(crate) fn from_word(word: Word) -> UBig {
-        UBig(Small(word))
+        UBig(Repr::from_word(word))
     }
 
     /// Get the representation of UBig.
     #[inline]
-    pub(crate) fn repr(&self) -> &Repr {
-        &self.0
+    pub(crate) fn repr(&self) -> StrongReprRef<'_> {
+        self.0.variants()
     }
 
     /// Convert into representation.
     #[inline]
-    pub(crate) fn into_repr(self) -> Repr {
-        self.0
+    pub(crate) fn into_repr(self) -> StrongRepr {
+        self.0.as_variants()
     }
 
     /// Length in Words.
     #[inline]
     pub(crate) fn len(&self) -> usize {
-        match self.repr() {
-            Small(_) => 1,
-            Large(buffer) => buffer.len(),
-        }
+        self.0.len()
+    }
+
+    /// Capacity in Words.
+    #[inline]
+    pub(crate) fn capacity(&self) -> usize {
+        self.0.capacity()
     }
 
     /// Representation in Words.
     #[inline]
     pub(crate) fn as_words(&self) -> &[Word] {
-        match self.repr() {
-            Small(0) => &[],
-            Small(word) => slice::from_ref(word),
-            Large(buffer) => buffer,
-        }
+        let (words, sign) = self.0.as_signed_slice();
+        debug_assert!(matches!(sign, crate::sign::Sign::Positive));
+        words
     }
 
     /// Maximum length in `Word`s.
@@ -106,7 +93,7 @@ impl UBig {
     /// will panic.
     ///
     /// This does not guarantee that there is sufficient memory to store numbers
-    /// up to this length. Memory allocation may fail even for smaller numbers.
+    /// up to this length. Memory allocation may fail even for Singleer numbers.
     ///
     /// The fact that this limit fits in `usize` guarantees that all bit
     /// addressing operations can be performed using `usize`.
@@ -119,24 +106,16 @@ impl UBig {
     }
 }
 
+// This custom implementation is necessary due to https://github.com/rust-lang/rust/issues/98374
 impl Clone for UBig {
     #[inline]
     fn clone(&self) -> UBig {
-        match self.repr() {
-            Small(x) => UBig(Small(*x)),
-            Large(buffer) => UBig(Large(buffer.clone())),
-        }
+        UBig(self.0.clone())
     }
 
     #[inline]
     fn clone_from(&mut self, source: &UBig) {
-        if let Large(buffer) = &mut self.0 {
-            if let Large(source_buffer) = source.repr() {
-                buffer.resizing_clone_from(source_buffer);
-                return;
-            }
-        }
-        *self = source.clone();
+        self.0.clone_from(&source.0)
     }
 }
 
@@ -147,30 +126,13 @@ impl From<Buffer> for UBig {
     /// there will be no reallocation here.
     fn from(mut buffer: Buffer) -> UBig {
         buffer.pop_zeros();
-
-        match buffer.len() {
-            0 => UBig::from_word(0),
-            1 => UBig::from_word(buffer[0]),
-            _ if buffer.len() > UBig::MAX_LEN => UBig::panic_number_too_large(),
-            _ => {
-                buffer.shrink();
-                UBig(Large(buffer))
-            }
-        }
+        UBig(Repr::from_buffer(buffer))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Current capacity in Words.
-    fn capacity(x: &UBig) -> usize {
-        match x.repr() {
-            Small(_) => 1,
-            Large(large) => large.capacity(),
-        }
-    }
 
     #[test]
     fn test_buffer_to_ubig() {
@@ -196,7 +158,7 @@ mod tests {
         buf.push(3);
         buf.push(4);
         let num: UBig = buf.into();
-        assert_eq!(capacity(&num), 7);
+        assert_eq!(num.capacity(), 7);
 
         let mut buf = Buffer::allocate(100);
         buf.push(1);
@@ -204,7 +166,7 @@ mod tests {
         buf.push(3);
         buf.push(4);
         let num: UBig = buf.into();
-        assert_eq!(capacity(&num), 6);
+        assert_eq!(num.capacity(), 6);
     }
 
     #[test]
@@ -215,7 +177,7 @@ mod tests {
         let a = gen_ubig(10);
         let b = a.clone();
         assert_eq!(a, b);
-        assert_eq!(capacity(&a), capacity(&b));
+        assert_eq!(a.capacity(), b.capacity());
     }
 
     #[test]
@@ -232,25 +194,25 @@ mod tests {
         assert_eq!(a, b);
 
         let mut a = gen_ubig(9);
-        let prev_cap = capacity(&a);
+        let prev_cap = a.capacity();
         a.clone_from(&num);
         // The buffer should be reused, 9 is close enough to 10.
-        assert_eq!(capacity(&a), prev_cap);
-        assert_ne!(capacity(&a), capacity(&num));
+        assert_eq!(a.capacity(), prev_cap);
+        assert_ne!(a.capacity(), num.capacity());
 
         let mut a = gen_ubig(3);
-        let prev_cap = capacity(&a);
+        let prev_cap = a.capacity();
         a.clone_from(&num);
-        // The buffer should now be reallocated, it's too small.
-        assert_ne!(capacity(&a), prev_cap);
-        assert_eq!(capacity(&a), capacity(&num));
+        // The buffer should now be reallocated, it's too Single.
+        assert_ne!(a.capacity(), prev_cap);
+        assert_eq!(a.capacity(), num.capacity());
 
         let mut a = gen_ubig(100);
-        let prev_cap = capacity(&a);
+        let prev_cap = a.capacity();
         a.clone_from(&num);
         // The buffer should now be reallocated, it's too large.
-        assert_ne!(capacity(&a), prev_cap);
-        assert_eq!(capacity(&a), capacity(&num));
+        assert_ne!(a.capacity(), prev_cap);
+        assert_eq!(a.capacity(), num.capacity());
     }
 
     fn gen_ubig(num_words: u16) -> UBig {

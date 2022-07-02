@@ -25,9 +25,9 @@ impl UBig {
             _ => {}
         }
         match self.repr() {
-            Small(0) => return UBig::from_word(0),
-            Small(1) => return UBig::from_word(1),
-            Small(2) => {
+            Single(0) => return UBig::from_word(0),
+            Single(1) => return UBig::from_word(1),
+            Single(2) => {
                 let mut x = UBig::from_word(0);
                 x.set_bit(exp);
                 return x;

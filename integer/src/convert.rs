@@ -102,7 +102,7 @@ impl UBig {
     /// ```
     pub fn to_le_bytes(&self) -> Vec<u8> {
         match self.repr() {
-            Small(x) => {
+            Single(x) => {
                 let bytes = x.to_le_bytes();
                 let skip_bytes = x.leading_zeros() as usize / 8;
                 bytes[..WORD_BYTES - skip_bytes].to_vec()
@@ -133,7 +133,7 @@ impl UBig {
     /// ```
     pub fn to_be_bytes(&self) -> Vec<u8> {
         match self.repr() {
-            Small(x) => {
+            Single(x) => {
                 let bytes = x.to_be_bytes();
                 let skip_bytes = x.leading_zeros() as usize / 8;
                 bytes[skip_bytes..].to_vec()
@@ -166,7 +166,7 @@ impl UBig {
     #[inline]
     pub fn to_f32(&self) -> f32 {
         match self.repr() {
-            Small(word) => *word as f32,
+            Single(word) => *word as f32,
             Large(_) => match u32::try_from(self) {
                 Ok(val) => val as f32,
                 Err(_) => self.to_f32_slow(),
@@ -217,7 +217,7 @@ impl UBig {
     #[inline]
     pub fn to_f64(&self) -> f64 {
         match self.repr() {
-            Small(word) => *word as f64,
+            Single(word) => *word as f64,
             Large(_) => match u64::try_from(self) {
                 Ok(val) => val as f64,
                 Err(_) => self.to_f64_slow(),
@@ -536,7 +536,7 @@ impl UBig {
         T: PrimitiveUnsigned,
     {
         match self.repr() {
-            Small(w) => match T::try_from(*w) {
+            Single(w) => match T::try_from(*w) {
                 Ok(val) => Ok(val),
                 Err(_) => Err(OutOfBoundsError),
             },
@@ -551,7 +551,7 @@ impl UBig {
         T: PrimitiveSigned,
     {
         match self.repr() {
-            Small(w) => T::try_from(*w).map_err(|_| OutOfBoundsError),
+            Single(w) => T::try_from(*w).map_err(|_| OutOfBoundsError),
             Large(buffer) => {
                 let u: T::Unsigned = unsigned_from_words(buffer)?;
                 u.try_into().map_err(|_| OutOfBoundsError)

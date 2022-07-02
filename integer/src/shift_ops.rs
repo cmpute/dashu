@@ -91,8 +91,8 @@ impl Shl<usize> for UBig {
     #[inline]
     fn shl(self, rhs: usize) -> UBig {
         match self.into_repr() {
-            Small(0) => UBig::from_word(0),
-            Small(word) => UBig::shl_word(word, rhs),
+            Single(0) => UBig::from_word(0),
+            Single(word) => UBig::shl_word(word, rhs),
             Large(buffer) => UBig::shl_large(buffer, rhs),
         }
     }
@@ -104,8 +104,8 @@ impl Shl<usize> for &UBig {
     #[inline]
     fn shl(self, rhs: usize) -> UBig {
         match self.repr() {
-            Small(0) => UBig::from_word(0),
-            Small(word) => UBig::shl_word(*word, rhs),
+            Single(0) => UBig::from_word(0),
+            Single(word) => UBig::shl_word(*word, rhs),
             Large(buffer) => UBig::shl_ref_large(buffer, rhs),
         }
     }
@@ -117,7 +117,7 @@ impl Shr<usize> for UBig {
     #[inline]
     fn shr(self, rhs: usize) -> UBig {
         match self.into_repr() {
-            Small(word) => UBig::shr_word(word, rhs),
+            Single(word) => UBig::shr_word(word, rhs),
             Large(buffer) => UBig::shr_large(buffer, rhs),
         }
     }
@@ -129,7 +129,7 @@ impl Shr<usize> for &UBig {
     #[inline]
     fn shr(self, rhs: usize) -> UBig {
         match self.repr() {
-            Small(word) => UBig::shr_word(*word, rhs),
+            Single(word) => UBig::shr_word(*word, rhs),
             Large(buffer) => UBig::shr_large_ref(buffer, rhs),
         }
     }

@@ -11,12 +11,12 @@ use alloc::alloc::Layout;
 use core::mem;
 use static_assertions::const_assert;
 
-/// If smaller length <= MAX_LEN_SIMPLE, simple multiplication can be used.
+/// If Singleer length <= MAX_LEN_SIMPLE, simple multiplication can be used.
 const MAX_LEN_SIMPLE: usize = 24;
-const_assert!(MAX_LEN_SIMPLE <= simple::MAX_SMALLER_LEN);
+const_assert!(MAX_LEN_SIMPLE <= simple::MAX_SingleER_LEN);
 const_assert!(MAX_LEN_SIMPLE + 1 >= karatsuba::MIN_LEN);
 
-/// If smaller length <= this, Karatsuba multiplication can be used.
+/// If Singleer length <= this, Karatsuba multiplication can be used.
 const MAX_LEN_KARATSUBA: usize = 192;
 const_assert!(MAX_LEN_KARATSUBA + 1 >= toom_3::MIN_LEN);
 
@@ -108,19 +108,19 @@ pub(crate) fn sub_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs
 }
 
 /// Temporary scratch space required for multiplication.
-pub(crate) fn memory_requirement_up_to(_total_len: usize, smaller_len: usize) -> Layout {
-    if smaller_len <= MAX_LEN_SIMPLE {
-        simple::memory_requirement_up_to(smaller_len)
-    } else if smaller_len <= MAX_LEN_KARATSUBA {
-        karatsuba::memory_requirement_up_to(smaller_len)
+pub(crate) fn memory_requirement_up_to(_total_len: usize, Singleer_len: usize) -> Layout {
+    if Singleer_len <= MAX_LEN_SIMPLE {
+        simple::memory_requirement_up_to(Singleer_len)
+    } else if Singleer_len <= MAX_LEN_KARATSUBA {
+        karatsuba::memory_requirement_up_to(Singleer_len)
     } else {
-        toom_3::memory_requirement_up_to(smaller_len)
+        toom_3::memory_requirement_up_to(Singleer_len)
     }
 }
 
 /// Temporary scratch space required for multiplication.
-pub(crate) fn memory_requirement_exact(total_len: usize, smaller_len: usize) -> Layout {
-    memory_requirement_up_to(total_len, smaller_len)
+pub(crate) fn memory_requirement_exact(total_len: usize, Singleer_len: usize) -> Layout {
+    memory_requirement_up_to(total_len, Singleer_len)
 }
 
 /// c += sign * a * b

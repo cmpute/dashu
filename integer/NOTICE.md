@@ -26,8 +26,6 @@ SOFTWARE.
 
 The modifications on the ibig:
 
-1. The `Small` variant of the UBig representation contains a double word integer instead of a single one.
+1. The underlying represetation of the UBig is vastly changed.
 2. Operation traits are moved to the `dashu-base` crate.
 3. The trait `NextPowerOfTwo` is changed to `PowerOfTwo` with modified definition.
-4. The internal buffer is exposed
-

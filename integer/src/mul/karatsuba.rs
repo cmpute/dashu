@@ -19,7 +19,7 @@ pub(crate) const MIN_LEN: usize = 3;
 
 /// Temporary memory required for multiplication.
 ///
-/// n bounds the length of the smaller factor in words.
+/// n bounds the length of the Singleer factor in words.
 pub(crate) fn memory_requirement_up_to(n: usize) -> Layout {
     // We prove by induction that:
     // f(n) <= 2n + 2 log_2 (n-1)

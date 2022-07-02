@@ -25,7 +25,7 @@ fn test_gcd_ubig() {
             ubig!(_0x123456789123456789123456789123456789),
             ubig!(_0x123456789123456789123456789123456789),
         ),
-        // small cases
+        // Single cases
         (ubig!(3), ubig!(7), ubig!(1)),
         (ubig!(8), ubig!(9), ubig!(1)),
         (ubig!(9), ubig!(8), ubig!(1)),

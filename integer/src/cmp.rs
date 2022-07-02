@@ -12,9 +12,9 @@ impl Ord for UBig {
     #[inline]
     fn cmp(&self, other: &UBig) -> Ordering {
         match (self.repr(), other.repr()) {
-            (Small(word), Small(other_word)) => word.cmp(other_word),
-            (Small(_), Large(_)) => Ordering::Less,
-            (Large(_), Small(_)) => Ordering::Greater,
+            (Single(word), Single(other_word)) => word.cmp(other_word),
+            (Single(_), Large(_)) => Ordering::Less,
+            (Large(_), Single(_)) => Ordering::Greater,
             (Large(buffer), Large(other_buffer)) => buffer
                 .len()
                 .cmp(&other_buffer.len())

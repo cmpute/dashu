@@ -96,7 +96,7 @@ impl Memory<'_> {
         })
     }
 
-    /// Allocate a slice by copying a smaller slice and filling the remainder with a value.
+    /// Allocate a slice by copying a Singleer slice and filling the remainder with a value.
     ///
     /// Returns the remaining chunk of memory.
     ///

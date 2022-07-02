@@ -12,7 +12,7 @@ use crate::{
 /// Granlund, Montgomerry "Division by Invariant Integers using Multiplication"
 /// Algorithm 4.1.
 #[derive(Clone, Copy)]
-pub(crate) struct FastDivideSmall {
+pub(crate) struct FastDivideSingle {
     // 2 <= divisor < 2^N, N = WORD_BITS
     divisor: Word,
 
@@ -25,7 +25,7 @@ pub(crate) struct FastDivideSmall {
     m: Word,
 }
 
-impl FastDivideSmall {
+impl FastDivideSingle {
     #[inline]
     pub(crate) const fn new(divisor: Word) -> Self {
         assert_in_const_fn(divisor > 1);
@@ -50,7 +50,7 @@ impl FastDivideSmall {
             double_word(0, math::ones_word(n) - (divisor - 1)) / extend_word(divisor),
         );
         // assert!(_hi == 0);
-        FastDivideSmall {
+        FastDivideSingle {
             divisor,
             shift: n - 1,
             m: lo + 1,
@@ -84,7 +84,7 @@ impl FastDivideSmall {
 
     #[inline]
     pub(crate) const fn dummy() -> Self {
-        FastDivideSmall {
+        FastDivideSingle {
             divisor: 0,
             shift: 0,
             m: 0,
@@ -318,13 +318,13 @@ mod tests {
     use rand::prelude::*;
 
     #[test]
-    fn test_fast_divide_small() {
+    fn test_fast_divide_Single() {
         let mut rng = StdRng::seed_from_u64(1);
         for _ in 0..1000000 {
             let d_bits = rng.gen_range(2..=WORD_BITS);
             let max_d = math::ones(d_bits);
             let d = rng.gen_range(max_d / 2 + 1..=max_d);
-            let fast_div = FastDivideSmall::new(d);
+            let fast_div = FastDivideSingle::new(d);
             let n = rng.gen();
             let (q, r) = fast_div.div_rem(n);
             assert_eq!(q, n / d);

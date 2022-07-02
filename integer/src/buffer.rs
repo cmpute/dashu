@@ -1,14 +1,16 @@
-//! Word buffer.
+//! Word buffer. TODO: rename to repr.rs
 
 use crate::{
-    arch::word::Word,
-    primitive::WORD_BITS_USIZE
+    arch::word::{Word, DoubleWord},
+    primitive::{WORD_BITS_USIZE, double_word, split_double_word},
+    sign::Sign,
 };
-
+use static_assertions::const_assert_eq;
 use alloc::{vec::Vec, alloc::Layout};
 use core::{
-    iter,
-    fmt,
+    slice,
+    fmt::{self, Write},
+    mem,
     ops::{Deref, DerefMut},
     num::NonZeroIsize,
     ptr::{self, NonNull},
@@ -17,45 +19,63 @@ use core::{
 
 /// This union contains the raw representation of words, the words are either inlined
 /// or on the heap. The flag used to distinguishing them is the `len` field of the buffer.
-union BufferData {
+#[repr(C)]
+union ReprData {
     inline: [Word; 2], // lo, hi
     heap: (*mut Word, usize) // ptr, len
 }
 
-/// Buffer for Words. The words in the buffer are ordered from LSB to MSB.
-///
-/// UBig operations are usually performed by creating a Buffer with appropriate capacity, filling it
-/// in with Words, and then converting to UBig.
-///
-/// If its capacity is exceeded, the `Buffer` will panic.
-pub(crate) struct Buffer {
-    data: BufferData,
-
+/// Internal representation for big integers.
+/// 
+/// It's optimized so that Single integers (single or double words) will not be allocated on heap.
+/// When the data is allocated on the heap, it can be casted to [Buffer] efficiently, but modifying
+/// the buffer inplace is not allowed because that can break the rule on the `capacity` field.
+#[repr(C)]
+pub(crate) struct Repr {
     /// The capacity is designed to be not zero so that it provides a niche value for other use.
     /// 
     /// How to intepret the `data` field:
     /// - capacity = 1: the words are inlined and the high word is 0
     /// - capacity = 2: the words are inlined
-    /// - capacity >= 3: the words are on allocated on the heap
+    /// - capacity >= 3: the words are on allocated on the heap. In this case, data.len >= 3 will also be forced.
     /// - capacity < 0: similiar to the cases above, but negative capacity value is used to mark the integer is negative.
     capacity: NonZeroIsize,
+
+    /// The words in the `data` field are ordered from LSB to MSB.
+    data: ReprData,
+}
+
+/// Buffer of words allocated on heap.
+/// 
+/// This struct is ensured to be consistent with [Repr] in struct layout (that's why `repr(C)` is necessary),
+/// but the big integer represented by this buffer is unsigned.
+/// 
+/// UBig operations are usually performed by creating a Buffer with appropriate capacity, filling it
+/// in with Words, and then converting to UBig.
+///
+/// If its capacity is exceeded, the `Buffer` will panic.
+#[repr(C)]
+pub(crate) struct Buffer {
+    capacity: usize,
+    ptr: NonNull<Word>,
+    len: usize
+}
+const_assert_eq!(mem::size_of::<Buffer>(), mem::size_of::<Repr>());
+
+
+pub(crate) enum StrongRepr {
+    Single(Word),
+    Double(DoubleWord),
+    Large(Buffer)
+}
+
+pub(crate) enum StrongReprRef<'a> {
+    RefSingle(Word),
+    RefDouble(DoubleWord),
+    RefLarge(&'a [Word])
 }
 
 impl Buffer {
-    /// Creates a buffer with a single word
-    pub(crate) fn from_word(n: Word) -> Buffer {
-        Buffer { data: BufferData { inline: [n, 0] }, capacity: NonZeroIsize::new(1).unwrap() }
-    }
-
-    /// Creates a buffer with a double word represented in [lo, hi].
-    pub(crate) fn from_dword(n: [Word; 2]) -> Buffer {
-        if n[1] == 0 {
-            Self::from_word(n[0])
-        } else {
-            Buffer { data: BufferData { inline: n }, capacity: NonZeroIsize::new(2).unwrap() }
-        }
-    }
-
     /// Maximum number of `Word`s.
     ///
     /// This ensures that the number of **bits** fits in `usize`, which is useful for bit count
@@ -94,93 +114,50 @@ impl Buffer {
     /// (the capacity is still 1 in this case) 
     #[inline]
     pub(crate) fn capacity(&self) -> usize {
-        self.capacity.get().unsigned_abs()
+        self.capacity
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        let cap = self.capacity();
-        if cap > 2 {
-            // SAFETY: the heap variant is guaranteed to be initialized when capacity > 2
-            unsafe { self.data.heap.1 }
-        } else {
-            cap
-        }
-    }
-
-    /// Returns a tuple with (data ptr, len ptr, capacity) only when the data is allocated on heap.
-    #[inline]
-    fn triplet(&self) -> (*const Word, usize, usize) {
-        let capacity = self.capacity();
-        debug_assert!(capacity > 2, "the data is not on heap");
-
-        unsafe {
-            // SAFETY: the assertion above ensures the data is allocated on heap.
-            //         The function is prive so debug_assert is sufficient.
-            (self.data.heap.0, self.data.heap.1, capacity)
-        }
-    }
-
-    /// Returns a mutable tuple with (data ptr, len ptr, capacity) only when the data is allocated on heap.
-    #[inline]
-    fn triplet_mut(&mut self) -> (*mut Word, &mut usize, usize) {
-        let capacity = self.capacity();
-        debug_assert!(capacity > 2, "the data is not on heap");
-
-        unsafe {
-            // SAFETY: the assertion above ensures the data is allocated on heap.
-            //         The function is prive so debug_assert is sufficient.
-            let ptr = self.data.heap.0;
-            let len = &mut self.data.heap.1;
-            (ptr, len, capacity)
-        }
+        self.len
     }
 
     /// Creates a `Buffer` with existing words, the words will be copied.
     ///
     /// It leaves some extra space for future growth.
-    /// 
-    /// # Panics
-    /// 
-    /// The method will panic if `num_words` < 3, in which case the data should be
-    /// inlined (using [Self::from_word] or [Self::from_dword]) instead of being allocated on heap.
-    pub(crate) fn allocate(num_words: usize) -> Buffer {
-        assert!(num_words > 2, "single or double words should be inlined");
+    pub(crate) fn allocate(num_words: usize) -> Self {
         if num_words > Self::MAX_CAPACITY {
             panic!("too many words to be allocated, maximum is {} bits", Self::MAX_CAPACITY);
         }
 
         unsafe {
-            let capacity = Self::default_capacity(num_words);
+            let len = num_words;
+            let capacity = Self::default_capacity(len);
             let layout = Layout::array::<Word>(capacity).unwrap();
             let ptr = alloc::alloc::alloc(layout);
-            let alloc = NonNull::new(ptr).unwrap().cast().as_ptr();
-            Buffer {
-                capacity: NonZeroIsize:: new_unchecked(capacity as isize),
-                data: BufferData { heap: (alloc, 0) }
-            }
+            let ptr = NonNull::new(ptr).unwrap().cast();
+            Buffer { capacity, ptr, len }
         }
     }
 
     /// Change capacity to store `num_words` plus some extra space for future growth.
     /// Note that this function should not be called when capacity = num_words
     fn reallocate(&mut self, num_words: usize) {
-        // TODO: do we need to consider the case where the data is inlined
-        // TODO: use the triplet function
         debug_assert!(num_words >= self.len());
 
         unsafe {
-            let old_layout = Layout::array::<Word>(self.capacity()).unwrap();
+            let old_layout = Layout::array::<Word>(self.capacity).unwrap();
             let new_capacity = Self::default_capacity(num_words);
             let new_layout = Layout::array::<Word>(new_capacity).unwrap();
             let new_ptr = alloc::alloc::realloc(
-                self.data.heap.0 as *mut u8,
+                self.ptr.as_ptr() as _,
                 old_layout,
                 new_layout.size()
             );
 
-            self.data.heap.0 = NonNull::new(new_ptr).unwrap().cast().as_ptr();
-            self.capacity = NonZeroIsize::new_unchecked(new_capacity as isize);
+            // update allocation info
+            self.ptr = NonNull::new(new_ptr).unwrap().cast();
+            self.capacity = new_capacity;
         }
     }
     
@@ -188,221 +165,184 @@ impl Buffer {
     /// reallocate if necessary.
     #[inline]
     pub(crate) fn ensure_capacity(&mut self, num_words: usize) {
-        if num_words > self.capacity() && num_words > 2 {
+        if num_words > self.capacity && num_words > 2 {
             self.reallocate(num_words);
         }
     }
 
-    /// Makes sure that the capacity is compact. The words will
-    /// be inlined if possible.
+    // TODO: what's the optimal strategy to shrink the integer when casting to UBig?
+    /// Makes sure that the capacity is compact.
     #[inline]
     pub(crate) fn shrink(&mut self) {
-        let (_, len, capacity) = self.triplet();
-
-        if len < 3 {
-            // shrink to inline if possible
-            self.truncate(len);
-        } else if capacity > Self::max_compact_capacity(len) {
-            self.reallocate(len);
+        if self.capacity > Self::max_compact_capacity(self.len) {
+            self.reallocate(self.len);
         }
     }
 
-    /// Append a Word to the buffer (on heap).
+    /// Append a Word to the buffer.
     ///
     /// # Panics
     ///
     /// Panics if there is not enough capacity.
     #[inline]
     pub(crate) fn push(&mut self, word: Word) {
-        let (ptr, len, capacity) = self.triplet_mut();
-        assert!(*len < capacity);
+        assert!(self.len < self.capacity);
 
         unsafe {
-            let end = ptr.add(*len);
+            let end = self.ptr.as_ptr().add(self.len);
             core::ptr::write(end, word);
-            *len += 1;
+            self.len += 1;
         }
     }
 
-    /// Append a Word (on heap) and reallocate if necessary.
+    /// Append a Word and reallocate if necessary.
     #[inline]
     pub(crate) fn push_may_reallocate(&mut self, word: Word) {
-        self.ensure_capacity(self.len() + 1);
+        self.ensure_capacity(self.len + 1);
         self.push(word);
     }
 
-    /// Append `n` zeros (on heap).
+    /// Append `n` zeros.
     ///
     /// # Panics
     ///
     /// Panics if there is not enough capacity.
     pub(crate) fn push_zeros(&mut self, n: usize) {
-        let (ptr, len, capacity) = self.triplet_mut();
-        assert!(n <= capacity - *len);
+        assert!(n <= self.capacity - self.len);
 
         unsafe {
-            let mut ptr = ptr.add(*len);
+            let mut ptr = self.ptr.as_ptr().add(self.len);
             for _ in 0..n {
                 ptr::write(ptr, 0);
                 ptr = ptr.add(1);
             }
-            *len += n;
+            self.len += n;
         }
     }
 
-    /// Insert `n` zeros in front (on heap).
+    /// Insert `n` zeros in front.
     ///
     /// # Panics
     ///
     /// Panics if there is not enough capacity.
     pub(crate) fn push_zeros_front(&mut self, n: usize) {
-        let (ptr, len, capacity) = self.triplet_mut();
-        assert!(n <= capacity - *len);
+        assert!(n <= self.capacity - self.len);
 
         unsafe {
             // move data
-            ptr::copy(ptr, ptr.add(n), *len);
+            let mut ptr = self.ptr.as_ptr();
+            ptr::copy(ptr, ptr.add(n), self.len);
 
             // fill zeros
-            let mut ptr = ptr;
             for _ in 0..n {
                 ptr::write(ptr, 0);
                 ptr = ptr.add(1);
             }
-            *len += n;
+            self.len += n;
         }
     }
 
-    /// Pop leading zero words (on heap). The words will be inlined if possible.
+    /// Append words by copying from slice.
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if there is not enough capacity.
     #[inline]
-    pub(crate) fn pop_zeros(&mut self) {
-        let (ptr, mut len, _) = self.triplet();
+    pub(crate) fn push_slice(&mut self, words: &[Word]) {
+        let (src_ptr, src_len) = (words.as_ptr(), words.len());
+        assert!(src_len <= self.capacity - self.len);
 
         unsafe {
-            if len > 0 {
+            ptr::copy_nonoverlapping(src_ptr, self.ptr.as_ptr().add(self.len), src_len);
+            self.len += src_len;
+        }
+    }
+
+    /// Pop leading zero words.
+    #[inline]
+    pub(crate) fn pop_zeros(&mut self) {
+        unsafe {
+            if self.len > 0 {
                 // adjust len until leading zeros are removed
-                let mut tail_ptr = ptr.add(len - 1);
-                while ptr::read(tail_ptr) == 0 && len > 2 {
+                let mut tail_ptr = self.ptr.as_ptr().add(self.len - 1);
+                while ptr::read(tail_ptr) == 0 && self.len > 0 {
                     tail_ptr = tail_ptr.sub(1);
-                    len -= 1;
+                    self.len -= 1;
                 }
             }
         }
-
-        self.truncate(len);
     }
 
-    /// Truncate length to `len` (on heap). The words will be inlined
-    /// if there are less than 3 words remaining.
+    /// Truncate length to `len`.
     /// 
     /// # Panics
     /// 
     /// Panics if the current length is less than `len`
     #[inline]
     pub(crate) fn truncate(&mut self, len: usize) {
-        let (ptr, cur_len, _) = self.triplet();
-        assert!(cur_len >= len);
-
-        unsafe {
-            // inline the data if the length is less than 3
-            match len {
-                0 => { *self = Self::from_word(0); }
-                1 => { *self = Self::from_word(ptr::read(ptr)); },
-                2 => {
-                    let (lo, hi) = (ptr::read(ptr), ptr::read(ptr.add(1)));
-                    *self = Self::from_dword([lo, hi]);
-                },
-                _ => {
-                    // len >= 3
-                    self.data.heap.1 = len;
-                }
-            }
-        }
+        assert!(self.len >= len);
+        self.len = len;
     }
 
-    /// Erase first n elements (on heap). The words will be inlined if possible.
+    /// Erase first n elements.
     #[inline]
     pub(crate) fn erase_front(&mut self, n: usize) {
-        let (ptr, len, _) = self.triplet_mut();
-        assert!(*len >= n);
+        assert!(self.len >= n);
 
-        let new_len = *len - n;
+        let ptr = self.ptr.as_ptr();
+        let new_len = self.len - n;
         unsafe {
             // move data
             ptr::copy(ptr.add(n), ptr, new_len);
         }
-        self.truncate(new_len);
     }
 
-    /// Clone from `src` and resize if necessary.
-    ///
-    /// Equivalent to, but more efficient than:
-    ///
-    /// ```ignore
-    /// buffer.ensure_capacity(src.len());
-    /// buffer.clone_from(src);
-    /// buffer.shrink();
-    /// ```
-    pub(crate) fn resizing_clone_from(&mut self, src: &Buffer) {
-        let cap = self.capacity();
-        let n = src.len();
-        if cap >= n && cap <= Buffer::max_compact_capacity(n) {
-            self.clone_from(src);
-        } else {
-            *self = src.clone();
-        }
-    }
-
-    /// Append words by copying from slice (on heap).
-    /// 
-    /// # Panics
-    /// 
-    /// Panics if there is not enough capacity.
-    pub(crate) fn push_slice(&mut self, words: &[Word]) {
-        let (ptr, len, capacity) = self.triplet_mut();
-        let (src_ptr, src_len) = (words.as_ptr(), words.len());
-        assert!(src_len <= capacity - *len);
-
-        unsafe {
-            ptr::copy_nonoverlapping(src_ptr, ptr.add(*len), src_len);
-            *len += src_len;
-        }
-    }
-
+    // /// Clone from `src` and resize if necessary.
+    // ///
+    // /// Equivalent to, but more efficient than:
+    // ///
+    // /// ```ignore
+    // /// buffer.ensure_capacity(src.len());
+    // /// buffer.clone_from(src);
+    // /// buffer.shrink();
+    // /// ```
+    // pub(crate) fn resizing_clone_from(&mut self, src: &Buffer) {
+    //     if self.capacity >= src.len && self.capacity <= Buffer::max_compact_capacity(src.len) {
+    //         self.clone_from(src);
+    //     } else {
+    //         *self = src.clone();
+    //     }
+    // }
 }
 
 impl Clone for Buffer {
     /// New buffer will be sized as `Buffer::allocate(self.len())`.
-    fn clone(&self) -> Buffer {
-        let mut new_buffer = Buffer::allocate(self.len());
-        new_buffer.clone_from(self);
+    #[inline]
+    fn clone(&self) -> Self {
+        let mut new_buffer = Buffer::allocate(self.len);
+        unsafe {
+            // SAFETY: src.ptr and self.ptr are both properly allocated by `Buffer::allocate()`.
+            //         src.ptr and self.ptr cannot alias, because the ptr should be uniquely owned by the Buffer
+            let new_ptr = new_buffer.ptr.as_ptr();
+            ptr::copy_nonoverlapping(self.ptr.as_ptr(), new_ptr, self.len);
+        }
+        new_buffer.len = self.len;
         new_buffer
     }
 
-    /// Panics if capacity is exceeded.
+    /// Reallocating if capacity is too Single or too large.
     #[inline]
-    fn clone_from(&mut self, src: &Buffer) {
-        let (src_ptr, src_len, _) = src.triplet();
-        let (ptr, len, capacity) = self.triplet_mut();
-
-        unsafe {
-            // inline the data if the length is less than 3
-            match src_len {
-                0 => { *self = Self::from_word(0); }
-                1 => { *self = Self::from_word(ptr::read(src_ptr)); },
-                2 => {
-                    let (lo, hi) = (ptr::read(src_ptr), ptr::read(src_ptr.add(1)));
-                    *self = Self::from_dword([lo, hi]);
-                },
-                _ => {
-                    assert!(capacity >= src_len);
-                    ptr::copy_nonoverlapping(src_ptr, ptr, src_len);
-                    *len = src_len;
-
-                    // copy the sign from src
-                    self.capacity = NonZeroIsize::new_unchecked(self.capacity.get().abs() * src.capacity.get().signum());
-                }
+    fn clone_from(&mut self, src: &Self) {
+        if self.capacity >= src.len && self.capacity <= Buffer::max_compact_capacity(src.len) {
+            // direct copy if the capacity is enough
+            unsafe {
+                // SAFETY: src.ptr and self.ptr are both properly allocated by `Buffer::allocate()`.
+                //         src.ptr and self.ptr cannot alias, because the ptr should be uniquely owned by the Buffer
+                ptr::copy_nonoverlapping(src.ptr.as_ptr(), self.ptr.as_ptr(), src.len);
             }
+            self.len = src.len;
+        } else {
+            *self = src.clone();
         }
     }
 }
@@ -410,11 +350,8 @@ impl Clone for Buffer {
 impl Drop for Buffer {
     fn drop(&mut self) {
         unsafe {
-            let capacity = self.capacity();
-            if capacity > 2 {
-                let layout = Layout::array::<Word>(capacity).unwrap();
-                alloc::alloc::dealloc(self.data.heap.0 as _, layout);
-            }
+            let layout = Layout::array::<Word>(self.capacity).unwrap();
+            alloc::alloc::dealloc(self.ptr.as_ptr() as _, layout);
         }
     }
 }
@@ -425,15 +362,10 @@ impl Deref for Buffer {
     #[inline]
     fn deref(&self) -> &[Word] {
         unsafe {
-            match self.capacity() {
-                0 => unreachable!(),
-                1 => &self.data.inline[..1],
-                2 => &self.data.inline,
-                _ => core::slice::from_raw_parts(
-                    self.data.heap.0,
-                    self.data.heap.1
-                )
-            }
+            slice::from_raw_parts(
+                self.ptr.as_ptr(),
+                self.len
+            )
         }
     }
 }
@@ -442,22 +374,17 @@ impl DerefMut for Buffer {
     #[inline]
     fn deref_mut(&mut self) -> &mut [Word] {
         unsafe {
-            match self.capacity() {
-                0 => unreachable!(),
-                1 => &mut self.data.inline[..1],
-                2 => &mut self.data.inline,
-                _ => core::slice::from_raw_parts_mut(
-                    self.data.heap.0,
-                    self.data.heap.1
-                )
-            }
+            slice::from_raw_parts_mut(
+                self.ptr.as_ptr(),
+                self.len
+            )
         }
     }
 }
 
 impl PartialEq for Buffer {
     #[inline]
-    fn eq(&self, other: &Buffer) -> bool {
+    fn eq(&self, other: &Self) -> bool {
         self[..] == other[..]
     }
 }
@@ -471,8 +398,340 @@ impl fmt::Debug for Buffer {
 
 impl Hash for Buffer {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.capacity.get().signum().hash(state);
         (**self).hash(state);
+    }
+}
+
+impl From<&[Word]> for Buffer {
+    fn from(words: &[Word]) -> Self {
+        let mut buffer = Buffer::allocate(words.len());
+        buffer.push_slice(words);
+        buffer
+    }
+}
+
+/*******************************
+    Implementations for Repr
+********************************/
+
+impl Repr {
+    /// Get the length of the number (in `Word`s)
+    #[inline]
+    pub fn len(&self) -> usize {
+        match self.capacity() {
+            0 => unreachable!(),
+            1 => 1,
+            2 => 2,
+            _ => unsafe { self.data.heap.1 }
+        }
+    }
+
+    /// Get the capacity of the representation (in `Word`s)
+    /// 
+    /// It will not be zero even if the underlying number is zero.
+    #[inline]
+    pub fn capacity(&self) -> usize {
+        self.capacity.get().unsigned_abs()
+    }
+
+    /// Intepret the [Repr] as a single word and get its value.
+    /// 
+    /// SAFETY: You need to check the capacity field before accessing the union.
+    #[inline]
+    unsafe fn as_word(&self) -> Word {
+        debug_assert!(self.capacity() == 1);
+        self.data.inline[0]
+    }
+
+    /// Intepret the [Repr] as a double word and get its value.
+    /// 
+    /// SAFETY: You need to check the capacity field before accessing the union.
+    #[inline]
+    unsafe fn as_dword(&self) -> DoubleWord {
+        debug_assert!(self.capacity() == 2);
+        double_word(self.data.inline[0], self.data.inline[1])
+    }
+
+    /// Get the capacity of Repr and sign simultaneously
+    #[inline]
+    pub fn signed_capacity(&self) -> (usize, Sign) {
+        if self.capacity.get() > 0 {
+            (self.capacity.get() as usize, Sign::Positive)
+        } else {
+            // wrapping will never happen because MAX_CAPACITY < isize::MAX
+            (self.capacity.get().wrapping_neg() as usize, Sign::Negative)
+        }
+    }
+
+    /// Set the sign flag of the representation
+    pub fn set_sign(&mut self, sign: Sign) {
+        match (self.capacity.get().signum(), sign) {
+            (1, Sign::Positive) | (-1, Sign::Negative) => {},
+            (1, Sign::Negative) | (-1, Sign::Positive) => {
+                self.capacity = unsafe {
+                    // SAFETY: capacity is not allowed to be zero
+                    NonZeroIsize::new_unchecked(self.capacity.get().wrapping_neg())
+                }
+            },
+            _ => unreachable!()
+        }
+    }
+
+    /// Cast the reference of `Repr` to a strong typed representation, assuming the underlying data is unsigned.
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the `capacity` is negative
+    #[inline]
+    pub fn variants(&self) -> StrongReprRef {
+        assert!(self.capacity.get() > 0);
+
+        match self.capacity.get() {
+            1 => StrongReprRef::RefSingle(self.data.inline[0]),
+            2 => StrongReprRef::RefDouble(double_word(self.data.inline[0], self.data.inline[1])),
+            _ => unsafe {
+                StrongReprRef::RefLarge(slice::from_raw_parts(
+                    self.data.heap.0,
+                    self.data.heap.1
+                ))
+            }
+        }
+    }
+
+    /// Cast the `Repr` to a strong typed representation, assuming the underlying data is unsigned.
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the `capacity` is negative
+    #[inline]
+    pub fn as_variants(self) -> StrongRepr {
+        assert!(self.capacity.get() > 0);
+
+        match self.capacity.get() {
+            1 => StrongRepr::Single(self.data.inline[0]),
+            2 => StrongRepr::Double(double_word(self.data.inline[0], self.data.inline[1])),
+            _ => unsafe {
+                // SAFETY: An `Buffer` and `Repr` have the same layout
+                //     and we have made sure that the data is allocated on heap
+                StrongRepr::Large(mem::transmute(self))
+            }
+        }
+    }
+
+    /// Cast the `Repr` to a strong typed representation and return the sign.
+    pub fn as_signed_variants(mut self) -> (StrongRepr, Sign) {
+        let (abs_capacity, sign) = self.signed_capacity();
+        self.capacity = unsafe {
+            // SAFETY: capacity is not allowed to be zero
+            NonZeroIsize::new_unchecked(abs_capacity as isize)
+        };
+        (self.as_variants(), sign)
+    }
+
+    /// Get a reference to the words in the `Repr`, together with the sign.
+    pub fn as_signed_slice(&self) -> (&[Word], Sign) {
+        let (capacity, sign) = self.signed_capacity();
+        let arr = unsafe {
+                match capacity {
+                0 => unreachable!(),
+                1 => &self.data.inline[..1],
+                2 => &self.data.inline,
+                _ => slice::from_raw_parts(
+                    self.data.heap.0,
+                    self.data.heap.1
+                )
+            }
+        };
+        (arr, sign)
+    }
+
+    /// Creates a `Repr` with a single word
+    #[inline]
+    pub(crate) fn from_word(n: Word) -> Self {
+        Repr { data: ReprData { inline: [n, 0] }, capacity: NonZeroIsize::new(1).unwrap() }
+    }
+
+    /// Creates a `Repr` with a double word represented in [lo, hi].
+    #[inline]
+    pub(crate) fn from_dword(n: DoubleWord) -> Self {
+        let (lo, hi) = split_double_word(n);
+        if hi == 0 {
+            Self::from_word(lo)
+        } else {
+            Repr { data: ReprData { inline: [lo, hi] }, capacity: NonZeroIsize::new(2).unwrap() }
+        }
+    }
+
+    /// Creates a `Repr` with a buffer allocated on heap.
+    /// 
+    /// Note that it's recommended to call `Buffer::pop_zeros()` before it's
+    /// converted to the `Repr`.
+    pub(crate) fn from_buffer(buffer: Buffer) -> Self {
+        match buffer.len() {
+            0 => Self::from_word(0),
+            1 => Self::from_word(buffer[0]),
+            2 => Self::from_dword(double_word(buffer[0], buffer[1])),
+            _ => unsafe {
+                // TODO: check whether this will call drop
+                // SAFETY: the length has been checked and capacity >= lenght,
+                //         so capacity is nonzero and larger than 2
+                mem::transmute(buffer)
+            }
+        }
+    }
+
+    /// Creates a `Repr` with a buffer allocated on heap and the sign of the number
+    /// 
+    /// Note that it's recommended to call `Buffer::pop_zeros()` before it's
+    /// converted to the `Repr`.
+    #[inline]
+    pub(crate) fn from_signed_buffer(heap: Buffer, sign: Sign) -> Self {
+        let mut result = Self::from_buffer(heap);
+        result.set_sign(sign);
+        result
+    }
+}
+
+
+impl Clone for Repr {
+    fn clone(&self) -> Self {
+        let (capacity, sign) = self.signed_capacity();
+
+        let mut new = unsafe {
+            // inline the data if the length is less than 3
+            // SAFETY: we check the capacity before accessing the variants
+            match capacity {
+                c if c <= 2 => {
+                    Repr { data: ReprData { inline: self.data.inline }, capacity: NonZeroIsize::new_unchecked(c as isize) }
+                },
+                _ => {
+                    let (ptr, len) = self.data.heap;
+                    let mut new_buffer = Buffer::allocate(len);
+                    new_buffer.push_slice(slice::from_raw_parts(ptr, len));
+
+                    // SAFETY: abs(self.capacity) >= 3 => self.data.len >= 3
+                    // so the capacity and len of new_buffer will be both >= 3
+                    mem::transmute(new_buffer)
+                }
+            }
+        };
+        new.set_sign(sign);
+        new
+    }
+
+    #[inline]
+    fn clone_from(&mut self, src: &Self) {
+        let (src_cap, src_sign) = src.signed_capacity();
+        let (cap, _) = self.signed_capacity();
+
+        // shortcut for inlined data
+        if src_cap <= 2 {
+            *self = { Repr { data: ReprData { inline: self.data.inline }, capacity: unsafe {
+                // SAFETY: the capacity from src is now allowed to be zero
+                NonZeroIsize::new_unchecked(src_cap as isize)
+            } } };
+            self.set_sign(src_sign);
+            return;
+        }
+
+        let (src_ptr, src_len) = src.data.heap;
+        let ptr = self.data.heap.0;
+        unsafe {
+            // check if we need reallocation, the strategy here is the same as `Buffer::clone_from()`
+            if cap < src_len || cap > Buffer::max_compact_capacity(src_len) {
+                // release the old buffer
+                // SAFETY: the old buffer is allocated through alloc::alloc::alloc
+                let layout = Layout::array::<Word>(cap).unwrap();
+                alloc::alloc::dealloc(ptr as _, layout);
+    
+                // allocate a new one
+                // SAFETY: all the fields in self are now safely obselete
+                let buffer_mut = &mut *(self as *mut Self as *mut Buffer);
+                *buffer_mut = Buffer::allocate(src_len);
+            }
+            
+            // SAFETY: src.ptr and self.ptr are both properly allocated by `Buffer::allocate()`.
+            //         src.ptr and self.ptr cannot alias, because the ptr should be uniquely owned by the Buffer
+            ptr::copy_nonoverlapping(src_ptr, ptr, src_len);
+        }
+
+        // update length and sign
+        self.data.heap.1 = src_len;
+        self.set_sign(src_sign);
+    }
+}
+
+impl Drop for Repr {
+    fn drop(&mut self) {
+        unsafe {
+            let capacity = self.capacity.get().unsigned_abs();
+            if capacity > 2 {
+                let layout = Layout::array::<Word>(capacity).unwrap();
+                alloc::alloc::dealloc(self.data.heap.0 as _, layout);
+            }
+        }
+    }
+}
+
+// impl Deref for Repr {
+//     type Target = [Word];
+
+//     #[inline]
+//     fn deref(&self) -> &[Word] {
+//         unsafe {
+//             match self.capacity() {
+//                 0 => unreachable!(),
+//                 1 => &self.data.inline[..1],
+//                 2 => &self.data.inline,
+//                 _ => slice::from_raw_parts(
+//                     self.data.heap.0,
+//                     self.data.heap.1
+//                 )
+//             }
+//         }
+//     }
+// }
+
+// impl DerefMut for Repr {
+//     #[inline]
+//     fn deref_mut(&mut self) -> &mut [Word] {
+//         unsafe {
+//             match self.capacity.get().wrapping_abs() {
+//                 0 => unreachable!(),
+//                 1 => &mut self.data.inline[..1],
+//                 2 => &mut self.data.inline,
+//                 _ => slice::from_raw_parts_mut(
+//                     self.data.heap.0,
+//                     self.data.heap.1
+//                 )
+//             }
+//         }
+//     }
+// }
+
+impl PartialEq for Repr {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.as_signed_slice() == other.as_signed_slice()
+    }
+}
+impl Eq for Repr {}
+
+impl fmt::Debug for Repr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (arr, sign) = self.as_signed_slice();
+        if let Sign::Negative = sign {
+            f.write_char('-');
+        }
+        f.debug_list().entries(arr).finish()
+    }
+}
+
+impl Hash for Repr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let (arr, sign) = self.as_signed_slice();
+        sign.hash(state);
+        (*arr).hash(state);
     }
 }
 

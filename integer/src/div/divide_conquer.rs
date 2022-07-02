@@ -19,8 +19,8 @@ pub(crate) fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> Layout
     // and at most lhs_len - rhs_len long.
     // One of the factors will be at most floor(rhs.len()/2),
     // and one of the factors will be at most lhs_len - rhs_len long.
-    let smaller_len = (rhs_len / 2).min(lhs_len - rhs_len);
-    mul::memory_requirement_up_to(rhs_len, smaller_len)
+    let Singleer_len = (rhs_len / 2).min(lhs_len - rhs_len);
+    mul::memory_requirement_up_to(rhs_len, Singleer_len)
 }
 
 /// Division in place using divide and conquer.
@@ -53,7 +53,7 @@ pub(crate) fn div_rem_in_place(
         m -= n;
     }
     if m > n {
-        let o = div_rem_in_place_small_quotient(&mut lhs[..m], rhs, fast_div_rhs_top, memory);
+        let o = div_rem_in_place_Single_quotient(&mut lhs[..m], rhs, fast_div_rhs_top, memory);
         if o {
             assert!(m == lhs.len());
             overflow = true;
@@ -78,12 +78,12 @@ fn div_rem_in_place_same_len(
 
     // Divide lhs[n_lo..] by rhs, putting quotient in lhs[n+n_lo..] and remainder in lhs[n_lo..n+n_lo].
     // This is a 3n/2n division.
-    let overflow = div_rem_in_place_small_quotient(&mut lhs[n_lo..], rhs, fast_div_rhs_top, memory);
+    let overflow = div_rem_in_place_Single_quotient(&mut lhs[n_lo..], rhs, fast_div_rhs_top, memory);
 
     // Divide lhs[..n+n_lo] by rhs, putting the rest of the quotient in lhs[n..n+n_lo] and remainder
     // in lhs[..n]. This is also a 3n/2n division.
     let overflow_lo =
-        div_rem_in_place_small_quotient(&mut lhs[..n + n_lo], rhs, fast_div_rhs_top, memory);
+        div_rem_in_place_Single_quotient(&mut lhs[..n + n_lo], rhs, fast_div_rhs_top, memory);
     assert!(!overflow_lo);
 
     overflow
@@ -99,7 +99,7 @@ fn div_rem_in_place_same_len(
 ///
 /// Returns carry in the quotient. It is at most 1 because rhs is normalized.
 #[must_use]
-fn div_rem_in_place_small_quotient(
+fn div_rem_in_place_Single_quotient(
     lhs: &mut [Word],
     rhs: &[Word],
     fast_div_rhs_top: FastDivideNormalized2,

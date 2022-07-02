@@ -14,12 +14,12 @@ use alloc::alloc::Layout;
 /// Split larger length into chunks of CHUNK_LEN..2 * CHUNK_LEN for memory locality.
 const CHUNK_LEN: usize = 1024;
 
-/// Max supported smaller factor length.
-pub(crate) const MAX_SMALLER_LEN: usize = CHUNK_LEN;
+/// Max supported Singleer factor length.
+pub(crate) const MAX_SingleER_LEN: usize = CHUNK_LEN;
 
 /// Temporary memory required for multiplication.
 ///
-/// n bounds the length of the smaller factor in words.
+/// n bounds the length of the Singleer factor in words.
 pub(crate) fn memory_requirement_up_to(_n: usize) -> Layout {
     memory::zero_layout()
 }
@@ -36,7 +36,7 @@ pub(crate) fn add_signed_mul(
     memory: &mut Memory,
 ) -> SignedWord {
     debug_assert!(a.len() >= b.len() && c.len() == a.len() + b.len());
-    debug_assert!(b.len() <= MAX_SMALLER_LEN);
+    debug_assert!(b.len() <= MAX_SingleER_LEN);
     if a.len() <= CHUNK_LEN {
         add_signed_mul_chunk(c, sign, a, b, memory)
     } else {
@@ -64,7 +64,7 @@ pub(crate) fn add_signed_mul_same_len(
     memory: &mut Memory,
 ) -> SignedWord {
     debug_assert!(a.len() == b.len() && c.len() == a.len() + b.len());
-    debug_assert!(b.len() <= MAX_SMALLER_LEN);
+    debug_assert!(b.len() <= MAX_SingleER_LEN);
     add_signed_mul_chunk(c, sign, a, b, memory)
 }
 

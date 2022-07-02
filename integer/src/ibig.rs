@@ -2,6 +2,7 @@
 
 use crate::{
     sign::Sign::{self, *},
+    buffer::{Buffer, Repr, StrongRepr, StrongReprRef},
     ubig::UBig,
 };
 
@@ -21,33 +22,30 @@ use crate::{
 /// assert_eq!(b, d);
 /// # Ok::<(), ParseError>(())
 /// ```
-#[derive(Clone, Eq, Hash, PartialEq)]
-pub struct IBig {
-    sign: Sign,
-    magnitude: UBig,
-}
+#[derive(Eq, Hash, PartialEq)]
+pub struct IBig(Repr);
 
 impl IBig {
     #[inline]
-    pub(crate) fn from_sign_magnitude(mut sign: Sign, magnitude: UBig) -> IBig {
-        if magnitude == UBig::from_word(0) {
-            sign = Positive;
+    pub(crate) fn from_sign_magnitude(sign: Sign, mut magnitude: UBig) -> IBig {
+        if magnitude != UBig::from_word(0) { // TODO: specialize is_zero
+            magnitude.0.set_sign(sign)
         }
-        IBig { sign, magnitude }
+        IBig(magnitude.0)
     }
 
     #[inline]
     pub(crate) fn sign(&self) -> Sign {
-        self.sign
+        unimplemented!()
     }
 
     #[inline]
     pub(crate) fn magnitude(&self) -> &UBig {
-        &self.magnitude
+        unimplemented!()
     }
 
     #[inline]
     pub(crate) fn into_sign_magnitude(self) -> (Sign, UBig) {
-        (self.sign, self.magnitude)
+        unimplemented!()
     }
 }

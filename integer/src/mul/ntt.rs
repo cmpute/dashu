@@ -5,7 +5,7 @@ use crate::{
         ntt::{MAX_ORDER, PRIMES},
         word::Word,
     },
-    modular::{modulo::ModuloSmallRaw, modulo_ring::ModuloRingSmall},
+    modular::{modulo::ModuloSingleRaw, modulo_ring::ModuloRingSingle},
 };
 
 /// The number of prime factors in the ring.
@@ -20,16 +20,16 @@ pub(crate) struct Prime {
 }
 
 /// Factor fields of the three-prime ring.
-const FIELDS: [ModuloRingSmall; NUM_PRIMES] = [
-    ModuloRingSmall::new(PRIMES[0].prime),
-    ModuloRingSmall::new(PRIMES[1].prime),
-    ModuloRingSmall::new(PRIMES[2].prime),
+const FIELDS: [ModuloRingSingle; NUM_PRIMES] = [
+    ModuloRingSingle::new(PRIMES[0].prime),
+    ModuloRingSingle::new(PRIMES[1].prime),
+    ModuloRingSingle::new(PRIMES[2].prime),
 ];
 
 /// An element of the three-prime ring.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct RingElement {
-    val: [ModuloSmallRaw; NUM_PRIMES],
+    val: [ModuloSingleRaw; NUM_PRIMES],
 }
 
 impl From<Word> for RingElement {
@@ -37,9 +37,9 @@ impl From<Word> for RingElement {
     fn from(x: Word) -> RingElement {
         RingElement {
             val: [
-                ModuloSmallRaw::from_word(x, &FIELDS[0]),
-                ModuloSmallRaw::from_word(x, &FIELDS[1]),
-                ModuloSmallRaw::from_word(x, &FIELDS[2]),
+                ModuloSingleRaw::from_word(x, &FIELDS[0]),
+                ModuloSingleRaw::from_word(x, &FIELDS[1]),
+                ModuloSingleRaw::from_word(x, &FIELDS[2]),
             ],
         }
     }
@@ -48,7 +48,7 @@ impl From<Word> for RingElement {
 impl RingElement {
     const fn zero() -> RingElement {
         RingElement {
-            val: [ModuloSmallRaw::from_normalized(0); NUM_PRIMES],
+            val: [ModuloSingleRaw::from_normalized(0); NUM_PRIMES],
         }
     }
 
@@ -75,9 +75,9 @@ impl RingElement {
 
 const MAX_ORDER_ROOT: RingElement = RingElement {
     val: [
-        ModuloSmallRaw::from_word(PRIMES[0].max_order_root, &FIELDS[0]),
-        ModuloSmallRaw::from_word(PRIMES[1].max_order_root, &FIELDS[1]),
-        ModuloSmallRaw::from_word(PRIMES[2].max_order_root, &FIELDS[2]),
+        ModuloSingleRaw::from_word(PRIMES[0].max_order_root, &FIELDS[0]),
+        ModuloSingleRaw::from_word(PRIMES[1].max_order_root, &FIELDS[1]),
+        ModuloSingleRaw::from_word(PRIMES[2].max_order_root, &FIELDS[2]),
     ],
 };
 
