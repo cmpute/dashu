@@ -80,7 +80,7 @@ impl UBig {
         let idx = n / WORD_BITS_USIZE;
         let mut buffer = Buffer::allocate(idx + 1);
         buffer.push(word);
-        buffer.extend((1..idx).map(|_| 0));
+        buffer.push_zeros(idx - 1);
         buffer.push(1 << (n % WORD_BITS_USIZE));
         buffer.into()
     }

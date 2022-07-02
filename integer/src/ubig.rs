@@ -91,6 +91,7 @@ impl UBig {
     /// within the largest possible number-theoretic transform.
     ///
     /// Also make sure this is even, useful for checking whether a square will overflow.
+    // TODO: only check allocation failure when doing multiplication or shifting
     pub(crate) const MAX_LEN: usize = math::min_usize(
         usize::MAX / WORD_BITS_USIZE,
         match 1usize.checked_shl(ntt::MAX_ORDER) {
