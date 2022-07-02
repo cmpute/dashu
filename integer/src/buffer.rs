@@ -8,9 +8,11 @@ use crate::{
 use alloc::{vec::Vec, alloc::Layout};
 use core::{
     iter,
+    fmt,
     ops::{Deref, DerefMut},
     num::NonZeroIsize,
     ptr::{self, NonNull},
+    hash::{Hash, Hasher}
 };
 
 /// This union contains the raw representation of words, the words are either inlined
@@ -26,7 +28,7 @@ union BufferData {
 /// in with Words, and then converting to UBig.
 ///
 /// If its capacity is exceeded, the `Buffer` will panic.
-pub(crate) struct BufferNew {
+pub(crate) struct Buffer {
     data: BufferData,
 
     /// The capacity is designed to be not zero so that it provides a niche value for other use.
@@ -39,18 +41,18 @@ pub(crate) struct BufferNew {
     capacity: NonZeroIsize,
 }
 
-impl BufferNew {
+impl Buffer {
     /// Creates a buffer with a single word
-    pub(crate) fn from_word(n: Word) -> BufferNew {
-        BufferNew { data: BufferData { inline: [n, 0] }, capacity: NonZeroIsize::new(1).unwrap() }
+    pub(crate) fn from_word(n: Word) -> Buffer {
+        Buffer { data: BufferData { inline: [n, 0] }, capacity: NonZeroIsize::new(1).unwrap() }
     }
 
     /// Creates a buffer with a double word represented in [lo, hi].
-    pub(crate) fn from_dword(n: [Word; 2]) -> BufferNew {
+    pub(crate) fn from_dword(n: [Word; 2]) -> Buffer {
         if n[1] == 0 {
             Self::from_word(n[0])
         } else {
-            BufferNew { data: BufferData { inline: n }, capacity: NonZeroIsize::new(2).unwrap() }
+            Buffer { data: BufferData { inline: n }, capacity: NonZeroIsize::new(2).unwrap() }
         }
     }
 
@@ -110,7 +112,7 @@ impl BufferNew {
     #[inline]
     fn triplet(&self) -> (*const Word, usize, usize) {
         let capacity = self.capacity();
-        debug_assert!(capacity > 2);
+        debug_assert!(capacity > 2, "the data is not on heap");
 
         unsafe {
             // SAFETY: the assertion above ensures the data is allocated on heap.
@@ -123,7 +125,7 @@ impl BufferNew {
     #[inline]
     fn triplet_mut(&mut self) -> (*mut Word, &mut usize, usize) {
         let capacity = self.capacity();
-        debug_assert!(capacity > 2);
+        debug_assert!(capacity > 2, "the data is not on heap");
 
         unsafe {
             // SAFETY: the assertion above ensures the data is allocated on heap.
@@ -137,7 +139,12 @@ impl BufferNew {
     /// Creates a `Buffer` with existing words, the words will be copied.
     ///
     /// It leaves some extra space for future growth.
-    pub(crate) fn allocate(num_words: usize) -> BufferNew {
+    /// 
+    /// # Panics
+    /// 
+    /// The method will panic if `num_words` < 3, in which case the data should be
+    /// inlined (using [Self::from_word] or [Self::from_dword]) instead of being allocated on heap.
+    pub(crate) fn allocate(num_words: usize) -> Buffer {
         assert!(num_words > 2, "single or double words should be inlined");
         if num_words > Self::MAX_CAPACITY {
             panic!("too many words to be allocated, maximum is {} bits", Self::MAX_CAPACITY);
@@ -148,7 +155,7 @@ impl BufferNew {
             let layout = Layout::array::<Word>(capacity).unwrap();
             let ptr = alloc::alloc::alloc(layout);
             let alloc = NonNull::new(ptr).unwrap().cast().as_ptr();
-            BufferNew {
+            Buffer {
                 capacity: NonZeroIsize:: new_unchecked(capacity as isize),
                 data: BufferData { heap: (alloc, 0) }
             }
@@ -158,8 +165,9 @@ impl BufferNew {
     /// Change capacity to store `num_words` plus some extra space for future growth.
     /// Note that this function should not be called when capacity = num_words
     fn reallocate(&mut self, num_words: usize) {
-        debug_assert!(num_words > self.len());
         // TODO: do we need to consider the case where the data is inlined
+        // TODO: use the triplet function
+        debug_assert!(num_words >= self.len());
 
         unsafe {
             let old_layout = Layout::array::<Word>(self.capacity()).unwrap();
@@ -321,7 +329,7 @@ impl BufferNew {
         let new_len = *len - n;
         unsafe {
             // move data
-            ptr::copy(ptr.add(new_len), ptr, new_len);
+            ptr::copy(ptr.add(n), ptr, new_len);
         }
         self.truncate(new_len);
     }
@@ -335,10 +343,10 @@ impl BufferNew {
     /// buffer.clone_from(src);
     /// buffer.shrink();
     /// ```
-    pub(crate) fn resizing_clone_from(&mut self, src: &BufferNew) {
+    pub(crate) fn resizing_clone_from(&mut self, src: &Buffer) {
         let cap = self.capacity();
         let n = src.len();
-        if cap >= n && cap <= BufferNew::max_compact_capacity(n) {
+        if cap >= n && cap <= Buffer::max_compact_capacity(n) {
             self.clone_from(src);
         } else {
             *self = src.clone();
@@ -363,17 +371,17 @@ impl BufferNew {
 
 }
 
-impl Clone for BufferNew {
+impl Clone for Buffer {
     /// New buffer will be sized as `Buffer::allocate(self.len())`.
-    fn clone(&self) -> BufferNew {
-        let mut new_buffer = BufferNew::allocate(self.len());
+    fn clone(&self) -> Buffer {
+        let mut new_buffer = Buffer::allocate(self.len());
         new_buffer.clone_from(self);
         new_buffer
     }
 
     /// Panics if capacity is exceeded.
     #[inline]
-    fn clone_from(&mut self, src: &BufferNew) {
+    fn clone_from(&mut self, src: &Buffer) {
         let (src_ptr, src_len, _) = src.triplet();
         let (ptr, len, capacity) = self.triplet_mut();
 
@@ -399,7 +407,7 @@ impl Clone for BufferNew {
     }
 }
 
-impl Drop for BufferNew {
+impl Drop for Buffer {
     fn drop(&mut self) {
         unsafe {
             let capacity = self.capacity();
@@ -411,7 +419,7 @@ impl Drop for BufferNew {
     }
 }
 
-impl Deref for BufferNew {
+impl Deref for Buffer {
     type Target = [Word];
 
     #[inline]
@@ -430,7 +438,7 @@ impl Deref for BufferNew {
     }
 }
 
-impl DerefMut for BufferNew {
+impl DerefMut for Buffer {
     #[inline]
     fn deref_mut(&mut self) -> &mut [Word] {
         unsafe {
@@ -447,25 +455,48 @@ impl DerefMut for BufferNew {
     }
 }
 
-/// Buffer for Words.
+impl PartialEq for Buffer {
+    #[inline]
+    fn eq(&self, other: &Buffer) -> bool {
+        self[..] == other[..]
+    }
+}
+impl Eq for Buffer {}
+
+impl fmt::Debug for Buffer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
+    }
+}
+
+impl Hash for Buffer {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.capacity.get().signum().hash(state);
+        (**self).hash(state);
+    }
+}
+
+/*
+
+/// Buffer for Words (Old).
 ///
-/// UBig operations are usually performed by creating a Buffer with appropriate capacity, filling it
+/// UBig operations are usually performed by creating a BufferOld with appropriate capacity, filling it
 /// in with Words, and then converting to UBig.
 ///
-/// If its capacity is exceeded, the `Buffer` will panic.
+/// If its capacity is exceeded, the `BufferOld` will panic.
 #[derive(Debug, Eq, Hash, PartialEq)]
-pub(crate) struct Buffer(Vec<Word>);
+pub(crate) struct BufferOld(Vec<Word>);
 
-impl Buffer {
-    /// Creates a `Buffer` with at least specified capacity.
+impl BufferOld {
+    /// Creates a `BufferOld` with at least specified capacity.
     ///
     /// It leaves some extra space for future growth.
-    pub(crate) fn allocate(num_words: usize) -> Buffer {
-        if num_words > Buffer::MAX_CAPACITY {
+    pub(crate) fn allocate(num_words: usize) -> BufferOld {
+        if num_words > BufferOld::MAX_CAPACITY {
             // UBig::panic_number_too_large();
             panic!()
         }
-        Buffer(Vec::with_capacity(Buffer::default_capacity(num_words)))
+        BufferOld(Vec::with_capacity(BufferOld::default_capacity(num_words)))
     }
 
     /// Ensure there is enough capacity in the buffer for `num_words`. Will reallocate if there is
@@ -480,7 +511,7 @@ impl Buffer {
     /// Makes sure that the capacity is compact.
     #[inline]
     pub(crate) fn shrink(&mut self) {
-        if self.capacity() > Buffer::max_compact_capacity(self.len()) {
+        if self.capacity() > BufferOld::max_compact_capacity(self.len()) {
             self.reallocate(self.len());
         }
     }
@@ -492,7 +523,7 @@ impl Buffer {
     /// Panics if `num_words < len()`.
     fn reallocate(&mut self, num_words: usize) {
         assert!(num_words >= self.len());
-        let mut new_buffer = Buffer::allocate(num_words);
+        let mut new_buffer = BufferOld::allocate(num_words);
         new_buffer.clone_from(self);
         *self = new_buffer
     }
@@ -579,10 +610,10 @@ impl Buffer {
     /// buffer.clone_from(source);
     /// buffer.shrink();
     /// ```
-    pub(crate) fn resizing_clone_from(&mut self, source: &Buffer) {
+    pub(crate) fn resizing_clone_from(&mut self, source: &BufferOld) {
         let cap = self.capacity();
         let n = source.len();
-        if cap >= n && cap <= Buffer::max_compact_capacity(n) {
+        if cap >= n && cap <= BufferOld::max_compact_capacity(n) {
             self.clone_from(source);
         } else {
             *self = source.clone();
@@ -602,39 +633,39 @@ impl Buffer {
     /// Provides `2 + 0.125 * num_words` extra space.
     #[inline]
     fn default_capacity(num_words: usize) -> usize {
-        debug_assert!(num_words <= Buffer::MAX_CAPACITY);
-        (num_words + num_words / 8 + 2).min(Buffer::MAX_CAPACITY)
+        debug_assert!(num_words <= BufferOld::MAX_CAPACITY);
+        (num_words + num_words / 8 + 2).min(BufferOld::MAX_CAPACITY)
     }
 
     /// Maximum compact capacity for a given number of `Word`s.
     ///
-    /// Requires that `num_words <= Buffer::MAX_CAPACITY`.
+    /// Requires that `num_words <= BufferOld::MAX_CAPACITY`.
     ///
     /// Allows `4 + 0.25 * num_words` overhead.
     #[inline]
     fn max_compact_capacity(num_words: usize) -> usize {
-        debug_assert!(num_words <= Buffer::MAX_CAPACITY);
-        (num_words + num_words / 4 + 4).min(Buffer::MAX_CAPACITY)
+        debug_assert!(num_words <= BufferOld::MAX_CAPACITY);
+        (num_words + num_words / 4 + 4).min(BufferOld::MAX_CAPACITY)
     }
 }
 
-impl Clone for Buffer {
-    /// New buffer will be sized as `Buffer::allocate(self.len())`.
-    fn clone(&self) -> Buffer {
-        let mut new_buffer = Buffer::allocate(self.len());
+impl Clone for BufferOld {
+    /// New buffer will be sized as `BufferOld::allocate(self.len())`.
+    fn clone(&self) -> BufferOld {
+        let mut new_buffer = BufferOld::allocate(self.len());
         new_buffer.clone_from(self);
         new_buffer
     }
 
     /// If capacity is exceeded, panic.
     #[inline]
-    fn clone_from(&mut self, source: &Buffer) {
+    fn clone_from(&mut self, source: &BufferOld) {
         assert!(self.capacity() >= source.len());
         self.0.clone_from(&source.0);
     }
 }
 
-impl Deref for Buffer {
+impl Deref for BufferOld {
     type Target = [Word];
 
     #[inline]
@@ -643,14 +674,14 @@ impl Deref for Buffer {
     }
 }
 
-impl DerefMut for Buffer {
+impl DerefMut for BufferOld {
     #[inline]
     fn deref_mut(&mut self) -> &mut [Word] {
         &mut self.0
     }
 }
 
-impl Extend<Word> for Buffer {
+impl Extend<Word> for BufferOld {
     fn extend<T>(&mut self, iter: T)
     where
         T: IntoIterator<Item = Word>,
@@ -661,7 +692,7 @@ impl Extend<Word> for Buffer {
     }
 }
 
-impl<'a> Extend<&'a Word> for Buffer {
+impl<'a> Extend<&'a Word> for BufferOld {
     fn extend<T>(&mut self, iter: T)
     where
         T: IntoIterator<Item = &'a Word>,
@@ -671,6 +702,8 @@ impl<'a> Extend<&'a Word> for Buffer {
         }
     }
 }
+
+*/
 
 #[cfg(test)]
 mod tests {
@@ -703,13 +736,13 @@ mod tests {
 
     #[test]
     fn test_ensure_capacity() {
-        let mut buffer = Buffer::allocate(2);
+        let mut buffer = Buffer::allocate(3);
         buffer.push(7);
-        assert_eq!(buffer.capacity(), 4);
+        assert!(buffer.capacity() >= 3);
         buffer.ensure_capacity(4);
-        assert_eq!(buffer.capacity(), 4);
+        assert!(buffer.capacity() >= 4);
         buffer.ensure_capacity(5);
-        assert_eq!(buffer.capacity(), 7);
+        assert!(buffer.capacity() >= 5);
         assert_eq!(&buffer[..], [7]);
     }
 
@@ -718,9 +751,10 @@ mod tests {
         let mut buffer = Buffer::allocate(100);
         buffer.push(7);
         buffer.push(8);
+        buffer.push(9);
         buffer.shrink();
-        assert_eq!(buffer.capacity(), Buffer::default_capacity(2));
-        assert_eq!(&buffer[..], [7, 8]);
+        assert_eq!(buffer.capacity(), Buffer::default_capacity(3));
+        assert_eq!(&buffer[..], [7, 8, 9]);
     }
 
     #[test]
@@ -729,9 +763,9 @@ mod tests {
         buffer.push(1);
         buffer.push(2);
         assert_eq!(&buffer[..], [1, 2]);
-        assert_eq!(buffer.pop(), Some(2));
-        assert_eq!(buffer.pop(), Some(1));
-        assert_eq!(buffer.pop(), None);
+        // assert_eq!(buffer.pop(), Some(2));
+        // assert_eq!(buffer.pop(), Some(1));
+        // assert_eq!(buffer.pop(), None);
     }
 
     #[test]
@@ -741,7 +775,7 @@ mod tests {
         buffer.push(2);
         buffer.push(0);
         buffer.push(0);
-        buffer.pop_leading_zeros();
+        buffer.pop_zeros();
         assert_eq!(&buffer[..], [1, 2]);
     }
 
@@ -750,7 +784,7 @@ mod tests {
         let mut buffer = Buffer::allocate(5);
         buffer.push(1);
         let list: [Word; 2] = [2, 3];
-        buffer.extend(&list);
+        buffer.push_slice(&list);
         assert_eq!(&buffer[..], [1, 2, 3]);
     }
 
@@ -793,7 +827,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_push_failed() {
-        let mut buffer = Buffer::allocate(2);
+        let mut buffer = Buffer::allocate(3);
         for _ in 0..10 {
             buffer.push(7);
         }
@@ -801,7 +835,7 @@ mod tests {
 
     #[test]
     fn test_push_may_reallocate() {
-        let mut buffer = Buffer::allocate(2);
+        let mut buffer = Buffer::allocate(3);
         for _ in 0..10 {
             buffer.push_may_reallocate(7);
         }
@@ -810,19 +844,25 @@ mod tests {
 
     #[test]
     fn test_clone() {
+        // TODO: test clone inline
+
         let mut buffer = Buffer::allocate(100);
         buffer.push(7);
         buffer.push(8);
+        buffer.push(9);
         let buffer2 = buffer.clone();
         assert_eq!(buffer, buffer2);
-        assert_eq!(buffer2.capacity(), Buffer::default_capacity(2));
+        assert_eq!(buffer2.capacity(), Buffer::default_capacity(3));
     }
 
     #[test]
     fn test_clone_from() {
+        // TODO: test clone inline
+
         let mut buffer = Buffer::allocate(100);
         buffer.push(7);
         buffer.push(8);
+        buffer.push(9);
         let mut buffer2 = Buffer::allocate(50);
         buffer2.clone_from(&buffer);
         assert_eq!(buffer, buffer2);

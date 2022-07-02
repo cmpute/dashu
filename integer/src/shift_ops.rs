@@ -234,7 +234,7 @@ impl UBig {
 
         let mut buffer = Buffer::allocate(shift_words + words.len() + 1);
         buffer.push_zeros(shift_words);
-        buffer.extend(words);
+        buffer.push_slice(words);
         let carry = shift::shl_in_place(&mut buffer[shift_words..], shift_bits);
         buffer.push(carry);
         buffer.into()
@@ -276,7 +276,7 @@ impl UBig {
             &[lo, hi] => UBig::from(double_word(lo, hi) >> shift_bits),
             _ => {
                 let mut buffer = Buffer::allocate(words.len());
-                buffer.extend(words);
+                buffer.push_slice(words);
                 shift::shr_in_place(&mut buffer, shift_bits);
                 buffer.into()
             }

@@ -146,7 +146,7 @@ impl From<Buffer> for UBig {
     /// (or even approximately between `0.9 * n` and `1.125 * n`),
     /// there will be no reallocation here.
     fn from(mut buffer: Buffer) -> UBig {
-        buffer.pop_leading_zeros();
+        buffer.pop_zeros();
 
         match buffer.len() {
             0 => UBig::from_word(0),
@@ -238,7 +238,7 @@ mod tests {
         assert_eq!(capacity(&a), prev_cap);
         assert_ne!(capacity(&a), capacity(&num));
 
-        let mut a = gen_ubig(2);
+        let mut a = gen_ubig(3);
         let prev_cap = capacity(&a);
         a.clone_from(&num);
         // The buffer should now be reallocated, it's too small.

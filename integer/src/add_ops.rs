@@ -555,7 +555,7 @@ impl UBig {
         let overflow = add::add_same_len_in_place(&mut buffer[..n], &rhs[..n]);
         if rhs.len() > n {
             buffer.ensure_capacity(rhs.len());
-            buffer.extend(&rhs[n..]);
+            buffer.push_slice(&rhs[n..]);
         }
         if overflow && add::add_one_in_place(&mut buffer[n..]) {
             buffer.push_may_reallocate(1);
@@ -592,7 +592,7 @@ impl UBig {
         }
         let borrow = add::sub_same_len_in_place_swap(&lhs[..n], &mut rhs);
         rhs.ensure_capacity(lhs.len());
-        rhs.extend(&lhs[n..]);
+        rhs.push_slice(&lhs[n..]);
         if borrow && add::sub_one_in_place(&mut rhs[n..]) {
             UBig::panic_negative();
         }

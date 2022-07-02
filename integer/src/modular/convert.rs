@@ -64,7 +64,7 @@ impl ModuloRingLarge {
     pub(crate) fn modulus(&self) -> UBig {
         let normalized_modulus = self.normalized_modulus();
         let mut buffer = Buffer::allocate(normalized_modulus.len());
-        buffer.extend(normalized_modulus);
+        buffer.push_slice(normalized_modulus);
         let low_bits = shift::shr_in_place(&mut buffer, self.shift());
         assert!(low_bits == 0);
         buffer.into()
@@ -128,7 +128,7 @@ impl ModuloLarge<'_> {
     pub(crate) fn residue(&self) -> UBig {
         let words = self.normalized_value();
         let mut buffer = Buffer::allocate(words.len());
-        buffer.extend(words);
+        buffer.push_slice(words);
         let low_bits = shift::shr_in_place(&mut buffer, self.ring().shift());
         assert!(low_bits == 0);
         buffer.into()

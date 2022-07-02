@@ -465,7 +465,7 @@ impl UBig {
         }
         if rhs.len() > buffer.len() {
             buffer.ensure_capacity(rhs.len());
-            buffer.extend(&rhs[buffer.len()..]);
+            buffer.push_slice(&rhs[buffer.len()..]);
         }
         buffer.into()
     }
@@ -562,7 +562,7 @@ impl UBig {
         }
         if rhs.len() > buffer.len() {
             buffer.ensure_capacity(rhs.len());
-            buffer.extend(&rhs[buffer.len()..]);
+            buffer.push_slice(&rhs[buffer.len()..]);
         }
         buffer.into()
     }
