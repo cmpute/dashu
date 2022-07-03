@@ -23,9 +23,9 @@ impl UBig {
     #[inline]
     pub fn gcd(&self, rhs: &UBig) -> UBig {
         match (self.repr(), rhs.repr()) {
-            (Single(word0), Single(word1)) => UBig::from_word(word0.gcd(*word1)),
-            (Single(word0), Large(buffer1)) => UBig::gcd_large_word(buffer1, *word0),
-            (Large(buffer0), Single(word1)) => UBig::gcd_large_word(buffer0, *word1),
+            (Small(word0), Small(word1)) => UBig::from_word(word0.gcd(*word1)),
+            (Small(word0), Large(buffer1)) => UBig::gcd_large_word(buffer1, *word0),
+            (Large(buffer0), Small(word1)) => UBig::gcd_large_word(buffer0, *word1),
             (Large(buffer0), Large(buffer1)) => UBig::gcd_large(buffer0.clone(), buffer1.clone()),
         }
     }
@@ -43,12 +43,12 @@ impl UBig {
     #[inline]
     pub fn extended_gcd(&self, rhs: &UBig) -> (UBig, IBig, IBig) {
         match (self.clone().into_repr(), rhs.clone().into_repr()) {
-            (Single(word0), Single(word1)) => {
+            (Small(word0), Small(word1)) => {
                 let (g, s, t) = word0.gcd_ext(word1);
                 (UBig::from_word(g), s.into(), t.into())
             }
-            (Large(buffer0), Single(word1)) => UBig::extended_gcd_large_word(buffer0, word1),
-            (Single(word0), Large(buffer1)) => {
+            (Large(buffer0), Small(word1)) => UBig::extended_gcd_large_word(buffer0, word1),
+            (Small(word0), Large(buffer1)) => {
                 let (g, s, t) = UBig::extended_gcd_large_word(buffer1, word0);
                 (g, t, s)
             }
@@ -64,12 +64,12 @@ impl UBig {
         }
 
         // reduce the large number
-        let Single = div::rem_by_word(buffer, rhs);
-        if Single == 0 {
+        let Small = div::rem_by_word(buffer, rhs);
+        if Small == 0 {
             return UBig::from_word(rhs);
         }
 
-        UBig::from_word(Single.gcd(rhs))
+        UBig::from_word(Small.gcd(rhs))
     }
 
     /// Perform extended gcd on a large number with a `Word`.

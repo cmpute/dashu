@@ -2,11 +2,10 @@
 
 use crate::{
     arch::{ntt, word::Word},
-    buffer::{Buffer, Repr, StrongRepr, StrongReprRef},
+    buffer::{Buffer, Repr, TypedRepr, TypedReprRef},
     math,
     primitive::WORD_BITS_USIZE,
 };
-use core::slice;
 
 /// Unsigned big integer.
 ///
@@ -37,14 +36,14 @@ impl UBig {
 
     /// Get the representation of UBig.
     #[inline]
-    pub(crate) fn repr(&self) -> StrongReprRef<'_> {
-        self.0.variants()
+    pub(crate) fn repr(&self) -> TypedReprRef<'_> {
+        self.0.as_typed()
     }
 
     /// Convert into representation.
     #[inline]
-    pub(crate) fn into_repr(self) -> StrongRepr {
-        self.0.as_variants()
+    pub(crate) fn into_repr(self) -> TypedRepr {
+        self.0.into_typed()
     }
 
     /// Length in Words.
@@ -62,7 +61,7 @@ impl UBig {
     /// Representation in Words.
     #[inline]
     pub(crate) fn as_words(&self) -> &[Word] {
-        let (words, sign) = self.0.as_signed_slice();
+        let (sign, words) = self.0.as_sign_slice();
         debug_assert!(matches!(sign, crate::sign::Sign::Positive));
         words
     }
@@ -93,7 +92,7 @@ impl UBig {
     /// will panic.
     ///
     /// This does not guarantee that there is sufficient memory to store numbers
-    /// up to this length. Memory allocation may fail even for Singleer numbers.
+    /// up to this length. Memory allocation may fail even for Smaller numbers.
     ///
     /// The fact that this limit fits in `usize` guarantees that all bit
     /// addressing operations can be performed using `usize`.
@@ -203,7 +202,7 @@ mod tests {
         let mut a = gen_ubig(3);
         let prev_cap = a.capacity();
         a.clone_from(&num);
-        // The buffer should now be reallocated, it's too Single.
+        // The buffer should now be reallocated, it's too Small.
         assert_ne!(a.capacity(), prev_cap);
         assert_eq!(a.capacity(), num.capacity());
 

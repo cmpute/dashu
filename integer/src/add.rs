@@ -3,9 +3,10 @@
 use crate::{
     arch::{
         self,
-        word::{SignedWord, Word},
+        word::{SignedWord, Word, DoubleWord},
+        add::{add_with_carry, sub_with_borrow},
     },
-    primitive::PrimitiveSigned,
+    primitive::{PrimitiveSigned, split_double_word},
     sign::Sign::{self, *},
 };
 use core::cmp::Ordering::*;
@@ -46,9 +47,23 @@ pub(crate) fn sub_one_in_place(words: &mut [Word]) -> bool {
 #[must_use]
 pub(crate) fn add_word_in_place(words: &mut [Word], rhs: Word) -> bool {
     let (word_0, words_hi) = words.split_first_mut().unwrap();
-    let (a, overflow) = word_0.overflowing_add(rhs);
+    let (a, carry) = word_0.overflowing_add(rhs);
     *word_0 = a;
-    overflow && add_one_in_place(words_hi)
+    carry && add_one_in_place(words_hi)
+}
+
+/// Add a double word to a non-empty word sequence.
+///
+/// Returns overflow.
+pub(crate) fn add_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> bool {
+    let (word_0, words_hi) = words.split_first_mut().unwrap();
+    let (word_1, words_hi) = words_hi.split_first_mut().unwrap();
+    let (b0, b1) = split_double_word(rhs);
+    let (s0, carry) = word_0.overflowing_add(b0);
+    *word_1 = s0;
+    let (s1, carry) = add_with_carry(*word_1, b1, carry);
+    *word_1 = s1;
+    carry && add_one_in_place(words_hi)
 }
 
 /// Subtract a word from a non-empty word sequence.
@@ -59,6 +74,21 @@ pub(crate) fn sub_word_in_place(words: &mut [Word], rhs: Word) -> bool {
     let (word_0, words_hi) = words.split_first_mut().unwrap();
     let (a, borrow) = word_0.overflowing_sub(rhs);
     *word_0 = a;
+    borrow && sub_one_in_place(words_hi)
+}
+
+/// Subtract a double word from a non-empty word sequence.
+///
+/// Returns borrow.
+#[must_use]
+pub(crate) fn sub_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> bool {
+    let (word_0, words_hi) = words.split_first_mut().unwrap();
+    let (word_1, words_hi) = words_hi.split_first_mut().unwrap();
+    let (b0, b1) = split_double_word(rhs);
+    let (s0, borrow) = word_0.overflowing_sub(b0);
+    *word_0 = s0;
+    let (s1, borrow) = sub_with_borrow(*word_1, b1, borrow);
+    *word_1 = s1;
     borrow && sub_one_in_place(words_hi)
 }
 

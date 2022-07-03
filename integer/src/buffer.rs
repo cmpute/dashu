@@ -6,7 +6,7 @@ use crate::{
     sign::Sign,
 };
 use static_assertions::const_assert_eq;
-use alloc::{vec::Vec, alloc::Layout};
+use alloc::alloc::Layout;
 use core::{
     slice,
     fmt::{self, Write},
@@ -27,7 +27,7 @@ union ReprData {
 
 /// Internal representation for big integers.
 /// 
-/// It's optimized so that Single integers (single or double words) will not be allocated on heap.
+/// It's optimized so that Small integers (single or double words) will not be allocated on heap.
 /// When the data is allocated on the heap, it can be casted to [Buffer] efficiently, but modifying
 /// the buffer inplace is not allowed because that can break the rule on the `capacity` field.
 #[repr(C)]
@@ -45,7 +45,7 @@ pub(crate) struct Repr {
     data: ReprData,
 }
 
-/// Buffer of words allocated on heap.
+/// Buffer of words allocated on heap. It's like a `Vec<Word>` with limited functionalities.
 /// 
 /// This struct is ensured to be consistent with [Repr] in struct layout (that's why `repr(C)` is necessary),
 /// but the big integer represented by this buffer is unsigned.
@@ -63,15 +63,13 @@ pub(crate) struct Buffer {
 const_assert_eq!(mem::size_of::<Buffer>(), mem::size_of::<Repr>());
 
 
-pub(crate) enum StrongRepr {
-    Single(Word),
-    Double(DoubleWord),
+pub(crate) enum TypedRepr {
+    Small(DoubleWord),
     Large(Buffer)
 }
 
-pub(crate) enum StrongReprRef<'a> {
-    RefSingle(Word),
-    RefDouble(DoubleWord),
+pub(crate) enum TypedReprRef<'a> {
+    RefSmall(DoubleWord),
     RefLarge(&'a [Word])
 }
 
@@ -330,7 +328,7 @@ impl Clone for Buffer {
         new_buffer
     }
 
-    /// Reallocating if capacity is too Single or too large.
+    /// Reallocating if capacity is too Small or too large.
     #[inline]
     fn clone_from(&mut self, src: &Self) {
         if self.capacity >= src.len && self.capacity <= Buffer::max_compact_capacity(src.len) {
@@ -410,10 +408,6 @@ impl From<&[Word]> for Buffer {
     }
 }
 
-/*******************************
-    Implementations for Repr
-********************************/
-
 impl Repr {
     /// Get the length of the number (in `Word`s)
     #[inline]
@@ -483,19 +477,39 @@ impl Repr {
     /// 
     /// Panics if the `capacity` is negative
     #[inline]
-    pub fn variants(&self) -> StrongReprRef {
+    pub fn as_typed(&self) -> TypedReprRef<'_> {
         assert!(self.capacity.get() > 0);
 
         match self.capacity.get() {
-            1 => StrongReprRef::RefSingle(self.data.inline[0]),
-            2 => StrongReprRef::RefDouble(double_word(self.data.inline[0], self.data.inline[1])),
+            1 | 2 => TypedReprRef::RefSmall(double_word(self.data.inline[0], self.data.inline[1])),
             _ => unsafe {
-                StrongReprRef::RefLarge(slice::from_raw_parts(
+                TypedReprRef::RefLarge(slice::from_raw_parts(
                     self.data.heap.0,
                     self.data.heap.1
                 ))
             }
         }
+    }
+
+    /// Cast the reference of `Repr` to a strong typed representation, and return with the sign.
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the `capacity` is negative
+    #[inline]
+    pub fn as_sign_typed(&self) -> (Sign, TypedReprRef<'_>) {
+        let (abs_capacity, sign) = self.signed_capacity();
+
+        let typed = match abs_capacity {
+            1 | 2 => TypedReprRef::RefSmall(double_word(self.data.inline[0], self.data.inline[1])),
+            _ => unsafe {
+                TypedReprRef::RefLarge(slice::from_raw_parts(
+                    self.data.heap.0,
+                    self.data.heap.1
+                ))
+            }
+        };
+        (sign, typed)
     }
 
     /// Cast the `Repr` to a strong typed representation, assuming the underlying data is unsigned.
@@ -504,35 +518,34 @@ impl Repr {
     /// 
     /// Panics if the `capacity` is negative
     #[inline]
-    pub fn as_variants(self) -> StrongRepr {
+    pub fn into_typed(self) -> TypedRepr {
         assert!(self.capacity.get() > 0);
 
         match self.capacity.get() {
-            1 => StrongRepr::Single(self.data.inline[0]),
-            2 => StrongRepr::Double(double_word(self.data.inline[0], self.data.inline[1])),
+            1 | 2 => TypedRepr::Small(double_word(self.data.inline[0], self.data.inline[1])),
             _ => unsafe {
                 // SAFETY: An `Buffer` and `Repr` have the same layout
                 //     and we have made sure that the data is allocated on heap
-                StrongRepr::Large(mem::transmute(self))
+                TypedRepr::Large(mem::transmute(self))
             }
         }
     }
 
-    /// Cast the `Repr` to a strong typed representation and return the sign.
-    pub fn as_signed_variants(mut self) -> (StrongRepr, Sign) {
+    /// Cast the `Repr` to a strong typed representation and return with the sign.
+    pub fn into_sign_typed(mut self) -> (Sign, TypedRepr) {
         let (abs_capacity, sign) = self.signed_capacity();
         self.capacity = unsafe {
             // SAFETY: capacity is not allowed to be zero
             NonZeroIsize::new_unchecked(abs_capacity as isize)
         };
-        (self.as_variants(), sign)
+        (sign, self.into_typed())
     }
 
     /// Get a reference to the words in the `Repr`, together with the sign.
-    pub fn as_signed_slice(&self) -> (&[Word], Sign) {
+    pub fn as_sign_slice(&self) -> (Sign, &[Word]) {
         let (capacity, sign) = self.signed_capacity();
-        let arr = unsafe {
-                match capacity {
+        let words = unsafe {
+            match capacity {
                 0 => unreachable!(),
                 1 => &self.data.inline[..1],
                 2 => &self.data.inline,
@@ -542,7 +555,7 @@ impl Repr {
                 )
             }
         };
-        (arr, sign)
+        (sign, words)
     }
 
     /// Creates a `Repr` with a single word
@@ -673,296 +686,31 @@ impl Drop for Repr {
     }
 }
 
-// impl Deref for Repr {
-//     type Target = [Word];
-
-//     #[inline]
-//     fn deref(&self) -> &[Word] {
-//         unsafe {
-//             match self.capacity() {
-//                 0 => unreachable!(),
-//                 1 => &self.data.inline[..1],
-//                 2 => &self.data.inline,
-//                 _ => slice::from_raw_parts(
-//                     self.data.heap.0,
-//                     self.data.heap.1
-//                 )
-//             }
-//         }
-//     }
-// }
-
-// impl DerefMut for Repr {
-//     #[inline]
-//     fn deref_mut(&mut self) -> &mut [Word] {
-//         unsafe {
-//             match self.capacity.get().wrapping_abs() {
-//                 0 => unreachable!(),
-//                 1 => &mut self.data.inline[..1],
-//                 2 => &mut self.data.inline,
-//                 _ => slice::from_raw_parts_mut(
-//                     self.data.heap.0,
-//                     self.data.heap.1
-//                 )
-//             }
-//         }
-//     }
-// }
-
 impl PartialEq for Repr {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.as_signed_slice() == other.as_signed_slice()
+        self.as_sign_slice() == other.as_sign_slice()
     }
 }
 impl Eq for Repr {}
 
 impl fmt::Debug for Repr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let (arr, sign) = self.as_signed_slice();
+        let (sign, words) = self.as_sign_slice();
         if let Sign::Negative = sign {
             f.write_char('-');
         }
-        f.debug_list().entries(arr).finish()
+        f.debug_list().entries(words).finish()
     }
 }
 
 impl Hash for Repr {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let (arr, sign) = self.as_signed_slice();
+        let (sign, arr) = self.as_sign_slice();
         sign.hash(state);
         (*arr).hash(state);
     }
 }
-
-/*
-
-/// Buffer for Words (Old).
-///
-/// UBig operations are usually performed by creating a BufferOld with appropriate capacity, filling it
-/// in with Words, and then converting to UBig.
-///
-/// If its capacity is exceeded, the `BufferOld` will panic.
-#[derive(Debug, Eq, Hash, PartialEq)]
-pub(crate) struct BufferOld(Vec<Word>);
-
-impl BufferOld {
-    /// Creates a `BufferOld` with at least specified capacity.
-    ///
-    /// It leaves some extra space for future growth.
-    pub(crate) fn allocate(num_words: usize) -> BufferOld {
-        if num_words > BufferOld::MAX_CAPACITY {
-            // UBig::panic_number_too_large();
-            panic!()
-        }
-        BufferOld(Vec::with_capacity(BufferOld::default_capacity(num_words)))
-    }
-
-    /// Ensure there is enough capacity in the buffer for `num_words`. Will reallocate if there is
-    /// not enough.
-    #[inline]
-    pub(crate) fn ensure_capacity(&mut self, num_words: usize) {
-        if num_words > self.capacity() {
-            self.reallocate(num_words);
-        }
-    }
-
-    /// Makes sure that the capacity is compact.
-    #[inline]
-    pub(crate) fn shrink(&mut self) {
-        if self.capacity() > BufferOld::max_compact_capacity(self.len()) {
-            self.reallocate(self.len());
-        }
-    }
-
-    /// Change capacity to store `num_words` plus some extra space for future growth.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `num_words < len()`.
-    fn reallocate(&mut self, num_words: usize) {
-        assert!(num_words >= self.len());
-        let mut new_buffer = BufferOld::allocate(num_words);
-        new_buffer.clone_from(self);
-        *self = new_buffer
-    }
-
-    /// Return buffer capacity.
-    #[inline]
-    pub(crate) fn capacity(&self) -> usize {
-        self.0.capacity()
-    }
-
-    /// Append a Word to the buffer.
-    ///
-    /// # Panics
-    ///
-    /// Panics if there is not enough capacity.
-    #[inline]
-    pub(crate) fn push(&mut self, word: Word) {
-        assert!(self.len() < self.capacity());
-        self.0.push(word);
-    }
-
-    /// Append a Word and reallocate if necessary.
-    #[inline]
-    pub(crate) fn push_may_reallocate(&mut self, word: Word) {
-        self.ensure_capacity(self.len() + 1);
-        self.push(word);
-    }
-
-    /// Append `n` zeros.
-    ///
-    /// # Panics
-    ///
-    /// Panics if there is not enough capacity.
-    pub(crate) fn push_zeros(&mut self, n: usize) {
-        assert!(n <= self.capacity() - self.len());
-        self.0.extend(iter::repeat(0).take(n));
-    }
-
-    /// Insert `n` zeros in front.
-    ///
-    /// # Panics
-    ///
-    /// Panics if there is not enough capacity.
-    pub(crate) fn push_zeros_front(&mut self, n: usize) {
-        assert!(n <= self.capacity() - self.len());
-        self.0.splice(..0, iter::repeat(0).take(n));
-    }
-
-    /// Pop the most significant `Word`.
-    #[inline]
-    pub(crate) fn pop(&mut self) -> Option<Word> {
-        self.0.pop()
-    }
-
-    /// Pop leading zero words.
-    #[inline]
-    pub(crate) fn pop_leading_zeros(&mut self) {
-        while let Some(0) = self.last() {
-            self.pop();
-        }
-    }
-
-    #[inline]
-    /// Truncate length to `len`.
-    pub(crate) fn truncate(&mut self, len: usize) {
-        assert!(self.len() >= len);
-
-        self.0.truncate(len);
-    }
-
-    /// Erase first n elements.
-    pub(crate) fn erase_front(&mut self, n: usize) {
-        assert!(self.len() >= n);
-
-        self.0.drain(..n);
-    }
-
-    /// Clone from `other` and resize if necessary.
-    ///
-    /// Equivalent to, but more efficient than:
-    ///
-    /// ```ignore
-    /// buffer.ensure_capacity(source.len());
-    /// buffer.clone_from(source);
-    /// buffer.shrink();
-    /// ```
-    pub(crate) fn resizing_clone_from(&mut self, source: &BufferOld) {
-        let cap = self.capacity();
-        let n = source.len();
-        if cap >= n && cap <= BufferOld::max_compact_capacity(n) {
-            self.clone_from(source);
-        } else {
-            *self = source.clone();
-        }
-    }
-
-    /// Maximum number of `Word`s.
-    ///
-    /// We allow 4 extra words beyond `UBig::MAX_LEN` to allow temporary space in operations.
-    pub(crate) const MAX_CAPACITY: usize = crate::ubig::UBig::MAX_LEN + 4;
-
-    /// Default capacity for a given number of `Word`s.
-    /// It should be between `num_words` and `max_capacity(num_words).
-    ///
-    /// Requires that `num_words <= MAX_CAPACITY`.
-    ///
-    /// Provides `2 + 0.125 * num_words` extra space.
-    #[inline]
-    fn default_capacity(num_words: usize) -> usize {
-        debug_assert!(num_words <= BufferOld::MAX_CAPACITY);
-        (num_words + num_words / 8 + 2).min(BufferOld::MAX_CAPACITY)
-    }
-
-    /// Maximum compact capacity for a given number of `Word`s.
-    ///
-    /// Requires that `num_words <= BufferOld::MAX_CAPACITY`.
-    ///
-    /// Allows `4 + 0.25 * num_words` overhead.
-    #[inline]
-    fn max_compact_capacity(num_words: usize) -> usize {
-        debug_assert!(num_words <= BufferOld::MAX_CAPACITY);
-        (num_words + num_words / 4 + 4).min(BufferOld::MAX_CAPACITY)
-    }
-}
-
-impl Clone for BufferOld {
-    /// New buffer will be sized as `BufferOld::allocate(self.len())`.
-    fn clone(&self) -> BufferOld {
-        let mut new_buffer = BufferOld::allocate(self.len());
-        new_buffer.clone_from(self);
-        new_buffer
-    }
-
-    /// If capacity is exceeded, panic.
-    #[inline]
-    fn clone_from(&mut self, source: &BufferOld) {
-        assert!(self.capacity() >= source.len());
-        self.0.clone_from(&source.0);
-    }
-}
-
-impl Deref for BufferOld {
-    type Target = [Word];
-
-    #[inline]
-    fn deref(&self) -> &[Word] {
-        &self.0
-    }
-}
-
-impl DerefMut for BufferOld {
-    #[inline]
-    fn deref_mut(&mut self) -> &mut [Word] {
-        &mut self.0
-    }
-}
-
-impl Extend<Word> for BufferOld {
-    fn extend<T>(&mut self, iter: T)
-    where
-        T: IntoIterator<Item = Word>,
-    {
-        for word in iter {
-            self.push(word);
-        }
-    }
-}
-
-impl<'a> Extend<&'a Word> for BufferOld {
-    fn extend<T>(&mut self, iter: T)
-    where
-        T: IntoIterator<Item = &'a Word>,
-    {
-        for word in iter {
-            self.push(*word);
-        }
-    }
-}
-
-*/
 
 #[cfg(test)]
 mod tests {

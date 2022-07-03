@@ -31,7 +31,7 @@ impl UBig {
         debug_assert!(*range != UBig::from_word(0));
 
         match range.repr() {
-            Single(word) => UBig::from_word(rng.gen_range(0..*word)),
+            Small(word) => UBig::from_word(rng.gen_range(0..*word)),
             Large(buffer) => UBig::uniform_large(buffer, rng),
         }
     }

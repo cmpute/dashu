@@ -2,7 +2,7 @@
 
 use crate::{
     arch::word::Word,
-    fast_divide::{FastDivideNormalized, FastDivideSingle},
+    fast_divide::{FastDivideNormalized, FastDivideSmall},
     primitive::WORD_BITS,
 };
 use static_assertions::const_assert;
@@ -67,7 +67,7 @@ pub(crate) struct RadixInfo {
     pub(crate) range_per_word: Word,
 
     /// Faster division by `radix`.
-    pub(crate) fast_div_radix: FastDivideSingle,
+    pub(crate) fast_div_radix: FastDivideSmall,
 
     /// Faster division by normalized range_per_word.
     /// Only for non-power-of-2 radixes.
@@ -83,7 +83,7 @@ pub(crate) fn radix_info(radix: Digit) -> &'static RadixInfo {
 
 impl RadixInfo {
     const fn for_radix(radix: Digit) -> RadixInfo {
-        let fast_div_radix = FastDivideSingle::new(radix as Word);
+        let fast_div_radix = FastDivideSmall::new(radix as Word);
         if radix.is_power_of_two() {
             RadixInfo {
                 digits_per_word: (WORD_BITS / radix.trailing_zeros()) as usize,
@@ -118,7 +118,7 @@ const fn generate_radix_info_table() -> RadixInfoTable {
     let mut table = [RadixInfo {
         digits_per_word: 0,
         range_per_word: 0,
-        fast_div_radix: FastDivideSingle::dummy(),
+        fast_div_radix: FastDivideSmall::dummy(),
         fast_div_range_per_word: FastDivideNormalized::dummy(),
     }; MAX_RADIX as usize + 1];
 

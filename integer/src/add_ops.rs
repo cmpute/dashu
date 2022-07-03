@@ -2,11 +2,11 @@
 
 use crate::{
     add,
-    arch::word::Word,
-    buffer::{Buffer, StrongRepr::*, StrongReprRef::*},
+    arch::word::{Word, DoubleWord},
+    buffer::{Buffer, TypedRepr::*, TypedReprRef::*},
     helper_macros,
     ibig::IBig,
-    primitive::{PrimitiveSigned, PrimitiveUnsigned},
+    primitive::split_double_word,
     sign::Sign::*,
     ubig::UBig,
 };
@@ -20,19 +20,7 @@ impl Add<UBig> for UBig {
 
     #[inline]
     fn add(self, rhs: UBig) -> UBig {
-        match (self.into_repr(), rhs.into_repr()) {
-            (Single(word0), Single(word1)) => UBig::add_word(word0, word1),
-            (Single(word0), Large(buffer1)) => UBig::add_large_word(buffer1, word0),
-            (Large(buffer0), Single(word1)) => UBig::add_large_word(buffer0, word1),
-            (Large(buffer0), Large(buffer1)) => {
-                if buffer0.len() >= buffer1.len() {
-                    UBig::add_large(buffer0, &buffer1)
-                } else {
-                    UBig::add_large(buffer1, &buffer0)
-                }
-            },
-            _ => unimplemented!()
-        }
+        ubig::add_repr_val_val(self.into_repr(), rhs.into_repr())
     }
 }
 
@@ -41,13 +29,7 @@ impl Add<&UBig> for UBig {
 
     #[inline]
     fn add(self, rhs: &UBig) -> UBig {
-        match (self.into_repr(), rhs.repr()) {
-            (Single(word0), RefSingle(word1)) => UBig::add_word(word0, word1),
-            (Single(word0), RefLarge(buffer1)) => UBig::add_large_word(buffer1.into(), word0),
-            (Large(buffer0), RefSingle(word1)) => UBig::add_large_word(buffer0, word1),
-            (Large(buffer0), RefLarge(buffer1)) => UBig::add_large(buffer0, buffer1),
-            _ => unimplemented!()
-        }
+        ubig::add_repr_ref_val(rhs.repr(), self.into_repr())
     }
 }
 
@@ -56,7 +38,7 @@ impl Add<UBig> for &UBig {
 
     #[inline]
     fn add(self, rhs: UBig) -> UBig {
-        rhs.add(self)
+        ubig::add_repr_ref_val(self.repr(), rhs.into_repr())
     }
 }
 
@@ -65,19 +47,7 @@ impl Add<&UBig> for &UBig {
 
     #[inline]
     fn add(self, rhs: &UBig) -> UBig {
-        match (self.repr(), rhs.repr()) {
-            (RefSingle(word0), RefSingle(word1)) => UBig::add_word(word0, word1),
-            (RefSingle(word0), RefLarge(buffer1)) => UBig::add_large_word(buffer1.into(), *word0),
-            (RefLarge(buffer0), RefSingle(word1)) => UBig::add_large_word(buffer0.into(), *word1),
-            (RefLarge(buffer0), RefLarge(buffer1)) => {
-                if buffer0.len() >= buffer1.len() {
-                    UBig::add_large(buffer0.into(), buffer1)
-                } else {
-                    UBig::add_large(buffer1.into(), buffer0)
-                }
-            },
-            _ => unimplemented!()
-        }
+        ubig::add_repr_ref_ref(self.repr(), rhs.repr())
     }
 }
 
@@ -100,13 +70,7 @@ impl Sub<UBig> for UBig {
 
     #[inline]
     fn sub(self, rhs: UBig) -> UBig {
-        match (self.into_repr(), rhs.into_repr()) {
-            (Single(word0), Single(word1)) => UBig::sub_word(word0, word1),
-            (Single(_), Large(_)) => UBig::panic_negative(),
-            (Large(buffer0), Single(word1)) => UBig::sub_large_word(buffer0, word1),
-            (Large(buffer0), Large(buffer1)) => UBig::sub_large(buffer0, &buffer1),
-            _ => unimplemented!()
-        }
+        ubig::sub_repr_val_val(self.into_repr(), rhs.into_repr())
     }
 }
 
@@ -115,13 +79,7 @@ impl Sub<&UBig> for UBig {
 
     #[inline]
     fn sub(self, rhs: &UBig) -> UBig {
-        match (self.into_repr(), rhs.repr()) {
-            (Single(word0), RefSingle(word1)) => UBig::sub_word(word0, word1),
-            (Single(_), RefLarge(_)) => UBig::panic_negative(),
-            (Large(buffer0), RefSingle(word1)) => UBig::sub_large_word(buffer0, word1),
-            (Large(buffer0), RefLarge(buffer1)) => UBig::sub_large(buffer0, buffer1),
-            _ => unimplemented!()
-        }
+        ubig::sub_repr_val_ref(self.into_repr(), rhs.repr())
     }
 }
 
@@ -130,13 +88,7 @@ impl Sub<UBig> for &UBig {
 
     #[inline]
     fn sub(self, rhs: UBig) -> UBig {
-        match (self.repr(), rhs.into_repr()) {
-            (RefSingle(word0), RefSingle(word1)) => UBig::sub_word(*word0, word1),
-            (RefSingle(_), RefLarge(_)) => UBig::panic_negative(),
-            (RefLarge(buffer0), RefSingle(word1)) => UBig::sub_large_word(buffer0.into(), word1),
-            (RefLarge(buffer0), RefLarge(buffer1)) => UBig::sub_large_ref_val(buffer0, buffer1),
-            _ => unimplemented!()
-        }
+        ubig::sub_repr_ref_val(self.repr(), rhs.into_repr())
     }
 }
 
@@ -146,11 +98,10 @@ impl Sub<&UBig> for &UBig {
     #[inline]
     fn sub(self, rhs: &UBig) -> UBig {
         match (self.repr(), rhs.repr()) {
-            (RefSingle(word0), RefSingle(word1)) => UBig::sub_word(*word0, *word1),
-            (RefSingle(_), RefLarge(_)) => UBig::panic_negative(),
-            (RefLarge(buffer0), RefSingle(word1)) => UBig::sub_large_word(buffer0.into(), *word1),
-            (RefLarge(buffer0), RefLarge(buffer1)) => UBig::sub_large(buffer0.into(), buffer1),
-            _ => unimplemented!()
+            (RefSmall(dword0), RefSmall(dword1)) => ubig::sub_dword(dword0, dword1),
+            (RefSmall(_), RefLarge(_)) => UBig::panic_negative(),
+            (RefLarge(buffer0), RefSmall(dword1)) => ubig::sub_large_dword(buffer0.into(), dword1),
+            (RefLarge(buffer0), RefLarge(buffer1)) => ubig::sub_large(buffer0.into(), buffer1),
         }
     }
 }
@@ -174,13 +125,13 @@ impl Add<IBig> for IBig {
 
     #[inline]
     fn add(self, rhs: IBig) -> IBig {
-        let (sign0, mag0) = self.into_sign_magnitude();
-        let (sign1, mag1) = rhs.into_sign_magnitude();
+        let (sign0, mag0) = self.into_sign_repr();
+        let (sign1, mag1) = rhs.into_sign_repr();
         match (sign0, sign1) {
-            (Positive, Positive) => IBig::from(mag0 + mag1),
-            (Positive, Negative) => IBig::sub_ubig_val_val(mag0, mag1),
-            (Negative, Positive) => IBig::sub_ubig_val_val(mag1, mag0),
-            (Negative, Negative) => -IBig::from(mag0 + mag1),
+            (Positive, Positive) => IBig::from(ubig::add_repr_val_val(mag0, mag1)),
+            (Positive, Negative) => ibig::sub_repr_val_val(mag0, mag1),
+            (Negative, Positive) => ibig::sub_repr_val_val(mag1, mag0),
+            (Negative, Negative) => -IBig::from(ubig::add_repr_val_val(mag0, mag1)),
         }
     }
 }
@@ -190,13 +141,13 @@ impl Add<&IBig> for IBig {
 
     #[inline]
     fn add(self, rhs: &IBig) -> IBig {
-        let (sign0, mag0) = self.into_sign_magnitude();
-        let (sign1, mag1) = (rhs.sign(), rhs.magnitude());
+        let (sign0, mag0) = self.into_sign_repr();
+        let (sign1, mag1) = rhs.signed_repr();
         match (sign0, sign1) {
-            (Positive, Positive) => IBig::from(mag0 + mag1),
-            (Positive, Negative) => IBig::sub_ubig_val_ref(mag0, mag1),
-            (Negative, Positive) => -IBig::sub_ubig_val_ref(mag0, mag1),
-            (Negative, Negative) => -IBig::from(mag0 + mag1),
+            (Positive, Positive) => IBig::from(ubig::add_repr_ref_val(mag1, mag0)),
+            (Positive, Negative) => -ibig::sub_repr_ref_val(mag1, mag0),
+            (Negative, Positive) => ibig::sub_repr_ref_val(mag1, mag0),
+            (Negative, Negative) => -IBig::from(ubig::add_repr_ref_val(mag1, mag0)),
         }
     }
 }
@@ -215,13 +166,13 @@ impl Add<&IBig> for &IBig {
 
     #[inline]
     fn add(self, rhs: &IBig) -> IBig {
-        let (sign0, mag0) = (self.sign(), self.magnitude());
-        let (sign1, mag1) = (rhs.sign(), rhs.magnitude());
+        let (sign0, mag0) = self.signed_repr();
+        let (sign1, mag1) = rhs.signed_repr();
         match (sign0, sign1) {
-            (Positive, Positive) => IBig::from(mag0 + mag1),
-            (Positive, Negative) => IBig::sub_ubig_ref_ref(mag0, mag1),
-            (Negative, Positive) => IBig::sub_ubig_ref_ref(mag1, mag0),
-            (Negative, Negative) => -IBig::from(mag0 + mag1),
+            (Positive, Positive) => IBig::from(ubig::add_repr_ref_ref(mag0, mag1)),
+            (Positive, Negative) => ibig::sub_repr_ref_ref(mag0, mag1),
+            (Negative, Positive) => ibig::sub_repr_ref_ref(mag1, mag0),
+            (Negative, Negative) => -IBig::from(ubig::add_repr_ref_ref(mag0, mag1)),
         }
     }
 }
@@ -272,13 +223,13 @@ impl Sub<&IBig> for &IBig {
 
     #[inline]
     fn sub(self, rhs: &IBig) -> IBig {
-        let (sign0, mag0) = (self.sign(), self.magnitude());
-        let (sign1, mag1) = (rhs.sign(), rhs.magnitude());
+        let (sign0, mag0) = self.signed_repr();
+        let (sign1, mag1) = rhs.signed_repr();
         match (sign0, sign1) {
-            (Positive, Positive) => IBig::sub_ubig_ref_ref(mag0, mag1),
-            (Positive, Negative) => IBig::from(mag0 + mag1),
-            (Negative, Positive) => -IBig::from(mag0 + mag1),
-            (Negative, Negative) => IBig::sub_ubig_ref_ref(mag1, mag0),
+            (Positive, Positive) => ibig::sub_repr_ref_ref(mag0, mag1),
+            (Positive, Negative) => IBig::from(ubig::add_repr_ref_ref(mag0, mag1)),
+            (Negative, Positive) => -IBig::from(ubig::add_repr_ref_ref(mag0, mag1)),
+            (Negative, Negative) => ibig::sub_repr_ref_ref(mag1, mag0),
         }
     }
 }
@@ -304,7 +255,7 @@ macro_rules! impl_add_ubig_unsigned {
 
             #[inline]
             fn add(self, rhs: $t) -> UBig {
-                self.add_unsigned(rhs)
+                self + UBig::from_unsigned(rhs)
             }
         }
 
@@ -313,7 +264,7 @@ macro_rules! impl_add_ubig_unsigned {
 
             #[inline]
             fn add(self, rhs: $t) -> UBig {
-                self.add_ref_unsigned(rhs)
+                self + UBig::from_unsigned(rhs)
             }
         }
 
@@ -323,7 +274,7 @@ macro_rules! impl_add_ubig_unsigned {
         impl AddAssign<$t> for UBig {
             #[inline]
             fn add_assign(&mut self, rhs: $t) {
-                self.add_assign_unsigned(rhs)
+                *self += UBig::from_unsigned(rhs)
             }
         }
 
@@ -334,7 +285,7 @@ macro_rules! impl_add_ubig_unsigned {
 
             #[inline]
             fn sub(self, rhs: $t) -> UBig {
-                self.sub_unsigned(rhs)
+                self - UBig::from_unsigned(rhs)
             }
         }
 
@@ -343,7 +294,7 @@ macro_rules! impl_add_ubig_unsigned {
 
             #[inline]
             fn sub(self, rhs: $t) -> UBig {
-                self.sub_ref_unsigned(rhs)
+                self - UBig::from_unsigned(rhs)
             }
         }
 
@@ -352,7 +303,7 @@ macro_rules! impl_add_ubig_unsigned {
         impl SubAssign<$t> for UBig {
             #[inline]
             fn sub_assign(&mut self, rhs: $t) {
-                self.sub_assign_unsigned(rhs)
+                *self -= UBig::from_unsigned(rhs)
             }
         }
 
@@ -374,7 +325,7 @@ macro_rules! impl_add_ubig_signed {
 
             #[inline]
             fn add(self, rhs: $t) -> UBig {
-                self.add_signed(rhs)
+                UBig::from_ibig(IBig::from(self) + IBig::from(rhs))
             }
         }
 
@@ -383,7 +334,7 @@ macro_rules! impl_add_ubig_signed {
 
             #[inline]
             fn add(self, rhs: $t) -> UBig {
-                self.add_ref_signed(rhs)
+                UBig::from_ibig(IBig::from(self) + IBig::from(rhs))
             }
         }
 
@@ -393,7 +344,7 @@ macro_rules! impl_add_ubig_signed {
         impl AddAssign<$t> for UBig {
             #[inline]
             fn add_assign(&mut self, rhs: $t) {
-                self.add_assign_signed(rhs)
+                *self = mem::take(self) + rhs
             }
         }
 
@@ -404,7 +355,7 @@ macro_rules! impl_add_ubig_signed {
 
             #[inline]
             fn sub(self, rhs: $t) -> UBig {
-                self.sub_signed(rhs)
+                UBig::from_ibig(IBig::from(self) - IBig::from(rhs))
             }
         }
 
@@ -413,7 +364,7 @@ macro_rules! impl_add_ubig_signed {
 
             #[inline]
             fn sub(self, rhs: $t) -> UBig {
-                self.sub_ref_signed(rhs)
+                UBig::from_ibig(IBig::from(self) - IBig::from(rhs))
             }
         }
 
@@ -422,7 +373,7 @@ macro_rules! impl_add_ubig_signed {
         impl SubAssign<$t> for UBig {
             #[inline]
             fn sub_assign(&mut self, rhs: $t) {
-                self.sub_assign_signed(rhs)
+                *self = mem::take(self) - rhs
             }
         }
 
@@ -444,7 +395,7 @@ macro_rules! impl_add_ibig_primitive {
 
             #[inline]
             fn add(self, rhs: $t) -> IBig {
-                self.add_primitive(rhs)
+                self + IBig::from(rhs)
             }
         }
 
@@ -453,7 +404,7 @@ macro_rules! impl_add_ibig_primitive {
 
             #[inline]
             fn add(self, rhs: $t) -> IBig {
-                self.add_ref_primitive(rhs)
+                self + IBig::from(rhs)
             }
         }
 
@@ -463,7 +414,7 @@ macro_rules! impl_add_ibig_primitive {
         impl AddAssign<$t> for IBig {
             #[inline]
             fn add_assign(&mut self, rhs: $t) {
-                self.add_assign_primitive(rhs)
+                *self += IBig::from(rhs)
             }
         }
 
@@ -474,7 +425,7 @@ macro_rules! impl_add_ibig_primitive {
 
             #[inline]
             fn sub(self, rhs: $t) -> IBig {
-                self.sub_primitive(rhs)
+                self - IBig::from(rhs)
             }
         }
 
@@ -483,7 +434,7 @@ macro_rules! impl_add_ibig_primitive {
 
             #[inline]
             fn sub(self, rhs: $t) -> IBig {
-                self.sub_ref_primitive(rhs)
+                self - IBig::from(rhs)
             }
         }
 
@@ -492,7 +443,7 @@ macro_rules! impl_add_ibig_primitive {
 
             #[inline]
             fn sub(self, rhs: IBig) -> IBig {
-                rhs.sub_from_primitive(self)
+                IBig::from(rhs) - self
             }
         }
 
@@ -501,7 +452,7 @@ macro_rules! impl_add_ibig_primitive {
 
             #[inline]
             fn sub(self, rhs: &IBig) -> IBig {
-                rhs.sub_ref_from_primitive(self)
+                rhs - IBig::from(self)
             }
         }
 
@@ -511,7 +462,7 @@ macro_rules! impl_add_ibig_primitive {
         impl SubAssign<$t> for IBig {
             #[inline]
             fn sub_assign(&mut self, rhs: $t) {
-                self.sub_assign_primitive(rhs)
+                *self -= IBig::from(rhs)
             }
         }
 
@@ -532,32 +483,78 @@ impl_add_ibig_primitive!(i64);
 impl_add_ibig_primitive!(i128);
 impl_add_ibig_primitive!(isize);
 
-impl UBig {
-    /// Add two `Word`s.
+mod ubig {
+    use crate::buffer::{TypedRepr, TypedReprRef};
+    use super::*;
+
     #[inline]
-    fn add_word(a: Word, b: Word) -> UBig {
-        let (res, overflow) = a.overflowing_add(b);
-        if overflow {
-            let mut buffer = Buffer::allocate(2);
-            buffer.push(res);
-            buffer.push(1);
-            buffer.into()
-        } else {
-            UBig::from_word(res)
+    pub fn add_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> UBig {
+        match (lhs, rhs) {
+            (RefSmall(dword0), RefSmall(dword1)) => ubig::add_dword(dword0, dword1),
+            (RefSmall(dword0), RefLarge(buffer1)) => ubig::add_large_dword(buffer1.into(), dword0),
+            (RefLarge(buffer0), RefSmall(dword1)) => ubig::add_large_dword(buffer0.into(), dword1),
+            (RefLarge(buffer0), RefLarge(buffer1)) => {
+                if buffer0.len() >= buffer1.len() {
+                    ubig::add_large(buffer0.into(), buffer1)
+                } else {
+                    ubig::add_large(buffer1.into(), buffer0)
+                }
+            },
         }
     }
 
-    /// Add a large number to a `Word`.
-    fn add_large_word(mut buffer: Buffer, rhs: Word) -> UBig {
-        debug_assert!(buffer.len() >= 2);
-        if add::add_word_in_place(&mut buffer, rhs) {
+    #[inline]
+    pub fn add_repr_ref_val(lhs: TypedReprRef, rhs: TypedRepr) -> UBig {
+        match (lhs, rhs) {
+            (RefSmall(dword0), Small(dword1)) => ubig::add_dword(dword0, dword1),
+            (RefSmall(dword0), Large(buffer1)) => ubig::add_large_dword(buffer1, dword0),
+            (RefLarge(buffer0), Small(dword1)) => ubig::add_large_dword(buffer0.into(), dword1),
+            (RefLarge(buffer0), Large(buffer1)) => ubig::add_large(buffer1, buffer0),
+        }
+    }
+
+    #[inline]
+    pub fn add_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> UBig {
+        match (lhs, rhs) {
+            (Small(dword0), Small(dword1)) => add_dword(dword0, dword1),
+            (Small(dword0), Large(buffer1)) => add_large_dword(buffer1, dword0),
+            (Large(buffer0), Small(dword1)) => add_large_dword(buffer0, dword1),
+            (Large(buffer0), Large(buffer1)) => {
+                if buffer0.len() >= buffer1.len() {
+                    add_large(buffer0, &buffer1)
+                } else {
+                    add_large(buffer1, &buffer0)
+                }
+            },
+        }
+    }
+    
+    #[inline]
+    pub fn add_dword(a: DoubleWord, b: DoubleWord) -> UBig {
+        let (res, overflow) = a.overflowing_add(b);
+        if overflow {
+            let (lo, hi) = split_double_word(res);
+            let mut buffer = Buffer::allocate(3);
+            buffer.push(lo);
+            buffer.push(hi);
+            buffer.push(1);
+            buffer.into()
+        } else {
+            res.into()
+        }
+    }
+
+    #[inline]
+    pub fn add_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> UBig {
+        debug_assert!(buffer.len() >= 3);
+        if add::add_dword_in_place(&mut buffer, rhs) {
             buffer.push_may_reallocate(1);
         }
         buffer.into()
     }
 
-    /// Add two large numbers.
-    fn add_large(mut buffer: Buffer, rhs: &[Word]) -> UBig {
+    #[inline]
+    pub fn add_large(mut buffer: Buffer, rhs: &[Word]) -> UBig {
         let n = buffer.len().min(rhs.len());
         let overflow = add::add_same_len_in_place(&mut buffer[..n], &rhs[..n]);
         if rhs.len() > n {
@@ -570,29 +567,60 @@ impl UBig {
         buffer.into()
     }
 
-    /// Subtract two `Word`s.
     #[inline]
-    fn sub_word(a: Word, b: Word) -> UBig {
+    pub fn sub_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> UBig {
+        match (lhs, rhs) {
+            (Small(dword0), Small(dword1)) => sub_dword(dword0, dword1),
+            (Small(_), Large(_)) => UBig::panic_negative(),
+            (Large(buffer0), Small(dword1)) => sub_large_dword(buffer0, dword1),
+            (Large(buffer0), Large(buffer1)) => sub_large(buffer0, &buffer1),
+        }
+    }
+
+    #[inline]
+    pub fn sub_repr_val_ref(lhs: TypedRepr, rhs: TypedReprRef) -> UBig {
+        match (lhs, rhs) {
+            (Small(dword0), RefSmall(dword1)) => sub_dword(dword0, dword1),
+            (Small(_), RefLarge(_)) => UBig::panic_negative(),
+            (Large(buffer0), RefSmall(dword1)) => sub_large_dword(buffer0, dword1),
+            (Large(buffer0), RefLarge(buffer1)) => sub_large(buffer0, buffer1),
+        }
+    }
+
+    #[inline]
+    pub fn sub_repr_ref_val(lhs: TypedReprRef, rhs: TypedRepr) -> UBig {
+        match (lhs, rhs) {
+            (RefSmall(dword0), Small(dword1)) => sub_dword(dword0, dword1),
+            (RefSmall(_), Large(_)) => UBig::panic_negative(),
+            (RefLarge(buffer0), Small(dword1)) => sub_large_dword(buffer0.into(), dword1),
+            (RefLarge(buffer0), Large(buffer1)) => sub_large_ref_val(buffer0, buffer1.into()),
+        }
+    }
+
+    #[inline]
+    pub fn sub_dword(a: DoubleWord, b: DoubleWord) -> UBig {
         match a.checked_sub(b) {
-            Some(res) => UBig::from_word(res),
+            Some(res) => res.into(),
             None => UBig::panic_negative(),
         }
     }
 
-    fn sub_large_word(mut lhs: Buffer, rhs: Word) -> UBig {
-        let overflow = add::sub_word_in_place(&mut lhs, rhs);
+    #[inline]
+    pub fn sub_large_dword(mut lhs: Buffer, rhs: DoubleWord) -> UBig {
+        let overflow = add::sub_dword_in_place(&mut lhs, rhs);
         assert!(!overflow);
         lhs.into()
     }
 
-    fn sub_large(mut lhs: Buffer, rhs: &[Word]) -> UBig {
+    #[inline]
+    pub fn sub_large(mut lhs: Buffer, rhs: &[Word]) -> UBig {
         if lhs.len() < rhs.len() || add::sub_in_place(&mut lhs, rhs) {
             UBig::panic_negative();
         }
         lhs.into()
     }
-
-    fn sub_large_ref_val(lhs: &[Word], mut rhs: Buffer) -> UBig {
+    
+    pub fn sub_large_ref_val(lhs: &[Word], mut rhs: Buffer) -> UBig {
         let n = rhs.len();
         if lhs.len() < n {
             UBig::panic_negative();
@@ -605,117 +633,56 @@ impl UBig {
         }
         rhs.into()
     }
-
-    #[inline]
-    fn add_unsigned<T: PrimitiveUnsigned>(self, rhs: T) -> UBig {
-        self + UBig::from_unsigned(rhs)
-    }
-
-    #[inline]
-    fn add_ref_unsigned<T: PrimitiveUnsigned>(&self, rhs: T) -> UBig {
-        self + UBig::from_unsigned(rhs)
-    }
-
-    #[inline]
-    fn add_assign_unsigned<T: PrimitiveUnsigned>(&mut self, rhs: T) {
-        *self += UBig::from_unsigned(rhs)
-    }
-
-    #[inline]
-    fn sub_unsigned<T: PrimitiveUnsigned>(self, rhs: T) -> UBig {
-        self - UBig::from_unsigned(rhs)
-    }
-
-    #[inline]
-    fn sub_ref_unsigned<T: PrimitiveUnsigned>(&self, rhs: T) -> UBig {
-        self - UBig::from_unsigned(rhs)
-    }
-
-    #[inline]
-    fn sub_assign_unsigned<T: PrimitiveUnsigned>(&mut self, rhs: T) {
-        *self -= UBig::from_unsigned(rhs)
-    }
-
-    #[inline]
-    fn add_signed<T: PrimitiveSigned>(self, rhs: T) -> UBig {
-        UBig::from_ibig_panic_on_overflow(IBig::from(self) + IBig::from_signed(rhs))
-    }
-
-    #[inline]
-    fn add_ref_signed<T: PrimitiveSigned>(&self, rhs: T) -> UBig {
-        UBig::from_ibig_panic_on_overflow(IBig::from(self) + IBig::from_signed(rhs))
-    }
-
-    #[inline]
-    fn add_assign_signed<T: PrimitiveSigned>(&mut self, rhs: T) {
-        *self = mem::take(self).add_signed(rhs)
-    }
-
-    #[inline]
-    fn sub_signed<T: PrimitiveSigned>(self, rhs: T) -> UBig {
-        UBig::from_ibig_panic_on_overflow(IBig::from(self) - IBig::from_signed(rhs))
-    }
-
-    #[inline]
-    fn sub_ref_signed<T: PrimitiveSigned>(&self, rhs: T) -> UBig {
-        UBig::from_ibig_panic_on_overflow(IBig::from(self) - IBig::from_signed(rhs))
-    }
-
-    #[inline]
-    fn sub_assign_signed<T: PrimitiveSigned>(&mut self, rhs: T) {
-        *self = mem::take(self).sub_signed(rhs)
-    }
 }
 
-impl IBig {
-    // TODO: refactor this into the Sub trait itself?
+mod ibig {
+    use crate::buffer::{TypedReprRef, TypedRepr};
+    use super::*;
+
     #[inline]
-    fn sub_ubig_val_val(lhs: UBig, rhs: UBig) -> IBig {
-        match (lhs.into_repr(), rhs.into_repr()) {
-            (Single(word0), Single(word1)) => IBig::sub_word_word(word0, word1),
-            (Single(word0), Large(buffer1)) => -IBig::sub_large_word(buffer1, word0),
-            (Large(buffer0), Single(word1)) => IBig::sub_large_word(buffer0, word1),
+    pub fn sub_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> IBig {
+        match (lhs, rhs) {
+            (Small(dword0), Small(dword1)) => sub_dword_word(dword0, dword1),
+            (Small(dword0), Large(buffer1)) => -sub_large_dword(buffer1, dword0),
+            (Large(buffer0), Small(dword1)) => sub_large_dword(buffer0, dword1),
             (Large(buffer0), Large(buffer1)) => {
                 if buffer0.len() >= buffer1.len() {
-                    IBig::sub_large(buffer0, &buffer1)
+                    sub_large(buffer0, &buffer1)
                 } else {
-                    -IBig::sub_large(buffer1, &buffer0)
+                    -sub_large(buffer1, &buffer0)
                 }
             },
-            _ => unimplemented!()
         }
     }
 
     #[inline]
-    fn sub_ubig_val_ref(lhs: UBig, rhs: &UBig) -> IBig {
-        match (lhs.into_repr(), rhs.repr()) {
-            (Single(word0), RefSingle(word1)) => IBig::sub_word_word(word0, *word1),
-            (Single(word0), RefLarge(buffer1)) => -IBig::sub_large_word(buffer1.into(), word0),
-            (Large(buffer0), RefSingle(word1)) => IBig::sub_large_word(buffer0, *word1),
-            (Large(buffer0), RefLarge(buffer1)) => IBig::sub_large(buffer0, buffer1),
-            _ => unimplemented!()
+    pub fn sub_repr_ref_val(lhs: TypedReprRef, rhs: TypedRepr) -> IBig {
+        match (lhs, rhs) {
+            (RefSmall(dword0), Small(dword1)) => sub_dword_word(dword0, dword1),
+            (RefSmall(dword0), Large(buffer1)) => -sub_large_dword(buffer1, dword0),
+            (RefLarge(buffer0), Small(dword1)) => sub_large_dword(buffer0.into(), dword1),
+            (RefLarge(buffer0), Large(buffer1)) => -sub_large(buffer1, buffer0),
         }
     }
 
     #[inline]
-    fn sub_ubig_ref_ref(lhs: &UBig, rhs: &UBig) -> IBig {
-        match (lhs.repr(), rhs.repr()) {
-            (RefSingle(word0), RefSingle(word1)) => IBig::sub_word_word(*word0, *word1),
-            (RefSingle(word0), RefLarge(buffer1)) => -IBig::sub_large_word(buffer1.into(), *word0),
-            (RefLarge(buffer0), RefSingle(word1)) => IBig::sub_large_word(buffer0.into(), *word1),
+    pub fn sub_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> IBig {
+        match (lhs, rhs) {
+            (RefSmall(dword0), RefSmall(dword1)) => sub_dword_word(dword0, dword1),
+            (RefSmall(dword0), RefLarge(buffer1)) => -sub_large_dword(buffer1.into(), dword0),
+            (RefLarge(buffer0), RefSmall(dword1)) => sub_large_dword(buffer0.into(), dword1),
             (RefLarge(buffer0), RefLarge(buffer1)) => {
                 if buffer0.len() >= buffer1.len() {
-                    IBig::sub_large(buffer0.into(), buffer1)
+                    sub_large(buffer0.into(), buffer1)
                 } else {
-                    -IBig::sub_large(buffer1.into(), buffer0)
+                    -sub_large(buffer1.into(), buffer0)
                 }
             },
-            _ => unimplemented!()
         }
     }
 
     #[inline]
-    fn sub_word_word(lhs: Word, rhs: Word) -> IBig {
+    pub fn sub_dword_word(lhs: DoubleWord, rhs: DoubleWord) -> IBig {
         let (val, overflow) = lhs.overflowing_sub(rhs);
         if !overflow {
             IBig::from(val)
@@ -724,81 +691,19 @@ impl IBig {
         }
     }
 
-    fn sub_large_word(lhs: Buffer, rhs: Word) -> IBig {
-        UBig::sub_large_word(lhs, rhs).into()
+    #[inline]
+    pub fn sub_large_dword(lhs: Buffer, rhs: DoubleWord) -> IBig {
+        ubig::sub_large_dword(lhs, rhs).into()
     }
 
-    fn sub_large(mut lhs: Buffer, rhs: &[Word]) -> IBig {
+    #[inline]
+    pub fn sub_large(mut lhs: Buffer, rhs: &[Word]) -> IBig {
         if lhs.len() >= rhs.len() {
             let sign = add::sub_in_place_with_sign(&mut lhs, rhs);
             IBig::from_sign_magnitude(sign, lhs.into())
         } else {
-            let res = UBig::sub_large_ref_val(rhs, lhs);
+            let res = ubig::sub_large_ref_val(rhs, lhs);
             IBig::from_sign_magnitude(Negative, res)
         }
-    }
-
-    #[inline]
-    fn add_primitive<T>(self, rhs: T) -> IBig
-    where
-        IBig: From<T>,
-    {
-        self + IBig::from(rhs)
-    }
-
-    #[inline]
-    fn add_ref_primitive<T>(&self, rhs: T) -> IBig
-    where
-        IBig: From<T>,
-    {
-        self + IBig::from(rhs)
-    }
-
-    #[inline]
-    fn add_assign_primitive<T>(&mut self, rhs: T)
-    where
-        IBig: From<T>,
-    {
-        *self += IBig::from(rhs)
-    }
-
-    #[inline]
-    fn sub_primitive<T>(self, rhs: T) -> IBig
-    where
-        IBig: From<T>,
-    {
-        self - IBig::from(rhs)
-    }
-
-    #[inline]
-    fn sub_ref_primitive<T>(&self, rhs: T) -> IBig
-    where
-        IBig: From<T>,
-    {
-        self - IBig::from(rhs)
-    }
-
-    #[inline]
-    fn sub_assign_primitive<T>(&mut self, rhs: T)
-    where
-        IBig: From<T>,
-    {
-        *self -= IBig::from(rhs)
-    }
-
-    #[inline]
-    fn sub_from_primitive<T>(self, rhs: T) -> IBig
-    where
-        IBig: From<T>,
-    {
-        IBig::from(rhs) - self
-    }
-
-    #[inline]
-    fn sub_ref_from_primitive<T>(&self, rhs: T) -> IBig
-    where
-        IBig: From<T>,
-    {
-        IBig::from(rhs) - self
     }
 }

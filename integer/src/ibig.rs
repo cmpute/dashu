@@ -2,7 +2,7 @@
 
 use crate::{
     sign::Sign::{self, *},
-    buffer::{Buffer, Repr, StrongRepr, StrongReprRef},
+    buffer::{Buffer, Repr, TypedRepr, TypedReprRef},
     ubig::UBig,
 };
 
@@ -26,6 +26,16 @@ use crate::{
 pub struct IBig(Repr);
 
 impl IBig {
+    #[inline]
+    pub(crate) fn signed_repr(&self) -> (Sign, TypedReprRef<'_>) {
+        self.0.as_sign_typed()
+    }
+
+    #[inline]
+    pub(crate) fn into_sign_repr(self) -> (Sign, TypedRepr) {
+        self.0.into_sign_typed()
+    }
+
     #[inline]
     pub(crate) fn from_sign_magnitude(sign: Sign, mut magnitude: UBig) -> IBig {
         if magnitude != UBig::from_word(0) { // TODO: specialize is_zero

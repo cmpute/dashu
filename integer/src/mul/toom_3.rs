@@ -27,7 +27,7 @@ pub(crate) const MIN_LEN: usize = 16;
 
 /// Temporary memory required for multiplication.
 ///
-/// n bounds the length of the Singleer factor in words.
+/// n bounds the length of the Smaller factor in words.
 pub(crate) fn memory_requirement_up_to(n: usize) -> Layout {
     // In each level of recursion we use:
     // a_eval: n3 + 1
@@ -49,7 +49,7 @@ pub(crate) fn memory_requirement_up_to(n: usize) -> Layout {
     // So we use 4n + 13 ceil log_2 n.
     //
     // Note: the recurence also works when we transition to Karatsuba, because
-    // Karatsuba memory requirements are Singleer.
+    // Karatsuba memory requirements are Smaller.
     let num_words = 4 * n + 13 * (math::ceil_log_2(n) as usize);
     memory::array_layout::<Word>(num_words)
 }

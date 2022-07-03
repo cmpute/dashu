@@ -2,12 +2,12 @@
 
 use crate::{
     arch::word::Word,
-    buffer::Buffer,
+    buffer::{Buffer, TypedReprRef::*},
     error::OutOfBoundsError,
     ibig::IBig,
     primitive::{self, PrimitiveSigned, PrimitiveUnsigned, WORD_BITS, WORD_BYTES},
     sign::Sign::*,
-    ubig::{Repr::*, UBig},
+    ubig::UBig,
 };
 use alloc::vec::Vec;
 use core::convert::{TryFrom, TryInto};
@@ -102,12 +102,12 @@ impl UBig {
     /// ```
     pub fn to_le_bytes(&self) -> Vec<u8> {
         match self.repr() {
-            Single(x) => {
+            RefSmall(x) => {
                 let bytes = x.to_le_bytes();
                 let skip_bytes = x.leading_zeros() as usize / 8;
                 bytes[..WORD_BYTES - skip_bytes].to_vec()
             }
-            Large(buffer) => {
+            RefLarge(buffer) => {
                 let n = buffer.len();
                 let last = buffer[n - 1];
                 let skip_last_bytes = last.leading_zeros() as usize / 8;
@@ -133,12 +133,12 @@ impl UBig {
     /// ```
     pub fn to_be_bytes(&self) -> Vec<u8> {
         match self.repr() {
-            Single(x) => {
+            RefSmall(x) => {
                 let bytes = x.to_be_bytes();
                 let skip_bytes = x.leading_zeros() as usize / 8;
                 bytes[skip_bytes..].to_vec()
             }
-            Large(buffer) => {
+            RefLarge(buffer) => {
                 let n = buffer.len();
                 let last = buffer[n - 1];
                 let skip_last_bytes = last.leading_zeros() as usize / 8;
@@ -166,8 +166,8 @@ impl UBig {
     #[inline]
     pub fn to_f32(&self) -> f32 {
         match self.repr() {
-            Single(word) => *word as f32,
-            Large(_) => match u32::try_from(self) {
+            RefSmall(word) => *word as f32,
+            RefLarge(_) => match u32::try_from(self) {
                 Ok(val) => val as f32,
                 Err(_) => self.to_f32_slow(),
             },
@@ -217,8 +217,8 @@ impl UBig {
     #[inline]
     pub fn to_f64(&self) -> f64 {
         match self.repr() {
-            Single(word) => *word as f64,
-            Large(_) => match u64::try_from(self) {
+            RefSmall(word) => *word as f64,
+            RefLarge(_) => match u64::try_from(self) {
                 Ok(val) => val as f64,
                 Err(_) => self.to_f64_slow(),
             },
@@ -536,11 +536,11 @@ impl UBig {
         T: PrimitiveUnsigned,
     {
         match self.repr() {
-            Single(w) => match T::try_from(*w) {
+            RefSmall(w) => match T::try_from(w) {
                 Ok(val) => Ok(val),
                 Err(_) => Err(OutOfBoundsError),
             },
-            Large(buffer) => unsigned_from_words(buffer),
+            RefLarge(buffer) => unsigned_from_words(buffer),
         }
     }
 
@@ -551,23 +551,24 @@ impl UBig {
         T: PrimitiveSigned,
     {
         match self.repr() {
-            Single(w) => T::try_from(*w).map_err(|_| OutOfBoundsError),
-            Large(buffer) => {
+            RefSmall(w) => T::try_from(w).map_err(|_| OutOfBoundsError),
+            RefLarge(buffer) => {
                 let u: T::Unsigned = unsigned_from_words(buffer)?;
                 u.try_into().map_err(|_| OutOfBoundsError)
             }
         }
     }
 
+    /// This method will panic if the signed integer input is negative,
+    /// therefore it should not be exposed to public.
     #[inline]
-    pub(crate) fn from_ibig_panic_on_overflow(x: IBig) -> UBig {
+    pub(crate) fn from_ibig(x: IBig) -> UBig {
         match UBig::try_from(x) {
             Ok(v) => v,
             Err(_) => UBig::panic_negative(),
         }
     }
 
-    #[inline]
     pub(crate) fn panic_negative() -> ! {
         panic!("negative UBig")
     }
