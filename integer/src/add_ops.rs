@@ -3,10 +3,10 @@
 use crate::{
     add,
     arch::word::{Word, DoubleWord},
-    buffer::{Buffer, TypedRepr::*, TypedReprRef::*},
+    buffer::Buffer,
     helper_macros,
     ibig::IBig,
-    primitive::split_double_word,
+    primitive::split_dword,
     sign::Sign::*,
     ubig::UBig,
 };
@@ -97,12 +97,7 @@ impl Sub<&UBig> for &UBig {
 
     #[inline]
     fn sub(self, rhs: &UBig) -> UBig {
-        match (self.repr(), rhs.repr()) {
-            (RefSmall(dword0), RefSmall(dword1)) => ubig::sub_dword(dword0, dword1),
-            (RefSmall(_), RefLarge(_)) => UBig::panic_negative(),
-            (RefLarge(buffer0), RefSmall(dword1)) => ubig::sub_large_dword(buffer0.into(), dword1),
-            (RefLarge(buffer0), RefLarge(buffer1)) => ubig::sub_large(buffer0.into(), buffer1),
-        }
+        ubig::sub_repr_ref_ref(self.repr(), rhs.repr())
     }
 }
 
@@ -484,7 +479,7 @@ impl_add_ibig_primitive!(i128);
 impl_add_ibig_primitive!(isize);
 
 mod ubig {
-    use crate::buffer::{TypedRepr, TypedReprRef};
+    use crate::buffer::{TypedRepr::{self, *}, TypedReprRef::{self, *}};
     use super::*;
 
     #[inline]
@@ -533,7 +528,7 @@ mod ubig {
     pub fn add_dword(a: DoubleWord, b: DoubleWord) -> UBig {
         let (res, overflow) = a.overflowing_add(b);
         if overflow {
-            let (lo, hi) = split_double_word(res);
+            let (lo, hi) = split_dword(res);
             let mut buffer = Buffer::allocate(3);
             buffer.push(lo);
             buffer.push(hi);
@@ -598,6 +593,16 @@ mod ubig {
     }
 
     #[inline]
+    pub fn sub_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> UBig {
+        match (lhs, rhs) {
+            (RefSmall(dword0), RefSmall(dword1)) => sub_dword(dword0, dword1),
+            (RefSmall(_), RefLarge(_)) => UBig::panic_negative(),
+            (RefLarge(buffer0), RefSmall(dword1)) => sub_large_dword(buffer0.into(), dword1),
+            (RefLarge(buffer0), RefLarge(buffer1)) => sub_large(buffer0.into(), buffer1),
+        }
+    }
+
+    #[inline]
     pub fn sub_dword(a: DoubleWord, b: DoubleWord) -> UBig {
         match a.checked_sub(b) {
             Some(res) => res.into(),
@@ -636,7 +641,7 @@ mod ubig {
 }
 
 mod ibig {
-    use crate::buffer::{TypedReprRef, TypedRepr};
+    use crate::buffer::{TypedReprRef::{self, *}, TypedRepr::{self, *}};
     use super::*;
 
     #[inline]

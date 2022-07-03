@@ -26,7 +26,7 @@ pub(crate) const fn double_word(low: Word, high: Word) -> DoubleWord {
 
 /// Split a `DoubleWord` into (low, high) parts
 #[inline]
-pub(crate) const fn split_double_word(dw: DoubleWord) -> (Word, Word) {
+pub(crate) const fn split_dword(dw: DoubleWord) -> (Word, Word) {
     (dw as Word, (dw >> WORD_BITS) as Word)
 }
 
@@ -148,6 +148,9 @@ impl_primitive_signed!(isize, usize);
 pub(crate) const WORD_BITS: u32 = Word::BIT_SIZE;
 pub(crate) const WORD_BITS_USIZE: usize = WORD_BITS as usize;
 pub(crate) const WORD_BYTES: usize = Word::BYTE_SIZE;
+pub(crate) const DWORD_BITS: u32 = DoubleWord::BIT_SIZE;
+pub(crate) const DWORD_BITS_USIZE: usize = DWORD_BITS as usize;
+pub(crate) const DWORD_BYTES: usize = DoubleWord::BYTE_SIZE;
 
 #[inline]
 pub(crate) fn word_from_le_bytes_partial(bytes: &[u8]) -> Word {
@@ -188,7 +191,7 @@ mod tests {
     #[test]
     fn test_double_word() {
         assert_eq!(DoubleWord::BIT_SIZE, 2 * WORD_BITS);
-        assert_eq!(split_double_word(double_word(3, 4)), (3, 4));
+        assert_eq!(split_dword(double_word(3, 4)), (3, 4));
     }
 
     #[test]

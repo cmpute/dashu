@@ -2,7 +2,7 @@
 
 use crate::{
     arch::word::{Word, DoubleWord},
-    primitive::{WORD_BITS_USIZE, double_word, split_double_word},
+    primitive::{WORD_BITS_USIZE, double_word, split_dword},
     sign::Sign,
 };
 use static_assertions::const_assert_eq;
@@ -295,22 +295,33 @@ impl Buffer {
         }
     }
 
-    // /// Clone from `src` and resize if necessary.
-    // ///
-    // /// Equivalent to, but more efficient than:
-    // ///
-    // /// ```ignore
-    // /// buffer.ensure_capacity(src.len());
-    // /// buffer.clone_from(src);
-    // /// buffer.shrink();
-    // /// ```
-    // pub(crate) fn resizing_clone_from(&mut self, src: &Buffer) {
-    //     if self.capacity >= src.len && self.capacity <= Buffer::max_compact_capacity(src.len) {
-    //         self.clone_from(src);
-    //     } else {
-    //         *self = src.clone();
-    //     }
-    // }
+    /// Get the first word of the buffer, assuming the buffer is not empty.
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the buffer is empty
+    pub(crate) fn front_word(&self) -> Word {
+        assert!(self.len >= 1);
+
+        unsafe {
+            ptr::read(self.ptr.as_ptr())
+        }
+    }
+
+    /// Get the first double word of the buffer, assuming the buffer has at least two words.
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the buffer is empty or has only 1 word
+    pub(crate) fn front_dword(&self) -> DoubleWord {
+        assert!(self.len >= 2);
+
+        unsafe {
+            let lo = ptr::read(self.ptr.as_ptr());
+            let hi = ptr::read(self.ptr.as_ptr().add(1));
+            double_word(lo, hi)
+        }
+    }
 }
 
 impl Clone for Buffer {
@@ -446,9 +457,19 @@ impl Repr {
         double_word(self.data.inline[0], self.data.inline[1])
     }
 
+    /// Get the sign of the repr
+    #[inline]
+    pub fn sign(&self) -> Sign {
+        if self.capacity.get() > 0 {
+            Sign::Positive
+        } else {
+            Sign::Negative
+        }
+    }
+
     /// Get the capacity of Repr and sign simultaneously
     #[inline]
-    pub fn signed_capacity(&self) -> (usize, Sign) {
+    pub fn sign_capacity(&self) -> (usize, Sign) {
         if self.capacity.get() > 0 {
             (self.capacity.get() as usize, Sign::Positive)
         } else {
@@ -498,7 +519,7 @@ impl Repr {
     /// Panics if the `capacity` is negative
     #[inline]
     pub fn as_sign_typed(&self) -> (Sign, TypedReprRef<'_>) {
-        let (abs_capacity, sign) = self.signed_capacity();
+        let (abs_capacity, sign) = self.sign_capacity();
 
         let typed = match abs_capacity {
             1 | 2 => TypedReprRef::RefSmall(double_word(self.data.inline[0], self.data.inline[1])),
@@ -533,7 +554,7 @@ impl Repr {
 
     /// Cast the `Repr` to a strong typed representation and return with the sign.
     pub fn into_sign_typed(mut self) -> (Sign, TypedRepr) {
-        let (abs_capacity, sign) = self.signed_capacity();
+        let (abs_capacity, sign) = self.sign_capacity();
         self.capacity = unsafe {
             // SAFETY: capacity is not allowed to be zero
             NonZeroIsize::new_unchecked(abs_capacity as isize)
@@ -543,7 +564,7 @@ impl Repr {
 
     /// Get a reference to the words in the `Repr`, together with the sign.
     pub fn as_sign_slice(&self) -> (Sign, &[Word]) {
-        let (capacity, sign) = self.signed_capacity();
+        let (capacity, sign) = self.sign_capacity();
         let words = unsafe {
             match capacity {
                 0 => unreachable!(),
@@ -567,7 +588,7 @@ impl Repr {
     /// Creates a `Repr` with a double word represented in [lo, hi].
     #[inline]
     pub(crate) fn from_dword(n: DoubleWord) -> Self {
-        let (lo, hi) = split_double_word(n);
+        let (lo, hi) = split_dword(n);
         if hi == 0 {
             Self::from_word(lo)
         } else {
@@ -598,8 +619,8 @@ impl Repr {
     /// Note that it's recommended to call `Buffer::pop_zeros()` before it's
     /// converted to the `Repr`.
     #[inline]
-    pub(crate) fn from_signed_buffer(heap: Buffer, sign: Sign) -> Self {
-        let mut result = Self::from_buffer(heap);
+    pub(crate) fn from_sign_buffer(sign: Sign, buffer: Buffer) -> Self {
+        let mut result = Self::from_buffer(buffer);
         result.set_sign(sign);
         result
     }
@@ -608,7 +629,7 @@ impl Repr {
 
 impl Clone for Repr {
     fn clone(&self) -> Self {
-        let (capacity, sign) = self.signed_capacity();
+        let (capacity, sign) = self.sign_capacity();
 
         let mut new = unsafe {
             // inline the data if the length is less than 3
@@ -634,8 +655,8 @@ impl Clone for Repr {
 
     #[inline]
     fn clone_from(&mut self, src: &Self) {
-        let (src_cap, src_sign) = src.signed_capacity();
-        let (cap, _) = self.signed_capacity();
+        let (src_cap, src_sign) = src.sign_capacity();
+        let (cap, _) = self.sign_capacity();
 
         // shortcut for inlined data
         if src_cap <= 2 {

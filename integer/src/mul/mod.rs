@@ -4,7 +4,7 @@ use crate::{
     add,
     arch::word::{SignedWord, Word},
     memory::Memory,
-    primitive::{double_word, extend_word, split_double_word},
+    primitive::{double_word, extend_word, split_dword},
     sign::Sign,
 };
 use alloc::alloc::Layout;
@@ -42,7 +42,7 @@ pub(crate) fn mul_word_in_place_with_carry(words: &mut [Word], rhs: Word, mut ca
     for a in words {
         // a * b + carry <= MAX * MAX + MAX < DoubleWord::MAX
         let (v_lo, v_hi) =
-            split_double_word(extend_word(*a) * extend_word(rhs) + extend_word(carry));
+            split_dword(extend_word(*a) * extend_word(rhs) + extend_word(carry));
         *a = v_lo;
         carry = v_hi;
     }
@@ -58,7 +58,7 @@ fn add_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) 
     let mut carry: Word = 0;
     for (a, b) in words.iter_mut().zip(rhs.iter()) {
         // a + mult * b + carry <= MAX * MAX + 2 * MAX <= DoubleWord::MAX
-        let (v_lo, v_hi) = split_double_word(
+        let (v_lo, v_hi) = split_dword(
             extend_word(*a) + extend_word(carry) + extend_word(mult) * extend_word(*b),
         );
         *a = v_lo;
@@ -100,7 +100,7 @@ pub(crate) fn sub_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs
             + extend_word(carry_plus_max)
             + (double_word(0, Word::MAX) - extend_word(Word::MAX))
             - extend_word(mult) * extend_word(*b);
-        let (v_lo, v_hi) = split_double_word(v);
+        let (v_lo, v_hi) = split_dword(v);
         *a = v_lo;
         carry_plus_max = v_hi;
     }

@@ -4,7 +4,7 @@ use crate::{
     arch::word::Word,
     buffer::Buffer,
     ibig::IBig,
-    primitive::{double_word, extend_word, split_double_word, WORD_BITS_USIZE},
+    primitive::{double_word, extend_word, split_dword, WORD_BITS_USIZE},
     shift,
     sign::Sign::*,
     ubig::{Repr::*, UBig},
@@ -189,6 +189,7 @@ impl Shr<usize> for &IBig {
 
 impl UBig {
     /// Shift left one non-zero `Word` by `rhs` bits.
+    // TODO: specialize the case where word == 1 using set_bit?
     #[inline]
     fn shl_word(word: Word, rhs: usize) -> UBig {
         debug_assert!(word != 0);
@@ -204,7 +205,7 @@ impl UBig {
     fn shl_word_slow(word: Word, rhs: usize) -> UBig {
         let shift_words = rhs / WORD_BITS_USIZE;
         let shift_bits = (rhs % WORD_BITS_USIZE) as u32;
-        let (lo, hi) = split_double_word(extend_word(word) << shift_bits);
+        let (lo, hi) = split_dword(extend_word(word) << shift_bits);
         let mut buffer = Buffer::allocate(shift_words + 2);
         buffer.push_zeros(shift_words);
         buffer.push(lo);

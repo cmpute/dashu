@@ -131,6 +131,6 @@ impl ModuloRingLarge {
     pub(crate) fn is_valid(&self, val: &[Word]) -> bool {
         val.len() == self.normalized_modulus.len()
             && cmp::cmp_same_len(val, &self.normalized_modulus) == Ordering::Less
-            && val[0] & math::ones::<Word>(self.shift) == 0
+            && val[0] & math::ones_word(self.shift) == 0
     }
 }

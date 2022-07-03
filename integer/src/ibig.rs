@@ -23,7 +23,7 @@ use crate::{
 /// # Ok::<(), ParseError>(())
 /// ```
 #[derive(Eq, Hash, PartialEq)]
-pub struct IBig(Repr);
+pub struct IBig(pub(crate) Repr);
 
 impl IBig {
     #[inline]

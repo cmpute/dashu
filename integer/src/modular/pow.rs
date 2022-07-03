@@ -6,7 +6,7 @@ use crate::{
         modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSmall, ModuloSmallRaw},
         modulo_ring::ModuloRingSmall,
     },
-    primitive::{double_word, split_double_word, PrimitiveUnsigned, WORD_BITS, WORD_BITS_USIZE},
+    primitive::{double_word, split_dword, PrimitiveUnsigned, WORD_BITS, WORD_BITS_USIZE},
     ubig::{Repr::*, UBig},
 };
 
@@ -165,10 +165,10 @@ impl<'a> ModuloLarge<'a> {
                     exp_words[word_idx - 1]
                 };
                 // Get a window of window_len bits, with top bit of 1.
-                let (mut window, _) = split_double_word(
+                let (mut window, _) = split_dword(
                     double_word(next_word, cur_word) >> (bit_idx + 1 + WORD_BITS - window_len),
                 );
-                window &= math::ones::<Word>(window_len);
+                window &= math::ones_word(window_len);
                 // Shift right to make the window odd.
                 let num_bits = window_len - window.trailing_zeros();
                 window >>= window_len - num_bits;

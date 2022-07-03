@@ -44,6 +44,7 @@ impl IBig {
     pub fn signum(&self) -> IBig {
         match self.sign() {
             Positive => {
+                // TODO: obselete magnitude() and implement is_zero for repr
                 if *self.magnitude() == UBig::from_word(0) {
                     IBig::from(0u8)
                 } else {
@@ -60,8 +61,9 @@ impl Neg for IBig {
 
     #[inline]
     fn neg(self) -> IBig {
-        let (sign, mag) = self.into_sign_magnitude();
-        IBig::from_sign_magnitude(-sign, mag)
+        let repr = self.0;
+        repr.set_sign(-repr.sign());
+        IBig(repr)
     }
 }
 
@@ -97,8 +99,9 @@ impl UnsignedAbs for IBig {
 
     #[inline]
     fn unsigned_abs(self) -> UBig {
-        let (_, mag) = self.into_sign_magnitude();
-        mag
+        let mut repr = self.0;
+        repr.set_sign(Sign::Positive);
+        UBig(repr)
     }
 }
 

@@ -1,6 +1,6 @@
 //! Mathematical functions.
 
-use crate::{arch::word::Word, assert::debug_assert_in_const_fn, primitive::PrimitiveUnsigned};
+use crate::{arch::word::{Word, DoubleWord}, assert::debug_assert_in_const_fn, primitive::PrimitiveUnsigned};
 
 /// The length of an integer in bits.
 /// 0 for 0.
@@ -66,24 +66,21 @@ pub(crate) const fn round_up_usize(a: usize, b: usize) -> usize {
 
 /// n ones: 2^n - 1
 #[inline]
-pub(crate) fn ones<T>(n: u32) -> T
-where
-    T: PrimitiveUnsigned,
-{
-    if n == 0 {
-        T::from(0u8)
-    } else {
-        T::MAX >> (T::BIT_SIZE - n)
-    }
-}
-
-/// n ones: 2^n - 1
-#[inline]
 pub(crate) const fn ones_word(n: u32) -> Word {
     if n == 0 {
         0
     } else {
         Word::MAX >> (Word::BIT_SIZE - n)
+    }
+}
+
+/// n ones: 2^n - 1
+#[inline]
+pub(crate) const fn ones_dword(n: u32) -> DoubleWord {
+    if n == 0 {
+        0
+    } else {
+        DoubleWord::MAX >> (DoubleWord::BIT_SIZE - n)
     }
 }
 
@@ -135,8 +132,8 @@ mod tests {
 
     #[test]
     fn test_ones() {
-        assert_eq!(ones::<u32>(0), 0);
-        assert_eq!(ones::<u32>(5), 0b11111);
-        assert_eq!(ones::<u32>(32), u32::MAX);
+        assert_eq!(ones_word(0), 0);
+        assert_eq!(ones_word(5), 0b11111);
+        assert_eq!(ones_word(16), u16::MAX as Word);
     }
 }

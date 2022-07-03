@@ -55,7 +55,7 @@ impl PreparedForFormatting for PreparedWord {
     }
 
     fn write(&mut self, digit_writer: &mut DigitWriter) -> fmt::Result {
-        let mask: Word = math::ones(self.log_radix);
+        let mask: Word = math::ones_word(self.log_radix);
         let mut digits = [0; WORD_BITS_USIZE];
         for idx in 0..self.width {
             let digit = ((self.word >> (idx as u32 * self.log_radix)) & mask) as u8;
@@ -100,7 +100,7 @@ impl PreparedForFormatting for PreparedLarge<'_> {
     }
 
     fn write(&mut self, digit_writer: &mut DigitWriter) -> fmt::Result {
-        let mask: Word = math::ones(self.log_radix);
+        let mask: Word = math::ones_word(self.log_radix);
 
         let mut it = self.words.iter().rev();
         let mut word = it.next().unwrap();
