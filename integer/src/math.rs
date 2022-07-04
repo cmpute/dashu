@@ -98,6 +98,7 @@ pub(crate) const fn min_usize(a: usize, b: usize) -> usize {
 }
 
 /// Multiply two `Word`s with carries and return the (low, high) parts of the product
+// TODO: do we need two carries? check lehmer gcd
 #[inline(always)]
 pub(crate) const fn mul_add_carry(lhs: Word, rhs: Word, c1: Word, c2: Word) -> (Word, Word) {
     split_dword(extend_word(lhs) * extend_word(rhs) + extend_word(c1) + extend_word(c2))

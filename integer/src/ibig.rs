@@ -44,6 +44,8 @@ impl IBig {
         IBig(magnitude.0)
     }
 
+    // TODO: add from_sign_repr()?
+
     #[inline]
     pub(crate) fn sign(&self) -> Sign {
         self.0.sign()

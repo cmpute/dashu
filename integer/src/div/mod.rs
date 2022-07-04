@@ -1,10 +1,10 @@
 //! Division functions.
 
 use crate::{
-    arch::word::Word,
+    arch::word::{Word, DoubleWord},
     fast_divide::{FastDivideNormalized, FastDivideNormalized2},
     memory::{self, Memory},
-    primitive::{double_word, extend_word},
+    primitive::{double_word, extend_word, WORD_BITS, split_dword},
     shift,
 };
 use alloc::alloc::Layout;
@@ -69,7 +69,6 @@ pub(crate) fn fast_div_by_word_in_place(
     rem >> shift
 }
 
-/// words % rhs
 pub(crate) fn rem_by_word(words: &[Word], rhs: Word) -> Word {
     debug_assert!(rhs != 0);
     if words.is_empty() {
@@ -79,31 +78,150 @@ pub(crate) fn rem_by_word(words: &[Word], rhs: Word) -> Word {
         return words[0] & (rhs - 1);
     }
 
+    // calculate remainder without normalizing the words
     let shift = rhs.leading_zeros();
     let fast_div_rhs = FastDivideNormalized::new(rhs << shift);
     let rem = fast_rem_by_normalized_word(words, fast_div_rhs);
+
+    // normalize the remainder
     let a = extend_word(rem) << shift;
     let (_, rem) = fast_div_rhs.div_rem(a);
     rem >> shift
 }
 
-/// words % rhs
 pub(crate) fn fast_rem_by_normalized_word(
     words: &[Word],
     fast_div_rhs: FastDivideNormalized,
 ) -> Word {
-    let mut iter = words.iter().rev();
+    debug_assert!(words.len() >= 2);
 
-    let mut rem: Word = 0;
-    match iter.next() {
-        None => return rem,
-        Some(word) => rem = fast_div_rhs.div_rem_word(*word).1,
+    // first calculate the highest remainder
+    let (last, front) = words.split_last().unwrap();
+    let mut rem = fast_div_rhs.div_rem_word(*last).1;
+
+    // then iterate through the words
+    for word in front.iter().rev() {
+        let a = double_word(*word, rem);
+        rem = fast_div_rhs.div_rem(a).1;
     }
 
-    for word in iter {
-        let a = double_word(*word, rem);
-        let (_, r) = fast_div_rhs.div_rem(a);
-        rem = r;
+    rem
+}
+
+/// words = words / rhs
+///
+/// rhs must not fit in a word, there could be one leading zero in words.
+///
+/// Returns words % rhs.
+pub(crate) fn div_by_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleWord {
+    debug_assert!(rhs > Word::MAX as DoubleWord, "call div_by_word_in_place when rhs is small");
+    if words.is_empty() {
+        // TODO: this should not happen, assert it. Also check other methods in this module
+        return 0;
+    }
+    if rhs.is_power_of_two() {
+        let sh = rhs.trailing_zeros();
+        debug_assert!(sh < WORD_BITS); // high word of rhs must not be zero
+        let (first, tail) = words.split_first_mut().unwrap();
+        let rem = shift::shr_in_place(tail, sh);
+        return double_word(rem, *first);
+    }
+
+    let fast_div_rhs = FastDivideNormalized2::new(rhs << rhs.leading_zeros());
+    fast_div_by_dword_in_place(words, rhs, fast_div_rhs)
+}
+
+/// words = words / rhs
+///
+/// Returns words % rhs.
+#[must_use]
+pub(crate) fn fast_div_by_dword_in_place(
+    words: &mut [Word],
+    rhs: DoubleWord,
+    fast_div_rhs: FastDivideNormalized2,
+) -> DoubleWord {
+    debug_assert!(words.len() >= 2);
+    let shift = rhs.leading_zeros();
+    let hi = shift::shl_in_place(words, shift);
+
+    // first div [hi, last word, second last word] by rhs
+    let (n_hi, front) = words.split_last_mut().unwrap();
+    let (n_lo, front) = front.split_last_mut().unwrap();
+    let (q, mut rem) = fast_div_rhs.div_rem((*n_lo, double_word(*n_hi, hi)));
+    *n_hi = 0; *n_lo = q;
+
+    // chunk the words into double words, and do 4by2 divisions
+    let mut dwords = front.rchunks_exact_mut(2);
+    for chunk in &mut dwords {
+        let lo = chunk.first_mut().unwrap();
+        let hi = chunk.last_mut().unwrap();
+        let (q, new_rem) = fast_div_rhs.div_rem_double(double_word(*lo, *hi), rem);
+        let (new_lo, new_hi) = split_dword(q);
+        *lo = new_lo;
+        *hi = new_hi;
+        rem = new_rem;
+    }
+
+    // there might be a single word left, do a 3by2 division
+    let r = dwords.into_remainder();
+    if r.len() > 0 {
+        debug_assert!(r.len() == 1);
+        let r0 = r.first_mut().unwrap();
+        let (q, new_rem) = fast_div_rhs.div_rem((*r0, rem));
+        *r0 = q;
+        rem = new_rem;
+    }
+
+    rem >> shift
+}
+
+pub(crate) fn rem_by_dword(words: &[Word], rhs: DoubleWord) -> DoubleWord {
+    debug_assert!(rhs > Word::MAX as DoubleWord, "call div_by_word_in_place when rhs is small");
+
+    if rhs.is_power_of_two() {
+        return double_word(words[0], words[1]) & (rhs - 1);
+    }
+
+    // calculate remainder without normalizing the words
+    let shift = rhs.leading_zeros();
+    debug_assert!(shift < WORD_BITS);
+    let fast_div_rhs = FastDivideNormalized2::new(rhs << shift);
+    let rem = fast_rem_by_normalized_dword(words, fast_div_rhs);
+
+    // normalize the remainder
+    let (r0, r1) = split_dword(rem);
+    let a12 = extend_word(r0) << shift | extend_word(r1) >> (WORD_BITS - shift);
+    let a0 = r1 << shift;
+    let (_, rem) = fast_div_rhs.div_rem((a0, a12));
+    rem >> shift
+}
+
+pub(crate) fn fast_rem_by_normalized_dword(
+    words: &[Word],
+    fast_div_rhs: FastDivideNormalized2,
+) -> DoubleWord {
+    debug_assert!(words.len() >= 3);
+
+    // first calculate the highest remainder
+    let (n_hi, front) = words.split_last().unwrap();
+    let (n_lo, front) = front.split_last().unwrap();
+    let mut rem = fast_div_rhs.div_rem_dword(double_word(*n_hi, *n_lo)).1;
+
+    // then iterate through the words
+    // chunk the words into double words, and do 4by2 divisions
+    let mut dwords = front.rchunks_exact(2);
+    for chunk in &mut dwords {
+        let lo = chunk.first().unwrap();
+        let hi = chunk.last().unwrap();
+        rem = fast_div_rhs.div_rem_double(double_word(*lo, *hi), rem).1;
+    }
+
+    // there might be a single word left, do a 3by2 division
+    let r = dwords.remainder();
+    if r.len() > 0 {
+        debug_assert!(r.len() == 1);
+        let r0 = r.first().unwrap();
+        rem = fast_div_rhs.div_rem((*r0, rem)).1;
     }
 
     rem

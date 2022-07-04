@@ -1,4 +1,5 @@
-//! Word buffer. TODO: rename to repr.rs
+//! Word buffer.
+// TODO: rename to repr.rs
 
 use crate::{
     arch::word::{Word, DoubleWord},
@@ -323,6 +324,23 @@ impl Buffer {
             double_word(lo, hi)
         }
     }
+
+    /// Make the data in `Repr` a copy of another slice.
+    /// 
+    /// It reallocates if capacity is too small or too large.
+    pub(crate) fn clone_from_slice(&mut self, src: &[Word]) {
+        if self.capacity >= src.len() && self.capacity <= Buffer::max_compact_capacity(src.len()) {
+            // direct copy if the capacity is enough
+            unsafe {
+                // SAFETY: src.ptr and self.ptr are both properly allocated by `Buffer::allocate()`.
+                //         src.ptr and self.ptr cannot alias, because the ptr should be uniquely owned by the Buffer
+                ptr::copy_nonoverlapping(src.as_ptr(), self.ptr.as_ptr(), src.len());
+            }
+            self.len = src.len();
+        } else {
+            *self = Self::from(src);
+        }
+    }
 }
 
 impl Clone for Buffer {
@@ -407,12 +425,14 @@ impl fmt::Debug for Buffer {
 }
 
 impl Hash for Buffer {
+    #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
         (**self).hash(state);
     }
 }
 
 impl From<&[Word]> for Buffer {
+    #[inline]
     fn from(words: &[Word]) -> Self {
         let mut buffer = Buffer::allocate(words.len());
         buffer.push_slice(words);

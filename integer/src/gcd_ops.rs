@@ -2,7 +2,7 @@
 
 use dashu_base::ring::{Gcd, ExtendedGcd};
 use crate::{
-    arch::word::Word,
+    arch::word::{Word, DoubleWord},
     buffer::{Buffer, TypedReprRef::*, TypedRepr::*},
     div, gcd,
     ibig::IBig,
@@ -24,8 +24,8 @@ impl UBig {
     pub fn gcd(&self, rhs: &UBig) -> UBig {
         match (self.repr(), rhs.repr()) {
             (RefSmall(dword0), RefSmall(dword1)) => UBig::from(dword0.gcd(dword1)),
-            (RefSmall(dword0), RefLarge(buffer1)) => ubig::gcd_large_word(buffer1, dword0),
-            (RefLarge(buffer0), RefSmall(dword1)) => ubig::gcd_large_word(buffer0, dword1),
+            (RefSmall(dword0), RefLarge(buffer1)) => ubig::gcd_large_dword(buffer1, dword0),
+            (RefLarge(buffer0), RefSmall(dword1)) => ubig::gcd_large_dword(buffer0, dword1),
             (RefLarge(buffer0), RefLarge(buffer1)) => ubig::gcd_large(buffer0.into(), buffer1.into()),
         }
     }
@@ -45,11 +45,11 @@ impl UBig {
         match (self.clone().into_repr(), rhs.clone().into_repr()) {
             (Small(dword0), Small(dword1)) => {
                 let (g, s, t) = dword0.gcd_ext(dword1);
-                (UBig::from_word(g), s.into(), t.into())
+                (UBig::from(g), s.into(), t.into())
             }
-            (Large(buffer0), Small(dword1)) => ubig::extended_gcd_large_word(buffer0, dword1),
+            (Large(buffer0), Small(dword1)) => ubig::extended_gcd_large_dword(buffer0, dword1),
             (Small(dword0), Large(buffer1)) => {
-                let (g, s, t) = ubig::extended_gcd_large_word(buffer1, dword0);
+                let (g, s, t) = ubig::extended_gcd_large_dword(buffer1, dword0);
                 (g, t, s)
             }
             (Large(buffer0), Large(buffer1)) => ubig::extended_gcd_large(buffer0, buffer1),
@@ -62,37 +62,37 @@ mod ubig {
 
     /// Perform gcd on a large number with a `Word`.
     #[inline]
-    pub fn gcd_large_word(buffer: &[Word], rhs: Word) -> UBig {
+    pub fn gcd_large_dword(buffer: &[Word], rhs: DoubleWord) -> UBig {
         if rhs == 0 {
             let clone = Buffer::from(buffer);
             return clone.into();
         }
 
         // reduce the large number
-        let word = div::rem_by_word(buffer, rhs);
+        let word = div::rem_by_dword(buffer, rhs);
         if word == 0 {
-            return UBig::from_word(rhs);
+            return UBig::from(rhs);
         }
 
-        UBig::from_word(word.gcd(rhs))
+        UBig::from(word.gcd(rhs))
     }
 
     /// Perform extended gcd on a large number with a `Word`.
     #[inline]
-    pub fn extended_gcd_large_word(mut buffer: Buffer, rhs: Word) -> (UBig, IBig, IBig) {
+    pub fn extended_gcd_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> (UBig, IBig, IBig) {
         if rhs == 0 {
             return (buffer.into(), IBig::one(), IBig::zero());
         }
 
         // reduce the large number
-        let rem = div::div_by_word_in_place(&mut buffer, rhs);
+        let rem = div::div_by_dword_in_place(&mut buffer, rhs);
         if rem == 0 {
-            return (UBig::from_word(rhs), IBig::zero(), IBig::one());
+            return (UBig::from(rhs), IBig::zero(), IBig::one());
         }
 
         let (r, s, t) = rhs.gcd_ext(rem);
         let new_t = -t * IBig::from(UBig::from(buffer)) + s;
-        (UBig::from_word(r), IBig::from(t), new_t)
+        (UBig::from(r), IBig::from(t), new_t)
     }
 
     /// Perform gcd on two large numbers.

@@ -265,6 +265,16 @@ impl FastDivideNormalized2 {
         Self { divisor, m: Self::invert_double_word(divisor) }
     }
 
+    #[inline]
+    pub(crate) const fn div_rem_dword(&self, a: DoubleWord) -> (DoubleWord, DoubleWord) {
+        if a < self.divisor {
+            (0, a)
+        } else {
+            (1, a - self.divisor)
+        }
+    }
+
+    // TODO: refactor input as a_lo, a_hi
     /// The input a is arranged as (lo, mi & hi)
     /// The output is (a / divisor, a % divisor)
     pub(crate) const fn div_rem(&self, a: (Word, DoubleWord)) -> (Word, DoubleWord) {
@@ -296,19 +306,15 @@ impl FastDivideNormalized2 {
         (q1, r)
     }
 
-    // The following code could be when case double word is inlined in UBig
-    //
-    // /// Divdide a 4-word number with double word divisor
-    // /// 
-    // /// The input a is arranged as (lo, hi)
-    // /// The output is (a / divisor, a % divisor)
-    // pub fn div_rem_double(&self, a: (DoubleWord, DoubleWord)) -> (DoubleWord, DoubleWord) {
-    //     let (a01, a23) = a;
-    //     let (a0, a1) = split_double_word(a01);
-    //     let (q1, r1) = self.div_rem((a1, a23));
-    //     let (q0, r0) = self.div_rem((a0, r1));
-    //     (double_word(q0, q1), r0)
-    // }
+    /// Divdide a 4-word number with double word divisor
+    /// 
+    /// The output is (a / divisor, a % divisor)
+    pub fn div_rem_double(&self, a_lo: DoubleWord, a_hi: DoubleWord) -> (DoubleWord, DoubleWord) {
+        let (a0, a1) = split_dword(a_lo);
+        let (q1, r1) = self.div_rem((a1, a_hi));
+        let (q0, r0) = self.div_rem((a0, r1));
+        (double_word(q0, q1), r0)
+    }
 }
 
 #[cfg(test)]

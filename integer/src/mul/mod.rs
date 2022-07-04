@@ -41,6 +41,9 @@ pub(crate) fn mul_word_in_place(words: &mut [Word], rhs: Word) -> Word {
 /// Returns carry as a double word.
 #[must_use]
 pub(crate) fn mul_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleWord {
+    debug_assert!(rhs > Word::MAX as DoubleWord, "call mul_word_in_place when rhs is small");
+
+    // chunk the words into double words, and do 2by2 multiplications
     let mut dwords = words.chunks_exact_mut(2);
     let mut carry = 0;
     for chunk in &mut dwords {
@@ -52,8 +55,11 @@ pub(crate) fn mul_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleW
         *hi = new_hi;
         carry = new_carry;
     }
+
+    // there might be a single word left, do two 1by1 multiplications
     let r = dwords.into_remainder();
     if r.len() > 0 {
+        debug_assert!(r.len() == 1);
         let r0 = r.first_mut().unwrap();
         let (m_lo, m_hi) = split_dword(rhs);
         let (c_lo, c_hi) = split_dword(carry);
