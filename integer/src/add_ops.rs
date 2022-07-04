@@ -137,7 +137,7 @@ impl Add<&IBig> for IBig {
     #[inline]
     fn add(self, rhs: &IBig) -> IBig {
         let (sign0, mag0) = self.into_sign_repr();
-        let (sign1, mag1) = rhs.signed_repr();
+        let (sign1, mag1) = rhs.as_sign_repr();
         match (sign0, sign1) {
             (Positive, Positive) => IBig::from(ubig::add_repr_ref_val(mag1, mag0)),
             (Positive, Negative) => -ibig::sub_repr_ref_val(mag1, mag0),
@@ -161,8 +161,8 @@ impl Add<&IBig> for &IBig {
 
     #[inline]
     fn add(self, rhs: &IBig) -> IBig {
-        let (sign0, mag0) = self.signed_repr();
-        let (sign1, mag1) = rhs.signed_repr();
+        let (sign0, mag0) = self.as_sign_repr();
+        let (sign1, mag1) = rhs.as_sign_repr();
         match (sign0, sign1) {
             (Positive, Positive) => IBig::from(ubig::add_repr_ref_ref(mag0, mag1)),
             (Positive, Negative) => ibig::sub_repr_ref_ref(mag0, mag1),
@@ -218,8 +218,8 @@ impl Sub<&IBig> for &IBig {
 
     #[inline]
     fn sub(self, rhs: &IBig) -> IBig {
-        let (sign0, mag0) = self.signed_repr();
-        let (sign1, mag1) = rhs.signed_repr();
+        let (sign0, mag0) = self.as_sign_repr();
+        let (sign1, mag1) = rhs.as_sign_repr();
         match (sign0, sign1) {
             (Positive, Positive) => ibig::sub_repr_ref_ref(mag0, mag1),
             (Positive, Negative) => IBig::from(ubig::add_repr_ref_ref(mag0, mag1)),

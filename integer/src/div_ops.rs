@@ -26,13 +26,13 @@ impl Div<UBig> for UBig {
     fn div(self, rhs: UBig) -> UBig {
         match (self.into_repr(), rhs.into_repr()) {
             (Small(word0), Small(word1)) => UBig::div_word(word0, word1),
-            (Small(_), Large(_)) => UBig::from_word(0),
+            (Small(_), Large(_)) => UBig::zero(),
             (Large(buffer0), Small(word1)) => UBig::div_large_word(buffer0, word1),
             (Large(buffer0), Large(buffer1)) => {
                 if buffer0.len() >= buffer1.len() {
                     UBig::div_large(buffer0, buffer1)
                 } else {
-                    UBig::from_word(0)
+                    UBig::zero()
                 }
             }
         }
@@ -46,13 +46,13 @@ impl Div<&UBig> for UBig {
     fn div(self, rhs: &UBig) -> UBig {
         match (self.into_repr(), rhs.repr()) {
             (Small(word0), Small(word1)) => UBig::div_word(word0, *word1),
-            (Small(_), Large(_)) => UBig::from_word(0),
+            (Small(_), Large(_)) => UBig::zero(),
             (Large(buffer0), Small(word1)) => UBig::div_large_word(buffer0, *word1),
             (Large(buffer0), Large(buffer1)) => {
                 if buffer0.len() >= buffer1.len() {
                     UBig::div_large(buffer0, buffer1.clone())
                 } else {
-                    UBig::from_word(0)
+                    UBig::zero()
                 }
             }
         }
@@ -66,13 +66,13 @@ impl Div<UBig> for &UBig {
     fn div(self, rhs: UBig) -> UBig {
         match (self.repr(), rhs.into_repr()) {
             (Small(word0), Small(word1)) => UBig::div_word(*word0, word1),
-            (Small(_), Large(_)) => UBig::from_word(0),
+            (Small(_), Large(_)) => UBig::zero(),
             (Large(buffer0), Small(word1)) => UBig::div_large_word(buffer0.clone(), word1),
             (Large(buffer0), Large(buffer1)) => {
                 if buffer0.len() >= buffer1.len() {
                     UBig::div_large(buffer0.clone(), buffer1)
                 } else {
-                    UBig::from_word(0)
+                    UBig::zero()
                 }
             }
         }
@@ -86,13 +86,13 @@ impl Div<&UBig> for &UBig {
     fn div(self, rhs: &UBig) -> UBig {
         match (self.repr(), rhs.repr()) {
             (Small(word0), Small(word1)) => UBig::div_word(*word0, *word1),
-            (Small(_), Large(_)) => UBig::from_word(0),
+            (Small(_), Large(_)) => UBig::zero(),
             (Large(buffer0), Small(word1)) => UBig::div_large_word(buffer0.clone(), *word1),
             (Large(buffer0), Large(buffer1)) => {
                 if buffer0.len() >= buffer1.len() {
                     UBig::div_large(buffer0.clone(), buffer1.clone())
                 } else {
-                    UBig::from_word(0)
+                    UBig::zero()
                 }
             }
         }
@@ -217,13 +217,13 @@ impl DivRem<UBig> for UBig {
     fn div_rem(self, rhs: UBig) -> (UBig, UBig) {
         match (self.into_repr(), rhs.into_repr()) {
             (Small(word0), Small(word1)) => UBig::div_rem_word(word0, word1),
-            (Small(word0), Large(_)) => (UBig::from_word(0), UBig::from_word(word0)),
+            (Small(word0), Large(_)) => (UBig::zero(), UBig::from_word(word0)),
             (Large(buffer0), Small(word1)) => UBig::div_rem_large_word(buffer0, word1),
             (Large(buffer0), Large(buffer1)) => {
                 if buffer0.len() >= buffer1.len() {
                     UBig::div_rem_large(buffer0, buffer1)
                 } else {
-                    (UBig::from_word(0), buffer0.into())
+                    (UBig::zero(), buffer0.into())
                 }
             }
         }
@@ -238,13 +238,13 @@ impl DivRem<&UBig> for UBig {
     fn div_rem(self, rhs: &UBig) -> (UBig, UBig) {
         match (self.into_repr(), rhs.repr()) {
             (Small(word0), Small(word1)) => UBig::div_rem_word(word0, *word1),
-            (Small(word0), Large(_)) => (UBig::from_word(0), UBig::from_word(word0)),
+            (Small(word0), Large(_)) => (UBig::zero(), UBig::from_word(word0)),
             (Large(buffer0), Small(word1)) => UBig::div_rem_large_word(buffer0, *word1),
             (Large(buffer0), Large(buffer1)) => {
                 if buffer0.len() >= buffer1.len() {
                     UBig::div_rem_large(buffer0, buffer1.clone())
                 } else {
-                    (UBig::from_word(0), buffer0.into())
+                    (UBig::zero(), buffer0.into())
                 }
             }
         }
@@ -259,7 +259,7 @@ impl DivRem<UBig> for &UBig {
     fn div_rem(self, rhs: UBig) -> (UBig, UBig) {
         match (self.repr(), rhs.into_repr()) {
             (Small(word0), Small(word1)) => UBig::div_rem_word(*word0, word1),
-            (Small(word0), Large(_)) => (UBig::from_word(0), UBig::from_word(*word0)),
+            (Small(word0), Large(_)) => (UBig::zero(), UBig::from_word(*word0)),
             (Large(buffer0), Small(word1)) => UBig::div_rem_large_word(buffer0.clone(), word1),
             (Large(buffer0), Large(mut buffer1)) => {
                 if buffer0.len() >= buffer1.len() {
@@ -267,7 +267,7 @@ impl DivRem<UBig> for &UBig {
                 } else {
                     // Reuse buffer1 for the remainder.
                     buffer1.resizing_clone_from(buffer0);
-                    (UBig::from_word(0), buffer1.into())
+                    (UBig::zero(), buffer1.into())
                 }
             }
         }
@@ -282,13 +282,13 @@ impl DivRem<&UBig> for &UBig {
     fn div_rem(self, rhs: &UBig) -> (UBig, UBig) {
         match (self.repr(), rhs.repr()) {
             (Small(word0), Small(word1)) => UBig::div_rem_word(*word0, *word1),
-            (Small(word0), Large(_)) => (UBig::from_word(0), UBig::from_word(*word0)),
+            (Small(word0), Large(_)) => (UBig::zero(), UBig::from_word(*word0)),
             (Large(buffer0), Small(word1)) => UBig::div_rem_large_word(buffer0.clone(), *word1),
             (Large(buffer0), Large(buffer1)) => {
                 if buffer0.len() >= buffer1.len() {
                     UBig::div_rem_large(buffer0.clone(), buffer1.clone())
                 } else {
-                    (UBig::from_word(0), self.clone())
+                    (UBig::zero(), self.clone())
                 }
             }
         }

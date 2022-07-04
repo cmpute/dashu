@@ -2,24 +2,30 @@
 
 use crate::{
     arch::word::Word,
+    buffer::TypedReprRef::{self, *},
     ibig::IBig,
     sign::Sign::*,
-    ubig::{Repr::*, UBig},
+    ubig::UBig,
 };
 use core::cmp::Ordering;
+
+/// Compare two `Repr`s
+fn repr_cmp(lhs: TypedReprRef, rhs: TypedReprRef) -> Ordering {
+    match (lhs, rhs) {
+        (RefSmall(dword), RefSmall(other_dword)) => dword.cmp(&other_dword),
+        (RefSmall(_), RefLarge(_)) => Ordering::Less,
+        (RefLarge(_), RefSmall(_)) => Ordering::Greater,
+        (RefLarge(buffer), RefLarge(other_buffer)) => buffer
+            .len()
+            .cmp(&other_buffer.len())
+            .then_with(|| cmp_same_len(buffer, other_buffer)),
+    }
+}
 
 impl Ord for UBig {
     #[inline]
     fn cmp(&self, other: &UBig) -> Ordering {
-        match (self.repr(), other.repr()) {
-            (Small(word), Small(other_word)) => word.cmp(other_word),
-            (Small(_), Large(_)) => Ordering::Less,
-            (Large(_), Small(_)) => Ordering::Greater,
-            (Large(buffer), Large(other_buffer)) => buffer
-                .len()
-                .cmp(&other_buffer.len())
-                .then_with(|| cmp_same_len(buffer, other_buffer)),
-        }
+        repr_cmp(self.repr(), other.repr())
     }
 }
 
@@ -33,11 +39,13 @@ impl PartialOrd for UBig {
 impl Ord for IBig {
     #[inline]
     fn cmp(&self, other: &IBig) -> Ordering {
-        match (self.sign(), other.sign()) {
-            (Positive, Positive) => self.magnitude().cmp(other.magnitude()),
+        let (lhs_sign, lhs_mag) = self.as_sign_repr();
+        let (rhs_sign, rhs_mag) = other.as_sign_repr();
+        match (lhs_sign, rhs_sign) {
+            (Positive, Positive) => repr_cmp(lhs_mag, rhs_mag),
             (Positive, Negative) => Ordering::Greater,
             (Negative, Positive) => Ordering::Less,
-            (Negative, Negative) => other.magnitude().cmp(self.magnitude()),
+            (Negative, Negative) => repr_cmp(rhs_mag, lhs_mag),
         }
     }
 }
@@ -51,6 +59,6 @@ impl PartialOrd for IBig {
 
 /// Compare lhs with rhs as numbers.
 pub(crate) fn cmp_same_len(lhs: &[Word], rhs: &[Word]) -> Ordering {
-    assert!(lhs.len() == rhs.len());
+    debug_assert!(lhs.len() == rhs.len());
     lhs.iter().rev().cmp(rhs.iter().rev())
 }

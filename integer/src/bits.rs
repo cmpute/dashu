@@ -2,12 +2,12 @@
 
 use crate::{
     arch::word::{Word, DoubleWord},
-    buffer::{Buffer, TypedRepr::*, TypedReprRef::*},
+    buffer::{Buffer, TypedRepr::*, TypedReprRef::{*, self}},
     helper_macros,
     ibig::IBig,
     math,
     ops::{AndNot, PowerOfTwo, UnsignedAbs},
-    primitive::{double_word, PrimitiveSigned, PrimitiveUnsigned, WORD_BITS_USIZE, DWORD_BITS_USIZE, split_dword},
+    primitive::{double_word, WORD_BITS_USIZE, DWORD_BITS_USIZE, split_dword},
     sign::Sign::*,
     ubig::UBig,
 };
@@ -194,7 +194,7 @@ impl IBig {
     /// ```
     #[inline]
     pub fn trailing_zeros(&self) -> Option<usize> {
-        match self.signed_repr().1 {
+        match self.as_sign_repr().1 {
             RefSmall(0) => None,
             RefSmall(dword) => Some(dword.trailing_zeros() as usize),
             RefLarge(buffer) => Some(trailing_zeros(buffer)),
@@ -668,6 +668,9 @@ impl Not for &IBig {
     }
 }
 
+// TODO: implement ops in IBig with functions on repr instead of using unsigned_abs(), and try
+// to optimize intermediate operations.
+
 impl BitAnd<IBig> for IBig {
     type Output = IBig;
 
@@ -688,9 +691,9 @@ impl BitAnd<&IBig> for IBig {
     #[inline]
     fn bitand(self, rhs: &IBig) -> IBig {
         match (self.sign(), rhs.sign()) {
-            (Positive, Positive) => IBig::from(self.unsigned_abs() & rhs.magnitude()),
+            (Positive, Positive) => IBig::from(self.unsigned_abs() & rhs.unsigned_abs()),
             (Positive, Negative) => IBig::from(self.unsigned_abs().and_not((!rhs).unsigned_abs())),
-            (Negative, Positive) => IBig::from(rhs.magnitude().and_not((!self).unsigned_abs())),
+            (Negative, Positive) => IBig::from(rhs.unsigned_abs().and_not((!self).unsigned_abs())),
             (Negative, Negative) => !IBig::from((!self).unsigned_abs() | (!rhs).unsigned_abs()),
         }
     }
@@ -711,9 +714,9 @@ impl BitAnd<&IBig> for &IBig {
     #[inline]
     fn bitand(self, rhs: &IBig) -> IBig {
         match (self.sign(), rhs.sign()) {
-            (Positive, Positive) => IBig::from(self.magnitude() & rhs.magnitude()),
-            (Positive, Negative) => IBig::from(self.magnitude().and_not((!rhs).unsigned_abs())),
-            (Negative, Positive) => IBig::from(rhs.magnitude().and_not((!self).unsigned_abs())),
+            (Positive, Positive) => IBig::from(self.unsigned_abs() & rhs.unsigned_abs()),
+            (Positive, Negative) => IBig::from(self.unsigned_abs().and_not((!rhs).unsigned_abs())),
+            (Negative, Positive) => IBig::from(rhs.unsigned_abs().and_not((!self).unsigned_abs())),
             (Negative, Negative) => !IBig::from((!self).unsigned_abs() | (!rhs).unsigned_abs()),
         }
     }
@@ -753,9 +756,9 @@ impl BitOr<&IBig> for IBig {
     #[inline]
     fn bitor(self, rhs: &IBig) -> IBig {
         match (self.sign(), rhs.sign()) {
-            (Positive, Positive) => IBig::from(self.unsigned_abs() | rhs.magnitude()),
+            (Positive, Positive) => IBig::from(self.unsigned_abs() | rhs.unsigned_abs()),
             (Positive, Negative) => !IBig::from((!rhs).unsigned_abs().and_not(self.unsigned_abs())),
-            (Negative, Positive) => !IBig::from((!self).unsigned_abs().and_not(rhs.magnitude())),
+            (Negative, Positive) => !IBig::from((!self).unsigned_abs().and_not(rhs.unsigned_abs())),
             (Negative, Negative) => !IBig::from((!self).unsigned_abs() & (!rhs).unsigned_abs()),
         }
     }
@@ -776,9 +779,9 @@ impl BitOr<&IBig> for &IBig {
     #[inline]
     fn bitor(self, rhs: &IBig) -> IBig {
         match (self.sign(), rhs.sign()) {
-            (Positive, Positive) => IBig::from(self.magnitude() | rhs.magnitude()),
-            (Positive, Negative) => !IBig::from((!rhs).unsigned_abs().and_not(self.magnitude())),
-            (Negative, Positive) => !IBig::from((!self).unsigned_abs().and_not(rhs.magnitude())),
+            (Positive, Positive) => IBig::from(self.unsigned_abs() | rhs.unsigned_abs()),
+            (Positive, Negative) => !IBig::from((!rhs).unsigned_abs().and_not(self.unsigned_abs())),
+            (Negative, Positive) => !IBig::from((!self).unsigned_abs().and_not(rhs.unsigned_abs())),
             (Negative, Negative) => !IBig::from((!self).unsigned_abs() & (!rhs).unsigned_abs()),
         }
     }
@@ -818,9 +821,9 @@ impl BitXor<&IBig> for IBig {
     #[inline]
     fn bitxor(self, rhs: &IBig) -> IBig {
         match (self.sign(), rhs.sign()) {
-            (Positive, Positive) => IBig::from(self.unsigned_abs() ^ rhs.magnitude()),
+            (Positive, Positive) => IBig::from(self.unsigned_abs() ^ rhs.unsigned_abs()),
             (Positive, Negative) => !IBig::from(self.unsigned_abs() ^ (!rhs).unsigned_abs()),
-            (Negative, Positive) => !IBig::from((!self).unsigned_abs() ^ rhs.magnitude()),
+            (Negative, Positive) => !IBig::from((!self).unsigned_abs() ^ rhs.unsigned_abs()),
             (Negative, Negative) => IBig::from((!self).unsigned_abs() ^ (!rhs).unsigned_abs()),
         }
     }
@@ -841,9 +844,9 @@ impl BitXor<&IBig> for &IBig {
     #[inline]
     fn bitxor(self, rhs: &IBig) -> IBig {
         match (self.sign(), rhs.sign()) {
-            (Positive, Positive) => IBig::from(self.magnitude() ^ rhs.magnitude()),
-            (Positive, Negative) => !IBig::from(self.magnitude() ^ (!rhs).unsigned_abs()),
-            (Negative, Positive) => !IBig::from((!self).unsigned_abs() ^ rhs.magnitude()),
+            (Positive, Positive) => IBig::from(self.unsigned_abs() ^ rhs.unsigned_abs()),
+            (Positive, Negative) => !IBig::from(self.unsigned_abs() ^ (!rhs).unsigned_abs()),
+            (Negative, Positive) => !IBig::from((!self).unsigned_abs() ^ rhs.unsigned_abs()),
             (Negative, Negative) => IBig::from((!self).unsigned_abs() ^ (!rhs).unsigned_abs()),
         }
     }
@@ -885,9 +888,9 @@ impl AndNot<&IBig> for IBig {
     #[inline]
     fn and_not(self, rhs: &IBig) -> IBig {
         match (self.sign(), rhs.sign()) {
-            (Positive, Positive) => IBig::from(self.unsigned_abs().and_not(rhs.magnitude())),
+            (Positive, Positive) => IBig::from(self.unsigned_abs().and_not(rhs.unsigned_abs())),
             (Positive, Negative) => IBig::from(self.unsigned_abs() & (!rhs).unsigned_abs()),
-            (Negative, Positive) => !IBig::from((!self).unsigned_abs() | rhs.magnitude()),
+            (Negative, Positive) => !IBig::from((!self).unsigned_abs() | rhs.unsigned_abs()),
             (Negative, Negative) => {
                 IBig::from((!rhs).unsigned_abs().and_not((!self).unsigned_abs()))
             }
@@ -901,8 +904,8 @@ impl AndNot<IBig> for &IBig {
     #[inline]
     fn and_not(self, rhs: IBig) -> IBig {
         match (self.sign(), rhs.sign()) {
-            (Positive, Positive) => IBig::from(self.magnitude().and_not(rhs.unsigned_abs())),
-            (Positive, Negative) => IBig::from(self.magnitude() & (!rhs).unsigned_abs()),
+            (Positive, Positive) => IBig::from(self.unsigned_abs().and_not(rhs.unsigned_abs())),
+            (Positive, Negative) => IBig::from(self.unsigned_abs() & (!rhs).unsigned_abs()),
             (Negative, Positive) => !IBig::from((!self).unsigned_abs() | rhs.unsigned_abs()),
             (Negative, Negative) => {
                 IBig::from((!rhs).unsigned_abs().and_not((!self).unsigned_abs()))
@@ -917,34 +920,11 @@ impl AndNot<&IBig> for &IBig {
     #[inline]
     fn and_not(self, rhs: &IBig) -> IBig {
         match (self.sign(), rhs.sign()) {
-            (Positive, Positive) => IBig::from(self.magnitude().and_not(rhs.magnitude())),
-            (Positive, Negative) => IBig::from(self.magnitude() & (!rhs).unsigned_abs()),
-            (Negative, Positive) => !IBig::from((!self).unsigned_abs() | rhs.magnitude()),
+            (Positive, Positive) => IBig::from(self.unsigned_abs().and_not(rhs.unsigned_abs())),
+            (Positive, Negative) => IBig::from(self.unsigned_abs() & (!rhs).unsigned_abs()),
+            (Negative, Positive) => !IBig::from((!self).unsigned_abs() | rhs.unsigned_abs()),
             (Negative, Negative) => {
                 IBig::from((!rhs).unsigned_abs().and_not((!self).unsigned_abs()))
-            }
-        }
-    }
-}
-
-impl UBig {
-    /// low n bits or'd
-    #[inline]
-    pub(crate) fn are_low_bits_nonzero(&self, n: usize) -> bool {
-        match self.repr() {
-            RefSmall(dword) => {
-                let n = n.min(WORD_BITS_USIZE) as u32;
-                dword & math::ones_dword(n) != 0
-            }
-            RefLarge(buffer) => {
-                let n_words = n / WORD_BITS_USIZE;
-                if n_words >= buffer.len() {
-                    true
-                } else {
-                    let n_top = (n % WORD_BITS_USIZE) as u32;
-                    buffer[..n_words].iter().any(|x| *x != 0)
-                        || buffer[n_words] & math::ones_word(n_top) != 0
-                }
             }
         }
     }
@@ -957,7 +937,9 @@ macro_rules! impl_bit_ops_ubig_unsigned {
 
             #[inline]
             fn bitand(self, rhs: $t) -> $t {
-                self.bitand_unsigned(rhs)
+                self.bitand(UBig::from_unsigned(rhs))
+                    .try_to_unsigned()
+                    .unwrap()
             }
         }
 
@@ -966,7 +948,9 @@ macro_rules! impl_bit_ops_ubig_unsigned {
 
             #[inline]
             fn bitand(self, rhs: $t) -> $t {
-                self.bitand_ref_unsigned(rhs)
+                self.bitand(UBig::from_unsigned(rhs))
+                    .try_to_unsigned()
+                    .unwrap()
             }
         }
 
@@ -976,7 +960,7 @@ macro_rules! impl_bit_ops_ubig_unsigned {
         impl BitAndAssign<$t> for UBig {
             #[inline]
             fn bitand_assign(&mut self, rhs: $t) {
-                self.bitand_assign_unsigned(rhs)
+                self.bitand_assign(UBig::from_unsigned(rhs))
             }
         }
 
@@ -987,7 +971,7 @@ macro_rules! impl_bit_ops_ubig_unsigned {
 
             #[inline]
             fn bitor(self, rhs: $t) -> UBig {
-                self.bitor_unsigned(rhs)
+                self.bitor(UBig::from_unsigned(rhs))
             }
         }
 
@@ -996,7 +980,7 @@ macro_rules! impl_bit_ops_ubig_unsigned {
 
             #[inline]
             fn bitor(self, rhs: $t) -> UBig {
-                self.bitor_ref_unsigned(rhs)
+                self.bitor(UBig::from_unsigned(rhs))
             }
         }
 
@@ -1006,7 +990,7 @@ macro_rules! impl_bit_ops_ubig_unsigned {
         impl BitOrAssign<$t> for UBig {
             #[inline]
             fn bitor_assign(&mut self, rhs: $t) {
-                self.bitor_assign_unsigned(rhs)
+                self.bitor_assign(UBig::from_unsigned(rhs))
             }
         }
 
@@ -1017,7 +1001,7 @@ macro_rules! impl_bit_ops_ubig_unsigned {
 
             #[inline]
             fn bitxor(self, rhs: $t) -> UBig {
-                self.bitxor_unsigned(rhs)
+                self.bitxor(UBig::from_unsigned(rhs))
             }
         }
 
@@ -1026,7 +1010,7 @@ macro_rules! impl_bit_ops_ubig_unsigned {
 
             #[inline]
             fn bitxor(self, rhs: $t) -> UBig {
-                self.bitxor_ref_unsigned(rhs)
+                self.bitxor(UBig::from_unsigned(rhs))
             }
         }
 
@@ -1036,7 +1020,7 @@ macro_rules! impl_bit_ops_ubig_unsigned {
         impl BitXorAssign<$t> for UBig {
             #[inline]
             fn bitxor_assign(&mut self, rhs: $t) {
-                self.bitxor_assign_unsigned(rhs)
+                self.bitxor_assign(UBig::from_unsigned(rhs))
             }
         }
 
@@ -1047,7 +1031,7 @@ macro_rules! impl_bit_ops_ubig_unsigned {
 
             #[inline]
             fn and_not(self, rhs: $t) -> UBig {
-                self.and_not_unsigned(rhs)
+                self.and_not(UBig::from_unsigned(rhs))
             }
         }
 
@@ -1056,7 +1040,7 @@ macro_rules! impl_bit_ops_ubig_unsigned {
 
             #[inline]
             fn and_not(self, rhs: $t) -> UBig {
-                self.and_not_ref_unsigned(rhs)
+                self.and_not(UBig::from_unsigned(rhs))
             }
         }
 
@@ -1078,7 +1062,7 @@ macro_rules! impl_bit_ops_ubig_signed {
 
             #[inline]
             fn bitand(self, rhs: $t) -> UBig {
-                self.bitand_signed(rhs)
+                UBig::from_ibig(IBig::from(self) & IBig::from_signed(rhs))
             }
         }
 
@@ -1087,7 +1071,12 @@ macro_rules! impl_bit_ops_ubig_signed {
 
             #[inline]
             fn bitand(self, rhs: $t) -> UBig {
-                self.bitand_ref_signed(rhs)
+                // Avoid big copy if rhs positive.
+                let rhs_signed = IBig::from_signed(rhs);
+                match rhs_signed.sign() {
+                    Positive => self & rhs_signed.unsigned_abs(),
+                    Negative => UBig::from_ibig(IBig::from(self) & rhs_signed),
+                }
             }
         }
 
@@ -1097,7 +1086,7 @@ macro_rules! impl_bit_ops_ubig_signed {
         impl BitAndAssign<$t> for UBig {
             #[inline]
             fn bitand_assign(&mut self, rhs: $t) {
-                self.bitand_assign_signed(rhs)
+                *self = mem::take(self).bitand(rhs)
             }
         }
 
@@ -1108,7 +1097,7 @@ macro_rules! impl_bit_ops_ubig_signed {
 
             #[inline]
             fn bitor(self, rhs: $t) -> UBig {
-                self.bitor_signed(rhs)
+                UBig::from_ibig(IBig::from(self) | IBig::from_signed(rhs))
             }
         }
 
@@ -1117,7 +1106,7 @@ macro_rules! impl_bit_ops_ubig_signed {
 
             #[inline]
             fn bitor(self, rhs: $t) -> UBig {
-                self.bitor_ref_signed(rhs)
+                UBig::from_ibig(IBig::from(self) | IBig::from_signed(rhs))
             }
         }
 
@@ -1127,7 +1116,7 @@ macro_rules! impl_bit_ops_ubig_signed {
         impl BitOrAssign<$t> for UBig {
             #[inline]
             fn bitor_assign(&mut self, rhs: $t) {
-                self.bitor_assign_signed(rhs)
+                *self = mem::take(self).bitor(rhs)
             }
         }
 
@@ -1138,7 +1127,7 @@ macro_rules! impl_bit_ops_ubig_signed {
 
             #[inline]
             fn bitxor(self, rhs: $t) -> UBig {
-                self.bitxor_signed(rhs)
+                UBig::from_ibig(IBig::from(self) ^ IBig::from_signed(rhs))
             }
         }
 
@@ -1147,7 +1136,7 @@ macro_rules! impl_bit_ops_ubig_signed {
 
             #[inline]
             fn bitxor(self, rhs: $t) -> UBig {
-                self.bitxor_ref_signed(rhs)
+                UBig::from_ibig(IBig::from(self) ^ IBig::from_signed(rhs))
             }
         }
 
@@ -1157,7 +1146,7 @@ macro_rules! impl_bit_ops_ubig_signed {
         impl BitXorAssign<$t> for UBig {
             #[inline]
             fn bitxor_assign(&mut self, rhs: $t) {
-                self.bitxor_assign_signed(rhs)
+                *self = mem::take(self).bitxor(rhs)
             }
         }
 
@@ -1168,7 +1157,7 @@ macro_rules! impl_bit_ops_ubig_signed {
 
             #[inline]
             fn and_not(self, rhs: $t) -> UBig {
-                self.and_not_signed(rhs)
+                UBig::from_ibig(IBig::from(self).and_not(IBig::from_signed(rhs)))
             }
         }
 
@@ -1177,7 +1166,7 @@ macro_rules! impl_bit_ops_ubig_signed {
 
             #[inline]
             fn and_not(self, rhs: $t) -> UBig {
-                self.and_not_ref_signed(rhs)
+                UBig::from_ibig(IBig::from(self).and_not(IBig::from_signed(rhs)))
             }
         }
 
@@ -1199,7 +1188,9 @@ macro_rules! impl_bit_ops_ibig_unsigned {
 
             #[inline]
             fn bitand(self, rhs: $t) -> $t {
-                self.bitand_unsigned(rhs)
+                self.bitand(IBig::from_unsigned(rhs))
+                    .try_to_unsigned()
+                    .unwrap()
             }
         }
 
@@ -1208,7 +1199,9 @@ macro_rules! impl_bit_ops_ibig_unsigned {
 
             #[inline]
             fn bitand(self, rhs: $t) -> $t {
-                self.bitand_ref_unsigned(rhs)
+                self.bitand(IBig::from_unsigned(rhs))
+                    .try_to_unsigned()
+                    .unwrap()
             }
         }
     };
@@ -1228,7 +1221,7 @@ macro_rules! impl_bit_ops_ibig_signed {
 
             #[inline]
             fn bitand(self, rhs: $t) -> IBig {
-                self.bitand_signed(rhs)
+                self.bitand(IBig::from_signed(rhs))
             }
         }
 
@@ -1237,7 +1230,7 @@ macro_rules! impl_bit_ops_ibig_signed {
 
             #[inline]
             fn bitand(self, rhs: $t) -> IBig {
-                self.bitand_ref_signed(rhs)
+                self.bitand(IBig::from_signed(rhs))
             }
         }
     };
@@ -1258,7 +1251,7 @@ macro_rules! impl_bit_ops_ibig_primitive {
         impl BitAndAssign<$t> for IBig {
             #[inline]
             fn bitand_assign(&mut self, rhs: $t) {
-                self.bitand_assign_primitive(rhs)
+                self.bitand_assign(IBig::from(rhs))
             }
         }
 
@@ -1269,7 +1262,7 @@ macro_rules! impl_bit_ops_ibig_primitive {
 
             #[inline]
             fn bitor(self, rhs: $t) -> IBig {
-                self.bitor_primitive(rhs)
+                self.bitor(IBig::from(rhs))
             }
         }
 
@@ -1278,7 +1271,7 @@ macro_rules! impl_bit_ops_ibig_primitive {
 
             #[inline]
             fn bitor(self, rhs: $t) -> IBig {
-                self.bitor_ref_primitive(rhs)
+                self.bitor(IBig::from(rhs))
             }
         }
 
@@ -1288,7 +1281,7 @@ macro_rules! impl_bit_ops_ibig_primitive {
         impl BitOrAssign<$t> for IBig {
             #[inline]
             fn bitor_assign(&mut self, rhs: $t) {
-                self.bitor_assign_primitive(rhs)
+                self.bitor_assign(IBig::from(rhs))
             }
         }
 
@@ -1299,7 +1292,7 @@ macro_rules! impl_bit_ops_ibig_primitive {
 
             #[inline]
             fn bitxor(self, rhs: $t) -> IBig {
-                self.bitxor_primitive(rhs)
+                self.bitxor(IBig::from(rhs))
             }
         }
 
@@ -1308,7 +1301,7 @@ macro_rules! impl_bit_ops_ibig_primitive {
 
             #[inline]
             fn bitxor(self, rhs: $t) -> IBig {
-                self.bitxor_ref_primitive(rhs)
+                self.bitxor(IBig::from(rhs))
             }
         }
 
@@ -1318,7 +1311,7 @@ macro_rules! impl_bit_ops_ibig_primitive {
         impl BitXorAssign<$t> for IBig {
             #[inline]
             fn bitxor_assign(&mut self, rhs: $t) {
-                self.bitxor_assign_primitive(rhs)
+                self.bitxor_assign(IBig::from(rhs))
             }
         }
 
@@ -1329,7 +1322,7 @@ macro_rules! impl_bit_ops_ibig_primitive {
 
             #[inline]
             fn and_not(self, rhs: $t) -> IBig {
-                self.and_not_primitive(rhs)
+                self.and_not(IBig::from(rhs))
             }
         }
 
@@ -1338,7 +1331,7 @@ macro_rules! impl_bit_ops_ibig_primitive {
 
             #[inline]
             fn and_not(self, rhs: $t) -> IBig {
-                self.and_not_ref_primitive(rhs)
+                self.and_not(IBig::from(rhs))
             }
         }
 
@@ -1358,222 +1351,3 @@ impl_bit_ops_ibig_primitive!(i32);
 impl_bit_ops_ibig_primitive!(i64);
 impl_bit_ops_ibig_primitive!(i128);
 impl_bit_ops_ibig_primitive!(isize);
-
-impl UBig {
-    #[inline]
-    fn bitand_unsigned<T: PrimitiveUnsigned>(self, rhs: T) -> T {
-        self.bitand(UBig::from_unsigned(rhs))
-            .try_to_unsigned()
-            .unwrap()
-    }
-
-    #[inline]
-    fn bitand_ref_unsigned<T: PrimitiveUnsigned>(&self, rhs: T) -> T {
-        self.bitand(UBig::from_unsigned(rhs))
-            .try_to_unsigned()
-            .unwrap()
-    }
-
-    #[inline]
-    fn bitand_assign_unsigned<T: PrimitiveUnsigned>(&mut self, rhs: T) {
-        self.bitand_assign(UBig::from_unsigned(rhs))
-    }
-
-    #[inline]
-    fn bitor_unsigned<T: PrimitiveUnsigned>(self, rhs: T) -> UBig {
-        self.bitor(UBig::from_unsigned(rhs))
-    }
-
-    #[inline]
-    fn bitor_ref_unsigned<T: PrimitiveUnsigned>(&self, rhs: T) -> UBig {
-        self.bitor(UBig::from_unsigned(rhs))
-    }
-
-    #[inline]
-    fn bitor_assign_unsigned<T: PrimitiveUnsigned>(&mut self, rhs: T) {
-        self.bitor_assign(UBig::from_unsigned(rhs))
-    }
-
-    #[inline]
-    fn bitxor_unsigned<T: PrimitiveUnsigned>(self, rhs: T) -> UBig {
-        self.bitxor(UBig::from_unsigned(rhs))
-    }
-
-    #[inline]
-    fn bitxor_ref_unsigned<T: PrimitiveUnsigned>(&self, rhs: T) -> UBig {
-        self.bitxor(UBig::from_unsigned(rhs))
-    }
-
-    #[inline]
-    fn bitxor_assign_unsigned<T: PrimitiveUnsigned>(&mut self, rhs: T) {
-        self.bitxor_assign(UBig::from_unsigned(rhs))
-    }
-
-    #[inline]
-    fn and_not_unsigned<T: PrimitiveUnsigned>(self, rhs: T) -> UBig {
-        self.and_not(UBig::from_unsigned(rhs))
-    }
-
-    #[inline]
-    fn and_not_ref_unsigned<T: PrimitiveUnsigned>(&self, rhs: T) -> UBig {
-        self.and_not(UBig::from_unsigned(rhs))
-    }
-
-    #[inline]
-    fn bitand_signed<T: PrimitiveSigned>(self, rhs: T) -> UBig {
-        UBig::from_ibig(IBig::from(self) & IBig::from_signed(rhs))
-    }
-
-    #[inline]
-    fn bitand_ref_signed<T: PrimitiveSigned>(&self, rhs: T) -> UBig {
-        // Avoid big copy if rhs positive.
-        let rhs_signed = IBig::from_signed(rhs);
-        match rhs_signed.sign() {
-            Positive => self & rhs_signed.unsigned_abs(),
-            Negative => UBig::from_ibig(IBig::from(self) & rhs_signed),
-        }
-    }
-
-    #[inline]
-    fn bitand_assign_signed<T: PrimitiveSigned>(&mut self, rhs: T) {
-        *self = mem::take(self).bitand_signed(rhs)
-    }
-
-    #[inline]
-    fn bitor_signed<T: PrimitiveSigned>(self, rhs: T) -> UBig {
-        UBig::from_ibig(IBig::from(self) | IBig::from_signed(rhs))
-    }
-
-    #[inline]
-    fn bitor_ref_signed<T: PrimitiveSigned>(&self, rhs: T) -> UBig {
-        UBig::from_ibig(IBig::from(self) | IBig::from_signed(rhs))
-    }
-
-    #[inline]
-    fn bitor_assign_signed<T: PrimitiveSigned>(&mut self, rhs: T) {
-        *self = mem::take(self).bitor_signed(rhs)
-    }
-
-    #[inline]
-    fn bitxor_signed<T: PrimitiveSigned>(self, rhs: T) -> UBig {
-        UBig::from_ibig(IBig::from(self) ^ IBig::from_signed(rhs))
-    }
-
-    #[inline]
-    fn bitxor_ref_signed<T: PrimitiveSigned>(&self, rhs: T) -> UBig {
-        UBig::from_ibig(IBig::from(self) ^ IBig::from_signed(rhs))
-    }
-
-    #[inline]
-    fn bitxor_assign_signed<T: PrimitiveSigned>(&mut self, rhs: T) {
-        *self = mem::take(self).bitxor_signed(rhs)
-    }
-
-    #[inline]
-    fn and_not_signed<T: PrimitiveSigned>(self, rhs: T) -> UBig {
-        UBig::from_ibig(IBig::from(self).and_not(IBig::from_signed(rhs)))
-    }
-
-    #[inline]
-    fn and_not_ref_signed<T: PrimitiveSigned>(&self, rhs: T) -> UBig {
-        UBig::from_ibig(IBig::from(self).and_not(IBig::from_signed(rhs)))
-    }
-}
-
-impl IBig {
-    #[inline]
-    fn bitand_unsigned<T: PrimitiveUnsigned>(self, rhs: T) -> T {
-        self.bitand(IBig::from_unsigned(rhs))
-            .try_to_unsigned()
-            .unwrap()
-    }
-
-    #[inline]
-    fn bitand_ref_unsigned<T: PrimitiveUnsigned>(&self, rhs: T) -> T {
-        self.bitand(IBig::from_unsigned(rhs))
-            .try_to_unsigned()
-            .unwrap()
-    }
-
-    #[inline]
-    fn bitand_signed<T: PrimitiveSigned>(self, rhs: T) -> IBig {
-        self.bitand(IBig::from_signed(rhs))
-    }
-
-    #[inline]
-    fn bitand_ref_signed<T: PrimitiveSigned>(&self, rhs: T) -> IBig {
-        self.bitand(IBig::from_signed(rhs))
-    }
-
-    #[inline]
-    fn bitand_assign_primitive<T>(&mut self, rhs: T)
-    where
-        IBig: From<T>,
-    {
-        self.bitand_assign(IBig::from(rhs))
-    }
-
-    #[inline]
-    fn bitor_primitive<T>(self, rhs: T) -> IBig
-    where
-        IBig: From<T>,
-    {
-        self.bitor(IBig::from(rhs))
-    }
-
-    #[inline]
-    fn bitor_ref_primitive<T>(&self, rhs: T) -> IBig
-    where
-        IBig: From<T>,
-    {
-        self.bitor(IBig::from(rhs))
-    }
-
-    #[inline]
-    fn bitor_assign_primitive<T>(&mut self, rhs: T)
-    where
-        IBig: From<T>,
-    {
-        self.bitor_assign(IBig::from(rhs))
-    }
-
-    #[inline]
-    fn bitxor_primitive<T>(self, rhs: T) -> IBig
-    where
-        IBig: From<T>,
-    {
-        self.bitxor(IBig::from(rhs))
-    }
-
-    #[inline]
-    fn bitxor_ref_primitive<T>(&self, rhs: T) -> IBig
-    where
-        IBig: From<T>,
-    {
-        self.bitxor(IBig::from(rhs))
-    }
-
-    #[inline]
-    fn bitxor_assign_primitive<T>(&mut self, rhs: T)
-    where
-        IBig: From<T>,
-    {
-        self.bitxor_assign(IBig::from(rhs))
-    }
-
-    #[inline]
-    fn and_not_primitive<T>(self, rhs: T) -> IBig
-    where
-        IBig: From<T>,
-    {
-        self.and_not(IBig::from(rhs))
-    }
-
-    #[inline]
-    fn and_not_ref_primitive<T>(&self, rhs: T) -> IBig
-    where
-        IBig: From<T>,
-    {
-        self.and_not(IBig::from(rhs))
-    }
-}

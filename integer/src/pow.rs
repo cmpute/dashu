@@ -3,8 +3,9 @@
 use crate::{
     ibig::IBig,
     primitive::PrimitiveUnsigned,
+    buffer::TypedReprRef::*,
     sign::Sign::*,
-    ubig::{Repr::*, UBig},
+    ubig::UBig,
 };
 
 impl UBig {
@@ -19,16 +20,16 @@ impl UBig {
     #[inline]
     pub fn pow(&self, exp: usize) -> UBig {
         match exp {
-            0 => return UBig::from_word(1),
+            0 => return UBig::one(),
             1 => return self.clone(),
             2 => return self * self,
             _ => {}
         }
         match self.repr() {
-            Small(0) => return UBig::from_word(0),
-            Small(1) => return UBig::from_word(1),
-            Small(2) => {
-                let mut x = UBig::from_word(0);
+            RefSmall(0) => return UBig::zero(),
+            RefSmall(1) => return UBig::one(),
+            RefSmall(2) => {
+                let mut x = UBig::zero();
                 x.set_bit(exp);
                 return x;
             }

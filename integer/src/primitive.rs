@@ -36,7 +36,7 @@ where
     Self: Debug,
     Self: Default,
     Self: From<u8>,
-    Self: TryFrom<Word>,
+    Self: TryFrom<DoubleWord>,
     Self: TryInto<Word>,
     Self: TryInto<usize>,
     Self: Eq,
@@ -60,7 +60,7 @@ where
 pub(crate) trait PrimitiveSigned
 where
     Self: Copy,
-    Self: TryFrom<Word>,
+    Self: TryFrom<DoubleWord>,
     Self::Unsigned: PrimitiveUnsigned,
     Self::Unsigned: TryFrom<Self>,
     Self::Unsigned: TryInto<Self>,

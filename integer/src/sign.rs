@@ -2,6 +2,7 @@
 
 use crate::{
     ibig::IBig,
+    buffer::TypedReprRef::RefSmall,
     ops::{Abs, UnsignedAbs},
     ubig::UBig,
 };
@@ -42,16 +43,14 @@ impl IBig {
     /// ```
     #[inline]
     pub fn signum(&self) -> IBig {
-        match self.sign() {
-            Positive => {
-                // TODO: obselete magnitude() and implement is_zero for repr
-                if *self.magnitude() == UBig::from_word(0) {
-                    IBig::from(0u8)
-                } else {
-                    IBig::from(1u8)
-                }
+        let (sign, repr) = self.as_sign_repr();
+        if let RefSmall(0) = repr {
+            IBig::zero()
+        } else {
+            match sign {
+                Positive => IBig::one(),
+                Negative => IBig::neg_one(),
             }
-            Negative => IBig::from(-1i8),
         }
     }
 }

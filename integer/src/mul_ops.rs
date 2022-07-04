@@ -298,7 +298,7 @@ impl UBig {
     /// Multiply a large number by a `Word`.
     fn mul_large_word(mut buffer: Buffer, a: Word) -> UBig {
         match a {
-            0 => UBig::from_word(0),
+            0 => UBig::zero(),
             1 => buffer.into(),
             _ => {
                 let carry = mul::mul_word_in_place(&mut buffer, a);

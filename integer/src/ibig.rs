@@ -27,7 +27,7 @@ pub struct IBig(pub(crate) Repr);
 
 impl IBig {
     #[inline]
-    pub(crate) fn signed_repr(&self) -> (Sign, TypedReprRef<'_>) {
+    pub(crate) fn as_sign_repr(&self) -> (Sign, TypedReprRef<'_>) {
         self.0.as_sign_typed()
     }
 
@@ -38,7 +38,7 @@ impl IBig {
 
     #[inline]
     pub(crate) fn from_sign_magnitude(sign: Sign, mut magnitude: UBig) -> IBig {
-        if magnitude != UBig::from_word(0) { // TODO: specialize is_zero
+        if magnitude != UBig::zero() { // TODO: specialize is_zero
             magnitude.0.set_sign(sign)
         }
         IBig(magnitude.0)
@@ -46,16 +46,48 @@ impl IBig {
 
     #[inline]
     pub(crate) fn sign(&self) -> Sign {
-        unimplemented!()
+        self.0.sign()
     }
 
     #[inline]
     pub(crate) fn magnitude(&self) -> &UBig {
-        unimplemented!()
+        // TODO: obselete
+        unreachable!()
     }
 
     #[inline]
     pub(crate) fn into_sign_magnitude(self) -> (Sign, UBig) {
-        unimplemented!()
+        let repr = self.0;
+        let sign = repr.sign();
+        repr.set_sign(Sign::Positive);
+        (sign, UBig(repr))
+    }
+
+    /// Create an IBig with value 0
+    pub fn zero() -> Self {
+        IBig(Repr::zero())
+    }
+
+    /// Create an IBig with value 1
+    pub fn one() -> Self {
+        IBig(Repr::one())
+    }
+
+    /// Create an IBig with value -1
+    pub fn neg_one() -> IBig {
+        IBig(Repr::neg_one())
+    }
+}
+
+// This custom implementation is necessary due to https://github.com/rust-lang/rust/issues/98374
+impl Clone for IBig {
+    #[inline]
+    fn clone(&self) -> IBig {
+        IBig(self.0.clone())
+    }
+
+    #[inline]
+    fn clone_from(&mut self, source: &IBig) {
+        self.0.clone_from(&source.0)
     }
 }

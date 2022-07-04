@@ -1,13 +1,13 @@
 //! Bit shift operators.
 
 use crate::{
-    arch::word::Word,
-    buffer::Buffer,
+    arch::word::{Word, DoubleWord},
+    buffer::{Buffer, TypedRepr::*, TypedReprRef::*},
     ibig::IBig,
-    primitive::{double_word, extend_word, split_dword, WORD_BITS_USIZE},
+    primitive::{double_word, extend_word, split_dword, WORD_BITS_USIZE, DWORD_BITS_USIZE},
     shift,
     sign::Sign::*,
-    ubig::{Repr::*, UBig},
+    ubig::UBig,
 };
 use core::{
     mem,
@@ -90,11 +90,7 @@ impl Shl<usize> for UBig {
 
     #[inline]
     fn shl(self, rhs: usize) -> UBig {
-        match self.into_repr() {
-            Small(0) => UBig::from_word(0),
-            Small(word) => UBig::shl_word(word, rhs),
-            Large(buffer) => UBig::shl_large(buffer, rhs),
-        }
+        ubig::shl_repr_val(self.into_repr(), rhs)
     }
 }
 
@@ -103,11 +99,7 @@ impl Shl<usize> for &UBig {
 
     #[inline]
     fn shl(self, rhs: usize) -> UBig {
-        match self.repr() {
-            Small(0) => UBig::from_word(0),
-            Small(word) => UBig::shl_word(*word, rhs),
-            Large(buffer) => UBig::shl_ref_large(buffer, rhs),
-        }
+        ubig::shl_repr_ref(self.repr(), rhs)
     }
 }
 
@@ -116,10 +108,7 @@ impl Shr<usize> for UBig {
 
     #[inline]
     fn shr(self, rhs: usize) -> UBig {
-        match self.into_repr() {
-            Small(word) => UBig::shr_word(word, rhs),
-            Large(buffer) => UBig::shr_large(buffer, rhs),
-        }
+        ubig::shr_repr_val(self.into_repr(), rhs)
     }
 }
 
@@ -128,10 +117,7 @@ impl Shr<usize> for &UBig {
 
     #[inline]
     fn shr(self, rhs: usize) -> UBig {
-        match self.repr() {
-            Small(word) => UBig::shr_word(*word, rhs),
-            Large(buffer) => UBig::shr_large_ref(buffer, rhs),
-        }
+        ubig::shr_repr_ref(self.repr(), rhs)
     }
 }
 
@@ -140,8 +126,8 @@ impl Shl<usize> for IBig {
 
     #[inline]
     fn shl(self, rhs: usize) -> IBig {
-        let (sign, mag) = self.into_sign_magnitude();
-        IBig::from_sign_magnitude(sign, mag.shl(rhs))
+        let (sign, mag) = self.into_sign_repr();
+        IBig::from_sign_magnitude(sign, ubig::shl_repr_val(mag, rhs))
     }
 }
 
@@ -150,8 +136,8 @@ impl Shl<usize> for &IBig {
 
     #[inline]
     fn shl(self, rhs: usize) -> IBig {
-        let (sign, mag) = (self.sign(), self.magnitude());
-        IBig::from_sign_magnitude(sign, mag.shl(rhs))
+        let (sign, mag) = self.as_sign_repr();
+        IBig::from_sign_magnitude(sign, ubig::shl_repr_ref(mag, rhs))
     }
 }
 
@@ -160,12 +146,12 @@ impl Shr<usize> for IBig {
 
     #[inline]
     fn shr(self, rhs: usize) -> IBig {
-        let (sign, mag) = self.into_sign_magnitude();
+        let (sign, mag) = self.into_sign_repr();
         match sign {
-            Positive => IBig::from(mag.shr(rhs)),
+            Positive => IBig::from(ubig::shr_repr_val(mag, rhs)),
             Negative => {
                 let b = mag.are_low_bits_nonzero(rhs);
-                -IBig::from(mag.shr(rhs)) - IBig::from(b)
+                -IBig::from(ubig::shr_repr_val(mag, rhs)) - IBig::from(b)
             }
         }
     }
@@ -176,49 +162,91 @@ impl Shr<usize> for &IBig {
 
     #[inline]
     fn shr(self, rhs: usize) -> IBig {
-        let (sign, mag) = (self.sign(), self.magnitude());
+        let (sign, mag) = self.as_sign_repr();
         match sign {
-            Positive => IBig::from(mag.shr(rhs)),
+            Positive => IBig::from(ubig::shr_repr_ref(mag, rhs)),
             Negative => {
                 let b = mag.are_low_bits_nonzero(rhs);
-                -IBig::from(mag.shr(rhs)) - IBig::from(b)
+                -IBig::from(ubig::shr_repr_ref(mag, rhs)) - IBig::from(b)
             }
         }
     }
 }
 
-impl UBig {
-    /// Shift left one non-zero `Word` by `rhs` bits.
-    // TODO: specialize the case where word == 1 using set_bit?
-    #[inline]
-    fn shl_word(word: Word, rhs: usize) -> UBig {
-        debug_assert!(word != 0);
+mod ubig {
+    use crate::buffer::{TypedReprRef, TypedRepr};
 
-        if rhs <= WORD_BITS_USIZE {
-            UBig::from(extend_word(word) << rhs)
-        } else {
-            UBig::shl_word_slow(word, rhs)
+    use super::*;
+
+    #[inline]
+    pub fn shl_repr_val(repr: TypedRepr, rhs: usize) -> UBig {
+        match repr {
+            Small(0) => UBig::zero(),
+            Small(dword) => shl_dword(dword, rhs),
+            Large(buffer) => shl_large(buffer, rhs),
         }
     }
 
-    /// Shift left one non-zero `Word` by `rhs` bits.
-    fn shl_word_slow(word: Word, rhs: usize) -> UBig {
+    #[inline]
+    pub fn shl_repr_ref(repr: TypedReprRef, rhs: usize) -> UBig {
+        match repr {
+            RefSmall(0) => UBig::zero(),
+            RefSmall(dword) => shl_dword(dword, rhs),
+            RefLarge(buffer) => shl_ref_large(buffer, rhs),
+        }
+    }
+
+    #[inline]
+    pub fn shr_repr_val(repr: TypedRepr, rhs: usize) -> UBig {
+        match repr {
+            Small(dword) => shr_dword(dword, rhs),
+            Large(buffer) => shr_large(buffer, rhs),
+        }
+    }
+
+    #[inline]
+    pub fn shr_repr_ref(repr: TypedReprRef, rhs: usize) -> UBig {
+        match repr {
+            RefSmall(dword) => shr_dword(dword, rhs),
+            RefLarge(buffer) => shr_large_ref(buffer, rhs),
+        }
+    }
+
+    /// Shift left a non-zero `DoubleWord` by `rhs` bits.
+    // TODO: specialize the case where word == 1 using set_bit?
+    #[inline]
+    pub fn shl_dword(dword: DoubleWord, rhs: usize) -> UBig {
+        debug_assert!(dword != 0);
+
+        if rhs <= dword.leading_zeros() as usize {
+            UBig::from(dword << rhs)
+        } else {
+            shl_dword_slow(dword, rhs)
+        }
+    }
+
+    /// Shift left a non-zero `DoubleWord` by `rhs` bits.
+    pub fn shl_dword_slow(dword: DoubleWord, rhs: usize) -> UBig {
         let shift_words = rhs / WORD_BITS_USIZE;
         let shift_bits = (rhs % WORD_BITS_USIZE) as u32;
-        let (lo, hi) = split_dword(extend_word(word) << shift_bits);
-        let mut buffer = Buffer::allocate(shift_words + 2);
+
+        let (lo, hi) = split_dword(dword);
+        let (n0, carry) = split_dword(extend_word(lo) << shift_bits);
+        let (n1, n2) = split_dword((extend_word(hi) << shift_bits) | carry as u128);
+        let mut buffer = Buffer::allocate(shift_words + 3);
         buffer.push_zeros(shift_words);
-        buffer.push(lo);
-        buffer.push(hi);
+        buffer.push(n0);
+        buffer.push(n1);
+        buffer.push(n2);
         buffer.into()
     }
 
     /// Shift left `buffer` by `rhs` bits.
-    fn shl_large(mut buffer: Buffer, rhs: usize) -> UBig {
+    pub fn shl_large(mut buffer: Buffer, rhs: usize) -> UBig {
         let shift_words = rhs / WORD_BITS_USIZE;
 
         if buffer.capacity() < buffer.len() + shift_words + 1 {
-            return UBig::shl_ref_large(&buffer, rhs);
+            return shl_ref_large(&buffer, rhs);
         }
 
         let shift_bits = (rhs % WORD_BITS_USIZE) as u32;
@@ -229,7 +257,7 @@ impl UBig {
     }
 
     /// Shift left large number of words by `rhs` bits.
-    fn shl_ref_large(words: &[Word], rhs: usize) -> UBig {
+    pub fn shl_ref_large(words: &[Word], rhs: usize) -> UBig {
         let shift_words = rhs / WORD_BITS_USIZE;
         let shift_bits = (rhs % WORD_BITS_USIZE) as u32;
 
@@ -241,22 +269,22 @@ impl UBig {
         buffer.into()
     }
 
-    /// Shift right one `Word` by `rhs` bits.
+    /// Shift right one `DoubleWord` by `rhs` bits.
     #[inline]
-    fn shr_word(word: Word, rhs: usize) -> UBig {
-        let word = if rhs < WORD_BITS_USIZE {
-            word >> rhs
+    pub fn shr_dword(dword: DoubleWord, rhs: usize) -> UBig {
+        let dword = if rhs < DWORD_BITS_USIZE {
+            dword >> rhs
         } else {
             0
         };
-        UBig::from_word(word)
+        dword.into()
     }
 
     /// Shift right `buffer` by `rhs` bits.
-    fn shr_large(mut buffer: Buffer, rhs: usize) -> UBig {
+    pub fn shr_large(mut buffer: Buffer, rhs: usize) -> UBig {
         let shift_words = rhs / WORD_BITS_USIZE;
         if shift_words >= buffer.len() {
-            return UBig::from_word(0);
+            return UBig::zero();
         }
         let shift_bits = (rhs % WORD_BITS_USIZE) as u32;
         buffer.erase_front(shift_words);
@@ -265,15 +293,15 @@ impl UBig {
     }
 
     /// Shift right large number of words by `rhs` bits.
-    fn shr_large_ref(words: &[Word], rhs: usize) -> UBig {
+    pub fn shr_large_ref(words: &[Word], rhs: usize) -> UBig {
         let shift_words = rhs / WORD_BITS_USIZE;
         let shift_bits = (rhs % WORD_BITS_USIZE) as u32;
 
         let words = &words[shift_words.min(words.len())..];
 
         match words {
-            [] => UBig::from_word(0),
-            &[w] => UBig::from_word(w >> shift_bits),
+            [] => UBig::zero(),
+            &[w] => UBig::from(w >> shift_bits),
             &[lo, hi] => UBig::from(double_word(lo, hi) >> shift_bits),
             _ => {
                 let mut buffer = Buffer::allocate(words.len());

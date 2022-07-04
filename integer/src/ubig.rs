@@ -58,6 +58,16 @@ impl UBig {
         self.0.capacity()
     }
 
+    /// Create an IBig with value 0
+    pub fn zero() -> Self {
+        UBig(Repr::zero())
+    }
+
+    /// Create an IBig with value 1
+    pub fn one() -> Self {
+        UBig(Repr::one())
+    }
+
     /// Representation in Words.
     #[inline]
     pub(crate) fn as_words(&self) -> &[Word] {
@@ -137,7 +147,7 @@ mod tests {
     fn test_buffer_to_ubig() {
         let buf = Buffer::allocate(5);
         let num: UBig = buf.into();
-        assert_eq!(num, UBig::from_word(0));
+        assert_eq!(num, UBig::zero());
 
         let mut buf = Buffer::allocate(5);
         buf.push(7);

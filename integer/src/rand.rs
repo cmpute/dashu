@@ -2,10 +2,10 @@
 
 use crate::{
     arch::word::Word,
-    buffer::Buffer,
+    buffer::{Buffer, TypedReprRef::*},
     ibig::IBig,
     ops::UnsignedAbs,
-    ubig::{Repr::*, UBig},
+    ubig::UBig,
 };
 
 use rand::{
@@ -28,11 +28,11 @@ impl UBig {
     where
         R: Rng + ?Sized,
     {
-        debug_assert!(*range != UBig::from_word(0));
+        debug_assert!(*range != UBig::zero());
 
         match range.repr() {
-            Small(word) => UBig::from_word(rng.gen_range(0..*word)),
-            Large(buffer) => UBig::uniform_large(buffer, rng),
+            RefSmall(dword) => UBig::from(rng.gen_range(0..dword)),
+            RefLarge(buffer) => UBig::uniform_large(buffer, rng),
         }
     }
 
@@ -105,7 +105,7 @@ impl UniformSampler for UniformUBig {
         B2: SampleBorrow<UBig>,
     {
         let range = high.borrow() - low.borrow();
-        if range == UBig::from_word(0) {
+        if range == UBig::zero() {
             panic!("Empty range");
         }
         UniformUBig {
@@ -120,7 +120,7 @@ impl UniformSampler for UniformUBig {
         B1: SampleBorrow<UBig>,
         B2: SampleBorrow<UBig>,
     {
-        let range = high.borrow() - low.borrow() + UBig::from_word(1);
+        let range = high.borrow() - low.borrow() + UBig::one();
         UniformUBig {
             range,
             offset: low.borrow().clone(),
@@ -163,7 +163,7 @@ impl UniformSampler for UniformIBig {
         B2: SampleBorrow<IBig>,
     {
         let range = high.borrow() - low.borrow();
-        if range <= IBig::from(0u8) {
+        if range <= IBig::zero() {
             panic!("Empty range");
         }
         UniformIBig {
@@ -179,7 +179,7 @@ impl UniformSampler for UniformIBig {
         B2: SampleBorrow<IBig>,
     {
         let range = high.borrow() - low.borrow() + IBig::from(1u8);
-        if range <= IBig::from(0u8) {
+        if range <= IBig::zero() {
             panic!("Empty range");
         }
         UniformIBig {

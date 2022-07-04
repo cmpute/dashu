@@ -16,7 +16,7 @@ impl Default for UBig {
     /// Default value: 0.
     #[inline]
     fn default() -> UBig {
-        UBig::from_word(0)
+        UBig::zero()
     }
 }
 
@@ -24,7 +24,7 @@ impl Default for IBig {
     /// Default value: 0.
     #[inline]
     fn default() -> IBig {
-        IBig::from(0u8)
+        IBig::zero()
     }
 }
 
@@ -166,7 +166,7 @@ impl UBig {
     #[inline]
     pub fn to_f32(&self) -> f32 {
         match self.repr() {
-            RefSmall(word) => *word as f32,
+            RefSmall(dword) => dword as f32,
             RefLarge(_) => match u32::try_from(self) {
                 Ok(val) => val as f32,
                 Err(_) => self.to_f32_slow(),
@@ -190,7 +190,7 @@ impl UBig {
             let value = ((exponent + 126) << 23) + mantissa;
 
             // Calculate round-to-even adjustment.
-            let extra_bit = self.are_low_bits_nonzero(n - 25);
+            let extra_bit = self.repr().are_low_bits_nonzero(n - 25);
             // low bit of mantissa and two extra bits
             let low_bits = ((mantissa25 & 0b11) << 1) | u32::from(extra_bit);
             let adjustment = round_to_even_adjustment(low_bits);
@@ -217,7 +217,7 @@ impl UBig {
     #[inline]
     pub fn to_f64(&self) -> f64 {
         match self.repr() {
-            RefSmall(word) => *word as f64,
+            RefSmall(dword) => dword as f64,
             RefLarge(_) => match u64::try_from(self) {
                 Ok(val) => val as f64,
                 Err(_) => self.to_f64_slow(),
@@ -241,7 +241,7 @@ impl UBig {
             let value = ((exponent + 1022) << 52) + mantissa;
 
             // Calculate round-to-even adjustment.
-            let extra_bit = self.are_low_bits_nonzero(n - 54);
+            let extra_bit = self.repr().are_low_bits_nonzero(n - 54);
             // low bit of mantissa and two extra bits
             let low_bits = (((mantissa54 & 0b11) as u32) << 1) | u32::from(extra_bit);
             let adjustment = round_to_even_adjustment(low_bits);
@@ -536,10 +536,7 @@ impl UBig {
         T: PrimitiveUnsigned,
     {
         match self.repr() {
-            RefSmall(w) => match T::try_from(w) {
-                Ok(val) => Ok(val),
-                Err(_) => Err(OutOfBoundsError),
-            },
+            RefSmall(dw) => T::try_from(dw).map_err(|_| OutOfBoundsError),
             RefLarge(buffer) => unsigned_from_words(buffer),
         }
     }
@@ -551,7 +548,7 @@ impl UBig {
         T: PrimitiveSigned,
     {
         match self.repr() {
-            RefSmall(w) => T::try_from(w).map_err(|_| OutOfBoundsError),
+            RefSmall(dw) => T::try_from(dw).map_err(|_| OutOfBoundsError),
             RefLarge(buffer) => {
                 let u: T::Unsigned = unsigned_from_words(buffer)?;
                 u.try_into().map_err(|_| OutOfBoundsError)

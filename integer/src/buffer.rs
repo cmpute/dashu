@@ -62,12 +62,13 @@ pub(crate) struct Buffer {
 }
 const_assert_eq!(mem::size_of::<Buffer>(), mem::size_of::<Repr>());
 
-
+/// A strong typed safe representation of a `Repr` without sign
 pub(crate) enum TypedRepr {
     Small(DoubleWord),
     Large(Buffer)
 }
 
+/// A strong typed safe representation of a reference to `Repr` without sign
 pub(crate) enum TypedReprRef<'a> {
     RefSmall(DoubleWord),
     RefLarge(&'a [Word])
@@ -624,6 +625,24 @@ impl Repr {
         result.set_sign(sign);
         result
     }
+
+    /// Creates a `Repr` with value 0
+    #[inline]
+    pub(crate) const fn zero() -> Self {
+        Repr { capacity: NonZeroIsize::new(1).unwrap(), data: ReprData { inline: [0, 0] }}
+    }
+
+    /// Creates a `Repr` with value 1
+    #[inline]
+    pub(crate) const fn one() -> Self {
+        Repr { capacity: NonZeroIsize::new(1).unwrap(), data: ReprData { inline: [1, 0] }}
+    }
+
+    /// Creates a `Repr` with value -1
+    #[inline]
+    pub(crate) const fn neg_one() -> Self {
+        Repr { capacity: NonZeroIsize::new(-1).unwrap(), data: ReprData { inline: [1, 0] }}
+    }
 }
 
 
@@ -730,6 +749,50 @@ impl Hash for Repr {
         let (sign, arr) = self.as_sign_slice();
         sign.hash(state);
         (*arr).hash(state);
+    }
+}
+
+pub mod repr_utils {
+    use super::*;
+    use crate::math;
+
+    #[inline]
+    fn are_dword_low_bits_nonzero(dword: &DoubleWord, n: usize) -> bool {
+        let n = n.min(WORD_BITS_USIZE) as u32;
+        dword & math::ones_dword(n) != 0
+    }
+
+    fn are_slice_low_bits_nonzero(words: &[Word], n: usize) -> bool {
+        let n_words = n / WORD_BITS_USIZE;
+        if n_words >= words.len() {
+            true
+        } else {
+            let n_top = (n % WORD_BITS_USIZE) as u32;
+            words[..n_words].iter().any(|x| *x != 0)
+                || words[n_words] & math::ones_word(n_top) != 0
+        }
+    }
+
+    impl TypedRepr {
+        /// Check if low n-bits are not all zeros
+        #[inline]
+        pub(crate) fn are_low_bits_nonzero(&self, n: usize) -> bool {
+            match self {
+                Self::Small(dword) => are_dword_low_bits_nonzero(dword, n),
+                Self::Large(buffer) => are_slice_low_bits_nonzero(buffer, n)
+            }
+        }
+    }
+    
+    impl<'a> TypedReprRef<'a> {
+        /// Check if low n-bits are not all zeros
+        #[inline]
+        pub(crate) fn are_low_bits_nonzero(&self, n: usize) -> bool {
+            match self {
+                Self::RefSmall(dword) => are_dword_low_bits_nonzero(dword, n),
+                Self::RefLarge(buffer) => are_slice_low_bits_nonzero(buffer, n)
+            }
+        }
     }
 }
 
@@ -907,7 +970,7 @@ mod tests {
         for i in 0..4 {
             buf2.push(i);
         }
-        buf.resizing_clone_from(&buf2);
+        buf.clone_from(&buf2);
         assert_eq!(buf.capacity(), 7);
         assert_eq!(&buf[..], [0, 1, 2, 3]);
 
@@ -915,11 +978,11 @@ mod tests {
         for i in 0..100 {
             buf3.push(i);
         }
-        buf.resizing_clone_from(&buf3);
+        buf.clone_from(&buf3);
         assert_eq!(buf.capacity(), Buffer::default_capacity(100));
         assert_eq!(buf.len(), 100);
 
-        buf.resizing_clone_from(&buf2);
+        buf.clone_from(&buf2);
         assert_eq!(buf.capacity(), 6);
         assert_eq!(&buf[..], [0, 1, 2, 3]);
     }

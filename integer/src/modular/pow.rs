@@ -72,7 +72,7 @@ impl<'a> ModuloSmall<'a> {
     fn pow(&self, exp: &UBig) -> ModuloSmall<'a> {
         match exp.repr() {
             // self^0 == 1
-            Small(0) => ModuloSmall::from_ubig(&UBig::from_word(1), self.ring()),
+            Small(0) => ModuloSmall::from_ubig(&UBig::one(), self.ring()),
             // self^1 == self
             Small(1) => self.clone(),
             // self^2 == self * self
@@ -102,7 +102,7 @@ impl<'a> ModuloLarge<'a> {
     fn pow(&self, exp: &UBig) -> ModuloLarge<'a> {
         match exp.repr() {
             // self^0 == 1
-            Small(0) => ModuloLarge::from_ubig(UBig::from_word(1), self.ring()),
+            Small(0) => ModuloLarge::from_ubig(UBig::one(), self.ring()),
             // self^1 == self
             Small(1) => self.clone(),
             _ => self.pow_nontrivial(exp),
