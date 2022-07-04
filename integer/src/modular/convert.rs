@@ -2,7 +2,7 @@
 
 use crate::{
     arch::word::Word,
-    buffer::Buffer,
+    buffer::{Buffer, TypedReprRef::*, TypedRepr::*},
     div,
     ibig::IBig,
     memory::MemoryAllocation,
@@ -10,10 +10,10 @@ use crate::{
         modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSmall, ModuloSmallRaw},
         modulo_ring::{ModuloRing, ModuloRingLarge, ModuloRingRepr, ModuloRingSmall},
     },
-    primitive::extend_word,
+    primitive::{extend_word, split_dword},
     shift,
     sign::Sign::*,
-    ubig::{Repr, UBig},
+    ubig::UBig,
 };
 use alloc::vec::Vec;
 use core::iter;
@@ -189,8 +189,13 @@ impl<'a> ModuloSmall<'a> {
     #[inline]
     pub(crate) fn from_ubig(x: &UBig, ring: &'a ModuloRingSmall) -> ModuloSmall<'a> {
         let raw = match x.repr() {
-            Repr::Small(word) => ModuloSmallRaw::from_word(*word, ring),
-            Repr::Large(words) => ModuloSmallRaw::from_large(words, ring),
+            RefSmall(dword) => if let Ok(word) = Word::try_from(dword) {
+                ModuloSmallRaw::from_word(word, ring)
+            } else {
+                // TODO: implement ModuloDouble, and rename ModuloSmall to ModuloSingle
+                unimplemented!()
+            }
+            RefLarge(words) => ModuloSmallRaw::from_large(words, ring),
         };
         ModuloSmall::new(raw, ring)
     }
@@ -202,8 +207,12 @@ impl<'a> ModuloLarge<'a> {
         let modulus = ring.normalized_modulus();
         let mut vec = Vec::with_capacity(modulus.len());
         match x.into_repr() {
-            Repr::Small(word) => vec.push(word),
-            Repr::Large(mut words) => {
+            Small(word) => {
+                let (lo, hi) = split_dword(word);
+                vec.push(lo);
+                vec.push(hi);
+            },
+            Large(mut words) => {
                 if words.len() < modulus.len() {
                     vec.extend(&*words);
                 } else {

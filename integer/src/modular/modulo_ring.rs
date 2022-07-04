@@ -3,10 +3,11 @@
 use crate::{
     arch::word::Word,
     assert::debug_assert_in_const_fn,
+    buffer::TypedReprRef,
     cmp, div,
     fast_divide::{FastDivideNormalized, FastDivideNormalized2},
     math,
-    ubig::{Repr, UBig},
+    ubig::UBig,
 };
 use alloc::vec::Vec;
 use core::cmp::Ordering;
@@ -22,6 +23,7 @@ use core::cmp::Ordering;
 /// ```
 pub struct ModuloRing(ModuloRingRepr);
 
+// TODO: rename to Single/Double/Large
 pub(crate) enum ModuloRingRepr {
     Small(ModuloRingSmall),
     Large(ModuloRingLarge),
@@ -61,9 +63,16 @@ impl ModuloRing {
     #[inline]
     pub fn new(n: &UBig) -> ModuloRing {
         match n.repr() {
-            Repr::Small(0) => panic!("ModuloRing::new(0)"),
-            Repr::Small(word) => ModuloRing(ModuloRingRepr::Small(ModuloRingSmall::new(*word))),
-            Repr::Large(words) => ModuloRing(ModuloRingRepr::Large(ModuloRingLarge::new(words))),
+            TypedReprRef::RefSmall(0) => panic!("ModuloRing::new(0)"),
+            TypedReprRef::RefSmall(word) => {
+                if let Ok(word) = Word::try_from(word) {
+                    ModuloRing(ModuloRingRepr::Small(ModuloRingSmall::new(word)))
+                } else {
+                    // TODO: implement double word version
+                    unimplemented!()
+                }
+            },
+            TypedReprRef::RefLarge(words) => ModuloRing(ModuloRingRepr::Large(ModuloRingLarge::new(words))),
         }
     }
 

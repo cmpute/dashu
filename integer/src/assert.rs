@@ -1,3 +1,5 @@
+// TODO: is this replaceable by const_assert?
+
 #[inline]
 pub(crate) const fn assert_in_const_fn(val: bool) {
     [(); 1][!val as usize]

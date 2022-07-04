@@ -1,6 +1,10 @@
 //! Mathematical functions.
 
-use crate::{arch::word::{Word, DoubleWord}, assert::debug_assert_in_const_fn, primitive::PrimitiveUnsigned};
+use crate::{
+    arch::word::{Word, DoubleWord},
+    assert::debug_assert_in_const_fn,
+    primitive::{PrimitiveUnsigned, WORD_BITS, split_dword, extend_word}
+};
 
 /// The length of an integer in bits.
 /// 0 for 0.
@@ -91,6 +95,36 @@ pub(crate) const fn min_usize(a: usize, b: usize) -> usize {
     } else {
         b
     }
+}
+
+/// Multiply two `Word`s with carries and return the (low, high) parts of the product
+#[inline(always)]
+pub(crate) const fn mul_add_carry(lhs: Word, rhs: Word, c1: Word, c2: Word) -> (Word, Word) {
+    split_dword(extend_word(lhs) * extend_word(rhs) + extend_word(c1) + extend_word(c2))
+}
+
+/// Multiply two `DoubleWord`s and return the (low, high) parts of the product
+#[inline]
+pub(crate) const fn mul_add_carry_dword(lhs: DoubleWord, rhs: DoubleWord) -> (DoubleWord, DoubleWord) {
+    // TODO: use mul_add_carry to implement this, and accept two carries
+    /// Split double word without narrowing
+    #[inline(always)]
+    const fn split(v: DoubleWord) -> (DoubleWord, DoubleWord) {
+        (v >> WORD_BITS, v & (DoubleWord::MAX >> WORD_BITS))
+    }
+
+    let (x1, x0) = split(lhs);
+    let (y1, y0) = split(rhs);
+
+    let z2 = x1 * y1;
+    let (c0, z0) = split(x0 * y0); // c0 <= umax::MAX - 1
+    let (c1, z1) = split(x1 * y0 + c0);
+    let z2 = z2 + c1;
+    let (c1, z1) = split(x0 * y1 + z1);
+    
+    let lo = z0 | z1 << WORD_BITS;
+    let hi = z2 + c1;
+    (lo, hi)
 }
 
 #[cfg(test)]

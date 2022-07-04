@@ -1,15 +1,14 @@
 //! Multiplication operators.
 
 use crate::{
-    arch::word::Word,
-    buffer::Buffer,
+    arch::word::{Word, DoubleWord},
+    buffer::{Buffer, TypedRepr::*, TypedReprRef::*},
     helper_macros,
     ibig::IBig,
     memory::MemoryAllocation,
     mul,
-    primitive::{extend_word, PrimitiveSigned, PrimitiveUnsigned},
     sign::Sign::{self, *},
-    ubig::{Repr::*, UBig},
+    ubig::UBig,
 };
 use core::{
     mem,
@@ -22,12 +21,7 @@ impl Mul<UBig> for UBig {
 
     #[inline]
     fn mul(self, rhs: UBig) -> UBig {
-        match (self.into_repr(), rhs.into_repr()) {
-            (Small(word0), Small(word1)) => UBig::mul_word(word0, word1),
-            (Small(word0), Large(buffer1)) => UBig::mul_large_word(buffer1, word0),
-            (Large(buffer0), Small(word1)) => UBig::mul_large_word(buffer0, word1),
-            (Large(buffer0), Large(buffer1)) => UBig::mul_large(&buffer0, &buffer1),
-        }
+        ubig::mul_repr_val_val(self.into_repr(), rhs.into_repr())
     }
 }
 
@@ -36,12 +30,7 @@ impl Mul<&UBig> for UBig {
 
     #[inline]
     fn mul(self, rhs: &UBig) -> UBig {
-        match (self.into_repr(), rhs.repr()) {
-            (Small(word0), Small(word1)) => UBig::mul_word(word0, *word1),
-            (Small(word0), Large(buffer1)) => UBig::mul_large_word(buffer1.clone(), word0),
-            (Large(buffer0), Small(word1)) => UBig::mul_large_word(buffer0, *word1),
-            (Large(buffer0), Large(buffer1)) => UBig::mul_large(&buffer0, buffer1),
-        }
+        ubig::mul_repr_ref_val(rhs.repr(), self.into_repr())
     }
 }
 
@@ -50,7 +39,7 @@ impl Mul<UBig> for &UBig {
 
     #[inline]
     fn mul(self, rhs: UBig) -> UBig {
-        rhs.mul(self)
+        ubig::mul_repr_ref_val(self.repr(), rhs.into_repr())
     }
 }
 
@@ -59,12 +48,7 @@ impl Mul<&UBig> for &UBig {
 
     #[inline]
     fn mul(self, rhs: &UBig) -> UBig {
-        match (self.repr(), rhs.repr()) {
-            (Small(word0), Small(word1)) => UBig::mul_word(*word0, *word1),
-            (Small(word0), Large(buffer1)) => UBig::mul_large_word(buffer1.clone(), *word0),
-            (Large(buffer0), Small(word1)) => UBig::mul_large_word(buffer0.clone(), *word1),
-            (Large(buffer0), Large(buffer1)) => UBig::mul_large(buffer0, buffer1),
-        }
+        ubig::mul_repr_ref_ref(self.repr(), rhs.repr())
     }
 }
 
@@ -87,20 +71,9 @@ impl Mul<IBig> for IBig {
 
     #[inline]
     fn mul(self, rhs: IBig) -> IBig {
-        let (sign0, mag0) = self.into_sign_magnitude();
-        let (sign1, mag1) = rhs.into_sign_magnitude();
-        IBig::from_sign_magnitude(sign0 * sign1, mag0 * mag1)
-    }
-}
-
-impl Mul<&IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn mul(self, rhs: &IBig) -> IBig {
-        let (sign0, mag0) = self.into_sign_magnitude();
-        let (sign1, mag1) = (rhs.sign(), rhs.magnitude());
-        IBig::from_sign_magnitude(sign0 * sign1, mag0 * mag1)
+        let (sign0, mag0) = self.into_sign_repr();
+        let (sign1, mag1) = rhs.into_sign_repr();
+        IBig::from_sign_magnitude(sign0 * sign1, ubig::mul_repr_val_val(mag0, mag1))
     }
 }
 
@@ -109,6 +82,17 @@ impl Mul<IBig> for &IBig {
 
     #[inline]
     fn mul(self, rhs: IBig) -> IBig {
+        let (sign0, mag0) = self.as_sign_repr();
+        let (sign1, mag1) = rhs.into_sign_repr();
+        IBig::from_sign_magnitude(sign0 * sign1, ubig::mul_repr_ref_val(mag0, mag1))
+    }
+}
+
+impl Mul<&IBig> for IBig {
+    type Output = IBig;
+
+    #[inline]
+    fn mul(self, rhs: &IBig) -> IBig {
         rhs.mul(self)
     }
 }
@@ -118,9 +102,9 @@ impl Mul<&IBig> for &IBig {
 
     #[inline]
     fn mul(self, rhs: &IBig) -> IBig {
-        let (sign0, mag0) = (self.sign(), self.magnitude());
-        let (sign1, mag1) = (rhs.sign(), rhs.magnitude());
-        IBig::from_sign_magnitude(sign0 * sign1, mag0 * mag1)
+        let (sign0, mag0) = self.as_sign_repr();
+        let (sign1, mag1) = rhs.as_sign_repr();
+        IBig::from_sign_magnitude(sign0 * sign1, ubig::mul_repr_ref_ref(mag0, mag1))
     }
 }
 
@@ -166,7 +150,7 @@ macro_rules! impl_mul_ubig_unsigned {
 
             #[inline]
             fn mul(self, rhs: $t) -> UBig {
-                self.mul_unsigned(rhs)
+                self * UBig::from_unsigned(rhs)
             }
         }
 
@@ -175,7 +159,7 @@ macro_rules! impl_mul_ubig_unsigned {
 
             #[inline]
             fn mul(self, rhs: $t) -> UBig {
-                self.mul_ref_unsigned(rhs)
+                self * UBig::from_unsigned(rhs)
             }
         }
 
@@ -185,7 +169,7 @@ macro_rules! impl_mul_ubig_unsigned {
         impl MulAssign<$t> for UBig {
             #[inline]
             fn mul_assign(&mut self, rhs: $t) {
-                self.mul_assign_unsigned(rhs)
+                *self *= UBig::from_unsigned(rhs)
             }
         }
 
@@ -207,7 +191,7 @@ macro_rules! impl_mul_ubig_signed {
 
             #[inline]
             fn mul(self, rhs: $t) -> UBig {
-                self.mul_signed(rhs)
+                UBig::from_ibig(IBig::from(self) * IBig::from_signed(rhs))
             }
         }
 
@@ -216,7 +200,7 @@ macro_rules! impl_mul_ubig_signed {
 
             #[inline]
             fn mul(self, rhs: $t) -> UBig {
-                self.mul_ref_signed(rhs)
+                UBig::from_ibig(IBig::from(self) * IBig::from_signed(rhs))
             }
         }
 
@@ -226,7 +210,7 @@ macro_rules! impl_mul_ubig_signed {
         impl MulAssign<$t> for UBig {
             #[inline]
             fn mul_assign(&mut self, rhs: $t) {
-                self.mul_assign_signed(rhs)
+                *self = mem::take(self) * rhs
             }
         }
 
@@ -248,7 +232,7 @@ macro_rules! impl_mul_ibig_primitive {
 
             #[inline]
             fn mul(self, rhs: $t) -> IBig {
-                self.mul_primitive(rhs)
+                self * IBig::from(rhs)
             }
         }
 
@@ -257,7 +241,7 @@ macro_rules! impl_mul_ibig_primitive {
 
             #[inline]
             fn mul(self, rhs: $t) -> IBig {
-                self.mul_ref_primitive(rhs)
+                self * IBig::from(rhs)
             }
         }
 
@@ -267,7 +251,7 @@ macro_rules! impl_mul_ibig_primitive {
         impl MulAssign<$t> for IBig {
             #[inline]
             fn mul_assign(&mut self, rhs: $t) {
-                self.mul_assign_primitive(rhs)
+                *self *= IBig::from(rhs)
             }
         }
 
@@ -288,22 +272,83 @@ impl_mul_ibig_primitive!(i64);
 impl_mul_ibig_primitive!(i128);
 impl_mul_ibig_primitive!(isize);
 
-impl UBig {
-    /// Multiply two `Word`s.
+mod ubig {
+    use crate::buffer::{TypedRepr, TypedReprRef};
+    use crate::math;
+    use crate::primitive::split_dword;
+    use super::*;
+
     #[inline]
-    fn mul_word(a: Word, b: Word) -> UBig {
-        UBig::from(extend_word(a) * extend_word(b))
+    pub fn mul_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> UBig {
+        match (lhs, rhs) {
+            (Small(dword0), Small(dword1)) => ubig::mul_dword(dword0, dword1),
+            (Small(dword0), Large(buffer1)) => ubig::mul_large_dword(buffer1, dword0),
+            (Large(buffer0), Small(dword1)) => ubig::mul_large_dword(buffer0, dword1),
+            (Large(buffer0), Large(buffer1)) => ubig::mul_large(&buffer0, &buffer1),
+        }
     }
 
-    /// Multiply a large number by a `Word`.
-    fn mul_large_word(mut buffer: Buffer, a: Word) -> UBig {
-        match a {
+    #[inline]
+    pub fn mul_repr_ref_val(lhs: TypedReprRef, rhs: TypedRepr) -> UBig {
+        match (lhs, rhs) {
+            (RefSmall(dword0), Small(dword1)) => ubig::mul_dword(dword0, dword1),
+            (RefSmall(dword0), Large(buffer1)) => ubig::mul_large_dword(buffer1, dword0),
+            (RefLarge(buffer0), Small(dword1)) => ubig::mul_large_dword(buffer0.into(), dword1),
+            (RefLarge(buffer0), Large(buffer1)) => ubig::mul_large(buffer0, &buffer1),
+        }
+    }
+
+    #[inline]
+    pub fn mul_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> UBig {
+        match (lhs, rhs) {
+            (RefSmall(dword0), RefSmall(dword1)) => ubig::mul_dword(dword0, dword1),
+            (RefSmall(dword0), RefLarge(buffer1)) => ubig::mul_large_dword(buffer1.into(), dword0),
+            (RefLarge(buffer0), RefSmall(dword1)) => ubig::mul_large_dword(buffer0.into(), dword1),
+            (RefLarge(buffer0), RefLarge(buffer1)) => ubig::mul_large(buffer0, buffer1),
+        }
+    }
+
+    /// Multiply two `DoubleWord`s.
+    #[inline]
+    pub fn mul_dword(a: DoubleWord, b: DoubleWord) -> UBig {
+        if a <= Word::MAX as DoubleWord && b <= Word::MAX as DoubleWord {
+            UBig::from(a as Word * b as Word)
+        } else {
+            mul_dword_slow(a, b)
+        }
+    }
+
+    pub fn mul_dword_slow(lhs: DoubleWord, rhs: DoubleWord) -> UBig {
+        let (lo, hi) = math::mul_add_carry_dword(lhs, rhs);
+        let buffer = Buffer::allocate(4);
+        let (n0, n1) = split_dword(lo);
+        buffer.push(n0);
+        buffer.push(n1);
+        let (n2, n3) = split_dword(hi);
+        buffer.push(n2);
+        buffer.push(n3);
+        buffer.into()
+    }
+
+    /// Multiply a large number by a `DoubleWord`.
+    pub fn mul_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> UBig {
+        match rhs {
             0 => UBig::zero(),
             1 => buffer.into(),
-            _ => {
-                let carry = mul::mul_word_in_place(&mut buffer, a);
+            a if a <= Word::MAX as DoubleWord => {
+                let carry = mul::mul_word_in_place(&mut buffer, a as Word);
                 if carry != 0 {
                     buffer.push_may_reallocate(carry);
+                }
+                buffer.into()
+            },
+            b => {
+                let carry = mul::mul_dword_in_place(&mut buffer, b);
+                if carry != 0 {
+                    let (lo, hi) = split_dword(carry);
+                    buffer.ensure_capacity(buffer.len() + 2);
+                    buffer.push(lo);
+                    buffer.push(hi);
                 }
                 buffer.into()
             }
@@ -311,7 +356,7 @@ impl UBig {
     }
 
     /// Multiply two large numbers.
-    fn mul_large(lhs: &[Word], rhs: &[Word]) -> UBig {
+    pub fn mul_large(lhs: &[Word], rhs: &[Word]) -> UBig {
         debug_assert!(lhs.len() >= 2 && rhs.len() >= 2);
 
         // This may be 1 too large.
@@ -328,61 +373,5 @@ impl UBig {
         let overflow = mul::add_signed_mul(&mut buffer, Positive, lhs, rhs, &mut memory);
         assert!(overflow == 0);
         buffer.into()
-    }
-
-    #[inline]
-    fn mul_unsigned<T: PrimitiveUnsigned>(self, rhs: T) -> UBig {
-        self * UBig::from_unsigned(rhs)
-    }
-
-    #[inline]
-    fn mul_ref_unsigned<T: PrimitiveUnsigned>(&self, rhs: T) -> UBig {
-        self * UBig::from_unsigned(rhs)
-    }
-
-    #[inline]
-    fn mul_assign_unsigned<T: PrimitiveUnsigned>(&mut self, rhs: T) {
-        *self *= UBig::from_unsigned(rhs)
-    }
-
-    #[inline]
-    fn mul_signed<T: PrimitiveSigned>(self, rhs: T) -> UBig {
-        UBig::from_ibig(IBig::from(self) * IBig::from_signed(rhs))
-    }
-
-    #[inline]
-    fn mul_ref_signed<T: PrimitiveSigned>(&self, rhs: T) -> UBig {
-        UBig::from_ibig(IBig::from(self) * IBig::from_signed(rhs))
-    }
-
-    #[inline]
-    fn mul_assign_signed<T: PrimitiveSigned>(&mut self, rhs: T) {
-        *self = mem::take(self).mul_signed(rhs)
-    }
-}
-
-impl IBig {
-    #[inline]
-    fn mul_primitive<T>(self, rhs: T) -> IBig
-    where
-        IBig: From<T>,
-    {
-        self * IBig::from(rhs)
-    }
-
-    #[inline]
-    fn mul_ref_primitive<T>(&self, rhs: T) -> IBig
-    where
-        IBig: From<T>,
-    {
-        self * IBig::from(rhs)
-    }
-
-    #[inline]
-    fn mul_assign_primitive<T>(&mut self, rhs: T)
-    where
-        IBig: From<T>,
-    {
-        *self *= IBig::from(rhs)
     }
 }

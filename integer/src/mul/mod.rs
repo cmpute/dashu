@@ -2,7 +2,8 @@
 
 use crate::{
     add,
-    arch::word::{SignedWord, Word},
+    math,
+    arch::word::{SignedWord, Word, DoubleWord},
     memory::Memory,
     primitive::{double_word, extend_word, split_dword},
     sign::Sign,
@@ -30,8 +31,38 @@ mod toom_3;
 ///
 /// Returns carry.
 #[must_use]
+#[inline]
 pub(crate) fn mul_word_in_place(words: &mut [Word], rhs: Word) -> Word {
     mul_word_in_place_with_carry(words, rhs, 0)
+}
+
+/// Multiply a word sequence by a `DoubleWord` in place.
+///
+/// Returns carry as a double word.
+#[must_use]
+pub(crate) fn mul_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleWord {
+    let mut dwords = words.chunks_exact_mut(2);
+    let mut carry = 0;
+    for chunk in &mut dwords {
+        let lo = chunk.first_mut().unwrap();
+        let hi = chunk.last_mut().unwrap();
+        let (p, new_carry) = math::mul_add_carry_dword(double_word(*lo, *hi), rhs);
+        let (new_lo, new_hi) = split_dword(p + carry);
+        *lo = new_lo;
+        *hi = new_hi;
+        carry = new_carry;
+    }
+    let r = dwords.into_remainder();
+    if r.len() > 0 {
+        let r0 = r.first_mut().unwrap();
+        let (m_lo, m_hi) = split_dword(rhs);
+        let (c_lo, c_hi) = split_dword(carry);
+        let (n_lo, nc_lo) = math::mul_add_carry(*r0, m_lo, c_lo, 0);
+        let (n_hi, nc_hi) = math::mul_add_carry(*r0, m_hi, nc_lo, c_hi);
+        *r0 = n_lo;
+        carry = double_word(n_hi, nc_hi);
+    }
+    carry
 }
 
 /// Multiply a word sequence by a `Word` in place with carry in.

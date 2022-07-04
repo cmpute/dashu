@@ -6,7 +6,7 @@ use crate::{
     math,
     primitive::{WORD_BITS, WORD_BITS_USIZE},
     radix::{self, Digit},
-    ubig::Repr::*,
+    buffer::TypedReprRef::*,
 };
 use core::fmt::{self, Formatter};
 
@@ -14,16 +14,16 @@ impl InRadixFull<'_> {
     /// Radix must be a power of 2.
     pub(crate) fn fmt_power_two(&self, f: &mut Formatter) -> fmt::Result {
         debug_assert!(radix::is_radix_valid(self.radix) && self.radix.is_power_of_two());
-        match self.magnitude.repr() {
-            Small(word) => {
-                let mut prepared = PreparedWord::new(*word, self.radix);
-                self.format_prepared(f, &mut prepared)
-            }
-            Large(buffer) => {
-                let mut prepared = PreparedLarge::new(buffer, self.radix);
-                self.format_prepared(f, &mut prepared)
+
+        if let RefSmall(dword) = self.magnitude.repr() {
+            if let Ok(word) = Word::try_from(dword) {
+                let mut prepared = PreparedWord::new(word, self.radix);
+                return self.format_prepared(f, &mut prepared);
             }
         }
+
+        let mut prepared = PreparedLarge::new(self.magnitude.as_words(), self.radix);
+        self.format_prepared(f, &mut prepared)
     }
 }
 

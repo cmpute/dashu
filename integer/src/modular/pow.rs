@@ -1,13 +1,14 @@
 use crate::{
     arch::word::Word,
     math,
+    buffer::TypedReprRef::*,
     memory::{self, MemoryAllocation},
     modular::{
         modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSmall, ModuloSmallRaw},
         modulo_ring::ModuloRingSmall,
     },
     primitive::{double_word, split_dword, PrimitiveUnsigned, WORD_BITS, WORD_BITS_USIZE},
-    ubig::{Repr::*, UBig},
+    ubig::UBig,
 };
 
 impl<'a> Modulo<'a> {
@@ -72,11 +73,11 @@ impl<'a> ModuloSmall<'a> {
     fn pow(&self, exp: &UBig) -> ModuloSmall<'a> {
         match exp.repr() {
             // self^0 == 1
-            Small(0) => ModuloSmall::from_ubig(&UBig::one(), self.ring()),
+            RefSmall(0) => ModuloSmall::from_ubig(&UBig::one(), self.ring()),
             // self^1 == self
-            Small(1) => self.clone(),
+            RefSmall(1) => self.clone(),
             // self^2 == self * self
-            Small(2) => {
+            RefSmall(2) => {
                 let res = self.raw().mul(self.raw(), self.ring());
                 ModuloSmall::new(res, self.ring())
             }
@@ -102,9 +103,9 @@ impl<'a> ModuloLarge<'a> {
     fn pow(&self, exp: &UBig) -> ModuloLarge<'a> {
         match exp.repr() {
             // self^0 == 1
-            Small(0) => ModuloLarge::from_ubig(UBig::one(), self.ring()),
+            RefSmall(0) => ModuloLarge::from_ubig(UBig::one(), self.ring()),
             // self^1 == self
-            Small(1) => self.clone(),
+            RefSmall(1) => self.clone(),
             _ => self.pow_nontrivial(exp),
         }
     }
