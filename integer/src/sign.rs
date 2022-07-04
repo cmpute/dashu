@@ -60,7 +60,7 @@ impl Neg for IBig {
 
     #[inline]
     fn neg(self) -> IBig {
-        let repr = self.0;
+        let mut repr = self.0;
         repr.set_sign(-repr.sign());
         IBig(repr)
     }

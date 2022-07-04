@@ -153,12 +153,12 @@ pub(crate) fn fast_div_by_dword_in_place(
     // chunk the words into double words, and do 4by2 divisions
     let mut dwords = front.rchunks_exact_mut(2);
     for chunk in &mut dwords {
-        let lo = chunk.first_mut().unwrap();
-        let hi = chunk.last_mut().unwrap();
+        let lo = chunk.first().unwrap();
+        let hi = chunk.last().unwrap();
         let (q, new_rem) = fast_div_rhs.div_rem_double(double_word(*lo, *hi), rem);
         let (new_lo, new_hi) = split_dword(q);
-        *lo = new_lo;
-        *hi = new_hi;
+        *chunk.first_mut().unwrap() = new_lo;
+        *chunk.last_mut().unwrap() = new_hi;
         rem = new_rem;
     }
 

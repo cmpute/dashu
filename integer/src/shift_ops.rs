@@ -175,11 +175,10 @@ impl Shr<usize> for &IBig {
 
 mod ubig {
     use crate::buffer::{TypedReprRef, TypedRepr};
-
     use super::*;
 
     #[inline]
-    pub fn shl_repr_val(repr: TypedRepr, rhs: usize) -> UBig {
+    pub(crate) fn shl_repr_val(repr: TypedRepr, rhs: usize) -> UBig {
         match repr {
             Small(0) => UBig::zero(),
             Small(dword) => shl_dword(dword, rhs),
@@ -188,7 +187,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn shl_repr_ref(repr: TypedReprRef, rhs: usize) -> UBig {
+    pub(crate) fn shl_repr_ref(repr: TypedReprRef, rhs: usize) -> UBig {
         match repr {
             RefSmall(0) => UBig::zero(),
             RefSmall(dword) => shl_dword(dword, rhs),
@@ -197,7 +196,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn shr_repr_val(repr: TypedRepr, rhs: usize) -> UBig {
+    pub(crate) fn shr_repr_val(repr: TypedRepr, rhs: usize) -> UBig {
         match repr {
             Small(dword) => shr_dword(dword, rhs),
             Large(buffer) => shr_large(buffer, rhs),
@@ -205,7 +204,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn shr_repr_ref(repr: TypedReprRef, rhs: usize) -> UBig {
+    pub(crate) fn shr_repr_ref(repr: TypedReprRef, rhs: usize) -> UBig {
         match repr {
             RefSmall(dword) => shr_dword(dword, rhs),
             RefLarge(buffer) => shr_large_ref(buffer, rhs),
@@ -242,7 +241,7 @@ mod ubig {
     }
 
     /// Shift left `buffer` by `rhs` bits.
-    pub fn shl_large(mut buffer: Buffer, rhs: usize) -> UBig {
+    fn shl_large(mut buffer: Buffer, rhs: usize) -> UBig {
         let shift_words = rhs / WORD_BITS_USIZE;
 
         if buffer.capacity() < buffer.len() + shift_words + 1 {
@@ -257,7 +256,7 @@ mod ubig {
     }
 
     /// Shift left large number of words by `rhs` bits.
-    pub fn shl_ref_large(words: &[Word], rhs: usize) -> UBig {
+    fn shl_ref_large(words: &[Word], rhs: usize) -> UBig {
         let shift_words = rhs / WORD_BITS_USIZE;
         let shift_bits = (rhs % WORD_BITS_USIZE) as u32;
 
@@ -271,7 +270,7 @@ mod ubig {
 
     /// Shift right one `DoubleWord` by `rhs` bits.
     #[inline]
-    pub fn shr_dword(dword: DoubleWord, rhs: usize) -> UBig {
+    fn shr_dword(dword: DoubleWord, rhs: usize) -> UBig {
         let dword = if rhs < DWORD_BITS_USIZE {
             dword >> rhs
         } else {
@@ -281,7 +280,7 @@ mod ubig {
     }
 
     /// Shift right `buffer` by `rhs` bits.
-    pub fn shr_large(mut buffer: Buffer, rhs: usize) -> UBig {
+    fn shr_large(mut buffer: Buffer, rhs: usize) -> UBig {
         let shift_words = rhs / WORD_BITS_USIZE;
         if shift_words >= buffer.len() {
             return UBig::zero();
@@ -293,7 +292,7 @@ mod ubig {
     }
 
     /// Shift right large number of words by `rhs` bits.
-    pub fn shr_large_ref(words: &[Word], rhs: usize) -> UBig {
+    fn shr_large_ref(words: &[Word], rhs: usize) -> UBig {
         let shift_words = rhs / WORD_BITS_USIZE;
         let shift_bits = (rhs % WORD_BITS_USIZE) as u32;
 

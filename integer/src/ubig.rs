@@ -59,12 +59,12 @@ impl UBig {
     }
 
     /// Create an IBig with value 0
-    pub fn zero() -> Self {
+    pub const fn zero() -> Self {
         UBig(Repr::zero())
     }
 
     /// Create an IBig with value 1
-    pub fn one() -> Self {
+    pub const fn one() -> Self {
         UBig(Repr::one())
     }
 

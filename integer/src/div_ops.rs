@@ -1143,12 +1143,11 @@ impl_div_ibig_signed!(i128);
 impl_div_ibig_signed!(isize);
 
 mod ubig {
-    use crate::buffer::{TypedRepr, TypedReprRef};
-
+    use crate::{buffer::{TypedRepr, TypedReprRef}, primitive::{shrink_dword, extend_word}};
     use super::*;
 
     #[inline]
-    pub fn div_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> UBig {
+    pub(crate) fn div_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> UBig {
         match (lhs, rhs) {
             (Small(dword0), Small(dword1)) => div_dword(dword0, dword1),
             (Small(_), Large(_)) => UBig::zero(),
@@ -1164,7 +1163,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn div_repr_val_ref(lhs: TypedRepr, rhs: TypedReprRef) -> UBig {
+    pub(crate) fn div_repr_val_ref(lhs: TypedRepr, rhs: TypedReprRef) -> UBig {
         match (lhs, rhs) {
             (Small(dword0), RefSmall(dword1)) => div_dword(dword0, dword1),
             (Small(_), RefLarge(_)) => UBig::zero(),
@@ -1180,7 +1179,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn div_repr_ref_val(lhs: TypedReprRef, rhs: TypedRepr) -> UBig {
+    pub(crate) fn div_repr_ref_val(lhs: TypedReprRef, rhs: TypedRepr) -> UBig {
         match (lhs, rhs) {
             (RefSmall(dword0), Small(dword1)) => div_dword(dword0, dword1),
             (RefSmall(_), Large(_)) => UBig::zero(),
@@ -1196,7 +1195,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn div_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> UBig {
+    pub(crate) fn div_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> UBig {
         match (lhs, rhs) {
             (RefSmall(dword0), RefSmall(dword1)) => div_dword(dword0, dword1),
             (RefSmall(_), RefLarge(_)) => UBig::zero(),
@@ -1212,7 +1211,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn rem_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> UBig {
+    pub(crate) fn rem_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> UBig {
         match (lhs, rhs) {
             (Small(dword0), Small(dword1)) => rem_dword(dword0, dword1),
             (Small(dword0), Large(_)) => dword0.into(),
@@ -1228,7 +1227,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn rem_repr_val_ref(lhs: TypedRepr, rhs: TypedReprRef) -> UBig {
+    pub(crate) fn rem_repr_val_ref(lhs: TypedRepr, rhs: TypedReprRef) -> UBig {
         match (lhs, rhs) {
             (Small(dword0), RefSmall(dword1)) => rem_dword(dword0, dword1),
             (Small(dword0), RefLarge(_)) => dword0.into(),
@@ -1244,7 +1243,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn rem_repr_ref_val(lhs: TypedReprRef, rhs: TypedRepr) -> UBig {
+    pub(crate) fn rem_repr_ref_val(lhs: TypedReprRef, rhs: TypedRepr) -> UBig {
         match (lhs, rhs) {
             (RefSmall(dword0), Small(dword1)) => rem_dword(dword0, dword1),
             (RefSmall(dword0), Large(_)) => dword0.into(),
@@ -1262,7 +1261,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn rem_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> UBig {
+    pub(crate) fn rem_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> UBig {
         match (lhs, rhs) {
             (RefSmall(dword0), RefSmall(dword1)) => rem_dword(dword0, dword1),
             (RefSmall(dword0), RefLarge(_)) => dword0.into(),
@@ -1278,7 +1277,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn div_rem_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> (UBig, UBig) {
+    pub(crate) fn div_rem_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> (UBig, UBig) {
         match (lhs, rhs) {
             (Small(dword0), Small(dword1)) => div_rem_dword(dword0, dword1),
             (Small(dword0), Large(_)) => (UBig::zero(), dword0.into()),
@@ -1294,7 +1293,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn div_rem_repr_val_ref(lhs: TypedRepr, rhs: TypedReprRef) -> (UBig, UBig) {
+    pub(crate) fn div_rem_repr_val_ref(lhs: TypedRepr, rhs: TypedReprRef) -> (UBig, UBig) {
         match (lhs, rhs) {
             (Small(dword0), RefSmall(dword1)) => div_rem_dword(dword0, dword1),
             (Small(dword0), RefLarge(_)) => (UBig::zero(), dword0.into()),
@@ -1310,7 +1309,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn div_rem_repr_ref_val(lhs: TypedReprRef, rhs: TypedRepr) -> (UBig, UBig) {
+    pub(crate) fn div_rem_repr_ref_val(lhs: TypedReprRef, rhs: TypedRepr) -> (UBig, UBig) {
         match (lhs, rhs) {
             (RefSmall(dword0), Small(dword1)) => div_rem_dword(dword0, dword1),
             (RefSmall(dword0), Large(_)) => (UBig::zero(), dword0.into()),
@@ -1328,7 +1327,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn div_rem_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> (UBig, UBig) {
+    pub(crate) fn div_rem_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> (UBig, UBig) {
         match (lhs, rhs) {
             (RefSmall(dword0), RefSmall(dword1)) => div_rem_dword(dword0, dword1),
             (RefSmall(dword0), RefLarge(_)) => (UBig::zero(), dword0.into()),
@@ -1344,7 +1343,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn div_dword(lhs: DoubleWord, rhs: DoubleWord) -> UBig {
+    fn div_dword(lhs: DoubleWord, rhs: DoubleWord) -> UBig {
         match lhs.checked_div(rhs) {
             Some(res) => UBig::from(res),
             None => panic_divide_by_0(),
@@ -1352,7 +1351,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn rem_dword(lhs: DoubleWord, rhs: DoubleWord) -> UBig {
+    fn rem_dword(lhs: DoubleWord, rhs: DoubleWord) -> UBig {
         match lhs.checked_rem(rhs) {
             Some(res) => UBig::from(res),
             None => panic_divide_by_0(),
@@ -1360,7 +1359,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn div_rem_dword(lhs: DoubleWord, rhs: DoubleWord) -> (UBig, UBig) {
+    fn div_rem_dword(lhs: DoubleWord, rhs: DoubleWord) -> (UBig, UBig) {
         // If division works, remainder also works.
         match lhs.checked_div(rhs) {
             Some(res) => (UBig::from(res), UBig::from(lhs % rhs)),
@@ -1369,34 +1368,42 @@ mod ubig {
     }
 
     #[inline]
-    pub fn div_large_dword(lhs: Buffer, rhs: DoubleWord) -> UBig {
+    fn div_large_dword(lhs: Buffer, rhs: DoubleWord) -> UBig {
         let (q, _) = div_rem_large_dword(lhs, rhs);
         q
     }
 
     #[inline]
-    pub fn rem_large_dword(lhs: &[Word], rhs: DoubleWord) -> UBig {
+    fn rem_large_dword(lhs: &[Word], rhs: DoubleWord) -> UBig {
         if rhs == 0 {
             panic_divide_by_0();
         }
-        div::rem_by_dword(lhs, rhs).into()
+        if rhs < Word::MAX as DoubleWord {
+            div::rem_by_word(lhs, shrink_dword(rhs)).into()
+        } else {
+            div::rem_by_dword(lhs, rhs).into()
+        }
     }
 
-    pub fn div_rem_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> (UBig, UBig) {
+    fn div_rem_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> (UBig, UBig) {
         if rhs == 0 {
             panic_divide_by_0();
         }
-        let rem = div::div_by_dword_in_place(&mut buffer, rhs);
+        let rem = if rhs < Word::MAX as DoubleWord {
+            extend_word(div::div_by_word_in_place(&mut buffer, shrink_dword(rhs)))
+        } else {
+            div::div_by_dword_in_place(&mut buffer, rhs)
+        };
         (buffer.into(), rem.into())
     }
 
-    pub fn div_large(mut lhs: Buffer, mut rhs: Buffer) -> UBig {
+    fn div_large(mut lhs: Buffer, mut rhs: Buffer) -> UBig {
         let _shift = div_rem_in_lhs(&mut lhs, &mut rhs);
         lhs.erase_front(rhs.len());
         lhs.into()
     }
 
-    pub fn rem_large(mut lhs: Buffer, mut rhs: Buffer) -> UBig {
+    fn rem_large(mut lhs: Buffer, mut rhs: Buffer) -> UBig {
         let shift = div_rem_in_lhs(&mut lhs, &mut rhs);
         let n = rhs.len();
         rhs.copy_from_slice(&lhs[..n]);
@@ -1405,7 +1412,7 @@ mod ubig {
         rhs.into()
     }
 
-    pub fn div_rem_large(mut lhs: Buffer, mut rhs: Buffer) -> (UBig, UBig) {
+    fn div_rem_large(mut lhs: Buffer, mut rhs: Buffer) -> (UBig, UBig) {
         let shift = div_rem_in_lhs(&mut lhs, &mut rhs);
         let n = rhs.len();
         rhs.copy_from_slice(&lhs[..n]);
@@ -1418,7 +1425,7 @@ mod ubig {
     /// lhs = (lhs / rhs, lhs % rhs)
     ///
     /// Returns shift.
-    pub fn div_rem_in_lhs(lhs: &mut Buffer, rhs: &mut Buffer) -> u32 {
+    fn div_rem_in_lhs(lhs: &mut Buffer, rhs: &mut Buffer) -> u32 {
         let (shift, fast_div_rhs_top) = div::normalize_large(rhs);
         let lhs_carry = shift::shl_in_place(lhs, shift);
         if lhs_carry != 0 {

@@ -14,7 +14,7 @@ use static_assertions::const_assert;
 
 /// If Smaller length <= MAX_LEN_SIMPLE, simple multiplication can be used.
 const MAX_LEN_SIMPLE: usize = 24;
-const_assert!(MAX_LEN_SIMPLE <= simple::MAX_SmallER_LEN);
+const_assert!(MAX_LEN_SIMPLE <= simple::MAX_SMALLER_LEN);
 const_assert!(MAX_LEN_SIMPLE + 1 >= karatsuba::MIN_LEN);
 
 /// If Smaller length <= this, Karatsuba multiplication can be used.
@@ -47,12 +47,12 @@ pub(crate) fn mul_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleW
     let mut dwords = words.chunks_exact_mut(2);
     let mut carry = 0;
     for chunk in &mut dwords {
-        let lo = chunk.first_mut().unwrap();
-        let hi = chunk.last_mut().unwrap();
+        let lo = chunk.first().unwrap();
+        let hi = chunk.last().unwrap();
         let (p, new_carry) = math::mul_add_carry_dword(double_word(*lo, *hi), rhs);
         let (new_lo, new_hi) = split_dword(p + carry);
-        *lo = new_lo;
-        *hi = new_hi;
+        *chunk.first_mut().unwrap() = new_lo;
+        *chunk.last_mut().unwrap() = new_hi;
         carry = new_carry;
     }
 
@@ -145,19 +145,19 @@ pub(crate) fn sub_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs
 }
 
 /// Temporary scratch space required for multiplication.
-pub(crate) fn memory_requirement_up_to(_total_len: usize, Smaller_len: usize) -> Layout {
-    if Smaller_len <= MAX_LEN_SIMPLE {
-        simple::memory_requirement_up_to(Smaller_len)
-    } else if Smaller_len <= MAX_LEN_KARATSUBA {
-        karatsuba::memory_requirement_up_to(Smaller_len)
+pub(crate) fn memory_requirement_up_to(_total_len: usize, smaller_len: usize) -> Layout {
+    if smaller_len <= MAX_LEN_SIMPLE {
+        simple::memory_requirement_up_to(smaller_len)
+    } else if smaller_len <= MAX_LEN_KARATSUBA {
+        karatsuba::memory_requirement_up_to(smaller_len)
     } else {
-        toom_3::memory_requirement_up_to(Smaller_len)
+        toom_3::memory_requirement_up_to(smaller_len)
     }
 }
 
 /// Temporary scratch space required for multiplication.
-pub(crate) fn memory_requirement_exact(total_len: usize, Smaller_len: usize) -> Layout {
-    memory_requirement_up_to(total_len, Smaller_len)
+pub(crate) fn memory_requirement_exact(total_len: usize, smaller_len: usize) -> Layout {
+    memory_requirement_up_to(total_len, smaller_len)
 }
 
 /// c += sign * a * b

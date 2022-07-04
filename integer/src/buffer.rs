@@ -522,14 +522,14 @@ impl Repr {
     pub fn as_typed(&self) -> TypedReprRef<'_> {
         assert!(self.capacity.get() > 0);
 
-        match self.capacity.get() {
-            1 | 2 => TypedReprRef::RefSmall(double_word(self.data.inline[0], self.data.inline[1])),
-            _ => unsafe {
-                TypedReprRef::RefLarge(slice::from_raw_parts(
+        unsafe {
+            match self.capacity.get() {
+                1 | 2 => TypedReprRef::RefSmall(double_word(self.data.inline[0], self.data.inline[1])),
+                _ => TypedReprRef::RefLarge(slice::from_raw_parts(
                     self.data.heap.0,
                     self.data.heap.1
                 ))
-            }
+            }    
         }
     }
 
@@ -542,10 +542,10 @@ impl Repr {
     pub fn as_sign_typed(&self) -> (Sign, TypedReprRef<'_>) {
         let (abs_capacity, sign) = self.sign_capacity();
 
-        let typed = match abs_capacity {
-            1 | 2 => TypedReprRef::RefSmall(double_word(self.data.inline[0], self.data.inline[1])),
-            _ => unsafe {
-                TypedReprRef::RefLarge(slice::from_raw_parts(
+        let typed = unsafe {
+            match abs_capacity {
+                1 | 2 => TypedReprRef::RefSmall(double_word(self.data.inline[0], self.data.inline[1])),
+                _ => TypedReprRef::RefLarge(slice::from_raw_parts(
                     self.data.heap.0,
                     self.data.heap.1
                 ))
@@ -563,12 +563,14 @@ impl Repr {
     pub fn into_typed(self) -> TypedRepr {
         assert!(self.capacity.get() > 0);
 
-        match self.capacity.get() {
-            1 | 2 => TypedRepr::Small(double_word(self.data.inline[0], self.data.inline[1])),
-            _ => unsafe {
-                // SAFETY: An `Buffer` and `Repr` have the same layout
-                //     and we have made sure that the data is allocated on heap
-                TypedRepr::Large(mem::transmute(self))
+        unsafe {
+            match self.capacity.get() {
+                1 | 2 => TypedRepr::Small(double_word(self.data.inline[0], self.data.inline[1])),
+                _ => {
+                    // SAFETY: An `Buffer` and `Repr` have the same layout
+                    //     and we have made sure that the data is allocated on heap
+                    TypedRepr::Large(mem::transmute(self))
+                }
             }
         }
     }
@@ -649,19 +651,19 @@ impl Repr {
     /// Creates a `Repr` with value 0
     #[inline]
     pub(crate) const fn zero() -> Self {
-        Repr { capacity: NonZeroIsize::new(1).unwrap(), data: ReprData { inline: [0, 0] }}
+        Repr { capacity: unsafe { NonZeroIsize::new_unchecked(1) }, data: ReprData { inline: [0, 0] }}
     }
 
     /// Creates a `Repr` with value 1
     #[inline]
     pub(crate) const fn one() -> Self {
-        Repr { capacity: NonZeroIsize::new(1).unwrap(), data: ReprData { inline: [1, 0] }}
+        Repr { capacity: unsafe { NonZeroIsize::new_unchecked(1) }, data: ReprData { inline: [1, 0] }}
     }
 
     /// Creates a `Repr` with value -1
     #[inline]
     pub(crate) const fn neg_one() -> Self {
-        Repr { capacity: NonZeroIsize::new(-1).unwrap(), data: ReprData { inline: [1, 0] }}
+        Repr { capacity: unsafe { NonZeroIsize::new_unchecked(-1) }, data: ReprData { inline: [1, 0] }}
     }
 }
 
@@ -697,19 +699,22 @@ impl Clone for Repr {
         let (src_cap, src_sign) = src.sign_capacity();
         let (cap, _) = self.sign_capacity();
 
-        // shortcut for inlined data
-        if src_cap <= 2 {
-            *self = { Repr { data: ReprData { inline: self.data.inline }, capacity: unsafe {
-                // SAFETY: the capacity from src is now allowed to be zero
-                NonZeroIsize::new_unchecked(src_cap as isize)
-            } } };
-            self.set_sign(src_sign);
-            return;
-        }
-
-        let (src_ptr, src_len) = src.data.heap;
-        let ptr = self.data.heap.0;
         unsafe {
+
+            // shortcut for inlined data
+            if src_cap <= 2 {
+                *self = Repr { data: ReprData { inline: self.data.inline }, capacity: 
+                    // SAFETY: the capacity from src is now allowed to be zero
+                    NonZeroIsize::new_unchecked(src_cap as isize)
+                };
+                self.set_sign(src_sign);
+                return;
+            }
+
+            // SAFETY: we checked that abs(src.capacity) > 2
+            let (src_ptr, src_len) = src.data.heap;
+            let ptr = self.data.heap.0;
+
             // check if we need reallocation, the strategy here is the same as `Buffer::clone_from()`
             if cap < src_len || cap > Buffer::max_compact_capacity(src_len) {
                 // release the old buffer
@@ -726,11 +731,11 @@ impl Clone for Repr {
             // SAFETY: src.ptr and self.ptr are both properly allocated by `Buffer::allocate()`.
             //         src.ptr and self.ptr cannot alias, because the ptr should be uniquely owned by the Buffer
             ptr::copy_nonoverlapping(src_ptr, ptr, src_len);
+            
+            // update length and sign
+            self.data.heap.1 = src_len;
+            self.set_sign(src_sign);
         }
-
-        // update length and sign
-        self.data.heap.1 = src_len;
-        self.set_sign(src_sign);
     }
 }
 
@@ -758,7 +763,7 @@ impl fmt::Debug for Repr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (sign, words) = self.as_sign_slice();
         if let Sign::Negative = sign {
-            f.write_char('-');
+            f.write_char('-')?;
         }
         f.debug_list().entries(words).finish()
     }

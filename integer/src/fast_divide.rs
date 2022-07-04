@@ -324,7 +324,7 @@ mod tests {
     use rand::prelude::*;
 
     #[test]
-    fn test_fast_divide_Small() {
+    fn test_fast_divide_small() {
         let mut rng = StdRng::seed_from_u64(1);
         for _ in 0..1000000 {
             let d_bits = rng.gen_range(2..=WORD_BITS);

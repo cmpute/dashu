@@ -483,7 +483,7 @@ mod ubig {
     use super::*;
 
     #[inline]
-    pub fn add_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> UBig {
+    pub(crate) fn add_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> UBig {
         match (lhs, rhs) {
             (RefSmall(dword0), RefSmall(dword1)) => ubig::add_dword(dword0, dword1),
             (RefSmall(dword0), RefLarge(buffer1)) => ubig::add_large_dword(buffer1.into(), dword0),
@@ -499,7 +499,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn add_repr_ref_val(lhs: TypedReprRef, rhs: TypedRepr) -> UBig {
+    pub(crate) fn add_repr_ref_val(lhs: TypedReprRef, rhs: TypedRepr) -> UBig {
         match (lhs, rhs) {
             (RefSmall(dword0), Small(dword1)) => ubig::add_dword(dword0, dword1),
             (RefSmall(dword0), Large(buffer1)) => ubig::add_large_dword(buffer1, dword0),
@@ -509,7 +509,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn add_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> UBig {
+    pub(crate) fn add_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> UBig {
         match (lhs, rhs) {
             (Small(dword0), Small(dword1)) => add_dword(dword0, dword1),
             (Small(dword0), Large(buffer1)) => add_large_dword(buffer1, dword0),
@@ -525,7 +525,7 @@ mod ubig {
     }
     
     #[inline]
-    pub fn add_dword(a: DoubleWord, b: DoubleWord) -> UBig {
+    fn add_dword(a: DoubleWord, b: DoubleWord) -> UBig {
         let (res, overflow) = a.overflowing_add(b);
         if overflow {
             let (lo, hi) = split_dword(res);
@@ -540,7 +540,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn add_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> UBig {
+    fn add_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> UBig {
         debug_assert!(buffer.len() >= 3);
         if add::add_dword_in_place(&mut buffer, rhs) {
             buffer.push_may_reallocate(1);
@@ -549,7 +549,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn add_large(mut buffer: Buffer, rhs: &[Word]) -> UBig {
+    fn add_large(mut buffer: Buffer, rhs: &[Word]) -> UBig {
         let n = buffer.len().min(rhs.len());
         let overflow = add::add_same_len_in_place(&mut buffer[..n], &rhs[..n]);
         if rhs.len() > n {
@@ -563,7 +563,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn sub_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> UBig {
+    pub(crate) fn sub_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> UBig {
         match (lhs, rhs) {
             (Small(dword0), Small(dword1)) => sub_dword(dword0, dword1),
             (Small(_), Large(_)) => UBig::panic_negative(),
@@ -573,7 +573,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn sub_repr_val_ref(lhs: TypedRepr, rhs: TypedReprRef) -> UBig {
+    pub(crate) fn sub_repr_val_ref(lhs: TypedRepr, rhs: TypedReprRef) -> UBig {
         match (lhs, rhs) {
             (Small(dword0), RefSmall(dword1)) => sub_dword(dword0, dword1),
             (Small(_), RefLarge(_)) => UBig::panic_negative(),
@@ -583,7 +583,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn sub_repr_ref_val(lhs: TypedReprRef, rhs: TypedRepr) -> UBig {
+    pub(crate) fn sub_repr_ref_val(lhs: TypedReprRef, rhs: TypedRepr) -> UBig {
         match (lhs, rhs) {
             (RefSmall(dword0), Small(dword1)) => sub_dword(dword0, dword1),
             (RefSmall(_), Large(_)) => UBig::panic_negative(),
@@ -593,7 +593,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn sub_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> UBig {
+    pub(crate) fn sub_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> UBig {
         match (lhs, rhs) {
             (RefSmall(dword0), RefSmall(dword1)) => sub_dword(dword0, dword1),
             (RefSmall(_), RefLarge(_)) => UBig::panic_negative(),
@@ -603,7 +603,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn sub_dword(a: DoubleWord, b: DoubleWord) -> UBig {
+    fn sub_dword(a: DoubleWord, b: DoubleWord) -> UBig {
         match a.checked_sub(b) {
             Some(res) => res.into(),
             None => UBig::panic_negative(),
@@ -611,21 +611,21 @@ mod ubig {
     }
 
     #[inline]
-    pub fn sub_large_dword(mut lhs: Buffer, rhs: DoubleWord) -> UBig {
+    pub(crate) fn sub_large_dword(mut lhs: Buffer, rhs: DoubleWord) -> UBig {
         let overflow = add::sub_dword_in_place(&mut lhs, rhs);
         assert!(!overflow);
         lhs.into()
     }
 
     #[inline]
-    pub fn sub_large(mut lhs: Buffer, rhs: &[Word]) -> UBig {
+    fn sub_large(mut lhs: Buffer, rhs: &[Word]) -> UBig {
         if lhs.len() < rhs.len() || add::sub_in_place(&mut lhs, rhs) {
             UBig::panic_negative();
         }
         lhs.into()
     }
     
-    pub fn sub_large_ref_val(lhs: &[Word], mut rhs: Buffer) -> UBig {
+    pub(crate) fn sub_large_ref_val(lhs: &[Word], mut rhs: Buffer) -> UBig {
         let n = rhs.len();
         if lhs.len() < n {
             UBig::panic_negative();
@@ -645,7 +645,7 @@ mod ibig {
     use super::*;
 
     #[inline]
-    pub fn sub_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> IBig {
+    pub(crate) fn sub_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> IBig {
         match (lhs, rhs) {
             (Small(dword0), Small(dword1)) => sub_dword_word(dword0, dword1),
             (Small(dword0), Large(buffer1)) => -sub_large_dword(buffer1, dword0),
@@ -661,7 +661,7 @@ mod ibig {
     }
 
     #[inline]
-    pub fn sub_repr_ref_val(lhs: TypedReprRef, rhs: TypedRepr) -> IBig {
+    pub(crate) fn sub_repr_ref_val(lhs: TypedReprRef, rhs: TypedRepr) -> IBig {
         match (lhs, rhs) {
             (RefSmall(dword0), Small(dword1)) => sub_dword_word(dword0, dword1),
             (RefSmall(dword0), Large(buffer1)) => -sub_large_dword(buffer1, dword0),
@@ -671,7 +671,7 @@ mod ibig {
     }
 
     #[inline]
-    pub fn sub_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> IBig {
+    pub(crate) fn sub_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> IBig {
         match (lhs, rhs) {
             (RefSmall(dword0), RefSmall(dword1)) => sub_dword_word(dword0, dword1),
             (RefSmall(dword0), RefLarge(buffer1)) => -sub_large_dword(buffer1.into(), dword0),
@@ -687,7 +687,7 @@ mod ibig {
     }
 
     #[inline]
-    pub fn sub_dword_word(lhs: DoubleWord, rhs: DoubleWord) -> IBig {
+    fn sub_dword_word(lhs: DoubleWord, rhs: DoubleWord) -> IBig {
         let (val, overflow) = lhs.overflowing_sub(rhs);
         if !overflow {
             IBig::from(val)
@@ -697,12 +697,12 @@ mod ibig {
     }
 
     #[inline]
-    pub fn sub_large_dword(lhs: Buffer, rhs: DoubleWord) -> IBig {
+    fn sub_large_dword(lhs: Buffer, rhs: DoubleWord) -> IBig {
         ubig::sub_large_dword(lhs, rhs).into()
     }
 
     #[inline]
-    pub fn sub_large(mut lhs: Buffer, rhs: &[Word]) -> IBig {
+    fn sub_large(mut lhs: Buffer, rhs: &[Word]) -> IBig {
         if lhs.len() >= rhs.len() {
             let sign = add::sub_in_place_with_sign(&mut lhs, rhs);
             IBig::from_sign_magnitude(sign, lhs.into())

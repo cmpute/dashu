@@ -2,7 +2,7 @@
 
 use crate::{
     arch::word::{Word, DoubleWord},
-    buffer::{Buffer, TypedRepr::*, TypedReprRef::{*, self}},
+    buffer::{Buffer, TypedRepr::*, TypedReprRef::*},
     helper_macros,
     ibig::IBig,
     math,
@@ -108,7 +108,7 @@ impl UBig {
                     *self = UBig::from(dword & !(1 << n));
                 }
             }
-            Large(buffer) => {
+            Large(mut buffer) => {
                 let idx = n / WORD_BITS_USIZE;
                 if idx < buffer.len() {
                     buffer[idx] &= !(1 << (n % WORD_BITS_USIZE));
@@ -520,7 +520,7 @@ impl AndNot<&UBig> for &UBig {
 mod ubig {
     use super::*;
 
-    pub fn with_bit_dword_slow(dword: DoubleWord, n: usize) -> UBig {
+    pub(crate) fn with_bit_dword_slow(dword: DoubleWord, n: usize) -> UBig {
         debug_assert!(n >= DWORD_BITS_USIZE);
         let idx = n / WORD_BITS_USIZE;
         let mut buffer = Buffer::allocate(idx + 1);
@@ -532,7 +532,7 @@ mod ubig {
         buffer.into()
     }
 
-    pub fn with_bit_large(mut buffer: Buffer, n: usize) -> UBig {
+    pub(crate) fn with_bit_large(mut buffer: Buffer, n: usize) -> UBig {
         let idx = n / WORD_BITS_USIZE;
         if idx < buffer.len() {
             buffer[idx] |= 1 << (n % WORD_BITS_USIZE);
@@ -544,7 +544,7 @@ mod ubig {
         buffer.into()
     }
 
-    pub fn next_power_of_two_large(mut buffer: Buffer) -> UBig {
+    pub(crate) fn next_power_of_two_large(mut buffer: Buffer) -> UBig {
         debug_assert!(*buffer.last().unwrap() != 0);
 
         let n = buffer.len();
@@ -577,7 +577,7 @@ mod ubig {
         buffer.into()
     }
 
-    pub fn bitand_large(mut buffer: Buffer, rhs: &[Word]) -> UBig {
+    pub(crate) fn bitand_large(mut buffer: Buffer, rhs: &[Word]) -> UBig {
         if buffer.len() > rhs.len() {
             buffer.truncate(rhs.len());
         }
@@ -587,7 +587,7 @@ mod ubig {
         buffer.into()
     }
 
-    pub fn bitor_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> UBig {
+    pub(crate) fn bitor_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> UBig {
         debug_assert!(buffer.len() >= 2);
 
         let (lo, hi) = split_dword(rhs);
@@ -598,7 +598,7 @@ mod ubig {
         buffer.into()
     }
 
-    pub fn bitor_large(mut buffer: Buffer, rhs: &[Word]) -> UBig {
+    pub(crate) fn bitor_large(mut buffer: Buffer, rhs: &[Word]) -> UBig {
         for (x, y) in buffer.iter_mut().zip(rhs.iter()) {
             *x |= *y;
         }
@@ -609,7 +609,7 @@ mod ubig {
         buffer.into()
     }
 
-    pub fn bitxor_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> UBig {
+    pub(crate) fn bitxor_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> UBig {
         debug_assert!(buffer.len() >= 2);
 
         let (lo, hi) = split_dword(rhs);
@@ -620,7 +620,7 @@ mod ubig {
         buffer.into()
     }
 
-    pub fn bitxor_large(mut buffer: Buffer, rhs: &[Word]) -> UBig {
+    pub(crate) fn bitxor_large(mut buffer: Buffer, rhs: &[Word]) -> UBig {
         for (x, y) in buffer.iter_mut().zip(rhs.iter()) {
             *x ^= *y;
         }
@@ -631,7 +631,7 @@ mod ubig {
         buffer.into()
     }
 
-    pub fn and_not_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> UBig {
+    pub(crate) fn and_not_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> UBig {
         debug_assert!(buffer.len() >= 2);
 
         let (lo, hi) = split_dword(rhs);
@@ -642,7 +642,7 @@ mod ubig {
         buffer.into()
     }
 
-    pub fn and_not_large(mut buffer: Buffer, rhs: &[Word]) -> UBig {
+    pub(crate) fn and_not_large(mut buffer: Buffer, rhs: &[Word]) -> UBig {
         for (x, y) in buffer.iter_mut().zip(rhs.iter()) {
             *x &= !*y;
         }

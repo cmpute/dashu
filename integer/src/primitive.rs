@@ -1,6 +1,7 @@
 //! Primitive integral types.
 
 use crate::{
+    assert::debug_assert_in_const_fn,
     arch::word::{DoubleWord, Word},
     error::OutOfBoundsError,
     sign::Sign::{self, *},
@@ -28,6 +29,14 @@ pub(crate) const fn double_word(low: Word, high: Word) -> DoubleWord {
 #[inline]
 pub(crate) const fn split_dword(dw: DoubleWord) -> (Word, Word) {
     (dw as Word, (dw >> WORD_BITS) as Word)
+}
+
+/// Get the low part of a `DoubleWord` assuming the high part is zero
+#[inline]
+pub(crate) const fn shrink_dword(dw: DoubleWord) -> Word {
+    let (lo, hi) = split_dword(dw);
+    debug_assert_in_const_fn!(hi == 0);
+    lo
 }
 
 pub(crate) trait PrimitiveUnsigned
@@ -150,7 +159,6 @@ pub(crate) const WORD_BITS_USIZE: usize = WORD_BITS as usize;
 pub(crate) const WORD_BYTES: usize = Word::BYTE_SIZE;
 pub(crate) const DWORD_BITS: u32 = DoubleWord::BIT_SIZE;
 pub(crate) const DWORD_BITS_USIZE: usize = DWORD_BITS as usize;
-pub(crate) const DWORD_BYTES: usize = DoubleWord::BYTE_SIZE;
 
 #[inline]
 pub(crate) fn word_from_le_bytes_partial(bytes: &[u8]) -> Word {

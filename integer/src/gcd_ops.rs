@@ -22,12 +22,7 @@ impl UBig {
     /// Panics if two oprands are both zero.
     #[inline]
     pub fn gcd(&self, rhs: &UBig) -> UBig {
-        match (self.repr(), rhs.repr()) {
-            (RefSmall(dword0), RefSmall(dword1)) => UBig::from(dword0.gcd(dword1)),
-            (RefSmall(dword0), RefLarge(buffer1)) => ubig::gcd_large_dword(buffer1, dword0),
-            (RefLarge(buffer0), RefSmall(dword1)) => ubig::gcd_large_dword(buffer0, dword1),
-            (RefLarge(buffer0), RefLarge(buffer1)) => ubig::gcd_large(buffer0.into(), buffer1.into()),
-        }
+        ubig::gcd_repr_ref_ref(self.repr(), rhs.repr())
     }
 
     /// Compute the greatest common divisor between self and the other operand, and return
@@ -42,7 +37,25 @@ impl UBig {
     /// Panics if two oprands are both zero.
     #[inline]
     pub fn extended_gcd(&self, rhs: &UBig) -> (UBig, IBig, IBig) {
-        match (self.clone().into_repr(), rhs.clone().into_repr()) {
+        ubig::xgcd_repr_val_val(self.clone().into_repr(), rhs.clone().into_repr())
+    }
+}
+
+mod ubig {
+    use crate::buffer::{TypedRepr, TypedReprRef};
+    use super::*;
+
+    pub(crate) fn gcd_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> UBig {
+        match (lhs, rhs) {
+            (RefSmall(dword0), RefSmall(dword1)) => dword0.gcd(dword1).into(),
+            (RefSmall(dword0), RefLarge(buffer1)) => gcd_large_dword(buffer1, dword0),
+            (RefLarge(buffer0), RefSmall(dword1)) => gcd_large_dword(buffer0, dword1),
+            (RefLarge(buffer0), RefLarge(buffer1)) => gcd_large(buffer0.into(), buffer1.into()),
+        }
+    }
+
+    pub(crate) fn xgcd_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> (UBig, IBig, IBig) {
+        match (lhs, rhs) {
             (Small(dword0), Small(dword1)) => {
                 let (g, s, t) = dword0.gcd_ext(dword1);
                 (UBig::from(g), s.into(), t.into())
@@ -55,14 +68,10 @@ impl UBig {
             (Large(buffer0), Large(buffer1)) => ubig::extended_gcd_large(buffer0, buffer1),
         }
     }
-}
-
-mod ubig {
-    use super::*;
 
     /// Perform gcd on a large number with a `Word`.
     #[inline]
-    pub fn gcd_large_dword(buffer: &[Word], rhs: DoubleWord) -> UBig {
+    fn gcd_large_dword(buffer: &[Word], rhs: DoubleWord) -> UBig {
         if rhs == 0 {
             let clone = Buffer::from(buffer);
             return clone.into();
@@ -79,7 +88,7 @@ mod ubig {
 
     /// Perform extended gcd on a large number with a `Word`.
     #[inline]
-    pub fn extended_gcd_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> (UBig, IBig, IBig) {
+    fn extended_gcd_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> (UBig, IBig, IBig) {
         if rhs == 0 {
             return (buffer.into(), IBig::one(), IBig::zero());
         }
@@ -97,7 +106,7 @@ mod ubig {
 
     /// Perform gcd on two large numbers.
     #[inline]
-    pub fn gcd_large(mut lhs: Buffer, mut rhs: Buffer) -> UBig {
+    fn gcd_large(mut lhs: Buffer, mut rhs: Buffer) -> UBig {
         let len = gcd::gcd_in_place(&mut lhs, &mut rhs);
         lhs.truncate(len);
         lhs.into()
@@ -105,7 +114,7 @@ mod ubig {
 
     /// Perform extended gcd on two large numbers.
     #[inline]
-    pub fn extended_gcd_large(mut lhs: Buffer, mut rhs: Buffer) -> (UBig, IBig, IBig) {
+    fn extended_gcd_large(mut lhs: Buffer, mut rhs: Buffer) -> (UBig, IBig, IBig) {
         let res_len = lhs.len().min(rhs.len());
         let mut buffer = Buffer::allocate(res_len);
         buffer.push_zeros(res_len);

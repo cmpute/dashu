@@ -275,11 +275,11 @@ impl_mul_ibig_primitive!(isize);
 mod ubig {
     use crate::buffer::{TypedRepr, TypedReprRef};
     use crate::math;
-    use crate::primitive::split_dword;
+    use crate::primitive::{split_dword, shrink_dword};
     use super::*;
 
     #[inline]
-    pub fn mul_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> UBig {
+    pub(crate) fn mul_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> UBig {
         match (lhs, rhs) {
             (Small(dword0), Small(dword1)) => ubig::mul_dword(dword0, dword1),
             (Small(dword0), Large(buffer1)) => ubig::mul_large_dword(buffer1, dword0),
@@ -289,7 +289,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn mul_repr_ref_val(lhs: TypedReprRef, rhs: TypedRepr) -> UBig {
+    pub(crate) fn mul_repr_ref_val(lhs: TypedReprRef, rhs: TypedRepr) -> UBig {
         match (lhs, rhs) {
             (RefSmall(dword0), Small(dword1)) => ubig::mul_dword(dword0, dword1),
             (RefSmall(dword0), Large(buffer1)) => ubig::mul_large_dword(buffer1, dword0),
@@ -299,7 +299,7 @@ mod ubig {
     }
 
     #[inline]
-    pub fn mul_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> UBig {
+    pub(crate) fn mul_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> UBig {
         match (lhs, rhs) {
             (RefSmall(dword0), RefSmall(dword1)) => ubig::mul_dword(dword0, dword1),
             (RefSmall(dword0), RefLarge(buffer1)) => ubig::mul_large_dword(buffer1.into(), dword0),
@@ -310,17 +310,17 @@ mod ubig {
 
     /// Multiply two `DoubleWord`s.
     #[inline]
-    pub fn mul_dword(a: DoubleWord, b: DoubleWord) -> UBig {
+    fn mul_dword(a: DoubleWord, b: DoubleWord) -> UBig {
         if a <= Word::MAX as DoubleWord && b <= Word::MAX as DoubleWord {
-            UBig::from(a as Word * b as Word)
+            UBig::from(shrink_dword(a) * shrink_dword(b))
         } else {
             mul_dword_slow(a, b)
         }
     }
 
-    pub fn mul_dword_slow(lhs: DoubleWord, rhs: DoubleWord) -> UBig {
+    fn mul_dword_slow(lhs: DoubleWord, rhs: DoubleWord) -> UBig {
         let (lo, hi) = math::mul_add_carry_dword(lhs, rhs);
-        let buffer = Buffer::allocate(4);
+        let mut buffer = Buffer::allocate(4);
         let (n0, n1) = split_dword(lo);
         buffer.push(n0);
         buffer.push(n1);
@@ -331,12 +331,12 @@ mod ubig {
     }
 
     /// Multiply a large number by a `DoubleWord`.
-    pub fn mul_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> UBig {
+    fn mul_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> UBig {
         match rhs {
             0 => UBig::zero(),
             1 => buffer.into(),
             a if a <= Word::MAX as DoubleWord => {
-                let carry = mul::mul_word_in_place(&mut buffer, a as Word);
+                let carry = mul::mul_word_in_place(&mut buffer, shrink_dword(a));
                 if carry != 0 {
                     buffer.push_may_reallocate(carry);
                 }
@@ -356,7 +356,7 @@ mod ubig {
     }
 
     /// Multiply two large numbers.
-    pub fn mul_large(lhs: &[Word], rhs: &[Word]) -> UBig {
+    fn mul_large(lhs: &[Word], rhs: &[Word]) -> UBig {
         debug_assert!(lhs.len() >= 2 && rhs.len() >= 2);
 
         // This may be 1 too large.

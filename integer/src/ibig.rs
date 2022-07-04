@@ -1,8 +1,8 @@
 //! Signed big integer.
 
 use crate::{
-    sign::Sign::{self, *},
-    buffer::{Buffer, Repr, TypedRepr, TypedReprRef},
+    sign::Sign,
+    buffer::{Repr, TypedRepr, TypedReprRef},
     ubig::UBig,
 };
 
@@ -59,24 +59,24 @@ impl IBig {
 
     #[inline]
     pub(crate) fn into_sign_magnitude(self) -> (Sign, UBig) {
-        let repr = self.0;
+        let mut repr = self.0;
         let sign = repr.sign();
         repr.set_sign(Sign::Positive);
         (sign, UBig(repr))
     }
 
     /// Create an IBig with value 0
-    pub fn zero() -> Self {
+    pub const fn zero() -> Self {
         IBig(Repr::zero())
     }
 
     /// Create an IBig with value 1
-    pub fn one() -> Self {
+    pub const fn one() -> Self {
         IBig(Repr::one())
     }
 
     /// Create an IBig with value -1
-    pub fn neg_one() -> IBig {
+    pub const fn neg_one() -> IBig {
         IBig(Repr::neg_one())
     }
 }
