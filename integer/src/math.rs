@@ -106,7 +106,7 @@ pub(crate) const fn mul_add_carry(lhs: Word, rhs: Word, c1: Word, c2: Word) -> (
 
 /// Multiply two `DoubleWord`s and return the (low, high) parts of the product
 #[inline]
-pub(crate) const fn mul_add_carry_dword(lhs: DoubleWord, rhs: DoubleWord) -> (DoubleWord, DoubleWord) {
+pub(crate) const fn mul_add_carry_dword(lhs: DoubleWord, rhs: DoubleWord, carry: DoubleWord) -> (DoubleWord, DoubleWord) {
     // TODO: use mul_add_carry to implement this, and accept two carries
     /// Split double word without narrowing
     #[inline(always)]
@@ -125,6 +125,9 @@ pub(crate) const fn mul_add_carry_dword(lhs: DoubleWord, rhs: DoubleWord) -> (Do
     
     let lo = z0 | z1 << WORD_BITS;
     let hi = z2 + c1;
+
+    let (lo, carry) = lo.overflowing_add(carry);
+    let hi = hi + carry as DoubleWord;
     (lo, hi)
 }
 

@@ -132,7 +132,7 @@ impl FastDivideNormalized {
         if a < self.divisor {
             (0, a)
         } else {
-            (1, a - self.divisor)
+            (1, a - self.divisor) // because self.divisor is normalized
         }
     }
 
@@ -270,7 +270,7 @@ impl FastDivideNormalized2 {
         if a < self.divisor {
             (0, a)
         } else {
-            (1, a - self.divisor)
+            (1, a - self.divisor) // because self.divisor is normalized
         }
     }
 
@@ -361,6 +361,7 @@ mod tests {
         assert_eq!(fast_div.div_rem((0, 0)), (0, 0));
 
         let mut rng = StdRng::seed_from_u64(1);
+        // 3by2 div
         for _ in 0..100000 {
             let d = rng.gen_range(DoubleWord::MAX / 2 + 1..=DoubleWord::MAX);
             let r = rng.gen_range(0..d);
@@ -373,6 +374,16 @@ mod tests {
 
             let fast_div = FastDivideNormalized2::new(d);
             assert_eq!(fast_div.div_rem((a0, a12)), (q, r), "failed at {:?} / {}", (a0, a12), d);
+        }
+
+        // 4by2 div
+        for _ in 0..20000 {
+            let d = rng.gen_range(DoubleWord::MAX / 2 + 1..=DoubleWord::MAX);
+            let q = rng.gen();
+            let r = rng.gen_range(0..d);
+            let (a_lo, a_hi) = math::mul_add_carry_dword(q, d, r);
+            let fast_div = FastDivideNormalized2::new(d);
+            assert_eq!(fast_div.div_rem_double(a_lo, a_hi), (q, r));
         }
     }
 }

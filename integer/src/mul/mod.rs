@@ -49,8 +49,8 @@ pub(crate) fn mul_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleW
     for chunk in &mut dwords {
         let lo = chunk.first().unwrap();
         let hi = chunk.last().unwrap();
-        let (p, new_carry) = math::mul_add_carry_dword(double_word(*lo, *hi), rhs);
-        let (new_lo, new_hi) = split_dword(p + carry);
+        let (p, new_carry) = math::mul_add_carry_dword(double_word(*lo, *hi), rhs, carry);
+        let (new_lo, new_hi) = split_dword(p);
         *chunk.first_mut().unwrap() = new_lo;
         *chunk.last_mut().unwrap() = new_hi;
         carry = new_carry;

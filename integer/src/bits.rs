@@ -82,7 +82,7 @@ impl UBig {
                 if n < DWORD_BITS_USIZE {
                     *self = UBig::from(dword | 1 << n);
                 } else {
-                    *self = ubig::with_bit_dword_spilt(dword, n);
+                    *self = ubig::with_bit_dword_spilled(dword, n);
                 }
             }
             Large(buffer) => {
@@ -577,7 +577,7 @@ impl AndNot<&UBig> for &UBig {
 mod ubig {
     use super::*;
 
-    pub(crate) fn with_bit_dword_spilt(dword: DoubleWord, n: usize) -> UBig {
+    pub(crate) fn with_bit_dword_spilled(dword: DoubleWord, n: usize) -> UBig {
         debug_assert!(n >= DWORD_BITS_USIZE);
         let idx = n / WORD_BITS_USIZE;
         let mut buffer = Buffer::allocate(idx + 1);

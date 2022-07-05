@@ -16,6 +16,7 @@ use crate::{
     ubig::UBig,
 };
 use alloc::vec::Vec;
+use dashu_base::UnsignedAbs;
 use core::iter;
 
 impl ModuloRing {
@@ -178,7 +179,8 @@ impl IntoModulo for IBig {
 impl IntoModulo for &IBig {
     #[inline]
     fn into_modulo(self, ring: &ModuloRing) -> Modulo {
-        let modulo = self.magnitude().into_modulo(ring);
+        // TODO: unnecessary copy here
+        let modulo = self.unsigned_abs().into_modulo(ring);
         match self.sign() {
             Positive => modulo,
             Negative => -modulo,
@@ -193,8 +195,10 @@ impl<'a> ModuloSingle<'a> {
             RefSmall(dword) => if let Ok(word) = Word::try_from(dword) {
                 ModuloSmallRaw::from_word(word, ring)
             } else {
-                // TODO: implement ModuloDouble, and rename ModuloSmall to ModuloSingle
-                unimplemented!()
+                // TODO: this is bandaid here
+                let (lo, hi) = split_dword(dword);
+                let double_slice = [lo, hi];
+                ModuloSmallRaw::from_large(&double_slice, ring)
             }
             RefLarge(words) => ModuloSmallRaw::from_large(words, ring),
         };

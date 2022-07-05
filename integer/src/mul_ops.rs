@@ -314,12 +314,12 @@ mod ubig {
         if a <= Word::MAX as DoubleWord && b <= Word::MAX as DoubleWord {
             UBig::from(a * b)
         } else {
-            mul_dword_spilt(a, b)
+            mul_dword_spilled(a, b)
         }
     }
 
-    fn mul_dword_spilt(lhs: DoubleWord, rhs: DoubleWord) -> UBig {
-        let (lo, hi) = math::mul_add_carry_dword(lhs, rhs);
+    fn mul_dword_spilled(lhs: DoubleWord, rhs: DoubleWord) -> UBig {
+        let (lo, hi) = math::mul_add_carry_dword(lhs, rhs, 0);
         let mut buffer = Buffer::allocate(4);
         let (n0, n1) = split_dword(lo);
         buffer.push(n0);

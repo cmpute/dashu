@@ -94,7 +94,8 @@ fn len_64_to_max_len(len_64: usize) -> usize {
 
 impl Serialize for IBig {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        (self.sign(), self.magnitude()).serialize(serializer)
+        // TODO: implement Serialize for Repr instead of using UnsignedAbs
+        (self.sign(), self.unsigned_abs()).serialize(serializer)
     }
 }
 

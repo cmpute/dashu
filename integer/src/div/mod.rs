@@ -23,6 +23,7 @@ pub(crate) fn normalize_large(words: &mut [Word]) -> (u32, FastDivideNormalized2
     let shift = words.last().unwrap().leading_zeros();
     let overflow = shift::shl_in_place(words, shift);
     debug_assert!(overflow == 0);
+    // TODO: use front_dword here
     let top_words = double_word(words[words.len() - 2], words[words.len() - 1]);
     (shift, FastDivideNormalized2::new(top_words))
 }
@@ -191,8 +192,8 @@ pub(crate) fn rem_by_dword(words: &[Word], rhs: DoubleWord) -> DoubleWord {
 
     // normalize the remainder
     let (r0, r1) = split_dword(rem);
-    let a12 = extend_word(r0) << shift | extend_word(r1) >> (WORD_BITS - shift);
-    let a0 = r1 << shift;
+    let a12 = extend_word(r1) << shift | extend_word(r0) >> (WORD_BITS - shift);
+    let a0 = r0 << shift;
     let (_, rem) = fast_div_rhs.div_rem((a0, a12));
     rem >> shift
 }
@@ -206,7 +207,7 @@ pub(crate) fn fast_rem_by_normalized_dword(
     // first calculate the highest remainder
     let (top_hi, words_lo) = words.split_last().unwrap();
     let (top_lo, words_lo) = words_lo.split_last().unwrap();
-    let mut rem = fast_div_rhs.div_rem_dword(double_word(*top_hi, *top_lo)).1;
+    let mut rem = fast_div_rhs.div_rem_dword(double_word(*top_lo, *top_hi)).1;
 
     // then iterate through the words
     // chunk the words into double words, and do 4by2 divisions
