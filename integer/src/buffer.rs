@@ -28,7 +28,7 @@ union ReprData {
 
 /// Internal representation for big integers.
 /// 
-/// It's optimized so that Small integers (single or double words) will not be allocated on heap.
+/// It's optimized so that small integers (single or double words) will not be allocated on heap.
 /// When the data is allocated on the heap, it can be casted to [Buffer] efficiently, but modifying
 /// the buffer inplace is not allowed because that can break the rule on the `capacity` field.
 #[repr(C)]
@@ -122,26 +122,51 @@ impl Buffer {
         self.len
     }
 
-    /// Creates a `Buffer` with existing words, the words will be copied.
+    /// Allocates words on heap, return the pointer and allocated size,
+    /// the caller needs to handle the deallocation of the words.
+    /// 
+    /// This function should NOT BE EXPOSED to public!
+    #[inline]
+    pub(crate) fn allocate_raw(num_words: usize) -> (NonNull<Word>, usize) {
+        debug_assert!(num_words <= Self::MAX_CAPACITY);
+
+        unsafe {
+            let capacity = Self::default_capacity(num_words);
+            let layout = Layout::array::<Word>(capacity).unwrap();
+            let ptr = alloc::alloc::alloc(layout);
+            let ptr = NonNull::new(ptr).unwrap().cast();
+            (ptr, capacity)
+        }
+    }
+
+    /// Deallocates the words on heap. The caller must make sure the ptr is valid.
+    /// 
+    /// This function should NOT BE EXPOSED to public!
+    #[inline]
+    pub(crate) unsafe fn deallocate_raw(ptr: NonNull<Word>, capacity: usize) {
+        let layout = Layout::array::<Word>(capacity).unwrap();
+        alloc::alloc::dealloc(ptr.as_ptr() as _, layout);
+    }
+
+    /// Creates a `Buffer` with at least specified capacity.
     ///
-    /// It leaves some extra space for future growth.
+    /// It leaves some extra space for future growth, and it allocates several words
+    /// even if `num_words` is zero.
     pub(crate) fn allocate(num_words: usize) -> Self {
         if num_words > Self::MAX_CAPACITY {
             panic!("too many words to be allocated, maximum is {} bits", Self::MAX_CAPACITY);
         }
-
-        unsafe {
-            let len = num_words;
-            let capacity = Self::default_capacity(len);
-            let layout = Layout::array::<Word>(capacity).unwrap();
-            let ptr = alloc::alloc::alloc(layout);
-            let ptr = NonNull::new(ptr).unwrap().cast();
-            Buffer { capacity, ptr, len }
-        }
+        let (ptr, capacity) = Self::allocate_raw(num_words);
+        Buffer { capacity, ptr, len: 0 }
     }
 
     /// Change capacity to store `num_words` plus some extra space for future growth.
-    /// Note that this function should not be called when capacity = num_words
+    /// 
+    /// Note that it's advised to prevent calling this function when capacity = num_words
+    /// 
+    /// # Panics
+    ///
+    /// Panics if `num_words < len()`.
     fn reallocate(&mut self, num_words: usize) {
         debug_assert!(num_words >= self.len());
 
@@ -170,7 +195,6 @@ impl Buffer {
         }
     }
 
-    // TODO: what's the optimal strategy to shrink the integer when casting to UBig?
     /// Makes sure that the capacity is compact.
     #[inline]
     pub(crate) fn shrink(&mut self) {
@@ -197,7 +221,7 @@ impl Buffer {
 
     /// Append a Word and reallocate if necessary.
     #[inline]
-    pub(crate) fn push_may_reallocate(&mut self, word: Word) {
+    pub(crate) fn push_resizing(&mut self, word: Word) {
         self.ensure_capacity(self.len + 1);
         self.push(word);
     }
@@ -295,6 +319,7 @@ impl Buffer {
             // move data
             ptr::copy(ptr.add(n), ptr, new_len);
         }
+        self.len = new_len;
     }
 
     /// Get the first word of the buffer, assuming the buffer is not empty.
@@ -358,7 +383,7 @@ impl Clone for Buffer {
         new_buffer
     }
 
-    /// Reallocating if capacity is too Small or too large.
+    /// Reallocating if capacity is too small or too large.
     #[inline]
     fn clone_from(&mut self, src: &Self) {
         if self.capacity >= src.len && self.capacity <= Buffer::max_compact_capacity(src.len) {
@@ -378,8 +403,7 @@ impl Clone for Buffer {
 impl Drop for Buffer {
     fn drop(&mut self) {
         unsafe {
-            let layout = Layout::array::<Word>(self.capacity).unwrap();
-            alloc::alloc::dealloc(self.ptr.as_ptr() as _, layout);
+            Self::deallocate_raw(self.ptr, self.capacity);
         }
     }
 }
@@ -619,20 +643,23 @@ impl Repr {
         }
     }
 
-    /// Creates a `Repr` with a buffer allocated on heap.
+    /// Creates a `Repr` with a buffer allocated on heap, the buffer will be
+    /// shrunk if there is exceeded capacity.
     /// 
     /// Note that it's recommended to call `Buffer::pop_zeros()` before it's
     /// converted to the `Repr`.
-    pub(crate) fn from_buffer(buffer: Buffer) -> Self {
+    pub(crate) fn from_buffer(mut buffer: Buffer) -> Self {
         match buffer.len() {
             0 => Self::from_word(0),
             1 => Self::from_word(buffer[0]),
             2 => Self::from_dword(double_word(buffer[0], buffer[1])),
-            _ => unsafe {
+            _ => {
+                buffer.shrink();
+
                 // TODO: check whether this will call drop
                 // SAFETY: the length has been checked and capacity >= lenght,
                 //         so capacity is nonzero and larger than 2
-                mem::transmute(buffer)
+                unsafe { mem::transmute(buffer) }
             }
         }
     }
@@ -667,7 +694,7 @@ impl Repr {
     }
 }
 
-
+// Cloning for Repr is written in a verbose way because it's performance critical.
 impl Clone for Repr {
     fn clone(&self) -> Self {
         let (capacity, sign) = self.sign_capacity();
@@ -686,6 +713,7 @@ impl Clone for Repr {
 
                     // SAFETY: abs(self.capacity) >= 3 => self.data.len >= 3
                     // so the capacity and len of new_buffer will be both >= 3
+                    // TOOD: we don't need transmute here
                     mem::transmute(new_buffer)
                 }
             }
@@ -694,43 +722,42 @@ impl Clone for Repr {
         new
     }
 
-    #[inline]
     fn clone_from(&mut self, src: &Self) {
         let (src_cap, src_sign) = src.sign_capacity();
         let (cap, _) = self.sign_capacity();
 
         unsafe {
-
             // shortcut for inlined data
             if src_cap <= 2 {
-                *self = Repr { data: ReprData { inline: self.data.inline }, capacity: 
-                    // SAFETY: the capacity from src is now allowed to be zero
-                    NonZeroIsize::new_unchecked(src_cap as isize)
-                };
-                self.set_sign(src_sign);
+                if cap > 2 {
+                    // release the old buffer if necessary
+                    Buffer::deallocate_raw(NonNull::new_unchecked(self.data.heap.0), cap);
+                }
+                self.data.inline = src.data.inline;
+                self.capacity = src.capacity;
                 return;
             }
 
             // SAFETY: we checked that abs(src.capacity) > 2
             let (src_ptr, src_len) = src.data.heap;
-            let ptr = self.data.heap.0;
+            debug_assert!(src_len >= 3);
 
             // check if we need reallocation, the strategy here is the same as `Buffer::clone_from()`
             if cap < src_len || cap > Buffer::max_compact_capacity(src_len) {
-                // release the old buffer
-                // SAFETY: the old buffer is allocated through alloc::alloc::alloc
-                let layout = Layout::array::<Word>(cap).unwrap();
-                alloc::alloc::dealloc(ptr as _, layout);
-    
-                // allocate a new one
-                // SAFETY: all the fields in self are now safely obselete
-                let buffer_mut = &mut *(self as *mut Self as *mut Buffer);
-                *buffer_mut = Buffer::allocate(src_len);
+                if cap > 2 {
+                    // release the old buffer if necessary
+                    Buffer::deallocate_raw(NonNull::new_unchecked(self.data.heap.0), cap);
+                }
+
+                let (new_ptr, new_cap) = Buffer::allocate_raw(src_len);
+                self.data.heap.0 = new_ptr.as_ptr();
+                // SAFETY: allocate_raw will allocates at least 2 words even if src_len is 0
+                self.capacity = NonZeroIsize::new_unchecked(new_cap as isize);
             }
             
             // SAFETY: src.ptr and self.ptr are both properly allocated by `Buffer::allocate()`.
             //         src.ptr and self.ptr cannot alias, because the ptr should be uniquely owned by the Buffer
-            ptr::copy_nonoverlapping(src_ptr, ptr, src_len);
+            ptr::copy_nonoverlapping(src_ptr, self.data.heap.0, src_len);
             
             // update length and sign
             self.data.heap.1 = src_len;
@@ -741,11 +768,10 @@ impl Clone for Repr {
 
 impl Drop for Repr {
     fn drop(&mut self) {
-        unsafe {
-            let capacity = self.capacity.get().unsigned_abs();
-            if capacity > 2 {
-                let layout = Layout::array::<Word>(capacity).unwrap();
-                alloc::alloc::dealloc(self.data.heap.0 as _, layout);
+        let capacity = self.capacity.get().unsigned_abs();
+        if capacity > 2 {
+            unsafe {
+                Buffer::deallocate_raw(NonNull::new_unchecked(self.data.heap.0), capacity);
             }
         }
     }
@@ -852,13 +878,13 @@ mod tests {
 
     #[test]
     fn test_ensure_capacity() {
-        let mut buffer = Buffer::allocate(3);
+        let mut buffer = Buffer::allocate(2);
         buffer.push(7);
-        assert!(buffer.capacity() >= 3);
+        assert_eq!(buffer.capacity(), 4);
         buffer.ensure_capacity(4);
-        assert!(buffer.capacity() >= 4);
+        assert_eq!(buffer.capacity(), 4);
         buffer.ensure_capacity(5);
-        assert!(buffer.capacity() >= 5);
+        assert_eq!(buffer.capacity(), 7);
         assert_eq!(&buffer[..], [7]);
     }
 
@@ -943,17 +969,17 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_push_failed() {
-        let mut buffer = Buffer::allocate(3);
+        let mut buffer = Buffer::allocate(2);
         for _ in 0..10 {
             buffer.push(7);
         }
     }
 
     #[test]
-    fn test_push_may_reallocate() {
-        let mut buffer = Buffer::allocate(3);
+    fn test_push_resizing() {
+        let mut buffer = Buffer::allocate(2);
         for _ in 0..10 {
-            buffer.push_may_reallocate(7);
+            buffer.push_resizing(7);
         }
         assert_eq!(buffer.len(), 10);
     }
@@ -974,6 +1000,8 @@ mod tests {
     #[test]
     fn test_clone_from() {
         // TODO: test clone inline
+        // TODO: check where we need clone_from with/without resizing, this function might be called
+        // clone_from_fixed, respectively push_resizing might be called resizing_push.
 
         let mut buffer = Buffer::allocate(100);
         buffer.push(7);
@@ -982,7 +1010,7 @@ mod tests {
         let mut buffer2 = Buffer::allocate(50);
         buffer2.clone_from(&buffer);
         assert_eq!(buffer, buffer2);
-        assert_eq!(buffer2.capacity(), Buffer::default_capacity(50));
+        assert_ne!(buffer.capacity(), buffer2.capacity());
     }
 
     #[test]

@@ -543,7 +543,7 @@ mod ubig {
     fn add_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> UBig {
         debug_assert!(buffer.len() >= 3);
         if add::add_dword_in_place(&mut buffer, rhs) {
-            buffer.push_may_reallocate(1);
+            buffer.push_resizing(1);
         }
         buffer.into()
     }
@@ -557,7 +557,7 @@ mod ubig {
             buffer.push_slice(&rhs[n..]);
         }
         if overflow && add::add_one_in_place(&mut buffer[n..]) {
-            buffer.push_may_reallocate(1);
+            buffer.push_resizing(1);
         }
         buffer.into()
     }

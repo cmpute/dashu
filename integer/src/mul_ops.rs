@@ -312,7 +312,7 @@ mod ubig {
     #[inline]
     fn mul_dword(a: DoubleWord, b: DoubleWord) -> UBig {
         if a <= Word::MAX as DoubleWord && b <= Word::MAX as DoubleWord {
-            UBig::from(shrink_dword(a) * shrink_dword(b))
+            UBig::from(a * b)
         } else {
             mul_dword_slow(a, b)
         }
@@ -338,7 +338,7 @@ mod ubig {
             a if a <= Word::MAX as DoubleWord => {
                 let carry = mul::mul_word_in_place(&mut buffer, shrink_dword(a));
                 if carry != 0 {
-                    buffer.push_may_reallocate(carry);
+                    buffer.push_resizing(carry);
                 }
                 buffer.into()
             },

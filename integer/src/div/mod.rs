@@ -96,11 +96,11 @@ pub(crate) fn fast_rem_by_normalized_word(
     debug_assert!(words.len() >= 2);
 
     // first calculate the highest remainder
-    let (last, front) = words.split_last().unwrap();
+    let (last, words_lo) = words.split_last().unwrap();
     let mut rem = fast_div_rhs.div_rem_word(*last).1;
 
     // then iterate through the words
-    for word in front.iter().rev() {
+    for word in words_lo.iter().rev() {
         let a = double_word(*word, rem);
         rem = fast_div_rhs.div_rem(a).1;
     }
@@ -122,8 +122,8 @@ pub(crate) fn div_by_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> Doub
     if rhs.is_power_of_two() {
         let sh = rhs.trailing_zeros();
         debug_assert!(sh < WORD_BITS); // high word of rhs must not be zero
-        let (first, tail) = words.split_first_mut().unwrap();
-        let rem = shift::shr_in_place(tail, sh);
+        let (first, words_hi) = words.split_first_mut().unwrap();
+        let rem = shift::shr_in_place(words_hi, sh);
         return double_word(rem, *first);
     }
 
@@ -145,13 +145,13 @@ pub(crate) fn fast_div_by_dword_in_place(
     let hi = shift::shl_in_place(words, shift);
 
     // first div [hi, last word, second last word] by rhs
-    let (n_hi, front) = words.split_last_mut().unwrap();
-    let (n_lo, front) = front.split_last_mut().unwrap();
-    let (q, mut rem) = fast_div_rhs.div_rem((*n_lo, double_word(*n_hi, hi)));
-    *n_hi = 0; *n_lo = q;
+    let (top_hi, words_lo) = words.split_last_mut().unwrap();
+    let (top_lo, words_lo) = words_lo.split_last_mut().unwrap();
+    let (q, mut rem) = fast_div_rhs.div_rem((*top_lo, double_word(*top_hi, hi)));
+    *top_hi = 0; *top_lo = q;
 
     // chunk the words into double words, and do 4by2 divisions
-    let mut dwords = front.rchunks_exact_mut(2);
+    let mut dwords = words_lo.rchunks_exact_mut(2);
     for chunk in &mut dwords {
         let lo = chunk.first().unwrap();
         let hi = chunk.last().unwrap();
@@ -203,13 +203,13 @@ pub(crate) fn fast_rem_by_normalized_dword(
     debug_assert!(words.len() >= 3);
 
     // first calculate the highest remainder
-    let (n_hi, front) = words.split_last().unwrap();
-    let (n_lo, front) = front.split_last().unwrap();
-    let mut rem = fast_div_rhs.div_rem_dword(double_word(*n_hi, *n_lo)).1;
+    let (top_hi, words_lo) = words.split_last().unwrap();
+    let (top_lo, words_lo) = words_lo.split_last().unwrap();
+    let mut rem = fast_div_rhs.div_rem_dword(double_word(*top_hi, *top_lo)).1;
 
     // then iterate through the words
     // chunk the words into double words, and do 4by2 divisions
-    let mut dwords = front.rchunks_exact(2);
+    let mut dwords = words_lo.rchunks_exact(2);
     for chunk in &mut dwords {
         let lo = chunk.first().unwrap();
         let hi = chunk.last().unwrap();

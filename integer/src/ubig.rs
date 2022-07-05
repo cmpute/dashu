@@ -205,21 +205,21 @@ mod tests {
         let mut a = gen_ubig(9);
         let prev_cap = a.capacity();
         a.clone_from(&num);
-        // The buffer should be reused, 9 is close enough to 10.
+        // the buffer should be reused, 9 is close enough to 10.
         assert_eq!(a.capacity(), prev_cap);
         assert_ne!(a.capacity(), num.capacity());
 
         let mut a = gen_ubig(3);
         let prev_cap = a.capacity();
         a.clone_from(&num);
-        // The buffer should now be reallocated, it's too Small.
+        // the buffer should now be reallocated, it's too Small.
         assert_ne!(a.capacity(), prev_cap);
         assert_eq!(a.capacity(), num.capacity());
 
         let mut a = gen_ubig(100);
         let prev_cap = a.capacity();
         a.clone_from(&num);
-        // The buffer should now be reallocated, it's too large.
+        // the buffer should now be reallocated, it's too large.
         assert_ne!(a.capacity(), prev_cap);
         assert_eq!(a.capacity(), num.capacity());
     }

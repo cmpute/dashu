@@ -326,9 +326,9 @@ mod tests {
     #[test]
     fn test_fast_divide_small() {
         let mut rng = StdRng::seed_from_u64(1);
-        for _ in 0..1000000 {
+        for _ in 0..400000 {
             let d_bits = rng.gen_range(2..=WORD_BITS);
-            let max_d = (1 << d_bits) - 1;
+            let max_d = Word::MAX >> (WORD_BITS - d_bits);
             let d = rng.gen_range(max_d / 2 + 1..=max_d);
             let fast_div = FastDivideSmall::new(d);
             let n = rng.gen();
@@ -344,7 +344,7 @@ mod tests {
         assert_eq!(fast_div.div_rem(0), (0, 0));
 
         let mut rng = StdRng::seed_from_u64(1);
-        for _ in 0..1000000 {
+        for _ in 0..200000 {
             let d = rng.gen_range(Word::MAX / 2 + 1..=Word::MAX);
             let q = rng.gen();
             let r = rng.gen_range(0..d);

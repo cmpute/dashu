@@ -60,7 +60,7 @@ pub(crate) fn add_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> bool {
     let (word_1, words_hi) = words_hi.split_first_mut().unwrap();
     let (b0, b1) = split_dword(rhs);
     let (s0, carry) = word_0.overflowing_add(b0);
-    *word_1 = s0;
+    *word_0 = s0;
     let (s1, carry) = add_with_carry(*word_1, b1, carry);
     *word_1 = s1;
     carry && add_one_in_place(words_hi)

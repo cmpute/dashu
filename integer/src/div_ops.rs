@@ -1429,14 +1429,14 @@ mod ubig {
         let (shift, fast_div_rhs_top) = div::normalize_large(rhs);
         let lhs_carry = shift::shl_in_place(lhs, shift);
         if lhs_carry != 0 {
-            lhs.push_may_reallocate(lhs_carry);
+            lhs.push_resizing(lhs_carry);
         }
         let mut allocation =
             MemoryAllocation::new(div::memory_requirement_exact(lhs.len(), rhs.len()));
         let mut memory = allocation.memory();
         let overflow = div::div_rem_in_place(lhs, rhs, fast_div_rhs_top, &mut memory);
         if overflow {
-            lhs.push_may_reallocate(1);
+            lhs.push_resizing(1);
         }
         shift
     }
