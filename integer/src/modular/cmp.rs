@@ -1,8 +1,8 @@
 //! Comparisons.
 
 use crate::modular::{
-    modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSmall},
-    modulo_ring::{ModuloRing, ModuloRingLarge, ModuloRingSmall},
+    modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSingle},
+    modulo_ring::{ModuloRing, ModuloRingLarge, ModuloRingSingle},
 };
 use core::ptr;
 
@@ -17,14 +17,14 @@ impl PartialEq for ModuloRing {
 impl Eq for ModuloRing {}
 
 /// Equality is identity: two rings are not equal even if they have the same modulus.
-impl PartialEq for ModuloRingSmall {
+impl PartialEq for ModuloRingSingle {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         ptr::eq(self, other)
     }
 }
 
-impl Eq for ModuloRingSmall {}
+impl Eq for ModuloRingSingle {}
 
 /// Equality is identity: two rings are not equal even if they have the same modulus.
 impl PartialEq for ModuloRingLarge {
@@ -58,7 +58,7 @@ impl PartialEq for Modulo<'_> {
 
 impl Eq for Modulo<'_> {}
 
-impl PartialEq for ModuloSmall<'_> {
+impl PartialEq for ModuloSingle<'_> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.check_same_ring(other);

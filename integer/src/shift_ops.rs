@@ -234,12 +234,12 @@ mod repr {
         if rhs <= dword.leading_zeros() as usize {
             Repr::from_dword(dword << rhs)
         } else {
-            shl_dword_slow(dword, rhs)
+            shl_dword_spilt(dword, rhs)
         }
     }
 
     /// Shift left a non-zero `DoubleWord` by `rhs` bits.
-    fn shl_dword_slow(dword: DoubleWord, rhs: usize) -> Repr {
+    fn shl_dword_spilt(dword: DoubleWord, rhs: usize) -> Repr {
         // TODO: specialize the case where dword == 1 using set_bit?
 
         let shift_words = rhs / WORD_BITS_USIZE;

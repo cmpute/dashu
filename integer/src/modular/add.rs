@@ -3,8 +3,8 @@
 use crate::{
     add, cmp,
     modular::{
-        modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSmall, ModuloSmallRaw},
-        modulo_ring::ModuloRingSmall,
+        modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSingle, ModuloSmallRaw},
+        modulo_ring::ModuloRingSingle,
     },
 };
 use core::{
@@ -164,7 +164,7 @@ impl<'a> SubAssign<&Modulo<'a>> for Modulo<'a> {
 impl ModuloSmallRaw {
     /// -self
     #[inline]
-    fn negate(self, ring: &ModuloRingSmall) -> ModuloSmallRaw {
+    fn negate(self, ring: &ModuloRingSingle) -> ModuloSmallRaw {
         debug_assert!(self.is_valid(ring));
         let normalized_val = match self.normalized() {
             0 => 0,
@@ -175,7 +175,7 @@ impl ModuloSmallRaw {
 
     /// self + other
     #[inline]
-    fn add(self, other: ModuloSmallRaw, ring: &ModuloRingSmall) -> ModuloSmallRaw {
+    fn add(self, other: ModuloSmallRaw, ring: &ModuloRingSingle) -> ModuloSmallRaw {
         debug_assert!(self.is_valid(ring) && other.is_valid(ring));
         let (mut val, overflow) = self.normalized().overflowing_add(other.normalized());
         let m = ring.normalized_modulus();
@@ -189,7 +189,7 @@ impl ModuloSmallRaw {
 
     /// self - other
     #[inline]
-    fn sub(self, other: ModuloSmallRaw, ring: &ModuloRingSmall) -> ModuloSmallRaw {
+    fn sub(self, other: ModuloSmallRaw, ring: &ModuloRingSingle) -> ModuloSmallRaw {
         debug_assert!(self.is_valid(ring) && other.is_valid(ring));
         let (mut val, overflow) = self.normalized().overflowing_sub(other.normalized());
         if overflow {
@@ -202,7 +202,7 @@ impl ModuloSmallRaw {
     }
 }
 
-impl<'a> ModuloSmall<'a> {
+impl<'a> ModuloSingle<'a> {
     /// self = -self
     #[inline]
     fn negate_in_place(&mut self) {
@@ -212,21 +212,21 @@ impl<'a> ModuloSmall<'a> {
 
     /// self += rhs
     #[inline]
-    fn add_in_place(&mut self, rhs: &ModuloSmall<'a>) {
+    fn add_in_place(&mut self, rhs: &ModuloSingle<'a>) {
         self.check_same_ring(rhs);
         self.set_raw(self.raw().add(rhs.raw(), self.ring()));
     }
 
     /// self -= rhs
     #[inline]
-    fn sub_in_place(&mut self, rhs: &ModuloSmall<'a>) {
+    fn sub_in_place(&mut self, rhs: &ModuloSingle<'a>) {
         self.check_same_ring(rhs);
         self.set_raw(self.raw().sub(rhs.raw(), self.ring()));
     }
 
     /// rhs = self - rhs
     #[inline]
-    fn sub_in_place_swap(&self, rhs: &mut ModuloSmall<'a>) {
+    fn sub_in_place_swap(&self, rhs: &mut ModuloSingle<'a>) {
         self.check_same_ring(rhs);
         rhs.set_raw(self.raw().sub(rhs.raw(), self.ring()));
     }

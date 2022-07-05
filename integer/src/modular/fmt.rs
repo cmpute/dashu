@@ -1,8 +1,8 @@
 //! Formatting modular rings and modular numbers.
 
 use crate::modular::{
-    modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSmall},
-    modulo_ring::{ModuloRing, ModuloRingLarge, ModuloRingRepr, ModuloRingSmall},
+    modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSingle},
+    modulo_ring::{ModuloRing, ModuloRingLarge, ModuloRingRepr, ModuloRingSingle},
 };
 use core::fmt::{self, Binary, Debug, Display, Formatter, LowerHex, Octal, UpperHex};
 
@@ -11,13 +11,13 @@ macro_rules! impl_fmt {
         impl $t for ModuloRing {
             fn fmt(&self, f: &mut Formatter) -> fmt::Result {
                 match self.repr() {
-                    ModuloRingRepr::Small(self_small) => $t::fmt(self_small, f),
+                    ModuloRingRepr::Single(self_small) => $t::fmt(self_small, f),
                     ModuloRingRepr::Large(self_large) => $t::fmt(self_large, f),
                 }
             }
         }
 
-        impl $t for ModuloRingSmall {
+        impl $t for ModuloRingSingle {
             fn fmt(&self, f: &mut Formatter) -> fmt::Result {
                 f.write_str("mod ")?;
                 $t::fmt(&self.modulus(), f)
@@ -40,7 +40,7 @@ macro_rules! impl_fmt {
             }
         }
 
-        impl $t for ModuloSmall<'_> {
+        impl $t for ModuloSingle<'_> {
             fn fmt(&self, f: &mut Formatter) -> fmt::Result {
                 $t::fmt(&self.residue(), f)?;
                 f.write_str(" (")?;

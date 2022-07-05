@@ -3,7 +3,7 @@
 use crate::{
     arch::word::Word,
     math,
-    modular::modulo_ring::{ModuloRingLarge, ModuloRingSmall},
+    modular::modulo_ring::{ModuloRingLarge, ModuloRingSingle},
 };
 use alloc::vec::Vec;
 
@@ -21,10 +21,11 @@ use alloc::vec::Vec;
 pub struct Modulo<'a>(ModuloRepr<'a>);
 
 pub(crate) enum ModuloRepr<'a> {
-    Small(ModuloSmall<'a>),
+    Small(ModuloSingle<'a>),
     Large(ModuloLarge<'a>),
 }
 
+// TODO: we should eliminate this struct and just implement functions inplace.
 /// Modular value in some unknown ring. The ring must be provided to operations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ModuloSmallRaw {
@@ -33,8 +34,8 @@ pub(crate) struct ModuloSmallRaw {
 }
 
 #[derive(Clone)]
-pub(crate) struct ModuloSmall<'a> {
-    ring: &'a ModuloRingSmall,
+pub(crate) struct ModuloSingle<'a> {
+    ring: &'a ModuloRingSingle,
     raw: ModuloSmallRaw,
 }
 
@@ -58,14 +59,14 @@ impl<'a> Modulo<'a> {
     }
 
     /// Panics when trying to do operations on [Modulo] values from different rings.
-    pub(crate) fn panic_different_rings() -> ! {
+    pub fn panic_different_rings() -> ! {
         panic!("Modulo values from different rings")
     }
 }
 
-impl<'a> From<ModuloSmall<'a>> for Modulo<'a> {
+impl<'a> From<ModuloSingle<'a>> for Modulo<'a> {
     #[inline]
-    fn from(a: ModuloSmall<'a>) -> Self {
+    fn from(a: ModuloSingle<'a>) -> Self {
         Modulo(ModuloRepr::Small(a))
     }
 }
@@ -88,22 +89,22 @@ impl ModuloSmallRaw {
     }
 
     #[inline]
-    pub(crate) const fn is_valid(&self, ring: &ModuloRingSmall) -> bool {
+    pub(crate) const fn is_valid(&self, ring: &ModuloRingSingle) -> bool {
         self.normalized_value < ring.normalized_modulus()
             && self.normalized_value & math::ones_word(ring.shift()) == 0
     }
 }
 
-impl<'a> ModuloSmall<'a> {
+impl<'a> ModuloSingle<'a> {
     #[inline]
-    pub(crate) fn new(raw: ModuloSmallRaw, ring: &'a ModuloRingSmall) -> Self {
+    pub(crate) fn new(raw: ModuloSmallRaw, ring: &'a ModuloRingSingle) -> Self {
         debug_assert!(raw.is_valid(ring));
-        ModuloSmall { ring, raw }
+        ModuloSingle { ring, raw }
     }
 
     /// Get the ring.
     #[inline]
-    pub(crate) fn ring(&self) -> &'a ModuloRingSmall {
+    pub(crate) fn ring(&self) -> &'a ModuloRingSingle {
         self.ring
     }
 
@@ -120,7 +121,7 @@ impl<'a> ModuloSmall<'a> {
 
     /// Checks that two values are from the same ring.
     #[inline]
-    pub(crate) fn check_same_ring(&self, other: &ModuloSmall) {
+    pub(crate) fn check_same_ring(&self, other: &ModuloSingle) {
         if self.ring() != other.ring() {
             Modulo::panic_different_rings();
         }

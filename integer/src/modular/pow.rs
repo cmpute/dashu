@@ -4,8 +4,8 @@ use crate::{
     buffer::TypedReprRef::*,
     memory::{self, MemoryAllocation},
     modular::{
-        modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSmall, ModuloSmallRaw},
-        modulo_ring::ModuloRingSmall,
+        modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSingle, ModuloSmallRaw},
+        modulo_ring::ModuloRingSingle,
     },
     primitive::{double_word, split_dword, PrimitiveUnsigned, WORD_BITS, WORD_BITS_USIZE},
     ubig::UBig,
@@ -37,7 +37,7 @@ impl<'a> Modulo<'a> {
 impl ModuloSmallRaw {
     /// self^exp
     #[inline]
-    pub(crate) const fn pow_word(self, exp: Word, ring: &ModuloRingSmall) -> ModuloSmallRaw {
+    pub(crate) const fn pow_word(self, exp: Word, ring: &ModuloRingSingle) -> ModuloSmallRaw {
         if exp == 0 {
             return ModuloSmallRaw::from_word(1, ring);
         }
@@ -53,7 +53,7 @@ impl ModuloSmallRaw {
         mut bits: u32,
         base: ModuloSmallRaw,
         exp: Word,
-        ring: &ModuloRingSmall,
+        ring: &ModuloRingSingle,
     ) -> ModuloSmallRaw {
         let mut res = self;
         while bits > 0 {
@@ -67,25 +67,25 @@ impl ModuloSmallRaw {
     }
 }
 
-impl<'a> ModuloSmall<'a> {
+impl<'a> ModuloSingle<'a> {
     /// Exponentiation.
     #[inline]
-    fn pow(&self, exp: &UBig) -> ModuloSmall<'a> {
+    fn pow(&self, exp: &UBig) -> ModuloSingle<'a> {
         match exp.repr() {
             // self^0 == 1
-            RefSmall(0) => ModuloSmall::from_ubig(&UBig::one(), self.ring()),
+            RefSmall(0) => ModuloSingle::from_ubig(&UBig::one(), self.ring()),
             // self^1 == self
             RefSmall(1) => self.clone(),
             // self^2 == self * self
             RefSmall(2) => {
                 let res = self.raw().mul(self.raw(), self.ring());
-                ModuloSmall::new(res, self.ring())
+                ModuloSingle::new(res, self.ring())
             }
             _ => self.pow_nontrivial(exp),
         }
     }
 
-    fn pow_nontrivial(&self, exp: &UBig) -> ModuloSmall<'a> {
+    fn pow_nontrivial(&self, exp: &UBig) -> ModuloSingle<'a> {
         debug_assert!(*exp >= UBig::from_word(3));
 
         let exp_words = exp.as_words();
@@ -95,7 +95,7 @@ impl<'a> ModuloSmall<'a> {
             n -= 1;
             val = val.pow_helper(WORD_BITS, self.raw(), exp_words[n], self.ring());
         }
-        ModuloSmall::new(val, self.ring())
+        ModuloSingle::new(val, self.ring())
     }
 }
 
@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn test_pow_word() {
-        let ring = ModuloRingSmall::new(100);
+        let ring = ModuloRingSingle::new(100);
         let a = ModuloSmallRaw::from_word(17, &ring);
         assert_eq!(a.pow_word(0, &ring).residue(&ring), 1);
         assert_eq!(a.pow_word(15, &ring).residue(&ring), 93);

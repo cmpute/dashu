@@ -5,3 +5,4 @@
 - [ ] Add operations between UBig and IBig (the result should be IBig)
 - [ ] Obselete magnitude() and from_word() function
 - [ ] Format code and inspect inline/pub(crate) markers
+- [ ] Add more tests to cover cases with inline double words

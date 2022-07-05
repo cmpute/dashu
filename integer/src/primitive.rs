@@ -31,12 +31,15 @@ pub(crate) const fn split_dword(dw: DoubleWord) -> (Word, Word) {
     (dw as Word, (dw >> WORD_BITS) as Word)
 }
 
-/// Get the low part of a `DoubleWord` assuming the high part is zero
+/// Get the low part of a `DoubleWord` if the high part is zero
 #[inline]
-pub(crate) const fn shrink_dword(dw: DoubleWord) -> Word {
+pub(crate) const fn shrink_dword(dw: DoubleWord) -> Option<Word> {
     let (lo, hi) = split_dword(dw);
-    debug_assert_in_const_fn!(hi == 0);
-    lo
+    if hi == 0 {
+        Some(lo)
+    } else {
+        None
+    }
 }
 
 pub(crate) trait PrimitiveUnsigned

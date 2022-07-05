@@ -4,8 +4,8 @@ use crate::{
     div,
     memory::{self, Memory, MemoryAllocation},
     modular::{
-        modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSmall, ModuloSmallRaw},
-        modulo_ring::{ModuloRingLarge, ModuloRingSmall},
+        modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSingle, ModuloSmallRaw},
+        modulo_ring::{ModuloRingLarge, ModuloRingSingle},
     },
     mul,
     primitive::extend_word,
@@ -81,7 +81,7 @@ impl<'a> MulAssign<&Modulo<'a>> for Modulo<'a> {
 
 impl ModuloSmallRaw {
     #[inline]
-    pub(crate) const fn mul(self, other: ModuloSmallRaw, ring: &ModuloRingSmall) -> ModuloSmallRaw {
+    pub(crate) const fn mul(self, other: ModuloSmallRaw, ring: &ModuloRingSingle) -> ModuloSmallRaw {
         debug_assert_in_const_fn!(self.is_valid(ring) && other.is_valid(ring));
         let a = self.normalized();
         let b = other.normalized();
@@ -91,10 +91,10 @@ impl ModuloSmallRaw {
     }
 }
 
-impl<'a> ModuloSmall<'a> {
+impl<'a> ModuloSingle<'a> {
     /// self *= rhs
     #[inline]
-    pub(crate) fn mul_in_place(&mut self, rhs: &ModuloSmall<'a>) {
+    pub(crate) fn mul_in_place(&mut self, rhs: &ModuloSingle<'a>) {
         self.check_same_ring(rhs);
         self.set_raw(self.raw().mul(rhs.raw(), self.ring()));
     }

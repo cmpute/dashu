@@ -576,12 +576,12 @@ mod repr {
                 RefSmall(dword) => dword as f32,
                 RefLarge(_) => match self.try_to_unsigned::<u32>() {
                     Ok(val) => val as f32,
-                    Err(_) => self.to_f32_slow(),
+                    Err(_) => self.to_f32_nontrivial(),
                 },
             }
         }
 
-        fn to_f32_slow(self) -> f32 {
+        fn to_f32_nontrivial(self) -> f32 {
             let n = self.bit_len();
             debug_assert!(n > 32);
 
@@ -617,12 +617,12 @@ mod repr {
                 RefSmall(dword) => dword as f64,
                 RefLarge(_) => match self.try_to_unsigned::<u64>() {
                     Ok(val) => val as f64,
-                    Err(_) => self.to_f64_slow(),
+                    Err(_) => self.to_f64_nontrivial(),
                 },
             }
         }
 
-        fn to_f64_slow(self) -> f64 {
+        fn to_f64_nontrivial(self) -> f64 {
             let n = self.bit_len();
             debug_assert!(n > 64);
 

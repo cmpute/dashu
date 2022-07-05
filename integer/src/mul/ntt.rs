@@ -5,7 +5,7 @@ use crate::{
         ntt::{MAX_ORDER, PRIMES},
         word::Word,
     },
-    modular::{modulo::ModuloSmallRaw, modulo_ring::ModuloRingSmall},
+    modular::{modulo::ModuloSmallRaw, modulo_ring::ModuloRingSingle},
 };
 
 /// The number of prime factors in the ring.
@@ -20,10 +20,10 @@ pub(crate) struct Prime {
 }
 
 /// Factor fields of the three-prime ring.
-const FIELDS: [ModuloRingSmall; NUM_PRIMES] = [
-    ModuloRingSmall::new(PRIMES[0].prime),
-    ModuloRingSmall::new(PRIMES[1].prime),
-    ModuloRingSmall::new(PRIMES[2].prime),
+const FIELDS: [ModuloRingSingle; NUM_PRIMES] = [
+    ModuloRingSingle::new(PRIMES[0].prime),
+    ModuloRingSingle::new(PRIMES[1].prime),
+    ModuloRingSingle::new(PRIMES[2].prime),
 ];
 
 /// An element of the three-prime ring.

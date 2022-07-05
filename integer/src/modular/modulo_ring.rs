@@ -1,13 +1,13 @@
 //! A ring of integers modulo a positive integer.
 
 use crate::{
-    arch::word::Word,
+    arch::word::{Word, DoubleWord},
     assert::debug_assert_in_const_fn,
     buffer::TypedReprRef,
     cmp, div,
     fast_divide::{FastDivideNormalized, FastDivideNormalized2},
     math,
-    ubig::UBig,
+    ubig::UBig, primitive::{shrink_dword, split_dword},
 };
 use alloc::vec::Vec;
 use core::cmp::Ordering;
@@ -23,16 +23,22 @@ use core::cmp::Ordering;
 /// ```
 pub struct ModuloRing(ModuloRingRepr);
 
-// TODO: rename to Single/Double/Large
 pub(crate) enum ModuloRingRepr {
-    Small(ModuloRingSmall),
+    Single(ModuloRingSingle),
+    // Double(ModuloRingDouble),
     Large(ModuloRingLarge),
 }
 
-pub(crate) struct ModuloRingSmall {
+pub(crate) struct ModuloRingSingle {
     normalized_modulus: Word,
     shift: u32,
     fast_div: FastDivideNormalized,
+}
+
+pub(crate) struct ModuloRingDouble {
+    normalized_modulus: DoubleWord,
+    shift: u32,
+    fast_div: FastDivideNormalized2,
 }
 
 pub(crate) struct ModuloRingLarge {
@@ -64,12 +70,15 @@ impl ModuloRing {
     pub fn new(n: &UBig) -> ModuloRing {
         match n.repr() {
             TypedReprRef::RefSmall(0) => panic!("ModuloRing::new(0)"),
-            TypedReprRef::RefSmall(word) => {
-                if let Ok(word) = Word::try_from(word) {
-                    ModuloRing(ModuloRingRepr::Small(ModuloRingSmall::new(word)))
+            TypedReprRef::RefSmall(dword) => {
+                if let Some(word) = shrink_dword(dword) {
+                    ModuloRing(ModuloRingRepr::Single(ModuloRingSingle::new(word)))
                 } else {
-                    // TODO: implement double word version
-                    unimplemented!()
+                    // ModuloRing(ModuloRingRepr::Double(ModuloRingDouble::new(dword)))
+                    // TODO: bandaid here
+                    let (lo, hi) = split_dword(dword);
+                    let dword_slice: [Word; 2] = [lo, hi];
+                    ModuloRing(ModuloRingRepr::Large(ModuloRingLarge::new(&dword_slice)))
                 }
             },
             TypedReprRef::RefLarge(words) => ModuloRing(ModuloRingRepr::Large(ModuloRingLarge::new(words))),
@@ -82,21 +91,22 @@ impl ModuloRing {
     }
 }
 
-impl ModuloRingSmall {
-    /// Create a new small ring of integers modulo `n`.
+impl ModuloRingSingle {
+    /// Create a new ring of integers modulo a single word number `n`.
     #[inline]
-    pub(crate) const fn new(n: Word) -> ModuloRingSmall {
+    pub(crate) const fn new(n: Word) -> ModuloRingSingle {
         debug_assert_in_const_fn!(n != 0);
         let shift = n.leading_zeros();
         let normalized_modulus = n << shift;
         let fast_div = FastDivideNormalized::new(normalized_modulus);
-        ModuloRingSmall {
+        ModuloRingSingle {
             normalized_modulus,
             shift,
             fast_div,
         }
     }
 
+    // Directly expose this through public field?
     #[inline]
     pub(crate) const fn normalized_modulus(&self) -> Word {
         self.normalized_modulus
@@ -109,6 +119,43 @@ impl ModuloRingSmall {
 
     #[inline]
     pub(crate) const fn fast_div(&self) -> FastDivideNormalized {
+        self.fast_div
+    }
+
+    #[inline]
+    pub(crate) const fn is_valid(&self, val: Word) -> bool {
+        val < self.normalized_modulus && val & math::ones_word(self.shift) == 0
+    }
+}
+
+
+impl ModuloRingDouble {
+    /// Create a new ring of integers modulo a double word number `n`.
+    #[inline]
+    pub(crate) const fn new(n: DoubleWord) -> ModuloRingDouble {
+        debug_assert_in_const_fn!(n > Word::MAX as DoubleWord);
+        let shift = n.leading_zeros();
+        let normalized_modulus = n << shift;
+        let fast_div = FastDivideNormalized2::new(normalized_modulus);
+        ModuloRingDouble {
+            normalized_modulus,
+            shift,
+            fast_div,
+        }
+    }
+
+    #[inline]
+    pub(crate) const fn normalized_modulus(&self) -> DoubleWord {
+        self.normalized_modulus
+    }
+
+    #[inline]
+    pub(crate) const fn shift(&self) -> u32 {
+        self.shift
+    }
+
+    #[inline]
+    pub(crate) const fn fast_div(&self) -> FastDivideNormalized2 {
         self.fast_div
     }
 }

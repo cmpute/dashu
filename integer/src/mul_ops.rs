@@ -314,11 +314,11 @@ mod ubig {
         if a <= Word::MAX as DoubleWord && b <= Word::MAX as DoubleWord {
             UBig::from(a * b)
         } else {
-            mul_dword_slow(a, b)
+            mul_dword_spilt(a, b)
         }
     }
 
-    fn mul_dword_slow(lhs: DoubleWord, rhs: DoubleWord) -> UBig {
+    fn mul_dword_spilt(lhs: DoubleWord, rhs: DoubleWord) -> UBig {
         let (lo, hi) = math::mul_add_carry_dword(lhs, rhs);
         let mut buffer = Buffer::allocate(4);
         let (n0, n1) = split_dword(lo);
@@ -335,15 +335,14 @@ mod ubig {
         match rhs {
             0 => UBig::zero(),
             1 => buffer.into(),
-            a if a <= Word::MAX as DoubleWord => {
-                let carry = mul::mul_word_in_place(&mut buffer, shrink_dword(a));
+            dw => if let Some(word) = shrink_dword(dw) {
+                let carry = mul::mul_word_in_place(&mut buffer, word);
                 if carry != 0 {
                     buffer.push_resizing(carry);
                 }
                 buffer.into()
-            },
-            b => {
-                let carry = mul::mul_dword_in_place(&mut buffer, b);
+            } else {
+                let carry = mul::mul_dword_in_place(&mut buffer, dw);
                 if carry != 0 {
                     let (lo, hi) = split_dword(carry);
                     buffer.ensure_capacity(buffer.len() + 2);

@@ -1,14 +1,14 @@
 //! Conversion between Modulo, UBig and IBig.
 
 use crate::{
-    arch::word::Word,
+    arch::word::{Word, DoubleWord},
     buffer::{Buffer, TypedReprRef::*, TypedRepr::*},
     div,
     ibig::IBig,
     memory::MemoryAllocation,
     modular::{
-        modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSmall, ModuloSmallRaw},
-        modulo_ring::{ModuloRing, ModuloRingLarge, ModuloRingRepr, ModuloRingSmall},
+        modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSingle, ModuloSmallRaw},
+        modulo_ring::{ModuloRing, ModuloRingLarge, ModuloRingRepr, ModuloRingSingle},
     },
     primitive::{extend_word, split_dword},
     shift,
@@ -31,8 +31,9 @@ impl ModuloRing {
     #[inline]
     pub fn modulus(&self) -> UBig {
         match self.repr() {
-            ModuloRingRepr::Small(self_small) => UBig::from_word(self_small.modulus()),
-            ModuloRingRepr::Large(self_large) => self_large.modulus(),
+            ModuloRingRepr::Single(single) => single.modulus().into(),
+            // ModuloRingRepr::Double(double) => double.modulus().into(),
+            ModuloRingRepr::Large(large) => large.modulus(),
         }
     }
 
@@ -53,7 +54,7 @@ impl ModuloRing {
     }
 }
 
-impl ModuloRingSmall {
+impl ModuloRingSingle {
     #[inline]
     pub(crate) fn modulus(&self) -> Word {
         self.normalized_modulus() >> self.shift()
@@ -93,13 +94,13 @@ impl Modulo<'_> {
 
 impl ModuloSmallRaw {
     #[inline]
-    pub(crate) fn residue(self, ring: &ModuloRingSmall) -> Word {
+    pub(crate) fn residue(self, ring: &ModuloRingSingle) -> Word {
         debug_assert!(self.is_valid(ring));
         self.normalized() >> ring.shift()
     }
 
     #[inline]
-    pub(crate) const fn from_word(word: Word, ring: &ModuloRingSmall) -> ModuloSmallRaw {
+    pub(crate) const fn from_word(word: Word, ring: &ModuloRingSingle) -> ModuloSmallRaw {
         let rem = if ring.shift() == 0 {
             ring.fast_div().div_rem_word(word).1
         } else {
@@ -108,7 +109,7 @@ impl ModuloSmallRaw {
         ModuloSmallRaw::from_normalized(rem)
     }
 
-    fn from_large(words: &[Word], ring: &ModuloRingSmall) -> ModuloSmallRaw {
+    fn from_large(words: &[Word], ring: &ModuloRingSingle) -> ModuloSmallRaw {
         let mut rem = div::fast_rem_by_normalized_word(words, ring.fast_div());
         if ring.shift() != 0 {
             rem = ring.fast_div().div_rem(extend_word(rem) << ring.shift()).1
@@ -117,7 +118,7 @@ impl ModuloSmallRaw {
     }
 }
 
-impl ModuloSmall<'_> {
+impl ModuloSingle<'_> {
     #[inline]
     pub(crate) fn residue(&self) -> Word {
         self.raw().residue(self.ring())
@@ -144,7 +145,7 @@ impl IntoModulo for UBig {
     #[inline]
     fn into_modulo(self, ring: &ModuloRing) -> Modulo {
         match ring.repr() {
-            ModuloRingRepr::Small(ring_small) => ModuloSmall::from_ubig(&self, ring_small).into(),
+            ModuloRingRepr::Single(ring_small) => ModuloSingle::from_ubig(&self, ring_small).into(),
             ModuloRingRepr::Large(ring_large) => ModuloLarge::from_ubig(self, ring_large).into(),
         }
     }
@@ -154,7 +155,7 @@ impl IntoModulo for &UBig {
     #[inline]
     fn into_modulo(self, ring: &ModuloRing) -> Modulo {
         match ring.repr() {
-            ModuloRingRepr::Small(ring_small) => ModuloSmall::from_ubig(self, ring_small).into(),
+            ModuloRingRepr::Single(ring_small) => ModuloSingle::from_ubig(self, ring_small).into(),
             ModuloRingRepr::Large(ring_large) => {
                 ModuloLarge::from_ubig(self.clone(), ring_large).into()
             }
@@ -185,9 +186,9 @@ impl IntoModulo for &IBig {
     }
 }
 
-impl<'a> ModuloSmall<'a> {
+impl<'a> ModuloSingle<'a> {
     #[inline]
-    pub(crate) fn from_ubig(x: &UBig, ring: &'a ModuloRingSmall) -> ModuloSmall<'a> {
+    pub(crate) fn from_ubig(x: &UBig, ring: &'a ModuloRingSingle) -> ModuloSingle<'a> {
         let raw = match x.repr() {
             RefSmall(dword) => if let Ok(word) = Word::try_from(dword) {
                 ModuloSmallRaw::from_word(word, ring)
@@ -197,7 +198,7 @@ impl<'a> ModuloSmall<'a> {
             }
             RefLarge(words) => ModuloSmallRaw::from_large(words, ring),
         };
-        ModuloSmall::new(raw, ring)
+        ModuloSingle::new(raw, ring)
     }
 }
 
