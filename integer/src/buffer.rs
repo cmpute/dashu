@@ -64,16 +64,20 @@ pub(crate) struct Buffer {
 const_assert_eq!(mem::size_of::<Buffer>(), mem::size_of::<Repr>());
 
 /// A strong typed safe representation of a `Repr` without sign
+#[derive(Clone)]
 pub(crate) enum TypedRepr {
     Small(DoubleWord),
     Large(Buffer)
 }
 
 /// A strong typed safe representation of a reference to `Repr` without sign
+#[derive(Clone, Copy)]
 pub(crate) enum TypedReprRef<'a> {
     RefSmall(DoubleWord),
     RefLarge(&'a [Word])
 }
+
+// TODO: add TypedRepr::ref() -> TypedReprRef
 
 impl Buffer {
     /// Maximum number of `Word`s.
@@ -467,7 +471,7 @@ impl From<&[Word]> for Buffer {
 impl Repr {
     /// Get the length of the number (in `Word`s)
     #[inline]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         match self.capacity() {
             0 => unreachable!(),
             1 => 1,
@@ -480,7 +484,7 @@ impl Repr {
     /// 
     /// It will not be zero even if the underlying number is zero.
     #[inline]
-    pub fn capacity(&self) -> usize {
+    pub const fn capacity(&self) -> usize {
         self.capacity.get().unsigned_abs()
     }
 
@@ -523,18 +527,16 @@ impl Repr {
         }
     }
 
-    /// Set the sign flag of the representation
-    pub fn set_sign(&mut self, sign: Sign) {
-        match (self.capacity.get().signum(), sign) {
-            (1, Sign::Positive) | (-1, Sign::Negative) => {},
-            (1, Sign::Negative) | (-1, Sign::Positive) => {
-                self.capacity = unsafe {
-                    // SAFETY: capacity is not allowed to be zero
-                    NonZeroIsize::new_unchecked(self.capacity.get().wrapping_neg())
-                }
-            },
-            _ => unreachable!()
+    /// Set the sign flag and return the changed representation
+    #[inline]
+    pub fn with_sign(mut self, sign: Sign) -> Self {
+        if (sign == Sign::Positive) ^ (self.capacity.get() > 0) {
+            self.capacity = unsafe {
+                // SAFETY: capacity is not allowed to be zero
+                NonZeroIsize::new_unchecked(-self.capacity.get())
+            }
         }
+        self
     }
 
     /// Cast the reference of `Repr` to a strong typed representation, assuming the underlying data is unsigned.
@@ -643,17 +645,20 @@ impl Repr {
         }
     }
 
-    /// Creates a `Repr` with a buffer allocated on heap, the buffer will be
-    /// shrunk if there is exceeded capacity.
-    /// 
-    /// Note that it's recommended to call `Buffer::pop_zeros()` before it's
-    /// converted to the `Repr`.
+    /// Creates a `Repr` with a buffer allocated on heap. The leading zeros in the buffer
+    /// will be trimmed and the buffer will be shrunk if there is exceeded capacity.
     pub(crate) fn from_buffer(mut buffer: Buffer) -> Self {
+        buffer.pop_zeros();
+
         match buffer.len() {
             0 => Self::from_word(0),
             1 => Self::from_word(buffer[0]),
             2 => Self::from_dword(double_word(buffer[0], buffer[1])),
             _ => {
+                // If the Buffer was allocated with `Buffer::allocate(n)`
+                // and the normalized length is between `n - 2` and `n + 2`
+                // (or even approximately between `0.9 * n` and `1.125 * n`),
+                // there will be no reallocation here.
                 buffer.shrink();
 
                 // TODO: check whether this will call drop
@@ -670,9 +675,7 @@ impl Repr {
     /// converted to the `Repr`.
     #[inline]
     pub(crate) fn from_sign_buffer(sign: Sign, buffer: Buffer) -> Self {
-        let mut result = Self::from_buffer(buffer);
-        result.set_sign(sign);
-        result
+        Self::from_buffer(buffer).with_sign(sign)
     }
 
     /// Creates a `Repr` with value 0
@@ -681,10 +684,26 @@ impl Repr {
         Repr { capacity: unsafe { NonZeroIsize::new_unchecked(1) }, data: ReprData { inline: [0, 0] }}
     }
 
+    /// Check if the underlying value is zero
+    #[inline]
+    pub(crate) const fn is_zero(&self) -> bool {
+        self.capacity() == 1 && unsafe {
+            self.data.inline[0] == 0
+        }
+    }
+
     /// Creates a `Repr` with value 1
     #[inline]
     pub(crate) const fn one() -> Self {
         Repr { capacity: unsafe { NonZeroIsize::new_unchecked(1) }, data: ReprData { inline: [1, 0] }}
+    }
+    
+    /// Check if the underlying value is zero
+    #[inline]
+    pub(crate) const fn is_one(&self) -> bool {
+        self.capacity.get() == 1 && unsafe {
+            self.data.inline[0] == 1
+        }
     }
 
     /// Creates a `Repr` with value -1
@@ -718,8 +737,7 @@ impl Clone for Repr {
                 }
             }
         };
-        new.set_sign(sign);
-        new
+        new.with_sign(sign)
     }
 
     fn clone_from(&mut self, src: &Self) {
@@ -761,17 +779,19 @@ impl Clone for Repr {
             
             // update length and sign
             self.data.heap.1 = src_len;
-            self.set_sign(src_sign);
+            if (src_sign == Sign::Positive) ^ (self.capacity.get() > 0) {
+                self.capacity = NonZeroIsize::new_unchecked(-self.capacity.get());
+            }
         }
     }
 }
 
 impl Drop for Repr {
     fn drop(&mut self) {
-        let capacity = self.capacity.get().unsigned_abs();
-        if capacity > 2 {
+        let cap = self.capacity();
+        if cap > 2 {
             unsafe {
-                Buffer::deallocate_raw(NonNull::new_unchecked(self.data.heap.0), capacity);
+                Buffer::deallocate_raw(NonNull::new_unchecked(self.data.heap.0), cap);
             }
         }
     }
@@ -800,50 +820,6 @@ impl Hash for Repr {
         let (sign, arr) = self.as_sign_slice();
         sign.hash(state);
         (*arr).hash(state);
-    }
-}
-
-pub mod repr_utils {
-    use super::*;
-    use crate::math;
-
-    #[inline]
-    fn are_dword_low_bits_nonzero(dword: &DoubleWord, n: usize) -> bool {
-        let n = n.min(WORD_BITS_USIZE) as u32;
-        dword & math::ones_dword(n) != 0
-    }
-
-    fn are_slice_low_bits_nonzero(words: &[Word], n: usize) -> bool {
-        let n_words = n / WORD_BITS_USIZE;
-        if n_words >= words.len() {
-            true
-        } else {
-            let n_top = (n % WORD_BITS_USIZE) as u32;
-            words[..n_words].iter().any(|x| *x != 0)
-                || words[n_words] & math::ones_word(n_top) != 0
-        }
-    }
-
-    impl TypedRepr {
-        /// Check if low n-bits are not all zeros
-        #[inline]
-        pub(crate) fn are_low_bits_nonzero(&self, n: usize) -> bool {
-            match self {
-                Self::Small(dword) => are_dword_low_bits_nonzero(dword, n),
-                Self::Large(buffer) => are_slice_low_bits_nonzero(buffer, n)
-            }
-        }
-    }
-    
-    impl<'a> TypedReprRef<'a> {
-        /// Check if low n-bits are not all zeros
-        #[inline]
-        pub(crate) fn are_low_bits_nonzero(&self, n: usize) -> bool {
-            match self {
-                Self::RefSmall(dword) => are_dword_low_bits_nonzero(dword, n),
-                Self::RefLarge(buffer) => are_slice_low_bits_nonzero(buffer, n)
-            }
-        }
     }
 }
 

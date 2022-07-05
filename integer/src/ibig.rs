@@ -23,6 +23,7 @@ use crate::{
 /// # Ok::<(), ParseError>(())
 /// ```
 #[derive(Eq, Hash, PartialEq)]
+#[repr(transparent)]
 pub struct IBig(pub(crate) Repr);
 
 impl IBig {
@@ -38,13 +39,12 @@ impl IBig {
 
     #[inline]
     pub(crate) fn from_sign_magnitude(sign: Sign, mut magnitude: UBig) -> IBig {
-        if magnitude != UBig::zero() { // TODO: specialize is_zero
-            magnitude.0.set_sign(sign)
+        if magnitude.is_zero() {
+            IBig(magnitude.0)
+        } else {
+            IBig(magnitude.0.with_sign(sign))
         }
-        IBig(magnitude.0)
     }
-
-    // TODO: add from_sign_repr()?
 
     #[inline]
     pub(crate) fn sign(&self) -> Sign {
@@ -59,23 +59,23 @@ impl IBig {
 
     #[inline]
     pub(crate) fn into_sign_magnitude(self) -> (Sign, UBig) {
-        let mut repr = self.0;
-        let sign = repr.sign();
-        repr.set_sign(Sign::Positive);
-        (sign, UBig(repr))
+        (self.0.sign(), UBig(self.0.with_sign(Sign::Positive)))
     }
 
     /// Create an IBig with value 0
+    #[inline]
     pub const fn zero() -> Self {
         IBig(Repr::zero())
     }
 
     /// Create an IBig with value 1
+    #[inline]
     pub const fn one() -> Self {
         IBig(Repr::one())
     }
 
     /// Create an IBig with value -1
+    #[inline]
     pub const fn neg_one() -> IBig {
         IBig(Repr::neg_one())
     }

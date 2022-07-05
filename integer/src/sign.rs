@@ -60,9 +60,8 @@ impl Neg for IBig {
 
     #[inline]
     fn neg(self) -> IBig {
-        let mut repr = self.0;
-        repr.set_sign(-repr.sign());
-        IBig(repr)
+        let sign = self.0.sign();
+        IBig(self.0.with_sign(-sign))
     }
 }
 
@@ -98,9 +97,7 @@ impl UnsignedAbs for IBig {
 
     #[inline]
     fn unsigned_abs(self) -> UBig {
-        let mut repr = self.0;
-        repr.set_sign(Sign::Positive);
-        UBig(repr)
+        UBig(self.0.with_sign(Sign::Positive))
     }
 }
 
@@ -109,6 +106,6 @@ impl UnsignedAbs for &IBig {
 
     #[inline]
     fn unsigned_abs(self) -> UBig {
-        self.magnitude().clone()
+        UBig(self.0.clone().with_sign(Sign::Positive))
     }
 }

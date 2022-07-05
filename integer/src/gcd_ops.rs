@@ -10,6 +10,8 @@ use crate::{
     ubig::UBig,
 };
 
+// TODO: disable these in 0.1.0 release. Release a new version after implementing a Lehmer's GCD version
+
 impl UBig {
     /// Compute the greatest common divisor between self and the other operand
     ///

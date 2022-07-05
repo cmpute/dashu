@@ -4,4 +4,4 @@
 - [ ] Remove operations for UBig with signed primitive integers.
 - [ ] Add operations between UBig and IBig (the result should be IBig)
 - [ ] Obselete magnitude() and from_word() function
-- [ ] Format code and inspect inline markers
+- [ ] Format code and inspect inline/pub(crate) markers

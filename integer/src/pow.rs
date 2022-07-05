@@ -1,5 +1,7 @@
 //! Exponentiation.
 
+use dashu_base::UnsignedAbs;
+
 use crate::{
     ibig::IBig,
     primitive::PrimitiveUnsigned,
@@ -67,6 +69,6 @@ impl IBig {
         } else {
             Positive
         };
-        IBig::from_sign_magnitude(sign, self.magnitude().pow(exp))
+        IBig::from_sign_magnitude(sign, self.unsigned_abs().pow(exp))
     }
 }

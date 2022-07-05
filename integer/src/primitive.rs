@@ -159,6 +159,7 @@ pub(crate) const WORD_BITS_USIZE: usize = WORD_BITS as usize;
 pub(crate) const WORD_BYTES: usize = Word::BYTE_SIZE;
 pub(crate) const DWORD_BITS: u32 = DoubleWord::BIT_SIZE;
 pub(crate) const DWORD_BITS_USIZE: usize = DWORD_BITS as usize;
+pub(crate) const DWORD_BYTES: usize = DoubleWord::BYTE_SIZE;
 
 #[inline]
 pub(crate) fn word_from_le_bytes_partial(bytes: &[u8]) -> Word {

@@ -16,8 +16,8 @@ use core::{
     ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not},
 };
 
-pub(crate) fn trailing_zeros(words: &[Word]) -> usize {
-    debug_assert!(!words.is_empty() || *words.last().unwrap() != 0);
+pub(crate) fn trailing_zeros_large(words: &[Word]) -> usize {
+    debug_assert!(*words.last().unwrap() != 0);
 
     for (idx, word) in words.iter().enumerate() {
         if *word != 0 {
@@ -29,6 +29,7 @@ pub(crate) fn trailing_zeros(words: &[Word]) -> usize {
     unreachable!()
 }
 
+// TODO: move this to math?
 // Panics if the length of words is less than 2
 #[inline]
 fn front_dword(words: &[Word]) -> DoubleWord {
@@ -138,7 +139,7 @@ impl UBig {
         match self.repr() {
             RefSmall(0) => None,
             RefSmall(dword) => Some(dword.trailing_zeros() as usize),
-            RefLarge(buffer) => Some(trailing_zeros(buffer)),
+            RefLarge(buffer) => Some(trailing_zeros_large(buffer)),
         }
     }
 
@@ -167,11 +168,67 @@ impl UBig {
     /// ```
     #[inline]
     pub fn bit_len(&self) -> usize {
-        match self.repr() {
-            RefSmall(dword) => math::bit_len(dword) as usize,
-            RefLarge(buffer) => {
-                buffer.len() * WORD_BITS_USIZE - buffer.last().unwrap().leading_zeros() as usize
+        self.repr().bit_len()
+    }
+}
+
+mod repr {
+    use crate::buffer::{TypedReprRef, TypedRepr, Repr};
+    use super::*;
+
+    impl<'a> TypedReprRef<'a> {
+        #[inline]
+        pub fn bit_len(self) -> usize {
+            match self {
+                RefSmall(dword) => math::bit_len(dword) as usize,
+                RefLarge(buffer) => {
+                    buffer.len() * WORD_BITS_USIZE - buffer.last().unwrap().leading_zeros() as usize
+                }
             }
+        }
+    
+        /// Get the highest n bits from the Repr
+        #[inline]
+        pub fn high_bits(self, n: usize) -> Repr {
+            let bit_len = self.bit_len();
+            self >> (bit_len - n)
+        }
+
+        /// Check if low n-bits are not all zeros
+        #[inline]
+        pub(crate) fn are_low_bits_nonzero(&self, n: usize) -> bool {
+            match self {
+                Self::RefSmall(dword) => are_dword_low_bits_nonzero(dword, n),
+                Self::RefLarge(buffer) => are_slice_low_bits_nonzero(buffer, n)
+            }
+        }
+    }
+
+    impl TypedRepr {
+        /// Check if low n-bits are not all zeros
+        #[inline]
+        pub(crate) fn are_low_bits_nonzero(&self, n: usize) -> bool {
+            match self {
+                Self::Small(dword) => are_dword_low_bits_nonzero(dword, n),
+                Self::Large(buffer) => are_slice_low_bits_nonzero(buffer, n)
+            }
+        }
+    }
+    
+    #[inline]
+    fn are_dword_low_bits_nonzero(dword: &DoubleWord, n: usize) -> bool {
+        let n = n.min(WORD_BITS_USIZE) as u32;
+        dword & math::ones_dword(n) != 0
+    }
+
+    fn are_slice_low_bits_nonzero(words: &[Word], n: usize) -> bool {
+        let n_words = n / WORD_BITS_USIZE;
+        if n_words >= words.len() {
+            true
+        } else {
+            let n_top = (n % WORD_BITS_USIZE) as u32;
+            words[..n_words].iter().any(|x| *x != 0)
+                || words[n_words] & math::ones_word(n_top) != 0
         }
     }
 }
@@ -197,7 +254,7 @@ impl IBig {
         match self.as_sign_repr().1 {
             RefSmall(0) => None,
             RefSmall(dword) => Some(dword.trailing_zeros() as usize),
-            RefLarge(buffer) => Some(trailing_zeros(buffer)),
+            RefLarge(buffer) => Some(trailing_zeros_large(buffer)),
         }
     }
 }

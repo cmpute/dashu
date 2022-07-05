@@ -24,6 +24,7 @@ use crate::{
 /// # Ok::<(), ParseError>(())
 /// ```
 #[derive(Eq, Hash, PartialEq)]
+#[repr(transparent)]
 pub struct UBig(pub(crate) Repr);
 
 impl UBig {
@@ -58,14 +59,28 @@ impl UBig {
         self.0.capacity()
     }
 
-    /// Create an IBig with value 0
+    /// Create a UBig with value 0
+    #[inline]
     pub const fn zero() -> Self {
         UBig(Repr::zero())
     }
 
-    /// Create an IBig with value 1
+    /// Check whether the value of UBig is 0
+    #[inline]
+    pub const fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
+
+    /// Create a UBig with value 1
+    #[inline]
     pub const fn one() -> Self {
         UBig(Repr::one())
+    }
+
+    /// Check whether the value of UBig is 1
+    #[inline]
+    pub const fn is_one(&self) -> bool {
+        self.0.is_one()
     }
 
     /// Representation in Words.
@@ -129,12 +144,8 @@ impl Clone for UBig {
 }
 
 impl From<Buffer> for UBig {
-    /// If the Buffer was allocated with `Buffer::allocate(n)`
-    /// and the normalized length is between `n - 2` and `n + 2`
-    /// (or even approximately between `0.9 * n` and `1.125 * n`),
-    /// there will be no reallocation here.
+    #[inline]
     fn from(mut buffer: Buffer) -> UBig {
-        buffer.pop_zeros();
         UBig(Repr::from_buffer(buffer))
     }
 }
