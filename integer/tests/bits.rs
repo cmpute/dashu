@@ -15,8 +15,10 @@ fn test_bit() {
     assert_eq!(ubig!(0b11101).bit(5), false);
     assert_eq!(ubig!(0b11101).bit(1000), false);
 
-    assert_eq!(ubig!(_0xffffffffffffffffffffffffffffffff).bit(127), true);
-    assert_eq!(ubig!(_0xffffffffffffffffffffffffffffffff).bit(128), false);
+    assert_eq!(ubig!(0xffffffffffffffffffffffffffffffff).bit(127), true);
+    assert_eq!(ubig!(0xffffffffffffffffffffffffffffffff).bit(128), false);
+    assert_eq!(ubig!(_0xffffffffffffffffffffffffffffffffffff).bit(143), true); // 2 ^ 144 - 1
+    assert_eq!(ubig!(_0xffffffffffffffffffffffffffffffffffff).bit(144), false);
 }
 
 #[test]

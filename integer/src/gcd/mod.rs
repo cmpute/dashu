@@ -13,6 +13,9 @@ mod binary;
 /// The result is stored in the low bits of lhs.
 /// The word length of the result number is returned.
 pub(crate) fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word]) -> usize {
+    if lhs.last().unwrap() == &0 || rhs.last().unwrap() == &0 {
+        panic!("leading zero!")
+    }
     binary::gcd_in_place(lhs, rhs)
 }
 

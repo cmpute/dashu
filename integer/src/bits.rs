@@ -42,7 +42,7 @@ fn front_dword(words: &[Word]) -> DoubleWord {
 }
 
 impl UBig {
-    /// Returns true if the `n`-th bit is set.
+    /// Returns true if the `n`-th bit is set, n starts from 0.
     ///
     /// # Examples
     ///
@@ -55,7 +55,7 @@ impl UBig {
     #[inline]
     pub fn bit(&self, n: usize) -> bool {
         match self.repr() {
-            RefSmall(dword) => n < WORD_BITS_USIZE && dword & 1 << n != 0,
+            RefSmall(dword) => n < DWORD_BITS_USIZE && dword & 1 << n != 0,
             RefLarge(buffer) => {
                 let idx = n / WORD_BITS_USIZE;
                 idx < buffer.len() && buffer[idx] & 1 << (n % WORD_BITS_USIZE) != 0
@@ -63,7 +63,7 @@ impl UBig {
         }
     }
 
-    /// Set the `n`-th bit.
+    /// Set the `n`-th bit, n starts from 0.
     ///
     /// # Examples
     ///
@@ -91,7 +91,7 @@ impl UBig {
         }
     }
 
-    /// Clear the `n`-th bit.
+    /// Clear the `n`-th bit, n starts from 0.
     ///
     /// # Examples
     ///
@@ -584,7 +584,7 @@ mod ubig {
         let (lo, hi) = split_dword(dword);
         buffer.push(lo);
         buffer.push(hi);
-        buffer.push_zeros(idx - 1);
+        buffer.push_zeros(idx - 2);
         buffer.push(1 << (n % WORD_BITS_USIZE));
         buffer.into()
     }

@@ -4,7 +4,7 @@ use crate::{
     arch::word::Word,
     fmt::{digit_writer::DigitWriter, InRadixFull, PreparedForFormatting},
     math,
-    primitive::{WORD_BITS, WORD_BITS_USIZE},
+    primitive::{WORD_BITS, WORD_BITS_USIZE, split_dword},
     radix::{self, Digit},
     buffer::TypedReprRef::*,
 };
@@ -15,14 +15,20 @@ impl InRadixFull<'_> {
     pub(crate) fn fmt_power_two(&self, f: &mut Formatter) -> fmt::Result {
         debug_assert!(radix::is_radix_valid(self.radix) && self.radix.is_power_of_two());
 
-        if let RefSmall(dword) = self.magnitude.repr() {
-            if let Ok(word) = Word::try_from(dword) {
+        let mut dword_slice: [Word; 2] = [0, 0];
+        let words = match self.magnitude {
+            RefSmall(dword) => if let Ok(word) = Word::try_from(dword) {
                 let mut prepared = PreparedWord::new(word, self.radix);
                 return self.format_prepared(f, &mut prepared);
-            }
-        }
+            } else {
+                let (lo, hi) = split_dword(dword);
+                dword_slice = [lo, hi];
+                &dword_slice
+            },
+            RefLarge(buffer) => buffer
+        };
 
-        let mut prepared = PreparedLarge::new(self.magnitude.as_words(), self.radix);
+        let mut prepared = PreparedLarge::new(words, self.radix);
         self.format_prepared(f, &mut prepared)
     }
 }

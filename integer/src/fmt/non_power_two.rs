@@ -7,7 +7,7 @@ use crate::{
     ops::DivRem,
     radix::{self, Digit},
     ubig::UBig,
-    buffer::TypedReprRef::*,
+    buffer::{TypedReprRef::*, Repr},
 };
 use alloc::vec::Vec;
 use core::{
@@ -23,20 +23,25 @@ impl InRadixFull<'_> {
     pub(crate) fn fmt_non_power_two(&self, f: &mut Formatter) -> fmt::Result {
         debug_assert!(radix::is_radix_valid(self.radix) && !self.radix.is_power_of_two());
 
-        if let RefSmall(dword) = self.magnitude.repr() {
-            if let Ok(word) = Word::try_from(dword) {
+        // TODO: prevent instantiating a new UBig here, after InRadixFull contains a reference of Repr
+        let repr = match self.magnitude {
+            RefSmall(dword) => if let Ok(word) = Word::try_from(dword) {
                 let mut prepared = PreparedWord::new(word, self.radix, 1);
                 return self.format_prepared(f, &mut prepared);
-            }
-        }
+            } else {
+                Repr::from_dword(dword)
+            },
+            RefLarge(buffer) => Repr::from_buffer(buffer.into())
+        };
+        let magnitude = UBig(repr);
 
         let radix_info = radix::radix_info(self.radix);
-        let max_digits = self.magnitude.len() * (radix_info.digits_per_word + 1);
+        let max_digits = magnitude.len() * (radix_info.digits_per_word + 1);
         if max_digits <= CHUNK_LEN * radix_info.digits_per_word {
-            let mut prepared = PreparedMedium::new(self.magnitude, self.radix);
+            let mut prepared = PreparedMedium::new(&magnitude, self.radix);
             self.format_prepared(f, &mut prepared)
         } else {
-            let mut prepared = PreparedLarge::new(self.magnitude, self.radix);
+            let mut prepared = PreparedLarge::new(&magnitude, self.radix);
             self.format_prepared(f, &mut prepared)
         }
     }
@@ -165,6 +170,7 @@ impl PreparedLarge {
 
         let mut radix_powers = Vec::new();
         let mut big_chunks = Vec::new();
+        // TODO: use log instead of pow here
         let chunk_power = UBig::from_word(radix_info.range_per_word).pow(CHUNK_LEN);
         if chunk_power > *number {
             return PreparedLarge {

@@ -4,7 +4,7 @@ use crate::{
     ibig::IBig,
     radix::{self, Digit, DigitCase},
     sign::Sign::{self, *},
-    ubig::UBig,
+    ubig::UBig, buffer::TypedReprRef,
 };
 use core::fmt::{
     self, Alignment, Binary, Debug, Display, Formatter, LowerHex, Octal, UpperHex, Write,
@@ -19,7 +19,7 @@ impl Display for UBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         InRadixFull {
             sign: Positive,
-            magnitude: self,
+            magnitude: self.repr(),
             radix: 10,
             prefix: "",
             digit_case: DigitCase::NoLetters,
@@ -38,7 +38,7 @@ impl Binary for UBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         InRadixFull {
             sign: Positive,
-            magnitude: self,
+            magnitude: self.repr(),
             radix: 2,
             prefix: if f.alternate() { "0b" } else { "" },
             digit_case: DigitCase::NoLetters,
@@ -51,7 +51,7 @@ impl Octal for UBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         InRadixFull {
             sign: Positive,
-            magnitude: self,
+            magnitude: self.repr(),
             radix: 8,
             prefix: if f.alternate() { "0o" } else { "" },
             digit_case: DigitCase::NoLetters,
@@ -64,7 +64,7 @@ impl LowerHex for UBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         InRadixFull {
             sign: Positive,
-            magnitude: self,
+            magnitude: self.repr(),
             radix: 16,
             prefix: if f.alternate() { "0x" } else { "" },
             digit_case: DigitCase::Lower,
@@ -77,7 +77,7 @@ impl UpperHex for UBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         InRadixFull {
             sign: Positive,
-            magnitude: self,
+            magnitude: self.repr(),
             radix: 16,
             prefix: if f.alternate() { "0x" } else { "" },
             digit_case: DigitCase::Upper,
@@ -88,9 +88,10 @@ impl UpperHex for UBig {
 
 impl Display for IBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let (sign, magnitude) = self.as_sign_repr();
         InRadixFull {
-            sign: self.sign(),
-            magnitude: self.magnitude(),
+            sign,
+            magnitude,
             radix: 10,
             prefix: "",
             digit_case: DigitCase::NoLetters,
@@ -107,9 +108,10 @@ impl Debug for IBig {
 
 impl Binary for IBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let (sign, magnitude) = self.as_sign_repr();
         InRadixFull {
-            sign: self.sign(),
-            magnitude: self.magnitude(),
+            sign,
+            magnitude,
             radix: 2,
             prefix: if f.alternate() { "0b" } else { "" },
             digit_case: DigitCase::NoLetters,
@@ -120,9 +122,10 @@ impl Binary for IBig {
 
 impl Octal for IBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let (sign, magnitude) = self.as_sign_repr();
         InRadixFull {
-            sign: self.sign(),
-            magnitude: self.magnitude(),
+            sign,
+            magnitude,
             radix: 8,
             prefix: if f.alternate() { "0o" } else { "" },
             digit_case: DigitCase::NoLetters,
@@ -133,9 +136,10 @@ impl Octal for IBig {
 
 impl LowerHex for IBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let (sign, magnitude) = self.as_sign_repr();
         InRadixFull {
-            sign: self.sign(),
-            magnitude: self.magnitude(),
+            sign,
+            magnitude,
             radix: 16,
             prefix: if f.alternate() { "0x" } else { "" },
             digit_case: DigitCase::Lower,
@@ -146,9 +150,10 @@ impl LowerHex for IBig {
 
 impl UpperHex for IBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let (sign, magnitude) = self.as_sign_repr();
         InRadixFull {
-            sign: self.sign(),
-            magnitude: self.magnitude(),
+            sign,
+            magnitude,
             radix: 16,
             prefix: if f.alternate() { "0x" } else { "" },
             digit_case: DigitCase::Upper,
@@ -176,7 +181,7 @@ impl UBig {
         radix::check_radix_valid(radix);
         InRadix {
             sign: Positive,
-            magnitude: self,
+            magnitude: self.repr(),
             radix,
         }
     }
@@ -199,9 +204,10 @@ impl IBig {
     #[inline]
     pub fn in_radix(&self, radix: u32) -> InRadix {
         radix::check_radix_valid(radix);
+        let (sign, magnitude) = self.as_sign_repr();
         InRadix {
-            sign: self.sign(),
-            magnitude: self.magnitude(),
+            sign,
+            magnitude,
             radix,
         }
     }
@@ -225,15 +231,16 @@ impl IBig {
 /// assert_eq!(format!("{:x}", ibig!(-3000)), "-bb8");
 /// ```
 pub struct InRadix<'a> {
+    // TODO: refactor to take reference of Repr.
     sign: Sign,
-    magnitude: &'a UBig,
+    magnitude: TypedReprRef<'a>,
     radix: Digit,
 }
 
 /// Representation in a given radix with a prefix and digit case.
 struct InRadixFull<'a> {
     sign: Sign,
-    magnitude: &'a UBig,
+    magnitude: TypedReprRef<'a>,
     radix: Digit,
     prefix: &'static str,
     digit_case: DigitCase,

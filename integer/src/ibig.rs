@@ -68,10 +68,22 @@ impl IBig {
         IBig(Repr::zero())
     }
 
+    /// Check whether the value of IBig is 0
+    #[inline]
+    pub const fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
+
     /// Create an IBig with value 1
     #[inline]
     pub const fn one() -> Self {
         IBig(Repr::one())
+    }
+
+    /// Check whether the value of IBig is 1
+    #[inline]
+    pub const fn is_one(&self) -> bool {
+        self.0.is_one()
     }
 
     /// Create an IBig with value -1

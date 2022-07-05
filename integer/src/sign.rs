@@ -60,8 +60,12 @@ impl Neg for IBig {
 
     #[inline]
     fn neg(self) -> IBig {
-        let sign = self.0.sign();
-        IBig(self.0.with_sign(-sign))
+        if self.is_zero() {
+            self
+        } else {
+            let sign = self.0.sign();
+            IBig(self.0.with_sign(-sign))
+        }
     }
 }
 

@@ -175,6 +175,7 @@ pub(crate) fn fast_div_by_dword_in_place(
     rem >> shift
 }
 
+/// words % rhs, panics if rhs fits in a single Word.
 pub(crate) fn rem_by_dword(words: &[Word], rhs: DoubleWord) -> DoubleWord {
     debug_assert!(rhs > Word::MAX as DoubleWord, "call div_by_word_in_place when rhs is small");
 

@@ -44,7 +44,7 @@ impl UBig {
 }
 
 mod ubig {
-    use crate::buffer::{TypedRepr, TypedReprRef};
+    use crate::{buffer::{TypedRepr, TypedReprRef}, primitive::shrink_dword};
     use super::*;
 
     pub(crate) fn gcd_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> UBig {
@@ -76,34 +76,55 @@ mod ubig {
     fn gcd_large_dword(buffer: &[Word], rhs: DoubleWord) -> UBig {
         if rhs == 0 {
             let clone = Buffer::from(buffer);
-            return clone.into();
+            clone.into()
         }
-
-        // reduce the large number
-        let word = div::rem_by_dword(buffer, rhs);
-        if word == 0 {
-            return UBig::from(rhs);
+        else if rhs <= Word::MAX as DoubleWord {
+            // reduce the large number by single word rhs
+            let rhs = shrink_dword(rhs);
+            let rem = div::rem_by_word(buffer, rhs);
+            if rem == 0 {
+                rhs.into()
+            } else {
+                rem.gcd(rhs).into()
+            }
+        } else {
+            // reduce the large number by double word rhs
+            let rem = div::rem_by_dword(buffer, rhs);
+            if rem == 0 {
+                rhs.into()
+            } else {
+                rem.gcd(rhs).into()
+            }
         }
-
-        UBig::from(word.gcd(rhs))
     }
 
     /// Perform extended gcd on a large number with a `Word`.
     #[inline]
     fn extended_gcd_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> (UBig, IBig, IBig) {
         if rhs == 0 {
-            return (buffer.into(), IBig::one(), IBig::zero());
+            (buffer.into(), IBig::one(), IBig::zero())
+        } else if rhs <= Word::MAX as DoubleWord {
+            // reduce the large number by single word rhs
+            let rhs = shrink_dword(rhs);
+            let rem = div::div_by_word_in_place(&mut buffer, rhs);
+            if rem == 0 {
+                (UBig::from(rhs), IBig::zero(), IBig::one())
+            } else {
+                let (r, s, t) = rhs.gcd_ext(rem);
+                let new_t = -t * IBig::from(UBig::from(buffer)) + s;
+                (UBig::from(r), IBig::from(t), new_t)
+            }
+        } else {
+            // reduce the large number by double word rhs
+            let rem = div::div_by_dword_in_place(&mut buffer, rhs);
+            if rem == 0 {
+                (UBig::from(rhs), IBig::zero(), IBig::one())
+            } else {
+                let (r, s, t) = rhs.gcd_ext(rem);
+                let new_t = -t * IBig::from(UBig::from(buffer)) + s;
+                (UBig::from(r), IBig::from(t), new_t)
+            }
         }
-
-        // reduce the large number
-        let rem = div::div_by_dword_in_place(&mut buffer, rhs);
-        if rem == 0 {
-            return (UBig::from(rhs), IBig::zero(), IBig::one());
-        }
-
-        let (r, s, t) = rhs.gcd_ext(rem);
-        let new_t = -t * IBig::from(UBig::from(buffer)) + s;
-        (UBig::from(r), IBig::from(t), new_t)
     }
 
     /// Perform gcd on two large numbers.

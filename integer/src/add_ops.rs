@@ -438,7 +438,7 @@ macro_rules! impl_add_ibig_primitive {
 
             #[inline]
             fn sub(self, rhs: IBig) -> IBig {
-                IBig::from(rhs) - self
+                IBig::from(self) - rhs
             }
         }
 
@@ -447,7 +447,7 @@ macro_rules! impl_add_ibig_primitive {
 
             #[inline]
             fn sub(self, rhs: &IBig) -> IBig {
-                rhs - IBig::from(self)
+                IBig::from(self) - rhs
             }
         }
 

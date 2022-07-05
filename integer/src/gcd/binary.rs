@@ -45,31 +45,31 @@ pub(crate) fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word]) -> usize {
                     // lhs -= rhs
                     assert!(!add::sub_in_place(lhs_cur, rhs_cur));
 
-                    // truncate trailing zeros
-                    let zeros = trailing_zeros_large(lhs_cur);
-                    lhs_cur = &mut lhs_cur[zeros / WORD_BITS_USIZE..];
-                    shift::shr_in_place(lhs_cur, (zeros % WORD_BITS_USIZE) as u32);
-
-                    // truncate leading zeros
+                    // truncate leading zeros before calculating trailing zeros
                     while *lhs_cur.last().unwrap() == 0 {
                         let last_pos = lhs_cur.len() - 1;
                         lhs_cur = &mut lhs_cur[..last_pos];
                     }
+
+                    // truncate trailing zeros
+                    let zeros = trailing_zeros_large(lhs_cur);
+                    lhs_cur = &mut lhs_cur[zeros / WORD_BITS_USIZE..];
+                    shift::shr_in_place(lhs_cur, (zeros % WORD_BITS_USIZE) as u32);
                 }
                 Ordering::Less => {
                     // rhs -= lhs
                     assert!(!add::sub_in_place(rhs_cur, lhs_cur));
 
-                    // truncate trailing zeros
-                    let zeros = trailing_zeros_large(rhs_cur);
-                    rhs_cur = &mut rhs_cur[zeros / WORD_BITS_USIZE..];
-                    shift::shr_in_place(rhs_cur, (zeros % WORD_BITS_USIZE) as u32);
-
-                    // truncate leading zeros
+                    // truncate leading zeros before calculating trailing zeros
                     while *rhs_cur.last().unwrap() == 0 {
                         let last_pos = rhs_cur.len() - 1;
                         rhs_cur = &mut rhs_cur[..last_pos];
                     }
+
+                    // truncate trailing zeros
+                    let zeros = trailing_zeros_large(rhs_cur);
+                    rhs_cur = &mut rhs_cur[zeros / WORD_BITS_USIZE..];
+                    shift::shr_in_place(rhs_cur, (zeros % WORD_BITS_USIZE) as u32);
                 }
             }
 
@@ -204,17 +204,17 @@ pub(crate) fn xgcd_in_place(
                     // lhs -= rhs
                     assert!(!add::sub_in_place(lhs_cur, rhs_cur));
 
-                    // truncate trailing zeros
-                    let zeros = trailing_zeros_large(lhs_cur);
-                    lhs_cur = &mut lhs_cur[zeros / WORD_BITS_USIZE..];
-                    shift::shr_in_place(lhs_cur, (zeros % WORD_BITS_USIZE) as u32);
-                    shift += zeros;
-
                     // truncate leading zeros
                     while *lhs_cur.last().unwrap() == 0 {
                         let last_pos = lhs_cur.len() - 1;
                         lhs_cur = &mut lhs_cur[..last_pos];
                     }
+
+                    // truncate trailing zeros
+                    let zeros = trailing_zeros_large(lhs_cur);
+                    lhs_cur = &mut lhs_cur[zeros / WORD_BITS_USIZE..];
+                    shift::shr_in_place(lhs_cur, (zeros % WORD_BITS_USIZE) as u32);
+                    shift += zeros;
 
                     assert!(!add_in_place_with_pos(t0, &mut t0_end, &t1[..t1_end]));
                     shl_in_place_with_pos(t1, &mut t1_end, zeros);
@@ -225,17 +225,17 @@ pub(crate) fn xgcd_in_place(
                     // rhs -= lhs
                     assert!(!add::sub_in_place(rhs_cur, lhs_cur));
 
-                    // truncate trailing zeros
-                    let zeros = trailing_zeros_large(rhs_cur);
-                    rhs_cur = &mut rhs_cur[zeros / WORD_BITS_USIZE..];
-                    shift::shr_in_place(rhs_cur, (zeros % WORD_BITS_USIZE) as u32);
-                    shift += zeros;
-
                     // truncate leading zeros
                     while *rhs_cur.last().unwrap() == 0 {
                         let last_pos = rhs_cur.len() - 1;
                         rhs_cur = &mut rhs_cur[..last_pos];
                     }
+
+                    // truncate trailing zeros
+                    let zeros = trailing_zeros_large(rhs_cur);
+                    rhs_cur = &mut rhs_cur[zeros / WORD_BITS_USIZE..];
+                    shift::shr_in_place(rhs_cur, (zeros % WORD_BITS_USIZE) as u32);
+                    shift += zeros;
 
                     assert!(!add_in_place_with_pos(t1, &mut t1_end, &t0[..t0_end]));
                     shl_in_place_with_pos(t0, &mut t0_end, zeros);
