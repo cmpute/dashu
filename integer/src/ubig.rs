@@ -28,13 +28,6 @@ use crate::{
 pub struct UBig(pub(crate) Repr);
 
 impl UBig {
-    /// Construct from one word.
-    // TODO: obselete this, use From and Into
-    #[inline]
-    pub(crate) fn from_word(word: Word) -> UBig {
-        UBig(Repr::from_word(word))
-    }
-
     /// Get the representation of UBig.
     #[inline]
     pub(crate) fn repr(&self) -> TypedReprRef<'_> {
@@ -45,18 +38,6 @@ impl UBig {
     #[inline]
     pub(crate) fn into_repr(self) -> TypedRepr {
         self.0.into_typed()
-    }
-
-    /// Length in Words.
-    #[inline]
-    pub(crate) fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    /// Capacity in Words.
-    #[inline]
-    pub(crate) fn capacity(&self) -> usize {
-        self.0.capacity()
     }
 
     /// Create a UBig with value 0
@@ -84,6 +65,7 @@ impl UBig {
     }
 
     /// Representation in Words.
+    // TODO: expose this
     #[inline]
     pub(crate) fn as_words(&self) -> &[Word] {
         let (sign, words) = self.0.as_sign_slice();
@@ -145,7 +127,7 @@ impl Clone for UBig {
 
 impl From<Buffer> for UBig {
     #[inline]
-    fn from(mut buffer: Buffer) -> UBig {
+    fn from(buffer: Buffer) -> UBig {
         UBig(Repr::from_buffer(buffer))
     }
 }
@@ -153,6 +135,14 @@ impl From<Buffer> for UBig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    impl UBig {
+        /// Capacity in Words.
+        #[inline]
+        pub(crate) fn capacity(&self) -> usize {
+            self.0.capacity()
+        }
+    }
 
     #[test]
     fn test_buffer_to_ubig() {
@@ -163,14 +153,14 @@ mod tests {
         let mut buf = Buffer::allocate(5);
         buf.push(7);
         let num: UBig = buf.into();
-        assert_eq!(num, UBig::from_word(7));
+        assert_eq!(num, UBig::from(7u8));
 
         let mut buf = Buffer::allocate(100);
         buf.push(7);
         buf.push(0);
         buf.push(0);
         let num: UBig = buf.into();
-        assert_eq!(num, UBig::from_word(7));
+        assert_eq!(num, UBig::from(7u8));
 
         let mut buf = Buffer::allocate(5);
         buf.push(1);
@@ -191,7 +181,7 @@ mod tests {
 
     #[test]
     fn test_clone() {
-        let a = UBig::from_word(5);
+        let a = UBig::from(5u8);
         assert_eq!(a.clone(), a);
 
         let a = gen_ubig(10);
@@ -204,10 +194,10 @@ mod tests {
     fn test_clone_from() {
         let num: UBig = gen_ubig(10);
 
-        let mut a = UBig::from_word(3);
+        let mut a = UBig::from(3u8);
         a.clone_from(&num);
         assert_eq!(a, num);
-        let b = UBig::from_word(7);
+        let b = UBig::from(7u8);
         a.clone_from(&b);
         assert_eq!(a, b);
         a.clone_from(&b);

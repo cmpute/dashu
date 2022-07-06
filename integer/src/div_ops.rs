@@ -14,7 +14,6 @@ use crate::{
 };
 use core::{
     convert::TryFrom,
-    fmt::Debug,
     mem,
     ops::{Div, DivAssign, Rem, RemAssign},
 };

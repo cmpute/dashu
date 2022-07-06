@@ -20,8 +20,7 @@ pub(crate) fn parse(src: &str, radix: Digit) -> Result<UBig, ParseError> {
     let bytes = src.as_bytes();
 
     if bytes.len() <= radix_info.digits_per_word {
-        let word = parse_word(bytes, radix)?;
-        Ok(UBig::from_word(word))
+        Ok(parse_word(bytes, radix)?.into())
     } else if bytes.len() <= CHUNK_LEN * radix_info.digits_per_word {
         parse_chunk(bytes, radix)
     } else {
@@ -74,7 +73,7 @@ fn parse_large(bytes: &[u8], radix: Digit) -> Result<UBig, ParseError> {
     assert!(bytes.len() > chunk_bytes);
 
     // Calculate radix^(CHUNK_LEN<<i).
-    let mut radix_powers = vec![UBig::from_word(radix_info.range_per_word).pow(CHUNK_LEN)];
+    let mut radix_powers = vec![UBig::from(radix_info.range_per_word).pow(CHUNK_LEN)];
 
     // while (chunk_bytes << radix_powers.len()) < bytes.len()
     // To avoid overflow:

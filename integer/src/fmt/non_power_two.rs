@@ -36,7 +36,7 @@ impl InRadixFull<'_> {
         let magnitude = UBig(repr);
 
         let radix_info = radix::radix_info(self.radix);
-        let max_digits = magnitude.len() * (radix_info.digits_per_word + 1);
+        let max_digits = magnitude.0.len() * (radix_info.digits_per_word + 1);
         if max_digits <= CHUNK_LEN * radix_info.digits_per_word {
             let mut prepared = PreparedMedium::new(&magnitude, self.radix);
             self.format_prepared(f, &mut prepared)
@@ -171,7 +171,7 @@ impl PreparedLarge {
         let mut radix_powers = Vec::new();
         let mut big_chunks = Vec::new();
         // TODO: use log instead of pow here
-        let chunk_power = UBig::from_word(radix_info.range_per_word).pow(CHUNK_LEN);
+        let chunk_power = UBig::from(radix_info.range_per_word).pow(CHUNK_LEN);
         if chunk_power > *number {
             return PreparedLarge {
                 top_chunk: PreparedMedium::new(number, radix),
@@ -185,7 +185,7 @@ impl PreparedLarge {
         loop {
             let prev = radix_powers.last().unwrap();
             // Avoid multiplication if we know prev * prev > number just by looking at lengths.
-            if 2 * prev.len() - 1 > number.len() {
+            if 2 * prev.0.len() - 1 > number.0.len() {
                 break;
             }
             // 2 * prev.len() is at most 1 larger than number.len().

@@ -87,7 +87,7 @@ impl Modulo<'_> {
     #[inline]
     pub fn residue(&self) -> UBig {
         match self.repr() {
-            ModuloRepr::Small(self_small) => UBig::from_word(self_small.residue()),
+            ModuloRepr::Small(self_small) => self_small.residue().into(),
             ModuloRepr::Large(self_large) => self_large.residue(),
         }
     }

@@ -2,7 +2,7 @@
 
 use crate::{
     arch::word::Word,
-    buffer::{Buffer, TypedReprRef::*},
+    buffer::{Buffer, Repr, TypedReprRef::*},
     error::OutOfBoundsError,
     ibig::IBig,
     primitive::{self, PrimitiveSigned, PrimitiveUnsigned, WORD_BITS, WORD_BYTES, DWORD_BYTES},
@@ -41,7 +41,7 @@ impl UBig {
     pub fn from_le_bytes(bytes: &[u8]) -> UBig {
         if bytes.len() <= WORD_BYTES {
             // fast path
-            UBig::from_word(primitive::word_from_le_bytes_partial(bytes))
+            UBig::from(primitive::word_from_le_bytes_partial(bytes))
         } else {
             UBig::from_le_bytes_large(bytes)
         }
@@ -72,7 +72,10 @@ impl UBig {
     pub fn from_be_bytes(bytes: &[u8]) -> UBig {
         if bytes.len() <= WORD_BYTES {
             // fast path
-            UBig::from_word(primitive::word_from_be_bytes_partial(bytes))
+            UBig(Repr::from_word(primitive::word_from_be_bytes_partial(bytes)))
+        } else if bytes.len() <= DWORD_BYTES {
+            // slightly slower path
+            UBig(Repr::from_dword(primitive::dword_from_be_bytes_partial(bytes)))
         } else {
             UBig::from_be_bytes_large(bytes)
         }
@@ -438,12 +441,13 @@ impl UBig {
     where
         T: PrimitiveUnsigned,
     {
-        match x.try_into() {
-            Ok(w) => UBig::from_word(w),
-            Err(_) => {
-                let repr = x.to_le_bytes();
-                UBig::from_le_bytes(repr.as_ref())
-            }
+        if let Ok(w) = x.try_into() {
+            UBig(Repr::from_word(w))
+        } else if let Ok(dw) = x.try_into() {
+            UBig(Repr::from_dword(dw))
+        } else {
+            let repr = x.to_le_bytes();
+            UBig::from_le_bytes(repr.as_ref())
         }
     }
 
@@ -590,7 +594,7 @@ mod repr {
             } else {
                 let exponent = (n - 1) as u32;
                 debug_assert!((32..128).contains(&exponent));
-                let mantissa25: u32 = (self >> (n - 25)).as_typed().try_to_unsigned().unwrap();
+                let mantissa25: u32 = self.high_bits(25).as_typed().try_to_unsigned().unwrap();
                 let mantissa = mantissa25 >> 1;
 
                 // value = [8 bits: exponent + 127][23 bits: mantissa without the top bit]
@@ -631,7 +635,7 @@ mod repr {
             } else {
                 let exponent = (n - 1) as u64;
                 debug_assert!((64..1024).contains(&exponent));
-                let mantissa54: u64 = (self >> (n - 54)).as_typed().try_to_unsigned().unwrap();
+                let mantissa54: u64 = self.high_bits(54).as_typed().try_to_unsigned().unwrap();
                 let mantissa = mantissa54 >> 1;
 
                 // value = [11-bits: exponent + 1023][52 bit: mantissa without the top bit]

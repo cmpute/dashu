@@ -62,3 +62,5 @@ pub(crate) fn cmp_same_len(lhs: &[Word], rhs: &[Word]) -> Ordering {
     debug_assert!(lhs.len() == rhs.len());
     lhs.iter().rev().cmp(rhs.iter().rev())
 }
+
+// TODO: implement cmp with primitive integers and eliminate UBig::from(xu8) in the code

@@ -1,7 +1,6 @@
 //! Primitive integral types.
 
 use crate::{
-    assert::debug_assert_in_const_fn,
     arch::word::{DoubleWord, Word},
     error::OutOfBoundsError,
     sign::Sign::{self, *},
@@ -48,8 +47,10 @@ where
     Self: Debug,
     Self: Default,
     Self: From<u8>,
+    Self: TryFrom<Word>,
     Self: TryFrom<DoubleWord>,
     Self: TryInto<Word>,
+    Self: TryInto<DoubleWord>,
     Self: TryInto<usize>,
     Self: Eq,
     Self: Add<Output = Self>,
@@ -172,10 +173,24 @@ pub(crate) fn word_from_le_bytes_partial(bytes: &[u8]) -> Word {
 }
 
 #[inline]
+pub(crate) fn dword_from_le_bytes_partial(bytes: &[u8]) -> DoubleWord {
+    let mut dword_bytes = [0; DWORD_BYTES];
+    dword_bytes[..bytes.len()].copy_from_slice(bytes);
+    DoubleWord::from_le_bytes(dword_bytes)
+}
+
+#[inline]
 pub(crate) fn word_from_be_bytes_partial(bytes: &[u8]) -> Word {
     let mut word_bytes = [0; WORD_BYTES];
-    word_bytes[Word::BYTE_SIZE - bytes.len()..].copy_from_slice(bytes);
+    word_bytes[WORD_BYTES - bytes.len()..].copy_from_slice(bytes);
     Word::from_be_bytes(word_bytes)
+}
+
+#[inline]
+pub(crate) fn dword_from_be_bytes_partial(bytes: &[u8]) -> DoubleWord {
+    let mut dword_bytes = [0; DWORD_BYTES];
+    dword_bytes[DWORD_BYTES - bytes.len()..].copy_from_slice(bytes);
+    DoubleWord::from_be_bytes(dword_bytes)
 }
 
 #[cfg(test)]

@@ -38,23 +38,18 @@ impl IBig {
     }
 
     #[inline]
-    pub(crate) fn from_sign_magnitude(sign: Sign, mut magnitude: UBig) -> IBig {
-        if magnitude.is_zero() {
-            IBig(magnitude.0)
+    pub(crate) fn from_sign_magnitude(sign: Sign, magnitude: UBig) -> IBig {
+        let repr = magnitude.0;
+        if repr.is_zero() {
+            IBig(repr)
         } else {
-            IBig(magnitude.0.with_sign(sign))
+            IBig(repr.with_sign(sign))
         }
     }
 
     #[inline]
     pub(crate) fn sign(&self) -> Sign {
         self.0.sign()
-    }
-
-    #[inline]
-    pub(crate) fn magnitude(&self) -> &UBig {
-        // TODO: obselete
-        unreachable!()
     }
 
     #[inline]

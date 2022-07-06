@@ -86,7 +86,7 @@ impl<'a> ModuloSingle<'a> {
     }
 
     fn pow_nontrivial(&self, exp: &UBig) -> ModuloSingle<'a> {
-        debug_assert!(*exp >= UBig::from_word(3));
+        debug_assert!(*exp >= UBig::from(3u8));
 
         let exp_words = exp.as_words();
         let mut n = exp_words.len() - 1;
@@ -111,7 +111,7 @@ impl<'a> ModuloLarge<'a> {
     }
 
     fn pow_nontrivial(&self, exp: &UBig) -> ModuloLarge<'a> {
-        debug_assert!(*exp >= UBig::from_word(2));
+        debug_assert!(*exp >= UBig::from(2u8));
 
         let n = self.ring().normalized_modulus().len();
         let window_len = ModuloLarge::choose_pow_window_len(exp.bit_len());

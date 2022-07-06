@@ -488,24 +488,6 @@ impl Repr {
         self.capacity.get().unsigned_abs()
     }
 
-    /// Intepret the [Repr] as a single word and get its value.
-    /// 
-    /// SAFETY: You need to check the capacity field before accessing the union.
-    #[inline]
-    unsafe fn as_word(&self) -> Word {
-        debug_assert!(self.capacity() == 1);
-        self.data.inline[0]
-    }
-
-    /// Intepret the [Repr] as a double word and get its value.
-    /// 
-    /// SAFETY: You need to check the capacity field before accessing the union.
-    #[inline]
-    unsafe fn as_dword(&self) -> DoubleWord {
-        debug_assert!(self.capacity() == 2);
-        double_word(self.data.inline[0], self.data.inline[1])
-    }
-
     /// Get the sign of the repr
     #[inline]
     pub fn sign(&self) -> Sign {
@@ -638,6 +620,7 @@ impl Repr {
     #[inline]
     pub(crate) fn from_dword(n: DoubleWord) -> Self {
         let (lo, hi) = split_dword(n);
+        // TODO: disable calling with single word by debug_assert(hi == 0)
         if hi == 0 {
             Self::from_word(lo)
         } else {
@@ -661,21 +644,11 @@ impl Repr {
                 // there will be no reallocation here.
                 buffer.shrink();
 
-                // TODO: check whether this will call drop
                 // SAFETY: the length has been checked and capacity >= lenght,
                 //         so capacity is nonzero and larger than 2
                 unsafe { mem::transmute(buffer) }
             }
         }
-    }
-
-    /// Creates a `Repr` with a buffer allocated on heap and the sign of the number
-    /// 
-    /// Note that it's recommended to call `Buffer::pop_zeros()` before it's
-    /// converted to the `Repr`.
-    #[inline]
-    pub(crate) fn from_sign_buffer(sign: Sign, buffer: Buffer) -> Self {
-        Self::from_buffer(buffer).with_sign(sign)
     }
 
     /// Creates a `Repr` with value 0
@@ -718,7 +691,7 @@ impl Clone for Repr {
     fn clone(&self) -> Self {
         let (capacity, sign) = self.sign_capacity();
 
-        let mut new = unsafe {
+        let new = unsafe {
             // inline the data if the length is less than 3
             // SAFETY: we check the capacity before accessing the variants
             match capacity {
@@ -976,8 +949,6 @@ mod tests {
     #[test]
     fn test_clone_from() {
         // TODO: test clone inline
-        // TODO: check where we need clone_from with/without resizing, this function might be called
-        // clone_from_fixed, respectively push_resizing might be called resizing_push.
 
         let mut buffer = Buffer::allocate(100);
         buffer.push(7);

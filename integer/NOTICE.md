@@ -27,6 +27,7 @@ SOFTWARE.
 The modifications on the ibig:
 
 1. The underlying represetation of the UBig is vastly changed, the new representation
-   supports inline double words and embedded sign bit.
+   supports inline double words and embedded sign bit, and the IBig doesn't support get
+   the magnitude as reference now.
 2. Operation traits are moved to the `dashu-base` crate.
 3. The trait `NextPowerOfTwo` is changed to `PowerOfTwo` with modified definition.

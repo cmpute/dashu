@@ -15,8 +15,7 @@ pub(crate) fn parse(src: &str, radix: Digit) -> Result<UBig, ParseError> {
     let radix_info = radix::radix_info(radix);
 
     if src.len() <= radix_info.digits_per_word {
-        let word = parse_word(src, radix)?;
-        Ok(UBig::from_word(word))
+        Ok(parse_word(src, radix)?.into())
     } else {
         parse_large(src, radix)
     }
