@@ -1,7 +1,7 @@
 use crate::{
     arch::word::Word,
+    repr::TypedReprRef::*,
     math,
-    buffer::TypedReprRef::*,
     memory::{self, MemoryAllocation},
     modular::{
         modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSingle, ModuloSmallRaw},

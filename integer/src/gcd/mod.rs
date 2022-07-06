@@ -1,9 +1,5 @@
 //! Greatest Common Divisor
-use crate::{
-    arch::word::Word,
-    memory::Memory,
-    sign::Sign,
-};
+use crate::{arch::word::Word, memory::Memory, sign::Sign};
 use alloc::alloc::Layout;
 
 mod binary;

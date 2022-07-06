@@ -62,10 +62,10 @@ fn test_div_rem_ubig() {
         // ),
         // 7^70-1 by 7^35
         (
-         ubig!(_0x16dc8782276b9f7addf9768f33c8007ce903866a4546c1a190),
-         ubig!(_0x4c8077a58a0a8cb7c24960e57),
-         ubig!(_0x4c8077a58a0a8cb7c24960e56),
-         ubig!(_0x4c8077a58a0a8cb7c24960e56),
+            ubig!(_0x16dc8782276b9f7addf9768f33c8007ce903866a4546c1a190),
+            ubig!(_0x4c8077a58a0a8cb7c24960e57),
+            ubig!(_0x4c8077a58a0a8cb7c24960e56),
+            ubig!(_0x4c8077a58a0a8cb7c24960e56),
         ),
         // // 2^20480-1 by 2^5120-1
         // (

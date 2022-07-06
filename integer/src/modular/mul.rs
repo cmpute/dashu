@@ -81,7 +81,11 @@ impl<'a> MulAssign<&Modulo<'a>> for Modulo<'a> {
 
 impl ModuloSmallRaw {
     #[inline]
-    pub(crate) const fn mul(self, other: ModuloSmallRaw, ring: &ModuloRingSingle) -> ModuloSmallRaw {
+    pub(crate) const fn mul(
+        self,
+        other: ModuloSmallRaw,
+        ring: &ModuloRingSingle,
+    ) -> ModuloSmallRaw {
         debug_assert_in_const_fn!(self.is_valid(ring) && other.is_valid(ring));
         let a = self.normalized();
         let b = other.normalized();

@@ -2,11 +2,11 @@
 
 use crate::{
     arch::word::Word,
+    repr::TypedReprRef::*,
     fmt::{digit_writer::DigitWriter, InRadixFull, PreparedForFormatting},
     math,
-    primitive::{WORD_BITS, WORD_BITS_USIZE, split_dword},
+    primitive::{split_dword, WORD_BITS, WORD_BITS_USIZE},
     radix::{self, Digit},
-    buffer::TypedReprRef::*,
 };
 use core::fmt::{self, Formatter};
 
@@ -17,15 +17,17 @@ impl InRadixFull<'_> {
 
         let mut dword_slice: [Word; 2] = [0, 0];
         let words = match self.magnitude {
-            RefSmall(dword) => if let Ok(word) = Word::try_from(dword) {
-                let mut prepared = PreparedWord::new(word, self.radix);
-                return self.format_prepared(f, &mut prepared);
-            } else {
-                let (lo, hi) = split_dword(dword);
-                dword_slice = [lo, hi];
-                &dword_slice
-            },
-            RefLarge(buffer) => buffer
+            RefSmall(dword) => {
+                if let Ok(word) = Word::try_from(dword) {
+                    let mut prepared = PreparedWord::new(word, self.radix);
+                    return self.format_prepared(f, &mut prepared);
+                } else {
+                    let (lo, hi) = split_dword(dword);
+                    dword_slice = [lo, hi];
+                    &dword_slice
+                }
+            }
+            RefLarge(buffer) => buffer,
         };
 
         let mut prepared = PreparedLarge::new(words, self.radix);

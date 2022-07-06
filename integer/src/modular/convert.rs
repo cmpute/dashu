@@ -1,8 +1,8 @@
 //! Conversion between Modulo, UBig and IBig.
 
 use crate::{
-    arch::word::{Word, DoubleWord},
-    buffer::{Buffer, TypedReprRef::*, TypedRepr::*},
+    arch::word::{DoubleWord, Word},
+    repr::{Buffer, TypedRepr::*, TypedReprRef::*},
     div,
     ibig::IBig,
     memory::MemoryAllocation,
@@ -16,8 +16,8 @@ use crate::{
     ubig::UBig,
 };
 use alloc::vec::Vec;
-use dashu_base::UnsignedAbs;
 use core::iter;
+use dashu_base::UnsignedAbs;
 
 impl ModuloRing {
     /// The ring modulus.
@@ -192,13 +192,15 @@ impl<'a> ModuloSingle<'a> {
     #[inline]
     pub(crate) fn from_ubig(x: &UBig, ring: &'a ModuloRingSingle) -> ModuloSingle<'a> {
         let raw = match x.repr() {
-            RefSmall(dword) => if let Ok(word) = Word::try_from(dword) {
-                ModuloSmallRaw::from_word(word, ring)
-            } else {
-                // TODO: this is bandaid here
-                let (lo, hi) = split_dword(dword);
-                let double_slice = [lo, hi];
-                ModuloSmallRaw::from_large(&double_slice, ring)
+            RefSmall(dword) => {
+                if let Ok(word) = Word::try_from(dword) {
+                    ModuloSmallRaw::from_word(word, ring)
+                } else {
+                    // TODO: this is bandaid here
+                    let (lo, hi) = split_dword(dword);
+                    let double_slice = [lo, hi];
+                    ModuloSmallRaw::from_large(&double_slice, ring)
+                }
             }
             RefLarge(words) => ModuloSmallRaw::from_large(words, ring),
         };
@@ -216,7 +218,7 @@ impl<'a> ModuloLarge<'a> {
                 let (lo, hi) = split_dword(word);
                 vec.push(lo);
                 vec.push(hi);
-            },
+            }
             Large(mut words) => {
                 if words.len() < modulus.len() {
                     vec.extend(&*words);

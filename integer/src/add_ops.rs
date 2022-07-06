@@ -2,8 +2,8 @@
 
 use crate::{
     add,
-    arch::word::{Word, DoubleWord},
-    buffer::Buffer,
+    arch::word::{DoubleWord, Word},
+    repr::Buffer,
     helper_macros,
     ibig::IBig,
     primitive::split_dword,
@@ -479,8 +479,11 @@ impl_add_ibig_primitive!(i128);
 impl_add_ibig_primitive!(isize);
 
 mod ubig {
-    use crate::buffer::{TypedRepr::{self, *}, TypedReprRef::{self, *}};
     use super::*;
+    use crate::repr::{
+        TypedRepr::{self, *},
+        TypedReprRef::{self, *},
+    };
 
     #[inline]
     pub(crate) fn add_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> UBig {
@@ -494,7 +497,7 @@ mod ubig {
                 } else {
                     ubig::add_large(buffer1.into(), buffer0)
                 }
-            },
+            }
         }
     }
 
@@ -520,10 +523,10 @@ mod ubig {
                 } else {
                     add_large(buffer1, &buffer0)
                 }
-            },
+            }
         }
     }
-    
+
     #[inline]
     fn add_dword(a: DoubleWord, b: DoubleWord) -> UBig {
         let (res, overflow) = a.overflowing_add(b);
@@ -624,7 +627,7 @@ mod ubig {
         }
         lhs.into()
     }
-    
+
     pub(crate) fn sub_large_ref_val(lhs: &[Word], mut rhs: Buffer) -> UBig {
         let n = rhs.len();
         if lhs.len() < n {
@@ -641,8 +644,11 @@ mod ubig {
 }
 
 mod ibig {
-    use crate::buffer::{TypedReprRef::{self, *}, TypedRepr::{self, *}};
     use super::*;
+    use crate::repr::{
+        TypedRepr::{self, *},
+        TypedReprRef::{self, *},
+    };
 
     #[inline]
     pub(crate) fn sub_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> IBig {
@@ -656,7 +662,7 @@ mod ibig {
                 } else {
                     -sub_large(buffer1, &buffer0)
                 }
-            },
+            }
         }
     }
 
@@ -682,7 +688,7 @@ mod ibig {
                 } else {
                     -sub_large(buffer1.into(), buffer0)
                 }
-            },
+            }
         }
     }
 

@@ -1,8 +1,8 @@
 //! Multiplication operators.
 
 use crate::{
-    arch::word::{Word, DoubleWord},
-    buffer::{Buffer, TypedRepr::*, TypedReprRef::*},
+    arch::word::{DoubleWord, Word},
+    repr::{Buffer, TypedRepr::*, TypedReprRef::*},
     helper_macros,
     ibig::IBig,
     memory::MemoryAllocation,
@@ -273,10 +273,10 @@ impl_mul_ibig_primitive!(i128);
 impl_mul_ibig_primitive!(isize);
 
 mod ubig {
-    use crate::buffer::{TypedRepr, TypedReprRef};
-    use crate::math;
-    use crate::primitive::{split_dword, shrink_dword};
     use super::*;
+    use crate::repr::{TypedRepr, TypedReprRef};
+    use crate::math;
+    use crate::primitive::{shrink_dword, split_dword};
 
     #[inline]
     pub(crate) fn mul_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> UBig {
@@ -335,21 +335,23 @@ mod ubig {
         match rhs {
             0 => UBig::zero(),
             1 => buffer.into(),
-            dw => if let Some(word) = shrink_dword(dw) {
-                let carry = mul::mul_word_in_place(&mut buffer, word);
-                if carry != 0 {
-                    buffer.push_resizing(carry);
+            dw => {
+                if let Some(word) = shrink_dword(dw) {
+                    let carry = mul::mul_word_in_place(&mut buffer, word);
+                    if carry != 0 {
+                        buffer.push_resizing(carry);
+                    }
+                    buffer.into()
+                } else {
+                    let carry = mul::mul_dword_in_place(&mut buffer, dw);
+                    if carry != 0 {
+                        let (lo, hi) = split_dword(carry);
+                        buffer.ensure_capacity(buffer.len() + 2);
+                        buffer.push(lo);
+                        buffer.push(hi);
+                    }
+                    buffer.into()
                 }
-                buffer.into()
-            } else {
-                let carry = mul::mul_dword_in_place(&mut buffer, dw);
-                if carry != 0 {
-                    let (lo, hi) = split_dword(carry);
-                    buffer.ensure_capacity(buffer.len() + 2);
-                    buffer.push(lo);
-                    buffer.push(hi);
-                }
-                buffer.into()
             }
         }
     }

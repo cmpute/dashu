@@ -1,12 +1,7 @@
 //! Simple (School book) division algorithm.
 
 use crate::{
-    add,
-    arch::word::Word,
-    cmp,
-    fast_divide::FastDivideNormalized2,
-    mul,
-    primitive::double_word,
+    add, arch::word::Word, cmp, fast_divide::FastDivideNormalized2, mul, primitive::double_word,
 };
 use core::cmp::Ordering;
 

@@ -1,13 +1,14 @@
 //! A ring of integers modulo a positive integer.
 
 use crate::{
-    arch::word::{Word, DoubleWord},
+    arch::word::{DoubleWord, Word},
     assert::debug_assert_in_const_fn,
-    buffer::TypedReprRef,
+    repr::TypedReprRef,
     cmp, div,
     fast_divide::{FastDivideNormalized, FastDivideNormalized2},
     math,
-    ubig::UBig, primitive::{shrink_dword, split_dword},
+    primitive::{shrink_dword, split_dword},
+    ubig::UBig,
 };
 use alloc::vec::Vec;
 use core::cmp::Ordering;
@@ -80,8 +81,10 @@ impl ModuloRing {
                     let dword_slice: [Word; 2] = [lo, hi];
                     ModuloRing(ModuloRingRepr::Large(ModuloRingLarge::new(&dword_slice)))
                 }
-            },
-            TypedReprRef::RefLarge(words) => ModuloRing(ModuloRingRepr::Large(ModuloRingLarge::new(words))),
+            }
+            TypedReprRef::RefLarge(words) => {
+                ModuloRing(ModuloRingRepr::Large(ModuloRingLarge::new(words)))
+            }
         }
     }
 
@@ -127,7 +130,6 @@ impl ModuloRingSingle {
         val < self.normalized_modulus && val & math::ones_word(self.shift) == 0
     }
 }
-
 
 impl ModuloRingDouble {
     /// Create a new ring of integers modulo a double word number `n`.

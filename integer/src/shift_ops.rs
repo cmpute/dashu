@@ -1,10 +1,10 @@
 //! Bit shift operators.
 
 use crate::{
-    arch::word::{Word, DoubleWord},
-    buffer::{Buffer, TypedRepr::*, TypedReprRef::*},
+    arch::word::{DoubleWord, Word},
+    repr::{Buffer, TypedRepr::*, TypedReprRef::*},
     ibig::IBig,
-    primitive::{double_word, extend_word, split_dword, WORD_BITS_USIZE, DWORD_BITS_USIZE},
+    primitive::{double_word, extend_word, split_dword, DWORD_BITS_USIZE, WORD_BITS_USIZE},
     shift,
     sign::Sign::*,
     ubig::UBig,
@@ -177,8 +177,8 @@ impl Shr<usize> for &IBig {
 }
 
 mod repr {
-    use crate::buffer::{Repr, TypedReprRef, TypedRepr};
     use super::*;
+    use crate::repr::{Repr, TypedRepr, TypedReprRef};
 
     impl Shl<usize> for TypedRepr {
         type Output = Repr;

@@ -70,7 +70,7 @@ mod add_ops;
 mod arch;
 mod assert;
 mod bits;
-mod buffer;
+mod repr;
 mod cmp;
 mod convert;
 mod div;

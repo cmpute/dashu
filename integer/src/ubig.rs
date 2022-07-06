@@ -2,7 +2,7 @@
 
 use crate::{
     arch::{ntt, word::Word},
-    buffer::{Buffer, Repr, TypedRepr, TypedReprRef},
+    repr::{Buffer, Repr, TypedRepr, TypedReprRef},
     math,
     primitive::WORD_BITS_USIZE,
 };

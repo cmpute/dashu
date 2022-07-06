@@ -2,7 +2,7 @@
 
 use crate::{
     arch::word::Word,
-    buffer::TypedReprRef::{self, *},
+    repr::TypedReprRef::{self, *},
     ibig::IBig,
     sign::Sign::*,
     ubig::UBig,

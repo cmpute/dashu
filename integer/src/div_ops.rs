@@ -1,8 +1,8 @@
 //! Division operators.
 
 use crate::{
-    arch::word::{Word, DoubleWord},
-    buffer::{Buffer, TypedReprRef::*, TypedRepr::*},
+    arch::word::{DoubleWord, Word},
+    repr::{Buffer, TypedRepr::*, TypedReprRef::*},
     div, helper_macros,
     ibig::IBig,
     memory::MemoryAllocation,
@@ -1169,8 +1169,11 @@ impl_div_ibig_signed!(i128);
 impl_div_ibig_signed!(isize);
 
 mod ubig {
-    use crate::{buffer::{TypedRepr, TypedReprRef}, primitive::{shrink_dword, extend_word}};
     use super::*;
+    use crate::{
+        repr::{TypedRepr, TypedReprRef},
+        primitive::{extend_word, shrink_dword},
+    };
 
     #[inline]
     pub(crate) fn div_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> UBig {

@@ -3,10 +3,10 @@
 use crate::{
     arch::{
         self,
-        word::{SignedWord, Word, DoubleWord},
         add::{add_with_carry, sub_with_borrow},
+        word::{DoubleWord, SignedWord, Word},
     },
-    primitive::{PrimitiveSigned, split_dword},
+    primitive::{split_dword, PrimitiveSigned},
     sign::Sign::{self, *},
 };
 use core::cmp::Ordering::*;

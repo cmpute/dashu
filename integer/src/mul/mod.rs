@@ -2,8 +2,8 @@
 
 use crate::{
     add,
+    arch::word::{DoubleWord, SignedWord, Word},
     math,
-    arch::word::{SignedWord, Word, DoubleWord},
     memory::Memory,
     primitive::{double_word, extend_word, split_dword},
     sign::Sign,
@@ -41,7 +41,10 @@ pub(crate) fn mul_word_in_place(words: &mut [Word], rhs: Word) -> Word {
 /// Returns carry as a double word.
 #[must_use]
 pub(crate) fn mul_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleWord {
-    debug_assert!(rhs > Word::MAX as DoubleWord, "call mul_word_in_place when rhs is small");
+    debug_assert!(
+        rhs > Word::MAX as DoubleWord,
+        "call mul_word_in_place when rhs is small"
+    );
 
     // chunk the words into double words, and do 2by2 multiplications
     let mut dwords = words.chunks_exact_mut(2);
@@ -78,8 +81,7 @@ pub(crate) fn mul_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleW
 pub(crate) fn mul_word_in_place_with_carry(words: &mut [Word], rhs: Word, mut carry: Word) -> Word {
     for a in words {
         // a * b + carry <= MAX * MAX + MAX < DoubleWord::MAX
-        let (v_lo, v_hi) =
-            split_dword(extend_word(*a) * extend_word(rhs) + extend_word(carry));
+        let (v_lo, v_hi) = split_dword(extend_word(*a) * extend_word(rhs) + extend_word(carry));
         *a = v_lo;
         carry = v_hi;
     }
@@ -95,9 +97,8 @@ fn add_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) 
     let mut carry: Word = 0;
     for (a, b) in words.iter_mut().zip(rhs.iter()) {
         // a + mult * b + carry <= MAX * MAX + 2 * MAX <= DoubleWord::MAX
-        let (v_lo, v_hi) = split_dword(
-            extend_word(*a) + extend_word(carry) + extend_word(mult) * extend_word(*b),
-        );
+        let (v_lo, v_hi) =
+            split_dword(extend_word(*a) + extend_word(carry) + extend_word(mult) * extend_word(*b));
         *a = v_lo;
         carry = v_hi;
     }

@@ -1,9 +1,9 @@
 //! Mathematical functions.
 
 use crate::{
-    arch::word::{Word, DoubleWord},
+    arch::word::{DoubleWord, Word},
     assert::debug_assert_in_const_fn,
-    primitive::{PrimitiveUnsigned, WORD_BITS, split_dword, extend_word}
+    primitive::{extend_word, split_dword, PrimitiveUnsigned, WORD_BITS},
 };
 
 /// The length of an integer in bits.
@@ -106,7 +106,11 @@ pub(crate) const fn mul_add_carry(lhs: Word, rhs: Word, c1: Word, c2: Word) -> (
 
 /// Multiply two `DoubleWord`s and return the (low, high) parts of the product
 #[inline]
-pub(crate) const fn mul_add_carry_dword(lhs: DoubleWord, rhs: DoubleWord, carry: DoubleWord) -> (DoubleWord, DoubleWord) {
+pub(crate) const fn mul_add_carry_dword(
+    lhs: DoubleWord,
+    rhs: DoubleWord,
+    carry: DoubleWord,
+) -> (DoubleWord, DoubleWord) {
     // TODO: use mul_add_carry to implement this, and accept two carries
     /// Split double word without narrowing
     #[inline(always)]
@@ -122,7 +126,7 @@ pub(crate) const fn mul_add_carry_dword(lhs: DoubleWord, rhs: DoubleWord, carry:
     let (c1, z1) = split(x1 * y0 + c0);
     let z2 = z2 + c1;
     let (c1, z1) = split(x0 * y1 + z1);
-    
+
     let lo = z0 | z1 << WORD_BITS;
     let hi = z2 + c1;
 

@@ -1,10 +1,10 @@
 //! Division functions.
 
 use crate::{
-    arch::word::{Word, DoubleWord},
+    arch::word::{DoubleWord, Word},
     fast_divide::{FastDivideNormalized, FastDivideNormalized2},
     memory::{self, Memory},
-    primitive::{double_word, extend_word, WORD_BITS, split_dword},
+    primitive::{double_word, extend_word, split_dword, WORD_BITS},
     shift,
 };
 use alloc::alloc::Layout;
@@ -115,7 +115,10 @@ pub(crate) fn fast_rem_by_normalized_word(
 ///
 /// Returns words % rhs.
 pub(crate) fn div_by_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleWord {
-    debug_assert!(rhs > Word::MAX as DoubleWord, "call div_by_word_in_place when rhs is small");
+    debug_assert!(
+        rhs > Word::MAX as DoubleWord,
+        "call div_by_word_in_place when rhs is small"
+    );
     if words.is_empty() {
         // TODO: this should not happen, assert it. Also check other methods in this module
         return 0;
@@ -149,7 +152,8 @@ pub(crate) fn fast_div_by_dword_in_place(
     let (top_hi, words_lo) = words.split_last_mut().unwrap();
     let (top_lo, words_lo) = words_lo.split_last_mut().unwrap();
     let (q, mut rem) = fast_div_rhs.div_rem((*top_lo, double_word(*top_hi, hi)));
-    *top_hi = 0; *top_lo = q;
+    *top_hi = 0;
+    *top_lo = q;
 
     // chunk the words into double words, and do 4by2 divisions
     let mut dwords = words_lo.rchunks_exact_mut(2);
@@ -178,7 +182,10 @@ pub(crate) fn fast_div_by_dword_in_place(
 
 /// words % rhs, panics if rhs fits in a single Word.
 pub(crate) fn rem_by_dword(words: &[Word], rhs: DoubleWord) -> DoubleWord {
-    debug_assert!(rhs > Word::MAX as DoubleWord, "call div_by_word_in_place when rhs is small");
+    debug_assert!(
+        rhs > Word::MAX as DoubleWord,
+        "call div_by_word_in_place when rhs is small"
+    );
 
     if rhs.is_power_of_two() {
         return double_word(words[0], words[1]) & (rhs - 1);

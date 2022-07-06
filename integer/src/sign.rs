@@ -1,8 +1,8 @@
 //! Operators on the sign of [IBig].
 
 use crate::{
+    repr::TypedReprRef::RefSmall,
     ibig::IBig,
-    buffer::TypedReprRef::RefSmall,
     ops::{Abs, UnsignedAbs},
     ubig::UBig,
 };

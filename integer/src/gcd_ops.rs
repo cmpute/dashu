@@ -1,14 +1,14 @@
 //! Operators for finding greatest common divisor.
 
-use dashu_base::ring::{Gcd, ExtendedGcd};
 use crate::{
-    arch::word::{Word, DoubleWord},
-    buffer::{Buffer, TypedReprRef::*, TypedRepr::*},
+    arch::word::{DoubleWord, Word},
+    repr::{Buffer, TypedRepr::*, TypedReprRef::*},
     div, gcd,
     ibig::IBig,
     memory::MemoryAllocation,
     ubig::UBig,
 };
+use dashu_base::ring::{ExtendedGcd, Gcd};
 
 // TODO: disable these in 0.1.0 release. Release a new version after implementing a Lehmer's GCD version
 
@@ -44,8 +44,11 @@ impl UBig {
 }
 
 mod ubig {
-    use crate::{buffer::{TypedRepr, TypedReprRef}, primitive::shrink_dword};
     use super::*;
+    use crate::{
+        repr::{TypedRepr, TypedReprRef},
+        primitive::shrink_dword,
+    };
 
     pub(crate) fn gcd_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> UBig {
         match (lhs, rhs) {

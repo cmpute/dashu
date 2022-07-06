@@ -1,8 +1,8 @@
 //! Signed big integer.
 
 use crate::{
+    repr::{Repr, TypedRepr, TypedReprRef},
     sign::Sign,
-    buffer::{Repr, TypedRepr, TypedReprRef},
     ubig::UBig,
 };
 

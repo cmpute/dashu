@@ -2,10 +2,10 @@
 
 use crate::{
     arch::word::Word,
-    buffer::{Buffer, Repr, TypedReprRef::*},
+    repr::{Buffer, Repr, TypedReprRef::*},
     error::OutOfBoundsError,
     ibig::IBig,
-    primitive::{self, PrimitiveSigned, PrimitiveUnsigned, WORD_BITS, WORD_BYTES, DWORD_BYTES},
+    primitive::{self, PrimitiveSigned, PrimitiveUnsigned, DWORD_BYTES, WORD_BITS, WORD_BYTES},
     sign::Sign::*,
     ubig::UBig,
 };
@@ -72,10 +72,14 @@ impl UBig {
     pub fn from_be_bytes(bytes: &[u8]) -> UBig {
         if bytes.len() <= WORD_BYTES {
             // fast path
-            UBig(Repr::from_word(primitive::word_from_be_bytes_partial(bytes)))
+            UBig(Repr::from_word(primitive::word_from_be_bytes_partial(
+                bytes,
+            )))
         } else if bytes.len() <= DWORD_BYTES {
             // slightly slower path
-            UBig(Repr::from_dword(primitive::dword_from_be_bytes_partial(bytes)))
+            UBig(Repr::from_dword(primitive::dword_from_be_bytes_partial(
+                bytes,
+            )))
         } else {
             UBig::from_be_bytes_large(bytes)
         }
@@ -559,8 +563,8 @@ impl IBig {
 }
 
 mod repr {
-    use crate::buffer::TypedReprRef;
     use super::*;
+    use crate::repr::TypedReprRef;
 
     impl<'a> TypedReprRef<'a> {
         #[inline]

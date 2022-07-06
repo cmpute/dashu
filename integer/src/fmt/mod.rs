@@ -1,10 +1,11 @@
 //! Formatting helpers.
 
 use crate::{
+    repr::TypedReprRef,
     ibig::IBig,
     radix::{self, Digit, DigitCase},
     sign::Sign::{self, *},
-    ubig::UBig, buffer::TypedReprRef,
+    ubig::UBig,
 };
 use core::fmt::{
     self, Alignment, Binary, Debug, Display, Formatter, LowerHex, Octal, UpperHex, Write,

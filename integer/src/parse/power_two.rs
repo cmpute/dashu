@@ -2,7 +2,7 @@
 
 use crate::{
     arch::word::Word,
-    buffer::Buffer,
+    repr::Buffer,
     error::ParseError,
     primitive::{WORD_BITS, WORD_BITS_USIZE},
     radix::{self, Digit},

@@ -2,12 +2,12 @@
 
 use crate::{
     arch::word::Word,
+    repr::{Repr, TypedReprRef::*},
     div,
     fmt::{digit_writer::DigitWriter, InRadixFull, PreparedForFormatting},
     ops::DivRem,
     radix::{self, Digit},
     ubig::UBig,
-    buffer::{TypedReprRef::*, Repr},
 };
 use alloc::vec::Vec;
 use core::{
@@ -25,13 +25,15 @@ impl InRadixFull<'_> {
 
         // TODO: prevent instantiating a new UBig here, after InRadixFull contains a reference of Repr
         let repr = match self.magnitude {
-            RefSmall(dword) => if let Ok(word) = Word::try_from(dword) {
-                let mut prepared = PreparedWord::new(word, self.radix, 1);
-                return self.format_prepared(f, &mut prepared);
-            } else {
-                Repr::from_dword(dword)
-            },
-            RefLarge(buffer) => Repr::from_buffer(buffer.into())
+            RefSmall(dword) => {
+                if let Ok(word) = Word::try_from(dword) {
+                    let mut prepared = PreparedWord::new(word, self.radix, 1);
+                    return self.format_prepared(f, &mut prepared);
+                } else {
+                    Repr::from_dword(dword)
+                }
+            }
+            RefLarge(buffer) => Repr::from_buffer(buffer.into()),
         };
         let magnitude = UBig(repr);
 
