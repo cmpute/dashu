@@ -178,7 +178,7 @@ impl Shr<usize> for &IBig {
 
 mod repr {
     use super::*;
-    use crate::repr::{Repr, TypedRepr, TypedReprRef};
+    use crate::{repr::{Repr, TypedRepr, TypedReprRef}};
 
     impl Shl<usize> for TypedRepr {
         type Output = Repr;
@@ -287,12 +287,11 @@ mod repr {
     /// Shift right one `DoubleWord` by `rhs` bits.
     #[inline]
     fn shr_dword(dword: DoubleWord, rhs: usize) -> Repr {
-        let dword = if rhs < DWORD_BITS_USIZE {
-            dword >> rhs
+        if rhs < DWORD_BITS_USIZE {
+            Repr::from_dword(dword >> rhs)
         } else {
-            0
-        };
-        Repr::from_dword(dword)
+            Repr::zero()
+        }
     }
 
     /// Shift right `buffer` by `rhs` bits.

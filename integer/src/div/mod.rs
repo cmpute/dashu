@@ -32,13 +32,11 @@ pub(crate) fn normalize_large(words: &mut [Word]) -> (u32, FastDivideNormalized2
 ///
 /// rhs must be non-zero
 ///
-/// Returns words % rhs.
+/// Returns words % rhs. Panics if `words` is too short (<= 2 words).
 #[must_use]
 pub(crate) fn div_by_word_in_place(words: &mut [Word], rhs: Word) -> Word {
-    debug_assert!(rhs != 0);
-    if words.is_empty() {
-        return 0;
-    }
+    debug_assert!(rhs != 0 && words.len() >= 2);
+
     if rhs.is_power_of_two() {
         let sh = rhs.trailing_zeros();
         let rem = shift::shr_in_place(words, sh);
@@ -70,11 +68,11 @@ pub(crate) fn fast_div_by_word_in_place(
     rem >> shift
 }
 
+/// Panics if `words` is too short (<= 2 words)
 pub(crate) fn rem_by_word(words: &[Word], rhs: Word) -> Word {
-    debug_assert!(rhs != 0);
-    if words.is_empty() {
-        return 0;
-    }
+    debug_assert!(rhs != 0 && words.len() >= 2);
+
+    // shortcut
     if rhs.is_power_of_two() {
         return words[0] & (rhs - 1);
     }
@@ -113,16 +111,14 @@ pub(crate) fn fast_rem_by_normalized_word(
 ///
 /// rhs must not fit in a word, there could be one leading zero in words.
 ///
-/// Returns words % rhs.
+/// Returns words % rhs. Panics if `words` is too short (<= 2 words)
 pub(crate) fn div_by_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleWord {
     debug_assert!(
         rhs > Word::MAX as DoubleWord,
         "call div_by_word_in_place when rhs is small"
     );
-    if words.is_empty() {
-        // TODO: this should not happen, assert it. Also check other methods in this module
-        return 0;
-    }
+    debug_assert!(words.len() >= 2);
+
     if rhs.is_power_of_two() {
         let sh = rhs.trailing_zeros();
         debug_assert!(sh < WORD_BITS); // high word of rhs must not be zero
@@ -151,7 +147,7 @@ pub(crate) fn fast_div_by_dword_in_place(
     // first div [hi, last word, second last word] by rhs
     let (top_hi, words_lo) = words.split_last_mut().unwrap();
     let (top_lo, words_lo) = words_lo.split_last_mut().unwrap();
-    let (q, mut rem) = fast_div_rhs.div_rem((*top_lo, double_word(*top_hi, hi)));
+    let (q, mut rem) = fast_div_rhs.div_rem(*top_lo, double_word(*top_hi, hi));
     *top_hi = 0;
     *top_lo = q;
 
@@ -172,7 +168,7 @@ pub(crate) fn fast_div_by_dword_in_place(
     if r.len() > 0 {
         debug_assert!(r.len() == 1);
         let r0 = r.first_mut().unwrap();
-        let (q, new_rem) = fast_div_rhs.div_rem((*r0, rem));
+        let (q, new_rem) = fast_div_rhs.div_rem(*r0, rem);
         *r0 = q;
         rem = new_rem;
     }
@@ -180,12 +176,13 @@ pub(crate) fn fast_div_by_dword_in_place(
     rem >> shift
 }
 
-/// words % rhs, panics if rhs fits in a single Word.
+/// words % rhs, panics if `words` is too short (<= 2 words) or rhs fits in a single Word.
 pub(crate) fn rem_by_dword(words: &[Word], rhs: DoubleWord) -> DoubleWord {
     debug_assert!(
         rhs > Word::MAX as DoubleWord,
         "call div_by_word_in_place when rhs is small"
     );
+    debug_assert!(words.len() >= 2);
 
     if rhs.is_power_of_two() {
         return double_word(words[0], words[1]) & (rhs - 1);
@@ -201,7 +198,7 @@ pub(crate) fn rem_by_dword(words: &[Word], rhs: DoubleWord) -> DoubleWord {
     let (r0, r1) = split_dword(rem);
     let a12 = extend_word(r1) << shift | extend_word(r0) >> (WORD_BITS - shift);
     let a0 = r0 << shift;
-    let (_, rem) = fast_div_rhs.div_rem((a0, a12));
+    let (_, rem) = fast_div_rhs.div_rem(a0, a12);
     rem >> shift
 }
 
@@ -230,7 +227,7 @@ pub(crate) fn fast_rem_by_normalized_dword(
     if r.len() > 0 {
         debug_assert!(r.len() == 1);
         let r0 = r.first().unwrap();
-        rem = fast_div_rhs.div_rem((*r0, rem)).1;
+        rem = fast_div_rhs.div_rem(*r0, rem).1;
     }
 
     rem
@@ -267,24 +264,5 @@ pub(crate) fn div_rem_in_place(
         simple::div_rem_in_place(lhs, rhs, fast_div_rhs_top)
     } else {
         divide_conquer::div_rem_in_place(lhs, rhs, fast_div_rhs_top, memory)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_div_by_word_in_place_empty() {
-        let mut a = [];
-        let rem = div_by_word_in_place(&mut a, 7);
-        assert_eq!(rem, 0);
-    }
-
-    #[test]
-    fn test_rem_by_word_empty() {
-        let a = [];
-        let rem = rem_by_word(&a, 7);
-        assert_eq!(rem, 0);
     }
 }

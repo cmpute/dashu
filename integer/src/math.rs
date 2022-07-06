@@ -3,7 +3,7 @@
 use crate::{
     arch::word::{DoubleWord, Word},
     assert::debug_assert_in_const_fn,
-    primitive::{extend_word, split_dword, PrimitiveUnsigned, WORD_BITS},
+    primitive::{extend_word, split_dword, PrimitiveUnsigned, WORD_BITS, double_word},
 };
 
 /// The length of an integer in bits.
@@ -97,41 +97,40 @@ pub(crate) const fn min_usize(a: usize, b: usize) -> usize {
     }
 }
 
-/// Multiply two `Word`s with carries and return the (low, high) parts of the product
-// TODO: do we need two carries? check lehmer gcd
+/// Multiply two `Word`s with carry and return the (low, high) parts of the product
+/// This operation will not overflow.
 #[inline(always)]
-pub(crate) const fn mul_add_carry(lhs: Word, rhs: Word, c1: Word, c2: Word) -> (Word, Word) {
-    split_dword(extend_word(lhs) * extend_word(rhs) + extend_word(c1) + extend_word(c2))
+pub(crate) const fn mul_add_carry(lhs: Word, rhs: Word, carry: Word) -> (Word, Word) {
+    split_dword(extend_word(lhs) * extend_word(rhs) + extend_word(carry))
 }
 
-/// Multiply two `DoubleWord`s and return the (low, high) parts of the product
+/// Multiply two `Word`s with 2 carries and return the (low, high) parts of the product.
+/// This operation will not overflow.
+#[inline(always)]
+pub(crate) const fn mul_add_2carry(lhs: Word, rhs: Word, c0: Word, c1: Word) -> (Word, Word) {
+    split_dword(extend_word(lhs) * extend_word(rhs) + extend_word(c0) + extend_word(c1))
+}
+
+/// Multiply two `DoubleWord`s with carry and return the (low, high) parts of the product.
+/// This operation will not overflow.
 #[inline]
 pub(crate) const fn mul_add_carry_dword(
     lhs: DoubleWord,
     rhs: DoubleWord,
     carry: DoubleWord,
 ) -> (DoubleWord, DoubleWord) {
-    // TODO: use mul_add_carry to implement this, and accept two carries
-    /// Split double word without narrowing
-    #[inline(always)]
-    const fn split(v: DoubleWord) -> (DoubleWord, DoubleWord) {
-        (v >> WORD_BITS, v & (DoubleWord::MAX >> WORD_BITS))
-    }
+    let (x0, x1) = split_dword(lhs);
+    let (y0, y1) = split_dword(rhs);
+    let (ic0, ic1) = split_dword(carry);
 
-    let (x1, x0) = split(lhs);
-    let (y1, y0) = split(rhs);
+    let (z0, c0) = mul_add_carry(x0, y0, ic0);
+    let (z1, c1a) = mul_add_carry(x1, y0, c0);
+    let (z1, c1b) = mul_add_2carry(x0, y1, z1, ic1);
+    let (z2, z3) = mul_add_2carry(x1, y1, c1a, c1b);
 
-    let z2 = x1 * y1;
-    let (c0, z0) = split(x0 * y0); // c0 <= umax::MAX - 1
-    let (c1, z1) = split(x1 * y0 + c0);
-    let z2 = z2 + c1;
-    let (c1, z1) = split(x0 * y1 + z1);
+    let lo = double_word(z0, z1);
+    let hi = double_word(z2, z3);
 
-    let lo = z0 | z1 << WORD_BITS;
-    let hi = z2 + c1;
-
-    let (lo, carry) = lo.overflowing_add(carry);
-    let hi = hi + carry as DoubleWord;
     (lo, hi)
 }
 

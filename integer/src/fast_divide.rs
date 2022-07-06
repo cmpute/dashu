@@ -147,7 +147,7 @@ impl FastDivideNormalized {
 
         // Approximate quotient is (m + B) * a / B^2 ~= (m * a/B + a)/B.
         // This is q1 below.
-        // This doesn't overflow because a_hi < Word::MAX.
+        // This doesn't overflow because a_hi < self.divisor <= Word::MAX.
         let (q0, q1) = split_dword(extend_word(self.m) * extend_word(a_hi) + a);
 
         // q = q1 + 1 is our first approximation, but calculate mod B.
@@ -278,18 +278,18 @@ impl FastDivideNormalized2 {
         }
     }
 
-    // TODO: refactor input as a_lo, a_hi
     /// The input a is arranged as (lo, mi & hi)
     /// The output is (a / divisor, a % divisor)
-    pub(crate) const fn div_rem(&self, a: (Word, DoubleWord)) -> (Word, DoubleWord) {
-        let (a0, a12) = a;
-        let (a1, a2) = split_dword(a12);
+    pub(crate) const fn div_rem(&self, a_lo: Word, a_hi: DoubleWord) -> (Word, DoubleWord) {
+        debug_assert_in_const_fn!(a_hi < self.divisor);
+        let (a1, a2) = split_dword(a_hi);
         let (d0, d1) = split_dword(self.divisor);
 
-        let (q0, q1) = split_dword(extend_word(self.m) * extend_word(a2) + a12);
+        // This doesn't overflow because a2 <= self.divisor / B <= Word::MAX.
+        let (q0, q1) = split_dword(extend_word(self.m) * extend_word(a2) + a_hi);
         let r1 = a1.wrapping_sub(q1.wrapping_mul(d1));
         let t = extend_word(d0) * extend_word(q1);
-        let r = double_word(a0, r1)
+        let r = double_word(a_lo, r1)
             .wrapping_sub(t)
             .wrapping_sub(self.divisor);
 
@@ -316,8 +316,8 @@ impl FastDivideNormalized2 {
     /// The output is (a / divisor, a % divisor)
     pub fn div_rem_double(&self, a_lo: DoubleWord, a_hi: DoubleWord) -> (DoubleWord, DoubleWord) {
         let (a0, a1) = split_dword(a_lo);
-        let (q1, r1) = self.div_rem((a1, a_hi));
-        let (q0, r0) = self.div_rem((a0, r1));
+        let (q1, r1) = self.div_rem(a1, a_hi);
+        let (q0, r0) = self.div_rem(a0, r1);
         (double_word(q0, q1), r0)
     }
 }
@@ -353,9 +353,9 @@ mod tests {
             let d = rng.gen_range(Word::MAX / 2 + 1..=Word::MAX);
             let q = rng.gen();
             let r = rng.gen_range(0..d);
-            let a = extend_word(q) * extend_word(d) + extend_word(r);
+            let (a0, a1) = math::mul_add_carry(q, d, r);
             let fast_div = FastDivideNormalized::new(d);
-            assert_eq!(fast_div.div_rem(a), (q, r));
+            assert_eq!(fast_div.div_rem(double_word(a0, a1)), (q, r));
         }
     }
 
@@ -363,7 +363,7 @@ mod tests {
     fn test_fast_divide_normalized2() {
         let d = DoubleWord::MAX;
         let fast_div = FastDivideNormalized2::new(d);
-        assert_eq!(fast_div.div_rem((0, 0)), (0, 0));
+        assert_eq!(fast_div.div_rem(0, 0), (0, 0));
 
         let mut rng = StdRng::seed_from_u64(1);
         // 3by2 div
@@ -374,12 +374,13 @@ mod tests {
 
             let (d0, d1) = split_dword(d);
             let (r0, r1) = split_dword(r);
-            let (a0, c) = split_dword(extend_word(q) * extend_word(d0) + extend_word(r0));
-            let a12 = extend_word(q) * extend_word(d1) + extend_word(r1) + extend_word(c);
+            let (a0, c) = math::mul_add_carry(q, d0, r0);
+            let (a1, a2) = math::mul_add_2carry(q, d1, r1, c);
+            let a12 = double_word(a1, a2);
 
             let fast_div = FastDivideNormalized2::new(d);
             assert_eq!(
-                fast_div.div_rem((a0, a12)),
+                fast_div.div_rem(a0, a12),
                 (q, r),
                 "failed at {:?} / {}",
                 (a0, a12),

@@ -66,8 +66,8 @@ pub(crate) fn mul_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleW
         let r0 = r.first_mut().unwrap();
         let (m_lo, m_hi) = split_dword(rhs);
         let (c_lo, c_hi) = split_dword(carry);
-        let (n_lo, nc_lo) = math::mul_add_carry(*r0, m_lo, c_lo, 0);
-        let (n_hi, nc_hi) = math::mul_add_carry(*r0, m_hi, nc_lo, c_hi);
+        let (n_lo, nc_lo) = math::mul_add_carry(*r0, m_lo, c_lo);
+        let (n_hi, nc_hi) = math::mul_add_2carry(*r0, m_hi, nc_lo, c_hi);
         *r0 = n_lo;
         carry = double_word(n_hi, nc_hi);
     }
@@ -80,8 +80,7 @@ pub(crate) fn mul_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleW
 #[must_use]
 pub(crate) fn mul_word_in_place_with_carry(words: &mut [Word], rhs: Word, mut carry: Word) -> Word {
     for a in words {
-        // a * b + carry <= MAX * MAX + MAX < DoubleWord::MAX
-        let (v_lo, v_hi) = split_dword(extend_word(*a) * extend_word(rhs) + extend_word(carry));
+        let (v_lo, v_hi) = math::mul_add_carry(*a, rhs, carry);
         *a = v_lo;
         carry = v_hi;
     }
@@ -96,9 +95,7 @@ fn add_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) 
     assert!(words.len() == rhs.len());
     let mut carry: Word = 0;
     for (a, b) in words.iter_mut().zip(rhs.iter()) {
-        // a + mult * b + carry <= MAX * MAX + 2 * MAX <= DoubleWord::MAX
-        let (v_lo, v_hi) =
-            split_dword(extend_word(*a) + extend_word(carry) + extend_word(mult) * extend_word(*b));
+        let (v_lo, v_hi) = math::mul_add_2carry(mult, *b, *a, carry);
         *a = v_lo;
         carry = v_hi;
     }

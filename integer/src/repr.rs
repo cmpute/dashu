@@ -1,5 +1,4 @@
 //! Word buffer.
-// TODO: rename to repr.rs
 
 use crate::{
     arch::word::{DoubleWord, Word},
@@ -36,10 +35,10 @@ pub(crate) struct Repr {
     /// The capacity is designed to be not zero so that it provides a niche value for other use.
     ///
     /// How to intepret the `data` field:
-    /// - capacity = 1: the words are inlined and the high word is 0
-    /// - capacity = 2: the words are inlined
-    /// - capacity >= 3: the words are on allocated on the heap. In this case, data.len >= 3 will also be forced.
-    /// - capacity < 0: similiar to the cases above, but negative capacity value is used to mark the integer is negative.
+    /// - `capacity` = 1: the words are inlined and the high word is 0. (including the case where low word is also 0)
+    /// - `capacity` = 2: the words are inlined
+    /// - `capacity` >= 3: the words are on allocated on the heap. In this case, data.len >= 3 will also be forced.
+    /// - `capacity` < 0: similiar to the cases above, but negative capacity value is used to mark the integer is negative.
     capacity: NonZeroIsize,
 
     /// The words in the `data` field are ordered from LSB to MSB.
@@ -612,18 +611,13 @@ impl Repr {
         }
     }
 
-    /// Creates a `Repr` with a double word represented in [lo, hi].
+    /// Creates a `Repr` with a double word
     #[inline]
     pub(crate) fn from_dword(n: DoubleWord) -> Self {
         let (lo, hi) = split_dword(n);
-        // TODO: disable calling with single word by debug_assert(hi == 0)
-        if hi == 0 {
-            Self::from_word(lo)
-        } else {
-            Repr {
-                data: ReprData { inline: [lo, hi] },
-                capacity: NonZeroIsize::new(2).unwrap(),
-            }
+        Repr {
+            data: ReprData { inline: [lo, hi] },
+            capacity: NonZeroIsize::new(1 + (hi != 0) as isize).unwrap(),
         }
     }
 
