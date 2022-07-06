@@ -4,7 +4,7 @@ use crate::{
     arch::word::{DoubleWord, Word},
     fast_divide::{FastDivideNormalized, FastDivideNormalized2},
     memory::{self, Memory},
-    primitive::{double_word, extend_word, split_dword, WORD_BITS},
+    primitive::{double_word, extend_word, split_dword, last_dword, WORD_BITS, first_dword},
     shift,
 };
 use alloc::alloc::Layout;
@@ -23,8 +23,7 @@ pub(crate) fn normalize_large(words: &mut [Word]) -> (u32, FastDivideNormalized2
     let shift = words.last().unwrap().leading_zeros();
     let overflow = shift::shl_in_place(words, shift);
     debug_assert!(overflow == 0);
-    // TODO: use front_dword here
-    let top_words = double_word(words[words.len() - 2], words[words.len() - 1]);
+    let top_words = last_dword(words);
     (shift, FastDivideNormalized2::new(top_words))
 }
 
@@ -154,9 +153,8 @@ pub(crate) fn fast_div_by_dword_in_place(
     // chunk the words into double words, and do 4by2 divisions
     let mut dwords = words_lo.rchunks_exact_mut(2);
     for chunk in &mut dwords {
-        let lo = chunk.first().unwrap();
-        let hi = chunk.last().unwrap();
-        let (q, new_rem) = fast_div_rhs.div_rem_double(double_word(*lo, *hi), rem);
+        let dword = first_dword(chunk);
+        let (q, new_rem) = fast_div_rhs.div_rem_double(dword, rem);
         let (new_lo, new_hi) = split_dword(q);
         *chunk.first_mut().unwrap() = new_lo;
         *chunk.last_mut().unwrap() = new_hi;
@@ -185,7 +183,7 @@ pub(crate) fn rem_by_dword(words: &[Word], rhs: DoubleWord) -> DoubleWord {
     debug_assert!(words.len() >= 2);
 
     if rhs.is_power_of_two() {
-        return double_word(words[0], words[1]) & (rhs - 1);
+        return first_dword(words) & (rhs - 1);
     }
 
     // calculate remainder without normalizing the words
@@ -217,9 +215,8 @@ pub(crate) fn fast_rem_by_normalized_dword(
     // chunk the words into double words, and do 4by2 divisions
     let mut dwords = words_lo.rchunks_exact(2);
     for chunk in &mut dwords {
-        let lo = chunk.first().unwrap();
-        let hi = chunk.last().unwrap();
-        rem = fast_div_rhs.div_rem_double(double_word(*lo, *hi), rem).1;
+        let dword = first_dword(chunk);
+        rem = fast_div_rhs.div_rem_double(dword, rem).1;
     }
 
     // there might be a single word left, do a 3by2 division

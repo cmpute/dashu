@@ -125,6 +125,7 @@ impl Clone for UBig {
     }
 }
 
+// TODO: we shouldn't need this if we implemented all ops as repr
 impl From<Buffer> for UBig {
     #[inline]
     fn from(buffer: Buffer) -> UBig {

@@ -31,3 +31,4 @@ The modifications on the ibig:
    the magnitude as reference now.
 2. Operation traits are moved to the `dashu-base` crate.
 3. The trait `NextPowerOfTwo` is changed to `PowerOfTwo` with modified definition.
+4. Bitwise operators between different signedness are removed to enforce explicitness

@@ -41,6 +41,29 @@ pub(crate) const fn shrink_dword(dw: DoubleWord) -> Option<Word> {
     }
 }
 
+/// Get the lowest double word of a slice of words
+#[inline]
+pub(crate) fn first_dword(words: &[Word]) -> DoubleWord {
+    debug_assert!(words.len() >= 2);
+    unsafe {
+        let lo = *words.get_unchecked(0);
+        let hi = *words.get_unchecked(1);
+        double_word(lo, hi)
+    }
+}
+
+/// Get the highest double word of a slice of words
+#[inline]
+pub(crate) fn last_dword(words: &[Word]) -> DoubleWord {
+    let len = words.len();
+    debug_assert!(len >= 2);
+    unsafe {
+        let lo = *words.get_unchecked(len - 2);
+        let hi = *words.get_unchecked(len - 1);
+        double_word(lo, hi)
+    }
+}
+
 pub(crate) trait PrimitiveUnsigned
 where
     Self: Copy,

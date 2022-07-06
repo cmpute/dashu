@@ -415,7 +415,6 @@ pub mod repr {
         }
     }
 
-
     #[inline]
     fn add_dword(a: DoubleWord, b: DoubleWord) -> Repr {
         let (res, overflow) = a.overflowing_add(b);
@@ -506,12 +505,39 @@ pub mod repr {
         }
     }
 
+    impl<'a> TypedReprRef<'a> {
+        /// Subtract one from the number
+        pub(crate) fn sub_one(self) -> Repr {
+            match self {
+                RefSmall(dword) => Repr::from_dword(dword - 1),
+                RefLarge(buffer) => sub_large_one(buffer.into())
+            }
+        }
+    }
+
+    impl TypedRepr {
+        /// Subtract one from the number
+        pub(crate) fn sub_one(self) -> Repr {
+            match self {
+                Small(dword) => Repr::from_dword(dword - 1),
+                Large(buffer) => sub_large_one(buffer)
+            }
+        }
+    }
+
     #[inline]
     fn sub_dword(a: DoubleWord, b: DoubleWord) -> Repr {
         match a.checked_sub(b) {
             Some(res) => Repr::from_dword(res),
             None => UBig::panic_negative(),
         }
+    }
+
+    #[inline]
+    fn sub_large_one(mut lhs: Buffer) -> Repr {
+        let overflow = add::sub_one_in_place(&mut lhs);
+        debug_assert!(!overflow);
+        Repr::from_buffer(lhs)
     }
 
     #[inline]

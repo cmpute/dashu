@@ -76,8 +76,6 @@ pub(crate) enum TypedReprRef<'a> {
     RefLarge(&'a [Word]),
 }
 
-// TODO: add TypedRepr::ref() -> TypedReprRef
-
 impl Buffer {
     /// Maximum number of `Word`s.
     ///
@@ -329,29 +327,33 @@ impl Buffer {
         self.len = new_len;
     }
 
-    /// Get the first word of the buffer, assuming the buffer is not empty.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the buffer is empty
-    pub(crate) fn front_word(&self) -> Word {
-        assert!(self.len >= 1);
-
-        unsafe { ptr::read(self.ptr.as_ptr()) }
-    }
-
     /// Get the first double word of the buffer, assuming the buffer has at least two words.
     ///
     /// # Panics
     ///
     /// Panics if the buffer is empty or has only 1 word
-    pub(crate) fn front_dword(&self) -> DoubleWord {
+    pub(crate) fn first_dword(&self) -> DoubleWord {
         assert!(self.len >= 2);
 
         unsafe {
             let lo = ptr::read(self.ptr.as_ptr());
             let hi = ptr::read(self.ptr.as_ptr().add(1));
             double_word(lo, hi)
+        }
+    }
+
+    /// Get the mutable reference to the first double word of the buffer,
+    /// assuming the buffer has at least two words.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the buffer is empty or has only 1 word
+    pub(crate) fn first_dword_mut(&mut self) -> (&mut Word, &mut Word) {
+        assert!(self.len >= 2);
+
+        unsafe {
+            let ptr = self.ptr.as_ptr();
+            (&mut *ptr, &mut *ptr.add(1))
         }
     }
 
@@ -802,6 +804,17 @@ impl Hash for Repr {
         let (sign, arr) = self.as_sign_slice();
         sign.hash(state);
         (*arr).hash(state);
+    }
+}
+
+impl TypedRepr {
+    /// Convert a reference of `TypedRef` to `TypedReprRef`
+    #[inline]
+    pub(crate) fn as_ref(&self) -> TypedReprRef {
+        match self {
+            Self::Small(dword) => TypedReprRef::RefSmall(*dword),
+            Self::Large(buffer) => TypedReprRef::RefLarge(&buffer)
+        }
     }
 }
 

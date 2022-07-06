@@ -2,6 +2,8 @@
 //!
 //! Most traits are only implemented for unsigned integers yet.
 
+// TODO: remove AndNot as it's not widely used, it's only used internally in UBig
+
 /// Bitwise AND NOT operation.
 ///
 /// `x.and_not(y)` is equivalent to `x & !y` for primitive integers.

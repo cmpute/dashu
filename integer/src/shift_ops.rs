@@ -153,7 +153,7 @@ impl Shr<usize> for IBig {
         match sign {
             Positive => IBig(mag >> rhs),
             Negative => {
-                let b = mag.are_low_bits_nonzero(rhs);
+                let b = mag.as_ref().are_low_bits_nonzero(rhs);
                 -IBig(mag >> rhs) - IBig::from(b)
             }
         }
