@@ -10,5 +10,6 @@ dashu-int = { path = "./integer" }
 [workspace]
 members = [
     "base",
+    "benchmark",
     "integer",
 ]
