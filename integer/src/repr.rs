@@ -682,6 +682,14 @@ impl Repr {
             data: ReprData { inline: [1, 0] },
         }
     }
+
+    /// Flip the sign bit of the Repr and return it 
+    pub fn neg(mut self) -> Self {
+        if !self.is_zero() {
+            self.capacity = unsafe { NonZeroIsize::new_unchecked(-self.capacity.get()) }
+        }
+        self
+    }
 }
 
 // Cloning for Repr is written in a verbose way because it's performance critical.

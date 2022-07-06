@@ -1,5 +1,4 @@
-/// Implement impl Op<B> for &A by forwarding to impl Op<B> for A.
-/// Includes &B.
+/// Implement `impl Op<B> for &A` by forwarding to `impl Op<B> for A`, including &B.
 macro_rules! forward_binop_first_arg_by_value {
     (impl $tr:ident<$t2:ty> for $t1:ty, $f:ident) => {
         impl $tr<$t2> for &$t1 {
@@ -22,8 +21,7 @@ macro_rules! forward_binop_first_arg_by_value {
     };
 }
 
-/// Implement impl Op<&B> for A by forwarding to impl Op<B> for A.
-/// Includes &A.
+/// Implement `impl Op<&B> for A` by forwarding to `impl Op<B> for A`, including &A.
 macro_rules! forward_binop_second_arg_by_value {
     (impl $tr:ident<$t2:ty> for $t1:ty, $f:ident) => {
         impl $tr<&$t2> for $t1 {
@@ -46,9 +44,9 @@ macro_rules! forward_binop_second_arg_by_value {
     };
 }
 
-/// Implement impl Op<&B> for A by forwarding to impl Op<B> for A.
+/// Implement `impl Op<&B> for A` by forwarding to `impl Op<B> for A`, including &A.
 /// Here Op has OutputDiv and OutputRem, rather than just Output.
-/// Includes &A.
+/// 
 macro_rules! forward_div_rem_second_arg_by_value {
     (impl $tr:ident<$t2:ty> for $t1:ty, $f:ident) => {
         impl $tr<&$t2> for $t1 {
@@ -73,8 +71,7 @@ macro_rules! forward_div_rem_second_arg_by_value {
     };
 }
 
-/// Implement impl Op<B> for A by forwarding to impl Op<A> for B.
-/// Includes &A and &B.
+/// Implement `impl Op<B> for A` by forwarding to `impl Op<A> for B`, including &A and &B.
 macro_rules! forward_binop_swap_args {
     (impl $tr:ident<$t2:ty> for $t1:ty, $f:ident) => {
         impl $tr<$t2> for $t1 {
@@ -115,7 +112,7 @@ macro_rules! forward_binop_swap_args {
     };
 }
 
-/// Implement impl OpAssign<&B> for A by forwarding to impl OpAssign<B> for A.
+/// Implement `impl OpAssign<&B> for A` by forwarding to `impl OpAssign<B> for A`.
 macro_rules! forward_binop_assign_arg_by_value {
     (impl $tr:ident<$t2:ty> for $t1:ty, $f:ident) => {
         impl $tr<&$t2> for $t1 {
@@ -127,8 +124,83 @@ macro_rules! forward_binop_assign_arg_by_value {
     };
 }
 
+/// Implement `impl Op<UBig> for UBig` by forwarding to `lhs.repr().op(rhs.repr())`, including &UBig.
+/// The output type is UBig.
+macro_rules! forward_ubig_binop_to_repr {
+    (impl $tr:ident, $f:ident) => {
+        impl $tr<UBig> for UBig {
+            type Output = UBig;
+
+            #[inline]
+            fn $f(self, rhs: UBig) -> UBig {
+                UBig(self.into_repr().$f(rhs.into_repr()))
+            }
+        }
+
+        impl<'r> $tr<&'r UBig> for UBig {
+            type Output = UBig;
+
+            #[inline]
+            fn $f(self, rhs: &UBig) -> UBig {
+                UBig(self.into_repr().$f(rhs.repr()))
+            }
+        }
+
+        impl<'l> $tr<UBig> for &'l UBig {
+            type Output = UBig;
+
+            #[inline]
+            fn $f(self, rhs: UBig) -> UBig {
+                UBig(self.repr().$f(rhs.into_repr()))
+            }
+        }
+
+        impl<'l, 'r> $tr<&'r UBig> for &'l UBig {
+            type Output = UBig;
+
+            #[inline]
+            fn $f(self, rhs: &UBig) -> UBig {
+                UBig(self.repr().$f(rhs.repr()))
+            }
+        }
+    };
+}
+
+/// Implement `impl OpAssign<B> for A` by forwarding to `*A = mem::take(A).op(B)`, including &B.
+macro_rules! forward_binop_assign_by_taking {
+    (impl $tr:ident<$t2:ty> for $t1:ty, $fassign:ident, $f:ident) => {
+        impl $tr<$t2> for $t1 {
+            #[inline]
+            fn $fassign(&mut self, rhs: $t2) {
+                *self = core::mem::take(self).$f(rhs);
+            }
+        }
+        impl $tr<&$t2> for $t1 {
+            #[inline]
+            fn $fassign(&mut self, rhs: &$t2) {
+                *self = core::mem::take(self).$f(rhs);
+            }
+        }
+    };
+}
+
+/// Implement `impl Add<IBig> for IBig` by forwarding to the Repr
+macro_rules! forword_ibig_add_to_repr {
+    ($lhs_sign:ident, $lhs_mag:ident, $rhs_sign:ident, $rhs_mag:ident) => {
+        match ($lhs_sign, $rhs_sign) {
+            (crate::sign::Sign::Positive, crate::sign::Sign::Positive) => IBig($lhs_mag.add($rhs_mag)),
+            (crate::sign::Sign::Positive, crate::sign::Sign::Negative) => IBig($lhs_mag.sub_signed($rhs_mag)),
+            (crate::sign::Sign::Negative, crate::sign::Sign::Positive) => IBig($rhs_mag.sub_signed($lhs_mag)),
+            (crate::sign::Sign::Negative, crate::sign::Sign::Negative) => IBig($lhs_mag.add($rhs_mag).neg()),
+        }
+    };
+}
+
 pub(crate) use forward_binop_assign_arg_by_value;
+pub(crate) use forward_binop_assign_by_taking;
 pub(crate) use forward_binop_first_arg_by_value;
 pub(crate) use forward_binop_second_arg_by_value;
 pub(crate) use forward_binop_swap_args;
 pub(crate) use forward_div_rem_second_arg_by_value;
+pub(crate) use forword_ibig_add_to_repr;
+pub(crate) use forward_ubig_binop_to_repr;

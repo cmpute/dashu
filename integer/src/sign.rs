@@ -60,12 +60,7 @@ impl Neg for IBig {
 
     #[inline]
     fn neg(self) -> IBig {
-        if self.is_zero() {
-            self
-        } else {
-            let sign = self.0.sign();
-            IBig(self.0.with_sign(-sign))
-        }
+        IBig(self.0.neg())
     }
 }
 
@@ -74,7 +69,7 @@ impl Neg for &IBig {
 
     #[inline]
     fn neg(self) -> IBig {
-        self.clone().neg()
+        IBig(self.0.clone().neg())
     }
 }
 
@@ -83,7 +78,7 @@ impl Abs for IBig {
 
     #[inline]
     fn abs(self) -> IBig {
-        IBig::from(self.unsigned_abs())
+        IBig(self.0.with_sign(Sign::Positive))
     }
 }
 
@@ -92,7 +87,7 @@ impl Abs for &IBig {
 
     #[inline]
     fn abs(self) -> IBig {
-        IBig::from(self.unsigned_abs())
+        IBig(self.0.clone().with_sign(Sign::Positive))
     }
 }
 

@@ -5,38 +5,48 @@ use crate::{error::ParseError, ibig::IBig, ops::Abs, ubig::UBig};
 impl num_traits::Zero for UBig {
     #[inline]
     fn zero() -> Self {
-        Self::from(0u8)
+        UBig::zero()
     }
 
     #[inline]
     fn is_zero(&self) -> bool {
-        *self == Self::from(0u8)
+        UBig::is_zero(&self)
     }
 }
 
 impl num_traits::Zero for IBig {
     #[inline]
     fn zero() -> Self {
-        Self::from(0u8)
+        IBig::zero()
     }
 
     #[inline]
     fn is_zero(&self) -> bool {
-        *self == Self::from(0u8)
+        IBig::is_zero(&self)
     }
 }
 
 impl num_traits::One for UBig {
     #[inline]
     fn one() -> Self {
-        Self::from(1u8)
+        UBig::one()
+    }
+
+    #[inline]
+    fn is_one(&self) -> bool {
+        UBig::is_one(&self)
     }
 }
 
 impl num_traits::One for IBig {
     #[inline]
     fn one() -> Self {
-        Self::from(1u8)
+        IBig::one()
+    }
+
+    #[inline]
+    fn is_one(&self) -> bool {
+        IBig::is_one(&self)
     }
 }
 

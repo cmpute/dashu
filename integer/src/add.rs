@@ -161,7 +161,7 @@ pub(crate) fn sub_same_len_in_place_swap(lhs: &[Word], rhs: &mut [Word]) -> bool
 /// (sign, lhs) = lhs - rhs
 #[must_use]
 pub(crate) fn sub_in_place_with_sign(lhs: &mut [Word], rhs: &[Word]) -> Sign {
-    assert!(lhs.len() >= rhs.len());
+    debug_assert!(lhs.len() >= rhs.len());
     let mut lhs_len = lhs.len();
     while lhs_len != 0 && lhs[lhs_len - 1] == 0 {
         lhs_len -= 1;
