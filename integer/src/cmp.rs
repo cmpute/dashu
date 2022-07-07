@@ -64,3 +64,4 @@ pub(crate) fn cmp_same_len(lhs: &[Word], rhs: &[Word]) -> Ordering {
 }
 
 // TODO: implement cmp with primitive integers and eliminate UBig::from(xu8) in the code
+// TODO: implement cmp between IBig and UBig

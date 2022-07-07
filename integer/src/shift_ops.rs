@@ -14,6 +14,7 @@ use core::{
     ops::{Shl, ShlAssign, Shr, ShrAssign},
 };
 
+// TODO: use helper macros
 macro_rules! impl_shifts {
     ($t:ty) => {
         impl Shl<&usize> for $t {
@@ -85,7 +86,6 @@ macro_rules! impl_shifts {
 impl_shifts!(UBig);
 impl_shifts!(IBig);
 
-// TODO: use macro to forward UBig operators to repr's
 impl Shl<usize> for UBig {
     type Output = UBig;
 
@@ -233,15 +233,25 @@ mod repr {
 
         if rhs <= dword.leading_zeros() as usize {
             Repr::from_dword(dword << rhs)
+        } else if dword == 1 {
+            shl_one_spilled(rhs)
         } else {
             shl_dword_spilled(dword, rhs)
         }
     }
 
+    /// Shift left 1 by `rhs` bits
+    fn shl_one_spilled(rhs: usize) -> Repr {
+        debug_assert!(rhs >= DWORD_BITS_USIZE);
+        let idx = rhs / WORD_BITS_USIZE;
+        let mut buffer = Buffer::allocate(idx + 1);
+        buffer.push_zeros(idx);
+        buffer.push(1 << (rhs % WORD_BITS_USIZE));
+        Repr::from_buffer(buffer)
+    }
+
     /// Shift left a non-zero `DoubleWord` by `rhs` bits.
     fn shl_dword_spilled(dword: DoubleWord, rhs: usize) -> Repr {
-        // TODO: specialize the case where dword == 1 using set_bit?
-
         let shift_words = rhs / WORD_BITS_USIZE;
         let shift_bits = (rhs % WORD_BITS_USIZE) as u32;
 

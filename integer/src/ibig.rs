@@ -39,12 +39,7 @@ impl IBig {
 
     #[inline]
     pub(crate) fn from_sign_magnitude(sign: Sign, magnitude: UBig) -> IBig {
-        let repr = magnitude.0;
-        if repr.is_zero() {
-            IBig(repr)
-        } else {
-            IBig(repr.with_sign(sign))
-        }
+        IBig(magnitude.0.with_sign(sign))
     }
 
     #[inline]

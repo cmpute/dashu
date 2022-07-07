@@ -41,8 +41,11 @@ impl UBig {
     pub fn from_le_bytes(bytes: &[u8]) -> UBig {
         if bytes.len() <= WORD_BYTES {
             // fast path
-            UBig::from(primitive::word_from_le_bytes_partial(bytes))
+            UBig(Repr::from_word(primitive::word_from_le_bytes_partial(bytes)))
+        } else if bytes.len() <= DWORD_BYTES {
+            UBig(Repr::from_dword(primitive::dword_from_le_bytes_partial(bytes)))
         } else {
+            // slow path
             UBig::from_le_bytes_large(bytes)
         }
     }
@@ -76,11 +79,11 @@ impl UBig {
                 bytes,
             )))
         } else if bytes.len() <= DWORD_BYTES {
-            // slightly slower path
             UBig(Repr::from_dword(primitive::dword_from_be_bytes_partial(
                 bytes,
             )))
         } else {
+            // slow path
             UBig::from_be_bytes_large(bytes)
         }
     }

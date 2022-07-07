@@ -419,6 +419,7 @@ pub mod repr {
     fn add_dword(a: DoubleWord, b: DoubleWord) -> Repr {
         let (res, overflow) = a.overflowing_add(b);
         if overflow {
+            // spilled
             let (lo, hi) = split_dword(res);
             let mut buffer = Buffer::allocate(3);
             buffer.push(lo);

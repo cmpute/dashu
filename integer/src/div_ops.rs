@@ -6,7 +6,6 @@ use crate::{
     ibig::IBig,
     memory::MemoryAllocation,
     ops::{Abs, DivEuclid, DivRem, DivRemEuclid, RemEuclid},
-    primitive::{PrimitiveSigned, PrimitiveUnsigned},
     repr::{Buffer, TypedRepr::*, TypedReprRef::*},
     shift,
     sign::Sign::*,
@@ -14,454 +13,48 @@ use crate::{
 };
 use core::{
     convert::TryFrom,
-    mem,
     ops::{Div, DivAssign, Rem, RemAssign},
 };
 
-impl Div<UBig> for UBig {
-    type Output = UBig;
+helper_macros::forward_ubig_binop_to_repr!(impl Div, div);
+helper_macros::forward_ubig_binop_to_repr!(impl Rem, rem);
+helper_macros::forward_ubig_binop_to_repr!(impl DivRem as divrem, div_rem);
+helper_macros::forward_ubig_binop_to_repr!(impl DivEuclid, div_euclid, div);
+helper_macros::forward_ubig_binop_to_repr!(impl RemEuclid, rem_euclid, rem);
+helper_macros::forward_ubig_binop_to_repr!(impl DivRemEuclid as divrem, div_rem_euclid, div_rem);
+helper_macros::forward_binop_assign_by_taking!(impl DivAssign<UBig> for UBig, div_assign, div);
+helper_macros::forward_binop_assign_by_taking!(impl RemAssign<UBig> for UBig, rem_assign, rem);
 
-    #[inline]
-    fn div(self, rhs: UBig) -> UBig {
-        ubig::div_repr_val_val(self.into_repr(), rhs.into_repr())
-    }
+macro_rules! impl_ibig_div {
+    ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {
+        // truncate towards 0.
+        IBig($mag0.div($mag1).with_sign($sign0 * $sign1))
+    };
 }
-
-impl Div<&UBig> for UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn div(self, rhs: &UBig) -> UBig {
-        ubig::div_repr_val_ref(self.into_repr(), rhs.repr())
-    }
+macro_rules! impl_ibig_rem {
+    ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {{
+        let _sign1 = $sign1; // unused
+        // remainder with truncating division has same sign as lhs.
+        IBig($mag0.rem($mag1).with_sign($sign0))
+    }};
 }
-
-impl Div<UBig> for &UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn div(self, rhs: UBig) -> UBig {
-        ubig::div_repr_ref_val(self.repr(), rhs.into_repr())
-    }
-}
-
-impl Div<&UBig> for &UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn div(self, rhs: &UBig) -> UBig {
-        ubig::div_repr_ref_ref(self.repr(), rhs.repr())
-    }
-}
-
-impl DivAssign<UBig> for UBig {
-    #[inline]
-    fn div_assign(&mut self, rhs: UBig) {
-        *self = mem::take(self) / rhs;
-    }
-}
-
-impl DivAssign<&UBig> for UBig {
-    #[inline]
-    fn div_assign(&mut self, rhs: &UBig) {
-        *self = mem::take(self) / rhs;
-    }
-}
-
-impl Rem<UBig> for UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn rem(self, rhs: UBig) -> UBig {
-        ubig::rem_repr_val_val(self.into_repr(), rhs.into_repr())
-    }
-}
-
-impl Rem<&UBig> for UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn rem(self, rhs: &UBig) -> UBig {
-        ubig::rem_repr_val_ref(self.into_repr(), rhs.repr())
-    }
-}
-
-impl Rem<UBig> for &UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn rem(self, rhs: UBig) -> UBig {
-        ubig::rem_repr_ref_val(self.repr(), rhs.into_repr())
-    }
-}
-
-impl Rem<&UBig> for &UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn rem(self, rhs: &UBig) -> UBig {
-        ubig::rem_repr_ref_ref(self.repr(), rhs.repr())
-    }
-}
-
-impl RemAssign<UBig> for UBig {
-    #[inline]
-    fn rem_assign(&mut self, rhs: UBig) {
-        *self = mem::take(self) % rhs;
-    }
-}
-
-impl RemAssign<&UBig> for UBig {
-    #[inline]
-    fn rem_assign(&mut self, rhs: &UBig) {
-        *self = mem::take(self) % rhs;
-    }
-}
-
-impl DivRem<UBig> for UBig {
-    type OutputDiv = UBig;
-    type OutputRem = UBig;
-
-    #[inline]
-    fn div_rem(self, rhs: UBig) -> (UBig, UBig) {
-        ubig::div_rem_repr_val_val(self.into_repr(), rhs.into_repr())
-    }
-}
-
-impl DivRem<&UBig> for UBig {
-    type OutputDiv = UBig;
-    type OutputRem = UBig;
-
-    #[inline]
-    fn div_rem(self, rhs: &UBig) -> (UBig, UBig) {
-        ubig::div_rem_repr_val_ref(self.into_repr(), rhs.repr())
-    }
-}
-
-impl DivRem<UBig> for &UBig {
-    type OutputDiv = UBig;
-    type OutputRem = UBig;
-
-    #[inline]
-    fn div_rem(self, rhs: UBig) -> (UBig, UBig) {
-        ubig::div_rem_repr_ref_val(self.repr(), rhs.into_repr())
-    }
-}
-
-impl DivRem<&UBig> for &UBig {
-    type OutputDiv = UBig;
-    type OutputRem = UBig;
-
-    #[inline]
-    fn div_rem(self, rhs: &UBig) -> (UBig, UBig) {
-        ubig::div_rem_repr_ref_ref(self.repr(), rhs.repr())
-    }
-}
-
-// TODO: use macros here
-impl DivEuclid<UBig> for UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn div_euclid(self, rhs: UBig) -> UBig {
-        self / rhs
-    }
-}
-
-impl DivEuclid<&UBig> for UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn div_euclid(self, rhs: &UBig) -> UBig {
-        self / rhs
-    }
-}
-
-impl DivEuclid<UBig> for &UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn div_euclid(self, rhs: UBig) -> UBig {
-        self / rhs
-    }
-}
-
-impl DivEuclid<&UBig> for &UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn div_euclid(self, rhs: &UBig) -> UBig {
-        self / rhs
-    }
-}
-
-impl RemEuclid<UBig> for UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn rem_euclid(self, rhs: UBig) -> UBig {
-        self % rhs
-    }
-}
-
-impl RemEuclid<&UBig> for UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn rem_euclid(self, rhs: &UBig) -> UBig {
-        self % rhs
-    }
-}
-
-impl RemEuclid<UBig> for &UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn rem_euclid(self, rhs: UBig) -> UBig {
-        self % rhs
-    }
-}
-
-impl RemEuclid<&UBig> for &UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn rem_euclid(self, rhs: &UBig) -> UBig {
-        self % rhs
-    }
-}
-
-impl DivRemEuclid<UBig> for UBig {
-    type OutputDiv = UBig;
-    type OutputRem = UBig;
-
-    #[inline]
-    fn div_rem_euclid(self, rhs: UBig) -> (UBig, UBig) {
-        self.div_rem(rhs)
-    }
-}
-
-impl DivRemEuclid<&UBig> for UBig {
-    type OutputDiv = UBig;
-    type OutputRem = UBig;
-
-    #[inline]
-    fn div_rem_euclid(self, rhs: &UBig) -> (UBig, UBig) {
-        self.div_rem(rhs)
-    }
-}
-
-impl DivRemEuclid<UBig> for &UBig {
-    type OutputDiv = UBig;
-    type OutputRem = UBig;
-
-    #[inline]
-    fn div_rem_euclid(self, rhs: UBig) -> (UBig, UBig) {
-        self.div_rem(rhs)
-    }
-}
-
-impl DivRemEuclid<&UBig> for &UBig {
-    type OutputDiv = UBig;
-    type OutputRem = UBig;
-
-    #[inline]
-    fn div_rem_euclid(self, rhs: &UBig) -> (UBig, UBig) {
-        self.div_rem(rhs)
-    }
-}
-
-impl Div<IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn div(self, rhs: IBig) -> IBig {
-        // Truncate towards 0.
-        let (sign0, mag0) = self.into_sign_repr();
-        let (sign1, mag1) = rhs.into_sign_repr();
-        IBig::from_sign_magnitude(sign0 * sign1, ubig::div_repr_val_val(mag0, mag1))
-    }
-}
-
-impl Div<&IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn div(self, rhs: &IBig) -> IBig {
-        // Truncate towards 0.
-        let (sign0, mag0) = self.into_sign_repr();
-        let (sign1, mag1) = rhs.as_sign_repr();
-        IBig::from_sign_magnitude(sign0 * sign1, ubig::div_repr_val_ref(mag0, mag1))
-    }
-}
-
-impl Div<IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn div(self, rhs: IBig) -> IBig {
-        // Truncate towards 0.
-        let (sign0, mag0) = self.as_sign_repr();
-        let (sign1, mag1) = rhs.into_sign_repr();
-        IBig::from_sign_magnitude(sign0 * sign1, ubig::div_repr_ref_val(mag0, mag1))
-    }
-}
-
-impl Div<&IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn div(self, rhs: &IBig) -> IBig {
-        // Truncate towards 0.
-        let (sign0, mag0) = self.as_sign_repr();
-        let (sign1, mag1) = rhs.as_sign_repr();
-        IBig::from_sign_magnitude(sign0 * sign1, ubig::div_repr_ref_ref(mag0, mag1))
-    }
-}
-
-impl DivAssign<IBig> for IBig {
-    #[inline]
-    fn div_assign(&mut self, rhs: IBig) {
-        *self = mem::take(self) / rhs;
-    }
-}
-
-impl DivAssign<&IBig> for IBig {
-    #[inline]
-    fn div_assign(&mut self, rhs: &IBig) {
-        *self = mem::take(self) / rhs;
-    }
-}
-
-impl Rem<IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn rem(self, rhs: IBig) -> IBig {
-        // Remainder with truncating division has same sign as lhs.
-        let (sign0, mag0) = self.into_sign_repr();
-        let (_, mag1) = rhs.into_sign_repr();
-        IBig::from_sign_magnitude(sign0, ubig::rem_repr_val_val(mag0, mag1))
-    }
-}
-
-impl Rem<&IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn rem(self, rhs: &IBig) -> IBig {
-        // Remainder with truncating division has same sign as lhs.
-        let (sign0, mag0) = self.into_sign_repr();
-        let (_, mag1) = rhs.as_sign_repr();
-        IBig::from_sign_magnitude(sign0, ubig::rem_repr_val_ref(mag0, mag1))
-    }
-}
-
-impl Rem<IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn rem(self, rhs: IBig) -> IBig {
-        // Remainder with truncating division has same sign as lhs.
-        let (sign0, mag0) = self.as_sign_repr();
-        let (_, mag1) = rhs.into_sign_repr();
-        IBig::from_sign_magnitude(sign0, ubig::rem_repr_ref_val(mag0, mag1))
-    }
-}
-
-impl Rem<&IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn rem(self, rhs: &IBig) -> IBig {
-        // Remainder with truncating division has same sign as lhs.
-        let (sign0, mag0) = self.as_sign_repr();
-        let (_, mag1) = rhs.as_sign_repr();
-        IBig::from_sign_magnitude(sign0, ubig::rem_repr_ref_ref(mag0, mag1))
-    }
-}
-
-impl RemAssign<IBig> for IBig {
-    #[inline]
-    fn rem_assign(&mut self, rhs: IBig) {
-        *self = mem::take(self) % rhs;
-    }
-}
-
-impl RemAssign<&IBig> for IBig {
-    #[inline]
-    fn rem_assign(&mut self, rhs: &IBig) {
-        *self = mem::take(self) % rhs;
-    }
-}
-
-impl DivRem<IBig> for IBig {
-    type OutputDiv = IBig;
-    type OutputRem = IBig;
-
-    #[inline]
-    fn div_rem(self, rhs: IBig) -> (IBig, IBig) {
-        // Truncate towards 0.
-        let (sign0, mag0) = self.into_sign_repr();
-        let (sign1, mag1) = rhs.into_sign_repr();
-        let (q, r) = ubig::div_rem_repr_val_val(mag0, mag1);
+helper_macros::forward_ibig_binop_to_repr!(impl Div, div, impl_ibig_div);
+helper_macros::forward_ibig_binop_to_repr!(impl Rem, rem, impl_ibig_rem);
+
+helper_macros::forward_binop_assign_by_taking!(impl DivAssign<IBig> for IBig, div_assign, div);
+helper_macros::forward_binop_assign_by_taking!(impl RemAssign<IBig> for IBig, rem_assign, rem);
+
+macro_rules! impl_ibig_div_rem {
+    ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {{
+        // truncate towards 0.
+        let (q, r) = $mag0.div_rem($mag1);
         (
-            IBig::from_sign_magnitude(sign0 * sign1, q),
-            IBig::from_sign_magnitude(sign0, r),
+            IBig(q.with_sign($sign0 * $sign1)),
+            IBig(r.with_sign($sign0)),
         )
-    }
+    }};
 }
-
-impl DivRem<&IBig> for IBig {
-    type OutputDiv = IBig;
-    type OutputRem = IBig;
-
-    #[inline]
-    fn div_rem(self, rhs: &IBig) -> (IBig, IBig) {
-        // Truncate towards 0.
-        let (sign0, mag0) = self.into_sign_repr();
-        let (sign1, mag1) = rhs.as_sign_repr();
-        let (q, r) = ubig::div_rem_repr_val_ref(mag0, mag1);
-        (
-            IBig::from_sign_magnitude(sign0 * sign1, q),
-            IBig::from_sign_magnitude(sign0, r),
-        )
-    }
-}
-
-impl DivRem<IBig> for &IBig {
-    type OutputDiv = IBig;
-    type OutputRem = IBig;
-
-    #[inline]
-    fn div_rem(self, rhs: IBig) -> (IBig, IBig) {
-        // Truncate towards 0.
-        let (sign0, mag0) = self.as_sign_repr();
-        let (sign1, mag1) = rhs.into_sign_repr();
-        let (q, r) = ubig::div_rem_repr_ref_val(mag0, mag1);
-        (
-            IBig::from_sign_magnitude(sign0 * sign1, q),
-            IBig::from_sign_magnitude(sign0, r),
-        )
-    }
-}
-
-impl DivRem<&IBig> for &IBig {
-    type OutputDiv = IBig;
-    type OutputRem = IBig;
-
-    #[inline]
-    fn div_rem(self, rhs: &IBig) -> (IBig, IBig) {
-        // Truncate towards 0.
-        let (sign0, mag0) = self.as_sign_repr();
-        let (sign1, mag1) = rhs.as_sign_repr();
-        let (q, r) = ubig::div_rem_repr_ref_ref(mag0, mag1);
-        (
-            IBig::from_sign_magnitude(sign0 * sign1, q),
-            IBig::from_sign_magnitude(sign0, r),
-        )
-    }
-}
+helper_macros::forward_ibig_binop_to_repr!(impl DivRem as divrem, div_rem, impl_ibig_div_rem);
 
 impl DivEuclid<IBig> for IBig {
     type Output = IBig;
@@ -779,226 +372,6 @@ impl_div_ubig_unsigned!(u64);
 impl_div_ubig_unsigned!(u128);
 impl_div_ubig_unsigned!(usize);
 
-macro_rules! impl_div_ubig_signed {
-    ($t:ty) => {
-        impl Div<$t> for UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn div(self, rhs: $t) -> UBig {
-                UBig::from_ibig(IBig::from(self) / IBig::from_signed(rhs))
-            }
-        }
-
-        impl Div<$t> for &UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn div(self, rhs: $t) -> UBig {
-                UBig::from_ibig(IBig::from(self) / IBig::from_signed(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl Div<$t> for UBig, div);
-
-        impl DivAssign<$t> for UBig {
-            #[inline]
-            fn div_assign(&mut self, rhs: $t) {
-                *self = mem::take(self) / rhs
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl DivAssign<$t> for UBig, div_assign);
-
-        impl Rem<$t> for UBig {
-            type Output = $t;
-
-            #[inline]
-            fn rem(self, rhs: $t) -> $t {
-                let (_, rhs_unsigned) = rhs.to_sign_magnitude();
-                let res = self % rhs_unsigned;
-                <$t>::try_from_sign_magnitude(Positive, res).unwrap()
-            }
-        }
-
-        impl Rem<$t> for &UBig {
-            type Output = $t;
-
-            #[inline]
-            fn rem(self, rhs: $t) -> $t {
-                let (_, rhs_unsigned) = rhs.to_sign_magnitude();
-                let res = self % rhs_unsigned;
-                <$t>::try_from_sign_magnitude(Positive, res).unwrap()
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl Rem<$t> for UBig, rem);
-
-        impl RemAssign<$t> for UBig {
-            #[inline]
-            fn rem_assign(&mut self, rhs: $t) {
-                let res = IBig::from(mem::take(self)) % IBig::from_signed(rhs);
-                *self = UBig::from_ibig(res);
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl RemAssign<$t> for UBig, rem_assign);
-
-        impl DivRem<$t> for UBig {
-            type OutputDiv = UBig;
-            type OutputRem = $t;
-
-            #[inline]
-            fn div_rem(self, rhs: $t) -> (UBig, $t) {
-                let (q, r) = IBig::from(self).div_rem(IBig::from_signed(rhs));
-                (
-                    UBig::from_ibig(q),
-                    r.try_to_signed().unwrap(),
-                )
-            }
-        }
-
-        impl DivRem<$t> for &UBig {
-            type OutputDiv = UBig;
-            type OutputRem = $t;
-
-            #[inline]
-            fn div_rem(self, rhs: $t) -> (UBig, $t) {
-                let (q, r) = IBig::from(self).div_rem(IBig::from_signed(rhs));
-                (
-                    UBig::from_ibig(q),
-                    r.try_to_signed().unwrap(),
-                )
-            }
-        }
-
-        helper_macros::forward_div_rem_second_arg_by_value!(impl DivRem<$t> for UBig, div_rem);
-
-        impl DivEuclid<$t> for UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn div_euclid(self, rhs: $t) -> UBig {
-                UBig::from_ibig(IBig::from(self).div_euclid(IBig::from_signed(rhs)))
-            }
-        }
-
-        impl DivEuclid<$t> for &UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn div_euclid(self, rhs: $t) -> UBig {
-                UBig::from_ibig(IBig::from(self).div_euclid(IBig::from_signed(rhs)))
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl DivEuclid<$t> for UBig, div_euclid);
-
-        impl RemEuclid<$t> for UBig {
-            type Output = $t;
-
-            #[inline]
-            fn rem_euclid(self, rhs: $t) -> $t {
-                self % rhs
-            }
-        }
-
-        impl RemEuclid<$t> for &UBig {
-            type Output = $t;
-
-            #[inline]
-            fn rem_euclid(self, rhs: $t) -> $t {
-                self % rhs
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl RemEuclid<$t> for UBig, rem_euclid);
-
-        impl DivRemEuclid<$t> for UBig {
-            type OutputDiv = UBig;
-            type OutputRem = $t;
-
-            #[inline]
-            fn div_rem_euclid(self, rhs: $t) -> (UBig, $t) {
-                let (q, r) = IBig::from(self).div_rem_euclid(IBig::from_signed(rhs));
-                (
-                    UBig::from_ibig(q),
-                    r.try_to_signed().unwrap(),
-                )
-            }
-        }
-
-        impl DivRemEuclid<$t> for &UBig {
-            type OutputDiv = UBig;
-            type OutputRem = $t;
-
-            #[inline]
-            fn div_rem_euclid(self, rhs: $t) -> (UBig, $t) {
-                let (q, r) = IBig::from(self).div_rem_euclid(IBig::from_signed(rhs));
-                (
-                    UBig::from_ibig(q),
-                    r.try_to_signed().unwrap(),
-                )
-            }
-        }
-
-        helper_macros::forward_div_rem_second_arg_by_value!(impl DivRemEuclid<$t> for UBig, div_rem_euclid);
-    };
-}
-
-impl_div_ubig_signed!(i8);
-impl_div_ubig_signed!(i16);
-impl_div_ubig_signed!(i32);
-impl_div_ubig_signed!(i64);
-impl_div_ubig_signed!(i128);
-impl_div_ubig_signed!(isize);
-
-macro_rules! impl_div_ibig_unsigned {
-    ($t:ty) => {
-        impl Rem<$t> for IBig {
-            // Can be negative, so does not fit in $t.
-            type Output = IBig;
-
-            #[inline]
-            fn rem(self, rhs: $t) -> IBig {
-                self % IBig::from_unsigned(rhs)
-            }
-        }
-
-        impl Rem<$t> for &IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn rem(self, rhs: $t) -> IBig {
-                self % IBig::from_unsigned(rhs)
-            }
-        }
-
-        impl DivRem<$t> for IBig {
-            type OutputDiv = IBig;
-            // Can be negative, so does not fit in $t.
-            type OutputRem = IBig;
-
-            #[inline]
-            fn div_rem(self, rhs: $t) -> (IBig, IBig) {
-                self.div_rem(IBig::from_unsigned(rhs))
-            }
-        }
-
-        impl DivRem<$t> for &IBig {
-            type OutputDiv = IBig;
-            type OutputRem = IBig;
-
-            #[inline]
-            fn div_rem(self, rhs: $t) -> (IBig, IBig) {
-                self.div_rem(IBig::from_unsigned(rhs))
-            }
-        }
-
-        impl_div_ibig_primitive!($t);
-    };
-}
-
 macro_rules! impl_div_ibig_signed {
     ($t:ty) => {
         impl Rem<$t> for IBig {
@@ -1155,12 +528,6 @@ macro_rules! impl_div_ibig_primitive {
     };
 }
 
-impl_div_ibig_unsigned!(u8);
-impl_div_ibig_unsigned!(u16);
-impl_div_ibig_unsigned!(u32);
-impl_div_ibig_unsigned!(u64);
-impl_div_ibig_unsigned!(u128);
-impl_div_ibig_unsigned!(usize);
 impl_div_ibig_signed!(i8);
 impl_div_ibig_signed!(i16);
 impl_div_ibig_signed!(i32);
@@ -1171,285 +538,126 @@ impl_div_ibig_signed!(isize);
 mod ubig {
     use super::*;
     use crate::{
-        primitive::{extend_word, shrink_dword},
-        repr::{TypedRepr, TypedReprRef},
+        primitive::shrink_dword,
+        repr::{TypedRepr, TypedReprRef, Repr},
     };
 
-    #[inline]
-    pub(crate) fn div_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> UBig {
-        match (lhs, rhs) {
-            (Small(dword0), Small(dword1)) => div_dword(dword0, dword1),
-            (Small(_), Large(_)) => UBig::zero(),
-            (Large(buffer0), Small(dword1)) => div_large_dword(buffer0, dword1),
-            (Large(buffer0), Large(buffer1)) => {
-                if buffer0.len() >= buffer1.len() {
-                    div_large(buffer0, buffer1)
-                } else {
-                    UBig::zero()
+    impl DivRem<TypedRepr> for TypedRepr {
+        type OutputDiv = Repr;
+        type OutputRem = Repr;
+
+        #[inline]
+        fn div_rem(self, rhs: TypedRepr) -> (Repr, Repr) {
+            match (self, rhs) {
+                (Small(dword0), Small(dword1)) => div_rem_dword(dword0, dword1),
+                (Small(dword0), Large(_)) => (Repr::zero(), Repr::from_dword(dword0)),
+                (Large(buffer0), Small(dword1)) => div_rem_large_dword(buffer0, dword1),
+                (Large(buffer0), Large(buffer1)) => {
+                    if buffer0.len() >= buffer1.len() {
+                        div_rem_large(buffer0, buffer1)
+                    } else {
+                        (Repr::zero(), Repr::from_buffer(buffer0.into()))
+                    }
+                }
+            }
+        }
+    }
+
+    impl<'l> DivRem<TypedRepr> for TypedReprRef<'l> {
+        type OutputDiv = Repr;
+        type OutputRem = Repr;
+
+        #[inline]
+        fn div_rem(self, rhs: TypedRepr) -> (Repr, Repr) {
+            match (self, rhs) {
+                (RefSmall(dword0), Small(dword1)) => div_rem_dword(dword0, dword1),
+                (RefSmall(dword0), Large(_)) => (Repr::zero(), Repr::from_dword(dword0)),
+                (RefLarge(buffer0), Small(dword1)) => div_rem_large_dword(buffer0.into(), dword1),
+                (RefLarge(buffer0), Large(mut buffer1)) => {
+                    if buffer0.len() >= buffer1.len() {
+                        div_rem_large(buffer0.into(), buffer1)
+                    } else {
+                        // Reuse buffer1 for the remainder.
+                        buffer1.clone_from_slice(buffer0);
+                        (Repr::zero(), Repr::from_buffer(buffer1))
+                    }
+                }
+            }
+        }
+    }
+
+    impl<'r> DivRem<TypedReprRef<'r>> for TypedRepr {
+        type OutputDiv = Repr;
+        type OutputRem = Repr;
+
+        #[inline]
+        fn div_rem(self, rhs: TypedReprRef) -> (Repr, Repr) {
+            match (self, rhs) {
+                (Small(dword0), RefSmall(dword1)) => div_rem_dword(dword0, dword1),
+                (Small(dword0), RefLarge(_)) => (Repr::zero(), Repr::from_dword(dword0)),
+                (Large(buffer0), RefSmall(dword1)) => div_rem_large_dword(buffer0, dword1),
+                (Large(buffer0), RefLarge(buffer1)) => {
+                    if buffer0.len() >= buffer1.len() {
+                        div_rem_large(buffer0, buffer1.into())
+                    } else {
+                        (Repr::zero(), Repr::from_buffer(buffer0))
+                    }
+                }
+            }
+        }
+    }
+
+    impl<'l, 'r> DivRem<TypedReprRef<'r>> for TypedReprRef<'l> {
+        type OutputDiv = Repr;
+        type OutputRem = Repr;
+
+        #[inline]
+        fn div_rem(self, rhs: TypedReprRef) -> (Repr, Repr) {
+            match (self, rhs) {
+                (RefSmall(dword0), RefSmall(dword1)) => div_rem_dword(dword0, dword1),
+                (RefSmall(dword0), RefLarge(_)) => (Repr::zero(), Repr::from_dword(dword0)),
+                (RefLarge(buffer0), RefSmall(dword1)) => div_rem_large_dword(buffer0.into(), dword1),
+                (RefLarge(buffer0), RefLarge(buffer1)) => {
+                    if buffer0.len() >= buffer1.len() {
+                        div_rem_large(buffer0.into(), buffer1.into())
+                    } else {
+                        (Repr::zero(), Repr::from_buffer(buffer0.into()))
+                    }
                 }
             }
         }
     }
 
     #[inline]
-    pub(crate) fn div_repr_val_ref(lhs: TypedRepr, rhs: TypedReprRef) -> UBig {
-        match (lhs, rhs) {
-            (Small(dword0), RefSmall(dword1)) => div_dword(dword0, dword1),
-            (Small(_), RefLarge(_)) => UBig::zero(),
-            (Large(buffer0), RefSmall(dword1)) => div_large_dword(buffer0, dword1),
-            (Large(buffer0), RefLarge(buffer1)) => {
-                if buffer0.len() >= buffer1.len() {
-                    div_large(buffer0, buffer1.into())
-                } else {
-                    UBig::zero()
-                }
-            }
-        }
-    }
-
-    #[inline]
-    pub(crate) fn div_repr_ref_val(lhs: TypedReprRef, rhs: TypedRepr) -> UBig {
-        match (lhs, rhs) {
-            (RefSmall(dword0), Small(dword1)) => div_dword(dword0, dword1),
-            (RefSmall(_), Large(_)) => UBig::zero(),
-            (RefLarge(buffer0), Small(dword1)) => div_large_dword(buffer0.into(), dword1),
-            (RefLarge(buffer0), Large(buffer1)) => {
-                if buffer0.len() >= buffer1.len() {
-                    div_large(buffer0.into(), buffer1)
-                } else {
-                    UBig::zero()
-                }
-            }
-        }
-    }
-
-    #[inline]
-    pub(crate) fn div_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> UBig {
-        match (lhs, rhs) {
-            (RefSmall(dword0), RefSmall(dword1)) => div_dword(dword0, dword1),
-            (RefSmall(_), RefLarge(_)) => UBig::zero(),
-            (RefLarge(buffer0), RefSmall(dword1)) => div_large_dword(buffer0.into(), dword1),
-            (RefLarge(buffer0), RefLarge(buffer1)) => {
-                if buffer0.len() >= buffer1.len() {
-                    div_large(buffer0.into(), buffer1.into())
-                } else {
-                    UBig::zero()
-                }
-            }
-        }
-    }
-
-    #[inline]
-    pub(crate) fn rem_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> UBig {
-        match (lhs, rhs) {
-            (Small(dword0), Small(dword1)) => rem_dword(dword0, dword1),
-            (Small(dword0), Large(_)) => dword0.into(),
-            (Large(buffer0), Small(dword1)) => rem_large_dword(&buffer0, dword1),
-            (Large(buffer0), Large(buffer1)) => {
-                if buffer0.len() >= buffer1.len() {
-                    rem_large(buffer0, buffer1)
-                } else {
-                    buffer0.into()
-                }
-            }
-        }
-    }
-
-    #[inline]
-    pub(crate) fn rem_repr_val_ref(lhs: TypedRepr, rhs: TypedReprRef) -> UBig {
-        match (lhs, rhs) {
-            (Small(dword0), RefSmall(dword1)) => rem_dword(dword0, dword1),
-            (Small(dword0), RefLarge(_)) => dword0.into(),
-            (Large(buffer0), RefSmall(dword1)) => rem_large_dword(&buffer0, dword1),
-            (Large(buffer0), RefLarge(buffer1)) => {
-                if buffer0.len() >= buffer1.len() {
-                    rem_large(buffer0, buffer1.into())
-                } else {
-                    buffer0.into()
-                }
-            }
-        }
-    }
-
-    #[inline]
-    pub(crate) fn rem_repr_ref_val(lhs: TypedReprRef, rhs: TypedRepr) -> UBig {
-        match (lhs, rhs) {
-            (RefSmall(dword0), Small(dword1)) => rem_dword(dword0, dword1),
-            (RefSmall(dword0), Large(_)) => dword0.into(),
-            (RefLarge(buffer0), Small(dword1)) => rem_large_dword(buffer0, dword1),
-            (RefLarge(buffer0), Large(mut buffer1)) => {
-                if buffer0.len() >= buffer1.len() {
-                    rem_large(buffer0.into(), buffer1)
-                } else {
-                    // Reuse buffer1 for the remainder.
-                    buffer1.clone_from_slice(buffer0);
-                    buffer1.into()
-                }
-            }
-        }
-    }
-
-    #[inline]
-    pub(crate) fn rem_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> UBig {
-        match (lhs, rhs) {
-            (RefSmall(dword0), RefSmall(dword1)) => rem_dword(dword0, dword1),
-            (RefSmall(dword0), RefLarge(_)) => dword0.into(),
-            (RefLarge(buffer0), RefSmall(dword1)) => rem_large_dword(buffer0, dword1),
-            (RefLarge(buffer0), RefLarge(buffer1)) => {
-                if buffer0.len() >= buffer1.len() {
-                    rem_large(buffer0.into(), buffer1.into())
-                } else {
-                    Buffer::from(buffer0).into()
-                }
-            }
-        }
-    }
-
-    #[inline]
-    pub(crate) fn div_rem_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> (UBig, UBig) {
-        match (lhs, rhs) {
-            (Small(dword0), Small(dword1)) => div_rem_dword(dword0, dword1),
-            (Small(dword0), Large(_)) => (UBig::zero(), dword0.into()),
-            (Large(buffer0), Small(dword1)) => div_rem_large_dword(buffer0, dword1),
-            (Large(buffer0), Large(buffer1)) => {
-                if buffer0.len() >= buffer1.len() {
-                    div_rem_large(buffer0, buffer1)
-                } else {
-                    (UBig::zero(), buffer0.into())
-                }
-            }
-        }
-    }
-
-    #[inline]
-    pub(crate) fn div_rem_repr_val_ref(lhs: TypedRepr, rhs: TypedReprRef) -> (UBig, UBig) {
-        match (lhs, rhs) {
-            (Small(dword0), RefSmall(dword1)) => div_rem_dword(dword0, dword1),
-            (Small(dword0), RefLarge(_)) => (UBig::zero(), dword0.into()),
-            (Large(buffer0), RefSmall(dword1)) => div_rem_large_dword(buffer0, dword1),
-            (Large(buffer0), RefLarge(buffer1)) => {
-                if buffer0.len() >= buffer1.len() {
-                    div_rem_large(buffer0, buffer1.into())
-                } else {
-                    (UBig::zero(), buffer0.into())
-                }
-            }
-        }
-    }
-
-    #[inline]
-    pub(crate) fn div_rem_repr_ref_val(lhs: TypedReprRef, rhs: TypedRepr) -> (UBig, UBig) {
-        match (lhs, rhs) {
-            (RefSmall(dword0), Small(dword1)) => div_rem_dword(dword0, dword1),
-            (RefSmall(dword0), Large(_)) => (UBig::zero(), dword0.into()),
-            (RefLarge(buffer0), Small(dword1)) => div_rem_large_dword(buffer0.into(), dword1),
-            (RefLarge(buffer0), Large(mut buffer1)) => {
-                if buffer0.len() >= buffer1.len() {
-                    div_rem_large(buffer0.into(), buffer1)
-                } else {
-                    // Reuse buffer1 for the remainder.
-                    buffer1.clone_from_slice(buffer0);
-                    (UBig::zero(), buffer1.into())
-                }
-            }
-        }
-    }
-
-    #[inline]
-    pub(crate) fn div_rem_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> (UBig, UBig) {
-        match (lhs, rhs) {
-            (RefSmall(dword0), RefSmall(dword1)) => div_rem_dword(dword0, dword1),
-            (RefSmall(dword0), RefLarge(_)) => (UBig::zero(), dword0.into()),
-            (RefLarge(buffer0), RefSmall(dword1)) => div_rem_large_dword(buffer0.into(), dword1),
-            (RefLarge(buffer0), RefLarge(buffer1)) => {
-                if buffer0.len() >= buffer1.len() {
-                    div_rem_large(buffer0.into(), buffer1.into())
-                } else {
-                    (UBig::zero(), Buffer::from(buffer0).into())
-                }
-            }
-        }
-    }
-
-    #[inline]
-    fn div_dword(lhs: DoubleWord, rhs: DoubleWord) -> UBig {
-        match lhs.checked_div(rhs) {
-            Some(res) => UBig::from(res),
-            None => panic_divide_by_0(),
-        }
-    }
-
-    #[inline]
-    fn rem_dword(lhs: DoubleWord, rhs: DoubleWord) -> UBig {
-        match lhs.checked_rem(rhs) {
-            Some(res) => UBig::from(res),
-            None => panic_divide_by_0(),
-        }
-    }
-
-    #[inline]
-    fn div_rem_dword(lhs: DoubleWord, rhs: DoubleWord) -> (UBig, UBig) {
+    fn div_rem_dword(lhs: DoubleWord, rhs: DoubleWord) -> (Repr, Repr) {
         // If division works, remainder also works.
         match lhs.checked_div(rhs) {
-            Some(res) => (UBig::from(res), UBig::from(lhs % rhs)),
+            Some(res) => (Repr::from_dword(res), Repr::from_dword(lhs % rhs)),
             None => panic_divide_by_0(),
         }
     }
 
-    #[inline]
-    fn div_large_dword(lhs: Buffer, rhs: DoubleWord) -> UBig {
-        let (q, _) = div_rem_large_dword(lhs, rhs);
-        q
-    }
-
-    #[inline]
-    fn rem_large_dword(lhs: &[Word], rhs: DoubleWord) -> UBig {
-        if rhs == 0 {
-            panic_divide_by_0();
-        }
-        if let Some(word) = shrink_dword(rhs) {
-            div::rem_by_word(lhs, word).into()
-        } else {
-            div::rem_by_dword(lhs, rhs).into()
-        }
-    }
-
-    fn div_rem_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> (UBig, UBig) {
+    fn div_rem_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> (Repr, Repr) {
         if rhs == 0 {
             panic_divide_by_0();
         }
         if let Some(word) = shrink_dword(rhs) {
             let rem = div::div_by_word_in_place(&mut buffer, word);
-            (buffer.into(), rem.into())
+            (Repr::from_buffer(buffer), Repr::from_word(rem))
         } else {
             let rem = div::div_by_dword_in_place(&mut buffer, rhs);
-            (buffer.into(), rem.into())
+            (Repr::from_buffer(buffer), Repr::from_dword(rem))
         }
     }
-
-    fn div_large(mut lhs: Buffer, mut rhs: Buffer) -> UBig {
-        let _shift = div_rem_in_lhs(&mut lhs, &mut rhs);
-        lhs.erase_front(rhs.len());
-        lhs.into()
-    }
-
-    fn rem_large(mut lhs: Buffer, mut rhs: Buffer) -> UBig {
-        let shift = div_rem_in_lhs(&mut lhs, &mut rhs);
-        let n = rhs.len();
-        rhs.copy_from_slice(&lhs[..n]);
-        let low_bits = shift::shr_in_place(&mut rhs, shift);
-        debug_assert!(low_bits == 0);
-        rhs.into()
-    }
-
-    fn div_rem_large(mut lhs: Buffer, mut rhs: Buffer) -> (UBig, UBig) {
+    
+    fn div_rem_large(mut lhs: Buffer, mut rhs: Buffer) -> (Repr, Repr) {
         let shift = div_rem_in_lhs(&mut lhs, &mut rhs);
         let n = rhs.len();
         rhs.copy_from_slice(&lhs[..n]);
         let low_bits = shift::shr_in_place(&mut rhs, shift);
         debug_assert!(low_bits == 0);
         lhs.erase_front(n);
-        (lhs.into(), rhs.into())
+        (Repr::from_buffer(lhs), Repr::from_buffer(rhs))
     }
 
     /// lhs = (lhs / rhs, lhs % rhs)
@@ -1469,6 +677,217 @@ mod ubig {
             lhs.push_resizing(1);
         }
         shift
+    }
+
+    impl Div<TypedRepr> for TypedRepr {
+        type Output = Repr;
+
+        #[inline]
+        fn div(self, rhs: TypedRepr) -> Repr {
+            match (self, rhs) {
+                (Small(dword0), Small(dword1)) => div_dword(dword0, dword1),
+                (Small(_), Large(_)) => Repr::zero(),
+                (Large(buffer0), Small(dword1)) => div_large_dword(buffer0, dword1),
+                (Large(buffer0), Large(buffer1)) => {
+                    if buffer0.len() >= buffer1.len() {
+                        div_large(buffer0, buffer1)
+                    } else {
+                        Repr::zero()
+                    }
+                }
+            }
+        }
+    }
+
+    impl<'r> Div<TypedReprRef<'r>> for TypedRepr {
+        type Output = Repr;
+
+        #[inline]
+        fn div(self, rhs: TypedReprRef<'r>) -> Repr {
+            match (self, rhs) {
+                (Small(dword0), RefSmall(dword1)) => div_dword(dword0, dword1),
+                (Small(_), RefLarge(_)) => Repr::zero(),
+                (Large(buffer0), RefSmall(dword1)) => div_large_dword(buffer0, dword1),
+                (Large(buffer0), RefLarge(buffer1)) => {
+                    if buffer0.len() >= buffer1.len() {
+                        div_large(buffer0, buffer1.into())
+                    } else {
+                        Repr::zero()
+                    }
+                }
+            }
+        }
+    }
+
+    impl<'l> Div<TypedRepr> for TypedReprRef<'l> {
+        type Output = Repr;
+
+        #[inline]
+        fn div(self, rhs: TypedRepr) -> Repr {
+            match (self, rhs) {
+                (RefSmall(dword0), Small(dword1)) => div_dword(dword0, dword1),
+                (RefSmall(_), Large(_)) => Repr::zero(),
+                (RefLarge(buffer0), Small(dword1)) => div_large_dword(buffer0.into(), dword1),
+                (RefLarge(buffer0), Large(buffer1)) => {
+                    if buffer0.len() >= buffer1.len() {
+                        div_large(buffer0.into(), buffer1)
+                    } else {
+                        Repr::zero()
+                    }
+                }
+            }
+        }
+    }
+
+    impl<'l, 'r> Div<TypedReprRef<'r>> for TypedReprRef<'l> {
+        type Output = Repr;
+
+        #[inline]
+        fn div(self, rhs: TypedReprRef) -> Repr {
+            match (self, rhs) {
+                (RefSmall(dword0), RefSmall(dword1)) => div_dword(dword0, dword1),
+                (RefSmall(_), RefLarge(_)) => Repr::zero(),
+                (RefLarge(buffer0), RefSmall(dword1)) => div_large_dword(buffer0.into(), dword1),
+                (RefLarge(buffer0), RefLarge(buffer1)) => {
+                    if buffer0.len() >= buffer1.len() {
+                        div_large(buffer0.into(), buffer1.into())
+                    } else {
+                        Repr::zero()
+                    }
+                }
+            }
+        }
+    }
+
+    #[inline]
+    fn div_dword(lhs: DoubleWord, rhs: DoubleWord) -> Repr {
+        match lhs.checked_div(rhs) {
+            Some(res) => Repr::from_dword(res),
+            None => panic_divide_by_0(),
+        }
+    }
+
+    #[inline]
+    fn div_large_dword(lhs: Buffer, rhs: DoubleWord) -> Repr {
+        let (q, _) = div_rem_large_dword(lhs, rhs);
+        q
+    }
+    
+    fn div_large(mut lhs: Buffer, mut rhs: Buffer) -> Repr {
+        let _shift = div_rem_in_lhs(&mut lhs, &mut rhs);
+        lhs.erase_front(rhs.len());
+        Repr::from_buffer(lhs)
+    }
+
+    impl Rem<TypedRepr> for TypedRepr {
+        type Output = Repr;
+
+        #[inline]
+        fn rem(self, rhs: TypedRepr) -> Repr {
+            match (self, rhs) {
+                (Small(dword0), Small(dword1)) => rem_dword(dword0, dword1),
+                (Small(dword0), Large(_)) => Repr::from_dword(dword0),
+                (Large(buffer0), Small(dword1)) => rem_large_dword(&buffer0, dword1),
+                (Large(buffer0), Large(buffer1)) => {
+                    if buffer0.len() >= buffer1.len() {
+                        rem_large(buffer0, buffer1)
+                    } else {
+                        Repr::from_buffer(buffer0)
+                    }
+                }
+            }
+        }
+    }
+
+    impl<'r> Rem<TypedReprRef<'r>> for TypedRepr {
+        type Output = Repr;
+
+        #[inline]
+        fn rem(self, rhs: TypedReprRef) -> Repr {
+            match (self, rhs) {
+                (Small(dword0), RefSmall(dword1)) => rem_dword(dword0, dword1),
+                (Small(dword0), RefLarge(_)) => Repr::from_dword(dword0),
+                (Large(buffer0), RefSmall(dword1)) => rem_large_dword(&buffer0, dword1),
+                (Large(buffer0), RefLarge(buffer1)) => {
+                    if buffer0.len() >= buffer1.len() {
+                        rem_large(buffer0, buffer1.into())
+                    } else {
+                        Repr::from_buffer(buffer0.into())
+                    }
+                }
+            }
+        }
+    }
+
+    impl<'l> Rem<TypedRepr> for TypedReprRef<'l> {
+        type Output = Repr;
+
+        #[inline]
+        fn rem(self, rhs: TypedRepr) -> Repr {
+            match (self, rhs) {
+                (RefSmall(dword0), Small(dword1)) => rem_dword(dword0, dword1),
+                (RefSmall(dword0), Large(_)) => Repr::from_dword(dword0),
+                (RefLarge(buffer0), Small(dword1)) => rem_large_dword(buffer0, dword1),
+                (RefLarge(buffer0), Large(mut buffer1)) => {
+                    if buffer0.len() >= buffer1.len() {
+                        rem_large(buffer0.into(), buffer1)
+                    } else {
+                        // Reuse buffer1 for the remainder.
+                        buffer1.clone_from_slice(buffer0);
+                        Repr::from_buffer(buffer1)
+                    }
+                }
+            }
+        }
+    }
+
+    impl<'l, 'r> Rem<TypedReprRef<'r>> for TypedReprRef<'l> {
+        type Output = Repr;
+
+        #[inline]
+        fn rem(self, rhs: TypedReprRef) -> Repr {
+            match (self, rhs) {
+                (RefSmall(dword0), RefSmall(dword1)) => rem_dword(dword0, dword1),
+                (RefSmall(dword0), RefLarge(_)) => Repr::from_dword(dword0),
+                (RefLarge(buffer0), RefSmall(dword1)) => rem_large_dword(buffer0, dword1),
+                (RefLarge(buffer0), RefLarge(buffer1)) => {
+                    if buffer0.len() >= buffer1.len() {
+                        rem_large(buffer0.into(), buffer1.into())
+                    } else {
+                        Repr::from_buffer(buffer0.into())
+                    }
+                }
+            }
+        }
+    }
+
+    #[inline]
+    fn rem_dword(lhs: DoubleWord, rhs: DoubleWord) -> Repr {
+        match lhs.checked_rem(rhs) {
+            Some(res) => Repr::from_dword(res),
+            None => panic_divide_by_0(),
+        }
+    }
+
+    #[inline]
+    fn rem_large_dword(lhs: &[Word], rhs: DoubleWord) -> Repr {
+        if rhs == 0 {
+            panic_divide_by_0();
+        }
+        if let Some(word) = shrink_dword(rhs) {
+            Repr::from_word(div::rem_by_word(lhs, word))
+        } else {
+            Repr::from_dword(div::rem_by_dword(lhs, rhs))
+        }
+    }
+
+    fn rem_large(mut lhs: Buffer, mut rhs: Buffer) -> Repr {
+        let shift = div_rem_in_lhs(&mut lhs, &mut rhs);
+        let n = rhs.len();
+        rhs.copy_from_slice(&lhs[..n]);
+        let low_bits = shift::shr_in_place(&mut rhs, shift);
+        debug_assert!(low_bits == 0);
+        Repr::from_buffer(rhs)
     }
 }
 

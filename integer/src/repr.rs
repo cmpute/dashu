@@ -502,10 +502,11 @@ impl Repr {
         }
     }
 
-    /// Set the sign flag and return the changed representation
+    /// Set the sign flag and return the changed representation. The sign will not
+    /// be flipped if self is zero
     #[inline]
     pub fn with_sign(mut self, sign: Sign) -> Self {
-        if (sign == Sign::Positive) ^ (self.capacity.get() > 0) {
+        if !self.is_zero() && ((sign == Sign::Positive) ^ (self.capacity.get() > 0)) {
             self.capacity = unsafe {
                 // SAFETY: capacity is not allowed to be zero
                 NonZeroIsize::new_unchecked(-self.capacity.get())
