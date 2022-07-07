@@ -31,7 +31,7 @@
 //! let b = ubig!(0x10ff);
 //! let c = ibig!(-azz base 36);
 //! let d: UBig = "15033211231241234523452345345787".parse()?;
-//! let e = 2 * &b + 1;
+//! let e = 2u8 * &b + 1u8;
 //! let f = a * b.pow(10);
 //!
 //! assert_eq!(e, ubig!(0x21ff));

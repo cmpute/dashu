@@ -14,7 +14,6 @@ use core::{
     ops::{Shl, ShlAssign, Shr, ShrAssign},
 };
 
-// TODO: use helper macros
 macro_rules! impl_shifts {
     ($t:ty) => {
         impl Shl<&usize> for $t {

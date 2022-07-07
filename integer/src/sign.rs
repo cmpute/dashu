@@ -6,7 +6,7 @@ use crate::{
     repr::TypedReprRef::RefSmall,
     ubig::UBig,
 };
-use core::ops::Neg;
+use core::ops::{Neg, Mul, MulAssign};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -26,6 +26,27 @@ impl Neg for Sign {
             Positive => Negative,
             Negative => Positive,
         }
+    }
+}
+
+impl Mul<Sign> for Sign {
+    type Output = Sign;
+
+    #[inline]
+    fn mul(self, rhs: Sign) -> Sign {
+        match (self, rhs) {
+            (Positive, Positive) => Positive,
+            (Positive, Negative) => Negative,
+            (Negative, Positive) => Negative,
+            (Negative, Negative) => Positive,
+        }
+    }
+}
+
+impl MulAssign<Sign> for Sign {
+    #[inline]
+    fn mul_assign(&mut self, rhs: Sign) {
+        *self = *self * rhs;
     }
 }
 

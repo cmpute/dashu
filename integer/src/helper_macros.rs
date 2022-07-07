@@ -338,97 +338,6 @@ macro_rules! forward_binop_assign_by_taking {
     };
 }
 
-/// Implement `impl Add<IBig> for IBig` by forwarding to the Repr
-macro_rules! forword_ibig_add_to_repr {
-    ($lhs_sign:ident, $lhs_mag:ident, $rhs_sign:ident, $rhs_mag:ident) => {
-        match ($lhs_sign, $rhs_sign) {
-            (crate::sign::Sign::Positive, crate::sign::Sign::Positive) => {
-                IBig($lhs_mag.add($rhs_mag))
-            }
-            (crate::sign::Sign::Positive, crate::sign::Sign::Negative) => {
-                IBig($lhs_mag.sub_signed($rhs_mag))
-            }
-            (crate::sign::Sign::Negative, crate::sign::Sign::Positive) => {
-                IBig($rhs_mag.sub_signed($lhs_mag))
-            }
-            (crate::sign::Sign::Negative, crate::sign::Sign::Negative) => {
-                IBig($lhs_mag.add($rhs_mag).neg())
-            }
-        }
-    };
-}
-
-/// Implement `impl BitAnd<IBig> for IBig` by forwarding to the Repr
-macro_rules! forword_ibig_bitand_to_repr {
-    ($lhs_sign:ident, $lhs_mag:ident, $rhs_sign:ident, $rhs_mag:ident) => {
-        match ($lhs_sign, $rhs_sign) {
-            (crate::sign::Sign::Positive, crate::sign::Sign::Positive) => {
-                IBig($lhs_mag.bitand($rhs_mag))
-            }
-            (crate::sign::Sign::Positive, crate::sign::Sign::Negative) => {
-                IBig($lhs_mag.and_not($rhs_mag.sub_one().into_typed()))
-            }
-            (crate::sign::Sign::Negative, crate::sign::Sign::Positive) => {
-                IBig($rhs_mag.and_not($lhs_mag.sub_one().into_typed()))
-            }
-            (crate::sign::Sign::Negative, crate::sign::Sign::Negative) => IBig(
-                $lhs_mag
-                    .sub_one()
-                    .into_typed()
-                    .bitor($rhs_mag.sub_one().into_typed()),
-            )
-            .not(),
-        }
-    };
-}
-
-/// Implement `impl BitOr<IBig> for IBig` by forwarding to the Repr
-macro_rules! forword_ibig_bitor_to_repr {
-    ($lhs_sign:ident, $lhs_mag:ident, $rhs_sign:ident, $rhs_mag:ident) => {
-        match ($lhs_sign, $rhs_sign) {
-            (crate::sign::Sign::Positive, crate::sign::Sign::Positive) => {
-                IBig($lhs_mag.bitor($rhs_mag))
-            }
-            (crate::sign::Sign::Positive, crate::sign::Sign::Negative) => {
-                IBig($rhs_mag.sub_one().into_typed().and_not($lhs_mag)).not()
-            }
-            (crate::sign::Sign::Negative, crate::sign::Sign::Positive) => {
-                IBig($lhs_mag.sub_one().into_typed().and_not($rhs_mag)).not()
-            }
-            (crate::sign::Sign::Negative, crate::sign::Sign::Negative) => IBig(
-                $lhs_mag
-                    .sub_one()
-                    .into_typed()
-                    .bitand($rhs_mag.sub_one().into_typed()),
-            )
-            .not(),
-        }
-    };
-}
-
-/// Implement `impl BitXor<IBig> for IBig` by forwarding to the Repr
-macro_rules! forword_ibig_bitxor_to_repr {
-    ($lhs_sign:ident, $lhs_mag:ident, $rhs_sign:ident, $rhs_mag:ident) => {
-        match ($lhs_sign, $rhs_sign) {
-            (crate::sign::Sign::Positive, crate::sign::Sign::Positive) => {
-                IBig($lhs_mag.bitxor($rhs_mag))
-            }
-            (crate::sign::Sign::Positive, crate::sign::Sign::Negative) => {
-                IBig($lhs_mag.bitxor($rhs_mag.sub_one().into_typed())).not()
-            }
-            (crate::sign::Sign::Negative, crate::sign::Sign::Positive) => {
-                IBig($lhs_mag.sub_one().into_typed().bitxor($rhs_mag)).not()
-            }
-            (crate::sign::Sign::Negative, crate::sign::Sign::Negative) => IBig(
-                $lhs_mag
-                    .sub_one()
-                    .into_typed()
-                    .bitxor($rhs_mag.sub_one().into_typed()),
-            ),
-        }
-    };
-}
-
 pub(crate) use forward_binop_assign_arg_by_value;
 pub(crate) use forward_binop_assign_by_taking;
 pub(crate) use forward_binop_first_arg_by_value;
@@ -437,7 +346,3 @@ pub(crate) use forward_binop_swap_args;
 pub(crate) use forward_div_rem_second_arg_by_value;
 pub(crate) use forward_ubig_binop_to_repr;
 pub(crate) use forward_ibig_binop_to_repr;
-pub(crate) use forword_ibig_add_to_repr;
-pub(crate) use forword_ibig_bitand_to_repr;
-pub(crate) use forword_ibig_bitor_to_repr;
-pub(crate) use forword_ibig_bitxor_to_repr;

@@ -167,34 +167,6 @@ fn test_add_sub_ubig_primitive() {
     x -= 1u8;
     x -= &2u8;
     assert_eq!(x, ubig!(7));
-
-    assert_eq!(ubig!(3) + (-1), ubig!(2));
-    assert_eq!(ubig!(3) + &(-1), ubig!(2));
-    assert_eq!(&ubig!(3) + (-1), ubig!(2));
-    assert_eq!(&ubig!(3) + &(-1), ubig!(2));
-    assert_eq!((-1) + ubig!(3), ubig!(2));
-    assert_eq!((-1) + &ubig!(3), ubig!(2));
-    assert_eq!(&(-1) + ubig!(3), ubig!(2));
-    assert_eq!(&(-1) + &ubig!(3), ubig!(2));
-    let mut x = ubig!(3);
-    x += -1;
-    x += &2;
-    assert_eq!(x, ubig!(4));
-
-    assert_eq!(ubig!(3) - (-1), ubig!(4));
-    assert_eq!(ubig!(3) - &(-1), ubig!(4));
-    assert_eq!(&ubig!(3) - (-1), ubig!(4));
-    assert_eq!(&ubig!(3) - &(-1), ubig!(4));
-    let mut x = ubig!(3);
-    x -= -1;
-    x -= &2;
-    assert_eq!(x, ubig!(2));
-}
-
-#[test]
-#[should_panic]
-fn test_add_ubig_primitive_overflow() {
-    let _ = ubig!(3) + (-5i16);
 }
 
 #[test]
@@ -206,31 +178,31 @@ fn test_sub_ubig_primitive_overflow() {
 #[test]
 #[allow(clippy::op_ref)]
 fn test_add_sub_ibig_primitive() {
-    assert_eq!(ibig!(-3) + 7u16, ibig!(4));
-    assert_eq!(ibig!(-3) + &7u16, ibig!(4));
-    assert_eq!(&ibig!(-3) + 7u16, ibig!(4));
-    assert_eq!(&ibig!(-3) + &7u16, ibig!(4));
-    assert_eq!(7u16 + ibig!(-3), ibig!(4));
-    assert_eq!(7u16 + &ibig!(-3), ibig!(4));
-    assert_eq!(&7u16 + ibig!(-3), ibig!(4));
-    assert_eq!(&7u16 + &ibig!(-3), ibig!(4));
+    assert_eq!(ibig!(-3) + 7, ibig!(4));
+    assert_eq!(ibig!(-3) + &7, ibig!(4));
+    assert_eq!(&ibig!(-3) + 7, ibig!(4));
+    assert_eq!(&ibig!(-3) + &7, ibig!(4));
+    assert_eq!(7 + ibig!(-3), ibig!(4));
+    assert_eq!(7 + &ibig!(-3), ibig!(4));
+    assert_eq!(&7 + ibig!(-3), ibig!(4));
+    assert_eq!(&7 + &ibig!(-3), ibig!(4));
     let mut x = ibig!(-3);
-    x += 3u8;
-    x += &3u8;
+    x += 3;
+    x += &3;
     assert_eq!(x, ibig!(3));
 
-    assert_eq!(ibig!(7) - 5u16, ibig!(2));
-    assert_eq!(ibig!(7) - &5u16, ibig!(2));
-    assert_eq!(&ibig!(7) - 5u16, ibig!(2));
-    assert_eq!(&ibig!(7) - &5u16, ibig!(2));
-    assert_eq!(5u16 - ibig!(7), ibig!(-2));
-    assert_eq!(5u16 - &ibig!(7), ibig!(-2));
-    assert_eq!(&5u16 - ibig!(7), ibig!(-2));
-    assert_eq!(&5u16 - &ibig!(7), ibig!(-2));
+    assert_eq!(ibig!(7) - 5, ibig!(2));
+    assert_eq!(ibig!(7) - &5, ibig!(2));
+    assert_eq!(&ibig!(7) - 5, ibig!(2));
+    assert_eq!(&ibig!(7) - &5, ibig!(2));
+    assert_eq!(5 - ibig!(7), ibig!(-2));
+    assert_eq!(5 - &ibig!(7), ibig!(-2));
+    assert_eq!(&5 - ibig!(7), ibig!(-2));
+    assert_eq!(&5 - &ibig!(7), ibig!(-2));
 
     let mut x = ibig!(10);
-    x -= 7u8;
-    x -= &7u8;
+    x -= 7;
+    x -= &7;
     assert_eq!(x, ibig!(-4));
 
     assert_eq!(ibig!(3) + (-1), ibig!(2));

@@ -110,7 +110,7 @@ fn bench_gcd(criterion: &mut Criterion) {
         let a = random_ubig(bits, &mut rng);
         let b = random_ubig(bits, &mut rng);
         group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
-            bencher.iter(|| black_box(&a).extended_gcd(black_box(&b)))
+            bencher.iter(|| black_box(&a).gcd_ext(black_box(&b)))
         });
     }
 

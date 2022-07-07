@@ -713,138 +713,39 @@ impl Not for &IBig {
     }
 }
 
-impl BitAnd<IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn bitand(self, rhs: IBig) -> IBig {
-        let (sign0, mag0) = self.into_sign_repr();
-        let (sign1, mag1) = rhs.into_sign_repr();
-        helper_macros::forword_ibig_bitand_to_repr!(sign0, mag0, sign1, mag1)
-    }
+macro_rules! impl_ibig_bitand {
+    ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {
+        match ($sign0, $sign1) {
+            (Positive, Positive) => IBig($mag0.bitand($mag1)),
+            (Positive, Negative) => IBig($mag0.and_not($mag1.sub_one().into_typed())),
+            (Negative, Positive) => IBig($mag1.and_not($mag0.sub_one().into_typed())),
+            (Negative, Negative) => !IBig($mag0.sub_one().into_typed().bitor($mag1.sub_one().into_typed())),
+        }
+    };
 }
-
-impl BitAnd<&IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn bitand(self, rhs: &IBig) -> IBig {
-        let (sign0, mag0) = self.into_sign_repr();
-        let (sign1, mag1) = rhs.as_sign_repr();
-        helper_macros::forword_ibig_bitand_to_repr!(sign0, mag0, sign1, mag1)
-    }
+macro_rules! impl_ibig_bitor {
+    ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {
+        match ($sign0, $sign1) {
+            (Positive, Positive) => IBig($mag0.bitor($mag1)),
+            (Positive, Negative) => !IBig($mag1.sub_one().into_typed().and_not($mag0)),
+            (Negative, Positive) => !IBig($mag0.sub_one().into_typed().and_not($mag1)),
+            (Negative, Negative) => !IBig($mag0.sub_one().into_typed().bitand($mag1.sub_one().into_typed())),
+        }
+    };
 }
-
-impl BitAnd<IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn bitand(self, rhs: IBig) -> IBig {
-        let (sign0, mag0) = self.as_sign_repr();
-        let (sign1, mag1) = rhs.into_sign_repr();
-        helper_macros::forword_ibig_bitand_to_repr!(sign0, mag0, sign1, mag1)
-    }
+macro_rules! impl_ibig_bitxor {
+    ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {
+        match ($sign0, $sign1) {
+            (Positive, Positive) => IBig($mag0.bitxor($mag1)),
+            (Positive, Negative) => !IBig($mag0.bitxor($mag1.sub_one().into_typed())),
+            (Negative, Positive) => !IBig($mag0.sub_one().into_typed().bitxor($mag1)),
+            (Negative, Negative) => IBig($mag0.sub_one().into_typed().bitxor($mag1.sub_one().into_typed())),
+        }
+    };
 }
-
-impl BitAnd<&IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn bitand(self, rhs: &IBig) -> IBig {
-        let (sign0, mag0) = self.as_sign_repr();
-        let (sign1, mag1) = rhs.as_sign_repr();
-        helper_macros::forword_ibig_bitand_to_repr!(sign0, mag0, sign1, mag1)
-    }
-}
-
-impl BitOr<IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn bitor(self, rhs: IBig) -> IBig {
-        let (sign0, mag0) = self.into_sign_repr();
-        let (sign1, mag1) = rhs.into_sign_repr();
-        helper_macros::forword_ibig_bitor_to_repr!(sign0, mag0, sign1, mag1)
-    }
-}
-
-impl BitOr<&IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn bitor(self, rhs: &IBig) -> IBig {
-        let (sign0, mag0) = self.into_sign_repr();
-        let (sign1, mag1) = rhs.as_sign_repr();
-        helper_macros::forword_ibig_bitor_to_repr!(sign0, mag0, sign1, mag1)
-    }
-}
-
-impl BitOr<IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn bitor(self, rhs: IBig) -> IBig {
-        let (sign0, mag0) = self.as_sign_repr();
-        let (sign1, mag1) = rhs.into_sign_repr();
-        helper_macros::forword_ibig_bitor_to_repr!(sign0, mag0, sign1, mag1)
-    }
-}
-
-impl BitOr<&IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn bitor(self, rhs: &IBig) -> IBig {
-        let (sign0, mag0) = self.as_sign_repr();
-        let (sign1, mag1) = rhs.as_sign_repr();
-        helper_macros::forword_ibig_bitor_to_repr!(sign0, mag0, sign1, mag1)
-    }
-}
-
-impl BitXor<IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn bitxor(self, rhs: IBig) -> IBig {
-        let (sign0, mag0) = self.into_sign_repr();
-        let (sign1, mag1) = rhs.into_sign_repr();
-        helper_macros::forword_ibig_bitxor_to_repr!(sign0, mag0, sign1, mag1)
-    }
-}
-
-impl BitXor<&IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn bitxor(self, rhs: &IBig) -> IBig {
-        let (sign0, mag0) = self.into_sign_repr();
-        let (sign1, mag1) = rhs.as_sign_repr();
-        helper_macros::forword_ibig_bitxor_to_repr!(sign0, mag0, sign1, mag1)
-    }
-}
-
-impl BitXor<IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn bitxor(self, rhs: IBig) -> IBig {
-        let (sign0, mag0) = self.as_sign_repr();
-        let (sign1, mag1) = rhs.into_sign_repr();
-        helper_macros::forword_ibig_bitxor_to_repr!(sign0, mag0, sign1, mag1)
-    }
-}
-
-impl BitXor<&IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn bitxor(self, rhs: &IBig) -> IBig {
-        let (sign0, mag0) = self.as_sign_repr();
-        let (sign1, mag1) = rhs.as_sign_repr();
-        helper_macros::forword_ibig_bitxor_to_repr!(sign0, mag0, sign1, mag1)
-    }
-}
-
+helper_macros::forward_ibig_binop_to_repr!(impl BitAnd, bitand, impl_ibig_bitand);
+helper_macros::forward_ibig_binop_to_repr!(impl BitOr, bitor, impl_ibig_bitor);
+helper_macros::forward_ibig_binop_to_repr!(impl BitXor, bitxor, impl_ibig_bitxor);
 helper_macros::forward_binop_assign_by_taking!(impl BitAndAssign<IBig> for IBig, bitand_assign, bitand);
 helper_macros::forward_binop_assign_by_taking!(impl BitOrAssign<IBig> for IBig, bitor_assign, bitor);
 helper_macros::forward_binop_assign_by_taking!(impl BitXorAssign<IBig> for IBig, bitxor_assign, bitxor);

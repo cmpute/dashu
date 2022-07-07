@@ -4,3 +4,4 @@
 - [ ] Add operations between UBig and IBig (the result should be IBig)
 - [ ] Format code and inspect inline/pub(crate) markers
 - [ ] Add more tests to cover cases with inline double words
+- [ ] Add documentation for internal modules as well.

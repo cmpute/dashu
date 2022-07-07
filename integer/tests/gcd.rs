@@ -68,13 +68,13 @@ fn test_gcd_ubig() {
         assert_eq!(&a.gcd(b), c);
         assert_eq!(&b.gcd(a), c);
 
-        let (g, x, y) = a.extended_gcd(b);
+        let (g, x, y) = a.gcd_ext(b);
         assert_eq!(&g, c);
         assert_eq!(
             x * IBig::from(a.clone()) + y * IBig::from(b.clone()),
             IBig::from(g)
         );
-        let (g, y, x) = b.extended_gcd(a);
+        let (g, y, x) = b.gcd_ext(a);
         assert_eq!(&g, c);
         assert_eq!(
             x * IBig::from(a.clone()) + y * IBig::from(b.clone()),
@@ -87,5 +87,5 @@ fn test_gcd_ubig() {
 #[should_panic]
 fn test_gcd_0() {
     let _ = ubig!(0).gcd(&ubig!(0));
-    let _ = ubig!(0).extended_gcd(&ubig!(0));
+    let _ = ubig!(0).gcd_ext(&ubig!(0));
 }

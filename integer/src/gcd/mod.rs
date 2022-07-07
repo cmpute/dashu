@@ -22,14 +22,14 @@ pub(crate) fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word]) -> usize {
 ///
 /// Specifically if g = gcd(lhs, rhs), lhs * a + rhs * b = g, then a is stored in **rhs**, b is stored in **lhs**,
 /// and the returned tuple is (sign of a, sign of b)
-pub(crate) fn xgcd_in_place(
+pub(crate) fn gcd_ext_in_place(
     lhs: &mut [Word],
     rhs: &mut [Word],
     g: &mut [Word],
     bonly: bool,
     memory: &mut Memory,
 ) -> (Sign, Sign) {
-    binary::xgcd_in_place(lhs, rhs, g, bonly, memory)
+    binary::gcd_ext_in_place(lhs, rhs, g, bonly, memory)
 }
 
 /// Memory requirement for GCD.

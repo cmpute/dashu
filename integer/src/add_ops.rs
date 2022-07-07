@@ -9,103 +9,35 @@ use crate::{
     sign::Sign::*,
     ubig::UBig,
 };
-use core::{
-    mem,
-    ops::{Add, AddAssign, Sub, SubAssign},
-};
+use core::ops::{Add, AddAssign, Sub, SubAssign};
 
 helper_macros::forward_ubig_binop_to_repr!(impl Add, add);
 helper_macros::forward_ubig_binop_to_repr!(impl Sub, sub);
 helper_macros::forward_binop_assign_by_taking!(impl AddAssign<UBig> for UBig, add_assign, add);
 helper_macros::forward_binop_assign_by_taking!(impl SubAssign<UBig> for UBig, sub_assign, sub);
 
-impl Add<IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn add(self, rhs: IBig) -> IBig {
-        let (sign0, mag0) = self.into_sign_repr();
-        let (sign1, mag1) = rhs.into_sign_repr();
-        helper_macros::forword_ibig_add_to_repr!(sign0, mag0, sign1, mag1)
-    }
-}
-
-impl Add<&IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn add(self, rhs: &IBig) -> IBig {
-        let (sign0, mag0) = self.into_sign_repr();
-        let (sign1, mag1) = rhs.as_sign_repr();
-        helper_macros::forword_ibig_add_to_repr!(sign0, mag0, sign1, mag1)
-    }
-}
-
-impl Add<IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn add(self, rhs: IBig) -> IBig {
-        let (sign0, mag0) = self.as_sign_repr();
-        let (sign1, mag1) = rhs.into_sign_repr();
-        helper_macros::forword_ibig_add_to_repr!(sign0, mag0, sign1, mag1)
-    }
-}
-
-impl Add<&IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn add(self, rhs: &IBig) -> IBig {
-        let (sign0, mag0) = self.as_sign_repr();
-        let (sign1, mag1) = rhs.as_sign_repr();
-        helper_macros::forword_ibig_add_to_repr!(sign0, mag0, sign1, mag1)
-    }
-}
-
-impl Sub<IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn sub(self, rhs: IBig) -> IBig {
-        self + -rhs
-    }
-}
-
-impl Sub<&IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn sub(self, rhs: &IBig) -> IBig {
-        -(-self + rhs)
-    }
-}
-
-impl Sub<IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn sub(self, rhs: IBig) -> IBig {
-        self + -rhs
-    }
-}
-
-impl Sub<&IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn sub(self, rhs: &IBig) -> IBig {
-        let (sign0, mag0) = self.as_sign_repr();
-        let (sign1, mag1) = rhs.as_sign_repr();
-        match (sign0, sign1) {
-            (Positive, Positive) => IBig(mag0.sub_signed(mag1)),
-            (Positive, Negative) => IBig(mag0.add(mag1)),
-            (Negative, Positive) => IBig(mag0.add(mag1).with_sign(Negative)),
-            (Negative, Negative) => IBig(mag1.sub_signed(mag0)),
+macro_rules! impl_ibig_add {
+    ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {
+        match ($sign0, $sign1) {
+            (Positive, Positive) => IBig($mag0.add($mag1)),
+            (Positive, Negative) => IBig($mag0.sub_signed($mag1)),
+            (Negative, Positive) => IBig($mag1.sub_signed($mag0)),
+            (Negative, Negative) => IBig($mag0.add($mag1).with_sign(Negative)),
         }
-    }
+    };
 }
-
+macro_rules! impl_ibig_sub {
+    ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {
+        match ($sign0, $sign1) {
+            (Positive, Positive) => IBig($mag0.sub_signed($mag1)),
+            (Positive, Negative) => IBig($mag0.add($mag1)),
+            (Negative, Positive) => IBig($mag0.add($mag1).with_sign(Negative)),
+            (Negative, Negative) => IBig($mag1.sub_signed($mag0)),
+        }
+    };
+}
+helper_macros::forward_ibig_binop_to_repr!(impl Add, add, impl_ibig_add);
+helper_macros::forward_ibig_binop_to_repr!(impl Sub, sub, impl_ibig_sub);
 helper_macros::forward_binop_assign_by_taking!(impl AddAssign<IBig> for IBig, add_assign, add);
 helper_macros::forward_binop_assign_by_taking!(impl SubAssign<IBig> for IBig, sub_assign, sub);
 
@@ -178,76 +110,6 @@ impl_add_ubig_unsigned!(u32);
 impl_add_ubig_unsigned!(u64);
 impl_add_ubig_unsigned!(u128);
 impl_add_ubig_unsigned!(usize);
-
-macro_rules! impl_add_ubig_signed {
-    ($t:ty) => {
-        impl Add<$t> for UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn add(self, rhs: $t) -> UBig {
-                UBig::from_ibig(IBig::from(self) + IBig::from(rhs))
-            }
-        }
-
-        impl Add<$t> for &UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn add(self, rhs: $t) -> UBig {
-                UBig::from_ibig(IBig::from(self) + IBig::from(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl Add<$t> for UBig, add);
-        helper_macros::forward_binop_swap_args!(impl Add<UBig> for $t, add);
-
-        impl AddAssign<$t> for UBig {
-            #[inline]
-            fn add_assign(&mut self, rhs: $t) {
-                *self = mem::take(self) + rhs
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl AddAssign<$t> for UBig, add_assign);
-
-        impl Sub<$t> for UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn sub(self, rhs: $t) -> UBig {
-                UBig::from_ibig(IBig::from(self) - IBig::from(rhs))
-            }
-        }
-
-        impl Sub<$t> for &UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn sub(self, rhs: $t) -> UBig {
-                UBig::from_ibig(IBig::from(self) - IBig::from(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl Sub<$t> for UBig, sub);
-
-        impl SubAssign<$t> for UBig {
-            #[inline]
-            fn sub_assign(&mut self, rhs: $t) {
-                *self = mem::take(self) - rhs
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl SubAssign<$t> for UBig, sub_assign);
-    };
-}
-
-impl_add_ubig_signed!(i8);
-impl_add_ubig_signed!(i16);
-impl_add_ubig_signed!(i32);
-impl_add_ubig_signed!(i64);
-impl_add_ubig_signed!(i128);
-impl_add_ubig_signed!(isize);
 
 macro_rules! impl_add_ibig_primitive {
     ($t:ty) => {
@@ -331,12 +193,6 @@ macro_rules! impl_add_ibig_primitive {
     };
 }
 
-impl_add_ibig_primitive!(u8);
-impl_add_ibig_primitive!(u16);
-impl_add_ibig_primitive!(u32);
-impl_add_ibig_primitive!(u64);
-impl_add_ibig_primitive!(u128);
-impl_add_ibig_primitive!(usize);
 impl_add_ibig_primitive!(i8);
 impl_add_ibig_primitive!(i16);
 impl_add_ibig_primitive!(i32);

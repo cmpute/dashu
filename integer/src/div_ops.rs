@@ -40,7 +40,6 @@ macro_rules! impl_ibig_rem {
 }
 helper_macros::forward_ibig_binop_to_repr!(impl Div, div, impl_ibig_div);
 helper_macros::forward_ibig_binop_to_repr!(impl Rem, rem, impl_ibig_rem);
-
 helper_macros::forward_binop_assign_by_taking!(impl DivAssign<IBig> for IBig, div_assign, div);
 helper_macros::forward_binop_assign_by_taking!(impl RemAssign<IBig> for IBig, rem_assign, rem);
 
@@ -535,7 +534,7 @@ impl_div_ibig_signed!(i64);
 impl_div_ibig_signed!(i128);
 impl_div_ibig_signed!(isize);
 
-mod ubig {
+mod repr {
     use super::*;
     use crate::{
         primitive::shrink_dword,
@@ -891,7 +890,6 @@ mod ubig {
     }
 }
 
-// TODO: organize all panic into error.rs
 fn panic_divide_by_0() -> ! {
     panic!("divide by 0")
 }
