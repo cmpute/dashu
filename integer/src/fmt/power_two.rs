@@ -2,11 +2,11 @@
 
 use crate::{
     arch::word::Word,
-    repr::TypedReprRef::*,
     fmt::{digit_writer::DigitWriter, InRadixFull, PreparedForFormatting},
     math,
     primitive::{split_dword, WORD_BITS, WORD_BITS_USIZE},
     radix::{self, Digit},
+    repr::TypedReprRef::*,
 };
 use core::fmt::{self, Formatter};
 

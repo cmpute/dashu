@@ -2,9 +2,9 @@
 
 use crate::{
     arch::word::Word,
-    repr::{Buffer, TypedReprRef::*},
     ibig::IBig,
     ops::UnsignedAbs,
+    repr::{Buffer, TypedReprRef::*},
     ubig::UBig,
 };
 

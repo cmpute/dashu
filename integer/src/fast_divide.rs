@@ -314,7 +314,11 @@ impl FastDivideNormalized2 {
     /// Divdide a 4-word number with double word divisor
     ///
     /// The output is (a / divisor, a % divisor)
-    pub const fn div_rem_double(&self, a_lo: DoubleWord, a_hi: DoubleWord) -> (DoubleWord, DoubleWord) {
+    pub const fn div_rem_double(
+        &self,
+        a_lo: DoubleWord,
+        a_hi: DoubleWord,
+    ) -> (DoubleWord, DoubleWord) {
         let (a0, a1) = split_dword(a_lo);
         let (q1, r1) = self.div_rem(a1, a_hi);
         let (q0, r0) = self.div_rem(a0, r1);

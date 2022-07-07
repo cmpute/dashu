@@ -2,10 +2,10 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
-    repr::{Buffer, TypedRepr::*, TypedReprRef::*},
     div, gcd,
     ibig::IBig,
     memory::MemoryAllocation,
+    repr::{Buffer, TypedRepr::*, TypedReprRef::*},
     ubig::UBig,
 };
 use dashu_base::ring::{ExtendedGcd, Gcd};
@@ -46,8 +46,8 @@ impl UBig {
 mod ubig {
     use super::*;
     use crate::{
-        repr::{TypedRepr, TypedReprRef},
         primitive::shrink_dword,
+        repr::{TypedRepr, TypedReprRef},
     };
 
     pub(crate) fn gcd_repr_ref_ref(lhs: TypedReprRef, rhs: TypedReprRef) -> UBig {

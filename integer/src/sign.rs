@@ -1,9 +1,9 @@
 //! Operators on the sign of [IBig].
 
 use crate::{
-    repr::TypedReprRef::RefSmall,
     ibig::IBig,
     ops::{Abs, UnsignedAbs},
+    repr::TypedReprRef::RefSmall,
     ubig::UBig,
 };
 use core::ops::Neg;

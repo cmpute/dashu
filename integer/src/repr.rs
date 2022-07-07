@@ -685,7 +685,7 @@ impl Repr {
         }
     }
 
-    /// Flip the sign bit of the Repr and return it 
+    /// Flip the sign bit of the Repr and return it
     pub fn neg(mut self) -> Self {
         if !self.is_zero() {
             self.capacity = unsafe { NonZeroIsize::new_unchecked(-self.capacity.get()) }
@@ -813,7 +813,7 @@ impl TypedRepr {
     pub(crate) fn as_ref(&self) -> TypedReprRef {
         match self {
             Self::Small(dword) => TypedReprRef::RefSmall(*dword),
-            Self::Large(buffer) => TypedReprRef::RefLarge(&buffer)
+            Self::Large(buffer) => TypedReprRef::RefLarge(&buffer),
         }
     }
 }
@@ -821,6 +821,21 @@ impl TypedRepr {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_repr_inline() {
+        let repr = Repr::zero();
+        assert_eq!(repr.capacity(), 1);
+        assert_eq!(repr.len(), 1);
+
+        let repr = Repr::from_word(123);
+        assert_eq!(repr.capacity(), 1);
+        assert_eq!(repr.len(), 1);
+
+        let repr = Repr::from_dword(123 << WORD_BITS_USIZE);
+        assert_eq!(repr.capacity(), 2);
+        assert_eq!(repr.len(), 2);
+    }
 
     #[test]
     fn test_default_capacity() {
@@ -957,8 +972,20 @@ mod tests {
 
     #[test]
     fn test_clone() {
-        // TODO: test clone inline
+        // test Repr
+        let repr = Repr::from_word(123);
+        let repr2 = repr.clone();
+        assert_eq!(repr2.capacity(), 1);
+        assert_eq!(repr2.len(), 1);
+        assert_eq!(repr, repr2);
 
+        let repr = Repr::from_dword(123 << WORD_BITS_USIZE);
+        let repr2 = repr.clone();
+        assert_eq!(repr2.capacity(), repr.capacity());
+        assert_eq!(repr2.len(), repr.len());
+        assert_eq!(repr, repr2);
+
+        // test Buffer
         let mut buffer = Buffer::allocate(100);
         buffer.push(7);
         buffer.push(8);
@@ -966,12 +993,31 @@ mod tests {
         let buffer2 = buffer.clone();
         assert_eq!(buffer, buffer2);
         assert_eq!(buffer2.capacity(), Buffer::default_capacity(3));
+
+        let repr = Repr::from_buffer(buffer);
+        let repr2 = repr.clone();
+        assert_eq!(repr.capacity(), Buffer::default_capacity(3));
+        assert_eq!(repr, repr2);
     }
 
     #[test]
     fn test_clone_from() {
-        // TODO: test clone inline
+        // test Repr
+        let repr = Repr::from_word(123);
+        let mut repr2 = Repr::zero();
+        repr2.clone_from(&repr);
+        assert_eq!(repr2.capacity(), repr.capacity());
+        assert_eq!(repr2.len(), repr.len());
+        assert_eq!(repr, repr2);
 
+        let repr = Repr::from_dword(123 << WORD_BITS_USIZE);
+        let mut repr2 = Repr::zero();
+        repr2.clone_from(&repr);
+        assert_eq!(repr2.capacity(), repr.capacity());
+        assert_eq!(repr2.len(), repr.len());
+        assert_eq!(repr, repr2);
+
+        // test Buffer
         let mut buffer = Buffer::allocate(100);
         buffer.push(7);
         buffer.push(8);
@@ -980,10 +1026,16 @@ mod tests {
         buffer2.clone_from(&buffer);
         assert_eq!(buffer, buffer2);
         assert_ne!(buffer.capacity(), buffer2.capacity());
+
+        let repr = Repr::from_buffer(buffer);
+        let mut repr2 = Repr::from_buffer(buffer2);
+        repr2.clone_from(&repr);
+        assert_eq!(repr, repr2);
     }
 
     #[test]
     fn test_resizing_clone_from() {
+        // test Buffer
         let mut buf = Buffer::allocate(5);
         assert_eq!(buf.capacity(), 7);
 
@@ -1007,5 +1059,31 @@ mod tests {
         buf.clone_from(&buf2);
         assert_eq!(buf.capacity(), 6);
         assert_eq!(&buf[..], [0, 1, 2, 3]);
+
+        // test Repr
+        let mut repr = Repr::zero(); // start from inline
+        let repr2 = Repr::from_buffer(buf2);
+        repr.clone_from(&repr2);
+        assert_eq!(repr.len(), 4);
+        assert_eq!(repr, repr2);
+        assert!(matches!(repr.as_typed(), TypedReprRef::RefLarge(_)));
+
+        let repr3 = Repr::from_buffer(buf3);
+        repr.clone_from(&repr3);
+        assert_eq!(repr.len(), 100);
+        assert_eq!(repr, repr3);
+        assert!(matches!(repr.as_typed(), TypedReprRef::RefLarge(_)));
+
+        repr.clone_from(&repr2);
+        assert_eq!(repr.len(), 4);
+        assert_eq!(repr, repr2);
+        assert!(matches!(repr.as_typed(), TypedReprRef::RefLarge(_)));
+
+        let repr_inline = Repr::from_word(123);
+        repr.clone_from(&repr_inline);
+        assert_eq!(repr.len(), 1);
+        assert_eq!(repr, repr_inline);
+        assert!(matches!(repr.as_typed(), TypedReprRef::RefSmall(_)));
+        
     }
 }

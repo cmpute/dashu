@@ -2,7 +2,6 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
-    repr::{Buffer, TypedRepr::*, TypedReprRef::*},
     div,
     ibig::IBig,
     memory::MemoryAllocation,
@@ -11,6 +10,7 @@ use crate::{
         modulo_ring::{ModuloRing, ModuloRingLarge, ModuloRingRepr, ModuloRingSingle},
     },
     primitive::{extend_word, split_dword},
+    repr::{Buffer, TypedRepr::*, TypedReprRef::*},
     shift,
     sign::Sign::*,
     ubig::UBig,

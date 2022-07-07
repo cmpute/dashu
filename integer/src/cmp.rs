@@ -2,8 +2,8 @@
 
 use crate::{
     arch::word::Word,
-    repr::TypedReprRef::{self, *},
     ibig::IBig,
+    repr::TypedReprRef::{self, *},
     sign::Sign::*,
     ubig::UBig,
 };

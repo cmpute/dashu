@@ -1,8 +1,4 @@
-use dashu_int::{
-    ibig,
-    ops::{AndNot, PowerOfTwo},
-    ubig, IBig,
-};
+use dashu_int::{ibig, ops::PowerOfTwo, ubig, IBig};
 
 #[test]
 #[allow(clippy::bool_assert_comparison)]
@@ -289,40 +285,6 @@ fn test_xor_ubig() {
 }
 
 #[test]
-fn test_and_not_ubig() {
-    let cases = [
-        (ubig!(0xf0f0), ubig!(0xff00), ubig!(0xf0)),
-        (
-            ubig!(_0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-            ubig!(0xff),
-            ubig!(_0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00),
-        ),
-        (
-            ubig!(0xff),
-            ubig!(_0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-            ubig!(0x11),
-        ),
-        (
-            ubig!(_0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-            ubig!(_0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
-            ubig!(_0x22222222222222222222222222222222),
-        ),
-        (
-            ubig!(_0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
-            ubig!(_0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-            ubig!(_0xdddddddddddddddddddddddddddddddd11111111111111111111111111111111),
-        ),
-    ];
-
-    for (a, b, c) in cases.iter() {
-        assert_eq!(a.and_not(b), *c);
-        assert_eq!(a.clone().and_not(b), *c);
-        assert_eq!(a.and_not(b.clone()), *c);
-        assert_eq!(a.clone().and_not(b.clone()), *c);
-    }
-}
-
-#[test]
 fn test_not_ibig() {
     for a in -20i8..=20i8 {
         let a_big: IBig = a.into();
@@ -406,22 +368,6 @@ fn test_xor_ibig() {
 }
 
 #[test]
-fn test_and_not_ibig() {
-    for a in -20i8..=20i8 {
-        for b in -20i8..=20i8 {
-            let a_big: IBig = a.into();
-            let b_big: IBig = b.into();
-            let res: IBig = (a & !b).into();
-
-            assert_eq!((&a_big).and_not(&b_big), res);
-            assert_eq!((&a_big).and_not(b_big.clone()), res);
-            assert_eq!(a_big.clone().and_not(&b_big), res);
-            assert_eq!(a_big.clone().and_not(b_big.clone()), res);
-        }
-    }
-}
-
-#[test]
 #[allow(clippy::identity_op, clippy::op_ref)]
 fn test_bit_ops_ubig_unsigned() {
     assert_eq!(ubig!(0xf0f) & 0xffu8, 0xfu8);
@@ -477,11 +423,6 @@ fn test_bit_ops_ubig_unsigned() {
     let mut x = ubig!(0xf0f);
     x ^= &0xffu8;
     assert_eq!(x, ubig!(0xff0));
-
-    assert_eq!(ubig!(0xf0f).and_not(0xffu8), ubig!(0xf00));
-    assert_eq!(ubig!(0xf0f).and_not(&0xffu8), ubig!(0xf00));
-    assert_eq!((&ubig!(0xf0f)).and_not(0xffu8), ubig!(0xf00));
-    assert_eq!((&ubig!(0xf0f)).and_not(&0xffu8), ubig!(0xf00));
 }
 
 #[test]
@@ -535,10 +476,4 @@ fn test_bit_ops_ibig_primitive() {
     let mut x = ibig!(0xf0f);
     x ^= &0xff;
     assert_eq!(x, ibig!(0xff0));
-
-    assert_eq!(ibig!(0xf0f).and_not(0xff), ibig!(0xf00));
-    assert_eq!(ibig!(0xf0f).and_not(&0xff), ibig!(0xf00));
-    assert_eq!((&ibig!(0xf0f)).and_not(0xff), ibig!(0xf00));
-    assert_eq!((&ibig!(0xf0f)).and_not(&0xff), ibig!(0xf00));
-    assert_eq!(ibig!(-13).and_not(-1), ibig!(0));
 }

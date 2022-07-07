@@ -1,9 +1,9 @@
 //! Formatting helpers.
 
 use crate::{
-    repr::TypedReprRef,
     ibig::IBig,
     radix::{self, Digit, DigitCase},
+    repr::TypedReprRef,
     sign::Sign::{self, *},
     ubig::UBig,
 };

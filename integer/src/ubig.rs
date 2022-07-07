@@ -2,9 +2,9 @@
 
 use crate::{
     arch::{ntt, word::Word},
-    repr::{Buffer, Repr, TypedRepr, TypedReprRef},
     math,
     primitive::WORD_BITS_USIZE,
+    repr::{Buffer, Repr, TypedRepr, TypedReprRef},
 };
 
 /// Unsigned big integer.

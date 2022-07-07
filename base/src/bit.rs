@@ -2,24 +2,6 @@
 //!
 //! Most traits are only implemented for unsigned integers yet.
 
-// TODO: remove AndNot as it's not widely used, it's only used internally in UBig
-
-/// Bitwise AND NOT operation.
-///
-/// `x.and_not(y)` is equivalent to `x & !y` for primitive integers.
-///
-/// # Examples
-///
-/// ```
-/// use dashu_base::AndNot;
-/// assert_eq!((0xff as u32).and_not(0x1111 as u32), 0xee);
-/// ```
-pub trait AndNot<Rhs = Self> {
-    type Output;
-
-    fn and_not(self, rhs: Rhs) -> Self::Output;
-}
-
 /// Common bit operations for integers
 pub trait BitTest {
     /// Get the minimum required number of bits to represent this integer
@@ -49,14 +31,6 @@ pub trait PowerOfTwo {
 
 macro_rules! impl_bit_ops_prim {
     ($($T:ty)*) => {$(
-        impl AndNot for $T {
-            type Output = $T;
-            #[inline]
-            fn and_not(self, rhs: $T) -> Self::Output {
-                self & !rhs
-            }
-        }
-
         impl BitTest for $T {
             #[inline]
             fn bit_len(&self) -> usize {

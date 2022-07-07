@@ -2,10 +2,10 @@
 
 use crate::{
     arch::word::Word,
-    repr::{Buffer, Repr, TypedReprRef::*},
     error::OutOfBoundsError,
     ibig::IBig,
     primitive::{self, PrimitiveSigned, PrimitiveUnsigned, DWORD_BYTES, WORD_BITS, WORD_BYTES},
+    repr::{Buffer, Repr, TypedReprRef::*},
     sign::Sign::*,
     ubig::UBig,
 };

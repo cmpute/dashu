@@ -4,7 +4,7 @@ use crate::{
     arch::word::{DoubleWord, Word},
     fast_divide::{FastDivideNormalized, FastDivideNormalized2},
     memory::{self, Memory},
-    primitive::{double_word, extend_word, split_dword, last_dword, WORD_BITS, first_dword},
+    primitive::{double_word, extend_word, first_dword, last_dword, split_dword, WORD_BITS},
     shift,
 };
 use alloc::alloc::Layout;

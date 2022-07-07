@@ -3,9 +3,9 @@
 use crate::{
     add,
     arch::word::{DoubleWord, Word},
-    repr::Buffer,
     helper_macros,
     ibig::IBig,
+    repr::Buffer,
     sign::Sign::*,
     ubig::UBig,
 };
@@ -346,13 +346,13 @@ impl_add_ibig_primitive!(isize);
 
 pub mod repr {
     use super::*;
-    use crate::{       
+    use crate::{
         primitive::split_dword,
         repr::{
             Repr,
             TypedRepr::{self, *},
             TypedReprRef::{self, *},
-        }
+        },
     };
 
     impl<'l, 'r> Add<TypedReprRef<'r>> for TypedReprRef<'l> {
@@ -505,39 +505,12 @@ pub mod repr {
         }
     }
 
-    impl<'a> TypedReprRef<'a> {
-        /// Subtract one from the number
-        pub(crate) fn sub_one(self) -> Repr {
-            match self {
-                RefSmall(dword) => Repr::from_dword(dword - 1),
-                RefLarge(buffer) => sub_large_one(buffer.into())
-            }
-        }
-    }
-
-    impl TypedRepr {
-        /// Subtract one from the number
-        pub(crate) fn sub_one(self) -> Repr {
-            match self {
-                Small(dword) => Repr::from_dword(dword - 1),
-                Large(buffer) => sub_large_one(buffer)
-            }
-        }
-    }
-
     #[inline]
     fn sub_dword(a: DoubleWord, b: DoubleWord) -> Repr {
         match a.checked_sub(b) {
             Some(res) => Repr::from_dword(res),
             None => UBig::panic_negative(),
         }
-    }
-
-    #[inline]
-    fn sub_large_one(mut lhs: Buffer) -> Repr {
-        let overflow = add::sub_one_in_place(&mut lhs);
-        debug_assert!(!overflow);
-        Repr::from_buffer(lhs)
     }
 
     #[inline]
@@ -569,6 +542,57 @@ pub mod repr {
         }
         Repr::from_buffer(rhs)
     }
+
+    impl<'a> TypedReprRef<'a> {
+        /// Add one to the number
+        pub(crate) fn add_one(self) -> Repr {
+            match self {
+                RefSmall(dword) => add_dword(dword, 1),
+                RefLarge(buffer) => add_large_one(buffer.into()),
+            }
+        }
+
+        /// Subtract one from the number
+        pub(crate) fn sub_one(self) -> Repr {
+            match self {
+                RefSmall(dword) => Repr::from_dword(dword - 1),
+                RefLarge(buffer) => sub_large_one(buffer.into()),
+            }
+        }
+    }
+
+    impl TypedRepr {
+        /// Add one to the number
+        pub(crate) fn add_one(self) -> Repr {
+            match self {
+                Small(dword) => add_dword(dword, 1),
+                Large(buffer) => add_large_one(buffer),
+            }
+        }
+
+        /// Subtract one from the number
+        pub(crate) fn sub_one(self) -> Repr {
+            match self {
+                Small(dword) => Repr::from_dword(dword - 1),
+                Large(buffer) => sub_large_one(buffer),
+            }
+        }
+    }
+
+    #[inline]
+    fn add_large_one(mut buffer: Buffer) -> Repr {
+        if add::add_one_in_place(&mut buffer) {
+            buffer.push_resizing(1);
+        }
+        Repr::from_buffer(buffer)
+    }
+
+    #[inline]
+    fn sub_large_one(mut buffer: Buffer) -> Repr {
+        let overflow = add::sub_one_in_place(&mut buffer);
+        debug_assert!(!overflow);
+        Repr::from_buffer(buffer)
+    }
 }
 
 /// This trait is for internal use only, it's used for distinguishing
@@ -581,8 +605,9 @@ trait SubSigned<Rhs> {
 mod repr_signed {
     use super::*;
     use crate::repr::{
+        Repr,
         TypedRepr::{self, *},
-        TypedReprRef::{self, *}, Repr,
+        TypedReprRef::{self, *},
     };
 
     impl<'l, 'r> SubSigned<TypedReprRef<'r>> for TypedReprRef<'l> {
@@ -591,7 +616,9 @@ mod repr_signed {
         fn sub_signed(self, rhs: TypedReprRef<'r>) -> Repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => sub_dword(dword0, dword1),
-                (RefSmall(dword0), RefLarge(buffer1)) => sub_large_dword(buffer1.into(), dword0).neg(),
+                (RefSmall(dword0), RefLarge(buffer1)) => {
+                    sub_large_dword(buffer1.into(), dword0).neg()
+                }
                 (RefLarge(buffer0), RefSmall(dword1)) => sub_large_dword(buffer0.into(), dword1),
                 (RefLarge(buffer0), RefLarge(buffer1)) => {
                     if buffer0.len() >= buffer1.len() {
@@ -617,7 +644,6 @@ mod repr_signed {
         }
     }
 
-    
     impl<'r> SubSigned<TypedReprRef<'r>> for TypedRepr {
         type Output = Repr;
         #[inline]

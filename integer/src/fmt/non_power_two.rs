@@ -2,11 +2,11 @@
 
 use crate::{
     arch::word::Word,
-    repr::{Repr, TypedReprRef::*},
     div,
     fmt::{digit_writer::DigitWriter, InRadixFull, PreparedForFormatting},
     ops::DivRem,
     radix::{self, Digit},
+    repr::{Repr, TypedReprRef::*},
     ubig::UBig,
 };
 use alloc::vec::Vec;

@@ -3,7 +3,7 @@
 use dashu_base::UnsignedAbs;
 
 use crate::{
-    repr::TypedReprRef::*, ibig::IBig, primitive::PrimitiveUnsigned, sign::Sign::*, ubig::UBig,
+    ibig::IBig, primitive::PrimitiveUnsigned, repr::TypedReprRef::*, sign::Sign::*, ubig::UBig,
 };
 
 impl UBig {

@@ -2,9 +2,9 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
-    repr::{Buffer, TypedRepr::*, TypedReprRef::*},
     ibig::IBig,
     primitive::{double_word, extend_word, split_dword, DWORD_BITS_USIZE, WORD_BITS_USIZE},
+    repr::{Buffer, TypedRepr::*, TypedReprRef::*},
     shift,
     sign::Sign::*,
     ubig::UBig,
@@ -178,7 +178,7 @@ impl Shr<usize> for &IBig {
 
 mod repr {
     use super::*;
-    use crate::{repr::{Repr, TypedRepr, TypedReprRef}};
+    use crate::repr::{Repr, TypedRepr, TypedReprRef};
 
     impl Shl<usize> for TypedRepr {
         type Output = Repr;

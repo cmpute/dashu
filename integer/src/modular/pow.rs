@@ -1,6 +1,5 @@
 use crate::{
     arch::word::Word,
-    repr::TypedReprRef::*,
     math,
     memory::{self, MemoryAllocation},
     modular::{
@@ -8,6 +7,7 @@ use crate::{
         modulo_ring::ModuloRingSingle,
     },
     primitive::{double_word, split_dword, PrimitiveUnsigned, WORD_BITS, WORD_BITS_USIZE},
+    repr::TypedReprRef::*,
     ubig::UBig,
 };
 

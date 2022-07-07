@@ -24,7 +24,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-The modifications on the ibig:
+Initial modifications on the `ibig` library:
 
 1. The underlying represetation of the UBig is vastly changed, the new representation
    supports inline double words and embedded sign bit, and the IBig doesn't support get
@@ -32,3 +32,4 @@ The modifications on the ibig:
 2. Operation traits are moved to the `dashu-base` crate.
 3. The trait `NextPowerOfTwo` is changed to `PowerOfTwo` with modified definition.
 4. Bitwise operators between different signedness are removed to enforce explicitness
+5. `AndNot` trait is made private because it's not widely used and the naming doesn't follow the BitXXX style in the std library.

@@ -2,12 +2,12 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
-    repr::{Buffer, TypedRepr::*, TypedReprRef::*},
     div, helper_macros,
     ibig::IBig,
     memory::MemoryAllocation,
     ops::{Abs, DivEuclid, DivRem, DivRemEuclid, RemEuclid},
     primitive::{PrimitiveSigned, PrimitiveUnsigned},
+    repr::{Buffer, TypedRepr::*, TypedReprRef::*},
     shift,
     sign::Sign::*,
     ubig::UBig,
@@ -1171,8 +1171,8 @@ impl_div_ibig_signed!(isize);
 mod ubig {
     use super::*;
     use crate::{
-        repr::{TypedRepr, TypedReprRef},
         primitive::{extend_word, shrink_dword},
+        repr::{TypedRepr, TypedReprRef},
     };
 
     #[inline]

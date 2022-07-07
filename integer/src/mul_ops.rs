@@ -2,11 +2,11 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
-    repr::{Buffer, TypedRepr::*, TypedReprRef::*},
     helper_macros,
     ibig::IBig,
     memory::MemoryAllocation,
     mul,
+    repr::{Buffer, TypedRepr::*, TypedReprRef::*},
     sign::Sign::{self, *},
     ubig::UBig,
 };
@@ -274,9 +274,9 @@ impl_mul_ibig_primitive!(isize);
 
 mod ubig {
     use super::*;
-    use crate::repr::{TypedRepr, TypedReprRef};
     use crate::math;
     use crate::primitive::{shrink_dword, split_dword};
+    use crate::repr::{TypedRepr, TypedReprRef};
 
     #[inline]
     pub(crate) fn mul_repr_val_val(lhs: TypedRepr, rhs: TypedRepr) -> UBig {

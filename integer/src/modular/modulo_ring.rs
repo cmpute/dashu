@@ -3,11 +3,11 @@
 use crate::{
     arch::word::{DoubleWord, Word},
     assert::debug_assert_in_const_fn,
-    repr::TypedReprRef,
     cmp, div,
     fast_divide::{FastDivideNormalized, FastDivideNormalized2},
     math,
     primitive::{shrink_dword, split_dword},
+    repr::TypedReprRef,
     ubig::UBig,
 };
 use alloc::vec::Vec;

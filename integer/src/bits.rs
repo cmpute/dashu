@@ -2,12 +2,12 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
-    repr::{Buffer, TypedRepr::*, TypedReprRef::*},
     helper_macros,
     ibig::IBig,
     math,
-    ops::{AndNot, PowerOfTwo, UnsignedAbs},
+    ops::PowerOfTwo,
     primitive::{first_dword, split_dword, DWORD_BITS_USIZE, WORD_BITS_USIZE},
+    repr::{Buffer, TypedRepr::*, TypedReprRef::*},
     sign::Sign::*,
     ubig::UBig,
 };
@@ -230,6 +230,16 @@ impl PowerOfTwo for UBig {
     }
 }
 
+/// Bitwise AND NOT operation. For internal use only, used for implementing
+/// bit operations on IBig.
+///
+/// `x.and_not(y)` is equivalent to `x & !y` for primitive integers.
+trait AndNot<Rhs = Self> {
+    type Output;
+
+    fn and_not(self, rhs: Rhs) -> Self::Output;
+}
+
 mod repr {
     use super::*;
     use crate::repr::{Repr, TypedRepr, TypedReprRef};
@@ -368,8 +378,12 @@ mod repr {
         fn bitand(self, rhs: TypedReprRef) -> Repr {
             match (self, rhs) {
                 (Small(dword0), RefSmall(dword1)) => Repr::from_dword(dword0 & dword1),
-                (Small(dword0), RefLarge(buffer1)) => Repr::from_dword(dword0 & first_dword(buffer1)),
-                (Large(buffer0), RefSmall(dword1)) => Repr::from_dword(buffer0.first_dword() & dword1),
+                (Small(dword0), RefLarge(buffer1)) => {
+                    Repr::from_dword(dword0 & first_dword(buffer1))
+                }
+                (Large(buffer0), RefSmall(dword1)) => {
+                    Repr::from_dword(buffer0.first_dword() & dword1)
+                }
                 (Large(buffer0), RefLarge(buffer1)) => bitand_large(buffer0, buffer1),
             }
         }
@@ -392,8 +406,12 @@ mod repr {
         fn bitand(self, rhs: TypedReprRef) -> Repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => Repr::from_dword(dword0 & dword1),
-                (RefSmall(dword0), RefLarge(buffer1)) => Repr::from_dword(dword0 & first_dword(buffer1)),
-                (RefLarge(buffer0), RefSmall(dword1)) => Repr::from_dword(first_dword(buffer0) & dword1),
+                (RefSmall(dword0), RefLarge(buffer1)) => {
+                    Repr::from_dword(dword0 & first_dword(buffer1))
+                }
+                (RefLarge(buffer0), RefSmall(dword1)) => {
+                    Repr::from_dword(first_dword(buffer0) & dword1)
+                }
                 (RefLarge(buffer0), RefLarge(buffer1)) => {
                     if buffer0.len() <= buffer1.len() {
                         bitand_large(buffer0.into(), buffer1)
@@ -448,7 +466,7 @@ mod repr {
             }
         }
     }
-    
+
     impl<'l> BitOr<TypedRepr> for TypedReprRef<'l> {
         type Output = Repr;
 
@@ -461,7 +479,7 @@ mod repr {
 
     impl<'l, 'r> BitOr<TypedReprRef<'r>> for TypedReprRef<'l> {
         type Output = Repr;
-    
+
         #[inline]
         fn bitor(self, rhs: TypedReprRef) -> Repr {
             match (self, rhs) {
@@ -502,7 +520,7 @@ mod repr {
 
     impl BitXor<TypedRepr> for TypedRepr {
         type Output = Repr;
-    
+
         #[inline]
         fn bitxor(self, rhs: TypedRepr) -> Repr {
             match (self, rhs) {
@@ -551,10 +569,8 @@ mod repr {
         fn bitxor(self, rhs: TypedReprRef) -> Repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => Repr::from_dword(dword0 ^ dword1),
-                (RefSmall(dword0), RefLarge(buffer1)) => 
-                    bitxor_large_dword(buffer1.into(), dword0),
-                (RefLarge(buffer0), RefSmall(dword1)) => 
-                    bitxor_large_dword(buffer0.into(), dword1),
+                (RefSmall(dword0), RefLarge(buffer1)) => bitxor_large_dword(buffer1.into(), dword0),
+                (RefLarge(buffer0), RefSmall(dword1)) => bitxor_large_dword(buffer0.into(), dword1),
                 (RefLarge(buffer0), RefLarge(buffer1)) => {
                     if buffer0.len() >= buffer1.len() {
                         bitxor_large(buffer0.into(), buffer1)
@@ -565,7 +581,7 @@ mod repr {
             }
         }
     }
-    
+
     fn bitxor_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> Repr {
         debug_assert!(buffer.len() >= 2);
 
@@ -594,7 +610,9 @@ mod repr {
         fn and_not(self, rhs: TypedRepr) -> Repr {
             match (self, rhs) {
                 (Small(dword0), Small(dword1)) => Repr::from_dword(dword0 & !dword1),
-                (Small(dword0), Large(buffer1)) => Repr::from_dword(dword0 & !buffer1.first_dword()),
+                (Small(dword0), Large(buffer1)) => {
+                    Repr::from_dword(dword0 & !buffer1.first_dword())
+                }
                 (Large(buffer0), Small(dword1)) => and_not_large_dword(buffer0, dword1),
                 (Large(buffer0), Large(buffer1)) => and_not_large(buffer0, &buffer1),
             }
@@ -608,7 +626,9 @@ mod repr {
         fn and_not(self, rhs: TypedReprRef) -> Repr {
             match (self, rhs) {
                 (Small(dword0), RefSmall(dword1)) => Repr::from_dword(dword0 & !dword1),
-                (Small(dword0), RefLarge(buffer1)) => Repr::from_dword(dword0 & !first_dword(buffer1)),
+                (Small(dword0), RefLarge(buffer1)) => {
+                    Repr::from_dword(dword0 & !first_dword(buffer1))
+                }
                 (Large(buffer0), RefSmall(dword1)) => and_not_large_dword(buffer0, dword1),
                 (Large(buffer0), RefLarge(buffer1)) => and_not_large(buffer0, buffer1),
             }
@@ -617,12 +637,14 @@ mod repr {
 
     impl<'l> AndNot<TypedRepr> for TypedReprRef<'l> {
         type Output = Repr;
-    
+
         #[inline]
         fn and_not(self, rhs: TypedRepr) -> Repr {
             match (self, rhs) {
                 (RefSmall(dword0), Small(dword1)) => Repr::from_dword(dword0 & !dword1),
-                (RefSmall(dword0), Large(buffer1)) => Repr::from_dword(dword0 & !buffer1.first_dword()),
+                (RefSmall(dword0), Large(buffer1)) => {
+                    Repr::from_dword(dword0 & !buffer1.first_dword())
+                }
                 (RefLarge(buffer0), Small(dword1)) => and_not_large_dword(buffer0.into(), dword1),
                 (RefLarge(buffer0), Large(buffer1)) => and_not_large(buffer0.into(), &buffer1),
             }
@@ -636,13 +658,17 @@ mod repr {
         fn and_not(self, rhs: TypedReprRef) -> Repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => Repr::from_dword(dword0 & !dword1),
-                (RefSmall(dword0), RefLarge(buffer1)) => Repr::from_dword(dword0 & !first_dword(buffer1)),
-                (RefLarge(buffer0), RefSmall(dword1)) => and_not_large_dword(buffer0.into(), dword1),
+                (RefSmall(dword0), RefLarge(buffer1)) => {
+                    Repr::from_dword(dword0 & !first_dword(buffer1))
+                }
+                (RefLarge(buffer0), RefSmall(dword1)) => {
+                    and_not_large_dword(buffer0.into(), dword1)
+                }
                 (RefLarge(buffer0), RefLarge(buffer1)) => and_not_large(buffer0.into(), buffer1),
             }
         }
     }
-    
+
     fn and_not_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> Repr {
         debug_assert!(buffer.len() >= 2);
 
@@ -666,8 +692,11 @@ impl Not for IBig {
 
     #[inline]
     fn not(self) -> IBig {
-        // TODO: implement "add_one" and then implement this more efficiently
-        -(self + IBig::one())
+        let (sign, mag) = self.into_sign_repr();
+        match sign {
+            Positive => IBig(mag.add_one().with_sign(Negative)),
+            Negative => IBig(mag.sub_one().with_sign(Positive))
+        }
     }
 }
 
@@ -676,7 +705,11 @@ impl Not for &IBig {
 
     #[inline]
     fn not(self) -> IBig {
-        -(self + IBig::one())
+        let (sign, mag) = self.as_sign_repr();
+        match sign {
+            Positive => IBig(mag.add_one().with_sign(Negative)),
+            Negative => IBig(mag.sub_one().with_sign(Positive))
+        }
     }
 }
 
@@ -816,73 +849,6 @@ helper_macros::forward_binop_assign_by_taking!(impl BitAndAssign<IBig> for IBig,
 helper_macros::forward_binop_assign_by_taking!(impl BitOrAssign<IBig> for IBig, bitor_assign, bitor);
 helper_macros::forward_binop_assign_by_taking!(impl BitXorAssign<IBig> for IBig, bitxor_assign, bitxor);
 
-// TODO: implement ops in IBig with functions on repr instead of using unsigned_abs(), and try
-// to optimize intermediate operations.
-
-impl AndNot<IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn and_not(self, rhs: IBig) -> IBig {
-        match (self.sign(), rhs.sign()) {
-            (Positive, Positive) => IBig::from(self.unsigned_abs().and_not(rhs.unsigned_abs())),
-            (Positive, Negative) => IBig::from(self.unsigned_abs() & (!rhs).unsigned_abs()),
-            (Negative, Positive) => !IBig::from((!self).unsigned_abs() | rhs.unsigned_abs()),
-            (Negative, Negative) => {
-                IBig::from((!rhs).unsigned_abs().and_not((!self).unsigned_abs()))
-            }
-        }
-    }
-}
-
-impl AndNot<&IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn and_not(self, rhs: &IBig) -> IBig {
-        match (self.sign(), rhs.sign()) {
-            (Positive, Positive) => IBig::from(self.unsigned_abs().and_not(rhs.unsigned_abs())),
-            (Positive, Negative) => IBig::from(self.unsigned_abs() & (!rhs).unsigned_abs()),
-            (Negative, Positive) => !IBig::from((!self).unsigned_abs() | rhs.unsigned_abs()),
-            (Negative, Negative) => {
-                IBig::from((!rhs).unsigned_abs().and_not((!self).unsigned_abs()))
-            }
-        }
-    }
-}
-
-impl AndNot<IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn and_not(self, rhs: IBig) -> IBig {
-        match (self.sign(), rhs.sign()) {
-            (Positive, Positive) => IBig::from(self.unsigned_abs().and_not(rhs.unsigned_abs())),
-            (Positive, Negative) => IBig::from(self.unsigned_abs() & (!rhs).unsigned_abs()),
-            (Negative, Positive) => !IBig::from((!self).unsigned_abs() | rhs.unsigned_abs()),
-            (Negative, Negative) => {
-                IBig::from((!rhs).unsigned_abs().and_not((!self).unsigned_abs()))
-            }
-        }
-    }
-}
-
-impl AndNot<&IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn and_not(self, rhs: &IBig) -> IBig {
-        match (self.sign(), rhs.sign()) {
-            (Positive, Positive) => IBig::from(self.unsigned_abs().and_not(rhs.unsigned_abs())),
-            (Positive, Negative) => IBig::from(self.unsigned_abs() & (!rhs).unsigned_abs()),
-            (Negative, Positive) => !IBig::from((!self).unsigned_abs() | rhs.unsigned_abs()),
-            (Negative, Negative) => {
-                IBig::from((!rhs).unsigned_abs().and_not((!self).unsigned_abs()))
-            }
-        }
-    }
-}
-
 macro_rules! impl_bit_ops_ubig_unsigned {
     ($t:ty) => {
         impl BitAnd<$t> for UBig {
@@ -978,26 +944,6 @@ macro_rules! impl_bit_ops_ubig_unsigned {
         }
 
         helper_macros::forward_binop_assign_arg_by_value!(impl BitXorAssign<$t> for UBig, bitxor_assign);
-
-        impl AndNot<$t> for UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn and_not(self, rhs: $t) -> UBig {
-                self.and_not(UBig::from_unsigned(rhs))
-            }
-        }
-
-        impl AndNot<$t> for &UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn and_not(self, rhs: $t) -> UBig {
-                self.and_not(UBig::from_unsigned(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl AndNot<$t> for UBig, and_not);
     };
 }
 
@@ -1099,26 +1045,6 @@ macro_rules! impl_bit_ops_ibig_signed {
         }
 
         helper_macros::forward_binop_assign_arg_by_value!(impl BitXorAssign<$t> for IBig, bitxor_assign);
-
-        impl AndNot<$t> for IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn and_not(self, rhs: $t) -> IBig {
-                self.and_not(IBig::from_signed(rhs))
-            }
-        }
-
-        impl AndNot<$t> for &IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn and_not(self, rhs: $t) -> IBig {
-                self.and_not(IBig::from_signed(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl AndNot<$t> for IBig, and_not);
     };
 }
 
@@ -1128,3 +1054,44 @@ impl_bit_ops_ibig_signed!(i32);
 impl_bit_ops_ibig_signed!(i64);
 impl_bit_ops_ibig_signed!(i128);
 impl_bit_ops_ibig_signed!(isize);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ubig;
+
+    #[test]
+    fn test_and_not() {
+        let cases = [
+            (ubig!(0xf0f0), ubig!(0xff00), ubig!(0xf0)),
+            (
+                ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
+                ubig!(0xff),
+                ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00),
+            ),
+            (
+                ubig!(0xff),
+                ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
+                ubig!(0x11),
+            ),
+            (
+                ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
+                ubig!(_0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
+                ubig!(0x22222222222222222222222222222222),
+            ),
+            (
+                ubig!(_0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
+                ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
+                ubig!(_0xdddddddddddddddddddddddddddddddd11111111111111111111111111111111),
+            ),
+        ];
+
+        for (a, b, c) in cases.iter() {
+            assert_eq!(UBig(a.repr().and_not(b.repr())), *c);
+            assert_eq!(UBig(a.clone().into_repr().and_not(b.repr())), *c);
+            assert_eq!(UBig(a.repr().and_not(b.clone().into_repr())), *c);
+            let (a, b) = (a.clone(), b.clone());
+            assert_eq!(UBig(a.into_repr().and_not(b.into_repr())), *c);
+        }
+    }
+}

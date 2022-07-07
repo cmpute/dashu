@@ -3,7 +3,7 @@
 use crate::{
     arch::word::{DoubleWord, Word},
     assert::debug_assert_in_const_fn,
-    primitive::{extend_word, split_dword, PrimitiveUnsigned, WORD_BITS, double_word},
+    primitive::{double_word, extend_word, split_dword, PrimitiveUnsigned, WORD_BITS},
 };
 
 /// The length of an integer in bits.
