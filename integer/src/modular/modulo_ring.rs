@@ -13,6 +13,8 @@ use crate::{
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
+use super::modulo::ModuloSingleRaw;
+
 /// A ring of integers modulo a positive integer.
 ///
 /// # Examples
@@ -126,8 +128,8 @@ impl ModuloRingSingle {
     }
 
     #[inline]
-    pub(crate) const fn is_valid(&self, val: Word) -> bool {
-        val < self.normalized_modulus && val & math::ones_word(self.shift) == 0
+    pub(crate) const fn is_valid(&self, val: ModuloSingleRaw) -> bool {
+        val.0 < self.normalized_modulus && val.0 & math::ones_word(self.shift) == 0
     }
 }
 

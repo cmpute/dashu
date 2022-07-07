@@ -3,10 +3,10 @@ use crate::{
     math,
     memory::{self, MemoryAllocation},
     modular::{
-        modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSingle, ModuloSmallRaw},
+        modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSingle, ModuloSingleRaw},
         modulo_ring::ModuloRingSingle,
     },
-    primitive::{double_word, split_dword, PrimitiveUnsigned, WORD_BITS, WORD_BITS_USIZE},
+    primitive::{double_word, split_dword, PrimitiveUnsigned, WORD_BITS, WORD_BITS_USIZE, shrink_dword},
     repr::TypedReprRef::*,
     ubig::UBig,
 };
@@ -28,74 +28,74 @@ impl<'a> Modulo<'a> {
     #[inline]
     pub fn pow(&self, exp: &UBig) -> Modulo<'a> {
         match self.repr() {
-            ModuloRepr::Small(self_small) => self_small.pow(exp).into(),
+            ModuloRepr::Small(self_small) => ModuloSingle::new(
+                self_small.ring().pow(self_small.raw(), exp),
+                self_small.ring()
+            ).into(),
             ModuloRepr::Large(self_large) => self_large.pow(exp).into(),
         }
     }
 }
 
-impl ModuloSmallRaw {
-    /// self^exp
+impl ModuloRingSingle {
     #[inline]
-    pub(crate) const fn pow_word(self, exp: Word, ring: &ModuloRingSingle) -> ModuloSmallRaw {
-        if exp == 0 {
-            return ModuloSmallRaw::from_word(1, ring);
+    pub const fn pow_word(&self, raw: ModuloSingleRaw, exp: Word) -> ModuloSingleRaw {
+        match exp {
+            0 => ModuloSingleRaw::from_word(1, &self),
+            1 => raw, // no-op
+            2 => self.sqr(raw),
+            _ => {
+                let bits = WORD_BITS - 1 - exp.leading_zeros();
+                self.pow_helper(raw, raw, exp, bits)
+            }
         }
-
-        let bits = WORD_BITS - 1 - exp.leading_zeros();
-        self.pow_helper(bits, self, exp, ring)
     }
 
-    /// self^2^bits * base^exp[..bits]
+    /// lhs^2^bits * rhs^exp[..bits] (in the modulo ring)
     #[inline]
     const fn pow_helper(
-        self,
-        mut bits: u32,
-        base: ModuloSmallRaw,
+        &self,
+        lhs: ModuloSingleRaw,
+        rhs: ModuloSingleRaw,
         exp: Word,
-        ring: &ModuloRingSingle,
-    ) -> ModuloSmallRaw {
-        let mut res = self;
+        mut bits: u32,
+    ) -> ModuloSingleRaw {
+        let mut res = lhs;
         while bits > 0 {
-            res = res.mul(res, ring);
+            res = self.sqr(res);
             bits -= 1;
             if exp & (1 << bits) != 0 {
-                res = res.mul(base, ring);
+                res = self.mul(res, rhs);
             }
         }
         res
     }
-}
 
-impl<'a> ModuloSingle<'a> {
     /// Exponentiation.
     #[inline]
-    fn pow(&self, exp: &UBig) -> ModuloSingle<'a> {
+    pub fn pow(&self, raw: ModuloSingleRaw, exp: &UBig) -> ModuloSingleRaw{
         match exp.repr() {
-            // self^0 == 1
-            RefSmall(0) => ModuloSingle::from_ubig(&UBig::one(), self.ring()),
-            // self^1 == self
-            RefSmall(1) => self.clone(),
-            // self^2 == self * self
-            RefSmall(2) => {
-                let res = self.raw().mul(self.raw(), self.ring());
-                ModuloSingle::new(res, self.ring())
-            }
-            _ => self.pow_nontrivial(exp),
+            RefSmall(dword) => {
+                let (lo, hi) = split_dword(dword);
+                if hi == 0 {
+                    self.pow_word(raw, lo)
+                } else {
+                    let res = self.pow_word(raw, hi);
+                    self.pow_helper(res, res, lo, WORD_BITS)
+                }
+            },
+            RefLarge(buffer) => self.pow_nontrivial(raw, buffer),
         }
     }
 
-    fn pow_nontrivial(&self, exp: &UBig) -> ModuloSingle<'a> {
-        debug_assert!(*exp >= UBig::from(3u8));
-
-        let exp_words = exp.as_words();
+    fn pow_nontrivial(&self, raw: ModuloSingleRaw, exp_words: &[Word]) -> ModuloSingleRaw{
         let mut n = exp_words.len() - 1;
-        let mut val = self.raw().pow_word(exp_words[n], self.ring());
+        let mut res = self.pow_word(raw, exp_words[n]); // apply the top word
         while n != 0 {
             n -= 1;
-            val = val.pow_helper(WORD_BITS, self.raw(), exp_words[n], self.ring());
+            res = self.pow_helper(res, raw, exp_words[n], WORD_BITS);
         }
-        ModuloSingle::new(val, self.ring())
+        res
     }
 }
 
@@ -226,8 +226,8 @@ mod tests {
     #[test]
     fn test_pow_word() {
         let ring = ModuloRingSingle::new(100);
-        let a = ModuloSmallRaw::from_word(17, &ring);
-        assert_eq!(a.pow_word(0, &ring).residue(&ring), 1);
-        assert_eq!(a.pow_word(15, &ring).residue(&ring), 93);
+        let modulo = ModuloSingleRaw(17);
+        assert_eq!(ring.pow_word(modulo, 0).residue(&ring), 1);
+        assert_eq!(ring.pow_word(modulo, 15).residue(&ring), 93);
     }
 }

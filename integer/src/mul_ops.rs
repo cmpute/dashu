@@ -192,7 +192,7 @@ mod repr {
         match rhs {
             0 => Repr::zero(),
             1 => Repr::from_buffer(buffer),
-            // TODO: specialize mul by 2, using a double function
+            // TODO: specialize shifting by checking if rhs is power of 2
             dw => {
                 if let Some(word) = shrink_dword(dw) {
                     let carry = mul::mul_word_in_place(&mut buffer, word);

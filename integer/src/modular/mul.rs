@@ -1,10 +1,9 @@
 use crate::{
     arch::word::Word,
-    assert::debug_assert_in_const_fn,
     div,
     memory::{self, Memory, MemoryAllocation},
     modular::{
-        modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSingle, ModuloSmallRaw},
+        modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSingle, ModuloSingleRaw},
         modulo_ring::{ModuloRingLarge, ModuloRingSingle},
     },
     mul,
@@ -59,13 +58,29 @@ impl<'a> MulAssign<Modulo<'a>> for Modulo<'a> {
     }
 }
 
+impl ModuloRingSingle {
+    #[inline]
+    pub const fn mul(&self, lhs: ModuloSingleRaw, rhs: ModuloSingleRaw) -> ModuloSingleRaw {
+        let product = extend_word(lhs.0 >> self.shift()) * extend_word(rhs.0);
+        let (_, rem) = self.fast_div().div_rem(product);
+        ModuloSingleRaw(rem)
+    }
+
+    #[inline]
+    pub const fn sqr(&self, raw: ModuloSingleRaw) -> ModuloSingleRaw {
+        let product = (extend_word(raw.0) * extend_word(raw.0)) >> self.shift();
+        let (_, rem) = self.fast_div().div_rem(product);
+        ModuloSingleRaw(rem)
+    }
+}
+
 impl<'a> MulAssign<&Modulo<'a>> for Modulo<'a> {
     #[inline]
     fn mul_assign(&mut self, rhs: &Modulo<'a>) {
         match (self.repr_mut(), rhs.repr()) {
             (ModuloRepr::Small(self_small), ModuloRepr::Small(rhs_small)) => {
                 self_small.check_same_ring(rhs_small);
-                self_small.mul_in_place(rhs_small);
+                self_small.set_raw(self_small.ring().mul(self_small.raw(), rhs_small.raw()));
             }
             (ModuloRepr::Large(self_large), ModuloRepr::Large(rhs_large)) => {
                 self_large.check_same_ring(rhs_large);
@@ -76,31 +91,6 @@ impl<'a> MulAssign<&Modulo<'a>> for Modulo<'a> {
             }
             _ => Modulo::panic_different_rings(),
         }
-    }
-}
-
-impl ModuloSmallRaw {
-    #[inline]
-    pub(crate) const fn mul(
-        self,
-        other: ModuloSmallRaw,
-        ring: &ModuloRingSingle,
-    ) -> ModuloSmallRaw {
-        debug_assert_in_const_fn!(self.is_valid(ring) && other.is_valid(ring));
-        let a = self.normalized();
-        let b = other.normalized();
-        let product = extend_word(a >> ring.shift()) * extend_word(b);
-        let (_, rem) = ring.fast_div().div_rem(product);
-        ModuloSmallRaw::from_normalized(rem)
-    }
-}
-
-impl<'a> ModuloSingle<'a> {
-    /// self *= rhs
-    #[inline]
-    pub(crate) fn mul_in_place(&mut self, rhs: &ModuloSingle<'a>) {
-        self.check_same_ring(rhs);
-        self.set_raw(self.raw().mul(rhs.raw(), self.ring()));
     }
 }
 

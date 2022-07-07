@@ -42,7 +42,7 @@ macro_rules! impl_fmt {
 
         impl $t for ModuloSingle<'_> {
             fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-                $t::fmt(&self.residue(), f)?;
+                $t::fmt(&self.raw().residue(self.ring()), f)?;
                 f.write_str(" (")?;
                 $t::fmt(self.ring(), f)?;
                 f.write_str(")")

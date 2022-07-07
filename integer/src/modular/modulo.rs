@@ -4,6 +4,7 @@ use crate::{
     arch::word::Word,
     math,
     modular::modulo_ring::{ModuloRingLarge, ModuloRingSingle},
+    primitive::extend_word,
 };
 use alloc::vec::Vec;
 
@@ -25,18 +26,15 @@ pub(crate) enum ModuloRepr<'a> {
     Large(ModuloLarge<'a>),
 }
 
-// TODO: we should eliminate this struct and just implement functions inplace.
 /// Modular value in some unknown ring. The ring must be provided to operations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct ModuloSmallRaw {
-    /// must be in range 0..modulus and divisible by the shift for ModuloSmallRing
-    normalized_value: Word,
-}
+pub(crate) struct ModuloSingleRaw(pub(crate) Word);
 
-#[derive(Clone)]
+// TODO: remove ModuloSingle / ModuloLarge, combine them directly into the ModuloRepr
+#[derive(Clone, Copy, Eq)]
 pub(crate) struct ModuloSingle<'a> {
     ring: &'a ModuloRingSingle,
-    raw: ModuloSmallRaw,
+    raw: ModuloSingleRaw,
 }
 
 pub(crate) struct ModuloLarge<'a> {
@@ -77,28 +75,10 @@ impl<'a> From<ModuloLarge<'a>> for Modulo<'a> {
     }
 }
 
-impl ModuloSmallRaw {
-    #[inline]
-    pub(crate) const fn normalized(self) -> Word {
-        self.normalized_value
-    }
-
-    #[inline]
-    pub(crate) const fn from_normalized(normalized_value: Word) -> Self {
-        ModuloSmallRaw { normalized_value }
-    }
-
-    #[inline]
-    pub(crate) const fn is_valid(&self, ring: &ModuloRingSingle) -> bool {
-        self.normalized_value < ring.normalized_modulus()
-            && self.normalized_value & math::ones_word(ring.shift()) == 0
-    }
-}
-
 impl<'a> ModuloSingle<'a> {
     #[inline]
-    pub(crate) fn new(raw: ModuloSmallRaw, ring: &'a ModuloRingSingle) -> Self {
-        debug_assert!(raw.is_valid(ring));
+    pub(crate) fn new(raw: ModuloSingleRaw, ring: &'a ModuloRingSingle) -> Self {
+        debug_assert!(ring.is_valid(raw));
         ModuloSingle { ring, raw }
     }
 
@@ -108,23 +88,26 @@ impl<'a> ModuloSingle<'a> {
         self.ring
     }
 
-    #[inline]
-    pub(crate) fn raw(&self) -> ModuloSmallRaw {
-        self.raw
-    }
-
-    #[inline]
-    pub(crate) fn set_raw(&mut self, raw: ModuloSmallRaw) {
-        debug_assert!(raw.is_valid(self.ring));
-        self.raw = raw;
-    }
-
     /// Checks that two values are from the same ring.
     #[inline]
     pub(crate) fn check_same_ring(&self, other: &ModuloSingle) {
         if self.ring() != other.ring() {
             Modulo::panic_different_rings();
         }
+    }
+
+    // TODO: rename to normalized() or raw()
+    #[inline]
+    pub(crate) const fn normalized_value(self) -> Word {
+        self.raw.0
+    }
+
+    pub(crate) const fn raw(&self) -> ModuloSingleRaw {
+        self.raw
+    }
+
+    pub(crate) fn set_raw(&mut self, val: ModuloSingleRaw) {
+        self.raw = val
     }
 }
 
