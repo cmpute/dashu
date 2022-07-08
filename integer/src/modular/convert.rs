@@ -4,16 +4,17 @@ use crate::{
     arch::word::{DoubleWord, Word},
     div,
     ibig::IBig,
+    math::shl_dword,
     memory::MemoryAllocation,
     modular::{
         modulo::{Modulo, ModuloRepr, ModuloSingleRaw},
         modulo_ring::{ModuloRing, ModuloRingLarge, ModuloRingRepr, ModuloRingSingle},
     },
-    primitive::{extend_word, split_dword, double_word},
-    repr::{Buffer, TypedRepr::*, TypedReprRef::*, Repr},
+    primitive::{double_word, extend_word, split_dword},
+    repr::{Buffer, Repr, TypedRepr::*, TypedReprRef::*},
     shift,
     sign::Sign::*,
-    ubig::UBig, math::shl_dword,
+    ubig::UBig,
 };
 use alloc::vec::Vec;
 use core::iter;
@@ -92,7 +93,7 @@ impl ModuloRingLarge {
         buffer.push_slice(normalized_modulus);
         let low_bits = shift::shr_in_place(&mut buffer, self.shift());
         assert!(low_bits == 0);
-        buffer.into()
+        UBig(Repr::from_buffer(buffer))
     }
 }
 
@@ -200,8 +201,12 @@ impl IntoModulo for UBig {
     #[inline]
     fn into_modulo(self, ring: &ModuloRing) -> Modulo {
         match ring.repr() {
-            ModuloRingRepr::Single(ring) => Modulo::from_small(ModuloSingleRaw::from_ubig(&self, ring), ring),
-            ModuloRingRepr::Large(ring) => Modulo::from_large(ModuloLargeRaw::from_ubig(self, ring), ring),
+            ModuloRingRepr::Single(ring) => {
+                Modulo::from_small(ModuloSingleRaw::from_ubig(&self, ring), ring)
+            }
+            ModuloRingRepr::Large(ring) => {
+                Modulo::from_large(ModuloLargeRaw::from_ubig(self, ring), ring)
+            }
         }
     }
 }
@@ -210,8 +215,12 @@ impl IntoModulo for &UBig {
     #[inline]
     fn into_modulo(self, ring: &ModuloRing) -> Modulo {
         match ring.repr() {
-            ModuloRingRepr::Single(ring) => Modulo::from_small(ModuloSingleRaw::from_ubig(&self, ring), ring),
-            ModuloRingRepr::Large(ring) => Modulo::from_large(ModuloLargeRaw::from_ubig(self.clone(), ring), ring),
+            ModuloRingRepr::Single(ring) => {
+                Modulo::from_small(ModuloSingleRaw::from_ubig(&self, ring), ring)
+            }
+            ModuloRingRepr::Large(ring) => {
+                Modulo::from_large(ModuloLargeRaw::from_ubig(self.clone(), ring), ring)
+            }
         }
     }
 }

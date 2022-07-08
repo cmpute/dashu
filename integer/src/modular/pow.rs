@@ -3,10 +3,12 @@ use crate::{
     math,
     memory::{self, MemoryAllocation},
     modular::{
-        modulo::{Modulo, ModuloRepr, ModuloSingleRaw, ModuloLargeRaw},
+        modulo::{Modulo, ModuloLargeRaw, ModuloRepr, ModuloSingleRaw},
         modulo_ring::ModuloRingSingle,
     },
-    primitive::{double_word, split_dword, PrimitiveUnsigned, WORD_BITS, WORD_BITS_USIZE, shrink_dword},
+    primitive::{
+        double_word, split_dword, PrimitiveUnsigned, WORD_BITS, WORD_BITS_USIZE,
+    },
     repr::TypedReprRef::*,
     ubig::UBig,
 };
@@ -30,13 +32,8 @@ impl<'a> Modulo<'a> {
     #[inline]
     pub fn pow(&self, exp: &UBig) -> Modulo<'a> {
         match self.repr() {
-            ModuloRepr::Small(raw, ring) => Modulo::from_small(
-                ring.pow(*raw, exp),
-                ring
-            ).into(),
-            ModuloRepr::Large(raw, ring) => {
-                Modulo::from_large(ring.pow(raw, exp), ring)
-            },
+            ModuloRepr::Small(raw, ring) => Modulo::from_small(ring.pow(*raw, exp), ring).into(),
+            ModuloRepr::Large(raw, ring) => Modulo::from_large(ring.pow(raw, exp), ring),
         }
     }
 }
@@ -77,7 +74,7 @@ impl ModuloRingSingle {
 
     /// Exponentiation.
     #[inline]
-    pub fn pow(&self, raw: ModuloSingleRaw, exp: &UBig) -> ModuloSingleRaw{
+    pub fn pow(&self, raw: ModuloSingleRaw, exp: &UBig) -> ModuloSingleRaw {
         match exp.repr() {
             RefSmall(dword) => {
                 let (lo, hi) = split_dword(dword);
@@ -87,12 +84,12 @@ impl ModuloRingSingle {
                     let res = self.pow_word(raw, hi);
                     self.pow_helper(res, res, lo, WORD_BITS)
                 }
-            },
+            }
             RefLarge(buffer) => self.pow_nontrivial(raw, buffer),
         }
     }
 
-    fn pow_nontrivial(&self, raw: ModuloSingleRaw, exp_words: &[Word]) -> ModuloSingleRaw{
+    fn pow_nontrivial(&self, raw: ModuloSingleRaw, exp_words: &[Word]) -> ModuloSingleRaw {
         let mut n = exp_words.len() - 1;
         let mut res = self.pow_word(raw, exp_words[n]); // apply the top word
         while n != 0 {
@@ -144,11 +141,7 @@ impl ModuloRingLarge {
                 let (prev, cur) = (&mut table[(i - 2) * n..i * n]).split_at_mut(n);
                 (&*prev, cur)
             };
-            cur.copy_from_slice(self.mul_normalized(
-                prev,
-                &val.0,
-                &mut memory,
-            ));
+            cur.copy_from_slice(self.mul_normalized(prev, &val.0, &mut memory));
         }
 
         let exp_words = exp.as_words();

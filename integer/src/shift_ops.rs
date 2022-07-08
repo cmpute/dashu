@@ -177,7 +177,10 @@ impl Shr<usize> for &IBig {
 
 mod repr {
     use super::*;
-    use crate::{repr::{Repr, TypedRepr, TypedReprRef}, math};
+    use crate::{
+        math,
+        repr::{Repr, TypedRepr, TypedReprRef},
+    };
 
     impl Shl<usize> for TypedRepr {
         type Output = Repr;

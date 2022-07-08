@@ -17,6 +17,8 @@ use core::{
 };
 use static_assertions::const_assert_eq;
 
+// TODO: impl Send and Sync for ReprData
+
 /// This union contains the raw representation of words, the words are either inlined
 /// or on the heap. The flag used to distinguishing them is the `len` field of the buffer.
 #[repr(C)]
@@ -123,6 +125,8 @@ impl Buffer {
         self.len
     }
 
+    // TODO: let allocate_raw accept capacity param so we can allocate exactly in future
+    // TODO: implement a into_boxed_slice() method and use it for the modular ring
     /// Allocates words on heap, return the pointer and allocated size,
     /// the caller needs to handle the deallocation of the words.
     ///
@@ -1085,6 +1089,5 @@ mod tests {
         assert_eq!(repr.len(), 1);
         assert_eq!(repr, repr_inline);
         assert!(matches!(repr.as_typed(), TypedReprRef::RefSmall(_)));
-        
     }
 }

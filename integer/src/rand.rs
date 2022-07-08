@@ -4,7 +4,7 @@ use crate::{
     arch::word::Word,
     ibig::IBig,
     ops::UnsignedAbs,
-    repr::{Buffer, TypedReprRef::*},
+    repr::{Buffer, Repr, TypedReprRef::*},
     ubig::UBig,
 };
 
@@ -46,7 +46,7 @@ impl UBig {
         while !try_fill_uniform(words, rng, &mut buffer) {
             // Repeat.
         }
-        buffer.into()
+        UBig(Repr::from_buffer(buffer))
     }
 }
 

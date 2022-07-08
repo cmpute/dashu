@@ -53,7 +53,7 @@ mod repr {
 
     impl<'l, 'r> Gcd<TypedReprRef<'r>> for TypedReprRef<'l> {
         type Output = Repr;
-        
+
         fn gcd(self, rhs: TypedReprRef) -> Repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => Repr::from_dword(dword0.gcd(dword1)),
@@ -87,7 +87,7 @@ mod repr {
             }
         }
     }
-    
+
     /// Perform gcd on two large numbers.
     #[inline]
     fn gcd_large(mut lhs: Buffer, mut rhs: Buffer) -> Repr {
@@ -95,7 +95,6 @@ mod repr {
         lhs.truncate(len);
         Repr::from_buffer(lhs)
     }
-
 
     impl ExtendedGcd<TypedRepr> for TypedRepr {
         type OutputCoeff = Repr;
@@ -110,7 +109,7 @@ mod repr {
                     (
                         Repr::from_dword(g),
                         Repr::from_dword(s_mag).with_sign(s_sign),
-                        Repr::from_dword(t_mag).with_sign(t_sign)
+                        Repr::from_dword(t_mag).with_sign(t_sign),
                     )
                 }
                 (Large(buffer0), Small(dword1)) => gcd_ext_large_dword(buffer0, dword1),
@@ -137,7 +136,11 @@ mod repr {
                 let (r, s, t) = word.gcd_ext(rem);
                 let (t_sign, t_mag) = t.to_sign_magnitude();
                 let new_t = s - t * IBig(Repr::from_buffer(buffer));
-                (Repr::from_word(r), Repr::from_word(t_mag).with_sign(t_sign), new_t.0)
+                (
+                    Repr::from_word(r),
+                    Repr::from_word(t_mag).with_sign(t_sign),
+                    new_t.0,
+                )
             }
         } else {
             // reduce the large number by double word rhs
@@ -148,7 +151,11 @@ mod repr {
                 let (r, s, t) = rhs.gcd_ext(rem);
                 let (t_sign, t_mag) = t.to_sign_magnitude();
                 let new_t = s - t * IBig(Repr::from_buffer(buffer));
-                (Repr::from_dword(r), Repr::from_dword(t_mag).with_sign(t_sign), new_t.0)
+                (
+                    Repr::from_dword(r),
+                    Repr::from_dword(t_mag).with_sign(t_sign),
+                    new_t.0,
+                )
             }
         }
     }

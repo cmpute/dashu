@@ -7,7 +7,7 @@ use crate::{
     math,
     ops::PowerOfTwo,
     primitive::{first_dword, split_dword, DWORD_BITS_USIZE, WORD_BITS_USIZE},
-    repr::{Buffer, TypedRepr::*, TypedReprRef::*},
+    repr::{Buffer, Repr, TypedRepr::*, TypedReprRef::*},
     sign::Sign::*,
     ubig::UBig,
 };
@@ -68,18 +68,18 @@ impl UBig {
         match mem::take(self).into_repr() {
             Small(dword) => {
                 if n < DWORD_BITS_USIZE {
-                    *self = UBig::from(dword | 1 << n);
+                    self.0 = Repr::from_dword(dword | 1 << n);
                 } else {
-                    *self = UBig::with_bit_dword_spilled(dword, n);
+                    self.0 = Self::with_bit_dword_spilled(dword, n);
                 }
             }
             Large(buffer) => {
-                *self = UBig::with_bit_large(buffer, n);
+                self.0 = Self::with_bit_large(buffer, n);
             }
         }
     }
 
-    fn with_bit_dword_spilled(dword: DoubleWord, n: usize) -> UBig {
+    fn with_bit_dword_spilled(dword: DoubleWord, n: usize) -> Repr {
         debug_assert!(n >= DWORD_BITS_USIZE);
         let idx = n / WORD_BITS_USIZE;
         let mut buffer = Buffer::allocate(idx + 1);
@@ -88,10 +88,10 @@ impl UBig {
         buffer.push(hi);
         buffer.push_zeros(idx - 2);
         buffer.push(1 << (n % WORD_BITS_USIZE));
-        buffer.into()
+        Repr::from_buffer(buffer)
     }
 
-    fn with_bit_large(mut buffer: Buffer, n: usize) -> UBig {
+    fn with_bit_large(mut buffer: Buffer, n: usize) -> Repr {
         let idx = n / WORD_BITS_USIZE;
         if idx < buffer.len() {
             buffer[idx] |= 1 << (n % WORD_BITS_USIZE);
@@ -100,7 +100,7 @@ impl UBig {
             buffer.push_zeros(idx - buffer.len());
             buffer.push(1 << (n % WORD_BITS_USIZE));
         }
-        buffer.into()
+        Repr::from_buffer(buffer)
     }
 
     /// Clear the `n`-th bit, n starts from 0.
@@ -118,7 +118,7 @@ impl UBig {
         match mem::take(self).into_repr() {
             Small(dword) => {
                 if n < DWORD_BITS_USIZE {
-                    *self = UBig::from(dword & !(1 << n));
+                    self.0 = Repr::from_dword(dword & !(1 << n));
                 }
             }
             Large(mut buffer) => {
@@ -126,7 +126,7 @@ impl UBig {
                 if idx < buffer.len() {
                     buffer[idx] &= !(1 << (n % WORD_BITS_USIZE));
                 }
-                *self = buffer.into();
+                self.0 = Repr::from_buffer(buffer);
             }
         }
     }
@@ -695,7 +695,7 @@ impl Not for IBig {
         let (sign, mag) = self.into_sign_repr();
         match sign {
             Positive => IBig(mag.add_one().with_sign(Negative)),
-            Negative => IBig(mag.sub_one().with_sign(Positive))
+            Negative => IBig(mag.sub_one().with_sign(Positive)),
         }
     }
 }
@@ -708,7 +708,7 @@ impl Not for &IBig {
         let (sign, mag) = self.as_sign_repr();
         match sign {
             Positive => IBig(mag.add_one().with_sign(Negative)),
-            Negative => IBig(mag.sub_one().with_sign(Positive))
+            Negative => IBig(mag.sub_one().with_sign(Positive)),
         }
     }
 }
@@ -719,7 +719,12 @@ macro_rules! impl_ibig_bitand {
             (Positive, Positive) => IBig($mag0.bitand($mag1)),
             (Positive, Negative) => IBig($mag0.and_not($mag1.sub_one().into_typed())),
             (Negative, Positive) => IBig($mag1.and_not($mag0.sub_one().into_typed())),
-            (Negative, Negative) => !IBig($mag0.sub_one().into_typed().bitor($mag1.sub_one().into_typed())),
+            (Negative, Negative) => !IBig(
+                $mag0
+                    .sub_one()
+                    .into_typed()
+                    .bitor($mag1.sub_one().into_typed()),
+            ),
         }
     };
 }
@@ -729,7 +734,12 @@ macro_rules! impl_ibig_bitor {
             (Positive, Positive) => IBig($mag0.bitor($mag1)),
             (Positive, Negative) => !IBig($mag1.sub_one().into_typed().and_not($mag0)),
             (Negative, Positive) => !IBig($mag0.sub_one().into_typed().and_not($mag1)),
-            (Negative, Negative) => !IBig($mag0.sub_one().into_typed().bitand($mag1.sub_one().into_typed())),
+            (Negative, Negative) => !IBig(
+                $mag0
+                    .sub_one()
+                    .into_typed()
+                    .bitand($mag1.sub_one().into_typed()),
+            ),
         }
     };
 }
@@ -739,7 +749,12 @@ macro_rules! impl_ibig_bitxor {
             (Positive, Positive) => IBig($mag0.bitxor($mag1)),
             (Positive, Negative) => !IBig($mag0.bitxor($mag1.sub_one().into_typed())),
             (Negative, Positive) => !IBig($mag0.sub_one().into_typed().bitxor($mag1)),
-            (Negative, Negative) => IBig($mag0.sub_one().into_typed().bitxor($mag1.sub_one().into_typed())),
+            (Negative, Negative) => IBig(
+                $mag0
+                    .sub_one()
+                    .into_typed()
+                    .bitxor($mag1.sub_one().into_typed()),
+            ),
         }
     };
 }

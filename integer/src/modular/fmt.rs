@@ -40,7 +40,7 @@ macro_rules! impl_fmt {
                         f.write_str(" (")?;
                         $t::fmt(ring, f)?;
                         f.write_str(")")
-                    },
+                    }
                     ModuloRepr::Large(_, ring) => {
                         $t::fmt(&residue, f)?;
                         f.write_str(" (")?;

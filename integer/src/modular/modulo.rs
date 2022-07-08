@@ -2,8 +2,8 @@
 
 use crate::{
     arch::word::Word,
-    modular::modulo_ring::{ModuloRingLarge, ModuloRingSingle},
     assert::debug_assert_in_const_fn,
+    modular::modulo_ring::{ModuloRingLarge, ModuloRingSingle},
 };
 use alloc::vec::Vec;
 
@@ -30,10 +30,10 @@ pub(crate) enum ModuloRepr<'a> {
 pub(crate) struct ModuloSingleRaw(pub(crate) Word);
 
 /// Multi-word modular value in some unknown ring. `self.0.len() == ring.normalized_modulus.len()`
-/// 
-/// The vanilla `Vec` is used instead of `Buffer` here because we want fixed and compact capacity in the modulo. 
+///
+/// The vanilla `Vec` is used instead of `Buffer` here because we want fixed and compact capacity in the modulo.
 #[derive(Clone, PartialEq, Eq)]
-pub(crate) struct ModuloLargeRaw(pub(crate) Vec<Word>); // TODO: use Box<[Word]> or Buffer
+pub(crate) struct ModuloLargeRaw(pub(crate) Vec<Word>); // TODO: use Box<[Word]>
 
 impl<'a> Modulo<'a> {
     /// Get representation.

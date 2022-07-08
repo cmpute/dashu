@@ -13,7 +13,7 @@ use crate::{
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
-use super::modulo::{ModuloSingleRaw, ModuloLargeRaw};
+use super::modulo::{ModuloLargeRaw, ModuloSingleRaw};
 
 /// A ring of integers modulo a positive integer.
 ///
@@ -45,7 +45,7 @@ pub(crate) struct ModuloRingDouble {
 }
 
 pub(crate) struct ModuloRingLarge {
-    normalized_modulus: Vec<Word>,
+    normalized_modulus: Vec<Word>, // TODO: use Box<[Word]>
     shift: u32,
     fast_div_top: FastDivideNormalized2,
 }

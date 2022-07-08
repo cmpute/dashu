@@ -6,7 +6,7 @@ use crate::{
     repr::TypedReprRef::RefSmall,
     ubig::UBig,
 };
-use core::ops::{Neg, Mul, MulAssign};
+use core::ops::{Mul, MulAssign, Neg};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]

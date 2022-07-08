@@ -20,8 +20,8 @@ pub use modulo::Modulo;
 pub use modulo_ring::ModuloRing;
 
 mod add;
-mod eq;
 pub(crate) mod convert;
+mod eq;
 mod fmt;
 pub(crate) mod modulo;
 pub(crate) mod modulo_ring;

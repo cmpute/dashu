@@ -34,6 +34,7 @@ macro_rules! impl_ibig_div {
 macro_rules! impl_ibig_rem {
     ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {{
         let _sign1 = $sign1; // unused
+
         // remainder with truncating division has same sign as lhs.
         IBig($mag0.rem($mag1).with_sign($sign0))
     }};
@@ -538,7 +539,7 @@ mod repr {
     use super::*;
     use crate::{
         primitive::shrink_dword,
-        repr::{TypedRepr, TypedReprRef, Repr},
+        repr::{Repr, TypedRepr, TypedReprRef},
     };
 
     impl DivRem<TypedRepr> for TypedRepr {
@@ -615,7 +616,9 @@ mod repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => div_rem_dword(dword0, dword1),
                 (RefSmall(dword0), RefLarge(_)) => (Repr::zero(), Repr::from_dword(dword0)),
-                (RefLarge(buffer0), RefSmall(dword1)) => div_rem_large_dword(buffer0.into(), dword1),
+                (RefLarge(buffer0), RefSmall(dword1)) => {
+                    div_rem_large_dword(buffer0.into(), dword1)
+                }
                 (RefLarge(buffer0), RefLarge(buffer1)) => {
                     if buffer0.len() >= buffer1.len() {
                         div_rem_large(buffer0.into(), buffer1.into())
@@ -648,7 +651,7 @@ mod repr {
             (Repr::from_buffer(buffer), Repr::from_dword(rem))
         }
     }
-    
+
     fn div_rem_large(mut lhs: Buffer, mut rhs: Buffer) -> (Repr, Repr) {
         let shift = div_rem_in_lhs(&mut lhs, &mut rhs);
         let n = rhs.len();
@@ -771,7 +774,7 @@ mod repr {
         let (q, _) = div_rem_large_dword(lhs, rhs);
         q
     }
-    
+
     fn div_large(mut lhs: Buffer, mut rhs: Buffer) -> Repr {
         let _shift = div_rem_in_lhs(&mut lhs, &mut rhs);
         lhs.erase_front(rhs.len());

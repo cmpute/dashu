@@ -110,7 +110,7 @@ mod repr {
     use super::*;
     use crate::math;
     use crate::primitive::{shrink_dword, split_dword};
-    use crate::repr::{TypedRepr, TypedReprRef, Repr};
+    use crate::repr::{Repr, TypedRepr, TypedReprRef};
 
     impl Mul<TypedRepr> for TypedRepr {
         type Output = Repr;
@@ -139,7 +139,7 @@ mod repr {
             }
         }
     }
-    
+
     impl<'r> Mul<TypedReprRef<'r>> for TypedRepr {
         type Output = Repr;
 
@@ -163,7 +163,6 @@ mod repr {
             }
         }
     }
-
 
     /// Multiply two `DoubleWord`s.
     #[inline]

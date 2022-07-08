@@ -1,12 +1,13 @@
 //! Modular addition and subtraction.
 
 use crate::{
-    add, cmp,
+    add,
+    assert::debug_assert_in_const_fn,
+    cmp,
     modular::{
         modulo::{Modulo, ModuloRepr, ModuloSingleRaw},
         modulo_ring::ModuloRingSingle,
     },
-    assert::debug_assert_in_const_fn,
 };
 use core::{
     cmp::Ordering,
@@ -25,7 +26,7 @@ impl<'a> Neg for Modulo<'a> {
             ModuloRepr::Large(mut raw, ring) => {
                 ring.negate_in_place(&mut raw);
                 Self::from_large(raw, ring)
-            },
+            }
         }
     }
 }

@@ -39,18 +39,19 @@ impl UBig {
     /// ```
     #[inline]
     pub fn from_le_bytes(bytes: &[u8]) -> UBig {
-        if bytes.len() <= WORD_BYTES {
+        let repr = if bytes.len() <= WORD_BYTES {
             // fast path
-            UBig(Repr::from_word(primitive::word_from_le_bytes_partial(bytes)))
+            Repr::from_word(primitive::word_from_le_bytes_partial(bytes))
         } else if bytes.len() <= DWORD_BYTES {
-            UBig(Repr::from_dword(primitive::dword_from_le_bytes_partial(bytes)))
+            Repr::from_dword(primitive::dword_from_le_bytes_partial(bytes))
         } else {
             // slow path
-            UBig::from_le_bytes_large(bytes)
-        }
+            Self::from_le_bytes_large(bytes)
+        };
+        UBig(repr)
     }
 
-    fn from_le_bytes_large(bytes: &[u8]) -> UBig {
+    fn from_le_bytes_large(bytes: &[u8]) -> Repr {
         debug_assert!(bytes.len() > WORD_BYTES);
         let mut buffer = Buffer::allocate((bytes.len() - 1) / WORD_BYTES + 1);
         let mut chunks = bytes.chunks_exact(WORD_BYTES);
@@ -60,7 +61,7 @@ impl UBig {
         if !chunks.remainder().is_empty() {
             buffer.push(primitive::word_from_le_bytes_partial(chunks.remainder()));
         }
-        buffer.into()
+        Repr::from_buffer(buffer)
     }
 
     /// Construct from big-endian bytes.
@@ -73,22 +74,19 @@ impl UBig {
     /// ```
     #[inline]
     pub fn from_be_bytes(bytes: &[u8]) -> UBig {
-        if bytes.len() <= WORD_BYTES {
+        let repr = if bytes.len() <= WORD_BYTES {
             // fast path
-            UBig(Repr::from_word(primitive::word_from_be_bytes_partial(
-                bytes,
-            )))
+            Repr::from_word(primitive::word_from_be_bytes_partial(bytes))
         } else if bytes.len() <= DWORD_BYTES {
-            UBig(Repr::from_dword(primitive::dword_from_be_bytes_partial(
-                bytes,
-            )))
+            Repr::from_dword(primitive::dword_from_be_bytes_partial(bytes))
         } else {
             // slow path
-            UBig::from_be_bytes_large(bytes)
-        }
+            Self::from_be_bytes_large(bytes)
+        };
+        UBig(repr)
     }
 
-    fn from_be_bytes_large(bytes: &[u8]) -> UBig {
+    fn from_be_bytes_large(bytes: &[u8]) -> Repr {
         debug_assert!(bytes.len() > WORD_BYTES);
         let mut buffer = Buffer::allocate((bytes.len() - 1) / WORD_BYTES + 1);
         let mut chunks = bytes.rchunks_exact(WORD_BYTES);
@@ -98,7 +96,7 @@ impl UBig {
         if !chunks.remainder().is_empty() {
             buffer.push(primitive::word_from_be_bytes_partial(chunks.remainder()));
         }
-        buffer.into()
+        Repr::from_buffer(buffer)
     }
 
     /// Return little-endian bytes.

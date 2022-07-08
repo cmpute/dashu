@@ -129,7 +129,12 @@ impl ModuloRingLarge {
     }
 
     /// self *= rhs
-    pub(crate) fn mul_in_place(&self, lhs: &mut ModuloLargeRaw, rhs: &ModuloLargeRaw, memory: &mut Memory) {
+    pub(crate) fn mul_in_place(
+        &self,
+        lhs: &mut ModuloLargeRaw,
+        rhs: &ModuloLargeRaw,
+        memory: &mut Memory,
+    ) {
         let prod = self.mul_normalized(&lhs.0, &rhs.0, memory);
         lhs.0.copy_from_slice(prod)
     }

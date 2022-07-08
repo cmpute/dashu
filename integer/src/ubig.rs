@@ -1,5 +1,5 @@
 //! Definitions of [UBig].
-//! 
+//!
 //! Conversion from internal representations including [Buffer], [TypedRepr], [TypedReprRef]
 //! to [UBig] is not implemented, the designed way to construct UBig from them is first convert them
 //! into [Repr], and then directly construct from the [Repr]. This restriction is set to make
@@ -9,7 +9,7 @@ use crate::{
     arch::{ntt, word::Word},
     math,
     primitive::WORD_BITS_USIZE,
-    repr::{Buffer, Repr, TypedRepr, TypedReprRef},
+    repr::{Repr, TypedRepr, TypedReprRef},
 };
 
 /// Unsigned big integer.
@@ -130,17 +130,10 @@ impl Clone for UBig {
     }
 }
 
-// TODO: we shouldn't need this if we implemented all ops using repr
-impl From<Buffer> for UBig {
-    #[inline]
-    fn from(buffer: Buffer) -> UBig {
-        UBig(Repr::from_buffer(buffer))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::repr::Buffer;
 
     impl UBig {
         /// Capacity in Words.
@@ -153,19 +146,19 @@ mod tests {
     #[test]
     fn test_buffer_to_ubig() {
         let buf = Buffer::allocate(5);
-        let num: UBig = buf.into();
+        let num = UBig(Repr::from_buffer(buf));
         assert_eq!(num, UBig::zero());
 
         let mut buf = Buffer::allocate(5);
         buf.push(7);
-        let num: UBig = buf.into();
+        let num = UBig(Repr::from_buffer(buf));
         assert_eq!(num, UBig::from(7u8));
 
         let mut buf = Buffer::allocate(100);
         buf.push(7);
         buf.push(0);
         buf.push(0);
-        let num: UBig = buf.into();
+        let num = UBig(Repr::from_buffer(buf));
         assert_eq!(num, UBig::from(7u8));
 
         let mut buf = Buffer::allocate(5);
@@ -173,7 +166,7 @@ mod tests {
         buf.push(2);
         buf.push(3);
         buf.push(4);
-        let num: UBig = buf.into();
+        let num = UBig(Repr::from_buffer(buf));
         assert_eq!(num.capacity(), 7);
 
         let mut buf = Buffer::allocate(100);
@@ -181,7 +174,7 @@ mod tests {
         buf.push(2);
         buf.push(3);
         buf.push(4);
-        let num: UBig = buf.into();
+        let num = UBig(Repr::from_buffer(buf));
         assert_eq!(num.capacity(), 6);
     }
 
@@ -236,6 +229,6 @@ mod tests {
         for i in 0..num_words {
             buf.push(i.into());
         }
-        buf.into()
+        UBig(Repr::from_buffer(buf))
     }
 }

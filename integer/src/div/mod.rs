@@ -3,9 +3,10 @@
 use crate::{
     arch::word::{DoubleWord, Word},
     fast_divide::{FastDivideNormalized, FastDivideNormalized2},
+    math::shl_dword,
     memory::{self, Memory},
     primitive::{double_word, extend_word, first_dword, last_dword, split_dword, WORD_BITS},
-    shift, math::shl_dword,
+    shift,
 };
 use alloc::alloc::Layout;
 

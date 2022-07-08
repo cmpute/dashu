@@ -5,7 +5,7 @@ use crate::{
     error::ParseError,
     mul,
     radix::{self, Digit},
-    repr::Buffer,
+    repr::{Buffer, Repr},
     ubig::UBig,
 };
 use alloc::vec;
@@ -60,7 +60,7 @@ fn parse_chunk(bytes: &[u8], radix: Digit) -> Result<UBig, ParseError> {
             buffer.push(carry);
         }
     }
-    Ok(buffer.into())
+    Ok(UBig(Repr::from_buffer(buffer)))
 }
 
 /// Parse an unsigned string to [UBig].

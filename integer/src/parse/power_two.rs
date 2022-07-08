@@ -5,7 +5,7 @@ use crate::{
     error::ParseError,
     primitive::{WORD_BITS, WORD_BITS_USIZE},
     radix::{self, Digit},
-    repr::Buffer,
+    repr::{Buffer, Repr},
     ubig::UBig,
 };
 
@@ -69,5 +69,5 @@ fn parse_large(src: &str, radix: Digit) -> Result<UBig, ParseError> {
     if bits > 0 {
         buffer.push(word);
     }
-    Ok(buffer.into())
+    Ok(UBig(Repr::from_buffer(buffer)))
 }

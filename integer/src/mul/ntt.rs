@@ -60,8 +60,8 @@ impl RingElement {
         RingElement {
             val: [
                 FIELDS[0].mul(self.val[0], rhs.val[0]),
-                FIELDS[1].mul(self.val[1],rhs.val[1]),
-                FIELDS[2].mul(self.val[2],rhs.val[2]),
+                FIELDS[1].mul(self.val[1], rhs.val[1]),
+                FIELDS[2].mul(self.val[2], rhs.val[2]),
             ],
         }
     }

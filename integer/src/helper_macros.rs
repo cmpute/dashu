@@ -317,7 +317,7 @@ macro_rules! forward_ibig_binop_to_repr {
                 $impl!(sign0, mag0, sign1, mag1)
             }
         }
-    }
+    };
 }
 
 /// Implement `impl OpAssign<B> for A` by forwarding to `*A = mem::take(A).op(B)`, including &B.
@@ -344,5 +344,5 @@ pub(crate) use forward_binop_first_arg_by_value;
 pub(crate) use forward_binop_second_arg_by_value;
 pub(crate) use forward_binop_swap_args;
 pub(crate) use forward_div_rem_second_arg_by_value;
-pub(crate) use forward_ubig_binop_to_repr;
 pub(crate) use forward_ibig_binop_to_repr;
+pub(crate) use forward_ubig_binop_to_repr;
