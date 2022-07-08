@@ -14,6 +14,8 @@ use crate::{
 use alloc::alloc::Layout;
 use core::ops::{Mul, MulAssign};
 
+use super::modulo::ModuloLargeRaw;
+
 impl<'a> Mul<Modulo<'a>> for Modulo<'a> {
     type Output = Modulo<'a>;
 
@@ -87,7 +89,7 @@ impl<'a> MulAssign<&Modulo<'a>> for Modulo<'a> {
                 let memory_requirement = self_large.ring().mul_memory_requirement();
                 let mut allocation = MemoryAllocation::new(memory_requirement);
                 let mut memory = allocation.memory();
-                self_large.mul_in_place(rhs_large, &mut memory);
+                self_large.ring().mul_in_place(self_large.raw_mut(), &rhs_large.raw(), &mut memory);
             }
             _ => Modulo::panic_different_rings(),
         }
@@ -125,29 +127,15 @@ impl ModuloRingLarge {
         let _overflow = div::div_rem_in_place(product, modulus, self.fast_div_top(), &mut memory);
         &product[..n]
     }
-}
-
-impl<'a> ModuloLarge<'a> {
-    /// self *= rhs
-    pub(crate) fn mul_in_place(&mut self, rhs: &ModuloLarge<'a>, memory: &mut Memory) {
-        self.mul_normalized_in_place(rhs.normalized_value(), memory);
-    }
-
-    /// self *= self
-    pub(crate) fn square_in_place(&mut self, memory: &mut Memory) {
-        self.modify_normalized_value(|words, ring| {
-            words.copy_from_slice(ring.mul_normalized(words, words, memory));
-        });
-    }
 
     /// self *= rhs
-    pub(crate) fn mul_normalized_in_place(
-        &mut self,
-        normalized_value: &[Word],
-        memory: &mut Memory,
-    ) {
-        self.modify_normalized_value(|words, ring| {
-            words.copy_from_slice(ring.mul_normalized(words, normalized_value, memory));
-        });
+    pub(crate) fn mul_in_place(&self, lhs: &mut ModuloLargeRaw, rhs: &ModuloLargeRaw, memory: &mut Memory) {
+        let prod = self.mul_normalized(&lhs.0, &rhs.0, memory);
+        lhs.0.copy_from_slice(prod)
+    }
+
+    pub(crate) fn sqr_in_place(&self, raw: &mut ModuloLargeRaw, memory: &mut Memory) {
+        let prod = self.mul_normalized(&raw.0, &raw.0, memory);
+        raw.0.copy_from_slice(prod)
     }
 }

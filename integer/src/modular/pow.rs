@@ -3,13 +3,15 @@ use crate::{
     math,
     memory::{self, MemoryAllocation},
     modular::{
-        modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSingle, ModuloSingleRaw},
+        modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSingle, ModuloSingleRaw, ModuloLargeRaw},
         modulo_ring::ModuloRingSingle,
     },
     primitive::{double_word, split_dword, PrimitiveUnsigned, WORD_BITS, WORD_BITS_USIZE, shrink_dword},
     repr::TypedReprRef::*,
     ubig::UBig,
 };
+
+use super::modulo_ring::ModuloRingLarge;
 
 impl<'a> Modulo<'a> {
     /// Exponentiation.
@@ -32,7 +34,10 @@ impl<'a> Modulo<'a> {
                 self_small.ring().pow(self_small.raw(), exp),
                 self_small.ring()
             ).into(),
-            ModuloRepr::Large(self_large) => self_large.pow(exp).into(),
+            ModuloRepr::Large(self_large) => {
+                let ring = self_large.ring();
+                ModuloLarge::new(ring.pow(self_large.raw(), exp), ring).into()
+            },
         }
     }
 }
@@ -41,7 +46,7 @@ impl ModuloRingSingle {
     #[inline]
     pub const fn pow_word(&self, raw: ModuloSingleRaw, exp: Word) -> ModuloSingleRaw {
         match exp {
-            0 => ModuloSingleRaw::from_word(1, &self),
+            0 => ModuloSingleRaw::one(self),
             1 => raw, // no-op
             2 => self.sqr(raw),
             _ => {
@@ -99,24 +104,22 @@ impl ModuloRingSingle {
     }
 }
 
-impl<'a> ModuloLarge<'a> {
-    fn pow(&self, exp: &UBig) -> ModuloLarge<'a> {
-        match exp.repr() {
-            // self^0 == 1
-            RefSmall(0) => ModuloLarge::from_ubig(UBig::one(), self.ring()),
-            // self^1 == self
-            RefSmall(1) => self.clone(),
-            _ => self.pow_nontrivial(exp),
+impl ModuloRingLarge {
+    pub fn pow(&self, raw: &ModuloLargeRaw, exp: &UBig) -> ModuloLargeRaw {
+        if exp.is_zero() {
+            ModuloLargeRaw::one(self)
+        } else if exp.is_one() {
+            raw.clone()
+        } else {
+            self.pow_nontrivial(raw, exp)
         }
     }
 
-    fn pow_nontrivial(&self, exp: &UBig) -> ModuloLarge<'a> {
-        debug_assert!(*exp >= UBig::from(2u8));
+    fn pow_nontrivial(&self, raw: &ModuloLargeRaw, exp: &UBig) -> ModuloLargeRaw {
+        let n = self.normalized_modulus().len();
+        let window_len = Self::choose_pow_window_len(exp.bit_len());
 
-        let n = self.ring().normalized_modulus().len();
-        let window_len = ModuloLarge::choose_pow_window_len(exp.bit_len());
-
-        // Precomputed table of small odd powers up to 2^window_len, starting from self^3.
+        // Precomputed table of small odd powers up to 2^window_len, starting from raw^3.
         #[allow(clippy::redundant_closure)]
         let table_words = ((1usize << (window_len - 1)) - 1)
             .checked_mul(n)
@@ -124,38 +127,38 @@ impl<'a> ModuloLarge<'a> {
 
         let memory_requirement = memory::add_layout(
             memory::array_layout::<Word>(table_words),
-            self.ring().mul_memory_requirement(),
+            self.mul_memory_requirement(),
         );
         let mut allocation = MemoryAllocation::new(memory_requirement);
         let mut memory = allocation.memory();
         let (table, mut memory) = memory.allocate_slice_fill::<Word>(table_words, 0);
 
-        // val = self^2
-        let mut val = self.clone();
-        val.mul_in_place(self, &mut memory);
+        // val = raw^2
+        let mut val = raw.clone();
+        self.sqr_in_place(&mut val, &mut memory);
 
-        // self^(2*i+1) = self^(2*i-1) * val
+        // raw^(2*i+1) = raw^(2*i-1) * val
         for i in 1..(1 << (window_len - 1)) {
             let (prev, cur) = if i == 1 {
-                (self.normalized_value(), &mut table[0..n])
+                (raw.0.as_ref(), &mut table[0..n])
             } else {
                 let (prev, cur) = (&mut table[(i - 2) * n..i * n]).split_at_mut(n);
                 (&*prev, cur)
             };
-            cur.copy_from_slice(self.ring().mul_normalized(
+            cur.copy_from_slice(self.mul_normalized(
                 prev,
-                val.normalized_value(),
+                &val.0,
                 &mut memory,
             ));
         }
 
         let exp_words = exp.as_words();
-        // We already have self^2 in val.
+        // We already have raw^2 in val.
         // exp.bit_len() >= 2 because exp >= 2.
         let mut bit = exp.bit_len() - 2;
 
         loop {
-            // val = self ^ exp[bit..] ignoring the lowest bit
+            // val = raw ^ exp[bit..] ignoring the lowest bit
             let word_idx = bit / WORD_BITS_USIZE;
             let bit_idx = (bit % WORD_BITS_USIZE) as u32;
             let cur_word = exp_words[word_idx];
@@ -175,26 +178,27 @@ impl<'a> ModuloLarge<'a> {
                 window >>= window_len - num_bits;
                 // val := val^2^(num_bits-1)
                 for _ in 0..num_bits - 1 {
-                    val.square_in_place(&mut memory);
+                    self.sqr_in_place(&mut val, &mut memory);
                 }
                 bit -= (num_bits as usize) - 1;
-                // Now val = self ^ exp[bit..] ignoring the num_bits lowest bits.
-                // val = val * self^window from precomputed table.
+                // Now val = raw ^ exp[bit..] ignoring the num_bits lowest bits.
+                // val = val * raw^window from precomputed table.
                 debug_assert!(window & 1 == 1);
                 let entry_idx = (window >> 1) as usize;
                 let entry = if entry_idx == 0 {
-                    self.normalized_value()
+                    &raw.0
                 } else {
                     &table[(entry_idx - 1) * n..entry_idx * n]
                 };
-                val.mul_normalized_in_place(entry, &mut memory);
+                let prod = self.mul_normalized(&val.0, entry, &mut memory);
+                val.0.copy_from_slice(prod);
             }
-            // val = self ^ exp[bit..]
+            // val = raw ^ exp[bit..]
             if bit == 0 {
                 break;
             }
             bit -= 1;
-            val.square_in_place(&mut memory);
+            self.sqr_in_place(&mut val, &mut memory);
         }
         val
     }
@@ -226,7 +230,7 @@ mod tests {
     #[test]
     fn test_pow_word() {
         let ring = ModuloRingSingle::new(100);
-        let modulo = ModuloSingleRaw(17);
+        let modulo = ModuloSingleRaw::from_word(17, &ring);
         assert_eq!(ring.pow_word(modulo, 0).residue(&ring), 1);
         assert_eq!(ring.pow_word(modulo, 15).residue(&ring), 93);
     }

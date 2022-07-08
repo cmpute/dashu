@@ -13,7 +13,7 @@ use crate::{
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
-use super::modulo::ModuloSingleRaw;
+use super::modulo::{ModuloSingleRaw, ModuloLargeRaw};
 
 /// A ring of integers modulo a positive integer.
 ///
@@ -188,9 +188,9 @@ impl ModuloRingLarge {
         self.fast_div_top
     }
 
-    pub(crate) fn is_valid(&self, val: &[Word]) -> bool {
-        val.len() == self.normalized_modulus.len()
-            && cmp::cmp_same_len(val, &self.normalized_modulus) == Ordering::Less
-            && val[0] & math::ones_word(self.shift) == 0
+    pub(crate) fn is_valid(&self, val: &ModuloLargeRaw) -> bool {
+        val.0.len() == self.normalized_modulus.len()
+            && cmp::cmp_same_len(&val.0, &self.normalized_modulus) == Ordering::Less
+            && val.0[0] & math::ones_word(self.shift) == 0
     }
 }

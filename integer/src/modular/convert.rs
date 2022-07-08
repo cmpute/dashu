@@ -19,6 +19,8 @@ use alloc::vec::Vec;
 use core::iter;
 use dashu_base::UnsignedAbs;
 
+use super::modulo::ModuloLargeRaw;
+
 impl ModuloRing {
     /// The ring modulus.
     ///
@@ -229,7 +231,7 @@ impl<'a> ModuloLarge<'a> {
             }
         }
         vec.extend(iter::repeat(0).take(modulus.len() - vec.len()));
-        ModuloLarge::new(vec, ring)
+        ModuloLarge::new(ModuloLargeRaw(vec), ring)
     }
 }
 

@@ -129,6 +129,7 @@ impl FastDivideNormalized {
         }
     }
 
+    /// (a / divisor, a % divisor), a need to be normalized (by self.shift)
     #[inline]
     pub(crate) const fn div_rem_word(&self, a: Word) -> (Word, Word) {
         if a < self.divisor {
@@ -138,7 +139,7 @@ impl FastDivideNormalized {
         }
     }
 
-    /// (a / divisor, a % divisor)
+    /// (a / divisor, a % divisor), a need to be normalized (by self.shift)
     /// The result must fit in a single word.
     #[inline]
     pub(crate) const fn div_rem(&self, a: DoubleWord) -> (Word, Word) {
