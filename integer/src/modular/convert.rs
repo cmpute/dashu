@@ -6,14 +6,14 @@ use crate::{
     ibig::IBig,
     memory::MemoryAllocation,
     modular::{
-        modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSingle, ModuloSingleRaw},
+        modulo::{Modulo, ModuloRepr, ModuloSingleRaw},
         modulo_ring::{ModuloRing, ModuloRingLarge, ModuloRingRepr, ModuloRingSingle},
     },
-    primitive::{extend_word, split_dword},
+    primitive::{extend_word, split_dword, double_word},
     repr::{Buffer, TypedRepr::*, TypedReprRef::*, Repr},
     shift,
     sign::Sign::*,
-    ubig::UBig,
+    ubig::UBig, math::shl_dword,
 };
 use alloc::vec::Vec;
 use core::iter;
@@ -57,6 +57,27 @@ impl ModuloRing {
     }
 }
 
+impl Modulo<'_> {
+    /// Get the residue in range `0..n` in an n-element ring.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::{modular::ModuloRing, ubig};
+    /// let ring = ModuloRing::new(&ubig!(100));
+    /// let x = ring.from(-1234);
+    /// assert_eq!(x.residue(), ubig!(66));
+    /// ```
+    #[inline]
+    pub fn residue(&self) -> UBig {
+        let repr = match self.repr() {
+            ModuloRepr::Small(raw, ring) => Repr::from_word(raw.residue(ring)),
+            ModuloRepr::Large(raw, ring) => Repr::from_buffer(raw.residue(ring)),
+        };
+        UBig(repr)
+    }
+}
+
 impl ModuloRingSingle {
     #[inline]
     pub(crate) fn modulus(&self) -> Word {
@@ -75,26 +96,6 @@ impl ModuloRingLarge {
     }
 }
 
-impl Modulo<'_> {
-    /// Get the residue in range `0..n` in an n-element ring.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use dashu_int::{modular::ModuloRing, ubig};
-    /// let ring = ModuloRing::new(&ubig!(100));
-    /// let x = ring.from(-1234);
-    /// assert_eq!(x.residue(), ubig!(66));
-    /// ```
-    #[inline]
-    pub fn residue(&self) -> UBig {
-        match self.repr() {
-            ModuloRepr::Small(self_small) => UBig(Repr::from_word(self_small.raw().residue(self_small.ring()))),
-            ModuloRepr::Large(self_large) => self_large.residue(),
-        }
-    }
-}
-
 impl ModuloSingleRaw {
     #[inline]
     pub(crate) const fn from_word(word: Word, ring: &ModuloRingSingle) -> Self {
@@ -102,6 +103,18 @@ impl ModuloSingleRaw {
             ring.fast_div().div_rem_word(word).1
         } else {
             ring.fast_div().div_rem(extend_word(word) << ring.shift()).1
+        };
+        ModuloSingleRaw(rem)
+    }
+
+    #[inline]
+    const fn from_dword(dword: DoubleWord, ring: &ModuloRingSingle) -> Self {
+        let rem = if ring.shift() == 0 {
+            ring.fast_div().div_rem(dword).1
+        } else {
+            let (n0, n1, n2) = shl_dword(dword, ring.shift());
+            let (_, r1) = ring.fast_div().div_rem(double_word(n1, n2));
+            ring.fast_div().div_rem(double_word(n0, r1)).1
         };
         ModuloSingleRaw(rem)
     }
@@ -121,10 +134,7 @@ impl ModuloSingleRaw {
                 if let Ok(word) = Word::try_from(dword) {
                     Self::from_word(word, ring)
                 } else {
-                    // TODO: this is bandaid here
-                    let (lo, hi) = split_dword(dword);
-                    let double_slice = [lo, hi];
-                    Self::from_large(&double_slice, ring)
+                    Self::from_dword(dword, ring)
                 }
             }
             RefLarge(words) => Self::from_large(words, ring),
@@ -138,70 +148,8 @@ impl ModuloSingleRaw {
     }
 }
 
-impl ModuloLarge<'_> {
-    pub(crate) fn residue(&self) -> UBig {
-        let words = self.normalized_value();
-        let mut buffer = Buffer::allocate(words.len());
-        buffer.push_slice(words);
-        let low_bits = shift::shr_in_place(&mut buffer, self.ring().shift());
-        assert!(low_bits == 0);
-        buffer.into()
-    }
-}
-
-/// Trait for types that can be converted into [Modulo] in a [ModuloRing].
-pub trait IntoModulo {
-    fn into_modulo(self, ring: &ModuloRing) -> Modulo;
-}
-
-impl IntoModulo for UBig {
-    #[inline]
-    fn into_modulo(self, ring: &ModuloRing) -> Modulo {
-        match ring.repr() {
-            ModuloRingRepr::Single(ring_small) => ModuloSingle::new(ModuloSingleRaw::from_ubig(&self, ring_small), ring_small).into(),
-            ModuloRingRepr::Large(ring_large) => ModuloLarge::from_ubig(self, ring_large).into(),
-        }
-    }
-}
-
-impl IntoModulo for &UBig {
-    #[inline]
-    fn into_modulo(self, ring: &ModuloRing) -> Modulo {
-        match ring.repr() {
-            ModuloRingRepr::Single(ring_small) => ModuloSingle::new(ModuloSingleRaw::from_ubig(self, ring_small), ring_small).into(),
-            ModuloRingRepr::Large(ring_large) => {
-                ModuloLarge::from_ubig(self.clone(), ring_large).into()
-            }
-        }
-    }
-}
-
-impl IntoModulo for IBig {
-    #[inline]
-    fn into_modulo(self, ring: &ModuloRing) -> Modulo {
-        let (sign, mag) = self.into_sign_magnitude();
-        let modulo = mag.into_modulo(ring);
-        match sign {
-            Positive => modulo,
-            Negative => -modulo,
-        }
-    }
-}
-
-impl IntoModulo for &IBig {
-    #[inline]
-    fn into_modulo(self, ring: &ModuloRing) -> Modulo {
-        // TODO: unnecessary copy here
-        let modulo = self.unsigned_abs().into_modulo(ring);
-        match self.sign() {
-            Positive => modulo,
-            Negative => -modulo,
-        }
-    }
-}
-
-impl<'a> ModuloLarge<'a> {
-    pub(crate) fn from_ubig(mut x: UBig, ring: &'a ModuloRingLarge) -> ModuloLarge<'a> {
+impl ModuloLargeRaw {
+    pub(crate) fn from_ubig(mut x: UBig, ring: &ModuloRingLarge) -> ModuloLargeRaw {
         x <<= ring.shift() as usize;
         let modulus = ring.normalized_modulus();
         let mut vec = Vec::with_capacity(modulus.len());
@@ -231,7 +179,63 @@ impl<'a> ModuloLarge<'a> {
             }
         }
         vec.extend(iter::repeat(0).take(modulus.len() - vec.len()));
-        ModuloLarge::new(ModuloLargeRaw(vec), ring)
+        ModuloLargeRaw(vec)
+    }
+
+    pub(crate) fn residue(&self, ring: &ModuloRingLarge) -> Buffer {
+        let mut buffer = Buffer::allocate(self.0.len());
+        buffer.push_slice(&self.0);
+        let low_bits = shift::shr_in_place(&mut buffer, ring.shift());
+        debug_assert!(low_bits == 0);
+        buffer
+    }
+}
+
+/// Trait for types that can be converted into [Modulo] in a [ModuloRing].
+pub trait IntoModulo {
+    fn into_modulo(self, ring: &ModuloRing) -> Modulo;
+}
+
+impl IntoModulo for UBig {
+    #[inline]
+    fn into_modulo(self, ring: &ModuloRing) -> Modulo {
+        match ring.repr() {
+            ModuloRingRepr::Single(ring) => Modulo::from_small(ModuloSingleRaw::from_ubig(&self, ring), ring),
+            ModuloRingRepr::Large(ring) => Modulo::from_large(ModuloLargeRaw::from_ubig(self, ring), ring),
+        }
+    }
+}
+
+impl IntoModulo for &UBig {
+    #[inline]
+    fn into_modulo(self, ring: &ModuloRing) -> Modulo {
+        match ring.repr() {
+            ModuloRingRepr::Single(ring) => Modulo::from_small(ModuloSingleRaw::from_ubig(&self, ring), ring),
+            ModuloRingRepr::Large(ring) => Modulo::from_large(ModuloLargeRaw::from_ubig(self.clone(), ring), ring),
+        }
+    }
+}
+
+impl IntoModulo for IBig {
+    #[inline]
+    fn into_modulo(self, ring: &ModuloRing) -> Modulo {
+        let sign = self.sign();
+        let modulo = self.unsigned_abs().into_modulo(ring);
+        match sign {
+            Positive => modulo,
+            Negative => -modulo,
+        }
+    }
+}
+
+impl IntoModulo for &IBig {
+    #[inline]
+    fn into_modulo(self, ring: &ModuloRing) -> Modulo {
+        let modulo = self.unsigned_abs().into_modulo(ring);
+        match self.sign() {
+            Positive => modulo,
+            Negative => -modulo,
+        }
     }
 }
 

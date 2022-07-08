@@ -3,7 +3,7 @@
 use crate::{
     arch::word::{DoubleWord, Word},
     ibig::IBig,
-    primitive::{double_word, extend_word, split_dword, DWORD_BITS_USIZE, WORD_BITS_USIZE},
+    primitive::{double_word, DWORD_BITS_USIZE, WORD_BITS_USIZE},
     repr::{Buffer, TypedRepr::*, TypedReprRef::*},
     shift,
     sign::Sign::*,
@@ -177,7 +177,7 @@ impl Shr<usize> for &IBig {
 
 mod repr {
     use super::*;
-    use crate::repr::{Repr, TypedRepr, TypedReprRef};
+    use crate::{repr::{Repr, TypedRepr, TypedReprRef}, math};
 
     impl Shl<usize> for TypedRepr {
         type Output = Repr;
@@ -254,9 +254,7 @@ mod repr {
         let shift_words = rhs / WORD_BITS_USIZE;
         let shift_bits = (rhs % WORD_BITS_USIZE) as u32;
 
-        let (lo, hi) = split_dword(dword);
-        let (n0, carry) = split_dword(extend_word(lo) << shift_bits);
-        let (n1, n2) = split_dword((extend_word(hi) << shift_bits) | carry as u128);
+        let (n0, n1, n2) = math::shl_dword(dword, shift_bits);
         let mut buffer = Buffer::allocate(shift_words + 3);
         buffer.push_zeros(shift_words);
         buffer.push(n0);

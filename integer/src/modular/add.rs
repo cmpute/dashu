@@ -3,7 +3,7 @@
 use crate::{
     add, cmp,
     modular::{
-        modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSingle, ModuloSingleRaw},
+        modulo::{Modulo, ModuloRepr, ModuloSingleRaw},
         modulo_ring::ModuloRingSingle,
     },
     assert::debug_assert_in_const_fn,
@@ -19,12 +19,14 @@ impl<'a> Neg for Modulo<'a> {
     type Output = Modulo<'a>;
 
     #[inline]
-    fn neg(mut self) -> Modulo<'a> {
-        match self.repr_mut() {
-            ModuloRepr::Small(self_small) => self_small.set_raw(self_small.ring().negate(self_small.raw())),
-            ModuloRepr::Large(self_large) => self_large.ring().negate_in_place(self_large.raw_mut()),
+    fn neg(self) -> Modulo<'a> {
+        match self.into_repr() {
+            ModuloRepr::Small(raw, ring) => Self::from_small(ring.negate(raw), ring),
+            ModuloRepr::Large(mut raw, ring) => {
+                ring.negate_in_place(&mut raw);
+                Self::from_large(raw, ring)
+            },
         }
-        self
     }
 }
 
@@ -85,11 +87,13 @@ impl<'a> AddAssign<&Modulo<'a>> for Modulo<'a> {
     #[inline]
     fn add_assign(&mut self, rhs: &Modulo<'a>) {
         match (self.repr_mut(), rhs.repr()) {
-            (ModuloRepr::Small(self_small), ModuloRepr::Small(rhs_small)) => {
-                self_small.set_raw(self_small.ring().add(self_small.raw(), rhs_small.raw()))
+            (ModuloRepr::Small(raw0, ring), ModuloRepr::Small(raw1, ring1)) => {
+                Modulo::check_same_ring_single(ring, ring1);
+                *raw0 = ring.add(*raw0, *raw1);
             }
-            (ModuloRepr::Large(self_large), ModuloRepr::Large(rhs_large)) => {
-                self_large.ring().add_in_place(self_large.raw_mut(), rhs_large.raw())
+            (ModuloRepr::Large(raw0, ring), ModuloRepr::Large(raw1, ring1)) => {
+                Modulo::check_same_ring_large(ring, ring1);
+                ring.add_in_place(raw0, raw1);
             }
             _ => Modulo::panic_different_rings(),
         }
@@ -119,19 +123,19 @@ impl<'a> Sub<Modulo<'a>> for &Modulo<'a> {
     type Output = Modulo<'a>;
 
     #[inline]
-    fn sub(self, mut rhs: Modulo<'a>) -> Modulo<'a> {
-        match (self.repr(), rhs.repr_mut()) {
-            (ModuloRepr::Small(self_small), ModuloRepr::Small(rhs_small)) => {
-                self_small.check_same_ring(rhs_small);
-                rhs_small.set_raw(self_small.ring().sub(self_small.raw(), rhs_small.raw()));
+    fn sub(self, rhs: Modulo<'a>) -> Modulo<'a> {
+        match (self.repr(), rhs.into_repr()) {
+            (ModuloRepr::Small(raw0, ring), ModuloRepr::Small(raw1, ring1)) => {
+                Modulo::check_same_ring_single(ring, ring1);
+                Modulo::from_small(ring.sub(*raw0, raw1), ring)
             }
-            (ModuloRepr::Large(self_large), ModuloRepr::Large(rhs_large)) => {
-                self_large.check_same_ring(rhs_large);
-                self_large.ring().sub_in_place_swap(self_large.raw(), rhs_large.raw_mut());
+            (ModuloRepr::Large(raw0, ring), ModuloRepr::Large(mut raw1, ring1)) => {
+                Modulo::check_same_ring_large(ring, ring1);
+                ring.sub_in_place_swap(raw0, &mut raw1);
+                Modulo::from_large(raw1, ring)
             }
             _ => Modulo::panic_different_rings(),
         }
-        rhs
     }
 }
 
@@ -155,14 +159,13 @@ impl<'a> SubAssign<&Modulo<'a>> for Modulo<'a> {
     #[inline]
     fn sub_assign(&mut self, rhs: &Modulo<'a>) {
         match (self.repr_mut(), rhs.repr()) {
-            (ModuloRepr::Small(self_small), ModuloRepr::Small(rhs_small)) => {
-                self_small.check_same_ring(rhs_small);
-                self_small.set_raw(self_small.ring().sub(self_small.raw(), rhs_small.raw()));
-                
+            (ModuloRepr::Small(raw0, ring), ModuloRepr::Small(raw1, ring1)) => {
+                Modulo::check_same_ring_single(ring, ring1);
+                *raw0 = ring.sub(*raw0, *raw1);
             }
-            (ModuloRepr::Large(self_large), ModuloRepr::Large(rhs_large)) => {
-                self_large.check_same_ring(rhs_large);
-                self_large.ring().sub_in_place(self_large.raw_mut(), rhs_large.raw());
+            (ModuloRepr::Large(raw0, ring), ModuloRepr::Large(raw1, ring1)) => {
+                Modulo::check_same_ring_large(ring, ring1);
+                ring.sub_in_place(raw0, raw1);
             }
             _ => Modulo::panic_different_rings(),
         }

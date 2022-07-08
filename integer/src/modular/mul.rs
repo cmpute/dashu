@@ -3,7 +3,7 @@ use crate::{
     div,
     memory::{self, Memory, MemoryAllocation},
     modular::{
-        modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSingle, ModuloSingleRaw},
+        modulo::{Modulo, ModuloRepr, ModuloSingleRaw},
         modulo_ring::{ModuloRingLarge, ModuloRingSingle},
     },
     mul,
@@ -80,16 +80,16 @@ impl<'a> MulAssign<&Modulo<'a>> for Modulo<'a> {
     #[inline]
     fn mul_assign(&mut self, rhs: &Modulo<'a>) {
         match (self.repr_mut(), rhs.repr()) {
-            (ModuloRepr::Small(self_small), ModuloRepr::Small(rhs_small)) => {
-                self_small.check_same_ring(rhs_small);
-                self_small.set_raw(self_small.ring().mul(self_small.raw(), rhs_small.raw()));
+            (ModuloRepr::Small(raw0, ring), ModuloRepr::Small(raw1, ring1)) => {
+                Modulo::check_same_ring_single(ring, ring1);
+                *raw0 = ring.mul(*raw0, *raw1);
             }
-            (ModuloRepr::Large(self_large), ModuloRepr::Large(rhs_large)) => {
-                self_large.check_same_ring(rhs_large);
-                let memory_requirement = self_large.ring().mul_memory_requirement();
+            (ModuloRepr::Large(raw0, ring), ModuloRepr::Large(raw1, ring1)) => {
+                Modulo::check_same_ring_large(ring, ring1);
+                let memory_requirement = ring.mul_memory_requirement();
                 let mut allocation = MemoryAllocation::new(memory_requirement);
                 let mut memory = allocation.memory();
-                self_large.ring().mul_in_place(self_large.raw_mut(), &rhs_large.raw(), &mut memory);
+                ring.mul_in_place(raw0, raw1, &mut memory);
             }
             _ => Modulo::panic_different_rings(),
         }

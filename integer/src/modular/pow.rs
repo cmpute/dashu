@@ -3,7 +3,7 @@ use crate::{
     math,
     memory::{self, MemoryAllocation},
     modular::{
-        modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSingle, ModuloSingleRaw, ModuloLargeRaw},
+        modulo::{Modulo, ModuloRepr, ModuloSingleRaw, ModuloLargeRaw},
         modulo_ring::ModuloRingSingle,
     },
     primitive::{double_word, split_dword, PrimitiveUnsigned, WORD_BITS, WORD_BITS_USIZE, shrink_dword},
@@ -30,13 +30,12 @@ impl<'a> Modulo<'a> {
     #[inline]
     pub fn pow(&self, exp: &UBig) -> Modulo<'a> {
         match self.repr() {
-            ModuloRepr::Small(self_small) => ModuloSingle::new(
-                self_small.ring().pow(self_small.raw(), exp),
-                self_small.ring()
+            ModuloRepr::Small(raw, ring) => Modulo::from_small(
+                ring.pow(*raw, exp),
+                ring
             ).into(),
-            ModuloRepr::Large(self_large) => {
-                let ring = self_large.ring();
-                ModuloLarge::new(ring.pow(self_large.raw(), exp), ring).into()
+            ModuloRepr::Large(raw, ring) => {
+                Modulo::from_large(ring.pow(raw, exp), ring)
             },
         }
     }

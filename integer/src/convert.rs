@@ -422,9 +422,9 @@ impl TryFrom<IBig> for UBig {
 
     #[inline]
     fn try_from(x: IBig) -> Result<UBig, OutOfBoundsError> {
-        match x.into_sign_magnitude() {
-            (Positive, mag) => Ok(mag),
-            (Negative, _) => Err(OutOfBoundsError),
+        match x.sign() {
+            Positive => Ok(UBig(x.0)),
+            Negative => Err(OutOfBoundsError),
         }
     }
 }

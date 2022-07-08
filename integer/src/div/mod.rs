@@ -5,7 +5,7 @@ use crate::{
     fast_divide::{FastDivideNormalized, FastDivideNormalized2},
     memory::{self, Memory},
     primitive::{double_word, extend_word, first_dword, last_dword, split_dword, WORD_BITS},
-    shift,
+    shift, math::shl_dword,
 };
 use alloc::alloc::Layout;
 
@@ -193,10 +193,8 @@ pub(crate) fn rem_by_dword(words: &[Word], rhs: DoubleWord) -> DoubleWord {
     let rem = fast_rem_by_normalized_dword(words, fast_div_rhs);
 
     // normalize the remainder
-    let (r0, r1) = split_dword(rem);
-    let a12 = extend_word(r1) << shift | extend_word(r0) >> (WORD_BITS - shift);
-    let a0 = r0 << shift;
-    let (_, rem) = fast_div_rhs.div_rem(a0, a12);
+    let (a0, a1, a2) = shl_dword(rem, shift);
+    let (_, rem) = fast_div_rhs.div_rem(a0, double_word(a1, a2));
     rem >> shift
 }
 

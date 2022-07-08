@@ -97,6 +97,16 @@ pub(crate) const fn min_usize(a: usize, b: usize) -> usize {
     }
 }
 
+// Calculate dw << shift, assuming shift <= Word::BIT_SIZE, returns (lo, mid, hi).
+pub(crate) const fn shl_dword(dw: DoubleWord, shift: u32) -> (Word, Word, Word) {
+    debug_assert_in_const_fn!(shift <= Word::BIT_SIZE);
+
+    let (lo, hi) = split_dword(dw);
+    let (n0, carry) = split_dword(extend_word(lo) << shift);
+    let (n1, n2) = split_dword((extend_word(hi) << shift) | extend_word(carry));
+    (n0, n1, n2)
+}
+
 /// Multiply two `Word`s with carry and return the (low, high) parts of the product
 /// This operation will not overflow.
 #[inline(always)]

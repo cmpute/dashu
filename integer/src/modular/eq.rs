@@ -1,7 +1,7 @@
 //! Comparisons.
 
 use crate::modular::{
-    modulo::{Modulo, ModuloLarge, ModuloRepr, ModuloSingle},
+    modulo::{Modulo, ModuloRepr},
     modulo_ring::{ModuloRing, ModuloRingLarge, ModuloRingSingle},
 };
 use core::ptr;
@@ -45,11 +45,13 @@ impl PartialEq for Modulo<'_> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         match (self.repr(), other.repr()) {
-            (ModuloRepr::Small(self_small), ModuloRepr::Small(other_small)) => {
-                self_small.eq(other_small)
+            (ModuloRepr::Small(raw0, ring0), ModuloRepr::Small(raw1, ring1)) => {
+                Modulo::check_same_ring_single(ring0, ring1);
+                raw0.eq(raw1)
             }
-            (ModuloRepr::Large(self_large), ModuloRepr::Large(other_large)) => {
-                self_large.eq(other_large)
+            (ModuloRepr::Large(raw0, ring0), ModuloRepr::Large(raw1, ring1)) => {
+                Modulo::check_same_ring_large(ring0, ring1);
+                raw0.eq(raw1)
             }
             _ => Modulo::panic_different_rings(),
         }
@@ -57,20 +59,3 @@ impl PartialEq for Modulo<'_> {
 }
 
 impl Eq for Modulo<'_> {}
-
-impl PartialEq for ModuloSingle<'_> {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        self.check_same_ring(other);
-        self.normalized_value() == other.normalized_value()
-    }
-}
-
-impl Eq for ModuloLarge<'_> {}
-
-impl PartialEq for ModuloLarge<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        self.check_same_ring(other);
-        self.normalized_value() == other.normalized_value()
-    }
-}

@@ -72,7 +72,7 @@ impl ModuloRing {
     #[inline]
     pub fn new(n: &UBig) -> ModuloRing {
         match n.repr() {
-            TypedReprRef::RefSmall(0) => panic!("ModuloRing::new(0)"),
+            TypedReprRef::RefSmall(0) => panic!("modulus cannot be 0"),
             TypedReprRef::RefSmall(dword) => {
                 if let Some(word) = shrink_dword(dword) {
                     ModuloRing(ModuloRingRepr::Single(ModuloRingSingle::new(word)))
