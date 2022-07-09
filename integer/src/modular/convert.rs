@@ -4,23 +4,21 @@ use crate::{
     arch::word::{DoubleWord, Word},
     div,
     ibig::IBig,
-    math::shl_dword,
+    math::{shl_dword, self},
     memory::MemoryAllocation,
     modular::{
         modulo::{Modulo, ModuloRepr, ModuloSingleRaw},
         modulo_ring::{ModuloRing, ModuloRingLarge, ModuloRingRepr, ModuloRingSingle},
     },
-    primitive::{double_word, extend_word, split_dword},
+    primitive::{double_word, extend_word},
     repr::{Buffer, Repr, TypedRepr::*, TypedReprRef::*},
     shift,
     sign::Sign::*,
     ubig::UBig,
 };
-use alloc::vec::Vec;
-use core::iter;
 use dashu_base::UnsignedAbs;
 
-use super::modulo::ModuloLargeRaw;
+use super::{modulo::{ModuloLargeRaw, ModuloDoubleRaw}, modulo_ring::ModuloRingDouble};
 
 impl ModuloRing {
     /// The ring modulus.
@@ -29,25 +27,26 @@ impl ModuloRing {
     ///
     /// ```
     /// # use dashu_int::{modular::ModuloRing, ubig};
-    /// let ring = ModuloRing::new(&ubig!(100));
+    /// let ring = ModuloRing::new(ubig!(100));
     /// assert_eq!(ring.modulus(), ubig!(100));
     /// ```
     #[inline]
     pub fn modulus(&self) -> UBig {
         match self.repr() {
             ModuloRingRepr::Single(single) => single.modulus().into(),
-            // ModuloRingRepr::Double(double) => double.modulus().into(),
+            ModuloRingRepr::Double(double) => double.modulus().into(),
             ModuloRingRepr::Large(large) => large.modulus(),
         }
     }
 
+    // TODO: rename as convert / transform
     /// Create an element of the ring from another type.
     ///
     /// # Examples
     ///
     /// ```
     /// # use dashu_int::{modular::ModuloRing, ubig};
-    /// let ring = ModuloRing::new(&ubig!(100));
+    /// let ring = ModuloRing::new(ubig!(100));
     /// let x = ring.from(-1234);
     /// let y = ring.from(ubig!(3366));
     /// assert!(x == y);
@@ -65,14 +64,15 @@ impl Modulo<'_> {
     ///
     /// ```
     /// # use dashu_int::{modular::ModuloRing, ubig};
-    /// let ring = ModuloRing::new(&ubig!(100));
+    /// let ring = ModuloRing::new(ubig!(100));
     /// let x = ring.from(-1234);
     /// assert_eq!(x.residue(), ubig!(66));
     /// ```
     #[inline]
     pub fn residue(&self) -> UBig {
         let repr = match self.repr() {
-            ModuloRepr::Small(raw, ring) => Repr::from_word(raw.residue(ring)),
+            ModuloRepr::Single(raw, ring) => Repr::from_word(raw.residue(ring)),
+            ModuloRepr::Double(raw, ring) => Repr::from_dword(raw.residue(ring)),
             ModuloRepr::Large(raw, ring) => Repr::from_buffer(raw.residue(ring)),
         };
         UBig(repr)
@@ -82,6 +82,13 @@ impl Modulo<'_> {
 impl ModuloRingSingle {
     #[inline]
     pub(crate) fn modulus(&self) -> Word {
+        self.normalized_modulus() >> self.shift()
+    }
+}
+
+impl ModuloRingDouble {
+    #[inline]
+    pub(crate) fn modulus(&self) -> DoubleWord {
         self.normalized_modulus() >> self.shift()
     }
 }
@@ -149,21 +156,66 @@ impl ModuloSingleRaw {
     }
 }
 
+impl ModuloDoubleRaw {
+    #[inline]
+    const fn from_dword(dword: DoubleWord, ring: &ModuloRingDouble) -> Self {
+        let rem = if ring.shift() == 0 {
+            ring.fast_div().div_rem_dword(dword).1
+        } else {
+            let (n0, n1, n2) = shl_dword(dword, ring.shift());
+            ring.fast_div().div_rem(n0, double_word(n1, n2)).1
+        };
+        ModuloDoubleRaw(rem)
+    }
+
+    fn from_large(words: &[Word], ring: &ModuloRingDouble) -> Self {
+        let mut rem = div::fast_rem_by_normalized_dword(words, ring.fast_div());
+        if ring.shift() != 0 {
+            let (r0, r1, r2) = shl_dword(rem, ring.shift());
+            rem = ring.fast_div().div_rem(r0, double_word(r1, r2)).1
+        }
+        ModuloDoubleRaw(rem)
+    }
+    
+    #[inline]
+    pub(crate) fn from_ubig(x: &UBig, ring: &ModuloRingDouble) -> Self {
+        match x.repr() {
+            RefSmall(dword) => Self::from_dword(dword, ring),
+            RefLarge(words) => Self::from_large(words, ring),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn residue(self, ring: &ModuloRingDouble) -> DoubleWord {
+        debug_assert!(ring.is_valid(self));
+        self.0 >> ring.shift()
+    }
+}
+
 impl ModuloLargeRaw {
-    pub(crate) fn from_ubig(mut x: UBig, ring: &ModuloRingLarge) -> ModuloLargeRaw {
-        x <<= ring.shift() as usize;
+    pub(crate) fn from_ubig(x: UBig, ring: &ModuloRingLarge) -> ModuloLargeRaw {
         let modulus = ring.normalized_modulus();
-        let mut vec = Vec::with_capacity(modulus.len());
-        match x.into_repr() {
-            Small(word) => {
-                let (lo, hi) = split_dword(word);
-                vec.push(lo);
-                vec.push(hi);
+        let mut buffer = match x.into_repr() {
+            Small(dword) => {
+                let (lo, mid, hi) = math::shl_dword(dword, ring.shift());
+                let mut buffer = Buffer::allocate_exact(modulus.len());
+                buffer.push(lo);
+                buffer.push(mid);
+                buffer.push(hi);
+
+                // because ModuloLarge is used only for integer with more than two words,
+                // word << ring.shift() must be smaller than the normalized modulus
+                buffer
             }
             Large(mut words) => {
-                if words.len() < modulus.len() {
-                    vec.extend(&*words);
-                } else {
+                // normalize
+                let carry = shift::shl_in_place(&mut words, ring.shift());
+                if carry != 0 {
+                    words.push_resizing(carry);
+                }
+
+                // reduce
+                if words.len() >= modulus.len() {
                     let mut allocation = MemoryAllocation::new(div::memory_requirement_exact(
                         words.len(),
                         modulus.len(),
@@ -175,12 +227,15 @@ impl ModuloLargeRaw {
                         ring.fast_div_top(),
                         &mut memory,
                     );
-                    vec.extend(&words[..modulus.len()]);
+                    words.truncate(modulus.len());
                 }
+                words.ensure_capacity_exact(modulus.len());
+                words
             }
-        }
-        vec.extend(iter::repeat(0).take(modulus.len() - vec.len()));
-        ModuloLargeRaw(vec)
+        };
+        dbg!(modulus.len(), buffer.len());
+        buffer.push_zeros(modulus.len() - buffer.len());
+        ModuloLargeRaw(buffer.into_boxed_slice())
     }
 
     pub(crate) fn residue(&self, ring: &ModuloRingLarge) -> Buffer {
@@ -202,7 +257,10 @@ impl IntoModulo for UBig {
     fn into_modulo(self, ring: &ModuloRing) -> Modulo {
         match ring.repr() {
             ModuloRingRepr::Single(ring) => {
-                Modulo::from_small(ModuloSingleRaw::from_ubig(&self, ring), ring)
+                Modulo::from_single(ModuloSingleRaw::from_ubig(&self, ring), ring)
+            }
+            ModuloRingRepr::Double(ring) => {
+                Modulo::from_double(ModuloDoubleRaw::from_ubig(&self, ring), ring)
             }
             ModuloRingRepr::Large(ring) => {
                 Modulo::from_large(ModuloLargeRaw::from_ubig(self, ring), ring)
@@ -216,7 +274,10 @@ impl IntoModulo for &UBig {
     fn into_modulo(self, ring: &ModuloRing) -> Modulo {
         match ring.repr() {
             ModuloRingRepr::Single(ring) => {
-                Modulo::from_small(ModuloSingleRaw::from_ubig(&self, ring), ring)
+                Modulo::from_single(ModuloSingleRaw::from_ubig(&self, ring), ring)
+            }
+            ModuloRingRepr::Double(ring) => {
+                Modulo::from_double(ModuloDoubleRaw::from_ubig(&self, ring), ring)
             }
             ModuloRingRepr::Large(ring) => {
                 Modulo::from_large(ModuloLargeRaw::from_ubig(self.clone(), ring), ring)

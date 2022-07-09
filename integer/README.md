@@ -27,7 +27,7 @@ assert_eq!(
     "hello 0x1a7e7c487267d2658a93"
 );
 
-let ring = ModuloRing::new(&ubig!(10000));
+let ring = ModuloRing::new(ubig!(10000));
 let x = ring.from(12345);
 let y = ring.from(55443);
 assert_eq!(format!("{}", x - y), "6902 (mod 10000)");

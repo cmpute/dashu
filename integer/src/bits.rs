@@ -343,8 +343,7 @@ mod repr {
             Some(p) => *last = p,
             None => {
                 *last = 0;
-                buffer.ensure_capacity(n + 1);
-                buffer.push(1);
+                buffer.push_resizing(1);
             }
         }
 

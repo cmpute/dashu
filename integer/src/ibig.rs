@@ -37,6 +37,7 @@ impl IBig {
         self.0.into_sign_typed()
     }
 
+    // TODO: maybe deprecate this method? or remove internal call and only expose to other crates
     #[inline]
     pub(crate) fn from_sign_magnitude(sign: Sign, magnitude: UBig) -> IBig {
         IBig(magnitude.0.with_sign(sign))
@@ -45,11 +46,6 @@ impl IBig {
     #[inline]
     pub(crate) fn sign(&self) -> Sign {
         self.0.sign()
-    }
-
-    #[inline]
-    pub(crate) fn into_sign_magnitude(self) -> (Sign, UBig) {
-        (self.0.sign(), UBig(self.0.with_sign(Sign::Positive)))
     }
 
     /// Create an IBig with value 0

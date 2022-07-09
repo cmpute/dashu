@@ -1,11 +1,13 @@
 //! Element of modular arithmetic.
 
 use crate::{
-    arch::word::Word,
+    arch::word::{Word, DoubleWord},
     assert::debug_assert_in_const_fn,
     modular::modulo_ring::{ModuloRingLarge, ModuloRingSingle},
+    repr::Buffer,
 };
-use alloc::vec::Vec;
+
+use super::modulo_ring::ModuloRingDouble;
 
 /// Modular arithmetic.
 ///
@@ -13,7 +15,7 @@ use alloc::vec::Vec;
 ///
 /// ```
 /// # use dashu_int::{modular::ModuloRing, ubig};
-/// let ring = ModuloRing::new(&ubig!(10000));
+/// let ring = ModuloRing::new(ubig!(10000));
 /// let x = ring.from(12345);
 /// let y = ring.from(55443);
 /// assert_eq!((x - y).residue(), ubig!(6902));
@@ -21,19 +23,26 @@ use alloc::vec::Vec;
 pub struct Modulo<'a>(ModuloRepr<'a>);
 
 pub(crate) enum ModuloRepr<'a> {
-    Small(ModuloSingleRaw, &'a ModuloRingSingle),
+    Single(ModuloSingleRaw, &'a ModuloRingSingle),
+    Double(ModuloDoubleRaw, &'a ModuloRingDouble),
     Large(ModuloLargeRaw, &'a ModuloRingLarge),
 }
 
 /// Single word modular value in some unknown ring. The ring must be provided to operations.
+/// 
+/// The internal value must be in range 0..modulus and divisible by the shift for ModuloSingleRing
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ModuloSingleRaw(pub(crate) Word);
 
+/// Double word modular value in some unknown ring. The ring must be provided to operations.
+/// 
+/// The internal value must be in range 0..modulus and divisible by the shift for ModuloDoubleRing
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ModuloDoubleRaw(pub(crate) DoubleWord);
+
 /// Multi-word modular value in some unknown ring. `self.0.len() == ring.normalized_modulus.len()`
-///
-/// The vanilla `Vec` is used instead of `Buffer` here because we want fixed and compact capacity in the modulo.
 #[derive(Clone, PartialEq, Eq)]
-pub(crate) struct ModuloLargeRaw(pub(crate) Vec<Word>); // TODO: use Box<[Word]>
+pub(crate) struct ModuloLargeRaw(pub(crate) Box<[Word]>);
 
 impl<'a> Modulo<'a> {
     /// Get representation.
@@ -59,9 +68,15 @@ impl<'a> Modulo<'a> {
     }
 
     #[inline]
-    pub(crate) const fn from_small(raw: ModuloSingleRaw, ring: &'a ModuloRingSingle) -> Self {
+    pub(crate) const fn from_single(raw: ModuloSingleRaw, ring: &'a ModuloRingSingle) -> Self {
         debug_assert_in_const_fn!(ring.is_valid(raw));
-        Modulo(ModuloRepr::Small(raw, ring))
+        Modulo(ModuloRepr::Single(raw, ring))
+    }
+    
+    #[inline]
+    pub(crate) const fn from_double(raw: ModuloDoubleRaw, ring: &'a ModuloRingDouble) -> Self {
+        debug_assert_in_const_fn!(ring.is_valid(raw));
+        Modulo(ModuloRepr::Double(raw, ring))
     }
 
     #[inline]
@@ -78,6 +93,13 @@ impl<'a> Modulo<'a> {
     }
 
     #[inline]
+    pub(crate) fn check_same_ring_double(lhs: &ModuloRingDouble, rhs: &ModuloRingDouble) {
+        if lhs != rhs {
+            Self::panic_different_rings();
+        }
+    }
+
+    #[inline]
     pub(crate) fn check_same_ring_large(lhs: &ModuloRingLarge, rhs: &ModuloRingLarge) {
         if lhs != rhs {
             Self::panic_different_rings();
@@ -88,7 +110,15 @@ impl<'a> Modulo<'a> {
 impl ModuloSingleRaw {
     pub const fn one(ring: &ModuloRingSingle) -> Self {
         let modulo = Self(1 << ring.shift());
-        debug_assert!(ring.is_valid(modulo));
+        debug_assert_in_const_fn!(ring.is_valid(modulo));
+        modulo
+    }
+}
+
+impl ModuloDoubleRaw {
+    pub const fn one(ring: &ModuloRingDouble) -> Self {
+        let modulo = Self(1 << ring.shift());
+        debug_assert_in_const_fn!(ring.is_valid(modulo));
         modulo
     }
 }
@@ -96,10 +126,10 @@ impl ModuloSingleRaw {
 impl ModuloLargeRaw {
     pub fn one(ring: &ModuloRingLarge) -> Self {
         let modulus = ring.normalized_modulus();
-        let mut vec = Vec::with_capacity(modulus.len());
-        vec.push(1 << ring.shift());
-        vec.extend(core::iter::repeat(0).take(modulus.len() - 1));
-        let modulo = Self(vec);
+        let mut buf = Buffer::allocate_exact(modulus.len());
+        buf.push(1 << ring.shift());
+        buf.push_zeros(modulus.len() - 1);
+        let modulo = Self(buf.into_boxed_slice());
         debug_assert!(ring.is_valid(&modulo));
         modulo
     }
@@ -121,24 +151,21 @@ impl Clone for ModuloRepr<'_> {
     #[inline]
     fn clone(&self) -> Self {
         match self {
-            ModuloRepr::Small(modulo, ring) => ModuloRepr::Small(modulo.clone(), ring),
+            ModuloRepr::Single(modulo, ring) => ModuloRepr::Single(modulo.clone(), ring),
+            ModuloRepr::Double(modulo, ring) => ModuloRepr::Double(modulo.clone(), ring),
             ModuloRepr::Large(modulo, ring) => ModuloRepr::Large(modulo.clone(), ring),
         }
     }
 
     #[inline]
     fn clone_from(&mut self, source: &Self) {
-        // TODO: do we actually need this? it seems that the large modulo is fixed in size
         if let (ModuloRepr::Large(raw, ring), ModuloRepr::Large(src_raw, src_ring)) =
             (&mut *self, source)
         {
             *ring = src_ring;
-            if raw.0.len() == src_raw.0.len() {
-                raw.0.copy_from_slice(&src_raw.0)
-            } else {
-                // We don't want to have spare capacity, so do not clone_from.
-                raw.0 = src_raw.0.clone();
-            }
+
+            // this can be efficient if ring.len() == src_ring.len()
+            raw.0.clone_from(&src_raw.0);
         } else {
             *self = source.clone();
         }

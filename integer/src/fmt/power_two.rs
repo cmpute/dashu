@@ -15,6 +15,7 @@ impl InRadixFull<'_> {
     pub(crate) fn fmt_power_two(&self, f: &mut Formatter) -> fmt::Result {
         debug_assert!(radix::is_radix_valid(self.radix) && self.radix.is_power_of_two());
 
+        // TODO: bandaid here
         let mut dword_slice: [Word; 2] = [0, 0];
         let words = match self.magnitude {
             RefSmall(dword) => {

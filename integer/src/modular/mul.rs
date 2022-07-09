@@ -9,12 +9,12 @@ use crate::{
     mul,
     primitive::extend_word,
     shift,
-    sign::Sign::Positive,
+    sign::Sign::Positive, math,
 };
 use alloc::alloc::Layout;
 use core::ops::{Mul, MulAssign};
 
-use super::modulo::ModuloLargeRaw;
+use super::{modulo::{ModuloLargeRaw, ModuloDoubleRaw}, modulo_ring::ModuloRingDouble};
 
 impl<'a> Mul<Modulo<'a>> for Modulo<'a> {
     type Output = Modulo<'a>;
@@ -60,6 +60,30 @@ impl<'a> MulAssign<Modulo<'a>> for Modulo<'a> {
     }
 }
 
+impl<'a> MulAssign<&Modulo<'a>> for Modulo<'a> {
+    #[inline]
+    fn mul_assign(&mut self, rhs: &Modulo<'a>) {
+        match (self.repr_mut(), rhs.repr()) {
+            (ModuloRepr::Single(raw0, ring), ModuloRepr::Single(raw1, ring1)) => {
+                Modulo::check_same_ring_single(ring, ring1);
+                *raw0 = ring.mul(*raw0, *raw1);
+            },
+            (ModuloRepr::Double(raw0, ring), ModuloRepr::Double(raw1, ring1)) => {
+                Modulo::check_same_ring_double(ring, ring1);
+                *raw0 = ring.mul(*raw0, *raw1);
+            }
+            (ModuloRepr::Large(raw0, ring), ModuloRepr::Large(raw1, ring1)) => {
+                Modulo::check_same_ring_large(ring, ring1);
+                let memory_requirement = ring.mul_memory_requirement();
+                let mut allocation = MemoryAllocation::new(memory_requirement);
+                let mut memory = allocation.memory();
+                ring.mul_in_place(raw0, raw1, &mut memory);
+            }
+            _ => Modulo::panic_different_rings(),
+        }
+    }
+}
+
 impl ModuloRingSingle {
     #[inline]
     pub const fn mul(&self, lhs: ModuloSingleRaw, rhs: ModuloSingleRaw) -> ModuloSingleRaw {
@@ -76,23 +100,19 @@ impl ModuloRingSingle {
     }
 }
 
-impl<'a> MulAssign<&Modulo<'a>> for Modulo<'a> {
+impl ModuloRingDouble {
     #[inline]
-    fn mul_assign(&mut self, rhs: &Modulo<'a>) {
-        match (self.repr_mut(), rhs.repr()) {
-            (ModuloRepr::Small(raw0, ring), ModuloRepr::Small(raw1, ring1)) => {
-                Modulo::check_same_ring_single(ring, ring1);
-                *raw0 = ring.mul(*raw0, *raw1);
-            }
-            (ModuloRepr::Large(raw0, ring), ModuloRepr::Large(raw1, ring1)) => {
-                Modulo::check_same_ring_large(ring, ring1);
-                let memory_requirement = ring.mul_memory_requirement();
-                let mut allocation = MemoryAllocation::new(memory_requirement);
-                let mut memory = allocation.memory();
-                ring.mul_in_place(raw0, raw1, &mut memory);
-            }
-            _ => Modulo::panic_different_rings(),
-        }
+    pub const fn mul(&self, lhs: ModuloDoubleRaw, rhs: ModuloDoubleRaw) -> ModuloDoubleRaw {
+        let (prod0, prod1) = math::mul_add_carry_dword(lhs.0 >> self.shift(), rhs.0, 0);
+        let (_, rem) = self.fast_div().div_rem_double(prod0, prod1);
+        ModuloDoubleRaw(rem)
+    }
+
+    #[inline]
+    pub const fn sqr(&self, raw: ModuloDoubleRaw) -> ModuloDoubleRaw {
+        let (prod0, prod1) = math::mul_add_carry_dword(raw.0 >> self.shift(), raw.0, 0);
+        let (_, rem) = self.fast_div().div_rem_double(prod0, prod1);
+        ModuloDoubleRaw(rem)
     }
 }
 

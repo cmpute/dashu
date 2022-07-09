@@ -6,6 +6,8 @@ use crate::modular::{
 };
 use core::ptr;
 
+use super::modulo_ring::ModuloRingDouble;
+
 /// Equality is identity: two rings are not equal even if they have the same modulus.
 impl PartialEq for ModuloRing {
     #[inline]
@@ -16,8 +18,8 @@ impl PartialEq for ModuloRing {
 
 impl Eq for ModuloRing {}
 
-/// Equality is identity: two rings are not equal even if they have the same modulus.
 impl PartialEq for ModuloRingSingle {
+    /// Equality is identity: two rings are not equal even if they have the same modulus.
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         ptr::eq(self, other)
@@ -26,8 +28,19 @@ impl PartialEq for ModuloRingSingle {
 
 impl Eq for ModuloRingSingle {}
 
-/// Equality is identity: two rings are not equal even if they have the same modulus.
+
+impl PartialEq for ModuloRingDouble {
+    /// Equality is identity: two rings are not equal even if they have the same modulus.
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        ptr::eq(self, other)
+    }
+}
+
+impl Eq for ModuloRingDouble {}
+
 impl PartialEq for ModuloRingLarge {
+    /// Equality is identity: two rings are not equal even if they have the same modulus.
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         ptr::eq(self, other)
@@ -45,8 +58,12 @@ impl PartialEq for Modulo<'_> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         match (self.repr(), other.repr()) {
-            (ModuloRepr::Small(raw0, ring0), ModuloRepr::Small(raw1, ring1)) => {
+            (ModuloRepr::Single(raw0, ring0), ModuloRepr::Single(raw1, ring1)) => {
                 Modulo::check_same_ring_single(ring0, ring1);
+                raw0.eq(raw1)
+            }
+            (ModuloRepr::Double(raw0, ring0), ModuloRepr::Double(raw1, ring1)) => {
+                Modulo::check_same_ring_double(ring0, ring1);
                 raw0.eq(raw1)
             }
             (ModuloRepr::Large(raw0, ring0), ModuloRepr::Large(raw1, ring1)) => {

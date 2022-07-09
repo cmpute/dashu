@@ -215,7 +215,7 @@ fn bench_modulo_mul(criterion: &mut Criterion) {
     for log_bits in 1..=6 {
         let bits = 10usize.pow(log_bits);
         let m = random_ubig(bits, &mut rng);
-        let ring = ModuloRing::new(&m);
+        let ring = ModuloRing::new(m);
         let a = ring.from(&random_ubig(bits, &mut rng));
         let b = ring.from(&random_ubig(bits, &mut rng));
         group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
@@ -237,7 +237,7 @@ fn bench_modulo_pow(criterion: &mut Criterion) {
         }
         let bits = 10usize.pow(log_bits);
         let m = random_ubig(bits, &mut rng);
-        let ring = ModuloRing::new(&m);
+        let ring = ModuloRing::new(m);
         let a = ring.from(&random_ubig(bits, &mut rng));
         let b = random_ubig(bits, &mut rng);
         group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {

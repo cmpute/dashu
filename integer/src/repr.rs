@@ -116,7 +116,7 @@ impl Buffer {
     /// The capacity will not be zero even if the numeric value represented by the buffer is 0.
     /// (the capacity is still 1 in this case)
     #[inline]
-    pub(crate) fn capacity(&self) -> usize {
+    pub fn capacity(&self) -> usize {
         self.capacity
     }
 
@@ -125,22 +125,19 @@ impl Buffer {
         self.len
     }
 
-    // TODO: let allocate_raw accept capacity param so we can allocate exactly in future
-    // TODO: implement a into_boxed_slice() method and use it for the modular ring
     /// Allocates words on heap, return the pointer and allocated size,
     /// the caller needs to handle the deallocation of the words.
     ///
     /// This function should NOT BE EXPOSED to public!
     #[inline]
-    pub(crate) fn allocate_raw(num_words: usize) -> (NonNull<Word>, usize) {
-        debug_assert!(num_words <= Self::MAX_CAPACITY);
+    pub fn allocate_raw(capacity: usize) -> NonNull<Word> {
+        debug_assert!(capacity <= Self::MAX_CAPACITY);
 
         unsafe {
-            let capacity = Self::default_capacity(num_words);
             let layout = Layout::array::<Word>(capacity).unwrap();
             let ptr = alloc::alloc::alloc(layout);
             let ptr = NonNull::new(ptr).unwrap().cast();
-            (ptr, capacity)
+            ptr
         }
     }
 
@@ -157,18 +154,41 @@ impl Buffer {
     ///
     /// It leaves some extra space for future growth, and it allocates several words
     /// even if `num_words` is zero.
-    pub(crate) fn allocate(num_words: usize) -> Self {
-        if num_words > Self::MAX_CAPACITY {
+    #[inline]
+    pub fn allocate(num_words: usize) -> Self {
+        Self::allocate_exact(Self::default_capacity(num_words))
+    }
+
+    /// Creates a `Buffer` with exactly specified capacity (in words).
+    pub fn allocate_exact(capacity: usize) -> Self {
+        if capacity > Self::MAX_CAPACITY {
             panic!(
-                "too many words to be allocated, maximum is {} bits",
+                "too many words to be allocated, maximum is {} words",
                 Self::MAX_CAPACITY
             );
         }
-        let (ptr, capacity) = Self::allocate_raw(num_words);
-        Buffer {
-            capacity,
-            ptr,
-            len: 0,
+
+        let ptr = Self::allocate_raw(capacity);
+        Buffer { capacity, ptr, len: 0 }
+    }
+
+    /// Change capacity to the given value
+    ///
+    /// # Panics
+    ///
+    /// Panics if `capacity < len()`.
+    fn reallocate_raw(&mut self, capacity: usize) {
+        debug_assert!(capacity >= self.len());
+
+        unsafe {
+            let old_layout = Layout::array::<Word>(self.capacity).unwrap();
+            let new_layout = Layout::array::<Word>(capacity).unwrap();
+            let new_ptr =
+                alloc::alloc::realloc(self.ptr.as_ptr() as _, old_layout, new_layout.size());
+
+            // update allocation info
+            self.ptr = NonNull::new(new_ptr).unwrap().cast();
+            self.capacity = capacity;
         }
     }
 
@@ -179,20 +199,10 @@ impl Buffer {
     /// # Panics
     ///
     /// Panics if `num_words < len()`.
+    #[inline]
     fn reallocate(&mut self, num_words: usize) {
         debug_assert!(num_words >= self.len());
-
-        unsafe {
-            let old_layout = Layout::array::<Word>(self.capacity).unwrap();
-            let new_capacity = Self::default_capacity(num_words);
-            let new_layout = Layout::array::<Word>(new_capacity).unwrap();
-            let new_ptr =
-                alloc::alloc::realloc(self.ptr.as_ptr() as _, old_layout, new_layout.size());
-
-            // update allocation info
-            self.ptr = NonNull::new(new_ptr).unwrap().cast();
-            self.capacity = new_capacity;
-        }
+        self.reallocate_raw(Self::default_capacity(num_words));
     }
 
     /// Ensure there is enough capacity in the buffer for `num_words`,
@@ -204,9 +214,18 @@ impl Buffer {
         }
     }
 
-    /// Makes sure that the capacity is compact.
+    /// Ensure there is enough capacity that is not less than the given value,
+    /// reallocate if necessary.
     #[inline]
-    pub(crate) fn shrink(&mut self) {
+    pub(crate) fn ensure_capacity_exact(&mut self, capacity: usize) {
+        if capacity > self.capacity && capacity > 2 {
+            self.reallocate_raw(capacity);
+        }
+    }
+
+    /// Makes sure that the capacity is compact for existing data.
+    #[inline]
+    pub(crate) fn shrink_to_fit(&mut self) {
         if self.capacity > Self::max_compact_capacity(self.len) {
             self.reallocate(self.len);
         }
@@ -336,6 +355,7 @@ impl Buffer {
     /// # Panics
     ///
     /// Panics if the buffer is empty or has only 1 word
+    #[inline]
     pub(crate) fn first_dword(&self) -> DoubleWord {
         assert!(self.len >= 2);
 
@@ -352,6 +372,7 @@ impl Buffer {
     /// # Panics
     ///
     /// Panics if the buffer is empty or has only 1 word
+    #[inline]
     pub(crate) fn first_dword_mut(&mut self) -> (&mut Word, &mut Word) {
         assert!(self.len >= 2);
 
@@ -375,6 +396,28 @@ impl Buffer {
             self.len = src.len();
         } else {
             *self = Self::from(src);
+        }
+    }
+
+    pub fn into_boxed_slice(self) -> Box<[Word]> {
+        // reallocate with 0 size is UB
+        if self.len == 0 {
+            return Box::new([]);
+        }
+
+        unsafe {
+            let me = mem::ManuallyDrop::new(self);
+
+            // first shrink the buffer to tight
+            // `Layout::array` cannot overflow here because self.capacity < Self::MAX_CAPACITY
+            let old_layout = Layout::array::<Word>(me.capacity).unwrap();
+            let new_layout = Layout::array::<Word>(me.len).unwrap();
+            let new_ptr =
+                alloc::alloc::realloc(me.ptr.as_ptr() as _, old_layout, new_layout.size());
+                
+            // then convert the ptr to boxed slice
+            let slice = slice::from_raw_parts_mut(new_ptr as *mut Word, me.len);
+            Box::from_raw(slice)
         }
     }
 }
@@ -406,6 +449,7 @@ impl Clone for Buffer {
             }
             self.len = src.len;
         } else {
+            // this statement drops the old buffer and deallocates the memory
             *self = src.clone();
         }
     }
@@ -470,7 +514,7 @@ impl Repr {
     #[inline]
     pub const fn len(&self) -> usize {
         match self.capacity() {
-            0 => unreachable!(),
+            // 0 => unreachable!(),
             1 => 1,
             2 => 2,
             _ => unsafe { self.data.heap.1 },
@@ -642,7 +686,7 @@ impl Repr {
                 // and the normalized length is between `n - 2` and `n + 2`
                 // (or even approximately between `0.9 * n` and `1.125 * n`),
                 // there will be no reallocation here.
-                buffer.shrink();
+                buffer.shrink_to_fit();
 
                 // SAFETY: the length has been checked and capacity >= lenght,
                 //         so capacity is nonzero and larger than 2
@@ -707,23 +751,19 @@ impl Clone for Repr {
         let new = unsafe {
             // inline the data if the length is less than 3
             // SAFETY: we check the capacity before accessing the variants
-            match capacity {
-                c if c <= 2 => Repr {
-                    data: ReprData {
-                        inline: self.data.inline,
-                    },
-                    capacity: NonZeroIsize::new_unchecked(c as isize),
-                },
-                _ => {
-                    let (ptr, len) = self.data.heap;
-                    let mut new_buffer = Buffer::allocate(len);
-                    new_buffer.push_slice(slice::from_raw_parts(ptr, len));
-
-                    // SAFETY: abs(self.capacity) >= 3 => self.data.len >= 3
-                    // so the capacity and len of new_buffer will be both >= 3
-                    // TOOD: we don't need transmute here
-                    mem::transmute(new_buffer)
+            if capacity <= 2 {
+                Repr { 
+                    data: ReprData { inline: self.data.inline },
+                    capacity: NonZeroIsize::new_unchecked(capacity as isize),
                 }
+            } else {
+                let (ptr, len) = self.data.heap;
+                let mut new_buffer = Buffer::allocate(len);
+                new_buffer.push_slice(slice::from_raw_parts(ptr, len));
+
+                // SAFETY: abs(self.capacity) >= 3 => self.data.len >= 3
+                // so the capacity and len of new_buffer will be both >= 3
+                mem::transmute(new_buffer)
             }
         };
         new.with_sign(sign)
@@ -756,7 +796,8 @@ impl Clone for Repr {
                     Buffer::deallocate_raw(NonNull::new_unchecked(self.data.heap.0), cap);
                 }
 
-                let (new_ptr, new_cap) = Buffer::allocate_raw(src_len);
+                let new_cap = Buffer::default_capacity(src_len);
+                let new_ptr = Buffer::allocate_raw(new_cap);
                 self.data.heap.0 = new_ptr.as_ptr();
                 // SAFETY: allocate_raw will allocates at least 2 words even if src_len is 0
                 self.capacity = NonZeroIsize::new_unchecked(new_cap as isize);
@@ -885,7 +926,7 @@ mod tests {
         buffer.push(7);
         buffer.push(8);
         buffer.push(9);
-        buffer.shrink();
+        buffer.shrink_to_fit();
         assert_eq!(buffer.capacity(), Buffer::default_capacity(3));
         assert_eq!(&buffer[..], [7, 8, 9]);
     }
@@ -896,16 +937,7 @@ mod tests {
         buffer.push(1);
         buffer.push(2);
         assert_eq!(&buffer[..], [1, 2]);
-        // assert_eq!(buffer.pop(), Some(2));
-        // assert_eq!(buffer.pop(), Some(1));
-        // assert_eq!(buffer.pop(), None);
-    }
 
-    #[test]
-    fn test_pop_leading_zeros() {
-        let mut buffer = Buffer::allocate(5);
-        buffer.push(1);
-        buffer.push(2);
         buffer.push(0);
         buffer.push(0);
         buffer.pop_zeros();
@@ -1089,5 +1121,27 @@ mod tests {
         assert_eq!(repr.len(), 1);
         assert_eq!(repr, repr_inline);
         assert!(matches!(repr.as_typed(), TypedReprRef::RefSmall(_)));
+    }
+
+    #[test]
+    fn test_into_boxed_slice () {
+        // empty buffer
+        let buffer = Buffer::allocate(2);
+        let slice = buffer.into_boxed_slice();
+        assert_eq!(slice.len(), 0);
+
+        // full buffer
+        let mut buffer = Buffer::allocate(2);
+        buffer.push(1);
+        buffer.push(2);
+        let slice = buffer.into_boxed_slice();
+        assert_eq!(*slice, [1, 2]);
+
+        // partially filled buffer
+        let mut buffer = Buffer::allocate(20);
+        buffer.push(1);
+        buffer.push(2);
+        let slice = buffer.into_boxed_slice();
+        assert_eq!(*slice, [1, 2]);
     }
 }

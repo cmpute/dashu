@@ -14,7 +14,7 @@ use core::{
     ops::{Add, AddAssign, Neg, Sub, SubAssign},
 };
 
-use super::{modulo::ModuloLargeRaw, modulo_ring::ModuloRingLarge};
+use super::{modulo::{ModuloLargeRaw, ModuloDoubleRaw}, modulo_ring::{ModuloRingLarge, ModuloRingDouble}};
 
 impl<'a> Neg for Modulo<'a> {
     type Output = Modulo<'a>;
@@ -22,7 +22,8 @@ impl<'a> Neg for Modulo<'a> {
     #[inline]
     fn neg(self) -> Modulo<'a> {
         match self.into_repr() {
-            ModuloRepr::Small(raw, ring) => Self::from_small(ring.negate(raw), ring),
+            ModuloRepr::Single(raw, ring) => Self::from_single(ring.negate(raw), ring),
+            ModuloRepr::Double(raw, ring) => Self::from_double(ring.negate(raw), ring),
             ModuloRepr::Large(mut raw, ring) => {
                 ring.negate_in_place(&mut raw);
                 Self::from_large(raw, ring)
@@ -88,8 +89,12 @@ impl<'a> AddAssign<&Modulo<'a>> for Modulo<'a> {
     #[inline]
     fn add_assign(&mut self, rhs: &Modulo<'a>) {
         match (self.repr_mut(), rhs.repr()) {
-            (ModuloRepr::Small(raw0, ring), ModuloRepr::Small(raw1, ring1)) => {
+            (ModuloRepr::Single(raw0, ring), ModuloRepr::Single(raw1, ring1)) => {
                 Modulo::check_same_ring_single(ring, ring1);
+                *raw0 = ring.add(*raw0, *raw1);
+            }
+            (ModuloRepr::Double(raw0, ring), ModuloRepr::Double(raw1, ring1)) => {
+                Modulo::check_same_ring_double(ring, ring1);
                 *raw0 = ring.add(*raw0, *raw1);
             }
             (ModuloRepr::Large(raw0, ring), ModuloRepr::Large(raw1, ring1)) => {
@@ -126,9 +131,13 @@ impl<'a> Sub<Modulo<'a>> for &Modulo<'a> {
     #[inline]
     fn sub(self, rhs: Modulo<'a>) -> Modulo<'a> {
         match (self.repr(), rhs.into_repr()) {
-            (ModuloRepr::Small(raw0, ring), ModuloRepr::Small(raw1, ring1)) => {
+            (ModuloRepr::Single(raw0, ring), ModuloRepr::Single(raw1, ring1)) => {
                 Modulo::check_same_ring_single(ring, ring1);
-                Modulo::from_small(ring.sub(*raw0, raw1), ring)
+                Modulo::from_single(ring.sub(*raw0, raw1), ring)
+            }
+            (ModuloRepr::Double(raw0, ring), ModuloRepr::Double(raw1, ring1)) => {
+                Modulo::check_same_ring_double(ring, ring1);
+                Modulo::from_double(ring.sub(*raw0, raw1), ring)
             }
             (ModuloRepr::Large(raw0, ring), ModuloRepr::Large(mut raw1, ring1)) => {
                 Modulo::check_same_ring_large(ring, ring1);
@@ -160,10 +169,14 @@ impl<'a> SubAssign<&Modulo<'a>> for Modulo<'a> {
     #[inline]
     fn sub_assign(&mut self, rhs: &Modulo<'a>) {
         match (self.repr_mut(), rhs.repr()) {
-            (ModuloRepr::Small(raw0, ring), ModuloRepr::Small(raw1, ring1)) => {
+            (ModuloRepr::Single(raw0, ring), ModuloRepr::Single(raw1, ring1)) => {
                 Modulo::check_same_ring_single(ring, ring1);
                 *raw0 = ring.sub(*raw0, *raw1);
-            }
+            },
+            (ModuloRepr::Double(raw0, ring), ModuloRepr::Double(raw1, ring1)) => {
+                Modulo::check_same_ring_double(ring, ring1);
+                *raw0 = ring.sub(*raw0, *raw1);
+            },
             (ModuloRepr::Large(raw0, ring), ModuloRepr::Large(raw1, ring1)) => {
                 Modulo::check_same_ring_large(ring, ring1);
                 ring.sub_in_place(raw0, raw1);
@@ -176,7 +189,7 @@ impl<'a> SubAssign<&Modulo<'a>> for Modulo<'a> {
 impl ModuloRingSingle {
     #[inline]
     const fn negate(&self, raw: ModuloSingleRaw) -> ModuloSingleRaw {
-        debug_assert!(self.is_valid(raw));
+        debug_assert_in_const_fn!(self.is_valid(raw));
         let val = match raw.0 {
             0 => 0,
             x => self.normalized_modulus() - x,
@@ -186,7 +199,7 @@ impl ModuloRingSingle {
 
     #[inline]
     const fn add(&self, lhs: ModuloSingleRaw, rhs: ModuloSingleRaw) -> ModuloSingleRaw {
-        debug_assert!(self.is_valid(lhs) && self.is_valid(rhs));
+        debug_assert_in_const_fn!(self.is_valid(lhs) && self.is_valid(rhs));
         let (mut val, overflow) = lhs.0.overflowing_add(rhs.0);
         let m = self.normalized_modulus();
         if overflow || val >= m {
@@ -199,15 +212,53 @@ impl ModuloRingSingle {
 
     #[inline]
     const fn sub(&self, lhs: ModuloSingleRaw, rhs: ModuloSingleRaw) -> ModuloSingleRaw {
-        debug_assert!(self.is_valid(lhs) && self.is_valid(rhs));
+        debug_assert_in_const_fn!(self.is_valid(lhs) && self.is_valid(rhs));
         let (mut val, overflow) = lhs.0.overflowing_sub(rhs.0);
         if overflow {
             let m = self.normalized_modulus();
             let (v, overflow2) = val.overflowing_add(m);
-            debug_assert!(overflow2);
+            debug_assert_in_const_fn!(overflow2);
             val = v;
         }
         ModuloSingleRaw(val)
+    }
+}
+
+impl ModuloRingDouble {
+    #[inline]
+    const fn negate(&self, raw: ModuloDoubleRaw) -> ModuloDoubleRaw {
+        debug_assert_in_const_fn!(self.is_valid(raw));
+        let val = match raw.0 {
+            0 => 0,
+            x => self.normalized_modulus() - x,
+        };
+        ModuloDoubleRaw(val)
+    }
+
+    #[inline]
+    const fn add(&self, lhs: ModuloDoubleRaw, rhs: ModuloDoubleRaw) -> ModuloDoubleRaw {
+        debug_assert_in_const_fn!(self.is_valid(lhs) && self.is_valid(rhs));
+        let (mut val, overflow) = lhs.0.overflowing_add(rhs.0);
+        let m = self.normalized_modulus();
+        if overflow || val >= m {
+            let (v, overflow2) = val.overflowing_sub(m);
+            debug_assert_in_const_fn!(overflow == overflow2);
+            val = v;
+        }
+        ModuloDoubleRaw(val)
+    }
+
+    #[inline]
+    const fn sub(&self, lhs: ModuloDoubleRaw, rhs: ModuloDoubleRaw) -> ModuloDoubleRaw {
+        debug_assert_in_const_fn!(self.is_valid(lhs) && self.is_valid(rhs));
+        let (mut val, overflow) = lhs.0.overflowing_sub(rhs.0);
+        if overflow {
+            let m = self.normalized_modulus();
+            let (v, overflow2) = val.overflowing_add(m);
+            debug_assert_in_const_fn!(overflow2);
+            val = v;
+        }
+        ModuloDoubleRaw(val)
     }
 }
 

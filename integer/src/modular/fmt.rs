@@ -2,7 +2,7 @@
 
 use crate::modular::{
     modulo::{Modulo, ModuloRepr},
-    modulo_ring::{ModuloRing, ModuloRingLarge, ModuloRingRepr, ModuloRingSingle},
+    modulo_ring::{ModuloRing, ModuloRingLarge, ModuloRingRepr, ModuloRingSingle, ModuloRingDouble},
 };
 use core::fmt::{self, Binary, Debug, Display, Formatter, LowerHex, Octal, UpperHex};
 
@@ -11,13 +11,21 @@ macro_rules! impl_fmt {
         impl $t for ModuloRing {
             fn fmt(&self, f: &mut Formatter) -> fmt::Result {
                 match self.repr() {
-                    ModuloRingRepr::Single(self_small) => $t::fmt(self_small, f),
-                    ModuloRingRepr::Large(self_large) => $t::fmt(self_large, f),
+                    ModuloRingRepr::Single(ring) => $t::fmt(ring, f),
+                    ModuloRingRepr::Double(ring) => $t::fmt(ring, f),
+                    ModuloRingRepr::Large(ring) => $t::fmt(ring, f),
                 }
             }
         }
 
         impl $t for ModuloRingSingle {
+            fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+                f.write_str("mod ")?;
+                $t::fmt(&self.modulus(), f)
+            }
+        }
+        
+        impl $t for ModuloRingDouble {
             fn fmt(&self, f: &mut Formatter) -> fmt::Result {
                 f.write_str("mod ")?;
                 $t::fmt(&self.modulus(), f)
@@ -34,20 +42,14 @@ macro_rules! impl_fmt {
         impl $t for Modulo<'_> {
             fn fmt(&self, f: &mut Formatter) -> fmt::Result {
                 let residue = self.residue();
+                $t::fmt(&residue, f)?;
+                f.write_str(" (")?;
                 match self.repr() {
-                    ModuloRepr::Small(_, ring) => {
-                        $t::fmt(&residue, f)?;
-                        f.write_str(" (")?;
-                        $t::fmt(ring, f)?;
-                        f.write_str(")")
-                    }
-                    ModuloRepr::Large(_, ring) => {
-                        $t::fmt(&residue, f)?;
-                        f.write_str(" (")?;
-                        $t::fmt(ring, f)?;
-                        f.write_str(")")
-                    }
+                    ModuloRepr::Single(_, ring) => $t::fmt(ring, f)?,
+                    ModuloRepr::Double(_, ring) => $t::fmt(ring, f)?,
+                    ModuloRepr::Large(_, ring) => $t::fmt(ring, f)?,
                 }
+                f.write_str(")")
             }
         }
     };

@@ -2,16 +2,16 @@ use dashu_int::{ibig, modular::ModuloRing, ubig};
 
 #[test]
 fn test_modulus() {
-    let ring = ModuloRing::new(&ubig!(100));
+    let ring = ModuloRing::new(ubig!(100));
     assert_eq!(ring.modulus(), ubig!(100));
 
-    let ring = ModuloRing::new(&ubig!(10).pow(100));
+    let ring = ModuloRing::new(ubig!(10).pow(100));
     assert_eq!(ring.modulus(), ubig!(10).pow(100));
 }
 
 #[test]
 fn test_clone() {
-    let ring1 = ModuloRing::new(&ubig!(100));
+    let ring1 = ModuloRing::new(ubig!(100));
     let x = ring1.from(512);
     let y = x.clone();
     assert_eq!(x, y);
@@ -20,7 +20,7 @@ fn test_clone() {
     z.clone_from(&x);
     assert_eq!(x, z);
 
-    let ring2 = ModuloRing::new(&ubig!(_1000000000000000000000000000000));
+    let ring2 = ModuloRing::new(ubig!(_1000000000000000000000000000000));
     let x = ring2.from(512);
     let y = x.clone();
     assert_eq!(x, y);
@@ -34,7 +34,7 @@ fn test_clone() {
     x.clone_from(&y);
     assert_eq!(x, y);
 
-    let ring3 = ModuloRing::new(&ubig!(10).pow(100));
+    let ring3 = ModuloRing::new(ubig!(10).pow(100));
     let x = ring2.from(1);
     let mut y = ring3.from(2);
     y.clone_from(&x);
@@ -43,7 +43,7 @@ fn test_clone() {
 
 #[test]
 fn test_convert() {
-    let ring = ModuloRing::new(&ubig!(100));
+    let ring = ModuloRing::new(ubig!(100));
     let x = ring.from(6);
     assert_eq!(x, ring.from(&ubig!(306)));
     assert_ne!(x, ring.from(&ubig!(313)));
@@ -70,7 +70,7 @@ fn test_convert() {
     assert_eq!(ring.from(0), ring.from(false));
     assert_eq!(ring.from(1), ring.from(true));
 
-    let ring = ModuloRing::new(&ubig!(
+    let ring = ModuloRing::new(ubig!(
         _1000000000000000000000000000000000000000000000000000000000000
     ));
     let x = ring.from(6);
@@ -103,14 +103,14 @@ fn test_convert() {
 
 #[test]
 fn test_negate() {
-    let ring = ModuloRing::new(&ubig!(100));
+    let ring = ModuloRing::new(ubig!(100));
     let x = ring.from(-1234);
     let y = -&x;
     assert_eq!(y.residue(), ubig!(34));
     let y = -x;
     assert_eq!(y.residue(), ubig!(34));
 
-    let ring = ModuloRing::new(&ubig!(_1000000000000000000000000000000));
+    let ring = ModuloRing::new(ubig!(_1000000000000000000000000000000));
     let x = ring.from(ibig!(-_33333123456789012345678901234567890));
     let y = -&x;
     assert_eq!(y, ring.from(ubig!(_44444123456789012345678901234567890)));
@@ -122,8 +122,8 @@ fn test_negate() {
 #[test]
 #[allow(clippy::eq_op)]
 fn test_different_rings() {
-    let ring1 = ModuloRing::new(&ubig!(100));
-    let ring2 = ModuloRing::new(&ubig!(100));
+    let ring1 = ModuloRing::new(ubig!(100));
+    let ring2 = ModuloRing::new(ubig!(100));
     assert_eq!(ring1, ring1);
     assert_ne!(ring1, ring2);
 }
@@ -131,8 +131,8 @@ fn test_different_rings() {
 #[test]
 #[should_panic]
 fn test_cmp_different_rings() {
-    let ring1 = ModuloRing::new(&ubig!(100));
-    let ring2 = ModuloRing::new(&ubig!(200));
+    let ring1 = ModuloRing::new(ubig!(100));
+    let ring2 = ModuloRing::new(ubig!(200));
     let x = ring1.from(5);
     let y = ring2.from(5);
     let _ = x == y;
@@ -140,8 +140,8 @@ fn test_cmp_different_rings() {
 
 #[test]
 fn test_add_sub() {
-    let ring1 = ModuloRing::new(&ubig!(100));
-    let ring2 = ModuloRing::new(&ubig!(_1000000000000000000000000000000));
+    let ring1 = ModuloRing::new(ubig!(100));
+    let ring2 = ModuloRing::new(ubig!(_1000000000000000000000000000000));
     let test_cases = [
         (ring1.from(1), ring1.from(2), ring1.from(3)),
         (ring1.from(99), ring1.from(5), ring1.from(4)),
@@ -195,10 +195,10 @@ fn test_add_sub() {
 
 #[test]
 fn test_mul() {
-    let ring1 = ModuloRing::new(&ubig!(100));
-    let ring2 = ModuloRing::new(&ubig!(_1000000000000000000000000000000));
+    let ring1 = ModuloRing::new(ubig!(100));
+    let ring2 = ModuloRing::new(ubig!(_1000000000000000000000000000000));
     let big = ubig!(10).pow(10000);
-    let ring3 = ModuloRing::new(&big);
+    let ring3 = ModuloRing::new(big.clone());
     let test_cases = [
         (ring1.from(23), ring1.from(96), ring1.from(8)),
         (
@@ -235,8 +235,8 @@ fn test_mul() {
 #[test]
 #[should_panic]
 fn test_add_different_rings() {
-    let ring1 = ModuloRing::new(&ubig!(100));
-    let ring2 = ModuloRing::new(&ubig!(200));
+    let ring1 = ModuloRing::new(ubig!(100));
+    let ring2 = ModuloRing::new(ubig!(200));
     let x = ring1.from(5);
     let y = ring2.from(5);
     let _ = x + y;
@@ -245,8 +245,8 @@ fn test_add_different_rings() {
 #[test]
 #[should_panic]
 fn test_sub_different_rings() {
-    let ring1 = ModuloRing::new(&ubig!(100));
-    let ring2 = ModuloRing::new(&ubig!(200));
+    let ring1 = ModuloRing::new(ubig!(100));
+    let ring2 = ModuloRing::new(ubig!(200));
     let x = ring1.from(5);
     let y = ring2.from(5);
     let _ = x - y;
@@ -254,7 +254,7 @@ fn test_sub_different_rings() {
 
 #[test]
 fn test_pow() {
-    let ring = ModuloRing::new(&ubig!(100));
+    let ring = ModuloRing::new(ubig!(100));
     assert_eq!(ring.from(0).pow(&ubig!(0)), ring.from(1));
     assert_eq!(ring.from(13).pow(&ubig!(0)), ring.from(1));
     assert_eq!(ring.from(13).pow(&ubig!(1)), ring.from(13));
@@ -266,7 +266,7 @@ fn test_pow() {
         ring.from(97)
     );
 
-    let ring = ModuloRing::new(&ubig!(_1000000000000000000000000000000));
+    let ring = ModuloRing::new(ubig!(_1000000000000000000000000000000));
     let x = ring.from(ubig!(_658571505947767552546868380533));
     assert_eq!(x.pow(&ubig!(0)), ring.from(1));
     assert_eq!(x.pow(&ubig!(1)), x);
@@ -277,14 +277,14 @@ fn test_pow() {
 
     // A Mersenne prime.
     let prime = ubig!(2).pow(4423) - ubig!(1);
-    let ring = ModuloRing::new(&prime);
+    let ring = ModuloRing::new(prime.clone());
     // Fermat theorem: a^(p-1) = 1
     assert_eq!(ring.from(13).pow(&(prime - ubig!(1))), ring.from(1));
 }
 
 #[test]
 fn test_format() {
-    let ring = ModuloRing::new(&ubig!(100));
+    let ring = ModuloRing::new(ubig!(100));
     let x = ring.from(105);
     assert_eq!(format!("{}", ring), "mod 100");
     assert_eq!(format!("{}", x), "5 (mod 100)");
@@ -295,7 +295,7 @@ fn test_format() {
     assert_eq!(format!("{:#x}", x), "0x5 (mod 0x64)");
     assert_eq!(format!("{:X}", x), "5 (mod 64)");
 
-    let ring = ModuloRing::new(&ubig!(_1000000000000000000000000000000));
+    let ring = ModuloRing::new(ubig!(_1000000000000000000000000000000));
     let x = -ring.from(1);
     assert_eq!(format!("{}", ring), "mod 1000000000000000000000000000000");
     assert_eq!(

@@ -6,14 +6,13 @@ use crate::{
     cmp, div,
     fast_divide::{FastDivideNormalized, FastDivideNormalized2},
     math,
-    primitive::{shrink_dword, split_dword},
-    repr::TypedReprRef,
+    primitive::shrink_dword,
+    repr::{TypedRepr, Buffer},
     ubig::UBig,
 };
-use alloc::vec::Vec;
 use core::cmp::Ordering;
 
-use super::modulo::{ModuloLargeRaw, ModuloSingleRaw};
+use super::modulo::{ModuloLargeRaw, ModuloSingleRaw, ModuloDoubleRaw};
 
 /// A ring of integers modulo a positive integer.
 ///
@@ -21,14 +20,14 @@ use super::modulo::{ModuloLargeRaw, ModuloSingleRaw};
 ///
 /// ```
 /// # use dashu_int::{modular::ModuloRing, ubig};
-/// let ring = ModuloRing::new(&ubig!(100));
+/// let ring = ModuloRing::new(ubig!(100));
 /// assert_eq!(ring.modulus(), ubig!(100));
 /// ```
 pub struct ModuloRing(ModuloRingRepr);
 
 pub(crate) enum ModuloRingRepr {
     Single(ModuloRingSingle),
-    // Double(ModuloRingDouble),
+    Double(ModuloRingDouble),
     Large(ModuloRingLarge),
 }
 
@@ -45,7 +44,7 @@ pub(crate) struct ModuloRingDouble {
 }
 
 pub(crate) struct ModuloRingLarge {
-    normalized_modulus: Vec<Word>, // TODO: use Box<[Word]>
+    normalized_modulus: Box<[Word]>,
     shift: u32,
     fast_div_top: FastDivideNormalized2,
 }
@@ -62,7 +61,7 @@ impl ModuloRing {
     ///
     /// ```
     /// # use dashu_int::{modular::ModuloRing, ubig};
-    /// let ring = ModuloRing::new(&ubig!(100));
+    /// let ring = ModuloRing::new(ubig!(100));
     /// assert_eq!(ring.modulus(), ubig!(100));
     /// ```
     ///
@@ -70,21 +69,17 @@ impl ModuloRing {
     ///
     /// Panics if `n` is zero.
     #[inline]
-    pub fn new(n: &UBig) -> ModuloRing {
-        match n.repr() {
-            TypedReprRef::RefSmall(0) => panic!("modulus cannot be 0"),
-            TypedReprRef::RefSmall(dword) => {
+    pub fn new(n: UBig) -> ModuloRing {
+        match n.into_repr() {
+            TypedRepr::Small(0) => panic!("modulus cannot be 0"),
+            TypedRepr::Small(dword) => {
                 if let Some(word) = shrink_dword(dword) {
                     ModuloRing(ModuloRingRepr::Single(ModuloRingSingle::new(word)))
                 } else {
-                    // ModuloRing(ModuloRingRepr::Double(ModuloRingDouble::new(dword)))
-                    // TODO: bandaid here
-                    let (lo, hi) = split_dword(dword);
-                    let dword_slice: [Word; 2] = [lo, hi];
-                    ModuloRing(ModuloRingRepr::Large(ModuloRingLarge::new(&dword_slice)))
+                    ModuloRing(ModuloRingRepr::Double(ModuloRingDouble::new(dword)))
                 }
             }
-            TypedReprRef::RefLarge(words) => {
+            TypedRepr::Large(words) => {
                 ModuloRing(ModuloRingRepr::Large(ModuloRingLarge::new(words)))
             }
         }
@@ -162,15 +157,19 @@ impl ModuloRingDouble {
     pub(crate) const fn fast_div(&self) -> FastDivideNormalized2 {
         self.fast_div
     }
+    
+    #[inline]
+    pub(crate) const fn is_valid(&self, val: ModuloDoubleRaw) -> bool {
+        val.0 < self.normalized_modulus && val.0 & math::ones_dword(self.shift) == 0
+    }
 }
 
 impl ModuloRingLarge {
     /// Create a new large ring of integers modulo `n`.
-    fn new(n: &[Word]) -> ModuloRingLarge {
-        let mut normalized_modulus = n.to_vec();
-        let (shift, fast_div_top) = div::normalize_large(&mut normalized_modulus);
+    fn new(mut n: Buffer) -> ModuloRingLarge {
+        let (shift, fast_div_top) = div::normalize_large(&mut n);
         ModuloRingLarge {
-            normalized_modulus,
+            normalized_modulus: n.into_boxed_slice(),
             shift,
             fast_div_top,
         }
