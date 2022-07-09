@@ -2,17 +2,16 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
-    assert::debug_assert_in_const_fn,
     cmp, div,
     fast_divide::{FastDivideNormalized, FastDivideNormalized2},
     math,
     primitive::shrink_dword,
-    repr::{TypedRepr, Buffer},
+    repr::{Buffer, TypedRepr},
     ubig::UBig,
 };
 use core::cmp::Ordering;
 
-use super::modulo::{ModuloLargeRaw, ModuloSingleRaw, ModuloDoubleRaw};
+use super::modulo::{ModuloDoubleRaw, ModuloLargeRaw, ModuloSingleRaw};
 
 /// A ring of integers modulo a positive integer.
 ///
@@ -95,7 +94,7 @@ impl ModuloRingSingle {
     /// Create a new ring of integers modulo a single word number `n`.
     #[inline]
     pub(crate) const fn new(n: Word) -> ModuloRingSingle {
-        debug_assert_in_const_fn!(n != 0);
+        debug_assert!(n != 0);
         let shift = n.leading_zeros();
         let normalized_modulus = n << shift;
         let fast_div = FastDivideNormalized::new(normalized_modulus);
@@ -132,7 +131,7 @@ impl ModuloRingDouble {
     /// Create a new ring of integers modulo a double word number `n`.
     #[inline]
     pub(crate) const fn new(n: DoubleWord) -> ModuloRingDouble {
-        debug_assert_in_const_fn!(n > Word::MAX as DoubleWord);
+        debug_assert!(n > Word::MAX as DoubleWord);
         let shift = n.leading_zeros();
         let normalized_modulus = n << shift;
         let fast_div = FastDivideNormalized2::new(normalized_modulus);
@@ -157,7 +156,7 @@ impl ModuloRingDouble {
     pub(crate) const fn fast_div(&self) -> FastDivideNormalized2 {
         self.fast_div
     }
-    
+
     #[inline]
     pub(crate) const fn is_valid(&self, val: ModuloDoubleRaw) -> bool {
         val.0 < self.normalized_modulus && val.0 & math::ones_dword(self.shift) == 0

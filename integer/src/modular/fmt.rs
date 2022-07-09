@@ -2,7 +2,9 @@
 
 use crate::modular::{
     modulo::{Modulo, ModuloRepr},
-    modulo_ring::{ModuloRing, ModuloRingLarge, ModuloRingRepr, ModuloRingSingle, ModuloRingDouble},
+    modulo_ring::{
+        ModuloRing, ModuloRingDouble, ModuloRingLarge, ModuloRingRepr, ModuloRingSingle,
+    },
 };
 use core::fmt::{self, Binary, Debug, Display, Formatter, LowerHex, Octal, UpperHex};
 
@@ -24,7 +26,7 @@ macro_rules! impl_fmt {
                 $t::fmt(&self.modulus(), f)
             }
         }
-        
+
         impl $t for ModuloRingDouble {
             fn fmt(&self, f: &mut Formatter) -> fmt::Result {
                 f.write_str("mod ")?;

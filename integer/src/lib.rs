@@ -46,8 +46,8 @@
 //! );
 //!
 //! let ring = ModuloRing::new(ubig!(10000));
-//! let x = ring.from(12345);
-//! let y = ring.from(55443);
+//! let x = ring.convert(12345);
+//! let y = ring.convert(55443);
 //! assert_eq!(format!("{}", x - y), "6902 (mod 10000)");
 //! # Ok::<(), ParseError>(())
 //! ```
@@ -68,7 +68,6 @@ pub use crate::{ibig::IBig, ubig::UBig};
 mod add;
 mod add_ops;
 mod arch;
-mod assert;
 mod bits;
 mod cmp;
 mod convert;

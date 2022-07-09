@@ -1,9 +1,7 @@
 //! Modular addition and subtraction.
 
 use crate::{
-    add,
-    assert::debug_assert_in_const_fn,
-    cmp,
+    add, cmp,
     modular::{
         modulo::{Modulo, ModuloRepr, ModuloSingleRaw},
         modulo_ring::ModuloRingSingle,
@@ -14,7 +12,10 @@ use core::{
     ops::{Add, AddAssign, Neg, Sub, SubAssign},
 };
 
-use super::{modulo::{ModuloLargeRaw, ModuloDoubleRaw}, modulo_ring::{ModuloRingLarge, ModuloRingDouble}};
+use super::{
+    modulo::{ModuloDoubleRaw, ModuloLargeRaw},
+    modulo_ring::{ModuloRingDouble, ModuloRingLarge},
+};
 
 impl<'a> Neg for Modulo<'a> {
     type Output = Modulo<'a>;
@@ -172,11 +173,11 @@ impl<'a> SubAssign<&Modulo<'a>> for Modulo<'a> {
             (ModuloRepr::Single(raw0, ring), ModuloRepr::Single(raw1, ring1)) => {
                 Modulo::check_same_ring_single(ring, ring1);
                 *raw0 = ring.sub(*raw0, *raw1);
-            },
+            }
             (ModuloRepr::Double(raw0, ring), ModuloRepr::Double(raw1, ring1)) => {
                 Modulo::check_same_ring_double(ring, ring1);
                 *raw0 = ring.sub(*raw0, *raw1);
-            },
+            }
             (ModuloRepr::Large(raw0, ring), ModuloRepr::Large(raw1, ring1)) => {
                 Modulo::check_same_ring_large(ring, ring1);
                 ring.sub_in_place(raw0, raw1);
@@ -189,7 +190,7 @@ impl<'a> SubAssign<&Modulo<'a>> for Modulo<'a> {
 impl ModuloRingSingle {
     #[inline]
     const fn negate(&self, raw: ModuloSingleRaw) -> ModuloSingleRaw {
-        debug_assert_in_const_fn!(self.is_valid(raw));
+        debug_assert!(self.is_valid(raw));
         let val = match raw.0 {
             0 => 0,
             x => self.normalized_modulus() - x,
@@ -199,12 +200,12 @@ impl ModuloRingSingle {
 
     #[inline]
     const fn add(&self, lhs: ModuloSingleRaw, rhs: ModuloSingleRaw) -> ModuloSingleRaw {
-        debug_assert_in_const_fn!(self.is_valid(lhs) && self.is_valid(rhs));
+        debug_assert!(self.is_valid(lhs) && self.is_valid(rhs));
         let (mut val, overflow) = lhs.0.overflowing_add(rhs.0);
         let m = self.normalized_modulus();
         if overflow || val >= m {
             let (v, overflow2) = val.overflowing_sub(m);
-            debug_assert_in_const_fn!(overflow == overflow2);
+            debug_assert!(overflow == overflow2);
             val = v;
         }
         ModuloSingleRaw(val)
@@ -212,12 +213,12 @@ impl ModuloRingSingle {
 
     #[inline]
     const fn sub(&self, lhs: ModuloSingleRaw, rhs: ModuloSingleRaw) -> ModuloSingleRaw {
-        debug_assert_in_const_fn!(self.is_valid(lhs) && self.is_valid(rhs));
+        debug_assert!(self.is_valid(lhs) && self.is_valid(rhs));
         let (mut val, overflow) = lhs.0.overflowing_sub(rhs.0);
         if overflow {
             let m = self.normalized_modulus();
             let (v, overflow2) = val.overflowing_add(m);
-            debug_assert_in_const_fn!(overflow2);
+            debug_assert!(overflow2);
             val = v;
         }
         ModuloSingleRaw(val)
@@ -227,7 +228,7 @@ impl ModuloRingSingle {
 impl ModuloRingDouble {
     #[inline]
     const fn negate(&self, raw: ModuloDoubleRaw) -> ModuloDoubleRaw {
-        debug_assert_in_const_fn!(self.is_valid(raw));
+        debug_assert!(self.is_valid(raw));
         let val = match raw.0 {
             0 => 0,
             x => self.normalized_modulus() - x,
@@ -237,12 +238,12 @@ impl ModuloRingDouble {
 
     #[inline]
     const fn add(&self, lhs: ModuloDoubleRaw, rhs: ModuloDoubleRaw) -> ModuloDoubleRaw {
-        debug_assert_in_const_fn!(self.is_valid(lhs) && self.is_valid(rhs));
+        debug_assert!(self.is_valid(lhs) && self.is_valid(rhs));
         let (mut val, overflow) = lhs.0.overflowing_add(rhs.0);
         let m = self.normalized_modulus();
         if overflow || val >= m {
             let (v, overflow2) = val.overflowing_sub(m);
-            debug_assert_in_const_fn!(overflow == overflow2);
+            debug_assert!(overflow == overflow2);
             val = v;
         }
         ModuloDoubleRaw(val)
@@ -250,12 +251,12 @@ impl ModuloRingDouble {
 
     #[inline]
     const fn sub(&self, lhs: ModuloDoubleRaw, rhs: ModuloDoubleRaw) -> ModuloDoubleRaw {
-        debug_assert_in_const_fn!(self.is_valid(lhs) && self.is_valid(rhs));
+        debug_assert!(self.is_valid(lhs) && self.is_valid(rhs));
         let (mut val, overflow) = lhs.0.overflowing_sub(rhs.0);
         if overflow {
             let m = self.normalized_modulus();
             let (v, overflow2) = val.overflowing_add(m);
-            debug_assert_in_const_fn!(overflow2);
+            debug_assert!(overflow2);
             val = v;
         }
         ModuloDoubleRaw(val)

@@ -28,7 +28,6 @@ impl PartialEq for ModuloRingSingle {
 
 impl Eq for ModuloRingSingle {}
 
-
 impl PartialEq for ModuloRingDouble {
     /// Equality is identity: two rings are not equal even if they have the same modulus.
     #[inline]

@@ -108,9 +108,9 @@ impl_mul_ibig_primitive!(isize);
 
 mod repr {
     use super::*;
-    use crate::math;
     use crate::primitive::{shrink_dword, split_dword};
     use crate::repr::{Repr, TypedRepr, TypedReprRef};
+    use crate::{math, shift};
 
     impl Mul<TypedRepr> for TypedRepr {
         type Output = Repr;
@@ -191,10 +191,13 @@ mod repr {
         match rhs {
             0 => Repr::zero(),
             1 => Repr::from_buffer(buffer),
-            // TODO: specialize shifting by checking if rhs is power of 2
             dw => {
                 if let Some(word) = shrink_dword(dw) {
-                    let carry = mul::mul_word_in_place(&mut buffer, word);
+                    let carry = if dw.is_power_of_two() {
+                        shift::shl_in_place(&mut buffer, dw.trailing_zeros())
+                    } else {
+                        mul::mul_word_in_place(&mut buffer, word)
+                    };
                     if carry != 0 {
                         buffer.push_resizing(carry);
                     }

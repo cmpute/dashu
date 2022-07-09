@@ -4,7 +4,7 @@ use crate::{
     arch::word::{DoubleWord, Word},
     div,
     ibig::IBig,
-    math::{shl_dword, self},
+    math::{self, shl_dword},
     memory::MemoryAllocation,
     modular::{
         modulo::{Modulo, ModuloRepr, ModuloSingleRaw},
@@ -18,7 +18,10 @@ use crate::{
 };
 use dashu_base::UnsignedAbs;
 
-use super::{modulo::{ModuloLargeRaw, ModuloDoubleRaw}, modulo_ring::ModuloRingDouble};
+use super::{
+    modulo::{ModuloDoubleRaw, ModuloLargeRaw},
+    modulo_ring::ModuloRingDouble,
+};
 
 impl ModuloRing {
     /// The ring modulus.
@@ -39,7 +42,6 @@ impl ModuloRing {
         }
     }
 
-    // TODO: rename as convert / transform
     /// Create an element of the ring from another type.
     ///
     /// # Examples
@@ -47,12 +49,12 @@ impl ModuloRing {
     /// ```
     /// # use dashu_int::{modular::ModuloRing, ubig};
     /// let ring = ModuloRing::new(ubig!(100));
-    /// let x = ring.from(-1234);
-    /// let y = ring.from(ubig!(3366));
+    /// let x = ring.convert(-1234);
+    /// let y = ring.convert(ubig!(3366));
     /// assert!(x == y);
     /// ```
     #[inline]
-    pub fn from<T: IntoModulo>(&self, x: T) -> Modulo {
+    pub fn convert<T: IntoModulo>(&self, x: T) -> Modulo {
         x.into_modulo(self)
     }
 }
@@ -65,7 +67,7 @@ impl Modulo<'_> {
     /// ```
     /// # use dashu_int::{modular::ModuloRing, ubig};
     /// let ring = ModuloRing::new(ubig!(100));
-    /// let x = ring.from(-1234);
+    /// let x = ring.convert(-1234);
     /// assert_eq!(x.residue(), ubig!(66));
     /// ```
     #[inline]
@@ -176,7 +178,7 @@ impl ModuloDoubleRaw {
         }
         ModuloDoubleRaw(rem)
     }
-    
+
     #[inline]
     pub(crate) fn from_ubig(x: &UBig, ring: &ModuloRingDouble) -> Self {
         match x.repr() {

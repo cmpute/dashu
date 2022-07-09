@@ -169,7 +169,11 @@ impl Buffer {
         }
 
         let ptr = Self::allocate_raw(capacity);
-        Buffer { capacity, ptr, len: 0 }
+        Buffer {
+            capacity,
+            ptr,
+            len: 0,
+        }
     }
 
     /// Change capacity to the given value
@@ -414,7 +418,7 @@ impl Buffer {
             let new_layout = Layout::array::<Word>(me.len).unwrap();
             let new_ptr =
                 alloc::alloc::realloc(me.ptr.as_ptr() as _, old_layout, new_layout.size());
-                
+
             // then convert the ptr to boxed slice
             let slice = slice::from_raw_parts_mut(new_ptr as *mut Word, me.len);
             Box::from_raw(slice)
@@ -752,8 +756,10 @@ impl Clone for Repr {
             // inline the data if the length is less than 3
             // SAFETY: we check the capacity before accessing the variants
             if capacity <= 2 {
-                Repr { 
-                    data: ReprData { inline: self.data.inline },
+                Repr {
+                    data: ReprData {
+                        inline: self.data.inline,
+                    },
                     capacity: NonZeroIsize::new_unchecked(capacity as isize),
                 }
             } else {
@@ -1124,7 +1130,7 @@ mod tests {
     }
 
     #[test]
-    fn test_into_boxed_slice () {
+    fn test_into_boxed_slice() {
         // empty buffer
         let buffer = Buffer::allocate(2);
         let slice = buffer.into_boxed_slice();

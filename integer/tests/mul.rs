@@ -34,9 +34,9 @@ where
 fn test_mul_ubig() {
     let test_cases = [
         (ubig!(0), ubig!(4), ubig!(0)),
+        (ubig!(0), ubig!(1) << 100, ubig!(0)),
         (ubig!(3), ubig!(4), ubig!(12)),
         (ubig!(0x123456789abc), ubig!(0x444333222111fff), ubig!(0x4daae4d8531f8de7e1fb5ae544)),
-        (ubig!(0), ubig!(1) << 100, ubig!(0)),
         (
             ubig!(1),
             ubig!(_0x123456789123456789123456789123456789),
@@ -57,6 +57,8 @@ fn test_mul_ubig() {
             ubig!(_0xabcdefabcdefabcdefabcdefabcdef),
             ubig!(_0xc379ab6dbd40ef67e528bfffd3039491348e20491348e20491348d5ccf67db24c3a1cca8f7891375de7)
         ),
+        (ubig!(5), ubig!(1) << 50, ubig!(5) << 50),
+        (ubig!(5), ubig!(1) << 100, ubig!(5) << 100),
     ];
 
     for (a, b, c) in &test_cases {

@@ -1,8 +1,7 @@
 //! Element of modular arithmetic.
 
 use crate::{
-    arch::word::{Word, DoubleWord},
-    assert::debug_assert_in_const_fn,
+    arch::word::{DoubleWord, Word},
     modular::modulo_ring::{ModuloRingLarge, ModuloRingSingle},
     repr::Buffer,
 };
@@ -16,8 +15,8 @@ use super::modulo_ring::ModuloRingDouble;
 /// ```
 /// # use dashu_int::{modular::ModuloRing, ubig};
 /// let ring = ModuloRing::new(ubig!(10000));
-/// let x = ring.from(12345);
-/// let y = ring.from(55443);
+/// let x = ring.convert(12345);
+/// let y = ring.convert(55443);
 /// assert_eq!((x - y).residue(), ubig!(6902));
 /// ```
 pub struct Modulo<'a>(ModuloRepr<'a>);
@@ -29,13 +28,13 @@ pub(crate) enum ModuloRepr<'a> {
 }
 
 /// Single word modular value in some unknown ring. The ring must be provided to operations.
-/// 
+///
 /// The internal value must be in range 0..modulus and divisible by the shift for ModuloSingleRing
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ModuloSingleRaw(pub(crate) Word);
 
 /// Double word modular value in some unknown ring. The ring must be provided to operations.
-/// 
+///
 /// The internal value must be in range 0..modulus and divisible by the shift for ModuloDoubleRing
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ModuloDoubleRaw(pub(crate) DoubleWord);
@@ -69,13 +68,13 @@ impl<'a> Modulo<'a> {
 
     #[inline]
     pub(crate) const fn from_single(raw: ModuloSingleRaw, ring: &'a ModuloRingSingle) -> Self {
-        debug_assert_in_const_fn!(ring.is_valid(raw));
+        debug_assert!(ring.is_valid(raw));
         Modulo(ModuloRepr::Single(raw, ring))
     }
-    
+
     #[inline]
     pub(crate) const fn from_double(raw: ModuloDoubleRaw, ring: &'a ModuloRingDouble) -> Self {
-        debug_assert_in_const_fn!(ring.is_valid(raw));
+        debug_assert!(ring.is_valid(raw));
         Modulo(ModuloRepr::Double(raw, ring))
     }
 
@@ -110,7 +109,7 @@ impl<'a> Modulo<'a> {
 impl ModuloSingleRaw {
     pub const fn one(ring: &ModuloRingSingle) -> Self {
         let modulo = Self(1 << ring.shift());
-        debug_assert_in_const_fn!(ring.is_valid(modulo));
+        debug_assert!(ring.is_valid(modulo));
         modulo
     }
 }
@@ -118,7 +117,7 @@ impl ModuloSingleRaw {
 impl ModuloDoubleRaw {
     pub const fn one(ring: &ModuloRingDouble) -> Self {
         let modulo = Self(1 << ring.shift());
-        debug_assert_in_const_fn!(ring.is_valid(modulo));
+        debug_assert!(ring.is_valid(modulo));
         modulo
     }
 }

@@ -1,6 +1,6 @@
 use crate::{
     arch::word::Word,
-    div,
+    div, math,
     memory::{self, Memory, MemoryAllocation},
     modular::{
         modulo::{Modulo, ModuloRepr, ModuloSingleRaw},
@@ -9,12 +9,15 @@ use crate::{
     mul,
     primitive::extend_word,
     shift,
-    sign::Sign::Positive, math,
+    sign::Sign::Positive,
 };
 use alloc::alloc::Layout;
 use core::ops::{Mul, MulAssign};
 
-use super::{modulo::{ModuloLargeRaw, ModuloDoubleRaw}, modulo_ring::ModuloRingDouble};
+use super::{
+    modulo::{ModuloDoubleRaw, ModuloLargeRaw},
+    modulo_ring::ModuloRingDouble,
+};
 
 impl<'a> Mul<Modulo<'a>> for Modulo<'a> {
     type Output = Modulo<'a>;
@@ -67,7 +70,7 @@ impl<'a> MulAssign<&Modulo<'a>> for Modulo<'a> {
             (ModuloRepr::Single(raw0, ring), ModuloRepr::Single(raw1, ring1)) => {
                 Modulo::check_same_ring_single(ring, ring1);
                 *raw0 = ring.mul(*raw0, *raw1);
-            },
+            }
             (ModuloRepr::Double(raw0, ring), ModuloRepr::Double(raw1, ring1)) => {
                 Modulo::check_same_ring_double(ring, ring1);
                 *raw0 = ring.mul(*raw0, *raw1);

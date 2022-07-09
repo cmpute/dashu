@@ -2,7 +2,6 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
-    assert::debug_assert_in_const_fn,
     primitive::{double_word, extend_word, split_dword, PrimitiveUnsigned},
 };
 
@@ -32,7 +31,7 @@ pub(crate) fn ceil_log_2<T: PrimitiveUnsigned>(x: T) -> u32 {
 /// x must be non-zero.
 #[inline]
 pub(crate) const fn ceil_log_2_word(x: Word) -> u32 {
-    debug_assert_in_const_fn!(x != 0);
+    debug_assert!(x != 0);
     bit_len_word(x - 1)
 }
 
@@ -99,7 +98,7 @@ pub(crate) const fn min_usize(a: usize, b: usize) -> usize {
 
 // Calculate dw << shift, assuming shift <= Word::BIT_SIZE, returns (lo, mid, hi).
 pub(crate) const fn shl_dword(dw: DoubleWord, shift: u32) -> (Word, Word, Word) {
-    debug_assert_in_const_fn!(shift <= Word::BIT_SIZE);
+    debug_assert!(shift <= Word::BIT_SIZE);
 
     let (lo, hi) = split_dword(dw);
     let (n0, carry) = split_dword(extend_word(lo) << shift);

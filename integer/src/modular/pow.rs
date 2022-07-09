@@ -6,14 +6,15 @@ use crate::{
         modulo::{Modulo, ModuloLargeRaw, ModuloRepr, ModuloSingleRaw},
         modulo_ring::ModuloRingSingle,
     },
-    primitive::{
-        double_word, split_dword, PrimitiveUnsigned, WORD_BITS, WORD_BITS_USIZE,
-    },
+    primitive::{double_word, split_dword, PrimitiveUnsigned, WORD_BITS, WORD_BITS_USIZE},
     repr::TypedReprRef::*,
     ubig::UBig,
 };
 
-use super::{modulo_ring::{ModuloRingLarge, ModuloRingDouble}, modulo::ModuloDoubleRaw};
+use super::{
+    modulo::ModuloDoubleRaw,
+    modulo_ring::{ModuloRingDouble, ModuloRingLarge},
+};
 
 impl<'a> Modulo<'a> {
     /// Exponentiation.
@@ -26,8 +27,8 @@ impl<'a> Modulo<'a> {
     /// let p = ubig!(2).pow(607) - ubig!(1);
     /// let ring = ModuloRing::new(p.clone());
     /// // Fermat's little theorem: a^(p-1) = 1 (mod p)
-    /// let a = ring.from(123);
-    /// assert_eq!(a.pow(&(p - ubig!(1))), ring.from(1));
+    /// let a = ring.convert(123);
+    /// assert_eq!(a.pow(&(p - ubig!(1))), ring.convert(1));
     /// ```
     #[inline]
     pub fn pow(&self, exp: &UBig) -> Modulo<'a> {
@@ -57,13 +58,7 @@ macro_rules! impl_pow_for_primitive {
 
             /// lhs^2^bits * rhs^exp[..bits] (in the modulo ring)
             #[inline]
-            const fn pow_helper(
-                &self,
-                lhs: $raw,
-                rhs: $raw,
-                exp: Word,
-                mut bits: u32,
-            ) -> $raw {
+            const fn pow_helper(&self, lhs: $raw, rhs: $raw, exp: Word, mut bits: u32) -> $raw {
                 let mut res = lhs;
                 while bits > 0 {
                     res = self.sqr(res);
