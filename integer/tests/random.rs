@@ -51,7 +51,6 @@ fn test_random_arithmetic() {
     for log_num_bits in 2..=6 {
         let num_bits = match 10usize.checked_pow(log_num_bits) {
             None => continue,
-            Some(x) if x > UBig::MAX_BIT_LEN / 2 - 10 => continue,
             Some(x) => x,
         };
         let num_cases = 10u32.pow(7 - log_num_bits);

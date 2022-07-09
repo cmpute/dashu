@@ -33,8 +33,8 @@ impl<'a> Modulo<'a> {
     #[inline]
     pub fn pow(&self, exp: &UBig) -> Modulo<'a> {
         match self.repr() {
-            ModuloRepr::Single(raw, ring) => Modulo::from_single(ring.pow(*raw, exp), ring).into(),
-            ModuloRepr::Double(raw, ring) => Modulo::from_double(ring.pow(*raw, exp), ring).into(),
+            ModuloRepr::Single(raw, ring) => Modulo::from_single(ring.pow(*raw, exp), ring),
+            ModuloRepr::Double(raw, ring) => Modulo::from_double(ring.pow(*raw, exp), ring),
             ModuloRepr::Large(raw, ring) => Modulo::from_large(ring.pow(raw, exp), ring),
         }
     }

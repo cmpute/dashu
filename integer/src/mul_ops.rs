@@ -11,7 +11,6 @@ use crate::{
     ubig::UBig,
 };
 use core::ops::{Mul, MulAssign};
-use static_assertions::const_assert;
 
 helper_macros::forward_ubig_binop_to_repr!(impl Mul, mul);
 helper_macros::forward_binop_assign_by_taking!(impl MulAssign<UBig> for UBig, mul_assign, mul);
@@ -220,9 +219,6 @@ mod repr {
     fn mul_large(lhs: &[Word], rhs: &[Word]) -> Repr {
         debug_assert!(lhs.len() >= 2 && rhs.len() >= 2);
 
-        // This may be 1 too large.
-        // TODO: remove this check
-        const_assert!(Buffer::MAX_CAPACITY - UBig::MAX_LEN >= 1);
         let res_len = lhs.len() + rhs.len();
         let mut buffer = Buffer::allocate(res_len);
         buffer.push_zeros(res_len);

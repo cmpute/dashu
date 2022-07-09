@@ -87,11 +87,11 @@ const MAX_ORDER_ROOT: RingElement = RingElement {
 
 type RootTable = [RingElement; MAX_ORDER as usize + 1];
 
-/// ROOTS[order]^(2^order) = 1
+// ROOTS[order]^(2^order) = 1
 #[allow(dead_code)]
 static ROOTS: RootTable = generate_roots(MAX_ORDER_ROOT);
 
-/// INVERSE_ROOTS[order]^(2^order) = 1
+// INVERSE_ROOTS[order]^(2^order) = 1
 #[allow(dead_code)]
 static INVERSE_ROOTS: RootTable = generate_roots(MAX_ORDER_ROOT.inverse());
 

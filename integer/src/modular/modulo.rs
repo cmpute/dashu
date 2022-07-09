@@ -150,8 +150,8 @@ impl Clone for ModuloRepr<'_> {
     #[inline]
     fn clone(&self) -> Self {
         match self {
-            ModuloRepr::Single(modulo, ring) => ModuloRepr::Single(modulo.clone(), ring),
-            ModuloRepr::Double(modulo, ring) => ModuloRepr::Double(modulo.clone(), ring),
+            ModuloRepr::Single(modulo, ring) => ModuloRepr::Single(*modulo, ring),
+            ModuloRepr::Double(modulo, ring) => ModuloRepr::Double(*modulo, ring),
             ModuloRepr::Large(modulo, ring) => ModuloRepr::Large(modulo.clone(), ring),
         }
     }

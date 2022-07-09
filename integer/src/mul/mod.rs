@@ -61,7 +61,7 @@ pub(crate) fn mul_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleW
 
     // there might be a single word left, do two 1by1 multiplications
     let r = dwords.into_remainder();
-    if r.len() > 0 {
+    if !r.is_empty() {
         debug_assert!(r.len() == 1);
         let r0 = r.first_mut().unwrap();
         let (m_lo, m_hi) = split_dword(rhs);

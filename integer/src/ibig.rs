@@ -3,7 +3,6 @@
 use crate::{
     repr::{Repr, TypedRepr, TypedReprRef},
     sign::Sign,
-    ubig::UBig,
 };
 
 /// Signed big integer.
@@ -35,12 +34,6 @@ impl IBig {
     #[inline]
     pub(crate) fn into_sign_repr(self) -> (Sign, TypedRepr) {
         self.0.into_sign_typed()
-    }
-
-    // TODO: maybe deprecate this method? or remove internal call and only expose to other crates
-    #[inline]
-    pub(crate) fn from_sign_magnitude(sign: Sign, magnitude: UBig) -> IBig {
-        IBig(magnitude.0.with_sign(sign))
     }
 
     #[inline]

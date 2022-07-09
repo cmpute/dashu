@@ -164,7 +164,7 @@ pub(crate) fn fast_div_by_dword_in_place(
 
     // there might be a single word left, do a 3by2 division
     let r = dwords.into_remainder();
-    if r.len() > 0 {
+    if !r.is_empty() {
         debug_assert!(r.len() == 1);
         let r0 = r.first_mut().unwrap();
         let (q, new_rem) = fast_div_rhs.div_rem(*r0, rem);
@@ -220,7 +220,7 @@ pub(crate) fn fast_rem_by_normalized_dword(
 
     // there might be a single word left, do a 3by2 division
     let r = dwords.remainder();
-    if r.len() > 0 {
+    if !r.is_empty() {
         debug_assert!(r.len() == 1);
         let r0 = r.first().unwrap();
         rem = fast_div_rhs.div_rem(*r0, rem).1;

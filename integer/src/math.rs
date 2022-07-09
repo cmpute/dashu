@@ -87,15 +87,6 @@ pub(crate) const fn ones_dword(n: u32) -> DoubleWord {
     }
 }
 
-#[inline]
-pub(crate) const fn min_usize(a: usize, b: usize) -> usize {
-    if a < b {
-        a
-    } else {
-        b
-    }
-}
-
 // Calculate dw << shift, assuming shift <= Word::BIT_SIZE, returns (lo, mid, hi).
 pub(crate) const fn shl_dword(dw: DoubleWord, shift: u32) -> (Word, Word, Word) {
     debug_assert!(shift <= Word::BIT_SIZE);

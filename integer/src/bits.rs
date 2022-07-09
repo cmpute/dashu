@@ -57,6 +57,7 @@ impl UBig {
     ///
     /// ```
     /// # use dashu_int::ubig;
+    ///
     /// let mut a = ubig!(0b100);
     /// a.set_bit(0);
     /// assert_eq!(a, ubig!(0b101));

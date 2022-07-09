@@ -44,10 +44,7 @@ impl<'a> DigitWriter<'a> {
     /// Must call flush to make sure all the data is written.
     pub(crate) fn flush(&mut self) -> fmt::Result {
         let buffer_len_rounded = math::round_up(self.buffer_len, arch::digits::DIGIT_CHUNK_LEN);
-        // LEGACY: Use fill(0) in Rust 1.50.
-        for w in &mut self.buffer[self.buffer_len..buffer_len_rounded] {
-            *w = 0;
-        }
+        self.buffer[self.buffer_len..buffer_len_rounded].fill(0);
         for chunk in
             self.buffer[..buffer_len_rounded].chunks_exact_mut(arch::digits::DIGIT_CHUNK_LEN)
         {

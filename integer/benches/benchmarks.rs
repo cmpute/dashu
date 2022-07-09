@@ -86,6 +86,8 @@ fn bench_div(criterion: &mut Criterion) {
     group.finish();
 }
 
+/*
+
 fn bench_gcd(criterion: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(1);
     let mut group = criterion.benchmark_group("gcd");
@@ -116,6 +118,8 @@ fn bench_gcd(criterion: &mut Criterion) {
 
     group.finish();
 }
+
+*/
 
 fn bench_to_hex(criterion: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(1);
@@ -253,7 +257,7 @@ criterion_group!(
     bench_sub,
     bench_mul,
     bench_div,
-    bench_gcd,
+    // bench_gcd,
     bench_to_hex,
     bench_to_dec,
     bench_from_hex,

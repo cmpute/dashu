@@ -131,7 +131,7 @@ impl IBig {
             }
         }
         let mag = UBig::from_str_radix_no_sign(src, radix)?;
-        Ok(IBig::from_sign_magnitude(sign, mag))
+        Ok(IBig(mag.0.with_sign(sign)))
     }
 
     /// Convert a string with an optional radix prefix to [IBig].
@@ -160,6 +160,6 @@ impl IBig {
             }
         }
         let mag = UBig::from_str_with_radix_prefix_no_sign(src)?;
-        Ok(IBig::from_sign_magnitude(sign, mag))
+        Ok(IBig(mag.0.with_sign(sign)))
     }
 }

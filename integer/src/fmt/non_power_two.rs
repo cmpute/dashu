@@ -5,8 +5,9 @@ use crate::{
     div,
     fmt::{digit_writer::DigitWriter, InRadixFull, PreparedForFormatting},
     ops::DivRem,
+    primitive::{shrink_dword, split_dword},
     radix::{self, Digit},
-    repr::{Repr, TypedReprRef::*},
+    repr::TypedReprRef::{self, *},
     ubig::UBig,
 };
 use alloc::vec::Vec;
@@ -14,7 +15,6 @@ use core::{
     fmt::{self, Formatter},
     mem,
 };
-use static_assertions::const_assert;
 
 /// Format in chunks of CHUNK_LEN * digits_per_word.
 const CHUNK_LEN: usize = 16;
@@ -23,27 +23,20 @@ impl InRadixFull<'_> {
     pub(crate) fn fmt_non_power_two(&self, f: &mut Formatter) -> fmt::Result {
         debug_assert!(radix::is_radix_valid(self.radix) && !self.radix.is_power_of_two());
 
-        // TODO: prevent instantiating a new UBig here, after InRadixFull contains a reference of Repr
-        let repr = match self.magnitude {
-            RefSmall(dword) => {
-                if let Ok(word) = Word::try_from(dword) {
-                    let mut prepared = PreparedWord::new(word, self.radix, 1);
-                    return self.format_prepared(f, &mut prepared);
-                } else {
-                    Repr::from_dword(dword)
-                }
+        if let RefSmall(dword) = self.magnitude {
+            if let Some(word) = shrink_dword(dword) {
+                let mut prepared = PreparedWord::new(word, self.radix, 1);
+                return self.format_prepared(f, &mut prepared);
             }
-            RefLarge(buffer) => Repr::from_buffer(buffer.into()),
-        };
-        let magnitude = UBig(repr);
+        }
 
         let radix_info = radix::radix_info(self.radix);
-        let max_digits = magnitude.0.len() * (radix_info.digits_per_word + 1);
+        let max_digits = self.magnitude.len() * (radix_info.digits_per_word + 1);
         if max_digits <= CHUNK_LEN * radix_info.digits_per_word {
-            let mut prepared = PreparedMedium::new(&magnitude, self.radix);
+            let mut prepared = PreparedMedium::new(self.magnitude, self.radix);
             self.format_prepared(f, &mut prepared)
         } else {
-            let mut prepared = PreparedLarge::new(&magnitude, self.radix);
+            let mut prepared = PreparedLarge::new(self.magnitude, self.radix);
             self.format_prepared(f, &mut prepared)
         }
     }
@@ -101,7 +94,7 @@ struct PreparedMedium {
 
 impl PreparedMedium {
     /// Prepare a medium number for formatting.
-    fn new(number: &UBig, radix: Digit) -> PreparedMedium {
+    fn new(number: TypedReprRef<'_>, radix: Digit) -> PreparedMedium {
         debug_assert!(radix::is_radix_valid(radix) && !radix.is_power_of_two());
         let radix_info = radix::radix_info(radix);
 
@@ -166,15 +159,14 @@ struct PreparedLarge {
 
 impl PreparedLarge {
     /// Prepare a medium number for formatting in a non-power-of-2 radix.
-    fn new(number: &UBig, radix: Digit) -> PreparedLarge {
+    fn new(number: TypedReprRef<'_>, radix: Digit) -> PreparedLarge {
         debug_assert!(radix::is_radix_valid(radix) && !radix.is_power_of_two());
         let radix_info = radix::radix_info(radix);
 
         let mut radix_powers = Vec::new();
         let mut big_chunks = Vec::new();
-        // TODO: use log instead of pow here
         let chunk_power = UBig::from(radix_info.range_per_word).pow(CHUNK_LEN);
-        if chunk_power > *number {
+        if chunk_power.repr() > number {
             return PreparedLarge {
                 top_chunk: PreparedMedium::new(number, radix),
                 radix_powers,
@@ -187,14 +179,13 @@ impl PreparedLarge {
         loop {
             let prev = radix_powers.last().unwrap();
             // Avoid multiplication if we know prev * prev > number just by looking at lengths.
-            if 2 * prev.0.len() - 1 > number.0.len() {
+            if 2 * prev.0.len() - 1 > number.len() {
                 break;
             }
+
             // 2 * prev.len() is at most 1 larger than number.len().
-            // It won't overflow because UBig::MAX_LEN is even.
-            const_assert!(UBig::MAX_LEN % 2 == 0);
             let new = prev * prev;
-            if new > *number {
+            if new.repr() > number {
                 break;
             }
             radix_powers.push(new);
@@ -203,12 +194,12 @@ impl PreparedLarge {
         let mut power_iter = radix_powers.iter().enumerate().rev();
         let mut x = {
             let (i, p) = power_iter.next().unwrap();
-            let (q, r) = number.div_rem(p);
-            big_chunks.push((i, r));
-            q
+            let (q, r) = number.div_rem(p.repr());
+            big_chunks.push((i, UBig(r)));
+            UBig(q)
         };
         for (i, p) in power_iter {
-            if x >= *p {
+            if &x >= p {
                 let (q, r) = x.div_rem(p);
                 big_chunks.push((i, r));
                 x = q;
@@ -216,7 +207,7 @@ impl PreparedLarge {
         }
 
         PreparedLarge {
-            top_chunk: PreparedMedium::new(&x, radix),
+            top_chunk: PreparedMedium::new(x.repr(), radix),
             radix_powers,
             big_chunks,
             radix,
@@ -237,7 +228,7 @@ impl PreparedLarge {
     /// Write digits_per_word * CHUNK_LEN digits.
     fn write_chunk(&self, digit_writer: &mut DigitWriter, x: UBig) -> fmt::Result {
         let radix_info = radix::radix_info(self.radix);
-        let (mut buffer, mut buffer_len) = ubig_to_chunk_buffer(&x);
+        let (mut buffer, mut buffer_len) = ubig_to_chunk_buffer(x.repr());
 
         let mut groups = [0; CHUNK_LEN];
 
@@ -283,10 +274,24 @@ impl PreparedForFormatting for PreparedLarge {
     }
 }
 
-fn ubig_to_chunk_buffer(x: &UBig) -> ([Word; CHUNK_LEN], usize) {
+fn ubig_to_chunk_buffer(x: TypedReprRef<'_>) -> ([Word; CHUNK_LEN], usize) {
     let mut buffer = [0; CHUNK_LEN];
-    let words = x.as_words();
-    let buffer_len = words.len();
-    buffer[..buffer_len].copy_from_slice(words);
-    (buffer, buffer_len)
+
+    match x {
+        TypedReprRef::RefSmall(dword) => {
+            let (lo, hi) = split_dword(dword);
+            buffer[0] = lo;
+            if hi != 0 {
+                buffer[1] = hi;
+                (buffer, 2)
+            } else {
+                (buffer, 1)
+            }
+        }
+        TypedReprRef::RefLarge(words) => {
+            let buffer_len = words.len();
+            buffer[..buffer_len].copy_from_slice(words);
+            (buffer, buffer_len)
+        }
+    }
 }

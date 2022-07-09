@@ -28,7 +28,7 @@ helper_macros::forward_binop_assign_by_taking!(impl RemAssign<UBig> for UBig, re
 macro_rules! impl_ibig_div {
     ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {
         // truncate towards 0.
-        IBig($mag0.div($mag1).with_sign($sign0 * $sign1))
+        IBig(($mag0 / $mag1).with_sign($sign0 * $sign1))
     };
 }
 macro_rules! impl_ibig_rem {
@@ -36,7 +36,7 @@ macro_rules! impl_ibig_rem {
         let _sign1 = $sign1; // unused
 
         // remainder with truncating division has same sign as lhs.
-        IBig($mag0.rem($mag1).with_sign($sign0))
+        IBig(($mag0 % $mag1).with_sign($sign0))
     }};
 }
 helper_macros::forward_ibig_binop_to_repr!(impl Div, div, impl_ibig_div);
@@ -556,7 +556,7 @@ mod repr {
                     if buffer0.len() >= buffer1.len() {
                         div_rem_large(buffer0, buffer1)
                     } else {
-                        (Repr::zero(), Repr::from_buffer(buffer0.into()))
+                        (Repr::zero(), Repr::from_buffer(buffer0))
                     }
                 }
             }
@@ -814,7 +814,7 @@ mod repr {
                     if buffer0.len() >= buffer1.len() {
                         rem_large(buffer0, buffer1.into())
                     } else {
-                        Repr::from_buffer(buffer0.into())
+                        Repr::from_buffer(buffer0)
                     }
                 }
             }

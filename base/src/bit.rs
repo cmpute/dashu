@@ -18,7 +18,7 @@ pub trait BitTest {
 ///
 /// # Examples
 /// ```
-/// # use dashu_base::PowerOfTwo;
+/// use dashu_base::PowerOfTwo;
 ///
 /// let n = 5u32;
 /// assert!(!n.is_power_of_two());

@@ -65,6 +65,6 @@ impl IBig {
         } else {
             Positive
         };
-        IBig::from_sign_magnitude(sign, self.unsigned_abs().pow(exp))
+        IBig(self.unsigned_abs().pow(exp).0.with_sign(sign))
     }
 }

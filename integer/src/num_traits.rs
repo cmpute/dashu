@@ -10,7 +10,7 @@ impl num_traits::Zero for UBig {
 
     #[inline]
     fn is_zero(&self) -> bool {
-        UBig::is_zero(&self)
+        UBig::is_zero(self)
     }
 }
 
@@ -22,7 +22,7 @@ impl num_traits::Zero for IBig {
 
     #[inline]
     fn is_zero(&self) -> bool {
-        IBig::is_zero(&self)
+        IBig::is_zero(self)
     }
 }
 
@@ -34,7 +34,7 @@ impl num_traits::One for UBig {
 
     #[inline]
     fn is_one(&self) -> bool {
-        UBig::is_one(&self)
+        UBig::is_one(self)
     }
 }
 
@@ -46,7 +46,7 @@ impl num_traits::One for IBig {
 
     #[inline]
     fn is_one(&self) -> bool {
-        IBig::is_one(&self)
+        IBig::is_one(self)
     }
 }
 
@@ -106,12 +106,12 @@ impl num_traits::Signed for IBig {
 
     #[inline]
     fn is_positive(&self) -> bool {
-        *self > IBig::from(0u8)
+        *self > IBig::zero()
     }
 
     #[inline]
     fn is_negative(&self) -> bool {
-        *self < IBig::from(0u8)
+        *self < IBig::zero()
     }
 }
 

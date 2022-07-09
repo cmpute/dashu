@@ -87,10 +87,7 @@ pub(crate) fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word]) -> usize {
     // move the result from rhs to low bits of lhs, with shift taken into account
     let shift_words = init_zeros / WORD_BITS_USIZE;
     let mut final_size = result_cur.len() + shift_words;
-    for i in lhs.iter_mut().take(shift_words) {
-        // LEGACY: equivalent to lhs[..shift_words].fill(0) after Rust 1.50
-        *i = 0;
-    }
+    lhs[..shift_words].fill(0);
     lhs[shift_words..final_size].copy_from_slice(result_cur);
     let carry = shift::shl_in_place(
         &mut lhs[shift_words..final_size],
@@ -278,10 +275,9 @@ pub(crate) fn gcd_ext_in_place(
 
     // reduce s0 and t0 if s0 > V/g - s0
     // the xx_end markers are ignored here because there could be leading zeros
-    // LEGACY: use Ordering::is_ge() in Rust 1.53
-    let reduce = !matches!(cmp_same_len(s0, s1), Ordering::Less) || {
+    let reduce = cmp_same_len(s0, s1).is_ge() || {
         assert!(!add::sub_in_place(s1, s0));
-        let r = !matches!(cmp_same_len(s0, s1), Ordering::Less);
+        let r = cmp_same_len(s0, s1).is_ge();
         assert!(!add::add_in_place(s1, s0));
         r
     };

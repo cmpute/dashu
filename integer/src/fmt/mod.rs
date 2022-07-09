@@ -232,7 +232,6 @@ impl IBig {
 /// assert_eq!(format!("{:x}", ibig!(-3000)), "-bb8");
 /// ```
 pub struct InRadix<'a> {
-    // TODO: refactor to take reference of Repr.
     sign: Sign,
     magnitude: TypedReprRef<'a>,
     radix: Digit,

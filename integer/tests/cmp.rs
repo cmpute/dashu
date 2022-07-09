@@ -2,7 +2,7 @@ use core::cmp::Ordering;
 use dashu_int::{ibig, ubig};
 
 #[test]
-fn test_cmp() {
+fn test_same_type_cmp() {
     assert_eq!(ubig!(500).cmp(&ubig!(500)), Ordering::Equal);
     assert!(ubig!(100) < ubig!(500));
     assert!(ubig!(500) > ubig!(100));
@@ -30,4 +30,27 @@ fn test_cmp() {
     assert!(ibig!(10) > ibig!(-15));
     assert!(ibig!(-10) < ibig!(-5));
     assert!(ibig!(-5) > ibig!(-10));
+}
+
+#[test]
+fn test_cross_type_cmp() {
+    assert_eq!(ubig!(500), ibig!(500));
+    assert_ne!(ubig!(500), ibig!(-500));
+    assert_eq!(ibig!(500), ubig!(500));
+    assert_ne!(ibig!(-500), ubig!(500));
+
+    assert!(ubig!(500) > ibig!(499));
+    assert!(ibig!(500) > ubig!(499));
+    assert!(ubig!(500) > ibig!(-500));
+    assert!(ibig!(-500) < ubig!(500));
+
+    assert_eq!(ubig!(500), 500);
+    assert_ne!(ubig!(500), -500);
+    assert_eq!(ibig!(500), 500);
+    assert_ne!(ibig!(-500), 500);
+
+    assert!(ubig!(500) > 499);
+    assert!(ibig!(500) > 499);
+    assert!(ubig!(500) > -500);
+    assert!(ibig!(-500) < 500);
 }

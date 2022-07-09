@@ -41,7 +41,7 @@ const RCBRT_TAB: [u8; 56] = [
 // util: high part of 32bit widening mul
 #[inline]
 fn wmul32_hi(a: u32, b: u32) -> u32 {
-    ((a as u64) * (b as u64) >> 32) as u32
+    (((a as u64) * (b as u64)) >> 32) as u32
 }
 
 impl NormalizedRootRem for u64 {
@@ -170,7 +170,7 @@ impl NormalizedRootRem for u128 {
             u += s1 as u64;
         }
         let mut s = (s1 as u64) << HALF_BITS | q;
-        let r = (u << (HALF_BITS + 1)) + (n0 & (1 << (HALF_BITS + 1)) - 1);
+        let r = (u << (HALF_BITS + 1)) + (n0 & ((1 << (HALF_BITS + 1)) - 1));
         let q2 = q * q;
         let mut borrow = (u >> (HALF_BITS - 1)) as i8 - (r < q2) as i8;
         let mut r = r.wrapping_sub(q2);

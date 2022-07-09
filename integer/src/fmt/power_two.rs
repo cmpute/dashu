@@ -1,10 +1,10 @@
 //! Format in a power-of-two radix.
 
 use crate::{
-    arch::word::Word,
+    arch::word::{DoubleWord, Word},
     fmt::{digit_writer::DigitWriter, InRadixFull, PreparedForFormatting},
     math,
-    primitive::{split_dword, WORD_BITS, WORD_BITS_USIZE},
+    primitive::{shrink_dword, DWORD_BITS_USIZE, WORD_BITS, WORD_BITS_USIZE},
     radix::{self, Digit},
     repr::TypedReprRef::*,
 };
@@ -15,24 +15,21 @@ impl InRadixFull<'_> {
     pub(crate) fn fmt_power_two(&self, f: &mut Formatter) -> fmt::Result {
         debug_assert!(radix::is_radix_valid(self.radix) && self.radix.is_power_of_two());
 
-        // TODO: bandaid here
-        let mut dword_slice: [Word; 2] = [0, 0];
-        let words = match self.magnitude {
+        match self.magnitude {
             RefSmall(dword) => {
-                if let Ok(word) = Word::try_from(dword) {
+                if let Some(word) = shrink_dword(dword) {
                     let mut prepared = PreparedWord::new(word, self.radix);
-                    return self.format_prepared(f, &mut prepared);
+                    self.format_prepared(f, &mut prepared)
                 } else {
-                    let (lo, hi) = split_dword(dword);
-                    dword_slice = [lo, hi];
-                    &dword_slice
+                    let mut prepared = PreparedDword::new(dword, self.radix);
+                    self.format_prepared(f, &mut prepared)
                 }
             }
-            RefLarge(buffer) => buffer,
-        };
-
-        let mut prepared = PreparedLarge::new(words, self.radix);
-        self.format_prepared(f, &mut prepared)
+            RefLarge(words) => {
+                let mut prepared = PreparedLarge::new(words, self.radix);
+                self.format_prepared(f, &mut prepared)
+            }
+        }
     }
 }
 
@@ -68,6 +65,45 @@ impl PreparedForFormatting for PreparedWord {
         let mut digits = [0; WORD_BITS_USIZE];
         for idx in 0..self.width {
             let digit = ((self.word >> (idx as u32 * self.log_radix)) & mask) as u8;
+            digits[self.width - 1 - idx] = digit;
+        }
+        digit_writer.write(&digits[..self.width])
+    }
+}
+
+/// A large number prepared for formatting.
+struct PreparedDword {
+    dword: DoubleWord,
+    log_radix: u32,
+    width: usize,
+}
+
+impl PreparedDword {
+    /// Prepare a `DoubleWord` for formatting.
+    fn new(dword: DoubleWord, radix: Digit) -> PreparedDword {
+        debug_assert!(dword > Word::MAX as DoubleWord);
+        debug_assert!(radix::is_radix_valid(radix) && radix.is_power_of_two());
+        let log_radix = radix.trailing_zeros();
+        let width = math::ceil_div(math::bit_len(dword), log_radix).max(1) as usize;
+
+        PreparedDword {
+            dword,
+            log_radix,
+            width,
+        }
+    }
+}
+
+impl PreparedForFormatting for PreparedDword {
+    fn width(&self) -> usize {
+        self.width
+    }
+
+    fn write(&mut self, digit_writer: &mut DigitWriter) -> fmt::Result {
+        let mask: DoubleWord = math::ones_dword(self.log_radix);
+        let mut digits = [0; DWORD_BITS_USIZE];
+        for idx in 0..self.width {
+            let digit = ((self.dword >> (idx as u32 * self.log_radix)) & mask) as u8;
             digits[self.width - 1 - idx] = digit;
         }
         digit_writer.write(&digits[..self.width])

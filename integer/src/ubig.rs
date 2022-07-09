@@ -1,15 +1,14 @@
 //! Definitions of [UBig].
 //!
-//! Conversion from internal representations including [Buffer], [TypedRepr], [TypedReprRef]
+//! Conversion from internal representations including [Buffer][crate::repr::Buffer], [TypedRepr], [TypedReprRef]
 //! to [UBig] is not implemented, the designed way to construct UBig from them is first convert them
 //! into [Repr], and then directly construct from the [Repr]. This restriction is set to make
 //! the source type explicit.
 
 use crate::{
-    arch::{ntt, word::Word},
-    math,
+    arch::word::Word,
     primitive::WORD_BITS_USIZE,
-    repr::{Repr, TypedRepr, TypedReprRef},
+    repr::{Buffer, Repr, TypedRepr, TypedReprRef},
 };
 
 /// Unsigned big integer.
@@ -78,42 +77,11 @@ impl UBig {
         words
     }
 
-    /// Maximum length in `Word`s.
-    ///
-    /// Ensures that the number of bits fits in `usize`, which is useful for bit count
-    /// operations, and for radix conversions (even base 2 can be represented).
-    ///
-    /// This also guarantees that up to 16 * length will not overflow.
-    ///
-    /// We also make sure that any multiplication whose result fits in `MAX_LEN` can fit
-    /// within the largest possible number-theoretic transform.
-    ///
-    /// Also make sure this is even, useful for checking whether a square will overflow.
-    // TODO: only check allocation failure when doing multiplication or shifting
-    pub(crate) const MAX_LEN: usize = math::min_usize(
-        usize::MAX / WORD_BITS_USIZE,
-        match 1usize.checked_shl(ntt::MAX_ORDER) {
-            Some(ntt_len) => ntt_len,
-            None => usize::MAX,
-        },
-    ) & !1usize;
-
-    /// Maximum length in bits.
-    ///
-    /// [UBig]s up to this length are supported. Creating a longer number
-    /// will panic.
-    ///
-    /// This does not guarantee that there is sufficient memory to store numbers
-    /// up to this length. Memory allocation may fail even for Smaller numbers.
-    ///
-    /// The fact that this limit fits in `usize` guarantees that all bit
-    /// addressing operations can be performed using `usize`.
-    ///
-    /// It is typically close to `usize::MAX`, but the exact value is platform-dependent.
-    pub const MAX_BIT_LEN: usize = UBig::MAX_LEN * WORD_BITS_USIZE;
-
     pub(crate) fn panic_number_too_large() -> ! {
-        panic!("number too large, maximum is {} bits", UBig::MAX_BIT_LEN)
+        panic!(
+            "number too large, maximum is {} bits",
+            Buffer::MAX_CAPACITY * WORD_BITS_USIZE
+        )
     }
 }
 

@@ -1,4 +1,11 @@
-use crate::{arch::word::Word, buffer::Buffer, ibig::IBig, primitive::WORD_BITS_USIZE, ubig::UBig};
+use crate::{
+    arch::word::Word,
+    ibig::IBig,
+    ops::UnsignedAbs,
+    primitive::WORD_BITS_USIZE,
+    repr::{Buffer, Repr},
+    ubig::UBig,
+};
 use alloc::vec::Vec;
 use core::fmt::{self, Formatter};
 use serde::{
@@ -59,7 +66,7 @@ impl<'de> Visitor<'de> for UBigVisitor {
                     push_word_64(&mut buffer, word_64);
                 }
                 assert!(seq.next_element::<u64>()?.is_none());
-                Ok(buffer.into())
+                Ok(UBig(Repr::from_buffer(buffer)))
             }
             None => {
                 let mut words_64 = Vec::new();
@@ -70,7 +77,7 @@ impl<'de> Visitor<'de> for UBigVisitor {
                 for word_64 in words_64 {
                     push_word_64(&mut buffer, word_64);
                 }
-                Ok(buffer.into())
+                Ok(UBig(Repr::from_buffer(buffer)))
             }
         }
     }
@@ -84,8 +91,6 @@ fn push_word_64(buffer: &mut Buffer, word_64: u64) {
 
 #[allow(clippy::absurd_extreme_comparisons)]
 fn len_64_to_max_len(len_64: usize) -> usize {
-    // Make sure we always have enough space for leading zero Words.
-    const_assert!(Buffer::MAX_CAPACITY - UBig::MAX_LEN >= WORDS_PER_U64 - 1);
     #[allow(clippy::redundant_closure)]
     len_64
         .checked_mul(WORDS_PER_U64)
@@ -99,9 +104,10 @@ impl Serialize for IBig {
     }
 }
 
-impl<'de> Deserialize<'de> for IBig {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let (sign, magnitude) = Deserialize::deserialize(deserializer)?;
-        Ok(IBig::from_sign_magnitude(sign, magnitude))
-    }
-}
+// TODO: fix this
+// impl<'de> Deserialize<'de> for IBig {
+//     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+//         let (sign, magnitude) = Deserialize::deserialize(deserializer)?;
+//         Ok(IBig(magnitude.0.with_sign(sign)))
+//     }
+// }

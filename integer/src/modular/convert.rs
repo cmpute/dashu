@@ -10,7 +10,7 @@ use crate::{
         modulo::{Modulo, ModuloRepr, ModuloSingleRaw},
         modulo_ring::{ModuloRing, ModuloRingLarge, ModuloRingRepr, ModuloRingSingle},
     },
-    primitive::{double_word, extend_word},
+    primitive::{double_word, extend_word, shrink_dword},
     repr::{Buffer, Repr, TypedRepr::*, TypedReprRef::*},
     shift,
     sign::Sign::*,
@@ -141,7 +141,7 @@ impl ModuloSingleRaw {
     pub(crate) fn from_ubig(x: &UBig, ring: &ModuloRingSingle) -> Self {
         match x.repr() {
             RefSmall(dword) => {
-                if let Ok(word) = Word::try_from(dword) {
+                if let Some(word) = shrink_dword(dword) {
                     Self::from_word(word, ring)
                 } else {
                     Self::from_dword(dword, ring)
@@ -276,10 +276,10 @@ impl IntoModulo for &UBig {
     fn into_modulo(self, ring: &ModuloRing) -> Modulo {
         match ring.repr() {
             ModuloRingRepr::Single(ring) => {
-                Modulo::from_single(ModuloSingleRaw::from_ubig(&self, ring), ring)
+                Modulo::from_single(ModuloSingleRaw::from_ubig(self, ring), ring)
             }
             ModuloRingRepr::Double(ring) => {
-                Modulo::from_double(ModuloDoubleRaw::from_ubig(&self, ring), ring)
+                Modulo::from_double(ModuloDoubleRaw::from_ubig(self, ring), ring)
             }
             ModuloRingRepr::Large(ring) => {
                 Modulo::from_large(ModuloLargeRaw::from_ubig(self.clone(), ring), ring)

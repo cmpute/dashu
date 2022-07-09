@@ -404,7 +404,7 @@ ibig_signed_conversions!(isize);
 impl From<UBig> for IBig {
     #[inline]
     fn from(x: UBig) -> IBig {
-        IBig::from_sign_magnitude(Positive, x)
+        IBig(x.0.with_sign(Positive))
     }
 }
 
@@ -535,14 +535,14 @@ impl IBig {
     /// Convert an unsigned primitive to [IBig].
     #[inline]
     pub(crate) fn from_unsigned<T: PrimitiveUnsigned>(x: T) -> IBig {
-        IBig::from(UBig::from_unsigned(x))
+        IBig(UBig::from_unsigned(x).0)
     }
 
     /// Convert a signed primitive to [IBig].
     #[inline]
     pub(crate) fn from_signed<T: PrimitiveSigned>(x: T) -> IBig {
         let (sign, mag) = x.to_sign_magnitude();
-        IBig::from_sign_magnitude(sign, UBig::from_unsigned(mag))
+        IBig(UBig::from_unsigned(mag).0.with_sign(sign))
     }
 
     /// Try to convert [IBig] to an unsigned primitive.

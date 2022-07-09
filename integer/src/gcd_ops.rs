@@ -10,20 +10,19 @@ use crate::{
 };
 use dashu_base::ring::{ExtendedGcd, Gcd};
 
-// TODO: disable these in 0.1.0 release. Release a new version after implementing a Lehmer's GCD version
-
 impl UBig {
     /// Compute the greatest common divisor between self and the other operand
     ///
     /// # Example
     /// ```
     /// # use dashu_int::ubig;
-    /// assert_eq!(ubig!(12).gcd(&ubig!(18)), ubig!(6));
+    /// // assert_eq!(ubig!(12).gcd(&ubig!(18)), ubig!(6));
     /// ```
     ///
     /// Panics if two oprands are both zero.
     #[inline]
-    pub fn gcd(&self, rhs: &UBig) -> UBig {
+    #[allow(unused)] // enable after 0.1.0
+    pub(crate) fn gcd(&self, rhs: &UBig) -> UBig {
         UBig(self.repr().gcd(rhs.repr()))
     }
 
@@ -33,12 +32,13 @@ impl UBig {
     /// # Example
     /// ```
     /// # use dashu_int::{ibig, ubig};
-    /// assert_eq!(ubig!(12).gcd_ext(&ubig!(18)), (ubig!(6), ibig!(-1), ibig!(1)));
+    /// // assert_eq!(ubig!(12).gcd_ext(&ubig!(18)), (ubig!(6), ibig!(-1), ibig!(1)));
     /// ```
     ///
     /// Panics if two oprands are both zero.
     #[inline]
-    pub fn gcd_ext(&self, rhs: &UBig) -> (UBig, IBig, IBig) {
+    #[allow(unused)] // enable after 0.1.0
+    pub(crate) fn gcd_ext(&self, rhs: &UBig) -> (UBig, IBig, IBig) {
         let (r, s, t) = self.clone().into_repr().gcd_ext(rhs.clone().into_repr());
         (UBig(r), IBig(s), IBig(t))
     }

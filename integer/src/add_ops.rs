@@ -344,7 +344,7 @@ pub mod repr {
                 (RefSmall(dword0), Small(dword1)) => sub_dword(dword0, dword1),
                 (RefSmall(_), Large(_)) => UBig::panic_negative(),
                 (RefLarge(buffer0), Small(dword1)) => sub_large_dword(buffer0.into(), dword1),
-                (RefLarge(buffer0), Large(buffer1)) => sub_large_ref_val(buffer0, buffer1.into()),
+                (RefLarge(buffer0), Large(buffer1)) => sub_large_ref_val(buffer0, buffer1),
             }
         }
     }
@@ -545,7 +545,7 @@ mod repr_signed {
 
     #[inline]
     fn sub_large_dword(lhs: Buffer, rhs: DoubleWord) -> Repr {
-        super::repr::sub_large_dword(lhs, rhs).into()
+        super::repr::sub_large_dword(lhs, rhs)
     }
 
     #[inline]

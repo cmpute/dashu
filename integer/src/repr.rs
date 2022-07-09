@@ -17,8 +17,6 @@ use core::{
 };
 use static_assertions::const_assert_eq;
 
-// TODO: impl Send and Sync for ReprData
-
 /// This union contains the raw representation of words, the words are either inlined
 /// or on the heap. The flag used to distinguishing them is the `len` field of the buffer.
 #[repr(C)]
@@ -64,6 +62,14 @@ pub(crate) struct Buffer {
 }
 const_assert_eq!(mem::size_of::<Buffer>(), mem::size_of::<Repr>());
 
+// SAFETY: the pointer to the allocated space is uniquely owned by this struct.
+unsafe impl Send for Repr {}
+unsafe impl Send for Buffer {}
+
+// SAFETY: we don't provide interior mutability for Repr and Buffer
+unsafe impl Sync for Repr {}
+unsafe impl Sync for Buffer {}
+
 /// A strong typed safe representation of a `Repr` without sign
 #[derive(Clone)]
 pub(crate) enum TypedRepr {
@@ -72,7 +78,7 @@ pub(crate) enum TypedRepr {
 }
 
 /// A strong typed safe representation of a reference to `Repr` without sign
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TypedReprRef<'a> {
     RefSmall(DoubleWord),
     RefLarge(&'a [Word]),
@@ -120,6 +126,7 @@ impl Buffer {
         self.capacity
     }
 
+    /// Return the length of words contained in the buffer
     #[inline]
     pub fn len(&self) -> usize {
         self.len
@@ -136,8 +143,7 @@ impl Buffer {
         unsafe {
             let layout = Layout::array::<Word>(capacity).unwrap();
             let ptr = alloc::alloc::alloc(layout);
-            let ptr = NonNull::new(ptr).unwrap().cast();
-            ptr
+            NonNull::new(ptr).unwrap().cast()
         }
     }
 
@@ -514,7 +520,7 @@ impl From<&[Word]> for Buffer {
 }
 
 impl Repr {
-    /// Get the length of the number (in `Word`s)
+    /// Get the length of the number (in `Word`s), return 1 even if it's zero.
     #[inline]
     pub const fn len(&self) -> usize {
         match self.capacity() {
@@ -862,10 +868,27 @@ impl Hash for Repr {
 impl TypedRepr {
     /// Convert a reference of `TypedRef` to `TypedReprRef`
     #[inline]
-    pub(crate) fn as_ref(&self) -> TypedReprRef {
+    pub fn as_ref(&self) -> TypedReprRef {
         match self {
             Self::Small(dword) => TypedReprRef::RefSmall(*dword),
-            Self::Large(buffer) => TypedReprRef::RefLarge(&buffer),
+            Self::Large(buffer) => TypedReprRef::RefLarge(buffer),
+        }
+    }
+}
+
+impl<'a> TypedReprRef<'a> {
+    /// Get the length of the number in words, return 1 even if the number is zero.
+    #[inline]
+    pub fn len(&self) -> usize {
+        match self {
+            Self::RefSmall(dword) => {
+                if *dword <= Word::MAX as DoubleWord {
+                    1
+                } else {
+                    2
+                }
+            }
+            Self::RefLarge(words) => words.len(),
         }
     }
 }
