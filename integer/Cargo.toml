@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Jacob Zhong <cmpute@gmail.com>", "Tomek Czajka <tczajka@gmail.com>"]
 edition = "2021"
 description = "A big integer library with good performance"
-keywords = ["mathematics", "numerics", "integer", "bigint", "#arbitrary-precision"]
+keywords = ["mathematics", "numerics", "integer", "bigint", "arbitrary-precision"]
 categories = ["mathematics", "no-std"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/cmpute/dashu"
@@ -20,6 +20,7 @@ std = ["dashu-base/std"]
 
 [dependencies.dashu-base]
 path = "../base"
+version = "0.1.0"
 default-features = false
 
 [dependencies.cfg-if]

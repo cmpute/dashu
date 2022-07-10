@@ -1,9 +1,12 @@
 [package]
 name = "dashu-base"
 version = "0.1.0"
+authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2021"
+description = "Common trait definitions and tools for the `dashu` libraries"
 repository = "https://github.com/cmpute/dashu"
 homepage = "https://github.com/cmpute/dashu"
+license = "MIT OR Apache-2.0"
 
 [dev-dependencies.rand]
 version = "0.8.3"

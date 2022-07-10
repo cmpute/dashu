@@ -5,7 +5,7 @@ use crate::{
     primitive::{double_word, split_dword, WORD_BITS_USIZE},
     sign::Sign,
 };
-use alloc::alloc::Layout;
+use alloc::{alloc::Layout, boxed::Box};
 use core::{
     fmt::{self, Write},
     hash::{Hash, Hasher},

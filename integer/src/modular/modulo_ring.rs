@@ -1,5 +1,6 @@
 //! A ring of integers modulo a positive integer.
 
+use super::modulo::{ModuloDoubleRaw, ModuloLargeRaw, ModuloSingleRaw};
 use crate::{
     arch::word::{DoubleWord, Word},
     cmp, div,
@@ -9,9 +10,8 @@ use crate::{
     repr::{Buffer, TypedRepr},
     ubig::UBig,
 };
+use alloc::boxed::Box;
 use core::cmp::Ordering;
-
-use super::modulo::{ModuloDoubleRaw, ModuloLargeRaw, ModuloSingleRaw};
 
 /// A ring of integers modulo a positive integer.
 ///
