@@ -374,7 +374,7 @@ macro_rules! forward_ubig_ibig_binop_to_repr {
             }
         }
 
-        impl<'l, 'r> $trait<&'l IBig> for &'l UBig {
+        impl<'l, 'r> $trait<&'r IBig> for &'l UBig {
             type Output = IBig;
 
             #[inline]
@@ -424,7 +424,7 @@ macro_rules! forward_ibig_ubig_binop_to_repr {
             }
         }
 
-        impl<'l, 'r> $trait<&'l UBig> for &'l IBig {
+        impl<'l, 'r> $trait<&'r UBig> for &'l IBig {
             type Output = IBig;
 
             #[inline]

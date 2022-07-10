@@ -6,7 +6,7 @@ use crate::{
     ibig::IBig,
     math,
     ops::PowerOfTwo,
-    primitive::{first_dword, split_dword, DWORD_BITS_USIZE, WORD_BITS_USIZE},
+    primitive::{lowest_dword, split_dword, DWORD_BITS_USIZE, WORD_BITS_USIZE},
     repr::{Buffer, Repr, TypedRepr::*, TypedReprRef::*},
     sign::Sign::*,
     ubig::UBig,
@@ -16,7 +16,7 @@ use core::{
     ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not},
 };
 
-pub fn trailing_zeros_large(words: &[Word]) -> usize {
+pub fn trailing_zeros(words: &[Word]) -> usize {
     debug_assert!(*words.last().unwrap() != 0);
 
     for (idx, word) in words.iter().enumerate() {
@@ -152,7 +152,7 @@ impl UBig {
         match self.repr() {
             RefSmall(0) => None,
             RefSmall(dword) => Some(dword.trailing_zeros() as usize),
-            RefLarge(buffer) => Some(trailing_zeros_large(buffer)),
+            RefLarge(buffer) => Some(trailing_zeros(buffer)),
         }
     }
 
@@ -214,7 +214,7 @@ impl IBig {
         match self.as_sign_repr().1 {
             RefSmall(0) => None,
             RefSmall(dword) => Some(dword.trailing_zeros() as usize),
-            RefLarge(buffer) => Some(trailing_zeros_large(buffer)),
+            RefLarge(buffer) => Some(trailing_zeros(buffer)),
         }
     }
 }
@@ -358,8 +358,8 @@ mod repr {
         fn bitand(self, rhs: TypedRepr) -> Repr {
             match (self, rhs) {
                 (Small(dword0), Small(dword1)) => Repr::from_dword(dword0 & dword1),
-                (Small(dword0), Large(buffer1)) => Repr::from_dword(dword0 & buffer1.first_dword()),
-                (Large(buffer0), Small(dword1)) => Repr::from_dword(buffer0.first_dword() & dword1),
+                (Small(dword0), Large(buffer1)) => Repr::from_dword(dword0 & buffer1.lowest_dword()),
+                (Large(buffer0), Small(dword1)) => Repr::from_dword(buffer0.lowest_dword() & dword1),
                 (Large(buffer0), Large(buffer1)) => {
                     if buffer0.len() <= buffer1.len() {
                         bitand_large(buffer0, &buffer1)
@@ -379,10 +379,10 @@ mod repr {
             match (self, rhs) {
                 (Small(dword0), RefSmall(dword1)) => Repr::from_dword(dword0 & dword1),
                 (Small(dword0), RefLarge(buffer1)) => {
-                    Repr::from_dword(dword0 & first_dword(buffer1))
+                    Repr::from_dword(dword0 & lowest_dword(buffer1))
                 }
                 (Large(buffer0), RefSmall(dword1)) => {
-                    Repr::from_dword(buffer0.first_dword() & dword1)
+                    Repr::from_dword(buffer0.lowest_dword() & dword1)
                 }
                 (Large(buffer0), RefLarge(buffer1)) => bitand_large(buffer0, buffer1),
             }
@@ -407,10 +407,10 @@ mod repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => Repr::from_dword(dword0 & dword1),
                 (RefSmall(dword0), RefLarge(buffer1)) => {
-                    Repr::from_dword(dword0 & first_dword(buffer1))
+                    Repr::from_dword(dword0 & lowest_dword(buffer1))
                 }
                 (RefLarge(buffer0), RefSmall(dword1)) => {
-                    Repr::from_dword(first_dword(buffer0) & dword1)
+                    Repr::from_dword(lowest_dword(buffer0) & dword1)
                 }
                 (RefLarge(buffer0), RefLarge(buffer1)) => {
                     if buffer0.len() <= buffer1.len() {
@@ -501,7 +501,7 @@ mod repr {
         debug_assert!(buffer.len() >= 2);
 
         let (lo, hi) = split_dword(rhs);
-        let (b_lo, b_hi) = buffer.first_dword_mut();
+        let (b_lo, b_hi) = buffer.lowest_dword_mut();
         *b_lo |= lo;
         *b_hi |= hi;
         Repr::from_buffer(buffer)
@@ -586,7 +586,7 @@ mod repr {
         debug_assert!(buffer.len() >= 2);
 
         let (lo, hi) = split_dword(rhs);
-        let (b_lo, b_hi) = buffer.first_dword_mut();
+        let (b_lo, b_hi) = buffer.lowest_dword_mut();
         *b_lo ^= lo;
         *b_hi ^= hi;
         Repr::from_buffer(buffer)
@@ -611,7 +611,7 @@ mod repr {
             match (self, rhs) {
                 (Small(dword0), Small(dword1)) => Repr::from_dword(dword0 & !dword1),
                 (Small(dword0), Large(buffer1)) => {
-                    Repr::from_dword(dword0 & !buffer1.first_dword())
+                    Repr::from_dword(dword0 & !buffer1.lowest_dword())
                 }
                 (Large(buffer0), Small(dword1)) => and_not_large_dword(buffer0, dword1),
                 (Large(buffer0), Large(buffer1)) => and_not_large(buffer0, &buffer1),
@@ -627,7 +627,7 @@ mod repr {
             match (self, rhs) {
                 (Small(dword0), RefSmall(dword1)) => Repr::from_dword(dword0 & !dword1),
                 (Small(dword0), RefLarge(buffer1)) => {
-                    Repr::from_dword(dword0 & !first_dword(buffer1))
+                    Repr::from_dword(dword0 & !lowest_dword(buffer1))
                 }
                 (Large(buffer0), RefSmall(dword1)) => and_not_large_dword(buffer0, dword1),
                 (Large(buffer0), RefLarge(buffer1)) => and_not_large(buffer0, buffer1),
@@ -643,7 +643,7 @@ mod repr {
             match (self, rhs) {
                 (RefSmall(dword0), Small(dword1)) => Repr::from_dword(dword0 & !dword1),
                 (RefSmall(dword0), Large(buffer1)) => {
-                    Repr::from_dword(dword0 & !buffer1.first_dword())
+                    Repr::from_dword(dword0 & !buffer1.lowest_dword())
                 }
                 (RefLarge(buffer0), Small(dword1)) => and_not_large_dword(buffer0.into(), dword1),
                 (RefLarge(buffer0), Large(buffer1)) => and_not_large(buffer0.into(), &buffer1),
@@ -659,7 +659,7 @@ mod repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => Repr::from_dword(dword0 & !dword1),
                 (RefSmall(dword0), RefLarge(buffer1)) => {
-                    Repr::from_dword(dword0 & !first_dword(buffer1))
+                    Repr::from_dword(dword0 & !lowest_dword(buffer1))
                 }
                 (RefLarge(buffer0), RefSmall(dword1)) => {
                     and_not_large_dword(buffer0.into(), dword1)
@@ -673,7 +673,7 @@ mod repr {
         debug_assert!(buffer.len() >= 2);
 
         let (lo, hi) = split_dword(rhs);
-        let (b_lo, b_hi) = buffer.first_dword_mut();
+        let (b_lo, b_hi) = buffer.lowest_dword_mut();
         *b_lo &= !lo;
         *b_hi &= !hi;
         Repr::from_buffer(buffer)

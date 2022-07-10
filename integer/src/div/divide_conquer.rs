@@ -28,7 +28,7 @@ pub fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> Layout {
 /// Divide lhs by rhs, replacing the top words of lhs by the quotient and the
 /// bottom words of lhs by the remainder.
 ///
-/// lhs = [lhs / rhs, lhs % rhs]
+/// `lhs = [lhs % rhs, lhs / rhs]`
 ///
 /// Returns carry in the quotient. It is at most 1 because rhs is normalized.
 #[must_use]
@@ -95,7 +95,7 @@ fn div_rem_in_place_same_len(
 /// Divide lhs by rhs, replacing the top words of lhs by the quotient and the
 /// bottom words of lhs by the remainder.
 ///
-/// lhs = [lhs / rhs, lhs % rhs]
+/// `lhs = [lhs % rhs, lhs / rhs]`
 ///
 /// Returns carry in the quotient. It is at most 1 because rhs is normalized.
 #[must_use]

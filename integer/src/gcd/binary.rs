@@ -6,8 +6,8 @@ use dashu_base::ring::Gcd;
 use crate::{
     add,
     arch::word::Word,
-    bits::trailing_zeros_large,
-    cmp::cmp_same_len,
+    bits::trailing_zeros,
+    cmp::{cmp_in_place, cmp_same_len},
     memory::{self, Memory},
     primitive::WORD_BITS_USIZE,
     shift,
@@ -19,8 +19,8 @@ use alloc::alloc::Layout;
 /// Naive binary GCD for two multi-digit integers
 pub fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word]) -> usize {
     // find common factors of 2
-    let lhs_zeros = trailing_zeros_large(lhs);
-    let rhs_zeros = trailing_zeros_large(rhs);
+    let lhs_zeros = trailing_zeros(lhs);
+    let rhs_zeros = trailing_zeros(rhs);
     let init_zeros = lhs_zeros.min(rhs_zeros);
 
     let (lhs_pos, rhs_pos) = (lhs_zeros / WORD_BITS_USIZE, rhs_zeros / WORD_BITS_USIZE);
@@ -35,11 +35,7 @@ pub fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word]) -> usize {
         let (mut lhs_cur, mut rhs_cur) = (&mut lhs[lhs_pos..], &mut rhs[rhs_pos..]);
 
         loop {
-            match lhs_cur
-                .len()
-                .cmp(&rhs_cur.len())
-                .then_with(|| cmp_same_len(lhs_cur, rhs_cur))
-            {
+            match cmp_in_place(lhs_cur, rhs_cur) {
                 Ordering::Equal => break,
                 Ordering::Greater => {
                     // lhs -= rhs
@@ -52,7 +48,7 @@ pub fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word]) -> usize {
                     }
 
                     // truncate trailing zeros
-                    let zeros = trailing_zeros_large(lhs_cur);
+                    let zeros = trailing_zeros(lhs_cur);
                     lhs_cur = &mut lhs_cur[zeros / WORD_BITS_USIZE..];
                     shift::shr_in_place(lhs_cur, (zeros % WORD_BITS_USIZE) as u32);
                 }
@@ -67,7 +63,7 @@ pub fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word]) -> usize {
                     }
 
                     // truncate trailing zeros
-                    let zeros = trailing_zeros_large(rhs_cur);
+                    let zeros = trailing_zeros(rhs_cur);
                     rhs_cur = &mut rhs_cur[zeros / WORD_BITS_USIZE..];
                     shift::shr_in_place(rhs_cur, (zeros % WORD_BITS_USIZE) as u32);
                 }
@@ -120,8 +116,8 @@ pub fn gcd_ext_in_place(
     debug_assert!(lhs.len() > 1 && rhs.len() > 1);
 
     // find common factors of 2
-    let lhs_zeros = trailing_zeros_large(lhs);
-    let rhs_zeros = trailing_zeros_large(rhs);
+    let lhs_zeros = trailing_zeros(lhs);
+    let rhs_zeros = trailing_zeros(rhs);
 
     let (lhs_pos, rhs_pos) = (lhs_zeros / WORD_BITS_USIZE, rhs_zeros / WORD_BITS_USIZE);
     shift::shr_in_place(&mut lhs[lhs_pos..], (lhs_zeros % WORD_BITS_USIZE) as u32);
@@ -191,11 +187,7 @@ pub fn gcd_ext_in_place(
         let (mut lhs_cur, mut rhs_cur) = (&mut lhs[lhs_pos..], &mut rhs[rhs_pos..]);
 
         loop {
-            match lhs_cur
-                .len()
-                .cmp(&rhs_cur.len())
-                .then_with(|| cmp_same_len(lhs_cur, rhs_cur))
-            {
+            match cmp_in_place(lhs_cur, rhs_cur) {
                 Ordering::Equal => break,
                 Ordering::Greater => {
                     // lhs -= rhs
@@ -208,7 +200,7 @@ pub fn gcd_ext_in_place(
                     }
 
                     // truncate trailing zeros
-                    let zeros = trailing_zeros_large(lhs_cur);
+                    let zeros = trailing_zeros(lhs_cur);
                     lhs_cur = &mut lhs_cur[zeros / WORD_BITS_USIZE..];
                     shift::shr_in_place(lhs_cur, (zeros % WORD_BITS_USIZE) as u32);
                     shift += zeros;
@@ -229,7 +221,7 @@ pub fn gcd_ext_in_place(
                     }
 
                     // truncate trailing zeros
-                    let zeros = trailing_zeros_large(rhs_cur);
+                    let zeros = trailing_zeros(rhs_cur);
                     rhs_cur = &mut rhs_cur[zeros / WORD_BITS_USIZE..];
                     shift::shr_in_place(rhs_cur, (zeros % WORD_BITS_USIZE) as u32);
                     shift += zeros;

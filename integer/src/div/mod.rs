@@ -5,7 +5,7 @@ use crate::{
     fast_divide::{FastDivideNormalized, FastDivideNormalized2},
     math::shl_dword,
     memory::{self, Memory},
-    primitive::{double_word, extend_word, first_dword, last_dword, split_dword, WORD_BITS},
+    primitive::{double_word, extend_word, lowest_dword, highest_dword, split_dword, WORD_BITS},
     shift,
 };
 use alloc::alloc::Layout;
@@ -16,15 +16,14 @@ mod simple;
 /// If divisor or quotient is at most this length, use the simple division algorithm.
 const MAX_LEN_SIMPLE: usize = 32;
 
-/// Normalize a large divisor.
+/// Normalize a divisor represented as words.
 ///
 /// Returns (shift, fast division for the top words).
-pub(crate) fn normalize_large(words: &mut [Word]) -> (u32, FastDivideNormalized2) {
-    assert!(words.len() >= 2);
+pub(crate) fn normalize(words: &mut [Word]) -> (u32, FastDivideNormalized2) {
     let shift = words.last().unwrap().leading_zeros();
     let overflow = shift::shl_in_place(words, shift);
     debug_assert!(overflow == 0);
-    let top_words = last_dword(words);
+    let top_words = highest_dword(words);
     (shift, FastDivideNormalized2::new(top_words))
 }
 
@@ -154,7 +153,7 @@ pub(crate) fn fast_div_by_dword_in_place(
     // chunk the words into double words, and do 4by2 divisions
     let mut dwords = words_lo.rchunks_exact_mut(2);
     for chunk in &mut dwords {
-        let dword = first_dword(chunk);
+        let dword = lowest_dword(chunk);
         let (q, new_rem) = fast_div_rhs.div_rem_double(dword, rem);
         let (new_lo, new_hi) = split_dword(q);
         *chunk.first_mut().unwrap() = new_lo;
@@ -184,7 +183,7 @@ pub fn rem_by_dword(words: &[Word], rhs: DoubleWord) -> DoubleWord {
     debug_assert!(words.len() >= 2);
 
     if rhs.is_power_of_two() {
-        return first_dword(words) & (rhs - 1);
+        return lowest_dword(words) & (rhs - 1);
     }
 
     // calculate remainder without normalizing the words
@@ -214,7 +213,7 @@ pub(crate) fn fast_rem_by_normalized_dword(
     // chunk the words into double words, and do 4by2 divisions
     let mut dwords = words_lo.rchunks_exact(2);
     for chunk in &mut dwords {
-        let dword = first_dword(chunk);
+        let dword = lowest_dword(chunk);
         rem = fast_div_rhs.div_rem_double(dword, rem).1;
     }
 
@@ -242,9 +241,9 @@ pub fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> Layout {
 /// Divide lhs by rhs, replacing the top words of lhs by the quotient and the
 /// bottom words of lhs by the remainder.
 ///
-/// rhs must have at least 2 words and the top bit must be 1.
+/// rhs must have at least 2 words and be normalized (the top bit must be 1).
 ///
-/// lhs = [lhs / rhs, lhs % rhs]
+/// `lhs = [lhs % rhs, lhs / rhs]`
 ///
 /// Returns carry in the quotient. It is at most 1 because rhs is normalized.
 #[must_use]
@@ -261,4 +260,30 @@ pub(crate) fn div_rem_in_place(
     } else {
         divide_conquer::div_rem_in_place(lhs, rhs, fast_div_rhs_top, memory)
     }
+}
+
+/// Divide lhs by rhs, replacing the top words of lhs by the quotient and the
+/// bottom words of lhs by the remainder.
+///
+/// `lhs = [lhs % rhs, lhs / rhs]`
+/// 
+/// There is no normalization requirements on both oprands.
+///
+/// Returns carry in the quotient and the number of shifted bits caused by normalization.
+/// To get the actual remainder, the remainder should be shifted by the number.
+pub(crate) fn div_rem_unnormalized_in_place(
+    lhs: &mut [Word],
+    rhs: &mut [Word],
+    memory: &mut Memory,
+) -> (u32, Word) {
+    let (shift, fast_div_rhs_top) = normalize(rhs);
+    let lhs_carry = shift::shl_in_place(lhs, shift);
+    let mut q_top = if lhs_carry > 0 {
+        simple::div_rem_highest_word(lhs_carry, lhs, rhs, fast_div_rhs_top)
+    } else {
+        0
+    };
+    let overflow = div_rem_in_place(lhs, rhs, fast_div_rhs_top, memory);
+    q_top += overflow as Word;
+    (shift, q_top)
 }

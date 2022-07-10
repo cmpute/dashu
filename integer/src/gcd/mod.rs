@@ -3,6 +3,7 @@ use crate::{arch::word::Word, memory::Memory, sign::Sign};
 use alloc::alloc::Layout;
 
 mod binary;
+mod lehmer;
 
 /// Greatest common divisor for two multi-digit integers
 ///
@@ -12,6 +13,9 @@ pub fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word]) -> usize {
     if lhs.last().unwrap() == &0 || rhs.last().unwrap() == &0 {
         panic!("leading zero!")
     }
+
+    // TODO: pre-remove the trailing zeros, and give the number of zeros as input
+    // to low-level algorithms
     binary::gcd_in_place(lhs, rhs)
 }
 

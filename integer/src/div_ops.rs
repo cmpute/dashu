@@ -85,7 +85,7 @@ impl<'l> Rem<IBig> for &'l UBig {
     }
 }
 
-impl<'l, 'r> Rem<&'l IBig> for &'l UBig {
+impl<'l, 'r> Rem<&'r IBig> for &'l UBig {
     type Output = UBig;
 
     #[inline]
@@ -733,19 +733,14 @@ mod repr {
 
     /// lhs = (lhs / rhs, lhs % rhs)
     ///
-    /// Returns shift.
+    /// Returns the number of shift bits produced by normalization.
     fn div_rem_in_lhs(lhs: &mut Buffer, rhs: &mut Buffer) -> u32 {
-        let (shift, fast_div_rhs_top) = div::normalize_large(rhs);
-        let lhs_carry = shift::shl_in_place(lhs, shift);
-        if lhs_carry != 0 {
-            lhs.push_resizing(lhs_carry);
-        }
         let mut allocation =
             MemoryAllocation::new(div::memory_requirement_exact(lhs.len(), rhs.len()));
         let mut memory = allocation.memory();
-        let overflow = div::div_rem_in_place(lhs, rhs, fast_div_rhs_top, &mut memory);
-        if overflow {
-            lhs.push_resizing(1);
+        let (shift, quo_carry) = div::div_rem_unnormalized_in_place(lhs, rhs, &mut memory);
+        if quo_carry > 0 {
+            lhs.push_resizing(quo_carry);
         }
         shift
     }

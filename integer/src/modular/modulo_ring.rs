@@ -166,7 +166,7 @@ impl ModuloRingDouble {
 impl ModuloRingLarge {
     /// Create a new large ring of integers modulo `n`.
     fn new(mut n: Buffer) -> ModuloRingLarge {
-        let (shift, fast_div_top) = div::normalize_large(&mut n);
+        let (shift, fast_div_top) = div::normalize(&mut n);
         ModuloRingLarge {
             normalized_modulus: n.into_boxed_slice(),
             shift,

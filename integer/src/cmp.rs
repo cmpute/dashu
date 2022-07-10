@@ -23,10 +23,7 @@ impl<'a> Ord for TypedReprRef<'a> {
             (RefSmall(dword), RefSmall(other_dword)) => dword.cmp(&other_dword),
             (RefSmall(_), RefLarge(_)) => Ordering::Less,
             (RefLarge(_), RefSmall(_)) => Ordering::Greater,
-            (RefLarge(buffer), RefLarge(other_buffer)) => buffer
-                .len()
-                .cmp(&other_buffer.len())
-                .then_with(|| cmp_same_len(buffer, other_buffer)),
+            (RefLarge(buffer), RefLarge(other_buffer)) => cmp_in_place(buffer, other_buffer),
         }
     }
 }
@@ -192,8 +189,16 @@ impl_cmp_ubig_with_signed_primitive!(i64);
 impl_cmp_ubig_with_signed_primitive!(i128);
 impl_cmp_ubig_with_signed_primitive!(isize);
 
-/// Compare lhs with rhs as numbers.
+/// Compare lhs with rhs of the same length as numbers.
+#[inline]
 pub fn cmp_same_len(lhs: &[Word], rhs: &[Word]) -> Ordering {
     debug_assert!(lhs.len() == rhs.len());
     lhs.iter().rev().cmp(rhs.iter().rev())
+}
+
+/// Compare lhs with rhs as numbers. The leading zeros of the input must be trimmed!
+pub fn cmp_in_place(lhs: &[Word], rhs: &[Word]) -> Ordering {
+    debug_assert!(lhs.len() >= 2 && rhs.len() >= 2);
+    debug_assert!(*lhs.last().unwrap() != 0 && *rhs.last().unwrap() != 0);
+    lhs.len().cmp(&rhs.len()).then_with(|| cmp_same_len(lhs, rhs))
 }

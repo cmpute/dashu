@@ -367,7 +367,7 @@ impl Buffer {
     ///
     /// Panics if the buffer is empty or has only 1 word
     #[inline]
-    pub fn first_dword(&self) -> DoubleWord {
+    pub fn lowest_dword(&self) -> DoubleWord {
         assert!(self.len >= 2);
 
         unsafe {
@@ -384,7 +384,7 @@ impl Buffer {
     ///
     /// Panics if the buffer is empty or has only 1 word
     #[inline]
-    pub fn first_dword_mut(&mut self) -> (&mut Word, &mut Word) {
+    pub fn lowest_dword_mut(&mut self) -> (&mut Word, &mut Word) {
         assert!(self.len >= 2);
 
         unsafe {

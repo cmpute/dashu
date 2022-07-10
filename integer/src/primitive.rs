@@ -1,7 +1,7 @@
 //! Primitive integral types.
 
 use crate::{
-    arch::word::{DoubleWord, Word},
+    arch::word::{DoubleWord, Word, SignedDoubleWord, SignedWord},
     error::OutOfBoundsError,
     sign::Sign::{self, *},
 };
@@ -12,22 +12,35 @@ use core::{
     ops::{Add, Div, Mul, Shl, Shr, Sub},
 };
 
-/// Cast `Word` to `DoubleWord`.
+/// Cast [Word] to [DoubleWord].
 #[inline]
 pub const fn extend_word(word: Word) -> DoubleWord {
     word as DoubleWord
 }
 
-/// Create a `DoubleWord` from two `Word`s.
+/// Cast [Word] to [SignedDoubleWord].
+#[inline]
+pub const fn signed_extend_word(word: Word) -> SignedDoubleWord {
+    word as SignedDoubleWord
+}
+
+/// Create a [DoubleWord] from two `Word`s.
 #[inline]
 pub const fn double_word(low: Word, high: Word) -> DoubleWord {
     extend_word(low) | extend_word(high) << WORD_BITS
 }
 
-/// Split a `DoubleWord` into (low, high) parts
+/// Split a [DoubleWord] into (low, high) parts
 #[inline]
 pub const fn split_dword(dw: DoubleWord) -> (Word, Word) {
     (dw as Word, (dw >> WORD_BITS) as Word)
+}
+
+/// Split a [SignedDoubleWord] into (low, high) parts, where the high part is signed
+/// and low part is unsigned
+#[inline]
+pub const fn split_signed_dword(dw: SignedDoubleWord) -> (Word, SignedWord) {
+    (dw as Word, (dw >> WORD_BITS) as SignedWord)
 }
 
 /// Get the low part of a `DoubleWord` if the high part is zero
@@ -43,7 +56,7 @@ pub const fn shrink_dword(dw: DoubleWord) -> Option<Word> {
 
 /// Get the lowest double word of a slice of words
 #[inline]
-pub fn first_dword(words: &[Word]) -> DoubleWord {
+pub fn lowest_dword(words: &[Word]) -> DoubleWord {
     debug_assert!(words.len() >= 2);
     unsafe {
         let lo = *words.get_unchecked(0);
@@ -54,7 +67,7 @@ pub fn first_dword(words: &[Word]) -> DoubleWord {
 
 /// Get the highest double word of a slice of words
 #[inline]
-pub fn last_dword(words: &[Word]) -> DoubleWord {
+pub fn highest_dword(words: &[Word]) -> DoubleWord {
     let len = words.len();
     debug_assert!(len >= 2);
     unsafe {
