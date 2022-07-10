@@ -19,7 +19,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: check
-          args: --all-features --workspace
+          args: --all-features
 
   test:
     name: Test
@@ -39,7 +39,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all-features --workspace
+          args: --all-features
 
   test-x86:
     name: Test x86
@@ -59,7 +59,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all-features --workspace
+          args: --all-features
 
   test-x86_64:
     name: Test x86_64
@@ -76,7 +76,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all-features --workspace
+          args: --all-features
 
   build-no-std:
     name: Build no-std
@@ -95,6 +95,23 @@ jobs:
           command: build
           args: --no-default-features --features "rand, num-traits, serde"
 
+  build-benchmark:
+    name: Build benchmark
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: -p benchmark
+
   build-aarch64:
     name: Build aarch64
     runs-on: ubuntu-latest
@@ -111,7 +128,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --target aarch64-unknown-linux-gnu --all-features --workspace
+          args: --target aarch64-unknown-linux-gnu --all-features
 
   fmt:
     name: Rustfmt
