@@ -20,7 +20,7 @@ use core::{
 const CHUNK_LEN: usize = 16;
 
 impl InRadixFull<'_> {
-    pub(crate) fn fmt_non_power_two(&self, f: &mut Formatter) -> fmt::Result {
+    pub fn fmt_non_power_two(&self, f: &mut Formatter) -> fmt::Result {
         debug_assert!(radix::is_radix_valid(self.radix) && !self.radix.is_power_of_two());
 
         if let RefSmall(dword) = self.magnitude {

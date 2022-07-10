@@ -3,10 +3,10 @@ use crate::mul::ntt::{Prime, NUM_PRIMES};
 /// Maximum order of the number-theoretic transform.
 ///
 /// 2^27 * 32 = 2^32 bits.
-pub(crate) const MAX_ORDER: u32 = 27;
+pub const MAX_ORDER: u32 = 27;
 
 /// Primes to be used for the number-theoretic transform.
-pub(crate) const PRIMES: [Prime; NUM_PRIMES] = [
+pub const PRIMES: [Prime; NUM_PRIMES] = [
     Prime {
         prime: 0xc0000001,
         max_order_root: 0x3,

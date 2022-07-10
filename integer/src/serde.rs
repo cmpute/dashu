@@ -1,9 +1,9 @@
 use crate::{
     arch::word::Word,
     ibig::IBig,
-    ops::UnsignedAbs,
-    primitive::WORD_BITS_USIZE,
-    repr::{Buffer, Repr},
+    primitive::{split_dword, WORD_BITS_USIZE},
+    repr::{Buffer, Repr, TypedReprRef},
+    sign::Sign,
     ubig::UBig,
 };
 use alloc::vec::Vec;
@@ -14,22 +14,58 @@ use serde::{
 };
 use static_assertions::const_assert;
 
+// We ensure that the max size of a word is 64-bit, if we are going to
+// support 128 bit word, it's going to be a break change.
 const_assert!(64 % WORD_BITS_USIZE == 0);
 const WORDS_PER_U64: usize = 64 / WORD_BITS_USIZE;
 
-impl Serialize for UBig {
+impl<'a> Serialize for TypedReprRef<'a> {
     #[allow(clippy::useless_conversion)]
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let chunks = self.as_words().chunks(WORDS_PER_U64);
-        let mut seq = serializer.serialize_seq(Some(chunks.len()))?;
-        for chunk in chunks {
-            let mut word_u64: u64 = 0;
-            for (i, word) in chunk.iter().enumerate() {
-                word_u64 |= u64::from(*word) << (i * WORD_BITS_USIZE);
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match *self {
+            TypedReprRef::RefSmall(0) => serializer.serialize_seq(Some(0))?.end(),
+            TypedReprRef::RefSmall(dword) => {
+                let (lo, hi) = split_dword(dword);
+                if WORDS_PER_U64 == 1 && hi != 0 {
+                    let mut seq = serializer.serialize_seq(Some(2))?;
+                    seq.serialize_element(&lo)?;
+                    seq.serialize_element(&hi)?;
+                    seq.end()
+                } else {
+                    let mut chunk = u64::from(lo);
+                    #[allow(arithmetic_overflow)]
+                    if hi != 0 {
+                        // this won't overflow because WORDS_PER_U64 > 1 if hi != 0
+                        chunk |= u64::from(hi) << WORD_BITS_USIZE;
+                    }
+                    let mut seq = serializer.serialize_seq(Some(1))?;
+                    seq.serialize_element(&chunk)?;
+                    seq.end()
+                }
             }
-            seq.serialize_element(&word_u64)?;
+            TypedReprRef::RefLarge(words) => {
+                let chunks = words.chunks(WORDS_PER_U64);
+                let mut seq = serializer.serialize_seq(Some(chunks.len()))?;
+                for chunk in chunks {
+                    let mut word_u64: u64 = 0;
+                    for (i, word) in chunk.iter().enumerate() {
+                        word_u64 |= u64::from(*word) << (i * WORD_BITS_USIZE);
+                    }
+                    seq.serialize_element(&word_u64)?;
+                }
+                seq.end()
+            }
         }
-        seq.end()
+    }
+}
+
+impl Serialize for UBig {
+    #[inline]
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.repr().serialize(serializer)
     }
 }
 
@@ -39,6 +75,7 @@ impl<'de> Deserialize<'de> for UBig {
     }
 }
 
+/// Currently all the data in the big integer is serialized as u64 chunks
 struct UBigVisitor;
 
 impl<'de> Visitor<'de> for UBigVisitor {
@@ -99,15 +136,13 @@ fn len_64_to_max_len(len_64: usize) -> usize {
 
 impl Serialize for IBig {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        // TODO: implement Serialize for Repr instead of using UnsignedAbs
-        (self.sign(), self.unsigned_abs()).serialize(serializer)
+        self.as_sign_repr().serialize(serializer)
     }
 }
 
-// TODO: fix this
-// impl<'de> Deserialize<'de> for IBig {
-//     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-//         let (sign, magnitude) = Deserialize::deserialize(deserializer)?;
-//         Ok(IBig(magnitude.0.with_sign(sign)))
-//     }
-// }
+impl<'de> Deserialize<'de> for IBig {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let (sign, magnitude): (Sign, UBig) = Deserialize::deserialize(deserializer)?;
+        Ok(IBig(magnitude.0.with_sign(sign)))
+    }
+}

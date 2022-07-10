@@ -15,7 +15,7 @@ use core::cmp::Ordering::*;
 ///
 /// Returns overflow.
 #[must_use]
-pub(crate) fn add_one_in_place(words: &mut [Word]) -> bool {
+pub fn add_one_in_place(words: &mut [Word]) -> bool {
     for word in words {
         let (a, overflow) = word.overflowing_add(1);
         *word = a;
@@ -30,7 +30,7 @@ pub(crate) fn add_one_in_place(words: &mut [Word]) -> bool {
 ///
 /// Returns borrow.
 #[must_use]
-pub(crate) fn sub_one_in_place(words: &mut [Word]) -> bool {
+pub fn sub_one_in_place(words: &mut [Word]) -> bool {
     for word in words {
         let (a, borrow) = word.overflowing_sub(1);
         *word = a;
@@ -45,7 +45,7 @@ pub(crate) fn sub_one_in_place(words: &mut [Word]) -> bool {
 ///
 /// Returns overflow.
 #[must_use]
-pub(crate) fn add_word_in_place(words: &mut [Word], rhs: Word) -> bool {
+pub fn add_word_in_place(words: &mut [Word], rhs: Word) -> bool {
     let (word_0, words_hi) = words.split_first_mut().unwrap();
     let (a, carry) = word_0.overflowing_add(rhs);
     *word_0 = a;
@@ -55,7 +55,7 @@ pub(crate) fn add_word_in_place(words: &mut [Word], rhs: Word) -> bool {
 /// Add a double word to a non-empty word sequence.
 ///
 /// Returns overflow.
-pub(crate) fn add_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> bool {
+pub fn add_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> bool {
     let (word_0, words_hi) = words.split_first_mut().unwrap();
     let (word_1, words_hi) = words_hi.split_first_mut().unwrap();
     let (b0, b1) = split_dword(rhs);
@@ -70,7 +70,7 @@ pub(crate) fn add_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> bool {
 ///
 /// Returns borrow.
 #[must_use]
-pub(crate) fn sub_word_in_place(words: &mut [Word], rhs: Word) -> bool {
+pub fn sub_word_in_place(words: &mut [Word], rhs: Word) -> bool {
     let (word_0, words_hi) = words.split_first_mut().unwrap();
     let (a, borrow) = word_0.overflowing_sub(rhs);
     *word_0 = a;
@@ -81,7 +81,7 @@ pub(crate) fn sub_word_in_place(words: &mut [Word], rhs: Word) -> bool {
 ///
 /// Returns borrow.
 #[must_use]
-pub(crate) fn sub_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> bool {
+pub fn sub_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> bool {
     let (word_0, words_hi) = words.split_first_mut().unwrap();
     let (word_1, words_hi) = words_hi.split_first_mut().unwrap();
     let (b0, b1) = split_dword(rhs);
@@ -96,7 +96,7 @@ pub(crate) fn sub_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> bool {
 ///
 /// Returns overflow.
 #[must_use]
-pub(crate) fn add_same_len_in_place(words: &mut [Word], rhs: &[Word]) -> bool {
+pub fn add_same_len_in_place(words: &mut [Word], rhs: &[Word]) -> bool {
     debug_assert!(words.len() == rhs.len());
 
     let mut carry = false;
@@ -112,7 +112,7 @@ pub(crate) fn add_same_len_in_place(words: &mut [Word], rhs: &[Word]) -> bool {
 ///
 /// Returns borrow.
 #[must_use]
-pub(crate) fn sub_same_len_in_place(lhs: &mut [Word], rhs: &[Word]) -> bool {
+pub fn sub_same_len_in_place(lhs: &mut [Word], rhs: &[Word]) -> bool {
     debug_assert!(lhs.len() == rhs.len());
     let mut borrow = false;
     for (a, b) in lhs.iter_mut().zip(rhs.iter()) {
@@ -127,7 +127,7 @@ pub(crate) fn sub_same_len_in_place(lhs: &mut [Word], rhs: &[Word]) -> bool {
 ///
 /// Returns overflow.
 #[must_use]
-pub(crate) fn add_in_place(lhs: &mut [Word], rhs: &[Word]) -> bool {
+pub fn add_in_place(lhs: &mut [Word], rhs: &[Word]) -> bool {
     let (lhs_lo, lhs_hi) = lhs.split_at_mut(rhs.len());
     let carry = add_same_len_in_place(lhs_lo, rhs);
     carry && add_one_in_place(lhs_hi)
@@ -137,7 +137,7 @@ pub(crate) fn add_in_place(lhs: &mut [Word], rhs: &[Word]) -> bool {
 ///
 /// Returns borrow.
 #[must_use]
-pub(crate) fn sub_in_place(lhs: &mut [Word], rhs: &[Word]) -> bool {
+pub fn sub_in_place(lhs: &mut [Word], rhs: &[Word]) -> bool {
     let (lhs_lo, lhs_hi) = lhs.split_at_mut(rhs.len());
     let borrow = sub_same_len_in_place(lhs_lo, rhs);
     borrow && sub_one_in_place(lhs_hi)
@@ -147,7 +147,7 @@ pub(crate) fn sub_in_place(lhs: &mut [Word], rhs: &[Word]) -> bool {
 ///
 /// Returns borrow.
 #[must_use]
-pub(crate) fn sub_same_len_in_place_swap(lhs: &[Word], rhs: &mut [Word]) -> bool {
+pub fn sub_same_len_in_place_swap(lhs: &[Word], rhs: &mut [Word]) -> bool {
     debug_assert!(lhs.len() == rhs.len());
     let mut borrow = false;
     for (a, b) in lhs.iter().zip(rhs.iter_mut()) {
@@ -160,7 +160,7 @@ pub(crate) fn sub_same_len_in_place_swap(lhs: &[Word], rhs: &mut [Word]) -> bool
 
 /// (sign, lhs) = lhs - rhs
 #[must_use]
-pub(crate) fn sub_in_place_with_sign(lhs: &mut [Word], rhs: &[Word]) -> Sign {
+pub fn sub_in_place_with_sign(lhs: &mut [Word], rhs: &[Word]) -> Sign {
     debug_assert!(lhs.len() >= rhs.len());
     let mut lhs_len = lhs.len();
     while lhs_len != 0 && lhs[lhs_len - 1] == 0 {
@@ -215,7 +215,7 @@ pub(crate) fn sub_in_place_with_sign(lhs: &mut [Word], rhs: &[Word]) -> Sign {
 ///
 /// Returns overflow.
 #[must_use]
-pub(crate) fn add_signed_word_in_place(words: &mut [Word], rhs: SignedWord) -> SignedWord {
+pub fn add_signed_word_in_place(words: &mut [Word], rhs: SignedWord) -> SignedWord {
     if rhs == 0 || words.is_empty() {
         return rhs;
     }
@@ -229,11 +229,7 @@ pub(crate) fn add_signed_word_in_place(words: &mut [Word], rhs: SignedWord) -> S
 ///
 /// Returns overflow.
 #[must_use]
-pub(crate) fn add_signed_same_len_in_place(
-    words: &mut [Word],
-    sign: Sign,
-    rhs: &[Word],
-) -> SignedWord {
+pub fn add_signed_same_len_in_place(words: &mut [Word], sign: Sign, rhs: &[Word]) -> SignedWord {
     debug_assert!(words.len() == rhs.len());
     match sign {
         Positive => SignedWord::from(add_same_len_in_place(words, rhs)),
@@ -245,7 +241,7 @@ pub(crate) fn add_signed_same_len_in_place(
 ///
 /// Returns overflow.
 #[must_use]
-pub(crate) fn add_signed_in_place(words: &mut [Word], sign: Sign, rhs: &[Word]) -> SignedWord {
+pub fn add_signed_in_place(words: &mut [Word], sign: Sign, rhs: &[Word]) -> SignedWord {
     debug_assert!(words.len() >= rhs.len());
     match sign {
         Positive => SignedWord::from(add_in_place(words, rhs)),

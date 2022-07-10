@@ -15,12 +15,12 @@ use alloc::alloc::Layout;
 const CHUNK_LEN: usize = 1024;
 
 /// Max supported Smaller factor length.
-pub(crate) const MAX_SMALLER_LEN: usize = CHUNK_LEN;
+pub const MAX_SMALLER_LEN: usize = CHUNK_LEN;
 
 /// Temporary memory required for multiplication.
 ///
 /// n bounds the length of the Smaller factor in words.
-pub(crate) fn memory_requirement_up_to(_n: usize) -> Layout {
+pub fn memory_requirement_up_to(_n: usize) -> Layout {
     memory::zero_layout()
 }
 
@@ -28,7 +28,7 @@ pub(crate) fn memory_requirement_up_to(_n: usize) -> Layout {
 /// Simple method: O(a.len() * b.len()).
 ///
 /// Returns carry.
-pub(crate) fn add_signed_mul(
+pub fn add_signed_mul(
     c: &mut [Word],
     sign: Sign,
     a: &[Word],
@@ -56,7 +56,7 @@ pub(crate) fn add_signed_mul(
 /// Simple method: O(a.len() * b.len()).
 ///
 /// Returns carry.
-pub(crate) fn add_signed_mul_same_len(
+pub fn add_signed_mul_same_len(
     c: &mut [Word],
     sign: Sign,
     a: &[Word],

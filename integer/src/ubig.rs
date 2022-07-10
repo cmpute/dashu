@@ -6,7 +6,6 @@
 //! the source type explicit.
 
 use crate::{
-    arch::word::Word,
     primitive::WORD_BITS_USIZE,
     repr::{Buffer, Repr, TypedRepr, TypedReprRef},
 };
@@ -68,10 +67,9 @@ impl UBig {
         self.0.is_one()
     }
 
-    /// Representation in Words.
-    // TODO: expose this
+    /// Representation in [Word][crate::Word]s.
     #[inline]
-    pub(crate) fn as_words(&self) -> &[Word] {
+    pub fn as_words(&self) -> &[crate::Word] {
         let (sign, words) = self.0.as_sign_slice();
         debug_assert!(matches!(sign, crate::sign::Sign::Positive));
         words

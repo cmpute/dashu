@@ -193,7 +193,7 @@ impl_cmp_ubig_with_signed_primitive!(i128);
 impl_cmp_ubig_with_signed_primitive!(isize);
 
 /// Compare lhs with rhs as numbers.
-pub(crate) fn cmp_same_len(lhs: &[Word], rhs: &[Word]) -> Ordering {
+pub fn cmp_same_len(lhs: &[Word], rhs: &[Word]) -> Ordering {
     debug_assert!(lhs.len() == rhs.len());
     lhs.iter().rev().cmp(rhs.iter().rev())
 }

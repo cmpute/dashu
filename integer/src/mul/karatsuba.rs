@@ -15,12 +15,12 @@ use alloc::alloc::Layout;
 // If n >= 3 then:
 // 6 * floor((n+1)/2) <= 3(n+1) = 3n + 3 <= 4n
 /// Minimum supported length of the factors.
-pub(crate) const MIN_LEN: usize = 3;
+pub const MIN_LEN: usize = 3;
 
 /// Temporary memory required for multiplication.
 ///
 /// n bounds the length of the Smaller factor in words.
-pub(crate) fn memory_requirement_up_to(n: usize) -> Layout {
+pub fn memory_requirement_up_to(n: usize) -> Layout {
     // We prove by induction that:
     // f(n) <= 2n + 2 log_2 (n-1)
     //
@@ -40,7 +40,7 @@ pub(crate) fn memory_requirement_up_to(n: usize) -> Layout {
 ///
 /// Returns carry.
 #[must_use]
-pub(crate) fn add_signed_mul(
+pub fn add_signed_mul(
     c: &mut [Word],
     sign: Sign,
     a: &[Word],
@@ -65,7 +65,7 @@ pub(crate) fn add_signed_mul(
 ///
 /// Returns carry.
 #[must_use]
-pub(crate) fn add_signed_mul_same_len(
+pub fn add_signed_mul_same_len(
     c: &mut [Word],
     sign: Sign,
     a: &[Word],

@@ -1,5 +1,5 @@
+use super::{ExtendedGcd, Gcd};
 use core::mem::replace;
-use super::{Gcd, ExtendedGcd};
 
 trait UncheckedGcd<Rhs = Self> {
     type Output;
@@ -16,7 +16,8 @@ trait UncheckedExtendedGcd<Rhs = Self> {
 
     /// Extended GCD with assumptions that (1) at least one of the input is not zero,
     /// (2) the first oprand is larger than the second. For internal use only.
-    fn unchecked_gcd_ext(self, rhs: Rhs) -> (Self::OutputGcd, Self::OutputCoeff, Self::OutputCoeff);
+    fn unchecked_gcd_ext(self, rhs: Rhs)
+        -> (Self::OutputGcd, Self::OutputCoeff, Self::OutputCoeff);
 }
 
 macro_rules! impl_unchecked_gcd_ops_prim {
@@ -147,11 +148,11 @@ macro_rules! impl_unchecked_gcd_ops_prim {
 }
 impl_unchecked_gcd_ops_prim!(u8 | i8; u16 | i16; usize | isize;);
 #[cfg(target_pointer_width = "16")]
-impl_unchecked_gcd_ops_prim!(u32 | i32 => u16 | i16; u64 | i64 => u32 | i32, u128 | i128 => u64 | i64;);
+impl_unchecked_gcd_ops_prim!(u32 | i32 => u16 | i16; u64 | i64 => u32 | i32; u128 | i128 => u64 | i64;);
 #[cfg(target_pointer_width = "32")]
-impl_unchecked_gcd_ops_prim!(u32 | i32);
+impl_unchecked_gcd_ops_prim!(u32 | i32;);
 #[cfg(target_pointer_width = "32")]
-impl_unchecked_gcd_ops_prim!(u64 | i64 => u32 | i32, u128 | i128 => u64 | u64;);
+impl_unchecked_gcd_ops_prim!(u64 | i64 => u32 | i32; u128 | i128 => u64 | u64;);
 #[cfg(target_pointer_width = "64")]
 impl_unchecked_gcd_ops_prim!(u32 | i32; u64 | i64;);
 #[cfg(target_pointer_width = "64")]
@@ -254,13 +255,24 @@ mod tests {
     fn test_simple() {
         assert_eq!(12u8.gcd(18), 6);
         assert_eq!(0x40000000u32.gcd(0xcfd41b91), 1);
-        assert_eq!(0x80000000000000000000000000000000u128.gcd(0x6f32f1ef8b18a2bc3cea59789c79d441), 1);
+        assert_eq!(
+            0x80000000000000000000000000000000u128.gcd(0x6f32f1ef8b18a2bc3cea59789c79d441),
+            1
+        );
 
         let result = 12u8.gcd_ext(18u8);
         assert_eq!(result, (6, -1, 1));
         let result = 0x40000000u32.gcd_ext(0xcfd41b91);
         assert_eq!(result, (1, -569926925, 175506801));
-        let result = 0x80000000000000000000000000000000u128.gcd_ext(0x6f32f1ef8b18a2bc3cea59789c79d441);
-        assert_eq!(result, (1, 59127885930508821681098646892310825630, -68061485417298041807799738471800882239));
+        let result =
+            0x80000000000000000000000000000000u128.gcd_ext(0x6f32f1ef8b18a2bc3cea59789c79d441);
+        assert_eq!(
+            result,
+            (
+                1,
+                59127885930508821681098646892310825630,
+                -68061485417298041807799738471800882239
+            )
+        );
     }
 }

@@ -65,6 +65,12 @@ extern crate alloc;
 
 pub use crate::{ibig::IBig, ubig::UBig};
 
+/// The primitive integer type used to construct the big integers.
+///
+/// The size of a [Word] is usually the same as [usize], but it's not guaranteed.
+/// It's dependent on the target architecture.
+pub type Word = arch::word::Word;
+
 mod add;
 mod add_ops;
 mod arch;

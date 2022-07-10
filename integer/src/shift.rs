@@ -7,7 +7,7 @@ use crate::{
 
 /// Shift left by less than WORD_BITS in place.
 /// Returns carry.
-pub(crate) fn shl_in_place(words: &mut [Word], shift: u32) -> Word {
+pub fn shl_in_place(words: &mut [Word], shift: u32) -> Word {
     debug_assert!(shift < WORD_BITS);
     if shift == 0 {
         return 0;
@@ -24,14 +24,14 @@ pub(crate) fn shl_in_place(words: &mut [Word], shift: u32) -> Word {
 /// Shift right by less than WORD_BITS in place.
 /// Returns shifted bits.
 #[inline]
-pub(crate) fn shr_in_place(words: &mut [Word], shift: u32) -> Word {
+pub fn shr_in_place(words: &mut [Word], shift: u32) -> Word {
     shr_in_place_with_carry(words, shift, 0)
 }
 
 /// Shift right by less than WORD_BITS in place.
 /// An optional carry could be provided from a higher word.
 /// Returns shifted bits.
-pub(crate) fn shr_in_place_with_carry(words: &mut [Word], shift: u32, mut carry: Word) -> Word {
+pub fn shr_in_place_with_carry(words: &mut [Word], shift: u32, mut carry: Word) -> Word {
     debug_assert!(shift < WORD_BITS);
     if shift == 0 {
         debug_assert!(carry == 0);

@@ -34,7 +34,7 @@ pub(crate) fn normalize_large(words: &mut [Word]) -> (u32, FastDivideNormalized2
 ///
 /// Returns words % rhs. Panics if `words` is too short (<= 2 words).
 #[must_use]
-pub(crate) fn div_by_word_in_place(words: &mut [Word], rhs: Word) -> Word {
+pub fn div_by_word_in_place(words: &mut [Word], rhs: Word) -> Word {
     debug_assert!(rhs != 0 && words.len() >= 2);
 
     if rhs.is_power_of_two() {
@@ -69,7 +69,7 @@ pub(crate) fn fast_div_by_word_in_place(
 }
 
 /// Panics if `words` is too short (<= 2 words)
-pub(crate) fn rem_by_word(words: &[Word], rhs: Word) -> Word {
+pub fn rem_by_word(words: &[Word], rhs: Word) -> Word {
     debug_assert!(rhs != 0 && words.len() >= 2);
 
     // shortcut
@@ -112,7 +112,7 @@ pub(crate) fn fast_rem_by_normalized_word(
 /// rhs must not fit in a word, there could be one leading zero in words.
 ///
 /// Returns words % rhs. Panics if `words` is too short (<= 2 words)
-pub(crate) fn div_by_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleWord {
+pub fn div_by_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleWord {
     debug_assert!(
         rhs > Word::MAX as DoubleWord,
         "call div_by_word_in_place when rhs is small"
@@ -176,7 +176,7 @@ pub(crate) fn fast_div_by_dword_in_place(
 }
 
 /// words % rhs, panics if `words` is too short (<= 2 words) or rhs fits in a single Word.
-pub(crate) fn rem_by_dword(words: &[Word], rhs: DoubleWord) -> DoubleWord {
+pub fn rem_by_dword(words: &[Word], rhs: DoubleWord) -> DoubleWord {
     debug_assert!(
         rhs > Word::MAX as DoubleWord,
         "call div_by_word_in_place when rhs is small"
@@ -230,7 +230,7 @@ pub(crate) fn fast_rem_by_normalized_dword(
 }
 
 /// Memory requirement for division.
-pub(crate) fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> Layout {
+pub fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> Layout {
     assert!(lhs_len >= rhs_len && rhs_len >= 2);
     if rhs_len <= MAX_LEN_SIMPLE || lhs_len - rhs_len <= MAX_LEN_SIMPLE {
         memory::zero_layout()

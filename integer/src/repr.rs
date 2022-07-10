@@ -31,7 +31,7 @@ union ReprData {
 /// When the data is allocated on the heap, it can be casted to [Buffer] efficiently, but modifying
 /// the buffer inplace is not allowed because that can break the rule on the `capacity` field.
 #[repr(C)]
-pub(crate) struct Repr {
+pub struct Repr {
     /// The capacity is designed to be not zero so that it provides a niche value for other use.
     ///
     /// How to intepret the `data` field:
@@ -39,6 +39,7 @@ pub(crate) struct Repr {
     /// - `capacity` = 2: the words are inlined
     /// - `capacity` >= 3: the words are on allocated on the heap. In this case, data.len >= 3 will also be forced.
     /// - `capacity` < 0: similiar to the cases above, but negative capacity value is used to mark the integer is negative.
+    ///     Note that in this case the inlined value is not allowed to be zero. (zero must have a positive sign)
     capacity: NonZeroIsize,
 
     /// The words in the `data` field are ordered from LSB to MSB.
@@ -55,7 +56,7 @@ pub(crate) struct Repr {
 ///
 /// If its capacity is exceeded, the `Buffer` will panic.
 #[repr(C)]
-pub(crate) struct Buffer {
+pub struct Buffer {
     capacity: usize,
     ptr: NonNull<Word>,
     len: usize,
@@ -72,14 +73,14 @@ unsafe impl Sync for Buffer {}
 
 /// A strong typed safe representation of a `Repr` without sign
 #[derive(Clone)]
-pub(crate) enum TypedRepr {
+pub enum TypedRepr {
     Small(DoubleWord),
     Large(Buffer),
 }
 
 /// A strong typed safe representation of a reference to `Repr` without sign
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TypedReprRef<'a> {
+pub enum TypedReprRef<'a> {
     RefSmall(DoubleWord),
     RefLarge(&'a [Word]),
 }
@@ -92,7 +93,7 @@ impl Buffer {
     ///
     /// Furthermore, this also ensures that the capacity of the buffer won't exceed isize::MAX,
     /// and ensures the safety for pointer movement.
-    pub(crate) const MAX_CAPACITY: usize = usize::MAX / WORD_BITS_USIZE;
+    pub const MAX_CAPACITY: usize = usize::MAX / WORD_BITS_USIZE;
 
     /// Default capacity for a given number of `Word`s.
     /// It should be between `num_words` and `max_compact_capacity(num_words).
@@ -151,7 +152,7 @@ impl Buffer {
     ///
     /// This function should NOT BE EXPOSED to public!
     #[inline]
-    pub(crate) unsafe fn deallocate_raw(ptr: NonNull<Word>, capacity: usize) {
+    pub unsafe fn deallocate_raw(ptr: NonNull<Word>, capacity: usize) {
         let layout = Layout::array::<Word>(capacity).unwrap();
         alloc::alloc::dealloc(ptr.as_ptr() as _, layout);
     }
@@ -218,7 +219,7 @@ impl Buffer {
     /// Ensure there is enough capacity in the buffer for `num_words`,
     /// reallocate if necessary.
     #[inline]
-    pub(crate) fn ensure_capacity(&mut self, num_words: usize) {
+    pub fn ensure_capacity(&mut self, num_words: usize) {
         if num_words > self.capacity && num_words > 2 {
             self.reallocate(num_words);
         }
@@ -227,7 +228,7 @@ impl Buffer {
     /// Ensure there is enough capacity that is not less than the given value,
     /// reallocate if necessary.
     #[inline]
-    pub(crate) fn ensure_capacity_exact(&mut self, capacity: usize) {
+    pub fn ensure_capacity_exact(&mut self, capacity: usize) {
         if capacity > self.capacity && capacity > 2 {
             self.reallocate_raw(capacity);
         }
@@ -235,7 +236,7 @@ impl Buffer {
 
     /// Makes sure that the capacity is compact for existing data.
     #[inline]
-    pub(crate) fn shrink_to_fit(&mut self) {
+    pub fn shrink_to_fit(&mut self) {
         if self.capacity > Self::max_compact_capacity(self.len) {
             self.reallocate(self.len);
         }
@@ -247,7 +248,7 @@ impl Buffer {
     ///
     /// Panics if there is not enough capacity.
     #[inline]
-    pub(crate) fn push(&mut self, word: Word) {
+    pub fn push(&mut self, word: Word) {
         assert!(self.len < self.capacity);
 
         unsafe {
@@ -259,7 +260,7 @@ impl Buffer {
 
     /// Append a Word and reallocate if necessary.
     #[inline]
-    pub(crate) fn push_resizing(&mut self, word: Word) {
+    pub fn push_resizing(&mut self, word: Word) {
         self.ensure_capacity(self.len + 1);
         self.push(word);
     }
@@ -269,7 +270,7 @@ impl Buffer {
     /// # Panics
     ///
     /// Panics if there is not enough capacity.
-    pub(crate) fn push_zeros(&mut self, n: usize) {
+    pub fn push_zeros(&mut self, n: usize) {
         assert!(n <= self.capacity - self.len);
 
         unsafe {
@@ -287,7 +288,7 @@ impl Buffer {
     /// # Panics
     ///
     /// Panics if there is not enough capacity.
-    pub(crate) fn push_zeros_front(&mut self, n: usize) {
+    pub fn push_zeros_front(&mut self, n: usize) {
         assert!(n <= self.capacity - self.len);
 
         unsafe {
@@ -310,7 +311,7 @@ impl Buffer {
     ///
     /// Panics if there is not enough capacity.
     #[inline]
-    pub(crate) fn push_slice(&mut self, words: &[Word]) {
+    pub fn push_slice(&mut self, words: &[Word]) {
         let (src_ptr, src_len) = (words.as_ptr(), words.len());
         assert!(src_len <= self.capacity - self.len);
 
@@ -322,7 +323,7 @@ impl Buffer {
 
     /// Pop leading zero words.
     #[inline]
-    pub(crate) fn pop_zeros(&mut self) {
+    pub fn pop_zeros(&mut self) {
         unsafe {
             if self.len > 0 {
                 // adjust len until leading zeros are removed
@@ -341,14 +342,14 @@ impl Buffer {
     ///
     /// Panics if the current length is less than `len`
     #[inline]
-    pub(crate) fn truncate(&mut self, len: usize) {
+    pub fn truncate(&mut self, len: usize) {
         assert!(self.len >= len);
         self.len = len;
     }
 
     /// Erase first n elements.
     #[inline]
-    pub(crate) fn erase_front(&mut self, n: usize) {
+    pub fn erase_front(&mut self, n: usize) {
         assert!(self.len >= n);
 
         let ptr = self.ptr.as_ptr();
@@ -366,7 +367,7 @@ impl Buffer {
     ///
     /// Panics if the buffer is empty or has only 1 word
     #[inline]
-    pub(crate) fn first_dword(&self) -> DoubleWord {
+    pub fn first_dword(&self) -> DoubleWord {
         assert!(self.len >= 2);
 
         unsafe {
@@ -383,7 +384,7 @@ impl Buffer {
     ///
     /// Panics if the buffer is empty or has only 1 word
     #[inline]
-    pub(crate) fn first_dword_mut(&mut self) -> (&mut Word, &mut Word) {
+    pub fn first_dword_mut(&mut self) -> (&mut Word, &mut Word) {
         assert!(self.len >= 2);
 
         unsafe {
@@ -395,7 +396,7 @@ impl Buffer {
     /// Make the data in `Repr` a copy of another slice.
     ///
     /// It reallocates if capacity is too small or too large.
-    pub(crate) fn clone_from_slice(&mut self, src: &[Word]) {
+    pub fn clone_from_slice(&mut self, src: &[Word]) {
         if self.capacity >= src.len() && self.capacity <= Buffer::max_compact_capacity(src.len()) {
             // direct copy if the capacity is enough
             unsafe {
@@ -520,12 +521,12 @@ impl From<&[Word]> for Buffer {
 }
 
 impl Repr {
-    /// Get the length of the number (in `Word`s), return 1 even if it's zero.
+    /// Get the length of the number (in `Word`s), return 0 when the number is zero.
     #[inline]
     pub const fn len(&self) -> usize {
         match self.capacity() {
             // 0 => unreachable!(),
-            1 => 1,
+            1 => (unsafe { self.data.inline[0] } != 0) as usize,
             2 => 2,
             _ => unsafe { self.data.heap.1 },
         }
@@ -655,7 +656,13 @@ impl Repr {
         let words = unsafe {
             match capacity {
                 0 => unreachable!(),
-                1 => &self.data.inline[..1],
+                1 => {
+                    if self.data.inline[0] == 0 {
+                        &[]
+                    } else {
+                        &self.data.inline[..1]
+                    }
+                }
                 2 => &self.data.inline,
                 _ => slice::from_raw_parts(self.data.heap.0, self.data.heap.1),
             }
@@ -665,7 +672,7 @@ impl Repr {
 
     /// Creates a `Repr` with a single word
     #[inline]
-    pub(crate) fn from_word(n: Word) -> Self {
+    pub fn from_word(n: Word) -> Self {
         Repr {
             data: ReprData { inline: [n, 0] },
             capacity: NonZeroIsize::new(1).unwrap(),
@@ -674,7 +681,7 @@ impl Repr {
 
     /// Creates a `Repr` with a double word
     #[inline]
-    pub(crate) fn from_dword(n: DoubleWord) -> Self {
+    pub fn from_dword(n: DoubleWord) -> Self {
         let (lo, hi) = split_dword(n);
         Repr {
             data: ReprData { inline: [lo, hi] },
@@ -684,7 +691,7 @@ impl Repr {
 
     /// Creates a `Repr` with a buffer allocated on heap. The leading zeros in the buffer
     /// will be trimmed and the buffer will be shrunk if there is exceeded capacity.
-    pub(crate) fn from_buffer(mut buffer: Buffer) -> Self {
+    pub fn from_buffer(mut buffer: Buffer) -> Self {
         buffer.pop_zeros();
 
         match buffer.len() {
@@ -707,7 +714,7 @@ impl Repr {
 
     /// Creates a `Repr` with value 0
     #[inline]
-    pub(crate) const fn zero() -> Self {
+    pub const fn zero() -> Self {
         Repr {
             capacity: unsafe { NonZeroIsize::new_unchecked(1) },
             data: ReprData { inline: [0, 0] },
@@ -716,13 +723,13 @@ impl Repr {
 
     /// Check if the underlying value is zero
     #[inline]
-    pub(crate) const fn is_zero(&self) -> bool {
+    pub const fn is_zero(&self) -> bool {
         self.capacity() == 1 && unsafe { self.data.inline[0] == 0 }
     }
 
     /// Creates a `Repr` with value 1
     #[inline]
-    pub(crate) const fn one() -> Self {
+    pub const fn one() -> Self {
         Repr {
             capacity: unsafe { NonZeroIsize::new_unchecked(1) },
             data: ReprData { inline: [1, 0] },
@@ -731,13 +738,13 @@ impl Repr {
 
     /// Check if the underlying value is zero
     #[inline]
-    pub(crate) const fn is_one(&self) -> bool {
+    pub const fn is_one(&self) -> bool {
         self.capacity.get() == 1 && unsafe { self.data.inline[0] == 1 }
     }
 
     /// Creates a `Repr` with value -1
     #[inline]
-    pub(crate) const fn neg_one() -> Self {
+    pub const fn neg_one() -> Self {
         Repr {
             capacity: unsafe { NonZeroIsize::new_unchecked(-1) },
             data: ReprData { inline: [1, 0] },
@@ -877,12 +884,14 @@ impl TypedRepr {
 }
 
 impl<'a> TypedReprRef<'a> {
-    /// Get the length of the number in words, return 1 even if the number is zero.
+    /// Get the length of the number in words, return 0 when the number is zero.
     #[inline]
     pub fn len(&self) -> usize {
         match self {
             Self::RefSmall(dword) => {
-                if *dword <= Word::MAX as DoubleWord {
+                if *dword == 0 {
+                    0
+                } else if *dword <= Word::MAX as DoubleWord {
                     1
                 } else {
                     2
@@ -901,7 +910,7 @@ mod tests {
     fn test_repr_inline() {
         let repr = Repr::zero();
         assert_eq!(repr.capacity(), 1);
-        assert_eq!(repr.len(), 1);
+        assert_eq!(repr.len(), 0);
 
         let repr = Repr::from_word(123);
         assert_eq!(repr.capacity(), 1);
@@ -935,6 +944,47 @@ mod tests {
     #[should_panic]
     fn test_allocate_too_large() {
         let _ = Buffer::allocate(Buffer::MAX_CAPACITY + 1);
+    }
+
+    #[test]
+    fn test_repr_deref() {
+        let repr = Repr::zero();
+        assert_eq!(repr.as_sign_slice(), (Sign::Positive, &[][..]));
+
+        let repr = Repr::one();
+        assert_eq!(repr.as_sign_slice(), (Sign::Positive, &[1][..]));
+
+        let mut buffer = Buffer::allocate(1);
+        buffer.push(1);
+        let repr = Repr::from_buffer(buffer).with_sign(Sign::Negative);
+        assert_eq!(repr.as_sign_slice(), (Sign::Negative, &[1][..]));
+
+        let mut buffer = Buffer::allocate(2);
+        buffer.push(1);
+        buffer.push(2);
+        let repr = Repr::from_buffer(buffer);
+        assert_eq!(repr.as_sign_slice(), (Sign::Positive, &[1, 2][..]));
+
+        let mut buffer = Buffer::allocate(2);
+        buffer.push(1);
+        buffer.push(2);
+        buffer.push(3);
+        buffer.push(4);
+        let repr = Repr::from_buffer(buffer);
+        assert_eq!(repr.as_sign_slice(), (Sign::Positive, &[1, 2, 3, 4][..]));
+    }
+
+    #[test]
+    fn test_repr_sign() {
+        let repr = Repr::zero();
+        assert_eq!(repr.sign(), Sign::Positive);
+        let repr = Repr::zero().neg();
+        assert_eq!(repr.sign(), Sign::Positive);
+
+        let repr = Repr::one();
+        assert_eq!(repr.sign(), Sign::Positive);
+        let repr = Repr::one().neg();
+        assert_eq!(repr.sign(), Sign::Negative);
     }
 
     #[test]

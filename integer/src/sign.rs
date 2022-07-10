@@ -10,7 +10,7 @@ use core::ops::{Mul, MulAssign, Neg};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-pub(crate) enum Sign {
+pub enum Sign {
     Positive,
     Negative,
 }

@@ -93,7 +93,7 @@ impl ModuloRing {
 impl ModuloRingSingle {
     /// Create a new ring of integers modulo a single word number `n`.
     #[inline]
-    pub(crate) const fn new(n: Word) -> ModuloRingSingle {
+    pub const fn new(n: Word) -> ModuloRingSingle {
         debug_assert!(n != 0);
         let shift = n.leading_zeros();
         let normalized_modulus = n << shift;
@@ -107,22 +107,22 @@ impl ModuloRingSingle {
 
     // Directly expose this through public field?
     #[inline]
-    pub(crate) const fn normalized_modulus(&self) -> Word {
+    pub const fn normalized_modulus(&self) -> Word {
         self.normalized_modulus
     }
 
     #[inline]
-    pub(crate) const fn shift(&self) -> u32 {
+    pub const fn shift(&self) -> u32 {
         self.shift
     }
 
     #[inline]
-    pub(crate) const fn fast_div(&self) -> FastDivideNormalized {
+    pub const fn fast_div(&self) -> FastDivideNormalized {
         self.fast_div
     }
 
     #[inline]
-    pub(crate) const fn is_valid(&self, val: ModuloSingleRaw) -> bool {
+    pub const fn is_valid(&self, val: ModuloSingleRaw) -> bool {
         val.0 < self.normalized_modulus && val.0 & math::ones_word(self.shift) == 0
     }
 }
@@ -130,7 +130,7 @@ impl ModuloRingSingle {
 impl ModuloRingDouble {
     /// Create a new ring of integers modulo a double word number `n`.
     #[inline]
-    pub(crate) const fn new(n: DoubleWord) -> ModuloRingDouble {
+    pub const fn new(n: DoubleWord) -> ModuloRingDouble {
         debug_assert!(n > Word::MAX as DoubleWord);
         let shift = n.leading_zeros();
         let normalized_modulus = n << shift;
@@ -143,22 +143,22 @@ impl ModuloRingDouble {
     }
 
     #[inline]
-    pub(crate) const fn normalized_modulus(&self) -> DoubleWord {
+    pub const fn normalized_modulus(&self) -> DoubleWord {
         self.normalized_modulus
     }
 
     #[inline]
-    pub(crate) const fn shift(&self) -> u32 {
+    pub const fn shift(&self) -> u32 {
         self.shift
     }
 
     #[inline]
-    pub(crate) const fn fast_div(&self) -> FastDivideNormalized2 {
+    pub const fn fast_div(&self) -> FastDivideNormalized2 {
         self.fast_div
     }
 
     #[inline]
-    pub(crate) const fn is_valid(&self, val: ModuloDoubleRaw) -> bool {
+    pub const fn is_valid(&self, val: ModuloDoubleRaw) -> bool {
         val.0 < self.normalized_modulus && val.0 & math::ones_dword(self.shift) == 0
     }
 }
@@ -174,19 +174,19 @@ impl ModuloRingLarge {
         }
     }
 
-    pub(crate) fn normalized_modulus(&self) -> &[Word] {
+    pub fn normalized_modulus(&self) -> &[Word] {
         &self.normalized_modulus
     }
 
-    pub(crate) fn shift(&self) -> u32 {
+    pub fn shift(&self) -> u32 {
         self.shift
     }
 
-    pub(crate) fn fast_div_top(&self) -> FastDivideNormalized2 {
+    pub fn fast_div_top(&self) -> FastDivideNormalized2 {
         self.fast_div_top
     }
 
-    pub(crate) fn is_valid(&self, val: &ModuloLargeRaw) -> bool {
+    pub fn is_valid(&self, val: &ModuloLargeRaw) -> bool {
         val.0.len() == self.normalized_modulus.len()
             && cmp::cmp_same_len(&val.0, &self.normalized_modulus) == Ordering::Less
             && val.0[0] & math::ones_word(self.shift) == 0

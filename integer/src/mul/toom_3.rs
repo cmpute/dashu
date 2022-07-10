@@ -23,12 +23,12 @@ use alloc::alloc::Layout;
 // 5 * n3 + 2 <= 5/3 (n+2) + 2 = 1/3 (5n + 16) <= 2n if n >= 16
 // If n >= 16, then n3 >= (16+2)/3 = 6 >= 2
 /// Minimum supported length of the factors.
-pub(crate) const MIN_LEN: usize = 16;
+pub const MIN_LEN: usize = 16;
 
 /// Temporary memory required for multiplication.
 ///
 /// n bounds the length of the Smaller factor in words.
-pub(crate) fn memory_requirement_up_to(n: usize) -> Layout {
+pub fn memory_requirement_up_to(n: usize) -> Layout {
     // In each level of recursion we use:
     // a_eval: n3 + 1
     // b_eval: n3 + 1
@@ -59,7 +59,7 @@ pub(crate) fn memory_requirement_up_to(n: usize) -> Layout {
 ///
 /// Returns carry.
 #[must_use]
-pub(crate) fn add_signed_mul(
+pub fn add_signed_mul(
     c: &mut [Word],
     sign: Sign,
     a: &[Word],
@@ -84,7 +84,7 @@ pub(crate) fn add_signed_mul(
 ///
 /// Returns carry.
 #[must_use]
-pub(crate) fn add_signed_mul_same_len(
+pub fn add_signed_mul_same_len(
     c: &mut [Word],
     sign: Sign,
     a: &[Word],

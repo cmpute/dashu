@@ -32,7 +32,7 @@ mod toom_3;
 /// Returns carry.
 #[must_use]
 #[inline]
-pub(crate) fn mul_word_in_place(words: &mut [Word], rhs: Word) -> Word {
+pub fn mul_word_in_place(words: &mut [Word], rhs: Word) -> Word {
     mul_word_in_place_with_carry(words, rhs, 0)
 }
 
@@ -40,7 +40,7 @@ pub(crate) fn mul_word_in_place(words: &mut [Word], rhs: Word) -> Word {
 ///
 /// Returns carry as a double word.
 #[must_use]
-pub(crate) fn mul_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleWord {
+pub fn mul_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleWord {
     debug_assert!(
         rhs > Word::MAX as DoubleWord,
         "call mul_word_in_place when rhs is small"
@@ -78,7 +78,7 @@ pub(crate) fn mul_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleW
 ///
 /// Returns carry.
 #[must_use]
-pub(crate) fn mul_word_in_place_with_carry(words: &mut [Word], rhs: Word, mut carry: Word) -> Word {
+pub fn mul_word_in_place_with_carry(words: &mut [Word], rhs: Word, mut carry: Word) -> Word {
     for a in words {
         let (v_lo, v_hi) = math::mul_add_carry(*a, rhs, carry);
         *a = v_lo;
@@ -120,7 +120,7 @@ fn add_mul_word_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) -> Word {
 ///
 /// Returns borrow.
 #[must_use]
-pub(crate) fn sub_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) -> Word {
+pub fn sub_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) -> Word {
     assert!(words.len() == rhs.len());
     // carry is in -Word::MAX..0
     // carry_plus_max = carry + Word::MAX
@@ -143,7 +143,7 @@ pub(crate) fn sub_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs
 }
 
 /// Temporary scratch space required for multiplication.
-pub(crate) fn memory_requirement_up_to(_total_len: usize, smaller_len: usize) -> Layout {
+pub fn memory_requirement_up_to(_total_len: usize, smaller_len: usize) -> Layout {
     if smaller_len <= MAX_LEN_SIMPLE {
         simple::memory_requirement_up_to(smaller_len)
     } else if smaller_len <= MAX_LEN_KARATSUBA {
@@ -154,7 +154,7 @@ pub(crate) fn memory_requirement_up_to(_total_len: usize, smaller_len: usize) ->
 }
 
 /// Temporary scratch space required for multiplication.
-pub(crate) fn memory_requirement_exact(total_len: usize, smaller_len: usize) -> Layout {
+pub fn memory_requirement_exact(total_len: usize, smaller_len: usize) -> Layout {
     memory_requirement_up_to(total_len, smaller_len)
 }
 
@@ -162,7 +162,7 @@ pub(crate) fn memory_requirement_exact(total_len: usize, smaller_len: usize) -> 
 ///
 /// Returns carry.
 #[must_use]
-pub(crate) fn add_signed_mul<'a>(
+pub fn add_signed_mul<'a>(
     c: &mut [Word],
     sign: Sign,
     mut a: &'a [Word],
@@ -188,7 +188,7 @@ pub(crate) fn add_signed_mul<'a>(
 ///
 /// Returns carry.
 #[must_use]
-pub(crate) fn add_signed_mul_same_len(
+pub fn add_signed_mul_same_len(
     c: &mut [Word],
     sign: Sign,
     a: &[Word],

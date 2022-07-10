@@ -8,7 +8,7 @@ mod binary;
 ///
 /// The result is stored in the low bits of lhs.
 /// The word length of the result number is returned.
-pub(crate) fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word]) -> usize {
+pub fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word]) -> usize {
     if lhs.last().unwrap() == &0 || rhs.last().unwrap() == &0 {
         panic!("leading zero!")
     }
@@ -22,7 +22,7 @@ pub(crate) fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word]) -> usize {
 ///
 /// Specifically if g = gcd(lhs, rhs), lhs * a + rhs * b = g, then a is stored in **rhs**, b is stored in **lhs**,
 /// and the returned tuple is (sign of a, sign of b)
-pub(crate) fn gcd_ext_in_place(
+pub fn gcd_ext_in_place(
     lhs: &mut [Word],
     rhs: &mut [Word],
     g: &mut [Word],
@@ -33,6 +33,6 @@ pub(crate) fn gcd_ext_in_place(
 }
 
 /// Memory requirement for GCD.
-pub(crate) fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> Layout {
+pub fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> Layout {
     binary::memory_requirement_up_to(lhs_len, rhs_len)
 }

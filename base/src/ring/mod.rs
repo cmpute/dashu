@@ -76,23 +76,23 @@ pub trait DivRemEuclid<Rhs = Self> {
 /// use dashu_base::Gcd;
 /// assert_eq!(12u8.gcd(10u8), 2);
 /// ```
-/// 
+///
 /// # Panics
 /// Panics if two oprands are both zero.
 pub trait Gcd<Rhs = Self> {
     type Output;
 
     /// Compute the greatest common divisor between the two operands.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if both operands are zeros
     fn gcd(self, rhs: Rhs) -> Self::Output;
 }
 
 /// Compute the greatest common divisor between self and the other operand, and return
 /// both the common divisor `g` and the Bézout coefficients.
-/// 
+///
 /// # Example
 /// ```
 /// use dashu_base::{Gcd, ExtendedGcd};
@@ -100,7 +100,7 @@ pub trait Gcd<Rhs = Self> {
 /// assert_eq!(g, 12u8.gcd(10u8));
 /// assert_eq!(g as i8, 12 * cx + 10 * cy);
 /// ```
-/// 
+///
 /// # Panics
 /// Panics if two oprands are both zero.
 pub trait ExtendedGcd<Rhs = Self> {

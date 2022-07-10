@@ -17,7 +17,7 @@ use crate::{
 use alloc::alloc::Layout;
 
 /// Naive binary GCD for two multi-digit integers
-pub(crate) fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word]) -> usize {
+pub fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word]) -> usize {
     // find common factors of 2
     let lhs_zeros = trailing_zeros_large(lhs);
     let rhs_zeros = trailing_zeros_large(rhs);
@@ -101,7 +101,7 @@ pub(crate) fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word]) -> usize {
 }
 
 /// Temporary memory required for extended gcd.
-pub(crate) fn memory_requirement_up_to(lhs_len: usize, rhs_len: usize) -> Layout {
+pub fn memory_requirement_up_to(lhs_len: usize, rhs_len: usize) -> Layout {
     // Required memory:
     // - two numbers (s0 & s1) with at most the same size as rhs
     // - two numbers (t0 & t1) with at most the same size as lhs
@@ -110,7 +110,7 @@ pub(crate) fn memory_requirement_up_to(lhs_len: usize, rhs_len: usize) -> Layout
 }
 
 /// Extended binary GCD for two multi-digits numbers
-pub(crate) fn gcd_ext_in_place(
+pub fn gcd_ext_in_place(
     lhs: &mut [Word],
     rhs: &mut [Word],
     g: &mut [Word],

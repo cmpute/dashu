@@ -1,8 +1,8 @@
 /// Machine word.
-pub(crate) type Word = u16;
+pub type Word = u16;
 
 /// Signed machine word.
-pub(crate) type SignedWord = i16;
+pub type SignedWord = i16;
 
 /// Double machine word.
-pub(crate) type DoubleWord = u32;
+pub type DoubleWord = u32;

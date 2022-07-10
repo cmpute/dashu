@@ -14,25 +14,25 @@ use core::{
 
 /// Cast `Word` to `DoubleWord`.
 #[inline]
-pub(crate) const fn extend_word(word: Word) -> DoubleWord {
+pub const fn extend_word(word: Word) -> DoubleWord {
     word as DoubleWord
 }
 
 /// Create a `DoubleWord` from two `Word`s.
 #[inline]
-pub(crate) const fn double_word(low: Word, high: Word) -> DoubleWord {
+pub const fn double_word(low: Word, high: Word) -> DoubleWord {
     extend_word(low) | extend_word(high) << WORD_BITS
 }
 
 /// Split a `DoubleWord` into (low, high) parts
 #[inline]
-pub(crate) const fn split_dword(dw: DoubleWord) -> (Word, Word) {
+pub const fn split_dword(dw: DoubleWord) -> (Word, Word) {
     (dw as Word, (dw >> WORD_BITS) as Word)
 }
 
 /// Get the low part of a `DoubleWord` if the high part is zero
 #[inline]
-pub(crate) const fn shrink_dword(dw: DoubleWord) -> Option<Word> {
+pub const fn shrink_dword(dw: DoubleWord) -> Option<Word> {
     let (lo, hi) = split_dword(dw);
     if hi == 0 {
         Some(lo)
@@ -43,7 +43,7 @@ pub(crate) const fn shrink_dword(dw: DoubleWord) -> Option<Word> {
 
 /// Get the lowest double word of a slice of words
 #[inline]
-pub(crate) fn first_dword(words: &[Word]) -> DoubleWord {
+pub fn first_dword(words: &[Word]) -> DoubleWord {
     debug_assert!(words.len() >= 2);
     unsafe {
         let lo = *words.get_unchecked(0);
@@ -54,7 +54,7 @@ pub(crate) fn first_dword(words: &[Word]) -> DoubleWord {
 
 /// Get the highest double word of a slice of words
 #[inline]
-pub(crate) fn last_dword(words: &[Word]) -> DoubleWord {
+pub fn last_dword(words: &[Word]) -> DoubleWord {
     let len = words.len();
     debug_assert!(len >= 2);
     unsafe {
@@ -64,7 +64,7 @@ pub(crate) fn last_dword(words: &[Word]) -> DoubleWord {
     }
 }
 
-pub(crate) trait PrimitiveUnsigned
+pub trait PrimitiveUnsigned
 where
     Self: Copy,
     Self: Debug,
@@ -93,7 +93,7 @@ where
     fn leading_zeros(self) -> u32;
 }
 
-pub(crate) trait PrimitiveSigned
+pub trait PrimitiveSigned
 where
     Self: Copy,
     Self: TryFrom<DoubleWord>,
@@ -180,36 +180,36 @@ impl_primitive_signed!(i64, u64);
 impl_primitive_signed!(i128, u128);
 impl_primitive_signed!(isize, usize);
 
-pub(crate) const WORD_BITS: u32 = Word::BIT_SIZE;
-pub(crate) const WORD_BITS_USIZE: usize = WORD_BITS as usize;
-pub(crate) const WORD_BYTES: usize = Word::BYTE_SIZE;
-pub(crate) const DWORD_BITS: u32 = DoubleWord::BIT_SIZE;
-pub(crate) const DWORD_BITS_USIZE: usize = DWORD_BITS as usize;
-pub(crate) const DWORD_BYTES: usize = DoubleWord::BYTE_SIZE;
+pub const WORD_BITS: u32 = Word::BIT_SIZE;
+pub const WORD_BITS_USIZE: usize = WORD_BITS as usize;
+pub const WORD_BYTES: usize = Word::BYTE_SIZE;
+pub const DWORD_BITS: u32 = DoubleWord::BIT_SIZE;
+pub const DWORD_BITS_USIZE: usize = DWORD_BITS as usize;
+pub const DWORD_BYTES: usize = DoubleWord::BYTE_SIZE;
 
 #[inline]
-pub(crate) fn word_from_le_bytes_partial(bytes: &[u8]) -> Word {
+pub fn word_from_le_bytes_partial(bytes: &[u8]) -> Word {
     let mut word_bytes = [0; WORD_BYTES];
     word_bytes[..bytes.len()].copy_from_slice(bytes);
     Word::from_le_bytes(word_bytes)
 }
 
 #[inline]
-pub(crate) fn dword_from_le_bytes_partial(bytes: &[u8]) -> DoubleWord {
+pub fn dword_from_le_bytes_partial(bytes: &[u8]) -> DoubleWord {
     let mut dword_bytes = [0; DWORD_BYTES];
     dword_bytes[..bytes.len()].copy_from_slice(bytes);
     DoubleWord::from_le_bytes(dword_bytes)
 }
 
 #[inline]
-pub(crate) fn word_from_be_bytes_partial(bytes: &[u8]) -> Word {
+pub fn word_from_be_bytes_partial(bytes: &[u8]) -> Word {
     let mut word_bytes = [0; WORD_BYTES];
     word_bytes[WORD_BYTES - bytes.len()..].copy_from_slice(bytes);
     Word::from_be_bytes(word_bytes)
 }
 
 #[inline]
-pub(crate) fn dword_from_be_bytes_partial(bytes: &[u8]) -> DoubleWord {
+pub fn dword_from_be_bytes_partial(bytes: &[u8]) -> DoubleWord {
     let mut dword_bytes = [0; DWORD_BYTES];
     dword_bytes[DWORD_BYTES - bytes.len()..].copy_from_slice(bytes);
     DoubleWord::from_be_bytes(dword_bytes)

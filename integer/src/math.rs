@@ -8,21 +8,21 @@ use crate::{
 /// The length of an integer in bits.
 /// 0 for 0.
 #[inline]
-pub(crate) fn bit_len<T: PrimitiveUnsigned>(x: T) -> u32 {
+pub fn bit_len<T: PrimitiveUnsigned>(x: T) -> u32 {
     T::BIT_SIZE - x.leading_zeros()
 }
 
 /// The length of an integer in bits.
 /// 0 for 0.
 #[inline]
-pub(crate) const fn bit_len_word(x: Word) -> u32 {
+pub const fn bit_len_word(x: Word) -> u32 {
     Word::BIT_SIZE - x.leading_zeros()
 }
 
 /// Ceiling of log_2(x).
 /// x must be non-zero.
 #[inline]
-pub(crate) fn ceil_log_2<T: PrimitiveUnsigned>(x: T) -> u32 {
+pub fn ceil_log_2<T: PrimitiveUnsigned>(x: T) -> u32 {
     debug_assert!(x != T::from(0u8));
     bit_len(x - T::from(1u8))
 }
@@ -30,14 +30,14 @@ pub(crate) fn ceil_log_2<T: PrimitiveUnsigned>(x: T) -> u32 {
 /// Ceiling of log_2(x).
 /// x must be non-zero.
 #[inline]
-pub(crate) const fn ceil_log_2_word(x: Word) -> u32 {
+pub const fn ceil_log_2_word(x: Word) -> u32 {
     debug_assert!(x != 0);
     bit_len_word(x - 1)
 }
 
 /// Ceiling of a / b.
 #[inline]
-pub(crate) fn ceil_div<T: PrimitiveUnsigned>(a: T, b: T) -> T {
+pub fn ceil_div<T: PrimitiveUnsigned>(a: T, b: T) -> T {
     if a == T::from(0u8) {
         T::from(0u8)
     } else {
@@ -47,7 +47,7 @@ pub(crate) fn ceil_div<T: PrimitiveUnsigned>(a: T, b: T) -> T {
 
 /// Ceiling of a / b.
 #[inline]
-pub(crate) const fn ceil_div_usize(a: usize, b: usize) -> usize {
+pub const fn ceil_div_usize(a: usize, b: usize) -> usize {
     if a == 0 {
         0
     } else {
@@ -57,19 +57,19 @@ pub(crate) const fn ceil_div_usize(a: usize, b: usize) -> usize {
 
 /// Round up a to a multiple of b.
 #[inline]
-pub(crate) fn round_up<T: PrimitiveUnsigned>(a: T, b: T) -> T {
+pub fn round_up<T: PrimitiveUnsigned>(a: T, b: T) -> T {
     ceil_div(a, b) * b
 }
 
 /// Round up a to a multiple of b.
 #[inline]
-pub(crate) const fn round_up_usize(a: usize, b: usize) -> usize {
+pub const fn round_up_usize(a: usize, b: usize) -> usize {
     ceil_div_usize(a, b) * b
 }
 
 /// n ones: 2^n - 1
 #[inline]
-pub(crate) const fn ones_word(n: u32) -> Word {
+pub const fn ones_word(n: u32) -> Word {
     if n == 0 {
         0
     } else {
@@ -79,7 +79,7 @@ pub(crate) const fn ones_word(n: u32) -> Word {
 
 /// n ones: 2^n - 1
 #[inline]
-pub(crate) const fn ones_dword(n: u32) -> DoubleWord {
+pub const fn ones_dword(n: u32) -> DoubleWord {
     if n == 0 {
         0
     } else {
@@ -88,7 +88,7 @@ pub(crate) const fn ones_dword(n: u32) -> DoubleWord {
 }
 
 // Calculate dw << shift, assuming shift <= Word::BIT_SIZE, returns (lo, mid, hi).
-pub(crate) const fn shl_dword(dw: DoubleWord, shift: u32) -> (Word, Word, Word) {
+pub const fn shl_dword(dw: DoubleWord, shift: u32) -> (Word, Word, Word) {
     debug_assert!(shift <= Word::BIT_SIZE);
 
     let (lo, hi) = split_dword(dw);
@@ -100,21 +100,21 @@ pub(crate) const fn shl_dword(dw: DoubleWord, shift: u32) -> (Word, Word, Word) 
 /// Multiply two `Word`s with carry and return the (low, high) parts of the product
 /// This operation will not overflow.
 #[inline(always)]
-pub(crate) const fn mul_add_carry(lhs: Word, rhs: Word, carry: Word) -> (Word, Word) {
+pub const fn mul_add_carry(lhs: Word, rhs: Word, carry: Word) -> (Word, Word) {
     split_dword(extend_word(lhs) * extend_word(rhs) + extend_word(carry))
 }
 
 /// Multiply two `Word`s with 2 carries and return the (low, high) parts of the product.
 /// This operation will not overflow.
 #[inline(always)]
-pub(crate) const fn mul_add_2carry(lhs: Word, rhs: Word, c0: Word, c1: Word) -> (Word, Word) {
+pub const fn mul_add_2carry(lhs: Word, rhs: Word, c0: Word, c1: Word) -> (Word, Word) {
     split_dword(extend_word(lhs) * extend_word(rhs) + extend_word(c0) + extend_word(c1))
 }
 
 /// Multiply two `DoubleWord`s with carry and return the (low, high) parts of the product.
 /// This operation will not overflow.
 #[inline]
-pub(crate) const fn mul_add_carry_dword(
+pub const fn mul_add_carry_dword(
     lhs: DoubleWord,
     rhs: DoubleWord,
     carry: DoubleWord,

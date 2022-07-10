@@ -8,20 +8,20 @@ use crate::{
 use static_assertions::const_assert;
 
 /// Digit and radix type.
-pub(crate) type Digit = u32;
+pub type Digit = u32;
 
 /// Maximum supported radix.
-pub(crate) const MAX_RADIX: Digit = 36;
+pub const MAX_RADIX: Digit = 36;
 
 /// Is a radix in valid range?
 #[inline]
-pub(crate) fn is_radix_valid(radix: Digit) -> bool {
+pub fn is_radix_valid(radix: Digit) -> bool {
     (2..=MAX_RADIX).contains(&radix)
 }
 
 /// Panics if `radix` is not in valid range.
 #[inline]
-pub(crate) fn check_radix_valid(radix: Digit) {
+pub fn check_radix_valid(radix: Digit) {
     if !is_radix_valid(radix) {
         panic!("Invalid radix: {}", radix);
     }
@@ -32,14 +32,14 @@ const_assert!(b'a' > b'0' + 10 && b'A' > b'0' + 10);
 /// u8 representation is: how much digits >= 10 should be offset by in ASCII.
 #[derive(Clone, Copy, Eq, PartialEq)]
 #[repr(u8)]
-pub(crate) enum DigitCase {
+pub enum DigitCase {
     NoLetters = 0,
     Lower = b'a' - b'0' - 10,
     Upper = b'A' - b'0' - 10,
 }
 
 /// Converts a byte (ASCII) representation of a digit to its value.
-pub(crate) fn digit_from_utf8_byte(byte: u8, radix: Digit) -> Option<Digit> {
+pub fn digit_from_utf8_byte(byte: u8, radix: Digit) -> Option<Digit> {
     let res = match byte {
         b'0'..=b'9' => (byte - b'0') as Digit,
         b'a'..=b'z' => (byte - b'a') as Digit + 10,
@@ -54,11 +54,11 @@ pub(crate) fn digit_from_utf8_byte(byte: u8, radix: Digit) -> Option<Digit> {
 }
 
 /// Maximum number of digits that a `Word` can ever have for any non-power-of-2 radix.
-pub(crate) const MAX_WORD_DIGITS_NON_POW_2: usize = RadixInfo::for_radix(3).digits_per_word + 1;
+pub const MAX_WORD_DIGITS_NON_POW_2: usize = RadixInfo::for_radix(3).digits_per_word + 1;
 
 /// Properties of a given radix.
 #[derive(Clone, Copy)]
-pub(crate) struct RadixInfo {
+pub struct RadixInfo {
     /// The number of digits that can always fit in a `Word`.
     pub(crate) digits_per_word: usize,
 
@@ -76,7 +76,7 @@ pub(crate) struct RadixInfo {
 
 /// RadixInfo for a given radix.
 #[inline]
-pub(crate) fn radix_info(radix: Digit) -> &'static RadixInfo {
+pub fn radix_info(radix: Digit) -> &'static RadixInfo {
     debug_assert!(is_radix_valid(radix));
     &RADIX_INFO_TABLE[radix as usize]
 }

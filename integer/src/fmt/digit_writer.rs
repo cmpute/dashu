@@ -9,7 +9,7 @@ const BUFFER_LEN_MIN: usize = 32;
 const BUFFER_LEN: usize = math::round_up_usize(BUFFER_LEN_MIN, arch::digits::DIGIT_CHUNK_LEN);
 
 /// DigitWriter allows writing raw digits and turns them into ASCII.
-pub(crate) struct DigitWriter<'a> {
+pub struct DigitWriter<'a> {
     buffer: [u8; BUFFER_LEN],
     buffer_len: usize,
     digit_case: DigitCase,
@@ -17,7 +17,7 @@ pub(crate) struct DigitWriter<'a> {
 }
 
 impl<'a> DigitWriter<'a> {
-    pub(crate) fn new(writer: &'a mut dyn fmt::Write, digit_case: DigitCase) -> DigitWriter {
+    pub fn new(writer: &'a mut dyn fmt::Write, digit_case: DigitCase) -> DigitWriter {
         DigitWriter {
             buffer: [0; BUFFER_LEN],
             buffer_len: 0,
@@ -27,7 +27,7 @@ impl<'a> DigitWriter<'a> {
     }
 
     /// buf must contain values 0-35, or 0-9 if digit_case is NoLetters.
-    pub(crate) fn write(&mut self, mut buf: &[u8]) -> fmt::Result {
+    pub fn write(&mut self, mut buf: &[u8]) -> fmt::Result {
         while !buf.is_empty() {
             let len = buf.len().min(BUFFER_LEN - self.buffer_len);
             let (buf_chunk, buf_remainder) = buf.split_at(len);
@@ -42,7 +42,7 @@ impl<'a> DigitWriter<'a> {
     }
 
     /// Must call flush to make sure all the data is written.
-    pub(crate) fn flush(&mut self) -> fmt::Result {
+    pub fn flush(&mut self) -> fmt::Result {
         let buffer_len_rounded = math::round_up(self.buffer_len, arch::digits::DIGIT_CHUNK_LEN);
         self.buffer[self.buffer_len..buffer_len_rounded].fill(0);
         for chunk in

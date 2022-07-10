@@ -83,20 +83,20 @@ impl Modulo<'_> {
 
 impl ModuloRingSingle {
     #[inline]
-    pub(crate) fn modulus(&self) -> Word {
+    pub fn modulus(&self) -> Word {
         self.normalized_modulus() >> self.shift()
     }
 }
 
 impl ModuloRingDouble {
     #[inline]
-    pub(crate) fn modulus(&self) -> DoubleWord {
+    pub fn modulus(&self) -> DoubleWord {
         self.normalized_modulus() >> self.shift()
     }
 }
 
 impl ModuloRingLarge {
-    pub(crate) fn modulus(&self) -> UBig {
+    pub fn modulus(&self) -> UBig {
         let normalized_modulus = self.normalized_modulus();
         let mut buffer = Buffer::allocate(normalized_modulus.len());
         buffer.push_slice(normalized_modulus);
@@ -108,7 +108,7 @@ impl ModuloRingLarge {
 
 impl ModuloSingleRaw {
     #[inline]
-    pub(crate) const fn from_word(word: Word, ring: &ModuloRingSingle) -> Self {
+    pub const fn from_word(word: Word, ring: &ModuloRingSingle) -> Self {
         let rem = if ring.shift() == 0 {
             ring.fast_div().div_rem_word(word).1
         } else {
@@ -138,7 +138,7 @@ impl ModuloSingleRaw {
     }
 
     #[inline]
-    pub(crate) fn from_ubig(x: &UBig, ring: &ModuloRingSingle) -> Self {
+    pub fn from_ubig(x: &UBig, ring: &ModuloRingSingle) -> Self {
         match x.repr() {
             RefSmall(dword) => {
                 if let Some(word) = shrink_dword(dword) {
@@ -152,7 +152,7 @@ impl ModuloSingleRaw {
     }
 
     #[inline]
-    pub(crate) fn residue(self, ring: &ModuloRingSingle) -> Word {
+    pub fn residue(self, ring: &ModuloRingSingle) -> Word {
         debug_assert!(ring.is_valid(self));
         self.0 >> ring.shift()
     }
@@ -180,7 +180,7 @@ impl ModuloDoubleRaw {
     }
 
     #[inline]
-    pub(crate) fn from_ubig(x: &UBig, ring: &ModuloRingDouble) -> Self {
+    pub fn from_ubig(x: &UBig, ring: &ModuloRingDouble) -> Self {
         match x.repr() {
             RefSmall(dword) => Self::from_dword(dword, ring),
             RefLarge(words) => Self::from_large(words, ring),
@@ -188,14 +188,14 @@ impl ModuloDoubleRaw {
     }
 
     #[inline]
-    pub(crate) fn residue(self, ring: &ModuloRingDouble) -> DoubleWord {
+    pub fn residue(self, ring: &ModuloRingDouble) -> DoubleWord {
         debug_assert!(ring.is_valid(self));
         self.0 >> ring.shift()
     }
 }
 
 impl ModuloLargeRaw {
-    pub(crate) fn from_ubig(x: UBig, ring: &ModuloRingLarge) -> ModuloLargeRaw {
+    pub fn from_ubig(x: UBig, ring: &ModuloRingLarge) -> ModuloLargeRaw {
         let modulus = ring.normalized_modulus();
         let mut buffer = match x.into_repr() {
             Small(dword) => {
@@ -240,7 +240,7 @@ impl ModuloLargeRaw {
         ModuloLargeRaw(buffer.into_boxed_slice())
     }
 
-    pub(crate) fn residue(&self, ring: &ModuloRingLarge) -> Buffer {
+    pub fn residue(&self, ring: &ModuloRingLarge) -> Buffer {
         let mut buffer = Buffer::allocate(self.0.len());
         buffer.push_slice(&self.0);
         let low_bits = shift::shr_in_place(&mut buffer, ring.shift());

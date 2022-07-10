@@ -402,7 +402,7 @@ pub mod repr {
 
     impl<'a> TypedReprRef<'a> {
         /// Add one to the number
-        pub(crate) fn add_one(self) -> Repr {
+        pub fn add_one(self) -> Repr {
             match self {
                 RefSmall(dword) => add_dword(dword, 1),
                 RefLarge(buffer) => add_large_one(buffer.into()),
@@ -410,7 +410,7 @@ pub mod repr {
         }
 
         /// Subtract one from the number
-        pub(crate) fn sub_one(self) -> Repr {
+        pub fn sub_one(self) -> Repr {
             match self {
                 RefSmall(dword) => Repr::from_dword(dword - 1),
                 RefLarge(buffer) => sub_large_one(buffer.into()),
@@ -420,7 +420,7 @@ pub mod repr {
 
     impl TypedRepr {
         /// Add one to the number
-        pub(crate) fn add_one(self) -> Repr {
+        pub fn add_one(self) -> Repr {
             match self {
                 Small(dword) => add_dword(dword, 1),
                 Large(buffer) => add_large_one(buffer),
@@ -428,7 +428,7 @@ pub mod repr {
         }
 
         /// Subtract one from the number
-        pub(crate) fn sub_one(self) -> Repr {
+        pub fn sub_one(self) -> Repr {
             match self {
                 Small(dword) => Repr::from_dword(dword - 1),
                 Large(buffer) => sub_large_one(buffer),

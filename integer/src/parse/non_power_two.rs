@@ -14,7 +14,7 @@ use alloc::vec;
 const CHUNK_LEN: usize = 256;
 
 /// Parse an unsigned string to [UBig].
-pub(crate) fn parse(src: &str, radix: Digit) -> Result<UBig, ParseError> {
+pub fn parse(src: &str, radix: Digit) -> Result<UBig, ParseError> {
     debug_assert!(radix::is_radix_valid(radix) && !radix.is_power_of_two());
     let radix_info = radix::radix_info(radix);
     let bytes = src.as_bytes();

@@ -9,10 +9,10 @@ use crate::{
 };
 
 /// The number of prime factors in the ring.
-pub(crate) const NUM_PRIMES: usize = 3;
+pub const NUM_PRIMES: usize = 3;
 
 /// A prime to be used for the number-theoretic transform.
-pub(crate) struct Prime {
+pub struct Prime {
     /// A prime of the form k * 2^MAX_ORDER + 1.
     pub(crate) prime: Word,
     /// max_order_root has order 2^MAX_ORDER.

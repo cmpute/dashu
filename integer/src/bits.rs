@@ -16,7 +16,7 @@ use core::{
     ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not},
 };
 
-pub(crate) fn trailing_zeros_large(words: &[Word]) -> usize {
+pub fn trailing_zeros_large(words: &[Word]) -> usize {
     debug_assert!(*words.last().unwrap() != 0);
 
     for (idx, word) in words.iter().enumerate() {
@@ -265,7 +265,7 @@ mod repr {
 
         /// Check if low n-bits are not all zeros
         #[inline]
-        pub(crate) fn are_low_bits_nonzero(self, n: usize) -> bool {
+        pub fn are_low_bits_nonzero(self, n: usize) -> bool {
             match self {
                 Self::RefSmall(dword) => are_dword_low_bits_nonzero(dword, n),
                 Self::RefLarge(buffer) => are_slice_low_bits_nonzero(buffer, n),
@@ -274,7 +274,7 @@ mod repr {
 
         /// Check if the underlying number is a power of two
         #[inline]
-        pub(crate) fn is_power_of_two(self) -> bool {
+        pub fn is_power_of_two(self) -> bool {
             match self {
                 RefSmall(dword) => dword.is_power_of_two(),
                 RefLarge(buffer) => {
@@ -287,7 +287,7 @@ mod repr {
 
     impl TypedRepr {
         #[inline]
-        pub(crate) fn next_power_of_two(self) -> Repr {
+        pub fn next_power_of_two(self) -> Repr {
             match self {
                 Small(dword) => match dword.checked_next_power_of_two() {
                     Some(p) => Repr::from_dword(p),

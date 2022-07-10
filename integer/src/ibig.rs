@@ -37,7 +37,7 @@ impl IBig {
     }
 
     #[inline]
-    pub(crate) fn sign(&self) -> Sign {
+    pub fn sign(&self) -> Sign {
         self.0.sign()
     }
 

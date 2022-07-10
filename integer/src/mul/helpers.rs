@@ -13,7 +13,7 @@ use crate::{
 /// Splits a into chunks of chunk_len, using regular multiplication for the remainder if any.
 ///
 /// Returns carry.
-pub(crate) fn add_signed_mul_split_into_chunks<F>(
+pub fn add_signed_mul_split_into_chunks<F>(
     mut c: &mut [Word],
     sign: Sign,
     mut a: &[Word],

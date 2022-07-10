@@ -4,13 +4,13 @@ use alloc::alloc::Layout;
 use core::{marker::PhantomData, mem, slice};
 
 /// Chunk of memory directly allocated from the global allocator.
-pub(crate) struct MemoryAllocation {
+pub struct MemoryAllocation {
     layout: Layout,
     start: *mut u8,
 }
 
 /// Chunk of memory.
-pub(crate) struct Memory<'a> {
+pub struct Memory<'a> {
     /// Start pointer.
     start: *mut u8,
     /// End pointer.
@@ -21,7 +21,7 @@ pub(crate) struct Memory<'a> {
 
 impl MemoryAllocation {
     /// Allocate memory.
-    pub(crate) fn new(layout: Layout) -> MemoryAllocation {
+    pub fn new(layout: Layout) -> MemoryAllocation {
         let start = if layout.size() == 0 {
             // We should use layout.dangling(), but that is unstable.
             layout.align() as *mut u8
@@ -41,7 +41,7 @@ impl MemoryAllocation {
 
     /// Get memory.
     #[inline]
-    pub(crate) fn memory(&mut self) -> Memory {
+    pub fn memory(&mut self) -> Memory {
         Memory {
             start: self.start,
             end: self.start.wrapping_add(self.layout.size()),
@@ -67,7 +67,7 @@ impl Memory<'_> {
     /// The original memory is not usable until both the new memory and the slice are dropped.
     ///
     /// The elements of the slice never get dropped!
-    pub(crate) fn allocate_slice_fill<T: Copy>(&mut self, n: usize, val: T) -> (&mut [T], Memory) {
+    pub fn allocate_slice_fill<T: Copy>(&mut self, n: usize, val: T) -> (&mut [T], Memory) {
         self.allocate_slice_initialize::<T, _>(n, |ptr| {
             for i in 0..n {
                 // Safe because ptr is properly aligned and has enough space.
@@ -85,7 +85,7 @@ impl Memory<'_> {
     /// The original memory is not usable until both the new memory and the slice are dropped.
     ///
     /// The elements of the slice never get dropped!
-    pub(crate) fn allocate_slice_copy<T: Copy>(&mut self, source: &[T]) -> (&mut [T], Memory) {
+    pub fn allocate_slice_copy<T: Copy>(&mut self, source: &[T]) -> (&mut [T], Memory) {
         self.allocate_slice_initialize::<T, _>(source.len(), |ptr| {
             for (i, v) in source.iter().enumerate() {
                 // Safe because ptr is properly aligned and has enough space.
@@ -103,7 +103,7 @@ impl Memory<'_> {
     /// The original memory is not usable until both the new memory and the slice are dropped.
     ///
     /// The elements of the slice never get dropped!
-    pub(crate) fn allocate_slice_copy_fill<T: Copy>(
+    pub fn allocate_slice_copy_fill<T: Copy>(
         &mut self,
         n: usize,
         source: &[T],
@@ -166,25 +166,25 @@ impl Memory<'_> {
 }
 
 #[inline]
-pub(crate) fn zero_layout() -> Layout {
+pub fn zero_layout() -> Layout {
     Layout::from_size_align(0, 1).unwrap()
 }
 
-pub(crate) fn array_layout<T>(n: usize) -> Layout {
+pub fn array_layout<T>(n: usize) -> Layout {
     Layout::array::<T>(n).unwrap_or_else(|_| panic_out_of_memory())
 }
 
-pub(crate) fn add_layout(a: Layout, b: Layout) -> Layout {
+pub fn add_layout(a: Layout, b: Layout) -> Layout {
     let (layout, _padding) = a.extend(b).unwrap_or_else(|_| panic_out_of_memory());
     layout
 }
 
-pub(crate) fn max_layout(a: Layout, b: Layout) -> Layout {
+pub fn max_layout(a: Layout, b: Layout) -> Layout {
     Layout::from_size_align(a.size().max(b.size()), a.align().max(b.align()))
         .unwrap_or_else(|_| panic_out_of_memory())
 }
 
-pub(crate) fn panic_out_of_memory() -> ! {
+pub fn panic_out_of_memory() -> ! {
     panic!("out of memory")
 }
 
