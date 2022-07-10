@@ -3,6 +3,11 @@ name = "dashu"
 version = "0.1.0"
 edition = "2021"
 
+keywords = ["bignum", "mathematics"]
+categories = ["mathematics", "no-std"]
+repository = "https://github.com/cmpute/dashu"
+homepage = "https://github.com/cmpute/dashu"
+
 [dependencies]
 dashu-base = { path = "./base" }
 dashu-int = { path = "./integer" }

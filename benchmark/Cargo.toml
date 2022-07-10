@@ -1,5 +1,5 @@
 [package]
-name = "bigint-benchmark"
+name = "benchmark"
 version = "0.0.0"
 
 [dependencies]

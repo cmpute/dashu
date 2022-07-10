@@ -1,10 +1,10 @@
 [package]
 name = "dashu-int"
-version = "0.0.1"
+version = "0.1.0"
 authors = ["Jacob Zhong <cmpute@gmail.com>", "Tomek Czajka <tczajka@gmail.com>"]
 edition = "2021"
 description = "A big integer library with good performance"
-keywords = ["bigint", "bignum", "mathematics"]
+keywords = ["mathematics", "numerics", "integer", "bigint", "#arbitrary-precision"]
 categories = ["mathematics", "no-std"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/cmpute/dashu"
@@ -16,12 +16,11 @@ all-features = true
 
 [features]
 default = ["std", "rand", "num-traits"]
-
-# Interface with the std library.
-std = []
+std = ["dashu-base/std"]
 
 [dependencies.dashu-base]
 path = "../base"
+default-features = false
 
 [dependencies.cfg-if]
 version = "1.0.0"
