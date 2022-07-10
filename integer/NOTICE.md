@@ -31,5 +31,8 @@ Initial modifications on the `ibig` library:
    the magnitude as reference now.
 2. Operation traits are moved to the `dashu-base` crate.
 3. The trait `NextPowerOfTwo` is changed to `PowerOfTwo` with modified definition.
-4. Bitwise operators between different signedness are removed to enforce explicitness
-5. `AndNot` trait is made private because it's not widely used and the naming doesn't follow the BitXXX style in the std library.
+4. Bitwise operators with primitive integers between different signedness are removed to
+   enforce explicitness. However, operators between UBig and IBig are added to reduce
+   copying overhead.
+5. `AndNot` trait is made private because it's not widely used and the naming doesn't
+   follow the BitXXX style in the std library.

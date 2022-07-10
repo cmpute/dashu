@@ -46,7 +46,6 @@ macro_rules! forward_binop_second_arg_by_value {
 
 /// Implement `impl Op<&B> for A` by forwarding to `impl Op<B> for A`, including &A.
 /// Here Op has OutputDiv and OutputRem, rather than just Output.
-///
 macro_rules! forward_div_rem_second_arg_by_value {
     (impl $trait:ident<$t2:ty> for $t1:ty, $method:ident) => {
         impl $trait<&$t2> for $t1 {
@@ -221,7 +220,7 @@ macro_rules! forward_ubig_binop_to_repr {
 }
 
 /// Implement `impl Op<IBig> for IBig` by forwarding to the macro `$impl` with arguments
-/// `(lhs_sign, lhs_magnitude, rhs_sign, rhs_magnitude)`, including &IBig.
+/// `(lhs_sign, lhs_repr, rhs_sign, rhs_repr)`, including &IBig.
 /// The output type is IBig.
 macro_rules! forward_ibig_binop_to_repr {
     (impl $trait:ident, $method:ident, $impl:ident) => {
@@ -338,6 +337,106 @@ macro_rules! forward_binop_assign_by_taking {
     };
 }
 
+/// Implement `impl Op<IBig> for UBig` by forwarding to the macro `$impl` with arguments
+/// `(self_repr, rhs_sign, rhs_repr)`
+macro_rules! forward_ubig_ibig_binop_to_repr {
+    (impl $trait:ident, $method:ident, $impl:ident) => {
+        impl $trait<IBig> for UBig {
+            type Output = IBig;
+
+            #[inline]
+            fn $method(self, rhs: IBig) -> IBig {
+                let lhs_mag = self.into_repr();
+                let (rhs_sign, rhs_mag) = rhs.into_sign_repr();
+                $impl!(lhs_mag, rhs_sign, rhs_mag)
+            }
+        }
+
+        impl<'r> $trait<&'r IBig> for UBig {
+            type Output = IBig;
+
+            #[inline]
+            fn $method(self, rhs: &IBig) -> IBig {
+                let lhs_mag = self.into_repr();
+                let (rhs_sign, rhs_mag) = rhs.as_sign_repr();
+                $impl!(lhs_mag, rhs_sign, rhs_mag)
+            }
+        }
+
+        impl<'l> $trait<IBig> for &'l UBig {
+            type Output = IBig;
+
+            #[inline]
+            fn $method(self, rhs: IBig) -> IBig {
+                let lhs_mag = self.repr();
+                let (rhs_sign, rhs_mag) = rhs.into_sign_repr();
+                $impl!(lhs_mag, rhs_sign, rhs_mag)
+            }
+        }
+
+        impl<'l, 'r> $trait<&'l IBig> for &'l UBig {
+            type Output = IBig;
+
+            #[inline]
+            fn $method(self, rhs: &IBig) -> IBig {
+                let lhs_mag = self.repr();
+                let (rhs_sign, rhs_mag) = rhs.as_sign_repr();
+                $impl!(lhs_mag, rhs_sign, rhs_mag)
+            }
+        }
+    };
+}
+
+/// Implement `impl Op<UBig> for IBig` by forwarding to the macro `$impl` with arguments
+/// `(self_sign, self_repr, rhs_repr)`
+macro_rules! forward_ibig_ubig_binop_to_repr {
+    (impl $trait:ident, $method:ident, $impl:ident) => {
+        impl $trait<UBig> for IBig {
+            type Output = IBig;
+
+            #[inline]
+            fn $method(self, rhs: UBig) -> IBig {
+                let (lhs_sign, lhs_mag) = self.into_sign_repr();
+                let rhs_mag = rhs.into_repr();
+                $impl!(lhs_sign, lhs_mag, rhs_mag)
+            }
+        }
+
+        impl<'r> $trait<&'r UBig> for IBig {
+            type Output = IBig;
+
+            #[inline]
+            fn $method(self, rhs: &UBig) -> IBig {
+                let (lhs_sign, lhs_mag) = self.into_sign_repr();
+                let rhs_mag = rhs.repr();
+                $impl!(lhs_sign, lhs_mag, rhs_mag)
+            }
+        }
+
+        impl<'l> $trait<UBig> for &'l IBig {
+            type Output = IBig;
+
+            #[inline]
+            fn $method(self, rhs: UBig) -> IBig {
+                let (lhs_sign, lhs_mag) = self.as_sign_repr();
+                let rhs_mag = rhs.into_repr();
+                $impl!(lhs_sign, lhs_mag, rhs_mag)
+            }
+        }
+
+        impl<'l, 'r> $trait<&'l UBig> for &'l IBig {
+            type Output = IBig;
+
+            #[inline]
+            fn $method(self, rhs: &UBig) -> IBig {
+                let (lhs_sign, lhs_mag) = self.as_sign_repr();
+                let rhs_mag = rhs.repr();
+                $impl!(lhs_sign, lhs_mag, rhs_mag)
+            }
+        }
+    };
+}
+
 pub(crate) use forward_binop_assign_arg_by_value;
 pub(crate) use forward_binop_assign_by_taking;
 pub(crate) use forward_binop_first_arg_by_value;
@@ -345,4 +444,6 @@ pub(crate) use forward_binop_second_arg_by_value;
 pub(crate) use forward_binop_swap_args;
 pub(crate) use forward_div_rem_second_arg_by_value;
 pub(crate) use forward_ibig_binop_to_repr;
+pub(crate) use forward_ibig_ubig_binop_to_repr;
 pub(crate) use forward_ubig_binop_to_repr;
+pub(crate) use forward_ubig_ibig_binop_to_repr;

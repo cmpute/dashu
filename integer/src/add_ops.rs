@@ -41,6 +41,46 @@ helper_macros::forward_ibig_binop_to_repr!(impl Sub, sub, impl_ibig_sub);
 helper_macros::forward_binop_assign_by_taking!(impl AddAssign<IBig> for IBig, add_assign, add);
 helper_macros::forward_binop_assign_by_taking!(impl SubAssign<IBig> for IBig, sub_assign, sub);
 
+macro_rules! impl_ubig_ibig_add {
+    ($mag0:ident, $sign1:ident, $mag1:ident) => {
+        match ($sign1) {
+            Positive => IBig($mag0.add($mag1)),
+            Negative => IBig($mag0.sub_signed($mag1)),
+        }
+    };
+}
+macro_rules! impl_ubig_ibig_sub {
+    ($mag0:ident, $sign1:ident, $mag1:ident) => {
+        match ($sign1) {
+            Positive => IBig($mag0.sub_signed($mag1)),
+            Negative => IBig($mag0.add($mag1)),
+        }
+    };
+}
+helper_macros::forward_ubig_ibig_binop_to_repr!(impl Add, add, impl_ubig_ibig_add);
+helper_macros::forward_ubig_ibig_binop_to_repr!(impl Sub, sub, impl_ubig_ibig_sub);
+
+macro_rules! impl_ibig_ubig_add {
+    ($sign0:ident, $mag0:ident, $mag1:ident) => {
+        match ($sign0) {
+            Positive => IBig($mag0.add($mag1)),
+            Negative => IBig($mag1.sub_signed($mag0)),
+        }
+    };
+}
+macro_rules! impl_ibig_ubig_sub {
+    ($sign0:ident, $mag0:ident, $mag1:ident) => {
+        match ($sign0) {
+            Positive => IBig($mag0.sub_signed($mag1)),
+            Negative => IBig($mag0.add($mag1).with_sign(Negative)),
+        }
+    };
+}
+helper_macros::forward_ibig_ubig_binop_to_repr!(impl Add, add, impl_ibig_ubig_add);
+helper_macros::forward_ibig_ubig_binop_to_repr!(impl Sub, sub, impl_ibig_ubig_sub);
+helper_macros::forward_binop_assign_by_taking!(impl AddAssign<UBig> for IBig, add_assign, add);
+helper_macros::forward_binop_assign_by_taking!(impl SubAssign<UBig> for IBig, sub_assign, sub);
+
 macro_rules! impl_add_ubig_unsigned {
     ($t:ty) => {
         impl Add<$t> for UBig {

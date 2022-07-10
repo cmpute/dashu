@@ -44,6 +44,75 @@ helper_macros::forward_ibig_binop_to_repr!(impl Rem, rem, impl_ibig_rem);
 helper_macros::forward_binop_assign_by_taking!(impl DivAssign<IBig> for IBig, div_assign, div);
 helper_macros::forward_binop_assign_by_taking!(impl RemAssign<IBig> for IBig, rem_assign, rem);
 
+macro_rules! impl_ubig_ibig_div {
+    ($mag0:ident, $sign1:ident, $mag1:ident) => {
+        // truncate towards 0.
+        IBig(($mag0 / $mag1).with_sign($sign1))
+    };
+}
+helper_macros::forward_ubig_ibig_binop_to_repr!(impl Div, div, impl_ubig_ibig_div);
+
+impl Rem<IBig> for UBig {
+    type Output = UBig;
+
+    #[inline]
+    fn rem(self, rhs: IBig) -> UBig {
+        let lhs_mag = self.into_repr();
+        let (_, rhs_mag) = rhs.into_sign_repr();
+        UBig(lhs_mag % rhs_mag)
+    }
+}
+
+impl<'r> Rem<&'r IBig> for UBig {
+    type Output = UBig;
+
+    #[inline]
+    fn rem(self, rhs: &IBig) -> UBig {
+        let lhs_mag = self.into_repr();
+        let (_, rhs_mag) = rhs.as_sign_repr();
+        UBig(lhs_mag % rhs_mag)
+    }
+}
+
+impl<'l> Rem<IBig> for &'l UBig {
+    type Output = UBig;
+
+    #[inline]
+    fn rem(self, rhs: IBig) -> UBig {
+        let lhs_mag = self.repr();
+        let (_, rhs_mag) = rhs.into_sign_repr();
+        UBig(lhs_mag % rhs_mag)
+    }
+}
+
+impl<'l, 'r> Rem<&'l IBig> for &'l UBig {
+    type Output = UBig;
+
+    #[inline]
+    fn rem(self, rhs: &IBig) -> UBig {
+        let lhs_mag = self.repr();
+        let (_, rhs_mag) = rhs.as_sign_repr();
+        UBig(lhs_mag % rhs_mag)
+    }
+}
+
+macro_rules! impl_ibig_ubig_div {
+    ($sign0:ident, $mag0:ident, $mag1:ident) => {
+        // truncate towards 0.
+        IBig(($mag0 / $mag1).with_sign($sign0))
+    };
+}
+macro_rules! impl_ibig_ubig_rem {
+    ($sign0:ident, $mag0:ident, $mag1:ident) => {{
+        // remainder with truncating division has same sign as lhs.
+        IBig(($mag0 % $mag1).with_sign($sign0))
+    }};
+}
+helper_macros::forward_ibig_ubig_binop_to_repr!(impl Div, div, impl_ibig_ubig_div);
+helper_macros::forward_ibig_ubig_binop_to_repr!(impl Rem, rem, impl_ibig_ubig_rem);
+helper_macros::forward_binop_assign_by_taking!(impl DivAssign<UBig> for IBig, div_assign, div);
+helper_macros::forward_binop_assign_by_taking!(impl RemAssign<UBig> for IBig, rem_assign, rem);
+
 macro_rules! impl_ibig_div_rem {
     ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {{
         // truncate towards 0.

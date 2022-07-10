@@ -1,7 +1,7 @@
 use dashu_int::{
     ibig,
     ops::{DivEuclid, DivRem, DivRemEuclid, RemEuclid},
-    ubig, IBig,
+    ubig, IBig, UBig,
 };
 
 #[test]
@@ -329,4 +329,27 @@ fn test_div_rem_euclid_ibig_signed() {
     assert_eq!(ibig!(-23).div_rem_euclid(&(-10)), (ibig!(3), 7));
     assert_eq!((&ibig!(-23)).div_rem_euclid(-10), (ibig!(3), 7));
     assert_eq!((&ibig!(-23)).div_rem_euclid(&(-10)), (ibig!(3), 7));
+}
+
+#[test]
+fn test_div_rem_euclid_ubig_ibig() {
+    for a in 1u8..=20u8 {
+        for b in -20i8..=20i8 {
+            if b == 0 {
+                continue;
+            }
+
+            let x = || UBig::from(a);
+            let y = || IBig::from(b);
+            assert_eq!((x() / y()) * y() + (x() % y()), x());
+            assert_eq!((&x() / y()) * y() + (&x() % y()), x());
+            assert_eq!((x() / &y()) * y() + (x() % &y()), x());
+            assert_eq!((&x() / &y()) * y() + (&x() % &y()), x());
+
+            assert_eq!((y() / x()) * x() + (y() % x()), y());
+            assert_eq!((&y() / x()) * x() + (&y() % x()), y());
+            assert_eq!((y() / &x()) * x() + (y() % &x()), y());
+            assert_eq!((&y() / &x()) * x() + (&y() % &x()), y());
+        }
+    }
 }

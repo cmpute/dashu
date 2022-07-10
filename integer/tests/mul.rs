@@ -114,3 +114,54 @@ fn test_mul_ibig_primitive() {
     x *= &-2;
     assert_eq!(x, ibig!(12));
 }
+
+#[test]
+fn test_mul_ubig_ibig() {
+    let test_cases = [
+        (ubig!(0), ibig!(4), ibig!(0)),
+        (ubig!(0), ibig!(1) << 100, ibig!(0)),
+        (ubig!(4), ibig!(0), ibig!(0)),
+        (ubig!(1) << 100, ibig!(0), ibig!(0)),
+        (ubig!(3), ibig!(4), ibig!(12)),
+        (ubig!(3), ibig!(-4), ibig!(-12)),
+        (ubig!(0x123456789abc), ibig!(0x444333222111fff), ibig!(0x4daae4d8531f8de7e1fb5ae544)),
+        (ubig!(0x123456789abc), ibig!(-0x444333222111fff), ibig!(-0x4daae4d8531f8de7e1fb5ae544)),
+        (
+            ubig!(1),
+            ibig!(-_0x123456789123456789123456789123456789),
+            ibig!(-_0x123456789123456789123456789123456789)
+        ),
+        (
+            ubig!(0x10),
+            ibig!(-_0x123456789123456789123456789123456789),
+            ibig!(-_0x1234567891234567891234567891234567890)
+        ),
+        (
+            ubig!(0x1000000000000000),
+            ibig!(-_0x123456789123456789123456789123456789),
+            ibig!(-_0x123456789123456789123456789123456789000000000000000)
+        ),
+        (
+            ubig!(_0x123456789123456789123456789123456789123456789123456789),
+            ibig!(-_0xabcdefabcdefabcdefabcdefabcdef),
+            ibig!(-_0xc379ab6dbd40ef67e528bfffd3039491348e20491348e20491348d5ccf67db24c3a1cca8f7891375de7)
+        ),
+        (ubig!(5), ibig!(-1) << 50, ibig!(-5) << 50),
+        (ubig!(5), ibig!(-1) << 100, ibig!(-5) << 100),
+    ];
+
+    for (a, b, c) in &test_cases {
+        assert_eq!(a * b, *c);
+        assert_eq!(a.clone() * b, *c);
+        assert_eq!(a * b.clone(), *c);
+        assert_eq!(a.clone() * b.clone(), *c);
+
+        let mut x = b.clone();
+        x *= a;
+        assert_eq!(x, *c);
+
+        let mut x = b.clone();
+        x *= a.clone();
+        assert_eq!(x, *c);
+    }
+}

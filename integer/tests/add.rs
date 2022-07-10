@@ -231,3 +231,46 @@ fn test_add_sub_ibig_primitive() {
     x -= &10;
     assert_eq!(x, ibig!(-6));
 }
+
+#[test]
+fn test_add_sub_ubig_ibig() {
+    let test_cases = [
+        (ubig!(3), ibig!(4), ibig!(7)),
+        (ubig!(3), ibig!(-4), ibig!(-1)),
+        (
+            ubig!(0x10000000000000000),
+            ibig!(-4),
+            ibig!(0xfffffffffffffffc),
+        ),
+        (
+            ubig!(0x10000000000000000),
+            ibig!(_0x200000000000000000000000000000000),
+            ibig!(_0x200000000000000010000000000000000),
+        ),
+        (
+            ubig!(_0x200000000000000010000000000000000),
+            ibig!(-_0x200000000000000000000000000000000),
+            ibig!(0x10000000000000000),
+        ),
+    ];
+
+    for (a, b, c) in &test_cases {
+        assert_eq!(a + b, *c);
+        assert_eq!(a.clone() + b, *c);
+        assert_eq!(a + b.clone(), *c);
+        assert_eq!(a.clone() + b.clone(), *c);
+
+        assert_eq!(c - a, *b);
+        assert_eq!(c.clone() - a, *b);
+        assert_eq!(c - a.clone(), *b);
+        assert_eq!(c.clone() - a.clone(), *b);
+
+        let mut x = c.clone();
+        x -= a;
+        assert_eq!(x, *b);
+
+        let mut x = c.clone();
+        x -= a.clone();
+        assert_eq!(x, *b);
+    }
+}

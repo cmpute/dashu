@@ -23,6 +23,21 @@ macro_rules! impl_ibig_mul {
 helper_macros::forward_ibig_binop_to_repr!(impl Mul, mul, impl_ibig_mul);
 helper_macros::forward_binop_assign_by_taking!(impl MulAssign<IBig> for IBig, mul_assign, mul);
 
+macro_rules! impl_ubig_ibig_mul {
+    ($mag0:ident, $sign1:ident, $mag1:ident) => {
+        IBig($mag0.mul($mag1).with_sign($sign1))
+    };
+}
+helper_macros::forward_ubig_ibig_binop_to_repr!(impl Mul, mul, impl_ubig_ibig_mul);
+
+macro_rules! impl_ibig_ubig_mul {
+    ($sign0:ident, $mag0:ident, $mag1:ident) => {
+        IBig($mag0.mul($mag1).with_sign($sign0))
+    };
+}
+helper_macros::forward_ibig_ubig_binop_to_repr!(impl Mul, mul, impl_ibig_ubig_mul);
+helper_macros::forward_binop_assign_by_taking!(impl MulAssign<UBig> for IBig, mul_assign, mul);
+
 macro_rules! impl_mul_ubig_unsigned {
     ($t:ty) => {
         impl Mul<$t> for UBig {
