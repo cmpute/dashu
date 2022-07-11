@@ -19,6 +19,7 @@ const MAX_LEN_SIMPLE: usize = 32;
 /// Normalize a divisor represented as words.
 ///
 /// Returns (shift, fast division for the top words).
+#[inline]
 pub(crate) fn normalize(words: &mut [Word]) -> (u32, FastDivideNormalized2) {
     let shift = words.last().unwrap().leading_zeros();
     let overflow = shift::shl_in_place(words, shift);
@@ -31,10 +32,10 @@ pub(crate) fn normalize(words: &mut [Word]) -> (u32, FastDivideNormalized2) {
 ///
 /// rhs must be non-zero
 ///
-/// Returns words % rhs. Panics if `words` is too short (<= 2 words).
+/// Returns words % rhs. Panics if `words` is emptu.
 #[must_use]
 pub fn div_by_word_in_place(words: &mut [Word], rhs: Word) -> Word {
-    debug_assert!(rhs != 0 && words.len() >= 2);
+    debug_assert!(rhs != 0 && !words.is_empty());
 
     if rhs.is_power_of_two() {
         let sh = rhs.trailing_zeros();
@@ -67,9 +68,9 @@ pub(crate) fn fast_div_by_word_in_place(
     rem >> shift
 }
 
-/// Panics if `words` is too short (<= 2 words)
+/// Panics if `words` is empty
 pub fn rem_by_word(words: &[Word], rhs: Word) -> Word {
-    debug_assert!(rhs != 0 && words.len() >= 2);
+    debug_assert!(rhs != 0 && !words.is_empty());
 
     // shortcut
     if rhs.is_power_of_two() {
@@ -91,7 +92,7 @@ pub(crate) fn fast_rem_by_normalized_word(
     words: &[Word],
     fast_div_rhs: FastDivideNormalized,
 ) -> Word {
-    debug_assert!(words.len() >= 2);
+    debug_assert!(!words.is_empty());
 
     // first calculate the highest remainder
     let (last, words_lo) = words.split_last().unwrap();

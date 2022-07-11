@@ -16,13 +16,12 @@ impl UBig {
     /// # Example
     /// ```
     /// # use dashu_int::ubig;
-    /// // assert_eq!(ubig!(12).gcd(&ubig!(18)), ubig!(6));
+    /// assert_eq!(ubig!(12).gcd(&ubig!(18)), ubig!(6));
     /// ```
     ///
     /// Panics if two oprands are both zero.
     #[inline]
-    #[allow(unused)] // enable after 0.1.0
-    pub(crate) fn gcd(&self, rhs: &UBig) -> UBig {
+    pub fn gcd(&self, rhs: &UBig) -> UBig {
         UBig(self.repr().gcd(rhs.repr()))
     }
 
@@ -32,13 +31,12 @@ impl UBig {
     /// # Example
     /// ```
     /// # use dashu_int::{ibig, ubig};
-    /// // assert_eq!(ubig!(12).gcd_ext(&ubig!(18)), (ubig!(6), ibig!(-1), ibig!(1)));
+    /// assert_eq!(ubig!(12).gcd_ext(&ubig!(18)), (ubig!(6), ibig!(-1), ibig!(1)));
     /// ```
     ///
     /// Panics if two oprands are both zero.
     #[inline]
-    #[allow(unused)] // enable after 0.1.0
-    pub(crate) fn gcd_ext(&self, rhs: &UBig) -> (UBig, IBig, IBig) {
+    pub fn gcd_ext(&self, rhs: &UBig) -> (UBig, IBig, IBig) {
         let (r, s, t) = self.clone().into_repr().gcd_ext(rhs.clone().into_repr());
         (UBig(r), IBig(s), IBig(t))
     }
@@ -91,9 +89,18 @@ mod repr {
     /// Perform gcd on two large numbers.
     #[inline]
     fn gcd_large(mut lhs: Buffer, mut rhs: Buffer) -> Repr {
-        let len = gcd::gcd_in_place(&mut lhs, &mut rhs);
-        lhs.truncate(len);
-        Repr::from_buffer(lhs)
+        let mut allocation =
+            MemoryAllocation::new(gcd::memory_requirement_exact(lhs.len(), rhs.len()));
+        let mut memory = allocation.memory();
+
+        let (len, swapped) = gcd::gcd_in_place(&mut lhs, &mut rhs, &mut memory);
+        if swapped {
+            rhs.truncate(len);
+            Repr::from_buffer(rhs)
+        } else {
+            lhs.truncate(len);
+            Repr::from_buffer(lhs)
+        }
     }
 
     impl ExtendedGcd<TypedRepr> for TypedRepr {
@@ -168,7 +175,7 @@ mod repr {
         buffer.push_zeros(res_len);
 
         let mut allocation =
-            MemoryAllocation::new(gcd::memory_requirement_exact(lhs.len(), rhs.len()));
+            MemoryAllocation::new(gcd::memory_requirement_ext_exact(lhs.len(), rhs.len()));
         let mut memory = allocation.memory();
 
         let (lhs_sign, rhs_sign) =

@@ -734,6 +734,7 @@ mod repr {
     /// lhs = (lhs / rhs, lhs % rhs)
     ///
     /// Returns the number of shift bits produced by normalization.
+    #[inline]
     fn div_rem_in_lhs(lhs: &mut Buffer, rhs: &mut Buffer) -> u32 {
         let mut allocation =
             MemoryAllocation::new(div::memory_requirement_exact(lhs.len(), rhs.len()));

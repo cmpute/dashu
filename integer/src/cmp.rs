@@ -196,9 +196,8 @@ pub fn cmp_same_len(lhs: &[Word], rhs: &[Word]) -> Ordering {
     lhs.iter().rev().cmp(rhs.iter().rev())
 }
 
-/// Compare lhs with rhs as numbers. The leading zeros of the input must be trimmed!
+/// Compare lhs with rhs as numbers. The leading zero words of the input must be trimmed!
 pub fn cmp_in_place(lhs: &[Word], rhs: &[Word]) -> Ordering {
-    debug_assert!(lhs.len() >= 2 && rhs.len() >= 2);
     debug_assert!(*lhs.last().unwrap() != 0 && *rhs.last().unwrap() != 0);
     lhs.len().cmp(&rhs.len()).then_with(|| cmp_same_len(lhs, rhs))
 }

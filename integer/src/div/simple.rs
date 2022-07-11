@@ -54,6 +54,7 @@ pub(crate) fn div_rem_in_place(
 /// must be smaller than rhs.
 /// 
 /// The remainder will be put in lhs_lo and the quotient word will be returned.
+#[inline]
 pub(crate) fn div_rem_highest_word (
     lhs_top: Word,
     lhs_lo: &mut [Word],

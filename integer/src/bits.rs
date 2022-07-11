@@ -16,17 +16,30 @@ use core::{
     ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not},
 };
 
+/// Count the trailing zero bits in the words.
+/// 
+/// # Panic
+/// Panics if the input is zero
+#[inline]
 pub fn trailing_zeros(words: &[Word]) -> usize {
-    debug_assert!(*words.last().unwrap() != 0);
-
     for (idx, word) in words.iter().enumerate() {
         if *word != 0 {
             return idx * WORD_BITS_USIZE + word.trailing_zeros() as usize;
         }
     }
 
-    // the assertion above ensured that there must be at least one non-zero word
-    unreachable!()
+    panic!("call trailing_zeros on 0")
+}
+
+/// Remove the leading zero words in an owning reference. Return
+/// a null slice if the input is zero (but the start pointer still
+/// points to the same address as input).
+#[inline]
+pub fn trim_leading_zeros(mut words: &mut [Word]) -> &mut [Word] {
+    while words.len() > 0 && *words.last().unwrap() == 0 {
+        words = words.split_last_mut().unwrap().1;
+    }
+    words
 }
 
 impl UBig {

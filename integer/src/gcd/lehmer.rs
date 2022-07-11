@@ -1,13 +1,18 @@
-use core::{cmp::Ordering, mem};
+use core::{cmp::Ordering, mem, ptr};
+use alloc::alloc::Layout;
+use dashu_base::Gcd;
+
 use crate::{
     arch::word::{Word, SignedWord, SignedDoubleWord},
     cmp::cmp_in_place,
     div, shift,
     memory::Memory,
-    primitive::{highest_dword, extend_word, split_dword, signed_extend_word, split_signed_dword}
+    primitive::{highest_dword, extend_word, split_dword, signed_extend_word, split_signed_dword},
+    bits::trim_leading_zeros,
+    sign::Sign,
 };
 
-/// Estimate the quotient and bezout coefficients using the highest word,
+/// Estimate the bezout coefficients using the highest word,
 /// return the coefficients (a, b, c, d) such that gcd(x, y) = gcd(ax - by, dy - cx)
 /// 
 /// If the guess has completely failed, then (b and c will be zero.)
@@ -71,7 +76,10 @@ fn highest_word_normalized(x: &[Word], y: &[Word]) -> (Word, Word) {
     (x_hi, y_hi)
 }
 
-/// Calculate (x, y) = (a*x - b*y, d*y - c*x) in a single run
+/// Calculate (x, y) = (a*x - b*y, d*y - c*x) in a single run.
+/// 
+/// Assuming x > y and (a, b, c, d) are calculated by lehmer_guess. Since the
+/// coefficients are estimated by lehmer_guess, it will reduce the x by almost 1.
 fn lehmer_step(x: &mut [Word], y: &mut [Word], a: Word, b: Word, c: Word, d: Word) {
     debug_assert!(x.len() >= y.len());
     debug_assert!(a <= SignedWord::MAX as Word && b <= SignedWord::MAX as Word);
@@ -89,14 +97,24 @@ fn lehmer_step(x: &mut [Word], y: &mut [Word], a: Word, b: Word, c: Word, d: Wor
         *x_i = x_new;
         *y_i = y_new;
     }
+    // by now, if x_carry or y_carry is not zero, it will be cancelled out by the next iteration,
+    // so we can just discard the high words of x
 }
 
-fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word], memory: &mut Memory) -> usize {
-    // keep x >= y though the algorithm
-    let (mut x, mut y) = match cmp_in_place(lhs, rhs) {
-        Ordering::Equal => return lhs.len(),
-        Ordering::Greater => (lhs, rhs),
-        Ordering::Less => (rhs, lhs)
+/// Temporary memory required for gcd.
+#[inline]
+pub fn memory_requirement_up_to(lhs_len: usize, rhs_len: usize) -> Layout {
+    // Required memory:
+    // - Possible memory required for the division in the euclidean step
+    div::memory_requirement_exact(lhs_len, rhs_len)
+}
+
+pub(crate) fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word], memory: &mut Memory) -> (usize, bool) {
+    // keep x >= y though the algorithm, and track the source of x and y
+    let (mut x, mut y, mut swapped) = match cmp_in_place(lhs, rhs) {
+        Ordering::Equal => return (lhs.len(), false),
+        Ordering::Greater => (lhs, rhs, false),
+        Ordering::Less => (rhs, lhs, true)
     };
 
     while y.len() >= 2 {
@@ -105,25 +123,78 @@ fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word], memory: &mut Memory) -> usiz
         let (a, b, c, d) = lehmer_guess(x_hi, y_hi);
 
         if b == 0 {
-            // the guess has failed, do a euclidean step (x, y) = (y, x % y)
+            // The guess has failed, do a euclidean step (x, y) = (y, x % y)
             let (shift, _) = div::div_rem_unnormalized_in_place(x, y, memory);
-            let r = &mut x[..y.len()];
+            let mut r = &mut x[..y.len()];
             let y_low_bits = shift::shr_in_place(y, shift);
             let r_low_bits = shift::shr_in_place(r, shift);
             debug_assert!(y_low_bits | r_low_bits == 0);
 
+            // Trim leading zero and swap
+            r = trim_leading_zeros(r);
             x = mem::replace(&mut y, r);
+            swapped = !swapped;
         } else {
             // this step could be optimized with a specialized routine
             lehmer_step(x, y, a, b, c, d);
+            x = trim_leading_zeros(x);
+            y = trim_leading_zeros(y);
             if cmp_in_place(x, y).is_le() {
                 mem::swap(&mut x, &mut y);
+                swapped = !swapped;
             }
         }
     }
 
-    // TODO: forward to double word gcd
-    unimplemented!()
+    if y.len() == 0 {
+        // the gcd result is in x
+        (x.len(), swapped)
+    } else if y.get(1).unwrap_or(&0) == &0 {
+        // forward to single word gcd, store result in x
+        let y_word = *y.first().unwrap();
+        let x_word = div::rem_by_word(x, y_word);
+        x[0] = x_word.gcd(y_word);
+        (1, swapped)
+    } else {
+        // forward to double word gcd, store result in x
+        let y_dword = highest_dword(y);
+        let x_dword = div::rem_by_dword(x, y_dword);
+        let (g_lo, g_hi) = split_dword(x_dword.gcd(y_dword));
+
+        x[0] = g_lo;
+        if g_hi != 0 {
+            x[1] = g_hi;
+            (2, swapped)
+        } else {
+            (1, swapped)
+        }
+    }
+}
+
+/// Extended binary GCD for two multi-digits numbers
+pub fn gcd_ext_in_place(
+    lhs: &mut [Word],
+    rhs: &mut [Word],
+    g: &mut [Word],
+    bonly: bool,
+    memory: &mut Memory,
+) -> (Sign, Sign) {
+    // keep x >= y though the algorithm, and track the source of x and y
+    let (mut x, mut y, mut swapped) = match cmp_in_place(lhs, rhs) {
+        Ordering::Equal => {
+            // TODO: remove fill by returning a length as well
+            lhs[1..].fill(0);
+            rhs[1..].fill(0);
+            *lhs.first_mut().unwrap() = 1;
+            *rhs.first_mut().unwrap() = 0;
+            return (Sign::Positive, Sign::Positive)
+        },
+        Ordering::Greater => (lhs, rhs, false),
+        Ordering::Less => (rhs, lhs, true)
+    };
+
+    // TODO: we need another lehmer_step function on coefficients and accept sign
+    unimplemented!();
 }
 
 /*

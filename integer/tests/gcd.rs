@@ -1,5 +1,3 @@
-/*
-
 use dashu_int::{ubig, IBig};
 
 #[test]
@@ -91,5 +89,3 @@ fn test_gcd_0() {
     let _ = ubig!(0).gcd(&ubig!(0));
     let _ = ubig!(0).gcd_ext(&ubig!(0));
 }
-
-*/
