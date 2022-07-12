@@ -86,7 +86,7 @@ macro_rules! impl_unchecked_gcd_ops_prim {
 
                 // the binary GCD algorithm
                 while a != b {
-                    if (a | b) >> <$HU>::BITS > 0 {
+                    if (a | b) >> <$HU>::BITS == 0 {
                         // forward to single width int
                         return (a as $HU).unchecked_gcd(b as $HU) as $U;
                     }
@@ -257,6 +257,10 @@ mod tests {
         assert_eq!(0x40000000u32.gcd(0xcfd41b91), 1);
         assert_eq!(
             0x80000000000000000000000000000000u128.gcd(0x6f32f1ef8b18a2bc3cea59789c79d441),
+            1
+        );
+        assert_eq!(
+            79901280795560547607793891992771245827u128.gcd(27442821378946980402542540754159585749),
             1
         );
 
