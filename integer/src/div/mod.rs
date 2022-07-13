@@ -32,7 +32,7 @@ pub(crate) fn normalize(words: &mut [Word]) -> (u32, FastDivideNormalized2) {
 ///
 /// rhs must be non-zero
 ///
-/// Returns words % rhs. Panics if `words` is emptu.
+/// Returns words % rhs. Panics if `words` is empty.
 #[must_use]
 pub fn div_by_word_in_place(words: &mut [Word], rhs: Word) -> Word {
     debug_assert!(rhs != 0 && !words.is_empty());

@@ -3,6 +3,7 @@ use crate::arch::word::Word;
 /// Add a + b + carry.
 ///
 /// Returns (result, overflow).
+// TODO: make this method inplace (a += b + carry, return carry). Same for other archs and xxx_with_carry methods.
 #[inline]
 pub fn add_with_carry(a: Word, b: Word, carry: bool) -> (Word, bool) {
     let mut sum = 0;

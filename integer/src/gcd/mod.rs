@@ -2,6 +2,7 @@
 use crate::{arch::word::Word, memory::{self, Memory}, sign::Sign};
 use alloc::alloc::Layout;
 
+mod naive;
 mod binary;
 mod lehmer;
 
@@ -37,10 +38,17 @@ pub fn gcd_ext_in_place(
     bonly: bool,
     memory: &mut Memory,
 ) -> (Sign, Sign) {
-    binary::gcd_ext_in_place(lhs, rhs, g, bonly, memory)
+    // binary::gcd_ext_in_place(lhs, rhs, g, bonly, memory)
+    let (_g_len, swapped) = naive::gcd_ext_in_place(lhs, rhs, g, bonly, memory);
+    if swapped {
+        (Sign::Negative, Sign::Positive)
+    } else {
+        (Sign::Positive, Sign::Negative)
+    }
 }
 
 /// Memory requirement for extended GCD.
 pub fn memory_requirement_ext_exact(lhs_len: usize, rhs_len: usize) -> Layout {
-    binary::memory_requirement_ext_up_to(lhs_len, rhs_len)
+    // binary::memory_requirement_ext_up_to(lhs_len, rhs_len)
+    naive::memory_requirement_ext_up_to(lhs_len, rhs_len)
 }
