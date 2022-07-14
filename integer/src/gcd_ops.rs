@@ -2,12 +2,14 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
-    div, gcd,
+    div, gcd, memory, mul,
     ibig::IBig,
+    sign::Sign,
     memory::MemoryAllocation,
     repr::{Buffer, TypedRepr::*, TypedReprRef::*},
     ubig::UBig,
 };
+use core::cmp::Ordering;
 use dashu_base::ring::{ExtendedGcd, Gcd};
 
 impl UBig {
@@ -46,7 +48,7 @@ mod repr {
     use super::*;
     use crate::{
         primitive::{shrink_dword, PrimitiveSigned},
-        repr::{Repr, TypedRepr, TypedReprRef},
+        repr::{Repr, TypedRepr, TypedReprRef}, add, cmp,
     };
 
     impl<'l, 'r> Gcd<TypedReprRef<'r>> for TypedReprRef<'l> {
@@ -170,20 +172,74 @@ mod repr {
     /// Perform extended gcd on two large numbers.
     #[inline]
     fn gcd_ext_large(mut lhs: Buffer, mut rhs: Buffer) -> (Repr, Repr, Repr) {
-        let res_len = lhs.len().min(rhs.len());
-        let mut buffer = Buffer::allocate(res_len);
-        buffer.push_zeros(res_len);
+        // make sure lhs > rhs
+        let swapped = match cmp::cmp_in_place(&lhs, &rhs) {
+            Ordering::Greater => false,
+            Ordering::Equal => return (Repr::from_buffer(lhs), Repr::one(), Repr::zero()),
+            Ordering::Less => {
+                core::mem::swap(&mut lhs, &mut rhs);
+                true
+            }
+        };
+        let (lhs_len, rhs_len) = (lhs.len(), rhs.len());
 
+        // allocate memory
+        let clone_mem = memory::array_layout::<Word>(lhs_len + rhs_len);
+        let gcd_mem = gcd::memory_requirement_ext_exact(lhs_len, rhs_len);
+        let post_mem = memory::add_layout(
+            // memory required for post processing: one multiplication + one division
+            mul::memory_requirement_exact(lhs_len + rhs_len, rhs_len),
+            div::memory_requirement_exact(lhs_len + rhs_len + 1, rhs_len)
+        );
         let mut allocation =
-            MemoryAllocation::new(gcd::memory_requirement_ext_exact(lhs.len(), rhs.len()));
+            MemoryAllocation::new(memory::add_layout(clone_mem, memory::max_layout(gcd_mem, post_mem)));
         let mut memory = allocation.memory();
 
-        let (lhs_sign, rhs_sign) =
-            gcd::gcd_ext_in_place(&mut lhs, &mut rhs, &mut buffer, false, &mut memory);
-        (
-            Repr::from_buffer(buffer),
-            Repr::from_buffer(rhs).with_sign(lhs_sign),
-            Repr::from_buffer(lhs).with_sign(rhs_sign),
-        )
+        // copy oprands for post processing
+        let (lhs_clone, mut memory) = memory.allocate_slice_copy(&lhs);
+        let (rhs_clone, mut memory) = memory.allocate_slice_copy(&rhs);
+
+        // actual computation
+        let (g_len, b_len, b_sign) =
+            gcd::gcd_ext_in_place(&mut lhs, &mut rhs, &mut memory);
+
+        // the result from the internal function is g = gcd(lhs, rhs), b s.t g = b*rhs mod lhs
+        // post processing: a = (g - rhs * b) / lhs
+        rhs.truncate(g_len);
+        let g = rhs;
+        lhs.truncate(b_len);
+        let b = lhs;
+
+        // residue = g - rhs * b
+        let brhs_len = rhs_clone.len() + b.len();
+        let (residue, mut memory) = memory.allocate_slice_fill(brhs_len + 1, 0);
+        let carry = mul::add_signed_mul(&mut residue[..brhs_len], Sign::Positive, rhs_clone, &b, &mut memory);
+        debug_assert!(carry == 0);
+        match b_sign {
+            Sign::Negative => {
+                *residue.last_mut().unwrap() = add::add_in_place(residue, &g) as Word;
+            },
+            Sign::Positive => {
+                let overflow = add::sub_in_place(residue, &g);
+                debug_assert!(!overflow);
+            },
+        };
+
+        // a = residue / lhs
+        let (_, overflow) = div::div_rem_unnormalized_in_place(residue, lhs_clone, &mut memory);
+        let mut a = Buffer::from(&residue[lhs_len..]);
+        debug_assert!(residue[0] == 0); // this division is an exact division
+        if overflow > 0 {
+            a.push(overflow);
+        }
+
+        let g = Repr::from_buffer(g);
+        let a = Repr::from_buffer(a).with_sign(-b_sign);
+        let b = Repr::from_buffer(b).with_sign(b_sign);
+        if swapped {
+            (g, b, a)   
+        } else {
+            (g, a, b)
+        }
     }
 }

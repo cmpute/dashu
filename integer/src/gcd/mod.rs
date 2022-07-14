@@ -3,7 +3,6 @@ use crate::{arch::word::Word, memory::{self, Memory}, sign::Sign};
 use alloc::alloc::Layout;
 
 mod naive;
-mod binary;
 mod lehmer;
 
 /// Greatest common divisor for two multi-digit integers
@@ -26,29 +25,23 @@ pub fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> Layout {
 
 /// Extended greatest common divisor for two multi-digit integers
 ///
-/// The GCD result is stored in g (need to be pre-allocated and zero filled), while the Bézout coefficient
-/// for the two operands is stored in the input slices, and the sign of the two coefficients are returned.
+/// The GCD result is stored in one of the input, while the Bézout coefficient for
+/// the operand is stored in another input slice. The length and sign of the result
+/// are returned. 
 ///
-/// Specifically if g = gcd(lhs, rhs), lhs * a + rhs * b = g, then a is stored in **rhs**, b is stored in **lhs**,
-/// and the returned tuple is (sign of a, sign of b)
+/// Specifically this function assumes `lhs > rhs`. If `g = gcd(lhs, rhs)`,
+/// `lhs * a + rhs * b = g`, then g is stored in **rhs**, b (unsigned) is
+/// stored in **lhs**, and the returned tuple is (length of g, length of b, sign of b).
+/// The other coefficient a could be computed when needed, by `a = (g - rhs * b) / lhs`
 pub fn gcd_ext_in_place(
     lhs: &mut [Word],
     rhs: &mut [Word],
-    g: &mut [Word],
-    bonly: bool,
     memory: &mut Memory,
-) -> (Sign, Sign) {
-    // binary::gcd_ext_in_place(lhs, rhs, g, bonly, memory)
-    let (_g_len, swapped) = naive::gcd_ext_in_place(lhs, rhs, g, bonly, memory);
-    if swapped {
-        (Sign::Negative, Sign::Positive)
-    } else {
-        (Sign::Positive, Sign::Negative)
-    }
+) -> (usize, usize, Sign) {
+    naive::gcd_ext_in_place(lhs, rhs, memory)
 }
 
 /// Memory requirement for extended GCD.
 pub fn memory_requirement_ext_exact(lhs_len: usize, rhs_len: usize) -> Layout {
-    // binary::memory_requirement_ext_up_to(lhs_len, rhs_len)
     naive::memory_requirement_ext_up_to(lhs_len, rhs_len)
 }
