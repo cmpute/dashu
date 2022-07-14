@@ -1,23 +1,35 @@
-use core::{cmp::Ordering, mem};
 use alloc::alloc::Layout;
+use core::{cmp::Ordering, mem};
 use dashu_base::Gcd;
 
 use crate::{
-    arch::word::{Word, DoubleWord, SignedWord, SignedDoubleWord},
+    arch::word::{DoubleWord, SignedDoubleWord, SignedWord, Word},
+    bits::locate_top_word_plus_one,
     cmp::cmp_in_place,
-    div, shift, mul,
+    div,
     memory::Memory,
-    primitive::{highest_dword, extend_word, split_dword, signed_extend_word, split_signed_dword, WORD_BITS},
-    bits::trim_leading_zeros,
+    mul,
+    primitive::{
+        extend_word, highest_dword, signed_extend_word, split_dword, split_signed_dword, WORD_BITS,
+    },
+    shift,
     sign::Sign,
 };
+
+/// Remove the leading zero words in an owning reference. Return
+/// a null slice if the input is zero (but the start pointer still
+/// points to the same address as input).
+#[inline]
+fn trim_leading_zeros(words: &mut [Word]) -> &mut [Word] {
+    words.split_at_mut(locate_top_word_plus_one(words)).0
+}
 
 /// Minimum length of words for using double word guessing on lehmer step
 pub const MIN_DWORD_GUESS_LEN: usize = 300;
 
 /// Estimate the bezout coefficients using the highest word,
 /// return the coefficients (a, b, c, d) such that gcd(x, y) = gcd(ax - by, dy - cx)
-/// 
+///
 /// If the guess has completely failed, then (b and c will be zero.)
 fn lehmer_guess(mut xbar: Word, mut ybar: Word) -> (Word, Word, Word, Word) {
     debug_assert!(xbar >= ybar);
@@ -41,7 +53,8 @@ fn lehmer_guess(mut xbar: Word, mut ybar: Word) -> (Word, Word, Word, Word) {
             break;
         }
 
-        a = r; b = s;
+        a = r;
+        b = s;
         xbar = t;
 
         if xbar == b {
@@ -64,7 +77,8 @@ fn lehmer_guess(mut xbar: Word, mut ybar: Word) -> (Word, Word, Word, Word) {
             break;
         }
 
-        d = r; c = s;
+        d = r;
+        c = s;
         ybar = t;
 
         if ybar == c {
@@ -83,7 +97,7 @@ fn highest_word_normalized(x: &[Word], y: &[Word]) -> (Word, Word) {
     let y_hi2 = match x.len() - y.len() {
         0 => highest_dword(y),
         1 => extend_word(*y.last().unwrap()),
-        _ => 0
+        _ => 0,
     };
     let shift = x_hi2.leading_zeros();
     let (_, x_hi) = split_dword(x_hi2 << shift);
@@ -114,7 +128,8 @@ fn lehmer_guess_dword(mut xbar: DoubleWord, mut ybar: DoubleWord) -> (Word, Word
             break;
         }
 
-        a = r; b = s;
+        a = r;
+        b = s;
         xbar = t;
 
         if xbar == b {
@@ -137,7 +152,8 @@ fn lehmer_guess_dword(mut xbar: DoubleWord, mut ybar: DoubleWord) -> (Word, Word
             break;
         }
 
-        d = r; c = s;
+        d = r;
+        c = s;
         ybar = t;
 
         if ybar == c {
@@ -160,10 +176,10 @@ fn highest_dword_normalized(x: &[Word], y: &[Word]) -> (DoubleWord, DoubleWord) 
         0 => {
             let (y0, y_lo) = y.split_last().unwrap();
             (*y0, highest_dword(y_lo))
-        },
+        }
         1 => (0, highest_dword(y)),
         2 => (0, extend_word(*y.last().unwrap())),
-        _ => (0, 0)
+        _ => (0, 0),
     };
     let shift = x0.leading_zeros();
     let x_hi = extend_word(*x0) << (shift + WORD_BITS) | x12 >> (WORD_BITS - shift);
@@ -172,7 +188,7 @@ fn highest_dword_normalized(x: &[Word], y: &[Word]) -> (DoubleWord, DoubleWord) 
 }
 
 /// Calculate (x, y) = (a*x - b*y, d*y - c*x) in a single run.
-/// 
+///
 /// Assuming x > y and (a, b, c, d) are calculated by lehmer_guess. Since the
 /// coefficients are estimated by lehmer_guess, it will reduce the x by almost 1.
 pub(crate) fn lehmer_step(x: &mut [Word], y: &mut [Word], a: Word, b: Word, c: Word, d: Word) {
@@ -204,12 +220,16 @@ pub fn memory_requirement_up_to(lhs_len: usize, rhs_len: usize) -> Layout {
     div::memory_requirement_exact(lhs_len, rhs_len)
 }
 
-pub(crate) fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word], memory: &mut Memory) -> (usize, bool) {
+pub(crate) fn gcd_in_place(
+    lhs: &mut [Word],
+    rhs: &mut [Word],
+    memory: &mut Memory,
+) -> (usize, bool) {
     // keep x >= y though the algorithm, and track the source of x and y
     let (mut x, mut y, mut swapped) = match cmp_in_place(lhs, rhs) {
         Ordering::Equal => return (lhs.len(), false),
         Ordering::Greater => (lhs, rhs, false),
-        Ordering::Less => (rhs, lhs, true)
+        Ordering::Less => (rhs, lhs, true),
     };
 
     while y.len() > 2 {
@@ -274,7 +294,14 @@ pub(crate) fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word], memory: &mut Memo
 /// Calculate (s, t) = (a*s - b*t, d*t - c*s) in a single run. Unlike [lehmer_step], both
 /// s and t are signed, and the output is not guaranteed to be smaller. This input must have
 /// the same size, if not, the smaller one should be padded with zeros.
-fn lehmer_ext_step(s: (Sign, &mut [Word]), t: (Sign, &mut [Word]), a: Word, b: Word, c: Word, d: Word) -> (SignedWord, SignedWord) {
+fn lehmer_ext_step(
+    s: (Sign, &mut [Word]),
+    t: (Sign, &mut [Word]),
+    a: Word,
+    b: Word,
+    c: Word,
+    d: Word,
+) -> (SignedWord, SignedWord) {
     debug_assert!(a <= SignedWord::MAX as Word && b <= SignedWord::MAX as Word);
     debug_assert!(c <= SignedWord::MAX as Word && d <= SignedWord::MAX as Word);
 
@@ -282,7 +309,7 @@ fn lehmer_ext_step(s: (Sign, &mut [Word]), t: (Sign, &mut [Word]), a: Word, b: W
     let (t_sign, t_words) = t;
     let (a, c) = match s_sign {
         Sign::Positive => (signed_extend_word(a), signed_extend_word(c)),
-        Sign::Negative => (-signed_extend_word(a), -signed_extend_word(c))
+        Sign::Negative => (-signed_extend_word(a), -signed_extend_word(c)),
     };
     let (b, d) = match t_sign {
         Sign::Positive => (signed_extend_word(b), signed_extend_word(d)),
@@ -320,10 +347,10 @@ pub fn gcd_ext_in_place(
             rhs[1..].fill(0);
             *lhs.first_mut().unwrap() = 1;
             *rhs.first_mut().unwrap() = 0;
-            return (Sign::Positive, Sign::Positive)
-        },
+            return (Sign::Positive, Sign::Positive);
+        }
         Ordering::Greater => (lhs, rhs, false),
-        Ordering::Less => (rhs, lhs, true)
+        Ordering::Less => (rhs, lhs, true),
     };
 
     // keep x = s0*lhs - t0*rhs, y = t1*rhs - s1*lhs, gcd(x, y) = gcd(lhs, rhs)
@@ -342,7 +369,6 @@ pub fn gcd_ext_in_place(
         *t1.first_mut().unwrap() = 1;
     }
 
-    
     while y.len() >= 2 {
         // Guess the coefficients based on the highest words
         let (a, b, c, d) = if x.len() < MIN_DWORD_GUESS_LEN {
@@ -364,17 +390,32 @@ pub fn gcd_ext_in_place(
 
             // s0 += q*s1, t1 += q*t0
             s0_end = q_lo.len() + s1_end;
-            let s_carry = mul::add_signed_mul(&mut s0[..s0_end], Sign::Positive, q_lo, &s1[..s1_end], &mut memory);
+            let s_carry = mul::add_signed_mul(
+                &mut s0[..s0_end],
+                Sign::Positive,
+                q_lo,
+                &s1[..s1_end],
+                &mut memory,
+            );
             t0_end = q_lo.len() + t1_end;
-            let t_carry = mul::add_signed_mul(t1, Sign::Positive, q_lo, &mut t0[..s1_end], &mut memory);
+            let t_carry =
+                mul::add_signed_mul(t1, Sign::Positive, q_lo, &mut t0[..s1_end], &mut memory);
             debug_assert!(s_carry | t_carry == 0);
             if q_top > 0 {
-                let s_carry = mul::add_mul_word_in_place(&mut s0[q_lo.len()..q_lo.len() + s0_end], q_top, &s1[..s1_end]);
+                let s_carry = mul::add_mul_word_in_place(
+                    &mut s0[q_lo.len()..q_lo.len() + s0_end],
+                    q_top,
+                    &s1[..s1_end],
+                );
                 if s_carry > 0 {
                     s0[s0_end] = s_carry;
                     s0_end += 1;
                 }
-                let t_carry = mul::add_mul_word_in_place(&mut t1[q_lo.len()..q_lo.len() + t1_end], q_top, &t0[..t0_end]);
+                let t_carry = mul::add_mul_word_in_place(
+                    &mut t1[q_lo.len()..q_lo.len() + t1_end],
+                    q_top,
+                    &t0[..t0_end],
+                );
                 if t_carry > 0 {
                     t1[t1_end] = t_carry;
                     t1_end += 1;
@@ -436,13 +477,13 @@ fn lxgcd(mut x: UBig, mut y: UBig) -> (UBig, IBig, IBig) {
             last_s = s; s = new_s;
             let new_t = last_t - IBig::from(q)*&t;
             last_t = t; t = new_t;
-            
+
         } else {
             let new_x = a*&x - b*&y;
             let new_y = d*&y - c*&x;
             let new_sx = a*&last_s - b*&s; let new_sy = d*s - c*last_s;
             let new_tx = a*&last_t - b*&t; let new_ty = d*t - c*last_t;
-            
+
             if new_x >= new_y {
                 x = new_x; y = new_y;
                 last_s = new_sx; s = new_sy;
@@ -456,7 +497,7 @@ fn lxgcd(mut x: UBig, mut y: UBig) -> (UBig, IBig, IBig) {
     }
 
     let (g, cx, cy) = x.extended_gcd(y);
-    
+
     (g, &cx * last_s + &cy * s, cx * last_t + cy * t)
 }
 

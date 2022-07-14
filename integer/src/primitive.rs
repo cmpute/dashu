@@ -1,7 +1,7 @@
 //! Primitive integral types.
 
 use crate::{
-    arch::word::{DoubleWord, Word, SignedDoubleWord, SignedWord},
+    arch::word::{DoubleWord, SignedDoubleWord, SignedWord, Word},
     error::OutOfBoundsError,
     sign::Sign::{self, *},
 };

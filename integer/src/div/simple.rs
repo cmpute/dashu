@@ -1,7 +1,12 @@
 //! Simple (School book) division algorithm.
 
 use crate::{
-    add, arch::word::Word, cmp, fast_divide::FastDivideNormalized2, mul, primitive::{double_word, highest_dword, split_dword},
+    add,
+    arch::word::Word,
+    cmp,
+    fast_divide::FastDivideNormalized2,
+    mul,
+    primitive::{double_word, highest_dword, split_dword},
 };
 use core::cmp::Ordering;
 
@@ -49,13 +54,13 @@ pub(crate) fn div_rem_in_place(
 }
 
 /// Do one step division on lhs by rhs, get the higest word of the quotient.
-/// 
+///
 /// Rhs must be normalized, lhs.len() > rhs.len() and lhs[lhs.len() - rhs.len()..]
 /// must be smaller than rhs.
-/// 
+///
 /// The remainder will be put in lhs_lo and the quotient word will be returned.
 #[inline]
-pub(crate) fn div_rem_highest_word (
+pub(crate) fn div_rem_highest_word(
     lhs_top: Word,
     lhs_lo: &mut [Word],
     rhs: &[Word],
@@ -66,7 +71,13 @@ pub(crate) fn div_rem_highest_word (
 
     let lhs_lo_len = lhs_lo.len();
     debug_assert!(lhs_lo_len >= n);
-    debug_assert!(lhs_top.cmp(rhs_top).then(cmp::cmp_same_len(&lhs_lo[lhs_lo_len - rhs_lo.len()..], rhs_lo)).is_le());
+    debug_assert!(lhs_top
+        .cmp(rhs_top)
+        .then(cmp::cmp_same_len(
+            &lhs_lo[lhs_lo_len - rhs_lo.len()..],
+            rhs_lo
+        ))
+        .is_le());
 
     // lhs0 = lhs_top
     let (lhs2, lhs1) = split_dword(highest_dword(lhs_lo));
@@ -83,8 +94,7 @@ pub(crate) fn div_rem_highest_word (
     };
 
     // Subtract a multiple of rhs.
-    let mut borrow =
-        mul::sub_mul_word_same_len_in_place(&mut lhs_lo[lhs_lo_len - n..], q, rhs);
+    let mut borrow = mul::sub_mul_word_same_len_in_place(&mut lhs_lo[lhs_lo_len - n..], q, rhs);
 
     if borrow > lhs_top {
         // Unlikely case: q is too large (by 1), add a correction.

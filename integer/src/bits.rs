@@ -17,7 +17,7 @@ use core::{
 };
 
 /// Count the trailing zero bits in the words.
-/// 
+///
 /// # Panic
 /// Panics if the input is zero
 #[inline]
@@ -31,15 +31,16 @@ pub fn trailing_zeros(words: &[Word]) -> usize {
     panic!("call trailing_zeros on 0")
 }
 
-/// Remove the leading zero words in an owning reference. Return
-/// a null slice if the input is zero (but the start pointer still
-/// points to the same address as input).
+/// Locate the top non-zero word in a slice. It returns the position of the
+/// word added by one for convenience, if the input is zero, then 0 is returned.
 #[inline]
-pub fn trim_leading_zeros(mut words: &mut [Word]) -> &mut [Word] {
-    while words.len() > 0 && *words.last().unwrap() == 0 {
-        words = words.split_last_mut().unwrap().1;
+pub fn locate_top_word_plus_one(words: &[Word]) -> usize {
+    for pos in (0..words.len()).rev() {
+        if words[pos] != 0 {
+            return pos + 1;
+        }
     }
-    words
+    0
 }
 
 impl UBig {
@@ -371,8 +372,12 @@ mod repr {
         fn bitand(self, rhs: TypedRepr) -> Repr {
             match (self, rhs) {
                 (Small(dword0), Small(dword1)) => Repr::from_dword(dword0 & dword1),
-                (Small(dword0), Large(buffer1)) => Repr::from_dword(dword0 & buffer1.lowest_dword()),
-                (Large(buffer0), Small(dword1)) => Repr::from_dword(buffer0.lowest_dword() & dword1),
+                (Small(dword0), Large(buffer1)) => {
+                    Repr::from_dword(dword0 & buffer1.lowest_dword())
+                }
+                (Large(buffer0), Small(dword1)) => {
+                    Repr::from_dword(buffer0.lowest_dword() & dword1)
+                }
                 (Large(buffer0), Large(buffer1)) => {
                     if buffer0.len() <= buffer1.len() {
                         bitand_large(buffer0, &buffer1)

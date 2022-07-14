@@ -2,11 +2,13 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
-    div, gcd, memory, mul,
+    div, gcd,
     ibig::IBig,
-    sign::Sign,
+    memory,
     memory::MemoryAllocation,
+    mul,
     repr::{Buffer, TypedRepr::*, TypedReprRef::*},
+    sign::Sign,
     ubig::UBig,
 };
 use core::cmp::Ordering;
@@ -47,8 +49,9 @@ impl UBig {
 mod repr {
     use super::*;
     use crate::{
+        add, cmp,
         primitive::{shrink_dword, PrimitiveSigned},
-        repr::{Repr, TypedRepr, TypedReprRef}, add, cmp,
+        repr::{Repr, TypedRepr, TypedReprRef},
     };
 
     impl<'l, 'r> Gcd<TypedReprRef<'r>> for TypedReprRef<'l> {
@@ -187,12 +190,18 @@ mod repr {
         let clone_mem = memory::array_layout::<Word>(lhs_len + rhs_len);
         let gcd_mem = gcd::memory_requirement_ext_exact(lhs_len, rhs_len);
         let post_mem = memory::add_layout(
-            // memory required for post processing: one multiplication + one division
-            mul::memory_requirement_exact(lhs_len + rhs_len, rhs_len),
-            div::memory_requirement_exact(lhs_len + rhs_len + 1, rhs_len)
+            // temporary space to store residue
+            memory::array_layout::<Word>(lhs_len + rhs_len),
+            memory::max_layout(
+                // memory required for post processing: one multiplication + one division
+                mul::memory_requirement_exact(lhs_len + rhs_len, rhs_len),
+                div::memory_requirement_exact(lhs_len + rhs_len + 1, rhs_len),
+            ),
         );
-        let mut allocation =
-            MemoryAllocation::new(memory::add_layout(clone_mem, memory::max_layout(gcd_mem, post_mem)));
+        let mut allocation = MemoryAllocation::new(memory::add_layout(
+            clone_mem,
+            memory::max_layout(gcd_mem, post_mem),
+        ));
         let mut memory = allocation.memory();
 
         // copy oprands for post processing
@@ -200,8 +209,7 @@ mod repr {
         let (rhs_clone, mut memory) = memory.allocate_slice_copy(&rhs);
 
         // actual computation
-        let (g_len, b_len, b_sign) =
-            gcd::gcd_ext_in_place(&mut lhs, &mut rhs, &mut memory);
+        let (g_len, b_len, b_sign) = gcd::gcd_ext_in_place(&mut lhs, &mut rhs, &mut memory);
 
         // the result from the internal function is g = gcd(lhs, rhs), b s.t g = b*rhs mod lhs
         // post processing: a = (g - rhs * b) / lhs
@@ -213,16 +221,22 @@ mod repr {
         // residue = g - rhs * b
         let brhs_len = rhs_clone.len() + b.len();
         let (residue, mut memory) = memory.allocate_slice_fill(brhs_len + 1, 0);
-        let carry = mul::add_signed_mul(&mut residue[..brhs_len], Sign::Positive, rhs_clone, &b, &mut memory);
+        let carry = mul::add_signed_mul(
+            &mut residue[..brhs_len],
+            Sign::Positive,
+            rhs_clone,
+            &b,
+            &mut memory,
+        );
         debug_assert!(carry == 0);
         match b_sign {
             Sign::Negative => {
                 *residue.last_mut().unwrap() = add::add_in_place(residue, &g) as Word;
-            },
+            }
             Sign::Positive => {
                 let overflow = add::sub_in_place(residue, &g);
                 debug_assert!(!overflow);
-            },
+            }
         };
 
         // a = residue / lhs
@@ -237,7 +251,7 @@ mod repr {
         let a = Repr::from_buffer(a).with_sign(-b_sign);
         let b = Repr::from_buffer(b).with_sign(b_sign);
         if swapped {
-            (g, b, a)   
+            (g, b, a)
         } else {
             (g, a, b)
         }

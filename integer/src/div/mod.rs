@@ -5,7 +5,7 @@ use crate::{
     fast_divide::{FastDivideNormalized, FastDivideNormalized2},
     math::shl_dword,
     memory::{self, Memory},
-    primitive::{double_word, extend_word, lowest_dword, highest_dword, split_dword, WORD_BITS},
+    primitive::{double_word, extend_word, highest_dword, lowest_dword, split_dword, WORD_BITS},
     shift,
 };
 use alloc::alloc::Layout;
@@ -267,7 +267,7 @@ pub(crate) fn div_rem_in_place(
 /// bottom words of lhs by the remainder.
 ///
 /// `lhs = [lhs % rhs, lhs / rhs]`
-/// 
+///
 /// There is no normalization requirements on both oprands.
 ///
 /// Returns carry in the quotient and the number of shifted bits caused by normalization.
