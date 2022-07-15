@@ -3,9 +3,9 @@
 use crate::{
     add,
     arch::word::{DoubleWord, Word},
+    buffer::Buffer,
     helper_macros,
     ibig::IBig,
-    buffer::Buffer,
     sign::Sign::*,
     ubig::UBig,
 };

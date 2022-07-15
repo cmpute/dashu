@@ -474,7 +474,7 @@ impl From<&[Word]> for Buffer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_default_capacity() {
         assert_eq!(Buffer::default_capacity(2), 4);
@@ -598,7 +598,7 @@ mod tests {
         }
         assert_eq!(buffer.len(), 10);
     }
-    
+
     #[test]
     fn test_into_boxed_slice() {
         // empty buffer

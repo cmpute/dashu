@@ -8,8 +8,8 @@ use crate::{
 };
 
 use super::{
-    modulo::{Modulo, ModuloRepr, ModuloSingleRaw, ModuloDoubleRaw, ModuloLargeRaw},
-    modulo_ring::{ModuloRingSingle, ModuloRingDouble, ModuloRingLarge},
+    modulo::{Modulo, ModuloDoubleRaw, ModuloLargeRaw, ModuloRepr, ModuloSingleRaw},
+    modulo_ring::{ModuloRingDouble, ModuloRingLarge, ModuloRingSingle},
 };
 
 impl<'a> Modulo<'a> {

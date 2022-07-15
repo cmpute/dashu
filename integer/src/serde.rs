@@ -1,8 +1,9 @@
 use crate::{
     arch::word::Word,
+    buffer::Buffer,
     ibig::IBig,
     primitive::{split_dword, WORD_BITS_USIZE},
-    repr::{Buffer, Repr, TypedReprRef},
+    repr::{Repr, TypedReprRef},
     sign::Sign,
     ubig::UBig,
 };

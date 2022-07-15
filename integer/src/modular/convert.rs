@@ -16,8 +16,10 @@ use crate::{
 use dashu_base::UnsignedAbs;
 
 use super::{
-    modulo::{ModuloDoubleRaw, ModuloLargeRaw, Modulo, ModuloRepr, ModuloSingleRaw},
-    modulo_ring::{ModuloRingDouble, ModuloRing, ModuloRingLarge, ModuloRingRepr, ModuloRingSingle},
+    modulo::{Modulo, ModuloDoubleRaw, ModuloLargeRaw, ModuloRepr, ModuloSingleRaw},
+    modulo_ring::{
+        ModuloRing, ModuloRingDouble, ModuloRingLarge, ModuloRingRepr, ModuloRingSingle,
+    },
 };
 
 impl ModuloRing {

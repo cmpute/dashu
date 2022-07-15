@@ -1,17 +1,18 @@
 use dashu_base::ExtendedGcd;
 
 use crate::{
-    gcd,
+    bits::locate_top_word_plus_one,
     buffer::Buffer,
+    gcd,
     memory::MemoryAllocation,
-    primitive::{PrimitiveSigned, lowest_dword},
-    shift::{shr_in_place, shl_in_place},
-    sign::Sign, bits::locate_top_word_plus_one,
+    primitive::{lowest_dword, PrimitiveSigned},
+    shift::{shl_in_place, shr_in_place},
+    sign::Sign,
 };
 
 use super::{
-    modulo::{Modulo, ModuloRepr, ModuloSingleRaw, ModuloDoubleRaw, ModuloLargeRaw},
-    modulo_ring::{ModuloRingSingle, ModuloRingDouble, ModuloRingLarge},
+    modulo::{Modulo, ModuloDoubleRaw, ModuloLargeRaw, ModuloRepr, ModuloSingleRaw},
+    modulo_ring::{ModuloRingDouble, ModuloRingLarge, ModuloRingSingle},
 };
 
 impl<'a> Modulo<'a> {
@@ -35,11 +36,10 @@ impl<'a> Modulo<'a> {
         match self.into_repr() {
             ModuloRepr::Single(raw, ring) => ring.inv(raw).map(|v| Modulo::from_single(v, ring)),
             ModuloRepr::Double(raw, ring) => ring.inv(raw).map(|v| Modulo::from_double(v, ring)),
-            ModuloRepr::Large(raw, ring) => ring.inv(raw).map(|v| Modulo::from_large(v, ring))
+            ModuloRepr::Large(raw, ring) => ring.inv(raw).map(|v| Modulo::from_large(v, ring)),
         }
     }
 }
-
 
 macro_rules! impl_mod_inv_for_primitive {
     ($ring:ty, $raw:ident) => {
@@ -63,7 +63,7 @@ macro_rules! impl_mod_inv_for_primitive {
                 }
             }
         }
-    }
+    };
 }
 impl_mod_inv_for_primitive!(ModuloRingSingle, ModuloSingleRaw);
 impl_mod_inv_for_primitive!(ModuloRingDouble, ModuloDoubleRaw);
@@ -88,16 +88,19 @@ impl ModuloRingLarge {
             1 => {
                 let (g, _, b_sign) = gcd::gcd_ext_word(&mut modulus, *raw.0.first().unwrap());
                 (g == 1, b_sign)
-            },
+            }
             2 => {
                 let (g, _, b_sign) = gcd::gcd_ext_dword(&mut modulus, lowest_dword(&raw.0));
                 (g == 1, b_sign)
-            },
+            }
             _ => {
-                let mut allocation = MemoryAllocation::new(
-                    gcd::memory_requirement_ext_exact(modulus.len(), raw_len));
+                let mut allocation = MemoryAllocation::new(gcd::memory_requirement_ext_exact(
+                    modulus.len(),
+                    raw_len,
+                ));
                 let mut memory = allocation.memory();
-                let (g_len, b_len, b_sign) = gcd::gcd_ext_in_place(&mut modulus, &mut raw.0[..raw_len], &mut memory);
+                let (g_len, b_len, b_sign) =
+                    gcd::gcd_ext_in_place(&mut modulus, &mut raw.0[..raw_len], &mut memory);
                 modulus[b_len..].fill(0);
 
                 // check if inverse exists

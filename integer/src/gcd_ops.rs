@@ -97,7 +97,7 @@ mod repr {
     fn gcd_large(mut lhs: Buffer, mut rhs: Buffer) -> Repr {
         // make sure lhs > rhs
         match cmp::cmp_in_place(&lhs, &rhs) {
-            Ordering::Greater => {},
+            Ordering::Greater => {}
             Ordering::Equal => return Repr::from_buffer(lhs),
             Ordering::Less => core::mem::swap(&mut lhs, &mut rhs),
         };

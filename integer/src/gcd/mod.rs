@@ -1,10 +1,12 @@
 //! Greatest Common Divisor
 use crate::{
-    arch::word::{Word, SignedWord, DoubleWord, SignedDoubleWord},
-    div, mul, add,
+    add,
+    arch::word::{DoubleWord, SignedDoubleWord, SignedWord, Word},
+    div,
     memory::Memory,
+    mul,
+    primitive::{extend_word, shrink_dword, PrimitiveSigned},
     sign::Sign,
-    primitive::{PrimitiveSigned, shrink_dword, extend_word},
 };
 use alloc::alloc::Layout;
 use dashu_base::ExtendedGcd;
@@ -14,7 +16,7 @@ mod lehmer;
 /// Greatest common divisor for two multi-digit integers
 ///
 /// This function assumes lhs > rhs.
-/// 
+///
 /// The result is stored in the low bits of lhs or rhs. The first returned value
 /// is the word length of result number, and the second returned value determine
 /// if the result is in lhs (false) or rhs (true)
@@ -58,13 +60,10 @@ pub fn memory_requirement_ext_exact(lhs_len: usize, rhs_len: usize) -> Layout {
 }
 
 /// Extended greatest common divisor between a large number and small number.
-/// 
+///
 /// If `g = gcd(lhs, rhs)`, `lhs * a + rhs * b = g`, b (unsigned) is
 /// stored in **lhs**, and the returned tuple is (g, a, sign of b).
-pub fn gcd_ext_word(
-    lhs: &mut [Word],
-    rhs: Word
-) -> (Word, SignedWord, Sign) {
+pub fn gcd_ext_word(lhs: &mut [Word], rhs: Word) -> (Word, SignedWord, Sign) {
     debug_assert!(rhs != 0);
     let rem = div::div_by_word_in_place(lhs, rhs);
     if rem == 0 {
@@ -83,10 +82,7 @@ pub fn gcd_ext_word(
     }
 }
 
-pub fn gcd_ext_dword(
-    lhs: &mut [Word],
-    rhs: DoubleWord
-) -> (DoubleWord, SignedDoubleWord, Sign) {
+pub fn gcd_ext_dword(lhs: &mut [Word], rhs: DoubleWord) -> (DoubleWord, SignedDoubleWord, Sign) {
     debug_assert!(
         rhs > Word::MAX as DoubleWord,
         "call gcd_ext_word when rhs is small"

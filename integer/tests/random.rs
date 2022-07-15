@@ -72,7 +72,7 @@ fn test_random_arithmetic() {
                 UBig::from_str_radix(&a.in_radix(radix).to_string(), radix).unwrap(),
                 a
             );
-            
+
             // gcd is much slower than primitive operations, test with lower frequency
             if i % 32 == 0 {
                 let (g, ca, cb) = a.gcd_ext(&b);

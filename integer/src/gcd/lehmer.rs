@@ -213,7 +213,8 @@ pub(crate) fn lehmer_step(x: &mut [Word], y: &mut [Word], a: Word, b: Word, c: W
     if x_carry != 0 {
         let x_top = x.last_mut().unwrap();
         debug_assert_eq!(y_carry as SignedDoubleWord, c * signed_extend_word(*x_top));
-        let (x_new, cx) = split_signed_dword(a * signed_extend_word(*x_top) + x_carry as SignedDoubleWord);
+        let (x_new, cx) =
+            split_signed_dword(a * signed_extend_word(*x_top) + x_carry as SignedDoubleWord);
         debug_assert!(cx == 0);
         *x_top = x_new;
     }
@@ -270,7 +271,7 @@ pub(crate) fn gcd_in_place(
         }
     }
 
-    if y.len() == 0 {
+    if y.is_empty() {
         // the gcd result is in x
         (x.len(), swapped)
     } else if y.get(1).unwrap_or(&0) == &0 {
@@ -447,7 +448,7 @@ pub fn gcd_ext_in_place(
 
     // If y is zero, then the gcd result is in x now.
     // Note that y.len() == 0 is equivalent to y == 0, which is guaranteed by trim_leading_zeros.
-    if y.len() == 0 {
+    if y.is_empty() {
         unsafe {
             if !swapped {
                 // if not swapped, then x is originated from lhs, copy it to rhs
@@ -507,5 +508,5 @@ pub fn gcd_ext_in_place(
     } else {
         Sign::Negative
     };
-    (1, locate_top_word_plus_one(&lhs), sign)
+    (1, locate_top_word_plus_one(lhs), sign)
 }

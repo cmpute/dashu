@@ -1,15 +1,13 @@
 //! Modular addition and subtraction.
 
-use crate::{
-    add, cmp
+use super::{
+    modulo::{Modulo, ModuloDoubleRaw, ModuloLargeRaw, ModuloRepr, ModuloSingleRaw},
+    modulo_ring::{ModuloRingDouble, ModuloRingLarge, ModuloRingSingle},
 };
+use crate::{add, cmp};
 use core::{
     cmp::Ordering,
     ops::{Add, AddAssign, Neg, Sub, SubAssign},
-};
-use super::{
-    modulo::{Modulo, ModuloRepr, ModuloSingleRaw, ModuloDoubleRaw, ModuloLargeRaw},
-    modulo_ring::{ModuloRingSingle, ModuloRingDouble, ModuloRingLarge},
 };
 
 impl<'a> Neg for Modulo<'a> {

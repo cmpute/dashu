@@ -1,12 +1,12 @@
 //! Element of modular arithmetic.
 
 use super::modulo_ring::ModuloRingDouble;
+use super::modulo_ring::{ModuloRingLarge, ModuloRingSingle};
 use crate::{
     arch::word::{DoubleWord, Word},
     buffer::Buffer,
 };
 use alloc::boxed::Box;
-use super::modulo_ring::{ModuloRingLarge, ModuloRingSingle};
 
 /// Modular arithmetic.
 ///
