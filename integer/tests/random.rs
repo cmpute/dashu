@@ -54,7 +54,7 @@ fn test_random_arithmetic() {
             Some(x) => x,
         };
         let num_cases = 10u32.pow(7 - log_num_bits);
-        for _ in 0..num_cases {
+        for i in 0..num_cases {
             let len_a = (&mut rng).gen_range(10..num_bits);
             let len_b = (&mut rng).gen_range(10..num_bits);
             let a = (&mut rng).gen_range(ubig!(100)..ubig!(1) << len_a);
@@ -71,7 +71,16 @@ fn test_random_arithmetic() {
             assert_eq!(
                 UBig::from_str_radix(&a.in_radix(radix).to_string(), radix).unwrap(),
                 a
-            )
+            );
+            
+            // gcd is much slower than primitive operations, test with lower frequency
+            if i % 32 == 0 {
+                let (g, ca, cb) = a.gcd_ext(&b);
+                assert_eq!(g, a.gcd(&b));
+                assert_eq!(&a % &g, 0);
+                assert_eq!(&b % &g, 0);
+                assert_eq!(g, a * ca + b * cb);
+            }
         }
     }
 }

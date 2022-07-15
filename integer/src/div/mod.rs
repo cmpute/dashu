@@ -203,7 +203,7 @@ pub(crate) fn fast_rem_by_normalized_dword(
     words: &[Word],
     fast_div_rhs: FastDivideNormalized2,
 ) -> DoubleWord {
-    debug_assert!(words.len() >= 3);
+    debug_assert!(words.len() >= 2);
 
     // first calculate the highest remainder
     let (top_hi, words_lo) = words.split_last().unwrap();

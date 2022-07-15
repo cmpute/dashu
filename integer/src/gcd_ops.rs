@@ -94,6 +94,13 @@ mod repr {
     /// Perform gcd on two large numbers.
     #[inline]
     fn gcd_large(mut lhs: Buffer, mut rhs: Buffer) -> Repr {
+        // make sure lhs > rhs
+        match cmp::cmp_in_place(&lhs, &rhs) {
+            Ordering::Greater => {},
+            Ordering::Equal => return Repr::from_buffer(lhs),
+            Ordering::Less => core::mem::swap(&mut lhs, &mut rhs),
+        };
+
         let mut allocation =
             MemoryAllocation::new(gcd::memory_requirement_exact(lhs.len(), rhs.len()));
         let mut memory = allocation.memory();

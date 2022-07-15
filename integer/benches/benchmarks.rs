@@ -105,7 +105,7 @@ fn bench_gcd(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group("extended_gcd");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
-    for log_bits in 1..=5 {
+    for log_bits in 3..=5 {
         let bits = 10usize.pow(log_bits);
         let a = random_ubig(bits, &mut rng);
         let b = random_ubig(bits, &mut rng);

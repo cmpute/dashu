@@ -1,16 +1,17 @@
 //! Greatest Common Divisor
 use crate::{
     arch::word::Word,
-    memory::{self, Memory},
+    memory::Memory,
     sign::Sign,
 };
 use alloc::alloc::Layout;
 
 mod lehmer;
-mod naive;
 
 /// Greatest common divisor for two multi-digit integers
 ///
+/// This function assumes lhs > rhs.
+/// 
 /// The result is stored in the low bits of lhs or rhs. The first returned value
 /// is the word length of result number, and the second returned value determine
 /// if the result is in lhs (false) or rhs (true)
@@ -20,7 +21,7 @@ pub fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word], memory: &mut Memory) -> 
         "leading zeros are not allowed!"
     );
 
-    // TODO: pre-remove the trailing zero words, and give the number of zeros as input
+    // XXX: pre-remove the trailing zero words, and give the number of zeros as input
     // to low-level algorithms.
     lehmer::gcd_in_place(lhs, rhs, memory)
 }
@@ -45,10 +46,10 @@ pub fn gcd_ext_in_place(
     rhs: &mut [Word],
     memory: &mut Memory,
 ) -> (usize, usize, Sign) {
-    naive::gcd_ext_in_place(lhs, rhs, memory)
+    lehmer::gcd_ext_in_place(lhs, rhs, memory)
 }
 
 /// Memory requirement for extended GCD.
 pub fn memory_requirement_ext_exact(lhs_len: usize, rhs_len: usize) -> Layout {
-    naive::memory_requirement_ext_up_to(lhs_len, rhs_len)
+    lehmer::memory_requirement_ext_up_to(lhs_len, rhs_len)
 }
