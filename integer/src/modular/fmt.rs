@@ -1,6 +1,6 @@
 //! Formatting modular rings and modular numbers.
 
-use crate::modular::{
+use super::{
     modulo::{Modulo, ModuloRepr},
     modulo_ring::{
         ModuloRing, ModuloRingDouble, ModuloRingLarge, ModuloRingRepr, ModuloRingSingle,

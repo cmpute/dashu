@@ -1,10 +1,13 @@
 //! Greatest Common Divisor
 use crate::{
-    arch::word::Word,
+    arch::word::{Word, SignedWord, DoubleWord, SignedDoubleWord},
+    div, mul, add,
     memory::Memory,
     sign::Sign,
+    primitive::{PrimitiveSigned, shrink_dword, extend_word},
 };
 use alloc::alloc::Layout;
+use dashu_base::ExtendedGcd;
 
 mod lehmer;
 
@@ -52,4 +55,59 @@ pub fn gcd_ext_in_place(
 /// Memory requirement for extended GCD.
 pub fn memory_requirement_ext_exact(lhs_len: usize, rhs_len: usize) -> Layout {
     lehmer::memory_requirement_ext_up_to(lhs_len, rhs_len)
+}
+
+/// Extended greatest common divisor between a large number and small number.
+/// 
+/// If `g = gcd(lhs, rhs)`, `lhs * a + rhs * b = g`, b (unsigned) is
+/// stored in **lhs**, and the returned tuple is (g, a, sign of b).
+pub fn gcd_ext_word(
+    lhs: &mut [Word],
+    rhs: Word
+) -> (Word, SignedWord, Sign) {
+    debug_assert!(rhs != 0);
+    let rem = div::div_by_word_in_place(lhs, rhs);
+    if rem == 0 {
+        *lhs.first_mut().unwrap() = 1;
+        lhs[1..].fill(0);
+        (rhs, 0, Sign::Positive)
+    } else {
+        // a = t, b = s - t * lhs
+        let (r, s, t) = rhs.gcd_ext(rem);
+        let (s_sign, s_mag) = s.to_sign_magnitude();
+        let t_mag = t.unsigned_abs();
+        let carry = mul::mul_word_in_place(lhs, t_mag);
+        let carry2 = add::add_word_in_place(lhs, s_mag);
+        debug_assert!(carry == 0 && !carry2);
+        (r, t, s_sign)
+    }
+}
+
+pub fn gcd_ext_dword(
+    lhs: &mut [Word],
+    rhs: DoubleWord
+) -> (DoubleWord, SignedDoubleWord, Sign) {
+    debug_assert!(
+        rhs > Word::MAX as DoubleWord,
+        "call gcd_ext_word when rhs is small"
+    );
+    let rem = div::div_by_dword_in_place(lhs, rhs);
+    if rem == 0 {
+        *lhs.first_mut().unwrap() = 1;
+        lhs[1..].fill(0);
+        (rhs, 0, Sign::Positive)
+    } else {
+        // a = t, b = s - t * lhs
+        let (r, s, t) = rhs.gcd_ext(rem);
+        let (s_sign, s_mag) = s.to_sign_magnitude();
+        let t_mag = t.unsigned_abs();
+        let carry = if let Some(st) = shrink_dword(t_mag) {
+            extend_word(mul::mul_word_in_place(lhs, st))
+        } else {
+            mul::mul_dword_in_place(lhs, t_mag)
+        };
+        let carry2 = add::add_dword_in_place(lhs, s_mag);
+        debug_assert!(carry == 0 && !carry2);
+        (r, t, s_sign)
+    }
 }

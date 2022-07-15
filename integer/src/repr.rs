@@ -46,6 +46,7 @@ pub struct Repr {
     data: ReprData,
 }
 
+// TODO: move buffer to a separate file
 /// Buffer of words allocated on heap. It's like a `Vec<Word>` with limited functionalities.
 ///
 /// This struct is ensured to be consistent with [Repr] in struct layout (that's why `repr(C)` is necessary),

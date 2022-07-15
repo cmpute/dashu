@@ -1,6 +1,6 @@
 //! Comparisons.
 
-use crate::modular::{
+use super::{
     modulo::{Modulo, ModuloRepr},
     modulo_ring::{ModuloRing, ModuloRingLarge, ModuloRingSingle},
 };

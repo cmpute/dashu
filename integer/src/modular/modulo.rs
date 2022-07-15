@@ -3,10 +3,10 @@
 use super::modulo_ring::ModuloRingDouble;
 use crate::{
     arch::word::{DoubleWord, Word},
-    modular::modulo_ring::{ModuloRingLarge, ModuloRingSingle},
     repr::Buffer,
 };
 use alloc::boxed::Box;
+use super::modulo_ring::{ModuloRingLarge, ModuloRingSingle};
 
 /// Modular arithmetic.
 ///

@@ -6,10 +6,6 @@ use crate::{
     ibig::IBig,
     math::{self, shl_dword},
     memory::MemoryAllocation,
-    modular::{
-        modulo::{Modulo, ModuloRepr, ModuloSingleRaw},
-        modulo_ring::{ModuloRing, ModuloRingLarge, ModuloRingRepr, ModuloRingSingle},
-    },
     primitive::{double_word, extend_word, shrink_dword},
     repr::{Buffer, Repr, TypedRepr::*, TypedReprRef::*},
     shift,
@@ -19,8 +15,8 @@ use crate::{
 use dashu_base::UnsignedAbs;
 
 use super::{
-    modulo::{ModuloDoubleRaw, ModuloLargeRaw},
-    modulo_ring::ModuloRingDouble,
+    modulo::{ModuloDoubleRaw, ModuloLargeRaw, Modulo, ModuloRepr, ModuloSingleRaw},
+    modulo_ring::{ModuloRingDouble, ModuloRing, ModuloRingLarge, ModuloRingRepr, ModuloRingSingle},
 };
 
 impl ModuloRing {
@@ -97,9 +93,7 @@ impl ModuloRingDouble {
 
 impl ModuloRingLarge {
     pub fn modulus(&self) -> UBig {
-        let normalized_modulus = self.normalized_modulus();
-        let mut buffer = Buffer::allocate(normalized_modulus.len());
-        buffer.push_slice(normalized_modulus);
+        let mut buffer: Buffer = self.normalized_modulus().into();
         let low_bits = shift::shr_in_place(&mut buffer, self.shift());
         assert!(low_bits == 0);
         UBig(Repr::from_buffer(buffer))
@@ -160,7 +154,7 @@ impl ModuloSingleRaw {
 
 impl ModuloDoubleRaw {
     #[inline]
-    const fn from_dword(dword: DoubleWord, ring: &ModuloRingDouble) -> Self {
+    pub const fn from_dword(dword: DoubleWord, ring: &ModuloRingDouble) -> Self {
         let rem = if ring.shift() == 0 {
             ring.fast_div().div_rem_dword(dword).1
         } else {
@@ -240,8 +234,7 @@ impl ModuloLargeRaw {
     }
 
     pub fn residue(&self, ring: &ModuloRingLarge) -> Buffer {
-        let mut buffer = Buffer::allocate(self.0.len());
-        buffer.push_slice(&self.0);
+        let mut buffer: Buffer = self.0.as_ref().into();
         let low_bits = shift::shr_in_place(&mut buffer, ring.shift());
         debug_assert!(low_bits == 0);
         buffer

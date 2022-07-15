@@ -1,20 +1,15 @@
 //! Modular addition and subtraction.
 
 use crate::{
-    add, cmp,
-    modular::{
-        modulo::{Modulo, ModuloRepr, ModuloSingleRaw},
-        modulo_ring::ModuloRingSingle,
-    },
+    add, cmp
 };
 use core::{
     cmp::Ordering,
     ops::{Add, AddAssign, Neg, Sub, SubAssign},
 };
-
 use super::{
-    modulo::{ModuloDoubleRaw, ModuloLargeRaw},
-    modulo_ring::{ModuloRingDouble, ModuloRingLarge},
+    modulo::{Modulo, ModuloRepr, ModuloSingleRaw, ModuloDoubleRaw, ModuloLargeRaw},
+    modulo_ring::{ModuloRingSingle, ModuloRingDouble, ModuloRingLarge},
 };
 
 impl<'a> Neg for Modulo<'a> {
@@ -189,7 +184,7 @@ impl<'a> SubAssign<&Modulo<'a>> for Modulo<'a> {
 
 impl ModuloRingSingle {
     #[inline]
-    const fn negate(&self, raw: ModuloSingleRaw) -> ModuloSingleRaw {
+    pub const fn negate(&self, raw: ModuloSingleRaw) -> ModuloSingleRaw {
         debug_assert!(self.is_valid(raw));
         let val = match raw.0 {
             0 => 0,
@@ -227,7 +222,7 @@ impl ModuloRingSingle {
 
 impl ModuloRingDouble {
     #[inline]
-    const fn negate(&self, raw: ModuloDoubleRaw) -> ModuloDoubleRaw {
+    pub const fn negate(&self, raw: ModuloDoubleRaw) -> ModuloDoubleRaw {
         debug_assert!(self.is_valid(raw));
         let val = match raw.0 {
             0 => 0,
@@ -264,7 +259,7 @@ impl ModuloRingDouble {
 }
 
 impl ModuloRingLarge {
-    fn negate_in_place(&self, raw: &mut ModuloLargeRaw) {
+    pub fn negate_in_place(&self, raw: &mut ModuloLargeRaw) {
         debug_assert!(self.is_valid(&*raw));
         if !raw.0.iter().all(|w| *w == 0) {
             let overflow = add::sub_same_len_in_place_swap(self.normalized_modulus(), &mut raw.0);

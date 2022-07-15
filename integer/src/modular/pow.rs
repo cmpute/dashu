@@ -2,18 +2,14 @@ use crate::{
     arch::word::Word,
     math,
     memory::{self, MemoryAllocation},
-    modular::{
-        modulo::{Modulo, ModuloLargeRaw, ModuloRepr, ModuloSingleRaw},
-        modulo_ring::ModuloRingSingle,
-    },
     primitive::{double_word, split_dword, PrimitiveUnsigned, WORD_BITS, WORD_BITS_USIZE},
     repr::TypedReprRef::*,
     ubig::UBig,
 };
 
 use super::{
-    modulo::ModuloDoubleRaw,
-    modulo_ring::{ModuloRingDouble, ModuloRingLarge},
+    modulo::{Modulo, ModuloRepr, ModuloSingleRaw, ModuloDoubleRaw, ModuloLargeRaw},
+    modulo_ring::{ModuloRingSingle, ModuloRingDouble, ModuloRingLarge},
 };
 
 impl<'a> Modulo<'a> {
@@ -32,6 +28,7 @@ impl<'a> Modulo<'a> {
     /// ```
     #[inline]
     pub fn pow(&self, exp: &UBig) -> Modulo<'a> {
+        // TODO: support signed exponent through inv (v0.2)
         match self.repr() {
             ModuloRepr::Single(raw, ring) => Modulo::from_single(ring.pow(*raw, exp), ring),
             ModuloRepr::Double(raw, ring) => Modulo::from_double(ring.pow(*raw, exp), ring),
@@ -40,7 +37,7 @@ impl<'a> Modulo<'a> {
     }
 }
 
-macro_rules! impl_pow_for_primitive {
+macro_rules! impl_mod_pow_for_primitive {
     ($ring:ty, $raw:ty) => {
         impl $ring {
             #[inline]
@@ -99,8 +96,8 @@ macro_rules! impl_pow_for_primitive {
         }
     };
 }
-impl_pow_for_primitive!(ModuloRingSingle, ModuloSingleRaw);
-impl_pow_for_primitive!(ModuloRingDouble, ModuloDoubleRaw);
+impl_mod_pow_for_primitive!(ModuloRingSingle, ModuloSingleRaw);
+impl_mod_pow_for_primitive!(ModuloRingDouble, ModuloDoubleRaw);
 
 impl ModuloRingLarge {
     pub fn pow(&self, raw: &ModuloLargeRaw, exp: &UBig) -> ModuloLargeRaw {

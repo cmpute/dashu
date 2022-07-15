@@ -25,5 +25,6 @@ mod eq;
 mod fmt;
 pub(crate) mod modulo;
 pub(crate) mod modulo_ring;
+mod inv;
 mod mul;
 mod pow;

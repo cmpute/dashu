@@ -148,37 +148,25 @@ mod repr {
             (Repr::from_buffer(buffer), Repr::one(), Repr::zero())
         } else if let Some(word) = shrink_dword(rhs) {
             // reduce the large number by single word rhs
-            let rem = div::div_by_word_in_place(&mut buffer, word);
-            if rem == 0 {
-                (Repr::from_word(word), Repr::zero(), Repr::one())
-            } else {
-                let (r, s, t) = word.gcd_ext(rem);
-                let (t_sign, t_mag) = t.to_sign_magnitude();
-                let new_t = s - t * IBig(Repr::from_buffer(buffer));
-                (
-                    Repr::from_word(r),
-                    Repr::from_word(t_mag).with_sign(t_sign),
-                    new_t.0,
-                )
-            }
+            let (g, a, b_sign) = gcd::gcd_ext_word(&mut buffer, word);
+            let (a_sign, a_mag) = a.to_sign_magnitude();
+            (
+                Repr::from_word(g),
+                Repr::from_word(a_mag).with_sign(a_sign),
+                Repr::from_buffer(buffer).with_sign(b_sign),
+            )
         } else {
-            // reduce the large number by double word rhs
-            let rem = div::div_by_dword_in_place(&mut buffer, rhs);
-            if rem == 0 {
-                (Repr::from_dword(rhs), Repr::zero(), Repr::one())
-            } else {
-                let (r, s, t) = rhs.gcd_ext(rem);
-                let (t_sign, t_mag) = t.to_sign_magnitude();
-                let new_t = s - t * IBig(Repr::from_buffer(buffer));
-                (
-                    Repr::from_dword(r),
-                    Repr::from_dword(t_mag).with_sign(t_sign),
-                    new_t.0,
-                )
-            }
+            let (g, a, b_sign) = gcd::gcd_ext_dword(&mut buffer, rhs);
+            let (a_sign, a_mag) = a.to_sign_magnitude();
+            (
+                Repr::from_dword(g),
+                Repr::from_dword(a_mag).with_sign(a_sign),
+                Repr::from_buffer(buffer).with_sign(b_sign),
+            )
         }
     }
 
+    // TODO: change this function to take reference input, because we have to copy them anyway
     /// Perform extended gcd on two large numbers.
     #[inline]
     fn gcd_ext_large(mut lhs: Buffer, mut rhs: Buffer) -> (Repr, Repr, Repr) {
