@@ -2,7 +2,7 @@ use dashu_base::ExtendedGcd;
 
 use crate::{
     gcd,
-    repr::Buffer,
+    buffer::Buffer,
     memory::MemoryAllocation,
     primitive::{PrimitiveSigned, lowest_dword},
     shift::{shr_in_place, shl_in_place},

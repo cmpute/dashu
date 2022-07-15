@@ -2,11 +2,12 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
+    buffer::Buffer,
     div, helper_macros,
     ibig::IBig,
     memory::MemoryAllocation,
     ops::{Abs, DivEuclid, DivRem, DivRemEuclid, RemEuclid},
-    repr::{Buffer, TypedRepr::*, TypedReprRef::*},
+    repr::{TypedRepr::*, TypedReprRef::*},
     shift,
     sign::Sign::*,
     ubig::UBig,

@@ -75,6 +75,7 @@ mod add;
 mod add_ops;
 mod arch;
 mod bits;
+mod buffer;
 mod cmp;
 mod convert;
 mod div;

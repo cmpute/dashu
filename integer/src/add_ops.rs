@@ -5,7 +5,7 @@ use crate::{
     arch::word::{DoubleWord, Word},
     helper_macros,
     ibig::IBig,
-    repr::Buffer,
+    buffer::Buffer,
     sign::Sign::*,
     ubig::UBig,
 };

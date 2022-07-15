@@ -2,12 +2,13 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
+    buffer::Buffer,
     helper_macros,
     ibig::IBig,
     math,
     ops::PowerOfTwo,
     primitive::{lowest_dword, split_dword, DWORD_BITS_USIZE, WORD_BITS_USIZE},
-    repr::{Buffer, Repr, TypedRepr::*, TypedReprRef::*},
+    repr::{Repr, TypedRepr::*, TypedReprRef::*},
     sign::Sign::*,
     ubig::UBig,
 };

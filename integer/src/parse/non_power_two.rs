@@ -2,10 +2,11 @@
 
 use crate::{
     arch::word::Word,
+    buffer::Buffer,
     error::ParseError,
     mul,
     radix::{self, Digit},
-    repr::{Buffer, Repr},
+    repr::Repr,
     ubig::UBig,
 };
 use alloc::vec;

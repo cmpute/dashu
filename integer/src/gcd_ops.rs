@@ -2,12 +2,13 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
+    buffer::Buffer,
     div, gcd,
     ibig::IBig,
     memory,
     memory::MemoryAllocation,
     mul,
-    repr::{Buffer, TypedRepr::*, TypedReprRef::*},
+    repr::{TypedRepr::*, TypedReprRef::*},
     sign::Sign,
     ubig::UBig,
 };
@@ -166,7 +167,6 @@ mod repr {
         }
     }
 
-    // TODO: change this function to take reference input, because we have to copy them anyway
     /// Perform extended gcd on two large numbers.
     #[inline]
     fn gcd_ext_large(mut lhs: Buffer, mut rhs: Buffer) -> (Repr, Repr, Repr) {

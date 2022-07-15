@@ -2,10 +2,11 @@
 
 use crate::{
     arch::word::Word,
+    buffer::Buffer,
     error::ParseError,
     primitive::{WORD_BITS, WORD_BITS_USIZE},
     radix::{self, Digit},
-    repr::{Buffer, Repr},
+    repr::Repr,
     ubig::UBig,
 };
 

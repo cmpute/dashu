@@ -1,13 +1,14 @@
 //! Definitions of [UBig].
 //!
-//! Conversion from internal representations including [Buffer][crate::repr::Buffer], [TypedRepr], [TypedReprRef]
+//! Conversion from internal representations including [Buffer][crate::buffer::Buffer], [TypedRepr], [TypedReprRef]
 //! to [UBig] is not implemented, the designed way to construct UBig from them is first convert them
 //! into [Repr], and then directly construct from the [Repr]. This restriction is set to make
 //! the source type explicit.
 
 use crate::{
+    buffer::Buffer,
     primitive::WORD_BITS_USIZE,
-    repr::{Buffer, Repr, TypedRepr, TypedReprRef},
+    repr::{Repr, TypedRepr, TypedReprRef},
 };
 
 /// Unsigned big integer.
@@ -99,7 +100,7 @@ impl Clone for UBig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repr::Buffer;
+    use crate::buffer::Buffer;
 
     impl UBig {
         /// Capacity in Words.

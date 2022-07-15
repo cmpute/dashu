@@ -2,9 +2,10 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
+    buffer::Buffer,
     ibig::IBig,
     primitive::{double_word, DWORD_BITS_USIZE, WORD_BITS_USIZE},
-    repr::{Buffer, TypedRepr::*, TypedReprRef::*},
+    repr::{TypedRepr::*, TypedReprRef::*},
     shift,
     sign::Sign::*,
     ubig::UBig,

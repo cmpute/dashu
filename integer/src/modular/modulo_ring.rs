@@ -3,11 +3,12 @@
 use super::modulo::{ModuloDoubleRaw, ModuloLargeRaw, ModuloSingleRaw};
 use crate::{
     arch::word::{DoubleWord, Word},
+    buffer::Buffer,
     cmp, div,
     fast_divide::{FastDivideNormalized, FastDivideNormalized2},
     math,
     primitive::shrink_dword,
-    repr::{Buffer, TypedRepr},
+    repr::TypedRepr,
     ubig::UBig,
 };
 use alloc::boxed::Box;
