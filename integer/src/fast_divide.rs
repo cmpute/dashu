@@ -27,7 +27,7 @@ pub(crate) struct FastDivideSmall {
 impl FastDivideSmall {
     #[inline]
     pub const fn new(divisor: Word) -> Self {
-        assert!(divisor > 1);
+        debug_assert!(divisor > 1);
         let n = math::ceil_log_2_word(divisor);
 
         // Calculate:
@@ -47,7 +47,7 @@ impl FastDivideSmall {
         // m = floor(B * (2^n-1 - (divisor-1)) / divisor) + 1
         let (lo, _hi) =
             split_dword(double_word(0, math::ones_word(n) - (divisor - 1)) / extend_word(divisor));
-        // assert!(_hi == 0);
+        debug_assert!(_hi == 0);
         FastDivideSmall {
             divisor,
             shift: n - 1,
@@ -112,7 +112,7 @@ impl FastDivideNormalized {
     #[inline]
     pub const fn invert_word(divisor: Word) -> Word {
         let (m, _hi) = split_dword(DoubleWord::MAX / extend_word(divisor));
-        assert!(_hi == 1);
+        debug_assert!(_hi == 1);
         m
     }
 

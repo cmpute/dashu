@@ -71,7 +71,7 @@ fn parse_large(bytes: &[u8], radix: Digit) -> Result<UBig, ParseError> {
     debug_assert!(radix::is_radix_valid(radix) && !radix.is_power_of_two());
     let radix_info = radix::radix_info(radix);
     let chunk_bytes = CHUNK_LEN * radix_info.digits_per_word;
-    assert!(bytes.len() > chunk_bytes);
+    debug_assert!(bytes.len() > chunk_bytes);
 
     // Calculate radix^(CHUNK_LEN<<i).
     let mut radix_powers = vec![UBig::from(radix_info.range_per_word).pow(CHUNK_LEN)];

@@ -261,7 +261,7 @@ impl ModuloRingLarge {
         debug_assert!(self.is_valid(&*raw));
         if !raw.0.iter().all(|w| *w == 0) {
             let overflow = add::sub_same_len_in_place_swap(self.normalized_modulus(), &mut raw.0);
-            assert!(!overflow);
+            debug_assert!(!overflow);
         }
     }
 

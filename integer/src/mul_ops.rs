@@ -245,7 +245,7 @@ mod repr {
         ));
         let mut memory = allocation.memory();
         let overflow = mul::add_signed_mul(&mut buffer, Positive, lhs, rhs, &mut memory);
-        assert!(overflow == 0);
+        debug_assert!(overflow == 0);
         Repr::from_buffer(buffer)
     }
 }

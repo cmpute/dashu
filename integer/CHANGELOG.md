@@ -2,8 +2,7 @@
 
 ## 0.1.1
 
-TODO: make all input condition on public functions verified by assert! instead of debug_assert!, or add random test cases
-
+- Implemented modular inverse for the `Modulo` type.
 - Implemented GCD and ExtendedGCD traits for `UBig` and `IBig`.
 
 ## 0.1.0

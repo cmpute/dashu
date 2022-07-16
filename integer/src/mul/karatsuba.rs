@@ -91,7 +91,7 @@ pub fn add_signed_mul_same_len(
         // c_1 += a_lo * b_lo
         let (c_lo, mut memory) = memory.allocate_slice_fill::<Word>(2 * mid, 0);
         let overflow = mul::add_signed_mul_same_len(c_lo, Positive, a_lo, b_lo, &mut memory);
-        assert!(overflow == 0);
+        debug_assert!(overflow == 0);
         carry_c0 += add::add_signed_same_len_in_place(&mut c[..2 * mid], sign, c_lo);
         carry_c1 += add::add_signed_same_len_in_place(&mut c[mid..3 * mid], sign, c_lo);
     }
@@ -100,7 +100,7 @@ pub fn add_signed_mul_same_len(
         // c_1 += a_hi * b_hi
         let (c_hi, mut memory) = memory.allocate_slice_fill::<Word>(2 * (n - mid), 0);
         let overflow = mul::add_signed_mul_same_len(c_hi, Positive, a_hi, b_hi, &mut memory);
-        assert!(overflow == 0);
+        debug_assert!(overflow == 0);
         carry += add::add_signed_same_len_in_place(&mut c[2 * mid..], sign, c_hi);
         carry_c1 += add::add_signed_in_place(&mut c[mid..3 * mid], sign, c_hi);
     }
@@ -124,6 +124,6 @@ pub fn add_signed_mul_same_len(
     carry_c1 += add::add_signed_word_in_place(&mut c[2 * mid..3 * mid], carry_c0);
     carry += add::add_signed_word_in_place(&mut c[3 * mid..], carry_c1);
 
-    assert!(carry.abs() <= 1);
+    debug_assert!(carry.abs() <= 1);
     carry
 }

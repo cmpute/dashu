@@ -47,7 +47,7 @@ pub(crate) fn div_rem_in_place(
     while m >= 2 * n {
         let o = div_rem_in_place_same_len(&mut lhs[m - 2 * n..m], rhs, fast_div_rhs_top, memory);
         if o {
-            assert!(m == lhs.len());
+            debug_assert!(m == lhs.len());
             overflow = true;
         }
         m -= n;
@@ -55,7 +55,7 @@ pub(crate) fn div_rem_in_place(
     if m > n {
         let o = div_rem_in_place_small_quotient(&mut lhs[..m], rhs, fast_div_rhs_top, memory);
         if o {
-            assert!(m == lhs.len());
+            debug_assert!(m == lhs.len());
             overflow = true;
         }
     }
@@ -84,7 +84,7 @@ fn div_rem_in_place_same_len(
     // in lhs[..n]. This is also a 3n/2n division.
     let overflow_lo =
         div_rem_in_place_small_quotient(&mut lhs[..n + n_lo], rhs, fast_div_rhs_top, memory);
-    assert!(!overflow_lo);
+    debug_assert!(!overflow_lo);
 
     overflow
 }
@@ -133,6 +133,6 @@ fn div_rem_in_place_small_quotient(
         q_overflow -= SignedWord::from(add::sub_one_in_place(q));
     }
 
-    assert!(rem_overflow == 0 && q_overflow >= 0 && q_overflow <= 1);
+    debug_assert!(rem_overflow == 0 && q_overflow >= 0 && q_overflow <= 1);
     q_overflow != 0
 }

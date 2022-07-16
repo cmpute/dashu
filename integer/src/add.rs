@@ -173,7 +173,7 @@ pub fn sub_in_place_with_sign(lhs: &mut [Word], rhs: &[Word]) -> Sign {
     match lhs_len.cmp(&rhs_len) {
         Greater => {
             let overflow = sub_in_place(&mut lhs[..lhs_len], &rhs[..rhs_len]);
-            assert!(!overflow);
+            debug_assert!(!overflow);
             Positive
         }
         Less => {
@@ -181,7 +181,7 @@ pub fn sub_in_place_with_sign(lhs: &mut [Word], rhs: &[Word]) -> Sign {
             (&mut lhs[lhs_len..rhs_len]).copy_from_slice(&rhs[lhs_len..rhs_len]);
             if borrow {
                 let overflow = sub_one_in_place(&mut lhs[lhs_len..rhs_len]);
-                assert!(!overflow);
+                debug_assert!(!overflow);
             }
             Negative
         }
@@ -191,12 +191,12 @@ pub fn sub_in_place_with_sign(lhs: &mut [Word], rhs: &[Word]) -> Sign {
                 match lhs[n - 1].cmp(&rhs[n - 1]) {
                     Greater => {
                         let overflow = sub_same_len_in_place(&mut lhs[..n], &rhs[..n]);
-                        assert!(!overflow);
+                        debug_assert!(!overflow);
                         return Positive;
                     }
                     Less => {
                         let overflow = sub_same_len_in_place_swap(&rhs[..n], &mut lhs[..n]);
-                        assert!(!overflow);
+                        debug_assert!(!overflow);
                         return Negative;
                     }
                     Equal => {

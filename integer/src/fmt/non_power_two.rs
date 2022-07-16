@@ -116,7 +116,7 @@ impl PreparedMedium {
                 buffer_len -= 1;
             }
         }
-        assert!(buffer_len == 1);
+        debug_assert!(buffer_len == 1);
         PreparedMedium {
             top_group: PreparedWord::new(buffer[0], radix, 1),
             low_groups,

@@ -163,7 +163,7 @@ impl Buffer {
     /// Panics if `num_words < len()`.
     #[inline]
     fn reallocate(&mut self, num_words: usize) {
-        debug_assert!(num_words >= self.len());
+        assert!(num_words >= self.len());
         self.reallocate_raw(Self::default_capacity(num_words));
     }
 

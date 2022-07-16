@@ -98,7 +98,7 @@ impl ModuloRingLarge {
     pub fn modulus(&self) -> UBig {
         let mut buffer: Buffer = self.normalized_modulus().into();
         let low_bits = shift::shr_in_place(&mut buffer, self.shift());
-        assert!(low_bits == 0);
+        debug_assert!(low_bits == 0);
         UBig(Repr::from_buffer(buffer))
     }
 }
