@@ -6,7 +6,7 @@ use crate::{
     div, helper_macros,
     ibig::IBig,
     memory::MemoryAllocation,
-    ops::{Abs, DivEuclid, DivRem, DivRemEuclid, RemEuclid},
+    ops::{DivEuclid, DivRem, DivRemEuclid, RemEuclid},
     repr::{TypedRepr::*, TypedReprRef::*},
     shift,
     sign::Sign::*,
@@ -181,109 +181,191 @@ impl DivEuclid<&IBig> for &IBig {
 }
 
 impl RemEuclid<IBig> for IBig {
-    type Output = IBig;
+    type Output = UBig;
 
     #[inline]
-    fn rem_euclid(self, rhs: IBig) -> IBig {
-        let r = self % &rhs;
-        match r.sign() {
-            Positive => r,
-            Negative => r + rhs.abs(),
-        }
+    fn rem_euclid(self, rhs: IBig) -> UBig {
+        let (sign0, mag0) = self.into_sign_repr();
+        let repr = match sign0 {
+            Positive => mag0 % rhs.into_sign_repr().1,
+            Negative => {
+                let r = mag0 % rhs.as_sign_repr().1;
+                if r.is_zero() {
+                    r
+                } else {
+                    rhs.into_sign_repr().1 - r.into_typed()
+                }
+            },
+        };
+        UBig(repr)
     }
 }
 
 impl RemEuclid<&IBig> for IBig {
-    type Output = IBig;
+    type Output = UBig;
 
     #[inline]
-    fn rem_euclid(self, rhs: &IBig) -> IBig {
-        let r = self % rhs;
-        match r.sign() {
-            Positive => r,
-            Negative => r + rhs.abs(),
-        }
+    fn rem_euclid(self, rhs: &IBig) -> UBig {
+        let (sign0, mag0) = self.into_sign_repr();
+        let mag1 = rhs.as_sign_repr().1;
+        let repr = match sign0 {
+            Positive => mag0 % mag1,
+            Negative => {
+                let r = mag0 % mag1;
+                if r.is_zero() {
+                    r
+                } else {
+                    mag1 - r.into_typed()
+                }
+            },
+        };
+        UBig(repr)
     }
 }
 
 impl RemEuclid<IBig> for &IBig {
-    type Output = IBig;
+    type Output = UBig;
 
     #[inline]
-    fn rem_euclid(self, rhs: IBig) -> IBig {
-        let r = self % &rhs;
-        match r.sign() {
-            Positive => r,
-            Negative => r + rhs.abs(),
-        }
+    fn rem_euclid(self, rhs: IBig) -> UBig {
+        let (sign0, mag0) = self.as_sign_repr();
+        let repr = match sign0 {
+            Positive => mag0 % rhs.into_sign_repr().1,
+            Negative => {
+                let r = mag0 % rhs.as_sign_repr().1;
+                if r.is_zero() {
+                    r
+                } else {
+                    rhs.into_sign_repr().1 - r.into_typed()
+                }
+            },
+        };
+        UBig(repr)
     }
 }
 
 impl RemEuclid<&IBig> for &IBig {
-    type Output = IBig;
+    type Output = UBig;
 
     #[inline]
-    fn rem_euclid(self, rhs: &IBig) -> IBig {
-        let r = self % rhs;
-        match r.sign() {
-            Positive => r,
-            Negative => r + rhs.abs(),
-        }
+    fn rem_euclid(self, rhs: &IBig) -> UBig {
+        let (sign0, mag0) = self.as_sign_repr();
+        let mag1 = rhs.as_sign_repr().1;
+        let repr = match sign0 {
+            Positive => mag0 % mag1,
+            Negative => {
+                let r = mag0 % mag1;
+                if r.is_zero() {
+                    r
+                } else {
+                    mag1 - r.into_typed()
+                }
+            },
+        };
+        UBig(repr)
     }
 }
 
 impl DivRemEuclid<IBig> for IBig {
     type OutputDiv = IBig;
-    type OutputRem = IBig;
+    type OutputRem = UBig;
 
     #[inline]
-    fn div_rem_euclid(self, rhs: IBig) -> (IBig, IBig) {
-        let (q, r) = self.div_rem(&rhs);
-        match r.sign() {
-            Positive => (q, r),
-            Negative => (q - rhs.signum(), r + rhs.abs()),
+    fn div_rem_euclid(self, rhs: IBig) -> (IBig, UBig) {
+        let (sign0, mag0) = self.into_sign_repr();
+        let sign1 = rhs.sign();
+        match sign0 {
+            Positive => {
+                let (q, r) = mag0.div_rem(rhs.into_sign_repr().1);
+                (IBig(q.with_sign(sign1)), UBig(r))
+            },
+            Negative => {
+                let (q, mut r) = mag0.div_rem(rhs.as_sign_repr().1);
+                let mut q = IBig(q.with_sign(-sign1));
+                if !r.is_zero() {
+                    q -= rhs.signum();
+                    r = rhs.into_sign_repr().1 - r.into_typed();
+                }
+                (q, UBig(r))
+            }
         }
     }
 }
 
 impl DivRemEuclid<&IBig> for IBig {
     type OutputDiv = IBig;
-    type OutputRem = IBig;
+    type OutputRem = UBig;
 
     #[inline]
-    fn div_rem_euclid(self, rhs: &IBig) -> (IBig, IBig) {
-        let (q, r) = self.div_rem(rhs);
-        match r.sign() {
-            Positive => (q, r),
-            Negative => (q - rhs.signum(), r + rhs.abs()),
+    fn div_rem_euclid(self, rhs: &IBig) -> (IBig, UBig) {
+        let (sign0, mag0) = self.into_sign_repr();
+        let (sign1, mag1) = rhs.as_sign_repr();
+        match sign0 {
+            Positive => {
+                let (q, r) = mag0.div_rem(mag1);
+                (IBig(q.with_sign(sign1)), UBig(r))
+            },
+            Negative => {
+                let (q, mut r) = mag0.div_rem(mag1);
+                let mut q = IBig(q.with_sign(-sign1));
+                if !r.is_zero() {
+                    q -= rhs.signum();
+                    r = mag1 - r.into_typed();
+                }
+                (q, UBig(r))
+            },
         }
     }
 }
 
 impl DivRemEuclid<IBig> for &IBig {
     type OutputDiv = IBig;
-    type OutputRem = IBig;
+    type OutputRem = UBig;
 
     #[inline]
-    fn div_rem_euclid(self, rhs: IBig) -> (IBig, IBig) {
-        let (q, r) = self.div_rem(&rhs);
-        match r.sign() {
-            Positive => (q, r),
-            Negative => (q - rhs.signum(), r + rhs.abs()),
+    fn div_rem_euclid(self, rhs: IBig) -> (IBig, UBig) {
+        let (sign0, mag0) = self.as_sign_repr();
+        let sign1 = rhs.sign();
+        match sign0 {
+            Positive => {
+                let (q, r) = mag0.div_rem(rhs.into_sign_repr().1);
+                (IBig(q.with_sign(sign1)), UBig(r))
+            },
+            Negative => {
+                let (q, mut r) = mag0.div_rem(rhs.as_sign_repr().1);
+                let mut q = IBig(q.with_sign(-sign1));
+                if !r.is_zero() {
+                    q -= rhs.signum();
+                    r = rhs.into_sign_repr().1 - r.into_typed();
+                }
+                (q, UBig(r))
+            }
         }
     }
 }
 
 impl DivRemEuclid<&IBig> for &IBig {
     type OutputDiv = IBig;
-    type OutputRem = IBig;
+    type OutputRem = UBig;
 
     #[inline]
-    fn div_rem_euclid(self, rhs: &IBig) -> (IBig, IBig) {
-        let (q, r) = self.div_rem(rhs);
-        match r.sign() {
-            Positive => (q, r),
-            Negative => (q - rhs.signum(), r + rhs.abs()),
+    fn div_rem_euclid(self, rhs: &IBig) -> (IBig, UBig) {
+        let (sign0, mag0) = self.as_sign_repr();
+        let (sign1, mag1) = rhs.as_sign_repr();
+        match sign0 {
+            Positive => {
+                let (q, r) = mag0.div_rem(mag1);
+                (IBig(q.with_sign(sign1)), UBig(r))
+            },
+            Negative => {
+                let (q, mut r) = mag0.div_rem(mag1);
+                let mut q = IBig(q.with_sign(-sign1));
+                if !r.is_zero() {
+                    q -= rhs.signum();
+                    r = mag1 - r.into_typed();
+                }
+                (q, UBig(r))
+            },
         }
     }
 }
@@ -443,53 +525,7 @@ impl_div_ubig_unsigned!(u128);
 impl_div_ubig_unsigned!(usize);
 
 macro_rules! impl_div_ibig_signed {
-    ($t:ty) => {
-        impl Rem<$t> for IBig {
-            type Output = $t;
-
-            #[inline]
-            fn rem(self, rhs: $t) -> $t {
-                (self % IBig::from_signed(rhs)).try_to_signed().unwrap()
-            }
-        }
-
-        impl Rem<$t> for &IBig {
-            type Output = $t;
-
-            #[inline]
-            fn rem(self, rhs: $t) -> $t {
-                (self % IBig::from_signed(rhs)).try_to_signed().unwrap()
-            }
-        }
-
-        impl DivRem<$t> for IBig {
-            type OutputDiv = IBig;
-            type OutputRem = $t;
-
-            #[inline]
-            fn div_rem(self, rhs: $t) -> (IBig, $t) {
-                let (q, r) = self.div_rem(IBig::from_signed(rhs));
-                (q, r.try_to_signed().unwrap())
-            }
-        }
-
-        impl DivRem<$t> for &IBig {
-            type OutputDiv = IBig;
-            type OutputRem = $t;
-
-            #[inline]
-            fn div_rem(self, rhs: $t) -> (IBig, $t) {
-                let (q, r) = self.div_rem(IBig::from_signed(rhs));
-                (q, r.try_to_signed().unwrap())
-            }
-        }
-
-        impl_div_ibig_primitive!($t);
-    };
-}
-
-macro_rules! impl_div_ibig_primitive {
-    ($t:ty) => {
+    ($t:ty, $u:ty) => {
         impl Div<$t> for IBig {
             type Output = IBig;
 
@@ -519,6 +555,24 @@ macro_rules! impl_div_ibig_primitive {
 
         helper_macros::forward_binop_assign_arg_by_value!(impl DivAssign<$t> for IBig, div_assign);
 
+        impl Rem<$t> for IBig {
+            type Output = $t;
+
+            #[inline]
+            fn rem(self, rhs: $t) -> $t {
+                (self % IBig::from_signed(rhs)).try_to_signed().unwrap()
+            }
+        }
+
+        impl Rem<$t> for &IBig {
+            type Output = $t;
+
+            #[inline]
+            fn rem(self, rhs: $t) -> $t {
+                (self % IBig::from_signed(rhs)).try_to_signed().unwrap()
+            }
+        }
+
         helper_macros::forward_binop_second_arg_by_value!(impl Rem<$t> for IBig, rem);
 
         impl RemAssign<$t> for IBig {
@@ -529,6 +583,28 @@ macro_rules! impl_div_ibig_primitive {
         }
 
         helper_macros::forward_binop_assign_arg_by_value!(impl RemAssign<$t> for IBig, rem_assign);
+
+        impl DivRem<$t> for IBig {
+            type OutputDiv = IBig;
+            type OutputRem = $t;
+
+            #[inline]
+            fn div_rem(self, rhs: $t) -> (IBig, $t) {
+                let (q, r) = self.div_rem(IBig::from_signed(rhs));
+                (q, r.try_to_signed().unwrap())
+            }
+        }
+
+        impl DivRem<$t> for &IBig {
+            type OutputDiv = IBig;
+            type OutputRem = $t;
+
+            #[inline]
+            fn div_rem(self, rhs: $t) -> (IBig, $t) {
+                let (q, r) = self.div_rem(IBig::from_signed(rhs));
+                (q, r.try_to_signed().unwrap())
+            }
+        }
 
         helper_macros::forward_div_rem_second_arg_by_value!(impl DivRem<$t> for IBig, div_rem);
 
@@ -553,20 +629,20 @@ macro_rules! impl_div_ibig_primitive {
         helper_macros::forward_binop_second_arg_by_value!(impl DivEuclid<$t> for IBig, div_euclid);
 
         impl RemEuclid<$t> for IBig {
-            type Output = $t;
+            type Output = $u;
 
             #[inline]
-            fn rem_euclid(self, rhs: $t) -> $t {
-                <$t>::try_from(self.rem_euclid(IBig::from(rhs))).unwrap()
+            fn rem_euclid(self, rhs: $t) -> $u {
+                <$u>::try_from(self.rem_euclid(IBig::from(rhs))).unwrap()
             }
         }
 
         impl RemEuclid<$t> for &IBig {
-            type Output = $t;
+            type Output = $u;
 
             #[inline]
-            fn rem_euclid(self, rhs: $t) -> $t {
-                <$t>::try_from(self.rem_euclid(IBig::from(rhs))).unwrap()
+            fn rem_euclid(self, rhs: $t) -> $u {
+                <$u>::try_from(self.rem_euclid(IBig::from(rhs))).unwrap()
             }
         }
 
@@ -574,23 +650,23 @@ macro_rules! impl_div_ibig_primitive {
 
         impl DivRemEuclid<$t> for IBig {
             type OutputDiv = IBig;
-            type OutputRem = $t;
+            type OutputRem = $u;
 
             #[inline]
-            fn div_rem_euclid(self, rhs: $t) -> (IBig, $t) {
+            fn div_rem_euclid(self, rhs: $t) -> (IBig, $u) {
                 let (q, r) = self.div_rem_euclid(IBig::from(rhs));
-                (q, <$t>::try_from(r).unwrap())
+                (q, <$u>::try_from(r).unwrap())
             }
         }
 
         impl DivRemEuclid<$t> for &IBig {
             type OutputDiv = IBig;
-            type OutputRem = $t;
+            type OutputRem = $u;
 
             #[inline]
-            fn div_rem_euclid(self, rhs: $t) -> (IBig, $t) {
+            fn div_rem_euclid(self, rhs: $t) -> (IBig, $u) {
                 let (q, r) = self.div_rem_euclid(IBig::from(rhs));
-                (q, <$t>::try_from(r).unwrap())
+                (q, <$u>::try_from(r).unwrap())
             }
         }
 
@@ -598,12 +674,12 @@ macro_rules! impl_div_ibig_primitive {
     };
 }
 
-impl_div_ibig_signed!(i8);
-impl_div_ibig_signed!(i16);
-impl_div_ibig_signed!(i32);
-impl_div_ibig_signed!(i64);
-impl_div_ibig_signed!(i128);
-impl_div_ibig_signed!(isize);
+impl_div_ibig_signed!(i8, u8);
+impl_div_ibig_signed!(i16, u16);
+impl_div_ibig_signed!(i32, u32);
+impl_div_ibig_signed!(i64, u64);
+impl_div_ibig_signed!(i128, u128);
+impl_div_ibig_signed!(isize, usize);
 
 mod repr {
     use super::*;

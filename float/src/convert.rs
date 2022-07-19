@@ -1,9 +1,10 @@
-use std::convert::TryInto;
+use core::convert::TryInto;
+use core::cmp::Ordering;
 use dashu_base::DivRem;
 use dashu_int::{IBig, ibig, UBig};
 use crate::{
     repr::{FloatRepr, BinaryRepr, DecimalRepr},
-    utils::{shr_radix, round_with_rem, get_precision},
+    utils::{get_precision, shr_rem_radix_in_place, round_with_fract, round_with_ratio},
     ibig_ext::{remove_pow, log_rem, log_pow}
 };
 
@@ -57,27 +58,44 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
         Self::from_parts_with_precision(integer, 0, precision)
     }
 
-    /// Create a floating number by dividing two integers with given precision
-    pub fn from_ratio(numerator: IBig, denominator: IBig, precision: usize) -> Self {
-        // FIXME: investigate whether it's faster to first calculate the inverse of denom, and then multiply
-        // FIXME: find a way to use the fast div support from ibig
+    /// Create a floating number expressed as `(numerator / denominator) * Radix ^ exponent` with given precision.
+    // TODO: accept unsigned denomiator only, and round_with_ratio should also accept unsigned denominator only
+    pub fn from_ratio_exponent(numerator: IBig, denominator: IBig, mut exponent: isize, precision: usize) -> Self {
+        // FIXME: use the fast div support from ibig
+        // FIXME: and also use the max number of exponent in a word to do shifting
         let (mut mantissa, mut rem) = numerator.div_rem(&denominator);
         let mut digits = get_precision::<X>(&mantissa);
-        let mut exponent = 0;
-        if digits < precision {
-            while digits < precision && &rem != &ibig!(0) {
-                let (d, r) = (rem * IBig::from(X)).div_rem(&denominator);
-                rem = r;
-                mantissa *= IBig::from(X);
-                mantissa += d;
-                digits += 1;
-                exponent -= 1;
+        match digits.cmp(&precision) {
+            Ordering::Equal => {
+                mantissa += round_with_ratio::<R>(&mantissa, rem, &denominator);
+            },
+            Ordering::Greater => {
+                let shift = digits - precision;
+                let low_digits = shr_rem_radix_in_place::<X>(&mut mantissa, shift);
+                mantissa += round_with_fract::<X, R>(&mantissa, low_digits, precision);
+                exponent = shift as isize;
+            },
+            Ordering::Less => {
+                while digits < precision && &rem != &ibig!(0) {
+                    let (d, r) = (rem * IBig::from(X)).div_rem(&denominator);
+                    rem = r;
+                    mantissa *= IBig::from(X);
+                    mantissa += d;
+                    digits += 1;
+                    exponent -= 1;
+                }
+                mantissa += round_with_fract::<X, R>(&mantissa, rem, 1);
             }
-        } else {
-            shr_radix::<X>(&mut mantissa, digits - precision);
-            exponent = (digits - precision) as isize;
         }
-        Self::from_parts_with_precision(mantissa, exponent, precision)
+
+        let (mantissa, exponent) = Self::normalize(mantissa, exponent);
+        FloatRepr { mantissa, exponent, precision }
+    }
+
+    /// Create a floating number by dividing two integers with given precision
+    #[inline]
+    pub fn from_ratio(numerator: IBig, denominator: IBig, precision: usize) -> Self {
+        Self::from_ratio_exponent(numerator, denominator, 0, precision)
     }
 
     /// Convert the float number to decimal based exponents.
@@ -120,10 +138,8 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
             let actual = result.actual_precision();
             if actual > precision {
                 let shift = actual - precision;
-                shr_radix::<X>(&mut result.mantissa, shift - 1); // left one additional digit for rounding
-                let (mut man, rem) = result.mantissa.div_rem(X as isize);
-                round_with_rem::<X, R>(&mut man, rem);
-                result.mantissa = man;
+                let low_digits = shr_rem_radix_in_place::<X>(&mut result.mantissa, shift);
+                result.mantissa += round_with_fract::<X, R>(&result.mantissa, low_digits, shift);
                 result.exponent += shift as isize;
             }
         }
@@ -151,7 +167,8 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
     #[allow(non_upper_case_globals)]
     pub fn with_radix<const NewX: usize>(self) -> FloatRepr<NewX, R> {
         if NewX == X {
-            return FloatRepr { mantissa: self.mantissa, exponent: self.exponent, precision: self.precision };
+            let FloatRepr { mantissa, exponent, precision } = self;
+            return FloatRepr { mantissa, exponent, precision };
         }
         // FIXME: shortcut if E is a power of NewX
 
@@ -211,14 +228,7 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
         unimplemented!()
     }
 
-    /// Convert raw parts into a float number, the precision will be inferred from mantissa
-    /// (the lowest k such that `mantissa < radix^k`)
-    /// 
-    /// # Panics
-    /// If the mantissa is larger than `radix^usize::MAX`
-    #[inline]
-    pub fn from_parts(mut mantissa: IBig, mut exponent: isize) -> Self {
-        // TODO: prevent using this function internally because we enforce normalized representation
+    pub(crate) fn normalize(mut mantissa: IBig, mut exponent: isize) -> (IBig, isize) {
         if X == 2 {
             if let Some(shift) = mantissa.trailing_zeros() {
                 mantissa >>= shift;
@@ -228,7 +238,18 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
             let shift: isize = remove_pow(&mut mantissa, &X.into()).try_into().unwrap();
             exponent += shift;
         }
+        (mantissa, exponent)
+    }
 
+    /// Convert raw parts into a float number, the precision will be inferred from mantissa
+    /// (the lowest k such that `mantissa < radix^k`)
+    /// 
+    /// # Panics
+    /// If the mantissa is larger than `radix^usize::MAX`
+    #[inline]
+    pub fn from_parts(mantissa: IBig, exponent: isize) -> Self {
+        // TODO: prevent using this function internally because we enforce normalized representation
+        let (mantissa, exponent) = Self::normalize(mantissa, exponent);
         let precision = get_precision::<X>(&mantissa);
         Self { mantissa, exponent, precision }
     }

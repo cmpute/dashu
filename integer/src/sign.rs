@@ -3,7 +3,6 @@
 use crate::{
     ibig::IBig,
     ops::{Abs, UnsignedAbs},
-    repr::TypedReprRef::RefSmall,
     ubig::UBig,
 };
 use core::ops::{Mul, MulAssign, Neg};
@@ -64,15 +63,7 @@ impl IBig {
     /// ```
     #[inline]
     pub fn signum(&self) -> IBig {
-        let (sign, repr) = self.as_sign_repr();
-        if let RefSmall(0) = repr {
-            IBig::zero()
-        } else {
-            match sign {
-                Positive => IBig::one(),
-                Negative => IBig::neg_one(),
-            }
-        }
+        IBig(self.0.signum())
     }
 }
 

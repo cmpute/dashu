@@ -1,5 +1,5 @@
 use core::ops::Mul;
-use crate::{repr::FloatRepr, utils::mul_hi};
+use crate::{repr::FloatRepr, utils::{shr_rem_radix_in_place, round_with_fract, get_precision}};
 
 impl<const X: usize, const R: u8> Mul for &FloatRepr<X, R> {
     type Output = FloatRepr<X, R>;
@@ -7,9 +7,18 @@ impl<const X: usize, const R: u8> Mul for &FloatRepr<X, R> {
     #[inline]
     fn mul(self, rhs: Self) -> Self::Output {
         let precision = self.precision.max(rhs.precision);
-        let mantissa = mul_hi::<X>(&self.mantissa, &rhs.mantissa, precision + 1);
         let exponent = self.exponent + rhs.exponent;
-        FloatRepr { mantissa, exponent, precision: precision + 1 }.with_precision(precision)
+        let mut mantissa = &self.mantissa * &rhs.mantissa;
+        let actual_prec = get_precision::<X>(&mantissa);
+        if actual_prec > precision {
+            let shift = actual_prec - precision;
+            let low_digits = shr_rem_radix_in_place::<X>(&mut mantissa, shift);
+            mantissa += round_with_fract::<X, R>(&mantissa, low_digits, shift);
+            let (mantissa, exponent) = Self::Output::normalize(mantissa, exponent);
+            FloatRepr { mantissa, exponent, precision }
+        } else {
+            FloatRepr { mantissa, exponent, precision }
+        }
     }
 }
 

@@ -305,6 +305,21 @@ impl Repr {
         }
         self
     }
+
+    /// Returns a number representing sign of self.
+    ///
+    /// [Self::zero] if the number is zero
+    /// [Self::one] if the number is positive
+    /// [Self::neg_one] if the number is negative
+    pub fn signum(&self) -> Self {
+        if self.is_zero() {
+            Self::zero()
+        } else if self.capacity.get() < 0 {
+            Self::neg_one()
+        } else {
+            Self::one()
+        }
+    }
 }
 
 // Cloning for Repr is written in a verbose way because it's performance critical.

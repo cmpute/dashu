@@ -51,7 +51,7 @@ impl IBig {
 
     #[inline]
     pub fn from_sign_magnitude(sign: Sign, magnitude: UBig) -> Self {
-        unimplemented!() // TODO: implement
+        IBig(magnitude.0.with_sign(sign))
     }
 
     /// Create an IBig with value 0

@@ -18,7 +18,6 @@ pub fn get_precision<const X: usize>(value: &IBig) -> usize{
 }
 
 /// "Left shifting" in given radix, i.e. multiply by a power of radix
-#[deprecated]
 #[inline]
 pub fn shl_radix<const X: usize>(value: &mut IBig, exp: usize) {
     if exp != 0 {
@@ -48,19 +47,6 @@ pub fn shr_radix<const X: usize>(value: &mut IBig, exp: usize) {
             _ => *value /= IBig::from(X).pow(exp)
         }
     }
-}
-
-/// Calculate the high parts of a * b.
-/// 
-/// It's equivalent to find `a * b / E^c` such that it's in the range `[E^(prec-1), E^prec)`
-#[inline]
-pub fn mul_hi<const X: usize>(a: &IBig, b: &IBig, prec: usize) -> IBig {
-    let mut c = a * b;
-    let prec_actual = get_precision::<X>(&c);
-    if prec_actual > prec {
-        shr_radix::<X>(&mut c, prec_actual - prec);
-    }
-    c
 }
 
 /// "Right shifting" in given radix, i.e. divide by a power of radix.
@@ -124,69 +110,51 @@ pub fn shr_rem_radix_in_place<const X: usize>(value: &mut IBig, exp: usize) -> I
     }
 }
 
-/// Return the rounding bit based on the remainder (mod Radix)
-#[deprecated]
-#[inline(always)]
-pub fn round_with_rem<const X: usize, const R: u8>(mantissa: &mut IBig, rem: isize) {
-    assert!((rem.abs() as usize) < X);
+// TODO: store the tenary value in an enum, and returns Approximation<FloatRepr, tenary> for various operations
+// make the round_with_fract and round_with_ratio associated with that enum
 
-    match (R, rem.signum()) {
-        (_, 0) => {},
-        (RoundingMode::Zero, _) => {},
-        (RoundingMode::Down, 1) => {},
-        (RoundingMode::Down, -1) => *mantissa -= 1,
-        (RoundingMode::Up, 1) => *mantissa += 1,
-        (RoundingMode::Up, -1) => {},
-        (RoundingMode::HalfEven | RoundingMode::HalfAway, _) => {
-            let double = if rem < 0 {
-                (rem + X as isize) * 2
-            } else {
-                rem * 2
-            } as usize;
-            match X.cmp(&double) {
-                Ordering::Greater => if rem > 0 {
-                    *mantissa += 1
-                },
+/// Round the number (mantissa + fract / X^precision), assuming |fract| / X^precision < 1. Return the adjustment.
+#[inline(always)]
+pub fn round_with_fract<const X: usize, const R: u8>(mantissa: &IBig, fract: IBig, precision: usize) -> i8 {
+    debug_assert!(fract.clone().unsigned_abs() < UBig::from(X).pow(precision));
+
+    if fract.is_zero() {
+        return 0;
+    }
+    let (fsign, fmag) = fract.to_sign_magnitude();
+
+    match R {
+        RoundingMode::Zero => match (mantissa.sign(), fsign) {
+            (Sign::Positive, Sign::Positive) | (Sign::Negative, Sign::Negative) => 0,
+            (Sign::Positive, Sign::Negative) => -(!mantissa.is_zero() as i8), // -1 if mantissa != 0
+            (Sign::Negative, Sign::Positive) => 1 // +1 if mantissa < 0 and fract > 0
+        },
+        RoundingMode::Down => -((fsign == Sign::Negative) as i8), // -1 if fract < 0, otherwise 0
+        RoundingMode::Up => (fsign == Sign::Positive) as i8, // +1 if fract > 0, otherwise 0
+        RoundingMode::HalfEven | RoundingMode::HalfAway => {
+            // TODO: here we can use logarithm to compare, instead of calculating the power?
+            let double = fmag << 1;
+            match UBig::from(X).pow(precision).cmp(&double) {
+                // |fract| < 1/2
+                Ordering::Greater => (fsign == Sign::Positive) as i8, // +1 if fract > 0
+                // |fract| = 1/2
                 Ordering::Equal => match R {
-                    RoundingMode::HalfEven => {
-                        // ties to even
-                        if &*mantissa % 2 != 0 {
-                            *mantissa += 1;
-                        }
-                    },
-                    RoundingMode::HalfAway => {
-                        // ties away from zero
-                        if rem > 0 {
-                            *mantissa += 1;
-                        } else {
-                            *mantissa -= 1;
-                        }
-                    },
+                    // ties to even
+                    RoundingMode::HalfEven => (&*mantissa & 1 == 1) as i8, // +1 if mantissa % 2 == 0
+                    RoundingMode::HalfAway => (fsign == Sign::Positive) as i8 - (fsign == Sign::Negative) as i8, // +1 if fract > 0, -1 if fract < 0
                     _ => unreachable!()
                 },
-                Ordering::Less => if rem < 0 {
-                    *mantissa -= 1
-                }
-            };
+                // |fract| > 1/2
+                Ordering::Less => -((fsign == Sign::Negative) as i8), // -1 if fract < 0
+            }
         },
         _ => unreachable!()
     }
 }
 
-/// Round the number (mantissa + rem * X^-precision), return the adjustment.
-#[inline(always)]
-pub fn round_with_rem_new<const X: usize, const R: u8>(mantissa: &IBig, rem: &IBig, precision: usize) -> i8 {
-    debug_assert!(rem.unsigned_abs() < UBig::from(X).pow(precision));
-
-    match R {
-        RoundingMode::Zero => match (mantissa.sign(), rem.sign()) {
-            (Sign::Positive, Sign::Positive) | (Sign::Negative, Sign::Negative) => 0,
-            (Sign::Positive, Sign::Negative) => -(!mantissa.is_zero() as i8), // -1 if mantissa != 0
-            (Sign::Negative, Sign::Positive) => rem.is_zero() as i8 // 1 if rem != 0
-        },
-        RoundingMode::Down => -((rem.sign() == Sign::Negative) as i8), // -1 if rem < 0, otherwise 0
-        _ => unimplemented!()
-    }
+/// Round the number (mantissa + numerator / denominator), assuming |numerator / denominator| < 1. Return the adjustment.
+pub fn round_with_ratio<const R: u8>(mantissa: &IBig, num: IBig, den: &IBig) -> i8 {
+    unimplemented!()
 }
 
 #[cfg(test)]

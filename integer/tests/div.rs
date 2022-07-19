@@ -206,7 +206,8 @@ fn test_div_rem_euclid_ibig() {
             let a_big: IBig = a.into();
             let b_big: IBig = b.into();
             let q: IBig = a.div_euclid(b).into();
-            let r: IBig = a.rem_euclid(b).into();
+            dbg!(a.rem_euclid(b));
+            let r: UBig = (a.rem_euclid(b) as u8).into();
             let qr = (q.clone(), r.clone());
 
             assert_eq!(a_big.clone().div_euclid(b_big.clone()), q);
@@ -320,15 +321,15 @@ fn test_div_rem_euclid_ibig_signed() {
     assert_eq!((&ibig!(-23)).div_euclid(-10), ibig!(3));
     assert_eq!((&ibig!(-23)).div_euclid(&(-10)), ibig!(3));
 
-    assert_eq!(ibig!(-23).rem_euclid(-10), 7);
-    assert_eq!(ibig!(-23).rem_euclid(&(-10)), 7);
-    assert_eq!((&ibig!(-23)).rem_euclid(-10), 7);
-    assert_eq!((&ibig!(-23)).rem_euclid(&(-10)), 7);
+    assert_eq!(ibig!(-23).rem_euclid(-10), 7u32);
+    assert_eq!(ibig!(-23).rem_euclid(&(-10)), 7u32);
+    assert_eq!((&ibig!(-23)).rem_euclid(-10), 7u32);
+    assert_eq!((&ibig!(-23)).rem_euclid(&(-10)), 7u32);
 
-    assert_eq!(ibig!(-23).div_rem_euclid(-10), (ibig!(3), 7));
-    assert_eq!(ibig!(-23).div_rem_euclid(&(-10)), (ibig!(3), 7));
-    assert_eq!((&ibig!(-23)).div_rem_euclid(-10), (ibig!(3), 7));
-    assert_eq!((&ibig!(-23)).div_rem_euclid(&(-10)), (ibig!(3), 7));
+    assert_eq!(ibig!(-23).div_rem_euclid(-10), (ibig!(3), 7u32));
+    assert_eq!(ibig!(-23).div_rem_euclid(&(-10)), (ibig!(3), 7u32));
+    assert_eq!((&ibig!(-23)).div_rem_euclid(-10), (ibig!(3), 7u32));
+    assert_eq!((&ibig!(-23)).div_rem_euclid(&(-10)), (ibig!(3), 7u32));
 }
 
 #[test]

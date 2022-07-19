@@ -1,9 +1,5 @@
 use core::ops::{Add, Sub};
-use core::cmp::Ordering;
-use dashu_int::{UBig, IBig, Sign};
-
-use crate::RoundingMode;
-use crate::utils::{shl_radix, shr_radix, round_with_rem, round_with_rem_new, shr_rem_radix_in_place};
+use crate::utils::{shl_radix, round_with_fract, shr_rem_radix_in_place};
 
 use crate::repr::FloatRepr;
 
@@ -22,9 +18,9 @@ impl<const X: usize, const R: u8> Add for FloatRepr<X, R> {
         let ediff = (lhs.exponent - rhs.exponent) as usize;
         let precision = lhs.precision.max(rhs.precision);
         if ediff > precision {
-            let adjust = round_with_rem_new::<X, R>(&lhs.mantissa, &rhs.mantissa, ediff);
+            let adjust = round_with_fract::<X, R>(&lhs.mantissa, rhs.mantissa, ediff);
             lhs.mantissa += adjust;
-            return rhs;
+            return lhs;
         }
 
         // align the exponent
@@ -42,7 +38,7 @@ impl<const X: usize, const R: u8> Add for FloatRepr<X, R> {
 
         // actuall adding
         let mantissa = lhs.mantissa + rhs.mantissa;
-        let adjust = round_with_rem_new::<X, R>(&mantissa, &rem, rem_prec);
+        let adjust = round_with_fract::<X, R>(&mantissa, rem, rem_prec);
         Self::from_parts(mantissa + adjust, exponent)
     }
 }
