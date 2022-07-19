@@ -2,7 +2,7 @@
 
 use crate::{
     repr::{Repr, TypedRepr, TypedReprRef},
-    sign::Sign,
+    sign::Sign, UBig,
 };
 
 /// Signed big integer.
@@ -36,9 +36,22 @@ impl IBig {
         self.0.into_sign_typed()
     }
 
+    // TODO: make Sign public
     #[inline]
     pub fn sign(&self) -> Sign {
         self.0.sign()
+    }
+
+    #[inline]
+    pub fn to_sign_magnitude(self) -> (Sign, UBig) {
+        let sign = self.0.sign();
+        let mag = self.0.with_sign(Sign::Positive);
+        (sign, UBig(mag))
+    }
+
+    #[inline]
+    pub fn from_sign_magnitude(sign: Sign, magnitude: UBig) -> Self {
+        unimplemented!() // TODO: implement
     }
 
     /// Create an IBig with value 0

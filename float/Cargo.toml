@@ -1,0 +1,15 @@
+[package]
+name = "dashu-float"
+version = "0.0.0"
+authors = ["Jacob Zhong <cmpute@gmail.com>"]
+edition = "2018"
+
+[dependencies.dashu-base]
+path = "../base"
+version = "0.1.1"
+default-features = false
+
+[dependencies.dashu-int]
+path = "../integer"
+version = "0.1.1"
+default-features = false

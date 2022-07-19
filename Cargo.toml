@@ -19,5 +19,6 @@ members = [
     "base",
     "benchmark",
     "integer",
+    "float",
 ]
 default-members = ["base", "integer"]

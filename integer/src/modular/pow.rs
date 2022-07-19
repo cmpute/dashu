@@ -28,7 +28,7 @@ impl<'a> Modulo<'a> {
     /// ```
     #[inline]
     pub fn pow(&self, exp: &UBig) -> Modulo<'a> {
-        // TODO: support signed exponent through inv (v0.2)
+        // TODO(v0.2): support signed exponent through inv
         match self.repr() {
             ModuloRepr::Single(raw, ring) => Modulo::from_single(ring.pow(*raw, exp), ring),
             ModuloRepr::Double(raw, ring) => Modulo::from_double(ring.pow(*raw, exp), ring),

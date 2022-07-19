@@ -63,7 +63,7 @@
 
 extern crate alloc;
 
-pub use crate::{ibig::IBig, ubig::UBig};
+pub use crate::{ibig::IBig, ubig::UBig, sign::Sign};
 
 /// The primitive integer type used to construct the big integers.
 ///

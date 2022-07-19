@@ -702,6 +702,7 @@ mod repr {
 
     #[inline]
     fn div_rem_dword(lhs: DoubleWord, rhs: DoubleWord) -> (Repr, Repr) {
+        // TODO: is rhs is a power of two, then forward to shifting
         // If division works, remainder also works.
         match lhs.checked_div(rhs) {
             Some(res) => (Repr::from_dword(res), Repr::from_dword(lhs % rhs)),
