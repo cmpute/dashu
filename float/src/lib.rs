@@ -6,29 +6,29 @@
 ///   radix, use FloatRepr::with_radix() to convert. (printing with certain radices is permitted,
 ///   but need to specify explicitly, to print decimal numbers, one can use scientific representation
 ///   or use the alternate flag)
-
 // TODO: reference crates: twofloat, num-bigfloat, rust_decimal, bigdecimal
-
 mod add;
 mod convert;
+mod div;
 mod fmt;
-mod repr;
-mod parse;
 mod ibig_ext;
+mod mul;
+mod parse;
+mod repr;
+mod round;
 mod sign;
 mod utils;
-mod mul;
-mod div;
 
-pub use repr::{FloatRepr, BinaryRepr, DecimalRepr, RoundingMode};
+pub use repr::{BinaryRepr, DecimalRepr, FloatRepr};
+pub use round::{Rounding, RoundingMode};
 
 /// Multi-precision float number with binary exponent and [RoundingMode::Zero] rounding mode
 #[allow(non_upper_case_globals)]
-pub type FBig = BinaryRepr<{RoundingMode::Zero}>;
+pub type FBig = BinaryRepr<{ RoundingMode::Zero }>;
 /// Multi-precision decimal number with decimal exponent and [RoundingMode::HalfEven] rounding mode
 #[allow(non_upper_case_globals)]
-pub type DBig = DecimalRepr<{RoundingMode::HalfEven}>;
+pub type DBig = DecimalRepr<{ RoundingMode::HalfEven }>;
 
 // TODO: make no_std
 // TODO: add macro fbig!, dbig!, support parsing scientific repr, and set rounding mode
-//       ref: scientific-macro crate, https://www.exploringbinary.com/hexadecimal-floating-point-constants/, 
+//       ref: scientific-macro crate, https://www.exploringbinary.com/hexadecimal-floating-point-constants/,

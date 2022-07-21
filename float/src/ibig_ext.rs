@@ -1,12 +1,12 @@
 //! TODO: Extension to ibig that should be upstreamed.
 
 use dashu_base::UnsignedAbs;
-use dashu_int::{IBig, UBig, ibig, ubig};
+use dashu_int::{ibig, ubig, IBig, UBig};
 
 // REF: https://en.wikipedia.org/wiki/Exponential_search
 //      https://people.csail.mit.edu/jaffer/III/ilog.pdf
 // should use a constant Log2_10 to speed up the case of radix 10.
-// 
+//
 // If log_rem(x, base) = (e, r), then x = base^e + r and 0 <= r < (base-1) * base^e
 pub fn log_rem(x: &UBig, base: usize) -> (usize, UBig) {
     assert!(x > &ubig!(0));

@@ -5,7 +5,9 @@
 pub mod bit;
 pub mod number;
 pub mod ring;
+pub mod approx;
 
 pub use bit::*;
 pub use number::*;
 pub use ring::*;
+pub use approx::*;

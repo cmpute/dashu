@@ -1,6 +1,6 @@
+use crate::repr::FloatRepr;
 use core::ops::Neg;
 use dashu_base::Abs;
-use crate::repr::FloatRepr;
 
 impl<const X: usize, const R: u8> Neg for FloatRepr<X, R> {
     type Output = Self;

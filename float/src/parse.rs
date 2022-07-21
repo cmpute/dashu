@@ -1,7 +1,7 @@
-use core::str::FromStr;
-use core::num::IntErrorKind;
-use dashu_int::{IBig, error::ParseError};
 use crate::{repr::FloatRepr, utils::get_precision};
+use core::num::IntErrorKind;
+use core::str::FromStr;
+use dashu_int::{error::ParseError, IBig};
 
 impl<const X: usize, const R: u8> FromStr for FloatRepr<X, R> {
     type Err = ParseError;
@@ -10,7 +10,7 @@ impl<const X: usize, const R: u8> FromStr for FloatRepr<X, R> {
     ///
     /// `src` may contain an optional `+` prefix.
     /// Digits 10-35 are represented by `a-z` or `A-Z`.
-    /// 
+    ///
     /// The valid representations include
     /// 1. `xxx.yyy` = `xxxyyy / radix ^ len(yyy)` (in this case 3)
     /// 2. `xxx.yyyEzz` = `xxxyyy / radix ^ len(yyy) * 10 ^ zz`
@@ -30,14 +30,14 @@ impl<const X: usize, const R: u8> FromStr for FloatRepr<X, R> {
             (Some(_), Some(_)) => return Err(ParseError::InvalidDigit),
             (Some(a), None) => Some(a),
             (None, Some(b)) => Some(b),
-            (None, None) => None
+            (None, None) => None,
         };
 
         let p_pos = match (src.rfind('P'), src.rfind('p')) {
             (Some(_), Some(_)) => return Err(ParseError::InvalidDigit),
             (Some(a), None) => Some(a),
             (None, Some(b)) => Some(b),
-            (None, None) => None
+            (None, None) => None,
         };
 
         let scale_pos = match (e_pos, p_pos) {
@@ -47,24 +47,24 @@ impl<const X: usize, const R: u8> FromStr for FloatRepr<X, R> {
                     return Err(ParseError::InvalidDigit);
                 }
                 Some(e)
-            },
+            }
             (None, Some(p)) => {
                 if X != 16 {
                     return Err(ParseError::InvalidDigit);
                 }
                 Some(p)
-            },
-            (None, None) => None
+            }
+            (None, None) => None,
         };
 
         // parse scale and remove the scale part from the str
         let scale = if let Some(pos) = scale_pos {
-            let value = match isize::from_str_radix(&src[pos+1..], X as u32) {
+            let value = match isize::from_str_radix(&src[pos + 1..], X as u32) {
                 Err(e) => match e.kind() {
                     IntErrorKind::Empty => return Err(ParseError::NoDigits),
                     _ => return Err(ParseError::InvalidDigit),
                 },
-                Ok(v) => v
+                Ok(v) => v,
             };
             src = &src[..pos];
             Some(value)
@@ -80,25 +80,25 @@ impl<const X: usize, const R: u8> FromStr for FloatRepr<X, R> {
             }
             (Some(dot), None) => {
                 let trunc = IBig::from_str_radix(&src[..dot], X as u32)?;
-                let fract = IBig::from_str_radix(&src[dot+1..], X as u32)?;
-                
+                let fract = IBig::from_str_radix(&src[dot + 1..], X as u32)?;
+
                 let fract_digits = get_precision::<X>(&fract);
                 let mantissa = trunc * IBig::from(X).pow(fract_digits) + fract;
                 Self::from_parts(mantissa, -(fract_digits as isize))
-            },
+            }
             (None, Some(s)) => {
                 let mantissa = IBig::from_str_radix(&src, X as u32)?;
                 Self::from_parts(mantissa, s)
-            },
+            }
             (Some(dot), Some(s)) => {
                 let trunc = IBig::from_str_radix(&src[..dot], X as u32)?;
-                let fract = IBig::from_str_radix(&src[dot+1..], X as u32)?;
+                let fract = IBig::from_str_radix(&src[dot + 1..], X as u32)?;
 
                 let fract_digits = get_precision::<X>(&fract);
                 let mantissa = trunc * IBig::from(X).pow(fract_digits) + fract;
                 let exponent = s - fract_digits as isize;
                 Self::from_parts(mantissa, exponent)
-            },
+            }
         };
 
         Ok(result)

@@ -1,9 +1,13 @@
 //! Implementation of formatters
 
+use crate::{
+    repr::FloatRepr,
+    utils::{get_precision, shr_radix, shr_rem_radix},
+    Rounding,
+};
 use core::fmt::{self, Display, Formatter, Write};
 use dashu_base::Abs;
 use dashu_int::ibig;
-use crate::{repr::FloatRepr, utils::{shr_rem_radix, shr_radix, get_precision, round_with_fract}};
 
 // TODO: implement Debug using mantissa * radix ^ exponent (prec: xxx),
 // FIXME: sign, width and fill options are not yet correctly handled
@@ -43,7 +47,7 @@ impl<const X: usize, const R: u8> Display for FloatRepr<X, R> {
                             let (shifted, mut rem) = shr_rem_radix::<X>(&frac, exp - v);
                             frac = shifted;
                             shr_radix::<X>(&mut rem, exp - v - 1);
-                            round_with_fract::<X, R>(&mut frac, rem, exp - v);
+                            frac += Rounding::from_fract::<X, R>(&frac, rem, exp - v);
                             get_precision::<X>(&frac)
                         } else {
                             0

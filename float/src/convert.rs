@@ -4,7 +4,8 @@ use dashu_base::DivRem;
 use dashu_int::{IBig, ibig, UBig};
 use crate::{
     repr::{FloatRepr, BinaryRepr, DecimalRepr},
-    utils::{get_precision, shr_rem_radix_in_place, round_with_fract, round_with_ratio},
+    round::Rounding,
+    utils::{get_precision, shr_rem_radix_in_place},
     ibig_ext::{remove_pow, log_rem, log_pow}
 };
 
@@ -54,11 +55,13 @@ impl<const R: u8> From<f64> for BinaryRepr<R> {
 
 impl<const X: usize, const R: u8> FloatRepr<X, R> {
     /// Create a floating number from a integer
+    #[inline]
     pub fn from_integer(integer: IBig, precision: usize) -> Self {
         Self::from_parts_with_precision(integer, 0, precision)
     }
 
     /// Create a floating number expressed as `(numerator / denominator) * Radix ^ exponent` with given precision.
+    // TODO: move this function to div.rs
     // TODO: accept unsigned denomiator only, and round_with_ratio should also accept unsigned denominator only
     pub fn from_ratio_exponent(numerator: IBig, denominator: IBig, mut exponent: isize, precision: usize) -> Self {
         // FIXME: use the fast div support from ibig
@@ -67,12 +70,12 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
         let mut digits = get_precision::<X>(&mantissa);
         match digits.cmp(&precision) {
             Ordering::Equal => {
-                mantissa += round_with_ratio::<R>(&mantissa, rem, &denominator);
+                mantissa += Rounding::from_ratio::<R>(&mantissa, rem, &denominator);
             },
             Ordering::Greater => {
                 let shift = digits - precision;
                 let low_digits = shr_rem_radix_in_place::<X>(&mut mantissa, shift);
-                mantissa += round_with_fract::<X, R>(&mantissa, low_digits, precision);
+                mantissa += Rounding::from_fract::<X, R>(&mantissa, low_digits, precision);
                 exponent = shift as isize;
             },
             Ordering::Less => {
@@ -84,7 +87,7 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
                     digits += 1;
                     exponent -= 1;
                 }
-                mantissa += round_with_fract::<X, R>(&mantissa, rem, 1);
+                mantissa += Rounding::from_fract::<X, R>(&mantissa, rem, 1);
             }
         }
 
@@ -139,7 +142,7 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
             if actual > precision {
                 let shift = actual - precision;
                 let low_digits = shr_rem_radix_in_place::<X>(&mut result.mantissa, shift);
-                result.mantissa += round_with_fract::<X, R>(&result.mantissa, low_digits, shift);
+                result.mantissa += Rounding::from_fract::<X, R>(&result.mantissa, low_digits, shift);
                 result.exponent += shift as isize;
             }
         }
@@ -239,31 +242,6 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
             exponent += shift;
         }
         (mantissa, exponent)
-    }
-
-    /// Convert raw parts into a float number, the precision will be inferred from mantissa
-    /// (the lowest k such that `mantissa < radix^k`)
-    /// 
-    /// # Panics
-    /// If the mantissa is larger than `radix^usize::MAX`
-    #[inline]
-    pub fn from_parts(mantissa: IBig, exponent: isize) -> Self {
-        // TODO: prevent using this function internally because we enforce normalized representation
-        let (mantissa, exponent) = Self::normalize(mantissa, exponent);
-        let precision = get_precision::<X>(&mantissa);
-        Self { mantissa, exponent, precision }
-    }
-
-    /// Convert raw parts into a float number, with given precision.
-    #[inline]
-    pub fn from_parts_with_precision(mantissa: IBig, exponent: isize, precision: usize) -> Self {
-        Self::from_parts(mantissa, exponent).with_precision(precision)
-    }
-
-    /// Convert the float number into raw (mantissa, exponent) parts
-    #[inline]
-    pub fn into_parts(self) -> (IBig, isize) {
-        (self.mantissa, self.exponent)
     }
 
     // TODO: let all these to_* functions return `Approximation`

@@ -1,5 +1,9 @@
+use crate::{
+    repr::FloatRepr,
+    utils::{get_precision, shr_rem_radix_in_place},
+    Rounding,
+};
 use core::ops::Mul;
-use crate::{repr::FloatRepr, utils::{shr_rem_radix_in_place, round_with_fract, get_precision}};
 
 impl<const X: usize, const R: u8> Mul for &FloatRepr<X, R> {
     type Output = FloatRepr<X, R>;
@@ -13,11 +17,19 @@ impl<const X: usize, const R: u8> Mul for &FloatRepr<X, R> {
         if actual_prec > precision {
             let shift = actual_prec - precision;
             let low_digits = shr_rem_radix_in_place::<X>(&mut mantissa, shift);
-            mantissa += round_with_fract::<X, R>(&mantissa, low_digits, shift);
+            mantissa += Rounding::from_fract::<X, R>(&mantissa, low_digits, shift);
             let (mantissa, exponent) = Self::Output::normalize(mantissa, exponent);
-            FloatRepr { mantissa, exponent, precision }
+            FloatRepr {
+                mantissa,
+                exponent,
+                precision,
+            }
         } else {
-            FloatRepr { mantissa, exponent, precision }
+            FloatRepr {
+                mantissa,
+                exponent,
+                precision,
+            }
         }
     }
 }
