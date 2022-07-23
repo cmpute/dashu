@@ -23,7 +23,7 @@ assert_eq!(
     "1589bda8effbfc495d8d73c83d8b27f94954e"
 );
 assert_eq!(
-    format!("hello {:#x}", d % ubig!(0xabcd1234134132451345)),
+    format!("hello {:#x}", d % ubig!(0xabcd_1234_1341_3245_1345)),
     "hello 0x1a7e7c487267d2658a93"
 );
 

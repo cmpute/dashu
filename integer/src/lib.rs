@@ -41,7 +41,7 @@
 //!     "1589bda8effbfc495d8d73c83d8b27f94954e"
 //! );
 //! assert_eq!(
-//!     format!("hello {:#x}", d % ubig!(0xabcd1234134132451345)),
+//!     format!("hello {:#x}", d % ubig!(0xabcd_1234_1341_3245_1345)),
 //!     "hello 0x1a7e7c487267d2658a93"
 //! );
 //!
@@ -63,7 +63,7 @@
 
 extern crate alloc;
 
-pub use crate::{ibig::IBig, ubig::UBig, sign::Sign};
+pub use crate::{ibig::IBig, sign::Sign, ubig::UBig};
 
 /// The primitive integer type used to construct the big integers.
 ///
@@ -94,7 +94,7 @@ pub mod modular;
 mod mul;
 mod mul_ops;
 pub mod ops;
-mod parse;
+pub mod parse;
 mod pow;
 mod primitive;
 mod radix;

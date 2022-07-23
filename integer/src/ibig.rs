@@ -2,7 +2,8 @@
 
 use crate::{
     repr::{Repr, TypedRepr, TypedReprRef},
-    sign::Sign, UBig,
+    sign::Sign,
+    UBig,
 };
 
 /// Signed big integer.

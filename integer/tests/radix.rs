@@ -89,14 +89,14 @@ fn test_ubig_in_radix() {
 
     assert_eq!(ubig!(123456789).to_string(), "123456789");
     assert_eq!(
-        ubig!(_123456789000000000000000000000000000000000123789749847509837450987340589273405)
+        ubig!(123456789000000000000000000000000000000000123789749847509837450987340589273405)
             .to_string(),
         "123456789000000000000000000000000000000000123789749847509837450987340589273405"
     );
-    assert_eq!(ubig!(_0x83c0d7401f0188462502c2e5f7035386b1c341d307e5fbe8200756201607769a706134cfab1).to_string(),
+    assert_eq!(ubig!(0x83c0d7401f0188462502c2e5f7035386b1c341d307e5fbe8200756201607769a706134cfab1).to_string(),
             "1048383517376714931597372965085953822045235087388094946568022880798260489887669110556129969");
     assert_eq!(
-        ubig!(_1048383517376714931597372965085953822045235087388094946568022880798260489887669110556129969).in_radix(16).to_string(),
+        ubig!(1048383517376714931597372965085953822045235087388094946568022880798260489887669110556129969).in_radix(16).to_string(),
         "83c0d7401f0188462502c2e5f7035386b1c341d307e5fbe8200756201607769a706134cfab1");
 }
 
@@ -189,6 +189,10 @@ fn test_ubig_from_str_radix() {
         ParseError::InvalidDigit
     );
     assert_eq!(
+        UBig::from_str_radix("ffff_ffff_ffff_ffff_ffff_ffff_ffff_fffg", 16).unwrap_err(),
+        ParseError::InvalidDigit
+    );
+    assert_eq!(
         UBig::from_str_radix("-0", 2).unwrap_err(),
         ParseError::InvalidDigit
     );
@@ -196,14 +200,26 @@ fn test_ubig_from_str_radix() {
     assert_eq!(UBig::from_str_radix("0", 2).unwrap(), ubig!(0));
     assert_eq!(UBig::from_str_radix("0000000000000", 2).unwrap(), ubig!(0));
     assert_eq!(
+        UBig::from_str_radix("000_000_000_000_0", 2).unwrap(),
+        ubig!(0)
+    );
+    assert_eq!(
         UBig::from_str_radix("1010110", 2).unwrap(),
         ubig!(0b1010110)
     );
+    assert_eq!(
+        UBig::from_str_radix("0101_0110", 2).unwrap(),
+        ubig!(0b1010110)
+    );
     assert_eq!(UBig::from_str_radix("f1Ee", 16).unwrap(), ubig!(0xf1ee));
+    assert_eq!(UBig::from_str_radix("f1_Ee", 16).unwrap(), ubig!(0xf1ee));
     assert_eq!(UBig::from_str_radix("Pp", 32).unwrap(), ubig!(825));
+    assert_eq!(UBig::from_str_radix("P_p", 32).unwrap(), ubig!(825));
 
     assert_eq!(UBig::from_str_radix("12345", 10), Ok(ubig!(12345)));
+    assert_eq!(UBig::from_str_radix("1_23_45", 10), Ok(ubig!(12345)));
     assert_eq!(UBig::from_str_radix("abzz", 36), Ok(ubig!(482111)));
+    assert_eq!(UBig::from_str_radix("ab_zz", 36), Ok(ubig!(482111)));
     assert_eq!(
         UBig::from_str_radix(
             "1538958592398779500320098585338768070858734861441260196946465951498852935601537907018559511",
@@ -211,6 +227,14 @@ fn test_ubig_from_str_radix() {
         ),
         UBig::from_str_radix(
             "c167bcc5802bf76f345a9f2a738d9d3b75ea4560a9be33c330216cbd15efc15d872a781f017",
+            16));
+    assert_eq!(
+        UBig::from_str_radix(
+            "15389_58592_39877_95003_20098_58533_87680_70858_73486_14412_60196_94646_59514_98852_93560",
+            10
+        ),
+        UBig::from_str_radix(
+            "571a_1aad_3444_d2c7_ce28_eacd_2285_2faa_03fe_3956_505c_f11e_cd48_6b7b_5f43_f8",
             16));
 
     {
@@ -426,7 +450,7 @@ fn test_macros() {
     assert_eq!(
         format!(
             "{:x}",
-            ubig!(_0x1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
+            ubig!(0x1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
         ),
         "1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     );
@@ -447,7 +471,7 @@ fn test_macros() {
     assert_eq!(
         format!(
             "{:x}",
-            ibig!(-_0x1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
+            ibig!(-0x1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
         ),
         "-1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     );

@@ -26,6 +26,9 @@ default-features = false
 [dependencies.cfg-if]
 version = "1.0.0"
 
+[dependencies.crunchy]
+version = "0.2.2"
+
 [dependencies.static_assertions]
 version = "1.1"
 

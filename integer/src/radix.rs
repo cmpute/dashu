@@ -15,8 +15,8 @@ pub const MAX_RADIX: Digit = 36;
 
 /// Is a radix in valid range?
 #[inline]
-pub fn is_radix_valid(radix: Digit) -> bool {
-    (2..=MAX_RADIX).contains(&radix)
+pub const fn is_radix_valid(radix: Digit) -> bool {
+    2 <= radix && radix <= MAX_RADIX
 }
 
 /// Panics if `radix` is not in valid range.
@@ -39,7 +39,13 @@ pub enum DigitCase {
 }
 
 /// Converts a byte (ASCII) representation of a digit to its value.
-pub fn digit_from_utf8_byte(byte: u8, radix: Digit) -> Option<Digit> {
+///
+/// The radix has to be in range 2..36 (inclusive), and the digit will
+/// be parsed with insensitive case.
+#[inline]
+pub const fn digit_from_ascii_byte(byte: u8, radix: Digit) -> Option<Digit> {
+    assert!(is_radix_valid(radix));
+
     let res = match byte {
         b'0'..=b'9' => (byte - b'0') as Digit,
         b'a'..=b'z' => (byte - b'a') as Digit + 10,
@@ -110,6 +116,7 @@ impl RadixInfo {
     }
 }
 
+// XXX: we may only store the table for 10 to reduce the binary size
 type RadixInfoTable = [RadixInfo; MAX_RADIX as usize + 1];
 
 static RADIX_INFO_TABLE: RadixInfoTable = generate_radix_info_table();
@@ -154,13 +161,13 @@ mod tests {
 
     #[test]
     fn test_digit_from_utf8_byte() {
-        assert_eq!(digit_from_utf8_byte(b'7', 10), Some(7));
-        assert_eq!(digit_from_utf8_byte(b'a', 16), Some(10));
-        assert_eq!(digit_from_utf8_byte(b'z', 36), Some(35));
-        assert_eq!(digit_from_utf8_byte(b'Z', 36), Some(35));
-        assert_eq!(digit_from_utf8_byte(b'?', 10), None);
-        assert_eq!(digit_from_utf8_byte(b'a', 10), None);
-        assert_eq!(digit_from_utf8_byte(b'z', 35), None);
-        assert_eq!(digit_from_utf8_byte(255, 35), None);
+        assert_eq!(digit_from_ascii_byte(b'7', 10), Some(7));
+        assert_eq!(digit_from_ascii_byte(b'a', 16), Some(10));
+        assert_eq!(digit_from_ascii_byte(b'z', 36), Some(35));
+        assert_eq!(digit_from_ascii_byte(b'Z', 36), Some(35));
+        assert_eq!(digit_from_ascii_byte(b'?', 10), None);
+        assert_eq!(digit_from_ascii_byte(b'a', 10), None);
+        assert_eq!(digit_from_ascii_byte(b'z', 35), None);
+        assert_eq!(digit_from_ascii_byte(255, 35), None);
     }
 }

@@ -1,4 +1,4 @@
-//! Formatting helpers.
+//! Integer formatting helpers.
 
 use crate::{
     ibig::IBig,

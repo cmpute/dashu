@@ -191,7 +191,7 @@ impl UBig {
     /// assert_eq!(ubig!(17).bit_len(), 5);
     /// assert_eq!(ubig!(0b101000000).bit_len(), 9);
     /// assert_eq!(ubig!(0).bit_len(), 0);
-    /// let x = ubig!(_0x90ffff3450897234);
+    /// let x = ubig!(0x90ffff3450897234);
     /// assert_eq!(x.bit_len(), x.in_radix(2).to_string().len());
     /// ```
     #[inline]
@@ -1011,13 +1011,13 @@ mod tests {
             ),
             (
                 ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-                ubig!(_0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
+                ubig!(0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
                 ubig!(0x22222222222222222222222222222222),
             ),
             (
-                ubig!(_0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
+                ubig!(0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
                 ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-                ubig!(_0xdddddddddddddddddddddddddddddddd11111111111111111111111111111111),
+                ubig!(0xdddddddddddddddddddddddddddddddd11111111111111111111111111111111),
             ),
         ];
 

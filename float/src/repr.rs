@@ -39,7 +39,7 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
 
     /// Convert raw parts into a float number, the precision will be inferred from mantissa
     /// (the lowest k such that `mantissa < radix^k`)
-    /// 
+    ///
     /// # Panics
     /// If the mantissa is larger than `radix^usize::MAX`
     #[inline]
@@ -47,7 +47,11 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
         // TODO: prevent using this function internally because we enforce normalized representation
         let (mantissa, exponent) = Self::normalize(mantissa, exponent);
         let precision = get_precision::<X>(&mantissa);
-        Self { mantissa, exponent, precision }
+        Self {
+            mantissa,
+            exponent,
+            precision,
+        }
     }
 
     /// Convert raw parts into a float number, with given precision.

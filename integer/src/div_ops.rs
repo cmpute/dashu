@@ -195,7 +195,7 @@ impl RemEuclid<IBig> for IBig {
                 } else {
                     rhs.into_sign_repr().1 - r.into_typed()
                 }
-            },
+            }
         };
         UBig(repr)
     }
@@ -217,7 +217,7 @@ impl RemEuclid<&IBig> for IBig {
                 } else {
                     mag1 - r.into_typed()
                 }
-            },
+            }
         };
         UBig(repr)
     }
@@ -238,7 +238,7 @@ impl RemEuclid<IBig> for &IBig {
                 } else {
                     rhs.into_sign_repr().1 - r.into_typed()
                 }
-            },
+            }
         };
         UBig(repr)
     }
@@ -260,7 +260,7 @@ impl RemEuclid<&IBig> for &IBig {
                 } else {
                     mag1 - r.into_typed()
                 }
-            },
+            }
         };
         UBig(repr)
     }
@@ -278,7 +278,7 @@ impl DivRemEuclid<IBig> for IBig {
             Positive => {
                 let (q, r) = mag0.div_rem(rhs.into_sign_repr().1);
                 (IBig(q.with_sign(sign1)), UBig(r))
-            },
+            }
             Negative => {
                 let (q, mut r) = mag0.div_rem(rhs.as_sign_repr().1);
                 let mut q = IBig(q.with_sign(-sign1));
@@ -304,7 +304,7 @@ impl DivRemEuclid<&IBig> for IBig {
             Positive => {
                 let (q, r) = mag0.div_rem(mag1);
                 (IBig(q.with_sign(sign1)), UBig(r))
-            },
+            }
             Negative => {
                 let (q, mut r) = mag0.div_rem(mag1);
                 let mut q = IBig(q.with_sign(-sign1));
@@ -313,7 +313,7 @@ impl DivRemEuclid<&IBig> for IBig {
                     r = mag1 - r.into_typed();
                 }
                 (q, UBig(r))
-            },
+            }
         }
     }
 }
@@ -330,7 +330,7 @@ impl DivRemEuclid<IBig> for &IBig {
             Positive => {
                 let (q, r) = mag0.div_rem(rhs.into_sign_repr().1);
                 (IBig(q.with_sign(sign1)), UBig(r))
-            },
+            }
             Negative => {
                 let (q, mut r) = mag0.div_rem(rhs.as_sign_repr().1);
                 let mut q = IBig(q.with_sign(-sign1));
@@ -356,7 +356,7 @@ impl DivRemEuclid<&IBig> for &IBig {
             Positive => {
                 let (q, r) = mag0.div_rem(mag1);
                 (IBig(q.with_sign(sign1)), UBig(r))
-            },
+            }
             Negative => {
                 let (q, mut r) = mag0.div_rem(mag1);
                 let mut q = IBig(q.with_sign(-sign1));
@@ -365,7 +365,7 @@ impl DivRemEuclid<&IBig> for &IBig {
                     r = mag1 - r.into_typed();
                 }
                 (q, UBig(r))
-            },
+            }
         }
     }
 }

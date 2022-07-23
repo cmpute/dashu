@@ -13,12 +13,9 @@ fn test_bit() {
 
     assert_eq!(ubig!(0xffffffffffffffffffffffffffffffff).bit(127), true);
     assert_eq!(ubig!(0xffffffffffffffffffffffffffffffff).bit(128), false);
+    assert_eq!(ubig!(0xffffffffffffffffffffffffffffffffffff).bit(143), true); // 2 ^ 144 - 1
     assert_eq!(
-        ubig!(_0xffffffffffffffffffffffffffffffffffff).bit(143),
-        true
-    ); // 2 ^ 144 - 1
-    assert_eq!(
-        ubig!(_0xffffffffffffffffffffffffffffffffffff).bit(144),
+        ubig!(0xffffffffffffffffffffffffffffffffffff).bit(144),
         false
     );
 }
@@ -29,34 +26,34 @@ fn test_set_bit() {
     a.set_bit(3);
     assert_eq!(a, ubig!(0b1000));
     a.set_bit(129);
-    assert_eq!(a, ubig!(_0x200000000000000000000000000000008));
+    assert_eq!(a, ubig!(0x200000000000000000000000000000008));
     a.set_bit(1);
-    assert_eq!(a, ubig!(_0x20000000000000000000000000000000a));
+    assert_eq!(a, ubig!(0x20000000000000000000000000000000a));
     a.set_bit(1);
-    assert_eq!(a, ubig!(_0x20000000000000000000000000000000a));
+    assert_eq!(a, ubig!(0x20000000000000000000000000000000a));
     a.set_bit(127);
-    assert_eq!(a, ubig!(_0x28000000000000000000000000000000a));
+    assert_eq!(a, ubig!(0x28000000000000000000000000000000a));
     a.set_bit(194);
     assert_eq!(
         a,
-        ubig!(_0x400000000000000028000000000000000000000000000000a)
+        ubig!(0x400000000000000028000000000000000000000000000000a)
     );
 }
 
 #[test]
 fn test_clear_bit() {
-    let mut a = ubig!(_0x400000000000000028000000000000000000000000000000a);
+    let mut a = ubig!(0x400000000000000028000000000000000000000000000000a);
     a.clear_bit(10000);
     assert_eq!(
         a,
-        ubig!(_0x400000000000000028000000000000000000000000000000a)
+        ubig!(0x400000000000000028000000000000000000000000000000a)
     );
     a.clear_bit(194);
-    assert_eq!(a, ubig!(_0x28000000000000000000000000000000a));
+    assert_eq!(a, ubig!(0x28000000000000000000000000000000a));
     a.clear_bit(1);
-    assert_eq!(a, ubig!(_0x280000000000000000000000000000008));
+    assert_eq!(a, ubig!(0x280000000000000000000000000000008));
     a.clear_bit(129);
-    assert_eq!(a, ubig!(_0x80000000000000000000000000000008));
+    assert_eq!(a, ubig!(0x80000000000000000000000000000008));
     a.clear_bit(127);
     assert_eq!(a, ubig!(0b1000));
     a.clear_bit(3);
@@ -68,7 +65,7 @@ fn test_trailing_zeros() {
     assert_eq!(ubig!(0).trailing_zeros(), None);
     assert_eq!(ubig!(0xf0000).trailing_zeros(), Some(16));
     assert_eq!(
-        ubig!(_0xfffffffffffffffffffff00000000000000000000000000000000000000000000000000)
+        ubig!(0xfffffffffffffffffffff00000000000000000000000000000000000000000000000000)
             .trailing_zeros(),
         Some(200)
     );
@@ -83,7 +80,7 @@ fn test_bit_len() {
     assert_eq!(ubig!(0).bit_len(), 0);
     assert_eq!(ubig!(0xf0000).bit_len(), 20);
     assert_eq!(
-        ubig!(_0xfffffffffffffffffffff00000000000000000000000000000000000000000000000000).bit_len(),
+        ubig!(0xfffffffffffffffffffff00000000000000000000000000000000000000000000000000).bit_len(),
         284
     );
 }
@@ -96,15 +93,15 @@ fn test_is_power_of_two() {
     assert_eq!(ubig!(16).is_power_of_two(), true);
     assert_eq!(ubig!(17).is_power_of_two(), false);
     assert_eq!(
-        ubig!(_0x4000000000000000000000000000000000000000000000).is_power_of_two(),
+        ubig!(0x4000000000000000000000000000000000000000000000).is_power_of_two(),
         true
     );
     assert_eq!(
-        ubig!(_0x5000000000000000000000000000000000000000000000).is_power_of_two(),
+        ubig!(0x5000000000000000000000000000000000000000000000).is_power_of_two(),
         false
     );
     assert_eq!(
-        ubig!(_0x4000000000000000000000010000000000000000000000).is_power_of_two(),
+        ubig!(0x4000000000000000000000010000000000000000000000).is_power_of_two(),
         false
     );
 }
@@ -114,38 +111,38 @@ fn test_next_power_of_two() {
     assert_eq!(ubig!(0).next_power_of_two(), ubig!(1));
     assert_eq!(ubig!(16).next_power_of_two(), ubig!(16));
     assert_eq!(ubig!(17).next_power_of_two(), ubig!(32));
-    assert_eq!(ubig!(_0xffffffff).next_power_of_two(), ubig!(_0x100000000));
+    assert_eq!(ubig!(0xffffffff).next_power_of_two(), ubig!(0x100000000));
     assert_eq!(
-        ubig!(_0xffffffffffffffff).next_power_of_two(),
-        ubig!(_0x10000000000000000)
+        ubig!(0xffffffffffffffff).next_power_of_two(),
+        ubig!(0x10000000000000000)
     );
     assert_eq!(
-        ubig!(_0xffffffffffffffffffffffffffffffff).next_power_of_two(),
-        ubig!(_0x100000000000000000000000000000000)
+        ubig!(0xffffffffffffffffffffffffffffffff).next_power_of_two(),
+        ubig!(0x100000000000000000000000000000000)
     );
     assert_eq!(
-        ubig!(_0xf0000000000000000000000000000000).next_power_of_two(),
-        ubig!(_0x100000000000000000000000000000000)
+        ubig!(0xf0000000000000000000000000000000).next_power_of_two(),
+        ubig!(0x100000000000000000000000000000000)
     );
     assert_eq!(
-        ubig!(_0xffffffffffffffff0000000000000000).next_power_of_two(),
-        ubig!(_0x100000000000000000000000000000000)
+        ubig!(0xffffffffffffffff0000000000000000).next_power_of_two(),
+        ubig!(0x100000000000000000000000000000000)
     );
     assert_eq!(
-        ubig!(_0xffffffffffffffff0000000000000000).next_power_of_two(),
-        ubig!(_0x100000000000000000000000000000000)
+        ubig!(0xffffffffffffffff0000000000000000).next_power_of_two(),
+        ubig!(0x100000000000000000000000000000000)
     );
     assert_eq!(
-        ubig!(_0x100000000000000000000000000000000).next_power_of_two(),
-        ubig!(_0x100000000000000000000000000000000)
+        ubig!(0x100000000000000000000000000000000).next_power_of_two(),
+        ubig!(0x100000000000000000000000000000000)
     );
     assert_eq!(
-        ubig!(_0x100000000000000000000000000000001).next_power_of_two(),
-        ubig!(_0x200000000000000000000000000000000)
+        ubig!(0x100000000000000000000000000000001).next_power_of_two(),
+        ubig!(0x200000000000000000000000000000000)
     );
     assert_eq!(
-        ubig!(_0x100100000000000000000000000000000).next_power_of_two(),
-        ubig!(_0x200000000000000000000000000000000)
+        ubig!(0x100100000000000000000000000000000).next_power_of_two(),
+        ubig!(0x200000000000000000000000000000000)
     );
 }
 
@@ -154,24 +151,24 @@ fn test_and_ubig() {
     let cases = [
         (ubig!(0xf0f0), ubig!(0xff00), ubig!(0xf000)),
         (
-            ubig!(_0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
+            ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
             ubig!(0xff),
             ubig!(0xee),
         ),
         (
             ubig!(0xff),
-            ubig!(_0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
+            ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
             ubig!(0xee),
         ),
         (
-            ubig!(_0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-            ubig!(_0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
-            ubig!(_0xcccccccccccccccccccccccccccccccc),
+            ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
+            ubig!(0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
+            ubig!(0xcccccccccccccccccccccccccccccccc),
         ),
         (
-            ubig!(_0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
-            ubig!(_0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-            ubig!(_0xcccccccccccccccccccccccccccccccc),
+            ubig!(0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
+            ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
+            ubig!(0xcccccccccccccccccccccccccccccccc),
         ),
     ];
 
@@ -199,24 +196,24 @@ fn test_or_ubig() {
     let cases = [
         (ubig!(0xf0f0), ubig!(0xff00), ubig!(0xfff0)),
         (
-            ubig!(_0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
+            ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
             ubig!(0xff),
-            ubig!(_0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeff),
+            ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeff),
         ),
         (
             ubig!(0xff),
-            ubig!(_0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-            ubig!(_0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeff),
+            ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
+            ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeff),
         ),
         (
-            ubig!(_0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-            ubig!(_0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
-            ubig!(_0xddddddddddddddddddddddddddddddddffffffffffffffffffffffffffffffff),
+            ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
+            ubig!(0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
+            ubig!(0xddddddddddddddddddddddddddddddddffffffffffffffffffffffffffffffff),
         ),
         (
-            ubig!(_0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
-            ubig!(_0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-            ubig!(_0xddddddddddddddddddddddddddddddddffffffffffffffffffffffffffffffff),
+            ubig!(0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
+            ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
+            ubig!(0xddddddddddddddddddddddddddddddddffffffffffffffffffffffffffffffff),
         ),
     ];
 
@@ -244,24 +241,24 @@ fn test_xor_ubig() {
     let cases = [
         (ubig!(0xf0f0), ubig!(0xff00), ubig!(0xff0)),
         (
-            ubig!(_0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
+            ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
             ubig!(0xff),
-            ubig!(_0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeee11),
+            ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeee11),
         ),
         (
             ubig!(0xff),
-            ubig!(_0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-            ubig!(_0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeee11),
+            ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
+            ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeee11),
         ),
         (
-            ubig!(_0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-            ubig!(_0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
-            ubig!(_0xdddddddddddddddddddddddddddddddd33333333333333333333333333333333),
+            ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
+            ubig!(0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
+            ubig!(0xdddddddddddddddddddddddddddddddd33333333333333333333333333333333),
         ),
         (
-            ubig!(_0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
-            ubig!(_0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-            ubig!(_0xdddddddddddddddddddddddddddddddd33333333333333333333333333333333),
+            ubig!(0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
+            ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
+            ubig!(0xdddddddddddddddddddddddddddddddd33333333333333333333333333333333),
         ),
     ];
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2 (WIP)
+
+- Support parsing very long integers using `ubig!` and `ibig!` without underscore prefix
+- Support underscore separater in string parsing
+
 ## 0.1.1
 
 - Implemented modular inverse for the `Modulo` type.

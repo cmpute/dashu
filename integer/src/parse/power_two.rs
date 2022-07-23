@@ -33,7 +33,10 @@ fn parse_word(src: &str, radix: Digit) -> Result<Word, ParseError> {
     let mut word = 0;
     let mut bits = 0;
     for byte in src.as_bytes().iter().rev() {
-        let digit = radix::digit_from_utf8_byte(*byte, radix).ok_or(ParseError::InvalidDigit)?;
+        if *byte == b'_' {
+            continue;
+        }
+        let digit = radix::digit_from_ascii_byte(*byte, radix).ok_or(ParseError::InvalidDigit)?;
         word |= (digit as Word) << bits;
         bits += log_radix;
     }
@@ -56,7 +59,10 @@ fn parse_large(src: &str, radix: Digit) -> Result<UBig, ParseError> {
     let mut bits = 0;
     let mut word = 0;
     for byte in src.as_bytes().iter().rev() {
-        let digit = radix::digit_from_utf8_byte(*byte, radix).ok_or(ParseError::InvalidDigit)?;
+        if *byte == b'_' {
+            continue;
+        }
+        let digit = radix::digit_from_ascii_byte(*byte, radix).ok_or(ParseError::InvalidDigit)?;
         word |= (digit as Word) << bits;
         let new_bits = bits + log_radix;
         if new_bits >= WORD_BITS {

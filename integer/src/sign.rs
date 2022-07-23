@@ -7,6 +7,7 @@ use crate::{
 };
 use core::ops::{Mul, MulAssign, Neg};
 
+/// An enum representing the sign of a number
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub enum Sign {

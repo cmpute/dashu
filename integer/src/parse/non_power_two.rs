@@ -18,7 +18,14 @@ const CHUNK_LEN: usize = 256;
 pub fn parse(src: &str, radix: Digit) -> Result<UBig, ParseError> {
     debug_assert!(radix::is_radix_valid(radix) && !radix.is_power_of_two());
     let radix_info = radix::radix_info(radix);
-    let bytes = src.as_bytes();
+    let mut bytes = src.as_bytes();
+    let stripped: vec::Vec<u8>;
+
+    // strip all underscores if detected
+    if bytes.contains(&b'_') {
+        stripped = bytes.iter().copied().filter(|&c| c != b'_').collect();
+        bytes = &stripped;
+    }
 
     if bytes.len() <= radix_info.digits_per_word {
         Ok(parse_word(bytes, radix)?.into())
@@ -38,7 +45,7 @@ fn parse_word(src: &[u8], radix: Digit) -> Result<Word, ParseError> {
 
     let mut word: Word = 0;
     for byte in src.iter() {
-        let digit = radix::digit_from_utf8_byte(*byte, radix).ok_or(ParseError::InvalidDigit)?;
+        let digit = radix::digit_from_ascii_byte(*byte, radix).ok_or(ParseError::InvalidDigit)?;
         word = word * (radix as Word) + (digit as Word);
     }
     Ok(word)
