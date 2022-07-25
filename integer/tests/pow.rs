@@ -1,4 +1,4 @@
-use dashu_int::{ibig, ubig};
+mod macros;
 
 #[test]
 fn test_pow_ubig() {

@@ -1,4 +1,6 @@
-use dashu_int::{error::ParseError, ibig, ubig, IBig, UBig};
+use dashu_int::{error::ParseError, IBig, UBig};
+
+mod macros;
 
 #[test]
 fn test_ubig_format() {

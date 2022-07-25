@@ -22,4 +22,4 @@ members = [
     "float",
     "macros",
 ]
-default-members = ["base", "integer"]
+default-members = ["base", "integer", "float", "macros"]

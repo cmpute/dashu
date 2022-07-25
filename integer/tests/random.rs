@@ -1,5 +1,7 @@
-use dashu_int::{ibig, ops::DivRem, ubig, UBig};
+use dashu_int::{ops::DivRem, UBig};
 use rand::{distributions::uniform::Uniform, prelude::*};
+
+mod macros;
 
 #[test]
 fn test_uniform_ubig() {

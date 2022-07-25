@@ -2,7 +2,8 @@ use core::{
     fmt::Debug,
     ops::{Mul, MulAssign},
 };
-use dashu_int::{ibig, ubig};
+
+mod macros;
 
 fn test_mul<'a, T>(a: &'a T, b: &'a T, c: &'a T)
 where

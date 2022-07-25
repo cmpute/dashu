@@ -1,7 +1,7 @@
 //! TODO: Extension to ibig that should be upstreamed.
 
 use dashu_base::UnsignedAbs;
-use dashu_int::{ibig, ubig, IBig, UBig};
+use dashu_int::{IBig, UBig};
 
 // REF: https://en.wikipedia.org/wiki/Exponential_search
 //      https://people.csail.mit.edu/jaffer/III/ilog.pdf
@@ -9,7 +9,7 @@ use dashu_int::{ibig, ubig, IBig, UBig};
 //
 // If log_rem(x, base) = (e, r), then x = base^e + r and 0 <= r < (base-1) * base^e
 pub fn log_rem(x: &UBig, base: usize) -> (usize, UBig) {
-    assert!(x > &ubig!(0));
+    assert!(!x.is_zero());
 
     // short cut for base 2
     if base == 2 {
@@ -21,7 +21,7 @@ pub fn log_rem(x: &UBig, base: usize) -> (usize, UBig) {
 
     // very naive algorithm by now
     let mut counter = 0;
-    let mut exp = ubig!(1);
+    let mut exp = UBig::one();
 
     loop {
         let new_exp = &exp * base;
@@ -54,8 +54,8 @@ pub fn magnitude(x: &IBig) -> UBig {
 }
 
 pub fn remove_pow(x: &mut IBig, base: &IBig) -> UBig {
-    let mut counter = ubig!(0);
-    while &*x % base == ibig!(0) {
+    let mut counter = UBig::zero();
+    while &*x % base == IBig::zero() {
         *x /= base;
         counter += 1u8;
     }
@@ -68,10 +68,10 @@ mod tests {
 
     #[test]
     fn test_log_rem() {
-        assert_eq!(log_rem(&ubig!(1), 2), (0, ubig!(0)));
-        assert_eq!(log_rem(&ubig!(2), 2), (1, ubig!(0)));
-        assert_eq!(log_rem(&ubig!(3), 2), (1, ubig!(1)));
-        assert_eq!(log_rem(&ubig!(3), 10), (0, ubig!(2)));
-        assert_eq!(log_rem(&ubig!(13), 10), (1, ubig!(3)));
+        assert_eq!(log_rem(&UBig::from(1u8), 2), (0, UBig::from(0u8)));
+        assert_eq!(log_rem(&UBig::from(2u8), 2), (1, UBig::from(0u8)));
+        assert_eq!(log_rem(&UBig::from(3u8), 2), (1, UBig::from(1u8)));
+        assert_eq!(log_rem(&UBig::from(3u8), 10), (0, UBig::from(2u8)));
+        assert_eq!(log_rem(&UBig::from(13u8), 10), (1, UBig::from(3u8)));
     }
 }

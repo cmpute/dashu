@@ -1,4 +1,4 @@
-Following is the copy of the MIT license of ibig-rs:
+Following is the copy of the MIT license of ibig-rs crate:
 
 ```
 MIT License
@@ -24,7 +24,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-Initial modifications on the `ibig` library:
+Initial modifications (at version 0.1.0) on the `ibig` library:
 
 1. The underlying represetation of the UBig is vastly changed, the new representation
    supports inline double words and embedded sign bit, and the IBig doesn't support get
@@ -36,3 +36,5 @@ Initial modifications on the `ibig` library:
    copying overhead.
 5. `AndNot` trait is made private because it's not widely used and the naming doesn't
    follow the BitXXX style in the std library.
+
+The other modifications from later versions can be found in the CHANGELOG.md

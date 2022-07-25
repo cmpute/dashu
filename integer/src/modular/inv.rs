@@ -21,15 +21,15 @@ impl<'a> Modulo<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::{modular::ModuloRing, ubig};
+    /// # use dashu_int::{modular::ModuloRing, UBig};
     /// // A Mersenne prime.
-    /// let p = ubig!(2).pow(127) - ubig!(1);
+    /// let p = UBig::from(2u8).pow(127) - UBig::one();
     /// let ring = ModuloRing::new(p.clone());
     /// // Fermat's little theorem: a^(p-2) = a^-1 (mod p)
     /// let a = ring.convert(123);
     /// let ainv = a.clone().inv().unwrap();
-    /// assert_eq!(ainv, a.pow(&(p - ubig!(2))));
-    /// assert_eq!((a * ainv).residue(), ubig!(1));
+    /// assert_eq!(ainv, a.pow(&(p - UBig::from(2u8))));
+    /// assert_eq!((a * ainv).residue(), 1);
     /// ```
     #[inline]
     pub fn inv(self) -> Option<Modulo<'a>> {

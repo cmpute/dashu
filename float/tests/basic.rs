@@ -1,20 +1,19 @@
 use std::str::FromStr;
 
-use dashu_int::ibig;
-use dashu_float::{FBig, DBig};
+use dashu_float::{DBig, FBig};
 
 #[test]
 fn test_print() {
     let f = FBig::from(-1.2f32);
     let g = FBig::from(2.7f32);
-    dbg!(f.clone()+g.clone());
-    println!("f+g: {}", f+g);
+    dbg!(f.clone() + g.clone());
+    println!("f+g: {}", f + g);
     // dbg!(&f);
     // println!("{}", f);
     // for i in 0..10 {
     //     println!(".{}, {:.*}", i, i, f);
     // }
-    let f = FBig::from_ratio(ibig!(3), ibig!(16), 10);
+    let f = FBig::from_ratio(3.into(), 16.into(), 10);
     dbg!(&f);
     println!("{}", f);
     // for i in 0..10 {

@@ -6,7 +6,7 @@ use crate::{
 use core::ops::Div;
 use core::cmp::Ordering;
 use dashu_base::DivRem;
-use dashu_int::{ibig, IBig};
+use dashu_int::IBig;
 
 impl<const X: usize, const R: u8> FloatRepr<X, R> {
     /// Create a floating number expressed as `(numerator / denominator) * Radix ^ exponent` with given precision.
@@ -32,7 +32,7 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
                 exponent = shift as isize;
             }
             Ordering::Less => {
-                while digits < precision && &rem != &ibig!(0) {
+                while digits < precision && !rem.is_zero() {
                     let (d, r) = (rem * IBig::from(X)).div_rem(&denominator);
                     rem = r;
                     mantissa *= IBig::from(X);

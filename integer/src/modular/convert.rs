@@ -28,9 +28,9 @@ impl ModuloRing {
     /// # Example
     ///
     /// ```
-    /// # use dashu_int::{modular::ModuloRing, ubig};
-    /// let ring = ModuloRing::new(ubig!(100));
-    /// assert_eq!(ring.modulus(), ubig!(100));
+    /// # use dashu_int::{modular::ModuloRing, UBig};
+    /// let ring = ModuloRing::new(UBig::from(100u8));
+    /// assert_eq!(ring.modulus(), 100);
     /// ```
     #[inline]
     pub fn modulus(&self) -> UBig {
@@ -46,10 +46,10 @@ impl ModuloRing {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::{modular::ModuloRing, ubig};
-    /// let ring = ModuloRing::new(ubig!(100));
+    /// # use dashu_int::{modular::ModuloRing, UBig};
+    /// let ring = ModuloRing::new(UBig::from(100u8));
     /// let x = ring.convert(-1234);
-    /// let y = ring.convert(ubig!(3366));
+    /// let y = ring.convert(UBig::from(3366u32));
     /// assert!(x == y);
     /// ```
     #[inline]
@@ -64,10 +64,10 @@ impl Modulo<'_> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::{modular::ModuloRing, ubig};
-    /// let ring = ModuloRing::new(ubig!(100));
+    /// # use dashu_int::{modular::ModuloRing, UBig};
+    /// let ring = ModuloRing::new(UBig::from(100u8));
     /// let x = ring.convert(-1234);
-    /// assert_eq!(x.residue(), ubig!(66));
+    /// assert_eq!(x.residue(), 66);
     /// ```
     #[inline]
     pub fn residue(&self) -> UBig {

@@ -13,10 +13,10 @@ use crate::{
 /// # Examples
 ///
 /// ```
-/// # use dashu_int::{error::ParseError, ibig, IBig};
-/// let a = ibig!(a2a123bbb127779cccc123123ccc base 32);
-/// let b = ibig!(-0x1231abcd4134);
-/// let c = IBig::from_str_radix("a2a123bbb127779cccc123123ccc", 32)?;
+/// # use dashu_int::{error::ParseError, IBig};
+/// let a = IBig::from(408580953453092208335085386466371u128);
+/// let b = IBig::from(-0x1231abcd4134i64);
+/// let c = IBig::from_str_radix("a2a123bbb127779cccc123", 32)?;
 /// let d = IBig::from_str_radix("-1231abcd4134", 16)?;
 /// assert_eq!(a, c);
 /// assert_eq!(b, d);

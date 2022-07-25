@@ -1,4 +1,6 @@
-use dashu_int::{ibig, ops::PowerOfTwo, ubig, IBig};
+use dashu_int::{ops::PowerOfTwo, IBig};
+
+mod macros;
 
 #[test]
 #[allow(clippy::bool_assert_comparison)]

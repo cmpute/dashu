@@ -35,8 +35,8 @@ impl UBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::{ubig, UBig};
-    /// assert_eq!(UBig::from_le_bytes(&[3, 2, 1]), ubig!(0x010203));
+    /// # use dashu_int::UBig;
+    /// assert_eq!(UBig::from_le_bytes(&[3, 2, 1]), 0x010203);
     /// ```
     #[inline]
     pub fn from_le_bytes(bytes: &[u8]) -> UBig {
@@ -70,8 +70,8 @@ impl UBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::{ubig, UBig};
-    /// assert_eq!(UBig::from_be_bytes(&[1, 2, 3]), ubig!(0x010203));
+    /// # use dashu_int::UBig;
+    /// assert_eq!(UBig::from_be_bytes(&[1, 2, 3]), 0x010203);
     /// ```
     #[inline]
     pub fn from_be_bytes(bytes: &[u8]) -> UBig {
@@ -105,9 +105,9 @@ impl UBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::ubig;
-    /// assert!(ubig!(0).to_le_bytes().is_empty());
-    /// assert_eq!(ubig!(0x010203).to_le_bytes(), [3, 2, 1]);
+    /// # use dashu_int::UBig;
+    /// assert!(UBig::zero().to_le_bytes().is_empty());
+    /// assert_eq!(UBig::from(0x010203u32).to_le_bytes(), [3, 2, 1]);
     /// ```
     pub fn to_le_bytes(&self) -> Vec<u8> {
         match self.repr() {
@@ -136,9 +136,9 @@ impl UBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::ubig;
-    /// assert!(ubig!(0).to_be_bytes().is_empty());
-    /// assert_eq!(ubig!(0x010203).to_be_bytes(), [1, 2, 3]);
+    /// # use dashu_int::UBig;
+    /// assert!(UBig::zero().to_be_bytes().is_empty());
+    /// assert_eq!(UBig::from(0x010203u32).to_be_bytes(), [1, 2, 3]);
     /// ```
     pub fn to_be_bytes(&self) -> Vec<u8> {
         match self.repr() {
@@ -197,8 +197,8 @@ impl UBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::ubig;
-    /// assert_eq!(ubig!(134).to_f32(), 134.0f32);
+    /// # use dashu_int::UBig;
+    /// assert_eq!(UBig::from(134u8).to_f32(), 134.0f32);
     /// ```
     #[inline]
     pub fn to_f32(&self) -> f32 {
@@ -212,8 +212,8 @@ impl UBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::ubig;
-    /// assert_eq!(ubig!(134).to_f64(), 134.0f64);
+    /// # use dashu_int::UBig;
+    /// assert_eq!(UBig::from(134u8).to_f64(), 134.0f64);
     /// ```
     #[inline]
     pub fn to_f64(&self) -> f64 {
@@ -254,8 +254,8 @@ impl IBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::ibig;
-    /// assert_eq!(ibig!(-134).to_f32(), -134.0f32);
+    /// # use dashu_int::IBig;
+    /// assert_eq!(IBig::from(-134).to_f32(), -134.0f32);
     /// ```
     #[inline]
     pub fn to_f32(&self) -> f32 {
@@ -274,8 +274,8 @@ impl IBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::ibig;
-    /// assert_eq!(ibig!(-134).to_f64(), -134.0f64);
+    /// # use dashu_int::IBig;
+    /// assert_eq!(IBig::from(-134).to_f64(), -134.0f64);
     /// ```
     #[inline]
     pub fn to_f64(&self) -> f64 {

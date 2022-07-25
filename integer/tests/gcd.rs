@@ -1,4 +1,6 @@
-use dashu_int::{ubig, IBig};
+use dashu_int::IBig;
+
+mod macros;
 
 #[test]
 fn test_gcd_ubig() {

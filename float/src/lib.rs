@@ -13,6 +13,7 @@ mod div;
 mod fmt;
 mod ibig_ext;
 mod mul;
+mod macros;
 mod parse;
 mod repr;
 mod round;

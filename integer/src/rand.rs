@@ -84,12 +84,12 @@ where
 /// # Example
 ///
 /// ```
-/// use dashu_int::ubig;
+/// use dashu_int::UBig;
 /// use rand::{distributions::uniform::Uniform, thread_rng, Rng};
-/// let a = thread_rng().gen_range(ubig!(3)..ubig!(10));
-/// let b = thread_rng().sample(Uniform::new(ubig!(0), &a));
-/// assert!(a >= ubig!(3) && a < ubig!(10));
-/// assert!(b >= ubig!(0) && b < a);
+/// let a = thread_rng().gen_range(UBig::from(3u8)..UBig::from(10u8));
+/// let b = thread_rng().sample(Uniform::new(UBig::zero(), &a));
+/// assert!(a >= 3 && a < 10);
+/// assert!(b >= 0 && b < a);
 /// ```
 pub struct UniformUBig {
     range: UBig,
@@ -142,12 +142,12 @@ impl UniformSampler for UniformUBig {
 /// # Example
 ///
 /// ```
-/// use dashu_int::ibig;
+/// use dashu_int::IBig;
 /// use rand::{distributions::uniform::Uniform, thread_rng, Rng};
-/// let a = thread_rng().gen_range(ibig!(3)..ibig!(10));
-/// let b = thread_rng().sample(Uniform::new(ibig!(-5), &a));
-/// assert!(a >= ibig!(3) && a < ibig!(10));
-/// assert!(b >= ibig!(-5) && b < a);
+/// let a = thread_rng().gen_range(IBig::from(3)..IBig::from(10));
+/// let b = thread_rng().sample(Uniform::new(IBig::from(-5), &a));
+/// assert!(a >= 3 && a < 10);
+/// assert!(b >= -5 && b < a);
 /// ```
 pub struct UniformIBig {
     range: UBig,

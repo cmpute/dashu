@@ -1,5 +1,6 @@
 use core::cmp::Ordering;
-use dashu_int::{ibig, ubig};
+
+mod macros;
 
 #[test]
 fn test_same_type_cmp() {

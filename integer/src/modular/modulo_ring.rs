@@ -19,9 +19,9 @@ use core::cmp::Ordering;
 /// # Examples
 ///
 /// ```
-/// # use dashu_int::{modular::ModuloRing, ubig};
-/// let ring = ModuloRing::new(ubig!(100));
-/// assert_eq!(ring.modulus(), ubig!(100));
+/// # use dashu_int::{modular::ModuloRing, UBig};
+/// let ring = ModuloRing::new(UBig::from(100u8));
+/// assert_eq!(ring.modulus(), 100);
 /// ```
 pub struct ModuloRing(ModuloRingRepr);
 
@@ -60,9 +60,9 @@ impl ModuloRing {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::{modular::ModuloRing, ubig};
-    /// let ring = ModuloRing::new(ubig!(100));
-    /// assert_eq!(ring.modulus(), ubig!(100));
+    /// # use dashu_int::{modular::ModuloRing, UBig};
+    /// let ring = ModuloRing::new(UBig::from(100u8));
+    /// assert_eq!(ring.modulus(), 100);
     /// ```
     ///
     /// # Panics

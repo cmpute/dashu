@@ -13,11 +13,11 @@ use alloc::boxed::Box;
 /// # Examples
 ///
 /// ```
-/// # use dashu_int::{modular::ModuloRing, ubig};
-/// let ring = ModuloRing::new(ubig!(10000));
+/// # use dashu_int::{modular::ModuloRing, UBig};
+/// let ring = ModuloRing::new(UBig::from(10000u32));
 /// let x = ring.convert(12345);
 /// let y = ring.convert(55443);
-/// assert_eq!((x - y).residue(), ubig!(6902));
+/// assert_eq!((x - y).residue(), 6902);
 /// ```
 pub struct Modulo<'a>(ModuloRepr<'a>);
 

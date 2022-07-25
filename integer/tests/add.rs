@@ -2,7 +2,8 @@ use core::{
     fmt::Debug,
     ops::{Add, AddAssign, Sub, SubAssign},
 };
-use dashu_int::{ibig, ubig};
+
+mod macros;
 
 /// Test a + b = c in various ways.
 fn test_add_sub<'a, T>(a: &'a T, b: &'a T, c: &'a T)

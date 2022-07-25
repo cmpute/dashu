@@ -1,8 +1,9 @@
 use dashu_int::{
-    ibig,
     ops::{DivEuclid, DivRem, DivRemEuclid, RemEuclid},
-    ubig, IBig, UBig,
+    IBig, UBig,
 };
+
+mod macros;
 
 #[test]
 fn test_div_rem_ubig() {

@@ -18,10 +18,10 @@ use crate::{
 /// # Examples
 ///
 /// ```
-/// # use dashu_int::{error::ParseError, ubig, UBig};
-/// let a = ubig!(a2a123bbb127779cccc123123ccc base 32);
-/// let b = ubig!(0x1231abcd4134);
-/// let c = UBig::from_str_radix("a2a123bbb127779cccc123123ccc", 32)?;
+/// # use dashu_int::{error::ParseError, UBig};
+/// let a = UBig::from(408580953453092208335085386466371u128);
+/// let b = UBig::from(0x1231abcd4134u64);
+/// let c = UBig::from_str_radix("a2a123bbb127779cccc123", 32)?;
 /// let d = UBig::from_str_radix("1231abcd4134", 16)?;
 /// assert_eq!(a, c);
 /// assert_eq!(b, d);

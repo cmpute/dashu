@@ -50,10 +50,10 @@ impl UBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::ubig;
-    /// assert_eq!(ubig!(0b10010).bit(1), true);
-    /// assert_eq!(ubig!(0b10010).bit(3), false);
-    /// assert_eq!(ubig!(0b10010).bit(100), false);
+    /// # use dashu_int::UBig;
+    /// assert_eq!(UBig::from(0b10010u16).bit(1), true);
+    /// assert_eq!(UBig::from(0b10010u16).bit(3), false);
+    /// assert_eq!(UBig::from(0b10010u16).bit(100), false);
     /// ```
     #[inline]
     pub fn bit(&self, n: usize) -> bool {
@@ -71,13 +71,13 @@ impl UBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::ubig;
+    /// # use dashu_int::UBig;
     ///
-    /// let mut a = ubig!(0b100);
+    /// let mut a = UBig::from(0b100u8);
     /// a.set_bit(0);
-    /// assert_eq!(a, ubig!(0b101));
+    /// assert_eq!(a, UBig::from(0b101u8));
     /// a.set_bit(10);
-    /// assert_eq!(a, ubig!(0b10000000101));
+    /// assert_eq!(a, UBig::from(0b10000000101u16));
     /// ```
     #[inline]
     pub fn set_bit(&mut self, n: usize) {
@@ -124,10 +124,10 @@ impl UBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::ubig;
-    /// let mut a = ubig!(0b101);
+    /// # use dashu_int::UBig;
+    /// let mut a = UBig::from(0b101u8);
     /// a.clear_bit(0);
-    /// assert_eq!(a, ubig!(0b100));
+    /// assert_eq!(a, UBig::from(0b100u8));
     /// ```
     #[inline]
     pub fn clear_bit(&mut self, n: usize) {
@@ -156,11 +156,11 @@ impl UBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::ubig;
-    /// assert_eq!(ubig!(17).trailing_zeros(), Some(0));
-    /// assert_eq!(ubig!(48).trailing_zeros(), Some(4));
-    /// assert_eq!(ubig!(0b101000000).trailing_zeros(), Some(6));
-    /// assert_eq!(ubig!(0).trailing_zeros(), None);
+    /// # use dashu_int::UBig;
+    /// assert_eq!(UBig::from(17u8).trailing_zeros(), Some(0));
+    /// assert_eq!(UBig::from(48u8).trailing_zeros(), Some(4));
+    /// assert_eq!(UBig::from(0b101000000u16).trailing_zeros(), Some(6));
+    /// assert_eq!(UBig::zero().trailing_zeros(), None);
     /// ```
     #[inline]
     pub fn trailing_zeros(&self) -> Option<usize> {
@@ -187,11 +187,11 @@ impl UBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::ubig;
-    /// assert_eq!(ubig!(17).bit_len(), 5);
-    /// assert_eq!(ubig!(0b101000000).bit_len(), 9);
-    /// assert_eq!(ubig!(0).bit_len(), 0);
-    /// let x = ubig!(0x90ffff3450897234);
+    /// # use dashu_int::UBig;
+    /// assert_eq!(UBig::from(17u8).bit_len(), 5);
+    /// assert_eq!(UBig::from(0b101000000u16).bit_len(), 9);
+    /// assert_eq!(UBig::zero().bit_len(), 0);
+    /// let x = UBig::from(0x90ffff3450897234u64);
     /// assert_eq!(x.bit_len(), x.in_radix(2).to_string().len());
     /// ```
     #[inline]
@@ -218,11 +218,11 @@ impl IBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::ibig;
-    /// assert_eq!(ibig!(17).trailing_zeros(), Some(0));
-    /// assert_eq!(ibig!(-48).trailing_zeros(), Some(4));
-    /// assert_eq!(ibig!(-0b101000000).trailing_zeros(), Some(6));
-    /// assert_eq!(ibig!(0).trailing_zeros(), None);
+    /// # use dashu_int::IBig;
+    /// assert_eq!(IBig::from(17).trailing_zeros(), Some(0));
+    /// assert_eq!(IBig::from(-48).trailing_zeros(), Some(4));
+    /// assert_eq!(IBig::from(-0b101000000).trailing_zeros(), Some(6));
+    /// assert_eq!(IBig::zero().trailing_zeros(), None);
     /// ```
     #[inline]
     pub fn trailing_zeros(&self) -> Option<usize> {
@@ -993,31 +993,30 @@ impl_bit_ops_ibig_signed!(isize);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ubig;
 
     #[test]
     fn test_and_not() {
         let cases = [
-            (ubig!(0xf0f0), ubig!(0xff00), ubig!(0xf0)),
+            (UBig::from(0xf0f0u16), UBig::from(0xff00u16), UBig::from(0xf0u16)),
             (
-                ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-                ubig!(0xff),
-                ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00),
+                UBig::from(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeu128),
+                UBig::from(0xffu8),
+                UBig::from(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00u128),
             ),
             (
-                ubig!(0xff),
-                ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-                ubig!(0x11),
+                UBig::from(0xffu8),
+                UBig::from(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeu128),
+                UBig::from(0x11u8),
             ),
             (
-                ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-                ubig!(0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
-                ubig!(0x22222222222222222222222222222222),
+                UBig::from_str_radix("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", 16).unwrap(),
+                UBig::from_str_radix("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", 16).unwrap(),
+                UBig::from_str_radix("22222222222222222222222222222222", 16).unwrap(),
             ),
             (
-                ubig!(0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
-                ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-                ubig!(0xdddddddddddddddddddddddddddddddd11111111111111111111111111111111),
+                UBig::from_str_radix("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", 16).unwrap(),
+                UBig::from_str_radix("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", 16).unwrap(),
+                UBig::from_str_radix("dddddddddddddddddddddddddddddddd11111111111111111111111111111111", 16).unwrap(),
             ),
         ];
 

@@ -20,8 +20,8 @@ impl UBig {
     ///
     /// # Example
     /// ```
-    /// # use dashu_int::ubig;
-    /// assert_eq!(ubig!(12).gcd(&ubig!(18)), ubig!(6));
+    /// # use dashu_int::UBig;
+    /// assert_eq!(UBig::from(12u8).gcd(&UBig::from(18u8)), 6);
     /// ```
     ///
     /// Panics if two oprands are both zero.
@@ -35,8 +35,9 @@ impl UBig {
     ///
     /// # Example
     /// ```
-    /// # use dashu_int::{ibig, ubig};
-    /// assert_eq!(ubig!(12).gcd_ext(&ubig!(18)), (ubig!(6), ibig!(-1), ibig!(1)));
+    /// # use dashu_int::UBig;
+    /// let (g, x, y) = UBig::from(12u8).gcd_ext(&UBig::from(18u8));
+    /// assert!(g == 6 && x == -1 && y == 1);
     /// ```
     ///
     /// Panics if two oprands are both zero.

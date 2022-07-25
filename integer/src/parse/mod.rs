@@ -40,8 +40,8 @@ impl UBig {
     ///
     /// # Examples
     /// ```
-    /// # use dashu_int::{error::ParseError, ubig, UBig};
-    /// assert_eq!(UBig::from_str_radix("+7ab", 32)?, ubig!(7499));
+    /// # use dashu_int::{error::ParseError, UBig};
+    /// assert_eq!(UBig::from_str_radix("+7ab", 32)?, 7499);
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn from_str_radix(src: &str, radix: u32) -> Result<UBig, ParseError> {
@@ -59,9 +59,9 @@ impl UBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::{error::ParseError, ubig, UBig};
-    /// assert_eq!(UBig::from_str_with_radix_prefix("+0o17")?, ubig!(0o17));
-    /// assert_eq!(UBig::from_str_with_radix_prefix("0x1f")?, ubig!(0x1f));
+    /// # use dashu_int::{error::ParseError, UBig};
+    /// assert_eq!(UBig::from_str_with_radix_prefix("+0o17")?, 0o17);
+    /// assert_eq!(UBig::from_str_with_radix_prefix("0x1f")?, 0x1f);
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn from_str_with_radix_prefix(src: &str) -> Result<UBig, ParseError> {
@@ -113,8 +113,8 @@ impl IBig {
     ///
     /// # Examples
     /// ```
-    /// # use dashu_int::{error::ParseError, ibig, IBig};
-    /// assert_eq!(IBig::from_str_radix("-7ab", 32)?, ibig!(-7499));
+    /// # use dashu_int::{error::ParseError, IBig};
+    /// assert_eq!(IBig::from_str_radix("-7ab", 32)?, IBig::from(-7499));
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn from_str_radix(mut src: &str, radix: u32) -> Result<IBig, ParseError> {
@@ -142,9 +142,9 @@ impl IBig {
     ///
     /// # Examples
     /// ```
-    /// # use dashu_int::{error::ParseError, ibig, IBig};
-    /// assert_eq!(IBig::from_str_with_radix_prefix("+0o17")?, ibig!(0o17));
-    /// assert_eq!(IBig::from_str_with_radix_prefix("-0x1f")?, ibig!(-0x1f));
+    /// # use dashu_int::{error::ParseError, IBig};
+    /// assert_eq!(IBig::from_str_with_radix_prefix("+0o17")?, 0o17);
+    /// assert_eq!(IBig::from_str_with_radix_prefix("-0x1f")?, -0x1f);
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn from_str_with_radix_prefix(mut src: &str) -> Result<IBig, ParseError> {

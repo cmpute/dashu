@@ -173,9 +173,9 @@ impl UBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::ubig;
-    /// assert_eq!(format!("{}", ubig!(83).in_radix(3)), "10002");
-    /// assert_eq!(format!("{:+010}", ubig!(35).in_radix(36)), "+00000000z");
+    /// # use dashu_int::UBig;
+    /// assert_eq!(format!("{}", UBig::from(83u8).in_radix(3)), "10002");
+    /// assert_eq!(format!("{:+010}", UBig::from(35u8).in_radix(36)), "+00000000z");
     /// ```
     #[inline]
     pub fn in_radix(&self, radix: u32) -> InRadix {
@@ -198,9 +198,9 @@ impl IBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::ibig;
-    /// assert_eq!(format!("{}", ibig!(-83).in_radix(3)), "-10002");
-    /// assert_eq!(format!("{:010}", ibig!(-35).in_radix(36)), "-00000000z");
+    /// # use dashu_int::IBig;
+    /// assert_eq!(format!("{}", IBig::from(-83).in_radix(3)), "-10002");
+    /// assert_eq!(format!("{:010}", IBig::from(-35).in_radix(36)), "-00000000z");
     /// ```
     #[inline]
     pub fn in_radix(&self, radix: u32) -> InRadix {
@@ -224,12 +224,12 @@ impl IBig {
 /// # Examples
 ///
 /// ```
-/// # use dashu_int::{ibig, ubig};
-/// assert_eq!(format!("{}", ubig!(83).in_radix(3)), "10002");
-/// assert_eq!(format!("{:+010}", ubig!(35).in_radix(36)), "+00000000z");
+/// # use dashu_int::{IBig, UBig};
+/// assert_eq!(format!("{}", UBig::from(83u8).in_radix(3)), "10002");
+/// assert_eq!(format!("{:+010}", UBig::from(35u8).in_radix(36)), "+00000000z");
 /// // For bases 2, 8, 10, 16 we don't have to use `InRadix`:
-/// assert_eq!(format!("{:x}", ubig!(3000)), "bb8");
-/// assert_eq!(format!("{:x}", ibig!(-3000)), "-bb8");
+/// assert_eq!(format!("{:x}", UBig::from(3000u32)), "bb8");
+/// assert_eq!(format!("{:x}", IBig::from(-3000)), "-bb8");
 /// ```
 pub struct InRadix<'a> {
     sign: Sign,

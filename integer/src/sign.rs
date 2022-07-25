@@ -59,8 +59,8 @@ impl IBig {
     ///
     /// # Examples
     /// ```
-    /// # use dashu_int::ibig;
-    /// assert_eq!(ibig!(-500).signum(), ibig!(-1));
+    /// # use dashu_int::IBig;
+    /// assert_eq!(IBig::from(-500).signum(), IBig::from(-1));
     /// ```
     #[inline]
     pub fn signum(&self) -> IBig {

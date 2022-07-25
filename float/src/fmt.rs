@@ -7,7 +7,7 @@ use crate::{
 };
 use core::fmt::{self, Display, Formatter, Write};
 use dashu_base::Abs;
-use dashu_int::ibig;
+use dashu_int::Sign;
 
 // TODO: implement Debug using mantissa * radix ^ exponent (prec: xxx),
 // FIXME: sign, width and fill options are not yet correctly handled
@@ -28,7 +28,7 @@ impl<const X: usize, const R: u8> Display for FloatRepr<X, R> {
             let mut frac = frac.abs(); // don't print sign for fractional part
 
             // print integral part
-            if trunc == ibig!(0) && self.mantissa < ibig!(0) {
+            if trunc.is_zero() && self.mantissa.sign() == Sign::Negative {
                 f.write_char('-')?;
             }
             trunc.in_radix(X as u32).fmt(f)?;
