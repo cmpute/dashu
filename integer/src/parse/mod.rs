@@ -11,9 +11,6 @@ use core::str::FromStr;
 
 mod non_power_two;
 mod power_two;
-mod primitive;
-
-pub use primitive::{parse_int_from_const_str, parse_int_from_const_str_with_prefix};
 
 impl FromStr for UBig {
     type Err = ParseError;

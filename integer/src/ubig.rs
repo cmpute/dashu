@@ -68,14 +68,6 @@ impl UBig {
         self.0.is_one()
     }
 
-    /// Representation in [Word][crate::Word]s.
-    #[inline]
-    pub fn as_words(&self) -> &[crate::Word] {
-        let (sign, words) = self.0.as_sign_slice();
-        debug_assert!(matches!(sign, crate::sign::Sign::Positive));
-        words
-    }
-
     pub(crate) fn panic_number_too_large() -> ! {
         panic!(
             "number too large, maximum is {} bits",

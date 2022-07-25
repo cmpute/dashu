@@ -1,5 +1,7 @@
 //! Macros for big integer literals.
 
+// TODO: make `ubig!` macro only usable in tests and simplify it
+
 /// Create a [UBig](crate::UBig) value.
 ///
 /// Usually just pass use a numeric literal. This works for bases 2, 8, 10 or 16 using standard
@@ -46,35 +48,21 @@
 macro_rules! ubig {
     ($val:tt) => {{
         const STR: &::core::primitive::str = ::core::stringify!($val);
-        const PRIM: ::core::option::Option<::core::primitive::u128> =
-            $crate::parse::parse_int_from_const_str_with_prefix(STR.as_bytes());
-
-        if let ::core::option::Option::Some(prim) = PRIM {
-            <$crate::UBig as ::core::convert::From<::core::primitive::u128>>::from(prim)
-        } else {
-            ::core::result::Result::expect(
-                $crate::UBig::from_str_with_radix_prefix(STR),
-                "invalid number",
-            )
-        }
+        ::core::result::Result::expect(
+            $crate::UBig::from_str_with_radix_prefix(STR),
+            "invalid number",
+        )
     }};
     ($val:tt base $radix:literal) => {{
         const STR: &::core::primitive::str = ::core::stringify!($val);
-        const PRIM: ::core::option::Option<::core::primitive::u128> =
-            $crate::parse::parse_int_from_const_str::<$radix>(STR.as_bytes());
-
-        if let ::core::option::Option::Some(prim) = PRIM {
-            <$crate::UBig as ::core::convert::From<::core::primitive::u128>>::from(prim)
-        } else {
-            let s = ::core::option::Option::unwrap_or(
-                ::core::primitive::str::strip_prefix(STR, "_"),
-                STR,
-            );
-            ::core::result::Result::expect(
-                $crate::UBig::from_str_radix(s, $radix),
-                "invalid number",
-            )
-        }
+        let s = ::core::option::Option::unwrap_or(
+            ::core::primitive::str::strip_prefix(STR, "_"),
+            STR,
+        );
+        ::core::result::Result::expect(
+            $crate::UBig::from_str_radix(s, $radix),
+            "invalid number",
+        )
     }};
 }
 

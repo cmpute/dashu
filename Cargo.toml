@@ -20,5 +20,6 @@ members = [
     "benchmark",
     "integer",
     "float",
+    "macros",
 ]
 default-members = ["base", "integer"]

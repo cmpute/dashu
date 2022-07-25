@@ -47,9 +47,9 @@ pub const fn digit_from_ascii_byte(byte: u8, radix: Digit) -> Option<Digit> {
     assert!(is_radix_valid(radix));
 
     let res = match byte {
-        b'0'..=b'9' => (byte - b'0') as Digit,
-        b'a'..=b'z' => (byte - b'a') as Digit + 10,
-        b'A'..=b'Z' => (byte - b'A') as Digit + 10,
+        c @ b'0'..=b'9' => (c - b'0') as Digit,
+        c @ b'a'..=b'z' => (c - b'a') as Digit + 10,
+        c @ b'A'..=b'Z' => (c - b'A') as Digit + 10,
         _ => return None,
     };
     if res < radix {

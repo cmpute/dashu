@@ -89,7 +89,7 @@ impl Repr {
 
     /// Get the sign of the repr
     #[inline]
-    pub fn sign(&self) -> Sign {
+    pub const fn sign(&self) -> Sign {
         if self.capacity.get() > 0 {
             Sign::Positive
         } else {
@@ -99,7 +99,7 @@ impl Repr {
 
     /// Get the capacity of Repr and sign simultaneously
     #[inline]
-    pub fn sign_capacity(&self) -> (usize, Sign) {
+    pub const fn sign_capacity(&self) -> (usize, Sign) {
         if self.capacity.get() > 0 {
             (self.capacity.get() as usize, Sign::Positive)
         } else {
@@ -111,8 +111,12 @@ impl Repr {
     /// Set the sign flag and return the changed representation. The sign will not
     /// be flipped if self is zero
     #[inline]
-    pub fn with_sign(mut self, sign: Sign) -> Self {
-        if !self.is_zero() && ((sign == Sign::Positive) ^ (self.capacity.get() > 0)) {
+    pub const fn with_sign(mut self, sign: Sign) -> Self {
+        let is_positive = match sign {
+            Sign::Positive => true,
+            Sign::Negative => false
+        };
+        if !self.is_zero() && (is_positive ^ (self.capacity.get() > 0)) {
             self.capacity = unsafe {
                 // SAFETY: capacity is not allowed to be zero
                 NonZeroIsize::new_unchecked(-self.capacity.get())
@@ -219,20 +223,20 @@ impl Repr {
 
     /// Creates a `Repr` with a single word
     #[inline]
-    pub fn from_word(n: Word) -> Self {
+    pub const fn from_word(n: Word) -> Self {
         Repr {
             data: ReprData { inline: [n, 0] },
-            capacity: NonZeroIsize::new(1).unwrap(),
+            capacity: unsafe { NonZeroIsize::new_unchecked(1) },
         }
     }
 
     /// Creates a `Repr` with a double word
     #[inline]
-    pub fn from_dword(n: DoubleWord) -> Self {
+    pub const fn from_dword(n: DoubleWord) -> Self {
         let (lo, hi) = split_dword(n);
         Repr {
             data: ReprData { inline: [lo, hi] },
-            capacity: NonZeroIsize::new(1 + (hi != 0) as isize).unwrap(),
+            capacity: unsafe { NonZeroIsize::new_unchecked(1 + (hi != 0) as isize) },
         }
     }
 
@@ -262,10 +266,7 @@ impl Repr {
     /// Creates a `Repr` with value 0
     #[inline]
     pub const fn zero() -> Self {
-        Repr {
-            capacity: unsafe { NonZeroIsize::new_unchecked(1) },
-            data: ReprData { inline: [0, 0] },
-        }
+        Self::from_word(0)
     }
 
     /// Check if the underlying value is zero
@@ -277,10 +278,7 @@ impl Repr {
     /// Creates a `Repr` with value 1
     #[inline]
     pub const fn one() -> Self {
-        Repr {
-            capacity: unsafe { NonZeroIsize::new_unchecked(1) },
-            data: ReprData { inline: [1, 0] },
-        }
+        Self::from_word(1)
     }
 
     /// Check if the underlying value is zero
@@ -292,14 +290,11 @@ impl Repr {
     /// Creates a `Repr` with value -1
     #[inline]
     pub const fn neg_one() -> Self {
-        Repr {
-            capacity: unsafe { NonZeroIsize::new_unchecked(-1) },
-            data: ReprData { inline: [1, 0] },
-        }
+        Self::from_word(1).with_sign(Sign::Negative)
     }
 
     /// Flip the sign bit of the Repr and return it
-    pub fn neg(mut self) -> Self {
+    pub const fn neg(mut self) -> Self {
         if !self.is_zero() {
             self.capacity = unsafe { NonZeroIsize::new_unchecked(-self.capacity.get()) }
         }
@@ -311,7 +306,7 @@ impl Repr {
     /// [Self::zero] if the number is zero
     /// [Self::one] if the number is positive
     /// [Self::neg_one] if the number is negative
-    pub fn signum(&self) -> Self {
+    pub const fn signum(&self) -> Self {
         if self.is_zero() {
             Self::zero()
         } else if self.capacity.get() < 0 {

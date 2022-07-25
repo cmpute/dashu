@@ -5,9 +5,9 @@ use crate::{
     buffer::Buffer,
     error::OutOfBoundsError,
     ibig::IBig,
-    primitive::{self, PrimitiveSigned, PrimitiveUnsigned, DWORD_BYTES, WORD_BITS, WORD_BYTES},
+    primitive::{self, PrimitiveSigned, PrimitiveUnsigned, DWORD_BYTES, WORD_BITS, WORD_BYTES, double_word},
     repr::{Repr, TypedReprRef::*},
-    sign::Sign::*,
+    sign::Sign::{self, *},
     ubig::UBig,
 };
 use alloc::vec::Vec;
@@ -162,6 +162,34 @@ impl UBig {
         }
     }
 
+    /// Get the raw representation in [Word]s.
+    /// 
+    /// If the number is zero, then empty slice will be returned.
+    #[inline]
+    pub fn as_words(&self) -> &[Word] {
+        let (sign, words) = self.0.as_sign_slice();
+        debug_assert!(matches!(sign, crate::sign::Sign::Positive));
+        words
+    }
+
+    /// Create a UBig from a single [Word].
+    #[inline]
+    pub const fn from_word(word: Word) -> Self {
+        Self(Repr::from_word(word))
+    }
+
+    /// Create a UBig from a double [Word].
+    #[inline]
+    pub const fn from_dword(low: Word, high: Word) -> Self {
+        Self(Repr::from_dword(double_word(low, high)))
+    }
+
+    /// Convert a sequence of [Word]s into a UBig
+    #[inline]
+    pub fn from_words(words: &[Word]) -> Self {
+        Self(Repr::from_buffer(words.into()))
+    }
+
     /// Convert to f32.
     ///
     /// Round to nearest, breaking ties to even last bit.
@@ -194,6 +222,31 @@ impl UBig {
 }
 
 impl IBig {
+    /// Get the raw representation in [Word]s.
+    /// 
+    /// If the number is zero, then empty slice will be returned.
+    #[inline]
+    pub fn as_sign_words(&self) -> (Sign, &[Word]) {
+        self.0.as_sign_slice()
+    }
+
+    /// Create an IBig from a [Sign] and a single [Word]
+    #[inline]
+    pub const fn from_sign_word(sign: Sign, word: Word) -> Self {
+        Self(Repr::from_word(word).with_sign(sign))
+    }
+
+    /// Create an IBig from a [Sign] and a double [Word]
+    pub const fn from_sign_dword(sign: Sign, low: Word, high: Word) -> Self {
+        Self(Repr::from_dword(double_word(low, high)).with_sign(sign))
+    }
+    
+    /// Convert a [Sign] and a sequence of [Word]s into a UBig
+    #[inline]
+    pub fn from_sign_words(sign: Sign, words: &[Word]) -> Self {
+        Self(Repr::from_buffer(words.into()).with_sign(sign))
+    }
+
     /// Convert to f32.
     ///
     /// Round to nearest, breaking ties to even last bit.
