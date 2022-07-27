@@ -121,3 +121,41 @@ impl UnsignedAbs for &IBig {
         UBig(self.0.clone().with_sign(Sign::Positive))
     }
 }
+
+impl Mul<Sign> for UBig {
+    type Output = IBig;
+
+    #[inline]
+    fn mul(self, rhs: Sign) -> Self::Output {
+        IBig(self.0.with_sign(rhs))
+    }
+}
+
+impl Mul<UBig> for Sign {
+    type Output = IBig;
+
+    #[inline]
+    fn mul(self, rhs: UBig) -> Self::Output {
+        IBig(rhs.0.with_sign(self))
+    }
+}
+
+impl Mul<Sign> for IBig {
+    type Output = IBig;
+
+    #[inline]
+    fn mul(self, rhs: Sign) -> Self::Output {
+        let sign = self.sign() * rhs;
+        IBig(self.0.with_sign(sign))
+    }
+}
+
+impl Mul<IBig> for Sign {
+    type Output = IBig;
+
+    #[inline]
+    fn mul(self, rhs: IBig) -> Self::Output {
+        let sign = self * rhs.sign();
+        IBig(rhs.0.with_sign(sign))
+    }
+}

@@ -10,21 +10,16 @@ use static_assertions::const_assert;
 /// Digit and radix type.
 pub type Digit = u32;
 
+/// Minimum supported radix.
+pub const MIN_RADIX: Digit = 2;
+
 /// Maximum supported radix.
 pub const MAX_RADIX: Digit = 36;
 
 /// Is a radix in valid range?
 #[inline]
 pub const fn is_radix_valid(radix: Digit) -> bool {
-    2 <= radix && radix <= MAX_RADIX
-}
-
-/// Panics if `radix` is not in valid range.
-#[inline]
-pub fn check_radix_valid(radix: Digit) {
-    if !is_radix_valid(radix) {
-        panic!("Invalid radix: {}", radix);
-    }
+    MIN_RADIX <= radix && radix <= MAX_RADIX
 }
 
 const_assert!(b'a' > b'0' + 10 && b'A' > b'0' + 10);

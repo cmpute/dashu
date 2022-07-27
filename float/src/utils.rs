@@ -1,6 +1,6 @@
-use crate::ibig_ext::{log, magnitude};
+use crate::ibig_ext::log;
 use core::convert::TryInto;
-use dashu_base::DivRem;
+use dashu_base::{DivRem, UnsignedAbs};
 use dashu_int::IBig;
 
 /// Get the integer k such that `radix^(k-1) <= value < radix^k`.
@@ -10,7 +10,7 @@ pub fn get_precision<const X: usize>(value: &IBig) -> usize {
         return 0;
     };
 
-    let e = log(&magnitude(value), X);
+    let e = log(&value.unsigned_abs(), X);
     let e: usize = e.try_into().unwrap();
     e + 1
 }

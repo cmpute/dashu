@@ -1,6 +1,6 @@
 use dashu_int::{error::ParseError, IBig, UBig};
 
-mod macros;
+mod helper_macros;
 
 #[test]
 fn test_ubig_format() {
@@ -340,71 +340,71 @@ fn test_radix_round_trip() {
 
 #[test]
 fn test_from_str_radix_with_radix_prefix() {
-    assert_eq!(UBig::from_str_with_radix_prefix("17").unwrap(), ubig!(17));
-    assert_eq!(UBig::from_str_with_radix_prefix("+17").unwrap(), ubig!(17));
+    assert_eq!(UBig::from_str_with_radix_prefix("17").unwrap(), (UBig::from(17u8), 10));
+    assert_eq!(UBig::from_str_with_radix_prefix("+17").unwrap(), (UBig::from(17u8), 10));
     assert_eq!(
         UBig::from_str_with_radix_prefix("0b101").unwrap(),
-        ubig!(0b101)
+        (UBig::from(0b101u8), 2)
     );
     assert_eq!(
         UBig::from_str_with_radix_prefix("+0b101").unwrap(),
-        ubig!(0b101)
+        (UBig::from(0b101u8), 2)
     );
     assert_eq!(
         UBig::from_str_with_radix_prefix("0o177").unwrap(),
-        ubig!(0o177)
+        (UBig::from(0o177u8), 8)
     );
     assert_eq!(
         UBig::from_str_with_radix_prefix("+0o177").unwrap(),
-        ubig!(0o177)
+        (UBig::from(0o177u8), 8)
     );
     assert_eq!(
         UBig::from_str_with_radix_prefix("0x1eE").unwrap(),
-        ubig!(0x1ee)
+        (UBig::from(0x1eeu16), 16)
     );
     assert_eq!(
         UBig::from_str_with_radix_prefix("+0x1eE").unwrap(),
-        ubig!(0x1ee)
+        (UBig::from(0x1eeu16), 16)
     );
 
-    assert_eq!(IBig::from_str_with_radix_prefix("17").unwrap(), ibig!(17));
-    assert_eq!(IBig::from_str_with_radix_prefix("+17").unwrap(), ibig!(17));
-    assert_eq!(IBig::from_str_with_radix_prefix("-17").unwrap(), ibig!(-17));
+    assert_eq!(IBig::from_str_with_radix_prefix("17").unwrap(), (IBig::from(17), 10));
+    assert_eq!(IBig::from_str_with_radix_prefix("+17").unwrap(), (IBig::from(17), 10));
+    assert_eq!(IBig::from_str_with_radix_prefix("-17").unwrap(), (IBig::from(-17), 10));
     assert_eq!(
         IBig::from_str_with_radix_prefix("0b101").unwrap(),
-        ibig!(0b101)
+        (IBig::from(0b101), 2)
     );
     assert_eq!(
         IBig::from_str_with_radix_prefix("+0b101").unwrap(),
-        ibig!(0b101)
+        (IBig::from(0b101), 2)
     );
     assert_eq!(
         IBig::from_str_with_radix_prefix("-0b101").unwrap(),
-        ibig!(-0b101)
+        (IBig::from(-0b101), 2)
     );
     assert_eq!(
         IBig::from_str_with_radix_prefix("0o177").unwrap(),
-        ibig!(0o177)
+        (IBig::from(0o177), 8)
     );
     assert_eq!(
         IBig::from_str_with_radix_prefix("+0o177").unwrap(),
-        ibig!(0o177)
+        (IBig::from(0o177), 8)
     );
     assert_eq!(
         IBig::from_str_with_radix_prefix("-0o177").unwrap(),
-        ibig!(-0o177)
+        (IBig::from(-0o177), 8)
     );
     assert_eq!(
         IBig::from_str_with_radix_prefix("0x1eE").unwrap(),
-        ibig!(0x1ee)
+        (IBig::from(0x1ee), 16)
     );
     assert_eq!(
         IBig::from_str_with_radix_prefix("+0x1eE").unwrap(),
-        ibig!(0x1ee)
+        (IBig::from(0x1ee), 16)
     );
     assert_eq!(
         IBig::from_str_with_radix_prefix("-0x1eE").unwrap(),
-        ibig!(-0x1ee)
+        (IBig::from(-0x1ee), 16)
     );
 
     assert_eq!(

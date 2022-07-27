@@ -1,6 +1,6 @@
 //! TODO: Extension to ibig that should be upstreamed.
 
-use dashu_base::UnsignedAbs;
+use dashu_base::{UnsignedAbs, DivRem};
 use dashu_int::{IBig, UBig};
 
 // REF: https://en.wikipedia.org/wiki/Exponential_search
@@ -49,14 +49,14 @@ pub fn log(x: &UBig, base: usize) -> usize {
     log_rem(x, base).0
 }
 
-pub fn magnitude(x: &IBig) -> UBig {
-    x.clone().unsigned_abs()
-}
-
 pub fn remove_pow(x: &mut IBig, base: &IBig) -> UBig {
     let mut counter = UBig::zero();
-    while &*x % base == IBig::zero() {
-        *x /= base;
+    while !x.is_zero() {
+        let (q, r) = (&*x).div_rem(base);
+        if !r.is_zero() {
+            break;
+        }
+        *x = q;
         counter += 1u8;
     }
     return counter;

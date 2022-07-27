@@ -4,7 +4,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-mod macros;
+mod helper_macros;
 
 fn hash<T>(x: &T) -> u64
 where

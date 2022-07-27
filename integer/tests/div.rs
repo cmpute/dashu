@@ -3,7 +3,7 @@ use dashu_int::{
     IBig, UBig,
 };
 
-mod macros;
+mod helper_macros;
 
 #[test]
 fn test_div_rem_ubig() {

@@ -41,7 +41,8 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
     /// (the lowest k such that `mantissa < radix^k`)
     ///
     /// # Panics
-    /// If the mantissa is larger than `radix^usize::MAX`
+    /// 
+    /// Panics if the mantissa is larger than `radix^usize::MAX`
     #[inline]
     pub fn from_parts(mantissa: IBig, exponent: isize) -> Self {
         // TODO: prevent using this function internally because we enforce normalized representation

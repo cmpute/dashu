@@ -71,6 +71,9 @@ extern crate alloc;
 pub use crate::{ibig::IBig, sign::Sign, ubig::UBig};
 
 /// The primitive integer type used to construct the big integers.
+/// 
+/// The big integers is interally represented as an array of [Word]s, so convert
+/// integers from and into [Word]s are efficient.
 ///
 /// The size of a [Word] is usually the same as [usize], but it's not guaranteed.
 /// It's dependent on the target architecture.
@@ -98,7 +101,7 @@ pub mod modular;
 mod mul;
 mod mul_ops;
 pub mod ops;
-pub mod parse;
+mod parse;
 mod pow;
 mod primitive;
 mod radix;
@@ -116,9 +119,3 @@ mod num_traits;
 
 #[cfg(feature = "serde")]
 mod serde;
-
-/// A verbose alias for [UBig]
-pub type Natural = UBig;
-
-/// A verbose alias for [IBig]
-pub type Integer = IBig;

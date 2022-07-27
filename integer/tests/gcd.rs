@@ -1,6 +1,6 @@
 use dashu_int::IBig;
 
-mod macros;
+mod helper_macros;
 
 #[test]
 fn test_gcd_ubig() {

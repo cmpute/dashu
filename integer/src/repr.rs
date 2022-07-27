@@ -303,9 +303,9 @@ impl Repr {
 
     /// Returns a number representing sign of self.
     ///
-    /// [Self::zero] if the number is zero
-    /// [Self::one] if the number is positive
-    /// [Self::neg_one] if the number is negative
+    /// * [Self::zero] if the number is zero
+    /// * [Self::one] if the number is positive
+    /// * [Self::neg_one] if the number is negative
     pub const fn signum(&self) -> Self {
         if self.is_zero() {
             Self::zero()

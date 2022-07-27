@@ -15,6 +15,8 @@ use crate::{
 use core::cmp::Ordering;
 use dashu_base::ring::{ExtendedGcd, Gcd};
 
+// TODO(v0.2): implement as trait
+
 impl UBig {
     /// Compute the greatest common divisor between self and the other operand
     ///

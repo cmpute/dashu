@@ -3,7 +3,7 @@ use core::{
     ops::{Mul, MulAssign},
 };
 
-mod macros;
+mod helper_macros;
 
 fn test_mul<'a, T>(a: &'a T, b: &'a T, c: &'a T)
 where

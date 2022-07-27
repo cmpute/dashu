@@ -22,6 +22,8 @@ pub enum ParseError {
     NoDigits,
     /// Invalid digit for a given radix.
     InvalidDigit,
+    /// The radix is not supported.
+    UnsupportedRadix,
 }
 
 impl Display for ParseError {
@@ -29,6 +31,7 @@ impl Display for ParseError {
         match self {
             ParseError::NoDigits => f.write_str("no digits"),
             ParseError::InvalidDigit => f.write_str("invalid digit"),
+            ParseError::UnsupportedRadix => f.write_str("unsupported radix"),
         }
     }
 }

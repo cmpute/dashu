@@ -74,7 +74,7 @@ pub fn parse_integer<const SIGNED: bool>(input: TokenStream) -> TokenStream {
             UBig::from_str_radix(&val, b)
                 .expect(&format!("Some digits are not valid under base {}", b))
         }
-        None => UBig::from_str_with_radix_prefix(&val).expect("Some digits are not valid"),
+        None => UBig::from_str_with_radix_prefix(&val).expect("Some digits are not valid").0,
     };
 
     // generate output tokens

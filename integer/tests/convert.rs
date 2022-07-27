@@ -1,7 +1,7 @@
 use dashu_int::{error::OutOfBoundsError, IBig, UBig};
 use std::convert::TryFrom;
 
-mod macros;
+mod helper_macros;
 
 #[test]
 fn test_from_to_le_bytes() {

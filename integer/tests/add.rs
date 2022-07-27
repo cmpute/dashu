@@ -3,7 +3,7 @@ use core::{
     ops::{Add, AddAssign, Sub, SubAssign},
 };
 
-mod macros;
+mod helper_macros;
 
 /// Test a + b = c in various ways.
 fn test_add_sub<'a, T>(a: &'a T, b: &'a T, c: &'a T)

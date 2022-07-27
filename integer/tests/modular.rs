@@ -1,6 +1,6 @@
 use dashu_int::modular::ModuloRing;
 
-mod macros;
+mod helper_macros;
 
 #[test]
 fn test_modulus() {

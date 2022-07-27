@@ -62,8 +62,7 @@ impl<'a> Modulo<'a> {
     }
 
     /// Panics when trying to do operations on [Modulo] values from different rings.
-    // TODO(v0.2): mark as pub(crate)
-    pub fn panic_different_rings() -> ! {
+    pub(crate) fn panic_different_rings() -> ! {
         panic!("Modulo values from different rings")
     }
 

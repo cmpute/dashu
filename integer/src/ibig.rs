@@ -37,21 +37,51 @@ impl IBig {
         self.0.into_sign_typed()
     }
 
-    // TODO: make Sign public
+    /// Get the sign of the [IBig]. Zero value has a positive sign.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::{IBig, Sign};
+    /// assert_eq!(IBig::zero().sign(), Sign::Positive);
+    /// assert_eq!(IBig::from(2).sign(), Sign::Positive);
+    /// assert_eq!(IBig::from(-3).sign(), Sign::Negative);
+    /// ```
     #[inline]
     pub fn sign(&self) -> Sign {
         self.0.sign()
     }
 
+    /// Convert the [IBig] into its [Sign] and [UBig] magnitude
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::{IBig, Sign, UBig};
+    /// assert_eq!(IBig::zero().into_parts(), (Sign::Positive, UBig::zero()));
+    /// assert_eq!(IBig::one().into_parts(), (Sign::Positive, UBig::one()));
+    /// assert_eq!(IBig::neg_one().into_parts(), (Sign::Negative, UBig::one()));
+    /// ```
     #[inline]
-    pub fn to_sign_magnitude(self) -> (Sign, UBig) {
+    pub fn into_parts(self) -> (Sign, UBig) {
         let sign = self.0.sign();
         let mag = self.0.with_sign(Sign::Positive);
         (sign, UBig(mag))
     }
 
+    
+    /// Create an [IBig] from the [Sign] and [UBig] magnitude
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::{IBig, Sign, UBig};
+    /// assert_eq!(IBig::from_parts(Sign::Positive, UBig::zero()), IBig::zero());
+    /// assert_eq!(IBig::from_parts(Sign::Positive, UBig::one()), IBig::one());
+    /// assert_eq!(IBig::from_parts(Sign::Negative, UBig::one()), IBig::neg_one());
+    /// ```
     #[inline]
-    pub fn from_sign_magnitude(sign: Sign, magnitude: UBig) -> Self {
+    pub fn from_parts(sign: Sign, magnitude: UBig) -> Self {
         IBig(magnitude.0.with_sign(sign))
     }
 

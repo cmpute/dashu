@@ -10,7 +10,6 @@ use dashu_int::IBig;
 
 impl<const X: usize, const R: u8> FloatRepr<X, R> {
     /// Create a floating number expressed as `(numerator / denominator) * Radix ^ exponent` with given precision.
-    // TODO: accept unsigned denomiator only, and round_with_ratio should also accept unsigned denominator only
     pub fn from_ratio_exponent(
         numerator: IBig,
         denominator: IBig,

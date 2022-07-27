@@ -3,9 +3,12 @@
 ## 0.2.0 (WIP)
 
 - Add a public API `as_words` to access internal representation of `UBig` and `IBig`.
-- Add const constructors `from_word`, `from_dword` and a direct constructor `from_words` for `UBig` and `IBig`
+- Add const constructors `from_word`, `from_dword` and a direct constructor `from_words` for `UBig` and `IBig`.
+- Add `Mul` implementations between `Sign` and `UBig`/`IBig`
 - Remove `ubig!` and `ibig!` macros from the crate, a more powerful version will be included in a separate `dashu-macro` crate.
-- Support underscore separater in string parsing
+- Parsing: support underscore separater.
+- Parsing: parsing a string with unsupported radix will now return an Err instead of `panic!`.
+- Parsing: `from_str_with_radix_prefix` now also return the radix.
 
 ## 0.1.1
 

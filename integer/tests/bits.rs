@@ -1,6 +1,6 @@
 use dashu_int::{ops::PowerOfTwo, IBig};
 
-mod macros;
+mod helper_macros;
 
 #[test]
 #[allow(clippy::bool_assert_comparison)]

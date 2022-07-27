@@ -1,3 +1,5 @@
+//! Simple helper macros for testing
+
 #[macro_export]
 macro_rules! ubig {
     ($val:tt) => {{
@@ -5,7 +7,7 @@ macro_rules! ubig {
         ::core::result::Result::expect(
             ::dashu_int::UBig::from_str_with_radix_prefix(STR),
             "invalid number",
-        )
+        ).0
     }};
     ($val:tt base $radix:literal) => {{
         const STR: &::core::primitive::str = ::core::stringify!($val);

@@ -16,6 +16,8 @@ mod digit_writer;
 mod non_power_two;
 mod power_two;
 
+pub use radix::{MIN_RADIX, MAX_RADIX};
+
 impl Display for UBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         InRadixFull {
@@ -163,6 +165,13 @@ impl UpperHex for IBig {
     }
 }
 
+/// Panics if `radix` is not in valid range.
+fn check_radix_valid(radix: Digit) {
+    if !radix::is_radix_valid(radix) {
+        panic!("Invalid radix: {}", radix);
+    }
+}
+
 impl UBig {
     /// Representation in a given radix.
     ///
@@ -179,7 +188,7 @@ impl UBig {
     /// ```
     #[inline]
     pub fn in_radix(&self, radix: u32) -> InRadix {
-        radix::check_radix_valid(radix);
+        check_radix_valid(radix);
         InRadix {
             sign: Positive,
             magnitude: self.repr(),
@@ -204,7 +213,7 @@ impl IBig {
     /// ```
     #[inline]
     pub fn in_radix(&self, radix: u32) -> InRadix {
-        radix::check_radix_valid(radix);
+        check_radix_valid(radix);
         let (sign, magnitude) = self.as_sign_repr();
         InRadix {
             sign,
@@ -214,7 +223,7 @@ impl IBig {
     }
 }
 
-/// Representation of a [UBig] or [IBig] in any radix between 2 and 36 inclusive.
+/// Representation of a [UBig] or [IBig] in any radix between [MIN_RADIX] and [MAX_RADIX] inclusive.
 ///
 /// This can be used to format a number in a non-standard radix.
 ///

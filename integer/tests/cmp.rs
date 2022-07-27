@@ -1,6 +1,6 @@
 use core::cmp::Ordering;
 
-mod macros;
+mod helper_macros;
 
 #[test]
 fn test_same_type_cmp() {

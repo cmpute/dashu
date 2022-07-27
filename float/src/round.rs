@@ -107,7 +107,7 @@ impl Rounding {
         if fract.is_zero() {
             return Self::NoOp;
         }
-        let (fsign, fmag) = fract.to_sign_magnitude();
+        let (fsign, fmag) = fract.into_parts();
         // TODO: here we can use logarithm to compare, instead of calculating the power?
         Self::from_rem::<R, _>(mantissa, fsign, || (fmag << 1).cmp(&UBig::from(X).pow(precision)))
     }
@@ -119,12 +119,12 @@ impl Rounding {
         if num.is_zero() {
             return Self::NoOp;
         }
-        let (nsign, nmag) = num.to_sign_magnitude();
+        let (nsign, nmag) = num.into_parts();
         Self::from_rem::<R, _>(mantissa, nsign * den.sign(), || {
             if den.sign() == Sign::Positive {
                 IBig::from((nmag) << 1).cmp(&den)
             } else {
-                den.cmp(&IBig::from_sign_magnitude(Sign::Negative, nmag << 1))
+                den.cmp(&IBig::from_parts(Sign::Negative, nmag << 1))
             }
         })
     }
