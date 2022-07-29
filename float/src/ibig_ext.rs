@@ -1,6 +1,6 @@
 //! TODO: Extension to ibig that should be upstreamed.
 
-use dashu_base::{UnsignedAbs, DivRem};
+use dashu_base::DivRem;
 use dashu_int::{IBig, UBig};
 
 // REF: https://en.wikipedia.org/wiki/Exponential_search

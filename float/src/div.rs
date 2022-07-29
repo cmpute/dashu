@@ -1,10 +1,10 @@
 use crate::{
-    round::Rounding,
     repr::FloatRepr,
+    round::Rounding,
     utils::{get_precision, shr_rem_radix_in_place},
 };
-use core::ops::Div;
 use core::cmp::Ordering;
+use core::ops::Div;
 use dashu_base::DivRem;
 use dashu_int::IBig;
 

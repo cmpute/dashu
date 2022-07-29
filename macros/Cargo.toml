@@ -15,3 +15,7 @@ proc-macro2 = "1"
 [dependencies.dashu-int]
 path = "../integer"
 version = "0.1.1"
+
+[dependencies.dashu-float]
+path = "../float"
+version = "0.1.0"

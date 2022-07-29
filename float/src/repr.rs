@@ -1,11 +1,12 @@
 use crate::utils::get_precision;
-use dashu_int::IBig;
+use dashu_int::{IBig, Sign, Word};
 
 // TODO: add standalone basic arith methods (add, sub, mul, div) for FloatRepr, such that it returns a Approximation struct
+// TODO: determine whether supporting Infs? Inf can be stored as zero mantissa with nonzero exponent
 
 /// An arbitrary precision floating number represented as `mantissa * radix^exponent`, with a precision
 /// such that `|mantissa| < radix^precision`. The mantissa is also called significant. `Radix` should be
-/// in range \[2, isize::MAX\]. The representation is always normalized (mantissa is not divisible by radix).
+/// in range \[2, isize::MAX\]. The representation is always normalized (nonzero mantissa is not divisible by radix, or zero mantissa with zero exponent).
 ///
 /// The rounding mode of operations between the float numbers is defined by `Rounding`, its value has to
 /// be one of [RoundingMode]. Operations are permitted only between float numbers with the same radix and
@@ -15,17 +16,17 @@ use dashu_int::IBig;
 /// The const generic parameters will be abbreviated as Radix -> X, Rounding -> R.
 /// Radix should be in range \[2, isize::MAX\], and Rounding value has to be one of [RoundingMode]
 #[allow(non_upper_case_globals)]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct FloatRepr<const Radix: usize, const Rounding: u8> {
     pub(crate) mantissa: IBig,
     pub(crate) exponent: isize,
-    pub(crate) precision: usize, // TODO: let precision = 0 implies no precision bound, but when no-precision number operates with another has-precision number, the precision will be set as the other one's
+    pub(crate) precision: usize, // TODO: let precision = 0 implies no precision bound, but when no-precision number operates with another has-precision number, the precision will be set as the other one's. This will requires us to make sure 0 value also has non-zero precision (1 will be ideal)
 }
 
 impl<const X: usize, const R: u8> FloatRepr<X, R> {
     /// Get the maximum precision set for the float number.
     #[inline]
-    pub fn precision(&self) -> usize {
+    pub const fn precision(&self) -> usize {
         self.precision
     }
 
@@ -41,18 +42,53 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
     /// (the lowest k such that `mantissa < radix^k`)
     ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the mantissa is larger than `radix^usize::MAX`
     #[inline]
     pub fn from_parts(mantissa: IBig, exponent: isize) -> Self {
-        // TODO: prevent using this function internally because we enforce normalized representation
+        // TODO: check we are not using this function internally because we enforce normalized representation
         let (mantissa, exponent) = Self::normalize(mantissa, exponent);
-        let precision = get_precision::<X>(&mantissa);
+        let precision = get_precision::<X>(&mantissa).max(1); // set precision to 1 if mantissa is zero
         Self {
             mantissa,
             exponent,
             precision,
         }
+    }
+
+    pub const fn from_parts_const(sign: Sign, man_lo: Word, man_hi: Word, mut exponent: isize) -> Self {
+        let mut mantissa = (man_hi as u128) << Word::BITS | (man_lo as u128);
+        if mantissa == 0 {
+            return Self::zero()
+        }
+
+        let mut precision = 0;
+
+        // normalize
+        if X.is_power_of_two() {
+            let xbits = X.trailing_zeros();
+            let shift = mantissa.trailing_zeros() / xbits;
+            mantissa >>= shift * xbits;
+            exponent += shift as isize;
+            precision = ((u128::BITS - mantissa.leading_zeros() + xbits - 1) / xbits) as usize;
+        } else {
+            let mut pow: u128 = 1;
+            while mantissa % (X as u128) == 0 {
+                mantissa /= X as u128;
+                exponent += 1;
+            }
+            while let Some(next) = pow.checked_mul(X as u128) {
+                precision += 1;
+                if next > mantissa {
+                    break;
+                }
+                pow = next;
+            }
+        }
+
+        let low = (mantissa & Word::MAX as u128) as Word;
+        let high = (mantissa >> Word::BITS) as Word;
+        Self { mantissa: IBig::from_parts_const(sign, low, high), exponent, precision }
     }
 
     /// Convert raw parts into a float number, with given precision.
@@ -65,6 +101,21 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
     #[inline]
     pub fn into_parts(self) -> (IBig, isize) {
         (self.mantissa, self.exponent)
+    }
+
+    #[inline]
+    pub const fn zero() -> Self {
+        Self { mantissa: IBig::zero(), exponent: 0, precision: 1 }
+    }
+
+    #[inline]
+    pub const fn one() -> Self {
+        Self { mantissa: IBig::one(), exponent: 0, precision: 1 }
+    }
+
+    #[inline]
+    pub const fn neg_one() -> Self {
+        Self { mantissa: IBig::neg_one(), exponent: 0, precision: 1 }
     }
 
     fn ceil(&self) -> IBig {

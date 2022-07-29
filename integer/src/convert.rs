@@ -232,21 +232,9 @@ impl IBig {
         self.0.as_sign_slice()
     }
 
-    /// Create an IBig from a [Sign] and a single [Word][crate::Word]
-    #[inline]
-    pub const fn from_sign_word(sign: Sign, word: crate::Word) -> Self {
-        Self(Repr::from_word(word).with_sign(sign))
-    }
-
     /// Create an IBig from a [Sign] and a double [Word][crate::Word]
-    pub const fn from_sign_dword(sign: Sign, low: crate::Word, high: crate::Word) -> Self {
+    pub const fn from_parts_const(sign: Sign, low: crate::Word, high: crate::Word) -> Self {
         Self(Repr::from_dword(double_word(low, high)).with_sign(sign))
-    }
-    
-    /// Convert a [Sign] and a sequence of [Word][crate::Word]s into a UBig
-    #[inline]
-    pub fn from_sign_words(sign: Sign, words: &[crate::Word]) -> Self {
-        Self(Repr::from_buffer(words.into()).with_sign(sign))
     }
 
     /// Convert to f32.

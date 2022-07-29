@@ -9,6 +9,7 @@
 
 // TODO: reference crates: twofloat, num-bigfloat, rust_decimal, bigdecimal
 mod add;
+mod cmp;
 mod convert;
 mod div;
 mod fmt;
@@ -26,9 +27,9 @@ pub use round::{Rounding, RoundingMode};
 /// Multi-precision float number with binary exponent and [RoundingMode::Zero] rounding mode
 #[allow(non_upper_case_globals)]
 pub type FBig = BinaryRepr<{ RoundingMode::Zero }>;
-/// Multi-precision decimal number with decimal exponent and [RoundingMode::HalfEven] rounding mode
+/// Multi-precision decimal number with decimal exponent and [RoundingMode::HalfAway] rounding mode
 #[allow(non_upper_case_globals)]
-pub type DBig = DecimalRepr<{ RoundingMode::HalfEven }>;
+pub type DBig = DecimalRepr<{ RoundingMode::HalfAway }>;
 
 // TODO: make no_std
 // TODO: add macro fbig!, dbig!, support parsing scientific repr, and set rounding mode

@@ -7,21 +7,19 @@ macro_rules! ubig {
         ::core::result::Result::expect(
             ::dashu_int::UBig::from_str_with_radix_prefix(STR),
             "invalid number",
-        ).0
+        )
+        .0
     }};
     ($val:tt base $radix:literal) => {{
         const STR: &::core::primitive::str = ::core::stringify!($val);
-        let s = ::core::option::Option::unwrap_or(
-            ::core::primitive::str::strip_prefix(STR, "_"),
-            STR,
-        );
+        let s =
+            ::core::option::Option::unwrap_or(::core::primitive::str::strip_prefix(STR, "_"), STR);
         ::core::result::Result::expect(
             ::dashu_int::UBig::from_str_radix(s, $radix),
             "invalid number",
         )
     }};
 }
-
 
 #[macro_export]
 macro_rules! ibig {

@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
-use dashu_int::{IBig, UBig};
-use dashu_macros::{fbig, ibig, ubig};
+use dashu_int::{IBig, UBig, Word};
+use dashu_macros::{ibig, ubig};
 
 #[test]
 fn test_ubig() {
@@ -39,13 +39,22 @@ fn test_ubig() {
     );
 
     // other radix tests
-    assert_eq!(ubig!(a3gp1 base 32), UBig::from_str_radix("a3gp1", 32).unwrap());
-    assert_eq!(ubig!(13agp base 32), UBig::from_str_radix("13agp", 32).unwrap());
+    assert_eq!(
+        ubig!(a3gp1 base 32),
+        UBig::from_str_radix("a3gp1", 32).unwrap()
+    );
+    assert_eq!(
+        ubig!(13agp base 32),
+        UBig::from_str_radix("13agp", 32).unwrap()
+    );
 
     // const test
+    const _: UBig = ubig!(0);
+    const _: UBig = ubig!(1);
     #[cfg(target_pointer_width = "64")]
     {
-        const _: UBig = ubig!(1);
+        assert!(Word::BITS >= 64); // assumption only for testing
+        const _: UBig = ubig!(0xffffffffffffffff);
         const _: UBig = ubig!(0xffffffffffffffffffffffffffffffff);
     }
 }
@@ -122,39 +131,40 @@ fn test_ibig() {
         )
         .unwrap()
     );
-    
+
     // other radix tests
-    assert_eq!(ibig!(a3gp1 base 32), IBig::from_str_radix("a3gp1", 32).unwrap());
-    assert_eq!(ibig!(+a3gp1 base 32), IBig::from_str_radix("+a3gp1", 32).unwrap());
-    assert_eq!(ibig!(-a3gp1 base 32), IBig::from_str_radix("-a3gp1", 32).unwrap());
-    assert_eq!(ibig!(13agp base 32), IBig::from_str_radix("13agp", 32).unwrap());
-    assert_eq!(ibig!(+13agp base 32), IBig::from_str_radix("+13agp", 32).unwrap());
-    assert_eq!(ibig!(-13agp base 32), IBig::from_str_radix("-13agp", 32).unwrap());
+    assert_eq!(
+        ibig!(a3gp1 base 32),
+        IBig::from_str_radix("a3gp1", 32).unwrap()
+    );
+    assert_eq!(
+        ibig!(+a3gp1 base 32),
+        IBig::from_str_radix("+a3gp1", 32).unwrap()
+    );
+    assert_eq!(
+        ibig!(-a3gp1 base 32),
+        IBig::from_str_radix("-a3gp1", 32).unwrap()
+    );
+    assert_eq!(
+        ibig!(13agp base 32),
+        IBig::from_str_radix("13agp", 32).unwrap()
+    );
+    assert_eq!(
+        ibig!(+13agp base 32),
+        IBig::from_str_radix("+13agp", 32).unwrap()
+    );
+    assert_eq!(
+        ibig!(-13agp base 32),
+        IBig::from_str_radix("-13agp", 32).unwrap()
+    );
 
     // const test
+    const _: IBig = ibig!(0);
+    const _: IBig = ibig!(-1);
     #[cfg(target_pointer_width = "64")]
     {
-        const _: IBig = ibig!(-1);
+        assert!(Word::BITS >= 64); // assumption only for testing
+        const _: IBig = ibig!(-0xffffffffffffffff);
         const _: IBig = ibig!(-0xffffffffffffffffffffffffffffffff);
     }
-}
-
-#[test]
-fn test_fbig() {
-    // REF: https://en.wikipedia.org/wiki/Scientific_notation#E_notation
-    // REF: https://en.cppreference.com/w/cpp/language/floating_literal
-    let _ = fbig!(1.23);
-    let _ = fbig!(1_0.2_3);
-    // let _ = fbig!(0x1.23); // limitation of Rust's lexer
-    let _ = fbig!(_0x1.23); // workaround 1
-    let _ = fbig!(0x123p-2); // workaround 2
-
-    let _ = fbig!(1.23e5); // radix = 10
-    let _ = fbig!(1.01b2); // 0b1.01 * 2^2, radix = 2
-    let _ = fbig!(2.6o2); // 0o2.6 * 8^2, radix = 8
-    let _ = fbig!(1f.2h2); // 0x1f.2 * 16^2, radix = 16 (workaround 3)
-
-    let _ = fbig!(e9a.c2 base 16); // radix = 16
-    let _ = fbig!(e9a.c2@32 base 16); // 0xe9a.c2 * 16^32, radix = 16
-    let _ = fbig!(e9a.c2@32 base 20); // 0xe9a.c2 * 20^32, radix = 20
 }

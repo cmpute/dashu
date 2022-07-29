@@ -74,7 +74,8 @@ impl Rounding {
                         // ties to even
                         RoundingMode::HalfEven => {
                             // if mantissa if odd, +1 if frac > 0, -1 if frac < 0
-                            ((rem_sign == Sign::Positive) as i8 - (rem_sign == Sign::Negative) as i8)
+                            ((rem_sign == Sign::Positive) as i8
+                                - (rem_sign == Sign::Negative) as i8)
                                 * (&*mantissa & 1 == 1) as i8
                         }
                         RoundingMode::HalfAway => {
@@ -109,7 +110,9 @@ impl Rounding {
         }
         let (fsign, fmag) = fract.into_parts();
         // TODO: here we can use logarithm to compare, instead of calculating the power?
-        Self::from_rem::<R, _>(mantissa, fsign, || (fmag << 1).cmp(&UBig::from(X).pow(precision)))
+        Self::from_rem::<R, _>(mantissa, fsign, || {
+            (fmag << 1).cmp(&UBig::from(X).pow(precision))
+        })
     }
 
     /// Calculate the rounding of the number (mantissa + numerator / denominator), assuming |numerator / denominator| < 1. Return the adjustment.
