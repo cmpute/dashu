@@ -6,6 +6,7 @@ use core::marker::PhantomData;
 use dashu_int::{IBig, Sign, Word};
 
 // TODO: add standalone basic arith methods (add, sub, mul, div) for FloatRepr, such that it returns a Approximation struct
+// TODO: rename mantissa to significand, radix to base
 
 /// An arbitrary precision floating number represented as `mantissa * radix^exponent`, with a precision
 /// such that `|mantissa| < radix^precision`. The mantissa is also called significant. The representation
@@ -27,8 +28,8 @@ use dashu_int::{IBig, Sign, Word};
 /// with infinity will lead to panic.
 ///
 /// The infinities are represented as:
-/// * Positive infinity: mantissa = 0, exponent > 0
-/// * Negative infinity: mantissa = 0, exponenet < 0
+/// * [Positive infinity][FloatRepr::INFINITY] (+∞): mantissa = 0, exponent > 0
+/// * [Negative infinity][FloatRepr::NEG_INFINITY] (-∞): mantissa = 0, exponenet < 0
 ///
 pub struct FloatRepr<const RADIX: usize, RoundingMode: Round = mode::Zero> {
     pub(crate) mantissa: IBig,
@@ -191,7 +192,7 @@ impl<const X: usize, R: Round> FloatRepr<X, R> {
             _marker: PhantomData,
         }
     }
-    /// [FloatRepr] representing positive infinity (∞)
+    /// [FloatRepr] representing positive infinity (+∞)
     pub const INFINITY: Self = Self::infinity();
 
     #[inline]

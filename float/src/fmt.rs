@@ -19,7 +19,7 @@ impl<const X: usize, R: Round> fmt::Debug for FloatRepr<X, R> {
         fmt::Debug::fmt(&X, f)?;
         f.write_str(" ^ ")?;
         fmt::Debug::fmt(&self.exponent, f)?;
-        f.write_str("(prec: ")?;
+        f.write_str(" (prec: ")?;
         fmt::Debug::fmt(&self.precision, f)?;
         f.write_str(", rnd: ")?;
         f.write_str(core::any::type_name::<R>())?;

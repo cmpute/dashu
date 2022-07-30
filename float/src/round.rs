@@ -12,10 +12,10 @@ pub mod mode {
     /// Round toward 0 (default mode for binary float)
     pub struct Zero;
 
-    /// Round toward +infinity
+    /// Round toward +∞
     pub struct Up;
 
-    /// Round toward -infinity
+    /// Round toward -∞
     pub struct Down;
 
     /// Round to the nearest value, ties are rounded to an even value. (default mode for decimal float)

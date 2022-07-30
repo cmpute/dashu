@@ -40,3 +40,81 @@ macro_rules! ibig {
         )
     };
 }
+
+/// Create a FBig instance from literal, note that this macro doesn't support the float point.
+#[macro_export]
+macro_rules! fbig {
+    ($val:tt) => {{
+        const STR: &::core::primitive::str = ::core::stringify!($val);
+        let stripped = STR.strip_prefix('_').unwrap_or(STR);
+        ::core::result::Result::expect(
+            <::dashu_float::FBig as ::core::str::FromStr>::from_str(stripped),
+            "invalid number",
+        )
+    }};
+    ($val:tt - $exp:literal) => {{
+        const VAL_STR: &::core::primitive::str = ::core::stringify!($val);
+        const EXP_STR: &::core::primitive::str = ::core::stringify!($exp);
+        let stripped = VAL_STR.strip_prefix('_').unwrap_or(VAL_STR);
+        let concat = [stripped, &"-", EXP_STR].concat();
+        ::core::result::Result::expect(
+            <::dashu_float::FBig as ::core::str::FromStr>::from_str(&concat),
+            "invalid number",
+        )
+    }};
+    (-$val:tt) => {{
+        const STR: &::core::primitive::str = ::core::stringify!($val);
+        let stripped = STR.strip_prefix('_').unwrap_or(STR);
+        -::core::result::Result::expect(
+            <::dashu_float::FBig as ::core::str::FromStr>::from_str(stripped),
+            "invalid number",
+        )
+    }};
+    (-$val:tt - $exp:literal) => {{
+        const VAL_STR: &::core::primitive::str = ::core::stringify!($val);
+        const EXP_STR: &::core::primitive::str = ::core::stringify!($exp);
+        let stripped = VAL_STR.strip_prefix('_').unwrap_or(VAL_STR);
+        let concat = [stripped, &"-", EXP_STR].concat();
+        -::core::result::Result::expect(
+            <::dashu_float::FBig as ::core::str::FromStr>::from_str(&concat),
+            "invalid number",
+        )
+    }};
+}
+
+/// Create a DBig instance from literal, note that this macro doesn't support the float point.
+#[macro_export]
+macro_rules! dbig {
+    ($val:tt) => {{
+        const STR: &::core::primitive::str = ::core::stringify!($val);
+        ::core::result::Result::expect(
+            <::dashu_float::DBig as ::core::str::FromStr>::from_str(STR),
+            "invalid number",
+        )
+    }};
+    ($val:tt - $exp:literal) => {{
+        const VAL_STR: &::core::primitive::str = ::core::stringify!($val);
+        const EXP_STR: &::core::primitive::str = ::core::stringify!($exp);
+        let concat = [VAL_STR, &"-", EXP_STR].concat();
+        ::core::result::Result::expect(
+            <::dashu_float::DBig as ::core::str::FromStr>::from_str(&concat),
+            "invalid number",
+        )
+    }};
+    (-$val:tt) => {{
+        const STR: &::core::primitive::str = ::core::stringify!($val);
+        -::core::result::Result::expect(
+            <::dashu_float::DBig as ::core::str::FromStr>::from_str(STR),
+            "invalid number",
+        )
+    }};
+    (-$val:tt - $exp:literal) => {{
+        const VAL_STR: &::core::primitive::str = ::core::stringify!($val);
+        const EXP_STR: &::core::primitive::str = ::core::stringify!($exp);
+        let concat = [VAL_STR, &"-", EXP_STR].concat();
+        -::core::result::Result::expect(
+            <::dashu_float::DBig as ::core::str::FromStr>::from_str(&concat),
+            "invalid number",
+        )
+    }};
+}

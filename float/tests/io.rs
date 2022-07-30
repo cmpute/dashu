@@ -95,6 +95,8 @@ fn test_fbig_from_str() {
         ("0x.2", 1, -3, 4),
         ("0x2.2", 17, -3, 8),
         ("-0x0_f.2_0", -121, -3, 16),
+        ("0x00100", 1, 8, 20),
+        ("-0x010.00", -1, 4, 20),
         //
         // scientific with 'p' notation
         //
@@ -105,6 +107,8 @@ fn test_fbig_from_str() {
         ("-0x0.6p-1", -3, -4, 8),
         ("-0x.1p0", -1, -4, 4),
         ("-0xc4.5ap3", -25133, -4, 16),
+        ("0x00001p2", 1, 2, 20),
+        ("-0x001.00p2", -1, 2, 20),
     ];
     for (text, man, exp, prec) in COMMON_CASES.iter().copied().chain(test_cases) {
         let val = FBig::from_str(text).unwrap();

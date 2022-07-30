@@ -33,6 +33,9 @@ impl Display for UBig {
 
 impl Debug for UBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        // TODO: display first x and last x digits only (if not inlined)
+        // TODO: display first & last digits with some diagnostic info
+        //       (repr size, is inlined or not, hex digits) if the alternate flag is set
         Display::fmt(self, f)
     }
 }

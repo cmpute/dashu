@@ -1,11 +1,10 @@
 use crate::{
-    round::Round,
-    round::Rounding,
+    round::{Rounding, Round},
+    repr::FloatRepr,
     utils::{shl_radix, shr_rem_radix_in_place},
 };
 use core::ops::{Add, Sub};
 
-use crate::repr::FloatRepr;
 use dashu_base::Approximation;
 
 impl<const X: usize, R: Round> Add for FloatRepr<X, R> {
@@ -47,6 +46,8 @@ impl<const X: usize, R: Round> Sub<FloatRepr<X, R>> for &FloatRepr<X, R> {
 }
 
 // TODO: rename the add function returning approximation to something else
+// TODO: return a struct representing the RoundingError instead of just rounding? We need to check the requirement
+//       for implementing a ball arithmetic library.
 
 impl<const X: usize, R: Round> FloatRepr<X, R> {
     fn add(self, rhs: Self) -> Approximation<Self, Rounding> {
@@ -68,24 +69,21 @@ impl<const X: usize, R: Round> FloatRepr<X, R> {
 
         // align the exponent
         let lhs_prec = lhs.actual_precision();
-        let (exponent, fract, fract_prec) = if ediff + lhs_prec > precision {
+        if ediff + lhs_prec > precision {
             // if the shifted lhs exceeds the desired precision, normalize lhs and shift rhs
             let shift = precision - lhs_prec;
             let low_digits = shr_rem_radix_in_place::<X>(&mut rhs.mantissa, shift);
             shl_radix::<X>(&mut lhs.mantissa, ediff - shift);
-            (lhs.exponent - (ediff - shift) as isize, low_digits, shift)
-        } else {
-            let low_digits = shr_rem_radix_in_place::<X>(&mut rhs.mantissa, ediff);
-            (lhs.exponent, low_digits, ediff)
-        };
 
-        // actuall adding
-        let mantissa = lhs.mantissa + rhs.mantissa;
-        if fract.is_zero() {
-            Approximation::Exact(Self::from_parts(mantissa, exponent))
-        } else {
-            let adjust = R::round_fract::<X>(&mantissa, fract, fract_prec);
+            // do addition
+            let mantissa = lhs.mantissa + rhs.mantissa;
+            let exponent = lhs.exponent - (ediff - shift) as isize;
+            let adjust = R::round_fract::<X>(&mantissa, low_digits, shift);
             Approximation::InExact(Self::from_parts(mantissa + adjust, exponent), adjust)
+        } else {
+            // otherwise directly shift lhs to required position
+            shl_radix::<X>(&mut lhs.mantissa, ediff);
+            Approximation::Exact(Self::from_parts(lhs.mantissa + rhs.mantissa, rhs.exponent))
         }
     }
 }
