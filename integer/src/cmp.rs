@@ -9,6 +9,8 @@ use crate::{
 };
 use core::cmp::Ordering;
 
+// TODO: implement abs_cmp for IBig, which compares the magnitude of two IBigs
+
 impl<'a> PartialOrd for TypedReprRef<'a> {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {

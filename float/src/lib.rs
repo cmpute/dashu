@@ -19,16 +19,14 @@ mod ibig_ext;
 mod mul;
 mod parse;
 mod repr;
-mod round;
+pub mod round;
 mod sign;
 mod utils;
 
-pub use repr::{BinaryRepr, DecimalRepr, FloatRepr};
-pub use round::{Rounding, RoundingMode};
+pub use repr::FloatRepr;
 
-/// Multi-precision float number with binary exponent and [RoundingMode::Zero] rounding mode
-#[allow(non_upper_case_globals)]
-pub type FBig = BinaryRepr<{ RoundingMode::Zero }>;
-/// Multi-precision decimal number with decimal exponent and [RoundingMode::HalfAway] rounding mode
-#[allow(non_upper_case_globals)]
-pub type DBig = DecimalRepr<{ RoundingMode::HalfAway }>;
+/// Multi-precision float number with binary exponent and [Zero][round::mode::Zero] rounding mode
+pub type FBig = FloatRepr<2, round::mode::Zero>;
+
+/// Multi-precision decimal number with decimal exponent and [HalfAway][round::mode::HalfAway] rounding mode
+pub type DBig = FloatRepr<10, round::mode::HalfAway>;

@@ -2,22 +2,36 @@
 
 use crate::{
     repr::FloatRepr,
+    round::Round,
     utils::{get_precision, shr_radix, shr_rem_radix},
-    Rounding,
 };
 use core::fmt::{self, Display, Formatter, Write};
 use dashu_base::Abs;
 use dashu_int::Sign;
 
-// TODO: implement Debug using mantissa * radix ^ exponent (prec: xxx),
 // FIXME: sign, width and fill options are not yet correctly handled
 // TODO: print decimal by default, and print in native radix
 
-impl<const X: usize, const R: u8> Display for FloatRepr<X, R> {
+impl<const X: usize, R: Round> fmt::Debug for FloatRepr<X, R> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.mantissa, f)?;
+        f.write_str(" * ")?;
+        fmt::Debug::fmt(&X, f)?;
+        f.write_str(" ^ ")?;
+        fmt::Debug::fmt(&self.exponent, f)?;
+        f.write_str("(prec: ")?;
+        fmt::Debug::fmt(&self.precision, f)?;
+        f.write_str(", rnd: ")?;
+        f.write_str(core::any::type_name::<R>())?;
+        f.write_str(")")
+    }
+}
+
+impl<const X: usize, R: Round> Display for FloatRepr<X, R> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // print in decimal if the alternate flag is set
         if f.alternate() && X != 10 {
-            return self.clone().into_decimal().fmt(f);
+            return self.to_decimal().fmt(f);
         }
 
         if self.exponent < 0 {
@@ -47,7 +61,7 @@ impl<const X: usize, const R: u8> Display for FloatRepr<X, R> {
                             let (shifted, mut rem) = shr_rem_radix::<X>(&frac, exp - v);
                             frac = shifted;
                             shr_radix::<X>(&mut rem, exp - v - 1);
-                            frac += Rounding::from_fract::<X, R>(&frac, rem, exp - v);
+                            frac += R::round_fract::<X>(&frac, rem, exp - v);
                             get_precision::<X>(&frac)
                         } else {
                             0

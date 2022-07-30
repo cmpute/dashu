@@ -1,4 +1,4 @@
-use dashu_float::{DBig, FBig, FloatRepr, RoundingMode};
+use dashu_float::{round::mode, DBig, FBig, FloatRepr};
 use dashu_int::{error::ParseError, IBig, Sign, Word};
 use std::str::FromStr;
 
@@ -127,7 +127,7 @@ fn test_fbig_from_str() {
 
 #[test]
 fn test_oct_hex_from_str() {
-    type FOct = FloatRepr<8, { RoundingMode::Zero }>;
+    type FOct = FloatRepr<8, mode::Zero>;
     let oct_cases = [
         //
         // scientific with 'o' notation
@@ -156,7 +156,7 @@ fn test_oct_hex_from_str() {
     assert_eq!(FOct::from_str("一.二"), Err(ParseError::InvalidDigit));
     assert_eq!(FOct::from_str("一.二o三"), Err(ParseError::InvalidDigit));
 
-    type FHex = FloatRepr<16, { RoundingMode::Zero }>;
+    type FHex = FloatRepr<16, mode::Zero>;
     let hex_cases = [
         //
         // scientific with 'h' notation
@@ -186,16 +186,16 @@ fn test_oct_hex_from_str() {
 #[test]
 fn test_other_bases() {
     assert_eq!(
-        FloatRepr::<3, { RoundingMode::Zero }>::from_str("12.21").unwrap(),
-        FloatRepr::<3, { RoundingMode::Zero }>::from_parts(ibig!(52), -2)
+        FloatRepr::<3, mode::Zero>::from_str("12.21").unwrap(),
+        FloatRepr::<3, mode::Zero>::from_parts(ibig!(52), -2)
     );
     assert_eq!(
-        FloatRepr::<20, { RoundingMode::Zero }>::from_str("gg.hh@12").unwrap(),
-        FloatRepr::<20, { RoundingMode::Zero }>::from_parts(ibig!(134757), 10)
+        FloatRepr::<20, mode::Zero>::from_str("gg.hh@12").unwrap(),
+        FloatRepr::<20, mode::Zero>::from_parts(ibig!(134757), 10)
     );
     assert_eq!(
-        FloatRepr::<30, { RoundingMode::Zero }>::from_str("gg.hh@-12").unwrap(),
-        FloatRepr::<30, { RoundingMode::Zero }>::from_parts(ibig!(446927), -14)
+        FloatRepr::<30, mode::Zero>::from_str("gg.hh@-12").unwrap(),
+        FloatRepr::<30, mode::Zero>::from_parts(ibig!(446927), -14)
     );
 }
 
@@ -213,10 +213,7 @@ fn test_from_parts() {
         FBig::from_parts(ibig!(1), 200)
     );
 
-    assert_eq!(
-        FBig::from_parts_const(Sign::Negative, 0, 0, 2),
-        FBig::ZERO
-    );
+    assert_eq!(FBig::from_parts_const(Sign::Negative, 0, 0, 2), FBig::ZERO);
     assert_eq!(
         FBig::from_parts_const(Sign::Negative, 1, 0, 0),
         FBig::NEG_ONE
@@ -249,10 +246,7 @@ fn test_from_parts() {
         DBig::from_parts(ibig!(1), 200)
     );
 
-    assert_eq!(
-        DBig::from_parts_const(Sign::Negative, 0, 0, 2),
-        DBig::ZERO
-    );
+    assert_eq!(DBig::from_parts_const(Sign::Negative, 0, 0, 2), DBig::ZERO);
     assert_eq!(
         DBig::from_parts_const(Sign::Negative, 100, 0, -2),
         DBig::NEG_ONE

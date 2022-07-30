@@ -1,9 +1,9 @@
-use crate::repr::FloatRepr;
+use crate::{repr::FloatRepr, round::Round};
 use core::ops::{Mul, Neg};
 use dashu_base::Abs;
 use dashu_int::Sign;
 
-impl<const X: usize, const R: u8> Neg for FloatRepr<X, R> {
+impl<const X: usize, R: Round> Neg for FloatRepr<X, R> {
     type Output = Self;
     #[inline]
     fn neg(mut self) -> Self::Output {
@@ -12,7 +12,7 @@ impl<const X: usize, const R: u8> Neg for FloatRepr<X, R> {
     }
 }
 
-impl<const X: usize, const R: u8> Neg for &FloatRepr<X, R> {
+impl<const X: usize, R: Round> Neg for &FloatRepr<X, R> {
     type Output = FloatRepr<X, R>;
     #[inline]
     fn neg(self) -> Self::Output {
@@ -20,7 +20,7 @@ impl<const X: usize, const R: u8> Neg for &FloatRepr<X, R> {
     }
 }
 
-impl<const X: usize, const R: u8> Abs for FloatRepr<X, R> {
+impl<const X: usize, R: Round> Abs for FloatRepr<X, R> {
     type Output = Self;
     fn abs(mut self) -> Self::Output {
         self.mantissa = self.mantissa.abs();
@@ -28,7 +28,7 @@ impl<const X: usize, const R: u8> Abs for FloatRepr<X, R> {
     }
 }
 
-impl<const X: usize, const R: u8> Mul<FloatRepr<X, R>> for Sign {
+impl<const X: usize, R: Round> Mul<FloatRepr<X, R>> for Sign {
     type Output = FloatRepr<X, R>;
     #[inline]
     fn mul(self, mut rhs: FloatRepr<X, R>) -> Self::Output {

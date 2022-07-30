@@ -1,13 +1,13 @@
 use crate::{
     ibig_ext::{log_pow, log_rem, remove_pow},
-    repr::{BinaryRepr, DecimalRepr, FloatRepr},
-    round::Rounding,
+    repr::FloatRepr,
+    round::Round,
     utils::{get_precision, shr_rem_radix_in_place},
 };
-use core::convert::TryInto;
+use core::{convert::TryInto, marker::PhantomData};
 use dashu_int::{IBig, UBig};
 
-impl<const R: u8> From<f32> for BinaryRepr<R> {
+impl<R: Round> From<f32> for FloatRepr<2, R> {
     fn from(f: f32) -> Self {
         let bits: u32 = f.to_bits();
 
@@ -29,11 +29,12 @@ impl<const R: u8> From<f32> for BinaryRepr<R> {
             mantissa,
             exponent,
             precision: 24,
+            _marker: PhantomData,
         }
     }
 }
 
-impl<const R: u8> From<f64> for BinaryRepr<R> {
+impl<R: Round> From<f64> for FloatRepr<2, R> {
     fn from(f: f64) -> Self {
         let bits: u64 = f.to_bits();
 
@@ -55,11 +56,12 @@ impl<const R: u8> From<f64> for BinaryRepr<R> {
             mantissa,
             exponent,
             precision: 53,
+            _marker: PhantomData,
         }
     }
 }
 
-impl<const X: usize, const R: u8> FloatRepr<X, R> {
+impl<const X: usize, R: Round> FloatRepr<X, R> {
     /// Create a floating number from a integer
     #[inline]
     pub fn from_integer(integer: IBig, precision: usize) -> Self {
@@ -70,13 +72,13 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
     ///
     /// It's equivalent to [Self::with_radix::<10>()]
     #[inline]
-    pub fn into_decimal(self) -> DecimalRepr<R> {
+    pub fn into_decimal(self) -> FloatRepr<10, R> {
         self.with_radix::<10>()
     }
 
     /// Convert the float number to decimal based exponents.
     #[inline]
-    pub fn to_decimal(&self) -> DecimalRepr<R> {
+    pub fn to_decimal(&self) -> FloatRepr<10, R> {
         self.clone().with_radix::<10>()
     }
 
@@ -84,13 +86,13 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
     ///
     /// It's equivalent to [Self::with_radix::<2>()]
     #[inline]
-    pub fn into_binary(self) -> BinaryRepr<R> {
+    pub fn into_binary(self) -> FloatRepr<2, R> {
         self.with_radix::<2>()
     }
 
     /// Convert the float number to decimal based exponents.
     #[inline]
-    pub fn to_binary(&self) -> BinaryRepr<R> {
+    pub fn to_binary(&self) -> FloatRepr<2, R> {
         self.clone().with_radix::<2>()
     }
 
@@ -107,8 +109,7 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
             if actual > precision {
                 let shift = actual - precision;
                 let low_digits = shr_rem_radix_in_place::<X>(&mut result.mantissa, shift);
-                result.mantissa +=
-                    Rounding::from_fract::<X, R>(&result.mantissa, low_digits, shift);
+                result.mantissa += R::round_fract::<X>(&result.mantissa, low_digits, shift);
                 result.exponent += shift as isize;
             }
         }
@@ -121,12 +122,12 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
     ///
     /// This operation has no cost.
     #[inline]
-    #[allow(non_upper_case_globals)]
-    pub fn with_rounding<const NewR: u8>(self) -> FloatRepr<X, { NewR }> {
+    pub fn with_rounding<NewR: Round>(self) -> FloatRepr<X, NewR> {
         FloatRepr {
             mantissa: self.mantissa,
             exponent: self.exponent,
             precision: self.precision,
+            _marker: PhantomData,
         }
     }
 
@@ -144,6 +145,7 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
                 mantissa: self.mantissa,
                 exponent: self.exponent,
                 precision: self.precision,
+                _marker: PhantomData,
             };
         }
         // FIXME: shortcut if E is a power of NewX
@@ -160,6 +162,7 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
                 mantissa: self.mantissa,
                 exponent: 0,
                 precision,
+                _marker: PhantomData,
             };
         } else if self.exponent > 0 {
             // denote log with base of radix2 as lgr2, then

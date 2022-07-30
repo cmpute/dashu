@@ -1,13 +1,13 @@
-use crate::{repr::FloatRepr, utils::get_precision};
-use core::num::IntErrorKind;
+use crate::{repr::FloatRepr, round::Round};
 use core::str::FromStr;
+use core::{marker::PhantomData, num::IntErrorKind};
 use dashu_int::{
     error::ParseError,
     fmt::{MAX_RADIX, MIN_RADIX},
     IBig, Sign, UBig,
 };
 
-impl<const X: usize, const R: u8> FromStr for FloatRepr<X, R> {
+impl<const X: usize, R: Round> FromStr for FloatRepr<X, R> {
     type Err = ParseError;
 
     /// Convert a string in a given base to [FloatRepr].
@@ -170,6 +170,7 @@ impl<const X: usize, const R: u8> FromStr for FloatRepr<X, R> {
             mantissa,
             exponent,
             precision: ndigits,
+            _marker: PhantomData,
         })
     }
 }

@@ -1,11 +1,12 @@
 use crate::{
     repr::FloatRepr,
+    round::Round,
     utils::{get_precision, shr_rem_radix_in_place},
-    Rounding,
 };
+use core::marker::PhantomData;
 use core::ops::Mul;
 
-impl<const X: usize, const R: u8> Mul for &FloatRepr<X, R> {
+impl<const X: usize, R: Round> Mul for &FloatRepr<X, R> {
     type Output = FloatRepr<X, R>;
 
     #[inline]
@@ -17,24 +18,26 @@ impl<const X: usize, const R: u8> Mul for &FloatRepr<X, R> {
         if actual_prec > precision {
             let shift = actual_prec - precision;
             let low_digits = shr_rem_radix_in_place::<X>(&mut mantissa, shift);
-            mantissa += Rounding::from_fract::<X, R>(&mantissa, low_digits, shift);
+            mantissa += R::round_fract::<X>(&mantissa, low_digits, shift);
             let (mantissa, exponent) = Self::Output::normalize(mantissa, exponent);
             FloatRepr {
                 mantissa,
                 exponent,
                 precision,
+                _marker: PhantomData,
             }
         } else {
             FloatRepr {
                 mantissa,
                 exponent,
                 precision,
+                _marker: PhantomData,
             }
         }
     }
 }
 
-impl<const X: usize, const R: u8> Mul for FloatRepr<X, R> {
+impl<const X: usize, R: Round> Mul for FloatRepr<X, R> {
     type Output = Self;
 
     #[inline]
@@ -42,7 +45,7 @@ impl<const X: usize, const R: u8> Mul for FloatRepr<X, R> {
         (&self).mul(&rhs)
     }
 }
-impl<const X: usize, const R: u8> Mul<FloatRepr<X, R>> for &FloatRepr<X, R> {
+impl<const X: usize, R: Round> Mul<FloatRepr<X, R>> for &FloatRepr<X, R> {
     type Output = FloatRepr<X, R>;
     #[inline]
     fn mul(self, rhs: FloatRepr<X, R>) -> Self::Output {

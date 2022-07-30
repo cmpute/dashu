@@ -1,11 +1,15 @@
-use crate::utils::get_precision;
+use crate::{
+    round::{mode, Round},
+    utils::get_precision,
+};
+use core::marker::PhantomData;
 use dashu_int::{IBig, Sign, Word};
 
 // TODO: add standalone basic arith methods (add, sub, mul, div) for FloatRepr, such that it returns a Approximation struct
 
 /// An arbitrary precision floating number represented as `mantissa * radix^exponent`, with a precision
-/// such that `|mantissa| < radix^precision`. The mantissa is also called significant. `Radix` should be
-/// in range \[2, isize::MAX\]. The representation is always normalized (nonzero mantissa is not divisible by radix, or zero mantissa with zero exponent).
+/// such that `|mantissa| < radix^precision`. The mantissa is also called significant. The representation
+/// is always normalized (nonzero mantissa is not divisible by radix, or zero mantissa with zero exponent).
 ///
 /// The rounding mode of operations between the float numbers is defined by `Rounding`, its value has to
 /// be one of [RoundingMode]. Operations are permitted only between float numbers with the same radix and
@@ -13,28 +17,45 @@ use dashu_int::{IBig, Sign, Word};
 /// For example, for correct subtraction, the two operands should have reverse rounding direction.
 ///
 /// # Generic Parameters
-/// The const generic parameters will be abbreviated as Radix -> X, Rounding -> R.
-/// Radix should be in range \[2, isize::MAX\], and Rounding value has to be one of [RoundingMode]
-/// 
+/// The const generic parameters will be abbreviated as RADIX -> X, Rounding -> R.
+/// RADIX should be in range \[2, isize::MAX\], and Rounding value has to be one of [RoundingMode]
+///
 /// # Infinity
-/// 
+///
 /// This struct supports representation the infinity, but the infinity is only supposed to be used as sentinels.
 /// That is, only equality test and comparison are implemented for infinity. Any other operations performed
 /// with infinity will lead to panic.
-/// 
+///
 /// The infinities are represented as:
-/// * (Positive) infinity: mantissa = 0, exponent > 0
+/// * Positive infinity: mantissa = 0, exponent > 0
 /// * Negative infinity: mantissa = 0, exponenet < 0
-/// 
-#[allow(non_upper_case_globals)]
-#[derive(Clone, Debug)]
-pub struct FloatRepr<const Radix: usize, const Rounding: u8> {
+///
+pub struct FloatRepr<const RADIX: usize, RoundingMode: Round = mode::Zero> {
     pub(crate) mantissa: IBig,
     pub(crate) exponent: isize,
     pub(crate) precision: usize, // TODO: let precision = 0 implies no precision bound, but when no-precision number operates with another has-precision number, the precision will be set as the other one's. This will requires us to make sure 0 value also has non-zero precision (1 will be ideal)
+    pub(crate) _marker: PhantomData<RoundingMode>,
 }
 
-impl<const X: usize, const R: u8> FloatRepr<X, R> {
+// this implementation is necessary due to the limitation of `#[derive(Clone)]`
+impl<const X: usize, R: Round> Clone for FloatRepr<X, R> {
+    fn clone(&self) -> Self {
+        Self {
+            mantissa: self.mantissa.clone(),
+            exponent: self.exponent,
+            precision: self.precision,
+            _marker: PhantomData,
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.mantissa.clone_from(&source.mantissa);
+        self.exponent = source.exponent;
+        self.precision = source.precision;
+    }
+}
+
+impl<const X: usize, R: Round> FloatRepr<X, R> {
     /// Get the maximum precision set for the float number.
     #[inline]
     pub const fn precision(&self) -> usize {
@@ -64,6 +85,7 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
             mantissa,
             exponent,
             precision,
+            _marker: PhantomData,
         }
     }
 
@@ -108,6 +130,7 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
             mantissa: IBig::from_parts_const(sign, low, high),
             exponent,
             precision,
+            _marker: PhantomData,
         }
     }
 
@@ -123,36 +146,65 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
         (self.mantissa, self.exponent)
     }
 
+    #[inline]
+    const fn zero() -> Self {
+        Self {
+            mantissa: IBig::ZERO,
+            exponent: 0,
+            precision: 1,
+            _marker: PhantomData,
+        }
+    }
     /// [FloatRepr] with value 0
-    pub const ZERO: Self = Self {
-        mantissa: IBig::ZERO,
-        exponent: 0,
-        precision: 1,
-    };
+    pub const ZERO: Self = Self::zero();
+
+    #[inline]
+    const fn one() -> Self {
+        Self {
+            mantissa: IBig::ONE,
+            exponent: 0,
+            precision: 1,
+            _marker: PhantomData,
+        }
+    }
     /// [FloatRepr] with value 1
-    pub const ONE: Self = Self {
-        mantissa: IBig::ONE,
-        exponent: 0,
-        precision: 1,
-    };
+    pub const ONE: Self = Self::one();
+
+    #[inline]
+    const fn neg_one() -> Self {
+        Self {
+            mantissa: IBig::NEG_ONE,
+            exponent: 0,
+            precision: 1,
+            _marker: PhantomData,
+        }
+    }
     /// [FloatRepr] with value -1
-    pub const NEG_ONE: Self = Self {
-        mantissa: IBig::NEG_ONE,
-        exponent: 0,
-        precision: 1,
-    };
+    pub const NEG_ONE: Self = Self::neg_one();
+
+    #[inline]
+    const fn infinity() -> Self {
+        Self {
+            mantissa: IBig::ZERO,
+            exponent: 1,
+            precision: 0,
+            _marker: PhantomData,
+        }
+    }
     /// [FloatRepr] representing positive infinity (∞)
-    pub const INFINITY: Self = Self {
-        mantissa: IBig::ZERO,
-        exponent: 1,
-        precision: 0,
-    };
+    pub const INFINITY: Self = Self::infinity();
+
+    #[inline]
+    const fn neg_infinity() -> Self {
+        Self {
+            mantissa: IBig::ZERO,
+            exponent: -1,
+            precision: 0,
+            _marker: PhantomData,
+        }
+    }
     /// [FloatRepr] representing negative infinity (-∞)
-    pub const NEG_INFINITY: Self = Self {
-        mantissa: IBig::ZERO,
-        exponent: -1,
-        precision: 0,
-    };
+    pub const NEG_INFINITY: Self = Self::neg_infinity();
 
     pub const fn is_zero(&self) -> bool {
         self.mantissa.is_zero() && self.exponent == 0
@@ -186,10 +238,3 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
         unimplemented!()
     }
 }
-
-/// Multi-precision float number with binary exponent
-#[allow(non_upper_case_globals)]
-pub type BinaryRepr<const Rounding: u8> = FloatRepr<2, Rounding>;
-/// Multi-precision decimal number with decimal exponent
-#[allow(non_upper_case_globals)]
-pub type DecimalRepr<const Rounding: u8> = FloatRepr<10, Rounding>;

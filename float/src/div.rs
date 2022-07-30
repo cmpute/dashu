@@ -1,15 +1,15 @@
 use crate::{
     repr::FloatRepr,
-    round::Rounding,
+    round::Round,
     utils::{get_precision, shr_rem_radix_in_place},
 };
-use core::cmp::Ordering;
 use core::ops::Div;
+use core::{cmp::Ordering, marker::PhantomData};
 use dashu_base::DivRem;
 use dashu_int::IBig;
 
-impl<const X: usize, const R: u8> FloatRepr<X, R> {
-    /// Create a floating number expressed as `(numerator / denominator) * Radix ^ exponent` with given precision.
+impl<const X: usize, R: Round> FloatRepr<X, R> {
+    /// Create a floating number expressed as `(numerator / denominator) * radix ^ exponent` with given precision.
     pub fn from_ratio_exponent(
         numerator: IBig,
         denominator: IBig,
@@ -22,12 +22,12 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
         let mut digits = get_precision::<X>(&mantissa);
         match digits.cmp(&precision) {
             Ordering::Equal => {
-                mantissa += Rounding::from_ratio::<R>(&mantissa, rem, &denominator);
+                mantissa += R::round_ratio(&mantissa, rem, &denominator);
             }
             Ordering::Greater => {
                 let shift = digits - precision;
                 let low_digits = shr_rem_radix_in_place::<X>(&mut mantissa, shift);
-                mantissa += Rounding::from_fract::<X, R>(&mantissa, low_digits, precision);
+                mantissa += R::round_fract::<X>(&mantissa, low_digits, precision);
                 exponent = shift as isize;
             }
             Ordering::Less => {
@@ -39,7 +39,7 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
                     digits += 1;
                     exponent -= 1;
                 }
-                mantissa += Rounding::from_fract::<X, R>(&mantissa, rem, 1);
+                mantissa += R::round_fract::<X>(&mantissa, rem, 1);
             }
         }
 
@@ -48,6 +48,7 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
             mantissa,
             exponent,
             precision,
+            _marker: PhantomData,
         }
     }
 
@@ -58,7 +59,7 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
     }
 }
 
-impl<const X: usize, const R: u8> Div for FloatRepr<X, R> {
+impl<const X: usize, R: Round> Div for FloatRepr<X, R> {
     type Output = Self;
     fn div(self, rhs: Self) -> Self::Output {
         Self::from_ratio_exponent(
