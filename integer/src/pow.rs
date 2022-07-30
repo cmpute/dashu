@@ -18,16 +18,16 @@ impl UBig {
     #[inline]
     pub fn pow(&self, exp: usize) -> UBig {
         match exp {
-            0 => return UBig::one(),
+            0 => return UBig::ONE,
             1 => return self.clone(),
             2 => return self * self,
             _ => {}
         }
         match self.repr() {
-            RefSmall(0) => return UBig::zero(),
-            RefSmall(1) => return UBig::one(),
+            RefSmall(0) => return UBig::ZERO,
+            RefSmall(1) => return UBig::ONE,
             RefSmall(2) => {
-                let mut x = UBig::zero();
+                let mut x = UBig::ZERO;
                 x.set_bit(exp);
                 return x;
             }

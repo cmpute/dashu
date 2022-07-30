@@ -90,7 +90,7 @@ impl<'de> Visitor<'de> for UBigVisitor {
         match seq.size_hint() {
             Some(0) => {
                 assert!(seq.next_element::<u64>()?.is_none());
-                Ok(UBig::zero())
+                Ok(UBig::ZERO)
             }
             Some(1) => {
                 let word_64: u64 = seq.next_element()?.unwrap();

@@ -14,7 +14,7 @@ fn random_ubig<R>(bits: usize, rng: &mut R) -> UBig
 where
     R: Rng + ?Sized,
 {
-    rng.gen_range(UBig::one() << (bits - 1)..UBig::one() << bits)
+    rng.gen_range(UBig::ONE << (bits - 1)..UBig::ONE << bits)
 }
 
 fn bench_add(criterion: &mut Criterion) {

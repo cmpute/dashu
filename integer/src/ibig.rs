@@ -22,6 +22,16 @@ use crate::{
 /// assert_eq!(b, d);
 /// # Ok::<(), ParseError>(())
 /// ```
+/// 
+/// The IBig struct is compact with a niche bit. It has the same memory size as [UBig]
+/// and it can could be used within simple enums with no additional memory requirement.
+/// 
+/// ```
+/// # use dashu_int::{IBig, UBig};
+/// use core::mem;
+/// assert_eq!(mem::size_of::<IBig>(), mem::size_of::<UBig>());
+/// assert_eq!(mem::size_of::<IBig>(), mem::size_of::<Option<IBig>>());
+/// ```
 #[derive(Eq, Hash, PartialEq)]
 #[repr(transparent)]
 pub struct IBig(pub(crate) Repr);
@@ -43,7 +53,7 @@ impl IBig {
     /// 
     /// ```
     /// # use dashu_int::{IBig, Sign};
-    /// assert_eq!(IBig::zero().sign(), Sign::Positive);
+    /// assert_eq!(IBig::ZERO.sign(), Sign::Positive);
     /// assert_eq!(IBig::from(2).sign(), Sign::Positive);
     /// assert_eq!(IBig::from(-3).sign(), Sign::Negative);
     /// ```
@@ -58,9 +68,9 @@ impl IBig {
     /// 
     /// ```
     /// # use dashu_int::{IBig, Sign, UBig};
-    /// assert_eq!(IBig::zero().into_parts(), (Sign::Positive, UBig::zero()));
-    /// assert_eq!(IBig::one().into_parts(), (Sign::Positive, UBig::one()));
-    /// assert_eq!(IBig::neg_one().into_parts(), (Sign::Negative, UBig::one()));
+    /// assert_eq!(IBig::ZERO.into_parts(), (Sign::Positive, UBig::ZERO));
+    /// assert_eq!(IBig::ONE.into_parts(), (Sign::Positive, UBig::ONE));
+    /// assert_eq!(IBig::NEG_ONE.into_parts(), (Sign::Negative, UBig::ONE));
     /// ```
     #[inline]
     pub fn into_parts(self) -> (Sign, UBig) {
@@ -76,43 +86,48 @@ impl IBig {
     /// 
     /// ```
     /// # use dashu_int::{IBig, Sign, UBig};
-    /// assert_eq!(IBig::from_parts(Sign::Positive, UBig::zero()), IBig::zero());
-    /// assert_eq!(IBig::from_parts(Sign::Positive, UBig::one()), IBig::one());
-    /// assert_eq!(IBig::from_parts(Sign::Negative, UBig::one()), IBig::neg_one());
+    /// assert_eq!(IBig::from_parts(Sign::Positive, UBig::ZERO), IBig::ZERO);
+    /// assert_eq!(IBig::from_parts(Sign::Positive, UBig::ONE), IBig::ONE);
+    /// assert_eq!(IBig::from_parts(Sign::Negative, UBig::ONE), IBig::NEG_ONE);
     /// ```
     #[inline]
     pub fn from_parts(sign: Sign, magnitude: UBig) -> Self {
         IBig(magnitude.0.with_sign(sign))
     }
 
-    /// Create an IBig with value 0
-    #[inline]
-    pub const fn zero() -> Self {
-        IBig(Repr::zero())
-    }
+    /// [IBig] with value 0
+    pub const ZERO: Self = Self(Repr::zero());
+    /// [IBig] with value 1
+    pub const ONE: Self = Self(Repr::one());
+    /// [IBig] with value -1
+    pub const NEG_ONE: Self = Self(Repr::neg_one());
 
-    /// Check whether the value of IBig is 0
+    /// Check whether the value is 0
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::IBig;
+    /// assert!(IBig::ZERO.is_zero());
+    /// assert!(!IBig::ONE.is_zero());
+    /// ```
     #[inline]
     pub const fn is_zero(&self) -> bool {
         self.0.is_zero()
     }
 
-    /// Create an IBig with value 1
-    #[inline]
-    pub const fn one() -> Self {
-        IBig(Repr::one())
-    }
-
-    /// Check whether the value of IBig is 1
+    /// Check whether the value is 1
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::IBig;
+    /// assert!(!IBig::ZERO.is_one());
+    /// assert!(IBig::ONE.is_one());
+    /// ```
     #[inline]
     pub const fn is_one(&self) -> bool {
         self.0.is_one()
-    }
-
-    /// Create an IBig with value -1
-    #[inline]
-    pub const fn neg_one() -> IBig {
-        IBig(Repr::neg_one())
     }
 }
 

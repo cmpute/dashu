@@ -17,7 +17,7 @@ impl Default for UBig {
     /// Default value: 0.
     #[inline]
     fn default() -> UBig {
-        UBig::zero()
+        UBig::ZERO
     }
 }
 
@@ -25,7 +25,7 @@ impl Default for IBig {
     /// Default value: 0.
     #[inline]
     fn default() -> IBig {
-        IBig::zero()
+        IBig::ZERO
     }
 }
 
@@ -106,7 +106,7 @@ impl UBig {
     ///
     /// ```
     /// # use dashu_int::UBig;
-    /// assert!(UBig::zero().to_le_bytes().is_empty());
+    /// assert!(UBig::ZERO.to_le_bytes().is_empty());
     /// assert_eq!(UBig::from(0x010203u32).to_le_bytes(), [3, 2, 1]);
     /// ```
     pub fn to_le_bytes(&self) -> Vec<u8> {
@@ -137,7 +137,7 @@ impl UBig {
     ///
     /// ```
     /// # use dashu_int::UBig;
-    /// assert!(UBig::zero().to_be_bytes().is_empty());
+    /// assert!(UBig::ZERO.to_be_bytes().is_empty());
     /// assert_eq!(UBig::from(0x010203u32).to_be_bytes(), [1, 2, 3]);
     /// ```
     pub fn to_be_bytes(&self) -> Vec<u8> {

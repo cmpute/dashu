@@ -1,8 +1,10 @@
 use core::cmp::Ordering;
-use core::ops::Add;
+use core::ops::{Add, AddAssign};
 use dashu_base::UnsignedAbs;
 use dashu_int::{IBig, Sign, UBig};
-use std::ops::AddAssign;
+
+// TODO: refactor RoundingMode to structs, implement a `Round` trait, requiring a `from_fract` and `from_ratio` method.
+// And the RoundingMode enum implements this trait, user can also provide their own rounding function
 
 // FIXME: this should be a enum when enum const is supported in generic argument
 /// Defines rounding modes of the floating numbers.
@@ -139,8 +141,8 @@ impl Add<Rounding> for IBig {
     fn add(self, rhs: Rounding) -> Self::Output {
         match rhs {
             Rounding::NoOp => self,
-            Rounding::AddOne => self + IBig::one(),
-            Rounding::SubOne => self - IBig::one(),
+            Rounding::AddOne => self + IBig::ONE,
+            Rounding::SubOne => self - IBig::ONE,
         }
     }
 }
@@ -151,8 +153,8 @@ impl Add<Rounding> for &IBig {
     fn add(self, rhs: Rounding) -> Self::Output {
         match rhs {
             Rounding::NoOp => self.clone(),
-            Rounding::AddOne => self + IBig::one(),
-            Rounding::SubOne => self - IBig::one(),
+            Rounding::AddOne => self + IBig::ONE,
+            Rounding::SubOne => self - IBig::ONE,
         }
     }
 }
@@ -161,8 +163,8 @@ impl AddAssign<Rounding> for IBig {
     fn add_assign(&mut self, rhs: Rounding) {
         match rhs {
             Rounding::NoOp => {}
-            Rounding::AddOne => *self += IBig::one(),
-            Rounding::SubOne => *self -= IBig::one(),
+            Rounding::AddOne => *self += IBig::ONE,
+            Rounding::SubOne => *self -= IBig::ONE,
         }
     }
 }

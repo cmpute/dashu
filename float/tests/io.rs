@@ -1,12 +1,14 @@
+use dashu_float::{DBig, FBig, FloatRepr, RoundingMode};
+use dashu_int::{error::ParseError, IBig, Sign, Word};
 use std::str::FromStr;
-use dashu_float::{FBig, DBig, FloatRepr, RoundingMode};
-use dashu_int::{IBig, error::ParseError, Word, Sign};
 
 mod helper_macros;
 
 // radix independent cases: (text, mantissa, exponent, precision)
 const COMMON_CASES: [(&str, i64, isize, usize); 28] = [
+    //
     // unsigned
+    //
     ("0.0", 0, 0, 2),
     (".0", 0, 0, 1),
     ("1", 1, 0, 1),
@@ -20,8 +22,9 @@ const COMMON_CASES: [(&str, i64, isize, usize); 28] = [
     ("0000.0001", 1, -4, 8),
     ("10_00_.00_00", 1, 3, 8),
     ("00_00._00_01", 1, -4, 8),
-
+    //
     // signed
+    //
     ("-0.0", 0, 0, 2),
     ("-.0", 0, 0, 1),
     ("-1", -1, 0, 1),
@@ -74,7 +77,9 @@ fn test_dbig_from_str() {
 #[test]
 fn test_fbig_from_str() {
     let test_cases = [
+        //
         // scientific with 'b' notation
+        //
         ("10b0", 1, 1, 2),
         ("0110b5", 3, 6, 4),
         ("-10B-7", -1, -6, 2),
@@ -82,15 +87,17 @@ fn test_fbig_from_str() {
         ("-.11b4", -3, 2, 2),
         ("-.0110B-1", -3, -4, 4),
         ("-1100_0100_.0101_1010b3", -25133, -4, 16),
-
+        //
         // with hexadecimal prefix
+        //
         ("0x2", 2, 0, 4),
         ("-0x02", -2, 0, 8),
         ("0x.2", 1, -3, 4),
         ("0x2.2", 17, -3, 8),
         ("-0x0_f.2_0", -121, -3, 16),
-
+        //
         // scientific with 'p' notation
+        //
         ("0x2p0", 1, 1, 4),
         ("0x6p5", 3, 6, 4),
         ("-0x2P-7", -1, -6, 4),
@@ -122,7 +129,9 @@ fn test_fbig_from_str() {
 fn test_oct_hex_from_str() {
     type FOct = FloatRepr<8, { RoundingMode::Zero }>;
     let oct_cases = [
+        //
         // scientific with 'o' notation
+        //
         ("10o0", 1, 1, 2),
         ("0770o5", 63, 6, 4),
         ("-30O-7", -3, -6, 2),
@@ -149,7 +158,9 @@ fn test_oct_hex_from_str() {
 
     type FHex = FloatRepr<16, { RoundingMode::Zero }>;
     let hex_cases = [
+        //
         // scientific with 'h' notation
+        //
         ("10h0", 1, 1, 2),
         ("0bb0h5", 187, 6, 4),
         ("-d0H-7", -13, -6, 2),
@@ -172,24 +183,86 @@ fn test_oct_hex_from_str() {
     assert_eq!(FHex::from_str("一.二h三"), Err(ParseError::InvalidDigit));
 }
 
-// TODO: test other bases
-// let _ = fbig!(e9a.c2 base 16); // radix = 16
-// let _ = fbig!(e9a.c2@32 base 16); // 0xe9a.c2 * 16^32, radix = 16
-// let _ = fbig!(e9a.c2@32 base 20); // 0xe9a.c2 * 20^32, radix = 20
+#[test]
+fn test_other_bases() {
+    assert_eq!(
+        FloatRepr::<3, { RoundingMode::Zero }>::from_str("12.21").unwrap(),
+        FloatRepr::<3, { RoundingMode::Zero }>::from_parts(ibig!(52), -2)
+    );
+    assert_eq!(
+        FloatRepr::<20, { RoundingMode::Zero }>::from_str("gg.hh@12").unwrap(),
+        FloatRepr::<20, { RoundingMode::Zero }>::from_parts(ibig!(134757), 10)
+    );
+    assert_eq!(
+        FloatRepr::<30, { RoundingMode::Zero }>::from_str("gg.hh@-12").unwrap(),
+        FloatRepr::<30, { RoundingMode::Zero }>::from_parts(ibig!(446927), -14)
+    );
+}
 
 #[test]
 fn test_from_parts() {
-    assert_eq!(FBig::from_parts(ibig!(0), 2), FBig::zero());
-    assert_eq!(FBig::from_parts(ibig!(-0), -1), FBig::zero());
+    assert_eq!(FBig::from_parts(ibig!(0), 2), FBig::ZERO);
+    assert_eq!(FBig::from_parts(ibig!(-4), -2), FBig::NEG_ONE);
     assert_eq!(FBig::from_parts(ibig!(4), 0), FBig::from_parts(ibig!(1), 2));
-    assert_eq!(FBig::from_parts(ibig!(-4), 0), FBig::from_parts(ibig!(-1), 2));
-    assert_eq!(FBig::from_parts(ibig!(1) << 200, 0), FBig::from_parts(ibig!(1), 200));
+    assert_eq!(
+        FBig::from_parts(ibig!(-4), 0),
+        FBig::from_parts(ibig!(-1), 2)
+    );
+    assert_eq!(
+        FBig::from_parts(ibig!(1) << 200, 0),
+        FBig::from_parts(ibig!(1), 200)
+    );
 
-    assert_eq!(FBig::from_parts_const(Sign::Negative, 0, 0, 2), FBig::zero());
-    assert_eq!(FBig::from_parts_const(Sign::Negative, 1, 0, 0), FBig::neg_one());
-    assert_eq!(FBig::from_parts_const(Sign::Positive, 4, 0, 0), FBig::from_parts(ibig!(1), 2));
-    assert_eq!(FBig::from_parts_const(Sign::Positive, 1 << (Word::BITS - 1), 0, 0), FBig::from_parts(ibig!(1), (Word::BITS - 1) as isize));
-    assert_eq!(FBig::from_parts_const(Sign::Positive, 0, 1 << (Word::BITS - 1), 0), FBig::from_parts(ibig!(1), (2 * Word::BITS - 1) as isize));
+    assert_eq!(
+        FBig::from_parts_const(Sign::Negative, 0, 0, 2),
+        FBig::ZERO
+    );
+    assert_eq!(
+        FBig::from_parts_const(Sign::Negative, 1, 0, 0),
+        FBig::NEG_ONE
+    );
+    assert_eq!(
+        FBig::from_parts_const(Sign::Positive, 4, 0, 0),
+        FBig::from_parts(ibig!(1), 2)
+    );
+    assert_eq!(
+        FBig::from_parts_const(Sign::Positive, 1 << (Word::BITS - 1), 0, 0),
+        FBig::from_parts(ibig!(1), (Word::BITS - 1) as isize)
+    );
+    assert_eq!(
+        FBig::from_parts_const(Sign::Positive, 0, 1 << (Word::BITS - 1), 0),
+        FBig::from_parts(ibig!(1), (2 * Word::BITS - 1) as isize)
+    );
 
-    // TODO: add decimal tests
+    assert_eq!(DBig::from_parts(ibig!(0), 2), DBig::ZERO);
+    assert_eq!(DBig::from_parts(ibig!(-100), -2), DBig::NEG_ONE);
+    assert_eq!(
+        DBig::from_parts(ibig!(200), 0),
+        DBig::from_parts(ibig!(2), 2)
+    );
+    assert_eq!(
+        DBig::from_parts(ibig!(-400), 0),
+        DBig::from_parts(ibig!(-4), 2)
+    );
+    assert_eq!(
+        DBig::from_parts(ibig!(10).pow(200), 0),
+        DBig::from_parts(ibig!(1), 200)
+    );
+
+    assert_eq!(
+        DBig::from_parts_const(Sign::Negative, 0, 0, 2),
+        DBig::ZERO
+    );
+    assert_eq!(
+        DBig::from_parts_const(Sign::Negative, 100, 0, -2),
+        DBig::NEG_ONE
+    );
+    assert_eq!(
+        DBig::from_parts_const(Sign::Positive, 200, 0, 0),
+        DBig::from_parts(ibig!(2), 2)
+    );
+    assert_eq!(
+        DBig::from_parts_const(Sign::Negative, 10000, 20000, 0),
+        DBig::from_parts_const(Sign::Negative, 1, 2, 4)
+    );
 }

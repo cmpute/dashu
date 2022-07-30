@@ -55,23 +55,23 @@ pub fn shr_rem_radix<const X: usize>(value: &IBig, exp: usize) -> (IBig, IBig) {
         match X {
             2 => {
                 // FIXME: a dedicate method to extract low bits for IBig might be helpful here
-                let rem = value & ((IBig::one() << exp) - 1);
+                let rem = value & ((IBig::ONE << exp) - 1);
                 (value >> exp, rem)
             }
             10 => {
-                let rem1 = value & ((IBig::one() << exp) - 1);
+                let rem1 = value & ((IBig::ONE << exp) - 1);
                 let (q, rem2) = (value >> exp).div_rem(IBig::from(5).pow(exp));
                 let rem = (rem2 << exp) + rem1;
                 (q, rem)
             }
             16 => {
-                let rem = value & ((IBig::one() << (4 * exp)) - 1);
+                let rem = value & ((IBig::ONE << (4 * exp)) - 1);
                 (value >> 4 * exp, rem)
             }
             _ => value.div_rem(IBig::from(X).pow(exp)),
         }
     } else {
-        (value.clone(), IBig::zero())
+        (value.clone(), IBig::ZERO)
     }
 }
 
@@ -81,19 +81,19 @@ pub fn shr_rem_radix_in_place<const X: usize>(value: &mut IBig, exp: usize) -> I
         match X {
             2 => {
                 // FIXME: a dedicate method to extract low bits for IBig might be helpful here
-                let rem = &*value & ((IBig::one() << exp) - 1);
+                let rem = &*value & ((IBig::ONE << exp) - 1);
                 *value >>= exp;
                 rem
             }
             10 => {
-                let rem1 = &*value & ((IBig::one() << exp) - 1);
+                let rem1 = &*value & ((IBig::ONE << exp) - 1);
                 let (q, rem2) = (&*value >> exp).div_rem(IBig::from(5).pow(exp));
                 *value = q;
                 let rem = (rem2 << exp) + rem1;
                 rem
             }
             16 => {
-                let rem = &*value & ((IBig::one() << (4 * exp)) - 1);
+                let rem = &*value & ((IBig::ONE << (4 * exp)) - 1);
                 *value >>= 4 * exp;
                 rem
             }
@@ -104,6 +104,6 @@ pub fn shr_rem_radix_in_place<const X: usize>(value: &mut IBig, exp: usize) -> I
             }
         }
     } else {
-        IBig::zero()
+        IBig::ZERO
     }
 }

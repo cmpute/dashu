@@ -23,7 +23,7 @@ impl<'a> Modulo<'a> {
     /// ```
     /// # use dashu_int::{modular::ModuloRing, UBig};
     /// // A Mersenne prime.
-    /// let p = UBig::from(2u8).pow(127) - UBig::one();
+    /// let p = UBig::from(2u8).pow(127) - UBig::ONE;
     /// let ring = ModuloRing::new(p.clone());
     /// // Fermat's little theorem: a^(p-2) = a^-1 (mod p)
     /// let a = ring.convert(123);

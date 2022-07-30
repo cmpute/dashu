@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2018"
 
+[features]
+default = ["std"]
+std = ["dashu-base/std", "dashu-int/std"]
+
 [dependencies.static_assertions]
 version = "1.1"
 

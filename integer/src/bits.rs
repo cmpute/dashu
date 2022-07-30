@@ -160,7 +160,7 @@ impl UBig {
     /// assert_eq!(UBig::from(17u8).trailing_zeros(), Some(0));
     /// assert_eq!(UBig::from(48u8).trailing_zeros(), Some(4));
     /// assert_eq!(UBig::from(0b101000000u16).trailing_zeros(), Some(6));
-    /// assert_eq!(UBig::zero().trailing_zeros(), None);
+    /// assert_eq!(UBig::ZERO.trailing_zeros(), None);
     /// ```
     #[inline]
     pub fn trailing_zeros(&self) -> Option<usize> {
@@ -190,7 +190,7 @@ impl UBig {
     /// # use dashu_int::UBig;
     /// assert_eq!(UBig::from(17u8).bit_len(), 5);
     /// assert_eq!(UBig::from(0b101000000u16).bit_len(), 9);
-    /// assert_eq!(UBig::zero().bit_len(), 0);
+    /// assert_eq!(UBig::ZERO.bit_len(), 0);
     /// let x = UBig::from(0x90ffff3450897234u64);
     /// assert_eq!(x.bit_len(), x.in_radix(2).to_string().len());
     /// ```
@@ -222,7 +222,7 @@ impl IBig {
     /// assert_eq!(IBig::from(17).trailing_zeros(), Some(0));
     /// assert_eq!(IBig::from(-48).trailing_zeros(), Some(4));
     /// assert_eq!(IBig::from(-0b101000000).trailing_zeros(), Some(6));
-    /// assert_eq!(IBig::zero().trailing_zeros(), None);
+    /// assert_eq!(IBig::ZERO.trailing_zeros(), None);
     /// ```
     #[inline]
     pub fn trailing_zeros(&self) -> Option<usize> {

@@ -21,7 +21,7 @@ pub fn log_rem(x: &UBig, base: usize) -> (usize, UBig) {
 
     // very naive algorithm by now
     let mut counter = 0;
-    let mut exp = UBig::one();
+    let mut exp = UBig::ONE;
 
     loop {
         let new_exp = &exp * base;
@@ -50,7 +50,7 @@ pub fn log(x: &UBig, base: usize) -> usize {
 }
 
 pub fn remove_pow(x: &mut IBig, base: &IBig) -> UBig {
-    let mut counter = UBig::zero();
+    let mut counter = UBig::ZERO;
     while !x.is_zero() {
         let (q, r) = (&*x).div_rem(base);
         if !r.is_zero() {

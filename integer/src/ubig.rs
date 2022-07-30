@@ -27,6 +27,15 @@ use crate::{
 /// assert_eq!(b, d);
 /// # Ok::<(), ParseError>(())
 /// ```
+/// 
+/// The UBig struct has a niche bit, therefore it can be used within simple enums
+/// with no additional memory requirement.
+/// 
+/// ```
+/// # use dashu_int::UBig;
+/// use core::mem;
+/// assert_eq!(mem::size_of::<UBig>(), mem::size_of::<Option<UBig>>());
+/// ```
 #[derive(Eq, Hash, PartialEq)]
 #[repr(transparent)]
 pub struct UBig(pub(crate) Repr);
@@ -44,25 +53,34 @@ impl UBig {
         self.0.into_typed()
     }
 
-    /// Create a UBig with value 0
-    #[inline]
-    pub const fn zero() -> Self {
-        UBig(Repr::zero())
-    }
+    /// [UBig] with value 0
+    pub const ZERO: Self = Self(Repr::zero());
+    /// [UBig] with value 1
+    pub const ONE: Self = Self(Repr::one());
 
-    /// Check whether the value of UBig is 0
+    /// Check whether the value is 0
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::UBig;
+    /// assert!(UBig::ZERO.is_zero());
+    /// assert!(!UBig::ONE.is_zero());
+    /// ```
     #[inline]
     pub const fn is_zero(&self) -> bool {
         self.0.is_zero()
     }
 
-    /// Create a UBig with value 1
-    #[inline]
-    pub const fn one() -> Self {
-        UBig(Repr::one())
-    }
-
-    /// Check whether the value of UBig is 1
+    /// Check whether the value is 1
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::UBig;
+    /// assert!(!UBig::ZERO.is_one());
+    /// assert!(UBig::ONE.is_one());
+    /// ```
     #[inline]
     pub const fn is_one(&self) -> bool {
         self.0.is_one()
@@ -106,7 +124,7 @@ mod tests {
     fn test_buffer_to_ubig() {
         let buf = Buffer::allocate(5);
         let num = UBig(Repr::from_buffer(buf));
-        assert_eq!(num, UBig::zero());
+        assert_eq!(num, UBig::ZERO);
 
         let mut buf = Buffer::allocate(5);
         buf.push(7);

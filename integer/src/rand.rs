@@ -29,7 +29,7 @@ impl UBig {
     where
         R: Rng + ?Sized,
     {
-        debug_assert!(*range != UBig::zero());
+        debug_assert!(!range.is_zero());
 
         match range.repr() {
             RefSmall(dword) => UBig::from(rng.gen_range(0..dword)),
@@ -87,7 +87,7 @@ where
 /// use dashu_int::UBig;
 /// use rand::{distributions::uniform::Uniform, thread_rng, Rng};
 /// let a = thread_rng().gen_range(UBig::from(3u8)..UBig::from(10u8));
-/// let b = thread_rng().sample(Uniform::new(UBig::zero(), &a));
+/// let b = thread_rng().sample(Uniform::new(UBig::ZERO, &a));
 /// assert!(a >= 3 && a < 10);
 /// assert!(b >= 0 && b < a);
 /// ```
@@ -106,7 +106,7 @@ impl UniformSampler for UniformUBig {
         B2: SampleBorrow<UBig>,
     {
         let range = high.borrow() - low.borrow();
-        if range == UBig::zero() {
+        if range.is_zero() {
             panic!("Empty range");
         }
         UniformUBig {
@@ -121,7 +121,7 @@ impl UniformSampler for UniformUBig {
         B1: SampleBorrow<UBig>,
         B2: SampleBorrow<UBig>,
     {
-        let range = high.borrow() - low.borrow() + UBig::one();
+        let range = high.borrow() - low.borrow() + UBig::ONE;
         UniformUBig {
             range,
             offset: low.borrow().clone(),
@@ -164,7 +164,7 @@ impl UniformSampler for UniformIBig {
         B2: SampleBorrow<IBig>,
     {
         let range = high.borrow() - low.borrow();
-        if range <= IBig::zero() {
+        if range <= IBig::ZERO {
             panic!("Empty range");
         }
         UniformIBig {
@@ -180,7 +180,7 @@ impl UniformSampler for UniformIBig {
         B2: SampleBorrow<IBig>,
     {
         let range = high.borrow() - low.borrow() + IBig::from(1u8);
-        if range <= IBig::zero() {
+        if range <= IBig::ZERO {
             panic!("Empty range");
         }
         UniformIBig {

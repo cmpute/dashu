@@ -110,7 +110,7 @@ impl<const X: usize, const R: u8> FromStr for FloatRepr<X, R> {
                     let trunc_str = &trunc_str[2..];
                     let digits = 4 * (trunc_str.len() - trunc_str.matches('_').count());
                     if trunc_str.len() == 0 {
-                        (UBig::zero(), digits, 16)
+                        (UBig::ZERO, digits, 16)
                     } else {
                         (UBig::from_str_radix(&trunc_str, 16)?, digits, 16)
                     }
@@ -118,14 +118,18 @@ impl<const X: usize, const R: u8> FromStr for FloatRepr<X, R> {
                     return Err(ParseError::UnsupportedRadix);
                 } else {
                     let digits = trunc_str.len() - trunc_str.matches('_').count();
-                    (UBig::from_str_radix(&src[..dot], X as u32)?, digits, X as u32)
+                    (
+                        UBig::from_str_radix(&src[..dot], X as u32)?,
+                        digits,
+                        X as u32,
+                    )
                 }
             } else {
                 if pmarker {
                     // prefix is required for using `p` as scale marker
                     return Err(ParseError::UnsupportedRadix);
                 }
-                (UBig::zero(), 0, X as u32)
+                (UBig::ZERO, 0, X as u32)
             };
 
             // parse fractional part
@@ -137,7 +141,7 @@ impl<const X: usize, const R: u8> FromStr for FloatRepr<X, R> {
                 }
                 (UBig::from_str_radix(src, base)?, digits)
             } else {
-                (UBig::zero(), 0)
+                (UBig::ZERO, 0)
             };
             ndigits = trunc_digits + fract_digits;
 

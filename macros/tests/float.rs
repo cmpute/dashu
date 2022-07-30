@@ -7,10 +7,10 @@ use dashu_macros::{fbig, dbig};
 #[test]
 fn test_fbig() {
     // binary digits
-    assert_eq!(fbig!(0), FBig::zero());
-    assert_eq!(fbig!(00001), FBig::one());
-    assert_eq!(fbig!(-1.), FBig::neg_one());
-    assert_eq!(fbig!(-1.00), FBig::neg_one());
+    assert_eq!(fbig!(0), FBig::ZERO);
+    assert_eq!(fbig!(00001), FBig::ONE);
+    assert_eq!(fbig!(-1.), FBig::NEG_ONE);
+    assert_eq!(fbig!(-1.00), FBig::NEG_ONE);
     assert_eq!(fbig!(-101.001), FBig::from_str("-101.001").unwrap());
     assert_eq!(fbig!(1001.b23), FBig::from_str("1001.b23").unwrap());
 
@@ -40,10 +40,10 @@ fn test_fbig() {
 
 #[test]
 fn test_dbig() {
-    assert_eq!(dbig!(0), DBig::zero());
-    assert_eq!(dbig!(00001), DBig::one());
-    assert_eq!(dbig!(-1.), DBig::neg_one());
-    assert_eq!(dbig!(-1.00), DBig::neg_one());
+    assert_eq!(dbig!(0), DBig::ZERO);
+    assert_eq!(dbig!(00001), DBig::ONE);
+    assert_eq!(dbig!(-1.), DBig::NEG_ONE);
+    assert_eq!(dbig!(-1.00), DBig::NEG_ONE);
     assert_eq!(dbig!(-123.004), DBig::from_str("-123.004").unwrap());
 
     assert_eq!(dbig!(1234.e23), DBig::from_str("1234.e23").unwrap());

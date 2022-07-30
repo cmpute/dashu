@@ -7,7 +7,9 @@
 //!   but need to specify explicitly, to print decimal numbers, one can use scientific representation
 //!   or use the alternate flag)
 
-// TODO: reference crates: twofloat, num-bigfloat, rust_decimal, bigdecimal
+#![cfg_attr(not(feature = "std"), no_std)]
+
+// TODO: reference crates: twofloat, num-bigfloat, rust_decimal, bigdecimal, scientific
 mod add;
 mod cmp;
 mod convert;
@@ -30,7 +32,3 @@ pub type FBig = BinaryRepr<{ RoundingMode::Zero }>;
 /// Multi-precision decimal number with decimal exponent and [RoundingMode::HalfAway] rounding mode
 #[allow(non_upper_case_globals)]
 pub type DBig = DecimalRepr<{ RoundingMode::HalfAway }>;
-
-// TODO: make no_std
-// TODO: add macro fbig!, dbig!, support parsing scientific repr, and set rounding mode
-//       ref: scientific-macro crate, https://www.exploringbinary.com/hexadecimal-floating-point-constants/,

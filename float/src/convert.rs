@@ -210,7 +210,7 @@ impl<const X: usize, const R: u8> FloatRepr<X, R> {
 
     pub(crate) fn normalize(mut mantissa: IBig, mut exponent: isize) -> (IBig, isize) {
         if mantissa.is_zero() {
-            return (IBig::zero(), 0)
+            return (IBig::ZERO, 0);
         }
         if X == 2 {
             if let Some(shift) = mantissa.trailing_zeros() {
