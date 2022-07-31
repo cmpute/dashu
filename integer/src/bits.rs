@@ -18,9 +18,7 @@ use core::{
 };
 
 /// Count the trailing zero bits in the words.
-///
-/// # Panic
-/// Panics if the input is zero
+/// Panics if the input is zero.
 #[inline]
 pub fn trailing_zeros(words: &[Word]) -> usize {
     for (idx, word) in words.iter().enumerate() {
@@ -29,7 +27,7 @@ pub fn trailing_zeros(words: &[Word]) -> usize {
         }
     }
 
-    panic!("call trailing_zeros on 0")
+    unreachable!("call trailing_zeros on 0")
 }
 
 /// Locate the top non-zero word in a slice. It returns the position of the

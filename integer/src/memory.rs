@@ -1,6 +1,7 @@
 //! Memory allocation.
 
 use alloc::alloc::Layout;
+use crate::error::{panic_out_of_memory, panic_allocate_too_much};
 use core::{marker::PhantomData, mem, slice};
 
 /// Chunk of memory directly allocated from the global allocator.
@@ -26,7 +27,7 @@ impl MemoryAllocation {
             // We should use layout.dangling(), but that is unstable.
             layout.align() as *mut u8
         } else if layout.size() > isize::MAX as usize {
-            panic_out_of_memory()
+            panic_allocate_too_much()
         } else {
             // Safe because size is non-zero.
             let ptr = unsafe { alloc::alloc::alloc(layout) };
@@ -134,7 +135,7 @@ impl Memory<'_> {
         #[allow(clippy::redundant_closure)]
         let (ptr, slice_end) = self
             .try_find_memory_for_slice::<T>(n)
-            .unwrap_or_else(|| panic_allocated_too_little());
+            .expect("internal error: not enough memory allocated");
 
         init(ptr);
 
@@ -171,25 +172,17 @@ pub fn zero_layout() -> Layout {
 }
 
 pub fn array_layout<T>(n: usize) -> Layout {
-    Layout::array::<T>(n).unwrap_or_else(|_| panic_out_of_memory())
+    Layout::array::<T>(n).unwrap_or_else(|_| panic_allocate_too_much())
 }
 
 pub fn add_layout(a: Layout, b: Layout) -> Layout {
-    let (layout, _padding) = a.extend(b).unwrap_or_else(|_| panic_out_of_memory());
+    let (layout, _padding) = a.extend(b).unwrap_or_else(|_| panic_allocate_too_much());
     layout
 }
 
 pub fn max_layout(a: Layout, b: Layout) -> Layout {
     Layout::from_size_align(a.size().max(b.size()), a.align().max(b.align()))
-        .unwrap_or_else(|_| panic_out_of_memory())
-}
-
-pub fn panic_out_of_memory() -> ! {
-    panic!("out of memory")
-}
-
-fn panic_allocated_too_little() -> ! {
-    panic!("internal error: not enough memory allocated")
+        .unwrap_or_else(|_| panic_allocate_too_much())
 }
 
 #[cfg(test)]

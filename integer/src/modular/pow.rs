@@ -1,6 +1,7 @@
 use crate::{
     arch::word::Word,
     math,
+    error::panic_allocate_too_much,
     memory::{self, MemoryAllocation},
     primitive::{double_word, split_dword, PrimitiveUnsigned, WORD_BITS, WORD_BITS_USIZE},
     repr::TypedReprRef::*,
@@ -118,7 +119,7 @@ impl ModuloRingLarge {
         #[allow(clippy::redundant_closure)]
         let table_words = ((1usize << (window_len - 1)) - 1)
             .checked_mul(n)
-            .unwrap_or_else(|| memory::panic_out_of_memory());
+            .unwrap_or_else(|| panic_allocate_too_much());
 
         let memory_requirement = memory::add_layout(
             memory::array_layout::<Word>(table_words),

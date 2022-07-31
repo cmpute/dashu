@@ -191,11 +191,6 @@ impl FastDivideNormalized {
 
         (q, r)
     }
-
-    #[inline]
-    pub const fn dummy() -> Self {
-        FastDivideNormalized { divisor: 0, m: 0 }
-    }
 }
 
 /// Divide a 3-Word by a prearranged DoubleWord divisor.

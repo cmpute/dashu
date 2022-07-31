@@ -2,6 +2,7 @@
 
 use crate::{
     ibig::IBig,
+    error::panic_invalid_radix,
     radix::{self, Digit, DigitCase},
     repr::TypedReprRef,
     sign::Sign::{self, *},
@@ -168,13 +169,6 @@ impl UpperHex for IBig {
     }
 }
 
-/// Panics if `radix` is not in valid range.
-fn check_radix_valid(radix: Digit) {
-    if !radix::is_radix_valid(radix) {
-        panic!("Invalid radix: {}", radix);
-    }
-}
-
 impl UBig {
     /// Representation in a given radix.
     ///
@@ -191,7 +185,10 @@ impl UBig {
     /// ```
     #[inline]
     pub fn in_radix(&self, radix: u32) -> InRadix {
-        check_radix_valid(radix);
+        if !radix::is_radix_valid(radix) {
+            panic_invalid_radix(radix);
+        }
+
         InRadix {
             sign: Positive,
             magnitude: self.repr(),
@@ -216,7 +213,10 @@ impl IBig {
     /// ```
     #[inline]
     pub fn in_radix(&self, radix: u32) -> InRadix {
-        check_radix_valid(radix);
+        if !radix::is_radix_valid(radix) {
+            panic_invalid_radix(radix);
+        }
+
         let (sign, magnitude) = self.as_sign_repr();
         InRadix {
             sign,

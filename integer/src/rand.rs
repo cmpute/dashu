@@ -4,6 +4,7 @@ use crate::{
     arch::word::Word,
     buffer::Buffer,
     ibig::IBig,
+    error::panic_empty_range,
     ops::UnsignedAbs,
     repr::{Repr, TypedReprRef::*},
     ubig::UBig,
@@ -107,7 +108,7 @@ impl UniformSampler for UniformUBig {
     {
         let range = high.borrow() - low.borrow();
         if range.is_zero() {
-            panic!("Empty range");
+            panic_empty_range()
         }
         UniformUBig {
             range,
@@ -165,7 +166,7 @@ impl UniformSampler for UniformIBig {
     {
         let range = high.borrow() - low.borrow();
         if range <= IBig::ZERO {
-            panic!("Empty range");
+            panic_empty_range();
         }
         UniformIBig {
             range: range.unsigned_abs(),
@@ -181,7 +182,7 @@ impl UniformSampler for UniformIBig {
     {
         let range = high.borrow() - low.borrow() + IBig::from(1u8);
         if range <= IBig::ZERO {
-            panic!("Empty range");
+            panic_empty_range()
         }
         UniformIBig {
             range: range.unsigned_abs(),

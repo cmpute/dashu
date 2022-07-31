@@ -4,7 +4,7 @@ use super::{
     modulo::{Modulo, ModuloDoubleRaw, ModuloLargeRaw, ModuloRepr, ModuloSingleRaw},
     modulo_ring::{ModuloRingDouble, ModuloRingLarge, ModuloRingSingle},
 };
-use crate::{add, cmp};
+use crate::{add, cmp, error::panic_different_rings};
 use core::{
     cmp::Ordering,
     ops::{Add, AddAssign, Neg, Sub, SubAssign},
@@ -95,7 +95,7 @@ impl<'a> AddAssign<&Modulo<'a>> for Modulo<'a> {
                 Modulo::check_same_ring_large(ring, ring1);
                 ring.add_in_place(raw0, raw1);
             }
-            _ => Modulo::panic_different_rings(),
+            _ => panic_different_rings(),
         }
     }
 }
@@ -138,7 +138,7 @@ impl<'a> Sub<Modulo<'a>> for &Modulo<'a> {
                 ring.sub_in_place_swap(raw0, &mut raw1);
                 Modulo::from_large(raw1, ring)
             }
-            _ => Modulo::panic_different_rings(),
+            _ => panic_different_rings(),
         }
     }
 }
@@ -175,7 +175,7 @@ impl<'a> SubAssign<&Modulo<'a>> for Modulo<'a> {
                 Modulo::check_same_ring_large(ring, ring1);
                 ring.sub_in_place(raw0, raw1);
             }
-            _ => Modulo::panic_different_rings(),
+            _ => panic_different_rings(),
         }
     }
 }

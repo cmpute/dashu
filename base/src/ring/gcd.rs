@@ -168,7 +168,7 @@ macro_rules! impl_gcd_ops_prim {
                 let (mut a, mut b) = (self, rhs);
                 if a == 0 || b == 0 {
                     if a == 0 && b == 0 {
-                        panic!("the greatest common divisor is not defined between zeros!");
+                        panic_gcd_0_0();
                     }
                     return a | b;
                 }
@@ -212,7 +212,7 @@ macro_rules! impl_gcd_ops_prim {
 
                 // check if zero inputs
                 match (a == 0, b == 0) {
-                    (true, true) => panic!("the greatest common divisor is not defined between zeros!"),
+                    (true, true) => panic_gcd_0_0(),
                     (true, false) => return (b, 0, 1),
                     (false, true) => return (a, 1, 0),
                     _ => {}
@@ -246,6 +246,10 @@ macro_rules! impl_gcd_ops_prim {
     )*}
 }
 impl_gcd_ops_prim!(u8 | i8; u16 | i16; u32 | i32; u64 | i64; u128 | i128; usize | isize;);
+
+fn panic_gcd_0_0() -> ! {
+    panic!("the greatest common divisor is not defined between zeros!")
+}
 
 #[cfg(test)]
 mod tests {

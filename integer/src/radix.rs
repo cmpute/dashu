@@ -3,11 +3,10 @@
 use crate::{
     arch::word::Word,
     fast_div::{FastDivideNormalized, FastDivideSmall},
-    primitive::WORD_BITS,
 };
 use static_assertions::const_assert;
 
-/// Digit and radix type.
+/// Digit and radix type, it's always u32.
 pub type Digit = u32;
 
 /// Minimum supported radix.
@@ -54,9 +53,6 @@ pub const fn digit_from_ascii_byte(byte: u8, radix: Digit) -> Option<Digit> {
     }
 }
 
-/// Maximum number of digits that a `Word` can ever have for any non-power-of-2 radix.
-pub const MAX_WORD_DIGITS_NON_POW_2: usize = RadixInfo::for_radix(3).digits_per_word + 1;
-
 /// Properties of a given radix.
 #[derive(Clone, Copy)]
 pub struct RadixInfo {
@@ -75,50 +71,41 @@ pub struct RadixInfo {
     pub(crate) fast_div_range_per_word: FastDivideNormalized,
 }
 
-/// RadixInfo for a given radix.
+/// Radix info for base 10
+const RADIX10_INFO: RadixInfo = RadixInfo::for_radix(10);
+
+/// Maximum number of digits that a `Word` can ever have for any non-power-of-2 radix.
+pub const MAX_WORD_DIGITS_NON_POW_2: usize = RadixInfo::for_radix(3).digits_per_word + 1;
+
+/// Get [RadixInfo] for a given radix.
+/// 
+/// This method is not specialized for power of two.
 #[inline]
 pub fn radix_info(radix: Digit) -> RadixInfo {
     debug_assert!(is_radix_valid(radix));
     
-    const RADIX2: RadixInfo = RadixInfo::for_radix(2);
-    const RADIX8: RadixInfo = RadixInfo::for_radix(8);
-    const RADIX10: RadixInfo = RadixInfo::for_radix(10);
-    const RADIX16: RadixInfo = RadixInfo::for_radix(16);
-    
     match radix {
-        10 => RADIX10,
-        16 => RADIX16,
-        2 => RADIX2,
-        8 => RADIX8,
+        10 => RADIX10_INFO,
         _ => RadixInfo::for_radix(radix)
     }
 }
 
 impl RadixInfo {
     const fn for_radix(radix: Digit) -> RadixInfo {
+        let mut digits_per_word = 0;
+        let mut range_per_word: Word = 1;
+        while let Some(range) = range_per_word.checked_mul(radix as Word) {
+            digits_per_word += 1;
+            range_per_word = range;
+        }
+        let shift = range_per_word.leading_zeros();
         let fast_div_radix = FastDivideSmall::new(radix as Word);
-        if radix.is_power_of_two() {
-            RadixInfo {
-                digits_per_word: (WORD_BITS / radix.trailing_zeros()) as usize,
-                range_per_word: 0,
-                fast_div_radix,
-                fast_div_range_per_word: FastDivideNormalized::dummy(),
-            }
-        } else {
-            let mut digits_per_word = 0;
-            let mut range_per_word: Word = 1;
-            while let Some(range) = range_per_word.checked_mul(radix as Word) {
-                digits_per_word += 1;
-                range_per_word = range;
-            }
-            let shift = range_per_word.leading_zeros();
-            let fast_div_range_per_word = FastDivideNormalized::new(range_per_word << shift);
-            RadixInfo {
-                digits_per_word,
-                range_per_word,
-                fast_div_radix,
-                fast_div_range_per_word,
-            }
+        let fast_div_range_per_word = FastDivideNormalized::new(range_per_word << shift);
+        RadixInfo {
+            digits_per_word,
+            range_per_word,
+            fast_div_radix,
+            fast_div_range_per_word,
         }
     }
 }

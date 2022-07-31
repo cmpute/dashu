@@ -4,6 +4,7 @@ use super::modulo_ring::ModuloRingDouble;
 use super::modulo_ring::{ModuloRingLarge, ModuloRingSingle};
 use crate::{
     arch::word::{DoubleWord, Word},
+    error::panic_different_rings,
     buffer::Buffer,
 };
 use alloc::boxed::Box;
@@ -61,11 +62,6 @@ impl<'a> Modulo<'a> {
         self.0
     }
 
-    /// Panics when trying to do operations on [Modulo] values from different rings.
-    pub(crate) fn panic_different_rings() -> ! {
-        panic!("Modulo values from different rings")
-    }
-
     #[inline]
     pub(crate) const fn from_single(raw: ModuloSingleRaw, ring: &'a ModuloRingSingle) -> Self {
         debug_assert!(ring.is_valid(raw));
@@ -87,21 +83,21 @@ impl<'a> Modulo<'a> {
     #[inline]
     pub(crate) fn check_same_ring_single(lhs: &ModuloRingSingle, rhs: &ModuloRingSingle) {
         if lhs != rhs {
-            Self::panic_different_rings();
+            panic_different_rings();
         }
     }
 
     #[inline]
     pub(crate) fn check_same_ring_double(lhs: &ModuloRingDouble, rhs: &ModuloRingDouble) {
         if lhs != rhs {
-            Self::panic_different_rings();
+            panic_different_rings();
         }
     }
 
     #[inline]
     pub(crate) fn check_same_ring_large(lhs: &ModuloRingLarge, rhs: &ModuloRingLarge) {
         if lhs != rhs {
-            Self::panic_different_rings();
+            panic_different_rings();
         }
     }
 }

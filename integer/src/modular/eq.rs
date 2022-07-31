@@ -1,12 +1,11 @@
 //! Comparisons.
 
+use crate::error::panic_different_rings;
 use super::{
     modulo::{Modulo, ModuloRepr},
-    modulo_ring::{ModuloRing, ModuloRingLarge, ModuloRingSingle},
+    modulo_ring::{ModuloRing, ModuloRingLarge, ModuloRingDouble, ModuloRingSingle},
 };
 use core::ptr;
-
-use super::modulo_ring::ModuloRingDouble;
 
 /// Equality is identity: two rings are not equal even if they have the same modulus.
 impl PartialEq for ModuloRing {
@@ -69,7 +68,7 @@ impl PartialEq for Modulo<'_> {
                 Modulo::check_same_ring_large(ring0, ring1);
                 raw0.eq(raw1)
             }
-            _ => Modulo::panic_different_rings(),
+            _ => panic_different_rings(),
         }
     }
 }

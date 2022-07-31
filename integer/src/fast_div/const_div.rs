@@ -3,6 +3,7 @@ use crate::{
     arch::word::{Word, DoubleWord},
     div,
     shift,
+    error::panic_divide_by_0,
     ubig::UBig,
     math::shl_dword,
     memory::MemoryAllocation,
@@ -179,7 +180,7 @@ pub struct ConstDivisor(pub(crate) ConstDivisorRepr);
 impl ConstDivisor {
     pub fn new(n: UBig) -> ConstDivisor {
         Self(match n.into_repr() {
-            TypedRepr::Small(0) => panic!("divisor cannot be 0"),
+            TypedRepr::Small(0) => panic_divide_by_0(),
             TypedRepr::Small(dword) => {
                 if let Some(word) = shrink_dword(dword) {
                     ConstDivisorRepr::Single(ConstSingleDivisor::new(word))
@@ -190,6 +191,27 @@ impl ConstDivisor {
             TypedRepr::Large(words) => {
                 ConstDivisorRepr::Large(ConstLargeDivisor::new(words))
             }
+        })
+    }
+
+    #[inline]
+    pub const fn from_word(word: Word) -> Self {
+        if word == 0 {
+            panic_divide_by_0()
+        }
+        Self(ConstDivisorRepr::Single(ConstSingleDivisor::new(word)))
+    }
+
+    #[inline]
+    pub const fn from_dword(dword: DoubleWord) -> Self {
+        if dword == 0 {
+            panic_divide_by_0()
+        }
+
+        Self(if let Some(word) = shrink_dword(dword) {
+            ConstDivisorRepr::Single(ConstSingleDivisor::new(word))
+        } else {
+            ConstDivisorRepr::Double(ConstDoubleDivisor::new(dword))
         })
     }
 }

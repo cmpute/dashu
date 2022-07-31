@@ -6,8 +6,6 @@
 //! the source type explicit.
 
 use crate::{
-    buffer::Buffer,
-    primitive::WORD_BITS_USIZE,
     repr::{Repr, TypedRepr, TypedReprRef},
 };
 
@@ -84,13 +82,6 @@ impl UBig {
     #[inline]
     pub const fn is_one(&self) -> bool {
         self.0.is_one()
-    }
-
-    pub(crate) fn panic_number_too_large() -> ! {
-        panic!(
-            "number too large, maximum is {} bits",
-            Buffer::MAX_CAPACITY * WORD_BITS_USIZE
-        )
     }
 }
 

@@ -3,6 +3,7 @@
 use crate::{
     arch::word::{DoubleWord, Word},
     primitive::{double_word, WORD_BITS_USIZE},
+    error::{panic_allocate_too_much, panic_out_of_memory},
 };
 use alloc::{alloc::Layout, boxed::Box};
 use core::{
@@ -95,6 +96,9 @@ impl Buffer {
         unsafe {
             let layout = Layout::array::<Word>(capacity).unwrap();
             let ptr = alloc::alloc::alloc(layout);
+            if ptr.is_null() {
+                panic_out_of_memory();
+            }
             NonNull::new(ptr).unwrap().cast()
         }
     }
@@ -120,10 +124,7 @@ impl Buffer {
     /// Creates a `Buffer` with exactly specified capacity (in words).
     pub fn allocate_exact(capacity: usize) -> Self {
         if capacity > Self::MAX_CAPACITY {
-            panic!(
-                "too many words to be allocated, maximum is {} words",
-                Self::MAX_CAPACITY
-            );
+            panic_allocate_too_much()
         }
 
         let ptr = Self::allocate_raw(capacity);

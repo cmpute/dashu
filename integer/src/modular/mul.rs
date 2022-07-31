@@ -1,6 +1,7 @@
 use crate::{
     arch::word::Word,
     div, math,
+    error::panic_different_rings,
     memory::{self, Memory, MemoryAllocation},
     modular::{
         modulo::{Modulo, ModuloRepr, ModuloSingleRaw},
@@ -82,7 +83,7 @@ impl<'a> MulAssign<&Modulo<'a>> for Modulo<'a> {
                 let mut memory = allocation.memory();
                 ring.mul_in_place(raw0, raw1, &mut memory);
             }
-            _ => Modulo::panic_different_rings(),
+            _ => panic_different_rings(),
         }
     }
 }

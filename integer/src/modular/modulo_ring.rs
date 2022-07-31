@@ -7,6 +7,7 @@ use crate::{
     cmp,
     fast_div::{FastDivideNormalized, FastDivideNormalized2, ConstSingleDivisor, ConstDoubleDivisor, ConstLargeDivisor},
     math,
+    error::panic_divide_by_0,
     primitive::shrink_dword,
     repr::{TypedRepr, Repr},
     ubig::UBig,
@@ -58,7 +59,7 @@ impl ModuloRing {
     #[inline]
     pub fn new(n: UBig) -> ModuloRing {
         Self(match n.into_repr() {
-            TypedRepr::Small(0) => panic!("modulus cannot be 0"),
+            TypedRepr::Small(0) => panic_divide_by_0(),
             TypedRepr::Small(dword) => {
                 if let Some(word) = shrink_dword(dword) {
                     ModuloRingRepr::Single(ModuloRingSingle::new(word))

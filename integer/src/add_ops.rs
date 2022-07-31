@@ -4,6 +4,7 @@ use crate::{
     add,
     arch::word::{DoubleWord, Word},
     buffer::Buffer,
+    error::panic_negative_ubig,
     helper_macros,
     ibig::IBig,
     sign::Sign::*,
@@ -356,7 +357,7 @@ pub mod repr {
         fn sub(self, rhs: TypedReprRef) -> Repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => sub_dword(dword0, dword1),
-                (RefSmall(_), RefLarge(_)) => UBig::panic_negative(),
+                (RefSmall(_), RefLarge(_)) => panic_negative_ubig(),
                 (RefLarge(buffer0), RefSmall(dword1)) => sub_large_dword(buffer0.into(), dword1),
                 (RefLarge(buffer0), RefLarge(buffer1)) => sub_large(buffer0.into(), buffer1),
             }
@@ -369,7 +370,7 @@ pub mod repr {
         fn sub(self, rhs: TypedReprRef) -> Repr {
             match (self, rhs) {
                 (Small(dword0), RefSmall(dword1)) => sub_dword(dword0, dword1),
-                (Small(_), RefLarge(_)) => UBig::panic_negative(),
+                (Small(_), RefLarge(_)) => panic_negative_ubig(),
                 (Large(buffer0), RefSmall(dword1)) => sub_large_dword(buffer0, dword1),
                 (Large(buffer0), RefLarge(buffer1)) => sub_large(buffer0, buffer1),
             }
@@ -382,7 +383,7 @@ pub mod repr {
         fn sub(self, rhs: TypedRepr) -> Repr {
             match (self, rhs) {
                 (RefSmall(dword0), Small(dword1)) => sub_dword(dword0, dword1),
-                (RefSmall(_), Large(_)) => UBig::panic_negative(),
+                (RefSmall(_), Large(_)) => panic_negative_ubig(),
                 (RefLarge(buffer0), Small(dword1)) => sub_large_dword(buffer0.into(), dword1),
                 (RefLarge(buffer0), Large(buffer1)) => sub_large_ref_val(buffer0, buffer1),
             }
@@ -395,7 +396,7 @@ pub mod repr {
         fn sub(self, rhs: TypedRepr) -> Repr {
             match (self, rhs) {
                 (Small(dword0), Small(dword1)) => sub_dword(dword0, dword1),
-                (Small(_), Large(_)) => UBig::panic_negative(),
+                (Small(_), Large(_)) => panic_negative_ubig(),
                 (Large(buffer0), Small(dword1)) => sub_large_dword(buffer0, dword1),
                 (Large(buffer0), Large(buffer1)) => sub_large(buffer0, &buffer1),
             }
@@ -406,7 +407,7 @@ pub mod repr {
     fn sub_dword(a: DoubleWord, b: DoubleWord) -> Repr {
         match a.checked_sub(b) {
             Some(res) => Repr::from_dword(res),
-            None => UBig::panic_negative(),
+            None => panic_negative_ubig(),
         }
     }
 
@@ -420,7 +421,7 @@ pub mod repr {
     #[inline]
     fn sub_large(mut lhs: Buffer, rhs: &[Word]) -> Repr {
         if lhs.len() < rhs.len() || add::sub_in_place(&mut lhs, rhs) {
-            UBig::panic_negative();
+            panic_negative_ubig();
         }
         Repr::from_buffer(lhs)
     }
@@ -429,13 +430,13 @@ pub mod repr {
     pub(crate) fn sub_large_ref_val(lhs: &[Word], mut rhs: Buffer) -> Repr {
         let n = rhs.len();
         if lhs.len() < n {
-            UBig::panic_negative();
+            panic_negative_ubig();
         }
         let borrow = add::sub_same_len_in_place_swap(&lhs[..n], &mut rhs);
         rhs.ensure_capacity(lhs.len());
         rhs.push_slice(&lhs[n..]);
         if borrow && add::sub_one_in_place(&mut rhs[n..]) {
-            UBig::panic_negative();
+            panic_negative_ubig();
         }
         Repr::from_buffer(rhs)
     }

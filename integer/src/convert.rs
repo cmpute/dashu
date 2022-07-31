@@ -3,7 +3,7 @@
 use crate::{
     arch::word::Word,
     buffer::Buffer,
-    error::OutOfBoundsError,
+    error::{OutOfBoundsError, panic_negative_ubig},
     ibig::IBig,
     primitive::{self, PrimitiveSigned, PrimitiveUnsigned, DWORD_BYTES, WORD_BITS, WORD_BYTES, double_word},
     repr::{Repr, TypedReprRef::*},
@@ -542,12 +542,8 @@ impl UBig {
     pub(crate) fn from_ibig(x: IBig) -> UBig {
         match UBig::try_from(x) {
             Ok(v) => v,
-            Err(_) => UBig::panic_negative(),
+            Err(_) => panic_negative_ubig(),
         }
-    }
-
-    pub(crate) fn panic_negative() -> ! {
-        panic!("negative UBig")
     }
 }
 
