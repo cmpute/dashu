@@ -89,7 +89,7 @@ mod convert;
 mod div;
 mod div_ops;
 pub mod error;
-mod fast_divide;
+pub mod fast_div;
 pub mod fmt;
 mod gcd;
 mod gcd_ops;

@@ -50,7 +50,7 @@ macro_rules! impl_mod_inv_for_primitive {
                 if raw.0 == 0 {
                     return None;
                 }
-                let (g, _, coeff) = self.modulus().gcd_ext(raw.0 >> self.shift());
+                let (g, _, coeff) = self.0.divisor().gcd_ext(raw.0 >> self.shift());
                 if g != 1 {
                     return None;
                 }

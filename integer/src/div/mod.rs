@@ -2,7 +2,7 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
-    fast_divide::{FastDivideNormalized, FastDivideNormalized2},
+    fast_div::{FastDivideNormalized, FastDivideNormalized2},
     math::shl_dword,
     memory::{self, Memory},
     primitive::{double_word, extend_word, highest_dword, lowest_dword, split_dword, WORD_BITS},

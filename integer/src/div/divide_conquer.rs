@@ -4,7 +4,7 @@ use crate::{
     add,
     arch::word::{SignedWord, Word},
     div,
-    fast_divide::FastDivideNormalized2,
+    fast_div::FastDivideNormalized2,
     memory::Memory,
     mul,
     sign::Sign::*,

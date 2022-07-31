@@ -2,7 +2,7 @@
 
 use crate::{
     arch::word::Word,
-    fast_divide::{FastDivideNormalized, FastDivideSmall},
+    fast_div::{FastDivideNormalized, FastDivideSmall},
     primitive::WORD_BITS,
 };
 use static_assertions::const_assert;
@@ -77,9 +77,21 @@ pub struct RadixInfo {
 
 /// RadixInfo for a given radix.
 #[inline]
-pub fn radix_info(radix: Digit) -> &'static RadixInfo {
+pub fn radix_info(radix: Digit) -> RadixInfo {
     debug_assert!(is_radix_valid(radix));
-    &RADIX_INFO_TABLE[radix as usize]
+    
+    const RADIX2: RadixInfo = RadixInfo::for_radix(2);
+    const RADIX8: RadixInfo = RadixInfo::for_radix(8);
+    const RADIX10: RadixInfo = RadixInfo::for_radix(10);
+    const RADIX16: RadixInfo = RadixInfo::for_radix(16);
+    
+    match radix {
+        10 => RADIX10,
+        16 => RADIX16,
+        2 => RADIX2,
+        8 => RADIX8,
+        _ => RadixInfo::for_radix(radix)
+    }
 }
 
 impl RadixInfo {
@@ -111,48 +123,9 @@ impl RadixInfo {
     }
 }
 
-// XXX: we may only store the table for 10 to reduce the binary size
-type RadixInfoTable = [RadixInfo; MAX_RADIX as usize + 1];
-
-static RADIX_INFO_TABLE: RadixInfoTable = generate_radix_info_table();
-
-const fn generate_radix_info_table() -> RadixInfoTable {
-    let mut table = [RadixInfo {
-        digits_per_word: 0,
-        range_per_word: 0,
-        fast_div_radix: FastDivideSmall::dummy(),
-        fast_div_range_per_word: FastDivideNormalized::dummy(),
-    }; MAX_RADIX as usize + 1];
-
-    let mut radix = 2;
-    while radix <= MAX_RADIX {
-        table[radix as usize] = RadixInfo::for_radix(radix);
-        radix += 1;
-    }
-    table
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_radix_info_table() {
-        for radix in 2..=MAX_RADIX {
-            let info = radix_info(radix);
-            // Check vs an approximation that happens to work for all bases.
-            assert_eq!(
-                info.digits_per_word,
-                ((WORD_BITS as f64 + 0.01) / (radix as f64).log2()) as usize
-            );
-            if !radix.is_power_of_two() {
-                assert_eq!(
-                    info.range_per_word,
-                    (radix as Word).pow(info.digits_per_word as u32)
-                );
-            }
-        }
-    }
 
     #[test]
     fn test_digit_from_utf8_byte() {

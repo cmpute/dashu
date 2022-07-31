@@ -37,5 +37,5 @@ impl<const X: usize, R: Round> Mul<FloatRepr<X, R>> for Sign {
     }
 }
 
-// TODO: implement all variants with sign
-// TODO: implement MulAssign for int and float
+// TODO(next): implement all variants with sign
+// TODO(next): implement MulAssign for int and float

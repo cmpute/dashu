@@ -1,4 +1,4 @@
-//! Divide by a prearranged Word quickly using multiplication by the reciprocal.
+//! Divide by a prearranged Word quickly using multiplication by the reciprocal (Barret style).
 
 use crate::{
     arch::word::{DoubleWord, Word},
@@ -79,15 +79,6 @@ impl FastDivideSmall {
         let r = a - q * self.divisor;
         (q, r)
     }
-
-    #[inline]
-    pub const fn dummy() -> Self {
-        FastDivideSmall {
-            divisor: 0,
-            shift: 0,
-            m: 0,
-        }
-    }
 }
 
 /// Divide a DoubleWord by a prearranged divisor.
@@ -98,7 +89,7 @@ impl FastDivideSmall {
 #[derive(Clone, Copy)]
 pub(crate) struct FastDivideNormalized {
     // Top bit must be 1.
-    divisor: Word,
+    pub(crate) divisor: Word,
 
     // floor ((B^2 - 1) / divisor) - B, where B = 2^WORD_BITS
     m: Word,
@@ -216,7 +207,7 @@ impl FastDivideNormalized {
 #[derive(Clone, Copy)]
 pub(crate) struct FastDivideNormalized2 {
     // Top bit must be 1.
-    divisor: DoubleWord,
+    pub(crate) divisor: DoubleWord,
 
     // floor ((B^3 - 1) / divisor) - B, where B = 2^WORD_BITS
     m: Word,

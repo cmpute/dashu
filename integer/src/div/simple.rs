@@ -4,7 +4,7 @@ use crate::{
     add,
     arch::word::Word,
     cmp,
-    fast_divide::FastDivideNormalized2,
+    fast_div::FastDivideNormalized2,
     mul,
     primitive::{double_word, highest_dword, split_dword},
 };

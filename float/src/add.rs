@@ -46,8 +46,6 @@ impl<const X: usize, R: Round> Sub<FloatRepr<X, R>> for &FloatRepr<X, R> {
 }
 
 // TODO: rename the add function returning approximation to something else
-// TODO: return a struct representing the RoundingError instead of just rounding? We need to check the requirement
-//       for implementing a ball arithmetic library.
 
 impl<const X: usize, R: Round> FloatRepr<X, R> {
     fn add(self, rhs: Self) -> Approximation<Self, Rounding> {

@@ -148,7 +148,7 @@ impl<const X: usize, R: Round> FloatRepr<X, R> {
                 _marker: PhantomData,
             };
         }
-        // FIXME: shortcut if E is a power of NewX
+        // FIXME: shortcut if X is a power of NewX
 
         // Calculate the new precision
         // new_precision = floor_log_radix2(radix1^precision)

@@ -3,11 +3,7 @@ use core::ops::{Add, AddAssign};
 use dashu_base::UnsignedAbs;
 use dashu_int::{IBig, Sign, UBig};
 
-// TODO: refactor RoundingMode to structs, implement a `Round` trait, requiring a `from_fract` and `from_ratio` method.
-// And the RoundingMode enum implements this trait, user can also provide their own rounding function
-
-// FIXME: this should be a enum when enum const is supported in generic argument
-/// Defines rounding modes of the floating numbers.
+/// Built-in rounding modes of the floating numbers.
 pub mod mode {
     /// Round toward 0 (default mode for binary float)
     pub struct Zero;

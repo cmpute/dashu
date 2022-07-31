@@ -5,8 +5,8 @@ use crate::{
 use core::marker::PhantomData;
 use dashu_int::{IBig, Sign, Word};
 
-// TODO: add standalone basic arith methods (add, sub, mul, div) for FloatRepr, such that it returns a Approximation struct
-// TODO: rename mantissa to significand, radix to base
+// TODO(next): change type of radix from usize to Word
+// TODO(next): rename mantissa to significand, radix to base
 
 /// An arbitrary precision floating number represented as `mantissa * radix^exponent`, with a precision
 /// such that `|mantissa| < radix^precision`. The mantissa is also called significant. The representation
@@ -223,6 +223,11 @@ impl<const X: usize, R: Round> FloatRepr<X, R> {
         !self.is_infinite()
     }
 
+    fn ulp(&self) -> Self {
+        // reference: https://docs.python.org/3/library/math.html#math.ulp
+        unimplemented!()
+    }
+
     fn ceil(&self) -> IBig {
         unimplemented!()
     }
@@ -239,3 +244,7 @@ impl<const X: usize, R: Round> FloatRepr<X, R> {
         unimplemented!()
     }
 }
+
+/// A wrapper over the float number. All the operations on the number will return the rounding
+/// error along with the result.
+pub struct ApprRepr<const RADIX: usize, RoundingMode: Round = mode::Zero>(FloatRepr<RADIX, RoundingMode>);

@@ -1036,6 +1036,9 @@ mod repr {
     }
 }
 
+// TODO: implement DivRemAssign for UBig and IBig
+// TODO: implement div, rem, div_rem, div_assign, rem_assign, div_rem_assign with ConstDivisor
+
 fn panic_divide_by_0() -> ! {
     panic!("divide by 0")
 }
