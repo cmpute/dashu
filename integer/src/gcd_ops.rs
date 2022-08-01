@@ -105,9 +105,8 @@ mod repr {
 
         let mut allocation =
             MemoryAllocation::new(gcd::memory_requirement_exact(lhs.len(), rhs.len()));
-        let mut memory = allocation.memory();
 
-        let (len, swapped) = gcd::gcd_in_place(&mut lhs, &mut rhs, &mut memory);
+        let (len, swapped) = gcd::gcd_in_place(&mut lhs, &mut rhs, &mut allocation.memory());
         if swapped {
             rhs.truncate(len);
             Repr::from_buffer(rhs)

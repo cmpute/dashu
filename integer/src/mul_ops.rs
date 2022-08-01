@@ -1,4 +1,4 @@
-//! Multiplication operators.
+//! Multiplication and squaring operators.
 
 use crate::{helper_macros, ibig::IBig, ubig::UBig};
 use core::ops::{Mul, MulAssign};
@@ -111,15 +111,46 @@ impl_mul_ibig_primitive!(i64);
 impl_mul_ibig_primitive!(i128);
 impl_mul_ibig_primitive!(isize);
 
+impl UBig {
+    /// Calculate the squared number (x * x).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use dashu_int::UBig;
+    /// assert_eq!(UBig::from(3u8).square(), 9);
+    /// ```
+    #[inline]
+    pub fn square(&self) -> UBig {
+        UBig(self.repr().square())
+    }
+}
+
+impl IBig {
+    /// Calculate the squared number (x * x).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use dashu_int::IBig;
+    /// assert_eq!(IBig::from(-3).square(), 9);
+    /// ```
+    #[inline]
+    pub fn square(&self) -> IBig {
+        IBig(self.as_sign_repr().1.square())
+    }
+}
+
 mod repr {
     use super::*;
     use crate::{
         arch::word::{DoubleWord, Word},
         buffer::Buffer,
+        cmp::cmp_in_place,
         math,
         memory::MemoryAllocation,
         mul,
-        primitive::{shrink_dword, split_dword},
+        primitive::{extend_word, shrink_dword, split_dword},
         repr::{
             Repr,
             TypedRepr::{self, *},
@@ -127,6 +158,7 @@ mod repr {
         },
         shift,
         sign::Sign::*,
+        sqr,
     };
 
     impl Mul<TypedRepr> for TypedRepr {
@@ -235,8 +267,12 @@ mod repr {
 
     /// Multiply two large numbers.
     fn mul_large(lhs: &[Word], rhs: &[Word]) -> Repr {
-        // TODO: shortcut if lhs = rhs
         debug_assert!(lhs.len() >= 2 && rhs.len() >= 2);
+
+        // shortcut to square if two operands are equal
+        if cmp_in_place(lhs, rhs).is_eq() {
+            return square_large(lhs);
+        }
 
         let res_len = lhs.len() + rhs.len();
         let mut buffer = Buffer::allocate(res_len);
@@ -246,9 +282,47 @@ mod repr {
             res_len,
             lhs.len().min(rhs.len()),
         ));
-        let mut memory = allocation.memory();
-        let overflow = mul::add_signed_mul(&mut buffer, Positive, lhs, rhs, &mut memory);
+        let overflow =
+            mul::add_signed_mul(&mut buffer, Positive, lhs, rhs, &mut allocation.memory());
         debug_assert!(overflow == 0);
+        Repr::from_buffer(buffer)
+    }
+
+    impl TypedReprRef<'_> {
+        pub fn square(&self) -> Repr {
+            match self {
+                TypedReprRef::RefSmall(dword) => {
+                    if let Some(word) = shrink_dword(*dword) {
+                        Repr::from_dword(extend_word(word) * extend_word(word))
+                    } else {
+                        square_dword_spilled(*dword)
+                    }
+                }
+                TypedReprRef::RefLarge(words) => square_large(words),
+            }
+        }
+    }
+
+    fn square_dword_spilled(dw: DoubleWord) -> Repr {
+        let (lo, hi) = math::mul_add_carry_dword(dw, dw, 0);
+        let mut buffer = Buffer::allocate(4);
+        let (n0, n1) = split_dword(lo);
+        buffer.push(n0);
+        buffer.push(n1);
+        let (n2, n3) = split_dword(hi);
+        buffer.push(n2);
+        buffer.push(n3);
+        Repr::from_buffer(buffer)
+    }
+
+    fn square_large(words: &[Word]) -> Repr {
+        debug_assert!(words.len() >= 2);
+
+        let mut buffer = Buffer::allocate(words.len() * 2);
+        buffer.push_zeros(words.len() * 2);
+
+        let mut allocation = MemoryAllocation::new(sqr::memory_requirement_exact(words.len()));
+        sqr::square(&mut buffer, words, &mut allocation.memory());
         Repr::from_buffer(buffer)
     }
 }

@@ -36,7 +36,7 @@ impl UBig {
             _ => {}
         }
         let mut p = usize::BIT_SIZE - 2 - exp.leading_zeros();
-        let mut res = self * self;
+        let mut res = self.square();
         loop {
             if exp & (1 << p) != 0 {
                 res *= self;
@@ -45,8 +45,7 @@ impl UBig {
                 break;
             }
             p -= 1;
-            // TODO: use specialized square function
-            res = &res * &res;
+            res = res.square();
         }
         res
     }
@@ -68,7 +67,7 @@ impl IBig {
         } else {
             Positive
         };
-        // TODO(next): prevent copy by unsigned_abs
+        // TODO(next): prevent copy of unsigned_abs
         IBig(self.unsigned_abs().pow(exp).0.with_sign(sign))
     }
 }

@@ -21,16 +21,16 @@ pub fn memory_requirement_exact(len: usize) -> Layout {
     }
 }
 
-/// b = a * a
+/// b = a * a, b must be filled with zeros.
 pub fn square<'a>(b: &mut [Word], a: &'a [Word], memory: &mut Memory) {
     debug_assert!(a.len() >= 2);
     debug_assert!(b.len() == a.len() * 2);
     debug_assert!(b.iter().all(|&v| v == 0));
 
-    if a.len() < MAX_LEN_SIMPLE {
+    if a.len() <= MAX_LEN_SIMPLE {
         simple::square(b, a);
     } else {
-        let carry = mul::add_signed_mul(b, Sign::Positive, a, a, memory);
+        let carry = mul::add_signed_mul_same_len(b, Sign::Positive, a, a, memory);
         debug_assert!(carry == 0);
     }
 }

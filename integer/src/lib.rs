@@ -110,7 +110,6 @@ mod shift;
 mod shift_ops;
 mod sign;
 mod sqr;
-mod sqr_ops;
 mod ubig;
 
 #[cfg(feature = "rand")]

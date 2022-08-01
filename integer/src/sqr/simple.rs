@@ -11,6 +11,7 @@ pub fn square<'a>(b: &mut [Word], a: &'a [Word]) {
     /*
      * A simple algorithm for squaring
      *
+     * let B = 2^WORD_BITS
      * take a = a0 + a1*B + a2*B^2 + a3*B^3 as an example
      * to calculate a^2 = (a0 + a1*B + a2*B^2 + a3*B^3) ^ 2
      *
@@ -27,13 +28,17 @@ pub fn square<'a>(b: &mut [Word], a: &'a [Word]) {
 
     // first step (triangular part)
     let mut c0 = false;
-    for (i, m) in a.iter().enumerate() {
-        let offset = i * 2 + 1;
+    let mut offset = 1;
+    let mut a_cur = a;
+    while let Some((m, new_cur)) = a_cur.split_first() {
+        a_cur = new_cur;
         let carry =
-            mul::add_mul_word_same_len_in_place(&mut b[offset..offset + a.len() - i], *m, &a[i..]);
-        let (carry, carry_next) = arch::add::add_with_carry(*b.last().unwrap(), carry, c0);
-        *b.last_mut().unwrap() = carry;
+            mul::add_mul_word_same_len_in_place(&mut b[offset..offset + a_cur.len()], *m, &a_cur);
+        let b_top = &mut b[offset + a_cur.len()];
+        let (new_top, carry_next) = arch::add::add_with_carry(*b_top, carry, c0);
+        *b_top = new_top;
         c0 = carry_next;
+        offset += 2;
     }
 
     // second step (diagonal part)

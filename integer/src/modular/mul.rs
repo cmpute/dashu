@@ -81,8 +81,7 @@ impl<'a> MulAssign<&Modulo<'a>> for Modulo<'a> {
                 Modulo::check_same_ring_large(ring, ring1);
                 let memory_requirement = ring.mul_memory_requirement();
                 let mut allocation = MemoryAllocation::new(memory_requirement);
-                let mut memory = allocation.memory();
-                ring.mul_in_place(raw0, raw1, &mut memory);
+                ring.mul_in_place(raw0, raw1, &mut allocation.memory());
             }
             _ => panic_different_rings(),
         }
@@ -165,7 +164,7 @@ impl ModuloRingLarge {
     }
 
     pub(crate) fn sqr_in_place(&self, raw: &mut ModuloLargeRaw, memory: &mut Memory) {
-        // TODO: use specialized square function
+        // TODO(next): use specialized square function
         let prod = self.mul_normalized(&raw.0, &raw.0, memory);
         raw.0.copy_from_slice(prod)
     }

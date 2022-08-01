@@ -49,6 +49,7 @@ fn test_random_arithmetic() {
     let p = ubig!(1000000007);
 
     // 10^2 bits: 10^5 cases
+    // ..to..
     // 10^6 bits: 10 cases
     for log_num_bits in 2..=6 {
         let num_bits = match 10usize.checked_pow(log_num_bits) {
@@ -74,6 +75,7 @@ fn test_random_arithmetic() {
                 UBig::from_str_radix(&a.in_radix(radix).to_string(), radix).unwrap(),
                 a
             );
+            assert_eq!((&a + UBig::ONE) * (&a - UBig::ONE), a.square() - UBig::ONE);
 
             // gcd is much slower than primitive operations, test with lower frequency
             if i % 32 == 0 {

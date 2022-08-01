@@ -149,9 +149,12 @@ impl ConstLargeDivisor {
                         words.len(),
                         modulus.len(),
                     ));
-                    let mut memory = allocation.memory();
-                    let _overflow =
-                        div::div_rem_in_place(&mut words, modulus, self.fast_div_top, &mut memory);
+                    let _overflow = div::div_rem_in_place(
+                        &mut words,
+                        modulus,
+                        self.fast_div_top,
+                        &mut allocation.memory(),
+                    );
                     words.truncate(modulus.len());
                 }
                 words.ensure_capacity_exact(modulus.len());

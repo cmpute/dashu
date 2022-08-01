@@ -2,7 +2,7 @@
 
 use crate::error::{panic_allocate_too_much, panic_out_of_memory};
 use alloc::alloc::Layout;
-use core::{marker::PhantomData, mem, slice};
+use core::{fmt, marker::PhantomData, mem, slice};
 
 /// Chunk of memory directly allocated from the global allocator.
 pub struct MemoryAllocation {
@@ -18,6 +18,15 @@ pub struct Memory<'a> {
     end: *mut u8,
     /// Logically, Memory contains a reference to some data with lifetime 'a.
     phantom_data: PhantomData<&'a mut ()>,
+}
+
+impl fmt::Debug for Memory<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Memory chunk (")?;
+        let offset = unsafe { self.end.offset_from(self.start) };
+        offset.fmt(f)?;
+        f.write_str(" bytes)")
+    }
 }
 
 impl MemoryAllocation {

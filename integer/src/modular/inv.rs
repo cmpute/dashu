@@ -98,9 +98,11 @@ impl ModuloRingLarge {
                     modulus.len(),
                     raw_len,
                 ));
-                let mut memory = allocation.memory();
-                let (g_len, b_len, b_sign) =
-                    gcd::gcd_ext_in_place(&mut modulus, &mut raw.0[..raw_len], &mut memory);
+                let (g_len, b_len, b_sign) = gcd::gcd_ext_in_place(
+                    &mut modulus,
+                    &mut raw.0[..raw_len],
+                    &mut allocation.memory(),
+                );
                 modulus[b_len..].fill(0);
 
                 // check if inverse exists
