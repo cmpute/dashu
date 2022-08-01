@@ -1,20 +1,22 @@
 //! Format in a non-power-of-two radix.
 
 use crate::{
-    arch::word::Word,
+    arch::word::{Word, DoubleWord},
     div,
     fmt::{digit_writer::DigitWriter, InRadixFull, PreparedForFormatting},
     ops::DivRem,
-    primitive::{shrink_dword, split_dword},
+    primitive::{shrink_dword, split_dword, double_word},
     radix::{self, Digit},
     repr::TypedReprRef::{self, *},
-    ubig::UBig,
+    ubig::UBig, math::shl_dword,
 };
 use alloc::vec::Vec;
 use core::{
     fmt::{self, Formatter},
     mem,
 };
+
+use super::DoubleEnd;
 
 /// Format in chunks of CHUNK_LEN * digits_per_word.
 const CHUNK_LEN: usize = 16;
@@ -26,6 +28,9 @@ impl InRadixFull<'_> {
         if let RefSmall(dword) = self.magnitude {
             if let Some(word) = shrink_dword(dword) {
                 let mut prepared = PreparedWord::new(word, self.radix, 1);
+                return self.format_prepared(f, &mut prepared);
+            } else {
+                let mut prepared = PreparedDword::new(dword, self.radix);
                 return self.format_prepared(f, &mut prepared);
             }
         }
@@ -42,6 +47,27 @@ impl InRadixFull<'_> {
     }
 }
 
+impl DoubleEnd<'_> {
+    pub fn fmt_non_power_two(&self, f: &mut Formatter) -> fmt::Result {
+        // if the number is small enough, we directly prepare all digits
+        if let RefSmall(dword) = self.magnitude {
+            if let Some(word) = shrink_dword(dword) {
+                let mut prepared = PreparedWord::new(word, 10, 1);
+                return self.format_prepared(f, &mut prepared, None);
+            } else {
+                let mut prepared = PreparedDword::new(dword, 10);
+                return self.format_prepared(f, &mut prepared, None);
+            }
+        }
+
+        // otherwise, find the least and most significant digits that fit in a word
+        // get LSB by one division, and get MSB by logarithm
+        let radix_info = radix::radix_info(10);
+
+        unimplemented!()
+    }
+}
+
 /// A `Word` prepared for formatting.
 struct PreparedWord {
     // digits[start_index..] actually used.
@@ -51,6 +77,8 @@ struct PreparedWord {
 
 impl PreparedWord {
     /// Prepare a `Word` for formatting.
+    /// 
+    /// If the input has less digits than min_digits, then zero padding will be appended.
     fn new(mut word: Word, radix: Digit, min_digits: usize) -> PreparedWord {
         debug_assert!(radix::is_radix_valid(radix) && !radix.is_power_of_two());
         let radix_info = radix::radix_info(radix);
@@ -75,6 +103,76 @@ impl PreparedWord {
 impl PreparedForFormatting for PreparedWord {
     fn width(&self) -> usize {
         radix::MAX_WORD_DIGITS_NON_POW_2 - self.start_index
+    }
+
+    fn write(&mut self, digit_writer: &mut DigitWriter) -> fmt::Result {
+        digit_writer.write(&self.digits[self.start_index..])
+    }
+}
+
+/// A `DoubleWord` prepared for formatting.
+struct PreparedDword {
+    // digits[start_index..] actually used.
+    digits: [u8; radix::MAX_DWORD_DIGITS_NON_POW_2],
+    start_index: usize,
+}
+
+impl PreparedDword {
+    /// Prepare a `DoubleWord` for formatting.
+    fn new(dword: DoubleWord, radix: Digit) -> PreparedDword {
+        debug_assert!(radix::is_radix_valid(radix) && !radix.is_power_of_two());
+        debug_assert!(dword > Word::MAX as DoubleWord);
+        let radix_info = radix::radix_info(radix);
+
+        let mut prepared = PreparedDword {
+            digits: [0; radix::MAX_DWORD_DIGITS_NON_POW_2],
+            start_index: radix::MAX_DWORD_DIGITS_NON_POW_2,
+        };
+
+        // extract digits from three parts separated by range_per_word
+        let shift = radix_info.range_per_word.leading_zeros();
+        let range_div = &radix_info.fast_div_range_per_word;
+
+        let (lo, mid, hi) = shl_dword(dword, shift);
+        let (q1, r) = range_div.div_rem(double_word(mid, hi));
+        let (q0, mut p0) = range_div.div_rem(double_word(lo, r));
+        p0 >>= shift;
+
+        // since: hi < 2^shift, range_per_word < 2^(WORD_BITS - shift),
+        // we have: q1 = [hi, mid] / range_per_word < 2^(2*shift)
+        // meanwhile, for radix 2~36 it can be verified that: shift <= 4 for WORD_BITS = 16 or 32 or 64
+        // so q1 * 2^shift < 2^(3*shift) < 2^16, the shifting below won't overflow
+        let q = double_word(q0, q1) << shift;
+        let (mut p2, mut p1) = range_div.div_rem(q);
+        p1 >>= shift;
+
+        // extract digits from each part
+        let mut get_digit = |p: &mut Word| {
+            let (new_p, d) = radix_info.fast_div_radix.div_rem(*p);
+            *p = new_p;
+            prepared.start_index -= 1;
+            prepared.digits[prepared.start_index] = d as u8;
+        };
+        for _ in 0..radix_info.digits_per_word {
+            get_digit(&mut p0);
+        }
+        for _ in 0..radix_info.digits_per_word {
+            if p1 == 0 && p2 == 0 {
+                break;
+            }
+            get_digit(&mut p1);
+        }
+        while p2 != 0 {
+            get_digit(&mut p2);
+        }
+
+        prepared
+    }
+}
+
+impl PreparedForFormatting for PreparedDword {
+    fn width(&self) -> usize {
+        radix::MAX_DWORD_DIGITS_NON_POW_2 - self.start_index
     }
 
     fn write(&mut self, digit_writer: &mut DigitWriter) -> fmt::Result {

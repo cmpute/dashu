@@ -38,12 +38,12 @@ pub(crate) fn div_rem_in_place(
     fast_div_rhs_top: FastDivideNormalized2,
     memory: &mut Memory,
 ) -> bool {
-    assert!(lhs.len() > rhs.len() + div::MAX_LEN_SIMPLE && rhs.len() > div::MAX_LEN_SIMPLE);
+    assert!(lhs.len() > rhs.len() + div::THRESHOLD_SIMPLE && rhs.len() > div::THRESHOLD_SIMPLE);
 
     let mut overflow = false;
     let n = rhs.len();
     let mut m = lhs.len();
-    assert!(n > div::MAX_LEN_SIMPLE && m >= n);
+    assert!(n > div::THRESHOLD_SIMPLE && m >= n);
     while m >= 2 * n {
         let o = div_rem_in_place_same_len(&mut lhs[m - 2 * n..m], rhs, fast_div_rhs_top, memory);
         if o {
@@ -71,9 +71,9 @@ fn div_rem_in_place_same_len(
     memory: &mut Memory,
 ) -> bool {
     let n = rhs.len();
-    assert!(n > div::MAX_LEN_SIMPLE && lhs.len() == 2 * n);
+    assert!(n > div::THRESHOLD_SIMPLE && lhs.len() == 2 * n);
     // To guarantee n_lo >= 2.
-    const_assert!(div::MAX_LEN_SIMPLE >= 3);
+    const_assert!(div::THRESHOLD_SIMPLE >= 3);
     let n_lo = n / 2;
 
     // Divide lhs[n_lo..] by rhs, putting quotient in lhs[n+n_lo..] and remainder in lhs[n_lo..n+n_lo].
@@ -109,7 +109,7 @@ fn div_rem_in_place_small_quotient(
     assert!(n >= 2 && lhs.len() >= n);
     let m = lhs.len() - n;
     assert!(m < n);
-    if m <= div::MAX_LEN_SIMPLE {
+    if m <= div::THRESHOLD_SIMPLE {
         return div::simple::div_rem_in_place(lhs, rhs, fast_div_rhs_top);
     }
     // Use top m words of the divisor to get a quotient approximation. It may be too large by at most 2.

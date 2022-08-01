@@ -1,12 +1,7 @@
 //! Bit shift operators.
 
 use crate::{
-    arch::word::{DoubleWord, Word},
-    buffer::Buffer,
     ibig::IBig,
-    primitive::{double_word, DWORD_BITS_USIZE, WORD_BITS_USIZE},
-    repr::{TypedRepr::*, TypedReprRef::*},
-    shift,
     sign::Sign::*,
     ubig::UBig,
 };
@@ -180,7 +175,11 @@ mod repr {
     use super::*;
     use crate::{
         math,
-        repr::{Repr, TypedRepr, TypedReprRef},
+        repr::{Repr, TypedRepr::{self, *}, TypedReprRef::{self, *}},
+        arch::word::{DoubleWord, Word},
+        primitive::{double_word, DWORD_BITS_USIZE, WORD_BITS_USIZE},
+        shift,
+        buffer::Buffer,
     };
 
     impl Shl<usize> for TypedRepr {
@@ -213,7 +212,7 @@ mod repr {
             match self {
                 RefSmall(0) => Repr::zero(),
                 RefSmall(dword) => shl_dword(dword, rhs),
-                RefLarge(buffer) => shl_ref_large(buffer, rhs),
+                RefLarge(words) => shl_ref_large(words, rhs),
             }
         }
     }
@@ -224,7 +223,7 @@ mod repr {
         fn shr(self, rhs: usize) -> Repr {
             match self {
                 RefSmall(dword) => shr_dword(dword, rhs),
-                RefLarge(buffer) => shr_large_ref(buffer, rhs),
+                RefLarge(words) => shr_large_ref(words, rhs),
             }
         }
     }

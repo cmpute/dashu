@@ -1,14 +1,8 @@
 //! Multiplication operators.
 
 use crate::{
-    arch::word::{DoubleWord, Word},
-    buffer::Buffer,
-    helper_macros,
     ibig::IBig,
-    memory::MemoryAllocation,
-    mul,
-    repr::{TypedRepr::*, TypedReprRef::*},
-    sign::Sign::*,
+    helper_macros,
     ubig::UBig,
 };
 use core::ops::{Mul, MulAssign};
@@ -123,9 +117,16 @@ impl_mul_ibig_primitive!(isize);
 
 mod repr {
     use super::*;
-    use crate::primitive::{shrink_dword, split_dword};
-    use crate::repr::{Repr, TypedRepr, TypedReprRef};
-    use crate::{math, shift};
+    use crate::{
+        arch::word::{DoubleWord, Word},
+        repr::{Repr, TypedRepr::{self, *}, TypedReprRef::{self, *}},
+        primitive::{shrink_dword, split_dword},
+        memory::MemoryAllocation,
+        buffer::Buffer,
+        mul,
+        sign::Sign::*,
+        math, shift
+    };
 
     impl Mul<TypedRepr> for TypedRepr {
         type Output = Repr;
@@ -233,6 +234,7 @@ mod repr {
 
     /// Multiply two large numbers.
     fn mul_large(lhs: &[Word], rhs: &[Word]) -> Repr {
+        // TODO: shortcut if lhs = rhs
         debug_assert!(lhs.len() >= 2 && rhs.len() >= 2);
 
         let res_len = lhs.len() + rhs.len();

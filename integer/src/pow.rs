@@ -17,6 +17,8 @@ impl UBig {
     /// ```
     #[inline]
     pub fn pow(&self, exp: usize) -> UBig {
+        // TODO: remove trailing zeros before powering
+        // TODO: lift the base to fill a Word / DoubleWord before actual powering
         match exp {
             0 => return UBig::ONE,
             1 => return self.clone(),
@@ -43,6 +45,7 @@ impl UBig {
                 break;
             }
             p -= 1;
+            // TODO: use specialized square function
             res = &res * &res;
         }
         res
@@ -65,6 +68,7 @@ impl IBig {
         } else {
             Positive
         };
+        // TODO(next): prevent copy by unsigned_abs
         IBig(self.unsigned_abs().pow(exp).0.with_sign(sign))
     }
 }

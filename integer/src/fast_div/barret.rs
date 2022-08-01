@@ -1,4 +1,5 @@
 //! Divide by a prearranged Word quickly using multiplication by the reciprocal (Barret style).
+// XXX: move this implementation to num-modular and make it a dependency
 
 use crate::{
     arch::word::{DoubleWord, Word},
@@ -55,7 +56,7 @@ impl FastDivideSmall {
         }
     }
 
-    /// ( a / divisor, a % divisor)
+    /// (a / divisor, a % divisor)
     #[inline]
     pub fn div_rem(&self, a: Word) -> (Word, Word) {
         // q = floor( (B + m) * a / (B * 2^n) )
@@ -119,7 +120,7 @@ impl FastDivideNormalized {
         }
     }
 
-    /// (a / divisor, a % divisor), a need to be normalized (by self.shift)
+    /// (a / divisor, a % divisor)
     #[inline]
     pub const fn div_rem_word(&self, a: Word) -> (Word, Word) {
         if a < self.divisor {
@@ -129,7 +130,7 @@ impl FastDivideNormalized {
         }
     }
 
-    /// (a / divisor, a % divisor), a need to be normalized (by self.shift)
+    /// (a / divisor, a % divisor)
     /// The result must fit in a single word.
     #[inline]
     pub const fn div_rem(&self, a: DoubleWord) -> (Word, Word) {

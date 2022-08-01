@@ -87,7 +87,7 @@ pub const fn ones_dword(n: u32) -> DoubleWord {
     }
 }
 
-// Calculate dw << shift, assuming shift <= Word::BIT_SIZE, returns (lo, mid, hi).
+/// Calculate dw << shift, assuming shift <= Word::BIT_SIZE, returns (lo, mid, hi).
 pub const fn shl_dword(dw: DoubleWord, shift: u32) -> (Word, Word, Word) {
     debug_assert!(shift <= Word::BIT_SIZE);
 

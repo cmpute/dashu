@@ -1,5 +1,7 @@
 //! Integer formatting helpers.
 
+// TODO(next): add description about formatting behaviors in the module level documentation
+
 use crate::{
     ibig::IBig,
     error::panic_invalid_radix,
@@ -249,15 +251,6 @@ pub struct InRadix<'a> {
     radix: Digit,
 }
 
-/// Representation in a given radix with a prefix and digit case.
-struct InRadixFull<'a> {
-    sign: Sign,
-    magnitude: TypedReprRef<'a>,
-    radix: Digit,
-    prefix: &'static str,
-    digit_case: DigitCase,
-}
-
 impl Display for InRadix<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let digit_case = if self.radix <= 10 {
@@ -277,6 +270,21 @@ impl Display for InRadix<'_> {
         }
         .fmt(f)
     }
+}
+
+/// Representation in a given radix with a prefix and digit case.
+struct InRadixFull<'a> {
+    sign: Sign,
+    magnitude: TypedReprRef<'a>,
+    radix: Digit,
+    prefix: &'static str,
+    digit_case: DigitCase,
+}
+
+/// Representation for printing only head and tail of the number, only decimal is supported
+struct DoubleEnd<'a> {
+    sign: Sign,
+    magnitude: TypedReprRef<'a>,
 }
 
 impl InRadixFull<'_> {
@@ -353,6 +361,24 @@ impl InRadixFull<'_> {
         }
 
         Ok(())
+    }
+}
+
+impl DoubleEnd<'_> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        self.fmt_non_power_two(f)
+    }
+
+    /// Format using a `PreparedForFormatting`.
+    fn format_prepared(
+        &self,
+        f: &mut Formatter,
+        prepared_high: &mut dyn PreparedForFormatting,
+        prepared_low: Option<&mut dyn PreparedForFormatting>,
+    ) -> fmt::Result {
+        // TODO: if the width of f is less than default, we can omit some digits, but if it's more than default, then no op
+        //       put `..` in the middle, so the LSB and MSB digits have the same width
+        unimplemented!()
     }
 }
 

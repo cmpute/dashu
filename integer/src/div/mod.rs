@@ -14,7 +14,7 @@ mod divide_conquer;
 mod simple;
 
 /// If divisor or quotient is at most this length, use the simple division algorithm.
-const MAX_LEN_SIMPLE: usize = 32;
+const THRESHOLD_SIMPLE: usize = 32;
 
 /// Normalize a divisor represented as words.
 ///
@@ -53,7 +53,7 @@ pub fn div_by_word_in_place(words: &mut [Word], rhs: Word) -> Word {
 #[must_use]
 pub(crate) fn fast_div_by_word_in_place(
     words: &mut [Word],
-    rhs: Word,
+    rhs: Word, // TODO(next): accept a shift value instead of rhs itself, same for dword version
     fast_div_rhs: FastDivideNormalized,
 ) -> Word {
     let shift = rhs.leading_zeros();
@@ -232,7 +232,7 @@ pub(crate) fn fast_rem_by_normalized_dword(
 /// Memory requirement for division.
 pub fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> Layout {
     assert!(lhs_len >= rhs_len && rhs_len >= 2);
-    if rhs_len <= MAX_LEN_SIMPLE || lhs_len - rhs_len <= MAX_LEN_SIMPLE {
+    if rhs_len <= THRESHOLD_SIMPLE || lhs_len - rhs_len <= THRESHOLD_SIMPLE {
         memory::zero_layout()
     } else {
         divide_conquer::memory_requirement_exact(lhs_len, rhs_len)
@@ -256,7 +256,7 @@ pub(crate) fn div_rem_in_place(
 ) -> bool {
     assert!(lhs.len() >= rhs.len() && rhs.len() >= 2);
 
-    if rhs.len() <= MAX_LEN_SIMPLE || lhs.len() - rhs.len() <= MAX_LEN_SIMPLE {
+    if rhs.len() <= THRESHOLD_SIMPLE || lhs.len() - rhs.len() <= THRESHOLD_SIMPLE {
         simple::div_rem_in_place(lhs, rhs, fast_div_rhs_top)
     } else {
         divide_conquer::div_rem_in_place(lhs, rhs, fast_div_rhs_top, memory)

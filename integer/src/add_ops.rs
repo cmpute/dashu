@@ -1,10 +1,6 @@
 //! Addition and subtraction operators.
 
 use crate::{
-    add,
-    arch::word::{DoubleWord, Word},
-    buffer::Buffer,
-    error::panic_negative_ubig,
     helper_macros,
     ibig::IBig,
     sign::Sign::*,
@@ -245,6 +241,10 @@ pub mod repr {
     use super::*;
     use crate::{
         primitive::split_dword,
+    add,
+    arch::word::{DoubleWord, Word},
+    buffer::Buffer,
+    error::panic_negative_ubig,
         repr::{
             Repr,
             TypedRepr::{self, *},
@@ -258,13 +258,13 @@ pub mod repr {
         fn add(self, rhs: TypedReprRef) -> Repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => add_dword(dword0, dword1),
-                (RefSmall(dword0), RefLarge(buffer1)) => add_large_dword(buffer1.into(), dword0),
-                (RefLarge(buffer0), RefSmall(dword1)) => add_large_dword(buffer0.into(), dword1),
-                (RefLarge(buffer0), RefLarge(buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        add_large(buffer0.into(), buffer1)
+                (RefSmall(dword0), RefLarge(words1)) => add_large_dword(words1.into(), dword0),
+                (RefLarge(words0), RefSmall(dword1)) => add_large_dword(words0.into(), dword1),
+                (RefLarge(words0), RefLarge(words1)) => {
+                    if words0.len() >= words1.len() {
+                        add_large(words0.into(), words1)
                     } else {
-                        add_large(buffer1.into(), buffer0)
+                        add_large(words1.into(), words0)
                     }
                 }
             }
@@ -278,8 +278,8 @@ pub mod repr {
             match (self, rhs) {
                 (RefSmall(dword0), Small(dword1)) => add_dword(dword0, dword1),
                 (RefSmall(dword0), Large(buffer1)) => add_large_dword(buffer1, dword0),
-                (RefLarge(buffer0), Small(dword1)) => add_large_dword(buffer0.into(), dword1),
-                (RefLarge(buffer0), Large(buffer1)) => add_large(buffer1, buffer0),
+                (RefLarge(words0), Small(dword1)) => add_large_dword(words0.into(), dword1),
+                (RefLarge(words0), Large(buffer1)) => add_large(buffer1, words0),
             }
         }
     }
@@ -502,11 +502,15 @@ trait SubSigned<Rhs> {
 
 mod repr_signed {
     use super::*;
-    use crate::repr::{
+    use crate::{
+        add,
+        arch::word::{DoubleWord, Word},
+        buffer::Buffer,
+        repr::{
         Repr,
         TypedRepr::{self, *},
         TypedReprRef::{self, *},
-    };
+    }};
 
     impl<'l, 'r> SubSigned<TypedReprRef<'r>> for TypedReprRef<'l> {
         type Output = Repr;
@@ -517,12 +521,12 @@ mod repr_signed {
                 (RefSmall(dword0), RefLarge(buffer1)) => {
                     sub_large_dword(buffer1.into(), dword0).neg()
                 }
-                (RefLarge(buffer0), RefSmall(dword1)) => sub_large_dword(buffer0.into(), dword1),
-                (RefLarge(buffer0), RefLarge(buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        sub_large(buffer0.into(), buffer1)
+                (RefLarge(words0), RefSmall(words1)) => sub_large_dword(words0.into(), words1),
+                (RefLarge(words0), RefLarge(words1)) => {
+                    if words0.len() >= words1.len() {
+                        sub_large(words0.into(), words1)
                     } else {
-                        sub_large(buffer1.into(), buffer0).neg()
+                        sub_large(words1.into(), words0).neg()
                     }
                 }
             }
@@ -536,8 +540,8 @@ mod repr_signed {
             match (self, rhs) {
                 (RefSmall(dword0), Small(dword1)) => sub_dword(dword0, dword1),
                 (RefSmall(dword0), Large(buffer1)) => sub_large_dword(buffer1, dword0).neg(),
-                (RefLarge(buffer0), Small(dword1)) => sub_large_dword(buffer0.into(), dword1),
-                (RefLarge(buffer0), Large(buffer1)) => sub_large(buffer1, buffer0).neg(),
+                (RefLarge(words0), Small(dword1)) => sub_large_dword(words0.into(), dword1),
+                (RefLarge(words0), Large(buffer1)) => sub_large(buffer1, words0).neg(),
             }
         }
     }
@@ -548,9 +552,9 @@ mod repr_signed {
         fn sub_signed(self, rhs: TypedReprRef) -> Self::Output {
             match (self, rhs) {
                 (Small(dword0), RefSmall(dword1)) => sub_dword(dword0, dword1),
-                (Small(dword0), RefLarge(buffer1)) => sub_large_dword(buffer1.into(), dword0).neg(),
+                (Small(dword0), RefLarge(words1)) => sub_large_dword(words1.into(), dword0).neg(),
                 (Large(buffer0), RefSmall(dword1)) => sub_large_dword(buffer0, dword1),
-                (Large(buffer0), RefLarge(buffer1)) => sub_large(buffer0, buffer1),
+                (Large(buffer0), RefLarge(words1)) => sub_large(buffer0, words1),
             }
         }
     }

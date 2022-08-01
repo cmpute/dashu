@@ -4,7 +4,7 @@ use crate::{
     add,
     arch::word::{DoubleWord, SignedWord, Word},
     math,
-    memory::Memory,
+    memory::{self, Memory},
     primitive::{double_word, extend_word, split_dword},
     sign::Sign,
 };
@@ -12,14 +12,14 @@ use alloc::alloc::Layout;
 use core::mem;
 use static_assertions::const_assert;
 
-/// If Smaller length <= MAX_LEN_SIMPLE, simple multiplication can be used.
-const MAX_LEN_SIMPLE: usize = 24;
-const_assert!(MAX_LEN_SIMPLE <= simple::MAX_SMALLER_LEN);
-const_assert!(MAX_LEN_SIMPLE + 1 >= karatsuba::MIN_LEN);
+/// If smaller operand length <= this, simple multiplication will be used.
+const THRESHOLD_SIMPLE: usize = 24;
+const_assert!(THRESHOLD_SIMPLE <= simple::MAX_SMALLER_LEN);
+const_assert!(THRESHOLD_SIMPLE + 1 >= karatsuba::MIN_LEN);
 
-/// If Smaller length <= this, Karatsuba multiplication can be used.
-const MAX_LEN_KARATSUBA: usize = 192;
-const_assert!(MAX_LEN_KARATSUBA + 1 >= toom_3::MIN_LEN);
+/// If smaller operand length <= this, Karatsuba multiplication will be used.
+const THRESHOLD_KARATSUBA: usize = 192;
+const_assert!(THRESHOLD_KARATSUBA + 1 >= toom_3::MIN_LEN);
 
 mod helpers;
 mod karatsuba;
@@ -91,7 +91,7 @@ pub fn mul_word_in_place_with_carry(words: &mut [Word], rhs: Word, mut carry: Wo
 ///
 /// Returns carry.
 #[must_use]
-fn add_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) -> Word {
+pub fn add_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) -> Word {
     assert!(words.len() == rhs.len());
     let mut carry: Word = 0;
     for (a, b) in words.iter_mut().zip(rhs.iter()) {
@@ -144,9 +144,9 @@ pub fn sub_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Wor
 
 /// Temporary scratch space required for multiplication.
 pub fn memory_requirement_up_to(_total_len: usize, smaller_len: usize) -> Layout {
-    if smaller_len <= MAX_LEN_SIMPLE {
-        simple::memory_requirement_up_to(smaller_len)
-    } else if smaller_len <= MAX_LEN_KARATSUBA {
+    if smaller_len <= THRESHOLD_SIMPLE {
+        memory::zero_layout()
+    } else if smaller_len <= THRESHOLD_KARATSUBA {
         karatsuba::memory_requirement_up_to(smaller_len)
     } else {
         toom_3::memory_requirement_up_to(smaller_len)
@@ -175,9 +175,9 @@ pub fn add_signed_mul<'a>(
         mem::swap(&mut a, &mut b);
     }
 
-    if b.len() <= MAX_LEN_SIMPLE {
+    if b.len() <= THRESHOLD_SIMPLE {
         simple::add_signed_mul(c, sign, a, b, memory)
-    } else if b.len() <= MAX_LEN_KARATSUBA {
+    } else if b.len() <= THRESHOLD_KARATSUBA {
         karatsuba::add_signed_mul(c, sign, a, b, memory)
     } else {
         toom_3::add_signed_mul(c, sign, a, b, memory)
@@ -198,9 +198,9 @@ pub fn add_signed_mul_same_len(
     let n = a.len();
     debug_assert!(b.len() == n && c.len() == 2 * n);
 
-    if n <= MAX_LEN_SIMPLE {
+    if n <= THRESHOLD_SIMPLE {
         simple::add_signed_mul_same_len(c, sign, a, b, memory)
-    } else if n <= MAX_LEN_KARATSUBA {
+    } else if n <= THRESHOLD_KARATSUBA {
         karatsuba::add_signed_mul_same_len(c, sign, a, b, memory)
     } else {
         toom_3::add_signed_mul_same_len(c, sign, a, b, memory)

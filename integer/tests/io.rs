@@ -4,6 +4,12 @@ mod helper_macros;
 
 #[test]
 fn test_ubig_format() {
+    assert_eq!(format!("{}", UBig::from(u8::MAX)), "255");
+    assert_eq!(format!("{}", UBig::from(u16::MAX)), "65535");
+    assert_eq!(format!("{}", UBig::from(u32::MAX)), "4294967295");
+    assert_eq!(format!("{}", UBig::from(u64::MAX)), "18446744073709551615");
+    assert_eq!(format!("{}", UBig::from(u128::MAX)), "340282366920938463463374607431768211455");
+
     assert_eq!(format!("{:b}", ubig!(0)), "0");
     assert_eq!(format!("{:b}", ubig!(100)), "1100100");
     assert_eq!(format!("{:#b}", ubig!(100)), "0b1100100");

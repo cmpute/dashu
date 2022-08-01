@@ -106,6 +106,8 @@ mod pow;
 mod primitive;
 mod radix;
 mod repr;
+mod sqr;
+mod sqr_ops;
 mod shift;
 mod shift_ops;
 mod sign;

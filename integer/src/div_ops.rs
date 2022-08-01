@@ -1,15 +1,9 @@
 //! Division operators.
 
 use crate::{
-    arch::word::{DoubleWord, Word},
-    buffer::Buffer,
-    div, helper_macros,
+    helper_macros,
     ibig::IBig,
-    error::panic_divide_by_0,
-    memory::MemoryAllocation,
     ops::{DivEuclid, DivRem, DivRemEuclid, RemEuclid},
-    repr::{TypedRepr::*, TypedReprRef::*},
-    shift,
     sign::Sign::*,
     ubig::UBig,
 };
@@ -686,7 +680,13 @@ mod repr {
     use super::*;
     use crate::{
         primitive::shrink_dword,
-        repr::{Repr, TypedRepr, TypedReprRef},
+        repr::{Repr, TypedRepr::{self, *}, TypedReprRef::{self, *}},
+        arch::word::{DoubleWord, Word},
+        buffer::Buffer,
+        div,
+        shift,
+        error::panic_divide_by_0,
+        memory::MemoryAllocation,
     };
 
     impl DivRem<TypedRepr> for TypedRepr {
@@ -719,13 +719,13 @@ mod repr {
             match (self, rhs) {
                 (RefSmall(dword0), Small(dword1)) => div_rem_dword(dword0, dword1),
                 (RefSmall(dword0), Large(_)) => (Repr::zero(), Repr::from_dword(dword0)),
-                (RefLarge(buffer0), Small(dword1)) => div_rem_large_dword(buffer0.into(), dword1),
-                (RefLarge(buffer0), Large(mut buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        div_rem_large(buffer0.into(), buffer1)
+                (RefLarge(words0), Small(dword1)) => div_rem_large_dword(words0.into(), dword1),
+                (RefLarge(words0), Large(mut buffer1)) => {
+                    if words0.len() >= buffer1.len() {
+                        div_rem_large(words0.into(), buffer1)
                     } else {
                         // Reuse buffer1 for the remainder.
-                        buffer1.clone_from_slice(buffer0);
+                        buffer1.clone_from_slice(words0);
                         (Repr::zero(), Repr::from_buffer(buffer1))
                     }
                 }
@@ -743,9 +743,9 @@ mod repr {
                 (Small(dword0), RefSmall(dword1)) => div_rem_dword(dword0, dword1),
                 (Small(dword0), RefLarge(_)) => (Repr::zero(), Repr::from_dword(dword0)),
                 (Large(buffer0), RefSmall(dword1)) => div_rem_large_dword(buffer0, dword1),
-                (Large(buffer0), RefLarge(buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        div_rem_large(buffer0, buffer1.into())
+                (Large(buffer0), RefLarge(words1)) => {
+                    if buffer0.len() >= words1.len() {
+                        div_rem_large(buffer0, words1.into())
                     } else {
                         (Repr::zero(), Repr::from_buffer(buffer0))
                     }
@@ -763,14 +763,14 @@ mod repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => div_rem_dword(dword0, dword1),
                 (RefSmall(dword0), RefLarge(_)) => (Repr::zero(), Repr::from_dword(dword0)),
-                (RefLarge(buffer0), RefSmall(dword1)) => {
-                    div_rem_large_dword(buffer0.into(), dword1)
+                (RefLarge(words0), RefSmall(dword1)) => {
+                    div_rem_large_dword(words0.into(), dword1)
                 }
-                (RefLarge(buffer0), RefLarge(buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        div_rem_large(buffer0.into(), buffer1.into())
+                (RefLarge(words0), RefLarge(words1)) => {
+                    if words0.len() >= words1.len() {
+                        div_rem_large(words0.into(), words1.into())
                     } else {
-                        (Repr::zero(), Repr::from_buffer(buffer0.into()))
+                        (Repr::zero(), Repr::from_buffer(words0.into()))
                     }
                 }
             }
@@ -779,7 +779,6 @@ mod repr {
 
     #[inline]
     fn div_rem_dword(lhs: DoubleWord, rhs: DoubleWord) -> (Repr, Repr) {
-        // TODO: is rhs is a power of two, then forward to shifting
         // If division works, remainder also works.
         match lhs.checked_div(rhs) {
             Some(res) => (Repr::from_dword(res), Repr::from_dword(lhs % rhs)),
@@ -801,6 +800,7 @@ mod repr {
     }
 
     fn div_rem_large(mut lhs: Buffer, mut rhs: Buffer) -> (Repr, Repr) {
+        // TODO: trim trailing words before division?
         let shift = div_rem_in_lhs(&mut lhs, &mut rhs);
         let n = rhs.len();
         rhs.copy_from_slice(&lhs[..n]);
@@ -854,9 +854,9 @@ mod repr {
                 (Small(dword0), RefSmall(dword1)) => div_dword(dword0, dword1),
                 (Small(_), RefLarge(_)) => Repr::zero(),
                 (Large(buffer0), RefSmall(dword1)) => div_large_dword(buffer0, dword1),
-                (Large(buffer0), RefLarge(buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        div_large(buffer0, buffer1.into())
+                (Large(buffer0), RefLarge(words1)) => {
+                    if buffer0.len() >= words1.len() {
+                        div_large(buffer0, words1.into())
                     } else {
                         Repr::zero()
                     }
@@ -873,10 +873,10 @@ mod repr {
             match (self, rhs) {
                 (RefSmall(dword0), Small(dword1)) => div_dword(dword0, dword1),
                 (RefSmall(_), Large(_)) => Repr::zero(),
-                (RefLarge(buffer0), Small(dword1)) => div_large_dword(buffer0.into(), dword1),
-                (RefLarge(buffer0), Large(buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        div_large(buffer0.into(), buffer1)
+                (RefLarge(words0), Small(dword1)) => div_large_dword(words0.into(), dword1),
+                (RefLarge(words1), Large(buffer1)) => {
+                    if words1.len() >= buffer1.len() {
+                        div_large(words1.into(), buffer1)
                     } else {
                         Repr::zero()
                     }
@@ -893,10 +893,10 @@ mod repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => div_dword(dword0, dword1),
                 (RefSmall(_), RefLarge(_)) => Repr::zero(),
-                (RefLarge(buffer0), RefSmall(dword1)) => div_large_dword(buffer0.into(), dword1),
-                (RefLarge(buffer0), RefLarge(buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        div_large(buffer0.into(), buffer1.into())
+                (RefLarge(words0), RefSmall(dword1)) => div_large_dword(words0.into(), dword1),
+                (RefLarge(words0), RefLarge(words1)) => {
+                    if words0.len() >= words1.len() {
+                        div_large(words0.into(), words1.into())
                     } else {
                         Repr::zero()
                     }
@@ -954,9 +954,9 @@ mod repr {
                 (Small(dword0), RefSmall(dword1)) => rem_dword(dword0, dword1),
                 (Small(dword0), RefLarge(_)) => Repr::from_dword(dword0),
                 (Large(buffer0), RefSmall(dword1)) => rem_large_dword(&buffer0, dword1),
-                (Large(buffer0), RefLarge(buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        rem_large(buffer0, buffer1.into())
+                (Large(buffer0), RefLarge(words1)) => {
+                    if buffer0.len() >= words1.len() {
+                        rem_large(buffer0, words1.into())
                     } else {
                         Repr::from_buffer(buffer0)
                     }
@@ -973,13 +973,13 @@ mod repr {
             match (self, rhs) {
                 (RefSmall(dword0), Small(dword1)) => rem_dword(dword0, dword1),
                 (RefSmall(dword0), Large(_)) => Repr::from_dword(dword0),
-                (RefLarge(buffer0), Small(dword1)) => rem_large_dword(buffer0, dword1),
-                (RefLarge(buffer0), Large(mut buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        rem_large(buffer0.into(), buffer1)
+                (RefLarge(words0), Small(dword1)) => rem_large_dword(words0, dword1),
+                (RefLarge(words0), Large(mut buffer1)) => {
+                    if words0.len() >= buffer1.len() {
+                        rem_large(words0.into(), buffer1)
                     } else {
                         // Reuse buffer1 for the remainder.
-                        buffer1.clone_from_slice(buffer0);
+                        buffer1.clone_from_slice(words0);
                         Repr::from_buffer(buffer1)
                     }
                 }
@@ -995,12 +995,12 @@ mod repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => rem_dword(dword0, dword1),
                 (RefSmall(dword0), RefLarge(_)) => Repr::from_dword(dword0),
-                (RefLarge(buffer0), RefSmall(dword1)) => rem_large_dword(buffer0, dword1),
-                (RefLarge(buffer0), RefLarge(buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        rem_large(buffer0.into(), buffer1.into())
+                (RefLarge(words0), RefSmall(dword1)) => rem_large_dword(words0, dword1),
+                (RefLarge(words0), RefLarge(words1)) => {
+                    if words0.len() >= words1.len() {
+                        rem_large(words0.into(), words1.into())
                     } else {
-                        Repr::from_buffer(buffer0.into())
+                        Repr::from_buffer(words0.into())
                     }
                 }
             }

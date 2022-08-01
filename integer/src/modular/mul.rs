@@ -164,6 +164,7 @@ impl ModuloRingLarge {
     }
 
     pub(crate) fn sqr_in_place(&self, raw: &mut ModuloLargeRaw, memory: &mut Memory) {
+        // TODO: use specialized square function
         let prod = self.mul_normalized(&raw.0, &raw.0, memory);
         raw.0.copy_from_slice(prod)
     }

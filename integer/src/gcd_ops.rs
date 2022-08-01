@@ -1,18 +1,10 @@
 //! Operators for finding greatest common divisor.
 
 use crate::{
-    arch::word::{DoubleWord, Word},
-    buffer::Buffer,
-    div, gcd,
     ibig::IBig,
-    memory,
-    memory::MemoryAllocation,
-    mul,
-    repr::{TypedRepr::*, TypedReprRef::*},
     sign::Sign,
     ubig::UBig,
 };
-use core::cmp::Ordering;
 use dashu_base::ring::{ExtendedGcd, Gcd};
 
 // TODO(v0.2): implement as trait
@@ -51,11 +43,18 @@ impl UBig {
 }
 
 mod repr {
+    use core::cmp::Ordering;
     use super::*;
     use crate::{
+        arch::word::{DoubleWord, Word},
+        buffer::Buffer,
+        div, gcd,
+        memory,
+        memory::MemoryAllocation,
+        mul,
         add, cmp,
         primitive::{shrink_dword, PrimitiveSigned},
-        repr::{Repr, TypedRepr, TypedReprRef},
+        repr::{Repr, TypedRepr::{self, *}, TypedReprRef::{self, *}},
     };
 
     impl<'l, 'r> Gcd<TypedReprRef<'r>> for TypedReprRef<'l> {
@@ -64,9 +63,9 @@ mod repr {
         fn gcd(self, rhs: TypedReprRef) -> Repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => Repr::from_dword(dword0.gcd(dword1)),
-                (RefSmall(dword0), RefLarge(buffer1)) => gcd_large_dword(buffer1, dword0),
-                (RefLarge(buffer0), RefSmall(dword1)) => gcd_large_dword(buffer0, dword1),
-                (RefLarge(buffer0), RefLarge(buffer1)) => gcd_large(buffer0.into(), buffer1.into()),
+                (RefSmall(dword0), RefLarge(words1)) => gcd_large_dword(words1, dword0),
+                (RefLarge(words0), RefSmall(dword1)) => gcd_large_dword(words0, dword1),
+                (RefLarge(words0), RefLarge(words1)) => gcd_large(words0.into(), words1.into()),
             }
         }
     }
