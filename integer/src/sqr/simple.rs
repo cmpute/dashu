@@ -1,22 +1,24 @@
-use crate::{arch::{self, word::Word}, mul, math::mul_add_2carry, primitive::{double_word, split_dword}};
+use crate::{
+    arch::{self, word::Word},
+    math::mul_add_2carry,
+    mul,
+    primitive::{double_word, split_dword},
+};
 
-pub fn square<'a>(
-    b: &mut [Word],
-    a: &'a [Word]
-) {
+pub fn square<'a>(b: &mut [Word], a: &'a [Word]) {
     debug_assert!(b.len() == a.len() * 2);
 
     /*
      * A simple algorithm for squaring
-     * 
+     *
      * take a = a0 + a1*B + a2*B^2 + a3*B^3 as an example
      * to calculate a^2 = (a0 + a1*B + a2*B^2 + a3*B^3) ^ 2
-     * 
+     *
      * first
      * b += a0 * (a1 + a2*B + a3*B^2) * B
      * b += a1 * (a2 + a3*B) * B^3
      * b += a2 * a3 * B^5
-
+     *
      * then
      * b = b * 2 + (a0^2 + a1^2*B^2 + a2^2*B^4 + a3^2*B^6)
      * the square and shifting can be fused in a single run
@@ -27,7 +29,8 @@ pub fn square<'a>(
     let mut c0 = false;
     for (i, m) in a.iter().enumerate() {
         let offset = i * 2 + 1;
-        let carry = mul::add_mul_word_same_len_in_place(&mut b[offset..offset + a.len() - i], *m, &a[i..]);
+        let carry =
+            mul::add_mul_word_same_len_in_place(&mut b[offset..offset + a.len() - i], *m, &a[i..]);
         let (carry, carry_next) = arch::add::add_with_carry(*b.last().unwrap(), carry, c0);
         *b.last_mut().unwrap() = carry;
         c0 = carry_next;

@@ -1,10 +1,6 @@
 //! Multiplication operators.
 
-use crate::{
-    ibig::IBig,
-    helper_macros,
-    ubig::UBig,
-};
+use crate::{helper_macros, ibig::IBig, ubig::UBig};
 use core::ops::{Mul, MulAssign};
 
 helper_macros::forward_ubig_binop_to_repr!(impl Mul, mul);
@@ -119,13 +115,18 @@ mod repr {
     use super::*;
     use crate::{
         arch::word::{DoubleWord, Word},
-        repr::{Repr, TypedRepr::{self, *}, TypedReprRef::{self, *}},
-        primitive::{shrink_dword, split_dword},
-        memory::MemoryAllocation,
         buffer::Buffer,
+        math,
+        memory::MemoryAllocation,
         mul,
+        primitive::{shrink_dword, split_dword},
+        repr::{
+            Repr,
+            TypedRepr::{self, *},
+            TypedReprRef::{self, *},
+        },
+        shift,
         sign::Sign::*,
-        math, shift
     };
 
     impl Mul<TypedRepr> for TypedRepr {

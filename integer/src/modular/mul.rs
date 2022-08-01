@@ -1,7 +1,8 @@
 use crate::{
     arch::word::Word,
-    div, math,
+    div,
     error::panic_different_rings,
+    math,
     memory::{self, Memory, MemoryAllocation},
     modular::{
         modulo::{Modulo, ModuloRepr, ModuloSingleRaw},

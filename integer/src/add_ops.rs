@@ -1,11 +1,6 @@
 //! Addition and subtraction operators.
 
-use crate::{
-    helper_macros,
-    ibig::IBig,
-    sign::Sign::*,
-    ubig::UBig,
-};
+use crate::{helper_macros, ibig::IBig, sign::Sign::*, ubig::UBig};
 use core::ops::{Add, AddAssign, Sub, SubAssign};
 
 helper_macros::forward_ubig_binop_to_repr!(impl Add, add);
@@ -240,11 +235,11 @@ impl_add_ibig_primitive!(isize);
 pub mod repr {
     use super::*;
     use crate::{
+        add,
+        arch::word::{DoubleWord, Word},
+        buffer::Buffer,
+        error::panic_negative_ubig,
         primitive::split_dword,
-    add,
-    arch::word::{DoubleWord, Word},
-    buffer::Buffer,
-    error::panic_negative_ubig,
         repr::{
             Repr,
             TypedRepr::{self, *},
@@ -507,10 +502,11 @@ mod repr_signed {
         arch::word::{DoubleWord, Word},
         buffer::Buffer,
         repr::{
-        Repr,
-        TypedRepr::{self, *},
-        TypedReprRef::{self, *},
-    }};
+            Repr,
+            TypedRepr::{self, *},
+            TypedReprRef::{self, *},
+        },
+    };
 
     impl<'l, 'r> SubSigned<TypedReprRef<'r>> for TypedReprRef<'l> {
         type Output = Repr;

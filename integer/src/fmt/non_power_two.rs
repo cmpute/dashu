@@ -1,14 +1,15 @@
 //! Format in a non-power-of-two radix.
 
 use crate::{
-    arch::word::{Word, DoubleWord},
+    arch::word::{DoubleWord, Word},
     div,
     fmt::{digit_writer::DigitWriter, InRadixFull, PreparedForFormatting},
+    math::shl_dword,
     ops::DivRem,
-    primitive::{shrink_dword, split_dword, double_word},
+    primitive::{double_word, shrink_dword, split_dword},
     radix::{self, Digit},
     repr::TypedReprRef::{self, *},
-    ubig::UBig, math::shl_dword,
+    ubig::UBig,
 };
 use alloc::vec::Vec;
 use core::{
@@ -77,7 +78,7 @@ struct PreparedWord {
 
 impl PreparedWord {
     /// Prepare a `Word` for formatting.
-    /// 
+    ///
     /// If the input has less digits than min_digits, then zero padding will be appended.
     fn new(mut word: Word, radix: Digit, min_digits: usize) -> PreparedWord {
         debug_assert!(radix::is_radix_valid(radix) && !radix.is_power_of_two());

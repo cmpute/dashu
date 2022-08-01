@@ -1,4 +1,4 @@
-use crate::{ubig::UBig, ibig::IBig};
+use crate::{ibig::IBig, ubig::UBig};
 
 impl UBig {
     #[inline]
@@ -15,7 +15,15 @@ impl IBig {
 }
 
 mod repr {
-    use crate::{repr::{Repr, TypedReprRef}, primitive::{shrink_dword, extend_word, split_dword}, arch::word::{DoubleWord, Word}, math, buffer::Buffer, memory::MemoryAllocation, sqr};
+    use crate::{
+        arch::word::{DoubleWord, Word},
+        buffer::Buffer,
+        math,
+        memory::MemoryAllocation,
+        primitive::{extend_word, shrink_dword, split_dword},
+        repr::{Repr, TypedReprRef},
+        sqr,
+    };
 
     impl TypedReprRef<'_> {
         pub fn square(&self) -> Repr {
@@ -26,10 +34,8 @@ mod repr {
                     } else {
                         unimplemented!()
                     }
-                },
-                TypedReprRef::RefLarge(words) => {
-                    square_large(words)
                 }
+                TypedReprRef::RefLarge(words) => square_large(words),
             }
         }
     }
@@ -52,9 +58,7 @@ mod repr {
         let mut buffer = Buffer::allocate(words.len() * 2);
         buffer.push_zeros(words.len());
 
-        let mut allocation = MemoryAllocation::new(sqr::memory_requirement_exact(
-            words.len()
-        ));
+        let mut allocation = MemoryAllocation::new(sqr::memory_requirement_exact(words.len()));
         let mut memory = allocation.memory();
         sqr::square(&mut buffer, words, &mut memory);
         Repr::from_buffer(buffer)

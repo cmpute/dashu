@@ -679,14 +679,18 @@ impl_div_ibig_signed!(isize, usize);
 mod repr {
     use super::*;
     use crate::{
-        primitive::shrink_dword,
-        repr::{Repr, TypedRepr::{self, *}, TypedReprRef::{self, *}},
         arch::word::{DoubleWord, Word},
         buffer::Buffer,
         div,
-        shift,
         error::panic_divide_by_0,
         memory::MemoryAllocation,
+        primitive::shrink_dword,
+        repr::{
+            Repr,
+            TypedRepr::{self, *},
+            TypedReprRef::{self, *},
+        },
+        shift,
     };
 
     impl DivRem<TypedRepr> for TypedRepr {
@@ -763,9 +767,7 @@ mod repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => div_rem_dword(dword0, dword1),
                 (RefSmall(dword0), RefLarge(_)) => (Repr::zero(), Repr::from_dword(dword0)),
-                (RefLarge(words0), RefSmall(dword1)) => {
-                    div_rem_large_dword(words0.into(), dword1)
-                }
+                (RefLarge(words0), RefSmall(dword1)) => div_rem_large_dword(words0.into(), dword1),
                 (RefLarge(words0), RefLarge(words1)) => {
                     if words0.len() >= words1.len() {
                         div_rem_large(words0.into(), words1.into())

@@ -3,9 +3,11 @@
 use crate::{
     arch::word::Word,
     buffer::Buffer,
-    error::{OutOfBoundsError, panic_negative_ubig},
+    error::{panic_negative_ubig, OutOfBoundsError},
     ibig::IBig,
-    primitive::{self, PrimitiveSigned, PrimitiveUnsigned, DWORD_BYTES, WORD_BITS, WORD_BYTES, double_word},
+    primitive::{
+        self, double_word, PrimitiveSigned, PrimitiveUnsigned, DWORD_BYTES, WORD_BITS, WORD_BYTES,
+    },
     repr::{Repr, TypedReprRef::*},
     sign::Sign::{self, *},
     ubig::UBig,
@@ -163,7 +165,7 @@ impl UBig {
     }
 
     /// Get the raw representation in [Word][crate::Word]s.
-    /// 
+    ///
     /// If the number is zero, then empty slice will be returned.
     #[inline]
     pub fn as_words(&self) -> &[crate::Word] {
@@ -225,7 +227,7 @@ impl UBig {
 
 impl IBig {
     /// Get the raw representation in [Word][crate::Word]s.
-    /// 
+    ///
     /// If the number is zero, then empty slice will be returned.
     #[inline]
     pub fn as_sign_words(&self) -> (Sign, &[crate::Word]) {

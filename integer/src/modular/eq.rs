@@ -1,10 +1,10 @@
 //! Comparisons.
 
-use crate::error::panic_different_rings;
 use super::{
     modulo::{Modulo, ModuloRepr},
-    modulo_ring::{ModuloRing, ModuloRingLarge, ModuloRingDouble, ModuloRingSingle},
+    modulo_ring::{ModuloRing, ModuloRingDouble, ModuloRingLarge, ModuloRingSingle},
 };
+use crate::error::panic_different_rings;
 use core::ptr;
 
 /// Equality is identity: two rings are not equal even if they have the same modulus.

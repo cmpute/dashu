@@ -8,7 +8,10 @@ fn test_ubig_format() {
     assert_eq!(format!("{}", UBig::from(u16::MAX)), "65535");
     assert_eq!(format!("{}", UBig::from(u32::MAX)), "4294967295");
     assert_eq!(format!("{}", UBig::from(u64::MAX)), "18446744073709551615");
-    assert_eq!(format!("{}", UBig::from(u128::MAX)), "340282366920938463463374607431768211455");
+    assert_eq!(
+        format!("{}", UBig::from(u128::MAX)),
+        "340282366920938463463374607431768211455"
+    );
 
     assert_eq!(format!("{:b}", ubig!(0)), "0");
     assert_eq!(format!("{:b}", ubig!(100)), "1100100");
@@ -346,8 +349,14 @@ fn test_radix_round_trip() {
 
 #[test]
 fn test_from_str_radix_with_radix_prefix() {
-    assert_eq!(UBig::from_str_with_radix_prefix("17").unwrap(), (UBig::from(17u8), 10));
-    assert_eq!(UBig::from_str_with_radix_prefix("+17").unwrap(), (UBig::from(17u8), 10));
+    assert_eq!(
+        UBig::from_str_with_radix_prefix("17").unwrap(),
+        (UBig::from(17u8), 10)
+    );
+    assert_eq!(
+        UBig::from_str_with_radix_prefix("+17").unwrap(),
+        (UBig::from(17u8), 10)
+    );
     assert_eq!(
         UBig::from_str_with_radix_prefix("0b101").unwrap(),
         (UBig::from(0b101u8), 2)
@@ -373,9 +382,18 @@ fn test_from_str_radix_with_radix_prefix() {
         (UBig::from(0x1eeu16), 16)
     );
 
-    assert_eq!(IBig::from_str_with_radix_prefix("17").unwrap(), (IBig::from(17), 10));
-    assert_eq!(IBig::from_str_with_radix_prefix("+17").unwrap(), (IBig::from(17), 10));
-    assert_eq!(IBig::from_str_with_radix_prefix("-17").unwrap(), (IBig::from(-17), 10));
+    assert_eq!(
+        IBig::from_str_with_radix_prefix("17").unwrap(),
+        (IBig::from(17), 10)
+    );
+    assert_eq!(
+        IBig::from_str_with_radix_prefix("+17").unwrap(),
+        (IBig::from(17), 10)
+    );
+    assert_eq!(
+        IBig::from_str_with_radix_prefix("-17").unwrap(),
+        (IBig::from(-17), 10)
+    );
     assert_eq!(
         IBig::from_str_with_radix_prefix("0b101").unwrap(),
         (IBig::from(0b101), 2)

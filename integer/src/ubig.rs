@@ -5,9 +5,7 @@
 //! into [Repr], and then directly construct from the [Repr]. This restriction is set to make
 //! the source type explicit.
 
-use crate::{
-    repr::{Repr, TypedRepr, TypedReprRef},
-};
+use crate::repr::{Repr, TypedRepr, TypedReprRef};
 
 /// Unsigned big integer.
 ///
@@ -25,10 +23,10 @@ use crate::{
 /// assert_eq!(b, d);
 /// # Ok::<(), ParseError>(())
 /// ```
-/// 
+///
 /// The UBig struct has a niche bit, therefore it can be used within simple enums
 /// with no additional memory requirement.
-/// 
+///
 /// ```
 /// # use dashu_int::UBig;
 /// use core::mem;
@@ -57,9 +55,9 @@ impl UBig {
     pub const ONE: Self = Self(Repr::one());
 
     /// Check whether the value is 0
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::UBig;
     /// assert!(UBig::ZERO.is_zero());
@@ -71,9 +69,9 @@ impl UBig {
     }
 
     /// Check whether the value is 1
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::UBig;
     /// assert!(!UBig::ZERO.is_one());

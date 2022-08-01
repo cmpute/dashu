@@ -3,7 +3,7 @@
 use crate::{
     error::ParseError,
     ibig::IBig,
-    radix::{self, Digit, is_radix_valid},
+    radix::{self, is_radix_valid, Digit},
     sign::Sign::*,
     ubig::UBig,
 };

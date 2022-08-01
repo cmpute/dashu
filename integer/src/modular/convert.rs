@@ -23,7 +23,7 @@ impl ModuloRing {
     /// The ring modulus.
     ///
     /// Note that there is overhead for retrieving the original modulus.
-    /// 
+    ///
     /// # Example
     ///
     /// ```

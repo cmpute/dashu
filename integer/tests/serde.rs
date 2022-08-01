@@ -1,4 +1,3 @@
-
 mod helper_macros;
 use serde_test::{assert_de_tokens, assert_tokens, Token};
 

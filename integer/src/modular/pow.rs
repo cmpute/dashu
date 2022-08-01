@@ -1,7 +1,7 @@
 use crate::{
     arch::word::Word,
-    math,
     error::panic_allocate_too_much,
+    math,
     memory::{self, MemoryAllocation},
     primitive::{double_word, split_dword, PrimitiveUnsigned, WORD_BITS, WORD_BITS_USIZE},
     repr::TypedReprRef::*,

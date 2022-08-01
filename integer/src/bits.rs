@@ -995,7 +995,11 @@ mod tests {
     #[test]
     fn test_and_not() {
         let cases = [
-            (UBig::from(0xf0f0u16), UBig::from(0xff00u16), UBig::from(0xf0u16)),
+            (
+                UBig::from(0xf0f0u16),
+                UBig::from(0xff00u16),
+                UBig::from(0xf0u16),
+            ),
             (
                 UBig::from(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeu128),
                 UBig::from(0xffu8),
@@ -1008,13 +1012,25 @@ mod tests {
             ),
             (
                 UBig::from_str_radix("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", 16).unwrap(),
-                UBig::from_str_radix("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", 16).unwrap(),
+                UBig::from_str_radix(
+                    "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                    16,
+                )
+                .unwrap(),
                 UBig::from_str_radix("22222222222222222222222222222222", 16).unwrap(),
             ),
             (
-                UBig::from_str_radix("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", 16).unwrap(),
+                UBig::from_str_radix(
+                    "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                    16,
+                )
+                .unwrap(),
                 UBig::from_str_radix("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", 16).unwrap(),
-                UBig::from_str_radix("dddddddddddddddddddddddddddddddd11111111111111111111111111111111", 16).unwrap(),
+                UBig::from_str_radix(
+                    "dddddddddddddddddddddddddddddddd11111111111111111111111111111111",
+                    16,
+                )
+                .unwrap(),
             ),
         ];
 

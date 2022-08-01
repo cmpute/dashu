@@ -3,8 +3,8 @@
 // TODO(next): add description about formatting behaviors in the module level documentation
 
 use crate::{
-    ibig::IBig,
     error::panic_invalid_radix,
+    ibig::IBig,
     radix::{self, Digit, DigitCase},
     repr::TypedReprRef,
     sign::Sign::{self, *},
@@ -19,7 +19,7 @@ mod digit_writer;
 mod non_power_two;
 mod power_two;
 
-pub use radix::{MIN_RADIX, MAX_RADIX};
+pub use radix::{MAX_RADIX, MIN_RADIX};
 
 impl Display for UBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {

@@ -1,4 +1,7 @@
-use dashu_int::{ops::{Abs, UnsignedAbs}, Sign};
+use dashu_int::{
+    ops::{Abs, UnsignedAbs},
+    Sign,
+};
 
 mod helper_macros;
 

@@ -5,11 +5,14 @@ use crate::{
     arch::word::{DoubleWord, Word},
     buffer::Buffer,
     cmp,
-    fast_div::{FastDivideNormalized, FastDivideNormalized2, ConstSingleDivisor, ConstDoubleDivisor, ConstLargeDivisor},
-    math,
     error::panic_divide_by_0,
+    fast_div::{
+        ConstDoubleDivisor, ConstLargeDivisor, ConstSingleDivisor, FastDivideNormalized,
+        FastDivideNormalized2,
+    },
+    math,
     primitive::shrink_dword,
-    repr::{TypedRepr, Repr},
+    repr::{Repr, TypedRepr},
     ubig::UBig,
 };
 use core::cmp::Ordering;
@@ -67,9 +70,7 @@ impl ModuloRing {
                     ModuloRingRepr::Double(ModuloRingDouble::new(dword))
                 }
             }
-            TypedRepr::Large(words) => {
-                ModuloRingRepr::Large(ModuloRingLarge::new(words))
-            }
+            TypedRepr::Large(words) => ModuloRingRepr::Large(ModuloRingLarge::new(words)),
         })
     }
 
@@ -157,7 +158,7 @@ impl ModuloRingLarge {
     pub fn normalized_modulus(&self) -> &[Word] {
         &self.0.normalized_modulus
     }
-    
+
     #[inline]
     pub fn modulus(&self) -> UBig {
         UBig(Repr::from_buffer(self.0.divisor()))

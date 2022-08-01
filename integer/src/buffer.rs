@@ -2,8 +2,8 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
-    primitive::{double_word, WORD_BITS_USIZE},
     error::{panic_allocate_too_much, panic_out_of_memory},
+    primitive::{double_word, WORD_BITS_USIZE},
 };
 use alloc::{alloc::Layout, boxed::Box};
 use core::{

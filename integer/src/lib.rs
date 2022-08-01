@@ -23,7 +23,7 @@
 //! The two main integer types are [UBig] (for unsigned integers) and [IBig] (for signed integers).
 //!
 //! Modular arithmetic is supported by the module [modular].
-//! 
+//!
 //! To construct big integers from literals conveniently, please use the `dashu-macro` crate.
 //!
 //! # Examples
@@ -71,7 +71,7 @@ extern crate alloc;
 pub use crate::{ibig::IBig, sign::Sign, ubig::UBig};
 
 /// The primitive integer type used to construct the big integers.
-/// 
+///
 /// The big integers is interally represented as an array of [Word]s, so convert
 /// integers from and into [Word]s are efficient.
 ///
@@ -106,11 +106,11 @@ mod pow;
 mod primitive;
 mod radix;
 mod repr;
-mod sqr;
-mod sqr_ops;
 mod shift;
 mod shift_ops;
 mod sign;
+mod sqr;
+mod sqr_ops;
 mod ubig;
 
 #[cfg(feature = "rand")]

@@ -1,7 +1,7 @@
 //! Memory allocation.
 
+use crate::error::{panic_allocate_too_much, panic_out_of_memory};
 use alloc::alloc::Layout;
-use crate::error::{panic_out_of_memory, panic_allocate_too_much};
 use core::{marker::PhantomData, mem, slice};
 
 /// Chunk of memory directly allocated from the global allocator.

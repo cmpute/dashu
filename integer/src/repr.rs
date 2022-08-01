@@ -114,7 +114,7 @@ impl Repr {
     pub const fn with_sign(mut self, sign: Sign) -> Self {
         let is_positive = match sign {
             Sign::Positive => true,
-            Sign::Negative => false
+            Sign::Negative => false,
         };
         if !self.is_zero() && (is_positive ^ (self.capacity.get() > 0)) {
             self.capacity = unsafe {

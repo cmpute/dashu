@@ -1,10 +1,6 @@
 //! Operators for finding greatest common divisor.
 
-use crate::{
-    ibig::IBig,
-    sign::Sign,
-    ubig::UBig,
-};
+use crate::{ibig::IBig, sign::Sign, ubig::UBig};
 use dashu_base::ring::{ExtendedGcd, Gcd};
 
 // TODO(v0.2): implement as trait
@@ -43,19 +39,22 @@ impl UBig {
 }
 
 mod repr {
-    use core::cmp::Ordering;
     use super::*;
     use crate::{
+        add,
         arch::word::{DoubleWord, Word},
         buffer::Buffer,
-        div, gcd,
-        memory,
+        cmp, div, gcd, memory,
         memory::MemoryAllocation,
         mul,
-        add, cmp,
         primitive::{shrink_dword, PrimitiveSigned},
-        repr::{Repr, TypedRepr::{self, *}, TypedReprRef::{self, *}},
+        repr::{
+            Repr,
+            TypedRepr::{self, *},
+            TypedReprRef::{self, *},
+        },
     };
+    use core::cmp::Ordering;
 
     impl<'l, 'r> Gcd<TypedReprRef<'r>> for TypedReprRef<'l> {
         type Output = Repr;

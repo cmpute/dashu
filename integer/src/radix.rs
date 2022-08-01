@@ -1,7 +1,7 @@
 //! Information about radixes.
 
 use crate::{
-    arch::word::{Word, DoubleWord},
+    arch::word::{DoubleWord, Word},
     fast_div::{FastDivideNormalized, FastDivideSmall},
 };
 use static_assertions::const_assert;
@@ -80,18 +80,23 @@ pub const MAX_WORD_DIGITS_NON_POW_2: usize = RadixInfo::for_radix(3).digits_per_
 pub const MAX_DWORD_DIGITS_NON_POW_2: usize = 2 * RadixInfo::for_radix(3).digits_per_word + 1;
 
 // Note: log3(2^16) = 10.09, log3(2^32) = 20.19, log3(2^64) = 40.38
-const_assert!((3 as DoubleWord).pow(MAX_DWORD_DIGITS_NON_POW_2 as u32 - 1).overflowing_mul(3).1);
+const_assert!(
+    (3 as DoubleWord)
+        .pow(MAX_DWORD_DIGITS_NON_POW_2 as u32 - 1)
+        .overflowing_mul(3)
+        .1
+);
 
 /// Get [RadixInfo] for a given radix.
-/// 
+///
 /// This method is not specialized for power of two.
 #[inline]
 pub fn radix_info(radix: Digit) -> RadixInfo {
     debug_assert!(is_radix_valid(radix));
-    
+
     match radix {
         10 => RADIX10_INFO,
-        _ => RadixInfo::for_radix(radix)
+        _ => RadixInfo::for_radix(radix),
     }
 }
 

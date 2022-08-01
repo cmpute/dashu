@@ -1,10 +1,6 @@
 //! Bit shift operators.
 
-use crate::{
-    ibig::IBig,
-    sign::Sign::*,
-    ubig::UBig,
-};
+use crate::{ibig::IBig, sign::Sign::*, ubig::UBig};
 use core::{
     mem,
     ops::{Shl, ShlAssign, Shr, ShrAssign},
@@ -174,12 +170,16 @@ impl Shr<usize> for &IBig {
 mod repr {
     use super::*;
     use crate::{
-        math,
-        repr::{Repr, TypedRepr::{self, *}, TypedReprRef::{self, *}},
         arch::word::{DoubleWord, Word},
-        primitive::{double_word, DWORD_BITS_USIZE, WORD_BITS_USIZE},
-        shift,
         buffer::Buffer,
+        math,
+        primitive::{double_word, DWORD_BITS_USIZE, WORD_BITS_USIZE},
+        repr::{
+            Repr,
+            TypedRepr::{self, *},
+            TypedReprRef::{self, *},
+        },
+        shift,
     };
 
     impl Shl<usize> for TypedRepr {

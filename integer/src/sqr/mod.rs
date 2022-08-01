@@ -2,7 +2,11 @@
 
 use alloc::alloc::Layout;
 
-use crate::{mul, arch::word::Word, memory::{Memory, self}, Sign};
+use crate::{
+    arch::word::Word,
+    memory::{self, Memory},
+    mul, Sign,
+};
 
 mod simple;
 
@@ -18,11 +22,7 @@ pub fn memory_requirement_exact(len: usize) -> Layout {
 }
 
 /// b = a * a
-pub fn square<'a>(
-    b: &mut [Word],
-    a: &'a [Word],
-    memory: &mut Memory,
-) {
+pub fn square<'a>(b: &mut [Word], a: &'a [Word], memory: &mut Memory) {
     debug_assert!(a.len() >= 2);
     debug_assert!(b.len() == a.len() * 2);
     debug_assert!(b.iter().all(|&v| v == 0));

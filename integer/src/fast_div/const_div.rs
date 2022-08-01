@@ -1,13 +1,15 @@
 use super::{FastDivideNormalized, FastDivideNormalized2};
 use crate::{
-    arch::word::{Word, DoubleWord},
+    arch::word::{DoubleWord, Word},
+    buffer::Buffer,
     div,
-    shift,
     error::panic_divide_by_0,
-    ubig::UBig,
     math::shl_dword,
     memory::MemoryAllocation,
-    primitive::{double_word, extend_word, shrink_dword}, repr::TypedRepr, buffer::Buffer,
+    primitive::{double_word, extend_word, shrink_dword},
+    repr::TypedRepr,
+    shift,
+    ubig::UBig,
 };
 use alloc::boxed::Box;
 
@@ -32,17 +34,14 @@ impl ConstSingleDivisor {
         debug_assert!(n != 0);
         let shift = n.leading_zeros();
         let fast_div = FastDivideNormalized::new(n << shift);
-        Self {
-            shift,
-            fast_div,
-        }
+        Self { shift, fast_div }
     }
 
     #[inline]
     pub const fn divisor(&self) -> Word {
         self.fast_div.divisor >> self.shift
     }
-    
+
     #[inline]
     pub const fn rem_word(&self, word: Word) -> Word {
         if self.shift == 0 {
@@ -78,10 +77,7 @@ impl ConstDoubleDivisor {
         debug_assert!(n > Word::MAX as DoubleWord);
         let shift = n.leading_zeros();
         let fast_div = FastDivideNormalized2::new(n << shift);
-        Self {
-            shift,
-            fast_div,
-        }
+        Self { shift, fast_div }
     }
 
     #[inline]
@@ -154,12 +150,8 @@ impl ConstLargeDivisor {
                         modulus.len(),
                     ));
                     let mut memory = allocation.memory();
-                    let _overflow = div::div_rem_in_place(
-                        &mut words,
-                        modulus,
-                        self.fast_div_top,
-                        &mut memory,
-                    );
+                    let _overflow =
+                        div::div_rem_in_place(&mut words, modulus, self.fast_div_top, &mut memory);
                     words.truncate(modulus.len());
                 }
                 words.ensure_capacity_exact(modulus.len());
@@ -172,7 +164,7 @@ impl ConstLargeDivisor {
 pub(crate) enum ConstDivisorRepr {
     Single(ConstSingleDivisor),
     Double(ConstDoubleDivisor),
-    Large(ConstLargeDivisor)
+    Large(ConstLargeDivisor),
 }
 
 pub struct ConstDivisor(pub(crate) ConstDivisorRepr);
@@ -188,9 +180,7 @@ impl ConstDivisor {
                     ConstDivisorRepr::Double(ConstDoubleDivisor::new(dword))
                 }
             }
-            TypedRepr::Large(words) => {
-                ConstDivisorRepr::Large(ConstLargeDivisor::new(words))
-            }
+            TypedRepr::Large(words) => ConstDivisorRepr::Large(ConstLargeDivisor::new(words)),
         })
     }
 

@@ -22,10 +22,10 @@ use crate::{
 /// assert_eq!(b, d);
 /// # Ok::<(), ParseError>(())
 /// ```
-/// 
+///
 /// The IBig struct is compact with a niche bit. It has the same memory size as [UBig]
 /// and it can could be used within simple enums with no additional memory requirement.
-/// 
+///
 /// ```
 /// # use dashu_int::{IBig, UBig};
 /// use core::mem;
@@ -48,9 +48,9 @@ impl IBig {
     }
 
     /// Get the sign of the [IBig]. Zero value has a positive sign.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::{IBig, Sign};
     /// assert_eq!(IBig::ZERO.sign(), Sign::Positive);
@@ -63,9 +63,9 @@ impl IBig {
     }
 
     /// Convert the [IBig] into its [Sign] and [UBig] magnitude
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::{IBig, Sign, UBig};
     /// assert_eq!(IBig::ZERO.into_parts(), (Sign::Positive, UBig::ZERO));
@@ -79,11 +79,10 @@ impl IBig {
         (sign, UBig(mag))
     }
 
-    
     /// Create an [IBig] from the [Sign] and [UBig] magnitude
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::{IBig, Sign, UBig};
     /// assert_eq!(IBig::from_parts(Sign::Positive, UBig::ZERO), IBig::ZERO);
@@ -103,9 +102,9 @@ impl IBig {
     pub const NEG_ONE: Self = Self(Repr::neg_one());
 
     /// Check whether the value is 0
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::IBig;
     /// assert!(IBig::ZERO.is_zero());
@@ -117,9 +116,9 @@ impl IBig {
     }
 
     /// Check whether the value is 1
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::IBig;
     /// assert!(!IBig::ZERO.is_one());

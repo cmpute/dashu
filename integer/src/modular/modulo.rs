@@ -4,8 +4,8 @@ use super::modulo_ring::ModuloRingDouble;
 use super::modulo_ring::{ModuloRingLarge, ModuloRingSingle};
 use crate::{
     arch::word::{DoubleWord, Word},
-    error::panic_different_rings,
     buffer::Buffer,
+    error::panic_different_rings,
 };
 use alloc::boxed::Box;
 
