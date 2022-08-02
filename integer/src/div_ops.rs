@@ -113,10 +113,7 @@ macro_rules! impl_ibig_div_rem {
     ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {{
         // truncate towards 0.
         let (q, r) = $mag0.div_rem($mag1);
-        (
-            IBig(q.with_sign($sign0 * $sign1)),
-            IBig(r.with_sign($sign0)),
-        )
+        (IBig(q.with_sign($sign0 * $sign1)), IBig(r.with_sign($sign0)))
     }};
 }
 helper_macros::forward_ibig_binop_to_repr!(impl DivRem as divrem, div_rem, impl_ibig_div_rem);
@@ -683,6 +680,7 @@ mod repr {
         buffer::Buffer,
         div,
         error::panic_divide_by_0,
+        helper_macros::debug_assert_zero,
         memory::MemoryAllocation,
         primitive::shrink_dword,
         repr::{
@@ -690,7 +688,7 @@ mod repr {
             TypedRepr::{self, *},
             TypedReprRef::{self, *},
         },
-        shift, helper_macros::debug_assert_zero,
+        shift,
     };
 
     impl DivRem<TypedRepr> for TypedRepr {

@@ -71,10 +71,7 @@ fn test_random_arithmetic() {
             let (quot, rem) = (&a * &b + &c).div_rem(&a);
             assert_eq!(quot, b);
             assert_eq!(rem, c);
-            assert_eq!(
-                UBig::from_str_radix(&a.in_radix(radix).to_string(), radix).unwrap(),
-                a
-            );
+            assert_eq!(UBig::from_str_radix(&a.in_radix(radix).to_string(), radix).unwrap(), a);
             assert_eq!((&a + UBig::ONE) * (&a - UBig::ONE), a.square() - UBig::ONE);
 
             // gcd is much slower than primitive operations, test with lower frequency

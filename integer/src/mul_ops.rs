@@ -156,8 +156,7 @@ mod repr {
             TypedRepr::{self, *},
             TypedReprRef::{self, *},
         },
-        shift,
-        sqr,
+        shift, sqr,
     };
 
     impl Mul<TypedRepr> for TypedRepr {
@@ -277,10 +276,8 @@ mod repr {
         let mut buffer = Buffer::allocate(res_len);
         buffer.push_zeros(res_len);
 
-        let mut allocation = MemoryAllocation::new(mul::memory_requirement_exact(
-            res_len,
-            lhs.len().min(rhs.len()),
-        ));
+        let mut allocation =
+            MemoryAllocation::new(mul::memory_requirement_exact(res_len, lhs.len().min(rhs.len())));
         mul::multiply(&mut buffer, lhs, rhs, &mut allocation.memory());
         Repr::from_buffer(buffer)
     }

@@ -16,10 +16,7 @@ fn test_bit() {
     assert_eq!(ubig!(0xffffffffffffffffffffffffffffffff).bit(127), true);
     assert_eq!(ubig!(0xffffffffffffffffffffffffffffffff).bit(128), false);
     assert_eq!(ubig!(0xffffffffffffffffffffffffffffffffffff).bit(143), true); // 2 ^ 144 - 1
-    assert_eq!(
-        ubig!(0xffffffffffffffffffffffffffffffffffff).bit(144),
-        false
-    );
+    assert_eq!(ubig!(0xffffffffffffffffffffffffffffffffffff).bit(144), false);
 }
 
 #[test]
@@ -36,20 +33,14 @@ fn test_set_bit() {
     a.set_bit(127);
     assert_eq!(a, ubig!(0x28000000000000000000000000000000a));
     a.set_bit(194);
-    assert_eq!(
-        a,
-        ubig!(0x400000000000000028000000000000000000000000000000a)
-    );
+    assert_eq!(a, ubig!(0x400000000000000028000000000000000000000000000000a));
 }
 
 #[test]
 fn test_clear_bit() {
     let mut a = ubig!(0x400000000000000028000000000000000000000000000000a);
     a.clear_bit(10000);
-    assert_eq!(
-        a,
-        ubig!(0x400000000000000028000000000000000000000000000000a)
-    );
+    assert_eq!(a, ubig!(0x400000000000000028000000000000000000000000000000a));
     a.clear_bit(194);
     assert_eq!(a, ubig!(0x28000000000000000000000000000000a));
     a.clear_bit(1);
@@ -94,18 +85,9 @@ fn test_is_power_of_two() {
     assert_eq!(ubig!(1).is_power_of_two(), true);
     assert_eq!(ubig!(16).is_power_of_two(), true);
     assert_eq!(ubig!(17).is_power_of_two(), false);
-    assert_eq!(
-        ubig!(0x4000000000000000000000000000000000000000000000).is_power_of_two(),
-        true
-    );
-    assert_eq!(
-        ubig!(0x5000000000000000000000000000000000000000000000).is_power_of_two(),
-        false
-    );
-    assert_eq!(
-        ubig!(0x4000000000000000000000010000000000000000000000).is_power_of_two(),
-        false
-    );
+    assert_eq!(ubig!(0x4000000000000000000000000000000000000000000000).is_power_of_two(), true);
+    assert_eq!(ubig!(0x5000000000000000000000000000000000000000000000).is_power_of_two(), false);
+    assert_eq!(ubig!(0x4000000000000000000000010000000000000000000000).is_power_of_two(), false);
 }
 
 #[test]
@@ -114,10 +96,7 @@ fn test_next_power_of_two() {
     assert_eq!(ubig!(16).next_power_of_two(), ubig!(16));
     assert_eq!(ubig!(17).next_power_of_two(), ubig!(32));
     assert_eq!(ubig!(0xffffffff).next_power_of_two(), ubig!(0x100000000));
-    assert_eq!(
-        ubig!(0xffffffffffffffff).next_power_of_two(),
-        ubig!(0x10000000000000000)
-    );
+    assert_eq!(ubig!(0xffffffffffffffff).next_power_of_two(), ubig!(0x10000000000000000));
     assert_eq!(
         ubig!(0xffffffffffffffffffffffffffffffff).next_power_of_two(),
         ubig!(0x100000000000000000000000000000000)
@@ -152,16 +131,8 @@ fn test_next_power_of_two() {
 fn test_and_ubig() {
     let cases = [
         (ubig!(0xf0f0), ubig!(0xff00), ubig!(0xf000)),
-        (
-            ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-            ubig!(0xff),
-            ubig!(0xee),
-        ),
-        (
-            ubig!(0xff),
-            ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-            ubig!(0xee),
-        ),
+        (ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee), ubig!(0xff), ubig!(0xee)),
+        (ubig!(0xff), ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee), ubig!(0xee)),
         (
             ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
             ubig!(0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),

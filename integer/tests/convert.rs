@@ -29,10 +29,7 @@ fn test_from_to_be_bytes() {
 fn test_ubig_from_unsigned() {
     assert_eq!(UBig::from(0xf1u8), UBig::from_be_bytes(&[0xf1]));
     assert_eq!(UBig::from(0xf123u16), UBig::from_be_bytes(&[0xf1, 0x23]));
-    assert_eq!(
-        UBig::from(0xf1234567u32),
-        UBig::from_be_bytes(&[0xf1, 0x23, 0x45, 0x67])
-    );
+    assert_eq!(UBig::from(0xf1234567u32), UBig::from_be_bytes(&[0xf1, 0x23, 0x45, 0x67]));
     assert_eq!(
         UBig::from(0xf123456701234567u64),
         UBig::from_be_bytes(&[0xf1, 0x23, 0x45, 0x67, 0x01, 0x23, 0x45, 0x67])
@@ -73,10 +70,7 @@ fn test_ubig_to_unsigned() {
     assert_eq!(u32::try_from(UBig::from(0xf1234567u32)), Ok(0xf1234567u32));
     assert!(u32::try_from(UBig::from(0x101234567u64)).is_err());
 
-    assert_eq!(
-        u64::try_from(UBig::from(0xf123456789abcdefu64)),
-        Ok(0xf123456789abcdefu64)
-    );
+    assert_eq!(u64::try_from(UBig::from(0xf123456789abcdefu64)), Ok(0xf123456789abcdefu64));
     assert!(u64::try_from(UBig::from(0x10123456789abcdefu128)).is_err());
 
     assert_eq!(
@@ -103,10 +97,7 @@ fn test_ubig_to_signed() {
     assert_eq!(i32::try_from(UBig::from(0x61234567u32)), Ok(0x61234567i32));
     assert!(i32::try_from(UBig::from(0x91234567u32)).is_err());
 
-    assert_eq!(
-        i64::try_from(UBig::from(0x3123456789abcdefu64)),
-        Ok(0x3123456789abcdefi64)
-    );
+    assert_eq!(i64::try_from(UBig::from(0x3123456789abcdefu64)), Ok(0x3123456789abcdefi64));
     assert!(i64::try_from(UBig::from(0xf123456789abcdefu64)).is_err());
 
     assert_eq!(
@@ -177,10 +168,7 @@ fn test_ubig_to_ibig() {
 fn test_ibig_to_ubig() {
     assert_eq!(UBig::try_from(IBig::from(0i32)), Ok(UBig::from(0u32)));
     assert_eq!(UBig::try_from(IBig::from(1000i32)), Ok(UBig::from(1000u32)));
-    assert_eq!(
-        UBig::try_from(&IBig::from(1000i32)),
-        Ok(UBig::from(1000u32))
-    );
+    assert_eq!(UBig::try_from(&IBig::from(1000i32)), Ok(UBig::from(1000u32)));
     assert!(UBig::try_from(IBig::from(-1000i32)).is_err());
     assert!(UBig::try_from(&IBig::from(-1000i32)).is_err());
 }
@@ -212,46 +200,22 @@ fn test_to_f32() {
     assert_eq!(ubig!(0x1000005).to_f32(), 16777220.0f32);
 
     for i in 10..80 {
-        assert_eq!(
-            (ubig!(0xfff3330) << i).to_f32(),
-            (0xfff3330 as f32) * (i as f32).exp2()
-        );
-        assert_eq!(
-            (ubig!(0xfff3331) << i).to_f32(),
-            (0xfff3330 as f32) * (i as f32).exp2()
-        );
-        assert_eq!(
-            (ubig!(0xfff3337) << i).to_f32(),
-            (0xfff3330 as f32) * (i as f32).exp2()
-        );
-        assert_eq!(
-            (ubig!(0xfff3338) << i).to_f32(),
-            (0xfff3340 as f32) * (i as f32).exp2()
-        );
+        assert_eq!((ubig!(0xfff3330) << i).to_f32(), (0xfff3330 as f32) * (i as f32).exp2());
+        assert_eq!((ubig!(0xfff3331) << i).to_f32(), (0xfff3330 as f32) * (i as f32).exp2());
+        assert_eq!((ubig!(0xfff3337) << i).to_f32(), (0xfff3330 as f32) * (i as f32).exp2());
+        assert_eq!((ubig!(0xfff3338) << i).to_f32(), (0xfff3340 as f32) * (i as f32).exp2());
         assert_eq!(
             ((ubig!(0xfff3338) << i) + ubig!(1)).to_f32(),
             (0xfff3340 as f32) * (i as f32).exp2()
         );
-        assert_eq!(
-            (ubig!(0xfff3339) << i).to_f32(),
-            (0xfff3340 as f32) * (i as f32).exp2()
-        );
-        assert_eq!(
-            (ubig!(0xfff3347) << i).to_f32(),
-            (0xfff3340 as f32) * (i as f32).exp2()
-        );
-        assert_eq!(
-            (ubig!(0xfff3348) << i).to_f32(),
-            (0xfff3340 as f32) * (i as f32).exp2()
-        );
+        assert_eq!((ubig!(0xfff3339) << i).to_f32(), (0xfff3340 as f32) * (i as f32).exp2());
+        assert_eq!((ubig!(0xfff3347) << i).to_f32(), (0xfff3340 as f32) * (i as f32).exp2());
+        assert_eq!((ubig!(0xfff3348) << i).to_f32(), (0xfff3340 as f32) * (i as f32).exp2());
         assert_eq!(
             ((ubig!(0xfff3348) << i) + ubig!(1)).to_f32(),
             (0xfff3350 as f32) * (i as f32).exp2()
         );
-        assert_eq!(
-            (ubig!(0xfff3349) << i).to_f32(),
-            (0xfff3350 as f32) * (i as f32).exp2()
-        );
+        assert_eq!((ubig!(0xfff3349) << i).to_f32(), (0xfff3350 as f32) * (i as f32).exp2());
     }
 
     assert!((ubig!(0xffffff7) << 100).to_f32() < f32::INFINITY);

@@ -17,11 +17,7 @@ fn test_gcd_ubig() {
             ubig!(0x123456789123456789123456789123456789),
             ubig!(0x123456789123456789123456789123456789),
         ),
-        (
-            ubig!(1),
-            ubig!(0x123456789123456789123456789123456789),
-            ubig!(1),
-        ),
+        (ubig!(1), ubig!(0x123456789123456789123456789123456789), ubig!(1)),
         (
             ubig!(0x123456789123456789123456789123456789),
             ubig!(0x123456789123456789123456789123456789),
@@ -59,11 +55,7 @@ fn test_gcd_ubig() {
             ubig!(0x1fffffffffffffffffffffffffffffffffffe1), // largest prime under 2^149
             ubig!(1),
         ),
-        (
-            ubig!(0x123456789123456789123456789123456789),
-            ubig!(0x987654321),
-            ubig!(0x2d),
-        ),
+        (ubig!(0x123456789123456789123456789123456789), ubig!(0x987654321), ubig!(0x2d)),
         (
             ubig!(0x123456789123456789123456789123456789),
             ubig!(0x987654321987654321987654321987654321),
@@ -112,16 +104,10 @@ fn test_gcd_ubig() {
 
         let (g, x, y) = a.gcd_ext(b);
         assert_eq!(&g, c);
-        assert_eq!(
-            x * IBig::from(a.clone()) + y * IBig::from(b.clone()),
-            IBig::from(g)
-        );
+        assert_eq!(x * IBig::from(a.clone()) + y * IBig::from(b.clone()), IBig::from(g));
         let (g, y, x) = b.gcd_ext(a);
         assert_eq!(&g, c);
-        assert_eq!(
-            x * IBig::from(a.clone()) + y * IBig::from(b.clone()),
-            IBig::from(g)
-        );
+        assert_eq!(x * IBig::from(a.clone()) + y * IBig::from(b.clone()), IBig::from(g));
     }
 }
 

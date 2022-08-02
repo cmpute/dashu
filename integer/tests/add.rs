@@ -55,16 +55,8 @@ where
 fn test_add_sub_ubig() {
     let test_cases = [
         (ubig!(3), ubig!(4), ubig!(7)),
-        (
-            ubig!(0xffffffffffffffff),
-            ubig!(1),
-            ubig!(0x10000000000000000),
-        ),
-        (
-            ubig!(0x10000000000000003),
-            ubig!(4),
-            ubig!(0x10000000000000007),
-        ),
+        (ubig!(0xffffffffffffffff), ubig!(1), ubig!(0x10000000000000000)),
+        (ubig!(0x10000000000000003), ubig!(4), ubig!(0x10000000000000007)),
         (
             ubig!(0xeeeeeeeeeeeeeeeeffffffffffffffff),
             ubig!(1),
@@ -116,11 +108,7 @@ fn test_add_sub_ibig() {
         (ibig!(3), ibig!(-4), ibig!(-1)),
         (ibig!(-3), ibig!(4), ibig!(1)),
         (ibig!(-3), ibig!(-4), ibig!(-7)),
-        (
-            ibig!(0x10000000000000000),
-            ibig!(-4),
-            ibig!(0xfffffffffffffffc),
-        ),
+        (ibig!(0x10000000000000000), ibig!(-4), ibig!(0xfffffffffffffffc)),
         (
             ibig!(0x10000000000000000),
             ibig!(0x200000000000000000000000000000000),
@@ -238,11 +226,7 @@ fn test_add_sub_ubig_ibig() {
     let test_cases = [
         (ubig!(3), ibig!(4), ibig!(7)),
         (ubig!(3), ibig!(-4), ibig!(-1)),
-        (
-            ubig!(0x10000000000000000),
-            ibig!(-4),
-            ibig!(0xfffffffffffffffc),
-        ),
+        (ubig!(0x10000000000000000), ibig!(-4), ibig!(0xfffffffffffffffc)),
         (
             ubig!(0x10000000000000000),
             ibig!(0x200000000000000000000000000000000),

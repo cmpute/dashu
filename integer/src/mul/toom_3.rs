@@ -3,11 +3,13 @@
 use crate::{
     add,
     arch::word::{SignedWord, Word},
-    div, math,
+    div,
+    helper_macros::debug_assert_zero,
+    math,
     memory::{self, Memory},
     mul::{self, helpers},
     shift,
-    sign::Sign::{self, *}, helper_macros::debug_assert_zero,
+    sign::Sign::{self, *},
 };
 use alloc::alloc::Layout;
 
@@ -166,11 +168,11 @@ pub fn add_signed_mul_same_len(
     // Now t1 = 3V(0) + V(2) - 12V(inf)
     {
         let (c_eval, mut memory) = memory.allocate_slice_fill(2 * n3 + 2, 0);
-        let c_eval_short = &mut c_eval[..2 * n3_short];
-        debug_assert_zero!(mul::add_signed_mul_same_len(c_eval_short, Positive, a2, b2, &mut memory));
-        carry_c2 += add::add_signed_in_place(&mut c[2 * n3..4 * n3 + 2], -sign, c_eval_short);
-        carry += add::add_signed_same_len_in_place(&mut c[4 * n3..], sign, c_eval_short);
-        c_eval[2 * n3_short] = mul::mul_word_in_place(c_eval_short, 12);
+        let c_short = &mut c_eval[..2 * n3_short];
+        debug_assert_zero!(mul::add_signed_mul_same_len(c_short, Positive, a2, b2, &mut memory));
+        carry_c2 += add::add_signed_in_place(&mut c[2 * n3..4 * n3 + 2], -sign, c_short);
+        carry += add::add_signed_same_len_in_place(&mut c[4 * n3..], sign, c_short);
+        c_eval[2 * n3_short] = mul::mul_word_in_place(c_short, 12);
         // 3V(0) + V(2) - 12V(inf) is never negative
         debug_assert_zero!(add::sub_in_place(t1, &c_eval[..2 * n3_short + 1]));
     }

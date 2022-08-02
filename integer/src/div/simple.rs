@@ -72,10 +72,7 @@ pub(crate) fn div_rem_highest_word(
     debug_assert!(lhs_lo_len >= n);
     debug_assert!(lhs_top
         .cmp(rhs_top)
-        .then(cmp::cmp_same_len(
-            &lhs_lo[lhs_lo_len - rhs_lo.len()..],
-            rhs_lo
-        ))
+        .then(cmp::cmp_same_len(&lhs_lo[lhs_lo_len - rhs_lo.len()..], rhs_lo))
         .is_le());
 
     // lhs0 = lhs_top

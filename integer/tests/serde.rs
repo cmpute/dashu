@@ -5,14 +5,8 @@ use serde_test::{assert_de_tokens, assert_tokens, Token};
 fn test_ubig_serde() {
     assert_tokens(&ubig!(0), &[Token::Seq { len: Some(0) }, Token::SeqEnd]);
     assert_de_tokens(&ubig!(0), &[Token::Seq { len: None }, Token::SeqEnd]);
-    assert_tokens(
-        &ubig!(17),
-        &[Token::Seq { len: Some(1) }, Token::U64(17), Token::SeqEnd],
-    );
-    assert_de_tokens(
-        &ubig!(17),
-        &[Token::Seq { len: None }, Token::U8(17), Token::SeqEnd],
-    );
+    assert_tokens(&ubig!(17), &[Token::Seq { len: Some(1) }, Token::U64(17), Token::SeqEnd]);
+    assert_de_tokens(&ubig!(17), &[Token::Seq { len: None }, Token::U8(17), Token::SeqEnd]);
     assert_tokens(
         &ubig!(0x123451234567890abcdef),
         &[

@@ -83,10 +83,7 @@ pub fn gcd_ext_word(lhs: &mut [Word], rhs: Word) -> (Word, SignedWord, Sign) {
 }
 
 pub fn gcd_ext_dword(lhs: &mut [Word], rhs: DoubleWord) -> (DoubleWord, SignedDoubleWord, Sign) {
-    debug_assert!(
-        rhs > Word::MAX as DoubleWord,
-        "call gcd_ext_word when rhs is small"
-    );
+    debug_assert!(rhs > Word::MAX as DoubleWord, "call gcd_ext_word when rhs is small");
     let rem = div::div_by_dword_in_place(lhs, rhs);
     if rem == 0 {
         *lhs.first_mut().unwrap() = 1;

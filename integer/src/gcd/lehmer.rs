@@ -7,13 +7,14 @@ use crate::{
     bits::locate_top_word_plus_one,
     cmp::cmp_in_place,
     div,
+    helper_macros::debug_assert_zero,
     memory::{self, Memory},
     mul,
     primitive::{
         extend_word, highest_dword, signed_extend_word, split_dword, split_signed_dword, WORD_BITS,
     },
     shift,
-    sign::Sign, helper_macros::debug_assert_zero,
+    sign::Sign,
 };
 
 /// Remove the leading zero words in an owning reference. Return

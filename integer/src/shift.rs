@@ -2,7 +2,8 @@
 
 use crate::{
     arch::word::Word,
-    primitive::{double_word, extend_word, split_dword, WORD_BITS}, math::shr_word,
+    math::shr_word,
+    primitive::{double_word, extend_word, split_dword, WORD_BITS},
 };
 
 /// Shift left by less than WORD_BITS in place.

@@ -72,34 +72,25 @@ fn test_convert() {
     assert_eq!(ring.convert(0), ring.convert(false));
     assert_eq!(ring.convert(1), ring.convert(true));
 
-    let ring = ModuloRing::new(ubig!(
-        _1000000000000000000000000000000000000000000000000000000000000
-    ));
+    let ring =
+        ModuloRing::new(ubig!(_1000000000000000000000000000000000000000000000000000000000000));
     let x = ring.convert(6);
     let y = ring.convert(ubig!(333333333333333333333333333333));
     assert_eq!(
         x,
-        ring.convert(ubig!(
-            _1000000000000000000000000000000000000000000000000000000000006
-        ))
+        ring.convert(ubig!(_1000000000000000000000000000000000000000000000000000000000006))
     );
     assert_eq!(
         x,
-        ring.convert(&ubig!(
-            _1000000000000000000000000000000000000000000000000000000000006
-        ))
+        ring.convert(&ubig!(_1000000000000000000000000000000000000000000000000000000000006))
     );
     assert_ne!(
         x,
-        ring.convert(ubig!(
-            _1000000000000000000000000000000000000000000000000000000000007
-        ))
+        ring.convert(ubig!(_1000000000000000000000000000000000000000000000000000000000007))
     );
     assert_eq!(
         y,
-        ring.convert(ubig!(
-            _7000000000000000000000000000000333333333333333333333333333333
-        ))
+        ring.convert(ubig!(_7000000000000000000000000000000333333333333333333333333333333))
     );
 }
 
@@ -209,11 +200,7 @@ fn test_mul() {
             ring2.convert(ubig!(170100953649249045221461413048)),
             ring2.convert(ubig!(399394418012748758198974935472)),
         ),
-        (
-            ring3.convert(&big - ubig!(1)),
-            ring3.convert(&big - ubig!(1)),
-            ring3.convert(1),
-        ),
+        (ring3.convert(&big - ubig!(1)), ring3.convert(&big - ubig!(1)), ring3.convert(1)),
     ];
 
     let all_test_cases = test_cases
@@ -388,12 +375,6 @@ fn test_format() {
         format!("{:#o}", x),
         "0o1447626234640431647336507777777777 (mod 0o1447626234640431647336510000000000)"
     );
-    assert_eq!(
-        format!("{:x}", x),
-        "c9f2c9cd04674edea3fffffff (mod c9f2c9cd04674edea40000000)"
-    );
-    assert_eq!(
-        format!("{:X}", x),
-        "C9F2C9CD04674EDEA3FFFFFFF (mod C9F2C9CD04674EDEA40000000)"
-    );
+    assert_eq!(format!("{:x}", x), "c9f2c9cd04674edea3fffffff (mod c9f2c9cd04674edea40000000)");
+    assert_eq!(format!("{:X}", x), "C9F2C9CD04674EDEA3FFFFFFF (mod C9F2C9CD04674EDEA40000000)");
 }

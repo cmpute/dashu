@@ -268,21 +268,12 @@ mod tests {
     fn test_try_from_sign_magnitude() {
         assert_eq!(i32::try_from_sign_magnitude(Positive, 0), Ok(0));
         assert_eq!(i32::try_from_sign_magnitude(Positive, 5), Ok(5));
-        assert_eq!(
-            i32::try_from_sign_magnitude(Positive, 0x7fffffff),
-            Ok(0x7fffffff)
-        );
+        assert_eq!(i32::try_from_sign_magnitude(Positive, 0x7fffffff), Ok(0x7fffffff));
         assert!(i32::try_from_sign_magnitude(Positive, 0x80000000).is_err());
         assert_eq!(i32::try_from_sign_magnitude(Negative, 0), Ok(0));
         assert_eq!(i32::try_from_sign_magnitude(Negative, 5), Ok(-5));
-        assert_eq!(
-            i32::try_from_sign_magnitude(Negative, 0x7fffffff),
-            Ok(-0x7fffffff)
-        );
-        assert_eq!(
-            i32::try_from_sign_magnitude(Negative, 0x80000000),
-            Ok(-0x80000000)
-        );
+        assert_eq!(i32::try_from_sign_magnitude(Negative, 0x7fffffff), Ok(-0x7fffffff));
+        assert_eq!(i32::try_from_sign_magnitude(Negative, 0x80000000), Ok(-0x80000000));
         assert!(i32::try_from_sign_magnitude(Negative, 0x80000001).is_err());
         assert!(i32::try_from_sign_magnitude(Negative, 0xffffffff).is_err());
     }

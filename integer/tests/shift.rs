@@ -12,14 +12,8 @@ fn test_ubig_shl() {
 
     assert_eq!(ubig!(0xef) << 0, ubig!(0xef));
     assert_eq!(ubig!(0xef) << 4, ubig!(0xef0));
-    assert_eq!(
-        ubig!(0xef) << 128,
-        ubig!(0xef00000000000000000000000000000000)
-    );
-    assert_eq!(
-        ubig!(0xef) << 124,
-        ubig!(0xef0000000000000000000000000000000)
-    );
+    assert_eq!(ubig!(0xef) << 128, ubig!(0xef00000000000000000000000000000000));
+    assert_eq!(ubig!(0xef) << 124, ubig!(0xef0000000000000000000000000000000));
     assert_eq!(ubig!(1) << 128, ubig!(0x100000000000000000000000000000000));
     assert_eq!(
         ubig!(1) << 1024,
@@ -131,22 +125,10 @@ fn test_ubig_shr() {
         ubig!(0x0123456789abcdef0123456789abcdef0123456789abcdef)
     );
 
-    assert_eq!(
-        ubig!(0x0123456789abcdef0123456789abcdef0123456789abcdef) >> 1000000,
-        ubig!(0)
-    );
-    assert_eq!(
-        &ubig!(0x0123456789abcdef0123456789abcdef0123456789abcdef) >> 1000000,
-        ubig!(0)
-    );
-    assert_eq!(
-        ubig!(0x0123456789abcdef0123456789abcdef0123456789abcdef) >> 1000001,
-        ubig!(0)
-    );
-    assert_eq!(
-        &ubig!(0x0123456789abcdef0123456789abcdef0123456789abcdef) >> 1000001,
-        ubig!(0)
-    );
+    assert_eq!(ubig!(0x0123456789abcdef0123456789abcdef0123456789abcdef) >> 1000000, ubig!(0));
+    assert_eq!(&ubig!(0x0123456789abcdef0123456789abcdef0123456789abcdef) >> 1000000, ubig!(0));
+    assert_eq!(ubig!(0x0123456789abcdef0123456789abcdef0123456789abcdef) >> 1000001, ubig!(0));
+    assert_eq!(&ubig!(0x0123456789abcdef0123456789abcdef0123456789abcdef) >> 1000001, ubig!(0));
 
     assert_eq!(
         ubig!(0x0123456789abcdef0123456789abcdef0123456789abcdef) >> 4,
@@ -214,11 +196,7 @@ fn test_ibig_shr() {
         ((ibig!(0xff) << 1000) + ibig!(1), 1000, ibig!(0xff)),
         (ibig!(-0xff) << 1000, 1000, ibig!(-0xff)),
         ((ibig!(-0xff) << 1000) - ibig!(1), 1000, ibig!(-0x100)),
-        (
-            (ibig!(-0xff) << 1000) - (ibig!(1) << 999),
-            1000,
-            ibig!(-0x100),
-        ),
+        ((ibig!(-0xff) << 1000) - (ibig!(1) << 999), 1000, ibig!(-0x100)),
         (ibig!(-0xff) << 1000, 2000, ibig!(-1)),
     ];
     for (a, b, c) in &test_cases {

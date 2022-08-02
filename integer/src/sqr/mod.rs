@@ -4,8 +4,9 @@ use alloc::alloc::Layout;
 
 use crate::{
     arch::word::Word,
+    helper_macros::debug_assert_zero,
     memory::{self, Memory},
-    mul, Sign, helper_macros::debug_assert_zero,
+    mul, Sign,
 };
 
 mod simple;

@@ -44,7 +44,9 @@ mod repr {
         add,
         arch::word::{DoubleWord, Word},
         buffer::Buffer,
-        cmp, div, gcd, memory,
+        cmp, div, gcd,
+        helper_macros::debug_assert_zero,
+        memory,
         memory::MemoryAllocation,
         mul,
         primitive::{shrink_dword, PrimitiveSigned},
@@ -52,7 +54,7 @@ mod repr {
             Repr,
             TypedRepr::{self, *},
             TypedReprRef::{self, *},
-        }, helper_macros::debug_assert_zero,
+        },
     };
     use core::cmp::Ordering;
 
@@ -216,12 +218,7 @@ mod repr {
         // residue = g - rhs * b
         let brhs_len = rhs_clone.len() + b.len();
         let (residue, mut memory) = memory.allocate_slice_fill(brhs_len + 1, 0);
-        mul::multiply(
-            &mut residue[..brhs_len],
-            rhs_clone,
-            &b,
-            &mut memory,
-        );
+        mul::multiply(&mut residue[..brhs_len], rhs_clone, &b, &mut memory);
         match b_sign {
             Sign::Negative => {
                 *residue.last_mut().unwrap() = add::add_in_place(residue, &g) as Word;

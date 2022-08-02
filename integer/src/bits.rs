@@ -995,11 +995,7 @@ mod tests {
     #[test]
     fn test_and_not() {
         let cases = [
-            (
-                UBig::from(0xf0f0u16),
-                UBig::from(0xff00u16),
-                UBig::from(0xf0u16),
-            ),
+            (UBig::from(0xf0f0u16), UBig::from(0xff00u16), UBig::from(0xf0u16)),
             (
                 UBig::from(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeu128),
                 UBig::from(0xffu8),

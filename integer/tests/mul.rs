@@ -188,26 +188,14 @@ fn test_sqr() {
         (ubig!(1), ubig!(1)),
         (ubig!(10), ubig!(100)),
         (ubig!(1) << 16, ubig!(1) << 32),
-        (
-            (ubig!(1) << 64) - ubig!(1),
-            (ubig!(1) << 128) - (ubig!(1) << 65) + ubig!(1),
-        ),
-        (
-            (ubig!(1) << 128) - ubig!(2),
-            (ubig!(1) << 256) - (ubig!(1) << 130) + ubig!(4),
-        ),
-        (
-            (ubig!(1) << 128) - ubig!(2),
-            (ubig!(1) << 256) - (ubig!(1) << 130) + ubig!(4),
-        ),
+        ((ubig!(1) << 64) - ubig!(1), (ubig!(1) << 128) - (ubig!(1) << 65) + ubig!(1)),
+        ((ubig!(1) << 128) - ubig!(2), (ubig!(1) << 256) - (ubig!(1) << 130) + ubig!(4)),
+        ((ubig!(1) << 128) - ubig!(2), (ubig!(1) << 256) - (ubig!(1) << 130) + ubig!(4)),
     ];
 
     for (a, b) in test_cases {
         assert_eq!(a.square(), b);
-        assert_eq!(
-            IBig::from_parts(dashu_int::Sign::Negative, a.clone()).square(),
-            b
-        );
+        assert_eq!(IBig::from_parts(dashu_int::Sign::Negative, a.clone()).square(), b);
     }
 
     // 3^[25, 50, 100, 200, 400, 800]
@@ -223,9 +211,6 @@ fn test_sqr() {
         let a = ab.first().unwrap();
         let b = ab.last().unwrap();
         assert_eq!(&a.square(), b);
-        assert_eq!(
-            &IBig::from_parts(dashu_int::Sign::Negative, a.clone()).square(),
-            b
-        );
+        assert_eq!(&IBig::from_parts(dashu_int::Sign::Negative, a.clone()).square(), b);
     }
 }

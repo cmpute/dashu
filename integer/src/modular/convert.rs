@@ -3,12 +3,13 @@
 use crate::{
     arch::word::{DoubleWord, Word},
     buffer::Buffer,
+    helper_macros::debug_assert_zero,
     ibig::IBig,
     primitive::shrink_dword,
     repr::{Repr, TypedReprRef::*},
     shift,
     sign::Sign::*,
-    ubig::UBig, helper_macros::debug_assert_zero,
+    ubig::UBig,
 };
 use dashu_base::UnsignedAbs;
 

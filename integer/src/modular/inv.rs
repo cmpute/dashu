@@ -4,10 +4,11 @@ use crate::{
     bits::locate_top_word_plus_one,
     buffer::Buffer,
     gcd,
+    helper_macros::debug_assert_zero,
     memory::MemoryAllocation,
     primitive::{lowest_dword, PrimitiveSigned},
     shift::{shl_in_place, shr_in_place},
-    sign::Sign, helper_macros::debug_assert_zero,
+    sign::Sign,
 };
 
 use super::{

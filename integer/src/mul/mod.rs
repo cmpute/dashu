@@ -3,10 +3,11 @@
 use crate::{
     add,
     arch::word::{DoubleWord, SignedWord, Word},
+    helper_macros::debug_assert_zero,
     math,
     memory::{self, Memory},
     primitive::{double_word, extend_word, split_dword},
-    sign::Sign, helper_macros::debug_assert_zero,
+    sign::Sign,
 };
 use alloc::alloc::Layout;
 use core::mem;
@@ -41,10 +42,7 @@ pub fn mul_word_in_place(words: &mut [Word], rhs: Word) -> Word {
 /// Returns carry as a double word.
 #[must_use]
 pub fn mul_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleWord {
-    debug_assert!(
-        rhs > Word::MAX as DoubleWord,
-        "call mul_word_in_place when rhs is small"
-    );
+    debug_assert!(rhs > Word::MAX as DoubleWord, "call mul_word_in_place when rhs is small");
 
     // chunk the words into double words, and do 2by2 multiplications
     let mut dwords = words.chunks_exact_mut(2);
@@ -176,12 +174,7 @@ pub fn memory_requirement_exact(total_len: usize, smaller_len: usize) -> Layout 
 
 /// c = a * b, c must be filled with zeros.
 #[inline]
-pub fn multiply<'a>(
-    c: &mut [Word],
-    a: &'a [Word],
-    b: &'a [Word],
-    memory: &mut Memory,
-) {
+pub fn multiply<'a>(c: &mut [Word], a: &'a [Word], b: &'a [Word], memory: &mut Memory) {
     debug_assert!(c.iter().all(|&v| v == 0));
     debug_assert_zero!(add_signed_mul(c, Sign::Positive, a, b, memory));
 }

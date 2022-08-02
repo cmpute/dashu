@@ -3,11 +3,11 @@
 use crate::{
     arch::word::{DoubleWord, Word},
     fast_div::{FastDivideNormalized, FastDivideNormalized2},
+    helper_macros::debug_assert_zero,
     math::shl_dword,
     memory::{self, Memory},
     primitive::{double_word, extend_word, highest_dword, lowest_dword, split_dword, WORD_BITS},
     shift,
-    helper_macros::debug_assert_zero,
 };
 use alloc::alloc::Layout;
 
@@ -114,10 +114,7 @@ pub(crate) fn fast_rem_by_normalized_word(
 ///
 /// Returns words % rhs. Panics if `words` is too short (<= 2 words)
 pub fn div_by_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleWord {
-    debug_assert!(
-        rhs > Word::MAX as DoubleWord,
-        "call div_by_word_in_place when rhs is small"
-    );
+    debug_assert!(rhs > Word::MAX as DoubleWord, "call div_by_word_in_place when rhs is small");
     debug_assert!(words.len() >= 2);
 
     if rhs.is_power_of_two() {
@@ -178,10 +175,7 @@ pub(crate) fn fast_div_by_dword_in_place(
 
 /// words % rhs, panics if `words` is too short (<= 2 words) or rhs fits in a single Word.
 pub fn rem_by_dword(words: &[Word], rhs: DoubleWord) -> DoubleWord {
-    debug_assert!(
-        rhs > Word::MAX as DoubleWord,
-        "call div_by_word_in_place when rhs is small"
-    );
+    debug_assert!(rhs > Word::MAX as DoubleWord, "call div_by_word_in_place when rhs is small");
     debug_assert!(words.len() >= 2);
 
     if rhs.is_power_of_two() {

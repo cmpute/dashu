@@ -4,12 +4,13 @@ use crate::{
     buffer::Buffer,
     div,
     error::panic_divide_by_0,
+    helper_macros::debug_assert_zero,
     math::shl_dword,
     memory::MemoryAllocation,
     primitive::{double_word, extend_word, shrink_dword},
     repr::TypedRepr,
     shift,
-    ubig::UBig, helper_macros::debug_assert_zero,
+    ubig::UBig,
 };
 use alloc::boxed::Box;
 

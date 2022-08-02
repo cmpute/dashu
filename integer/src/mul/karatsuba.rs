@@ -3,8 +3,8 @@
 use crate::{
     add,
     arch::word::{SignedWord, Word},
-    math,
     helper_macros::debug_assert_zero,
+    math,
     memory::{self, Memory},
     mul::{self, helpers},
     sign::Sign::{self, *},

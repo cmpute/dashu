@@ -1,10 +1,11 @@
 use crate::{
-    arch::word::Word,
     add,
-    div,
+    arch::word::Word,
+    bits::locate_top_word_plus_one,
+    cmp, div,
     error::panic_different_rings,
+    helper_macros::debug_assert_zero,
     math,
-    cmp,
     memory::{self, Memory, MemoryAllocation},
     modular::{
         modulo::{Modulo, ModuloRepr, ModuloSingleRaw},
@@ -13,7 +14,7 @@ use crate::{
     mul,
     primitive::extend_word,
     shift,
-    sign::Sign::Positive, bits::locate_top_word_plus_one, helper_macros::debug_assert_zero,
+    sign::Sign::Positive,
 };
 use alloc::alloc::Layout;
 use core::ops::{Mul, MulAssign};
@@ -156,7 +157,8 @@ impl ModuloRingLarge {
 
         // return product % normalized_modulus
         if na + nb > n {
-            let _overflow = div::div_rem_in_place(product, modulus, self.fast_div_top(), &mut memory);
+            let _overflow =
+                div::div_rem_in_place(product, modulus, self.fast_div_top(), &mut memory);
             &product[..n]
         } else {
             if cmp::cmp_same_len(product, modulus).is_ge() {

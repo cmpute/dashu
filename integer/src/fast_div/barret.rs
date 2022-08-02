@@ -370,13 +370,7 @@ mod tests {
             let a12 = double_word(a1, a2);
 
             let fast_div = FastDivideNormalized2::new(d);
-            assert_eq!(
-                fast_div.div_rem(a0, a12),
-                (q, r),
-                "failed at {:?} / {}",
-                (a0, a12),
-                d
-            );
+            assert_eq!(fast_div.div_rem(a0, a12), (q, r), "failed at {:?} / {}", (a0, a12), d);
         }
 
         // 4by2 div
