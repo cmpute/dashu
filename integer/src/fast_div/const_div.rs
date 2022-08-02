@@ -9,7 +9,7 @@ use crate::{
     primitive::{double_word, extend_word, shrink_dword},
     repr::TypedRepr,
     shift,
-    ubig::UBig,
+    ubig::UBig, helper_macros::debug_assert_zero,
 };
 use alloc::boxed::Box;
 
@@ -117,8 +117,7 @@ impl ConstLargeDivisor {
 
     pub fn divisor(&self) -> Buffer {
         let mut buffer = Buffer::from(self.normalized_modulus.as_ref());
-        let low_bits = shift::shr_in_place(&mut buffer, self.shift);
-        debug_assert!(low_bits == 0);
+        debug_assert_zero!(shift::shr_in_place(&mut buffer, self.shift));
         buffer
     }
 

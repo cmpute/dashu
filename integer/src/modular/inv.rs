@@ -7,7 +7,7 @@ use crate::{
     memory::MemoryAllocation,
     primitive::{lowest_dword, PrimitiveSigned},
     shift::{shl_in_place, shr_in_place},
-    sign::Sign,
+    sign::Sign, helper_macros::debug_assert_zero,
 };
 
 use super::{
@@ -74,12 +74,10 @@ impl ModuloRingLarge {
         // prepare modulus
         let mut modulus = Buffer::allocate_exact(self.normalized_modulus().len());
         modulus.push_slice(self.normalized_modulus());
-        let low_bits = shr_in_place(&mut modulus, self.shift());
-        debug_assert!(low_bits == 0);
+        debug_assert_zero!(shr_in_place(&mut modulus, self.shift()));
 
         // prepare modulo value
-        let low_bits = shr_in_place(&mut raw.0, self.shift());
-        debug_assert!(low_bits == 0);
+        debug_assert_zero!(shr_in_place(&mut raw.0, self.shift()));
         let raw_len = locate_top_word_plus_one(&raw.0);
 
         // call extended gcd

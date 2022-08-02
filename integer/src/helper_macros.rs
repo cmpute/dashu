@@ -1,3 +1,12 @@
+/// Assert the expression value is zero in debug mode, but the expression will
+/// still run in release mode. It's usually used for assertions on overflow.
+macro_rules! debug_assert_zero {
+    ($($arg:tt)*) => {{
+        let __check__ = $($arg)*;
+        debug_assert_eq!(__check__ as $crate::arch::word::DoubleWord, 0);
+    }};
+}
+
 /// Implement `impl Op<B> for &A` by forwarding to `impl Op<B> for A`, including &B.
 macro_rules! forward_binop_first_arg_by_value {
     (impl $trait:ident<$t2:ty> for $t1:ty, $method:ident) => {
@@ -437,6 +446,7 @@ macro_rules! forward_ibig_ubig_binop_to_repr {
     };
 }
 
+pub(crate) use debug_assert_zero;
 pub(crate) use forward_binop_assign_arg_by_value;
 pub(crate) use forward_binop_assign_by_taking;
 pub(crate) use forward_binop_first_arg_by_value;

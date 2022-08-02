@@ -157,7 +157,6 @@ mod repr {
             TypedReprRef::{self, *},
         },
         shift,
-        sign::Sign::*,
         sqr,
     };
 
@@ -282,9 +281,7 @@ mod repr {
             res_len,
             lhs.len().min(rhs.len()),
         ));
-        let overflow =
-            mul::add_signed_mul(&mut buffer, Positive, lhs, rhs, &mut allocation.memory());
-        debug_assert!(overflow == 0);
+        mul::multiply(&mut buffer, lhs, rhs, &mut allocation.memory());
         Repr::from_buffer(buffer)
     }
 

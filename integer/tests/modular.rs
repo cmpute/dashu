@@ -197,6 +197,7 @@ fn test_add_sub() {
 
 #[test]
 fn test_mul() {
+    // TODO(next): add more test cases
     let ring1 = ModuloRing::new(ubig!(100));
     let ring2 = ModuloRing::new(ubig!(1000000000000000000000000000000));
     let big = ubig!(10).pow(10000);

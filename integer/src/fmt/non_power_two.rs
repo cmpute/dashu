@@ -202,10 +202,11 @@ impl PreparedMedium {
         let mut low_groups = [0; CHUNK_LEN];
         let mut num_low_groups = 0;
 
+        let shift = radix_info.range_per_word.leading_zeros();
         while buffer_len > 1 {
             let rem = div::fast_div_by_word_in_place(
                 &mut buffer[..buffer_len],
-                radix_info.range_per_word,
+                shift,
                 radix_info.fast_div_range_per_word,
             );
             low_groups[num_low_groups] = rem;
@@ -331,10 +332,11 @@ impl PreparedLarge {
 
         let mut groups = [0; CHUNK_LEN];
 
+        let shift = radix_info.range_per_word.leading_zeros();
         for group in groups.iter_mut() {
             *group = div::fast_div_by_word_in_place(
                 &mut buffer[..buffer_len],
-                radix_info.range_per_word,
+                shift,
                 radix_info.fast_div_range_per_word,
             );
             while buffer_len != 0 && buffer[buffer_len - 1] == 0 {

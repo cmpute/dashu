@@ -6,7 +6,7 @@ use crate::{
     math,
     memory::{self, Memory},
     primitive::{double_word, extend_word, split_dword},
-    sign::Sign,
+    sign::Sign, helper_macros::debug_assert_zero,
 };
 use alloc::alloc::Layout;
 use core::mem;
@@ -79,6 +79,10 @@ pub fn mul_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleWord {
 /// Returns carry.
 #[must_use]
 pub fn mul_word_in_place_with_carry(words: &mut [Word], rhs: Word, mut carry: Word) -> Word {
+    if rhs == 0 {
+        return 0;
+    }
+
     for a in words {
         let (v_lo, v_hi) = math::mul_add_carry(*a, rhs, carry);
         *a = v_lo;
@@ -93,6 +97,10 @@ pub fn mul_word_in_place_with_carry(words: &mut [Word], rhs: Word, mut carry: Wo
 #[must_use]
 pub fn add_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) -> Word {
     assert!(words.len() == rhs.len());
+    if mult == 0 {
+        return 0;
+    }
+
     let mut carry: Word = 0;
     for (a, b) in words.iter_mut().zip(rhs.iter()) {
         let (v_lo, v_hi) = math::mul_add_2carry(mult, *b, *a, carry);
@@ -108,6 +116,10 @@ pub fn add_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Wor
 #[must_use]
 pub fn add_mul_word_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) -> Word {
     assert!(words.len() >= rhs.len());
+    if mult == 0 {
+        return 0;
+    }
+
     let n = rhs.len();
     let mut carry = add_mul_word_same_len_in_place(&mut words[..n], mult, rhs);
     if words.len() > n {
@@ -122,6 +134,10 @@ pub fn add_mul_word_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) -> Wo
 #[must_use]
 pub fn sub_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) -> Word {
     assert!(words.len() == rhs.len());
+    if mult == 0 {
+        return 0;
+    }
+
     // carry is in -Word::MAX..0
     // carry_plus_max = carry + Word::MAX
     let mut carry_plus_max = Word::MAX;
@@ -158,6 +174,18 @@ pub fn memory_requirement_exact(total_len: usize, smaller_len: usize) -> Layout 
     memory_requirement_up_to(total_len, smaller_len)
 }
 
+/// c = a * b, c must be filled with zeros.
+#[inline]
+pub fn multiply<'a>(
+    c: &mut [Word],
+    a: &'a [Word],
+    b: &'a [Word],
+    memory: &mut Memory,
+) {
+    debug_assert!(c.iter().all(|&v| v == 0));
+    debug_assert_zero!(add_signed_mul(c, Sign::Positive, a, b, memory));
+}
+
 /// c += sign * a * b
 ///
 /// Returns carry.
@@ -184,7 +212,7 @@ pub fn add_signed_mul<'a>(
     }
 }
 
-/// c += sign * a * b
+/// c += sign * a * b with len(a) == len(b)
 ///
 /// Returns carry.
 #[must_use]

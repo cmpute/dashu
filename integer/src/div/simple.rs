@@ -8,7 +8,6 @@ use crate::{
     mul,
     primitive::{double_word, highest_dword, split_dword},
 };
-use core::cmp::Ordering;
 
 /// Division in place using the simple algorithm.
 ///
@@ -32,7 +31,7 @@ pub(crate) fn div_rem_in_place(
     let lhs_len = lhs.len();
     assert!(lhs_len >= n);
 
-    let quotient_carry = cmp::cmp_same_len(&lhs[lhs_len - n..], rhs) >= Ordering::Equal;
+    let quotient_carry = cmp::cmp_same_len(&lhs[lhs_len - n..], rhs).is_ge();
     if quotient_carry {
         let overflow = add::sub_same_len_in_place(&mut lhs[lhs_len - n..], rhs);
         debug_assert!(!overflow);

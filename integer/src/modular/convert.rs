@@ -8,7 +8,7 @@ use crate::{
     repr::{Repr, TypedReprRef::*},
     shift,
     sign::Sign::*,
-    ubig::UBig,
+    ubig::UBig, helper_macros::debug_assert_zero,
 };
 use dashu_base::UnsignedAbs;
 
@@ -131,8 +131,7 @@ impl ModuloLargeRaw {
 
     pub fn residue(&self, ring: &ModuloRingLarge) -> Buffer {
         let mut buffer: Buffer = self.0.as_ref().into();
-        let low_bits = shift::shr_in_place(&mut buffer, ring.shift());
-        debug_assert!(low_bits == 0);
+        debug_assert_zero!(shift::shr_in_place(&mut buffer, ring.shift()));
         buffer
     }
 }

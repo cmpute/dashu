@@ -690,7 +690,7 @@ mod repr {
             TypedRepr::{self, *},
             TypedReprRef::{self, *},
         },
-        shift,
+        shift, helper_macros::debug_assert_zero,
     };
 
     impl DivRem<TypedRepr> for TypedRepr {
@@ -802,12 +802,11 @@ mod repr {
     }
 
     fn div_rem_large(mut lhs: Buffer, mut rhs: Buffer) -> (Repr, Repr) {
-        // TODO: trim trailing words before division?
+        // TODO: trim trailing zero words before division?
         let shift = div_rem_in_lhs(&mut lhs, &mut rhs);
         let n = rhs.len();
         rhs.copy_from_slice(&lhs[..n]);
-        let low_bits = shift::shr_in_place(&mut rhs, shift);
-        debug_assert!(low_bits == 0);
+        debug_assert_zero!(shift::shr_in_place(&mut rhs, shift));
         lhs.erase_front(n);
         (Repr::from_buffer(lhs), Repr::from_buffer(rhs))
     }
@@ -1033,8 +1032,7 @@ mod repr {
         let shift = div_rem_in_lhs(&mut lhs, &mut rhs);
         let n = rhs.len();
         rhs.copy_from_slice(&lhs[..n]);
-        let low_bits = shift::shr_in_place(&mut rhs, shift);
-        debug_assert!(low_bits == 0);
+        debug_assert_zero!(shift::shr_in_place(&mut rhs, shift));
         Repr::from_buffer(rhs)
     }
 }

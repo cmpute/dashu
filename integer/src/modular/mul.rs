@@ -1,8 +1,10 @@
 use crate::{
     arch::word::Word,
+    add,
     div,
     error::panic_different_rings,
     math,
+    cmp,
     memory::{self, Memory, MemoryAllocation},
     modular::{
         modulo::{Modulo, ModuloRepr, ModuloSingleRaw},
@@ -11,7 +13,7 @@ use crate::{
     mul,
     primitive::extend_word,
     shift,
-    sign::Sign::Positive,
+    sign::Sign::Positive, bits::locate_top_word_plus_one, helper_macros::debug_assert_zero,
 };
 use alloc::alloc::Layout;
 use core::ops::{Mul, MulAssign};
@@ -143,13 +145,25 @@ impl ModuloRingLarge {
         let n = modulus.len();
         debug_assert!(a.len() == n && b.len() == n);
 
-        let (product, mut memory) = memory.allocate_slice_fill::<Word>(2 * n, 0);
-        let overflow = mul::add_signed_mul_same_len(product, Positive, a, b, &mut memory);
-        assert_eq!(overflow, 0);
-        shift::shr_in_place(product, self.shift());
+        // trim the leading zeros in a, b
+        let na = locate_top_word_plus_one(a);
+        let nb = locate_top_word_plus_one(b);
 
-        let _overflow = div::div_rem_in_place(product, modulus, self.fast_div_top(), &mut memory);
-        &product[..n]
+        // product = (a * b >> self.shift())
+        let (product, mut memory) = memory.allocate_slice_fill::<Word>(n.max(na + nb), 0);
+        mul::multiply(&mut product[..na + nb], &a[..na], &b[..nb], &mut memory);
+        debug_assert_zero!(shift::shr_in_place(product, self.shift()));
+
+        // return product % normalized_modulus
+        if na + nb > n {
+            let _overflow = div::div_rem_in_place(product, modulus, self.fast_div_top(), &mut memory);
+            &product[..n]
+        } else {
+            if cmp::cmp_same_len(product, modulus).is_ge() {
+                debug_assert_zero!(add::sub_same_len_in_place(product, modulus));
+            }
+            product
+        }
     }
 
     /// self *= rhs
@@ -159,11 +173,13 @@ impl ModuloRingLarge {
         rhs: &ModuloLargeRaw,
         memory: &mut Memory,
     ) {
+        // TODO: truncate leading zeros before mul
         let prod = self.mul_normalized(&lhs.0, &rhs.0, memory);
         lhs.0.copy_from_slice(prod)
     }
 
     pub(crate) fn sqr_in_place(&self, raw: &mut ModuloLargeRaw, memory: &mut Memory) {
+        // TODO: truncate leading zeros before sqr
         // TODO(next): use specialized square function
         let prod = self.mul_normalized(&raw.0, &raw.0, memory);
         raw.0.copy_from_slice(prod)

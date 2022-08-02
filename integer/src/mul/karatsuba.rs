@@ -4,6 +4,7 @@ use crate::{
     add,
     arch::word::{SignedWord, Word},
     math,
+    helper_macros::debug_assert_zero,
     memory::{self, Memory},
     mul::{self, helpers},
     sign::Sign::{self, *},
@@ -90,8 +91,7 @@ pub fn add_signed_mul_same_len(
         // c_0 += a_lo * b_lo
         // c_1 += a_lo * b_lo
         let (c_lo, mut memory) = memory.allocate_slice_fill::<Word>(2 * mid, 0);
-        let overflow = mul::add_signed_mul_same_len(c_lo, Positive, a_lo, b_lo, &mut memory);
-        debug_assert!(overflow == 0);
+        debug_assert_zero!(mul::add_signed_mul_same_len(c_lo, Positive, a_lo, b_lo, &mut memory));
         carry_c0 += add::add_signed_same_len_in_place(&mut c[..2 * mid], sign, c_lo);
         carry_c1 += add::add_signed_same_len_in_place(&mut c[mid..3 * mid], sign, c_lo);
     }
@@ -99,8 +99,7 @@ pub fn add_signed_mul_same_len(
         // c_2 += a_hi * b_hi
         // c_1 += a_hi * b_hi
         let (c_hi, mut memory) = memory.allocate_slice_fill::<Word>(2 * (n - mid), 0);
-        let overflow = mul::add_signed_mul_same_len(c_hi, Positive, a_hi, b_hi, &mut memory);
-        debug_assert!(overflow == 0);
+        debug_assert_zero!(mul::add_signed_mul_same_len(c_hi, Positive, a_hi, b_hi, &mut memory));
         carry += add::add_signed_same_len_in_place(&mut c[2 * mid..], sign, c_hi);
         carry_c1 += add::add_signed_in_place(&mut c[mid..3 * mid], sign, c_hi);
     }

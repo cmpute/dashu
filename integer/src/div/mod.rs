@@ -7,11 +7,13 @@ use crate::{
     memory::{self, Memory},
     primitive::{double_word, extend_word, highest_dword, lowest_dword, split_dword, WORD_BITS},
     shift,
+    helper_macros::debug_assert_zero,
 };
 use alloc::alloc::Layout;
 
 mod divide_conquer;
 mod simple;
+pub(crate) use simple::div_rem_highest_word;
 
 /// If divisor or quotient is at most this length, use the simple division algorithm.
 const THRESHOLD_SIMPLE: usize = 32;
@@ -22,8 +24,7 @@ const THRESHOLD_SIMPLE: usize = 32;
 #[inline]
 pub(crate) fn normalize(words: &mut [Word]) -> (u32, FastDivideNormalized2) {
     let shift = words.last().unwrap().leading_zeros();
-    let overflow = shift::shl_in_place(words, shift);
-    debug_assert!(overflow == 0);
+    debug_assert_zero!(shift::shl_in_place(words, shift));
     let top_words = highest_dword(words);
     (shift, FastDivideNormalized2::new(top_words))
 }
@@ -38,13 +39,14 @@ pub fn div_by_word_in_place(words: &mut [Word], rhs: Word) -> Word {
     debug_assert!(rhs != 0 && !words.is_empty());
 
     if rhs.is_power_of_two() {
-        let sh = rhs.trailing_zeros();
-        let rem = shift::shr_in_place(words, sh);
+        let shift = rhs.trailing_zeros();
+        let rem = shift::shr_in_place(words, shift);
         return rem;
     }
 
-    let fast_div_rhs = FastDivideNormalized::new(rhs << rhs.leading_zeros());
-    fast_div_by_word_in_place(words, rhs, fast_div_rhs)
+    let shift = rhs.leading_zeros();
+    let fast_div_rhs = FastDivideNormalized::new(rhs << shift);
+    fast_div_by_word_in_place(words, shift, fast_div_rhs)
 }
 
 /// words = words / rhs
@@ -53,10 +55,9 @@ pub fn div_by_word_in_place(words: &mut [Word], rhs: Word) -> Word {
 #[must_use]
 pub(crate) fn fast_div_by_word_in_place(
     words: &mut [Word],
-    rhs: Word, // TODO(next): accept a shift value instead of rhs itself, same for dword version
+    shift: u32,
     fast_div_rhs: FastDivideNormalized,
 ) -> Word {
-    let shift = rhs.leading_zeros();
     let mut rem = shift::shl_in_place(words, shift);
 
     for word in words.iter_mut().rev() {
@@ -120,15 +121,16 @@ pub fn div_by_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleWord 
     debug_assert!(words.len() >= 2);
 
     if rhs.is_power_of_two() {
-        let sh = rhs.trailing_zeros();
-        debug_assert!(sh < WORD_BITS); // high word of rhs must not be zero
+        let shift = rhs.trailing_zeros();
+        debug_assert!(shift < WORD_BITS); // high word of rhs must not be zero
         let (first, words_hi) = words.split_first_mut().unwrap();
-        let rem = shift::shr_in_place(words_hi, sh);
-        return double_word(rem, *first);
+        let rem = shift::shr_in_place(words_hi, shift);
+        return double_word(rem, *first); // TODO(next): this might be not correct, add test case for this.
     }
 
-    let fast_div_rhs = FastDivideNormalized2::new(rhs << rhs.leading_zeros());
-    fast_div_by_dword_in_place(words, rhs, fast_div_rhs)
+    let shift = rhs.leading_zeros();
+    let fast_div_rhs = FastDivideNormalized2::new(rhs << shift);
+    fast_div_by_dword_in_place(words, shift, fast_div_rhs)
 }
 
 /// words = words / rhs
@@ -137,11 +139,10 @@ pub fn div_by_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleWord 
 #[must_use]
 pub(crate) fn fast_div_by_dword_in_place(
     words: &mut [Word],
-    rhs: DoubleWord,
+    shift: u32,
     fast_div_rhs: FastDivideNormalized2,
 ) -> DoubleWord {
-    debug_assert!(words.len() >= 2);
-    let shift = rhs.leading_zeros();
+    debug_assert!(words.len() >= 2 && shift < WORD_BITS);
     let hi = shift::shl_in_place(words, shift);
 
     // first div [hi, last word, second last word] by rhs
@@ -280,7 +281,7 @@ pub(crate) fn div_rem_unnormalized_in_place(
     let (shift, fast_div_rhs_top) = normalize(rhs);
     let lhs_carry = shift::shl_in_place(lhs, shift);
     let mut q_top = if lhs_carry > 0 {
-        simple::div_rem_highest_word(lhs_carry, lhs, rhs, fast_div_rhs_top)
+        div_rem_highest_word(lhs_carry, lhs, rhs, fast_div_rhs_top)
     } else {
         0
     };

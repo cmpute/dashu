@@ -7,7 +7,7 @@ use crate::{
     memory::{self, Memory},
     mul::{self, helpers},
     shift,
-    sign::Sign::{self, *},
+    sign::Sign::{self, *}, helper_macros::debug_assert_zero,
 };
 use alloc::alloc::Layout;
 
@@ -136,8 +136,7 @@ pub fn add_signed_mul_same_len(
     let (t1, mut memory) = memory.allocate_slice_fill(2 * n3 + 2, 0);
     {
         let t1_short = &mut t1[..2 * n3];
-        let overflow = mul::add_signed_mul_same_len(t1_short, Positive, a0, b0, &mut memory);
-        debug_assert!(overflow == 0);
+        debug_assert_zero!(mul::add_signed_mul_same_len(t1_short, Positive, a0, b0, &mut memory));
         carry_c0 += add::add_signed_same_len_in_place(&mut c[..2 * n3], sign, t1_short);
         carry_c2 += add::add_signed_in_place(&mut c[2 * n3..4 * n3 + 2], -sign, t1_short);
         t1[2 * n3] = mul::mul_word_in_place(t1_short, 3);
@@ -156,8 +155,7 @@ pub fn add_signed_mul_same_len(
         a_eval[n3] += mul::add_mul_word_in_place(&mut a_eval[..n3], 4, a2);
         b_eval[n3] = mul::add_mul_word_same_len_in_place(&mut b_eval[..n3], 2, b1);
         b_eval[n3] += mul::add_mul_word_in_place(&mut b_eval[..n3], 4, b2);
-        let overflow = mul::add_signed_mul_same_len(t1, Positive, a_eval, b_eval, &mut memory);
-        debug_assert!(overflow == 0);
+        debug_assert_zero!(mul::add_signed_mul_same_len(t1, Positive, a_eval, b_eval, &mut memory));
     }
 
     // Evaluate at inf.
@@ -169,14 +167,12 @@ pub fn add_signed_mul_same_len(
     {
         let (c_eval, mut memory) = memory.allocate_slice_fill(2 * n3 + 2, 0);
         let c_eval_short = &mut c_eval[..2 * n3_short];
-        let overflow = mul::add_signed_mul_same_len(c_eval_short, Positive, a2, b2, &mut memory);
-        debug_assert!(overflow == 0);
+        debug_assert_zero!(mul::add_signed_mul_same_len(c_eval_short, Positive, a2, b2, &mut memory));
         carry_c2 += add::add_signed_in_place(&mut c[2 * n3..4 * n3 + 2], -sign, c_eval_short);
         carry += add::add_signed_same_len_in_place(&mut c[4 * n3..], sign, c_eval_short);
         c_eval[2 * n3_short] = mul::mul_word_in_place(c_eval_short, 12);
-        let overflow = add::sub_in_place(t1, &c_eval[..2 * n3_short + 1]);
         // 3V(0) + V(2) - 12V(inf) is never negative
-        debug_assert!(!overflow);
+        debug_assert_zero!(add::sub_in_place(t1, &c_eval[..2 * n3_short + 1]));
     }
 
     // Sign of V(-1).
@@ -202,8 +198,7 @@ pub fn add_signed_mul_same_len(
         b_eval.copy_from_slice(b02);
         b_eval[n3] += Word::from(add::add_same_len_in_place(&mut b_eval[..n3], b1));
 
-        let overflow = mul::add_signed_mul_same_len(t2, Positive, a_eval, b_eval, &mut memory);
-        debug_assert!(overflow == 0);
+        debug_assert_zero!(mul::add_signed_mul_same_len(t2, Positive, a_eval, b_eval, &mut memory));
         carry_c1 += add::add_signed_in_place(&mut c[n3..3 * n3 + 2], sign, t2);
 
         // Evaluate at -1.
@@ -221,19 +216,11 @@ pub fn add_signed_mul_same_len(
         // We don't need a02, b02 any more, exit the block so that we can use c_eval again.
     }
     let (c_eval, mut memory) = memory.allocate_slice_fill(2 * (n3 + 1), 0);
-    let overflow = mul::add_signed_mul_same_len(c_eval, Positive, a_eval, b_eval, &mut memory);
-    debug_assert!(overflow == 0);
-    let overflow = add::add_signed_same_len_in_place(t2, value_neg1_sign, c_eval);
-    debug_assert!(overflow == 0);
+    debug_assert_zero!(mul::add_signed_mul_same_len(c_eval, Positive, a_eval, b_eval, &mut memory));
+    debug_assert_zero!(add::add_signed_same_len_in_place(t2, value_neg1_sign, c_eval));
     match value_neg1_sign {
-        Positive => {
-            let overflow = mul::add_mul_word_same_len_in_place(t1, 2, c_eval);
-            debug_assert!(overflow == 0);
-        }
-        Negative => {
-            let overflow = mul::sub_mul_word_same_len_in_place(t1, 2, c_eval);
-            debug_assert!(overflow == 0);
-        }
+        Positive => debug_assert_zero!(mul::add_mul_word_same_len_in_place(t1, 2, c_eval)),
+        Negative => debug_assert_zero!(mul::sub_mul_word_same_len_in_place(t1, 2, c_eval)),
     }
 
     // t1 /= 6

@@ -5,7 +5,7 @@ use alloc::alloc::Layout;
 use crate::{
     arch::word::Word,
     memory::{self, Memory},
-    mul, Sign,
+    mul, Sign, helper_macros::debug_assert_zero,
 };
 
 mod simple;
@@ -30,7 +30,6 @@ pub fn square<'a>(b: &mut [Word], a: &'a [Word], memory: &mut Memory) {
     if a.len() <= MAX_LEN_SIMPLE {
         simple::square(b, a);
     } else {
-        let carry = mul::add_signed_mul_same_len(b, Sign::Positive, a, a, memory);
-        debug_assert!(carry == 0);
+        debug_assert_zero!(mul::add_signed_mul_same_len(b, Sign::Positive, a, a, memory));
     }
 }

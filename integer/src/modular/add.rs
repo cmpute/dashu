@@ -5,10 +5,7 @@ use super::{
     modulo_ring::{ModuloRingDouble, ModuloRingLarge, ModuloRingSingle},
 };
 use crate::{add, cmp, error::panic_different_rings};
-use core::{
-    cmp::Ordering,
-    ops::{Add, AddAssign, Neg, Sub, SubAssign},
-};
+use core::ops::{Add, AddAssign, Neg, Sub, SubAssign};
 
 impl<'a> Neg for Modulo<'a> {
     type Output = Modulo<'a>;
@@ -269,7 +266,7 @@ impl ModuloRingLarge {
         debug_assert!(self.is_valid(&*lhs) && self.is_valid(rhs));
         let modulus = self.normalized_modulus();
         let overflow = add::add_same_len_in_place(&mut lhs.0, &rhs.0);
-        if overflow || cmp::cmp_same_len(&lhs.0, modulus) >= Ordering::Equal {
+        if overflow || cmp::cmp_same_len(&lhs.0, modulus).is_ge() {
             let overflow2 = add::sub_same_len_in_place(&mut lhs.0, modulus);
             debug_assert_eq!(overflow, overflow2);
         }

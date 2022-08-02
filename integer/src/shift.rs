@@ -2,7 +2,7 @@
 
 use crate::{
     arch::word::Word,
-    primitive::{double_word, extend_word, split_dword, WORD_BITS},
+    primitive::{double_word, extend_word, split_dword, WORD_BITS}, math::shr_word,
 };
 
 /// Shift left by less than WORD_BITS in place.
@@ -34,13 +34,13 @@ pub fn shr_in_place(words: &mut [Word], shift: u32) -> Word {
 pub fn shr_in_place_with_carry(words: &mut [Word], shift: u32, mut carry: Word) -> Word {
     debug_assert!(shift < WORD_BITS);
     if shift == 0 {
-        debug_assert!(carry == 0);
+        debug_assert_eq!(carry, 0);
         return 0;
     }
     for word in words.iter_mut().rev() {
-        let (new_carry, new_word) = split_dword(double_word(0, *word) >> shift);
+        let (new_word, new_carry) = shr_word(*word, shift);
         *word = new_word | carry;
         carry = new_carry;
     }
-    carry >> (WORD_BITS - shift)
+    carry >> (WORD_BITS - shift) // TODO(next): don't shift the output
 }

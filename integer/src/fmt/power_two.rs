@@ -170,7 +170,7 @@ impl PreparedForFormatting for PreparedLarge<'_> {
             }
             digit_writer.write(&[digit])?;
         }
-        debug_assert!(bits == 0);
+        debug_assert_eq!(bits, 0);
         Ok(())
     }
 }

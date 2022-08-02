@@ -52,7 +52,7 @@ mod repr {
             Repr,
             TypedRepr::{self, *},
             TypedReprRef::{self, *},
-        },
+        }, helper_macros::debug_assert_zero,
     };
     use core::cmp::Ordering;
 
@@ -216,14 +216,12 @@ mod repr {
         // residue = g - rhs * b
         let brhs_len = rhs_clone.len() + b.len();
         let (residue, mut memory) = memory.allocate_slice_fill(brhs_len + 1, 0);
-        let carry = mul::add_signed_mul(
+        mul::multiply(
             &mut residue[..brhs_len],
-            Sign::Positive,
             rhs_clone,
             &b,
             &mut memory,
         );
-        debug_assert!(carry == 0);
         match b_sign {
             Sign::Negative => {
                 *residue.last_mut().unwrap() = add::add_in_place(residue, &g) as Word;
@@ -237,7 +235,7 @@ mod repr {
         // a = residue / lhs
         let (_, overflow) = div::div_rem_unnormalized_in_place(residue, lhs_clone, &mut memory);
         let mut a = Buffer::from(&residue[lhs_len..]);
-        debug_assert!(residue[0] == 0); // this division is an exact division
+        debug_assert_eq!(residue[0], 0); // this division is an exact division
         if overflow > 0 {
             a.push(overflow);
         }
