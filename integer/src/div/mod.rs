@@ -4,7 +4,7 @@ use crate::{
     arch::word::{DoubleWord, Word},
     fast_div::{FastDivideNormalized, FastDivideNormalized2},
     helper_macros::debug_assert_zero,
-    math::shl_dword,
+    math::{shl_dword, shr_word},
     memory::{self, Memory},
     primitive::{double_word, extend_word, highest_dword, lowest_dword, split_dword, WORD_BITS},
     shift,
@@ -38,10 +38,12 @@ pub(crate) fn normalize(words: &mut [Word]) -> (u32, FastDivideNormalized2) {
 pub fn div_by_word_in_place(words: &mut [Word], rhs: Word) -> Word {
     debug_assert!(rhs != 0 && !words.is_empty());
 
-    if rhs.is_power_of_two() {
+    if rhs == 1 {
+        return 0;
+    } else if rhs.is_power_of_two() {
         let shift = rhs.trailing_zeros();
         let rem = shift::shr_in_place(words, shift);
-        return rem;
+        return rem >> (WORD_BITS - shift);
     }
 
     let shift = rhs.leading_zeros();
@@ -118,14 +120,19 @@ pub fn div_by_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleWord 
     debug_assert!(words.len() >= 2);
 
     if rhs.is_power_of_two() {
-        let shift = rhs.trailing_zeros();
-        debug_assert!(shift < WORD_BITS); // high word of rhs must not be zero
-        let (first, words_hi) = words.split_first_mut().unwrap();
-        let rem = shift::shr_in_place(words_hi, shift);
-        return double_word(rem, *first); // TODO(next): this might be not correct, add test case for this.
+        let first = shift::shr_in_place_one_word(words);
+        let shift = rhs.trailing_zeros() - WORD_BITS;
+        if shift == 0 {
+            return extend_word(first);
+        } else {
+            let n2 = shift::shr_in_place(words, shift);
+            let (n1, n0) = shr_word(first, shift);
+            return double_word(n0, n1 | n2) >> (WORD_BITS - shift);
+        }
     }
 
     let shift = rhs.leading_zeros();
+    debug_assert!(shift < WORD_BITS); // high word of rhs must not be zero
     let fast_div_rhs = FastDivideNormalized2::new(rhs << shift);
     fast_div_by_dword_in_place(words, shift, fast_div_rhs)
 }

@@ -3,7 +3,7 @@
 use crate::{
     arch::word::Word,
     math::shr_word,
-    primitive::{double_word, extend_word, split_dword, WORD_BITS},
+    primitive::{extend_word, split_dword, WORD_BITS},
 };
 
 /// Shift left by less than WORD_BITS in place.
@@ -22,16 +22,21 @@ pub fn shl_in_place(words: &mut [Word], shift: u32) -> Word {
     carry
 }
 
-/// Shift right by less than WORD_BITS in place.
-/// Returns shifted bits.
+/// Shift right by at most WORD_BITS in place.
+/// Returns shifted bits in the high bits of a Word.
 #[inline]
 pub fn shr_in_place(words: &mut [Word], shift: u32) -> Word {
-    shr_in_place_with_carry(words, shift, 0)
+    debug_assert!(shift <= WORD_BITS);
+    if shift == WORD_BITS {
+        shr_in_place_one_word(words)
+    } else {
+        shr_in_place_with_carry(words, shift, 0)
+    }
 }
 
 /// Shift right by less than WORD_BITS in place.
 /// An optional carry could be provided from a higher word.
-/// Returns shifted bits.
+/// Returns shifted bits in the high bits of a Word.
 pub fn shr_in_place_with_carry(words: &mut [Word], shift: u32, mut carry: Word) -> Word {
     debug_assert!(shift < WORD_BITS);
     if shift == 0 {
@@ -43,5 +48,16 @@ pub fn shr_in_place_with_carry(words: &mut [Word], shift: u32, mut carry: Word) 
         *word = new_word | carry;
         carry = new_carry;
     }
-    carry >> (WORD_BITS - shift) // TODO(next): don't shift the output
+    carry
+}
+
+/// Shift right by WORD_BITS in place
+pub fn shr_in_place_one_word(words: &mut [Word]) -> Word {
+    unsafe {
+        let ptr = words.as_mut_ptr();
+        let rem = ptr.read();
+        ptr.copy_from(ptr.add(1), words.len() - 1);
+        ptr.add(words.len() - 1).write(0);
+        rem
+    }
 }

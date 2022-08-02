@@ -31,7 +31,10 @@ union ReprData {
 /// the buffer inplace is not allowed because that can break the rule on the `capacity` field.
 #[repr(C)]
 pub struct Repr {
-    /// The capacity is designed to be not zero so that it provides a niche value for other use.
+    /// The words in the `data` field are ordered from the least significant to the most significant.
+    data: ReprData,
+
+    /// The capacity is designed to be not zero so that it provides a niche value for layout optimization.
     ///
     /// How to intepret the `data` field:
     /// - `capacity` = 1: the words are inlined and the high word is 0. (including the case where low word is also 0)
@@ -40,12 +43,14 @@ pub struct Repr {
     /// - `capacity` < 0: similiar to the cases above, but negative capacity value is used to mark the integer is negative.
     ///     Note that in this case the inlined value is not allowed to be zero. (zero must have a positive sign)
     capacity: NonZeroIsize,
-
-    /// The words in the `data` field are ordered from LSB to MSB.
-    data: ReprData,
 }
 
+// right now on all supported architectures, Word = usize. However, for cases where
+// Word > usize, an extra padding in Buffer will be necessary for this equality to hold
 const_assert_eq!(mem::size_of::<Buffer>(), mem::size_of::<Repr>());
+
+// make sure the layout optimization is effective
+const_assert_eq!(mem::size_of::<Repr>(), mem::size_of::<Option<Repr>>());
 
 // SAFETY: the pointer to the allocated space is uniquely owned by this struct.
 unsafe impl Send for Repr {}

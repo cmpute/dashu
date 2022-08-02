@@ -28,5 +28,5 @@ pub use repr::FloatRepr;
 /// Multi-precision float number with binary exponent and [Zero][round::mode::Zero] rounding mode
 pub type FBig = FloatRepr<2, round::mode::Zero>;
 
-/// Multi-precision decimal number with decimal exponent and [HalfAway][round::mode::HalfAway] rounding mode
+/// Multi-precision float number with decimal exponent and [HalfAway][round::mode::HalfAway] rounding mode
 pub type DBig = FloatRepr<10, round::mode::HalfAway>;

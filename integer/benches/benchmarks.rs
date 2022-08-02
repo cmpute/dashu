@@ -235,10 +235,10 @@ fn bench_modulo_pow(criterion: &mut Criterion) {
         if log_bits == 4 {
             group.sample_size(10);
         }
-        let bits = 10usize.pow(log_bits);
+        let bits = 10usize.pow(log_bits) / 2;
         let m = random_ubig(bits, &mut rng);
         let ring = ModuloRing::new(m);
-        let a = ring.convert(&random_ubig(bits, &mut rng));
+        let a = ring.convert(&random_ubig(2048, &mut rng));
         let b = random_ubig(bits, &mut rng);
         group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
             bencher.iter(|| black_box(&a).pow(&b))

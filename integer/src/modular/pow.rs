@@ -15,6 +15,9 @@ use super::{
 
 impl<'a> Modulo<'a> {
     /// Exponentiation.
+    /// 
+    /// If you want use negative exponent, you can first use [inv()][Self::inv] to
+    /// convert the base to its inverse, and then call this method.
     ///
     /// # Examples
     ///
@@ -29,7 +32,6 @@ impl<'a> Modulo<'a> {
     /// ```
     #[inline]
     pub fn pow(&self, exp: &UBig) -> Modulo<'a> {
-        // TODO(v0.2): support signed exponent through inv
         match self.repr() {
             ModuloRepr::Single(raw, ring) => Modulo::from_single(ring.pow(*raw, exp), ring),
             ModuloRepr::Double(raw, ring) => Modulo::from_double(ring.pow(*raw, exp), ring),

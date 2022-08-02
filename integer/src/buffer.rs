@@ -26,9 +26,9 @@ use core::{
 /// If its capacity is exceeded, the `Buffer` will panic.
 #[repr(C)]
 pub struct Buffer {
-    capacity: usize,
     ptr: NonNull<Word>,
     len: usize,
+    capacity: usize,
 }
 
 // SAFETY: the pointer to the allocated space is uniquely owned by this struct.

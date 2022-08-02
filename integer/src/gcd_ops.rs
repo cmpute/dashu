@@ -45,7 +45,6 @@ mod repr {
         arch::word::{DoubleWord, Word},
         buffer::Buffer,
         cmp, div, gcd,
-        helper_macros::debug_assert_zero,
         memory,
         memory::MemoryAllocation,
         mul,

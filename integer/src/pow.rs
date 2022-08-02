@@ -22,7 +22,7 @@ impl UBig {
         match exp {
             0 => return UBig::ONE,
             1 => return self.clone(),
-            2 => return self * self,
+            2 => return self.square(),
             _ => {}
         }
         match self.repr() {

@@ -378,9 +378,8 @@ pub fn gcd_ext_in_place(
             // The guess has failed, do a euclidean step (x, y) = (y, x % y)
             let (shift, q_top) = div::div_rem_unnormalized_in_place(x, y, &mut memory);
             let (mut r, mut q_lo) = x.split_at_mut(y.len());
-            let y_low_bits = shift::shr_in_place(y, shift);
-            let r_low_bits = shift::shr_in_place(r, shift);
-            debug_assert!(y_low_bits | r_low_bits == 0); // these are bits for normalization
+            debug_assert_zero!(shift::shr_in_place(y, shift));
+            debug_assert_zero!(shift::shr_in_place(r, shift));
             r = trim_leading_zeros(r);
             if q_top == 0 {
                 q_lo = trim_leading_zeros(q_lo);

@@ -24,7 +24,7 @@ pub fn memory_requirement_exact(len: usize) -> Layout {
 
 /// b = a * a, b must be filled with zeros.
 pub fn square<'a>(b: &mut [Word], a: &'a [Word], memory: &mut Memory) {
-    debug_assert!(a.len() >= 2);
+    debug_assert!(a.len() >= 2, "use native multiplication when a is small");
     debug_assert!(b.len() == a.len() * 2);
     debug_assert!(b.iter().all(|&v| v == 0));
 

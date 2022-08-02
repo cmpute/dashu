@@ -88,6 +88,7 @@ pub const fn ones_dword(n: u32) -> DoubleWord {
 }
 
 /// Calculate dw << shift, assuming shift <= Word::BIT_SIZE, returns (lo, mid, hi).
+#[inline]
 pub const fn shl_dword(dw: DoubleWord, shift: u32) -> (Word, Word, Word) {
     debug_assert!(shift <= Word::BIT_SIZE);
 
@@ -99,6 +100,7 @@ pub const fn shl_dword(dw: DoubleWord, shift: u32) -> (Word, Word, Word) {
 
 /// Calculate w >> shift, return (result, shifted bits)
 /// Note that the shifted bits are put on the highest bits of the Word
+#[inline]
 pub const fn shr_word(w: Word, shift: u32) -> (Word, Word) {
     let (c, r) = split_dword(double_word(0, w) >> shift);
     (r, c)
