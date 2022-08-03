@@ -79,42 +79,7 @@ impl UBig {
     /// ```
     #[inline]
     pub fn set_bit(&mut self, n: usize) {
-        match mem::take(self).into_repr() {
-            Small(dword) => {
-                if n < DWORD_BITS_USIZE {
-                    self.0 = Repr::from_dword(dword | 1 << n);
-                } else {
-                    self.0 = Self::with_bit_dword_spilled(dword, n);
-                }
-            }
-            Large(buffer) => {
-                self.0 = Self::with_bit_large(buffer, n);
-            }
-        }
-    }
-
-    fn with_bit_dword_spilled(dword: DoubleWord, n: usize) -> Repr {
-        debug_assert!(n >= DWORD_BITS_USIZE);
-        let idx = n / WORD_BITS_USIZE;
-        let mut buffer = Buffer::allocate(idx + 1);
-        let (lo, hi) = split_dword(dword);
-        buffer.push(lo);
-        buffer.push(hi);
-        buffer.push_zeros(idx - 2);
-        buffer.push(1 << (n % WORD_BITS_USIZE));
-        Repr::from_buffer(buffer)
-    }
-
-    fn with_bit_large(mut buffer: Buffer, n: usize) -> Repr {
-        let idx = n / WORD_BITS_USIZE;
-        if idx < buffer.len() {
-            buffer[idx] |= 1 << (n % WORD_BITS_USIZE);
-        } else {
-            buffer.ensure_capacity(idx + 1);
-            buffer.push_zeros(idx - buffer.len());
-            buffer.push(1 << (n % WORD_BITS_USIZE));
-        }
-        Repr::from_buffer(buffer)
+        self.0 = mem::take(self).into_repr().set_bit(n);
     }
 
     /// Clear the `n`-th bit, n starts from 0.
@@ -162,11 +127,7 @@ impl UBig {
     /// ```
     #[inline]
     pub fn trailing_zeros(&self) -> Option<usize> {
-        match self.repr() {
-            RefSmall(0) => None,
-            RefSmall(dword) => Some(dword.trailing_zeros() as usize),
-            RefLarge(buffer) => Some(trailing_zeros(buffer)),
-        }
+        self.repr().trailing_zeros()
     }
 
     /// Bit length.
@@ -224,11 +185,7 @@ impl IBig {
     /// ```
     #[inline]
     pub fn trailing_zeros(&self) -> Option<usize> {
-        match self.as_sign_repr().1 {
-            RefSmall(0) => None,
-            RefSmall(dword) => Some(dword.trailing_zeros() as usize),
-            RefLarge(buffer) => Some(trailing_zeros(buffer)),
-        }
+        self.as_sign_repr().1.trailing_zeros()
     }
 }
 
@@ -263,8 +220,8 @@ mod repr {
         pub fn bit_len(self) -> usize {
             match self {
                 RefSmall(dword) => math::bit_len(dword) as usize,
-                RefLarge(buffer) => {
-                    buffer.len() * WORD_BITS_USIZE - buffer.last().unwrap().leading_zeros() as usize
+                RefLarge(words) => {
+                    words.len() * WORD_BITS_USIZE - words.last().unwrap().leading_zeros() as usize
                 }
             }
         }
@@ -281,7 +238,7 @@ mod repr {
         pub fn are_low_bits_nonzero(self, n: usize) -> bool {
             match self {
                 Self::RefSmall(dword) => are_dword_low_bits_nonzero(dword, n),
-                Self::RefLarge(buffer) => are_slice_low_bits_nonzero(buffer, n),
+                Self::RefLarge(words) => are_slice_low_bits_nonzero(words, n),
             }
         }
 
@@ -290,10 +247,18 @@ mod repr {
         pub fn is_power_of_two(self) -> bool {
             match self {
                 RefSmall(dword) => dword.is_power_of_two(),
-                RefLarge(buffer) => {
-                    buffer[..buffer.len() - 1].iter().all(|x| *x == 0)
-                        && buffer.last().unwrap().is_power_of_two()
+                RefLarge(words) => {
+                    words[..words.len() - 1].iter().all(|x| *x == 0)
+                        && words.last().unwrap().is_power_of_two()
                 }
+            }
+        }
+
+        pub fn trailing_zeros(self) -> Option<usize> {
+            match self {
+                RefSmall(0) => None,
+                RefSmall(dword) => Some(dword.trailing_zeros() as usize),
+                RefLarge(words) => Some(trailing_zeros(words)),
             }
         }
     }
@@ -312,6 +277,19 @@ mod repr {
                     }
                 },
                 Large(buffer) => next_power_of_two_large(buffer),
+            }
+        }
+
+        pub fn set_bit(self, n: usize) -> Repr {
+            match self {
+                Small(dword) => {
+                    if n < DWORD_BITS_USIZE {
+                        Repr::from_dword(dword | 1 << n)
+                    } else {
+                        with_bit_dword_spilled(dword, n)
+                    }
+                }
+                Large(buffer) => with_bit_large(buffer, n),
             }
         }
     }
@@ -361,6 +339,30 @@ mod repr {
             }
         }
 
+        Repr::from_buffer(buffer)
+    }
+
+    fn with_bit_dword_spilled(dword: DoubleWord, n: usize) -> Repr {
+        debug_assert!(n >= DWORD_BITS_USIZE);
+        let idx = n / WORD_BITS_USIZE;
+        let mut buffer = Buffer::allocate(idx + 1);
+        let (lo, hi) = split_dword(dword);
+        buffer.push(lo);
+        buffer.push(hi);
+        buffer.push_zeros(idx - 2);
+        buffer.push(1 << (n % WORD_BITS_USIZE));
+        Repr::from_buffer(buffer)
+    }
+
+    fn with_bit_large(mut buffer: Buffer, n: usize) -> Repr {
+        let idx = n / WORD_BITS_USIZE;
+        if idx < buffer.len() {
+            buffer[idx] |= 1 << (n % WORD_BITS_USIZE);
+        } else {
+            buffer.ensure_capacity(idx + 1);
+            buffer.push_zeros(idx - buffer.len());
+            buffer.push(1 << (n % WORD_BITS_USIZE));
+        }
         Repr::from_buffer(buffer)
     }
 

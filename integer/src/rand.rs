@@ -34,7 +34,7 @@ impl UBig {
 
         match range.repr() {
             RefSmall(dword) => UBig::from(rng.gen_range(0..dword)),
-            RefLarge(buffer) => UBig::uniform_large(buffer, rng),
+            RefLarge(words) => UBig::uniform_large(words, rng),
         }
     }
 

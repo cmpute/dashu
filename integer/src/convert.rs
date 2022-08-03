@@ -118,12 +118,12 @@ impl UBig {
                 let skip_bytes = x.leading_zeros() as usize / 8;
                 bytes[..DWORD_BYTES - skip_bytes].to_vec()
             }
-            RefLarge(buffer) => {
-                let n = buffer.len();
-                let last = buffer[n - 1];
+            RefLarge(words) => {
+                let n = words.len();
+                let last = words[n - 1];
                 let skip_last_bytes = last.leading_zeros() as usize / 8;
                 let mut bytes = Vec::with_capacity(n * WORD_BYTES - skip_last_bytes);
-                for word in &buffer[..n - 1] {
+                for word in &words[..n - 1] {
                     bytes.extend_from_slice(&word.to_le_bytes());
                 }
                 let last_bytes = last.to_le_bytes();
@@ -149,14 +149,14 @@ impl UBig {
                 let skip_bytes = x.leading_zeros() as usize / 8;
                 bytes[skip_bytes..].to_vec()
             }
-            RefLarge(buffer) => {
-                let n = buffer.len();
-                let last = buffer[n - 1];
+            RefLarge(words) => {
+                let n = words.len();
+                let last = words[n - 1];
                 let skip_last_bytes = last.leading_zeros() as usize / 8;
                 let mut bytes = Vec::with_capacity(n * WORD_BYTES - skip_last_bytes);
                 let last_bytes = last.to_be_bytes();
                 bytes.extend_from_slice(&last_bytes[skip_last_bytes..]);
-                for word in buffer[..n - 1].iter().rev() {
+                for word in words[..n - 1].iter().rev() {
                     bytes.extend_from_slice(&word.to_be_bytes());
                 }
                 bytes
@@ -531,8 +531,8 @@ impl UBig {
     {
         match self.repr() {
             RefSmall(dw) => T::try_from(dw).map_err(|_| OutOfBoundsError),
-            RefLarge(buffer) => {
-                let u: T::Unsigned = unsigned_from_words(buffer)?;
+            RefLarge(words) => {
+                let u: T::Unsigned = unsigned_from_words(words)?;
                 u.try_into().map_err(|_| OutOfBoundsError)
             }
         }
@@ -617,7 +617,7 @@ mod repr {
         {
             match self {
                 RefSmall(dw) => T::try_from(dw).map_err(|_| OutOfBoundsError),
-                RefLarge(buffer) => unsigned_from_words(buffer),
+                RefLarge(words) => unsigned_from_words(words),
             }
         }
 

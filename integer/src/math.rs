@@ -2,7 +2,7 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
-    primitive::{double_word, extend_word, split_dword, PrimitiveUnsigned},
+    primitive::{double_word, extend_word, split_dword, PrimitiveUnsigned, WORD_BITS},
 };
 
 /// The length of an integer in bits.
@@ -143,6 +143,34 @@ pub const fn mul_add_carry_dword(
     (lo, hi)
 }
 
+/// Calculate the max k such that base^k <= Word::MAX, return (k, base^k)
+pub const fn max_exp_in_word(base: Word) -> (usize, Word) {
+    debug_assert!(base > 2);
+
+    // estimate log_base(Word::MAX)
+    let mut exp = WORD_BITS / (WORD_BITS - base.leading_zeros());
+    let mut pow: Word = base.pow(exp);
+    while let Some(prod) = pow.checked_mul(base) {
+        exp += 1;
+        pow = prod;
+    }
+    (exp as usize, pow)
+}
+
+/// Calculate the max k such that base^k <= DoubleWord::MAX, return (k, base^k)
+pub const fn max_exp_in_dword(base: Word) -> (usize, DoubleWord) {
+    debug_assert!(base > 2);
+    let (exp, pow) = max_exp_in_word(base);
+    let (exp, pow) = (2 * exp, extend_word(pow) * extend_word(pow));
+
+    // the error of exp is at most one
+    if let Some(prod) = pow.checked_mul(extend_word(base)) {
+        (exp + 1, prod)
+    } else {
+        (exp, pow)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,5 +213,15 @@ mod tests {
         assert_eq!(ones_word(0), 0);
         assert_eq!(ones_word(5), 0b11111);
         assert_eq!(ones_word(16), u16::MAX as Word);
+    }
+
+    #[test]
+    fn test_max_exp_in_word() {
+        for b in 3..30 {
+            let (_, pow) = max_exp_in_word(b);
+            assert!(pow.overflowing_mul(b).1);
+            let (_, pow) = max_exp_in_dword(b);
+            assert!(pow.overflowing_mul(extend_word(b)).1);
+        }
     }
 }

@@ -210,11 +210,13 @@ impl Buffer {
         }
     }
 
-    /// Append a Word and reallocate if necessary.
+    /// Append a Word and reallocate if necessary. No-op if word is 0.
     #[inline]
     pub fn push_resizing(&mut self, word: Word) {
-        self.ensure_capacity(self.len + 1);
-        self.push(word);
+        if word != 0 {
+            self.ensure_capacity(self.len + 1);
+            self.push(word);
+        }
     }
 
     /// Append `n` zeros.
@@ -347,9 +349,9 @@ impl Buffer {
 
     /// Make the data in this [Buffer] a copy of another slice.
     ///
-    /// It reallocates if capacity is too small or too large.
+    /// It reallocates if capacity is too small.
     pub fn clone_from_slice(&mut self, src: &[Word]) {
-        if self.capacity >= src.len() && self.capacity <= Buffer::max_compact_capacity(src.len()) {
+        if self.capacity >= src.len() {
             // direct copy if the capacity is enough
             unsafe {
                 // SAFETY: src.ptr and self.ptr are both properly allocated by `Buffer::allocate()`.

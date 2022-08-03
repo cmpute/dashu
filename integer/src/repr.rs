@@ -370,7 +370,7 @@ impl Clone for Repr {
             let (src_ptr, src_len) = src.data.heap;
             debug_assert!(src_len >= 3);
 
-            // check if we need reallocation, the strategy here is the same as `Buffer::clone_from()`
+            // check if we need reallocation, it happens when capacity is too small or too large
             if cap < src_len || cap > Buffer::max_compact_capacity(src_len) {
                 if cap > 2 {
                     // release the old buffer if necessary
@@ -440,7 +440,7 @@ impl TypedRepr {
     pub fn as_ref(&self) -> TypedReprRef {
         match self {
             Self::Small(dword) => TypedReprRef::RefSmall(*dword),
-            Self::Large(buffer) => TypedReprRef::RefLarge(buffer),
+            Self::Large(words) => TypedReprRef::RefLarge(words),
         }
     }
 }

@@ -818,9 +818,7 @@ mod repr {
             MemoryAllocation::new(div::memory_requirement_exact(lhs.len(), rhs.len()));
         let (shift, quo_carry) =
             div::div_rem_unnormalized_in_place(lhs, rhs, &mut allocation.memory());
-        if quo_carry > 0 {
-            lhs.push_resizing(quo_carry);
-        }
+        lhs.push_resizing(quo_carry);
         shift
     }
 

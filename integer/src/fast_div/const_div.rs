@@ -139,9 +139,7 @@ impl ConstLargeDivisor {
             TypedRepr::Large(mut words) => {
                 // normalize
                 let carry = shift::shl_in_place(&mut words, self.shift);
-                if carry != 0 {
-                    words.push_resizing(carry);
-                }
+                words.push_resizing(carry);
 
                 // reduce
                 if words.len() >= modulus.len() {

@@ -15,7 +15,7 @@ use super::{
 
 impl<'a> Modulo<'a> {
     /// Exponentiation.
-    /// 
+    ///
     /// If you want use negative exponent, you can first use [inv()][Self::inv] to
     /// convert the base to its inverse, and then call this method.
     ///
@@ -83,7 +83,7 @@ macro_rules! impl_mod_pow_for_primitive {
                             self.pow_helper(res, raw, lo, WORD_BITS)
                         }
                     }
-                    RefLarge(buffer) => self.pow_nontrivial(raw, buffer),
+                    RefLarge(words) => self.pow_nontrivial(raw, words),
                 }
             }
 

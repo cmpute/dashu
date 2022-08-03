@@ -13,8 +13,7 @@ use crate::{
     },
     mul,
     primitive::{extend_word, split_dword},
-    shift,
-    sqr,
+    shift, sqr,
 };
 use alloc::alloc::Layout;
 use core::ops::{Mul, MulAssign};
@@ -195,11 +194,7 @@ impl ModuloRingLarge {
     }
 
     /// Returns a^2 allocated in memory.
-    pub(crate) fn sqr_normalized<'a>(
-        &self,
-        a: &[Word],
-        memory: &'a mut Memory,
-    ) -> &'a [Word] {
+    pub(crate) fn sqr_normalized<'a>(&self, a: &[Word], memory: &'a mut Memory) -> &'a [Word] {
         let modulus = self.normalized_modulus();
         let n = modulus.len();
         debug_assert!(a.len() == n);

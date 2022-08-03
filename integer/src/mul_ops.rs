@@ -141,7 +141,7 @@ impl IBig {
     }
 }
 
-mod repr {
+pub(crate) mod repr {
     use super::*;
     use crate::{
         arch::word::{DoubleWord, Word},
@@ -245,9 +245,7 @@ mod repr {
                     } else {
                         mul::mul_word_in_place(&mut buffer, word)
                     };
-                    if carry != 0 {
-                        buffer.push_resizing(carry);
-                    }
+                    buffer.push_resizing(carry);
                     Repr::from_buffer(buffer)
                 } else {
                     let carry = mul::mul_dword_in_place(&mut buffer, dw);
@@ -264,7 +262,7 @@ mod repr {
     }
 
     /// Multiply two large numbers.
-    fn mul_large(lhs: &[Word], rhs: &[Word]) -> Repr {
+    pub(crate) fn mul_large(lhs: &[Word], rhs: &[Word]) -> Repr {
         debug_assert!(lhs.len() >= 2 && rhs.len() >= 2);
 
         // shortcut to square if two operands are equal
@@ -309,7 +307,7 @@ mod repr {
         Repr::from_buffer(buffer)
     }
 
-    fn square_large(words: &[Word]) -> Repr {
+    pub(crate) fn square_large(words: &[Word]) -> Repr {
         debug_assert!(words.len() >= 2);
 
         let mut buffer = Buffer::allocate(words.len() * 2);

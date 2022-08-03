@@ -1,8 +1,9 @@
 //! Information about radixes.
 
 use crate::{
-    arch::word::{DoubleWord, Word},
+    arch::word::Word,
     fast_div::{FastDivideNormalized, FastDivideSmall},
+    math::{max_exp_in_dword, max_exp_in_word},
 };
 use static_assertions::const_assert;
 
@@ -75,17 +76,9 @@ pub struct RadixInfo {
 const RADIX10_INFO: RadixInfo = RadixInfo::for_radix(10);
 
 /// Maximum number of digits that a `Word` can ever have for any non-power-of-2 radix.
-pub const MAX_WORD_DIGITS_NON_POW_2: usize = RadixInfo::for_radix(3).digits_per_word + 1;
+pub const MAX_WORD_DIGITS_NON_POW_2: usize = max_exp_in_word(3).0 + 1;
 /// Maximum number of digits that a `DoubleWord` can ever have for any non-power-of-2 radix.
-pub const MAX_DWORD_DIGITS_NON_POW_2: usize = 2 * RadixInfo::for_radix(3).digits_per_word + 1;
-
-// Note: log3(2^16) = 10.09, log3(2^32) = 20.19, log3(2^64) = 40.38
-const_assert!(
-    (3 as DoubleWord)
-        .pow(MAX_DWORD_DIGITS_NON_POW_2 as u32 - 1)
-        .overflowing_mul(3)
-        .1
-);
+pub const MAX_DWORD_DIGITS_NON_POW_2: usize = max_exp_in_dword(3).0 + 1;
 
 /// Get [RadixInfo] for a given radix.
 ///
@@ -102,12 +95,7 @@ pub fn radix_info(radix: Digit) -> RadixInfo {
 
 impl RadixInfo {
     const fn for_radix(radix: Digit) -> RadixInfo {
-        let mut digits_per_word = 0;
-        let mut range_per_word: Word = 1;
-        while let Some(range) = range_per_word.checked_mul(radix as Word) {
-            digits_per_word += 1;
-            range_per_word = range;
-        }
+        let (digits_per_word, range_per_word) = max_exp_in_word(radix as Word);
         let shift = range_per_word.leading_zeros();
         let fast_div_radix = FastDivideSmall::new(radix as Word);
         let fast_div_range_per_word = FastDivideNormalized::new(range_per_word << shift);

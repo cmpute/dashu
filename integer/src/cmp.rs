@@ -22,10 +22,10 @@ impl<'a> Ord for TypedReprRef<'a> {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
         match (*self, *other) {
-            (RefSmall(dword), RefSmall(other_dword)) => dword.cmp(&other_dword),
+            (RefSmall(dword0), RefSmall(dword1)) => dword0.cmp(&dword1),
             (RefSmall(_), RefLarge(_)) => Ordering::Less,
             (RefLarge(_), RefSmall(_)) => Ordering::Greater,
-            (RefLarge(buffer), RefLarge(other_buffer)) => cmp_in_place(buffer, other_buffer),
+            (RefLarge(words0), RefLarge(words1)) => cmp_in_place(words0, words1),
         }
     }
 }
