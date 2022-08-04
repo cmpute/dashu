@@ -32,7 +32,7 @@ pub fn memory_requirement_up_to(n: usize) -> Layout {
     //       = 2n + 2log (n-1) - Const
     //
     // Use 2n + 2 ceil log_2 n.
-    let num_words = 2 * n + 2 * (math::ceil_log_2(n) as usize);
+    let num_words = 2 * n + 2 * (math::ceil_log2(n) as usize);
     memory::array_layout::<Word>(num_words)
 }
 

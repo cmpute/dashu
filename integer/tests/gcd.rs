@@ -115,5 +115,10 @@ fn test_gcd_ubig() {
 #[should_panic]
 fn test_gcd_0() {
     let _ = ubig!(0).gcd(&ubig!(0));
+}
+
+#[test]
+#[should_panic]
+fn test_gcd_ext_0() {
     let _ = ubig!(0).gcd_ext(&ubig!(0));
 }

@@ -95,6 +95,7 @@ mod gcd;
 mod gcd_ops;
 mod helper_macros;
 mod ibig;
+mod log;
 mod math;
 mod memory;
 pub mod modular;

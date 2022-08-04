@@ -235,7 +235,7 @@ fn bench_modulo_pow(criterion: &mut Criterion) {
         if log_bits == 4 {
             group.sample_size(10);
         }
-        let bits = 10usize.pow(log_bits) / 2;
+        let bits = 10usize.pow(log_bits);
         let m = random_ubig(bits, &mut rng);
         let ring = ModuloRing::new(m);
         let a = ring.convert(&random_ubig(2048, &mut rng));

@@ -15,6 +15,7 @@ impl UBig {
     /// ```
     #[inline]
     pub fn pow(&self, exp: usize) -> UBig {
+        // remove factor 2 before actual powering
         let shift = self.trailing_zeros().unwrap_or(0);
         let result = if shift != 0 {
             self.repr()
@@ -48,6 +49,7 @@ impl IBig {
             Positive
         };
 
+        // remove factor 2 before actual powering
         let shift = mag.trailing_zeros().unwrap_or(0);
         let result = if shift != 0 {
             mag.shr(shift)
@@ -62,13 +64,13 @@ impl IBig {
     }
 }
 
-mod repr {
+pub(crate) mod repr {
     use dashu_base::DivRem;
 
     use crate::{
         arch::word::{DoubleWord, Word},
         buffer::Buffer,
-        math::{self, max_exp_in_word},
+        math::{self, max_exp_in_word, bit_len},
         memory::{self, MemoryAllocation},
         mul, mul_ops,
         primitive::{extend_word, shrink_dword, split_dword, PrimitiveUnsigned},
@@ -84,12 +86,10 @@ mod repr {
             // shortcuts
             match exp {
                 0 => return Repr::one(),
-                1 => {
-                    return match *self {
-                        Self::RefSmall(dw) => Repr::from_dword(dw),
-                        Self::RefLarge(words) => Repr::from_buffer(Buffer::from(words)),
-                    }
-                }
+                1 => return match *self {
+                    Self::RefSmall(dw) => Repr::from_dword(dw),
+                    Self::RefLarge(words) => Repr::from_buffer(Buffer::from(words)),
+                },
                 2 => return self.square(),
                 _ => {}
             };
@@ -107,7 +107,8 @@ mod repr {
         }
     }
 
-    fn pow_word_base(base: Word, exp: usize) -> Repr {
+    pub(crate) fn pow_word_base(base: Word, exp: usize) -> Repr {
+        debug_assert!(exp > 1);
         match base {
             0 => return Repr::zero(),
             1 => return Repr::one(),
@@ -141,7 +142,7 @@ mod repr {
         let mut memory = allocation.memory();
 
         // res = wbase * wbase
-        let mut p = usize::BIT_SIZE - 2 - exp.leading_zeros();
+        let mut p = bit_len(exp) - 2;
         let (lo, hi) = split_dword(extend_word(wbase) * extend_word(wbase));
         res.push(lo);
         res.push(hi);
@@ -170,7 +171,8 @@ mod repr {
         Repr::from_buffer(res)
     }
 
-    fn pow_dword_base(base: DoubleWord, exp: usize) -> Repr {
+    pub(crate) fn pow_dword_base(base: DoubleWord, exp: usize) -> Repr {
+        debug_assert!(exp > 1);
         debug_assert!(base > Word::MAX as DoubleWord);
 
         let mut res = Buffer::allocate(2 * exp); // result is at most 2 * exp words
@@ -183,7 +185,7 @@ mod repr {
         let mut memory = allocation.memory();
 
         // res = base * base
-        let mut p = usize::BIT_SIZE - 2 - exp.leading_zeros();
+        let mut p = bit_len(exp) - 2;
         let (lo, hi) = math::mul_add_carry_dword(base, base, 0);
         let (n0, n1) = split_dword(lo);
         res.push(n0);
@@ -216,19 +218,19 @@ mod repr {
         Repr::from_buffer(res)
     }
 
-    fn pow_large_base(base: &[Word], exp: usize) -> Repr {
-        let mut p = usize::BIT_SIZE - 2 - exp.leading_zeros();
-        let mut res = Repr::from_buffer(Buffer::from(base));
-        res = res.as_typed().square();
+    pub(crate) fn pow_large_base(base: &[Word], exp: usize) -> Repr {
+        debug_assert!(exp > 1);
+        let mut p = bit_len(exp) - 2;
+        let mut res = mul_ops::repr::square_large(base);
         loop {
             if exp & (1 << p) != 0 {
-                res = mul_ops::repr::mul_large(res.as_sign_slice().1, base);
+                res = mul_ops::repr::mul_large(res.as_slice(), base);
             }
             if p == 0 {
                 break;
             }
             p -= 1;
-            res = mul_ops::repr::square_large(res.as_sign_slice().1);
+            res = mul_ops::repr::square_large(res.as_slice());
         }
         res
     }

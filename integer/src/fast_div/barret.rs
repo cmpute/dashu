@@ -4,7 +4,7 @@
 use crate::{
     arch::word::{DoubleWord, Word},
     math,
-    primitive::{double_word, extend_word, split_dword},
+    primitive::{double_word, extend_word, split_dword, WORD_BITS},
 };
 
 /// Divide a Word by a prearranged divisor.
@@ -29,7 +29,8 @@ impl FastDivideSmall {
     #[inline]
     pub const fn new(divisor: Word) -> Self {
         debug_assert!(divisor > 1);
-        let n = math::ceil_log_2_word(divisor);
+        // n = ceil(log2(divisor))
+        let n = WORD_BITS - (divisor - 1).leading_zeros();
 
         // Calculate:
         // m = floor(B * 2^n / divisor) + 1 - B

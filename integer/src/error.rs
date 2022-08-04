@@ -73,3 +73,8 @@ pub(crate) const fn panic_different_rings() -> ! {
 pub(crate) fn panic_invalid_radix(radix: u32) -> ! {
     panic!("invalid radix: {}, only radix 2-36 are supported", radix);
 }
+
+/// Panics when the base is 0 or 1 in logarithm
+pub(crate) fn panic_invalid_log_oprand() -> ! {
+    panic!("logarithm is not defined for 0, base 0 and base 1!");
+}

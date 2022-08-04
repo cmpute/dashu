@@ -1,5 +1,5 @@
-/// Assert the expression value is zero in debug mode, but the expression will
-/// still run in release mode. It's usually used for assertions on overflow.
+/// Execute the expression, and assert the return value is zero in debug mode.
+/// The expression is still executed in release mode. It's usually used for assertions on overflow.
 macro_rules! debug_assert_zero {
     ($($arg:tt)*) => {{
         let __check__ = $($arg)*;

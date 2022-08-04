@@ -234,7 +234,7 @@ pub(crate) mod repr {
     }
 
     /// Multiply a large number by a `DoubleWord`.
-    fn mul_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> Repr {
+    pub(crate) fn mul_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> Repr {
         match rhs {
             0 => Repr::zero(),
             1 => Repr::from_buffer(buffer),

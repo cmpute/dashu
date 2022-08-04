@@ -137,26 +137,12 @@ impl Repr {
     /// Panics if the `capacity` is negative
     #[inline]
     pub fn as_typed(&self) -> TypedReprRef<'_> {
-        assert!(self.capacity.get() > 0);
-
-        unsafe {
-            match self.capacity.get() {
-                1 | 2 => {
-                    TypedReprRef::RefSmall(double_word(self.data.inline[0], self.data.inline[1]))
-                }
-                _ => TypedReprRef::RefLarge(slice::from_raw_parts(
-                    self.data.heap.0,
-                    self.data.heap.1,
-                )),
-            }
-        }
+        let (sign, typed) = self.as_sign_typed();
+        assert!(sign == Sign::Positive);
+        typed
     }
 
     /// Cast the reference of `Repr` to a strong typed representation, and return with the sign.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the `capacity` is negative
     #[inline]
     pub fn as_sign_typed(&self) -> (Sign, TypedReprRef<'_>) {
         let (abs_capacity, sign) = self.sign_capacity();
@@ -204,6 +190,18 @@ impl Repr {
             NonZeroIsize::new_unchecked(abs_capacity as isize)
         };
         (sign, self.into_typed())
+    }
+
+    /// Get a reference to the words in the `Repr`
+    /// 
+    /// # Panics
+    ///
+    /// Panics if the `capacity` is negative
+    #[inline]
+    pub fn as_slice(&self) -> &[Word] {
+        let (sign, slice) = self.as_sign_slice();
+        assert!(sign == Sign::Positive);
+        slice
     }
 
     /// Get a reference to the words in the `Repr`, together with the sign.
@@ -490,6 +488,7 @@ mod tests {
         assert_eq!(repr.as_sign_slice(), (Sign::Positive, &[][..]));
 
         let repr = Repr::one();
+        assert_eq!(repr.as_slice(), &[1][..]);
         assert_eq!(repr.as_sign_slice(), (Sign::Positive, &[1][..]));
 
         let mut buffer = Buffer::allocate(1);
@@ -501,6 +500,7 @@ mod tests {
         buffer.push(1);
         buffer.push(2);
         let repr = Repr::from_buffer(buffer);
+        assert_eq!(repr.as_slice(), &[1, 2][..]);
         assert_eq!(repr.as_sign_slice(), (Sign::Positive, &[1, 2][..]));
 
         let mut buffer = Buffer::allocate(2);
@@ -509,6 +509,7 @@ mod tests {
         buffer.push(3);
         buffer.push(4);
         let repr = Repr::from_buffer(buffer);
+        assert_eq!(repr.as_slice(), &[1, 2, 3, 4][..]);
         assert_eq!(repr.as_sign_slice(), (Sign::Positive, &[1, 2, 3, 4][..]));
     }
 

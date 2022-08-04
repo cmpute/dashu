@@ -8,7 +8,7 @@ use crate::{
     math,
     ops::PowerOfTwo,
     primitive::{lowest_dword, split_dword, DWORD_BITS_USIZE, WORD_BITS_USIZE},
-    repr::{Repr, TypedRepr::*, TypedReprRef::*},
+    repr::{TypedRepr::*, TypedReprRef::*},
     sign::Sign::*,
     ubig::UBig,
 };
@@ -94,20 +94,7 @@ impl UBig {
     /// ```
     #[inline]
     pub fn clear_bit(&mut self, n: usize) {
-        match mem::take(self).into_repr() {
-            Small(dword) => {
-                if n < DWORD_BITS_USIZE {
-                    self.0 = Repr::from_dword(dword & !(1 << n));
-                }
-            }
-            Large(mut buffer) => {
-                let idx = n / WORD_BITS_USIZE;
-                if idx < buffer.len() {
-                    buffer[idx] &= !(1 << (n % WORD_BITS_USIZE));
-                }
-                self.0 = Repr::from_buffer(buffer);
-            }
-        }
+        self.0 = mem::take(self).into_repr().clear_bit(n);
     }
 
     /// Returns the number of trailing zeros in the binary representation.
@@ -290,6 +277,25 @@ mod repr {
                     }
                 }
                 Large(buffer) => with_bit_large(buffer, n),
+            }
+        }
+        
+        pub fn clear_bit(self, n: usize) -> Repr {
+            match self {
+                Small(dword) => {
+                    if n < DWORD_BITS_USIZE {
+                        Repr::from_dword(dword & !(1 << n))
+                    } else {
+                        Repr::from_dword(dword)
+                    }
+                }
+                Large(mut buffer) => {
+                    let idx = n / WORD_BITS_USIZE;
+                    if idx < buffer.len() {
+                        buffer[idx] &= !(1 << (n % WORD_BITS_USIZE));
+                    }
+                    Repr::from_buffer(buffer)
+                }
             }
         }
     }
