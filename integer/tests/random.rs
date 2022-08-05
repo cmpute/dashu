@@ -1,4 +1,7 @@
-use dashu_int::{ops::{DivRem, Gcd, ExtendedGcd}, UBig};
+use dashu_int::{
+    ops::{DivRem, ExtendedGcd, Gcd},
+    UBig,
+};
 use rand::{distributions::uniform::Uniform, prelude::*};
 
 mod helper_macros;

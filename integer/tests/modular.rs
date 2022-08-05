@@ -214,8 +214,16 @@ fn test_mul() {
             ring2.convert(ubig!(203682414864643790397583130625)),
         ),
         (ring3.convert(&big - ubig!(1)), ring3.convert(&big - ubig!(1)), ring3.convert(1)),
-        (ring3.convert(&big - ubig!(1)), ring3.convert(&big - ubig!(10).pow(10)), ring3.convert(ubig!(10).pow(10))),
-        (ring3.convert(&big - ubig!(10).pow(10)), ring3.convert(&big - ubig!(10).pow(10)), ring3.convert(ubig!(10).pow(20))),
+        (
+            ring3.convert(&big - ubig!(1)),
+            ring3.convert(&big - ubig!(10).pow(10)),
+            ring3.convert(ubig!(10).pow(10)),
+        ),
+        (
+            ring3.convert(&big - ubig!(10).pow(10)),
+            ring3.convert(&big - ubig!(10).pow(10)),
+            ring3.convert(ubig!(10).pow(20)),
+        ),
     ];
 
     let all_test_cases = test_cases

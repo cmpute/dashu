@@ -70,7 +70,7 @@ pub(crate) mod repr {
     use crate::{
         arch::word::{DoubleWord, Word},
         buffer::Buffer,
-        math::{self, max_exp_in_word, bit_len},
+        math::{self, bit_len, max_exp_in_word},
         memory::{self, MemoryAllocation},
         mul, mul_ops,
         primitive::{extend_word, shrink_dword, split_dword},
@@ -86,10 +86,12 @@ pub(crate) mod repr {
             // shortcuts
             match exp {
                 0 => return Repr::one(),
-                1 => return match *self {
-                    Self::RefSmall(dw) => Repr::from_dword(dw),
-                    Self::RefLarge(words) => Repr::from_buffer(Buffer::from(words)),
-                },
+                1 => {
+                    return match *self {
+                        Self::RefSmall(dw) => Repr::from_dword(dw),
+                        Self::RefLarge(words) => Repr::from_buffer(Buffer::from(words)),
+                    }
+                }
                 2 => return self.square(),
                 _ => {}
             };

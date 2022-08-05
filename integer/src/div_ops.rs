@@ -14,12 +14,28 @@ use core::{
 
 helper_macros::forward_ubig_binop_to_repr!(impl Div, div);
 helper_macros::forward_ubig_binop_to_repr!(impl Rem, rem);
-helper_macros::forward_ubig_binop_to_repr!(impl DivRem as divrem, div_rem);
 helper_macros::forward_ubig_binop_to_repr!(impl DivEuclid, div_euclid, div);
 helper_macros::forward_ubig_binop_to_repr!(impl RemEuclid, rem_euclid, rem);
-helper_macros::forward_ubig_binop_to_repr!(impl DivRemEuclid as divrem, div_rem_euclid, div_rem);
 helper_macros::forward_binop_assign_by_taking!(impl DivAssign<UBig> for UBig, div_assign, div);
 helper_macros::forward_binop_assign_by_taking!(impl RemAssign<UBig> for UBig, rem_assign, rem);
+
+macro_rules! impl_ubig_divrem {
+    ($repr0:ident, $repr1:ident) => {{
+        let (q, r) = $repr0.div_rem($repr1);
+        (UBig(q), UBig(r))
+    }};
+}
+helper_macros::forward_ubig_binop_to_repr!(
+    impl DivRem, div_rem -> (UBig, UBig),
+    OutputDiv = UBig, OutputRem = UBig,
+    impl_ubig_divrem
+);
+helper_macros::forward_ubig_binop_to_repr!(
+    impl DivRemEuclid,
+    div_rem_euclid -> (UBig, UBig),
+    OutputDiv = UBig, OutputRem = UBig,
+    impl_ubig_divrem
+);
 
 macro_rules! impl_ibig_div {
     ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {
@@ -116,7 +132,11 @@ macro_rules! impl_ibig_div_rem {
         (IBig(q.with_sign($sign0 * $sign1)), IBig(r.with_sign($sign0)))
     }};
 }
-helper_macros::forward_ibig_binop_to_repr!(impl DivRem as divrem, div_rem, impl_ibig_div_rem);
+helper_macros::forward_ibig_binop_to_repr!(
+    impl DivRem, div_rem -> (IBig, IBig),
+    OutputDiv = IBig, OutputRem = IBig,
+    impl_ibig_div_rem
+);
 
 impl DivEuclid<IBig> for IBig {
     type Output = IBig;

@@ -9,8 +9,6 @@ use crate::{
 };
 use core::cmp::Ordering;
 
-// TODO(next): implement abs_cmp, abs_eq for IBig, which compares the magnitude of two IBigs
-
 impl<'a> PartialOrd for TypedReprRef<'a> {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -100,6 +98,36 @@ impl PartialOrd<UBig> for IBig {
             Negative => Ordering::Less,
         };
         Some(ord)
+    }
+}
+
+impl IBig {
+    /// Check whether the magnitude of this number is equal the magnitude of the other number
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::IBig;
+    ///
+    /// assert!(IBig::from(2).abs_eq(&IBig::from(-2)));
+    /// assert!(IBig::from(-3).abs_eq(&IBig::from(-3)));
+    /// ```
+    pub fn abs_eq(&self, other: &IBig) -> bool {
+        self.0.as_sign_slice().1.eq(other.0.as_sign_slice().1)
+    }
+
+    /// Compare the magnitude of this number to the magnitude of the other number
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::IBig;
+    ///
+    /// assert!(IBig::from(2).abs_cmp(&IBig::from(-3)).is_le());
+    /// assert!(IBig::from(-2).abs_cmp(&IBig::from(3)).is_le());
+    /// ```
+    pub fn abs_cmp(&self, other: &IBig) -> Ordering {
+        self.0.as_sign_typed().1.cmp(&other.0.as_sign_typed().1)
     }
 }
 

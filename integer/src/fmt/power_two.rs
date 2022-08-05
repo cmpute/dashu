@@ -1,5 +1,6 @@
 //! Format in a power-of-two radix.
 
+use super::{digit_writer::DigitWriter, InRadixFull, PreparedForFormatting};
 use crate::{
     arch::word::{DoubleWord, Word},
     math,
@@ -7,7 +8,6 @@ use crate::{
     radix::{self, Digit},
     repr::TypedReprRef::*,
 };
-use super::{digit_writer::DigitWriter, InRadixFull, PreparedForFormatting};
 use core::fmt::{self, Formatter};
 
 impl InRadixFull<'_> {

@@ -279,7 +279,7 @@ mod repr {
                 Large(buffer) => with_bit_large(buffer, n),
             }
         }
-        
+
         pub fn clear_bit(self, n: usize) -> Repr {
             match self {
                 Small(dword) => {

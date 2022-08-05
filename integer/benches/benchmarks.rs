@@ -6,7 +6,11 @@ use criterion::{
     black_box, criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion,
     PlotConfiguration,
 };
-use dashu_int::{modular::ModuloRing, ops::{DivRem, Gcd, ExtendedGcd}, UBig};
+use dashu_int::{
+    modular::ModuloRing,
+    ops::{DivRem, ExtendedGcd, Gcd},
+    UBig,
+};
 use rand::prelude::*;
 use std::fmt::Write;
 

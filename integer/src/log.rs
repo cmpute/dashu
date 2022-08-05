@@ -1,18 +1,18 @@
 //! Logarithm
 
-use crate::{ubig::UBig, ibig::IBig};
+use crate::{ibig::IBig, ubig::UBig};
 
 impl UBig {
     /// Calculate the (truncated) logarithm of the [UBig]
-    /// 
+    ///
     /// This function could takes a long time when the integer is very large.
     /// In applications where an exact result is not necessary,
     /// [log2f][UBig::log2f] could be used.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the number is 0, or the base is 0 or 1
-    /// 
+    ///
     /// # Example
     ///
     /// ```
@@ -27,15 +27,15 @@ impl UBig {
     }
 
     /// Calculate a fast f32 estimation of the binary logarithm.
-    /// 
+    ///
     /// The result is always less or equal to the actual value. The precision of the log
     /// result is at least 8 bits (relative error < 2^-8). The actual precision distribution
     /// depends on the word size. With 64 bit words, the precision is at least 13 bits.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the number is 0
-    /// 
+    ///
     /// # Example
     ///
     /// ```
@@ -51,16 +51,16 @@ impl UBig {
 }
 
 impl IBig {
-    /// Calculate the (truncated) logarithm of the absolute value of [IBig]
-    /// 
+    /// Calculate the (truncated) logarithm of the magnitude of [IBig]
+    ///
     /// This function could takes a long time when the integer is very large.
     /// In applications where an exact result is not necessary,
     /// [log2f][IBig::log2f] could be used.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the number is 0, or the base is 0 or 1
-    /// 
+    ///
     /// # Example
     ///
     /// ```
@@ -74,14 +74,14 @@ impl IBig {
         self.as_sign_repr().1.log(base.repr()).0
     }
 
-    /// Calculate a fast f32 estimation of the binary logarithm on the absolute value.
-    /// 
+    /// Calculate a fast f32 estimation of the binary logarithm on the magnitude.
+    ///
     /// See the documentation of [UBig::log2f] for the precision behavior.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the number is 0
-    /// 
+    ///
     /// # Example
     ///
     /// ```
@@ -100,13 +100,26 @@ pub(crate) mod repr {
     use core::cmp::Ordering;
 
     use crate::{
+        arch::word::{DoubleWord, Word},
+        buffer::Buffer,
+        cmp::cmp_in_place,
+        div,
         error::panic_invalid_log_oprand,
-        repr::{TypedReprRef::{self, *}, Repr},
-        primitive::{shrink_dword, WORD_BITS_USIZE, highest_dword, split_dword, extend_word, WORD_BITS},
-        math::{log2_word_fp8, log2_dword_fp8, max_exp_in_word, max_exp_in_dword, ceil_log2_word_fp8, ceil_log2_dword_fp8},
-        arch::word::{Word, DoubleWord},
-        cmp::cmp_in_place, buffer::Buffer,
-        pow, mul_ops, mul, div, helper_macros::debug_assert_zero, radix};
+        helper_macros::debug_assert_zero,
+        math::{
+            ceil_log2_dword_fp8, ceil_log2_word_fp8, log2_dword_fp8, log2_word_fp8,
+            max_exp_in_dword, max_exp_in_word,
+        },
+        mul, mul_ops, pow,
+        primitive::{
+            extend_word, highest_dword, shrink_dword, split_dword, WORD_BITS, WORD_BITS_USIZE,
+        },
+        radix,
+        repr::{
+            Repr,
+            TypedReprRef::{self, *},
+        },
+    };
 
     impl TypedReprRef<'_> {
         /// Floor logarithm, returns (log(self), base^log(self))
@@ -115,14 +128,17 @@ pub(crate) mod repr {
             if let RefSmall(dw) = base {
                 match dw {
                     0 | 1 => panic_invalid_log_oprand(),
-                    2 => return (self.bit_len() - 1, Repr::zero().into_typed().set_bit(self.bit_len())),
+                    2 => {
+                        return (
+                            self.bit_len() - 1,
+                            Repr::zero().into_typed().set_bit(self.bit_len()),
+                        )
+                    }
                     b if b.is_power_of_two() => {
                         let base_bits = b.trailing_zeros() as usize;
                         let exp = (self.bit_len() - 1) / base_bits;
-                        return (exp, Repr::zero()
-                            .into_typed()
-                            .set_bit(exp * base_bits))
-                    },
+                        return (exp, Repr::zero().into_typed().set_bit(exp * base_bits));
+                    }
                     _ => {}
                 }
             }
@@ -140,31 +156,31 @@ pub(crate) mod repr {
                         buffer[1] = hi;
                         log_large(words, &buffer)
                     }
-                },
-                (RefLarge(words), RefLarge(base_words)) => {
-                    match cmp_in_place(words, base_words) {
-                        Ordering::Less => (0, Repr::one()),
-                        Ordering::Equal => (1, Repr::from_buffer(Buffer::from(words)) ),
-                        Ordering::Greater => log_large(words, base_words)
-                    }
                 }
+                (RefLarge(words), RefLarge(base_words)) => match cmp_in_place(words, base_words) {
+                    Ordering::Less => (0, Repr::one()),
+                    Ordering::Equal => (1, Repr::from_buffer(Buffer::from(words))),
+                    Ordering::Greater => log_large(words, base_words),
+                },
             }
         }
 
         pub fn log2f(self) -> f32 {
             match self {
-                RefSmall(dword) => if let Some(word) = shrink_dword(dword) {
-                    if word == 0 {
-                        panic_invalid_log_oprand()
+                RefSmall(dword) => {
+                    if let Some(word) = shrink_dword(dword) {
+                        if word == 0 {
+                            panic_invalid_log_oprand()
+                        }
+                        let (exp, pow) = max_exp_in_dword(word);
+                        let shift = WORD_BITS - pow.leading_zeros();
+                        let est = log2_word_fp8((pow >> shift) as Word) + shift * 256;
+                        est as f32 / exp as f32 / 256.0
+                    } else {
+                        log2_dword_fp8(dword) as f32 / 256.0
                     }
-                    let (exp, pow) = max_exp_in_dword(word);
-                    let shift = WORD_BITS - pow.leading_zeros();
-                    let est = log2_word_fp8((pow >> shift) as Word) + shift * 256;
-                    est as f32 / exp as f32 / 256.0
-                } else {
-                    log2_dword_fp8(dword) as f32 / 256.0
-                },
-                RefLarge(words) => log2_large_fp8(words) as f32 / 256.0
+                }
+                RefLarge(words) => log2_large_fp8(words) as f32 / 256.0,
             }
         }
     }
@@ -215,7 +231,8 @@ pub(crate) mod repr {
             Repr::from_word(base)
         } else {
             pow::repr::pow_word_base(base, est)
-        }.into_buffer();
+        }
+        .into_buffer();
 
         // first proceed by multiplying wbase, which happens very rarely
         while est_pow.len() < target.len() {
@@ -238,7 +255,7 @@ pub(crate) mod repr {
                     let carry = mul::mul_word_in_place(&mut est_pow, base);
                     est_pow.push_resizing(carry);
                     est += 1;
-                },
+                }
                 Ordering::Equal => break,
                 Ordering::Greater => {
                     // recover the over estimate
@@ -263,10 +280,12 @@ pub(crate) mod repr {
         } else {
             // the target is too large, use very coarse estimation
             // to prevent overflow in log2_large_fp8
-            let log2_self = target.len() * WORD_BITS_USIZE - target.last().unwrap().leading_zeros() as usize;
+            let log2_self =
+                target.len() * WORD_BITS_USIZE - target.last().unwrap().leading_zeros() as usize;
             let log2_base = (base.len() + 1) * WORD_BITS_USIZE; // ceiling log
             log2_self / log2_base
-        }.max(1); // est >= 1
+        }
+        .max(1); // est >= 1
         let mut est_pow = if est == 1 {
             Repr::from_buffer(Buffer::from(base))
         } else if base.len() == 2 {

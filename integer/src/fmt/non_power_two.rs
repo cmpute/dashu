@@ -1,22 +1,27 @@
 //! Format in a non-power-of-two radix.
 
+use super::{digit_writer::DigitWriter, DoubleEnd, InRadixFull, PreparedForFormatting};
 use crate::{
     arch::word::{DoubleWord, Word},
+    buffer::Buffer,
     div,
+    helper_macros::debug_assert_zero,
+    log,
     math::shl_dword,
     ops::DivRem,
     primitive::{double_word, shrink_dword, split_dword},
     radix::{self, Digit},
-    repr::{TypedReprRef::{self, *}, Repr},
-    log, buffer::Buffer, helper_macros::debug_assert_zero, shift,
+    repr::{
+        Repr,
+        TypedReprRef::{self, *},
+    },
+    shift,
 };
-use super::{digit_writer::DigitWriter, InRadixFull, PreparedForFormatting, DoubleEnd};
 use alloc::vec::Vec;
 use core::{
     fmt::{self, Formatter},
     mem,
 };
-
 
 /// Format in chunks of CHUNK_LEN * digits_per_word.
 const CHUNK_LEN: usize = 16;
@@ -63,19 +68,23 @@ impl DoubleEnd<'_> {
                     let mut prepared = PreparedDword::new(dword, 10);
                     return self.format_prepared(f, prepared.width(), &mut prepared, None);
                 }
-            },
+            }
             RefLarge(words) => {
                 // otherwise, find the least and most significant digits that fit in a word.
                 // for the least significant digits, use the normal remainder algorithm
                 // for most significant digits, use the logarithm to find the top bits
                 let low_digits = div::rem_by_word(words, radix::RADIX10_INFO.range_per_word);
-                let mut prepared_low = PreparedWord::new(low_digits, 10, radix::RADIX10_INFO.digits_per_word);
+                let mut prepared_low =
+                    PreparedWord::new(low_digits, 10, radix::RADIX10_INFO.digits_per_word);
 
                 let (exp, pow) = log::repr::log_word_base(words, 10);
                 let mut pow = pow.into_buffer();
                 // there are exp + 1 digits, pow = 10^exp, we need to divide the target number
                 // by 10^(exp + 1 - digits_per_word) = pow / 10^(digits_per_word-1) to get the high digits
-                debug_assert_zero!(div::div_by_word_in_place(&mut pow, radix::RADIX10_INFO.range_per_word / 10));
+                debug_assert_zero!(div::div_by_word_in_place(
+                    &mut pow,
+                    radix::RADIX10_INFO.range_per_word / 10
+                ));
                 pow.pop_zeros();
                 debug_assert!(pow.len() > 1);
 
@@ -88,10 +97,17 @@ impl DoubleEnd<'_> {
                 } else {
                     (words_top, &mut words[..])
                 };
-                let high_digits = div::div_rem_highest_word(words_top, words_lo, &pow, fast_div_pow);
-                let mut prepared_high = PreparedWord::new(high_digits, 10, radix::RADIX10_INFO.digits_per_word);
+                let high_digits =
+                    div::div_rem_highest_word(words_top, words_lo, &pow, fast_div_pow);
+                let mut prepared_high =
+                    PreparedWord::new(high_digits, 10, radix::RADIX10_INFO.digits_per_word);
 
-                return self.format_prepared(f, exp as usize + 1, &mut prepared_high, Some(&mut prepared_low))
+                return self.format_prepared(
+                    f,
+                    exp as usize + 1,
+                    &mut prepared_high,
+                    Some(&mut prepared_low),
+                );
             }
         }
     }
@@ -293,7 +309,9 @@ impl PreparedLarge {
 
         let mut radix_powers = Vec::new();
         let mut big_chunks = Vec::new();
-        let chunk_power = Repr::from_word(radix_info.range_per_word).as_typed().pow(CHUNK_LEN);
+        let chunk_power = Repr::from_word(radix_info.range_per_word)
+            .as_typed()
+            .pow(CHUNK_LEN);
         if chunk_power.as_typed() > number {
             return PreparedLarge {
                 top_chunk: PreparedMedium::new(number, radix),
@@ -424,7 +442,6 @@ fn repr_to_chunk_buffer(x: TypedReprRef<'_>) -> ([Word; CHUNK_LEN], usize) {
         }
     }
 }
-
 
 /// Utility function to print usize in decimal digits
 pub fn write_usize_decimals(f: &mut fmt::Formatter, u: usize) -> fmt::Result {

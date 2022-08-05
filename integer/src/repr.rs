@@ -29,7 +29,7 @@ union ReprData {
 /// It's optimized so that small integers (single or double words) will not be allocated on heap.
 /// When the data is allocated on the heap, it can be casted to [Buffer] efficiently, but modifying
 /// the buffer inplace is not allowed because that can break the rule on the `capacity` field.
-/// 
+///
 /// To modified the internal data, one must convert the Repr into either [TypedRepr](enum, owning the data)
 /// or [Buffer](raw heap buffer). To access the internal data, one must use [TypedReprRef](enum, reference)
 /// or [slice][Repr::as_slice] protocol.
@@ -198,7 +198,7 @@ impl Repr {
     }
 
     /// Get a reference to the words in the `Repr`
-    /// 
+    ///
     /// # Panics
     ///
     /// Panics if the `capacity` is negative
@@ -294,7 +294,7 @@ impl Repr {
                     buffer.push(self.data.inline[0]);
                     buffer.push(self.data.inline[1]);
                     buffer
-                },
+                }
                 _ => {
                     // SAFETY: An `Buffer` and `Repr` have the same layout
                     //     and we have made sure that the data is allocated on heap
@@ -622,7 +622,7 @@ mod tests {
         let buffer_back = repr.into_buffer();
         assert_eq!(buffer_back.len(), 2);
         assert_eq!(&buffer_back[..], &[123, 456][..]);
-        
+
         let mut buffer = Buffer::allocate(3);
         buffer.push(123);
         buffer.push(456);
