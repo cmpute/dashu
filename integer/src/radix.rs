@@ -73,7 +73,7 @@ pub struct RadixInfo {
 }
 
 /// Radix info for base 10
-const RADIX10_INFO: RadixInfo = RadixInfo::for_radix(10);
+pub const RADIX10_INFO: RadixInfo = RadixInfo::for_radix(10);
 
 /// Maximum number of digits that a `Word` can ever have for any non-power-of-2 radix.
 pub const MAX_WORD_DIGITS_NON_POW_2: usize = max_exp_in_word(3).0 + 1;

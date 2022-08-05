@@ -2,12 +2,12 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
-    fmt::{digit_writer::DigitWriter, InRadixFull, PreparedForFormatting},
     math,
     primitive::{shrink_dword, DWORD_BITS_USIZE, WORD_BITS, WORD_BITS_USIZE},
     radix::{self, Digit},
     repr::TypedReprRef::*,
 };
+use super::{digit_writer::DigitWriter, InRadixFull, PreparedForFormatting};
 use core::fmt::{self, Formatter};
 
 impl InRadixFull<'_> {

@@ -36,10 +36,11 @@ impl Display for UBig {
 
 impl Debug for UBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        // TODO(next): display first x and last x digits only (if not inlined)
-        // TODO(next): display first & last digits with some diagnostic info
-        //       (repr size, is inlined or not, hex digits) if the alternate flag is set
-        Display::fmt(self, f)
+        DoubleEnd {
+            sign: Positive,
+            magnitude: self.repr(),
+            verbose: f.alternate(),
+        }.fmt(f)
     }
 }
 
@@ -111,7 +112,12 @@ impl Display for IBig {
 
 impl Debug for IBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        Display::fmt(self, f)
+        let (sign, magnitude) = self.as_sign_repr();
+        DoubleEnd {
+            sign,
+            magnitude,
+            verbose: f.alternate(),
+        }.fmt(f)
     }
 }
 
@@ -285,6 +291,7 @@ struct InRadixFull<'a> {
 struct DoubleEnd<'a> {
     sign: Sign,
     magnitude: TypedReprRef<'a>,
+    verbose: bool,
 }
 
 impl InRadixFull<'_> {
@@ -373,12 +380,40 @@ impl DoubleEnd<'_> {
     fn format_prepared(
         &self,
         f: &mut Formatter,
+        digits: usize,
         prepared_high: &mut dyn PreparedForFormatting,
         prepared_low: Option<&mut dyn PreparedForFormatting>,
     ) -> fmt::Result {
-        // TODO: if the width of f is less than default, we can omit some digits, but if it's more than default, then no op
-        //       put `..` in the middle, so the LSB and MSB digits have the same width
-        unimplemented!()
+        let sign = if self.sign == Negative {
+            "-"
+        } else if f.sign_plus() {
+            "+"
+        } else {
+            ""
+        };
+        f.write_str(sign)?;
+
+        let mut digit_writer = DigitWriter::new(f, DigitCase::NoLetters);
+        prepared_high.write(&mut digit_writer)?;
+        digit_writer.flush()?;
+
+        if let Some(low) = prepared_low {
+            f.write_str("..")?;
+
+            let mut digit_writer = DigitWriter::new(f, DigitCase::NoLetters);
+            low.write(&mut digit_writer)?;
+            digit_writer.flush()?;
+        }
+
+        if self.verbose {
+            f.write_str(" (")?;
+            non_power_two::write_usize_decimals(f, digits)?;
+            f.write_str(" digits, ")?;
+            non_power_two::write_usize_decimals(f, self.magnitude.bit_len())?;
+            f.write_str(" bits)")?;
+        }
+
+        Ok(())
     }
 }
 

@@ -74,6 +74,11 @@ fn test_random_arithmetic() {
             assert_eq!(UBig::from_str_radix(&a.in_radix(radix).to_string(), radix).unwrap(), a);
             assert_eq!((&a + UBig::ONE) * (&a - UBig::ONE), a.square() - UBig::ONE);
 
+            // pow can be very slow when exponent is too large
+            if log_num_bits <= 5 && i % 8 == 0 {
+                assert_eq!((ubig!(5).pow(num_bits) + 1u8).log(&ubig!(25)), num_bits / 2);
+            }
+
             // gcd is much slower than primitive operations, test with lower frequency
             if i % 32 == 0 {
                 let (g, ca, cb) = a.gcd_ext(&b);

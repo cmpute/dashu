@@ -3,21 +3,20 @@
 use crate::{
     arch::word::{DoubleWord, Word},
     div,
-    fmt::{digit_writer::DigitWriter, InRadixFull, PreparedForFormatting},
     math::shl_dword,
     ops::DivRem,
     primitive::{double_word, shrink_dword, split_dword},
     radix::{self, Digit},
     repr::TypedReprRef::{self, *},
-    ubig::UBig,
+    ubig::UBig, log, buffer::Buffer, helper_macros::debug_assert_zero, shift,
 };
+use super::{digit_writer::DigitWriter, InRadixFull, PreparedForFormatting, DoubleEnd};
 use alloc::vec::Vec;
 use core::{
     fmt::{self, Formatter},
     mem,
 };
 
-use super::DoubleEnd;
 
 /// Format in chunks of CHUNK_LEN * digits_per_word.
 const CHUNK_LEN: usize = 16;
@@ -50,22 +49,51 @@ impl InRadixFull<'_> {
 
 impl DoubleEnd<'_> {
     pub fn fmt_non_power_two(&self, f: &mut Formatter) -> fmt::Result {
-        // if the number is small enough, we directly prepare all digits
-        if let RefSmall(dword) = self.magnitude {
-            if let Some(word) = shrink_dword(dword) {
-                let mut prepared = PreparedWord::new(word, 10, 1);
-                return self.format_prepared(f, &mut prepared, None);
-            } else {
-                let mut prepared = PreparedDword::new(dword, 10);
-                return self.format_prepared(f, &mut prepared, None);
+        match self.magnitude {
+            RefSmall(dword) => {
+                // if the number is small enough, we directly prepare all digits
+                if let Some(word) = shrink_dword(dword) {
+                    let mut prepared = PreparedWord::new(word, 10, 1);
+                    let digits = match word {
+                        0 => 0,
+                        _ => prepared.width(),
+                    };
+                    return self.format_prepared(f, digits, &mut prepared, None);
+                } else {
+                    let mut prepared = PreparedDword::new(dword, 10);
+                    return self.format_prepared(f, prepared.width(), &mut prepared, None);
+                }
+            },
+            RefLarge(words) => {
+                // otherwise, find the least and most significant digits that fit in a word.
+                // for the least significant digits, use the normal remainder algorithm
+                // for most significant digits, use the logarithm to find the top bits
+                let low_digits = div::rem_by_word(words, radix::RADIX10_INFO.range_per_word);
+                let mut prepared_low = PreparedWord::new(low_digits, 10, radix::RADIX10_INFO.digits_per_word);
+
+                let (exp, pow) = log::repr::log_word_base(words, 10);
+                let mut pow = pow.into_buffer();
+                // there are exp + 1 digits, pow = 10^exp, we need to divide the target number
+                // by 10^(exp + 1 - digits_per_word) = pow / 10^(digits_per_word-1) to get the high digits
+                debug_assert_zero!(div::div_by_word_in_place(&mut pow, radix::RADIX10_INFO.range_per_word / 10));
+                pow.pop_zeros();
+                debug_assert!(pow.len() > 1);
+
+                let mut words = Buffer::from(words);
+                let (shift, fast_div_pow) = div::normalize(&mut pow);
+                let words_top = shift::shl_in_place(&mut words, shift);
+                let (words_top, words_lo) = if words_top == 0 {
+                    let (words_top, words_lo) = words.split_last_mut().unwrap();
+                    (*words_top, words_lo)
+                } else {
+                    (words_top, &mut words[..])
+                };
+                let high_digits = div::div_rem_highest_word(words_top, words_lo, &pow, fast_div_pow);
+                let mut prepared_high = PreparedWord::new(high_digits, 10, radix::RADIX10_INFO.digits_per_word);
+
+                return self.format_prepared(f, exp as usize + 1, &mut prepared_high, Some(&mut prepared_low))
             }
         }
-
-        // otherwise, find the least and most significant digits that fit in a word
-        // get LSB by one division, and get MSB by logarithm
-        let radix_info = radix::radix_info(10);
-
-        unimplemented!()
     }
 }
 
@@ -250,7 +278,7 @@ impl PreparedForFormatting for PreparedMedium {
 struct PreparedLarge {
     top_chunk: PreparedMedium,
     // radix^((digits_per_word * CHUNK_LEN) << i)
-    radix_powers: Vec<UBig>,
+    radix_powers: Vec<UBig>, // TODO: use Repr instead of UBig
     // little endian chunks: (i, (digits_per_word * CHUNK_LEN)<<i digit number)
     // decreasing in size, so there is a logarithmic number of them
     big_chunks: Vec<(usize, UBig)>,
@@ -395,4 +423,13 @@ fn ubig_to_chunk_buffer(x: TypedReprRef<'_>) -> ([Word; CHUNK_LEN], usize) {
             (buffer, buffer_len)
         }
     }
+}
+
+
+/// Utility function to print usize in decimal digits
+pub fn write_usize_decimals(f: &mut fmt::Formatter, u: usize) -> fmt::Result {
+    let mut prepared = PreparedWord::new(u as Word, 10, 1);
+    let mut writer = DigitWriter::new(f, radix::DigitCase::NoLetters);
+    prepared.write(&mut writer)?;
+    writer.flush()
 }

@@ -1,4 +1,4 @@
-use dashu_int::{error::ParseError, IBig, UBig};
+use dashu_int::{error::ParseError, IBig, UBig, Word};
 
 mod helper_macros;
 
@@ -373,4 +373,47 @@ fn test_macros() {
         format!("{}", ibig!(-ppppppppppppppppppp base 32).in_radix(32)),
         "-ppppppppppppppppppp"
     );
+}
+
+#[test]
+fn test_ubig_debug() {
+    assert_eq!(format!("{:?}", ubig!(0)), "0");
+    assert_eq!(format!("{:#?}", ubig!(0)), "0 (0 digits, 0 bits)");
+    assert_eq!(format!("{:?}", ubig!(100)), "100");
+    assert_eq!(format!("{:#?}", ubig!(100)), "100 (3 digits, 7 bits)");
+    assert_eq!(format!("{:?}", ubig!(12345678)), "12345678");
+    assert_eq!(format!("{:#?}", ubig!(12345678)), "12345678 (8 digits, 24 bits)");
+    assert_eq!(format!("{:?}", (ubig!(1) << 31) - 1u8), "2147483647");
+    assert_eq!(format!("{:#?}", (ubig!(1) << 31) - 1u8), "2147483647 (10 digits, 31 bits)");
+
+    if Word::BITS == 64 {
+        // the number of displayed digits dependends on Word size
+        assert_eq!(format!("{:?}", ubig!(1) << 128), "3402823669209384634..3374607431768211456");
+        assert_eq!(format!("{:#?}", ubig!(1) << 128), "3402823669209384634..3374607431768211456 (39 digits, 129 bits)");
+        assert_eq!(format!("{:?}", (ubig!(1) << 129) - 1u8), "6805647338418769269..6749214863536422911");
+        assert_eq!(format!("{:#?}", (ubig!(1) << 129) - 1u8), "6805647338418769269..6749214863536422911 (39 digits, 129 bits)");
+        assert_eq!(format!("{:?}", (ubig!(1) << 200) - 1u8), "1606938044258990275..2993782792835301375");
+        assert_eq!(format!("{:#?}", (ubig!(1) << 200) - 1u8), "1606938044258990275..2993782792835301375 (61 digits, 200 bits)");
+        assert_eq!(format!("{:?}", (ubig!(1) << 2000) - 1u8), "1148130695274254524..3762184851149029375");
+        assert_eq!(format!("{:#?}", (ubig!(1) << 2000) - 1u8), "1148130695274254524..3762184851149029375 (603 digits, 2000 bits)");
+    }
+}
+
+
+#[test]
+fn test_ibig_debug() {
+    assert_eq!(format!("{:?}", ibig!(-0)), "0");
+    assert_eq!(format!("{:#?}", ibig!(-0)), "0 (0 digits, 0 bits)");
+    assert_eq!(format!("{:?}", ibig!(-100)), "-100");
+    assert_eq!(format!("{:+?}", ibig!(100)), "+100");
+    assert_eq!(format!("{:#?}", ibig!(-100)), "-100 (3 digits, 7 bits)");
+    assert_eq!(format!("{:+#?}", ibig!(100)), "+100 (3 digits, 7 bits)");
+
+    if Word::BITS == 64 {
+        // the number of displayed digits dependends on Word size
+        assert_eq!(format!("{:?}", ibig!(-1) << 128), "-3402823669209384634..3374607431768211456");
+        assert_eq!(format!("{:#?}", ibig!(-1) << 128), "-3402823669209384634..3374607431768211456 (39 digits, 129 bits)");
+        assert_eq!(format!("{:?}", (ibig!(-1) << 200) + 1), "-1606938044258990275..2993782792835301375");
+        assert_eq!(format!("{:#?}", (ibig!(-1) << 200) + 1), "-1606938044258990275..2993782792835301375 (61 digits, 200 bits)");
+    }
 }

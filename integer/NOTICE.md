@@ -36,5 +36,6 @@ Initial modifications (at version 0.1.0) on the `ibig` library:
    copying overhead.
 5. `AndNot` trait is made private because it's not widely used and the naming doesn't
    follow the BitXXX style in the std library.
+6. MSRV is increased to 1.56
 
 The other modifications from later versions can be found in the CHANGELOG.md

@@ -9,7 +9,7 @@ use crate::{
 };
 use core::cmp::Ordering;
 
-// TODO: implement abs_cmp for IBig, which compares the magnitude of two IBigs
+// TODO(next): implement abs_cmp, abs_eq for IBig, which compares the magnitude of two IBigs
 
 impl<'a> PartialOrd for TypedReprRef<'a> {
     #[inline]

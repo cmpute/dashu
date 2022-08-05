@@ -15,7 +15,7 @@ use core::{
     slice,
 };
 
-/// Buffer of words allocated on heap. It's like a `Vec<Word>` with limited functionalities.
+/// Buffer of words allocated on heap. It's like a `Vec<Word>` with functionalities specialized for words.
 ///
 /// This struct is ensured to be consistent with [Repr][crate::repr::Repr] in struct layout
 /// (that's why `repr(C)` is necessary), but the big integer represented by this buffer is unsigned.

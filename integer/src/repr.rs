@@ -29,6 +29,10 @@ union ReprData {
 /// It's optimized so that small integers (single or double words) will not be allocated on heap.
 /// When the data is allocated on the heap, it can be casted to [Buffer] efficiently, but modifying
 /// the buffer inplace is not allowed because that can break the rule on the `capacity` field.
+/// 
+/// To modified the internal data, one must convert the Repr into either [TypedRepr](enum, owning the data)
+/// or [Buffer](raw heap buffer). To access the internal data, one must use [TypedReprRef](enum, reference)
+/// or [slice][Repr::as_slice] protocol.
 #[repr(C)]
 pub struct Repr {
     /// The words in the `data` field are ordered from the least significant to the most significant.
@@ -183,6 +187,7 @@ impl Repr {
     }
 
     /// Cast the `Repr` to a strong typed representation and return with the sign.
+    #[inline]
     pub fn into_sign_typed(mut self) -> (Sign, TypedRepr) {
         let (abs_capacity, sign) = self.sign_capacity();
         self.capacity = unsafe {
@@ -262,6 +267,39 @@ impl Repr {
                 // SAFETY: the length has been checked and capacity >= lenght,
                 //         so capacity is nonzero and larger than 2
                 unsafe { mem::transmute(buffer) }
+            }
+        }
+    }
+
+    /// Cast the `Repr` to a [Buffer] instance, assuming the underlying data is unsigned.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `capacity` is negative
+    pub fn into_buffer(self) -> Buffer {
+        assert!(self.capacity.get() > 0);
+
+        unsafe {
+            match self.capacity.get() {
+                1 => {
+                    let mut buffer = Buffer::allocate(1);
+                    if self.data.inline[0] != 0 {
+                        buffer.push(self.data.inline[0]);
+                    }
+                    buffer
+                }
+                2 => {
+                    debug_assert!(self.data.inline[1] != 0);
+                    let mut buffer = Buffer::allocate(2);
+                    buffer.push(self.data.inline[0]);
+                    buffer.push(self.data.inline[1]);
+                    buffer
+                },
+                _ => {
+                    // SAFETY: An `Buffer` and `Repr` have the same layout
+                    //     and we have made sure that the data is allocated on heap
+                    mem::transmute(self)
+                }
             }
         }
     }
@@ -554,6 +592,47 @@ mod tests {
         let repr2 = repr.clone();
         assert_eq!(repr.capacity(), Buffer::default_capacity(3));
         assert_eq!(repr, repr2);
+    }
+
+    #[test]
+    fn test_convert_buffer() {
+        let buffer = Buffer::allocate(0);
+        let repr = Repr::from_buffer(buffer);
+        assert_eq!(repr.len(), 0);
+        assert!(repr.as_slice().is_empty());
+        let buffer_back = repr.into_buffer();
+        assert_eq!(buffer_back.len(), 0);
+        assert!(buffer_back.is_empty());
+
+        let mut buffer = Buffer::allocate(1);
+        buffer.push(123);
+        let repr = Repr::from_buffer(buffer);
+        assert_eq!(repr.len(), 1);
+        assert_eq!(repr.as_slice(), &[123][..]);
+        let buffer_back = repr.into_buffer();
+        assert_eq!(buffer_back.len(), 1);
+        assert_eq!(&buffer_back[..], &[123][..]);
+
+        let mut buffer = Buffer::allocate(2);
+        buffer.push(123);
+        buffer.push(456);
+        let repr = Repr::from_buffer(buffer);
+        assert_eq!(repr.len(), 2);
+        assert_eq!(repr.as_slice(), &[123, 456][..]);
+        let buffer_back = repr.into_buffer();
+        assert_eq!(buffer_back.len(), 2);
+        assert_eq!(&buffer_back[..], &[123, 456][..]);
+        
+        let mut buffer = Buffer::allocate(3);
+        buffer.push(123);
+        buffer.push(456);
+        buffer.push(789);
+        let repr = Repr::from_buffer(buffer);
+        assert_eq!(repr.len(), 3);
+        assert_eq!(repr.as_slice(), &[123, 456, 789][..]);
+        let buffer_back = repr.into_buffer();
+        assert_eq!(buffer_back.len(), 3);
+        assert_eq!(&buffer_back[..], &[123, 456, 789][..]);
     }
 
     #[test]

@@ -73,7 +73,7 @@ pub(crate) mod repr {
         math::{self, max_exp_in_word, bit_len},
         memory::{self, MemoryAllocation},
         mul, mul_ops,
-        primitive::{extend_word, shrink_dword, split_dword, PrimitiveUnsigned},
+        primitive::{extend_word, shrink_dword, split_dword},
         repr::{
             Repr,
             TypedReprRef::{self, *},

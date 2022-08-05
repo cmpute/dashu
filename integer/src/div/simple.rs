@@ -52,7 +52,7 @@ pub(crate) fn div_rem_in_place(
     quotient_carry
 }
 
-/// Do one step division on lhs by rhs, get the higest word of the quotient.
+/// Do one step division on lhs by rhs, get the highest word of the quotient.
 ///
 /// Rhs must be normalized, lhs.len() > rhs.len() and lhs[lhs.len() - rhs.len()..]
 /// must be smaller than rhs.

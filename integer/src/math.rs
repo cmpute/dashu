@@ -369,13 +369,37 @@ mod tests {
         assert_eq!(log2_word_fp8(12345), 3478); // err = 1
         assert_eq!(log2_dword_fp8(12345678), 6029); // err = 1
         assert_eq!(log2_dword_fp8(1234567890), 7731); // err = 0
-        
-        // assert_eq!(ceil_log2_word_fp8(1), 0);
+        assert_eq!(log2_word_fp8(0xff), 2046); // err = 0
+        assert_eq!(log2_word_fp8(0x100), 2048); // err = 0
+        assert_eq!(log2_word_fp8(0x101), 2048); // err = 1
+        assert_eq!(log2_dword_fp8(0xff00), 4094); // err = 0
+        assert_eq!(log2_dword_fp8(0xffff), 4095); // err = 0
+        assert_eq!(log2_dword_fp8(0x10000), 4096); // err = 0
+        assert_eq!(log2_dword_fp8(0x10001), 4096); // err = 0
+
         assert_eq!(ceil_log2_word_fp8(12), 918); // err = 0
         assert_eq!(ceil_log2_word_fp8(123), 1778); // err = 0
         assert_eq!(ceil_log2_word_fp8(1234), 2631); // err = 2
         assert_eq!(ceil_log2_word_fp8(12345), 3480); // err = 0
         assert_eq!(ceil_log2_dword_fp8(12345678), 6032); // err = 2
         assert_eq!(ceil_log2_dword_fp8(1234567890), 7733); // err = 1
+        assert_eq!(ceil_log2_word_fp8(0xff), 2047); // err = 0
+        assert_eq!(ceil_log2_word_fp8(0x101), 2051); // err = 1
+        assert_eq!(ceil_log2_dword_fp8(0xff00), 4096); // err = 1
+        assert_eq!(ceil_log2_dword_fp8(0xffff), 4096); // err = 0
+        assert_eq!(ceil_log2_dword_fp8(0x10001), 4098); // err = 1
+
+        if Word::BITS == 64 {
+            // hard cases
+            assert_eq!(log2_word_fp8(0x7f00000000000000), 16125); // err = 0
+            assert_eq!(log2_word_fp8(0x7fffffffffffffff), 16127); // err = 0
+            assert_eq!(log2_word_fp8(0xff00000000000000), 16382); // err = 0
+            assert_eq!(log2_word_fp8(0xffffffffffffffff), 16383); // err = 0
+
+            assert_eq!(ceil_log2_word_fp8(0x7f00000000000000), 16126); // err = 0
+            assert_eq!(ceil_log2_word_fp8(0x7fffffffffffffff), 16128); // err = 0
+            assert_eq!(ceil_log2_word_fp8(0xff00000000000000), 16384); // err = 1
+            assert_eq!(ceil_log2_word_fp8(0xffffffffffffffff), 16384); // err = 0
+        }
     }
 }

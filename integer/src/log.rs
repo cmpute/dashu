@@ -2,18 +2,21 @@
 
 use crate::{ubig::UBig, ibig::IBig};
 
-// TODO: add notes:
-// log2(1+x) ~ x when x = 0-1, max_err = (-1 + log(2) - log(log(2)))/log(2) ~ 0.086
-// log_b(1+x) = log2(1+x)/log2(b) ~ x / log2(b)
-// for example log10(1+x) ~ x/log2(10), max ~ (-1 + log(2) - log(log(2)))/log(10) ~ 0.086 / log2(10) = 0.026 
-// this could be used to further increase the estimation of log:
-// log(x, base) = log(base^floorlog(x)) + log(1+(x-base^floorlog(x))/base^floorlog(x))
-// one extra digit precision can be get with base up to 71 (71 is the max number of x s.t. (-1 + log(2) - log(log(2)))/log(x) < 1/x)
-// two extra digit for base up to 5, three extra digit for base 2
-
-
 impl UBig {
-    /// Calculate the logarithm of the [UBig]
+    /// Calculate the (truncated) logarithm of the [UBig]
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the number is 0, or the base is 0 or 1
+    /// 
+    /// # Example
+    ///
+    /// ```
+    /// # use dashu_int::UBig;
+    /// let base = UBig::from(3u8);
+    /// assert_eq!(UBig::from(81u8).log(&base), 4);
+    /// assert_eq!(UBig::from(1000u16).log(&base), 6);
+    /// ```
     #[inline]
     pub fn log(&self, base: &UBig) -> usize {
         self.repr().log(base.repr()).0
@@ -21,24 +24,37 @@ impl UBig {
 }
 
 impl IBig {
-    /// Calculate the logarithm of the absolute value of [IBig]
+    /// Calculate the (truncated) logarithm of the absolute value of [IBig]
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the number is 0, or the base is 0 or 1
+    /// 
+    /// # Example
+    ///
+    /// ```
+    /// # use dashu_int::{UBig, IBig};
+    /// let base = UBig::from(3u8);
+    /// assert_eq!(IBig::from(-81).log(&base), 4);
+    /// assert_eq!(IBig::from(-1000).log(&base), 6);
+    /// ```
     #[inline]
     pub fn log(&self, base: &UBig) -> usize {
         self.as_sign_repr().1.log(base.repr()).0
     }
 }
 
-mod repr {
+pub(crate) mod repr {
     use core::cmp::Ordering;
 
     use crate::{
         error::panic_invalid_log_oprand,
-        repr::{TypedReprRef::{self, *}, TypedRepr::*, Repr},
+        repr::{TypedReprRef::{self, *}, Repr},
         primitive::{shrink_dword, WORD_BITS_USIZE, highest_dword, split_dword, extend_word},
         math::{log2_dword_fp8, max_exp_in_word, ceil_log2_word_fp8, ceil_log2_dword_fp8},
         arch::word::{Word, DoubleWord},
         cmp::cmp_in_place, buffer::Buffer,
-        pow, mul_ops, mul, div, helper_macros::debug_assert_zero};
+        pow, mul_ops, mul, div, helper_macros::debug_assert_zero, radix};
 
     impl TypedReprRef<'_> {
         /// Floor logarithm, returns (log(self), base^log(self))
@@ -60,11 +76,11 @@ mod repr {
             }
 
             match (self, base) {
-                (RefSmall(dword), RefSmall(base_dword)) => log_rem_dword(dword, base_dword),
+                (RefSmall(dword), RefSmall(base_dword)) => log_dword(dword, base_dword),
                 (RefSmall(_), RefLarge(_)) => (0, Repr::one()),
                 (RefLarge(words), RefSmall(base_dword)) => {
                     if let Some(base_word) = shrink_dword(base_dword) {
-                        log_rem_word_base(words, base_word)
+                        log_word_base(words, base_word)
                     } else {
                         let mut buffer: [Word; 2] = [0; 2];
                         let (lo, hi) = split_dword(base_dword);
@@ -85,7 +101,7 @@ mod repr {
 
     }
 
-    fn log_rem_dword(target: DoubleWord, base: DoubleWord) -> (usize, Repr) {
+    fn log_dword(target: DoubleWord, base: DoubleWord) -> (usize, Repr) {
         debug_assert!(base > 1);
 
         // shortcuts
@@ -116,28 +132,22 @@ mod repr {
         (est as usize, Repr::from_dword(est_pow))
     }
 
-    fn log_rem_word_base(target: &[Word], base: Word) -> (usize, Repr) {
+    pub(crate) fn log_word_base(target: &[Word], base: Word) -> (usize, Repr) {
         let log2_self = log2_large_fp8(target);
-        // TODO: specialize for base == 10
-        let (wexp, wbase) = max_exp_in_word(base);
+        let (wexp, wbase) = if base == 10 {
+            // specialize for base 10, which is cached in radix_info
+            (radix::RADIX10_INFO.digits_per_word, radix::RADIX10_INFO.range_per_word)
+        } else {
+            max_exp_in_word(base)
+        };
         let log2_wbase = ceil_log2_word_fp8(wbase) as usize;
 
         let mut est = log2_self * wexp / log2_wbase; // est >= 1
-        let est_pow = if est == 1 {
+        let mut est_pow = if est == 1 {
             Repr::from_word(base)
         } else {
             pow::repr::pow_word_base(base, est)
-        };
-        let mut est_pow = match est_pow.into_typed() {
-            Small(dword) => {
-                let mut buffer = Buffer::allocate(2);
-                let (lo, hi) = split_dword(dword);
-                buffer.push(lo);
-                buffer.push(hi);
-                buffer
-            },
-            Large(buffer) => buffer
-        };
+        }.into_buffer();
 
         // first proceed by multiplying wbase, which happens very rarely
         while est_pow.len() < target.len() {
