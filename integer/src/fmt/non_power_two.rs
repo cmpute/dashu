@@ -7,8 +7,8 @@ use crate::{
     ops::DivRem,
     primitive::{double_word, shrink_dword, split_dword},
     radix::{self, Digit},
-    repr::TypedReprRef::{self, *},
-    ubig::UBig, log, buffer::Buffer, helper_macros::debug_assert_zero, shift,
+    repr::{TypedReprRef::{self, *}, Repr},
+    log, buffer::Buffer, helper_macros::debug_assert_zero, shift,
 };
 use super::{digit_writer::DigitWriter, InRadixFull, PreparedForFormatting, DoubleEnd};
 use alloc::vec::Vec;
@@ -225,7 +225,7 @@ impl PreparedMedium {
         debug_assert!(radix::is_radix_valid(radix) && !radix.is_power_of_two());
         let radix_info = radix::radix_info(radix);
 
-        let (mut buffer, mut buffer_len) = ubig_to_chunk_buffer(number);
+        let (mut buffer, mut buffer_len) = repr_to_chunk_buffer(number);
 
         let mut low_groups = [0; CHUNK_LEN];
         let mut num_low_groups = 0;
@@ -278,10 +278,10 @@ impl PreparedForFormatting for PreparedMedium {
 struct PreparedLarge {
     top_chunk: PreparedMedium,
     // radix^((digits_per_word * CHUNK_LEN) << i)
-    radix_powers: Vec<UBig>, // TODO: use Repr instead of UBig
+    radix_powers: Vec<Repr>,
     // little endian chunks: (i, (digits_per_word * CHUNK_LEN)<<i digit number)
     // decreasing in size, so there is a logarithmic number of them
-    big_chunks: Vec<(usize, UBig)>,
+    big_chunks: Vec<(usize, Repr)>,
     radix: Digit,
 }
 
@@ -293,8 +293,8 @@ impl PreparedLarge {
 
         let mut radix_powers = Vec::new();
         let mut big_chunks = Vec::new();
-        let chunk_power = UBig::from(radix_info.range_per_word).pow(CHUNK_LEN);
-        if chunk_power.repr() > number {
+        let chunk_power = Repr::from_word(radix_info.range_per_word).as_typed().pow(CHUNK_LEN);
+        if chunk_power.as_typed() > number {
             return PreparedLarge {
                 top_chunk: PreparedMedium::new(number, radix),
                 radix_powers,
@@ -307,13 +307,13 @@ impl PreparedLarge {
         loop {
             let prev = radix_powers.last().unwrap();
             // Avoid multiplication if we know prev * prev > number just by looking at lengths.
-            if 2 * prev.0.len() - 1 > number.len() {
+            if 2 * prev.len() - 1 > number.len() {
                 break;
             }
 
             // 2 * prev.len() is at most 1 larger than number.len().
-            let new = prev * prev;
-            if new.repr() > number {
+            let new = prev.as_typed().square();
+            if new.as_typed() > number {
                 break;
             }
             radix_powers.push(new);
@@ -322,20 +322,20 @@ impl PreparedLarge {
         let mut power_iter = radix_powers.iter().enumerate().rev();
         let mut x = {
             let (i, p) = power_iter.next().unwrap();
-            let (q, r) = number.div_rem(p.repr());
-            big_chunks.push((i, UBig(r)));
-            UBig(q)
+            let (q, r) = number.div_rem(p.as_typed());
+            big_chunks.push((i, r));
+            q
         };
         for (i, p) in power_iter {
-            if &x >= p {
-                let (q, r) = x.div_rem(p);
+            if x.as_typed() >= p.as_typed() {
+                let (q, r) = x.into_typed().div_rem(p.as_typed());
                 big_chunks.push((i, r));
                 x = q;
             }
         }
 
         PreparedLarge {
-            top_chunk: PreparedMedium::new(x.repr(), radix),
+            top_chunk: PreparedMedium::new(x.as_typed(), radix),
             radix_powers,
             big_chunks,
             radix,
@@ -343,20 +343,20 @@ impl PreparedLarge {
     }
 
     /// Write (digits_per_word * CHUNK_LEN) << i digits.
-    fn write_big_chunk(&self, digit_writer: &mut DigitWriter, i: usize, x: UBig) -> fmt::Result {
+    fn write_big_chunk(&self, digit_writer: &mut DigitWriter, i: usize, x: Repr) -> fmt::Result {
         if i == 0 {
             self.write_chunk(digit_writer, x)
         } else {
-            let (q, r) = x.div_rem(&self.radix_powers[i - 1]);
+            let (q, r) = x.into_typed().div_rem(self.radix_powers[i - 1].as_typed());
             self.write_big_chunk(digit_writer, i - 1, q)?;
             self.write_big_chunk(digit_writer, i - 1, r)
         }
     }
 
     /// Write digits_per_word * CHUNK_LEN digits.
-    fn write_chunk(&self, digit_writer: &mut DigitWriter, x: UBig) -> fmt::Result {
+    fn write_chunk(&self, digit_writer: &mut DigitWriter, x: Repr) -> fmt::Result {
         let radix_info = radix::radix_info(self.radix);
-        let (mut buffer, mut buffer_len) = ubig_to_chunk_buffer(x.repr());
+        let (mut buffer, mut buffer_len) = repr_to_chunk_buffer(x.as_typed());
 
         let mut groups = [0; CHUNK_LEN];
 
@@ -403,7 +403,7 @@ impl PreparedForFormatting for PreparedLarge {
     }
 }
 
-fn ubig_to_chunk_buffer(x: TypedReprRef<'_>) -> ([Word; CHUNK_LEN], usize) {
+fn repr_to_chunk_buffer(x: TypedReprRef<'_>) -> ([Word; CHUNK_LEN], usize) {
     let mut buffer = [0; CHUNK_LEN];
 
     match x {

@@ -69,7 +69,9 @@ pub trait DivRemEuclid<Rhs = Self> {
     fn div_rem_euclid(self, rhs: Rhs) -> (Self::OutputDiv, Self::OutputRem);
 }
 
-/// Compute the greatest common divisor
+/// Compute the greatest common divisor.
+/// 
+/// For negative integers, the common divisor is still kept positive.
 ///
 /// # Example
 /// ```
@@ -78,20 +80,21 @@ pub trait DivRemEuclid<Rhs = Self> {
 /// ```
 ///
 /// # Panics
-/// Panics if two oprands are both zero.
+/// 
+/// Panics if both operands are zeros
 pub trait Gcd<Rhs = Self> {
     type Output;
 
     /// Compute the greatest common divisor between the two operands.
-    ///
-    /// # Panics
     ///
     /// Panics if both operands are zeros
     fn gcd(self, rhs: Rhs) -> Self::Output;
 }
 
 /// Compute the greatest common divisor between self and the other operand, and return
-/// both the common divisor `g` and the Bézout coefficients.
+/// both the common divisor `g` and the Bézout coefficients respectively.
+/// 
+/// For negative integers, the common divisor is still kept positive.
 ///
 /// # Example
 /// ```
@@ -102,13 +105,16 @@ pub trait Gcd<Rhs = Self> {
 /// ```
 ///
 /// # Panics
-/// Panics if two oprands are both zero.
+/// 
+/// Panics if both operands are zeros
 pub trait ExtendedGcd<Rhs = Self> {
     type OutputGcd;
     type OutputCoeff;
 
     /// Calculate the greatest common divisor between the two operands, returns
-    /// the common divisor and the Bézout coefficients respectively.
+    /// the common divisor `g` and the Bézout coefficients respectively.
+    /// 
+    /// Panics if both operands are zeros
     fn gcd_ext(self, rhs: Rhs) -> (Self::OutputGcd, Self::OutputCoeff, Self::OutputCoeff);
 }
 

@@ -70,7 +70,8 @@ extern crate alloc;
 
 pub use crate::{ibig::IBig, sign::Sign, ubig::UBig};
 
-/// The primitive integer type used to construct the big integers.
+/// The primitive integer type used to construct the big integers. It's guaranteed to be
+/// one of the rust unsigned integer types
 ///
 /// The big integers is interally represented as an array of [Word]s, so convert
 /// integers from and into [Word]s are efficient.

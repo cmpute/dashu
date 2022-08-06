@@ -11,7 +11,7 @@ macro_rules! impl_ibig_mul {
         IBig($mag0.mul($mag1).with_sign($sign0 * $sign1))
     };
 }
-helper_macros::forward_ibig_binop_to_repr!(impl Mul, mul, impl_ibig_mul);
+helper_macros::forward_ibig_binop_to_repr!(impl Mul, mul, Output = IBig, impl_ibig_mul);
 helper_macros::forward_binop_assign_by_taking!(impl MulAssign<IBig> for IBig, mul_assign, mul);
 
 macro_rules! impl_ubig_ibig_mul {

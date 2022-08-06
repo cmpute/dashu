@@ -3,7 +3,7 @@
 mod barret;
 mod const_div;
 pub(crate) use barret::{FastDivideNormalized, FastDivideNormalized2, FastDivideSmall};
-pub use const_div::ConstDivisor;
+pub(crate) use const_div::ConstDivisor; // TODO: implement related API and then make it public
 pub(crate) use const_div::{
     ConstDivisorRepr, ConstDoubleDivisor, ConstLargeDivisor, ConstSingleDivisor,
 };

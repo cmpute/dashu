@@ -35,8 +35,8 @@ macro_rules! impl_ibig_rem {
         IBig(($mag0 % $mag1).with_sign($sign0))
     }};
 }
-helper_macros::forward_ibig_binop_to_repr!(impl Div, div, impl_ibig_div);
-helper_macros::forward_ibig_binop_to_repr!(impl Rem, rem, impl_ibig_rem);
+helper_macros::forward_ibig_binop_to_repr!(impl Div, div, Output = IBig, impl_ibig_div);
+helper_macros::forward_ibig_binop_to_repr!(impl Rem, rem, Output = IBig, impl_ibig_rem);
 helper_macros::forward_binop_assign_by_taking!(impl DivAssign<IBig> for IBig, div_assign, div);
 helper_macros::forward_binop_assign_by_taking!(impl RemAssign<IBig> for IBig, rem_assign, rem);
 

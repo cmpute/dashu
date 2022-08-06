@@ -5,6 +5,10 @@ use crate::{ubig::UBig, ibig::IBig};
 impl UBig {
     /// Calculate the (truncated) logarithm of the [UBig]
     /// 
+    /// This function could takes a long time when the integer is very large.
+    /// In applications where an exact result is not necessary,
+    /// [log2f][UBig::log2f] could be used.
+    /// 
     /// # Panics
     /// 
     /// Panics if the number is 0, or the base is 0 or 1
@@ -21,10 +25,37 @@ impl UBig {
     pub fn log(&self, base: &UBig) -> usize {
         self.repr().log(base.repr()).0
     }
+
+    /// Calculate a fast f32 estimation of the binary logarithm.
+    /// 
+    /// The result is always less or equal to the actual value. The precision of the log
+    /// result is at least 8 bits (relative error < 2^-8). The actual precision distribution
+    /// depends on the word size. With 64 bit words, the precision is at least 13 bits.
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the number is 0
+    /// 
+    /// # Example
+    ///
+    /// ```
+    /// # use dashu_int::UBig;
+    /// let lb3 = 1.584962500721156f32;
+    /// let lb3_est = UBig::from(3u8).log2f();
+    /// assert!(lb3 - lb3_est < 1. / 256.);
+    /// ```
+    #[inline]
+    pub fn log2f(&self) -> f32 {
+        self.repr().log2f()
+    }
 }
 
 impl IBig {
     /// Calculate the (truncated) logarithm of the absolute value of [IBig]
+    /// 
+    /// This function could takes a long time when the integer is very large.
+    /// In applications where an exact result is not necessary,
+    /// [log2f][IBig::log2f] could be used.
     /// 
     /// # Panics
     /// 
@@ -42,6 +73,27 @@ impl IBig {
     pub fn log(&self, base: &UBig) -> usize {
         self.as_sign_repr().1.log(base.repr()).0
     }
+
+    /// Calculate a fast f32 estimation of the binary logarithm on the absolute value.
+    /// 
+    /// See the documentation of [UBig::log2f] for the precision behavior.
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the number is 0
+    /// 
+    /// # Example
+    ///
+    /// ```
+    /// # use dashu_int::IBig;
+    /// let lb3 = 1.584962500721156f32;
+    /// let lb3_est = IBig::from(-3).log2f();
+    /// assert!(lb3 - lb3_est < 1. / 256.);
+    /// ```
+    #[inline]
+    pub fn log2f(&self) -> f32 {
+        self.as_sign_repr().1.log2f()
+    }
 }
 
 pub(crate) mod repr {
@@ -50,8 +102,8 @@ pub(crate) mod repr {
     use crate::{
         error::panic_invalid_log_oprand,
         repr::{TypedReprRef::{self, *}, Repr},
-        primitive::{shrink_dword, WORD_BITS_USIZE, highest_dword, split_dword, extend_word},
-        math::{log2_dword_fp8, max_exp_in_word, ceil_log2_word_fp8, ceil_log2_dword_fp8},
+        primitive::{shrink_dword, WORD_BITS_USIZE, highest_dword, split_dword, extend_word, WORD_BITS},
+        math::{log2_word_fp8, log2_dword_fp8, max_exp_in_word, max_exp_in_dword, ceil_log2_word_fp8, ceil_log2_dword_fp8},
         arch::word::{Word, DoubleWord},
         cmp::cmp_in_place, buffer::Buffer,
         pow, mul_ops, mul, div, helper_macros::debug_assert_zero, radix};
@@ -99,6 +151,22 @@ pub(crate) mod repr {
             }
         }
 
+        pub fn log2f(self) -> f32 {
+            match self {
+                RefSmall(dword) => if let Some(word) = shrink_dword(dword) {
+                    if word == 0 {
+                        panic_invalid_log_oprand()
+                    }
+                    let (exp, pow) = max_exp_in_dword(word);
+                    let shift = WORD_BITS - pow.leading_zeros();
+                    let est = log2_word_fp8((pow >> shift) as Word) + shift * 256;
+                    est as f32 / exp as f32 / 256.0
+                } else {
+                    log2_dword_fp8(dword) as f32 / 256.0
+                },
+                RefLarge(words) => log2_large_fp8(words) as f32 / 256.0
+            }
+        }
     }
 
     fn log_dword(target: DoubleWord, base: DoubleWord) -> (usize, Repr) {

@@ -783,9 +783,9 @@ macro_rules! impl_ibig_bitxor {
         }
     };
 }
-helper_macros::forward_ibig_binop_to_repr!(impl BitAnd, bitand, impl_ibig_bitand);
-helper_macros::forward_ibig_binop_to_repr!(impl BitOr, bitor, impl_ibig_bitor);
-helper_macros::forward_ibig_binop_to_repr!(impl BitXor, bitxor, impl_ibig_bitxor);
+helper_macros::forward_ibig_binop_to_repr!(impl BitAnd, bitand, Output = IBig, impl_ibig_bitand);
+helper_macros::forward_ibig_binop_to_repr!(impl BitOr, bitor, Output = IBig, impl_ibig_bitor);
+helper_macros::forward_ibig_binop_to_repr!(impl BitXor, bitxor, Output = IBig, impl_ibig_bitxor);
 helper_macros::forward_binop_assign_by_taking!(impl BitAndAssign<IBig> for IBig, bitand_assign, bitand);
 helper_macros::forward_binop_assign_by_taking!(impl BitOrAssign<IBig> for IBig, bitor_assign, bitor);
 helper_macros::forward_binop_assign_by_taking!(impl BitXorAssign<IBig> for IBig, bitxor_assign, bitxor);

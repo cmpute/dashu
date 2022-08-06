@@ -232,12 +232,12 @@ macro_rules! forward_ubig_binop_to_repr {
 /// `(lhs_sign, lhs_repr, rhs_sign, rhs_repr)`, including &IBig.
 /// The output type is IBig.
 macro_rules! forward_ibig_binop_to_repr {
-    (impl $trait:ident, $method:ident, $impl:ident) => {
+    (impl $trait:ident, $method:ident, $output:ident = $ty_output:ty, $impl:ident) => {
         impl $trait<IBig> for IBig {
-            type Output = IBig;
+            type $output = $ty_output;
 
             #[inline]
-            fn $method(self, rhs: IBig) -> IBig {
+            fn $method(self, rhs: IBig) -> $ty_output {
                 let (sign0, mag0) = self.into_sign_repr();
                 let (sign1, mag1) = rhs.into_sign_repr();
                 $impl!(sign0, mag0, sign1, mag1)
@@ -245,10 +245,10 @@ macro_rules! forward_ibig_binop_to_repr {
         }
 
         impl<'r> $trait<&'r IBig> for IBig {
-            type Output = IBig;
+            type $output = $ty_output;
 
             #[inline]
-            fn $method(self, rhs: &IBig) -> IBig {
+            fn $method(self, rhs: &IBig) -> $ty_output {
                 let (sign0, mag0) = self.into_sign_repr();
                 let (sign1, mag1) = rhs.as_sign_repr();
                 $impl!(sign0, mag0, sign1, mag1)
@@ -256,10 +256,10 @@ macro_rules! forward_ibig_binop_to_repr {
         }
 
         impl<'l> $trait<IBig> for &'l IBig {
-            type Output = IBig;
+            type $output = $ty_output;
 
             #[inline]
-            fn $method(self, rhs: IBig) -> IBig {
+            fn $method(self, rhs: IBig) -> $ty_output {
                 let (sign0, mag0) = self.as_sign_repr();
                 let (sign1, mag1) = rhs.into_sign_repr();
                 $impl!(sign0, mag0, sign1, mag1)
@@ -267,10 +267,10 @@ macro_rules! forward_ibig_binop_to_repr {
         }
 
         impl<'l, 'r> $trait<&'r IBig> for &'l IBig {
-            type Output = IBig;
+            type $output = $ty_output;
 
             #[inline]
-            fn $method(self, rhs: &IBig) -> IBig {
+            fn $method(self, rhs: &IBig) -> $ty_output {
                 let (sign0, mag0) = self.as_sign_repr();
                 let (sign1, mag1) = rhs.as_sign_repr();
                 $impl!(sign0, mag0, sign1, mag1)

@@ -1,6 +1,15 @@
-//! Integer formatting helpers.
-
-// TODO(next): add description about formatting behaviors in the module level documentation
+//! # Integer formatting.
+//! 
+//! Both [UBig] and [IBig] support rust formatter traits ([Display], [LowerHex], etc.). The sign,
+//! width, filling and padding options of the formatter are supported for all formatter traits except
+//! [Debug]. Different from other formatters, [Debug] will display the least and the most significant
+//! digits of the integer, but omitting the middle digits when it's too large. This helps to improve the
+//! readability of debug info, and the printing speed. The digit length and bit length will also be displayed
+//! when the alternate flag of the formatter is set. (pretty printing)
+//! 
+//! The struct [InRadix] can be used to print the integer in a given radix, which also supporting
+//! the common formatter options. But the [Debug] trait is not implemented for [InRadix] yet.
+//! 
 
 use crate::{
     error::panic_invalid_radix,
@@ -236,7 +245,7 @@ impl IBig {
 
 /// Representation of a [UBig] or [IBig] in any radix between [MIN_RADIX] and [MAX_RADIX] inclusive.
 ///
-/// This can be used to format a number in a non-standard radix.
+/// This can be used to format a number in a non-standard radix, by calling [UBig::in_radix] or [IBig::in_radix].
 ///
 /// The default format uses lower-case letters a-z for digits 10-35.
 /// The "alternative" format (`{:#}`) uses upper-case letters.

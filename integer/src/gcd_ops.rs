@@ -1,40 +1,69 @@
 //! Operators for finding greatest common divisor.
 
-use crate::{ibig::IBig, sign::Sign, ubig::UBig};
+use crate::{ibig::IBig, sign::Sign, ubig::UBig, helper_macros::{forward_ubig_binop_to_repr, forward_ibig_binop_to_repr}};
 use dashu_base::ring::{ExtendedGcd, Gcd};
 
-// TODO(v0.2): implement as trait
+forward_ubig_binop_to_repr!(impl Gcd, gcd);
 
-impl UBig {
-    /// Compute the greatest common divisor between self and the other operand
-    ///
-    /// # Example
-    /// ```
-    /// # use dashu_int::UBig;
-    /// assert_eq!(UBig::from(12u8).gcd(&UBig::from(18u8)), 6);
-    /// ```
-    ///
-    /// Panics if two oprands are both zero.
-    #[inline]
-    pub fn gcd(&self, rhs: &UBig) -> UBig {
-        UBig(self.repr().gcd(rhs.repr()))
-    }
+impl ExtendedGcd for UBig {
+    type OutputGcd = UBig;
+    type OutputCoeff = IBig;
 
-    /// Compute the greatest common divisor between self and the other operand, and return
-    /// both the common divisor `g` and the Bézout coefficients.
-    ///
-    /// # Example
-    /// ```
-    /// # use dashu_int::UBig;
-    /// let (g, x, y) = UBig::from(12u8).gcd_ext(&UBig::from(18u8));
-    /// assert!(g == 6 && x == -1 && y == 1);
-    /// ```
-    ///
-    /// Panics if two oprands are both zero.
     #[inline]
-    pub fn gcd_ext(&self, rhs: &UBig) -> (UBig, IBig, IBig) {
-        let (r, s, t) = self.clone().into_repr().gcd_ext(rhs.clone().into_repr());
+    fn gcd_ext(self, rhs: Self) -> (UBig, IBig, IBig) {
+        let (r, s, t) = self.into_repr().gcd_ext(rhs.into_repr());
         (UBig(r), IBig(s), IBig(t))
+    }
+}
+
+impl ExtendedGcd for &UBig {
+    type OutputGcd = UBig;
+    type OutputCoeff = IBig;
+
+    #[inline]
+    fn gcd_ext(self, rhs: Self) -> (UBig, IBig, IBig) {
+        self.clone().gcd_ext(rhs.clone())
+    }
+}
+
+macro_rules! impl_ibig_gcd {
+    ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {{
+        let _signs = ($sign0, $sign1); // not used
+        UBig($mag0.gcd($mag1))
+    }};
+}
+forward_ibig_binop_to_repr!(impl Gcd, gcd, Output = UBig, impl_ibig_gcd);
+
+// impl ExtendedGcd<&UBig> for &UBig {
+//     type OutputGcd = UBig;
+//     type OutputCoeff = IBig;
+
+//     #[inline]
+//     fn gcd_ext(self, rhs: Self) -> (UBig, IBig, IBig) {
+//         self.clone().gcd_ext(rhs.clone())
+//     }
+// }
+
+impl ExtendedGcd for IBig {
+    type OutputGcd = UBig;
+    type OutputCoeff = IBig;
+
+    #[inline]
+    fn gcd_ext(self, rhs: Self) -> (UBig, IBig, IBig) {
+        let (sign0, mag0) = self.into_sign_repr();
+        let (sign1, mag1) = rhs.into_sign_repr();
+        let (r, s, t) = mag0.gcd_ext(mag1);
+        (UBig(r), sign0 * IBig(s), sign1 * IBig(t))
+    }
+}
+
+impl ExtendedGcd for &IBig {
+    type OutputGcd = UBig;
+    type OutputCoeff = IBig;
+
+    #[inline]
+    fn gcd_ext(self, rhs: Self) -> (UBig, IBig, IBig) {
+        self.clone().gcd_ext(rhs.clone())
     }
 }
 
@@ -66,6 +95,30 @@ mod repr {
                 (RefLarge(words0), RefSmall(dword1)) => gcd_large_dword(words0, dword1),
                 (RefLarge(words0), RefLarge(words1)) => gcd_large(words0.into(), words1.into()),
             }
+        }
+    }
+
+    impl<'l> Gcd<TypedRepr> for TypedReprRef<'l> {
+        type Output = Repr;
+        #[inline]
+        fn gcd(self, rhs: TypedRepr) -> Self::Output {
+            self.gcd(rhs.as_ref())
+        }
+    }
+
+    impl<'r> Gcd<TypedReprRef<'r>> for TypedRepr {
+        type Output = Repr;
+        #[inline]
+        fn gcd(self, rhs: TypedReprRef) -> Self::Output {
+            self.as_ref().gcd(rhs)
+        }
+    }
+
+    impl Gcd<TypedRepr> for TypedRepr {
+        type Output = Repr;
+        #[inline]
+        fn gcd(self, rhs: TypedRepr) -> Self::Output {
+            self.as_ref().gcd(rhs.as_ref())
         }
     }
 

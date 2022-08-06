@@ -1,4 +1,4 @@
-use dashu_int::{ops::DivRem, UBig};
+use dashu_int::{ops::{DivRem, Gcd, ExtendedGcd}, UBig};
 use rand::{distributions::uniform::Uniform, prelude::*};
 
 mod helper_macros;
@@ -81,8 +81,8 @@ fn test_random_arithmetic() {
 
             // gcd is much slower than primitive operations, test with lower frequency
             if i % 32 == 0 {
-                let (g, ca, cb) = a.gcd_ext(&b);
-                assert_eq!(g, a.gcd(&b));
+                let (g, ca, cb) = (&a).gcd_ext(&b);
+                assert_eq!(g, (&a).gcd(&b));
                 assert_eq!(&a % &g, 0);
                 assert_eq!(&b % &g, 0);
                 assert_eq!(g, a * ca + b * cb);

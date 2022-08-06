@@ -188,19 +188,34 @@ fn test_add_sub() {
 
 #[test]
 fn test_mul() {
-    // TODO(next): add more test cases
     let ring1 = ModuloRing::new(ubig!(100));
     let ring2 = ModuloRing::new(ubig!(1000000000000000000000000000000));
     let big = ubig!(10).pow(10000);
     let ring3 = ModuloRing::new(big.clone());
     let test_cases = [
+        (ring1.convert(1), ring1.convert(1), ring1.convert(1)),
+        (ring1.convert(1), ring1.convert(99), ring1.convert(99)),
+        (ring1.convert(99), ring1.convert(99), ring1.convert(1)),
         (ring1.convert(23), ring1.convert(96), ring1.convert(8)),
+        (ring1.convert(64), ring1.convert(64), ring1.convert(96)),
         (
             ring2.convert(ubig!(46301564276035228370597101114)),
             ring2.convert(ubig!(170100953649249045221461413048)),
             ring2.convert(ubig!(399394418012748758198974935472)),
         ),
+        (
+            ring2.convert(ubig!(1208925819614629174706176)),
+            ring2.convert(ubig!(1208925819614629174706176)),
+            ring2.convert(ubig!(203684832716283019655932542976)),
+        ),
+        (
+            ring2.convert(ubig!(1208925819614629174706175)),
+            ring2.convert(ubig!(1208925819614629174706175)),
+            ring2.convert(ubig!(203682414864643790397583130625)),
+        ),
         (ring3.convert(&big - ubig!(1)), ring3.convert(&big - ubig!(1)), ring3.convert(1)),
+        (ring3.convert(&big - ubig!(1)), ring3.convert(&big - ubig!(10).pow(10)), ring3.convert(ubig!(10).pow(10))),
+        (ring3.convert(&big - ubig!(10).pow(10)), ring3.convert(&big - ubig!(10).pow(10)), ring3.convert(ubig!(10).pow(20))),
     ];
 
     let all_test_cases = test_cases

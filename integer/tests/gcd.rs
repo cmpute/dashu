@@ -1,4 +1,4 @@
-use dashu_int::IBig;
+use dashu_int::{IBig, ops::{Gcd, ExtendedGcd}};
 
 mod helper_macros;
 
@@ -114,11 +114,11 @@ fn test_gcd_ubig() {
 #[test]
 #[should_panic]
 fn test_gcd_0() {
-    let _ = ubig!(0).gcd(&ubig!(0));
+    let _ = ubig!(0).gcd(ubig!(0));
 }
 
 #[test]
 #[should_panic]
 fn test_gcd_ext_0() {
-    let _ = ubig!(0).gcd_ext(&ubig!(0));
+    let _ = ubig!(0).gcd_ext(ubig!(0));
 }
