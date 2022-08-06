@@ -10,6 +10,12 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 // TODO: reference crates: twofloat, num-bigfloat, rust_decimal, bigdecimal, scientific
+// TODO: algorithm ref
+//   - https://www.researchgate.net/project/Arbitrary-precision-Arithmetic-package
+//   - https://www.mpfr.org/algorithms.pdf
+//   - Handbook of Floating-Point arithmetic
+//   - https://hal.archives-ouvertes.fr/hal-01227877/file/2015-FixFloat.pdf
+
 mod add;
 mod cmp;
 mod convert;

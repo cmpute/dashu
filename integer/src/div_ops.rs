@@ -820,7 +820,6 @@ mod repr {
     }
 
     fn div_rem_large(mut lhs: Buffer, mut rhs: Buffer) -> (Repr, Repr) {
-        // TODO: trim trailing zero words before division?
         let shift = div_rem_in_lhs(&mut lhs, &mut rhs);
         let n = rhs.len();
         rhs.copy_from_slice(&lhs[..n]);

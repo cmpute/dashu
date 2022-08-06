@@ -26,8 +26,6 @@ pub fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word], memory: &mut Memory) -> 
         "leading zeros are not allowed!"
     );
 
-    // XXX: pre-remove the trailing zero words, and give the number of zeros as input
-    // to low-level algorithms.
     lehmer::gcd_in_place(lhs, rhs, memory)
 }
 

@@ -7,6 +7,7 @@ use dashu_int::{IBig, Sign, Word};
 
 // TODO(next): change type of radix from usize to Word
 // TODO(next): rename mantissa to significand, radix to base
+// TODO(next): Move the (mantissa, exponent) to a Repr struct, (precision, rounding) to a Context struct
 
 /// An arbitrary precision floating number represented as `mantissa * radix^exponent`, with a precision
 /// such that `|mantissa| < radix^precision`. The mantissa is also called significant. The representation

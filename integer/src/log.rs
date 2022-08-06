@@ -44,6 +44,7 @@ impl UBig {
     /// let lb3_est = UBig::from(3u8).log2f();
     /// assert!(lb3 - lb3_est < 1. / 256.);
     /// ```
+    // TODO: Move this method to the dashu_base, and provide a log2f_ceil version as well
     #[inline]
     pub fn log2f(&self) -> f32 {
         self.repr().log2f()
@@ -313,7 +314,7 @@ pub(crate) mod repr {
     #[inline]
     fn log2_large_fp8(words: &[Word]) -> usize {
         let log2_hi = log2_dword_fp8(highest_dword(words)) as usize;
-        log2_hi + (words.len() - 2) * WORD_BITS_USIZE
+        log2_hi + (words.len() - 2) * WORD_BITS_USIZE * 256
     }
 
     #[inline]
@@ -324,6 +325,6 @@ pub(crate) mod repr {
         } else {
             ceil_log2_dword_fp8(hi) as usize
         };
-        log2_hi + (words.len() - 2) * WORD_BITS_USIZE
+        log2_hi + (words.len() - 2) * WORD_BITS_USIZE * 256
     }
 }
