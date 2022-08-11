@@ -47,6 +47,14 @@ impl IBig {
         self.0.into_sign_typed()
     }
 
+    /// Get the raw representation in [Word][crate::Word]s.
+    ///
+    /// If the number is zero, then empty slice will be returned.
+    #[inline]
+    pub fn as_sign_words(&self) -> (Sign, &[crate::Word]) {
+        self.0.as_sign_slice()
+    }
+
     /// Get the sign of the [IBig]. Zero value has a positive sign.
     ///
     /// # Examples
@@ -92,6 +100,12 @@ impl IBig {
     #[inline]
     pub fn from_parts(sign: Sign, magnitude: UBig) -> Self {
         IBig(magnitude.0.with_sign(sign))
+    }
+
+    /// Create an IBig from a [Sign] and a [DoubleWord][crate::DoubleWord]
+    #[inline]
+    pub const fn from_parts_const(sign: Sign, dword: crate::DoubleWord) -> Self {
+        Self(Repr::from_dword(dword).with_sign(sign))
     }
 
     /// [IBig] with value 0

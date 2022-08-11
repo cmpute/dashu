@@ -1,23 +1,28 @@
 use core::cmp::Ordering;
 use core::ops::{Add, AddAssign};
 use dashu_base::UnsignedAbs;
-use dashu_int::{IBig, Sign, UBig};
+use dashu_int::{IBig, Sign, UBig, Word};
 
 /// Built-in rounding modes of the floating numbers.
 pub mod mode {
     /// Round toward 0 (default mode for binary float)
+    #[derive(Clone, Copy)]
     pub struct Zero;
 
     /// Round toward +∞
+    #[derive(Clone, Copy)]
     pub struct Up;
 
     /// Round toward -∞
+    #[derive(Clone, Copy)]
     pub struct Down;
 
     /// Round to the nearest value, ties are rounded to an even value. (default mode for decimal float)
+    #[derive(Clone, Copy)]
     pub struct HalfEven;
 
     /// Round to the nearest value, ties away from zero
+    #[derive(Clone, Copy)]
     pub struct HalfAway;
 }
 
@@ -34,34 +39,35 @@ pub enum Rounding {
     SubOne,
 }
 
-pub trait Round {
-    /// Calculate the rounding of the number (mantissa + rem), assuming rem != 0 and |rem| < 1.
+pub trait Round: Copy {
+    // TODO: find a better name
+    /// Calculate the rounding of the number (integer + rem), assuming rem != 0 and |rem| < 1.
     /// `rem_half_test` should tell |rem|.cmp(0.5)
     fn round_rem<F: FnOnce() -> Ordering>(
-        mantissa: &IBig,
+        integer: &IBig,
         rem_sign: Sign,
         rem_half_test: F,
     ) -> Rounding;
 
-    /// Calculate the rounding of the number (mantissa + fract / X^precision), assuming |fract| / X^precision < 1. Return the adjustment.
+    /// Calculate the rounding of the number (integer + fract / X^precision), assuming |fract| / X^precision < 1. Return the adjustment.
     #[inline]
-    fn round_fract<const X: usize>(mantissa: &IBig, fract: IBig, precision: usize) -> Rounding {
+    fn round_fract<const B: Word>(integer: &IBig, fract: IBig, precision: usize) -> Rounding {
         // this assertion is costly, so only check in debug mode
-        debug_assert!(fract.clone().unsigned_abs() < UBig::from(X).pow(precision));
+        debug_assert!(fract.clone().unsigned_abs() < UBig::from_word(B).pow(precision));
 
         if fract.is_zero() {
             return Rounding::NoOp;
         }
         let (fsign, fmag) = fract.into_parts();
         // TODO: here we can use logarithm to compare, instead of calculating the power?
-        Self::round_rem::<_>(mantissa, fsign, || {
-            (fmag << 1).cmp(&UBig::from(X).pow(precision))
+        Self::round_rem::<_>(integer, fsign, || {
+            (fmag << 1).cmp(&UBig::from_word(B).pow(precision))
         })
     }
 
-    /// Calculate the rounding of the number (mantissa + numerator / denominator), assuming |numerator / denominator| < 1. Return the adjustment.
+    /// Calculate the rounding of the number (integer + numerator / denominator), assuming |numerator / denominator| < 1. Return the adjustment.
     #[inline]
-    fn round_ratio(mantissa: &IBig, num: IBig, den: &IBig) -> Rounding {
+    fn round_ratio(integer: &IBig, num: IBig, den: &IBig) -> Rounding {
         assert!(!den.is_zero());
         // this assertion can be costly, so only check in debug mode
         debug_assert!(num.clone().unsigned_abs() < den.clone().unsigned_abs());
@@ -70,7 +76,7 @@ pub trait Round {
             return Rounding::NoOp;
         }
         let (nsign, nmag) = num.into_parts();
-        Self::round_rem::<_>(mantissa, nsign * den.sign(), || {
+        Self::round_rem::<_>(integer, nsign * den.sign(), || {
             if den.sign() == Sign::Positive {
                 IBig::from((nmag) << 1).cmp(&den)
             } else {
@@ -83,14 +89,14 @@ pub trait Round {
 impl Round for mode::Zero {
     #[inline]
     fn round_rem<F: FnOnce() -> Ordering>(
-        mantissa: &IBig,
+        integer: &IBig,
         rem_sign: Sign,
         _rem_half_test: F,
     ) -> Rounding {
-        if mantissa.is_zero() {
+        if integer.is_zero() {
             return Rounding::NoOp;
         }
-        match (mantissa.sign(), rem_sign) {
+        match (integer.sign(), rem_sign) {
             (Sign::Positive, Sign::Positive) | (Sign::Negative, Sign::Negative) => Rounding::NoOp,
             (Sign::Positive, Sign::Negative) => Rounding::SubOne,
             (Sign::Negative, Sign::Positive) => Rounding::AddOne,
@@ -101,7 +107,7 @@ impl Round for mode::Zero {
 impl Round for mode::Down {
     #[inline]
     fn round_rem<F: FnOnce() -> Ordering>(
-        _mantissa: &IBig,
+        _integer: &IBig,
         rem_sign: Sign,
         _rem_half_test: F,
     ) -> Rounding {
@@ -117,7 +123,7 @@ impl Round for mode::Down {
 impl Round for mode::Up {
     #[inline]
     fn round_rem<F: FnOnce() -> Ordering>(
-        _mantissa: &IBig,
+        _integer: &IBig,
         rem_sign: Sign,
         _rem_half_test: F,
     ) -> Rounding {
@@ -133,7 +139,7 @@ impl Round for mode::Up {
 impl Round for mode::HalfAway {
     #[inline]
     fn round_rem<F: FnOnce() -> Ordering>(
-        mantissa: &IBig,
+        integer: &IBig,
         rem_sign: Sign,
         rem_half_test: F,
     ) -> Rounding {
@@ -142,10 +148,10 @@ impl Round for mode::HalfAway {
             Ordering::Less => Rounding::NoOp,
             // |rem| = 1/2
             Ordering::Equal => {
-                // +1 if mantissa and rem >= 0, -1 if mantissa and rem <= 0
-                if mantissa >= &IBig::ZERO && rem_sign == Sign::Positive {
+                // +1 if integer and rem >= 0, -1 if integer and rem <= 0
+                if integer >= &IBig::ZERO && rem_sign == Sign::Positive {
                     Rounding::AddOne
-                } else if mantissa <= &IBig::ZERO && rem_sign == Sign::Negative {
+                } else if integer <= &IBig::ZERO && rem_sign == Sign::Negative {
                     Rounding::SubOne
                 } else {
                     Rounding::NoOp
@@ -166,7 +172,7 @@ impl Round for mode::HalfAway {
 impl Round for mode::HalfEven {
     #[inline]
     fn round_rem<F: FnOnce() -> Ordering>(
-        mantissa: &IBig,
+        integer: &IBig,
         rem_sign: Sign,
         rem_half_test: F,
     ) -> Rounding {
@@ -175,8 +181,8 @@ impl Round for mode::HalfEven {
             Ordering::Less => Rounding::NoOp,
             // |rem| = 1/2
             Ordering::Equal => {
-                // if mantissa is odd, +1 if rem > 0, -1 if rem < 0
-                if mantissa & 1 == 1 {
+                // if integer is odd, +1 if rem > 0, -1 if rem < 0
+                if integer & 1 == 1 {
                     match rem_sign {
                         Sign::Positive => Rounding::AddOne,
                         Sign::Negative => Rounding::SubOne,
@@ -239,22 +245,22 @@ mod tests {
     #[test]
     fn test_from_fract() {
         #[rustfmt::skip]
-        fn test_all_rounding<const X: usize, const D: usize>(
+        fn test_all_rounding<const B: Word, const D: usize>(
             input: &(i32, i32, Rounding, Rounding, Rounding, Rounding, Rounding),
         ) {
             let (value, fract, rnd_zero, rnd_up, rnd_down, rnd_halfeven, rnd_halfaway) = *input;
             let (value, fract) = (IBig::from(value), IBig::from(fract));
-            assert_eq!(Zero::round_fract::<X>(&value, fract.clone(), D), rnd_zero);
-            assert_eq!(Up::round_fract::<X>(&value, fract.clone(), D), rnd_up);
-            assert_eq!(Down::round_fract::<X>(&value, fract.clone(), D), rnd_down);
-            assert_eq!(HalfEven::round_fract::<X>(&value, fract.clone(), D), rnd_halfeven);
-            assert_eq!(HalfAway::round_fract::<X>(&value, fract.clone(), D), rnd_halfaway);
+            assert_eq!(Zero::round_fract::<B>(&value, fract.clone(), D), rnd_zero);
+            assert_eq!(Up::round_fract::<B>(&value, fract.clone(), D), rnd_up);
+            assert_eq!(Down::round_fract::<B>(&value, fract.clone(), D), rnd_down);
+            assert_eq!(HalfEven::round_fract::<B>(&value, fract.clone(), D), rnd_halfeven);
+            assert_eq!(HalfAway::round_fract::<B>(&value, fract.clone(), D), rnd_halfaway);
         }
 
         // cases for radix = 2, 2 digit fraction
         #[rustfmt::skip]
         let binary_cases = [
-            // (mantissa value, fraction part, roundings...)
+            // (integer value, fraction part, roundings...)
             // Mode: Zero,   Up,     Down,   HEven,  HAway
             (0,  3,  NoOp,   AddOne, NoOp,   AddOne, AddOne),
             (0,  2,  NoOp,   AddOne, NoOp,   NoOp,   AddOne),
@@ -283,7 +289,7 @@ mod tests {
         // cases for radix = 3, 1 digit fraction
         #[rustfmt::skip]
         let tenary_cases = [
-            // (mantissa value, fraction part, roundings...)
+            // (integer value, fraction part, roundings...)
             // Mode: Zero,   Up,     Down,   HEven,  HAway
             (0,  2,  NoOp,   AddOne, NoOp,   AddOne, AddOne),
             (0,  1,  NoOp,   AddOne, NoOp,   NoOp,   NoOp),
@@ -306,7 +312,7 @@ mod tests {
         // cases for radix = 10, 1 digit fraction
         #[rustfmt::skip]
         let decimal_cases = [
-            // (mantissa value, fraction part, roundings...)
+            // (integer value, fraction part, roundings...)
             // Mode: Zero  , Up    , Down  , HEven , HAway
             ( 0,  7, NoOp  , AddOne, NoOp  , AddOne, AddOne),
             ( 0,  5, NoOp  , AddOne, NoOp  , NoOp  , AddOne),
@@ -351,7 +357,7 @@ mod tests {
         // cases for radix = 2, 2 digit fraction
         #[rustfmt::skip]
         let test_cases = [
-            // (mantissa value, mumerator, denominator, roundings...)
+            // (integer value, mumerator, denominator, roundings...)
             // Mode:     Zero  , Up    , Down  , HEven , HAway
             ( 0,  0,  2, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
             ( 0,  1,  2, NoOp  , AddOne, NoOp  , NoOp  , AddOne),

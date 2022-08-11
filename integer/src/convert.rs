@@ -6,10 +6,10 @@ use crate::{
     error::{panic_negative_ubig, OutOfBoundsError},
     ibig::IBig,
     primitive::{
-        self, double_word, PrimitiveSigned, PrimitiveUnsigned, DWORD_BYTES, WORD_BITS, WORD_BYTES,
+        self, PrimitiveSigned, PrimitiveUnsigned, DWORD_BYTES, WORD_BITS, WORD_BYTES,
     },
     repr::{Repr, TypedReprRef::*},
-    sign::Sign::{self, *},
+    sign::Sign::*,
     ubig::UBig,
 };
 use alloc::vec::Vec;
@@ -164,34 +164,6 @@ impl UBig {
         }
     }
 
-    /// Get the raw representation in [Word][crate::Word]s.
-    ///
-    /// If the number is zero, then empty slice will be returned.
-    #[inline]
-    pub fn as_words(&self) -> &[crate::Word] {
-        let (sign, words) = self.0.as_sign_slice();
-        debug_assert!(matches!(sign, crate::sign::Sign::Positive));
-        words
-    }
-
-    /// Create a UBig from a single [Word][crate::Word].
-    #[inline]
-    pub const fn from_word(word: crate::Word) -> Self {
-        Self(Repr::from_word(word))
-    }
-
-    /// Create a UBig from a double [Word][crate::Word].
-    #[inline]
-    pub const fn from_dword(low: crate::Word, high: crate::Word) -> Self {
-        Self(Repr::from_dword(double_word(low, high)))
-    }
-
-    /// Convert a sequence of [Word][crate::Word]s into a UBig
-    #[inline]
-    pub fn from_words(words: &[crate::Word]) -> Self {
-        Self(Repr::from_buffer(words.into()))
-    }
-
     // TODO(v0.2): return an Approximation struct
 
     /// Convert to f32.
@@ -226,19 +198,6 @@ impl UBig {
 }
 
 impl IBig {
-    /// Get the raw representation in [Word][crate::Word]s.
-    ///
-    /// If the number is zero, then empty slice will be returned.
-    #[inline]
-    pub fn as_sign_words(&self) -> (Sign, &[crate::Word]) {
-        self.0.as_sign_slice()
-    }
-
-    /// Create an IBig from a [Sign] and a double [Word][crate::Word]
-    pub const fn from_parts_const(sign: Sign, low: crate::Word, high: crate::Word) -> Self {
-        Self(Repr::from_dword(double_word(low, high)).with_sign(sign))
-    }
-
     /// Convert to f32.
     ///
     /// Round to nearest, breaking ties to even last bit.

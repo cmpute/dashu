@@ -1,87 +1,101 @@
 use crate::{
+    Word,
     round::{Rounding, Round},
-    repr::FloatRepr,
+    repr::{Context, Repr},
+    fbig::FBig,
     utils::{shl_radix, shr_rem_radix_in_place},
 };
 use core::ops::{Add, Sub};
 
 use dashu_base::Approximation;
 
-impl<const X: usize, R: Round> Add for FloatRepr<X, R> {
+impl<const B: Word, R: Round> Add for FBig<B, R> {
     type Output = Self;
 
+    #[inline]
     fn add(self, rhs: Self) -> Self::Output {
-        self.add(rhs).value()
+        let context = Context::max(self.context, rhs.context);
+        FBig {
+            repr: context.add(self.repr, rhs.repr).value(),
+            context
+        }
     }
 }
 
-impl<const X: usize, R: Round> Sub for FloatRepr<X, R> {
+impl<const B: Word, R: Round> Sub for FBig<B, R> {
     type Output = Self;
+
     #[inline]
     fn sub(self, rhs: Self) -> Self::Output {
-        return self.add(-rhs).value();
+        let context = Context::max(self.context, rhs.context);
+        FBig {
+            repr: context.add(self.repr, -rhs.repr).value(),
+            context
+        }
     }
 }
 
-impl<const X: usize, R: Round> Add for &FloatRepr<X, R> {
-    type Output = FloatRepr<X, R>;
+impl<const B: Word, R: Round> Add for &FBig<B, R> {
+    type Output = FBig<B, R>;
     #[inline]
     fn add(self, rhs: Self) -> Self::Output {
-        self.clone().add(rhs.clone()).value()
+        unimplemented!()
     }
 }
-impl<const X: usize, R: Round> Sub for &FloatRepr<X, R> {
-    type Output = FloatRepr<X, R>;
+impl<const B: Word, R: Round> Sub for &FBig<B, R> {
+    type Output = FBig<B, R>;
     #[inline]
     fn sub(self, rhs: Self) -> Self::Output {
         self.add(&(-rhs))
     }
 }
-impl<const X: usize, R: Round> Sub<FloatRepr<X, R>> for &FloatRepr<X, R> {
-    type Output = FloatRepr<X, R>;
+impl<const B: Word, R: Round> Sub<FBig<B, R>> for &FBig<B, R> {
+    type Output = FBig<B, R>;
     #[inline]
-    fn sub(self, rhs: FloatRepr<X, R>) -> Self::Output {
+    fn sub(self, rhs: FBig<B, R>) -> Self::Output {
         self.add(&(-rhs))
     }
 }
 
-// TODO: rename the add function returning approximation to something else
-
-impl<const X: usize, R: Round> FloatRepr<X, R> {
-    fn add(self, rhs: Self) -> Approximation<Self, Rounding> {
+impl<R: Round> Context<R> {
+    // TODO: let add take reference
+    pub fn add<const B: Word>(&self, lhs: Repr<B>, rhs: Repr<B>) -> Approximation<Repr<B>, Rounding> {
         // put the oprand of lower exponent on the right
-        let (mut lhs, mut rhs) = if self.exponent >= rhs.exponent {
-            (self, rhs)
+        let (mut lhs, mut rhs) = if lhs.exponent >= rhs.exponent {
+            (lhs, rhs)
         } else {
-            (rhs, self)
+            (rhs, lhs)
         };
 
         // shortcut if lhs is too small
         let ediff = (lhs.exponent - rhs.exponent) as usize;
-        let precision = lhs.precision.max(rhs.precision);
-        if ediff > precision {
-            let adjust = R::round_fract::<X>(&lhs.mantissa, rhs.mantissa, ediff);
-            lhs.mantissa += adjust;
+        if ediff > self.precision {
+            let adjust = R::round_fract::<B>(&lhs.significand, rhs.significand, ediff);
+            lhs.significand += adjust;
             return Approximation::InExact(lhs, adjust);
         }
 
         // align the exponent
-        let lhs_prec = lhs.actual_precision();
-        if ediff + lhs_prec > precision {
+        let lhs_prec = lhs.digits();
+        if ediff + lhs_prec > self.precision {
             // if the shifted lhs exceeds the desired precision, normalize lhs and shift rhs
-            let shift = precision - lhs_prec;
-            let low_digits = shr_rem_radix_in_place::<X>(&mut rhs.mantissa, shift);
-            shl_radix::<X>(&mut lhs.mantissa, ediff - shift);
+            let shift = self.precision - lhs_prec;
+            let low_digits = shr_rem_radix_in_place::<B>(&mut rhs.significand, shift);
+            shl_radix::<B>(&mut lhs.significand, ediff - shift);
 
             // do addition
-            let mantissa = lhs.mantissa + rhs.mantissa;
+            let significand = lhs.significand + rhs.significand;
             let exponent = lhs.exponent - (ediff - shift) as isize;
-            let adjust = R::round_fract::<X>(&mantissa, low_digits, shift);
-            Approximation::InExact(Self::from_parts(mantissa + adjust, exponent), adjust)
+            let adjust = R::round_fract::<B>(&significand, low_digits, shift);
+            Approximation::InExact(Repr::new(significand + adjust, exponent), adjust)
         } else {
             // otherwise directly shift lhs to required position
-            shl_radix::<X>(&mut lhs.mantissa, ediff);
-            Approximation::Exact(Self::from_parts(lhs.mantissa + rhs.mantissa, rhs.exponent))
+            shl_radix::<B>(&mut lhs.significand, ediff);
+            Approximation::Exact(Repr::new(lhs.significand + rhs.significand, rhs.exponent))
         }
+    }
+
+    pub fn add_assign<const B: Word>(&self, lhs: &mut Repr<B>, rhs: &Repr<B>) -> Approximation<(), Rounding> {
+        unimplemented!()
     }
 }

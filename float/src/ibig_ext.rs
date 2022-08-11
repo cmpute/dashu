@@ -1,4 +1,4 @@
-//! TODO: Extension to ibig that should be upstreamed.
+// TODO: Extension to ibig that should be upstreamed.
 
 use dashu_base::DivRem;
 use dashu_int::{IBig, UBig};
@@ -35,7 +35,6 @@ pub fn log_rem(x: &UBig, base: usize) -> (usize, UBig) {
 
 /// Calculate log_base(x^exp), return the floored value and remainder.
 pub fn log_pow_rem(x: &UBig, exp: usize, base: usize) -> (usize, UBig) {
-    // FIXME: this should be optimizable based on log_base(x^exp) = exp * log_base(x)
     log_rem(&x.pow(exp), base)
 }
 
@@ -44,11 +43,7 @@ pub fn log_pow(x: &UBig, exp: usize, base: usize) -> usize {
     log_pow_rem(x, exp, base).0
 }
 
-#[inline]
-pub fn log(x: &UBig, base: usize) -> usize {
-    log_rem(x, base).0
-}
-
+// TODO(next): move this into ibig
 pub fn remove_pow(x: &mut IBig, base: &IBig) -> UBig {
     let mut counter = UBig::ZERO;
     while !x.is_zero() {

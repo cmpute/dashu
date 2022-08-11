@@ -1,13 +1,12 @@
 use crate::{
     ibig_ext::{log_pow, log_rem, remove_pow},
-    repr::FloatRepr,
+    repr::{Repr, Context},
     round::Round,
-    utils::{get_precision, shr_rem_radix_in_place},
+    utils::{shr_rem_radix_in_place}, fbig::FBig,
 };
-use core::{convert::TryInto, marker::PhantomData};
-use dashu_int::{IBig, UBig};
+use dashu_int::{IBig, UBig, Word};
 
-impl<R: Round> From<f32> for FloatRepr<2, R> {
+impl<R: Round> From<f32> for FBig<2, R> {
     fn from(f: f32) -> Self {
         let bits: u32 = f.to_bits();
 
@@ -26,15 +25,13 @@ impl<R: Round> From<f32> for FloatRepr<2, R> {
         };
 
         Self {
-            mantissa,
-            exponent,
-            precision: 24,
-            _marker: PhantomData,
+            repr: Repr::new(mantissa, exponent),
+            context: Context::new(24)
         }
     }
 }
 
-impl<R: Round> From<f64> for FloatRepr<2, R> {
+impl<R: Round> From<f64> for FBig<2, R> {
     fn from(f: f64) -> Self {
         let bits: u64 = f.to_bits();
 
@@ -51,49 +48,40 @@ impl<R: Round> From<f64> for FloatRepr<2, R> {
         } else {
             IBig::from(-mantissa)
         };
-
+        
         Self {
-            mantissa,
-            exponent,
-            precision: 53,
-            _marker: PhantomData,
+            repr: Repr::new(mantissa, exponent),
+            context: Context::new(53)
         }
     }
 }
 
-impl<const X: usize, R: Round> FloatRepr<X, R> {
+impl<const B: Word, R: Round> FBig<B, R> {
     /// Create a floating number from a integer
     #[inline]
-    pub fn from_integer(integer: IBig, precision: usize) -> Self {
-        Self::from_parts_with_precision(integer, 0, precision)
-    }
-
-    /// Convert the float number to decimal based exponents.
-    ///
-    /// It's equivalent to [Self::with_radix::<10>()]
-    #[inline]
-    pub fn into_decimal(self) -> FloatRepr<10, R> {
-        self.with_radix::<10>()
-    }
-
-    /// Convert the float number to decimal based exponents.
-    #[inline]
-    pub fn to_decimal(&self) -> FloatRepr<10, R> {
-        self.clone().with_radix::<10>()
-    }
-
-    /// Convert the float number to binary based exponents.
-    ///
-    /// It's equivalent to [Self::with_radix::<2>()]
-    #[inline]
-    pub fn into_binary(self) -> FloatRepr<2, R> {
-        self.with_radix::<2>()
+    pub fn from_integer(integer: IBig) -> Self {
+        let repr = Repr {
+            significand: integer,
+            exponent: 0
+        };
+        let precision = repr.digits();
+        Self {
+            repr,
+            context: Context::new(precision)
+        }
     }
 
     /// Convert the float number to decimal based exponents.
     #[inline]
-    pub fn to_binary(&self) -> FloatRepr<2, R> {
-        self.clone().with_radix::<2>()
+    pub fn to_decimal(&self) -> FBig<10, R> {
+        let c: Self = self.clone();
+        c.with_base::<10>()
+    }
+
+    /// Convert the float number to decimal based exponents.
+    #[inline]
+    pub fn to_binary(&self) -> FBig<2, R> {
+        self.clone().with_base::<2>()
     }
 
     /// Explicitly change the precision of the number.
@@ -104,17 +92,17 @@ impl<const X: usize, R: Round> FloatRepr<X, R> {
         let mut result = self;
 
         // shrink if possible
-        if result.precision > precision {
-            let actual = result.actual_precision();
+        if result.context.precision > precision {
+            let actual = result.digits();
             if actual > precision {
                 let shift = actual - precision;
-                let low_digits = shr_rem_radix_in_place::<X>(&mut result.mantissa, shift);
-                result.mantissa += R::round_fract::<X>(&result.mantissa, low_digits, shift);
-                result.exponent += shift as isize;
+                let low_digits = shr_rem_radix_in_place::<B>(&mut result.repr.significand, shift);
+                result.repr.significand += R::round_fract::<B>(&result.repr.significand, low_digits, shift);
+                result.repr.exponent += shift as isize;
             }
         }
 
-        result.precision = precision;
+        result.context.precision = precision;
         return result;
     }
 
@@ -122,12 +110,10 @@ impl<const X: usize, R: Round> FloatRepr<X, R> {
     ///
     /// This operation has no cost.
     #[inline]
-    pub fn with_rounding<NewR: Round>(self) -> FloatRepr<X, NewR> {
-        FloatRepr {
-            mantissa: self.mantissa,
-            exponent: self.exponent,
-            precision: self.precision,
-            _marker: PhantomData,
+    pub fn with_rounding<NewR: Round>(self) -> FBig<B, NewR> {
+        FBig {
+            repr: self.repr,
+            context: Context::new(self.context.precision)
         }
     }
 
@@ -139,32 +125,33 @@ impl<const X: usize, R: Round> FloatRepr<X, R> {
     /// If any rounding happens during the conversion, if will follow
     /// the rounding mode specified by the type parameter.
     #[allow(non_upper_case_globals)]
-    pub fn with_radix<const NewX: usize>(self) -> FloatRepr<NewX, R> {
-        if NewX == X {
-            return FloatRepr {
-                mantissa: self.mantissa,
-                exponent: self.exponent,
-                precision: self.precision,
-                _marker: PhantomData,
+    pub fn with_base<const NewB: Word>(self) -> FBig<NewB, R> {
+        if NewB == B {
+            return FBig {
+                repr: Repr {
+                    significand: self.repr.significand,
+                    exponent: self.repr.exponent,
+                },
+                context: self.context,
             };
         }
         // FIXME: shortcut if X is a power of NewX
 
         // Calculate the new precision
         // new_precision = floor_log_radix2(radix1^precision)
-        let precision = log_pow(&UBig::from(X), self.precision, NewX);
+        let precision = log_pow(&UBig::from_word(B), self.context.precision, NewB as usize);
 
         // Convert by calculating logarithm
         // FIXME: currently the calculation is done in full precision, could be vastly optimized
-        let result = if self.exponent == 0 {
+        //        by using a float logarithm algorithm (when precision and exponent is large, otherwise
+        //        we can still use the naive one)
+        let result = if self.repr.exponent == 0 {
             // direct copy if the exponent is zero
-            return FloatRepr {
-                mantissa: self.mantissa,
-                exponent: 0,
-                precision,
-                _marker: PhantomData,
+            return FBig {
+                repr: Repr { significand: self.repr.significand, exponent: 0 },
+                context: Context::new(precision)
             };
-        } else if self.exponent > 0 {
+        } else if self.repr.exponent > 0 {
             // denote log with base of radix2 as lgr2, then
             // mantissa * radix1 ^ exp1
             // = mantissa * radix2 ^ lgr2(radix1^exp1)
@@ -174,12 +161,12 @@ impl<const X: usize, R: Round> FloatRepr<X, R> {
             // 1 + rem_lgr2(radix1^exp1) / (radix2 ^ floor_lgr2(radix1^exp1))
             // = radix1^exp1 / (radix1^exp1 - rem_lgr2(radix1^exp1))
 
-            let precision_ub = UBig::from(X).pow(self.exponent as usize);
-            let (log_v, log_r) = log_rem(&precision_ub, NewX);
+            let precision_ub = UBig::from_word(B).pow(self.repr.exponent as usize);
+            let (log_v, log_r) = log_rem(&precision_ub, NewB as usize);
             let den = IBig::from(&precision_ub - log_r);
-            let num = IBig::from(precision_ub) * self.mantissa;
-            let mut value = FloatRepr::<NewX, R>::from_ratio(num, den, precision + 1);
-            value.exponent += log_v as isize;
+            let num = IBig::from(precision_ub) * self.repr.significand;
+            let mut value = FBig::<NewB, R>::from_ratio(num, den, precision + 1);
+            value.repr.exponent += log_v as isize;
             value
         } else {
             // denote log with base of radix2 as lgr2, then
@@ -192,12 +179,12 @@ impl<const X: usize, R: Round> FloatRepr<X, R> {
             // 1 - rem_lgr2(radix1^exp1) / (radix2 ^ floor_lgr2(radix1^exp1) + rem_lgr2(radix1^exp1))
             // = radix2 ^ floor_lgr2(radix1^exp1) / radix1^exp1
 
-            let precision_ub = UBig::from(X).pow(-self.exponent as usize);
-            let (log_v, log_r) = log_rem(&precision_ub, NewX);
-            let num = IBig::from(&precision_ub - log_r) * self.mantissa;
+            let precision_ub = UBig::from_word(B).pow(-self.repr.exponent as usize);
+            let (log_v, log_r) = log_rem(&precision_ub, NewB as usize);
+            let num = IBig::from(&precision_ub - log_r) * self.repr.significand;
             let den = IBig::from(precision_ub);
-            let mut value = FloatRepr::<NewX, R>::from_ratio(num, den, precision + 1);
-            value.exponent -= log_v as isize;
+            let mut value = FBig::<NewB, R>::from_ratio(num, den, precision + 1);
+            value.repr.exponent -= log_v as isize;
             value
         };
 
@@ -205,26 +192,10 @@ impl<const X: usize, R: Round> FloatRepr<X, R> {
     }
 
     #[allow(non_upper_case_globals)]
-    fn with_radix_and_precision<const NewX: usize>(self, precision: usize) -> FloatRepr<NewX, R> {
+    fn with_base_and_precision<const NewB: Word>(self, precision: usize) -> FBig<NewB, R> {
         // approximate power if precision is small
         // calculate more digits if precision is high
         unimplemented!()
-    }
-
-    pub(crate) fn normalize(mut mantissa: IBig, mut exponent: isize) -> (IBig, isize) {
-        if mantissa.is_zero() {
-            return (IBig::ZERO, 0);
-        }
-        if X == 2 {
-            if let Some(shift) = mantissa.trailing_zeros() {
-                mantissa >>= shift;
-                exponent += shift as isize;
-            };
-        } else {
-            let shift: isize = remove_pow(&mut mantissa, &X.into()).try_into().unwrap();
-            exponent += shift;
-        }
-        (mantissa, exponent)
     }
 
     // TODO: let all these to_* functions return `Approximation`

@@ -1,16 +1,16 @@
-use crate::{repr::FloatRepr, round::Round};
-use core::str::FromStr;
-use core::{marker::PhantomData, num::IntErrorKind};
+use crate::{fbig::FBig, repr::{Repr, Context}, round::Round};
+use core::{str::FromStr, num::IntErrorKind};
+use dashu_int::Word;
 use dashu_int::{
     error::ParseError,
     fmt::{MAX_RADIX, MIN_RADIX},
-    IBig, Sign, UBig,
+    Sign, UBig,
 };
 
-impl<const X: usize, R: Round> FromStr for FloatRepr<X, R> {
+impl<const B: Word, R: Round> FromStr for FBig<B, R> {
     type Err = ParseError;
 
-    /// Convert a string in a given base to [FloatRepr].
+    /// Convert a string in a given base to [FBig].
     ///
     /// `src` may contain an optional `+` prefix.
     /// Digits 10-35 are represented by `a-z` or `A-Z`.
@@ -49,10 +49,10 @@ impl<const X: usize, R: Round> FromStr for FloatRepr<X, R> {
     /// Panics if the radix `X` is not between [MIN_RADIX] and [MAX_RADIX] inclusive
     ///
     fn from_str(mut src: &str) -> Result<Self, ParseError> {
-        assert!(MIN_RADIX as usize <= X && X <= MAX_RADIX as usize);
+        assert!(MIN_RADIX as Word <= B && B <= MAX_RADIX as Word);
 
         // determine the position of scale markers
-        let scale_pos = match X {
+        let scale_pos = match B {
             10 => src.rfind(&['e', 'E', '@']),
             2 => src.rfind(&['b', 'B', 'p', 'P', '@']),
             8 => src.rfind(&['o', 'O', '@']),
@@ -69,7 +69,7 @@ impl<const X: usize, R: Round> FromStr for FloatRepr<X, R> {
                 },
                 Ok(v) => v,
             };
-            let use_p = if X == 2 {
+            let use_p = if B == 2 {
                 src.bytes().nth(pos) == Some(b'p') || src.bytes().nth(pos) == Some(b'P')
             } else {
                 false
@@ -95,33 +95,33 @@ impl<const X: usize, R: Round> FromStr for FloatRepr<X, R> {
         // parse the body of the float number
         let mut exponent = scale;
         let ndigits;
-        let mantissa = if let Some(dot) = src.find('.') {
+        let significand = if let Some(dot) = src.find('.') {
             // check whether both integral part and fractional part are empty
             if src.len() == 1 {
                 return Err(ParseError::NoDigits);
             }
 
             // parse integral part
-            let (trunc, trunc_digits, base) = if dot != 0 {
-                let trunc_str = &src[..dot];
-                let has_prefix = trunc_str.starts_with("0x") || trunc_str.starts_with("0X");
-                if X == 2 && has_prefix {
+            let (int, int_digits, base) = if dot != 0 {
+                let int_str = &src[..dot];
+                let has_prefix = int_str.starts_with("0x") || int_str.starts_with("0X");
+                if B == 2 && has_prefix {
                     // only hexadecimal is allowed with prefix
-                    let trunc_str = &trunc_str[2..];
-                    let digits = 4 * (trunc_str.len() - trunc_str.matches('_').count());
-                    if trunc_str.len() == 0 {
+                    let int_str = &int_str[2..];
+                    let digits = 4 * (int_str.len() - int_str.matches('_').count());
+                    if int_str.len() == 0 {
                         (UBig::ZERO, digits, 16)
                     } else {
-                        (UBig::from_str_radix(&trunc_str, 16)?, digits, 16)
+                        (UBig::from_str_radix(&int_str, 16)?, digits, 16)
                     }
-                } else if X == 2 && pmarker && !has_prefix {
+                } else if B == 2 && pmarker && !has_prefix {
                     return Err(ParseError::UnsupportedRadix);
                 } else {
-                    let digits = trunc_str.len() - trunc_str.matches('_').count();
+                    let digits = int_str.len() - int_str.matches('_').count();
                     (
-                        UBig::from_str_radix(&src[..dot], X as u32)?,
+                        UBig::from_str_radix(&src[..dot], B as u32)?,
                         digits,
-                        X as u32,
+                        B as u32,
                     )
                 }
             } else {
@@ -129,48 +129,46 @@ impl<const X: usize, R: Round> FromStr for FloatRepr<X, R> {
                     // prefix is required for using `p` as scale marker
                     return Err(ParseError::UnsupportedRadix);
                 }
-                (UBig::ZERO, 0, X as u32)
+                (UBig::ZERO, 0, B as u32)
             };
 
             // parse fractional part
             src = &src[dot + 1..];
             let (fract, fract_digits) = if !src.is_empty() {
                 let mut digits = src.len() - src.matches('_').count();
-                if X == 2 && base == 16 {
+                if B == 2 && base == 16 {
                     digits *= 4;
                 }
                 (UBig::from_str_radix(src, base)?, digits)
             } else {
                 (UBig::ZERO, 0)
             };
-            ndigits = trunc_digits + fract_digits;
+            ndigits = int_digits + fract_digits;
 
             if fract.is_zero() {
-                trunc
+                int
             } else {
                 exponent -= fract_digits as isize;
-                trunc * UBig::from(X).pow(fract_digits) + fract
+                int * UBig::from_word(B).pow(fract_digits) + fract
             }
         } else {
             let has_prefix = src.starts_with("0x") || src.starts_with("0X");
-            if X == 2 && has_prefix {
+            if B == 2 && has_prefix {
                 src = &src[2..];
                 ndigits = 4 * (src.len() - src.matches('_').count());
                 UBig::from_str_radix(src, 16)?
-            } else if X == 2 && pmarker && !has_prefix {
+            } else if B == 2 && pmarker && !has_prefix {
                 return Err(ParseError::UnsupportedRadix);
             } else {
                 ndigits = src.len() - src.matches('_').count();
-                UBig::from_str_radix(&src, X as u32)?
+                UBig::from_str_radix(&src, B as u32)?
             }
         };
 
-        let (mantissa, exponent) = Self::normalize(sign * mantissa, exponent);
+        let repr = Repr::new(sign * significand, exponent);
         Ok(Self {
-            mantissa,
-            exponent,
-            precision: ndigits,
-            _marker: PhantomData,
+            repr,
+            context: Context::new(ndigits)
         })
     }
 }

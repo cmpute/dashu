@@ -54,6 +54,34 @@ impl UBig {
     /// [UBig] with value 1
     pub const ONE: Self = Self(Repr::one());
 
+    /// Get the raw representation in [Word][crate::Word]s.
+    ///
+    /// If the number is zero, then empty slice will be returned.
+    #[inline]
+    pub fn as_words(&self) -> &[crate::Word] {
+        let (sign, words) = self.0.as_sign_slice();
+        debug_assert!(matches!(sign, crate::sign::Sign::Positive));
+        words
+    }
+
+    /// Create a UBig from a single [Word][crate::Word].
+    #[inline]
+    pub const fn from_word(word: crate::Word) -> Self {
+        Self(Repr::from_word(word))
+    }
+
+    /// Create a UBig from a [DoubleWord][crate::DoubleWord].
+    #[inline]
+    pub const fn from_dword(dword: crate::DoubleWord) -> Self {
+        Self(Repr::from_dword(dword))
+    }
+
+    /// Convert a sequence of [Word][crate::Word]s into a UBig
+    #[inline]
+    pub fn from_words(words: &[crate::Word]) -> Self {
+        Self(Repr::from_buffer(words.into()))
+    }
+
     /// Check whether the value is 0
     ///
     /// # Examples

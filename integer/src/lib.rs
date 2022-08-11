@@ -80,6 +80,9 @@ pub use crate::{ibig::IBig, sign::Sign, ubig::UBig};
 /// It's dependent on the target architecture.
 pub type Word = arch::word::Word;
 
+/// The primitive integer type that has exactly double the size of [Word].
+pub type DoubleWord = arch::word::DoubleWord;
+
 mod add;
 mod add_ops;
 mod arch;

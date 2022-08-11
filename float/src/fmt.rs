@@ -1,24 +1,25 @@
 //! Implementation of formatters
 
 use crate::{
-    repr::FloatRepr,
     round::Round,
-    utils::{get_precision, shr_radix, shr_rem_radix},
+    utils::{get_precision, shr_radix, shr_rem_radix}, fbig::FBig, repr::{Repr, Context},
 };
 use core::fmt::{self, Display, Formatter, Write};
 use dashu_base::Abs;
-use dashu_int::Sign;
+use dashu_int::{Sign, Word};
 
-// FIXME: sign, width and fill options are not yet correctly handled
-// TODO: print decimal by default, and print in native radix
-
-impl<const X: usize, R: Round> fmt::Debug for FloatRepr<X, R> {
+impl<const B: Word> fmt::Debug for Repr<B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.mantissa, f)?;
+        fmt::Debug::fmt(&self.significand, f)?;
         f.write_str(" * ")?;
-        fmt::Debug::fmt(&X, f)?;
+        fmt::Debug::fmt(&B, f)?;
         f.write_str(" ^ ")?;
-        fmt::Debug::fmt(&self.exponent, f)?;
+        fmt::Debug::fmt(&self.exponent, f)
+    }
+}
+
+impl<R: Round> fmt::Debug for Context<R> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str(" (prec: ")?;
         fmt::Debug::fmt(&self.precision, f)?;
         f.write_str(", rnd: ")?;
@@ -27,25 +28,35 @@ impl<const X: usize, R: Round> fmt::Debug for FloatRepr<X, R> {
     }
 }
 
-impl<const X: usize, R: Round> Display for FloatRepr<X, R> {
+impl<const B: Word, R: Round> fmt::Debug for FBig<B, R> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.repr, f)?;
+        fmt::Debug::fmt(&self.context, f)
+    }
+}
+
+// FIXME: sign, width and fill options are not yet correctly handled
+
+impl<const B: Word, R: Round> Display for FBig<B, R> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        // TODO: print decimal by default?
         // print in decimal if the alternate flag is set
-        if f.alternate() && X != 10 {
+        if f.alternate() && B != 10 {
             return self.to_decimal().fmt(f);
         }
 
-        if self.exponent < 0 {
-            let exp = -self.exponent as usize;
-            let (trunc, frac) = shr_rem_radix::<X>(&self.mantissa, exp);
-            let frac_prec = get_precision::<X>(&frac);
+        if self.repr.exponent < 0 {
+            let exp = -self.repr.exponent as usize;
+            let (int, frac) = shr_rem_radix::<B>(&self.repr.significand, exp);
+            let frac_prec = get_precision::<B>(&frac);
             assert!(frac_prec <= exp);
             let mut frac = frac.abs(); // don't print sign for fractional part
 
             // print integral part
-            if trunc.is_zero() && self.mantissa.sign() == Sign::Negative {
+            if int.is_zero() && self.repr.significand.sign() == Sign::Negative {
                 f.write_char('-')?;
             }
-            trunc.in_radix(X as u32).fmt(f)?;
+            int.in_radix(B as u32).fmt(f)?;
 
             // print fractional part
             // note that the fractional part has actually exp digits (with left zero padding)
@@ -58,11 +69,11 @@ impl<const X: usize, R: Round> Display for FloatRepr<X, R> {
                         let new_prec = if exp == v {
                             frac_prec
                         } else if frac_prec > exp - v {
-                            let (shifted, mut rem) = shr_rem_radix::<X>(&frac, exp - v);
+                            let (shifted, mut rem) = shr_rem_radix::<B>(&frac, exp - v);
                             frac = shifted;
-                            shr_radix::<X>(&mut rem, exp - v - 1);
-                            frac += R::round_fract::<X>(&frac, rem, exp - v);
-                            get_precision::<X>(&frac)
+                            shr_radix::<B>(&mut rem, exp - v - 1);
+                            frac += R::round_fract::<B>(&frac, rem, exp - v);
+                            get_precision::<B>(&frac)
                         } else {
                             0
                         };
@@ -73,14 +84,14 @@ impl<const X: usize, R: Round> Display for FloatRepr<X, R> {
                             }
                         }
                         if frac_prec > exp - v {
-                            frac.in_radix(X as u32).fmt(f)?;
+                            frac.in_radix(B as u32).fmt(f)?;
                         }
                     } else {
                         // append zeros if the required precision is larger
                         for _ in 0..exp - frac_prec {
                             f.write_char('0')?;
                         }
-                        frac.in_radix(X as u32).fmt(f)?;
+                        frac.in_radix(B as u32).fmt(f)?;
                         for _ in 0..v - exp {
                             f.write_char('0')?; // TODO: padding handling is not correct here
                         }
@@ -93,14 +104,14 @@ impl<const X: usize, R: Round> Display for FloatRepr<X, R> {
                     for _ in 0..(exp - frac_prec) {
                         f.write_char('0')?;
                     }
-                    frac.in_radix(X as u32).fmt(f)?;
+                    frac.in_radix(B as u32).fmt(f)?;
                 }
             }
         } else {
-            // directly print the mantissa and append zeros if needed
+            // directly print the significand and append zeros if needed
             // precision doesn't make a difference since we force printing in native radix
-            self.mantissa.in_radix(X as u32).fmt(f)?;
-            for _ in 0..self.exponent {
+            self.repr.significand.in_radix(B as u32).fmt(f)?;
+            for _ in 0..self.repr.exponent {
                 f.write_char('0')?;
             }
         };

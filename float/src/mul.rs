@@ -1,43 +1,28 @@
+use dashu_base::Approximation;
+use dashu_int::Word;
+
 use crate::{
-    repr::FloatRepr,
-    round::Round,
+    repr::{Context, Repr},
+    fbig::FBig,
+    round::{Round, Rounding},
     utils::{get_precision, shr_rem_radix_in_place},
 };
-use core::marker::PhantomData;
 use core::ops::Mul;
 
-impl<const X: usize, R: Round> Mul for &FloatRepr<X, R> {
-    type Output = FloatRepr<X, R>;
+impl<const B: Word, R: Round> Mul for &FBig<B, R> {
+    type Output = FBig<B, R>;
 
     #[inline]
     fn mul(self, rhs: Self) -> Self::Output {
-        let precision = self.precision.max(rhs.precision);
-        let exponent = self.exponent + rhs.exponent;
-        let mut mantissa = &self.mantissa * &rhs.mantissa;
-        let actual_prec = get_precision::<X>(&mantissa);
-        if actual_prec > precision {
-            let shift = actual_prec - precision;
-            let low_digits = shr_rem_radix_in_place::<X>(&mut mantissa, shift);
-            mantissa += R::round_fract::<X>(&mantissa, low_digits, shift);
-            let (mantissa, exponent) = Self::Output::normalize(mantissa, exponent);
-            FloatRepr {
-                mantissa,
-                exponent,
-                precision,
-                _marker: PhantomData,
-            }
-        } else {
-            FloatRepr {
-                mantissa,
-                exponent,
-                precision,
-                _marker: PhantomData,
-            }
+        let context = Context::max(self.context, rhs.context);
+        FBig {
+            repr: context.mul(&self.repr, &rhs.repr).value(),
+            context
         }
     }
 }
 
-impl<const X: usize, R: Round> Mul for FloatRepr<X, R> {
+impl<const B: Word, R: Round> Mul for FBig<B, R> {
     type Output = Self;
 
     #[inline]
@@ -45,10 +30,30 @@ impl<const X: usize, R: Round> Mul for FloatRepr<X, R> {
         (&self).mul(&rhs)
     }
 }
-impl<const X: usize, R: Round> Mul<FloatRepr<X, R>> for &FloatRepr<X, R> {
-    type Output = FloatRepr<X, R>;
+impl<const B: Word, R: Round> Mul<FBig<B, R>> for &FBig<B, R> {
+    type Output = FBig<B, R>;
     #[inline]
-    fn mul(self, rhs: FloatRepr<X, R>) -> Self::Output {
+    fn mul(self, rhs: FBig<B, R>) -> Self::Output {
         self.mul(&rhs)
+    }
+}
+
+impl<R: Round> Context<R> {
+    pub fn mul<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Approximation<Repr<B>, Rounding> {
+        let exponent = lhs.exponent + rhs.exponent;
+        let mut significand = &lhs.significand * &rhs.significand;
+        let actual_prec = get_precision::<B>(&significand);
+        if actual_prec > self.precision {
+            let shift = actual_prec - self.precision;
+            let low_digits = shr_rem_radix_in_place::<B>(&mut significand, shift);
+            let adjust = R::round_fract::<B>(&significand, low_digits, shift);
+            Approximation::InExact(Repr::new(significand + adjust, exponent), adjust)
+        } else {
+            Approximation::Exact(Repr::new(significand, exponent))
+        }
+    }
+
+    pub fn mul_assign<const B: Word>(&self, lhs: &mut Repr<B>, rhs: &Repr<B>) -> Approximation<(), Rounding> {
+        unimplemented!()
     }
 }
