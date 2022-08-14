@@ -39,7 +39,6 @@ impl<const B: Word, R: Round> fmt::Debug for FBig<B, R> {
 
 impl<const B: Word, R: Round> Display for FBig<B, R> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        // TODO: print decimal by default?
         // print in decimal if the alternate flag is set
         if f.alternate() && B != 10 {
             return self.to_decimal().fmt(f);

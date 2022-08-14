@@ -2,7 +2,7 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
-    primitive::{double_word, extend_word, split_dword, PrimitiveUnsigned, DWORD_BITS, WORD_BITS},
+    primitive::{double_word, extend_word, split_dword, PrimitiveUnsigned, WORD_BITS},
 };
 
 /// The length of an integer in bits.
@@ -21,6 +21,7 @@ pub fn ceil_log2<T: PrimitiveUnsigned>(x: T) -> u32 {
 }
 
 // 8bit fixed point estimation of log2(x), x from 0x80 to 0xff, rounding down.
+#[cfg(not(feature = "std"))]
 const LOG2_TAB: [u8; 128] = [
     0x00, 0x02, 0x05, 0x08, 0x0b, 0x0e, 0x10, 0x13, 0x16, 0x19, 0x1b, 0x1e, 0x21, 0x23, 0x26, 0x28,
     0x2b, 0x2e, 0x30, 0x33, 0x35, 0x38, 0x3a, 0x3d, 0x3f, 0x41, 0x44, 0x46, 0x49, 0x4b, 0x4d, 0x50,
@@ -35,6 +36,7 @@ const LOG2_TAB: [u8; 128] = [
 /// A 8bit fixed point estimation of log2(n), the result
 /// is always less than the exact value and estimation error ≤ 2.
 #[inline]
+#[cfg(not(feature = "std"))]
 pub const fn log2_word_fp8(n: Word) -> u32 {
     debug_assert!(n > 0);
 
@@ -78,6 +80,7 @@ pub const fn log2_word_fp8(n: Word) -> u32 {
 /// Panics if n is a power of two, in which case the log should
 /// be trivially handled.
 #[inline]
+#[cfg(not(feature = "std"))]
 pub const fn ceil_log2_word_fp8(n: Word) -> u32 {
     debug_assert!(n > 0);
     debug_assert!(!n.is_power_of_two());
@@ -118,8 +121,9 @@ pub const fn ceil_log2_word_fp8(n: Word) -> u32 {
 /// A 8bit fixed point estimation of log2(n), the result
 /// is always less than the exact value and estimation error ≤ 2.
 #[inline]
+#[cfg(not(feature = "std"))]
 pub const fn log2_dword_fp8(n: DoubleWord) -> u32 {
-    let bits = DWORD_BITS - n.leading_zeros();
+    let bits = crate::primitive::DWORD_BITS - n.leading_zeros();
     if bits <= WORD_BITS {
         log2_word_fp8(n as Word)
     } else {
@@ -136,10 +140,11 @@ pub const fn log2_dword_fp8(n: DoubleWord) -> u32 {
 /// Panics if n is a power of two, in which case the log should
 /// be trivially handled.
 #[inline]
+#[cfg(not(feature = "std"))]
 pub const fn ceil_log2_dword_fp8(n: DoubleWord) -> u32 {
     debug_assert!(!n.is_power_of_two());
 
-    let bits = DWORD_BITS - n.leading_zeros();
+    let bits = crate::primitive::DWORD_BITS - n.leading_zeros();
     if bits <= WORD_BITS {
         ceil_log2_word_fp8(n as Word)
     } else {
@@ -353,6 +358,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "std"))]
     fn test_log2_fp8() {
         assert_eq!(log2_word_fp8(1), 0); // err = 0
         assert_eq!(log2_word_fp8(12), 917); // err = 0

@@ -1,4 +1,4 @@
-use dashu_int::{IBig, Sign, UBig, Word};
+use dashu_int::{IBig, Sign, UBig, Word, DoubleWord};
 use proc_macro2::{Delimiter, Group, Literal, Punct, Spacing, TokenStream, TokenTree};
 use quote::quote;
 
@@ -128,7 +128,8 @@ pub fn quote_ubig(int: UBig) -> TokenStream {
         // the number is small enough to fit a double word, generates const expression
         let low = *words.get(0).unwrap_or(&0);
         let high = *words.get(1).unwrap_or(&0);
-        quote! { ::dashu_int::UBig::from_dword(#low, #high) }
+        let dword = low as DoubleWord | (high as DoubleWord) << Word::BITS;
+        quote! { ::dashu_int::UBig::from_dword(#dword) }
     } else {
         // the number contains more than two words, convert to array of words
         let words_tt = quote_words(words);
@@ -148,7 +149,8 @@ pub fn quote_ibig(int: IBig) -> TokenStream {
         // the number is small enough to fit a double word, generates const expression
         let low = *words.get(0).unwrap_or(&0);
         let high = *words.get(1).unwrap_or(&0);
-        quote! { ::dashu_int::IBig::from_parts_const(#sign, #low, #high) }
+        let dword = low as DoubleWord | (high as DoubleWord) << Word::BITS;
+        quote! { ::dashu_int::IBig::from_parts_const(#sign, #dword) }
     } else {
         // the number contains more than two words, convert to array of words
         let words_tt = quote_words(words);

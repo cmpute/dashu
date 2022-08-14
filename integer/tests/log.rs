@@ -64,24 +64,64 @@ fn test_log_ubig() {
         (ubig!(7).pow(4000) + 1u8, ubig!(7).pow(400), 10),
     ];
     for (pow, base, exp) in test_cases {
-        assert_eq!(pow.log(&base), exp, "{}, {}, {}", pow, base, exp);
+        assert_eq!(pow.ilog(&base), exp, "{}, {}, {}", pow, base, exp);
+    }
+}
+
+#[test]
+fn test_log2_ubig() {
+    // log2 should be exact when the result is an inlined integer
+    for i in [0, 1, 2, 4, 10, 31] {
+        let (lb, ub) = ubig!(2).pow(i).log2_bounds();
+        assert_eq!(lb, i as f32);
+        assert_eq!(ub, i as f32);
+    }
+
+    let test_cases = [
+        (ubig!(3), 1.584962500721156),
+        (ubig!(5), 2.321928094887362),
+        (ubig!(7), 2.807354922057604),
+        (ubig!(10), 3.321928094887362),
+        ((ubig!(1) << 8) - 1u8, 7.994353436858858),
+        ((ubig!(1) << 16) - 1u8, 15.999977986052736),
+        ((ubig!(1) << 16) - (ubig!(1) << 11), 15.954196310386875),
+        ((ubig!(1) << 32) - 1u8, 31.999999999664098),
+        ((ubig!(1) << 32) - (ubig!(1) << 22), 31.998590429745327),
+        (ubig!(1) << 50, 50.),
+        (ubig!(1) << 100, 100.),
+        (ubig!(1) << 5000, 5000.),
+        (ubig!(3).pow(5), 7.924812503605781),
+        (ubig!(5).pow(7), 16.253496664211536),
+        (ubig!(7).pow(11), 30.880904142633646),
+        (ubig!(3).pow(4000), 6339.850002884625),
+        (ubig!(5).pow(4000), 9287.71237954945),
+        (ubig!(7).pow(4000), 11229.419688230417),
+        (ubig!(10).pow(4000), 13287.71237954945),
+        (ubig!(10).pow(100000), 332192.8094887362),
+    ];
+    const ERR_BOUND: f64 = 1. / 256.;
+    for (n, log2) in test_cases {
+        let (lb, ub) = n.log2_bounds();
+        let (lb, ub) = (lb as f64, ub as f64);
+        assert!(lb <= log2 && (log2 - lb) / log2 < ERR_BOUND);
+        assert!(ub >= log2 && (ub - log2) / log2 < ERR_BOUND);
     }
 }
 
 #[test]
 #[should_panic]
 fn test_log_base_0() {
-    let _ = ubig!(1234).log(&ubig!(0));
+    let _ = ubig!(1234).ilog(&ubig!(0));
 }
 
 #[test]
 #[should_panic]
 fn test_log_base_1() {
-    let _ = ubig!(1234).log(&ubig!(1));
+    let _ = ubig!(1234).ilog(&ubig!(1));
 }
 
 #[test]
 #[should_panic]
 fn test_log_0() {
-    let _ = ubig!(0).log(&ubig!(1234));
+    let _ = ubig!(0).ilog(&ubig!(1234));
 }

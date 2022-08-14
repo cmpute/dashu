@@ -16,7 +16,7 @@ impl<const B: Word, R: Round> FBig<B, R> {
         mut exponent: isize,
         precision: usize,
     ) -> Self {
-        // FIXME: use the fast div support from ibig
+        // FIXME: change to first align the operands to 2n/n (n is working precision), then do the integer division
         let (mut significand, mut rem) = numerator.div_rem(&denominator);
         let mut digits = get_precision::<B>(&significand);
         match digits.cmp(&precision) {

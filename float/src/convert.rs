@@ -135,14 +135,14 @@ impl<const B: Word, R: Round> FBig<B, R> {
                 context: self.context,
             };
         }
-        // FIXME: shortcut if X is a power of NewX
+        // TODO: shortcut if X is a power of NewX
 
         // Calculate the new precision
         // new_precision = floor_log_radix2(radix1^precision)
         let precision = log_pow(&UBig::from_word(B), self.context.precision, NewB as usize);
 
         // Convert by calculating logarithm
-        // FIXME: currently the calculation is done in full precision, could be vastly optimized
+        // TODO: currently the calculation is done in full precision, could be vastly optimized
         //        by using a float logarithm algorithm (when precision and exponent is large, otherwise
         //        we can still use the naive one)
         let result = if self.repr.exponent == 0 {

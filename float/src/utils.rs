@@ -15,7 +15,7 @@ pub fn get_precision<const B: Word>(value: &IBig) -> usize {
         return 0;
     };
 
-    let e = value.log(&UBig::from_word(B));
+    let e = value.ilog(&UBig::from_word(B));
     let e: usize = e.try_into().unwrap();
     e + 1
 }

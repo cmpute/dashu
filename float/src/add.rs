@@ -98,4 +98,6 @@ impl<R: Round> Context<R> {
     pub fn add_assign<const B: Word>(&self, lhs: &mut Repr<B>, rhs: &Repr<B>) -> Approximation<(), Rounding> {
         unimplemented!()
     }
+
+    // TODO: add a separate sub, sub_assign function
 }

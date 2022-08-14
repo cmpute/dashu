@@ -79,7 +79,7 @@ fn test_random_arithmetic() {
 
             // pow can be very slow when exponent is too large
             if log_num_bits <= 5 && i % 8 == 0 {
-                assert_eq!((ubig!(5).pow(num_bits) + 1u8).log(&ubig!(25)), num_bits / 2);
+                assert_eq!((ubig!(5).pow(num_bits) + 1u8).ilog(&ubig!(25)), num_bits / 2);
             }
 
             // gcd is much slower than primitive operations, test with lower frequency
