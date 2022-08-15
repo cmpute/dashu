@@ -17,6 +17,8 @@ use core::{
     ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not},
 };
 
+// TODO: add a method called split to split the integer at given bit index
+
 /// Count the trailing zero bits in the words.
 /// Panics if the input is zero.
 #[inline]

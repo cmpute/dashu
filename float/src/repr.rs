@@ -1,6 +1,6 @@
 use crate::{
     round::{mode, Round},
-    utils::{get_precision, base_as_ibig}, ibig_ext::remove_pow,
+    utils::{digit_len, base_as_ibig}, ibig_ext::remove_pow,
 };
 use core::marker::PhantomData;
 use dashu_int::{IBig, Sign, Word, DoubleWord};
@@ -19,7 +19,7 @@ pub struct Context<RoundingMode: Round> {
 }
 
 impl<const B: Word> Repr<B> {
-    pub const B_IBIG: IBig = base_as_ibig::<B>();
+    pub const BASE: IBig = base_as_ibig::<B>();
 
     pub const fn zero() -> Self {
         Self { significand: IBig::ZERO, exponent: 0 }
@@ -69,7 +69,7 @@ impl<const B: Word> Repr<B> {
 
     /// Get the number of digits in the significand.
     pub fn digits(&self) -> usize {
-        get_precision::<B>(&self.significand)
+        digit_len::<B>(&self.significand)
     }
 
     /// Create a [Repr] from significand and exponent. This

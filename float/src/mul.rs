@@ -5,7 +5,7 @@ use crate::{
     repr::{Context, Repr},
     fbig::FBig,
     round::{Round, Rounding},
-    utils::{get_precision, shr_rem_radix_in_place},
+    utils::{digit_len, shr_rem_radix_in_place},
 };
 use core::ops::Mul;
 
@@ -42,7 +42,7 @@ impl<R: Round> Context<R> {
     pub fn mul<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Approximation<Repr<B>, Rounding> {
         let exponent = lhs.exponent + rhs.exponent;
         let mut significand = &lhs.significand * &rhs.significand;
-        let actual_prec = get_precision::<B>(&significand);
+        let actual_prec = digit_len::<B>(&significand);
         if actual_prec > self.precision {
             let shift = actual_prec - self.precision;
             let low_digits = shr_rem_radix_in_place::<B>(&mut significand, shift);

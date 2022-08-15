@@ -7,8 +7,8 @@
 - Add a public API `as_words` and `as_sign_words` to access internal representation of `UBig` and `IBig`.
 - Add const constructors `from_word`, `from_dword` and a direct constructor `from_words` for `UBig` and `IBig`.
 - Implement `Mul` between `Sign` and `UBig`/`IBig`.
-- Implement integer logarithm `ilog`.
-- Implement approximated bounds of base 2 logarithm `log2_bounds`.
+- Implement `DivRemAssign` for `UBig` and `IBig`, and `DivRemAssign` is re-exported in the `ops` module.
+- Implement integer logarithm `ilog` and approximated bounds of base 2 logarithm `log2_bounds`.
 
 ### Remove
 - Remove `ubig!` and `ibig!` macros from the crate, more powerful versions of them will be included in a separate `dashu-macro` crate.

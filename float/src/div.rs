@@ -1,11 +1,11 @@
 use crate::{
     repr::{Repr, Context},
     fbig::FBig,
-    round::Round,
-    utils::{get_precision, shr_rem_radix_in_place},
+    round::{Round, Rounding},
+    utils::{digit_len, shr_rem_radix_in_place},
 };
 use core::{ops::Div, cmp::Ordering};
-use dashu_base::DivRem;
+use dashu_base::{DivRem, Approximation};
 use dashu_int::{IBig, Sign, DoubleWord, Word};
 
 impl<const B: Word, R: Round> FBig<B, R> {
@@ -18,7 +18,7 @@ impl<const B: Word, R: Round> FBig<B, R> {
     ) -> Self {
         // FIXME: change to first align the operands to 2n/n (n is working precision), then do the integer division
         let (mut significand, mut rem) = numerator.div_rem(&denominator);
-        let mut digits = get_precision::<B>(&significand);
+        let mut digits = digit_len::<B>(&significand);
         match digits.cmp(&precision) {
             Ordering::Equal => {
                 significand += R::round_ratio(&significand, rem, &denominator);
@@ -32,9 +32,9 @@ impl<const B: Word, R: Round> FBig<B, R> {
             Ordering::Less => {
                 // TODO: create an associated const
                 while digits < precision && !rem.is_zero() {
-                    let (d, r) = (rem * Repr::<B>::B_IBIG).div_rem(&denominator);
+                    let (d, r) = (rem * Repr::<B>::BASE).div_rem(&denominator);
                     rem = r;
-                    significand *= Repr::<B>::B_IBIG;
+                    significand *= Repr::<B>::BASE;
                     significand += d;
                     digits += 1;
                     exponent -= 1;
@@ -65,5 +65,11 @@ impl<const B: Word, R: Round> Div for FBig<B, R> {
             self.repr.exponent - rhs.repr.exponent,
             self.context.precision.max(rhs.context.precision),
         )
+    }
+}
+
+impl<R: Round> Context<R> {
+    pub fn div<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Approximation<Repr<B>, Rounding> {
+        unimplemented!()
     }
 }

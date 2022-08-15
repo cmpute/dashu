@@ -343,17 +343,38 @@ macro_rules! forward_binop_assign_by_taking {
             }
         }
     };
+    // this branch is currently only used for DivRemAssign
+    (impl $trait:ident<$t2:ty> for $t1:ty, $methodassign:ident, $output:ident = $ty_output:ty, $method:ident) => {
+        impl $trait<$t2> for $t1 {
+            type $output = $ty_output;
+            #[inline]
+            fn $methodassign(&mut self, rhs: $t2) -> $ty_output {
+                let (a, b) = core::mem::take(self).$method(rhs);
+                *self = a;
+                b
+            }
+        }
+        impl $trait<&$t2> for $t1 {
+            type $output = $ty_output;
+            #[inline]
+            fn $methodassign(&mut self, rhs: &$t2) -> $ty_output{
+                let (a, b) = core::mem::take(self).$method(rhs);
+                *self = a;
+                b
+            }
+        }
+    };
 }
 
 /// Implement `impl Op<IBig> for UBig` by forwarding to the macro `$impl` with arguments
 /// `(self_repr, rhs_sign, rhs_repr)`
 macro_rules! forward_ubig_ibig_binop_to_repr {
-    (impl $trait:ident, $method:ident, $impl:ident) => {
+    (impl $trait:ident, $method:ident, $output:ident = $ty_output:ty, $impl:ident) => {
         impl $trait<IBig> for UBig {
-            type Output = IBig;
+            type $output = $ty_output;
 
             #[inline]
-            fn $method(self, rhs: IBig) -> IBig {
+            fn $method(self, rhs: IBig) -> $ty_output {
                 let lhs_mag = self.into_repr();
                 let (rhs_sign, rhs_mag) = rhs.into_sign_repr();
                 $impl!(lhs_mag, rhs_sign, rhs_mag)
@@ -361,10 +382,10 @@ macro_rules! forward_ubig_ibig_binop_to_repr {
         }
 
         impl<'r> $trait<&'r IBig> for UBig {
-            type Output = IBig;
+            type $output = $ty_output;
 
             #[inline]
-            fn $method(self, rhs: &IBig) -> IBig {
+            fn $method(self, rhs: &IBig) -> $ty_output {
                 let lhs_mag = self.into_repr();
                 let (rhs_sign, rhs_mag) = rhs.as_sign_repr();
                 $impl!(lhs_mag, rhs_sign, rhs_mag)
@@ -372,10 +393,10 @@ macro_rules! forward_ubig_ibig_binop_to_repr {
         }
 
         impl<'l> $trait<IBig> for &'l UBig {
-            type Output = IBig;
+            type $output = $ty_output;
 
             #[inline]
-            fn $method(self, rhs: IBig) -> IBig {
+            fn $method(self, rhs: IBig) -> $ty_output {
                 let lhs_mag = self.repr();
                 let (rhs_sign, rhs_mag) = rhs.into_sign_repr();
                 $impl!(lhs_mag, rhs_sign, rhs_mag)
@@ -383,10 +404,10 @@ macro_rules! forward_ubig_ibig_binop_to_repr {
         }
 
         impl<'l, 'r> $trait<&'r IBig> for &'l UBig {
-            type Output = IBig;
+            type $output = $ty_output;
 
             #[inline]
-            fn $method(self, rhs: &IBig) -> IBig {
+            fn $method(self, rhs: &IBig) -> $ty_output {
                 let lhs_mag = self.repr();
                 let (rhs_sign, rhs_mag) = rhs.as_sign_repr();
                 $impl!(lhs_mag, rhs_sign, rhs_mag)
@@ -398,12 +419,12 @@ macro_rules! forward_ubig_ibig_binop_to_repr {
 /// Implement `impl Op<UBig> for IBig` by forwarding to the macro `$impl` with arguments
 /// `(self_sign, self_repr, rhs_repr)`
 macro_rules! forward_ibig_ubig_binop_to_repr {
-    (impl $trait:ident, $method:ident, $impl:ident) => {
+    (impl $trait:ident, $method:ident, $output:ident = $ty_output:ty, $impl:ident) => {
         impl $trait<UBig> for IBig {
-            type Output = IBig;
+            type $output = $ty_output;
 
             #[inline]
-            fn $method(self, rhs: UBig) -> IBig {
+            fn $method(self, rhs: UBig) -> $ty_output {
                 let (lhs_sign, lhs_mag) = self.into_sign_repr();
                 let rhs_mag = rhs.into_repr();
                 $impl!(lhs_sign, lhs_mag, rhs_mag)
@@ -411,10 +432,10 @@ macro_rules! forward_ibig_ubig_binop_to_repr {
         }
 
         impl<'r> $trait<&'r UBig> for IBig {
-            type Output = IBig;
+            type $output = $ty_output;
 
             #[inline]
-            fn $method(self, rhs: &UBig) -> IBig {
+            fn $method(self, rhs: &UBig) -> $ty_output {
                 let (lhs_sign, lhs_mag) = self.into_sign_repr();
                 let rhs_mag = rhs.repr();
                 $impl!(lhs_sign, lhs_mag, rhs_mag)
@@ -422,10 +443,10 @@ macro_rules! forward_ibig_ubig_binop_to_repr {
         }
 
         impl<'l> $trait<UBig> for &'l IBig {
-            type Output = IBig;
+            type $output = $ty_output;
 
             #[inline]
-            fn $method(self, rhs: UBig) -> IBig {
+            fn $method(self, rhs: UBig) -> $ty_output {
                 let (lhs_sign, lhs_mag) = self.as_sign_repr();
                 let rhs_mag = rhs.into_repr();
                 $impl!(lhs_sign, lhs_mag, rhs_mag)
@@ -433,10 +454,10 @@ macro_rules! forward_ibig_ubig_binop_to_repr {
         }
 
         impl<'l, 'r> $trait<&'r UBig> for &'l IBig {
-            type Output = IBig;
+            type $output = $ty_output;
 
             #[inline]
-            fn $method(self, rhs: &UBig) -> IBig {
+            fn $method(self, rhs: &UBig) -> $ty_output {
                 let (lhs_sign, lhs_mag) = self.as_sign_repr();
                 let rhs_mag = rhs.repr();
                 $impl!(lhs_sign, lhs_mag, rhs_mag)

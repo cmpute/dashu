@@ -1,5 +1,5 @@
 use dashu_int::{
-    ops::{DivEuclid, DivRem, DivRemEuclid, RemEuclid},
+    ops::{DivEuclid, DivRem, DivRemAssign, DivRemEuclid, RemEuclid},
     IBig, UBig,
 };
 
@@ -155,6 +155,16 @@ fn test_div_rem_ubig() {
         assert_eq!(a.div_rem(b.clone()), qr);
         assert_eq!(a.clone().div_rem(b.clone()), qr);
 
+        let mut x = a.clone();
+        let y = x.div_rem_assign(b.clone());
+        assert_eq!(x, *q);
+        assert_eq!(y, *r);
+
+        let mut x = a.clone();
+        let y = x.div_rem_assign(b);
+        assert_eq!(x, *q);
+        assert_eq!(y, *r);
+
         assert_eq!(a.div_euclid(b), *q);
         assert_eq!(a.clone().div_euclid(b), *q);
         assert_eq!(a.div_euclid(b.clone()), *q);
@@ -222,6 +232,16 @@ fn test_div_rem_ibig() {
             assert_eq!((&a_big).div_rem(b_big.clone()), qr);
             assert_eq!(a_big.clone().div_rem(&b_big), qr);
             assert_eq!((&a_big).div_rem(&b_big), qr);
+
+            let mut x = a_big.clone();
+            let y = x.div_rem_assign(b_big.clone());
+            assert_eq!(x, q);
+            assert_eq!(y, r);
+
+            let mut x = a_big.clone();
+            let y = x.div_rem_assign(&b_big);
+            assert_eq!(x, q);
+            assert_eq!(y, r);
         }
     }
 }

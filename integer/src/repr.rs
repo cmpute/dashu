@@ -498,6 +498,12 @@ impl<'a> TypedReprRef<'a> {
             Self::RefLarge(words) => words.len(),
         }
     }
+
+    /// This operation just return a copy of `self`. It's meant to be used in macros.
+    #[inline]
+    pub fn as_ref(&self) -> TypedReprRef {
+        *self
+    }
 }
 
 #[cfg(test)]

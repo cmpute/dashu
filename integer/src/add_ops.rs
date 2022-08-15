@@ -49,8 +49,8 @@ macro_rules! impl_ubig_ibig_sub {
         }
     };
 }
-helper_macros::forward_ubig_ibig_binop_to_repr!(impl Add, add, impl_ubig_ibig_add);
-helper_macros::forward_ubig_ibig_binop_to_repr!(impl Sub, sub, impl_ubig_ibig_sub);
+helper_macros::forward_ubig_ibig_binop_to_repr!(impl Add, add, Output = IBig, impl_ubig_ibig_add);
+helper_macros::forward_ubig_ibig_binop_to_repr!(impl Sub, sub, Output = IBig, impl_ubig_ibig_sub);
 
 macro_rules! impl_ibig_ubig_add {
     ($sign0:ident, $mag0:ident, $mag1:ident) => {
@@ -68,8 +68,8 @@ macro_rules! impl_ibig_ubig_sub {
         }
     };
 }
-helper_macros::forward_ibig_ubig_binop_to_repr!(impl Add, add, impl_ibig_ubig_add);
-helper_macros::forward_ibig_ubig_binop_to_repr!(impl Sub, sub, impl_ibig_ubig_sub);
+helper_macros::forward_ibig_ubig_binop_to_repr!(impl Add, add, Output = IBig, impl_ibig_ubig_add);
+helper_macros::forward_ibig_ubig_binop_to_repr!(impl Sub, sub, Output = IBig, impl_ibig_ubig_sub);
 helper_macros::forward_binop_assign_by_taking!(impl AddAssign<UBig> for IBig, add_assign, add);
 helper_macros::forward_binop_assign_by_taking!(impl SubAssign<UBig> for IBig, sub_assign, sub);
 

@@ -41,7 +41,7 @@ macro_rules! ibig {
     };
 }
 
-/// Create a FBig instance from literal, note that this macro doesn't support the float point.
+/// Create a FBig instance with base 2 from literal, note that this macro doesn't support the float point.
 #[macro_export]
 macro_rules! fbig {
     ($val:tt) => {{

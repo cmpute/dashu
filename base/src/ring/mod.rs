@@ -24,9 +24,9 @@ pub trait DivRem<Rhs = Self> {
 /// assert!(n == 2 && r == 3);
 /// ```
 pub trait DivRemAssign<Rhs = Self> {
-    type Output;
+    type OutputRem;
 
-    fn div_rem_assign(&mut self, rhs: Rhs) -> Self::Output;
+    fn div_rem_assign(&mut self, rhs: Rhs) -> Self::OutputRem;
 }
 
 /// Compute Euclidean quotient.

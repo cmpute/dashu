@@ -3,7 +3,7 @@
 use crate::{
     helper_macros,
     ibig::IBig,
-    ops::{DivEuclid, DivRem, DivRemEuclid, RemEuclid},
+    ops::{DivEuclid, DivRem, DivRemAssign, DivRemEuclid, RemEuclid},
     sign::Sign::*,
     ubig::UBig,
 };
@@ -11,6 +11,8 @@ use core::{
     convert::TryFrom,
     ops::{Div, DivAssign, Rem, RemAssign},
 };
+
+// Ops for UBig
 
 helper_macros::forward_ubig_binop_to_repr!(impl Div, div);
 helper_macros::forward_ubig_binop_to_repr!(impl Rem, rem);
@@ -36,6 +38,12 @@ helper_macros::forward_ubig_binop_to_repr!(
     OutputDiv = UBig, OutputRem = UBig,
     impl_ubig_divrem
 );
+helper_macros::forward_binop_assign_by_taking!(
+    impl DivRemAssign<UBig> for UBig, div_rem_assign,
+    OutputRem = UBig, div_rem
+);
+
+// Ops for IBig
 
 macro_rules! impl_ibig_div {
     ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {
@@ -45,7 +53,7 @@ macro_rules! impl_ibig_div {
 }
 macro_rules! impl_ibig_rem {
     ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {{
-        let _sign1 = $sign1; // unused
+        let _unused = $sign1;
 
         // remainder with truncating division has same sign as lhs.
         IBig(($mag0 % $mag1).with_sign($sign0))
@@ -55,75 +63,6 @@ helper_macros::forward_ibig_binop_to_repr!(impl Div, div, Output = IBig, impl_ib
 helper_macros::forward_ibig_binop_to_repr!(impl Rem, rem, Output = IBig, impl_ibig_rem);
 helper_macros::forward_binop_assign_by_taking!(impl DivAssign<IBig> for IBig, div_assign, div);
 helper_macros::forward_binop_assign_by_taking!(impl RemAssign<IBig> for IBig, rem_assign, rem);
-
-macro_rules! impl_ubig_ibig_div {
-    ($mag0:ident, $sign1:ident, $mag1:ident) => {
-        // truncate towards 0.
-        IBig(($mag0 / $mag1).with_sign($sign1))
-    };
-}
-helper_macros::forward_ubig_ibig_binop_to_repr!(impl Div, div, impl_ubig_ibig_div);
-
-impl Rem<IBig> for UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn rem(self, rhs: IBig) -> UBig {
-        let lhs_mag = self.into_repr();
-        let (_, rhs_mag) = rhs.into_sign_repr();
-        UBig(lhs_mag % rhs_mag)
-    }
-}
-
-impl<'r> Rem<&'r IBig> for UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn rem(self, rhs: &IBig) -> UBig {
-        let lhs_mag = self.into_repr();
-        let (_, rhs_mag) = rhs.as_sign_repr();
-        UBig(lhs_mag % rhs_mag)
-    }
-}
-
-impl<'l> Rem<IBig> for &'l UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn rem(self, rhs: IBig) -> UBig {
-        let lhs_mag = self.repr();
-        let (_, rhs_mag) = rhs.into_sign_repr();
-        UBig(lhs_mag % rhs_mag)
-    }
-}
-
-impl<'l, 'r> Rem<&'r IBig> for &'l UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn rem(self, rhs: &IBig) -> UBig {
-        let lhs_mag = self.repr();
-        let (_, rhs_mag) = rhs.as_sign_repr();
-        UBig(lhs_mag % rhs_mag)
-    }
-}
-
-macro_rules! impl_ibig_ubig_div {
-    ($sign0:ident, $mag0:ident, $mag1:ident) => {
-        // truncate towards 0.
-        IBig(($mag0 / $mag1).with_sign($sign0))
-    };
-}
-macro_rules! impl_ibig_ubig_rem {
-    ($sign0:ident, $mag0:ident, $mag1:ident) => {{
-        // remainder with truncating division has same sign as lhs.
-        IBig(($mag0 % $mag1).with_sign($sign0))
-    }};
-}
-helper_macros::forward_ibig_ubig_binop_to_repr!(impl Div, div, impl_ibig_ubig_div);
-helper_macros::forward_ibig_ubig_binop_to_repr!(impl Rem, rem, impl_ibig_ubig_rem);
-helper_macros::forward_binop_assign_by_taking!(impl DivAssign<UBig> for IBig, div_assign, div);
-helper_macros::forward_binop_assign_by_taking!(impl RemAssign<UBig> for IBig, rem_assign, rem);
 
 macro_rules! impl_ibig_div_rem {
     ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {{
@@ -138,249 +77,98 @@ helper_macros::forward_ibig_binop_to_repr!(
     impl_ibig_div_rem
 );
 
-impl DivEuclid<IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn div_euclid(self, rhs: IBig) -> IBig {
-        let s = rhs.signum();
-        let (q, r) = self.div_rem(rhs);
-        match r.sign() {
-            Positive => q,
-            Negative => q - s,
+macro_rules! impl_ibig_div_euclid {
+    ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {{
+        let (q, r) = $mag0.div_rem($mag1);
+        let q = IBig(q.with_sign($sign0 * $sign1));
+        match ($sign0, r.is_zero()) {
+            (Positive, _) | (Negative, true) => q,
+            (Negative, false) => q - $sign1.as_int(),
         }
-    }
+    }};
 }
-
-impl DivEuclid<&IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn div_euclid(self, rhs: &IBig) -> IBig {
-        let (q, r) = self.div_rem(rhs);
-        match r.sign() {
-            Positive => q,
-            Negative => q - rhs.signum(),
-        }
-    }
-}
-
-impl DivEuclid<IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn div_euclid(self, rhs: IBig) -> IBig {
-        let s = rhs.signum();
-        let (q, r) = self.div_rem(rhs);
-        match r.sign() {
-            Positive => q,
-            Negative => q - s,
-        }
-    }
-}
-
-impl DivEuclid<&IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn div_euclid(self, rhs: &IBig) -> IBig {
-        let (q, r) = self.div_rem(rhs);
-        match r.sign() {
-            Positive => q,
-            Negative => q - rhs.signum(),
-        }
-    }
-}
-
-impl RemEuclid<IBig> for IBig {
-    type Output = UBig;
-
-    #[inline]
-    fn rem_euclid(self, rhs: IBig) -> UBig {
-        let (sign0, mag0) = self.into_sign_repr();
-        let repr = match sign0 {
-            Positive => mag0 % rhs.into_sign_repr().1,
+macro_rules! impl_ibig_rem_euclid {
+    ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {{
+        let _unused = $sign1;
+        let repr = match $sign0 {
+            Positive => $mag0 % $mag1,
             Negative => {
-                let r = mag0 % rhs.as_sign_repr().1;
+                let r = $mag0 % $mag1.as_ref();
                 if r.is_zero() {
                     r
                 } else {
-                    rhs.into_sign_repr().1 - r.into_typed()
+                    $mag1 - r.into_typed()
                 }
             }
         };
         UBig(repr)
-    }
+    }};
 }
+helper_macros::forward_ibig_binop_to_repr!(impl DivEuclid, div_euclid, Output = IBig, impl_ibig_div_euclid);
+helper_macros::forward_ibig_binop_to_repr!(impl RemEuclid, rem_euclid, Output = UBig, impl_ibig_rem_euclid);
 
-impl RemEuclid<&IBig> for IBig {
-    type Output = UBig;
-
-    #[inline]
-    fn rem_euclid(self, rhs: &IBig) -> UBig {
-        let (sign0, mag0) = self.into_sign_repr();
-        let mag1 = rhs.as_sign_repr().1;
-        let repr = match sign0 {
-            Positive => mag0 % mag1,
-            Negative => {
-                let r = mag0 % mag1;
-                if r.is_zero() {
-                    r
-                } else {
-                    mag1 - r.into_typed()
-                }
-            }
-        };
-        UBig(repr)
-    }
-}
-
-impl RemEuclid<IBig> for &IBig {
-    type Output = UBig;
-
-    #[inline]
-    fn rem_euclid(self, rhs: IBig) -> UBig {
-        let (sign0, mag0) = self.as_sign_repr();
-        let repr = match sign0 {
-            Positive => mag0 % rhs.into_sign_repr().1,
-            Negative => {
-                let r = mag0 % rhs.as_sign_repr().1;
-                if r.is_zero() {
-                    r
-                } else {
-                    rhs.into_sign_repr().1 - r.into_typed()
-                }
-            }
-        };
-        UBig(repr)
-    }
-}
-
-impl RemEuclid<&IBig> for &IBig {
-    type Output = UBig;
-
-    #[inline]
-    fn rem_euclid(self, rhs: &IBig) -> UBig {
-        let (sign0, mag0) = self.as_sign_repr();
-        let mag1 = rhs.as_sign_repr().1;
-        let repr = match sign0 {
-            Positive => mag0 % mag1,
-            Negative => {
-                let r = mag0 % mag1;
-                if r.is_zero() {
-                    r
-                } else {
-                    mag1 - r.into_typed()
-                }
-            }
-        };
-        UBig(repr)
-    }
-}
-
-impl DivRemEuclid<IBig> for IBig {
-    type OutputDiv = IBig;
-    type OutputRem = UBig;
-
-    #[inline]
-    fn div_rem_euclid(self, rhs: IBig) -> (IBig, UBig) {
-        let (sign0, mag0) = self.into_sign_repr();
-        let sign1 = rhs.sign();
-        match sign0 {
+macro_rules! impl_ibig_divrem_euclid {
+    ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {
+        match $sign0 {
             Positive => {
-                let (q, r) = mag0.div_rem(rhs.into_sign_repr().1);
-                (IBig(q.with_sign(sign1)), UBig(r))
+                let (q, r) = $mag0.div_rem($mag1);
+                (IBig(q.with_sign($sign1)), UBig(r))
             }
             Negative => {
-                let (q, mut r) = mag0.div_rem(rhs.as_sign_repr().1);
-                let mut q = IBig(q.with_sign(-sign1));
+                let (q, mut r) = $mag0.div_rem($mag1.as_ref());
+                let mut q = IBig(q.with_sign(-$sign1));
                 if !r.is_zero() {
-                    q -= rhs.signum();
-                    r = rhs.into_sign_repr().1 - r.into_typed();
+                    q -= $sign1.as_int();
+                    r = $mag1 - r.into_typed();
                 }
                 (q, UBig(r))
             }
         }
-    }
+    };
 }
+helper_macros::forward_ibig_binop_to_repr!(
+    impl DivRemEuclid, div_rem_euclid -> (IBig, UBig),
+    OutputDiv = IBig, OutputRem = UBig,
+    impl_ibig_divrem_euclid
+);
+helper_macros::forward_binop_assign_by_taking!(
+    impl DivRemAssign<IBig> for IBig, div_rem_assign,
+    OutputRem = IBig, div_rem
+);
 
-impl DivRemEuclid<&IBig> for IBig {
-    type OutputDiv = IBig;
-    type OutputRem = UBig;
+// Ops between UBig & IBig
 
-    #[inline]
-    fn div_rem_euclid(self, rhs: &IBig) -> (IBig, UBig) {
-        let (sign0, mag0) = self.into_sign_repr();
-        let (sign1, mag1) = rhs.as_sign_repr();
-        match sign0 {
-            Positive => {
-                let (q, r) = mag0.div_rem(mag1);
-                (IBig(q.with_sign(sign1)), UBig(r))
-            }
-            Negative => {
-                let (q, mut r) = mag0.div_rem(mag1);
-                let mut q = IBig(q.with_sign(-sign1));
-                if !r.is_zero() {
-                    q -= rhs.signum();
-                    r = mag1 - r.into_typed();
-                }
-                (q, UBig(r))
-            }
-        }
-    }
+macro_rules! impl_ubig_ibig_div {
+    ($mag0:ident, $sign1:ident, $mag1:ident) => {
+        IBig(($mag0 / $mag1).with_sign($sign1))
+    };
 }
-
-impl DivRemEuclid<IBig> for &IBig {
-    type OutputDiv = IBig;
-    type OutputRem = UBig;
-
-    #[inline]
-    fn div_rem_euclid(self, rhs: IBig) -> (IBig, UBig) {
-        let (sign0, mag0) = self.as_sign_repr();
-        let sign1 = rhs.sign();
-        match sign0 {
-            Positive => {
-                let (q, r) = mag0.div_rem(rhs.into_sign_repr().1);
-                (IBig(q.with_sign(sign1)), UBig(r))
-            }
-            Negative => {
-                let (q, mut r) = mag0.div_rem(rhs.as_sign_repr().1);
-                let mut q = IBig(q.with_sign(-sign1));
-                if !r.is_zero() {
-                    q -= rhs.signum();
-                    r = rhs.into_sign_repr().1 - r.into_typed();
-                }
-                (q, UBig(r))
-            }
-        }
-    }
+macro_rules! impl_ubig_ibig_rem {
+    ($mag0:ident, $sign1:ident, $mag1:ident) => {{
+        let _unused = $sign1;
+        UBig($mag0 % $mag1)
+    }};
 }
+helper_macros::forward_ubig_ibig_binop_to_repr!(impl Div, div, Output = IBig, impl_ubig_ibig_div);
+helper_macros::forward_ubig_ibig_binop_to_repr!(impl Rem, rem, Output = UBig, impl_ubig_ibig_rem);
+helper_macros::forward_binop_assign_by_taking!(impl RemAssign<IBig> for UBig, rem_assign, rem);
 
-impl DivRemEuclid<&IBig> for &IBig {
-    type OutputDiv = IBig;
-    type OutputRem = UBig;
-
-    #[inline]
-    fn div_rem_euclid(self, rhs: &IBig) -> (IBig, UBig) {
-        let (sign0, mag0) = self.as_sign_repr();
-        let (sign1, mag1) = rhs.as_sign_repr();
-        match sign0 {
-            Positive => {
-                let (q, r) = mag0.div_rem(mag1);
-                (IBig(q.with_sign(sign1)), UBig(r))
-            }
-            Negative => {
-                let (q, mut r) = mag0.div_rem(mag1);
-                let mut q = IBig(q.with_sign(-sign1));
-                if !r.is_zero() {
-                    q -= rhs.signum();
-                    r = mag1 - r.into_typed();
-                }
-                (q, UBig(r))
-            }
-        }
-    }
+macro_rules! impl_ibig_ubig_div {
+    ($sign0:ident, $mag0:ident, $mag1:ident) => {
+        // truncate towards 0.
+        IBig(($mag0 / $mag1).with_sign($sign0))
+    };
 }
+macro_rules! impl_ibig_ubig_rem {
+    ($sign0:ident, $mag0:ident, $mag1:ident) => {{
+        // remainder with truncating division has same sign as lhs.
+        IBig(($mag0 % $mag1).with_sign($sign0))
+    }};
+}
+helper_macros::forward_ibig_ubig_binop_to_repr!(impl Div, div, Output = IBig, impl_ibig_ubig_div);
+helper_macros::forward_ibig_ubig_binop_to_repr!(impl Rem, rem, Output = IBig, impl_ibig_ubig_rem);
+helper_macros::forward_binop_assign_by_taking!(impl DivAssign<UBig> for IBig, div_assign, div);
+helper_macros::forward_binop_assign_by_taking!(impl RemAssign<UBig> for IBig, rem_assign, rem);
 
 macro_rules! impl_div_ubig_unsigned {
     ($t:ty) => {
@@ -1052,5 +840,4 @@ mod repr {
     }
 }
 
-// TODO: implement DivRemAssign for UBig and IBig
 // TODO: implement div, rem, div_rem, div_assign, rem_assign, div_rem_assign with ConstDivisor

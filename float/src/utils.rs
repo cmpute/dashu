@@ -1,5 +1,4 @@
-use core::convert::TryInto;
-use dashu_base::{DivRem, UnsignedAbs};
+use dashu_base::{DivRem, UnsignedAbs, DivRemAssign};
 use dashu_int::{IBig, Word, Sign, DoubleWord, UBig};
 
 #[inline]
@@ -7,22 +6,35 @@ pub const fn base_as_ibig<const B: Word>() -> IBig {
     IBig::from_parts_const(Sign::Positive, B as DoubleWord)
 }
 
-// TODO: deprecate this function?
-/// Get the integer k such that `radix^(k-1) <= value < radix^k`.
-/// If value is 0, then `k = 0` is returned.
-pub fn get_precision<const B: Word>(value: &IBig) -> usize {
+/// Calculate the number of digits in base `B`.
+/// 
+/// Returns the integer `k` such that `radix^(k-1) <= value < radix^k`.
+/// If value is `0`, then `k = 0` is returned.
+#[inline]
+pub fn digit_len<const B: Word>(value: &IBig) -> usize {
     if value.is_zero() {
         return 0;
     };
-
-    let e = value.ilog(&UBig::from_word(B));
-    let e: usize = e.try_into().unwrap();
-    e + 1
+    value.ilog(&UBig::from_word(B)) + 1
 }
 
 /// "Left shifting" in given radix, i.e. multiply by a power of radix
 #[inline]
-pub fn shl_radix<const B: Word>(value: &mut IBig, exp: usize) {
+pub fn shl_radix<const B: Word>(value: &IBig, exp: usize) -> IBig {
+    if exp == 0 {
+        return value.clone();
+    }
+
+    match B {
+        2 => value << exp,
+        10 => IBig::from(5).pow(exp) << exp,
+        16 => value << 4 * exp,
+        _ => value * base_as_ibig::<B>().pow(exp),
+    }
+}
+
+#[inline]
+pub fn shl_radix_in_place<const B: Word>(value: &mut IBig, exp: usize) {
     if exp != 0 {
         match B {
             2 => *value <<= exp,
@@ -103,9 +115,7 @@ pub fn shr_rem_radix_in_place<const B: Word>(value: &mut IBig, exp: usize) -> IB
                 rem
             }
             _ => {
-                let (q, r) = (&*value).div_rem(base_as_ibig::<B>().pow(exp));
-                *value = q;
-                r
+                value.div_rem_assign(base_as_ibig::<B>().pow(exp))
             }
         }
     } else {

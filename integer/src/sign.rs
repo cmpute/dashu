@@ -17,6 +17,17 @@ pub enum Sign {
 
 use Sign::*;
 
+impl Sign {
+    /// Convert [Positive] to [IBig::ONE], [Negative] to [IBig::NEG_ONE]
+    #[inline]
+    pub(crate) fn as_int(self) -> IBig {
+        match self {
+            Positive => IBig::ONE,
+            Negative => IBig::NEG_ONE,
+        }
+    }
+}
+
 impl Neg for Sign {
     type Output = Sign;
 

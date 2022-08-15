@@ -2,7 +2,7 @@
 
 use crate::{
     round::Round,
-    utils::{get_precision, shr_radix, shr_rem_radix}, fbig::FBig, repr::{Repr, Context},
+    utils::{digit_len, shr_radix, shr_rem_radix}, fbig::FBig, repr::{Repr, Context},
 };
 use core::fmt::{self, Display, Formatter, Write};
 use dashu_base::Abs;
@@ -47,7 +47,7 @@ impl<const B: Word, R: Round> Display for FBig<B, R> {
         if self.repr.exponent < 0 {
             let exp = -self.repr.exponent as usize;
             let (int, frac) = shr_rem_radix::<B>(&self.repr.significand, exp);
-            let frac_prec = get_precision::<B>(&frac);
+            let frac_prec = digit_len::<B>(&frac);
             assert!(frac_prec <= exp);
             let mut frac = frac.abs(); // don't print sign for fractional part
 
@@ -72,7 +72,7 @@ impl<const B: Word, R: Round> Display for FBig<B, R> {
                             frac = shifted;
                             shr_radix::<B>(&mut rem, exp - v - 1);
                             frac += R::round_fract::<B>(&frac, rem, exp - v);
-                            get_precision::<B>(&frac)
+                            digit_len::<B>(&frac)
                         } else {
                             0
                         };

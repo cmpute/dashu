@@ -7,7 +7,7 @@ impl UBig {
     ///
     /// This function could takes a long time when the integer is very large.
     /// In applications where an exact result is not necessary,
-    /// [log2f][UBig::log2f] could be used.
+    /// [log2f_bounds][UBig::log2f_bounds] could be used.
     ///
     /// # Panics
     ///
@@ -60,7 +60,7 @@ impl IBig {
     ///
     /// This function could takes a long time when the integer is very large.
     /// In applications where an exact result is not necessary,
-    /// [log2f][IBig::log2f] could be used.
+    /// [log2f_bounds][IBig::log2f_bounds] could be used.
     ///
     /// # Panics
     ///
@@ -423,12 +423,12 @@ pub(crate) mod repr {
         // cannot be exact even if the input is a power of two
         let hi = highest_dword(words);
         let rem_bits = (words.len() - 2) * WORD_BITS_USIZE;
-        if hi.is_power_of_two() {
+        let est = if hi.is_power_of_two() {
             (hi.trailing_zeros() as usize + rem_bits) as f32
         } else {
-            let est = log2_dword(hi) + rem_bits as f32;
-            est * (1. - LOG2_ADJUST) // ensure underesitmation
-        }
+            log2_dword(hi) + rem_bits as f32
+        };
+        est * (1. - LOG2_ADJUST) // ensure underesitmation
     }
 
     #[inline]

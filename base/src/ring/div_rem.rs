@@ -11,7 +11,7 @@ macro_rules! impl_div_rem_ops_prim {
             }
         }
         impl DivRemAssign for $T {
-            type Output = $T;
+            type OutputRem = $T;
             #[inline]
             fn div_rem_assign(&mut self, rhs: $T) -> $T {
                 let r = *self % rhs;

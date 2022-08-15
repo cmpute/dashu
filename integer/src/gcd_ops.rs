@@ -24,7 +24,7 @@ forward_ubig_binop_to_repr!(
 
 macro_rules! impl_ibig_gcd {
     ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {{
-        let _signs = ($sign0, $sign1); // not used
+        let _unused = ($sign0, $sign1);
         UBig($mag0.gcd($mag1))
     }};
 }
