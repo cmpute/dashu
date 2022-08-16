@@ -27,7 +27,7 @@ pub fn shl_radix<const B: Word>(value: &IBig, exp: usize) -> IBig {
 
     match B {
         2 => value << exp,
-        10 => IBig::from(5).pow(exp) << exp,
+        10 => value * IBig::from(5).pow(exp) << exp,
         16 => value << 4 * exp,
         _ => value * base_as_ibig::<B>().pow(exp),
     }
@@ -50,7 +50,21 @@ pub fn shl_radix_in_place<const B: Word>(value: &mut IBig, exp: usize) {
 
 /// "Right shifting" in given radix, i.e. divide by a power of radix
 #[inline]
-pub fn shr_radix<const B: Word>(value: &mut IBig, exp: usize) {
+pub fn shr_radix<const B: Word>(value: &IBig, exp: usize) -> IBig {
+    if exp == 0 {
+        return value.clone();
+    }
+
+    match B {
+        2 => value >> exp,
+        10 => (value >> exp) / IBig::from(5).pow(exp),
+        16 => value >> 4 * exp,
+        _ => value / base_as_ibig::<B>().pow(exp),
+    }
+}
+
+#[inline]
+pub fn shr_radix_in_place<const B: Word>(value: &mut IBig, exp: usize) {
     if exp != 0 {
         match B {
             2 => *value >>= exp,
@@ -121,4 +135,13 @@ pub fn shr_rem_radix_in_place<const B: Word>(value: &mut IBig, exp: usize) -> IB
     } else {
         IBig::ZERO
     }
+}
+
+/// Split the integer at given digit position. Return the high part and low part.
+/// 
+/// For example in base 10, split_radix_at(123, 1) returns (12, 3)
+#[inline]
+pub fn split_radix_at<const B: Word>(mut value: IBig, pos: usize) -> (IBig, IBig) {
+    let r = shr_rem_radix_in_place::<B>(&mut value, pos);
+    (value, r)
 }

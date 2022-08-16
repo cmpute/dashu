@@ -2,18 +2,20 @@ use core::marker::PhantomData;
 use dashu_int::{IBig, Sign, Word, DoubleWord};
 use crate::{repr::{Repr, Context}, round::{Round, mode}};
 
-/// An arbitrary precision floating number represented as `signficand * radix^exponent`, with a precision
-/// such that `|signficand| < radix^precision`. The signficand is also called significant. The representation
-/// is always normalized (nonzero signficand is not divisible by radix, or zero signficand with zero exponent).
+/// An arbitrary precision floating number represented as `signficand * base^exponent`, with a precision
+/// such that `|signficand| < base^precision`. The representation is always normalized (nonzero signficand
+/// is not divisible by base, or zero signficand with zero exponent). But the precision limit is not always
+/// enforced. In rare cases, the significand can have one more digit than the precision limit.
 ///
 /// The rounding mode of operations between the float numbers is defined by `Rounding`, its value has to
-/// be one of [RoundingMode]. Operations are permitted only between float numbers with the same radix and
+/// be one of [RoundingMode]. Operations are permitted only between float numbers with the same base and
 /// rounding mode. Note that the rounding is only for operations, it's not "associated" with the value.
-/// For example, for correct subtraction, the two operands should have reverse rounding direction.
+/// For example, for a `correct` subtraction, the two operands should have reverse rounding direction, but
+/// the rounding mode of [FBig] only determines the rounding direction of this subtraction operation.
 ///
 /// # Generic Parameters
-/// The const generic parameters will be abbreviated as RADIX -> X, Rounding -> R.
-/// RADIX should be in range \[2, isize::MAX\], and Rounding value has to be one of [RoundingMode]
+/// The const generic parameters will be abbreviated as BASE -> B, Rounding -> R.
+/// BASE should be in range \[2, isize::MAX\], and Rounding value has to be one of [RoundingMode]
 ///
 /// # Infinity
 ///

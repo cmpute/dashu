@@ -2,7 +2,7 @@
 
 use crate::{
     round::Round,
-    utils::{digit_len, shr_radix, shr_rem_radix}, fbig::FBig, repr::{Repr, Context},
+    utils::{digit_len, shr_radix_in_place, shr_rem_radix}, fbig::FBig, repr::{Repr, Context},
 };
 use core::fmt::{self, Display, Formatter, Write};
 use dashu_base::Abs;
@@ -70,7 +70,7 @@ impl<const B: Word, R: Round> Display for FBig<B, R> {
                         } else if frac_prec > exp - v {
                             let (shifted, mut rem) = shr_rem_radix::<B>(&frac, exp - v);
                             frac = shifted;
-                            shr_radix::<B>(&mut rem, exp - v - 1);
+                            shr_radix_in_place::<B>(&mut rem, exp - v - 1);
                             frac += R::round_fract::<B>(&frac, rem, exp - v);
                             digit_len::<B>(&frac)
                         } else {
