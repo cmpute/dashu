@@ -60,9 +60,7 @@ pub trait Round: Copy {
         }
         let (fsign, fmag) = fract.into_parts();
         // TODO: here we can use logarithm to compare first, instead of calculating the power?
-        Self::round_rem::<_>(integer, fsign, || {
-            (fmag << 1).cmp(&UBig::from_word(B).pow(precision))
-        })
+        Self::round_rem::<_>(integer, fsign, || (fmag << 1).cmp(&UBig::from_word(B).pow(precision)))
     }
 
     /// Calculate the rounding of the number (integer + numerator / denominator), assuming |numerator / denominator| < 1. Return the adjustment.

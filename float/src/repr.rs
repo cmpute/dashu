@@ -1,9 +1,11 @@
 use crate::{
-    round::{mode, Round},
-    utils::{digit_len, base_as_ibig}, ibig_ext::remove_pow,
+    ibig_ext::remove_pow,
+    round::{mode, Round, Rounding},
+    utils::{base_as_ibig, digit_len, shr_rem_radix_in_place},
 };
 use core::marker::PhantomData;
-use dashu_int::{IBig, Sign, Word, DoubleWord};
+use dashu_base::Approximation;
+use dashu_int::{DoubleWord, IBig, Sign, Word};
 
 #[derive(PartialEq, Eq)]
 pub struct Repr<const BASE: Word> {
@@ -22,19 +24,34 @@ impl<const B: Word> Repr<B> {
     pub const BASE: IBig = base_as_ibig::<B>();
 
     pub const fn zero() -> Self {
-        Self { significand: IBig::ZERO, exponent: 0 }
+        Self {
+            significand: IBig::ZERO,
+            exponent: 0,
+        }
     }
     pub const fn one() -> Self {
-        Self { significand: IBig::ONE, exponent: 0 }
+        Self {
+            significand: IBig::ONE,
+            exponent: 0,
+        }
     }
     pub const fn neg_one() -> Self {
-        Self { significand: IBig::NEG_ONE, exponent: 0 }
+        Self {
+            significand: IBig::NEG_ONE,
+            exponent: 0,
+        }
     }
     pub const fn infinity() -> Self {
-        Self { significand: IBig::ZERO, exponent: 1 }
+        Self {
+            significand: IBig::ZERO,
+            exponent: 1,
+        }
     }
     pub const fn neg_infinity() -> Self {
-        Self { significand: IBig::ZERO, exponent: -1 }
+        Self {
+            significand: IBig::ZERO,
+            exponent: -1,
+        }
     }
     pub const fn is_zero(&self) -> bool {
         self.significand.is_zero() && self.exponent == 0
@@ -51,7 +68,10 @@ impl<const B: Word> Repr<B> {
 
     pub fn normalize(self) -> Self {
         use core::convert::TryInto;
-        let Self {mut significand, mut exponent} = self;
+        let Self {
+            mut significand,
+            mut exponent,
+        } = self;
         if significand.is_zero() {
             return Self::zero();
         }
@@ -64,19 +84,33 @@ impl<const B: Word> Repr<B> {
             let shift: isize = remove_pow(&mut significand, &B.into()).try_into().unwrap();
             exponent += shift;
         }
-        Self { significand, exponent }
+        Self {
+            significand,
+            exponent,
+        }
     }
 
     /// Get the number of digits in the significand.
+    #[inline]
     pub fn digits(&self) -> usize {
         digit_len::<B>(&self.significand)
+    }
+
+    /// Fast over estimation of [digits][Self::digits]
+    #[inline]
+    pub fn digits_ub(&self) -> usize {
+        (self.significand.log2_bounds().1 / Self::BASE.log2_bounds().0) as usize + 1
     }
 
     /// Create a [Repr] from significand and exponent. This
     /// constructor will normalize the representation.
     #[inline]
     pub fn new(significand: IBig, exponent: isize) -> Self {
-        Self{significand, exponent}.normalize()
+        Self {
+            significand,
+            exponent,
+        }
+        .normalize()
     }
 }
 
@@ -100,7 +134,10 @@ impl<const B: Word> Clone for Repr<B> {
 impl<R: Round> Context<R> {
     #[inline]
     pub const fn new(precision: usize) -> Self {
-        Self { precision, _marker: PhantomData }
+        Self {
+            precision,
+            _marker: PhantomData,
+        }
     }
 
     #[inline]
@@ -111,7 +148,28 @@ impl<R: Round> Context<R> {
             } else {
                 rhs.precision
             },
-            _marker: PhantomData
+            _marker: PhantomData,
+        }
+    }
+
+    /// Round the repr to the desired precision
+    pub(crate) fn round<const B: Word>(&self, repr: Repr<B>) -> Approximation<Repr<B>, Rounding> {
+        // XXX: estimated digit length can be used here to prevent costly call to the digits()
+        let digits = repr.digits();
+        if digits > self.precision {
+            let Repr {
+                mut significand,
+                exponent,
+            } = repr;
+            let shift = digits - self.precision;
+            let r = shr_rem_radix_in_place::<B>(&mut significand, shift);
+            let adjust = R::round_fract::<B>(&significand, r, shift);
+            Approximation::Inexact(
+                Repr::new(significand + adjust, exponent + shift as isize),
+                adjust,
+            )
+        } else {
+            Approximation::Exact(repr)
         }
     }
 }

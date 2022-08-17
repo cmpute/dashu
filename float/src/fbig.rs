@@ -1,6 +1,9 @@
+use crate::{
+    repr::{Context, Repr},
+    round::{mode, Round},
+};
 use core::marker::PhantomData;
-use dashu_int::{IBig, Sign, Word, DoubleWord};
-use crate::{repr::{Repr, Context}, round::{Round, mode}};
+use dashu_int::{DoubleWord, IBig, Sign, Word};
 
 /// An arbitrary precision floating number represented as `signficand * base^exponent`, with a precision
 /// such that `|signficand| < base^precision`. The representation is always normalized (nonzero signficand
@@ -29,26 +32,29 @@ use crate::{repr::{Repr, Context}, round::{Round, mode}};
 ///
 pub struct FBig<const BASE: Word = 2, RoundingMode: Round = mode::Zero> {
     pub(crate) repr: Repr<BASE>,
-    pub(crate) context: Context<RoundingMode>
+    pub(crate) context: Context<RoundingMode>,
 }
 
-impl<const B: Word, R: Round> FBig <B, R> {
+impl<const B: Word, R: Round> FBig<B, R> {
+    /// Create a [FBig] instance, internal use only
+    #[inline]
+    pub const fn new_raw(repr: Repr<B>, context: Context<R>) -> Self {
+        Self { repr, context }
+    }
+
     const fn zero() -> Self {
-        Self {
-            repr: Repr::zero(),
-            context: Context::new(1)
-        }
+        Self::new_raw(Repr::zero(), Context::new(1))
     }
     /// [FBig] with value 0
     pub const ZERO: Self = Self::zero();
 
     const fn one() -> Self {
-        Self { repr: Repr::one(), context: Context::new(1) }
+        Self::new_raw(Repr::one(), Context::new(1))
     }
     pub const ONE: Self = Self::one();
 
     const fn neg_one() -> Self {
-        Self { repr: Repr::neg_one(), context: Context::new(1) }
+        Self::new_raw(Repr::neg_one(), Context::new(1))
     }
     pub const NEG_ONE: Self = Self::neg_one();
 
@@ -65,6 +71,12 @@ impl<const B: Word, R: Round> FBig <B, R> {
         self.repr.digits()
     }
 
+    /// Get the context associated with the float number
+    #[inline]
+    pub const fn context(&self) -> Context<R> {
+        self.context
+    }
+
     /// Convert raw parts into a float number, the precision will be inferred from significand
     /// (the lowest k such that `significand < radix^k`)
     ///
@@ -78,7 +90,10 @@ impl<const B: Word, R: Round> FBig <B, R> {
         let precision = repr.digits().max(1); // set precision to 1 if signficand is zero
         Self {
             repr,
-            context: Context { precision, _marker: PhantomData },
+            context: Context {
+                precision,
+                _marker: PhantomData,
+            },
         }
     }
 
@@ -89,7 +104,7 @@ impl<const B: Word, R: Round> FBig <B, R> {
         mut exponent: isize,
     ) -> Self {
         if significand == 0 {
-            return Self::ZERO
+            return Self::ZERO;
         }
 
         let mut digits = 0;
@@ -100,7 +115,8 @@ impl<const B: Word, R: Round> FBig <B, R> {
             let shift = significand.trailing_zeros() / base_bits;
             significand >>= shift * base_bits;
             exponent += shift as isize;
-            digits = ((DoubleWord::BITS - significand.leading_zeros() + base_bits - 1) / base_bits) as usize;
+            digits = ((DoubleWord::BITS - significand.leading_zeros() + base_bits - 1) / base_bits)
+                as usize;
         } else {
             let mut pow: DoubleWord = 1;
             while significand % (B as DoubleWord) == 0 {
@@ -118,10 +134,11 @@ impl<const B: Word, R: Round> FBig <B, R> {
 
         let repr = Repr {
             significand: IBig::from_parts_const(sign, significand),
-            exponent
+            exponent,
         };
         Self {
-            repr, context: Context::new(digits)
+            repr,
+            context: Context::new(digits),
         }
     }
 
@@ -173,3 +190,11 @@ impl<const B: Word, R: Round> PartialEq for FBig<B, R> {
     }
 }
 impl<const B: Word, R: Round> Eq for FBig<B, R> {}
+
+impl<const B: Word, R: Round> Default for FBig<B, R> {
+    /// Default value: 0.
+    #[inline]
+    fn default() -> Self {
+        Self::ZERO
+    }
+}

@@ -4,7 +4,7 @@ pub enum Approximation<T, E> {
     Exact(T),
 
     /// The result is inexact, contains the result value and error
-    InExact(T, E)
+    Inexact(T, E)
 }
 
 impl<T, E> Approximation<T, E> {
@@ -13,18 +13,32 @@ impl<T, E> Approximation<T, E> {
     pub fn value(self) -> T {
         match self {
             Self::Exact(v) => v,
-            Self::InExact(v, _) => v
+            Self::Inexact(v, _) => v
         }
     }
-}
 
-impl<T, E: Default> Approximation<T, E> {
-    /// Get the error of the calculation. Default is returned if the result is exact.
+    /// Get the reference to the calculation result
     #[inline]
-    pub fn error(self) -> E {
+    pub fn value_ref(&self) -> &T {
         match self {
-            Self::Exact(_) => E::default(),
-            Self::InExact(_, e) => e
+            Self::Exact(v) => v,
+            Self::Inexact(v, _) => v
+        }
+    }
+
+    #[inline]
+    pub fn error(&self) -> Option<&E> {
+        match self {
+            Self::Exact(_) => None,
+            Self::Inexact(_, e) => Some(e)
+        }
+    }
+
+    #[inline]
+    pub fn map<U, F>(self, f: F) -> Approximation<U, E> where F: FnOnce(T) -> U {
+        match self {
+            Self::Exact(v) => Approximation::Exact(f(v)),
+            Self::Inexact(v, e) => Approximation::Inexact(f(v), e)
         }
     }
 }

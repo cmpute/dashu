@@ -32,19 +32,20 @@ impl FastDivideSmall {
         // n = ceil(log2(divisor))
         let n = WORD_BITS - (divisor - 1).leading_zeros();
 
-        // Calculate:
-        // m = floor(B * 2^n / divisor) + 1 - B
-        // m >= B + 1 - B >= 1
-        // m <= B * 2^n / (2^(n-1) + 1) + 1 - B
-        //    = (B * 2^n + 2^(n-1) + 1) / (2^(n-1) + 1) - B
-        //    = B * (2^n + 2^(n-1-N) + 2^-N) / (2^(n-1)+1) - B
-        //    < B * (2^n + 2^1) / (2^(n-1)+1) - B
-        //    = B
-        // So m fits in a Word.
-        //
-        // Note:
-        // divisor * (B + m) = divisor * floor(B * 2^n / divisor + 1)
-        // = B * 2^n + k, 1 <= k <= divisor
+        /* Calculate:
+         * m = floor(B * 2^n / divisor) + 1 - B
+         * m >= B + 1 - B >= 1
+         * m <= B * 2^n / (2^(n-1) + 1) + 1 - B
+         *    = (B * 2^n + 2^(n-1) + 1) / (2^(n-1) + 1) - B
+         *    = B * (2^n + 2^(n-1-N) + 2^-N) / (2^(n-1)+1) - B
+         *    < B * (2^n + 2^1) / (2^(n-1)+1) - B
+         *    = B
+         * So m fits in a Word.
+         *
+         * Note:
+         * divisor * (B + m) = divisor * floor(B * 2^n / divisor + 1)
+         * = B * 2^n + k, 1 <= k <= divisor
+         */
 
         // m = floor(B * (2^n-1 - (divisor-1)) / divisor) + 1
         let (lo, _hi) =
@@ -61,18 +62,19 @@ impl FastDivideSmall {
     #[inline]
     pub fn div_rem(&self, a: Word) -> (Word, Word) {
         // q = floor( (B + m) * a / (B * 2^n) )
-        //
-        // Remember that divisor * (B + m) = B * 2^n + k, 1 <= k <= 2^n
-        //
-        // (B + m) * a / (B * 2^n)
-        // = a / divisor * (B * 2^n + k) / (B * 2^n)
-        // = a / divisor + k * a / (divisor * B * 2^n)
-        // On one hand, this is >= a / divisor
-        // On the other hand, this is:
-        // <= a / divisor + 2^n * (B-1) / (2^n * B) / divisor
-        // < (a + 1) / divisor
-        //
-        // Therefore the floor is always the exact quotient.
+        /*
+         * Remember that divisor * (B + m) = B * 2^n + k, 1 <= k <= 2^n
+         *
+         * (B + m) * a / (B * 2^n)
+         * = a / divisor * (B * 2^n + k) / (B * 2^n)
+         * = a / divisor + k * a / (divisor * B * 2^n)
+         * On one hand, this is >= a / divisor
+         * On the other hand, this is:
+         * <= a / divisor + 2^n * (B-1) / (2^n * B) / divisor
+         * < (a + 1) / divisor
+         *
+         * Therefore the floor is always the exact quotient.
+         */
 
         // t = m * n / B
         let (_, t) = split_dword(extend_word(self.m) * extend_word(a));
@@ -148,26 +150,27 @@ impl FastDivideNormalized {
         let q = q1.wrapping_add(1);
         let r = a_lo.wrapping_sub(q.wrapping_mul(self.divisor));
 
-        // Theorem: max(-d, q0+1-B) <= r < max(B-d, q0)
-        // Proof:
-        // r = a - q * d = a - q1 * d - d
-        // = a - (q1 * B + q0 - q0) * d/B - d
-        // = a - (m * a_hi + a - q0) * d/B - d
-        // = a - ((m+B) * a_hi + a_lo - q0) * d/B - d
-        // = a - ((B^2-k)/d * a_hi + a_lo - q0) * d/B - d
-        // = a - B * a_hi + (a_hi * k - a_lo * d + q0 * d) / B - d
-        // = (a_hi * k + a_lo * (B - d) + q0 * d) / B - d
-        //
-        // r >= q0 * d / B - d
-        // r >= -d
-        // r >= d/B (q0 - B) > q0-B
-        // r >= max(-d, q0+1-B)
-        //
-        // r < (d * d + B * (B-d) + q0 * d) / B - d
-        // = (B-d)^2 / B + q0 * d / B
-        // = (1 - d/B) * (B-d) + (d/B) * q0
-        // <= max(B-d, q0)
-        // QED
+        /* Theorem: max(-d, q0+1-B) <= r < max(B-d, q0)
+         * Proof:
+         * r = a - q * d = a - q1 * d - d
+         * = a - (q1 * B + q0 - q0) * d/B - d
+         * = a - (m * a_hi + a - q0) * d/B - d
+         * = a - ((m+B) * a_hi + a_lo - q0) * d/B - d
+         * = a - ((B^2-k)/d * a_hi + a_lo - q0) * d/B - d
+         * = a - B * a_hi + (a_hi * k - a_lo * d + q0 * d) / B - d
+         * = (a_hi * k + a_lo * (B - d) + q0 * d) / B - d
+         *
+         * r >= q0 * d / B - d
+         * r >= -d
+         * r >= d/B (q0 - B) > q0-B
+         * r >= max(-d, q0+1-B)
+         *
+         * r < (d * d + B * (B-d) + q0 * d) / B - d
+         * = (B-d)^2 / B + q0 * d / B
+         * = (1 - d/B) * (B-d) + (d/B) * q0
+         * <= max(B-d, q0)
+         * QED
+         */
 
         // if r mod B > q0 { q -= 1; r += d; }
         //

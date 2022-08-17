@@ -1,4 +1,4 @@
-use crate::{fbig::FBig, round::Round, repr::Repr};
+use crate::{fbig::FBig, repr::Repr, round::Round};
 use core::ops::{Mul, Neg};
 use dashu_base::Abs;
 use dashu_int::{Sign, Word};
@@ -46,5 +46,6 @@ impl<const B: Word, R: Round> Mul<FBig<B, R>> for Sign {
     }
 }
 
+// TODO(next): implement sign() for Repr and FBig
 // TODO(next): implement all variants with sign
 // TODO(next): implement MulAssign for int and float

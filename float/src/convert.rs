@@ -1,9 +1,11 @@
 use crate::{
+    fbig::FBig,
     ibig_ext::{log_pow, log_rem, remove_pow},
-    repr::{Repr, Context},
-    round::Round,
-    utils::{shr_rem_radix_in_place}, fbig::FBig,
+    repr::{Context, Repr},
+    round::{Round, Rounding},
+    utils::shr_rem_radix_in_place,
 };
+use dashu_base::Approximation;
 use dashu_int::{IBig, UBig, Word};
 
 impl<R: Round> From<f32> for FBig<2, R> {
@@ -26,7 +28,7 @@ impl<R: Round> From<f32> for FBig<2, R> {
 
         Self {
             repr: Repr::new(mantissa, exponent),
-            context: Context::new(24)
+            context: Context::new(24),
         }
     }
 }
@@ -48,10 +50,10 @@ impl<R: Round> From<f64> for FBig<2, R> {
         } else {
             IBig::from(-mantissa)
         };
-        
+
         Self {
             repr: Repr::new(mantissa, exponent),
-            context: Context::new(53)
+            context: Context::new(53),
         }
     }
 }
@@ -62,12 +64,12 @@ impl<const B: Word, R: Round> FBig<B, R> {
     pub fn from_integer(integer: IBig) -> Self {
         let repr = Repr {
             significand: integer,
-            exponent: 0
+            exponent: 0,
         };
         let precision = repr.digits();
         Self {
             repr,
-            context: Context::new(precision)
+            context: Context::new(precision),
         }
     }
 
@@ -88,22 +90,17 @@ impl<const B: Word, R: Round> FBig<B, R> {
     ///
     /// If the given precision is less than the previous value,
     /// it will be rounded following the rounding mode specified by the type parameter.
-    pub fn with_precision(self, precision: usize) -> Self {
-        let mut result = self;
+    pub fn with_precision(self, precision: usize) -> Approximation<Self, Rounding> {
+        let new_context = Context::new(precision);
 
-        // shrink if possible
-        if result.context.precision > precision {
-            let actual = result.digits();
-            if actual > precision {
-                let shift = actual - precision;
-                let low_digits = shr_rem_radix_in_place::<B>(&mut result.repr.significand, shift);
-                result.repr.significand += R::round_fract::<B>(&result.repr.significand, low_digits, shift);
-                result.repr.exponent += shift as isize;
-            }
-        }
+        // shrink if necessary
+        let repr = if self.context.precision > precision {
+            new_context.round(self.repr)
+        } else {
+            Approximation::Exact(self.repr)
+        };
 
-        result.context.precision = precision;
-        return result;
+        repr.map(|v| Self::new_raw(v, new_context))
     }
 
     /// Explicitly change the rounding mode of the number.
@@ -113,7 +110,7 @@ impl<const B: Word, R: Round> FBig<B, R> {
     pub fn with_rounding<NewR: Round>(self) -> FBig<B, NewR> {
         FBig {
             repr: self.repr,
-            context: Context::new(self.context.precision)
+            context: Context::new(self.context.precision),
         }
     }
 
@@ -148,8 +145,11 @@ impl<const B: Word, R: Round> FBig<B, R> {
         let result = if self.repr.exponent == 0 {
             // direct copy if the exponent is zero
             return FBig {
-                repr: Repr { significand: self.repr.significand, exponent: 0 },
-                context: Context::new(precision)
+                repr: Repr {
+                    significand: self.repr.significand,
+                    exponent: 0,
+                },
+                context: Context::new(precision),
             };
         } else if self.repr.exponent > 0 {
             // denote log with base of radix2 as lgr2, then
@@ -188,7 +188,7 @@ impl<const B: Word, R: Round> FBig<B, R> {
             value
         };
 
-        result.with_precision(precision)
+        result.with_precision(precision).value()
     }
 
     #[allow(non_upper_case_globals)]

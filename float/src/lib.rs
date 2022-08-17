@@ -20,18 +20,19 @@ mod add;
 mod cmp;
 mod convert;
 mod div;
+mod fbig;
 mod fmt;
 mod ibig_ext;
 mod mul;
 mod parse;
 mod repr;
-mod fbig;
 pub mod round;
 mod sign;
 mod utils;
 
 pub use dashu_int::Word;
 pub use fbig::FBig;
+pub use repr::Context;
 
 /// Multi-precision float number with decimal exponent and [HalfAway][round::mode::HalfAway] rounding mode
 pub type DBig = FBig<10, round::mode::HalfAway>;

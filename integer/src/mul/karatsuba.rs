@@ -22,15 +22,16 @@ pub const MIN_LEN: usize = 3;
 ///
 /// n bounds the length of the Smaller factor in words.
 pub fn memory_requirement_up_to(n: usize) -> Layout {
-    // We prove by induction that:
-    // f(n) <= 2n + 2 log_2 (n-1)
-    //
-    // Base case: f(2) >= 0.
-    // For n > 2:
-    // f(n) = 2ceil(n/2) + f(ceil(n/2)) - Const
-    //      <= n+1 + n+1 + 2log ((n+1)/2-1) - Const
-    //       = 2n + 2log (n-1) - Const
-    //
+    /* We prove by induction that:
+     * f(n) <= 2n + 2 log_2 (n-1)
+     *
+     * Base case: f(2) >= 0.
+     * For n > 2:
+     * f(n) = 2ceil(n/2) + f(ceil(n/2)) - Const
+     *      <= n+1 + n+1 + 2log ((n+1)/2-1) - Const
+     *       = 2n + 2log (n-1) - Const
+     */
+
     // Use 2n + 2 ceil log_2 n.
     let num_words = 2 * n + 2 * (math::ceil_log2(n) as usize);
     memory::array_layout::<Word>(num_words)

@@ -1,8 +1,10 @@
 //! Implementation of formatters
 
 use crate::{
+    fbig::FBig,
+    repr::{Context, Repr},
     round::Round,
-    utils::{digit_len, shr_radix_in_place, shr_rem_radix}, fbig::FBig, repr::{Repr, Context},
+    utils::{digit_len, shr_radix_in_place, shr_rem_radix},
 };
 use core::fmt::{self, Display, Formatter, Write};
 use dashu_base::Abs;

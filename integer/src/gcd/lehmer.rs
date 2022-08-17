@@ -106,6 +106,7 @@ fn highest_word_normalized(x: &[Word], y: &[Word]) -> (Word, Word) {
     (x_hi, y_hi)
 }
 
+/// Same as [lehmer_guess] but use the highest double word
 fn lehmer_guess_dword(mut xbar: DoubleWord, mut ybar: DoubleWord) -> (Word, Word, Word, Word) {
     debug_assert!(xbar >= ybar);
     const COEFF_LIMIT: DoubleWord = SignedWord::MAX as DoubleWord;

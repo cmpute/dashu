@@ -1,12 +1,12 @@
 use crate::{
-    repr::{Repr, Context},
     fbig::FBig,
+    repr::{Context, Repr},
     round::{Round, Rounding},
     utils::{digit_len, shr_rem_radix_in_place},
 };
-use core::{ops::Div, cmp::Ordering};
-use dashu_base::{DivRem, Approximation};
-use dashu_int::{IBig, Sign, DoubleWord, Word};
+use core::{cmp::Ordering, ops::Div};
+use dashu_base::{Approximation, DivRem};
+use dashu_int::{DoubleWord, IBig, Sign, Word};
 
 impl<const B: Word, R: Round> FBig<B, R> {
     /// Create a floating number expressed as `(numerator / denominator) * radix ^ exponent` with given precision.
@@ -30,7 +30,7 @@ impl<const B: Word, R: Round> FBig<B, R> {
                 exponent = shift as isize;
             }
             Ordering::Less => {
-                // TODO: create an associated const
+                // TODO: create an associated const divisor
                 while digits < precision && !rem.is_zero() {
                     let (d, r) = (rem * Repr::<B>::BASE).div_rem(&denominator);
                     rem = r;
@@ -45,7 +45,7 @@ impl<const B: Word, R: Round> FBig<B, R> {
 
         FBig {
             repr: Repr::new(significand, exponent),
-            context: Context::new(precision)
+            context: Context::new(precision),
         }
     }
 
@@ -69,7 +69,11 @@ impl<const B: Word, R: Round> Div for FBig<B, R> {
 }
 
 impl<R: Round> Context<R> {
-    pub fn div<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Approximation<Repr<B>, Rounding> {
+    pub fn div<const B: Word>(
+        &self,
+        lhs: &Repr<B>,
+        rhs: &Repr<B>,
+    ) -> Approximation<Repr<B>, Rounding> {
         unimplemented!()
     }
 }

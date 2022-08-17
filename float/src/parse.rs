@@ -1,5 +1,9 @@
-use crate::{fbig::FBig, repr::{Repr, Context}, round::Round};
-use core::{str::FromStr, num::IntErrorKind};
+use crate::{
+    fbig::FBig,
+    repr::{Context, Repr},
+    round::Round,
+};
+use core::{num::IntErrorKind, str::FromStr};
 use dashu_int::Word;
 use dashu_int::{
     error::ParseError,
@@ -118,11 +122,7 @@ impl<const B: Word, R: Round> FromStr for FBig<B, R> {
                     return Err(ParseError::UnsupportedRadix);
                 } else {
                     let digits = int_str.len() - int_str.matches('_').count();
-                    (
-                        UBig::from_str_radix(&src[..dot], B as u32)?,
-                        digits,
-                        B as u32,
-                    )
+                    (UBig::from_str_radix(&src[..dot], B as u32)?, digits, B as u32)
                 }
             } else {
                 if pmarker {
@@ -168,7 +168,7 @@ impl<const B: Word, R: Round> FromStr for FBig<B, R> {
         let repr = Repr::new(sign * significand, exponent);
         Ok(Self {
             repr,
-            context: Context::new(ndigits)
+            context: Context::new(ndigits),
         })
     }
 }
