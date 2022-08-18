@@ -55,14 +55,32 @@ impl<const B: Word, R: Round> FromStr for FBig<B, R> {
     fn from_str(mut src: &str) -> Result<Self, ParseError> {
         assert!(MIN_RADIX as Word <= B && B <= MAX_RADIX as Word);
 
+        // parse and remove the sign
+        let sign = match src.strip_prefix('-') {
+            Some(s) => {
+                src = s;
+                Sign::Negative
+            }
+            None => {
+                src = src.strip_prefix('+').unwrap_or(src);
+                Sign::Positive
+            }
+        };
+
         // determine the position of scale markers
+        let has_prefix = src.starts_with("0x") || src.starts_with("0X");
         let scale_pos = match B {
             10 => src.rfind(&['e', 'E', '@']),
-            2 => src.rfind(&['b', 'B', 'p', 'P', '@']),
+            2 => if has_prefix {
+                src.rfind(&['p', 'P', '@'])
+            } else {
+                src.rfind(&['b', 'B', '@'])
+            },
             8 => src.rfind(&['o', 'O', '@']),
             16 => src.rfind(&['h', 'H', '@']),
             _ => src.rfind('@'),
         };
+
 
         // parse scale and remove the scale part from the str
         let (scale, pmarker) = if let Some(pos) = scale_pos {
@@ -84,18 +102,6 @@ impl<const B: Word, R: Round> FromStr for FBig<B, R> {
             (0, false)
         };
 
-        // parse and remove the sign
-        let sign = match src.strip_prefix('-') {
-            Some(s) => {
-                src = s;
-                Sign::Negative
-            }
-            None => {
-                src = src.strip_prefix('+').unwrap_or(src);
-                Sign::Positive
-            }
-        };
-
         // parse the body of the float number
         let mut exponent = scale;
         let ndigits;
@@ -108,9 +114,8 @@ impl<const B: Word, R: Round> FromStr for FBig<B, R> {
             // parse integral part
             let (int, int_digits, base) = if dot != 0 {
                 let int_str = &src[..dot];
-                let has_prefix = int_str.starts_with("0x") || int_str.starts_with("0X");
                 if B == 2 && has_prefix {
-                    // only hexadecimal is allowed with prefix
+                    // only base 2 float is allowed using prefix
                     let int_str = &int_str[2..];
                     let digits = 4 * (int_str.len() - int_str.matches('_').count());
                     if int_str.len() == 0 {

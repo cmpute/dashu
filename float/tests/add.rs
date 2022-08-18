@@ -256,3 +256,5 @@ fn test_sub_decimal() {
         }
     }
 }
+
+// TODO: test adding inf (should fail)

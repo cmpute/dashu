@@ -53,11 +53,13 @@ impl<'l, 'r, const B: Word, R: Round> Add<&'r FBig<B, R>> for &'l FBig<B, R> {
 }
 
 impl<const B: Word, R: Round> AddAssign for FBig<B, R> {
+    #[inline]
     fn add_assign(&mut self, rhs: Self) {
         *self = core::mem::take(self) + rhs
     }
 }
 impl<const B: Word, R: Round> AddAssign<&FBig<B, R>> for FBig<B, R> {
+    #[inline]
     fn add_assign(&mut self, rhs: &FBig<B, R>) {
         *self = core::mem::take(self) + rhs
     }
@@ -100,11 +102,13 @@ impl<'l, 'r, const B: Word, R: Round> Sub<&'r FBig<B, R>> for &'l FBig<B, R> {
 }
 
 impl<const B: Word, R: Round> SubAssign for FBig<B, R> {
+    #[inline]
     fn sub_assign(&mut self, rhs: Self) {
         *self = core::mem::take(self) - rhs
     }
 }
 impl<const B: Word, R: Round> SubAssign<&FBig<B, R>> for FBig<B, R> {
+    #[inline]
     fn sub_assign(&mut self, rhs: &FBig<B, R>) {
         *self = core::mem::take(self) - rhs
     }

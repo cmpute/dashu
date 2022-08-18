@@ -1,4 +1,4 @@
-use dashu_float::{round::mode, DBig, FBig};
+use dashu_float::{DBig, FBig};
 use dashu_int::{error::ParseError, DoubleWord, IBig, Sign, Word};
 use std::str::FromStr;
 
@@ -95,6 +95,8 @@ fn test_fbig_from_str() {
         ("-0x02", -2, 0, 8),
         ("0x.2", 1, -3, 4),
         ("0x2.2", 17, -3, 8),
+        ("0xa", 5, 1, 4),
+        ("0xb", 11, 0, 4),
         ("-0x0_f.2_0", -121, -3, 16),
         ("0x00100", 1, 8, 20),
         ("-0x010.00", -1, 4, 20),
@@ -117,7 +119,7 @@ fn test_fbig_from_str() {
         assert_eq!(val.precision(), prec);
     }
 
-    assert_eq!(FBig2::from_str("p"), Err(ParseError::NoDigits));
+    assert_eq!(FBig2::from_str("p"), Err(ParseError::InvalidDigit));
     assert_eq!(FBig2::from_str("."), Err(ParseError::NoDigits));
     assert_eq!(FBig2::from_str("1.0e8"), Err(ParseError::InvalidDigit));
     assert_eq!(FBig2::from_str("0o2.2"), Err(ParseError::InvalidDigit));
@@ -125,9 +127,9 @@ fn test_fbig_from_str() {
     assert_eq!(FBig2::from_str("一.二p三"), Err(ParseError::InvalidDigit));
 
     // prefix `0x` is required in following cases
-    assert_eq!(FBig2::from_str("1p8"), Err(ParseError::UnsupportedRadix));
-    assert_eq!(FBig2::from_str(".1p8"), Err(ParseError::UnsupportedRadix));
-    assert_eq!(FBig2::from_str("1.0p8"), Err(ParseError::UnsupportedRadix));
+    assert_eq!(FBig2::from_str("1p8"), Err(ParseError::InvalidDigit));
+    assert_eq!(FBig2::from_str(".1p8"), Err(ParseError::InvalidDigit));
+    assert_eq!(FBig2::from_str("1.0p8"), Err(ParseError::InvalidDigit));
 }
 
 #[test]
