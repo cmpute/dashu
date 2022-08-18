@@ -170,3 +170,9 @@ impl Mul<IBig> for Sign {
         IBig(rhs.0.with_sign(sign))
     }
 }
+
+impl MulAssign<Sign> for IBig {
+    fn mul_assign(&mut self, rhs: Sign) {
+        *self = core::mem::take(self) * rhs;
+    }
+}

@@ -137,14 +137,14 @@ pub fn shr_rem_radix_in_place<const B: Word>(value: &mut IBig, exp: usize) -> IB
     }
 }
 
-/// Split the integer at given digit position. Return the high part and low part,
-/// the sign is applied to both parts
+/// Split the integer at given digit position. Return the low part and high part,
+/// and the sign is applied to both parts.
 ///
 /// For example in base 10:
-/// * split_radix_at(123, 1) returns (12, 3)
-/// * split_radix_at(-123, 2) returns (-1, -23)
+/// * split_digits(123, 1) returns (3, 12)
+/// * split_digits(-123, 2) returns (-23, -1)
 #[inline]
-pub fn split_radix_at<const B: Word>(mut value: IBig, pos: usize) -> (IBig, IBig) {
+pub fn split_digits<const B: Word>(mut value: IBig, pos: usize) -> (IBig, IBig) {
     let r = shr_rem_radix_in_place::<B>(&mut value, pos);
-    (value, r)
+    (r, value)
 }

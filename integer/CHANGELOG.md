@@ -6,6 +6,7 @@
 
 - Add a public API `as_words` and `as_sign_words` to access internal representation of `UBig` and `IBig`.
 - Add const constructors `from_word`, `from_dword` and a direct constructor `from_words` for `UBig` and `IBig`.
+- Add `abs_cmp`, `abs_eq` for `IBig`.
 - Implement `Mul` between `Sign` and `UBig`/`IBig`.
 - Implement `DivRemAssign` for `UBig` and `IBig`, and `DivRemAssign` is re-exported in the `ops` module.
 - Implement integer logarithm `ilog` and approximated bounds of base 2 logarithm `log2_bounds`.
@@ -43,7 +44,7 @@ The code for big integer is ported from `ibig @ 0.3.5` with modifications stated
   fits in a word, and only remove these small divisors.
   Further improvement: store a const divisor for the prime factors in the primorial, thus supports a fast factorial of
   the gcd result, and then divide with these const divisor.
-- Logarithm: for very large est value, the est error is large and there could be many fixing steps,
+- Logarithm: for very large est value, the est error can be large and there can be many fixing steps,
   we should use a similar strategy as the non_power_two formatter, using power sequence,
   or call log again on the target / est_pow
 - Power: implement a k-ary pow when exponent is too large (after lifting to at least a full word), this will store pre-computed 2^1~2^k powers. Maybe move this implementation to a separate module folder, and use the window selection function from modular pow.

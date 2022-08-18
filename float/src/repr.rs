@@ -153,7 +153,7 @@ impl<R: Round> Context<R> {
     }
 
     /// Round the repr to the desired precision
-    pub(crate) fn round<const B: Word>(&self, repr: Repr<B>) -> Approximation<Repr<B>, Rounding> {
+    pub(crate) fn repr_round<const B: Word>(&self, repr: Repr<B>) -> Approximation<Repr<B>, Rounding> {
         // XXX: estimated digit length can be used here to prevent costly call to the digits()
         let digits = repr.digits();
         if digits > self.precision {

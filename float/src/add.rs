@@ -4,38 +4,24 @@ use crate::{
     round::{Round, Rounding},
     utils::{
         digit_len, shl_radix, shl_radix_in_place, shr_rem_radix, shr_rem_radix_in_place,
-        split_radix_at,
+        split_digits,
     },
     Word,
 };
 use core::{
     cmp::Ordering,
-    ops::{Add, AddAssign, Sub},
+    ops::{Add, AddAssign, Sub, SubAssign},
 };
 
 use dashu_base::Approximation;
-use dashu_int::IBig;
+use dashu_int::{IBig, Sign::{self, *}};
 
 impl<const B: Word, R: Round> Add for FBig<B, R> {
     type Output = Self;
 
     #[inline]
     fn add(self, rhs: Self) -> Self::Output {
-        let context = Context::max(self.context, rhs.context);
-        if self.repr.is_zero() {
-            return FBig::new_raw(rhs.repr, context);
-        }
-        if rhs.repr.is_zero() {
-            return FBig::new_raw(self.repr, context);
-        }
-
-        let sum = match self.repr.exponent.cmp(&rhs.repr.exponent) {
-            Ordering::Equal => context
-                .round(Repr::new(self.repr.significand + rhs.repr.significand, self.repr.exponent)),
-            Ordering::Greater => context.repr_add_large_small(self.repr, &rhs.repr),
-            Ordering::Less => context.repr_add_small_large(self.repr, &rhs.repr),
-        };
-        FBig::new_raw(sum.value(), context)
+        add_val_val(self, rhs, Positive)
     }
 }
 
@@ -44,23 +30,7 @@ impl<'r, const B: Word, R: Round> Add<&'r FBig<B, R>> for FBig<B, R> {
 
     #[inline]
     fn add(self, rhs: &FBig<B, R>) -> Self::Output {
-        let context = Context::max(self.context, rhs.context);
-        if self.repr.is_zero() {
-            return FBig::new_raw(rhs.repr.clone(), context);
-        }
-        if rhs.repr.is_zero() {
-            return FBig::new_raw(self.repr, context);
-        }
-
-        let sum = match self.repr.exponent.cmp(&rhs.repr.exponent) {
-            Ordering::Equal => context.round(Repr::new(
-                self.repr.significand + &rhs.repr.significand,
-                self.repr.exponent,
-            )),
-            Ordering::Greater => context.repr_add_large_small(self.repr, &rhs.repr),
-            Ordering::Less => context.repr_add_small_large(self.repr, &rhs.repr),
-        };
-        FBig::new_raw(sum.value(), context)
+        add_val_ref(self, rhs, Positive)
     }
 }
 
@@ -69,23 +39,7 @@ impl<'l, const B: Word, R: Round> Add<FBig<B, R>> for &'l FBig<B, R> {
 
     #[inline]
     fn add(self, rhs: FBig<B, R>) -> Self::Output {
-        let context = Context::max(self.context, rhs.context);
-        if self.repr.is_zero() {
-            return FBig::new_raw(rhs.repr, context);
-        }
-        if rhs.repr.is_zero() {
-            return FBig::new_raw(self.repr.clone(), context);
-        }
-
-        let sum = match self.repr.exponent.cmp(&rhs.repr.exponent) {
-            Ordering::Equal => context.round(Repr::new(
-                &self.repr.significand + rhs.repr.significand,
-                self.repr.exponent,
-            )),
-            Ordering::Greater => context.repr_add_small_large(rhs.repr, &self.repr),
-            Ordering::Less => context.repr_add_large_small(rhs.repr, &self.repr),
-        };
-        FBig::new_raw(sum.value(), context)
+        add_ref_val(self, rhs, Positive)
     }
 }
 
@@ -94,23 +48,7 @@ impl<'l, 'r, const B: Word, R: Round> Add<&'r FBig<B, R>> for &'l FBig<B, R> {
 
     #[inline]
     fn add(self, rhs: &FBig<B, R>) -> Self::Output {
-        let context = Context::max(self.context, rhs.context);
-        if self.repr.is_zero() {
-            return FBig::new_raw(rhs.repr.clone(), context);
-        }
-        if rhs.repr.is_zero() {
-            return FBig::new_raw(self.repr.clone(), context);
-        }
-
-        let sum = match self.repr.exponent.cmp(&rhs.repr.exponent) {
-            Ordering::Equal => context.round(Repr::new(
-                &self.repr.significand + &rhs.repr.significand,
-                self.repr.exponent,
-            )),
-            Ordering::Greater => context.repr_add_large_small(self.repr.clone(), &rhs.repr),
-            Ordering::Less => context.repr_add_small_large(self.repr.clone(), &rhs.repr),
-        };
-        FBig::new_raw(sum.value(), context)
+        add_ref_ref(self, rhs, Positive)
     }
 }
 
@@ -130,28 +68,129 @@ impl<const B: Word, R: Round> Sub for FBig<B, R> {
 
     #[inline]
     fn sub(self, rhs: Self) -> Self::Output {
-        let context = Context::max(self.context, rhs.context);
-        FBig {
-            repr: context.repr_add_large_small(self.repr, &-rhs.repr).value(),
-            context,
-        }
+        add_val_val(self, rhs, Negative)
     }
 }
 
-impl<const B: Word, R: Round> Sub for &FBig<B, R> {
-    type Output = FBig<B, R>;
+impl<'r, const B: Word, R: Round> Sub<&'r FBig<B, R>> for FBig<B, R> {
+    type Output = Self;
+
     #[inline]
-    fn sub(self, rhs: Self) -> Self::Output {
-        // TODO(next): let repr_add_large_small accepts a rhs sign input
-        self.add(&(-rhs))
+    fn sub(self, rhs: &FBig<B, R>) -> Self::Output {
+        add_val_ref(self, rhs, Negative)
     }
 }
-impl<const B: Word, R: Round> Sub<FBig<B, R>> for &FBig<B, R> {
+
+impl<'l, const B: Word, R: Round> Sub<FBig<B, R>> for &'l FBig<B, R> {
     type Output = FBig<B, R>;
+
     #[inline]
     fn sub(self, rhs: FBig<B, R>) -> Self::Output {
-        self.add(&(-rhs))
+        add_ref_val(self, rhs, Negative)
     }
+}
+
+impl<'l, 'r, const B: Word, R: Round> Sub<&'r FBig<B, R>> for &'l FBig<B, R> {
+    type Output = FBig<B, R>;
+
+    #[inline]
+    fn sub(self, rhs: &FBig<B, R>) -> Self::Output {
+        add_ref_ref(self, rhs, Negative)
+    }
+}
+
+impl<const B: Word, R: Round> SubAssign for FBig<B, R> {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = core::mem::take(self) - rhs
+    }
+}
+impl<const B: Word, R: Round> SubAssign<&FBig<B, R>> for FBig<B, R> {
+    fn sub_assign(&mut self, rhs: &FBig<B, R>) {
+        *self = core::mem::take(self) - rhs
+    }
+}
+
+fn add_val_val<const B: Word, R: Round>(lhs: FBig<B, R>, mut rhs: FBig<B, R>, rhs_sign: Sign) -> FBig<B, R> {
+    let context = Context::max(lhs.context, rhs.context);
+    rhs.repr.significand *= rhs_sign;
+    let sum = if lhs.repr.is_zero() {
+        rhs.repr
+    } else if rhs.repr.is_zero() {
+        lhs.repr
+    } else {
+        match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
+            Ordering::Equal => context
+                .repr_round(Repr::new(lhs.repr.significand + rhs.repr.significand, lhs.repr.exponent)),
+            Ordering::Greater => context.repr_add_large_small(lhs.repr, &rhs.repr, Positive),
+            Ordering::Less => context.repr_add_small_large(lhs.repr, &rhs.repr, Positive),
+        }.value()
+    };
+    FBig::new_raw(sum, context)
+}
+
+fn add_val_ref<const B: Word, R: Round>(lhs: FBig<B, R>, rhs: &FBig<B, R>, rhs_sign: Sign) -> FBig<B, R> {
+    let context = Context::max(lhs.context, rhs.context);
+    let sum = if lhs.repr.is_zero() {
+        let mut repr = rhs.repr.clone();
+        repr.significand *= rhs_sign;
+        repr
+    } else if rhs.repr.is_zero() {
+        lhs.repr
+    } else {
+        match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
+            Ordering::Equal =>{
+                let sum_signif = match rhs_sign {
+                    Positive => lhs.repr.significand + &rhs.repr.significand,
+                    Negative => lhs.repr.significand - &rhs.repr.significand,
+                };
+                context.repr_round(Repr::new(sum_signif, lhs.repr.exponent))
+            } ,
+            Ordering::Greater => context.repr_add_large_small(lhs.repr, &rhs.repr, rhs_sign),
+            Ordering::Less => context.repr_add_small_large(lhs.repr, &rhs.repr, rhs_sign),
+        }.value()
+    };
+    FBig::new_raw(sum, context)
+}
+
+fn add_ref_val<const B: Word, R: Round>(lhs: &FBig<B, R>, mut rhs: FBig<B, R>, rhs_sign: Sign) -> FBig<B, R> {
+    let context = Context::max(lhs.context, rhs.context);
+    rhs.repr.significand *= rhs_sign;
+    let sum = if lhs.repr.is_zero() {
+        rhs.repr
+    } else if rhs.repr.is_zero() {
+        lhs.repr.clone()
+    } else {
+        match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
+            Ordering::Equal => context.repr_round(Repr::new(
+                &lhs.repr.significand + rhs.repr.significand,
+                lhs.repr.exponent,
+            )),
+            Ordering::Greater => context.repr_add_small_large(rhs.repr, &lhs.repr, Positive),
+            Ordering::Less => context.repr_add_large_small(rhs.repr, &lhs.repr, Positive),
+        }.value()
+    };
+    FBig::new_raw(sum, context)
+}
+
+fn add_ref_ref<const B: Word, R: Round>(lhs: &FBig<B, R>, rhs: &FBig<B, R>, rhs_sign: Sign) -> FBig<B, R> {
+    let context = Context::max(lhs.context, rhs.context);
+    let sum = if lhs.repr.is_zero() {
+        let mut repr = rhs.repr.clone();
+        repr.significand *= rhs_sign;
+        repr
+    } else if rhs.repr.is_zero() {
+        lhs.repr.clone()
+    } else {
+        match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
+            Ordering::Equal => context.repr_round(Repr::new(
+                &lhs.repr.significand + rhs_sign * rhs.repr.significand.clone(),
+                lhs.repr.exponent,
+            )),
+            Ordering::Greater => context.repr_add_large_small(lhs.repr.clone(), &rhs.repr, rhs_sign),
+            Ordering::Less => context.repr_add_small_large(lhs.repr.clone(), &rhs.repr, rhs_sign),
+        }.value()
+    };
+    FBig::new_raw(sum, context)
 }
 
 impl<R: Round> Context<R> {
@@ -200,7 +239,7 @@ impl<R: Round> Context<R> {
                 if !low.0.is_zero() && is_sub {
                     let (low_val, low_prec) = low;
                     let shift = low_prec.min(rnd_precision - digits);
-                    let (pad, low_val) = split_radix_at::<B>(low_val, low_prec - shift);
+                    let (low_val, pad) = split_digits::<B>(low_val, low_prec - shift);
                     shl_radix_in_place::<B>(&mut significand, shift);
                     exponent -= shift as isize;
                     significand += pad;
@@ -220,16 +259,17 @@ impl<R: Round> Context<R> {
         }
     }
 
-    // lhs + rhs, assuming lhs.exponent >= rhs.exponent
+    // lhs + rhs_sign * rhs, assuming lhs.exponent >= rhs.exponent
     pub(crate) fn repr_add_large_small<const B: Word>(
         &self,
         mut lhs: Repr<B>,
         rhs: &Repr<B>,
+        rhs_sign: Sign,
     ) -> Approximation<Repr<B>, Rounding> {
         debug_assert!(lhs.exponent >= rhs.exponent);
 
         // use one extra digit when subtracting to prevent cancellation in rounding
-        let is_sub = lhs.significand.sign() != rhs.significand.sign();
+        let is_sub = lhs.significand.sign() != rhs_sign * rhs.significand.sign();
         let rnd_precision = self.precision + is_sub as usize;
 
         let ediff = (lhs.exponent - rhs.exponent) as usize;
@@ -255,7 +295,7 @@ impl<R: Round> Context<R> {
                 } else {
                     (rnd_precision - ldigits) + 1
                 }; // low_prec >= 2
-                low = (rhs.significand.signum(), low_prec);
+                low = (rhs_sign * rhs.significand.signum(), low_prec);
                 (lhs.significand, lhs.exponent)
             } else if ldigits >= self.precision {
                 // if the lhs already exceeds the desired precision, just align rhs
@@ -270,8 +310,8 @@ impl<R: Round> Context<R> {
                  * rhs:      |=========|xxxx|
                  */
                 let (rhs_signif, r) = shr_rem_radix::<B>(&rhs.significand, ediff);
-                low = (r, ediff);
-                (lhs.significand + rhs_signif, lhs.exponent)
+                low = (rhs_sign * r, ediff);
+                (lhs.significand + rhs_sign * rhs_signif, lhs.exponent)
             } else if ediff + ldigits > self.precision {
                 // if the shifted lhs exceeds the desired precision, align lhs and rhs to precision
                 /* Before:
@@ -291,8 +331,8 @@ impl<R: Round> Context<R> {
                 let (rhs_signif, r) = shr_rem_radix::<B>(&rhs.significand, rshift);
                 shl_radix_in_place::<B>(&mut lhs.significand, lshift);
 
-                low = (r, rshift);
-                (lhs.significand + rhs_signif, lhs.exponent - lshift as isize)
+                low = (rhs_sign * r, rshift);
+                (lhs.significand + rhs_sign * rhs_signif, lhs.exponent - lshift as isize)
             } else {
                 // otherwise directly shift lhs to required position
                 /* Before:
@@ -307,23 +347,27 @@ impl<R: Round> Context<R> {
                  */
                 shl_radix_in_place::<B>(&mut lhs.significand, ediff);
                 low = (IBig::ZERO, 0);
-                (lhs.significand + &rhs.significand, rhs.exponent)
+                match rhs_sign {
+                    Positive => (lhs.significand + &rhs.significand, rhs.exponent),
+                    Negative => (lhs.significand - &rhs.significand, rhs.exponent)
+                }
             };
 
         self.repr_round_sum(significand, exponent, low, is_sub)
     }
 
-    // lhs + rhs, assuming lhs.exponent <= rhs.exponent
+    // lhs + rhs_sign * rhs, assuming lhs.exponent <= rhs.exponent
     pub(crate) fn repr_add_small_large<const B: Word>(
         &self,
         mut lhs: Repr<B>,
         rhs: &Repr<B>,
+        rhs_sign: Sign,
     ) -> Approximation<Repr<B>, Rounding> {
         debug_assert!(lhs.exponent <= rhs.exponent);
 
         // the following implementation should be exactly the same as `repr_add_large_small`
         // other than lhs and rhs are swapped. See `repr_add_large_small` for full documentation
-        let is_sub = lhs.significand.sign() != rhs.significand.sign();
+        let is_sub = lhs.significand.sign() != rhs_sign * rhs.significand.sign();
         let rnd_precision = self.precision + is_sub as usize;
 
         let ediff = (rhs.exponent - lhs.exponent) as usize;
@@ -341,12 +385,15 @@ impl<R: Round> Context<R> {
                     (rnd_precision - rdigits) + 1
                 };
                 low = (lhs.significand.signum(), low_prec);
-                (rhs.significand.clone(), rhs.exponent)
+                (rhs_sign * rhs.significand.clone(), rhs.exponent)
             } else if rdigits >= self.precision {
                 // if the rhs already exceeds the desired precision, just align lhs
                 let r = shr_rem_radix_in_place::<B>(&mut lhs.significand, ediff);
                 low = (r, ediff);
-                (&rhs.significand + lhs.significand, rhs.exponent)
+                match rhs_sign {
+                    Positive => (lhs.significand + &rhs.significand, rhs.exponent),
+                    Negative => (lhs.significand - &rhs.significand, rhs.exponent)
+                }
             } else if ediff + rdigits > self.precision {
                 // if the shifted rhs exceeds the desired precision, align lhs and rhs to precision
                 let lshift = self.precision - rdigits;
@@ -355,12 +402,12 @@ impl<R: Round> Context<R> {
                 let rhs_signif = shl_radix::<B>(&rhs.significand, lshift);
 
                 low = (r, rshift);
-                (rhs_signif + lhs.significand, rhs.exponent - lshift as isize)
+                (rhs_sign * rhs_signif + lhs.significand, rhs.exponent - lshift as isize)
             } else {
                 // otherwise directly shift rhs to required position
                 let rhs_signif = shl_radix::<B>(&rhs.significand, ediff);
                 low = (IBig::ZERO, 0);
-                (rhs_signif + lhs.significand, lhs.exponent)
+                (rhs_sign * rhs_signif + lhs.significand, lhs.exponent)
             };
 
         self.repr_round_sum(significand, exponent, low, is_sub)
@@ -371,21 +418,44 @@ impl<R: Round> Context<R> {
         lhs: &FBig<B, R>,
         rhs: &FBig<B, R>,
     ) -> Approximation<FBig<B, R>, Rounding> {
-        let context = Context::max(lhs.context, rhs.context);
         let sum = if lhs.repr.is_zero() {
-            context.round(lhs.repr.clone())
+            self.repr_round(rhs.repr.clone())
         } else if rhs.repr.is_zero() {
-            context.round(rhs.repr.clone())
+            self.repr_round(lhs.repr.clone())
         } else {
             match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
-                Ordering::Equal => context.round(Repr::new(
+                Ordering::Equal => self.repr_round(Repr::new(
                     &lhs.repr.significand + &rhs.repr.significand,
                     lhs.repr.exponent,
                 )),
-                Ordering::Greater => context.repr_add_large_small(lhs.repr.clone(), &rhs.repr),
-                Ordering::Less => context.repr_add_small_large(lhs.repr.clone(), &rhs.repr),
+                Ordering::Greater => self.repr_add_large_small(lhs.repr.clone(), &rhs.repr, Positive),
+                Ordering::Less => self.repr_add_small_large(lhs.repr.clone(), &rhs.repr, Positive),
             }
         };
-        sum.map(|v| FBig::new_raw(v, context))
+        sum.map(|v| FBig::new_raw(v, *self))
+    }
+
+    pub fn sub<const B: Word>(
+        &self,
+        lhs: &FBig<B, R>,
+        rhs: &FBig<B, R>,
+    ) -> Approximation<FBig<B, R>, Rounding> {
+        let sum = if lhs.repr.is_zero() {
+            let mut repr = rhs.repr.clone();
+            repr.significand *= Negative;
+            self.repr_round(repr)
+        } else if rhs.repr.is_zero() {
+            self.repr_round(lhs.repr.clone())
+        } else {
+            match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
+                Ordering::Equal => self.repr_round(Repr::new(
+                    &lhs.repr.significand - &rhs.repr.significand,
+                    lhs.repr.exponent,
+                )),
+                Ordering::Greater => self.repr_add_large_small(lhs.repr.clone(), &rhs.repr, Negative),
+                Ordering::Less => self.repr_add_small_large(lhs.repr.clone(), &rhs.repr, Negative),
+            }
+        };
+        sum.map(|v| FBig::new_raw(v, *self))
     }
 }

@@ -95,7 +95,7 @@ impl<const B: Word, R: Round> FBig<B, R> {
 
         // shrink if necessary
         let repr = if self.context.precision > precision {
-            new_context.round(self.repr)
+            new_context.repr_round(self.repr)
         } else {
             Approximation::Exact(self.repr)
         };

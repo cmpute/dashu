@@ -17,8 +17,6 @@ use core::{
     ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not},
 };
 
-// TODO: add a method called split to split the integer at given bit index
-
 /// Count the trailing zero bits in the words.
 /// Panics if the input is zero.
 #[inline]
@@ -145,6 +143,10 @@ impl UBig {
     #[inline]
     pub fn bit_len(&self) -> usize {
         self.repr().bit_len()
+    }
+
+    pub fn split_bits(self, n: usize) -> (UBig, UBig) {
+        unimplemented!() // TODO(next): Implement
     }
 }
 
