@@ -123,4 +123,8 @@ fn test_mul_decimal() {
     }
 }
 
-// TODO: test mul by inf (should fail)
+#[test]
+#[should_panic]
+fn test_mul_by_inf() {
+    let _ = dashu_float::DBig::ONE * dashu_float::DBig::INFINITY;
+}

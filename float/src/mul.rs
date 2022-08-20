@@ -1,5 +1,6 @@
 use crate::{
     fbig::FBig,
+    error::check_inf_operands,
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
 };
@@ -10,6 +11,8 @@ impl<'l, 'r, const B: Word, R: Round> Mul<&'r FBig<B, R>> for &'l FBig<B, R> {
 
     #[inline]
     fn mul(self, rhs: &FBig<B, R>) -> Self::Output {
+        check_inf_operands(&self.repr, &rhs.repr);
+
         let context = Context::max(self.context, rhs.context);
         let repr = Repr::new(
             &self.repr.significand * &rhs.repr.significand,
@@ -24,6 +27,8 @@ impl<'r, const B: Word, R: Round> Mul<&'r FBig<B, R>> for FBig<B, R> {
 
     #[inline]
     fn mul(self, rhs: &FBig<B, R>) -> Self::Output {
+        check_inf_operands(&self.repr, &rhs.repr);
+
         let context = Context::max(self.context, rhs.context);
         let repr = Repr::new(
             self.repr.significand * &rhs.repr.significand,
@@ -38,6 +43,8 @@ impl<'l, const B: Word, R: Round> Mul<FBig<B, R>> for &'l FBig<B, R> {
 
     #[inline]
     fn mul(self, rhs: FBig<B, R>) -> Self::Output {
+        check_inf_operands(&self.repr, &rhs.repr);
+
         let context = Context::max(self.context, rhs.context);
         let repr = Repr::new(
             &self.repr.significand * rhs.repr.significand,
@@ -52,6 +59,8 @@ impl<const B: Word, R: Round> Mul<FBig<B, R>> for FBig<B, R> {
 
     #[inline]
     fn mul(self, rhs: FBig<B, R>) -> Self::Output {
+        check_inf_operands(&self.repr, &rhs.repr);
+
         let context = Context::max(self.context, rhs.context);
         let repr = Repr::new(
             self.repr.significand * rhs.repr.significand,
@@ -80,6 +89,8 @@ impl<R: Round> Context<R> {
         lhs: &FBig<B, R>,
         rhs: &FBig<B, R>,
     ) -> Rounded<FBig<B, R>> {
+        check_inf_operands(&lhs.repr, &rhs.repr);
+
         // TODO: shrink lhs and rhs to at most double the precision before mul
         let repr = Repr::new(
             &lhs.repr.significand * &rhs.repr.significand,

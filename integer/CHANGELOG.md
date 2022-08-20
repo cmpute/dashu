@@ -9,7 +9,7 @@
 - Add a public API `as_words` and `as_sign_words` to access internal representation of `UBig` and `IBig` respectively.
 - Add const constructors `from_word`, `from_dword` and a direct constructor `from_words` for `UBig`.
 - Add a const constructor `from_parts_const` and a director constructor `from_parts` for `IBig`
-- Add `split_bits` for `UBig`.
+- Add `split_bits` and `clear_high_bits` for `UBig`.
 - Add `abs_cmp`, `abs_eq` for `IBig`.
 - Implement `Mul` between `Sign` and `UBig`/`IBig`.
 - Implement `DivRemAssign` for `UBig` and `IBig`, and `DivRemAssign` is re-exported in the `ops` module.

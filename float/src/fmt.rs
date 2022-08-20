@@ -4,7 +4,7 @@ use crate::{
     fbig::FBig,
     repr::{Context, Repr},
     round::Round,
-    utils::{digit_len, shr_radix_in_place, shr_rem_radix},
+    utils::{digit_len, shr_digits_in_place, split_digits_ref},
 };
 use core::fmt::{self, Display, Formatter, Write};
 use dashu_base::Abs;
@@ -48,7 +48,7 @@ impl<const B: Word, R: Round> Display for FBig<B, R> {
 
         if self.repr.exponent < 0 {
             let exp = -self.repr.exponent as usize;
-            let (int, frac) = shr_rem_radix::<B>(&self.repr.significand, exp);
+            let (int, frac) = split_digits_ref::<B>(&self.repr.significand, exp);
             let frac_prec = digit_len::<B>(&frac);
             assert!(frac_prec <= exp);
             let mut frac = frac.abs(); // don't print sign for fractional part
@@ -70,9 +70,9 @@ impl<const B: Word, R: Round> Display for FBig<B, R> {
                         let new_prec = if exp == v {
                             frac_prec
                         } else if frac_prec > exp - v {
-                            let (shifted, mut rem) = shr_rem_radix::<B>(&frac, exp - v);
+                            let (shifted, mut rem) = split_digits_ref::<B>(&frac, exp - v);
                             frac = shifted;
-                            shr_radix_in_place::<B>(&mut rem, exp - v - 1);
+                            shr_digits_in_place::<B>(&mut rem, exp - v - 1);
                             frac += R::round_fract::<B>(&frac, rem, exp - v);
                             digit_len::<B>(&frac)
                         } else {

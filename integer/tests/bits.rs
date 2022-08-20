@@ -54,6 +54,23 @@ fn test_clear_bit() {
 }
 
 #[test]
+fn test_clear_high_bits() {
+    let mut a = ubig!(0xf000000000000000ff000000000000000000000000000000a);
+    a.clear_high_bits(10000);
+    assert_eq!(a, ubig!(0xf000000000000000ff000000000000000000000000000000a));
+    a.clear_high_bits(194);
+    assert_eq!(a, ubig!(0x3000000000000000ff000000000000000000000000000000a));
+    a.clear_high_bits(131);
+    assert_eq!(a, ubig!(0x7f000000000000000000000000000000a));
+    a.clear_high_bits(127);
+    assert_eq!(a, ubig!(0x7000000000000000000000000000000a));
+    a.clear_high_bits(4);
+    assert_eq!(a, ubig!(0xa));
+    a.clear_high_bits(0);
+    assert_eq!(a, ubig!(0));
+}
+
+#[test]
 fn test_split_bits() {
     let a = ubig!(0x123456789098765432101234567890987654321);
     let (a, b) = a.split_bits(0);

@@ -3,7 +3,6 @@ use crate::{
     ibig_ext::{log_pow, log_rem, remove_pow},
     repr::{Context, Repr},
     round::{Round, Rounding},
-    utils::shr_rem_radix_in_place,
 };
 use dashu_base::Approximation;
 use dashu_int::{IBig, UBig, Word};

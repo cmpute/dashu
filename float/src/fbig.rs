@@ -51,12 +51,24 @@ impl<const B: Word, R: Round> FBig<B, R> {
     const fn one() -> Self {
         Self::new_raw(Repr::one(), Context::new(1))
     }
+    /// [FBig] with value 1
     pub const ONE: Self = Self::one();
 
     const fn neg_one() -> Self {
         Self::new_raw(Repr::neg_one(), Context::new(1))
     }
+    /// [FBig] with value -1
     pub const NEG_ONE: Self = Self::neg_one();
+
+    const fn inf() -> Self {
+        Self::new_raw(Repr::infinity(), Context::new(0))
+    }
+    pub const INFINITY: Self = Self::inf();
+
+    const fn neg_inf() -> Self {
+        Self::new_raw(Repr::neg_infinity(), Context::new(0))
+    }
+    pub const NEG_INFINITY: Self = Self::neg_inf();
 
     /// Get the maximum precision set for the float number.
     pub const fn precision(&self) -> usize {
@@ -186,6 +198,7 @@ impl<const B: Word, R: Round> Clone for FBig<B, R> {
 impl<const B: Word, R: Round> PartialEq for FBig<B, R> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
+        // the representation is normalized so direct comparing is okay
         self.repr == other.repr
     }
 }

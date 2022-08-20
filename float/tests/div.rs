@@ -122,3 +122,15 @@ fn test_div_decimal() {
         }
     }
 }
+
+#[test]
+#[should_panic]
+fn test_div_by_inf() {
+    let _ = dashu_float::DBig::ONE / dashu_float::DBig::INFINITY;
+}
+
+#[test]
+#[should_panic]
+fn test_div_by_0() {
+    let _ = dashu_float::DBig::ONE / dashu_float::DBig::ZERO;
+}

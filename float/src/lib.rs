@@ -20,6 +20,7 @@ mod add;
 mod cmp;
 mod convert;
 mod div;
+mod error;
 mod fbig;
 mod fmt;
 mod ibig_ext;

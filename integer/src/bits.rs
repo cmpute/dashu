@@ -125,6 +125,29 @@ impl UBig {
         let (lo, hi) = self.into_repr().split_bits(n);
         (UBig(lo), UBig(hi))
     }
+
+    /// Clear the high bits from (n+1)-th bit.
+    /// 
+    /// This operation is equivalent to getting the lowest n bits on the integer
+    /// i.e. `self &= ((1 << n) - 1)`.
+    /// 
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::UBig;
+    /// let mut x = UBig::from(0b10100011u8);
+    /// x.clear_high_bits(4);
+    /// assert_eq!(x, UBig::from(0b0011u8));
+    ///
+    /// let mut x = UBig::from(0x90ffff3450897234u64);
+    /// let lo = (&x) & ((UBig::ONE << 21) - 1u8);
+    /// x.clear_high_bits(21);
+    /// assert_eq!(x, lo);
+    /// ```
+    #[inline]
+    pub fn clear_high_bits(&mut self, n: usize) {
+        self.0 = mem::take(self).into_repr().clear_high_bits(n);
+    }
 }
 
 helper_macros::forward_ubig_binop_to_repr!(impl BitAnd, bitand);
@@ -185,7 +208,7 @@ mod repr {
         arch::word::DoubleWord,
         buffer::Buffer,
         math::{self, ceil_div, ones_dword, ones_word},
-        primitive::{lowest_dword, split_dword, DWORD_BITS, DWORD_BITS_USIZE, WORD_BITS_USIZE},
+        primitive::{lowest_dword, split_dword, DWORD_BITS_USIZE, WORD_BITS_USIZE},
         repr::{
             Repr,
             TypedRepr::{self, *},
@@ -214,13 +237,6 @@ mod repr {
                     words.len() * WORD_BITS_USIZE - words.last().unwrap().leading_zeros() as usize
                 }
             }
-        }
-
-        /// Get the highest n bits from the Repr
-        #[inline]
-        pub fn high_bits(self, n: usize) -> Repr {
-            let bit_len = self.bit_len();
-            self >> (bit_len - n)
         }
 
         /// Check if low n-bits are not all zeros
@@ -302,13 +318,38 @@ mod repr {
             }
         }
 
+        pub fn clear_high_bits(self, n: usize) -> Repr {
+            match self {
+                Small(dword) => {
+                    if n < DWORD_BITS_USIZE {
+                        Repr::from_dword(dword & ones_dword(n as u32))
+                    } else {
+                        Repr::from_dword(dword)
+                    }
+                }
+                Large(buffer) => clear_high_bits_large(buffer, n)
+            }
+        }
+
         pub fn split_bits(self, n: usize) -> (Repr, Repr) {
             match self {
-                Small(dword) => (
-                    Repr::from_dword(dword & ones_dword(n.try_into().unwrap_or(DWORD_BITS))),
-                    Repr::from_dword(dword >> n),
-                ),
-                Large(buffer) => split_bits_large(buffer, n),
+                Small(dword) => if n < DWORD_BITS_USIZE {
+                    (
+                        Repr::from_dword(dword & ones_dword(n as u32)),
+                        Repr::from_dword(dword >> n),
+                    )
+                } else {
+                    (Repr::from_dword(dword), Repr::zero())
+                },
+                Large(buffer) => {
+                    if n == 0 {
+                        (Repr::zero(), Repr::from_buffer(buffer))
+                    } else {
+                        let hi = shift_ops::repr::shr_large_ref(&buffer, n);
+                        let lo = clear_high_bits_large(buffer, n);
+                        (lo, hi)
+                    }
+                },
             }
         }
     }
@@ -399,21 +440,16 @@ mod repr {
     }
 
     #[inline]
-    fn split_bits_large(mut buffer: Buffer, n: usize) -> (Repr, Repr) {
-        if n == 0 {
-            (Repr::zero(), Repr::from_buffer(buffer))
+    fn clear_high_bits_large(mut buffer: Buffer, n: usize) -> Repr {
+        let n_words = ceil_div(n, WORD_BITS_USIZE);
+        if n_words > buffer.len() {
+            Repr::from_buffer(buffer)
         } else {
-            let n_words = ceil_div(n, WORD_BITS_USIZE);
-            if n_words > buffer.len() {
-                (Repr::from_buffer(buffer), Repr::zero())
-            } else {
-                let hi = shift_ops::repr::shr_large_ref(&buffer, n);
-                buffer.truncate(n_words);
-                let last = buffer.last_mut().unwrap();
+            buffer.truncate(n_words);
+            if let Some(last) = buffer.last_mut() {
                 *last = *last & ones_word((n % WORD_BITS_USIZE) as u32);
-                let lo = Repr::from_buffer(buffer);
-                (lo, hi)
             }
+            Repr::from_buffer(buffer)
         }
     }
 

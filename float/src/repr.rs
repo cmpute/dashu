@@ -1,7 +1,7 @@
 use crate::{
     ibig_ext::remove_pow,
     round::{Round, Rounding},
-    utils::{base_as_ibig, digit_len, shr_rem_radix_in_place},
+    utils::{base_as_ibig, digit_len, split_digits},
 };
 use core::marker::PhantomData;
 use dashu_base::Approximation;
@@ -175,18 +175,17 @@ impl<R: Round> Context<R> {
         repr: Repr<B>,
     ) -> Approximation<Repr<B>, Rounding> {
         assert!(repr.is_finite());
-        // XXX: estimated digit length can be used here to prevent costly call to the digits()
         let digits = repr.digits();
         if digits > self.precision {
             let Repr {
-                mut significand,
+                significand,
                 exponent,
             } = repr;
             let shift = digits - self.precision;
-            let r = shr_rem_radix_in_place::<B>(&mut significand, shift);
-            let adjust = R::round_fract::<B>(&significand, r, shift);
+            let (signif_hi, signif_lo) = split_digits::<B>(significand, shift);
+            let adjust = R::round_fract::<B>(&signif_hi, signif_lo, shift);
             Approximation::Inexact(
-                Repr::new(significand + adjust, exponent + shift as isize),
+                Repr::new(signif_hi + adjust, exponent + shift as isize),
                 adjust,
             )
         } else {

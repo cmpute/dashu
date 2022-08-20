@@ -2,9 +2,10 @@ use crate::{
     fbig::FBig,
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
+    error::check_inf_operands,
     utils::{
-        digit_len, shl_radix, shl_radix_in_place, shr_rem_radix, shr_rem_radix_in_place,
-        split_digits,
+        digit_len, shl_digits, shl_digits_in_place,
+        split_digits, split_digits_ref,
     },
 };
 use core::{
@@ -120,6 +121,8 @@ fn add_val_val<const B: Word, R: Round>(
     mut rhs: FBig<B, R>,
     rhs_sign: Sign,
 ) -> FBig<B, R> {
+    check_inf_operands(&lhs.repr, &rhs.repr);
+
     let context = Context::max(lhs.context, rhs.context);
     rhs.repr.significand *= rhs_sign;
     let sum = if lhs.repr.is_zero() {
@@ -145,6 +148,8 @@ fn add_val_ref<const B: Word, R: Round>(
     rhs: &FBig<B, R>,
     rhs_sign: Sign,
 ) -> FBig<B, R> {
+    check_inf_operands(&lhs.repr, &rhs.repr);
+
     let context = Context::max(lhs.context, rhs.context);
     let sum = if lhs.repr.is_zero() {
         let mut repr = rhs.repr.clone();
@@ -174,6 +179,8 @@ fn add_ref_val<const B: Word, R: Round>(
     mut rhs: FBig<B, R>,
     rhs_sign: Sign,
 ) -> FBig<B, R> {
+    check_inf_operands(&lhs.repr, &rhs.repr);
+
     let context = Context::max(lhs.context, rhs.context);
     rhs.repr.significand *= rhs_sign;
     let sum = if lhs.repr.is_zero() {
@@ -199,6 +206,8 @@ fn add_ref_ref<const B: Word, R: Round>(
     rhs: &FBig<B, R>,
     rhs_sign: Sign,
 ) -> FBig<B, R> {
+    check_inf_operands(&lhs.repr, &rhs.repr);
+
     let context = Context::max(lhs.context, rhs.context);
     let sum = if lhs.repr.is_zero() {
         let mut repr = rhs.repr.clone();
@@ -248,10 +257,11 @@ impl<R: Round> Context<R> {
                  * shrink:     |=======|xxxxxxxxxxxx|
                  */
                 let shift = digits - rnd_precision;
-                let mut r = shr_rem_radix_in_place::<B>(&mut significand, shift);
+                let (signif_hi, mut signif_lo) = split_digits::<B>(significand, shift);
+                significand = signif_hi;
                 exponent += shift as isize;
-                shl_radix_in_place::<B>(&mut r, low.1);
-                low.0 += r;
+                shl_digits_in_place::<B>(&mut signif_lo, low.1);
+                low.0 += signif_lo;
                 low.1 += shift;
             }
             Ordering::Less => {
@@ -268,8 +278,8 @@ impl<R: Round> Context<R> {
                 if !low.0.is_zero() && is_sub {
                     let (low_val, low_prec) = low;
                     let shift = low_prec.min(rnd_precision - digits);
-                    let (low_val, pad) = split_digits::<B>(low_val, low_prec - shift);
-                    shl_radix_in_place::<B>(&mut significand, shift);
+                    let (pad, low_val) = split_digits::<B>(low_val, low_prec - shift);
+                    shl_digits_in_place::<B>(&mut significand, shift);
                     exponent -= shift as isize;
                     significand += pad;
                     low = (low_val, low_prec - shift);
@@ -338,7 +348,7 @@ impl<R: Round> Context<R> {
                  * lhs: |==============|
                  * rhs:      |=========|xxxx|
                  */
-                let (rhs_signif, r) = shr_rem_radix::<B>(&rhs.significand, ediff);
+                let (rhs_signif, r) = split_digits_ref::<B>(&rhs.significand, ediff);
                 low = (rhs_sign * r, ediff);
                 (lhs.significand + rhs_sign * rhs_signif, lhs.exponent)
             } else if ediff + ldigits > self.precision {
@@ -357,8 +367,8 @@ impl<R: Round> Context<R> {
                  */
                 let lshift = self.precision - ldigits;
                 let rshift = ediff - lshift;
-                let (rhs_signif, r) = shr_rem_radix::<B>(&rhs.significand, rshift);
-                shl_radix_in_place::<B>(&mut lhs.significand, lshift);
+                let (rhs_signif, r) = split_digits_ref::<B>(&rhs.significand, rshift);
+                shl_digits_in_place::<B>(&mut lhs.significand, lshift);
 
                 low = (rhs_sign * r, rshift);
                 (lhs.significand + rhs_sign * rhs_signif, lhs.exponent - lshift as isize)
@@ -374,7 +384,7 @@ impl<R: Round> Context<R> {
                  * lhs: |==========0000000000|
                  * rhs:       |==============|
                  */
-                shl_radix_in_place::<B>(&mut lhs.significand, ediff);
+                shl_digits_in_place::<B>(&mut lhs.significand, ediff);
                 low = (IBig::ZERO, 0);
                 match rhs_sign {
                     Positive => (lhs.significand + &rhs.significand, rhs.exponent),
@@ -388,7 +398,7 @@ impl<R: Round> Context<R> {
     // lhs + rhs_sign * rhs, assuming lhs.exponent <= rhs.exponent
     fn repr_add_small_large<const B: Word>(
         &self,
-        mut lhs: Repr<B>,
+        lhs: Repr<B>,
         rhs: &Repr<B>,
         rhs_sign: Sign,
     ) -> Rounded<Repr<B>> {
@@ -417,24 +427,24 @@ impl<R: Round> Context<R> {
                 (rhs_sign * rhs.significand.clone(), rhs.exponent)
             } else if rdigits >= self.precision {
                 // if the rhs already exceeds the desired precision, just align lhs
-                let r = shr_rem_radix_in_place::<B>(&mut lhs.significand, ediff);
+                let (lhs_signif, r) = split_digits::<B>(lhs.significand, ediff);
                 low = (r, ediff);
                 match rhs_sign {
-                    Positive => (lhs.significand + &rhs.significand, rhs.exponent),
-                    Negative => (lhs.significand - &rhs.significand, rhs.exponent),
+                    Positive => (lhs_signif + &rhs.significand, rhs.exponent),
+                    Negative => (lhs_signif - &rhs.significand, rhs.exponent),
                 }
             } else if ediff + rdigits > self.precision {
                 // if the shifted rhs exceeds the desired precision, align lhs and rhs to precision
                 let lshift = self.precision - rdigits;
                 let rshift = ediff - lshift;
-                let r = shr_rem_radix_in_place::<B>(&mut lhs.significand, rshift);
-                let rhs_signif = shl_radix::<B>(&rhs.significand, lshift);
+                let (lhs_signif, r) = split_digits::<B>(lhs.significand, rshift);
+                let rhs_signif = shl_digits::<B>(&rhs.significand, lshift);
 
                 low = (r, rshift);
-                (rhs_sign * rhs_signif + lhs.significand, rhs.exponent - lshift as isize)
+                (rhs_sign * rhs_signif + lhs_signif, rhs.exponent - lshift as isize)
             } else {
                 // otherwise directly shift rhs to required position
-                let rhs_signif = shl_radix::<B>(&rhs.significand, ediff);
+                let rhs_signif = shl_digits::<B>(&rhs.significand, ediff);
                 low = (IBig::ZERO, 0);
                 (rhs_sign * rhs_signif + lhs.significand, lhs.exponent)
             };
@@ -447,6 +457,8 @@ impl<R: Round> Context<R> {
         lhs: &FBig<B, R>,
         rhs: &FBig<B, R>,
     ) -> Rounded<FBig<B, R>> {
+        check_inf_operands(&lhs.repr, &rhs.repr);
+
         let sum = if lhs.repr.is_zero() {
             self.repr_round(rhs.repr.clone())
         } else if rhs.repr.is_zero() {
@@ -471,6 +483,8 @@ impl<R: Round> Context<R> {
         lhs: &FBig<B, R>,
         rhs: &FBig<B, R>,
     ) -> Rounded<FBig<B, R>> {
+        check_inf_operands(&lhs.repr, &rhs.repr);
+
         let sum = if lhs.repr.is_zero() {
             let mut repr = rhs.repr.clone();
             repr.significand *= Negative;

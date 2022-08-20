@@ -257,4 +257,14 @@ fn test_sub_decimal() {
     }
 }
 
-// TODO: test adding inf (should fail)
+#[test]
+#[should_panic]
+fn test_add_by_inf() {
+    let _ = dashu_float::DBig::ONE + dashu_float::DBig::INFINITY;
+}
+
+#[test]
+#[should_panic]
+fn test_sub_by_inf() {
+    let _ = dashu_float::DBig::ONE - dashu_float::DBig::INFINITY;
+}

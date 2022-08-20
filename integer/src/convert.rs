@@ -598,7 +598,7 @@ mod repr {
             } else {
                 let exponent = (n - 1) as u32;
                 debug_assert!((32..128).contains(&exponent));
-                let mantissa25: u32 = self.high_bits(25).as_typed().try_to_unsigned().unwrap();
+                let mantissa25: u32 = (self >> (n - 25)).as_typed().try_to_unsigned().unwrap();
                 let mantissa = mantissa25 >> 1;
 
                 // value = [8 bits: exponent + 127][23 bits: mantissa without the top bit]
@@ -639,7 +639,7 @@ mod repr {
             } else {
                 let exponent = (n - 1) as u64;
                 debug_assert!((64..1024).contains(&exponent));
-                let mantissa54: u64 = self.high_bits(54).as_typed().try_to_unsigned().unwrap();
+                let mantissa54: u64 = (self >> (n - 54)).as_typed().try_to_unsigned().unwrap();
                 let mantissa = mantissa54 >> 1;
 
                 // value = [11-bits: exponent + 1023][52 bit: mantissa without the top bit]

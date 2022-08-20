@@ -1,8 +1,9 @@
 use crate::{
     fbig::FBig,
+    error::check_inf_operands,
     repr::{Context, Repr, Word},
     round::{Rounded, Round},
-    utils::{digit_len, shl_radix_in_place},
+    utils::{digit_len, shl_digits_in_place},
 };
 use core::ops::{Div, DivAssign};
 use dashu_base::{Approximation, DivRem};
@@ -72,6 +73,8 @@ impl<R: Round> Context<R> {
         lhs: Repr<B>,
         rhs: &Repr<B>,
     ) -> Rounded<Repr<B>> {
+        check_inf_operands(&lhs, &rhs);
+
         // this method don't deal with the case where lhs significand is too large
         debug_assert!(lhs.digits() <= self.precision + rhs.digits());
 
@@ -85,7 +88,7 @@ impl<R: Round> Context<R> {
         if q.is_zero() { // lhs.significand < rhs.significand
             let rdigits = digit_len::<B>(&r); // rdigits <= ddigits
             let shift = ddigits + self.precision - rdigits;
-            shl_radix_in_place::<B>(
+            shl_digits_in_place::<B>(
                 &mut r,
                 shift,
             );
@@ -98,11 +101,11 @@ impl<R: Round> Context<R> {
             if ndigits < ddigits + self.precision {
                 // TODO: here the operations can be optimized: 1. prevent double power, 2. q += q0 can be |= if B is power of 2
                 let shift = ddigits + self.precision - ndigits;
-                shl_radix_in_place::<B>(
+                shl_digits_in_place::<B>(
                     &mut q,
                     shift,
                 );
-                shl_radix_in_place::<B>(
+                shl_digits_in_place::<B>(
                     &mut r,
                     shift,
                 );
