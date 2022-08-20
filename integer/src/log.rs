@@ -7,7 +7,7 @@ impl UBig {
     ///
     /// This function could takes a long time when the integer is very large.
     /// In applications where an exact result is not necessary,
-    /// [log2f_bounds][UBig::log2f_bounds] could be used.
+    /// [log2_bounds][UBig::log2_bounds] could be used.
     ///
     /// # Panics
     ///
@@ -30,7 +30,7 @@ impl UBig {
     ///
     /// The result is `(lower bound, upper bound)` such that lower bound ≤ log2(self) ≤ upper bound.
     /// The precision of the bounds is at least 8 bits (relative error < 2^-8).
-    /// 
+    ///
     /// With `std` disabled, the precision is about 13 bits. With `std` enabled, the precision
     /// will be full 23 bits.
     ///
@@ -60,7 +60,7 @@ impl IBig {
     ///
     /// This function could takes a long time when the integer is very large.
     /// In applications where an exact result is not necessary,
-    /// [log2f_bounds][IBig::log2f_bounds] could be used.
+    /// [log2_bounds][IBig::log2_bounds] could be used.
     ///
     /// # Panics
     ///
@@ -116,9 +116,7 @@ pub(crate) mod repr {
         helper_macros::debug_assert_zero,
         math::max_exp_in_word,
         mul, mul_ops, pow,
-        primitive::{
-            extend_word, highest_dword, shrink_dword, split_dword, WORD_BITS_USIZE,
-        },
+        primitive::{extend_word, highest_dword, shrink_dword, split_dword, WORD_BITS_USIZE},
         radix,
         repr::{
             Repr,
@@ -127,7 +125,9 @@ pub(crate) mod repr {
     };
 
     #[cfg(not(feature = "std"))]
-    use crate::math::{ceil_log2_dword_fp8, ceil_log2_word_fp8, log2_dword_fp8, log2_word_fp8, max_exp_in_dword};
+    use crate::math::{
+        ceil_log2_dword_fp8, ceil_log2_word_fp8, log2_dword_fp8, log2_word_fp8, max_exp_in_dword,
+    };
 
     impl TypedReprRef<'_> {
         /// Floor logarithm, returns (log(self), base^log(self))
@@ -387,7 +387,7 @@ pub(crate) mod repr {
                         $n >> (nbits - 24)
                     };
                     let est = if shifted.is_power_of_two() {
-                        shifted.trailing_zeros() as f32 
+                        shifted.trailing_zeros() as f32
                     } else {
                         (shifted as f32).log2() * ADJUST
                     };
@@ -410,7 +410,7 @@ pub(crate) mod repr {
     fn ceil_log2_word(word: Word) -> f32 {
         log2_using_f32!(word, true)
     }
-    
+
     #[inline]
     #[cfg(feature = "std")]
     fn ceil_log2_dword(dword: DoubleWord) -> f32 {

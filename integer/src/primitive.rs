@@ -77,6 +77,18 @@ pub fn highest_dword(words: &[Word]) -> DoubleWord {
     }
 }
 
+/// Locate the top non-zero word in a slice. It returns the position of the
+/// word added by one for convenience, if the input is zero, then 0 is returned.
+#[inline]
+pub fn locate_top_word_plus_one(words: &[Word]) -> usize {
+    for pos in (0..words.len()).rev() {
+        if words[pos] != 0 {
+            return pos + 1;
+        }
+    }
+    0
+}
+
 pub trait PrimitiveUnsigned
 where
     Self: Copy,

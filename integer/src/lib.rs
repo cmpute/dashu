@@ -24,7 +24,7 @@
 //!
 //! Modular arithmetic is supported by the module [modular].
 //!
-//! To construct big integers from literals conveniently, please use the `dashu-macro` crate.
+//! To construct big integers from integer literals conveniently, please use the `dashu-macro` crate.
 //!
 //! # Examples
 //!
@@ -59,10 +59,10 @@
 //!
 //! # Optional dependencies
 //!
-//! * `std` (default): for `std::error::Error`.
-//! * `num-traits` (default): integral traits.
-//! * `rand` (default): random number generation.
-//! * `serde`: serialization and deserialization.
+//! * `std` (*default*): for `std::error::Error` and some internal usages of `std` functions.
+//! * `num-traits` (*default*): support integral traits from crate `num-traits`.
+//! * `rand` (*default*): support random number generation based on crate `rand`.
+//! * `serde`: support serialization and deserialization based on crate `serde`.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -70,8 +70,8 @@ extern crate alloc;
 
 pub use crate::{ibig::IBig, sign::Sign, ubig::UBig};
 
-/// The primitive integer type used to construct the big integers. It's guaranteed to be
-/// one of the rust unsigned integer types
+/// The primitive integer type used to construct the big integers, guaranteed to be
+/// a rust built-in unsigned integer type.
 ///
 /// The big integers is interally represented as an array of [Word]s, so convert
 /// integers from and into [Word]s are efficient.

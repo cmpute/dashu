@@ -104,8 +104,18 @@ macro_rules! impl_ibig_rem_euclid {
         UBig(repr)
     }};
 }
-helper_macros::forward_ibig_binop_to_repr!(impl DivEuclid, div_euclid, Output = IBig, impl_ibig_div_euclid);
-helper_macros::forward_ibig_binop_to_repr!(impl RemEuclid, rem_euclid, Output = UBig, impl_ibig_rem_euclid);
+helper_macros::forward_ibig_binop_to_repr!(
+    impl DivEuclid,
+    div_euclid,
+    Output = IBig,
+    impl_ibig_div_euclid
+);
+helper_macros::forward_ibig_binop_to_repr!(
+    impl RemEuclid,
+    rem_euclid,
+    Output = UBig,
+    impl_ibig_rem_euclid
+);
 
 macro_rules! impl_ibig_divrem_euclid {
     ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {

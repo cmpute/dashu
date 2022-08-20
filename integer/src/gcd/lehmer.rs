@@ -4,14 +4,14 @@ use dashu_base::{ExtendedGcd, Gcd};
 
 use crate::{
     arch::word::{DoubleWord, SignedDoubleWord, SignedWord, Word},
-    bits::locate_top_word_plus_one,
     cmp::cmp_in_place,
     div,
     helper_macros::debug_assert_zero,
     memory::{self, Memory},
     mul,
     primitive::{
-        extend_word, highest_dword, signed_extend_word, split_dword, split_signed_dword, WORD_BITS,
+        extend_word, highest_dword, locate_top_word_plus_one, signed_extend_word, split_dword,
+        split_signed_dword, WORD_BITS,
     },
     shift,
     sign::Sign,

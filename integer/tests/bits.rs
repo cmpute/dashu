@@ -54,6 +54,32 @@ fn test_clear_bit() {
 }
 
 #[test]
+fn test_split_bits() {
+    let a = ubig!(0x123456789098765432101234567890987654321);
+    let (a, b) = a.split_bits(0);
+    assert!(a.is_zero());
+    let (a, b) = b.split_bits(153);
+    assert!(b.is_zero());
+    let (a, b) = a.split_bits(100000000);
+    assert!(b.is_zero());
+    let (a, b) = a.split_bits(148);
+    assert_eq!(a, ubig!(0x3456789098765432101234567890987654321));
+    assert_eq!(b, ubig!(0x12));
+    let (a, b) = a.split_bits(8);
+    assert_eq!(a, ubig!(0x21));
+    assert_eq!(b, ubig!(0x34567890987654321012345678909876543));
+    let (a, b) = b.split_bits(7);
+    assert_eq!(a, ubig!(0x43));
+    assert_eq!(b, ubig!(0x68acf12130eca864202468acf12130eca));
+    let (a, b) = b.split_bits(127);
+    assert_eq!(a, ubig!(0xacf12130eca864202468acf12130eca));
+    assert_eq!(b, ubig!(0xd));
+    let (a, b) = a.split_bits(65);
+    assert_eq!(a, ubig!(0x2468acf12130eca));
+    assert_eq!(b, ubig!(0x567890987654321));
+}
+
+#[test]
 fn test_trailing_zeros() {
     assert_eq!(ubig!(0).trailing_zeros(), None);
     assert_eq!(ubig!(0xf0000).trailing_zeros(), Some(16));

@@ -1,7 +1,6 @@
 use crate::{
     add,
     arch::word::Word,
-    bits::locate_top_word_plus_one,
     cmp, div,
     error::panic_different_rings,
     helper_macros::debug_assert_zero,
@@ -12,7 +11,7 @@ use crate::{
         modulo_ring::{ModuloRingLarge, ModuloRingSingle},
     },
     mul,
-    primitive::{extend_word, split_dword},
+    primitive::{extend_word, locate_top_word_plus_one, split_dword},
     shift, sqr,
 };
 use alloc::alloc::Layout;

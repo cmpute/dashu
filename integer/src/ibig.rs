@@ -10,6 +10,16 @@ use crate::{
 ///
 /// Arbitrarily large signed integer.
 ///
+/// The IBig struct is compact with a niche bit. It has the same memory size as [UBig]
+/// and it can could be used within simple enums with no additional memory requirement.
+///
+/// ```
+/// # use dashu_int::{IBig, UBig};
+/// use core::mem;
+/// assert_eq!(mem::size_of::<IBig>(), mem::size_of::<UBig>());
+/// assert_eq!(mem::size_of::<IBig>(), mem::size_of::<Option<IBig>>());
+/// ```
+/// 
 /// # Examples
 ///
 /// ```
@@ -23,15 +33,6 @@ use crate::{
 /// # Ok::<(), ParseError>(())
 /// ```
 ///
-/// The IBig struct is compact with a niche bit. It has the same memory size as [UBig]
-/// and it can could be used within simple enums with no additional memory requirement.
-///
-/// ```
-/// # use dashu_int::{IBig, UBig};
-/// use core::mem;
-/// assert_eq!(mem::size_of::<IBig>(), mem::size_of::<UBig>());
-/// assert_eq!(mem::size_of::<IBig>(), mem::size_of::<Option<IBig>>());
-/// ```
 #[derive(Eq, Hash, PartialEq)]
 #[repr(transparent)]
 pub struct IBig(pub(crate) Repr);
@@ -50,6 +51,15 @@ impl IBig {
     /// Get the raw representation in [Word][crate::Word]s.
     ///
     /// If the number is zero, then empty slice will be returned.
+    /// 
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::{IBig, Sign};
+    /// assert_eq!(IBig::ZERO.as_sign_words(), (Sign::Positive, &[] as &[_]));
+    /// assert_eq!(IBig::NEG_ONE.as_sign_words().0, Sign::Negative);
+    /// assert_eq!(IBig::NEG_ONE.as_sign_words().1, &[1]);
+    /// ```
     #[inline]
     pub fn as_sign_words(&self) -> (Sign, &[crate::Word]) {
         self.0.as_sign_slice()
@@ -66,7 +76,7 @@ impl IBig {
     /// assert_eq!(IBig::from(-3).sign(), Sign::Negative);
     /// ```
     #[inline]
-    pub fn sign(&self) -> Sign {
+    pub const fn sign(&self) -> Sign {
         self.0.sign()
     }
 
@@ -103,6 +113,16 @@ impl IBig {
     }
 
     /// Create an IBig from a [Sign] and a [DoubleWord][crate::DoubleWord]
+    /// 
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::{IBig, Sign, UBig};
+    /// const ONE: IBig = IBig::from_parts_const(Sign::Positive, 1);
+    /// assert_eq!(ONE, IBig::ONE);
+    /// const NEG_ONE: IBig = IBig::from_parts_const(Sign::Negative, 1);
+    /// assert_eq!(NEG_ONE, IBig::NEG_ONE);
+    /// ```
     #[inline]
     pub const fn from_parts_const(sign: Sign, dword: crate::DoubleWord) -> Self {
         Self(Repr::from_dword(dword).with_sign(sign))

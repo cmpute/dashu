@@ -167,7 +167,7 @@ impl Shr<usize> for &IBig {
     }
 }
 
-mod repr {
+pub(crate) mod repr {
     use super::*;
     use crate::{
         arch::word::{DoubleWord, Word},
@@ -317,7 +317,7 @@ mod repr {
     }
 
     /// Shift right large number of words by `rhs` bits.
-    fn shr_large_ref(words: &[Word], rhs: usize) -> Repr {
+    pub(crate) fn shr_large_ref(words: &[Word], rhs: usize) -> Repr {
         let shift_words = rhs / WORD_BITS_USIZE;
         let shift_bits = (rhs % WORD_BITS_USIZE) as u32;
 

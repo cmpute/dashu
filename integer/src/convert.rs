@@ -5,9 +5,7 @@ use crate::{
     buffer::Buffer,
     error::{panic_negative_ubig, OutOfBoundsError},
     ibig::IBig,
-    primitive::{
-        self, PrimitiveSigned, PrimitiveUnsigned, DWORD_BYTES, WORD_BITS, WORD_BYTES,
-    },
+    primitive::{self, PrimitiveSigned, PrimitiveUnsigned, DWORD_BYTES, WORD_BITS, WORD_BYTES},
     repr::{Repr, TypedReprRef::*},
     sign::Sign::*,
     ubig::UBig,

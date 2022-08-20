@@ -57,6 +57,14 @@ impl UBig {
     /// Get the raw representation in [Word][crate::Word]s.
     ///
     /// If the number is zero, then empty slice will be returned.
+    /// 
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::{UBig, Word};
+    /// assert_eq!(UBig::ZERO.as_words(), &[] as &[Word]);
+    /// assert_eq!(UBig::ONE.as_words(), &[1]);
+    /// ```
     #[inline]
     pub fn as_words(&self) -> &[crate::Word] {
         let (sign, words) = self.0.as_sign_slice();
@@ -65,18 +73,47 @@ impl UBig {
     }
 
     /// Create a UBig from a single [Word][crate::Word].
+    /// 
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::UBig;
+    /// const ZERO: UBig = UBig::from_word(0);
+    /// assert_eq!(ZERO, UBig::ZERO);
+    /// const ONE: UBig = UBig::from_word(1);
+    /// assert_eq!(ONE, UBig::ONE);
+    /// ```
     #[inline]
     pub const fn from_word(word: crate::Word) -> Self {
         Self(Repr::from_word(word))
     }
 
     /// Create a UBig from a [DoubleWord][crate::DoubleWord].
+    /// 
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::UBig;
+    /// const ZERO: UBig = UBig::from_dword(0);
+    /// assert_eq!(ZERO, UBig::ZERO);
+    /// const ONE: UBig = UBig::from_dword(1);
+    /// assert_eq!(ONE, UBig::ONE);
+    /// ```
     #[inline]
     pub const fn from_dword(dword: crate::DoubleWord) -> Self {
         Self(Repr::from_dword(dword))
     }
 
     /// Convert a sequence of [Word][crate::Word]s into a UBig
+    /// 
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::{UBig, Word};
+    /// assert_eq!(UBig::from_words(&[] as &[Word]), UBig::ZERO);
+    /// assert_eq!(UBig::from_words(&[1]), UBig::ONE);
+    /// assert_eq!(UBig::from_words(&[1, 1]), (UBig::ONE << Word::BITS as usize) + UBig::ONE);
+    /// ```
     #[inline]
     pub fn from_words(words: &[crate::Word]) -> Self {
         Self(Repr::from_buffer(words.into()))

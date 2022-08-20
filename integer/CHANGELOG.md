@@ -4,8 +4,12 @@
 
 ### Add
 
-- Add a public API `as_words` and `as_sign_words` to access internal representation of `UBig` and `IBig`.
-- Add const constructors `from_word`, `from_dword` and a direct constructor `from_words` for `UBig` and `IBig`.
+- Expose the `Sign` enum and related operations with `UBig` and `IBig`
+- Expose `DoubleWord` for easier operation with `Word`
+- Add a public API `as_words` and `as_sign_words` to access internal representation of `UBig` and `IBig` respectively.
+- Add const constructors `from_word`, `from_dword` and a direct constructor `from_words` for `UBig`.
+- Add a const constructor `from_parts_const` and a director constructor `from_parts` for `IBig`
+- Add `split_bits` for `UBig`.
 - Add `abs_cmp`, `abs_eq` for `IBig`.
 - Implement `Mul` between `Sign` and `UBig`/`IBig`.
 - Implement `DivRemAssign` for `UBig` and `IBig`, and `DivRemAssign` is re-exported in the `ops` module.
@@ -17,6 +21,7 @@
 ### Change
 
 - Function `zero()`, `one()`, `neg_one()` are changed to associated constants `ZERO`, `ONE`, `NEG_ONE`.
+- Function `gcd()` and `extended_gcd()` of `UBig` and `IBig` are changed to be associated functions of `Gcd` and `ExtendedGCD`.
 - Parsing a string with unsupported radix will now return an Err instead of `panic!`.
 - `from_str_with_radix_prefix` now also return the radix.
 
@@ -29,7 +34,7 @@
 ### Add
 
 - Implemented modular inverse for the `Modulo` type.
-- Implemented `GCD` and `ExtendedGCD` traits for `UBig` and `IBig`.
+- Implemented `gcd` and `extended_gcd` for `UBig` and `IBig`.
 
 ## 0.1.0
 

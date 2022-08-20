@@ -2,7 +2,7 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
-    primitive::{double_word, extend_word, split_dword, PrimitiveUnsigned, WORD_BITS},
+    primitive::{double_word, extend_word, split_dword, PrimitiveUnsigned, DWORD_BITS, WORD_BITS},
 };
 
 /// The length of an integer in bits.
@@ -210,14 +210,14 @@ pub const fn ones_dword(n: u32) -> DoubleWord {
     if n == 0 {
         0
     } else {
-        DoubleWord::MAX >> (DoubleWord::BIT_SIZE - n)
+        DoubleWord::MAX >> (DWORD_BITS - n)
     }
 }
 
 /// Calculate dw << shift, assuming shift <= Word::BIT_SIZE, returns (lo, mid, hi).
 #[inline]
 pub const fn shl_dword(dw: DoubleWord, shift: u32) -> (Word, Word, Word) {
-    debug_assert!(shift <= Word::BIT_SIZE);
+    debug_assert!(shift <= WORD_BITS);
 
     let (lo, hi) = split_dword(dw);
     let (n0, carry) = split_dword(extend_word(lo) << shift);

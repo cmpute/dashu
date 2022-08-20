@@ -357,7 +357,7 @@ macro_rules! forward_binop_assign_by_taking {
         impl $trait<&$t2> for $t1 {
             type $output = $ty_output;
             #[inline]
-            fn $methodassign(&mut self, rhs: &$t2) -> $ty_output{
+            fn $methodassign(&mut self, rhs: &$t2) -> $ty_output {
                 let (a, b) = core::mem::take(self).$method(rhs);
                 *self = a;
                 b

@@ -1,46 +1,12 @@
 //! Bitwise operators.
 
 use crate::{
-    arch::word::{DoubleWord, Word},
-    buffer::Buffer,
-    helper_macros,
-    ibig::IBig,
-    math,
-    ops::PowerOfTwo,
-    primitive::{lowest_dword, split_dword, DWORD_BITS_USIZE, WORD_BITS_USIZE},
-    repr::{TypedRepr::*, TypedReprRef::*},
-    sign::Sign::*,
-    ubig::UBig,
+    arch::word::Word, helper_macros, ibig::IBig, ops::PowerOfTwo, sign::Sign::*, ubig::UBig,
 };
 use core::{
     mem,
     ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not},
 };
-
-/// Count the trailing zero bits in the words.
-/// Panics if the input is zero.
-#[inline]
-pub fn trailing_zeros(words: &[Word]) -> usize {
-    for (idx, word) in words.iter().enumerate() {
-        if *word != 0 {
-            return idx * WORD_BITS_USIZE + word.trailing_zeros() as usize;
-        }
-    }
-
-    unreachable!("call trailing_zeros on 0")
-}
-
-/// Locate the top non-zero word in a slice. It returns the position of the
-/// word added by one for convenience, if the input is zero, then 0 is returned.
-#[inline]
-pub fn locate_top_word_plus_one(words: &[Word]) -> usize {
-    for pos in (0..words.len()).rev() {
-        if words[pos] != 0 {
-            return pos + 1;
-        }
-    }
-    0
-}
 
 impl UBig {
     /// Returns true if the `n`-th bit is set, n starts from 0.
@@ -55,13 +21,7 @@ impl UBig {
     /// ```
     #[inline]
     pub fn bit(&self, n: usize) -> bool {
-        match self.repr() {
-            RefSmall(dword) => n < DWORD_BITS_USIZE && dword & 1 << n != 0,
-            RefLarge(buffer) => {
-                let idx = n / WORD_BITS_USIZE;
-                idx < buffer.len() && buffer[idx] & 1 << (n % WORD_BITS_USIZE) != 0
-            }
-        }
+        self.repr().bit(n)
     }
 
     /// Set the `n`-th bit, n starts from 0.
@@ -128,8 +88,6 @@ impl UBig {
     /// * the index of the top 1 bit plus one
     /// * the floor of the logarithm base 2 of the number plus one.
     ///
-    ///
-    ///
     /// # Examples
     ///
     /// ```
@@ -145,8 +103,27 @@ impl UBig {
         self.repr().bit_len()
     }
 
+    /// Split this integer into low bits and high bits.
+    ///
+    /// Its returns are equal to `(self & ((1 << n) - 1), self >> n)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::UBig;
+    /// let (lo, hi) = UBig::from(0b10100011u8).split_bits(4);
+    /// assert_eq!(hi, UBig::from(0b1010u8));
+    /// assert_eq!(lo, UBig::from(0b0011u8));
+    ///
+    /// let x = UBig::from(0x90ffff3450897234u64);
+    /// let (lo, hi) = x.clone().split_bits(21);
+    /// assert_eq!(hi, (&x) >> 21);
+    /// assert_eq!(lo, x & ((UBig::ONE << 21) - 1u8));
+    /// ```
+    #[inline]
     pub fn split_bits(self, n: usize) -> (UBig, UBig) {
-        unimplemented!() // TODO(next): Implement
+        let (lo, hi) = self.into_repr().split_bits(n);
+        (UBig(lo), UBig(hi))
     }
 }
 
@@ -204,9 +181,31 @@ trait AndNot<Rhs = Self> {
 
 mod repr {
     use super::*;
-    use crate::repr::{Repr, TypedRepr, TypedReprRef};
+    use crate::{
+        arch::word::DoubleWord,
+        buffer::Buffer,
+        math::{self, ceil_div, ones_dword, ones_word},
+        primitive::{lowest_dword, split_dword, DWORD_BITS, DWORD_BITS_USIZE, WORD_BITS_USIZE},
+        repr::{
+            Repr,
+            TypedRepr::{self, *},
+            TypedReprRef::{self, *},
+        },
+        shift_ops,
+    };
 
     impl<'a> TypedReprRef<'a> {
+        #[inline]
+        pub fn bit(self, n: usize) -> bool {
+            match self {
+                RefSmall(dword) => n < DWORD_BITS_USIZE && dword & 1 << n != 0,
+                RefLarge(buffer) => {
+                    let idx = n / WORD_BITS_USIZE;
+                    idx < buffer.len() && buffer[idx] & 1 << (n % WORD_BITS_USIZE) != 0
+                }
+            }
+        }
+
         #[inline]
         pub fn bit_len(self) -> usize {
             match self {
@@ -249,7 +248,7 @@ mod repr {
             match self {
                 RefSmall(0) => None,
                 RefSmall(dword) => Some(dword.trailing_zeros() as usize),
-                RefLarge(words) => Some(trailing_zeros(words)),
+                RefLarge(words) => Some(trailing_zeros_large(words)),
             }
         }
     }
@@ -302,12 +301,22 @@ mod repr {
                 }
             }
         }
+
+        pub fn split_bits(self, n: usize) -> (Repr, Repr) {
+            match self {
+                Small(dword) => (
+                    Repr::from_dword(dword & ones_dword(n.try_into().unwrap_or(DWORD_BITS))),
+                    Repr::from_dword(dword >> n),
+                ),
+                Large(buffer) => split_bits_large(buffer, n),
+            }
+        }
     }
 
     #[inline]
     fn are_dword_low_bits_nonzero(dword: DoubleWord, n: usize) -> bool {
         let n = n.min(WORD_BITS_USIZE) as u32;
-        dword & math::ones_dword(n) != 0
+        dword & ones_dword(n) != 0
     }
 
     fn are_slice_low_bits_nonzero(words: &[Word], n: usize) -> bool {
@@ -316,7 +325,7 @@ mod repr {
             true
         } else {
             let n_top = (n % WORD_BITS_USIZE) as u32;
-            words[..n_words].iter().any(|x| *x != 0) || words[n_words] & math::ones_word(n_top) != 0
+            words[..n_words].iter().any(|x| *x != 0) || words[n_words] & ones_word(n_top) != 0
         }
     }
 
@@ -374,6 +383,38 @@ mod repr {
             buffer.push(1 << (n % WORD_BITS_USIZE));
         }
         Repr::from_buffer(buffer)
+    }
+
+    /// Count the trailing zero bits in the words.
+    /// Panics if the input is zero.
+    #[inline]
+    fn trailing_zeros_large(words: &[Word]) -> usize {
+        for (idx, word) in words.iter().enumerate() {
+            if *word != 0 {
+                return idx * WORD_BITS_USIZE + word.trailing_zeros() as usize;
+            }
+        }
+
+        unreachable!("call trailing_zeros on 0")
+    }
+
+    #[inline]
+    fn split_bits_large(mut buffer: Buffer, n: usize) -> (Repr, Repr) {
+        if n == 0 {
+            (Repr::zero(), Repr::from_buffer(buffer))
+        } else {
+            let n_words = ceil_div(n, WORD_BITS_USIZE);
+            if n_words > buffer.len() {
+                (Repr::from_buffer(buffer), Repr::zero())
+            } else {
+                let hi = shift_ops::repr::shr_large_ref(&buffer, n);
+                buffer.truncate(n_words);
+                let last = buffer.last_mut().unwrap();
+                *last = *last & ones_word((n % WORD_BITS_USIZE) as u32);
+                let lo = Repr::from_buffer(buffer);
+                (lo, hi)
+            }
+        }
     }
 
     impl BitAnd<TypedRepr> for TypedRepr {

@@ -108,7 +108,6 @@ impl IBig {
     ///
     /// ```
     /// # use dashu_int::IBig;
-    ///
     /// assert!(IBig::from(2).abs_eq(&IBig::from(-2)));
     /// assert!(IBig::from(-3).abs_eq(&IBig::from(-3)));
     /// ```
@@ -122,7 +121,6 @@ impl IBig {
     ///
     /// ```
     /// # use dashu_int::IBig;
-    ///
     /// assert!(IBig::from(2).abs_cmp(&IBig::from(-3)).is_le());
     /// assert!(IBig::from(-2).abs_cmp(&IBig::from(3)).is_le());
     /// ```

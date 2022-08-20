@@ -2,4 +2,6 @@
 
 pub use dashu_base::bit::{BitTest, PowerOfTwo};
 pub use dashu_base::number::{Abs, UnsignedAbs};
-pub use dashu_base::ring::{DivEuclid, DivRem, DivRemAssign, DivRemEuclid, ExtendedGcd, Gcd, RemEuclid};
+pub use dashu_base::ring::{
+    DivEuclid, DivRem, DivRemAssign, DivRemEuclid, ExtendedGcd, Gcd, RemEuclid,
+};
