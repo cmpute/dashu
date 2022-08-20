@@ -18,6 +18,8 @@ pub fn digit_len<const B: Word>(value: &IBig) -> usize {
     value.ilog(&UBig::from_word(B)) + 1
 }
 
+// TODO(next): rename shx_radix to shx_digits
+
 /// "Left shifting" in given radix, i.e. multiply by a power of radix
 #[inline]
 pub fn shl_radix<const B: Word>(value: &IBig, exp: usize) -> IBig {

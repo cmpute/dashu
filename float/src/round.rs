@@ -1,6 +1,6 @@
 use core::cmp::Ordering;
 use core::ops::{Add, AddAssign};
-use dashu_base::UnsignedAbs;
+use dashu_base::{UnsignedAbs, Approximation};
 use dashu_int::{IBig, Sign, UBig, Word};
 
 /// Built-in rounding modes of the floating numbers.
@@ -38,6 +38,9 @@ pub enum Rounding {
     /// Subtract one
     SubOne,
 }
+
+/// A type representing float operation result, for internal use only
+pub type Rounded<T> = Approximation<T, Rounding>;
 
 pub trait Round: Copy {
     // TODO: find a better name

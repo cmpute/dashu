@@ -2,7 +2,7 @@ use core::{
     fmt::Debug,
     ops::{Add, AddAssign, Sub, SubAssign},
 };
-use dashu_base::{Approximation::*};
+use dashu_base::Approximation::*;
 use dashu_float::{round::Rounding::*, Context};
 
 mod helper_macros;
@@ -89,8 +89,8 @@ fn test_add_binary() {
                 assert_eq!(va, *a);
                 assert_eq!(vb, *b);
                 assert_eq!(vc, *c);
-            },
-            _ => panic!("the result should be exact!")
+            }
+            _ => panic!("the result should be exact!"),
         }
     }
 
@@ -134,15 +134,15 @@ fn test_add_decimal() {
         test_add(b, a, c);
         test_sub(c, a, b);
         test_sub(c, b, a);
-        
+
         let context = Context::max(a.context(), b.context());
         match (context.add(a, b), context.sub(c, a), context.sub(c, b)) {
             (Exact(vc), Exact(vb), Exact(va)) => {
                 assert_eq!(va, *a);
                 assert_eq!(vb, *b);
                 assert_eq!(vc, *c);
-            },
-            _ => panic!("the result should be exact!")
+            }
+            _ => panic!("the result should be exact!"),
         }
     }
 

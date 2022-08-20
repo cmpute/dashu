@@ -1,9 +1,9 @@
 use crate::{
-    repr::{Context, Repr},
+    repr::{Context, Repr, Word},
     round::{mode, Round},
 };
 use core::marker::PhantomData;
-use dashu_int::{DoubleWord, IBig, Sign, Word};
+use dashu_int::{DoubleWord, IBig, Sign};
 
 /// An arbitrary precision floating number represented as `signficand * base^exponent`, with a precision
 /// such that `|signficand| < base^precision`. The representation is always normalized (nonzero signficand

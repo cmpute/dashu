@@ -1,20 +1,21 @@
 use crate::{
     fbig::FBig,
-    repr::{Context, Repr},
-    round::{Round, Rounding},
+    repr::{Context, Repr, Word},
+    round::{Round, Rounded},
     utils::{
         digit_len, shl_radix, shl_radix_in_place, shr_rem_radix, shr_rem_radix_in_place,
         split_digits,
     },
-    Word,
 };
 use core::{
     cmp::Ordering,
     ops::{Add, AddAssign, Sub, SubAssign},
 };
 
-use dashu_base::Approximation;
-use dashu_int::{IBig, Sign::{self, *}};
+use dashu_int::{
+    IBig,
+    Sign::{self, *},
+};
 
 impl<const B: Word, R: Round> Add for FBig<B, R> {
     type Output = Self;
@@ -114,7 +115,11 @@ impl<const B: Word, R: Round> SubAssign<&FBig<B, R>> for FBig<B, R> {
     }
 }
 
-fn add_val_val<const B: Word, R: Round>(lhs: FBig<B, R>, mut rhs: FBig<B, R>, rhs_sign: Sign) -> FBig<B, R> {
+fn add_val_val<const B: Word, R: Round>(
+    lhs: FBig<B, R>,
+    mut rhs: FBig<B, R>,
+    rhs_sign: Sign,
+) -> FBig<B, R> {
     let context = Context::max(lhs.context, rhs.context);
     rhs.repr.significand *= rhs_sign;
     let sum = if lhs.repr.is_zero() {
@@ -123,16 +128,23 @@ fn add_val_val<const B: Word, R: Round>(lhs: FBig<B, R>, mut rhs: FBig<B, R>, rh
         lhs.repr
     } else {
         match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
-            Ordering::Equal => context
-                .repr_round(Repr::new(lhs.repr.significand + rhs.repr.significand, lhs.repr.exponent)),
+            Ordering::Equal => context.repr_round(Repr::new(
+                lhs.repr.significand + rhs.repr.significand,
+                lhs.repr.exponent,
+            )),
             Ordering::Greater => context.repr_add_large_small(lhs.repr, &rhs.repr, Positive),
             Ordering::Less => context.repr_add_small_large(lhs.repr, &rhs.repr, Positive),
-        }.value()
+        }
+        .value()
     };
     FBig::new_raw(sum, context)
 }
 
-fn add_val_ref<const B: Word, R: Round>(lhs: FBig<B, R>, rhs: &FBig<B, R>, rhs_sign: Sign) -> FBig<B, R> {
+fn add_val_ref<const B: Word, R: Round>(
+    lhs: FBig<B, R>,
+    rhs: &FBig<B, R>,
+    rhs_sign: Sign,
+) -> FBig<B, R> {
     let context = Context::max(lhs.context, rhs.context);
     let sum = if lhs.repr.is_zero() {
         let mut repr = rhs.repr.clone();
@@ -142,21 +154,26 @@ fn add_val_ref<const B: Word, R: Round>(lhs: FBig<B, R>, rhs: &FBig<B, R>, rhs_s
         lhs.repr
     } else {
         match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
-            Ordering::Equal =>{
+            Ordering::Equal => {
                 let sum_signif = match rhs_sign {
                     Positive => lhs.repr.significand + &rhs.repr.significand,
                     Negative => lhs.repr.significand - &rhs.repr.significand,
                 };
                 context.repr_round(Repr::new(sum_signif, lhs.repr.exponent))
-            } ,
+            }
             Ordering::Greater => context.repr_add_large_small(lhs.repr, &rhs.repr, rhs_sign),
             Ordering::Less => context.repr_add_small_large(lhs.repr, &rhs.repr, rhs_sign),
-        }.value()
+        }
+        .value()
     };
     FBig::new_raw(sum, context)
 }
 
-fn add_ref_val<const B: Word, R: Round>(lhs: &FBig<B, R>, mut rhs: FBig<B, R>, rhs_sign: Sign) -> FBig<B, R> {
+fn add_ref_val<const B: Word, R: Round>(
+    lhs: &FBig<B, R>,
+    mut rhs: FBig<B, R>,
+    rhs_sign: Sign,
+) -> FBig<B, R> {
     let context = Context::max(lhs.context, rhs.context);
     rhs.repr.significand *= rhs_sign;
     let sum = if lhs.repr.is_zero() {
@@ -171,12 +188,17 @@ fn add_ref_val<const B: Word, R: Round>(lhs: &FBig<B, R>, mut rhs: FBig<B, R>, r
             )),
             Ordering::Greater => context.repr_add_small_large(rhs.repr, &lhs.repr, Positive),
             Ordering::Less => context.repr_add_large_small(rhs.repr, &lhs.repr, Positive),
-        }.value()
+        }
+        .value()
     };
     FBig::new_raw(sum, context)
 }
 
-fn add_ref_ref<const B: Word, R: Round>(lhs: &FBig<B, R>, rhs: &FBig<B, R>, rhs_sign: Sign) -> FBig<B, R> {
+fn add_ref_ref<const B: Word, R: Round>(
+    lhs: &FBig<B, R>,
+    rhs: &FBig<B, R>,
+    rhs_sign: Sign,
+) -> FBig<B, R> {
     let context = Context::max(lhs.context, rhs.context);
     let sum = if lhs.repr.is_zero() {
         let mut repr = rhs.repr.clone();
@@ -190,9 +212,12 @@ fn add_ref_ref<const B: Word, R: Round>(lhs: &FBig<B, R>, rhs: &FBig<B, R>, rhs_
                 &lhs.repr.significand + rhs_sign * rhs.repr.significand.clone(),
                 lhs.repr.exponent,
             )),
-            Ordering::Greater => context.repr_add_large_small(lhs.repr.clone(), &rhs.repr, rhs_sign),
+            Ordering::Greater => {
+                context.repr_add_large_small(lhs.repr.clone(), &rhs.repr, rhs_sign)
+            }
             Ordering::Less => context.repr_add_small_large(lhs.repr.clone(), &rhs.repr, rhs_sign),
-        }.value()
+        }
+        .value()
     };
     FBig::new_raw(sum, context)
 }
@@ -206,7 +231,7 @@ impl<R: Round> Context<R> {
         mut exponent: isize,
         mut low: (IBig, usize),
         is_sub: bool,
-    ) -> Approximation<Repr<B>, Rounding> {
+    ) -> Rounded<Repr<B>> {
         let rnd_precision = self.precision + is_sub as usize; // use one extra digit to prevent cancellation in rounding
 
         // align to precision again
@@ -254,22 +279,22 @@ impl<R: Round> Context<R> {
 
         // perform rounding
         if low.0.is_zero() {
-            Approximation::Exact(Repr::new(significand, exponent))
+            Rounded::Exact(Repr::new(significand, exponent))
         } else {
             // By now significand should have at least full precision. After adjustment, the digits length
             // could be one more than the precision. We don't shrink the extra digit.
             let adjust = R::round_fract::<B>(&significand, low.0, low.1);
-            Approximation::Inexact(Repr::new(significand + adjust, exponent), adjust)
+            Rounded::Inexact(Repr::new(significand + adjust, exponent), adjust)
         }
     }
 
     // lhs + rhs_sign * rhs, assuming lhs.exponent >= rhs.exponent
-    pub(crate) fn repr_add_large_small<const B: Word>(
+    fn repr_add_large_small<const B: Word>(
         &self,
         mut lhs: Repr<B>,
         rhs: &Repr<B>,
         rhs_sign: Sign,
-    ) -> Approximation<Repr<B>, Rounding> {
+    ) -> Rounded<Repr<B>> {
         debug_assert!(lhs.exponent >= rhs.exponent);
 
         // use one extra digit when subtracting to prevent cancellation in rounding
@@ -353,7 +378,7 @@ impl<R: Round> Context<R> {
                 low = (IBig::ZERO, 0);
                 match rhs_sign {
                     Positive => (lhs.significand + &rhs.significand, rhs.exponent),
-                    Negative => (lhs.significand - &rhs.significand, rhs.exponent)
+                    Negative => (lhs.significand - &rhs.significand, rhs.exponent),
                 }
             };
 
@@ -361,12 +386,12 @@ impl<R: Round> Context<R> {
     }
 
     // lhs + rhs_sign * rhs, assuming lhs.exponent <= rhs.exponent
-    pub(crate) fn repr_add_small_large<const B: Word>(
+    fn repr_add_small_large<const B: Word>(
         &self,
         mut lhs: Repr<B>,
         rhs: &Repr<B>,
         rhs_sign: Sign,
-    ) -> Approximation<Repr<B>, Rounding> {
+    ) -> Rounded<Repr<B>> {
         debug_assert!(lhs.exponent <= rhs.exponent);
 
         // the following implementation should be exactly the same as `repr_add_large_small`
@@ -396,7 +421,7 @@ impl<R: Round> Context<R> {
                 low = (r, ediff);
                 match rhs_sign {
                     Positive => (lhs.significand + &rhs.significand, rhs.exponent),
-                    Negative => (lhs.significand - &rhs.significand, rhs.exponent)
+                    Negative => (lhs.significand - &rhs.significand, rhs.exponent),
                 }
             } else if ediff + rdigits > self.precision {
                 // if the shifted rhs exceeds the desired precision, align lhs and rhs to precision
@@ -421,7 +446,7 @@ impl<R: Round> Context<R> {
         &self,
         lhs: &FBig<B, R>,
         rhs: &FBig<B, R>,
-    ) -> Approximation<FBig<B, R>, Rounding> {
+    ) -> Rounded<FBig<B, R>> {
         let sum = if lhs.repr.is_zero() {
             self.repr_round(rhs.repr.clone())
         } else if rhs.repr.is_zero() {
@@ -432,7 +457,9 @@ impl<R: Round> Context<R> {
                     &lhs.repr.significand + &rhs.repr.significand,
                     lhs.repr.exponent,
                 )),
-                Ordering::Greater => self.repr_add_large_small(lhs.repr.clone(), &rhs.repr, Positive),
+                Ordering::Greater => {
+                    self.repr_add_large_small(lhs.repr.clone(), &rhs.repr, Positive)
+                }
                 Ordering::Less => self.repr_add_small_large(lhs.repr.clone(), &rhs.repr, Positive),
             }
         };
@@ -443,7 +470,7 @@ impl<R: Round> Context<R> {
         &self,
         lhs: &FBig<B, R>,
         rhs: &FBig<B, R>,
-    ) -> Approximation<FBig<B, R>, Rounding> {
+    ) -> Rounded<FBig<B, R>> {
         let sum = if lhs.repr.is_zero() {
             let mut repr = rhs.repr.clone();
             repr.significand *= Negative;
@@ -456,7 +483,9 @@ impl<R: Round> Context<R> {
                     &lhs.repr.significand - &rhs.repr.significand,
                     lhs.repr.exponent,
                 )),
-                Ordering::Greater => self.repr_add_large_small(lhs.repr.clone(), &rhs.repr, Negative),
+                Ordering::Greater => {
+                    self.repr_add_large_small(lhs.repr.clone(), &rhs.repr, Negative)
+                }
                 Ordering::Less => self.repr_add_small_large(lhs.repr.clone(), &rhs.repr, Negative),
             }
         };

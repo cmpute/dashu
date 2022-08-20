@@ -43,7 +43,7 @@ impl<const B: Word, R: Round> Display for FBig<B, R> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // print in decimal if the alternate flag is set
         if f.alternate() && B != 10 {
-            return self.to_decimal().fmt(f);
+            return self.to_decimal().value().fmt(f);
         }
 
         if self.repr.exponent < 0 {

@@ -81,7 +81,7 @@ impl IBig {
 
     /// Estimate the bounds of the binary logarithm on the magnitude.
     ///
-    /// See the documentation of [UBig::log2_bounds] for the precision behavior.
+    /// See the documentation of [UBig::log2_bounds] for details.
     ///
     /// # Panics
     ///

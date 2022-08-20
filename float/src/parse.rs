@@ -1,10 +1,9 @@
 use crate::{
     fbig::FBig,
-    repr::{Context, Repr},
+    repr::{Context, Repr, Word},
     round::Round,
 };
 use core::{num::IntErrorKind, str::FromStr};
-use dashu_int::Word;
 use dashu_int::{
     error::ParseError,
     fmt::{MAX_RADIX, MIN_RADIX},
@@ -71,16 +70,17 @@ impl<const B: Word, R: Round> FromStr for FBig<B, R> {
         let has_prefix = src.starts_with("0x") || src.starts_with("0X");
         let scale_pos = match B {
             10 => src.rfind(&['e', 'E', '@']),
-            2 => if has_prefix {
-                src.rfind(&['p', 'P', '@'])
-            } else {
-                src.rfind(&['b', 'B', '@'])
-            },
+            2 => {
+                if has_prefix {
+                    src.rfind(&['p', 'P', '@'])
+                } else {
+                    src.rfind(&['b', 'B', '@'])
+                }
+            }
             8 => src.rfind(&['o', 'O', '@']),
             16 => src.rfind(&['h', 'H', '@']),
             _ => src.rfind('@'),
         };
-
 
         // parse scale and remove the scale part from the str
         let (scale, pmarker) = if let Some(pos) = scale_pos {

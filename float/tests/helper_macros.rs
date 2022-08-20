@@ -1,5 +1,5 @@
 //! Helper macros for testing
-//! 
+//!
 //! The macros for constructing numbers rely on string parsing, so do not use
 //! these macros when testing string parsing!
 

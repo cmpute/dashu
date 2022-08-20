@@ -60,29 +60,24 @@ impl<R: Round> From<f64> for FBig<2, R> {
 
 impl<const B: Word, R: Round> FBig<B, R> {
     /// Create a floating number from a integer
+    #[deprecated] // TODO(next): implement as From trait
     #[inline]
     pub fn from_integer(integer: IBig) -> Self {
-        let repr = Repr {
-            significand: integer,
-            exponent: 0,
-        };
-        let precision = repr.digits();
-        Self {
-            repr,
-            context: Context::new(precision),
-        }
+        let repr = Repr::new(integer, 0);
+        let context = Context::new(repr.digits());
+        Self::new_raw(repr, context)
     }
 
     /// Convert the float number to decimal based exponents.
     #[inline]
-    pub fn to_decimal(&self) -> FBig<10, R> {
+    pub fn to_decimal(&self) -> Approximation<FBig<10, R>, Rounding> {
         let c: Self = self.clone();
         c.with_base::<10>()
     }
 
     /// Convert the float number to decimal based exponents.
     #[inline]
-    pub fn to_binary(&self) -> FBig<2, R> {
+    pub fn to_binary(&self) -> Approximation<FBig<2, R>, Rounding> {
         self.clone().with_base::<2>()
     }
 
@@ -90,6 +85,7 @@ impl<const B: Word, R: Round> FBig<B, R> {
     ///
     /// If the given precision is less than the previous value,
     /// it will be rounded following the rounding mode specified by the type parameter.
+    #[inline]
     pub fn with_precision(self, precision: usize) -> Approximation<Self, Rounding> {
         let new_context = Context::new(precision);
 
@@ -122,15 +118,15 @@ impl<const B: Word, R: Round> FBig<B, R> {
     /// If any rounding happens during the conversion, if will follow
     /// the rounding mode specified by the type parameter.
     #[allow(non_upper_case_globals)]
-    pub fn with_base<const NewB: Word>(self) -> FBig<NewB, R> {
+    pub fn with_base<const NewB: Word>(self) -> Approximation<FBig<NewB, R>, Rounding> {
         if NewB == B {
-            return FBig {
+            return Approximation::Exact(FBig {
                 repr: Repr {
                     significand: self.repr.significand,
                     exponent: self.repr.exponent,
                 },
                 context: self.context,
-            };
+            });
         }
         // TODO: shortcut if X is a power of NewX
 
@@ -144,13 +140,13 @@ impl<const B: Word, R: Round> FBig<B, R> {
         //        we can still use the naive one)
         let result = if self.repr.exponent == 0 {
             // direct copy if the exponent is zero
-            return FBig {
+            return Approximation::Exact(FBig {
                 repr: Repr {
                     significand: self.repr.significand,
                     exponent: 0,
                 },
                 context: Context::new(precision),
-            };
+            });
         } else if self.repr.exponent > 0 {
             // denote log with base of radix2 as lgr2, then
             // mantissa * radix1 ^ exp1
@@ -188,7 +184,7 @@ impl<const B: Word, R: Round> FBig<B, R> {
             value
         };
 
-        result.with_precision(precision).value()
+        result.with_precision(precision)
     }
 
     #[allow(non_upper_case_globals)]

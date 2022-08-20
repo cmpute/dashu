@@ -2,7 +2,7 @@ use core::{
     fmt::Debug,
     ops::{Mul, MulAssign},
 };
-use dashu_base::{Approximation::*};
+use dashu_base::Approximation::*;
 use dashu_float::{round::Rounding::*, Context};
 
 mod helper_macros;
@@ -87,6 +87,8 @@ fn test_mul_decimal() {
         (dbig!(012e1), dbig!(034e-1), dbig!(408)),
         (dbig!(0056e2), dbig!(0078e4), dbig!(4368e6)),
         (dbig!(25), dbig!(16), dbig!(4e2)),
+        (dbig!(25), dbig!(40), dbig!(1e3)),
+        (dbig!(25), dbig!(64), dbig!(16e2)),
     ];
 
     for (a, b, c) in &exact_cases {

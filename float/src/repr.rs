@@ -1,11 +1,12 @@
 use crate::{
     ibig_ext::remove_pow,
-    round::{mode, Round, Rounding},
+    round::{Round, Rounding},
     utils::{base_as_ibig, digit_len, shr_rem_radix_in_place},
 };
 use core::marker::PhantomData;
 use dashu_base::Approximation;
-use dashu_int::{DoubleWord, IBig, Sign, Word};
+use dashu_int::IBig;
+pub use dashu_int::Word;
 
 #[derive(PartialEq, Eq)]
 pub struct Repr<const BASE: Word> {
@@ -99,7 +100,23 @@ impl<const B: Word> Repr<B> {
     /// Fast over estimation of [digits][Self::digits]
     #[inline]
     pub fn digits_ub(&self) -> usize {
-        (self.significand.log2_bounds().1 / Self::BASE.log2_bounds().0) as usize + 1
+        let log = if B == 10 {
+            self.significand.log2_bounds().1 * core::f32::consts::LOG10_2
+        } else {
+            self.significand.log2_bounds().1 / Self::BASE.log2_bounds().0   
+        };
+        log as usize + 1
+    }
+
+    /// Fast under estimation of [digits][Self::digits]
+    #[inline]
+    pub fn digits_lb(&self) -> usize {
+        let log = if B == 10 {
+            self.significand.log2_bounds().0 * core::f32::consts::LOG10_2
+        } else {
+            self.significand.log2_bounds().0 / Self::BASE.log2_bounds().1
+        };
+        log as usize + 1
     }
 
     /// Create a [Repr] from significand and exponent. This
@@ -153,7 +170,10 @@ impl<R: Round> Context<R> {
     }
 
     /// Round the repr to the desired precision
-    pub(crate) fn repr_round<const B: Word>(&self, repr: Repr<B>) -> Approximation<Repr<B>, Rounding> {
+    pub(crate) fn repr_round<const B: Word>(
+        &self,
+        repr: Repr<B>,
+    ) -> Approximation<Repr<B>, Rounding> {
         assert!(repr.is_finite());
         // XXX: estimated digit length can be used here to prevent costly call to the digits()
         let digits = repr.digits();

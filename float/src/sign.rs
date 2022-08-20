@@ -1,7 +1,7 @@
-use crate::{fbig::FBig, repr::Repr, round::Round};
+use crate::{fbig::FBig, repr::{Repr, Word}, round::Round};
 use core::ops::{Mul, Neg};
 use dashu_base::Abs;
-use dashu_int::{Sign, Word};
+use dashu_int::Sign;
 
 impl<const B: Word> Neg for Repr<B> {
     type Output = Self;

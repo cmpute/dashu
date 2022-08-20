@@ -30,7 +30,6 @@ pub mod round;
 mod sign;
 mod utils;
 
-pub use dashu_int::Word;
 pub use fbig::FBig;
 pub use repr::Context;
 
