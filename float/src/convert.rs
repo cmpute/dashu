@@ -57,21 +57,27 @@ impl<R: Round> From<f64> for FBig<2, R> {
     }
 }
 
-impl<const B: Word, R: Round> FBig<B, R> {
-    /// Create a floating number from a integer
-    #[deprecated] // TODO(next): implement as From trait
+impl<const B: Word, R: Round> From<IBig> for FBig<B, R> {
     #[inline]
-    pub fn from_integer(integer: IBig) -> Self {
-        let repr = Repr::new(integer, 0);
+    fn from(n: IBig) -> Self {
+        let repr = Repr::new(n, 0);
         let context = Context::new(repr.digits());
         Self::new_raw(repr, context)
     }
+}
 
+impl<const B: Word, R: Round> From<UBig> for FBig<B, R> {
+    #[inline]
+    fn from(n: UBig) -> Self {
+        IBig::from(n).into()
+    }
+}
+
+impl<const B: Word, R: Round> FBig<B, R> {
     /// Convert the float number to decimal based exponents.
     #[inline]
     pub fn to_decimal(&self) -> Approximation<FBig<10, R>, Rounding> {
-        let c: Self = self.clone();
-        c.with_base::<10>()
+        self.clone().with_base::<10>()
     }
 
     /// Convert the float number to decimal based exponents.

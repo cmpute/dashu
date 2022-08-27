@@ -38,26 +38,32 @@ pub struct FBig<const BASE: Word = 2, RoundingMode: Round = mode::Zero> {
 impl<const B: Word, R: Round> FBig<B, R> {
     /// Create a [FBig] instance, internal use only
     #[inline]
-    pub const fn new_raw(repr: Repr<B>, context: Context<R>) -> Self {
+    pub(crate) const fn new_raw(repr: Repr<B>, context: Context<R>) -> Self {
         Self { repr, context }
+    }
+
+    /// Create a [FBig] instance from word, internal use only
+    #[inline]
+    pub(crate) const fn from_word(val: Word) -> Self {
+        Self::from_parts_const(Sign::Positive, val as _, 0)
     }
 
     const fn zero() -> Self {
         Self::new_raw(Repr::zero(), Context::new(1))
     }
-    /// [FBig] with value 0
+    /// [FBig] with value 0 and precision 1
     pub const ZERO: Self = Self::zero();
 
     const fn one() -> Self {
         Self::new_raw(Repr::one(), Context::new(1))
     }
-    /// [FBig] with value 1
+    /// [FBig] with value 1 and precision 1
     pub const ONE: Self = Self::one();
 
     const fn neg_one() -> Self {
         Self::new_raw(Repr::neg_one(), Context::new(1))
     }
-    /// [FBig] with value -1
+    /// [FBig] with value -1 and precision 1
     pub const NEG_ONE: Self = Self::neg_one();
 
     const fn inf() -> Self {

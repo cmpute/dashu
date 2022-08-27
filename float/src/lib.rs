@@ -24,6 +24,7 @@ mod error;
 mod fbig;
 mod fmt;
 mod ibig_ext;
+mod log;
 mod mul;
 mod parse;
 mod repr;

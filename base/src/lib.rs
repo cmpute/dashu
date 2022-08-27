@@ -3,11 +3,13 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 pub mod bit;
-pub mod number;
+pub mod sign;
 pub mod ring;
 pub mod approx;
+pub mod math;
 
 pub use bit::*;
-pub use number::*;
+pub use sign::*;
 pub use ring::*;
 pub use approx::*;
+pub use math::*;

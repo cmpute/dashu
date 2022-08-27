@@ -1,4 +1,4 @@
-//! Trait definitions for operations on general numbers.
+//! Trait definitions for sign related operations.
 
 /// Absolute value.
 ///

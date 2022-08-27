@@ -4,7 +4,7 @@ use crate::{
     utils::{base_as_ibig, digit_len, split_digits},
 };
 use core::marker::PhantomData;
-use dashu_base::Approximation;
+use dashu_base::{Approximation, Log2Bounds};
 use dashu_int::IBig;
 pub use dashu_int::Word;
 

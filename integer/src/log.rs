@@ -1,6 +1,6 @@
 //! Logarithm
 
-use crate::{ibig::IBig, ubig::UBig};
+use crate::{ibig::IBig, ubig::UBig, ops::Log2Bounds};
 
 impl UBig {
     /// Calculate the (truncated) logarithm of the [UBig]
@@ -25,33 +25,12 @@ impl UBig {
     pub fn ilog(&self, base: &UBig) -> usize {
         self.repr().log(base.repr()).0
     }
+}
 
-    /// Estimate the bounds of the binary logarithm.
-    ///
-    /// The result is `(lower bound, upper bound)` such that lower bound ≤ log2(self) ≤ upper bound.
-    /// The precision of the bounds is at least 8 bits (relative error < 2^-8).
-    ///
-    /// With `std` disabled, the precision is about 13 bits. With `std` enabled, the precision
-    /// will be full 23 bits.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the number is 0
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use dashu_int::UBig;
-    /// let lb3 = 1.584962500721156f32;
-    /// let (lb3_lb, lb3_ub) = UBig::from(3u8).log2_bounds();
-    /// assert!(lb3_lb <= lb3 && lb3 <= lb3_ub);
-    /// assert!((lb3 - lb3_lb) / lb3 < 1. / 256.);
-    /// assert!((lb3_ub - lb3) / lb3 <= 1. / 256.);
-    /// ```
+impl Log2Bounds for UBig {
     #[inline]
-    pub fn log2_bounds(&self) -> (f32, f32) {
-        let repr = self.repr();
-        (repr.log2_lb(), repr.log2_ub())
+    fn log2_bounds(&self) -> (f32, f32) {
+        self.repr().log2_bounds()
     }
 }
 
@@ -78,34 +57,19 @@ impl IBig {
     pub fn ilog(&self, base: &UBig) -> usize {
         self.as_sign_repr().1.log(base.repr()).0
     }
+}
 
-    /// Estimate the bounds of the binary logarithm on the magnitude.
-    ///
-    /// See the documentation of [UBig::log2_bounds] for details.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the number is 0
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use dashu_int::IBig;
-    /// let lb3 = 1.584962500721156f32;
-    /// let (lb3_lb, lb3_ub) = IBig::from(-3).log2_bounds();
-    /// assert!(lb3_lb <= lb3 && lb3 <= lb3_ub);
-    /// assert!((lb3 - lb3_lb) / lb3 < 1. / 256.);
-    /// assert!((lb3_ub - lb3) / lb3 <= 1. / 256.);
-    /// ```
+impl Log2Bounds for IBig {
     #[inline]
-    pub fn log2_bounds(&self) -> (f32, f32) {
-        let repr = self.as_sign_repr().1;
-        (repr.log2_lb(), repr.log2_ub())
+    fn log2_bounds(&self) -> (f32, f32) {
+        self.as_sign_repr().1.log2_bounds()
     }
 }
 
 pub(crate) mod repr {
     use core::cmp::Ordering;
+
+    use dashu_base::Log2Bounds;
 
     use crate::{
         arch::word::{DoubleWord, Word},
@@ -122,11 +86,6 @@ pub(crate) mod repr {
             Repr,
             TypedReprRef::{self, *},
         },
-    };
-
-    #[cfg(not(feature = "std"))]
-    use crate::math::{
-        ceil_log2_dword_fp8, ceil_log2_word_fp8, log2_dword_fp8, log2_word_fp8, max_exp_in_dword,
     };
 
     impl TypedReprRef<'_> {
@@ -173,55 +132,10 @@ pub(crate) mod repr {
             }
         }
 
-        /// Lower bound of log2(self)
-        pub fn log2_lb(self) -> f32 {
+        pub fn log2_bounds(self) -> (f32, f32) {
             match self {
-                RefSmall(dword) => {
-                    if dword == 0 {
-                        panic_invalid_log_oprand()
-                    }
-                    if dword.is_power_of_two() {
-                        // this int to float conversion is lossless
-                        return dword.trailing_zeros() as f32;
-                    }
-                    #[cfg(not(feature = "std"))]
-                    if dword < 1 << (Word::BITS / 2) {
-                        // log2_word_fp8 is not accurate when the base is too small
-                        // we first raise the base to a pow under a DoubleWord
-                        let (exp, pow) = max_exp_in_dword(dword as Word);
-                        let shift = crate::primitive::WORD_BITS - pow.leading_zeros();
-                        let est = log2_word_fp8((pow >> shift) as Word) + shift * 256;
-                        return est as f32 / (exp as f32 * 256.);
-                    }
-                    log2_dword(dword)
-                }
-                RefLarge(words) => log2_large(words),
-            }
-        }
-
-        /// Upper bound of log2(self)
-        pub fn log2_ub(self) -> f32 {
-            match self {
-                RefSmall(dword) => {
-                    if dword == 0 {
-                        panic_invalid_log_oprand()
-                    }
-                    if dword.is_power_of_two() {
-                        // this int to float conversion is lossless
-                        return dword.trailing_zeros() as f32;
-                    }
-                    #[cfg(not(feature = "std"))]
-                    if dword < 1 << (Word::BITS / 2) {
-                        // ceil_log2_word_fp8 is not accurate when the base is too small
-                        // we first raise the base to a pow under a DoubleWord
-                        let (exp, pow) = max_exp_in_dword(dword as Word);
-                        let shift = crate::primitive::WORD_BITS - pow.leading_zeros();
-                        let est = ceil_log2_word_fp8((pow >> shift) as Word) + shift * 256;
-                        return est as f32 / (exp as f32 * 256.);
-                    }
-                    ceil_log2_dword(dword)
-                }
-                RefLarge(words) => ceil_log2_large(words),
+                RefSmall(dword) => dword.log2_bounds(),
+                RefLarge(words) => log2_bounds_large(words)
             }
         }
     }
@@ -238,8 +152,8 @@ pub(crate) mod repr {
             _ => {}
         }
 
-        let log2_self = log2_dword(target);
-        let log2_base = ceil_log2_dword(base);
+        let log2_self = target.log2_bounds().0;
+        let log2_base = base.log2_bounds().1;
 
         let mut est = (log2_self / log2_base) as u32; // float to int is underestimate
         let mut est_pow = base.pow(est);
@@ -259,14 +173,14 @@ pub(crate) mod repr {
     }
 
     pub(crate) fn log_word_base(target: &[Word], base: Word) -> (usize, Repr) {
-        let log2_self = log2_large(target);
+        let log2_self = log2_bounds_large(target).0;
         let (wexp, wbase) = if base == 10 {
             // specialize for base 10, which is cached in radix_info
             (radix::RADIX10_INFO.digits_per_word, radix::RADIX10_INFO.range_per_word)
         } else {
             max_exp_in_word(base)
         };
-        let log2_wbase = ceil_log2_word(wbase);
+        let log2_wbase = wbase.log2_bounds().1;
 
         let mut est = (log2_self * wexp as f32 / log2_wbase) as usize; // est >= 1
         let mut est_pow = if est == 1 {
@@ -277,7 +191,7 @@ pub(crate) mod repr {
         .into_buffer();
         assert!(cmp_in_place(&est_pow, target).is_le());
 
-        // first proceed by multiplying wbase, which happens very rarely
+        // first proceed by multiplying wbase, which should happen very rarely
         while est_pow.len() < target.len() {
             if est_pow.len() == target.len() - 1 {
                 let target_hi = highest_dword(target);
@@ -316,8 +230,8 @@ pub(crate) mod repr {
         debug_assert!(cmp_in_place(target, base).is_ge()); // this ensures est >= 1
 
         // first estimates the result
-        let log2_self = log2_large(target);
-        let log2_base = ceil_log2_large(base);
+        let log2_self = log2_bounds_large(target).0;
+        let log2_base = log2_bounds_large(base).1;
         let mut est = (log2_self / log2_base) as usize; // float to int is underestimate
         est = est.max(1); // sometimes est can be zero due to estimation error
         let mut est_pow = if est == 1 {
@@ -346,102 +260,17 @@ pub(crate) mod repr {
     }
 
     #[inline]
-    #[cfg(not(feature = "std"))]
-    fn log2_dword(dword: DoubleWord) -> f32 {
-        log2_dword_fp8(dword) as f32 / 256.0
-    }
-
-    #[inline]
-    #[cfg(not(feature = "std"))]
-    fn ceil_log2_word(word: Word) -> f32 {
-        ceil_log2_word_fp8(word) as f32 / 256.0
-    }
-
-    #[inline]
-    #[cfg(not(feature = "std"))]
-    fn ceil_log2_dword(dword: DoubleWord) -> f32 {
-        ceil_log2_dword_fp8(dword) as f32 / 256.0
-    }
-
-    /// Adjustment required to ensure floor or ceil operation
-    const LOG2_ADJUST: f32 = 2. * f32::EPSILON;
-
-    #[cfg(feature = "std")]
-    macro_rules! log2_using_f32 {
-        ($n:ident, $ceil:literal) => {{
-            if $n.is_power_of_two() {
-                $n.trailing_zeros() as f32
-            } else {
-                const ADJUST: f32 = if $ceil {
-                    (1. + LOG2_ADJUST)
-                } else {
-                    (1. - LOG2_ADJUST)
-                };
-
-                let nbits = crate::math::bit_len($n);
-                if nbits > 24 {
-                    // 24bit integer converted to f32 is lossless
-                    let shifted = if $ceil {
-                        ($n >> (nbits - 24)) + 1
-                    } else {
-                        $n >> (nbits - 24)
-                    };
-                    let est = if shifted.is_power_of_two() {
-                        shifted.trailing_zeros() as f32
-                    } else {
-                        (shifted as f32).log2() * ADJUST
-                    };
-                    est + (nbits - 24) as f32
-                } else {
-                    ($n as f32).log2() * ADJUST
-                }
-            }
-        }};
-    }
-
-    #[inline]
-    #[cfg(feature = "std")]
-    fn log2_dword(dword: DoubleWord) -> f32 {
-        log2_using_f32!(dword, false)
-    }
-
-    #[inline]
-    #[cfg(feature = "std")]
-    fn ceil_log2_word(word: Word) -> f32 {
-        log2_using_f32!(word, true)
-    }
-
-    #[inline]
-    #[cfg(feature = "std")]
-    fn ceil_log2_dword(dword: DoubleWord) -> f32 {
-        log2_using_f32!(dword, true)
-    }
-
-    #[inline]
-    fn log2_large(words: &[Word]) -> f32 {
+    fn log2_bounds_large(words: &[Word]) -> (f32, f32) {
         // notice that the bit length can be larger than 2^24, so the result
         // cannot be exact even if the input is a power of two
         let hi = highest_dword(words);
         let rem_bits = (words.len() - 2) * WORD_BITS_USIZE;
-        let est = if hi.is_power_of_two() {
-            (hi.trailing_zeros() as usize + rem_bits) as f32
-        } else {
-            log2_dword(hi) + rem_bits as f32
-        };
-        est * (1. - LOG2_ADJUST) // ensure underesitmation
-    }
+        let (hi_lb, hi_ub) = hi.log2_bounds();
 
-    #[inline]
-    fn ceil_log2_large(words: &[Word]) -> f32 {
-        // notice that the bit length can be larger than 2^24, so the result
-        // cannot be exact even if the input is a power of two
-        let hi = highest_dword(words);
-        let rem_bits = (words.len() - 2) * WORD_BITS_USIZE;
-        let est = if hi.is_power_of_two() {
-            (hi.trailing_zeros() as usize + rem_bits) as f32
-        } else {
-            ceil_log2_dword(hi) + rem_bits as f32
-        };
-        est * (1. + LOG2_ADJUST) // ensure overestimation
+        /// Adjustment required to ensure floor or ceil operation
+        const ADJUST: f32 = 2. * f32::EPSILON;
+        let est_lb = (hi_lb + rem_bits as f32) * (1. - ADJUST);
+        let est_ub = (hi_ub + rem_bits as f32) * (1. + ADJUST);
+        (est_lb, est_ub)
     }
 }

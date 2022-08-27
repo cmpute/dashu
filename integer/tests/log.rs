@@ -1,3 +1,5 @@
+use dashu_base::Log2Bounds;
+
 mod helper_macros;
 
 #[test]
