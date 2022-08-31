@@ -68,7 +68,7 @@ impl<const B: Word, R: Round> FBig<B, R> {
 }
 
 impl<R: Round> Context<R> {
-    fn repr_div<const B: Word> (
+    pub(crate) fn repr_div<const B: Word> (
         &self,
         lhs: Repr<B>,
         rhs: &Repr<B>,
@@ -137,5 +137,15 @@ impl<R: Round> Context<R> {
             lhs.repr.clone()
         };
         self.repr_div(lhs_repr, &rhs.repr).map(|v| FBig::new_raw(v, *self))
+    }
+}
+
+// TODO: implement more variants with macros, after implementing From<primitive> for FBig
+impl<const B: Word, R: Round> Div<dashu_int::IBig> for FBig<B, R> {
+    type Output = FBig<B, R>;
+
+    #[inline]
+    fn div(self, rhs: dashu_int::IBig) -> Self::Output {
+        self / FBig::from(rhs)
     }
 }

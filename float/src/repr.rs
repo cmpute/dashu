@@ -4,7 +4,7 @@ use crate::{
     utils::{base_as_ibig, digit_len, split_digits},
 };
 use core::marker::PhantomData;
-use dashu_base::{Approximation, Log2Bounds};
+use dashu_base::{Approximation, EstimatedLog2};
 use dashu_int::IBig;
 pub use dashu_int::Word;
 
@@ -16,7 +16,9 @@ pub struct Repr<const BASE: Word> {
 
 #[derive(Clone, Copy)]
 pub struct Context<RoundingMode: Round> {
-    // TODO: let precision = 0 implies no precision bound, but when no-precision number operates with another has-precision number, the precision will be set as the other one's. This will requires us to make sure 0 value also has non-zero precision (1 will be ideal)
+    // TODO: let precision = 0 implies no precision bound, but when no-precision number operates with another has-precision number,
+    //       the precision will be set as the other one's. This will requires us to make sure 0 value also has non-zero precision (1 will be ideal)
+    //       more tests are necessary after implementing this
     pub(crate) precision: usize,
     pub(crate) _marker: PhantomData<RoundingMode>,
 }

@@ -5,4 +5,4 @@ pub use dashu_base::sign::{Abs, UnsignedAbs};
 pub use dashu_base::ring::{
     DivEuclid, DivRem, DivRemAssign, DivRemEuclid, ExtendedGcd, Gcd, RemEuclid,
 };
-pub use dashu_base::math::Log2Bounds;
+pub use dashu_base::math::EstimatedLog2;

@@ -1,4 +1,4 @@
-use super::Log2Bounds;
+use super::EstimatedLog2;
 
 // 8bit fixed point estimation of log2(x), x from 0x80 to 0xff, rounding down.
 #[cfg(not(feature = "std"))]
@@ -97,7 +97,7 @@ fn panic_log_base_0() -> ! {
 }
 
 #[cfg(not(feature = "std"))]
-impl Log2Bounds for u8 {
+impl EstimatedLog2 for u8 {
     #[inline]
     fn log2_bounds(&self) -> (f32, f32) {
         match *self {
@@ -125,7 +125,7 @@ impl Log2Bounds for u8 {
 }
 
 #[cfg(not(feature = "std"))]
-impl Log2Bounds for u16 {
+impl EstimatedLog2 for u16 {
     #[inline]
     fn log2_bounds(&self) -> (f32, f32) {
         if *self <= 0xff {
@@ -144,7 +144,7 @@ impl Log2Bounds for u16 {
 #[cfg(not(feature = "std"))]
 macro_rules! impl_log2_bounds_for_large_ints {
     ($($t:ty)*) => {$(
-        impl Log2Bounds for $t {
+        impl EstimatedLog2 for $t {
             #[inline]
             fn log2_bounds(&self) -> (f32, f32) {
                 if *self <= 0xff {
@@ -185,7 +185,7 @@ impl_log2_bounds_for_large_ints!(u32 u64 u128 usize);
 #[cfg(feature = "std")]
 macro_rules! impl_log2_bounds_for_ints {
     ($($t:ty)*) => {$(
-        impl Log2Bounds for $t {
+        impl EstimatedLog2 for $t {
             fn log2_bounds(&self) -> (f32, f32) {
                 assert!(*self > 0);
 

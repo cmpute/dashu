@@ -1,6 +1,6 @@
 use crate::{
     fbig::FBig,
-    error::check_inf_operands,
+    error::{check_inf_operands, panic_operate_with_inf},
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
 };
@@ -83,6 +83,21 @@ impl<const B: Word, R: Round> MulAssign<&FBig<B, R>> for FBig<B, R> {
     }
 }
 
+impl<const B: Word, R: Round> FBig<B, R> {
+    #[inline]
+    pub fn square(&self) -> Self {
+        if self.repr.is_infinite() {
+            panic_operate_with_inf();
+        }
+
+        let repr = Repr::new(
+            self.repr.significand.square(),
+            2 * self.repr.exponent,
+        );
+        FBig::new_raw(self.context.repr_round(repr).value(), self.context)
+    }
+}
+
 impl<R: Round> Context<R> {
     pub fn mul<const B: Word>(
         &self,
@@ -97,5 +112,33 @@ impl<R: Round> Context<R> {
             lhs.repr.exponent + rhs.repr.exponent,
         );
         self.repr_round(repr).map(|v| FBig::new_raw(v, *self))
+    }
+}
+
+// TODO: implement more variants with macros, after implementing From<primitive> for FBig
+impl<const B: Word, R: Round> Mul<FBig<B, R>> for i32 {
+    type Output = FBig<B, R>;
+
+    #[inline]
+    fn mul(self, rhs: FBig<B, R>) -> Self::Output {
+        FBig::from(dashu_int::IBig::from(self)) * rhs
+    }
+}
+
+impl<const B: Word, R: Round> Mul<dashu_int::IBig> for &FBig<B, R> {
+    type Output = FBig<B, R>;
+
+    #[inline]
+    fn mul(self, rhs: dashu_int::IBig) -> Self::Output {
+        self * FBig::from(rhs)
+    }
+}
+
+impl<const B: Word, R: Round> Mul<dashu_int::IBig> for FBig<B, R> {
+    type Output = FBig<B, R>;
+
+    #[inline]
+    fn mul(self, rhs: dashu_int::IBig) -> Self::Output {
+        self * FBig::from(rhs)
     }
 }

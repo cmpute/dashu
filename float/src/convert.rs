@@ -2,10 +2,17 @@ use crate::{
     fbig::FBig,
     ibig_ext::{log_pow, log_rem, remove_pow},
     repr::{Context, Repr},
-    round::{Round, Rounding},
+    round::{Round, Rounding, Rounded},
 };
 use dashu_base::Approximation;
 use dashu_int::{IBig, UBig, Word};
+
+impl<R: Round> Context<R> {
+    pub fn convert_int<const B: Word>(&self, n: IBig) -> FBig<B, R> {
+        let repr = Repr::<B>::new(n, 0);
+        FBig::new_raw(self.repr_round(repr).value(), *self)
+    }
+}
 
 impl<R: Round> From<f32> for FBig<2, R> {
     fn from(f: f32) -> Self {
@@ -140,9 +147,7 @@ impl<const B: Word, R: Round> FBig<B, R> {
         let precision = log_pow(&UBig::from_word(B), self.context.precision, NewB as usize);
 
         // Convert by calculating logarithm
-        // TODO: currently the calculation is done in full precision, could be vastly optimized
-        //        by using a float logarithm algorithm (when precision and exponent is large, otherwise
-        //        we can still use the naive one)
+        // TODO: refactor to call with_base_and_precision, the precision = floor(e*log_NewB(B)).
         let result = if self.repr.exponent == 0 {
             // direct copy if the exponent is zero
             return Approximation::Exact(FBig {
@@ -193,10 +198,26 @@ impl<const B: Word, R: Round> FBig<B, R> {
     }
 
     #[allow(non_upper_case_globals)]
-    fn with_base_and_precision<const NewB: Word>(self, precision: usize) -> FBig<NewB, R> {
-        // approximate power if precision is small
-        // calculate more digits if precision is high
-        unimplemented!()
+    fn with_base_and_precision<const NewB: Word>(self, precision: usize) -> Rounded<FBig<NewB, R>> {
+        let context = Context::new(precision);
+
+        const THRESHOLD_SMALL_EXP: isize = 4;
+        if self.repr.exponent.abs() <= THRESHOLD_SMALL_EXP {
+            // if the exponent is small enough
+            if self.repr.exponent >= 0 {
+                let signif = self.repr.significand * Repr::<B>::BASE.pow(self.repr.exponent as usize);
+                return Approximation::Exact(FBig::new_raw(Repr::new( signif, 0), context))
+            } else {
+                let num = Repr::new(self.repr.significand, 0);
+                let den = Repr::new(Repr::<B>::BASE.pow(-self.repr.exponent as usize), 0);
+                return context.repr_div(num, &den).map(|v| FBig::new_raw(v, context));
+            }
+        } else {
+            // exp_f = self.repr.exponent * log(B) / log(NewB)
+            // exp = trunc(exp_f)
+            // signif = self.repr.significand * exp(log(NewB) * fract(exp_f))
+            unimplemented!()
+        }
     }
 
     // TODO: let all these to_* functions return `Approximation`

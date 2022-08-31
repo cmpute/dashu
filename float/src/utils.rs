@@ -48,7 +48,8 @@ pub fn shl_digits_in_place<const B: Word>(value: &mut IBig, exp: usize) {
     }
 }
 
-// TODO: shr on ibig is different from shl, need to fix this
+// TODO: shr on ibig is different for positive and negative numbers, need to fix this!!!
+//       (for shl, the behavior is consistent with pos and neg numbers)
 
 /// "Right shifting" in given radix, i.e. divide by a power of radix
 #[inline]

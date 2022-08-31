@@ -1,6 +1,6 @@
 //! Logarithm
 
-use crate::{ibig::IBig, ubig::UBig, ops::Log2Bounds};
+use crate::{ibig::IBig, ubig::UBig, ops::EstimatedLog2};
 
 impl UBig {
     /// Calculate the (truncated) logarithm of the [UBig]
@@ -27,7 +27,7 @@ impl UBig {
     }
 }
 
-impl Log2Bounds for UBig {
+impl EstimatedLog2 for UBig {
     #[inline]
     fn log2_bounds(&self) -> (f32, f32) {
         self.repr().log2_bounds()
@@ -59,7 +59,7 @@ impl IBig {
     }
 }
 
-impl Log2Bounds for IBig {
+impl EstimatedLog2 for IBig {
     #[inline]
     fn log2_bounds(&self) -> (f32, f32) {
         self.as_sign_repr().1.log2_bounds()
@@ -69,7 +69,7 @@ impl Log2Bounds for IBig {
 pub(crate) mod repr {
     use core::cmp::Ordering;
 
-    use dashu_base::Log2Bounds;
+    use dashu_base::EstimatedLog2;
 
     use crate::{
         arch::word::{DoubleWord, Word},

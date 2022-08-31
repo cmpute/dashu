@@ -1,4 +1,4 @@
-use dashu_base::Log2Bounds;
+use dashu_base::EstimatedLog2;
 
 mod helper_macros;
 
