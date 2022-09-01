@@ -57,7 +57,7 @@ impl UBig {
     /// Get the raw representation in [Word][crate::Word]s.
     ///
     /// If the number is zero, then empty slice will be returned.
-    /// 
+    ///
     /// # Examples
     ///
     /// ```
@@ -73,7 +73,7 @@ impl UBig {
     }
 
     /// Create a UBig from a single [Word][crate::Word].
-    /// 
+    ///
     /// # Examples
     ///
     /// ```
@@ -89,7 +89,7 @@ impl UBig {
     }
 
     /// Create a UBig from a [DoubleWord][crate::DoubleWord].
-    /// 
+    ///
     /// # Examples
     ///
     /// ```
@@ -105,7 +105,7 @@ impl UBig {
     }
 
     /// Convert a sequence of [Word][crate::Word]s into a UBig
-    /// 
+    ///
     /// # Examples
     ///
     /// ```

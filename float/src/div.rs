@@ -1,8 +1,8 @@
 use crate::{
-    fbig::FBig,
     error::check_inf_operands,
+    fbig::FBig,
     repr::{Context, Repr, Word},
-    round::{Rounded, Round},
+    round::{Round, Rounded},
     utils::{digit_len, shl_digits_in_place},
 };
 use core::ops::{Div, DivAssign};
@@ -68,11 +68,7 @@ impl<const B: Word, R: Round> FBig<B, R> {
 }
 
 impl<R: Round> Context<R> {
-    pub(crate) fn repr_div<const B: Word> (
-        &self,
-        lhs: Repr<B>,
-        rhs: &Repr<B>,
-    ) -> Rounded<Repr<B>> {
+    pub(crate) fn repr_div<const B: Word>(&self, lhs: Repr<B>, rhs: &Repr<B>) -> Rounded<Repr<B>> {
         check_inf_operands(&lhs, &rhs);
 
         // this method don't deal with the case where lhs significand is too large
@@ -85,13 +81,11 @@ impl<R: Round> Context<R> {
         }
 
         let ddigits = digit_len::<B>(&rhs.significand);
-        if q.is_zero() { // lhs.significand < rhs.significand
+        if q.is_zero() {
+            // lhs.significand < rhs.significand
             let rdigits = digit_len::<B>(&r); // rdigits <= ddigits
             let shift = ddigits + self.precision - rdigits;
-            shl_digits_in_place::<B>(
-                &mut r,
-                shift,
-            );
+            shl_digits_in_place::<B>(&mut r, shift);
             e -= shift as isize;
             let (q0, r0) = r.div_rem(&rhs.significand);
             q = q0;
@@ -101,16 +95,10 @@ impl<R: Round> Context<R> {
             if ndigits < ddigits + self.precision {
                 // TODO: here the operations can be optimized: 1. prevent double power, 2. q += q0 can be |= if B is power of 2
                 let shift = ddigits + self.precision - ndigits;
-                shl_digits_in_place::<B>(
-                    &mut q,
-                    shift,
-                );
-                shl_digits_in_place::<B>(
-                    &mut r,
-                    shift,
-                );
+                shl_digits_in_place::<B>(&mut q, shift);
+                shl_digits_in_place::<B>(&mut r, shift);
                 e -= shift as isize;
-    
+
                 let (q0, r0) = r.div_rem(&rhs.significand);
                 q += q0;
                 r = r0;
@@ -125,18 +113,19 @@ impl<R: Round> Context<R> {
         }
     }
 
-    pub fn div<const B: Word>(
-        &self,
-        lhs: &FBig<B, R>,
-        rhs: &FBig<B, R>,
-    ) -> Rounded<FBig<B, R>> {
-        let lhs_repr = if !lhs.repr.is_zero() && lhs.repr.digits_ub() > rhs.repr.digits_lb() + self.precision {
+    pub fn div<const B: Word>(&self, lhs: &FBig<B, R>, rhs: &FBig<B, R>) -> Rounded<FBig<B, R>> {
+        let lhs_repr = if !lhs.repr.is_zero()
+            && lhs.repr.digits_ub() > rhs.repr.digits_lb() + self.precision
+        {
             // shrink lhs if it's larger than necessary
-            Self::new(rhs.repr.digits() + self.precision).repr_round(lhs.repr.clone()).value()
+            Self::new(rhs.repr.digits() + self.precision)
+                .repr_round(lhs.repr.clone())
+                .value()
         } else {
             lhs.repr.clone()
         };
-        self.repr_div(lhs_repr, &rhs.repr).map(|v| FBig::new_raw(v, *self))
+        self.repr_div(lhs_repr, &rhs.repr)
+            .map(|v| FBig::new_raw(v, *self))
     }
 }
 

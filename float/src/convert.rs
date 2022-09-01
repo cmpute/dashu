@@ -2,7 +2,7 @@ use crate::{
     fbig::FBig,
     ibig_ext::{log_pow, log_rem, remove_pow},
     repr::{Context, Repr},
-    round::{Round, Rounding, Rounded},
+    round::{Round, Rounded, Rounding},
 };
 use dashu_base::Approximation;
 use dashu_int::{IBig, UBig, Word};
@@ -205,12 +205,15 @@ impl<const B: Word, R: Round> FBig<B, R> {
         if self.repr.exponent.abs() <= THRESHOLD_SMALL_EXP {
             // if the exponent is small enough
             if self.repr.exponent >= 0 {
-                let signif = self.repr.significand * Repr::<B>::BASE.pow(self.repr.exponent as usize);
-                return Approximation::Exact(FBig::new_raw(Repr::new( signif, 0), context))
+                let signif =
+                    self.repr.significand * Repr::<B>::BASE.pow(self.repr.exponent as usize);
+                return Approximation::Exact(FBig::new_raw(Repr::new(signif, 0), context));
             } else {
                 let num = Repr::new(self.repr.significand, 0);
                 let den = Repr::new(Repr::<B>::BASE.pow(-self.repr.exponent as usize), 0);
-                return context.repr_div(num, &den).map(|v| FBig::new_raw(v, context));
+                return context
+                    .repr_div(num, &den)
+                    .map(|v| FBig::new_raw(v, context));
             }
         } else {
             // exp_f = self.repr.exponent * log(B) / log(NewB)

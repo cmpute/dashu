@@ -1,11 +1,10 @@
-
 use dashu_base::EstimatedLog2;
 use dashu_int::IBig;
 
 use crate::{
     fbig::FBig,
     repr::{Context, Word},
-    round::{Round, Rounded}
+    round::{Round, Rounded},
 };
 
 impl<const B: Word, R: Round> EstimatedLog2 for FBig<B, R> {
@@ -37,7 +36,7 @@ impl<const B: Word, R: Round> FBig<B, R> {
 
 impl<R: Round> Context<R> {
     /// Calculate log(2)
-    /// 
+    ///
     /// The precision of the output will be larger than self.precision
     #[inline]
     fn ln2<const B: Word>(&self) -> FBig<B, R> {
@@ -48,7 +47,7 @@ impl<R: Round> Context<R> {
     }
 
     /// Calculate log(2)
-    /// 
+    ///
     /// The precision of the output will be larger than self.precision
     #[inline]
     fn ln10<const B: Word>(&self) -> FBig<B, R> {
@@ -58,7 +57,7 @@ impl<R: Round> Context<R> {
     }
 
     /// Calculate log(B), for internal use only
-    /// 
+    ///
     /// The precision of the output will be larger than self.precision
     #[inline]
     pub(crate) fn ln_base<const B: Word>(&self) -> FBig<B, R> {
@@ -66,28 +65,30 @@ impl<R: Round> Context<R> {
             2 => self.ln2(),
             10 => self.ln10(),
             i if i.is_power_of_two() => self.ln2() * i.trailing_zeros(),
-            _ => self.ln(&FBig::from_parts_const(dashu_int::Sign::Positive, B as _, 0)).value()
+            _ => self
+                .ln(&FBig::from_parts_const(dashu_int::Sign::Positive, B as _, 0))
+                .value(),
         }
     }
 
     /// Calculate L(n) = acoth(n) = atanh(1/n) = 1/2 log((n+1)/(n-1))
-    /// 
+    ///
     /// This method is intended to be used in logarithm calculation,
     /// so the precision of the output will be larger than desired precision.
     fn iacoth<const B: Word>(&self, n: IBig) -> FBig<B, R> {
-        /* 
+        /*
          * use Maclaurin series:
          *       1    1     n+1             1
          * atanh(—) = — log(———) =  Σ  ———————————
          *       n    2     n-1    i≥0 n²ⁱ⁺¹(2i+1)
-         * 
+         *
          * Therefore to achieve precision B^p, the series should be stopped at
          *    n²ⁱ⁺¹(2i+1) / n >= B^p
          * => 2i*ln(n) + ln(2i+1) >= p ln(B)
          * => 2i*ln(n) >= p ln(B)
          * => 2i >= p/log_B(n)
          * let k = 2i + 1, we choose max{k} = p/log_B(n) + 1
-         * 
+         *
          * There will be i summations when calculating the series, to prevent
          * loss of significant, we needs log_B(i) guard digits.
          *    log_B[(p/log_B(n) - 1) / 2]
@@ -183,25 +184,49 @@ mod tests {
 
         let context = Context::<mode::Zero>::new(40);
         let decimal_6 = context.iacoth::<10>(6.into()).with_precision(40).value();
-        assert_eq!(decimal_6.repr.significand, IBig::from_str_radix("1682361183106064652522967051084960450557", 10).unwrap());
+        assert_eq!(
+            decimal_6.repr.significand,
+            IBig::from_str_radix("1682361183106064652522967051084960450557", 10).unwrap()
+        );
 
         let context = Context::<mode::Zero>::new(201);
         let binary_6 = context.iacoth::<2>(6.into()).with_precision(201).value();
-        assert_eq!(binary_6.repr.significand, IBig::from_str_radix("2162760151454160450909229890833066944953539957685348083415205", 10).unwrap());
+        assert_eq!(
+            binary_6.repr.significand,
+            IBig::from_str_radix(
+                "2162760151454160450909229890833066944953539957685348083415205",
+                10
+            )
+            .unwrap()
+        );
     }
 
     #[test]
     fn test_ln2_ln10() {
         let context = Context::<mode::Zero>::new(45);
         let decimal_ln2 = context.ln2::<10>().with_precision(45).value();
-        assert_eq!(decimal_ln2.repr.significand, IBig::from_str_radix("693147180559945309417232121458176568075500134", 10).unwrap());
+        assert_eq!(
+            decimal_ln2.repr.significand,
+            IBig::from_str_radix("693147180559945309417232121458176568075500134", 10).unwrap()
+        );
         let decimal_ln10 = context.ln10::<10>().with_precision(45).value();
-        assert_eq!(decimal_ln10.repr.significand, IBig::from_str_radix("230258509299404568401799145468436420760110148", 10).unwrap());
+        assert_eq!(
+            decimal_ln10.repr.significand,
+            IBig::from_str_radix("230258509299404568401799145468436420760110148", 10).unwrap()
+        );
 
         let context = Context::<mode::Zero>::new(180);
         let binary_ln2 = context.ln2::<2>().with_precision(180).value();
-        assert_eq!(binary_ln2.repr.significand, IBig::from_str_radix("1062244963371879310175186301324412638028404515790072203", 10).unwrap());
+        assert_eq!(
+            binary_ln2.repr.significand,
+            IBig::from_str_radix("1062244963371879310175186301324412638028404515790072203", 10)
+                .unwrap()
+        );
         let binary_ln10 = context.ln10::<2>().with_precision(180).value();
-        assert_eq!(binary_ln10.repr.significand, IBig::from_str_radix("882175346869410758689845931257775553286341791676474847", 10).unwrap());
+        assert_eq!(
+            binary_ln10.repr.significand,
+            IBig::from_str_radix("882175346869410758689845931257775553286341791676474847", 10)
+                .unwrap()
+        );
     }
 }

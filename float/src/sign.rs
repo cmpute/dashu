@@ -1,12 +1,20 @@
-use crate::{fbig::FBig, repr::{Repr, Word, Context}, round::Round};
-use core::ops::{Mul, Neg, MulAssign};
+use crate::{
+    fbig::FBig,
+    repr::{Context, Repr, Word},
+    round::Round,
+};
+use core::ops::{Mul, MulAssign, Neg};
 use dashu_base::Abs;
-use dashu_int::{Sign, IBig};
+use dashu_int::{IBig, Sign};
 
 impl<const B: Word, R: Round> FBig<B, R> {
     pub const fn signum(&self) -> Self {
         let significand = if self.repr.significand.is_zero() && self.repr.exponent != 0 {
-            if self.repr.exponent > 0 { IBig::ONE } else { IBig::NEG_ONE }
+            if self.repr.exponent > 0 {
+                IBig::ONE
+            } else {
+                IBig::NEG_ONE
+            }
         } else {
             self.repr.significand.signum()
         };

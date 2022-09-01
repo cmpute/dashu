@@ -1,6 +1,6 @@
 use crate::{
-    fbig::FBig,
     error::{check_inf_operands, panic_operate_with_inf},
+    fbig::FBig,
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
 };
@@ -90,20 +90,13 @@ impl<const B: Word, R: Round> FBig<B, R> {
             panic_operate_with_inf();
         }
 
-        let repr = Repr::new(
-            self.repr.significand.square(),
-            2 * self.repr.exponent,
-        );
+        let repr = Repr::new(self.repr.significand.square(), 2 * self.repr.exponent);
         FBig::new_raw(self.context.repr_round(repr).value(), self.context)
     }
 }
 
 impl<R: Round> Context<R> {
-    pub fn mul<const B: Word>(
-        &self,
-        lhs: &FBig<B, R>,
-        rhs: &FBig<B, R>,
-    ) -> Rounded<FBig<B, R>> {
+    pub fn mul<const B: Word>(&self, lhs: &FBig<B, R>, rhs: &FBig<B, R>) -> Rounded<FBig<B, R>> {
         check_inf_operands(&lhs.repr, &rhs.repr);
 
         // TODO: shrink lhs and rhs to at most double the precision before mul

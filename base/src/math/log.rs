@@ -106,7 +106,7 @@ impl EstimatedLog2 for u8 {
             i if i.is_power_of_two() => {
                 let log = self.trailing_zeros() as f32;
                 (log, log)
-            },
+            }
             3 => (1.5849625, 1.5849626),
             i if i < 16 => {
                 let pow = (i as u16).pow(4);
@@ -196,7 +196,7 @@ macro_rules! impl_log2_bounds_for_ints {
                     /// Adjustment required to ensure floor or ceil operation
                     const ADJUST_UP: f32 = 1. + 2. * f32::EPSILON;
                     const ADJUST_DOWN: f32 = 1. - 2. * f32::EPSILON;
-        
+
                     let nbits = Self::BITS - self.leading_zeros();
                     if nbits <= 24 {
                         // 24bit integer converted to f32 is lossless
@@ -206,7 +206,7 @@ macro_rules! impl_log2_bounds_for_ints {
                         let shifted = (self >> (nbits - 24)) as f32;
                         let est_lb = shifted.log2() * ADJUST_DOWN;
                         let est_ub = (shifted + 1.).log2() * ADJUST_UP;
-        
+
                         let shift = (nbits - 24) as f32;
                         (est_lb + shift, est_ub + shift)
                     }

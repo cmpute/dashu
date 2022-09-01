@@ -27,11 +27,8 @@ fn test_ubig() {
     assert_eq!(ubig!(abcdef base 16), UBig::from(0xabcdefu32));
     assert_eq!(
         ubig!(123456789012345678901234567890123456789012345678901234567890 base 16),
-        UBig::from_str_radix(
-            "123456789012345678901234567890123456789012345678901234567890",
-            16
-        )
-        .unwrap()
+        UBig::from_str_radix("123456789012345678901234567890123456789012345678901234567890", 16)
+            .unwrap()
     );
     assert_eq!(
         ubig!(1234567890_1234567890_1234567890_1234567890_1234567890 base 16),
@@ -39,14 +36,8 @@ fn test_ubig() {
     );
 
     // other radix tests
-    assert_eq!(
-        ubig!(a3gp1 base 32),
-        UBig::from_str_radix("a3gp1", 32).unwrap()
-    );
-    assert_eq!(
-        ubig!(13agp base 32),
-        UBig::from_str_radix("13agp", 32).unwrap()
-    );
+    assert_eq!(ubig!(a3gp1 base 32), UBig::from_str_radix("a3gp1", 32).unwrap());
+    assert_eq!(ubig!(13agp base 32), UBig::from_str_radix("13agp", 32).unwrap());
 
     // const test
     const _: UBig = ubig!(0);
@@ -101,62 +92,32 @@ fn test_ibig() {
     assert_eq!(ibig!(-abcdef base 16), IBig::from(-0xabcdef));
     assert_eq!(
         ibig!(123456789012345678901234567890123456789012345678901234567890 base 16),
-        IBig::from_str_radix(
-            "123456789012345678901234567890123456789012345678901234567890",
-            16
-        )
-        .unwrap()
+        IBig::from_str_radix("123456789012345678901234567890123456789012345678901234567890", 16)
+            .unwrap()
     );
     assert_eq!(
         ibig!(+123456789012345678901234567890123456789012345678901234567890 base 16),
-        IBig::from_str_radix(
-            "+123456789012345678901234567890123456789012345678901234567890",
-            16
-        )
-        .unwrap()
+        IBig::from_str_radix("+123456789012345678901234567890123456789012345678901234567890", 16)
+            .unwrap()
     );
     assert_eq!(
         ibig!(-123456789012345678901234567890123456789012345678901234567890 base 16),
-        IBig::from_str_radix(
-            "-123456789012345678901234567890123456789012345678901234567890",
-            16
-        )
-        .unwrap()
+        IBig::from_str_radix("-123456789012345678901234567890123456789012345678901234567890", 16)
+            .unwrap()
     );
     assert_eq!(
         ibig!(-1234567890_1234567890_1234567890_1234567890_1234567890 base 16),
-        IBig::from_str_radix(
-            "-1234567890_1234567890_1234567890_1234567890_1234567890",
-            16
-        )
-        .unwrap()
+        IBig::from_str_radix("-1234567890_1234567890_1234567890_1234567890_1234567890", 16)
+            .unwrap()
     );
 
     // other radix tests
-    assert_eq!(
-        ibig!(a3gp1 base 32),
-        IBig::from_str_radix("a3gp1", 32).unwrap()
-    );
-    assert_eq!(
-        ibig!(+a3gp1 base 32),
-        IBig::from_str_radix("+a3gp1", 32).unwrap()
-    );
-    assert_eq!(
-        ibig!(-a3gp1 base 32),
-        IBig::from_str_radix("-a3gp1", 32).unwrap()
-    );
-    assert_eq!(
-        ibig!(13agp base 32),
-        IBig::from_str_radix("13agp", 32).unwrap()
-    );
-    assert_eq!(
-        ibig!(+13agp base 32),
-        IBig::from_str_radix("+13agp", 32).unwrap()
-    );
-    assert_eq!(
-        ibig!(-13agp base 32),
-        IBig::from_str_radix("-13agp", 32).unwrap()
-    );
+    assert_eq!(ibig!(a3gp1 base 32), IBig::from_str_radix("a3gp1", 32).unwrap());
+    assert_eq!(ibig!(+a3gp1 base 32), IBig::from_str_radix("+a3gp1", 32).unwrap());
+    assert_eq!(ibig!(-a3gp1 base 32), IBig::from_str_radix("-a3gp1", 32).unwrap());
+    assert_eq!(ibig!(13agp base 32), IBig::from_str_radix("13agp", 32).unwrap());
+    assert_eq!(ibig!(+13agp base 32), IBig::from_str_radix("+13agp", 32).unwrap());
+    assert_eq!(ibig!(-13agp base 32), IBig::from_str_radix("-13agp", 32).unwrap());
 
     // const test
     const _: IBig = ibig!(0);

@@ -42,7 +42,7 @@ fn test_div_binary() {
         (fbig!(0x1000), fbig!(0x10), fbig!(0x100)),
         (fbig!(0x1000), fbig!(-0x10), fbig!(-0x100)),
         (fbig!(-0xffff), fbig!(-0xff), fbig!(0x101)),
-        (fbig!(0x1b), fbig!(0x3), fbig!(0x9))
+        (fbig!(0x1b), fbig!(0x3), fbig!(0x9)),
     ];
 
     for (a, b, c) in &exact_cases {
@@ -86,7 +86,7 @@ fn test_div_decimal() {
         (dbig!(1000), dbig!(10), dbig!(100)),
         (dbig!(1000), dbig!(-10), dbig!(-100)),
         (dbig!(-9999), dbig!(-99), dbig!(101)),
-        (dbig!(27), dbig!(3), dbig!(9))
+        (dbig!(27), dbig!(3), dbig!(9)),
     ];
 
     for (a, b, c) in &exact_cases {

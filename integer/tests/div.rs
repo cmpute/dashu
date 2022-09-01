@@ -339,7 +339,7 @@ fn test_div_rem_ibig_signed() {
     assert_eq!(ibig!(-23).div_rem(&(-10i8)), (ibig!(2), -3));
     assert_eq!((&ibig!(-23)).div_rem(-10i8), (ibig!(2), -3));
     assert_eq!((&ibig!(-23)).div_rem(&(-10i8)), (ibig!(2), -3));
-    
+
     let mut x = ibig!(-23);
     assert_eq!(x.div_rem_assign(-10i8), ibig!(-3));
     assert_eq!(x, ibig!(2));

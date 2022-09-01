@@ -1,4 +1,4 @@
-use dashu_int::{IBig, Sign, UBig, Word, DoubleWord};
+use dashu_int::{DoubleWord, IBig, Sign, UBig, Word};
 use proc_macro2::{Delimiter, Group, Literal, Punct, Spacing, TokenStream, TokenTree};
 use quote::quote;
 

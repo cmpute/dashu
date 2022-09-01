@@ -1,6 +1,6 @@
 use core::cmp::Ordering;
 use core::ops::{Add, AddAssign};
-use dashu_base::{UnsignedAbs, Approximation};
+use dashu_base::{Approximation, UnsignedAbs};
 use dashu_int::{IBig, Sign, UBig, Word};
 
 /// Built-in rounding modes of the floating numbers.

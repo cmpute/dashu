@@ -9,7 +9,7 @@ pub trait EstimatedLog2 {
     ///
     /// With `std` disabled, the precision is about 13 bits. With `std` enabled, the precision
     /// will be full 23 bits.
-    /// 
+    ///
     /// For negative values, the logarithm is calculated based on its absolute value.
     ///
     /// # Panics
@@ -20,7 +20,7 @@ pub trait EstimatedLog2 {
     ///
     /// ```
     /// use dashu_base::EstimatedLog2;
-    /// 
+    ///
     /// let lb3 = 1.584962500721156f32;
     /// let (lb3_lb, lb3_ub) = 3u8.log2_bounds();
     /// assert!(lb3_lb <= lb3 && lb3 <= lb3_ub);

@@ -127,10 +127,10 @@ impl UBig {
     }
 
     /// Clear the high bits from (n+1)-th bit.
-    /// 
+    ///
     /// This operation is equivalent to getting the lowest n bits on the integer
     /// i.e. `self &= ((1 << n) - 1)`.
-    /// 
+    ///
     /// # Examples
     ///
     /// ```
@@ -327,20 +327,22 @@ mod repr {
                         Repr::from_dword(dword)
                     }
                 }
-                Large(buffer) => clear_high_bits_large(buffer, n)
+                Large(buffer) => clear_high_bits_large(buffer, n),
             }
         }
 
         pub fn split_bits(self, n: usize) -> (Repr, Repr) {
             match self {
-                Small(dword) => if n < DWORD_BITS_USIZE {
-                    (
-                        Repr::from_dword(dword & ones_dword(n as u32)),
-                        Repr::from_dword(dword >> n),
-                    )
-                } else {
-                    (Repr::from_dword(dword), Repr::zero())
-                },
+                Small(dword) => {
+                    if n < DWORD_BITS_USIZE {
+                        (
+                            Repr::from_dword(dword & ones_dword(n as u32)),
+                            Repr::from_dword(dword >> n),
+                        )
+                    } else {
+                        (Repr::from_dword(dword), Repr::zero())
+                    }
+                }
                 Large(buffer) => {
                     if n == 0 {
                         (Repr::zero(), Repr::from_buffer(buffer))
@@ -349,7 +351,7 @@ mod repr {
                         let lo = clear_high_bits_large(buffer, n);
                         (lo, hi)
                     }
-                },
+                }
             }
         }
     }

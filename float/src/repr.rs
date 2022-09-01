@@ -105,7 +105,7 @@ impl<const B: Word> Repr<B> {
         let log = if B == 10 {
             self.significand.log2_bounds().1 * core::f32::consts::LOG10_2
         } else {
-            self.significand.log2_bounds().1 / Self::BASE.log2_bounds().0   
+            self.significand.log2_bounds().1 / Self::BASE.log2_bounds().0
         };
         log as usize + 1
     }
@@ -186,10 +186,7 @@ impl<R: Round> Context<R> {
             let shift = digits - self.precision;
             let (signif_hi, signif_lo) = split_digits::<B>(significand, shift);
             let adjust = R::round_fract::<B>(&signif_hi, signif_lo, shift);
-            Approximation::Inexact(
-                Repr::new(signif_hi + adjust, exponent + shift as isize),
-                adjust,
-            )
+            Approximation::Inexact(Repr::new(signif_hi + adjust, exponent + shift as isize), adjust)
         } else {
             Approximation::Exact(repr)
         }

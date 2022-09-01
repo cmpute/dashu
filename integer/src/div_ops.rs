@@ -232,7 +232,7 @@ macro_rules! impl_divrem_with_primitive {
                 (q, r.try_into().unwrap())
             }
         }
-    }
+    };
 }
 
 macro_rules! impl_div_primitive_with_ubig {

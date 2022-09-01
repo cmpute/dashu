@@ -137,9 +137,9 @@ pub fn split_digits<const B: Word>(value: IBig, pos: usize) -> (IBig, IBig) {
                 let (q, rem2) = q.div_rem(IBig::from(5).pow(pos));
                 let rem = (rem2 << pos) + rem1;
                 (q, rem)
-            },
+            }
             i if i.is_power_of_two() => split_bits(value, pos * i.trailing_zeros() as usize),
-            _ => value.div_rem(base_as_ibig::<B>().pow(pos))
+            _ => value.div_rem(base_as_ibig::<B>().pow(pos)),
         }
     } else {
         (value, IBig::ZERO)

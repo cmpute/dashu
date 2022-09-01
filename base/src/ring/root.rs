@@ -319,14 +319,8 @@ mod tests {
 
     #[test]
     fn test_sqrt() {
-        assert_eq!(
-            u64::MAX.sqrt_rem(),
-            (u32::MAX as u64, (u32::MAX as u64) * 2)
-        );
-        assert_eq!(
-            u128::MAX.sqrt_rem(),
-            (u64::MAX as u128, (u64::MAX as u128) * 2)
-        );
+        assert_eq!(u64::MAX.sqrt_rem(), (u32::MAX as u64, (u32::MAX as u64) * 2));
+        assert_eq!(u128::MAX.sqrt_rem(), (u64::MAX as u128, (u64::MAX as u128) * 2));
 
         macro_rules! random_case {
             ($T:ty) => {
@@ -347,10 +341,7 @@ mod tests {
     #[test]
     fn test_cbrt() {
         assert_eq!(u64::MAX.cbrt_rem(), (2642245, 19889396695490));
-        assert_eq!(
-            u128::MAX.cbrt_rem(),
-            (6981463658331, 81751874631114922977532764)
-        );
+        assert_eq!(u128::MAX.cbrt_rem(), (6981463658331, 81751874631114922977532764));
 
         macro_rules! random_case {
             ($T:ty) => {

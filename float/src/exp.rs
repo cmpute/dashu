@@ -1,5 +1,9 @@
+use crate::{
+    fbig::FBig,
+    repr::{Context, Word},
+    round::{Round, Rounded},
+};
 use dashu_int::IBig;
-use crate::{round::{Round, Rounded}, repr::{Word, Context}, fbig::FBig};
 
 impl<R: Round> Context<R> {
     pub fn powi<const B: Word>(&self, x: &IBig) -> Rounded<FBig<B, R>> {

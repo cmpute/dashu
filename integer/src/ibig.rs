@@ -19,7 +19,7 @@ use crate::{
 /// assert_eq!(mem::size_of::<IBig>(), mem::size_of::<UBig>());
 /// assert_eq!(mem::size_of::<IBig>(), mem::size_of::<Option<IBig>>());
 /// ```
-/// 
+///
 /// # Examples
 ///
 /// ```
@@ -51,7 +51,7 @@ impl IBig {
     /// Get the raw representation in [Word][crate::Word]s.
     ///
     /// If the number is zero, then empty slice will be returned.
-    /// 
+    ///
     /// # Examples
     ///
     /// ```
@@ -113,7 +113,7 @@ impl IBig {
     }
 
     /// Create an IBig from a [Sign] and a [DoubleWord][crate::DoubleWord]
-    /// 
+    ///
     /// # Examples
     ///
     /// ```

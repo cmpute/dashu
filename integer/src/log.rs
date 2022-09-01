@@ -1,6 +1,6 @@
 //! Logarithm
 
-use crate::{ibig::IBig, ubig::UBig, ops::EstimatedLog2};
+use crate::{ibig::IBig, ops::EstimatedLog2, ubig::UBig};
 
 impl UBig {
     /// Calculate the (truncated) logarithm of the [UBig]
@@ -135,7 +135,7 @@ pub(crate) mod repr {
         pub fn log2_bounds(self) -> (f32, f32) {
             match self {
                 RefSmall(dword) => dword.log2_bounds(),
-                RefLarge(words) => log2_bounds_large(words)
+                RefLarge(words) => log2_bounds_large(words),
             }
         }
     }

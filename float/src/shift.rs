@@ -1,5 +1,5 @@
+use crate::{fbig::FBig, repr::Word, round::Round};
 use core::ops::{Shl, ShlAssign, Shr, ShrAssign};
-use crate::{round::{Round}, repr::Word, fbig::FBig};
 
 impl<const B: Word, R: Round> Shl<usize> for FBig<B, R> {
     type Output = Self;

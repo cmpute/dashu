@@ -29,7 +29,7 @@ macro_rules! impl_binop_with_primitive {
                 self.$method(<$t>::from(rhs)).try_into().unwrap()
             }
         }
-        
+
         impl<'r> $trait<&'r $target> for $t {
             type Output = $omethod;
             #[inline]
@@ -70,7 +70,7 @@ macro_rules! impl_commutative_binop_with_primitive {
                 <$t>::from(*self).$method(rhs).try_into().unwrap()
             }
         }
-        
+
         impl<'r> $trait<&'r $t> for $target {
             type Output = $omethod;
             #[inline]
@@ -460,11 +460,11 @@ macro_rules! forward_ibig_ubig_binop_to_repr {
 }
 
 pub(crate) use debug_assert_zero;
-pub(crate) use impl_binop_with_primitive;
-pub(crate) use impl_commutative_binop_with_primitive;
-pub(crate) use impl_binop_assign_with_primitive;
-pub(crate) use impl_binop_assign_by_taking;
 pub(crate) use forward_ibig_binop_to_repr;
 pub(crate) use forward_ibig_ubig_binop_to_repr;
 pub(crate) use forward_ubig_binop_to_repr;
 pub(crate) use forward_ubig_ibig_binop_to_repr;
+pub(crate) use impl_binop_assign_by_taking;
+pub(crate) use impl_binop_assign_with_primitive;
+pub(crate) use impl_binop_with_primitive;
+pub(crate) use impl_commutative_binop_with_primitive;

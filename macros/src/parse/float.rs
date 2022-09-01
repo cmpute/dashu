@@ -2,7 +2,7 @@ use super::int::{quote_sign, quote_words};
 use core::str::FromStr;
 
 use dashu_float::{DBig, FBig};
-use dashu_int::{Sign, DoubleWord, Word};
+use dashu_int::{DoubleWord, Sign, Word};
 use proc_macro2::TokenStream;
 use quote::quote;
 
@@ -13,7 +13,9 @@ fn panic_fbig_syntax() -> ! {
 // TODO: support arbitrary base?
 pub fn parse_binary_float(input: TokenStream) -> TokenStream {
     let mut value_str = String::new();
-    input.into_iter().for_each(|tt| value_str.push_str(&tt.to_string()));
+    input
+        .into_iter()
+        .for_each(|tt| value_str.push_str(&tt.to_string()));
 
     // parse and remove the sign
     let mut value_str = value_str.as_str();
@@ -35,7 +37,9 @@ pub fn parse_binary_float(input: TokenStream) -> TokenStream {
     };
 
     // generate expressions
-    let (man, exp) = FBig::<2, >::from_str(value_str).unwrap_or_else(|_| panic_fbig_syntax()).into_parts();
+    let (man, exp) = FBig::<2>::from_str(value_str)
+        .unwrap_or_else(|_| panic_fbig_syntax())
+        .into_parts();
     assert!(man.sign() == Sign::Positive);
     let sign = quote_sign(sign);
     let words = man.as_sign_words().1;
@@ -59,7 +63,9 @@ pub fn parse_binary_float(input: TokenStream) -> TokenStream {
 
 pub fn parse_decimal_float(input: TokenStream) -> TokenStream {
     let mut value_str = String::new();
-    input.into_iter().for_each(|tt| value_str.push_str(&tt.to_string()));
+    input
+        .into_iter()
+        .for_each(|tt| value_str.push_str(&tt.to_string()));
 
     let f = DBig::from_str(&value_str).unwrap_or_else(|_| panic_fbig_syntax());
     let (man, exp) = f.into_parts();

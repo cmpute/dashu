@@ -30,8 +30,8 @@ mod mul;
 mod parse;
 mod repr;
 pub mod round;
-mod sign;
 mod shift;
+mod sign;
 mod utils;
 
 pub use fbig::FBig;

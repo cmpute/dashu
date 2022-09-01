@@ -1,8 +1,8 @@
 use core::str::FromStr;
 
-use dashu_float::{FBig, DBig};
+use dashu_float::{DBig, FBig};
 use dashu_int::Word;
-use dashu_macros::{fbig, dbig};
+use dashu_macros::{dbig, fbig};
 
 #[test]
 fn test_fbig() {
@@ -21,7 +21,7 @@ fn test_fbig() {
     assert_eq!(fbig!(-_0x.02), FBig::from_str("-0x.02").unwrap());
     assert_eq!(fbig!(-_0x1.02p2), FBig::from_str("-0x1.02p2").unwrap());
     assert_eq!(fbig!(0x1p2), FBig::from_str("0x1p2").unwrap());
-    assert_eq!(fbig!(_0x1.p-2), FBig::from_str("0x1.p-2").unwrap());
+    assert_eq!(fbig!(_0x1.p - 2), FBig::from_str("0x1.p-2").unwrap());
     assert_eq!(fbig!(_0x.02p2), FBig::from_str("0x.02p2").unwrap());
     assert_eq!(fbig!(-_0x.02p-2), FBig::from_str("-0x.02p-2").unwrap());
 
@@ -47,7 +47,7 @@ fn test_dbig() {
     assert_eq!(dbig!(-123.004), DBig::from_str("-123.004").unwrap());
 
     assert_eq!(dbig!(1234.e23), DBig::from_str("1234.e23").unwrap());
-    assert_eq!(dbig!(12.34e-5),  DBig::from_str("12.34e-5").unwrap());
+    assert_eq!(dbig!(12.34e-5), DBig::from_str("12.34e-5").unwrap());
 
     // const test
     const _: DBig = dbig!(0);
@@ -58,6 +58,7 @@ fn test_dbig() {
     {
         assert!(Word::BITS >= 64);
         const _: DBig = dbig!(18446744073709551615e1234); // 2^64 * 10^1234
-        const _: DBig = dbig!(-0.340282366920938463463374607431768211455e-1234); // 2^128 * 10^-(1234+128)
+        const _: DBig = dbig!(-0.340282366920938463463374607431768211455e-1234);
+        // 2^128 * 10^-(1234+128)
     }
 }
