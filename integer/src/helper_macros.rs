@@ -7,126 +7,119 @@ macro_rules! debug_assert_zero {
     }};
 }
 
-/// Implement `impl Op<B> for &A` by forwarding to `impl Op<B> for A`, including &B.
-macro_rules! forward_binop_first_arg_by_value {
-    (impl $trait:ident<$t2:ty> for $t1:ty, $method:ident) => {
-        impl $trait<$t2> for &$t1 {
-            type Output = <$t1 as $trait<$t2>>::Output;
-
+/// Implement `impl Op<B> for A` by converting B to A. This macro includes operations
+/// with A, B swapped and taking by references.
+macro_rules! impl_binop_with_primitive {
+    (impl $trait:ident<$target:ty> for $t:ty, $method:ident) => {
+        crate::helper_macros::impl_binop_with_primitive!(impl $trait<$target> for $t, $method -> $t);
+    };
+    (impl $trait:ident<$target:ty> for $t:ty, $method:ident -> $omethod:ty) => {
+        impl $trait<$target> for $t {
+            type Output = $omethod;
             #[inline]
-            fn $method(self, rhs: $t2) -> Self::Output {
-                (*self).$method(rhs)
+            fn $method(self, rhs: $target) -> $omethod {
+                self.$method(<$t>::from(rhs)).try_into().unwrap()
             }
         }
 
-        impl<'a> $trait<&'a $t2> for &$t1 {
-            type Output = <$t1 as $trait<&'a $t2>>::Output;
-
+        impl<'l> $trait<$target> for &'l $t {
+            type Output = $omethod;
             #[inline]
-            fn $method(self, rhs: &$t2) -> Self::Output {
-                (*self).$method(rhs)
+            fn $method(self, rhs: $target) -> $omethod {
+                self.$method(<$t>::from(rhs)).try_into().unwrap()
+            }
+        }
+        
+        impl<'r> $trait<&'r $target> for $t {
+            type Output = $omethod;
+            #[inline]
+            fn $method(self, rhs: &$target) -> $omethod {
+                self.$method(<$t>::from(*rhs)).try_into().unwrap()
+            }
+        }
+
+        impl<'l, 'r> $trait<&'r $target> for &'l $t {
+            type Output = $omethod;
+            #[inline]
+            fn $method(self, rhs: &$target) -> $omethod {
+                self.$method(<$t>::from(*rhs)).try_into().unwrap()
             }
         }
     };
 }
 
-/// Implement `impl Op<&B> for A` by forwarding to `impl Op<B> for A`, including &A.
-macro_rules! forward_binop_second_arg_by_value {
-    (impl $trait:ident<$t2:ty> for $t1:ty, $method:ident) => {
-        impl $trait<&$t2> for $t1 {
-            type Output = <$t1 as $trait<$t2>>::Output;
+macro_rules! impl_commutative_binop_with_primitive {
+    (impl $trait:ident<$target:ty> for $t:ty, $method:ident) => {
+        crate::helper_macros::impl_commutative_binop_with_primitive!(impl $trait<$target> for $t, $method -> $t);
+    };
+    (impl $trait:ident<$target:ty> for $t:ty, $method:ident -> $omethod:ty) => {
+        crate::helper_macros::impl_binop_with_primitive!(impl $trait<$target> for $t, $method);
 
+        impl $trait<$t> for $target {
+            type Output = $omethod;
             #[inline]
-            fn $method(self, rhs: &$t2) -> Self::Output {
-                self.$method(*rhs)
+            fn $method(self, rhs: $t) -> $omethod {
+                <$t>::from(self).$method(rhs).try_into().unwrap()
             }
         }
 
-        impl<'a> $trait<&$t2> for &'a $t1 {
-            type Output = <&'a $t1 as $trait<$t2>>::Output;
-
+        impl<'l> $trait<$t> for &'l $target {
+            type Output = $omethod;
             #[inline]
-            fn $method(self, rhs: &$t2) -> Self::Output {
-                self.$method(*rhs)
+            fn $method(self, rhs: $t) -> $omethod {
+                <$t>::from(*self).$method(rhs).try_into().unwrap()
+            }
+        }
+        
+        impl<'r> $trait<&'r $t> for $target {
+            type Output = $omethod;
+            #[inline]
+            fn $method(self, rhs: &$t) -> $omethod {
+                <$t>::from(self).$method(rhs).try_into().unwrap()
+            }
+        }
+
+        impl<'l, 'r> $trait<&'r $t> for &'l $target {
+            type Output = $omethod;
+            #[inline]
+            fn $method(self, rhs: &$t) -> $omethod {
+                <$t>::from(*self).$method(rhs).try_into().unwrap()
             }
         }
     };
 }
 
-/// Implement `impl Op<&B> for A` by forwarding to `impl Op<B> for A`, including &A.
-/// Here Op has OutputDiv and OutputRem, rather than just Output.
-macro_rules! forward_div_rem_second_arg_by_value {
-    (impl $trait:ident<$t2:ty> for $t1:ty, $method:ident) => {
-        impl $trait<&$t2> for $t1 {
-            type OutputDiv = <$t1 as $trait<$t2>>::OutputDiv;
-            type OutputRem = <$t1 as $trait<$t2>>::OutputRem;
-
+/// Implement `impl OpAssign<B> for A` by converting B to A. This macro
+/// includes operation with &B
+macro_rules! impl_binop_assign_with_primitive {
+    (impl $trait:ident<$target:ty> for $t:ty, $method:ident) => {
+        impl $trait<$target> for $t {
             #[inline]
-            fn $method(self, rhs: &$t2) -> (Self::OutputDiv, Self::OutputRem) {
-                self.$method(*rhs)
+            fn $method(&mut self, rhs: $target) {
+                self.$method(<$t>::from(rhs))
             }
         }
-
-        impl<'a> $trait<&$t2> for &'a $t1 {
-            type OutputDiv = <&'a $t1 as $trait<$t2>>::OutputDiv;
-            type OutputRem = <&'a $t1 as $trait<$t2>>::OutputRem;
-
+        impl<'r> $trait<&'r $target> for $t {
             #[inline]
-            fn $method(self, rhs: &$t2) -> (Self::OutputDiv, Self::OutputRem) {
-                self.$method(*rhs)
+            fn $method(&mut self, rhs: &$target) {
+                self.$method(<$t>::from(*rhs))
             }
         }
     };
-}
-
-/// Implement `impl Op<B> for A` by forwarding to `impl Op<A> for B`, including &A and &B.
-macro_rules! forward_binop_swap_args {
-    (impl $trait:ident<$t2:ty> for $t1:ty, $method:ident) => {
-        impl $trait<$t2> for $t1 {
-            type Output = <$t2 as $trait<$t1>>::Output;
-
+    // this branch is currently only used for DivRemAssign
+    (impl $trait:ident<$target:ty> for $t:ty, $method:ident, $output:ident = $ty_output:ty) => {
+        impl $trait<$target> for $t {
+            type $output = $ty_output;
             #[inline]
-            fn $method(self, rhs: $t2) -> Self::Output {
-                rhs.$method(self)
+            fn $method(&mut self, rhs: $target) -> $ty_output {
+                self.$method(<$t>::from(rhs)).try_into().unwrap()
             }
         }
-
-        impl<'a> $trait<&'a $t2> for $t1 {
-            type Output = <&'a $t2 as $trait<$t1>>::Output;
-
+        impl $trait<&$target> for $t {
+            type $output = $ty_output;
             #[inline]
-            fn $method(self, rhs: &$t2) -> Self::Output {
-                rhs.$method(self)
-            }
-        }
-
-        impl<'a> $trait<$t2> for &'a $t1 {
-            type Output = <$t2 as $trait<&'a $t1>>::Output;
-
-            #[inline]
-            fn $method(self, rhs: $t2) -> Self::Output {
-                rhs.$method(self)
-            }
-        }
-
-        impl<'a, 'b> $trait<&'a $t2> for &'b $t1 {
-            type Output = <&'a $t2 as $trait<&'b $t1>>::Output;
-
-            #[inline]
-            fn $method(self, rhs: &$t2) -> Self::Output {
-                rhs.$method(self)
-            }
-        }
-    };
-}
-
-/// Implement `impl OpAssign<&B> for A` by forwarding to `impl OpAssign<B> for A`.
-macro_rules! forward_binop_assign_arg_by_value {
-    (impl $trait:ident<$t2:ty> for $t1:ty, $method:ident) => {
-        impl $trait<&$t2> for $t1 {
-            #[inline]
-            fn $method(&mut self, rhs: &$t2) {
-                self.$method(*rhs)
+            fn $method(&mut self, rhs: &$target) -> $ty_output {
+                self.$method(<$t>::from(*rhs)).try_into().unwrap()
             }
         }
     };
@@ -328,7 +321,7 @@ macro_rules! forward_ibig_binop_to_repr {
 }
 
 /// Implement `impl OpAssign<B> for A` by forwarding to `*A = mem::take(A).op(B)`, including &B.
-macro_rules! forward_binop_assign_by_taking {
+macro_rules! impl_binop_assign_by_taking {
     (impl $trait:ident<$t2:ty> for $t1:ty, $methodassign:ident, $method:ident) => {
         impl $trait<$t2> for $t1 {
             #[inline]
@@ -467,12 +460,10 @@ macro_rules! forward_ibig_ubig_binop_to_repr {
 }
 
 pub(crate) use debug_assert_zero;
-pub(crate) use forward_binop_assign_arg_by_value;
-pub(crate) use forward_binop_assign_by_taking;
-pub(crate) use forward_binop_first_arg_by_value;
-pub(crate) use forward_binop_second_arg_by_value;
-pub(crate) use forward_binop_swap_args;
-pub(crate) use forward_div_rem_second_arg_by_value;
+pub(crate) use impl_binop_with_primitive;
+pub(crate) use impl_commutative_binop_with_primitive;
+pub(crate) use impl_binop_assign_with_primitive;
+pub(crate) use impl_binop_assign_by_taking;
 pub(crate) use forward_ibig_binop_to_repr;
 pub(crate) use forward_ibig_ubig_binop_to_repr;
 pub(crate) use forward_ubig_binop_to_repr;

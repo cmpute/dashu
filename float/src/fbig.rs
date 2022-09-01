@@ -76,7 +76,13 @@ impl<const B: Word, R: Round> FBig<B, R> {
     }
     pub const NEG_INFINITY: Self = Self::neg_inf();
 
+    #[inline]
+    pub const fn sign(&self) -> Sign {
+        self.repr.significand.sign()
+    }
+
     /// Get the maximum precision set for the float number.
+    #[inline]
     pub const fn precision(&self) -> usize {
         self.context.precision
     }

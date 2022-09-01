@@ -10,3 +10,5 @@ fn test_log_decimal() {
     let log00003 = dbig!(00000000000000000003e-4).ln();
     assert_eq!(log00003, dbig!(-81117280833080730447e-19));
 }
+
+// TODO(next): add more test cases and add test for binary float

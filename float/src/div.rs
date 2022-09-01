@@ -149,3 +149,5 @@ impl<const B: Word, R: Round> Div<dashu_int::IBig> for FBig<B, R> {
         self / FBig::from(rhs)
     }
 }
+
+// TODO: implement div_euclid, rem_euclid, div_rem_euclid for float, as it can be properly defined

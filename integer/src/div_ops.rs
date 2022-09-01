@@ -4,13 +4,18 @@ use crate::{
     helper_macros,
     ibig::IBig,
     ops::{DivEuclid, DivRem, DivRemAssign, DivRemEuclid, RemEuclid},
-    sign::Sign::*,
+    sign::Sign::{self, *},
     ubig::UBig,
 };
-use core::{
-    convert::TryFrom,
-    ops::{Div, DivAssign, Rem, RemAssign},
-};
+use core::ops::{Div, DivAssign, Rem, RemAssign};
+
+#[inline]
+fn sign_as_int(s: Sign) -> IBig {
+    match s {
+        Positive => IBig::ONE,
+        Negative => IBig::NEG_ONE,
+    }
+}
 
 // Ops for UBig
 
@@ -18,8 +23,8 @@ helper_macros::forward_ubig_binop_to_repr!(impl Div, div);
 helper_macros::forward_ubig_binop_to_repr!(impl Rem, rem);
 helper_macros::forward_ubig_binop_to_repr!(impl DivEuclid, div_euclid, div);
 helper_macros::forward_ubig_binop_to_repr!(impl RemEuclid, rem_euclid, rem);
-helper_macros::forward_binop_assign_by_taking!(impl DivAssign<UBig> for UBig, div_assign, div);
-helper_macros::forward_binop_assign_by_taking!(impl RemAssign<UBig> for UBig, rem_assign, rem);
+helper_macros::impl_binop_assign_by_taking!(impl DivAssign<UBig> for UBig, div_assign, div);
+helper_macros::impl_binop_assign_by_taking!(impl RemAssign<UBig> for UBig, rem_assign, rem);
 
 macro_rules! impl_ubig_divrem {
     ($repr0:ident, $repr1:ident) => {{
@@ -38,7 +43,7 @@ helper_macros::forward_ubig_binop_to_repr!(
     OutputDiv = UBig, OutputRem = UBig,
     impl_ubig_divrem
 );
-helper_macros::forward_binop_assign_by_taking!(
+helper_macros::impl_binop_assign_by_taking!(
     impl DivRemAssign<UBig> for UBig, div_rem_assign,
     OutputRem = UBig, div_rem
 );
@@ -61,8 +66,8 @@ macro_rules! impl_ibig_rem {
 }
 helper_macros::forward_ibig_binop_to_repr!(impl Div, div, Output = IBig, impl_ibig_div);
 helper_macros::forward_ibig_binop_to_repr!(impl Rem, rem, Output = IBig, impl_ibig_rem);
-helper_macros::forward_binop_assign_by_taking!(impl DivAssign<IBig> for IBig, div_assign, div);
-helper_macros::forward_binop_assign_by_taking!(impl RemAssign<IBig> for IBig, rem_assign, rem);
+helper_macros::impl_binop_assign_by_taking!(impl DivAssign<IBig> for IBig, div_assign, div);
+helper_macros::impl_binop_assign_by_taking!(impl RemAssign<IBig> for IBig, rem_assign, rem);
 
 macro_rules! impl_ibig_div_rem {
     ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {{
@@ -83,7 +88,7 @@ macro_rules! impl_ibig_div_euclid {
         let q = IBig(q.with_sign($sign0 * $sign1));
         match ($sign0, r.is_zero()) {
             (Positive, _) | (Negative, true) => q,
-            (Negative, false) => q - $sign1.as_int(),
+            (Negative, false) => q - sign_as_int($sign1),
         }
     }};
 }
@@ -128,7 +133,7 @@ macro_rules! impl_ibig_divrem_euclid {
                 let (q, mut r) = $mag0.div_rem($mag1.as_ref());
                 let mut q = IBig(q.with_sign(-$sign1));
                 if !r.is_zero() {
-                    q -= $sign1.as_int();
+                    q -= sign_as_int($sign1);
                     r = $mag1 - r.into_typed();
                 }
                 (q, UBig(r))
@@ -141,7 +146,7 @@ helper_macros::forward_ibig_binop_to_repr!(
     OutputDiv = IBig, OutputRem = UBig,
     impl_ibig_divrem_euclid
 );
-helper_macros::forward_binop_assign_by_taking!(
+helper_macros::impl_binop_assign_by_taking!(
     impl DivRemAssign<IBig> for IBig, div_rem_assign,
     OutputRem = IBig, div_rem
 );
@@ -161,7 +166,7 @@ macro_rules! impl_ubig_ibig_rem {
 }
 helper_macros::forward_ubig_ibig_binop_to_repr!(impl Div, div, Output = IBig, impl_ubig_ibig_div);
 helper_macros::forward_ubig_ibig_binop_to_repr!(impl Rem, rem, Output = UBig, impl_ubig_ibig_rem);
-helper_macros::forward_binop_assign_by_taking!(impl RemAssign<IBig> for UBig, rem_assign, rem);
+helper_macros::impl_binop_assign_by_taking!(impl RemAssign<IBig> for UBig, rem_assign, rem);
 
 macro_rules! impl_ibig_ubig_div {
     ($sign0:ident, $mag0:ident, $mag1:ident) => {
@@ -177,319 +182,82 @@ macro_rules! impl_ibig_ubig_rem {
 }
 helper_macros::forward_ibig_ubig_binop_to_repr!(impl Div, div, Output = IBig, impl_ibig_ubig_div);
 helper_macros::forward_ibig_ubig_binop_to_repr!(impl Rem, rem, Output = IBig, impl_ibig_ubig_rem);
-helper_macros::forward_binop_assign_by_taking!(impl DivAssign<UBig> for IBig, div_assign, div);
-helper_macros::forward_binop_assign_by_taking!(impl RemAssign<UBig> for IBig, rem_assign, rem);
+helper_macros::impl_binop_assign_by_taking!(impl DivAssign<UBig> for IBig, div_assign, div);
+helper_macros::impl_binop_assign_by_taking!(impl RemAssign<UBig> for IBig, rem_assign, rem);
 
-macro_rules! impl_div_ubig_unsigned {
-    ($t:ty) => {
-        impl Div<$t> for UBig {
-            type Output = UBig;
+// Ops with primitives
+
+macro_rules! impl_divrem_with_primitive {
+    (impl <$target:ty> for $t:ty) => {
+        impl DivRem<$target> for $t {
+            type OutputDiv = $t;
+            type OutputRem = $target;
 
             #[inline]
-            fn div(self, rhs: $t) -> UBig {
-                self / UBig::from_unsigned(rhs)
+            fn div_rem(self, rhs: $target) -> ($t, $target) {
+                let (q, r) = self.div_rem(<$t>::from(rhs));
+                (q, r.try_into().unwrap())
             }
         }
 
-        impl Div<$t> for &UBig {
-            type Output = UBig;
+        impl<'l> DivRem<$target> for &'l $t {
+            type OutputDiv = $t;
+            type OutputRem = $target;
 
             #[inline]
-            fn div(self, rhs: $t) -> UBig {
-                self / UBig::from_unsigned(rhs)
+            fn div_rem(self, rhs: $target) -> ($t, $target) {
+                let (q, r) = self.div_rem(<$t>::from(rhs));
+                (q, r.try_into().unwrap())
             }
         }
 
-        helper_macros::forward_binop_second_arg_by_value!(impl Div<$t> for UBig, div);
+        impl<'r> DivRem<&'r $target> for $t {
+            type OutputDiv = $t;
+            type OutputRem = $target;
 
-        impl DivAssign<$t> for UBig {
             #[inline]
-            fn div_assign(&mut self, rhs: $t) {
-                self.div_assign(UBig::from_unsigned(rhs))
+            fn div_rem(self, rhs: &$target) -> ($t, $target) {
+                let (q, r) = self.div_rem(<$t>::from(*rhs));
+                (q, r.try_into().unwrap())
             }
         }
 
-        helper_macros::forward_binop_assign_arg_by_value!(impl DivAssign<$t> for UBig, div_assign);
-
-        impl Rem<$t> for UBig {
-            type Output = $t;
-
-            #[inline]
-            fn rem(self, rhs: $t) -> $t {
-                (self % UBig::from_unsigned(rhs)).try_to_unsigned().unwrap()
-            }
-        }
-
-        impl Rem<$t> for &UBig {
-            type Output = $t;
+        impl<'l, 'r> DivRem<&'r $target> for &'l $t {
+            type OutputDiv = $t;
+            type OutputRem = $target;
 
             #[inline]
-            fn rem(self, rhs: $t) -> $t {
-                (self % UBig::from_unsigned(rhs)).try_to_unsigned().unwrap()
+            fn div_rem(self, rhs: &$target) -> ($t, $target) {
+                let (q, r) = self.div_rem(<$t>::from(*rhs));
+                (q, r.try_into().unwrap())
             }
         }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl Rem<$t> for UBig, rem);
-
-        impl RemAssign<$t> for UBig {
-            #[inline]
-            fn rem_assign(&mut self, rhs: $t) {
-                self.rem_assign(UBig::from_unsigned(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl RemAssign<$t> for UBig, rem_assign);
-
-        impl DivRem<$t> for UBig {
-            type OutputDiv = UBig;
-            type OutputRem = $t;
-
-            #[inline]
-            fn div_rem(self, rhs: $t) -> (UBig, $t) {
-                let (q, r) = self.div_rem(UBig::from_unsigned(rhs));
-                (q, r.try_to_unsigned().unwrap())
-            }
-        }
-
-        impl DivRem<$t> for &UBig {
-            type OutputDiv = UBig;
-            type OutputRem = $t;
-
-            #[inline]
-            fn div_rem(self, rhs: $t) -> (UBig, $t) {
-                let (q, r) = self.div_rem(UBig::from_unsigned(rhs));
-                (q, r.try_to_unsigned().unwrap())
-            }
-        }
-
-        helper_macros::forward_div_rem_second_arg_by_value!(impl DivRem<$t> for UBig, div_rem);
-
-         impl DivEuclid<$t> for UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn div_euclid(self, rhs: $t) -> UBig {
-                UBig::from_ibig(IBig::from(self) / IBig::from_unsigned(rhs))
-            }
-        }
-
-        impl DivEuclid<$t> for &UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn div_euclid(self, rhs: $t) -> UBig {
-                UBig::from_ibig(IBig::from(self) / IBig::from_unsigned(rhs))
-            }
-        }
-        helper_macros::forward_binop_second_arg_by_value!(impl DivEuclid<$t> for UBig, div_euclid);
-
-        impl RemEuclid<$t> for UBig {
-            type Output = $t;
-
-            #[inline]
-            fn rem_euclid(self, rhs: $t) -> $t {
-                self % rhs
-            }
-        }
-
-        impl RemEuclid<$t> for &UBig {
-            type Output = $t;
-
-            #[inline]
-            fn rem_euclid(self, rhs: $t) -> $t {
-                self % rhs
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl RemEuclid<$t> for UBig, rem_euclid);
-
-        impl DivRemEuclid<$t> for UBig {
-            type OutputDiv = UBig;
-            type OutputRem = $t;
-
-            #[inline]
-            fn div_rem_euclid(self, rhs: $t) -> (UBig, $t) {
-                self.div_rem(rhs)
-            }
-        }
-
-        impl DivRemEuclid<$t> for &UBig {
-            type OutputDiv = UBig;
-            type OutputRem = $t;
-
-            #[inline]
-            fn div_rem_euclid(self, rhs: $t) -> (UBig, $t) {
-                self.div_rem(rhs)
-            }
-        }
-
-        helper_macros::forward_div_rem_second_arg_by_value!(impl DivRemEuclid<$t> for UBig, div_rem_euclid);
-    };
+    }
 }
 
-impl_div_ubig_unsigned!(u8);
-impl_div_ubig_unsigned!(u16);
-impl_div_ubig_unsigned!(u32);
-impl_div_ubig_unsigned!(u64);
-impl_div_ubig_unsigned!(u128);
-impl_div_ubig_unsigned!(usize);
+macro_rules! impl_div_primitive_with_ubig {
+    ($($t:ty)*) => {$(
+        helper_macros::impl_binop_with_primitive!(impl Div<$t> for UBig, div);
+        helper_macros::impl_binop_with_primitive!(impl Rem<$t> for UBig, rem -> $t);
+        helper_macros::impl_binop_assign_with_primitive!(impl DivAssign<$t> for UBig, div_assign);
 
-macro_rules! impl_div_ibig_signed {
-    ($t:ty, $u:ty) => {
-        impl Div<$t> for IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn div(self, rhs: $t) -> IBig {
-                self.div(IBig::from(rhs))
-            }
-        }
-
-        impl Div<$t> for &IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn div(self, rhs: $t) -> IBig {
-                self.div(IBig::from(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl Div<$t> for IBig, div);
-
-        impl DivAssign<$t> for IBig {
-            #[inline]
-            fn div_assign(&mut self, rhs: $t) {
-                self.div_assign(IBig::from(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl DivAssign<$t> for IBig, div_assign);
-
-        impl Rem<$t> for IBig {
-            type Output = $t;
-
-            #[inline]
-            fn rem(self, rhs: $t) -> $t {
-                (self % IBig::from_signed(rhs)).try_to_signed().unwrap()
-            }
-        }
-
-        impl Rem<$t> for &IBig {
-            type Output = $t;
-
-            #[inline]
-            fn rem(self, rhs: $t) -> $t {
-                (self % IBig::from_signed(rhs)).try_to_signed().unwrap()
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl Rem<$t> for IBig, rem);
-
-        impl RemAssign<$t> for IBig {
-            #[inline]
-            fn rem_assign(&mut self, rhs: $t) {
-                self.rem_assign(IBig::from(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl RemAssign<$t> for IBig, rem_assign);
-
-        impl DivRem<$t> for IBig {
-            type OutputDiv = IBig;
-            type OutputRem = $t;
-
-            #[inline]
-            fn div_rem(self, rhs: $t) -> (IBig, $t) {
-                let (q, r) = self.div_rem(IBig::from_signed(rhs));
-                (q, r.try_to_signed().unwrap())
-            }
-        }
-
-        impl DivRem<$t> for &IBig {
-            type OutputDiv = IBig;
-            type OutputRem = $t;
-
-            #[inline]
-            fn div_rem(self, rhs: $t) -> (IBig, $t) {
-                let (q, r) = self.div_rem(IBig::from_signed(rhs));
-                (q, r.try_to_signed().unwrap())
-            }
-        }
-
-        helper_macros::forward_div_rem_second_arg_by_value!(impl DivRem<$t> for IBig, div_rem);
-
-        impl DivEuclid<$t> for IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn div_euclid(self, rhs: $t) -> IBig {
-                self.div_euclid(IBig::from(rhs))
-            }
-        }
-
-        impl DivEuclid<$t> for &IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn div_euclid(self, rhs: $t) -> IBig {
-                self.div_euclid(IBig::from(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl DivEuclid<$t> for IBig, div_euclid);
-
-        impl RemEuclid<$t> for IBig {
-            type Output = $u;
-
-            #[inline]
-            fn rem_euclid(self, rhs: $t) -> $u {
-                <$u>::try_from(self.rem_euclid(IBig::from(rhs))).unwrap()
-            }
-        }
-
-        impl RemEuclid<$t> for &IBig {
-            type Output = $u;
-
-            #[inline]
-            fn rem_euclid(self, rhs: $t) -> $u {
-                <$u>::try_from(self.rem_euclid(IBig::from(rhs))).unwrap()
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl RemEuclid<$t> for IBig, rem_euclid);
-
-        impl DivRemEuclid<$t> for IBig {
-            type OutputDiv = IBig;
-            type OutputRem = $u;
-
-            #[inline]
-            fn div_rem_euclid(self, rhs: $t) -> (IBig, $u) {
-                let (q, r) = self.div_rem_euclid(IBig::from(rhs));
-                (q, <$u>::try_from(r).unwrap())
-            }
-        }
-
-        impl DivRemEuclid<$t> for &IBig {
-            type OutputDiv = IBig;
-            type OutputRem = $u;
-
-            #[inline]
-            fn div_rem_euclid(self, rhs: $t) -> (IBig, $u) {
-                let (q, r) = self.div_rem_euclid(IBig::from(rhs));
-                (q, <$u>::try_from(r).unwrap())
-            }
-        }
-
-        helper_macros::forward_div_rem_second_arg_by_value!(impl DivRemEuclid<$t> for IBig, div_rem_euclid);
-    };
+        impl_divrem_with_primitive!(impl <$t> for UBig);
+        helper_macros::impl_binop_assign_with_primitive!(impl DivRemAssign<$t> for UBig, div_rem_assign, OutputRem = $t);
+    )*};
 }
+impl_div_primitive_with_ubig!(u8 u16 u32 u64 u128 usize);
 
-impl_div_ibig_signed!(i8, u8);
-impl_div_ibig_signed!(i16, u16);
-impl_div_ibig_signed!(i32, u32);
-impl_div_ibig_signed!(i64, u64);
-impl_div_ibig_signed!(i128, u128);
-impl_div_ibig_signed!(isize, usize);
+macro_rules! impl_div_primitive_with_ibig {
+    ($($t:ty)*) => {$(
+        helper_macros::impl_binop_with_primitive!(impl Div<$t> for IBig, div);
+        helper_macros::impl_binop_with_primitive!(impl Rem<$t> for IBig, rem -> $t);
+        helper_macros::impl_binop_assign_with_primitive!(impl DivAssign<$t> for IBig, div_assign);
+
+        impl_divrem_with_primitive!(impl <$t> for IBig);
+        helper_macros::impl_binop_assign_with_primitive!(impl DivRemAssign<$t> for IBig, div_rem_assign, OutputRem = $t);
+    )*};
+}
+impl_div_primitive_with_ibig!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);
 
 mod repr {
     use super::*;

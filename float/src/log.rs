@@ -57,6 +57,19 @@ impl<R: Round> Context<R> {
         3 * self.ln2() + 2 * self.iacoth(9.into())
     }
 
+    /// Calculate log(B), for internal use only
+    /// 
+    /// The precision of the output will be larger than self.precision
+    #[inline]
+    pub(crate) fn ln_base<const B: Word>(&self) -> FBig<B, R> {
+        match B {
+            2 => self.ln2(),
+            10 => self.ln10(),
+            i if i.is_power_of_two() => self.ln2() * i.trailing_zeros(),
+            _ => self.ln(&FBig::from_parts_const(dashu_int::Sign::Positive, B as _, 0)).value()
+        }
+    }
+
     /// Calculate L(n) = acoth(n) = atanh(1/n) = 1/2 log((n+1)/(n-1))
     /// 
     /// This method is intended to be used in logarithm calculation,
@@ -82,8 +95,8 @@ impl<R: Round> Context<R> {
          *  = log_B(p/2) - log_B(log_B(n))
          * <= log_B(p/2)
          */
-        let max_k = (self.precision as f32 * B.log2_bounds().1 / n.log2_bounds().0) as usize;
-        let guard_digits = ((self.precision / 2).log2_bounds().1 / B.log2_bounds().1) as usize;
+        let max_k = (self.precision as f32 * B.log2_est() / n.log2_est()) as usize;
+        let guard_digits = ((self.precision / 2).log2_est() / B.log2_est()) as usize;
         let (max_k, guard_digits) = (max_k + 2, guard_digits + 2); // add extras to ensure precise result
         let work_context = Self::new(self.precision + guard_digits);
 
@@ -102,28 +115,35 @@ impl<R: Round> Context<R> {
 
     /// Calculate the natural logarithm of the number x
     pub fn ln<const B: Word>(&self, x: &FBig<B, R>) -> Rounded<FBig<B, R>> {
-        // Simple algorithm:
-        // log(x) = log(x/2^s) + slog2
-        // such that x*2^s is close to but larger than 1,
-        // so s = -floor(log2(x))
+        // A simple algorithm:
+        // - let log(x) = log(x/2^s) + slog2 where s = floor(log2(x))
+        // - such that x*2^s is close to but larger than 1,
+        // - then s = -floor(log2(x))
         let x = x.clone().with_precision(self.precision + 1).value();
-        let log2 = x.log2_bounds().0;
+        let log2 = x.log2_est();
         let x_scaled = if log2 >= 0. {
-            let pow = IBig::ONE << log2 as usize;
-            x / pow
+            let s = log2 as usize;
+            if B == 2 {
+                x >> s
+            } else {
+                x / (IBig::ONE << s)
+            }
         } else {
-            let pow = IBig::ONE << (-log2) as usize;
-            x * pow
+            let s = (-log2) as usize;
+            if B == 2 {
+                x << s
+            } else {
+                x * (IBig::ONE << s)
+            }
         };
         // TODO: assert x_scaled > 1
 
-        // after the number is scaled to nearly one, use Maclaurin series on log(x) = 2atanh(z)
+        // after the number is scaled to nearly one, use Maclaurin series on log(x) = 2atanh(z):
         // let z = (x-1)/(x+1) < 1, log(x) = 2atanh(z) = 2Σ(zⁱ/i) for i = 1,3,5,...
-        // Similar to iacoth, the required iterations stop at i = -p/log_B(z) + 1,
-        // and we need log_B(p/2) guard bits
+        // similar to iacoth, the required iterations stop at i = -p/log_B(z) + 1, and we need log_B(p/2) guard bits
         let z = (&x_scaled - FBig::ONE) / (x_scaled + FBig::ONE);
-        let max_k = (self.precision as f32 * B.log2_bounds().1 / -z.log2_bounds().0) as usize;
-        let guard_digits = ((self.precision / 2).log2_bounds().1 / B.log2_bounds().1) as usize;
+        let max_k = (self.precision as f32 * B.log2_est() / -z.log2_est()) as usize;
+        let guard_digits = ((self.precision / 2).log2_est() / B.log2_est()) as usize;
         let (max_k, guard_digits) = (max_k + 2, guard_digits + 2); // add extras to ensure precise result
         let work_context = Self::new(self.precision + guard_digits);
 
@@ -144,6 +164,8 @@ impl<R: Round> Context<R> {
         };
         result.with_precision(self.precision)
     }
+
+    // TODO: implement ln_1p, when |x| > 1/B use ln(1+x), when |x| < 1/B use normal tyler series
 }
 
 #[cfg(test)]

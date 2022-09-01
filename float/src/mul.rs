@@ -115,7 +115,7 @@ impl<R: Round> Context<R> {
     }
 }
 
-// TODO: implement more variants with macros, after implementing From<primitive> for FBig
+// TODO(next): implement more variants with macros, after implementing From<primitive> for FBig
 impl<const B: Word, R: Round> Mul<FBig<B, R>> for i32 {
     type Output = FBig<B, R>;
 
@@ -140,5 +140,14 @@ impl<const B: Word, R: Round> Mul<dashu_int::IBig> for FBig<B, R> {
     #[inline]
     fn mul(self, rhs: dashu_int::IBig) -> Self::Output {
         self * FBig::from(rhs)
+    }
+}
+
+impl<const B: Word, R: Round> Mul<u32> for FBig<B, R> {
+    type Output = FBig<B, R>;
+
+    #[inline]
+    fn mul(self, rhs: u32) -> Self::Output {
+        self * FBig::from(dashu_int::IBig::from(rhs))
     }
 }

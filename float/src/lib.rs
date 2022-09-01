@@ -21,6 +21,7 @@ mod cmp;
 mod convert;
 mod div;
 mod error;
+mod exp;
 mod fbig;
 mod fmt;
 mod ibig_ext;
@@ -30,6 +31,7 @@ mod parse;
 mod repr;
 pub mod round;
 mod sign;
+mod shift;
 mod utils;
 
 pub use fbig::FBig;

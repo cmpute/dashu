@@ -4,7 +4,7 @@ use crate::{helper_macros, ibig::IBig, ubig::UBig};
 use core::ops::{Mul, MulAssign};
 
 helper_macros::forward_ubig_binop_to_repr!(impl Mul, mul);
-helper_macros::forward_binop_assign_by_taking!(impl MulAssign<UBig> for UBig, mul_assign, mul);
+helper_macros::impl_binop_assign_by_taking!(impl MulAssign<UBig> for UBig, mul_assign, mul);
 
 macro_rules! impl_ibig_mul {
     ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {
@@ -12,7 +12,7 @@ macro_rules! impl_ibig_mul {
     };
 }
 helper_macros::forward_ibig_binop_to_repr!(impl Mul, mul, Output = IBig, impl_ibig_mul);
-helper_macros::forward_binop_assign_by_taking!(impl MulAssign<IBig> for IBig, mul_assign, mul);
+helper_macros::impl_binop_assign_by_taking!(impl MulAssign<IBig> for IBig, mul_assign, mul);
 
 macro_rules! impl_ubig_ibig_mul {
     ($mag0:ident, $sign1:ident, $mag1:ident) => {
@@ -27,89 +27,25 @@ macro_rules! impl_ibig_ubig_mul {
     };
 }
 helper_macros::forward_ibig_ubig_binop_to_repr!(impl Mul, mul, Output = IBig, impl_ibig_ubig_mul);
-helper_macros::forward_binop_assign_by_taking!(impl MulAssign<UBig> for IBig, mul_assign, mul);
+helper_macros::impl_binop_assign_by_taking!(impl MulAssign<UBig> for IBig, mul_assign, mul);
 
-macro_rules! impl_mul_ubig_unsigned {
-    ($t:ty) => {
-        impl Mul<$t> for UBig {
-            type Output = UBig;
+// Ops with primitives
 
-            #[inline]
-            fn mul(self, rhs: $t) -> UBig {
-                self * UBig::from_unsigned(rhs)
-            }
-        }
-
-        impl Mul<$t> for &UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn mul(self, rhs: $t) -> UBig {
-                self * UBig::from_unsigned(rhs)
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl Mul<$t> for UBig, mul);
-        helper_macros::forward_binop_swap_args!(impl Mul<UBig> for $t, mul);
-
-        impl MulAssign<$t> for UBig {
-            #[inline]
-            fn mul_assign(&mut self, rhs: $t) {
-                *self *= UBig::from_unsigned(rhs)
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl MulAssign<$t> for UBig, mul_assign);
-    };
+macro_rules! impl_div_primitive_with_ubig {
+    ($($t:ty)*) => {$(
+        helper_macros::impl_commutative_binop_with_primitive!(impl Mul<$t> for UBig, mul);
+        helper_macros::impl_binop_assign_with_primitive!(impl MulAssign<$t> for UBig, mul_assign);
+    )*};
 }
+impl_div_primitive_with_ubig!(u8 u16 u32 u64 u128 usize);
 
-impl_mul_ubig_unsigned!(u8);
-impl_mul_ubig_unsigned!(u16);
-impl_mul_ubig_unsigned!(u32);
-impl_mul_ubig_unsigned!(u64);
-impl_mul_ubig_unsigned!(u128);
-impl_mul_ubig_unsigned!(usize);
-
-macro_rules! impl_mul_ibig_primitive {
-    ($t:ty) => {
-        impl Mul<$t> for IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn mul(self, rhs: $t) -> IBig {
-                self * IBig::from(rhs)
-            }
-        }
-
-        impl Mul<$t> for &IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn mul(self, rhs: $t) -> IBig {
-                self * IBig::from(rhs)
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl Mul<$t> for IBig, mul);
-        helper_macros::forward_binop_swap_args!(impl Mul<IBig> for $t, mul);
-
-        impl MulAssign<$t> for IBig {
-            #[inline]
-            fn mul_assign(&mut self, rhs: $t) {
-                *self *= IBig::from(rhs)
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl MulAssign<$t> for IBig, mul_assign);
-    };
+macro_rules! impl_div_primitive_with_ibig {
+    ($($t:ty)*) => {$(
+        helper_macros::impl_commutative_binop_with_primitive!(impl Mul<$t> for IBig, mul);
+        helper_macros::impl_binop_assign_with_primitive!(impl MulAssign<$t> for IBig, mul_assign);
+    )*};
 }
-
-impl_mul_ibig_primitive!(i8);
-impl_mul_ibig_primitive!(i16);
-impl_mul_ibig_primitive!(i32);
-impl_mul_ibig_primitive!(i64);
-impl_mul_ibig_primitive!(i128);
-impl_mul_ibig_primitive!(isize);
+impl_div_primitive_with_ibig!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);
 
 impl UBig {
     /// Calculate the squared number (x * x).

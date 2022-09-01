@@ -154,9 +154,9 @@ helper_macros::forward_ubig_binop_to_repr!(impl BitAnd, bitand);
 helper_macros::forward_ubig_binop_to_repr!(impl BitOr, bitor);
 helper_macros::forward_ubig_binop_to_repr!(impl BitXor, bitxor);
 helper_macros::forward_ubig_binop_to_repr!(impl AndNot, and_not);
-helper_macros::forward_binop_assign_by_taking!(impl BitAndAssign<UBig> for UBig, bitand_assign, bitand);
-helper_macros::forward_binop_assign_by_taking!(impl BitOrAssign<UBig> for UBig, bitor_assign, bitor);
-helper_macros::forward_binop_assign_by_taking!(impl BitXorAssign<UBig> for UBig, bitxor_assign, bitxor);
+helper_macros::impl_binop_assign_by_taking!(impl BitAndAssign<UBig> for UBig, bitand_assign, bitand);
+helper_macros::impl_binop_assign_by_taking!(impl BitOrAssign<UBig> for UBig, bitor_assign, bitor);
+helper_macros::impl_binop_assign_by_taking!(impl BitXorAssign<UBig> for UBig, bitxor_assign, bitxor);
 
 impl IBig {
     /// Returns the number of trailing zeros in the two's complement binary representation.
@@ -867,215 +867,33 @@ macro_rules! impl_ibig_bitxor {
 helper_macros::forward_ibig_binop_to_repr!(impl BitAnd, bitand, Output = IBig, impl_ibig_bitand);
 helper_macros::forward_ibig_binop_to_repr!(impl BitOr, bitor, Output = IBig, impl_ibig_bitor);
 helper_macros::forward_ibig_binop_to_repr!(impl BitXor, bitxor, Output = IBig, impl_ibig_bitxor);
-helper_macros::forward_binop_assign_by_taking!(impl BitAndAssign<IBig> for IBig, bitand_assign, bitand);
-helper_macros::forward_binop_assign_by_taking!(impl BitOrAssign<IBig> for IBig, bitor_assign, bitor);
-helper_macros::forward_binop_assign_by_taking!(impl BitXorAssign<IBig> for IBig, bitxor_assign, bitxor);
+helper_macros::impl_binop_assign_by_taking!(impl BitAndAssign<IBig> for IBig, bitand_assign, bitand);
+helper_macros::impl_binop_assign_by_taking!(impl BitOrAssign<IBig> for IBig, bitor_assign, bitor);
+helper_macros::impl_binop_assign_by_taking!(impl BitXorAssign<IBig> for IBig, bitxor_assign, bitxor);
 
-macro_rules! impl_bit_ops_ubig_unsigned {
-    ($t:ty) => {
-        impl BitAnd<$t> for UBig {
-            type Output = $t;
-
-            #[inline]
-            fn bitand(self, rhs: $t) -> $t {
-                self.bitand(UBig::from_unsigned(rhs))
-                    .try_to_unsigned()
-                    .unwrap()
-            }
-        }
-
-        impl BitAnd<$t> for &UBig {
-            type Output = $t;
-
-            #[inline]
-            fn bitand(self, rhs: $t) -> $t {
-                self.bitand(UBig::from_unsigned(rhs))
-                    .try_to_unsigned()
-                    .unwrap()
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl BitAnd<$t> for UBig, bitand);
-        helper_macros::forward_binop_swap_args!(impl BitAnd<UBig> for $t, bitand);
-
-        impl BitAndAssign<$t> for UBig {
-            #[inline]
-            fn bitand_assign(&mut self, rhs: $t) {
-                self.bitand_assign(UBig::from_unsigned(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl BitAndAssign<$t> for UBig, bitand_assign);
-
-        impl BitOr<$t> for UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn bitor(self, rhs: $t) -> UBig {
-                self.bitor(UBig::from_unsigned(rhs))
-            }
-        }
-
-        impl BitOr<$t> for &UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn bitor(self, rhs: $t) -> UBig {
-                self.bitor(UBig::from_unsigned(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl BitOr<$t> for UBig, bitor);
-        helper_macros::forward_binop_swap_args!(impl BitOr<UBig> for $t, bitor);
-
-        impl BitOrAssign<$t> for UBig {
-            #[inline]
-            fn bitor_assign(&mut self, rhs: $t) {
-                self.bitor_assign(UBig::from_unsigned(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl BitOrAssign<$t> for UBig, bitor_assign);
-
-        impl BitXor<$t> for UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn bitxor(self, rhs: $t) -> UBig {
-                self.bitxor(UBig::from_unsigned(rhs))
-            }
-        }
-
-        impl BitXor<$t> for &UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn bitxor(self, rhs: $t) -> UBig {
-                self.bitxor(UBig::from_unsigned(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl BitXor<$t> for UBig, bitxor);
-        helper_macros::forward_binop_swap_args!(impl BitXor<UBig> for $t, bitxor);
-
-        impl BitXorAssign<$t> for UBig {
-            #[inline]
-            fn bitxor_assign(&mut self, rhs: $t) {
-                self.bitxor_assign(UBig::from_unsigned(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl BitXorAssign<$t> for UBig, bitxor_assign);
-    };
+macro_rules! impl_bit_ops_primitive_with_ubig {
+    ($($t:ty)*) => {$(
+        helper_macros::impl_commutative_binop_with_primitive!(impl BitAnd<$t> for UBig, bitand -> $t);
+        helper_macros::impl_commutative_binop_with_primitive!(impl BitOr<$t> for UBig, bitor);
+        helper_macros::impl_commutative_binop_with_primitive!(impl BitXor<$t> for UBig, bitxor);
+        helper_macros::impl_binop_assign_with_primitive!(impl BitAndAssign<$t> for UBig, bitand_assign);
+        helper_macros::impl_binop_assign_with_primitive!(impl BitOrAssign<$t> for UBig, bitor_assign);
+        helper_macros::impl_binop_assign_with_primitive!(impl BitXorAssign<$t> for UBig, bitxor_assign);
+    )*};
 }
+impl_bit_ops_primitive_with_ubig!(u8 u16 u32 u64 u128 usize);
 
-impl_bit_ops_ubig_unsigned!(u8);
-impl_bit_ops_ubig_unsigned!(u16);
-impl_bit_ops_ubig_unsigned!(u32);
-impl_bit_ops_ubig_unsigned!(u64);
-impl_bit_ops_ubig_unsigned!(u128);
-impl_bit_ops_ubig_unsigned!(usize);
-
-macro_rules! impl_bit_ops_ibig_signed {
-    ($t:ty) => {
-        impl BitAnd<$t> for IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn bitand(self, rhs: $t) -> IBig {
-                self.bitand(IBig::from_signed(rhs))
-            }
-        }
-
-        impl BitAnd<$t> for &IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn bitand(self, rhs: $t) -> IBig {
-                self.bitand(IBig::from_signed(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl BitAnd<$t> for IBig, bitand);
-        helper_macros::forward_binop_swap_args!(impl BitAnd<IBig> for $t, bitand);
-
-        impl BitAndAssign<$t> for IBig {
-            #[inline]
-            fn bitand_assign(&mut self, rhs: $t) {
-                self.bitand_assign(IBig::from_signed(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl BitAndAssign<$t> for IBig, bitand_assign);
-
-        impl BitOr<$t> for IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn bitor(self, rhs: $t) -> IBig {
-                self.bitor(IBig::from_signed(rhs))
-            }
-        }
-
-        impl BitOr<$t> for &IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn bitor(self, rhs: $t) -> IBig {
-                self.bitor(IBig::from_signed(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl BitOr<$t> for IBig, bitor);
-        helper_macros::forward_binop_swap_args!(impl BitOr<IBig> for $t, bitor);
-
-        impl BitOrAssign<$t> for IBig {
-            #[inline]
-            fn bitor_assign(&mut self, rhs: $t) {
-                self.bitor_assign(IBig::from_signed(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl BitOrAssign<$t> for IBig, bitor_assign);
-
-        impl BitXor<$t> for IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn bitxor(self, rhs: $t) -> IBig {
-                self.bitxor(IBig::from_signed(rhs))
-            }
-        }
-
-        impl BitXor<$t> for &IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn bitxor(self, rhs: $t) -> IBig {
-                self.bitxor(IBig::from_signed(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl BitXor<$t> for IBig, bitxor);
-        helper_macros::forward_binop_swap_args!(impl BitXor<IBig> for $t, bitxor);
-
-        impl BitXorAssign<$t> for IBig {
-            #[inline]
-            fn bitxor_assign(&mut self, rhs: $t) {
-                self.bitxor_assign(IBig::from_signed(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl BitXorAssign<$t> for IBig, bitxor_assign);
-    };
+macro_rules! impl_bit_ops_primitive_with_ibig {
+    ($($t:ty)*) => {$(
+        helper_macros::impl_commutative_binop_with_primitive!(impl BitAnd<$t> for IBig, bitand);
+        helper_macros::impl_commutative_binop_with_primitive!(impl BitOr<$t> for IBig, bitor);
+        helper_macros::impl_commutative_binop_with_primitive!(impl BitXor<$t> for IBig, bitxor);
+        helper_macros::impl_binop_assign_with_primitive!(impl BitAndAssign<$t> for IBig, bitand_assign);
+        helper_macros::impl_binop_assign_with_primitive!(impl BitOrAssign<$t> for IBig, bitor_assign);
+        helper_macros::impl_binop_assign_with_primitive!(impl BitXorAssign<$t> for IBig, bitxor_assign);
+    )*};
 }
-
-impl_bit_ops_ibig_signed!(i8);
-impl_bit_ops_ibig_signed!(i16);
-impl_bit_ops_ibig_signed!(i32);
-impl_bit_ops_ibig_signed!(i64);
-impl_bit_ops_ibig_signed!(i128);
-impl_bit_ops_ibig_signed!(isize);
+impl_bit_ops_primitive_with_ibig!(i8 i16 i32 i64 i128 isize);
 
 #[cfg(test)]
 mod tests {

@@ -302,84 +302,50 @@ fn test_div_rem_ubig_unsigned() {
     assert_eq!(ubig!(23) % &10u8, 3u8);
     assert_eq!(&ubig!(23) % 10u8, 3u8);
     assert_eq!(&ubig!(23) % &10u8, 3u8);
-    let mut x = ubig!(23);
-    x %= 10u8;
-    assert_eq!(x, ubig!(3));
-    let mut x = ubig!(23);
-    x %= &10u8;
-    assert_eq!(x, ubig!(3));
 
     assert_eq!(ubig!(23).div_rem(10u8), (ubig!(2), 3u8));
     assert_eq!(ubig!(23).div_rem(&10u8), (ubig!(2), 3u8));
     assert_eq!((&ubig!(23)).div_rem(10u8), (ubig!(2), 3u8));
     assert_eq!((&ubig!(23)).div_rem(&10u8), (ubig!(2), 3u8));
-}
 
-#[test]
-fn test_div_rem_euclid_ubig_unsigned() {
-    assert_eq!(ubig!(23).div_euclid(10u8), ubig!(2));
-    assert_eq!(ubig!(23).div_euclid(&10u8), ubig!(2));
-    assert_eq!((&ubig!(23)).div_euclid(10u8), ubig!(2));
-    assert_eq!((&ubig!(23)).div_euclid(&10u8), ubig!(2));
-
-    assert_eq!(ubig!(23).rem_euclid(10u8), 3u8);
-    assert_eq!(ubig!(23).rem_euclid(&10u8), 3u8);
-    assert_eq!((&ubig!(23)).rem_euclid(10u8), 3u8);
-    assert_eq!((&ubig!(23)).rem_euclid(&10u8), 3u8);
-
-    assert_eq!(ubig!(23).div_rem_euclid(10u8), (ubig!(2), 3u8));
-    assert_eq!(ubig!(23).div_rem_euclid(&10u8), (ubig!(2), 3u8));
-    assert_eq!((&ubig!(23)).div_rem_euclid(10u8), (ubig!(2), 3u8));
-    assert_eq!((&ubig!(23)).div_rem_euclid(&10u8), (ubig!(2), 3u8));
+    let mut x = ubig!(23);
+    assert_eq!(x.div_rem_assign(10u8), 3);
+    assert_eq!(x, ubig!(2));
+    let mut x = ubig!(23);
+    assert_eq!(x.div_rem_assign(&10u8), 3);
+    assert_eq!(x, ubig!(2));
 }
 
 #[test]
 #[allow(clippy::op_ref)]
 fn test_div_rem_ibig_signed() {
-    assert_eq!(ibig!(-23) / (-10), ibig!(2));
-    assert_eq!(ibig!(-23) / &(-10), ibig!(2));
-    assert_eq!(&ibig!(-23) / (-10), ibig!(2));
-    assert_eq!(&ibig!(-23) / &(-10), ibig!(2));
+    assert_eq!(ibig!(-23) / (-10i8), ibig!(2));
+    assert_eq!(ibig!(-23) / &(-10i8), ibig!(2));
+    assert_eq!(&ibig!(-23) / (-10i8), ibig!(2));
+    assert_eq!(&ibig!(-23) / &(-10i8), ibig!(2));
     let mut x = ibig!(-23);
-    x /= -10;
+    x /= -10i8;
     assert_eq!(x, ibig!(2));
     let mut x = ibig!(-23);
-    x /= &(-10);
+    x /= &(-10i8);
     assert_eq!(x, ibig!(2));
 
-    assert_eq!(ibig!(-23) % (-10), -3);
-    assert_eq!(ibig!(-23) % &(-10), -3);
-    assert_eq!(&ibig!(-23) % (-10), -3);
-    assert_eq!(&ibig!(-23) % &(-10), -3);
+    assert_eq!(ibig!(-23) % (-10i8), -3);
+    assert_eq!(ibig!(-23) % &(-10i8), -3);
+    assert_eq!(&ibig!(-23) % (-10i8), -3);
+    assert_eq!(&ibig!(-23) % &(-10i8), -3);
+
+    assert_eq!(ibig!(-23).div_rem(-10i8), (ibig!(2), -3));
+    assert_eq!(ibig!(-23).div_rem(&(-10i8)), (ibig!(2), -3));
+    assert_eq!((&ibig!(-23)).div_rem(-10i8), (ibig!(2), -3));
+    assert_eq!((&ibig!(-23)).div_rem(&(-10i8)), (ibig!(2), -3));
+    
     let mut x = ibig!(-23);
-    x %= -10;
-    assert_eq!(x, ibig!(-3));
+    assert_eq!(x.div_rem_assign(-10i8), ibig!(-3));
+    assert_eq!(x, ibig!(2));
     let mut x = ibig!(-23);
-    x %= &(-10);
-    assert_eq!(x, ibig!(-3));
-
-    assert_eq!(ibig!(-23).div_rem(-10), (ibig!(2), -3));
-    assert_eq!(ibig!(-23).div_rem(&(-10)), (ibig!(2), -3));
-    assert_eq!((&ibig!(-23)).div_rem(-10), (ibig!(2), -3));
-    assert_eq!((&ibig!(-23)).div_rem(&(-10)), (ibig!(2), -3));
-}
-
-#[test]
-fn test_div_rem_euclid_ibig_signed() {
-    assert_eq!(ibig!(-23).div_euclid(-10), ibig!(3));
-    assert_eq!(ibig!(-23).div_euclid(&(-10)), ibig!(3));
-    assert_eq!((&ibig!(-23)).div_euclid(-10), ibig!(3));
-    assert_eq!((&ibig!(-23)).div_euclid(&(-10)), ibig!(3));
-
-    assert_eq!(ibig!(-23).rem_euclid(-10), 7u32);
-    assert_eq!(ibig!(-23).rem_euclid(&(-10)), 7u32);
-    assert_eq!((&ibig!(-23)).rem_euclid(-10), 7u32);
-    assert_eq!((&ibig!(-23)).rem_euclid(&(-10)), 7u32);
-
-    assert_eq!(ibig!(-23).div_rem_euclid(-10), (ibig!(3), 7u32));
-    assert_eq!(ibig!(-23).div_rem_euclid(&(-10)), (ibig!(3), 7u32));
-    assert_eq!((&ibig!(-23)).div_rem_euclid(-10), (ibig!(3), 7u32));
-    assert_eq!((&ibig!(-23)).div_rem_euclid(&(-10)), (ibig!(3), 7u32));
+    assert_eq!(x.div_rem_assign(&(-10i8)), ibig!(-3));
+    assert_eq!(x, ibig!(2));
 }
 
 #[test]

@@ -30,7 +30,7 @@ pub trait EstimatedLog2 {
     fn log2_bounds(&self) -> (f32, f32);
 
     /// Estimate the value of the binary logarithm. It's calculated as the
-    /// average of [log2_bounds][EstimatedLog2::log2_bounds].
+    /// average of [log2_bounds][EstimatedLog2::log2_bounds] by default.
     #[inline]
     fn log2_est(&self) -> f32 {
         let (lb, ub) = self.log2_bounds();

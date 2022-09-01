@@ -7,6 +7,7 @@ use crate::{
 };
 use core::ops::{Mul, MulAssign, Neg};
 
+// TODO(next): move sign to dashu_base
 /// An enum representing the sign of a number
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -16,17 +17,6 @@ pub enum Sign {
 }
 
 use Sign::*;
-
-impl Sign {
-    /// Convert [Positive] to [IBig::ONE], [Negative] to [IBig::NEG_ONE]
-    #[inline]
-    pub(crate) fn as_int(self) -> IBig {
-        match self {
-            Positive => IBig::ONE,
-            Negative => IBig::NEG_ONE,
-        }
-    }
-}
 
 impl Neg for Sign {
     type Output = Sign;
@@ -74,7 +64,7 @@ impl IBig {
     /// assert_eq!(IBig::from(-500).signum(), IBig::from(-1));
     /// ```
     #[inline]
-    pub fn signum(&self) -> IBig {
+    pub const fn signum(&self) -> IBig {
         IBig(self.0.signum())
     }
 }
