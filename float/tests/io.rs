@@ -1,9 +1,9 @@
-use dashu_float::{DBig, FBig};
+use dashu_float::{DBig, FBig, round::mode};
 use dashu_int::{error::ParseError, DoubleWord, IBig, Sign, Word};
 use std::str::FromStr;
 
 mod helper_macros;
-pub type FBig2 = FBig<2>;
+pub type FBig2 = FBig;
 
 // radix independent cases: (text, mantissa, exponent, precision)
 const COMMON_CASES: [(&str, i64, isize, usize); 28] = [
@@ -134,7 +134,7 @@ fn test_fbig_from_str() {
 
 #[test]
 fn test_oct_hex_from_str() {
-    type FOct = FBig<8>;
+    type FOct = FBig<mode::Zero, 8>;
     let oct_cases = [
         //
         // scientific with 'o' notation
@@ -163,7 +163,7 @@ fn test_oct_hex_from_str() {
     assert_eq!(FOct::from_str("一.二"), Err(ParseError::InvalidDigit));
     assert_eq!(FOct::from_str("一.二o三"), Err(ParseError::InvalidDigit));
 
-    type FHex = FBig<16>;
+    type FHex = FBig<mode::Zero, 16>;
     let hex_cases = [
         //
         // scientific with 'h' notation
@@ -192,14 +192,14 @@ fn test_oct_hex_from_str() {
 
 #[test]
 fn test_other_bases() {
-    assert_eq!(FBig::<3>::from_str("12.21").unwrap(), FBig::<3>::from_parts(ibig!(52), -2));
+    assert_eq!(FBig::<mode::Zero, 3>::from_str("12.21").unwrap(), FBig::<mode::Zero, 3>::from_parts(ibig!(52), -2));
     assert_eq!(
-        FBig::<20>::from_str("gg.hh@12").unwrap(),
-        FBig::<20>::from_parts(ibig!(134757), 10)
+        FBig::<mode::Zero, 20>::from_str("gg.hh@12").unwrap(),
+        FBig::<mode::Zero, 20>::from_parts(ibig!(134757), 10)
     );
     assert_eq!(
-        FBig::<30>::from_str("gg.hh@-12").unwrap(),
-        FBig::<30>::from_parts(ibig!(446927), -14)
+        FBig::<mode::Zero, 30>::from_str("gg.hh@-12").unwrap(),
+        FBig::<mode::Zero, 30>::from_parts(ibig!(446927), -14)
     );
 }
 

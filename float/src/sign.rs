@@ -7,7 +7,7 @@ use core::ops::{Mul, MulAssign, Neg};
 use dashu_base::Abs;
 use dashu_int::{IBig, Sign};
 
-impl<const B: Word, R: Round> FBig<B, R> {
+impl<R: Round, const B: Word> FBig<R, B> {
     pub const fn signum(&self) -> Self {
         let significand = if self.repr.significand.is_zero() && self.repr.exponent != 0 {
             if self.repr.exponent > 0 {
@@ -35,7 +35,7 @@ impl<const B: Word> Neg for Repr<B> {
     }
 }
 
-impl<const B: Word, R: Round> Neg for FBig<B, R> {
+impl<R: Round, const B: Word> Neg for FBig<R, B> {
     type Output = Self;
     #[inline]
     fn neg(mut self) -> Self::Output {
@@ -44,15 +44,15 @@ impl<const B: Word, R: Round> Neg for FBig<B, R> {
     }
 }
 
-impl<const B: Word, R: Round> Neg for &FBig<B, R> {
-    type Output = FBig<B, R>;
+impl<R: Round, const B: Word> Neg for &FBig<R, B> {
+    type Output = FBig<R, B>;
     #[inline]
     fn neg(self) -> Self::Output {
         self.clone().neg()
     }
 }
 
-impl<const B: Word, R: Round> Abs for FBig<B, R> {
+impl<R: Round, const B: Word> Abs for FBig<R, B> {
     type Output = Self;
     fn abs(mut self) -> Self::Output {
         self.repr.significand = self.repr.significand.abs();
@@ -60,17 +60,17 @@ impl<const B: Word, R: Round> Abs for FBig<B, R> {
     }
 }
 
-impl<const B: Word, R: Round> Mul<FBig<B, R>> for Sign {
-    type Output = FBig<B, R>;
+impl<R: Round, const B: Word> Mul<FBig<R, B>> for Sign {
+    type Output = FBig<R, B>;
     #[inline]
-    fn mul(self, mut rhs: FBig<B, R>) -> Self::Output {
+    fn mul(self, mut rhs: FBig<R, B>) -> Self::Output {
         rhs.repr.significand = rhs.repr.significand * self;
         rhs
     }
 }
 
-impl<const B: Word, R: Round> Mul<Sign> for FBig<B, R> {
-    type Output = FBig<B, R>;
+impl<R: Round, const B: Word> Mul<Sign> for FBig<R, B> {
+    type Output = FBig<R, B>;
     #[inline]
     fn mul(mut self, rhs: Sign) -> Self::Output {
         self.repr.significand *= rhs;
@@ -78,7 +78,7 @@ impl<const B: Word, R: Round> Mul<Sign> for FBig<B, R> {
     }
 }
 
-impl<const B: Word, R: Round> MulAssign<Sign> for FBig<B, R> {
+impl<R: Round, const B: Word> MulAssign<Sign> for FBig<R, B> {
     #[inline]
     fn mul_assign(&mut self, rhs: Sign) {
         self.repr.significand *= rhs;

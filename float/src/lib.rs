@@ -24,6 +24,7 @@ mod error;
 mod exp;
 mod fbig;
 mod fmt;
+mod helper_macros;
 mod ibig_ext;
 mod log;
 mod mul;
@@ -38,4 +39,4 @@ pub use fbig::FBig;
 pub use repr::Context;
 
 /// Multi-precision float number with decimal exponent and [HalfAway][round::mode::HalfAway] rounding mode
-pub type DBig = FBig<10, round::mode::HalfAway>;
+pub type DBig = FBig<round::mode::HalfAway, 10>;

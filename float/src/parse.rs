@@ -10,7 +10,7 @@ use dashu_int::{
     Sign, UBig,
 };
 
-impl<const B: Word, R: Round> FromStr for FBig<B, R> {
+impl<R: Round, const B: Word> FromStr for FBig<R, B> {
     type Err = ParseError;
 
     /// Convert a string in a given base to [FBig].

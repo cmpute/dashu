@@ -30,12 +30,12 @@ use dashu_int::{DoubleWord, IBig, Sign};
 /// * [Positive infinity][FloatRepr::INFINITY] (+∞): signficand = 0, exponent > 0
 /// * [Negative infinity][FloatRepr::NEG_INFINITY] (-∞): signficand = 0, exponenet < 0
 ///
-pub struct FBig<const BASE: Word = 2, RoundingMode: Round = mode::Zero> {
+pub struct FBig<RoundingMode: Round = mode::Zero, const BASE: Word = 2> {
     pub(crate) repr: Repr<BASE>,
     pub(crate) context: Context<RoundingMode>,
 }
 
-impl<const B: Word, R: Round> FBig<B, R> {
+impl<R: Round, const B: Word> FBig<R, B> {
     /// Create a [FBig] instance, internal use only
     #[inline]
     pub(crate) const fn new_raw(repr: Repr<B>, context: Context<R>) -> Self {
@@ -191,7 +191,7 @@ impl<const B: Word, R: Round> FBig<B, R> {
 }
 
 // This custom implementation is necessary due to https://github.com/rust-lang/rust/issues/98374
-impl<const B: Word, R: Round> Clone for FBig<B, R> {
+impl<R: Round, const B: Word> Clone for FBig<R, B> {
     #[inline]
     fn clone(&self) -> Self {
         Self {
@@ -207,16 +207,16 @@ impl<const B: Word, R: Round> Clone for FBig<B, R> {
     }
 }
 
-impl<const B: Word, R: Round> PartialEq for FBig<B, R> {
+impl<R: Round, const B: Word> PartialEq for FBig<R, B> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         // the representation is normalized so direct comparing is okay
         self.repr == other.repr
     }
 }
-impl<const B: Word, R: Round> Eq for FBig<B, R> {}
+impl<R: Round, const B: Word> Eq for FBig<R, B> {}
 
-impl<const B: Word, R: Round> Default for FBig<B, R> {
+impl<R: Round, const B: Word> Default for FBig<R, B> {
     /// Default value: 0.
     #[inline]
     fn default() -> Self {

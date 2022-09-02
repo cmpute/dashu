@@ -6,21 +6,21 @@ use crate::{
 use dashu_int::IBig;
 
 impl<R: Round> Context<R> {
-    pub fn powi<const B: Word>(&self, x: &IBig) -> Rounded<FBig<B, R>> {
+    pub fn powi<const B: Word>(&self, x: &IBig) -> Rounded<FBig<R, B>> {
         unimplemented!()
     }
 
     #[inline]
-    pub fn exp<const B: Word>(&self, x: &FBig<B, R>) -> Rounded<FBig<B, R>> {
+    pub fn exp<const B: Word>(&self, x: &FBig<R, B>) -> Rounded<FBig<R, B>> {
         self.exp_internal(x, false)
     }
 
     #[inline]
-    pub fn exp_m1<const B: Word>(&self, x: &FBig<B, R>) -> Rounded<FBig<B, R>> {
+    pub fn exp_m1<const B: Word>(&self, x: &FBig<R, B>) -> Rounded<FBig<R, B>> {
         self.exp_internal(x, true)
     }
 
-    fn exp_internal<const B: Word>(&self, x: &FBig<B, R>, minus_one: bool) -> Rounded<FBig<B, R>> {
+    fn exp_internal<const B: Word>(&self, x: &FBig<R, B>, minus_one: bool) -> Rounded<FBig<R, B>> {
         // A simple algorithm:
         // - let r = (x - s logB) / B^m, where s = floor(x / logB), such that r < B^-m.
         // - if the target precision is n digits, then only about max_k = n/m terms in Tyler series

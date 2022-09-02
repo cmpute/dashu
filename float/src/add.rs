@@ -3,7 +3,7 @@ use crate::{
     fbig::FBig,
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
-    utils::{digit_len, shl_digits, shl_digits_in_place, split_digits, split_digits_ref},
+    utils::{digit_len, shl_digits, shl_digits_in_place, split_digits, split_digits_ref}, helper_macros,
 };
 use core::{
     cmp::Ordering,
@@ -12,10 +12,10 @@ use core::{
 
 use dashu_int::{
     IBig,
-    Sign::{self, *},
+    Sign::{self, *}, UBig,
 };
 
-impl<const B: Word, R: Round> Add for FBig<B, R> {
+impl<R: Round, const B: Word> Add for FBig<R, B> {
     type Output = Self;
 
     #[inline]
@@ -24,47 +24,47 @@ impl<const B: Word, R: Round> Add for FBig<B, R> {
     }
 }
 
-impl<'r, const B: Word, R: Round> Add<&'r FBig<B, R>> for FBig<B, R> {
+impl<'r, const B: Word, R: Round> Add<&'r FBig<R, B>> for FBig<R, B> {
     type Output = Self;
 
     #[inline]
-    fn add(self, rhs: &FBig<B, R>) -> Self::Output {
+    fn add(self, rhs: &FBig<R, B>) -> Self::Output {
         add_val_ref(self, rhs, Positive)
     }
 }
 
-impl<'l, const B: Word, R: Round> Add<FBig<B, R>> for &'l FBig<B, R> {
-    type Output = FBig<B, R>;
+impl<'l, const B: Word, R: Round> Add<FBig<R, B>> for &'l FBig<R, B> {
+    type Output = FBig<R, B>;
 
     #[inline]
-    fn add(self, rhs: FBig<B, R>) -> Self::Output {
+    fn add(self, rhs: FBig<R, B>) -> Self::Output {
         add_ref_val(self, rhs, Positive)
     }
 }
 
-impl<'l, 'r, const B: Word, R: Round> Add<&'r FBig<B, R>> for &'l FBig<B, R> {
-    type Output = FBig<B, R>;
+impl<'l, 'r, const B: Word, R: Round> Add<&'r FBig<R, B>> for &'l FBig<R, B> {
+    type Output = FBig<R, B>;
 
     #[inline]
-    fn add(self, rhs: &FBig<B, R>) -> Self::Output {
+    fn add(self, rhs: &FBig<R, B>) -> Self::Output {
         add_ref_ref(self, rhs, Positive)
     }
 }
 
-impl<const B: Word, R: Round> AddAssign for FBig<B, R> {
+impl<R: Round, const B: Word> AddAssign for FBig<R, B> {
     #[inline]
     fn add_assign(&mut self, rhs: Self) {
         *self = core::mem::take(self) + rhs
     }
 }
-impl<const B: Word, R: Round> AddAssign<&FBig<B, R>> for FBig<B, R> {
+impl<R: Round, const B: Word> AddAssign<&FBig<R, B>> for FBig<R, B> {
     #[inline]
-    fn add_assign(&mut self, rhs: &FBig<B, R>) {
+    fn add_assign(&mut self, rhs: &FBig<R, B>) {
         *self = core::mem::take(self) + rhs
     }
 }
 
-impl<const B: Word, R: Round> Sub for FBig<B, R> {
+impl<R: Round, const B: Word> Sub for FBig<R, B> {
     type Output = Self;
 
     #[inline]
@@ -73,51 +73,61 @@ impl<const B: Word, R: Round> Sub for FBig<B, R> {
     }
 }
 
-impl<'r, const B: Word, R: Round> Sub<&'r FBig<B, R>> for FBig<B, R> {
+impl<'r, const B: Word, R: Round> Sub<&'r FBig<R, B>> for FBig<R, B> {
     type Output = Self;
 
     #[inline]
-    fn sub(self, rhs: &FBig<B, R>) -> Self::Output {
+    fn sub(self, rhs: &FBig<R, B>) -> Self::Output {
         add_val_ref(self, rhs, Negative)
     }
 }
 
-impl<'l, const B: Word, R: Round> Sub<FBig<B, R>> for &'l FBig<B, R> {
-    type Output = FBig<B, R>;
+impl<'l, const B: Word, R: Round> Sub<FBig<R, B>> for &'l FBig<R, B> {
+    type Output = FBig<R, B>;
 
     #[inline]
-    fn sub(self, rhs: FBig<B, R>) -> Self::Output {
+    fn sub(self, rhs: FBig<R, B>) -> Self::Output {
         add_ref_val(self, rhs, Negative)
     }
 }
 
-impl<'l, 'r, const B: Word, R: Round> Sub<&'r FBig<B, R>> for &'l FBig<B, R> {
-    type Output = FBig<B, R>;
+impl<'l, 'r, const B: Word, R: Round> Sub<&'r FBig<R, B>> for &'l FBig<R, B> {
+    type Output = FBig<R, B>;
 
     #[inline]
-    fn sub(self, rhs: &FBig<B, R>) -> Self::Output {
+    fn sub(self, rhs: &FBig<R, B>) -> Self::Output {
         add_ref_ref(self, rhs, Negative)
     }
 }
 
-impl<const B: Word, R: Round> SubAssign for FBig<B, R> {
+impl<R: Round, const B: Word> SubAssign for FBig<R, B> {
     #[inline]
     fn sub_assign(&mut self, rhs: Self) {
         *self = core::mem::take(self) - rhs
     }
 }
-impl<const B: Word, R: Round> SubAssign<&FBig<B, R>> for FBig<B, R> {
+impl<R: Round, const B: Word> SubAssign<&FBig<R, B>> for FBig<R, B> {
     #[inline]
-    fn sub_assign(&mut self, rhs: &FBig<B, R>) {
+    fn sub_assign(&mut self, rhs: &FBig<R, B>) {
         *self = core::mem::take(self) - rhs
     }
 }
 
-fn add_val_val<const B: Word, R: Round>(
-    lhs: FBig<B, R>,
-    mut rhs: FBig<B, R>,
+macro_rules! impl_add_sub_primitive_with_fbig {
+    ($($t:ty)*) => {$(
+        helper_macros::impl_commutative_binop_with_primitive!(impl Add<$t>, add);
+        helper_macros::impl_binop_assign_with_primitive!(impl AddAssign<$t>, add_assign);
+        helper_macros::impl_commutative_binop_with_primitive!(impl Sub<$t>, sub);
+        helper_macros::impl_binop_assign_with_primitive!(impl SubAssign<$t>, sub_assign);
+    )*};
+}
+impl_add_sub_primitive_with_fbig!(u8 u16 u32 u64 u128 usize UBig i8 i16 i32 i64 i128 isize IBig);
+
+fn add_val_val<R: Round, const B: Word>(
+    lhs: FBig<R, B>,
+    mut rhs: FBig<R, B>,
     rhs_sign: Sign,
-) -> FBig<B, R> {
+) -> FBig<R, B> {
     check_inf_operands(&lhs.repr, &rhs.repr);
 
     let context = Context::max(lhs.context, rhs.context);
@@ -140,11 +150,11 @@ fn add_val_val<const B: Word, R: Round>(
     FBig::new_raw(sum, context)
 }
 
-fn add_val_ref<const B: Word, R: Round>(
-    lhs: FBig<B, R>,
-    rhs: &FBig<B, R>,
+fn add_val_ref<R: Round, const B: Word>(
+    lhs: FBig<R, B>,
+    rhs: &FBig<R, B>,
     rhs_sign: Sign,
-) -> FBig<B, R> {
+) -> FBig<R, B> {
     check_inf_operands(&lhs.repr, &rhs.repr);
 
     let context = Context::max(lhs.context, rhs.context);
@@ -171,11 +181,11 @@ fn add_val_ref<const B: Word, R: Round>(
     FBig::new_raw(sum, context)
 }
 
-fn add_ref_val<const B: Word, R: Round>(
-    lhs: &FBig<B, R>,
-    mut rhs: FBig<B, R>,
+fn add_ref_val<R: Round, const B: Word>(
+    lhs: &FBig<R, B>,
+    mut rhs: FBig<R, B>,
     rhs_sign: Sign,
-) -> FBig<B, R> {
+) -> FBig<R, B> {
     check_inf_operands(&lhs.repr, &rhs.repr);
 
     let context = Context::max(lhs.context, rhs.context);
@@ -198,11 +208,11 @@ fn add_ref_val<const B: Word, R: Round>(
     FBig::new_raw(sum, context)
 }
 
-fn add_ref_ref<const B: Word, R: Round>(
-    lhs: &FBig<B, R>,
-    rhs: &FBig<B, R>,
+fn add_ref_ref<R: Round, const B: Word>(
+    lhs: &FBig<R, B>,
+    rhs: &FBig<R, B>,
     rhs_sign: Sign,
-) -> FBig<B, R> {
+) -> FBig<R, B> {
     check_inf_operands(&lhs.repr, &rhs.repr);
 
     let context = Context::max(lhs.context, rhs.context);
@@ -449,7 +459,7 @@ impl<R: Round> Context<R> {
         self.repr_round_sum(significand, exponent, low, is_sub)
     }
 
-    pub fn add<const B: Word>(&self, lhs: &FBig<B, R>, rhs: &FBig<B, R>) -> Rounded<FBig<B, R>> {
+    pub fn add<const B: Word>(&self, lhs: &FBig<R, B>, rhs: &FBig<R, B>) -> Rounded<FBig<R, B>> {
         check_inf_operands(&lhs.repr, &rhs.repr);
 
         let sum = if lhs.repr.is_zero() {
@@ -471,7 +481,7 @@ impl<R: Round> Context<R> {
         sum.map(|v| FBig::new_raw(v, *self))
     }
 
-    pub fn sub<const B: Word>(&self, lhs: &FBig<B, R>, rhs: &FBig<B, R>) -> Rounded<FBig<B, R>> {
+    pub fn sub<const B: Word>(&self, lhs: &FBig<R, B>, rhs: &FBig<R, B>) -> Rounded<FBig<R, B>> {
         check_inf_operands(&lhs.repr, &rhs.repr);
 
         let sum = if lhs.repr.is_zero() {

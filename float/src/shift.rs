@@ -1,7 +1,7 @@
 use crate::{fbig::FBig, repr::Word, round::Round};
 use core::ops::{Shl, ShlAssign, Shr, ShrAssign};
 
-impl<const B: Word, R: Round> Shl<usize> for FBig<B, R> {
+impl<R: Round, const B: Word> Shl<usize> for FBig<R, B> {
     type Output = Self;
     #[inline]
     fn shl(mut self, rhs: usize) -> Self::Output {
@@ -10,14 +10,14 @@ impl<const B: Word, R: Round> Shl<usize> for FBig<B, R> {
     }
 }
 
-impl<const B: Word, R: Round> ShlAssign<usize> for FBig<B, R> {
+impl<R: Round, const B: Word> ShlAssign<usize> for FBig<R, B> {
     #[inline]
     fn shl_assign(&mut self, rhs: usize) {
         self.repr.exponent += rhs as isize;
     }
 }
 
-impl<const B: Word, R: Round> Shr<usize> for FBig<B, R> {
+impl<R: Round, const B: Word> Shr<usize> for FBig<R, B> {
     type Output = Self;
     #[inline]
     fn shr(mut self, rhs: usize) -> Self::Output {
@@ -26,7 +26,7 @@ impl<const B: Word, R: Round> Shr<usize> for FBig<B, R> {
     }
 }
 
-impl<const B: Word, R: Round> ShrAssign<usize> for FBig<B, R> {
+impl<R: Round, const B: Word> ShrAssign<usize> for FBig<R, B> {
     #[inline]
     fn shr_assign(&mut self, rhs: usize) {
         self.repr.exponent -= rhs as isize;

@@ -3,7 +3,7 @@
 use crate::{
     arch::word::Word,
     buffer::Buffer,
-    error::{panic_negative_ubig, OutOfBoundsError},
+    error::OutOfBoundsError,
     ibig::IBig,
     primitive::{self, PrimitiveSigned, PrimitiveUnsigned, DWORD_BYTES, WORD_BITS, WORD_BYTES},
     repr::{Repr, TypedReprRef::*},
@@ -245,7 +245,7 @@ fn round_to_even_adjustment(bits: u32) -> bool {
 }
 
 macro_rules! ubig_unsigned_conversions {
-    ($t:ty) => {
+    ($($t:ty)*) => {$(
         impl From<$t> for UBig {
             #[inline]
             fn from(value: $t) -> UBig {
@@ -270,15 +270,9 @@ macro_rules! ubig_unsigned_conversions {
                 value.try_to_unsigned()
             }
         }
-    };
+    )*};
 }
-
-ubig_unsigned_conversions!(u8);
-ubig_unsigned_conversions!(u16);
-ubig_unsigned_conversions!(u32);
-ubig_unsigned_conversions!(u64);
-ubig_unsigned_conversions!(u128);
-ubig_unsigned_conversions!(usize);
+ubig_unsigned_conversions!(u8 u16 u32 u64 u128 usize);
 
 impl From<bool> for UBig {
     #[inline]
@@ -288,7 +282,7 @@ impl From<bool> for UBig {
 }
 
 macro_rules! ubig_signed_conversions {
-    ($t:ty) => {
+    ($($t:ty)*) => {$(
         impl TryFrom<$t> for UBig {
             type Error = OutOfBoundsError;
 
@@ -315,18 +309,12 @@ macro_rules! ubig_signed_conversions {
                 value.try_to_signed()
             }
         }
-    };
+    )*};
 }
-
-ubig_signed_conversions!(i8);
-ubig_signed_conversions!(i16);
-ubig_signed_conversions!(i32);
-ubig_signed_conversions!(i64);
-ubig_signed_conversions!(i128);
-ubig_signed_conversions!(isize);
+ubig_signed_conversions!(i8 i16 i32 i64 i128 isize);
 
 macro_rules! ibig_unsigned_conversions {
-    ($t:ty) => {
+    ($($t:ty)*) => {$(
         impl From<$t> for IBig {
             #[inline]
             fn from(value: $t) -> IBig {
@@ -351,15 +339,10 @@ macro_rules! ibig_unsigned_conversions {
                 value.try_to_unsigned()
             }
         }
-    };
+    )*};
 }
 
-ibig_unsigned_conversions!(u8);
-ibig_unsigned_conversions!(u16);
-ibig_unsigned_conversions!(u32);
-ibig_unsigned_conversions!(u64);
-ibig_unsigned_conversions!(u128);
-ibig_unsigned_conversions!(usize);
+ibig_unsigned_conversions!(u8 u16 u32 u64 u128 usize);
 
 impl From<bool> for IBig {
     #[inline]
@@ -369,7 +352,7 @@ impl From<bool> for IBig {
 }
 
 macro_rules! ibig_signed_conversions {
-    ($t:ty) => {
+    ($($t:ty)*) => {$(
         impl From<$t> for IBig {
             #[inline]
             fn from(value: $t) -> IBig {
@@ -394,15 +377,10 @@ macro_rules! ibig_signed_conversions {
                 value.try_to_signed()
             }
         }
-    };
+    )*};
 }
 
-ibig_signed_conversions!(i8);
-ibig_signed_conversions!(i16);
-ibig_signed_conversions!(i32);
-ibig_signed_conversions!(i64);
-ibig_signed_conversions!(i128);
-ibig_signed_conversions!(isize);
+ibig_signed_conversions!(i8 i16 i32 i64 i128 isize);
 
 impl From<UBig> for IBig {
     #[inline]
@@ -492,16 +470,6 @@ impl UBig {
                 let u: T::Unsigned = unsigned_from_words(words)?;
                 u.try_into().map_err(|_| OutOfBoundsError)
             }
-        }
-    }
-
-    /// This method will panic if the signed integer input is negative,
-    /// therefore it should not be exposed to public.
-    #[inline]
-    pub(crate) fn from_ibig(x: IBig) -> UBig {
-        match UBig::try_from(x) {
-            Ok(v) => v,
-            Err(_) => panic_negative_ubig(),
         }
     }
 }

@@ -99,7 +99,7 @@ macro_rules! impl_binop_assign_with_primitive {
                 self.$method(<$t>::from(rhs))
             }
         }
-        impl<'r> $trait<&'r $target> for $t {
+        impl $trait<&$target> for $t {
             #[inline]
             fn $method(&mut self, rhs: &$target) {
                 self.$method(<$t>::from(*rhs))

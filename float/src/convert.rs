@@ -8,13 +8,15 @@ use dashu_base::Approximation;
 use dashu_int::{IBig, UBig, Word};
 
 impl<R: Round> Context<R> {
-    pub fn convert_int<const B: Word>(&self, n: IBig) -> FBig<B, R> {
+    /// Convert an [IBig] instance to a [FBig] instance with precision
+    /// and rounding given by the context.
+    pub fn convert_int<const B: Word>(&self, n: IBig) -> FBig<R, B> {
         let repr = Repr::<B>::new(n, 0);
         FBig::new_raw(self.repr_round(repr).value(), *self)
     }
 }
 
-impl<R: Round> From<f32> for FBig<2, R> {
+impl<R: Round> From<f32> for FBig<R, 2> {
     fn from(f: f32) -> Self {
         let bits: u32 = f.to_bits();
 
@@ -39,7 +41,7 @@ impl<R: Round> From<f32> for FBig<2, R> {
     }
 }
 
-impl<R: Round> From<f64> for FBig<2, R> {
+impl<R: Round> From<f64> for FBig<R, 2> {
     fn from(f: f64) -> Self {
         let bits: u64 = f.to_bits();
 
@@ -64,7 +66,7 @@ impl<R: Round> From<f64> for FBig<2, R> {
     }
 }
 
-impl<const B: Word, R: Round> From<IBig> for FBig<B, R> {
+impl<R: Round, const B: Word> From<IBig> for FBig<R, B> {
     #[inline]
     fn from(n: IBig) -> Self {
         let repr = Repr::new(n, 0);
@@ -73,23 +75,23 @@ impl<const B: Word, R: Round> From<IBig> for FBig<B, R> {
     }
 }
 
-impl<const B: Word, R: Round> From<UBig> for FBig<B, R> {
+impl<R: Round, const B: Word> From<UBig> for FBig<R, B> {
     #[inline]
     fn from(n: UBig) -> Self {
         IBig::from(n).into()
     }
 }
 
-impl<const B: Word, R: Round> FBig<B, R> {
+impl<R: Round, const B: Word> FBig<R, B> {
     /// Convert the float number to decimal based exponents.
     #[inline]
-    pub fn to_decimal(&self) -> Approximation<FBig<10, R>, Rounding> {
+    pub fn to_decimal(&self) -> Rounded<FBig<R, 10>> {
         self.clone().with_base::<10>()
     }
 
     /// Convert the float number to decimal based exponents.
     #[inline]
-    pub fn to_binary(&self) -> Approximation<FBig<2, R>, Rounding> {
+    pub fn to_binary(&self) -> Rounded<FBig<R, 2>> {
         self.clone().with_base::<2>()
     }
 
@@ -98,7 +100,7 @@ impl<const B: Word, R: Round> FBig<B, R> {
     /// If the given precision is less than the previous value,
     /// it will be rounded following the rounding mode specified by the type parameter.
     #[inline]
-    pub fn with_precision(self, precision: usize) -> Approximation<Self, Rounding> {
+    pub fn with_precision(self, precision: usize) -> Rounded<Self> {
         let new_context = Context::new(precision);
 
         // shrink if necessary
@@ -115,7 +117,7 @@ impl<const B: Word, R: Round> FBig<B, R> {
     ///
     /// This operation has no cost.
     #[inline]
-    pub fn with_rounding<NewR: Round>(self) -> FBig<B, NewR> {
+    pub fn with_rounding<NewR: Round>(self) -> FBig<NewR, B> {
         FBig {
             repr: self.repr,
             context: Context::new(self.context.precision),
@@ -130,7 +132,7 @@ impl<const B: Word, R: Round> FBig<B, R> {
     /// If any rounding happens during the conversion, if will follow
     /// the rounding mode specified by the type parameter.
     #[allow(non_upper_case_globals)]
-    pub fn with_base<const NewB: Word>(self) -> Approximation<FBig<NewB, R>, Rounding> {
+    pub fn with_base<const NewB: Word>(self) -> Rounded<FBig<R, NewB>> {
         if NewB == B {
             return Approximation::Exact(FBig {
                 repr: Repr {
@@ -171,7 +173,7 @@ impl<const B: Word, R: Round> FBig<B, R> {
             let (log_v, log_r) = log_rem(&precision_ub, NewB as usize);
             let den = IBig::from(&precision_ub - log_r);
             let num = IBig::from(precision_ub) * self.repr.significand;
-            let mut value = FBig::<NewB, R>::from_ratio(num, den, precision + 1);
+            let mut value = FBig::<R, NewB>::from_ratio(num, den, precision + 1);
             value.repr.exponent += log_v as isize;
             value
         } else {
@@ -189,7 +191,7 @@ impl<const B: Word, R: Round> FBig<B, R> {
             let (log_v, log_r) = log_rem(&precision_ub, NewB as usize);
             let num = IBig::from(&precision_ub - log_r) * self.repr.significand;
             let den = IBig::from(precision_ub);
-            let mut value = FBig::<NewB, R>::from_ratio(num, den, precision + 1);
+            let mut value = FBig::<R, NewB>::from_ratio(num, den, precision + 1);
             value.repr.exponent -= log_v as isize;
             value
         };
@@ -198,7 +200,7 @@ impl<const B: Word, R: Round> FBig<B, R> {
     }
 
     #[allow(non_upper_case_globals)]
-    fn with_base_and_precision<const NewB: Word>(self, precision: usize) -> Rounded<FBig<NewB, R>> {
+    fn with_base_and_precision<const NewB: Word>(self, precision: usize) -> Rounded<FBig<R, NewB>> {
         let context = Context::new(precision);
 
         const THRESHOLD_SMALL_EXP: isize = 4;
@@ -223,20 +225,42 @@ impl<const B: Word, R: Round> FBig<B, R> {
         }
     }
 
-    // TODO: let all these to_* functions return `Approximation`
-
     /// Convert the float number to native [f32] with the given rounding mode.
-    fn to_f32(&self) -> f32 {
+    fn to_f32(&self) -> Rounded<f32> {
         unimplemented!()
     }
 
     /// Convert the float number to native [f64] with the given rounding mode.
-    fn to_f64(&self) -> f64 {
+    fn to_f64(&self) -> Rounded<f64> {
         unimplemented!()
     }
 
     /// Convert the float number to integer with the given rounding mode.
-    fn to_int(&self) -> IBig {
+    fn to_int(&self) -> Rounded<IBig> {
         unimplemented!()
     }
 }
+
+macro_rules! fbig_unsigned_conversions {
+    ($($t:ty)*) => {$(
+        impl<R: Round, const B: Word> From<$t> for FBig<R, B> {
+            #[inline]
+            fn from(value: $t) -> FBig<R, B> {
+                UBig::from(value).into()
+            }
+        }
+    )*};
+}
+fbig_unsigned_conversions!(u8 u16 u32 u64 u128 usize);
+
+macro_rules! fbig_signed_conversions {
+    ($($t:ty)*) => {$(
+        impl<R: Round, const B: Word> From<$t> for FBig<R, B> {
+            #[inline]
+            fn from(value: $t) -> FBig<R, B> {
+                IBig::from(value).into()
+            }
+        }
+    )*};
+}
+fbig_signed_conversions!(i8 i16 i32 i64 i128 isize);

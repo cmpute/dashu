@@ -30,7 +30,7 @@ impl<R: Round> fmt::Debug for Context<R> {
     }
 }
 
-impl<const B: Word, R: Round> fmt::Debug for FBig<B, R> {
+impl<R: Round, const B: Word> fmt::Debug for FBig<R, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&self.repr, f)?;
         fmt::Debug::fmt(&self.context, f)
@@ -39,7 +39,7 @@ impl<const B: Word, R: Round> fmt::Debug for FBig<B, R> {
 
 // FIXME: sign, width and fill options are not yet correctly handled
 
-impl<const B: Word, R: Round> Display for FBig<B, R> {
+impl<R: Round, const B: Word> Display for FBig<R, B> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // print in decimal if the alternate flag is set
         if f.alternate() && B != 10 {

@@ -7,7 +7,7 @@ use crate::{
     round::{Round, Rounded},
 };
 
-impl<const B: Word, R: Round> EstimatedLog2 for FBig<B, R> {
+impl<R: Round, const B: Word> EstimatedLog2 for FBig<R, B> {
     // currently a Word has at most 64 bits, so log2() < f32::MAX
     fn log2_bounds(&self) -> (f32, f32) {
         // log(s*B^e) = log(s) + e*log(B)
@@ -27,7 +27,7 @@ impl<const B: Word, R: Round> EstimatedLog2 for FBig<B, R> {
     }
 }
 
-impl<const B: Word, R: Round> FBig<B, R> {
+impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     pub fn ln(&self) -> Self {
         self.context.ln(self).value()
@@ -39,20 +39,29 @@ impl<R: Round> Context<R> {
     ///
     /// The precision of the output will be larger than self.precision
     #[inline]
-    fn ln2<const B: Word>(&self) -> FBig<B, R> {
+    fn ln2<const B: Word>(&self) -> FBig<R, B> {
         // log(2) = 4L(6) + 2L(99)
         // see formula (24) from Gourdon, Xavier, and Pascal Sebah.
         // "The Logarithmic Constant: Log 2." (2004)
         4 * self.iacoth(6.into()) + 2 * self.iacoth(99.into())
     }
 
+    /// Calculate log(5)
+    ///
+    /// The precision of the output will be larger than self.precision
+    // #[inline]
+    // fn ln5<const B: Word>(&self) -> FBig<R, B> {
+    //     // log(5) = 2log(2) + 2L(9)
+    //     // see example (17) from "The Logarithmic Constant: Log 2"
+    //     2 * self.ln2() + 2 * self.iacoth(9.into())
+    // }
+
     /// Calculate log(2)
     ///
     /// The precision of the output will be larger than self.precision
     #[inline]
-    fn ln10<const B: Word>(&self) -> FBig<B, R> {
+    fn ln10<const B: Word>(&self) -> FBig<R, B> {
         // log(10) = log(2) + log(5) = 3log(2) + 2L(9)
-        // see example (17) from "The Logarithmic Constant: Log 2"
         3 * self.ln2() + 2 * self.iacoth(9.into())
     }
 
@@ -60,7 +69,7 @@ impl<R: Round> Context<R> {
     ///
     /// The precision of the output will be larger than self.precision
     #[inline]
-    pub(crate) fn ln_base<const B: Word>(&self) -> FBig<B, R> {
+    pub(crate) fn ln_base<const B: Word>(&self) -> FBig<R, B> {
         match B {
             2 => self.ln2(),
             10 => self.ln10(),
@@ -75,7 +84,7 @@ impl<R: Round> Context<R> {
     ///
     /// This method is intended to be used in logarithm calculation,
     /// so the precision of the output will be larger than desired precision.
-    fn iacoth<const B: Word>(&self, n: IBig) -> FBig<B, R> {
+    fn iacoth<const B: Word>(&self, n: IBig) -> FBig<R, B> {
         /*
          * use Maclaurin series:
          *       1    1     n+1             1
@@ -115,7 +124,7 @@ impl<R: Round> Context<R> {
     }
 
     /// Calculate the natural logarithm of the number x
-    pub fn ln<const B: Word>(&self, x: &FBig<B, R>) -> Rounded<FBig<B, R>> {
+    pub fn ln<const B: Word>(&self, x: &FBig<R, B>) -> Rounded<FBig<R, B>> {
         // A simple algorithm:
         // - let log(x) = log(x/2^s) + slog2 where s = floor(log2(x))
         // - such that x*2^s is close to but larger than 1,
@@ -158,7 +167,7 @@ impl<R: Round> Context<R> {
         }
 
         // compose the logarithm of the original number
-        let result = if log2 >= 0. {
+        let result: FBig<R, B> = if log2 >= 0. {
             2 * sum + self.ln2() * IBig::from(log2 as usize)
         } else {
             2 * sum - self.ln2() * IBig::from((-log2) as usize)

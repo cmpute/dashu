@@ -1,60 +1,69 @@
 use crate::{
     error::check_inf_operands,
     fbig::FBig,
+    helper_macros,
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
     utils::{digit_len, shl_digits_in_place},
 };
 use core::ops::{Div, DivAssign};
 use dashu_base::{Approximation, DivRem};
-use dashu_int::IBig;
+use dashu_int::{IBig, UBig};
 
-impl<const B: Word, R: Round> Div<FBig<B, R>> for FBig<B, R> {
-    type Output = FBig<B, R>;
-    fn div(self, rhs: FBig<B, R>) -> Self::Output {
+impl<R: Round, const B: Word> Div<FBig<R, B>> for FBig<R, B> {
+    type Output = FBig<R, B>;
+    fn div(self, rhs: FBig<R, B>) -> Self::Output {
         let context = Context::max(self.context, rhs.context);
         FBig::new_raw(context.repr_div(self.repr, &rhs.repr).value(), context)
     }
 }
 
-impl<'l, const B: Word, R: Round> Div<FBig<B, R>> for &'l FBig<B, R> {
-    type Output = FBig<B, R>;
-    fn div(self, rhs: FBig<B, R>) -> Self::Output {
+impl<'l, const B: Word, R: Round> Div<FBig<R, B>> for &'l FBig<R, B> {
+    type Output = FBig<R, B>;
+    fn div(self, rhs: FBig<R, B>) -> Self::Output {
         let context = Context::max(self.context, rhs.context);
         FBig::new_raw(context.repr_div(self.repr.clone(), &rhs.repr).value(), context)
     }
 }
 
-impl<'r, const B: Word, R: Round> Div<&'r FBig<B, R>> for FBig<B, R> {
+impl<'r, const B: Word, R: Round> Div<&'r FBig<R, B>> for FBig<R, B> {
     type Output = Self;
-    fn div(self, rhs: &FBig<B, R>) -> Self::Output {
+    fn div(self, rhs: &FBig<R, B>) -> Self::Output {
         let context = Context::max(self.context, rhs.context);
         FBig::new_raw(context.repr_div(self.repr, &rhs.repr).value(), context)
     }
 }
 
-impl<'l, 'r, const B: Word, R: Round> Div<&'r FBig<B, R>> for &'l FBig<B, R> {
-    type Output = FBig<B, R>;
-    fn div(self, rhs: &FBig<B, R>) -> Self::Output {
+impl<'l, 'r, const B: Word, R: Round> Div<&'r FBig<R, B>> for &'l FBig<R, B> {
+    type Output = FBig<R, B>;
+    fn div(self, rhs: &FBig<R, B>) -> Self::Output {
         let context = Context::max(self.context, rhs.context);
         FBig::new_raw(context.repr_div(self.repr.clone(), &rhs.repr).value(), context)
     }
 }
 
-impl<const B: Word, R: Round> DivAssign for FBig<B, R> {
+impl<R: Round, const B: Word> DivAssign for FBig<R, B> {
     #[inline]
     fn div_assign(&mut self, rhs: Self) {
         *self = core::mem::take(self) / rhs
     }
 }
-impl<const B: Word, R: Round> DivAssign<&FBig<B, R>> for FBig<B, R> {
+impl<R: Round, const B: Word> DivAssign<&FBig<R, B>> for FBig<R, B> {
     #[inline]
-    fn div_assign(&mut self, rhs: &FBig<B, R>) {
+    fn div_assign(&mut self, rhs: &FBig<R, B>) {
         *self = core::mem::take(self) / rhs
     }
 }
 
-impl<const B: Word, R: Round> FBig<B, R> {
+macro_rules! impl_add_sub_primitive_with_fbig {
+    ($($t:ty)*) => {$(
+        helper_macros::impl_commutative_binop_with_primitive!(impl Div<$t>, div);
+        helper_macros::impl_binop_assign_with_primitive!(impl DivAssign<$t>, div_assign);
+    )*};
+}
+impl_add_sub_primitive_with_fbig!(u8 u16 u32 u64 u128 usize UBig i8 i16 i32 i64 i128 isize IBig);
+
+impl<R: Round, const B: Word> FBig<R, B> {
     /// Create a floating number by dividing two integers with given precision
     #[inline]
     #[deprecated] // TODO: remove this, implement as From<RBig> in future
@@ -113,7 +122,7 @@ impl<R: Round> Context<R> {
         }
     }
 
-    pub fn div<const B: Word>(&self, lhs: &FBig<B, R>, rhs: &FBig<B, R>) -> Rounded<FBig<B, R>> {
+    pub fn div<const B: Word>(&self, lhs: &FBig<R, B>, rhs: &FBig<R, B>) -> Rounded<FBig<R, B>> {
         let lhs_repr = if !lhs.repr.is_zero()
             && lhs.repr.digits_ub() > rhs.repr.digits_lb() + self.precision
         {
@@ -129,14 +138,5 @@ impl<R: Round> Context<R> {
     }
 }
 
-// TODO: implement more variants with macros, after implementing From<primitive> for FBig
-impl<const B: Word, R: Round> Div<dashu_int::IBig> for FBig<B, R> {
-    type Output = FBig<B, R>;
-
-    #[inline]
-    fn div(self, rhs: dashu_int::IBig) -> Self::Output {
-        self / FBig::from(rhs)
-    }
-}
-
 // TODO: implement div_euclid, rem_euclid, div_rem_euclid for float, as it can be properly defined
+//       maybe also implement rem and div_rem to be consistent with the builtin float
