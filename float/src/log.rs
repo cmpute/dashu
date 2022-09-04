@@ -92,23 +92,23 @@ impl<R: Round> Context<R> {
          *       n    2     n-1    i≥0 n²ⁱ⁺¹(2i+1)
          *
          * Therefore to achieve precision B^p, the series should be stopped at
-         *    n²ⁱ⁺¹(2i+1) / n >= B^p
-         * => 2i*ln(n) + ln(2i+1) >= p ln(B)
-         * => 2i*ln(n) >= p ln(B)
-         * => 2i >= p/log_B(n)
-         * let k = 2i + 1, we choose max{k} = p/log_B(n) + 1
+         *    n²ⁱ⁺¹(2i+1) / n = B^p
+         * => 2i*ln(n) + ln(2i+1) = p ln(B)
+         * ~> 2i*ln(n) = p ln(B)
+         * => 2i = p/log_B(n)
          *
          * There will be i summations when calculating the series, to prevent
          * loss of significant, we needs log_B(i) guard digits.
-         *    log_B[(p/log_B(n) - 1) / 2]
+         *    log_B(i)
          * <= log_B(p/2log_B(n))
          *  = log_B(p/2) - log_B(log_B(n))
          * <= log_B(p/2)
          */
-        let max_k = (self.precision as f32 * B.log2_est() / n.log2_est()) as usize;
+
+        // extras digits are added to ensure precise result
+        // TODO(next): test if we can use log_B(p/2log_B(n)) directly
         let guard_digits = ((self.precision / 2).log2_est() / B.log2_est()) as usize;
-        let (max_k, guard_digits) = (max_k + 2, guard_digits + 2); // add extras to ensure precise result
-        let work_context = Self::new(self.precision + guard_digits);
+        let work_context = Self::new(self.precision + guard_digits + 2);
 
         let n = work_context.convert_int(n);
         let inv = FBig::ONE / n;
@@ -116,11 +116,17 @@ impl<R: Round> Context<R> {
         let mut sum = inv.clone();
         let mut pow = inv;
 
-        for k in (3..=max_k).step_by(2) {
+        let mut k: usize = 3;
+        loop {
             pow *= &inv2;
-            sum += &pow / work_context.convert_int::<B>(k.into());
+            let next = &sum + &pow / work_context.convert_int::<B>(k.into());
+
+            if next == sum {
+                return sum;
+            }
+            sum = next;
+            k += 2;
         }
-        sum
     }
 
     /// Calculate the natural logarithm of the number x
@@ -149,21 +155,26 @@ impl<R: Round> Context<R> {
         // TODO: assert x_scaled > 1
 
         // after the number is scaled to nearly one, use Maclaurin series on log(x) = 2atanh(z):
-        // let z = (x-1)/(x+1) < 1, log(x) = 2atanh(z) = 2Σ(zⁱ/i) for i = 1,3,5,...
-        // similar to iacoth, the required iterations stop at i = -p/log_B(z) + 1, and we need log_B(p/2) guard bits
+        // let z = (x-1)/(x+1) < 1, log(x) = 2atanh(z) = 2Σ(z²ⁱ⁺¹/(2i+1)) for i = 1,3,5,...
+        // similar to iacoth, the required iterations stop at i = -p/2log_B(z), and we need log_B(i) guard bits
         let z = (&x_scaled - FBig::ONE) / (x_scaled + FBig::ONE);
-        let max_k = (self.precision as f32 * B.log2_est() / -z.log2_est()) as usize;
         let guard_digits = ((self.precision / 2).log2_est() / B.log2_est()) as usize;
-        let (max_k, guard_digits) = (max_k + 2, guard_digits + 2); // add extras to ensure precise result
-        let work_context = Self::new(self.precision + guard_digits);
+        let work_context = Self::new(self.precision + guard_digits + 2);
 
         let z2 = z.square();
         let mut pow = z.clone();
         let mut sum = z.clone();
 
-        for k in (3..=max_k).step_by(2) {
+        let mut k: usize = 3;
+        loop {
             pow *= &z2;
-            sum += &pow / work_context.convert_int::<B>(k.into());
+            let next = &sum + &pow / work_context.convert_int::<B>(k.into());
+
+            if next == sum {
+                break;
+            }
+            sum = next;
+            k += 2;
         }
 
         // compose the logarithm of the original number

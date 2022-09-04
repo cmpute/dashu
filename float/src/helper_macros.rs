@@ -94,6 +94,25 @@ macro_rules! impl_binop_assign_with_primitive {
     };
 }
 
+/// Implement `impl OpAssign<A> for FBig` by forwarding to `*f = mem::take(f).op(A)`, including &f.
+macro_rules! impl_binop_assign_by_taking {
+    (impl $trait:ident<$t2:ty>, $methodassign:ident, $method:ident) => {
+        impl<R: Round, const B: Word> $trait<$t2> for FBig<R, B> {
+            #[inline]
+            fn $methodassign(&mut self, rhs: $t2) {
+                *self = core::mem::take(self).$method(rhs);
+            }
+        }
+        impl<R: Round, const B: Word> $trait<&$t2> for FBig<R, B> {
+            #[inline]
+            fn $methodassign(&mut self, rhs: &$t2) {
+                *self = core::mem::take(self).$method(rhs);
+            }
+        }
+    };
+}
+
 pub(crate) use impl_binop_with_primitive;
 pub(crate) use impl_binop_assign_with_primitive;
+pub(crate) use impl_binop_assign_by_taking;
 pub(crate) use impl_commutative_binop_with_primitive;

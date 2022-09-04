@@ -43,6 +43,9 @@ pub enum Rounding {
 pub type Rounded<T> = Approximation<T, Rounding>;
 
 pub trait Round: Copy {
+    /// The rounding operation that rounds to an opposite direction
+    type Reverse: Round;
+
     // TODO: find a better name
     /// Calculate the rounding of the number (integer + rem), assuming rem != 0 and |rem| < 1.
     /// `rem_half_test` should tell |rem|.cmp(0.5)
@@ -88,6 +91,8 @@ pub trait Round: Copy {
 }
 
 impl Round for mode::Zero {
+    type Reverse = Self; // TODO: this is not correct
+
     #[inline]
     fn round_rem<F: FnOnce() -> Ordering>(
         integer: &IBig,
@@ -106,6 +111,8 @@ impl Round for mode::Zero {
 }
 
 impl Round for mode::Down {
+    type Reverse = mode::Up;
+
     #[inline]
     fn round_rem<F: FnOnce() -> Ordering>(
         _integer: &IBig,
@@ -122,6 +129,8 @@ impl Round for mode::Down {
 }
 
 impl Round for mode::Up {
+    type Reverse = mode::Down;
+
     #[inline]
     fn round_rem<F: FnOnce() -> Ordering>(
         _integer: &IBig,
@@ -138,6 +147,8 @@ impl Round for mode::Up {
 }
 
 impl Round for mode::HalfAway {
+    type Reverse = Self;
+
     #[inline]
     fn round_rem<F: FnOnce() -> Ordering>(
         integer: &IBig,
@@ -171,6 +182,8 @@ impl Round for mode::HalfAway {
 }
 
 impl Round for mode::HalfEven {
+    type Reverse = Self;
+
     #[inline]
     fn round_rem<F: FnOnce() -> Ordering>(
         integer: &IBig,

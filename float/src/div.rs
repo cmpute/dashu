@@ -7,7 +7,7 @@ use crate::{
     utils::{digit_len, shl_digits_in_place},
 };
 use core::ops::{Div, DivAssign};
-use dashu_base::{Approximation, DivRem};
+use dashu_base::{Approximation, DivRem, DivEuclid, DivRemEuclid, RemEuclid};
 use dashu_int::{IBig, UBig};
 
 impl<R: Round, const B: Word> Div<FBig<R, B>> for FBig<R, B> {
@@ -27,7 +27,7 @@ impl<'l, const B: Word, R: Round> Div<FBig<R, B>> for &'l FBig<R, B> {
 }
 
 impl<'r, const B: Word, R: Round> Div<&'r FBig<R, B>> for FBig<R, B> {
-    type Output = Self;
+    type Output = FBig<R, B>;
     fn div(self, rhs: &FBig<R, B>) -> Self::Output {
         let context = Context::max(self.context, rhs.context);
         FBig::new_raw(context.repr_div(self.repr, &rhs.repr).value(), context)
@@ -55,6 +55,125 @@ impl<R: Round, const B: Word> DivAssign<&FBig<R, B>> for FBig<R, B> {
     }
 }
 
+impl<R: Round, const B: Word> DivEuclid<FBig<R, B>> for FBig<R, B> {
+    type Output = IBig;
+    #[inline]
+    fn div_euclid(self, rhs: FBig<R, B>) -> Self::Output {
+        let (num, den) = align_as_int(self, rhs);
+        num.div_euclid(den)
+    }
+}
+
+impl<'l, const B: Word, R: Round> DivEuclid<FBig<R, B>> for &'l FBig<R, B> {
+    type Output = IBig;
+    #[inline]
+    fn div_euclid(self, rhs: FBig<R, B>) -> Self::Output {
+        self.clone().div_euclid(rhs)
+    }
+}
+
+impl<'r, const B: Word, R: Round> DivEuclid<&'r FBig<R, B>> for FBig<R, B> {
+    type Output = IBig;
+    #[inline]
+    fn div_euclid(self, rhs: &FBig<R, B>) -> Self::Output {
+        self.div_euclid(rhs.clone())
+    }
+}
+
+impl<'l, 'r, const B: Word, R: Round> DivEuclid<&'r FBig<R, B>> for &'l FBig<R, B> {
+    type Output = IBig;
+    #[inline]
+    fn div_euclid(self, rhs: &FBig<R, B>) -> Self::Output {
+        self.clone().div_euclid(rhs.clone())
+    }
+}
+
+impl<R: Round, const B: Word> RemEuclid<FBig<R, B>> for FBig<R, B> {
+    type Output = FBig<R, B>;
+    #[inline]
+    fn rem_euclid(self, rhs: FBig<R, B>) -> Self::Output {
+        let r_exponent = self.repr.exponent.min(rhs.repr.exponent);
+        let context = Context::max(self.context, rhs.context);
+    
+        let (num, den) = align_as_int(self, rhs);
+        let r = num.rem_euclid(den);
+        let mut r = context.convert_int(r.into());
+        if !r.repr.significand.is_zero(){
+            r.repr.exponent += r_exponent;
+        }
+        r
+    }
+}
+
+impl<'l, const B: Word, R: Round> RemEuclid<FBig<R, B>> for &'l FBig<R, B> {
+    type Output = FBig<R, B>;
+    #[inline]
+    fn rem_euclid(self, rhs: FBig<R, B>) -> Self::Output {
+        self.clone().rem_euclid(rhs)
+    }
+}
+
+impl<'r, const B: Word, R: Round> RemEuclid<&'r FBig<R, B>> for FBig<R, B> {
+    type Output = FBig<R, B>;
+    #[inline]
+    fn rem_euclid(self, rhs: &FBig<R, B>) -> Self::Output {
+        self.rem_euclid(rhs.clone())
+    }
+}
+
+impl<'l, 'r, const B: Word, R: Round> RemEuclid<&'r FBig<R, B>> for &'l FBig<R, B> {
+    type Output = FBig<R, B>;
+    #[inline]
+    fn rem_euclid(self, rhs: &FBig<R, B>) -> Self::Output {
+        self.clone().rem_euclid(rhs.clone())
+    }
+}
+
+impl<R: Round, const B: Word> DivRemEuclid<FBig<R, B>> for FBig<R, B> {
+    type OutputDiv = IBig;
+    type OutputRem = FBig<R, B>;
+    #[inline]
+    fn div_rem_euclid(self, rhs: FBig<R, B>) -> (IBig, FBig<R, B>) {
+        let r_exponent = self.repr.exponent.min(rhs.repr.exponent);
+        let context = Context::max(self.context, rhs.context);
+    
+        let (num, den) = align_as_int(self, rhs);
+        let (q, r) = num.div_rem_euclid(den);
+        let mut r = context.convert_int(r.into());
+        if !r.repr.significand.is_zero(){
+            r.repr.exponent += r_exponent;
+        }
+        (q, r)
+    }
+}
+
+impl<'l, const B: Word, R: Round> DivRemEuclid<FBig<R, B>> for &'l FBig<R, B> {
+    type OutputDiv = IBig;
+    type OutputRem = FBig<R, B>;
+    #[inline]
+    fn div_rem_euclid(self, rhs: FBig<R, B>) -> (IBig, FBig<R, B>) {
+        self.clone().div_rem_euclid(rhs)
+    }
+}
+
+impl<'r, const B: Word, R: Round> DivRemEuclid<&'r FBig<R, B>> for FBig<R, B> {
+    type OutputDiv = IBig;
+    type OutputRem = FBig<R, B>;
+    #[inline]
+    fn div_rem_euclid(self, rhs: &FBig<R, B>) -> (IBig, FBig<R, B>) {
+        self.div_rem_euclid(rhs.clone())
+    }
+}
+
+impl<'l, 'r, const B: Word, R: Round> DivRemEuclid<&'r FBig<R, B>> for &'l FBig<R, B> {
+    type OutputDiv = IBig;
+    type OutputRem = FBig<R, B>;
+    #[inline]
+    fn div_rem_euclid(self, rhs: &FBig<R, B>) -> (IBig, FBig<R, B>) {
+        self.clone().div_rem_euclid(rhs.clone())
+    }
+}
+
 macro_rules! impl_add_sub_primitive_with_fbig {
     ($($t:ty)*) => {$(
         helper_macros::impl_commutative_binop_with_primitive!(impl Div<$t>, div);
@@ -62,6 +181,21 @@ macro_rules! impl_add_sub_primitive_with_fbig {
     )*};
 }
 impl_add_sub_primitive_with_fbig!(u8 u16 u32 u64 u128 usize UBig i8 i16 i32 i64 i128 isize IBig);
+
+// Align two float by exponent such that they are both turned into integers
+fn align_as_int<R: Round, const B: Word>(
+    lhs: FBig<R, B>,
+    rhs: FBig<R, B>
+) -> (IBig, IBig) {
+    let ediff = lhs.repr.exponent - rhs.repr.exponent;
+    let (mut num, mut den) = (lhs.repr.significand, rhs.repr.significand);
+    if ediff >= 0 {
+        shl_digits_in_place::<B>(&mut num, ediff as _);
+    } else {
+        shl_digits_in_place::<B>(&mut den, (-ediff) as _);
+    }
+    (num, den)
+}
 
 impl<R: Round, const B: Word> FBig<R, B> {
     /// Create a floating number by dividing two integers with given precision

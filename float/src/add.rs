@@ -51,19 +51,6 @@ impl<'l, 'r, const B: Word, R: Round> Add<&'r FBig<R, B>> for &'l FBig<R, B> {
     }
 }
 
-impl<R: Round, const B: Word> AddAssign for FBig<R, B> {
-    #[inline]
-    fn add_assign(&mut self, rhs: Self) {
-        *self = core::mem::take(self) + rhs
-    }
-}
-impl<R: Round, const B: Word> AddAssign<&FBig<R, B>> for FBig<R, B> {
-    #[inline]
-    fn add_assign(&mut self, rhs: &FBig<R, B>) {
-        *self = core::mem::take(self) + rhs
-    }
-}
-
 impl<R: Round, const B: Word> Sub for FBig<R, B> {
     type Output = Self;
 
@@ -100,18 +87,8 @@ impl<'l, 'r, const B: Word, R: Round> Sub<&'r FBig<R, B>> for &'l FBig<R, B> {
     }
 }
 
-impl<R: Round, const B: Word> SubAssign for FBig<R, B> {
-    #[inline]
-    fn sub_assign(&mut self, rhs: Self) {
-        *self = core::mem::take(self) - rhs
-    }
-}
-impl<R: Round, const B: Word> SubAssign<&FBig<R, B>> for FBig<R, B> {
-    #[inline]
-    fn sub_assign(&mut self, rhs: &FBig<R, B>) {
-        *self = core::mem::take(self) - rhs
-    }
-}
+helper_macros::impl_binop_assign_by_taking!(impl AddAssign<Self>, add_assign, add);
+helper_macros::impl_binop_assign_by_taking!(impl SubAssign<Self>, sub_assign, sub);
 
 macro_rules! impl_add_sub_primitive_with_fbig {
     ($($t:ty)*) => {$(

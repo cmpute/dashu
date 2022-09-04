@@ -207,15 +207,6 @@ impl<R: Round, const B: Word> Clone for FBig<R, B> {
     }
 }
 
-impl<R: Round, const B: Word> PartialEq for FBig<R, B> {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        // the representation is normalized so direct comparing is okay
-        self.repr == other.repr
-    }
-}
-impl<R: Round, const B: Word> Eq for FBig<R, B> {}
-
 impl<R: Round, const B: Word> Default for FBig<R, B> {
     /// Default value: 0.
     #[inline]

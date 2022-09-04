@@ -64,6 +64,9 @@ impl IBig {
     }
 }
 
+// TODO: change the algorithm to right-to-left exponentiation, which should be faster because the exponent has to be
+//       a small integer that fits in a word
+
 pub(crate) mod repr {
     use dashu_base::DivRem;
 

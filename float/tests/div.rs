@@ -2,7 +2,7 @@ use core::{
     fmt::Debug,
     ops::{Div, DivAssign},
 };
-use dashu_base::Approximation::*;
+use dashu_base::{Approximation::*, DivEuclid, RemEuclid, DivRemEuclid};
 use dashu_float::{round::Rounding::*, Context};
 
 mod helper_macros;
@@ -134,3 +134,64 @@ fn test_div_by_inf() {
 fn test_div_by_0() {
     let _ = dashu_float::DBig::ONE / dashu_float::DBig::ZERO;
 }
+
+#[test]
+fn test_div_rem_euclid_binary() {
+    // test cases: n, d, quotient, remainder
+    let test_cases = [
+        (fbig!(0), fbig!(1), ibig!(0), fbig!(0)),
+        (fbig!(1), fbig!(1), ibig!(1), fbig!(0)),
+        (fbig!(0x1000), fbig!(0x1000), ibig!(1), fbig!(0)),
+        (fbig!(0x1000), fbig!(0x10), ibig!(0x100), fbig!(0)),
+        (fbig!(0x1000), fbig!(-0x10), ibig!(-0x100), fbig!(0)),
+        (fbig!(-0xffff), fbig!(-0xff), ibig!(0x101), fbig!(0)),
+        (fbig!(0x1b), fbig!(0x3), ibig!(9), fbig!(0)),
+        (fbig!(0x43), fbig!(0x21), ibig!(2), fbig!(0x1)),
+        (fbig!(0x654), fbig!(-0x321), ibig!(-2), fbig!(0x12)),
+        (fbig!(-0x98765), fbig!(-0x43210), ibig!(3), fbig!(0x30ecb)),
+        (fbig!(0x1), fbig!(0x9), ibig!(0), fbig!(0x1)),
+        (fbig!(0x1), fbig!(0x9p-4), ibig!(1), fbig!(0x7p-4)),
+        (fbig!(0x1), fbig!(0x9p-8), ibig!(28), fbig!(0x4p-8)),
+        (fbig!(0x13), fbig!(-0x9), ibig!(-2), fbig!(0x1)),
+        (fbig!(0x169), fbig!(-0x9), ibig!(-40), fbig!(0x1)),
+    ];
+
+    for (n, d, q, r) in &test_cases {
+        assert_eq!(n.div_euclid(d), *q);
+        assert_eq!(n.rem_euclid(d), *r);
+        let (quotient, remainder) = n.div_rem_euclid(d);
+        assert_eq!(quotient, *q);
+        assert_eq!(remainder, *r);
+    }
+}
+
+#[test]
+fn test_div_rem_euclid_decimal() {
+    // test cases: n, d, quotient, remainder
+    let test_cases = [
+        (dbig!(0), dbig!(1), ibig!(0), dbig!(0)),
+        (dbig!(1), dbig!(1), ibig!(1), dbig!(0)),
+        (dbig!(1000), dbig!(1000), ibig!(1), dbig!(0)),
+        (dbig!(1000), dbig!(10), ibig!(100), dbig!(0)),
+        (dbig!(1000), dbig!(-10), ibig!(-100), dbig!(0)),
+        (dbig!(-9999), dbig!(-99), ibig!(101), dbig!(0)),
+        (dbig!(27), dbig!(3), ibig!(9), dbig!(0)),
+        (dbig!(43), dbig!(21), ibig!(2), dbig!(1)),
+        (dbig!(654), dbig!(-321), ibig!(-2), dbig!(12)),
+        (dbig!(-98765), dbig!(-43210), ibig!(3), dbig!(30865)),
+        (dbig!(1), dbig!(9), ibig!(0), dbig!(1)),
+        (dbig!(1), dbig!(9e-1), ibig!(1), dbig!(1e-1)),
+        (dbig!(1), dbig!(9e-2), ibig!(11), dbig!(1e-2)),
+        (dbig!(13), dbig!(-9), ibig!(-1), dbig!(4)),
+        (dbig!(169), dbig!(-9), ibig!(-18), dbig!(7)),
+    ];
+
+    for (n, d, q, r) in &test_cases {
+        assert_eq!(n.div_euclid(d), *q);
+        assert_eq!(n.rem_euclid(d), *r);
+        let (quotient, remainder) = n.div_rem_euclid(d);
+        assert_eq!(quotient, *q);
+        assert_eq!(remainder, *r);
+    }
+}
+
