@@ -1,7 +1,7 @@
 use crate::{
     ibig_ext::remove_pow,
     round::{Round, Rounding},
-    utils::{base_as_ibig, digit_len, split_digits},
+    utils::{base_as_ibig, digit_len, split_digits, split_digits_ref},
 };
 use core::marker::PhantomData;
 use dashu_base::{Approximation, EstimatedLog2};
@@ -26,45 +26,56 @@ pub struct Context<RoundingMode: Round> {
 impl<const B: Word> Repr<B> {
     pub const BASE: IBig = base_as_ibig::<B>();
 
+    #[inline]
     pub const fn zero() -> Self {
         Self {
             significand: IBig::ZERO,
             exponent: 0,
         }
     }
+    #[inline]
     pub const fn one() -> Self {
         Self {
             significand: IBig::ONE,
             exponent: 0,
         }
     }
+    #[inline]
     pub const fn neg_one() -> Self {
         Self {
             significand: IBig::NEG_ONE,
             exponent: 0,
         }
     }
+
+    #[inline]
     pub const fn infinity() -> Self {
         Self {
             significand: IBig::ZERO,
             exponent: 1,
         }
     }
+    #[inline]
     pub const fn neg_infinity() -> Self {
         Self {
             significand: IBig::ZERO,
             exponent: -1,
         }
     }
+
+    #[inline]
     pub const fn is_zero(&self) -> bool {
         self.significand.is_zero() && self.exponent == 0
     }
+    #[inline]
     pub const fn is_one(&self) -> bool {
         self.significand.is_one() && self.exponent == 0
     }
+    #[inline]
     pub const fn is_infinite(&self) -> bool {
         self.significand.is_zero() && self.exponent != 0
     }
+    #[inline]
     pub const fn is_finite(&self) -> bool {
         !self.is_infinite()
     }
@@ -179,16 +190,29 @@ impl<R: Round> Context<R> {
         assert!(repr.is_finite());
         let digits = repr.digits();
         if digits > self.precision {
-            let Repr {
-                significand,
-                exponent,
-            } = repr;
             let shift = digits - self.precision;
-            let (signif_hi, signif_lo) = split_digits::<B>(significand, shift);
+            let (signif_hi, signif_lo) = split_digits::<B>(repr.significand, shift);
             let adjust = R::round_fract::<B>(&signif_hi, signif_lo, shift);
-            Approximation::Inexact(Repr::new(signif_hi + adjust, exponent + shift as isize), adjust)
+            Approximation::Inexact(Repr::new(signif_hi + adjust, repr.exponent + shift as isize), adjust)
         } else {
             Approximation::Exact(repr)
+        }
+    }
+
+    /// Round the repr to the desired precision
+    pub(crate) fn repr_round_ref<const B: Word>(
+        &self,
+        repr: &Repr<B>,
+    ) -> Approximation<Repr<B>, Rounding> {
+        assert!(repr.is_finite());
+        let digits = repr.digits();
+        if digits > self.precision {
+            let shift = digits - self.precision;
+            let (signif_hi, signif_lo) = split_digits_ref::<B>(&repr.significand, shift);
+            let adjust = R::round_fract::<B>(&signif_hi, signif_lo, shift);
+            Approximation::Inexact(Repr::new(signif_hi + adjust, repr.exponent + shift as isize), adjust)
+        } else {
+            Approximation::Exact(repr.clone())
         }
     }
 }

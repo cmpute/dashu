@@ -91,25 +91,52 @@ impl<R: Round, const B: Word> FBig<R, B> {
 }
 
 impl<R: Round> Context<R> {
-    #[inline]
-    pub fn mul<const B: Word>(&self, lhs: &FBig<R, B>, rhs: &FBig<R, B>) -> Rounded<FBig<R, B>> {
+    pub fn mul<_R1: Round, _R2: Round, const B: Word>(&self, lhs: &FBig<_R1, B>, rhs: &FBig<_R2, B>) -> Rounded<FBig<R, B>> {
         check_inf_operands(&lhs.repr, &rhs.repr);
 
-        // TODO: shrink lhs and rhs to at most double the precision before mul
+        // at most double the precision is required to get a correct result
+        // shrink the input operands if necessary
+        let max_precision = self.precision * 2;
+
+        let lhs_shrink;
+        let lhs_repr = if lhs.digits() > max_precision {
+            lhs_shrink = Context::<R>::new(max_precision).repr_round_ref(&lhs.repr).value();
+            &lhs_shrink
+        } else {
+            &lhs.repr
+        };
+
+        let rhs_shrink;
+        let rhs_repr = if rhs.digits() > max_precision {
+            rhs_shrink = Context::<R>::new(max_precision).repr_round_ref(&rhs.repr).value();
+            &rhs_shrink
+        } else {
+            &rhs.repr
+        };
+
         let repr = Repr::new(
-            &lhs.repr.significand * &rhs.repr.significand,
-            lhs.repr.exponent + rhs.repr.exponent,
+            &lhs_repr.significand * &rhs_repr.significand,
+            lhs_repr.exponent + rhs_repr.exponent,
         );
         self.repr_round(repr).map(|v| FBig::new_raw(v, *self))
     }
 
-    #[inline]
-    pub fn square<const B: Word>(&self, f: &FBig<R, B>) -> Rounded<FBig<R, B>> {
+    pub fn square<_R: Round, const B: Word>(&self, f: &FBig<_R, B>) -> Rounded<FBig<R, B>> {
         if f.repr.is_infinite() {
             panic_operate_with_inf();
         }
 
-        let repr = Repr::new(f.repr.significand.square(), 2 * f.repr.exponent);
+        // shrink the input operands if necessary
+        let max_precision = self.precision * 2;
+        let f_shrink;
+        let f_repr = if f.repr.digits() > max_precision {
+            f_shrink = Context::<R>::new(max_precision).repr_round_ref(&f.repr).value();
+            &f_shrink
+        } else {
+            &f.repr
+        };
+
+        let repr = Repr::new(f_repr.significand.square(), 2 * f_repr.exponent);
         self.repr_round(repr).map(|v| FBig::new_raw(v, *self))
     }
 }

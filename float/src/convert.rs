@@ -10,9 +10,9 @@ use dashu_int::{IBig, UBig, Word};
 impl<R: Round> Context<R> {
     /// Convert an [IBig] instance to a [FBig] instance with precision
     /// and rounding given by the context.
-    pub fn convert_int<const B: Word>(&self, n: IBig) -> FBig<R, B> {
+    pub fn convert_int<const B: Word>(&self, n: IBig) -> Rounded<FBig<R, B>> {
         let repr = Repr::<B>::new(n, 0);
-        FBig::new_raw(self.repr_round(repr).value(), *self)
+        self.repr_round(repr).map(|v| FBig::new_raw(v, *self))
     }
 }
 

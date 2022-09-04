@@ -3,7 +3,7 @@ use dashu_int::IBig;
 
 use crate::{
     fbig::FBig,
-    repr::{Context, Word},
+    repr::{Context, Word, Repr},
     round::{Round, Rounded},
 };
 
@@ -98,7 +98,7 @@ impl<R: Round> Context<R> {
          * => 2i = p/log_B(n)
          *
          * There will be i summations when calculating the series, to prevent
-         * loss of significant, we needs log_B(i) guard digits.
+         * loss of significant, we needs about log_B(i) guard digits.
          *    log_B(i)
          * <= log_B(p/2log_B(n))
          *  = log_B(p/2) - log_B(log_B(n))
@@ -107,10 +107,10 @@ impl<R: Round> Context<R> {
 
         // extras digits are added to ensure precise result
         // TODO(next): test if we can use log_B(p/2log_B(n)) directly
-        let guard_digits = ((self.precision / 2).log2_est() / B.log2_est()) as usize;
+        let guard_digits = (self.precision.log2_est() / B.log2_est()) as usize;
         let work_context = Self::new(self.precision + guard_digits + 2);
 
-        let n = work_context.convert_int(n);
+        let n = work_context.convert_int(n).value();
         let inv = FBig::ONE / n;
         let inv2 = inv.square();
         let mut sum = inv.clone();
@@ -119,7 +119,7 @@ impl<R: Round> Context<R> {
         let mut k: usize = 3;
         loop {
             pow *= &inv2;
-            let next = &sum + &pow / work_context.convert_int::<B>(k.into());
+            let next = &sum + &pow / work_context.convert_int::<B>(k.into()).value();
 
             if next == sum {
                 return sum;
@@ -133,34 +133,36 @@ impl<R: Round> Context<R> {
     pub fn ln<const B: Word>(&self, x: &FBig<R, B>) -> Rounded<FBig<R, B>> {
         // A simple algorithm:
         // - let log(x) = log(x/2^s) + slog2 where s = floor(log2(x))
-        // - such that x*2^s is close to but larger than 1,
-        // - then s = -floor(log2(x))
-        let x = x.clone().with_precision(self.precision + 1).value();
+        // - such that x*2^s is close to but larger than 1 (and x*2^s < 2)
+        let guard_digits = (self.precision.log2_est() / B.log2_est()) as usize;
+        let mut work_precision = self.precision + guard_digits + 2;
+
+        let x = x.clone().with_precision(work_precision).value();
         let log2 = x.log2_est();
-        let x_scaled = if log2 >= 0. {
-            let s = log2 as usize;
-            if B == 2 {
-                x >> s
-            } else {
-                x / (IBig::ONE << s)
-            }
+        let s = log2 as isize - (log2 < 0.) as isize;
+        let mut x_scaled = if B == 2 {
+            x >> s
         } else {
-            let s = (-log2) as usize;
-            if B == 2 {
-                x << s
+            if s > 0 {
+                x / (IBig::ONE << s as usize)
             } else {
-                x * (IBig::ONE << s)
+                x * (IBig::ONE << (-s) as usize)
             }
         };
         // TODO: assert x_scaled > 1
+
+        if s < 0 {
+            // when s is negative, the final addition is actually a subtraction,
+            // therefore we need to double the precision to get the correct result
+            work_precision += self.precision;
+            x_scaled.context.precision = work_precision;
+        };
+        let work_context = Context::new(work_precision);
 
         // after the number is scaled to nearly one, use Maclaurin series on log(x) = 2atanh(z):
         // let z = (x-1)/(x+1) < 1, log(x) = 2atanh(z) = 2Σ(z²ⁱ⁺¹/(2i+1)) for i = 1,3,5,...
         // similar to iacoth, the required iterations stop at i = -p/2log_B(z), and we need log_B(i) guard bits
         let z = (&x_scaled - FBig::ONE) / (x_scaled + FBig::ONE);
-        let guard_digits = ((self.precision / 2).log2_est() / B.log2_est()) as usize;
-        let work_context = Self::new(self.precision + guard_digits + 2);
-
         let z2 = z.square();
         let mut pow = z.clone();
         let mut sum = z.clone();
@@ -168,7 +170,7 @@ impl<R: Round> Context<R> {
         let mut k: usize = 3;
         loop {
             pow *= &z2;
-            let next = &sum + &pow / work_context.convert_int::<B>(k.into());
+            let next = &sum + &pow / work_context.convert_int::<B>(k.into()).value();
 
             if next == sum {
                 break;
@@ -178,11 +180,7 @@ impl<R: Round> Context<R> {
         }
 
         // compose the logarithm of the original number
-        let result: FBig<R, B> = if log2 >= 0. {
-            2 * sum + self.ln2() * IBig::from(log2 as usize)
-        } else {
-            2 * sum - self.ln2() * IBig::from((-log2) as usize)
-        };
+        let result: FBig<R, B> = 2 * sum + s * work_context.ln2();
         result.with_precision(self.precision)
     }
 

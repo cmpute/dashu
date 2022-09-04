@@ -97,7 +97,7 @@ impl<R: Round, const B: Word> RemEuclid<FBig<R, B>> for FBig<R, B> {
     
         let (num, den) = align_as_int(self, rhs);
         let r = num.rem_euclid(den);
-        let mut r = context.convert_int(r.into());
+        let mut r = context.convert_int(r.into()).value();
         if !r.repr.significand.is_zero(){
             r.repr.exponent += r_exponent;
         }
@@ -139,8 +139,8 @@ impl<R: Round, const B: Word> DivRemEuclid<FBig<R, B>> for FBig<R, B> {
     
         let (num, den) = align_as_int(self, rhs);
         let (q, r) = num.div_rem_euclid(den);
-        let mut r = context.convert_int(r.into());
-        if !r.repr.significand.is_zero(){
+        let mut r = context.convert_int(r.into()).value();
+        if !r.repr.significand.is_zero() {
             r.repr.exponent += r_exponent;
         }
         (q, r)
@@ -203,7 +203,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     #[deprecated] // TODO: remove this, implement as From<RBig> in future
     pub fn from_ratio(numerator: IBig, denominator: IBig, precision: usize) -> Self {
         let context = Context::new(precision);
-        let dummy = Context::new(0);
+        let dummy = Context::<R>::new(0);
         let n = FBig::new_raw(Repr::new(numerator, 0), dummy);
         let d = FBig::new_raw(Repr::new(denominator, 0), dummy);
         context.div(&n, &d).value()
@@ -256,13 +256,13 @@ impl<R: Round> Context<R> {
         }
     }
 
-    pub fn div<const B: Word>(&self, lhs: &FBig<R, B>, rhs: &FBig<R, B>) -> Rounded<FBig<R, B>> {
+    pub fn div<_R1: Round, _R2: Round, const B: Word>(&self, lhs: &FBig<_R1, B>, rhs: &FBig<_R2, B>) -> Rounded<FBig<R, B>> {
         let lhs_repr = if !lhs.repr.is_zero()
             && lhs.repr.digits_ub() > rhs.repr.digits_lb() + self.precision
         {
             // shrink lhs if it's larger than necessary
             Self::new(rhs.repr.digits() + self.precision)
-                .repr_round(lhs.repr.clone())
+                .repr_round_ref(&lhs.repr)
                 .value()
         } else {
             lhs.repr.clone()
@@ -271,6 +271,3 @@ impl<R: Round> Context<R> {
             .map(|v| FBig::new_raw(v, *self))
     }
 }
-
-// TODO: implement div_euclid, rem_euclid, div_rem_euclid for float, as it can be properly defined
-//       maybe also implement rem and div_rem to be consistent with the builtin float

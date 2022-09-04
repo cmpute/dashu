@@ -436,13 +436,13 @@ impl<R: Round> Context<R> {
         self.repr_round_sum(significand, exponent, low, is_sub)
     }
 
-    pub fn add<const B: Word>(&self, lhs: &FBig<R, B>, rhs: &FBig<R, B>) -> Rounded<FBig<R, B>> {
+    pub fn add<_R1: Round, _R2: Round, const B: Word>(&self, lhs: &FBig<_R1, B>, rhs: &FBig<_R2, B>) -> Rounded<FBig<R, B>> {
         check_inf_operands(&lhs.repr, &rhs.repr);
 
         let sum = if lhs.repr.is_zero() {
-            self.repr_round(rhs.repr.clone())
+            self.repr_round_ref(&rhs.repr)
         } else if rhs.repr.is_zero() {
-            self.repr_round(lhs.repr.clone())
+            self.repr_round_ref(&lhs.repr)
         } else {
             match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
                 Ordering::Equal => self.repr_round(Repr::new(
@@ -458,15 +458,13 @@ impl<R: Round> Context<R> {
         sum.map(|v| FBig::new_raw(v, *self))
     }
 
-    pub fn sub<const B: Word>(&self, lhs: &FBig<R, B>, rhs: &FBig<R, B>) -> Rounded<FBig<R, B>> {
+    pub fn sub<_R1: Round, _R2: Round, const B: Word>(&self, lhs: &FBig<_R1, B>, rhs: &FBig<_R2, B>) -> Rounded<FBig<R, B>> {
         check_inf_operands(&lhs.repr, &rhs.repr);
 
         let sum = if lhs.repr.is_zero() {
-            let mut repr = rhs.repr.clone();
-            repr.significand *= Negative;
-            self.repr_round(repr)
+            self.repr_round_ref(&rhs.repr).map(|v| -v)
         } else if rhs.repr.is_zero() {
-            self.repr_round(lhs.repr.clone())
+            self.repr_round_ref(&lhs.repr)
         } else {
             match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
                 Ordering::Equal => self.repr_round(Repr::new(

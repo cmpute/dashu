@@ -8,6 +8,10 @@ pub mod mode {
     /// Round toward 0 (default mode for binary float)
     #[derive(Clone, Copy)]
     pub struct Zero;
+    
+    /// Round away from 0
+    #[derive(Clone, Copy)]
+    pub struct Away;
 
     /// Round toward +∞
     #[derive(Clone, Copy)]
@@ -106,6 +110,30 @@ impl Round for mode::Zero {
             (Sign::Positive, Sign::Positive) | (Sign::Negative, Sign::Negative) => Rounding::NoOp,
             (Sign::Positive, Sign::Negative) => Rounding::SubOne,
             (Sign::Negative, Sign::Positive) => Rounding::AddOne,
+        }
+    }
+}
+
+impl Round for mode::Away {
+    type Reverse = mode::Zero;
+
+    #[inline]
+    fn round_rem<F: FnOnce() -> Ordering>(
+            integer: &IBig,
+            rem_sign: Sign,
+            _rem_half_test: F,
+        ) -> Rounding {
+        if integer.is_zero() {
+            match rem_sign {
+                Sign::Positive => Rounding::AddOne,
+                Sign::Negative => Rounding::SubOne,
+            }
+        } else {
+            match (integer.sign(), rem_sign) {
+                (Sign::Positive, Sign::Positive) => Rounding::AddOne,
+                (Sign::Negative, Sign::Negative) => Rounding::SubOne,
+                (Sign::Positive, Sign::Negative) | (Sign::Negative, Sign::Positive) => Rounding::NoOp,
+            }
         }
     }
 }
@@ -260,11 +288,12 @@ mod tests {
     fn test_from_fract() {
         #[rustfmt::skip]
         fn test_all_rounding<const B: Word, const D: usize>(
-            input: &(i32, i32, Rounding, Rounding, Rounding, Rounding, Rounding),
+            input: &(i32, i32, Rounding, Rounding, Rounding, Rounding, Rounding, Rounding),
         ) {
-            let (value, fract, rnd_zero, rnd_up, rnd_down, rnd_halfeven, rnd_halfaway) = *input;
+            let (value, fract, rnd_zero, rnd_away, rnd_up, rnd_down, rnd_halfeven, rnd_halfaway) = *input;
             let (value, fract) = (IBig::from(value), IBig::from(fract));
             assert_eq!(Zero::round_fract::<B>(&value, fract.clone(), D), rnd_zero);
+            assert_eq!(Away::round_fract::<B>(&value, fract.clone(), D), rnd_away);
             assert_eq!(Up::round_fract::<B>(&value, fract.clone(), D), rnd_up);
             assert_eq!(Down::round_fract::<B>(&value, fract.clone(), D), rnd_down);
             assert_eq!(HalfEven::round_fract::<B>(&value, fract.clone(), D), rnd_halfeven);
@@ -275,28 +304,28 @@ mod tests {
         #[rustfmt::skip]
         let binary_cases = [
             // (integer value, fraction part, roundings...)
-            // Mode: Zero,   Up,     Down,   HEven,  HAway
-            (0,  3,  NoOp,   AddOne, NoOp,   AddOne, AddOne),
-            (0,  2,  NoOp,   AddOne, NoOp,   NoOp,   AddOne),
-            (0,  1,  NoOp,   AddOne, NoOp,   NoOp,   NoOp),
-            (0,  0,  NoOp,   NoOp,   NoOp,   NoOp,   NoOp),
-            (0,  -1, NoOp,   NoOp,   SubOne, NoOp,   NoOp),
-            (0,  -2, NoOp,   NoOp,   SubOne, NoOp,   SubOne),
-            (0,  -3, NoOp,   NoOp,   SubOne, SubOne, SubOne),
-            (1,  3,  NoOp,   AddOne, NoOp,   AddOne, AddOne),
-            (1,  2,  NoOp,   AddOne, NoOp,   AddOne, AddOne),
-            (1,  1,  NoOp,   AddOne, NoOp,   NoOp,   NoOp),
-            (1,  0,  NoOp,   NoOp,   NoOp,   NoOp,   NoOp),
-            (1,  -1, SubOne, NoOp,   SubOne, NoOp,   NoOp),
-            (1,  -2, SubOne, NoOp,   SubOne, SubOne, NoOp),
-            (1,  -3, SubOne, NoOp,   SubOne, SubOne, SubOne),
-            (-1, 3,  AddOne, AddOne, NoOp,   AddOne, AddOne),
-            (-1, 2,  AddOne, AddOne, NoOp,   AddOne, NoOp),
-            (-1, 1,  AddOne, AddOne, NoOp,   NoOp,   NoOp),
-            (-1, 0,  NoOp,   NoOp,   NoOp,   NoOp,   NoOp),
-            (-1, -1, NoOp,   NoOp,   SubOne, NoOp,   NoOp),
-            (-1, -2, NoOp,   NoOp,   SubOne, SubOne, SubOne),
-            (-1, -3, NoOp,   NoOp,   SubOne, SubOne, SubOne),
+            // Mode: Zero  , Away  , Up    , Down  , HEven,  HAway
+            ( 0,  3, NoOp  , AddOne, AddOne, NoOp  , AddOne, AddOne),
+            ( 0,  2, NoOp  , AddOne, AddOne, NoOp  , NoOp  , AddOne),
+            ( 0,  1, NoOp  , AddOne, AddOne, NoOp  , NoOp  , NoOp  ),
+            ( 0,  0, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
+            ( 0, -1, NoOp  , SubOne, NoOp  , SubOne, NoOp  , NoOp  ),
+            ( 0, -2, NoOp  , SubOne, NoOp  , SubOne, NoOp  , SubOne),
+            ( 0, -3, NoOp  , SubOne, NoOp  , SubOne, SubOne, SubOne),
+            ( 1,  3, NoOp  , AddOne, AddOne, NoOp  , AddOne, AddOne),
+            ( 1,  2, NoOp  , AddOne, AddOne, NoOp  , AddOne, AddOne),
+            ( 1,  1, NoOp  , AddOne, AddOne, NoOp  , NoOp  , NoOp  ),
+            ( 1,  0, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
+            ( 1, -1, SubOne, NoOp  , NoOp  , SubOne, NoOp  , NoOp  ),
+            ( 1, -2, SubOne, NoOp  , NoOp  , SubOne, SubOne, NoOp  ),
+            ( 1, -3, SubOne, NoOp  , NoOp  , SubOne, SubOne, SubOne),
+            (-1,  3, AddOne, NoOp  , AddOne, NoOp  , AddOne, AddOne),
+            (-1,  2, AddOne, NoOp  , AddOne, NoOp  , AddOne, NoOp  ),
+            (-1,  1, AddOne, NoOp  , AddOne, NoOp  , NoOp  , NoOp  ),
+            (-1,  0, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
+            (-1, -1, NoOp  , SubOne, NoOp  , SubOne, NoOp  , NoOp  ),
+            (-1, -2, NoOp  , SubOne, NoOp  , SubOne, SubOne, SubOne),
+            (-1, -3, NoOp  , SubOne, NoOp  , SubOne, SubOne, SubOne),
         ];
         binary_cases.iter().for_each(test_all_rounding::<2, 2>);
 
@@ -304,22 +333,22 @@ mod tests {
         #[rustfmt::skip]
         let tenary_cases = [
             // (integer value, fraction part, roundings...)
-            // Mode: Zero,   Up,     Down,   HEven,  HAway
-            (0,  2,  NoOp,   AddOne, NoOp,   AddOne, AddOne),
-            (0,  1,  NoOp,   AddOne, NoOp,   NoOp,   NoOp),
-            (0,  0,  NoOp,   NoOp,   NoOp,   NoOp,   NoOp),
-            (0,  -1, NoOp,   NoOp,   SubOne, NoOp,   NoOp),
-            (0,  -2, NoOp,   NoOp,   SubOne, SubOne, SubOne),
-            (1,  2,  NoOp,   AddOne, NoOp,   AddOne, AddOne),
-            (1,  1,  NoOp,   AddOne, NoOp,   NoOp,   NoOp),
-            (1,  0,  NoOp,   NoOp,   NoOp,   NoOp,   NoOp),
-            (1,  -1, SubOne, NoOp,   SubOne, NoOp,   NoOp),
-            (1,  -2, SubOne, NoOp,   SubOne, SubOne, SubOne),
-            (-1, 2,  AddOne, AddOne, NoOp,   AddOne, AddOne),
-            (-1, 1,  AddOne, AddOne, NoOp,   NoOp,   NoOp),
-            (-1, 0,  NoOp,   NoOp,   NoOp,   NoOp,   NoOp),
-            (-1, -1, NoOp,   NoOp,   SubOne, NoOp,   NoOp),
-            (-1, -2, NoOp,   NoOp,   SubOne, SubOne, SubOne),
+            // Mode: Zero,   Away  , Up    , Down  , HEven , HAway
+            ( 0,  2, NoOp,   AddOne, AddOne, NoOp  , AddOne, AddOne),
+            ( 0,  1, NoOp,   AddOne, AddOne, NoOp  , NoOp  , NoOp  ),
+            ( 0,  0, NoOp,   NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
+            ( 0, -1, NoOp,   SubOne, NoOp  , SubOne, NoOp  , NoOp  ),
+            ( 0, -2, NoOp,   SubOne, NoOp  , SubOne, SubOne, SubOne),
+            ( 1,  2, NoOp,   AddOne, AddOne, NoOp  , AddOne, AddOne),
+            ( 1,  1, NoOp,   AddOne, AddOne, NoOp  , NoOp  , NoOp  ),
+            ( 1,  0, NoOp,   NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
+            ( 1, -1, SubOne, NoOp  , NoOp  , SubOne, NoOp  , NoOp  ),
+            ( 1, -2, SubOne, NoOp  , NoOp  , SubOne, SubOne, SubOne),
+            (-1,  2, AddOne, NoOp  , AddOne, NoOp  , AddOne, AddOne),
+            (-1,  1, AddOne, NoOp  , AddOne, NoOp  , NoOp  , NoOp  ),
+            (-1,  0, NoOp,   NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
+            (-1, -1, NoOp,   SubOne, NoOp  , SubOne, NoOp  , NoOp  ),
+            (-1, -2, NoOp,   SubOne, NoOp  , SubOne, SubOne, SubOne),
         ];
         tenary_cases.iter().for_each(test_all_rounding::<3, 1>);
 
@@ -327,28 +356,28 @@ mod tests {
         #[rustfmt::skip]
         let decimal_cases = [
             // (integer value, fraction part, roundings...)
-            // Mode: Zero  , Up    , Down  , HEven , HAway
-            ( 0,  7, NoOp  , AddOne, NoOp  , AddOne, AddOne),
-            ( 0,  5, NoOp  , AddOne, NoOp  , NoOp  , AddOne),
-            ( 0,  2, NoOp  , AddOne, NoOp  , NoOp  , NoOp  ),
-            ( 0,  0, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
-            ( 0, -2, NoOp  , NoOp  , SubOne, NoOp  , NoOp  ),
-            ( 0, -5, NoOp  , NoOp  , SubOne, NoOp  , SubOne),
-            ( 0, -7, NoOp  , NoOp  , SubOne, SubOne, SubOne),
-            ( 1,  7, NoOp  , AddOne, NoOp  , AddOne, AddOne),
-            ( 1,  5, NoOp  , AddOne, NoOp  , AddOne, AddOne),
-            ( 1,  2, NoOp  , AddOne, NoOp  , NoOp  , NoOp  ),
-            ( 1,  0, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
-            ( 1, -2, SubOne, NoOp  , SubOne, NoOp  , NoOp  ),
-            ( 1, -5, SubOne, NoOp  , SubOne, SubOne, NoOp  ),
-            ( 1, -7, SubOne, NoOp  , SubOne, SubOne, SubOne),
-            (-1,  7, AddOne, AddOne, NoOp  , AddOne, AddOne),
-            (-1,  5, AddOne, AddOne, NoOp  , AddOne, NoOp  ),
-            (-1,  2, AddOne, AddOne, NoOp  , NoOp  , NoOp  ),
-            (-1,  0, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
-            (-1, -2, NoOp  , NoOp  , SubOne, NoOp  , NoOp  ),
-            (-1, -5, NoOp  , NoOp  , SubOne, SubOne, SubOne),
-            (-1, -7, NoOp  , NoOp  , SubOne, SubOne, SubOne),
+            // Mode: Zero  , Away  , Up    , Down  , HEven , HAway
+            ( 0,  7, NoOp  , AddOne, AddOne, NoOp  , AddOne, AddOne),
+            ( 0,  5, NoOp  , AddOne, AddOne, NoOp  , NoOp  , AddOne),
+            ( 0,  2, NoOp  , AddOne, AddOne, NoOp  , NoOp  , NoOp  ),
+            ( 0,  0, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
+            ( 0, -2, NoOp  , SubOne, NoOp  , SubOne, NoOp  , NoOp  ),
+            ( 0, -5, NoOp  , SubOne, NoOp  , SubOne, NoOp  , SubOne),
+            ( 0, -7, NoOp  , SubOne, NoOp  , SubOne, SubOne, SubOne),
+            ( 1,  7, NoOp  , AddOne, AddOne, NoOp  , AddOne, AddOne),
+            ( 1,  5, NoOp  , AddOne, AddOne, NoOp  , AddOne, AddOne),
+            ( 1,  2, NoOp  , AddOne, AddOne, NoOp  , NoOp  , NoOp  ),
+            ( 1,  0, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
+            ( 1, -2, SubOne, NoOp  , NoOp  , SubOne, NoOp  , NoOp  ),
+            ( 1, -5, SubOne, NoOp  , NoOp  , SubOne, SubOne, NoOp  ),
+            ( 1, -7, SubOne, NoOp  , NoOp  , SubOne, SubOne, SubOne),
+            (-1,  7, AddOne, NoOp  , AddOne, NoOp  , AddOne, AddOne),
+            (-1,  5, AddOne, NoOp  , AddOne, NoOp  , AddOne, NoOp  ),
+            (-1,  2, AddOne, NoOp  , AddOne, NoOp  , NoOp  , NoOp  ),
+            (-1,  0, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
+            (-1, -2, NoOp  , SubOne, NoOp  , SubOne, NoOp  , NoOp  ),
+            (-1, -5, NoOp  , SubOne, NoOp  , SubOne, SubOne, SubOne),
+            (-1, -7, NoOp  , SubOne, NoOp  , SubOne, SubOne, SubOne),
         ];
         decimal_cases.iter().for_each(test_all_rounding::<10, 1>);
     }
@@ -357,11 +386,12 @@ mod tests {
     fn test_from_ratio() {
         #[rustfmt::skip]
         fn test_all_rounding(
-            input: &(i32, i32, i32, Rounding, Rounding, Rounding, Rounding, Rounding),
+            input: &(i32, i32, i32, Rounding, Rounding, Rounding, Rounding, Rounding, Rounding),
         ) {
-            let (value, num, den, rnd_zero, rnd_up, rnd_down, rnd_halfeven, rnd_halfaway) = *input;
+            let (value, num, den, rnd_zero, rnd_away, rnd_up, rnd_down, rnd_halfeven, rnd_halfaway) = *input;
             let (value, num, den) = (IBig::from(value), IBig::from(num), IBig::from(den));
             assert_eq!(Zero::round_ratio(&value, num.clone(), &den), rnd_zero);
+            assert_eq!(Away::round_ratio(&value, num.clone(), &den), rnd_away);
             assert_eq!(Up::round_ratio(&value, num.clone(), &den), rnd_up);
             assert_eq!(Down::round_ratio(&value, num.clone(), &den), rnd_down);
             assert_eq!(HalfEven::round_ratio(&value, num.clone(), &den), rnd_halfeven);
@@ -372,56 +402,56 @@ mod tests {
         #[rustfmt::skip]
         let test_cases = [
             // (integer value, mumerator, denominator, roundings...)
-            // Mode:     Zero  , Up    , Down  , HEven , HAway
-            ( 0,  0,  2, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
-            ( 0,  1,  2, NoOp  , AddOne, NoOp  , NoOp  , AddOne),
-            ( 0, -1,  2, NoOp  , NoOp  , SubOne, NoOp  , SubOne),
-            ( 0,  0, -2, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
-            ( 0,  1, -2, NoOp  , NoOp  , SubOne, NoOp  , SubOne),
-            ( 0, -1, -2, NoOp  , AddOne, NoOp  , NoOp  , AddOne),
-            ( 1,  0,  2, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
-            ( 1,  1,  2, NoOp  , AddOne, NoOp  , AddOne, AddOne),
-            ( 1, -1,  2, SubOne, NoOp  , SubOne, SubOne, NoOp  ),
-            ( 1,  0, -2, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
-            ( 1,  1, -2, SubOne, NoOp  , SubOne, SubOne, NoOp  ),
-            ( 1, -1, -2, NoOp  , AddOne, NoOp  , AddOne, AddOne),
-            (-1,  0,  2, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
-            (-1,  1,  2, AddOne, AddOne, NoOp  , AddOne, NoOp  ),
-            (-1, -1,  2, NoOp  , NoOp  , SubOne, SubOne, SubOne),
-            (-1,  0, -2, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
-            (-1,  1, -2, NoOp  , NoOp  , SubOne, SubOne, SubOne),
-            (-1, -1, -2, AddOne, AddOne, NoOp  , AddOne, NoOp  ),
+            // Mode:     Zero  , Away  , Up    , Down  , HEven , HAway
+            ( 0,  0,  2, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
+            ( 0,  1,  2, NoOp  , AddOne, AddOne, NoOp  , NoOp  , AddOne),
+            ( 0, -1,  2, NoOp  , SubOne, NoOp  , SubOne, NoOp  , SubOne),
+            ( 0,  0, -2, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
+            ( 0,  1, -2, NoOp  , SubOne, NoOp  , SubOne, NoOp  , SubOne),
+            ( 0, -1, -2, NoOp  , AddOne, AddOne, NoOp  , NoOp  , AddOne),
+            ( 1,  0,  2, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
+            ( 1,  1,  2, NoOp  , AddOne, AddOne, NoOp  , AddOne, AddOne),
+            ( 1, -1,  2, SubOne, NoOp  , NoOp  , SubOne, SubOne, NoOp  ),
+            ( 1,  0, -2, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
+            ( 1,  1, -2, SubOne, NoOp  , NoOp  , SubOne, SubOne, NoOp  ),
+            ( 1, -1, -2, NoOp  , AddOne, AddOne, NoOp  , AddOne, AddOne),
+            (-1,  0,  2, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
+            (-1,  1,  2, AddOne, NoOp  , AddOne, NoOp  , AddOne, NoOp  ),
+            (-1, -1,  2, NoOp  , SubOne, NoOp  , SubOne, SubOne, SubOne),
+            (-1,  0, -2, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
+            (-1,  1, -2, NoOp  , SubOne, NoOp  , SubOne, SubOne, SubOne),
+            (-1, -1, -2, AddOne, NoOp  , AddOne, NoOp  , AddOne, NoOp  ),
 
-            ( 0, -2,  3, NoOp  , NoOp  , SubOne, SubOne, SubOne),
-            ( 0, -1,  3, NoOp  , NoOp  , SubOne, NoOp  , NoOp  ),
-            ( 0,  0,  3, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
-            ( 0,  1,  3, NoOp  , AddOne, NoOp  , NoOp  , NoOp  ),
-            ( 0,  2,  3, NoOp  , AddOne, NoOp  , AddOne, AddOne),
-            ( 0, -2, -3, NoOp  , AddOne, NoOp  , AddOne, AddOne),
-            ( 0, -1, -3, NoOp  , AddOne, NoOp  , NoOp  , NoOp  ),
-            ( 0,  0, -3, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
-            ( 0,  1, -3, NoOp  , NoOp  , SubOne, NoOp  , NoOp  ),
-            ( 0,  2, -3, NoOp  , NoOp  , SubOne, SubOne, SubOne),
-            ( 1, -2,  3, SubOne, NoOp  , SubOne, SubOne, SubOne),
-            ( 1, -1,  3, SubOne, NoOp  , SubOne, NoOp  , NoOp  ),
-            ( 1,  0,  3, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
-            ( 1,  1,  3, NoOp  , AddOne, NoOp  , NoOp  , NoOp  ),
-            ( 1,  2,  3, NoOp  , AddOne, NoOp  , AddOne, AddOne),
-            ( 1, -2, -3, NoOp  , AddOne, NoOp  , AddOne, AddOne),
-            ( 1, -1, -3, NoOp  , AddOne, NoOp  , NoOp  , NoOp  ),
-            ( 1,  0, -3, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
-            ( 1,  1, -3, SubOne, NoOp  , SubOne, NoOp  , NoOp  ),
-            ( 1,  2, -3, SubOne, NoOp  , SubOne, SubOne, SubOne),
-            (-1, -2,  3, NoOp  , NoOp  , SubOne, SubOne, SubOne),
-            (-1, -1,  3, NoOp  , NoOp  , SubOne, NoOp  , NoOp  ),
-            (-1,  0,  3, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
-            (-1,  1,  3, AddOne, AddOne, NoOp  , NoOp  , NoOp  ),
-            (-1,  2,  3, AddOne, AddOne, NoOp  , AddOne, AddOne),
-            (-1, -2, -3, AddOne, AddOne, NoOp  , AddOne, AddOne),
-            (-1, -1, -3, AddOne, AddOne, NoOp  , NoOp  , NoOp  ),
-            (-1,  0, -3, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
-            (-1,  1, -3, NoOp  , NoOp  , SubOne, NoOp  , NoOp  ),
-            (-1,  2, -3, NoOp  , NoOp  , SubOne, SubOne, SubOne),
+            ( 0, -2,  3, NoOp  , SubOne, NoOp  , SubOne, SubOne, SubOne),
+            ( 0, -1,  3, NoOp  , SubOne, NoOp  , SubOne, NoOp  , NoOp  ),
+            ( 0,  0,  3, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
+            ( 0,  1,  3, NoOp  , AddOne, AddOne, NoOp  , NoOp  , NoOp  ),
+            ( 0,  2,  3, NoOp  , AddOne, AddOne, NoOp  , AddOne, AddOne),
+            ( 0, -2, -3, NoOp  , AddOne, AddOne, NoOp  , AddOne, AddOne),
+            ( 0, -1, -3, NoOp  , AddOne, AddOne, NoOp  , NoOp  , NoOp  ),
+            ( 0,  0, -3, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
+            ( 0,  1, -3, NoOp  , SubOne, NoOp  , SubOne, NoOp  , NoOp  ),
+            ( 0,  2, -3, NoOp  , SubOne, NoOp  , SubOne, SubOne, SubOne),
+            ( 1, -2,  3, SubOne, NoOp  , NoOp  , SubOne, SubOne, SubOne),
+            ( 1, -1,  3, SubOne, NoOp  , NoOp  , SubOne, NoOp  , NoOp  ),
+            ( 1,  0,  3, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
+            ( 1,  1,  3, NoOp  , AddOne, AddOne, NoOp  , NoOp  , NoOp  ),
+            ( 1,  2,  3, NoOp  , AddOne, AddOne, NoOp  , AddOne, AddOne),
+            ( 1, -2, -3, NoOp  , AddOne, AddOne, NoOp  , AddOne, AddOne),
+            ( 1, -1, -3, NoOp  , AddOne, AddOne, NoOp  , NoOp  , NoOp  ),
+            ( 1,  0, -3, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
+            ( 1,  1, -3, SubOne, NoOp  , NoOp  , SubOne, NoOp  , NoOp  ),
+            ( 1,  2, -3, SubOne, NoOp  , NoOp  , SubOne, SubOne, SubOne),
+            (-1, -2,  3, NoOp  , SubOne, NoOp  , SubOne, SubOne, SubOne),
+            (-1, -1,  3, NoOp  , SubOne, NoOp  , SubOne, NoOp  , NoOp  ),
+            (-1,  0,  3, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
+            (-1,  1,  3, AddOne, NoOp  , AddOne, NoOp  , NoOp  , NoOp  ),
+            (-1,  2,  3, AddOne, NoOp  , AddOne, NoOp  , AddOne, AddOne),
+            (-1, -2, -3, AddOne, NoOp  , AddOne, NoOp  , AddOne, AddOne),
+            (-1, -1, -3, AddOne, NoOp  , AddOne, NoOp  , NoOp  , NoOp  ),
+            (-1,  0, -3, NoOp  , NoOp  , NoOp  , NoOp  , NoOp  , NoOp  ),
+            (-1,  1, -3, NoOp  , SubOne, NoOp  , SubOne, NoOp  , NoOp  ),
+            (-1,  2, -3, NoOp  , SubOne, NoOp  , SubOne, SubOne, SubOne),
         ];
         test_cases.iter().for_each(test_all_rounding);
     }
