@@ -95,7 +95,7 @@ pub trait Round: Copy {
 }
 
 impl Round for mode::Zero {
-    type Reverse = Self; // TODO: this is not correct
+    type Reverse = mode::Away;
 
     #[inline]
     fn round_rem<F: FnOnce() -> Ordering>(

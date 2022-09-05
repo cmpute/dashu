@@ -1,13 +1,14 @@
 # Roadmap to v0.1
-- [ ] Add complete tests
 - [ ] Implement macros for creating float from literals
 - [x] Add methods to return inexactness
-- [ ] Implement +-*/ and exp/log
-- [ ] Implement more arithmetic traits with primitive types
-- [ ] Implement more arithmetic traits for reference type
+- [x] Implement +-*/ and exp/log
+- [x] Implement more arithmetic traits with primitive types
+- [x] Implement more arithmetic traits for reference type
+- [ ] Full support and tests for inf
+- [ ] Full support and tests for arbitrary precision (precision = 0)
+- [ ] Make conversion between bases ready
 
 # Roadmap to v0.2
-- [ ] Implement *assign traits
 - [ ] Implement Random generator
 - [ ] Implement Serde serialization
 

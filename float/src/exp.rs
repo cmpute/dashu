@@ -18,6 +18,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
     pub fn exp(&self) -> FBig<R, B> {
         self.context.exp(self).value()
     }
+
+    #[inline]
+    pub fn exp_m1(&self) -> FBig<R, B> {
+        self.context.exp_m1(self).value()
+    }
 }
 
 // TODO: give the exact formulation of required guard bits
@@ -63,6 +68,8 @@ impl<R: Round> Context<R> {
         res.and_then(|v| v.with_precision(self.precision))
     }
 
+    // TODO: implement powf
+
     #[inline]
     pub fn exp<_R: Round, const B: Word>(&self, x: &FBig<_R, B>) -> Rounded<FBig<R, B>> {
         self.exp_internal(x, false)
@@ -75,7 +82,10 @@ impl<R: Round> Context<R> {
 
     fn exp_internal<_R: Round, const B: Word>(&self, x: &FBig<_R, B>, minus_one: bool) -> Rounded<FBig<R, B>> {
         if x.repr.is_zero() {
-            return Exact(FBig::ONE);
+            return match minus_one {
+                false => Exact(FBig::ONE),
+                true => Exact(FBig::ZERO),
+            };
         }
 
         // A simple algorithm:
@@ -84,21 +94,27 @@ impl<R: Round> Context<R> {
         // - finally, exp(x) = B^s * exp(r)^(B^n)
         // - the optimal n is √p as given by MPFR
 
-        // Taylor series: exp(r) = 1 + Σ(rⁱ/i!)
+        // Maclaurin series: exp(r) = 1 + Σ(rⁱ/i!)
         // There will be about p/log_B(r) summations when calculating the series, to prevent
         // loss of significant, we needs about log_B(p) guard digits.
-        let taylor_guard_digits = (self.precision.log2_est() / B.log2_est()) as usize;
+        let series_guard_digits = (self.precision.log2_est() / B.log2_est()) as usize + 2;
         let pow_guard_digits = (self.precision.bit_len() as f32 * B.log2_est() * 2.) as usize; // heuristic
         let work_precision;
 
+        // When minus_one is true and |x| < 1/B, the input is fed into the Maclaurin series without scaling
         let no_scaling = minus_one && x.log2_est() < -B.log2_est();
         let (s, n, r) = if no_scaling {
             // if minus_one is true and x is already small (x < 1/B),
-            // then directly evaluate the Taylor series without scaling
-            work_precision = self.precision + taylor_guard_digits;
+            // then directly evaluate the Maclaurin series without scaling
+            if x.sign() == Sign::Negative {
+                // extra digits are required to prevent cancellation during the summation
+                work_precision = self.precision + 2 * series_guard_digits;
+            } else {
+                work_precision = self.precision + series_guard_digits;
+            }
             (0, 0, x.clone())
         } else {
-            work_precision = self.precision + taylor_guard_digits + pow_guard_digits;
+            work_precision = self.precision + series_guard_digits + pow_guard_digits;
             let logb = Context::new(work_precision).ln_base::<B>();
             let (s, r) = x.div_rem_euclid(logb);
 
@@ -132,10 +148,15 @@ impl<R: Round> Context<R> {
 
         if no_scaling {
             sum.with_precision(self.precision)
+        } else if minus_one {
+            // add extra digits to compensate for the subtraction
+            Context::<R>::new(self.precision + self.precision / 8 + 1) // heuristic
+                .powi(&sum, Repr::<B>::BASE.pow(n))
+                .map(|v| (v << s) - FBig::ONE)
+                .and_then(|v| v.with_precision(self.precision))
         } else {
             self.powi(&sum, Repr::<B>::BASE.pow(n))
                 .map(|v| v << s)
-                .and_then(|v| v.with_precision(self.precision))
         }
     }
 }

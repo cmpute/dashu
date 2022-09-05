@@ -54,7 +54,7 @@ impl<R: Round, const B: Word> Display for FBig<R, B> {
             let mut frac = frac.abs(); // don't print sign for fractional part
 
             // print integral part
-            if int.is_zero() && self.repr.significand.sign() == Sign::Negative {
+            if int.is_zero() && self.sign() == Sign::Negative {
                 f.write_char('-')?;
             }
             int.in_radix(B as u32).fmt(f)?;

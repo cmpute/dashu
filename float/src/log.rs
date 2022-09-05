@@ -1,9 +1,9 @@
-use dashu_base::EstimatedLog2;
-use dashu_int::IBig;
+use dashu_base::{EstimatedLog2, Approximation::*};
+use dashu_int::{IBig, Sign};
 
 use crate::{
     fbig::FBig,
-    repr::{Context, Word, Repr},
+    repr::{Context, Word},
     round::{Round, Rounded},
 };
 
@@ -31,6 +31,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     pub fn ln(&self) -> Self {
         self.context.ln(self).value()
+    }
+
+    #[inline]
+    pub fn ln_1p(&self) -> Self {
+        self.context.ln_1p(self).value()
     }
 }
 
@@ -129,30 +134,60 @@ impl<R: Round> Context<R> {
         }
     }
 
-    /// Calculate the natural logarithm of the number x
+    /// Calculate the natural logarithm of the number `x`
+    #[inline]
     pub fn ln<const B: Word>(&self, x: &FBig<R, B>) -> Rounded<FBig<R, B>> {
+        return self.ln_internal(x, false);
+    }
+    
+    /// Calculate the natural logarithm of the number `(x+1)`
+    #[inline]
+    pub fn ln_1p<const B: Word>(&self, x: &FBig<R, B>) -> Rounded<FBig<R, B>> {
+        return self.ln_internal(x, true);
+    }
+
+    fn ln_internal<const B: Word>(&self, x: &FBig<R, B>, one_plus: bool) -> Rounded<FBig<R, B>> {
+        if (one_plus && x.repr.is_zero()) || (!one_plus && x.repr.is_one()) {
+            return Exact(FBig::ZERO)
+        }
+
         // A simple algorithm:
         // - let log(x) = log(x/2^s) + slog2 where s = floor(log2(x))
         // - such that x*2^s is close to but larger than 1 (and x*2^s < 2)
-        let guard_digits = (self.precision.log2_est() / B.log2_est()) as usize;
-        let mut work_precision = self.precision + guard_digits + 2;
-
+        let guard_digits = (self.precision.log2_est() / B.log2_est()) as usize + 2;
+        let mut work_precision = self.precision + guard_digits + one_plus as usize;
         let x = x.clone().with_precision(work_precision).value();
-        let log2 = x.log2_est();
-        let s = log2 as isize - (log2 < 0.) as isize;
-        let mut x_scaled = if B == 2 {
-            x >> s
-        } else {
-            if s > 0 {
-                x / (IBig::ONE << s as usize)
-            } else {
-                x * (IBig::ONE << (-s) as usize)
-            }
-        };
-        // TODO: assert x_scaled > 1
 
-        if s < 0 {
-            // when s is negative, the final addition is actually a subtraction,
+        // When one_plus is true and |x| < 1/B, the input is fed into the Maclaurin without scaling
+        let no_scaling = one_plus && x.log2_est() < -B.log2_est();
+
+        let (s, mut x_scaled) = if no_scaling {
+            (0, x)
+        } else {
+            let x = if one_plus {
+                x + FBig::ONE
+            } else {
+                x
+            };
+
+            let log2 = x.log2_est();
+            let s = log2 as isize - (log2 < 0.) as isize; // floor(log2(x))
+
+            let x_scaled = if B == 2 {
+                x >> s
+            } else {
+                if s > 0 {
+                    x / (IBig::ONE << s as usize)
+                } else {
+                    x * (IBig::ONE << (-s) as usize)
+                }
+            };
+            // TODO: assert x_scaled > 1
+            (s, x_scaled)
+        };
+
+        if s < 0 || x_scaled.sign() == Sign::Negative {
+            // when s or x_scaled is negative, the final addition is actually a subtraction,
             // therefore we need to double the precision to get the correct result
             work_precision += self.precision;
             x_scaled.context.precision = work_precision;
@@ -162,7 +197,12 @@ impl<R: Round> Context<R> {
         // after the number is scaled to nearly one, use Maclaurin series on log(x) = 2atanh(z):
         // let z = (x-1)/(x+1) < 1, log(x) = 2atanh(z) = 2Σ(z²ⁱ⁺¹/(2i+1)) for i = 1,3,5,...
         // similar to iacoth, the required iterations stop at i = -p/2log_B(z), and we need log_B(i) guard bits
-        let z = (&x_scaled - FBig::ONE) / (x_scaled + FBig::ONE);
+        let z = if no_scaling {
+            let d = &x_scaled + (FBig::ONE + FBig::ONE);
+            x_scaled / d
+        } else {
+            (&x_scaled - FBig::ONE) / (x_scaled + FBig::ONE)
+        };
         let z2 = z.square();
         let mut pow = z.clone();
         let mut sum = z.clone();
@@ -180,11 +220,13 @@ impl<R: Round> Context<R> {
         }
 
         // compose the logarithm of the original number
-        let result: FBig<R, B> = 2 * sum + s * work_context.ln2();
+        let result: FBig<R, B> = if no_scaling {
+            2 * sum
+        } else {
+            2 * sum + s * work_context.ln2()
+        };
         result.with_precision(self.precision)
     }
-
-    // TODO: implement ln_1p, when |x| > 1/B use ln(1+x), when |x| < 1/B use normal tyler series
 }
 
 #[cfg(test)]

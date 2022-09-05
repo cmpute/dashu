@@ -19,6 +19,7 @@ pub struct Context<RoundingMode: Round> {
     // TODO: let precision = 0 implies no precision bound, but when no-precision number operates with another has-precision number,
     //       the precision will be set as the other one's. This will requires us to make sure 0 value also has non-zero precision (1 will be ideal)
     //       more tests are necessary after implementing this
+    // TODO: consider expose precision as Option<usize> instead of allowing 0?
     pub(crate) precision: usize,
     pub(crate) _marker: PhantomData<RoundingMode>,
 }
