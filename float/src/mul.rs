@@ -21,7 +21,7 @@ impl<'l, 'r, const B: Word, R: Round> Mul<&'r FBig<R, B>> for &'l FBig<R, B> {
             &self.repr.significand * &rhs.repr.significand,
             self.repr.exponent + rhs.repr.exponent,
         );
-        FBig::new_raw(context.repr_round(repr).value(), context)
+        FBig::new(context.repr_round(repr).value(), context)
     }
 }
 
@@ -37,7 +37,7 @@ impl<'r, const B: Word, R: Round> Mul<&'r FBig<R, B>> for FBig<R, B> {
             self.repr.significand * &rhs.repr.significand,
             self.repr.exponent + rhs.repr.exponent,
         );
-        FBig::new_raw(context.repr_round(repr).value(), context)
+        FBig::new(context.repr_round(repr).value(), context)
     }
 }
 
@@ -53,7 +53,7 @@ impl<'l, const B: Word, R: Round> Mul<FBig<R, B>> for &'l FBig<R, B> {
             &self.repr.significand * rhs.repr.significand,
             self.repr.exponent + rhs.repr.exponent,
         );
-        FBig::new_raw(context.repr_round(repr).value(), context)
+        FBig::new(context.repr_round(repr).value(), context)
     }
 }
 
@@ -69,7 +69,7 @@ impl<R: Round, const B: Word> Mul<FBig<R, B>> for FBig<R, B> {
             self.repr.significand * rhs.repr.significand,
             self.repr.exponent + rhs.repr.exponent,
         );
-        FBig::new_raw(context.repr_round(repr).value(), context)
+        FBig::new(context.repr_round(repr).value(), context)
     }
 }
 
@@ -118,7 +118,7 @@ impl<R: Round> Context<R> {
             &lhs_repr.significand * &rhs_repr.significand,
             lhs_repr.exponent + rhs_repr.exponent,
         );
-        self.repr_round(repr).map(|v| FBig::new_raw(v, *self))
+        self.repr_round(repr).map(|v| FBig::new(v, *self))
     }
 
     pub fn square<_R: Round, const B: Word>(&self, f: &FBig<_R, B>) -> Rounded<FBig<R, B>> {
@@ -137,6 +137,6 @@ impl<R: Round> Context<R> {
         };
 
         let repr = Repr::new(f_repr.significand.square(), 2 * f_repr.exponent);
-        self.repr_round(repr).map(|v| FBig::new_raw(v, *self))
+        self.repr_round(repr).map(|v| FBig::new(v, *self))
     }
 }

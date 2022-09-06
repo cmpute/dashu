@@ -1,5 +1,5 @@
-use dashu_base::{EstimatedLog2, Approximation::*};
-use dashu_int::{IBig, Sign};
+use dashu_base::{EstimatedLog2, Approximation::*, Sign};
+use dashu_int::IBig;
 
 use crate::{
     fbig::FBig,
@@ -80,7 +80,7 @@ impl<R: Round> Context<R> {
             10 => self.ln10(),
             i if i.is_power_of_two() => self.ln2() * i.trailing_zeros(),
             _ => self
-                .ln(&FBig::from_parts_const(dashu_int::Sign::Positive, B as _, 0))
+                .ln(&FBig::from_parts_const(dashu_base::Sign::Positive, B as _, 0))
                 .value(),
         }
     }
@@ -170,7 +170,7 @@ impl<R: Round> Context<R> {
                 x
             };
 
-            let log2 = x.log2_est();
+            let log2 = x.log2_bounds().0;
             let s = log2 as isize - (log2 < 0.) as isize; // floor(log2(x))
 
             let x_scaled = if B == 2 {
@@ -182,7 +182,7 @@ impl<R: Round> Context<R> {
                     x * (IBig::ONE << (-s) as usize)
                 }
             };
-            // TODO: assert x_scaled > 1
+            debug_assert!(x_scaled >= FBig::ONE);
             (s, x_scaled)
         };
 

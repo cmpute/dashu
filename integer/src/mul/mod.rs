@@ -7,7 +7,7 @@ use crate::{
     math,
     memory::{self, Memory},
     primitive::{double_word, extend_word, split_dword},
-    sign::Sign,
+    Sign,
 };
 use alloc::alloc::Layout;
 use core::mem;

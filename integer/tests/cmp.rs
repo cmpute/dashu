@@ -3,7 +3,7 @@ use core::cmp::Ordering;
 mod helper_macros;
 
 #[test]
-fn test_same_type_cmp() {
+fn test_cmp() {
     assert_eq!(ubig!(500).cmp(&ubig!(500)), Ordering::Equal);
     assert!(ubig!(100) < ubig!(500));
     assert!(ubig!(500) > ubig!(100));

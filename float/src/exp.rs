@@ -5,8 +5,8 @@ use crate::{
     repr::{Context, Word, Repr},
     round::{Round, Rounded},
 };
-use dashu_base::{Approximation::*, DivRemEuclid, EstimatedLog2, BitTest};
-use dashu_int::{IBig, Sign};
+use dashu_base::{Approximation::*, Sign, DivRemEuclid, EstimatedLog2, BitTest};
+use dashu_int::IBig;
 
 impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
@@ -38,13 +38,13 @@ impl<R: Round> Context<R> {
             let pow = rev_context.powi(base, exp.into()).value();
             let inv = rev_context.repr_div(Repr::one(), &pow.repr);
             let repr = inv.and_then(|v| self.repr_round(v));
-            return repr.map(|v| FBig::new_raw(v, *self));
+            return repr.map(|v| FBig::new(v, *self));
         }
         if exp.is_zero() {
             return Exact(FBig::ONE);
         } else if exp.is_one() {
             let repr = self.repr_round_ref(&base.repr);
-            return repr.map(|v| FBig::new_raw(v, *self));
+            return repr.map(|v| FBig::new(v, *self));
         }
 
         // increase working precision when the exponent is large

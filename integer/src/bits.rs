@@ -1,7 +1,7 @@
 //! Bitwise operators.
 
 use crate::{
-    arch::word::Word, helper_macros, ibig::IBig, ops::PowerOfTwo, sign::Sign::*, ubig::UBig,
+    arch::word::Word, helper_macros, ibig::IBig, ops::PowerOfTwo, Sign::*, ubig::UBig,
 };
 use core::{
     mem,

@@ -3,7 +3,8 @@ use crate::{
     round::{mode, Round},
 };
 use core::marker::PhantomData;
-use dashu_int::{DoubleWord, IBig, Sign};
+use dashu_base::Sign;
+use dashu_int::{DoubleWord, IBig};
 
 /// An arbitrary precision floating number represented as `signficand * base^exponent`, with a precision
 /// such that `|signficand| < base^precision`. The representation is always normalized (nonzero signficand
@@ -36,49 +37,51 @@ pub struct FBig<RoundingMode: Round = mode::Zero, const BASE: Word = 2> {
 }
 
 impl<R: Round, const B: Word> FBig<R, B> {
-    /// Create a [FBig] instance, internal use only
+    /// Create a [FBig] instance from raw parts, internal use only
     #[inline]
-    pub(crate) const fn new_raw(repr: Repr<B>, context: Context<R>) -> Self {
+    pub(crate) const fn new(repr: Repr<B>, context: Context<R>) -> Self {
         Self { repr, context }
     }
 
-    /// Create a [FBig] instance from word, internal use only
-    #[inline]
-    pub(crate) const fn from_word(val: Word) -> Self {
-        Self::from_parts_const(Sign::Positive, val as _, 0)
-    }
-
     const fn zero() -> Self {
-        Self::new_raw(Repr::zero(), Context::new(1))
+        Self::new(Repr::zero(), Context::new(1))
     }
     /// [FBig] with value 0 and precision 1
     pub const ZERO: Self = Self::zero();
 
     const fn one() -> Self {
-        Self::new_raw(Repr::one(), Context::new(1))
+        Self::new(Repr::one(), Context::new(1))
     }
     /// [FBig] with value 1 and precision 1
     pub const ONE: Self = Self::one();
 
     const fn neg_one() -> Self {
-        Self::new_raw(Repr::neg_one(), Context::new(1))
+        Self::new(Repr::neg_one(), Context::new(1))
     }
     /// [FBig] with value -1 and precision 1
     pub const NEG_ONE: Self = Self::neg_one();
 
     const fn inf() -> Self {
-        Self::new_raw(Repr::infinity(), Context::new(0))
+        Self::new(Repr::infinity(), Context::new(0))
     }
     pub const INFINITY: Self = Self::inf();
 
     const fn neg_inf() -> Self {
-        Self::new_raw(Repr::neg_infinity(), Context::new(0))
+        Self::new(Repr::neg_infinity(), Context::new(0))
     }
     pub const NEG_INFINITY: Self = Self::neg_inf();
 
     #[inline]
     pub const fn sign(&self) -> Sign {
-        self.repr.significand.sign()
+        if self.repr.significand.is_zero() {
+            if self.repr.exponent >= 0 {
+                Sign::Positive
+            } else {
+                Sign::Negative
+            }
+        } else {
+            self.repr.significand.sign()
+        }
     }
 
     /// Get the maximum precision set for the float number.

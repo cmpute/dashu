@@ -4,7 +4,7 @@ use crate::{
     arch::word::Word,
     ibig::IBig,
     repr::TypedReprRef::{self, *},
-    sign::Sign::*,
+    Sign::*,
     ubig::UBig,
 };
 use core::cmp::Ordering;

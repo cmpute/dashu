@@ -4,10 +4,11 @@ use crate::{
     round::Round,
 };
 use core::{num::IntErrorKind, str::FromStr};
+use dashu_base::Sign;
 use dashu_int::{
     error::ParseError,
     fmt::{MAX_RADIX, MIN_RADIX},
-    Sign, UBig,
+    UBig,
 };
 
 impl<R: Round, const B: Word> FromStr for FBig<R, B> {

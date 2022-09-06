@@ -14,7 +14,7 @@ impl<R: Round, const B: Word> Div<FBig<R, B>> for FBig<R, B> {
     type Output = FBig<R, B>;
     fn div(self, rhs: FBig<R, B>) -> Self::Output {
         let context = Context::max(self.context, rhs.context);
-        FBig::new_raw(context.repr_div(self.repr, &rhs.repr).value(), context)
+        FBig::new(context.repr_div(self.repr, &rhs.repr).value(), context)
     }
 }
 
@@ -22,7 +22,7 @@ impl<'l, const B: Word, R: Round> Div<FBig<R, B>> for &'l FBig<R, B> {
     type Output = FBig<R, B>;
     fn div(self, rhs: FBig<R, B>) -> Self::Output {
         let context = Context::max(self.context, rhs.context);
-        FBig::new_raw(context.repr_div(self.repr.clone(), &rhs.repr).value(), context)
+        FBig::new(context.repr_div(self.repr.clone(), &rhs.repr).value(), context)
     }
 }
 
@@ -30,7 +30,7 @@ impl<'r, const B: Word, R: Round> Div<&'r FBig<R, B>> for FBig<R, B> {
     type Output = FBig<R, B>;
     fn div(self, rhs: &FBig<R, B>) -> Self::Output {
         let context = Context::max(self.context, rhs.context);
-        FBig::new_raw(context.repr_div(self.repr, &rhs.repr).value(), context)
+        FBig::new(context.repr_div(self.repr, &rhs.repr).value(), context)
     }
 }
 
@@ -38,7 +38,7 @@ impl<'l, 'r, const B: Word, R: Round> Div<&'r FBig<R, B>> for &'l FBig<R, B> {
     type Output = FBig<R, B>;
     fn div(self, rhs: &FBig<R, B>) -> Self::Output {
         let context = Context::max(self.context, rhs.context);
-        FBig::new_raw(context.repr_div(self.repr.clone(), &rhs.repr).value(), context)
+        FBig::new(context.repr_div(self.repr.clone(), &rhs.repr).value(), context)
     }
 }
 
@@ -204,8 +204,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
     pub fn from_ratio(numerator: IBig, denominator: IBig, precision: usize) -> Self {
         let context = Context::new(precision);
         let dummy = Context::<R>::new(0);
-        let n = FBig::new_raw(Repr::new(numerator, 0), dummy);
-        let d = FBig::new_raw(Repr::new(denominator, 0), dummy);
+        let n = FBig::new(Repr::new(numerator, 0), dummy);
+        let d = FBig::new(Repr::new(denominator, 0), dummy);
         context.div(&n, &d).value()
     }
 }
@@ -268,6 +268,6 @@ impl<R: Round> Context<R> {
             lhs.repr.clone()
         };
         self.repr_div(lhs_repr, &rhs.repr)
-            .map(|v| FBig::new_raw(v, *self))
+            .map(|v| FBig::new(v, *self))
     }
 }

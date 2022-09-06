@@ -4,8 +4,8 @@ use crate::{
     round::Round,
 };
 use core::ops::{Mul, MulAssign, Neg};
-use dashu_base::Abs;
-use dashu_int::{IBig, Sign};
+use dashu_base::{Abs, Sign};
+use dashu_int::IBig;
 
 impl<R: Round, const B: Word> FBig<R, B> {
     pub const fn signum(&self) -> Self {
@@ -22,7 +22,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
             significand,
             exponent: 0,
         };
-        Self::new_raw(repr, Context::new(1))
+        Self::new(repr, Context::new(1))
     }
 }
 

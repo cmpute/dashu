@@ -1,6 +1,6 @@
 //! Bit shift operators.
 
-use crate::{ibig::IBig, sign::Sign::*, ubig::UBig};
+use crate::{ibig::IBig, Sign::*, ubig::UBig};
 use core::{
     mem,
     ops::{Shl, ShlAssign, Shr, ShrAssign},

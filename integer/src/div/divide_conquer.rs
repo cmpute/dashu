@@ -7,7 +7,7 @@ use crate::{
     fast_div::FastDivideNormalized2,
     memory::Memory,
     mul,
-    sign::Sign::*,
+    Sign::*,
 };
 use alloc::alloc::Layout;
 use static_assertions::const_assert;

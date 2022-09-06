@@ -7,8 +7,8 @@ use crate::{
     utils::{digit_len, shr_digits_in_place, split_digits_ref},
 };
 use core::fmt::{self, Display, Formatter, Write};
-use dashu_base::Abs;
-use dashu_int::{Sign, Word};
+use dashu_base::{Abs, Sign};
+use dashu_int::Word;
 
 impl<const B: Word> fmt::Debug for Repr<B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

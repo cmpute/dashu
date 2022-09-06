@@ -16,7 +16,7 @@ use crate::{
     ibig::IBig,
     radix::{self, Digit, DigitCase},
     repr::TypedReprRef,
-    sign::Sign::{self, *},
+    Sign::{self, *},
     ubig::UBig,
 };
 use core::fmt::{

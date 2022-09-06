@@ -5,7 +5,7 @@ use crate::{
     arch::word::{SignedWord, Word},
     memory::Memory,
     mul,
-    sign::Sign,
+    Sign,
 };
 
 /// c += sign * a * b

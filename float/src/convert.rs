@@ -12,7 +12,7 @@ impl<R: Round> Context<R> {
     /// and rounding given by the context.
     pub fn convert_int<const B: Word>(&self, n: IBig) -> Rounded<FBig<R, B>> {
         let repr = Repr::<B>::new(n, 0);
-        self.repr_round(repr).map(|v| FBig::new_raw(v, *self))
+        self.repr_round(repr).map(|v| FBig::new(v, *self))
     }
 }
 
@@ -71,7 +71,7 @@ impl<R: Round, const B: Word> From<IBig> for FBig<R, B> {
     fn from(n: IBig) -> Self {
         let repr = Repr::new(n, 0);
         let context = Context::new(repr.digits());
-        Self::new_raw(repr, context)
+        Self::new(repr, context)
     }
 }
 
@@ -110,7 +110,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
             Approximation::Exact(self.repr)
         };
 
-        repr.map(|v| Self::new_raw(v, new_context))
+        repr.map(|v| Self::new(v, new_context))
     }
 
     /// Explicitly change the rounding mode of the number.
@@ -209,13 +209,13 @@ impl<R: Round, const B: Word> FBig<R, B> {
             if self.repr.exponent >= 0 {
                 let signif =
                     self.repr.significand * Repr::<B>::BASE.pow(self.repr.exponent as usize);
-                return Approximation::Exact(FBig::new_raw(Repr::new(signif, 0), context));
+                return Approximation::Exact(FBig::new(Repr::new(signif, 0), context));
             } else {
                 let num = Repr::new(self.repr.significand, 0);
                 let den = Repr::new(Repr::<B>::BASE.pow(-self.repr.exponent as usize), 0);
                 return context
                     .repr_div(num, &den)
-                    .map(|v| FBig::new_raw(v, context));
+                    .map(|v| FBig::new(v, context));
             }
         } else {
             // exp_f = self.repr.exponent * log(B) / log(NewB)

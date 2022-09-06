@@ -4,7 +4,7 @@ use crate::{
     arch::word::{DoubleWord, Word},
     buffer::Buffer,
     primitive::{double_word, split_dword},
-    sign::Sign,
+    Sign,
 };
 use core::{
     fmt::{self, Write},

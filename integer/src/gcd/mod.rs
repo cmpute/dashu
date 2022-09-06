@@ -6,7 +6,7 @@ use crate::{
     memory::Memory,
     mul,
     primitive::{extend_word, shrink_dword, PrimitiveSigned},
-    sign::Sign,
+    Sign,
 };
 use alloc::alloc::Layout;
 use dashu_base::ExtendedGcd;

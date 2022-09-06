@@ -7,7 +7,7 @@ use crate::{
     math,
     memory::{self, Memory},
     mul::{self, helpers},
-    sign::Sign::{self, *},
+    Sign::{self, *},
 };
 use alloc::alloc::Layout;
 

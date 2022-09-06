@@ -1,5 +1,6 @@
+use dashu_base::Sign;
 use dashu_float::{DBig, FBig, round::mode};
-use dashu_int::{error::ParseError, DoubleWord, IBig, Sign, Word};
+use dashu_int::{error::ParseError, DoubleWord, IBig, Word};
 use std::str::FromStr;
 
 mod helper_macros;

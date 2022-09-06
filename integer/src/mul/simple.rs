@@ -7,7 +7,7 @@ use crate::{
     },
     memory::Memory,
     mul::{self, helpers},
-    sign::Sign::{self, *},
+    Sign::{self, *},
 };
 
 /// Split larger length into chunks of CHUNK_LEN..2 * CHUNK_LEN for memory locality.

@@ -68,7 +68,7 @@ impl UBig {
     #[inline]
     pub fn as_words(&self) -> &[crate::Word] {
         let (sign, words) = self.0.as_sign_slice();
-        debug_assert!(matches!(sign, crate::sign::Sign::Positive));
+        debug_assert!(matches!(sign, crate::Sign::Positive));
         words
     }
 

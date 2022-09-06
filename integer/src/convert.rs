@@ -7,7 +7,7 @@ use crate::{
     ibig::IBig,
     primitive::{self, PrimitiveSigned, PrimitiveUnsigned, DWORD_BYTES, WORD_BITS, WORD_BYTES},
     repr::{Repr, TypedReprRef::*},
-    sign::Sign::*,
+    Sign::*,
     ubig::UBig,
 };
 use alloc::vec::Vec;

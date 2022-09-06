@@ -14,7 +14,7 @@ use crate::{
         split_signed_dword, WORD_BITS,
     },
     shift,
-    sign::Sign,
+    Sign,
 };
 
 /// Remove the leading zero words in an owning reference. Return

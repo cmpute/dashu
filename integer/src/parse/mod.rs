@@ -4,7 +4,7 @@ use crate::{
     error::ParseError,
     ibig::IBig,
     radix::{self, is_radix_valid, Digit},
-    sign::Sign::*,
+    Sign::*,
     ubig::UBig,
 };
 use core::str::FromStr;

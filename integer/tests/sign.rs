@@ -8,11 +8,14 @@ mod helper_macros;
 #[test]
 #[allow(clippy::double_neg)]
 fn test_neg() {
+    assert_eq!(-ubig!(123), ibig!(-123));
     assert_eq!(-ibig!(123), ibig!(-123));
     assert_eq!(-ibig!(-123), ibig!(123));
     assert_eq!(-ibig!(0), ibig!(0));
 
+    assert_eq!(-&ubig!(123), ibig!(-123));
     assert_eq!(-&ibig!(123), ibig!(-123));
+    assert_eq!(-&ibig!(0), ibig!(0));
 }
 
 #[test]

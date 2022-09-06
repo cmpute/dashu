@@ -3,7 +3,7 @@
 use crate::{
     arch::word::{DoubleWord, SignedDoubleWord, SignedWord, Word},
     error::OutOfBoundsError,
-    sign::Sign::{self, *},
+    Sign::{self, *},
 };
 use core::{
     convert::{TryFrom, TryInto},

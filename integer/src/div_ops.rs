@@ -4,7 +4,7 @@ use crate::{
     helper_macros,
     ibig::IBig,
     ops::{DivEuclid, DivRem, DivRemAssign, DivRemEuclid, RemEuclid},
-    sign::Sign::{self, *},
+    Sign::{self, *},
     ubig::UBig,
 };
 use core::ops::{Div, DivAssign, Rem, RemAssign};

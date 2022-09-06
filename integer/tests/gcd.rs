@@ -1,7 +1,4 @@
-use dashu_int::{
-    ops::{ExtendedGcd, Gcd},
-    IBig, Sign,
-};
+use dashu_int::ops::{ExtendedGcd, Gcd};
 
 mod helper_macros;
 
@@ -102,8 +99,8 @@ fn test_gcd_ubig_ibig() {
     ];
 
     for (a, b, c) in &test_cases {
-        let ia = IBig::from_parts(Sign::Negative, a.clone());
-        let ib = IBig::from_parts(Sign::Negative, b.clone());
+        let ia = -a.clone();
+        let ib = -b.clone();
 
         assert_eq!(&a.gcd(b), c);
         assert_eq!(&a.gcd(b.clone()), c);
@@ -116,17 +113,17 @@ fn test_gcd_ubig_ibig() {
 
         let (g, x, y) = a.gcd_ext(b);
         assert_eq!(&g, c);
-        assert_eq!(x * IBig::from(a.clone()) + y * IBig::from(b.clone()), IBig::from(g));
+        assert_eq!(x * a + y * b, g);
         let (g, y, x) = b.gcd_ext(a);
         assert_eq!(&g, c);
-        assert_eq!(x * IBig::from(a.clone()) + y * IBig::from(b.clone()), IBig::from(g));
+        assert_eq!(x * a + y * b, g);
 
         let (g, x, y) = (&ia).gcd_ext(&ib);
         assert_eq!(&g, c);
-        assert_eq!(x * ia.clone() + y * ib.clone(), IBig::from(g));
+        assert_eq!(x * &ia + y * &ib, g);
         let (g, y, x) = (&ib).gcd_ext(&ia);
         assert_eq!(&g, c);
-        assert_eq!(x * ia.clone() + y * ib.clone(), IBig::from(g));
+        assert_eq!(x * &ia + y * &ib, g);
     }
 }
 

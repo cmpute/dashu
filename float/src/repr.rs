@@ -130,7 +130,7 @@ impl<const B: Word> Repr<B> {
         } else {
             self.significand.log2_bounds().0 / Self::BASE.log2_bounds().1
         };
-        log as usize + 1
+        log as usize
     }
 
     /// Create a [Repr] from significand and exponent. This

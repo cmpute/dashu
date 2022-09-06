@@ -1,5 +1,5 @@
-use dashu_base::DivRem;
-use dashu_int::{DoubleWord, IBig, Sign, UBig, Word};
+use dashu_base::{DivRem, Sign};
+use dashu_int::{DoubleWord, IBig, UBig, Word};
 
 #[inline]
 pub const fn base_as_ibig<const B: Word>() -> IBig {

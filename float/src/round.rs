@@ -1,7 +1,7 @@
 use core::cmp::Ordering;
 use core::ops::{Add, AddAssign};
-use dashu_base::{Approximation, UnsignedAbs};
-use dashu_int::{IBig, Sign, UBig, Word};
+use dashu_base::{Approximation, UnsignedAbs, Sign, EstimatedLog2};
+use dashu_int::{IBig, UBig, Word};
 
 /// Built-in rounding modes of the floating numbers.
 pub mod mode {
@@ -50,16 +50,16 @@ pub trait Round: Copy {
     /// The rounding operation that rounds to an opposite direction
     type Reverse: Round;
 
-    // TODO: find a better name
     /// Calculate the rounding of the number (integer + rem), assuming rem != 0 and |rem| < 1.
-    /// `rem_half_test` should tell |rem|.cmp(0.5)
-    fn round_rem<F: FnOnce() -> Ordering>(
+    /// `low_half_test` should tell |rem|.cmp(0.5)
+    fn round_low_part<F: FnOnce() -> Ordering>(
         integer: &IBig,
-        rem_sign: Sign,
-        rem_half_test: F,
+        low_sign: Sign,
+        low_half_test: F,
     ) -> Rounding;
 
-    /// Calculate the rounding of the number (integer + fract / X^precision), assuming |fract| / X^precision < 1. Return the adjustment.
+    /// Calculate the rounding of the number (integer + fract / X^precision),
+    /// assuming |fract| / X^precision < 1. Return the adjustment.
     #[inline]
     fn round_fract<const B: Word>(integer: &IBig, fract: IBig, precision: usize) -> Rounding {
         // this assertion is costly, so only check in debug mode
@@ -69,11 +69,26 @@ pub trait Round: Copy {
             return Rounding::NoOp;
         }
         let (fsign, fmag) = fract.into_parts();
-        // TODO: here we can use estimated logarithm to compare first, instead of calculating the power?
-        Self::round_rem::<_>(integer, fsign, || (fmag << 1).cmp(&UBig::from_word(B).pow(precision)))
+
+        let test = || {
+            // first use the estimated log2 to do coarse comparison, then do the exact comparison
+            let (lb, ub) = fmag.log2_bounds();
+            let (b_lb, b_ub) = B.log2_bounds();
+
+            // 0.999 and 1.001 are used here to prevent the influence of the precision loss of the multiplcations
+            if lb + 0.999 > b_ub * precision as f32 {
+                Ordering::Greater
+            } else if ub + 1.001 < b_lb * precision as f32 {
+                Ordering::Less
+            } else {
+                (fmag << 1).cmp(&UBig::from_word(B).pow(precision))
+            }
+        };
+        Self::round_low_part::<_>(integer, fsign, test)
     }
 
-    /// Calculate the rounding of the number (integer + numerator / denominator), assuming |numerator / denominator| < 1. Return the adjustment.
+    /// Calculate the rounding of the number (integer + numerator / denominator),
+    /// assuming |numerator / denominator| < 1. Return the adjustment.
     #[inline]
     fn round_ratio(integer: &IBig, num: IBig, den: &IBig) -> Rounding {
         assert!(!den.is_zero());
@@ -84,11 +99,11 @@ pub trait Round: Copy {
             return Rounding::NoOp;
         }
         let (nsign, nmag) = num.into_parts();
-        Self::round_rem::<_>(integer, nsign * den.sign(), || {
+        Self::round_low_part::<_>(integer, nsign * den.sign(), || {
             if den.sign() == Sign::Positive {
-                IBig::from((nmag) << 1).cmp(&den)
+                IBig::from(nmag << 1).cmp(&den)
             } else {
-                den.cmp(&IBig::from_parts(Sign::Negative, nmag << 1))
+                den.cmp(&-(nmag << 1))
             }
         })
     }
@@ -98,15 +113,15 @@ impl Round for mode::Zero {
     type Reverse = mode::Away;
 
     #[inline]
-    fn round_rem<F: FnOnce() -> Ordering>(
+    fn round_low_part<F: FnOnce() -> Ordering>(
         integer: &IBig,
-        rem_sign: Sign,
-        _rem_half_test: F,
+        low_sign: Sign,
+        _low_half_test: F,
     ) -> Rounding {
         if integer.is_zero() {
             return Rounding::NoOp;
         }
-        match (integer.sign(), rem_sign) {
+        match (integer.sign(), low_sign) {
             (Sign::Positive, Sign::Positive) | (Sign::Negative, Sign::Negative) => Rounding::NoOp,
             (Sign::Positive, Sign::Negative) => Rounding::SubOne,
             (Sign::Negative, Sign::Positive) => Rounding::AddOne,
@@ -118,18 +133,18 @@ impl Round for mode::Away {
     type Reverse = mode::Zero;
 
     #[inline]
-    fn round_rem<F: FnOnce() -> Ordering>(
+    fn round_low_part<F: FnOnce() -> Ordering>(
             integer: &IBig,
-            rem_sign: Sign,
-            _rem_half_test: F,
+            low_sign: Sign,
+            _low_half_test: F,
         ) -> Rounding {
         if integer.is_zero() {
-            match rem_sign {
+            match low_sign {
                 Sign::Positive => Rounding::AddOne,
                 Sign::Negative => Rounding::SubOne,
             }
         } else {
-            match (integer.sign(), rem_sign) {
+            match (integer.sign(), low_sign) {
                 (Sign::Positive, Sign::Positive) => Rounding::AddOne,
                 (Sign::Negative, Sign::Negative) => Rounding::SubOne,
                 (Sign::Positive, Sign::Negative) | (Sign::Negative, Sign::Positive) => Rounding::NoOp,
@@ -142,13 +157,13 @@ impl Round for mode::Down {
     type Reverse = mode::Up;
 
     #[inline]
-    fn round_rem<F: FnOnce() -> Ordering>(
+    fn round_low_part<F: FnOnce() -> Ordering>(
         _integer: &IBig,
-        rem_sign: Sign,
-        _rem_half_test: F,
+        low_sign: Sign,
+        _low_half_test: F,
     ) -> Rounding {
         // -1 if fract < 0, otherwise 0
-        if rem_sign == Sign::Negative {
+        if low_sign == Sign::Negative {
             Rounding::SubOne
         } else {
             Rounding::NoOp
@@ -160,13 +175,13 @@ impl Round for mode::Up {
     type Reverse = mode::Down;
 
     #[inline]
-    fn round_rem<F: FnOnce() -> Ordering>(
+    fn round_low_part<F: FnOnce() -> Ordering>(
         _integer: &IBig,
-        rem_sign: Sign,
-        _rem_half_test: F,
+        low_sign: Sign,
+        _low_half_test: F,
     ) -> Rounding {
         // +1 if fract > 0, otherwise 0
-        if rem_sign == Sign::Positive {
+        if low_sign == Sign::Positive {
             Rounding::AddOne
         } else {
             Rounding::NoOp
@@ -178,20 +193,20 @@ impl Round for mode::HalfAway {
     type Reverse = Self;
 
     #[inline]
-    fn round_rem<F: FnOnce() -> Ordering>(
+    fn round_low_part<F: FnOnce() -> Ordering>(
         integer: &IBig,
-        rem_sign: Sign,
-        rem_half_test: F,
+        low_sign: Sign,
+        low_half_test: F,
     ) -> Rounding {
-        match rem_half_test() {
+        match low_half_test() {
             // |rem| < 1/2
             Ordering::Less => Rounding::NoOp,
             // |rem| = 1/2
             Ordering::Equal => {
                 // +1 if integer and rem >= 0, -1 if integer and rem <= 0
-                if integer >= &IBig::ZERO && rem_sign == Sign::Positive {
+                if integer >= &IBig::ZERO && low_sign == Sign::Positive {
                     Rounding::AddOne
-                } else if integer <= &IBig::ZERO && rem_sign == Sign::Negative {
+                } else if integer <= &IBig::ZERO && low_sign == Sign::Negative {
                     Rounding::SubOne
                 } else {
                     Rounding::NoOp
@@ -200,7 +215,7 @@ impl Round for mode::HalfAway {
             // |rem| > 1/2
             Ordering::Greater => {
                 // +1 if rem > 0, -1 if rem < 0
-                match rem_sign {
+                match low_sign {
                     Sign::Positive => Rounding::AddOne,
                     Sign::Negative => Rounding::SubOne,
                 }
@@ -213,19 +228,19 @@ impl Round for mode::HalfEven {
     type Reverse = Self;
 
     #[inline]
-    fn round_rem<F: FnOnce() -> Ordering>(
+    fn round_low_part<F: FnOnce() -> Ordering>(
         integer: &IBig,
-        rem_sign: Sign,
-        rem_half_test: F,
+        low_sign: Sign,
+        low_half_test: F,
     ) -> Rounding {
-        match rem_half_test() {
+        match low_half_test() {
             // |rem| < 1/2
             Ordering::Less => Rounding::NoOp,
             // |rem| = 1/2
             Ordering::Equal => {
                 // if integer is odd, +1 if rem > 0, -1 if rem < 0
                 if integer & 1 == 1 {
-                    match rem_sign {
+                    match low_sign {
                         Sign::Positive => Rounding::AddOne,
                         Sign::Negative => Rounding::SubOne,
                     }
@@ -236,7 +251,7 @@ impl Round for mode::HalfEven {
             // |rem| > 1/2
             Ordering::Greater => {
                 // +1 if rem > 0, -1 if rem < 0
-                match rem_sign {
+                match low_sign {
                     Sign::Positive => Rounding::AddOne,
                     Sign::Negative => Rounding::SubOne,
                 }

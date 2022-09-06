@@ -2,7 +2,7 @@
 
 use crate::{
     repr::{Repr, TypedRepr, TypedReprRef},
-    sign::Sign,
+    Sign,
     UBig,
 };
 

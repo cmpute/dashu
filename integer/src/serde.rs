@@ -4,7 +4,7 @@ use crate::{
     ibig::IBig,
     primitive::{split_dword, WORD_BITS_USIZE},
     repr::{Repr, TypedReprRef},
-    sign::Sign,
+    Sign,
     ubig::UBig,
 };
 use alloc::vec::Vec;

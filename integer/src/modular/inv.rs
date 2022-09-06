@@ -7,7 +7,7 @@ use crate::{
     memory::MemoryAllocation,
     primitive::{locate_top_word_plus_one, lowest_dword, PrimitiveSigned},
     shift::{shl_in_place, shr_in_place},
-    sign::Sign,
+    Sign,
 };
 
 use super::{

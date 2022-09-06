@@ -3,8 +3,6 @@ use core::{
     ops::{Mul, MulAssign},
 };
 
-use dashu_int::IBig;
-
 mod helper_macros;
 
 fn test_mul<'a, T>(a: &'a T, b: &'a T, c: &'a T)
@@ -195,7 +193,7 @@ fn test_sqr() {
 
     for (a, b) in test_cases {
         assert_eq!(a.square(), b);
-        assert_eq!(IBig::from_parts(dashu_int::Sign::Negative, a.clone()).square(), b);
+        assert_eq!((-a).square(), b);
     }
 
     // 3^[25, 50, 100, 200, 400, 800]
@@ -211,6 +209,6 @@ fn test_sqr() {
         let a = ab.first().unwrap();
         let b = ab.last().unwrap();
         assert_eq!(&a.square(), b);
-        assert_eq!(&IBig::from_parts(dashu_int::Sign::Negative, a.clone()).square(), b);
+        assert_eq!(&(-a).square(), b);
     }
 }

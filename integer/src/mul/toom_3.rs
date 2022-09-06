@@ -9,7 +9,7 @@ use crate::{
     memory::{self, Memory},
     mul::{self, helpers},
     shift,
-    sign::Sign::{self, *},
+    Sign::{self, *},
 };
 use alloc::alloc::Layout;
 

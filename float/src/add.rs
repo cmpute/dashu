@@ -10,10 +10,8 @@ use core::{
     ops::{Add, AddAssign, Sub, SubAssign},
 };
 
-use dashu_int::{
-    IBig,
-    Sign::{self, *}, UBig,
-};
+use dashu_base::Sign::{self, *};
+use dashu_int::{IBig, UBig};
 
 impl<R: Round, const B: Word> Add for FBig<R, B> {
     type Output = Self;
@@ -124,7 +122,7 @@ fn add_val_val<R: Round, const B: Word>(
         }
         .value()
     };
-    FBig::new_raw(sum, context)
+    FBig::new(sum, context)
 }
 
 fn add_val_ref<R: Round, const B: Word>(
@@ -155,7 +153,7 @@ fn add_val_ref<R: Round, const B: Word>(
         }
         .value()
     };
-    FBig::new_raw(sum, context)
+    FBig::new(sum, context)
 }
 
 fn add_ref_val<R: Round, const B: Word>(
@@ -182,7 +180,7 @@ fn add_ref_val<R: Round, const B: Word>(
         }
         .value()
     };
-    FBig::new_raw(sum, context)
+    FBig::new(sum, context)
 }
 
 fn add_ref_ref<R: Round, const B: Word>(
@@ -212,7 +210,7 @@ fn add_ref_ref<R: Round, const B: Word>(
         }
         .value()
     };
-    FBig::new_raw(sum, context)
+    FBig::new(sum, context)
 }
 
 impl<R: Round> Context<R> {
@@ -455,7 +453,7 @@ impl<R: Round> Context<R> {
                 Ordering::Less => self.repr_add_small_large(lhs.repr.clone(), &rhs.repr, Positive),
             }
         };
-        sum.map(|v| FBig::new_raw(v, *self))
+        sum.map(|v| FBig::new(v, *self))
     }
 
     pub fn sub<_R1: Round, _R2: Round, const B: Word>(&self, lhs: &FBig<_R1, B>, rhs: &FBig<_R2, B>) -> Rounded<FBig<R, B>> {
@@ -477,6 +475,6 @@ impl<R: Round> Context<R> {
                 Ordering::Less => self.repr_add_small_large(lhs.repr.clone(), &rhs.repr, Negative),
             }
         };
-        sum.map(|v| FBig::new_raw(v, *self))
+        sum.map(|v| FBig::new(v, *self))
     }
 }
