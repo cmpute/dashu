@@ -1,5 +1,5 @@
 use dashu_base::Sign;
-use dashu_float::{DBig, FBig, round::mode};
+use dashu_float::{round::mode, DBig, FBig};
 use dashu_int::{error::ParseError, DoubleWord, IBig, Word};
 use std::str::FromStr;
 
@@ -193,7 +193,10 @@ fn test_oct_hex_from_str() {
 
 #[test]
 fn test_other_bases() {
-    assert_eq!(FBig::<mode::Zero, 3>::from_str("12.21").unwrap(), FBig::<mode::Zero, 3>::from_parts(ibig!(52), -2));
+    assert_eq!(
+        FBig::<mode::Zero, 3>::from_str("12.21").unwrap(),
+        FBig::<mode::Zero, 3>::from_parts(ibig!(52), -2)
+    );
     assert_eq!(
         FBig::<mode::Zero, 20>::from_str("gg.hh@12").unwrap(),
         FBig::<mode::Zero, 20>::from_parts(ibig!(134757), 10)

@@ -3,8 +3,8 @@
 use crate::{
     helper_macros::{forward_ibig_binop_to_repr, forward_ubig_binop_to_repr},
     ibig::IBig,
-    Sign,
     ubig::UBig,
+    Sign,
 };
 use dashu_base::ring::{ExtendedGcd, Gcd};
 

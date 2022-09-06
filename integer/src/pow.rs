@@ -2,7 +2,7 @@
 
 use core::ops::{Shl, Shr};
 
-use crate::{ibig::IBig, Sign::*, ubig::UBig};
+use crate::{ibig::IBig, ubig::UBig, Sign::*};
 
 impl UBig {
     /// Raises self to the power of `exp`.

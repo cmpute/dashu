@@ -1,9 +1,10 @@
 use crate::{
     error::check_inf_operands,
     fbig::FBig,
+    helper_macros,
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
-    utils::{digit_len, shl_digits, shl_digits_in_place, split_digits, split_digits_ref}, helper_macros,
+    utils::{digit_len, shl_digits, shl_digits_in_place, split_digits, split_digits_ref},
 };
 use core::{
     cmp::Ordering,
@@ -434,7 +435,11 @@ impl<R: Round> Context<R> {
         self.repr_round_sum(significand, exponent, low, is_sub)
     }
 
-    pub fn add<_R1: Round, _R2: Round, const B: Word>(&self, lhs: &FBig<_R1, B>, rhs: &FBig<_R2, B>) -> Rounded<FBig<R, B>> {
+    pub fn add<_R1: Round, _R2: Round, const B: Word>(
+        &self,
+        lhs: &FBig<_R1, B>,
+        rhs: &FBig<_R2, B>,
+    ) -> Rounded<FBig<R, B>> {
         check_inf_operands(&lhs.repr, &rhs.repr);
 
         let sum = if lhs.repr.is_zero() {
@@ -456,7 +461,11 @@ impl<R: Round> Context<R> {
         sum.map(|v| FBig::new(v, *self))
     }
 
-    pub fn sub<_R1: Round, _R2: Round, const B: Word>(&self, lhs: &FBig<_R1, B>, rhs: &FBig<_R2, B>) -> Rounded<FBig<R, B>> {
+    pub fn sub<_R1: Round, _R2: Round, const B: Word>(
+        &self,
+        lhs: &FBig<_R1, B>,
+        rhs: &FBig<_R2, B>,
+    ) -> Rounded<FBig<R, B>> {
         check_inf_operands(&lhs.repr, &rhs.repr);
 
         let sum = if lhs.repr.is_zero() {

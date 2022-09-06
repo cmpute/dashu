@@ -1,4 +1,4 @@
-use dashu_base::{EstimatedLog2, Approximation::*, Sign};
+use dashu_base::{Approximation::*, EstimatedLog2, Sign};
 use dashu_int::IBig;
 
 use crate::{
@@ -139,7 +139,7 @@ impl<R: Round> Context<R> {
     pub fn ln<const B: Word>(&self, x: &FBig<R, B>) -> Rounded<FBig<R, B>> {
         return self.ln_internal(x, false);
     }
-    
+
     /// Calculate the natural logarithm of the number `(x+1)`
     #[inline]
     pub fn ln_1p<const B: Word>(&self, x: &FBig<R, B>) -> Rounded<FBig<R, B>> {
@@ -148,7 +148,7 @@ impl<R: Round> Context<R> {
 
     fn ln_internal<const B: Word>(&self, x: &FBig<R, B>, one_plus: bool) -> Rounded<FBig<R, B>> {
         if (one_plus && x.repr.is_zero()) || (!one_plus && x.repr.is_one()) {
-            return Exact(FBig::ZERO)
+            return Exact(FBig::ZERO);
         }
 
         // A simple algorithm:
@@ -164,11 +164,7 @@ impl<R: Round> Context<R> {
         let (s, mut x_scaled) = if no_scaling {
             (0, x)
         } else {
-            let x = if one_plus {
-                x + FBig::ONE
-            } else {
-                x
-            };
+            let x = if one_plus { x + FBig::ONE } else { x };
 
             let log2 = x.log2_bounds().0;
             let s = log2 as isize - (log2 < 0.) as isize; // floor(log2(x))

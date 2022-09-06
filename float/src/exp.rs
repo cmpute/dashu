@@ -2,10 +2,10 @@ use core::convert::TryInto;
 
 use crate::{
     fbig::FBig,
-    repr::{Context, Word, Repr},
+    repr::{Context, Repr, Word},
     round::{Round, Rounded},
 };
-use dashu_base::{Approximation::*, Sign, DivRemEuclid, EstimatedLog2, BitTest};
+use dashu_base::{Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign};
 use dashu_int::IBig;
 
 impl<R: Round, const B: Word> FBig<R, B> {
@@ -28,7 +28,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
 // TODO: give the exact formulation of required guard bits
 
 impl<R: Round> Context<R> {
-    pub fn powi<_R: Round, const B: Word>(&self, base: &FBig<_R, B>, exp: IBig) -> Rounded<FBig<R, B>> {
+    pub fn powi<_R: Round, const B: Word>(
+        &self,
+        base: &FBig<_R, B>,
+        exp: IBig,
+    ) -> Rounded<FBig<R, B>> {
         let (exp_sign, exp) = exp.into_parts();
         if exp_sign == Sign::Negative {
             // if the exponent is negative, then negate the exponent
@@ -80,7 +84,11 @@ impl<R: Round> Context<R> {
         self.exp_internal(x, true)
     }
 
-    fn exp_internal<_R: Round, const B: Word>(&self, x: &FBig<_R, B>, minus_one: bool) -> Rounded<FBig<R, B>> {
+    fn exp_internal<_R: Round, const B: Word>(
+        &self,
+        x: &FBig<_R, B>,
+        minus_one: bool,
+    ) -> Rounded<FBig<R, B>> {
         if x.repr.is_zero() {
             return match minus_one {
                 false => Exact(FBig::ONE),
@@ -124,7 +132,11 @@ impl<R: Round> Context<R> {
             (s, n, r)
         };
 
-        let r = r.with_rounding::<R>().with_precision(work_precision).value() >> n;
+        let r = r
+            .with_rounding::<R>()
+            .with_precision(work_precision)
+            .value()
+            >> n;
         let mut factorial = IBig::ONE;
         let mut pow = r.clone();
         let mut sum = if no_scaling {
@@ -155,8 +167,7 @@ impl<R: Round> Context<R> {
                 .map(|v| (v << s) - FBig::ONE)
                 .and_then(|v| v.with_precision(self.precision))
         } else {
-            self.powi(&sum, Repr::<B>::BASE.pow(n))
-                .map(|v| v << s)
+            self.powi(&sum, Repr::<B>::BASE.pow(n)).map(|v| v << s)
         }
     }
 }

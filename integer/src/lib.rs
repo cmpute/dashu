@@ -68,8 +68,8 @@
 
 extern crate alloc;
 
-pub use dashu_base::Sign;
 pub use crate::{ibig::IBig, ubig::UBig};
+pub use dashu_base::Sign;
 
 /// The primitive integer type used to construct the big integers, guaranteed to be
 /// a rust built-in unsigned integer type.

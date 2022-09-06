@@ -53,12 +53,12 @@ impl<T, E> Approximation<T, E> {
         match self {
             Self::Exact(v) => match f(v) {
                 Approximation::Exact(v2) => Approximation::Exact(v2),
-                Approximation::Inexact(v2, e) => Approximation::Inexact(v2, e)
+                Approximation::Inexact(v2, e) => Approximation::Inexact(v2, e),
             },
             Self::Inexact(v, e) => match f(v) {
                 Approximation::Exact(v2) => Approximation::Inexact(v2, e),
-                Approximation::Inexact(v2, e2) => Approximation::Inexact(v2, e2)
+                Approximation::Inexact(v2, e2) => Approximation::Inexact(v2, e2),
             },
         }
-    } 
+    }
 }

@@ -7,7 +7,7 @@ use crate::{
     utils::{digit_len, shl_digits_in_place},
 };
 use core::ops::{Div, DivAssign};
-use dashu_base::{Approximation, DivRem, DivEuclid, DivRemEuclid, RemEuclid};
+use dashu_base::{Approximation, DivEuclid, DivRem, DivRemEuclid, RemEuclid};
 use dashu_int::{IBig, UBig};
 
 impl<R: Round, const B: Word> Div<FBig<R, B>> for FBig<R, B> {
@@ -94,11 +94,11 @@ impl<R: Round, const B: Word> RemEuclid<FBig<R, B>> for FBig<R, B> {
     fn rem_euclid(self, rhs: FBig<R, B>) -> Self::Output {
         let r_exponent = self.repr.exponent.min(rhs.repr.exponent);
         let context = Context::max(self.context, rhs.context);
-    
+
         let (num, den) = align_as_int(self, rhs);
         let r = num.rem_euclid(den);
         let mut r = context.convert_int(r.into()).value();
-        if !r.repr.significand.is_zero(){
+        if !r.repr.significand.is_zero() {
             r.repr.exponent += r_exponent;
         }
         r
@@ -136,7 +136,7 @@ impl<R: Round, const B: Word> DivRemEuclid<FBig<R, B>> for FBig<R, B> {
     fn div_rem_euclid(self, rhs: FBig<R, B>) -> (IBig, FBig<R, B>) {
         let r_exponent = self.repr.exponent.min(rhs.repr.exponent);
         let context = Context::max(self.context, rhs.context);
-    
+
         let (num, den) = align_as_int(self, rhs);
         let (q, r) = num.div_rem_euclid(den);
         let mut r = context.convert_int(r.into()).value();
@@ -183,10 +183,7 @@ macro_rules! impl_add_sub_primitive_with_fbig {
 impl_add_sub_primitive_with_fbig!(u8 u16 u32 u64 u128 usize UBig i8 i16 i32 i64 i128 isize IBig);
 
 // Align two float by exponent such that they are both turned into integers
-fn align_as_int<R: Round, const B: Word>(
-    lhs: FBig<R, B>,
-    rhs: FBig<R, B>
-) -> (IBig, IBig) {
+fn align_as_int<R: Round, const B: Word>(lhs: FBig<R, B>, rhs: FBig<R, B>) -> (IBig, IBig) {
     let ediff = lhs.repr.exponent - rhs.repr.exponent;
     let (mut num, mut den) = (lhs.repr.significand, rhs.repr.significand);
     if ediff >= 0 {
@@ -256,7 +253,11 @@ impl<R: Round> Context<R> {
         }
     }
 
-    pub fn div<_R1: Round, _R2: Round, const B: Word>(&self, lhs: &FBig<_R1, B>, rhs: &FBig<_R2, B>) -> Rounded<FBig<R, B>> {
+    pub fn div<_R1: Round, _R2: Round, const B: Word>(
+        &self,
+        lhs: &FBig<_R1, B>,
+        rhs: &FBig<_R2, B>,
+    ) -> Rounded<FBig<R, B>> {
         let lhs_repr = if !lhs.repr.is_zero()
             && lhs.repr.digits_ub() > rhs.repr.digits_lb() + self.precision
         {

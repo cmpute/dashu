@@ -213,9 +213,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
             } else {
                 let num = Repr::new(self.repr.significand, 0);
                 let den = Repr::new(Repr::<B>::BASE.pow(-self.repr.exponent as usize), 0);
-                return context
-                    .repr_div(num, &den)
-                    .map(|v| FBig::new(v, context));
+                return context.repr_div(num, &den).map(|v| FBig::new(v, context));
             }
         } else {
             // exp_f = self.repr.exponent * log(B) / log(NewB)

@@ -4,8 +4,8 @@ use crate::{
     error::ParseError,
     ibig::IBig,
     radix::{self, is_radix_valid, Digit},
-    Sign::*,
     ubig::UBig,
+    Sign::*,
 };
 use core::str::FromStr;
 

@@ -1,7 +1,7 @@
 use super::int::{quote_sign, quote_words};
 use core::str::FromStr;
 
-use dashu_float::{DBig, FBig, round::mode};
+use dashu_float::{round::mode, DBig, FBig};
 use dashu_int::{DoubleWord, Sign, Word};
 use proc_macro2::TokenStream;
 use quote::quote;

@@ -13,8 +13,7 @@ use crate::{
         extend_word, highest_dword, locate_top_word_plus_one, signed_extend_word, split_dword,
         split_signed_dword, WORD_BITS,
     },
-    shift,
-    Sign,
+    shift, Sign,
 };
 
 /// Remove the leading zero words in an owning reference. Return

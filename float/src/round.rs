@@ -1,6 +1,6 @@
 use core::cmp::Ordering;
 use core::ops::{Add, AddAssign};
-use dashu_base::{Approximation, UnsignedAbs, Sign, EstimatedLog2};
+use dashu_base::{Approximation, EstimatedLog2, Sign, UnsignedAbs};
 use dashu_int::{IBig, UBig, Word};
 
 /// Built-in rounding modes of the floating numbers.
@@ -8,7 +8,7 @@ pub mod mode {
     /// Round toward 0 (default mode for binary float)
     #[derive(Clone, Copy)]
     pub struct Zero;
-    
+
     /// Round away from 0
     #[derive(Clone, Copy)]
     pub struct Away;
@@ -134,10 +134,10 @@ impl Round for mode::Away {
 
     #[inline]
     fn round_low_part<F: FnOnce() -> Ordering>(
-            integer: &IBig,
-            low_sign: Sign,
-            _low_half_test: F,
-        ) -> Rounding {
+        integer: &IBig,
+        low_sign: Sign,
+        _low_half_test: F,
+    ) -> Rounding {
         if integer.is_zero() {
             match low_sign {
                 Sign::Positive => Rounding::AddOne,
@@ -147,7 +147,9 @@ impl Round for mode::Away {
             match (integer.sign(), low_sign) {
                 (Sign::Positive, Sign::Positive) => Rounding::AddOne,
                 (Sign::Negative, Sign::Negative) => Rounding::SubOne,
-                (Sign::Positive, Sign::Negative) | (Sign::Negative, Sign::Positive) => Rounding::NoOp,
+                (Sign::Positive, Sign::Negative) | (Sign::Negative, Sign::Positive) => {
+                    Rounding::NoOp
+                }
             }
         }
     }

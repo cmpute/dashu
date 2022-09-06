@@ -8,8 +8,8 @@ use crate::{
     primitive::shrink_dword,
     repr::{Repr, TypedReprRef::*},
     shift,
-    Sign::*,
     ubig::UBig,
+    Sign::*,
 };
 use dashu_base::UnsignedAbs;
 

@@ -2,7 +2,7 @@ use core::{
     fmt::Debug,
     ops::{Div, DivAssign},
 };
-use dashu_base::{Approximation::*, DivEuclid, RemEuclid, DivRemEuclid};
+use dashu_base::{Approximation::*, DivEuclid, DivRemEuclid, RemEuclid};
 use dashu_float::{round::Rounding::*, Context};
 
 mod helper_macros;
@@ -194,4 +194,3 @@ fn test_div_rem_euclid_decimal() {
         assert_eq!(remainder, *r);
     }
 }
-

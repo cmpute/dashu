@@ -4,8 +4,8 @@ use crate::{
     arch::word::Word,
     ibig::IBig,
     repr::TypedReprRef::{self, *},
-    Sign::*,
     ubig::UBig,
+    Sign::*,
 };
 use core::cmp::Ordering;
 

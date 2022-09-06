@@ -16,8 +16,8 @@ use crate::{
     ibig::IBig,
     radix::{self, Digit, DigitCase},
     repr::TypedReprRef,
-    Sign::{self, *},
     ubig::UBig,
+    Sign::{self, *},
 };
 use core::fmt::{
     self, Alignment, Binary, Debug, Display, Formatter, LowerHex, Octal, UpperHex, Write,

@@ -1,6 +1,6 @@
 use core::cmp::Ordering;
 
-use dashu_float::{FBig, DBig};
+use dashu_float::{DBig, FBig};
 
 mod helper_macros;
 type FBig2 = FBig;

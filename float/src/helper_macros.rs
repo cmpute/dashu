@@ -1,4 +1,3 @@
-
 /// Implement `impl Op<A> for FBig` by converting A to FBig. This macro includes operations taking by references.
 macro_rules! impl_binop_with_primitive {
     (impl $trait:ident<$target:ty>, $method:ident) => {
@@ -112,7 +111,7 @@ macro_rules! impl_binop_assign_by_taking {
     };
 }
 
-pub(crate) use impl_binop_with_primitive;
-pub(crate) use impl_binop_assign_with_primitive;
 pub(crate) use impl_binop_assign_by_taking;
+pub(crate) use impl_binop_assign_with_primitive;
+pub(crate) use impl_binop_with_primitive;
 pub(crate) use impl_commutative_binop_with_primitive;

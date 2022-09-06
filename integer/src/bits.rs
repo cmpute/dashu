@@ -1,8 +1,6 @@
 //! Bitwise operators.
 
-use crate::{
-    arch::word::Word, helper_macros, ibig::IBig, ops::PowerOfTwo, Sign::*, ubig::UBig,
-};
+use crate::{arch::word::Word, helper_macros, ibig::IBig, ops::PowerOfTwo, ubig::UBig, Sign::*};
 use core::{
     mem,
     ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not},

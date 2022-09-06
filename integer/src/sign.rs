@@ -1,12 +1,12 @@
 //! Operators on the sign of [IBig].
 
-use dashu_base::Sign;
 use crate::{
     ibig::IBig,
     ops::{Abs, UnsignedAbs},
     ubig::UBig,
 };
 use core::ops::{Mul, MulAssign, Neg};
+use dashu_base::Sign;
 
 // // TODO(next): move sign to dashu_base
 // /// An enum representing the sign of a number

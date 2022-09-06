@@ -7,8 +7,8 @@ use crate::{
     ibig::IBig,
     primitive::{self, PrimitiveSigned, PrimitiveUnsigned, DWORD_BYTES, WORD_BITS, WORD_BYTES},
     repr::{Repr, TypedReprRef::*},
-    Sign::*,
     ubig::UBig,
+    Sign::*,
 };
 use alloc::vec::Vec;
 use core::convert::{TryFrom, TryInto};

@@ -4,8 +4,8 @@ use crate::{
     ibig::IBig,
     primitive::{split_dword, WORD_BITS_USIZE},
     repr::{Repr, TypedReprRef},
-    Sign,
     ubig::UBig,
+    Sign,
 };
 use alloc::vec::Vec;
 use core::fmt::{self, Formatter};

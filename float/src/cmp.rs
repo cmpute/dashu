@@ -1,11 +1,6 @@
 use core::cmp::Ordering;
 
-use crate::{
-    fbig::FBig,
-    repr::Word,
-    round::Round,
-    utils::shl_digits,
-};
+use crate::{fbig::FBig, repr::Word, round::Round, utils::shl_digits};
 
 impl<R: Round, const B: Word> PartialEq for FBig<R, B> {
     #[inline]
@@ -19,7 +14,7 @@ impl<R: Round, const B: Word> PartialEq for FBig<R, B> {
             (false, false) => self.repr == other.repr,
 
             // inf != any exact numbers
-            (_, _) => false
+            (_, _) => false,
         }
     }
 }
@@ -37,19 +32,28 @@ impl<R: Round, const B: Word> Ord for FBig<R, B> {
         // case 1: compare with inf
         match (self.repr.is_infinite(), other.repr.is_infinite()) {
             (true, true) => return self.repr.exponent.cmp(&other.repr.exponent),
-            (false, true) => return match other.repr.exponent >= 0 {
-                true => Ordering::Less,
-                false => Ordering::Greater
-            },
-            (true, false) => return match self.repr.exponent >= 0 {
-                true => Ordering::Greater,
-                false => Ordering::Less
-            },
+            (false, true) => {
+                return match other.repr.exponent >= 0 {
+                    true => Ordering::Less,
+                    false => Ordering::Greater,
+                }
+            }
+            (true, false) => {
+                return match self.repr.exponent >= 0 {
+                    true => Ordering::Greater,
+                    false => Ordering::Less,
+                }
+            }
             _ => {}
         };
 
         // case 2: compare sign
-        match self.repr.significand.signum().cmp(&other.repr.significand.signum()) {
+        match self
+            .repr
+            .significand
+            .signum()
+            .cmp(&other.repr.significand.signum())
+        {
             Ordering::Greater => return Ordering::Greater,
             Ordering::Less => return Ordering::Less,
             _ => {}
@@ -61,7 +65,7 @@ impl<R: Round, const B: Word> Ord for FBig<R, B> {
         let (lhs_prec, rhs_prec) = (self.context.precision, other.context.precision);
         if lhs_prec != 0 && rhs_prec != 0 {
             // only compare when both number are not having arbitrary precision
-            if lhs_exp > rhs_exp + rhs_prec as isize{
+            if lhs_exp > rhs_exp + rhs_prec as isize {
                 return sign * Ordering::Greater;
             }
             if rhs_exp > lhs_exp + lhs_prec as isize {
@@ -79,10 +83,15 @@ impl<R: Round, const B: Word> Ord for FBig<R, B> {
         }
 
         // case 5: compare exact values by shifting
+        let (lhs_signif, rhs_signif) = (&self.repr.significand, &other.repr.significand);
         match lhs_exp.cmp(&rhs_exp) {
-            Ordering::Equal => self.repr.significand.cmp(&other.repr.significand),
-            Ordering::Greater => shl_digits::<B>(&self.repr.significand, (lhs_exp - rhs_exp) as usize).cmp(&other.repr.significand),
-            Ordering::Less => self.repr.significand.cmp(&shl_digits::<B>(&other.repr.significand, (rhs_exp - lhs_exp) as usize)),
+            Ordering::Equal => lhs_signif.cmp(rhs_signif),
+            Ordering::Greater => {
+                shl_digits::<B>(lhs_signif, (lhs_exp - rhs_exp) as usize).cmp(rhs_signif)
+            }
+            Ordering::Less => {
+                lhs_signif.cmp(&shl_digits::<B>(rhs_signif, (rhs_exp - lhs_exp) as usize))
+            }
         }
     }
 }

@@ -194,7 +194,10 @@ impl<R: Round> Context<R> {
             let shift = digits - self.precision;
             let (signif_hi, signif_lo) = split_digits::<B>(repr.significand, shift);
             let adjust = R::round_fract::<B>(&signif_hi, signif_lo, shift);
-            Approximation::Inexact(Repr::new(signif_hi + adjust, repr.exponent + shift as isize), adjust)
+            Approximation::Inexact(
+                Repr::new(signif_hi + adjust, repr.exponent + shift as isize),
+                adjust,
+            )
         } else {
             Approximation::Exact(repr)
         }
@@ -211,7 +214,10 @@ impl<R: Round> Context<R> {
             let shift = digits - self.precision;
             let (signif_hi, signif_lo) = split_digits_ref::<B>(&repr.significand, shift);
             let adjust = R::round_fract::<B>(&signif_hi, signif_lo, shift);
-            Approximation::Inexact(Repr::new(signif_hi + adjust, repr.exponent + shift as isize), adjust)
+            Approximation::Inexact(
+                Repr::new(signif_hi + adjust, repr.exponent + shift as isize),
+                adjust,
+            )
         } else {
             Approximation::Exact(repr.clone())
         }

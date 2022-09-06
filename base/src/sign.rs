@@ -1,6 +1,9 @@
 //! Trait definitions for sign related operations.
 
-use core::{cmp::Ordering, ops::{Mul, MulAssign, Neg}};
+use core::{
+    cmp::Ordering,
+    ops::{Mul, MulAssign, Neg},
+};
 
 /// Absolute value.
 ///
@@ -90,7 +93,7 @@ impl Mul<Ordering> for Sign {
     fn mul(self, rhs: Ordering) -> Self::Output {
         match self {
             Positive => rhs,
-            Negative => rhs.reverse()
+            Negative => rhs.reverse(),
         }
     }
 }
@@ -101,7 +104,7 @@ impl Mul<Sign> for Ordering {
     fn mul(self, rhs: Sign) -> Self::Output {
         match rhs {
             Positive => self,
-            Negative => self.reverse()
+            Negative => self.reverse(),
         }
     }
 }
@@ -126,7 +129,7 @@ impl Ord for Sign {
         match (self, other) {
             (Positive, Negative) => Ordering::Greater,
             (Negative, Positive) => Ordering::Less,
-            _ => Ordering::Equal
+            _ => Ordering::Equal,
         }
     }
 }
