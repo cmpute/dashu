@@ -1,5 +1,5 @@
 use crate::{
-    error::check_inf_operands,
+    error::{check_inf_operands, check_precision_limited},
     fbig::FBig,
     helper_macros,
     repr::{Context, Repr, Word},
@@ -210,6 +210,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
 impl<R: Round> Context<R> {
     pub(crate) fn repr_div<const B: Word>(&self, lhs: Repr<B>, rhs: &Repr<B>) -> Rounded<Repr<B>> {
         check_inf_operands(&lhs, &rhs);
+        check_precision_limited(self.precision);
 
         // this method don't deal with the case where lhs significand is too large
         debug_assert!(lhs.digits() <= self.precision + rhs.digits());

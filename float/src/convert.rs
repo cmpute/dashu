@@ -1,8 +1,8 @@
 use crate::{
     fbig::FBig,
-    ibig_ext::{log_pow, log_rem, remove_pow},
+    ibig_ext::{log_pow, log_rem},
     repr::{Context, Repr},
-    round::{Round, Rounded, Rounding},
+    round::{Round, Rounded, mode}, utils::{shr_digits, split_digits_ref}, error::panic_operate_with_inf,
 };
 use dashu_base::Approximation;
 use dashu_int::{IBig, UBig, Word};
@@ -16,6 +16,7 @@ impl<R: Round> Context<R> {
     }
 }
 
+// TODO: make conversion from f32/f64 TryFrom, we need to correctly deal with nan and subnormals
 impl<R: Round> From<f32> for FBig<R, 2> {
     fn from(f: f32) -> Self {
         let bits: u32 = f.to_bits();
@@ -219,23 +220,104 @@ impl<R: Round, const B: Word> FBig<R, B> {
             // exp_f = self.repr.exponent * log(B) / log(NewB)
             // exp = trunc(exp_f)
             // signif = self.repr.significand * exp(log(NewB) * fract(exp_f))
-            unimplemented!()
+
+            // TODO: implement this branch after trunc/fract/floor/ceil are tested
+            // and obselete the old algorithm in with_base()
+            unimplemented!() 
         }
     }
 
     /// Convert the float number to native [f32] with the given rounding mode.
-    fn to_f32(&self) -> Rounded<f32> {
+    fn to_f32(&self) -> Option<Rounded<f32>> {
         unimplemented!()
     }
 
     /// Convert the float number to native [f64] with the given rounding mode.
-    fn to_f64(&self) -> Rounded<f64> {
+    fn to_f64(&self) -> Option<Rounded<f64>> {
         unimplemented!()
     }
 
     /// Convert the float number to integer with the given rounding mode.
-    fn to_int(&self) -> Rounded<IBig> {
+    fn to_int(&self) -> Option<Rounded<IBig>> {
         unimplemented!()
+    }
+
+    #[inline]
+    pub fn trunc(&self) -> Self {
+        if self.repr.is_infinite() {
+            panic_operate_with_inf();
+        }
+
+        let exponent = self.repr.exponent;
+        if exponent >= 0 {
+            return self.clone();
+        } else if exponent + (self.repr.digits_ub() as isize) < 0 {
+            return Self::ZERO;
+        }
+
+        let shift = (-exponent) as usize;
+        let signif = shr_digits::<B>(&self.repr.significand, shift);
+        let context = Context::new(self.precision() - shift);
+        FBig::new(Repr::new(signif, 0), context)
+    }
+
+    // Split the float number at the floating point, assuming it exists (the number is not a integer).
+    // The method returns (integral part, fractional part, fraction precision).
+    fn split_at_point(&self) -> (IBig, IBig, usize) {
+        debug_assert!(self.repr.exponent < 0);
+
+        let exponent = self.repr.exponent;
+        if exponent + (self.repr.digits_ub() as isize) < 0 {
+            return (IBig::ZERO, self.repr.significand.clone(), self.context.precision);
+        }
+
+        let shift = (-exponent) as usize;
+        let (hi, lo) = split_digits_ref::<B>(&self.repr.significand, shift);
+        (hi, lo, shift)
+    }
+
+    #[inline]
+    pub fn fract(&self) -> Self {
+        if self.repr.is_infinite() {
+            panic_operate_with_inf();
+        }
+        if self.repr.exponent >= 0 {
+            return Self::ZERO;
+        }
+
+        let (_, lo, precision) = self.split_at_point();
+        let context = Context::new(precision);
+        FBig::new(Repr::new(lo, self.repr.exponent), context)
+    }
+
+    #[inline]
+    pub fn ceil(&self) -> Self {
+        if self.repr.is_infinite() {
+            panic_operate_with_inf();
+        }
+        if self.repr.exponent >= 0 {
+            return self.clone();
+        }
+
+        let (hi, lo, precision) = self.split_at_point();
+        let rounding = mode::Up::round_fract::<B>(&hi, lo, precision);
+        let context = Context::new(self.precision() - precision);
+        FBig::new(Repr::new(hi + rounding, 0), context)
+    }
+
+    #[inline]
+    pub fn floor(&self) -> Self {
+        if self.repr.is_infinite() {
+            panic_operate_with_inf();
+        }
+        if self.repr.exponent >= 0 {
+            return self.clone();
+        }
+
+        let (hi, lo, precision) = self.split_at_point();
+        let rounding = mode::Down::round_fract::<B>(&hi, lo, precision);
+        let context = Context::new(self.precision() - precision);
+        FBig::new(Repr::new(hi + rounding, 0), context)
     }
 }
 

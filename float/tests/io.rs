@@ -1,7 +1,7 @@
+use core::str::FromStr;
 use dashu_base::Sign;
 use dashu_float::{round::mode, DBig, FBig};
 use dashu_int::{error::ParseError, DoubleWord, IBig, Word};
-use std::str::FromStr;
 
 mod helper_macros;
 pub type FBig2 = FBig;

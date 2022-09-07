@@ -100,7 +100,11 @@ impl<R: Round> Context<R> {
 
         // at most double the precision is required to get a correct result
         // shrink the input operands if necessary
-        let max_precision = self.precision * 2;
+        let max_precision = if self.limited() {
+            self.precision * 2
+        } else {
+            usize::MAX
+        };
 
         let lhs_shrink;
         let lhs_repr = if lhs.digits() > max_precision {
@@ -135,7 +139,12 @@ impl<R: Round> Context<R> {
         }
 
         // shrink the input operands if necessary
-        let max_precision = self.precision * 2;
+        let max_precision = if self.limited() {
+            self.precision * 2
+        } else {
+            usize::MAX
+        };
+
         let f_shrink;
         let f_repr = if f.repr.digits() > max_precision {
             f_shrink = Context::<R>::new(max_precision)

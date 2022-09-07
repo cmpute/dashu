@@ -308,6 +308,7 @@ impl RootRem for u128 {
     }
 }
 
+// TODO: implement sqrt for other integers by forwarding to u64
 // Further improvements (after we have a benchmark)
 // XXX: maybe forward sqrt to f64 if std enabled, don't forward cbrt
 // XXX: u128 can also use newton iteration on 1/sqrt and 1/cbrt

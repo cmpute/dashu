@@ -3,7 +3,7 @@ use core::convert::TryInto;
 use crate::{
     fbig::FBig,
     repr::{Context, Repr, Word},
-    round::{Round, Rounded},
+    round::{Round, Rounded}, error::check_precision_limited,
 };
 use dashu_base::{Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign};
 use dashu_int::IBig;
@@ -33,6 +33,8 @@ impl<R: Round> Context<R> {
         base: &FBig<_R, B>,
         exp: IBig,
     ) -> Rounded<FBig<R, B>> {
+        check_precision_limited(self.precision);
+
         let (exp_sign, exp) = exp.into_parts();
         if exp_sign == Sign::Negative {
             // if the exponent is negative, then negate the exponent
@@ -84,11 +86,17 @@ impl<R: Round> Context<R> {
         self.exp_internal(x, true)
     }
 
+    // TODO: change reduction to (x - s log2) / 2^n, so that the final powering is always base 2, and doesn't depends on powi.
+    //       the powering exp(r)^(2^n) could be optimized by noticing (1+x)^2 - 1 = x^2 + 2x
+    //       consider this change after having a benchmark
+
     fn exp_internal<_R: Round, const B: Word>(
         &self,
         x: &FBig<_R, B>,
         minus_one: bool,
     ) -> Rounded<FBig<R, B>> {
+        check_precision_limited(self.precision);
+
         if x.repr.is_zero() {
             return match minus_one {
                 false => Exact(FBig::ONE),
@@ -149,6 +157,7 @@ impl<R: Round> Context<R> {
         loop {
             factorial *= k;
             pow *= &r;
+            // TODO: use &pow / &factorial < ulp as stop criteria?
 
             let next = &sum + &pow / &factorial;
             if next == sum {

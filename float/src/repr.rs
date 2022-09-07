@@ -1,13 +1,18 @@
 use crate::{
     ibig_ext::remove_pow,
-    round::{Round, Rounding},
+    round::{Round, Rounded},
     utils::{base_as_ibig, digit_len, split_digits, split_digits_ref},
 };
 use core::marker::PhantomData;
-use dashu_base::{Approximation, EstimatedLog2};
+use dashu_base::{Approximation::*, EstimatedLog2};
 use dashu_int::IBig;
 pub use dashu_int::Word;
 
+// TODO: make Repr public to user, only expose constructors and maybe a selective subset of methods.
+//       then all context methods could take repr as input instead of a full FBig object.
+//       also add conversion between FBig and repr (FBig::{new(repr, context), repr(), into_repr()}).
+//       this is necessary for compositing complex numbers without duplicate context.
+//       the existing FBig::new() should be renamed as new_raw(), the new FBig::new() will check whether repr is within the precision limitation (panic if not)
 #[derive(PartialEq, Eq)]
 pub struct Repr<const BASE: Word> {
     pub(crate) significand: IBig,
@@ -18,7 +23,8 @@ pub struct Repr<const BASE: Word> {
 pub struct Context<RoundingMode: Round> {
     // TODO: let precision = 0 implies no precision bound, but when no-precision number operates with another has-precision number,
     //       the precision will be set as the other one's. This will requires us to make sure 0 value also has non-zero precision (1 will be ideal)
-    //       more tests are necessary after implementing this
+    //       more tests are necessary after implementing this.
+    //       besides, unary functions on zero precision float should panic.
     // TODO: consider expose precision as Option<usize> instead of allowing 0?
     pub(crate) precision: usize,
     pub(crate) _marker: PhantomData<RoundingMode>,
@@ -183,23 +189,33 @@ impl<R: Round> Context<R> {
         }
     }
 
+    /// Check whether the precision is limited (not zero)
+    #[inline]
+    pub(crate) fn limited(&self) -> bool {
+        self.precision != 0
+    }
+
     /// Round the repr to the desired precision
     pub(crate) fn repr_round<const B: Word>(
         &self,
         repr: Repr<B>,
-    ) -> Approximation<Repr<B>, Rounding> {
+    ) -> Rounded<Repr<B>> {
         assert!(repr.is_finite());
+        if !self.limited() {
+            return Exact(repr);
+        }
+
         let digits = repr.digits();
         if digits > self.precision {
             let shift = digits - self.precision;
             let (signif_hi, signif_lo) = split_digits::<B>(repr.significand, shift);
             let adjust = R::round_fract::<B>(&signif_hi, signif_lo, shift);
-            Approximation::Inexact(
+            Inexact(
                 Repr::new(signif_hi + adjust, repr.exponent + shift as isize),
                 adjust,
             )
         } else {
-            Approximation::Exact(repr)
+            Exact(repr)
         }
     }
 
@@ -207,19 +223,23 @@ impl<R: Round> Context<R> {
     pub(crate) fn repr_round_ref<const B: Word>(
         &self,
         repr: &Repr<B>,
-    ) -> Approximation<Repr<B>, Rounding> {
-        assert!(repr.is_finite());
+    ) -> Rounded<Repr<B>> {
+        assert!(repr.is_finite());        
+        if !self.limited() {
+            return Exact(repr.clone());
+        }
+
         let digits = repr.digits();
         if digits > self.precision {
             let shift = digits - self.precision;
             let (signif_hi, signif_lo) = split_digits_ref::<B>(&repr.significand, shift);
             let adjust = R::round_fract::<B>(&signif_hi, signif_lo, shift);
-            Approximation::Inexact(
+            Inexact(
                 Repr::new(signif_hi + adjust, repr.exponent + shift as isize),
                 adjust,
             )
         } else {
-            Approximation::Exact(repr.clone())
+            Exact(repr.clone())
         }
     }
 }

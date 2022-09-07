@@ -162,7 +162,7 @@ impl UBig {
         }
     }
 
-    // TODO(v0.2): return an Approximation struct
+    // TODO(v0.2): return an Approximation struct, with the error being the Sign of result - value
 
     /// Convert to f32.
     ///

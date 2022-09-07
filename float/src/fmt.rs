@@ -120,3 +120,5 @@ impl<R: Round, const B: Word> Display for FBig<R, B> {
         Ok(())
     }
 }
+
+// TODO: impl LowerHex and UpperHex for FBig with base 2, printing the "0xabcp-n" format.

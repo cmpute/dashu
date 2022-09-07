@@ -44,21 +44,21 @@ impl<R: Round, const B: Word> FBig<R, B> {
     }
 
     const fn zero() -> Self {
-        Self::new(Repr::zero(), Context::new(1))
+        Self::new(Repr::zero(), Context::new(0))
     }
-    /// [FBig] with value 0 and precision 1
+    /// [FBig] with value 0 and precision 0
     pub const ZERO: Self = Self::zero();
 
     const fn one() -> Self {
-        Self::new(Repr::one(), Context::new(1))
+        Self::new(Repr::one(), Context::new(0))
     }
-    /// [FBig] with value 1 and precision 1
+    /// [FBig] with value 1 and precision 0
     pub const ONE: Self = Self::one();
 
     const fn neg_one() -> Self {
-        Self::new(Repr::neg_one(), Context::new(1))
+        Self::new(Repr::neg_one(), Context::new(0))
     }
-    /// [FBig] with value -1 and precision 1
+    /// [FBig] with value -1 and precision 0
     pub const NEG_ONE: Self = Self::neg_one();
 
     const fn inf() -> Self {
@@ -175,21 +175,29 @@ impl<R: Round, const B: Word> FBig<R, B> {
         (self.repr.significand, self.repr.exponent)
     }
 
-    fn ulp(&self) -> Self {
-        // reference: https://docs.python.org/3/library/math.html#math.ulp
-        unimplemented!()
-    }
-    fn ceil(&self) -> IBig {
-        unimplemented!()
-    }
-    fn floor(&self) -> IBig {
-        unimplemented!()
-    }
-    fn trunc(&self) -> Self {
-        unimplemented!()
-    }
-    fn fract(&self) -> Self {
-        unimplemented!()
+    /// Return the value of the least significant digit of the float number x,
+    /// such that x + ulp is the first float bigger than x (given the precision from the context).
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::error::ParseError;
+    /// # use dashu_float::DBig;
+    /// assert_eq!(DBig::from_str_native("1.23")?.ulp(), DBig::from_str_native("0.01")?);
+    /// assert_eq!(DBig::from_str_native("01.23")?.ulp(), DBig::from_str_native("0.001")?);
+    /// # Ok::<(), ParseError>(())
+    /// ```
+    #[inline]
+    pub fn ulp(&self) -> Self {
+        if self.repr.is_infinite() {
+            return self.clone();
+        }
+
+        let repr = Repr {
+            significand: IBig::ONE,
+            exponent: self.repr.exponent + self.repr.digits() as isize - self.context.precision as isize
+        };
+        Self::new(repr, self.context)
     }
 }
 

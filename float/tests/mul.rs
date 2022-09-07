@@ -128,3 +128,16 @@ fn test_mul_decimal() {
 fn test_mul_by_inf() {
     let _ = dashu_float::DBig::ONE * dashu_float::DBig::INFINITY;
 }
+
+#[test]
+fn test_mul_zero_precision() {
+    let a = fbig!(0xff).with_precision(0).value();
+    let b = fbig!(-0xff);
+    test_mul(&a, &a, &fbig!(0xfe01));
+    test_mul(&a, &b, &fbig!(-0xfep8));
+
+    let a = dbig!(99).with_precision(0).value();
+    let b = dbig!(-99);
+    test_mul(&a, &a, &dbig!(9801));
+    test_mul(&a, &b, &dbig!(-98e2));
+}

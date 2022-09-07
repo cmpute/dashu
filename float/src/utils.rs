@@ -1,3 +1,4 @@
+use core::mem;
 use dashu_base::{DivRem, Sign};
 use dashu_int::{DoubleWord, IBig, UBig, Word};
 
@@ -28,7 +29,7 @@ pub fn shl_digits<const B: Word>(value: &IBig, exp: usize) -> IBig {
     match B {
         2 => value << exp,
         10 => value * IBig::from(5).pow(exp) << exp,
-        16 => value << 4 * exp,
+        b if b.is_power_of_two() => value << (exp * b.trailing_zeros() as usize),
         _ => value * base_as_ibig::<B>().pow(exp),
     }
 }
@@ -42,14 +43,28 @@ pub fn shl_digits_in_place<const B: Word>(value: &mut IBig, exp: usize) {
                 *value *= IBig::from(5).pow(exp);
                 *value <<= exp;
             }
-            16 => *value <<= 4 * exp,
+            b if b.is_power_of_two() => *value <<= exp * b.trailing_zeros() as usize,
             _ => *value *= base_as_ibig::<B>().pow(exp),
         }
     }
 }
 
-// TODO: shr on ibig is different for positive and negative numbers, need to fix this!!!
-//       (for shl, the behavior is consistent with pos and neg numbers)
+// The original Shr operation of IBig follows two's complement representation,
+// here we only want to shift the magnitude, so a separate operation is necessary
+#[inline]
+fn shr(value: IBig, shift: usize) -> IBig {
+    let (sign, mag) = value.into_parts();
+    IBig::from_parts(sign, mag >> shift)
+}
+
+#[inline]
+fn shr_ref(value: &IBig, shift: usize) -> IBig {
+    let (sign, words) = value.as_sign_words();
+    let n_words = shift / Word::BITS as usize;
+
+    let hi = UBig::from_words(&words[n_words.min(words.len())..]);
+    IBig::from_parts(sign, hi >> shift % Word::BITS as usize)
+}
 
 /// "Right shifting" in given radix, i.e. divide by a power of radix
 #[inline]
@@ -59,9 +74,9 @@ pub fn shr_digits<const B: Word>(value: &IBig, exp: usize) -> IBig {
     }
 
     match B {
-        2 => value >> exp,
-        10 => (value >> exp) / IBig::from(5).pow(exp),
-        16 => value >> 4 * exp,
+        2 => shr_ref(value, exp),
+        10 => shr_ref(value, exp) / IBig::from(5).pow(exp),
+        b if b.is_power_of_two() => shr_ref(value, exp * b.trailing_zeros() as usize),
         _ => value / base_as_ibig::<B>().pow(exp),
     }
 }
@@ -70,12 +85,9 @@ pub fn shr_digits<const B: Word>(value: &IBig, exp: usize) -> IBig {
 pub fn shr_digits_in_place<const B: Word>(value: &mut IBig, exp: usize) {
     if exp != 0 {
         match B {
-            2 => *value >>= exp,
-            10 => {
-                *value >>= exp;
-                *value /= IBig::from(5).pow(exp);
-            }
-            16 => *value >>= 4 * exp,
+            2 => *value = shr(mem::take(value), exp),
+            10 => *value = shr(mem::take(value), exp) / IBig::from(5).pow(exp),
+            b if b.is_power_of_two() => *value = shr(mem::take(value), exp * b.trailing_zeros() as usize),
             _ => *value /= base_as_ibig::<B>().pow(exp),
         }
     }
@@ -150,6 +162,19 @@ pub fn split_digits<const B: Word>(value: IBig, pos: usize) -> (IBig, IBig) {
 mod tests {
     use super::*;
     use dashu_base::UnsignedAbs;
+
+    #[test]
+    fn test_shr_ref() {
+        let a = IBig::from(0x1234567890abcdefu64).pow(12); // 723 bits
+        assert_eq!(shr_ref(&a, 10), (&a).unsigned_abs() >> 10);
+        assert_eq!(shr_ref(&a, 100), (&a).unsigned_abs() >> 100);
+        assert_eq!(shr_ref(&a, 1000), (&a).unsigned_abs() >> 1000);
+        
+        let a = IBig::from(-0x1234567890abcdefi64).pow(7); // 422 bits
+        assert_eq!(-shr_ref(&a, 10), (&a).unsigned_abs() >> 10);
+        assert_eq!(-shr_ref(&a, 100), (&a).unsigned_abs() >> 100);
+        assert_eq!(-shr_ref(&a, 1000), (&a).unsigned_abs() >> 1000);
+    }
 
     #[test]
     fn test_split_bits_ref() {

@@ -11,48 +11,48 @@ use dashu_int::{
     UBig,
 };
 
-impl<R: Round, const B: Word> FromStr for FBig<R, B> {
-    type Err = ParseError;
-
-    /// Convert a string in a given base to [FBig].
+impl<R: Round, const B: Word> FBig<R, B> {
+    /// Convert a string in the native base (i.e. radix) to [FBig].
     ///
     /// `src` may contain an optional `+` prefix.
     /// Digits 10-35 are represented by `a-z` or `A-Z`.
     ///
     /// The valid representations include
     /// 1. `aaa` or `aaa.`
-    ///     * `aaa` is represented in native radix `X` without radix prefixes.
-    /// 1. `aaa.bbb` = `aaabbb / radix ^ len(bbb)`
-    ///     * `aaa` and `bbb` are represented in native radix `X` without radix prefixes.
+    ///     * `aaa` is represented in native base `B` without base prefixes.
+    /// 1. `aaa.bbb` = `aaabbb / base ^ len(bbb)`
+    ///     * `aaa` and `bbb` are represented in native base `B` without base prefixes.
     ///     * `len(bbb)` represents the number of digits in `bbb`, e.g `len(bbb)` is 3. (Same below)
-    /// 1. `aaa.bbb@cc` = `aaabbb / radix ^ len(bbb) * radix ^ cc`
-    ///     * `aaa` and `bbb` are represented in native radix `X`
+    /// 1. `aaa.bbb@cc` = `aaabbb / base ^ len(bbb) * base ^ cc`
+    ///     * `aaa` and `bbb` are represented in native base `B`
     ///     * Refernce: [GMP: IO of floats](https://gmplib.org/manual/I_002fO-of-Floats)
-    /// 1. `aaa.bbbEcc` = `aaabbb / radix ^ len(bbb) * 10 ^ cc`
-    ///     * `E` could be lower case, radix `X` must be 10
+    /// 1. `aaa.bbbEcc` = `aaabbb / base ^ len(bbb) * 10 ^ cc`
+    ///     * `E` could be lower case, base `B` must be 10
     ///     * `aaa` and `bbb` are all represented in decimal
     /// 1. `0xaaa` or `0xaaa`
-    /// 1. `0xaaa.bbb` = `aaabbb / radix ^ len(bbb)`
-    /// 1. `0xaaa.bbbPcc` = `aaabbb / radix ^ len(bbb) * 2 ^ cc`
-    ///     * `P` could be lower case, radix `X` must be 2 (not 16!)
+    /// 1. `0xaaa.bbb` = `aaabbb / base ^ len(bbb)`
+    /// 1. `0xaaa.bbbPcc` = `aaabbb / base ^ len(bbb) * 2 ^ cc`
+    ///     * `P` could be lower case, base `B` must be 2 (not 16!)
     ///     * `aaa` and `bbb` are represented in hexadecimal
     ///     * Reference: [C++ langauge specs](https://en.cppreference.com/w/cpp/language/floating_literal)
-    /// 1. `aaa.bbbBcc` = `aaabbb / radix ^ len(bbb) * 2 ^ cc`
-    /// 1. `aaa.bbbOcc` = `aaabbb / radix ^ len(bbb) * 8 ^ cc`
-    /// 1. `aaa.bbbHcc` = `aaabbb / radix ^ len(bbb) * 16 ^ cc`
-    ///     * `B`/`O`/`H` could be lower case, and radix `X` must be consistent with the marker.
+    /// 1. `aaa.bbbBcc` = `aaabbb / base ^ len(bbb) * 2 ^ cc`
+    /// 1. `aaa.bbbOcc` = `aaabbb / base ^ len(bbb) * 8 ^ cc`
+    /// 1. `aaa.bbbHcc` = `aaabbb / base ^ len(bbb) * 16 ^ cc`
+    ///     * `B`/`O`/`H` could be lower case, and base `B` must be consistent with the marker.
     ///     * `aaa` and `bbb` are represented in binary/octal/hexadecimal correspondingly without prefix.
     ///     * Reference: [Wikipedia: Scientific Notation](https://en.wikipedia.org/wiki/Scientific_notation#Other_bases)
     ///
     /// Literal `aaa` and `cc` above can be signed, but `bbb` must be unsigned.
     /// All `cc` are represented in decimal. Either `aaa` or `bbb` can be omitted
     /// when its value is zero, but they are not allowed to be omitted at the same time.
+    /// 
+    /// This function is the actual implementation of the [FromStr] trait.
     ///
     /// # Panics
     ///
-    /// Panics if the radix `X` is not between [MIN_RADIX] and [MAX_RADIX] inclusive
+    /// Panics if the base `B` is not between [MIN_RADIX] and [MAX_RADIX] inclusive.
     ///
-    fn from_str(mut src: &str) -> Result<Self, ParseError> {
+    pub fn from_str_native(mut src: &str) -> Result<Self, ParseError> {
         assert!(MIN_RADIX as Word <= B && B <= MAX_RADIX as Word);
 
         // parse and remove the sign
@@ -176,5 +176,13 @@ impl<R: Round, const B: Word> FromStr for FBig<R, B> {
             repr,
             context: Context::new(ndigits),
         })
+    }
+}
+
+impl<R: Round, const B: Word> FromStr for FBig<R, B> {
+    type Err = ParseError;
+    #[inline]
+    fn from_str(s: &str) -> Result<Self, ParseError> {
+        FBig::from_str_native(s)
     }
 }

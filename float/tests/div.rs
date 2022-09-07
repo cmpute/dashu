@@ -194,3 +194,9 @@ fn test_div_rem_euclid_decimal() {
         assert_eq!(remainder, *r);
     }
 }
+
+#[test]
+#[should_panic]
+fn test_div_unlimited_precision() {
+    let _ = dbig!(1).with_precision(0).value() / dbig!(3).with_precision(0).value();
+}
