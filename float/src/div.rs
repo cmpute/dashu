@@ -194,19 +194,6 @@ fn align_as_int<R: Round, const B: Word>(lhs: FBig<R, B>, rhs: FBig<R, B>) -> (I
     (num, den)
 }
 
-impl<R: Round, const B: Word> FBig<R, B> {
-    /// Create a floating number by dividing two integers with given precision
-    #[inline]
-    #[deprecated] // TODO: remove this, implement as From<RBig> in future
-    pub fn from_ratio(numerator: IBig, denominator: IBig, precision: usize) -> Self {
-        let context = Context::new(precision);
-        let dummy = Context::<R>::new(0);
-        let n = FBig::new(Repr::new(numerator, 0), dummy);
-        let d = FBig::new(Repr::new(denominator, 0), dummy);
-        context.div(&n, &d).value()
-    }
-}
-
 impl<R: Round> Context<R> {
     pub(crate) fn repr_div<const B: Word>(&self, lhs: Repr<B>, rhs: &Repr<B>) -> Rounded<Repr<B>> {
         check_inf_operands(&lhs, &rhs);

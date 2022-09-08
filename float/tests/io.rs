@@ -4,7 +4,9 @@ use dashu_float::{round::mode, DBig, FBig};
 use dashu_int::{error::ParseError, DoubleWord, IBig, Word};
 
 mod helper_macros;
-pub type FBig2 = FBig;
+type FBin = FBig;
+type FOct = FBig<mode::Zero, 8>;
+type FHex = FBig<mode::Zero, 16>;
 
 // radix independent cases: (text, mantissa, exponent, precision)
 const COMMON_CASES: [(&str, i64, isize, usize); 28] = [
@@ -115,27 +117,26 @@ fn test_fbig_from_str() {
         ("-0x001.00p2", -1, 2, 20),
     ];
     for (text, man, exp, prec) in COMMON_CASES.iter().copied().chain(test_cases) {
-        let val = FBig2::from_str(text).unwrap();
-        assert_eq!(val, FBig2::from_parts(IBig::from(man), exp));
+        let val = FBin::from_str(text).unwrap();
+        assert_eq!(val, FBin::from_parts(IBig::from(man), exp));
         assert_eq!(val.precision(), prec);
     }
 
-    assert_eq!(FBig2::from_str("p"), Err(ParseError::InvalidDigit));
-    assert_eq!(FBig2::from_str("."), Err(ParseError::NoDigits));
-    assert_eq!(FBig2::from_str("1.0e8"), Err(ParseError::InvalidDigit));
-    assert_eq!(FBig2::from_str("0o2.2"), Err(ParseError::InvalidDigit));
-    assert_eq!(FBig2::from_str("一.二"), Err(ParseError::InvalidDigit));
-    assert_eq!(FBig2::from_str("一.二p三"), Err(ParseError::InvalidDigit));
+    assert_eq!(FBin::from_str("p"), Err(ParseError::InvalidDigit));
+    assert_eq!(FBin::from_str("."), Err(ParseError::NoDigits));
+    assert_eq!(FBin::from_str("1.0e8"), Err(ParseError::InvalidDigit));
+    assert_eq!(FBin::from_str("0o2.2"), Err(ParseError::InvalidDigit));
+    assert_eq!(FBin::from_str("一.二"), Err(ParseError::InvalidDigit));
+    assert_eq!(FBin::from_str("一.二p三"), Err(ParseError::InvalidDigit));
 
     // prefix `0x` is required in following cases
-    assert_eq!(FBig2::from_str("1p8"), Err(ParseError::InvalidDigit));
-    assert_eq!(FBig2::from_str(".1p8"), Err(ParseError::InvalidDigit));
-    assert_eq!(FBig2::from_str("1.0p8"), Err(ParseError::InvalidDigit));
+    assert_eq!(FBin::from_str("1p8"), Err(ParseError::InvalidDigit));
+    assert_eq!(FBin::from_str(".1p8"), Err(ParseError::InvalidDigit));
+    assert_eq!(FBin::from_str("1.0p8"), Err(ParseError::InvalidDigit));
 }
 
 #[test]
 fn test_oct_hex_from_str() {
-    type FOct = FBig<mode::Zero, 8>;
     let oct_cases = [
         //
         // scientific with 'o' notation
@@ -164,7 +165,6 @@ fn test_oct_hex_from_str() {
     assert_eq!(FOct::from_str("一.二"), Err(ParseError::InvalidDigit));
     assert_eq!(FOct::from_str("一.二o三"), Err(ParseError::InvalidDigit));
 
-    type FHex = FBig<mode::Zero, 16>;
     let hex_cases = [
         //
         // scientific with 'h' notation
@@ -209,22 +209,22 @@ fn test_other_bases() {
 
 #[test]
 fn test_from_parts() {
-    assert_eq!(FBig2::from_parts(ibig!(0), 2), FBig::ZERO);
-    assert_eq!(FBig2::from_parts(ibig!(-4), -2), FBig::NEG_ONE);
-    assert_eq!(FBig2::from_parts(ibig!(4), 0), FBig2::from_parts(ibig!(1), 2));
-    assert_eq!(FBig2::from_parts(ibig!(-4), 0), FBig2::from_parts(ibig!(-1), 2));
-    assert_eq!(FBig2::from_parts(ibig!(1) << 200, 0), FBig2::from_parts(ibig!(1), 200));
+    assert_eq!(FBin::from_parts(ibig!(0), 2), FBig::ZERO);
+    assert_eq!(FBin::from_parts(ibig!(-4), -2), FBig::NEG_ONE);
+    assert_eq!(FBin::from_parts(ibig!(4), 0), FBin::from_parts(ibig!(1), 2));
+    assert_eq!(FBin::from_parts(ibig!(-4), 0), FBin::from_parts(ibig!(-1), 2));
+    assert_eq!(FBin::from_parts(ibig!(1) << 200, 0), FBin::from_parts(ibig!(1), 200));
 
-    assert_eq!(FBig2::from_parts_const(Sign::Negative, 0, 2), FBig::ZERO);
-    assert_eq!(FBig2::from_parts_const(Sign::Negative, 1, 0), FBig::NEG_ONE);
-    assert_eq!(FBig2::from_parts_const(Sign::Positive, 4, 0), FBig2::from_parts(ibig!(1), 2));
+    assert_eq!(FBin::from_parts_const(Sign::Negative, 0, 2), FBig::ZERO);
+    assert_eq!(FBin::from_parts_const(Sign::Negative, 1, 0), FBig::NEG_ONE);
+    assert_eq!(FBin::from_parts_const(Sign::Positive, 4, 0), FBin::from_parts(ibig!(1), 2));
     assert_eq!(
-        FBig2::from_parts_const(Sign::Positive, 1 << (Word::BITS - 1), 0),
-        FBig2::from_parts(ibig!(1), (Word::BITS - 1) as isize)
+        FBin::from_parts_const(Sign::Positive, 1 << (Word::BITS - 1), 0),
+        FBin::from_parts(ibig!(1), (Word::BITS - 1) as isize)
     );
     assert_eq!(
-        FBig2::from_parts_const(Sign::Positive, 1 << (DoubleWord::BITS - 1), 0),
-        FBig2::from_parts(ibig!(1), (DoubleWord::BITS - 1) as isize)
+        FBin::from_parts_const(Sign::Positive, 1 << (DoubleWord::BITS - 1), 0),
+        FBin::from_parts(ibig!(1), (DoubleWord::BITS - 1) as isize)
     );
 
     assert_eq!(DBig::from_parts(ibig!(0), 2), DBig::ZERO);

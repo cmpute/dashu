@@ -1,14 +1,13 @@
 use crate::{
-    ibig_ext::remove_pow,
     round::{Round, Rounded},
     utils::{base_as_ibig, digit_len, split_digits, split_digits_ref},
 };
 use core::marker::PhantomData;
 use dashu_base::{Approximation::*, EstimatedLog2};
-use dashu_int::IBig;
+use dashu_int::{IBig, UBig};
 pub use dashu_int::Word;
 
-// TODO: make Repr public to user, only expose constructors and maybe a selective subset of methods.
+// TODO(next): make Repr public to user, only expose constructors and maybe a selective subset of methods.
 //       then all context methods could take repr as input instead of a full FBig object.
 //       also add conversion between FBig and repr (FBig::{new(repr, context), repr(), into_repr()}).
 //       this is necessary for compositing complex numbers without duplicate context.
@@ -27,7 +26,7 @@ pub struct Context<RoundingMode: Round> {
     //       besides, unary functions on zero precision float should panic.
     // TODO: consider expose precision as Option<usize> instead of allowing 0?
     pub(crate) precision: usize,
-    pub(crate) _marker: PhantomData<RoundingMode>,
+    _marker: PhantomData<RoundingMode>,
 }
 
 impl<const B: Word> Repr<B> {
@@ -87,8 +86,9 @@ impl<const B: Word> Repr<B> {
         !self.is_infinite()
     }
 
+    /// Normalize the float representation so that the significand is not divisible by the base.
+    /// Any floats with zero significand will be considered as zero value (instead of an `INFINITY`)
     pub fn normalize(self) -> Self {
-        use core::convert::TryInto;
         let Self {
             mut significand,
             mut exponent,
@@ -96,14 +96,21 @@ impl<const B: Word> Repr<B> {
         if significand.is_zero() {
             return Self::zero();
         }
+
         if B == 2 {
-            if let Some(shift) = significand.trailing_zeros() {
-                significand >>= shift;
-                exponent += shift as isize;
-            };
+            let shift = significand.trailing_zeros().unwrap();
+            significand >>= shift;
+            exponent += shift as isize;
+        } else if B.is_power_of_two() {
+            let bits = B.trailing_zeros() as usize;
+            let shift = significand.trailing_zeros().unwrap() / bits;
+            significand >>= shift * bits;
+            exponent += shift as isize;
         } else {
-            let shift: isize = remove_pow(&mut significand, &B.into()).try_into().unwrap();
-            exponent += shift;
+            let (sign, mut mag) = significand.into_parts();
+            let shift = mag.remove(&UBig::from_word(B)).unwrap();
+            exponent += shift as isize;
+            significand = IBig::from_parts(sign, mag);
         }
         Self {
             significand,

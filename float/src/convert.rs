@@ -1,10 +1,11 @@
+use core::convert::TryInto;
+
 use crate::{
     fbig::FBig,
-    ibig_ext::{log_pow, log_rem},
     repr::{Context, Repr},
-    round::{Round, Rounded, mode}, utils::{shr_digits, split_digits_ref}, error::panic_operate_with_inf,
+    round::{Round, Rounded, mode}, utils::{shr_digits, split_digits_ref, ilog_exact}, error::panic_operate_with_inf,
 };
-use dashu_base::Approximation;
+use dashu_base::{Approximation::*, DivRemEuclid, EstimatedLog2};
 use dashu_int::{IBig, UBig, Word};
 
 impl<R: Round> Context<R> {
@@ -108,7 +109,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
         let repr = if self.context.precision > precision {
             new_context.repr_round(self.repr)
         } else {
-            Approximation::Exact(self.repr)
+            Exact(self.repr)
         };
 
         repr.map(|v| Self::new(v, new_context))
@@ -132,10 +133,18 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```new_radix ^ new_precision <= old_radix ^ old_precision```.
     /// If any rounding happens during the conversion, if will follow
     /// the rounding mode specified by the type parameter.
+    #[inline]
     #[allow(non_upper_case_globals)]
     pub fn with_base<const NewB: Word>(self) -> Rounded<FBig<R, NewB>> {
+        let precision = Repr::<B>::BASE.pow(self.context.precision).log2_bounds().0 / NewB.log2_bounds().1;
+        self.with_base_and_precision(precision as usize)
+    }
+
+    #[allow(non_upper_case_globals)]
+    pub fn with_base_and_precision<const NewB: Word>(self, precision: usize) -> Rounded<FBig<R, NewB>> {
+        // shortcut if NewB is the same as B
         if NewB == B {
-            return Approximation::Exact(FBig {
+            return Exact(FBig {
                 repr: Repr {
                     significand: self.repr.significand,
                     exponent: self.repr.exponent,
@@ -143,87 +152,53 @@ impl<R: Round, const B: Word> FBig<R, B> {
                 context: self.context,
             });
         }
-        // TODO: shortcut if X is a power of NewX
 
-        // Calculate the new precision
-        // new_precision = floor_log_radix2(radix1^precision)
-        let precision = log_pow(&UBig::from_word(B), self.context.precision, NewB as usize);
-
-        // Convert by calculating logarithm
-        // TODO: refactor to call with_base_and_precision, the precision = floor(e*log_NewB(B)).
-        let result = if self.repr.exponent == 0 {
-            // direct copy if the exponent is zero
-            return Approximation::Exact(FBig {
-                repr: Repr {
-                    significand: self.repr.significand,
-                    exponent: 0,
-                },
-                context: Context::new(precision),
-            });
-        } else if self.repr.exponent > 0 {
-            // denote log with base of radix2 as lgr2, then
-            // mantissa * radix1 ^ exp1
-            // = mantissa * radix2 ^ lgr2(radix1^exp1)
-            // = mantissa * (radix2 ^ floor_lgr2(radix1^exp1) + rem_lgr2(radix1^exp1))
-            // = mantissa * ratio * (radix2 ^ floor_lgr2(radix1^exp1))
-            // where the ratio is
-            // 1 + rem_lgr2(radix1^exp1) / (radix2 ^ floor_lgr2(radix1^exp1))
-            // = radix1^exp1 / (radix1^exp1 - rem_lgr2(radix1^exp1))
-
-            let precision_ub = UBig::from_word(B).pow(self.repr.exponent as usize);
-            let (log_v, log_r) = log_rem(&precision_ub, NewB as usize);
-            let den = IBig::from(&precision_ub - log_r);
-            let num = IBig::from(precision_ub) * self.repr.significand;
-            let mut value = FBig::<R, NewB>::from_ratio(num, den, precision + 1);
-            value.repr.exponent += log_v as isize;
-            value
+        let context = Context::<R>::new(precision);
+        if NewB > B {
+            // shortcut if NewB is a power of B
+            let n = ilog_exact(NewB, B);
+            if n > 1 {
+                let (exp, rem) = self.repr.exponent.div_rem_euclid(n as isize);
+                let signif = self.repr.significand * B.pow(rem as u32);
+                let repr = Repr::new(signif, exp);
+                return context.repr_round(repr).map(|v| FBig::new(v, context));
+            }
         } else {
-            // denote log with base of radix2 as lgr2, then
-            // mantissa / radix1 ^ exp1
-            // = mantissa / radix2 ^ lgr2(radix1^exp1)
-            // = mantissa / (radix2 ^ floor_lgr2(radix1^exp1) + rem_lgr2(radix1^exp1))
-            // = mantissa (1 / (radix2 ^ floor_lgr2(..)) - rem_lgr2(..) / (radix2 ^ floor_lgr2(..) * (radix2 ^ floor_lgr2(..) + rem_lgr2(..)))
-            // = mantissa * ratio * (1 / (radix2 ^ floor_lgr2(radix1^exp1))
-            // where the ratio is
-            // 1 - rem_lgr2(radix1^exp1) / (radix2 ^ floor_lgr2(radix1^exp1) + rem_lgr2(radix1^exp1))
-            // = radix2 ^ floor_lgr2(radix1^exp1) / radix1^exp1
+            // shortcut if B is a power of NewB
+            let n = ilog_exact(B, NewB);
+            if n > 1 {
+                let exp = self.repr.exponent * n as isize;
+                let repr = Repr::new(self.repr.significand, exp);
+                return Exact(FBig::new(repr, context));
+            }
+        }
 
-            let precision_ub = UBig::from_word(B).pow(-self.repr.exponent as usize);
-            let (log_v, log_r) = log_rem(&precision_ub, NewB as usize);
-            let num = IBig::from(&precision_ub - log_r) * self.repr.significand;
-            let den = IBig::from(precision_ub);
-            let mut value = FBig::<R, NewB>::from_ratio(num, den, precision + 1);
-            value.repr.exponent -= log_v as isize;
-            value
-        };
+        // XXX: there's a potential optimization: if B is a multiple of NewB, then the factor B
+        // should be trivially removed first, but this requires full support of const generics.
 
-        result.with_precision(precision)
-    }
-
-    #[allow(non_upper_case_globals)]
-    fn with_base_and_precision<const NewB: Word>(self, precision: usize) -> Rounded<FBig<R, NewB>> {
-        let context = Context::new(precision);
-
-        const THRESHOLD_SMALL_EXP: isize = 4;
+        const THRESHOLD_SMALL_EXP: isize = 4; // TODO: choose a better value, maybe one such that BASE.pow(exp) is fit in a double word?
         if self.repr.exponent.abs() <= THRESHOLD_SMALL_EXP {
-            // if the exponent is small enough
+            // if the exponent is small enough, directly evaluate the exponent
             if self.repr.exponent >= 0 {
                 let signif =
                     self.repr.significand * Repr::<B>::BASE.pow(self.repr.exponent as usize);
-                return Approximation::Exact(FBig::new(Repr::new(signif, 0), context));
+                Exact(FBig::new(Repr::new(signif, 0), context))
             } else {
                 let num = Repr::new(self.repr.significand, 0);
                 let den = Repr::new(Repr::<B>::BASE.pow(-self.repr.exponent as usize), 0);
-                return context.repr_div(num, &den).map(|v| FBig::new(v, context));
+                context.repr_div(num, &den).map(|v| FBig::new(v, context))
             }
         } else {
-            // exp_f = self.repr.exponent * log(B) / log(NewB)
-            // exp = trunc(exp_f)
-            // signif = self.repr.significand * exp(log(NewB) * fract(exp_f))
-
-            // TODO: implement this branch after trunc/fract/floor/ceil are tested
-            // and obselete the old algorithm in with_base()
-            unimplemented!() 
+            // if the exponent is large, then we first estimate the result exponent as floor(exponent * log(B) / log(NewB)),
+            // then the fractional part is multiplied with the original significand
+            let work_context = Context::<R>::new(2 * precision); // double the precision to get the precision logarithm
+            let new_exp = self.repr.exponent * work_context.ln(&FBig::from_parts_const(dashu_base::Sign::Positive, B as _, 0)).value();
+            let (exponent, rem) = new_exp.div_rem_euclid(work_context.ln_base::<NewB>());
+            let exponent: isize = exponent.try_into().unwrap();
+            let exp_rem = rem.exp();
+            let significand = self.repr.significand * exp_rem.repr.significand;
+            let repr = Repr::new(significand, exponent + exp_rem.repr.exponent);
+            context.repr_round(repr).map(|v| FBig::new(v, context))
         }
     }
 
@@ -238,10 +213,23 @@ impl<R: Round, const B: Word> FBig<R, B> {
     }
 
     /// Convert the float number to integer with the given rounding mode.
-    fn to_int(&self) -> Option<Rounded<IBig>> {
-        unimplemented!()
+    pub fn to_int(&self) -> Option<Rounded<IBig>> {
+        if self.repr.is_infinite() {
+            return None;
+        }
+        // TODO: check if self is too large, if so return None
+
+        if self.repr.exponent >= 0 {
+            return Some(Exact(&self.repr.significand * Repr::<B>::BASE.pow(self.repr.exponent as usize)));
+        }
+        let (hi, lo, precision) = self.split_at_point();
+        let adjust = R::round_fract::<B>(&hi, lo, precision);
+        Some(Inexact(hi + adjust, adjust))
     }
 
+    /// Get the integral part of the float
+    /// 
+    /// Note: this function will adjust the precision accordingly!
     #[inline]
     pub fn trunc(&self) -> Self {
         if self.repr.is_infinite() {
@@ -276,6 +264,9 @@ impl<R: Round, const B: Word> FBig<R, B> {
         (hi, lo, shift)
     }
 
+    /// Get the fractional part of the float
+    /// 
+    /// Note: this function will adjust the precision accordingly!
     #[inline]
     pub fn fract(&self) -> Self {
         if self.repr.is_infinite() {

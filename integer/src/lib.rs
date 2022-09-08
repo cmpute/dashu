@@ -111,6 +111,7 @@ mod parse;
 mod pow;
 mod primitive;
 mod radix;
+mod remove;
 mod repr;
 mod shift;
 mod shift_ops;

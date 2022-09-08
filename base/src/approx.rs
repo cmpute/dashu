@@ -1,4 +1,5 @@
 /// Represent an calculation result with possible error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Approximation<T, E> {
     /// The result is exact, contains the result value
     Exact(T),

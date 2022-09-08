@@ -2,7 +2,6 @@ use crate::{
     repr::{Context, Repr, Word},
     round::{mode, Round},
 };
-use core::marker::PhantomData;
 use dashu_base::Sign;
 use dashu_int::{DoubleWord, IBig};
 
@@ -115,13 +114,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
         // TODO: check we are not using this function internally because we enforce normalized representation
         let repr = Repr::new(significand, exponent);
         let precision = repr.digits().max(1); // set precision to 1 if signficand is zero
-        Self {
-            repr,
-            context: Context {
-                precision,
-                _marker: PhantomData,
-            },
-        }
+        let context = Context::new(precision);
+        Self::new(repr, context)
     }
 
     #[inline]
@@ -163,10 +157,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
             significand: IBig::from_parts_const(sign, significand),
             exponent,
         };
-        Self {
-            repr,
-            context: Context::new(digits),
-        }
+        Self::new(repr, Context::new(digits))
     }
 
     /// Convert the float number into raw (signficand, exponent) parts

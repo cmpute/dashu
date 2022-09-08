@@ -158,6 +158,27 @@ pub fn split_digits<const B: Word>(value: IBig, pos: usize) -> (IBig, IBig) {
     }
 }
 
+/// If n is a power of base, then return the exponent,
+/// otherwise return 0.
+pub const fn ilog_exact(n: Word, base: Word) -> u32 {
+    if n < base {
+        return 0;
+    }
+
+    let mut pow = base;
+    let mut exp = 1;
+    while pow < n {
+        pow *= base;
+        exp += 1;
+    }
+
+    if pow == n {
+        return exp;
+    } else {
+        return 0;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

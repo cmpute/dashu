@@ -111,7 +111,7 @@ impl<R: Round> Context<R> {
          */
 
         // extras digits are added to ensure precise result
-        // TODO(next): test if we can use log_B(p/2log_B(n)) directly
+        // TODO: test if we can use log_B(p/2log_B(n)) directly
         let guard_digits = (self.precision.log2_est() / B.log2_est()) as usize;
         let work_context = Self::new(self.precision + guard_digits + 2);
 

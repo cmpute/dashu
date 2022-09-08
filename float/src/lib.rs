@@ -25,7 +25,6 @@ mod exp;
 mod fbig;
 mod fmt;
 mod helper_macros;
-mod ibig_ext;
 mod log;
 mod mul;
 mod parse;
