@@ -1,12 +1,17 @@
-use core::convert::{TryInto, TryFrom};
+use core::convert::{TryFrom, TryInto};
 
 use crate::{
+    error::{check_inf, panic_unlimited_precision},
     fbig::FBig,
     repr::{Context, Repr},
-    round::{Round, Rounded, mode::{self, HalfEven}, Rounding}, utils::{shr_digits, split_digits_ref, ilog_exact}, error::{check_inf, panic_unlimited_precision},
+    round::{
+        mode::{self, HalfEven},
+        Round, Rounded, Rounding,
+    },
+    utils::{ilog_exact, shr_digits, split_digits_ref},
 };
 use dashu_base::{Approximation::*, DivRemEuclid, EstimatedLog2};
-use dashu_int::{IBig, UBig, Word, error::OutOfBoundsError};
+use dashu_int::{error::OutOfBoundsError, IBig, UBig, Word};
 
 impl<R: Round> Context<R> {
     /// Convert an [IBig] instance to a [FBig] instance with precision
@@ -147,17 +152,21 @@ impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     #[allow(non_upper_case_globals)]
     pub fn with_base<const NewB: Word>(self) -> Rounded<FBig<R, NewB>> {
-        let precision = Repr::<B>::BASE.pow(self.context.precision).log2_bounds().0 / NewB.log2_bounds().1;
+        let precision =
+            Repr::<B>::BASE.pow(self.context.precision).log2_bounds().0 / NewB.log2_bounds().1;
         self.with_base_and_precision(precision as usize)
     }
 
     /// Explicitly change the base of the float number with given precision (under the new base).
-    /// 
+    ///
     /// # Panic
-    /// 
+    ///
     /// Panics if the precision is 0 when the base conversion cannot be done losslessly.
     #[allow(non_upper_case_globals)]
-    pub fn with_base_and_precision<const NewB: Word>(self, precision: usize) -> Rounded<FBig<R, NewB>> {
+    pub fn with_base_and_precision<const NewB: Word>(
+        self,
+        precision: usize,
+    ) -> Rounded<FBig<R, NewB>> {
         // shortcut if NewB is the same as B
         if NewB == B {
             return Exact(FBig {
@@ -216,7 +225,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
             // if the exponent is large, then we first estimate the result exponent as floor(exponent * log(B) / log(NewB)),
             // then the fractional part is multiplied with the original significand
             let work_context = Context::<R>::new(2 * precision); // double the precision to get the precision logarithm
-            let new_exp = self.repr.exponent * work_context.ln(&Repr::new(Repr::<B>::BASE, 0)).value();
+            let new_exp =
+                self.repr.exponent * work_context.ln(&Repr::new(Repr::<B>::BASE, 0)).value();
             let (exponent, rem) = new_exp.div_rem_euclid(work_context.ln_base::<NewB>());
             let exponent: isize = exponent.try_into().unwrap();
             let exp_rem = rem.exp();
@@ -227,7 +237,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     }
 
     /// Convert the float number to integer with the given rounding mode.
-    /// 
+    ///
     /// Warning: If the float number has a very large exponent, it will be evaluated and result
     /// in allocating an huge integer and it might eat up all your memory.
     pub fn to_int(&self) -> Rounded<IBig> {
@@ -235,7 +245,9 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
         // shortcut when the number is already an integer
         if self.repr.exponent >= 0 {
-            return Exact(&self.repr.significand * Repr::<B>::BASE.pow(self.repr.exponent as usize));
+            return Exact(
+                &self.repr.significand * Repr::<B>::BASE.pow(self.repr.exponent as usize),
+            );
         }
 
         let (hi, lo, precision) = self.split_at_point();
@@ -244,7 +256,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     }
 
     /// Get the integral part of the float
-    /// 
+    ///
     /// Note: this function will adjust the precision accordingly!
     #[inline]
     pub fn trunc(&self) -> Self {
@@ -279,7 +291,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     }
 
     /// Get the fractional part of the float
-    /// 
+    ///
     /// Note: this function will adjust the precision accordingly!
     #[inline]
     pub fn fract(&self) -> Self {
@@ -332,7 +344,9 @@ impl<R: Round> FBig<R, 2> {
         }
 
         let context = Context::<HalfEven>::new(24);
-        context.repr_round_ref(&self.repr).map(|v| v.significand.to_f32().value() * (v.exponent as f32).exp2())
+        context
+            .repr_round_ref(&self.repr)
+            .map(|v| v.significand.to_f32().value() * (v.exponent as f32).exp2())
     }
 
     /// Convert the float number to [f64] with HalfEven rounding mode regardless of the mode associated with this number.
@@ -346,7 +360,9 @@ impl<R: Round> FBig<R, 2> {
         }
 
         let context = Context::<HalfEven>::new(53);
-        context.repr_round_ref(&self.repr).map(|v| v.significand.to_f64().value() * (v.exponent as f64).exp2())
+        context
+            .repr_round_ref(&self.repr)
+            .map(|v| v.significand.to_f64().value() * (v.exponent as f64).exp2())
     }
 }
 

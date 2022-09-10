@@ -10,7 +10,7 @@ fn test_shift() {
     assert_eq!(fbig!(0x1) >> 1, fbig!(0x1p-1));
     assert_eq!(fbig!(-0x1) << 1, fbig!(-0x1p1));
     assert_eq!(fbig!(-0x1) >> 1, fbig!(-0x1p-1));
-    
+
     assert_eq!(dbig!(0) << 1, dbig!(0));
     assert_eq!(dbig!(0) >> 1, dbig!(0));
     assert_eq!(dbig!(1) << 1, dbig!(1e1));

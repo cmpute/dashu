@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 use core::fmt::{self, Formatter};
 use serde::{
     de::{Deserialize, Deserializer, SeqAccess, Visitor},
-    ser::{Serialize, SerializeSeq, Serializer, SerializeTuple},
+    ser::{Serialize, SerializeSeq, SerializeTuple, Serializer},
 };
 use static_assertions::const_assert;
 
@@ -148,11 +148,7 @@ impl Serialize for IBig {
 impl<'de> Deserialize<'de> for IBig {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let (sign, magnitude): (bool, UBig) = Deserialize::deserialize(deserializer)?;
-        let sign = if sign {
-            Sign::Negative
-        } else {
-            Sign::Positive
-        };
+        let sign = if sign { Sign::Negative } else { Sign::Positive };
         Ok(IBig(magnitude.0.with_sign(sign)))
     }
 }

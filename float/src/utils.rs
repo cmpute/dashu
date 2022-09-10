@@ -87,7 +87,9 @@ pub fn shr_digits_in_place<const B: Word>(value: &mut IBig, exp: usize) {
         match B {
             2 => *value = shr(mem::take(value), exp),
             10 => *value = shr(mem::take(value), exp) / IBig::from(5).pow(exp),
-            b if b.is_power_of_two() => *value = shr(mem::take(value), exp * b.trailing_zeros() as usize),
+            b if b.is_power_of_two() => {
+                *value = shr(mem::take(value), exp * b.trailing_zeros() as usize)
+            }
             _ => *value /= base_as_ibig::<B>().pow(exp),
         }
     }
@@ -190,7 +192,7 @@ mod tests {
         assert_eq!(shr_ref(&a, 10), (&a).unsigned_abs() >> 10);
         assert_eq!(shr_ref(&a, 100), (&a).unsigned_abs() >> 100);
         assert_eq!(shr_ref(&a, 1000), (&a).unsigned_abs() >> 1000);
-        
+
         let a = IBig::from(-0x1234567890abcdefi64).pow(7); // 422 bits
         assert_eq!(-shr_ref(&a, 10), (&a).unsigned_abs() >> 10);
         assert_eq!(-shr_ref(&a, 100), (&a).unsigned_abs() >> 100);

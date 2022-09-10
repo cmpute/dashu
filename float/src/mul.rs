@@ -1,7 +1,7 @@
 use dashu_int::{IBig, UBig};
 
 use crate::{
-    error::{check_inf_operands, check_inf},
+    error::{check_inf, check_inf_operands},
     fbig::FBig,
     helper_macros,
     repr::{Context, Repr, Word},
@@ -91,11 +91,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
 }
 
 impl<R: Round> Context<R> {
-    pub fn mul<const B: Word>(
-        &self,
-        lhs: &Repr<B>,
-        rhs: &Repr<B>,
-    ) -> Rounded<FBig<R, B>> {
+    pub fn mul<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Rounded<FBig<R, B>> {
         check_inf_operands(lhs, rhs);
 
         // at most double the precision is required to get a correct result
@@ -108,9 +104,7 @@ impl<R: Round> Context<R> {
 
         let lhs_shrink;
         let lhs_repr = if lhs.digits() > max_precision {
-            lhs_shrink = Context::<R>::new(max_precision)
-                .repr_round_ref(lhs)
-                .value();
+            lhs_shrink = Context::<R>::new(max_precision).repr_round_ref(lhs).value();
             &lhs_shrink
         } else {
             lhs
@@ -118,9 +112,7 @@ impl<R: Round> Context<R> {
 
         let rhs_shrink;
         let rhs_repr = if rhs.digits() > max_precision {
-            rhs_shrink = Context::<R>::new(max_precision)
-                .repr_round_ref(rhs)
-                .value();
+            rhs_shrink = Context::<R>::new(max_precision).repr_round_ref(rhs).value();
             &rhs_shrink
         } else {
             rhs
@@ -145,9 +137,7 @@ impl<R: Round> Context<R> {
 
         let f_shrink;
         let f_repr = if f.digits() > max_precision {
-            f_shrink = Context::<R>::new(max_precision)
-                .repr_round_ref(f)
-                .value();
+            f_shrink = Context::<R>::new(max_precision).repr_round_ref(f).value();
             &f_shrink
         } else {
             f

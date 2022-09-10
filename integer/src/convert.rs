@@ -11,8 +11,11 @@ use crate::{
     Sign::*,
 };
 use alloc::vec::Vec;
-use dashu_base::{Approximation::{self, *}, Sign};
 use core::convert::{TryFrom, TryInto};
+use dashu_base::{
+    Approximation::{self, *},
+    Sign,
+};
 
 impl Default for UBig {
     /// Default value: 0.
@@ -216,7 +219,7 @@ impl IBig {
         let (sign, mag) = self.as_sign_repr();
         match mag.to_f32() {
             Exact(val) => Exact(sign * val),
-            Inexact(val, diff) => Inexact(sign * val, sign * diff)
+            Inexact(val, diff) => Inexact(sign * val, sign * diff),
         }
     }
 
@@ -237,7 +240,7 @@ impl IBig {
         let (sign, mag) = self.as_sign_repr();
         match mag.to_f64() {
             Exact(val) => Exact(sign * val),
-            Inexact(val, diff) => Inexact(sign * val, sign * diff)
+            Inexact(val, diff) => Inexact(sign * val, sign * diff),
         }
     }
 }
@@ -534,7 +537,7 @@ mod repr {
     use static_assertions::const_assert;
 
     use super::*;
-    use crate::{repr::TypedReprRef, arch::word::DoubleWord};
+    use crate::{arch::word::DoubleWord, repr::TypedReprRef};
 
     impl<'a> TypedReprRef<'a> {
         #[inline]
@@ -644,7 +647,7 @@ mod repr {
     fn to_f32_small(dword: u128) -> Approximation<f32, Sign> {
         let f = dword as f32;
         if f.is_infinite() {
-            return Inexact(f, Sign::Positive)
+            return Inexact(f, Sign::Positive);
         }
 
         let back = f as u128;

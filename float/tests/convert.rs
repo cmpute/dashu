@@ -1,6 +1,12 @@
 use core::convert::TryFrom;
-use dashu_float::{DBig, round::{mode::{Zero, HalfAway}, Rounding::*}, FBig};
 use dashu_base::Approximation::*;
+use dashu_float::{
+    round::{
+        mode::{HalfAway, Zero},
+        Rounding::*,
+    },
+    DBig, FBig,
+};
 
 mod helper_macros;
 
@@ -13,7 +19,7 @@ fn test_ceil_floor() {
     assert_eq!(fbig!(-0x1p1).ceil(), fbig!(-0x1p1));
     assert_eq!(fbig!(-0x1).ceil(), fbig!(-0x1));
     assert_eq!(fbig!(-0x1p-1).ceil(), fbig!(0x0));
-    
+
     assert_eq!(fbig!(0x0).floor(), fbig!(0x0));
     assert_eq!(fbig!(0x1p1).floor(), fbig!(0x1p1));
     assert_eq!(fbig!(0x1).floor(), fbig!(0x1));
@@ -21,7 +27,7 @@ fn test_ceil_floor() {
     assert_eq!(fbig!(-0x1p1).floor(), fbig!(-0x1p1));
     assert_eq!(fbig!(-0x1).floor(), fbig!(-0x1));
     assert_eq!(fbig!(-0x1p-1).floor(), fbig!(-0x1));
-    
+
     assert_eq!(dbig!(0).ceil(), dbig!(0));
     assert_eq!(dbig!(1e1).ceil(), dbig!(1e1));
     assert_eq!(dbig!(1).ceil(), dbig!(1));
@@ -29,7 +35,7 @@ fn test_ceil_floor() {
     assert_eq!(dbig!(-1e1).ceil(), dbig!(-1e1));
     assert_eq!(dbig!(-1).ceil(), dbig!(-1));
     assert_eq!(dbig!(-1e-1).ceil(), dbig!(0));
-    
+
     assert_eq!(dbig!(0).floor(), dbig!(0));
     assert_eq!(dbig!(1e1).floor(), dbig!(1e1));
     assert_eq!(dbig!(1).floor(), dbig!(1));
@@ -53,7 +59,7 @@ fn test_trunc_fract() {
     assert_eq!(fbig!(-0x12p-4).trunc(), fbig!(-0x1));
     assert_eq!(fbig!(-0x12p-8).trunc(), fbig!(-0x0));
     assert_eq!(fbig!(-0x12p-12).trunc(), fbig!(0x0));
-    
+
     assert_eq!(fbig!(0x0).fract(), fbig!(0x0));
     assert_eq!(fbig!(0x12p4).fract(), fbig!(0x0));
     assert_eq!(fbig!(0x12).fract(), fbig!(0x0));
@@ -78,7 +84,7 @@ fn test_trunc_fract() {
     assert_eq!(dbig!(-12e-1).trunc(), dbig!(-1));
     assert_eq!(dbig!(-12e-2).trunc(), dbig!(-0));
     assert_eq!(dbig!(-12e-3).trunc(), dbig!(0));
-    
+
     assert_eq!(dbig!(0).fract(), dbig!(0));
     assert_eq!(dbig!(12e1).fract(), dbig!(0));
     assert_eq!(dbig!(12).fract(), dbig!(0));
@@ -125,6 +131,7 @@ fn test_fract_inf() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_base_change() {
     // binary -> decimal
     // 5 decimal digits precision < 20 binary digits precision
@@ -278,9 +285,15 @@ fn test_to_f64() {
     assert_eq!(fbig!(0x123456789p-100).to_f64(), Exact(3.85494105719682466897e-21));
     assert_eq!(fbig!(-0x987654321p50).to_f64(), Exact(-4.60788792400719364542e+25));
     // exact value: 3.3436283752161326232549204599099774676691163414240905497490... × 10^-39
-    assert_eq!(fbig!(0x1234567890123456789p-200).to_f64(), Inexact(3.34362837521613240285e-39, NoOp));
+    assert_eq!(
+        fbig!(0x1234567890123456789p-200).to_f64(),
+        Inexact(3.34362837521613240285e-39, NoOp)
+    );
     // exact value: 72310453210697978489701299687443815627510656356042859969687735028883143242326999040
-    assert_eq!(fbig!(-0x9876543210987654321p200).to_f64(), Inexact(-7.23104532106979813055e+82, SubOne));
+    assert_eq!(
+        fbig!(-0x9876543210987654321p200).to_f64(),
+        Inexact(-7.23104532106979813055e+82, SubOne)
+    );
 
     assert_eq!(FBig::<Zero, 2>::INFINITY.to_f64(), Inexact(f64::INFINITY, NoOp));
     assert_eq!(FBig::<Zero, 2>::NEG_INFINITY.to_f64(), Inexact(f64::NEG_INFINITY, NoOp));

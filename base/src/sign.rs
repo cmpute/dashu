@@ -138,7 +138,7 @@ macro_rules! impl_mul_sign_for_primitives {
     ($($t:ty)*) => {$(
         impl Mul<$t> for Sign {
             type Output = $t;
-        
+
             #[inline]
             fn mul(self, rhs: $t) -> Self::Output {
                 match self {

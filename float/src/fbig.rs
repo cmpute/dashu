@@ -6,48 +6,48 @@ use dashu_base::Sign;
 use dashu_int::{DoubleWord, IBig};
 
 /// An arbitrary precision floating point number with arbitrary base and rounding mode.
-/// 
+///
 /// The float number consists of a [Repr] and a [Context]. The [Repr] instance determines
 /// the value of the number, and the [Context] contains runtime information (such as precision
 /// limit, rounding mode, etc.)
-/// 
+///
 /// For how the number is represented, see [Repr], for how the precision limit and rounding
 /// mode is applied, see [Context].
 ///
 /// The arithmetic operations on [FBig] follows the behavior of its associated context.
 /// If a different precision limit and/or rounding mode is required, or the rounding
 /// information has to be preserved, use the methods of the [Context] type.
-/// 
+///
 /// # Examples
-/// 
+///
 /// TODO
-/// 
+///
 /// # Generic Parameters
-/// 
+///
 /// The const generic parameters will be abbreviated as `BASE` -> `B`, `RoundingMode` -> `R`.
 /// THe `BASE` must be in range \[2, isize::MAX\], and the `RoundingMode` can be chosen from
 /// the [mode] module.
-/// 
+///
 /// # Parsing and printing
-/// 
+///
 /// Conversion from and to [str] is limited to native radix (i.e. base). To print or parse
 /// with different radix, please use [to_binary()][FBig::to_binary], [to_decimal()][FBig::to_decimal]
 /// or [with_base()][FBig::with_base] to convert.
-/// 
+///
 /// For detailed requirements of parsing, refer to the [from_str_native()][FBig::from_str_native] method.
-/// 
+///
 /// # Convert from/to `f32`/`f64`
-/// 
+///
 /// The conversion between [FBig] and [f32]/[f64] is only defined for base 2 [FBig]. To convert
 /// from/to other bases, please first convert to base 2, and then change the base using [with_base()][FBig::with_base].
-/// 
+///
 /// Converting from [f32]/[f64] (using [TryFrom][core::convert::TryFrom]) is lossless, except for
 /// that `NAN` values will result in [Err]. Converting to [f32]/[f64] (using [to_f32()][FBig::to_f32]
 /// and [to_f64()][FBig::to_f64]) is lossy, and the rounding direction is contained in the result of these
 /// two methods.
-/// 
+///
 /// The infinities are converted as it is, and the subnormals are converted using its actual values.
-/// 
+///
 pub struct FBig<RoundingMode: Round = mode::Zero, const BASE: Word = 2> {
     pub(crate) repr: Repr<BASE>,
     pub(crate) context: Context<RoundingMode>,
@@ -61,12 +61,12 @@ impl<R: Round, const B: Word> FBig<R, B> {
     }
 
     /// Create a [FBig] instance from [Repr] and [Context].
-    /// 
+    ///
     /// This method should not be used in most cases. It's designed to be used when
     /// you hold a [Repr] instance and want to create an [FBig] from that.
-    /// 
+    ///
     /// # Panic
-    /// 
+    ///
     /// Panics if the [Repr] has more digits than the precision limit specified in the context.
     /// Note that this condition is not checked in release build.
     #[inline]
@@ -216,9 +216,9 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
     /// Return the value of the least significant digit of the float number x,
     /// such that x + ulp is the first float bigger than x (given the precision from the context).
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::DBig;
@@ -234,7 +234,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
         let repr = Repr {
             significand: IBig::ONE,
-            exponent: self.repr.exponent + self.repr.digits() as isize - self.context.precision as isize
+            exponent: self.repr.exponent + self.repr.digits() as isize
+                - self.context.precision as isize,
         };
         Self::new(repr, self.context)
     }

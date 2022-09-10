@@ -2,9 +2,10 @@ use dashu_base::{Approximation::*, EstimatedLog2, Sign};
 use dashu_int::IBig;
 
 use crate::{
+    error::check_precision_limited,
     fbig::FBig,
-    repr::{Context, Word, Repr},
-    round::{Round, Rounded}, error::check_precision_limited,
+    repr::{Context, Repr, Word},
+    round::{Round, Rounded},
 };
 
 impl<const B: Word> EstimatedLog2 for Repr<B> {
@@ -101,9 +102,7 @@ impl<R: Round> Context<R> {
             2 => self.ln2(),
             10 => self.ln10(),
             i if i.is_power_of_two() => self.ln2() * i.trailing_zeros(),
-            _ => self
-                .ln(&Repr::new(Repr::<B>::BASE, 0))
-                .value(),
+            _ => self.ln(&Repr::new(Repr::<B>::BASE, 0)).value(),
         }
     }
 

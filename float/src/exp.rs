@@ -1,9 +1,10 @@
 use core::convert::TryInto;
 
 use crate::{
+    error::check_precision_limited,
     fbig::FBig,
     repr::{Context, Repr, Word},
-    round::{Round, Rounded}, error::check_precision_limited,
+    round::{Round, Rounded},
 };
 use dashu_base::{Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign};
 use dashu_int::IBig;
@@ -28,11 +29,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
 // TODO: give the exact formulation of required guard bits
 
 impl<R: Round> Context<R> {
-    pub fn powi<const B: Word>(
-        &self,
-        base: &Repr<B>,
-        exp: IBig,
-    ) -> Rounded<FBig<R, B>> {
+    pub fn powi<const B: Word>(&self, base: &Repr<B>, exp: IBig) -> Rounded<FBig<R, B>> {
         check_precision_limited(self.precision);
 
         let (exp_sign, exp) = exp.into_parts();
@@ -90,11 +87,7 @@ impl<R: Round> Context<R> {
     //       the powering exp(r)^(2^n) could be optimized by noticing (1+x)^2 - 1 = x^2 + 2x
     //       consider this change after having a benchmark
 
-    fn exp_internal<const B: Word>(
-        &self,
-        x: &Repr<B>,
-        minus_one: bool,
-    ) -> Rounded<FBig<R, B>> {
+    fn exp_internal<const B: Word>(&self, x: &Repr<B>, minus_one: bool) -> Rounded<FBig<R, B>> {
         check_precision_limited(self.precision);
 
         if x.is_zero() {
@@ -175,7 +168,8 @@ impl<R: Round> Context<R> {
                 .map(|v| (v << s) - FBig::ONE)
                 .and_then(|v| v.with_precision(self.precision))
         } else {
-            self.powi(sum.repr(), Repr::<B>::BASE.pow(n)).map(|v| v << s)
+            self.powi(sum.repr(), Repr::<B>::BASE.pow(n))
+                .map(|v| v << s)
         }
     }
 }

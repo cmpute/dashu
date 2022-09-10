@@ -226,7 +226,7 @@ impl<R: Round> Context<R> {
     ) -> Rounded<Repr<B>> {
         if !self.limited() {
             // short cut for unlimited precision
-            return Rounded::Exact(Repr::new(significand, exponent))
+            return Rounded::Exact(Repr::new(significand, exponent));
         }
 
         let rnd_precision = self.precision + is_sub as usize; // use one extra digit to prevent cancellation in rounding
@@ -305,80 +305,82 @@ impl<R: Round> Context<R> {
 
         // align the exponent
         let low: (IBig, usize); // (value of low part, precision of the low part)
-        let (significand, exponent) =
-            if self.limited() && rdigits_est + 1 < ediff && rdigits_est + 1 + rnd_precision < ldigits + ediff {
-                // if rhs is much smaller than lhs, direct round on the rhs
-                /*
-                 * lhs: |=========|
-                 * rhs:                  |========|
-                 *                |<--- ediff --->|
-                 *      |< precision >|
-                 */
+        let (significand, exponent) = if self.limited()
+            && rdigits_est + 1 < ediff
+            && rdigits_est + 1 + rnd_precision < ldigits + ediff
+        {
+            // if rhs is much smaller than lhs, direct round on the rhs
+            /*
+             * lhs: |=========|
+             * rhs:                  |========|
+             *                |<--- ediff --->|
+             *      |< precision >|
+             */
 
-                // In this case, the actual significand of rhs doesn't matter,
-                // we can just replace it with 1 for correct rounding
-                let low_prec = if ldigits >= rnd_precision {
-                    2
-                } else {
-                    (rnd_precision - ldigits) + 1
-                }; // low_prec >= 2
-                low = (rhs_sign * rhs.significand.signum(), low_prec);
-                (lhs.significand, lhs.exponent)
-            } else if self.limited() && ldigits >= self.precision {
-                // if the lhs already exceeds the desired precision, just align rhs
-                /* Before:
-                 * lhs: |==============|
-                 * rhs:      |==============|
-                 *              ediff  |<-->|
-                 *    precision  |<--->|
-                 *
-                 * After:
-                 * lhs: |==============|
-                 * rhs:      |=========|xxxx|
-                 */
-                let (rhs_signif, r) = split_digits_ref::<B>(&rhs.significand, ediff);
-                low = (rhs_sign * r, ediff);
-                (lhs.significand + rhs_sign * rhs_signif, lhs.exponent)
-            } else if self.limited() && ediff + ldigits > self.precision {
-                // if the shifted lhs exceeds the desired precision, align lhs and rhs to precision
-                /* Before:
-                 * lhs: |=========|
-                 * rhs:      |==============|
-                 *                |< ediff >|
-                 *      |< precision >|
-                 *
-                 * After:
-                 * lhs: |=========0000|
-                 * rhs:      |========|xxxxx|
-                 *        lshift  |<->|
-                 *            rshift  |<--->|
-                 */
-                let lshift = self.precision - ldigits;
-                let rshift = ediff - lshift;
-                let (rhs_signif, r) = split_digits_ref::<B>(&rhs.significand, rshift);
-                shl_digits_in_place::<B>(&mut lhs.significand, lshift);
-
-                low = (rhs_sign * r, rshift);
-                (lhs.significand + rhs_sign * rhs_signif, lhs.exponent - lshift as isize)
+            // In this case, the actual significand of rhs doesn't matter,
+            // we can just replace it with 1 for correct rounding
+            let low_prec = if ldigits >= rnd_precision {
+                2
             } else {
-                // otherwise directly shift lhs to required position
-                /* Before:
-                 * lhs: |==========|
-                 * rhs:       |==============|
-                 *                 |< ediff >|
-                 *      |<------ precision ------>|
-                 *
-                 * After:
-                 * lhs: |==========0000000000|
-                 * rhs:       |==============|
-                 */
-                shl_digits_in_place::<B>(&mut lhs.significand, ediff);
-                low = (IBig::ZERO, 0);
-                match rhs_sign {
-                    Positive => (lhs.significand + &rhs.significand, rhs.exponent),
-                    Negative => (lhs.significand - &rhs.significand, rhs.exponent),
-                }
-            };
+                (rnd_precision - ldigits) + 1
+            }; // low_prec >= 2
+            low = (rhs_sign * rhs.significand.signum(), low_prec);
+            (lhs.significand, lhs.exponent)
+        } else if self.limited() && ldigits >= self.precision {
+            // if the lhs already exceeds the desired precision, just align rhs
+            /* Before:
+             * lhs: |==============|
+             * rhs:      |==============|
+             *              ediff  |<-->|
+             *    precision  |<--->|
+             *
+             * After:
+             * lhs: |==============|
+             * rhs:      |=========|xxxx|
+             */
+            let (rhs_signif, r) = split_digits_ref::<B>(&rhs.significand, ediff);
+            low = (rhs_sign * r, ediff);
+            (lhs.significand + rhs_sign * rhs_signif, lhs.exponent)
+        } else if self.limited() && ediff + ldigits > self.precision {
+            // if the shifted lhs exceeds the desired precision, align lhs and rhs to precision
+            /* Before:
+             * lhs: |=========|
+             * rhs:      |==============|
+             *                |< ediff >|
+             *      |< precision >|
+             *
+             * After:
+             * lhs: |=========0000|
+             * rhs:      |========|xxxxx|
+             *        lshift  |<->|
+             *            rshift  |<--->|
+             */
+            let lshift = self.precision - ldigits;
+            let rshift = ediff - lshift;
+            let (rhs_signif, r) = split_digits_ref::<B>(&rhs.significand, rshift);
+            shl_digits_in_place::<B>(&mut lhs.significand, lshift);
+
+            low = (rhs_sign * r, rshift);
+            (lhs.significand + rhs_sign * rhs_signif, lhs.exponent - lshift as isize)
+        } else {
+            // otherwise directly shift lhs to required position
+            /* Before:
+             * lhs: |==========|
+             * rhs:       |==============|
+             *                 |< ediff >|
+             *      |<------ precision ------>|
+             *
+             * After:
+             * lhs: |==========0000000000|
+             * rhs:       |==============|
+             */
+            shl_digits_in_place::<B>(&mut lhs.significand, ediff);
+            low = (IBig::ZERO, 0);
+            match rhs_sign {
+                Positive => (lhs.significand + &rhs.significand, rhs.exponent),
+                Negative => (lhs.significand - &rhs.significand, rhs.exponent),
+            }
+        };
 
         self.repr_round_sum(significand, exponent, low, is_sub)
     }
@@ -403,48 +405,46 @@ impl<R: Round> Context<R> {
 
         // align the exponent
         let low: (IBig, usize);
-        let (significand, exponent) =
-            if self.limited() && ldigits_est + 1 < ediff && ldigits_est + 1 + rnd_precision < rdigits + ediff {
-                // if lhs is much smaller than rhs, direct round on the lhs
-                let low_prec = if rdigits >= rnd_precision {
-                    2
-                } else {
-                    (rnd_precision - rdigits) + 1
-                };
-                low = (lhs.significand.signum(), low_prec);
-                (rhs_sign * rhs.significand.clone(), rhs.exponent)
-            } else if self.limited() && rdigits >= self.precision {
-                // if the rhs already exceeds the desired precision, just align lhs
-                let (lhs_signif, r) = split_digits::<B>(lhs.significand, ediff);
-                low = (r, ediff);
-                match rhs_sign {
-                    Positive => (lhs_signif + &rhs.significand, rhs.exponent),
-                    Negative => (lhs_signif - &rhs.significand, rhs.exponent),
-                }
-            } else if self.limited() && ediff + rdigits > self.precision {
-                // if the shifted rhs exceeds the desired precision, align lhs and rhs to precision
-                let lshift = self.precision - rdigits;
-                let rshift = ediff - lshift;
-                let (lhs_signif, r) = split_digits::<B>(lhs.significand, rshift);
-                let rhs_signif = shl_digits::<B>(&rhs.significand, lshift);
-
-                low = (r, rshift);
-                (rhs_sign * rhs_signif + lhs_signif, rhs.exponent - lshift as isize)
+        let (significand, exponent) = if self.limited()
+            && ldigits_est + 1 < ediff
+            && ldigits_est + 1 + rnd_precision < rdigits + ediff
+        {
+            // if lhs is much smaller than rhs, direct round on the lhs
+            let low_prec = if rdigits >= rnd_precision {
+                2
             } else {
-                // otherwise directly shift rhs to required position
-                let rhs_signif = shl_digits::<B>(&rhs.significand, ediff);
-                low = (IBig::ZERO, 0);
-                (rhs_sign * rhs_signif + lhs.significand, lhs.exponent)
+                (rnd_precision - rdigits) + 1
             };
+            low = (lhs.significand.signum(), low_prec);
+            (rhs_sign * rhs.significand.clone(), rhs.exponent)
+        } else if self.limited() && rdigits >= self.precision {
+            // if the rhs already exceeds the desired precision, just align lhs
+            let (lhs_signif, r) = split_digits::<B>(lhs.significand, ediff);
+            low = (r, ediff);
+            match rhs_sign {
+                Positive => (lhs_signif + &rhs.significand, rhs.exponent),
+                Negative => (lhs_signif - &rhs.significand, rhs.exponent),
+            }
+        } else if self.limited() && ediff + rdigits > self.precision {
+            // if the shifted rhs exceeds the desired precision, align lhs and rhs to precision
+            let lshift = self.precision - rdigits;
+            let rshift = ediff - lshift;
+            let (lhs_signif, r) = split_digits::<B>(lhs.significand, rshift);
+            let rhs_signif = shl_digits::<B>(&rhs.significand, lshift);
+
+            low = (r, rshift);
+            (rhs_sign * rhs_signif + lhs_signif, rhs.exponent - lshift as isize)
+        } else {
+            // otherwise directly shift rhs to required position
+            let rhs_signif = shl_digits::<B>(&rhs.significand, ediff);
+            low = (IBig::ZERO, 0);
+            (rhs_sign * rhs_signif + lhs.significand, lhs.exponent)
+        };
 
         self.repr_round_sum(significand, exponent, low, is_sub)
     }
 
-    pub fn add<const B: Word>(
-        &self,
-        lhs: &Repr<B>,
-        rhs: &Repr<B>,
-    ) -> Rounded<FBig<R, B>> {
+    pub fn add<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Rounded<FBig<R, B>> {
         check_inf_operands(lhs, rhs);
 
         let sum = if lhs.is_zero() {
@@ -453,24 +453,17 @@ impl<R: Round> Context<R> {
             self.repr_round_ref(&lhs)
         } else {
             match lhs.exponent.cmp(&rhs.exponent) {
-                Ordering::Equal => self.repr_round(Repr::new(
-                    &lhs.significand + &rhs.significand,
-                    lhs.exponent,
-                )),
-                Ordering::Greater => {
-                    self.repr_add_large_small(lhs.clone(), &rhs, Positive)
+                Ordering::Equal => {
+                    self.repr_round(Repr::new(&lhs.significand + &rhs.significand, lhs.exponent))
                 }
+                Ordering::Greater => self.repr_add_large_small(lhs.clone(), &rhs, Positive),
                 Ordering::Less => self.repr_add_small_large(lhs.clone(), &rhs, Positive),
             }
         };
         sum.map(|v| FBig::new(v, *self))
     }
 
-    pub fn sub<const B: Word>(
-        &self,
-        lhs: &Repr<B>,
-        rhs: &Repr<B>,
-    ) -> Rounded<FBig<R, B>> {
+    pub fn sub<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Rounded<FBig<R, B>> {
         check_inf_operands(lhs, rhs);
 
         let sum = if lhs.is_zero() {
@@ -479,13 +472,10 @@ impl<R: Round> Context<R> {
             self.repr_round_ref(&lhs)
         } else {
             match lhs.exponent.cmp(&rhs.exponent) {
-                Ordering::Equal => self.repr_round(Repr::new(
-                    &lhs.significand - &rhs.significand,
-                    lhs.exponent,
-                )),
-                Ordering::Greater => {
-                    self.repr_add_large_small(lhs.clone(), &rhs, Negative)
+                Ordering::Equal => {
+                    self.repr_round(Repr::new(&lhs.significand - &rhs.significand, lhs.exponent))
                 }
+                Ordering::Greater => self.repr_add_large_small(lhs.clone(), &rhs, Negative),
                 Ordering::Less => self.repr_add_small_large(lhs.clone(), &rhs, Negative),
             }
         };

@@ -5,7 +5,7 @@ use crate::{
     primitive::{double_word, split_dword},
 };
 
-pub fn square<'a>(b: &mut [Word], a: &'a [Word]) {
+pub fn square(b: &mut [Word], a: &[Word]) {
     debug_assert!(b.len() == a.len() * 2);
 
     /*
@@ -33,7 +33,7 @@ pub fn square<'a>(b: &mut [Word], a: &'a [Word]) {
     while let Some((m, new_cur)) = a_cur.split_first() {
         a_cur = new_cur;
         let carry =
-            mul::add_mul_word_same_len_in_place(&mut b[offset..offset + a_cur.len()], *m, &a_cur);
+            mul::add_mul_word_same_len_in_place(&mut b[offset..offset + a_cur.len()], *m, a_cur);
         let b_top = &mut b[offset + a_cur.len()];
         let (new_top, carry_next) = arch::add::add_with_carry(*b_top, carry, c0);
         *b_top = new_top;

@@ -1,4 +1,4 @@
-use crate::{fbig::FBig, repr::Word, round::Round, error::check_inf};
+use crate::{error::check_inf, fbig::FBig, repr::Word, round::Round};
 use core::ops::{Shl, ShlAssign, Shr, ShrAssign};
 
 impl<R: Round, const B: Word> Shl<isize> for FBig<R, B> {
@@ -7,7 +7,7 @@ impl<R: Round, const B: Word> Shl<isize> for FBig<R, B> {
     fn shl(mut self, rhs: isize) -> Self::Output {
         check_inf(&self.repr);
         if !self.repr.is_zero() {
-            self.repr.exponent += rhs;            
+            self.repr.exponent += rhs;
         }
         self
     }

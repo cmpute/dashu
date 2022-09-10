@@ -63,10 +63,10 @@ impl DoubleEnd<'_> {
                         0 => 0,
                         _ => prepared.width(),
                     };
-                    return self.format_prepared(f, digits, &mut prepared, None);
+                    self.format_prepared(f, digits, &mut prepared, None)
                 } else {
                     let mut prepared = PreparedDword::new(dword, 10);
-                    return self.format_prepared(f, prepared.width(), &mut prepared, None);
+                    self.format_prepared(f, prepared.width(), &mut prepared, None)
                 }
             }
             RefLarge(words) => {
@@ -102,12 +102,12 @@ impl DoubleEnd<'_> {
                 let mut prepared_high =
                     PreparedWord::new(high_digits, 10, radix::RADIX10_INFO.digits_per_word);
 
-                return self.format_prepared(
+                self.format_prepared(
                     f,
                     exp as usize + 1,
                     &mut prepared_high,
                     Some(&mut prepared_low),
-                );
+                )
             }
         }
     }

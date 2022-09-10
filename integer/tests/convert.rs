@@ -202,21 +202,42 @@ fn test_to_f32() {
 
     for i in 10..80 {
         assert_eq!((ubig!(0xfff3330) << i).to_f32(), Exact((0xfff3330 as f32) * (i as f32).exp2()));
-        assert_eq!((ubig!(0xfff3331) << i).to_f32(), Inexact((0xfff3330 as f32) * (i as f32).exp2(), Negative));
-        assert_eq!((ubig!(0xfff3337) << i).to_f32(), Inexact((0xfff3330 as f32) * (i as f32).exp2(), Negative));
-        assert_eq!((ubig!(0xfff3338) << i).to_f32(), Inexact((0xfff3340 as f32) * (i as f32).exp2(), Positive));
+        assert_eq!(
+            (ubig!(0xfff3331) << i).to_f32(),
+            Inexact((0xfff3330 as f32) * (i as f32).exp2(), Negative)
+        );
+        assert_eq!(
+            (ubig!(0xfff3337) << i).to_f32(),
+            Inexact((0xfff3330 as f32) * (i as f32).exp2(), Negative)
+        );
+        assert_eq!(
+            (ubig!(0xfff3338) << i).to_f32(),
+            Inexact((0xfff3340 as f32) * (i as f32).exp2(), Positive)
+        );
         assert_eq!(
             ((ubig!(0xfff3338) << i) + ubig!(1)).to_f32(),
             Inexact((0xfff3340 as f32) * (i as f32).exp2(), Positive)
         );
-        assert_eq!((ubig!(0xfff3339) << i).to_f32(), Inexact((0xfff3340 as f32) * (i as f32).exp2(), Positive));
-        assert_eq!((ubig!(0xfff3347) << i).to_f32(), Inexact((0xfff3340 as f32) * (i as f32).exp2(), Negative));
-        assert_eq!((ubig!(0xfff3348) << i).to_f32(), Inexact((0xfff3340 as f32) * (i as f32).exp2(), Negative));
+        assert_eq!(
+            (ubig!(0xfff3339) << i).to_f32(),
+            Inexact((0xfff3340 as f32) * (i as f32).exp2(), Positive)
+        );
+        assert_eq!(
+            (ubig!(0xfff3347) << i).to_f32(),
+            Inexact((0xfff3340 as f32) * (i as f32).exp2(), Negative)
+        );
+        assert_eq!(
+            (ubig!(0xfff3348) << i).to_f32(),
+            Inexact((0xfff3340 as f32) * (i as f32).exp2(), Negative)
+        );
         assert_eq!(
             ((ubig!(0xfff3348) << i) + ubig!(1)).to_f32(),
             Inexact((0xfff3350 as f32) * (i as f32).exp2(), Positive)
         );
-        assert_eq!((ubig!(0xfff3349) << i).to_f32(), Inexact((0xfff3350 as f32) * (i as f32).exp2(), Positive));
+        assert_eq!(
+            (ubig!(0xfff3349) << i).to_f32(),
+            Inexact((0xfff3350 as f32) * (i as f32).exp2(), Positive)
+        );
     }
 
     assert!((ubig!(0xffffff7) << 100).to_f32().value() < f32::INFINITY);
@@ -296,5 +317,8 @@ fn test_to_f64() {
     assert_eq!(ibig!(7).to_f64(), Exact(7.0f64));
     assert_eq!(ibig!(-7).to_f64(), Exact(-7.0f64));
     assert!((ibig!(-0x1fffffffffffff7) << 967).to_f64().value() > -f64::INFINITY);
-    assert_eq!((ibig!(-0x1fffffffffffff8) << 967).to_f64(), Inexact(f64::NEG_INFINITY, Negative));
+    assert_eq!(
+        (ibig!(-0x1fffffffffffff8) << 967).to_f64(),
+        Inexact(f64::NEG_INFINITY, Negative)
+    );
 }

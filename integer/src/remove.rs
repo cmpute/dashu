@@ -1,11 +1,11 @@
-use alloc::vec::Vec;
+use alloc::vec;
+use crate::ubig::UBig;
 use dashu_base::{DivRem, PowerOfTwo};
-use crate::{ubig::UBig};
 
 impl UBig {
     /// Divide out all multiples of the factor from the integer,
     /// returns the exponent of the removed factor.
-    /// 
+    ///
     /// For self = 0 or factor = 0 or 1, this method returns None.
     pub fn remove(&mut self, factor: &UBig) -> Option<usize> {
         if self.is_zero() || factor.is_zero() || factor.is_one() {
@@ -27,8 +27,7 @@ impl UBig {
 
         // first stage, division with exponentially growing factors
         let mut exp = 1;
-        let mut pows = Vec::new();
-        pows.push(factor.square());
+        let mut pows = vec![factor.square()];
         loop {
             let last = pows.last().unwrap();
             let (new_q, r) = (&q).div_rem(last);

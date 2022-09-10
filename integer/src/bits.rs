@@ -447,7 +447,7 @@ mod repr {
         } else {
             buffer.truncate(n_words);
             if let Some(last) = buffer.last_mut() {
-                *last = *last & ones_word((n % WORD_BITS_USIZE) as u32);
+                *last &= ones_word((n % WORD_BITS_USIZE) as u32);
             }
             Repr::from_buffer(buffer)
         }

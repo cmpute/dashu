@@ -45,7 +45,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Literal `aaa` and `cc` above can be signed, but `bbb` must be unsigned.
     /// All `cc` are represented in decimal. Either `aaa` or `bbb` can be omitted
     /// when its value is zero, but they are not allowed to be omitted at the same time.
-    /// 
+    ///
     /// This function is the actual implementation of the [FromStr] trait.
     ///
     /// # Panics

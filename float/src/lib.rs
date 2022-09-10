@@ -21,7 +21,7 @@ mod sign;
 mod utils;
 
 pub use fbig::FBig;
-pub use repr::{Repr, Context};
+pub use repr::{Context, Repr};
 
 /// Multi-precision float number with decimal exponent and [HalfAway][round::mode::HalfAway] rounding mode
 pub type DBig = FBig<round::mode::HalfAway, 10>;

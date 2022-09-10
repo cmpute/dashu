@@ -85,7 +85,11 @@ fn test_add_binary() {
         test_sub(c, b, a);
 
         let context = Context::max(a.context(), b.context());
-        match (context.add(a.repr(), b.repr()), context.sub(c.repr(), a.repr()), context.sub(c.repr(), b.repr())) {
+        match (
+            context.add(a.repr(), b.repr()),
+            context.sub(c.repr(), a.repr()),
+            context.sub(c.repr(), b.repr()),
+        ) {
             (Exact(vc), Exact(vb), Exact(va)) => {
                 assert_eq!(va, *a);
                 assert_eq!(vb, *b);
@@ -138,7 +142,11 @@ fn test_add_decimal() {
         test_sub(c, b, a);
 
         let context = Context::max(a.context(), b.context());
-        match (context.add(a.repr(), b.repr()), context.sub(c.repr(), a.repr()), context.sub(c.repr(), b.repr())) {
+        match (
+            context.add(a.repr(), b.repr()),
+            context.sub(c.repr(), a.repr()),
+            context.sub(c.repr(), b.repr()),
+        ) {
             (Exact(vc), Exact(vb), Exact(va)) => {
                 assert_eq!(va, *a);
                 assert_eq!(vb, *b);
@@ -284,7 +292,7 @@ fn test_add_sub_unlimited_precision() {
     test_add(&a, &a, &dbig!(19998));
     test_add(&a, &b, &dbig!(0));
     test_add(&b, &b, &dbig!(-19998));
-    
+
     let a = fbig!(0x1p16).with_precision(0).value();
     let b = fbig!(0x1p-16).with_precision(0).value();
     test_add(&a, &fbig!(0x1p-16), &a);

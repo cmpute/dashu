@@ -46,9 +46,9 @@ pub enum Rounding {
 }
 
 /// A type representing float operation result
-/// 
+///
 /// If the operation result is inexact, the adjustment from the final rounding
-/// will be returned along with the result. 
+/// will be returned along with the result.
 pub type Rounded<T> = Approximation<T, Rounding>;
 
 /// A trait describing the rounding strategy
