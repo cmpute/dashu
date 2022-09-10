@@ -184,7 +184,7 @@ impl<R: Round> Context<R> {
             (s, x_scaled)
         };
 
-        if s < 0 || x_scaled.sign() == Sign::Negative {
+        if s < 0 || x_scaled.repr.sign() == Sign::Negative {
             // when s or x_scaled is negative, the final addition is actually a subtraction,
             // therefore we need to double the precision to get the correct result
             work_precision += self.precision;

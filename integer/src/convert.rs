@@ -11,6 +11,7 @@ use crate::{
     Sign::*,
 };
 use alloc::vec::Vec;
+use dashu_base::{Approximation::{self, *}, Sign};
 use core::convert::{TryFrom, TryInto};
 
 impl Default for UBig {
@@ -162,35 +163,37 @@ impl UBig {
         }
     }
 
-    // TODO(v0.2): return an Approximation struct, with the error being the Sign of result - value
-
     /// Convert to f32.
     ///
-    /// Round to nearest, breaking ties to even last bit.
+    /// Round to nearest, breaking ties to even last bit. The returned approximation
+    /// is exact if the integer is exactly representable by f32, otherwise the error
+    /// field of the approximation contains the sign of `result - self`.
     ///
     /// # Examples
     ///
     /// ```
     /// # use dashu_int::UBig;
-    /// assert_eq!(UBig::from(134u8).to_f32(), 134.0f32);
+    /// assert_eq!(UBig::from(134u8).to_f32().value(), 134.0f32);
     /// ```
     #[inline]
-    pub fn to_f32(&self) -> f32 {
+    pub fn to_f32(&self) -> Approximation<f32, Sign> {
         self.repr().to_f32()
     }
 
     /// Convert to f64.
     ///
-    /// Round to nearest, breaking ties to even last bit.
+    /// Round to nearest, breaking ties to even last bit. The returned approximation
+    /// is exact if the integer is exactly representable by f64, otherwise the error
+    /// field of the approximation contains the sign of `result - self`.
     ///
     /// # Examples
     ///
     /// ```
     /// # use dashu_int::UBig;
-    /// assert_eq!(UBig::from(134u8).to_f64(), 134.0f64);
+    /// assert_eq!(UBig::from(134u8).to_f64().value(), 134.0f64);
     /// ```
     #[inline]
-    pub fn to_f64(&self) -> f64 {
+    pub fn to_f64(&self) -> Approximation<f64, Sign> {
         self.repr().to_f64()
     }
 }
@@ -198,50 +201,45 @@ impl UBig {
 impl IBig {
     /// Convert to f32.
     ///
-    /// Round to nearest, breaking ties to even last bit.
+    /// Round to nearest, breaking ties to even last bit. The returned approximation
+    /// is exact if the integer is exactly representable by f32, otherwise the error
+    /// field of the approximation contains the sign of `result - self`.
     ///
     /// # Examples
     ///
     /// ```
     /// # use dashu_int::IBig;
-    /// assert_eq!(IBig::from(-134).to_f32(), -134.0f32);
+    /// assert_eq!(IBig::from(-134).to_f32().value(), -134.0f32);
     /// ```
     #[inline]
-    pub fn to_f32(&self) -> f32 {
+    pub fn to_f32(&self) -> Approximation<f32, Sign> {
         let (sign, mag) = self.as_sign_repr();
-        let val = mag.to_f32();
-        match sign {
-            Positive => val,
-            Negative => -val,
+        match mag.to_f32() {
+            Exact(val) => Exact(sign * val),
+            Inexact(val, diff) => Inexact(sign * val, sign * diff)
         }
     }
 
     /// Convert to f64.
     ///
-    /// Round to nearest, breaking ties to even last bit.
+    /// Round to nearest, breaking ties to even last bit. The returned approximation
+    /// is exact if the integer is exactly representable by f64, otherwise the error
+    /// field of the approximation contains the sign of `result - self`.
     ///
     /// # Examples
     ///
     /// ```
     /// # use dashu_int::IBig;
-    /// assert_eq!(IBig::from(-134).to_f64(), -134.0f64);
+    /// assert_eq!(IBig::from(-134).to_f64().value(), -134.0f64);
     /// ```
     #[inline]
-    pub fn to_f64(&self) -> f64 {
+    pub fn to_f64(&self) -> Approximation<f64, Sign> {
         let (sign, mag) = self.as_sign_repr();
-        let val = mag.to_f64();
-        match sign {
-            Positive => val,
-            Negative => -val,
+        match mag.to_f64() {
+            Exact(val) => Exact(sign * val),
+            Inexact(val, diff) => Inexact(sign * val, sign * diff)
         }
     }
-}
-
-/// Round to even floating point adjustment, based on the bottom
-/// bit of mantissa and additional 2 bits (i.e. 3 bits in units of ULP/4).
-#[inline]
-fn round_to_even_adjustment(bits: u32) -> bool {
-    bits >= 0b110 || bits == 0b011
 }
 
 macro_rules! ubig_unsigned_conversions {
@@ -531,8 +529,12 @@ impl IBig {
 }
 
 mod repr {
+    use core::cmp::Ordering;
+
+    use static_assertions::const_assert;
+
     use super::*;
-    use crate::repr::TypedReprRef;
+    use crate::{repr::TypedReprRef, arch::word::DoubleWord};
 
     impl<'a> TypedReprRef<'a> {
         #[inline]
@@ -547,25 +549,24 @@ mod repr {
         }
 
         #[inline]
-        pub fn to_f32(self) -> f32 {
+        pub fn to_f32(self) -> Approximation<f32, Sign> {
             match self {
-                RefSmall(dword) => dword as f32,
-                RefLarge(_) => match self.try_to_unsigned::<u32>() {
-                    Ok(val) => val as f32,
+                RefSmall(dword) => to_f32_small(dword as u128),
+                RefLarge(_) => match self.try_to_unsigned::<u128>() {
+                    Ok(val) => to_f32_small(val as u128),
                     Err(_) => self.to_f32_nontrivial(),
                 },
             }
         }
 
-        fn to_f32_nontrivial(self) -> f32 {
+        fn to_f32_nontrivial(self) -> Approximation<f32, Sign> {
             let n = self.bit_len();
             debug_assert!(n > 32);
 
             if n > 128 {
-                f32::INFINITY
+                Inexact(f32::INFINITY, Positive)
             } else {
                 let exponent = (n - 1) as u32;
-                debug_assert!((32..128).contains(&exponent));
                 let mantissa25: u32 = (self >> (n - 25)).as_typed().try_to_unsigned().unwrap();
                 let mantissa = mantissa25 >> 1;
 
@@ -576,37 +577,42 @@ mod repr {
                 let extra_bit = self.are_low_bits_nonzero(n - 25);
                 // low bit of mantissa and two extra bits
                 let low_bits = ((mantissa25 & 0b11) << 1) | u32::from(extra_bit);
-                let adjustment = round_to_even_adjustment(low_bits);
 
-                // If adjustment is true, increase the mantissa.
-                // If the mantissa overflows, this correctly increases the exponent and
-                // sets the mantissa to 0.
-                // If the exponent overflows, we correctly get the representation of infinity.
-                let value = value + u32::from(adjustment);
-                f32::from_bits(value)
+                if low_bits & 0b11 == 0 {
+                    // If two extra bits are all zeros, then the float is exact
+                    Exact(f32::from_bits(value))
+                } else {
+                    // If adjustment is true, increase the mantissa.
+                    // If the mantissa overflows, this correctly increases the exponent and sets the mantissa to 0.
+                    // If the exponent overflows, we correctly get the representation of infinity.
+                    if round_to_even_adjustment(low_bits) {
+                        Inexact(f32::from_bits(value + 1), Positive)
+                    } else {
+                        Inexact(f32::from_bits(value), Negative)
+                    }
+                }
             }
         }
 
         #[inline]
-        pub fn to_f64(self) -> f64 {
+        pub fn to_f64(self) -> Approximation<f64, Sign> {
             match self {
-                RefSmall(dword) => dword as f64,
-                RefLarge(_) => match self.try_to_unsigned::<u64>() {
-                    Ok(val) => val as f64,
+                RefSmall(dword) => to_f64_small(dword as u128),
+                RefLarge(_) => match self.try_to_unsigned::<u128>() {
+                    Ok(val) => to_f64_small(val as u128),
                     Err(_) => self.to_f64_nontrivial(),
                 },
             }
         }
 
-        fn to_f64_nontrivial(self) -> f64 {
+        fn to_f64_nontrivial(self) -> Approximation<f64, Sign> {
             let n = self.bit_len();
             debug_assert!(n > 64);
 
             if n > 1024 {
-                f64::INFINITY
+                Inexact(f64::INFINITY, Positive)
             } else {
                 let exponent = (n - 1) as u64;
-                debug_assert!((64..1024).contains(&exponent));
                 let mantissa54: u64 = (self >> (n - 54)).as_typed().try_to_unsigned().unwrap();
                 let mantissa = mantissa54 >> 1;
 
@@ -617,15 +623,54 @@ mod repr {
                 let extra_bit = self.are_low_bits_nonzero(n - 54);
                 // low bit of mantissa and two extra bits
                 let low_bits = (((mantissa54 & 0b11) as u32) << 1) | u32::from(extra_bit);
-                let adjustment = round_to_even_adjustment(low_bits);
 
-                // If adjustment is true, increase the mantissa.
-                // If the mantissa overflows, this correctly increases the exponent and
-                // sets the mantissa to 0.
-                // If the exponent overflows, we correctly get the representation of infinity.
-                let value = value + u64::from(adjustment);
-                f64::from_bits(value)
+                if low_bits & 0b11 == 0 {
+                    // If two extra bits are all zeros, then the float is exact
+                    Exact(f64::from_bits(value))
+                } else {
+                    // If adjustment is true, increase the mantissa.
+                    // If the mantissa overflows, this correctly increases the exponent and sets the mantissa to 0.
+                    // If the exponent overflows, we correctly get the representation of infinity.
+                    if round_to_even_adjustment(low_bits) {
+                        Inexact(f64::from_bits(value + 1), Positive)
+                    } else {
+                        Inexact(f64::from_bits(value), Negative)
+                    }
+                }
             }
         }
+    }
+
+    fn to_f32_small(dword: u128) -> Approximation<f32, Sign> {
+        let f = dword as f32;
+        if f.is_infinite() {
+            return Inexact(f, Sign::Positive)
+        }
+
+        let back = f as u128;
+        match back.partial_cmp(&dword).unwrap() {
+            Ordering::Greater => Inexact(f, Sign::Positive),
+            Ordering::Equal => Exact(f),
+            Ordering::Less => Inexact(f, Sign::Negative),
+        }
+    }
+
+    fn to_f64_small(dword: u128) -> Approximation<f64, Sign> {
+        const_assert!((u128::MAX as f64) < f64::MAX);
+        let f = dword as f64;
+        let back = f as DoubleWord;
+
+        match back.partial_cmp(&dword).unwrap() {
+            Ordering::Greater => Inexact(f, Sign::Positive),
+            Ordering::Equal => Exact(f),
+            Ordering::Less => Inexact(f, Sign::Negative),
+        }
+    }
+
+    /// Round to even floating point adjustment, based on the bottom
+    /// bit of mantissa and additional 2 bits (i.e. 3 bits in units of ULP/4).
+    #[inline]
+    fn round_to_even_adjustment(bits: u32) -> bool {
+        bits >= 0b110 || bits == 0b011
     }
 }

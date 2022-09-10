@@ -10,7 +10,7 @@ fn panic_fbig_syntax() -> ! {
     panic!("Incorrect syntax, please refer to the docs for acceptable float literal formats.")
 }
 
-// XXX: support arbitrary base?
+// TODO(next): support arbitrary base?
 pub fn parse_binary_float(input: TokenStream) -> TokenStream {
     let mut value_str = String::new();
     input

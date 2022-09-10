@@ -133,3 +133,33 @@ impl Ord for Sign {
         }
     }
 }
+
+macro_rules! impl_mul_sign_for_primitives {
+    ($($t:ty)*) => {$(
+        impl Mul<$t> for Sign {
+            type Output = $t;
+        
+            #[inline]
+            fn mul(self, rhs: $t) -> Self::Output {
+                match self {
+                    Positive => rhs,
+                    Negative => -rhs
+                }
+            }
+        }
+
+        impl Mul<Sign> for $t {
+            type Output = $t;
+
+            #[inline]
+            fn mul(self, rhs: Sign) -> Self::Output {
+                match rhs {
+                    Positive => self,
+                    Negative => -self
+                }
+            }
+        }
+    )*};
+}
+
+impl_mul_sign_for_primitives!(i8 i16 i32 i64 i128 isize f32 f64);

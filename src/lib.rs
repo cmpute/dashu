@@ -11,3 +11,6 @@ pub type Natural = dashu_int::UBig;
 
 /// A verbose alias for [IBig][dashu_int::IBig]
 pub type Integer = dashu_int::IBig;
+
+// TODO: explain that all crates under dashu will have the same major and minor version.
+// TODO: add float

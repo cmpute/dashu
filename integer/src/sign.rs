@@ -8,50 +8,6 @@ use crate::{
 use core::ops::{Mul, MulAssign, Neg};
 use dashu_base::Sign;
 
-// // TODO(next): move sign to dashu_base
-// /// An enum representing the sign of a number
-// #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-// #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-// pub enum Sign {
-//     Positive,
-//     Negative,
-// }
-
-// use Sign::*;
-
-// impl Neg for Sign {
-//     type Output = Sign;
-
-//     #[inline]
-//     fn neg(self) -> Sign {
-//         match self {
-//             Positive => Negative,
-//             Negative => Positive,
-//         }
-//     }
-// }
-
-// impl Mul<Sign> for Sign {
-//     type Output = Sign;
-
-//     #[inline]
-//     fn mul(self, rhs: Sign) -> Sign {
-//         match (self, rhs) {
-//             (Positive, Positive) => Positive,
-//             (Positive, Negative) => Negative,
-//             (Negative, Positive) => Negative,
-//             (Negative, Negative) => Positive,
-//         }
-//     }
-// }
-
-// impl MulAssign<Sign> for Sign {
-//     #[inline]
-//     fn mul_assign(&mut self, rhs: Sign) {
-//         *self = *self * rhs;
-//     }
-// }
-
 impl IBig {
     /// A number representing the sign of `self`.
     ///

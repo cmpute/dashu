@@ -1,7 +1,7 @@
 use dashu_int::{IBig, UBig};
 
 use crate::{
-    error::{check_inf_operands, panic_operate_with_inf},
+    error::{check_inf_operands, check_inf},
     fbig::FBig,
     helper_macros,
     repr::{Context, Repr, Word},
@@ -134,9 +134,7 @@ impl<R: Round> Context<R> {
     }
 
     pub fn square<_R: Round, const B: Word>(&self, f: &FBig<_R, B>) -> Rounded<FBig<R, B>> {
-        if f.repr.is_infinite() {
-            panic_operate_with_inf();
-        }
+        check_inf(&f.repr);
 
         // shrink the input operands if necessary
         let max_precision = if self.limited() {

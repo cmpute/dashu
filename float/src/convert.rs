@@ -1,12 +1,12 @@
-use core::convert::TryInto;
+use core::convert::{TryInto, TryFrom};
 
 use crate::{
     fbig::FBig,
     repr::{Context, Repr},
-    round::{Round, Rounded, mode}, utils::{shr_digits, split_digits_ref, ilog_exact}, error::panic_operate_with_inf,
+    round::{Round, Rounded, mode::{self, HalfEven}, Rounding}, utils::{shr_digits, split_digits_ref, ilog_exact}, error::check_inf,
 };
 use dashu_base::{Approximation::*, DivRemEuclid, EstimatedLog2};
-use dashu_int::{IBig, UBig, Word};
+use dashu_int::{IBig, UBig, Word, error::OutOfBoundsError};
 
 impl<R: Round> Context<R> {
     /// Convert an [IBig] instance to a [FBig] instance with precision
@@ -17,43 +17,71 @@ impl<R: Round> Context<R> {
     }
 }
 
-// TODO: make conversion from f32/f64 TryFrom, we need to correctly deal with nan and subnormals
-impl<R: Round> From<f32> for FBig<R, 2> {
-    fn from(f: f32) -> Self {
+impl<R: Round> TryFrom<f32> for FBig<R, 2> {
+    type Error = OutOfBoundsError;
+
+    fn try_from(f: f32) -> Result<Self, Self::Error> {
         let bits: u32 = f.to_bits();
+        let sign_bit = bits >> 31;
+        let mantissa_bits = bits & 0x7fffff;
 
+        // deal with inf/nan values
         let mut exponent: isize = ((bits >> 23) & 0xff) as isize;
-        exponent -= 127 + 23; // bias + mantissa shift
+        if exponent == 0xff {
+            return if mantissa_bits != 0 {
+                Err(OutOfBoundsError) // nan
+            } else if sign_bit == 0 {
+                Ok(FBig::INFINITY)
+            } else {
+                Ok(FBig::NEG_INFINITY)
+            };
+        }
 
+        // then parse normal values
         let mantissa = if exponent == 0 {
-            (bits & 0x7fffff) << 1
+            exponent = -127;
+            mantissa_bits << 1
         } else {
-            (bits & 0x7fffff) | 0x800000
+            exponent -= 127 + 23; // bias + mantissa shift
+            mantissa_bits | 0x800000
         } as i32;
-        let mantissa = if bits >> 31 == 0 {
+        let mantissa = if sign_bit == 0 {
             IBig::from(mantissa)
         } else {
             IBig::from(-mantissa)
         };
 
-        Self {
-            repr: Repr::new(mantissa, exponent),
-            context: Context::new(24),
-        }
+        let repr = Repr::new(mantissa, exponent);
+        let context = Context::new(24);
+        Ok(Self::new(repr, context))
     }
 }
 
-impl<R: Round> From<f64> for FBig<R, 2> {
-    fn from(f: f64) -> Self {
+impl<R: Round> TryFrom<f64> for FBig<R, 2> {
+    type Error = OutOfBoundsError;
+
+    fn try_from(f: f64) -> Result<Self, Self::Error> {
         let bits: u64 = f.to_bits();
+        let sign_bit = bits >> 63;
+        let mantissa_bits = bits & 0xfffffffffffff;
 
         let mut exponent: isize = ((bits >> 52) & 0x7ff) as isize;
-        exponent -= 1023 + 52; // bias + mantissa shift
+        if exponent == 0x7ff {
+            return if mantissa_bits != 0 {
+                Err(OutOfBoundsError) // nan
+            } else if sign_bit == 0 {
+                Ok(FBig::INFINITY)
+            } else {
+                Ok(FBig::NEG_INFINITY)
+            };
+        }
 
         let mantissa = if exponent == 0 {
-            (bits & 0xfffffffffffff) << 1
+            exponent = -1023;
+            mantissa_bits << 1
         } else {
-            (bits & 0xfffffffffffff) | 0x10000000000000
+            exponent -= 1023 + 52; // bias + mantissa shift
+            mantissa_bits | 0x10000000000000
         } as i64;
         let mantissa = if bits >> 63 == 0 {
             IBig::from(mantissa)
@@ -61,26 +89,9 @@ impl<R: Round> From<f64> for FBig<R, 2> {
             IBig::from(-mantissa)
         };
 
-        Self {
-            repr: Repr::new(mantissa, exponent),
-            context: Context::new(53),
-        }
-    }
-}
-
-impl<R: Round, const B: Word> From<IBig> for FBig<R, B> {
-    #[inline]
-    fn from(n: IBig) -> Self {
-        let repr = Repr::new(n, 0);
-        let context = Context::new(repr.digits());
-        Self::new(repr, context)
-    }
-}
-
-impl<R: Round, const B: Word> From<UBig> for FBig<R, B> {
-    #[inline]
-    fn from(n: UBig) -> Self {
-        IBig::from(n).into()
+        let repr = Repr::new(mantissa, exponent);
+        let context = Context::new(53);
+        Ok(Self::new(repr, context))
     }
 }
 
@@ -202,29 +213,21 @@ impl<R: Round, const B: Word> FBig<R, B> {
         }
     }
 
-    /// Convert the float number to native [f32] with the given rounding mode.
-    fn to_f32(&self) -> Option<Rounded<f32>> {
-        unimplemented!()
-    }
-
-    /// Convert the float number to native [f64] with the given rounding mode.
-    fn to_f64(&self) -> Option<Rounded<f64>> {
-        unimplemented!()
-    }
-
     /// Convert the float number to integer with the given rounding mode.
-    pub fn to_int(&self) -> Option<Rounded<IBig>> {
-        if self.repr.is_infinite() {
-            return None;
-        }
-        // TODO: check if self is too large, if so return None
+    /// 
+    /// Warning: If the float number has a very large exponent, it will be evaluated and result
+    /// in allocating an huge integer and it might eat up all your memory.
+    pub fn to_int(&self) -> Rounded<IBig> {
+        check_inf(&self.repr);
 
+        // shortcut when the number is already an integer
         if self.repr.exponent >= 0 {
-            return Some(Exact(&self.repr.significand * Repr::<B>::BASE.pow(self.repr.exponent as usize)));
+            return Exact(&self.repr.significand * Repr::<B>::BASE.pow(self.repr.exponent as usize));
         }
+
         let (hi, lo, precision) = self.split_at_point();
         let adjust = R::round_fract::<B>(&hi, lo, precision);
-        Some(Inexact(hi + adjust, adjust))
+        Inexact(hi + adjust, adjust)
     }
 
     /// Get the integral part of the float
@@ -232,9 +235,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Note: this function will adjust the precision accordingly!
     #[inline]
     pub fn trunc(&self) -> Self {
-        if self.repr.is_infinite() {
-            panic_operate_with_inf();
-        }
+        check_inf(&self.repr);
 
         let exponent = self.repr.exponent;
         if exponent >= 0 {
@@ -269,9 +270,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Note: this function will adjust the precision accordingly!
     #[inline]
     pub fn fract(&self) -> Self {
-        if self.repr.is_infinite() {
-            panic_operate_with_inf();
-        }
+        check_inf(&self.repr);
         if self.repr.exponent >= 0 {
             return Self::ZERO;
         }
@@ -283,9 +282,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
     #[inline]
     pub fn ceil(&self) -> Self {
-        if self.repr.is_infinite() {
-            panic_operate_with_inf();
-        }
+        check_inf(&self.repr);
         if self.repr.exponent >= 0 {
             return self.clone();
         }
@@ -298,9 +295,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
     #[inline]
     pub fn floor(&self) -> Self {
-        if self.repr.is_infinite() {
-            panic_operate_with_inf();
-        }
+        check_inf(&self.repr);
         if self.repr.exponent >= 0 {
             return self.clone();
         }
@@ -309,6 +304,52 @@ impl<R: Round, const B: Word> FBig<R, B> {
         let rounding = mode::Down::round_fract::<B>(&hi, lo, precision);
         let context = Context::new(self.precision() - precision);
         FBig::new(Repr::new(hi + rounding, 0), context)
+    }
+}
+
+impl<R: Round> FBig<R, 2> {
+    /// Convert the float number to [f32] with HalfEven rounding mode regardless of the mode associated with this number.
+    pub fn to_f32(&self) -> Rounded<f32> {
+        if self.repr.is_infinite() {
+            return Inexact(self.repr.sign() * f32::INFINITY, Rounding::NoOp);
+        } else if self > &Self::try_from(f32::MAX).unwrap() {
+            return Inexact(f32::INFINITY, Rounding::AddOne);
+        } else if self < &Self::try_from(f32::MIN).unwrap() {
+            return Inexact(f32::NEG_INFINITY, Rounding::SubOne);
+        }
+
+        let context = Context::<HalfEven>::new(24);
+        context.repr_round_ref(&self.repr).map(|v| v.significand.to_f32().value() * (v.exponent as f32).exp2())
+    }
+
+    /// Convert the float number to [f64] with HalfEven rounding mode regardless of the mode associated with this number.
+    pub fn to_f64(&self) -> Rounded<f64> {
+        if self.repr.is_infinite() {
+            return Inexact(self.repr.sign() * f64::INFINITY, Rounding::NoOp);
+        } else if self > &Self::try_from(f64::MAX).unwrap() {
+            return Inexact(f64::INFINITY, Rounding::AddOne);
+        } else if self < &Self::try_from(f64::MIN).unwrap() {
+            return Inexact(f64::NEG_INFINITY, Rounding::SubOne);
+        }
+
+        let context = Context::<HalfEven>::new(53);
+        context.repr_round_ref(&self.repr).map(|v| v.significand.to_f64().value() * (v.exponent as f64).exp2())
+    }
+}
+
+impl<R: Round, const B: Word> From<IBig> for FBig<R, B> {
+    #[inline]
+    fn from(n: IBig) -> Self {
+        let repr = Repr::new(n, 0);
+        let context = Context::new(repr.digits());
+        Self::new(repr, context)
+    }
+}
+
+impl<R: Round, const B: Word> From<UBig> for FBig<R, B> {
+    #[inline]
+    fn from(n: UBig) -> Self {
+        IBig::from(n).into()
     }
 }
 

@@ -29,7 +29,13 @@ use dashu_int::{DoubleWord, IBig};
 /// The infinities are represented as:
 /// * [Positive infinity][FloatRepr::INFINITY] (+∞): signficand = 0, exponent > 0
 /// * [Negative infinity][FloatRepr::NEG_INFINITY] (-∞): signficand = 0, exponenet < 0
-///
+/// 
+/// # Conversion between `f32`/`f64`
+/// 
+/// From: Infinities are mapped to infinities. `NAN` values are parsed as Err. Subnormal values are mapped as its actual values.
+/// To: Infinities are mapped to infinities, values beyond the representation range of f32 and f64 are converted to infinities.
+/// Values with the representation range of subnormals are converted to subnormals (based on the Rounding operation).
+/// 
 pub struct FBig<RoundingMode: Round = mode::Zero, const BASE: Word = 2> {
     pub(crate) repr: Repr<BASE>,
     pub(crate) context: Context<RoundingMode>,
@@ -70,19 +76,6 @@ impl<R: Round, const B: Word> FBig<R, B> {
     }
     pub const NEG_INFINITY: Self = Self::neg_inf();
 
-    #[inline]
-    pub const fn sign(&self) -> Sign {
-        if self.repr.significand.is_zero() {
-            if self.repr.exponent >= 0 {
-                Sign::Positive
-            } else {
-                Sign::Negative
-            }
-        } else {
-            self.repr.significand.sign()
-        }
-    }
-
     /// Get the maximum precision set for the float number.
     #[inline]
     pub const fn precision(&self) -> usize {
@@ -111,7 +104,6 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Panics if the significand is larger than `radix^usize::MAX`
     #[inline]
     pub fn from_parts(significand: IBig, exponent: isize) -> Self {
-        // TODO: check we are not using this function internally because we enforce normalized representation
         let repr = Repr::new(significand, exponent);
         let precision = repr.digits().max(1); // set precision to 1 if signficand is zero
         let context = Context::new(precision);

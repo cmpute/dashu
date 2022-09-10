@@ -122,7 +122,7 @@ impl<R: Round> Context<R> {
         let (s, n, r) = if no_scaling {
             // if minus_one is true and x is already small (x < 1/B),
             // then directly evaluate the Maclaurin series without scaling
-            if x.sign() == Sign::Negative {
+            if x.repr.sign() == Sign::Negative {
                 // extra digits are required to prevent cancellation during the summation
                 work_precision = self.precision + 2 * series_guard_digits;
             } else {
@@ -144,7 +144,7 @@ impl<R: Round> Context<R> {
             .with_rounding::<R>()
             .with_precision(work_precision)
             .value()
-            >> n;
+            >> n as isize;
         let mut factorial = IBig::ONE;
         let mut pow = r.clone();
         let mut sum = if no_scaling {

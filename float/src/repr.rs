@@ -3,7 +3,7 @@ use crate::{
     utils::{base_as_ibig, digit_len, split_digits, split_digits_ref},
 };
 use core::marker::PhantomData;
-use dashu_base::{Approximation::*, EstimatedLog2};
+use dashu_base::{Approximation::*, EstimatedLog2, Sign};
 use dashu_int::{IBig, UBig};
 pub use dashu_int::Word;
 
@@ -84,6 +84,19 @@ impl<const B: Word> Repr<B> {
     #[inline]
     pub const fn is_finite(&self) -> bool {
         !self.is_infinite()
+    }
+
+    #[inline]
+    pub const fn sign(&self) -> Sign {
+        if self.significand.is_zero() {
+            if self.exponent >= 0 {
+                Sign::Positive
+            } else {
+                Sign::Negative
+            }
+        } else {
+            self.significand.sign()
+        }
     }
 
     /// Normalize the float representation so that the significand is not divisible by the base.

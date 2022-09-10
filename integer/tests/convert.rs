@@ -1,3 +1,4 @@
+use dashu_base::{Approximation::*, Sign::*};
 use dashu_int::{error::OutOfBoundsError, IBig, UBig};
 use std::convert::TryFrom;
 
@@ -187,113 +188,113 @@ fn test_display_out_of_bounds_error() {
 #[test]
 #[allow(clippy::float_cmp)]
 fn test_to_f32() {
-    assert_eq!(ubig!(0).to_f32(), 0.0f32);
-    assert_eq!(ubig!(7).to_f32(), 7.0f32);
+    assert_eq!(ubig!(0).to_f32(), Exact(0.0f32));
+    assert_eq!(ubig!(7).to_f32(), Exact(7.0f32));
     // 2^24 - 1 is still exactly representable
-    assert_eq!(ubig!(0xffffff).to_f32(), 16777215.0f32);
-    assert_eq!(ubig!(0x1000000).to_f32(), 16777216.0f32);
+    assert_eq!(ubig!(0xffffff).to_f32(), Exact(16777215.0f32));
+    assert_eq!(ubig!(0x1000000).to_f32(), Exact(16777216.0f32));
     // Now round to even should begin.
-    assert_eq!(ubig!(0x1000001).to_f32(), 16777216.0f32);
-    assert_eq!(ubig!(0x1000002).to_f32(), 16777218.0f32);
-    assert_eq!(ubig!(0x1000003).to_f32(), 16777220.0f32);
-    assert_eq!(ubig!(0x1000004).to_f32(), 16777220.0f32);
-    assert_eq!(ubig!(0x1000005).to_f32(), 16777220.0f32);
+    assert_eq!(ubig!(0x1000001).to_f32(), Inexact(16777216.0f32, Negative));
+    assert_eq!(ubig!(0x1000002).to_f32(), Exact(16777218.0f32));
+    assert_eq!(ubig!(0x1000003).to_f32(), Inexact(16777220.0f32, Positive));
+    assert_eq!(ubig!(0x1000004).to_f32(), Exact(16777220.0f32));
+    assert_eq!(ubig!(0x1000005).to_f32(), Inexact(16777220.0f32, Negative));
 
     for i in 10..80 {
-        assert_eq!((ubig!(0xfff3330) << i).to_f32(), (0xfff3330 as f32) * (i as f32).exp2());
-        assert_eq!((ubig!(0xfff3331) << i).to_f32(), (0xfff3330 as f32) * (i as f32).exp2());
-        assert_eq!((ubig!(0xfff3337) << i).to_f32(), (0xfff3330 as f32) * (i as f32).exp2());
-        assert_eq!((ubig!(0xfff3338) << i).to_f32(), (0xfff3340 as f32) * (i as f32).exp2());
+        assert_eq!((ubig!(0xfff3330) << i).to_f32(), Exact((0xfff3330 as f32) * (i as f32).exp2()));
+        assert_eq!((ubig!(0xfff3331) << i).to_f32(), Inexact((0xfff3330 as f32) * (i as f32).exp2(), Negative));
+        assert_eq!((ubig!(0xfff3337) << i).to_f32(), Inexact((0xfff3330 as f32) * (i as f32).exp2(), Negative));
+        assert_eq!((ubig!(0xfff3338) << i).to_f32(), Inexact((0xfff3340 as f32) * (i as f32).exp2(), Positive));
         assert_eq!(
             ((ubig!(0xfff3338) << i) + ubig!(1)).to_f32(),
-            (0xfff3340 as f32) * (i as f32).exp2()
+            Inexact((0xfff3340 as f32) * (i as f32).exp2(), Positive)
         );
-        assert_eq!((ubig!(0xfff3339) << i).to_f32(), (0xfff3340 as f32) * (i as f32).exp2());
-        assert_eq!((ubig!(0xfff3347) << i).to_f32(), (0xfff3340 as f32) * (i as f32).exp2());
-        assert_eq!((ubig!(0xfff3348) << i).to_f32(), (0xfff3340 as f32) * (i as f32).exp2());
+        assert_eq!((ubig!(0xfff3339) << i).to_f32(), Inexact((0xfff3340 as f32) * (i as f32).exp2(), Positive));
+        assert_eq!((ubig!(0xfff3347) << i).to_f32(), Inexact((0xfff3340 as f32) * (i as f32).exp2(), Negative));
+        assert_eq!((ubig!(0xfff3348) << i).to_f32(), Inexact((0xfff3340 as f32) * (i as f32).exp2(), Negative));
         assert_eq!(
             ((ubig!(0xfff3348) << i) + ubig!(1)).to_f32(),
-            (0xfff3350 as f32) * (i as f32).exp2()
+            Inexact((0xfff3350 as f32) * (i as f32).exp2(), Positive)
         );
-        assert_eq!((ubig!(0xfff3349) << i).to_f32(), (0xfff3350 as f32) * (i as f32).exp2());
+        assert_eq!((ubig!(0xfff3349) << i).to_f32(), Inexact((0xfff3350 as f32) * (i as f32).exp2(), Positive));
     }
 
-    assert!((ubig!(0xffffff7) << 100).to_f32() < f32::INFINITY);
-    assert!((ubig!(0xffffff8) << 100).to_f32() == f32::INFINITY);
-    assert!((ubig!(1) << 1000).to_f32() == f32::INFINITY);
+    assert!((ubig!(0xffffff7) << 100).to_f32().value() < f32::INFINITY);
+    assert_eq!((ubig!(0xffffff8) << 100).to_f32(), Inexact(f32::INFINITY, Positive));
+    assert_eq!((ubig!(1) << 1000).to_f32(), Inexact(f32::INFINITY, Positive));
 
-    assert_eq!(ibig!(0).to_f32(), 0.0f32);
-    assert_eq!(ibig!(7).to_f32(), 7.0f32);
-    assert_eq!(ibig!(-7).to_f32(), -7.0f32);
-    assert!((ibig!(-0xffffff7) << 100).to_f32() > -f32::INFINITY);
-    assert!((ibig!(-0xffffff8) << 100).to_f32() == -f32::INFINITY);
+    assert_eq!(ibig!(0).to_f32(), Exact(0.0f32));
+    assert_eq!(ibig!(7).to_f32(), Exact(7.0f32));
+    assert_eq!(ibig!(-7).to_f32(), Exact(-7.0f32));
+    assert!((ibig!(-0xffffff7) << 100).to_f32().value() > -f32::INFINITY);
+    assert_eq!((ibig!(-0xffffff8) << 100).to_f32(), Inexact(f32::NEG_INFINITY, Negative));
 }
 
 #[test]
 #[allow(clippy::float_cmp)]
 fn test_to_f64() {
-    assert_eq!(ubig!(0).to_f64(), 0.0f64);
-    assert_eq!(ubig!(7).to_f64(), 7.0f64);
+    assert_eq!(ubig!(0).to_f64(), Exact(0.0f64));
+    assert_eq!(ubig!(7).to_f64(), Exact(7.0f64));
     // 2^53 - 1 is still exactly representable
-    assert_eq!(ubig!(0x1fffffffffffff).to_f64(), 9007199254740991.0f64);
-    assert_eq!(ubig!(0x20000000000000).to_f64(), 9007199254740992.0f64);
+    assert_eq!(ubig!(0x1fffffffffffff).to_f64(), Exact(9007199254740991.0f64));
+    assert_eq!(ubig!(0x20000000000000).to_f64(), Exact(9007199254740992.0f64));
     // Now round to even should begin.
-    assert_eq!(ubig!(0x20000000000001).to_f64(), 9007199254740992.0f64);
-    assert_eq!(ubig!(0x20000000000002).to_f64(), 9007199254740994.0f64);
-    assert_eq!(ubig!(0x20000000000003).to_f64(), 9007199254740996.0f64);
-    assert_eq!(ubig!(0x20000000000004).to_f64(), 9007199254740996.0f64);
-    assert_eq!(ubig!(0x20000000000005).to_f64(), 9007199254740996.0f64);
+    assert_eq!(ubig!(0x20000000000001).to_f64(), Inexact(9007199254740992.0f64, Negative));
+    assert_eq!(ubig!(0x20000000000002).to_f64(), Exact(9007199254740994.0f64));
+    assert_eq!(ubig!(0x20000000000003).to_f64(), Inexact(9007199254740996.0f64, Positive));
+    assert_eq!(ubig!(0x20000000000004).to_f64(), Exact(9007199254740996.0f64));
+    assert_eq!(ubig!(0x20000000000005).to_f64(), Inexact(9007199254740996.0f64, Negative));
 
     for i in 10..500 {
         assert_eq!(
             (ubig!(0x1ffffffffff3330) << i).to_f64(),
-            (0x1ffffffffff3330u64 as f64) * (i as f64).exp2()
+            Exact((0x1ffffffffff3330u64 as f64) * (i as f64).exp2())
         );
         assert_eq!(
             (ubig!(0x1ffffffffff3331) << i).to_f64(),
-            (0x1ffffffffff3330u64 as f64) * (i as f64).exp2()
+            Inexact((0x1ffffffffff3330u64 as f64) * (i as f64).exp2(), Negative)
         );
         assert_eq!(
             (ubig!(0x1ffffffffff3337) << i).to_f64(),
-            (0x1ffffffffff3330u64 as f64) * (i as f64).exp2()
+            Inexact((0x1ffffffffff3330u64 as f64) * (i as f64).exp2(), Negative)
         );
         assert_eq!(
             (ubig!(0x1ffffffffff3338) << i).to_f64(),
-            (0x1ffffffffff3340u64 as f64) * (i as f64).exp2()
+            Inexact((0x1ffffffffff3340u64 as f64) * (i as f64).exp2(), Positive)
         );
         assert_eq!(
             ((ubig!(0x1ffffffffff3338) << i) + ubig!(1)).to_f64(),
-            (0x1ffffffffff3340u64 as f64) * (i as f64).exp2()
+            Inexact((0x1ffffffffff3340u64 as f64) * (i as f64).exp2(), Positive)
         );
         assert_eq!(
             (ubig!(0x1ffffffffff3339) << i).to_f64(),
-            (0x1ffffffffff3340u64 as f64) * (i as f64).exp2()
+            Inexact((0x1ffffffffff3340u64 as f64) * (i as f64).exp2(), Positive)
         );
         assert_eq!(
             (ubig!(0x1ffffffffff3347) << i).to_f64(),
-            (0x1ffffffffff3340u64 as f64) * (i as f64).exp2()
+            Inexact((0x1ffffffffff3340u64 as f64) * (i as f64).exp2(), Negative)
         );
         assert_eq!(
             (ubig!(0x1ffffffffff3348) << i).to_f64(),
-            (0x1ffffffffff3340u64 as f64) * (i as f64).exp2()
+            Inexact((0x1ffffffffff3340u64 as f64) * (i as f64).exp2(), Negative)
         );
         assert_eq!(
             ((ubig!(0x1ffffffffff3348) << i) + ubig!(1)).to_f64(),
-            (0x1ffffffffff3350u64 as f64) * (i as f64).exp2()
+            Inexact((0x1ffffffffff3350u64 as f64) * (i as f64).exp2(), Positive)
         );
         assert_eq!(
             (ubig!(0x1ffffffffff3349) << i).to_f64(),
-            (0x1ffffffffff3350u64 as f64) * (i as f64).exp2()
+            Inexact((0x1ffffffffff3350u64 as f64) * (i as f64).exp2(), Positive)
         );
     }
 
-    assert!((ubig!(0x1fffffffffffff7) << 967).to_f64() < f64::INFINITY);
-    assert!((ubig!(0x1fffffffffffff8) << 967).to_f64() == f64::INFINITY);
-    assert!((ubig!(1) << 10000).to_f64() == f64::INFINITY);
+    assert!((ubig!(0x1fffffffffffff7) << 967).to_f64().value() < f64::INFINITY);
+    assert_eq!((ubig!(0x1fffffffffffff8) << 967).to_f64(), Inexact(f64::INFINITY, Positive));
+    assert_eq!((ubig!(1) << 10000).to_f64(), Inexact(f64::INFINITY, Positive));
 
-    assert_eq!(ibig!(0).to_f64(), 0.0f64);
-    assert_eq!(ibig!(7).to_f64(), 7.0f64);
-    assert_eq!(ibig!(-7).to_f64(), -7.0f64);
-    assert!((ibig!(-0x1fffffffffffff7) << 967).to_f64() > -f64::INFINITY);
-    assert!((ibig!(-0x1fffffffffffff8) << 967).to_f64() == -f64::INFINITY);
+    assert_eq!(ibig!(0).to_f64(), Exact(0.0f64));
+    assert_eq!(ibig!(7).to_f64(), Exact(7.0f64));
+    assert_eq!(ibig!(-7).to_f64(), Exact(-7.0f64));
+    assert!((ibig!(-0x1fffffffffffff7) << 967).to_f64().value() > -f64::INFINITY);
+    assert_eq!((ibig!(-0x1fffffffffffff8) << 967).to_f64(), Inexact(f64::NEG_INFINITY, Negative));
 }
