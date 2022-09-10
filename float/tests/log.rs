@@ -35,7 +35,7 @@ fn test_ln_binary() {
     ];
     for (x, ln) in &inexact_cases {
         assert_eq!(x.ln(), *ln);
-        if let Inexact(v, e) = x.context().ln(x) {
+        if let Inexact(v, e) = x.context().ln(x.repr()) {
             assert_eq!(v, *ln);
             assert_eq!(e, NoOp);
         } else {
@@ -78,7 +78,7 @@ fn test_ln_decimal() {
     ];
     for (x, ln, rnd) in &inexact_cases {
         assert_eq!(x.ln(), *ln);
-        if let Inexact(v, e) = x.context().ln(x) {
+        if let Inexact(v, e) = x.context().ln(x.repr()) {
             assert_eq!(v, *ln);
             assert_eq!(e, *rnd);
         } else {
@@ -125,7 +125,7 @@ fn test_ln_1p_binary() {
     ];
     for (x, ln) in &inexact_cases {
         assert_eq!(x.ln_1p(), *ln);
-        if let Inexact(v, e) = x.context().ln_1p(x) {
+        if let Inexact(v, e) = x.context().ln_1p(x.repr()) {
             assert_eq!(v, *ln);
             assert_eq!(e, NoOp);
         } else {
@@ -169,7 +169,7 @@ fn test_ln_1p_decimal() {
     ];
     for (x, ln, rnd) in &inexact_cases {
         assert_eq!(x.ln_1p(), *ln);
-        if let Inexact(v, e) = x.context().ln_1p(x) {
+        if let Inexact(v, e) = x.context().ln_1p(x.repr()) {
             assert_eq!(v, *ln);
             assert_eq!(e, *rnd);
         } else {

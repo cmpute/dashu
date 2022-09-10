@@ -11,26 +11,26 @@ use dashu_int::IBig;
 impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     pub fn powi(&self, exp: IBig) -> FBig<R, B> {
-        self.context.powi(self, exp).value()
+        self.context.powi(&self.repr, exp).value()
     }
 
     #[inline]
     pub fn exp(&self) -> FBig<R, B> {
-        self.context.exp(self).value()
+        self.context.exp(&self.repr).value()
     }
 
     #[inline]
     pub fn exp_m1(&self) -> FBig<R, B> {
-        self.context.exp_m1(self).value()
+        self.context.exp_m1(&self.repr).value()
     }
 }
 
 // TODO: give the exact formulation of required guard bits
 
 impl<R: Round> Context<R> {
-    pub fn powi<_R: Round, const B: Word>(
+    pub fn powi<const B: Word>(
         &self,
-        base: &FBig<_R, B>,
+        base: &Repr<B>,
         exp: IBig,
     ) -> Rounded<FBig<R, B>> {
         check_precision_limited(self.precision);
@@ -49,7 +49,7 @@ impl<R: Round> Context<R> {
         if exp.is_zero() {
             return Exact(FBig::ONE);
         } else if exp.is_one() {
-            let repr = self.repr_round_ref(&base.repr);
+            let repr = self.repr_round_ref(&base);
             return repr.map(|v| FBig::new(v, *self));
         }
 
@@ -59,16 +59,16 @@ impl<R: Round> Context<R> {
 
         // binary exponentiation from left to right
         let mut p = exp.bit_len() - 2;
-        let mut res = work_context.square(&base);
+        let mut res = work_context.square(base);
         loop {
             if exp.bit(p) {
-                res = res.and_then(|v| work_context.mul(&v, &base));
+                res = res.and_then(|v| work_context.mul(v.repr(), base));
             }
             if p == 0 {
                 break;
             }
             p -= 1;
-            res = res.and_then(|v| work_context.square(&v));
+            res = res.and_then(|v| work_context.square(v.repr()));
         }
 
         res.and_then(|v| v.with_precision(self.precision))
@@ -77,12 +77,12 @@ impl<R: Round> Context<R> {
     // TODO: implement powf
 
     #[inline]
-    pub fn exp<_R: Round, const B: Word>(&self, x: &FBig<_R, B>) -> Rounded<FBig<R, B>> {
+    pub fn exp<const B: Word>(&self, x: &Repr<B>) -> Rounded<FBig<R, B>> {
         self.exp_internal(x, false)
     }
 
     #[inline]
-    pub fn exp_m1<_R: Round, const B: Word>(&self, x: &FBig<_R, B>) -> Rounded<FBig<R, B>> {
+    pub fn exp_m1<const B: Word>(&self, x: &Repr<B>) -> Rounded<FBig<R, B>> {
         self.exp_internal(x, true)
     }
 
@@ -90,14 +90,14 @@ impl<R: Round> Context<R> {
     //       the powering exp(r)^(2^n) could be optimized by noticing (1+x)^2 - 1 = x^2 + 2x
     //       consider this change after having a benchmark
 
-    fn exp_internal<_R: Round, const B: Word>(
+    fn exp_internal<const B: Word>(
         &self,
-        x: &FBig<_R, B>,
+        x: &Repr<B>,
         minus_one: bool,
     ) -> Rounded<FBig<R, B>> {
         check_precision_limited(self.precision);
 
-        if x.repr.is_zero() {
+        if x.is_zero() {
             return match minus_one {
                 false => Exact(FBig::ONE),
                 true => Exact(FBig::ZERO),
@@ -122,16 +122,19 @@ impl<R: Round> Context<R> {
         let (s, n, r) = if no_scaling {
             // if minus_one is true and x is already small (x < 1/B),
             // then directly evaluate the Maclaurin series without scaling
-            if x.repr.sign() == Sign::Negative {
+            if x.sign() == Sign::Negative {
                 // extra digits are required to prevent cancellation during the summation
                 work_precision = self.precision + 2 * series_guard_digits;
             } else {
                 work_precision = self.precision + series_guard_digits;
             }
-            (0, 0, x.clone())
+            let context = Context::<R>::new(work_precision);
+            (0, 0, FBig::new(context.repr_round_ref(x).value(), context))
         } else {
             work_precision = self.precision + series_guard_digits + pow_guard_digits;
-            let logb = Context::new(work_precision).ln_base::<B>();
+            let context = Context::<R>::new(work_precision);
+            let x = FBig::new(context.repr_round_ref(x).value(), context);
+            let logb = context.ln_base::<B>();
             let (s, r) = x.div_rem_euclid(logb);
 
             // here m is roughly equal to sqrt(self.precision)
@@ -140,11 +143,7 @@ impl<R: Round> Context<R> {
             (s, n, r)
         };
 
-        let r = r
-            .with_rounding::<R>()
-            .with_precision(work_precision)
-            .value()
-            >> n as isize;
+        let r = r >> n as isize;
         let mut factorial = IBig::ONE;
         let mut pow = r.clone();
         let mut sum = if no_scaling {
@@ -172,11 +171,11 @@ impl<R: Round> Context<R> {
         } else if minus_one {
             // add extra digits to compensate for the subtraction
             Context::<R>::new(self.precision + self.precision / 8 + 1) // heuristic
-                .powi(&sum, Repr::<B>::BASE.pow(n))
+                .powi(sum.repr(), Repr::<B>::BASE.pow(n))
                 .map(|v| (v << s) - FBig::ONE)
                 .and_then(|v| v.with_precision(self.precision))
         } else {
-            self.powi(&sum, Repr::<B>::BASE.pow(n)).map(|v| v << s)
+            self.powi(sum.repr(), Repr::<B>::BASE.pow(n)).map(|v| v << s)
         }
     }
 }

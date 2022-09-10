@@ -241,22 +241,24 @@ impl<R: Round> Context<R> {
         }
     }
 
-    pub fn div<_R1: Round, _R2: Round, const B: Word>(
+    pub fn div<const B: Word>(
         &self,
-        lhs: &FBig<_R1, B>,
-        rhs: &FBig<_R2, B>,
+        lhs: &Repr<B>,
+        rhs: &Repr<B>,
     ) -> Rounded<FBig<R, B>> {
-        let lhs_repr = if !lhs.repr.is_zero()
-            && lhs.repr.digits_ub() > rhs.repr.digits_lb() + self.precision
+        check_inf_operands(lhs, rhs);
+
+        let lhs_repr = if !lhs.is_zero()
+            && lhs.digits_ub() > rhs.digits_lb() + self.precision
         {
             // shrink lhs if it's larger than necessary
-            Self::new(rhs.repr.digits() + self.precision)
-                .repr_round_ref(&lhs.repr)
+            Self::new(rhs.digits() + self.precision)
+                .repr_round_ref(&lhs)
                 .value()
         } else {
-            lhs.repr.clone()
+            lhs.clone()
         };
-        self.repr_div(lhs_repr, &rhs.repr)
+        self.repr_div(lhs_repr, &rhs)
             .map(|v| FBig::new(v, *self))
     }
 }

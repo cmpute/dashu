@@ -216,7 +216,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
             // if the exponent is large, then we first estimate the result exponent as floor(exponent * log(B) / log(NewB)),
             // then the fractional part is multiplied with the original significand
             let work_context = Context::<R>::new(2 * precision); // double the precision to get the precision logarithm
-            let new_exp = self.repr.exponent * work_context.ln(&FBig::from_parts_const(dashu_base::Sign::Positive, B as _, 0)).value();
+            let new_exp = self.repr.exponent * work_context.ln(&Repr::new(Repr::<B>::BASE, 0)).value();
             let (exponent, rem) = new_exp.div_rem_euclid(work_context.ln_base::<NewB>());
             let exponent: isize = exponent.try_into().unwrap();
             let exp_rem = rem.exp();

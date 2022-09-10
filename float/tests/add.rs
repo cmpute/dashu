@@ -85,7 +85,7 @@ fn test_add_binary() {
         test_sub(c, b, a);
 
         let context = Context::max(a.context(), b.context());
-        match (context.add(a, b), context.sub(c, a), context.sub(c, b)) {
+        match (context.add(a.repr(), b.repr()), context.sub(c.repr(), a.repr()), context.sub(c.repr(), b.repr())) {
             (Exact(vc), Exact(vb), Exact(va)) => {
                 assert_eq!(va, *a);
                 assert_eq!(vb, *b);
@@ -108,7 +108,7 @@ fn test_add_binary() {
         test_add(a, b, c);
         test_add(b, a, c);
 
-        if let Inexact(v, e) = Context::max(a.context(), b.context()).add(a, b) {
+        if let Inexact(v, e) = Context::max(a.context(), b.context()).add(a.repr(), b.repr()) {
             assert_eq!(v, *c);
             assert_eq!(e, *rnd);
         } else {
@@ -138,7 +138,7 @@ fn test_add_decimal() {
         test_sub(c, b, a);
 
         let context = Context::max(a.context(), b.context());
-        match (context.add(a, b), context.sub(c, a), context.sub(c, b)) {
+        match (context.add(a.repr(), b.repr()), context.sub(c.repr(), a.repr()), context.sub(c.repr(), b.repr())) {
             (Exact(vc), Exact(vb), Exact(va)) => {
                 assert_eq!(va, *a);
                 assert_eq!(vb, *b);
@@ -178,7 +178,7 @@ fn test_add_decimal() {
         test_add(a, b, c);
         test_add(b, a, c);
 
-        if let Inexact(v, e) = Context::max(a.context(), b.context()).add(a, b) {
+        if let Inexact(v, e) = Context::max(a.context(), b.context()).add(a.repr(), b.repr()) {
             assert_eq!(v, *c);
             assert_eq!(e, *rnd);
         } else {
@@ -200,7 +200,7 @@ fn test_sub_binary() {
     for (a, b, c, rnd) in &inexact_cases {
         test_sub(a, b, c);
 
-        if let Inexact(v, e) = Context::max(a.context(), b.context()).sub(a, b) {
+        if let Inexact(v, e) = Context::max(a.context(), b.context()).sub(a.repr(), b.repr()) {
             assert_eq!(v, *c);
             assert_eq!(e, *rnd);
         } else {
@@ -227,7 +227,7 @@ fn test_sub_decimal() {
     for (a, b, c) in &exact_cases {
         test_sub(a, b, c);
 
-        if let Exact(v) = Context::max(a.context(), b.context()).sub(a, b) {
+        if let Exact(v) = Context::max(a.context(), b.context()).sub(a.repr(), b.repr()) {
             assert_eq!(v, *c);
         } else {
             panic!("the result should be exact!")
@@ -250,7 +250,7 @@ fn test_sub_decimal() {
     for (a, b, c, rnd) in &inexact_cases {
         test_sub(a, b, c);
 
-        if let Inexact(v, e) = Context::max(a.context(), b.context()).sub(a, b) {
+        if let Inexact(v, e) = Context::max(a.context(), b.context()).sub(a.repr(), b.repr()) {
             assert_eq!(v, *c);
             assert_eq!(e, *rnd);
         } else {

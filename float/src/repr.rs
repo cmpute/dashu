@@ -7,17 +7,57 @@ use dashu_base::{Approximation::*, EstimatedLog2, Sign};
 use dashu_int::{IBig, UBig};
 pub use dashu_int::Word;
 
-// TODO(next): make Repr public to user, only expose constructors and maybe a selective subset of methods.
-//       then all context methods could take repr as input instead of a full FBig object.
-//       also add conversion between FBig and repr (FBig::{new(repr, context), repr(), into_repr()}).
-//       this is necessary for compositing complex numbers without duplicate context.
-//       the existing FBig::new() should be renamed as new_raw(), the new FBig::new() will check whether repr is within the precision limitation (panic if not)
+/// Underlying representation of an arbitrary precision floating number.
+/// 
+/// The floating point number is represented as `significand * base^exponent`, where the
+/// type of the significand is [IBig], and the type of exponent is [isize]. The representation
+/// is always normalized (nonzero signficand is not divisible by the base, or zero signficand
+/// with zero exponent).
+/// 
+/// When it's used together with a [Context], its precision will be limited so that
+/// `|signficand| < base^precision`. However, the precision limit is not always enforced.
+/// In rare cases, the significand can have one more digit than the precision limit.
+///
+/// # Infinity
+///
+/// This struct supports representing the infinity, but the infinity is only supposed to be used
+/// as sentinels. That is, only equality test and comparison are implemented for the infinity.
+/// Any other operations on the infinity will lead to panic. If an operation result is too large
+/// or too small, the operation will **panic** instead of returning an infinity.
+/// 
 #[derive(PartialEq, Eq)]
 pub struct Repr<const BASE: Word> {
+    /// The significand of the floating point number. If the significand is zero, then the number is:
+    /// - Zero, if exponent = 0
+    /// - Positive infinity, if exponent > 0
+    /// - Negative infinity, if exponent < 0
     pub(crate) significand: IBig,
+
+    /// The exponent of the floating point number.
     pub(crate) exponent: isize,
 }
 
+/// The context containing runtime information for the floating point number and its operations.
+/// 
+/// The context currently consists of a *precision limit* and a *rounding mode*.
+/// 
+/// # Precision
+/// 
+/// The precision limit determine the number of significant digits in the float number.
+/// 
+/// For binary operations, the result will have the higher one between the precisions of two
+/// operands.
+/// 
+/// If the precision is set to 0, then the precision is unlimited during operations.
+/// Be cautious to use unlimited precision because it can leads to very huge significands.
+/// Unlimited precision is forbidden for some operations where the result is always inexact.
+/// 
+/// # Rounding Mode
+/// 
+/// The rounding mode determines the rounding behavior of the float operations.
+/// 
+/// For binary operations, the two oprands must have the same rounding mode.
+/// 
 #[derive(Clone, Copy)]
 pub struct Context<RoundingMode: Round> {
     /// The precision of the floating point number. If set to zero, then
@@ -29,6 +69,7 @@ pub struct Context<RoundingMode: Round> {
 impl<const B: Word> Repr<B> {
     pub const BASE: IBig = base_as_ibig::<B>();
 
+    /// Create a [Repr] instance representing value zero
     #[inline]
     pub const fn zero() -> Self {
         Self {
@@ -36,6 +77,7 @@ impl<const B: Word> Repr<B> {
             exponent: 0,
         }
     }
+    /// Create a [Repr] instance representing value one
     #[inline]
     pub const fn one() -> Self {
         Self {
@@ -43,6 +85,7 @@ impl<const B: Word> Repr<B> {
             exponent: 0,
         }
     }
+    /// Create a [Repr] instance representing value negative one
     #[inline]
     pub const fn neg_one() -> Self {
         Self {
@@ -50,7 +93,7 @@ impl<const B: Word> Repr<B> {
             exponent: 0,
         }
     }
-
+    /// Create a [Repr] instance representing (positive) infinity
     #[inline]
     pub const fn infinity() -> Self {
         Self {
@@ -58,6 +101,7 @@ impl<const B: Word> Repr<B> {
             exponent: 1,
         }
     }
+    /// Create a [Repr] instance representing (negative) infinity
     #[inline]
     pub const fn neg_infinity() -> Self {
         Self {
@@ -65,24 +109,28 @@ impl<const B: Word> Repr<B> {
             exponent: -1,
         }
     }
-
+    /// Determine if the [Repr] represents zero
     #[inline]
     pub const fn is_zero(&self) -> bool {
         self.significand.is_zero() && self.exponent == 0
     }
+    /// Determine if the [Repr] represents one
     #[inline]
     pub const fn is_one(&self) -> bool {
         self.significand.is_one() && self.exponent == 0
     }
+    /// Determine if the [Repr] represents positive or negative infinity
     #[inline]
     pub const fn is_infinite(&self) -> bool {
         self.significand.is_zero() && self.exponent != 0
     }
+    /// Determine if the [Repr] represents a finite number
     #[inline]
     pub const fn is_finite(&self) -> bool {
         !self.is_infinite()
     }
 
+    /// Get the sign of the number
     #[inline]
     pub const fn sign(&self) -> Sign {
         if self.significand.is_zero() {
@@ -98,7 +146,7 @@ impl<const B: Word> Repr<B> {
 
     /// Normalize the float representation so that the significand is not divisible by the base.
     /// Any floats with zero significand will be considered as zero value (instead of an `INFINITY`)
-    pub fn normalize(self) -> Self {
+    pub(crate) fn normalize(self) -> Self {
         let Self {
             mut significand,
             mut exponent,
@@ -134,24 +182,24 @@ impl<const B: Word> Repr<B> {
         digit_len::<B>(&self.significand)
     }
 
-    /// Fast over estimation of [digits][Self::digits]
+    /// Fast over-estimation of [digits][Self::digits]
     #[inline]
     pub fn digits_ub(&self) -> usize {
-        let log = if B == 10 {
-            self.significand.log2_bounds().1 * core::f32::consts::LOG10_2
-        } else {
-            self.significand.log2_bounds().1 / Self::BASE.log2_bounds().0
+        let log = match B {
+            2 => self.significand.log2_bounds().1,
+            10 => self.significand.log2_bounds().1 * core::f32::consts::LOG10_2,
+            _ => self.significand.log2_bounds().1 / Self::BASE.log2_bounds().0
         };
         log as usize + 1
     }
 
-    /// Fast under estimation of [digits][Self::digits]
+    /// Fast under-estimation of [digits][Self::digits]
     #[inline]
     pub fn digits_lb(&self) -> usize {
-        let log = if B == 10 {
-            self.significand.log2_bounds().0 * core::f32::consts::LOG10_2
-        } else {
-            self.significand.log2_bounds().0 / Self::BASE.log2_bounds().1
+        let log = match B {
+            2 => self.significand.log2_bounds().0,
+            10 => self.significand.log2_bounds().0 * core::f32::consts::LOG10_2,
+            _ => self.significand.log2_bounds().0 / Self::BASE.log2_bounds().1
         };
         log as usize
     }

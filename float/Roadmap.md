@@ -15,6 +15,7 @@
 - [ ] Implement Serde serialization
 - [ ] Implememt sqrt, cbrt, nth_root
 - [ ] Implement powf, log
+- [ ] Benchmark against crates: twofloat, num-bigfloat, rust_decimal, bigdecimal, scientific
 
 # Roadmap to v1.0
 - [ ] fast float printing (references: [dragonbox](https://github.com/jk-jeon/dragonbox), [ryu](https://lib.rs/crates/ryu-js), [Articles by Lemire](https://arxiv.org/search/cs?searchtype=author&query=Lemire%2C+D), [Fast number parsing by Lemire](https://arxiv.org/pdf/2101.11408.pdf), specialize algorithms in the range where IBig is inlined

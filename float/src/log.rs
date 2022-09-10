@@ -3,39 +3,61 @@ use dashu_int::IBig;
 
 use crate::{
     fbig::FBig,
-    repr::{Context, Word},
+    repr::{Context, Word, Repr},
     round::{Round, Rounded}, error::check_precision_limited,
 };
 
-impl<R: Round, const B: Word> EstimatedLog2 for FBig<R, B> {
+impl<const B: Word> EstimatedLog2 for Repr<B> {
     // currently a Word has at most 64 bits, so log2() < f32::MAX
     fn log2_bounds(&self) -> (f32, f32) {
         // log(s*B^e) = log(s) + e*log(B)
-        let (logs_lb, logs_ub) = self.repr.significand.log2_bounds();
+        let (logs_lb, logs_ub) = self.significand.log2_bounds();
         let (logb_lb, logb_ub) = if B.is_power_of_two() {
             let log = B.trailing_zeros() as f32;
             (log, log)
         } else {
             B.log2_bounds()
         };
-        let e = self.repr.exponent as f32;
-        if self.repr.exponent >= 0 {
+        let e = self.exponent as f32;
+        if self.exponent >= 0 {
             (logs_lb + e * logb_lb, logs_ub + e * logb_ub)
         } else {
             (logs_lb + e * logb_ub, logs_ub + e * logb_lb)
         }
+    }
+
+    fn log2_est(&self) -> f32 {
+        let logs = self.significand.log2_est();
+        let logb = if B.is_power_of_two() {
+            B.trailing_zeros() as f32
+        } else {
+            B.log2_est()
+        };
+        logs + self.exponent as f32 * logb
+    }
+}
+
+impl<R: Round, const B: Word> EstimatedLog2 for FBig<R, B> {
+    #[inline]
+    fn log2_bounds(&self) -> (f32, f32) {
+        self.repr.log2_bounds()
+    }
+
+    #[inline]
+    fn log2_est(&self) -> f32 {
+        self.repr.log2_est()
     }
 }
 
 impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     pub fn ln(&self) -> Self {
-        self.context.ln(self).value()
+        self.context.ln(&self.repr).value()
     }
 
     #[inline]
     pub fn ln_1p(&self) -> Self {
-        self.context.ln_1p(self).value()
+        self.context.ln_1p(&self.repr).value()
     }
 }
 
@@ -80,7 +102,7 @@ impl<R: Round> Context<R> {
             10 => self.ln10(),
             i if i.is_power_of_two() => self.ln2() * i.trailing_zeros(),
             _ => self
-                .ln(&FBig::from_parts_const(dashu_base::Sign::Positive, B as _, 0))
+                .ln(&Repr::new(Repr::<B>::BASE, 0))
                 .value(),
         }
     }
@@ -136,20 +158,20 @@ impl<R: Round> Context<R> {
 
     /// Calculate the natural logarithm of the number `x`
     #[inline]
-    pub fn ln<const B: Word>(&self, x: &FBig<R, B>) -> Rounded<FBig<R, B>> {
+    pub fn ln<const B: Word>(&self, x: &Repr<B>) -> Rounded<FBig<R, B>> {
         return self.ln_internal(x, false);
     }
 
     /// Calculate the natural logarithm of the number `(x+1)`
     #[inline]
-    pub fn ln_1p<const B: Word>(&self, x: &FBig<R, B>) -> Rounded<FBig<R, B>> {
+    pub fn ln_1p<const B: Word>(&self, x: &Repr<B>) -> Rounded<FBig<R, B>> {
         return self.ln_internal(x, true);
     }
 
-    fn ln_internal<const B: Word>(&self, x: &FBig<R, B>, one_plus: bool) -> Rounded<FBig<R, B>> {
+    fn ln_internal<const B: Word>(&self, x: &Repr<B>, one_plus: bool) -> Rounded<FBig<R, B>> {
         check_precision_limited(self.precision);
 
-        if (one_plus && x.repr.is_zero()) || (!one_plus && x.repr.is_one()) {
+        if (one_plus && x.is_zero()) || (!one_plus && x.is_one()) {
             return Exact(FBig::ZERO);
         }
 
@@ -158,7 +180,8 @@ impl<R: Round> Context<R> {
         // - such that x*2^s is close to but larger than 1 (and x*2^s < 2)
         let guard_digits = (self.precision.log2_est() / B.log2_est()) as usize + 2;
         let mut work_precision = self.precision + guard_digits + one_plus as usize;
-        let x = x.clone().with_precision(work_precision).value();
+        let context = Context::<R>::new(work_precision);
+        let x = FBig::new(context.repr_round_ref(x).value(), context);
 
         // When one_plus is true and |x| < 1/B, the input is fed into the Maclaurin without scaling
         let no_scaling = one_plus && x.log2_est() < -B.log2_est();

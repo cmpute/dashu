@@ -1,3 +1,5 @@
+//! Trait and implementations for rounding during operations.
+
 use core::cmp::Ordering;
 use core::ops::{Add, AddAssign};
 use dashu_base::{Approximation, EstimatedLog2, Sign, UnsignedAbs};
@@ -43,9 +45,13 @@ pub enum Rounding {
     SubOne,
 }
 
-/// A type representing float operation result, for internal use only
+/// A type representing float operation result
+/// 
+/// If the operation result is inexact, the adjustment from the final rounding
+/// will be returned along with the result. 
 pub type Rounded<T> = Approximation<T, Rounding>;
 
+/// A trait describing the rounding strategy
 pub trait Round: Copy {
     /// The rounding operation that rounds to an opposite direction
     type Reverse: Round;

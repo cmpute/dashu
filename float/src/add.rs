@@ -440,53 +440,53 @@ impl<R: Round> Context<R> {
         self.repr_round_sum(significand, exponent, low, is_sub)
     }
 
-    pub fn add<_R1: Round, _R2: Round, const B: Word>(
+    pub fn add<const B: Word>(
         &self,
-        lhs: &FBig<_R1, B>,
-        rhs: &FBig<_R2, B>,
+        lhs: &Repr<B>,
+        rhs: &Repr<B>,
     ) -> Rounded<FBig<R, B>> {
-        check_inf_operands(&lhs.repr, &rhs.repr);
+        check_inf_operands(lhs, rhs);
 
-        let sum = if lhs.repr.is_zero() {
-            self.repr_round_ref(&rhs.repr)
-        } else if rhs.repr.is_zero() {
-            self.repr_round_ref(&lhs.repr)
+        let sum = if lhs.is_zero() {
+            self.repr_round_ref(&rhs)
+        } else if rhs.is_zero() {
+            self.repr_round_ref(&lhs)
         } else {
-            match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
+            match lhs.exponent.cmp(&rhs.exponent) {
                 Ordering::Equal => self.repr_round(Repr::new(
-                    &lhs.repr.significand + &rhs.repr.significand,
-                    lhs.repr.exponent,
+                    &lhs.significand + &rhs.significand,
+                    lhs.exponent,
                 )),
                 Ordering::Greater => {
-                    self.repr_add_large_small(lhs.repr.clone(), &rhs.repr, Positive)
+                    self.repr_add_large_small(lhs.clone(), &rhs, Positive)
                 }
-                Ordering::Less => self.repr_add_small_large(lhs.repr.clone(), &rhs.repr, Positive),
+                Ordering::Less => self.repr_add_small_large(lhs.clone(), &rhs, Positive),
             }
         };
         sum.map(|v| FBig::new(v, *self))
     }
 
-    pub fn sub<_R1: Round, _R2: Round, const B: Word>(
+    pub fn sub<const B: Word>(
         &self,
-        lhs: &FBig<_R1, B>,
-        rhs: &FBig<_R2, B>,
+        lhs: &Repr<B>,
+        rhs: &Repr<B>,
     ) -> Rounded<FBig<R, B>> {
-        check_inf_operands(&lhs.repr, &rhs.repr);
+        check_inf_operands(lhs, rhs);
 
-        let sum = if lhs.repr.is_zero() {
-            self.repr_round_ref(&rhs.repr).map(|v| -v)
-        } else if rhs.repr.is_zero() {
-            self.repr_round_ref(&lhs.repr)
+        let sum = if lhs.is_zero() {
+            self.repr_round_ref(&rhs).map(|v| -v)
+        } else if rhs.is_zero() {
+            self.repr_round_ref(&lhs)
         } else {
-            match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
+            match lhs.exponent.cmp(&rhs.exponent) {
                 Ordering::Equal => self.repr_round(Repr::new(
-                    &lhs.repr.significand - &rhs.repr.significand,
-                    lhs.repr.exponent,
+                    &lhs.significand - &rhs.significand,
+                    lhs.exponent,
                 )),
                 Ordering::Greater => {
-                    self.repr_add_large_small(lhs.repr.clone(), &rhs.repr, Negative)
+                    self.repr_add_large_small(lhs.clone(), &rhs, Negative)
                 }
-                Ordering::Less => self.repr_add_small_large(lhs.repr.clone(), &rhs.repr, Negative),
+                Ordering::Less => self.repr_add_small_large(lhs.clone(), &rhs, Negative),
             }
         };
         sum.map(|v| FBig::new(v, *self))

@@ -86,17 +86,17 @@ impl_add_sub_primitive_with_fbig!(u8 u16 u32 u64 u128 usize UBig i8 i16 i32 i64 
 impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     pub fn square(&self) -> Self {
-        self.context.square(self).value()
+        self.context.square(&self.repr).value()
     }
 }
 
 impl<R: Round> Context<R> {
-    pub fn mul<_R1: Round, _R2: Round, const B: Word>(
+    pub fn mul<const B: Word>(
         &self,
-        lhs: &FBig<_R1, B>,
-        rhs: &FBig<_R2, B>,
+        lhs: &Repr<B>,
+        rhs: &Repr<B>,
     ) -> Rounded<FBig<R, B>> {
-        check_inf_operands(&lhs.repr, &rhs.repr);
+        check_inf_operands(lhs, rhs);
 
         // at most double the precision is required to get a correct result
         // shrink the input operands if necessary
@@ -109,21 +109,21 @@ impl<R: Round> Context<R> {
         let lhs_shrink;
         let lhs_repr = if lhs.digits() > max_precision {
             lhs_shrink = Context::<R>::new(max_precision)
-                .repr_round_ref(&lhs.repr)
+                .repr_round_ref(lhs)
                 .value();
             &lhs_shrink
         } else {
-            &lhs.repr
+            lhs
         };
 
         let rhs_shrink;
         let rhs_repr = if rhs.digits() > max_precision {
             rhs_shrink = Context::<R>::new(max_precision)
-                .repr_round_ref(&rhs.repr)
+                .repr_round_ref(rhs)
                 .value();
             &rhs_shrink
         } else {
-            &rhs.repr
+            rhs
         };
 
         let repr = Repr::new(
@@ -133,8 +133,8 @@ impl<R: Round> Context<R> {
         self.repr_round(repr).map(|v| FBig::new(v, *self))
     }
 
-    pub fn square<_R: Round, const B: Word>(&self, f: &FBig<_R, B>) -> Rounded<FBig<R, B>> {
-        check_inf(&f.repr);
+    pub fn square<const B: Word>(&self, f: &Repr<B>) -> Rounded<FBig<R, B>> {
+        check_inf(f);
 
         // shrink the input operands if necessary
         let max_precision = if self.limited() {
@@ -144,13 +144,13 @@ impl<R: Round> Context<R> {
         };
 
         let f_shrink;
-        let f_repr = if f.repr.digits() > max_precision {
+        let f_repr = if f.digits() > max_precision {
             f_shrink = Context::<R>::new(max_precision)
-                .repr_round_ref(&f.repr)
+                .repr_round_ref(f)
                 .value();
             &f_shrink
         } else {
-            &f.repr
+            f
         };
 
         let repr = Repr::new(f_repr.significand.square(), 2 * f_repr.exponent);
