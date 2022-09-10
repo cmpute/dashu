@@ -20,11 +20,8 @@ pub struct Repr<const BASE: Word> {
 
 #[derive(Clone, Copy)]
 pub struct Context<RoundingMode: Round> {
-    // TODO: let precision = 0 implies no precision bound, but when no-precision number operates with another has-precision number,
-    //       the precision will be set as the other one's. This will requires us to make sure 0 value also has non-zero precision (1 will be ideal)
-    //       more tests are necessary after implementing this.
-    //       besides, unary functions on zero precision float should panic.
-    // TODO: consider expose precision as Option<usize> instead of allowing 0?
+    /// The precision of the floating point number. If set to zero, then
+    /// the precision is unlimited
     pub(crate) precision: usize,
     _marker: PhantomData<RoundingMode>,
 }

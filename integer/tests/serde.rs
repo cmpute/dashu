@@ -33,10 +33,7 @@ fn test_ibig_serde() {
         &ibig!(0),
         &[
             Token::Tuple { len: 2 },
-            Token::UnitVariant {
-                name: "Sign",
-                variant: "Positive",
-            },
+            Token::Bool(false),
             Token::Seq { len: Some(0) },
             Token::SeqEnd,
             Token::TupleEnd,
@@ -46,10 +43,7 @@ fn test_ibig_serde() {
         &ibig!(0),
         &[
             Token::Seq { len: None },
-            Token::UnitVariant {
-                name: "Sign",
-                variant: "Negative",
-            },
+            Token::Bool(true),
             Token::Seq { len: None },
             Token::SeqEnd,
             Token::SeqEnd,
@@ -59,10 +53,7 @@ fn test_ibig_serde() {
         &ibig!(17),
         &[
             Token::Tuple { len: 2 },
-            Token::UnitVariant {
-                name: "Sign",
-                variant: "Positive",
-            },
+            Token::Bool(false),
             Token::Seq { len: Some(1) },
             Token::U64(17),
             Token::SeqEnd,
@@ -73,10 +64,7 @@ fn test_ibig_serde() {
         &ibig!(-17),
         &[
             Token::Tuple { len: 2 },
-            Token::UnitVariant {
-                name: "Sign",
-                variant: "Negative",
-            },
+            Token::Bool(true),
             Token::Seq { len: Some(1) },
             Token::U64(17),
             Token::SeqEnd,

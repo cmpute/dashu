@@ -3,7 +3,7 @@ use core::convert::{TryInto, TryFrom};
 use crate::{
     fbig::FBig,
     repr::{Context, Repr},
-    round::{Round, Rounded, mode::{self, HalfEven}, Rounding}, utils::{shr_digits, split_digits_ref, ilog_exact}, error::check_inf,
+    round::{Round, Rounded, mode::{self, HalfEven}, Rounding}, utils::{shr_digits, split_digits_ref, ilog_exact}, error::{check_inf, panic_unlimited_precision},
 };
 use dashu_base::{Approximation::*, DivRemEuclid, EstimatedLog2};
 use dashu_int::{IBig, UBig, Word, error::OutOfBoundsError};
@@ -137,11 +137,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
         }
     }
 
-    /// Explicitly change the radix of the float number.
+    /// Explicitly change the base of the float number.
     ///
     /// The precision of the result number will be at most equal to the
     /// precision of the original number (numerically), that is
-    /// ```new_radix ^ new_precision <= old_radix ^ old_precision```.
+    /// ```new_base ^ new_precision <= old_base ^ old_precision```.
     /// If any rounding happens during the conversion, if will follow
     /// the rounding mode specified by the type parameter.
     #[inline]
@@ -151,6 +151,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
         self.with_base_and_precision(precision as usize)
     }
 
+    /// Explicitly change the base of the float number with given precision (under the new base).
+    /// 
+    /// # Panic
+    /// 
+    /// Panics if the precision is 0 when the base conversion cannot be done losslessly.
     #[allow(non_upper_case_globals)]
     pub fn with_base_and_precision<const NewB: Word>(self, precision: usize) -> Rounded<FBig<R, NewB>> {
         // shortcut if NewB is the same as B
@@ -184,10 +189,18 @@ impl<R: Round, const B: Word> FBig<R, B> {
             }
         }
 
+        // if the base cannot be converted losslessly, the precision must be set
+        if precision == 0 {
+            panic_unlimited_precision();
+        }
+
         // XXX: there's a potential optimization: if B is a multiple of NewB, then the factor B
         // should be trivially removed first, but this requires full support of const generics.
 
-        const THRESHOLD_SMALL_EXP: isize = 4; // TODO: choose a better value, maybe one such that BASE.pow(exp) is fit in a double word?
+        // choose a exponent threshold such that number with exponent smaller than this value
+        // will be converted by directly evaluating the power. The threshold here is chosen such
+        // that the power under base 10 will fit in a double word.
+        const THRESHOLD_SMALL_EXP: isize = (Word::BITS as f32 * 0.6020599913279624) as isize; // word bits * 2 / log2(10)
         if self.repr.exponent.abs() <= THRESHOLD_SMALL_EXP {
             // if the exponent is small enough, directly evaluate the exponent
             if self.repr.exponent >= 0 {

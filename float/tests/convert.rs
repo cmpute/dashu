@@ -174,6 +174,12 @@ fn test_base_change() {
 }
 
 #[test]
+#[should_panic]
+fn test_base_change_unlimited_precision() {
+    let _ = dbig!(0x1234p-1).with_precision(0).value().with_base::<2>();
+}
+
+#[test]
 fn test_from_f32() {
     assert_eq!(FBig::try_from(0f32).unwrap(), fbig!(0x0));
     assert_eq!(FBig::try_from(-0f32).unwrap(), fbig!(0x0));

@@ -272,7 +272,7 @@ fn test_sub_by_inf() {
 }
 
 #[test]
-fn test_add_sub_zero_precision() {
+fn test_add_sub_unlimited_precision() {
     let a = fbig!(0xffff).with_precision(0).value();
     let b = fbig!(-0xffff).with_precision(0).value();
     test_add(&a, &a, &fbig!(0x1fffe));

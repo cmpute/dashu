@@ -1,8 +1,20 @@
 # dashu-int
 
-Arbitrary precision integer implementation for the dashu library. 
+Arbitrary precision integer implementation as a part of the `dashu` library. 
 
-The majority of the code is based on the [ibig crate](https://github.com/tczajka/ibig-rs). The modification notice based on the the original `ibig` repo is included in the [NOTICE](./NOTICE) file.
+> The majority of the code is based on the [ibig crate](https://github.com/tczajka/ibig-rs). The modification notice based on the the original `ibig` repo is included in the [NOTICE](./NOTICE) file.
+
+## Features
+
+- Support for both unsigned and signed big integers.
+- Small integers are inlined on stack with specialized algorithms.
+- Efficient implementation for basic arithmetic operations (`+`,`-`,`*`,`/`,`%`,`<<`,`>>`).
+- Support other arithmetic operations including `pow`, `ilog`, `gcd`, `gcd_ext`.
+- Bit operations for signed big integers follow the 2's complement rule.
+- Efficient implementation for modular arithmetics (e.g. modular powering and inverse).
+- Efficient integer parsing and printing with base 2~36.
+- Developer friendly debug printing for big integers.
+- Direct access to underlying machine word array.
 
 ## Examples
 
@@ -27,10 +39,11 @@ assert_eq!(
     "hello 0x1a7e7c487267d2658a93"
 );
 
-/let ring = ModuloRing::new(UBig::from(10000u32));
-/let x = ring.convert(12345);
-/let y = ring.convert(55443);
-/assert_eq!(format!("{}", x - y), "6902 (mod 10000)");
+// modular arithmetics
+let ring = ModuloRing::new(UBig::from(10000u32));
+let x = ring.convert(12345);
+let y = ring.convert(55443);
+assert_eq!(format!("{}", x - y), "6902 (mod 10000)");
 ```
 
 ## Optional dependencies
@@ -40,10 +53,9 @@ assert_eq!(
 * `rand` (default): random number generation.
 * `serde`: serialization and deserialization.
 
-## Benchmarks
+## Performance
 
-[Benchmarks](https://github.com/tczajka/bigint-benchmark-rs) contains a quick benchmark of
-Rust big integer libraries.
+See the [built-in benchmark](../benchmark/).
 
 ## License
 

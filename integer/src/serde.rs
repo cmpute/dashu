@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 use core::fmt::{self, Formatter};
 use serde::{
     de::{Deserialize, Deserializer, SeqAccess, Visitor},
-    ser::{Serialize, SerializeSeq, Serializer},
+    ser::{Serialize, SerializeSeq, Serializer, SerializeTuple},
 };
 use static_assertions::const_assert;
 
@@ -132,18 +132,27 @@ fn len_64_to_max_len(len_64: usize) -> usize {
     #[allow(clippy::redundant_closure)]
     len_64
         .checked_mul(WORDS_PER_U64)
-        .unwrap_or_else(|| UBig::panic_number_too_large())
+        .expect("The number to be deserialized is too large")
 }
 
 impl Serialize for IBig {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.as_sign_repr().serialize(serializer)
+        let (sign, repr) = self.as_sign_repr();
+        let mut tup = serializer.serialize_tuple(2)?;
+        tup.serialize_element(&(sign == Sign::Negative))?;
+        tup.serialize_element(&repr)?;
+        tup.end()
     }
 }
 
 impl<'de> Deserialize<'de> for IBig {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let (sign, magnitude): (Sign, UBig) = Deserialize::deserialize(deserializer)?;
+        let (sign, magnitude): (bool, UBig) = Deserialize::deserialize(deserializer)?;
+        let sign = if sign {
+            Sign::Negative
+        } else {
+            Sign::Positive
+        };
         Ok(IBig(magnitude.0.with_sign(sign)))
     }
 }

@@ -188,6 +188,12 @@ fn test_exp_decimal() {
 }
 
 #[test]
+#[should_panic]
+fn test_exp_unlimited_precision() {
+    let _ = dbig!(2).with_precision(0).value().exp();
+}
+
+#[test]
 fn test_exp_m1_binary() {
     assert_eq!(fbig!(0).exp_m1(), fbig!(0));
 
@@ -281,4 +287,10 @@ fn test_exp_m1_decimal() {
             panic!("the result should be inexact!")
         }
     }
+}
+
+#[test]
+#[should_panic]
+fn test_exp_m1_unlimited_precision() {
+    let _ = dbig!(2).with_precision(0).value().exp_m1();
 }
