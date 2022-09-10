@@ -448,16 +448,16 @@ impl<R: Round> Context<R> {
         check_inf_operands(lhs, rhs);
 
         let sum = if lhs.is_zero() {
-            self.repr_round_ref(&rhs)
+            self.repr_round_ref(rhs)
         } else if rhs.is_zero() {
-            self.repr_round_ref(&lhs)
+            self.repr_round_ref(lhs)
         } else {
             match lhs.exponent.cmp(&rhs.exponent) {
                 Ordering::Equal => {
                     self.repr_round(Repr::new(&lhs.significand + &rhs.significand, lhs.exponent))
                 }
-                Ordering::Greater => self.repr_add_large_small(lhs.clone(), &rhs, Positive),
-                Ordering::Less => self.repr_add_small_large(lhs.clone(), &rhs, Positive),
+                Ordering::Greater => self.repr_add_large_small(lhs.clone(), rhs, Positive),
+                Ordering::Less => self.repr_add_small_large(lhs.clone(), rhs, Positive),
             }
         };
         sum.map(|v| FBig::new(v, *self))
@@ -467,16 +467,16 @@ impl<R: Round> Context<R> {
         check_inf_operands(lhs, rhs);
 
         let sum = if lhs.is_zero() {
-            self.repr_round_ref(&rhs).map(|v| -v)
+            self.repr_round_ref(rhs).map(|v| -v)
         } else if rhs.is_zero() {
-            self.repr_round_ref(&lhs)
+            self.repr_round_ref(lhs)
         } else {
             match lhs.exponent.cmp(&rhs.exponent) {
                 Ordering::Equal => {
                     self.repr_round(Repr::new(&lhs.significand - &rhs.significand, lhs.exponent))
                 }
-                Ordering::Greater => self.repr_add_large_small(lhs.clone(), &rhs, Negative),
-                Ordering::Less => self.repr_add_small_large(lhs.clone(), &rhs, Negative),
+                Ordering::Greater => self.repr_add_large_small(lhs.clone(), rhs, Negative),
+                Ordering::Less => self.repr_add_small_large(lhs.clone(), rhs, Negative),
             }
         };
         sum.map(|v| FBig::new(v, *self))

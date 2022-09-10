@@ -247,7 +247,7 @@ impl<R: Round, const B: Word> Clone for FBig<R, B> {
     fn clone(&self) -> Self {
         Self {
             repr: self.repr.clone(),
-            context: self.context.clone(),
+            context: self.context,
         }
     }
 

@@ -64,7 +64,7 @@ impl<R: Round, const B: Word> Mul<FBig<R, B>> for Sign {
     type Output = FBig<R, B>;
     #[inline]
     fn mul(self, mut rhs: FBig<R, B>) -> Self::Output {
-        rhs.repr.significand = rhs.repr.significand * self;
+        rhs.repr.significand *= self;
         rhs
     }
 }

@@ -196,7 +196,7 @@ fn align_as_int<R: Round, const B: Word>(lhs: FBig<R, B>, rhs: FBig<R, B>) -> (I
 
 impl<R: Round> Context<R> {
     pub(crate) fn repr_div<const B: Word>(&self, lhs: Repr<B>, rhs: &Repr<B>) -> Rounded<Repr<B>> {
-        check_inf_operands(&lhs, &rhs);
+        check_inf_operands(&lhs, rhs);
         check_precision_limited(self.precision);
 
         // this method don't deal with the case where lhs significand is too large
@@ -247,11 +247,11 @@ impl<R: Round> Context<R> {
         let lhs_repr = if !lhs.is_zero() && lhs.digits_ub() > rhs.digits_lb() + self.precision {
             // shrink lhs if it's larger than necessary
             Self::new(rhs.digits() + self.precision)
-                .repr_round_ref(&lhs)
+                .repr_round_ref(lhs)
                 .value()
         } else {
             lhs.clone()
         };
-        self.repr_div(lhs_repr, &rhs).map(|v| FBig::new(v, *self))
+        self.repr_div(lhs_repr, rhs).map(|v| FBig::new(v, *self))
     }
 }

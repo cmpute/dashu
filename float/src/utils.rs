@@ -28,7 +28,7 @@ pub fn shl_digits<const B: Word>(value: &IBig, exp: usize) -> IBig {
 
     match B {
         2 => value << exp,
-        10 => value * IBig::from(5).pow(exp) << exp,
+        10 => (value * IBig::from(5).pow(exp)) << exp,
         b if b.is_power_of_two() => value << (exp * b.trailing_zeros() as usize),
         _ => value * base_as_ibig::<B>().pow(exp),
     }
@@ -63,7 +63,7 @@ fn shr_ref(value: &IBig, shift: usize) -> IBig {
     let n_words = shift / Word::BITS as usize;
 
     let hi = UBig::from_words(&words[n_words.min(words.len())..]);
-    IBig::from_parts(sign, hi >> shift % Word::BITS as usize)
+    IBig::from_parts(sign, hi >> (shift % Word::BITS as usize))
 }
 
 /// "Right shifting" in given radix, i.e. divide by a power of radix
@@ -175,9 +175,9 @@ pub const fn ilog_exact(n: Word, base: Word) -> u32 {
     }
 
     if pow == n {
-        return exp;
+        exp
     } else {
-        return 0;
+        0
     }
 }
 

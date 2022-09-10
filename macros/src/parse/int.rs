@@ -45,7 +45,7 @@ pub fn parse_integer<const SIGNED: bool>(input: TokenStream) -> TokenStream {
             TokenTree::Ident(ident) => {
                 if val.is_none() {
                     val = Some(ident.to_string())
-                } else if base.is_none() && ident.to_string() == "base" {
+                } else if base.is_none() && ident == "base" {
                     base_marked = true
                 } else {
                     panic_syntax();
@@ -74,7 +74,7 @@ pub fn parse_integer<const SIGNED: bool>(input: TokenStream) -> TokenStream {
     let val = val.unwrap();
     let big = match base {
         Some(b) => {
-            let b = u32::from_str_radix(&b, 10).unwrap();
+            let b = b.parse::<u32>().unwrap();
             match UBig::from_str_radix(&val, b) {
                 Ok(v) => v,
                 Err(_) => panic_base_invalid(),
@@ -103,13 +103,12 @@ pub fn parse_integer<const SIGNED: bool>(input: TokenStream) -> TokenStream {
 pub fn quote_words(words: &[Word]) -> Group {
     let words_stream: TokenStream = words
         .iter()
-        .map(|&w| {
+        .flat_map(|&w| {
             [
                 TokenTree::Literal(Literal::u64_unsuffixed(w)),
                 TokenTree::Punct(Punct::new(',', Spacing::Alone)),
             ]
         })
-        .flatten()
         .collect();
     Group::new(Delimiter::Bracket, words_stream)
 }

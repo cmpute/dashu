@@ -158,13 +158,13 @@ impl<R: Round> Context<R> {
     /// Calculate the natural logarithm of the number `x`
     #[inline]
     pub fn ln<const B: Word>(&self, x: &Repr<B>) -> Rounded<FBig<R, B>> {
-        return self.ln_internal(x, false);
+        self.ln_internal(x, false)
     }
 
     /// Calculate the natural logarithm of the number `(x+1)`
     #[inline]
     pub fn ln_1p<const B: Word>(&self, x: &Repr<B>) -> Rounded<FBig<R, B>> {
-        return self.ln_internal(x, true);
+        self.ln_internal(x, true)
     }
 
     fn ln_internal<const B: Word>(&self, x: &Repr<B>, one_plus: bool) -> Rounded<FBig<R, B>> {
@@ -195,12 +195,10 @@ impl<R: Round> Context<R> {
 
             let x_scaled = if B == 2 {
                 x >> s
+            } else if s > 0 {
+                x / (IBig::ONE << s as usize)
             } else {
-                if s > 0 {
-                    x / (IBig::ONE << s as usize)
-                } else {
-                    x * (IBig::ONE << (-s) as usize)
-                }
+                x * (IBig::ONE << (-s) as usize)
             };
             debug_assert!(x_scaled >= FBig::ONE);
             (s, x_scaled)
@@ -225,7 +223,7 @@ impl<R: Round> Context<R> {
         };
         let z2 = z.square();
         let mut pow = z.clone();
-        let mut sum = z.clone();
+        let mut sum = z;
 
         let mut k: usize = 3;
         loop {

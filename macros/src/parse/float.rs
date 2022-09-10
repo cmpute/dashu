@@ -31,10 +31,7 @@ pub fn parse_binary_float(input: TokenStream) -> TokenStream {
     };
 
     // allow one underscore prefix
-    let value_str = match value_str.strip_prefix('_') {
-        Some(s) => s,
-        None => &value_str,
-    };
+    let value_str = value_str.strip_prefix('_').unwrap_or(value_str);
 
     // generate expressions
     let (man, exp) = FBig::<mode::Zero, 2>::from_str(value_str)

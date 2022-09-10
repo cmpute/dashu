@@ -209,7 +209,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
         // choose a exponent threshold such that number with exponent smaller than this value
         // will be converted by directly evaluating the power. The threshold here is chosen such
         // that the power under base 10 will fit in a double word.
-        const THRESHOLD_SMALL_EXP: isize = (Word::BITS as f32 * 0.6020599913279624) as isize; // word bits * 2 / log2(10)
+        const THRESHOLD_SMALL_EXP: isize = (Word::BITS as f32 * 0.60206) as isize; // word bits * 2 / log2(10)
         if self.repr.exponent.abs() <= THRESHOLD_SMALL_EXP {
             // if the exponent is small enough, directly evaluate the exponent
             if self.repr.exponent >= 0 {

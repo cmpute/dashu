@@ -99,14 +99,12 @@ impl<R: Round, const B: Word> Display for FBig<R, B> {
                     }
                 }
                 // don't print any fractional part if precision is zero
-            } else {
-                if frac_prec > 0 {
-                    f.write_char('.')?;
-                    for _ in 0..(exp - frac_prec) {
-                        f.write_char('0')?;
-                    }
-                    frac.in_radix(B as u32).fmt(f)?;
+            } else if frac_prec > 0 {
+                f.write_char('.')?;
+                for _ in 0..(exp - frac_prec) {
+                    f.write_char('0')?;
                 }
+                frac.in_radix(B as u32).fmt(f)?;
             }
         } else {
             // directly print the significand and append zeros if needed

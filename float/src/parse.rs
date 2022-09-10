@@ -85,7 +85,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
         // parse scale and remove the scale part from the str
         let (scale, pmarker) = if let Some(pos) = scale_pos {
-            let value = match isize::from_str_radix(&src[pos + 1..], 10) {
+            let value = match (&src[pos + 1..]).parse::<isize>() {
                 Err(e) => match e.kind() {
                     IntErrorKind::Empty => return Err(ParseError::NoDigits),
                     _ => return Err(ParseError::InvalidDigit),
@@ -93,7 +93,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
                 Ok(v) => v,
             };
             let use_p = if B == 2 {
-                src.bytes().nth(pos) == Some(b'p') || src.bytes().nth(pos) == Some(b'P')
+                src.as_bytes().get(pos) == Some(&b'p') || src.as_bytes().get(pos) == Some(&b'P')
             } else {
                 false
             };
@@ -119,10 +119,10 @@ impl<R: Round, const B: Word> FBig<R, B> {
                     // only base 2 float is allowed using prefix
                     let int_str = &int_str[2..];
                     let digits = 4 * (int_str.len() - int_str.matches('_').count());
-                    if int_str.len() == 0 {
+                    if int_str.is_empty() {
                         (UBig::ZERO, digits, 16)
                     } else {
-                        (UBig::from_str_radix(&int_str, 16)?, digits, 16)
+                        (UBig::from_str_radix(int_str, 16)?, digits, 16)
                     }
                 } else if B == 2 && pmarker && !has_prefix {
                     return Err(ParseError::UnsupportedRadix);
@@ -167,7 +167,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
                 return Err(ParseError::UnsupportedRadix);
             } else {
                 ndigits = src.len() - src.matches('_').count();
-                UBig::from_str_radix(&src, B as u32)?
+                UBig::from_str_radix(src, B as u32)?
             }
         };
 

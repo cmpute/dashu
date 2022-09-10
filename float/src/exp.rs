@@ -46,7 +46,7 @@ impl<R: Round> Context<R> {
         if exp.is_zero() {
             return Exact(FBig::ONE);
         } else if exp.is_one() {
-            let repr = self.repr_round_ref(&base);
+            let repr = self.repr_round_ref(base);
             return repr.map(|v| FBig::new(v, *self));
         }
 

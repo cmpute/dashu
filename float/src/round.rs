@@ -107,7 +107,7 @@ pub trait Round: Copy {
         let (nsign, nmag) = num.into_parts();
         Self::round_low_part::<_>(integer, nsign * den.sign(), || {
             if den.sign() == Sign::Positive {
-                IBig::from(nmag << 1).cmp(&den)
+                IBig::from(nmag << 1).cmp(den)
             } else {
                 den.cmp(&-(nmag << 1))
             }
