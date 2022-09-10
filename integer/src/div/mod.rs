@@ -244,9 +244,10 @@ pub fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> Layout {
 /// Divide lhs by rhs, replacing the top words of lhs by the quotient and the
 /// bottom words of lhs by the remainder.
 ///
-/// rhs must have at least 2 words and be normalized (the top bit must be 1).
-///
 /// `lhs = [lhs % rhs, lhs / rhs]`
+///
+/// `rhs` must have at least 2 words and be normalized (the top bit must be 1).
+/// `lhs` must be pre-applied the shift from fast_div_rhs_top.
 ///
 /// Returns carry in the quotient. It is at most 1 because rhs is normalized.
 #[must_use]
@@ -256,7 +257,7 @@ pub(crate) fn div_rem_in_place(
     fast_div_rhs_top: FastDivideNormalized2,
     memory: &mut Memory,
 ) -> bool {
-    assert!(lhs.len() >= rhs.len() && rhs.len() >= 2);
+    debug_assert!(lhs.len() >= rhs.len() && rhs.len() >= 2);
 
     if rhs.len() <= THRESHOLD_SIMPLE || lhs.len() - rhs.len() <= THRESHOLD_SIMPLE {
         simple::div_rem_in_place(lhs, rhs, fast_div_rhs_top)
@@ -270,16 +271,19 @@ pub(crate) fn div_rem_in_place(
 ///
 /// `lhs = [lhs % rhs, lhs / rhs]`
 ///
-/// There is no normalization requirements on both oprands.
+/// `rhs` must have at least 2 words and be normalized (the top bit must be 1).
+/// `lhs` should not be preprocessed, it will be shifted by this function
 ///
-/// Returns carry in the quotient and the number of shifted bits caused by normalization.
-/// To get the actual remainder, the remainder should be shifted by the number.
-pub(crate) fn div_rem_unnormalized_in_place(
+/// Returns carry in the quotient. It is at most 1 because rhs is normalized.
+/// To get the actual remainder, the remainder should be shifted back.
+pub(crate) fn div_rem_unshifted_in_place(
     lhs: &mut [Word],
-    rhs: &mut [Word],
+    rhs: &[Word],
+    shift: u32,
+    fast_div_rhs_top: FastDivideNormalized2,
     memory: &mut Memory,
-) -> (u32, Word) {
-    let (shift, fast_div_rhs_top) = normalize(rhs);
+) -> Word {
+    // prerequisite: let (shift, fast_div_rhs_top) = normalize(rhs);
     let lhs_carry = shift::shl_in_place(lhs, shift);
     let mut q_top = if lhs_carry > 0 {
         div_rem_highest_word(lhs_carry, lhs, rhs, fast_div_rhs_top)
@@ -288,5 +292,5 @@ pub(crate) fn div_rem_unnormalized_in_place(
     };
     let overflow = div_rem_in_place(lhs, rhs, fast_div_rhs_top, memory);
     q_top += overflow as Word;
-    (shift, q_top)
+    q_top
 }

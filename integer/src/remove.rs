@@ -1,5 +1,5 @@
-use alloc::vec;
 use crate::ubig::UBig;
+use alloc::vec;
 use dashu_base::{DivRem, PowerOfTwo};
 
 impl UBig {

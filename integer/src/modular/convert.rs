@@ -125,8 +125,10 @@ impl ModuloDoubleRaw {
 
 impl ModuloLargeRaw {
     pub fn from_ubig(x: UBig, ring: &ModuloRingLarge) -> ModuloLargeRaw {
-        let mut buffer = ring.0.rem_large(x.into_repr());
-        buffer.push_zeros(ring.normalized_modulus().len() - buffer.len());
+        let mut buffer = ring.0.rem_repr(x.into_repr());
+        let modulus_len = ring.normalized_modulus().len();
+        buffer.ensure_capacity_exact(modulus_len);
+        buffer.push_zeros(modulus_len - buffer.len());
         Self(buffer.into_boxed_slice())
     }
 

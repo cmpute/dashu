@@ -178,6 +178,6 @@ impl ModuloRingLarge {
     pub fn is_valid(&self, val: &ModuloLargeRaw) -> bool {
         val.0.len() == self.normalized_modulus().len()
             && cmp::cmp_same_len(&val.0, self.normalized_modulus()) == Ordering::Less
-            && val.0[0] & math::ones_word(self.shift()) == 0
+            && val.0[0] & math::ones_word(self.shift()) == 0 // must be shifted
     }
 }

@@ -394,15 +394,21 @@ mod repr {
         (Repr::from_buffer(lhs), Repr::from_buffer(rhs))
     }
 
-    /// lhs = (lhs / rhs, lhs % rhs)
+    /// lhs = [lhs % rhs, lhs / rhs]
     ///
     /// Returns the number of shift bits produced by normalization.
     #[inline]
     fn div_rem_in_lhs(lhs: &mut Buffer, rhs: &mut Buffer) -> u32 {
         let mut allocation =
             MemoryAllocation::new(div::memory_requirement_exact(lhs.len(), rhs.len()));
-        let (shift, quo_carry) =
-            div::div_rem_unnormalized_in_place(lhs, rhs, &mut allocation.memory());
+        let (shift, fast_div_top) = div::normalize(rhs);
+        let quo_carry = div::div_rem_unshifted_in_place(
+            lhs,
+            rhs,
+            shift,
+            fast_div_top,
+            &mut allocation.memory(),
+        );
         lhs.push_resizing(quo_carry);
         shift
     }

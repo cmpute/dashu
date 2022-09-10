@@ -311,7 +311,9 @@ mod repr {
         };
 
         // a = residue / lhs
-        let (_, overflow) = div::div_rem_unnormalized_in_place(residue, lhs_clone, &mut memory);
+        let (shift, fast_div_top) = div::normalize(lhs_clone);
+        let overflow =
+            div::div_rem_unshifted_in_place(residue, lhs_clone, shift, fast_div_top, &mut memory);
         let mut a = Buffer::from(&residue[lhs_len..]);
         debug_assert_eq!(residue[0], 0); // this division is an exact division
         if overflow > 0 {

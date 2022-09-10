@@ -250,7 +250,8 @@ pub(crate) fn gcd_in_place(
 
         if b == 0 {
             // The guess has failed, do a euclidean step (x, y) = (y, x % y)
-            let (shift, _) = div::div_rem_unnormalized_in_place(x, y, memory);
+            let (shift, fast_div_top) = div::normalize(y);
+            let _rem = div::div_rem_unshifted_in_place(x, y, shift, fast_div_top, memory);
             let mut r = &mut x[..y.len()];
             debug_assert_zero!(shift::shr_in_place(y, shift));
             debug_assert_zero!(shift::shr_in_place(r, shift));
@@ -376,7 +377,8 @@ pub fn gcd_ext_in_place(
 
         if b == 0 {
             // The guess has failed, do a euclidean step (x, y) = (y, x % y)
-            let (shift, q_top) = div::div_rem_unnormalized_in_place(x, y, &mut memory);
+            let (shift, fast_div_top) = div::normalize(y);
+            let q_top = div::div_rem_unshifted_in_place(x, y, shift, fast_div_top, &mut memory);
             let (mut r, mut q_lo) = x.split_at_mut(y.len());
             debug_assert_zero!(shift::shr_in_place(y, shift));
             debug_assert_zero!(shift::shr_in_place(r, shift));
