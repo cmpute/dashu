@@ -152,6 +152,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     #[allow(non_upper_case_globals)]
     pub fn with_base<const NewB: Word>(self) -> Rounded<FBig<R, NewB>> {
+        // if self.context.precision is zero, then precision is also zero
         let precision =
             Repr::<B>::BASE.pow(self.context.precision).log2_bounds().0 / NewB.log2_bounds().1;
         self.with_base_and_precision(precision as usize)
@@ -159,6 +160,13 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
     /// Explicitly change the base of the float number with given precision (under the new base).
     ///
+    /// Infinities are mapped to infinities inexactly, the error will [NoOp][Rounding::NoOp].
+    /// 
+    /// Conversion for float numbers with unlimited precision is only allowed in following cases:
+    /// - The number is infinite
+    /// - The new base NewB is a power of B
+    /// - B is a power of the new base NewB
+    /// 
     /// # Panic
     ///
     /// Panics if the precision is 0 when the base conversion cannot be done losslessly.
@@ -178,7 +186,15 @@ impl<R: Round, const B: Word> FBig<R, B> {
             });
         }
 
+        // shortcut for infinities
         let context = Context::<R>::new(precision);
+        if self.repr.is_infinite() {
+            return Inexact(FBig::new(Repr {
+                significand: self.repr.significand,
+                exponent: self.repr.exponent
+            }, context), Rounding::NoOp);
+        }
+
         if NewB > B {
             // shortcut if NewB is a power of B
             let n = ilog_exact(NewB, B);

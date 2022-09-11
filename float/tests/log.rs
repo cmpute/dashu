@@ -1,5 +1,5 @@
 use dashu_base::Approximation::*;
-use dashu_float::round::Rounding::*;
+use dashu_float::{round::Rounding::*, DBig};
 
 mod helper_macros;
 
@@ -94,6 +94,12 @@ fn test_ln_unlimited_precision() {
 }
 
 #[test]
+#[should_panic]
+fn test_ln_inf() {
+    let _ = DBig::INFINITY.ln();
+}
+
+#[test]
 fn test_ln_1p_binary() {
     assert_eq!(fbig!(0).ln_1p(), fbig!(0));
 
@@ -182,4 +188,10 @@ fn test_ln_1p_decimal() {
 #[should_panic]
 fn test_ln_1p_unlimited_precision() {
     let _ = dbig!(2).with_precision(0).value().ln_1p();
+}
+
+#[test]
+#[should_panic]
+fn test_ln_1p_inf() {
+    let _ = DBig::INFINITY.ln_1p();
 }

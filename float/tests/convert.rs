@@ -140,6 +140,8 @@ fn test_base_change() {
     assert_eq!(fbig!(0x12345p100).with_rounding::<HalfAway>().to_decimal(), Inexact(dbig!(945224e29), AddOne));
     assert_eq!(fbig!(0x12345p-1).with_rounding::<HalfAway>().to_decimal(), Exact(dbig!(372825e-1)));
     assert_eq!(fbig!(-0x12345p-100).with_rounding::<HalfAway>().to_decimal(), Inexact(dbig!(-588214e-31), NoOp));
+    assert_eq!(FBig::<HalfAway, 2>::INFINITY.to_decimal(), Inexact(DBig::INFINITY, NoOp));
+    assert_eq!(FBig::<HalfAway, 2>::NEG_INFINITY.to_decimal(), Inexact(DBig::NEG_INFINITY, NoOp));
 
     assert_eq!(fbig!(0x12345).with_rounding::<HalfAway>().with_base_and_precision::<10>(10), Exact(dbig!(74565)));
     assert_eq!(fbig!(-0x12345p1).with_rounding::<HalfAway>().with_base_and_precision::<10>(10), Exact(dbig!(-149130)));
@@ -154,6 +156,8 @@ fn test_base_change() {
     assert_eq!(dbig!(12345e100).with_rounding::<Zero>().to_binary(), Inexact(fbig!(0xdc78p330), NoOp));
     assert_eq!(dbig!(12345e-1).with_rounding::<Zero>().to_binary(), Exact(fbig!(0x9a5p-1)));
     assert_eq!(dbig!(-12345e-100).with_rounding::<Zero>().to_binary(), Inexact(fbig!(-0xa8c2p-334), NoOp));
+    assert_eq!(DBig::INFINITY.to_binary(), Inexact(FBig::<HalfAway, 2>::INFINITY, NoOp));
+    assert_eq!(DBig::NEG_INFINITY.to_binary(), Inexact(FBig::<HalfAway, 2>::NEG_INFINITY, NoOp));
 
     assert_eq!(dbig!(12345).with_rounding::<Zero>().with_base_and_precision::<2>(30), Exact(fbig!(0x3039)));
     assert_eq!(dbig!(-12345e1).with_rounding::<Zero>().with_base_and_precision::<2>(30), Exact(fbig!(-0xf11dp1)));
@@ -171,6 +175,8 @@ fn test_base_change() {
     assert_eq!(fbig!(0x12345p-1).with_base::<16>(), Exact(FHex::from_parts(ibig!(0x91a28), -1)));
     assert_eq!(fbig!(-0x12345p-100).with_base::<16>(), Exact(FHex::from_parts(ibig!(-0x12345), -25)));
     assert_eq!(fbig!(-0x12345p-111).with_base::<16>(), Exact(FHex::from_parts(ibig!(-0x2468a), -28)));
+    assert_eq!(FBig::<Zero, 2>::INFINITY.with_base::<16>(), Inexact(FHex::INFINITY, NoOp));
+    assert_eq!(FBig::<Zero, 2>::NEG_INFINITY.with_base::<16>(), Inexact(FHex::NEG_INFINITY, NoOp));
 
     // hexadecimal -> binary
     assert_eq!(FHex::from_parts(ibig!(0x12345), 0).to_binary(), Exact(fbig!(0x12345)));
@@ -178,6 +184,8 @@ fn test_base_change() {
     assert_eq!(FHex::from_parts(ibig!(0x12345), 100).to_binary(), Exact(fbig!(0x12345p400)));
     assert_eq!(FHex::from_parts(ibig!(0x12345), -1).to_binary(), Exact(fbig!(0x12345p-4)));
     assert_eq!(FHex::from_parts(ibig!(-0x12345), 100).to_binary(), Exact(fbig!(-0x12345p400)));
+    assert_eq!(FHex::INFINITY.to_binary(), Inexact(FBig::<Zero, 2>::INFINITY, NoOp));
+    assert_eq!(FHex::NEG_INFINITY.to_binary(), Inexact(FBig::<Zero, 2>::NEG_INFINITY, NoOp));
 }
 
 #[test]

@@ -4,8 +4,8 @@
 - [x] Implement +-*/ and exp/log
 - [x] Implement more arithmetic traits with primitive types
 - [x] Implement more arithmetic traits for reference type
-- [ ] Full support and tests for inf
-- [ ] Full support and tests for arbitrary precision (precision = 0)
+- [x] Full support and tests for inf
+- [x] Full support and tests for arbitrary precision (precision = 0)
 - [x] Make conversion between bases ready
 - [ ] Full documentation
 

@@ -136,6 +136,13 @@ fn test_div_by_0() {
 }
 
 #[test]
+#[should_panic]
+fn test_div_by_unlimited_precision() {
+    let _ = dbig!(1).with_precision(0).value() / dbig!(3).with_precision(0).value();
+}
+
+
+#[test]
 fn test_div_rem_euclid_binary() {
     // test cases: n, d, quotient, remainder
     let test_cases = [
@@ -193,10 +200,4 @@ fn test_div_rem_euclid_decimal() {
         assert_eq!(quotient, *q);
         assert_eq!(remainder, *r);
     }
-}
-
-#[test]
-#[should_panic]
-fn test_div_unlimited_precision() {
-    let _ = dbig!(1).with_precision(0).value() / dbig!(3).with_precision(0).value();
 }

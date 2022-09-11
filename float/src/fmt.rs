@@ -4,7 +4,7 @@ use crate::{
     fbig::FBig,
     repr::{Context, Repr},
     round::Round,
-    utils::{digit_len, shr_digits_in_place, split_digits_ref},
+    utils::{digit_len, split_digits_ref, split_digits},
 };
 use core::fmt::{self, Display, Formatter, Write};
 use dashu_base::{Abs, Sign};
@@ -47,10 +47,12 @@ impl<R: Round, const B: Word> Display for FBig<R, B> {
         }
 
         if self.repr.exponent < 0 {
+            // If the exponent is negative, then the float number has fractional part
+
             let exp = -self.repr.exponent as usize;
             let (int, frac) = split_digits_ref::<B>(&self.repr.significand, exp);
-            let frac_prec = digit_len::<B>(&frac);
-            assert!(frac_prec <= exp);
+            let frac_digits = digit_len::<B>(&frac);
+            debug_assert!(frac_digits <= exp);
             let mut frac = frac.abs(); // don't print sign for fractional part
 
             // print integral part
@@ -60,48 +62,48 @@ impl<R: Round, const B: Word> Display for FBig<R, B> {
             int.in_radix(B as u32).fmt(f)?;
 
             // print fractional part
-            // note that the fractional part has actually exp digits (with left zero padding)
-            if let Some(v) = f.precision() {
-                if v != 0 {
+            // note that the fractional part has exact exp digits (with left zero padding)
+            if let Some(prec) = f.precision() {
+                if prec != 0 {
                     f.write_char('.')?;
-                    if exp >= v {
+                    if exp >= prec {
                         // shrink fractional part if it exceeds the required precision
                         // there could be one more digit in the fractional part after rounding
-                        let new_prec = if exp == v {
-                            frac_prec
-                        } else if frac_prec > exp - v {
-                            let (shifted, mut rem) = split_digits_ref::<B>(&frac, exp - v);
-                            frac = shifted;
-                            shr_digits_in_place::<B>(&mut rem, exp - v - 1);
-                            frac += R::round_fract::<B>(&frac, rem, exp - v);
+                        let new_prec = if exp == prec {
+                            frac_digits
+                        } else if frac_digits > exp - prec {
+                            let (shifted, rem) = split_digits::<B>(frac, exp - prec);
+                            let adjust = R::round_fract::<B>(&shifted, rem, exp - prec);
+                            frac = shifted + adjust;
                             digit_len::<B>(&frac)
                         } else {
                             0
                         };
 
-                        if v > new_prec {
-                            for _ in 0..v - new_prec {
+                        // print padding zeros
+                        if prec > new_prec {
+                            for _ in 0..prec - new_prec {
                                 f.write_char('0')?;
                             }
                         }
-                        if frac_prec > exp - v {
+                        if frac_digits > exp - prec {
                             frac.in_radix(B as u32).fmt(f)?;
                         }
                     } else {
                         // append zeros if the required precision is larger
-                        for _ in 0..exp - frac_prec {
+                        for _ in 0..exp - frac_digits {
                             f.write_char('0')?;
                         }
                         frac.in_radix(B as u32).fmt(f)?;
-                        for _ in 0..v - exp {
+                        for _ in 0..prec - exp {
                             f.write_char('0')?; // TODO: padding handling is not correct here
                         }
                     }
                 }
                 // don't print any fractional part if precision is zero
-            } else if frac_prec > 0 {
+            } else if frac_digits > 0 {
                 f.write_char('.')?;
-                for _ in 0..(exp - frac_prec) {
+                for _ in 0..(exp - frac_digits) {
                     f.write_char('0')?;
                 }
                 frac.in_radix(B as u32).fmt(f)?;

@@ -1,7 +1,7 @@
 use core::convert::TryInto;
 
 use crate::{
-    error::check_precision_limited,
+    error::{check_precision_limited, check_inf},
     fbig::FBig,
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
@@ -30,6 +30,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
 impl<R: Round> Context<R> {
     pub fn powi<const B: Word>(&self, base: &Repr<B>, exp: IBig) -> Rounded<FBig<R, B>> {
+        check_inf(base);
         check_precision_limited(self.precision);
 
         let (exp_sign, exp) = exp.into_parts();
@@ -88,6 +89,7 @@ impl<R: Round> Context<R> {
     //       consider this change after having a benchmark
 
     fn exp_internal<const B: Word>(&self, x: &Repr<B>, minus_one: bool) -> Rounded<FBig<R, B>> {
+        check_inf(x);
         check_precision_limited(self.precision);
 
         if x.is_zero() {

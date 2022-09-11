@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 description = "Procedure macros to create big numbers"
+rust-version = "1.61"
 
 [lib]
 proc-macro = true

@@ -16,7 +16,7 @@ pub(crate) fn check_inf_operands<const B: Word>(lhs: &Repr<B>, rhs: &Repr<B>) {
 
 /// Panics when operate with infinities
 pub(crate) const fn panic_operate_with_inf() -> ! {
-    panic!("binary operations with infinity is forbidden!")
+    panic!("arithmetic operations with the infinity are not allowed!")
 }
 
 pub(crate) fn check_precision_limited(precision: usize) {

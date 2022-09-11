@@ -2,7 +2,7 @@ use dashu_base::{Approximation::*, EstimatedLog2, Sign};
 use dashu_int::IBig;
 
 use crate::{
-    error::check_precision_limited,
+    error::{check_precision_limited, check_inf},
     fbig::FBig,
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
@@ -168,6 +168,7 @@ impl<R: Round> Context<R> {
     }
 
     fn ln_internal<const B: Word>(&self, x: &Repr<B>, one_plus: bool) -> Rounded<FBig<R, B>> {
+        check_inf(x);
         check_precision_limited(self.precision);
 
         if (one_plus && x.is_zero()) || (!one_plus && x.is_one()) {

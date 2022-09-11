@@ -1,7 +1,7 @@
 use super::{ExtendedGcd, Gcd};
 use core::mem::replace;
 
-// TODO(next): Implement gcd for signed integers
+// TODO: Implement gcd for signed integers
 
 trait UncheckedGcd<Rhs = Self> {
     type Output;
