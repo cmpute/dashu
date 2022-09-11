@@ -69,14 +69,21 @@ pub fn gcd_ext_word(lhs: &mut [Word], rhs: Word) -> (Word, SignedWord, Sign) {
         lhs[1..].fill(0);
         (rhs, 0, Sign::Positive)
     } else {
-        // a = t, b = s - t * lhs
+        /*
+         * r = s * rhs + t * rem
+         *   = s * rhs + t * (lhs - q * rhs)
+         *   = t * lhs + (s - t * q) * rhs
+         * so let a = t, b = s - t * q, then r = a * lhs + b * rhs
+         */
         let (r, s, t) = rhs.gcd_ext(rem);
         let (s_sign, s_mag) = s.to_sign_magnitude();
-        let t_mag = t.unsigned_abs();
+        let (t_sign, t_mag) = t.to_sign_magnitude();
+        let b_sign = if s_mag == 0 { -t_sign } else { s_sign };
+
         let carry = mul::mul_word_in_place(lhs, t_mag);
         let carry2 = add::add_word_in_place(lhs, s_mag);
         debug_assert!(carry == 0 && !carry2);
-        (r, t, s_sign)
+        (r, t, b_sign)
     }
 }
 
@@ -88,10 +95,12 @@ pub fn gcd_ext_dword(lhs: &mut [Word], rhs: DoubleWord) -> (DoubleWord, SignedDo
         lhs[1..].fill(0);
         (rhs, 0, Sign::Positive)
     } else {
-        // a = t, b = s - t * lhs
+        // same as above, a = t, b = s - t * lhs
         let (r, s, t) = rhs.gcd_ext(rem);
         let (s_sign, s_mag) = s.to_sign_magnitude();
-        let t_mag = t.unsigned_abs();
+        let (t_sign, t_mag) = t.to_sign_magnitude();
+        let b_sign = if s_mag == 0 { -t_sign } else { s_sign };
+
         let carry = if let Some(st) = shrink_dword(t_mag) {
             extend_word(mul::mul_word_in_place(lhs, st))
         } else {
@@ -99,6 +108,6 @@ pub fn gcd_ext_dword(lhs: &mut [Word], rhs: DoubleWord) -> (DoubleWord, SignedDo
         };
         let carry2 = add::add_dword_in_place(lhs, s_mag);
         debug_assert!(carry == 0 && !carry2);
-        (r, t, s_sign)
+        (r, t, b_sign)
     }
 }

@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use dashu_int::{IBig, UBig, Word};
+use dashu_int::{IBig, UBig};
 use dashu_macros::{ibig, ubig};
 
 #[test]
@@ -42,9 +42,13 @@ fn test_ubig() {
     // const test
     const _: UBig = ubig!(0);
     const _: UBig = ubig!(1);
-    #[cfg(target_pointer_width = "64")]
+    #[cfg(all(
+        target_pointer_width = "64",
+        not(force_bits = "16"),
+        not(force_bits = "32")
+    ))]
     {
-        assert!(Word::BITS >= 64); // assumption only for testing
+        assert!(dashu_int::Word::BITS == 64); // assumption only for testing
         const _: UBig = ubig!(0xffffffffffffffff);
         const _: UBig = ubig!(0xffffffffffffffffffffffffffffffff);
     }
@@ -122,9 +126,13 @@ fn test_ibig() {
     // const test
     const _: IBig = ibig!(0);
     const _: IBig = ibig!(-1);
-    #[cfg(target_pointer_width = "64")]
+    #[cfg(all(
+        target_pointer_width = "64",
+        not(force_bits = "16"),
+        not(force_bits = "32")
+    ))]
     {
-        assert!(Word::BITS >= 64); // assumption only for testing
+        assert!(dashu_int::Word::BITS == 64); // assumption only for testing
         const _: IBig = ibig!(-0xffffffffffffffff);
         const _: IBig = ibig!(-0xffffffffffffffffffffffffffffffff);
     }

@@ -1,5 +1,8 @@
 use crate::{
-    arch::{self, word::Word},
+    arch::{
+        self,
+        word::{DoubleWord, Word},
+    },
     math::mul_add_2carry,
     mul,
     primitive::{double_word, split_dword},
@@ -51,8 +54,8 @@ pub fn square(b: &mut [Word], a: &[Word]) {
         let (s0, s1) = mul_add_2carry(*m, *m, *b0, *b0);
         let s = double_word(s0, s1);
         let wb1 = double_word(0, *b1);
-        let (s, oc1) = s.overflowing_add(wb1 + c1 as u128);
-        let (s, oc2) = s.overflowing_add(wb1 + c2 as u128);
+        let (s, oc1) = s.overflowing_add(wb1 + c1 as DoubleWord);
+        let (s, oc2) = s.overflowing_add(wb1 + c2 as DoubleWord);
         let (s0, s1) = split_dword(s);
 
         *b01.first_mut().unwrap() = s0;

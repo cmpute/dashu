@@ -23,7 +23,7 @@ impl<R: Round, const B: Word> Add for FBig<R, B> {
     }
 }
 
-impl<'r, const B: Word, R: Round> Add<&'r FBig<R, B>> for FBig<R, B> {
+impl<'r, R: Round, const B: Word> Add<&'r FBig<R, B>> for FBig<R, B> {
     type Output = Self;
 
     #[inline]
@@ -32,7 +32,7 @@ impl<'r, const B: Word, R: Round> Add<&'r FBig<R, B>> for FBig<R, B> {
     }
 }
 
-impl<'l, const B: Word, R: Round> Add<FBig<R, B>> for &'l FBig<R, B> {
+impl<'l, R: Round, const B: Word> Add<FBig<R, B>> for &'l FBig<R, B> {
     type Output = FBig<R, B>;
 
     #[inline]
@@ -41,7 +41,7 @@ impl<'l, const B: Word, R: Round> Add<FBig<R, B>> for &'l FBig<R, B> {
     }
 }
 
-impl<'l, 'r, const B: Word, R: Round> Add<&'r FBig<R, B>> for &'l FBig<R, B> {
+impl<'l, 'r, R: Round, const B: Word> Add<&'r FBig<R, B>> for &'l FBig<R, B> {
     type Output = FBig<R, B>;
 
     #[inline]
@@ -59,7 +59,7 @@ impl<R: Round, const B: Word> Sub for FBig<R, B> {
     }
 }
 
-impl<'r, const B: Word, R: Round> Sub<&'r FBig<R, B>> for FBig<R, B> {
+impl<'r, R: Round, const B: Word> Sub<&'r FBig<R, B>> for FBig<R, B> {
     type Output = Self;
 
     #[inline]
@@ -68,7 +68,7 @@ impl<'r, const B: Word, R: Round> Sub<&'r FBig<R, B>> for FBig<R, B> {
     }
 }
 
-impl<'l, const B: Word, R: Round> Sub<FBig<R, B>> for &'l FBig<R, B> {
+impl<'l, R: Round, const B: Word> Sub<FBig<R, B>> for &'l FBig<R, B> {
     type Output = FBig<R, B>;
 
     #[inline]
@@ -77,7 +77,7 @@ impl<'l, const B: Word, R: Round> Sub<FBig<R, B>> for &'l FBig<R, B> {
     }
 }
 
-impl<'l, 'r, const B: Word, R: Round> Sub<&'r FBig<R, B>> for &'l FBig<R, B> {
+impl<'l, 'r, R: Round, const B: Word> Sub<&'r FBig<R, B>> for &'l FBig<R, B> {
     type Output = FBig<R, B>;
 
     #[inline]

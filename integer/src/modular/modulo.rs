@@ -76,7 +76,6 @@ impl<'a> Modulo<'a> {
 
     #[inline]
     pub(crate) fn from_large(raw: ModuloLargeRaw, ring: &'a ModuloRingLarge) -> Self {
-        dbg!(&raw.0, ring.normalized_modulus());
         debug_assert!(ring.is_valid(&raw));
         Modulo(ModuloRepr::Large(raw, ring))
     }

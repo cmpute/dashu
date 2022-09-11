@@ -537,7 +537,7 @@ mod repr {
     use static_assertions::const_assert;
 
     use super::*;
-    use crate::{arch::word::DoubleWord, repr::TypedReprRef};
+    use crate::repr::TypedReprRef;
 
     impl<'a> TypedReprRef<'a> {
         #[inline]
@@ -661,7 +661,7 @@ mod repr {
     fn to_f64_small(dword: u128) -> Approximation<f64, Sign> {
         const_assert!((u128::MAX as f64) < f64::MAX);
         let f = dword as f64;
-        let back = f as DoubleWord;
+        let back = f as u128;
 
         match back.partial_cmp(&dword).unwrap() {
             Ordering::Greater => Inexact(f, Sign::Positive),

@@ -95,7 +95,7 @@ pub(crate) struct FastDivideNormalized {
     // Top bit must be 1.
     pub(crate) divisor: Word,
 
-    // floor ((B^2 - 1) / divisor) - B, where B = 2^WORD_BITS
+    // floor((B^2 - 1) / divisor) - B, where B = 2^WORD_BITS
     m: Word,
 }
 
@@ -189,7 +189,7 @@ impl FastDivideNormalized {
 
         // At this point 0 <= r < B, i.e. 0 <= r < 2d.
         // the following fix step is unlikely to happen
-        if r > self.divisor {
+        if r >= self.divisor {
             q += 1;
             r -= self.divisor;
         }

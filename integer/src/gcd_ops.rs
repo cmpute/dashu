@@ -97,7 +97,7 @@ mod repr {
         }
     }
 
-    /// Perform gcd on a large number with a `Word`.
+    /// Perform gcd on a large number with a `DoubleWord`.
     #[inline]
     fn gcd_large_dword(buffer: &[Word], rhs: DoubleWord) -> Repr {
         if rhs == 0 {

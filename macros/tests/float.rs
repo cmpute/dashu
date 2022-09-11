@@ -1,7 +1,6 @@
 use core::str::FromStr;
 
 use dashu_float::{DBig, FBig};
-use dashu_int::Word;
 use dashu_macros::{dbig, fbig};
 
 #[test]
@@ -30,9 +29,13 @@ fn test_fbig() {
     const _: FBig = fbig!(1);
     const _: FBig = fbig!(-1);
     const _: FBig = fbig!(-10.01b100);
-    #[cfg(target_pointer_width = "64")]
+    #[cfg(all(
+        target_pointer_width = "64",
+        not(force_bits = "16"),
+        not(force_bits = "32")
+    ))]
     {
-        assert!(Word::BITS >= 64);
+        assert!(dashu_int::Word::BITS >= 64);
         const _: FBig = fbig!(0xffffffffffffffffp1234);
         const _: FBig = fbig!(-0xffffffffffffffffffffffffffffffffp-1234);
     }
@@ -54,9 +57,13 @@ fn test_dbig() {
     const _: DBig = dbig!(1);
     const _: DBig = dbig!(-1);
     const _: DBig = dbig!(-2.55e100);
-    #[cfg(target_pointer_width = "64")]
+    #[cfg(all(
+        target_pointer_width = "64",
+        not(force_bits = "16"),
+        not(force_bits = "32")
+    ))]
     {
-        assert!(Word::BITS >= 64);
+        assert!(dashu_int::Word::BITS >= 64);
         // 2^64 * 10^1234
         const _: DBig = dbig!(18446744073709551615e1234);
         // 2^128 * 10^-(1234+128)

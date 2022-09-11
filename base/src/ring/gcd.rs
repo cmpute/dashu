@@ -229,7 +229,7 @@ macro_rules! impl_gcd_ops_prim {
                 if a >= b {
                     if b == 1 {
                         // this shortcut eliminates the overflow when a = <$T>::MAX and b = 1
-                        (1, 0, 1)
+                        (1 << shift, 0, 1)
                     } else {
                         // forward to the gcd algorithm
                         let (g, ca, cb) = a.unchecked_gcd_ext(b);
@@ -237,7 +237,7 @@ macro_rules! impl_gcd_ops_prim {
                     }
                 } else {
                     if a == 1 {
-                        (1, 1, 0)
+                        (1 << shift, 1, 0)
                     } else {
                         let (g, cb, ca) = b.unchecked_gcd_ext(a);
                         (g << shift, ca, cb)
@@ -260,6 +260,7 @@ mod tests {
     #[test]
     fn test_simple() {
         assert_eq!(12u8.gcd(18), 6);
+        assert_eq!(16u16.gcd(2032), 16);
         assert_eq!(0x40000000u32.gcd(0xcfd41b91), 1);
         assert_eq!(
             0x80000000000000000000000000000000u128.gcd(0x6f32f1ef8b18a2bc3cea59789c79d441),
@@ -270,8 +271,10 @@ mod tests {
             1
         );
 
-        let result = 12u8.gcd_ext(18u8);
+        let result = 12u8.gcd_ext(18);
         assert_eq!(result, (6, -1, 1));
+        let result = 16u16.gcd_ext(2032);
+        assert_eq!(result, (16, 1, 0));
         let result = 0x40000000u32.gcd_ext(0xcfd41b91);
         assert_eq!(result, (1, -569926925, 175506801));
         let result =

@@ -483,7 +483,7 @@ pub fn gcd_ext_in_place(
 
     // forward to single word gcd
     let (g_word, cx, cy) = x_word.gcd_ext(y_word);
-    swapped ^= cx < 0;
+    swapped ^= (cx < 0) || (cx == 0 && cy > 0);
 
     // let lhs stores |b| = |cx| * t0 + |cy| * t1
     // by now, number of words in |b| should be close to lhs

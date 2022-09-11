@@ -105,7 +105,8 @@ pub fn quote_words(words: &[Word]) -> Group {
         .iter()
         .flat_map(|&w| {
             [
-                TokenTree::Literal(Literal::u64_unsuffixed(w)),
+                // currently Word bits <= 64
+                TokenTree::Literal(Literal::u64_unsuffixed(w as u64)),
                 TokenTree::Punct(Punct::new(',', Spacing::Alone)),
             ]
         })

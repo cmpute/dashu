@@ -25,6 +25,7 @@
 - Function `gcd()` and `extended_gcd()` of `UBig` and `IBig` are changed to be associated functions of `Gcd` and `ExtendedGCD`.
 - Parsing a string with unsupported radix will now return an Err instead of `panic!`.
 - `from_str_with_radix_prefix` now also return the radix.
+- Due to the requirement of `dashu-float`, the MSRV is now 1.61. Rust versions from 1.57 to 1.60 are still working for `dashu-int` in this version, but it won't be ensured in future releases.
 
 ### Improve
 - Parsing integers from string support underscore separater.

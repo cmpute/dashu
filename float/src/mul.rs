@@ -9,7 +9,7 @@ use crate::{
 };
 use core::ops::{Mul, MulAssign};
 
-impl<'l, 'r, const B: Word, R: Round> Mul<&'r FBig<R, B>> for &'l FBig<R, B> {
+impl<'l, 'r, R: Round, const B: Word> Mul<&'r FBig<R, B>> for &'l FBig<R, B> {
     type Output = FBig<R, B>;
 
     #[inline]
@@ -25,7 +25,7 @@ impl<'l, 'r, const B: Word, R: Round> Mul<&'r FBig<R, B>> for &'l FBig<R, B> {
     }
 }
 
-impl<'r, const B: Word, R: Round> Mul<&'r FBig<R, B>> for FBig<R, B> {
+impl<'r, R: Round, const B: Word> Mul<&'r FBig<R, B>> for FBig<R, B> {
     type Output = FBig<R, B>;
 
     #[inline]
@@ -41,7 +41,7 @@ impl<'r, const B: Word, R: Round> Mul<&'r FBig<R, B>> for FBig<R, B> {
     }
 }
 
-impl<'l, const B: Word, R: Round> Mul<FBig<R, B>> for &'l FBig<R, B> {
+impl<'l, R: Round, const B: Word> Mul<FBig<R, B>> for &'l FBig<R, B> {
     type Output = FBig<R, B>;
 
     #[inline]

@@ -37,7 +37,8 @@ impl UBig {
 
             exp += 1 << pows.len();
             q = new_q;
-            pows.push(last.square());
+            let next_sq = last.square();
+            pows.push(next_sq);
         }
 
         // second stage, division from highest power to the lowest
