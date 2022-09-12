@@ -360,7 +360,6 @@ fn test_format_binary() {
     assert_eq!(format!("{:=<+16.8}", fbig!(0x123p-4)), "+10010.00110000=");
     assert_eq!(format!("{:=^+16.8}", fbig!(0x123p-4)), "+10010.00110000=");
     assert_eq!(format!("{:=>+16.8}", fbig!(0x123p-4)), "=+10010.00110000");
-
 }
 
 #[test]
@@ -381,7 +380,7 @@ fn test_format_decimal() {
     assert_eq!(format!("{}", DBig::from_parts(i8::MIN.into(), -1)), "-12.8");
     assert_eq!(format!("{}", DBig::from_parts(i16::MAX.into(), -2)), "327.67");
     assert_eq!(format!("{}", DBig::from_parts(i16::MIN.into(), -2)), "-327.68");
-    
+
     assert_eq!(format!("{:.0}", dbig!(0)), "0");
     assert_eq!(format!("{:.0}", dbig!(1)), "1");
     assert_eq!(format!("{:.0}", dbig!(-1)), "-1");

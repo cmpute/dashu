@@ -1,7 +1,7 @@
 use core::convert::TryInto;
 
 use crate::{
-    error::{check_precision_limited, check_inf},
+    error::{check_inf, check_precision_limited},
     fbig::FBig,
     repr::{Context, Repr, Word},
     round::{Round, Rounded},

@@ -3,12 +3,12 @@
 use crate::{
     fbig::FBig,
     repr::{Context, Repr},
-    round::{Round, mode::Zero},
+    round::{mode::Zero, Round},
     utils::{digit_len, split_digits_ref},
 };
-use core::fmt::{self, Display, Formatter, Write, Alignment};
+use core::fmt::{self, Alignment, Display, Formatter, Write};
 use dashu_base::{Sign, UnsignedAbs};
-use dashu_int::{Word};
+use dashu_int::Word;
 
 impl<const B: Word> fmt::Debug for Repr<B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -58,8 +58,7 @@ impl<const B: Word> Repr<B> {
                 let adjust = R::round_fract::<B>(&signif, rem, shift);
                 rounded_signif = signif + adjust;
                 (&rounded_signif, self.exponent - diff)
-            }
-            else {
+            } else {
                 (&self.significand, self.exponent)
             }
         } else {
@@ -113,13 +112,13 @@ impl<const B: Word> Repr<B> {
                     Some(Alignment::Center) => {
                         let diff = min_width - width;
                         (diff / 2, diff - diff / 2)
-                    },
+                    }
                 }
             }
         } else {
             (0, 0)
         };
-        
+
         // print left padding
         let fill = if f.sign_aware_zero_pad() {
             '0'

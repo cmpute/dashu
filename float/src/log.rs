@@ -2,7 +2,7 @@ use dashu_base::{Approximation::*, EstimatedLog2, Sign};
 use dashu_int::IBig;
 
 use crate::{
-    error::{check_precision_limited, check_inf},
+    error::{check_inf, check_precision_limited},
     fbig::FBig,
     repr::{Context, Repr, Word},
     round::{Round, Rounded},

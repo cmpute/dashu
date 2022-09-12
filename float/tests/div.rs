@@ -141,7 +141,6 @@ fn test_div_by_unlimited_precision() {
     let _ = dbig!(1).with_precision(0).value() / dbig!(3).with_precision(0).value();
 }
 
-
 #[test]
 fn test_div_rem_euclid_binary() {
     // test cases: n, d, quotient, remainder

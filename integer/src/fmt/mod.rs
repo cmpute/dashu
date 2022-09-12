@@ -302,25 +302,30 @@ impl Display for InRadix<'_> {
 
 impl InRadix<'_> {
     /// Print the number in the simplest way, ignoring the all printing flags in the formatter.
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```
     /// # use dashu_int::UBig;
     /// # use core::fmt;
     /// struct HexDisplay<'a>(&'a UBig);
-    /// 
+    ///
     /// impl<'a> fmt::Display for HexDisplay<'a> {
     ///     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     ///         self.0.in_radix(16).fmt_custom(f, true, "hex:")
     ///     }
     /// }
-    /// 
+    ///
     /// let n = UBig::from(12345u16);
     /// let disp = HexDisplay(&n);
     /// assert_eq!(format!("{:=^+10}", disp), "hex:3039");
     /// ```
-    pub fn fmt_custom(&self, f: &mut Formatter, upper_case: bool, prefix: &'static str) -> fmt::Result {
+    pub fn fmt_custom(
+        &self,
+        f: &mut Formatter,
+        upper_case: bool,
+        prefix: &'static str,
+    ) -> fmt::Result {
         let digit_case = if self.radix <= 10 {
             DigitCase::NoLetters
         } else if upper_case {
@@ -333,7 +338,7 @@ impl InRadix<'_> {
             sign: self.sign,
             magnitude: self.magnitude,
             radix: self.radix,
-            prefix: prefix,
+            prefix,
             digit_case,
             ignore: true,
         }
@@ -348,7 +353,7 @@ struct InRadixWriter<'a> {
     radix: Digit,
     prefix: &'static str,
     digit_case: DigitCase,
-    ignore: bool // whether ignore formatting options
+    ignore: bool, // whether ignore formatting options
 }
 
 /// Representation for printing only head and tail of the number, only decimal is supported
