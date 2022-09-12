@@ -72,6 +72,10 @@ fn test_clear_high_bits() {
 
 #[test]
 fn test_split_bits() {
+    let (a, b) = ubig!(0).split_bits(0);
+    assert_eq!(a, ubig!(0));
+    assert_eq!(b, ubig!(0));
+
     let a = ubig!(0x123456789098765432101234567890987654321);
     let (a, b) = a.split_bits(0);
     assert!(a.is_zero());

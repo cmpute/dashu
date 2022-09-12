@@ -9,7 +9,7 @@ type FOct = FBig<mode::Zero, 8>;
 type FHex = FBig<mode::Zero, 16>;
 
 // radix independent cases: (text, mantissa, exponent, precision)
-const COMMON_CASES: [(&str, i64, isize, usize); 28] = [
+const FROM_STR_COMMON_CASES: [(&str, i64, isize, usize); 28] = [
     //
     // unsigned
     //
@@ -47,7 +47,7 @@ const COMMON_CASES: [(&str, i64, isize, usize); 28] = [
 ];
 
 #[test]
-fn test_dbig_from_str() {
+fn test_from_str_decimal() {
     let test_cases = [
         // scientific
         ("2e0", 2, 0, 1),
@@ -57,7 +57,7 @@ fn test_dbig_from_str() {
         ("-.6e-1", -6, -2, 1),
         ("-12_34_.56_78e9", -12345678, 5, 8),
     ];
-    for (text, man, exp, prec) in COMMON_CASES.iter().copied().chain(test_cases) {
+    for (text, man, exp, prec) in FROM_STR_COMMON_CASES.iter().copied().chain(test_cases) {
         let val = DBig::from_str(text).unwrap();
         assert_eq!(val, DBig::from_parts(IBig::from(man), exp));
         assert_eq!(val.precision(), prec);
@@ -79,7 +79,7 @@ fn test_dbig_from_str() {
 }
 
 #[test]
-fn test_fbig_from_str() {
+fn test_from_str_binary() {
     let test_cases = [
         //
         // scientific with 'b' notation
@@ -116,7 +116,7 @@ fn test_fbig_from_str() {
         ("0x00001p2", 1, 2, 20),
         ("-0x001.00p2", -1, 2, 20),
     ];
-    for (text, man, exp, prec) in COMMON_CASES.iter().copied().chain(test_cases) {
+    for (text, man, exp, prec) in FROM_STR_COMMON_CASES.iter().copied().chain(test_cases) {
         let val = FBin::from_str(text).unwrap();
         assert_eq!(val, FBin::from_parts(IBig::from(man), exp));
         assert_eq!(val.precision(), prec);
@@ -136,7 +136,7 @@ fn test_fbig_from_str() {
 }
 
 #[test]
-fn test_oct_hex_from_str() {
+fn test_from_str_oct_hex() {
     let oct_cases = [
         //
         // scientific with 'o' notation
@@ -149,7 +149,7 @@ fn test_oct_hex_from_str() {
         ("-.0700O-1", -7, -3, 4),
         ("-06_25_.13_30o3", -207451, 0, 8),
     ];
-    for (text, man, exp, prec) in COMMON_CASES.iter().copied().chain(oct_cases) {
+    for (text, man, exp, prec) in FROM_STR_COMMON_CASES.iter().copied().chain(oct_cases) {
         let val = FOct::from_str(text).unwrap();
         assert_eq!(val, FOct::from_parts(IBig::from(man), exp));
         assert_eq!(val.precision(), prec);
@@ -177,7 +177,7 @@ fn test_oct_hex_from_str() {
         ("-.0f00H-1", -15, -3, 4),
         ("-0a_db_.74h-3", -711540, -5, 6),
     ];
-    for (text, man, exp, prec) in COMMON_CASES.iter().copied().chain(hex_cases) {
+    for (text, man, exp, prec) in FROM_STR_COMMON_CASES.iter().copied().chain(hex_cases) {
         let val = FHex::from_str(text).unwrap();
         assert_eq!(val, FHex::from_parts(IBig::from(man), exp));
         assert_eq!(val.precision(), prec);
@@ -192,7 +192,7 @@ fn test_oct_hex_from_str() {
 }
 
 #[test]
-fn test_other_bases() {
+fn test_from_str_other_bases() {
     assert_eq!(
         FBig::<mode::Zero, 3>::from_str("12.21").unwrap(),
         FBig::<mode::Zero, 3>::from_parts(ibig!(52), -2)
@@ -240,4 +240,257 @@ fn test_from_parts() {
         DBig::from_parts_const(Sign::Negative, 100200, 0),
         DBig::from_parts_const(Sign::Negative, 1002, 2)
     );
+}
+
+#[test]
+fn test_format_binary() {
+    assert_eq!(format!("{}", fbig!(0x0)), "0");
+    assert_eq!(format!("{}", fbig!(0x1)), "1");
+    assert_eq!(format!("{}", fbig!(-0x1)), "-1");
+    assert_eq!(format!("{}", fbig!(0x1p4)), "10000");
+    assert_eq!(format!("{}", fbig!(-0x1p4)), "-10000");
+    assert_eq!(format!("{}", fbig!(0x1p-1)), "0.1");
+    assert_eq!(format!("{}", fbig!(-0x1p-1)), "-0.1");
+    assert_eq!(format!("{}", fbig!(0x1p-4)), "0.0001");
+    assert_eq!(format!("{}", fbig!(-0x1p-4)), "-0.0001");
+
+    assert_eq!(format!("{}", FBin::INFINITY), "inf");
+    assert_eq!(format!("{}", FBin::NEG_INFINITY), "-inf");
+    assert_eq!(format!("{}", FBin::from_parts(i8::MAX.into(), -4)), "111.1111");
+    assert_eq!(format!("{}", FBin::from_parts(i8::MIN.into(), -4)), "-1000");
+    assert_eq!(format!("{}", FBin::from_parts(i16::MAX.into(), -8)), "1111111.11111111");
+    assert_eq!(format!("{}", FBin::from_parts(i16::MIN.into(), -8)), "-10000000");
+
+    assert_eq!(format!("{:.0}", fbig!(0x0)), "0");
+    assert_eq!(format!("{:.0}", fbig!(0x1)), "1");
+    assert_eq!(format!("{:.0}", fbig!(-0x1)), "-1");
+    assert_eq!(format!("{:.0}", fbig!(0x1p4)), "10000");
+    assert_eq!(format!("{:.0}", fbig!(-0x1p4)), "-10000");
+    assert_eq!(format!("{:.0}", fbig!(0x1p-1)), "0");
+    assert_eq!(format!("{:.0}", fbig!(-0x1p-1)), "-0");
+    assert_eq!(format!("{:.0}", fbig!(0x1p-4)), "0");
+    assert_eq!(format!("{:.0}", fbig!(-0x1p-4)), "-0");
+    assert_eq!(format!("{:8.0}", fbig!(0x0)), "       0");
+    assert_eq!(format!("{:8.0}", fbig!(0x1)), "       1");
+    assert_eq!(format!("{:8.0}", fbig!(-0x1)), "      -1");
+    assert_eq!(format!("{:8.0}", fbig!(0x1p4)), "   10000");
+    assert_eq!(format!("{:8.0}", fbig!(-0x1p4)), "  -10000");
+    assert_eq!(format!("{:8.0}", fbig!(0x1p-1)), "       0");
+    assert_eq!(format!("{:8.0}", fbig!(-0x1p-1)), "      -0");
+    assert_eq!(format!("{:8.0}", fbig!(0x1p-4)), "       0");
+    assert_eq!(format!("{:8.0}", fbig!(-0x1p-4)), "      -0");
+
+    assert_eq!(format!("{:.8}", fbig!(0x0)), "0.00000000");
+    assert_eq!(format!("{:.8}", fbig!(0x1)), "1.00000000");
+    assert_eq!(format!("{:.8}", fbig!(-0x1)), "-1.00000000");
+    assert_eq!(format!("{:.8}", fbig!(0x1p4)), "10000.00000000");
+    assert_eq!(format!("{:.8}", fbig!(-0x1p4)), "-10000.00000000");
+    assert_eq!(format!("{:.8}", fbig!(0x1p-1)), "0.10000000");
+    assert_eq!(format!("{:.8}", fbig!(-0x1p-1)), "-0.10000000");
+    assert_eq!(format!("{:.8}", fbig!(0x1p-4)), "0.00010000");
+    assert_eq!(format!("{:.8}", fbig!(-0x1p-4)), "-0.00010000");
+    assert_eq!(format!("{:8.4}", fbig!(0x0)), "  0.0000");
+    assert_eq!(format!("{:8.4}", fbig!(0x1)), "  1.0000");
+    assert_eq!(format!("{:8.4}", fbig!(-0x1)), " -1.0000");
+    assert_eq!(format!("{:8.4}", fbig!(0x1p4)), "10000.0000");
+    assert_eq!(format!("{:8.4}", fbig!(-0x1p4)), "-10000.0000");
+    assert_eq!(format!("{:8.4}", fbig!(0x1p-1)), "  0.1000");
+    assert_eq!(format!("{:8.4}", fbig!(-0x1p-1)), " -0.1000");
+    assert_eq!(format!("{:8.4}", fbig!(0x1p-4)), "  0.0001");
+    assert_eq!(format!("{:8.4}", fbig!(-0x1p-4)), " -0.0001");
+    assert_eq!(format!("{:8.4}", fbig!(0x1p-5)), "  0.0000");
+    assert_eq!(format!("{:8.4}", fbig!(-0x1p-5)), " -0.0000");
+
+    assert_eq!(format!("{:16}", fbig!(0x123p-4)), "      10010.0011");
+    assert_eq!(format!("{:16}", fbig!(-0x123p-4)), "     -10010.0011");
+    assert_eq!(format!("{:+16}", fbig!(0x123p-4)), "     +10010.0011");
+    assert_eq!(format!("{:+16}", fbig!(-0x123p-4)), "     -10010.0011");
+    assert_eq!(format!("{:<16}", fbig!(0x123p-4)), "10010.0011      ");
+    assert_eq!(format!("{:<16}", fbig!(-0x123p-4)), "-10010.0011     ");
+    assert_eq!(format!("{:<+16}", fbig!(0x123p-4)), "+10010.0011     ");
+    assert_eq!(format!("{:^16}", fbig!(0x123p-4)), "   10010.0011   ");
+    assert_eq!(format!("{:^16}", fbig!(-0x123p-4)), "  -10010.0011   ");
+    assert_eq!(format!("{:^+16}", fbig!(0x123p-4)), "  +10010.0011   ");
+    assert_eq!(format!("{:>16}", fbig!(0x123p-4)), "      10010.0011");
+    assert_eq!(format!("{:>16}", fbig!(-0x123p-4)), "     -10010.0011");
+    assert_eq!(format!("{:>+16}", fbig!(0x123p-4)), "     +10010.0011");
+    assert_eq!(format!("{:=<16}", fbig!(-0x123p-4)), "-10010.0011=====");
+    assert_eq!(format!("{:=^16}", fbig!(-0x123p-4)), "==-10010.0011===");
+    assert_eq!(format!("{:=>16}", fbig!(-0x123p-4)), "=====-10010.0011");
+    assert_eq!(format!("{:=<+16}", fbig!(0x123p-4)), "+10010.0011=====");
+    assert_eq!(format!("{:=^+16}", fbig!(0x123p-4)), "==+10010.0011===");
+    assert_eq!(format!("{:=>+16}", fbig!(0x123p-4)), "=====+10010.0011");
+
+    assert_eq!(format!("{:16.0}", fbig!(0x123p-4)), "           10010");
+    assert_eq!(format!("{:16.0}", fbig!(-0x123p-4)), "          -10010");
+    assert_eq!(format!("{:+16.0}", fbig!(0x123p-4)), "          +10010");
+    assert_eq!(format!("{:+16.0}", fbig!(-0x123p-4)), "          -10010");
+    assert_eq!(format!("{:<16.0}", fbig!(0x123p-4)), "10010           ");
+    assert_eq!(format!("{:<16.0}", fbig!(-0x123p-4)), "-10010          ");
+    assert_eq!(format!("{:<+16.0}", fbig!(0x123p-4)), "+10010          ");
+    assert_eq!(format!("{:^16.0}", fbig!(0x123p-4)), "     10010      ");
+    assert_eq!(format!("{:^16.0}", fbig!(-0x123p-4)), "     -10010     ");
+    assert_eq!(format!("{:^+16.0}", fbig!(0x123p-4)), "     +10010     ");
+    assert_eq!(format!("{:>16.0}", fbig!(0x123p-4)), "           10010");
+    assert_eq!(format!("{:>16.0}", fbig!(-0x123p-4)), "          -10010");
+    assert_eq!(format!("{:>+16.0}", fbig!(0x123p-4)), "          +10010");
+    assert_eq!(format!("{:=<16.0}", fbig!(-0x123p-4)), "-10010==========");
+    assert_eq!(format!("{:=^16.0}", fbig!(-0x123p-4)), "=====-10010=====");
+    assert_eq!(format!("{:=>16.0}", fbig!(-0x123p-4)), "==========-10010");
+    assert_eq!(format!("{:=<+16.0}", fbig!(0x123p-4)), "+10010==========");
+    assert_eq!(format!("{:=^+16.0}", fbig!(0x123p-4)), "=====+10010=====");
+    assert_eq!(format!("{:=>+16.0}", fbig!(0x123p-4)), "==========+10010");
+
+    assert_eq!(format!("{:16.8}", fbig!(0x123p-4)), "  10010.00110000");
+    assert_eq!(format!("{:16.8}", fbig!(-0x123p-4)), " -10010.00110000");
+    assert_eq!(format!("{:+16.8}", fbig!(0x123p-4)), " +10010.00110000");
+    assert_eq!(format!("{:+16.8}", fbig!(-0x123p-4)), " -10010.00110000");
+    assert_eq!(format!("{:<16.8}", fbig!(0x123p-4)), "10010.00110000  ");
+    assert_eq!(format!("{:<16.8}", fbig!(-0x123p-4)), "-10010.00110000 ");
+    assert_eq!(format!("{:<+16.8}", fbig!(0x123p-4)), "+10010.00110000 ");
+    assert_eq!(format!("{:^16.8}", fbig!(0x123p-4)), " 10010.00110000 ");
+    assert_eq!(format!("{:^16.8}", fbig!(-0x123p-4)), "-10010.00110000 ");
+    assert_eq!(format!("{:^+16.8}", fbig!(0x123p-4)), "+10010.00110000 ");
+    assert_eq!(format!("{:>16.8}", fbig!(0x123p-4)), "  10010.00110000");
+    assert_eq!(format!("{:>16.8}", fbig!(-0x123p-4)), " -10010.00110000");
+    assert_eq!(format!("{:>+16.8}", fbig!(0x123p-4)), " +10010.00110000");
+    assert_eq!(format!("{:=<16.8}", fbig!(-0x123p-4)), "-10010.00110000=");
+    assert_eq!(format!("{:=^16.8}", fbig!(-0x123p-4)), "-10010.00110000=");
+    assert_eq!(format!("{:=>16.8}", fbig!(-0x123p-4)), "=-10010.00110000");
+    assert_eq!(format!("{:=<+16.8}", fbig!(0x123p-4)), "+10010.00110000=");
+    assert_eq!(format!("{:=^+16.8}", fbig!(0x123p-4)), "+10010.00110000=");
+    assert_eq!(format!("{:=>+16.8}", fbig!(0x123p-4)), "=+10010.00110000");
+
+}
+
+#[test]
+fn test_format_decimal() {
+    assert_eq!(format!("{}", dbig!(0)), "0");
+    assert_eq!(format!("{}", dbig!(1)), "1");
+    assert_eq!(format!("{}", dbig!(-1)), "-1");
+    assert_eq!(format!("{}", dbig!(1e4)), "10000");
+    assert_eq!(format!("{}", dbig!(-1e4)), "-10000");
+    assert_eq!(format!("{}", dbig!(1e-1)), "0.1");
+    assert_eq!(format!("{}", dbig!(-1e-1)), "-0.1");
+    assert_eq!(format!("{}", dbig!(1e-4)), "0.0001");
+    assert_eq!(format!("{}", dbig!(-1e-4)), "-0.0001");
+
+    assert_eq!(format!("{}", DBig::INFINITY), "inf");
+    assert_eq!(format!("{}", DBig::NEG_INFINITY), "-inf");
+    assert_eq!(format!("{}", DBig::from_parts(i8::MAX.into(), -1)), "12.7");
+    assert_eq!(format!("{}", DBig::from_parts(i8::MIN.into(), -1)), "-12.8");
+    assert_eq!(format!("{}", DBig::from_parts(i16::MAX.into(), -2)), "327.67");
+    assert_eq!(format!("{}", DBig::from_parts(i16::MIN.into(), -2)), "-327.68");
+    
+    assert_eq!(format!("{:.0}", dbig!(0)), "0");
+    assert_eq!(format!("{:.0}", dbig!(1)), "1");
+    assert_eq!(format!("{:.0}", dbig!(-1)), "-1");
+    assert_eq!(format!("{:.0}", dbig!(1e4)), "10000");
+    assert_eq!(format!("{:.0}", dbig!(-1e4)), "-10000");
+    assert_eq!(format!("{:.0}", dbig!(1e-1)), "0");
+    assert_eq!(format!("{:.0}", dbig!(-1e-1)), "-0");
+    assert_eq!(format!("{:.0}", dbig!(1e-4)), "0");
+    assert_eq!(format!("{:.0}", dbig!(-1e-4)), "-0");
+    assert_eq!(format!("{:.0}", dbig!(9e-1)), "1"); // round up
+    assert_eq!(format!("{:.0}", dbig!(-9e-1)), "-1");
+    assert_eq!(format!("{:.0}", dbig!(99e-1)), "10");
+    assert_eq!(format!("{:.0}", dbig!(-99e-1)), "-10");
+    assert_eq!(format!("{:8.0}", dbig!(0)), "       0");
+    assert_eq!(format!("{:8.0}", dbig!(1)), "       1");
+    assert_eq!(format!("{:8.0}", dbig!(-1)), "      -1");
+    assert_eq!(format!("{:8.0}", dbig!(1e4)), "   10000");
+    assert_eq!(format!("{:8.0}", dbig!(-1e4)), "  -10000");
+    assert_eq!(format!("{:8.0}", dbig!(1e-1)), "       0");
+    assert_eq!(format!("{:8.0}", dbig!(-1e-1)), "      -0");
+    assert_eq!(format!("{:8.0}", dbig!(1e-4)), "       0");
+    assert_eq!(format!("{:8.0}", dbig!(-1e-4)), "      -0");
+    assert_eq!(format!("{:8.0}", dbig!(9e-1)), "       1");
+    assert_eq!(format!("{:8.0}", dbig!(-9e-1)), "      -1");
+    assert_eq!(format!("{:8.0}", dbig!(99e-1)), "      10");
+    assert_eq!(format!("{:8.0}", dbig!(-99e-1)), "     -10");
+
+    assert_eq!(format!("{:.8}", dbig!(0)), "0.00000000");
+    assert_eq!(format!("{:.8}", dbig!(1)), "1.00000000");
+    assert_eq!(format!("{:.8}", dbig!(-1)), "-1.00000000");
+    assert_eq!(format!("{:.8}", dbig!(1e4)), "10000.00000000");
+    assert_eq!(format!("{:.8}", dbig!(-1e4)), "-10000.00000000");
+    assert_eq!(format!("{:.8}", dbig!(1e-1)), "0.10000000");
+    assert_eq!(format!("{:.8}", dbig!(-1e-1)), "-0.10000000");
+    assert_eq!(format!("{:.8}", dbig!(1e-4)), "0.00010000");
+    assert_eq!(format!("{:.8}", dbig!(-1e-4)), "-0.00010000");
+    assert_eq!(format!("{:8.4}", dbig!(0)), "  0.0000");
+    assert_eq!(format!("{:8.4}", dbig!(1)), "  1.0000");
+    assert_eq!(format!("{:8.4}", dbig!(-1)), " -1.0000");
+    assert_eq!(format!("{:8.4}", dbig!(1e4)), "10000.0000");
+    assert_eq!(format!("{:8.4}", dbig!(-1e4)), "-10000.0000");
+    assert_eq!(format!("{:8.4}", dbig!(1e-1)), "  0.1000");
+    assert_eq!(format!("{:8.4}", dbig!(-1e-1)), " -0.1000");
+    assert_eq!(format!("{:8.4}", dbig!(1e-4)), "  0.0001");
+    assert_eq!(format!("{:8.4}", dbig!(-1e-4)), " -0.0001");
+    assert_eq!(format!("{:8.4}", dbig!(1e-5)), "  0.0000");
+    assert_eq!(format!("{:8.4}", dbig!(-1e-5)), " -0.0000");
+    assert_eq!(format!("{:8.4}", dbig!(9e-5)), "  0.0001");
+    assert_eq!(format!("{:8.4}", dbig!(-9e-5)), " -0.0001");
+    assert_eq!(format!("{:8.4}", dbig!(99e-5)), "  0.0010");
+    assert_eq!(format!("{:8.4}", dbig!(-99e-5)), " -0.0010");
+
+    assert_eq!(format!("{:8}", dbig!(123e-2)), "    1.23");
+    assert_eq!(format!("{:8}", dbig!(-123e-2)), "   -1.23");
+    assert_eq!(format!("{:+8}", dbig!(123e-2)), "   +1.23");
+    assert_eq!(format!("{:+8}", dbig!(-123e-2)), "   -1.23");
+    assert_eq!(format!("{:<8}", dbig!(123e-2)), "1.23    ");
+    assert_eq!(format!("{:<8}", dbig!(-123e-2)), "-1.23   ");
+    assert_eq!(format!("{:<+8}", dbig!(123e-2)), "+1.23   ");
+    assert_eq!(format!("{:^8}", dbig!(123e-2)), "  1.23  ");
+    assert_eq!(format!("{:^8}", dbig!(-123e-2)), " -1.23  ");
+    assert_eq!(format!("{:^+8}", dbig!(123e-2)), " +1.23  ");
+    assert_eq!(format!("{:>8}", dbig!(123e-2)), "    1.23");
+    assert_eq!(format!("{:>8}", dbig!(-123e-2)), "   -1.23");
+    assert_eq!(format!("{:>+8}", dbig!(123e-2)), "   +1.23");
+    assert_eq!(format!("{:=<8}", dbig!(-123e-2)), "-1.23===");
+    assert_eq!(format!("{:=^8}", dbig!(-123e-2)), "=-1.23==");
+    assert_eq!(format!("{:=>8}", dbig!(-123e-2)), "===-1.23");
+    assert_eq!(format!("{:=<+8}", dbig!(123e-2)), "+1.23===");
+    assert_eq!(format!("{:=^+8}", dbig!(123e-2)), "=+1.23==");
+    assert_eq!(format!("{:=>+8}", dbig!(123e-2)), "===+1.23");
+
+    assert_eq!(format!("{:8.0}", dbig!(123e-2)), "       1");
+    assert_eq!(format!("{:8.0}", dbig!(-123e-2)), "      -1");
+    assert_eq!(format!("{:+8.0}", dbig!(123e-2)), "      +1");
+    assert_eq!(format!("{:+8.0}", dbig!(-123e-2)), "      -1");
+    assert_eq!(format!("{:<8.0}", dbig!(123e-2)), "1       ");
+    assert_eq!(format!("{:<8.0}", dbig!(-123e-2)), "-1      ");
+    assert_eq!(format!("{:<+8.0}", dbig!(123e-2)), "+1      ");
+    assert_eq!(format!("{:^8.0}", dbig!(123e-2)), "   1    ");
+    assert_eq!(format!("{:^8.0}", dbig!(-123e-2)), "   -1   ");
+    assert_eq!(format!("{:^+8.0}", dbig!(123e-2)), "   +1   ");
+    assert_eq!(format!("{:>8.0}", dbig!(123e-2)), "       1");
+    assert_eq!(format!("{:>8.0}", dbig!(-123e-2)), "      -1");
+    assert_eq!(format!("{:>+8.0}", dbig!(123e-2)), "      +1");
+    assert_eq!(format!("{:=<8.0}", dbig!(-123e-2)), "-1======");
+    assert_eq!(format!("{:=^8.0}", dbig!(-123e-2)), "===-1===");
+    assert_eq!(format!("{:=>8.0}", dbig!(-123e-2)), "======-1");
+    assert_eq!(format!("{:=<+8.0}", dbig!(123e-2)), "+1======");
+    assert_eq!(format!("{:=^+8.0}", dbig!(123e-2)), "===+1===");
+    assert_eq!(format!("{:=>+8.0}", dbig!(123e-2)), "======+1");
+
+    assert_eq!(format!("{:8.4}", dbig!(123e-2)), "  1.2300");
+    assert_eq!(format!("{:8.4}", dbig!(-123e-2)), " -1.2300");
+    assert_eq!(format!("{:+8.4}", dbig!(123e-2)), " +1.2300");
+    assert_eq!(format!("{:+8.4}", dbig!(-123e-2)), " -1.2300");
+    assert_eq!(format!("{:<8.4}", dbig!(123e-2)), "1.2300  ");
+    assert_eq!(format!("{:<8.4}", dbig!(-123e-2)), "-1.2300 ");
+    assert_eq!(format!("{:<+8.4}", dbig!(123e-2)), "+1.2300 ");
+    assert_eq!(format!("{:^8.4}", dbig!(123e-2)), " 1.2300 ");
+    assert_eq!(format!("{:^8.4}", dbig!(-123e-2)), "-1.2300 ");
+    assert_eq!(format!("{:^+8.4}", dbig!(123e-2)), "+1.2300 ");
+    assert_eq!(format!("{:>8.4}", dbig!(123e-2)), "  1.2300");
+    assert_eq!(format!("{:>8.4}", dbig!(-123e-2)), " -1.2300");
+    assert_eq!(format!("{:>+8.4}", dbig!(123e-2)), " +1.2300");
+    assert_eq!(format!("{:=<8.4}", dbig!(-123e-2)), "-1.2300=");
+    assert_eq!(format!("{:=^8.4}", dbig!(-123e-2)), "-1.2300=");
+    assert_eq!(format!("{:=>8.4}", dbig!(-123e-2)), "=-1.2300");
+    assert_eq!(format!("{:=<+8.4}", dbig!(123e-2)), "+1.2300=");
+    assert_eq!(format!("{:=^+8.4}", dbig!(123e-2)), "+1.2300=");
+    assert_eq!(format!("{:=>+8.4}", dbig!(123e-2)), "=+1.2300");
 }

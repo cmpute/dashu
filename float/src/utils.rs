@@ -1,4 +1,3 @@
-use core::mem;
 use dashu_base::{DivRem, Sign};
 use dashu_int::{DoubleWord, IBig, UBig, Word};
 
@@ -52,12 +51,6 @@ pub fn shl_digits_in_place<const B: Word>(value: &mut IBig, exp: usize) {
 // The original Shr operation of IBig follows two's complement representation,
 // here we only want to shift the magnitude, so a separate operation is necessary
 #[inline]
-fn shr(value: IBig, shift: usize) -> IBig {
-    let (sign, mag) = value.into_parts();
-    IBig::from_parts(sign, mag >> shift)
-}
-
-#[inline]
 fn shr_ref(value: &IBig, shift: usize) -> IBig {
     let (sign, words) = value.as_sign_words();
     let n_words = shift / Word::BITS as usize;
@@ -81,20 +74,6 @@ pub fn shr_digits<const B: Word>(value: &IBig, exp: usize) -> IBig {
     }
 }
 
-#[inline]
-pub fn shr_digits_in_place<const B: Word>(value: &mut IBig, exp: usize) {
-    if exp != 0 {
-        match B {
-            2 => *value = shr(mem::take(value), exp),
-            10 => *value = shr(mem::take(value), exp) / IBig::from(5).pow(exp),
-            b if b.is_power_of_two() => {
-                *value = shr(mem::take(value), exp * b.trailing_zeros() as usize)
-            }
-            _ => *value /= base_as_ibig::<B>().pow(exp),
-        }
-    }
-}
-
 /// Equivalent to value.unsigned_abs().split_bits(n), but returns (hi, lo) and preserving the sign
 fn split_bits(value: IBig, n: usize) -> (IBig, IBig) {
     let (sign, mag) = value.into_parts();
@@ -105,6 +84,9 @@ fn split_bits(value: IBig, n: usize) -> (IBig, IBig) {
 /// Equivalent to value.unsigned_abs().split_bits(n), but returns (hi, lo) and preserving the sign
 fn split_bits_ref(value: &IBig, n: usize) -> (IBig, IBig) {
     debug_assert!(n > 0);
+    if value.is_zero() {
+        return (IBig::ZERO, IBig::ZERO);
+    }
 
     let (sign, words) = value.as_sign_words();
     let n_words = n / Word::BITS as usize;

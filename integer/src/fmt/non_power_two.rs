@@ -1,6 +1,6 @@
 //! Format in a non-power-of-two radix.
 
-use super::{digit_writer::DigitWriter, DoubleEnd, InRadixFull, PreparedForFormatting};
+use super::{digit_writer::DigitWriter, DoubleEnd, InRadixWriter, PreparedForFormatting};
 use crate::{
     arch::word::{DoubleWord, Word},
     buffer::Buffer,
@@ -26,7 +26,7 @@ use core::{
 /// Format in chunks of CHUNK_LEN * digits_per_word.
 const CHUNK_LEN: usize = 16;
 
-impl InRadixFull<'_> {
+impl InRadixWriter<'_> {
     pub fn fmt_non_power_two(&self, f: &mut Formatter) -> fmt::Result {
         debug_assert!(radix::is_radix_valid(self.radix) && !self.radix.is_power_of_two());
 

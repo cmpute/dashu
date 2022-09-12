@@ -3,12 +3,12 @@
 use crate::{
     fbig::FBig,
     repr::{Context, Repr},
-    round::Round,
-    utils::{digit_len, split_digits_ref, split_digits},
+    round::{Round, mode::Zero},
+    utils::{digit_len, split_digits_ref},
 };
-use core::fmt::{self, Display, Formatter, Write};
-use dashu_base::{Abs, Sign};
-use dashu_int::Word;
+use core::fmt::{self, Display, Formatter, Write, Alignment};
+use dashu_base::{Sign, UnsignedAbs};
+use dashu_int::{Word};
 
 impl<const B: Word> fmt::Debug for Repr<B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -37,87 +37,213 @@ impl<R: Round, const B: Word> fmt::Debug for FBig<R, B> {
     }
 }
 
-// FIXME: sign, width and fill options are not yet correctly handled
-
-impl<R: Round, const B: Word> Display for FBig<R, B> {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        // print in decimal if the alternate flag is set
-        if f.alternate() && B != 10 {
-            return self.to_decimal().value().fmt(f);
+impl<const B: Word> Repr<B> {
+    fn fmt_round<R: Round>(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        // shortcut for infinities
+        if self.is_infinite() {
+            return match self.sign() {
+                Sign::Positive => "inf".fmt(f),
+                Sign::Negative => "-inf".fmt(f),
+            };
         }
 
-        if self.repr.exponent < 0 {
-            // If the exponent is negative, then the float number has fractional part
-
-            let exp = -self.repr.exponent as usize;
-            let (int, frac) = split_digits_ref::<B>(&self.repr.significand, exp);
-            let frac_digits = digit_len::<B>(&frac);
-            debug_assert!(frac_digits <= exp);
-            let mut frac = frac.abs(); // don't print sign for fractional part
-
-            // print integral part
-            if int.is_zero() && self.repr.sign() == Sign::Negative {
-                f.write_char('-')?;
+        // first perform rounding before actual printing if necessary
+        let negative = self.significand.sign() == Sign::Negative;
+        let rounded_signif;
+        let (signif, exp) = if let Some(prec) = f.precision() {
+            let diff = prec as isize + self.exponent;
+            if diff < 0 {
+                let shift = -diff as usize;
+                let (signif, rem) = split_digits_ref::<B>(&self.significand, shift);
+                let adjust = R::round_fract::<B>(&signif, rem, shift);
+                rounded_signif = signif + adjust;
+                (&rounded_signif, self.exponent - diff)
             }
-            int.in_radix(B as u32).fmt(f)?;
+            else {
+                (&self.significand, self.exponent)
+            }
+        } else {
+            (&self.significand, self.exponent)
+        };
 
-            // print fractional part
-            // note that the fractional part has exact exp digits (with left zero padding)
+        // calculate padding if necessary
+        let (left_pad, right_pad) = if let Some(min_width) = f.width() {
+            // first calculate the with of the formatted digits without padding
+
+            let mut signif_digits = digit_len::<B>(signif);
+            // the leading zeros needs to be printed (when the exponent of the number is very small).
+            let leading_zeros = -(exp + signif_digits as isize - 1).min(0) as usize;
+            // the trailing zeros needs to be printed (when the exponent of the number is very large)
+            let mut trailing_zeros = exp.max(0) as usize;
+
+            // if the precision option is set, there might be extra trailing zeros
             if let Some(prec) = f.precision() {
+                let diff = prec as isize + exp.min(0);
+                if diff > 0 {
+                    trailing_zeros += diff as usize;
+                }
+            }
+            if leading_zeros == 0 {
+                // there is at least one digit to print (0)
+                signif_digits = signif_digits.max(1);
+            }
+
+            let has_sign = (negative || f.sign_plus()) as usize;
+            let has_float_point = if exp > 0 {
+                // if there's no fractional part, the result has the floating point
+                // only if the precision is set to be non-zero
+                f.precision().unwrap_or(0) > 0
+            } else {
+                // if there is fractional part, the result has the floating point
+                // if the precision is not set, or set to be non-zero
+                f.precision() != Some(0) // non-zero or none
+            } as usize;
+
+            let width = signif_digits + has_sign + has_float_point + leading_zeros + trailing_zeros;
+
+            // check alignment and calculate padding
+            if width >= min_width {
+                (0, 0)
+            } else if f.sign_aware_zero_pad() {
+                (min_width - width, 0)
+            } else {
+                match f.align() {
+                    Some(Alignment::Left) => (0, min_width - width),
+                    Some(Alignment::Right) | None => (min_width - width, 0),
+                    Some(Alignment::Center) => {
+                        let diff = min_width - width;
+                        (diff / 2, diff - diff / 2)
+                    },
+                }
+            }
+        } else {
+            (0, 0)
+        };
+        
+        // print left padding
+        let fill = if f.sign_aware_zero_pad() {
+            '0'
+        } else {
+            f.fill()
+        };
+        for _ in 0..left_pad {
+            f.write_char(fill)?;
+        }
+
+        // print the actual digits
+        if exp < 0 {
+            // If the exponent is negative, then the float number has fractional part
+            let exp = -exp as usize;
+            let (int, fract) = split_digits_ref::<B>(signif, exp);
+
+            let frac_digits = digit_len::<B>(&fract);
+            debug_assert!(frac_digits <= exp);
+
+            // print the integral part.
+            if !negative && f.sign_plus() {
+                f.write_char('+')?;
+            }
+            if int.is_zero() {
+                if negative {
+                    f.write_char('-')?;
+                }
+                f.write_char('0')?;
+            } else {
+                int.in_radix(B as u32).fmt_custom(f, false, "")?;
+            }
+
+            // print the fractional part, it has exactly `exp` digits (with left zero padding)
+            let fract = fract.unsigned_abs(); // don't print sign for fractional part
+            if let Some(prec) = f.precision() {
+                // don't print any fractional part if precision is zero
                 if prec != 0 {
                     f.write_char('.')?;
                     if exp >= prec {
-                        // shrink fractional part if it exceeds the required precision
-                        // there could be one more digit in the fractional part after rounding
-                        let new_prec = if exp == prec {
-                            frac_digits
-                        } else if frac_digits > exp - prec {
-                            let (shifted, rem) = split_digits::<B>(frac, exp - prec);
-                            let adjust = R::round_fract::<B>(&shifted, rem, exp - prec);
-                            frac = shifted + adjust;
-                            digit_len::<B>(&frac)
-                        } else {
-                            0
-                        };
+                        // the fractional part should be already rounded at the beginning
+                        debug_assert!(exp == prec);
 
                         // print padding zeros
-                        if prec > new_prec {
-                            for _ in 0..prec - new_prec {
+                        if prec > frac_digits {
+                            for _ in 0..prec - frac_digits {
                                 f.write_char('0')?;
                             }
                         }
-                        if frac_digits > exp - prec {
-                            frac.in_radix(B as u32).fmt(f)?;
+                        if frac_digits > 0 {
+                            fract.in_radix(B as u32).fmt_custom(f, false, "")?;
                         }
                     } else {
                         // append zeros if the required precision is larger
                         for _ in 0..exp - frac_digits {
                             f.write_char('0')?;
                         }
-                        frac.in_radix(B as u32).fmt(f)?;
+                        fract.in_radix(B as u32).fmt_custom(f, false, "")?;
                         for _ in 0..prec - exp {
-                            f.write_char('0')?; // TODO: padding handling is not correct here
+                            f.write_char('0')?;
                         }
                     }
                 }
-                // don't print any fractional part if precision is zero
             } else if frac_digits > 0 {
                 f.write_char('.')?;
                 for _ in 0..(exp - frac_digits) {
                     f.write_char('0')?;
                 }
-                frac.in_radix(B as u32).fmt(f)?;
+                fract.in_radix(B as u32).fmt_custom(f, false, "")?;
             }
         } else {
-            // directly print the significand and append zeros if needed
-            // precision doesn't make a difference since we force printing in native radix
-            self.repr.significand.in_radix(B as u32).fmt(f)?;
-            for _ in 0..self.repr.exponent {
+            // In this case, the number is actually an integer and it can be trivially formatted.
+            // However, when the precision option is set, we need to append zeros.
+
+            // print the significand
+            if !negative && f.sign_plus() {
+                f.write_char('+')?;
+            }
+            if signif.is_zero() {
+                if negative {
+                    f.write_char('-')?;
+                }
                 f.write_char('0')?;
+            } else {
+                signif.in_radix(B as u32).fmt_custom(f, false, "")?;
+            }
+
+            // append zeros if needed
+            for _ in 0..exp {
+                f.write_char('0')?;
+            }
+
+            // print trailing zeros after the float point if the precision is set to be nonzero
+            if let Some(prec) = f.precision() {
+                if prec > 0 {
+                    f.write_char('.')?;
+                    for _ in 0..prec {
+                        f.write_char('0')?;
+                    }
+                }
             }
         };
 
+        // print right padding
+        for _ in 0..right_pad {
+            f.write_char(f.fill())?;
+        }
+
         Ok(())
+    }
+}
+
+impl<const B: Word> Display for Repr<B> {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.fmt_round::<Zero>(f)
+    }
+}
+
+// TODO(next): implement display and debug for repr instead of directly on FBig
+
+impl<R: Round, const B: Word> Display for FBig<R, B> {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        self.repr.fmt_round::<R>(f)
     }
 }
 

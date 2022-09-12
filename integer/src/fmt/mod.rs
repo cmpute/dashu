@@ -32,12 +32,13 @@ pub use radix::{MAX_RADIX, MIN_RADIX};
 
 impl Display for UBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        InRadixFull {
+        InRadixWriter {
             sign: Positive,
             magnitude: self.repr(),
             radix: 10,
             prefix: "",
             digit_case: DigitCase::NoLetters,
+            ignore: false,
         }
         .fmt(f)
     }
@@ -56,12 +57,13 @@ impl Debug for UBig {
 
 impl Binary for UBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        InRadixFull {
+        InRadixWriter {
             sign: Positive,
             magnitude: self.repr(),
             radix: 2,
             prefix: if f.alternate() { "0b" } else { "" },
             digit_case: DigitCase::NoLetters,
+            ignore: false,
         }
         .fmt(f)
     }
@@ -69,12 +71,13 @@ impl Binary for UBig {
 
 impl Octal for UBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        InRadixFull {
+        InRadixWriter {
             sign: Positive,
             magnitude: self.repr(),
             radix: 8,
             prefix: if f.alternate() { "0o" } else { "" },
             digit_case: DigitCase::NoLetters,
+            ignore: false,
         }
         .fmt(f)
     }
@@ -82,12 +85,13 @@ impl Octal for UBig {
 
 impl LowerHex for UBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        InRadixFull {
+        InRadixWriter {
             sign: Positive,
             magnitude: self.repr(),
             radix: 16,
             prefix: if f.alternate() { "0x" } else { "" },
             digit_case: DigitCase::Lower,
+            ignore: false,
         }
         .fmt(f)
     }
@@ -95,12 +99,13 @@ impl LowerHex for UBig {
 
 impl UpperHex for UBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        InRadixFull {
+        InRadixWriter {
             sign: Positive,
             magnitude: self.repr(),
             radix: 16,
             prefix: if f.alternate() { "0x" } else { "" },
             digit_case: DigitCase::Upper,
+            ignore: false,
         }
         .fmt(f)
     }
@@ -109,12 +114,13 @@ impl UpperHex for UBig {
 impl Display for IBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let (sign, magnitude) = self.as_sign_repr();
-        InRadixFull {
+        InRadixWriter {
             sign,
             magnitude,
             radix: 10,
             prefix: "",
             digit_case: DigitCase::NoLetters,
+            ignore: false,
         }
         .fmt(f)
     }
@@ -135,12 +141,13 @@ impl Debug for IBig {
 impl Binary for IBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let (sign, magnitude) = self.as_sign_repr();
-        InRadixFull {
+        InRadixWriter {
             sign,
             magnitude,
             radix: 2,
             prefix: if f.alternate() { "0b" } else { "" },
             digit_case: DigitCase::NoLetters,
+            ignore: false,
         }
         .fmt(f)
     }
@@ -149,12 +156,13 @@ impl Binary for IBig {
 impl Octal for IBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let (sign, magnitude) = self.as_sign_repr();
-        InRadixFull {
+        InRadixWriter {
             sign,
             magnitude,
             radix: 8,
             prefix: if f.alternate() { "0o" } else { "" },
             digit_case: DigitCase::NoLetters,
+            ignore: false,
         }
         .fmt(f)
     }
@@ -163,12 +171,13 @@ impl Octal for IBig {
 impl LowerHex for IBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let (sign, magnitude) = self.as_sign_repr();
-        InRadixFull {
+        InRadixWriter {
             sign,
             magnitude,
             radix: 16,
             prefix: if f.alternate() { "0x" } else { "" },
             digit_case: DigitCase::Lower,
+            ignore: false,
         }
         .fmt(f)
     }
@@ -177,12 +186,13 @@ impl LowerHex for IBig {
 impl UpperHex for IBig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let (sign, magnitude) = self.as_sign_repr();
-        InRadixFull {
+        InRadixWriter {
             sign,
             magnitude,
             radix: 16,
             prefix: if f.alternate() { "0x" } else { "" },
             digit_case: DigitCase::Upper,
+            ignore: false,
         }
         .fmt(f)
     }
@@ -260,7 +270,7 @@ impl IBig {
 /// assert_eq!(format!("{:+010}", UBig::from(35u8).in_radix(36)), "+00000000z");
 /// // For bases 2, 8, 10, 16 we don't have to use `InRadix`:
 /// assert_eq!(format!("{:x}", UBig::from(3000u32)), "bb8");
-/// assert_eq!(format!("{:x}", IBig::from(-3000)), "-bb8");
+/// assert_eq!(format!("{:#X}", IBig::from(-3000)), "-0xBB8");
 /// ```
 pub struct InRadix<'a> {
     sign: Sign,
@@ -278,34 +288,78 @@ impl Display for InRadix<'_> {
             DigitCase::Lower
         };
 
-        InRadixFull {
+        InRadixWriter {
             sign: self.sign,
             magnitude: self.magnitude,
             radix: self.radix,
             prefix: "",
             digit_case,
+            ignore: false,
+        }
+        .fmt(f)
+    }
+}
+
+impl InRadix<'_> {
+    /// Print the number in the simplest way, ignoring the all printing flags in the formatter.
+    /// 
+    /// # Example
+    /// 
+    /// ```
+    /// # use dashu_int::UBig;
+    /// # use core::fmt;
+    /// struct HexDisplay<'a>(&'a UBig);
+    /// 
+    /// impl<'a> fmt::Display for HexDisplay<'a> {
+    ///     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    ///         self.0.in_radix(16).fmt_custom(f, true, "hex:")
+    ///     }
+    /// }
+    /// 
+    /// let n = UBig::from(12345u16);
+    /// let disp = HexDisplay(&n);
+    /// assert_eq!(format!("{:=^+10}", disp), "hex:3039");
+    /// ```
+    pub fn fmt_custom(&self, f: &mut Formatter, upper_case: bool, prefix: &'static str) -> fmt::Result {
+        let digit_case = if self.radix <= 10 {
+            DigitCase::NoLetters
+        } else if upper_case {
+            DigitCase::Upper
+        } else {
+            DigitCase::Lower
+        };
+
+        InRadixWriter {
+            sign: self.sign,
+            magnitude: self.magnitude,
+            radix: self.radix,
+            prefix: prefix,
+            digit_case,
+            ignore: true,
         }
         .fmt(f)
     }
 }
 
 /// Representation in a given radix with a prefix and digit case.
-struct InRadixFull<'a> {
+struct InRadixWriter<'a> {
     sign: Sign,
     magnitude: TypedReprRef<'a>,
     radix: Digit,
     prefix: &'static str,
     digit_case: DigitCase,
+    ignore: bool // whether ignore formatting options
 }
 
 /// Representation for printing only head and tail of the number, only decimal is supported
+// TODO: support hexadecimal, which is used by the `{:x?}` and `{:X?}` format.
 struct DoubleEnd<'a> {
     sign: Sign,
     magnitude: TypedReprRef<'a>,
     verbose: bool,
 }
 
-impl InRadixFull<'_> {
+impl InRadixWriter<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         if self.radix.is_power_of_two() {
             self.fmt_power_two(f)
@@ -326,7 +380,7 @@ impl InRadixFull<'_> {
         // (WORD_BITS - 1) spare bits before we would hit overflow.
         let sign = if self.sign == Negative {
             "-"
-        } else if f.sign_plus() {
+        } else if !self.ignore && f.sign_plus() {
             "+"
         } else {
             ""
@@ -340,13 +394,13 @@ impl InRadixFull<'_> {
             digit_writer.flush()
         };
 
-        match f.width() {
-            None => {
+        match (f.width(), self.ignore) {
+            (None, _) | (_, true) => {
                 f.write_str(sign)?;
                 f.write_str(self.prefix)?;
                 write_digits(f)?
             }
-            Some(min_width) => {
+            (Some(min_width), false) => {
                 if width >= min_width {
                     f.write_str(sign)?;
                     f.write_str(self.prefix)?;
@@ -355,23 +409,23 @@ impl InRadixFull<'_> {
                     f.write_str(sign)?;
                     f.write_str(self.prefix)?;
                     for _ in 0..min_width - width {
-                        f.write_str("0")?;
+                        f.write_char('0')?;
                     }
                     write_digits(f)?;
                 } else {
-                    let left = match f.align() {
+                    let left_pad = match f.align() {
                         Some(Alignment::Left) => 0,
                         Some(Alignment::Right) | None => min_width - width,
                         Some(Alignment::Center) => (min_width - width) / 2,
                     };
                     let fill = f.fill();
-                    for _ in 0..left {
+                    for _ in 0..left_pad {
                         f.write_char(fill)?;
                     }
                     f.write_str(sign)?;
                     f.write_str(self.prefix)?;
                     write_digits(f)?;
-                    for _ in left..min_width - width {
+                    for _ in left_pad..min_width - width {
                         f.write_char(fill)?;
                     }
                 }

@@ -1,6 +1,6 @@
 //! Format in a power-of-two radix.
 
-use super::{digit_writer::DigitWriter, InRadixFull, PreparedForFormatting};
+use super::{digit_writer::DigitWriter, InRadixWriter, PreparedForFormatting};
 use crate::{
     arch::word::{DoubleWord, Word},
     math,
@@ -10,7 +10,7 @@ use crate::{
 };
 use core::fmt::{self, Formatter};
 
-impl InRadixFull<'_> {
+impl InRadixWriter<'_> {
     /// Radix must be a power of 2.
     pub fn fmt_power_two(&self, f: &mut Formatter) -> fmt::Result {
         debug_assert!(radix::is_radix_valid(self.radix) && self.radix.is_power_of_two());

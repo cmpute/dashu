@@ -107,6 +107,10 @@ fn test_ubig_in_radix() {
 
 #[test]
 fn test_ibig_format() {
+    assert_eq!(format!("{}", ibig!(-123)), "-123");
+    assert_eq!(format!("{:?}", ibig!(-123)), "-123");
+    assert_eq!(format!("{:=>10}", ibig!(-123)), "======-123");
+
     assert_eq!(format!("{:b}", ibig!(0)), "0");
     assert_eq!(format!("{:b}", ibig!(100)), "1100100");
     assert_eq!(format!("{:b}", ibig!(-100)), "-1100100");
@@ -146,10 +150,6 @@ fn test_ibig_format() {
     assert_eq!(format!("{:#X}", ibig!(-3000)), "-0xBB8");
     assert_eq!(format!("{:#10X}", ibig!(3000)), "     0xBB8");
     assert_eq!(format!("{:#10X}", ibig!(-3000)), "    -0xBB8");
-
-    assert_eq!(format!("{}", ibig!(-123)), "-123");
-    assert_eq!(format!("{:?}", ibig!(-123)), "-123");
-    assert_eq!(format!("{:=>10}", ibig!(-123)), "======-123");
 }
 
 #[test]

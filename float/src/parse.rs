@@ -12,6 +12,7 @@ use dashu_int::{
 };
 
 impl<R: Round, const B: Word> FBig<R, B> {
+    // TODO(next): make it clear how is infinity parsed?
     /// Convert a string in the native base (i.e. radix) to [FBig].
     ///
     /// `src` may contain an optional `+` prefix.
