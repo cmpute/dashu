@@ -8,42 +8,73 @@ use crate::{
 };
 use core::fmt::{self, Alignment, Display, Formatter, Write};
 use dashu_base::{Sign, UnsignedAbs};
-use dashu_int::Word;
+use dashu_int::{IBig, Word};
+
+trait DebugStructHelper {
+    /// Print the full debug info for the significand
+    fn field_significand<const B: Word>(&mut self, signif: &IBig) -> &mut Self;
+}
+
+impl<'a, 'b> DebugStructHelper for fmt::DebugStruct<'a, 'b> {
+    fn field_significand<const B: Word>(&mut self, signif: &IBig) -> &mut Self {
+        match B {
+            2 => self.field(
+                "significand",
+                &format_args!("{:?} ({} bits)", signif, digit_len::<B>(signif)),
+            ),
+            10 => self.field("significand", &format_args!("{:#?}", signif)),
+            _ => self.field(
+                "significand",
+                &format_args!("{:?} ({} digits)", signif, digit_len::<B>(signif)),
+            ),
+        }
+    }
+}
 
 impl<const B: Word> fmt::Debug for Repr<B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.significand, f)?;
-        f.write_str(" * ")?;
-        fmt::Debug::fmt(&B, f)?;
-        f.write_str(" ^ ")?;
-        fmt::Debug::fmt(&self.exponent, f)
+        // shortcut for infinities
+        if self.is_infinite() {
+            return match self.sign() {
+                Sign::Positive => f.write_str("inf"),
+                Sign::Negative => f.write_str("-inf"),
+            };
+        }
+
+        if f.alternate() {
+            f.debug_struct("Repr")
+                .field_significand::<B>(&self.significand)
+                .field("exponent", &format_args!("{} ^ {}", &B, &self.exponent))
+                .finish()
+        } else {
+            f.write_fmt(format_args!("{:?} * {} ^ {}", &self.significand, &B, &self.exponent))
+        }
     }
 }
 
 impl<R: Round> fmt::Debug for Context<R> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(" (prec: ")?;
-        fmt::Debug::fmt(&self.precision, f)?;
-        f.write_str(", rnd: ")?;
-        f.write_str(core::any::type_name::<R>())?;
-        f.write_str(")")
-    }
-}
-
-impl<R: Round, const B: Word> fmt::Debug for FBig<R, B> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.repr, f)?;
-        fmt::Debug::fmt(&self.context, f)
+        let rnd_name = core::any::type_name::<R>();
+        let rnd_name = rnd_name
+            .rfind("::")
+            .map(|pos| &rnd_name[pos + 2..])
+            .unwrap_or(rnd_name);
+        f.debug_struct("Context")
+            .field("precision", &self.precision)
+            .field("rounding", &format_args!("{}", rnd_name))
+            .finish()
     }
 }
 
 impl<const B: Word> Repr<B> {
+    /// Print the float number with given rounding mode. The rounding may happen if the precision option
+    /// of the formatter is set.
     fn fmt_round<R: Round>(&self, f: &mut Formatter<'_>) -> fmt::Result {
         // shortcut for infinities
         if self.is_infinite() {
             return match self.sign() {
-                Sign::Positive => "inf".fmt(f),
-                Sign::Negative => "-inf".fmt(f),
+                Sign::Positive => f.write_str("inf"),
+                Sign::Negative => f.write_str("-inf"),
             };
         }
 
@@ -148,7 +179,7 @@ impl<const B: Word> Repr<B> {
                 }
                 f.write_char('0')?;
             } else {
-                int.in_radix(B as u32).fmt_custom(f, false, "")?;
+                f.write_fmt(format_args!("{}", int.in_radix(B as u32)))?;
             }
 
             // print the fractional part, it has exactly `exp` digits (with left zero padding)
@@ -168,14 +199,14 @@ impl<const B: Word> Repr<B> {
                             }
                         }
                         if frac_digits > 0 {
-                            fract.in_radix(B as u32).fmt_custom(f, false, "")?;
+                            f.write_fmt(format_args!("{}", fract.in_radix(B as u32)))?;
                         }
                     } else {
                         // append zeros if the required precision is larger
                         for _ in 0..exp - frac_digits {
                             f.write_char('0')?;
                         }
-                        fract.in_radix(B as u32).fmt_custom(f, false, "")?;
+                        f.write_fmt(format_args!("{}", fract.in_radix(B as u32)))?;
                         for _ in 0..prec - exp {
                             f.write_char('0')?;
                         }
@@ -186,7 +217,7 @@ impl<const B: Word> Repr<B> {
                 for _ in 0..(exp - frac_digits) {
                     f.write_char('0')?;
                 }
-                fract.in_radix(B as u32).fmt_custom(f, false, "")?;
+                f.write_fmt(format_args!("{}", fract.in_radix(B as u32)))?;
             }
         } else {
             // In this case, the number is actually an integer and it can be trivially formatted.
@@ -202,7 +233,7 @@ impl<const B: Word> Repr<B> {
                 }
                 f.write_char('0')?;
             } else {
-                signif.in_radix(B as u32).fmt_custom(f, false, "")?;
+                f.write_fmt(format_args!("{}", signif.in_radix(B as u32)))?;
             }
 
             // append zeros if needed
@@ -237,7 +268,37 @@ impl<const B: Word> Display for Repr<B> {
     }
 }
 
-// TODO(next): implement display and debug for repr instead of directly on FBig
+impl<R: Round, const B: Word> fmt::Debug for FBig<R, B> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // shortcut for infinities
+        if self.is_infinite() {
+            return match self.repr.sign() {
+                Sign::Positive => f.write_str("inf"),
+                Sign::Negative => f.write_str("-inf"),
+            };
+        }
+
+        let rnd_name = core::any::type_name::<R>();
+        let rnd_name = rnd_name
+            .rfind("::")
+            .map(|pos| &rnd_name[pos + 2..])
+            .unwrap_or(rnd_name);
+
+        if f.alternate() {
+            f.debug_struct("FBig")
+                .field_significand::<B>(&self.repr.significand)
+                .field("exponent", &format_args!("{} ^ {}", &B, &self.repr.exponent))
+                .field("precision", &self.context.precision)
+                .field("rounding", &format_args!("{}", rnd_name))
+                .finish()
+        } else {
+            f.write_fmt(format_args!(
+                "{:?} (prec: {}, rnd: {})",
+                &self.repr, &self.context.precision, &rnd_name
+            ))
+        }
+    }
+}
 
 impl<R: Round, const B: Word> Display for FBig<R, B> {
     #[inline]

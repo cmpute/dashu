@@ -493,3 +493,73 @@ fn test_format_decimal() {
     assert_eq!(format!("{:=^+8.4}", dbig!(123e-2)), "+1.2300=");
     assert_eq!(format!("{:=>+8.4}", dbig!(123e-2)), "=+1.2300");
 }
+
+#[test]
+fn test_format_debug() {
+    assert_eq!(format!("{:?}", DBig::INFINITY), "inf");
+    assert_eq!(format!("{:?}", DBig::NEG_INFINITY), "-inf");
+    assert_eq!(format!("{:#?}", DBig::INFINITY), "inf");
+    assert_eq!(format!("{:#?}", DBig::NEG_INFINITY), "-inf");
+
+    assert_eq!(format!("{:?}", fbig!(0x1234p-4).repr()), "1165 * 2 ^ -2");
+    assert_eq!(
+        format!("{:?}", fbig!(0x1234p-4).context()),
+        "Context { precision: 16, rounding: Zero }"
+    );
+    assert_eq!(format!("{:?}", fbig!(0x1234p-4)), "1165 * 2 ^ -2 (prec: 16, rnd: Zero)");
+
+    assert_eq!(
+        format!("{:#?}", fbig!(0x1234p-4).repr()),
+        r#"Repr {
+    significand: 1165 (11 bits),
+    exponent: 2 ^ -2,
+}"#
+    );
+    assert_eq!(
+        format!("{:#?}", fbig!(0x1234p-4).context()),
+        r#"Context {
+    precision: 16,
+    rounding: Zero,
+}"#
+    );
+    assert_eq!(
+        format!("{:#?}", fbig!(0x1234p-4)),
+        r#"FBig {
+    significand: 1165 (11 bits),
+    exponent: 2 ^ -2,
+    precision: 16,
+    rounding: Zero,
+}"#
+    );
+
+    assert_eq!(format!("{:?}", dbig!(1234e-2).repr()), "1234 * 10 ^ -2");
+    assert_eq!(
+        format!("{:?}", dbig!(1234e-2).context()),
+        "Context { precision: 4, rounding: HalfAway }"
+    );
+    assert_eq!(format!("{:?}", dbig!(1234e-2)), "1234 * 10 ^ -2 (prec: 4, rnd: HalfAway)");
+
+    assert_eq!(
+        format!("{:#?}", dbig!(1234e-2).repr()),
+        r#"Repr {
+    significand: 1234 (4 digits, 11 bits),
+    exponent: 10 ^ -2,
+}"#
+    );
+    assert_eq!(
+        format!("{:#?}", dbig!(1234e-2).context()),
+        r#"Context {
+    precision: 4,
+    rounding: HalfAway,
+}"#
+    );
+    assert_eq!(
+        format!("{:#?}", dbig!(1234e-2)),
+        r#"FBig {
+    significand: 1234 (4 digits, 11 bits),
+    exponent: 10 ^ -2,
+    precision: 4,
+    rounding: HalfAway,
+}"#
+    );
+}

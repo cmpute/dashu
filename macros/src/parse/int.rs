@@ -1,6 +1,8 @@
-use dashu_int::{DoubleWord, IBig, Sign, UBig, Word};
-use proc_macro2::{Delimiter, Group, Literal, Punct, Spacing, TokenStream, TokenTree};
+use dashu_int::{IBig, Sign, UBig};
+use proc_macro2::{TokenStream, TokenTree};
 use quote::quote;
+
+use super::common::{get_dword_from_words, quote_sign, quote_words};
 
 fn panic_ubig_syntax() -> ! {
     panic!("Incorrect syntax, the correct syntax is like ubig!(1230) or ubig(1230 base 4)")
@@ -100,38 +102,13 @@ pub fn parse_integer<const SIGNED: bool>(input: TokenStream) -> TokenStream {
     }
 }
 
-pub fn quote_words(words: &[Word]) -> Group {
-    let words_stream: TokenStream = words
-        .iter()
-        .flat_map(|&w| {
-            [
-                // currently Word bits <= 64
-                TokenTree::Literal(Literal::u64_unsuffixed(w as u64)),
-                TokenTree::Punct(Punct::new(',', Spacing::Alone)),
-            ]
-        })
-        .collect();
-    Group::new(Delimiter::Bracket, words_stream)
-}
-
-pub fn quote_sign(sign: Sign) -> TokenStream {
-    match sign {
-        Sign::Positive => quote! { ::dashu_int::Sign::Positive },
-        Sign::Negative => quote! { ::dashu_int::Sign::Negative },
-    }
-}
-
 pub fn quote_ubig(int: UBig) -> TokenStream {
     let words = int.as_words();
-    let n_words = words.len();
-    if n_words <= 2 {
-        // the number is small enough to fit a double word, generates const expression
-        let low = *words.get(0).unwrap_or(&0);
-        let high = *words.get(1).unwrap_or(&0);
-        let dword = low as DoubleWord | (high as DoubleWord) << Word::BITS;
+    if let Some(dword) = get_dword_from_words(words) {
         quote! { ::dashu_int::UBig::from_dword(#dword) }
     } else {
         // the number contains more than two words, convert to array of words
+        let n_words = words.len();
         let words_tt = quote_words(words);
         quote! {{
             const WORDS: [::dashu_int::Word; #n_words] = #words_tt;
@@ -144,15 +121,11 @@ pub fn quote_ibig(int: IBig) -> TokenStream {
     let (sign, mag) = int.into_parts();
     let sign = quote_sign(sign);
     let words = mag.as_words();
-    let n_words = words.len();
-    if n_words <= 2 {
-        // the number is small enough to fit a double word, generates const expression
-        let low = *words.get(0).unwrap_or(&0);
-        let high = *words.get(1).unwrap_or(&0);
-        let dword = low as DoubleWord | (high as DoubleWord) << Word::BITS;
+    if let Some(dword) = get_dword_from_words(words) {
         quote! { ::dashu_int::IBig::from_parts_const(#sign, #dword) }
     } else {
         // the number contains more than two words, convert to array of words
+        let n_words = words.len();
         let words_tt = quote_words(words);
         quote! {{
             const WORDS: [::dashu_int::Word; #n_words] = #words_tt;

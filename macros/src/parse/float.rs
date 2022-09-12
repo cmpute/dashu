@@ -1,8 +1,8 @@
-use super::int::{quote_sign, quote_words};
+use super::common::{get_dword_from_words, quote_sign, quote_words};
 use core::str::FromStr;
 
 use dashu_float::{round::mode, DBig, FBig};
-use dashu_int::{DoubleWord, Sign, Word};
+use dashu_int::Sign;
 use proc_macro2::TokenStream;
 use quote::quote;
 
@@ -10,7 +10,6 @@ fn panic_fbig_syntax() -> ! {
     panic!("Incorrect syntax, please refer to the docs for acceptable float literal formats.")
 }
 
-// TODO(next): support arbitrary base?
 pub fn parse_binary_float(input: TokenStream) -> TokenStream {
     let mut value_str = String::new();
     input
@@ -40,15 +39,13 @@ pub fn parse_binary_float(input: TokenStream) -> TokenStream {
     assert!(man.sign() == Sign::Positive);
     let sign = quote_sign(sign);
     let words = man.as_sign_words().1;
-    let n_words = words.len();
-    if n_words <= 2 {
+
+    if let Some(dword) = get_dword_from_words(words) {
         // the number is small enough to fit a double word, generates const expression
-        let low = *words.get(0).unwrap_or(&0);
-        let high = *words.get(1).unwrap_or(&0);
-        let dword = low as DoubleWord | (high as DoubleWord) << Word::BITS;
         quote! { ::dashu_float::FBig::<::dashu_float::round::mode::Zero, 2>::from_parts_const(#sign, #dword, #exp) }
     } else {
         // the number contains more than two words, convert to array of words
+        let n_words = words.len();
         let words_tt = quote_words(words);
         quote! {{
             const WORDS: [::dashu_int::Word; #n_words] = #words_tt;
@@ -68,15 +65,13 @@ pub fn parse_decimal_float(input: TokenStream) -> TokenStream {
     let (man, exp) = f.into_parts();
     let (sign, words) = man.as_sign_words();
     let sign = quote_sign(sign);
-    let n_words = words.len();
-    if n_words <= 2 {
+
+    if let Some(dword) = get_dword_from_words(words) {
         // the number is small enough to fit a double word, generates const expression
-        let low = *words.get(0).unwrap_or(&0);
-        let high = *words.get(1).unwrap_or(&0);
-        let dword = low as DoubleWord | (high as DoubleWord) << Word::BITS;
         quote! { ::dashu_float::DBig::from_parts_const(#sign, #dword, #exp) }
     } else {
         // the number contains more than two words, convert to array of words
+        let n_words = words.len();
         let words_tt = quote_words(words);
         quote! {{
             const WORDS: [::dashu_int::Word; #n_words] = #words_tt;

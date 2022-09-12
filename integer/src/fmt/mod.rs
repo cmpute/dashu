@@ -38,7 +38,6 @@ impl Display for UBig {
             radix: 10,
             prefix: "",
             digit_case: DigitCase::NoLetters,
-            ignore: false,
         }
         .fmt(f)
     }
@@ -63,7 +62,6 @@ impl Binary for UBig {
             radix: 2,
             prefix: if f.alternate() { "0b" } else { "" },
             digit_case: DigitCase::NoLetters,
-            ignore: false,
         }
         .fmt(f)
     }
@@ -77,7 +75,6 @@ impl Octal for UBig {
             radix: 8,
             prefix: if f.alternate() { "0o" } else { "" },
             digit_case: DigitCase::NoLetters,
-            ignore: false,
         }
         .fmt(f)
     }
@@ -91,7 +88,6 @@ impl LowerHex for UBig {
             radix: 16,
             prefix: if f.alternate() { "0x" } else { "" },
             digit_case: DigitCase::Lower,
-            ignore: false,
         }
         .fmt(f)
     }
@@ -105,7 +101,6 @@ impl UpperHex for UBig {
             radix: 16,
             prefix: if f.alternate() { "0x" } else { "" },
             digit_case: DigitCase::Upper,
-            ignore: false,
         }
         .fmt(f)
     }
@@ -120,7 +115,6 @@ impl Display for IBig {
             radix: 10,
             prefix: "",
             digit_case: DigitCase::NoLetters,
-            ignore: false,
         }
         .fmt(f)
     }
@@ -147,7 +141,6 @@ impl Binary for IBig {
             radix: 2,
             prefix: if f.alternate() { "0b" } else { "" },
             digit_case: DigitCase::NoLetters,
-            ignore: false,
         }
         .fmt(f)
     }
@@ -162,7 +155,6 @@ impl Octal for IBig {
             radix: 8,
             prefix: if f.alternate() { "0o" } else { "" },
             digit_case: DigitCase::NoLetters,
-            ignore: false,
         }
         .fmt(f)
     }
@@ -177,7 +169,6 @@ impl LowerHex for IBig {
             radix: 16,
             prefix: if f.alternate() { "0x" } else { "" },
             digit_case: DigitCase::Lower,
-            ignore: false,
         }
         .fmt(f)
     }
@@ -192,7 +183,6 @@ impl UpperHex for IBig {
             radix: 16,
             prefix: if f.alternate() { "0x" } else { "" },
             digit_case: DigitCase::Upper,
-            ignore: false,
         }
         .fmt(f)
     }
@@ -294,53 +284,6 @@ impl Display for InRadix<'_> {
             radix: self.radix,
             prefix: "",
             digit_case,
-            ignore: false,
-        }
-        .fmt(f)
-    }
-}
-
-impl InRadix<'_> {
-    /// Print the number in the simplest way, ignoring the all printing flags in the formatter.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use dashu_int::UBig;
-    /// # use core::fmt;
-    /// struct HexDisplay<'a>(&'a UBig);
-    ///
-    /// impl<'a> fmt::Display for HexDisplay<'a> {
-    ///     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    ///         self.0.in_radix(16).fmt_custom(f, true, "hex:")
-    ///     }
-    /// }
-    ///
-    /// let n = UBig::from(12345u16);
-    /// let disp = HexDisplay(&n);
-    /// assert_eq!(format!("{:=^+10}", disp), "hex:3039");
-    /// ```
-    pub fn fmt_custom(
-        &self,
-        f: &mut Formatter,
-        upper_case: bool,
-        prefix: &'static str,
-    ) -> fmt::Result {
-        let digit_case = if self.radix <= 10 {
-            DigitCase::NoLetters
-        } else if upper_case {
-            DigitCase::Upper
-        } else {
-            DigitCase::Lower
-        };
-
-        InRadixWriter {
-            sign: self.sign,
-            magnitude: self.magnitude,
-            radix: self.radix,
-            prefix,
-            digit_case,
-            ignore: true,
         }
         .fmt(f)
     }
@@ -353,7 +296,6 @@ struct InRadixWriter<'a> {
     radix: Digit,
     prefix: &'static str,
     digit_case: DigitCase,
-    ignore: bool, // whether ignore formatting options
 }
 
 /// Representation for printing only head and tail of the number, only decimal is supported
@@ -385,7 +327,7 @@ impl InRadixWriter<'_> {
         // (WORD_BITS - 1) spare bits before we would hit overflow.
         let sign = if self.sign == Negative {
             "-"
-        } else if !self.ignore && f.sign_plus() {
+        } else if f.sign_plus() {
             "+"
         } else {
             ""
@@ -399,13 +341,13 @@ impl InRadixWriter<'_> {
             digit_writer.flush()
         };
 
-        match (f.width(), self.ignore) {
-            (None, _) | (_, true) => {
+        match f.width() {
+            None => {
                 f.write_str(sign)?;
                 f.write_str(self.prefix)?;
                 write_digits(f)?
             }
-            (Some(min_width), false) => {
+            Some(min_width) => {
                 if width >= min_width {
                     f.write_str(sign)?;
                     f.write_str(self.prefix)?;
