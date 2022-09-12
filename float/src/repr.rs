@@ -58,7 +58,7 @@ pub struct Repr<const BASE: Word> {
 ///
 /// For binary operations, the two oprands must have the same rounding mode.
 /// 
-/// TODO(next): explain the error range for different rounding errors.
+/// TODO(v0.2): explain the error range for different rounding errors.
 ///
 #[derive(Clone, Copy)]
 pub struct Context<RoundingMode: Round> {
@@ -414,7 +414,7 @@ impl<R: Round> Context<R> {
 
     /// Check whether the precision is limited (not zero)
     #[inline]
-    pub(crate) fn limited(&self) -> bool {
+    pub(crate) fn is_limited(&self) -> bool {
         self.precision != 0
     }
 
@@ -427,7 +427,7 @@ impl<R: Round> Context<R> {
     /// Round the repr to the desired precision
     pub(crate) fn repr_round<const B: Word>(&self, repr: Repr<B>) -> Rounded<Repr<B>> {
         assert!(repr.is_finite());
-        if !self.limited() {
+        if !self.is_limited() {
             return Exact(repr);
         }
 
@@ -445,7 +445,7 @@ impl<R: Round> Context<R> {
     /// Round the repr to the desired precision
     pub(crate) fn repr_round_ref<const B: Word>(&self, repr: &Repr<B>) -> Rounded<Repr<B>> {
         assert!(repr.is_finite());
-        if !self.limited() {
+        if !self.is_limited() {
             return Exact(repr.clone());
         }
 

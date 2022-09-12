@@ -18,23 +18,57 @@ use dashu_int::{DoubleWord, IBig};
 /// If a different precision limit and/or rounding mode is required, or the rounding
 /// information has to be preserved, use the methods of the [Context] type.
 ///
-/// # Examples
-///
-/// TODO
-///
 /// # Generic Parameters
 ///
 /// The const generic parameters will be abbreviated as `BASE` -> `B`, `RoundingMode` -> `R`.
 /// THe `BASE` must be in range \[2, isize::MAX\], and the `RoundingMode` can be chosen from
 /// the [mode] module.
+/// 
+/// With the default generic parameters, the floating number is of base 2 rounded towards zero.
+/// This is the most efficient format for operations. To represent a decimal number, the alias
+/// [DBig][crate::DBig] is provided, which is base 10 rounded to the nearest.
 ///
 /// # Parsing and printing
 ///
+/// To create a [FBig] instance, there are four ways:
+/// 1. Use predifined constants (e.g. [FBig::ZERO], [FBig::ONE], [FBig::NEG_INFINITY]).
+/// 1. Use the literal macro `fbig!` or `dbig!` defined in the [`dashu-macro`](https://docs.rs/dashu-macros/latest/dashu_macros/) crate.
+/// 1. Construct from the significand and exponent using [from_parts()][FBig::from_parts] or [from_parts_const()][FBig::from_parts_const].
+/// 1. Parse from a string.
+/// 
 /// Conversion from and to [str] is limited to native radix (i.e. base). To print or parse
 /// with different radix, please use [to_binary()][FBig::to_binary], [to_decimal()][FBig::to_decimal]
-/// or [with_base()][FBig::with_base] to convert.
+/// or [with_base()][FBig::with_base], [with_base_and_precision()][FBig::with_base_and_precision] to convert.
 ///
-/// For detailed requirements of parsing, refer to the [from_str_native()][FBig::from_str_native] method.
+/// For printing, currently only the [Display][core::fmt::Display] and [Debug][core::fmt::Debug] are supported.
+/// Other formatting traits will be supported in future.
+/// 
+/// ```
+/// # use dashu_int::error::ParseError;
+/// # use dashu_float::DBig;
+/// // parsing
+/// let a = DBig::from_parts(123456789.into(), -5);
+/// let b = DBig::from_str_native("1234.56789")?;
+/// let c = DBig::from_str_native("1.23456789e3")?;
+/// assert_eq!(a, b);
+/// assert_eq!(b, c);
+/// 
+/// // printing
+/// assert_eq!(format!("{}", DBig::from_str_native("12.34")?), "12.34");
+/// let x = DBig::from_str_native("10.01")?
+///     .with_precision(0) // use unlimited precision
+///     .value(); 
+/// if dashu_int::Word::BITS == 64 {
+///     // number of digits to display depends on the word size
+///     assert_eq!(
+///         format!("{:?}", x.powi(100.into())),
+///         "1105115697720767968..1441386704950100001 * 10 ^ -200 (prec: 0, rnd: HalfAway)"
+///     );
+/// }
+/// # Ok::<(), ParseError>(())
+/// ```
+/// 
+/// For detailed information of parsing, refer to the [from_str_native()][FBig::from_str_native] method.
 ///
 /// # Convert from/to `f32`/`f64`
 ///
@@ -82,7 +116,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Note that this condition is not checked in release build.
     #[inline]
     pub fn from_repr(repr: Repr<B>, context: Context<R>) -> Self {
-        debug_assert!(repr.is_infinite() || !context.limited() || repr.digits() <= context.precision);
+        debug_assert!(repr.is_infinite() || !context.is_limited() || repr.digits() <= context.precision);
         Self { repr, context }
     }
 

@@ -78,14 +78,20 @@ impl<R: Round> Context<R> {
     /// assert_eq!(context.powi(&a.repr(), 10.into()), Inexact(DBig::from_str_native("8.2")?, AddOne));
     /// # Ok::<(), ParseError>(())
     /// ```
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the precision is unlimited and the exponent is negative. In this case, the exact
+    /// result is likely to have infinite digits.
     pub fn powi<const B: Word>(&self, base: &Repr<B>, exp: IBig) -> Rounded<FBig<R, B>> {
         check_inf(base);
-        check_precision_limited(self.precision);
 
         let (exp_sign, exp) = exp.into_parts();
         if exp_sign == Sign::Negative {
             // if the exponent is negative, then negate the exponent
-            // note that do the inverse at last requires less guard bits
+            // note that do the inverse at last requires less guard bits            
+            check_precision_limited(self.precision); // TODO: we can allow this if the inverse is exact (only when significand is one?)
+
             let guard_bits = self.precision.bit_len() * 2; // heuristic
             let rev_context = Context::<R::Reverse>::new(self.precision + guard_bits);
             let pow = rev_context.powi(base, exp.into()).value();
@@ -100,9 +106,13 @@ impl<R: Round> Context<R> {
             return repr.map(|v| FBig::new(v, *self));
         }
 
-        // increase working precision when the exponent is large
-        let guard_digits = exp.bit_len() + self.precision.bit_len(); // heuristic
-        let work_context = Context::<R>::new(self.precision + guard_digits);
+        let work_context = if self.is_limited() {
+            // increase working precision when the exponent is large
+            let guard_digits = exp.bit_len() + self.precision.bit_len(); // heuristic
+            Context::<R>::new(self.precision + guard_digits)
+        } else {
+            Context::<R>::new(0)
+        };
 
         // binary exponentiation from left to right
         let mut p = exp.bit_len() - 2;

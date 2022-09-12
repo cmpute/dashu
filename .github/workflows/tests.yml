@@ -99,7 +99,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --no-default-features --features "rand, num-traits, serde"
+          args: -p dashu --no-default-features --features "rand, num-traits, serde"
 
   build-benchmark:
     name: Build benchmark

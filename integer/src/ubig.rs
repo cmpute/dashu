@@ -7,30 +7,61 @@
 
 use crate::repr::{Repr, TypedRepr, TypedReprRef};
 
-/// Unsigned big integer.
+/// An unsigned arbitrary precision integer.
 ///
-/// Arbitrarily large unsigned integer.
+/// This struct represents an arbitrarily large unsigned integer. Technically the size of the integer
+/// is bounded by the memory size, but it's enough for practical use on modern devices.
 ///
-/// # Examples
+/// # Parsing and printing
 ///
+/// To create a [UBig] instance, there are three ways:
+/// 1. Use predifined constants (e.g. [UBig::ZERO], [UBig::ONE]).
+/// 1. Use the literal macro `ubig!` defined in the [`dashu-macro`](https://docs.rs/dashu-macros/latest/dashu_macros/) crate.
+/// 1. Parse from a string.
+/// 
+/// Parsing from either literal or string supports representation with base 2~36.
+/// 
+/// For printing, the [UBig] type supports common formatting traits ([Display][core::fmt::Display],
+/// [Debug][core::fmt::Debug], [LowerHex][core::fmt::LowerHex], etc.). Specially, printing huge number
+/// using [Debug][core::fmt::Debug] will conveniently omit the middle digits of the number, only print
+/// the least and most significant (decimal) digits.
+/// 
 /// ```
-/// # use dashu_int::{error::ParseError, UBig};
+/// # use dashu_int::{error::ParseError, UBig, Word};
+/// // parsing
 /// let a = UBig::from(408580953453092208335085386466371u128);
 /// let b = UBig::from(0x1231abcd4134u64);
 /// let c = UBig::from_str_radix("a2a123bbb127779cccc123", 32)?;
 /// let d = UBig::from_str_radix("1231abcd4134", 16)?;
 /// assert_eq!(a, c);
 /// assert_eq!(b, d);
+/// 
+/// // printing
+/// assert_eq!(format!("{}", UBig::from(12u8)), "12");
+/// assert_eq!(format!("{:#X}", UBig::from(0xabcdu16)), "0xABCD");
+/// if Word::BITS == 64 {
+///     // number of digits to display depends on the word size
+///     assert_eq!(
+///         format!("{:?}", UBig::ONE << 1000),
+///         "1071508607186267320..4386837205668069376"
+///     );
+/// }
 /// # Ok::<(), ParseError>(())
 /// ```
 ///
-/// The UBig struct has a niche bit, therefore it can be used within simple enums
-/// with no additional memory requirement.
+/// # Memory
+/// 
+/// Integers that fit in a [DoubleWord][crate::DoubleWord] will be inlined on stack and
+/// no heap allocation will be invoked. For large integers, they will be represented as
+/// an array of [Word][crate::Word]s, and stored on heap.
+/// 
+/// Note that the [UBig] struct has a niche bit, therefore it can be used within simple
+/// enums with no memory overhead.
 ///
 /// ```
 /// # use dashu_int::UBig;
-/// use core::mem;
-/// assert_eq!(mem::size_of::<UBig>(), mem::size_of::<Option<UBig>>());
+/// use core::mem::size_of;
+/// assert_eq!(size_of::<UBig>(), size_of::<Option<UBig>>());
 /// ```
 #[derive(Eq, Hash, PartialEq)]
 #[repr(transparent)]

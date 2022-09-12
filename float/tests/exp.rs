@@ -5,6 +5,10 @@ mod helper_macros;
 
 #[test]
 fn test_powi_binary() {
+    // simple cases
+    assert_eq!(fbig!(0x0).powi(ibig!(0)), fbig!(0x1));
+    assert_eq!(fbig!(0x0).powi(ibig!(10)), fbig!(0x0));
+
     let exact_cases = [
         (fbig!(0x1), ibig!(0), fbig!(0x1)),
         (fbig!(0x1), ibig!(1), fbig!(0x1)),
@@ -50,6 +54,10 @@ fn test_powi_binary() {
 
 #[test]
 fn test_powi_decimal() {
+    // simple cases
+    assert_eq!(dbig!(0).powi(ibig!(0)), dbig!(1));
+    assert_eq!(dbig!(0).powi(ibig!(10)), dbig!(0));
+
     let exact_cases = [
         (dbig!(1), ibig!(0), dbig!(1)),
         (dbig!(1), ibig!(1), dbig!(1)),
@@ -91,6 +99,20 @@ fn test_powi_decimal() {
             panic!("the result should be inexact!")
         }
     }
+}
+
+#[test]
+fn test_powi_unlimited_precision() {
+    assert_eq!(fbig!(0x1p-3).with_precision(0).value().powi(ibig!(100)), fbig!(0x1p-300));
+    assert_eq!(
+        fbig!(0x11p-3).with_precision(0).value().powi(ibig!(100)),
+        fbig!(0x1ad6e751d93a86b6ee122b6be4254d4ee2283adf63955e927dd2ccf8c9ed1fceec29ee2d0e93474283c3edae5b313516ad69c41p-300));
+}
+
+#[test]
+#[should_panic]
+fn test_powi_unlimited_precision_neg_exp() {
+    let _ = fbig!(0x3p-3).with_precision(0).value().powi(ibig!(-100));
 }
 
 #[test]

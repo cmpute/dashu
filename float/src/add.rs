@@ -224,7 +224,7 @@ impl<R: Round> Context<R> {
         mut low: (IBig, usize),
         is_sub: bool,
     ) -> Rounded<Repr<B>> {
-        if !self.limited() {
+        if !self.is_limited() {
             // short cut for unlimited precision
             return Rounded::Exact(Repr::new(significand, exponent));
         }
@@ -305,7 +305,7 @@ impl<R: Round> Context<R> {
 
         // align the exponent
         let low: (IBig, usize); // (value of low part, precision of the low part)
-        let (significand, exponent) = if self.limited()
+        let (significand, exponent) = if self.is_limited()
             && rdigits_est + 1 < ediff
             && rdigits_est + 1 + rnd_precision < ldigits + ediff
         {
@@ -326,7 +326,7 @@ impl<R: Round> Context<R> {
             }; // low_prec >= 2
             low = (rhs_sign * rhs.significand.signum(), low_prec);
             (lhs.significand, lhs.exponent)
-        } else if self.limited() && ldigits >= self.precision {
+        } else if self.is_limited() && ldigits >= self.precision {
             // if the lhs already exceeds the desired precision, just align rhs
             /* Before:
              * lhs: |==============|
@@ -341,7 +341,7 @@ impl<R: Round> Context<R> {
             let (rhs_signif, r) = split_digits_ref::<B>(&rhs.significand, ediff);
             low = (rhs_sign * r, ediff);
             (lhs.significand + rhs_sign * rhs_signif, lhs.exponent)
-        } else if self.limited() && ediff + ldigits > self.precision {
+        } else if self.is_limited() && ediff + ldigits > self.precision {
             // if the shifted lhs exceeds the desired precision, align lhs and rhs to precision
             /* Before:
              * lhs: |=========|
@@ -405,7 +405,7 @@ impl<R: Round> Context<R> {
 
         // align the exponent
         let low: (IBig, usize);
-        let (significand, exponent) = if self.limited()
+        let (significand, exponent) = if self.is_limited()
             && ldigits_est + 1 < ediff
             && ldigits_est + 1 + rnd_precision < rdigits + ediff
         {
@@ -417,7 +417,7 @@ impl<R: Round> Context<R> {
             };
             low = (lhs.significand.signum(), low_prec);
             (rhs_sign * rhs.significand.clone(), rhs.exponent)
-        } else if self.limited() && rdigits >= self.precision {
+        } else if self.is_limited() && rdigits >= self.precision {
             // if the rhs already exceeds the desired precision, just align lhs
             let (lhs_signif, r) = split_digits::<B>(lhs.significand, ediff);
             low = (r, ediff);
@@ -425,7 +425,7 @@ impl<R: Round> Context<R> {
                 Positive => (lhs_signif + &rhs.significand, rhs.exponent),
                 Negative => (lhs_signif - &rhs.significand, rhs.exponent),
             }
-        } else if self.limited() && ediff + rdigits > self.precision {
+        } else if self.is_limited() && ediff + rdigits > self.precision {
             // if the shifted rhs exceeds the desired precision, align lhs and rhs to precision
             let lshift = self.precision - rdigits;
             let rshift = ediff - lshift;

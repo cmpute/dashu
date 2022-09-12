@@ -1,15 +1,4 @@
-# Roadmap to v0.1
-- [ ] Implement macros for creating float from literals
-- [x] Add methods to return inexactness
-- [x] Implement +-*/ and exp/log
-- [x] Implement more arithmetic traits with primitive types
-- [x] Implement more arithmetic traits for reference type
-- [x] Full support and tests for inf
-- [x] Full support and tests for arbitrary precision (precision = 0)
-- [x] Make conversion between bases ready
-- [ ] Full documentation
-
-# Roadmap to v0.2
+# Roadmap to vnext
 - [ ] Support generating base math constants (E, Pi, SQRT2, etc.)
 - [ ] Implement Random generator
 - [ ] Implement Serde serialization

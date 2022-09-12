@@ -1,4 +1,6 @@
 //! A big float library supporting arbitrary precision, arbitrary base and arbitrary rounding mode.
+//! 
+// TODO(v0.2): crate level docs
 
 #![cfg_attr(not(feature = "std"), no_std)]
 

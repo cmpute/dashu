@@ -5,31 +5,61 @@ use crate::{
     Sign, UBig,
 };
 
-/// Signed big integer.
+/// An signed arbitrary precision integer.
 ///
-/// Arbitrarily large signed integer.
+/// This struct represents an arbitrarily large signed integer. Technically the size of the integer
+/// is bounded by the memory size, but it's enough for practical use on modern devices.
 ///
-/// The IBig struct is compact with a niche bit. It has the same memory size as [UBig]
-/// and it can could be used within simple enums with no additional memory requirement.
+/// # Parsing and printing
+/// 
+/// There are four ways to create an [IBig] instance:
+/// 1. Use predifined constants (e.g. [IBig::ZERO], [IBig::NEG_ONE]).
+/// 1. Use the literal macro `ibig!` defined in the [`dashu-macro`](https://docs.rs/dashu-macros/latest/dashu_macros/) crate.
+/// 1. Construct from a [Sign] and a [UBig] instance.
+/// 1. Parse from a string.
+/// 
+/// Parsing from either literal or string supports representation with base 2~36.
+/// 
+/// For printing, the [IBig] type supports common formatting traits ([Display][core::fmt::Display],
+/// [Debug][core::fmt::Debug], [LowerHex][core::fmt::LowerHex], etc.). Specially, printing huge number
+/// using [Debug][core::fmt::Debug] will conveniently omit the middle digits of the number, only print
+/// the least and most significant (decimal) digits.
 ///
 /// ```
-/// # use dashu_int::{IBig, UBig};
-/// use core::mem;
-/// assert_eq!(mem::size_of::<IBig>(), mem::size_of::<UBig>());
-/// assert_eq!(mem::size_of::<IBig>(), mem::size_of::<Option<IBig>>());
-/// ```
-///
-/// # Examples
-///
-/// ```
-/// # use dashu_int::{error::ParseError, IBig};
+/// // parsing
+/// # use dashu_int::{error::ParseError, IBig, Word};
 /// let a = IBig::from(408580953453092208335085386466371u128);
 /// let b = IBig::from(-0x1231abcd4134i64);
 /// let c = IBig::from_str_radix("a2a123bbb127779cccc123", 32)?;
 /// let d = IBig::from_str_radix("-1231abcd4134", 16)?;
 /// assert_eq!(a, c);
 /// assert_eq!(b, d);
+/// 
+/// // printing
+/// assert_eq!(format!("{}", IBig::from(12)), "12");
+/// assert_eq!(format!("{:#X}", IBig::from(-0xabcd)), "-0xABCD");
+/// if Word::BITS == 64 {
+///     // number of digits to display depends on the word size
+///     assert_eq!(
+///         format!("{:?}", IBig::NEG_ONE << 1000),
+///         "-1071508607186267320..4386837205668069376"
+///     );
+/// }
 /// # Ok::<(), ParseError>(())
+/// ```
+/// 
+/// # Memory
+/// 
+/// The internal representation of [IBig] is exactly the same as [UBig]. It just use a
+/// small trick to store the sign bit without additional memory allocation. This means that
+/// [IBig] also has the small integer optimization and the niche bit to use with simple
+/// enums.
+///
+/// ```
+/// # use dashu_int::{IBig, UBig};
+/// use core::mem::size_of;
+/// assert_eq!(size_of::<IBig>(), size_of::<UBig>());
+/// assert_eq!(size_of::<IBig>(), size_of::<Option<IBig>>());
 /// ```
 ///
 #[derive(Eq, Hash, PartialEq)]

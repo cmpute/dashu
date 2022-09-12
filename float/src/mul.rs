@@ -115,7 +115,7 @@ impl<R: Round> Context<R> {
 
         // at most double the precision is required to get a correct result
         // shrink the input operands if necessary
-        let max_precision = if self.limited() {
+        let max_precision = if self.is_limited() {
             self.precision * 2
         } else {
             usize::MAX
@@ -163,7 +163,7 @@ impl<R: Round> Context<R> {
         check_inf(f);
 
         // shrink the input operands if necessary
-        let max_precision = if self.limited() {
+        let max_precision = if self.is_limited() {
             self.precision * 2
         } else {
             usize::MAX
