@@ -39,10 +39,11 @@ use dashu_int::{DoubleWord, IBig};
 /// # Convert from/to `f32`/`f64`
 ///
 /// The conversion between [FBig] and [f32]/[f64] is only defined for base 2 [FBig]. To convert
-/// from/to other bases, please first convert to base 2, and then change the base using [with_base()][FBig::with_base].
+/// from/to other bases, please first convert to base 2, and then change the base using [with_base()][FBig::with_base]
+/// or [with_base_and_precision()][FBig::with_base_and_precision].
 ///
 /// Converting from [f32]/[f64] (using [TryFrom][core::convert::TryFrom]) is lossless, except for
-/// that `NAN` values will result in [Err]. Converting to [f32]/[f64] (using [to_f32()][FBig::to_f32]
+/// that `NAN` values will result in an [Err]. Converting to [f32]/[f64] (using [to_f32()][FBig::to_f32]
 /// and [to_f64()][FBig::to_f64]) is lossy, and the rounding direction is contained in the result of these
 /// two methods.
 ///
@@ -65,13 +66,23 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// This method should not be used in most cases. It's designed to be used when
     /// you hold a [Repr] instance and want to create an [FBig] from that.
     ///
-    /// # Panic
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_float::DBig;
+    /// use dashu_float::{Repr, Context};
+    /// 
+    /// assert_eq!(DBig::from_repr(Repr::one(), Context::new(1)), DBig::ONE);
+    /// assert_eq!(DBig::from_repr(Repr::infinity(), Context::new(1)), DBig::INFINITY);
+    /// ```
+    /// 
+    /// # Panics
     ///
     /// Panics if the [Repr] has more digits than the precision limit specified in the context.
     /// Note that this condition is not checked in release build.
     #[inline]
     pub fn from_repr(repr: Repr<B>, context: Context<R>) -> Self {
-        debug_assert!(!context.limited() || repr.digits() < context.precision);
+        debug_assert!(repr.is_infinite() || !context.limited() || repr.digits() <= context.precision);
         Self { repr, context }
     }
 
@@ -79,12 +90,16 @@ impl<R: Round, const B: Word> FBig<R, B> {
         Self::new(Repr::zero(), Context::new(0))
     }
     /// [FBig] with value 0 and unlimited precision
+    /// 
+    /// To test if the float number is zero, use `self.repr().is_zero()`.
     pub const ZERO: Self = Self::zero();
 
     const fn one() -> Self {
         Self::new(Repr::one(), Context::new(0))
     }
     /// [FBig] with value 1 and unlimited precision
+    /// 
+    /// To test if the float number is one, use `self.repr().one()`.
     pub const ONE: Self = Self::one();
 
     const fn neg_one() -> Self {
@@ -97,44 +112,58 @@ impl<R: Round, const B: Word> FBig<R, B> {
         Self::new(Repr::infinity(), Context::new(0))
     }
     /// [FBig] instance representing the positive infinity (+∞)
+    /// 
+    /// To test if the float number is infinite, use `self.repr().infinite()`.
     pub const INFINITY: Self = Self::inf();
 
     const fn neg_inf() -> Self {
         Self::new(Repr::neg_infinity(), Context::new(0))
     }
     /// [FBig] instance representing the negative infinity (-∞)
+    /// 
+    /// To test if the float number is infinite, use `self.repr().infinite()`.
     pub const NEG_INFINITY: Self = Self::neg_inf();
 
-    /// Determine if the float number is zero
-    #[inline]
-    pub const fn is_zero(&self) -> bool {
-        self.repr.is_zero()
-    }
-    /// Determine if the float number is one
-    #[inline]
-    pub const fn is_one(&self) -> bool {
-        self.repr.is_one()
-    }
-    /// Determine if the float number is (±)infinity
-    #[inline]
-    pub const fn is_infinite(&self) -> bool {
-        self.repr.is_infinite()
-    }
-    /// Determine if the float number is finite
-    #[inline]
-    pub const fn is_finite(&self) -> bool {
-        self.repr.is_finite()
-    }
-
     /// Get the maximum precision set for the float number.
+    /// 
+    /// It's equivalent to `self.context().precision()`.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::error::ParseError;
+    /// # use dashu_float::DBig;
+    /// use dashu_float::Repr;
+    /// 
+    /// let a = DBig::from_str_native("1.234")?;
+    /// assert!(a.repr().significand() <= &Repr::<10>::BASE.pow(a.precision()));
+    /// # Ok::<(), ParseError>(())
+    /// ```
     #[inline]
     pub const fn precision(&self) -> usize {
         self.context.precision
     }
 
-    /// Get the actual precision needed for the float number.
+    /// Get the number of the significant digits in the float number
     ///
-    /// This is also the actual precision needed for the float number. Shrink to this value using [Self::with_precision] will not cause loss of float precision.
+    /// It's equivalent to `self.repr().digits()`.
+    /// 
+    /// This value is also the actual precision needed for the float number. Shrink to this
+    /// value using [with_precision()][FBig::with_precision] will not cause loss of float precision.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::error::ParseError;
+    /// # use dashu_float::DBig;
+    /// use dashu_base::Approximation::*;
+    /// 
+    /// let a = DBig::from_str_native("-1.234e-3")?;
+    /// assert_eq!(a.digits(), 4);
+    /// assert!(matches!(a.clone().with_precision(4), Exact(_)));
+    /// assert!(matches!(a.clone().with_precision(3), Inexact(_, _)));
+    /// # Ok::<(), ParseError>(())
+    /// ```
     #[inline]
     pub fn digits(&self) -> usize {
         self.repr.digits()
@@ -145,19 +174,41 @@ impl<R: Round, const B: Word> FBig<R, B> {
     pub const fn context(&self) -> Context<R> {
         self.context
     }
-    /// Get the reference to the numeric representation
+    /// Get a reference to the underlying numeric representation
     #[inline]
     pub const fn repr(&self) -> &Repr<B> {
         &self.repr
     }
     /// Get the underlying numeric representation
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_float::DBig;
+    /// use dashu_float::Repr;
+    /// 
+    /// let a = DBig::ONE;
+    /// assert_eq!(a.into_repr(), Repr::<10>::one());
+    /// ```
     #[inline]
     pub fn into_repr(self) -> Repr<B> {
         self.repr
     }
 
-    /// Convert raw parts into a float number, the precision will be inferred from significand
-    /// (the lowest k such that `significand <= base^k`)
+    /// Convert raw parts (significand, exponent) into a float number.
+    /// 
+    /// The precision will be inferred from significand (the lowest k such that `significand <= base^k`)
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::error::ParseError;
+    /// # use dashu_float::DBig;
+    /// let a = DBig::from_parts((-1234).into(), -2);
+    /// assert_eq!(a, DBig::from_str_native("-12.34")?);
+    /// assert_eq!(a.precision(), 4); // 1234 has 4 (decimal) digits
+    /// # Ok::<(), ParseError>(())
+    /// ```
     #[inline]
     pub fn from_parts(significand: IBig, exponent: isize) -> Self {
         let repr = Repr::new(significand, exponent);
@@ -166,6 +217,23 @@ impl<R: Round, const B: Word> FBig<R, B> {
         Self::new(repr, context)
     }
 
+    /// Convert raw parts (significand, exponent) into a float number in a `const` context.
+    /// 
+    /// It requires that the significand fits in a [DoubleWord].
+    /// The precision will be inferred from significand (the lowest k such that `significand <= base^k`)
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::error::ParseError;
+    /// # use dashu_float::DBig;
+    /// use dashu_base::Sign;
+    /// 
+    /// const A: DBig = DBig::from_parts_const(Sign::Negative, 1234, -2);
+    /// assert_eq!(A, DBig::from_str_native("-12.34")?);
+    /// assert_eq!(A.precision(), 4); // 1234 has 4 (decimal) digits
+    /// # Ok::<(), ParseError>(())
+    /// ```
     #[inline]
     pub const fn from_parts_const(
         sign: Sign,
@@ -208,14 +276,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
         Self::new(repr, Context::new(digits))
     }
 
-    /// Convert the float number into raw (signficand, exponent) parts
-    #[inline]
-    pub fn into_parts(self) -> (IBig, isize) {
-        (self.repr.significand, self.repr.exponent)
-    }
-
     /// Return the value of the least significant digit of the float number x,
-    /// such that x + ulp is the first float bigger than x (given the precision from the context).
+    /// such that `x + ulp` is the first float number greater than x (given the precision from the context).
     ///
     /// # Examples
     ///

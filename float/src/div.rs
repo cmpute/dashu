@@ -241,6 +241,28 @@ impl<R: Round> Context<R> {
         }
     }
 
+    /// Divide two floating point numbers under this context.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::error::ParseError;
+    /// # use dashu_float::DBig;
+    /// use dashu_base::Approximation::*;
+    /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
+    /// 
+    /// let context = Context::<HalfAway>::new(2);
+    /// let a = DBig::from_str_native("-1.234")?;
+    /// let b = DBig::from_str_native("6.789")?;
+    /// assert_eq!(context.div(&a.repr(), &b.repr()), Inexact(DBig::from_str_native("-0.18")?, NoOp));
+    /// # Ok::<(), ParseError>(())
+    /// ```
+    /// 
+    /// # Euclidean Division
+    /// 
+    /// To do euclidean division on the float numbers (get an integer quotient and remainder, equivalent to C99's
+    /// `fmod` and `remquo`), please use the methods provided by traits [DivEuclid], [RemEuclid] and [DivRemEuclid].
+    /// 
     pub fn div<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Rounded<FBig<R, B>> {
         check_inf_operands(lhs, rhs);
 

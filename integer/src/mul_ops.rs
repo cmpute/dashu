@@ -48,9 +48,9 @@ macro_rules! impl_div_primitive_with_ibig {
 impl_div_primitive_with_ibig!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);
 
 impl UBig {
-    /// Calculate the squared number (x * x).
+    /// Calculate the square of the number (`x * x`).
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// # use dashu_int::UBig;
@@ -63,9 +63,9 @@ impl UBig {
 }
 
 impl IBig {
-    /// Calculate the squared number (x * x).
+    /// Calculate the square of the number (`self * self`).
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// # use dashu_int::IBig;

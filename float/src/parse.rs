@@ -12,43 +12,72 @@ use dashu_int::{
 };
 
 impl<R: Round, const B: Word> FBig<R, B> {
-    // TODO(next): make it clear how is infinity parsed?
-    /// Convert a string in the native base (i.e. radix) to [FBig].
+    /// Convert a string in the native base (i.e. radix `B`) to [FBig].
     ///
-    /// `src` may contain an optional `+` prefix.
-    /// Digits 10-35 are represented by `a-z` or `A-Z`.
+    /// If the parsing succeeded, the result number will be **losslessly** parsed from the
+    /// input string.
+    /// 
+    /// This function is the actual implementation of the [FromStr] trait.
+    /// 
+    /// **Note**: Infinites are **intentionally not supported** by this function.
     ///
+    /// # Format
+    /// 
     /// The valid representations include
     /// 1. `aaa` or `aaa.`
     ///     * `aaa` is represented in native base `B` without base prefixes.
     /// 1. `aaa.bbb` = `aaabbb / base ^ len(bbb)`
     ///     * `aaa` and `bbb` are represented in native base `B` without base prefixes.
     ///     * `len(bbb)` represents the number of digits in `bbb`, e.g `len(bbb)` is 3. (Same below)
-    /// 1. `aaa.bbb@cc` = `aaabbb / base ^ len(bbb) * base ^ cc`
+    /// 1. `aaa.bbb@cc` = `aaabbb * base ^ (cc - len(bbb))`
     ///     * `aaa` and `bbb` are represented in native base `B`
-    ///     * Refernce: [GMP: IO of floats](https://gmplib.org/manual/I_002fO-of-Floats)
-    /// 1. `aaa.bbbEcc` = `aaabbb / base ^ len(bbb) * 10 ^ cc`
+    ///     * This is consistent with the representation used by [GNU GMP](https://gmplib.org/manual/I_002fO-of-Floats).
+    /// 1. `aaa.bbbEcc` = `aaabbb * 10 ^ (cc - len(bbb))`
     ///     * `E` could be lower case, base `B` must be 10
     ///     * `aaa` and `bbb` are all represented in decimal
     /// 1. `0xaaa` or `0xaaa`
-    /// 1. `0xaaa.bbb` = `aaabbb / base ^ len(bbb)`
-    /// 1. `0xaaa.bbbPcc` = `aaabbb / base ^ len(bbb) * 2 ^ cc`
+    /// 1. `0xaaa.bbb` = `0xaaabbb / 16 ^ len(bbb)`
+    /// 1. `0xaaa.bbbPcc` = `0xaaabbb / 16 ^ len(bbb) * 2 ^ cc`
     ///     * `P` could be lower case, base `B` must be 2 (not 16!)
     ///     * `aaa` and `bbb` are represented in hexadecimal
-    ///     * Reference: [C++ langauge specs](https://en.cppreference.com/w/cpp/language/floating_literal)
-    /// 1. `aaa.bbbBcc` = `aaabbb / base ^ len(bbb) * 2 ^ cc`
-    /// 1. `aaa.bbbOcc` = `aaabbb / base ^ len(bbb) * 8 ^ cc`
-    /// 1. `aaa.bbbHcc` = `aaabbb / base ^ len(bbb) * 16 ^ cc`
+    ///     * This is consistent with the [C++ hexadecimal literals](https://en.cppreference.com/w/cpp/language/floating_literal).
+    /// 1. `aaa.bbbBcc` = `aaabbb * 2 ^ (cc - len(bbb))`
+    /// 1. `aaa.bbbOcc` = `aaabbb * 8 ^ (cc - len(bbb))`
+    /// 1. `aaa.bbbHcc` = `aaabbb * 16 ^ (cc - len(bbb))`
     ///     * `B`/`O`/`H` could be lower case, and base `B` must be consistent with the marker.
     ///     * `aaa` and `bbb` are represented in binary/octal/hexadecimal correspondingly without prefix.
-    ///     * Reference: [Wikipedia: Scientific Notation](https://en.wikipedia.org/wiki/Scientific_notation#Other_bases)
+    ///     * This is consistent with some scientific notations described in [Wikipedia](https://en.wikipedia.org/wiki/Scientific_notation#Other_bases).
     ///
+    /// Digits 10-35 are represented by `a-z` or `A-Z`.
+    /// 
     /// Literal `aaa` and `cc` above can be signed, but `bbb` must be unsigned.
     /// All `cc` are represented in decimal. Either `aaa` or `bbb` can be omitted
     /// when its value is zero, but they are not allowed to be omitted at the same time.
     ///
-    /// This function is the actual implementation of the [FromStr] trait.
-    ///
+    /// # Precision
+    /// 
+    /// The precision of the parsed number is determined by the number of digits that are presented
+    /// in the input string. For example, the numbers parsed from `12.34` or `1.234e-1` will have a
+    /// precision of 4, while the ones parsed from `12.34000` or `00012.34` will have a precision of 7.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::error::ParseError;
+    /// # use dashu_float::DBig;
+    /// use dashu_base::Approximation::*;
+    /// 
+    /// let a = DBig::from_str_native("-1.23400e-3")?;
+    /// let b = DBig::from_str_native("-123.4@-05")?;
+    /// assert_eq!(a, b);
+    /// assert_eq!(a.precision(), 6);
+    /// assert_eq!(b.precision(), 4);
+    /// 
+    /// assert!(DBig::from_str_native("-0x1.234p-3").is_err());
+    /// assert!(DBig::from_str_native("-1.234H-3").is_err());
+    /// # Ok::<(), ParseError>(())
+    /// ```
+    /// 
     /// # Panics
     ///
     /// Panics if the base `B` is not between [MIN_RADIX] and [MAX_RADIX] inclusive.

@@ -16,7 +16,7 @@ pub trait EstimatedLog2 {
     ///
     /// Panics if the number is 0
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use dashu_base::EstimatedLog2;

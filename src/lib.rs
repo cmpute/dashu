@@ -1,10 +1,19 @@
+/// Defintions of common traits
 pub mod base {
     pub use dashu_base::*;
 }
 
+/// Arbitrary precision integer number
 pub mod integer {
     pub use dashu_int::*;
 }
+
+/// Arbitrary precision floating point number
+pub mod float {
+    pub use dashu_float::*;
+}
+
+pub use dashu_macros::{ubig, ibig, fbig, dbig};
 
 /// A verbose alias for [UBig][dashu_int::UBig]
 pub type Natural = dashu_int::UBig;
@@ -12,5 +21,8 @@ pub type Natural = dashu_int::UBig;
 /// A verbose alias for [IBig][dashu_int::IBig]
 pub type Integer = dashu_int::IBig;
 
-// TODO: explain that all crates under dashu will have the same major and minor version.
-// TODO: add float
+/// A verbose alias for [FBig][dashu_float::FBig] (with base 2, rounding towards zero)
+pub type Real = dashu_float::FBig;
+
+/// A verbose alias for [DBig][dashu_float::DBig]
+pub type Decimal = dashu_float::DBig;

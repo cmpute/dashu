@@ -7,7 +7,7 @@ use crate::{ibig::IBig, ubig::UBig, Sign::*};
 impl UBig {
     /// Raises self to the power of `exp`.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// # use dashu_int::UBig;
@@ -34,7 +34,7 @@ impl UBig {
 impl IBig {
     /// Raises self to the power of `exp`.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// # use dashu_int::IBig;

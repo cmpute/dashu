@@ -25,7 +25,7 @@ impl ModuloRing {
     ///
     /// Note that there is overhead for retrieving the original modulus.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// # use dashu_int::{modular::ModuloRing, UBig};

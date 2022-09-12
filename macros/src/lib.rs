@@ -14,7 +14,7 @@ pub fn ibig(input: TokenStream) -> TokenStream {
     parse::int::parse_integer::<true>(input.into()).into()
 }
 
-/// Create an arbitrary precision floating number with base 2
+/// Create an arbitrary precision float number with base 2
 ///
 /// This macro only accepts binary or hexadecimal literals. It doesn't allow decimal literals because
 /// the conversion is not always lossless. Therefore if you want to create an [FBig][dashu_float::FBig]
@@ -30,7 +30,7 @@ pub fn fbig(input: TokenStream) -> TokenStream {
     parse::float::parse_binary_float(input.into()).into()
 }
 
-/// Create an arbitrary precision floating number with base 2
+/// Create an arbitrary precision float number with base 2
 #[proc_macro]
 pub fn dbig(input: TokenStream) -> TokenStream {
     parse::float::parse_decimal_float(input.into()).into()

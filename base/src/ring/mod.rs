@@ -2,7 +2,7 @@
 
 /// Compute quotient and remainder at the same time.
 ///
-/// # Example
+/// # Examples
 /// ```
 /// use dashu_base::DivRem;
 /// assert_eq!(23.div_rem(10), (2, 3));
@@ -16,7 +16,7 @@ pub trait DivRem<Rhs = Self> {
 
 /// Compute quotient inplace and return remainder at the same time.
 ///
-/// # Example
+/// # Examples
 /// ```
 /// use dashu_base::DivRemAssign;
 /// let mut n = 23;
@@ -31,7 +31,7 @@ pub trait DivRemAssign<Rhs = Self> {
 
 /// Compute Euclidean quotient.
 ///
-/// # Example
+/// # Examples
 /// ```
 /// use dashu_base::DivEuclid;
 /// assert_eq!((-23).div_euclid(10), -3);
@@ -44,7 +44,7 @@ pub trait DivEuclid<Rhs = Self> {
 
 /// Compute Euclidean remainder.
 ///
-/// # Example
+/// # Examples
 /// ```
 /// use dashu_base::RemEuclid;
 /// assert_eq!((-23).rem_euclid(10), 7);
@@ -57,7 +57,7 @@ pub trait RemEuclid<Rhs = Self> {
 
 /// Compute Euclidean quotient and remainder at the same time.
 ///
-/// # Example
+/// # Examples
 /// ```
 /// use dashu_base::DivRemEuclid;
 /// assert_eq!((-23).div_rem_euclid(10), (-3, 7));
@@ -73,7 +73,7 @@ pub trait DivRemEuclid<Rhs = Self> {
 ///
 /// For negative integers, the common divisor is still kept positive.
 ///
-/// # Example
+/// # Examples
 /// ```
 /// use dashu_base::Gcd;
 /// assert_eq!(12u8.gcd(10u8), 2);
@@ -96,7 +96,7 @@ pub trait Gcd<Rhs = Self> {
 ///
 /// For negative integers, the common divisor is still kept positive.
 ///
-/// # Example
+/// # Examples
 /// ```
 /// use dashu_base::{Gcd, ExtendedGcd};
 /// let (g, cx, cy) = 12u8.gcd_ext(10u8);

@@ -12,8 +12,12 @@ license = "MIT OR Apache-2.0"
 rust-version = "1.61"
 
 [dependencies]
+# all crates under dashu will have the same major and minor version,
+# but the patch version can be different.
 dashu-base = { path = "./base", version = "0.1.0" }
 dashu-int = { path = "./integer", version = "0.1.0" }
+dashu-float = { path = "./float", version = "0.1.0" }
+dashu-macros = { path = "./macros", version = "0.1.0" }
 
 [workspace]
 members = [

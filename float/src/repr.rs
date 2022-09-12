@@ -1,6 +1,6 @@
 use crate::{
     round::{Round, Rounded},
-    utils::{base_as_ibig, digit_len, split_digits, split_digits_ref},
+    utils::{base_as_ibig, digit_len, split_digits, split_digits_ref}, error::panic_operate_with_inf,
 };
 use core::marker::PhantomData;
 use dashu_base::{Approximation::*, EstimatedLog2, Sign};
@@ -57,16 +57,19 @@ pub struct Repr<const BASE: Word> {
 /// The rounding mode determines the rounding behavior of the float operations.
 ///
 /// For binary operations, the two oprands must have the same rounding mode.
+/// 
+/// TODO(next): explain the error range for different rounding errors.
 ///
 #[derive(Clone, Copy)]
 pub struct Context<RoundingMode: Round> {
-    /// The precision of the floating point number. If set to zero, then
-    /// the precision is unlimited
+    /// The precision of the floating point number.
+    /// If set to zero, then the precision is unlimited.
     pub(crate) precision: usize,
     _marker: PhantomData<RoundingMode>,
 }
 
 impl<const B: Word> Repr<B> {
+    /// The base of the representation. It's exposed as an [IBig] constant.
     pub const BASE: IBig = base_as_ibig::<B>();
 
     /// Create a [Repr] instance representing value zero
@@ -93,7 +96,7 @@ impl<const B: Word> Repr<B> {
             exponent: 0,
         }
     }
-    /// Create a [Repr] instance representing (positive) infinity
+    /// Create a [Repr] instance representing the (positive) infinity
     #[inline]
     pub const fn infinity() -> Self {
         Self {
@@ -101,7 +104,7 @@ impl<const B: Word> Repr<B> {
             exponent: 1,
         }
     }
-    /// Create a [Repr] instance representing (negative) infinity
+    /// Create a [Repr] instance representing the negative infinity
     #[inline]
     pub const fn neg_infinity() -> Self {
         Self {
@@ -109,28 +112,76 @@ impl<const B: Word> Repr<B> {
             exponent: -1,
         }
     }
+
     /// Determine if the [Repr] represents zero
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_float::Repr;
+    /// assert!(Repr::<2>::zero().is_zero());
+    /// assert!(!Repr::<10>::one().is_zero());
+    /// ```
     #[inline]
     pub const fn is_zero(&self) -> bool {
         self.significand.is_zero() && self.exponent == 0
     }
+
     /// Determine if the [Repr] represents one
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_float::Repr;
+    /// assert!(Repr::<2>::zero().is_zero());
+    /// assert!(!Repr::<10>::one().is_zero());
+    /// ```
     #[inline]
     pub const fn is_one(&self) -> bool {
         self.significand.is_one() && self.exponent == 0
     }
-    /// Determine if the [Repr] represents positive or negative infinity
+
+    /// Determine if the [Repr] represents the (±)infinity
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_float::Repr;
+    /// assert!(Repr::<2>::infinity().is_infinite());
+    /// assert!(Repr::<10>::neg_infinity().is_infinite());
+    /// assert!(!Repr::<10>::one().is_infinite());
+    /// ```
     #[inline]
     pub const fn is_infinite(&self) -> bool {
         self.significand.is_zero() && self.exponent != 0
     }
+
     /// Determine if the [Repr] represents a finite number
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_float::Repr;
+    /// assert!(Repr::<2>::zero().is_finite());
+    /// assert!(Repr::<10>::one().is_finite());
+    /// assert!(!Repr::<16>::infinity().is_finite());
+    /// ```
     #[inline]
     pub const fn is_finite(&self) -> bool {
         !self.is_infinite()
     }
 
     /// Get the sign of the number
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_base::Sign;
+    /// # use dashu_float::Repr;
+    /// assert_eq!(Repr::<2>::zero().sign(), Sign::Positive);
+    /// assert_eq!(Repr::<2>::neg_one().sign(), Sign::Negative);
+    /// assert_eq!(Repr::<10>::neg_infinity().sign(), Sign::Negative);
+    /// ```
     #[inline]
     pub const fn sign(&self) -> Sign {
         if self.significand.is_zero() {
@@ -176,15 +227,50 @@ impl<const B: Word> Repr<B> {
         }
     }
 
-    /// Get the number of digits in the significand.
+    /// Get the number of digits (under base `B`) in the significand.
+    /// 
+    /// If the number is 0, then 0 is returned (instead of 1).
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_float::Repr;
+    /// assert_eq!(Repr::<2>::zero().digits(), 0);
+    /// assert_eq!(Repr::<2>::one().digits(), 1);
+    /// assert_eq!(Repr::<10>::one().digits(), 1);
+    /// 
+    /// assert_eq!(Repr::<10>::new(100.into(), 0).digits(), 1); // 1e2
+    /// assert_eq!(Repr::<10>::new(101.into(), 0).digits(), 3);
+    /// ```
     #[inline]
     pub fn digits(&self) -> usize {
+        if self.is_infinite() {
+            panic_operate_with_inf();
+        }
+
         digit_len::<B>(&self.significand)
     }
 
     /// Fast over-estimation of [digits][Self::digits]
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_float::Repr;
+    /// assert_eq!(Repr::<2>::zero().digits_ub(), 0);
+    /// assert_eq!(Repr::<2>::one().digits_ub(), 1);
+    /// assert_eq!(Repr::<10>::one().digits_ub(), 1);
+    /// assert_eq!(Repr::<2>::new(31.into(), 0).digits_ub(), 5);
+    /// assert_eq!(Repr::<10>::new(99.into(), 0).digits_ub(), 2);
+    /// ```
     #[inline]
     pub fn digits_ub(&self) -> usize {
+        if self.is_infinite() {
+            panic_operate_with_inf();
+        } else if self.significand.is_zero() {
+            return 0;
+        }
+
         let log = match B {
             2 => self.significand.log2_bounds().1,
             10 => self.significand.log2_bounds().1 * core::f32::consts::LOG10_2,
@@ -194,8 +280,24 @@ impl<const B: Word> Repr<B> {
     }
 
     /// Fast under-estimation of [digits][Self::digits]
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_float::Repr;
+    /// assert_eq!(Repr::<2>::zero().digits_lb(), 0);
+    /// assert_eq!(Repr::<2>::one().digits_lb(), 0);
+    /// assert_eq!(Repr::<10>::one().digits_lb(), 0);
+    /// assert_eq!(Repr::<10>::new(1001.into(), 0).digits_lb(), 3);
+    /// ```
     #[inline]
     pub fn digits_lb(&self) -> usize {
+        if self.is_infinite() {
+            panic_operate_with_inf();
+        } else if self.significand.is_zero() {
+            return 0;
+        }
+
         let log = match B {
             2 => self.significand.log2_bounds().0,
             10 => self.significand.log2_bounds().0 * core::f32::consts::LOG10_2,
@@ -204,8 +306,21 @@ impl<const B: Word> Repr<B> {
         log as usize
     }
 
-    /// Create a [Repr] from significand and exponent. This
+    /// Create a [Repr] from the significand and exponent. This
     /// constructor will normalize the representation.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_float::Repr;
+    /// let a = Repr::<2>::new(400.into(), -2);
+    /// assert_eq!(a.significand(), &25);
+    /// assert_eq!(a.exponent(), 2);
+    /// 
+    /// let b = Repr::<10>::new(400.into(), -2);
+    /// assert_eq!(b.significand(), &4);
+    /// assert_eq!(b.exponent(), 0);
+    /// ```
     #[inline]
     pub fn new(significand: IBig, exponent: isize) -> Self {
         Self {
@@ -213,6 +328,37 @@ impl<const B: Word> Repr<B> {
             exponent,
         }
         .normalize()
+    }
+
+    /// Get the significand of the representation
+    #[inline]
+    pub fn significand(&self) -> &IBig {
+        &self.significand
+    }
+    
+    /// Get the exponent of the representation
+    #[inline]
+    pub fn exponent(&self) -> isize {
+        self.exponent
+    }
+
+    /// Convert the float number into raw `(signficand, exponent)` parts
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_float::Repr;
+    /// use dashu_int::IBig;
+    /// 
+    /// let a = Repr::<2>::new(400.into(), -2);
+    /// assert_eq!(a.into_parts(), (IBig::from(25), 2));
+    /// 
+    /// let b = Repr::<10>::new(400.into(), -2);
+    /// assert_eq!(b.into_parts(), (IBig::from(4), 0));
+    /// ```
+    #[inline]
+    pub fn into_parts(self) -> (IBig, isize) {
+        (self.significand, self.exponent)
     }
 }
 
@@ -234,6 +380,7 @@ impl<const B: Word> Clone for Repr<B> {
 }
 
 impl<R: Round> Context<R> {
+    /// Create a float operation context with the given precision limit.
     #[inline]
     pub const fn new(precision: usize) -> Self {
         Self {
@@ -242,6 +389,17 @@ impl<R: Round> Context<R> {
         }
     }
 
+    /// Create a float operation context with the higher precision from the two context inputs.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use dashu_float::{Context, round::mode::Zero};
+    /// 
+    /// let ctxt1 = Context::<Zero>::new(2);
+    /// let ctxt2 = Context::<Zero>::new(5);
+    /// assert_eq!(Context::max(ctxt1, ctxt2).precision(), 5);
+    /// ```
     #[inline]
     pub const fn max(lhs: Self, rhs: Self) -> Self {
         Self {
@@ -258,6 +416,12 @@ impl<R: Round> Context<R> {
     #[inline]
     pub(crate) fn limited(&self) -> bool {
         self.precision != 0
+    }
+
+    /// Get the precision limited from the context
+    #[inline]
+    pub const fn precision(&self) -> usize {
+        self.precision
     }
 
     /// Round the repr to the desired precision

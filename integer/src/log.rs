@@ -13,7 +13,7 @@ impl UBig {
     ///
     /// Panics if the number is 0, or the base is 0 or 1
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// # use dashu_int::UBig;
@@ -45,7 +45,7 @@ impl IBig {
     ///
     /// Panics if the number is 0, or the base is 0 or 1
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// # use dashu_int::{UBig, IBig};

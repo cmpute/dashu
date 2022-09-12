@@ -91,6 +91,25 @@ impl<R: Round, const B: Word> FBig<R, B> {
 }
 
 impl<R: Round> Context<R> {
+    /// Multiply two floating point numbers under this context.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::error::ParseError;
+    /// # use dashu_float::DBig;
+    /// use dashu_base::Approximation::*;
+    /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
+    /// 
+    /// let context = Context::<HalfAway>::new(2);
+    /// let a = DBig::from_str_native("-1.234")?;
+    /// let b = DBig::from_str_native("6.789")?;
+    /// assert_eq!(
+    ///     context.mul(&a.repr(), &b.repr()),
+    ///     Inexact(DBig::from_str_native("-8.4")?, SubOne)
+    /// );
+    /// # Ok::<(), ParseError>(())
+    /// ```
     pub fn mul<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Rounded<FBig<R, B>> {
         check_inf_operands(lhs, rhs);
 
@@ -125,6 +144,21 @@ impl<R: Round> Context<R> {
         self.repr_round(repr).map(|v| FBig::new(v, *self))
     }
 
+    /// Calculate the square of the floating point number under this context.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::error::ParseError;
+    /// # use dashu_float::DBig;
+    /// use dashu_base::Approximation::*;
+    /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
+    /// 
+    /// let context = Context::<HalfAway>::new(2);
+    /// let a = DBig::from_str_native("-1.234")?;
+    /// assert_eq!(context.square(&a.repr()), Inexact(DBig::from_str_native("1.5")?, NoOp));
+    /// # Ok::<(), ParseError>(())
+    /// ```
     pub fn square<const B: Word>(&self, f: &Repr<B>) -> Rounded<FBig<R, B>> {
         check_inf(f);
 

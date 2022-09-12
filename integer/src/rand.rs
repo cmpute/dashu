@@ -82,7 +82,7 @@ where
 
 /// Uniform [UBig] distribution.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```
 /// use dashu_int::UBig;
@@ -140,7 +140,7 @@ impl UniformSampler for UniformUBig {
 
 /// Uniform [IBig] distribution.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```
 /// use dashu_int::IBig;

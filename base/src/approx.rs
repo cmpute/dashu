@@ -18,7 +18,7 @@ impl<T, E> Approximation<T, E> {
         }
     }
 
-    /// Get the reference to the calculation result
+    /// Get a reference to the calculation result
     #[inline]
     pub fn value_ref(&self) -> &T {
         match self {

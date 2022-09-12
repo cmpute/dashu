@@ -35,6 +35,7 @@ pub fn parse_binary_float(input: TokenStream) -> TokenStream {
     // generate expressions
     let (man, exp) = FBig::<mode::Zero, 2>::from_str(value_str)
         .unwrap_or_else(|_| panic_fbig_syntax())
+        .into_repr()
         .into_parts();
     assert!(man.sign() == Sign::Positive);
     let sign = quote_sign(sign);
@@ -62,7 +63,7 @@ pub fn parse_decimal_float(input: TokenStream) -> TokenStream {
         .for_each(|tt| value_str.push_str(&tt.to_string()));
 
     let f = DBig::from_str(&value_str).unwrap_or_else(|_| panic_fbig_syntax());
-    let (man, exp) = f.into_parts();
+    let (man, exp) = f.into_repr().into_parts();
     let (sign, words) = man.as_sign_words();
     let sign = quote_sign(sign);
 

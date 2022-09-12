@@ -271,7 +271,7 @@ impl<const B: Word> Display for Repr<B> {
 impl<R: Round, const B: Word> fmt::Debug for FBig<R, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // shortcut for infinities
-        if self.is_infinite() {
+        if self.repr.is_infinite() {
             return match self.repr.sign() {
                 Sign::Positive => f.write_str("inf"),
                 Sign::Negative => f.write_str("-inf"),

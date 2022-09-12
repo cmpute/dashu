@@ -444,6 +444,22 @@ impl<R: Round> Context<R> {
         self.repr_round_sum(significand, exponent, low, is_sub)
     }
 
+    /// Add two floating point numbers under this context.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::error::ParseError;
+    /// # use dashu_float::DBig;
+    /// use dashu_base::Approximation::*;
+    /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
+    /// 
+    /// let context = Context::<HalfAway>::new(2);
+    /// let a = DBig::from_str_native("1.234")?;
+    /// let b = DBig::from_str_native("6.789")?;
+    /// assert_eq!(context.add(&a.repr(), &b.repr()), Inexact(DBig::from_str_native("8.0")?, NoOp));
+    /// # Ok::<(), ParseError>(())
+    /// ```
     pub fn add<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Rounded<FBig<R, B>> {
         check_inf_operands(lhs, rhs);
 
@@ -463,6 +479,25 @@ impl<R: Round> Context<R> {
         sum.map(|v| FBig::new(v, *self))
     }
 
+    /// Subtract two floating point numbers under this context.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::error::ParseError;
+    /// # use dashu_float::DBig;
+    /// use dashu_base::Approximation::*;
+    /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
+    /// 
+    /// let context = Context::<HalfAway>::new(2);
+    /// let a = DBig::from_str_native("1.234")?;
+    /// let b = DBig::from_str_native("6.789")?;
+    /// assert_eq!(
+    ///     context.sub(&a.repr(), &b.repr()),
+    ///     Inexact(DBig::from_str_native("-5.6")?, SubOne)
+    /// );
+    /// # Ok::<(), ParseError>(())
+    /// ```
     pub fn sub<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Rounded<FBig<R, B>> {
         check_inf_operands(lhs, rhs);
 
