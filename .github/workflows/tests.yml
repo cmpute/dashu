@@ -1,4 +1,10 @@
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
 
 name: Tests
 
@@ -161,3 +167,19 @@ jobs:
         with:
           command: clippy
           args: --all-features -- -D warnings
+
+  miri:
+    name: Miri
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+          components: miri
+      - uses: actions-rs/cargo@v1
+        with:
+          command: miri
+          args: test
