@@ -14,8 +14,8 @@ fn test_fbig() {
     assert_eq!(fbig!(00001).precision(), 5);
     assert_eq!(fbig!(-1.), FBin::NEG_ONE);
     assert_eq!(fbig!(-1.00), FBin::NEG_ONE);
+    assert_eq!(fbig!(-1.00).precision(), 3);
     assert_eq!(fbig!(-101.001), FBin::from_str("-101.001").unwrap());
-    assert_eq!(fbig!(-101.001).precision(), 6);
     assert_eq!(fbig!(1001.b23), FBin::from_str("1001.b23").unwrap());
 
     // hex digits
@@ -61,9 +61,12 @@ fn test_fbig() {
 #[test]
 fn test_dbig() {
     assert_eq!(dbig!(0), DBig::ZERO);
+    assert_eq!(dbig!(0).precision(), 0);
     assert_eq!(dbig!(00001), DBig::ONE);
+    assert_eq!(dbig!(00001).precision(), 5);
     assert_eq!(dbig!(-1.), DBig::NEG_ONE);
     assert_eq!(dbig!(-1.00), DBig::NEG_ONE);
+    assert_eq!(dbig!(-1.00).precision(), 3);
     assert_eq!(dbig!(-123.004), DBig::from_str("-123.004").unwrap());
 
     assert_eq!(dbig!(1234.e23), DBig::from_str("1234.e23").unwrap());
@@ -76,10 +79,10 @@ fn test_dbig() {
     );
     assert_eq!(dbig!(515377520732011331036461129765621272702107522001e-100).precision(), 48);
     assert_eq!(
-        dbig!(515377520732011331036461100000000000000000000000e-100),
-        DBig::from_str("515377520732011331036461100000000000000000000000e-100").unwrap()
+        dbig!(515377520732011331036461129765621272702107500000e-100),
+        DBig::from_str("515377520732011331036461129765621272702107500000e-100").unwrap()
     );
-    assert_eq!(dbig!(515377520732011331036461100000000000000000000000e-100).precision(), 48);
+    assert_eq!(dbig!(515377520732011331036461129765621272702107500000e-100).precision(), 48);
 
     // const test
     const _: DBig = dbig!(0);

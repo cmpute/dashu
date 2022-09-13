@@ -4,10 +4,19 @@ A library set of big numbers. It's intended to be a rust native replacement for 
 
 ## Features
 
-- Efficient implementation of various algorithms
-- Pure rust, full `no_std` support
+- Efficient implementation of various algorithms.
+- Pure rust, full `no_std` support.
 - Focus on ergonomics & readability.
 - Current MSRV is 1.61
+
+## Sub-crates
+
+- [`dashu-base`](./base): Common trait definitions
+- [`dashu-int`](./integer): Arbitrary precision integers
+- [`dashu-float`](./float): Arbitrary precision floating point numbers
+- [`dashu-macros`](./macros): Macros for creating big numbers
+
+`dashu` is a meta crate that re-exports all the types from these sub-crates. Please see the README.md in each subdirectory for crate-specific introduction.
 
 ## License
 

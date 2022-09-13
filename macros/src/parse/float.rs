@@ -79,7 +79,9 @@ pub fn parse_decimal_float(input: TokenStream) -> TokenStream {
         quote! {{
             const WORDS: [::dashu_int::Word; #n_words] = #words_tt;
             let signif = ::dashu_int::IBig::from_parts(#sign, ::dashu_int::UBig::from_words(&WORDS));
-            ::dashu_float::DBig::from_parts(signif, #exp)
+            let repr = ::dashu_float::Repr::<10>::new(signif, #exp);
+            let context = ::dashu_float::Context::new(#prec);
+            ::dashu_float::DBig::from_repr(repr, context)
         }}
     }
 }
