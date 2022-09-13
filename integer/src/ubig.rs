@@ -5,27 +5,63 @@
 //! into [Repr], and then directly construct from the [Repr]. This restriction is set to make
 //! the source type explicit.
 
-use crate::{
-    buffer::Buffer,
-    primitive::WORD_BITS_USIZE,
-    repr::{Repr, TypedRepr, TypedReprRef},
-};
+use crate::repr::{Repr, TypedRepr, TypedReprRef};
 
-/// Unsigned big integer.
+/// An unsigned arbitrary precision integer.
 ///
-/// Arbitrarily large unsigned integer.
+/// This struct represents an arbitrarily large unsigned integer. Technically the size of the integer
+/// is bounded by the memory size, but it's enough for practical use on modern devices.
 ///
-/// # Examples
+/// # Parsing and printing
+///
+/// To create a [UBig] instance, there are three ways:
+/// 1. Use predifined constants (e.g. [UBig::ZERO], [UBig::ONE]).
+/// 1. Use the literal macro `ubig!` defined in the [`dashu-macro`](https://docs.rs/dashu-macros/latest/dashu_macros/) crate.
+/// 1. Parse from a string.
+///
+/// Parsing from either literal or string supports representation with base 2~36.
+///
+/// For printing, the [UBig] type supports common formatting traits ([Display][core::fmt::Display],
+/// [Debug][core::fmt::Debug], [LowerHex][core::fmt::LowerHex], etc.). Specially, printing huge number
+/// using [Debug][core::fmt::Debug] will conveniently omit the middle digits of the number, only print
+/// the least and most significant (decimal) digits.
 ///
 /// ```
-/// # use dashu_int::{error::ParseError, ubig, UBig};
-/// let a = ubig!(a2a123bbb127779cccc123123ccc base 32);
-/// let b = ubig!(0x1231abcd4134);
-/// let c = UBig::from_str_radix("a2a123bbb127779cccc123123ccc", 32)?;
+/// # use dashu_int::{error::ParseError, UBig, Word};
+/// // parsing
+/// let a = UBig::from(408580953453092208335085386466371u128);
+/// let b = UBig::from(0x1231abcd4134u64);
+/// let c = UBig::from_str_radix("a2a123bbb127779cccc123", 32)?;
 /// let d = UBig::from_str_radix("1231abcd4134", 16)?;
 /// assert_eq!(a, c);
 /// assert_eq!(b, d);
+///
+/// // printing
+/// assert_eq!(format!("{}", UBig::from(12u8)), "12");
+/// assert_eq!(format!("{:#X}", UBig::from(0xabcdu16)), "0xABCD");
+/// if Word::BITS == 64 {
+///     // number of digits to display depends on the word size
+///     assert_eq!(
+///         format!("{:?}", UBig::ONE << 1000),
+///         "1071508607186267320..4386837205668069376"
+///     );
+/// }
 /// # Ok::<(), ParseError>(())
+/// ```
+///
+/// # Memory
+///
+/// Integers that fit in a [DoubleWord][crate::DoubleWord] will be inlined on stack and
+/// no heap allocation will be invoked. For large integers, they will be represented as
+/// an array of [Word][crate::Word]s, and stored on heap.
+///
+/// Note that the [UBig] struct has a niche bit, therefore it can be used within simple
+/// enums with no memory overhead.
+///
+/// ```
+/// # use dashu_int::UBig;
+/// use core::mem::size_of;
+/// assert_eq!(size_of::<UBig>(), size_of::<Option<UBig>>());
 /// ```
 #[derive(Eq, Hash, PartialEq)]
 #[repr(transparent)]
@@ -44,43 +80,102 @@ impl UBig {
         self.0.into_typed()
     }
 
-    /// Create a UBig with value 0
+    /// [UBig] with value 0
+    pub const ZERO: Self = Self(Repr::zero());
+    /// [UBig] with value 1
+    pub const ONE: Self = Self(Repr::one());
+
+    /// Get the raw representation in [Word][crate::Word]s.
+    ///
+    /// If the number is zero, then empty slice will be returned.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::{UBig, Word};
+    /// assert_eq!(UBig::ZERO.as_words(), &[] as &[Word]);
+    /// assert_eq!(UBig::ONE.as_words(), &[1]);
+    /// ```
     #[inline]
-    pub const fn zero() -> Self {
-        UBig(Repr::zero())
+    pub fn as_words(&self) -> &[crate::Word] {
+        let (sign, words) = self.0.as_sign_slice();
+        debug_assert!(matches!(sign, crate::Sign::Positive));
+        words
     }
 
-    /// Check whether the value of UBig is 0
+    /// Create a UBig from a single [Word][crate::Word].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::UBig;
+    /// const ZERO: UBig = UBig::from_word(0);
+    /// assert_eq!(ZERO, UBig::ZERO);
+    /// const ONE: UBig = UBig::from_word(1);
+    /// assert_eq!(ONE, UBig::ONE);
+    /// ```
+    #[inline]
+    pub const fn from_word(word: crate::Word) -> Self {
+        Self(Repr::from_word(word))
+    }
+
+    /// Create a UBig from a [DoubleWord][crate::DoubleWord].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::UBig;
+    /// const ZERO: UBig = UBig::from_dword(0);
+    /// assert_eq!(ZERO, UBig::ZERO);
+    /// const ONE: UBig = UBig::from_dword(1);
+    /// assert_eq!(ONE, UBig::ONE);
+    /// ```
+    #[inline]
+    pub const fn from_dword(dword: crate::DoubleWord) -> Self {
+        Self(Repr::from_dword(dword))
+    }
+
+    /// Convert a sequence of [Word][crate::Word]s into a UBig
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::{UBig, Word};
+    /// assert_eq!(UBig::from_words(&[] as &[Word]), UBig::ZERO);
+    /// assert_eq!(UBig::from_words(&[1]), UBig::ONE);
+    /// assert_eq!(UBig::from_words(&[1, 1]), (UBig::ONE << Word::BITS as usize) + UBig::ONE);
+    /// ```
+    #[inline]
+    pub fn from_words(words: &[crate::Word]) -> Self {
+        Self(Repr::from_buffer(words.into()))
+    }
+
+    /// Check whether the value is 0
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::UBig;
+    /// assert!(UBig::ZERO.is_zero());
+    /// assert!(!UBig::ONE.is_zero());
+    /// ```
     #[inline]
     pub const fn is_zero(&self) -> bool {
         self.0.is_zero()
     }
 
-    /// Create a UBig with value 1
-    #[inline]
-    pub const fn one() -> Self {
-        UBig(Repr::one())
-    }
-
-    /// Check whether the value of UBig is 1
+    /// Check whether the value is 1
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::UBig;
+    /// assert!(!UBig::ZERO.is_one());
+    /// assert!(UBig::ONE.is_one());
+    /// ```
     #[inline]
     pub const fn is_one(&self) -> bool {
         self.0.is_one()
-    }
-
-    /// Representation in [Word][crate::Word]s.
-    #[inline]
-    pub fn as_words(&self) -> &[crate::Word] {
-        let (sign, words) = self.0.as_sign_slice();
-        debug_assert!(matches!(sign, crate::sign::Sign::Positive));
-        words
-    }
-
-    pub(crate) fn panic_number_too_large() -> ! {
-        panic!(
-            "number too large, maximum is {} bits",
-            Buffer::MAX_CAPACITY * WORD_BITS_USIZE
-        )
     }
 }
 
@@ -114,7 +209,7 @@ mod tests {
     fn test_buffer_to_ubig() {
         let buf = Buffer::allocate(5);
         let num = UBig(Repr::from_buffer(buf));
-        assert_eq!(num, UBig::zero());
+        assert_eq!(num, UBig::ZERO);
 
         let mut buf = Buffer::allocate(5);
         buf.push(7);

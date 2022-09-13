@@ -2,7 +2,7 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
-    primitive::{double_word, extend_word, split_dword, PrimitiveUnsigned},
+    primitive::{double_word, extend_word, split_dword, PrimitiveUnsigned, DWORD_BITS, WORD_BITS},
 };
 
 /// The length of an integer in bits.
@@ -12,27 +12,12 @@ pub fn bit_len<T: PrimitiveUnsigned>(x: T) -> u32 {
     T::BIT_SIZE - x.leading_zeros()
 }
 
-/// The length of an integer in bits.
-/// 0 for 0.
-#[inline]
-pub const fn bit_len_word(x: Word) -> u32 {
-    Word::BIT_SIZE - x.leading_zeros()
-}
-
 /// Ceiling of log_2(x).
 /// x must be non-zero.
 #[inline]
-pub fn ceil_log_2<T: PrimitiveUnsigned>(x: T) -> u32 {
+pub fn ceil_log2<T: PrimitiveUnsigned>(x: T) -> u32 {
     debug_assert!(x != T::from(0u8));
     bit_len(x - T::from(1u8))
-}
-
-/// Ceiling of log_2(x).
-/// x must be non-zero.
-#[inline]
-pub const fn ceil_log_2_word(x: Word) -> u32 {
-    debug_assert!(x != 0);
-    bit_len_word(x - 1)
 }
 
 /// Ceiling of a / b.
@@ -83,18 +68,27 @@ pub const fn ones_dword(n: u32) -> DoubleWord {
     if n == 0 {
         0
     } else {
-        DoubleWord::MAX >> (DoubleWord::BIT_SIZE - n)
+        DoubleWord::MAX >> (DWORD_BITS - n)
     }
 }
 
-// Calculate dw << shift, assuming shift <= Word::BIT_SIZE, returns (lo, mid, hi).
+/// Calculate dw << shift, assuming shift <= Word::BIT_SIZE, returns (lo, mid, hi).
+#[inline]
 pub const fn shl_dword(dw: DoubleWord, shift: u32) -> (Word, Word, Word) {
-    debug_assert!(shift <= Word::BIT_SIZE);
+    debug_assert!(shift <= WORD_BITS);
 
     let (lo, hi) = split_dword(dw);
     let (n0, carry) = split_dword(extend_word(lo) << shift);
     let (n1, n2) = split_dword((extend_word(hi) << shift) | extend_word(carry));
     (n0, n1, n2)
+}
+
+/// Calculate w >> shift, return (result, shifted bits)
+/// Note that the shifted bits are put on the highest bits of the Word
+#[inline]
+pub const fn shr_word(w: Word, shift: u32) -> (Word, Word) {
+    let (c, r) = split_dword(double_word(0, w) >> shift);
+    (r, c)
 }
 
 /// Multiply two `Word`s with carry and return the (low, high) parts of the product
@@ -134,6 +128,39 @@ pub const fn mul_add_carry_dword(
     (lo, hi)
 }
 
+/// Calculate the max k such that base^k <= Word::MAX, return (k, base^k)
+pub const fn max_exp_in_word(base: Word) -> (usize, Word) {
+    debug_assert!(base > 2);
+
+    // shortcut
+    if base > ones_word(WORD_BITS / 2) {
+        return (1, base);
+    }
+
+    // estimate log_base(Word::MAX)
+    let mut exp = WORD_BITS / (WORD_BITS - base.leading_zeros());
+    let mut pow: Word = base.pow(exp);
+    while let Some(prod) = pow.checked_mul(base) {
+        exp += 1;
+        pow = prod;
+    }
+    (exp as usize, pow)
+}
+
+/// Calculate the max k such that base^k <= DoubleWord::MAX, return (k, base^k)
+pub const fn max_exp_in_dword(base: Word) -> (usize, DoubleWord) {
+    debug_assert!(base > 2);
+    let (exp, pow) = max_exp_in_word(base);
+    let (exp, pow) = (2 * exp, extend_word(pow) * extend_word(pow));
+
+    // the error of exp is at most one
+    if let Some(prod) = pow.checked_mul(extend_word(base)) {
+        (exp + 1, prod)
+    } else {
+        (exp, pow)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -148,11 +175,11 @@ mod tests {
 
     #[test]
     fn test_ceil_log_2() {
-        assert_eq!(ceil_log_2(1u32), 0);
-        assert_eq!(ceil_log_2(7u32), 3);
-        assert_eq!(ceil_log_2(8u32), 3);
-        assert_eq!(ceil_log_2(9u32), 4);
-        assert_eq!(ceil_log_2(u32::MAX), 32);
+        assert_eq!(ceil_log2(1u32), 0);
+        assert_eq!(ceil_log2(7u32), 3);
+        assert_eq!(ceil_log2(8u32), 3);
+        assert_eq!(ceil_log2(9u32), 4);
+        assert_eq!(ceil_log2(u32::MAX), 32);
     }
 
     #[test]
@@ -176,5 +203,15 @@ mod tests {
         assert_eq!(ones_word(0), 0);
         assert_eq!(ones_word(5), 0b11111);
         assert_eq!(ones_word(16), u16::MAX as Word);
+    }
+
+    #[test]
+    fn test_max_exp_in_word() {
+        for b in 3..30 {
+            let (_, pow) = max_exp_in_word(b);
+            assert!(pow.overflowing_mul(b).1);
+            let (_, pow) = max_exp_in_dword(b);
+            assert!(pow.overflowing_mul(extend_word(b)).1);
+        }
     }
 }

@@ -2,29 +2,24 @@
 
 use crate::{
     arch::word::Word,
-    fast_divide::{FastDivideNormalized, FastDivideSmall},
-    primitive::WORD_BITS,
+    fast_div::{FastDivideNormalized, FastDivideSmall},
+    math::{max_exp_in_dword, max_exp_in_word},
 };
 use static_assertions::const_assert;
 
-/// Digit and radix type.
+/// Digit and radix type, it's always u32.
 pub type Digit = u32;
+
+/// Minimum supported radix.
+pub const MIN_RADIX: Digit = 2;
 
 /// Maximum supported radix.
 pub const MAX_RADIX: Digit = 36;
 
 /// Is a radix in valid range?
 #[inline]
-pub fn is_radix_valid(radix: Digit) -> bool {
-    (2..=MAX_RADIX).contains(&radix)
-}
-
-/// Panics if `radix` is not in valid range.
-#[inline]
-pub fn check_radix_valid(radix: Digit) {
-    if !is_radix_valid(radix) {
-        panic!("Invalid radix: {}", radix);
-    }
+pub const fn is_radix_valid(radix: Digit) -> bool {
+    MIN_RADIX <= radix && radix <= MAX_RADIX
 }
 
 const_assert!(b'a' > b'0' + 10 && b'A' > b'0' + 10);
@@ -39,11 +34,17 @@ pub enum DigitCase {
 }
 
 /// Converts a byte (ASCII) representation of a digit to its value.
-pub fn digit_from_utf8_byte(byte: u8, radix: Digit) -> Option<Digit> {
+///
+/// The radix has to be in range 2..36 (inclusive), and the digit will
+/// be parsed with insensitive case.
+#[inline]
+pub const fn digit_from_ascii_byte(byte: u8, radix: Digit) -> Option<Digit> {
+    assert!(is_radix_valid(radix));
+
     let res = match byte {
-        b'0'..=b'9' => (byte - b'0') as Digit,
-        b'a'..=b'z' => (byte - b'a') as Digit + 10,
-        b'A'..=b'Z' => (byte - b'A') as Digit + 10,
+        c @ b'0'..=b'9' => (c - b'0') as Digit,
+        c @ b'a'..=b'z' => (c - b'a') as Digit + 10,
+        c @ b'A'..=b'Z' => (c - b'A') as Digit + 10,
         _ => return None,
     };
     if res < radix {
@@ -52,9 +53,6 @@ pub fn digit_from_utf8_byte(byte: u8, radix: Digit) -> Option<Digit> {
         None
     }
 }
-
-/// Maximum number of digits that a `Word` can ever have for any non-power-of-2 radix.
-pub const MAX_WORD_DIGITS_NON_POW_2: usize = RadixInfo::for_radix(3).digits_per_word + 1;
 
 /// Properties of a given radix.
 #[derive(Clone, Copy)]
@@ -74,60 +72,40 @@ pub struct RadixInfo {
     pub(crate) fast_div_range_per_word: FastDivideNormalized,
 }
 
-/// RadixInfo for a given radix.
+/// Radix info for base 10
+pub const RADIX10_INFO: RadixInfo = RadixInfo::for_radix(10);
+
+/// Maximum number of digits that a `Word` can ever have for any non-power-of-2 radix.
+pub const MAX_WORD_DIGITS_NON_POW_2: usize = max_exp_in_word(3).0 + 1;
+/// Maximum number of digits that a `DoubleWord` can ever have for any non-power-of-2 radix.
+pub const MAX_DWORD_DIGITS_NON_POW_2: usize = max_exp_in_dword(3).0 + 1;
+
+/// Get [RadixInfo] for a given radix.
+///
+/// This method is not specialized for power of two.
 #[inline]
-pub fn radix_info(radix: Digit) -> &'static RadixInfo {
+pub fn radix_info(radix: Digit) -> RadixInfo {
     debug_assert!(is_radix_valid(radix));
-    &RADIX_INFO_TABLE[radix as usize]
+
+    match radix {
+        10 => RADIX10_INFO,
+        _ => RadixInfo::for_radix(radix),
+    }
 }
 
 impl RadixInfo {
     const fn for_radix(radix: Digit) -> RadixInfo {
+        let (digits_per_word, range_per_word) = max_exp_in_word(radix as Word);
+        let shift = range_per_word.leading_zeros();
         let fast_div_radix = FastDivideSmall::new(radix as Word);
-        if radix.is_power_of_two() {
-            RadixInfo {
-                digits_per_word: (WORD_BITS / radix.trailing_zeros()) as usize,
-                range_per_word: 0,
-                fast_div_radix,
-                fast_div_range_per_word: FastDivideNormalized::dummy(),
-            }
-        } else {
-            let mut digits_per_word = 0;
-            let mut range_per_word: Word = 1;
-            while let Some(range) = range_per_word.checked_mul(radix as Word) {
-                digits_per_word += 1;
-                range_per_word = range;
-            }
-            let shift = range_per_word.leading_zeros();
-            let fast_div_range_per_word = FastDivideNormalized::new(range_per_word << shift);
-            RadixInfo {
-                digits_per_word,
-                range_per_word,
-                fast_div_radix,
-                fast_div_range_per_word,
-            }
+        let fast_div_range_per_word = FastDivideNormalized::new(range_per_word << shift);
+        RadixInfo {
+            digits_per_word,
+            range_per_word,
+            fast_div_radix,
+            fast_div_range_per_word,
         }
     }
-}
-
-type RadixInfoTable = [RadixInfo; MAX_RADIX as usize + 1];
-
-static RADIX_INFO_TABLE: RadixInfoTable = generate_radix_info_table();
-
-const fn generate_radix_info_table() -> RadixInfoTable {
-    let mut table = [RadixInfo {
-        digits_per_word: 0,
-        range_per_word: 0,
-        fast_div_radix: FastDivideSmall::dummy(),
-        fast_div_range_per_word: FastDivideNormalized::dummy(),
-    }; MAX_RADIX as usize + 1];
-
-    let mut radix = 2;
-    while radix <= MAX_RADIX {
-        table[radix as usize] = RadixInfo::for_radix(radix);
-        radix += 1;
-    }
-    table
 }
 
 #[cfg(test)]
@@ -135,32 +113,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_radix_info_table() {
-        for radix in 2..=MAX_RADIX {
-            let info = radix_info(radix);
-            // Check vs an approximation that happens to work for all bases.
-            assert_eq!(
-                info.digits_per_word,
-                ((WORD_BITS as f64 + 0.01) / (radix as f64).log2()) as usize
-            );
-            if !radix.is_power_of_two() {
-                assert_eq!(
-                    info.range_per_word,
-                    (radix as Word).pow(info.digits_per_word as u32)
-                );
-            }
-        }
-    }
-
-    #[test]
     fn test_digit_from_utf8_byte() {
-        assert_eq!(digit_from_utf8_byte(b'7', 10), Some(7));
-        assert_eq!(digit_from_utf8_byte(b'a', 16), Some(10));
-        assert_eq!(digit_from_utf8_byte(b'z', 36), Some(35));
-        assert_eq!(digit_from_utf8_byte(b'Z', 36), Some(35));
-        assert_eq!(digit_from_utf8_byte(b'?', 10), None);
-        assert_eq!(digit_from_utf8_byte(b'a', 10), None);
-        assert_eq!(digit_from_utf8_byte(b'z', 35), None);
-        assert_eq!(digit_from_utf8_byte(255, 35), None);
+        assert_eq!(digit_from_ascii_byte(b'7', 10), Some(7));
+        assert_eq!(digit_from_ascii_byte(b'a', 16), Some(10));
+        assert_eq!(digit_from_ascii_byte(b'z', 36), Some(35));
+        assert_eq!(digit_from_ascii_byte(b'Z', 36), Some(35));
+        assert_eq!(digit_from_ascii_byte(b'?', 10), None);
+        assert_eq!(digit_from_ascii_byte(b'a', 10), None);
+        assert_eq!(digit_from_ascii_byte(b'z', 35), None);
+        assert_eq!(digit_from_ascii_byte(255, 35), None);
     }
 }

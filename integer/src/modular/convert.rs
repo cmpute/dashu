@@ -3,15 +3,13 @@
 use crate::{
     arch::word::{DoubleWord, Word},
     buffer::Buffer,
-    div,
+    helper_macros::debug_assert_zero,
     ibig::IBig,
-    math::{self, shl_dword},
-    memory::MemoryAllocation,
-    primitive::{double_word, extend_word, shrink_dword},
-    repr::{Repr, TypedRepr::*, TypedReprRef::*},
+    primitive::shrink_dword,
+    repr::{Repr, TypedReprRef::*},
     shift,
-    sign::Sign::*,
     ubig::UBig,
+    Sign::*,
 };
 use dashu_base::UnsignedAbs;
 
@@ -25,18 +23,20 @@ use super::{
 impl ModuloRing {
     /// The ring modulus.
     ///
-    /// # Example
+    /// Note that there is overhead for retrieving the original modulus.
+    ///
+    /// # Examples
     ///
     /// ```
-    /// # use dashu_int::{modular::ModuloRing, ubig};
-    /// let ring = ModuloRing::new(ubig!(100));
-    /// assert_eq!(ring.modulus(), ubig!(100));
+    /// # use dashu_int::{modular::ModuloRing, UBig};
+    /// let ring = ModuloRing::new(UBig::from(100u8));
+    /// assert_eq!(ring.modulus(), 100);
     /// ```
     #[inline]
     pub fn modulus(&self) -> UBig {
         match self.repr() {
-            ModuloRingRepr::Single(single) => single.modulus().into(),
-            ModuloRingRepr::Double(double) => double.modulus().into(),
+            ModuloRingRepr::Single(single) => single.modulus(),
+            ModuloRingRepr::Double(double) => double.modulus(),
             ModuloRingRepr::Large(large) => large.modulus(),
         }
     }
@@ -46,10 +46,10 @@ impl ModuloRing {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::{modular::ModuloRing, ubig};
-    /// let ring = ModuloRing::new(ubig!(100));
+    /// # use dashu_int::{modular::ModuloRing, UBig};
+    /// let ring = ModuloRing::new(UBig::from(100u8));
     /// let x = ring.convert(-1234);
-    /// let y = ring.convert(ubig!(3366));
+    /// let y = ring.convert(UBig::from(3366u32));
     /// assert!(x == y);
     /// ```
     #[inline]
@@ -64,10 +64,10 @@ impl Modulo<'_> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::{modular::ModuloRing, ubig};
-    /// let ring = ModuloRing::new(ubig!(100));
+    /// # use dashu_int::{modular::ModuloRing, UBig};
+    /// let ring = ModuloRing::new(UBig::from(100u8));
     /// let x = ring.convert(-1234);
-    /// assert_eq!(x.residue(), ubig!(66));
+    /// assert_eq!(x.residue(), 66);
     /// ```
     #[inline]
     pub fn residue(&self) -> UBig {
@@ -80,72 +80,24 @@ impl Modulo<'_> {
     }
 }
 
-impl ModuloRingSingle {
-    #[inline]
-    pub fn modulus(&self) -> Word {
-        self.normalized_modulus() >> self.shift()
-    }
-}
-
-impl ModuloRingDouble {
-    #[inline]
-    pub fn modulus(&self) -> DoubleWord {
-        self.normalized_modulus() >> self.shift()
-    }
-}
-
-impl ModuloRingLarge {
-    pub fn modulus(&self) -> UBig {
-        let mut buffer: Buffer = self.normalized_modulus().into();
-        let low_bits = shift::shr_in_place(&mut buffer, self.shift());
-        debug_assert!(low_bits == 0);
-        UBig(Repr::from_buffer(buffer))
-    }
-}
-
 impl ModuloSingleRaw {
     #[inline]
     pub const fn from_word(word: Word, ring: &ModuloRingSingle) -> Self {
-        let rem = if ring.shift() == 0 {
-            ring.fast_div().div_rem_word(word).1
-        } else {
-            ring.fast_div().div_rem(extend_word(word) << ring.shift()).1
-        };
-        ModuloSingleRaw(rem)
-    }
-
-    #[inline]
-    const fn from_dword(dword: DoubleWord, ring: &ModuloRingSingle) -> Self {
-        let rem = if ring.shift() == 0 {
-            ring.fast_div().div_rem(dword).1
-        } else {
-            let (n0, n1, n2) = shl_dword(dword, ring.shift());
-            let (_, r1) = ring.fast_div().div_rem(double_word(n1, n2));
-            ring.fast_div().div_rem(double_word(n0, r1)).1
-        };
-        ModuloSingleRaw(rem)
-    }
-
-    fn from_large(words: &[Word], ring: &ModuloRingSingle) -> Self {
-        let mut rem = div::fast_rem_by_normalized_word(words, ring.fast_div());
-        if ring.shift() != 0 {
-            rem = ring.fast_div().div_rem(extend_word(rem) << ring.shift()).1
-        }
-        ModuloSingleRaw(rem)
+        Self(ring.0.rem_word(word))
     }
 
     #[inline]
     pub fn from_ubig(x: &UBig, ring: &ModuloRingSingle) -> Self {
-        match x.repr() {
+        Self(match x.repr() {
             RefSmall(dword) => {
                 if let Some(word) = shrink_dword(dword) {
-                    Self::from_word(word, ring)
+                    ring.0.rem_word(word)
                 } else {
-                    Self::from_dword(dword, ring)
+                    ring.0.rem_dword(dword)
                 }
             }
-            RefLarge(words) => Self::from_large(words, ring),
-        }
+            RefLarge(words) => ring.0.rem_large(words),
+        })
     }
 
     #[inline]
@@ -157,31 +109,11 @@ impl ModuloSingleRaw {
 
 impl ModuloDoubleRaw {
     #[inline]
-    pub const fn from_dword(dword: DoubleWord, ring: &ModuloRingDouble) -> Self {
-        let rem = if ring.shift() == 0 {
-            ring.fast_div().div_rem_dword(dword).1
-        } else {
-            let (n0, n1, n2) = shl_dword(dword, ring.shift());
-            ring.fast_div().div_rem(n0, double_word(n1, n2)).1
-        };
-        ModuloDoubleRaw(rem)
-    }
-
-    fn from_large(words: &[Word], ring: &ModuloRingDouble) -> Self {
-        let mut rem = div::fast_rem_by_normalized_dword(words, ring.fast_div());
-        if ring.shift() != 0 {
-            let (r0, r1, r2) = shl_dword(rem, ring.shift());
-            rem = ring.fast_div().div_rem(r0, double_word(r1, r2)).1
-        }
-        ModuloDoubleRaw(rem)
-    }
-
-    #[inline]
     pub fn from_ubig(x: &UBig, ring: &ModuloRingDouble) -> Self {
-        match x.repr() {
-            RefSmall(dword) => Self::from_dword(dword, ring),
-            RefLarge(words) => Self::from_large(words, ring),
-        }
+        Self(match x.repr() {
+            RefSmall(dword) => ring.0.rem_dword(dword),
+            RefLarge(words) => ring.0.rem_large(words),
+        })
     }
 
     #[inline]
@@ -193,53 +125,16 @@ impl ModuloDoubleRaw {
 
 impl ModuloLargeRaw {
     pub fn from_ubig(x: UBig, ring: &ModuloRingLarge) -> ModuloLargeRaw {
-        let modulus = ring.normalized_modulus();
-        let mut buffer = match x.into_repr() {
-            Small(dword) => {
-                let (lo, mid, hi) = math::shl_dword(dword, ring.shift());
-                let mut buffer = Buffer::allocate_exact(modulus.len());
-                buffer.push(lo);
-                buffer.push(mid);
-                buffer.push(hi);
-
-                // because ModuloLarge is used only for integer with more than two words,
-                // word << ring.shift() must be smaller than the normalized modulus
-                buffer
-            }
-            Large(mut words) => {
-                // normalize
-                let carry = shift::shl_in_place(&mut words, ring.shift());
-                if carry != 0 {
-                    words.push_resizing(carry);
-                }
-
-                // reduce
-                if words.len() >= modulus.len() {
-                    let mut allocation = MemoryAllocation::new(div::memory_requirement_exact(
-                        words.len(),
-                        modulus.len(),
-                    ));
-                    let mut memory = allocation.memory();
-                    let _overflow = div::div_rem_in_place(
-                        &mut words,
-                        modulus,
-                        ring.fast_div_top(),
-                        &mut memory,
-                    );
-                    words.truncate(modulus.len());
-                }
-                words.ensure_capacity_exact(modulus.len());
-                words
-            }
-        };
-        buffer.push_zeros(modulus.len() - buffer.len());
-        ModuloLargeRaw(buffer.into_boxed_slice())
+        let mut buffer = ring.0.rem_repr(x.into_repr());
+        let modulus_len = ring.normalized_modulus().len();
+        buffer.ensure_capacity_exact(modulus_len);
+        buffer.push_zeros(modulus_len - buffer.len());
+        Self(buffer.into_boxed_slice())
     }
 
     pub fn residue(&self, ring: &ModuloRingLarge) -> Buffer {
         let mut buffer: Buffer = self.0.as_ref().into();
-        let low_bits = shift::shr_in_place(&mut buffer, ring.shift());
-        debug_assert!(low_bits == 0);
+        debug_assert_zero!(shift::shr_in_place(&mut buffer, ring.shift()));
         buffer
     }
 }

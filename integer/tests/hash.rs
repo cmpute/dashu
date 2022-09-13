@@ -1,8 +1,9 @@
-use dashu_int::ubig;
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
 };
+
+mod helper_macros;
 
 fn hash<T>(x: &T) -> u64
 where

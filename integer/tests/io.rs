@@ -1,7 +1,15 @@
-use dashu_int::{error::ParseError, ibig, ubig, IBig, UBig};
+use dashu_int::{error::ParseError, IBig, UBig, Word};
+
+mod helper_macros;
 
 #[test]
 fn test_ubig_format() {
+    assert_eq!(format!("{}", UBig::from(u8::MAX)), "255");
+    assert_eq!(format!("{}", UBig::from(u16::MAX)), "65535");
+    assert_eq!(format!("{}", UBig::from(u32::MAX)), "4294967295");
+    assert_eq!(format!("{}", UBig::from(u64::MAX)), "18446744073709551615");
+    assert_eq!(format!("{}", UBig::from(u128::MAX)), "340282366920938463463374607431768211455");
+
     assert_eq!(format!("{:b}", ubig!(0)), "0");
     assert_eq!(format!("{:b}", ubig!(100)), "1100100");
     assert_eq!(format!("{:#b}", ubig!(100)), "0b1100100");
@@ -72,10 +80,7 @@ fn test_ubig_in_radix() {
     assert_eq!(format!("{}", ubig!(1294).in_radix(36)), "zy");
     assert_eq!(format!("{:#010}", ubig!(1294).in_radix(36)), "00000000ZY");
 
-    assert_eq!(
-        ubig!(0xffffffff).in_radix(3).to_string(),
-        "102002022201221111210"
-    );
+    assert_eq!(ubig!(0xffffffff).in_radix(3).to_string(), "102002022201221111210");
     assert_eq!(
         ubig!(0xffffffffffffffff).in_radix(3).to_string(),
         "11112220022122120101211020120210210211220"
@@ -89,19 +94,23 @@ fn test_ubig_in_radix() {
 
     assert_eq!(ubig!(123456789).to_string(), "123456789");
     assert_eq!(
-        ubig!(_123456789000000000000000000000000000000000123789749847509837450987340589273405)
+        ubig!(123456789000000000000000000000000000000000123789749847509837450987340589273405)
             .to_string(),
         "123456789000000000000000000000000000000000123789749847509837450987340589273405"
     );
-    assert_eq!(ubig!(_0x83c0d7401f0188462502c2e5f7035386b1c341d307e5fbe8200756201607769a706134cfab1).to_string(),
+    assert_eq!(ubig!(0x83c0d7401f0188462502c2e5f7035386b1c341d307e5fbe8200756201607769a706134cfab1).to_string(),
             "1048383517376714931597372965085953822045235087388094946568022880798260489887669110556129969");
     assert_eq!(
-        ubig!(_1048383517376714931597372965085953822045235087388094946568022880798260489887669110556129969).in_radix(16).to_string(),
+        ubig!(1048383517376714931597372965085953822045235087388094946568022880798260489887669110556129969).in_radix(16).to_string(),
         "83c0d7401f0188462502c2e5f7035386b1c341d307e5fbe8200756201607769a706134cfab1");
 }
 
 #[test]
 fn test_ibig_format() {
+    assert_eq!(format!("{}", ibig!(-123)), "-123");
+    assert_eq!(format!("{:?}", ibig!(-123)), "-123");
+    assert_eq!(format!("{:=>10}", ibig!(-123)), "======-123");
+
     assert_eq!(format!("{:b}", ibig!(0)), "0");
     assert_eq!(format!("{:b}", ibig!(100)), "1100100");
     assert_eq!(format!("{:b}", ibig!(-100)), "-1100100");
@@ -141,10 +150,6 @@ fn test_ibig_format() {
     assert_eq!(format!("{:#X}", ibig!(-3000)), "-0xBB8");
     assert_eq!(format!("{:#10X}", ibig!(3000)), "     0xBB8");
     assert_eq!(format!("{:#10X}", ibig!(-3000)), "    -0xBB8");
-
-    assert_eq!(format!("{}", ibig!(-123)), "-123");
-    assert_eq!(format!("{:?}", ibig!(-123)), "-123");
-    assert_eq!(format!("{:=>10}", ibig!(-123)), "======-123");
 }
 
 #[test]
@@ -172,38 +177,33 @@ fn test_ibig_in_radix() {
 
 #[test]
 fn test_ubig_from_str_radix() {
-    assert_eq!(
-        UBig::from_str_radix("", 2).unwrap_err(),
-        ParseError::NoDigits
-    );
-    assert_eq!(
-        UBig::from_str_radix("+", 2).unwrap_err(),
-        ParseError::NoDigits
-    );
-    assert_eq!(
-        UBig::from_str_radix("012", 2).unwrap_err(),
-        ParseError::InvalidDigit
-    );
+    assert_eq!(UBig::from_str_radix("", 2).unwrap_err(), ParseError::NoDigits);
+    assert_eq!(UBig::from_str_radix("+", 2).unwrap_err(), ParseError::NoDigits);
+    assert_eq!(UBig::from_str_radix("012", 2).unwrap_err(), ParseError::InvalidDigit);
     assert_eq!(
         UBig::from_str_radix("ffffffffffffffffffffffffffffffffffffffffffffffg", 16).unwrap_err(),
         ParseError::InvalidDigit
     );
     assert_eq!(
-        UBig::from_str_radix("-0", 2).unwrap_err(),
+        UBig::from_str_radix("ffff_ffff_ffff_ffff_ffff_ffff_ffff_fffg", 16).unwrap_err(),
         ParseError::InvalidDigit
     );
+    assert_eq!(UBig::from_str_radix("-0", 2).unwrap_err(), ParseError::InvalidDigit);
     assert_eq!(UBig::from_str_radix("+0", 2).unwrap(), ubig!(0));
     assert_eq!(UBig::from_str_radix("0", 2).unwrap(), ubig!(0));
     assert_eq!(UBig::from_str_radix("0000000000000", 2).unwrap(), ubig!(0));
-    assert_eq!(
-        UBig::from_str_radix("1010110", 2).unwrap(),
-        ubig!(0b1010110)
-    );
+    assert_eq!(UBig::from_str_radix("000_000_000_000_0", 2).unwrap(), ubig!(0));
+    assert_eq!(UBig::from_str_radix("1010110", 2).unwrap(), ubig!(0b1010110));
+    assert_eq!(UBig::from_str_radix("0101_0110", 2).unwrap(), ubig!(0b1010110));
     assert_eq!(UBig::from_str_radix("f1Ee", 16).unwrap(), ubig!(0xf1ee));
+    assert_eq!(UBig::from_str_radix("f1_Ee", 16).unwrap(), ubig!(0xf1ee));
     assert_eq!(UBig::from_str_radix("Pp", 32).unwrap(), ubig!(825));
+    assert_eq!(UBig::from_str_radix("P_p", 32).unwrap(), ubig!(825));
 
     assert_eq!(UBig::from_str_radix("12345", 10), Ok(ubig!(12345)));
+    assert_eq!(UBig::from_str_radix("1_23_45", 10), Ok(ubig!(12345)));
     assert_eq!(UBig::from_str_radix("abzz", 36), Ok(ubig!(482111)));
+    assert_eq!(UBig::from_str_radix("ab_zz", 36), Ok(ubig!(482111)));
     assert_eq!(
         UBig::from_str_radix(
             "1538958592398779500320098585338768070858734861441260196946465951498852935601537907018559511",
@@ -211,6 +211,14 @@ fn test_ubig_from_str_radix() {
         ),
         UBig::from_str_radix(
             "c167bcc5802bf76f345a9f2a738d9d3b75ea4560a9be33c330216cbd15efc15d872a781f017",
+            16));
+    assert_eq!(
+        UBig::from_str_radix(
+            "15389_58592_39877_95003_20098_58533_87680_70858_73486_14412_60196_94646_59514_98852_93560",
+            10
+        ),
+        UBig::from_str_radix(
+            "571a_1aad_3444_d2c7_ce28_eacd_2285_2faa_03fe_3956_505c_f11e_cd48_6b7b_5f43_f8",
             16));
 
     {
@@ -225,37 +233,16 @@ fn test_ubig_from_str_radix() {
 
 #[test]
 fn test_ibig_from_str_radix() {
-    assert_eq!(
-        IBig::from_str_radix("", 2).unwrap_err(),
-        ParseError::NoDigits
-    );
-    assert_eq!(
-        IBig::from_str_radix("+", 2).unwrap_err(),
-        ParseError::NoDigits
-    );
-    assert_eq!(
-        IBig::from_str_radix("-", 2).unwrap_err(),
-        ParseError::NoDigits
-    );
-    assert_eq!(
-        IBig::from_str_radix("-+5", 2).unwrap_err(),
-        ParseError::InvalidDigit
-    );
-    assert_eq!(
-        IBig::from_str_radix("-012", 2).unwrap_err(),
-        ParseError::InvalidDigit
-    );
+    assert_eq!(IBig::from_str_radix("", 2).unwrap_err(), ParseError::NoDigits);
+    assert_eq!(IBig::from_str_radix("+", 2).unwrap_err(), ParseError::NoDigits);
+    assert_eq!(IBig::from_str_radix("-", 2).unwrap_err(), ParseError::NoDigits);
+    assert_eq!(IBig::from_str_radix("-+5", 2).unwrap_err(), ParseError::InvalidDigit);
+    assert_eq!(IBig::from_str_radix("-012", 2).unwrap_err(), ParseError::InvalidDigit);
     assert_eq!(IBig::from_str_radix("0", 2).unwrap(), ibig!(0));
     assert_eq!(IBig::from_str_radix("+0", 2).unwrap(), ibig!(0));
     assert_eq!(IBig::from_str_radix("-0", 2).unwrap(), ibig!(0));
-    assert_eq!(
-        IBig::from_str_radix("1010110", 2).unwrap(),
-        ibig!(0b1010110)
-    );
-    assert_eq!(
-        IBig::from_str_radix("-1010110", 2).unwrap(),
-        ibig!(-0b1010110)
-    );
+    assert_eq!(IBig::from_str_radix("1010110", 2).unwrap(), ibig!(0b1010110));
+    assert_eq!(IBig::from_str_radix("-1010110", 2).unwrap(), ibig!(-0b1010110));
     {
         let x: IBig = "-1234".parse().unwrap();
         assert_eq!(x, ibig!(-1234));
@@ -272,13 +259,10 @@ fn test_radix_round_trip() {
         "abcccaacacbbcbabcbacbacbabcabcbabcabbc1000"
     );
     assert_eq!(
-        UBig::from_str_radix(
-            "12341235234512341345356745634563563563457356356354645634563456",
-            8
-        )
-        .unwrap()
-        .in_radix(16)
-        .to_string(),
+        UBig::from_str_radix("12341235234512341345356745634563563563457356356354645634563456", 8)
+            .unwrap()
+            .in_radix(16)
+            .to_string(),
         "a70a75394a70b95dde5ce5cee77397bb9dcecd2e72e72e"
     );
 
@@ -314,102 +298,36 @@ fn test_radix_round_trip() {
 
 #[test]
 fn test_from_str_radix_with_radix_prefix() {
-    assert_eq!(UBig::from_str_with_radix_prefix("17").unwrap(), ubig!(17));
-    assert_eq!(UBig::from_str_with_radix_prefix("+17").unwrap(), ubig!(17));
-    assert_eq!(
-        UBig::from_str_with_radix_prefix("0b101").unwrap(),
-        ubig!(0b101)
-    );
-    assert_eq!(
-        UBig::from_str_with_radix_prefix("+0b101").unwrap(),
-        ubig!(0b101)
-    );
-    assert_eq!(
-        UBig::from_str_with_radix_prefix("0o177").unwrap(),
-        ubig!(0o177)
-    );
-    assert_eq!(
-        UBig::from_str_with_radix_prefix("+0o177").unwrap(),
-        ubig!(0o177)
-    );
-    assert_eq!(
-        UBig::from_str_with_radix_prefix("0x1eE").unwrap(),
-        ubig!(0x1ee)
-    );
-    assert_eq!(
-        UBig::from_str_with_radix_prefix("+0x1eE").unwrap(),
-        ubig!(0x1ee)
-    );
+    assert_eq!(UBig::from_str_with_radix_prefix("17").unwrap(), (UBig::from(17u8), 10));
+    assert_eq!(UBig::from_str_with_radix_prefix("+17").unwrap(), (UBig::from(17u8), 10));
+    assert_eq!(UBig::from_str_with_radix_prefix("0b101").unwrap(), (UBig::from(0b101u8), 2));
+    assert_eq!(UBig::from_str_with_radix_prefix("+0b101").unwrap(), (UBig::from(0b101u8), 2));
+    assert_eq!(UBig::from_str_with_radix_prefix("0o177").unwrap(), (UBig::from(0o177u8), 8));
+    assert_eq!(UBig::from_str_with_radix_prefix("+0o177").unwrap(), (UBig::from(0o177u8), 8));
+    assert_eq!(UBig::from_str_with_radix_prefix("0x1eE").unwrap(), (UBig::from(0x1eeu16), 16));
+    assert_eq!(UBig::from_str_with_radix_prefix("+0x1eE").unwrap(), (UBig::from(0x1eeu16), 16));
 
-    assert_eq!(IBig::from_str_with_radix_prefix("17").unwrap(), ibig!(17));
-    assert_eq!(IBig::from_str_with_radix_prefix("+17").unwrap(), ibig!(17));
-    assert_eq!(IBig::from_str_with_radix_prefix("-17").unwrap(), ibig!(-17));
-    assert_eq!(
-        IBig::from_str_with_radix_prefix("0b101").unwrap(),
-        ibig!(0b101)
-    );
-    assert_eq!(
-        IBig::from_str_with_radix_prefix("+0b101").unwrap(),
-        ibig!(0b101)
-    );
-    assert_eq!(
-        IBig::from_str_with_radix_prefix("-0b101").unwrap(),
-        ibig!(-0b101)
-    );
-    assert_eq!(
-        IBig::from_str_with_radix_prefix("0o177").unwrap(),
-        ibig!(0o177)
-    );
-    assert_eq!(
-        IBig::from_str_with_radix_prefix("+0o177").unwrap(),
-        ibig!(0o177)
-    );
-    assert_eq!(
-        IBig::from_str_with_radix_prefix("-0o177").unwrap(),
-        ibig!(-0o177)
-    );
-    assert_eq!(
-        IBig::from_str_with_radix_prefix("0x1eE").unwrap(),
-        ibig!(0x1ee)
-    );
-    assert_eq!(
-        IBig::from_str_with_radix_prefix("+0x1eE").unwrap(),
-        ibig!(0x1ee)
-    );
-    assert_eq!(
-        IBig::from_str_with_radix_prefix("-0x1eE").unwrap(),
-        ibig!(-0x1ee)
-    );
+    assert_eq!(IBig::from_str_with_radix_prefix("17").unwrap(), (IBig::from(17), 10));
+    assert_eq!(IBig::from_str_with_radix_prefix("+17").unwrap(), (IBig::from(17), 10));
+    assert_eq!(IBig::from_str_with_radix_prefix("-17").unwrap(), (IBig::from(-17), 10));
+    assert_eq!(IBig::from_str_with_radix_prefix("0b101").unwrap(), (IBig::from(0b101), 2));
+    assert_eq!(IBig::from_str_with_radix_prefix("+0b101").unwrap(), (IBig::from(0b101), 2));
+    assert_eq!(IBig::from_str_with_radix_prefix("-0b101").unwrap(), (IBig::from(-0b101), 2));
+    assert_eq!(IBig::from_str_with_radix_prefix("0o177").unwrap(), (IBig::from(0o177), 8));
+    assert_eq!(IBig::from_str_with_radix_prefix("+0o177").unwrap(), (IBig::from(0o177), 8));
+    assert_eq!(IBig::from_str_with_radix_prefix("-0o177").unwrap(), (IBig::from(-0o177), 8));
+    assert_eq!(IBig::from_str_with_radix_prefix("0x1eE").unwrap(), (IBig::from(0x1ee), 16));
+    assert_eq!(IBig::from_str_with_radix_prefix("+0x1eE").unwrap(), (IBig::from(0x1ee), 16));
+    assert_eq!(IBig::from_str_with_radix_prefix("-0x1eE").unwrap(), (IBig::from(-0x1ee), 16));
 
-    assert_eq!(
-        UBig::from_str_with_radix_prefix("").unwrap_err(),
-        ParseError::NoDigits
-    );
-    assert_eq!(
-        UBig::from_str_with_radix_prefix("+").unwrap_err(),
-        ParseError::NoDigits
-    );
-    assert_eq!(
-        UBig::from_str_with_radix_prefix("0b102").unwrap_err(),
-        ParseError::InvalidDigit
-    );
+    assert_eq!(UBig::from_str_with_radix_prefix("").unwrap_err(), ParseError::NoDigits);
+    assert_eq!(UBig::from_str_with_radix_prefix("+").unwrap_err(), ParseError::NoDigits);
+    assert_eq!(UBig::from_str_with_radix_prefix("0b102").unwrap_err(), ParseError::InvalidDigit);
 
-    assert_eq!(
-        IBig::from_str_with_radix_prefix("").unwrap_err(),
-        ParseError::NoDigits
-    );
-    assert_eq!(
-        IBig::from_str_with_radix_prefix("+").unwrap_err(),
-        ParseError::NoDigits
-    );
-    assert_eq!(
-        IBig::from_str_with_radix_prefix("-").unwrap_err(),
-        ParseError::NoDigits
-    );
-    assert_eq!(
-        IBig::from_str_with_radix_prefix("0x1fg").unwrap_err(),
-        ParseError::InvalidDigit
-    );
+    assert_eq!(IBig::from_str_with_radix_prefix("").unwrap_err(), ParseError::NoDigits);
+    assert_eq!(IBig::from_str_with_radix_prefix("+").unwrap_err(), ParseError::NoDigits);
+    assert_eq!(IBig::from_str_with_radix_prefix("-").unwrap_err(), ParseError::NoDigits);
+    assert_eq!(IBig::from_str_with_radix_prefix("0x1fg").unwrap_err(), ParseError::InvalidDigit);
 }
 
 #[test]
@@ -424,10 +342,7 @@ fn test_macros() {
     assert_eq!(ubig!(0b101), UBig::from(0b101u32));
     assert_eq!(ubig!(0o177), UBig::from(0o177u32));
     assert_eq!(
-        format!(
-            "{:x}",
-            ubig!(_0x1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
-        ),
+        format!("{:x}", ubig!(0x1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)),
         "1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     );
     assert_eq!(ubig!(100 base 32), UBig::from(1024u32));
@@ -445,10 +360,7 @@ fn test_macros() {
     assert_eq!(ibig!(0x1ff), IBig::from(0x1ffi32));
     assert_eq!(ibig!(-0x1ff), IBig::from(-0x1ffi32));
     assert_eq!(
-        format!(
-            "{:x}",
-            ibig!(-_0x1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
-        ),
+        format!("{:x}", ibig!(-0x1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)),
         "-1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     );
     assert_eq!(ibig!(100 base 32), IBig::from(1024i32));
@@ -461,4 +373,76 @@ fn test_macros() {
         format!("{}", ibig!(-ppppppppppppppppppp base 32).in_radix(32)),
         "-ppppppppppppppppppp"
     );
+}
+
+#[test]
+fn test_ubig_debug() {
+    assert_eq!(format!("{:?}", ubig!(0)), "0");
+    assert_eq!(format!("{:#?}", ubig!(0)), "0 (0 digits, 0 bits)");
+    assert_eq!(format!("{:?}", ubig!(100)), "100");
+    assert_eq!(format!("{:#?}", ubig!(100)), "100 (3 digits, 7 bits)");
+    assert_eq!(format!("{:?}", ubig!(12345678)), "12345678");
+    assert_eq!(format!("{:#?}", ubig!(12345678)), "12345678 (8 digits, 24 bits)");
+    assert_eq!(format!("{:?}", (ubig!(1) << 31) - 1u8), "2147483647");
+    assert_eq!(format!("{:#?}", (ubig!(1) << 31) - 1u8), "2147483647 (10 digits, 31 bits)");
+
+    if Word::BITS == 64 {
+        // the number of displayed digits dependends on Word size
+        assert_eq!(format!("{:?}", ubig!(1) << 128), "3402823669209384634..3374607431768211456");
+        assert_eq!(
+            format!("{:#?}", ubig!(1) << 128),
+            "3402823669209384634..3374607431768211456 (39 digits, 129 bits)"
+        );
+        assert_eq!(
+            format!("{:?}", (ubig!(1) << 129) - 1u8),
+            "6805647338418769269..6749214863536422911"
+        );
+        assert_eq!(
+            format!("{:#?}", (ubig!(1) << 129) - 1u8),
+            "6805647338418769269..6749214863536422911 (39 digits, 129 bits)"
+        );
+        assert_eq!(
+            format!("{:?}", (ubig!(1) << 200) - 1u8),
+            "1606938044258990275..2993782792835301375"
+        );
+        assert_eq!(
+            format!("{:#?}", (ubig!(1) << 200) - 1u8),
+            "1606938044258990275..2993782792835301375 (61 digits, 200 bits)"
+        );
+        assert_eq!(
+            format!("{:?}", (ubig!(1) << 2000) - 1u8),
+            "1148130695274254524..3762184851149029375"
+        );
+        assert_eq!(
+            format!("{:#?}", (ubig!(1) << 2000) - 1u8),
+            "1148130695274254524..3762184851149029375 (603 digits, 2000 bits)"
+        );
+    }
+}
+
+#[test]
+fn test_ibig_debug() {
+    assert_eq!(format!("{:?}", ibig!(-0)), "0");
+    assert_eq!(format!("{:#?}", ibig!(-0)), "0 (0 digits, 0 bits)");
+    assert_eq!(format!("{:?}", ibig!(-100)), "-100");
+    assert_eq!(format!("{:+?}", ibig!(100)), "+100");
+    assert_eq!(format!("{:#?}", ibig!(-100)), "-100 (3 digits, 7 bits)");
+    assert_eq!(format!("{:+#?}", ibig!(100)), "+100 (3 digits, 7 bits)");
+
+    if Word::BITS == 64 {
+        // the number of displayed digits dependends on Word size
+        assert_eq!(format!("{:?}", ibig!(-1) << 128), "-3402823669209384634..3374607431768211456");
+        assert_eq!(
+            format!("{:#?}", ibig!(-1) << 128),
+            "-3402823669209384634..3374607431768211456 (39 digits, 129 bits)"
+        );
+        assert_eq!(
+            format!("{:?}", (ibig!(-1) << 200) + 1),
+            "-1606938044258990275..2993782792835301375"
+        );
+        assert_eq!(
+            format!("{:#?}", (ibig!(-1) << 200) + 1),
+            "-1606938044258990275..2993782792835301375 (61 digits, 200 bits)"
+        );
+    }
 }

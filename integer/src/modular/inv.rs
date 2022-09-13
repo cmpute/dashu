@@ -1,13 +1,13 @@
 use dashu_base::ExtendedGcd;
 
 use crate::{
-    bits::locate_top_word_plus_one,
     buffer::Buffer,
     gcd,
+    helper_macros::debug_assert_zero,
     memory::MemoryAllocation,
-    primitive::{lowest_dword, PrimitiveSigned},
+    primitive::{locate_top_word_plus_one, lowest_dword, PrimitiveSigned},
     shift::{shl_in_place, shr_in_place},
-    sign::Sign,
+    Sign,
 };
 
 use super::{
@@ -21,15 +21,15 @@ impl<'a> Modulo<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::{modular::ModuloRing, ubig};
+    /// # use dashu_int::{modular::ModuloRing, UBig};
     /// // A Mersenne prime.
-    /// let p = ubig!(2).pow(127) - ubig!(1);
+    /// let p = UBig::from(2u8).pow(127) - UBig::ONE;
     /// let ring = ModuloRing::new(p.clone());
     /// // Fermat's little theorem: a^(p-2) = a^-1 (mod p)
     /// let a = ring.convert(123);
     /// let ainv = a.clone().inv().unwrap();
-    /// assert_eq!(ainv, a.pow(&(p - ubig!(2))));
-    /// assert_eq!((a * ainv).residue(), ubig!(1));
+    /// assert_eq!(ainv, a.pow(&(p - UBig::from(2u8))));
+    /// assert_eq!((a * ainv).residue(), 1);
     /// ```
     #[inline]
     pub fn inv(self) -> Option<Modulo<'a>> {
@@ -50,7 +50,7 @@ macro_rules! impl_mod_inv_for_primitive {
                 if raw.0 == 0 {
                     return None;
                 }
-                let (g, _, coeff) = self.modulus().gcd_ext(raw.0 >> self.shift());
+                let (g, _, coeff) = self.0.divisor().gcd_ext(raw.0 >> self.shift());
                 if g != 1 {
                     return None;
                 }
@@ -74,12 +74,10 @@ impl ModuloRingLarge {
         // prepare modulus
         let mut modulus = Buffer::allocate_exact(self.normalized_modulus().len());
         modulus.push_slice(self.normalized_modulus());
-        let low_bits = shr_in_place(&mut modulus, self.shift());
-        debug_assert!(low_bits == 0);
+        debug_assert_zero!(shr_in_place(&mut modulus, self.shift()));
 
         // prepare modulo value
-        let low_bits = shr_in_place(&mut raw.0, self.shift());
-        debug_assert!(low_bits == 0);
+        debug_assert_zero!(shr_in_place(&mut raw.0, self.shift()));
         let raw_len = locate_top_word_plus_one(&raw.0);
 
         // call extended gcd
@@ -98,9 +96,11 @@ impl ModuloRingLarge {
                     modulus.len(),
                     raw_len,
                 ));
-                let mut memory = allocation.memory();
-                let (g_len, b_len, b_sign) =
-                    gcd::gcd_ext_in_place(&mut modulus, &mut raw.0[..raw_len], &mut memory);
+                let (g_len, b_len, b_sign) = gcd::gcd_ext_in_place(
+                    &mut modulus,
+                    &mut raw.0[..raw_len],
+                    &mut allocation.memory(),
+                );
                 modulus[b_len..].fill(0);
 
                 // check if inverse exists

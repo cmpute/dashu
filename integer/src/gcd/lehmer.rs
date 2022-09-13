@@ -4,16 +4,16 @@ use dashu_base::{ExtendedGcd, Gcd};
 
 use crate::{
     arch::word::{DoubleWord, SignedDoubleWord, SignedWord, Word},
-    bits::locate_top_word_plus_one,
     cmp::cmp_in_place,
     div,
+    helper_macros::debug_assert_zero,
     memory::{self, Memory},
     mul,
     primitive::{
-        extend_word, highest_dword, signed_extend_word, split_dword, split_signed_dword, WORD_BITS,
+        extend_word, highest_dword, locate_top_word_plus_one, signed_extend_word, split_dword,
+        split_signed_dword, WORD_BITS,
     },
-    shift,
-    sign::Sign,
+    shift, Sign,
 };
 
 /// Remove the leading zero words in an owning reference. Return
@@ -105,6 +105,7 @@ fn highest_word_normalized(x: &[Word], y: &[Word]) -> (Word, Word) {
     (x_hi, y_hi)
 }
 
+/// Same as [lehmer_guess] but use the highest double word
 fn lehmer_guess_dword(mut xbar: DoubleWord, mut ybar: DoubleWord) -> (Word, Word, Word, Word) {
     debug_assert!(xbar >= ybar);
     const COEFF_LIMIT: DoubleWord = SignedWord::MAX as DoubleWord;
@@ -215,7 +216,7 @@ pub(crate) fn lehmer_step(x: &mut [Word], y: &mut [Word], a: Word, b: Word, c: W
         debug_assert_eq!(y_carry as SignedDoubleWord, c * signed_extend_word(*x_top));
         let (x_new, cx) =
             split_signed_dword(a * signed_extend_word(*x_top) + x_carry as SignedDoubleWord);
-        debug_assert!(cx == 0);
+        debug_assert_eq!(cx, 0);
         *x_top = x_new;
     }
 }
@@ -234,7 +235,7 @@ pub(crate) fn gcd_in_place(
     memory: &mut Memory,
 ) -> (usize, bool) {
     // keep x >= y though the algorithm, and track the source of x and y
-    debug_assert!(cmp_in_place(lhs, rhs).is_gt());
+    debug_assert!(cmp_in_place(lhs, rhs).is_ge());
     let (mut x, mut y, mut swapped) = (lhs, rhs, false);
 
     while y.len() > 2 {
@@ -249,11 +250,11 @@ pub(crate) fn gcd_in_place(
 
         if b == 0 {
             // The guess has failed, do a euclidean step (x, y) = (y, x % y)
-            let (shift, _) = div::div_rem_unnormalized_in_place(x, y, memory);
+            let (shift, fast_div_top) = div::normalize(y);
+            let _rem = div::div_rem_unshifted_in_place(x, y, shift, fast_div_top, memory);
             let mut r = &mut x[..y.len()];
-            let y_low_bits = shift::shr_in_place(y, shift);
-            let r_low_bits = shift::shr_in_place(r, shift);
-            debug_assert!(y_low_bits | r_low_bits == 0); // these are bits for normalization
+            debug_assert_zero!(shift::shr_in_place(y, shift));
+            debug_assert_zero!(shift::shr_in_place(r, shift));
             r = trim_leading_zeros(r);
 
             // swap: (x, y) = (y, r)
@@ -351,7 +352,7 @@ pub fn gcd_ext_in_place(
     let (lhs_ptr, rhs_ptr) = (lhs.as_mut_ptr(), rhs.as_mut_ptr());
 
     // keep x >= y though the algorithm, and track the source of x and y using the swapped flag
-    debug_assert!(cmp_in_place(lhs, rhs).is_gt());
+    debug_assert!(cmp_in_place(lhs, rhs).is_ge());
     let (mut x, mut y) = (lhs, rhs);
     let mut swapped = false;
 
@@ -376,11 +377,11 @@ pub fn gcd_ext_in_place(
 
         if b == 0 {
             // The guess has failed, do a euclidean step (x, y) = (y, x % y)
-            let (shift, q_top) = div::div_rem_unnormalized_in_place(x, y, &mut memory);
+            let (shift, fast_div_top) = div::normalize(y);
+            let q_top = div::div_rem_unshifted_in_place(x, y, shift, fast_div_top, &mut memory);
             let (mut r, mut q_lo) = x.split_at_mut(y.len());
-            let y_low_bits = shift::shr_in_place(y, shift);
-            let r_low_bits = shift::shr_in_place(r, shift);
-            debug_assert!(y_low_bits | r_low_bits == 0); // these are bits for normalization
+            debug_assert_zero!(shift::shr_in_place(y, shift));
+            debug_assert_zero!(shift::shr_in_place(r, shift));
             r = trim_leading_zeros(r);
             if q_top == 0 {
                 q_lo = trim_leading_zeros(q_lo);
@@ -471,19 +472,18 @@ pub fn gcd_ext_in_place(
     let y_word = *y.first().unwrap();
     let x_word = div::div_by_word_in_place(x, y_word);
     t0_len = x.len() + t1_len;
-    let t_carry = mul::add_signed_mul(
+    debug_assert_zero!(mul::add_signed_mul(
         &mut t0[..t0_len],
         Sign::Positive,
         x,
         &t1[..t1_len],
         &mut memory,
-    );
-    debug_assert!(t_carry == 0);
+    ));
     t0_len = locate_top_word_plus_one(&t0[..t0_len]);
 
     // forward to single word gcd
     let (g_word, cx, cy) = x_word.gcd_ext(y_word);
-    swapped ^= cx < 0;
+    swapped ^= (cx < 0) || (cx == 0 && cy > 0);
 
     // let lhs stores |b| = |cx| * t0 + |cy| * t1
     // by now, number of words in |b| should be close to lhs
@@ -500,9 +500,8 @@ pub fn gcd_ext_in_place(
     lhs.fill(0);
 
     let (cx, cy) = (cx.unsigned_abs(), cy.unsigned_abs());
-    let carry1 = mul::add_mul_word_in_place(lhs, cx, &t0[..t0_len]);
-    let carry2 = mul::add_mul_word_in_place(lhs, cy, &t1[..t1_len]);
-    debug_assert!(carry1 | carry2 == 0);
+    debug_assert_zero!(mul::add_mul_word_in_place(lhs, cx, &t0[..t0_len]));
+    debug_assert_zero!(mul::add_mul_word_in_place(lhs, cy, &t1[..t1_len]));
     let sign = if swapped {
         Sign::Positive
     } else {

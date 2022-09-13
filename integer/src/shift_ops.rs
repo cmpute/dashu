@@ -1,15 +1,6 @@
 //! Bit shift operators.
 
-use crate::{
-    arch::word::{DoubleWord, Word},
-    buffer::Buffer,
-    ibig::IBig,
-    primitive::{double_word, DWORD_BITS_USIZE, WORD_BITS_USIZE},
-    repr::{TypedRepr::*, TypedReprRef::*},
-    shift,
-    sign::Sign::*,
-    ubig::UBig,
-};
+use crate::{ibig::IBig, ubig::UBig, Sign::*};
 use core::{
     mem,
     ops::{Shl, ShlAssign, Shr, ShrAssign},
@@ -176,11 +167,19 @@ impl Shr<usize> for &IBig {
     }
 }
 
-mod repr {
+pub(crate) mod repr {
     use super::*;
     use crate::{
+        arch::word::{DoubleWord, Word},
+        buffer::Buffer,
         math,
-        repr::{Repr, TypedRepr, TypedReprRef},
+        primitive::{double_word, DWORD_BITS_USIZE, WORD_BITS_USIZE},
+        repr::{
+            Repr,
+            TypedRepr::{self, *},
+            TypedReprRef::{self, *},
+        },
+        shift,
     };
 
     impl Shl<usize> for TypedRepr {
@@ -213,7 +212,7 @@ mod repr {
             match self {
                 RefSmall(0) => Repr::zero(),
                 RefSmall(dword) => shl_dword(dword, rhs),
-                RefLarge(buffer) => shl_ref_large(buffer, rhs),
+                RefLarge(words) => shl_ref_large(words, rhs),
             }
         }
     }
@@ -224,7 +223,7 @@ mod repr {
         fn shr(self, rhs: usize) -> Repr {
             match self {
                 RefSmall(dword) => shr_dword(dword, rhs),
-                RefLarge(buffer) => shr_large_ref(buffer, rhs),
+                RefLarge(words) => shr_large_ref(words, rhs),
             }
         }
     }
@@ -318,7 +317,7 @@ mod repr {
     }
 
     /// Shift right large number of words by `rhs` bits.
-    fn shr_large_ref(words: &[Word], rhs: usize) -> Repr {
+    pub(crate) fn shr_large_ref(words: &[Word], rhs: usize) -> Repr {
         let shift_words = rhs / WORD_BITS_USIZE;
         let shift_bits = (rhs % WORD_BITS_USIZE) as u32;
 

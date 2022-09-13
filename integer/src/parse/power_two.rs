@@ -13,9 +13,9 @@ use crate::{
 /// Parse an unsigned string to [UBig].
 pub fn parse(src: &str, radix: Digit) -> Result<UBig, ParseError> {
     debug_assert!(radix::is_radix_valid(radix) && radix.is_power_of_two());
-    let radix_info = radix::radix_info(radix);
 
-    if src.len() <= radix_info.digits_per_word {
+    let digits_per_word = (WORD_BITS / radix.trailing_zeros()) as usize;
+    if src.len() <= digits_per_word {
         Ok(parse_word(src, radix)?.into())
     } else {
         parse_large(src, radix)
@@ -27,13 +27,16 @@ pub fn parse(src: &str, radix: Digit) -> Result<UBig, ParseError> {
 /// The length of the string must be at most digits_per_word(radix).
 fn parse_word(src: &str, radix: Digit) -> Result<Word, ParseError> {
     debug_assert!(radix::is_radix_valid(radix) && radix.is_power_of_two());
-    debug_assert!(src.len() <= radix::radix_info(radix).digits_per_word);
+    debug_assert!(src.len() <= (WORD_BITS / radix.trailing_zeros()) as usize);
 
     let log_radix = radix.trailing_zeros();
     let mut word = 0;
     let mut bits = 0;
     for byte in src.as_bytes().iter().rev() {
-        let digit = radix::digit_from_utf8_byte(*byte, radix).ok_or(ParseError::InvalidDigit)?;
+        if *byte == b'_' {
+            continue;
+        }
+        let digit = radix::digit_from_ascii_byte(*byte, radix).ok_or(ParseError::InvalidDigit)?;
         word |= (digit as Word) << bits;
         bits += log_radix;
     }
@@ -51,12 +54,15 @@ fn parse_large(src: &str, radix: Digit) -> Result<UBig, ParseError> {
     let num_bits = src
         .len()
         .checked_mul(log_radix as usize)
-        .unwrap_or_else(|| UBig::panic_number_too_large());
+        .expect("the number to be parsed is too large");
     let mut buffer = Buffer::allocate((num_bits - 1) / WORD_BITS_USIZE + 1);
     let mut bits = 0;
     let mut word = 0;
     for byte in src.as_bytes().iter().rev() {
-        let digit = radix::digit_from_utf8_byte(*byte, radix).ok_or(ParseError::InvalidDigit)?;
+        if *byte == b'_' {
+            continue;
+        }
+        let digit = radix::digit_from_ascii_byte(*byte, radix).ok_or(ParseError::InvalidDigit)?;
         word |= (digit as Word) << bits;
         let new_bits = bits + log_radix;
         if new_bits >= WORD_BITS {

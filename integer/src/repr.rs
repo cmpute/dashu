@@ -4,7 +4,7 @@ use crate::{
     arch::word::{DoubleWord, Word},
     buffer::Buffer,
     primitive::{double_word, split_dword},
-    sign::Sign,
+    Sign,
 };
 use core::{
     fmt::{self, Write},
@@ -29,9 +29,16 @@ union ReprData {
 /// It's optimized so that small integers (single or double words) will not be allocated on heap.
 /// When the data is allocated on the heap, it can be casted to [Buffer] efficiently, but modifying
 /// the buffer inplace is not allowed because that can break the rule on the `capacity` field.
+///
+/// To modified the internal data, one must convert the Repr into either [TypedRepr](enum, owning the data)
+/// or [Buffer](raw heap buffer). To access the internal data, one must use [TypedReprRef](enum, reference)
+/// or [slice][Repr::as_slice] protocol.
 #[repr(C)]
 pub struct Repr {
-    /// The capacity is designed to be not zero so that it provides a niche value for other use.
+    /// The words in the `data` field are ordered from the least significant to the most significant.
+    data: ReprData,
+
+    /// The capacity is designed to be not zero so that it provides a niche value for layout optimization.
     ///
     /// How to intepret the `data` field:
     /// - `capacity` = 1: the words are inlined and the high word is 0. (including the case where low word is also 0)
@@ -40,12 +47,14 @@ pub struct Repr {
     /// - `capacity` < 0: similiar to the cases above, but negative capacity value is used to mark the integer is negative.
     ///     Note that in this case the inlined value is not allowed to be zero. (zero must have a positive sign)
     capacity: NonZeroIsize,
-
-    /// The words in the `data` field are ordered from LSB to MSB.
-    data: ReprData,
 }
 
+// right now on all supported architectures, Word = usize. However, for cases where
+// Word > usize, an extra padding in Buffer will be necessary for this equality to hold
 const_assert_eq!(mem::size_of::<Buffer>(), mem::size_of::<Repr>());
+
+// make sure the layout optimization is effective
+const_assert_eq!(mem::size_of::<Repr>(), mem::size_of::<Option<Repr>>());
 
 // SAFETY: the pointer to the allocated space is uniquely owned by this struct.
 unsafe impl Send for Repr {}
@@ -89,7 +98,7 @@ impl Repr {
 
     /// Get the sign of the repr
     #[inline]
-    pub fn sign(&self) -> Sign {
+    pub const fn sign(&self) -> Sign {
         if self.capacity.get() > 0 {
             Sign::Positive
         } else {
@@ -99,7 +108,7 @@ impl Repr {
 
     /// Get the capacity of Repr and sign simultaneously
     #[inline]
-    pub fn sign_capacity(&self) -> (usize, Sign) {
+    pub const fn sign_capacity(&self) -> (usize, Sign) {
         if self.capacity.get() > 0 {
             (self.capacity.get() as usize, Sign::Positive)
         } else {
@@ -111,8 +120,12 @@ impl Repr {
     /// Set the sign flag and return the changed representation. The sign will not
     /// be flipped if self is zero
     #[inline]
-    pub fn with_sign(mut self, sign: Sign) -> Self {
-        if !self.is_zero() && ((sign == Sign::Positive) ^ (self.capacity.get() > 0)) {
+    pub const fn with_sign(mut self, sign: Sign) -> Self {
+        let is_positive = match sign {
+            Sign::Positive => true,
+            Sign::Negative => false,
+        };
+        if !self.is_zero() && (is_positive ^ (self.capacity.get() > 0)) {
             self.capacity = unsafe {
                 // SAFETY: capacity is not allowed to be zero
                 NonZeroIsize::new_unchecked(-self.capacity.get())
@@ -128,26 +141,12 @@ impl Repr {
     /// Panics if the `capacity` is negative
     #[inline]
     pub fn as_typed(&self) -> TypedReprRef<'_> {
-        assert!(self.capacity.get() > 0);
-
-        unsafe {
-            match self.capacity.get() {
-                1 | 2 => {
-                    TypedReprRef::RefSmall(double_word(self.data.inline[0], self.data.inline[1]))
-                }
-                _ => TypedReprRef::RefLarge(slice::from_raw_parts(
-                    self.data.heap.0,
-                    self.data.heap.1,
-                )),
-            }
-        }
+        let (sign, typed) = self.as_sign_typed();
+        assert!(sign == Sign::Positive);
+        typed
     }
 
     /// Cast the reference of `Repr` to a strong typed representation, and return with the sign.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the `capacity` is negative
     #[inline]
     pub fn as_sign_typed(&self) -> (Sign, TypedReprRef<'_>) {
         let (abs_capacity, sign) = self.sign_capacity();
@@ -188,6 +187,7 @@ impl Repr {
     }
 
     /// Cast the `Repr` to a strong typed representation and return with the sign.
+    #[inline]
     pub fn into_sign_typed(mut self) -> (Sign, TypedRepr) {
         let (abs_capacity, sign) = self.sign_capacity();
         self.capacity = unsafe {
@@ -195,6 +195,18 @@ impl Repr {
             NonZeroIsize::new_unchecked(abs_capacity as isize)
         };
         (sign, self.into_typed())
+    }
+
+    /// Get a reference to the words in the `Repr`
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `capacity` is negative
+    #[inline]
+    pub fn as_slice(&self) -> &[Word] {
+        let (sign, slice) = self.as_sign_slice();
+        assert!(sign == Sign::Positive);
+        slice
     }
 
     /// Get a reference to the words in the `Repr`, together with the sign.
@@ -219,20 +231,20 @@ impl Repr {
 
     /// Creates a `Repr` with a single word
     #[inline]
-    pub fn from_word(n: Word) -> Self {
+    pub const fn from_word(n: Word) -> Self {
         Repr {
             data: ReprData { inline: [n, 0] },
-            capacity: NonZeroIsize::new(1).unwrap(),
+            capacity: unsafe { NonZeroIsize::new_unchecked(1) },
         }
     }
 
     /// Creates a `Repr` with a double word
     #[inline]
-    pub fn from_dword(n: DoubleWord) -> Self {
+    pub const fn from_dword(n: DoubleWord) -> Self {
         let (lo, hi) = split_dword(n);
         Repr {
             data: ReprData { inline: [lo, hi] },
-            capacity: NonZeroIsize::new(1 + (hi != 0) as isize).unwrap(),
+            capacity: unsafe { NonZeroIsize::new_unchecked(1 + (hi != 0) as isize) },
         }
     }
 
@@ -259,13 +271,43 @@ impl Repr {
         }
     }
 
+    /// Cast the `Repr` to a [Buffer] instance, assuming the underlying data is unsigned.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `capacity` is negative
+    pub fn into_buffer(self) -> Buffer {
+        assert!(self.capacity.get() > 0);
+
+        unsafe {
+            match self.capacity.get() {
+                1 => {
+                    let mut buffer = Buffer::allocate(1);
+                    if self.data.inline[0] != 0 {
+                        buffer.push(self.data.inline[0]);
+                    }
+                    buffer
+                }
+                2 => {
+                    debug_assert!(self.data.inline[1] != 0);
+                    let mut buffer = Buffer::allocate(2);
+                    buffer.push(self.data.inline[0]);
+                    buffer.push(self.data.inline[1]);
+                    buffer
+                }
+                _ => {
+                    // SAFETY: An `Buffer` and `Repr` have the same layout
+                    //     and we have made sure that the data is allocated on heap
+                    mem::transmute(self)
+                }
+            }
+        }
+    }
+
     /// Creates a `Repr` with value 0
     #[inline]
     pub const fn zero() -> Self {
-        Repr {
-            capacity: unsafe { NonZeroIsize::new_unchecked(1) },
-            data: ReprData { inline: [0, 0] },
-        }
+        Self::from_word(0)
     }
 
     /// Check if the underlying value is zero
@@ -277,10 +319,7 @@ impl Repr {
     /// Creates a `Repr` with value 1
     #[inline]
     pub const fn one() -> Self {
-        Repr {
-            capacity: unsafe { NonZeroIsize::new_unchecked(1) },
-            data: ReprData { inline: [1, 0] },
-        }
+        Self::from_word(1)
     }
 
     /// Check if the underlying value is zero
@@ -292,18 +331,30 @@ impl Repr {
     /// Creates a `Repr` with value -1
     #[inline]
     pub const fn neg_one() -> Self {
-        Repr {
-            capacity: unsafe { NonZeroIsize::new_unchecked(-1) },
-            data: ReprData { inline: [1, 0] },
-        }
+        Self::from_word(1).with_sign(Sign::Negative)
     }
 
     /// Flip the sign bit of the Repr and return it
-    pub fn neg(mut self) -> Self {
+    pub const fn neg(mut self) -> Self {
         if !self.is_zero() {
             self.capacity = unsafe { NonZeroIsize::new_unchecked(-self.capacity.get()) }
         }
         self
+    }
+
+    /// Returns a number representing sign of self.
+    ///
+    /// * [Self::zero] if the number is zero
+    /// * [Self::one] if the number is positive
+    /// * [Self::neg_one] if the number is negative
+    pub const fn signum(&self) -> Self {
+        if self.is_zero() {
+            Self::zero()
+        } else if self.capacity.get() < 0 {
+            Self::neg_one()
+        } else {
+            Self::one()
+        }
     }
 }
 
@@ -355,7 +406,7 @@ impl Clone for Repr {
             let (src_ptr, src_len) = src.data.heap;
             debug_assert!(src_len >= 3);
 
-            // check if we need reallocation, the strategy here is the same as `Buffer::clone_from()`
+            // check if we need reallocation, it happens when capacity is too small or too large
             if cap < src_len || cap > Buffer::max_compact_capacity(src_len) {
                 if cap > 2 {
                     // release the old buffer if necessary
@@ -425,7 +476,7 @@ impl TypedRepr {
     pub fn as_ref(&self) -> TypedReprRef {
         match self {
             Self::Small(dword) => TypedReprRef::RefSmall(*dword),
-            Self::Large(buffer) => TypedReprRef::RefLarge(buffer),
+            Self::Large(words) => TypedReprRef::RefLarge(words),
         }
     }
 }
@@ -446,6 +497,12 @@ impl<'a> TypedReprRef<'a> {
             }
             Self::RefLarge(words) => words.len(),
         }
+    }
+
+    /// This operation just return a copy of `self`. It's meant to be used in macros.
+    #[inline]
+    pub fn as_ref(&self) -> TypedReprRef {
+        *self
     }
 }
 
@@ -475,6 +532,7 @@ mod tests {
         assert_eq!(repr.as_sign_slice(), (Sign::Positive, &[][..]));
 
         let repr = Repr::one();
+        assert_eq!(repr.as_slice(), &[1][..]);
         assert_eq!(repr.as_sign_slice(), (Sign::Positive, &[1][..]));
 
         let mut buffer = Buffer::allocate(1);
@@ -486,6 +544,7 @@ mod tests {
         buffer.push(1);
         buffer.push(2);
         let repr = Repr::from_buffer(buffer);
+        assert_eq!(repr.as_slice(), &[1, 2][..]);
         assert_eq!(repr.as_sign_slice(), (Sign::Positive, &[1, 2][..]));
 
         let mut buffer = Buffer::allocate(2);
@@ -494,6 +553,7 @@ mod tests {
         buffer.push(3);
         buffer.push(4);
         let repr = Repr::from_buffer(buffer);
+        assert_eq!(repr.as_slice(), &[1, 2, 3, 4][..]);
         assert_eq!(repr.as_sign_slice(), (Sign::Positive, &[1, 2, 3, 4][..]));
     }
 
@@ -538,6 +598,47 @@ mod tests {
         let repr2 = repr.clone();
         assert_eq!(repr.capacity(), Buffer::default_capacity(3));
         assert_eq!(repr, repr2);
+    }
+
+    #[test]
+    fn test_convert_buffer() {
+        let buffer = Buffer::allocate(0);
+        let repr = Repr::from_buffer(buffer);
+        assert_eq!(repr.len(), 0);
+        assert!(repr.as_slice().is_empty());
+        let buffer_back = repr.into_buffer();
+        assert_eq!(buffer_back.len(), 0);
+        assert!(buffer_back.is_empty());
+
+        let mut buffer = Buffer::allocate(1);
+        buffer.push(123);
+        let repr = Repr::from_buffer(buffer);
+        assert_eq!(repr.len(), 1);
+        assert_eq!(repr.as_slice(), &[123][..]);
+        let buffer_back = repr.into_buffer();
+        assert_eq!(buffer_back.len(), 1);
+        assert_eq!(&buffer_back[..], &[123][..]);
+
+        let mut buffer = Buffer::allocate(2);
+        buffer.push(123);
+        buffer.push(456);
+        let repr = Repr::from_buffer(buffer);
+        assert_eq!(repr.len(), 2);
+        assert_eq!(repr.as_slice(), &[123, 456][..]);
+        let buffer_back = repr.into_buffer();
+        assert_eq!(buffer_back.len(), 2);
+        assert_eq!(&buffer_back[..], &[123, 456][..]);
+
+        let mut buffer = Buffer::allocate(3);
+        buffer.push(123);
+        buffer.push(456);
+        buffer.push(789);
+        let repr = Repr::from_buffer(buffer);
+        assert_eq!(repr.len(), 3);
+        assert_eq!(repr.as_slice(), &[123, 456, 789][..]);
+        let buffer_back = repr.into_buffer();
+        assert_eq!(buffer_back.len(), 3);
+        assert_eq!(&buffer_back[..], &[123, 456, 789][..]);
     }
 
     #[test]

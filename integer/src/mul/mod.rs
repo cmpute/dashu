@@ -3,23 +3,24 @@
 use crate::{
     add,
     arch::word::{DoubleWord, SignedWord, Word},
+    helper_macros::debug_assert_zero,
     math,
-    memory::Memory,
+    memory::{self, Memory},
     primitive::{double_word, extend_word, split_dword},
-    sign::Sign,
+    Sign,
 };
 use alloc::alloc::Layout;
 use core::mem;
 use static_assertions::const_assert;
 
-/// If Smaller length <= MAX_LEN_SIMPLE, simple multiplication can be used.
-const MAX_LEN_SIMPLE: usize = 24;
-const_assert!(MAX_LEN_SIMPLE <= simple::MAX_SMALLER_LEN);
-const_assert!(MAX_LEN_SIMPLE + 1 >= karatsuba::MIN_LEN);
+/// If smaller operand length <= this, simple multiplication will be used.
+const THRESHOLD_SIMPLE: usize = 24;
+const_assert!(THRESHOLD_SIMPLE <= simple::MAX_SMALLER_LEN);
+const_assert!(THRESHOLD_SIMPLE + 1 >= karatsuba::MIN_LEN);
 
-/// If Smaller length <= this, Karatsuba multiplication can be used.
-const MAX_LEN_KARATSUBA: usize = 192;
-const_assert!(MAX_LEN_KARATSUBA + 1 >= toom_3::MIN_LEN);
+/// If smaller operand length <= this, Karatsuba multiplication will be used.
+const THRESHOLD_KARATSUBA: usize = 192;
+const_assert!(THRESHOLD_KARATSUBA + 1 >= toom_3::MIN_LEN);
 
 mod helpers;
 mod karatsuba;
@@ -41,10 +42,7 @@ pub fn mul_word_in_place(words: &mut [Word], rhs: Word) -> Word {
 /// Returns carry as a double word.
 #[must_use]
 pub fn mul_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleWord {
-    debug_assert!(
-        rhs > Word::MAX as DoubleWord,
-        "call mul_word_in_place when rhs is small"
-    );
+    debug_assert!(rhs > Word::MAX as DoubleWord, "call mul_word_in_place when rhs is small");
 
     // chunk the words into double words, and do 2by2 multiplications
     let mut dwords = words.chunks_exact_mut(2);
@@ -79,6 +77,10 @@ pub fn mul_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleWord {
 /// Returns carry.
 #[must_use]
 pub fn mul_word_in_place_with_carry(words: &mut [Word], rhs: Word, mut carry: Word) -> Word {
+    if rhs == 0 {
+        return 0;
+    }
+
     for a in words {
         let (v_lo, v_hi) = math::mul_add_carry(*a, rhs, carry);
         *a = v_lo;
@@ -91,8 +93,12 @@ pub fn mul_word_in_place_with_carry(words: &mut [Word], rhs: Word, mut carry: Wo
 ///
 /// Returns carry.
 #[must_use]
-fn add_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) -> Word {
+pub fn add_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) -> Word {
     assert!(words.len() == rhs.len());
+    if mult == 0 {
+        return 0;
+    }
+
     let mut carry: Word = 0;
     for (a, b) in words.iter_mut().zip(rhs.iter()) {
         let (v_lo, v_hi) = math::mul_add_2carry(mult, *b, *a, carry);
@@ -108,6 +114,10 @@ fn add_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) 
 #[must_use]
 pub fn add_mul_word_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) -> Word {
     assert!(words.len() >= rhs.len());
+    if mult == 0 {
+        return 0;
+    }
+
     let n = rhs.len();
     let mut carry = add_mul_word_same_len_in_place(&mut words[..n], mult, rhs);
     if words.len() > n {
@@ -122,6 +132,10 @@ pub fn add_mul_word_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) -> Wo
 #[must_use]
 pub fn sub_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) -> Word {
     assert!(words.len() == rhs.len());
+    if mult == 0 {
+        return 0;
+    }
+
     // carry is in -Word::MAX..0
     // carry_plus_max = carry + Word::MAX
     let mut carry_plus_max = Word::MAX;
@@ -144,9 +158,9 @@ pub fn sub_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Wor
 
 /// Temporary scratch space required for multiplication.
 pub fn memory_requirement_up_to(_total_len: usize, smaller_len: usize) -> Layout {
-    if smaller_len <= MAX_LEN_SIMPLE {
-        simple::memory_requirement_up_to(smaller_len)
-    } else if smaller_len <= MAX_LEN_KARATSUBA {
+    if smaller_len <= THRESHOLD_SIMPLE {
+        memory::zero_layout()
+    } else if smaller_len <= THRESHOLD_KARATSUBA {
         karatsuba::memory_requirement_up_to(smaller_len)
     } else {
         toom_3::memory_requirement_up_to(smaller_len)
@@ -156,6 +170,13 @@ pub fn memory_requirement_up_to(_total_len: usize, smaller_len: usize) -> Layout
 /// Temporary scratch space required for multiplication.
 pub fn memory_requirement_exact(total_len: usize, smaller_len: usize) -> Layout {
     memory_requirement_up_to(total_len, smaller_len)
+}
+
+/// c = a * b, c must be filled with zeros.
+#[inline]
+pub fn multiply<'a>(c: &mut [Word], a: &'a [Word], b: &'a [Word], memory: &mut Memory) {
+    debug_assert!(c.iter().all(|&v| v == 0));
+    debug_assert_zero!(add_signed_mul(c, Sign::Positive, a, b, memory));
 }
 
 /// c += sign * a * b
@@ -175,16 +196,16 @@ pub fn add_signed_mul<'a>(
         mem::swap(&mut a, &mut b);
     }
 
-    if b.len() <= MAX_LEN_SIMPLE {
+    if b.len() <= THRESHOLD_SIMPLE {
         simple::add_signed_mul(c, sign, a, b, memory)
-    } else if b.len() <= MAX_LEN_KARATSUBA {
+    } else if b.len() <= THRESHOLD_KARATSUBA {
         karatsuba::add_signed_mul(c, sign, a, b, memory)
     } else {
         toom_3::add_signed_mul(c, sign, a, b, memory)
     }
 }
 
-/// c += sign * a * b
+/// c += sign * a * b with len(a) == len(b)
 ///
 /// Returns carry.
 #[must_use]
@@ -198,9 +219,9 @@ pub fn add_signed_mul_same_len(
     let n = a.len();
     debug_assert!(b.len() == n && c.len() == 2 * n);
 
-    if n <= MAX_LEN_SIMPLE {
+    if n <= THRESHOLD_SIMPLE {
         simple::add_signed_mul_same_len(c, sign, a, b, memory)
-    } else if n <= MAX_LEN_KARATSUBA {
+    } else if n <= THRESHOLD_KARATSUBA {
         karatsuba::add_signed_mul_same_len(c, sign, a, b, memory)
     } else {
         toom_3::add_signed_mul_same_len(c, sign, a, b, memory)

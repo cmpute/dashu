@@ -9,15 +9,45 @@ categories = ["mathematics", "no-std"]
 repository = "https://github.com/cmpute/dashu"
 homepage = "https://github.com/cmpute/dashu"
 license = "MIT OR Apache-2.0"
-
-[dependencies]
-dashu-base = { path = "./base", version = "0.1.0" }
-dashu-int = { path = "./integer", version = "0.1.0" }
+rust-version = "1.61"
 
 [workspace]
 members = [
     "base",
     "benchmark",
     "integer",
+    "float",
+    "macros",
 ]
-default-members = ["base", "integer"]
+default-members = ["base", "integer", "float", "macros"]
+
+[dependencies]
+# all crates under dashu will have the same major and minor version,
+# but the patch version can be different.
+
+[dependencies.dashu-base]
+path = "./base"
+version = "0.1.1"
+default-features = false
+
+[dependencies.dashu-int]
+path = "./integer"
+version = "0.1.1"
+default-features = false
+
+[dependencies.dashu-float]
+path = "./float"
+version = "0.1.0"
+default-features = false
+
+[dependencies.dashu-macros]
+path = "./macros"
+version = "0.1.0"
+default-features = false
+
+[features]
+default = ["std", "rand", "num-traits"]
+std = ["dashu-base/std", "dashu-int/std", "dashu-float/std"]
+rand = ["dashu-int/rand"]
+serde = ["dashu-int/serde"]
+"num-traits" = ["dashu-int/num-traits"]

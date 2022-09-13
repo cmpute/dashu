@@ -8,7 +8,7 @@ use super::{
 };
 use core::fmt::{self, Binary, Debug, Display, Formatter, LowerHex, Octal, UpperHex};
 
-macro_rules! impl_fmt {
+macro_rules! impl_fmt_for_modulo_ring {
     ($t:ident) => {
         impl $t for ModuloRing {
             fn fmt(&self, f: &mut Formatter) -> fmt::Result {
@@ -40,6 +40,12 @@ macro_rules! impl_fmt {
                 $t::fmt(&self.modulus(), f)
             }
         }
+    };
+}
+
+macro_rules! impl_fmt_for_modulo {
+    ($t:ident) => {
+        impl_fmt_for_modulo_ring!($t);
 
         impl $t for Modulo<'_> {
             fn fmt(&self, f: &mut Formatter) -> fmt::Result {
@@ -57,9 +63,35 @@ macro_rules! impl_fmt {
     };
 }
 
-impl_fmt!(Display);
-impl_fmt!(Debug);
-impl_fmt!(Binary);
-impl_fmt!(Octal);
-impl_fmt!(LowerHex);
-impl_fmt!(UpperHex);
+impl_fmt_for_modulo!(Display);
+impl_fmt_for_modulo!(Binary);
+impl_fmt_for_modulo!(Octal);
+impl_fmt_for_modulo!(LowerHex);
+impl_fmt_for_modulo!(UpperHex);
+impl_fmt_for_modulo_ring!(Debug);
+
+impl Debug for Modulo<'_> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let residue = self.residue();
+        if f.alternate() {
+            let modulus = match self.repr() {
+                ModuloRepr::Single(_, ring) => ring.modulus(),
+                ModuloRepr::Double(_, ring) => ring.modulus(),
+                ModuloRepr::Large(_, ring) => ring.modulus(),
+            };
+            f.debug_struct("Modulo")
+                .field("residue", &residue)
+                .field("modulus", &modulus)
+                .finish()
+        } else {
+            Debug::fmt(&residue, f)?;
+            f.write_str(" (")?;
+            match self.repr() {
+                ModuloRepr::Single(_, ring) => Debug::fmt(ring, f)?,
+                ModuloRepr::Double(_, ring) => Debug::fmt(ring, f)?,
+                ModuloRepr::Large(_, ring) => Debug::fmt(ring, f)?,
+            }
+            f.write_str(")")
+        }
+    }
+}

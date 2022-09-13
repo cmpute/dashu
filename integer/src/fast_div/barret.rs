@@ -1,9 +1,10 @@
-//! Divide by a prearranged Word quickly using multiplication by the reciprocal.
+//! Divide by a prearranged Word quickly using multiplication by the reciprocal (Barret style).
+// XXX: move this implementation to num-modular and make it a dependency
 
 use crate::{
     arch::word::{DoubleWord, Word},
     math,
-    primitive::{double_word, extend_word, split_dword},
+    primitive::{double_word, extend_word, split_dword, WORD_BITS},
 };
 
 /// Divide a Word by a prearranged divisor.
@@ -28,21 +29,23 @@ impl FastDivideSmall {
     #[inline]
     pub const fn new(divisor: Word) -> Self {
         debug_assert!(divisor > 1);
-        let n = math::ceil_log_2_word(divisor);
+        // n = ceil(log2(divisor))
+        let n = WORD_BITS - (divisor - 1).leading_zeros();
 
-        // Calculate:
-        // m = floor(B * 2^n / divisor) + 1 - B
-        // m >= B + 1 - B >= 1
-        // m <= B * 2^n / (2^(n-1) + 1) + 1 - B
-        //    = (B * 2^n + 2^(n-1) + 1) / (2^(n-1) + 1) - B
-        //    = B * (2^n + 2^(n-1-N) + 2^-N) / (2^(n-1)+1) - B
-        //    < B * (2^n + 2^1) / (2^(n-1)+1) - B
-        //    = B
-        // So m fits in a Word.
-        //
-        // Note:
-        // divisor * (B + m) = divisor * floor(B * 2^n / divisor + 1)
-        // = B * 2^n + k, 1 <= k <= divisor
+        /* Calculate:
+         * m = floor(B * 2^n / divisor) + 1 - B
+         * m >= B + 1 - B >= 1
+         * m <= B * 2^n / (2^(n-1) + 1) + 1 - B
+         *    = (B * 2^n + 2^(n-1) + 1) / (2^(n-1) + 1) - B
+         *    = B * (2^n + 2^(n-1-N) + 2^-N) / (2^(n-1)+1) - B
+         *    < B * (2^n + 2^1) / (2^(n-1)+1) - B
+         *    = B
+         * So m fits in a Word.
+         *
+         * Note:
+         * divisor * (B + m) = divisor * floor(B * 2^n / divisor + 1)
+         * = B * 2^n + k, 1 <= k <= divisor
+         */
 
         // m = floor(B * (2^n-1 - (divisor-1)) / divisor) + 1
         let (lo, _hi) =
@@ -55,22 +58,23 @@ impl FastDivideSmall {
         }
     }
 
-    /// ( a / divisor, a % divisor)
+    /// (a / divisor, a % divisor)
     #[inline]
     pub fn div_rem(&self, a: Word) -> (Word, Word) {
         // q = floor( (B + m) * a / (B * 2^n) )
-        //
-        // Remember that divisor * (B + m) = B * 2^n + k, 1 <= k <= 2^n
-        //
-        // (B + m) * a / (B * 2^n)
-        // = a / divisor * (B * 2^n + k) / (B * 2^n)
-        // = a / divisor + k * a / (divisor * B * 2^n)
-        // On one hand, this is >= a / divisor
-        // On the other hand, this is:
-        // <= a / divisor + 2^n * (B-1) / (2^n * B) / divisor
-        // < (a + 1) / divisor
-        //
-        // Therefore the floor is always the exact quotient.
+        /*
+         * Remember that divisor * (B + m) = B * 2^n + k, 1 <= k <= 2^n
+         *
+         * (B + m) * a / (B * 2^n)
+         * = a / divisor * (B * 2^n + k) / (B * 2^n)
+         * = a / divisor + k * a / (divisor * B * 2^n)
+         * On one hand, this is >= a / divisor
+         * On the other hand, this is:
+         * <= a / divisor + 2^n * (B-1) / (2^n * B) / divisor
+         * < (a + 1) / divisor
+         *
+         * Therefore the floor is always the exact quotient.
+         */
 
         // t = m * n / B
         let (_, t) = split_dword(extend_word(self.m) * extend_word(a));
@@ -78,15 +82,6 @@ impl FastDivideSmall {
         let q = (t + ((a - t) >> 1)) >> self.shift;
         let r = a - q * self.divisor;
         (q, r)
-    }
-
-    #[inline]
-    pub const fn dummy() -> Self {
-        FastDivideSmall {
-            divisor: 0,
-            shift: 0,
-            m: 0,
-        }
     }
 }
 
@@ -98,9 +93,9 @@ impl FastDivideSmall {
 #[derive(Clone, Copy)]
 pub(crate) struct FastDivideNormalized {
     // Top bit must be 1.
-    divisor: Word,
+    pub(crate) divisor: Word,
 
-    // floor ((B^2 - 1) / divisor) - B, where B = 2^WORD_BITS
+    // floor((B^2 - 1) / divisor) - B, where B = 2^WORD_BITS
     m: Word,
 }
 
@@ -128,7 +123,7 @@ impl FastDivideNormalized {
         }
     }
 
-    /// (a / divisor, a % divisor), a need to be normalized (by self.shift)
+    /// (a / divisor, a % divisor)
     #[inline]
     pub const fn div_rem_word(&self, a: Word) -> (Word, Word) {
         if a < self.divisor {
@@ -138,7 +133,7 @@ impl FastDivideNormalized {
         }
     }
 
-    /// (a / divisor, a % divisor), a need to be normalized (by self.shift)
+    /// (a / divisor, a % divisor)
     /// The result must fit in a single word.
     #[inline]
     pub const fn div_rem(&self, a: DoubleWord) -> (Word, Word) {
@@ -155,26 +150,27 @@ impl FastDivideNormalized {
         let q = q1.wrapping_add(1);
         let r = a_lo.wrapping_sub(q.wrapping_mul(self.divisor));
 
-        // Theorem: max(-d, q0+1-B) <= r < max(B-d, q0)
-        // Proof:
-        // r = a - q * d = a - q1 * d - d
-        // = a - (q1 * B + q0 - q0) * d/B - d
-        // = a - (m * a_hi + a - q0) * d/B - d
-        // = a - ((m+B) * a_hi + a_lo - q0) * d/B - d
-        // = a - ((B^2-k)/d * a_hi + a_lo - q0) * d/B - d
-        // = a - B * a_hi + (a_hi * k - a_lo * d + q0 * d) / B - d
-        // = (a_hi * k + a_lo * (B - d) + q0 * d) / B - d
-        //
-        // r >= q0 * d / B - d
-        // r >= -d
-        // r >= d/B (q0 - B) > q0-B
-        // r >= max(-d, q0+1-B)
-        //
-        // r < (d * d + B * (B-d) + q0 * d) / B - d
-        // = (B-d)^2 / B + q0 * d / B
-        // = (1 - d/B) * (B-d) + (d/B) * q0
-        // <= max(B-d, q0)
-        // QED
+        /* Theorem: max(-d, q0+1-B) <= r < max(B-d, q0)
+         * Proof:
+         * r = a - q * d = a - q1 * d - d
+         * = a - (q1 * B + q0 - q0) * d/B - d
+         * = a - (m * a_hi + a - q0) * d/B - d
+         * = a - ((m+B) * a_hi + a_lo - q0) * d/B - d
+         * = a - ((B^2-k)/d * a_hi + a_lo - q0) * d/B - d
+         * = a - B * a_hi + (a_hi * k - a_lo * d + q0 * d) / B - d
+         * = (a_hi * k + a_lo * (B - d) + q0 * d) / B - d
+         *
+         * r >= q0 * d / B - d
+         * r >= -d
+         * r >= d/B (q0 - B) > q0-B
+         * r >= max(-d, q0+1-B)
+         *
+         * r < (d * d + B * (B-d) + q0 * d) / B - d
+         * = (B-d)^2 / B + q0 * d / B
+         * = (1 - d/B) * (B-d) + (d/B) * q0
+         * <= max(B-d, q0)
+         * QED
+         */
 
         // if r mod B > q0 { q -= 1; r += d; }
         //
@@ -193,17 +189,12 @@ impl FastDivideNormalized {
 
         // At this point 0 <= r < B, i.e. 0 <= r < 2d.
         // the following fix step is unlikely to happen
-        if r > self.divisor {
+        if r >= self.divisor {
             q += 1;
             r -= self.divisor;
         }
 
         (q, r)
-    }
-
-    #[inline]
-    pub const fn dummy() -> Self {
-        FastDivideNormalized { divisor: 0, m: 0 }
     }
 }
 
@@ -216,7 +207,7 @@ impl FastDivideNormalized {
 #[derive(Clone, Copy)]
 pub(crate) struct FastDivideNormalized2 {
     // Top bit must be 1.
-    divisor: DoubleWord,
+    pub(crate) divisor: DoubleWord,
 
     // floor ((B^3 - 1) / divisor) - B, where B = 2^WORD_BITS
     m: Word,
@@ -383,13 +374,7 @@ mod tests {
             let a12 = double_word(a1, a2);
 
             let fast_div = FastDivideNormalized2::new(d);
-            assert_eq!(
-                fast_div.div_rem(a0, a12),
-                (q, r),
-                "failed at {:?} / {}",
-                (a0, a12),
-                d
-            );
+            assert_eq!(fast_div.div_rem(a0, a12), (q, r), "failed at {:?} / {}", (a0, a12), d);
         }
 
         // 4by2 div

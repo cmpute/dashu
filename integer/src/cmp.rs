@@ -4,8 +4,8 @@ use crate::{
     arch::word::Word,
     ibig::IBig,
     repr::TypedReprRef::{self, *},
-    sign::Sign::*,
     ubig::UBig,
+    Sign::*,
 };
 use core::cmp::Ordering;
 
@@ -20,10 +20,10 @@ impl<'a> Ord for TypedReprRef<'a> {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
         match (*self, *other) {
-            (RefSmall(dword), RefSmall(other_dword)) => dword.cmp(&other_dword),
+            (RefSmall(dword0), RefSmall(dword1)) => dword0.cmp(&dword1),
             (RefSmall(_), RefLarge(_)) => Ordering::Less,
             (RefLarge(_), RefSmall(_)) => Ordering::Greater,
-            (RefLarge(buffer), RefLarge(other_buffer)) => cmp_in_place(buffer, other_buffer),
+            (RefLarge(words0), RefLarge(words1)) => cmp_in_place(words0, words1),
         }
     }
 }
@@ -98,6 +98,34 @@ impl PartialOrd<UBig> for IBig {
             Negative => Ordering::Less,
         };
         Some(ord)
+    }
+}
+
+impl IBig {
+    /// Check whether the magnitude of this number is equal the magnitude of the other number
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::IBig;
+    /// assert!(IBig::from(2).abs_eq(&IBig::from(-2)));
+    /// assert!(IBig::from(-3).abs_eq(&IBig::from(-3)));
+    /// ```
+    pub fn abs_eq(&self, other: &IBig) -> bool {
+        self.0.as_sign_slice().1.eq(other.0.as_sign_slice().1)
+    }
+
+    /// Compare the magnitude of this number to the magnitude of the other number
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::IBig;
+    /// assert!(IBig::from(2).abs_cmp(&IBig::from(-3)).is_le());
+    /// assert!(IBig::from(-2).abs_cmp(&IBig::from(3)).is_le());
+    /// ```
+    pub fn abs_cmp(&self, other: &IBig) -> Ordering {
+        self.0.as_sign_typed().1.cmp(&other.0.as_sign_typed().1)
     }
 }
 

@@ -2,6 +2,7 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
+    error::{panic_allocate_too_much, panic_out_of_memory},
     primitive::{double_word, WORD_BITS_USIZE},
 };
 use alloc::{alloc::Layout, boxed::Box};
@@ -14,7 +15,7 @@ use core::{
     slice,
 };
 
-/// Buffer of words allocated on heap. It's like a `Vec<Word>` with limited functionalities.
+/// Buffer of words allocated on heap. It's like a `Vec<Word>` with functionalities specialized for words.
 ///
 /// This struct is ensured to be consistent with [Repr][crate::repr::Repr] in struct layout
 /// (that's why `repr(C)` is necessary), but the big integer represented by this buffer is unsigned.
@@ -25,9 +26,9 @@ use core::{
 /// If its capacity is exceeded, the `Buffer` will panic.
 #[repr(C)]
 pub struct Buffer {
-    capacity: usize,
     ptr: NonNull<Word>,
     len: usize,
+    capacity: usize,
 }
 
 // SAFETY: the pointer to the allocated space is uniquely owned by this struct.
@@ -95,6 +96,9 @@ impl Buffer {
         unsafe {
             let layout = Layout::array::<Word>(capacity).unwrap();
             let ptr = alloc::alloc::alloc(layout);
+            if ptr.is_null() {
+                panic_out_of_memory();
+            }
             NonNull::new(ptr).unwrap().cast()
         }
     }
@@ -120,10 +124,7 @@ impl Buffer {
     /// Creates a `Buffer` with exactly specified capacity (in words).
     pub fn allocate_exact(capacity: usize) -> Self {
         if capacity > Self::MAX_CAPACITY {
-            panic!(
-                "too many words to be allocated, maximum is {} words",
-                Self::MAX_CAPACITY
-            );
+            panic_allocate_too_much()
         }
 
         let ptr = Self::allocate_raw(capacity);
@@ -209,11 +210,13 @@ impl Buffer {
         }
     }
 
-    /// Append a Word and reallocate if necessary.
+    /// Append a Word and reallocate if necessary. No-op if word is 0.
     #[inline]
     pub fn push_resizing(&mut self, word: Word) {
-        self.ensure_capacity(self.len + 1);
-        self.push(word);
+        if word != 0 {
+            self.ensure_capacity(self.len + 1);
+            self.push(word);
+        }
     }
 
     /// Append `n` zeros.
@@ -346,9 +349,9 @@ impl Buffer {
 
     /// Make the data in this [Buffer] a copy of another slice.
     ///
-    /// It reallocates if capacity is too small or too large.
+    /// It reallocates if capacity is too small.
     pub fn clone_from_slice(&mut self, src: &[Word]) {
-        if self.capacity >= src.len() && self.capacity <= Buffer::max_compact_capacity(src.len()) {
+        if self.capacity >= src.len() {
             // direct copy if the capacity is enough
             unsafe {
                 // SAFETY: src.ptr and self.ptr are both properly allocated by `Buffer::allocate()`.

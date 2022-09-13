@@ -1,5 +1,10 @@
-use dashu_int::{ibig, ops::DivRem, ubig, UBig};
+use dashu_int::{
+    ops::{DivRem, ExtendedGcd, Gcd},
+    UBig,
+};
 use rand::{distributions::uniform::Uniform, prelude::*};
+
+mod helper_macros;
 
 #[test]
 fn test_uniform_ubig() {
@@ -47,6 +52,7 @@ fn test_random_arithmetic() {
     let p = ubig!(1000000007);
 
     // 10^2 bits: 10^5 cases
+    // ..to..
     // 10^6 bits: 10 cases
     for log_num_bits in 2..=6 {
         let num_bits = match 10usize.checked_pow(log_num_bits) {
@@ -68,15 +74,18 @@ fn test_random_arithmetic() {
             let (quot, rem) = (&a * &b + &c).div_rem(&a);
             assert_eq!(quot, b);
             assert_eq!(rem, c);
-            assert_eq!(
-                UBig::from_str_radix(&a.in_radix(radix).to_string(), radix).unwrap(),
-                a
-            );
+            assert_eq!(UBig::from_str_radix(&a.in_radix(radix).to_string(), radix).unwrap(), a);
+            assert_eq!((&a + UBig::ONE) * (&a - UBig::ONE), a.square() - UBig::ONE);
+
+            // pow can be very slow when exponent is too large
+            if log_num_bits <= 5 && i % 8 == 0 {
+                assert_eq!((ubig!(5).pow(num_bits) + 1u8).ilog(&ubig!(25)), num_bits / 2);
+            }
 
             // gcd is much slower than primitive operations, test with lower frequency
             if i % 32 == 0 {
-                let (g, ca, cb) = a.gcd_ext(&b);
-                assert_eq!(g, a.gcd(&b));
+                let (g, ca, cb) = (&a).gcd_ext(&b);
+                assert_eq!(g, (&a).gcd(&b));
                 assert_eq!(&a % &g, 0);
                 assert_eq!(&b % &g, 0);
                 assert_eq!(g, a * ca + b * cb);

@@ -1,0 +1,23 @@
+[package]
+name = "dashu-float"
+version = "0.1.0"
+authors = ["Jacob Zhong <cmpute@gmail.com>"]
+edition = "2018"
+rust-version = "1.61"
+
+[features]
+default = ["std"]
+std = ["dashu-base/std", "dashu-int/std"]
+
+[dependencies.static_assertions]
+version = "1.1"
+
+[dependencies.dashu-base]
+path = "../base"
+version = "0.1.1"
+default-features = false
+
+[dependencies.dashu-int]
+path = "../integer"
+version = "0.1.1"
+default-features = false

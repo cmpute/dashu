@@ -1,11 +1,11 @@
 //! Implement num-traits traits.
 
-use crate::{error::ParseError, ibig::IBig, ops::Abs, ubig::UBig};
+use crate::{error::ParseError, ibig::IBig, ops::Abs, ubig::UBig, Sign};
 
 impl num_traits::Zero for UBig {
     #[inline]
     fn zero() -> Self {
-        UBig::zero()
+        UBig::ZERO
     }
 
     #[inline]
@@ -17,7 +17,7 @@ impl num_traits::Zero for UBig {
 impl num_traits::Zero for IBig {
     #[inline]
     fn zero() -> Self {
-        IBig::zero()
+        IBig::ZERO
     }
 
     #[inline]
@@ -29,7 +29,7 @@ impl num_traits::Zero for IBig {
 impl num_traits::One for UBig {
     #[inline]
     fn one() -> Self {
-        UBig::one()
+        UBig::ONE
     }
 
     #[inline]
@@ -41,7 +41,7 @@ impl num_traits::One for UBig {
 impl num_traits::One for IBig {
     #[inline]
     fn one() -> Self {
-        IBig::one()
+        IBig::ONE
     }
 
     #[inline]
@@ -106,12 +106,12 @@ impl num_traits::Signed for IBig {
 
     #[inline]
     fn is_positive(&self) -> bool {
-        *self > IBig::zero()
+        !self.is_zero() && self.sign() == Sign::Positive
     }
 
     #[inline]
     fn is_negative(&self) -> bool {
-        *self < IBig::zero()
+        self.sign() == Sign::Negative
     }
 }
 

@@ -1,30 +1,54 @@
 //! Division operators.
 
 use crate::{
-    arch::word::{DoubleWord, Word},
-    buffer::Buffer,
-    div, helper_macros,
+    helper_macros,
     ibig::IBig,
-    memory::MemoryAllocation,
-    ops::{Abs, DivEuclid, DivRem, DivRemEuclid, RemEuclid},
-    repr::{TypedRepr::*, TypedReprRef::*},
-    shift,
-    sign::Sign::*,
+    ops::{DivEuclid, DivRem, DivRemAssign, DivRemEuclid, RemEuclid},
     ubig::UBig,
+    Sign::{self, *},
 };
-use core::{
-    convert::TryFrom,
-    ops::{Div, DivAssign, Rem, RemAssign},
-};
+use core::ops::{Div, DivAssign, Rem, RemAssign};
+
+#[inline]
+fn sign_as_int(s: Sign) -> IBig {
+    match s {
+        Positive => IBig::ONE,
+        Negative => IBig::NEG_ONE,
+    }
+}
+
+// Ops for UBig
 
 helper_macros::forward_ubig_binop_to_repr!(impl Div, div);
 helper_macros::forward_ubig_binop_to_repr!(impl Rem, rem);
-helper_macros::forward_ubig_binop_to_repr!(impl DivRem as divrem, div_rem);
 helper_macros::forward_ubig_binop_to_repr!(impl DivEuclid, div_euclid, div);
 helper_macros::forward_ubig_binop_to_repr!(impl RemEuclid, rem_euclid, rem);
-helper_macros::forward_ubig_binop_to_repr!(impl DivRemEuclid as divrem, div_rem_euclid, div_rem);
-helper_macros::forward_binop_assign_by_taking!(impl DivAssign<UBig> for UBig, div_assign, div);
-helper_macros::forward_binop_assign_by_taking!(impl RemAssign<UBig> for UBig, rem_assign, rem);
+helper_macros::impl_binop_assign_by_taking!(impl DivAssign<UBig> for UBig, div_assign, div);
+helper_macros::impl_binop_assign_by_taking!(impl RemAssign<UBig> for UBig, rem_assign, rem);
+
+macro_rules! impl_ubig_divrem {
+    ($repr0:ident, $repr1:ident) => {{
+        let (q, r) = $repr0.div_rem($repr1);
+        (UBig(q), UBig(r))
+    }};
+}
+helper_macros::forward_ubig_binop_to_repr!(
+    impl DivRem, div_rem -> (UBig, UBig),
+    OutputDiv = UBig, OutputRem = UBig,
+    impl_ubig_divrem
+);
+helper_macros::forward_ubig_binop_to_repr!(
+    impl DivRemEuclid,
+    div_rem_euclid -> (UBig, UBig),
+    OutputDiv = UBig, OutputRem = UBig,
+    impl_ubig_divrem
+);
+helper_macros::impl_binop_assign_by_taking!(
+    impl DivRemAssign<UBig> for UBig, div_rem_assign,
+    OutputRem = UBig, div_rem
+);
+
+// Ops for IBig
 
 macro_rules! impl_ibig_div {
     ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {
@@ -34,68 +58,115 @@ macro_rules! impl_ibig_div {
 }
 macro_rules! impl_ibig_rem {
     ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {{
-        let _sign1 = $sign1; // unused
+        let _unused = $sign1;
 
         // remainder with truncating division has same sign as lhs.
         IBig(($mag0 % $mag1).with_sign($sign0))
     }};
 }
-helper_macros::forward_ibig_binop_to_repr!(impl Div, div, impl_ibig_div);
-helper_macros::forward_ibig_binop_to_repr!(impl Rem, rem, impl_ibig_rem);
-helper_macros::forward_binop_assign_by_taking!(impl DivAssign<IBig> for IBig, div_assign, div);
-helper_macros::forward_binop_assign_by_taking!(impl RemAssign<IBig> for IBig, rem_assign, rem);
+helper_macros::forward_ibig_binop_to_repr!(impl Div, div, Output = IBig, impl_ibig_div);
+helper_macros::forward_ibig_binop_to_repr!(impl Rem, rem, Output = IBig, impl_ibig_rem);
+helper_macros::impl_binop_assign_by_taking!(impl DivAssign<IBig> for IBig, div_assign, div);
+helper_macros::impl_binop_assign_by_taking!(impl RemAssign<IBig> for IBig, rem_assign, rem);
+
+macro_rules! impl_ibig_div_rem {
+    ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {{
+        // truncate towards 0.
+        let (q, r) = $mag0.div_rem($mag1);
+        (IBig(q.with_sign($sign0 * $sign1)), IBig(r.with_sign($sign0)))
+    }};
+}
+helper_macros::forward_ibig_binop_to_repr!(
+    impl DivRem, div_rem -> (IBig, IBig),
+    OutputDiv = IBig, OutputRem = IBig,
+    impl_ibig_div_rem
+);
+
+macro_rules! impl_ibig_div_euclid {
+    ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {{
+        let (q, r) = $mag0.div_rem($mag1);
+        let q = IBig(q.with_sign($sign0 * $sign1));
+        match ($sign0, r.is_zero()) {
+            (Positive, _) | (Negative, true) => q,
+            (Negative, false) => q - sign_as_int($sign1),
+        }
+    }};
+}
+macro_rules! impl_ibig_rem_euclid {
+    ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {{
+        let _unused = $sign1;
+        let repr = match $sign0 {
+            Positive => $mag0 % $mag1,
+            Negative => {
+                let r = $mag0 % $mag1.as_ref();
+                if r.is_zero() {
+                    r
+                } else {
+                    $mag1 - r.into_typed()
+                }
+            }
+        };
+        UBig(repr)
+    }};
+}
+helper_macros::forward_ibig_binop_to_repr!(
+    impl DivEuclid,
+    div_euclid,
+    Output = IBig,
+    impl_ibig_div_euclid
+);
+helper_macros::forward_ibig_binop_to_repr!(
+    impl RemEuclid,
+    rem_euclid,
+    Output = UBig,
+    impl_ibig_rem_euclid
+);
+
+macro_rules! impl_ibig_divrem_euclid {
+    ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {
+        match $sign0 {
+            Positive => {
+                let (q, r) = $mag0.div_rem($mag1);
+                (IBig(q.with_sign($sign1)), UBig(r))
+            }
+            Negative => {
+                let (q, mut r) = $mag0.div_rem($mag1.as_ref());
+                let mut q = IBig(q.with_sign(-$sign1));
+                if !r.is_zero() {
+                    q -= sign_as_int($sign1);
+                    r = $mag1 - r.into_typed();
+                }
+                (q, UBig(r))
+            }
+        }
+    };
+}
+helper_macros::forward_ibig_binop_to_repr!(
+    impl DivRemEuclid, div_rem_euclid -> (IBig, UBig),
+    OutputDiv = IBig, OutputRem = UBig,
+    impl_ibig_divrem_euclid
+);
+helper_macros::impl_binop_assign_by_taking!(
+    impl DivRemAssign<IBig> for IBig, div_rem_assign,
+    OutputRem = IBig, div_rem
+);
+
+// Ops between UBig & IBig
 
 macro_rules! impl_ubig_ibig_div {
     ($mag0:ident, $sign1:ident, $mag1:ident) => {
-        // truncate towards 0.
         IBig(($mag0 / $mag1).with_sign($sign1))
     };
 }
-helper_macros::forward_ubig_ibig_binop_to_repr!(impl Div, div, impl_ubig_ibig_div);
-
-impl Rem<IBig> for UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn rem(self, rhs: IBig) -> UBig {
-        let lhs_mag = self.into_repr();
-        let (_, rhs_mag) = rhs.into_sign_repr();
-        UBig(lhs_mag % rhs_mag)
-    }
+macro_rules! impl_ubig_ibig_rem {
+    ($mag0:ident, $sign1:ident, $mag1:ident) => {{
+        let _unused = $sign1;
+        UBig($mag0 % $mag1)
+    }};
 }
-
-impl<'r> Rem<&'r IBig> for UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn rem(self, rhs: &IBig) -> UBig {
-        let lhs_mag = self.into_repr();
-        let (_, rhs_mag) = rhs.as_sign_repr();
-        UBig(lhs_mag % rhs_mag)
-    }
-}
-
-impl<'l> Rem<IBig> for &'l UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn rem(self, rhs: IBig) -> UBig {
-        let lhs_mag = self.repr();
-        let (_, rhs_mag) = rhs.into_sign_repr();
-        UBig(lhs_mag % rhs_mag)
-    }
-}
-
-impl<'l, 'r> Rem<&'r IBig> for &'l UBig {
-    type Output = UBig;
-
-    #[inline]
-    fn rem(self, rhs: &IBig) -> UBig {
-        let lhs_mag = self.repr();
-        let (_, rhs_mag) = rhs.as_sign_repr();
-        UBig(lhs_mag % rhs_mag)
-    }
-}
+helper_macros::forward_ubig_ibig_binop_to_repr!(impl Div, div, Output = IBig, impl_ubig_ibig_div);
+helper_macros::forward_ubig_ibig_binop_to_repr!(impl Rem, rem, Output = UBig, impl_ubig_ibig_rem);
+helper_macros::impl_binop_assign_by_taking!(impl RemAssign<IBig> for UBig, rem_assign, rem);
 
 macro_rules! impl_ibig_ubig_div {
     ($sign0:ident, $mag0:ident, $mag1:ident) => {
@@ -109,507 +180,101 @@ macro_rules! impl_ibig_ubig_rem {
         IBig(($mag0 % $mag1).with_sign($sign0))
     }};
 }
-helper_macros::forward_ibig_ubig_binop_to_repr!(impl Div, div, impl_ibig_ubig_div);
-helper_macros::forward_ibig_ubig_binop_to_repr!(impl Rem, rem, impl_ibig_ubig_rem);
-helper_macros::forward_binop_assign_by_taking!(impl DivAssign<UBig> for IBig, div_assign, div);
-helper_macros::forward_binop_assign_by_taking!(impl RemAssign<UBig> for IBig, rem_assign, rem);
+helper_macros::forward_ibig_ubig_binop_to_repr!(impl Div, div, Output = IBig, impl_ibig_ubig_div);
+helper_macros::forward_ibig_ubig_binop_to_repr!(impl Rem, rem, Output = IBig, impl_ibig_ubig_rem);
+helper_macros::impl_binop_assign_by_taking!(impl DivAssign<UBig> for IBig, div_assign, div);
+helper_macros::impl_binop_assign_by_taking!(impl RemAssign<UBig> for IBig, rem_assign, rem);
 
-macro_rules! impl_ibig_div_rem {
-    ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {{
-        // truncate towards 0.
-        let (q, r) = $mag0.div_rem($mag1);
-        (
-            IBig(q.with_sign($sign0 * $sign1)),
-            IBig(r.with_sign($sign0)),
-        )
-    }};
-}
-helper_macros::forward_ibig_binop_to_repr!(impl DivRem as divrem, div_rem, impl_ibig_div_rem);
+// Ops with primitives
 
-impl DivEuclid<IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn div_euclid(self, rhs: IBig) -> IBig {
-        let s = rhs.signum();
-        let (q, r) = self.div_rem(rhs);
-        match r.sign() {
-            Positive => q,
-            Negative => q - s,
-        }
-    }
-}
-
-impl DivEuclid<&IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn div_euclid(self, rhs: &IBig) -> IBig {
-        let (q, r) = self.div_rem(rhs);
-        match r.sign() {
-            Positive => q,
-            Negative => q - rhs.signum(),
-        }
-    }
-}
-
-impl DivEuclid<IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn div_euclid(self, rhs: IBig) -> IBig {
-        let s = rhs.signum();
-        let (q, r) = self.div_rem(rhs);
-        match r.sign() {
-            Positive => q,
-            Negative => q - s,
-        }
-    }
-}
-
-impl DivEuclid<&IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn div_euclid(self, rhs: &IBig) -> IBig {
-        let (q, r) = self.div_rem(rhs);
-        match r.sign() {
-            Positive => q,
-            Negative => q - rhs.signum(),
-        }
-    }
-}
-
-impl RemEuclid<IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn rem_euclid(self, rhs: IBig) -> IBig {
-        let r = self % &rhs;
-        match r.sign() {
-            Positive => r,
-            Negative => r + rhs.abs(),
-        }
-    }
-}
-
-impl RemEuclid<&IBig> for IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn rem_euclid(self, rhs: &IBig) -> IBig {
-        let r = self % rhs;
-        match r.sign() {
-            Positive => r,
-            Negative => r + rhs.abs(),
-        }
-    }
-}
-
-impl RemEuclid<IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn rem_euclid(self, rhs: IBig) -> IBig {
-        let r = self % &rhs;
-        match r.sign() {
-            Positive => r,
-            Negative => r + rhs.abs(),
-        }
-    }
-}
-
-impl RemEuclid<&IBig> for &IBig {
-    type Output = IBig;
-
-    #[inline]
-    fn rem_euclid(self, rhs: &IBig) -> IBig {
-        let r = self % rhs;
-        match r.sign() {
-            Positive => r,
-            Negative => r + rhs.abs(),
-        }
-    }
-}
-
-impl DivRemEuclid<IBig> for IBig {
-    type OutputDiv = IBig;
-    type OutputRem = IBig;
-
-    #[inline]
-    fn div_rem_euclid(self, rhs: IBig) -> (IBig, IBig) {
-        let (q, r) = self.div_rem(&rhs);
-        match r.sign() {
-            Positive => (q, r),
-            Negative => (q - rhs.signum(), r + rhs.abs()),
-        }
-    }
-}
-
-impl DivRemEuclid<&IBig> for IBig {
-    type OutputDiv = IBig;
-    type OutputRem = IBig;
-
-    #[inline]
-    fn div_rem_euclid(self, rhs: &IBig) -> (IBig, IBig) {
-        let (q, r) = self.div_rem(rhs);
-        match r.sign() {
-            Positive => (q, r),
-            Negative => (q - rhs.signum(), r + rhs.abs()),
-        }
-    }
-}
-
-impl DivRemEuclid<IBig> for &IBig {
-    type OutputDiv = IBig;
-    type OutputRem = IBig;
-
-    #[inline]
-    fn div_rem_euclid(self, rhs: IBig) -> (IBig, IBig) {
-        let (q, r) = self.div_rem(&rhs);
-        match r.sign() {
-            Positive => (q, r),
-            Negative => (q - rhs.signum(), r + rhs.abs()),
-        }
-    }
-}
-
-impl DivRemEuclid<&IBig> for &IBig {
-    type OutputDiv = IBig;
-    type OutputRem = IBig;
-
-    #[inline]
-    fn div_rem_euclid(self, rhs: &IBig) -> (IBig, IBig) {
-        let (q, r) = self.div_rem(rhs);
-        match r.sign() {
-            Positive => (q, r),
-            Negative => (q - rhs.signum(), r + rhs.abs()),
-        }
-    }
-}
-
-macro_rules! impl_div_ubig_unsigned {
-    ($t:ty) => {
-        impl Div<$t> for UBig {
-            type Output = UBig;
+macro_rules! impl_divrem_with_primitive {
+    (impl <$target:ty> for $t:ty) => {
+        impl DivRem<$target> for $t {
+            type OutputDiv = $t;
+            type OutputRem = $target;
 
             #[inline]
-            fn div(self, rhs: $t) -> UBig {
-                self / UBig::from_unsigned(rhs)
+            fn div_rem(self, rhs: $target) -> ($t, $target) {
+                let (q, r) = self.div_rem(<$t>::from(rhs));
+                (q, r.try_into().unwrap())
             }
         }
 
-        impl Div<$t> for &UBig {
-            type Output = UBig;
+        impl<'l> DivRem<$target> for &'l $t {
+            type OutputDiv = $t;
+            type OutputRem = $target;
 
             #[inline]
-            fn div(self, rhs: $t) -> UBig {
-                self / UBig::from_unsigned(rhs)
+            fn div_rem(self, rhs: $target) -> ($t, $target) {
+                let (q, r) = self.div_rem(<$t>::from(rhs));
+                (q, r.try_into().unwrap())
             }
         }
 
-        helper_macros::forward_binop_second_arg_by_value!(impl Div<$t> for UBig, div);
+        impl<'r> DivRem<&'r $target> for $t {
+            type OutputDiv = $t;
+            type OutputRem = $target;
 
-        impl DivAssign<$t> for UBig {
             #[inline]
-            fn div_assign(&mut self, rhs: $t) {
-                self.div_assign(UBig::from_unsigned(rhs))
+            fn div_rem(self, rhs: &$target) -> ($t, $target) {
+                let (q, r) = self.div_rem(<$t>::from(*rhs));
+                (q, r.try_into().unwrap())
             }
         }
 
-        helper_macros::forward_binop_assign_arg_by_value!(impl DivAssign<$t> for UBig, div_assign);
-
-        impl Rem<$t> for UBig {
-            type Output = $t;
-
-            #[inline]
-            fn rem(self, rhs: $t) -> $t {
-                (self % UBig::from_unsigned(rhs)).try_to_unsigned().unwrap()
-            }
-        }
-
-        impl Rem<$t> for &UBig {
-            type Output = $t;
+        impl<'l, 'r> DivRem<&'r $target> for &'l $t {
+            type OutputDiv = $t;
+            type OutputRem = $target;
 
             #[inline]
-            fn rem(self, rhs: $t) -> $t {
-                (self % UBig::from_unsigned(rhs)).try_to_unsigned().unwrap()
+            fn div_rem(self, rhs: &$target) -> ($t, $target) {
+                let (q, r) = self.div_rem(<$t>::from(*rhs));
+                (q, r.try_into().unwrap())
             }
         }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl Rem<$t> for UBig, rem);
-
-        impl RemAssign<$t> for UBig {
-            #[inline]
-            fn rem_assign(&mut self, rhs: $t) {
-                self.rem_assign(UBig::from_unsigned(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl RemAssign<$t> for UBig, rem_assign);
-
-        impl DivRem<$t> for UBig {
-            type OutputDiv = UBig;
-            type OutputRem = $t;
-
-            #[inline]
-            fn div_rem(self, rhs: $t) -> (UBig, $t) {
-                let (q, r) = self.div_rem(UBig::from_unsigned(rhs));
-                (q, r.try_to_unsigned().unwrap())
-            }
-        }
-
-        impl DivRem<$t> for &UBig {
-            type OutputDiv = UBig;
-            type OutputRem = $t;
-
-            #[inline]
-            fn div_rem(self, rhs: $t) -> (UBig, $t) {
-                let (q, r) = self.div_rem(UBig::from_unsigned(rhs));
-                (q, r.try_to_unsigned().unwrap())
-            }
-        }
-
-        helper_macros::forward_div_rem_second_arg_by_value!(impl DivRem<$t> for UBig, div_rem);
-
-         impl DivEuclid<$t> for UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn div_euclid(self, rhs: $t) -> UBig {
-                UBig::from_ibig(IBig::from(self) / IBig::from_unsigned(rhs))
-            }
-        }
-
-        impl DivEuclid<$t> for &UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn div_euclid(self, rhs: $t) -> UBig {
-                UBig::from_ibig(IBig::from(self) / IBig::from_unsigned(rhs))
-            }
-        }
-        helper_macros::forward_binop_second_arg_by_value!(impl DivEuclid<$t> for UBig, div_euclid);
-
-        impl RemEuclid<$t> for UBig {
-            type Output = $t;
-
-            #[inline]
-            fn rem_euclid(self, rhs: $t) -> $t {
-                self % rhs
-            }
-        }
-
-        impl RemEuclid<$t> for &UBig {
-            type Output = $t;
-
-            #[inline]
-            fn rem_euclid(self, rhs: $t) -> $t {
-                self % rhs
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl RemEuclid<$t> for UBig, rem_euclid);
-
-        impl DivRemEuclid<$t> for UBig {
-            type OutputDiv = UBig;
-            type OutputRem = $t;
-
-            #[inline]
-            fn div_rem_euclid(self, rhs: $t) -> (UBig, $t) {
-                self.div_rem(rhs)
-            }
-        }
-
-        impl DivRemEuclid<$t> for &UBig {
-            type OutputDiv = UBig;
-            type OutputRem = $t;
-
-            #[inline]
-            fn div_rem_euclid(self, rhs: $t) -> (UBig, $t) {
-                self.div_rem(rhs)
-            }
-        }
-
-        helper_macros::forward_div_rem_second_arg_by_value!(impl DivRemEuclid<$t> for UBig, div_rem_euclid);
     };
 }
 
-impl_div_ubig_unsigned!(u8);
-impl_div_ubig_unsigned!(u16);
-impl_div_ubig_unsigned!(u32);
-impl_div_ubig_unsigned!(u64);
-impl_div_ubig_unsigned!(u128);
-impl_div_ubig_unsigned!(usize);
+macro_rules! impl_div_primitive_with_ubig {
+    ($($t:ty)*) => {$(
+        helper_macros::impl_binop_with_primitive!(impl Div<$t> for UBig, div);
+        helper_macros::impl_binop_with_primitive!(impl Rem<$t> for UBig, rem -> $t);
+        helper_macros::impl_binop_assign_with_primitive!(impl DivAssign<$t> for UBig, div_assign);
 
-macro_rules! impl_div_ibig_signed {
-    ($t:ty) => {
-        impl Rem<$t> for IBig {
-            type Output = $t;
-
-            #[inline]
-            fn rem(self, rhs: $t) -> $t {
-                (self % IBig::from_signed(rhs)).try_to_signed().unwrap()
-            }
-        }
-
-        impl Rem<$t> for &IBig {
-            type Output = $t;
-
-            #[inline]
-            fn rem(self, rhs: $t) -> $t {
-                (self % IBig::from_signed(rhs)).try_to_signed().unwrap()
-            }
-        }
-
-        impl DivRem<$t> for IBig {
-            type OutputDiv = IBig;
-            type OutputRem = $t;
-
-            #[inline]
-            fn div_rem(self, rhs: $t) -> (IBig, $t) {
-                let (q, r) = self.div_rem(IBig::from_signed(rhs));
-                (q, r.try_to_signed().unwrap())
-            }
-        }
-
-        impl DivRem<$t> for &IBig {
-            type OutputDiv = IBig;
-            type OutputRem = $t;
-
-            #[inline]
-            fn div_rem(self, rhs: $t) -> (IBig, $t) {
-                let (q, r) = self.div_rem(IBig::from_signed(rhs));
-                (q, r.try_to_signed().unwrap())
-            }
-        }
-
-        impl_div_ibig_primitive!($t);
-    };
+        impl_divrem_with_primitive!(impl <$t> for UBig);
+        helper_macros::impl_binop_assign_with_primitive!(impl DivRemAssign<$t> for UBig, div_rem_assign, OutputRem = $t);
+    )*};
 }
+impl_div_primitive_with_ubig!(u8 u16 u32 u64 u128 usize);
 
-macro_rules! impl_div_ibig_primitive {
-    ($t:ty) => {
-        impl Div<$t> for IBig {
-            type Output = IBig;
+macro_rules! impl_div_primitive_with_ibig {
+    ($($t:ty)*) => {$(
+        helper_macros::impl_binop_with_primitive!(impl Div<$t> for IBig, div);
+        helper_macros::impl_binop_with_primitive!(impl Rem<$t> for IBig, rem -> $t);
+        helper_macros::impl_binop_assign_with_primitive!(impl DivAssign<$t> for IBig, div_assign);
 
-            #[inline]
-            fn div(self, rhs: $t) -> IBig {
-                self.div(IBig::from(rhs))
-            }
-        }
-
-        impl Div<$t> for &IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn div(self, rhs: $t) -> IBig {
-                self.div(IBig::from(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl Div<$t> for IBig, div);
-
-        impl DivAssign<$t> for IBig {
-            #[inline]
-            fn div_assign(&mut self, rhs: $t) {
-                self.div_assign(IBig::from(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl DivAssign<$t> for IBig, div_assign);
-
-        helper_macros::forward_binop_second_arg_by_value!(impl Rem<$t> for IBig, rem);
-
-        impl RemAssign<$t> for IBig {
-            #[inline]
-            fn rem_assign(&mut self, rhs: $t) {
-                self.rem_assign(IBig::from(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl RemAssign<$t> for IBig, rem_assign);
-
-        helper_macros::forward_div_rem_second_arg_by_value!(impl DivRem<$t> for IBig, div_rem);
-
-        impl DivEuclid<$t> for IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn div_euclid(self, rhs: $t) -> IBig {
-                self.div_euclid(IBig::from(rhs))
-            }
-        }
-
-        impl DivEuclid<$t> for &IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn div_euclid(self, rhs: $t) -> IBig {
-                self.div_euclid(IBig::from(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl DivEuclid<$t> for IBig, div_euclid);
-
-        impl RemEuclid<$t> for IBig {
-            type Output = $t;
-
-            #[inline]
-            fn rem_euclid(self, rhs: $t) -> $t {
-                <$t>::try_from(self.rem_euclid(IBig::from(rhs))).unwrap()
-            }
-        }
-
-        impl RemEuclid<$t> for &IBig {
-            type Output = $t;
-
-            #[inline]
-            fn rem_euclid(self, rhs: $t) -> $t {
-                <$t>::try_from(self.rem_euclid(IBig::from(rhs))).unwrap()
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl RemEuclid<$t> for IBig, rem_euclid);
-
-        impl DivRemEuclid<$t> for IBig {
-            type OutputDiv = IBig;
-            type OutputRem = $t;
-
-            #[inline]
-            fn div_rem_euclid(self, rhs: $t) -> (IBig, $t) {
-                let (q, r) = self.div_rem_euclid(IBig::from(rhs));
-                (q, <$t>::try_from(r).unwrap())
-            }
-        }
-
-        impl DivRemEuclid<$t> for &IBig {
-            type OutputDiv = IBig;
-            type OutputRem = $t;
-
-            #[inline]
-            fn div_rem_euclid(self, rhs: $t) -> (IBig, $t) {
-                let (q, r) = self.div_rem_euclid(IBig::from(rhs));
-                (q, <$t>::try_from(r).unwrap())
-            }
-        }
-
-        helper_macros::forward_div_rem_second_arg_by_value!(impl DivRemEuclid<$t> for IBig, div_rem_euclid);
-    };
+        impl_divrem_with_primitive!(impl <$t> for IBig);
+        helper_macros::impl_binop_assign_with_primitive!(impl DivRemAssign<$t> for IBig, div_rem_assign, OutputRem = $t);
+    )*};
 }
-
-impl_div_ibig_signed!(i8);
-impl_div_ibig_signed!(i16);
-impl_div_ibig_signed!(i32);
-impl_div_ibig_signed!(i64);
-impl_div_ibig_signed!(i128);
-impl_div_ibig_signed!(isize);
+impl_div_primitive_with_ibig!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);
 
 mod repr {
     use super::*;
     use crate::{
+        arch::word::{DoubleWord, Word},
+        buffer::Buffer,
+        div,
+        error::panic_divide_by_0,
+        helper_macros::debug_assert_zero,
+        memory::MemoryAllocation,
         primitive::shrink_dword,
-        repr::{Repr, TypedRepr, TypedReprRef},
+        repr::{
+            Repr,
+            TypedRepr::{self, *},
+            TypedReprRef::{self, *},
+        },
+        shift,
     };
 
     impl DivRem<TypedRepr> for TypedRepr {
@@ -642,13 +307,13 @@ mod repr {
             match (self, rhs) {
                 (RefSmall(dword0), Small(dword1)) => div_rem_dword(dword0, dword1),
                 (RefSmall(dword0), Large(_)) => (Repr::zero(), Repr::from_dword(dword0)),
-                (RefLarge(buffer0), Small(dword1)) => div_rem_large_dword(buffer0.into(), dword1),
-                (RefLarge(buffer0), Large(mut buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        div_rem_large(buffer0.into(), buffer1)
+                (RefLarge(words0), Small(dword1)) => div_rem_large_dword(words0.into(), dword1),
+                (RefLarge(words0), Large(mut buffer1)) => {
+                    if words0.len() >= buffer1.len() {
+                        div_rem_large(words0.into(), buffer1)
                     } else {
                         // Reuse buffer1 for the remainder.
-                        buffer1.clone_from_slice(buffer0);
+                        buffer1.clone_from_slice(words0);
                         (Repr::zero(), Repr::from_buffer(buffer1))
                     }
                 }
@@ -666,9 +331,9 @@ mod repr {
                 (Small(dword0), RefSmall(dword1)) => div_rem_dword(dword0, dword1),
                 (Small(dword0), RefLarge(_)) => (Repr::zero(), Repr::from_dword(dword0)),
                 (Large(buffer0), RefSmall(dword1)) => div_rem_large_dword(buffer0, dword1),
-                (Large(buffer0), RefLarge(buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        div_rem_large(buffer0, buffer1.into())
+                (Large(buffer0), RefLarge(words1)) => {
+                    if buffer0.len() >= words1.len() {
+                        div_rem_large(buffer0, words1.into())
                     } else {
                         (Repr::zero(), Repr::from_buffer(buffer0))
                     }
@@ -686,14 +351,12 @@ mod repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => div_rem_dword(dword0, dword1),
                 (RefSmall(dword0), RefLarge(_)) => (Repr::zero(), Repr::from_dword(dword0)),
-                (RefLarge(buffer0), RefSmall(dword1)) => {
-                    div_rem_large_dword(buffer0.into(), dword1)
-                }
-                (RefLarge(buffer0), RefLarge(buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        div_rem_large(buffer0.into(), buffer1.into())
+                (RefLarge(words0), RefSmall(dword1)) => div_rem_large_dword(words0.into(), dword1),
+                (RefLarge(words0), RefLarge(words1)) => {
+                    if words0.len() >= words1.len() {
+                        div_rem_large(words0.into(), words1.into())
                     } else {
-                        (Repr::zero(), Repr::from_buffer(buffer0.into()))
+                        (Repr::zero(), Repr::from_buffer(words0.into()))
                     }
                 }
             }
@@ -726,24 +389,27 @@ mod repr {
         let shift = div_rem_in_lhs(&mut lhs, &mut rhs);
         let n = rhs.len();
         rhs.copy_from_slice(&lhs[..n]);
-        let low_bits = shift::shr_in_place(&mut rhs, shift);
-        debug_assert!(low_bits == 0);
+        debug_assert_zero!(shift::shr_in_place(&mut rhs, shift));
         lhs.erase_front(n);
         (Repr::from_buffer(lhs), Repr::from_buffer(rhs))
     }
 
-    /// lhs = (lhs / rhs, lhs % rhs)
+    /// lhs = [lhs % rhs, lhs / rhs]
     ///
     /// Returns the number of shift bits produced by normalization.
     #[inline]
     fn div_rem_in_lhs(lhs: &mut Buffer, rhs: &mut Buffer) -> u32 {
         let mut allocation =
             MemoryAllocation::new(div::memory_requirement_exact(lhs.len(), rhs.len()));
-        let mut memory = allocation.memory();
-        let (shift, quo_carry) = div::div_rem_unnormalized_in_place(lhs, rhs, &mut memory);
-        if quo_carry > 0 {
-            lhs.push_resizing(quo_carry);
-        }
+        let (shift, fast_div_top) = div::normalize(rhs);
+        let quo_carry = div::div_rem_unshifted_in_place(
+            lhs,
+            rhs,
+            shift,
+            fast_div_top,
+            &mut allocation.memory(),
+        );
+        lhs.push_resizing(quo_carry);
         shift
     }
 
@@ -776,9 +442,9 @@ mod repr {
                 (Small(dword0), RefSmall(dword1)) => div_dword(dword0, dword1),
                 (Small(_), RefLarge(_)) => Repr::zero(),
                 (Large(buffer0), RefSmall(dword1)) => div_large_dword(buffer0, dword1),
-                (Large(buffer0), RefLarge(buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        div_large(buffer0, buffer1.into())
+                (Large(buffer0), RefLarge(words1)) => {
+                    if buffer0.len() >= words1.len() {
+                        div_large(buffer0, words1.into())
                     } else {
                         Repr::zero()
                     }
@@ -795,10 +461,10 @@ mod repr {
             match (self, rhs) {
                 (RefSmall(dword0), Small(dword1)) => div_dword(dword0, dword1),
                 (RefSmall(_), Large(_)) => Repr::zero(),
-                (RefLarge(buffer0), Small(dword1)) => div_large_dword(buffer0.into(), dword1),
-                (RefLarge(buffer0), Large(buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        div_large(buffer0.into(), buffer1)
+                (RefLarge(words0), Small(dword1)) => div_large_dword(words0.into(), dword1),
+                (RefLarge(words1), Large(buffer1)) => {
+                    if words1.len() >= buffer1.len() {
+                        div_large(words1.into(), buffer1)
                     } else {
                         Repr::zero()
                     }
@@ -815,10 +481,10 @@ mod repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => div_dword(dword0, dword1),
                 (RefSmall(_), RefLarge(_)) => Repr::zero(),
-                (RefLarge(buffer0), RefSmall(dword1)) => div_large_dword(buffer0.into(), dword1),
-                (RefLarge(buffer0), RefLarge(buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        div_large(buffer0.into(), buffer1.into())
+                (RefLarge(words0), RefSmall(dword1)) => div_large_dword(words0.into(), dword1),
+                (RefLarge(words0), RefLarge(words1)) => {
+                    if words0.len() >= words1.len() {
+                        div_large(words0.into(), words1.into())
                     } else {
                         Repr::zero()
                     }
@@ -876,9 +542,9 @@ mod repr {
                 (Small(dword0), RefSmall(dword1)) => rem_dword(dword0, dword1),
                 (Small(dword0), RefLarge(_)) => Repr::from_dword(dword0),
                 (Large(buffer0), RefSmall(dword1)) => rem_large_dword(&buffer0, dword1),
-                (Large(buffer0), RefLarge(buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        rem_large(buffer0, buffer1.into())
+                (Large(buffer0), RefLarge(words1)) => {
+                    if buffer0.len() >= words1.len() {
+                        rem_large(buffer0, words1.into())
                     } else {
                         Repr::from_buffer(buffer0)
                     }
@@ -895,13 +561,13 @@ mod repr {
             match (self, rhs) {
                 (RefSmall(dword0), Small(dword1)) => rem_dword(dword0, dword1),
                 (RefSmall(dword0), Large(_)) => Repr::from_dword(dword0),
-                (RefLarge(buffer0), Small(dword1)) => rem_large_dword(buffer0, dword1),
-                (RefLarge(buffer0), Large(mut buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        rem_large(buffer0.into(), buffer1)
+                (RefLarge(words0), Small(dword1)) => rem_large_dword(words0, dword1),
+                (RefLarge(words0), Large(mut buffer1)) => {
+                    if words0.len() >= buffer1.len() {
+                        rem_large(words0.into(), buffer1)
                     } else {
                         // Reuse buffer1 for the remainder.
-                        buffer1.clone_from_slice(buffer0);
+                        buffer1.clone_from_slice(words0);
                         Repr::from_buffer(buffer1)
                     }
                 }
@@ -917,12 +583,12 @@ mod repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => rem_dword(dword0, dword1),
                 (RefSmall(dword0), RefLarge(_)) => Repr::from_dword(dword0),
-                (RefLarge(buffer0), RefSmall(dword1)) => rem_large_dword(buffer0, dword1),
-                (RefLarge(buffer0), RefLarge(buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        rem_large(buffer0.into(), buffer1.into())
+                (RefLarge(words0), RefSmall(dword1)) => rem_large_dword(words0, dword1),
+                (RefLarge(words0), RefLarge(words1)) => {
+                    if words0.len() >= words1.len() {
+                        rem_large(words0.into(), words1.into())
                     } else {
-                        Repr::from_buffer(buffer0.into())
+                        Repr::from_buffer(words0.into())
                     }
                 }
             }
@@ -953,12 +619,9 @@ mod repr {
         let shift = div_rem_in_lhs(&mut lhs, &mut rhs);
         let n = rhs.len();
         rhs.copy_from_slice(&lhs[..n]);
-        let low_bits = shift::shr_in_place(&mut rhs, shift);
-        debug_assert!(low_bits == 0);
+        debug_assert_zero!(shift::shr_in_place(&mut rhs, shift));
         Repr::from_buffer(rhs)
     }
 }
 
-fn panic_divide_by_0() -> ! {
-    panic!("divide by 0")
-}
+// TODO: implement div, rem, div_rem, div_assign, rem_assign, div_rem_assign with ConstDivisor

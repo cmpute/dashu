@@ -7,7 +7,7 @@ use crate::{
         word::{DoubleWord, SignedWord, Word},
     },
     primitive::{split_dword, PrimitiveSigned},
-    sign::Sign::{self, *},
+    Sign::{self, *},
 };
 use core::cmp::Ordering::*;
 

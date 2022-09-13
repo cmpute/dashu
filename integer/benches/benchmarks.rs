@@ -6,7 +6,11 @@ use criterion::{
     black_box, criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion,
     PlotConfiguration,
 };
-use dashu_int::{modular::ModuloRing, ops::DivRem, ubig, UBig};
+use dashu_int::{
+    modular::ModuloRing,
+    ops::{DivRem, ExtendedGcd, Gcd},
+    UBig,
+};
 use rand::prelude::*;
 use std::fmt::Write;
 
@@ -14,7 +18,7 @@ fn random_ubig<R>(bits: usize, rng: &mut R) -> UBig
 where
     R: Rng + ?Sized,
 {
-    rng.gen_range(ubig!(1) << (bits - 1)..ubig!(1) << bits)
+    rng.gen_range(UBig::ONE << (bits - 1)..UBig::ONE << bits)
 }
 
 fn bench_add(criterion: &mut Criterion) {
@@ -200,7 +204,7 @@ fn bench_pow(criterion: &mut Criterion) {
     for log_power in 1..=6 {
         let p = 10usize.pow(log_power);
         group.bench_with_input(BenchmarkId::from_parameter(p), &p, |bencher, p| {
-            bencher.iter(|| ubig!(3).pow(*p))
+            bencher.iter(|| UBig::from(3u8).pow(*p))
         });
     }
 
@@ -238,7 +242,7 @@ fn bench_modulo_pow(criterion: &mut Criterion) {
         let bits = 10usize.pow(log_bits);
         let m = random_ubig(bits, &mut rng);
         let ring = ModuloRing::new(m);
-        let a = ring.convert(&random_ubig(bits, &mut rng));
+        let a = ring.convert(&random_ubig(2048, &mut rng));
         let b = random_ubig(bits, &mut rng);
         group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
             bencher.iter(|| black_box(&a).pow(&b))

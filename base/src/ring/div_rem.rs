@@ -11,7 +11,7 @@ macro_rules! impl_div_rem_ops_prim {
             }
         }
         impl DivRemAssign for $T {
-            type Output = $T;
+            type OutputRem = $T;
             #[inline]
             fn div_rem_assign(&mut self, rhs: $T) -> $T {
                 let r = *self % rhs;
@@ -53,7 +53,7 @@ macro_rules! impl_div_rem_ops_prim {
         }
     )*}
 }
-impl_div_rem_ops_prim!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128);
+impl_div_rem_ops_prim!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);
 
 #[cfg(test)]
 mod tests {

@@ -10,6 +10,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/cmpute/dashu"
 homepage = "https://github.com/cmpute/dashu"
 readme = "README.md"
+rust-version = "1.61"
 
 [package.metadata.docs.rs]
 all-features = true

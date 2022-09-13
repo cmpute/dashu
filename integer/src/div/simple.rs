@@ -4,11 +4,10 @@ use crate::{
     add,
     arch::word::Word,
     cmp,
-    fast_divide::FastDivideNormalized2,
+    fast_div::FastDivideNormalized2,
     mul,
     primitive::{double_word, highest_dword, split_dword},
 };
-use core::cmp::Ordering;
 
 /// Division in place using the simple algorithm.
 ///
@@ -32,7 +31,7 @@ pub(crate) fn div_rem_in_place(
     let lhs_len = lhs.len();
     assert!(lhs_len >= n);
 
-    let quotient_carry = cmp::cmp_same_len(&lhs[lhs_len - n..], rhs) >= Ordering::Equal;
+    let quotient_carry = cmp::cmp_same_len(&lhs[lhs_len - n..], rhs).is_ge();
     if quotient_carry {
         let overflow = add::sub_same_len_in_place(&mut lhs[lhs_len - n..], rhs);
         debug_assert!(!overflow);
@@ -53,7 +52,7 @@ pub(crate) fn div_rem_in_place(
     quotient_carry
 }
 
-/// Do one step division on lhs by rhs, get the higest word of the quotient.
+/// Do one step division on lhs by rhs, get the highest word of the quotient.
 ///
 /// Rhs must be normalized, lhs.len() > rhs.len() and lhs[lhs.len() - rhs.len()..]
 /// must be smaller than rhs.
@@ -73,10 +72,7 @@ pub(crate) fn div_rem_highest_word(
     debug_assert!(lhs_lo_len >= n);
     debug_assert!(lhs_top
         .cmp(rhs_top)
-        .then(cmp::cmp_same_len(
-            &lhs_lo[lhs_lo_len - rhs_lo.len()..],
-            rhs_lo
-        ))
+        .then(cmp::cmp_same_len(&lhs_lo[lhs_lo_len - rhs_lo.len()..], rhs_lo))
         .is_le());
 
     // lhs0 = lhs_top

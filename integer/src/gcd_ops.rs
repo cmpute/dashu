@@ -1,59 +1,64 @@
 //! Operators for finding greatest common divisor.
 
 use crate::{
-    arch::word::{DoubleWord, Word},
-    buffer::Buffer,
-    div, gcd,
+    helper_macros::{forward_ibig_binop_to_repr, forward_ubig_binop_to_repr},
     ibig::IBig,
-    memory,
-    memory::MemoryAllocation,
-    mul,
-    repr::{TypedRepr::*, TypedReprRef::*},
-    sign::Sign,
     ubig::UBig,
+    Sign,
 };
-use core::cmp::Ordering;
 use dashu_base::ring::{ExtendedGcd, Gcd};
 
-impl UBig {
-    /// Compute the greatest common divisor between self and the other operand
-    ///
-    /// # Example
-    /// ```
-    /// # use dashu_int::ubig;
-    /// assert_eq!(ubig!(12).gcd(&ubig!(18)), ubig!(6));
-    /// ```
-    ///
-    /// Panics if two oprands are both zero.
-    #[inline]
-    pub fn gcd(&self, rhs: &UBig) -> UBig {
-        UBig(self.repr().gcd(rhs.repr()))
-    }
+forward_ubig_binop_to_repr!(impl Gcd, gcd);
 
-    /// Compute the greatest common divisor between self and the other operand, and return
-    /// both the common divisor `g` and the Bézout coefficients.
-    ///
-    /// # Example
-    /// ```
-    /// # use dashu_int::{ibig, ubig};
-    /// assert_eq!(ubig!(12).gcd_ext(&ubig!(18)), (ubig!(6), ibig!(-1), ibig!(1)));
-    /// ```
-    ///
-    /// Panics if two oprands are both zero.
-    #[inline]
-    pub fn gcd_ext(&self, rhs: &UBig) -> (UBig, IBig, IBig) {
-        let (r, s, t) = self.clone().into_repr().gcd_ext(rhs.clone().into_repr());
+macro_rules! impl_ubig_gcd_ext {
+    ($repr0:ident, $repr1:ident) => {{
+        let (r, s, t) = $repr0.gcd_ext($repr1);
         (UBig(r), IBig(s), IBig(t))
-    }
+    }};
 }
+forward_ubig_binop_to_repr!(
+    impl ExtendedGcd, gcd_ext -> (UBig, IBig, IBig),
+    OutputGcd = UBig, OutputCoeff = IBig,
+    impl_ubig_gcd_ext
+);
+
+macro_rules! impl_ibig_gcd {
+    ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {{
+        let _unused = ($sign0, $sign1);
+        UBig($mag0.gcd($mag1))
+    }};
+}
+forward_ibig_binop_to_repr!(impl Gcd, gcd, Output = UBig, impl_ibig_gcd);
+
+macro_rules! impl_ibig_gcd_ext {
+    ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {{
+        let (r, s, t) = $mag0.gcd_ext($mag1);
+        (UBig(r), $sign0 * IBig(s), $sign1 * IBig(t))
+    }};
+}
+forward_ibig_binop_to_repr!(
+    impl ExtendedGcd, gcd_ext -> (UBig, IBig, IBig),
+    OutputGcd = UBig, OutputCoeff = IBig,
+    impl_ibig_gcd_ext
+);
 
 mod repr {
     use super::*;
     use crate::{
-        add, cmp,
+        add,
+        arch::word::{DoubleWord, Word},
+        buffer::Buffer,
+        cmp, div, gcd, memory,
+        memory::MemoryAllocation,
+        mul,
         primitive::{shrink_dword, PrimitiveSigned},
-        repr::{Repr, TypedRepr, TypedReprRef},
+        repr::{
+            Repr,
+            TypedRepr::{self, *},
+            TypedReprRef::{self, *},
+        },
     };
+    use core::cmp::Ordering;
 
     impl<'l, 'r> Gcd<TypedReprRef<'r>> for TypedReprRef<'l> {
         type Output = Repr;
@@ -61,14 +66,38 @@ mod repr {
         fn gcd(self, rhs: TypedReprRef) -> Repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => Repr::from_dword(dword0.gcd(dword1)),
-                (RefSmall(dword0), RefLarge(buffer1)) => gcd_large_dword(buffer1, dword0),
-                (RefLarge(buffer0), RefSmall(dword1)) => gcd_large_dword(buffer0, dword1),
-                (RefLarge(buffer0), RefLarge(buffer1)) => gcd_large(buffer0.into(), buffer1.into()),
+                (RefSmall(dword0), RefLarge(words1)) => gcd_large_dword(words1, dword0),
+                (RefLarge(words0), RefSmall(dword1)) => gcd_large_dword(words0, dword1),
+                (RefLarge(words0), RefLarge(words1)) => gcd_large(words0.into(), words1.into()),
             }
         }
     }
 
-    /// Perform gcd on a large number with a `Word`.
+    impl<'l> Gcd<TypedRepr> for TypedReprRef<'l> {
+        type Output = Repr;
+        #[inline]
+        fn gcd(self, rhs: TypedRepr) -> Self::Output {
+            self.gcd(rhs.as_ref())
+        }
+    }
+
+    impl<'r> Gcd<TypedReprRef<'r>> for TypedRepr {
+        type Output = Repr;
+        #[inline]
+        fn gcd(self, rhs: TypedReprRef) -> Self::Output {
+            self.as_ref().gcd(rhs)
+        }
+    }
+
+    impl Gcd<TypedRepr> for TypedRepr {
+        type Output = Repr;
+        #[inline]
+        fn gcd(self, rhs: TypedRepr) -> Self::Output {
+            self.as_ref().gcd(rhs.as_ref())
+        }
+    }
+
+    /// Perform gcd on a large number with a `DoubleWord`.
     #[inline]
     fn gcd_large_dword(buffer: &[Word], rhs: DoubleWord) -> Repr {
         if rhs == 0 {
@@ -104,9 +133,8 @@ mod repr {
 
         let mut allocation =
             MemoryAllocation::new(gcd::memory_requirement_exact(lhs.len(), rhs.len()));
-        let mut memory = allocation.memory();
 
-        let (len, swapped) = gcd::gcd_in_place(&mut lhs, &mut rhs, &mut memory);
+        let (len, swapped) = gcd::gcd_in_place(&mut lhs, &mut rhs, &mut allocation.memory());
         if swapped {
             rhs.truncate(len);
             Repr::from_buffer(rhs)
@@ -116,22 +144,65 @@ mod repr {
         }
     }
 
-    impl ExtendedGcd<TypedRepr> for TypedRepr {
+    impl<'l, 'r> ExtendedGcd<TypedReprRef<'r>> for TypedReprRef<'l> {
+        type OutputCoeff = Repr;
+        type OutputGcd = Repr;
+
+        fn gcd_ext(self, rhs: TypedReprRef<'r>) -> (Repr, Repr, Repr) {
+            match (self, rhs) {
+                (RefSmall(dword0), RefSmall(dword1)) => gcd_ext_dword(dword0, dword1),
+                (RefLarge(words0), RefSmall(dword1)) => gcd_ext_large_dword(words0.into(), dword1),
+                (RefSmall(dword0), RefLarge(words1)) => {
+                    let (g, s, t) = gcd_ext_large_dword(words1.into(), dword0);
+                    (g, t, s)
+                }
+                (RefLarge(words0), RefLarge(words1)) => gcd_ext_large(words0.into(), words1.into()),
+            }
+        }
+    }
+
+    impl<'r> ExtendedGcd<TypedReprRef<'r>> for TypedRepr {
+        type OutputCoeff = Repr;
+        type OutputGcd = Repr;
+
+        fn gcd_ext(self, rhs: TypedReprRef<'r>) -> (Repr, Repr, Repr) {
+            match (self, rhs) {
+                (Small(dword0), RefSmall(dword1)) => gcd_ext_dword(dword0, dword1),
+                (Large(buffer0), RefSmall(dword1)) => gcd_ext_large_dword(buffer0, dword1),
+                (Small(dword0), RefLarge(words1)) => {
+                    let (g, s, t) = gcd_ext_large_dword(words1.into(), dword0);
+                    (g, t, s)
+                }
+                (Large(buffer0), RefLarge(words1)) => gcd_ext_large(buffer0, words1.into()),
+            }
+        }
+    }
+
+    impl<'l> ExtendedGcd<TypedRepr> for TypedReprRef<'l> {
         type OutputCoeff = Repr;
         type OutputGcd = Repr;
 
         fn gcd_ext(self, rhs: TypedRepr) -> (Repr, Repr, Repr) {
             match (self, rhs) {
-                (Small(dword0), Small(dword1)) => {
-                    let (g, s, t) = dword0.gcd_ext(dword1);
-                    let (s_sign, s_mag) = s.to_sign_magnitude();
-                    let (t_sign, t_mag) = t.to_sign_magnitude();
-                    (
-                        Repr::from_dword(g),
-                        Repr::from_dword(s_mag).with_sign(s_sign),
-                        Repr::from_dword(t_mag).with_sign(t_sign),
-                    )
+                (RefSmall(dword0), Small(dword1)) => gcd_ext_dword(dword0, dword1),
+                (RefLarge(words0), Small(dword1)) => gcd_ext_large_dword(words0.into(), dword1),
+                (RefSmall(dword0), Large(buffer1)) => {
+                    let (g, s, t) = gcd_ext_large_dword(buffer1, dword0);
+                    (g, t, s)
                 }
+                (RefLarge(words0), Large(buffer1)) => gcd_ext_large(words0.into(), buffer1),
+            }
+        }
+    }
+
+    impl ExtendedGcd<TypedRepr> for TypedRepr {
+        type OutputCoeff = Repr;
+        type OutputGcd = Repr;
+
+        #[inline]
+        fn gcd_ext(self, rhs: TypedRepr) -> (Repr, Repr, Repr) {
+            match (self, rhs) {
+                (Small(dword0), Small(dword1)) => gcd_ext_dword(dword0, dword1),
                 (Large(buffer0), Small(dword1)) => gcd_ext_large_dword(buffer0, dword1),
                 (Small(dword0), Large(buffer1)) => {
                     let (g, s, t) = gcd_ext_large_dword(buffer1, dword0);
@@ -140,6 +211,18 @@ mod repr {
                 (Large(buffer0), Large(buffer1)) => gcd_ext_large(buffer0, buffer1),
             }
         }
+    }
+
+    #[inline]
+    fn gcd_ext_dword(lhs: DoubleWord, rhs: DoubleWord) -> (Repr, Repr, Repr) {
+        let (g, s, t) = lhs.gcd_ext(rhs);
+        let (s_sign, s_mag) = s.to_sign_magnitude();
+        let (t_sign, t_mag) = t.to_sign_magnitude();
+        (
+            Repr::from_dword(g),
+            Repr::from_dword(s_mag).with_sign(s_sign),
+            Repr::from_dword(t_mag).with_sign(t_sign),
+        )
     }
 
     /// Perform extended gcd on a large number with a `Word`.
@@ -216,14 +299,7 @@ mod repr {
         // residue = g - rhs * b
         let brhs_len = rhs_clone.len() + b.len();
         let (residue, mut memory) = memory.allocate_slice_fill(brhs_len + 1, 0);
-        let carry = mul::add_signed_mul(
-            &mut residue[..brhs_len],
-            Sign::Positive,
-            rhs_clone,
-            &b,
-            &mut memory,
-        );
-        debug_assert!(carry == 0);
+        mul::multiply(&mut residue[..brhs_len], rhs_clone, &b, &mut memory);
         match b_sign {
             Sign::Negative => {
                 *residue.last_mut().unwrap() = add::add_in_place(residue, &g) as Word;
@@ -235,9 +311,11 @@ mod repr {
         };
 
         // a = residue / lhs
-        let (_, overflow) = div::div_rem_unnormalized_in_place(residue, lhs_clone, &mut memory);
+        let (shift, fast_div_top) = div::normalize(lhs_clone);
+        let overflow =
+            div::div_rem_unshifted_in_place(residue, lhs_clone, shift, fast_div_top, &mut memory);
         let mut a = Buffer::from(&residue[lhs_len..]);
-        debug_assert!(residue[0] == 0); // this division is an exact division
+        debug_assert_eq!(residue[0], 0); // this division is an exact division
         if overflow > 0 {
             a.push(overflow);
         }

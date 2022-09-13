@@ -2,8 +2,9 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
-    fast_divide::{FastDivideNormalized, FastDivideNormalized2},
-    math::shl_dword,
+    fast_div::{FastDivideNormalized, FastDivideNormalized2},
+    helper_macros::debug_assert_zero,
+    math::{shl_dword, shr_word},
     memory::{self, Memory},
     primitive::{double_word, extend_word, highest_dword, lowest_dword, split_dword, WORD_BITS},
     shift,
@@ -12,9 +13,10 @@ use alloc::alloc::Layout;
 
 mod divide_conquer;
 mod simple;
+pub(crate) use simple::div_rem_highest_word;
 
 /// If divisor or quotient is at most this length, use the simple division algorithm.
-const MAX_LEN_SIMPLE: usize = 32;
+const THRESHOLD_SIMPLE: usize = 32;
 
 /// Normalize a divisor represented as words.
 ///
@@ -22,8 +24,7 @@ const MAX_LEN_SIMPLE: usize = 32;
 #[inline]
 pub(crate) fn normalize(words: &mut [Word]) -> (u32, FastDivideNormalized2) {
     let shift = words.last().unwrap().leading_zeros();
-    let overflow = shift::shl_in_place(words, shift);
-    debug_assert!(overflow == 0);
+    debug_assert_zero!(shift::shl_in_place(words, shift));
     let top_words = highest_dword(words);
     (shift, FastDivideNormalized2::new(top_words))
 }
@@ -37,14 +38,17 @@ pub(crate) fn normalize(words: &mut [Word]) -> (u32, FastDivideNormalized2) {
 pub fn div_by_word_in_place(words: &mut [Word], rhs: Word) -> Word {
     debug_assert!(rhs != 0 && !words.is_empty());
 
-    if rhs.is_power_of_two() {
-        let sh = rhs.trailing_zeros();
-        let rem = shift::shr_in_place(words, sh);
-        return rem;
+    if rhs == 1 {
+        return 0;
+    } else if rhs.is_power_of_two() {
+        let shift = rhs.trailing_zeros();
+        let rem = shift::shr_in_place(words, shift);
+        return rem >> (WORD_BITS - shift);
     }
 
-    let fast_div_rhs = FastDivideNormalized::new(rhs << rhs.leading_zeros());
-    fast_div_by_word_in_place(words, rhs, fast_div_rhs)
+    let shift = rhs.leading_zeros();
+    let fast_div_rhs = FastDivideNormalized::new(rhs << shift);
+    fast_div_by_word_in_place(words, shift, fast_div_rhs)
 }
 
 /// words = words / rhs
@@ -53,10 +57,9 @@ pub fn div_by_word_in_place(words: &mut [Word], rhs: Word) -> Word {
 #[must_use]
 pub(crate) fn fast_div_by_word_in_place(
     words: &mut [Word],
-    rhs: Word,
+    shift: u32,
     fast_div_rhs: FastDivideNormalized,
 ) -> Word {
-    let shift = rhs.leading_zeros();
     let mut rem = shift::shl_in_place(words, shift);
 
     for word in words.iter_mut().rev() {
@@ -113,22 +116,25 @@ pub(crate) fn fast_rem_by_normalized_word(
 ///
 /// Returns words % rhs. Panics if `words` is too short (<= 2 words)
 pub fn div_by_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleWord {
-    debug_assert!(
-        rhs > Word::MAX as DoubleWord,
-        "call div_by_word_in_place when rhs is small"
-    );
+    debug_assert!(rhs > Word::MAX as DoubleWord, "call div_by_word_in_place when rhs is small");
     debug_assert!(words.len() >= 2);
 
     if rhs.is_power_of_two() {
-        let sh = rhs.trailing_zeros();
-        debug_assert!(sh < WORD_BITS); // high word of rhs must not be zero
-        let (first, words_hi) = words.split_first_mut().unwrap();
-        let rem = shift::shr_in_place(words_hi, sh);
-        return double_word(rem, *first);
+        let first = shift::shr_in_place_one_word(words);
+        let shift = rhs.trailing_zeros() - WORD_BITS;
+        if shift == 0 {
+            return extend_word(first);
+        } else {
+            let n2 = shift::shr_in_place(words, shift);
+            let (n1, n0) = shr_word(first, shift);
+            return double_word(n0, n1 | n2) >> (WORD_BITS - shift);
+        }
     }
 
-    let fast_div_rhs = FastDivideNormalized2::new(rhs << rhs.leading_zeros());
-    fast_div_by_dword_in_place(words, rhs, fast_div_rhs)
+    let shift = rhs.leading_zeros();
+    debug_assert!(shift < WORD_BITS); // high word of rhs must not be zero
+    let fast_div_rhs = FastDivideNormalized2::new(rhs << shift);
+    fast_div_by_dword_in_place(words, shift, fast_div_rhs)
 }
 
 /// words = words / rhs
@@ -137,11 +143,10 @@ pub fn div_by_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> DoubleWord 
 #[must_use]
 pub(crate) fn fast_div_by_dword_in_place(
     words: &mut [Word],
-    rhs: DoubleWord,
+    shift: u32,
     fast_div_rhs: FastDivideNormalized2,
 ) -> DoubleWord {
-    debug_assert!(words.len() >= 2);
-    let shift = rhs.leading_zeros();
+    debug_assert!(words.len() >= 2 && shift < WORD_BITS);
     let hi = shift::shl_in_place(words, shift);
 
     // first div [hi, last word, second last word] by rhs
@@ -177,10 +182,7 @@ pub(crate) fn fast_div_by_dword_in_place(
 
 /// words % rhs, panics if `words` is too short (<= 2 words) or rhs fits in a single Word.
 pub fn rem_by_dword(words: &[Word], rhs: DoubleWord) -> DoubleWord {
-    debug_assert!(
-        rhs > Word::MAX as DoubleWord,
-        "call div_by_word_in_place when rhs is small"
-    );
+    debug_assert!(rhs > Word::MAX as DoubleWord, "call div_by_word_in_place when rhs is small");
     debug_assert!(words.len() >= 2);
 
     if rhs.is_power_of_two() {
@@ -232,7 +234,7 @@ pub(crate) fn fast_rem_by_normalized_dword(
 /// Memory requirement for division.
 pub fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> Layout {
     assert!(lhs_len >= rhs_len && rhs_len >= 2);
-    if rhs_len <= MAX_LEN_SIMPLE || lhs_len - rhs_len <= MAX_LEN_SIMPLE {
+    if rhs_len <= THRESHOLD_SIMPLE || lhs_len - rhs_len <= THRESHOLD_SIMPLE {
         memory::zero_layout()
     } else {
         divide_conquer::memory_requirement_exact(lhs_len, rhs_len)
@@ -242,9 +244,10 @@ pub fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> Layout {
 /// Divide lhs by rhs, replacing the top words of lhs by the quotient and the
 /// bottom words of lhs by the remainder.
 ///
-/// rhs must have at least 2 words and be normalized (the top bit must be 1).
-///
 /// `lhs = [lhs % rhs, lhs / rhs]`
+///
+/// `rhs` must have at least 2 words and be normalized (the top bit must be 1).
+/// `lhs` must be pre-applied the shift from fast_div_rhs_top.
 ///
 /// Returns carry in the quotient. It is at most 1 because rhs is normalized.
 #[must_use]
@@ -254,9 +257,9 @@ pub(crate) fn div_rem_in_place(
     fast_div_rhs_top: FastDivideNormalized2,
     memory: &mut Memory,
 ) -> bool {
-    assert!(lhs.len() >= rhs.len() && rhs.len() >= 2);
+    debug_assert!(lhs.len() >= rhs.len() && rhs.len() >= 2);
 
-    if rhs.len() <= MAX_LEN_SIMPLE || lhs.len() - rhs.len() <= MAX_LEN_SIMPLE {
+    if rhs.len() <= THRESHOLD_SIMPLE || lhs.len() - rhs.len() <= THRESHOLD_SIMPLE {
         simple::div_rem_in_place(lhs, rhs, fast_div_rhs_top)
     } else {
         divide_conquer::div_rem_in_place(lhs, rhs, fast_div_rhs_top, memory)
@@ -268,23 +271,26 @@ pub(crate) fn div_rem_in_place(
 ///
 /// `lhs = [lhs % rhs, lhs / rhs]`
 ///
-/// There is no normalization requirements on both oprands.
+/// `rhs` must have at least 2 words and be normalized (the top bit must be 1).
+/// `lhs` should not be preprocessed, it will be shifted by this function
 ///
-/// Returns carry in the quotient and the number of shifted bits caused by normalization.
-/// To get the actual remainder, the remainder should be shifted by the number.
-pub(crate) fn div_rem_unnormalized_in_place(
+/// Returns carry in the quotient. It is at most 1 because rhs is normalized.
+/// To get the actual remainder, the remainder should be shifted back.
+pub(crate) fn div_rem_unshifted_in_place(
     lhs: &mut [Word],
-    rhs: &mut [Word],
+    rhs: &[Word],
+    shift: u32,
+    fast_div_rhs_top: FastDivideNormalized2,
     memory: &mut Memory,
-) -> (u32, Word) {
-    let (shift, fast_div_rhs_top) = normalize(rhs);
+) -> Word {
+    // prerequisite: let (shift, fast_div_rhs_top) = normalize(rhs);
     let lhs_carry = shift::shl_in_place(lhs, shift);
     let mut q_top = if lhs_carry > 0 {
-        simple::div_rem_highest_word(lhs_carry, lhs, rhs, fast_div_rhs_top)
+        div_rem_highest_word(lhs_carry, lhs, rhs, fast_div_rhs_top)
     } else {
         0
     };
     let overflow = div_rem_in_place(lhs, rhs, fast_div_rhs_top, memory);
     q_top += overflow as Word;
-    (shift, q_top)
+    q_top
 }

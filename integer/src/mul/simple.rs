@@ -5,24 +5,16 @@ use crate::{
         self,
         word::{SignedWord, Word},
     },
-    memory::{self, Memory},
+    memory::Memory,
     mul::{self, helpers},
-    sign::Sign::{self, *},
+    Sign::{self, *},
 };
-use alloc::alloc::Layout;
 
 /// Split larger length into chunks of CHUNK_LEN..2 * CHUNK_LEN for memory locality.
 const CHUNK_LEN: usize = 1024;
 
 /// Max supported Smaller factor length.
 pub const MAX_SMALLER_LEN: usize = CHUNK_LEN;
-
-/// Temporary memory required for multiplication.
-///
-/// n bounds the length of the Smaller factor in words.
-pub fn memory_requirement_up_to(_n: usize) -> Layout {
-    memory::zero_layout()
-}
 
 /// c += sign * a * b
 /// Simple method: O(a.len() * b.len()).

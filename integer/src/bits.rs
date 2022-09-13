@@ -1,48 +1,10 @@
 //! Bitwise operators.
 
-use crate::{
-    arch::word::{DoubleWord, Word},
-    buffer::Buffer,
-    helper_macros,
-    ibig::IBig,
-    math,
-    ops::PowerOfTwo,
-    primitive::{lowest_dword, split_dword, DWORD_BITS_USIZE, WORD_BITS_USIZE},
-    repr::{Repr, TypedRepr::*, TypedReprRef::*},
-    sign::Sign::*,
-    ubig::UBig,
-};
+use crate::{arch::word::Word, helper_macros, ibig::IBig, ops::PowerOfTwo, ubig::UBig, Sign::*};
 use core::{
     mem,
     ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not},
 };
-
-/// Count the trailing zero bits in the words.
-///
-/// # Panic
-/// Panics if the input is zero
-#[inline]
-pub fn trailing_zeros(words: &[Word]) -> usize {
-    for (idx, word) in words.iter().enumerate() {
-        if *word != 0 {
-            return idx * WORD_BITS_USIZE + word.trailing_zeros() as usize;
-        }
-    }
-
-    panic!("call trailing_zeros on 0")
-}
-
-/// Locate the top non-zero word in a slice. It returns the position of the
-/// word added by one for convenience, if the input is zero, then 0 is returned.
-#[inline]
-pub fn locate_top_word_plus_one(words: &[Word]) -> usize {
-    for pos in (0..words.len()).rev() {
-        if words[pos] != 0 {
-            return pos + 1;
-        }
-    }
-    0
-}
 
 impl UBig {
     /// Returns true if the `n`-th bit is set, n starts from 0.
@@ -50,20 +12,14 @@ impl UBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::ubig;
-    /// assert_eq!(ubig!(0b10010).bit(1), true);
-    /// assert_eq!(ubig!(0b10010).bit(3), false);
-    /// assert_eq!(ubig!(0b10010).bit(100), false);
+    /// # use dashu_int::UBig;
+    /// assert_eq!(UBig::from(0b10010u16).bit(1), true);
+    /// assert_eq!(UBig::from(0b10010u16).bit(3), false);
+    /// assert_eq!(UBig::from(0b10010u16).bit(100), false);
     /// ```
     #[inline]
     pub fn bit(&self, n: usize) -> bool {
-        match self.repr() {
-            RefSmall(dword) => n < DWORD_BITS_USIZE && dword & 1 << n != 0,
-            RefLarge(buffer) => {
-                let idx = n / WORD_BITS_USIZE;
-                idx < buffer.len() && buffer[idx] & 1 << (n % WORD_BITS_USIZE) != 0
-            }
-        }
+        self.repr().bit(n)
     }
 
     /// Set the `n`-th bit, n starts from 0.
@@ -71,52 +27,17 @@ impl UBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::ubig;
+    /// # use dashu_int::UBig;
     ///
-    /// let mut a = ubig!(0b100);
+    /// let mut a = UBig::from(0b100u8);
     /// a.set_bit(0);
-    /// assert_eq!(a, ubig!(0b101));
+    /// assert_eq!(a, UBig::from(0b101u8));
     /// a.set_bit(10);
-    /// assert_eq!(a, ubig!(0b10000000101));
+    /// assert_eq!(a, UBig::from(0b10000000101u16));
     /// ```
     #[inline]
     pub fn set_bit(&mut self, n: usize) {
-        match mem::take(self).into_repr() {
-            Small(dword) => {
-                if n < DWORD_BITS_USIZE {
-                    self.0 = Repr::from_dword(dword | 1 << n);
-                } else {
-                    self.0 = Self::with_bit_dword_spilled(dword, n);
-                }
-            }
-            Large(buffer) => {
-                self.0 = Self::with_bit_large(buffer, n);
-            }
-        }
-    }
-
-    fn with_bit_dword_spilled(dword: DoubleWord, n: usize) -> Repr {
-        debug_assert!(n >= DWORD_BITS_USIZE);
-        let idx = n / WORD_BITS_USIZE;
-        let mut buffer = Buffer::allocate(idx + 1);
-        let (lo, hi) = split_dword(dword);
-        buffer.push(lo);
-        buffer.push(hi);
-        buffer.push_zeros(idx - 2);
-        buffer.push(1 << (n % WORD_BITS_USIZE));
-        Repr::from_buffer(buffer)
-    }
-
-    fn with_bit_large(mut buffer: Buffer, n: usize) -> Repr {
-        let idx = n / WORD_BITS_USIZE;
-        if idx < buffer.len() {
-            buffer[idx] |= 1 << (n % WORD_BITS_USIZE);
-        } else {
-            buffer.ensure_capacity(idx + 1);
-            buffer.push_zeros(idx - buffer.len());
-            buffer.push(1 << (n % WORD_BITS_USIZE));
-        }
-        Repr::from_buffer(buffer)
+        self.0 = mem::take(self).into_repr().set_bit(n);
     }
 
     /// Clear the `n`-th bit, n starts from 0.
@@ -124,27 +45,14 @@ impl UBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::ubig;
-    /// let mut a = ubig!(0b101);
+    /// # use dashu_int::UBig;
+    /// let mut a = UBig::from(0b101u8);
     /// a.clear_bit(0);
-    /// assert_eq!(a, ubig!(0b100));
+    /// assert_eq!(a, UBig::from(0b100u8));
     /// ```
     #[inline]
     pub fn clear_bit(&mut self, n: usize) {
-        match mem::take(self).into_repr() {
-            Small(dword) => {
-                if n < DWORD_BITS_USIZE {
-                    self.0 = Repr::from_dword(dword & !(1 << n));
-                }
-            }
-            Large(mut buffer) => {
-                let idx = n / WORD_BITS_USIZE;
-                if idx < buffer.len() {
-                    buffer[idx] &= !(1 << (n % WORD_BITS_USIZE));
-                }
-                self.0 = Repr::from_buffer(buffer);
-            }
-        }
+        self.0 = mem::take(self).into_repr().clear_bit(n);
     }
 
     /// Returns the number of trailing zeros in the binary representation.
@@ -156,19 +64,15 @@ impl UBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::ubig;
-    /// assert_eq!(ubig!(17).trailing_zeros(), Some(0));
-    /// assert_eq!(ubig!(48).trailing_zeros(), Some(4));
-    /// assert_eq!(ubig!(0b101000000).trailing_zeros(), Some(6));
-    /// assert_eq!(ubig!(0).trailing_zeros(), None);
+    /// # use dashu_int::UBig;
+    /// assert_eq!(UBig::from(17u8).trailing_zeros(), Some(0));
+    /// assert_eq!(UBig::from(48u8).trailing_zeros(), Some(4));
+    /// assert_eq!(UBig::from(0b101000000u16).trailing_zeros(), Some(6));
+    /// assert_eq!(UBig::ZERO.trailing_zeros(), None);
     /// ```
     #[inline]
     pub fn trailing_zeros(&self) -> Option<usize> {
-        match self.repr() {
-            RefSmall(0) => None,
-            RefSmall(dword) => Some(dword.trailing_zeros() as usize),
-            RefLarge(buffer) => Some(trailing_zeros(buffer)),
-        }
+        self.repr().trailing_zeros()
     }
 
     /// Bit length.
@@ -182,21 +86,65 @@ impl UBig {
     /// * the index of the top 1 bit plus one
     /// * the floor of the logarithm base 2 of the number plus one.
     ///
-    ///
-    ///
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::ubig;
-    /// assert_eq!(ubig!(17).bit_len(), 5);
-    /// assert_eq!(ubig!(0b101000000).bit_len(), 9);
-    /// assert_eq!(ubig!(0).bit_len(), 0);
-    /// let x = ubig!(_0x90ffff3450897234);
+    /// # use dashu_int::UBig;
+    /// assert_eq!(UBig::from(17u8).bit_len(), 5);
+    /// assert_eq!(UBig::from(0b101000000u16).bit_len(), 9);
+    /// assert_eq!(UBig::ZERO.bit_len(), 0);
+    /// let x = UBig::from(0x90ffff3450897234u64);
     /// assert_eq!(x.bit_len(), x.in_radix(2).to_string().len());
     /// ```
     #[inline]
     pub fn bit_len(&self) -> usize {
         self.repr().bit_len()
+    }
+
+    /// Split this integer into low bits and high bits.
+    ///
+    /// Its returns are equal to `(self & ((1 << n) - 1), self >> n)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::UBig;
+    /// let (lo, hi) = UBig::from(0b10100011u8).split_bits(4);
+    /// assert_eq!(hi, UBig::from(0b1010u8));
+    /// assert_eq!(lo, UBig::from(0b0011u8));
+    ///
+    /// let x = UBig::from(0x90ffff3450897234u64);
+    /// let (lo, hi) = x.clone().split_bits(21);
+    /// assert_eq!(hi, (&x) >> 21);
+    /// assert_eq!(lo, x & ((UBig::ONE << 21) - 1u8));
+    /// ```
+    #[inline]
+    pub fn split_bits(self, n: usize) -> (UBig, UBig) {
+        let (lo, hi) = self.into_repr().split_bits(n);
+        (UBig(lo), UBig(hi))
+    }
+
+    /// Clear the high bits from (n+1)-th bit.
+    ///
+    /// This operation is equivalent to getting the lowest n bits on the integer
+    /// i.e. `self &= ((1 << n) - 1)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::UBig;
+    /// let mut x = UBig::from(0b10100011u8);
+    /// x.clear_high_bits(4);
+    /// assert_eq!(x, UBig::from(0b0011u8));
+    ///
+    /// let mut x = UBig::from(0x90ffff3450897234u64);
+    /// let lo = (&x) & ((UBig::ONE << 21) - 1u8);
+    /// x.clear_high_bits(21);
+    /// assert_eq!(x, lo);
+    /// ```
+    #[inline]
+    pub fn clear_high_bits(&mut self, n: usize) {
+        self.0 = mem::take(self).into_repr().clear_high_bits(n);
     }
 }
 
@@ -204,9 +152,9 @@ helper_macros::forward_ubig_binop_to_repr!(impl BitAnd, bitand);
 helper_macros::forward_ubig_binop_to_repr!(impl BitOr, bitor);
 helper_macros::forward_ubig_binop_to_repr!(impl BitXor, bitxor);
 helper_macros::forward_ubig_binop_to_repr!(impl AndNot, and_not);
-helper_macros::forward_binop_assign_by_taking!(impl BitAndAssign<UBig> for UBig, bitand_assign, bitand);
-helper_macros::forward_binop_assign_by_taking!(impl BitOrAssign<UBig> for UBig, bitor_assign, bitor);
-helper_macros::forward_binop_assign_by_taking!(impl BitXorAssign<UBig> for UBig, bitxor_assign, bitxor);
+helper_macros::impl_binop_assign_by_taking!(impl BitAndAssign<UBig> for UBig, bitand_assign, bitand);
+helper_macros::impl_binop_assign_by_taking!(impl BitOrAssign<UBig> for UBig, bitor_assign, bitor);
+helper_macros::impl_binop_assign_by_taking!(impl BitXorAssign<UBig> for UBig, bitxor_assign, bitxor);
 
 impl IBig {
     /// Returns the number of trailing zeros in the two's complement binary representation.
@@ -218,19 +166,15 @@ impl IBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::ibig;
-    /// assert_eq!(ibig!(17).trailing_zeros(), Some(0));
-    /// assert_eq!(ibig!(-48).trailing_zeros(), Some(4));
-    /// assert_eq!(ibig!(-0b101000000).trailing_zeros(), Some(6));
-    /// assert_eq!(ibig!(0).trailing_zeros(), None);
+    /// # use dashu_int::IBig;
+    /// assert_eq!(IBig::from(17).trailing_zeros(), Some(0));
+    /// assert_eq!(IBig::from(-48).trailing_zeros(), Some(4));
+    /// assert_eq!(IBig::from(-0b101000000).trailing_zeros(), Some(6));
+    /// assert_eq!(IBig::ZERO.trailing_zeros(), None);
     /// ```
     #[inline]
     pub fn trailing_zeros(&self) -> Option<usize> {
-        match self.as_sign_repr().1 {
-            RefSmall(0) => None,
-            RefSmall(dword) => Some(dword.trailing_zeros() as usize),
-            RefLarge(buffer) => Some(trailing_zeros(buffer)),
-        }
+        self.as_sign_repr().1.trailing_zeros()
     }
 }
 
@@ -258,24 +202,39 @@ trait AndNot<Rhs = Self> {
 
 mod repr {
     use super::*;
-    use crate::repr::{Repr, TypedRepr, TypedReprRef};
+    use crate::{
+        arch::word::DoubleWord,
+        buffer::Buffer,
+        math::{self, ceil_div, ones_dword, ones_word},
+        primitive::{lowest_dword, split_dword, DWORD_BITS_USIZE, WORD_BITS_USIZE},
+        repr::{
+            Repr,
+            TypedRepr::{self, *},
+            TypedReprRef::{self, *},
+        },
+        shift_ops,
+    };
 
     impl<'a> TypedReprRef<'a> {
         #[inline]
-        pub fn bit_len(self) -> usize {
+        pub fn bit(self, n: usize) -> bool {
             match self {
-                RefSmall(dword) => math::bit_len(dword) as usize,
+                RefSmall(dword) => n < DWORD_BITS_USIZE && dword & 1 << n != 0,
                 RefLarge(buffer) => {
-                    buffer.len() * WORD_BITS_USIZE - buffer.last().unwrap().leading_zeros() as usize
+                    let idx = n / WORD_BITS_USIZE;
+                    idx < buffer.len() && buffer[idx] & 1 << (n % WORD_BITS_USIZE) != 0
                 }
             }
         }
 
-        /// Get the highest n bits from the Repr
         #[inline]
-        pub fn high_bits(self, n: usize) -> Repr {
-            let bit_len = self.bit_len();
-            self >> (bit_len - n)
+        pub fn bit_len(self) -> usize {
+            match self {
+                RefSmall(dword) => math::bit_len(dword) as usize,
+                RefLarge(words) => {
+                    words.len() * WORD_BITS_USIZE - words.last().unwrap().leading_zeros() as usize
+                }
+            }
         }
 
         /// Check if low n-bits are not all zeros
@@ -283,7 +242,7 @@ mod repr {
         pub fn are_low_bits_nonzero(self, n: usize) -> bool {
             match self {
                 Self::RefSmall(dword) => are_dword_low_bits_nonzero(dword, n),
-                Self::RefLarge(buffer) => are_slice_low_bits_nonzero(buffer, n),
+                Self::RefLarge(words) => are_slice_low_bits_nonzero(words, n),
             }
         }
 
@@ -292,10 +251,18 @@ mod repr {
         pub fn is_power_of_two(self) -> bool {
             match self {
                 RefSmall(dword) => dword.is_power_of_two(),
-                RefLarge(buffer) => {
-                    buffer[..buffer.len() - 1].iter().all(|x| *x == 0)
-                        && buffer.last().unwrap().is_power_of_two()
+                RefLarge(words) => {
+                    words[..words.len() - 1].iter().all(|x| *x == 0)
+                        && words.last().unwrap().is_power_of_two()
                 }
+            }
+        }
+
+        pub fn trailing_zeros(self) -> Option<usize> {
+            match self {
+                RefSmall(0) => None,
+                RefSmall(dword) => Some(dword.trailing_zeros() as usize),
+                RefLarge(words) => Some(trailing_zeros_large(words)),
             }
         }
     }
@@ -316,12 +283,81 @@ mod repr {
                 Large(buffer) => next_power_of_two_large(buffer),
             }
         }
+
+        pub fn set_bit(self, n: usize) -> Repr {
+            match self {
+                Small(dword) => {
+                    if n < DWORD_BITS_USIZE {
+                        Repr::from_dword(dword | 1 << n)
+                    } else {
+                        with_bit_dword_spilled(dword, n)
+                    }
+                }
+                Large(buffer) => with_bit_large(buffer, n),
+            }
+        }
+
+        pub fn clear_bit(self, n: usize) -> Repr {
+            match self {
+                Small(dword) => {
+                    if n < DWORD_BITS_USIZE {
+                        Repr::from_dword(dword & !(1 << n))
+                    } else {
+                        Repr::from_dword(dword)
+                    }
+                }
+                Large(mut buffer) => {
+                    let idx = n / WORD_BITS_USIZE;
+                    if idx < buffer.len() {
+                        buffer[idx] &= !(1 << (n % WORD_BITS_USIZE));
+                    }
+                    Repr::from_buffer(buffer)
+                }
+            }
+        }
+
+        pub fn clear_high_bits(self, n: usize) -> Repr {
+            match self {
+                Small(dword) => {
+                    if n < DWORD_BITS_USIZE {
+                        Repr::from_dword(dword & ones_dword(n as u32))
+                    } else {
+                        Repr::from_dword(dword)
+                    }
+                }
+                Large(buffer) => clear_high_bits_large(buffer, n),
+            }
+        }
+
+        pub fn split_bits(self, n: usize) -> (Repr, Repr) {
+            match self {
+                Small(dword) => {
+                    if n < DWORD_BITS_USIZE {
+                        (
+                            Repr::from_dword(dword & ones_dword(n as u32)),
+                            Repr::from_dword(dword >> n),
+                        )
+                    } else {
+                        (Repr::from_dword(dword), Repr::zero())
+                    }
+                }
+                Large(buffer) => {
+                    if n == 0 {
+                        (Repr::zero(), Repr::from_buffer(buffer))
+                    } else {
+                        let hi = shift_ops::repr::shr_large_ref(&buffer, n);
+                        let lo = clear_high_bits_large(buffer, n);
+                        (lo, hi)
+                    }
+                }
+            }
+        }
     }
 
     #[inline]
     fn are_dword_low_bits_nonzero(dword: DoubleWord, n: usize) -> bool {
         let n = n.min(WORD_BITS_USIZE) as u32;
-        dword & math::ones_dword(n) != 0
+        dword & ones_dword(n) != 0
     }
 
     fn are_slice_low_bits_nonzero(words: &[Word], n: usize) -> bool {
@@ -330,7 +366,7 @@ mod repr {
             true
         } else {
             let n_top = (n % WORD_BITS_USIZE) as u32;
-            words[..n_words].iter().any(|x| *x != 0) || words[n_words] & math::ones_word(n_top) != 0
+            words[..n_words].iter().any(|x| *x != 0) || words[n_words] & ones_word(n_top) != 0
         }
     }
 
@@ -364,6 +400,57 @@ mod repr {
         }
 
         Repr::from_buffer(buffer)
+    }
+
+    fn with_bit_dword_spilled(dword: DoubleWord, n: usize) -> Repr {
+        debug_assert!(n >= DWORD_BITS_USIZE);
+        let idx = n / WORD_BITS_USIZE;
+        let mut buffer = Buffer::allocate(idx + 1);
+        let (lo, hi) = split_dword(dword);
+        buffer.push(lo);
+        buffer.push(hi);
+        buffer.push_zeros(idx - 2);
+        buffer.push(1 << (n % WORD_BITS_USIZE));
+        Repr::from_buffer(buffer)
+    }
+
+    fn with_bit_large(mut buffer: Buffer, n: usize) -> Repr {
+        let idx = n / WORD_BITS_USIZE;
+        if idx < buffer.len() {
+            buffer[idx] |= 1 << (n % WORD_BITS_USIZE);
+        } else {
+            buffer.ensure_capacity(idx + 1);
+            buffer.push_zeros(idx - buffer.len());
+            buffer.push(1 << (n % WORD_BITS_USIZE));
+        }
+        Repr::from_buffer(buffer)
+    }
+
+    /// Count the trailing zero bits in the words.
+    /// Panics if the input is zero.
+    #[inline]
+    fn trailing_zeros_large(words: &[Word]) -> usize {
+        for (idx, word) in words.iter().enumerate() {
+            if *word != 0 {
+                return idx * WORD_BITS_USIZE + word.trailing_zeros() as usize;
+            }
+        }
+
+        unreachable!("call trailing_zeros on 0")
+    }
+
+    #[inline]
+    fn clear_high_bits_large(mut buffer: Buffer, n: usize) -> Repr {
+        let n_words = ceil_div(n, WORD_BITS_USIZE);
+        if n_words > buffer.len() {
+            Repr::from_buffer(buffer)
+        } else {
+            buffer.truncate(n_words);
+            if let Some(last) = buffer.last_mut() {
+                *last &= ones_word((n % WORD_BITS_USIZE) as u32);
+            }
+            Repr::from_buffer(buffer)
+        }
     }
 
     impl BitAnd<TypedRepr> for TypedRepr {
@@ -777,247 +864,76 @@ macro_rules! impl_ibig_bitxor {
         }
     };
 }
-helper_macros::forward_ibig_binop_to_repr!(impl BitAnd, bitand, impl_ibig_bitand);
-helper_macros::forward_ibig_binop_to_repr!(impl BitOr, bitor, impl_ibig_bitor);
-helper_macros::forward_ibig_binop_to_repr!(impl BitXor, bitxor, impl_ibig_bitxor);
-helper_macros::forward_binop_assign_by_taking!(impl BitAndAssign<IBig> for IBig, bitand_assign, bitand);
-helper_macros::forward_binop_assign_by_taking!(impl BitOrAssign<IBig> for IBig, bitor_assign, bitor);
-helper_macros::forward_binop_assign_by_taking!(impl BitXorAssign<IBig> for IBig, bitxor_assign, bitxor);
+helper_macros::forward_ibig_binop_to_repr!(impl BitAnd, bitand, Output = IBig, impl_ibig_bitand);
+helper_macros::forward_ibig_binop_to_repr!(impl BitOr, bitor, Output = IBig, impl_ibig_bitor);
+helper_macros::forward_ibig_binop_to_repr!(impl BitXor, bitxor, Output = IBig, impl_ibig_bitxor);
+helper_macros::impl_binop_assign_by_taking!(impl BitAndAssign<IBig> for IBig, bitand_assign, bitand);
+helper_macros::impl_binop_assign_by_taking!(impl BitOrAssign<IBig> for IBig, bitor_assign, bitor);
+helper_macros::impl_binop_assign_by_taking!(impl BitXorAssign<IBig> for IBig, bitxor_assign, bitxor);
 
-macro_rules! impl_bit_ops_ubig_unsigned {
-    ($t:ty) => {
-        impl BitAnd<$t> for UBig {
-            type Output = $t;
-
-            #[inline]
-            fn bitand(self, rhs: $t) -> $t {
-                self.bitand(UBig::from_unsigned(rhs))
-                    .try_to_unsigned()
-                    .unwrap()
-            }
-        }
-
-        impl BitAnd<$t> for &UBig {
-            type Output = $t;
-
-            #[inline]
-            fn bitand(self, rhs: $t) -> $t {
-                self.bitand(UBig::from_unsigned(rhs))
-                    .try_to_unsigned()
-                    .unwrap()
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl BitAnd<$t> for UBig, bitand);
-        helper_macros::forward_binop_swap_args!(impl BitAnd<UBig> for $t, bitand);
-
-        impl BitAndAssign<$t> for UBig {
-            #[inline]
-            fn bitand_assign(&mut self, rhs: $t) {
-                self.bitand_assign(UBig::from_unsigned(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl BitAndAssign<$t> for UBig, bitand_assign);
-
-        impl BitOr<$t> for UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn bitor(self, rhs: $t) -> UBig {
-                self.bitor(UBig::from_unsigned(rhs))
-            }
-        }
-
-        impl BitOr<$t> for &UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn bitor(self, rhs: $t) -> UBig {
-                self.bitor(UBig::from_unsigned(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl BitOr<$t> for UBig, bitor);
-        helper_macros::forward_binop_swap_args!(impl BitOr<UBig> for $t, bitor);
-
-        impl BitOrAssign<$t> for UBig {
-            #[inline]
-            fn bitor_assign(&mut self, rhs: $t) {
-                self.bitor_assign(UBig::from_unsigned(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl BitOrAssign<$t> for UBig, bitor_assign);
-
-        impl BitXor<$t> for UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn bitxor(self, rhs: $t) -> UBig {
-                self.bitxor(UBig::from_unsigned(rhs))
-            }
-        }
-
-        impl BitXor<$t> for &UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn bitxor(self, rhs: $t) -> UBig {
-                self.bitxor(UBig::from_unsigned(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl BitXor<$t> for UBig, bitxor);
-        helper_macros::forward_binop_swap_args!(impl BitXor<UBig> for $t, bitxor);
-
-        impl BitXorAssign<$t> for UBig {
-            #[inline]
-            fn bitxor_assign(&mut self, rhs: $t) {
-                self.bitxor_assign(UBig::from_unsigned(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl BitXorAssign<$t> for UBig, bitxor_assign);
-    };
+macro_rules! impl_bit_ops_primitive_with_ubig {
+    ($($t:ty)*) => {$(
+        helper_macros::impl_commutative_binop_with_primitive!(impl BitAnd<$t> for UBig, bitand -> $t);
+        helper_macros::impl_commutative_binop_with_primitive!(impl BitOr<$t> for UBig, bitor);
+        helper_macros::impl_commutative_binop_with_primitive!(impl BitXor<$t> for UBig, bitxor);
+        helper_macros::impl_binop_assign_with_primitive!(impl BitAndAssign<$t> for UBig, bitand_assign);
+        helper_macros::impl_binop_assign_with_primitive!(impl BitOrAssign<$t> for UBig, bitor_assign);
+        helper_macros::impl_binop_assign_with_primitive!(impl BitXorAssign<$t> for UBig, bitxor_assign);
+    )*};
 }
+impl_bit_ops_primitive_with_ubig!(u8 u16 u32 u64 u128 usize);
 
-impl_bit_ops_ubig_unsigned!(u8);
-impl_bit_ops_ubig_unsigned!(u16);
-impl_bit_ops_ubig_unsigned!(u32);
-impl_bit_ops_ubig_unsigned!(u64);
-impl_bit_ops_ubig_unsigned!(u128);
-impl_bit_ops_ubig_unsigned!(usize);
-
-macro_rules! impl_bit_ops_ibig_signed {
-    ($t:ty) => {
-        impl BitAnd<$t> for IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn bitand(self, rhs: $t) -> IBig {
-                self.bitand(IBig::from_signed(rhs))
-            }
-        }
-
-        impl BitAnd<$t> for &IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn bitand(self, rhs: $t) -> IBig {
-                self.bitand(IBig::from_signed(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl BitAnd<$t> for IBig, bitand);
-        helper_macros::forward_binop_swap_args!(impl BitAnd<IBig> for $t, bitand);
-
-        impl BitAndAssign<$t> for IBig {
-            #[inline]
-            fn bitand_assign(&mut self, rhs: $t) {
-                self.bitand_assign(IBig::from_signed(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl BitAndAssign<$t> for IBig, bitand_assign);
-
-        impl BitOr<$t> for IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn bitor(self, rhs: $t) -> IBig {
-                self.bitor(IBig::from_signed(rhs))
-            }
-        }
-
-        impl BitOr<$t> for &IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn bitor(self, rhs: $t) -> IBig {
-                self.bitor(IBig::from_signed(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl BitOr<$t> for IBig, bitor);
-        helper_macros::forward_binop_swap_args!(impl BitOr<IBig> for $t, bitor);
-
-        impl BitOrAssign<$t> for IBig {
-            #[inline]
-            fn bitor_assign(&mut self, rhs: $t) {
-                self.bitor_assign(IBig::from_signed(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl BitOrAssign<$t> for IBig, bitor_assign);
-
-        impl BitXor<$t> for IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn bitxor(self, rhs: $t) -> IBig {
-                self.bitxor(IBig::from_signed(rhs))
-            }
-        }
-
-        impl BitXor<$t> for &IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn bitxor(self, rhs: $t) -> IBig {
-                self.bitxor(IBig::from_signed(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl BitXor<$t> for IBig, bitxor);
-        helper_macros::forward_binop_swap_args!(impl BitXor<IBig> for $t, bitxor);
-
-        impl BitXorAssign<$t> for IBig {
-            #[inline]
-            fn bitxor_assign(&mut self, rhs: $t) {
-                self.bitxor_assign(IBig::from_signed(rhs))
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl BitXorAssign<$t> for IBig, bitxor_assign);
-    };
+macro_rules! impl_bit_ops_primitive_with_ibig {
+    ($($t:ty)*) => {$(
+        helper_macros::impl_commutative_binop_with_primitive!(impl BitAnd<$t> for IBig, bitand);
+        helper_macros::impl_commutative_binop_with_primitive!(impl BitOr<$t> for IBig, bitor);
+        helper_macros::impl_commutative_binop_with_primitive!(impl BitXor<$t> for IBig, bitxor);
+        helper_macros::impl_binop_assign_with_primitive!(impl BitAndAssign<$t> for IBig, bitand_assign);
+        helper_macros::impl_binop_assign_with_primitive!(impl BitOrAssign<$t> for IBig, bitor_assign);
+        helper_macros::impl_binop_assign_with_primitive!(impl BitXorAssign<$t> for IBig, bitxor_assign);
+    )*};
 }
-
-impl_bit_ops_ibig_signed!(i8);
-impl_bit_ops_ibig_signed!(i16);
-impl_bit_ops_ibig_signed!(i32);
-impl_bit_ops_ibig_signed!(i64);
-impl_bit_ops_ibig_signed!(i128);
-impl_bit_ops_ibig_signed!(isize);
+impl_bit_ops_primitive_with_ibig!(i8 i16 i32 i64 i128 isize);
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ubig;
 
     #[test]
     fn test_and_not() {
         let cases = [
-            (ubig!(0xf0f0), ubig!(0xff00), ubig!(0xf0)),
+            (UBig::from(0xf0f0u16), UBig::from(0xff00u16), UBig::from(0xf0u16)),
             (
-                ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-                ubig!(0xff),
-                ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00),
+                UBig::from(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeu128),
+                UBig::from(0xffu8),
+                UBig::from(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00u128),
             ),
             (
-                ubig!(0xff),
-                ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-                ubig!(0x11),
+                UBig::from(0xffu8),
+                UBig::from(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeu128),
+                UBig::from(0x11u8),
             ),
             (
-                ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-                ubig!(_0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
-                ubig!(0x22222222222222222222222222222222),
+                UBig::from_str_radix("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", 16).unwrap(),
+                UBig::from_str_radix(
+                    "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                    16,
+                )
+                .unwrap(),
+                UBig::from_str_radix("22222222222222222222222222222222", 16).unwrap(),
             ),
             (
-                ubig!(_0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd),
-                ubig!(0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee),
-                ubig!(_0xdddddddddddddddddddddddddddddddd11111111111111111111111111111111),
+                UBig::from_str_radix(
+                    "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                    16,
+                )
+                .unwrap(),
+                UBig::from_str_radix("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", 16).unwrap(),
+                UBig::from_str_radix(
+                    "dddddddddddddddddddddddddddddddd11111111111111111111111111111111",
+                    16,
+                )
+                .unwrap(),
             ),
         ];
 

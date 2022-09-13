@@ -7,9 +7,9 @@
 //! # Examples
 //!
 //! ```
-//! use dashu_int::{modular::ModuloRing, ubig};
+//! use dashu_int::{modular::ModuloRing, UBig};
 //!
-//! let ring = ModuloRing::new(ubig!(10000));
+//! let ring = ModuloRing::new(UBig::from(10000u32));
 //! let x = ring.convert(12345);
 //! let y = ring.convert(55443);
 //! assert_eq!(format!("{}", x - y), "6902 (mod 10000)");

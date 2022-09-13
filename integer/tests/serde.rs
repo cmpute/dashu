@@ -1,18 +1,12 @@
-use dashu_int::{ibig, ubig};
+mod helper_macros;
 use serde_test::{assert_de_tokens, assert_tokens, Token};
 
 #[test]
 fn test_ubig_serde() {
     assert_tokens(&ubig!(0), &[Token::Seq { len: Some(0) }, Token::SeqEnd]);
     assert_de_tokens(&ubig!(0), &[Token::Seq { len: None }, Token::SeqEnd]);
-    assert_tokens(
-        &ubig!(17),
-        &[Token::Seq { len: Some(1) }, Token::U64(17), Token::SeqEnd],
-    );
-    assert_de_tokens(
-        &ubig!(17),
-        &[Token::Seq { len: None }, Token::U8(17), Token::SeqEnd],
-    );
+    assert_tokens(&ubig!(17), &[Token::Seq { len: Some(1) }, Token::U64(17), Token::SeqEnd]);
+    assert_de_tokens(&ubig!(17), &[Token::Seq { len: None }, Token::U8(17), Token::SeqEnd]);
     assert_tokens(
         &ubig!(0x123451234567890abcdef),
         &[
@@ -39,10 +33,7 @@ fn test_ibig_serde() {
         &ibig!(0),
         &[
             Token::Tuple { len: 2 },
-            Token::UnitVariant {
-                name: "Sign",
-                variant: "Positive",
-            },
+            Token::Bool(false),
             Token::Seq { len: Some(0) },
             Token::SeqEnd,
             Token::TupleEnd,
@@ -52,10 +43,7 @@ fn test_ibig_serde() {
         &ibig!(0),
         &[
             Token::Seq { len: None },
-            Token::UnitVariant {
-                name: "Sign",
-                variant: "Negative",
-            },
+            Token::Bool(true),
             Token::Seq { len: None },
             Token::SeqEnd,
             Token::SeqEnd,
@@ -65,10 +53,7 @@ fn test_ibig_serde() {
         &ibig!(17),
         &[
             Token::Tuple { len: 2 },
-            Token::UnitVariant {
-                name: "Sign",
-                variant: "Positive",
-            },
+            Token::Bool(false),
             Token::Seq { len: Some(1) },
             Token::U64(17),
             Token::SeqEnd,
@@ -79,10 +64,7 @@ fn test_ibig_serde() {
         &ibig!(-17),
         &[
             Token::Tuple { len: 2 },
-            Token::UnitVariant {
-                name: "Sign",
-                variant: "Negative",
-            },
+            Token::Bool(true),
             Token::Seq { len: Some(1) },
             Token::U64(17),
             Token::SeqEnd,

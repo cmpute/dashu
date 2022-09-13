@@ -1,4 +1,6 @@
-use dashu_int::{ibig, modular::ModuloRing, ubig};
+use dashu_int::modular::ModuloRing;
+
+mod helper_macros;
 
 #[test]
 fn test_modulus() {
@@ -20,7 +22,7 @@ fn test_clone() {
     z.clone_from(&x);
     assert_eq!(x, z);
 
-    let ring2 = ModuloRing::new(ubig!(_1000000000000000000000000000000));
+    let ring2 = ModuloRing::new(ubig!(1000000000000000000000000000000));
     let x = ring2.convert(512);
     let y = x.clone();
     assert_eq!(x, y);
@@ -47,12 +49,12 @@ fn test_convert() {
     let x = ring.convert(6);
     assert_eq!(x, ring.convert(&ubig!(306)));
     assert_ne!(x, ring.convert(&ubig!(313)));
-    assert_eq!(x, ring.convert(&ubig!(_18297381723918723981723981723906)));
-    assert_ne!(x, ring.convert(&ubig!(_18297381723918723981723981723913)));
-    assert_eq!(x, ring.convert(ubig!(_18297381723918723981723981723906)));
-    assert_eq!(x, ring.convert(ibig!(_18297381723918723981723981723906)));
-    assert_eq!(x, ring.convert(ibig!(-_18297381723918723981723981723994)));
-    assert_eq!(x, ring.convert(&ibig!(-_18297381723918723981723981723994)));
+    assert_eq!(x, ring.convert(&ubig!(18297381723918723981723981723906)));
+    assert_ne!(x, ring.convert(&ubig!(18297381723918723981723981723913)));
+    assert_eq!(x, ring.convert(ubig!(18297381723918723981723981723906)));
+    assert_eq!(x, ring.convert(ibig!(18297381723918723981723981723906)));
+    assert_eq!(x, ring.convert(ibig!(-18297381723918723981723981723994)));
+    assert_eq!(x, ring.convert(&ibig!(-18297381723918723981723981723994)));
     assert_eq!(x, ring.convert(106u8));
     assert_eq!(x, ring.convert(106u16));
     assert_eq!(x, ring.convert(1006u32));
@@ -70,34 +72,25 @@ fn test_convert() {
     assert_eq!(ring.convert(0), ring.convert(false));
     assert_eq!(ring.convert(1), ring.convert(true));
 
-    let ring = ModuloRing::new(ubig!(
-        _1000000000000000000000000000000000000000000000000000000000000
-    ));
+    let ring =
+        ModuloRing::new(ubig!(_1000000000000000000000000000000000000000000000000000000000000));
     let x = ring.convert(6);
-    let y = ring.convert(ubig!(_333333333333333333333333333333));
+    let y = ring.convert(ubig!(333333333333333333333333333333));
     assert_eq!(
         x,
-        ring.convert(ubig!(
-            _1000000000000000000000000000000000000000000000000000000000006
-        ))
+        ring.convert(ubig!(_1000000000000000000000000000000000000000000000000000000000006))
     );
     assert_eq!(
         x,
-        ring.convert(&ubig!(
-            _1000000000000000000000000000000000000000000000000000000000006
-        ))
+        ring.convert(&ubig!(_1000000000000000000000000000000000000000000000000000000000006))
     );
     assert_ne!(
         x,
-        ring.convert(ubig!(
-            _1000000000000000000000000000000000000000000000000000000000007
-        ))
+        ring.convert(ubig!(_1000000000000000000000000000000000000000000000000000000000007))
     );
     assert_eq!(
         y,
-        ring.convert(ubig!(
-            _7000000000000000000000000000000333333333333333333333333333333
-        ))
+        ring.convert(ubig!(_7000000000000000000000000000000333333333333333333333333333333))
     );
 }
 
@@ -110,13 +103,13 @@ fn test_negate() {
     let y = -x;
     assert_eq!(y.residue(), ubig!(34));
 
-    let ring = ModuloRing::new(ubig!(_1000000000000000000000000000000));
-    let x = ring.convert(ibig!(-_33333123456789012345678901234567890));
+    let ring = ModuloRing::new(ubig!(1000000000000000000000000000000));
+    let x = ring.convert(ibig!(-33333123456789012345678901234567890));
     let y = -&x;
-    assert_eq!(y, ring.convert(ubig!(_44444123456789012345678901234567890)));
-    assert_eq!(y.residue(), ubig!(_123456789012345678901234567890));
+    assert_eq!(y, ring.convert(ubig!(44444123456789012345678901234567890)));
+    assert_eq!(y.residue(), ubig!(123456789012345678901234567890));
     let y = -x;
-    assert_eq!(y, ring.convert(ubig!(_44444123456789012345678901234567890)));
+    assert_eq!(y, ring.convert(ubig!(44444123456789012345678901234567890)));
 }
 
 #[test]
@@ -141,7 +134,7 @@ fn test_cmp_different_rings() {
 #[test]
 fn test_add_sub() {
     let ring1 = ModuloRing::new(ubig!(100));
-    let ring2 = ModuloRing::new(ubig!(_1000000000000000000000000000000));
+    let ring2 = ModuloRing::new(ubig!(1000000000000000000000000000000));
     let test_cases = [
         (ring1.convert(1), ring1.convert(2), ring1.convert(3)),
         (ring1.convert(99), ring1.convert(5), ring1.convert(4)),
@@ -196,20 +189,40 @@ fn test_add_sub() {
 #[test]
 fn test_mul() {
     let ring1 = ModuloRing::new(ubig!(100));
-    let ring2 = ModuloRing::new(ubig!(_1000000000000000000000000000000));
+    let ring2 = ModuloRing::new(ubig!(1000000000000000000000000000000));
     let big = ubig!(10).pow(10000);
     let ring3 = ModuloRing::new(big.clone());
     let test_cases = [
+        (ring1.convert(1), ring1.convert(1), ring1.convert(1)),
+        (ring1.convert(1), ring1.convert(99), ring1.convert(99)),
+        (ring1.convert(99), ring1.convert(99), ring1.convert(1)),
         (ring1.convert(23), ring1.convert(96), ring1.convert(8)),
+        (ring1.convert(64), ring1.convert(64), ring1.convert(96)),
         (
-            ring2.convert(ubig!(_46301564276035228370597101114)),
-            ring2.convert(ubig!(_170100953649249045221461413048)),
-            ring2.convert(ubig!(_399394418012748758198974935472)),
+            ring2.convert(ubig!(46301564276035228370597101114)),
+            ring2.convert(ubig!(170100953649249045221461413048)),
+            ring2.convert(ubig!(399394418012748758198974935472)),
         ),
         (
+            ring2.convert(ubig!(1208925819614629174706176)),
+            ring2.convert(ubig!(1208925819614629174706176)),
+            ring2.convert(ubig!(203684832716283019655932542976)),
+        ),
+        (
+            ring2.convert(ubig!(1208925819614629174706175)),
+            ring2.convert(ubig!(1208925819614629174706175)),
+            ring2.convert(ubig!(203682414864643790397583130625)),
+        ),
+        (ring3.convert(&big - ubig!(1)), ring3.convert(&big - ubig!(1)), ring3.convert(1)),
+        (
             ring3.convert(&big - ubig!(1)),
-            ring3.convert(&big - ubig!(1)),
-            ring3.convert(1),
+            ring3.convert(&big - ubig!(10).pow(10)),
+            ring3.convert(ubig!(10).pow(10)),
+        ),
+        (
+            ring3.convert(&big - ubig!(10).pow(10)),
+            ring3.convert(&big - ubig!(10).pow(10)),
+            ring3.convert(ubig!(10).pow(20)),
         ),
     ];
 
@@ -251,8 +264,8 @@ fn test_inv() {
     assert_eq!(y.residue(), ubig!(67)); // inverse is unique for prime modulus
 
     // medium ring
-    let ring = ModuloRing::new(ubig!(_1000000000000000000000000000000));
-    let x = ring.convert(ibig!(_3333312345678901234567890123456789));
+    let ring = ModuloRing::new(ubig!(1000000000000000000000000000000));
+    let x = ring.convert(ibig!(3333312345678901234567890123456789));
     let y = x.clone().inv().unwrap();
     assert_eq!((x * y).residue(), ubig!(1));
 
@@ -261,39 +274,48 @@ fn test_inv() {
     let x = ring.convert(10);
     assert!(x.inv().is_none());
 
-    let ring = ModuloRing::new(ubig!(_1000000000000000000000000000057)); // prime
+    let ring = ModuloRing::new(ubig!(1000000000000000000000000000057)); // prime
     let x = ring.convert(123456789);
     let y = x.inv().unwrap();
     assert_eq!(y.residue(), ubig!(951144331155413413514262063034));
 
     // large ring
     let ring = ModuloRing::new(ubig!(
-        _0x100000000000000000000000000000000000000000000000000000000000000000000000000000000
+        0x100000000000000000000000000000000000000000000000000000000000000000000000000000000
     ));
     let x = ring.convert(123456789);
     let y = x.inv().unwrap();
-    assert_eq!(y.residue(), ubig!(_502183094104378158094730467601915490123618665365443345649182408561985048745994978946725109832253));
+    assert_eq!(
+        y.residue(),
+        ubig!(502183094104378158094730467601915490123618665365443345649182408561985048745994978946725109832253)
+    );
 
     let x = ring.convert(0);
     assert!(x.inv().is_none());
     let x = ring.convert(10);
     assert!(x.inv().is_none());
 
-    let x = ring.convert(ubig!(_0x123456789123456789123456789));
+    let x = ring.convert(ubig!(0x123456789123456789123456789));
     let y = x.inv().unwrap();
-    assert_eq!(y.residue(), ubig!(_1654687843822646720169408413229830444089197976699429504340681760590766246761104608701978442022585));
-    let x = ring.convert(ubig!(_0x123456789123456789123456788));
+    assert_eq!(
+        y.residue(),
+        ubig!(1654687843822646720169408413229830444089197976699429504340681760590766246761104608701978442022585)
+    );
+    let x = ring.convert(ubig!(0x123456789123456789123456788));
     assert!(x.inv().is_none());
 
     let x = ring.convert(ubig!(
-        _0x123456789123456789123456789123456789123456789123456789
+        0x123456789123456789123456789123456789123456789123456789
     ));
     let y = x.inv().unwrap();
     let x = ring.convert(ubig!(
-        _0x123456789123456789123456789123456789123456789000000000
+        0x123456789123456789123456789123456789123456789000000000
     ));
     assert!(x.inv().is_none());
-    assert_eq!(y.residue(), ubig!(_77064304169441121490325922823072327980740992335161695976803567323815961864721792027154186059449));
+    assert_eq!(
+        y.residue(),
+        ubig!(77064304169441121490325922823072327980740992335161695976803567323815961864721792027154186059449)
+    );
 }
 
 #[test]
@@ -330,13 +352,13 @@ fn test_pow() {
         ring.convert(97)
     );
 
-    let ring = ModuloRing::new(ubig!(_1000000000000000000000000000000));
-    let x = ring.convert(ubig!(_658571505947767552546868380533));
+    let ring = ModuloRing::new(ubig!(1000000000000000000000000000000));
+    let x = ring.convert(ubig!(658571505947767552546868380533));
     assert_eq!(x.pow(&ubig!(0)), ring.convert(1));
     assert_eq!(x.pow(&ubig!(1)), x);
     assert_eq!(
-        x.pow(&ubig!(_794990856522773482558337459018)),
-        ring.convert(ubig!(_660533815789733011052086421209))
+        x.pow(&ubig!(794990856522773482558337459018)),
+        ring.convert(ubig!(660533815789733011052086421209))
     );
 
     // A Mersenne prime.
@@ -352,36 +374,54 @@ fn test_format() {
     let x = ring.convert(105);
     assert_eq!(format!("{}", ring), "mod 100");
     assert_eq!(format!("{}", x), "5 (mod 100)");
-    assert_eq!(format!("{:?}", x), "5 (mod 100)");
     assert_eq!(format!("{:=^5}", x), "==5== (mod =100=)");
     assert_eq!(format!("{:b}", x), "101 (mod 1100100)");
     assert_eq!(format!("{:o}", x), "5 (mod 144)");
     assert_eq!(format!("{:#x}", x), "0x5 (mod 0x64)");
     assert_eq!(format!("{:X}", x), "5 (mod 64)");
-
-    let ring = ModuloRing::new(ubig!(_1000000000000000000000000000000));
-    let x = -ring.convert(1);
-    assert_eq!(format!("{}", ring), "mod 1000000000000000000000000000000");
+    assert_eq!(format!("{:?}", x), "5 (mod 100)");
     assert_eq!(
-        format!("{:?}", x),
-        "999999999999999999999999999999 (mod 1000000000000000000000000000000)"
+        format!("{:#?}", x),
+        r#"Modulo {
+    residue: 5 (1 digits, 3 bits),
+    modulus: 100 (3 digits, 7 bits),
+}"#
     );
+
+    // 1000000000000000000000000000000000000000 has 130 bits
+    let ring = ModuloRing::new(ubig!(1000000000000000000000000000000000000000));
+    let x = -ring.convert(1);
+    assert_eq!(format!("{}", ring), "mod 1000000000000000000000000000000000000000");
     assert_eq!(
-        format!("{:35}", x),
-        "     999999999999999999999999999999 (mod     1000000000000000000000000000000)"
+        format!("{:45}", x),
+        "      999999999999999999999999999999999999999 (mod      1000000000000000000000000000000000000000)"
     );
     assert_eq!(format!("{:b}", x),
-        "1100100111110010110010011100110100000100011001110100111011011110101000111111111111111111111111111111 (mod 1100100111110010110010011100110100000100011001110100111011011110101001000000000000000000000000000000)");
+        "1011110000010100001111111010010011100010010100001110101100110001000101111101100101010101100111111111111111111111111111111111111111 (mod 1011110000010100001111111010010011100010010100001110101100110001000101111101100101010101101000000000000000000000000000000000000000)");
     assert_eq!(
         format!("{:#o}", x),
-        "0o1447626234640431647336507777777777 (mod 0o1447626234640431647336510000000000)"
+        "0o13602417722342241654610575452547777777777777 (mod 0o13602417722342241654610575452550000000000000)"
     );
     assert_eq!(
         format!("{:x}", x),
-        "c9f2c9cd04674edea3fffffff (mod c9f2c9cd04674edea40000000)"
+        "2f050fe938943acc45f65567fffffffff (mod 2f050fe938943acc45f65568000000000)"
     );
     assert_eq!(
         format!("{:X}", x),
-        "C9F2C9CD04674EDEA3FFFFFFF (mod C9F2C9CD04674EDEA40000000)"
+        "2F050FE938943ACC45F65567FFFFFFFFF (mod 2F050FE938943ACC45F65568000000000)"
     );
+
+    if dashu_int::Word::BITS == 64 {
+        assert_eq!(
+            format!("{:?}", x),
+            "9999999999999999999..9999999999999999999 (mod 1000000000000000000..0000000000000000000)"
+        );
+        assert_eq!(
+            format!("{:#?}", x),
+            r#"Modulo {
+    residue: 9999999999999999999..9999999999999999999 (39 digits, 130 bits),
+    modulus: 1000000000000000000..0000000000000000000 (40 digits, 130 bits),
+}"#
+        );
+    }
 }

@@ -3,6 +3,7 @@
 use crate::{
     arch::word::Word,
     buffer::Buffer,
+    error::panic_empty_range,
     ibig::IBig,
     ops::UnsignedAbs,
     repr::{Repr, TypedReprRef::*},
@@ -29,11 +30,11 @@ impl UBig {
     where
         R: Rng + ?Sized,
     {
-        debug_assert!(*range != UBig::zero());
+        debug_assert!(!range.is_zero());
 
         match range.repr() {
             RefSmall(dword) => UBig::from(rng.gen_range(0..dword)),
-            RefLarge(buffer) => UBig::uniform_large(buffer, rng),
+            RefLarge(words) => UBig::uniform_large(words, rng),
         }
     }
 
@@ -81,15 +82,15 @@ where
 
 /// Uniform [UBig] distribution.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```
-/// use dashu_int::ubig;
+/// use dashu_int::UBig;
 /// use rand::{distributions::uniform::Uniform, thread_rng, Rng};
-/// let a = thread_rng().gen_range(ubig!(3)..ubig!(10));
-/// let b = thread_rng().sample(Uniform::new(ubig!(0), &a));
-/// assert!(a >= ubig!(3) && a < ubig!(10));
-/// assert!(b >= ubig!(0) && b < a);
+/// let a = thread_rng().gen_range(UBig::from(3u8)..UBig::from(10u8));
+/// let b = thread_rng().sample(Uniform::new(UBig::ZERO, &a));
+/// assert!(a >= 3 && a < 10);
+/// assert!(b >= 0 && b < a);
 /// ```
 pub struct UniformUBig {
     range: UBig,
@@ -106,8 +107,8 @@ impl UniformSampler for UniformUBig {
         B2: SampleBorrow<UBig>,
     {
         let range = high.borrow() - low.borrow();
-        if range == UBig::zero() {
-            panic!("Empty range");
+        if range.is_zero() {
+            panic_empty_range()
         }
         UniformUBig {
             range,
@@ -121,7 +122,7 @@ impl UniformSampler for UniformUBig {
         B1: SampleBorrow<UBig>,
         B2: SampleBorrow<UBig>,
     {
-        let range = high.borrow() - low.borrow() + UBig::one();
+        let range = high.borrow() - low.borrow() + UBig::ONE;
         UniformUBig {
             range,
             offset: low.borrow().clone(),
@@ -139,15 +140,15 @@ impl UniformSampler for UniformUBig {
 
 /// Uniform [IBig] distribution.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```
-/// use dashu_int::ibig;
+/// use dashu_int::IBig;
 /// use rand::{distributions::uniform::Uniform, thread_rng, Rng};
-/// let a = thread_rng().gen_range(ibig!(3)..ibig!(10));
-/// let b = thread_rng().sample(Uniform::new(ibig!(-5), &a));
-/// assert!(a >= ibig!(3) && a < ibig!(10));
-/// assert!(b >= ibig!(-5) && b < a);
+/// let a = thread_rng().gen_range(IBig::from(3)..IBig::from(10));
+/// let b = thread_rng().sample(Uniform::new(IBig::from(-5), &a));
+/// assert!(a >= 3 && a < 10);
+/// assert!(b >= -5 && b < a);
 /// ```
 pub struct UniformIBig {
     range: UBig,
@@ -164,8 +165,8 @@ impl UniformSampler for UniformIBig {
         B2: SampleBorrow<IBig>,
     {
         let range = high.borrow() - low.borrow();
-        if range <= IBig::zero() {
-            panic!("Empty range");
+        if range <= IBig::ZERO {
+            panic_empty_range();
         }
         UniformIBig {
             range: range.unsigned_abs(),
@@ -180,8 +181,8 @@ impl UniformSampler for UniformIBig {
         B2: SampleBorrow<IBig>,
     {
         let range = high.borrow() - low.borrow() + IBig::from(1u8);
-        if range <= IBig::zero() {
-            panic!("Empty range");
+        if range <= IBig::ZERO {
+            panic_empty_range()
         }
         UniformIBig {
             range: range.unsigned_abs(),

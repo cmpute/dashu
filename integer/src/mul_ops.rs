@@ -1,131 +1,99 @@
-//! Multiplication operators.
+//! Multiplication and squaring operators.
 
-use crate::{
-    arch::word::{DoubleWord, Word},
-    buffer::Buffer,
-    helper_macros,
-    ibig::IBig,
-    memory::MemoryAllocation,
-    mul,
-    repr::{TypedRepr::*, TypedReprRef::*},
-    sign::Sign::*,
-    ubig::UBig,
-};
+use crate::{helper_macros, ibig::IBig, ubig::UBig};
 use core::ops::{Mul, MulAssign};
 
 helper_macros::forward_ubig_binop_to_repr!(impl Mul, mul);
-helper_macros::forward_binop_assign_by_taking!(impl MulAssign<UBig> for UBig, mul_assign, mul);
+helper_macros::impl_binop_assign_by_taking!(impl MulAssign<UBig> for UBig, mul_assign, mul);
 
 macro_rules! impl_ibig_mul {
     ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {
         IBig($mag0.mul($mag1).with_sign($sign0 * $sign1))
     };
 }
-helper_macros::forward_ibig_binop_to_repr!(impl Mul, mul, impl_ibig_mul);
-helper_macros::forward_binop_assign_by_taking!(impl MulAssign<IBig> for IBig, mul_assign, mul);
+helper_macros::forward_ibig_binop_to_repr!(impl Mul, mul, Output = IBig, impl_ibig_mul);
+helper_macros::impl_binop_assign_by_taking!(impl MulAssign<IBig> for IBig, mul_assign, mul);
 
 macro_rules! impl_ubig_ibig_mul {
     ($mag0:ident, $sign1:ident, $mag1:ident) => {
         IBig($mag0.mul($mag1).with_sign($sign1))
     };
 }
-helper_macros::forward_ubig_ibig_binop_to_repr!(impl Mul, mul, impl_ubig_ibig_mul);
+helper_macros::forward_ubig_ibig_binop_to_repr!(impl Mul, mul, Output = IBig, impl_ubig_ibig_mul);
 
 macro_rules! impl_ibig_ubig_mul {
     ($sign0:ident, $mag0:ident, $mag1:ident) => {
         IBig($mag0.mul($mag1).with_sign($sign0))
     };
 }
-helper_macros::forward_ibig_ubig_binop_to_repr!(impl Mul, mul, impl_ibig_ubig_mul);
-helper_macros::forward_binop_assign_by_taking!(impl MulAssign<UBig> for IBig, mul_assign, mul);
+helper_macros::forward_ibig_ubig_binop_to_repr!(impl Mul, mul, Output = IBig, impl_ibig_ubig_mul);
+helper_macros::impl_binop_assign_by_taking!(impl MulAssign<UBig> for IBig, mul_assign, mul);
 
-macro_rules! impl_mul_ubig_unsigned {
-    ($t:ty) => {
-        impl Mul<$t> for UBig {
-            type Output = UBig;
+// Ops with primitives
 
-            #[inline]
-            fn mul(self, rhs: $t) -> UBig {
-                self * UBig::from_unsigned(rhs)
-            }
-        }
+macro_rules! impl_div_primitive_with_ubig {
+    ($($t:ty)*) => {$(
+        helper_macros::impl_commutative_binop_with_primitive!(impl Mul<$t> for UBig, mul);
+        helper_macros::impl_binop_assign_with_primitive!(impl MulAssign<$t> for UBig, mul_assign);
+    )*};
+}
+impl_div_primitive_with_ubig!(u8 u16 u32 u64 u128 usize);
 
-        impl Mul<$t> for &UBig {
-            type Output = UBig;
+macro_rules! impl_div_primitive_with_ibig {
+    ($($t:ty)*) => {$(
+        helper_macros::impl_commutative_binop_with_primitive!(impl Mul<$t> for IBig, mul);
+        helper_macros::impl_binop_assign_with_primitive!(impl MulAssign<$t> for IBig, mul_assign);
+    )*};
+}
+impl_div_primitive_with_ibig!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);
 
-            #[inline]
-            fn mul(self, rhs: $t) -> UBig {
-                self * UBig::from_unsigned(rhs)
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl Mul<$t> for UBig, mul);
-        helper_macros::forward_binop_swap_args!(impl Mul<UBig> for $t, mul);
-
-        impl MulAssign<$t> for UBig {
-            #[inline]
-            fn mul_assign(&mut self, rhs: $t) {
-                *self *= UBig::from_unsigned(rhs)
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl MulAssign<$t> for UBig, mul_assign);
-    };
+impl UBig {
+    /// Calculate the square of the number (`x * x`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::UBig;
+    /// assert_eq!(UBig::from(3u8).square(), 9);
+    /// ```
+    #[inline]
+    pub fn square(&self) -> UBig {
+        UBig(self.repr().square())
+    }
 }
 
-impl_mul_ubig_unsigned!(u8);
-impl_mul_ubig_unsigned!(u16);
-impl_mul_ubig_unsigned!(u32);
-impl_mul_ubig_unsigned!(u64);
-impl_mul_ubig_unsigned!(u128);
-impl_mul_ubig_unsigned!(usize);
-
-macro_rules! impl_mul_ibig_primitive {
-    ($t:ty) => {
-        impl Mul<$t> for IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn mul(self, rhs: $t) -> IBig {
-                self * IBig::from(rhs)
-            }
-        }
-
-        impl Mul<$t> for &IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn mul(self, rhs: $t) -> IBig {
-                self * IBig::from(rhs)
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl Mul<$t> for IBig, mul);
-        helper_macros::forward_binop_swap_args!(impl Mul<IBig> for $t, mul);
-
-        impl MulAssign<$t> for IBig {
-            #[inline]
-            fn mul_assign(&mut self, rhs: $t) {
-                *self *= IBig::from(rhs)
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl MulAssign<$t> for IBig, mul_assign);
-    };
+impl IBig {
+    /// Calculate the square of the number (`self * self`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::IBig;
+    /// assert_eq!(IBig::from(-3).square(), 9);
+    /// ```
+    #[inline]
+    pub fn square(&self) -> IBig {
+        IBig(self.as_sign_repr().1.square())
+    }
 }
 
-impl_mul_ibig_primitive!(i8);
-impl_mul_ibig_primitive!(i16);
-impl_mul_ibig_primitive!(i32);
-impl_mul_ibig_primitive!(i64);
-impl_mul_ibig_primitive!(i128);
-impl_mul_ibig_primitive!(isize);
-
-mod repr {
+pub(crate) mod repr {
     use super::*;
-    use crate::primitive::{shrink_dword, split_dword};
-    use crate::repr::{Repr, TypedRepr, TypedReprRef};
-    use crate::{math, shift};
+    use crate::{
+        arch::word::{DoubleWord, Word},
+        buffer::Buffer,
+        cmp::cmp_in_place,
+        math,
+        memory::MemoryAllocation,
+        mul,
+        primitive::{extend_word, shrink_dword, split_dword},
+        repr::{
+            Repr,
+            TypedRepr::{self, *},
+            TypedReprRef::{self, *},
+        },
+        shift, sqr,
+    };
 
     impl Mul<TypedRepr> for TypedRepr {
         type Output = Repr;
@@ -202,7 +170,7 @@ mod repr {
     }
 
     /// Multiply a large number by a `DoubleWord`.
-    fn mul_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> Repr {
+    pub(crate) fn mul_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> Repr {
         match rhs {
             0 => Repr::zero(),
             1 => Repr::from_buffer(buffer),
@@ -213,9 +181,7 @@ mod repr {
                     } else {
                         mul::mul_word_in_place(&mut buffer, word)
                     };
-                    if carry != 0 {
-                        buffer.push_resizing(carry);
-                    }
+                    buffer.push_resizing(carry);
                     Repr::from_buffer(buffer)
                 } else {
                     let carry = mul::mul_dword_in_place(&mut buffer, dw);
@@ -232,20 +198,59 @@ mod repr {
     }
 
     /// Multiply two large numbers.
-    fn mul_large(lhs: &[Word], rhs: &[Word]) -> Repr {
+    pub(crate) fn mul_large(lhs: &[Word], rhs: &[Word]) -> Repr {
         debug_assert!(lhs.len() >= 2 && rhs.len() >= 2);
+
+        // shortcut to square if two operands are equal
+        if cmp_in_place(lhs, rhs).is_eq() {
+            return square_large(lhs);
+        }
 
         let res_len = lhs.len() + rhs.len();
         let mut buffer = Buffer::allocate(res_len);
         buffer.push_zeros(res_len);
 
-        let mut allocation = MemoryAllocation::new(mul::memory_requirement_exact(
-            res_len,
-            lhs.len().min(rhs.len()),
-        ));
-        let mut memory = allocation.memory();
-        let overflow = mul::add_signed_mul(&mut buffer, Positive, lhs, rhs, &mut memory);
-        debug_assert!(overflow == 0);
+        let mut allocation =
+            MemoryAllocation::new(mul::memory_requirement_exact(res_len, lhs.len().min(rhs.len())));
+        mul::multiply(&mut buffer, lhs, rhs, &mut allocation.memory());
+        Repr::from_buffer(buffer)
+    }
+
+    impl TypedReprRef<'_> {
+        pub fn square(&self) -> Repr {
+            match self {
+                TypedReprRef::RefSmall(dword) => {
+                    if let Some(word) = shrink_dword(*dword) {
+                        Repr::from_dword(extend_word(word) * extend_word(word))
+                    } else {
+                        square_dword_spilled(*dword)
+                    }
+                }
+                TypedReprRef::RefLarge(words) => square_large(words),
+            }
+        }
+    }
+
+    fn square_dword_spilled(dw: DoubleWord) -> Repr {
+        let (lo, hi) = math::mul_add_carry_dword(dw, dw, 0);
+        let mut buffer = Buffer::allocate(4);
+        let (n0, n1) = split_dword(lo);
+        buffer.push(n0);
+        buffer.push(n1);
+        let (n2, n3) = split_dword(hi);
+        buffer.push(n2);
+        buffer.push(n3);
+        Repr::from_buffer(buffer)
+    }
+
+    pub(crate) fn square_large(words: &[Word]) -> Repr {
+        debug_assert!(words.len() >= 2);
+
+        let mut buffer = Buffer::allocate(words.len() * 2);
+        buffer.push_zeros(words.len() * 2);
+
+        let mut allocation = MemoryAllocation::new(sqr::memory_requirement_exact(words.len()));
+        sqr::square(&mut buffer, words, &mut allocation.memory());
         Repr::from_buffer(buffer)
     }
 }

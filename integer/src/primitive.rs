@@ -3,7 +3,7 @@
 use crate::{
     arch::word::{DoubleWord, SignedDoubleWord, SignedWord, Word},
     error::OutOfBoundsError,
-    sign::Sign::{self, *},
+    Sign::{self, *},
 };
 use core::{
     convert::{TryFrom, TryInto},
@@ -75,6 +75,18 @@ pub fn highest_dword(words: &[Word]) -> DoubleWord {
         let hi = *words.get_unchecked(len - 1);
         double_word(lo, hi)
     }
+}
+
+/// Locate the top non-zero word in a slice. It returns the position of the
+/// word added by one for convenience, if the input is zero, then 0 is returned.
+#[inline]
+pub fn locate_top_word_plus_one(words: &[Word]) -> usize {
+    for pos in (0..words.len()).rev() {
+        if words[pos] != 0 {
+            return pos + 1;
+        }
+    }
+    0
 }
 
 pub trait PrimitiveUnsigned
@@ -268,21 +280,12 @@ mod tests {
     fn test_try_from_sign_magnitude() {
         assert_eq!(i32::try_from_sign_magnitude(Positive, 0), Ok(0));
         assert_eq!(i32::try_from_sign_magnitude(Positive, 5), Ok(5));
-        assert_eq!(
-            i32::try_from_sign_magnitude(Positive, 0x7fffffff),
-            Ok(0x7fffffff)
-        );
+        assert_eq!(i32::try_from_sign_magnitude(Positive, 0x7fffffff), Ok(0x7fffffff));
         assert!(i32::try_from_sign_magnitude(Positive, 0x80000000).is_err());
         assert_eq!(i32::try_from_sign_magnitude(Negative, 0), Ok(0));
         assert_eq!(i32::try_from_sign_magnitude(Negative, 5), Ok(-5));
-        assert_eq!(
-            i32::try_from_sign_magnitude(Negative, 0x7fffffff),
-            Ok(-0x7fffffff)
-        );
-        assert_eq!(
-            i32::try_from_sign_magnitude(Negative, 0x80000000),
-            Ok(-0x80000000)
-        );
+        assert_eq!(i32::try_from_sign_magnitude(Negative, 0x7fffffff), Ok(-0x7fffffff));
+        assert_eq!(i32::try_from_sign_magnitude(Negative, 0x80000000), Ok(-0x80000000));
         assert!(i32::try_from_sign_magnitude(Negative, 0x80000001).is_err());
         assert!(i32::try_from_sign_magnitude(Negative, 0xffffffff).is_err());
     }

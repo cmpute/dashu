@@ -1,5 +1,6 @@
 use crate::{
     arch::word::Word,
+    error::panic_allocate_too_much,
     math,
     memory::{self, MemoryAllocation},
     primitive::{double_word, split_dword, PrimitiveUnsigned, WORD_BITS, WORD_BITS_USIZE},
@@ -15,20 +16,22 @@ use super::{
 impl<'a> Modulo<'a> {
     /// Exponentiation.
     ///
+    /// If you want use negative exponent, you can first use [inv()][Self::inv] to
+    /// convert the base to its inverse, and then call this method.
+    ///
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::{modular::ModuloRing, ubig};
+    /// # use dashu_int::{modular::ModuloRing, UBig};
     /// // A Mersenne prime.
-    /// let p = ubig!(2).pow(607) - ubig!(1);
+    /// let p = UBig::from(2u8).pow(607) - UBig::ONE;
     /// let ring = ModuloRing::new(p.clone());
     /// // Fermat's little theorem: a^(p-1) = 1 (mod p)
     /// let a = ring.convert(123);
-    /// assert_eq!(a.pow(&(p - ubig!(1))), ring.convert(1));
+    /// assert_eq!(a.pow(&(p - UBig::ONE)), ring.convert(1));
     /// ```
     #[inline]
     pub fn pow(&self, exp: &UBig) -> Modulo<'a> {
-        // TODO: support signed exponent through inv (v0.2)
         match self.repr() {
             ModuloRepr::Single(raw, ring) => Modulo::from_single(ring.pow(*raw, exp), ring),
             ModuloRepr::Double(raw, ring) => Modulo::from_double(ring.pow(*raw, exp), ring),
@@ -80,7 +83,7 @@ macro_rules! impl_mod_pow_for_primitive {
                             self.pow_helper(res, raw, lo, WORD_BITS)
                         }
                     }
-                    RefLarge(buffer) => self.pow_nontrivial(raw, buffer),
+                    RefLarge(words) => self.pow_nontrivial(raw, words),
                 }
             }
 
@@ -118,7 +121,7 @@ impl ModuloRingLarge {
         #[allow(clippy::redundant_closure)]
         let table_words = ((1usize << (window_len - 1)) - 1)
             .checked_mul(n)
-            .unwrap_or_else(|| memory::panic_out_of_memory());
+            .unwrap_or_else(|| panic_allocate_too_much());
 
         let memory_requirement = memory::add_layout(
             memory::array_layout::<Word>(table_words),

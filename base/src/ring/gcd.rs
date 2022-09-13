@@ -1,6 +1,8 @@
 use super::{ExtendedGcd, Gcd};
 use core::mem::replace;
 
+// TODO: Implement gcd for signed integers
+
 trait UncheckedGcd<Rhs = Self> {
     type Output;
 
@@ -168,7 +170,7 @@ macro_rules! impl_gcd_ops_prim {
                 let (mut a, mut b) = (self, rhs);
                 if a == 0 || b == 0 {
                     if a == 0 && b == 0 {
-                        panic!("the greatest common divisor is not defined between zeros!");
+                        panic_gcd_0_0();
                     }
                     return a | b;
                 }
@@ -212,7 +214,7 @@ macro_rules! impl_gcd_ops_prim {
 
                 // check if zero inputs
                 match (a == 0, b == 0) {
-                    (true, true) => panic!("the greatest common divisor is not defined between zeros!"),
+                    (true, true) => panic_gcd_0_0(),
                     (true, false) => return (b, 0, 1),
                     (false, true) => return (a, 1, 0),
                     _ => {}
@@ -227,7 +229,7 @@ macro_rules! impl_gcd_ops_prim {
                 if a >= b {
                     if b == 1 {
                         // this shortcut eliminates the overflow when a = <$T>::MAX and b = 1
-                        (1, 0, 1)
+                        (1 << shift, 0, 1)
                     } else {
                         // forward to the gcd algorithm
                         let (g, ca, cb) = a.unchecked_gcd_ext(b);
@@ -235,7 +237,7 @@ macro_rules! impl_gcd_ops_prim {
                     }
                 } else {
                     if a == 1 {
-                        (1, 1, 0)
+                        (1 << shift, 1, 0)
                     } else {
                         let (g, cb, ca) = b.unchecked_gcd_ext(a);
                         (g << shift, ca, cb)
@@ -247,6 +249,10 @@ macro_rules! impl_gcd_ops_prim {
 }
 impl_gcd_ops_prim!(u8 | i8; u16 | i16; u32 | i32; u64 | i64; u128 | i128; usize | isize;);
 
+fn panic_gcd_0_0() -> ! {
+    panic!("the greatest common divisor is not defined between zeros!")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,6 +260,7 @@ mod tests {
     #[test]
     fn test_simple() {
         assert_eq!(12u8.gcd(18), 6);
+        assert_eq!(16u16.gcd(2032), 16);
         assert_eq!(0x40000000u32.gcd(0xcfd41b91), 1);
         assert_eq!(
             0x80000000000000000000000000000000u128.gcd(0x6f32f1ef8b18a2bc3cea59789c79d441),
@@ -264,8 +271,10 @@ mod tests {
             1
         );
 
-        let result = 12u8.gcd_ext(18u8);
+        let result = 12u8.gcd_ext(18);
         assert_eq!(result, (6, -1, 1));
+        let result = 16u16.gcd_ext(2032);
+        assert_eq!(result, (16, 1, 0));
         let result = 0x40000000u32.gcd_ext(0xcfd41b91);
         assert_eq!(result, (1, -569926925, 175506801));
         let result =

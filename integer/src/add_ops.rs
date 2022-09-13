@@ -1,20 +1,12 @@
 //! Addition and subtraction operators.
 
-use crate::{
-    add,
-    arch::word::{DoubleWord, Word},
-    buffer::Buffer,
-    helper_macros,
-    ibig::IBig,
-    sign::Sign::*,
-    ubig::UBig,
-};
+use crate::{helper_macros, ibig::IBig, ubig::UBig, Sign::*};
 use core::ops::{Add, AddAssign, Sub, SubAssign};
 
 helper_macros::forward_ubig_binop_to_repr!(impl Add, add);
 helper_macros::forward_ubig_binop_to_repr!(impl Sub, sub);
-helper_macros::forward_binop_assign_by_taking!(impl AddAssign<UBig> for UBig, add_assign, add);
-helper_macros::forward_binop_assign_by_taking!(impl SubAssign<UBig> for UBig, sub_assign, sub);
+helper_macros::impl_binop_assign_by_taking!(impl AddAssign<UBig> for UBig, add_assign, add);
+helper_macros::impl_binop_assign_by_taking!(impl SubAssign<UBig> for UBig, sub_assign, sub);
 
 macro_rules! impl_ibig_add {
     ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {
@@ -36,10 +28,10 @@ macro_rules! impl_ibig_sub {
         }
     };
 }
-helper_macros::forward_ibig_binop_to_repr!(impl Add, add, impl_ibig_add);
-helper_macros::forward_ibig_binop_to_repr!(impl Sub, sub, impl_ibig_sub);
-helper_macros::forward_binop_assign_by_taking!(impl AddAssign<IBig> for IBig, add_assign, add);
-helper_macros::forward_binop_assign_by_taking!(impl SubAssign<IBig> for IBig, sub_assign, sub);
+helper_macros::forward_ibig_binop_to_repr!(impl Add, add, Output = IBig, impl_ibig_add);
+helper_macros::forward_ibig_binop_to_repr!(impl Sub, sub, Output = IBig, impl_ibig_sub);
+helper_macros::impl_binop_assign_by_taking!(impl AddAssign<IBig> for IBig, add_assign, add);
+helper_macros::impl_binop_assign_by_taking!(impl SubAssign<IBig> for IBig, sub_assign, sub);
 
 macro_rules! impl_ubig_ibig_add {
     ($mag0:ident, $sign1:ident, $mag1:ident) => {
@@ -57,8 +49,8 @@ macro_rules! impl_ubig_ibig_sub {
         }
     };
 }
-helper_macros::forward_ubig_ibig_binop_to_repr!(impl Add, add, impl_ubig_ibig_add);
-helper_macros::forward_ubig_ibig_binop_to_repr!(impl Sub, sub, impl_ubig_ibig_sub);
+helper_macros::forward_ubig_ibig_binop_to_repr!(impl Add, add, Output = IBig, impl_ubig_ibig_add);
+helper_macros::forward_ubig_ibig_binop_to_repr!(impl Sub, sub, Output = IBig, impl_ubig_ibig_sub);
 
 macro_rules! impl_ibig_ubig_add {
     ($sign0:ident, $mag0:ident, $mag1:ident) => {
@@ -76,173 +68,40 @@ macro_rules! impl_ibig_ubig_sub {
         }
     };
 }
-helper_macros::forward_ibig_ubig_binop_to_repr!(impl Add, add, impl_ibig_ubig_add);
-helper_macros::forward_ibig_ubig_binop_to_repr!(impl Sub, sub, impl_ibig_ubig_sub);
-helper_macros::forward_binop_assign_by_taking!(impl AddAssign<UBig> for IBig, add_assign, add);
-helper_macros::forward_binop_assign_by_taking!(impl SubAssign<UBig> for IBig, sub_assign, sub);
+helper_macros::forward_ibig_ubig_binop_to_repr!(impl Add, add, Output = IBig, impl_ibig_ubig_add);
+helper_macros::forward_ibig_ubig_binop_to_repr!(impl Sub, sub, Output = IBig, impl_ibig_ubig_sub);
+helper_macros::impl_binop_assign_by_taking!(impl AddAssign<UBig> for IBig, add_assign, add);
+helper_macros::impl_binop_assign_by_taking!(impl SubAssign<UBig> for IBig, sub_assign, sub);
 
-macro_rules! impl_add_ubig_unsigned {
-    ($t:ty) => {
-        impl Add<$t> for UBig {
-            type Output = UBig;
+// Ops with primitives
 
-            #[inline]
-            fn add(self, rhs: $t) -> UBig {
-                self + UBig::from_unsigned(rhs)
-            }
-        }
-
-        impl Add<$t> for &UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn add(self, rhs: $t) -> UBig {
-                self + UBig::from_unsigned(rhs)
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl Add<$t> for UBig, add);
-        helper_macros::forward_binop_swap_args!(impl Add<UBig> for $t, add);
-
-        impl AddAssign<$t> for UBig {
-            #[inline]
-            fn add_assign(&mut self, rhs: $t) {
-                *self += UBig::from_unsigned(rhs)
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl AddAssign<$t> for UBig, add_assign);
-
-        impl Sub<$t> for UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn sub(self, rhs: $t) -> UBig {
-                self - UBig::from_unsigned(rhs)
-            }
-        }
-
-        impl Sub<$t> for &UBig {
-            type Output = UBig;
-
-            #[inline]
-            fn sub(self, rhs: $t) -> UBig {
-                self - UBig::from_unsigned(rhs)
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl Sub<$t> for UBig, sub);
-
-        impl SubAssign<$t> for UBig {
-            #[inline]
-            fn sub_assign(&mut self, rhs: $t) {
-                *self -= UBig::from_unsigned(rhs)
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl SubAssign<$t> for UBig, sub_assign);
-    };
+macro_rules! impl_add_sub_primitive_with_ubig {
+    ($($t:ty)*) => {$(
+        helper_macros::impl_commutative_binop_with_primitive!(impl Add<$t> for UBig, add);
+        helper_macros::impl_binop_assign_with_primitive!(impl AddAssign<$t> for UBig, add_assign);
+        helper_macros::impl_commutative_binop_with_primitive!(impl Sub<$t> for UBig, sub);
+        helper_macros::impl_binop_assign_with_primitive!(impl SubAssign<$t> for UBig, sub_assign);
+    )*};
 }
+impl_add_sub_primitive_with_ubig!(u8 u16 u32 u64 u128 usize);
 
-impl_add_ubig_unsigned!(u8);
-impl_add_ubig_unsigned!(u16);
-impl_add_ubig_unsigned!(u32);
-impl_add_ubig_unsigned!(u64);
-impl_add_ubig_unsigned!(u128);
-impl_add_ubig_unsigned!(usize);
-
-macro_rules! impl_add_ibig_primitive {
-    ($t:ty) => {
-        impl Add<$t> for IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn add(self, rhs: $t) -> IBig {
-                self + IBig::from(rhs)
-            }
-        }
-
-        impl Add<$t> for &IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn add(self, rhs: $t) -> IBig {
-                self + IBig::from(rhs)
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl Add<$t> for IBig, add);
-        helper_macros::forward_binop_swap_args!(impl Add<IBig> for $t, add);
-
-        impl AddAssign<$t> for IBig {
-            #[inline]
-            fn add_assign(&mut self, rhs: $t) {
-                *self += IBig::from(rhs)
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl AddAssign<$t> for IBig, add_assign);
-
-        impl Sub<$t> for IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn sub(self, rhs: $t) -> IBig {
-                self - IBig::from(rhs)
-            }
-        }
-
-        impl Sub<$t> for &IBig {
-            type Output = IBig;
-
-            #[inline]
-            fn sub(self, rhs: $t) -> IBig {
-                self - IBig::from(rhs)
-            }
-        }
-
-        impl Sub<IBig> for $t {
-            type Output = IBig;
-
-            #[inline]
-            fn sub(self, rhs: IBig) -> IBig {
-                IBig::from(self) - rhs
-            }
-        }
-
-        impl Sub<&IBig> for $t {
-            type Output = IBig;
-
-            #[inline]
-            fn sub(self, rhs: &IBig) -> IBig {
-                IBig::from(self) - rhs
-            }
-        }
-
-        helper_macros::forward_binop_second_arg_by_value!(impl Sub<$t> for IBig, sub);
-        helper_macros::forward_binop_first_arg_by_value!(impl Sub<IBig> for $t, sub);
-
-        impl SubAssign<$t> for IBig {
-            #[inline]
-            fn sub_assign(&mut self, rhs: $t) {
-                *self -= IBig::from(rhs)
-            }
-        }
-
-        helper_macros::forward_binop_assign_arg_by_value!(impl SubAssign<$t> for IBig, sub_assign);
-    };
+macro_rules! impl_add_sub_primitive_with_ibig {
+    ($($t:ty)*) => {$(
+        helper_macros::impl_commutative_binop_with_primitive!(impl Add<$t> for IBig, add);
+        helper_macros::impl_binop_assign_with_primitive!(impl AddAssign<$t> for IBig, add_assign);
+        helper_macros::impl_commutative_binop_with_primitive!(impl Sub<$t> for IBig, sub);
+        helper_macros::impl_binop_assign_with_primitive!(impl SubAssign<$t> for IBig, sub_assign);
+    )*};
 }
-
-impl_add_ibig_primitive!(i8);
-impl_add_ibig_primitive!(i16);
-impl_add_ibig_primitive!(i32);
-impl_add_ibig_primitive!(i64);
-impl_add_ibig_primitive!(i128);
-impl_add_ibig_primitive!(isize);
+impl_add_sub_primitive_with_ibig!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);
 
 pub mod repr {
     use super::*;
     use crate::{
+        add,
+        arch::word::{DoubleWord, Word},
+        buffer::Buffer,
+        error::panic_negative_ubig,
         primitive::split_dword,
         repr::{
             Repr,
@@ -257,13 +116,13 @@ pub mod repr {
         fn add(self, rhs: TypedReprRef) -> Repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => add_dword(dword0, dword1),
-                (RefSmall(dword0), RefLarge(buffer1)) => add_large_dword(buffer1.into(), dword0),
-                (RefLarge(buffer0), RefSmall(dword1)) => add_large_dword(buffer0.into(), dword1),
-                (RefLarge(buffer0), RefLarge(buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        add_large(buffer0.into(), buffer1)
+                (RefSmall(dword0), RefLarge(words1)) => add_large_dword(words1.into(), dword0),
+                (RefLarge(words0), RefSmall(dword1)) => add_large_dword(words0.into(), dword1),
+                (RefLarge(words0), RefLarge(words1)) => {
+                    if words0.len() >= words1.len() {
+                        add_large(words0.into(), words1)
                     } else {
-                        add_large(buffer1.into(), buffer0)
+                        add_large(words1.into(), words0)
                     }
                 }
             }
@@ -277,8 +136,8 @@ pub mod repr {
             match (self, rhs) {
                 (RefSmall(dword0), Small(dword1)) => add_dword(dword0, dword1),
                 (RefSmall(dword0), Large(buffer1)) => add_large_dword(buffer1, dword0),
-                (RefLarge(buffer0), Small(dword1)) => add_large_dword(buffer0.into(), dword1),
-                (RefLarge(buffer0), Large(buffer1)) => add_large(buffer1, buffer0),
+                (RefLarge(words0), Small(dword1)) => add_large_dword(words0.into(), dword1),
+                (RefLarge(words0), Large(buffer1)) => add_large(buffer1, words0),
             }
         }
     }
@@ -356,7 +215,7 @@ pub mod repr {
         fn sub(self, rhs: TypedReprRef) -> Repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => sub_dword(dword0, dword1),
-                (RefSmall(_), RefLarge(_)) => UBig::panic_negative(),
+                (RefSmall(_), RefLarge(_)) => panic_negative_ubig(),
                 (RefLarge(buffer0), RefSmall(dword1)) => sub_large_dword(buffer0.into(), dword1),
                 (RefLarge(buffer0), RefLarge(buffer1)) => sub_large(buffer0.into(), buffer1),
             }
@@ -369,7 +228,7 @@ pub mod repr {
         fn sub(self, rhs: TypedReprRef) -> Repr {
             match (self, rhs) {
                 (Small(dword0), RefSmall(dword1)) => sub_dword(dword0, dword1),
-                (Small(_), RefLarge(_)) => UBig::panic_negative(),
+                (Small(_), RefLarge(_)) => panic_negative_ubig(),
                 (Large(buffer0), RefSmall(dword1)) => sub_large_dword(buffer0, dword1),
                 (Large(buffer0), RefLarge(buffer1)) => sub_large(buffer0, buffer1),
             }
@@ -382,7 +241,7 @@ pub mod repr {
         fn sub(self, rhs: TypedRepr) -> Repr {
             match (self, rhs) {
                 (RefSmall(dword0), Small(dword1)) => sub_dword(dword0, dword1),
-                (RefSmall(_), Large(_)) => UBig::panic_negative(),
+                (RefSmall(_), Large(_)) => panic_negative_ubig(),
                 (RefLarge(buffer0), Small(dword1)) => sub_large_dword(buffer0.into(), dword1),
                 (RefLarge(buffer0), Large(buffer1)) => sub_large_ref_val(buffer0, buffer1),
             }
@@ -395,7 +254,7 @@ pub mod repr {
         fn sub(self, rhs: TypedRepr) -> Repr {
             match (self, rhs) {
                 (Small(dword0), Small(dword1)) => sub_dword(dword0, dword1),
-                (Small(_), Large(_)) => UBig::panic_negative(),
+                (Small(_), Large(_)) => panic_negative_ubig(),
                 (Large(buffer0), Small(dword1)) => sub_large_dword(buffer0, dword1),
                 (Large(buffer0), Large(buffer1)) => sub_large(buffer0, &buffer1),
             }
@@ -406,7 +265,7 @@ pub mod repr {
     fn sub_dword(a: DoubleWord, b: DoubleWord) -> Repr {
         match a.checked_sub(b) {
             Some(res) => Repr::from_dword(res),
-            None => UBig::panic_negative(),
+            None => panic_negative_ubig(),
         }
     }
 
@@ -420,7 +279,7 @@ pub mod repr {
     #[inline]
     fn sub_large(mut lhs: Buffer, rhs: &[Word]) -> Repr {
         if lhs.len() < rhs.len() || add::sub_in_place(&mut lhs, rhs) {
-            UBig::panic_negative();
+            panic_negative_ubig();
         }
         Repr::from_buffer(lhs)
     }
@@ -429,13 +288,13 @@ pub mod repr {
     pub(crate) fn sub_large_ref_val(lhs: &[Word], mut rhs: Buffer) -> Repr {
         let n = rhs.len();
         if lhs.len() < n {
-            UBig::panic_negative();
+            panic_negative_ubig();
         }
         let borrow = add::sub_same_len_in_place_swap(&lhs[..n], &mut rhs);
         rhs.ensure_capacity(lhs.len());
         rhs.push_slice(&lhs[n..]);
         if borrow && add::sub_one_in_place(&mut rhs[n..]) {
-            UBig::panic_negative();
+            panic_negative_ubig();
         }
         Repr::from_buffer(rhs)
     }
@@ -501,10 +360,15 @@ trait SubSigned<Rhs> {
 
 mod repr_signed {
     use super::*;
-    use crate::repr::{
-        Repr,
-        TypedRepr::{self, *},
-        TypedReprRef::{self, *},
+    use crate::{
+        add,
+        arch::word::{DoubleWord, Word},
+        buffer::Buffer,
+        repr::{
+            Repr,
+            TypedRepr::{self, *},
+            TypedReprRef::{self, *},
+        },
     };
 
     impl<'l, 'r> SubSigned<TypedReprRef<'r>> for TypedReprRef<'l> {
@@ -516,12 +380,12 @@ mod repr_signed {
                 (RefSmall(dword0), RefLarge(buffer1)) => {
                     sub_large_dword(buffer1.into(), dword0).neg()
                 }
-                (RefLarge(buffer0), RefSmall(dword1)) => sub_large_dword(buffer0.into(), dword1),
-                (RefLarge(buffer0), RefLarge(buffer1)) => {
-                    if buffer0.len() >= buffer1.len() {
-                        sub_large(buffer0.into(), buffer1)
+                (RefLarge(words0), RefSmall(words1)) => sub_large_dword(words0.into(), words1),
+                (RefLarge(words0), RefLarge(words1)) => {
+                    if words0.len() >= words1.len() {
+                        sub_large(words0.into(), words1)
                     } else {
-                        sub_large(buffer1.into(), buffer0).neg()
+                        sub_large(words1.into(), words0).neg()
                     }
                 }
             }
@@ -535,8 +399,8 @@ mod repr_signed {
             match (self, rhs) {
                 (RefSmall(dword0), Small(dword1)) => sub_dword(dword0, dword1),
                 (RefSmall(dword0), Large(buffer1)) => sub_large_dword(buffer1, dword0).neg(),
-                (RefLarge(buffer0), Small(dword1)) => sub_large_dword(buffer0.into(), dword1),
-                (RefLarge(buffer0), Large(buffer1)) => sub_large(buffer1, buffer0).neg(),
+                (RefLarge(words0), Small(dword1)) => sub_large_dword(words0.into(), dword1),
+                (RefLarge(words0), Large(buffer1)) => sub_large(buffer1, words0).neg(),
             }
         }
     }
@@ -547,9 +411,9 @@ mod repr_signed {
         fn sub_signed(self, rhs: TypedReprRef) -> Self::Output {
             match (self, rhs) {
                 (Small(dword0), RefSmall(dword1)) => sub_dword(dword0, dword1),
-                (Small(dword0), RefLarge(buffer1)) => sub_large_dword(buffer1.into(), dword0).neg(),
+                (Small(dword0), RefLarge(words1)) => sub_large_dword(words1.into(), dword0).neg(),
                 (Large(buffer0), RefSmall(dword1)) => sub_large_dword(buffer0, dword1),
-                (Large(buffer0), RefLarge(buffer1)) => sub_large(buffer0, buffer1),
+                (Large(buffer0), RefLarge(words1)) => sub_large(buffer0, words1),
             }
         }
     }

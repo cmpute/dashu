@@ -1,17 +1,21 @@
 use dashu_int::{
-    ibig,
     ops::{Abs, UnsignedAbs},
-    ubig,
+    Sign,
 };
+
+mod helper_macros;
 
 #[test]
 #[allow(clippy::double_neg)]
 fn test_neg() {
+    assert_eq!(-ubig!(123), ibig!(-123));
     assert_eq!(-ibig!(123), ibig!(-123));
     assert_eq!(-ibig!(-123), ibig!(123));
     assert_eq!(-ibig!(0), ibig!(0));
 
+    assert_eq!(-&ubig!(123), ibig!(-123));
     assert_eq!(-&ibig!(123), ibig!(-123));
+    assert_eq!(-&ibig!(0), ibig!(0));
 }
 
 #[test]
@@ -35,4 +39,19 @@ fn test_signum() {
     assert_eq!(ibig!(-500).signum(), ibig!(-1));
     assert_eq!(ibig!(0).signum(), ibig!(0));
     assert_eq!(ibig!(500).signum(), ibig!(1));
+}
+
+#[test]
+fn test_mul() {
+    assert_eq!(Sign::Positive * ubig!(0), ibig!(0));
+    assert_eq!(Sign::Negative * ubig!(0), ibig!(0));
+    assert_eq!(Sign::Positive * ubig!(123), ibig!(123));
+    assert_eq!(Sign::Negative * ubig!(123), ibig!(-123));
+
+    assert_eq!(Sign::Positive * ibig!(0), ibig!(0));
+    assert_eq!(Sign::Negative * ibig!(0), ibig!(0));
+    assert_eq!(Sign::Positive * ibig!(123), ibig!(123));
+    assert_eq!(Sign::Negative * ibig!(123), ibig!(-123));
+    assert_eq!(Sign::Positive * ibig!(-123), ibig!(-123));
+    assert_eq!(Sign::Negative * ibig!(-123), ibig!(123));
 }

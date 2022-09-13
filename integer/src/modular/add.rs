@@ -4,11 +4,8 @@ use super::{
     modulo::{Modulo, ModuloDoubleRaw, ModuloLargeRaw, ModuloRepr, ModuloSingleRaw},
     modulo_ring::{ModuloRingDouble, ModuloRingLarge, ModuloRingSingle},
 };
-use crate::{add, cmp};
-use core::{
-    cmp::Ordering,
-    ops::{Add, AddAssign, Neg, Sub, SubAssign},
-};
+use crate::{add, cmp, error::panic_different_rings};
+use core::ops::{Add, AddAssign, Neg, Sub, SubAssign};
 
 impl<'a> Neg for Modulo<'a> {
     type Output = Modulo<'a>;
@@ -95,7 +92,7 @@ impl<'a> AddAssign<&Modulo<'a>> for Modulo<'a> {
                 Modulo::check_same_ring_large(ring, ring1);
                 ring.add_in_place(raw0, raw1);
             }
-            _ => Modulo::panic_different_rings(),
+            _ => panic_different_rings(),
         }
     }
 }
@@ -138,7 +135,7 @@ impl<'a> Sub<Modulo<'a>> for &Modulo<'a> {
                 ring.sub_in_place_swap(raw0, &mut raw1);
                 Modulo::from_large(raw1, ring)
             }
-            _ => Modulo::panic_different_rings(),
+            _ => panic_different_rings(),
         }
     }
 }
@@ -175,7 +172,7 @@ impl<'a> SubAssign<&Modulo<'a>> for Modulo<'a> {
                 Modulo::check_same_ring_large(ring, ring1);
                 ring.sub_in_place(raw0, raw1);
             }
-            _ => Modulo::panic_different_rings(),
+            _ => panic_different_rings(),
         }
     }
 }
@@ -258,7 +255,7 @@ impl ModuloRingDouble {
 
 impl ModuloRingLarge {
     pub fn negate_in_place(&self, raw: &mut ModuloLargeRaw) {
-        debug_assert!(self.is_valid(&*raw));
+        debug_assert!(self.is_valid(raw));
         if !raw.0.iter().all(|w| *w == 0) {
             let overflow = add::sub_same_len_in_place_swap(self.normalized_modulus(), &mut raw.0);
             debug_assert!(!overflow);
@@ -266,17 +263,17 @@ impl ModuloRingLarge {
     }
 
     fn add_in_place(&self, lhs: &mut ModuloLargeRaw, rhs: &ModuloLargeRaw) {
-        debug_assert!(self.is_valid(&*lhs) && self.is_valid(rhs));
+        debug_assert!(self.is_valid(lhs) && self.is_valid(rhs));
         let modulus = self.normalized_modulus();
         let overflow = add::add_same_len_in_place(&mut lhs.0, &rhs.0);
-        if overflow || cmp::cmp_same_len(&lhs.0, modulus) >= Ordering::Equal {
+        if overflow || cmp::cmp_same_len(&lhs.0, modulus).is_ge() {
             let overflow2 = add::sub_same_len_in_place(&mut lhs.0, modulus);
             debug_assert_eq!(overflow, overflow2);
         }
     }
 
     fn sub_in_place(&self, lhs: &mut ModuloLargeRaw, rhs: &ModuloLargeRaw) {
-        debug_assert!(self.is_valid(&*lhs) && self.is_valid(rhs));
+        debug_assert!(self.is_valid(lhs) && self.is_valid(rhs));
         let modulus = self.normalized_modulus();
         let overflow = add::sub_same_len_in_place(&mut lhs.0, &rhs.0);
         if overflow {
@@ -287,7 +284,7 @@ impl ModuloRingLarge {
 
     /// rhs = self - rhs
     fn sub_in_place_swap(&self, lhs: &ModuloLargeRaw, rhs: &mut ModuloLargeRaw) {
-        debug_assert!(self.is_valid(&*lhs) && self.is_valid(rhs));
+        debug_assert!(self.is_valid(lhs) && self.is_valid(rhs));
         let modulus = self.normalized_modulus();
         let overflow = add::sub_same_len_in_place_swap(&lhs.0, &mut rhs.0);
         if overflow {

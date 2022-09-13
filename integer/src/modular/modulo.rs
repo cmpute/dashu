@@ -5,6 +5,7 @@ use super::modulo_ring::{ModuloRingLarge, ModuloRingSingle};
 use crate::{
     arch::word::{DoubleWord, Word},
     buffer::Buffer,
+    error::panic_different_rings,
 };
 use alloc::boxed::Box;
 
@@ -13,11 +14,11 @@ use alloc::boxed::Box;
 /// # Examples
 ///
 /// ```
-/// # use dashu_int::{modular::ModuloRing, ubig};
-/// let ring = ModuloRing::new(ubig!(10000));
+/// # use dashu_int::{modular::ModuloRing, UBig};
+/// let ring = ModuloRing::new(UBig::from(10000u32));
 /// let x = ring.convert(12345);
 /// let y = ring.convert(55443);
-/// assert_eq!((x - y).residue(), ubig!(6902));
+/// assert_eq!((x - y).residue(), 6902);
 /// ```
 pub struct Modulo<'a>(ModuloRepr<'a>);
 
@@ -61,11 +62,6 @@ impl<'a> Modulo<'a> {
         self.0
     }
 
-    /// Panics when trying to do operations on [Modulo] values from different rings.
-    pub fn panic_different_rings() -> ! {
-        panic!("Modulo values from different rings")
-    }
-
     #[inline]
     pub(crate) const fn from_single(raw: ModuloSingleRaw, ring: &'a ModuloRingSingle) -> Self {
         debug_assert!(ring.is_valid(raw));
@@ -87,21 +83,21 @@ impl<'a> Modulo<'a> {
     #[inline]
     pub(crate) fn check_same_ring_single(lhs: &ModuloRingSingle, rhs: &ModuloRingSingle) {
         if lhs != rhs {
-            Self::panic_different_rings();
+            panic_different_rings();
         }
     }
 
     #[inline]
     pub(crate) fn check_same_ring_double(lhs: &ModuloRingDouble, rhs: &ModuloRingDouble) {
         if lhs != rhs {
-            Self::panic_different_rings();
+            panic_different_rings();
         }
     }
 
     #[inline]
     pub(crate) fn check_same_ring_large(lhs: &ModuloRingLarge, rhs: &ModuloRingLarge) {
         if lhs != rhs {
-            Self::panic_different_rings();
+            panic_different_rings();
         }
     }
 }
