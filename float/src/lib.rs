@@ -38,8 +38,8 @@
 //! let b = DBig::from_str_native("6.022e23")?;
 //! let c = DBig::from_parts(271828.into(), -5);
 //! let d: DBig = "-0.0123456789".parse()?;
-//! let e = b.ln() + DBig::ONE;
-//! let f = &c * d.powi(10.into());
+//! let e = 2 * b.ln() + DBig::ONE;
+//! let f = &c * d.powi(10.into()) / 7;
 //!
 //! assert_eq!(a.precision(), 24); // IEEE 754 single has 24 significant bits
 //! assert_eq!(b.precision(), 4); // 4 decimal digits

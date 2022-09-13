@@ -8,6 +8,7 @@ keywords = ["mathematics", "bignum"]
 categories = ["mathematics", "no-std"]
 repository = "https://github.com/cmpute/dashu"
 homepage = "https://github.com/cmpute/dashu"
+documentation = "https://docs.rs/dashu"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
 rust-version = "1.61"
