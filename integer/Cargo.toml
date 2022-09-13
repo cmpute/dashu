@@ -1,6 +1,6 @@
 [package]
 name = "dashu-int"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["Jacob Zhong <cmpute@gmail.com>", "Tomek Czajka <tczajka@gmail.com>"]
 edition = "2021"
 description = "A big integer library with good performance"
@@ -21,7 +21,7 @@ std = ["dashu-base/std"]
 
 [dependencies.dashu-base]
 path = "../base"
-version = "0.1.1"
+version = "0.2.0"
 default-features = false
 
 [dependencies.cfg-if]

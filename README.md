@@ -1,12 +1,11 @@
 # dashu
 
-A library set of big numbers. It's intended to be a rust native replacement for GNU GMP + MPFR + MPC.
+A library set of big numbers. It's intended to be a rust native alternative to GNU GMP + MPFR (+ MPC in future).
 
 ## Features
 
-- Efficient implementation of various algorithms.
 - Pure rust, full `no_std` support.
-- Focus on ergonomics & readability.
+- Focus on ergonomics & readability, and then efficiency.
 - Current MSRV is 1.61
 
 ## Sub-crates

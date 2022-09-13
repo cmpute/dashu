@@ -1,6 +1,6 @@
 [package]
 name = "dashu"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 description = "A library set of big numbers"
@@ -8,6 +8,7 @@ keywords = ["mathematics", "bignum"]
 categories = ["mathematics", "no-std"]
 repository = "https://github.com/cmpute/dashu"
 homepage = "https://github.com/cmpute/dashu"
+readme = "README.md"
 license = "MIT OR Apache-2.0"
 rust-version = "1.61"
 
@@ -27,22 +28,22 @@ default-members = ["base", "integer", "float", "macros"]
 
 [dependencies.dashu-base]
 path = "./base"
-version = "0.1.1"
+version = "0.2.0"
 default-features = false
 
 [dependencies.dashu-int]
 path = "./integer"
-version = "0.1.1"
+version = "0.2.0"
 default-features = false
 
 [dependencies.dashu-float]
 path = "./float"
-version = "0.1.0"
+version = "0.2.0"
 default-features = false
 
 [dependencies.dashu-macros]
 path = "./macros"
-version = "0.1.0"
+version = "0.2.0"
 default-features = false
 
 [features]

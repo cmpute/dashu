@@ -1,9 +1,19 @@
 [package]
 name = "dashu-float"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
-edition = "2018"
+edition = "2021"
+description = "A big float library supporting arbitrary precision, arbitrary base and arbitrary rounding mode"
+keywords = ["mathematics", "numerics", "floating-point", "decimal", "arbitrary-precision"]
+categories = ["mathematics", "no-std"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/cmpute/dashu"
+homepage = "https://github.com/cmpute/dashu"
+readme = "README.md"
 rust-version = "1.61"
+
+[package.metadata.docs.rs]
+all-features = true
 
 [features]
 default = ["std"]
@@ -14,10 +24,10 @@ version = "1.1"
 
 [dependencies.dashu-base]
 path = "../base"
-version = "0.1.1"
+version = "0.2.0"
 default-features = false
 
 [dependencies.dashu-int]
 path = "../integer"
-version = "0.1.1"
+version = "0.2.0"
 default-features = false
