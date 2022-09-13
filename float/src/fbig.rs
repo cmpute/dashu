@@ -261,7 +261,10 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Convert raw parts (significand, exponent) into a float number in a `const` context.
     /// 
     /// It requires that the significand fits in a [DoubleWord].
-    /// The precision will be inferred from significand (the lowest k such that `significand <= base^k`)
+    /// 
+    /// The precision will be inferred from significand (the lowest k such that `significand <= base^k`).
+    /// If the `min_precision` is provided, then the higher one from the given and inferred precision
+    /// will be used as the final precision.
     /// 
     /// # Examples
     /// 
@@ -270,9 +273,12 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # use dashu_float::DBig;
     /// use dashu_base::Sign;
     /// 
-    /// const A: DBig = DBig::from_parts_const(Sign::Negative, 1234, -2);
+    /// const A: DBig = DBig::from_parts_const(Sign::Negative, 1234, -2, None);
     /// assert_eq!(A, DBig::from_str_native("-12.34")?);
     /// assert_eq!(A.precision(), 4); // 1234 has 4 (decimal) digits
+    /// 
+    /// const B: DBig = DBig::from_parts_const(Sign::Negative, 1234, -2, Some(5));
+    /// assert_eq!(B.precision(), 5); // overrided by the argument
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
@@ -280,6 +286,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
         sign: Sign,
         mut significand: DoubleWord,
         mut exponent: isize,
+        min_precision: Option<usize>
     ) -> Self {
         if significand == 0 {
             return Self::ZERO;
@@ -314,7 +321,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
             significand: IBig::from_parts_const(sign, significand),
             exponent,
         };
-        Self::new(repr, Context::new(digits))
+        let precision = match min_precision {
+            Some(prec) => if prec > digits { prec } else { digits },
+            None => digits
+        };
+        Self::new(repr, Context::new(precision))
     }
 
     /// Return the value of the least significant digit of the float number x,
