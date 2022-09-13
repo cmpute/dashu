@@ -11,15 +11,15 @@ use crate::{
 /// is bounded by the memory size, but it's enough for practical use on modern devices.
 ///
 /// # Parsing and printing
-/// 
+///
 /// There are four ways to create an [IBig] instance:
 /// 1. Use predifined constants (e.g. [IBig::ZERO], [IBig::NEG_ONE]).
 /// 1. Use the literal macro `ibig!` defined in the [`dashu-macro`](https://docs.rs/dashu-macros/latest/dashu_macros/) crate.
 /// 1. Construct from a [Sign] and a [UBig] instance.
 /// 1. Parse from a string.
-/// 
+///
 /// Parsing from either literal or string supports representation with base 2~36.
-/// 
+///
 /// For printing, the [IBig] type supports common formatting traits ([Display][core::fmt::Display],
 /// [Debug][core::fmt::Debug], [LowerHex][core::fmt::LowerHex], etc.). Specially, printing huge number
 /// using [Debug][core::fmt::Debug] will conveniently omit the middle digits of the number, only print
@@ -34,7 +34,7 @@ use crate::{
 /// let d = IBig::from_str_radix("-1231abcd4134", 16)?;
 /// assert_eq!(a, c);
 /// assert_eq!(b, d);
-/// 
+///
 /// // printing
 /// assert_eq!(format!("{}", IBig::from(12)), "12");
 /// assert_eq!(format!("{:#X}", IBig::from(-0xabcd)), "-0xABCD");
@@ -47,9 +47,9 @@ use crate::{
 /// }
 /// # Ok::<(), ParseError>(())
 /// ```
-/// 
+///
 /// # Memory
-/// 
+///
 /// The internal representation of [IBig] is exactly the same as [UBig]. It just use a
 /// small trick to store the sign bit without additional memory allocation. This means that
 /// [IBig] also has the small integer optimization and the niche bit to use with simple

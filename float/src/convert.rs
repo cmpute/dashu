@@ -16,15 +16,15 @@ use dashu_int::{error::OutOfBoundsError, IBig, UBig, Word};
 impl<R: Round> Context<R> {
     /// Convert an [IBig] instance to a [FBig] instance with precision
     /// and rounding given by the context.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
-    /// 
+    ///
     /// let context = Context::<HalfAway>::new(2);
     /// assert_eq!(context.convert_int::<10>((-12).into()), Exact(DBig::from_str_native("-12")?));
     /// assert_eq!(
@@ -119,18 +119,18 @@ impl<R: Round> TryFrom<f64> for FBig<R, 2> {
 
 impl<R: Round, const B: Word> FBig<R, B> {
     /// Convert the float number to base 10 (with decimal exponents).
-    /// 
+    ///
     /// It's equivalent to `self.with_base::<10>()`. See [with_base()][Self::with_base]
     /// for the precision and rounding behavior.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::{mode::HalfAway, Rounding::*};
-    /// 
+    ///
     /// assert_eq!(
     ///     FBig::<HalfAway, 2>::from_str_native("0x1234")?.to_decimal(),
     ///     Exact(DBig::from_str_native("4660")?)
@@ -145,9 +145,9 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// );
     /// # Ok::<(), ParseError>(())
     /// ```
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the associated context has unlimited precision and the conversion
     /// cannot be performed losslessly.
     #[inline]
@@ -156,18 +156,18 @@ impl<R: Round, const B: Word> FBig<R, B> {
     }
 
     /// Convert the float number to base 2 (with binary exponents).
-    /// 
+    ///
     /// It's equivalent to `self.with_base::<2>()`. See [with_base()][Self::with_base]
     /// for the precision and rounding behavior.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::{mode::HalfAway, Rounding::*};
-    /// 
+    ///
     /// assert_eq!(
     ///     DBig::from_str_native("1234")?.to_binary(),
     ///     Exact(FBig::<HalfAway, 2>::from_str_native("0x4d2")?)
@@ -182,9 +182,9 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// );
     /// # Ok::<(), ParseError>(())
     /// ```
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the associated context has unlimited precision and the conversion
     /// cannot be performed losslessly.
     #[inline]
@@ -196,15 +196,15 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ///
     /// If the given precision is less than the current value in the context,
     /// it will be rounded with the rounding mode specified by the generic parameter.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```rust
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::{mode::HalfAway, Rounding::*};
-    /// 
+    ///
     /// let a = DBig::from_str_native("2.345")?;
     /// assert_eq!(a.precision(), 4);
     /// assert_eq!(
@@ -235,18 +235,18 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ///
     /// This operation doesn't modify the underlying representation, it only changes
     /// the rounding mode in the context.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```rust
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::{mode::{HalfAway, Zero}, Rounding::*};
-    /// 
+    ///
     /// type DBigHalfAway = DBig;
     /// type DBigZero = FBig::<Zero, 10>;
-    /// 
+    ///
     /// let a = DBigHalfAway::from_str_native("2.345")?;
     /// let b = DBigZero::from_str_native("2.345")?;
     /// assert_eq!(a.with_rounding::<Zero>(), b);
@@ -266,24 +266,24 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// The precision of the result number will be calculated in such a way that the new
     /// limit of the significand is less than or equal to before. That is, the new precision
     /// will be the max integer such that
-    /// 
+    ///
     /// `NewB ^ new_precision <= B ^ old_precision`
-    /// 
+    ///
     /// If any rounding happens during the conversion, if will follow
     /// the rounding mode specified by the generic parameter.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```rust
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::{mode::Zero, Rounding::*};
-    /// 
+    ///
     /// type FBin = FBig;
     /// type FDec = FBig<Zero, 10>;
     /// type FHex = FBig<Zero, 16>;
-    /// 
+    ///
     /// let a = FBin::from_str_native("0x1.234")?; // 0x1234 * 2^-12
     /// assert_eq!(
     ///     a.clone().with_base::<10>(),
@@ -297,9 +297,9 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// );
     /// # Ok::<(), ParseError>(())
     /// ```
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the associated context has unlimited precision and the conversion
     /// cannot be performed losslessly.
     #[inline]
@@ -321,17 +321,17 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// - B is a power of the new base NewB
     ///
     /// # Examples
-    /// 
+    ///
     /// ```rust
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::{mode::Zero, Rounding::*};
-    /// 
+    ///
     /// type FBin = FBig;
     /// type FDec = FBig<Zero, 10>;
     /// type FHex = FBig<Zero, 16>;
-    /// 
+    ///
     /// let a = FBin::from_str_native("0x1.234")?; // 0x1234 * 2^-12
     /// assert_eq!(
     ///     a.clone().with_base_and_precision::<10>(8),
@@ -350,7 +350,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// );
     /// # Ok::<(), ParseError>(())
     /// ```
-    /// 
+    ///
     /// # Panics
     ///
     /// Panics if the associated context has unlimited precision and the conversion
@@ -447,15 +447,15 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ///
     /// **Warning**: If the float number has a very large exponent, it will be evaluated and result
     /// in allocating an huge integer and it might eat up all your memory.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::Rounding::*;
-    /// 
+    ///
     /// assert_eq!(
     ///     DBig::from_str_native("1234")?.to_int(),
     ///     Exact(1234.into())
@@ -470,9 +470,9 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// );
     /// # Ok::<(), ParseError>(())
     /// ```
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the number is infinte
     pub fn to_int(&self) -> Rounded<IBig> {
         check_inf(&self.repr);
@@ -492,9 +492,9 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Get the integral part of the float
     ///
     /// **Note**: this function will adjust the precision accordingly.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::DBig;
@@ -504,9 +504,9 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// assert_eq!(a.trunc().precision(), 1);
     /// # Ok::<(), ParseError>(())
     /// ```
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the number is infinte
     #[inline]
     pub fn trunc(&self) -> Self {
@@ -543,9 +543,9 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Get the fractional part of the float
     ///
     /// **Note**: this function will adjust the precision accordingly!
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::DBig;
@@ -555,9 +555,9 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// assert_eq!(a.fract().precision(), 3);
     /// # Ok::<(), ParseError>(())
     /// ```
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the number is infinte
     #[inline]
     pub fn fract(&self) -> Self {
@@ -572,23 +572,23 @@ impl<R: Round, const B: Word> FBig<R, B> {
     }
 
     /// Returns the smallest integer greater than or equal to self.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::DBig;
     /// let a = DBig::from_str_native("1.234")?;
     /// assert_eq!(a.ceil(), DBig::from_str_native("2")?);
-    /// 
+    ///
     /// // works for very large exponent
     /// let b = DBig::from_str_native("1.234e10000")?;
     /// assert_eq!(b.ceil(), b);
     /// # Ok::<(), ParseError>(())
     /// ```
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the number is infinte
     #[inline]
     pub fn ceil(&self) -> Self {
@@ -604,23 +604,23 @@ impl<R: Round, const B: Word> FBig<R, B> {
     }
 
     /// Returns the largest integer less than or equal to self.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::DBig;
     /// let a = DBig::from_str_native("1.234")?;
     /// assert_eq!(a.floor(), DBig::from_str_native("1")?);
-    /// 
+    ///
     /// // works for very large exponent
     /// let b = DBig::from_str_native("1.234e10000")?;
     /// assert_eq!(b.floor(), b);
     /// # Ok::<(), ParseError>(())
     /// ```
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the number is infinte
     #[inline]
     pub fn floor(&self) -> Self {
@@ -638,19 +638,19 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
 impl<R: Round> FBig<R, 2> {
     /// Convert the float number to [f32] with [HalfEven] rounding mode regardless of the mode associated with this number.
-    /// 
+    ///
     /// This method is only available to base 2 float number. For other bases, it's required
     /// to convert the number to base 2 explicitly using `self.with_base_and_precision::<2>(23)`
     /// first, and then convert to [f32].
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::DBig;
     /// let a = DBig::from_str_native("1.234")?;
     /// assert_eq!(a.with_base_and_precision::<2>(23).value().to_f32().value(), 1.234);
-    /// 
+    ///
     /// let b = DBig::INFINITY;
     /// assert_eq!(b.with_base_and_precision::<2>(23).value().to_f32().value(), f32::INFINITY);
     /// # Ok::<(), ParseError>(())
@@ -666,35 +666,33 @@ impl<R: Round> FBig<R, 2> {
 
         // TODO: this implementation is a bandaid, it doesn't handles subnormal yet
         let context = Context::<HalfEven>::new(24);
-        context
-            .repr_round_ref(&self.repr)
-            .map(|v| {
-                let exp2 = if v.exponent > 127 {
-                    f32::INFINITY
-                } else if v.exponent < -127 {
-                    0.0
-                } else {
-                    let ebits = (v.exponent + 127) as u32;
-                    f32::from_bits(ebits << 23)
-                };
-                v.significand.to_f32().value() * exp2
-            })
+        context.repr_round_ref(&self.repr).map(|v| {
+            let exp2 = if v.exponent > 127 {
+                f32::INFINITY
+            } else if v.exponent < -127 {
+                0.0
+            } else {
+                let ebits = (v.exponent + 127) as u32;
+                f32::from_bits(ebits << 23)
+            };
+            v.significand.to_f32().value() * exp2
+        })
     }
 
     /// Convert the float number to [f64] with [HalfEven] rounding mode regardless of the mode associated with this number.
-    /// 
+    ///
     /// This method is only available to base 2 float number. For other bases, it's required
     /// to convert the number to base 2 explicitly using `self.with_base_and_precision::<2>(53)`
     /// first, and then convert to [f32].
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::DBig;
     /// let a = DBig::from_str_native("1.234")?;
     /// assert_eq!(a.with_base_and_precision::<2>(53).value().to_f64().value(), 1.234);
-    /// 
+    ///
     /// let b = DBig::INFINITY;
     /// assert_eq!(b.with_base_and_precision::<2>(53).value().to_f64().value(), f64::INFINITY);
     /// # Ok::<(), ParseError>(())
@@ -709,19 +707,17 @@ impl<R: Round> FBig<R, 2> {
         }
 
         let context = Context::<HalfEven>::new(53);
-        context
-            .repr_round_ref(&self.repr)
-            .map(|v| {
-                let exp2 = if v.exponent > 1023 {
-                    f64::INFINITY
-                } else if v.exponent < -1023 {
-                    0.0
-                } else {
-                    let ebits = (v.exponent + 1023) as u64;
-                    f64::from_bits(ebits << 52)
-                };
-                v.significand.to_f64().value() * exp2
-            })
+        context.repr_round_ref(&self.repr).map(|v| {
+            let exp2 = if v.exponent > 1023 {
+                f64::INFINITY
+            } else if v.exponent < -1023 {
+                0.0
+            } else {
+                let ebits = (v.exponent + 1023) as u64;
+                f64::from_bits(ebits << 52)
+            };
+            v.significand.to_f64().value() * exp2
+        })
     }
 }
 

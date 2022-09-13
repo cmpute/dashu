@@ -52,9 +52,9 @@ impl<R: Round, const B: Word> EstimatedLog2 for FBig<R, B> {
 
 impl<R: Round, const B: Word> FBig<R, B> {
     /// Calculate the natural logarithm function (`log(x)`) on the float number.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::DBig;
@@ -67,11 +67,10 @@ impl<R: Round, const B: Word> FBig<R, B> {
         self.context.ln(&self.repr).value()
     }
 
-    
     /// Calculate the natural logarithm function (`log(x+1)`) on the float number
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::DBig;
@@ -169,15 +168,15 @@ impl<R: Round> Context<R> {
     }
 
     /// Calculate the natural logarithm function (`log(x)`) on the float number under this context.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
-    /// 
+    ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str_native("1.234")?;
     /// assert_eq!(context.ln(&a.repr()), Inexact(DBig::from_str_native("0.21")?, NoOp));
@@ -189,15 +188,15 @@ impl<R: Round> Context<R> {
     }
 
     /// Calculate the natural logarithm function (`log(x+1)`) on the float number under this context.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
-    /// 
+    ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str_native("0.1234")?;
     /// assert_eq!(context.ln_1p(&a.repr()), Inexact(DBig::from_str_native("0.12")?, AddOne));

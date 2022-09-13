@@ -6,13 +6,13 @@ use dashu_base::{Approximation, EstimatedLog2, Sign, UnsignedAbs};
 use dashu_int::{IBig, UBig, Word};
 
 /// Built-in rounding modes of the floating numbers.
-/// 
+///
 /// # Rounding Error
-/// 
-/// For different rounding modes, the [Rounding][crate::round::Rounding] error 
+///
+/// For different rounding modes, the [Rounding][crate::round::Rounding] error
 /// in the output of operations tells the error range, as described in
 /// the table below.
-/// 
+///
 /// | Mode     | Rounding | Error (truth - estimation) Range |
 /// |----------|----------|----------------------------------|
 /// | Zero     | NoOp     | `(-1 ulp 0)` or `(0, 1 ulp)`*    |
@@ -26,9 +26,9 @@ use dashu_int::{IBig, UBig, Word};
 /// | HalfEven | AddOne   | `[-1/2 ulp, 0)`                  |
 /// | HalfEven | NoOp     | `[-1/2 ulp, 1/2 ulp]`            |
 /// | HalfEven | SubOne   | `(0, 1/2 ulp]`                   |
-/// 
+///
 /// *: Dependends on the sign of the result
-/// 
+///
 pub mod mode {
     /// Round toward 0 (default mode for binary float)
     #[derive(Clone, Copy)]
@@ -56,7 +56,7 @@ pub mod mode {
 }
 
 /// The adjustment of a rounding operation
-/// 
+///
 /// See [the `mode` module][mode] for the corresponding error bounds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rounding {

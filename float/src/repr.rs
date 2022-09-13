@@ -1,6 +1,7 @@
 use crate::{
+    error::panic_operate_with_inf,
     round::{Round, Rounded},
-    utils::{base_as_ibig, digit_len, split_digits, split_digits_ref}, error::panic_operate_with_inf,
+    utils::{base_as_ibig, digit_len, split_digits, split_digits_ref},
 };
 use core::marker::PhantomData;
 use dashu_base::{Approximation::*, EstimatedLog2, Sign};
@@ -58,7 +59,7 @@ pub struct Repr<const BASE: Word> {
 /// # Rounding Mode
 ///
 /// The rounding mode determines the rounding behavior of the float operations.
-/// 
+///
 /// See [the rounding mode module][crate::round::mode] for built-in rounding modes.
 /// Users can implement custom rounding mode by implementing the [Round][crate::round::Round]
 /// trait, but this is discouraged since in the future we might restrict the rounding
@@ -120,9 +121,9 @@ impl<const B: Word> Repr<B> {
     }
 
     /// Determine if the [Repr] represents zero
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_float::Repr;
     /// assert!(Repr::<2>::zero().is_zero());
@@ -134,9 +135,9 @@ impl<const B: Word> Repr<B> {
     }
 
     /// Determine if the [Repr] represents one
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_float::Repr;
     /// assert!(Repr::<2>::zero().is_zero());
@@ -148,9 +149,9 @@ impl<const B: Word> Repr<B> {
     }
 
     /// Determine if the [Repr] represents the (±)infinity
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_float::Repr;
     /// assert!(Repr::<2>::infinity().is_infinite());
@@ -163,9 +164,9 @@ impl<const B: Word> Repr<B> {
     }
 
     /// Determine if the [Repr] represents a finite number
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_float::Repr;
     /// assert!(Repr::<2>::zero().is_finite());
@@ -178,9 +179,9 @@ impl<const B: Word> Repr<B> {
     }
 
     /// Get the sign of the number
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_base::Sign;
     /// # use dashu_float::Repr;
@@ -234,17 +235,17 @@ impl<const B: Word> Repr<B> {
     }
 
     /// Get the number of digits (under base `B`) in the significand.
-    /// 
+    ///
     /// If the number is 0, then 0 is returned (instead of 1).
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_float::Repr;
     /// assert_eq!(Repr::<2>::zero().digits(), 0);
     /// assert_eq!(Repr::<2>::one().digits(), 1);
     /// assert_eq!(Repr::<10>::one().digits(), 1);
-    /// 
+    ///
     /// assert_eq!(Repr::<10>::new(100.into(), 0).digits(), 1); // 1e2
     /// assert_eq!(Repr::<10>::new(101.into(), 0).digits(), 3);
     /// ```
@@ -258,9 +259,9 @@ impl<const B: Word> Repr<B> {
     }
 
     /// Fast over-estimation of [digits][Self::digits]
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_float::Repr;
     /// assert_eq!(Repr::<2>::zero().digits_ub(), 0);
@@ -286,9 +287,9 @@ impl<const B: Word> Repr<B> {
     }
 
     /// Fast under-estimation of [digits][Self::digits]
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_float::Repr;
     /// assert_eq!(Repr::<2>::zero().digits_lb(), 0);
@@ -314,15 +315,15 @@ impl<const B: Word> Repr<B> {
 
     /// Create a [Repr] from the significand and exponent. This
     /// constructor will normalize the representation.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_float::Repr;
     /// let a = Repr::<2>::new(400.into(), -2);
     /// assert_eq!(a.significand(), &25);
     /// assert_eq!(a.exponent(), 2);
-    /// 
+    ///
     /// let b = Repr::<10>::new(400.into(), -2);
     /// assert_eq!(b.significand(), &4);
     /// assert_eq!(b.exponent(), 0);
@@ -341,7 +342,7 @@ impl<const B: Word> Repr<B> {
     pub fn significand(&self) -> &IBig {
         &self.significand
     }
-    
+
     /// Get the exponent of the representation
     #[inline]
     pub fn exponent(&self) -> isize {
@@ -349,16 +350,16 @@ impl<const B: Word> Repr<B> {
     }
 
     /// Convert the float number into raw `(signficand, exponent)` parts
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_float::Repr;
     /// use dashu_int::IBig;
-    /// 
+    ///
     /// let a = Repr::<2>::new(400.into(), -2);
     /// assert_eq!(a.into_parts(), (IBig::from(25), 2));
-    /// 
+    ///
     /// let b = Repr::<10>::new(400.into(), -2);
     /// assert_eq!(b.into_parts(), (IBig::from(4), 0));
     /// ```
@@ -396,12 +397,12 @@ impl<R: Round> Context<R> {
     }
 
     /// Create a float operation context with the higher precision from the two context inputs.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// use dashu_float::{Context, round::mode::Zero};
-    /// 
+    ///
     /// let ctxt1 = Context::<Zero>::new(2);
     /// let ctxt2 = Context::<Zero>::new(5);
     /// assert_eq!(Context::max(ctxt1, ctxt2).precision(), 5);

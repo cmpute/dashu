@@ -217,7 +217,10 @@ fn test_from_parts() {
 
     assert_eq!(FBin::from_parts_const(Sign::Negative, 0, 2, None), FBin::ZERO);
     assert_eq!(FBin::from_parts_const(Sign::Negative, 1, 0, None), FBin::NEG_ONE);
-    assert_eq!(FBin::from_parts_const(Sign::Positive, 4, 0, None), FBin::from_parts(ibig!(1), 2));
+    assert_eq!(
+        FBin::from_parts_const(Sign::Positive, 4, 0, None),
+        FBin::from_parts(ibig!(1), 2)
+    );
     assert_eq!(
         FBin::from_parts_const(Sign::Positive, 1 << (Word::BITS - 1), 0, None),
         FBin::from_parts(ibig!(1), (Word::BITS - 1) as isize)
@@ -235,7 +238,10 @@ fn test_from_parts() {
 
     assert_eq!(DBig::from_parts_const(Sign::Negative, 0, 2, None), DBig::ZERO);
     assert_eq!(DBig::from_parts_const(Sign::Negative, 100, -2, None), DBig::NEG_ONE);
-    assert_eq!(DBig::from_parts_const(Sign::Positive, 200, 0, None), DBig::from_parts(ibig!(2), 2));
+    assert_eq!(
+        DBig::from_parts_const(Sign::Positive, 200, 0, None),
+        DBig::from_parts(ibig!(2), 2)
+    );
     assert_eq!(
         DBig::from_parts_const(Sign::Negative, 100200, 0, None),
         DBig::from_parts_const(Sign::Negative, 1002, 2, None)

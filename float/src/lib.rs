@@ -14,7 +14,7 @@
 // dual licensed as above, without any additional terms or conditions.
 
 //! A big float library supporting arbitrary precision, arbitrary base and arbitrary rounding mode.
-//! 
+//!
 //! The library implements efficient large floating point arithmetic in pure Rust.
 //!
 //! The main type is [FBig] representing the arbitrary precision floating point numbers, the [DBig] type
@@ -22,14 +22,14 @@
 //!
 //! To construct big floats from literals, please use the [`dashu-macro`](https://docs.rs/dashu-macros/latest/dashu_macros/)
 //! crate for your convenience.
-//! 
+//!
 //! # Examples
 //!
 //! ```
 //! # use dashu_int::error::ParseError;
 //! use core::convert::TryFrom;
 //! use dashu_float::{FBig, DBig};
-//! 
+//!
 //! // due to the limit of rust generics, the default float type
 //! // need to be instantiate explicitly
 //! type FBin = FBig;
@@ -40,7 +40,7 @@
 //! let d: DBig = "-0.0123456789".parse()?;
 //! let e = b.ln() + DBig::ONE;
 //! let f = &c * d.powi(10.into());
-//! 
+//!
 //! assert_eq!(a.precision(), 24); // IEEE 754 single has 24 significant bits
 //! assert_eq!(b.precision(), 4); // 4 decimal digits
 //!

@@ -1,6 +1,6 @@
 use core::cmp::Ordering;
 
-use crate::{fbig::FBig, repr::Word, round::Round, utils::shl_digits, repr::Repr};
+use crate::{fbig::FBig, repr::Repr, repr::Word, round::Round, utils::shl_digits};
 
 impl<R1: Round, R2: Round, const B: Word> PartialEq<FBig<R2, B>> for FBig<R1, B> {
     #[inline]
@@ -20,7 +20,11 @@ impl<R1: Round, R2: Round, const B: Word> PartialEq<FBig<R2, B>> for FBig<R1, B>
 }
 impl<R: Round, const B: Word> Eq for FBig<R, B> {}
 
-fn repr_cmp<const B: Word>(lhs: &Repr<B>, rhs: &Repr<B>, precision: Option<(usize, usize)>) -> Ordering {
+fn repr_cmp<const B: Word>(
+    lhs: &Repr<B>,
+    rhs: &Repr<B>,
+    precision: Option<(usize, usize)>,
+) -> Ordering {
     // case 1: compare with inf
     match (lhs.is_infinite(), rhs.is_infinite()) {
         (true, true) => return lhs.exponent.cmp(&rhs.exponent),
@@ -40,11 +44,7 @@ fn repr_cmp<const B: Word>(lhs: &Repr<B>, rhs: &Repr<B>, precision: Option<(usiz
     };
 
     // case 2: compare sign
-    match lhs
-        .significand
-        .signum()
-        .cmp(&rhs.significand.signum())
-    {
+    match lhs.significand.signum().cmp(&rhs.significand.signum()) {
         Ordering::Greater => return Ordering::Greater,
         Ordering::Less => return Ordering::Less,
         _ => {}
@@ -104,7 +104,11 @@ impl<const B: Word> Ord for Repr<B> {
 impl<R1: Round, R2: Round, const B: Word> PartialOrd<FBig<R2, B>> for FBig<R1, B> {
     #[inline]
     fn partial_cmp(&self, other: &FBig<R2, B>) -> Option<Ordering> {
-        Some(repr_cmp(&self.repr, &other.repr, Some((self.context.precision, other.context.precision))))
+        Some(repr_cmp(
+            &self.repr,
+            &other.repr,
+            Some((self.context.precision, other.context.precision)),
+        ))
     }
 }
 

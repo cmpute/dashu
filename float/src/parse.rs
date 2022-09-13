@@ -16,13 +16,13 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ///
     /// If the parsing succeeded, the result number will be **losslessly** parsed from the
     /// input string.
-    /// 
+    ///
     /// This function is the actual implementation of the [FromStr] trait.
-    /// 
+    ///
     /// **Note**: Infinites are **intentionally not supported** by this function.
     ///
     /// # Format
-    /// 
+    ///
     /// The valid representations include
     /// 1. `aaa` or `aaa.`
     ///     * `aaa` is represented in native base `B` without base prefixes.
@@ -49,35 +49,35 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ///     * This is consistent with some scientific notations described in [Wikipedia](https://en.wikipedia.org/wiki/Scientific_notation#Other_bases).
     ///
     /// Digits 10-35 are represented by `a-z` or `A-Z`.
-    /// 
+    ///
     /// Literal `aaa` and `cc` above can be signed, but `bbb` must be unsigned.
     /// All `cc` are represented in decimal. Either `aaa` or `bbb` can be omitted
     /// when its value is zero, but they are not allowed to be omitted at the same time.
     ///
     /// # Precision
-    /// 
+    ///
     /// The precision of the parsed number is determined by the number of digits that are presented
     /// in the input string. For example, the numbers parsed from `12.34` or `1.234e-1` will have a
     /// precision of 4, while the ones parsed from `12.34000` or `00012.34` will have a precision of 7.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
-    /// 
+    ///
     /// let a = DBig::from_str_native("-1.23400e-3")?;
     /// let b = DBig::from_str_native("-123.4@-05")?;
     /// assert_eq!(a, b);
     /// assert_eq!(a.precision(), 6);
     /// assert_eq!(b.precision(), 4);
-    /// 
+    ///
     /// assert!(DBig::from_str_native("-0x1.234p-3").is_err());
     /// assert!(DBig::from_str_native("-1.234H-3").is_err());
     /// # Ok::<(), ParseError>(())
     /// ```
-    /// 
+    ///
     /// # Panics
     ///
     /// Panics if the base `B` is not between [MIN_RADIX] and [MAX_RADIX] inclusive.

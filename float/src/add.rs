@@ -445,15 +445,15 @@ impl<R: Round> Context<R> {
     }
 
     /// Add two floating point numbers under this context.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
-    /// 
+    ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str_native("1.234")?;
     /// let b = DBig::from_str_native("6.789")?;
@@ -480,15 +480,15 @@ impl<R: Round> Context<R> {
     }
 
     /// Subtract two floating point numbers under this context.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
-    /// 
+    ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str_native("1.234")?;
     /// let b = DBig::from_str_native("6.789")?;

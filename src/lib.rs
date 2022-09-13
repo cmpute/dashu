@@ -13,7 +13,7 @@ pub mod float {
     pub use dashu_float::*;
 }
 
-pub use dashu_macros::{ubig, ibig, fbig, dbig};
+pub use dashu_macros::{dbig, fbig, ibig, ubig};
 
 /// A verbose alias for [UBig][dashu_int::UBig]
 pub type Natural = dashu_int::UBig;

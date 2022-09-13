@@ -106,7 +106,8 @@ fn test_powi_unlimited_precision() {
     assert_eq!(fbig!(0x1p-3).with_precision(0).value().powi(ibig!(100)), fbig!(0x1p-300));
     assert_eq!(
         fbig!(0x11p-3).with_precision(0).value().powi(ibig!(100)),
-        fbig!(0x1ad6e751d93a86b6ee122b6be4254d4ee2283adf63955e927dd2ccf8c9ed1fceec29ee2d0e93474283c3edae5b313516ad69c41p-300));
+        fbig!(0x1ad6e751d93a86b6ee122b6be4254d4ee2283adf63955e927dd2ccf8c9ed1fceec29ee2d0e93474283c3edae5b313516ad69c41p-300)
+    );
 }
 
 #[test]

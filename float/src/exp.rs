@@ -11,9 +11,9 @@ use dashu_int::IBig;
 
 impl<R: Round, const B: Word> FBig<R, B> {
     /// Raise the floating point number to an integer power.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::DBig;
@@ -25,11 +25,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
     pub fn powi(&self, exp: IBig) -> FBig<R, B> {
         self.context.powi(&self.repr, exp).value()
     }
-    
+
     /// Calculate the exponential function (`eˣ`) on the floating point number.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::DBig;
@@ -42,11 +42,10 @@ impl<R: Round, const B: Word> FBig<R, B> {
         self.context.exp(&self.repr).value()
     }
 
-    
     /// Calculate the exponential minus one function (`eˣ-1`) on the floating point number.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::DBig;
@@ -64,23 +63,23 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
 impl<R: Round> Context<R> {
     /// Raise the floating point number to an integer power under this context.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
-    /// 
+    ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str_native("-1.234")?;
     /// assert_eq!(context.powi(&a.repr(), 10.into()), Inexact(DBig::from_str_native("8.2")?, AddOne));
     /// # Ok::<(), ParseError>(())
     /// ```
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the precision is unlimited and the exponent is negative. In this case, the exact
     /// result is likely to have infinite digits.
     pub fn powi<const B: Word>(&self, base: &Repr<B>, exp: IBig) -> Rounded<FBig<R, B>> {
@@ -89,7 +88,7 @@ impl<R: Round> Context<R> {
         let (exp_sign, exp) = exp.into_parts();
         if exp_sign == Sign::Negative {
             // if the exponent is negative, then negate the exponent
-            // note that do the inverse at last requires less guard bits            
+            // note that do the inverse at last requires less guard bits
             check_precision_limited(self.precision); // TODO: we can allow this if the inverse is exact (only when significand is one?)
 
             let guard_bits = self.precision.bit_len() * 2; // heuristic
@@ -134,15 +133,15 @@ impl<R: Round> Context<R> {
     // TODO: implement powf
 
     /// Calculate the exponential function (`eˣ`) on the floating point number under this context.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
-    /// 
+    ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str_native("-1.234")?;
     /// assert_eq!(context.exp(&a.repr()), Inexact(DBig::from_str_native("0.29")?, NoOp));
@@ -154,15 +153,15 @@ impl<R: Round> Context<R> {
     }
 
     /// Calculate the exponential minus one function (`eˣ-1`) on the floating point number under this context.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::error::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
-    /// 
+    ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str_native("-0.1234")?;
     /// assert_eq!(context.exp_m1(&a.repr()), Inexact(DBig::from_str_native("-0.12")?, SubOne));
