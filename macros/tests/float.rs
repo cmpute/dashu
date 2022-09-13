@@ -1,43 +1,42 @@
 use core::str::FromStr;
 
-use dashu_float::{DBig, FBig};
+use dashu_float::DBig;
 use dashu_macros::{dbig, fbig};
-
-type FBin = FBig;
+type FBig = dashu_float::FBig;
 
 #[test]
 fn test_fbig() {
     // binary digits
-    assert_eq!(fbig!(0), FBin::ZERO);
+    assert_eq!(fbig!(0), FBig::ZERO);
     assert_eq!(fbig!(0).precision(), 0);
-    assert_eq!(fbig!(00001), FBin::ONE);
+    assert_eq!(fbig!(00001), FBig::ONE);
     assert_eq!(fbig!(00001).precision(), 5);
-    assert_eq!(fbig!(-1.), FBin::NEG_ONE);
-    assert_eq!(fbig!(-1.00), FBin::NEG_ONE);
+    assert_eq!(fbig!(-1.), FBig::NEG_ONE);
+    assert_eq!(fbig!(-1.00), FBig::NEG_ONE);
     assert_eq!(fbig!(-1.00).precision(), 3);
-    assert_eq!(fbig!(-101.001), FBin::from_str("-101.001").unwrap());
-    assert_eq!(fbig!(1001.b23), FBin::from_str("1001.b23").unwrap());
+    assert_eq!(fbig!(-101.001), FBig::from_str("-101.001").unwrap());
+    assert_eq!(fbig!(1001.b23), FBig::from_str("1001.b23").unwrap());
 
     // hex digits
-    assert_eq!(fbig!(0x1234), FBin::from_str("0x1234").unwrap());
-    assert_eq!(fbig!(-_0x1.02), FBin::from_str("-0x1.02").unwrap());
-    assert_eq!(fbig!(_0x1.), FBin::from_str("0x1.").unwrap());
-    assert_eq!(fbig!(-_0x.02), FBin::from_str("-0x.02").unwrap());
-    assert_eq!(fbig!(-_0x1.02p2), FBin::from_str("-0x1.02p2").unwrap());
-    assert_eq!(fbig!(0x1p2), FBin::from_str("0x1p2").unwrap());
-    assert_eq!(fbig!(_0x1.p - 2), FBin::from_str("0x1.p-2").unwrap());
-    assert_eq!(fbig!(_0x.02p2), FBin::from_str("0x.02p2").unwrap());
-    assert_eq!(fbig!(-_0x.02p-2), FBin::from_str("-0x.02p-2").unwrap());
+    assert_eq!(fbig!(0x1234), FBig::from_str("0x1234").unwrap());
+    assert_eq!(fbig!(-_0x1.02), FBig::from_str("-0x1.02").unwrap());
+    assert_eq!(fbig!(_0x1.), FBig::from_str("0x1.").unwrap());
+    assert_eq!(fbig!(-_0x.02), FBig::from_str("-0x.02").unwrap());
+    assert_eq!(fbig!(-_0x1.02p2), FBig::from_str("-0x1.02p2").unwrap());
+    assert_eq!(fbig!(0x1p2), FBig::from_str("0x1p2").unwrap());
+    assert_eq!(fbig!(_0x1.p - 2), FBig::from_str("0x1.p-2").unwrap());
+    assert_eq!(fbig!(_0x.02p2), FBig::from_str("0x.02p2").unwrap());
+    assert_eq!(fbig!(-_0x.02p-2), FBig::from_str("-0x.02p-2").unwrap());
 
     // big float
     assert_eq!(
         fbig!(0x5a4653ca673768565b41f775d6947d55cf3813d1p-200),
-        FBin::from_str("0x5a4653ca673768565b41f775d6947d55cf3813d1p-200").unwrap()
+        FBig::from_str("0x5a4653ca673768565b41f775d6947d55cf3813d1p-200").unwrap()
     );
     assert_eq!(fbig!(0x5a4653ca673768565b41f775d6947d55cf3813d1p-200).precision(), 160);
     assert_eq!(
         fbig!(0x5a4653ca673768565b41f0000000000000000000p-200),
-        FBin::from_str("0x5a4653ca673768565b41f0000000000000000000p-200").unwrap()
+        FBig::from_str("0x5a4653ca673768565b41f0000000000000000000p-200").unwrap()
     );
     assert_eq!(fbig!(0x5a4653ca673768565b41f0000000000000000000p-200).precision(), 160);
 

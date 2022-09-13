@@ -1,9 +1,9 @@
 use core::cmp::Ordering;
 
-use dashu_float::{DBig, FBig};
+use dashu_float::DBig;
+type FBig = dashu_float::FBig;
 
 mod helper_macros;
-type FBin = FBig;
 
 #[test]
 fn test_eq_binary() {
@@ -15,11 +15,11 @@ fn test_eq_binary() {
     assert_eq!(fbig!(0x1000), fbig!(0x1p12));
     assert_ne!(fbig!(0x1001), fbig!(0x1p12));
 
-    assert_eq!(FBin::INFINITY, FBin::INFINITY);
-    assert_eq!(FBin::NEG_INFINITY, FBin::NEG_INFINITY);
-    assert_ne!(FBin::INFINITY, fbig!(0x1));
-    assert_ne!(FBin::NEG_INFINITY, fbig!(-0x1));
-    assert_ne!(FBin::INFINITY, FBin::NEG_INFINITY);
+    assert_eq!(FBig::INFINITY, FBig::INFINITY);
+    assert_eq!(FBig::NEG_INFINITY, FBig::NEG_INFINITY);
+    assert_ne!(FBig::INFINITY, fbig!(0x1));
+    assert_ne!(FBig::NEG_INFINITY, fbig!(-0x1));
+    assert_ne!(FBig::INFINITY, FBig::NEG_INFINITY);
 }
 
 #[test]
@@ -42,20 +42,20 @@ fn test_eq_decimal() {
 #[test]
 fn test_cmp_binary() {
     // case 1: compare with inf
-    assert_eq!(FBin::INFINITY.cmp(&FBin::INFINITY), Ordering::Equal);
-    assert_eq!(FBin::NEG_INFINITY.cmp(&FBin::NEG_INFINITY), Ordering::Equal);
-    assert!(FBin::INFINITY > FBin::NEG_INFINITY);
-    assert!(FBin::NEG_INFINITY < FBin::INFINITY);
+    assert_eq!(FBig::INFINITY.cmp(&FBig::INFINITY), Ordering::Equal);
+    assert_eq!(FBig::NEG_INFINITY.cmp(&FBig::NEG_INFINITY), Ordering::Equal);
+    assert!(FBig::INFINITY > FBig::NEG_INFINITY);
+    assert!(FBig::NEG_INFINITY < FBig::INFINITY);
 
-    assert!(FBin::INFINITY > fbig!(0x1));
-    assert!(FBin::INFINITY > fbig!(0x1p100));
-    assert!(FBin::INFINITY > fbig!(-0x1));
-    assert!(FBin::INFINITY > fbig!(-0x1p100));
-    assert!(FBin::NEG_INFINITY < FBin::INFINITY);
-    assert!(FBin::NEG_INFINITY < fbig!(0x1));
-    assert!(FBin::NEG_INFINITY < fbig!(0x1p100));
-    assert!(FBin::NEG_INFINITY < fbig!(-0x1));
-    assert!(FBin::NEG_INFINITY < fbig!(-0x1p100));
+    assert!(FBig::INFINITY > fbig!(0x1));
+    assert!(FBig::INFINITY > fbig!(0x1p100));
+    assert!(FBig::INFINITY > fbig!(-0x1));
+    assert!(FBig::INFINITY > fbig!(-0x1p100));
+    assert!(FBig::NEG_INFINITY < FBig::INFINITY);
+    assert!(FBig::NEG_INFINITY < fbig!(0x1));
+    assert!(FBig::NEG_INFINITY < fbig!(0x1p100));
+    assert!(FBig::NEG_INFINITY < fbig!(-0x1));
+    assert!(FBig::NEG_INFINITY < fbig!(-0x1p100));
 
     // case 2: compare sign
     assert!(fbig!(0x1) > fbig!(0));

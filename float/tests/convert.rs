@@ -11,6 +11,7 @@ use dashu_float::{
 mod helper_macros;
 
 type FBin = FBig;
+type FHex = FBig<Zero, 16>;
 
 #[test]
 fn test_ceil_floor() {
@@ -166,8 +167,6 @@ fn test_base_change() {
     assert_eq!(dbig!(12345e100).with_rounding::<Zero>().with_base_and_precision::<2>(30), Inexact(fbig!(0x371e2de9p316), NoOp));
     assert_eq!(dbig!(12345e-1).with_rounding::<Zero>().with_base_and_precision::<2>(30), Exact(fbig!(0x9a5p-1)));
     assert_eq!(dbig!(-12345e-100).with_rounding::<Zero>().with_base_and_precision::<2>(30), Inexact(fbig!(-0x2a30a4e2p-348), NoOp));
-
-    type FHex = FBig<Zero, 16>;
 
     // binary -> hexadecimal
     assert_eq!(fbig!(0x12345).with_base::<16>(), Exact(FHex::from_parts(ibig!(0x12345), 0)));

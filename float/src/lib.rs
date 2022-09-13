@@ -28,13 +28,13 @@
 //! ```
 //! # use dashu_int::error::ParseError;
 //! use core::convert::TryFrom;
-//! use dashu_float::{FBig, DBig};
+//! use dashu_float::DBig;
 //!
 //! // due to the limit of rust generics, the default float type
 //! // need to be instantiate explicitly
-//! type FBin = FBig;
+//! type FBig = dashu_float::FBig;
 //!
-//! let a = FBin::try_from(-12.34_f32).unwrap();
+//! let a = FBig::try_from(-12.34_f32).unwrap();
 //! let b = DBig::from_str_native("6.022e23")?;
 //! let c = DBig::from_parts(271828.into(), -5);
 //! let d: DBig = "-0.0123456789".parse()?;
