@@ -209,14 +209,14 @@ fn test_from_str_other_bases() {
 
 #[test]
 fn test_from_parts() {
-    assert_eq!(FBin::from_parts(ibig!(0), 2), FBig::ZERO);
-    assert_eq!(FBin::from_parts(ibig!(-4), -2), FBig::NEG_ONE);
+    assert_eq!(FBin::from_parts(ibig!(0), 2), FBin::ZERO);
+    assert_eq!(FBin::from_parts(ibig!(-4), -2), FBin::NEG_ONE);
     assert_eq!(FBin::from_parts(ibig!(4), 0), FBin::from_parts(ibig!(1), 2));
     assert_eq!(FBin::from_parts(ibig!(-4), 0), FBin::from_parts(ibig!(-1), 2));
     assert_eq!(FBin::from_parts(ibig!(1) << 200, 0), FBin::from_parts(ibig!(1), 200));
 
-    assert_eq!(FBin::from_parts_const(Sign::Negative, 0, 2), FBig::ZERO);
-    assert_eq!(FBin::from_parts_const(Sign::Negative, 1, 0), FBig::NEG_ONE);
+    assert_eq!(FBin::from_parts_const(Sign::Negative, 0, 2), FBin::ZERO);
+    assert_eq!(FBin::from_parts_const(Sign::Negative, 1, 0), FBin::NEG_ONE);
     assert_eq!(FBin::from_parts_const(Sign::Positive, 4, 0), FBin::from_parts(ibig!(1), 2));
     assert_eq!(
         FBin::from_parts_const(Sign::Positive, 1 << (Word::BITS - 1), 0),

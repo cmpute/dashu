@@ -242,7 +242,7 @@ impl<R: Round> Context<R> {
             } else {
                 x * (IBig::ONE << (-s) as usize)
             };
-            debug_assert!(x_scaled >= FBig::ONE);
+            debug_assert!(x_scaled >= FBig::<R, B>::ONE);
             (s, x_scaled)
         };
 

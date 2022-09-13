@@ -39,7 +39,10 @@ pub struct Repr<const BASE: Word> {
 
 /// The context containing runtime information for the floating point number and its operations.
 ///
-/// The context currently consists of a *precision limit* and a *rounding mode*.
+/// The context currently consists of a *precision limit* and a *rounding mode*. All the operation
+/// associated with the context will be precise to the **full precision** (`|error| < 1 ulp`).
+/// The rounding result returned from the functions tells additional error information, see
+/// [the rounding mode module][crate::round::mode] for details.
 ///
 /// # Precision
 ///
@@ -48,17 +51,20 @@ pub struct Repr<const BASE: Word> {
 /// For binary operations, the result will have the higher one between the precisions of two
 /// operands.
 ///
-/// If the precision is set to 0, then the precision is unlimited during operations.
+/// If the precision is set to 0, then the precision is **unlimited** during operations.
 /// Be cautious to use unlimited precision because it can leads to very huge significands.
 /// Unlimited precision is forbidden for some operations where the result is always inexact.
 ///
 /// # Rounding Mode
 ///
 /// The rounding mode determines the rounding behavior of the float operations.
+/// 
+/// See [the rounding mode module][crate::round::mode] for built-in rounding modes.
+/// Users can implement custom rounding mode by implementing the [Round][crate::round::Round]
+/// trait, but this is discouraged since in the future we might restrict the rounding
+/// modes to be chosen from the the built-in modes.
 ///
 /// For binary operations, the two oprands must have the same rounding mode.
-/// 
-/// TODO(v0.2): explain the error range for different rounding errors.
 ///
 #[derive(Clone, Copy)]
 pub struct Context<RoundingMode: Round> {

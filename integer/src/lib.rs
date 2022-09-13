@@ -24,7 +24,8 @@
 //!
 //! Modular arithmetic is supported by the module [modular].
 //!
-//! To construct big integers from integer literals conveniently, please use the `dashu-macro` crate.
+//! To construct big integers from literals, please use the [`dashu-macro`](https://docs.rs/dashu-macros/latest/dashu_macros/)
+//! crate for your convenience..
 //!
 //! # Examples
 //!

@@ -664,10 +664,21 @@ impl<R: Round> FBig<R, 2> {
             return Inexact(f32::NEG_INFINITY, Rounding::SubOne);
         }
 
+        // TODO: this implementation is a bandaid, it doesn't handles subnormal yet
         let context = Context::<HalfEven>::new(24);
         context
             .repr_round_ref(&self.repr)
-            .map(|v| v.significand.to_f32().value() * (v.exponent as f32).exp2())
+            .map(|v| {
+                let exp2 = if v.exponent > 127 {
+                    f32::INFINITY
+                } else if v.exponent < -127 {
+                    0.0
+                } else {
+                    let ebits = (v.exponent + 127) as u32;
+                    f32::from_bits(ebits << 23)
+                };
+                v.significand.to_f32().value() * exp2
+            })
     }
 
     /// Convert the float number to [f64] with [HalfEven] rounding mode regardless of the mode associated with this number.
@@ -700,7 +711,17 @@ impl<R: Round> FBig<R, 2> {
         let context = Context::<HalfEven>::new(53);
         context
             .repr_round_ref(&self.repr)
-            .map(|v| v.significand.to_f64().value() * (v.exponent as f64).exp2())
+            .map(|v| {
+                let exp2 = if v.exponent > 1023 {
+                    f64::INFINITY
+                } else if v.exponent < -1023 {
+                    0.0
+                } else {
+                    let ebits = (v.exponent + 1023) as u64;
+                    f64::from_bits(ebits << 52)
+                };
+                v.significand.to_f64().value() * exp2
+            })
     }
 }
 

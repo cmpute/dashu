@@ -70,6 +70,13 @@ use dashu_int::{DoubleWord, IBig};
 /// 
 /// For detailed information of parsing, refer to the [from_str_native()][FBig::from_str_native] method.
 ///
+/// # Binary operations
+/// 
+/// Binary operations on [FBig] instances are restricted to the same base and same rounding mode. This is
+/// designed to make sure that no hidden conversion is performed during the operations. However, for equality
+/// test and comparsion, two [FBig] instances can have different rounding modes (but not different bases),
+/// because rounding will never happends during comparison.
+/// 
 /// # Convert from/to `f32`/`f64`
 ///
 /// The conversion between [FBig] and [f32]/[f64] is only defined for base 2 [FBig]. To convert
