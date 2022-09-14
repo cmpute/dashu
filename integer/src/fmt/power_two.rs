@@ -168,7 +168,8 @@ impl PreparedForFormatting for PreparedLarge<'_> {
                 bits -= self.log_radix;
                 digit = ((word >> bits) & mask) as u8;
             }
-            digit_writer.write(&[digit])?;
+            // digit_writer.write(&[digit])?;
+            digit_writer.write_digit(digit)?;
         }
         debug_assert_eq!(bits, 0);
         Ok(())
