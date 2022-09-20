@@ -37,7 +37,7 @@ const RCBRT_TAB: [u8; 56] = [
 /// This procedure requires s <= `sqrt(n)`, returns the error `n - s^2`.
 macro_rules! fix_sqrt_error {
     ($t:ty, $n:ident, $s:ident) => {{
-        let mut e = $n - ($s as $t) * ($s as $t);
+        let mut e = $n - ($s as $t).pow(2);
         let mut elim = 2 * $s as $t + 1;
         while e >= elim {
             $s += 1;
@@ -52,7 +52,7 @@ macro_rules! fix_sqrt_error {
 /// This procedure requires c <= `cbrt(n)`, returns the error `n - c^3`.
 macro_rules! fix_cbrt_error {
     ($t:ty, $n:ident, $c:ident) => {{
-        let cc = ($c as $t) * ($c as $t);
+        let cc = ($c as $t).pow(2);
         let mut e = $n - cc * ($c as $t);
         let mut elim = 3 * (cc + $c as $t) + 1;
         while e >= elim {
@@ -135,7 +135,6 @@ impl NormalizedRootRem for u32 {
         (s, e)
     }
 
-    // note that the input should be normalized to 63 bits instead of 64
     fn normalized_cbrt_rem(self) -> (u16, u32) {
         // Use newton's method on 1/cbrt(n)
         // x_{i+1} = x_i * (4 - n*x_i^3) / 3
@@ -211,7 +210,6 @@ impl NormalizedRootRem for u64 {
         (s, e)
     }
 
-    // note that the input should be normalized to 63 bits instead of 64
     fn normalized_cbrt_rem(self) -> (u32, u64) {
         // Use newton's method on 1/cbrt(n)
         // x_{i+1} = x_i * (4 - n*x_i^3) / 3
@@ -253,43 +251,50 @@ impl NormalizedRootRem for u128 {
 
     fn normalized_sqrt_rem(self) -> (u64, u128) {
         debug_assert!(self.leading_zeros() <= 1);
-        const HALF_BITS: u32 = u64::BITS / 2;
 
         /* 
-         * the following algorithm is based on "Karatsuba Square Root":
-         * assume n = a3*b^3 + a2*b^2 + a1*b + a0, b=2^k
+         * the "Karatsuba Square Root" algorithm:
+         * assume n = a*B^2 + b1*B + b0, B=2^k, a has 2k bits
          * 1. calculate sqrt on high part:
-         *     s1, r1 = sqrt_rem(a3*b + a2);
+         *     s1, r1 = sqrt_rem(a)
          * 2. estimate the root with low part
-         *     q, u = div_rem(r1*b + a1, 2*s1)
-         *     s = s1 * b + q
-         *     r = u*b + a0 - q^2
+         *     q, u = div_rem(r1*B + b1, 2*s1)
+         *     s = s1*B + q
+         *     r = u*B + b0 - q^2
+         *    at this step, since a is normalized, we have s1 >= B/2,
+         *    therefore q <= (r1*B + b1) / B < r1 + 1 <= B
+         * 
          * 3. if a3 is normalized, then s is either correct or 1 too big.
          *    r is negative in the latter case, needs adjustment
          *     if r < 0 {
          *         r += 2*s - 1
          *         s -= 1
          *     }
+         * 
+         * Reference: Zimmermann, P. (1999). Karatsuba square root (Doctoral dissertation, INRIA).
+         * https://hal.inria.fr/inria-00072854/en/
          */
 
         // step1: calculate sqrt on high parts
-        let (n0, n1) = (self & u64::MAX as u128, self >> u64::BITS);
-        let (n0, n1) = (n0 as u64, n1 as u64);
-        let (s1, r1) = n1.normalized_sqrt_rem();
+        let (a, b) = (self >> u64::BITS, self & u64::MAX as u128);
+        let (a, b) = (a as u64, b as u64);
+        let (s1, r1) = a.normalized_sqrt_rem();
 
         // step2: estimate the result with low parts
-        // note that r1 <= 2*s1 < 2^(HALF_BITS + 1)
-        let r0 = r1 << (HALF_BITS - 1) | n0 >> (HALF_BITS + 1);
+        // note that r1 <= 2*s1 < 2^(KBITS + 1)
+        const KBITS: u32 = u64::BITS / 2;
+        let r0 = r1 << (KBITS - 1) | b >> (KBITS + 1);
         let (mut q, mut u) = r0.div_rem(s1 as u64);
-        if q >> HALF_BITS > 0 {
-            // if q = 2^HALF_BITS, reduce the overestimate
+        if q >> KBITS > 0 {
+            // if q >= B, reduce the overestimate
             q -= 1;
             u += s1 as u64;
         }
-        let mut s = (s1 as u64) << HALF_BITS | q;
-        let r = (u << (HALF_BITS + 1)) + (n0 & ((1 << (HALF_BITS + 1)) - 1));
+
+        let mut s = (s1 as u64) << KBITS | q;
+        let r = (u << (KBITS + 1)) | (b & ((1 << (KBITS + 1)) - 1));
         let q2 = q * q;
-        let mut borrow = (u >> (HALF_BITS - 1)) as i8 - (r < q2) as i8;
+        let mut borrow = (u >> (KBITS - 1)) as i8 - (r < q2) as i8;
         let mut r = r.wrapping_sub(q2);
 
         // step3: adjustment
@@ -306,40 +311,51 @@ impl NormalizedRootRem for u128 {
     fn normalized_cbrt_rem(self) -> (u64, u128) {
         debug_assert!(self.leading_zeros() <= 2);
 
-        // step1: calculate cbrt on high parts
-        // shift more bits when the input is 128 bits
-        let lo_bits: u32 = 63 + 3 * (self.leading_zeros() == 0) as u32;
-        let (n0, n1) = (self & ((1 << lo_bits) - 1), self >> lo_bits);
-        let (n0, n1) = (n0 as u64, n1 as u64);
-        let (c1, r1) = n1.normalized_cbrt_rem();
+        /* 
+         * the following algorithm is similar to the "Karatsuba Square Root" above:
+         * assume n = a*B^3 + b2*B^2 + b1*B + b0, B=2^k, a has roughly 3k bits
+         * 1. calculate cbrt on high part:
+         *     c1, r1 = cbrt_rem(a)
+         * 2. estimate the root with low part
+         *     q, u = div_rem(r1*B + b2, 3*c1^2)
+         *     c = c1*B + q
+         *     r = u*B^2 + b1*B + b0 - 3*c1*q^2*B - q^3
+         * 
+         * 3. if a5 is normalized, then only few adjustments are needed 
+         *     while r < 0 {
+         *         r += 3*c^2 - 3*c + 1
+         *         c -= 1
+         *     }
+         */
 
-        // step2: one newton step x_{k+1} = (n/x_k^2 + 2x_k) / 3
-        // with the inital guess of x being s1 << (LO_BITS / 3)
-        let root_shift: u32 = lo_bits / 3;
-        let c1 = c1 as u64;
-        let c = (c1 << root_shift) + (r1 << root_shift | n0 >> (2 * root_shift)) / (c1 * c1 * 3);
-
-        // step3: second newton steps, because the convergence for cubic root is only linear
-        let cc = (c as u128) * (c as u128);
-        let ed3 = ((self / cc) as i64 - c as i64) / 3; // ed3 = (n - c^2) / (3*c^3)
-        let c = (c as i64 + ed3) as u64; // here c is an overestimate (c >= result)
-        let mut c = c.min(6981463658331); // prevent overflowing when calculate c^3
-
-        // step3: adjustment
-        let cc = (c as u128) * (c as u128);
-        let ccc = cc * (c as u128);
-        if self >= ccc {
-            (c, self - ccc)
+        // step1: calculate cbrt on high 62 bits
+        let (c1, r1) = if self.leading_zeros() > 0 {
+            // actually on high 65 bits
+            let a = (self >> 63) as u64;
+            let (mut c, _) = a.normalized_cbrt_rem();
+            c >>= 1;
+            (c, (a >> 3) - (c as u64).pow(3))
         } else {
-            let mut e = ccc - self;
-            let mut elim = 3 * (cc - c as u128) + 1;
-            while e >= elim {
-                c -= 1;
-                e -= elim;
-                elim -= 6 * (c as u128);
-            }
-            (c - 1, elim - e)
+            let a = (self >> 66) as u64;
+            a.normalized_cbrt_rem()
+        };
+
+        // step2: estimate the root with low part
+        const KBITS: u32 = 22;
+        let r0 = ((r1 as u128) << KBITS) | (self >> (2 * KBITS) & ((1 << KBITS) - 1));
+        let (q, u) = r0.div_rem(3 * (c1 as u128).pow(2));
+        let mut c = ((c1 as u64) << KBITS) + (q as u64); // q might be larger than B
+        // r = u*B^2 + b1*B + b0 - 3*c1*q^2*B - q^3
+        let t1 = (u << (2 * KBITS)) | (self & ((1 << (2 * KBITS)) - 1));
+        let t2 = ((3*(c1 as u128) << KBITS) + q) * q.pow(2);
+        let mut r = t1 as i128 - t2 as i128;
+
+        // step3: adjustment, finishes in at most 4 steps
+        while r < 0 {
+            r += 3 * (c as i128 - 1) * c as i128 + 1;
+            c -= 1;
         }
+        (c, r as u128)
     }
 }
 
@@ -364,178 +380,55 @@ impl RootRem for u8 {
     }
 
     #[inline]
-    fn nth_root_rem(self, n: usize) -> (u8, u8) {
+    fn nth_root_rem(self, _n: usize) -> (u8, u8) {
         unimplemented!()
     }
 }
 
-impl RootRem for u16 {
-    type Output = u16;
+macro_rules! impl_rootrem_using_normalized {
+    ($($t:ty)*) => {$(
+        impl RootRem for $t {
+            type Output = $t;
 
-    #[inline]
-    fn sqrt_rem(self) -> (u16, u16) {
-        if self == 0 {
-            return (0, 0);
-        }
-
-        // normalize the input and call the normalized subroutine
-        let shift = self.leading_zeros() & !1; // make sure shift is divisible by 2
-        let (root, mut rem) = (self << shift).normalized_sqrt_rem();
-        let root = (root >> (shift / 2)) as u16;
-        if shift != 0 {
-            rem = self - root * root;
-        }
-        (root, rem)
-    }
-
-    fn cbrt_rem(self) -> (u16, u16) {
-        if self == 0 {
-            return (0, 0);
-        }
-
-        // normalize the input and call the normalized subroutine
-        let mut shift = self.leading_zeros();
-        shift -= shift % 3; // make sure shift is divisible by 3
-        let (root, mut rem) = (self << shift).normalized_cbrt_rem();
-        let root = (root >> (shift / 3)) as u16;
-        if shift != 0 {
-            rem = self - root * root * root;
-        }
-        (root as u16, rem)
-    }
-
-    fn nth_root_rem(self, n: usize) -> (u16, u16) {
-        unimplemented!()
-    }
+            #[inline]
+            fn sqrt_rem(self) -> ($t, $t) {
+                if self == 0 {
+                    return (0, 0);
+                }
+        
+                // normalize the input and call the normalized subroutine
+                let shift = self.leading_zeros() & !1; // make sure shift is divisible by 2
+                let (root, mut rem) = (self << shift).normalized_sqrt_rem();
+                let root = (root >> (shift / 2)) as $t;
+                if shift != 0 {
+                    rem = self - root.pow(2);
+                }
+                (root, rem)
+            }
+        
+            fn cbrt_rem(self) -> ($t, $t) {
+                if self == 0 {
+                    return (0, 0);
+                }
+        
+                // normalize the input and call the normalized subroutine
+                let mut shift = self.leading_zeros();
+                shift -= shift % 3; // make sure shift is divisible by 3
+                let (root, mut rem) = (self << shift).normalized_cbrt_rem();
+                let root = (root >> (shift / 3)) as $t;
+                if shift != 0 {
+                    rem = self - root.pow(3);
+                }
+                (root, rem)
+            }
+        
+            fn nth_root_rem(self, _n: usize) -> ($t, $t) {
+                unimplemented!()
+            }
+        }        
+    )*};
 }
-
-impl RootRem for u32 {
-    type Output = u32;
-
-    #[inline]
-    fn sqrt_rem(self) -> (u32, u32) {
-        if self == 0 {
-            return (0, 0);
-        }
-
-        // normalize the input and call the normalized subroutine
-        let shift = self.leading_zeros() & !1; // make sure shift is divisible by 2
-        let (root, mut rem) = (self << shift).normalized_sqrt_rem();
-        let root = (root >> (shift / 2)) as u32;
-        if shift != 0 {
-            rem = self - root * root;
-        }
-        (root, rem)
-    }
-
-    fn cbrt_rem(self) -> (u32, u32) {
-        if self == 0 {
-            return (0, 0);
-        }
-
-        // normalize the input and call the normalized subroutine
-        let mut shift = self.leading_zeros();
-        shift -= shift % 3; // make sure shift is divisible by 3
-        let (root, mut rem) = (self << shift).normalized_cbrt_rem();
-        let root = (root >> (shift / 3)) as u32;
-        if shift != 0 {
-            rem = self - root * root * root;
-        }
-        (root as u32, rem)
-    }
-
-    #[inline]
-    fn nth_root_rem(self, _n: usize) -> (u32, u32) {
-        unimplemented!()
-    }
-}
-
-impl RootRem for u64 {
-    type Output = u64;
-
-    #[inline]
-    fn sqrt_rem(self) -> (u64, u64) {
-        if self == 0 {
-            return (0, 0);
-        }
-
-        // normalize the input and call the normalized subroutine
-        let shift = self.leading_zeros() & !1; // make sure shift is divisible by 2
-        let (root, mut rem) = (self << shift).normalized_sqrt_rem();
-        let root = (root >> (shift / 2)) as u64;
-        if shift != 0 {
-            rem = self - root * root;
-        }
-        (root, rem)
-    }
-
-    fn cbrt_rem(self) -> (u64, u64) {
-        if self == 0 {
-            return (0, 0);
-        }
-
-        // normalize the input and call the normalized subroutine
-        let mut shift = self.leading_zeros();
-        shift -= shift % 3; // make sure shift is divisible by 3
-        let (root, mut rem) = (self << shift).normalized_cbrt_rem();
-        let root = (root >> (shift / 3)) as u64;
-        if shift != 0 {
-            rem = self - root * root * root;
-        }
-        (root as u64, rem)
-    }
-
-    #[inline]
-    fn nth_root_rem(self, _n: usize) -> (u64, u64) {
-        unimplemented!()
-    }
-}
-
-impl RootRem for u128 {
-    type Output = u128;
-
-    #[inline]
-    fn sqrt_rem(self) -> (u128, u128) {
-        if self == 0 {
-            return (0, 0);
-        }
-        if self <= u64::MAX as u128 {
-            let (s, r) = (self as u64).sqrt_rem();
-            return (s as u128, r as u128);
-        }
-
-        // normalize the input and call the normalized subroutine
-        let shift = self.leading_zeros() & (u32::MAX - 1); // make sure shift is divisible by 2
-        let (root, mut rem) = (self << shift).normalized_sqrt_rem();
-        let root = (root >> (shift / 2)) as u128;
-        if shift != 0 {
-            rem = self - root * root;
-        }
-        (root, rem)
-    }
-
-    #[inline]
-    fn cbrt_rem(self) -> (u128, u128) {
-        if self == 0 {
-            return (0, 0);
-        }
-
-        // normalize the input and call the normalized subroutine
-        let mut shift = self.leading_zeros();
-        shift -= shift % 3; // make sure shift is divisible by 3
-        let (root, mut rem) = (self << shift).normalized_cbrt_rem();
-        let root = (root >> (shift / 3)) as u128;
-        if shift != 0 {
-            rem = self - root * root * root;
-        }
-        (root as u128, rem)
-    }
-
-    #[inline]
-    fn nth_root_rem(self, _n: usize) -> (u128, u128) {
-        unimplemented!()
-    }
-}
+impl_rootrem_using_normalized!(u16 u32 u64 u128);
 
 // XXX: maybe forward sqrt to f32/f64 if std enabled, don't forward cbrt
 

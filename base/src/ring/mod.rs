@@ -122,7 +122,10 @@ pub trait ExtendedGcd<Rhs = Self> {
 pub trait RootRem {
     type Output;
 
+    // TODO(v0.3): remove in the next version
+    #[deprecated(note = "this function is never supported and will be removed in the next version")]
     fn nth_root_rem(self, n: usize) -> (Self::Output, Self::Output);
+
     fn sqrt_rem(self) -> (Self::Output, Self::Output);
     fn cbrt_rem(self) -> (Self::Output, Self::Output);
 }
