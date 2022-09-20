@@ -3,6 +3,7 @@
 //! Most traits are only implemented for unsigned integers yet.
 
 /// Common bit operations for integers
+// TODO: implement this for UBig, add doc tests
 pub trait BitTest {
     /// Get the minimum required number of bits to represent this integer
     fn bit_len(&self) -> usize;
@@ -14,7 +15,7 @@ pub trait BitTest {
     fn trailing_zeros(&self) -> Option<usize>;
 }
 
-/// Next power of two.
+/// Functions related to the power of two.
 ///
 /// # Examples
 /// ```
@@ -25,7 +26,9 @@ pub trait BitTest {
 /// assert_eq!(n.next_power_of_two(), 8);
 /// ```
 pub trait PowerOfTwo {
+    /// Test if self is a power of two (`2^k`)
     fn is_power_of_two(&self) -> bool;
+    /// Get the smallest power of two greater than or equal to self.
     fn next_power_of_two(self) -> Self;
 }
 

@@ -128,3 +128,5 @@ mod num_traits;
 
 #[cfg(feature = "serde")]
 mod serde;
+
+// TODO(next): implement iter::Sum and iter::Product
