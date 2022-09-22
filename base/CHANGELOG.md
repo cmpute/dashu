@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 (WIP)
+
+- Implement `RootRem` for `u8`, `u16`, `u32`
+
 ## 0.2.0
 
 - Add traits `Approximation`, `Sign` and `EstimatedLog2`.

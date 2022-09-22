@@ -229,7 +229,8 @@ impl<R: Round> Context<R> {
             return Rounded::Exact(Repr::new(significand, exponent));
         }
 
-        let rnd_precision = self.precision + is_sub as usize; // use one extra digit to prevent cancellation in rounding
+        // use one extra digit to prevent cancellation in rounding
+        let rnd_precision = self.precision + is_sub as usize;
 
         // align to precision again
         let digits = digit_len::<B>(&significand);

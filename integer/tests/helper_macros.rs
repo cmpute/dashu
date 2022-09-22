@@ -1,6 +1,9 @@
-//! Helper macros for testing
+//! Helper macros for constructing numbers
 //!
-//! //! The macros for constructing numbers rely on string parsing, so do not use
+//! These macros are the simpler versions of the ones in `dashu-macros`, meant
+//! to be used in testing only.
+//!
+//! These macros rely on string parsing, so do not use
 //! these macros when testing string parsing!
 
 #[macro_export]

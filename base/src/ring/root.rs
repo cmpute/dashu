@@ -70,9 +70,10 @@ impl NormalizedRootRem for u16 {
     fn normalized_sqrt_rem(self) -> (u8, u16) {
         debug_assert!(self.leading_zeros() <= 1);
 
-        // retrieved r ≈ √32 / √(n >> 9) * 0x200 = 1 / √(n >> 14) / 2^9 = 2^21 / √n.
+        // retrieved r ≈ √32 / √(n >> 9) * 0x200 = 1 / √(n >> 14) * 2^9 = 2^16 / √n.
         let r = 0x100 | RSQRT_TAB[(self >> 9) as usize - 32] as u32; // 9 bits
-        let mut s = ((r * self as u32) >> 21) as u8;
+        let s = (r * self as u32) >> 16;
+        let mut s = (s - 1) as u8; // to make sure s is an underestimate
 
         // then fix the estimation error
         let e = fix_sqrt_error!(u16, self, s);
@@ -86,8 +87,8 @@ impl NormalizedRootRem for u16 {
         let adjust = self.leading_zeros() == 0;
         let r = 0x100 | RCBRT_TAB[(self >> (9 + (3 * adjust as u8))) as usize - 8] as u32; // 9 bits
         let r2 = (r * r) >> (2 + 2 * adjust as u8);
-        let mut c = ((r2 * self as u32) >> 24) as u8;
-        c -= 2; // to make sure c is an underestimate
+        let c = (r2 * self as u32) >> 24;
+        let mut c = (c - 1) as u8; // to make sure c is an underestimate
 
         // step6: fix the estimation error, at most 2 steps are needed
         // if we use more bits to estimate the initial guess, less steps can be required

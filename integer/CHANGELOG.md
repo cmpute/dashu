@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 (WIP)
+
+- Implement `core::iter::{Sum, Product}` for `UBig` and `IBig`
+
 ## 0.2.0
 
 ### Add

@@ -71,6 +71,7 @@ mod exp;
 mod fbig;
 mod fmt;
 mod helper_macros;
+mod iter;
 mod log;
 mod mul;
 mod parse;
