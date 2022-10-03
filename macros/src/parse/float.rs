@@ -42,17 +42,29 @@ pub fn parse_binary_float(input: TokenStream) -> TokenStream {
 
     if let Some(dword) = get_dword_from_words(words) {
         // the number is small enough to fit a double word, generates const expression
+        #[cfg(not(feature = "embedded"))]
         quote! { ::dashu_float::FBig::<::dashu_float::round::mode::Zero, 2>::from_parts_const(#sign, #dword, #exp, Some(#prec)) }
+        #[cfg(feature = "embedded")]
+        quote! { ::dashu::float::FBig::<::dashu::float::round::mode::Zero, 2>::from_parts_const(#sign, #dword, #exp, Some(#prec)) }
     } else {
         // the number contains more than two words, convert to array of words
         let n_words = words.len();
         let words_tt = quote_words(words);
+        #[cfg(not(feature = "embedded"))]
         quote! {{
             const WORDS: [::dashu_int::Word; #n_words] = #words_tt;
             let signif = ::dashu_int::IBig::from_parts(#sign, ::dashu_int::UBig::from_words(&WORDS));
             let repr = ::dashu_float::Repr::<2>::new(signif, #exp);
             let context = ::dashu_float::Context::<::dashu_float::round::mode::Zero>::new(#prec);
             ::dashu_float::FBig::from_repr(repr, context)
+        }}
+        #[cfg(feature = "embedded")]
+        quote! {{
+            const WORDS: [::dashu::Word; #n_words] = #words_tt;
+            let signif = ::dashu::integer::IBig::from_parts(#sign, ::dashu::integer::UBig::from_words(&WORDS));
+            let repr = ::dashu::float::Repr::<2>::new(signif, #exp);
+            let context = ::dashu::float::Context::<::dashu::float::round::mode::Zero>::new(#prec);
+            ::dashu::float::FBig::from_repr(repr, context)
         }}
     }
 }
@@ -71,17 +83,29 @@ pub fn parse_decimal_float(input: TokenStream) -> TokenStream {
 
     if let Some(dword) = get_dword_from_words(words) {
         // the number is small enough to fit a double word, generates const expression
+        #[cfg(not(feature = "embedded"))]
         quote! { ::dashu_float::DBig::from_parts_const(#sign, #dword, #exp, Some(#prec)) }
+        #[cfg(feature = "embedded")]
+        quote! { ::dashu::float::DBig::from_parts_const(#sign, #dword, #exp, Some(#prec)) }
     } else {
         // the number contains more than two words, convert to array of words
         let n_words = words.len();
         let words_tt = quote_words(words);
+        #[cfg(not(feature = "embedded"))]
         quote! {{
             const WORDS: [::dashu_int::Word; #n_words] = #words_tt;
             let signif = ::dashu_int::IBig::from_parts(#sign, ::dashu_int::UBig::from_words(&WORDS));
             let repr = ::dashu_float::Repr::<10>::new(signif, #exp);
             let context = ::dashu_float::Context::new(#prec);
             ::dashu_float::DBig::from_repr(repr, context)
+        }}
+        #[cfg(feature = "embedded")]
+        quote! {{
+            const WORDS: [::dashu::integer::Word; #n_words] = #words_tt;
+            let signif = ::dashu::integer::IBig::from_parts(#sign, ::dashu::integer::UBig::from_words(&WORDS));
+            let repr = ::dashu::float::Repr::<10>::new(signif, #exp);
+            let context = ::dashu::float::Context::new(#prec);
+            ::dashu::float::DBig::from_repr(repr, context)
         }}
     }
 }

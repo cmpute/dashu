@@ -23,10 +23,20 @@ proc-macro = true
 quote = "1"
 proc-macro2 = "1"
 
+[dependencies.dashu-base]
+path = "../base"
+version = "0.2.0"
+default-features = false
+
 [dependencies.dashu-int]
 path = "../integer"
 version = "0.2.0"
+default-features = false
 
 [dependencies.dashu-float]
 path = "../float"
 version = "0.2.0"
+default-features = false
+
+[features]
+embedded = [] # whether it's used with the `dashu` crate

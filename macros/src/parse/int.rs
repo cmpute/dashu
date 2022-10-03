@@ -105,14 +105,23 @@ pub fn parse_integer<const SIGNED: bool>(input: TokenStream) -> TokenStream {
 pub fn quote_ubig(int: UBig) -> TokenStream {
     let words = int.as_words();
     if let Some(dword) = get_dword_from_words(words) {
+        #[cfg(not(feature = "embedded"))]
         quote! { ::dashu_int::UBig::from_dword(#dword) }
+        #[cfg(feature = "embedded")]
+        quote! { ::dashu::integer::UBig::from_dword(#dword) }
     } else {
         // the number contains more than two words, convert to array of words
         let n_words = words.len();
         let words_tt = quote_words(words);
+        #[cfg(not(feature = "embedded"))]
         quote! {{
             const WORDS: [::dashu_int::Word; #n_words] = #words_tt;
             ::dashu_int::UBig::from_words(&WORDS)
+        }}
+        #[cfg(feature = "embedded")]
+        quote! {{
+            const WORDS: [::dashu::integer::Word; #n_words] = #words_tt;
+            ::dashu::integer::UBig::from_words(&WORDS)
         }}
     }
 }
@@ -122,14 +131,23 @@ pub fn quote_ibig(int: IBig) -> TokenStream {
     let sign = quote_sign(sign);
     let words = mag.as_words();
     if let Some(dword) = get_dword_from_words(words) {
+        #[cfg(not(feature = "embedded"))]
         quote! { ::dashu_int::IBig::from_parts_const(#sign, #dword) }
+        #[cfg(feature = "embedded")]
+        quote! { ::dashu::integer::IBig::from_parts_const(#sign, #dword) }
     } else {
         // the number contains more than two words, convert to array of words
         let n_words = words.len();
         let words_tt = quote_words(words);
+        #[cfg(not(feature = "embedded"))]
         quote! {{
             const WORDS: [::dashu_int::Word; #n_words] = #words_tt;
             ::dashu_int::IBig::from_parts(#sign, ::dashu_int::UBig::from_words(&WORDS))
+        }}
+        #[cfg(feature = "embedded")]
+        quote! {{
+            const WORDS: [::dashu::integer::Word; #n_words] = #words_tt;
+            ::dashu::integer::IBig::from_parts(#sign, ::dashu::integer::UBig::from_words(&WORDS))
         }}
     }
 }

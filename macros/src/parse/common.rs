@@ -26,8 +26,14 @@ pub fn quote_words(words: &[Word]) -> Group {
 }
 
 pub fn quote_sign(sign: Sign) -> TokenStream {
+    #[cfg(not(feature = "embedded"))]
     match sign {
-        Sign::Positive => quote! { ::dashu_int::Sign::Positive },
-        Sign::Negative => quote! { ::dashu_int::Sign::Negative },
+        Sign::Positive => quote! { ::dashu_base::Sign::Positive },
+        Sign::Negative => quote! { ::dashu_base::Sign::Negative },
+    }
+    #[cfg(feature = "embedded")]
+    match sign {
+        Sign::Positive => quote! { ::dashu::base::Sign::Positive },
+        Sign::Negative => quote! { ::dashu::base::Sign::Negative },
     }
 }

@@ -16,6 +16,19 @@
 //! A macro library for creating big numbers from literals.
 //!
 //! See the documentation of each macro for the usage.
+//!
+//! # Dependency requirement
+//!
+//! Due the fact that the macros expand to plain tokens, and proc macro crates can't
+//! re-export types, it's required to add explicit dependency to the underlying crates
+//! when using the macros. Specifically, you need to add the following crates as dependencies
+//! to your `Cargo.toml`:
+//! * For [ubig!] and [ibig!]: `dashu-int`
+//! * For [fbig!] and [dbig!]: `dashu-int`, `dashu-float`
+//!
+//! If you are using these macros from the `dashu` crate, then it's not necessary to
+//! explicitly adding these dependencies, because the related types are re-exported
+//! by the `dashu` crate.
 
 use proc_macro::TokenStream;
 

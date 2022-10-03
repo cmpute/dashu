@@ -24,8 +24,8 @@ members = [
 default-members = ["base", "integer", "float", "macros"]
 
 [dependencies]
-# all crates under dashu will have the same major and minor version,
-# but the patch version can be different.
+# all crates under dashu will have the same major version,
+# but the minor and patch versions can be different.
 
 [dependencies.dashu-base]
 path = "./base"
@@ -46,10 +46,11 @@ default-features = false
 path = "./macros"
 version = "0.2.0"
 default-features = false
+features = ["embedded"]
 
 [features]
 default = ["std", "rand", "num-traits"]
 std = ["dashu-base/std", "dashu-int/std", "dashu-float/std"]
 rand = ["dashu-int/rand"]
 serde = ["dashu-int/serde"]
-"num-traits" = ["dashu-int/num-traits"]
+num-traits = ["dashu-int/num-traits"]
