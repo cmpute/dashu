@@ -120,7 +120,7 @@ pub trait ExtendedGcd<Rhs = Self> {
 
 /// Compute the roots (square root, cubic root and arbitrary n-th roots)
 pub trait RootRem {
-    type Output;
+    type Output; // TODO(v0.3): Separate root type and remainder type
 
     // TODO(v0.3): remove in the next version
     #[deprecated(note = "this function is never supported and will be removed in the next version")]

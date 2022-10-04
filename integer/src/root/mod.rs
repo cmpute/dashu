@@ -27,5 +27,5 @@ fn sqrt_rem(b: &mut [Word], a: &mut [Word], memory: &mut Memory) {
     debug_assert!(a.len() >= 2, "use native sqrt when a is small");
     debug_assert!(a.len() == b.len() * 2);
 
-    karatsuba::sqrt_rem(b, a, memory)
+    let r_top = karatsuba::sqrt_rem(b, a, memory);
 }

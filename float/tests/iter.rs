@@ -44,8 +44,8 @@ fn test_sum() {
     assert_eq!((&nums[..1]).iter().sum::<DBig>(), dbig!(-1e2));
     assert_eq!((&nums[..2]).iter().sum::<DBig>(), dbig!(-11e1));
     assert_eq!((&nums[..4]).iter().sum::<DBig>(), dbig!(-1111e-1));
-    assert_eq!(nums.iter().sum::<DBig>(), dbig!(0));
-    assert_eq!(nums.into_iter().sum::<DBig>(), dbig!(0));
+    assert_eq!(nums.iter().sum::<DBig>(), dbig!(1e-2));
+    assert_eq!(nums.into_iter().sum::<DBig>(), dbig!(1e-2));
 }
 
 #[test]
