@@ -26,6 +26,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
         self.context.powi(&self.repr, exp).value()
     }
 
+    #[inline]
+    pub fn pow(&self, exp: FBig<R,B>) -> FBig<R, B> {
+        (exp*self.ln()).exp()
+    }
+
     /// Calculate the exponential function (`eˣ`) on the floating point number.
     ///
     /// # Examples
