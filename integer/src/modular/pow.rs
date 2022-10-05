@@ -140,7 +140,7 @@ impl ModuloRingLarge {
             let (prev, cur) = if i == 1 {
                 (raw.0.as_ref(), &mut table[0..n])
             } else {
-                let (prev, cur) = (&mut table[(i - 2) * n..i * n]).split_at_mut(n);
+                let (prev, cur) = table[(i - 2) * n..i * n].split_at_mut(n);
                 (&*prev, cur)
             };
             cur.copy_from_slice(self.mul_normalized(prev, &val.0, &mut memory));

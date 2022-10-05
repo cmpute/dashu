@@ -45,7 +45,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all-features
+          args: --all-features --workspace --exclude dashu-macros --exclude benchmark
 
   test-x86:
     name: Test x86
@@ -65,7 +65,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all-features
+          args: --all-features --workspace --exclude dashu-macros --exclude benchmark
 
   test-x86_64:
     name: Test x86_64
@@ -82,7 +82,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all-features
+          args: --all-features --workspace --exclude dashu-macros --exclude benchmark
 
   build-no-std:
     name: Build no-std
@@ -134,7 +134,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --target aarch64-unknown-linux-gnu --all-features
+          args: --target aarch64-unknown-linux-gnu --all-features --workspace --exclude dashu-macros --exclude benchmark
 
   fmt:
     name: Rustfmt
