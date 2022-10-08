@@ -63,9 +63,8 @@ mod parse;
 /// assert_eq!(i, j);
 /// ```
 ///
-/// For numbers that are small enough (fit in a [dashu_int::DoubleWord]), the literal can
-/// be assigned to a constant. The threshold depends on the machine word size, but it's
-/// guaranteed that this threshold is at least `2^32`.
+/// For numbers that are small enough (fits in a [u32]), the literal can
+/// be assigned to a constant.
 ///
 /// ```
 /// # use dashu_macros::ubig;
@@ -109,9 +108,8 @@ pub fn ubig(input: TokenStream) -> TokenStream {
 /// assert_eq!(i, j);
 /// ```
 ///
-/// For numbers that are small enough (fit in a [dashu_int::DoubleWord]), the literal can
-/// be assigned to a constant. The threshold depends on the machine word size, but it's
-/// guaranteed that this threshold is at least `2^32`.
+/// For numbers that are small enough (fits in a [u32]), the literal can
+/// be assigned to a constant.
 ///
 /// ```
 /// # use dashu_macros::ibig;
@@ -166,9 +164,8 @@ pub fn ibig(input: TokenStream) -> TokenStream {
 /// assert_eq!(b.digits(), 10); // 0x3ef only has 10 effective bits
 /// ```
 ///
-/// For numbers that are small enough (significand fits in a [dashu_int::DoubleWord]),
-/// the literal can be assigned to a constant. The threshold depends on the machine
-/// word size, but it's guaranteed that this threshold is at least `2^32`.
+/// For numbers that are small enough (significand fits in a [u32]),
+/// the literal can be assigned to a constant.
 ///
 /// ```
 /// # use dashu_macros::fbig;
@@ -206,9 +203,8 @@ pub fn fbig(input: TokenStream) -> TokenStream {
 /// assert_eq!(b.digits(), 3); // 312 only has 3 effective digits
 /// ```
 ///
-/// For numbers whose significands are small enough (fit in a [dashu_int::DoubleWord]),
-/// the literal can be assigned to a constant. The threshold depends on the machine
-/// word size, but it's guaranteed that this threshold is at least `2^32`.
+/// For numbers whose significands are small enough (fit in a [u32]),
+/// the literal can be assigned to a constant.
 ///
 /// ```
 /// # use dashu_macros::dbig;
