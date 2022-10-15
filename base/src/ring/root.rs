@@ -253,28 +253,8 @@ impl NormalizedRootRem for u128 {
     fn normalized_sqrt_rem(self) -> (u64, u128) {
         debug_assert!(self.leading_zeros() <= 1);
 
-        /* 
-         * the "Karatsuba Square Root" algorithm:
-         * assume n = a*B^2 + b1*B + b0, B=2^k, a has 2k bits
-         * 1. calculate sqrt on high part:
-         *     s1, r1 = sqrt_rem(a)
-         * 2. estimate the root with low part
-         *     q, u = div_rem(r1*B + b1, 2*s1)
-         *     s = s1*B + q
-         *     r = u*B + b0 - q^2
-         *    at this step, since a is normalized, we have s1 >= B/2,
-         *    therefore q <= (r1*B + b1) / B < r1 + 1 <= B
-         * 
-         * 3. if a3 is normalized, then s is either correct or 1 too big.
-         *    r is negative in the latter case, needs adjustment
-         *     if r < 0 {
-         *         r += 2*s - 1
-         *         s -= 1
-         *     }
-         * 
-         * Reference: Zimmermann, P. (1999). Karatsuba square root (Doctoral dissertation, INRIA).
-         * https://hal.inria.fr/inria-00072854/en/
-         */
+        // use the "Karatsuba Square Root" algorithm
+        // (see the implementation in dashu_int, or https://hal.inria.fr/inria-00072854/en/)
 
         // step1: calculate sqrt on high parts
         let (a, b) = (self >> u64::BITS, self & u64::MAX as u128);
@@ -283,11 +263,12 @@ impl NormalizedRootRem for u128 {
 
         // step2: estimate the result with low parts
         // note that r1 <= 2*s1 < 2^(KBITS + 1)
+        // here r0 = (r1*B + b) / 2
         const KBITS: u32 = u64::BITS / 2;
         let r0 = r1 << (KBITS - 1) | b >> (KBITS + 1);
         let (mut q, mut u) = r0.div_rem(s1 as u64);
         if q >> KBITS > 0 {
-            // if q >= B, reduce the overestimate
+            // if q >= B (then q = B), reduce the overestimate
             q -= 1;
             u += s1 as u64;
         }
@@ -295,18 +276,18 @@ impl NormalizedRootRem for u128 {
         let mut s = (s1 as u64) << KBITS | q;
         let r = (u << (KBITS + 1)) | (b & ((1 << (KBITS + 1)) - 1));
         let q2 = q * q;
-        let mut borrow = (u >> (KBITS - 1)) as i8 - (r < q2) as i8;
+        let mut c = (u >> (KBITS - 1)) as i8 - (r < q2) as i8;
         let mut r = r.wrapping_sub(q2);
 
-        // step3: adjustment
-        if borrow < 0 {
-            r = r.wrapping_add(s);
-            borrow += (r < s) as i8;
+        // step3: fix the estimation error if necessary
+        if c < 0 {
+            let (new_r, c1) = r.overflowing_add(s);
             s -= 1;
-            r = r.wrapping_add(s);
-            borrow += (r < s) as i8;
+            let (new_r, c2) = new_r.overflowing_add(s);
+            r = new_r;
+            c += c1 as i8 + c2 as i8;
         }
-        (s, (borrow as u128) << u64::BITS | r as u128)
+        (s, (c as u128) << u64::BITS | r as u128)
     }
 
     fn normalized_cbrt_rem(self) -> (u64, u128) {
