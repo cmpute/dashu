@@ -116,6 +116,7 @@ mod radix;
 mod remove;
 mod repr;
 mod root;
+mod root_ops;
 mod shift;
 mod shift_ops;
 mod sign;

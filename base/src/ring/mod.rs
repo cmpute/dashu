@@ -130,6 +130,8 @@ pub trait RootRem {
     fn cbrt_rem(self) -> (Self::Output, Self::Output);
 }
 
+// TODO(v0.3): Create a Root trait, but only has function for sqrt and cbrt
+
 mod div_rem;
 mod gcd;
 mod root;

@@ -212,7 +212,7 @@ pub(crate) mod repr {
             match self {
                 RefSmall(0) => Repr::zero(),
                 RefSmall(dword) => shl_dword(dword, rhs),
-                RefLarge(words) => shl_ref_large(words, rhs),
+                RefLarge(words) => shl_large_ref(words, rhs),
             }
         }
     }
@@ -271,7 +271,7 @@ pub(crate) mod repr {
         let shift_words = rhs / WORD_BITS_USIZE;
 
         if buffer.capacity() < buffer.len() + shift_words + 1 {
-            return shl_ref_large(&buffer, rhs);
+            return shl_large_ref(&buffer, rhs);
         }
 
         let shift_bits = (rhs % WORD_BITS_USIZE) as u32;
@@ -282,7 +282,7 @@ pub(crate) mod repr {
     }
 
     /// Shift left large number of words by `rhs` bits.
-    fn shl_ref_large(words: &[Word], rhs: usize) -> Repr {
+    pub(crate) fn shl_large_ref(words: &[Word], rhs: usize) -> Repr {
         let shift_words = rhs / WORD_BITS_USIZE;
         let shift_bits = (rhs % WORD_BITS_USIZE) as u32;
 

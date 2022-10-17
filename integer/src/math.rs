@@ -83,7 +83,7 @@ pub const fn shl_dword(dw: DoubleWord, shift: u32) -> (Word, Word, Word) {
     (n0, n1, n2)
 }
 
-/// Calculate w >> shift, return (result, shifted bits)
+/// Calculate w >> shift, return (result, shifted bits).
 /// Note that the shifted bits are put on the highest bits of the Word
 #[inline]
 pub const fn shr_word(w: Word, shift: u32) -> (Word, Word) {
@@ -91,7 +91,7 @@ pub const fn shr_word(w: Word, shift: u32) -> (Word, Word) {
     (r, c)
 }
 
-/// Multiply two `Word`s with carry and return the (low, high) parts of the product
+/// Multiply two `Word`s with carry and return the (low, high) parts of the product.
 /// This operation will not overflow.
 #[inline(always)]
 pub const fn mul_add_carry(lhs: Word, rhs: Word, carry: Word) -> (Word, Word) {

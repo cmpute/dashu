@@ -12,6 +12,7 @@ pub fn memory_requirement_sqrt_rem(n: usize) -> Layout {
     if n == 2 {
         memory::zero_layout()
     } else {
+        // We need to perform a squaring with n words and an n by n/2 division
         memory::max_layout(
             sqr::memory_requirement_exact(n),
             div::memory_requirement_exact(n, n - n/2)
@@ -55,7 +56,6 @@ pub fn sqrt_rem<'a>(b: &mut [Word], a: &mut [Word], memory: &mut Memory) -> bool
      * Reference: Zimmermann, P. (1999). Karatsuba square root (Doctoral dissertation, INRIA).
      * https://hal.inria.fr/inria-00072854/en/
      */
-
     let n = a.len() / 2; // the length of a
     let split = n / 2; // the length of b0
 
@@ -64,6 +64,7 @@ pub fn sqrt_rem<'a>(b: &mut [Word], a: &mut [Word], memory: &mut Memory) -> bool
     let r1_top = sqrt_rem(&mut b[split..], &mut a[2*split..], memory);
     if r1_top {
         // if the remainder `r1` has a carry, subtract `s1` from it so that the carry is removed
+        // so later when calculate 2*q = (r1*B + b1) / s1, the result is actually one less
         let carry = sub_in_place(&mut a[2*split..split + n], &b[split..]);
         debug_assert!(carry);
     }
@@ -71,26 +72,34 @@ pub fn sqrt_rem<'a>(b: &mut [Word], a: &mut [Word], memory: &mut Memory) -> bool
     // step2: estimate the result with lower half
     let fast_div_top = FastDivideNormalized2::new(highest_dword(b));
     let carry = div::div_rem_in_place(&mut a[split..split + n], &b[split..], fast_div_top, memory);
-    b[..split].copy_from_slice(&a[n..split + n]);
-    // by now q = b[..split], u = a[split..n], carry is true only if r1 >= s1.
+    let (a_lo, a_hi) = a.split_at_mut(n);
+    b[..split].copy_from_slice(&a_hi[..split]);
+    // by now 2*q = b[..split], u = a[split..n], carry is true only if r1 >= s1.
     // also notice that r1 <= 2 * s1, if r1 was subtracted by s1, then r1 <= s1.
     // so r_top and carry are both true only if r1 == 2 * s1 at the beginning.
     // the top bit of q is true if either r_top or carry is true, but not both
-    let _ = shr_in_place_with_carry(&mut b[..split], 1, (r1_top ^ carry) as _);
-    let q_top = r1_top && carry; // this is true only when q = B, so b[..split] = 0
+    let _ = shr_in_place_with_carry(&mut b[..split], 1, ((r1_top ^ carry) as Word) << (WORD_BITS - 1));
+    let q_top = r1_top && carry; // true only when q = B, and then b[..split] = 0
 
-    let mut c = 0i8; // stores final carry of the remainder
-    if a[split] & 1 != 0 {
-        // this step fixs the error in u caused by using s1 as divisor instead of 2*s1
-        c = add_in_place(&mut a[split..n], &b[split..]) as i8;
+    let mut c = 0i8; // stores final carry (top bit) of the remainder
+    if a_hi[0] & 1 != 0 {
+        // this step fixes the error in u caused by using s1 as divisor instead of 2*s1
+        c = add_in_place(&mut a_lo[split..], &b[split..]) as i8;
     }
 
     // store q^2 in high part of a, ignoring q_top.
     // afterwards, the q_top flag will be considered in the subtraction,
-    // and the remaining error in q^2 will be fixed by step 3
-    let (a_lo, a_hi) = a.split_at_mut(n);
     a_hi.fill(0);
-    sqr::square(&mut a_hi[..2 * split], &b[..split], memory);
+    if !q_top {
+        // if q_top is True, then q^2 = B^2, so we don't need to do squaring
+        if split == 1 {
+            let (b2_lo, b2_hi) = split_dword(extend_word(b[0]) * extend_word(b[0]));
+            a_hi[0] = b2_lo;
+            a_hi[1] = b2_hi;
+        } else {
+            sqr::square(&mut a_hi[..2 * split], &b[..split], memory);
+        }
+    }
     if 2 * split < n {
         a_hi[2 * split] = q_top as Word;
     } else {
@@ -103,10 +112,9 @@ pub fn sqrt_rem<'a>(b: &mut [Word], a: &mut [Word], memory: &mut Memory) -> bool
         // r += 2*s - 1; s -= 1;
         // apply the q_top to s first, and then adjust s and r
         let overflow = add_word_in_place(&mut b[split..], q_top as _);
-        c += add_mul_word_in_place(&mut a_lo[..split], 2, &b[..split]) as i8;
-        c += 2 * overflow as i8;
+        c += add_mul_word_in_place(a_lo, 2, b) as i8 + 2 * overflow as i8;
         c -= sub_one_in_place(a_lo) as i8;
-        let borrow = sub_one_in_place(&mut b[..n]);
+        let borrow = sub_one_in_place(b);
         debug_assert!(!(overflow ^ borrow)); // borrow should happen if and only if when overflow is true
     }
 
@@ -117,6 +125,7 @@ pub fn sqrt_rem<'a>(b: &mut [Word], a: &mut [Word], memory: &mut Memory) -> bool
 fn sqrt_rem_42<'a>(b: &mut [Word], a: &mut [Word]) -> bool {
     debug_assert!(a.len() == 4 && b.len() == 2);
 
+    // see sqrt_rem() for algorithm explanation
     // step1: sqrt on the higher half
     let (s1, r1) = highest_dword(a).sqrt_rem();
     let s1 = s1 as Word;
@@ -155,35 +164,4 @@ fn sqrt_rem_42<'a>(b: &mut [Word], a: &mut [Word]) -> bool {
     a[0] = r_lo; a[1] = r_hi;
     b[0] = s_lo; b[1] = s_hi;
     c > 0
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{sqrt_rem_42, Word};
-    use crate::UBig;
-
-    #[test]
-    fn test_sqrt_42() {
-        let a = UBig::from_str_radix("100788288067706660892852085821456193179743392153874910688885216801600345870807", 10).unwrap();
-        let mut a: [Word; 4] = a.as_words().try_into().unwrap();
-        let mut b: [Word; 2] = [0, 0];
-        let c = sqrt_rem_42(&mut b, &mut a);
-
-        let r = UBig::from_words(&a[..2]);
-        let s = UBig::from_words(&b);
-        assert!(c);
-        assert_eq!(s, UBig::from(317471712232297416216550966658362741242u128));
-        assert_eq!(r, UBig::from(207656855896179259254063594487929956787u128));
-
-        let a = (UBig::ONE << 256) - UBig::ONE;
-        let mut a: [Word; 4] = a.as_words().try_into().unwrap();
-        let mut b: [Word; 2] = [0, 0];
-        let c = sqrt_rem_42(&mut b, &mut a);
-
-        let r = UBig::from_words(&a[..2]);
-        let s = UBig::from_words(&b);
-        assert!(c);
-        assert_eq!(s, UBig::from(340282366920938463463374607431768211455u128));
-        assert_eq!(r, UBig::from(340282366920938463463374607431768211454u128));
-    }
 }
