@@ -47,3 +47,48 @@ fn test_sqrt() {
         assert_eq!(pow.sqrt_rem(), (s, r));
     }
 }
+
+#[test]
+fn test_nth_root() {
+    assert_eq!(ubig!(2).nth_root(1), ubig!(2));
+    assert_eq!(ubig!(2).nth_root(2), ubig!(1));
+    assert_eq!(ubig!(2).nth_root(3), ubig!(1));
+
+    let test_cases = [
+        (ubig!(123456789), [
+            ubig!(11111),
+            ubig!(497),
+            ubig!(105),
+            ubig!(41),
+            ubig!(22),
+            ubig!(14)
+        ]),
+        ((ubig!(1) << 512) + ubig!(1), [
+            ubig!(115792089237316195423570985008687907853269984665640564039457584007913129639936),
+            ubig!(2375668978229576954621987151322942598255746237355560),
+            ubig!(340282366920938463463374607431768211456),
+            ubig!(6690699980388625489511488543534),
+            ubig!(48740834812604276470692694),
+            ubig!(10427830626922116451064)
+        ])
+    ];
+
+    for (n, roots) in test_cases {
+        for (i, root) in roots.into_iter().enumerate() {
+            assert_eq!(n.nth_root(i + 2), root);
+        }
+    }
+    
+    // large order roots
+    assert_eq!(ubig!(123456789).nth_root(26), ubig!(2));
+    assert_eq!(ubig!(123456789).nth_root(27), ubig!(1));
+    let n128 = (ubig!(1) << 128) + ubig!(1);
+    assert_eq!(n128.nth_root(128), ubig!(2));
+    assert_eq!(n128.nth_root(129), ubig!(1));
+}
+
+#[test]
+#[should_panic]
+fn test_zeroth_root_panic() {
+    let _ = ubig!(2).nth_root(0);
+}

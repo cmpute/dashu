@@ -79,3 +79,7 @@ pub(crate) fn panic_invalid_radix(radix: u32) -> ! {
 pub(crate) fn panic_invalid_log_oprand() -> ! {
     panic!("logarithm is not defined for 0, base 0 and base 1!");
 }
+
+pub(crate) fn panic_root_zeroth() -> ! {
+    panic!("finding 0th root is not allowed!")
+}

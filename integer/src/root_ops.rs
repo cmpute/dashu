@@ -1,4 +1,4 @@
-use crate::ubig::UBig;
+use crate::{ubig::UBig, error::panic_root_zeroth};
 
 impl UBig {
     #[inline]
@@ -6,10 +6,47 @@ impl UBig {
         UBig(self.repr().sqrt_rem().0)
     }
 
+    // TODO(v0.3): expose as traits
     #[inline]
     pub fn sqrt_rem(&self) -> (UBig, UBig) {
         let (s, r) = self.repr().sqrt_rem();
         (UBig(s), UBig(r))
+    }
+
+    pub fn nth_root(&self, n: usize) -> UBig {
+        match n {
+            0 => panic_root_zeroth(),
+            1 => return self.clone(),
+            2 => return self.sqrt(),
+            _ => {}
+        }
+
+        // shortcut
+        let bits = self.bit_len();
+        if bits <= n {
+            // the result must be 1
+            return Self::ONE;
+        }
+
+        // then use newton's method
+        let nm1 = n - 1;
+        let mut guess = Self::ONE << (self.bit_len() / n); // underestimate
+        let next = |x: &UBig| {
+            let y = self / x.pow(nm1);
+            (y + x * nm1) / n
+        };
+
+        let mut fixpoint = next(&guess);
+        // first go up then go down, to ensure an underestimate
+        while fixpoint > guess {
+            guess = fixpoint;
+            fixpoint = next(&guess);
+        }
+        while fixpoint < guess {
+            guess = fixpoint;
+            fixpoint = next(&guess);
+        }
+        guess
     }
 }
 
@@ -51,6 +88,7 @@ mod repr {
 
         // afterwards, s = out[..], r = buffer[..n] + r_top << n*WORD_BITS
         // then recover the result if shift != 0
+        // TODO(v0.3): add option to skip this step (also add for primitive ints)
         if shift != 0 {
             // to get the final result, let s0 = s mod 2^(shift/2), then
             // 2^shift*n = (s-s0)^2 + 2s*s0 - s0^2 + r, so final r = (r + 2s*s0 - s0^2) / 2^shift
