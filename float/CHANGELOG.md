@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 (WIP)
+
+- Implement `core::iter::{Sum, Product}` for `FBig`
+
 ## 0.2.0 (Initial release)
 
 - Support basic arithmetic operations (`add`/`sub`/`mul`/`div`/`exp`/`ln`) and base conversion.

@@ -16,6 +16,7 @@ use super::{
 };
 
 impl<'a> Modulo<'a> {
+    // TODO(v0.3): rename to inverse and take input as reference, move to div.rs to be consistent with ibig
     /// Multiplicative inverse.
     ///
     /// # Examples

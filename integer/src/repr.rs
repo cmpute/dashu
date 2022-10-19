@@ -81,7 +81,7 @@ impl Repr {
     #[inline]
     pub const fn len(&self) -> usize {
         match self.capacity() {
-            // 0 => unreachable!(),
+            0 => unreachable!(),
             1 => (unsafe { self.data.inline[0] } != 0) as usize,
             2 => 2,
             _ => unsafe { self.data.heap.1 },
@@ -248,7 +248,7 @@ impl Repr {
         }
     }
 
-    /// Creates a `Repr` with a buffer allocated on heap. The leading zeros in the buffer
+    /// Create a `Repr` with a buffer allocated on heap. The leading zeros in the buffer
     /// will be trimmed and the buffer will be shrunk if there is exceeded capacity.
     pub fn from_buffer(mut buffer: Buffer) -> Self {
         buffer.pop_zeros();
@@ -268,6 +268,14 @@ impl Repr {
                 //         so capacity is nonzero and larger than 2
                 unsafe { mem::transmute(buffer) }
             }
+        }
+    }
+
+    /// Create a [Repr] cloned from a reference to another [Repr]
+    pub fn from_ref(tref: TypedReprRef) -> Self {
+        return match tref {
+            TypedReprRef::RefSmall(dw) => Self::from_dword(dw),
+            TypedReprRef::RefLarge(words) => Self::from_buffer(Buffer::from(words)),
         }
     }
 

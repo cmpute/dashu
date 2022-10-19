@@ -70,6 +70,7 @@ impl UBig {
     /// assert_eq!(UBig::from(0b101000000u16).trailing_zeros(), Some(6));
     /// assert_eq!(UBig::ZERO.trailing_zeros(), None);
     /// ```
+    // TODO(v0.3): expose this function through BitTest trait
     #[inline]
     pub fn trailing_zeros(&self) -> Option<usize> {
         self.repr().trailing_zeros()
@@ -430,13 +431,9 @@ mod repr {
     /// Panics if the input is zero.
     #[inline]
     fn trailing_zeros_large(words: &[Word]) -> usize {
-        for (idx, word) in words.iter().enumerate() {
-            if *word != 0 {
-                return idx * WORD_BITS_USIZE + word.trailing_zeros() as usize;
-            }
-        }
-
-        unreachable!("call trailing_zeros on 0")
+        let zero_words = words.iter().position(|&word| word != 0).unwrap();
+        let zero_bits = words[zero_words].trailing_zeros() as usize;
+        zero_words * WORD_BITS_USIZE + zero_bits
     }
 
     #[inline]

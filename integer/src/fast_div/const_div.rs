@@ -1,3 +1,5 @@
+//! Public interface for creating a constant divisor.
+
 use core::{
     mem,
     ops::{Div, DivAssign, Rem, RemAssign},
@@ -189,6 +191,7 @@ pub(crate) enum ConstDivisorRepr {
     Large(ConstLargeDivisor),
 }
 
+// TODO: add docs for ConstDivisor (and mention it in the top level doc)
 pub struct ConstDivisor(pub(crate) ConstDivisorRepr);
 
 impl ConstDivisor {
@@ -387,7 +390,6 @@ impl<'r> DivRemAssign<&'r ConstDivisor> for IBig {
 }
 
 mod repr {
-
     use super::*;
     use crate::repr::{
         Repr,

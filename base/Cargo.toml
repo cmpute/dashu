@@ -19,6 +19,14 @@ all-features = true
 [dev-dependencies.rand]
 version = "0.8.3"
 
+[dev-dependencies.criterion]
+version = "0.4.0"
+features = ["html_reports"]
+
 [features]
 default = ["std"]
 std = []
+
+[[bench]]
+name = "benchmarks"
+harness = false
