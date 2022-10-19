@@ -20,6 +20,7 @@ members = [
     "integer",
     "float",
     "macros",
+    "rational"
 ]
 default-members = ["base", "integer", "float", "macros"]
 
