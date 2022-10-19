@@ -1,60 +1,87 @@
-use crate::{ubig::UBig, error::panic_root_zeroth};
+use dashu_base::Sign;
+
+use crate::{ubig::UBig, ibig::IBig, error::{panic_root_zeroth, panic_root_negative}};
 
 impl UBig {
+    /// Calculate the square root of the integer
     #[inline]
     pub fn sqrt(&self) -> UBig {
-        UBig(self.repr().sqrt_rem().0)
+        UBig(self.repr().sqrt())
     }
 
-    // TODO(v0.3): expose as traits
+    // TODO(v0.3): expose this only in trait RootRem
+    /// Calculate the square root and the remainder of the integer
     #[inline]
     pub fn sqrt_rem(&self) -> (UBig, UBig) {
         let (s, r) = self.repr().sqrt_rem();
         (UBig(s), UBig(r))
     }
 
+    /// Calculate the nth-root of the integer
+    #[inline]
     pub fn nth_root(&self, n: usize) -> UBig {
-        match n {
-            0 => panic_root_zeroth(),
-            1 => return self.clone(),
-            2 => return self.sqrt(),
-            _ => {}
+        UBig(self.repr().nth_root(n))
+    }
+}
+
+impl IBig {
+    /// Calculate the square root of the integer
+    #[inline]
+    pub fn sqrt(&self) -> UBig {
+        let (sign, mag) = self.as_sign_repr();
+        if sign == Sign::Negative {
+            panic_root_negative()
+        }
+        UBig(mag.sqrt())
+    }
+
+    /// Calculate the square root and the remainder of the integer
+    #[inline]
+    pub fn sqrt_rem(&self) -> (UBig, UBig) {
+        let (sign, mag) = self.as_sign_repr();
+        if sign == Sign::Negative {
+            panic_root_negative()
+        }
+        let (s, r) = mag.sqrt_rem();
+        (UBig(s), UBig(r))
+    }
+
+    /// Calculate the nth-root of the integer
+    #[inline]
+    pub fn nth_root(&self, n: usize) -> IBig {
+        if n == 0 {
+            panic_root_zeroth()
         }
 
-        // shortcut
-        let bits = self.bit_len();
-        if bits <= n {
-            // the result must be 1
-            return Self::ONE;
+        let (sign, mag) = self.as_sign_repr();
+        if sign == Sign::Negative && n % 2 == 0 {
+            panic_root_negative()
         }
 
-        // then use newton's method
-        let nm1 = n - 1;
-        let mut guess = Self::ONE << (self.bit_len() / n); // underestimate
-        let next = |x: &UBig| {
-            let y = self / x.pow(nm1);
-            (y + x * nm1) / n
-        };
-
-        let mut fixpoint = next(&guess);
-        // first go up then go down, to ensure an underestimate
-        while fixpoint > guess {
-            guess = fixpoint;
-            fixpoint = next(&guess);
-        }
-        while fixpoint < guess {
-            guess = fixpoint;
-            fixpoint = next(&guess);
-        }
-        guess
+        IBig(mag.nth_root(n).with_sign(sign))
     }
 }
 
 mod repr {
-    use dashu_base::RootRem;
+    use super::*;
+    use dashu_base::{Root, RootRem};
     use crate::{repr::{TypedReprRef::{self, *}, Repr}, primitive::{shrink_dword, WORD_BITS, WORD_BITS_USIZE, extend_word}, arch::word::Word, buffer::Buffer, shift_ops, root, memory::MemoryAllocation, mul, add, shift};
 
     impl<'a> TypedReprRef<'a> {
+        #[inline]
+        pub fn sqrt(self) -> Repr {
+            match self {
+                RefSmall(dw) => {
+                    if let Some(w) = shrink_dword(dw) {
+                        Repr::from_word(w.sqrt())
+                    } else {
+                        Repr::from_dword(dw.sqrt())
+                    }
+                },
+                RefLarge(words) => sqrt_rem_large(words, true).0
+            }
+        }
+
         #[inline]
         pub fn sqrt_rem(self) -> (Repr, Repr) {
             match self {
@@ -67,12 +94,12 @@ mod repr {
                         (Repr::from_dword(s), Repr::from_dword(r))
                     }
                 },
-                RefLarge(words) => sqrt_rem_large(words)
+                RefLarge(words) => sqrt_rem_large(words, false)
             }
         }
     }
 
-    fn sqrt_rem_large(words: &[Word]) -> (Repr, Repr) {
+    fn sqrt_rem_large(words: &[Word], root_only: bool) -> (Repr, Repr) {
         // first shift the words so that there are even words and
         // the top word is normalized. Note: shift <= 2 * WORD_BITS - 2
         let shift = WORD_BITS_USIZE * (words.len() & 1)
@@ -88,29 +115,70 @@ mod repr {
 
         // afterwards, s = out[..], r = buffer[..n] + r_top << n*WORD_BITS
         // then recover the result if shift != 0
-        // TODO(v0.3): add option to skip this step (also add for primitive ints)
         if shift != 0 {
             // to get the final result, let s0 = s mod 2^(shift/2), then
             // 2^shift*n = (s-s0)^2 + 2s*s0 - s0^2 + r, so final r = (r + 2s*s0 - s0^2) / 2^shift
-            let s0 = out[0] & ((1 << (shift / 2)) - 1);
-            let c1 = mul::add_mul_word_in_place(&mut buffer[..n], 2 * s0, &out);
-            let c2 = add::sub_dword_in_place(&mut buffer[..n], extend_word(s0) * extend_word(s0));
-            buffer[n] = r_top as Word + c1 - c2 as Word;
+            if !root_only {
+                let s0 = out[0] & ((1 << (shift / 2)) - 1);
+                let c1 = mul::add_mul_word_in_place(&mut buffer[..n], 2 * s0, &out);
+                let c2 = add::sub_dword_in_place(&mut buffer[..n], extend_word(s0) * extend_word(s0));
+                buffer[n] = r_top as Word + c1 - c2 as Word;
+            }
     
             // s >>= shift/2, r >>= shift
             let _ = shift::shr_in_place(&mut out, shift as u32 / 2);
-            if shift > WORD_BITS_USIZE {
-                shift::shr_in_place_one_word(&mut buffer);
-                buffer.truncate(n);
-            } else {
-                buffer.truncate(n + 1);
+            if !root_only {
+                if shift > WORD_BITS_USIZE {
+                    shift::shr_in_place_one_word(&mut buffer);
+                    buffer.truncate(n);
+                } else {
+                    buffer.truncate(n + 1);
+                }
+                let _ = shift::shr_in_place(&mut buffer, shift as u32 % WORD_BITS);
             }
-            let _ = shift::shr_in_place(&mut buffer, shift as u32 % WORD_BITS);
-        } else {
+        } else if !root_only {
             buffer[n] = r_top as Word;
             buffer.truncate(n + 1);
         }
 
         (Repr::from_buffer(out), Repr::from_buffer(buffer))
+    }
+
+    impl<'a> TypedReprRef<'a> {
+        pub fn nth_root(self, n: usize) -> Repr {
+            match n {
+                0 => panic_root_zeroth(),
+                1 => return Repr::from_ref(self),
+                2 => return self.sqrt(),
+                _ => {}
+            }
+
+            // shortcut
+            let bits = self.bit_len();
+            if bits <= n {
+                // the result must be 1
+                return Repr::one();
+            }
+
+            // then use newton's method
+            let nm1 = n - 1;
+            let mut guess = UBig::ONE << (self.bit_len() / n); // underestimate
+            let next = |x: &UBig| {
+                let y = UBig(self / x.pow(nm1).into_repr());
+                (y + x * nm1) / n
+            };
+
+            let mut fixpoint = next(&guess);
+            // first go up then go down, to ensure an underestimate
+            while fixpoint > guess {
+                guess = fixpoint;
+                fixpoint = next(&guess);
+            }
+            while fixpoint < guess {
+                guess = fixpoint;
+                fixpoint = next(&guess);
+            }
+            guess.0
+        }
     }
 }

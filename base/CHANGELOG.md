@@ -3,6 +3,7 @@
 ## 0.2.1 (WIP)
 
 - Implement `RootRem` for `u8`, `u16`, `u32`
+- Add trait `Root` and implement it for `u8`, `u16`, `u32`, `u64`, `u128`
 
 ## 0.2.0
 

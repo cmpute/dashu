@@ -3,7 +3,7 @@
 //! Most traits are only implemented for unsigned integers yet.
 
 /// Common bit operations for integers
-// TODO: implement this for UBig, add doc tests
+// TODO: add doc tests
 pub trait BitTest {
     /// Get the minimum required number of bits to represent this integer
     fn bit_len(&self) -> usize;
@@ -13,6 +13,8 @@ pub trait BitTest {
 
     /// Get the number of trailing zeros in the integer
     fn trailing_zeros(&self) -> Option<usize>;
+
+    // TODO(v0.3): add trailing_ones
 }
 
 /// Functions related to the power of two.

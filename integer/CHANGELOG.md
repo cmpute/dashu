@@ -2,6 +2,9 @@
 
 ## 0.2.1 (WIP)
 
+### Add
+
+- Add `sqrt`, `sqrt_rem`, `nth_root` for `UBig` and `IBig`
 - Implement `core::iter::{Sum, Product}` for `UBig` and `IBig`
 
 ## 0.2.0

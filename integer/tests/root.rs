@@ -4,20 +4,29 @@ mod helper_macros;
 fn test_sqrt() {
     // some fixed cases
     let a = ubig!(10000);
+    assert_eq!(a.sqrt(), ubig!(100));
     assert_eq!(a.sqrt_rem(), (ubig!(100), ubig!(0)));
     let a = ubig!(100000);
+    assert_eq!(a.sqrt(), ubig!(316));
     assert_eq!(a.sqrt_rem(), (ubig!(316), ubig!(144)));
     let a = ubig!(1234567890123456789);
+    assert_eq!(a.sqrt(), ubig!(1111111106));
     assert_eq!(a.sqrt_rem(), (ubig!(1111111106), ubig!(246913553)));
     let a = ubig!(12345679012345678987654320987654321);
+    assert_eq!(a.sqrt(), ubig!(111111111111111111));
     assert_eq!(a.sqrt_rem(), (ubig!(111111111111111111), ubig!(0)));
     let a = ubig!(100788288067706660892852085821456193179743392153874910688885216801600345870807);
+    assert_eq!(a.sqrt(), ubig!(317471712232297416216550966658362741242));
     assert_eq!(a.sqrt_rem(), (ubig!(317471712232297416216550966658362741242), ubig!(547939222817117722717438201919698168243)));
+
+    assert_eq!(ibig!(10000).sqrt(), ibig!(100));
+    assert_eq!(ibig!(100000).sqrt(), ibig!(316));
 
     // sqrt on 2^i - 1
     for i in [10, 20, 50, 64, 100, 128, 200, 256, 512, 400, 512] {
         let a = (ubig!(1) << i) - ubig!(1);
         let s = (ubig!(1) << (i / 2)) - ubig!(1);
+        assert_eq!(a.sqrt(), s);
         assert_eq!(a.sqrt_rem(), (s.clone(), s * 2u8), "failed when i = {}", i);
     }
 
@@ -44,8 +53,15 @@ fn test_sqrt() {
     for (i, (s, r)) in sqrt3_cases.into_iter().enumerate() {
         let e = 3 + 12*i;
         let pow = ubig!(3).pow(e);
+        assert_eq!(pow.sqrt(), s);
         assert_eq!(pow.sqrt_rem(), (s, r));
     }
+}
+
+#[test]
+#[should_panic]
+fn test_sqrt_negative_panic() {
+    let _ = ibig!(-1).sqrt();
 }
 
 #[test]
@@ -53,6 +69,10 @@ fn test_nth_root() {
     assert_eq!(ubig!(2).nth_root(1), ubig!(2));
     assert_eq!(ubig!(2).nth_root(2), ubig!(1));
     assert_eq!(ubig!(2).nth_root(3), ubig!(1));
+    assert_eq!(ibig!(-2).nth_root(1), ibig!(-2));
+    assert_eq!(ibig!(2).nth_root(2), ibig!(1));
+    assert_eq!(ibig!(-2).nth_root(3), ibig!(-1));
+    assert_eq!(ibig!(-32).nth_root(5), ibig!(-2));
 
     let test_cases = [
         (ubig!(123456789), [
@@ -91,4 +111,10 @@ fn test_nth_root() {
 #[should_panic]
 fn test_zeroth_root_panic() {
     let _ = ubig!(2).nth_root(0);
+}
+
+#[test]
+#[should_panic]
+fn test_even_root_negative_panic() {
+    let _ = ibig!(-1).nth_root(4);
 }
