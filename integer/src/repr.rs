@@ -273,7 +273,7 @@ impl Repr {
 
     /// Create a [Repr] cloned from a reference to another [Repr]
     pub fn from_ref(tref: TypedReprRef) -> Self {
-        return match tref {
+        match tref {
             TypedReprRef::RefSmall(dw) => Self::from_dword(dw),
             TypedReprRef::RefLarge(words) => Self::from_buffer(Buffer::from(words)),
         }

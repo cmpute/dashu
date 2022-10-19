@@ -113,7 +113,6 @@ impl UBig {
         UBig(Repr::from_be_bytes(bytes))
     }
 
-
     /// Return little-endian bytes.
     ///
     /// # Examples

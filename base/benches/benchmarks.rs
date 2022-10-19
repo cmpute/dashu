@@ -5,7 +5,7 @@ use criterion::{
     PlotConfiguration,
 };
 
-use dashu_base::{Gcd, ExtendedGcd, RootRem};
+use dashu_base::{ExtendedGcd, Gcd, RootRem};
 use rand::prelude::*;
 
 const SEED: u64 = 1;
@@ -43,10 +43,10 @@ fn bench_gcd(criterion: &mut Criterion) {
     binop_case!(u128, 120, gcd, rng, group);
 
     group.finish();
-    
+
     let mut group = criterion.benchmark_group("gcd_ext");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
-    
+
     binop_case!(u16, 10, gcd_ext, rng, group);
     binop_case!(u32, 20, gcd_ext, rng, group);
     binop_case!(u64, 40, gcd_ext, rng, group);
@@ -81,10 +81,6 @@ fn bench_roots(criterion: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_gcd,
-    bench_roots,
-);
+criterion_group!(benches, bench_gcd, bench_roots,);
 
 criterion_main!(benches);

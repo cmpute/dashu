@@ -118,7 +118,6 @@ pub trait ExtendedGcd<Rhs = Self> {
     fn gcd_ext(self, rhs: Rhs) -> (Self::OutputGcd, Self::OutputCoeff, Self::OutputCoeff);
 }
 
-
 // TODO: more docs
 /// Compute the roots (square root, cubic root) of an integer.
 pub trait Root {

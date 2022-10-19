@@ -54,6 +54,7 @@ impl num_traits::Pow<usize> for UBig {
     type Output = UBig;
 
     #[inline]
+    #[allow(clippy::needless_borrow)]
     fn pow(self, rhs: usize) -> UBig {
         (&self).pow(rhs)
     }
@@ -72,6 +73,7 @@ impl num_traits::Pow<usize> for IBig {
     type Output = IBig;
 
     #[inline]
+    #[allow(clippy::needless_borrow)]
     fn pow(self, rhs: usize) -> IBig {
         (&self).pow(rhs)
     }

@@ -25,7 +25,7 @@ fn test_sum() {
     assert_eq!((&nums[..4]).iter().sum::<FBig>(), fbig!(-0xfp-1));
     assert_eq!(nums.iter().sum::<FBig>(), fbig!(0x1p-2));
     assert_eq!(nums.into_iter().sum::<FBig>(), fbig!(0x1p-2));
-    
+
     let nums = [
         dbig!(-0001e2),
         dbig!(-1e1),
@@ -39,7 +39,7 @@ fn test_sum() {
         dbig!(1e1),
         dbig!(1e2),
     ];
-    
+
     assert_eq!((&nums[..0]).iter().sum::<DBig>(), dbig!(0));
     assert_eq!((&nums[..1]).iter().sum::<DBig>(), dbig!(-1e2));
     assert_eq!((&nums[..2]).iter().sum::<DBig>(), dbig!(-11e1));

@@ -1,6 +1,10 @@
 use dashu_base::Sign;
 
-use crate::{ubig::UBig, ibig::IBig, error::{panic_root_zeroth, panic_root_negative}};
+use crate::{
+    error::{panic_root_negative, panic_root_zeroth},
+    ibig::IBig,
+    ubig::UBig,
+};
 
 impl UBig {
     /// Calculate the square root of the integer
@@ -64,8 +68,20 @@ impl IBig {
 
 mod repr {
     use super::*;
+    use crate::{
+        add,
+        arch::word::Word,
+        buffer::Buffer,
+        memory::MemoryAllocation,
+        mul,
+        primitive::{extend_word, shrink_dword, WORD_BITS, WORD_BITS_USIZE},
+        repr::{
+            Repr,
+            TypedReprRef::{self, *},
+        },
+        root, shift, shift_ops,
+    };
     use dashu_base::{Root, RootRem};
-    use crate::{repr::{TypedReprRef::{self, *}, Repr}, primitive::{shrink_dword, WORD_BITS, WORD_BITS_USIZE, extend_word}, arch::word::Word, buffer::Buffer, shift_ops, root, memory::MemoryAllocation, mul, add, shift};
 
     impl<'a> TypedReprRef<'a> {
         #[inline]
@@ -77,8 +93,8 @@ mod repr {
                     } else {
                         Repr::from_dword(dw.sqrt())
                     }
-                },
-                RefLarge(words) => sqrt_rem_large(words, true).0
+                }
+                RefLarge(words) => sqrt_rem_large(words, true).0,
             }
         }
 
@@ -93,8 +109,8 @@ mod repr {
                         let (s, r) = dw.sqrt_rem();
                         (Repr::from_dword(s), Repr::from_dword(r))
                     }
-                },
-                RefLarge(words) => sqrt_rem_large(words, false)
+                }
+                RefLarge(words) => sqrt_rem_large(words, false),
             }
         }
     }
@@ -109,8 +125,7 @@ mod repr {
         let mut out = Buffer::allocate(n);
         out.push_zeros(n);
 
-        let mut allocation =
-            MemoryAllocation::new(root::memory_requirement_sqrt_rem(n));
+        let mut allocation = MemoryAllocation::new(root::memory_requirement_sqrt_rem(n));
         let r_top = root::sqrt_rem(&mut out, &mut buffer, &mut allocation.memory());
 
         // afterwards, s = out[..], r = buffer[..n] + r_top << n*WORD_BITS
@@ -121,10 +136,11 @@ mod repr {
             if !root_only {
                 let s0 = out[0] & ((1 << (shift / 2)) - 1);
                 let c1 = mul::add_mul_word_in_place(&mut buffer[..n], 2 * s0, &out);
-                let c2 = add::sub_dword_in_place(&mut buffer[..n], extend_word(s0) * extend_word(s0));
+                let c2 =
+                    add::sub_dword_in_place(&mut buffer[..n], extend_word(s0) * extend_word(s0));
                 buffer[n] = r_top as Word + c1 - c2 as Word;
             }
-    
+
             // s >>= shift/2, r >>= shift
             let _ = shift::shr_in_place(&mut out, shift as u32 / 2);
             if !root_only {

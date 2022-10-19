@@ -1,11 +1,16 @@
-use alloc::alloc::Layout;
-use dashu_base::{RootRem, DivRem};
 use crate::{
-    arch::word::{Word, DoubleWord},
-    memory::{self, Memory}, primitive::{highest_dword, WORD_BITS, split_dword, double_word, extend_word},
-    div, add::{add_in_place, sub_in_place, add_word_in_place, sub_one_in_place}, fast_div::FastDivideNormalized2,
-    shift::shr_in_place_with_carry, sqr, mul::add_mul_word_in_place,
+    add::{add_in_place, add_word_in_place, sub_in_place, sub_one_in_place},
+    arch::word::{DoubleWord, Word},
+    div,
+    fast_div::FastDivideNormalized2,
+    memory::{self, Memory},
+    mul::add_mul_word_in_place,
+    primitive::{double_word, extend_word, highest_dword, split_dword, WORD_BITS},
+    shift::shr_in_place_with_carry,
+    sqr,
 };
+use alloc::alloc::Layout;
+use dashu_base::{DivRem, RootRem};
 
 // n is the size of the output, or half the size of the input
 pub fn memory_requirement_sqrt_rem(n: usize) -> Layout {
@@ -15,14 +20,14 @@ pub fn memory_requirement_sqrt_rem(n: usize) -> Layout {
         // We need to perform a squaring with n words and an n by n/2 division
         memory::max_layout(
             sqr::memory_requirement_exact(n),
-            div::memory_requirement_exact(n, n - n/2)
+            div::memory_requirement_exact(n, n - n / 2),
         )
     }
 }
 
 // Requires a is normalized to 2n words (length must be even)
 // Returns the carry of the remainder
-pub fn sqrt_rem<'a>(b: &mut [Word], a: &mut [Word], memory: &mut Memory) -> bool {
+pub fn sqrt_rem(b: &mut [Word], a: &mut [Word], memory: &mut Memory) -> bool {
     debug_assert!(a.len() % 2 == 0);
     debug_assert!(a.len() >= 4, "use native sqrt when a has less than 2 words");
     debug_assert!(a.len() == b.len() * 2);
@@ -32,7 +37,7 @@ pub fn sqrt_rem<'a>(b: &mut [Word], a: &mut [Word], memory: &mut Memory) -> bool
         return sqrt_rem_42(b, a);
     }
 
-    /* 
+    /*
      * the "Karatsuba Square Root" algorithm:
      * assume n = a*B^2 + b1*B + b0, B=2^k, a has 2k bits and
      * is normalized (the top two bits of a are not all zeros)
@@ -45,14 +50,14 @@ pub fn sqrt_rem<'a>(b: &mut [Word], a: &mut [Word], memory: &mut Memory) -> bool
      *    at this step, since a is normalized, we have s1 >= B/2,
      *    therefore q <= floor((r1*B + b1) / B) <= r1 <= 2*s1
      *    also notice b1 < B <= 2*s1, so q <= B
-     * 
+     *
      * 3. if a3 is normalized, then s is either correct or 1 too big.
      *    r is negative in the latter case, needs adjustment
      *     if r < 0 {
      *         r += 2*s - 1
      *         s -= 1
      *     }
-     * 
+     *
      * Reference: Zimmermann, P. (1999). Karatsuba square root (Doctoral dissertation, INRIA).
      * https://hal.inria.fr/inria-00072854/en/
      */
@@ -61,11 +66,11 @@ pub fn sqrt_rem<'a>(b: &mut [Word], a: &mut [Word], memory: &mut Memory) -> bool
 
     // step1: sqrt on the higher half
     // afterwards, s1 = b[split..], r1 = a[2*split..split + n]
-    let r1_top = sqrt_rem(&mut b[split..], &mut a[2*split..], memory);
+    let r1_top = sqrt_rem(&mut b[split..], &mut a[2 * split..], memory);
     if r1_top {
         // if the remainder `r1` has a carry, subtract `s1` from it so that the carry is removed
         // so later when calculate 2*q = (r1*B + b1) / s1, the result is actually one less
-        let carry = sub_in_place(&mut a[2*split..split + n], &b[split..]);
+        let carry = sub_in_place(&mut a[2 * split..split + n], &b[split..]);
         debug_assert!(carry);
     }
 
@@ -78,7 +83,8 @@ pub fn sqrt_rem<'a>(b: &mut [Word], a: &mut [Word], memory: &mut Memory) -> bool
     // also notice that r1 <= 2 * s1, if r1 was subtracted by s1, then r1 <= s1.
     // so r_top and carry are both true only if r1 == 2 * s1 at the beginning.
     // the top bit of q is true if either r_top or carry is true, but not both
-    let _ = shr_in_place_with_carry(&mut b[..split], 1, ((r1_top ^ carry) as Word) << (WORD_BITS - 1));
+    let _ =
+        shr_in_place_with_carry(&mut b[..split], 1, ((r1_top ^ carry) as Word) << (WORD_BITS - 1));
     let q_top = r1_top && carry; // true only when q = B, and then b[..split] = 0
 
     let mut c = 0i8; // stores final carry (top bit) of the remainder
@@ -118,11 +124,11 @@ pub fn sqrt_rem<'a>(b: &mut [Word], a: &mut [Word], memory: &mut Memory) -> bool
         debug_assert!(!(overflow ^ borrow)); // borrow should happen if and only if when overflow is true
     }
 
-    return c > 0;
+    c > 0
 }
 
 // Special case when a has exactly 4 Words
-fn sqrt_rem_42<'a>(b: &mut [Word], a: &mut [Word]) -> bool {
+fn sqrt_rem_42(b: &mut [Word], a: &mut [Word]) -> bool {
     debug_assert!(a.len() == 4 && b.len() == 2);
 
     // see sqrt_rem() for algorithm explanation
@@ -161,7 +167,9 @@ fn sqrt_rem_42<'a>(b: &mut [Word], a: &mut [Word]) -> bool {
 
     let (r_lo, r_hi) = split_dword(r);
     let (s_lo, s_hi) = split_dword(s);
-    a[0] = r_lo; a[1] = r_hi;
-    b[0] = s_lo; b[1] = s_hi;
+    a[0] = r_lo;
+    a[1] = r_hi;
+    b[0] = s_lo;
+    b[1] = s_hi;
     c > 0
 }
