@@ -329,3 +329,101 @@ fn test_exp_m1_unlimited_precision() {
 fn test_exp_m1_inf() {
     let _ = DBig::INFINITY.exp_m1();
 }
+
+#[test]
+fn test_powf_binary() {
+    assert_eq!(fbig!(0).powf(&fbig!(0)), fbig!(1));
+    assert_eq!(fbig!(1).powf(&fbig!(0)), fbig!(1));
+    assert_eq!(fbig!(0).powf(&fbig!(1)), fbig!(0));
+    assert_eq!(fbig!(1).powf(&fbig!(1)), fbig!(1));
+    assert_eq!(fbig!(1).powf(&fbig!(-1)), fbig!(1));
+
+    // cases for x^x and x^-x
+    let xx_inexact_cases = [
+        (fbig!(0x12p-8), fbig!(0xd4p-8), fbig!(0x9ap-7)),
+        (fbig!(0x12p-4), fbig!(0x92p-7), fbig!(0xe0p-8)),
+        (fbig!(0x1234p-16), fbig!(0xd421p-16), fbig!(0x9a78p-15)),
+        (fbig!(0x1234p-8), fbig!(0x9311p61), fbig!(0xdecep-92)),
+        (fbig!(0x123456789p-36), fbig!(0xd42103860p-36), fbig!(0x9a78d9b71p-35)),
+        (fbig!(0x123456789p-24), fbig!(0xa9f5a6d63p2349), fbig!(0xc0cc7d326p-2420)),
+        (
+            fbig!(0x123456789012345678901234567890123456789p-156),
+            fbig!(0xd42103860f3571cd2a460fb6b4ea8d9b7c731f2p-156),
+            fbig!(0x9a78d9b718a5e6b0df4da5a7ae7442e43f3d092p-155)
+        ),
+        (
+            fbig!(0x123456789012345678901234567890123456789p-142),
+            fbig!(0xdfa5a59d0656d300e096909463f09b52c76104ap11712),
+            fbig!(0x92843df7e9a9b00a08c246f466f9783f1f6f463p-12023)
+        ),
+    ];
+
+    for (x, pow, npow) in &xx_inexact_cases {
+        assert_eq!(x.powf(x), *pow);
+        assert_eq!(x.powf(&-x), *npow);
+        if let Inexact(v, e) = x.context().powf(x.repr(), x.repr()) {
+            assert_eq!(v, *pow);
+            assert_eq!(e, NoOp);
+        } else {
+            panic!("the result should be inexact!")
+        }
+        if let Inexact(v, e) = x.context().powf(x.repr(), &(-x).repr()) {
+            assert_eq!(v, *npow);
+            assert_eq!(e, NoOp);
+        } else {
+            panic!("the result should be inexact!")
+        }
+    }
+}
+
+#[test]
+fn test_powf_decimal() {
+    assert_eq!(dbig!(0).powf(&dbig!(0)), dbig!(1));
+    assert_eq!(dbig!(1).powf(&dbig!(0)), dbig!(1));
+    assert_eq!(dbig!(0).powf(&dbig!(1)), dbig!(0));
+    assert_eq!(dbig!(1).powf(&dbig!(1)), dbig!(1));
+    assert_eq!(dbig!(1).powf(&dbig!(-1)), dbig!(1));
+
+    // cases for x^x and x^-x
+    let xx_inexact_cases = [
+        (dbig!(98e-3), dbig!(80e-2), AddOne, dbig!(13e-1), AddOne),
+        (dbig!(9876e-5), dbig!(7956e-4), NoOp, dbig!(1257e-3), AddOne),
+        (dbig!(987654321e-10), dbig!(795612734e-9), AddOne, dbig!(125689291e-8), AddOne),
+        (
+            dbig!(987654321098765432109876543210987654321e-40),
+            dbig!(795612733503722716297318660203562998522e-39),
+            AddOne,
+            dbig!(125689290516530042979504040185410636781e-38),
+            NoOp,
+        ),
+    ];
+
+    for (x, pow, rnd, npow, nrnd) in &xx_inexact_cases {
+        assert_eq!(x.powf(x), *pow);
+        assert_eq!(x.powf(&-x), *npow);
+        if let Inexact(v, e) = x.context().powf(x.repr(), x.repr()) {
+            assert_eq!(v, *pow);
+            assert_eq!(e, *rnd);
+        } else {
+            panic!("the result should be inexact!")
+        }
+        if let Inexact(v, e) = x.context().powf(x.repr(), &(-x).repr()) {
+            assert_eq!(v, *npow);
+            assert_eq!(e, *nrnd);
+        } else {
+            panic!("the result should be inexact!")
+        }
+    }
+}
+
+#[test]
+#[should_panic]
+fn test_pow_unlimited_precision() {
+    let _ = dbig!(2).with_precision(0).value().powf(&dbig!(2.1).with_precision(0).value());
+}
+
+#[test]
+#[should_panic]
+fn test_pow_inf() {
+    let _ = DBig::INFINITY.powf(&dbig!(2));
+}

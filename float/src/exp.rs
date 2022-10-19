@@ -1,7 +1,7 @@
 use core::convert::TryInto;
 
 use crate::{
-    error::{check_inf, check_precision_limited},
+    error::{check_inf, check_precision_limited, panic_power_negative_base},
     fbig::FBig,
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
@@ -24,6 +24,12 @@ impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     pub fn powi(&self, exp: IBig) -> FBig<R, B> {
         self.context.powi(&self.repr, exp).value()
+    }
+
+    #[inline]
+    pub fn powf(&self, exp: &Self) -> Self {
+        let context = Context::max(self.context, exp.context);
+        context.powf(&self.repr, &exp.repr).value()
     }
 
     /// Calculate the exponential function (`eˣ`) on the floating point number.
@@ -130,7 +136,29 @@ impl<R: Round> Context<R> {
         res.and_then(|v| v.with_precision(self.precision))
     }
 
-    // TODO: implement powf
+    /// Raise the floating point number to an floating point power under this context.
+    pub fn powf<const B: Word>(&self, base: &Repr<B>, exp: &Repr<B>) -> Rounded<FBig<R, B>> {
+        check_inf(base);
+        check_precision_limited(self.precision); // TODO: we can allow it if exp is integer
+
+        // shortcuts
+        if exp.is_zero() {
+            return Exact(FBig::ONE);
+        } else if exp.is_one() {
+            let repr = self.repr_round_ref(base);
+            return repr.map(|v| FBig::new(v, *self));
+        }
+        if base.sign() == Sign::Negative { // TODO: we should allow negative base when exp is an integer
+            panic_power_negative_base()
+        }
+
+        // x^y = exp(y*log(x)), the formula for guard_digits comes from MPFR
+        let guard_digits = 10 + self.precision.log2_est() as usize;
+        let work_context = Context::<R>::new(self.precision + guard_digits);
+
+        let res = work_context.ln(base).and_then(|v| work_context.mul(&v.repr, exp)).and_then(|v| work_context.exp(&v.repr));
+        res.and_then(|v| v.with_precision(self.precision))
+    }
 
     /// Calculate the exponential function (`eˣ`) on the floating point number under this context.
     ///
