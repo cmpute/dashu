@@ -3,6 +3,7 @@
 ## 0.2.1 (WIP)
 
 - Implement `core::iter::{Sum, Product}` for `FBig`
+- Implement `powf`, `sqrt` for `FBig`
 
 ## 0.2.0 (Initial release)
 
@@ -15,7 +16,7 @@
 - Implement Random generator
 - Implement Serde serialization
 - Implememt sqrt, cbrt, nth_root
-- Implement powf, log
+- Implement log
 - Create operations benchmark
 - Benchmark against crates: rug, twofloat, num-bigfloat, rust_decimal, bigdecimal, scientific
 - Implement more formatting traits
