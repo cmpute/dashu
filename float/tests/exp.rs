@@ -349,12 +349,12 @@ fn test_powf_binary() {
         (
             fbig!(0x123456789012345678901234567890123456789p-156),
             fbig!(0xd42103860f3571cd2a460fb6b4ea8d9b7c731f2p-156),
-            fbig!(0x9a78d9b718a5e6b0df4da5a7ae7442e43f3d092p-155)
+            fbig!(0x9a78d9b718a5e6b0df4da5a7ae7442e43f3d092p-155),
         ),
         (
             fbig!(0x123456789012345678901234567890123456789p-142),
             fbig!(0xdfa5a59d0656d300e096909463f09b52c76104ap11712),
-            fbig!(0x92843df7e9a9b00a08c246f466f9783f1f6f463p-12023)
+            fbig!(0x92843df7e9a9b00a08c246f466f9783f1f6f463p-12023),
         ),
     ];
 
@@ -419,7 +419,10 @@ fn test_powf_decimal() {
 #[test]
 #[should_panic]
 fn test_pow_unlimited_precision() {
-    let _ = dbig!(2).with_precision(0).value().powf(&dbig!(2.1).with_precision(0).value());
+    let _ = dbig!(2)
+        .with_precision(0)
+        .value()
+        .powf(&dbig!(2.1).with_precision(0).value());
 }
 
 #[test]

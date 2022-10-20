@@ -26,6 +26,18 @@ impl<R: Round, const B: Word> FBig<R, B> {
         self.context.powi(&self.repr, exp).value()
     }
 
+    /// Raise the floating point number to an floating point power.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::error::ParseError;
+    /// # use dashu_float::DBig;
+    /// let x = DBig::from_str_native("1.23")?;
+    /// let y = DBig::from_str_native("-4.56")?;
+    /// assert_eq!(x.powf(&y), DBig::from_str_native("0.389")?);
+    /// # Ok::<(), ParseError>(())
+    /// ```
     #[inline]
     pub fn powf(&self, exp: &Self) -> Self {
         let context = Context::max(self.context, exp.context);
@@ -137,6 +149,25 @@ impl<R: Round> Context<R> {
     }
 
     /// Raise the floating point number to an floating point power under this context.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::error::ParseError;
+    /// # use dashu_float::DBig;
+    /// use dashu_base::Approximation::*;
+    /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
+    ///
+    /// let context = Context::<HalfAway>::new(2);
+    /// let x = DBig::from_str_native("1.23")?;
+    /// let y = DBig::from_str_native("-4.56")?;
+    /// assert_eq!(context.powf(&x.repr(), &y.repr()), Inexact(DBig::from_str_native("0.39")?, AddOne));
+    /// # Ok::<(), ParseError>(())
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is unlimited.
     pub fn powf<const B: Word>(&self, base: &Repr<B>, exp: &Repr<B>) -> Rounded<FBig<R, B>> {
         check_inf(base);
         check_precision_limited(self.precision); // TODO: we can allow it if exp is integer
@@ -148,15 +179,19 @@ impl<R: Round> Context<R> {
             let repr = self.repr_round_ref(base);
             return repr.map(|v| FBig::new(v, *self));
         }
-        if base.sign() == Sign::Negative { // TODO: we should allow negative base when exp is an integer
+        if base.sign() == Sign::Negative {
+            // TODO: we should allow negative base when exp is an integer
             panic_power_negative_base()
         }
 
-        // x^y = exp(y*log(x)), the formula for guard_digits comes from MPFR
+        // x^y = exp(y*log(x)), use a simple rule for guard bits
         let guard_digits = 10 + self.precision.log2_est() as usize;
         let work_context = Context::<R>::new(self.precision + guard_digits);
 
-        let res = work_context.ln(base).and_then(|v| work_context.mul(&v.repr, exp)).and_then(|v| work_context.exp(&v.repr));
+        let res = work_context
+            .ln(base)
+            .and_then(|v| work_context.mul(&v.repr, exp))
+            .and_then(|v| work_context.exp(&v.repr));
         res.and_then(|v| v.with_precision(self.precision))
     }
 
