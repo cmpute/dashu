@@ -66,13 +66,25 @@ impl<'a> Serialize for TypedReprRef<'a> {
 impl Serialize for UBig {
     #[inline]
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.repr().serialize(serializer)
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&self.to_string())
+        } else {
+            self.repr().serialize(serializer)
+        }
     }
 }
 
 impl<'de> Deserialize<'de> for UBig {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_seq(UBigVisitor)
+        if deserializer.is_human_readable() {
+            let s = String::deserialize(deserializer)?;
+            match UBig::from_str_with_radix_prefix(&s) {
+                Ok((n, _)) => Ok(n),
+                Err(e) => Err(serde::de::Error::custom(e)),
+            }
+        } else {
+            deserializer.deserialize_seq(UBigVisitor)
+        }
     }
 }
 
@@ -137,18 +149,30 @@ fn len_64_to_max_len(len_64: usize) -> usize {
 
 impl Serialize for IBig {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let (sign, repr) = self.as_sign_repr();
-        let mut tup = serializer.serialize_tuple(2)?;
-        tup.serialize_element(&(sign == Sign::Negative))?;
-        tup.serialize_element(&repr)?;
-        tup.end()
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&self.to_string())
+        } else {
+            let (sign, repr) = self.as_sign_repr();
+            let mut tup = serializer.serialize_tuple(2)?;
+            tup.serialize_element(&(sign == Sign::Negative))?;
+            tup.serialize_element(&repr)?;
+            tup.end()
+        }
     }
 }
 
 impl<'de> Deserialize<'de> for IBig {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let (sign, magnitude): (bool, UBig) = Deserialize::deserialize(deserializer)?;
-        let sign = if sign { Sign::Negative } else { Sign::Positive };
-        Ok(IBig(magnitude.0.with_sign(sign)))
+        if deserializer.is_human_readable() {
+            let s = String::deserialize(deserializer)?;
+            match IBig::from_str_with_radix_prefix(&s) {
+                Ok((n, _)) => Ok(n),
+                Err(e) => Err(serde::de::Error::custom(e)),
+            }
+        } else {
+            let (sign, magnitude): (bool, UBig) = Deserialize::deserialize(deserializer)?;
+            let sign = if sign { Sign::Negative } else { Sign::Positive };
+            Ok(IBig(magnitude.0.with_sign(sign)))
+        }
     }
 }

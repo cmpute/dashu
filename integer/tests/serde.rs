@@ -1,14 +1,24 @@
 mod helper_macros;
-use serde_test::{assert_de_tokens, assert_tokens, Token};
+use serde_test::{assert_de_tokens, assert_tokens, Configure, Token};
 
 #[test]
 fn test_ubig_serde() {
-    assert_tokens(&ubig!(0), &[Token::Seq { len: Some(0) }, Token::SeqEnd]);
-    assert_de_tokens(&ubig!(0), &[Token::Seq { len: None }, Token::SeqEnd]);
-    assert_tokens(&ubig!(17), &[Token::Seq { len: Some(1) }, Token::U64(17), Token::SeqEnd]);
-    assert_de_tokens(&ubig!(17), &[Token::Seq { len: None }, Token::U8(17), Token::SeqEnd]);
+    assert_tokens(&ubig!(0).compact(), &[Token::Seq { len: Some(0) }, Token::SeqEnd]);
+    assert_tokens(&ubig!(0).readable(), &[Token::Str("0")]);
+    assert_de_tokens(&ubig!(0).compact(), &[Token::Seq { len: None }, Token::SeqEnd]);
+    assert_de_tokens(&ubig!(0).readable(), &[Token::Str("0")]);
     assert_tokens(
-        &ubig!(0x123451234567890abcdef),
+        &ubig!(17).compact(),
+        &[Token::Seq { len: Some(1) }, Token::U64(17), Token::SeqEnd],
+    );
+    assert_tokens(&ubig!(17).readable(), &[Token::Str("17")]);
+    assert_de_tokens(
+        &ubig!(17).compact(),
+        &[Token::Seq { len: None }, Token::U8(17), Token::SeqEnd],
+    );
+    assert_de_tokens(&ubig!(17).readable(), &[Token::Str("17")]);
+    assert_tokens(
+        &ubig!(0x123451234567890abcdef).compact(),
         &[
             Token::Seq { len: Some(2) },
             Token::U64(0x1234567890abcdef),
@@ -16,8 +26,12 @@ fn test_ubig_serde() {
             Token::SeqEnd,
         ],
     );
+    assert_tokens(
+        &ubig!(0x123451234567890abcdef).readable(),
+        &[Token::Str("1375482783624620011146735")],
+    );
     assert_de_tokens(
-        &ubig!(0x123451234567890abcdef),
+        &ubig!(0x123451234567890abcdef).compact(),
         &[
             Token::Seq { len: None },
             Token::U64(0x1234567890abcdef),
@@ -25,12 +39,16 @@ fn test_ubig_serde() {
             Token::SeqEnd,
         ],
     );
+    assert_de_tokens(
+        &ubig!(0x123451234567890abcdef).readable(),
+        &[Token::Str("0x123451234567890abcdef")],
+    );
 }
 
 #[test]
 fn test_ibig_serde() {
     assert_tokens(
-        &ibig!(0),
+        &ibig!(0).compact(),
         &[
             Token::Tuple { len: 2 },
             Token::Bool(false),
@@ -39,8 +57,9 @@ fn test_ibig_serde() {
             Token::TupleEnd,
         ],
     );
+    assert_tokens(&ibig!(0).readable(), &[Token::Str("0")]);
     assert_de_tokens(
-        &ibig!(0),
+        &ibig!(0).compact(),
         &[
             Token::Seq { len: None },
             Token::Bool(true),
@@ -49,8 +68,9 @@ fn test_ibig_serde() {
             Token::SeqEnd,
         ],
     );
+    assert_de_tokens(&ibig!(0).readable(), &[Token::Str("0")]);
     assert_tokens(
-        &ibig!(17),
+        &ibig!(17).compact(),
         &[
             Token::Tuple { len: 2 },
             Token::Bool(false),
@@ -60,8 +80,10 @@ fn test_ibig_serde() {
             Token::TupleEnd,
         ],
     );
+    assert_tokens(&ibig!(17).readable(), &[Token::Str("17")]);
+    assert_de_tokens(&ibig!(17).readable(), &[Token::Str("0x11")]);
     assert_tokens(
-        &ibig!(-17),
+        &ibig!(-17).compact(),
         &[
             Token::Tuple { len: 2 },
             Token::Bool(true),
@@ -71,4 +93,6 @@ fn test_ibig_serde() {
             Token::TupleEnd,
         ],
     );
+    assert_tokens(&ibig!(-17).readable(), &[Token::Str("-17")]);
+    assert_de_tokens(&ibig!(-17).readable(), &[Token::Str("-0x11")]);
 }
