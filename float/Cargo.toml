@@ -1,6 +1,6 @@
 [package]
 name = "dashu-float"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2021"
 description = "A big float library supporting arbitrary precision, arbitrary base and arbitrary rounding mode"
@@ -25,10 +25,10 @@ version = "1.1"
 
 [dependencies.dashu-base]
 path = "../base"
-version = "0.2.0"
+version = "0.2.1"
 default-features = false
 
 [dependencies.dashu-int]
 path = "../integer"
-version = "0.2.0"
+version = "0.2.1"
 default-features = false

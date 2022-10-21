@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.1 (WIP)
+## 0.2.1
 
 - Implement `core::iter::{Sum, Product}` for `FBig`
 - Implement `powf`, `sqrt` for `FBig`
@@ -13,9 +13,10 @@
 
 ## Roadmap to next version
 - Support generating base math constants (E, Pi, SQRT2, etc.)
+- Support operations with inf
 - Implement Random generator
 - Implement Serde serialization
-- Implememt sqrt, cbrt, nth_root
+- Implememt cbrt, nth_root
 - Implement log
 - Create operations benchmark
 - Benchmark against crates: rug, twofloat, num-bigfloat, rust_decimal, bigdecimal, scientific
