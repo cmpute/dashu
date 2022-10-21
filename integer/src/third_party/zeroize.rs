@@ -1,6 +1,10 @@
 use zeroize::Zeroize;
 
-use crate::{buffer::Buffer, repr::{Repr, TypedRepr}, UBig, IBig};
+use crate::{
+    buffer::Buffer,
+    repr::{Repr, TypedRepr},
+    IBig, UBig,
+};
 
 impl Zeroize for Buffer {
     #[inline]
