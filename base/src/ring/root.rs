@@ -123,7 +123,7 @@ impl NormalizedRootRem for u32 {
 
         // step3: √n = x * 1/√n
         let r = r << 1; // normalize to 16 bits, now r estimates 2^31 / √n
-        let mut s = wmul16_hi(r, n16) << 1;
+        let mut s = wmul16_hi(r, n16).saturating_mul(2); // overflowing can happen
         s -= 4; // to make sure s is an underestimate
 
         // step4: second Newton iteration on √n
@@ -462,6 +462,12 @@ mod tests {
 
     #[test]
     fn test_sqrt() {
+        assert_eq!(2u8.sqrt_rem(), (1, 1));
+        assert_eq!(2u16.sqrt_rem(), (1, 1));
+        assert_eq!(2u32.sqrt_rem(), (1, 1));
+        assert_eq!(2u64.sqrt_rem(), (1, 1));
+        assert_eq!(2u128.sqrt_rem(), (1, 1));
+
         assert_eq!(u8::MAX.sqrt_rem(), (15, 30));
         assert_eq!(u16::MAX.sqrt_rem(), (u8::MAX as u16, (u8::MAX as u16) * 2));
         assert_eq!(u32::MAX.sqrt_rem(), (u16::MAX as u32, (u16::MAX as u32) * 2));
@@ -473,6 +479,9 @@ mod tests {
         assert_eq!((u32::MAX / 2).sqrt_rem(), (46340, 88047));
         assert_eq!((u64::MAX / 2).sqrt_rem(), (3037000499, 5928526806));
         assert_eq!((u128::MAX / 2).sqrt_rem(), (13043817825332782212, 9119501915260492783));
+
+        // some cases from previous bugs
+        assert_eq!(65533u32.sqrt_rem(), (255, 508));
 
         macro_rules! random_case {
             ($T:ty) => {
@@ -496,11 +505,11 @@ mod tests {
 
     #[test]
     fn test_cbrt() {
-        assert_eq!(u8::MAX.cbrt_rem(), (6, 39));
-        assert_eq!(u16::MAX.cbrt_rem(), (40, 1535));
-        assert_eq!(u32::MAX.cbrt_rem(), (1625, 3951670));
-        assert_eq!(u64::MAX.cbrt_rem(), (2642245, 19889396695490));
-        assert_eq!(u128::MAX.cbrt_rem(), (6981463658331, 81751874631114922977532764));
+        assert_eq!(2u8.cbrt_rem(), (1, 1));
+        assert_eq!(2u16.cbrt_rem(), (1, 1));
+        assert_eq!(2u32.cbrt_rem(), (1, 1));
+        assert_eq!(2u64.cbrt_rem(), (1, 1));
+        assert_eq!(2u128.cbrt_rem(), (1, 1));
 
         assert_eq!((u8::MAX / 2).cbrt_rem(), (5, 2));
         assert_eq!((u16::MAX / 2).cbrt_rem(), (31, 2976));

@@ -34,6 +34,7 @@ jobs:
         bits: [16, 32, 64]
     runs-on: ubuntu-latest
     env:
+      RUST_BACKTRACE: 1
       RUSTFLAGS: -D warnings --cfg force_bits="${{ matrix.bits }}$"
     steps:
       - uses: actions/checkout@v2
@@ -51,6 +52,7 @@ jobs:
     name: Test x86
     runs-on: ubuntu-latest
     env:
+      RUST_BACKTRACE: 1
       RUSTFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v2
@@ -71,6 +73,7 @@ jobs:
     name: Test x86_64
     runs-on: ubuntu-latest
     env:
+      RUST_BACKTRACE: 1
       RUSTFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v2

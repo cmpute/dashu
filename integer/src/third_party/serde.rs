@@ -8,6 +8,7 @@ use crate::{
     Sign,
 };
 use core::fmt::{self, Formatter};
+use alloc::{vec::Vec, string::ToString};
 use serde::{
     de::{Deserialize, Deserializer, SeqAccess, Visitor},
     ser::{Serialize, SerializeSeq, SerializeTuple, Serializer},

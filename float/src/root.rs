@@ -23,7 +23,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn sqrt(&self) -> Self {
-        self.context.sqrt(&self.repr()).value()
+        self.context.sqrt(self.repr()).value()
     }
 }
 
