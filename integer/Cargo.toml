@@ -17,7 +17,7 @@ rust-version = "1.61"
 all-features = true
 
 [features]
-default = ["std", "rand", "num-traits", "num-integer"]
+default = ["std", "rand", "num-traits", "num-integer", "num-order"]
 std = ["dashu-base/std"]
 
 [dependencies.dashu-base]
@@ -39,6 +39,11 @@ default-features = false
 [dependencies.num-integer]
 optional = true
 version = "0.1.45"
+default-features = false
+
+[dependencies.num-order]
+optional = true
+version = "1.0.4"
 default-features = false
 
 [dependencies.rand]

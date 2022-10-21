@@ -9,6 +9,25 @@ use crate::{
 };
 use core::cmp::Ordering;
 
+/// Compare lhs with rhs of the same length as numbers.
+#[inline]
+pub fn cmp_same_len(lhs: &[Word], rhs: &[Word]) -> Ordering {
+    debug_assert!(lhs.len() == rhs.len());
+    lhs.iter().rev().cmp(rhs.iter().rev())
+}
+
+/// Compare lhs with rhs as numbers. The leading zero words of the input must be trimmed.
+///
+/// # Panics
+///
+/// Panic if lhs or rhs has leading zero words (including the case where lhs == 0 or rhs == 0)
+pub fn cmp_in_place(lhs: &[Word], rhs: &[Word]) -> Ordering {
+    debug_assert!(*lhs.last().unwrap() != 0 && *rhs.last().unwrap() != 0);
+    lhs.len()
+        .cmp(&rhs.len())
+        .then_with(|| cmp_same_len(lhs, rhs))
+}
+
 impl<'a> PartialOrd for TypedReprRef<'a> {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -217,21 +236,4 @@ impl_cmp_ubig_with_signed_primitive!(i64);
 impl_cmp_ubig_with_signed_primitive!(i128);
 impl_cmp_ubig_with_signed_primitive!(isize);
 
-/// Compare lhs with rhs of the same length as numbers.
-#[inline]
-pub fn cmp_same_len(lhs: &[Word], rhs: &[Word]) -> Ordering {
-    debug_assert!(lhs.len() == rhs.len());
-    lhs.iter().rev().cmp(rhs.iter().rev())
-}
-
-/// Compare lhs with rhs as numbers. The leading zero words of the input must be trimmed.
-///
-/// # Panics
-///
-/// Panic if lhs or rhs has leading zero words (including the case where lhs == 0 or rhs == 0)
-pub fn cmp_in_place(lhs: &[Word], rhs: &[Word]) -> Ordering {
-    debug_assert!(*lhs.last().unwrap() != 0 && *rhs.last().unwrap() != 0);
-    lhs.len()
-        .cmp(&rhs.len())
-        .then_with(|| cmp_same_len(lhs, rhs))
-}
+// TODO(next): implement PartialOrd<f32>, <f64>

@@ -6,7 +6,9 @@
 
 - Add `sqrt`, `sqrt_rem`, `nth_root` for `UBig` and `IBig`
 - Implement `core::iter::{Sum, Product}` for `UBig` and `IBig`
-- Implement `num_integer::Integer` for `UBig` and `IBig`
+- Implement `num_traits::{Euclid, ToPrimitive, FromPrimitive}` for `UBig` and `IBig`
+- Implement `num_integer::{Integer, Roots}` for `UBig` and `IBig`
+- Implement `num_order::{NumHash, NumOrd}` for `UBig` and `IBig`
 - `serde` se/derialization now supports the `is_human_readable()` flag
 
 ## 0.2.0

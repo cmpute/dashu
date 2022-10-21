@@ -3,7 +3,7 @@
 //! Most traits are only implemented for unsigned integers yet.
 
 /// Common bit operations for integers
-// TODO: add doc tests
+// TODO(v0.3): add doc tests
 pub trait BitTest {
     /// Get the minimum required number of bits to represent this integer
     fn bit_len(&self) -> usize;

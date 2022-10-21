@@ -1,5 +1,7 @@
 //! Implement num-traits traits.
 
+use dashu_base::{DivEuclid, RemEuclid};
+
 use crate::{error::ParseError, ibig::IBig, ops::Abs, ubig::UBig, Sign};
 
 impl num_traits::Zero for UBig {
@@ -131,4 +133,112 @@ impl num_traits::Num for IBig {
     fn from_str_radix(s: &str, radix: u32) -> Result<Self, ParseError> {
         Self::from_str_radix(s, radix)
     }
+}
+
+impl num_traits::Euclid for UBig {
+    #[inline]
+    fn div_euclid(&self, v: &Self) -> Self {
+        DivEuclid::div_euclid(self, v)
+    }
+    #[inline]
+    fn rem_euclid(&self, v: &Self) -> Self {
+        RemEuclid::rem_euclid(self, v)
+    }
+}
+
+impl num_traits::Euclid for IBig {
+    #[inline]
+    fn div_euclid(&self, v: &Self) -> Self {
+        DivEuclid::div_euclid(self, v)
+    }
+    #[inline]
+    fn rem_euclid(&self, v: &Self) -> Self {
+        RemEuclid::rem_euclid(self, v).into()
+    }
+}
+
+impl num_traits::ToPrimitive for UBig {
+    #[inline]
+    fn to_u64(&self) -> Option<u64> {
+        self.try_into().ok()
+    }
+    #[inline]
+    fn to_i64(&self) -> Option<i64> {
+        self.try_into().ok()
+    }
+    #[inline]
+    fn to_u128(&self) -> Option<u128> {
+        self.try_into().ok()
+    }
+    #[inline]
+    fn to_i128(&self) -> Option<i128> {
+        self.try_into().ok()
+    }
+    #[inline]
+    fn to_f64(&self) -> Option<f64> {
+        Some(self.to_f64().value())
+    }
+}
+
+impl num_traits::ToPrimitive for IBig {
+    #[inline]
+    fn to_u64(&self) -> Option<u64> {
+        self.try_into().ok()
+    }
+    #[inline]
+    fn to_i64(&self) -> Option<i64> {
+        self.try_into().ok()
+    }
+    #[inline]
+    fn to_u128(&self) -> Option<u128> {
+        self.try_into().ok()
+    }
+    #[inline]
+    fn to_i128(&self) -> Option<i128> {
+        self.try_into().ok()
+    }
+    #[inline]
+    fn to_f64(&self) -> Option<f64> {
+        Some(self.to_f64().value())
+    }
+}
+
+impl num_traits::FromPrimitive for UBig {
+    #[inline]
+    fn from_u64(n: u64) -> Option<Self> {
+        n.try_into().ok()
+    }
+    #[inline]
+    fn from_i64(n: i64) -> Option<Self> {
+        n.try_into().ok()
+    }
+    #[inline]
+    fn from_i128(n: i128) -> Option<Self> {
+        n.try_into().ok()
+    }
+    #[inline]
+    fn from_u128(n: u128) -> Option<Self> {
+        n.try_into().ok()
+    }
+    // TODO(next): f64 is not yet correctly handled
+}
+
+impl num_traits::FromPrimitive for IBig {
+    #[inline]
+    fn from_u64(n: u64) -> Option<Self> {
+        n.try_into().ok()
+    }
+    #[inline]
+    fn from_i64(n: i64) -> Option<Self> {
+        n.try_into().ok()
+    }
+    #[inline]
+    fn from_i128(n: i128) -> Option<Self> {
+        n.try_into().ok()
+    }
+    #[inline]
+    fn from_u128(n: u128) -> Option<Self> {
+        n.try_into().ok()
+    }
+    // TODO(next): f64 is not yet correctly handled
 }
