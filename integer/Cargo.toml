@@ -57,6 +57,11 @@ version = "1.0.130"
 default-features = false
 features = ["derive"]
 
+[dependencies.zeroize]
+optional = true
+version = "1.5.7"
+default-features = false
+
 [dev-dependencies.criterion]
 version = "0.4.0"
 features = ["html_reports"]

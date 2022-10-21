@@ -19,6 +19,10 @@ use static_assertions::const_assert;
 const_assert!(64 % WORD_BITS_USIZE == 0);
 const WORDS_PER_U64: usize = 64 / WORD_BITS_USIZE;
 
+// XXX: shall we directly serialize to bytes array (either little- or big-endian). This improves portability
+//      but affects efficiency. We might also consider implement different serialization strategy using other
+//      crates (like tkyv)? see https://github.com/djkoloski/rust_serialization_benchmark
+
 impl<'a> Serialize for TypedReprRef<'a> {
     #[allow(clippy::useless_conversion)]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
