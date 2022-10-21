@@ -7,7 +7,6 @@ use crate::{
     ubig::UBig,
     Sign,
 };
-use alloc::vec::Vec;
 use core::fmt::{self, Formatter};
 use serde::{
     de::{Deserialize, Deserializer, SeqAccess, Visitor},
@@ -77,11 +76,7 @@ impl Serialize for UBig {
 impl<'de> Deserialize<'de> for UBig {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         if deserializer.is_human_readable() {
-            let s = String::deserialize(deserializer)?;
-            match UBig::from_str_with_radix_prefix(&s) {
-                Ok((n, _)) => Ok(n),
-                Err(e) => Err(serde::de::Error::custom(e)),
-            }
+            deserializer.deserialize_str(UBigVisitor)
         } else {
             deserializer.deserialize_seq(UBigVisitor)
         }
@@ -95,7 +90,17 @@ impl<'de> Visitor<'de> for UBigVisitor {
     type Value = UBig;
 
     fn expecting(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "a sequence of 64-bit words")
+        write!(f, "a string or a sequence of 64-bit words")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        match UBig::from_str_with_radix_prefix(v) {
+            Ok((n, _)) => Ok(n),
+            Err(e) => Err(serde::de::Error::custom(e)),
+        }
     }
 
     fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<UBig, A::Error> {
@@ -164,8 +169,8 @@ impl Serialize for IBig {
 impl<'de> Deserialize<'de> for IBig {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         if deserializer.is_human_readable() {
-            let s = String::deserialize(deserializer)?;
-            match IBig::from_str_with_radix_prefix(&s) {
+            let s: &str = Deserialize::deserialize(deserializer)?;
+            match IBig::from_str_with_radix_prefix(s) {
                 Ok((n, _)) => Ok(n),
                 Err(e) => Err(serde::de::Error::custom(e)),
             }
