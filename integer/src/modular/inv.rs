@@ -33,7 +33,7 @@ impl<'a> Modulo<'a> {
     /// assert_eq!((a * ainv).residue(), 1);
     /// ```
     #[inline]
-    pub fn inv(self) -> Option<Modulo<'a>> {
+    pub fn inverse(self) -> Option<Modulo<'a>> {
         match self.into_repr() {
             ModuloRepr::Single(raw, ring) => ring.inv(raw).map(|v| Modulo::from_single(v, ring)),
             ModuloRepr::Double(raw, ring) => ring.inv(raw).map(|v| Modulo::from_double(v, ring)),

@@ -237,3 +237,4 @@ impl_cmp_ubig_with_signed_primitive!(i128);
 impl_cmp_ubig_with_signed_primitive!(isize);
 
 // TODO(next): implement PartialOrd<f32>, <f64>
+// TODO(v0.3): deprecate comparison with small integers, use num-order instead. See https://github.com/rust-num/num-bigint/issues/150

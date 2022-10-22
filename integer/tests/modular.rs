@@ -250,33 +250,33 @@ fn test_inv() {
     // small ring
     let ring = ModuloRing::new(ubig!(100));
     let x = ring.convert(9);
-    let y = x.clone().inv().unwrap();
+    let y = x.clone().inverse().unwrap();
     assert_eq!((x * y).residue(), ubig!(1));
 
     let x = ring.convert(0);
-    assert!(x.inv().is_none());
+    assert!(x.inverse().is_none());
     let x = ring.convert(10);
-    assert!(x.inv().is_none());
+    assert!(x.inverse().is_none());
 
     let ring = ModuloRing::new(ubig!(103));
     let x = ring.convert(20);
-    let y = x.inv().unwrap();
+    let y = x.inverse().unwrap();
     assert_eq!(y.residue(), ubig!(67)); // inverse is unique for prime modulus
 
     // medium ring
     let ring = ModuloRing::new(ubig!(1000000000000000000000000000000));
     let x = ring.convert(ibig!(3333312345678901234567890123456789));
-    let y = x.clone().inv().unwrap();
+    let y = x.clone().inverse().unwrap();
     assert_eq!((x * y).residue(), ubig!(1));
 
     let x = ring.convert(0);
-    assert!(x.inv().is_none());
+    assert!(x.inverse().is_none());
     let x = ring.convert(10);
-    assert!(x.inv().is_none());
+    assert!(x.inverse().is_none());
 
     let ring = ModuloRing::new(ubig!(1000000000000000000000000000057)); // prime
     let x = ring.convert(123456789);
-    let y = x.inv().unwrap();
+    let y = x.inverse().unwrap();
     assert_eq!(y.residue(), ubig!(951144331155413413514262063034));
 
     // large ring
@@ -284,34 +284,34 @@ fn test_inv() {
         0x100000000000000000000000000000000000000000000000000000000000000000000000000000000
     ));
     let x = ring.convert(123456789);
-    let y = x.inv().unwrap();
+    let y = x.inverse().unwrap();
     assert_eq!(
         y.residue(),
         ubig!(502183094104378158094730467601915490123618665365443345649182408561985048745994978946725109832253)
     );
 
     let x = ring.convert(0);
-    assert!(x.inv().is_none());
+    assert!(x.inverse().is_none());
     let x = ring.convert(10);
-    assert!(x.inv().is_none());
+    assert!(x.inverse().is_none());
 
     let x = ring.convert(ubig!(0x123456789123456789123456789));
-    let y = x.inv().unwrap();
+    let y = x.inverse().unwrap();
     assert_eq!(
         y.residue(),
         ubig!(1654687843822646720169408413229830444089197976699429504340681760590766246761104608701978442022585)
     );
     let x = ring.convert(ubig!(0x123456789123456789123456788));
-    assert!(x.inv().is_none());
+    assert!(x.inverse().is_none());
 
     let x = ring.convert(ubig!(
         0x123456789123456789123456789123456789123456789123456789
     ));
-    let y = x.inv().unwrap();
+    let y = x.inverse().unwrap();
     let x = ring.convert(ubig!(
         0x123456789123456789123456789123456789123456789000000000
     ));
-    assert!(x.inv().is_none());
+    assert!(x.inverse().is_none());
     assert_eq!(
         y.residue(),
         ubig!(77064304169441121490325922823072327980740992335161695976803567323815961864721792027154186059449)

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0 (WIP)
+
+### Chnage
+
+- Definition of `RootRem` has changed (the associated type has been changed to `OutputRoot`, `OutputRem`)
+
 ## 0.2.1
 
 - Implement `RootRem` for `u8`, `u16`, `u32`

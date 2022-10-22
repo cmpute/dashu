@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0
+
+### Change
+
+- `Modulo::inv` is renamed to `Modulo::inverse`
+- `sqrt_rem` is only exposed through the `RootRem` trait now.
+
+### Remove
+
+- `sqrt_rem` is removed from `IBig`
+
 ## 0.2.1
 
 ### Add
