@@ -85,26 +85,21 @@ pub(crate) mod repr {
     };
 
     impl TypedReprRef<'_> {
-        pub fn pow(&self, exp: usize) -> Repr {
+        pub fn pow(self, exp: usize) -> Repr {
             // shortcuts
             match exp {
                 0 => return Repr::one(),
-                1 => {
-                    return match *self {
-                        Self::RefSmall(dw) => Repr::from_dword(dw),
-                        Self::RefLarge(words) => Repr::from_buffer(Buffer::from(words)),
-                    }
-                }
+                1 => return Repr::from_ref(self),
                 2 => return self.square(),
                 _ => {}
             };
 
             match self {
                 RefSmall(dword) => {
-                    if let Some(word) = shrink_dword(*dword) {
+                    if let Some(word) = shrink_dword(dword) {
                         pow_word_base(word, exp)
                     } else {
-                        pow_dword_base(*dword, exp)
+                        pow_dword_base(dword, exp)
                     }
                 }
                 RefLarge(words) => pow_large_base(words, exp),

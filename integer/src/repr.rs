@@ -81,7 +81,7 @@ impl Repr {
     #[inline]
     pub const fn len(&self) -> usize {
         match self.capacity() {
-            // 0 => unreachable!(),
+            0 => unreachable!(),
             1 => (unsafe { self.data.inline[0] } != 0) as usize,
             2 => 2,
             _ => unsafe { self.data.heap.1 },
@@ -229,6 +229,18 @@ impl Repr {
         (sign, words)
     }
 
+    #[cfg(feature = "zeroize")]
+    pub fn as_full_slice(&mut self) -> &mut [Word] {
+        unsafe {
+            let capacity = self.capacity();
+            if capacity <= 2 {
+                &mut self.data.inline
+            } else {
+                slice::from_raw_parts_mut(self.data.heap.0, capacity)
+            }
+        }
+    }
+
     /// Creates a `Repr` with a single word
     #[inline]
     pub const fn from_word(n: Word) -> Self {
@@ -248,7 +260,7 @@ impl Repr {
         }
     }
 
-    /// Creates a `Repr` with a buffer allocated on heap. The leading zeros in the buffer
+    /// Create a `Repr` with a buffer allocated on heap. The leading zeros in the buffer
     /// will be trimmed and the buffer will be shrunk if there is exceeded capacity.
     pub fn from_buffer(mut buffer: Buffer) -> Self {
         buffer.pop_zeros();
@@ -268,6 +280,14 @@ impl Repr {
                 //         so capacity is nonzero and larger than 2
                 unsafe { mem::transmute(buffer) }
             }
+        }
+    }
+
+    /// Create a [Repr] cloned from a reference to another [Repr]
+    pub fn from_ref(tref: TypedReprRef) -> Self {
+        match tref {
+            TypedReprRef::RefSmall(dw) => Self::from_dword(dw),
+            TypedReprRef::RefLarge(words) => Self::from_buffer(Buffer::from(words)),
         }
     }
 
@@ -395,6 +415,7 @@ impl Clone for Repr {
             if src_cap <= 2 {
                 if cap > 2 {
                     // release the old buffer if necessary
+                    // SAFETY: self.data.heap.0 must be valid pointer if cap > 2
                     Buffer::deallocate_raw(NonNull::new_unchecked(self.data.heap.0), cap);
                 }
                 self.data.inline = src.data.inline;

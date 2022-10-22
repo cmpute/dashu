@@ -385,6 +385,12 @@ impl Buffer {
             Box::from_raw(slice)
         }
     }
+
+    // This method is meant for implementation of zeroize traits
+    #[cfg(feature = "zeroize")]
+    pub fn as_full_slice(&mut self) -> &mut [Word] {
+        unsafe { slice::from_raw_parts_mut(self.ptr.as_mut(), self.capacity) }
+    }
 }
 
 impl Clone for Buffer {

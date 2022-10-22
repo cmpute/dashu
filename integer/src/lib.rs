@@ -61,7 +61,9 @@
 //! # Optional dependencies
 //!
 //! * `std` (*default*): for `std::error::Error` and some internal usages of `std` functions.
-//! * `num-traits` (*default*): support integral traits from crate `num-traits`.
+//! * `num-traits` (*default*): support traits from crate `num-traits`.
+//! * `num-integer` (*default*): support traits from crate `num-integer`.
+//! * `num-order` (*default*): support traits from crate `num-order`.
 //! * `rand` (*default*): support random number generation based on crate `rand`.
 //! * `serde`: support serialization and deserialization based on crate `serde`.
 
@@ -101,6 +103,7 @@ mod gcd;
 mod gcd_ops;
 mod helper_macros;
 mod ibig;
+mod iter;
 mod log;
 mod math;
 mod memory;
@@ -114,17 +117,14 @@ mod primitive;
 mod radix;
 mod remove;
 mod repr;
+mod root;
+mod root_ops;
 mod shift;
 mod shift_ops;
 mod sign;
 mod sqr;
+mod third_party;
 mod ubig;
 
-#[cfg(feature = "rand")]
-pub mod rand;
-
-#[cfg(feature = "num-traits")]
-mod num_traits;
-
-#[cfg(feature = "serde")]
-mod serde;
+// All the public items from third_party will be exposed
+pub use third_party::*;

@@ -1,6 +1,6 @@
 [package]
 name = "dashu-base"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2021"
 description = "Common trait definitions and tools for the `dashu` libraries"
@@ -19,6 +19,14 @@ all-features = true
 [dev-dependencies.rand]
 version = "0.8.3"
 
+[dev-dependencies.criterion]
+version = "0.4.0"
+features = ["html_reports"]
+
 [features]
 default = ["std"]
 std = []
+
+[[bench]]
+name = "benchmarks"
+harness = false

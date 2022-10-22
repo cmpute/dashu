@@ -33,6 +33,59 @@ impl Default for IBig {
     }
 }
 
+impl Repr {
+    #[inline]
+    pub fn from_le_bytes(bytes: &[u8]) -> Repr {
+        if bytes.len() <= WORD_BYTES {
+            // fast path
+            Self::from_word(primitive::word_from_le_bytes_partial(bytes))
+        } else if bytes.len() <= DWORD_BYTES {
+            Self::from_dword(primitive::dword_from_le_bytes_partial(bytes))
+        } else {
+            // slow path
+            Self::from_le_bytes_large(bytes)
+        }
+    }
+
+    pub fn from_le_bytes_large(bytes: &[u8]) -> Repr {
+        debug_assert!(bytes.len() >= DWORD_BYTES);
+        let mut buffer = Buffer::allocate((bytes.len() - 1) / WORD_BYTES + 1);
+        let mut chunks = bytes.chunks_exact(WORD_BYTES);
+        for chunk in &mut chunks {
+            buffer.push(Word::from_le_bytes(chunk.try_into().unwrap()));
+        }
+        if !chunks.remainder().is_empty() {
+            buffer.push(primitive::word_from_le_bytes_partial(chunks.remainder()));
+        }
+        Repr::from_buffer(buffer)
+    }
+
+    pub fn from_be_bytes(bytes: &[u8]) -> Repr {
+        if bytes.len() <= WORD_BYTES {
+            // fast path
+            Repr::from_word(primitive::word_from_be_bytes_partial(bytes))
+        } else if bytes.len() <= DWORD_BYTES {
+            Repr::from_dword(primitive::dword_from_be_bytes_partial(bytes))
+        } else {
+            // slow path
+            Self::from_be_bytes_large(bytes)
+        }
+    }
+
+    pub fn from_be_bytes_large(bytes: &[u8]) -> Repr {
+        debug_assert!(bytes.len() >= DWORD_BYTES);
+        let mut buffer = Buffer::allocate((bytes.len() - 1) / WORD_BYTES + 1);
+        let mut chunks = bytes.rchunks_exact(WORD_BYTES);
+        for chunk in &mut chunks {
+            buffer.push(Word::from_be_bytes(chunk.try_into().unwrap()));
+        }
+        if !chunks.remainder().is_empty() {
+            buffer.push(primitive::word_from_be_bytes_partial(chunks.remainder()));
+        }
+        Repr::from_buffer(buffer)
+    }
+}
+
 impl UBig {
     /// Construct from little-endian bytes.
     ///
@@ -44,29 +97,7 @@ impl UBig {
     /// ```
     #[inline]
     pub fn from_le_bytes(bytes: &[u8]) -> UBig {
-        let repr = if bytes.len() <= WORD_BYTES {
-            // fast path
-            Repr::from_word(primitive::word_from_le_bytes_partial(bytes))
-        } else if bytes.len() <= DWORD_BYTES {
-            Repr::from_dword(primitive::dword_from_le_bytes_partial(bytes))
-        } else {
-            // slow path
-            Self::from_le_bytes_large(bytes)
-        };
-        UBig(repr)
-    }
-
-    fn from_le_bytes_large(bytes: &[u8]) -> Repr {
-        debug_assert!(bytes.len() > WORD_BYTES);
-        let mut buffer = Buffer::allocate((bytes.len() - 1) / WORD_BYTES + 1);
-        let mut chunks = bytes.chunks_exact(WORD_BYTES);
-        for chunk in &mut chunks {
-            buffer.push(Word::from_le_bytes(chunk.try_into().unwrap()));
-        }
-        if !chunks.remainder().is_empty() {
-            buffer.push(primitive::word_from_le_bytes_partial(chunks.remainder()));
-        }
-        Repr::from_buffer(buffer)
+        UBig(Repr::from_le_bytes(bytes))
     }
 
     /// Construct from big-endian bytes.
@@ -79,29 +110,7 @@ impl UBig {
     /// ```
     #[inline]
     pub fn from_be_bytes(bytes: &[u8]) -> UBig {
-        let repr = if bytes.len() <= WORD_BYTES {
-            // fast path
-            Repr::from_word(primitive::word_from_be_bytes_partial(bytes))
-        } else if bytes.len() <= DWORD_BYTES {
-            Repr::from_dword(primitive::dword_from_be_bytes_partial(bytes))
-        } else {
-            // slow path
-            Self::from_be_bytes_large(bytes)
-        };
-        UBig(repr)
-    }
-
-    fn from_be_bytes_large(bytes: &[u8]) -> Repr {
-        debug_assert!(bytes.len() > WORD_BYTES);
-        let mut buffer = Buffer::allocate((bytes.len() - 1) / WORD_BYTES + 1);
-        let mut chunks = bytes.rchunks_exact(WORD_BYTES);
-        for chunk in &mut chunks {
-            buffer.push(Word::from_be_bytes(chunk.try_into().unwrap()));
-        }
-        if !chunks.remainder().is_empty() {
-            buffer.push(primitive::word_from_be_bytes_partial(chunks.remainder()));
-        }
-        Repr::from_buffer(buffer)
+        UBig(Repr::from_be_bytes(bytes))
     }
 
     /// Return little-endian bytes.
@@ -113,6 +122,7 @@ impl UBig {
     /// assert!(UBig::ZERO.to_le_bytes().is_empty());
     /// assert_eq!(UBig::from(0x010203u32).to_le_bytes(), [3, 2, 1]);
     /// ```
+    // TODO(v0.3): return Box<[u8]> instead?
     pub fn to_le_bytes(&self) -> Vec<u8> {
         match self.repr() {
             RefSmall(x) => {
@@ -428,14 +438,7 @@ impl UBig {
     where
         T: PrimitiveUnsigned,
     {
-        if let Ok(w) = x.try_into() {
-            UBig(Repr::from_word(w))
-        } else if let Ok(dw) = x.try_into() {
-            UBig(Repr::from_dword(dw))
-        } else {
-            let repr = x.to_le_bytes();
-            UBig::from_le_bytes(repr.as_ref())
-        }
+        UBig(Repr::from_unsigned(x))
     }
 
     /// Try to convert a signed primitive to [UBig].
@@ -444,9 +447,10 @@ impl UBig {
     where
         T: PrimitiveSigned,
     {
-        match T::Unsigned::try_from(x) {
-            Ok(u) => Ok(UBig::from_unsigned(u)),
-            Err(_) => Err(OutOfBoundsError),
+        let (sign, mag) = x.to_sign_magnitude();
+        match sign {
+            Sign::Positive => Ok(UBig(Repr::from_unsigned(mag))),
+            Sign::Negative => Err(OutOfBoundsError),
         }
     }
 
@@ -465,37 +469,7 @@ impl UBig {
     where
         T: PrimitiveSigned,
     {
-        match self.repr() {
-            RefSmall(dw) => T::try_from(dw).map_err(|_| OutOfBoundsError),
-            RefLarge(words) => {
-                let u: T::Unsigned = unsigned_from_words(words)?;
-                u.try_into().map_err(|_| OutOfBoundsError)
-            }
-        }
-    }
-}
-
-/// Try to convert `Word`s to an unsigned primitive.
-fn unsigned_from_words<T>(words: &[Word]) -> Result<T, OutOfBoundsError>
-where
-    T: PrimitiveUnsigned,
-{
-    debug_assert!(words.len() >= 2);
-    let t_words = T::BYTE_SIZE / WORD_BYTES;
-    if t_words <= 1 || words.len() > t_words {
-        Err(OutOfBoundsError)
-    } else {
-        assert!(
-            T::BIT_SIZE % WORD_BITS == 0,
-            "A large primitive type not a multiple of word size."
-        );
-        let mut repr = T::default().to_le_bytes();
-        let bytes: &mut [u8] = repr.as_mut();
-        for (idx, w) in words.iter().enumerate() {
-            let pos = idx * WORD_BYTES;
-            bytes[pos..pos + WORD_BYTES].copy_from_slice(&w.to_le_bytes());
-        }
-        Ok(T::from_le_bytes(repr))
+        T::try_from_sign_magnitude(Sign::Positive, self.repr().try_to_unsigned()?)
     }
 }
 
@@ -503,14 +477,14 @@ impl IBig {
     /// Convert an unsigned primitive to [IBig].
     #[inline]
     pub(crate) fn from_unsigned<T: PrimitiveUnsigned>(x: T) -> IBig {
-        IBig(UBig::from_unsigned(x).0)
+        IBig(Repr::from_unsigned(x))
     }
 
     /// Convert a signed primitive to [IBig].
     #[inline]
     pub(crate) fn from_signed<T: PrimitiveSigned>(x: T) -> IBig {
         let (sign, mag) = x.to_sign_magnitude();
-        IBig(UBig::from_unsigned(mag).0.with_sign(sign))
+        IBig(Repr::from_unsigned(mag).with_sign(sign))
     }
 
     /// Try to convert [IBig] to an unsigned primitive.
@@ -538,6 +512,47 @@ mod repr {
 
     use super::*;
     use crate::repr::TypedReprRef;
+
+    /// Try to convert `Word`s to an unsigned primitive.
+    fn unsigned_from_words<T>(words: &[Word]) -> Result<T, OutOfBoundsError>
+    where
+        T: PrimitiveUnsigned,
+    {
+        debug_assert!(words.len() >= 2);
+        let t_words = T::BYTE_SIZE / WORD_BYTES;
+        if t_words <= 1 || words.len() > t_words {
+            Err(OutOfBoundsError)
+        } else {
+            assert!(
+                T::BIT_SIZE % WORD_BITS == 0,
+                "A large primitive type not a multiple of word size."
+            );
+            let mut repr = T::default().to_le_bytes();
+            let bytes: &mut [u8] = repr.as_mut();
+            for (idx, w) in words.iter().enumerate() {
+                let pos = idx * WORD_BYTES;
+                bytes[pos..pos + WORD_BYTES].copy_from_slice(&w.to_le_bytes());
+            }
+            Ok(T::from_le_bytes(repr))
+        }
+    }
+
+    impl Repr {
+        #[inline]
+        pub fn from_unsigned<T>(x: T) -> Self
+        where
+            T: PrimitiveUnsigned,
+        {
+            if let Ok(w) = x.try_into() {
+                Self::from_word(w)
+            } else if let Ok(dw) = x.try_into() {
+                Self::from_dword(dw)
+            } else {
+                let repr = x.to_le_bytes();
+                Self::from_le_bytes_large(repr.as_ref())
+            }
+        }
+    }
 
     impl<'a> TypedReprRef<'a> {
         #[inline]

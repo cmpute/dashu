@@ -115,7 +115,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
         // parse scale and remove the scale part from the str
         let (scale, pmarker) = if let Some(pos) = scale_pos {
-            let value = match (&src[pos + 1..]).parse::<isize>() {
+            let value = match src[pos + 1..].parse::<isize>() {
                 Err(e) => match e.kind() {
                     IntErrorKind::Empty => return Err(ParseError::NoDigits),
                     _ => return Err(ParseError::InvalidDigit),

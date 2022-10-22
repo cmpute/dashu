@@ -1,6 +1,6 @@
 [package]
 name = "dashu-int"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Jacob Zhong <cmpute@gmail.com>", "Tomek Czajka <tczajka@gmail.com>"]
 edition = "2021"
 description = "A big integer library with good performance"
@@ -17,12 +17,12 @@ rust-version = "1.61"
 all-features = true
 
 [features]
-default = ["std", "rand", "num-traits"]
+default = ["std", "rand", "num-traits", "num-integer", "num-order"]
 std = ["dashu-base/std"]
 
 [dependencies.dashu-base]
 path = "../base"
-version = "0.2.0"
+version = "0.2.1"
 default-features = false
 
 [dependencies.cfg-if]
@@ -36,6 +36,16 @@ optional = true
 version = "0.2.14"
 default-features = false
 
+[dependencies.num-integer]
+optional = true
+version = "0.1.45"
+default-features = false
+
+[dependencies.num-order]
+optional = true
+version = "1.0.4"
+default-features = false
+
 [dependencies.rand]
 optional = true
 version = "0.8.3"
@@ -46,6 +56,11 @@ optional = true
 version = "1.0.130"
 default-features = false
 features = ["derive"]
+
+[dependencies.zeroize]
+optional = true
+version = "1.5.7"
+default-features = false
 
 [dev-dependencies.criterion]
 version = "0.4.0"

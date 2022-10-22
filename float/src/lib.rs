@@ -71,10 +71,12 @@ mod exp;
 mod fbig;
 mod fmt;
 mod helper_macros;
+mod iter;
 mod log;
 mod mul;
 mod parse;
 mod repr;
+mod root;
 pub mod round;
 mod shift;
 mod sign;
@@ -85,3 +87,5 @@ pub use repr::{Context, Repr};
 
 /// Multi-precision float number with decimal exponent and [HalfAway][round::mode::HalfAway] rounding mode
 pub type DBig = FBig<round::mode::HalfAway, 10>;
+
+// TODO: allow operations with inf, but only panic when the result is nan (inf - inf and inf / inf)

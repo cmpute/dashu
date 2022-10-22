@@ -129,43 +129,28 @@ impl<R: Round, const B: Word> FBig<R, B> {
         Self { repr, context }
     }
 
-    const fn zero() -> Self {
-        Self::new(Repr::zero(), Context::new(0))
-    }
     /// [FBig] with value 0 and unlimited precision
     ///
     /// To test if the float number is zero, use `self.repr().is_zero()`.
-    pub const ZERO: Self = Self::zero();
+    pub const ZERO: Self = Self::new(Repr::zero(), Context::new(0));
 
-    const fn one() -> Self {
-        Self::new(Repr::one(), Context::new(0))
-    }
     /// [FBig] with value 1 and unlimited precision
     ///
-    /// To test if the float number is one, use `self.repr().one()`.
-    pub const ONE: Self = Self::one();
+    /// To test if the float number is one, use `self.repr().is_one()`.
+    pub const ONE: Self = Self::new(Repr::one(), Context::new(0));
 
-    const fn neg_one() -> Self {
-        Self::new(Repr::neg_one(), Context::new(0))
-    }
     /// [FBig] with value -1 and unlimited precision
-    pub const NEG_ONE: Self = Self::neg_one();
+    pub const NEG_ONE: Self = Self::new(Repr::neg_one(), Context::new(0));
 
-    const fn inf() -> Self {
-        Self::new(Repr::infinity(), Context::new(0))
-    }
     /// [FBig] instance representing the positive infinity (+∞)
     ///
     /// To test if the float number is infinite, use `self.repr().infinite()`.
-    pub const INFINITY: Self = Self::inf();
+    pub const INFINITY: Self = Self::new(Repr::infinity(), Context::new(0));
 
-    const fn neg_inf() -> Self {
-        Self::new(Repr::neg_infinity(), Context::new(0))
-    }
     /// [FBig] instance representing the negative infinity (-∞)
     ///
     /// To test if the float number is infinite, use `self.repr().infinite()`.
-    pub const NEG_INFINITY: Self = Self::neg_inf();
+    pub const NEG_INFINITY: Self = Self::new(Repr::neg_infinity(), Context::new(0));
 
     /// Get the maximum precision set for the float number.
     ///

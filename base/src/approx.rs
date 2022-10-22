@@ -1,3 +1,5 @@
+//! Trait definitions for approximated values
+
 /// Represent an calculation result with a possible error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Approximation<T, E> {
