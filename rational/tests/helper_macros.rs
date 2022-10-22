@@ -62,4 +62,16 @@ macro_rules! rbig {
     (-$num:tt / $den:tt) => {
         ::dashu_ratio::RBig::from_parts(ibig!(-$num), ubig!($den))
     };
+    (~$val:tt) => {
+        ::dashu_ratio::Relaxed::from_parts(ibig!($val), ::dashu_int::UBig::ONE)
+    };
+    (~-$val:tt) => {
+        ::dashu_ratio::Relaxed::from_parts(ibig!(-$val), ::dashu_int::UBig::ONE)
+    };
+    (~$num:tt / $den:tt) => {
+        ::dashu_ratio::Relaxed::from_parts(ibig!($num), ubig!($den))
+    };
+    (~-$num:tt / $den:tt) => {
+        ::dashu_ratio::Relaxed::from_parts(ibig!(-$num), ubig!($den))
+    };
 }

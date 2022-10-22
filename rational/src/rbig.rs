@@ -39,6 +39,10 @@ impl RBig {
     pub fn denominator(&self) -> &UBig {
         &self.0.denominator
     }
+    #[inline]
+    pub fn relax(self) -> Relaxed {
+        Relaxed(self.0)
+    }
 }
 
 // This custom implementation is necessary due to https://github.com/rust-lang/rust/issues/98374
@@ -90,6 +94,10 @@ impl Relaxed {
     #[inline]
     pub fn denominator(&self) -> &UBig {
         &self.0.denominator
+    }
+    #[inline]
+    pub fn canonicalize(self) -> RBig {
+        RBig(self.0.reduce())
     }
 }
 

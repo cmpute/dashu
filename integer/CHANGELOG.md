@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2 (WIP)
+
+- Implement `Gcd::gcd` between `UBig` and `IBig`
+
 ## 0.2.1
 
 ### Add

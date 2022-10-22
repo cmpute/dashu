@@ -8,7 +8,7 @@ mod rbig;
 mod repr;
 mod sign;
 
-pub use rbig::RBig;
+pub use rbig::{RBig, Relaxed};
 
 // TODO: support "nearest", "nearest_ub" and "nearest_lb" to find the closest rational number,
 //       given a limit on the denominator, (see https://math.stackexchange.com/q/2438510/815652)

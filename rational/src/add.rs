@@ -12,7 +12,7 @@ macro_rules! impl_addsub_with_rbig {
         $a:ident, $b:ident, $c:ident, $d:ident,
         $ra:ident, $rb:ident, $rc:ident, $rd:ident, $method:ident
     ) => {{
-        let _ = ($ra, $rc); // not used
+        let _unused = ($ra, $rc);
         let g_bd = Gcd::gcd($rb, $rd);
 
         // a/b ± c/d = (ad ± bc)/bd
@@ -47,7 +47,7 @@ macro_rules! impl_addsub_with_relaxed {
         $a:ident, $b:ident, $c:ident, $d:ident,
         $ra:ident, $rb:ident, $rc:ident, $rd:ident, $method:ident
     ) => {{
-        let _ = ($ra, $rc); // not used
+        let _unused = ($ra, $rc);
         Relaxed::from_parts(($a * $rd).$method($c * $rb), $b * $d)
     }};
 }

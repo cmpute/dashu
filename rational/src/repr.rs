@@ -9,10 +9,9 @@ pub struct Repr {
 impl Repr {
     /// Remove the common factors between numerator and denominator
     pub fn reduce(self) -> Repr {
-        let (sign, n) = self.numerator.into_parts();
-        let g = (&n).gcd(&self.denominator);
+        let g = (&self.numerator).gcd(&self.denominator);
         Repr {
-            numerator: IBig::from_parts(sign, n / &g),
+            numerator: self.numerator / &g,
             denominator: self.denominator / g,
         }
     }
@@ -20,10 +19,9 @@ impl Repr {
     /// Remove the common factors with the hint, that is the factors are calculated
     /// as `gcd(hint, gcd(numerator, denominator))`
     pub fn reduce_with_hint(self, hint: UBig) -> Repr {
-        let (sign, n) = self.numerator.into_parts();
-        let g = hint.gcd(&n).gcd(&self.denominator);
+        let g = hint.gcd(&self.numerator).gcd(&self.denominator);
         Repr {
-            numerator: IBig::from_parts(sign, n / &g),
+            numerator: self.numerator / &g,
             denominator: self.denominator / g,
         }
     }
