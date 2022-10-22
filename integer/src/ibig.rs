@@ -199,7 +199,6 @@ impl Clone for IBig {
     fn clone(&self) -> IBig {
         IBig(self.0.clone())
     }
-
     #[inline]
     fn clone_from(&mut self, source: &IBig) {
         self.0.clone_from(&source.0)

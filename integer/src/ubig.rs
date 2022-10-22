@@ -185,7 +185,6 @@ impl Clone for UBig {
     fn clone(&self) -> UBig {
         UBig(self.0.clone())
     }
-
     #[inline]
     fn clone_from(&mut self, source: &UBig) {
         self.0.clone_from(&source.0)

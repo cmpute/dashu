@@ -2,6 +2,7 @@ mod add;
 mod cmp;
 mod error;
 mod fmt;
+mod helper_macros;
 mod mul;
 mod rbig;
 mod repr;

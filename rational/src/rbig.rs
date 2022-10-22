@@ -9,17 +9,23 @@ pub struct RBig(pub(crate) Repr);
 pub struct Relaxed(pub(crate) Repr); // the result is not always normalized
 
 impl RBig {
+    pub const ZERO: Self = Self(Repr::zero());
+    pub const ONE: Self = Self(Repr::one());
+    pub const NEG_ONE: Self = Self(Repr::neg_one());
+
     #[inline]
     pub fn from_parts(numerator: IBig, denominator: UBig) -> Self {
         if denominator.is_zero() {
             panic_divide_by_0()
         }
-        let mut repr = Repr {
-            numerator,
-            denominator,
-        };
-        repr.reduce();
-        Self(repr)
+
+        Self(
+            Repr {
+                numerator,
+                denominator,
+            }
+            .reduce(),
+        )
     }
     #[inline]
     pub fn into_parts(self) -> (IBig, UBig) {
@@ -35,19 +41,43 @@ impl RBig {
     }
 }
 
+// This custom implementation is necessary due to https://github.com/rust-lang/rust/issues/98374
+impl Clone for RBig {
+    #[inline]
+    fn clone(&self) -> RBig {
+        RBig(self.0.clone())
+    }
+    #[inline]
+    fn clone_from(&mut self, source: &RBig) {
+        self.0.clone_from(&source.0)
+    }
+}
+
+impl Default for RBig {
+    #[inline]
+    fn default() -> Self {
+        Self::ZERO
+    }
+}
+
 impl Relaxed {
+    pub const ZERO: Self = Self(Repr::zero());
+    pub const ONE: Self = Self(Repr::one());
+    pub const NEG_ONE: Self = Self(Repr::neg_one());
+
     #[inline]
     pub fn from_parts(numerator: IBig, denominator: UBig) -> Self {
         if denominator.is_zero() {
             panic_divide_by_0();
         }
 
-        let mut repr = Repr {
-            numerator,
-            denominator,
-        };
-        repr.reduce2();
-        Self(repr)
+        Self(
+            Repr {
+                numerator,
+                denominator,
+            }
+            .reduce2(),
+        )
     }
     #[inline]
     pub fn into_parts(self) -> (IBig, UBig) {
@@ -60,5 +90,24 @@ impl Relaxed {
     #[inline]
     pub fn denominator(&self) -> &UBig {
         &self.0.denominator
+    }
+}
+
+// This custom implementation is necessary due to https://github.com/rust-lang/rust/issues/98374
+impl Clone for Relaxed {
+    #[inline]
+    fn clone(&self) -> Relaxed {
+        Relaxed(self.0.clone())
+    }
+    #[inline]
+    fn clone_from(&mut self, source: &Relaxed) {
+        self.0.clone_from(&source.0)
+    }
+}
+
+impl Default for Relaxed {
+    #[inline]
+    fn default() -> Self {
+        Self::ZERO
     }
 }

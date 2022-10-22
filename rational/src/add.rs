@@ -1,101 +1,57 @@
-use core::ops::Add;
+use core::ops::{Add, AddAssign, Sub, SubAssign};
 use dashu_base::Gcd;
 
-use crate::rbig::{RBig, Relaxed};
+use crate::{
+    helper_macros::{impl_binop_with_macro, impl_binop_assign_by_taking},
+    rbig::{RBig, Relaxed},
+    repr::Repr,
+};
 
-impl Add for RBig {
-    type Output = RBig;
-    fn add(self, rhs: Self) -> Self::Output {
-        let (a, b) = self.into_parts();
-        let (c, d) = rhs.into_parts();
-        let g_bd = (&b).gcd(&d);
+macro_rules! impl_addsub_with_rbig {
+    (
+        $a:ident, $b:ident, $c:ident, $d:ident,
+        $ra:ident, $rb:ident, $rc:ident, $rd:ident, $method:ident
+    ) => {{
+        let _ = ($ra, $rc); // not used
+        let g_bd = Gcd::gcd($rb, $rd);
 
-        // a/b + c/d = (ad + bc)/bd
-        if g_bd.is_one() {
-            let left = a * &d;
-            let right = c * &b;
-            RBig::from_parts(left + right, b * d)
+        // a/b ± c/d = (ad ± bc)/bd
+        let repr = if g_bd.is_one() {
+            let left = $a * $rd;
+            let right = $c * $rb;
+            Repr {
+                numerator: left.$method(right),
+                denominator: $b * $d,
+            }
         } else {
-            let ddg = d / &g_bd;
-            let left = &ddg * a;
-            let right = &b / g_bd * c;
-            RBig::from_parts(left + right, b * ddg)
-        }
-    }
+            let ddg = $d / &g_bd;
+            let left = &ddg * $a;
+            let right = $rb / &g_bd * $c;
+            Repr {
+                numerator: left.$method(right),
+                denominator: $b * ddg,
+            }
+            .reduce_with_hint(g_bd)
+        };
+
+        RBig(repr)
+    }};
 }
+impl_binop_with_macro!(Add, add, impl_addsub_with_rbig);
+impl_binop_with_macro!(Sub, sub, impl_addsub_with_rbig);
+impl_binop_assign_by_taking!(impl AddAssign<RBig> for RBig, add_assign, add);
+impl_binop_assign_by_taking!(impl SubAssign<RBig> for RBig, sub_assign, sub);
 
-impl<'r> Add<&'r RBig> for RBig {
-    type Output = RBig;
-    fn add(self, rhs: &RBig) -> Self::Output {
-        let (a, b) = self.into_parts();
-        let (c, d) = (rhs.numerator(), rhs.denominator());
-        let g_bd = (&b).gcd(d);
-
-        // a/b + c/d = (ad + bc)/bd
-        if g_bd.is_one() {
-            let left = a * d;
-            let right = c * &b;
-            RBig::from_parts(left + right, b * d)
-        } else {
-            let bdg = b / &g_bd;
-            let right = &bdg * c;
-            let left = d / g_bd * a;
-            RBig::from_parts(left + right, bdg * d)
-        }
-    }
+macro_rules! impl_addsub_with_relaxed {
+    (
+        $a:ident, $b:ident, $c:ident, $d:ident,
+        $ra:ident, $rb:ident, $rc:ident, $rd:ident, $method:ident
+    ) => {{
+        let _ = ($ra, $rc); // not used
+        Relaxed::from_parts(($a * $rd).$method($c * $rb), $b * $d)
+    }};
 }
-
-impl<'l> Add<RBig> for &'l RBig {
-    type Output = RBig;
-    fn add(self, rhs: RBig) -> Self::Output {
-        let (a, b) = (self.numerator(), self.denominator());
-        let (c, d) = rhs.into_parts();
-        let g_bd = (b).gcd(&d);
-
-        // a/b + c/d = (ad + bc)/bd
-        if g_bd.is_one() {
-            let left = a * &d;
-            let right = c * b;
-            RBig::from_parts(left + right, b * d)
-        } else {
-            let ddg = d / &g_bd;
-            let left = &ddg * a;
-            let right = b / g_bd * c;
-            RBig::from_parts(left + right, b * ddg)
-        }
-    }
-}
-
-impl<'l, 'r> Add<&'r RBig> for &'l RBig {
-    type Output = RBig;
-    fn add(self, rhs: &RBig) -> Self::Output {
-        let (a, b) = (self.numerator(), self.denominator());
-        let (c, d) = (rhs.numerator(), rhs.denominator());
-        let g_bd = b.gcd(d);
-
-        // a/b + c/d = (ad + bc)/bd
-        if g_bd.is_one() {
-            let left = a * d;
-            let right = c * b;
-            RBig::from_parts(left + right, b * d)
-        } else {
-            let ddg = d / &g_bd;
-            let left = &ddg * a;
-            let right = b / g_bd * c;
-            RBig::from_parts(left + right, b * ddg)
-        }
-    }
-}
-
-impl Add for Relaxed {
-    type Output = Relaxed;
-    fn add(self, rhs: Self) -> Self::Output {
-        let (a, b) = self.into_parts();
-        let (c, d) = rhs.into_parts();
-
-        // a/b + c/d = (ad + bc)/bd
-        let left = a * &d;
-        let right = c * &b;
-        Relaxed::from_parts(left + right, b * d)
-    }
-}
+impl_binop_with_macro!(Add, add, Relaxed, impl_addsub_with_relaxed);
+impl_binop_with_macro!(Sub, sub, Relaxed, impl_addsub_with_relaxed);
+impl_binop_assign_by_taking!(impl AddAssign<Relaxed> for Relaxed, add_assign, add);
+impl_binop_assign_by_taking!(impl SubAssign<Relaxed> for Relaxed, sub_assign, sub);
