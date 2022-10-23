@@ -17,5 +17,3 @@ mod serde;
 
 #[cfg(feature = "zeroize")]
 mod zeroize;
-
-// TODO(next): support zeroize::Zeroize, quickcheck::Arbitrary

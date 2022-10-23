@@ -623,5 +623,3 @@ mod repr {
         Repr::from_buffer(rhs)
     }
 }
-
-// TODO: implement div, rem, div_rem, div_assign, rem_assign, div_rem_assign with ConstDivisor
