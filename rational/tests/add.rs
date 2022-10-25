@@ -1,4 +1,7 @@
-use core::{fmt::Debug, ops::{Add, AddAssign, Sub, SubAssign}};
+use core::{
+    fmt::Debug,
+    ops::{Add, AddAssign, Sub, SubAssign},
+};
 
 mod helper_macros;
 

@@ -1,17 +1,19 @@
-// a/b * c/d = (ac)/gcd(a,d)/gcd(b,c)/(bd)
-
 use core::ops::{Mul, MulAssign};
 
 use dashu_base::Gcd;
 
-use crate::{rbig::{RBig, Relaxed}, repr::Repr, helper_macros::{impl_binop_with_macro, impl_binop_assign_by_taking}};
+use crate::{
+    helper_macros::{impl_binop_assign_by_taking, impl_binop_with_macro},
+    rbig::{RBig, Relaxed},
+    repr::Repr,
+};
 
 impl RBig {
     #[inline]
     pub fn square(&self) -> Self {
-        Self(Repr{
+        Self(Repr {
             numerator: self.numerator().square(),
-            denominator: self.denominator().square()
+            denominator: self.denominator().square(),
         })
     }
 }
@@ -21,17 +23,28 @@ macro_rules! impl_mul_with_rbig {
         $a:ident, $b:ident, $c:ident, $d:ident,
         $ra:ident, $rb:ident, $rc:ident, $rd:ident, $method:ident
     ) => {{
-        let g_ad = ($ra).gcd($rd);
-        let g_bc = ($rb).gcd($rc);
-        RBig(Repr{
-            numerator: ($a/&g_ad).$method($c/&g_bc),
-            denominator: ($b/g_bc).$method($d/g_ad),
+        // a/b * c/d = (ac)/gcd(a,d)/gcd(b,c)/(bd)
+        let g_ad = $ra.gcd($rd);
+        let g_bc = $rb.gcd($rc);
+        RBig(Repr {
+            numerator: ($a / &g_ad).$method($c / &g_bc),
+            denominator: ($b / g_bc).$method($d / g_ad),
         })
     }};
 }
 
 impl_binop_with_macro!(Mul, mul, impl_mul_with_rbig);
 impl_binop_assign_by_taking!(impl MulAssign<RBig> for RBig, mul_assign, mul);
+
+impl Relaxed {
+    #[inline]
+    pub fn square(&self) -> Self {
+        Self(Repr {
+            numerator: self.numerator().square(),
+            denominator: self.denominator().square(),
+        })
+    }
+}
 
 macro_rules! impl_mul_with_relaxed {
     (

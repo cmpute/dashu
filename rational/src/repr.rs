@@ -44,15 +44,24 @@ impl Repr {
 
     #[inline]
     pub const fn zero() -> Repr {
-        Repr { numerator: IBig::ZERO, denominator: UBig::ONE }
+        Repr {
+            numerator: IBig::ZERO,
+            denominator: UBig::ONE,
+        }
     }
     #[inline]
     pub const fn one() -> Repr {
-        Repr { numerator: IBig::ONE, denominator: UBig::ONE }
+        Repr {
+            numerator: IBig::ONE,
+            denominator: UBig::ONE,
+        }
     }
     #[inline]
     pub const fn neg_one() -> Repr {
-        Repr { numerator: IBig::NEG_ONE, denominator: UBig::ONE }
+        Repr {
+            numerator: IBig::NEG_ONE,
+            denominator: UBig::ONE,
+        }
     }
 }
 

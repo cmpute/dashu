@@ -2,7 +2,7 @@ use core::ops::{Add, AddAssign, Sub, SubAssign};
 use dashu_base::Gcd;
 
 use crate::{
-    helper_macros::{impl_binop_with_macro, impl_binop_assign_by_taking},
+    helper_macros::{impl_binop_assign_by_taking, impl_binop_with_macro},
     rbig::{RBig, Relaxed},
     repr::Repr,
 };

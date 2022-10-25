@@ -66,5 +66,5 @@ macro_rules! impl_binop_assign_by_taking {
     };
 }
 
-pub(crate) use impl_binop_with_macro;
 pub(crate) use impl_binop_assign_by_taking;
+pub(crate) use impl_binop_with_macro;

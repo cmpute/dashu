@@ -38,8 +38,8 @@ fn test_mul_rbig() {
         (rbig!(1), rbig!(1), rbig!(1)),
         (rbig!(1), rbig!(-1), rbig!(-1)),
         (rbig!(-1), rbig!(-1), rbig!(1)),
-        (rbig!(1/2), rbig!(-2/3), rbig!(-1/3)),
-        (rbig!(10/9), rbig!(15/4), rbig!(25/6)),
+        (rbig!(1 / 2), rbig!(-2 / 3), rbig!(-1 / 3)),
+        (rbig!(10 / 9), rbig!(15 / 4), rbig!(25 / 6)),
     ];
 
     for (a, b, c) in &test_cases {
