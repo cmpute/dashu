@@ -445,7 +445,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
     /// Convert the float number to integer with the given rounding mode.
     ///
-    /// **Warning**: If the float number has a very large exponent, it will be evaluated and result
+    /// # Warning
+    /// If the float number has a very large exponent, it will be evaluated and result
     /// in allocating an huge integer and it might eat up all your memory.
     ///
     /// # Examples

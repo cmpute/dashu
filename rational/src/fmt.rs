@@ -17,6 +17,17 @@ impl fmt::Debug for Repr {
     }
 }
 
+impl fmt::Display for Repr {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.denominator.is_one() {
+            f.write_fmt(format_args!("{:?}", &self.numerator))
+        } else {
+            f.write_fmt(format_args!("{:?}/{:?}", &self.numerator, &self.denominator))
+        }
+    }
+}
+
 impl fmt::Debug for RBig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if f.alternate() {
@@ -27,6 +38,13 @@ impl fmt::Debug for RBig {
         } else {
             f.write_fmt(format_args!("{:?} / {:?}", self.numerator(), self.denominator()))
         }
+    }
+}
+
+impl fmt::Display for RBig {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.0, f)
     }
 }
 
@@ -42,3 +60,19 @@ impl fmt::Debug for Relaxed {
         }
     }
 }
+
+impl fmt::Display for Relaxed {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.0, f)
+    }
+}
+
+// TODO: support formatting as decimal (see below)
+/*
+ * format!("{}", rbig!(1/3)) -> 1/3
+ * format!("{:.4}", rbig!(1/3)) -> 1.3333
+ * format!("{:#.4}", rbig!(1/3)) -> 1.(3)
+ * format!("{:e}", rbig!(1/3)) -> 1.3e0
+ * format!("{:.4e}", rbig!(1/3)) -> 1.3333e0
+ */

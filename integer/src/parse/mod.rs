@@ -14,7 +14,7 @@ mod power_two;
 
 impl FromStr for UBig {
     type Err = ParseError;
-
+    #[inline]
     fn from_str(s: &str) -> Result<UBig, ParseError> {
         UBig::from_str_radix(s, 10)
     }
@@ -22,7 +22,7 @@ impl FromStr for UBig {
 
 impl FromStr for IBig {
     type Err = ParseError;
-
+    #[inline]
     fn from_str(s: &str) -> Result<IBig, ParseError> {
         IBig::from_str_radix(s, 10)
     }

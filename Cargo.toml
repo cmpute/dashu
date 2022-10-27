@@ -43,6 +43,11 @@ path = "./float"
 version = "0.2.0"
 default-features = false
 
+[dependencies.dashu-ratio]
+path = "./rational"
+version = "0.2.0"
+default-features = false
+
 [dependencies.dashu-macros]
 path = "./macros"
 version = "0.2.0"
