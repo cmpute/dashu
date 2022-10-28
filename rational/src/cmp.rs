@@ -1,13 +1,4 @@
-use crate::rbig::{RBig, Relaxed};
-
-impl PartialEq for RBig {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        // representation of RBig is canonicalized, so it suffices to compare the components
-        self.numerator() == other.numerator() && self.denominator() == other.denominator()
-    }
-}
-impl Eq for RBig {}
+use crate::rbig::Relaxed;
 
 impl PartialEq for Relaxed {
     #[inline]

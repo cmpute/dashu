@@ -9,9 +9,9 @@ fn test_rbig_format() {
     assert_eq!(format!("{}", rbig!(1)), "1");
     assert_eq!(format!("{}", rbig!(-1)), "-1");
     assert_eq!(format!("{}", rbig!(-3)), "-3");
-    assert_eq!(format!("{}", rbig!(1/3)), "1/3");
-    assert_eq!(format!("{}", rbig!(-1/3)), "-1/3");
-    assert_eq!(format!("{}", rbig!(12/15)), "4/5");
+    assert_eq!(format!("{}", rbig!(1 / 3)), "1/3");
+    assert_eq!(format!("{}", rbig!(-1 / 3)), "-1/3");
+    assert_eq!(format!("{}", rbig!(12 / 15)), "4/5");
 }
 
 #[test]
@@ -36,10 +36,10 @@ fn test_rbig_from_str_radix() {
     assert_eq!(RBig::from_str_radix("0", 2).unwrap(), rbig!(0));
     assert_eq!(RBig::from_str_radix("1", 2).unwrap(), rbig!(1));
     assert_eq!(RBig::from_str_radix("-1", 2).unwrap(), rbig!(-1));
-    assert_eq!(RBig::from_str_radix("1/2", 10).unwrap(), rbig!(1/2));
-    assert_eq!(RBig::from_str_radix("-1/2", 10).unwrap(), rbig!(-1/2));
-    assert_eq!(RBig::from_str_radix("+1/-2", 10).unwrap(), rbig!(-1/2));
-    assert_eq!(RBig::from_str_radix("-1/-2", 10).unwrap(), rbig!(1/2));
+    assert_eq!(RBig::from_str_radix("1/2", 10).unwrap(), rbig!(1 / 2));
+    assert_eq!(RBig::from_str_radix("-1/2", 10).unwrap(), rbig!(-1 / 2));
+    assert_eq!(RBig::from_str_radix("+1/-2", 10).unwrap(), rbig!(-1 / 2));
+    assert_eq!(RBig::from_str_radix("-1/-2", 10).unwrap(), rbig!(1 / 2));
 }
 
 #[test]

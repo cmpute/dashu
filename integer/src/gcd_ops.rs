@@ -1,7 +1,10 @@
 //! Operators for finding greatest common divisor.
 
 use crate::{
-    helper_macros::{forward_ibig_binop_to_repr, forward_ubig_binop_to_repr, forward_ibig_ubig_binop_to_repr, forward_ubig_ibig_binop_to_repr},
+    helper_macros::{
+        forward_ibig_binop_to_repr, forward_ibig_ubig_binop_to_repr, forward_ubig_binop_to_repr,
+        forward_ubig_ibig_binop_to_repr,
+    },
     ibig::IBig,
     ubig::UBig,
     Sign,
