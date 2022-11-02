@@ -49,3 +49,5 @@ macro_rules! impl_div_with_relaxed {
 
 impl_binop_with_macro!(Div, div, Relaxed, impl_div_with_relaxed);
 impl_binop_assign_by_taking!(impl DivAssign<Relaxed> for Relaxed, div_assign, div);
+
+// TODO: implement div_euclid, rem_euclid, div_rem_euclid

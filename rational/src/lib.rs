@@ -1,5 +1,6 @@
 mod add;
 mod cmp;
+mod convert;
 mod div;
 mod error;
 mod fmt;

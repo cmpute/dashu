@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0 (WIP)
+
+- Add trait `FloatEncoding` and implement it for `f32` and `f64`
+- Add trait `Signed`
+- Add conversion between `Sign` and `bool`
+
 ## 0.2.1
 
 - Implement `RootRem` for `u8`, `u16`, `u32`

@@ -31,6 +31,11 @@ pub trait UnsignedAbs {
     fn unsigned_abs(self) -> Self::Output;
 }
 
+pub trait Signed {
+    fn sign(&self) -> Sign;
+    fn signum(&self) -> Self;
+}
+
 macro_rules! impl_abs_ops_prim {
     ($($signed:ty => $unsigned:ty;)*) => {$(
         impl Abs for $signed {
@@ -48,11 +53,29 @@ macro_rules! impl_abs_ops_prim {
                 <$signed>::unsigned_abs(self)
             }
         }
+
+        impl Signed for $signed {
+            #[inline]
+            fn sign(&self) -> Sign {
+                if *self >= 0 {
+                    Sign::Positive
+                } else {
+                    Sign::Negative
+                }
+            }
+
+            #[inline]
+            fn signum(&self) -> Self {
+                <$signed>::signum(*self)
+            }
+        }
     )*}
 }
 impl_abs_ops_prim!(i8 => u8; i16 => u16; i32 => u32; i64 => u64; i128 => u128; isize => usize;);
 
 /// An enum representing the sign of a number
+/// 
+/// A sign can be converted to or from a boolean value, assuming `true` is [Negative].
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Sign {
     Positive,
@@ -60,6 +83,28 @@ pub enum Sign {
 }
 
 use Sign::*;
+
+impl From<bool> for Sign {
+    /// Convert boolean value to [Sign], returns [Negative] for `true`
+    #[inline]
+    fn from(v: bool) -> Self {
+        match v {
+            true => Self::Negative,
+            false => Self::Positive
+        }
+    }
+}
+
+impl From<Sign> for bool {
+    /// Convert [Sign] to boolean value, returns `true` for [Negative]
+    #[inline]
+    fn from(v: Sign) -> Self {
+        match v {
+            Sign::Negative => true,
+            Sign::Positive => false
+        }
+    }
+}
 
 impl Neg for Sign {
     type Output = Sign;

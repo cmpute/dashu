@@ -150,3 +150,6 @@ fn run_task_using<T: Number>(task: &str, n: u32, iter: u32) -> (String, Duration
     let time = start_time.elapsed();
     (answer.unwrap(), time)
 }
+
+// TODO: add task to test more operations, such as
+// a=2^n, b=3^n, sqrt((a+b)/(a-b)).gcd(sqrt((a+b)*(a-b))

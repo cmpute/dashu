@@ -12,6 +12,8 @@ impl Display for OutOfBoundsError {
     }
 }
 
+// TODO(v0.3): Create a new error type called ConversionError, which includes OutOfBounds and PrecisionLoss
+
 #[cfg(feature = "std")]
 impl std::error::Error for OutOfBoundsError {}
 

@@ -638,6 +638,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
 }
 
 impl<R: Round> FBig<R, 2> {
+    // TODO(v0.3): support conversion to f32/f64 with arbitrary bases
     /// Convert the float number to [f32] with [HalfEven] rounding mode regardless of the mode associated with this number.
     ///
     /// This method is only available to base 2 float number. For other bases, it's required
