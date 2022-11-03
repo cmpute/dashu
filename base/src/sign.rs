@@ -74,7 +74,7 @@ macro_rules! impl_abs_ops_prim {
 impl_abs_ops_prim!(i8 => u8; i16 => u16; i32 => u32; i64 => u64; i128 => u128; isize => usize;);
 
 /// An enum representing the sign of a number
-/// 
+///
 /// A sign can be converted to or from a boolean value, assuming `true` is [Negative].
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Sign {
@@ -90,7 +90,7 @@ impl From<bool> for Sign {
     fn from(v: bool) -> Self {
         match v {
             true => Self::Negative,
-            false => Self::Positive
+            false => Self::Positive,
         }
     }
 }
@@ -101,7 +101,7 @@ impl From<Sign> for bool {
     fn from(v: Sign) -> Self {
         match v {
             Sign::Negative => true,
-            Sign::Positive => false
+            Sign::Positive => false,
         }
     }
 }

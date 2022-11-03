@@ -14,7 +14,7 @@ use alloc::vec::Vec;
 use core::convert::{TryFrom, TryInto};
 use dashu_base::{
     Approximation::{self, *},
-    Sign,
+    FloatEncoding, Sign,
 };
 
 impl Default for UBig {
@@ -577,6 +577,7 @@ mod repr {
             }
         }
 
+        #[inline]
         fn to_f32_nontrivial(self) -> Approximation<f32, Sign> {
             let n = self.bit_len();
             debug_assert!(n > 32);
@@ -584,31 +585,9 @@ mod repr {
             if n > 128 {
                 Inexact(f32::INFINITY, Positive)
             } else {
-                let exponent = (n - 1) as u32;
-                let mantissa25: u32 = (self >> (n - 25)).as_typed().try_to_unsigned().unwrap();
-                let mantissa = mantissa25 >> 1;
-
-                // value = [8 bits: exponent + 127][23 bits: mantissa without the top bit]
-                let value = ((exponent + 126) << 23) + mantissa;
-
-                // Calculate round-to-even adjustment.
-                let extra_bit = self.are_low_bits_nonzero(n - 25);
-                // low bit of mantissa and two extra bits
-                let low_bits = ((mantissa25 & 0b11) << 1) | u32::from(extra_bit);
-
-                if low_bits & 0b11 == 0 {
-                    // If two extra bits are all zeros, then the float is exact
-                    Exact(f32::from_bits(value))
-                } else {
-                    // If adjustment is true, increase the mantissa.
-                    // If the mantissa overflows, this correctly increases the exponent and sets the mantissa to 0.
-                    // If the exponent overflows, we correctly get the representation of infinity.
-                    if round_to_even_adjustment(low_bits) {
-                        Inexact(f32::from_bits(value + 1), Positive)
-                    } else {
-                        Inexact(f32::from_bits(value), Negative)
-                    }
-                }
+                let top_u31: u32 = (self >> (n - 31)).as_typed().try_to_unsigned().unwrap();
+                let extra_bit = self.are_low_bits_nonzero(n - 31) as u32;
+                f32::encode((top_u31 | extra_bit) as i32, (n - 31) as i16)
             }
         }
 
@@ -623,6 +602,7 @@ mod repr {
             }
         }
 
+        #[inline]
         fn to_f64_nontrivial(self) -> Approximation<f64, Sign> {
             let n = self.bit_len();
             debug_assert!(n > 64);
@@ -630,31 +610,9 @@ mod repr {
             if n > 1024 {
                 Inexact(f64::INFINITY, Positive)
             } else {
-                let exponent = (n - 1) as u64;
-                let mantissa54: u64 = (self >> (n - 54)).as_typed().try_to_unsigned().unwrap();
-                let mantissa = mantissa54 >> 1;
-
-                // value = [11-bits: exponent + 1023][52 bit: mantissa without the top bit]
-                let value = ((exponent + 1022) << 52) + mantissa;
-
-                // Calculate round-to-even adjustment.
-                let extra_bit = self.are_low_bits_nonzero(n - 54);
-                // low bit of mantissa and two extra bits
-                let low_bits = (((mantissa54 & 0b11) as u32) << 1) | u32::from(extra_bit);
-
-                if low_bits & 0b11 == 0 {
-                    // If two extra bits are all zeros, then the float is exact
-                    Exact(f64::from_bits(value))
-                } else {
-                    // If adjustment is true, increase the mantissa.
-                    // If the mantissa overflows, this correctly increases the exponent and sets the mantissa to 0.
-                    // If the exponent overflows, we correctly get the representation of infinity.
-                    if round_to_even_adjustment(low_bits) {
-                        Inexact(f64::from_bits(value + 1), Positive)
-                    } else {
-                        Inexact(f64::from_bits(value), Negative)
-                    }
-                }
+                let top_u63: u64 = (self >> (n - 63)).as_typed().try_to_unsigned().unwrap();
+                let extra_bit = self.are_low_bits_nonzero(n - 63) as u64;
+                f64::encode((top_u63 | extra_bit) as i64, (n - 63) as i16)
             }
         }
     }
@@ -683,12 +641,5 @@ mod repr {
             Ordering::Equal => Exact(f),
             Ordering::Less => Inexact(f, Sign::Negative),
         }
-    }
-
-    /// Round to even floating point adjustment, based on the bottom
-    /// bit of mantissa and additional 2 bits (i.e. 3 bits in units of ULP/4).
-    #[inline]
-    fn round_to_even_adjustment(bits: u32) -> bool {
-        bits >= 0b110 || bits == 0b011
     }
 }
