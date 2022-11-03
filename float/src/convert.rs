@@ -1,4 +1,7 @@
-use core::convert::{TryFrom, TryInto};
+use core::{
+    convert::{TryFrom, TryInto},
+    num::FpCategory,
+};
 
 use crate::{
     error::{check_inf, panic_unlimited_precision},
@@ -10,7 +13,9 @@ use crate::{
     },
     utils::{ilog_exact, shr_digits, split_digits_ref},
 };
-use dashu_base::{Approximation::*, DivRemEuclid, EstimatedLog2};
+use dashu_base::{
+    Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, FloatEncoding, Sign, Signed,
+};
 use dashu_int::{error::OutOfBoundsError, IBig, UBig, Word};
 
 impl<R: Round> Context<R> {
@@ -39,83 +44,36 @@ impl<R: Round> Context<R> {
     }
 }
 
-impl<R: Round> TryFrom<f32> for FBig<R, 2> {
-    type Error = OutOfBoundsError;
+macro_rules! impl_from_float_for_fbig {
+    ($t:ty) => {
+        impl<R: Round> TryFrom<$t> for FBig<R, 2> {
+            type Error = OutOfBoundsError;
 
-    fn try_from(f: f32) -> Result<Self, Self::Error> {
-        let bits: u32 = f.to_bits();
-        let sign_bit = bits >> 31;
-        let mantissa_bits = bits & 0x7fffff;
+            fn try_from(f: $t) -> Result<Self, Self::Error> {
+                match f.decode() {
+                    Ok((man, exp)) => {
+                        let repr = Repr::new(man.into(), exp as _);
 
-        // deal with inf/nan values
-        let mut exponent: isize = ((bits >> 23) & 0xff) as isize;
-        if exponent == 0xff {
-            return if mantissa_bits != 0 {
-                Err(OutOfBoundsError) // nan
-            } else if sign_bit == 0 {
-                Ok(FBig::INFINITY)
-            } else {
-                Ok(FBig::NEG_INFINITY)
-            };
+                        // The precision is inferenced from the mantissa, because the mantissa of
+                        // normal float is always normalized. This will produce correct precision
+                        // for subnormal floats
+                        let bits = man.unsigned_abs().bit_len();
+                        let context = Context::new(bits);
+                        Ok(Self::new(repr, context))
+                    }
+                    Err(FpCategory::Infinite) => match f.sign() {
+                        Sign::Positive => Ok(FBig::INFINITY),
+                        Sign::Negative => Ok(FBig::NEG_INFINITY),
+                    },
+                    _ => Err(OutOfBoundsError),
+                }
+            }
         }
-
-        // then parse normal values
-        let mantissa = if exponent == 0 {
-            exponent = -127;
-            mantissa_bits << 1
-        } else {
-            exponent -= 127 + 23; // bias + mantissa shift
-            mantissa_bits | 0x800000
-        } as i32;
-        let mantissa = if sign_bit == 0 {
-            IBig::from(mantissa)
-        } else {
-            IBig::from(-mantissa)
-        };
-
-        let repr = Repr::new(mantissa, exponent);
-        let context = Context::new(24);
-        Ok(Self::new(repr, context))
-    }
+    };
 }
 
-impl<R: Round> TryFrom<f64> for FBig<R, 2> {
-    type Error = OutOfBoundsError;
-
-    fn try_from(f: f64) -> Result<Self, Self::Error> {
-        let bits: u64 = f.to_bits();
-        let sign_bit = bits >> 63;
-        let mantissa_bits = bits & 0xfffffffffffff;
-
-        let mut exponent: isize = ((bits >> 52) & 0x7ff) as isize;
-        if exponent == 0x7ff {
-            return if mantissa_bits != 0 {
-                Err(OutOfBoundsError) // nan
-            } else if sign_bit == 0 {
-                Ok(FBig::INFINITY)
-            } else {
-                Ok(FBig::NEG_INFINITY)
-            };
-        }
-
-        let mantissa = if exponent == 0 {
-            exponent = -1023;
-            mantissa_bits << 1
-        } else {
-            exponent -= 1023 + 52; // bias + mantissa shift
-            mantissa_bits | 0x10000000000000
-        } as i64;
-        let mantissa = if bits >> 63 == 0 {
-            IBig::from(mantissa)
-        } else {
-            IBig::from(-mantissa)
-        };
-
-        let repr = Repr::new(mantissa, exponent);
-        let context = Context::new(53);
-        Ok(Self::new(repr, context))
-    }
-}
+impl_from_float_for_fbig!(f32);
+impl_from_float_for_fbig!(f64);
 
 impl<R: Round, const B: Word> FBig<R, B> {
     /// Convert the float number to base 10 (with decimal exponents).
@@ -639,6 +597,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
 impl<R: Round> FBig<R, 2> {
     // TODO(v0.3): support conversion to f32/f64 with arbitrary bases
+    // TODO(v0.3): support custom rounding (which can be different from the associated rounding)
     /// Convert the float number to [f32] with [HalfEven] rounding mode regardless of the mode associated with this number.
     ///
     /// This method is only available to base 2 float number. For other bases, it's required
@@ -658,26 +617,30 @@ impl<R: Round> FBig<R, 2> {
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn to_f32(&self) -> Rounded<f32> {
+        let sign = self.repr.sign();
         if self.repr.is_infinite() {
-            return Inexact(self.repr.sign() * f32::INFINITY, Rounding::NoOp);
-        } else if self > &Self::try_from(f32::MAX).unwrap() {
-            return Inexact(f32::INFINITY, Rounding::AddOne);
-        } else if self < &Self::try_from(f32::MIN).unwrap() {
-            return Inexact(f32::NEG_INFINITY, Rounding::SubOne);
+            return Inexact(sign * f32::INFINITY, Rounding::NoOp);
         }
 
-        // TODO: this implementation is a bandaid, it doesn't handles subnormal yet
         let context = Context::<HalfEven>::new(24);
-        context.repr_round_ref(&self.repr).map(|v| {
-            let exp2 = if v.exponent > 127 {
-                f32::INFINITY
-            } else if v.exponent < -127 {
-                0.0
+        context.repr_round_ref(&self.repr).and_then(|v| {
+            let man24: i32 = v.significand.try_into().unwrap();
+            if v.exponent > 128 { // f32::MAX = 2^128 * (1 - 2^-24)
+                match sign {
+                    Sign::Positive => Inexact(f32::INFINITY, Rounding::AddOne),
+                    Sign::Negative => Inexact(f32::NEG_INFINITY, Rounding::SubOne),
+                }
+            } else if v.exponent < -149 { // f32::MIN_POSITIVE = 2^-149
+                match sign {
+                    Sign::Positive => Inexact(0f32, Rounding::SubOne),
+                    Sign::Negative => Inexact(-0f32, Rounding::AddOne),
+                }
             } else {
-                let ebits = (v.exponent + 127) as u32;
-                f32::from_bits(ebits << 23)
-            };
-            v.significand.to_f32().value() * exp2
+                match f32::encode(man24, v.exponent as i16) {
+                    Exact(v) => Exact(v),
+                    _ => unreachable!()
+                }
+            }
         })
     }
 
@@ -700,25 +663,30 @@ impl<R: Round> FBig<R, 2> {
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn to_f64(&self) -> Rounded<f64> {
+        let sign = self.repr.sign();
         if self.repr.is_infinite() {
-            return Inexact(self.repr.sign() * f64::INFINITY, Rounding::NoOp);
-        } else if self > &Self::try_from(f64::MAX).unwrap() {
-            return Inexact(f64::INFINITY, Rounding::AddOne);
-        } else if self < &Self::try_from(f64::MIN).unwrap() {
-            return Inexact(f64::NEG_INFINITY, Rounding::SubOne);
+            return Inexact(sign * f64::INFINITY, Rounding::NoOp);
         }
 
         let context = Context::<HalfEven>::new(53);
-        context.repr_round_ref(&self.repr).map(|v| {
-            let exp2 = if v.exponent > 1023 {
-                f64::INFINITY
-            } else if v.exponent < -1023 {
-                0.0
+        context.repr_round_ref(&self.repr).and_then(|v| {
+            let man53: i64 = v.significand.try_into().unwrap();
+            if v.exponent > 1024 { // f64::MAX = 2^1024 × (1 − 2^−53)
+                match sign {
+                    Sign::Positive => Inexact(f64::INFINITY, Rounding::AddOne),
+                    Sign::Negative => Inexact(f64::NEG_INFINITY, Rounding::SubOne),
+                }
+            } else if v.exponent < -1074 { // f64::MIN_POSITIVE = 2^-1074
+                match sign {
+                    Sign::Positive => Inexact(0f64, Rounding::SubOne),
+                    Sign::Negative => Inexact(-0f64, Rounding::AddOne),
+                }
             } else {
-                let ebits = (v.exponent + 1023) as u64;
-                f64::from_bits(ebits << 52)
-            };
-            v.significand.to_f64().value() * exp2
+                match f64::encode(man53, v.exponent as i16) {
+                    Exact(v) => Exact(v),
+                    _ => unreachable!()
+                }
+            }
         })
     }
 }

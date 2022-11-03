@@ -201,14 +201,16 @@ fn test_from_f32() {
     assert_eq!(FBin::try_from(-0f32).unwrap(), fbig!(0x0));
     assert_eq!(FBin::try_from(1f32).unwrap(), fbig!(0x1));
     assert_eq!(FBin::try_from(-1f32).unwrap(), fbig!(-0x1));
+    assert_eq!(FBin::try_from(-1f32).unwrap().precision(), 24);
     assert_eq!(FBin::try_from(1234f32).unwrap(), fbig!(0x4d2));
     assert_eq!(FBin::try_from(-1234f32).unwrap(), fbig!(-0x4d2));
     assert_eq!(12.34f32.to_bits(), 0x414570a4); // exact value: 12.340000152587890625
     assert_eq!(FBin::try_from(12.34f32).unwrap(), fbig!(0x315c29p-18));
     assert_eq!(FBin::try_from(-12.34f32).unwrap(), fbig!(-0x315c29p-18));
     assert_eq!(1e-40_f32.to_bits(), 0x000116c2); // subnormal
-    assert_eq!(FBin::try_from(1e-40_f32).unwrap(), fbig!(0x116c2p-126));
-    assert_eq!(FBin::try_from(-1e-40_f32).unwrap(), fbig!(-0x116c2p-126));
+    assert_eq!(FBin::try_from(1e-40_f32).unwrap(), fbig!(0x116c2p-149));
+    assert_eq!(FBin::try_from(-1e-40_f32).unwrap(), fbig!(-0x116c2p-149));
+    assert_eq!(FBin::try_from(-1e-40_f32).unwrap().precision(), 17);
     assert_eq!(FBin::try_from(f32::INFINITY).unwrap(), FBin::INFINITY);
     assert_eq!(FBin::try_from(f32::NEG_INFINITY).unwrap(), FBin::NEG_INFINITY);
     assert!(FBin::try_from(f32::NAN).is_err());
@@ -220,14 +222,16 @@ fn test_from_f64() {
     assert_eq!(FBin::try_from(-0f64).unwrap(), fbig!(0x0));
     assert_eq!(FBin::try_from(1f64).unwrap(), fbig!(0x1));
     assert_eq!(FBin::try_from(-1f64).unwrap(), fbig!(-0x1));
+    assert_eq!(FBin::try_from(-1f64).unwrap().precision(), 53);
     assert_eq!(FBin::try_from(1234f64).unwrap(), fbig!(0x4d2));
     assert_eq!(FBin::try_from(-1234f64).unwrap(), fbig!(-0x4d2));
     assert_eq!(12.34f64.to_bits(), 0x4028ae147ae147ae); // exact value: 12.339999999999999857891452847979962825775146484375
     assert_eq!(FBin::try_from(12.34f64).unwrap(), fbig!(0xc570a3d70a3d7p-48));
     assert_eq!(FBin::try_from(-12.34f64).unwrap(), fbig!(-0xc570a3d70a3d7p-48));
     assert_eq!(1e-308_f64.to_bits(), 0x000730d67819e8d2); // subnormal
-    assert_eq!(FBin::try_from(1e-308_f64).unwrap(), fbig!(0x730d67819e8d2p-1022));
-    assert_eq!(FBin::try_from(-1e-308_f64).unwrap(), fbig!(-0x730d67819e8d2p-1022));
+    assert_eq!(FBin::try_from(1e-308_f64).unwrap(), fbig!(0x730d67819e8d2p-1074));
+    assert_eq!(FBin::try_from(-1e-308_f64).unwrap(), fbig!(-0x730d67819e8d2p-1074));
+    assert_eq!(FBin::try_from(-1e-308_f64).unwrap().precision(), 51);
     assert_eq!(FBin::try_from(f64::INFINITY).unwrap(), FBin::INFINITY);
     assert_eq!(FBin::try_from(f64::NEG_INFINITY).unwrap(), FBin::NEG_INFINITY);
     assert!(FBin::try_from(f64::NAN).is_err());
@@ -281,6 +285,8 @@ fn test_to_f32() {
     assert_eq!(FBig::<Zero, 2>::NEG_INFINITY.to_f32(), Inexact(f32::NEG_INFINITY, NoOp));
     assert_eq!((fbig!(0x1) << 200).to_f32(), Inexact(f32::INFINITY, AddOne));
     assert_eq!((fbig!(-0x1) << 200).to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
+    assert_eq!((fbig!(0x1) >> 140).to_f32(), Exact(f32::from_bits(0x200))); // subnormal
+    assert_eq!((fbig!(-0x1) >> 140).to_f32(), Exact(-f32::from_bits(0x200)));
 }
 
 #[test]
@@ -308,4 +314,6 @@ fn test_to_f64() {
     assert_eq!(FBig::<Zero, 2>::NEG_INFINITY.to_f64(), Inexact(f64::NEG_INFINITY, NoOp));
     assert_eq!((fbig!(0x1) << 2000).to_f64(), Inexact(f64::INFINITY, AddOne));
     assert_eq!((fbig!(-0x1) << 2000).to_f64(), Inexact(f64::NEG_INFINITY, SubOne));
+    assert_eq!((fbig!(0x1) >> 1060).to_f64(), Exact(f64::from_bits(0x4000))); // subnormal
+    assert_eq!((fbig!(-0x1) >> 1060).to_f64(), Exact(-f64::from_bits(0x4000)));
 }

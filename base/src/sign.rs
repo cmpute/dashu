@@ -31,12 +31,25 @@ pub trait UnsignedAbs {
     fn unsigned_abs(self) -> Self::Output;
 }
 
+// TODO(v0.3): add docs
 pub trait Signed {
     fn sign(&self) -> Sign;
-    fn signum(&self) -> Self;
 }
 
 macro_rules! impl_abs_ops_prim {
+    ($($signed:ty;)*) => {$( // this branch is for float
+        impl Abs for $signed {
+            type Output = $signed;
+            #[inline]
+            fn abs(self) -> Self::Output {
+                if self.is_nan() || self >= 0. {
+                    self
+                } else {
+                    -self
+                }
+            }
+        }
+    )*};
     ($($signed:ty => $unsigned:ty;)*) => {$(
         impl Abs for $signed {
             type Output = $signed;
@@ -53,25 +66,10 @@ macro_rules! impl_abs_ops_prim {
                 <$signed>::unsigned_abs(self)
             }
         }
-
-        impl Signed for $signed {
-            #[inline]
-            fn sign(&self) -> Sign {
-                if *self >= 0 {
-                    Sign::Positive
-                } else {
-                    Sign::Negative
-                }
-            }
-
-            #[inline]
-            fn signum(&self) -> Self {
-                <$signed>::signum(*self)
-            }
-        }
     )*}
 }
 impl_abs_ops_prim!(i8 => u8; i16 => u16; i32 => u32; i64 => u64; i128 => u128; isize => usize;);
+impl_abs_ops_prim!(f32; f64;);
 
 /// An enum representing the sign of a number
 ///
@@ -179,7 +177,7 @@ impl Ord for Sign {
     }
 }
 
-macro_rules! impl_mul_sign_for_primitives {
+macro_rules! impl_sign_for_primitives {
     ($($t:ty)*) => {$(
         impl Mul<$t> for Sign {
             type Output = $t;
@@ -204,7 +202,20 @@ macro_rules! impl_mul_sign_for_primitives {
                 }
             }
         }
+
+        impl Signed for $t {
+            #[inline]
+            fn sign(&self) -> Sign {
+                if *self >= (0 as $t) {
+                    Sign::Positive
+                } else if *self < (0 as $t) {
+                    Sign::Negative
+                } else {
+                    panic!("NaN doesn't have a sign!")
+                }
+            }
+        }
     )*};
 }
 
-impl_mul_sign_for_primitives!(i8 i16 i32 i64 i128 isize f32 f64);
+impl_sign_for_primitives!(i8 i16 i32 i64 i128 isize f32 f64);

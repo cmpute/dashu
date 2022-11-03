@@ -9,10 +9,17 @@ Contents of the user guide:
 - Conversion (clarify fallible or infallible)
   - Conversion between types
   - Conversion between primitives
+  - Conversion for float type (how precision is determined)
 - Parsing and Formatting
   - Standard Parsing API `from_str`, `from_str_radix`
   - Standard Formatting Traits
   - Debug Print
   - Float number parsing
   - Rational number formatting
-  
+- Supported Operations
+  - Equality test and comparison
+  - Basic arithmetics (+-*/%)
+  - Exponential and Logarithm (including the estimated ones)
+  - Bit Operations
+  - GCD and ExtGCD
+  - Hashing and NumHashing

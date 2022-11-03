@@ -190,7 +190,11 @@ impl FloatEncoding for f32 {
         } else {
             // normal float
             // first normalize the mantissa (and remove the top bit)
-            mantissa <<= zeros + 1;
+            if mantissa == 1 {
+                mantissa = 0; // shl will overflow
+            } else {
+                mantissa <<= zeros + 1;
+            }
 
             // then calculate the exponent (bias is 127)
             let exponent = (exponent + 127 + u32::BITS as i16) as u32 - zeros - 1;
@@ -308,7 +312,11 @@ impl FloatEncoding for f64 {
         } else {
             // normal float
             // first normalize the mantissa (and remove the top bit)
-            mantissa <<= zeros + 1;
+            if mantissa == 1 {
+                mantissa = 0; // shl will overflow
+            } else {
+                mantissa <<= zeros + 1;
+            }
 
             // then calculate the exponent (bias is 1023)
             let exponent = (exponent + 1023 + u64::BITS as i16) as u64 - zeros as u64 - 1;
@@ -402,7 +410,7 @@ mod tests {
         assert_eq!(f64::encode(-1, -1075), Inexact(-0f64, Sign::Positive));
 
         // test rounding
-        assert_eq!(f32::encode(3, -150), Inexact(f32::from_bits(0x0000002), Sign::Positive));
+        assert_eq!(f32::encode(3, -150), Inexact(f32::from_bits(0x00000002), Sign::Positive));
         assert_eq!(f32::encode(-5, -150), Inexact(f32::from_bits(0x80000002), Sign::Positive));
         assert_eq!(f32::encode(i32::MAX, 50), Inexact(f32::from_bits(0x68000000), Sign::Positive));
         assert_eq!(
@@ -419,7 +427,7 @@ mod tests {
         );
         assert_eq!(
             f64::encode(3, -1075),
-            Inexact(f64::from_bits(0x000000000000002), Sign::Positive)
+            Inexact(f64::from_bits(0x0000000000000002), Sign::Positive)
         );
         assert_eq!(
             f64::encode(-5, -1075),
@@ -431,12 +439,16 @@ mod tests {
         );
         assert_eq!(
             f64::encode(i64::MAX, -1075),
-            Inexact(f64::from_bits(0xb0000000000000), Sign::Positive)
+            Inexact(f64::from_bits(0x00b0000000000000), Sign::Positive)
         );
         assert_eq!(
             f64::encode(i64::MAX, -1095),
-            Inexact(f64::from_bits(0x40000000000), Sign::Positive)
+            Inexact(f64::from_bits(0x0000040000000000), Sign::Positive)
         );
         assert_eq!(f64::encode(i64::MAX, -1115), Inexact(f64::from_bits(0x400000), Sign::Positive));
+
+        // other cases
+        assert_eq!(f32::encode(1, 0), Exact(1f32));
+        assert_eq!(f64::encode(1, 0), Exact(1f64));
     }
 }
