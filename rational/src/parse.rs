@@ -1,6 +1,7 @@
 use crate::rbig::{RBig, Relaxed};
 use core::str::FromStr;
-use dashu_int::{error::ParseError, IBig, UBig};
+use dashu_base::ParseError;
+use dashu_int::{IBig, UBig};
 
 macro_rules! impl_from_str {
     ($t:ty) => {

@@ -1,7 +1,7 @@
 //! Traits and implementations for rounding during operations.
 
 use core::cmp::Ordering;
-use core::ops::{Add, AddAssign, Neg};
+use core::ops::{Add, AddAssign};
 use dashu_base::{Approximation, EstimatedLog2, Sign, UnsignedAbs};
 use dashu_int::{IBig, UBig, Word};
 

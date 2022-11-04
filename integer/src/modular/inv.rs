@@ -28,7 +28,7 @@ impl<'a> Modulo<'a> {
     /// let ring = ModuloRing::new(p.clone());
     /// // Fermat's little theorem: a^(p-2) = a^-1 (mod p)
     /// let a = ring.convert(123);
-    /// let ainv = a.clone().inv().unwrap();
+    /// let ainv = a.clone().inverse().unwrap();
     /// assert_eq!(ainv, a.pow(&(p - UBig::from(2u8))));
     /// assert_eq!((a * ainv).residue(), 1);
     /// ```

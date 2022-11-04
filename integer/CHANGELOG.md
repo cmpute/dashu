@@ -15,6 +15,7 @@
 ### Remove
 
 - `sqrt_rem` is removed from `IBig`
+- `error::{OutOfBoundsError, ParseError}` are removed, related error types are added to `dashu-base`
 
 ## 0.2.1
 

@@ -4,9 +4,8 @@ use crate::{
     round::Round,
 };
 use core::{num::IntErrorKind, str::FromStr};
-use dashu_base::Sign;
+use dashu_base::{Sign, ParseError};
 use dashu_int::{
-    error::ParseError,
     fmt::{MAX_RADIX, MIN_RADIX},
     UBig,
 };
@@ -63,7 +62,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     ///

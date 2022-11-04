@@ -1,56 +1,96 @@
 use core::cmp::Ordering;
 
-use dashu_base::{Approximation::{*, self}, Sign, FloatEncoding, UnsignedAbs, DivRem};
-use dashu_int::{error::OutOfBoundsError, IBig, UBig};
+use dashu_base::{Approximation::{*, self}, Sign, FloatEncoding, UnsignedAbs, DivRem, ConversionError};
+use dashu_int::{IBig, UBig};
 
 use crate::{rbig::{RBig, Relaxed}, repr::Repr};
 
-impl From<UBig> for RBig {
+impl From<UBig> for Repr {
     #[inline]
     fn from(v: UBig) -> Self {
-        RBig::from_parts(v.into(), UBig::ONE)
-    }
-}
-
-impl From<IBig> for RBig {
-    #[inline]
-    fn from(v: IBig) -> Self {
-        RBig::from_parts(v, UBig::ONE)
-    }
-}
-
-impl TryFrom<RBig> for IBig {
-    type Error = OutOfBoundsError; // TODO(v0.3): change to PrecisionLossError
-    #[inline]
-    fn try_from(value: RBig) -> Result<Self, Self::Error> {
-        if value.0.denominator.is_one() {
-            Ok(value.0.numerator)
-        } else {
-            Err(OutOfBoundsError)
+        Repr{
+            numerator: v.into(),
+            denominator: UBig::ONE
         }
     }
 }
 
-impl From<u8> for RBig {
+impl From<IBig> for Repr {
     #[inline]
-    fn from(v: u8) -> RBig {
-        RBig::from_parts(v.into(), UBig::ONE)
+    fn from(v: IBig) -> Self {
+        Repr{
+            numerator: v,
+            denominator: UBig::ONE
+        }
     }
 }
 
-impl TryFrom<RBig> for u8 {
-    type Error = OutOfBoundsError;
+impl TryFrom<Repr> for IBig {
+    type Error = ConversionError;
     #[inline]
-    fn try_from(value: RBig) -> Result<Self, Self::Error> {
-        let int: IBig = value.try_into()?;
-        int.try_into()
+    fn try_from(value: Repr) -> Result<Self, Self::Error> {
+        if value.denominator.is_one() {
+            Ok(value.numerator)
+        } else {
+            Err(ConversionError::LossOfPrecision)
+        }
     }
 }
+
+macro_rules! forward_conversion_to_repr {
+    ($t:ident) => {
+        impl From<UBig> for $t {
+            #[inline]
+            fn from(v: UBig) -> Self {
+                $t(Repr::from(v))
+            }
+        }
+        impl From<IBig> for $t {
+            #[inline]
+            fn from(v: IBig) -> Self {
+                $t(Repr::from(v))
+            }
+        }        
+        impl TryFrom<$t> for IBig {
+            type Error = ConversionError;
+            #[inline]
+            fn try_from(value: $t) -> Result<Self, Self::Error> {
+                Self::try_from(value.0)
+            }
+        }
+    };
+}
+forward_conversion_to_repr!(RBig);
+forward_conversion_to_repr!(Relaxed);
+
+macro_rules! impl_conversion_for_prim_ints {
+    ($($t:ty)*) => {$(
+        impl From<$t> for Repr {
+            #[inline]
+            fn from(v: $t) -> Repr {
+                Repr {
+                    numerator: v.into(),
+                    denominator: UBig::ONE
+                }
+            }
+        }
+
+        impl TryFrom<RBig> for $t {
+            type Error = ConversionError;
+            #[inline]
+            fn try_from(value: RBig) -> Result<Self, Self::Error> {
+                let int: IBig = value.try_into()?;
+                int.try_into()
+            }
+        }
+    )*};
+}
+impl_conversion_for_prim_ints!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);
 
 macro_rules! impl_from_float_for_repr {
     ($t:ty) => {
         impl TryFrom<$t> for Repr {
-            type Error = OutOfBoundsError;
+            type Error = ConversionError;
 
             fn try_from(value: $t) -> Result<Self, Self::Error> {
                 // shortcut to prevent issues in counting leading zeros
@@ -73,20 +113,20 @@ macro_rules! impl_from_float_for_repr {
                         };
                         Ok(repr)
                     },
-                    Err(_) => Err(OutOfBoundsError)
+                    Err(_) => Err(ConversionError::OutOfBounds)
                 }
             }
         }
  
         impl TryFrom<$t> for RBig {
-            type Error = OutOfBoundsError;
+            type Error = ConversionError;
             #[inline]
             fn try_from(value: $t) -> Result<Self, Self::Error> {
                 Repr::try_from(value).map(|repr| RBig(repr))
             }
         }
         impl TryFrom<$t> for Relaxed {
-            type Error = OutOfBoundsError;
+            type Error = ConversionError;
             #[inline]
             fn try_from(value: $t) -> Result<Self, Self::Error> {
                 Repr::try_from(value).map(|repr| Relaxed(repr))

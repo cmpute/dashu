@@ -15,8 +15,9 @@ use crate::{
 };
 use dashu_base::{
     Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, FloatEncoding, Sign, Signed,
+    ConversionError
 };
-use dashu_int::{error::OutOfBoundsError, IBig, UBig, Word};
+use dashu_int::{IBig, UBig, Word};
 
 impl<R: Round> Context<R> {
     /// Convert an [IBig] instance to a [FBig] instance with precision
@@ -25,7 +26,7 @@ impl<R: Round> Context<R> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
@@ -47,7 +48,7 @@ impl<R: Round> Context<R> {
 macro_rules! impl_from_float_for_fbig {
     ($t:ty) => {
         impl<R: Round> TryFrom<$t> for FBig<R, 2> {
-            type Error = OutOfBoundsError;
+            type Error = ConversionError;
 
             fn try_from(f: $t) -> Result<Self, Self::Error> {
                 match f.decode() {
@@ -65,7 +66,7 @@ macro_rules! impl_from_float_for_fbig {
                         Sign::Positive => Ok(FBig::INFINITY),
                         Sign::Negative => Ok(FBig::NEG_INFINITY),
                     },
-                    _ => Err(OutOfBoundsError),
+                    _ => Err(ConversionError::OutOfBounds),
                 }
             }
         }
@@ -84,7 +85,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::{mode::HalfAway, Rounding::*};
@@ -121,7 +122,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::{mode::HalfAway, Rounding::*};
@@ -158,7 +159,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```rust
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::{mode::HalfAway, Rounding::*};
@@ -197,7 +198,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```rust
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::{mode::{HalfAway, Zero}, Rounding::*};
@@ -233,7 +234,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```rust
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::{mode::Zero, Rounding::*};
@@ -281,7 +282,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```rust
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::{mode::Zero, Rounding::*};
@@ -410,7 +411,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::Rounding::*;
@@ -455,7 +456,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// let a = DBig::from_str_native("1.234")?;
     /// assert_eq!(a.trunc(), DBig::from_str_native("1")?);
@@ -506,7 +507,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// let a = DBig::from_str_native("1.234")?;
     /// assert_eq!(a.fract(), DBig::from_str_native("0.234")?);
@@ -535,7 +536,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// let a = DBig::from_str_native("1.234")?;
     /// assert_eq!(a.ceil(), DBig::from_str_native("2")?);
@@ -567,7 +568,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// let a = DBig::from_str_native("1.234")?;
     /// assert_eq!(a.floor(), DBig::from_str_native("1")?);
@@ -607,7 +608,7 @@ impl<R: Round> FBig<R, 2> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// let a = DBig::from_str_native("1.234")?;
     /// assert_eq!(a.with_base_and_precision::<2>(23).value().to_f32().value(), 1.234);
@@ -651,7 +652,7 @@ impl<R: Round> FBig<R, 2> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// let a = DBig::from_str_native("1.234")?;
     /// assert_eq!(a.with_base_and_precision::<2>(53).value().to_f64().value(), 1.234);

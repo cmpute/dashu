@@ -1,4 +1,4 @@
-use dashu_int::error::ParseError;
+use dashu_base::ParseError;
 use dashu_ratio::{RBig, Relaxed};
 
 mod helper_macros;

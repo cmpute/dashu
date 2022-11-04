@@ -3,7 +3,6 @@
 use crate::{
     arch::word::Word,
     buffer::Buffer,
-    error::OutOfBoundsError,
     ibig::IBig,
     primitive::{self, PrimitiveSigned, PrimitiveUnsigned, DWORD_BYTES, WORD_BITS, WORD_BYTES},
     repr::{Repr, TypedReprRef::*},
@@ -15,6 +14,7 @@ use core::convert::{TryFrom, TryInto};
 use dashu_base::{
     Approximation::{self, *},
     FloatEncoding, Sign,
+    ConversionError
 };
 
 impl Default for UBig {
@@ -265,19 +265,19 @@ macro_rules! ubig_unsigned_conversions {
         }
 
         impl TryFrom<UBig> for $t {
-            type Error = OutOfBoundsError;
+            type Error = ConversionError;
 
             #[inline]
-            fn try_from(value: UBig) -> Result<$t, OutOfBoundsError> {
+            fn try_from(value: UBig) -> Result<$t, ConversionError> {
                 value.try_to_unsigned()
             }
         }
 
         impl TryFrom<&UBig> for $t {
-            type Error = OutOfBoundsError;
+            type Error = ConversionError;
 
             #[inline]
-            fn try_from(value: &UBig) -> Result<$t, OutOfBoundsError> {
+            fn try_from(value: &UBig) -> Result<$t, ConversionError> {
                 value.try_to_unsigned()
             }
         }
@@ -295,28 +295,28 @@ impl From<bool> for UBig {
 macro_rules! ubig_signed_conversions {
     ($($t:ty)*) => {$(
         impl TryFrom<$t> for UBig {
-            type Error = OutOfBoundsError;
+            type Error = ConversionError;
 
             #[inline]
-            fn try_from(value: $t) -> Result<UBig, OutOfBoundsError> {
+            fn try_from(value: $t) -> Result<UBig, ConversionError> {
                 UBig::try_from_signed(value)
             }
         }
 
         impl TryFrom<UBig> for $t {
-            type Error = OutOfBoundsError;
+            type Error = ConversionError;
 
             #[inline]
-            fn try_from(value: UBig) -> Result<$t, OutOfBoundsError> {
+            fn try_from(value: UBig) -> Result<$t, ConversionError> {
                 value.try_to_signed()
             }
         }
 
         impl TryFrom<&UBig> for $t {
-            type Error = OutOfBoundsError;
+            type Error = ConversionError;
 
             #[inline]
-            fn try_from(value: &UBig) -> Result<$t, OutOfBoundsError> {
+            fn try_from(value: &UBig) -> Result<$t, ConversionError> {
                 value.try_to_signed()
             }
         }
@@ -334,19 +334,19 @@ macro_rules! ibig_unsigned_conversions {
         }
 
         impl TryFrom<IBig> for $t {
-            type Error = OutOfBoundsError;
+            type Error = ConversionError;
 
             #[inline]
-            fn try_from(value: IBig) -> Result<$t, OutOfBoundsError> {
+            fn try_from(value: IBig) -> Result<$t, ConversionError> {
                 value.try_to_unsigned()
             }
         }
 
         impl TryFrom<&IBig> for $t {
-            type Error = OutOfBoundsError;
+            type Error = ConversionError;
 
             #[inline]
-            fn try_from(value: &IBig) -> Result<$t, OutOfBoundsError> {
+            fn try_from(value: &IBig) -> Result<$t, ConversionError> {
                 value.try_to_unsigned()
             }
         }
@@ -372,19 +372,19 @@ macro_rules! ibig_signed_conversions {
         }
 
         impl TryFrom<IBig> for $t {
-            type Error = OutOfBoundsError;
+            type Error = ConversionError;
 
             #[inline]
-            fn try_from(value: IBig) -> Result<$t, OutOfBoundsError> {
+            fn try_from(value: IBig) -> Result<$t, ConversionError> {
                 value.try_to_signed()
             }
         }
 
         impl TryFrom<&IBig> for $t {
-            type Error = OutOfBoundsError;
+            type Error = ConversionError;
 
             #[inline]
-            fn try_from(value: &IBig) -> Result<$t, OutOfBoundsError> {
+            fn try_from(value: &IBig) -> Result<$t, ConversionError> {
                 value.try_to_signed()
             }
         }
@@ -408,25 +408,25 @@ impl From<&UBig> for IBig {
 }
 
 impl TryFrom<IBig> for UBig {
-    type Error = OutOfBoundsError;
+    type Error = ConversionError;
 
     #[inline]
-    fn try_from(x: IBig) -> Result<UBig, OutOfBoundsError> {
+    fn try_from(x: IBig) -> Result<UBig, ConversionError> {
         match x.sign() {
             Positive => Ok(UBig(x.0)),
-            Negative => Err(OutOfBoundsError),
+            Negative => Err(ConversionError::OutOfBounds),
         }
     }
 }
 
 impl TryFrom<&IBig> for UBig {
-    type Error = OutOfBoundsError;
+    type Error = ConversionError;
 
     #[inline]
-    fn try_from(x: &IBig) -> Result<UBig, OutOfBoundsError> {
+    fn try_from(x: &IBig) -> Result<UBig, ConversionError> {
         match x.sign() {
             Positive => Ok(UBig(x.0.clone())),
-            Negative => Err(OutOfBoundsError),
+            Negative => Err(ConversionError::OutOfBounds),
         }
     }
 }
@@ -443,20 +443,20 @@ impl UBig {
 
     /// Try to convert a signed primitive to [UBig].
     #[inline]
-    fn try_from_signed<T>(x: T) -> Result<UBig, OutOfBoundsError>
+    fn try_from_signed<T>(x: T) -> Result<UBig, ConversionError>
     where
         T: PrimitiveSigned,
     {
         let (sign, mag) = x.to_sign_magnitude();
         match sign {
             Sign::Positive => Ok(UBig(Repr::from_unsigned(mag))),
-            Sign::Negative => Err(OutOfBoundsError),
+            Sign::Negative => Err(ConversionError::OutOfBounds),
         }
     }
 
     /// Try to convert [UBig] to an unsigned primitive.
     #[inline]
-    pub(crate) fn try_to_unsigned<T>(&self) -> Result<T, OutOfBoundsError>
+    pub(crate) fn try_to_unsigned<T>(&self) -> Result<T, ConversionError>
     where
         T: PrimitiveUnsigned,
     {
@@ -465,7 +465,7 @@ impl UBig {
 
     /// Try to convert [UBig] to a signed primitive.
     #[inline]
-    fn try_to_signed<T>(&self) -> Result<T, OutOfBoundsError>
+    fn try_to_signed<T>(&self) -> Result<T, ConversionError>
     where
         T: PrimitiveSigned,
     {
@@ -489,17 +489,17 @@ impl IBig {
 
     /// Try to convert [IBig] to an unsigned primitive.
     #[inline]
-    pub(crate) fn try_to_unsigned<T: PrimitiveUnsigned>(&self) -> Result<T, OutOfBoundsError> {
+    pub(crate) fn try_to_unsigned<T: PrimitiveUnsigned>(&self) -> Result<T, ConversionError> {
         let (sign, mag) = self.as_sign_repr();
         match sign {
             Positive => mag.try_to_unsigned(),
-            Negative => Err(OutOfBoundsError),
+            Negative => Err(ConversionError::OutOfBounds),
         }
     }
 
     /// Try to convert [IBig] to an signed primitive.
     #[inline]
-    pub(crate) fn try_to_signed<T: PrimitiveSigned>(&self) -> Result<T, OutOfBoundsError> {
+    pub(crate) fn try_to_signed<T: PrimitiveSigned>(&self) -> Result<T, ConversionError> {
         let (sign, mag) = self.as_sign_repr();
         T::try_from_sign_magnitude(sign, mag.try_to_unsigned()?)
     }
@@ -514,14 +514,14 @@ mod repr {
     use crate::repr::TypedReprRef;
 
     /// Try to convert `Word`s to an unsigned primitive.
-    fn unsigned_from_words<T>(words: &[Word]) -> Result<T, OutOfBoundsError>
+    fn unsigned_from_words<T>(words: &[Word]) -> Result<T, ConversionError>
     where
         T: PrimitiveUnsigned,
     {
         debug_assert!(words.len() >= 2);
         let t_words = T::BYTE_SIZE / WORD_BYTES;
         if t_words <= 1 || words.len() > t_words {
-            Err(OutOfBoundsError)
+            Err(ConversionError::OutOfBounds)
         } else {
             assert!(
                 T::BIT_SIZE % WORD_BITS == 0,
@@ -556,12 +556,12 @@ mod repr {
 
     impl<'a> TypedReprRef<'a> {
         #[inline]
-        pub fn try_to_unsigned<T>(self) -> Result<T, OutOfBoundsError>
+        pub fn try_to_unsigned<T>(self) -> Result<T, ConversionError>
         where
             T: PrimitiveUnsigned,
         {
             match self {
-                RefSmall(dw) => T::try_from(dw).map_err(|_| OutOfBoundsError),
+                RefSmall(dw) => T::try_from(dw).map_err(|_| ConversionError::OutOfBounds),
                 RefLarge(words) => unsigned_from_words(words),
             }
         }

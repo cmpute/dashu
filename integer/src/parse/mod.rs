@@ -1,13 +1,13 @@
 //! Integer parsing helpers.
 
 use crate::{
-    error::ParseError,
     ibig::IBig,
     radix::{self, is_radix_valid, Digit},
     ubig::UBig,
     Sign::*,
 };
 use core::str::FromStr;
+use dashu_base::ParseError;
 
 mod non_power_two;
 mod power_two;
@@ -36,7 +36,8 @@ impl UBig {
     ///
     /// # Examples
     /// ```
-    /// # use dashu_int::{error::ParseError, UBig};
+    /// # use dashu_base::ParseError;
+    /// # use dashu_int::UBig;
     /// assert_eq!(UBig::from_str_radix("+7ab", 32)?, 7499);
     /// # Ok::<(), ParseError>(())
     /// ```
@@ -58,7 +59,8 @@ impl UBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::{error::ParseError, UBig};
+    /// # use dashu_base::ParseError;
+    /// # use dashu_int::UBig;
     /// assert_eq!(UBig::from_str_with_radix_prefix("+0o17")?, (UBig::from(0o17u8), 8));
     /// assert_eq!(UBig::from_str_with_radix_prefix("0x1f")?.0, 0x1f);
     /// # Ok::<(), ParseError>(())
@@ -109,7 +111,8 @@ impl IBig {
     ///
     /// # Examples
     /// ```
-    /// # use dashu_int::{error::ParseError, IBig};
+    /// # use dashu_base::ParseError;
+    /// # use dashu_int::IBig;
     /// assert_eq!(IBig::from_str_radix("-7ab", 32)?, IBig::from(-7499));
     /// # Ok::<(), ParseError>(())
     /// ```
@@ -142,7 +145,8 @@ impl IBig {
     ///
     /// # Examples
     /// ```
-    /// # use dashu_int::{error::ParseError, IBig};
+    /// # use dashu_base::ParseError;
+    /// # use dashu_int::IBig;
     /// assert_eq!(IBig::from_str_with_radix_prefix("+0o17")?, (IBig::from(0o17), 8));
     /// assert_eq!(IBig::from_str_with_radix_prefix("-0x1f")?.0, -0x1f);
     /// # Ok::<(), ParseError>(())

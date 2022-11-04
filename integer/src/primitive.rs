@@ -2,9 +2,9 @@
 
 use crate::{
     arch::word::{DoubleWord, SignedDoubleWord, SignedWord, Word},
-    error::OutOfBoundsError,
     Sign::{self, *},
 };
+use dashu_base::ConversionError;
 use core::{
     convert::{TryFrom, TryInto},
     fmt::Debug,
@@ -129,7 +129,7 @@ where
     type Unsigned;
 
     fn to_sign_magnitude(self) -> (Sign, Self::Unsigned);
-    fn try_from_sign_magnitude(sign: Sign, mag: Self::Unsigned) -> Result<Self, OutOfBoundsError>;
+    fn try_from_sign_magnitude(sign: Sign, mag: Self::Unsigned) -> Result<Self, ConversionError>;
 }
 
 macro_rules! impl_primitive_unsigned {
@@ -174,15 +174,15 @@ macro_rules! impl_primitive_signed {
             fn try_from_sign_magnitude(
                 sign: Sign,
                 mag: Self::Unsigned,
-            ) -> Result<Self, OutOfBoundsError> {
+            ) -> Result<Self, ConversionError> {
                 match sign {
-                    Positive => mag.try_into().map_err(|_| OutOfBoundsError),
+                    Positive => mag.try_into().map_err(|_| ConversionError::OutOfBounds),
                     Negative => {
                         let x = mag.wrapping_neg() as Self;
                         if x <= 0 {
                             Ok(x)
                         } else {
-                            Err(OutOfBoundsError)
+                            Err(ConversionError::OutOfBounds)
                         }
                     }
                 }

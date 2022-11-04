@@ -35,3 +35,8 @@ pub const fn panic_unlimited_precision() -> ! {
 pub const fn panic_power_negative_base() -> ! {
     panic!("powering on negative bases could result in complex number!")
 }
+
+/// Panics when taking an even order root of an negative number
+pub(crate) fn panic_root_negative() -> ! {
+    panic!("the root is a complex number!")
+}
