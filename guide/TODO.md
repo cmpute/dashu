@@ -18,7 +18,7 @@ Contents of the user guide:
   - Rational number formatting
 - Supported Operations
   - Equality test and comparison
-  - Basic arithmetics (+-*/%)
+  - Basic arithmetics (+-*) (clarify behavior of division and modulo on different types)
   - Exponential and Logarithm (including the estimated ones)
   - Bit Operations
   - GCD and ExtGCD

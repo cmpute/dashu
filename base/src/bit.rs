@@ -150,16 +150,16 @@ impl FloatEncoding for f32 {
         let mut mantissa = mantissa.unsigned_abs();
 
         let zeros = mantissa.leading_zeros();
-        let topbit = (u32::BITS - zeros) as i16 + exponent;
+        let top_bit = (u32::BITS - zeros) as i16 + exponent;
 
-        if topbit > 128 {
+        if top_bit > 128 {
             // overflow
             return if sign == 0 {
                 Inexact(f32::INFINITY, Sign::Positive)
             } else {
                 Inexact(f32::NEG_INFINITY, Sign::Negative)
             };
-        } else if topbit < -125 - 23 {
+        } else if top_bit < -125 - 23 {
             // underflow
             return if sign == 0 {
                 Inexact(0f32, Sign::Negative)
@@ -170,7 +170,7 @@ impl FloatEncoding for f32 {
 
         let bits; // bit representation
         let round_bits; // for rounding
-        if topbit <= -125 {
+        if top_bit <= -125 {
             // subnormal float
             // (this branch includes 1e-125, the smallest positive normal f32)
 
@@ -271,16 +271,16 @@ impl FloatEncoding for f64 {
         let mut mantissa = mantissa.unsigned_abs();
 
         let zeros = mantissa.leading_zeros();
-        let topbit = (u64::BITS - zeros) as i16 + exponent;
+        let top_bit = (u64::BITS - zeros) as i16 + exponent;
 
-        if topbit > 1024 {
+        if top_bit > 1024 {
             // overflow
             return if sign == 0 {
                 Inexact(f64::INFINITY, Sign::Positive)
             } else {
                 Inexact(f64::NEG_INFINITY, Sign::Negative)
             };
-        } else if topbit < -1022 - 52 {
+        } else if top_bit < -1022 - 52 {
             // underflow
             return if sign == 0 {
                 Inexact(0f64, Sign::Negative)
@@ -291,7 +291,7 @@ impl FloatEncoding for f64 {
 
         let bits; // bit representation
         let round_bits; // for rounding
-        if topbit <= -1022 {
+        if top_bit <= -1022 {
             // subnormal float
             // (this branch includes 1e-1022, the smallest positive normal f32)
 

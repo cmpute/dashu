@@ -87,6 +87,15 @@ impl RBig {
     pub fn relax(self) -> Relaxed {
         Relaxed(self.0)
     }
+
+    #[inline]
+    pub const fn is_zero(&self) -> bool {
+        self.0.numerator.is_zero()
+    }
+    #[inline]
+    pub const fn is_one(&self) -> bool {
+        self.0.numerator.is_one()
+    }
 }
 
 // This custom implementation is necessary due to https://github.com/rust-lang/rust/issues/98374
@@ -163,6 +172,15 @@ impl Relaxed {
     #[inline]
     pub fn canonicalize(self) -> RBig {
         RBig(self.0.reduce())
+    }
+
+    #[inline]
+    pub const fn is_zero(&self) -> bool {
+        self.0.numerator.is_zero()
+    }
+    #[inline]
+    pub const fn is_one(&self) -> bool {
+        self.0.numerator.is_one()
     }
 }
 

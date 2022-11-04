@@ -1,6 +1,6 @@
 use core::cmp::Ordering;
 
-use dashu_base::{Approximation::{*, self}, Sign, FloatEncoding, UnsignedAbs, DivRem, ConversionError};
+use dashu_base::{Approximation::{*, self}, Sign, FloatEncoding, UnsignedAbs, DivRem, ConversionError, PowerOfTwo};
 use dashu_int::{IBig, UBig};
 
 use crate::{rbig::{RBig, Relaxed}, repr::Repr};
@@ -25,6 +25,21 @@ impl From<IBig> for Repr {
     }
 }
 
+impl TryFrom<Repr> for UBig {
+    type Error = ConversionError;
+    #[inline]
+    fn try_from(value: Repr) -> Result<Self, Self::Error> {
+        let (sign, mag) = value.numerator.into_parts();
+        if sign == Sign::Negative {
+            Err(ConversionError::OutOfBounds)
+        } else if mag.is_one() {
+            Ok(mag)
+        } else {
+            Err(ConversionError::LossOfPrecision)
+        }
+    }
+}
+
 impl TryFrom<Repr> for IBig {
     type Error = ConversionError;
     #[inline]
@@ -38,20 +53,14 @@ impl TryFrom<Repr> for IBig {
 }
 
 macro_rules! forward_conversion_to_repr {
-    ($t:ident) => {
-        impl From<UBig> for $t {
+    ($from:ty => $t:ident) => {
+        impl From<$from> for $t {
             #[inline]
-            fn from(v: UBig) -> Self {
+            fn from(v: $from) -> Self {
                 $t(Repr::from(v))
             }
-        }
-        impl From<IBig> for $t {
-            #[inline]
-            fn from(v: IBig) -> Self {
-                $t(Repr::from(v))
-            }
-        }        
-        impl TryFrom<$t> for IBig {
+        }    
+        impl TryFrom<$t> for $from {
             type Error = ConversionError;
             #[inline]
             fn try_from(value: $t) -> Result<Self, Self::Error> {
@@ -60,8 +69,10 @@ macro_rules! forward_conversion_to_repr {
         }
     };
 }
-forward_conversion_to_repr!(RBig);
-forward_conversion_to_repr!(Relaxed);
+forward_conversion_to_repr!(UBig => RBig);
+forward_conversion_to_repr!(IBig => RBig);
+forward_conversion_to_repr!(UBig => Relaxed);
+forward_conversion_to_repr!(IBig => Relaxed);
 
 macro_rules! impl_conversion_for_prim_ints {
     ($($t:ty)*) => {$(
@@ -75,19 +86,22 @@ macro_rules! impl_conversion_for_prim_ints {
             }
         }
 
-        impl TryFrom<RBig> for $t {
+        impl TryFrom<Repr> for $t {
             type Error = ConversionError;
             #[inline]
-            fn try_from(value: RBig) -> Result<Self, Self::Error> {
+            fn try_from(value: Repr) -> Result<Self, Self::Error> {
                 let int: IBig = value.try_into()?;
                 int.try_into()
             }
         }
+
+        forward_conversion_to_repr!($t => RBig);
+        forward_conversion_to_repr!($t => Relaxed);
     )*};
 }
 impl_conversion_for_prim_ints!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);
 
-macro_rules! impl_from_float_for_repr {
+macro_rules! impl_conversion_from_float {
     ($t:ty) => {
         impl TryFrom<$t> for Repr {
             type Error = ConversionError;
@@ -134,8 +148,57 @@ macro_rules! impl_from_float_for_repr {
         }
     };
 }
-impl_from_float_for_repr!(f32);
-impl_from_float_for_repr!(f64);
+impl_conversion_from_float!(f32);
+impl_conversion_from_float!(f64);
+
+macro_rules! impl_conversion_to_float {
+    ($t:ty [$lb:literal, $ub:literal]) => {
+        impl TryFrom<RBig> for $t {
+            type Error = ConversionError;
+
+            /// Convert RBig to primitive floats. It returns [Ok] only if
+            /// the conversion can be done losslessly
+            fn try_from(value: RBig) -> Result<Self, Self::Error> {
+                if value.0.numerator.is_zero() {
+                    Ok(0.)
+                } else if value.0.denominator.is_power_of_two() {
+                    // conversion is exact only if the denominator is a power of two
+                    let num_bits = value.0.numerator.abs_bit_len();
+                    let den_bits = value.0.denominator.trailing_zeros().unwrap();
+                    let top_bit = num_bits as isize - den_bits as isize;
+                    if top_bit > $ub { // see to_f32::encode for explanation of the bounds
+                        Err(ConversionError::OutOfBounds)
+                    } else if top_bit < $lb {
+                        Err(ConversionError::LossOfPrecision)
+                    } else {
+                        match <$t>::encode(value.0.numerator.try_into().unwrap(), -(den_bits as i16)) {
+                            Exact(v) => Ok(v),
+                            Inexact(v, _) => if v.is_infinite() {
+                                Err(ConversionError::OutOfBounds)
+                            } else {
+                                Err(ConversionError::LossOfPrecision)
+                            }
+                        }
+                    }
+                } else {
+                    Err(ConversionError::LossOfPrecision)
+                }
+            }
+        }
+
+        impl TryFrom<Relaxed> for $t {
+            type Error = ConversionError;
+
+            #[inline]
+            fn try_from(value: Relaxed) -> Result<Self, Self::Error> {
+                // convert to RBig to eliminate cofactors
+                <$t>::try_from(value.canonicalize())
+            }
+        }       
+    };
+}
+impl_conversion_to_float!(f32 [-149, 128]); // see f32::encode for explanation of the bounds
+impl_conversion_to_float!(f64 [-1074, 1024]); // see f32::encode for explanation of the bounds
 
 impl Repr {
     /// Convert the rational number to [f32] without guaranteed correct rounding.
