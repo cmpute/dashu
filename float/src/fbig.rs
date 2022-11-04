@@ -89,6 +89,8 @@ use dashu_int::{DoubleWord, IBig};
 /// two methods.
 ///
 /// The infinities are converted as it is, and the subnormals are converted using its actual values.
+/// 
+/// TODO(v0.3): explain the difference with IEEE float (no neg zero, no nan values)
 ///
 pub struct FBig<RoundingMode: Round = mode::Zero, const BASE: Word = 2> {
     pub(crate) repr: Repr<BASE>,

@@ -368,6 +368,7 @@ mod tests {
             f32::MIN_POSITIVE,
             -f32::MIN_POSITIVE,
             f32::EPSILON,
+            f32::from_bits(0x1),      // smallest f32
             f32::from_bits(0x7ff),    // some subnormal value
             f32::from_bits(0x7fffff), // largest subnormal number
             f32::from_bits(0x800000), // smallest normal number
@@ -388,6 +389,7 @@ mod tests {
             f64::MIN_POSITIVE,
             -f64::MIN_POSITIVE,
             f64::EPSILON,
+            f64::from_bits(0x1),              // smallest f64
             f64::from_bits(0x7fffff),         // largest subnormal number
             f64::from_bits(0xfffffffffffff),  // some subnormal value
             f64::from_bits(0x10000000000000), // smallest normal number
@@ -450,5 +452,7 @@ mod tests {
         // other cases
         assert_eq!(f32::encode(1, 0), Exact(1f32));
         assert_eq!(f64::encode(1, 0), Exact(1f64));
+        assert_eq!(f32::encode(0x1000000, -173), Exact(f32::from_bits(0x1)));
+        assert_eq!(f64::encode(0x40000000000000, -1128), Exact(f64::from_bits(0x1)));
     }
 }

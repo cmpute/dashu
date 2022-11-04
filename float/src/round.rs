@@ -1,7 +1,7 @@
 //! Traits and implementations for rounding during operations.
 
 use core::cmp::Ordering;
-use core::ops::{Add, AddAssign};
+use core::ops::{Add, AddAssign, Neg};
 use dashu_base::{Approximation, EstimatedLog2, Sign, UnsignedAbs};
 use dashu_int::{IBig, UBig, Word};
 
@@ -295,7 +295,7 @@ impl Round for mode::HalfEven {
 
 impl Add<Rounding> for IBig {
     type Output = IBig;
-
+    #[inline]
     fn add(self, rhs: Rounding) -> Self::Output {
         match rhs {
             Rounding::NoOp => self,
@@ -307,7 +307,7 @@ impl Add<Rounding> for IBig {
 
 impl Add<Rounding> for &IBig {
     type Output = IBig;
-
+    #[inline]
     fn add(self, rhs: Rounding) -> Self::Output {
         match rhs {
             Rounding::NoOp => self.clone(),
@@ -318,6 +318,7 @@ impl Add<Rounding> for &IBig {
 }
 
 impl AddAssign<Rounding> for IBig {
+    #[inline]
     fn add_assign(&mut self, rhs: Rounding) {
         match rhs {
             Rounding::NoOp => {}

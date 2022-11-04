@@ -6,6 +6,20 @@ use crate::{
     repr::Repr,
 };
 
+impl RBig {
+    #[inline]
+    pub const fn sign(&self) -> Sign {
+        self.0.numerator.sign()
+    }
+}
+
+impl Relaxed {
+    #[inline]
+    pub const fn sign(&self) -> Sign {
+        self.0.numerator.sign()
+    }
+}
+
 impl Repr {
     #[inline]
     fn neg(mut self) -> Repr {

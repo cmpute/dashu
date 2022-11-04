@@ -283,10 +283,20 @@ fn test_to_f32() {
 
     assert_eq!(FBig::<Zero, 2>::INFINITY.to_f32(), Inexact(f32::INFINITY, NoOp));
     assert_eq!(FBig::<Zero, 2>::NEG_INFINITY.to_f32(), Inexact(f32::NEG_INFINITY, NoOp));
-    assert_eq!((fbig!(0x1) << 200).to_f32(), Inexact(f32::INFINITY, AddOne));
-    assert_eq!((fbig!(-0x1) << 200).to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
-    assert_eq!((fbig!(0x1) >> 140).to_f32(), Exact(f32::from_bits(0x200))); // subnormal
-    assert_eq!((fbig!(-0x1) >> 140).to_f32(), Exact(-f32::from_bits(0x200)));
+    assert_eq!(fbig!(0x1p200).to_f32(), Inexact(f32::INFINITY, AddOne)); // overflow
+    assert_eq!(fbig!(-0x1p200).to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
+    assert_eq!(fbig!(0x1p128).to_f32(), Inexact(f32::INFINITY, AddOne)); // boundary for overflow
+    assert_eq!(fbig!(-0x1p128).to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
+    assert_eq!(fbig!(0xffffffffp96).to_f32(), Inexact(f32::INFINITY, AddOne));
+    assert_eq!(fbig!(-0xffffffffp96).to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
+    assert_eq!(fbig!(0x1p-140).to_f32(), Exact(f32::from_bits(0x200))); // subnormal
+    assert_eq!(fbig!(-0x1p-140).to_f32(), Exact(-f32::from_bits(0x200)));
+    assert_eq!(fbig!(0x1p-149).to_f32(), Exact(f32::from_bits(0x1)));
+    assert_eq!(fbig!(-0x1p-149).to_f32(), Exact(-f32::from_bits(0x1)));
+    assert_eq!(fbig!(0x1p-150).to_f32(), Inexact(0f32, NoOp)); // boundary for underflow
+    assert_eq!(fbig!(-0x1p-150).to_f32(), Inexact(-0f32, NoOp));
+    assert_eq!(fbig!(0xffffffffp-182).to_f32(), Inexact(0f32, NoOp));
+    assert_eq!(fbig!(-0xffffffffp-182).to_f32(), Inexact(-0f32, NoOp));
 }
 
 #[test]
@@ -312,8 +322,18 @@ fn test_to_f64() {
 
     assert_eq!(FBig::<Zero, 2>::INFINITY.to_f64(), Inexact(f64::INFINITY, NoOp));
     assert_eq!(FBig::<Zero, 2>::NEG_INFINITY.to_f64(), Inexact(f64::NEG_INFINITY, NoOp));
-    assert_eq!((fbig!(0x1) << 2000).to_f64(), Inexact(f64::INFINITY, AddOne));
-    assert_eq!((fbig!(-0x1) << 2000).to_f64(), Inexact(f64::NEG_INFINITY, SubOne));
-    assert_eq!((fbig!(0x1) >> 1060).to_f64(), Exact(f64::from_bits(0x4000))); // subnormal
-    assert_eq!((fbig!(-0x1) >> 1060).to_f64(), Exact(-f64::from_bits(0x4000)));
+    assert_eq!(fbig!(0x1p2000).to_f64(), Inexact(f64::INFINITY, AddOne)); // overflow
+    assert_eq!(fbig!(-0x1p2000).to_f64(), Inexact(f64::NEG_INFINITY, SubOne));
+    assert_eq!(fbig!(0x1p1024).to_f32(), Inexact(f32::INFINITY, AddOne)); // boundary for overflow
+    assert_eq!(fbig!(-0x1p1024).to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
+    assert_eq!(fbig!(0xffffffffffffffffp960).to_f32(), Inexact(f32::INFINITY, AddOne));
+    assert_eq!(fbig!(-0xffffffffffffffffp960).to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
+    assert_eq!(fbig!(0x1p-1060).to_f64(), Exact(f64::from_bits(0x4000))); // subnormal
+    assert_eq!(fbig!(-0x1p-1060).to_f64(), Exact(-f64::from_bits(0x4000)));
+    assert_eq!(fbig!(0x1p-1074).to_f64(), Exact(f64::from_bits(0x1)));
+    assert_eq!(fbig!(-0x1p-1074).to_f64(), Exact(-f64::from_bits(0x1)));
+    assert_eq!(fbig!(0x1p-1075).to_f64(), Inexact(0f64, NoOp)); // boundary for underflow
+    assert_eq!(fbig!(-0x1p-1075).to_f64(), Inexact(-0f64, NoOp));
+    assert_eq!(fbig!(0xffffffffffffffffp-1139).to_f64(), Inexact(0f64, NoOp));
+    assert_eq!(fbig!(-0xffffffffffffffffp-1139).to_f64(), Inexact(-0f64, NoOp));
 }

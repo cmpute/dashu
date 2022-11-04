@@ -3,6 +3,7 @@
 ## 0.2.2 (WIP)
 
 - Implement `Gcd::gcd` between `UBig` and `IBig`
+- Add `abs_bit_len` for `IBig`
 
 ## 0.2.1
 

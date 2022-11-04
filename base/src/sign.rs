@@ -37,7 +37,7 @@ pub trait Signed {
 }
 
 macro_rules! impl_abs_ops_prim {
-    ($($signed:ty;)*) => {$( // this branch is for float
+    ($($signed:ty;)*) => {$( // this branch is only for float
         impl Abs for $signed {
             type Output = $signed;
             #[inline]
@@ -177,7 +177,7 @@ impl Ord for Sign {
     }
 }
 
-macro_rules! impl_sign_for_primitives {
+macro_rules! impl_sign_ops_for_primitives {
     ($($t:ty)*) => {$(
         impl Mul<$t> for Sign {
             type Output = $t;
@@ -202,20 +202,57 @@ macro_rules! impl_sign_for_primitives {
                 }
             }
         }
+    )*};
+}
+impl_sign_ops_for_primitives!(i8 i16 i32 i64 i128 isize f32 f64);
 
+macro_rules! impl_signed_for_int {
+    ($($t:ty)*) => {$(
         impl Signed for $t {
             #[inline]
             fn sign(&self) -> Sign {
-                if *self >= (0 as $t) {
-                    Sign::Positive
-                } else if *self < (0 as $t) {
-                    Sign::Negative
-                } else {
-                    panic!("NaN doesn't have a sign!")
-                }
+                Sign::from(*self < 0)
             }
         }
     )*};
 }
+impl_signed_for_int!(i8 i16 i32 i64 i128 isize);
 
-impl_sign_for_primitives!(i8 i16 i32 i64 i128 isize f32 f64);
+macro_rules! impl_signed_for_float {
+    ($t:ty, $shift:literal) => {
+        impl Signed for $t {
+            #[inline]
+            fn sign(&self) -> Sign {
+                if self.is_nan() {
+                    panic!("nan doesn't have a sign")
+                }
+                Sign::from(self.to_bits() >> $shift > 0)
+            }
+        }
+    };
+}
+impl_signed_for_float!(f32, 31);
+impl_signed_for_float!(f64, 63);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_signed() {
+        assert_eq!(0i32.sign(), Sign::Positive);
+        assert_eq!(1i32.sign(), Sign::Positive);
+        assert_eq!((-1i32).sign(), Sign::Negative);
+        
+        assert_eq!(0f32.sign(), Sign::Positive);
+        assert_eq!((-0f32).sign(), Sign::Negative);
+        assert_eq!(1f32.sign(), Sign::Positive);
+        assert_eq!((-1f32).sign(), Sign::Negative);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_signed_nan() {
+        let _ = f32::NAN.sign();
+    }
+}

@@ -3,8 +3,9 @@
 ## 0.3.0 (WIP)
 
 - Add trait `FloatEncoding` and implement it for `f32` and `f64`
-- Add trait `Signed`
+- Add trait `Signed` and implement it for all signed primitive types
 - Add conversion between `Sign` and `bool`
+- Implement `Abs` for `f32` and `f64`
 
 ## 0.2.1
 
