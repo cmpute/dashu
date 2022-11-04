@@ -344,10 +344,11 @@ impl NormalizedRootRem for u128 {
 
 // The implementation for u8 is very naive, because it's rarely used
 impl RootRem for u8 {
-    type Output = u8;
+    type OutputSqrt = u8;
+    type OutputCbrt = u8;
 
     #[inline]
-    fn sqrt_rem(self) -> (u8, u8) {
+    fn sqrt_rem(&self) -> (u8, u8) {
         // brute-force search, because there are only 16 possibilites.
         let mut s = 0;
         let e = fix_sqrt_error!(u8, self, s);
@@ -355,38 +356,36 @@ impl RootRem for u8 {
     }
 
     #[inline]
-    fn cbrt_rem(self) -> (u8, u8) {
+    fn cbrt_rem(&self) -> (u8, u8) {
         // brute-force search, because there are only 7 possibilites.
         let mut c = 0;
         let e = fix_cbrt_error!(u8, self, c);
         (c, e)
     }
-
-    #[inline]
-    fn nth_root_rem(self, _n: usize) -> (u8, u8) {
-        unimplemented!()
-    }
 }
 
 impl Root for u8 {
-    type Output = u8;
+    type OutputSqrt = u8;
+    type OutputCbrt = u8;
+
     #[inline]
-    fn sqrt(&self) -> Self::Output {
+    fn sqrt(&self) -> u8 {
         self.sqrt_rem().0
     }
     #[inline]
-    fn cbrt(&self) -> Self::Output {
+    fn cbrt(&self) -> u8 {
         self.cbrt_rem().0
     }
 }
 
 macro_rules! impl_rootrem_using_normalized {
-    ($($t:ty)*) => {$(
+    ($t:ty, $half:ty) => {
         impl Root for $t {
-            type Output = $t;
+            type OutputSqrt = $half;
+            type OutputCbrt = $half;
 
             #[inline]
-            fn sqrt(&self) -> $t {
+            fn sqrt(&self) -> $half {
                 if *self == 0 {
                     return 0;
                 }
@@ -394,11 +393,11 @@ macro_rules! impl_rootrem_using_normalized {
                 // normalize the input and call the normalized subroutine
                 let shift = self.leading_zeros() & !1; // make sure shift is divisible by 2
                 let (root, _) = (self << shift).normalized_sqrt_rem();
-                (root >> (shift / 2)) as $t
+                root >> (shift / 2)
             }
 
             #[inline]
-            fn cbrt(&self) -> $t {
+            fn cbrt(&self) -> $half {
                 if *self == 0 {
                     return 0;
                 }
@@ -407,51 +406,51 @@ macro_rules! impl_rootrem_using_normalized {
                 let mut shift = self.leading_zeros();
                 shift -= shift % 3; // make sure shift is divisible by 3
                 let (root, _) = (self << shift).normalized_cbrt_rem();
-                (root >> (shift / 3)) as $t
+                root >> (shift / 3)
             }
         }
 
         impl RootRem for $t {
-            type Output = $t;
+            type OutputSqrt = $half;
+            type OutputCbrt = $half;
 
-            fn sqrt_rem(self) -> ($t, $t) {
-                if self == 0 {
+            fn sqrt_rem(&self) -> ($half, $t) {
+                if *self == 0 {
                     return (0, 0);
                 }
 
                 // normalize the input and call the normalized subroutine
                 let shift = self.leading_zeros() & !1; // make sure shift is divisible by 2
-                let (root, mut rem) = (self << shift).normalized_sqrt_rem();
-                let root = (root >> (shift / 2)) as $t;
+                let (mut root, mut rem) = (self << shift).normalized_sqrt_rem();
                 if shift != 0 {
-                    rem = self - root.pow(2);
+                    root >>= shift / 2;
+                    rem = self - (root as $t).pow(2);
                 }
                 (root, rem)
             }
 
-            fn cbrt_rem(self) -> ($t, $t) {
-                if self == 0 {
+            fn cbrt_rem(&self) -> ($half, $t) {
+                if *self == 0 {
                     return (0, 0);
                 }
 
                 // normalize the input and call the normalized subroutine
                 let mut shift = self.leading_zeros();
                 shift -= shift % 3; // make sure shift is divisible by 3
-                let (root, mut rem) = (self << shift).normalized_cbrt_rem();
-                let root = (root >> (shift / 3)) as $t;
+                let (mut root, mut rem) = (self << shift).normalized_cbrt_rem();
                 if shift != 0 {
-                    rem = self - root.pow(3);
+                    root >>= shift / 3;
+                    rem = self - (root as $t).pow(3);
                 }
                 (root, rem)
             }
-
-            fn nth_root_rem(self, _n: usize) -> ($t, $t) {
-                unimplemented!()
-            }
         }
-    )*};
+    };
 }
-impl_rootrem_using_normalized!(u16 u32 u64 u128);
+impl_rootrem_using_normalized!(u16, u8);
+impl_rootrem_using_normalized!(u32, u16);
+impl_rootrem_using_normalized!(u64, u32);
+impl_rootrem_using_normalized!(u128, u64);
 
 // XXX: maybe forward sqrt to f32/f64 if std enabled, don't forward cbrt
 
@@ -469,10 +468,10 @@ mod tests {
         assert_eq!(2u128.sqrt_rem(), (1, 1));
 
         assert_eq!(u8::MAX.sqrt_rem(), (15, 30));
-        assert_eq!(u16::MAX.sqrt_rem(), (u8::MAX as u16, (u8::MAX as u16) * 2));
-        assert_eq!(u32::MAX.sqrt_rem(), (u16::MAX as u32, (u16::MAX as u32) * 2));
-        assert_eq!(u64::MAX.sqrt_rem(), (u32::MAX as u64, (u32::MAX as u64) * 2));
-        assert_eq!(u128::MAX.sqrt_rem(), (u64::MAX as u128, (u64::MAX as u128) * 2));
+        assert_eq!(u16::MAX.sqrt_rem(), (u8::MAX, (u8::MAX as u16) * 2));
+        assert_eq!(u32::MAX.sqrt_rem(), (u16::MAX, (u16::MAX as u32) * 2));
+        assert_eq!(u64::MAX.sqrt_rem(), (u32::MAX, (u32::MAX as u64) * 2));
+        assert_eq!(u128::MAX.sqrt_rem(), (u64::MAX, (u64::MAX as u128) * 2));
 
         assert_eq!((u8::MAX / 2).sqrt_rem(), (11, 6));
         assert_eq!((u16::MAX / 2).sqrt_rem(), (181, 6));
@@ -487,9 +486,10 @@ mod tests {
             ($T:ty) => {
                 let n: $T = random();
                 let (root, rem) = n.sqrt_rem();
-                assert!(rem <= root * 2, "sqrt({}) remainder too large", n);
-                assert_eq!(n, root * root + rem, "sqrt({}) != {}, {}", n, root, rem);
-                assert_eq!(n.sqrt(), root);
+                assert_eq!(root, n.sqrt());
+
+                assert!(rem <= (root as $T) * 2, "sqrt({}) remainder too large", n);
+                assert_eq!(n, (root as $T).pow(2) + rem, "sqrt({}) != {}, {}", n, root, rem);
             };
         }
 
@@ -526,10 +526,11 @@ mod tests {
             ($T:ty) => {
                 let n: $T = random();
                 let (root, rem) = n.cbrt_rem();
-                let root2 = root * root;
-                assert!(rem <= 3 * (root2 + root), "cbrt({}) remainder too large", n);
-                assert_eq!(n, root2 * root + rem, "cbrt({}) != {}, {}", n, root, rem);
-                assert_eq!(n.cbrt(), root);
+                assert_eq!(root, n.cbrt());
+
+                let root = root as $T;
+                assert!(rem <= 3 * (root * root + root), "cbrt({}) remainder too large", n);
+                assert_eq!(n, root.pow(3) + rem, "cbrt({}) != {}, {}", n, root, rem);
             };
         }
 

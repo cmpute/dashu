@@ -1,9 +1,20 @@
 # Changelog
 
-## 0.2.2 (WIP)
+## 0.3.0
+
+### Add
 
 - Implement `Gcd::gcd` between `UBig` and `IBig`
 - Add `abs_bit_len` for `IBig`
+
+### Change
+
+- `Modulo::inv` is renamed to `Modulo::inverse`
+- `sqrt_rem` is only exposed through the `RootRem` trait now.
+
+### Remove
+
+- `sqrt_rem` is removed from `IBig`
 
 ## 0.2.1
 

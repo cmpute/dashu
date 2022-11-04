@@ -1,3 +1,5 @@
+use dashu_base::RootRem;
+
 mod helper_macros;
 
 #[test]

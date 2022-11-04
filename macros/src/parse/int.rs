@@ -2,7 +2,7 @@ use dashu_int::{IBig, Sign, UBig};
 use proc_macro2::{TokenStream, TokenTree};
 use quote::quote;
 
-use super::common::{get_dword_from_words, quote_sign, quote_words};
+use super::common::{quote_bytes, quote_sign};
 
 fn panic_ubig_syntax() -> ! {
     panic!("Incorrect syntax, the correct syntax is like ubig!(1230) or ubig(1230 base 4)")
@@ -102,26 +102,31 @@ pub fn parse_integer<const SIGNED: bool>(input: TokenStream) -> TokenStream {
     }
 }
 
+// TODO(v0.3): only inline u32 ints, (then this will be platform agnostic), parse the big integer from bytes
+//             instead of words?
+
 pub fn quote_ubig(int: UBig) -> TokenStream {
-    let words = int.as_words();
-    if let Some(dword) = get_dword_from_words(words) {
+    if int.bit_len() <= 32 {
+        // if the integer fits in a u32, generates const expression
+        let u: u32 = int.try_into().unwrap();
         #[cfg(not(feature = "embedded"))]
-        quote! { ::dashu_int::UBig::from_dword(#dword) }
+        quote! { ::dashu_int::UBig::from_dword(#u as _) }
         #[cfg(feature = "embedded")]
-        quote! { ::dashu::integer::UBig::from_dword(#dword) }
+        quote! { ::dashu::integer::UBig::from_dword(#u as _) }
     } else {
-        // the number contains more than two words, convert to array of words
-        let n_words = words.len();
-        let words_tt = quote_words(words);
+        // otherwise, convert to a byte array
+        let bytes = int.to_le_bytes();
+        let len = bytes.len();
+        let bytes_tt = quote_bytes(&bytes);
         #[cfg(not(feature = "embedded"))]
         quote! {{
-            const WORDS: [::dashu_int::Word; #n_words] = #words_tt;
-            ::dashu_int::UBig::from_words(&WORDS)
+            const BYTES: [u8; #len] = #bytes_tt;
+            ::dashu_int::UBig::from_le_bytes(&BYTES)
         }}
         #[cfg(feature = "embedded")]
         quote! {{
-            const WORDS: [::dashu::integer::Word; #n_words] = #words_tt;
-            ::dashu::integer::UBig::from_words(&WORDS)
+            const BYTES: [u8; #len] = #bytes_tt;
+            ::dashu::integer::UBig::from_le_bytes(&BYTES)
         }}
     }
 }
@@ -129,25 +134,27 @@ pub fn quote_ubig(int: UBig) -> TokenStream {
 pub fn quote_ibig(int: IBig) -> TokenStream {
     let (sign, mag) = int.into_parts();
     let sign = quote_sign(sign);
-    let words = mag.as_words();
-    if let Some(dword) = get_dword_from_words(words) {
+    if mag.bit_len() <= 32 {
+        // if the integer fits in a u32, generates const expression
+        let u: u32 = mag.try_into().unwrap();
         #[cfg(not(feature = "embedded"))]
-        quote! { ::dashu_int::IBig::from_parts_const(#sign, #dword) }
+        quote! { ::dashu_int::IBig::from_parts_const(#sign, #u as _) }
         #[cfg(feature = "embedded")]
-        quote! { ::dashu::integer::IBig::from_parts_const(#sign, #dword) }
+        quote! { ::dashu::integer::IBig::from_parts_const(#sign, #u as _) }
     } else {
-        // the number contains more than two words, convert to array of words
-        let n_words = words.len();
-        let words_tt = quote_words(words);
+        // otherwise, convert to a byte array
+        let bytes = mag.to_le_bytes();
+        let len = bytes.len();
+        let bytes_tt = quote_bytes(&bytes);
         #[cfg(not(feature = "embedded"))]
         quote! {{
-            const WORDS: [::dashu_int::Word; #n_words] = #words_tt;
-            ::dashu_int::IBig::from_parts(#sign, ::dashu_int::UBig::from_words(&WORDS))
+            const BYTES: [u8; #len] = #bytes_tt;
+            ::dashu_int::IBig::from_parts(#sign, ::dashu_int::UBig::from_le_bytes(&BYTES))
         }}
         #[cfg(feature = "embedded")]
         quote! {{
-            const WORDS: [::dashu::integer::Word; #n_words] = #words_tt;
-            ::dashu::integer::IBig::from_parts(#sign, ::dashu::integer::UBig::from_words(&WORDS))
+            const BYTES: [u8; #len] = #bytes_tt;
+            ::dashu::integer::IBig::from_parts(#sign, ::dashu::integer::UBig::from_le_bytes(&BYTES))
         }}
     }
 }

@@ -1,4 +1,4 @@
-use dashu_base::Sign;
+use dashu_base::{Sign, RootRem};
 
 use crate::{
     error::{panic_root_negative, panic_root_zeroth},
@@ -13,18 +13,27 @@ impl UBig {
         UBig(self.repr().sqrt())
     }
 
-    // TODO(v0.3): expose this only in trait RootRem
-    /// Calculate the square root and the remainder of the integer
-    #[inline]
-    pub fn sqrt_rem(&self) -> (UBig, UBig) {
-        let (s, r) = self.repr().sqrt_rem();
-        (UBig(s), UBig(r))
-    }
-
     /// Calculate the nth-root of the integer
     #[inline]
     pub fn nth_root(&self, n: usize) -> UBig {
         UBig(self.repr().nth_root(n))
+    }
+}
+
+impl RootRem for UBig {
+    type OutputSqrt = UBig;
+    type OutputCbrt = UBig;
+
+    #[inline]
+    fn sqrt_rem(&self) -> (Self, Self) {
+        let (s, r) = self.repr().sqrt_rem();
+        (UBig(s), UBig(r))
+    }
+    #[inline]
+    fn cbrt_rem(&self) -> (Self, Self) {
+        let c = self.nth_root(3);
+        let r = self - c.pow(3);
+        (c, r)
     }
 }
 
@@ -37,17 +46,6 @@ impl IBig {
             panic_root_negative()
         }
         UBig(mag.sqrt())
-    }
-
-    /// Calculate the square root and the remainder of the integer
-    #[inline]
-    pub fn sqrt_rem(&self) -> (UBig, UBig) {
-        let (sign, mag) = self.as_sign_repr();
-        if sign == Sign::Negative {
-            panic_root_negative()
-        }
-        let (s, r) = mag.sqrt_rem();
-        (UBig(s), UBig(r))
     }
 
     /// Calculate the nth-root of the integer
@@ -89,9 +87,9 @@ mod repr {
             match self {
                 RefSmall(dw) => {
                     if let Some(w) = shrink_dword(dw) {
-                        Repr::from_word(w.sqrt())
+                        Repr::from_word(w.sqrt() as Word)
                     } else {
-                        Repr::from_dword(dw.sqrt())
+                        Repr::from_word(dw.sqrt())
                     }
                 }
                 RefLarge(words) => sqrt_rem_large(words, true).0,
@@ -104,10 +102,10 @@ mod repr {
                 RefSmall(dw) => {
                     if let Some(w) = shrink_dword(dw) {
                         let (s, r) = w.sqrt_rem();
-                        (Repr::from_word(s), Repr::from_word(r))
+                        (Repr::from_word(s as Word), Repr::from_word(r))
                     } else {
                         let (s, r) = dw.sqrt_rem();
-                        (Repr::from_dword(s), Repr::from_dword(r))
+                        (Repr::from_word(s), Repr::from_dword(r))
                     }
                 }
                 RefLarge(words) => sqrt_rem_large(words, false),

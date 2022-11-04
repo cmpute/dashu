@@ -45,16 +45,7 @@ fn test_fbig() {
     const _: FBig = fbig!(1);
     const _: FBig = fbig!(-1);
     const _: FBig = fbig!(-10.01b100);
-    #[cfg(all(
-        target_pointer_width = "64",
-        not(force_bits = "16"),
-        not(force_bits = "32")
-    ))]
-    {
-        assert!(dashu_int::Word::BITS >= 64);
-        const _: FBig = fbig!(0xffffffffffffffffp1234);
-        const _: FBig = fbig!(-0xffffffffffffffffffffffffffffffffp-1234);
-    }
+    const _: FBig = fbig!(0xffffffffp-1234);
 }
 
 #[test]
@@ -88,16 +79,5 @@ fn test_dbig() {
     const _: DBig = dbig!(1);
     const _: DBig = dbig!(-1);
     const _: DBig = dbig!(-2.55e100);
-    #[cfg(all(
-        target_pointer_width = "64",
-        not(force_bits = "16"),
-        not(force_bits = "32")
-    ))]
-    {
-        assert!(dashu_int::Word::BITS >= 64);
-        // 2^64 * 10^1234
-        const _: DBig = dbig!(18446744073709551615e1234);
-        // 2^128 * 10^-(1234+128)
-        const _: DBig = dbig!(-0.340282366920938463463374607431768211455e-1234);
-    }
+    const _: DBig = dbig!(4294967295e-1234);
 }
