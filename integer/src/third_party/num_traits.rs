@@ -1,6 +1,6 @@
 //! Implement num-traits traits.
 
-use dashu_base::{DivEuclid, RemEuclid, ParseError};
+use dashu_base::{DivEuclid, ParseError, RemEuclid};
 
 use crate::{ibig::IBig, ops::Abs, ubig::UBig, Sign};
 

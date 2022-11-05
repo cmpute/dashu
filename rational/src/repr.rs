@@ -1,7 +1,7 @@
 use dashu_base::Gcd;
 use dashu_int::{IBig, UBig};
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(Hash)]
 pub struct Repr {
     pub(crate) numerator: IBig,
     pub(crate) denominator: UBig,
@@ -10,6 +10,10 @@ pub struct Repr {
 impl Repr {
     /// Remove the common factors between numerator and denominator
     pub fn reduce(self) -> Repr {
+        if self.numerator.is_zero() {
+            return Repr::zero();
+        }
+
         let g = (&self.numerator).gcd(&self.denominator);
         Repr {
             numerator: self.numerator / &g,
@@ -20,6 +24,10 @@ impl Repr {
     /// Remove the common factors with the hint, that is the factors are calculated
     /// as `gcd(hint, gcd(numerator, denominator))`
     pub fn reduce_with_hint(self, hint: UBig) -> Repr {
+        if self.numerator.is_zero() {
+            return Repr::zero();
+        }
+
         let g = hint.gcd(&self.numerator).gcd(&self.denominator);
         Repr {
             numerator: self.numerator / &g,
@@ -29,6 +37,10 @@ impl Repr {
 
     /// Remove only common factor of power of 2, which is cheap
     pub fn reduce2(self) -> Repr {
+        if self.numerator.is_zero() {
+            return Repr::zero();
+        }
+
         let n_zeros = self.numerator.trailing_zeros().unwrap_or_default();
         let d_zeros = self.denominator.trailing_zeros().unwrap();
         let zeros = n_zeros.min(d_zeros);

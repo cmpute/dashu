@@ -1,5 +1,5 @@
 use core::str::FromStr;
-use dashu_base::{Sign, ParseError};
+use dashu_base::{ParseError, Sign};
 use dashu_float::{round::mode, DBig, FBig};
 use dashu_int::{DoubleWord, IBig, Word};
 

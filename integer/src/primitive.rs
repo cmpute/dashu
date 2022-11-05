@@ -4,13 +4,13 @@ use crate::{
     arch::word::{DoubleWord, SignedDoubleWord, SignedWord, Word},
     Sign::{self, *},
 };
-use dashu_base::ConversionError;
 use core::{
     convert::{TryFrom, TryInto},
     fmt::Debug,
     mem,
     ops::{Add, Div, Mul, Shl, Shr, Sub},
 };
+use dashu_base::ConversionError;
 
 /// Cast [Word] to [DoubleWord].
 #[inline]

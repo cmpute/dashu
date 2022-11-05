@@ -14,8 +14,8 @@ use crate::{
     utils::{ilog_exact, shr_digits, split_digits_ref},
 };
 use dashu_base::{
-    Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, FloatEncoding, Sign, Signed,
-    ConversionError
+    Approximation::*, BitTest, ConversionError, DivRemEuclid, EstimatedLog2, FloatEncoding, Sign,
+    Signed,
 };
 use dashu_int::{IBig, UBig, Word};
 
@@ -626,18 +626,20 @@ impl<R: Round> FBig<R, 2> {
         let context = Context::<HalfEven>::new(24);
         context.repr_round_ref(&self.repr).and_then(|v| {
             let man24: i32 = v.significand.try_into().unwrap();
-            if v.exponent >= 128 { // max f32 = 2^128 * (1 - 2^-24)
+            if v.exponent >= 128 {
+                // max f32 = 2^128 * (1 - 2^-24)
                 match sign {
                     Sign::Positive => Inexact(f32::INFINITY, Rounding::AddOne),
                     Sign::Negative => Inexact(f32::NEG_INFINITY, Rounding::SubOne),
                 }
-            } else if v.exponent < -149 - 24 { // min f32 = 2^-149
+            } else if v.exponent < -149 - 24 {
+                // min f32 = 2^-149
                 Inexact(sign * 0f32, Rounding::NoOp)
             } else {
                 match f32::encode(man24, v.exponent as i16) {
                     Exact(v) => Exact(v),
                     // this branch only happens when the result underflows
-                    Inexact(v, _) => Inexact(v, Rounding::NoOp)
+                    Inexact(v, _) => Inexact(v, Rounding::NoOp),
                 }
             }
         })
@@ -670,18 +672,20 @@ impl<R: Round> FBig<R, 2> {
         let context = Context::<HalfEven>::new(53);
         context.repr_round_ref(&self.repr).and_then(|v| {
             let man53: i64 = v.significand.try_into().unwrap();
-            if v.exponent >= 1024 { // max f64 = 2^1024 × (1 − 2^−53)
+            if v.exponent >= 1024 {
+                // max f64 = 2^1024 × (1 − 2^−53)
                 match sign {
                     Sign::Positive => Inexact(f64::INFINITY, Rounding::AddOne),
                     Sign::Negative => Inexact(f64::NEG_INFINITY, Rounding::SubOne),
                 }
-            } else if v.exponent < -1074 - 53 { // min f64 = 2^-1074
+            } else if v.exponent < -1074 - 53 {
+                // min f64 = 2^-1074
                 Inexact(sign * 0f64, Rounding::NoOp)
             } else {
                 match f64::encode(man53, v.exponent as i16) {
                     Exact(v) => Exact(v),
                     // this branch only happens when the result underflows
-                    Inexact(v, _) => Inexact(v, Rounding::NoOp)
+                    Inexact(v, _) => Inexact(v, Rounding::NoOp),
                 }
             }
         })

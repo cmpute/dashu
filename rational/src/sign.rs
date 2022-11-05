@@ -22,8 +22,16 @@ impl Relaxed {
 
 impl Repr {
     #[inline]
-    fn neg(mut self) -> Repr {
+    pub fn neg(mut self) -> Repr {
         self.numerator = -self.numerator;
+        self
+    }
+
+    #[inline]
+    pub fn abs(mut self) -> Repr {
+        if self.numerator.sign() == Sign::Negative {
+            self.numerator = -self.numerator
+        }
         self
     }
 }
@@ -57,6 +65,23 @@ impl Neg for &Relaxed {
     #[inline]
     fn neg(self) -> Self::Output {
         Relaxed(self.0.clone().neg())
+    }
+}
+
+impl Mul<Repr> for Sign {
+    type Output = Repr;
+    #[inline]
+    fn mul(self, mut rhs: Repr) -> Repr {
+        rhs.numerator *= self;
+        rhs
+    }
+}
+impl Mul<Sign> for Repr {
+    type Output = Repr;
+    #[inline]
+    fn mul(mut self, rhs: Sign) -> Repr {
+        self.numerator *= rhs;
+        self
     }
 }
 

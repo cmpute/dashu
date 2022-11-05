@@ -243,7 +243,7 @@ mod tests {
         assert_eq!(0i32.sign(), Sign::Positive);
         assert_eq!(1i32.sign(), Sign::Positive);
         assert_eq!((-1i32).sign(), Sign::Negative);
-        
+
         assert_eq!(0f32.sign(), Sign::Positive);
         assert_eq!((-0f32).sign(), Sign::Negative);
         assert_eq!(1f32.sign(), Sign::Positive);

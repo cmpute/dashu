@@ -1,16 +1,22 @@
 use core::cmp::Ordering;
 
-use dashu_base::{Approximation::{*, self}, Sign, FloatEncoding, UnsignedAbs, DivRem, ConversionError, PowerOfTwo};
+use dashu_base::{
+    Approximation::{self, *},
+    ConversionError, DivRem, FloatEncoding, PowerOfTwo, Sign, UnsignedAbs,
+};
 use dashu_int::{IBig, UBig};
 
-use crate::{rbig::{RBig, Relaxed}, repr::Repr};
+use crate::{
+    rbig::{RBig, Relaxed},
+    repr::Repr,
+};
 
 impl From<UBig> for Repr {
     #[inline]
     fn from(v: UBig) -> Self {
-        Repr{
+        Repr {
             numerator: v.into(),
-            denominator: UBig::ONE
+            denominator: UBig::ONE,
         }
     }
 }
@@ -18,9 +24,9 @@ impl From<UBig> for Repr {
 impl From<IBig> for Repr {
     #[inline]
     fn from(v: IBig) -> Self {
-        Repr{
+        Repr {
             numerator: v,
-            denominator: UBig::ONE
+            denominator: UBig::ONE,
         }
     }
 }
@@ -59,7 +65,7 @@ macro_rules! forward_conversion_to_repr {
             fn from(v: $from) -> Self {
                 $t(Repr::from(v))
             }
-        }    
+        }
         impl TryFrom<$t> for $from {
             type Error = ConversionError;
             #[inline]
@@ -109,41 +115,45 @@ macro_rules! impl_conversion_from_float {
             fn try_from(value: $t) -> Result<Self, Self::Error> {
                 // shortcut to prevent issues in counting leading zeros
                 if value == 0. {
-                    return Ok(Repr::zero())
+                    return Ok(Repr::zero());
                 }
 
                 match value.decode() {
-                    Ok((mut man, mut exp)) => {
-                        let shift = man.trailing_zeros();
-                        man >>= shift;
-                        exp += shift as i16;
-
+                    Ok((man, exp)) => {
+                        // here we don't remove the common factor 2, because we need exact
+                        // exponent value in some cases (like approx_f32 and approx_f64)
                         let repr = if exp >= 0 {
-                            Repr { numerator: IBig::from(man) << exp as usize, denominator: UBig::ONE }
+                            Repr {
+                                numerator: IBig::from(man) << exp as usize,
+                                denominator: UBig::ONE,
+                            }
                         } else {
                             let mut denominator = UBig::ZERO;
                             denominator.set_bit((-exp) as _);
-                            Repr { numerator: IBig::from(man), denominator }
+                            Repr {
+                                numerator: IBig::from(man),
+                                denominator,
+                            }
                         };
                         Ok(repr)
-                    },
-                    Err(_) => Err(ConversionError::OutOfBounds)
+                    }
+                    Err(_) => Err(ConversionError::OutOfBounds),
                 }
             }
         }
- 
+
         impl TryFrom<$t> for RBig {
             type Error = ConversionError;
             #[inline]
             fn try_from(value: $t) -> Result<Self, Self::Error> {
-                Repr::try_from(value).map(|repr| RBig(repr))
+                Repr::try_from(value).map(|repr| RBig(repr.reduce2()))
             }
         }
         impl TryFrom<$t> for Relaxed {
             type Error = ConversionError;
             #[inline]
             fn try_from(value: $t) -> Result<Self, Self::Error> {
-                Repr::try_from(value).map(|repr| Relaxed(repr))
+                Repr::try_from(value).map(|repr| Relaxed(repr.reduce2()))
             }
         }
     };
@@ -166,17 +176,23 @@ macro_rules! impl_conversion_to_float {
                     let num_bits = value.0.numerator.abs_bit_len();
                     let den_bits = value.0.denominator.trailing_zeros().unwrap();
                     let top_bit = num_bits as isize - den_bits as isize;
-                    if top_bit > $ub { // see to_f32::encode for explanation of the bounds
+                    if top_bit > $ub {
+                        // see to_f32::encode for explanation of the bounds
                         Err(ConversionError::OutOfBounds)
                     } else if top_bit < $lb {
                         Err(ConversionError::LossOfPrecision)
                     } else {
-                        match <$t>::encode(value.0.numerator.try_into().unwrap(), -(den_bits as i16)) {
+                        match <$t>::encode(
+                            value.0.numerator.try_into().unwrap(),
+                            -(den_bits as i16),
+                        ) {
                             Exact(v) => Ok(v),
-                            Inexact(v, _) => if v.is_infinite() {
-                                Err(ConversionError::OutOfBounds)
-                            } else {
-                                Err(ConversionError::LossOfPrecision)
+                            Inexact(v, _) => {
+                                if v.is_infinite() {
+                                    Err(ConversionError::OutOfBounds)
+                                } else {
+                                    Err(ConversionError::LossOfPrecision)
+                                }
                             }
                         }
                     }
@@ -194,7 +210,7 @@ macro_rules! impl_conversion_to_float {
                 // convert to RBig to eliminate cofactors
                 <$t>::try_from(value.canonicalize())
             }
-        }       
+        }
     };
 }
 impl_conversion_to_float!(f32 [-149, 128]); // see f32::encode for explanation of the bounds
@@ -218,20 +234,26 @@ impl Repr {
             (&self.numerator) >> num_shift as usize
         } else {
             (&self.numerator) << (-num_shift) as usize
-        }.try_into().unwrap();
+        }
+        .try_into()
+        .unwrap();
 
         let den_shift = den_bits as isize - 24;
         let den24: u32 = if den_shift >= 0 {
             (&self.denominator) >> den_shift as usize
         } else {
             (&self.denominator) << (-den_shift) as usize
-        }.try_into().unwrap();
+        }
+        .try_into()
+        .unwrap();
 
         // determine the exponent
         let exponent = num_shift - den_shift;
-        if exponent >= 128 { // max f32 = 2^128 * (1 - 2^-24)
+        if exponent >= 128 {
+            // max f32 = 2^128 * (1 - 2^-24)
             sign * f32::INFINITY
-        }  else if exponent < -149 - 25 { // min f32 = 2^-149, quotient has at most 25 bits
+        } else if exponent < -149 - 25 {
+            // min f32 = 2^-149, quotient has at most 25 bits
             sign * 0f32
         } else {
             let (mut man, r) = num48.unsigned_abs().div_rem(den24 as u64);
@@ -261,20 +283,26 @@ impl Repr {
             (&self.numerator) >> num_shift as usize
         } else {
             (&self.numerator) << (-num_shift) as usize
-        }.try_into().unwrap();
+        }
+        .try_into()
+        .unwrap();
 
         let den_shift = den_bits as isize - 53;
         let den53: u64 = if den_shift >= 0 {
             (&self.denominator) >> den_shift as usize
         } else {
             (&self.denominator) << (-den_shift) as usize
-        }.try_into().unwrap();
+        }
+        .try_into()
+        .unwrap();
 
         // determine the exponent
         let exponent = num_shift - den_shift;
-        if exponent >= 1024 { // max f64 = 2^1024 × (1 − 2^−53)
+        if exponent >= 1024 {
+            // max f64 = 2^1024 × (1 − 2^−53)
             sign * f64::INFINITY
-        }  else if exponent < -1074 - 54 { // min f64 = 2^-1074, quotient has at most 54 bits
+        } else if exponent < -1074 - 54 {
+            // min f64 = 2^-1074, quotient has at most 54 bits
             sign * 0f64
         } else {
             let (mut man, r) = num106.unsigned_abs().div_rem(den53 as u128);
@@ -308,10 +336,12 @@ impl Repr {
             ((&self.numerator) << (-shift) as usize, self.denominator.clone())
         };
 
-        // then construct the 
-        if shift >= 128 { // max f32 = 2^128 * (1 - 2^-24)
+        // then construct the
+        if shift >= 128 {
+            // max f32 = 2^128 * (1 - 2^-24)
             Inexact(sign * f32::INFINITY, sign)
-        } else if shift < -149 - 25 { // min f32 = 2^-149, quotient has at most 25 bits
+        } else if shift < -149 - 25 {
+            // min f32 = 2^-149, quotient has at most 25 bits
             Inexact(sign * 0f32, -sign)
         } else {
             let (man, r) = num.unsigned_abs().div_rem(&den);
@@ -327,7 +357,8 @@ impl Repr {
                 } else {
                     Inexact(man, -sign)
                 }
-            }.and_then(|man| f32::encode(sign * man as i32, shift as i16))
+            }
+            .and_then(|man| f32::encode(sign * man as i32, shift as i16))
         }
     }
 
@@ -350,10 +381,12 @@ impl Repr {
             ((&self.numerator) << (-shift) as usize, self.denominator.clone())
         };
 
-        // then construct the 
-        if shift >= 1024 { // max f64 = 2^1024 × (1 − 2^−53)
+        // then construct the
+        if shift >= 1024 {
+            // max f64 = 2^1024 × (1 − 2^−53)
             Inexact(sign * f64::INFINITY, sign)
-        } else if shift < -1074 - 53 { // min f64 = 2^-1074, quotient has at most 53 bits
+        } else if shift < -1074 - 53 {
+            // min f64 = 2^-1074, quotient has at most 53 bits
             Inexact(sign * 0f64, -sign)
         } else {
             let (man, r) = num.unsigned_abs().div_rem(&den);
@@ -369,15 +402,15 @@ impl Repr {
                 } else {
                     Inexact(man, -sign)
                 }
-            }.and_then(|man| f64::encode(sign * man as i64, shift as i16))
+            }
+            .and_then(|man| f64::encode(sign * man as i64, shift as i16))
         }
     }
-
 }
 
 impl RBig {
     /// Convert the rational number to [f32].
-    /// 
+    ///
     /// The rounding will be correct at most of the time, but in rare cases
     /// the mantissa can be off by one bit.
     #[inline]

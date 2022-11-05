@@ -13,8 +13,7 @@ use alloc::vec::Vec;
 use core::convert::{TryFrom, TryInto};
 use dashu_base::{
     Approximation::{self, *},
-    FloatEncoding, Sign,
-    ConversionError
+    ConversionError, FloatEncoding, Sign,
 };
 
 impl Default for UBig {

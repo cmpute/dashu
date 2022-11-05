@@ -4,7 +4,7 @@ use crate::{
     round::Round,
 };
 use core::{num::IntErrorKind, str::FromStr};
-use dashu_base::{Sign, ParseError};
+use dashu_base::{ParseError, Sign};
 use dashu_int::{
     fmt::{MAX_RADIX, MIN_RADIX},
     UBig,
