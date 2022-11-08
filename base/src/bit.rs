@@ -9,19 +9,45 @@ use crate::{
     Sign::{self, *},
 };
 
-/// Common bit operations for integers
-// TODO(v0.3): add doc tests
+/// Bit query for integers
+/// 
+/// # Examples
+/// 
+/// 
+/// ```
+/// # use dashu_base::BitTest;
+/// // query a bit of the number
+/// assert_eq!(0b10010.bit(1), true);
+/// assert_eq!(0b10010.bit(3), false);
+/// assert_eq!(0b10010.bit(100), false);
+/// assert_eq!((-0b10010).bit(1), true);
+/// assert_eq!((-0b10010).bit(3), true);
+/// assert_eq!((-0b10010).bit(100), true);
+/// 
+/// // query the bit length of the number
+/// assert_eq!(0.bit_len(), 0);
+/// assert_eq!(17.bit_len(), 5);
+/// assert_eq!((-17).bit_len(), 5);
+/// assert_eq!(0b101000000.bit_len(), 9);
+/// ```
 pub trait BitTest {
-    /// Get the minimum required number of bits to represent this integer
+    /// Effective bit length of the binary representation.
+    ///
+    /// For 0, the length is 0.
+    ///
+    /// For positive numbers it is:
+    /// * number of digits in base 2
+    /// * the index of the top 1 bit plus one
+    /// * the floored base-2 logarithm of the number plus one.
+    /// 
+    /// For negative numbers it is:
+    /// * number of digits in base 2 without the sign
+    /// * the index of the top 0 bit plus one
+    /// * the floored base-2 logarithm of the absolute value of the number plus one.
     fn bit_len(&self) -> usize;
 
-    /// Get the n-th bit of the integer
+    /// Returns true if the `n`-th bit is set in its two's complement binary representation, n starts from 0.
     fn bit(&self, n: usize) -> bool;
-
-    /// Get the number of trailing zeros in the integer
-    fn trailing_zeros(&self) -> Option<usize>;
-
-    // TODO(v0.3): add trailing_ones
 }
 
 /// Functions related to the power of two.
@@ -41,7 +67,7 @@ pub trait PowerOfTwo {
     fn next_power_of_two(self) -> Self;
 }
 
-macro_rules! impl_bit_ops_prim {
+macro_rules! impl_bit_ops_for_uint {
     ($($T:ty)*) => {$(
         impl BitTest for $T {
             #[inline]
@@ -50,14 +76,10 @@ macro_rules! impl_bit_ops_prim {
             }
             #[inline]
             fn bit(&self, position: usize) -> bool {
-                self & (1 << position) > 0
-            }
-            #[inline]
-            fn trailing_zeros(&self) -> Option<usize> {
-                if *self == 0 {
-                    None
+                if position >= <$T>::BITS as usize {
+                    return false;
                 } else {
-                    Some(<$T>::trailing_zeros(*self) as usize)
+                    self & (1 << position) > 0
                 }
             }
         }
@@ -74,7 +96,27 @@ macro_rules! impl_bit_ops_prim {
         }
     )*}
 }
-impl_bit_ops_prim!(u8 u16 u32 u64 u128 usize);
+impl_bit_ops_for_uint!(u8 u16 u32 u64 u128 usize);
+
+macro_rules! impl_bit_ops_for_int {
+    ($($T:ty)*) => {$(
+        impl BitTest for $T {
+            #[inline]
+            fn bit_len(&self) -> usize {
+                self.unsigned_abs().bit_len()
+            }
+            #[inline]
+            fn bit(&self, position: usize) -> bool {
+                if position >= <$T>::BITS as usize {
+                    return self < &0;
+                } else {
+                    self & (1 << position) > 0
+                }
+            }
+        }
+    )*}
+}
+impl_bit_ops_for_int!(i8 i16 i32 i64 i128 isize);
 
 pub trait FloatEncoding {
     type Mantissa;

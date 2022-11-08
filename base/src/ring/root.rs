@@ -1,4 +1,4 @@
-use super::{Root, RootRem};
+use super::{SquareRoot, SquareRootRem, CubicRoot, CubicRootRem};
 use crate::DivRem;
 
 trait NormalizedRootRem: Sized {
@@ -343,9 +343,8 @@ impl NormalizedRootRem for u128 {
 }
 
 // The implementation for u8 is very naive, because it's rarely used
-impl RootRem for u8 {
-    type OutputSqrt = u8;
-    type OutputCbrt = u8;
+impl SquareRootRem for u8 {
+    type Output = u8;
 
     #[inline]
     fn sqrt_rem(&self) -> (u8, u8) {
@@ -354,6 +353,10 @@ impl RootRem for u8 {
         let e = fix_sqrt_error!(u8, self, s);
         (s, e)
     }
+}
+
+impl CubicRootRem for u8 {
+    type Output = u8;
 
     #[inline]
     fn cbrt_rem(&self) -> (u8, u8) {
@@ -364,25 +367,28 @@ impl RootRem for u8 {
     }
 }
 
-impl Root for u8 {
-    type OutputSqrt = u8;
-    type OutputCbrt = u8;
+impl SquareRoot for u8 {
+    type Output = u8;
 
     #[inline]
-    fn sqrt(&self) -> u8 {
+    fn sqrt(&self) -> Self::Output {
         self.sqrt_rem().0
     }
+}
+
+impl CubicRoot for u8 {
+    type Output = u8;
+
     #[inline]
-    fn cbrt(&self) -> u8 {
+    fn cbrt(&self) -> Self::Output {
         self.cbrt_rem().0
     }
 }
 
 macro_rules! impl_rootrem_using_normalized {
     ($t:ty, $half:ty) => {
-        impl Root for $t {
-            type OutputSqrt = $half;
-            type OutputCbrt = $half;
+        impl SquareRoot for $t {
+            type Output = $half;
 
             #[inline]
             fn sqrt(&self) -> $half {
@@ -395,6 +401,29 @@ macro_rules! impl_rootrem_using_normalized {
                 let (root, _) = (self << shift).normalized_sqrt_rem();
                 root >> (shift / 2)
             }
+        }
+
+        impl SquareRootRem for $t {
+            type Output = $half;
+            
+            fn sqrt_rem(&self) -> ($half, $t) {
+                if *self == 0 {
+                    return (0, 0);
+                }
+
+                // normalize the input and call the normalized subroutine
+                let shift = self.leading_zeros() & !1; // make sure shift is divisible by 2
+                let (mut root, mut rem) = (self << shift).normalized_sqrt_rem();
+                if shift != 0 {
+                    root >>= shift / 2;
+                    rem = self - (root as $t).pow(2);
+                }
+                (root, rem)
+            }
+        }
+
+        impl CubicRoot for $t {
+            type Output = $half;
 
             #[inline]
             fn cbrt(&self) -> $half {
@@ -410,24 +439,8 @@ macro_rules! impl_rootrem_using_normalized {
             }
         }
 
-        impl RootRem for $t {
-            type OutputSqrt = $half;
-            type OutputCbrt = $half;
-
-            fn sqrt_rem(&self) -> ($half, $t) {
-                if *self == 0 {
-                    return (0, 0);
-                }
-
-                // normalize the input and call the normalized subroutine
-                let shift = self.leading_zeros() & !1; // make sure shift is divisible by 2
-                let (mut root, mut rem) = (self << shift).normalized_sqrt_rem();
-                if shift != 0 {
-                    root >>= shift / 2;
-                    rem = self - (root as $t).pow(2);
-                }
-                (root, rem)
-            }
+        impl CubicRootRem for $t {
+            type Output = $half;
 
             fn cbrt_rem(&self) -> ($half, $t) {
                 if *self == 0 {

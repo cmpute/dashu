@@ -1,6 +1,7 @@
 use super::{common::quote_sign, int::{quote_ibig, quote_ubig}};
 use core::str::FromStr;
 
+use dashu_base::BitTest;
 use dashu_ratio::{RBig, Relaxed};
 use proc_macro2::TokenStream;
 use quote::quote;

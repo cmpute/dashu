@@ -7,6 +7,7 @@ use crate::{
     repr::TypedReprRef::*,
     ubig::UBig,
 };
+use dashu_base::BitTest;
 
 use super::{
     modulo::{Modulo, ModuloDoubleRaw, ModuloLargeRaw, ModuloRepr, ModuloSingleRaw},

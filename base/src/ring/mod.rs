@@ -119,25 +119,30 @@ pub trait ExtendedGcd<Rhs = Self> {
 }
 
 // TODO: more docs
-/// Compute the roots (square root, cubic root) of an integer.
-pub trait Root {
-    type OutputSqrt;
-    type OutputCbrt;
 
-    fn sqrt(&self) -> Self::OutputSqrt;
-    fn cbrt(&self) -> Self::OutputCbrt;
+pub trait SquareRoot {
+    type Output;
+
+    fn sqrt(&self) -> Self::Output;
 }
 
-/// Compute the roots (square root, cubic root) of an integer, and returns the remainder of the root as well.
-pub trait RootRem {
-    type OutputSqrt;
-    type OutputCbrt;
+pub trait CubicRoot {
+    type Output;
 
-    fn sqrt_rem(&self) -> (Self::OutputSqrt, Self);
-    fn cbrt_rem(&self) -> (Self::OutputCbrt, Self);
+    fn cbrt(&self) -> Self::Output;
 }
 
-// TODO(v0.3): split the root traits into sqrt and cbrt traits
+pub trait SquareRootRem {
+    type Output;
+
+    fn sqrt_rem(&self) -> (Self::Output, Self);
+}
+
+pub trait CubicRootRem {
+    type Output;
+
+    fn cbrt_rem(&self) -> (Self::Output, Self);
+}
 
 mod div_rem;
 mod gcd;

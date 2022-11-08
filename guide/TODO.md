@@ -20,6 +20,6 @@ Contents of the user guide:
   - Equality test and comparison
   - Basic arithmetics (+-*) (clarify behavior of division and modulo on different types)
   - Exponential and Logarithm (including the estimated ones)
-  - Bit Operations
+  - Bit Operations (clarify that it follows the two's complement rule)
   - GCD and ExtGCD
   - Hashing and NumHashing

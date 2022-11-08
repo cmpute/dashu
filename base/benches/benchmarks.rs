@@ -5,7 +5,7 @@ use criterion::{
     PlotConfiguration,
 };
 
-use dashu_base::{ExtendedGcd, Gcd, RootRem};
+use dashu_base::{ExtendedGcd, Gcd, SquareRoot, CubicRoot};
 use rand::prelude::*;
 
 const SEED: u64 = 1;
@@ -61,22 +61,22 @@ fn bench_roots(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group("sqrt");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
-    uop_case!(u16, 10, sqrt_rem, rng, group);
-    uop_case!(u32, 20, sqrt_rem, rng, group);
-    uop_case!(u64, 40, sqrt_rem, rng, group);
-    uop_case!(u128, 80, sqrt_rem, rng, group);
-    uop_case!(u128, 120, sqrt_rem, rng, group);
+    uop_case!(u16, 10, sqrt, rng, group);
+    uop_case!(u32, 20, sqrt, rng, group);
+    uop_case!(u64, 40, sqrt, rng, group);
+    uop_case!(u128, 80, sqrt, rng, group);
+    uop_case!(u128, 120, sqrt, rng, group);
 
     group.finish();
 
     let mut group = criterion.benchmark_group("cbrt");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
-    uop_case!(u16, 10, cbrt_rem, rng, group);
-    uop_case!(u32, 20, cbrt_rem, rng, group);
-    uop_case!(u64, 40, cbrt_rem, rng, group);
-    uop_case!(u128, 80, cbrt_rem, rng, group);
-    uop_case!(u128, 120, cbrt_rem, rng, group);
+    uop_case!(u16, 10, cbrt, rng, group);
+    uop_case!(u32, 20, cbrt, rng, group);
+    uop_case!(u64, 40, cbrt, rng, group);
+    uop_case!(u128, 80, cbrt, rng, group);
+    uop_case!(u128, 120, cbrt, rng, group);
 
     group.finish();
 }

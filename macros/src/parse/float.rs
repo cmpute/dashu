@@ -1,6 +1,7 @@
 use super::{common::quote_sign, int::quote_ibig};
 use core::str::FromStr;
 
+use dashu_base::BitTest;
 use dashu_float::{round::mode, DBig, FBig};
 use dashu_int::{Sign, IBig};
 use proc_macro2::TokenStream;

@@ -6,7 +6,8 @@
 
 - Implement `Gcd::gcd` and `ExtendedGcd::gcd_ext` between `UBig` and `IBig`
 - Implement `DivRem::div_rem` between `UBig` and `IBig`
-- Add `bit_len` for `IBig`
+- Implement `dashu_base::BitTest` for `IBig`
+- Add `trailing_ones` for `UBig` and `IBig`
 
 ### Change
 
@@ -14,10 +15,10 @@
 - `sqrt_rem` is only exposed through the `dashu_base::RootRem` trait now.
 - `abs_cmp` is only exposed throught the `dashu_base::AbsCmp` trait now.
 - `abs_eq` is only exposed throught the `dashu_base::AbsEq` trait now.
+- `bit_len` and `bit` are only exposed throught the `dashu_base::BitTest` trait now.
 
 ### Remove
 
-- `sqrt_rem` is removed from `IBig`
 - `error::{OutOfBoundsError, ParseError}` are removed, related error types are added to `dashu-base`
 
 ## 0.2.1

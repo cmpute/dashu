@@ -1,27 +1,14 @@
 //! Bitwise operators.
 
+use dashu_base::BitTest;
+
 use crate::{arch::word::Word, helper_macros, ibig::IBig, ops::PowerOfTwo, ubig::UBig, Sign::*};
 use core::{
     mem,
-    ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not},
+    ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not}, cmp::Ordering,
 };
 
 impl UBig {
-    /// Returns true if the `n`-th bit is set, n starts from 0.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use dashu_int::UBig;
-    /// assert_eq!(UBig::from(0b10010u16).bit(1), true);
-    /// assert_eq!(UBig::from(0b10010u16).bit(3), false);
-    /// assert_eq!(UBig::from(0b10010u16).bit(100), false);
-    /// ```
-    #[inline]
-    pub fn bit(&self, n: usize) -> bool {
-        self.repr().bit(n)
-    }
-
     /// Set the `n`-th bit, n starts from 0.
     ///
     /// # Examples
@@ -70,38 +57,31 @@ impl UBig {
     /// assert_eq!(UBig::from(0b101000000u16).trailing_zeros(), Some(6));
     /// assert_eq!(UBig::ZERO.trailing_zeros(), None);
     /// ```
-    // TODO(v0.3): expose this function through BitTest trait
     #[inline]
     pub fn trailing_zeros(&self) -> Option<usize> {
         self.repr().trailing_zeros()
     }
 
-    /// Bit length.
+    /// Returns the number of trailing ones in the binary representation.
     ///
-    /// The length of the binary representation of the number.
-    ///
-    /// For 0, the length is 0.
-    ///
-    /// For non-zero numbers it is:
-    /// * `in_radix(2).to_string().len()`
-    /// * the index of the top 1 bit plus one
-    /// * the floor of the logarithm base 2 of the number plus one.
+    /// In other words, it is the number of trailing zeros of it added by one.
+    /// 
+    /// This method never returns [None].
     ///
     /// # Examples
     ///
     /// ```
     /// # use dashu_int::UBig;
-    /// assert_eq!(UBig::from(17u8).bit_len(), 5);
-    /// assert_eq!(UBig::from(0b101000000u16).bit_len(), 9);
-    /// assert_eq!(UBig::ZERO.bit_len(), 0);
-    /// let x = UBig::from(0x90ffff3450897234u64);
-    /// assert_eq!(x.bit_len(), x.in_radix(2).to_string().len());
+    /// assert_eq!(UBig::from(17u8).trailing_ones(), Some(1));
+    /// assert_eq!(UBig::from(48u8).trailing_ones(), Some(0));
+    /// assert_eq!(UBig::from(0b101001111u16).trailing_ones(), Some(4));
+    /// assert_eq!(UBig::ZERO.trailing_ones(), Some(0));
     /// ```
     #[inline]
-    pub fn bit_len(&self) -> usize {
-        self.repr().bit_len()
+    pub fn trailing_ones(&self) -> Option<usize> {
+        Some(self.repr().trailing_ones())
     }
-
+    
     /// Split this integer into low bits and high bits.
     ///
     /// Its returns are equal to `(self & ((1 << n) - 1), self >> n)`.
@@ -157,6 +137,29 @@ helper_macros::impl_binop_assign_by_taking!(impl BitAndAssign<UBig> for UBig, bi
 helper_macros::impl_binop_assign_by_taking!(impl BitOrAssign<UBig> for UBig, bitor_assign, bitor);
 helper_macros::impl_binop_assign_by_taking!(impl BitXorAssign<UBig> for UBig, bitxor_assign, bitxor);
 
+impl BitTest for UBig {
+    #[inline]
+    fn bit(&self, n: usize) -> bool {
+        self.repr().bit(n)
+    }
+    #[inline]
+    fn bit_len(&self) -> usize {
+        self.repr().bit_len()
+    }
+}
+
+impl PowerOfTwo for UBig {
+    #[inline]
+    fn is_power_of_two(&self) -> bool {
+        self.repr().is_power_of_two()
+    }
+
+    #[inline]
+    fn next_power_of_two(self) -> UBig {
+        UBig(self.into_repr().next_power_of_two())
+    }
+}
+
 impl IBig {
     /// Returns the number of trailing zeros in the two's complement binary representation.
     ///
@@ -178,35 +181,51 @@ impl IBig {
         self.as_sign_repr().1.trailing_zeros()
     }
 
-    /// Bit length of the magnitude.
+    /// Returns the number of trailing ones in the two's complement binary representation.
     ///
-    /// The length of the binary representation of the number without the sign.
-    /// It's equivalent to `self.unsigned_abs().bit_len()`.
+    /// For positive `self`, it's equivalent to `self.unsigned_abs().trailing_zeros()`.
+    /// For negative `self`, it's equivalent to `(!self.unsigned_abs() + 1).trailing_zeros()`.
+    ///
+    /// For -1, it returns `None`.
     ///
     /// # Examples
     ///
     /// ```
     /// # use dashu_int::IBig;
-    /// assert_eq!(IBig::from(-17).bit_len(), 5);
-    /// assert_eq!(IBig::ZERO.bit_len(), 0);
-    /// let x = IBig::from(0x70ffff3450897234i64);
-    /// assert_eq!(x.bit_len(), x.in_radix(2).to_string().len());
+    /// assert_eq!(IBig::from(17).trailing_ones(), Some(1));
+    /// assert_eq!(IBig::from(-48).trailing_ones(), Some(0));
+    /// assert_eq!(IBig::from(-0b101000001).trailing_ones(), Some(6));
+    /// assert_eq!(IBig::NEG_ONE.trailing_ones(), None);
     /// ```
-    #[inline]
-    pub fn bit_len(&self) -> usize {
-        self.as_sign_repr().1.bit_len()
+    pub fn trailing_ones(&self) -> Option<usize> {
+        let (sign, repr) = self.as_sign_repr();
+        match sign {
+            Positive => Some(repr.trailing_ones()),
+            Negative => repr.trailing_ones_neg()
+        }
     }
 }
 
-impl PowerOfTwo for UBig {
+impl BitTest for IBig {
     #[inline]
-    fn is_power_of_two(&self) -> bool {
-        self.repr().is_power_of_two()
+    fn bit(&self, n: usize) -> bool {
+        let (sign, repr) = self.as_sign_repr();
+        match sign {
+            Positive => repr.bit(n),
+            Negative => {
+                let zeros = repr.trailing_zeros().unwrap();
+                match n.cmp(&zeros) {
+                    Ordering::Equal => true,
+                    Ordering::Greater => !repr.bit(n),
+                    Ordering::Less => false,
+                }
+            }
+        }
     }
 
     #[inline]
-    fn next_power_of_two(self) -> UBig {
-        UBig(self.into_repr().next_power_of_two())
+    fn bit_len(&self) -> usize {
+        self.as_sign_repr().1.bit_len()
     }
 }
 
@@ -283,6 +302,27 @@ mod repr {
                 RefSmall(0) => None,
                 RefSmall(dword) => Some(dword.trailing_zeros() as usize),
                 RefLarge(words) => Some(trailing_zeros_large(words)),
+            }
+        }
+
+        pub fn trailing_ones(self) -> usize {
+            match self {
+                RefSmall(dword) => dword.trailing_ones() as usize,
+                RefLarge(words) => trailing_ones_large(words),
+            }
+        }
+        
+        /// Number of trailing ones in (-self)
+        pub fn trailing_ones_neg(self) -> Option<usize> {
+            match self {
+                RefSmall(0) => Some(0),
+                RefSmall(1) => None,
+                RefSmall(dword) => Some((!dword + 1).trailing_ones() as usize),
+                RefLarge(words) => if words[0] & 1 == 0 {
+                    Some(0)
+                } else {
+                    Some(trailing_zeros_large_shifted_by_one(words) + 1)
+                },
             }
         }
     }
@@ -453,6 +493,29 @@ mod repr {
         let zero_words = words.iter().position(|&word| word != 0).unwrap();
         let zero_bits = words[zero_words].trailing_zeros() as usize;
         zero_words * WORD_BITS_USIZE + zero_bits
+    }
+    
+    /// Count the trailing zero bits in the words shifted right by one.
+    /// Panics if the input is zero.
+    #[inline]
+    fn trailing_zeros_large_shifted_by_one(words: &[Word]) -> usize {
+        debug_assert!(words.len() >= 2);
+        let zero_begin = (words[0] >> 1).trailing_zeros() as usize;
+        if zero_begin < (WORD_BITS_USIZE - 1) {
+            return zero_begin;
+        } else {
+            let zero_words = words.iter().skip(1).position(|&word| word != 0).unwrap();
+            let zero_bits = words[zero_words].trailing_zeros() as usize;
+            zero_words * WORD_BITS_USIZE + zero_bits + zero_begin
+        }
+    }
+
+    /// Count the trailing one bits in the words.
+    #[inline]
+    fn trailing_ones_large(words: &[Word]) -> usize {
+        let one_words = words.iter().position(|&word| word != Word::MAX).unwrap();
+        let one_bits = words[one_words].trailing_ones() as usize;
+        one_words * WORD_BITS_USIZE + one_bits
     }
 
     #[inline]

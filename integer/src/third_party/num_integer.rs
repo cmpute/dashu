@@ -1,4 +1,4 @@
-use dashu_base::{DivRem, ExtendedGcd, Gcd, Sign};
+use dashu_base::{DivRem, ExtendedGcd, Gcd, Sign, SquareRoot, CubicRoot, BitTest};
 
 use crate::{ibig::IBig, ubig::UBig};
 
@@ -57,7 +57,11 @@ impl num_integer::Integer for UBig {
 impl num_integer::Roots for UBig {
     #[inline]
     fn sqrt(&self) -> Self {
-        self.sqrt()
+        SquareRoot::sqrt(self)
+    }
+    #[inline]
+    fn cbrt(&self) -> Self {
+        CubicRoot::cbrt(self)
     }
     #[inline]
     fn nth_root(&self, n: u32) -> Self {
@@ -130,7 +134,11 @@ impl num_integer::Integer for IBig {
 impl num_integer::Roots for IBig {
     #[inline]
     fn sqrt(&self) -> Self {
-        self.sqrt().into()
+        SquareRoot::sqrt(self).into()
+    }
+    #[inline]
+    fn cbrt(&self) -> Self {
+        CubicRoot::cbrt(self)
     }
     #[inline]
     fn nth_root(&self, n: u32) -> Self {

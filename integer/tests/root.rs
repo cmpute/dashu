@@ -1,4 +1,4 @@
-use dashu_base::RootRem;
+use dashu_int::ops::*;
 
 mod helper_macros;
 

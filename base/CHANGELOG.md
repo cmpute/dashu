@@ -10,10 +10,16 @@
 - Add conversion between `Sign` and `bool`
 - Implement `Abs` for `f32` and `f64`
 - Add types `error::{ConversionError, ParseError}` (originates from `dashu-int`)
+- Add trait `SquareRoot`, `SquareRootRem`, `CubicRoot`, `CubicRootRem`
 
 ### Change
 
-- Definition of `RootRem` has changed (the associated type has been changed to `OutputRoot`, `OutputRem`)
+- `trailing_zeros` has been removed from the `BitTest` trait
+- The definition of `BitTest::bit_len` has changed, and `BitTest` is now implemented for signed integers.
+
+### Remove
+
+- `Root` and `RootRem` are removed (use `SquareRoot`, `SquareRootRem`, etc. instead)
 
 ## 0.2.1
 

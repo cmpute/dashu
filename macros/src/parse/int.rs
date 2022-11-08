@@ -1,3 +1,4 @@
+use dashu_base::BitTest;
 use dashu_int::{IBig, Sign, UBig};
 use proc_macro2::{TokenStream, TokenTree};
 use quote::quote;

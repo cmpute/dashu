@@ -1,4 +1,4 @@
-use dashu_base::{RootRem, Sign};
+use dashu_base::{SquareRoot, SquareRootRem, CubicRoot, CubicRootRem, Sign};
 
 use crate::{
     error::{panic_root_negative, panic_root_zeroth},
@@ -7,12 +7,7 @@ use crate::{
 };
 
 impl UBig {
-    /// Calculate the square root of the integer
-    #[inline]
-    pub fn sqrt(&self) -> UBig {
-        UBig(self.repr().sqrt())
-    }
-
+    // TODO(next): add docs
     /// Calculate the nth-root of the integer
     #[inline]
     pub fn nth_root(&self, n: usize) -> UBig {
@@ -20,17 +15,35 @@ impl UBig {
     }
 }
 
-impl RootRem for UBig {
-    type OutputSqrt = UBig;
-    type OutputCbrt = UBig;
+impl SquareRoot for UBig {
+    type Output = UBig;
+    #[inline]
+    fn sqrt(&self) -> Self::Output {
+        UBig(self.repr().sqrt())
+    }
+}
 
+impl SquareRootRem for UBig {
+    type Output = UBig;
     #[inline]
     fn sqrt_rem(&self) -> (Self, Self) {
         let (s, r) = self.repr().sqrt_rem();
         (UBig(s), UBig(r))
     }
+}
+
+impl CubicRoot for UBig {
+    type Output = UBig;
     #[inline]
-    fn cbrt_rem(&self) -> (Self, Self) {
+    fn cbrt(&self) -> Self::Output {
+        self.nth_root(3)
+    }
+}
+
+impl CubicRootRem for UBig {
+    type Output = UBig;
+    #[inline]
+    fn cbrt_rem(&self) -> (Self::Output, Self) {
         let c = self.nth_root(3);
         let r = self - c.pow(3);
         (c, r)
@@ -38,16 +51,6 @@ impl RootRem for UBig {
 }
 
 impl IBig {
-    /// Calculate the square root of the integer
-    #[inline]
-    pub fn sqrt(&self) -> UBig {
-        let (sign, mag) = self.as_sign_repr();
-        if sign == Sign::Negative {
-            panic_root_negative()
-        }
-        UBig(mag.sqrt())
-    }
-
     /// Calculate the nth-root of the integer
     #[inline]
     pub fn nth_root(&self, n: usize) -> IBig {
@@ -61,6 +64,30 @@ impl IBig {
         }
 
         IBig(mag.nth_root(n).with_sign(sign))
+    }
+}
+
+impl SquareRoot for IBig {
+    type Output = UBig;
+    #[inline]
+    fn sqrt(&self) -> UBig {
+        let (sign, mag) = self.as_sign_repr();
+        if sign == Sign::Negative {
+            panic_root_negative()
+        }
+        UBig(mag.sqrt())
+    }
+}
+
+impl CubicRoot for IBig {
+    type Output = IBig;
+    #[inline]
+    fn cbrt(&self) -> IBig {
+        let (sign, mag) = self.as_sign_repr();
+        if sign == Sign::Negative {
+            panic_root_negative()
+        }
+        IBig(mag.nth_root(3).with_sign(sign))
     }
 }
 
@@ -79,7 +106,7 @@ mod repr {
         },
         root, shift, shift_ops,
     };
-    use dashu_base::{Root, RootRem};
+    use dashu_base::{SquareRoot, SquareRootRem};
 
     impl<'a> TypedReprRef<'a> {
         #[inline]

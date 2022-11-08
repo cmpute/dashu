@@ -2,7 +2,7 @@ use core::cmp::Ordering;
 
 use dashu_base::{
     Approximation::{self, *},
-    ConversionError, DivRem, FloatEncoding, PowerOfTwo, Sign, UnsignedAbs,
+    ConversionError, DivRem, FloatEncoding, PowerOfTwo, Sign, UnsignedAbs, BitTest
 };
 use dashu_int::{IBig, UBig};
 

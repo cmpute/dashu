@@ -1,4 +1,4 @@
-use dashu_int::{ops::PowerOfTwo, IBig};
+use dashu_int::{ops::*, IBig};
 
 mod helper_macros;
 
@@ -17,6 +17,21 @@ fn test_bit() {
     assert_eq!(ubig!(0xffffffffffffffffffffffffffffffff).bit(128), false);
     assert_eq!(ubig!(0xffffffffffffffffffffffffffffffffffff).bit(143), true); // 2 ^ 144 - 1
     assert_eq!(ubig!(0xffffffffffffffffffffffffffffffffffff).bit(144), false);
+    
+    assert_eq!(ibig!(0).bit(0), false);
+    assert_eq!(ibig!(0).bit(1000), false);
+    assert_eq!(ibig!(-0b11101).bit(0), true);
+    assert_eq!(ibig!(-0b11101).bit(1), true);
+    assert_eq!(ibig!(-0b11101).bit(4), false);
+    assert_eq!(ibig!(-0b11101).bit(5), true);
+    assert_eq!(ibig!(-0b11101).bit(1000), true);
+
+    assert_eq!(ibig!(-0xffffffffffffffffffffffffffffffff).bit(127), false);
+    assert_eq!(ibig!(-0xffffffffffffffffffffffffffffffff).bit(128), true);
+    assert_eq!(ibig!(-0xffffffffffffffffffffffffffffffffffff).bit(143), false); // 1 - 2 ^ 144
+    assert_eq!(ibig!(-0xffffffffffffffffffffffffffffffffffff).bit(144), true);
+    assert_eq!(ibig!(-0x1000000000000000000000000000000000000).bit(143), false); // 2 ^ 144
+    assert_eq!(ibig!(-0x1000000000000000000000000000000000000).bit(144), true);
 }
 
 #[test]
@@ -113,6 +128,23 @@ fn test_trailing_zeros() {
     assert_eq!(ibig!(0).trailing_zeros(), None);
     assert_eq!(ibig!(0xf0000).trailing_zeros(), Some(16));
     assert_eq!(ibig!(-0xf0000).trailing_zeros(), Some(16));
+}
+
+#[test]
+fn test_trailing_ones() {
+    assert_eq!(ubig!(0).trailing_ones(), Some(0));
+    assert_eq!(ubig!(0xffff).trailing_ones(), Some(16));
+    assert_eq!(
+        ubig!(0xfffffffffffffffffffff000000000000000000000000000000000000000000ffffffff)
+            .trailing_ones(),
+        Some(32)
+    );
+
+    assert_eq!(ibig!(0).trailing_ones(), Some(0));
+    assert_eq!(ibig!(-1).trailing_ones(), None);
+    assert_eq!(ibig!(0xffff).trailing_ones(), Some(16));
+    assert_eq!(ibig!(-0xf0000).trailing_ones(), Some(0));
+    assert_eq!(ibig!(-0xf0001).trailing_ones(), Some(16));
 }
 
 #[test]

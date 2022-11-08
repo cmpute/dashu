@@ -1,6 +1,6 @@
 use crate::{repr::Repr, RBig};
 use core::cmp::Ordering;
-use dashu_base::Sign::*;
+use dashu_base::{Sign::*, BitTest};
 
 impl PartialEq for Repr {
     #[inline]
