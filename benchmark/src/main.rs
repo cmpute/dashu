@@ -152,4 +152,5 @@ fn run_task_using<T: Number>(task: &str, n: u32, iter: u32) -> (String, Duration
 }
 
 // TODO: add task to test more operations, such as
-// a=2^n, b=3^n, sqrt((a+b)/(a-b)).gcd(sqrt((a+b)*(a-b))
+// - some complex calculation: a=2^n, b=3^n, sqrt((a+b)/(a-b)).gcd(sqrt((a+b)*(a-b))
+// - fibonacci reciprocal a_n = a_n-1 + 1 / a_n-2

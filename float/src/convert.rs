@@ -485,7 +485,10 @@ impl<R: Round, const B: Word> FBig<R, B> {
         FBig::new(Repr::new(signif, 0), context)
     }
 
-    // Split the float number at the floating point, assuming it exists (the number is not a integer).
+    // TODO(next): move floor ceil etc to round_ops.rs
+    // TODO(next): expose a verison to split at point but taking ownership
+
+    // Split the float number at the radix point, assuming it exists (the number is not a integer).
     // The method returns (integral part, fractional part, fraction precision).
     fn split_at_point(&self) -> (IBig, IBig, usize) {
         debug_assert!(self.repr.exponent < 0);

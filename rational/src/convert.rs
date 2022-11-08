@@ -406,6 +406,10 @@ impl Repr {
             .and_then(|man| f64::encode(sign * man as i64, shift as i16))
         }
     }
+
+    // TODO(next): implement fn to_int() -> Approximation<IBig, Sign>
+    // TODO: implement fn to_float<R: Round>(precision: usize) -> Approximation<FBig, Rounding>
+    //       and       fn to_decimal<R: Round>(precision: usize) -> Approximation<DBig, Rounding>
 }
 
 impl RBig {
@@ -422,10 +426,43 @@ impl RBig {
         self.0.to_f64_fast()
     }
 
+    /// Convert the rational number to [f32] with guaranteed correct rounding.
     #[inline]
     pub fn to_f32(&self) -> Approximation<f32, Sign> {
         self.0.to_f32()
     }
+    #[inline]
+    pub fn to_f64(&self) -> Approximation<f64, Sign> {
+        self.0.to_f64()
+    }
+}
+
+impl Relaxed {
+    /// Convert the rational number to [f32].
+    /// 
+    /// See [RBig::to_f32_fast] for details.
+    #[inline]
+    pub fn to_f32_fast(&self) -> f32 {
+        self.0.to_f32_fast()
+    }
+    /// Convert the rational number to [f64].
+    /// 
+    /// See [RBig::to_f64_fast] for details.
+    #[inline]
+    pub fn to_f64_fast(&self) -> f64 {
+        self.0.to_f64_fast()
+    }
+
+    /// Convert the rational number to [f32] with guaranteed correct rounding.
+    /// 
+    /// See [RBig::to_f32] for details.
+    #[inline]
+    pub fn to_f32(&self) -> Approximation<f32, Sign> {
+        self.0.to_f32()
+    }
+    /// Convert the rational number to [f64] with guaranteed correct rounding.
+    /// 
+    /// See [RBig::to_f64] for details.
     #[inline]
     pub fn to_f64(&self) -> Approximation<f64, Sign> {
         self.0.to_f64()

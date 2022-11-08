@@ -1,9 +1,10 @@
 use core::ops::{Mul, MulAssign};
 
 use dashu_base::Gcd;
+use dashu_int::{IBig, UBig};
 
 use crate::{
-    helper_macros::{impl_binop_assign_by_taking, impl_binop_with_macro},
+    helper_macros::{impl_binop_assign_by_taking, impl_binop_with_macro, impl_binop_with_int},
     rbig::{RBig, Relaxed},
     repr::Repr,
 };
@@ -57,3 +58,35 @@ macro_rules! impl_mul_with_relaxed {
 }
 impl_binop_with_macro!(Mul, mul, Relaxed, impl_mul_with_relaxed);
 impl_binop_assign_by_taking!(impl MulAssign<Relaxed> for Relaxed, mul_assign, mul);
+
+macro_rules! impl_mul_int_with_rbig {
+    (
+        $a:ident, $b:ident, $i:ident,
+        $ra:ident, $rb:ident, $ri:ident, $method:ident
+    ) => {{
+        let _unused = ($ra, $rb, $ri);
+        let g = $rb.gcd($ri);
+        RBig(Repr {
+            numerator: ($a / &g).$method($i),
+            denominator: $b / g,
+        })
+    }};
+}
+impl_binop_with_int!(impl Mul<UBig>, mul, impl_mul_int_with_rbig);
+impl_binop_with_int!(impl Mul<IBig>, mul, impl_mul_int_with_rbig);
+impl_binop_with_int!(impl Mul for UBig, mul, impl_mul_int_with_rbig);
+impl_binop_with_int!(impl Mul for IBig, mul, impl_mul_int_with_rbig);
+
+macro_rules! impl_mul_int_with_relaxed {
+    (
+        $a:ident, $b:ident, $i:ident,
+        $ra:ident, $rb:ident, $ri:ident, $method:ident
+    ) => {{
+        let _unused = ($ra, $rb, $ri);
+        Relaxed::from_parts($a.$method($i), $b)
+    }};
+}
+impl_binop_with_int!(impl Mul<UBig>, mul, Relaxed, impl_mul_int_with_relaxed);
+impl_binop_with_int!(impl Mul<IBig>, mul, Relaxed, impl_mul_int_with_relaxed);
+impl_binop_with_int!(impl Mul for UBig, mul, Relaxed, impl_mul_int_with_relaxed);
+impl_binop_with_int!(impl Mul for IBig, mul, Relaxed, impl_mul_int_with_relaxed);

@@ -1,8 +1,9 @@
 use core::ops::{Add, AddAssign, Sub, SubAssign};
 use dashu_base::Gcd;
+use dashu_int::{UBig, IBig};
 
 use crate::{
-    helper_macros::{impl_binop_assign_by_taking, impl_binop_with_macro},
+    helper_macros::{impl_binop_assign_by_taking, impl_binop_with_macro, impl_binop_with_int},
     rbig::{RBig, Relaxed},
     repr::Repr,
 };
@@ -55,3 +56,69 @@ impl_binop_with_macro!(Add, add, Relaxed, impl_addsub_with_relaxed);
 impl_binop_with_macro!(Sub, sub, Relaxed, impl_addsub_with_relaxed);
 impl_binop_assign_by_taking!(impl AddAssign<Relaxed> for Relaxed, add_assign, add);
 impl_binop_assign_by_taking!(impl SubAssign<Relaxed> for Relaxed, sub_assign, sub);
+
+macro_rules! impl_addsub_int_with_rbig {
+    (
+        $a:ident, $b:ident, $i:ident,
+        $ra:ident, $rb:ident, $ri:ident, $method:ident
+    ) => {{
+        let _unused = ($ra, $ri);
+        RBig(Repr {
+            numerator: $a.$method($rb * $i),
+            denominator: $b,
+        })
+    }};
+}
+macro_rules! impl_int_sub_rbig { // sub is not commutative
+    (
+        $a:ident, $b:ident, $i:ident,
+        $ra:ident, $rb:ident, $ri:ident, $method:ident
+    ) => {{
+        let _unused = ($ra, $ri);
+        RBig(Repr {
+            numerator: ($rb * $i).$method($a),
+            denominator: $b,
+        })
+    }};
+}
+impl_binop_with_int!(impl Add<UBig>, add, impl_addsub_int_with_rbig);
+impl_binop_with_int!(impl Add<IBig>, add, impl_addsub_int_with_rbig);
+impl_binop_with_int!(impl Sub<UBig>, sub, impl_addsub_int_with_rbig);
+impl_binop_with_int!(impl Sub<IBig>, sub, impl_addsub_int_with_rbig);
+impl_binop_with_int!(impl Add for UBig, add, impl_addsub_int_with_rbig);
+impl_binop_with_int!(impl Add for IBig, add, impl_addsub_int_with_rbig);
+impl_binop_with_int!(impl Sub for UBig, sub, impl_int_sub_rbig);
+impl_binop_with_int!(impl Sub for IBig, sub, impl_int_sub_rbig);
+
+macro_rules! impl_addsub_int_with_relaxed {
+    (
+        $a:ident, $b:ident, $i:ident,
+        $ra:ident, $rb:ident, $ri:ident, $method:ident
+    ) => {{
+        let _unused = ($ra, $ri);
+        Relaxed(Repr {
+            numerator: $a.$method($rb * $i),
+            denominator: $b,
+        })
+    }};
+}
+macro_rules! impl_int_sub_relaxed {
+    (
+        $a:ident, $b:ident, $i:ident,
+        $ra:ident, $rb:ident, $ri:ident, $method:ident
+    ) => {{
+        let _unused = ($ra, $ri);
+        Relaxed(Repr {
+            numerator: ($rb * $i).$method($a),
+            denominator: $b,
+        })
+    }};
+}
+impl_binop_with_int!(impl Add<UBig>, add, Relaxed, impl_addsub_int_with_relaxed);
+impl_binop_with_int!(impl Add<IBig>, add, Relaxed, impl_addsub_int_with_relaxed);
+impl_binop_with_int!(impl Sub<UBig>, sub, Relaxed, impl_addsub_int_with_relaxed);
+impl_binop_with_int!(impl Sub<IBig>, sub, Relaxed, impl_addsub_int_with_relaxed);
+impl_binop_with_int!(impl Add for UBig, add, Relaxed, impl_addsub_int_with_relaxed);
+impl_binop_with_int!(impl Add for IBig, add, Relaxed, impl_addsub_int_with_relaxed);
+impl_binop_with_int!(impl Sub for UBig, sub, Relaxed, impl_int_sub_relaxed);
+impl_binop_with_int!(impl Sub for IBig, sub, Relaxed, impl_int_sub_relaxed);

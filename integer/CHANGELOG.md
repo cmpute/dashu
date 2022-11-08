@@ -1,10 +1,11 @@
 # Changelog
 
-## 0.3.0
+## 0.3.0 (WIP)
 
 ### Add
 
-- Implement `Gcd::gcd` between `UBig` and `IBig`
+- Implement `Gcd::gcd` and `ExtendedGcd::gcd_ext` between `UBig` and `IBig`
+- Implement `DivRem::div_rem` between `UBig` and `IBig`
 - Add `abs_bit_len` for `IBig`
 
 ### Change
