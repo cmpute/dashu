@@ -38,5 +38,10 @@ path = "../float"
 version = "0.2.0"
 default-features = false
 
+[dependencies.dashu-ratio]
+path = "../rational"
+version = "0.2.0"
+default-features = false
+
 [features]
 embedded = [] # whether it's used with the `dashu` crate

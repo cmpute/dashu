@@ -18,7 +18,7 @@ pub mod rational {
     pub use dashu_ratio::*;
 }
 
-pub use dashu_macros::{dbig, fbig, ibig, ubig};
+pub use dashu_macros::{dbig, fbig, ibig, ubig, rbig};
 
 /// A verbose alias for [UBig][dashu_int::UBig]
 pub type Natural = dashu_int::UBig;

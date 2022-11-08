@@ -93,68 +93,61 @@ pub fn parse_integer<const SIGNED: bool>(input: TokenStream) -> TokenStream {
         }
     };
 
-    // generate output tokens
-    if SIGNED {
-        let sign = if neg { Sign::Negative } else { Sign::Positive };
-        quote_ibig(IBig::from_parts(sign, big))
+    // if the integer fits in a u32, generates const expression
+    let sign = if neg { Sign::Negative } else { Sign::Positive };
+    if big.bit_len() <= 32 {
+        let u: u32 = big.try_into().unwrap();
+        let sign = quote_sign(sign);
+        if SIGNED {
+            #[cfg(not(feature = "embedded"))]
+            quote! { ::dashu_int::IBig::from_parts_const(#sign, #u as _) }
+            #[cfg(feature = "embedded")]
+            quote! { ::dashu::integer::IBig::from_parts_const(#sign, #u as _) }
+        } else {
+            #[cfg(not(feature = "embedded"))]
+            quote! { ::dashu_int::UBig::from_dword(#u as _) }
+            #[cfg(feature = "embedded")]
+            quote! { ::dashu::integer::UBig::from_dword(#u as _) }
+        }
     } else {
-        quote_ubig(big)
+        if SIGNED {
+            quote_ibig(IBig::from_parts(sign, big))
+        } else {
+            quote_ubig(big)
+        }
     }
 }
 
 // TODO(v0.3): only inline u32 ints, (then this will be platform agnostic), parse the big integer from bytes
 //             instead of words?
 
+/// Generate tokens for creating a [UBig] instance (non-const)
 pub fn quote_ubig(int: UBig) -> TokenStream {
-    if int.bit_len() <= 32 {
-        // if the integer fits in a u32, generates const expression
-        let u: u32 = int.try_into().unwrap();
-        #[cfg(not(feature = "embedded"))]
-        quote! { ::dashu_int::UBig::from_dword(#u as _) }
-        #[cfg(feature = "embedded")]
-        quote! { ::dashu::integer::UBig::from_dword(#u as _) }
-    } else {
-        // otherwise, convert to a byte array
-        let bytes = int.to_le_bytes();
-        let len = bytes.len();
-        let bytes_tt = quote_bytes(&bytes);
-        #[cfg(not(feature = "embedded"))]
-        quote! {{
-            const BYTES: [u8; #len] = #bytes_tt;
-            ::dashu_int::UBig::from_le_bytes(&BYTES)
-        }}
-        #[cfg(feature = "embedded")]
-        quote! {{
-            const BYTES: [u8; #len] = #bytes_tt;
-            ::dashu::integer::UBig::from_le_bytes(&BYTES)
-        }}
-    }
+    debug_assert!(int.bit_len() > 32);
+    let bytes = int.to_le_bytes();
+    let len = bytes.len();
+    let bytes_tt = quote_bytes(&bytes);
+    #[cfg(not(feature = "embedded"))]
+    quote! {{
+        const BYTES: [u8; #len] = #bytes_tt;
+        ::dashu_int::UBig::from_le_bytes(&BYTES)
+    }}
+    #[cfg(feature = "embedded")]
+    quote! {{
+        const BYTES: [u8; #len] = #bytes_tt;
+        ::dashu::integer::UBig::from_le_bytes(&BYTES)
+    }}
 }
 
+/// Generate tokens for creating a [IBig] instance (non-const)
 pub fn quote_ibig(int: IBig) -> TokenStream {
+    debug_assert!(int.bit_len() > 32);
     let (sign, mag) = int.into_parts();
     let sign = quote_sign(sign);
-    if mag.bit_len() <= 32 {
-        // if the integer fits in a u32, generates const expression
-        let u: u32 = mag.try_into().unwrap();
-        #[cfg(not(feature = "embedded"))]
-        quote! { ::dashu_int::IBig::from_parts_const(#sign, #u as _) }
-        #[cfg(feature = "embedded")]
-        quote! { ::dashu::integer::IBig::from_parts_const(#sign, #u as _) }
-    } else {
-        // otherwise, convert to a byte array
-        let bytes = mag.to_le_bytes();
-        let len = bytes.len();
-        let bytes_tt = quote_bytes(&bytes);
-        #[cfg(not(feature = "embedded"))]
-        quote! {{
-            const BYTES: [u8; #len] = #bytes_tt;
-            ::dashu_int::IBig::from_parts(#sign, ::dashu_int::UBig::from_le_bytes(&BYTES))
-        }}
-        #[cfg(feature = "embedded")]
-        quote! {{
-            const BYTES: [u8; #len] = #bytes_tt;
-            ::dashu::integer::IBig::from_parts(#sign, ::dashu::integer::UBig::from_le_bytes(&BYTES))
-        }}
-    }
+    let mag_tt = quote_ubig(mag);
+
+    #[cfg(not(feature = "embedded"))]
+    quote! { ::dashu_int::IBig::from_parts(#sign, #mag_tt) }
+    #[cfg(feature = "embedded")]
+    quote! { ::dashu::int::IBig::from_parts(#sign, #mag_tt) }
 }

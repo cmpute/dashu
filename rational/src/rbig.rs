@@ -47,7 +47,7 @@ impl RBig {
     }
     /// Create a rational number in a const context
     #[inline]
-    pub fn from_parts_const(
+    pub const fn from_parts_const(
         sign: Sign,
         mut numerator: DoubleWord,
         mut denominator: DoubleWord,
@@ -63,7 +63,8 @@ impl RBig {
             let (mut y, mut r) = (denominator, numerator % denominator);
             while r > 1 {
                 let new_r = y % r;
-                y = core::mem::replace(&mut r, new_r);
+                y = r;
+                r = new_r;
             }
             if r == 0 {
                 numerator /= y;
