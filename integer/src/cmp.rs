@@ -1,5 +1,7 @@
 //! Comparisons operators.
 
+use dashu_base::{AbsEq, AbsCmp};
+
 use crate::{
     arch::word::Word,
     ibig::IBig,
@@ -120,33 +122,44 @@ impl PartialOrd<UBig> for IBig {
     }
 }
 
-impl IBig {
-    /// Check whether the magnitude of this number is equal the magnitude of the other number
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use dashu_int::IBig;
-    /// assert!(IBig::from(2).abs_eq(&IBig::from(-2)));
-    /// assert!(IBig::from(-3).abs_eq(&IBig::from(-3)));
-    /// ```
-    pub fn abs_eq(&self, other: &IBig) -> bool {
-        self.0.as_sign_slice().1.eq(other.0.as_sign_slice().1)
-    }
-
-    /// Compare the magnitude of this number to the magnitude of the other number
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use dashu_int::IBig;
-    /// assert!(IBig::from(2).abs_cmp(&IBig::from(-3)).is_le());
-    /// assert!(IBig::from(-2).abs_cmp(&IBig::from(3)).is_le());
-    /// ```
-    pub fn abs_cmp(&self, other: &IBig) -> Ordering {
-        self.0.as_sign_typed().1.cmp(&other.0.as_sign_typed().1)
+impl AbsEq for IBig {
+    #[inline]
+    fn abs_eq(&self, rhs: &Self) -> bool {
+        self.0.as_sign_slice().1.eq(rhs.0.as_sign_slice().1)
     }
 }
+impl AbsEq<UBig> for IBig {
+    #[inline]
+    fn abs_eq(&self, rhs: &UBig) -> bool {
+        self.0.as_sign_slice().1.eq(rhs.0.as_slice())
+    }
+}
+impl AbsEq<IBig> for UBig {
+    #[inline]
+    fn abs_eq(&self, rhs: &IBig) -> bool {
+        self.0.as_slice().eq(rhs.0.as_sign_slice().1)
+    }
+}
+
+impl AbsCmp for IBig {
+    #[inline]
+    fn abs_cmp(&self, rhs: &Self) -> Ordering {
+        self.0.as_sign_typed().1.cmp(&rhs.0.as_sign_typed().1)
+    }
+}
+impl AbsCmp<UBig> for IBig {
+    #[inline]
+    fn abs_cmp(&self, rhs: &UBig) -> Ordering {
+        self.0.as_sign_typed().1.cmp(&rhs.0.as_typed())
+    }
+}
+impl AbsCmp<IBig> for UBig {
+    #[inline]
+    fn abs_cmp(&self, rhs: &IBig) -> Ordering {
+        self.0.as_typed().cmp(&rhs.0.as_sign_typed().1)
+    }
+}
+
 
 macro_rules! impl_cmp_with_primitive {
     ($big:ty, $prim:ty) => {

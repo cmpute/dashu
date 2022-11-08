@@ -1,22 +1,22 @@
 //! Implementations of methods related to simplification.
 //! 
 //! Note that these methods are only implemented for [RBig] but not for [Relaxed][crate::Relaxed]
-//! because the latter one is naturally not in the simpliest form.
+//! because the latter one is naturally not in the simplest form.
 
 use crate::{
     rbig::RBig,
-    repr::Repr, error::panic_divide_by_0, Relaxed,
+    repr::Repr, error::panic_divide_by_0,
 };
 use core::{mem, cmp::Ordering};
-use dashu_base::{DivRem, UnsignedAbs, Approximation};
+use dashu_base::{DivRem, UnsignedAbs, Approximation, AbsCmp};
 use dashu_int::{IBig, UBig, Sign};
 
 impl Repr {
-    /// Find the simpliest rational number in the open interval `(lower, upper)`.
-    /// See [RBig::simpliest_in()] and <https://stackoverflow.com/q/66980340/5960776>.
-    pub fn simpliest_in(mut lower: Self, mut upper: Self) -> Self {
+    /// Find the simplest rational number in the open interval `(lower, upper)`.
+    /// See [RBig::simplest_in()] and <https://stackoverflow.com/q/66980340/5960776>.
+    pub fn simplest_in(mut lower: Self, mut upper: Self) -> Self {
         let sign = if lower.numerator.sign() != upper.numerator.sign() {
-            // if lower < 0 < upper, then 0 is the simpliest
+            // if lower < 0 < upper, then 0 is the simplest
             return Self::zero();
         } else {
             lower.numerator.sign()
@@ -71,8 +71,8 @@ impl Repr {
     }
 }
 
-/// Implementation of simpliest_from_f32, simpliest_from_f64
-macro_rules! impl_simpliest_from_float {
+/// Implementation of simplest_from_f32, simplest_from_f64
+macro_rules! impl_simplest_from_float {
     ($f:ident) => {{
         if $f.is_infinite() || $f.is_nan() {
             return None;
@@ -81,7 +81,7 @@ macro_rules! impl_simpliest_from_float {
         }
 
         // get the range (f - ulp/2, f + ulp/2)
-        // if f is negative, then range will be flipped by simpliest_in()
+        // if f is negative, then range will be flipped by simplest_in()
         let mut est = Repr::try_from($f).unwrap();
         est.numerator <<= 1;
         est.denominator <<= 1;
@@ -94,18 +94,18 @@ macro_rules! impl_simpliest_from_float {
             denominator: est.denominator
         }.reduce());
 
-        // find the simpliest float in the range
-        let mut simpliest = Self::simpliest_in(left.clone(), right.clone());
+        // find the simplest float in the range
+        let mut simplest = Self::simplest_in(left.clone(), right.clone());
         if $f.to_bits() & 1 == 0 {
             // consider boundry values when last bit is 0 (because ties to even)
-            if left.is_simpler_than(&simpliest) {
-                simpliest = left;
+            if left.is_simpler_than(&simplest) {
+                simplest = left;
             }
-            if right.is_simpler_than(&simpliest) {
-                simpliest = right;
+            if right.is_simpler_than(&simplest) {
+                simplest = right;
             }
         }
-        Some(simpliest)
+        Some(simplest)
     }};
 }
 
@@ -120,23 +120,21 @@ impl RBig {
             && self.sign() > other.sign() // then compare sign
     }
 
-    pub fn simpliest_from_f32(f: f32) -> Option<Self> {
-        impl_simpliest_from_float!(f)
+    pub fn simplest_from_f32(f: f32) -> Option<Self> {
+        impl_simplest_from_float!(f)
     }
 
-    pub fn simpliest_from_f64(f: f64) -> Option<Self> {
-        impl_simpliest_from_float!(f)
+    pub fn simplest_from_f64(f: f64) -> Option<Self> {
+        impl_simplest_from_float!(f)
     }
 
-    // TODO: support simpliest_from_fbig
-
-    /// Find the simpliest rational number in the open interval `(lower, upper)`.
+    /// Find the simplest rational number in the open interval `(lower, upper)`.
     /// 
     /// `lower` and `upper` will be swapped if necessary. If `lower` and `upper` are
     /// the same number, then this number will be directly returned.
     #[inline]
-    pub fn simpliest_in(lower: Self, upper: Self) -> Self {
-        Self(Repr::simpliest_in(lower.0, upper.0).reduce())
+    pub fn simplest_in(lower: Self, upper: Self) -> Self {
+        Self(Repr::simplest_in(lower.0, upper.0).reduce())
     }
 
     /// Find the previous and next value in farey sequence (from 0 to 1) with `limit` as the order.
@@ -145,7 +143,7 @@ impl RBig {
     fn farey_neighbors(x: &Self, limit: &UBig) -> (Self, Self) {
         debug_assert!(x.denominator() > limit);
         debug_assert!(!x.numerator().is_zero());
-        // TODO(next): assert |x.numerator| < x.denominator
+        debug_assert!(x.numerator().abs_cmp(x.denominator()).is_le());
 
         let (mut left, mut right) = match x.sign() {
             Sign::Positive => (Repr::zero(), Repr::one()),

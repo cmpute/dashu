@@ -15,6 +15,4 @@ mod simplify;
 
 pub use rbig::{RBig, Relaxed};
 
-// TODO: support "nearest", "nearest_ub" and "nearest_lb" to find the closest rational number,
-//       given a limit on the denominator, (see https://math.stackexchange.com/q/2438510/815652)
 // TODO: support `is_human_readable` option if we support serde (see https://github.com/rust-num/num-rational/issues/90)

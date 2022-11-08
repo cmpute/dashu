@@ -187,13 +187,13 @@ impl IBig {
     ///
     /// ```
     /// # use dashu_int::IBig;
-    /// assert_eq!(IBig::from(-17).abs_bit_len(), 5);
-    /// assert_eq!(IBig::ZERO.abs_bit_len(), 0);
+    /// assert_eq!(IBig::from(-17).bit_len(), 5);
+    /// assert_eq!(IBig::ZERO.bit_len(), 0);
     /// let x = IBig::from(0x70ffff3450897234i64);
-    /// assert_eq!(x.abs_bit_len(), x.in_radix(2).to_string().len());
+    /// assert_eq!(x.bit_len(), x.in_radix(2).to_string().len());
     /// ```
     #[inline]
-    pub fn abs_bit_len(&self) -> usize {
+    pub fn bit_len(&self) -> usize {
         self.as_sign_repr().1.bit_len()
     }
 }

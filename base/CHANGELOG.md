@@ -4,13 +4,14 @@
 
 ### Add
 
+- Add trait `AbsCmp` and `AbsEq`
 - Add trait `FloatEncoding` and implement it for `f32` and `f64`
 - Add trait `Signed` and implement it for all signed primitive types
 - Add conversion between `Sign` and `bool`
 - Implement `Abs` for `f32` and `f64`
 - Add types `error::{ConversionError, ParseError}` (originates from `dashu-int`)
 
-### Chnage
+### Change
 
 - Definition of `RootRem` has changed (the associated type has been changed to `OutputRoot`, `OutputRem`)
 

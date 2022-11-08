@@ -173,7 +173,7 @@ macro_rules! impl_conversion_to_float {
                     Ok(0.)
                 } else if value.0.denominator.is_power_of_two() {
                     // conversion is exact only if the denominator is a power of two
-                    let num_bits = value.0.numerator.abs_bit_len();
+                    let num_bits = value.0.numerator.bit_len();
                     let den_bits = value.0.denominator.trailing_zeros().unwrap();
                     let top_bit = num_bits as isize - den_bits as isize;
                     if top_bit > $ub {
@@ -226,7 +226,7 @@ impl Repr {
 
         // to get enough precision (24 bits), we need to do a 48 by 24 bit division
         let sign = self.numerator.sign();
-        let num_bits = self.numerator.abs_bit_len();
+        let num_bits = self.numerator.bit_len();
         let den_bits = self.denominator.bit_len();
 
         let num_shift = num_bits as isize - 48;
@@ -275,7 +275,7 @@ impl Repr {
 
         // to get enough precision (53 bits), we need to do a 106 by 53 bit division
         let sign = self.numerator.sign();
-        let num_bits = self.numerator.abs_bit_len();
+        let num_bits = self.numerator.bit_len();
         let den_bits = self.denominator.bit_len();
 
         let num_shift = num_bits as isize - 106;
@@ -326,7 +326,7 @@ impl Repr {
         // to get enough precision, shift such that numerator has
         // 24 bits more than the denominator
         let sign = self.numerator.sign();
-        let num_bits = self.numerator.abs_bit_len();
+        let num_bits = self.numerator.bit_len();
         let den_bits = self.denominator.bit_len();
 
         let shift = num_bits as isize - den_bits as isize - 24; // i.e. exponent
@@ -371,7 +371,7 @@ impl Repr {
         // to get enough precision, shift such that numerator has
         // 53 bits more than the denominator
         let sign = self.numerator.sign();
-        let num_bits = self.numerator.abs_bit_len();
+        let num_bits = self.numerator.bit_len();
         let den_bits = self.denominator.bit_len();
 
         let shift = num_bits as isize - den_bits as isize - 53; // i.e. exponent
@@ -406,10 +406,6 @@ impl Repr {
             .and_then(|man| f64::encode(sign * man as i64, shift as i16))
         }
     }
-
-    // TODO(next): implement fn to_int() -> Approximation<IBig, Sign>
-    // TODO: implement fn to_float<R: Round>(precision: usize) -> Approximation<FBig, Rounding>
-    //       and       fn to_decimal<R: Round>(precision: usize) -> Approximation<DBig, Rounding>
 }
 
 impl RBig {
@@ -434,6 +430,15 @@ impl RBig {
     #[inline]
     pub fn to_f64(&self) -> Approximation<f64, Sign> {
         self.0.to_f64()
+    }
+    #[inline]
+    pub fn to_int(&self) -> Approximation<IBig, Self> {
+        let (trunc, fract) = self.clone().split_at_point();
+        if fract.is_zero() {
+            Approximation::Exact(trunc)
+        } else {
+            Approximation::Inexact(trunc, fract)
+        }
     }
 }
 
@@ -466,5 +471,17 @@ impl Relaxed {
     #[inline]
     pub fn to_f64(&self) -> Approximation<f64, Sign> {
         self.0.to_f64()
+    }
+    /// Convert the rational number to [IBig].
+    /// 
+    /// See [RBig::to_int] for details.
+    #[inline]
+    pub fn to_int(&self) -> Approximation<IBig, Self> {
+        let (trunc, fract) = self.clone().split_at_point();
+        if fract.is_zero() {
+            Approximation::Exact(trunc)
+        } else {
+            Approximation::Inexact(trunc, fract)
+        }
     }
 }

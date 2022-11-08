@@ -218,3 +218,5 @@ pub fn fbig(input: TokenStream) -> TokenStream {
 pub fn dbig(input: TokenStream) -> TokenStream {
     parse::float::parse_decimal_float(input.into()).into()
 }
+
+// TODO(next): implement macro for rbig

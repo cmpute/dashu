@@ -11,9 +11,9 @@ impl PartialEq for Repr {
         }
 
         let n1d2_bits =
-            self.numerator.abs_bit_len() as isize + other.denominator.bit_len() as isize;
+            self.numerator.bit_len() as isize + other.denominator.bit_len() as isize;
         let n2d1_bits =
-            other.numerator.abs_bit_len() as isize + self.denominator.bit_len() as isize;
+            other.numerator.bit_len() as isize + self.denominator.bit_len() as isize;
         if n1d2_bits.abs_diff(n2d1_bits) > 1 {
             return false;
         }
@@ -57,9 +57,9 @@ impl Ord for Repr {
 
         // step3: test bit size
         let n1d2_bits =
-            self.numerator.abs_bit_len() as isize + other.denominator.bit_len() as isize;
+            self.numerator.bit_len() as isize + other.denominator.bit_len() as isize;
         let n2d1_bits =
-            other.numerator.abs_bit_len() as isize + self.denominator.bit_len() as isize;
+            other.numerator.bit_len() as isize + self.denominator.bit_len() as isize;
         if n1d2_bits > n2d1_bits + 1 {
             return if negative {
                 Ordering::Less
