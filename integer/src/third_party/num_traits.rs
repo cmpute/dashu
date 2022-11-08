@@ -1,8 +1,8 @@
 //! Implement num-traits traits.
 
-use dashu_base::{DivEuclid, RemEuclid};
+use dashu_base::{DivEuclid, ParseError, RemEuclid};
 
-use crate::{error::ParseError, ibig::IBig, ops::Abs, ubig::UBig, Sign};
+use crate::{ibig::IBig, ops::Abs, ubig::UBig, Sign};
 
 impl num_traits::Zero for UBig {
     #[inline]

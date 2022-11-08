@@ -13,7 +13,12 @@ pub mod float {
     pub use dashu_float::*;
 }
 
-pub use dashu_macros::{dbig, fbig, ibig, ubig};
+/// Arbitrary precision rational number
+pub mod rational {
+    pub use dashu_ratio::*;
+}
+
+pub use dashu_macros::{dbig, fbig, ibig, ubig, rbig};
 
 /// A verbose alias for [UBig][dashu_int::UBig]
 pub type Natural = dashu_int::UBig;
@@ -26,3 +31,6 @@ pub type Real = dashu_float::FBig;
 
 /// A verbose alias for [DBig][dashu_float::DBig] (base 10, rounding to the nearest)
 pub type Decimal = dashu_float::DBig;
+
+/// A verbose alias for [RBig][dashu_ratio::RBig]
+pub type Rational = dashu_ratio::RBig;

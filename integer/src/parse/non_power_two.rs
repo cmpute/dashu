@@ -3,13 +3,13 @@
 use crate::{
     arch::word::Word,
     buffer::Buffer,
-    error::ParseError,
     mul,
     radix::{self, Digit},
     repr::Repr,
     ubig::UBig,
 };
 use alloc::vec;
+use dashu_base::ParseError;
 
 /// Parse in chunks of CHUNK_LEN * digits_per_word.
 const CHUNK_LEN: usize = 256;

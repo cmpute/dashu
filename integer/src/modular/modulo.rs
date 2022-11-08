@@ -135,7 +135,6 @@ impl Clone for Modulo<'_> {
     fn clone(&self) -> Self {
         Modulo(self.0.clone())
     }
-
     #[inline]
     fn clone_from(&mut self, source: &Self) {
         self.0.clone_from(&source.0);

@@ -1,5 +1,5 @@
 use dashu_base::{Approximation::*, Sign::*};
-use dashu_int::{error::OutOfBoundsError, IBig, UBig};
+use dashu_int::{IBig, UBig};
 use std::convert::TryFrom;
 
 mod helper_macros;
@@ -178,11 +178,6 @@ fn test_ibig_to_ubig() {
 fn test_default() {
     assert_eq!(UBig::default(), ubig!(0));
     assert_eq!(IBig::default(), ibig!(0));
-}
-
-#[test]
-fn test_display_out_of_bounds_error() {
-    assert_eq!(OutOfBoundsError.to_string(), "number out of bounds");
 }
 
 #[test]

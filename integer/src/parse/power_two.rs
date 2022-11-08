@@ -3,12 +3,13 @@
 use crate::{
     arch::word::Word,
     buffer::Buffer,
-    error::ParseError,
     primitive::{WORD_BITS, WORD_BITS_USIZE},
     radix::{self, Digit},
     repr::Repr,
     ubig::UBig,
 };
+
+use dashu_base::ParseError;
 
 /// Parse an unsigned string to [UBig].
 pub fn parse(src: &str, radix: Digit) -> Result<UBig, ParseError> {

@@ -20,6 +20,7 @@ members = [
     "integer",
     "float",
     "macros",
+    "rational"
 ]
 default-members = ["base", "integer", "float", "macros"]
 
@@ -39,6 +40,11 @@ default-features = false
 
 [dependencies.dashu-float]
 path = "./float"
+version = "0.2.0"
+default-features = false
+
+[dependencies.dashu-ratio]
+path = "./rational"
 version = "0.2.0"
 default-features = false
 

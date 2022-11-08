@@ -1,4 +1,4 @@
-use dashu_base::{Sign, RootRem};
+use dashu_base::{RootRem, Sign};
 
 use crate::{
     error::{panic_root_negative, panic_root_zeroth},

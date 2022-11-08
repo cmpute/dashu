@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0
+
+- Now conversion from FBig to `f32`/`f64` support subnormal values
+
 ## 0.2.1
 
 - Implement `core::iter::{Sum, Product}` for `FBig`

@@ -177,6 +177,25 @@ impl IBig {
     pub fn trailing_zeros(&self) -> Option<usize> {
         self.as_sign_repr().1.trailing_zeros()
     }
+
+    /// Bit length of the magnitude.
+    ///
+    /// The length of the binary representation of the number without the sign.
+    /// It's equivalent to `self.unsigned_abs().bit_len()`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::IBig;
+    /// assert_eq!(IBig::from(-17).bit_len(), 5);
+    /// assert_eq!(IBig::ZERO.bit_len(), 0);
+    /// let x = IBig::from(0x70ffff3450897234i64);
+    /// assert_eq!(x.bit_len(), x.in_radix(2).to_string().len());
+    /// ```
+    #[inline]
+    pub fn bit_len(&self) -> usize {
+        self.as_sign_repr().1.bit_len()
+    }
 }
 
 impl PowerOfTwo for UBig {

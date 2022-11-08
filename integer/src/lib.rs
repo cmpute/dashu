@@ -30,7 +30,7 @@
 //! # Examples
 //!
 //! ```
-//! # use dashu_int::error::ParseError;
+//! # use dashu_base::ParseError;
 //! use dashu_int::{IBig, modular::ModuloRing, UBig};
 //!
 //! let a = UBig::from(12345678u32);
@@ -96,7 +96,7 @@ mod cmp;
 mod convert;
 mod div;
 mod div_ops;
-pub mod error;
+mod error;
 pub mod fast_div;
 pub mod fmt;
 mod gcd;

@@ -25,6 +25,7 @@
 //! to your `Cargo.toml`:
 //! * For [ubig!] and [ibig!]: `dashu-int`
 //! * For [fbig!] and [dbig!]: `dashu-int`, `dashu-float`
+//! * For [rbig!]: `dashu-int`, `dashu-ratio`
 //!
 //! If you are using these macros from the `dashu` crate, then it's not necessary to
 //! explicitly adding these dependencies, because the related types are re-exported
@@ -217,4 +218,31 @@ pub fn fbig(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn dbig(input: TokenStream) -> TokenStream {
     parse::float::parse_decimal_float(input.into()).into()
+}
+
+/// Create an arbitrary precision rational number ([dashu_ratio::RBig] or [dashu_ratio::Relaxed]).
+///
+/// ```
+/// # use dashu_macros::rbig;
+/// let a = rbig!(22/7);
+/// let b = rbig!(~-1/13); // use `~` to create a relaxed rational number
+///
+/// // underscores can be used to separate digits
+/// let c = rbig!(107_241/35_291);
+/// ```
+///
+/// For numbers whose the numerator and denominator are small enough (fit in [u32]),
+/// the literal can be assigned to a constant.
+///
+/// ```
+/// # use dashu_macros::rbig;
+/// use dashu_ratio::{RBig, Relaxed};
+///
+/// const A: RBig = rbig!(-1/2);
+/// const B: Relaxed = rbig!(~3355/15);
+/// ```
+// TODO: add a 0xfffffffe/0xffffffff example
+#[proc_macro]
+pub fn rbig(input: TokenStream) -> TokenStream {
+    parse::ratio::parse_ratio(input.into()).into()
 }

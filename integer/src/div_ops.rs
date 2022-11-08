@@ -9,6 +9,8 @@ use crate::{
 };
 use core::ops::{Div, DivAssign, Rem, RemAssign};
 
+// TODO: remove sign_as_int, use add::add_one_in_place or add::sub_one_in_place instead.
+
 #[inline]
 fn sign_as_int(s: Sign) -> IBig {
     match s {
@@ -164,8 +166,15 @@ macro_rules! impl_ubig_ibig_rem {
         UBig($mag0 % $mag1)
     }};
 }
+macro_rules! impl_ubig_ibig_divrem {
+    ($mag0:ident, $sign1:ident, $mag1:ident) => {{
+        let (q, r) = $mag0.div_rem($mag1);
+        (IBig(q.with_sign($sign1)), UBig(r))
+    }};
+}
 helper_macros::forward_ubig_ibig_binop_to_repr!(impl Div, div, Output = IBig, impl_ubig_ibig_div);
 helper_macros::forward_ubig_ibig_binop_to_repr!(impl Rem, rem, Output = UBig, impl_ubig_ibig_rem);
+helper_macros::forward_ubig_ibig_binop_to_repr!(impl DivRem, div_rem -> (IBig, UBig), OutputDiv = IBig, OutputRem = UBig, impl_ubig_ibig_divrem);
 helper_macros::impl_binop_assign_by_taking!(impl RemAssign<IBig> for UBig, rem_assign, rem);
 
 macro_rules! impl_ibig_ubig_div {
@@ -180,8 +189,16 @@ macro_rules! impl_ibig_ubig_rem {
         IBig(($mag0 % $mag1).with_sign($sign0))
     }};
 }
+macro_rules! impl_ibig_ubig_divrem {
+    ($sign0:ident, $mag0:ident, $mag1:ident) => {{
+        // remainder with truncating division has same sign as lhs.
+        let (q, r) = $mag0.div_rem($mag1);
+        (IBig(q.with_sign($sign0)), IBig(r.with_sign($sign0)))
+    }};
+}
 helper_macros::forward_ibig_ubig_binop_to_repr!(impl Div, div, Output = IBig, impl_ibig_ubig_div);
 helper_macros::forward_ibig_ubig_binop_to_repr!(impl Rem, rem, Output = IBig, impl_ibig_ubig_rem);
+helper_macros::forward_ibig_ubig_binop_to_repr!(impl DivRem, div_rem -> (IBig, IBig), OutputDiv = IBig, OutputRem = IBig, impl_ibig_ubig_divrem);
 helper_macros::impl_binop_assign_by_taking!(impl DivAssign<UBig> for IBig, div_assign, div);
 helper_macros::impl_binop_assign_by_taking!(impl RemAssign<UBig> for IBig, rem_assign, rem);
 
@@ -623,5 +640,3 @@ mod repr {
         Repr::from_buffer(rhs)
     }
 }
-
-// TODO: implement div, rem, div_rem, div_assign, rem_assign, div_rem_assign with ConstDivisor
