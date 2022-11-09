@@ -18,7 +18,7 @@ use alloc::boxed::Box;
 /// let ring = ModuloRing::new(UBig::from(10000u32));
 /// let x = ring.convert(12345);
 /// let y = ring.convert(55443);
-/// assert_eq!((x - y).residue(), 6902);
+/// assert_eq!((x - y).residue(), UBig::from(6902u32));
 /// ```
 pub struct Modulo<'a>(ModuloRepr<'a>);
 

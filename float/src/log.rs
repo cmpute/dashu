@@ -297,9 +297,9 @@ mod tests {
     fn test_iacoth() {
         let context = Context::<mode::Zero>::new(10);
         let binary_6 = context.iacoth::<2>(6.into()).with_precision(10).value();
-        assert_eq!(binary_6.repr.significand, 689);
+        assert_eq!(binary_6.repr.significand, IBig::from(689));
         let decimal_6 = context.iacoth::<10>(6.into()).with_precision(10).value();
-        assert_eq!(decimal_6.repr.significand, 1682361183);
+        assert_eq!(decimal_6.repr.significand, IBig::from(1682361183));
 
         let context = Context::<mode::Zero>::new(40);
         let decimal_6 = context.iacoth::<10>(6.into()).with_precision(40).value();

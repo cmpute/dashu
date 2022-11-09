@@ -13,7 +13,7 @@ impl RBig {
     #[inline]
     pub fn square(&self) -> Self {
         Self(Repr {
-            numerator: self.numerator().square(),
+            numerator: self.numerator().square().into(),
             denominator: self.denominator().square(),
         })
     }
@@ -41,7 +41,7 @@ impl Relaxed {
     #[inline]
     pub fn square(&self) -> Self {
         Self(Repr {
-            numerator: self.numerator().square(),
+            numerator: self.numerator().square().into(),
             denominator: self.denominator().square(),
         })
     }

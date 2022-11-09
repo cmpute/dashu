@@ -31,7 +31,7 @@ impl<'a> Modulo<'a> {
     /// let a = ring.convert(123);
     /// let ainv = a.clone().inv().unwrap();
     /// assert_eq!(ainv, a.pow(&(p - UBig::from(2u8))));
-    /// assert_eq!((a * ainv).residue(), 1);
+    /// assert_eq!((a * ainv).residue(), UBig::ONE);
     /// ```
     #[inline]
     pub fn inv(&self) -> Option<Modulo<'a>> {

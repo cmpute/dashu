@@ -86,8 +86,8 @@ fn test_random_arithmetic() {
             if i % 32 == 0 {
                 let (g, ca, cb) = (&a).gcd_ext(&b);
                 assert_eq!(g, (&a).gcd(&b));
-                assert_eq!(&a % &g, 0);
-                assert_eq!(&b % &g, 0);
+                assert_eq!(&a % &g, ubig!(0));
+                assert_eq!(&b % &g, ubig!(0));
                 assert_eq!(g, a * ca + b * cb);
             }
         }

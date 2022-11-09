@@ -92,7 +92,7 @@ impl UBig {
     ///
     /// ```
     /// # use dashu_int::UBig;
-    /// assert_eq!(UBig::from_le_bytes(&[3, 2, 1]), 0x010203);
+    /// assert_eq!(UBig::from_le_bytes(&[3, 2, 1]), UBig::from(0x010203u32));
     /// ```
     #[inline]
     pub fn from_le_bytes(bytes: &[u8]) -> UBig {
@@ -105,7 +105,7 @@ impl UBig {
     ///
     /// ```
     /// # use dashu_int::UBig;
-    /// assert_eq!(UBig::from_be_bytes(&[1, 2, 3]), 0x010203);
+    /// assert_eq!(UBig::from_be_bytes(&[1, 2, 3]), UBig::from(0x010203u32));
     /// ```
     #[inline]
     pub fn from_be_bytes(bytes: &[u8]) -> UBig {

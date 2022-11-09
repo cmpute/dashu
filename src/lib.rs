@@ -1,3 +1,7 @@
+//! The meta crate that re-exports all `dashu` numeric types.
+
+#![cfg_attr(not(feature = "std"), no_std)]
+
 /// Defintions of common traits
 pub mod base {
     pub use dashu_base::*;

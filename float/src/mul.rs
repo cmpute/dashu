@@ -177,7 +177,7 @@ impl<R: Round> Context<R> {
             f
         };
 
-        let repr = Repr::new(f_repr.significand.square(), 2 * f_repr.exponent);
+        let repr = Repr::new(f_repr.significand.square().into(), 2 * f_repr.exponent);
         self.repr_round(repr).map(|v| FBig::new(v, *self))
     }
 }

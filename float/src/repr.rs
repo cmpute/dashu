@@ -322,13 +322,14 @@ impl<const B: Word> Repr<B> {
     /// # Examples
     ///
     /// ```
+    /// # use dashu_int::IBig;
     /// # use dashu_float::Repr;
     /// let a = Repr::<2>::new(400.into(), -2);
-    /// assert_eq!(a.significand(), &25);
+    /// assert_eq!(a.significand(), &IBig::from(25));
     /// assert_eq!(a.exponent(), 2);
     ///
     /// let b = Repr::<10>::new(400.into(), -2);
-    /// assert_eq!(b.significand(), &4);
+    /// assert_eq!(b.significand(), &IBig::from(4));
     /// assert_eq!(b.exponent(), 0);
     /// ```
     #[inline]

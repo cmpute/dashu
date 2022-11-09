@@ -34,13 +34,13 @@
 //! use dashu_int::{IBig, modular::ModuloRing, UBig};
 //!
 //! let a = UBig::from(12345678u32);
-//! let b = UBig::from(0x10ffu16);
+//! let b = IBig::from(-0x10ff);
 //! let c = IBig::from_str_radix("-azz", 36).unwrap();
 //! let d: UBig = "15033211231241234523452345345787".parse()?;
-//! let e = 2u8 * &b + 1u8;
+//! let e = 2 * &b - 1;
 //! let f = a * b.pow(10);
 //!
-//! assert_eq!(e, 0x21ff); // direct comparison with primitive integers
+//! assert_eq!(e, IBig::from(-0x21ff));
 //! assert_eq!(c.to_string(), "-14255");
 //! assert_eq!(
 //!     f.in_radix(16).to_string(),

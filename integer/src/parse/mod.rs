@@ -38,7 +38,7 @@ impl UBig {
     /// ```
     /// # use dashu_base::ParseError;
     /// # use dashu_int::UBig;
-    /// assert_eq!(UBig::from_str_radix("+7ab", 32)?, 7499);
+    /// assert_eq!(UBig::from_str_radix("+7ab", 32)?, UBig::from(7499u16));
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn from_str_radix(src: &str, radix: u32) -> Result<UBig, ParseError> {
@@ -62,7 +62,7 @@ impl UBig {
     /// # use dashu_base::ParseError;
     /// # use dashu_int::UBig;
     /// assert_eq!(UBig::from_str_with_radix_prefix("+0o17")?, (UBig::from(0o17u8), 8));
-    /// assert_eq!(UBig::from_str_with_radix_prefix("0x1f")?.0, 0x1f);
+    /// assert_eq!(UBig::from_str_with_radix_prefix("0x1f")?.0, UBig::from(0x1fu8));
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
@@ -148,7 +148,7 @@ impl IBig {
     /// # use dashu_base::ParseError;
     /// # use dashu_int::IBig;
     /// assert_eq!(IBig::from_str_with_radix_prefix("+0o17")?, (IBig::from(0o17), 8));
-    /// assert_eq!(IBig::from_str_with_radix_prefix("-0x1f")?.0, -0x1f);
+    /// assert_eq!(IBig::from_str_with_radix_prefix("-0x1f")?.0, IBig::from(-0x1f));
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn from_str_with_radix_prefix(mut src: &str) -> Result<(IBig, Digit), ParseError> {

@@ -22,7 +22,7 @@ members = [
     "macros",
     "rational"
 ]
-default-members = ["base", "integer", "float", "macros"]
+default-members = ["base", "integer", "float", "rational", "macros"]
 
 [dependencies]
 # all crates under dashu will have the same major version,
@@ -56,6 +56,7 @@ features = ["embedded"]
 
 [features]
 default = ["std", "rand", "num-traits"]
+# TODO(v0.3): update dependencies. std is not triggered for dashu-float by default?
 std = ["dashu-base/std", "dashu-int/std", "dashu-float/std"]
 rand = ["dashu-int/rand"]
 serde = ["dashu-int/serde"]

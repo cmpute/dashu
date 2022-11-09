@@ -1,4 +1,4 @@
-use core::hash::Hash;
+use core::{hash::Hash, cmp::Ordering};
 
 use crate::{ibig::IBig, ubig::UBig};
 
@@ -14,42 +14,76 @@ impl num_order::NumHash for IBig {
     }
 }
 
-macro_rules! impl_num_cmp_with {
-    ($t:ty) => {
+// TODO(next): implement partial_cmp with f32/f64
+
+macro_rules! impl_num_cmp_ubig_with_unsigned {
+    ($($t:ty)*) => {$(
         impl num_order::NumOrd<$t> for UBig {
-            fn num_partial_cmp(&self, other: &$t) -> Option<core::cmp::Ordering> {
-                self.partial_cmp(other)
+            #[inline]
+            fn num_partial_cmp(&self, other: &$t) -> Option<Ordering> {
+                self.partial_cmp(&UBig::from_unsigned(*other))
             }
         }
         impl num_order::NumOrd<UBig> for $t {
-            fn num_partial_cmp(&self, other: &UBig) -> Option<core::cmp::Ordering> {
-                self.partial_cmp(other)
+            #[inline]
+            fn num_partial_cmp(&self, other: &UBig) -> Option<Ordering> {
+                UBig::from_unsigned(*self).partial_cmp(other)
             }
         }
+    )*};
+}
+impl_num_cmp_ubig_with_unsigned!(u8 u16 u32 u64 u128 usize);
+
+macro_rules! impl_num_cmp_ubig_with_signed {
+    ($($t:ty)*) => {$(
+        impl num_order::NumOrd<$t> for UBig {
+            #[inline]
+            fn num_partial_cmp(&self, other: &$t) -> Option<Ordering> {
+                self.partial_cmp(&IBig::from_signed(*other))
+            }
+        }
+        impl num_order::NumOrd<UBig> for $t {
+            #[inline]
+            fn num_partial_cmp(&self, other: &UBig) -> Option<Ordering> {
+                IBig::from_signed(*self).partial_cmp(other)
+            }
+        }
+    )*};
+}
+impl_num_cmp_ubig_with_signed!(i8 i16 i32 i64 i128 isize);
+
+macro_rules! impl_num_cmp_ibig_with_unsigned {
+    ($($t:ty)*) => {$(
         impl num_order::NumOrd<$t> for IBig {
-            fn num_partial_cmp(&self, other: &$t) -> Option<core::cmp::Ordering> {
-                self.partial_cmp(other)
+            #[inline]
+            fn num_partial_cmp(&self, other: &$t) -> Option<Ordering> {
+                self.partial_cmp(&IBig::from_unsigned(*other))
             }
         }
         impl num_order::NumOrd<IBig> for $t {
-            fn num_partial_cmp(&self, other: &IBig) -> Option<core::cmp::Ordering> {
-                self.partial_cmp(other)
+            #[inline]
+            fn num_partial_cmp(&self, other: &IBig) -> Option<Ordering> {
+                IBig::from_unsigned(*self).partial_cmp(other)
             }
         }
-    };
+    )*};
 }
+impl_num_cmp_ibig_with_unsigned!(u8 u16 u32 u64 u128 usize);
 
-impl_num_cmp_with!(u8);
-impl_num_cmp_with!(u16);
-impl_num_cmp_with!(u32);
-impl_num_cmp_with!(u64);
-impl_num_cmp_with!(u128);
-impl_num_cmp_with!(usize);
-impl_num_cmp_with!(i8);
-impl_num_cmp_with!(i16);
-impl_num_cmp_with!(i32);
-impl_num_cmp_with!(i64);
-impl_num_cmp_with!(i128);
-impl_num_cmp_with!(isize);
-
-// TODO(next): implement partial_cmp with f32/f64
+macro_rules! impl_num_cmp_ibig_with_signed {
+    ($($t:ty)*) => {$(
+        impl num_order::NumOrd<$t> for IBig {
+            #[inline]
+            fn num_partial_cmp(&self, other: &$t) -> Option<Ordering> {
+                self.partial_cmp(&IBig::from_signed(*other))
+            }
+        }
+        impl num_order::NumOrd<IBig> for $t {
+            #[inline]
+            fn num_partial_cmp(&self, other: &IBig) -> Option<Ordering> {
+                IBig::from_signed(*self).partial_cmp(other)
+            }
+        }
+    )*};
+}
+impl_num_cmp_ibig_with_signed!(i8 i16 i32 i64 i128 isize);

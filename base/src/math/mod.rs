@@ -4,14 +4,16 @@
 pub trait EstimatedLog2 {
     /// Estimate the bounds of the binary logarithm.
     ///
-    /// The result is `(lower bound, upper bound)` such that lower bound ≤ log2(self) ≤ upper bound.
+    /// The result is `(lower bound, upper bound)` such that `lower bound ≤ log2(self) ≤ upper bound`.
     /// The precision of the bounds must be at least 8 bits (relative error < 2^-8).
     ///
     /// With `std` disabled, the precision is about 13 bits. With `std` enabled, the precision
     /// can be full 24 bits. But the exact precision is not guaranteed and should not be not
     /// relied on.
     ///
-    /// For negative values, the logarithm is calculated based on its absolute value.
+    /// For negative values, the logarithm is calculated based on its absolute value. If the number
+    /// is zero, then negative infinity will be returned.
+    /// 
     ///
     /// # Panics
     ///

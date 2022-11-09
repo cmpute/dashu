@@ -14,7 +14,7 @@ fn test_remove() {
         for b in [ubig!(2), ubig!(3), ubig!(10), ubig!(16)] {
             let mut a = b.clone().pow(i) * 5u8;
             assert_eq!(a.remove(&b), Some(i));
-            assert_eq!(a, 5);
+            assert_eq!(a, ubig!(5));
         }
     }
 }

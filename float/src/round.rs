@@ -272,7 +272,7 @@ impl Round for mode::HalfEven {
             // |rem| = 1/2
             Ordering::Equal => {
                 // if integer is odd, +1 if rem > 0, -1 if rem < 0
-                if integer & 1 == 1 {
+                if integer & 1 == IBig::ONE {
                     match low_sign {
                         Sign::Positive => Rounding::AddOne,
                         Sign::Negative => Rounding::SubOne,

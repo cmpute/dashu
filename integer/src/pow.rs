@@ -11,7 +11,7 @@ impl UBig {
     ///
     /// ```
     /// # use dashu_int::UBig;
-    /// assert_eq!(UBig::from(3u8).pow(3), 27);
+    /// assert_eq!(UBig::from(3u8).pow(3), UBig::from(27u8));
     /// ```
     #[inline]
     pub fn pow(&self, exp: usize) -> UBig {
@@ -38,7 +38,7 @@ impl IBig {
     ///
     /// ```
     /// # use dashu_int::IBig;
-    /// assert_eq!(IBig::from(-3).pow(3), -27);
+    /// assert_eq!(IBig::from(-3).pow(3), IBig::from(-27));
     /// ```
     #[inline]
     pub fn pow(&self, exp: usize) -> IBig {
