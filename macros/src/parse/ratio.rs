@@ -1,4 +1,7 @@
-use super::{common::quote_sign, int::{quote_ibig, quote_ubig}};
+use super::{
+    common::quote_sign,
+    int::{quote_ibig, quote_ubig},
+};
 use core::str::FromStr;
 
 use dashu_base::BitTest;
@@ -23,15 +26,19 @@ pub fn parse_ratio(input: TokenStream) -> TokenStream {
         Some(s) => {
             value_str = s;
             true
-        },
-        None => false
+        }
+        None => false,
     };
 
     // generate expressions
     let (num, den) = if relaxed {
-        Relaxed::from_str(value_str).unwrap_or_else(|_| panic_rbig_syntax()).into_parts()
+        Relaxed::from_str(value_str)
+            .unwrap_or_else(|_| panic_rbig_syntax())
+            .into_parts()
     } else {
-        RBig::from_str(value_str).unwrap_or_else(|_| panic_rbig_syntax()).into_parts()
+        RBig::from_str(value_str)
+            .unwrap_or_else(|_| panic_rbig_syntax())
+            .into_parts()
     };
 
     if num.bit_len() <= 32 && den.bit_len() <= 32 {

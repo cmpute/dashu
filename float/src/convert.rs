@@ -7,10 +7,7 @@ use crate::{
     error::{check_inf, panic_unlimited_precision},
     fbig::FBig,
     repr::{Context, Repr},
-    round::{
-        mode::HalfEven,
-        Round, Rounded, Rounding,
-    },
+    round::{mode::HalfEven, Round, Rounded, Rounding},
     utils::ilog_exact,
 };
 use dashu_base::{

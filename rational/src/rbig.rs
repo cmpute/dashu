@@ -3,7 +3,7 @@ use dashu_int::{DoubleWord, IBig, UBig};
 
 use crate::{error::panic_divide_by_0, repr::Repr};
 
-#[derive(Hash, PartialOrd, Ord)]
+#[derive(PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct RBig(pub(crate) Repr);
 
@@ -55,7 +55,7 @@ impl RBig {
         if denominator == 0 {
             panic_divide_by_0()
         } else if numerator == 0 {
-            return Self::ZERO
+            return Self::ZERO;
         }
 
         if numerator > 1 && denominator > 1 {
@@ -155,20 +155,20 @@ impl Relaxed {
     }
     /// Create a rational number in a const context
     #[inline]
-    pub const fn from_parts_const(sign: Sign, numerator: DoubleWord, denominator: DoubleWord) -> Self {
+    pub const fn from_parts_const(
+        sign: Sign,
+        numerator: DoubleWord,
+        denominator: DoubleWord,
+    ) -> Self {
         if denominator == 0 {
             panic_divide_by_0()
         } else if numerator == 0 {
-            return Self::ZERO
+            return Self::ZERO;
         }
 
         let n2 = numerator.trailing_zeros();
         let d2 = denominator.trailing_zeros();
-        let zeros = if n2 <= d2 {
-            n2
-        } else {
-            d2
-        };
+        let zeros = if n2 <= d2 { n2 } else { d2 };
         Self(Repr {
             numerator: IBig::from_parts_const(sign, numerator >> zeros),
             denominator: UBig::from_dword(denominator >> zeros),

@@ -1,4 +1,4 @@
-use super::{SquareRoot, SquareRootRem, CubicRoot, CubicRootRem};
+use super::{CubicRoot, CubicRootRem, SquareRoot, SquareRootRem};
 use crate::DivRem;
 
 trait NormalizedRootRem: Sized {
@@ -405,7 +405,7 @@ macro_rules! impl_rootrem_using_normalized {
 
         impl SquareRootRem for $t {
             type Output = $half;
-            
+
             fn sqrt_rem(&self) -> ($half, $t) {
                 if *self == 0 {
                     return (0, 0);

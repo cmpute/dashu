@@ -455,7 +455,7 @@ macro_rules! forward_ubig_ibig_binop_to_repr {
                 $impl!(lhs_mag, rhs_sign, rhs_mag)
             }
         }
-    }
+    };
 }
 
 /// Implement `impl Op<UBig> for IBig` by forwarding to the macro `$impl` with arguments
@@ -554,7 +554,7 @@ macro_rules! forward_ibig_ubig_binop_to_repr {
                 $impl!(lhs_sign, lhs_mag, rhs_mag)
             }
         }
-    }
+    };
 }
 
 pub(crate) use debug_assert_zero;

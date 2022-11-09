@@ -2,11 +2,8 @@ use crate::{
     error::check_inf,
     fbig::FBig,
     repr::{Context, Repr},
-    round::{
-        mode,
-        Round,
-    },
-    utils::{shr_digits, split_digits_ref, split_digits},
+    round::{mode, Round},
+    utils::{shr_digits, split_digits, split_digits_ref},
 };
 use dashu_int::{IBig, Word};
 
@@ -66,11 +63,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
     }
 
     /// Split the rational number into integral and fractional parts (split at the radix point)
-    /// 
+    ///
     /// It's equivalent to `(self.trunc(), self.fract())`
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
@@ -100,7 +97,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
         let lo_ctxt = Context::new(shift);
         (
             FBig::new(Repr::new(hi, 0), hi_ctxt),
-            FBig::new(Repr::new(lo, self.repr.exponent), lo_ctxt)
+            FBig::new(Repr::new(lo, self.repr.exponent), lo_ctxt),
         )
     }
 

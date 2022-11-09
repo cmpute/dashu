@@ -1,7 +1,6 @@
 use dashu_base::Gcd;
 use dashu_int::{IBig, UBig};
 
-#[derive(Hash)]
 pub struct Repr {
     pub(crate) numerator: IBig,
     pub(crate) denominator: UBig,

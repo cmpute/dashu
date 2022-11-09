@@ -4,8 +4,9 @@ use dashu_base::BitTest;
 
 use crate::{arch::word::Word, helper_macros, ibig::IBig, ops::PowerOfTwo, ubig::UBig, Sign::*};
 use core::{
+    cmp::Ordering,
     mem,
-    ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not}, cmp::Ordering,
+    ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not},
 };
 
 impl UBig {
@@ -65,7 +66,7 @@ impl UBig {
     /// Returns the number of trailing ones in the binary representation.
     ///
     /// In other words, it is the number of trailing zeros of it added by one.
-    /// 
+    ///
     /// This method never returns [None].
     ///
     /// # Examples
@@ -81,7 +82,7 @@ impl UBig {
     pub fn trailing_ones(&self) -> Option<usize> {
         Some(self.repr().trailing_ones())
     }
-    
+
     /// Split this integer into low bits and high bits.
     ///
     /// Its returns are equal to `(self & ((1 << n) - 1), self >> n)`.
@@ -201,7 +202,7 @@ impl IBig {
         let (sign, repr) = self.as_sign_repr();
         match sign {
             Positive => Some(repr.trailing_ones()),
-            Negative => repr.trailing_ones_neg()
+            Negative => repr.trailing_ones_neg(),
         }
     }
 }
@@ -311,18 +312,20 @@ mod repr {
                 RefLarge(words) => trailing_ones_large(words),
             }
         }
-        
+
         /// Number of trailing ones in (-self)
         pub fn trailing_ones_neg(self) -> Option<usize> {
             match self {
                 RefSmall(0) => Some(0),
                 RefSmall(1) => None,
                 RefSmall(dword) => Some((!dword + 1).trailing_ones() as usize),
-                RefLarge(words) => if words[0] & 1 == 0 {
-                    Some(0)
-                } else {
-                    Some(trailing_zeros_large_shifted_by_one(words) + 1)
-                },
+                RefLarge(words) => {
+                    if words[0] & 1 == 0 {
+                        Some(0)
+                    } else {
+                        Some(trailing_zeros_large_shifted_by_one(words) + 1)
+                    }
+                }
             }
         }
     }
@@ -494,7 +497,7 @@ mod repr {
         let zero_bits = words[zero_words].trailing_zeros() as usize;
         zero_words * WORD_BITS_USIZE + zero_bits
     }
-    
+
     /// Count the trailing zero bits in the words shifted right by one.
     /// Panics if the input is zero.
     #[inline]
@@ -502,7 +505,7 @@ mod repr {
         debug_assert!(words.len() >= 2);
         let zero_begin = (words[0] >> 1).trailing_zeros() as usize;
         if zero_begin < (WORD_BITS_USIZE - 1) {
-            return zero_begin;
+            zero_begin
         } else {
             let zero_words = words.iter().skip(1).position(|&word| word != 0).unwrap();
             let zero_bits = words[zero_words].trailing_zeros() as usize;

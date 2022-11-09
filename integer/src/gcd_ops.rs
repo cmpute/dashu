@@ -43,7 +43,6 @@ forward_ibig_binop_to_repr!(
     impl_ibig_gcd_ext
 );
 
-
 macro_rules! impl_ubig_ibig_gcd {
     ($mag0:ident, $sign1:ident, $mag1:ident) => {{
         let _unused = $sign1;

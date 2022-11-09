@@ -247,7 +247,7 @@ fn test_mul() {
 
 #[test]
 fn test_inv() {
-    // small ring    
+    // small ring
     let ring = ModuloRing::new(ubig!(1));
     assert_eq!(ring.convert(0).inv(), Some(ring.convert(0)));
 

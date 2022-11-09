@@ -144,7 +144,7 @@ pub fn split_digits<const B: Word>(value: IBig, pos: usize) -> (IBig, IBig) {
 
 /// If n is a power of base, then return the exponent,
 /// otherwise return 0.
-/// 
+///
 /// This is a const function replacement of `IBig::ilog`.
 pub const fn ilog_exact(n: Word, base: Word) -> u32 {
     if n < base {

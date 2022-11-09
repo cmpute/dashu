@@ -1,6 +1,6 @@
-use core::{hash::Hash, cmp::Ordering};
+use core::{cmp::Ordering, hash::Hash};
 
-use dashu_base::{Signed, Sign, FloatEncoding, BitTest};
+use dashu_base::{BitTest, FloatEncoding, Sign, Signed};
 
 use crate::{ibig::IBig, ubig::UBig};
 
@@ -108,23 +108,23 @@ macro_rules! impl_num_ord_ubig_with_float {
                         false => Some(Ordering::Greater)
                     };
                 }
-        
+
                 // step1: compare sign
                 if other.sign() == Sign::Negative {
                     return Some(Ordering::Greater);
                 }
-        
+
                 // step2: compare with infinity
                 if other.is_infinite() {
                     return Some(Ordering::Less);
                 }
-        
+
                 // step3: test if the integer is bigger than the max float value
                 let self_bits = self.bit_len();
                 if self_bits > (<$t>::MANTISSA_DIGITS as usize + <$t>::MAX_EXP as usize) {
                     return Some(Ordering::Greater);
                 }
-        
+
                 // step4: decode the float and compare the bits
                 let (man, exp) = other.decode().unwrap();
                 let other_bits = man.bit_len() as isize + exp as isize;
@@ -135,7 +135,7 @@ macro_rules! impl_num_ord_ubig_with_float {
                 } else if self_bits < other_bits as usize {
                     return Some(Ordering::Less);
                 }
-        
+
                 // step5: do the final comparison
                 if exp >= 0 {
                     let shifted = UBig::from(man.unsigned_abs()) << exp as usize;
@@ -145,7 +145,7 @@ macro_rules! impl_num_ord_ubig_with_float {
                 }
             }
         }
-        
+
         impl num_order::NumOrd<UBig> for $t {
             #[inline]
             fn num_partial_cmp(&self, other: &UBig) -> Option<Ordering> {
@@ -169,7 +169,7 @@ macro_rules! impl_num_ord_ibig_with_float {
                         false => Some(sign_to_ord(self.sign()))
                     };
                 }
-        
+
                 // step1: compare sign
                 let sign = match (self.sign(), other.sign()) {
                     (Sign::Positive, Sign::Positive) => Sign::Positive,
@@ -177,18 +177,18 @@ macro_rules! impl_num_ord_ibig_with_float {
                     (Sign::Negative, Sign::Positive) => return Some(Ordering::Less),
                     (Sign::Negative, Sign::Negative) => Sign::Negative,
                 };
-        
+
                 // step2: compare with infinity and 0
                 if other.is_infinite() {
                     return Some(sign_to_ord(-sign));
                 }
-        
+
                 // step3: test if the integer is bigger than the max float value
                 let self_bits = self.bit_len();
                 if self_bits > (<$t>::MANTISSA_DIGITS as usize + <$t>::MAX_EXP as usize) {
                     return Some(sign_to_ord(sign));
                 }
-        
+
                 // step4: decode the float and compare the bits
                 let (man, exp) = other.decode().unwrap();
                 let other_bits = man.bit_len() as isize + exp as isize;
@@ -199,7 +199,7 @@ macro_rules! impl_num_ord_ibig_with_float {
                 } else if self_bits < other_bits as usize {
                     return Some(sign_to_ord(-sign));
                 }
-        
+
                 // step5: do the final comparison
                 if exp >= 0 {
                     let shifted = IBig::from(man) << exp as usize;
@@ -209,7 +209,7 @@ macro_rules! impl_num_ord_ibig_with_float {
                 }
             }
         }
-        
+
         impl num_order::NumOrd<IBig> for $t {
             #[inline]
             fn num_partial_cmp(&self, other: &IBig) -> Option<Ordering> {

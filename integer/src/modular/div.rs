@@ -2,12 +2,13 @@ use dashu_base::ExtendedGcd;
 
 use crate::{
     buffer::Buffer,
+    error::panic_divide_by_invalid_modulo,
     gcd,
     helper_macros::debug_assert_zero,
     memory::MemoryAllocation,
     primitive::{locate_top_word_plus_one, lowest_dword, PrimitiveSigned},
     shift::{shl_in_place, shr_in_place},
-    Sign, error::panic_divide_by_invalid_modulo,
+    Sign,
 };
 
 use core::ops::{Div, DivAssign};
@@ -36,9 +37,11 @@ impl<'a> Modulo<'a> {
     #[inline]
     pub fn inv(&self) -> Option<Modulo<'a>> {
         match self.repr() {
-            ModuloRepr::Single(raw, ring) => ring.inv(&raw).map(|v| Modulo::from_single(v, ring)),
-            ModuloRepr::Double(raw, ring) => ring.inv(&raw).map(|v| Modulo::from_double(v, ring)),
-            ModuloRepr::Large(raw, ring) => ring.inv(raw.clone()).map(|v| Modulo::from_large(v, ring)),
+            ModuloRepr::Single(raw, ring) => ring.inv(raw).map(|v| Modulo::from_single(v, ring)),
+            ModuloRepr::Double(raw, ring) => ring.inv(raw).map(|v| Modulo::from_double(v, ring)),
+            ModuloRepr::Large(raw, ring) => {
+                ring.inv(raw.clone()).map(|v| Modulo::from_large(v, ring))
+            }
         }
     }
 }
@@ -154,7 +157,7 @@ impl<'a> Div<&Modulo<'a>> for &Modulo<'a> {
 
     #[inline]
     fn div(self, rhs: &Modulo<'a>) -> Modulo<'a> {
-        // Clippy doesn't like that division is implemented using multiplication.
+        // Clippy doesn't like that div is implemented using mul.
         #[allow(clippy::suspicious_arithmetic_impl)]
         match rhs.inv() {
             None => panic_divide_by_invalid_modulo(),

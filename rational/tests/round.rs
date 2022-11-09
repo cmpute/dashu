@@ -40,7 +40,7 @@ fn test_trunc_fract() {
         (rbig!(~0xffff/0xfe), ibig!(258), rbig!(~3/0xfe)),
         (rbig!(~0xfffe/0xff), ibig!(256), rbig!(~0xfe/0xff)),
     ];
-    
+
     for (ratio, trunc, fract) in test_cases {
         assert_eq!(ratio.trunc(), trunc);
         assert_eq!(ratio.fract(), fract);

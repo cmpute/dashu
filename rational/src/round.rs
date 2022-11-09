@@ -1,6 +1,6 @@
+use crate::{repr::Repr, RBig, Relaxed};
 use dashu_base::DivRem;
 use dashu_int::IBig;
-use crate::{repr::Repr, RBig, Relaxed};
 
 impl Repr {
     /// Split the rational number into integral and fractional parts (split at the radix point)
@@ -14,7 +14,7 @@ impl Repr {
             // no need to reduce here
             Repr {
                 numerator: r,
-                denominator: self.denominator
+                denominator: self.denominator,
             }
         };
         (trunc, fract)
@@ -51,7 +51,7 @@ impl Repr {
         } else {
             Repr {
                 numerator: r,
-                denominator: self.denominator.clone()
+                denominator: self.denominator.clone(),
             }
         }
     }
@@ -78,7 +78,7 @@ impl RBig {
     pub fn trunc(&self) -> IBig {
         self.0.trunc()
     }
-    
+
     #[inline]
     pub fn fract(&self) -> Self {
         Self(self.0.fract())
@@ -106,7 +106,7 @@ impl Relaxed {
     pub fn trunc(&self) -> IBig {
         self.0.trunc()
     }
-    
+
     #[inline]
     pub fn fract(&self) -> Self {
         Self(self.0.fract())

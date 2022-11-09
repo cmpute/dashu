@@ -1,6 +1,6 @@
 //! Comparisons operators.
 
-use dashu_base::{AbsEq, AbsCmp};
+use dashu_base::{AbsCmp, AbsEq};
 
 use crate::{
     arch::word::Word,

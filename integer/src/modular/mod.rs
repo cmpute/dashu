@@ -21,9 +21,9 @@ pub use modulo_ring::ModuloRing;
 
 mod add;
 pub(crate) mod convert;
+mod div;
 mod eq;
 mod fmt;
-mod div;
 pub(crate) mod modulo;
 pub(crate) mod modulo_ring;
 mod mul;

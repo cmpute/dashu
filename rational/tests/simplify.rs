@@ -8,10 +8,10 @@ fn test_simplest_in() {
     assert_eq!(RBig::simplest_in(rbig!(0), rbig!(0)), rbig!(0));
     assert_eq!(RBig::simplest_in(rbig!(-1), rbig!(1)), rbig!(0));
     assert_eq!(RBig::simplest_in(rbig!(-1), rbig!(-1)), rbig!(-1));
-    assert_eq!(RBig::simplest_in(rbig!(2/7), rbig!(2/9)), rbig!(1/4));
-    assert_eq!(RBig::simplest_in(rbig!(-20/7), rbig!(-20/9)), rbig!(-5/2));
+    assert_eq!(RBig::simplest_in(rbig!(2 / 7), rbig!(2 / 9)), rbig!(1 / 4));
+    assert_eq!(RBig::simplest_in(rbig!(-20 / 7), rbig!(-20 / 9)), rbig!(-5 / 2));
     assert_eq!(RBig::simplest_in(rbig!(5), rbig!(7)), rbig!(6));
-    assert_eq!(RBig::simplest_in(rbig!(5), rbig!(6)), rbig!(11/2));
+    assert_eq!(RBig::simplest_in(rbig!(5), rbig!(6)), rbig!(11 / 2));
 }
 
 #[test]
@@ -31,7 +31,6 @@ fn test_simplest_from_f32() {
         (-1, 3),
         (1, 4),
         (-1, 5),
-
         // convergents of pi
         (22, 7),
         (333, 106),
@@ -60,7 +59,6 @@ fn test_simplest_from_f64() {
         (-1, 3),
         (1, 4),
         (-1, 5),
-
         // convergents of pi
         (22, 7),
         (333, 106),
@@ -75,7 +73,7 @@ fn test_simplest_from_f64() {
         (5419351, 1725033),
         (80143857, 25510582),
         (165707065, 52746197),
-        (245850922, 78256779)
+        (245850922, 78256779),
     ];
     for (num, den) in cases {
         let f = num as f64 / den as f64;
@@ -93,16 +91,34 @@ fn test_nearest() {
     // test general cases
     let test_cases = [
         // (value, limit, next down, next up, sign of nearest - value)
-        (core::f64::consts::PI, 10u64, rbig!(25/8), rbig!(22/7), Positive),
-        (core::f64::consts::PI, 100, rbig!(311/99), rbig!(22/7), Negative),
-        (core::f64::consts::PI, 1000, rbig!(2818/897), rbig!(355/113), Positive),
-        (core::f64::consts::PI, 10000, rbig!(31218/9937), rbig!(355/113), Positive),
-        (core::f64::consts::PI, 100000, rbig!(208341/66317), rbig!(312689/99532), Positive),
-        (core::f64::consts::SQRT_2, 10, rbig!(7/5), rbig!(10/7), Negative),
-        (core::f64::consts::SQRT_2, 100, rbig!(140/99), rbig!(99/70), Negative),
-        (core::f64::consts::SQRT_2, 1000, rbig!(1393/985), rbig!(577/408), Negative),
-        (core::f64::consts::SQRT_2, 10000, rbig!(8119/5741), rbig!(11482/8119), Positive),
-        (core::f64::consts::SQRT_2, 100000, rbig!(47321/33461), rbig!(114243/80782), Positive),
+        (core::f64::consts::PI, 10u64, rbig!(25 / 8), rbig!(22 / 7), Positive),
+        (core::f64::consts::PI, 100, rbig!(311 / 99), rbig!(22 / 7), Negative),
+        (core::f64::consts::PI, 1000, rbig!(2818 / 897), rbig!(355 / 113), Positive),
+        (core::f64::consts::PI, 10000, rbig!(31218 / 9937), rbig!(355 / 113), Positive),
+        (
+            core::f64::consts::PI,
+            100000,
+            rbig!(208341 / 66317),
+            rbig!(312689 / 99532),
+            Positive,
+        ),
+        (core::f64::consts::SQRT_2, 10, rbig!(7 / 5), rbig!(10 / 7), Negative),
+        (core::f64::consts::SQRT_2, 100, rbig!(140 / 99), rbig!(99 / 70), Negative),
+        (core::f64::consts::SQRT_2, 1000, rbig!(1393 / 985), rbig!(577 / 408), Negative),
+        (
+            core::f64::consts::SQRT_2,
+            10000,
+            rbig!(8119 / 5741),
+            rbig!(11482 / 8119),
+            Positive,
+        ),
+        (
+            core::f64::consts::SQRT_2,
+            100000,
+            rbig!(47321 / 33461),
+            rbig!(114243 / 80782),
+            Positive,
+        ),
     ];
     for (value, limit, down, up, cmp) in test_cases {
         let ratio: RBig = value.try_into().unwrap();
@@ -128,5 +144,5 @@ fn test_nearest() {
 #[test]
 #[should_panic]
 fn test_nearest_zero_limit() {
-    let _ = rbig!(1/2).nearest(&ubig!(0));
+    let _ = rbig!(1 / 2).nearest(&ubig!(0));
 }

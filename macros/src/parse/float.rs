@@ -3,7 +3,7 @@ use core::str::FromStr;
 
 use dashu_base::BitTest;
 use dashu_float::{round::mode, DBig, FBig};
-use dashu_int::{Sign, IBig};
+use dashu_int::{IBig, Sign};
 use proc_macro2::TokenStream;
 use quote::quote;
 
@@ -47,10 +47,10 @@ pub fn parse_binary_float(input: TokenStream) -> TokenStream {
 
         #[cfg(not(feature = "embedded"))]
         quote! { ::dashu_float::FBig::<::dashu_float::round::mode::Zero, 2>
-            ::from_parts_const(#sign, #u as _, #exp, Some(#prec)) }
+        ::from_parts_const(#sign, #u as _, #exp, Some(#prec)) }
         #[cfg(feature = "embedded")]
         quote! { ::dashu::float::FBig::<::dashu::float::round::mode::Zero, 2>
-            ::from_parts_const(#sign, #u as _, #exp, Some(#prec)) }
+        ::from_parts_const(#sign, #u as _, #exp, Some(#prec)) }
     } else {
         let signif_tt = quote_ibig(IBig::from_parts(sign, mag));
 

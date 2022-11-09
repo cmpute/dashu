@@ -10,9 +10,9 @@ use crate::{
 };
 
 /// Bit query for integers
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// # use dashu_base::BitTest;
 /// // query a bit of the number
@@ -22,7 +22,7 @@ use crate::{
 /// assert_eq!((-0b10010).bit(1), true);
 /// assert_eq!((-0b10010).bit(3), true);
 /// assert_eq!((-0b10010).bit(100), true);
-/// 
+///
 /// // query the bit length of the number
 /// assert_eq!(0.bit_len(), 0);
 /// assert_eq!(17.bit_len(), 5);
@@ -38,7 +38,7 @@ pub trait BitTest {
     /// * number of digits in base 2
     /// * the index of the top 1 bit plus one
     /// * the floored base-2 logarithm of the number plus one.
-    /// 
+    ///
     /// For negative numbers it is:
     /// * number of digits in base 2 without the sign
     /// * the index of the top 0 bit plus one
@@ -118,19 +118,19 @@ macro_rules! impl_bit_ops_for_int {
 impl_bit_ops_for_int!(i8 i16 i32 i64 i128 isize);
 
 /// Support encoding and decoding of floats into (mantissa, exponent) parts.
-/// 
+///
 /// See the docs of each method for the details
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// # use dashu_base::{FloatEncoding, Approximation::*, Sign::*};
 /// use core::num::FpCategory;
-/// 
+///
 /// assert_eq!(0f64.decode(), Ok((0, -1074))); // exponent will not be reduced
 /// assert_eq!(1f32.decode(), Ok((1 << 23, -23)));
 /// assert_eq!(f32::INFINITY.decode(), Err(FpCategory::Infinite));
-/// 
+///
 /// assert_eq!(f64::encode(0, 1), Exact(0f64));
 /// assert_eq!(f32::encode(1, 0), Exact(1f32));
 /// assert_eq!(f32::encode(i32::MAX, 100), Inexact(f32::INFINITY, Positive));
@@ -140,13 +140,13 @@ pub trait FloatEncoding {
     type Exponent;
 
     /// Convert a float number `mantissa * 2^exponent` into `(mantissa, exponent)` parts faithfully.
-    /// 
+    ///
     /// This method will not reduce the result (e.g. turn `2 * 2^-1` into `1 * 2^0`), and it
     /// will return [Err] when the float number is nan or infinite.
     fn decode(self) -> Result<(Self::Mantissa, Self::Exponent), FpCategory>;
 
     /// Convert `(mantissa, exponent)` to `mantissa * 2^exponent` faithfully.
-    /// 
+    ///
     /// It won't generate `NaN` values. However if the actual value is out of the
     /// representation range, it might return an infinity or subnormal number.
     ///

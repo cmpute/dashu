@@ -1,4 +1,4 @@
-use dashu_base::{DivRem, ExtendedGcd, Gcd, Sign, SquareRoot, CubicRoot, BitTest};
+use dashu_base::{BitTest, CubicRoot, DivRem, ExtendedGcd, Gcd, Sign, SquareRoot};
 
 use crate::{ibig::IBig, ubig::UBig};
 

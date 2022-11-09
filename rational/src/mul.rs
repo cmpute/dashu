@@ -4,7 +4,7 @@ use dashu_base::Gcd;
 use dashu_int::{IBig, UBig};
 
 use crate::{
-    helper_macros::{impl_binop_assign_by_taking, impl_binop_with_macro, impl_binop_with_int},
+    helper_macros::{impl_binop_assign_by_taking, impl_binop_with_int, impl_binop_with_macro},
     rbig::{RBig, Relaxed},
     repr::Repr,
 };

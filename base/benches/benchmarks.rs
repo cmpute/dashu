@@ -5,7 +5,7 @@ use criterion::{
     PlotConfiguration,
 };
 
-use dashu_base::{ExtendedGcd, Gcd, SquareRoot, CubicRoot};
+use dashu_base::{CubicRoot, ExtendedGcd, Gcd, SquareRoot};
 use rand::prelude::*;
 
 const SEED: u64 = 1;

@@ -13,7 +13,7 @@ pub trait EstimatedLog2 {
     ///
     /// For negative values, the logarithm is calculated based on its absolute value. If the number
     /// is zero, then negative infinity will be returned.
-    /// 
+    ///
     ///
     /// # Panics
     ///

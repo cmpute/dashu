@@ -145,4 +145,3 @@ fn test_trunc_inf() {
 fn test_fract_inf() {
     let _ = DBig::INFINITY.fract();
 }
-

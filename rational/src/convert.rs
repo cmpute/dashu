@@ -2,7 +2,7 @@ use core::cmp::Ordering;
 
 use dashu_base::{
     Approximation::{self, *},
-    ConversionError, DivRem, FloatEncoding, PowerOfTwo, Sign, UnsignedAbs, BitTest
+    BitTest, ConversionError, DivRem, FloatEncoding, PowerOfTwo, Sign, UnsignedAbs,
 };
 use dashu_int::{IBig, UBig};
 
@@ -444,14 +444,14 @@ impl RBig {
 
 impl Relaxed {
     /// Convert the rational number to [f32].
-    /// 
+    ///
     /// See [RBig::to_f32_fast] for details.
     #[inline]
     pub fn to_f32_fast(&self) -> f32 {
         self.0.to_f32_fast()
     }
     /// Convert the rational number to [f64].
-    /// 
+    ///
     /// See [RBig::to_f64_fast] for details.
     #[inline]
     pub fn to_f64_fast(&self) -> f64 {
@@ -459,21 +459,21 @@ impl Relaxed {
     }
 
     /// Convert the rational number to [f32] with guaranteed correct rounding.
-    /// 
+    ///
     /// See [RBig::to_f32] for details.
     #[inline]
     pub fn to_f32(&self) -> Approximation<f32, Sign> {
         self.0.to_f32()
     }
     /// Convert the rational number to [f64] with guaranteed correct rounding.
-    /// 
+    ///
     /// See [RBig::to_f64] for details.
     #[inline]
     pub fn to_f64(&self) -> Approximation<f64, Sign> {
         self.0.to_f64()
     }
     /// Convert the rational number to [IBig].
-    /// 
+    ///
     /// See [RBig::to_int] for details.
     #[inline]
     pub fn to_int(&self) -> Approximation<IBig, Self> {

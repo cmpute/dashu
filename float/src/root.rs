@@ -1,4 +1,4 @@
-use dashu_base::{Approximation, SquareRootRem, Sign, UnsignedAbs};
+use dashu_base::{Approximation, Sign, SquareRootRem, UnsignedAbs};
 use dashu_int::IBig;
 
 use crate::{

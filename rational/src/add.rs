@@ -1,9 +1,11 @@
+#![allow(clippy::suspicious_arithmetic_impl)] // Clippy doesn't like that add/sub is implemented with mul.
+
 use core::ops::{Add, AddAssign, Sub, SubAssign};
 use dashu_base::Gcd;
-use dashu_int::{UBig, IBig};
+use dashu_int::{IBig, UBig};
 
 use crate::{
-    helper_macros::{impl_binop_assign_by_taking, impl_binop_with_macro, impl_binop_with_int},
+    helper_macros::{impl_binop_assign_by_taking, impl_binop_with_int, impl_binop_with_macro},
     rbig::{RBig, Relaxed},
     repr::Repr,
 };
@@ -69,7 +71,8 @@ macro_rules! impl_addsub_int_with_rbig {
         })
     }};
 }
-macro_rules! impl_int_sub_rbig { // sub is not commutative
+macro_rules! impl_int_sub_rbig {
+    // sub is not commutative
     (
         $a:ident, $b:ident, $i:ident,
         $ra:ident, $rb:ident, $ri:ident, $method:ident

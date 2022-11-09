@@ -1,15 +1,12 @@
 //! Implementations of methods related to simplification.
-//! 
+//!
 //! Note that these methods are only implemented for [RBig] but not for [Relaxed][crate::Relaxed]
 //! because the latter one is naturally not in the simplest form.
 
-use crate::{
-    rbig::RBig,
-    repr::Repr, error::panic_divide_by_0,
-};
-use core::{mem, cmp::Ordering};
-use dashu_base::{DivRem, UnsignedAbs, Approximation, AbsCmp};
-use dashu_int::{IBig, UBig, Sign};
+use crate::{error::panic_divide_by_0, rbig::RBig, repr::Repr};
+use core::{cmp::Ordering, mem};
+use dashu_base::{AbsCmp, Approximation, DivRem, UnsignedAbs};
+use dashu_int::{IBig, Sign, UBig};
 
 impl Repr {
     /// Find the simplest rational number in the open interval `(lower, upper)`.
@@ -85,14 +82,20 @@ macro_rules! impl_simplest_from_float {
         let mut est = Repr::try_from($f).unwrap();
         est.numerator <<= 1;
         est.denominator <<= 1;
-        let left = Self(Repr {
-            numerator: &est.numerator + IBig::ONE,
-            denominator: est.denominator.clone()
-        }.reduce());
-        let right = Self(Repr {
-            numerator: est.numerator - IBig::ONE,
-            denominator: est.denominator
-        }.reduce());
+        let left = Self(
+            Repr {
+                numerator: &est.numerator + IBig::ONE,
+                denominator: est.denominator.clone(),
+            }
+            .reduce(),
+        );
+        let right = Self(
+            Repr {
+                numerator: est.numerator - IBig::ONE,
+                denominator: est.denominator,
+            }
+            .reduce(),
+        );
 
         // find the simplest float in the range
         let mut simplest = Self::simplest_in(left.clone(), right.clone());
@@ -129,7 +132,7 @@ impl RBig {
     }
 
     /// Find the simplest rational number in the open interval `(lower, upper)`.
-    /// 
+    ///
     /// `lower` and `upper` will be swapped if necessary. If `lower` and `upper` are
     /// the same number, then this number will be directly returned.
     #[inline]
@@ -138,7 +141,7 @@ impl RBig {
     }
 
     /// Find the previous and next value in farey sequence (from 0 to 1) with `limit` as the order.
-    /// 
+    ///
     /// This function requires `-1 < x < 1` and `x.denominator` > `limit`
     fn farey_neighbors(x: &Self, limit: &UBig) -> (Self, Self) {
         debug_assert!(x.denominator() > limit);
@@ -184,7 +187,7 @@ impl RBig {
 
         // directly return this number if it's already simple enough
         if self.denominator() <= limit {
-            return Approximation::Exact(self.clone())
+            return Approximation::Exact(self.clone());
         }
 
         let (trunc, r) = self.clone().split_at_point();
@@ -194,15 +197,15 @@ impl RBig {
         let mut mid = (&left + &right).0;
         mid.denominator <<= 1;
         if r.0 > mid {
-            return Approximation::Inexact(trunc + right, Sign::Positive);
+            Approximation::Inexact(trunc + right, Sign::Positive)
         } else {
-            return Approximation::Inexact(trunc + left, Sign::Negative);
+            Approximation::Inexact(trunc + left, Sign::Negative)
         }
     }
 
     /// Find the closest rational number that is greater than this number and has a denominator less than `limit`.
-    /// 
-    /// It's equivalent to finding the next element in Farey sequence of order `limit`. 
+    ///
+    /// It's equivalent to finding the next element in Farey sequence of order `limit`.
     pub fn next_up(&self, limit: &UBig) -> Self {
         if limit.is_zero() {
             panic_divide_by_0()
@@ -213,22 +216,23 @@ impl RBig {
             // If the denominator of the number is already small enough, increase the number a little
             // bit before finding the farey neighbors. Note that the distance between two adjacent
             // numbers in a farey sequence is at least limit^-2, so we just increase limit^-2
-            let target = fract + Self(Repr{
-                numerator: IBig::ONE,
-                denominator: limit.square(),
-            });
+            let target = fract
+                + Self(Repr {
+                    numerator: IBig::ONE,
+                    denominator: limit.square(),
+                });
             Self::farey_neighbors(&target, limit).1
         } else {
             // otherwise we can directly find the next value by finding farey bounds
             Self::farey_neighbors(&fract, limit).1
         };
-        return trunc + up;
+        trunc + up
     }
 
     /// Find the closest rational number that is less than this number and has a denominator less than `limit`.
-    /// 
+    ///
     /// It's equivalent to finding the previous element in Farey sequence of order `limit`.
-    /// 
+    ///
     /// This method requires the denominator of this number is less than the limit, otherwise
     /// please use [RBig::nearest]
     pub fn next_down(&self, limit: &UBig) -> Self {
@@ -239,14 +243,15 @@ impl RBig {
         // similar to next_up()
         let (trunc, fract) = self.clone().split_at_point();
         let down = if self.denominator() <= limit {
-            let target = fract - Self(Repr{
-                numerator: IBig::ONE,
-                denominator: limit.square(),
-            });
+            let target = fract
+                - Self(Repr {
+                    numerator: IBig::ONE,
+                    denominator: limit.square(),
+                });
             Self::farey_neighbors(&target, limit).0
         } else {
             Self::farey_neighbors(&fract, limit).0
         };
-        return trunc + down;
+        trunc + down
     }
 }

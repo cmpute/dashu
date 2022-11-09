@@ -31,7 +31,7 @@ pub trait UnsignedAbs {
     fn unsigned_abs(self) -> Self::Output;
 }
 
- /// Check whether the magnitude of this number is equal the magnitude of the other number
+/// Check whether the magnitude of this number is equal the magnitude of the other number
 pub trait AbsEq<Rhs = Self> {
     fn abs_eq(&self, rhs: &Rhs) -> bool;
 }

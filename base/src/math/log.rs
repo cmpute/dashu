@@ -263,7 +263,7 @@ macro_rules! impl_log2_bounds_for_float {
             fn log2_bounds(&self) -> (f32, f32) {
                 use crate::FloatEncoding;
                 use core::num::FpCategory::*;
-        
+
                 if *self == 0. {
                     (f32::NEG_INFINITY, f32::NEG_INFINITY)
                 } else {
@@ -301,7 +301,7 @@ macro_rules! impl_log2_bounds_for_float {
                     (next_down(log2), next_up(log2))
                 }
             }
-        
+
             #[inline]
             fn log2_est(&self) -> f32 {
                 assert!(!self.is_nan());

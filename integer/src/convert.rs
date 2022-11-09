@@ -9,7 +9,7 @@ use crate::{
     ubig::UBig,
     Sign::*,
 };
-use alloc::{vec::Vec, boxed::Box};
+use alloc::{boxed::Box, vec::Vec};
 use core::convert::{TryFrom, TryInto};
 use dashu_base::{
     Approximation::{self, *},
@@ -414,7 +414,7 @@ macro_rules! ibig_float_conversions {
     ($($t:ty)*) => {$(
         impl TryFrom<$t> for IBig {
             type Error = ConversionError;
-        
+
             fn try_from(value: $t) -> Result<Self, Self::Error> {
                 let (man, exp) = value.decode().map_err(|_| ConversionError::OutOfBounds)?;
                 let mut result: IBig = man.into();
@@ -429,7 +429,6 @@ macro_rules! ibig_float_conversions {
     )*};
 }
 ibig_float_conversions!(f32 f64);
-
 
 impl From<UBig> for IBig {
     #[inline]

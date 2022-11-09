@@ -80,7 +80,7 @@ use dashu_int::{DoubleWord, IBig};
 /// The infinities are converted as it is, and the subnormals are converted using its actual values.
 ///
 /// # IEEE 754 behavior compliance
-/// 
+///
 /// The representation of the floating point number doesn't follows the IEEE 754 standard, as it's not
 /// designed for arbitrary precision numbers. The key differences include:
 /// * [FBig] doesn't support NaN values. In places where IEEE 754 operations generate NaNs, `FBig` will panic.
@@ -90,7 +90,7 @@ use dashu_int::{DoubleWord, IBig};
 /// * [FBig] operations will panic if the result overflows or underflows¹.
 /// * [FBig] does support infinities, but currently infinities are not allowed to be operated with, except for
 ///   equality test and comparison¹.
-/// 
+///
 /// ¹ These behaviors are subject to changes in the future.
 ///
 /// # Convert from/to `f32`/`f64`

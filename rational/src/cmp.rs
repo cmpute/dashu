@@ -1,6 +1,6 @@
 use crate::{repr::Repr, RBig, Relaxed};
-use core::cmp::Ordering;
-use dashu_base::{Sign::*, BitTest};
+use core::{cmp::Ordering, hash::Hash};
+use dashu_base::{BitTest, Sign::*};
 
 impl PartialEq for Repr {
     #[inline]
@@ -10,10 +10,8 @@ impl PartialEq for Repr {
             return false;
         }
 
-        let n1d2_bits =
-            self.numerator.bit_len() as isize + other.denominator.bit_len() as isize;
-        let n2d1_bits =
-            other.numerator.bit_len() as isize + self.denominator.bit_len() as isize;
+        let n1d2_bits = self.numerator.bit_len() as isize + other.denominator.bit_len() as isize;
+        let n2d1_bits = other.numerator.bit_len() as isize + self.denominator.bit_len() as isize;
         if n1d2_bits.abs_diff(n2d1_bits) > 1 {
             return false;
         }
@@ -32,6 +30,16 @@ impl PartialEq for RBig {
     }
 }
 impl Eq for RBig {}
+
+// Hash is only implemented for RBig but not for Relaxed, because the representation
+// is not unique for Relaxed.
+impl Hash for RBig {
+    #[inline]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.numerator.hash(state);
+        self.0.denominator.hash(state);
+    }
+}
 
 impl PartialOrd for Repr {
     #[inline]
@@ -56,10 +64,8 @@ impl Ord for Repr {
         }
 
         // step3: test bit size
-        let n1d2_bits =
-            self.numerator.bit_len() as isize + other.denominator.bit_len() as isize;
-        let n2d1_bits =
-            other.numerator.bit_len() as isize + self.denominator.bit_len() as isize;
+        let n1d2_bits = self.numerator.bit_len() as isize + other.denominator.bit_len() as isize;
+        let n2d1_bits = other.numerator.bit_len() as isize + self.denominator.bit_len() as isize;
         if n1d2_bits > n2d1_bits + 1 {
             return if negative {
                 Ordering::Less

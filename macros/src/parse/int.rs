@@ -110,12 +110,10 @@ pub fn parse_integer<const SIGNED: bool>(input: TokenStream) -> TokenStream {
             #[cfg(feature = "embedded")]
             quote! { ::dashu::integer::UBig::from_dword(#u as _) }
         }
+    } else if SIGNED {
+        quote_ibig(IBig::from_parts(sign, big))
     } else {
-        if SIGNED {
-            quote_ibig(IBig::from_parts(sign, big))
-        } else {
-            quote_ubig(big)
-        }
+        quote_ubig(big)
     }
 }
 
