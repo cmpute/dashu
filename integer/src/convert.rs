@@ -389,8 +389,48 @@ macro_rules! ibig_signed_conversions {
         }
     )*};
 }
-
 ibig_signed_conversions!(i8 i16 i32 i64 i128 isize);
+
+macro_rules! ubig_float_conversions {
+    ($($t:ty)*) => {$(
+        impl TryFrom<$t> for UBig {
+            type Error = ConversionError;
+
+            fn try_from(value: $t) -> Result<Self, Self::Error> {
+                let (man, exp) = value.decode().map_err(|_| ConversionError::OutOfBounds)?;
+                let mut result: UBig = man.try_into()?;
+                if exp >= 0 {
+                    result <<= exp as usize;
+                } else {
+                    result >>= (-exp) as usize;
+                }
+                Ok(result)
+            }
+        }
+    )*};
+}
+ubig_float_conversions!(f32 f64);
+
+macro_rules! ibig_float_conversions {
+    ($($t:ty)*) => {$(
+        impl TryFrom<$t> for IBig {
+            type Error = ConversionError;
+        
+            fn try_from(value: $t) -> Result<Self, Self::Error> {
+                let (man, exp) = value.decode().map_err(|_| ConversionError::OutOfBounds)?;
+                let mut result: IBig = man.into();
+                if exp >= 0 {
+                    result <<= exp as usize;
+                } else {
+                    result >>= (-exp) as usize;
+                }
+                Ok(result)
+            }
+        }
+    )*};
+}
+ibig_float_conversions!(f32 f64);
+
 
 impl From<UBig> for IBig {
     #[inline]

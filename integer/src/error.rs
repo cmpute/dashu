@@ -50,3 +50,8 @@ pub(crate) fn panic_root_zeroth() -> ! {
 pub(crate) fn panic_root_negative() -> ! {
     panic!("the root is a complex number!")
 }
+
+/// Panics when taking an inavlid inverse on a modulo number
+pub(crate) fn panic_divide_by_invalid_modulo() -> ! {
+    panic!("Division by a non-invertible Modulo")
+}

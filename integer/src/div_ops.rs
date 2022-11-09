@@ -5,19 +5,9 @@ use crate::{
     ibig::IBig,
     ops::{DivEuclid, DivRem, DivRemAssign, DivRemEuclid, RemEuclid},
     ubig::UBig,
-    Sign::{self, *},
+    Sign::*,
 };
 use core::ops::{Div, DivAssign, Rem, RemAssign};
-
-// TODO: remove sign_as_int, use add::add_one_in_place or add::sub_one_in_place instead.
-
-#[inline]
-fn sign_as_int(s: Sign) -> IBig {
-    match s {
-        Positive => IBig::ONE,
-        Negative => IBig::NEG_ONE,
-    }
-}
 
 // Ops for UBig
 
@@ -87,11 +77,11 @@ helper_macros::forward_ibig_binop_to_repr!(
 macro_rules! impl_ibig_div_euclid {
     ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {{
         let (q, r) = $mag0.div_rem($mag1);
-        let q = IBig(q.with_sign($sign0 * $sign1));
-        match ($sign0, r.is_zero()) {
+        let q = match ($sign0, r.is_zero()) {
             (Positive, _) | (Negative, true) => q,
-            (Negative, false) => q - sign_as_int($sign1),
-        }
+            (Negative, false) => q.into_typed().add_one(),
+        };
+        IBig(q.with_sign($sign0 * $sign1))
     }};
 }
 macro_rules! impl_ibig_rem_euclid {
@@ -132,13 +122,12 @@ macro_rules! impl_ibig_divrem_euclid {
                 (IBig(q.with_sign($sign1)), UBig(r))
             }
             Negative => {
-                let (q, mut r) = $mag0.div_rem($mag1.as_ref());
-                let mut q = IBig(q.with_sign(-$sign1));
+                let (mut q, mut r) = $mag0.div_rem($mag1.as_ref());
                 if !r.is_zero() {
-                    q -= sign_as_int($sign1);
+                    q = q.into_typed().add_one();
                     r = $mag1 - r.into_typed();
                 }
-                (q, UBig(r))
+                (IBig(q.with_sign(-$sign1)), UBig(r))
             }
         }
     };

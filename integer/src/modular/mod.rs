@@ -23,7 +23,7 @@ mod add;
 pub(crate) mod convert;
 mod eq;
 mod fmt;
-mod inv;
+mod div;
 pub(crate) mod modulo;
 pub(crate) mod modulo_ring;
 mod mul;

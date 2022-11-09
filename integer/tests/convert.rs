@@ -1,4 +1,4 @@
-use dashu_base::{Approximation::*, Sign::*};
+use dashu_base::{Approximation::*, Sign::*, ConversionError::*};
 use dashu_int::{IBig, UBig};
 use std::convert::TryFrom;
 
@@ -316,4 +316,32 @@ fn test_to_f64() {
         (ibig!(-0x1fffffffffffff8) << 967).to_f64(),
         Inexact(f64::NEG_INFINITY, Negative)
     );
+}
+
+#[test]
+fn test_from_f32() {
+    assert_eq!(UBig::try_from(0f32), Ok(ubig!(0)));
+    assert_eq!(UBig::try_from(1f32), Ok(ubig!(1)));
+    assert_eq!(UBig::try_from(-1f32), Err(OutOfBounds));
+    assert_eq!(UBig::try_from(f32::INFINITY), Err(OutOfBounds));
+    assert_eq!(UBig::try_from(f32::NEG_INFINITY), Err(OutOfBounds));
+    assert_eq!(UBig::try_from(f32::NAN), Err(OutOfBounds));
+    
+    assert_eq!(UBig::try_from(1e10f32), Ok(ubig!(10000000000)));
+    assert_eq!(UBig::try_from(1e20f32), Ok(ubig!(100000002004087734272)));
+}
+
+#[test]
+fn test_from_f64() {
+    assert_eq!(UBig::try_from(0f64), Ok(ubig!(0)));
+    assert_eq!(UBig::try_from(1f64), Ok(ubig!(1)));
+    assert_eq!(UBig::try_from(-1f64), Err(OutOfBounds));
+    assert_eq!(UBig::try_from(f64::INFINITY), Err(OutOfBounds));
+    assert_eq!(UBig::try_from(f64::NEG_INFINITY), Err(OutOfBounds));
+    assert_eq!(UBig::try_from(f64::NAN), Err(OutOfBounds));
+    
+    assert_eq!(UBig::try_from(1e10f64), Ok(ubig!(10000000000)));
+    assert_eq!(UBig::try_from(1e20f64), Ok(ubig!(100000000000000000000)));
+    assert_eq!(UBig::try_from(1e30f64), Ok(ubig!(1000000000000000019884624838656)));
+    assert_eq!(UBig::try_from(1e40f64), Ok(ubig!(10000000000000000303786028427003666890752)));
 }

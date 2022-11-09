@@ -119,9 +119,6 @@ pub fn parse_integer<const SIGNED: bool>(input: TokenStream) -> TokenStream {
     }
 }
 
-// TODO(v0.3): only inline u32 ints, (then this will be platform agnostic), parse the big integer from bytes
-//             instead of words?
-
 /// Generate tokens for creating a [UBig] instance (non-const)
 pub fn quote_ubig(int: UBig) -> TokenStream {
     debug_assert!(int.bit_len() > 32);
