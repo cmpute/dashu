@@ -1,4 +1,5 @@
-use dashu_int::{error::ParseError, IBig, UBig, Word};
+use dashu_base::ParseError;
+use dashu_int::{IBig, UBig, Word};
 
 mod helper_macros;
 

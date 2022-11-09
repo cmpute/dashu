@@ -1,5 +1,5 @@
-use dashu_base::{Approximation::*, Sign::*};
-use dashu_int::{error::OutOfBoundsError, IBig, UBig};
+use dashu_base::{Approximation::*, Sign::*, ConversionError::*};
+use dashu_int::{IBig, UBig};
 use std::convert::TryFrom;
 
 mod helper_macros;
@@ -7,23 +7,23 @@ mod helper_macros;
 #[test]
 fn test_from_to_le_bytes() {
     let empty: [u8; 0] = [];
-    assert_eq!(UBig::from_le_bytes(&[]).to_le_bytes(), empty);
-    assert_eq!(UBig::from_le_bytes(&[0; 100]).to_le_bytes(), empty);
-    assert_eq!(UBig::from_le_bytes(&[1, 2, 3, 0]).to_le_bytes(), [1, 2, 3]);
+    assert_eq!(*UBig::from_le_bytes(&[]).to_le_bytes(), empty);
+    assert_eq!(*UBig::from_le_bytes(&[0; 100]).to_le_bytes(), empty);
+    assert_eq!(*UBig::from_le_bytes(&[1, 2, 3, 0]).to_le_bytes(), [1, 2, 3]);
     let bytes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
-    assert_eq!(UBig::from_le_bytes(&bytes).to_le_bytes(), bytes);
+    assert_eq!(*UBig::from_le_bytes(&bytes).to_le_bytes(), bytes);
 }
 
 #[test]
 fn test_from_to_be_bytes() {
     let empty: [u8; 0] = [];
-    assert_eq!(UBig::from_be_bytes(&[]).to_be_bytes(), empty);
-    assert_eq!(UBig::from_be_bytes(&[0; 100]).to_be_bytes(), empty);
-    assert_eq!(UBig::from_be_bytes(&[0, 1, 2, 3]).to_be_bytes(), [1, 2, 3]);
+    assert_eq!(*UBig::from_be_bytes(&[]).to_be_bytes(), empty);
+    assert_eq!(*UBig::from_be_bytes(&[0; 100]).to_be_bytes(), empty);
+    assert_eq!(*UBig::from_be_bytes(&[0, 1, 2, 3]).to_be_bytes(), [1, 2, 3]);
     let bytes = [
         100, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
     ];
-    assert_eq!(UBig::from_be_bytes(&bytes).to_be_bytes(), bytes);
+    assert_eq!(*UBig::from_be_bytes(&bytes).to_be_bytes(), bytes);
 }
 
 #[test]
@@ -181,11 +181,6 @@ fn test_default() {
 }
 
 #[test]
-fn test_display_out_of_bounds_error() {
-    assert_eq!(OutOfBoundsError.to_string(), "number out of bounds");
-}
-
-#[test]
 #[allow(clippy::float_cmp)]
 fn test_to_f32() {
     assert_eq!(ubig!(0).to_f32(), Exact(0.0f32));
@@ -321,4 +316,32 @@ fn test_to_f64() {
         (ibig!(-0x1fffffffffffff8) << 967).to_f64(),
         Inexact(f64::NEG_INFINITY, Negative)
     );
+}
+
+#[test]
+fn test_from_f32() {
+    assert_eq!(UBig::try_from(0f32), Ok(ubig!(0)));
+    assert_eq!(UBig::try_from(1f32), Ok(ubig!(1)));
+    assert_eq!(UBig::try_from(-1f32), Err(OutOfBounds));
+    assert_eq!(UBig::try_from(f32::INFINITY), Err(OutOfBounds));
+    assert_eq!(UBig::try_from(f32::NEG_INFINITY), Err(OutOfBounds));
+    assert_eq!(UBig::try_from(f32::NAN), Err(OutOfBounds));
+    
+    assert_eq!(UBig::try_from(1e10f32), Ok(ubig!(10000000000)));
+    assert_eq!(UBig::try_from(1e20f32), Ok(ubig!(100000002004087734272)));
+}
+
+#[test]
+fn test_from_f64() {
+    assert_eq!(UBig::try_from(0f64), Ok(ubig!(0)));
+    assert_eq!(UBig::try_from(1f64), Ok(ubig!(1)));
+    assert_eq!(UBig::try_from(-1f64), Err(OutOfBounds));
+    assert_eq!(UBig::try_from(f64::INFINITY), Err(OutOfBounds));
+    assert_eq!(UBig::try_from(f64::NEG_INFINITY), Err(OutOfBounds));
+    assert_eq!(UBig::try_from(f64::NAN), Err(OutOfBounds));
+    
+    assert_eq!(UBig::try_from(1e10f64), Ok(ubig!(10000000000)));
+    assert_eq!(UBig::try_from(1e20f64), Ok(ubig!(100000000000000000000)));
+    assert_eq!(UBig::try_from(1e30f64), Ok(ubig!(1000000000000000019884624838656)));
+    assert_eq!(UBig::try_from(1e40f64), Ok(ubig!(10000000000000000303786028427003666890752)));
 }

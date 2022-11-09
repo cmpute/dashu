@@ -1,8 +1,35 @@
 # Changelog
 
-## 0.2.1
+## 0.3.0 (WIP)
 
 ### Add
+
+- Implement `Gcd::gcd` and `ExtendedGcd::gcd_ext` between `UBig` and `IBig`
+- Implement `DivRem::div_rem` between `UBig` and `IBig`
+- Implement `dashu_base::BitTest` for `IBig`
+- Implement `Div` and `DivAssign` for `Modulo`
+- Add `trailing_ones` for `UBig` and `IBig`
+- Implement `TryFrom<f32>` and `TryFrom<f64>` for `UBig` and `IBig`
+- Implement `num_order::{NumOrd<f32>, NumOrd<f64>` for `UBig` and `IBig`
+
+### Change
+
+- `sqrt_rem` is only exposed through the `dashu_base::RootRem` trait now.
+- `abs_cmp` is only exposed throught the `dashu_base::AbsCmp` trait now.
+- `abs_eq` is only exposed throught the `dashu_base::AbsEq` trait now.
+- `bit_len` and `bit` are only exposed throught the `dashu_base::BitTest` trait now.
+- `Modulo::inv` now takes the reference of a `Modulo`.
+- `to_le_bytes` and `to_be_bytes` now return a boxed array `Box<[u8]>` instead of a `Vec<u8>`
+- `IBig::square()` now returns `UBig` instead of `IBig`
+
+### Remove
+
+- `error::{OutOfBoundsError, ParseError}` are removed, related error types are added to `dashu-base`
+- `PartialOrd` and `PartialEq` is not implemented for primitive integers any more. Please use `num_order::NumOrd`
+  for comparison. (See [`num-bigint`#150](https://github.com/rust-num/num-bigint/issues/150))
+- `num-integer` feature is not enabled by default now.
+
+## 0.2.1
 
 - Add `sqrt`, `sqrt_rem`, `nth_root` for `UBig` and `IBig`
 - Implement `core::iter::{Sum, Product}` for `UBig` and `IBig`
@@ -44,8 +71,6 @@
 - Improve speed for power function `pow()`
 
 ## 0.1.1
-
-### Add
 
 - Implemented modular inverse for the `Modulo` type.
 - Implemented `gcd` and `extended_gcd` for `UBig` and `IBig`.

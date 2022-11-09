@@ -54,7 +54,7 @@ impl UBig {
     ///
     /// ```
     /// # use dashu_int::UBig;
-    /// assert_eq!(UBig::from(3u8).square(), 9);
+    /// assert_eq!(UBig::from(3u8).square(), UBig::from(9u8));
     /// ```
     #[inline]
     pub fn square(&self) -> UBig {
@@ -68,12 +68,12 @@ impl IBig {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::IBig;
-    /// assert_eq!(IBig::from(-3).square(), 9);
+    /// # use dashu_int::{UBig, IBig};
+    /// assert_eq!(IBig::from(-3).square(), UBig::from(9u8));
     /// ```
     #[inline]
-    pub fn square(&self) -> IBig {
-        IBig(self.as_sign_repr().1.square())
+    pub fn square(&self) -> UBig {
+        UBig(self.as_sign_repr().1.square())
     }
 }
 

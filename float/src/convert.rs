@@ -1,17 +1,23 @@
-use core::convert::{TryFrom, TryInto};
+use core::{
+    convert::{TryFrom, TryInto},
+    num::FpCategory,
+};
 
 use crate::{
     error::{check_inf, panic_unlimited_precision},
     fbig::FBig,
     repr::{Context, Repr},
     round::{
-        mode::{self, HalfEven},
+        mode::HalfEven,
         Round, Rounded, Rounding,
     },
-    utils::{ilog_exact, shr_digits, split_digits_ref},
+    utils::ilog_exact,
 };
-use dashu_base::{Approximation::*, DivRemEuclid, EstimatedLog2};
-use dashu_int::{error::OutOfBoundsError, IBig, UBig, Word};
+use dashu_base::{
+    Approximation::*, BitTest, ConversionError, DivRemEuclid, EstimatedLog2, FloatEncoding, Sign,
+    Signed,
+};
+use dashu_int::{IBig, UBig, Word};
 
 impl<R: Round> Context<R> {
     /// Convert an [IBig] instance to a [FBig] instance with precision
@@ -20,7 +26,7 @@ impl<R: Round> Context<R> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
@@ -39,83 +45,36 @@ impl<R: Round> Context<R> {
     }
 }
 
-impl<R: Round> TryFrom<f32> for FBig<R, 2> {
-    type Error = OutOfBoundsError;
+macro_rules! impl_from_float_for_fbig {
+    ($t:ty) => {
+        impl<R: Round> TryFrom<$t> for FBig<R, 2> {
+            type Error = ConversionError;
 
-    fn try_from(f: f32) -> Result<Self, Self::Error> {
-        let bits: u32 = f.to_bits();
-        let sign_bit = bits >> 31;
-        let mantissa_bits = bits & 0x7fffff;
+            fn try_from(f: $t) -> Result<Self, Self::Error> {
+                match f.decode() {
+                    Ok((man, exp)) => {
+                        let repr = Repr::new(man.into(), exp as _);
 
-        // deal with inf/nan values
-        let mut exponent: isize = ((bits >> 23) & 0xff) as isize;
-        if exponent == 0xff {
-            return if mantissa_bits != 0 {
-                Err(OutOfBoundsError) // nan
-            } else if sign_bit == 0 {
-                Ok(FBig::INFINITY)
-            } else {
-                Ok(FBig::NEG_INFINITY)
-            };
+                        // The precision is inferenced from the mantissa, because the mantissa of
+                        // normal float is always normalized. This will produce correct precision
+                        // for subnormal floats
+                        let bits = man.unsigned_abs().bit_len();
+                        let context = Context::new(bits);
+                        Ok(Self::new(repr, context))
+                    }
+                    Err(FpCategory::Infinite) => match f.sign() {
+                        Sign::Positive => Ok(FBig::INFINITY),
+                        Sign::Negative => Ok(FBig::NEG_INFINITY),
+                    },
+                    _ => Err(ConversionError::OutOfBounds),
+                }
+            }
         }
-
-        // then parse normal values
-        let mantissa = if exponent == 0 {
-            exponent = -127;
-            mantissa_bits << 1
-        } else {
-            exponent -= 127 + 23; // bias + mantissa shift
-            mantissa_bits | 0x800000
-        } as i32;
-        let mantissa = if sign_bit == 0 {
-            IBig::from(mantissa)
-        } else {
-            IBig::from(-mantissa)
-        };
-
-        let repr = Repr::new(mantissa, exponent);
-        let context = Context::new(24);
-        Ok(Self::new(repr, context))
-    }
+    };
 }
 
-impl<R: Round> TryFrom<f64> for FBig<R, 2> {
-    type Error = OutOfBoundsError;
-
-    fn try_from(f: f64) -> Result<Self, Self::Error> {
-        let bits: u64 = f.to_bits();
-        let sign_bit = bits >> 63;
-        let mantissa_bits = bits & 0xfffffffffffff;
-
-        let mut exponent: isize = ((bits >> 52) & 0x7ff) as isize;
-        if exponent == 0x7ff {
-            return if mantissa_bits != 0 {
-                Err(OutOfBoundsError) // nan
-            } else if sign_bit == 0 {
-                Ok(FBig::INFINITY)
-            } else {
-                Ok(FBig::NEG_INFINITY)
-            };
-        }
-
-        let mantissa = if exponent == 0 {
-            exponent = -1023;
-            mantissa_bits << 1
-        } else {
-            exponent -= 1023 + 52; // bias + mantissa shift
-            mantissa_bits | 0x10000000000000
-        } as i64;
-        let mantissa = if bits >> 63 == 0 {
-            IBig::from(mantissa)
-        } else {
-            IBig::from(-mantissa)
-        };
-
-        let repr = Repr::new(mantissa, exponent);
-        let context = Context::new(53);
-        Ok(Self::new(repr, context))
-    }
-}
+impl_from_float_for_fbig!(f32);
+impl_from_float_for_fbig!(f64);
 
 impl<R: Round, const B: Word> FBig<R, B> {
     /// Convert the float number to base 10 (with decimal exponents).
@@ -126,7 +85,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::{mode::HalfAway, Rounding::*};
@@ -163,7 +122,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::{mode::HalfAway, Rounding::*};
@@ -200,7 +159,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```rust
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::{mode::HalfAway, Rounding::*};
@@ -239,7 +198,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```rust
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::{mode::{HalfAway, Zero}, Rounding::*};
@@ -275,7 +234,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```rust
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::{mode::Zero, Rounding::*};
@@ -323,7 +282,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```rust
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::{mode::Zero, Rounding::*};
@@ -445,13 +404,14 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
     /// Convert the float number to integer with the given rounding mode.
     ///
-    /// **Warning**: If the float number has a very large exponent, it will be evaluated and result
+    /// # Warning
+    /// If the float number has a very large exponent, it will be evaluated and result
     /// in allocating an huge integer and it might eat up all your memory.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::Rounding::*;
@@ -484,159 +444,15 @@ impl<R: Round, const B: Word> FBig<R, B> {
             );
         }
 
-        let (hi, lo, precision) = self.split_at_point();
+        let (hi, lo, precision) = self.split_at_point_internal();
         let adjust = R::round_fract::<B>(&hi, lo, precision);
         Inexact(hi + adjust, adjust)
-    }
-
-    /// Get the integral part of the float
-    ///
-    /// **Note**: this function will adjust the precision accordingly.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use dashu_int::error::ParseError;
-    /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("1.234")?;
-    /// assert_eq!(a.trunc(), DBig::from_str_native("1")?);
-    /// // the actual precision of the integral part is 1 digit
-    /// assert_eq!(a.trunc().precision(), 1);
-    /// # Ok::<(), ParseError>(())
-    /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if the number is infinte
-    #[inline]
-    pub fn trunc(&self) -> Self {
-        check_inf(&self.repr);
-
-        let exponent = self.repr.exponent;
-        if exponent >= 0 {
-            return self.clone();
-        } else if exponent + (self.repr.digits_ub() as isize) < 0 {
-            return Self::ZERO;
-        }
-
-        let shift = (-exponent) as usize;
-        let signif = shr_digits::<B>(&self.repr.significand, shift);
-        let context = Context::new(self.precision() - shift);
-        FBig::new(Repr::new(signif, 0), context)
-    }
-
-    // Split the float number at the floating point, assuming it exists (the number is not a integer).
-    // The method returns (integral part, fractional part, fraction precision).
-    fn split_at_point(&self) -> (IBig, IBig, usize) {
-        debug_assert!(self.repr.exponent < 0);
-
-        let exponent = self.repr.exponent;
-        if exponent + (self.repr.digits_ub() as isize) < 0 {
-            return (IBig::ZERO, self.repr.significand.clone(), self.context.precision);
-        }
-
-        let shift = (-exponent) as usize;
-        let (hi, lo) = split_digits_ref::<B>(&self.repr.significand, shift);
-        (hi, lo, shift)
-    }
-
-    /// Get the fractional part of the float
-    ///
-    /// **Note**: this function will adjust the precision accordingly!
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use dashu_int::error::ParseError;
-    /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("1.234")?;
-    /// assert_eq!(a.fract(), DBig::from_str_native("0.234")?);
-    /// // the actual precision of the integral part is 3 digits
-    /// assert_eq!(a.fract().precision(), 3);
-    /// # Ok::<(), ParseError>(())
-    /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if the number is infinte
-    #[inline]
-    pub fn fract(&self) -> Self {
-        check_inf(&self.repr);
-        if self.repr.exponent >= 0 {
-            return Self::ZERO;
-        }
-
-        let (_, lo, precision) = self.split_at_point();
-        let context = Context::new(precision);
-        FBig::new(Repr::new(lo, self.repr.exponent), context)
-    }
-
-    /// Returns the smallest integer greater than or equal to self.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use dashu_int::error::ParseError;
-    /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("1.234")?;
-    /// assert_eq!(a.ceil(), DBig::from_str_native("2")?);
-    ///
-    /// // works for very large exponent
-    /// let b = DBig::from_str_native("1.234e10000")?;
-    /// assert_eq!(b.ceil(), b);
-    /// # Ok::<(), ParseError>(())
-    /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if the number is infinte
-    #[inline]
-    pub fn ceil(&self) -> Self {
-        check_inf(&self.repr);
-        if self.repr.exponent >= 0 {
-            return self.clone();
-        }
-
-        let (hi, lo, precision) = self.split_at_point();
-        let rounding = mode::Up::round_fract::<B>(&hi, lo, precision);
-        let context = Context::new(self.precision() - precision);
-        FBig::new(Repr::new(hi + rounding, 0), context)
-    }
-
-    /// Returns the largest integer less than or equal to self.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use dashu_int::error::ParseError;
-    /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("1.234")?;
-    /// assert_eq!(a.floor(), DBig::from_str_native("1")?);
-    ///
-    /// // works for very large exponent
-    /// let b = DBig::from_str_native("1.234e10000")?;
-    /// assert_eq!(b.floor(), b);
-    /// # Ok::<(), ParseError>(())
-    /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if the number is infinte
-    #[inline]
-    pub fn floor(&self) -> Self {
-        check_inf(&self.repr);
-        if self.repr.exponent >= 0 {
-            return self.clone();
-        }
-
-        let (hi, lo, precision) = self.split_at_point();
-        let rounding = mode::Down::round_fract::<B>(&hi, lo, precision);
-        let context = Context::new(self.precision() - precision);
-        FBig::new(Repr::new(hi + rounding, 0), context)
     }
 }
 
 impl<R: Round> FBig<R, 2> {
+    // TODO: support conversion to f32/f64 with arbitrary bases
+
     /// Convert the float number to [f32] with [HalfEven] rounding mode regardless of the mode associated with this number.
     ///
     /// This method is only available to base 2 float number. For other bases, it's required
@@ -646,7 +462,7 @@ impl<R: Round> FBig<R, 2> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// let a = DBig::from_str_native("1.234")?;
     /// assert_eq!(a.with_base_and_precision::<2>(23).value().to_f32().value(), 1.234);
@@ -656,26 +472,30 @@ impl<R: Round> FBig<R, 2> {
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn to_f32(&self) -> Rounded<f32> {
+        let sign = self.repr.sign();
         if self.repr.is_infinite() {
-            return Inexact(self.repr.sign() * f32::INFINITY, Rounding::NoOp);
-        } else if self > &Self::try_from(f32::MAX).unwrap() {
-            return Inexact(f32::INFINITY, Rounding::AddOne);
-        } else if self < &Self::try_from(f32::MIN).unwrap() {
-            return Inexact(f32::NEG_INFINITY, Rounding::SubOne);
+            return Inexact(sign * f32::INFINITY, Rounding::NoOp);
         }
 
-        // TODO: this implementation is a bandaid, it doesn't handles subnormal yet
         let context = Context::<HalfEven>::new(24);
-        context.repr_round_ref(&self.repr).map(|v| {
-            let exp2 = if v.exponent > 127 {
-                f32::INFINITY
-            } else if v.exponent < -127 {
-                0.0
+        context.repr_round_ref(&self.repr).and_then(|v| {
+            let man24: i32 = v.significand.try_into().unwrap();
+            if v.exponent >= 128 {
+                // max f32 = 2^128 * (1 - 2^-24)
+                match sign {
+                    Sign::Positive => Inexact(f32::INFINITY, Rounding::AddOne),
+                    Sign::Negative => Inexact(f32::NEG_INFINITY, Rounding::SubOne),
+                }
+            } else if v.exponent < -149 - 24 {
+                // min f32 = 2^-149
+                Inexact(sign * 0f32, Rounding::NoOp)
             } else {
-                let ebits = (v.exponent + 127) as u32;
-                f32::from_bits(ebits << 23)
-            };
-            v.significand.to_f32().value() * exp2
+                match f32::encode(man24, v.exponent as i16) {
+                    Exact(v) => Exact(v),
+                    // this branch only happens when the result underflows
+                    Inexact(v, _) => Inexact(v, Rounding::NoOp),
+                }
+            }
         })
     }
 
@@ -688,7 +508,7 @@ impl<R: Round> FBig<R, 2> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// let a = DBig::from_str_native("1.234")?;
     /// assert_eq!(a.with_base_and_precision::<2>(53).value().to_f64().value(), 1.234);
@@ -698,25 +518,30 @@ impl<R: Round> FBig<R, 2> {
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn to_f64(&self) -> Rounded<f64> {
+        let sign = self.repr.sign();
         if self.repr.is_infinite() {
-            return Inexact(self.repr.sign() * f64::INFINITY, Rounding::NoOp);
-        } else if self > &Self::try_from(f64::MAX).unwrap() {
-            return Inexact(f64::INFINITY, Rounding::AddOne);
-        } else if self < &Self::try_from(f64::MIN).unwrap() {
-            return Inexact(f64::NEG_INFINITY, Rounding::SubOne);
+            return Inexact(sign * f64::INFINITY, Rounding::NoOp);
         }
 
         let context = Context::<HalfEven>::new(53);
-        context.repr_round_ref(&self.repr).map(|v| {
-            let exp2 = if v.exponent > 1023 {
-                f64::INFINITY
-            } else if v.exponent < -1023 {
-                0.0
+        context.repr_round_ref(&self.repr).and_then(|v| {
+            let man53: i64 = v.significand.try_into().unwrap();
+            if v.exponent >= 1024 {
+                // max f64 = 2^1024 × (1 − 2^−53)
+                match sign {
+                    Sign::Positive => Inexact(f64::INFINITY, Rounding::AddOne),
+                    Sign::Negative => Inexact(f64::NEG_INFINITY, Rounding::SubOne),
+                }
+            } else if v.exponent < -1074 - 53 {
+                // min f64 = 2^-1074
+                Inexact(sign * 0f64, Rounding::NoOp)
             } else {
-                let ebits = (v.exponent + 1023) as u64;
-                f64::from_bits(ebits << 52)
-            };
-            v.significand.to_f64().value() * exp2
+                match f64::encode(man53, v.exponent as i16) {
+                    Exact(v) => Exact(v),
+                    // this branch only happens when the result underflows
+                    Inexact(v, _) => Inexact(v, Rounding::NoOp),
+                }
+            }
         })
     }
 }

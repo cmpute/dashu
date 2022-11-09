@@ -10,7 +10,7 @@ use crate::{
     sqr,
 };
 use alloc::alloc::Layout;
-use dashu_base::{DivRem, RootRem};
+use dashu_base::{DivRem, SquareRootRem};
 
 // n is the size of the output, or half the size of the input
 pub fn memory_requirement_sqrt_rem(n: usize) -> Layout {

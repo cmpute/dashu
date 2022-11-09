@@ -1,4 +1,4 @@
-use dashu_base::Sign;
+use dashu_base::{SquareRoot, SquareRootRem, CubicRoot, CubicRootRem, Sign};
 
 use crate::{
     error::{panic_root_negative, panic_root_zeroth},
@@ -7,50 +7,76 @@ use crate::{
 };
 
 impl UBig {
-    /// Calculate the square root of the integer
-    #[inline]
-    pub fn sqrt(&self) -> UBig {
-        UBig(self.repr().sqrt())
-    }
-
-    // TODO(v0.3): expose this only in trait RootRem
-    /// Calculate the square root and the remainder of the integer
-    #[inline]
-    pub fn sqrt_rem(&self) -> (UBig, UBig) {
-        let (s, r) = self.repr().sqrt_rem();
-        (UBig(s), UBig(r))
-    }
-
-    /// Calculate the nth-root of the integer
+    /// Calculate the nth-root of the integer rounding towards zero
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::UBig;
+    /// assert_eq!(UBig::from(4u8).nth_root(2), UBig::from(2u8));
+    /// assert_eq!(UBig::from(4u8).nth_root(3), UBig::from(1u8));
+    /// assert_eq!(UBig::from(1024u16).nth_root(5), UBig::from(4u8));
+    /// ```
+    /// 
+    /// # Panics
+    /// 
+    /// If `n` is zero
     #[inline]
     pub fn nth_root(&self, n: usize) -> UBig {
         UBig(self.repr().nth_root(n))
     }
 }
 
-impl IBig {
-    /// Calculate the square root of the integer
+impl SquareRoot for UBig {
+    type Output = UBig;
     #[inline]
-    pub fn sqrt(&self) -> UBig {
-        let (sign, mag) = self.as_sign_repr();
-        if sign == Sign::Negative {
-            panic_root_negative()
-        }
-        UBig(mag.sqrt())
+    fn sqrt(&self) -> Self::Output {
+        UBig(self.repr().sqrt())
     }
+}
 
-    /// Calculate the square root and the remainder of the integer
+impl SquareRootRem for UBig {
+    type Output = UBig;
     #[inline]
-    pub fn sqrt_rem(&self) -> (UBig, UBig) {
-        let (sign, mag) = self.as_sign_repr();
-        if sign == Sign::Negative {
-            panic_root_negative()
-        }
-        let (s, r) = mag.sqrt_rem();
+    fn sqrt_rem(&self) -> (Self, Self) {
+        let (s, r) = self.repr().sqrt_rem();
         (UBig(s), UBig(r))
     }
+}
 
-    /// Calculate the nth-root of the integer
+impl CubicRoot for UBig {
+    type Output = UBig;
+    #[inline]
+    fn cbrt(&self) -> Self::Output {
+        self.nth_root(3)
+    }
+}
+
+impl CubicRootRem for UBig {
+    type Output = UBig;
+    #[inline]
+    fn cbrt_rem(&self) -> (Self::Output, Self) {
+        let c = self.nth_root(3);
+        let r = self - c.pow(3);
+        (c, r)
+    }
+}
+
+impl IBig {
+    /// Calculate the nth-root of the integer rounding towards zero
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::IBig;
+    /// assert_eq!(IBig::from(4).nth_root(2), IBig::from(2));
+    /// assert_eq!(IBig::from(-4).nth_root(3), IBig::from(-1));
+    /// assert_eq!(IBig::from(-1024).nth_root(5), IBig::from(-4));
+    /// ```
+    /// 
+    /// # Panics
+    /// 
+    /// If `n` is zero, or if `n` is even when the integer is negative.
     #[inline]
     pub fn nth_root(&self, n: usize) -> IBig {
         if n == 0 {
@@ -63,6 +89,30 @@ impl IBig {
         }
 
         IBig(mag.nth_root(n).with_sign(sign))
+    }
+}
+
+impl SquareRoot for IBig {
+    type Output = UBig;
+    #[inline]
+    fn sqrt(&self) -> UBig {
+        let (sign, mag) = self.as_sign_repr();
+        if sign == Sign::Negative {
+            panic_root_negative()
+        }
+        UBig(mag.sqrt())
+    }
+}
+
+impl CubicRoot for IBig {
+    type Output = IBig;
+    #[inline]
+    fn cbrt(&self) -> IBig {
+        let (sign, mag) = self.as_sign_repr();
+        if sign == Sign::Negative {
+            panic_root_negative()
+        }
+        IBig(mag.nth_root(3).with_sign(sign))
     }
 }
 
@@ -81,7 +131,7 @@ mod repr {
         },
         root, shift, shift_ops,
     };
-    use dashu_base::{Root, RootRem};
+    use dashu_base::{SquareRoot, SquareRootRem};
 
     impl<'a> TypedReprRef<'a> {
         #[inline]
@@ -89,9 +139,9 @@ mod repr {
             match self {
                 RefSmall(dw) => {
                     if let Some(w) = shrink_dword(dw) {
-                        Repr::from_word(w.sqrt())
+                        Repr::from_word(w.sqrt() as Word)
                     } else {
-                        Repr::from_dword(dw.sqrt())
+                        Repr::from_word(dw.sqrt())
                     }
                 }
                 RefLarge(words) => sqrt_rem_large(words, true).0,
@@ -104,10 +154,10 @@ mod repr {
                 RefSmall(dw) => {
                     if let Some(w) = shrink_dword(dw) {
                         let (s, r) = w.sqrt_rem();
-                        (Repr::from_word(s), Repr::from_word(r))
+                        (Repr::from_word(s as Word), Repr::from_word(r))
                     } else {
                         let (s, r) = dw.sqrt_rem();
-                        (Repr::from_dword(s), Repr::from_dword(r))
+                        (Repr::from_word(s), Repr::from_dword(r))
                     }
                 }
                 RefLarge(words) => sqrt_rem_large(words, false),

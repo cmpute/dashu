@@ -1,3 +1,5 @@
+use dashu_int::ops::*;
+
 mod helper_macros;
 
 #[test]

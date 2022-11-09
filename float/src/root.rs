@@ -1,8 +1,8 @@
-use dashu_base::{Approximation, Sign};
+use dashu_base::{Approximation, SquareRootRem, Sign, UnsignedAbs};
 use dashu_int::IBig;
 
 use crate::{
-    error::{check_inf, check_precision_limited},
+    error::{check_inf, check_precision_limited, panic_root_negative},
     fbig::FBig,
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
@@ -15,7 +15,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// let a = DBig::from_str_native("1.23")?;
     /// assert_eq!(a.sqrt(), DBig::from_str_native("1.11")?);
@@ -33,7 +33,7 @@ impl<R: Round> Context<R> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
@@ -50,6 +50,9 @@ impl<R: Round> Context<R> {
     pub fn sqrt<const B: Word>(&self, x: &Repr<B>) -> Rounded<FBig<R, B>> {
         check_inf(x);
         check_precision_limited(self.precision);
+        if x.sign() == Sign::Negative {
+            panic_root_negative()
+        }
 
         // adjust the signifcand so that the exponent is even
         let digits = x.digits() as isize;
@@ -62,7 +65,7 @@ impl<R: Round> Context<R> {
             (hi, lo, shift)
         };
 
-        let (root, rem) = signif.sqrt_rem();
+        let (root, rem) = signif.unsigned_abs().sqrt_rem();
         let root = Sign::Positive * root;
         let exp = (x.exponent - shift) / 2;
 

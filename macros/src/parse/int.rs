@@ -1,8 +1,9 @@
+use dashu_base::BitTest;
 use dashu_int::{IBig, Sign, UBig};
 use proc_macro2::{TokenStream, TokenTree};
 use quote::quote;
 
-use super::common::{get_dword_from_words, quote_sign, quote_words};
+use super::common::{quote_bytes, quote_sign};
 
 fn panic_ubig_syntax() -> ! {
     panic!("Incorrect syntax, the correct syntax is like ubig!(1230) or ubig(1230 base 4)")
@@ -93,61 +94,58 @@ pub fn parse_integer<const SIGNED: bool>(input: TokenStream) -> TokenStream {
         }
     };
 
-    // generate output tokens
-    if SIGNED {
-        let sign = if neg { Sign::Negative } else { Sign::Positive };
-        quote_ibig(IBig::from_parts(sign, big))
+    // if the integer fits in a u32, generates const expression
+    let sign = if neg { Sign::Negative } else { Sign::Positive };
+    if big.bit_len() <= 32 {
+        let u: u32 = big.try_into().unwrap();
+        let sign = quote_sign(sign);
+        if SIGNED {
+            #[cfg(not(feature = "embedded"))]
+            quote! { ::dashu_int::IBig::from_parts_const(#sign, #u as _) }
+            #[cfg(feature = "embedded")]
+            quote! { ::dashu::integer::IBig::from_parts_const(#sign, #u as _) }
+        } else {
+            #[cfg(not(feature = "embedded"))]
+            quote! { ::dashu_int::UBig::from_dword(#u as _) }
+            #[cfg(feature = "embedded")]
+            quote! { ::dashu::integer::UBig::from_dword(#u as _) }
+        }
     } else {
-        quote_ubig(big)
+        if SIGNED {
+            quote_ibig(IBig::from_parts(sign, big))
+        } else {
+            quote_ubig(big)
+        }
     }
 }
 
+/// Generate tokens for creating a [UBig] instance (non-const)
 pub fn quote_ubig(int: UBig) -> TokenStream {
-    let words = int.as_words();
-    if let Some(dword) = get_dword_from_words(words) {
-        #[cfg(not(feature = "embedded"))]
-        quote! { ::dashu_int::UBig::from_dword(#dword) }
-        #[cfg(feature = "embedded")]
-        quote! { ::dashu::integer::UBig::from_dword(#dword) }
-    } else {
-        // the number contains more than two words, convert to array of words
-        let n_words = words.len();
-        let words_tt = quote_words(words);
-        #[cfg(not(feature = "embedded"))]
-        quote! {{
-            const WORDS: [::dashu_int::Word; #n_words] = #words_tt;
-            ::dashu_int::UBig::from_words(&WORDS)
-        }}
-        #[cfg(feature = "embedded")]
-        quote! {{
-            const WORDS: [::dashu::integer::Word; #n_words] = #words_tt;
-            ::dashu::integer::UBig::from_words(&WORDS)
-        }}
-    }
+    debug_assert!(int.bit_len() > 32);
+    let bytes = int.to_le_bytes();
+    let len = bytes.len();
+    let bytes_tt = quote_bytes(&bytes);
+    #[cfg(not(feature = "embedded"))]
+    quote! {{
+        const BYTES: [u8; #len] = #bytes_tt;
+        ::dashu_int::UBig::from_le_bytes(&BYTES)
+    }}
+    #[cfg(feature = "embedded")]
+    quote! {{
+        const BYTES: [u8; #len] = #bytes_tt;
+        ::dashu::integer::UBig::from_le_bytes(&BYTES)
+    }}
 }
 
+/// Generate tokens for creating a [IBig] instance (non-const)
 pub fn quote_ibig(int: IBig) -> TokenStream {
+    debug_assert!(int.bit_len() > 32);
     let (sign, mag) = int.into_parts();
     let sign = quote_sign(sign);
-    let words = mag.as_words();
-    if let Some(dword) = get_dword_from_words(words) {
-        #[cfg(not(feature = "embedded"))]
-        quote! { ::dashu_int::IBig::from_parts_const(#sign, #dword) }
-        #[cfg(feature = "embedded")]
-        quote! { ::dashu::integer::IBig::from_parts_const(#sign, #dword) }
-    } else {
-        // the number contains more than two words, convert to array of words
-        let n_words = words.len();
-        let words_tt = quote_words(words);
-        #[cfg(not(feature = "embedded"))]
-        quote! {{
-            const WORDS: [::dashu_int::Word; #n_words] = #words_tt;
-            ::dashu_int::IBig::from_parts(#sign, ::dashu_int::UBig::from_words(&WORDS))
-        }}
-        #[cfg(feature = "embedded")]
-        quote! {{
-            const WORDS: [::dashu::integer::Word; #n_words] = #words_tt;
-            ::dashu::integer::IBig::from_parts(#sign, ::dashu::integer::UBig::from_words(&WORDS))
-        }}
-    }
+    let mag_tt = quote_ubig(mag);
+
+    #[cfg(not(feature = "embedded"))]
+    quote! { ::dashu_int::IBig::from_parts(#sign, #mag_tt) }
+    #[cfg(feature = "embedded")]
+    quote! { ::dashu::int::IBig::from_parts(#sign, #mag_tt) }
 }

@@ -23,5 +23,5 @@ fn test_hash() {
     }
 
     let h3 = hash(&(ubig!(2) << 1000));
-    assert!(h3 != h);
+    assert_ne!(h3, h);
 }

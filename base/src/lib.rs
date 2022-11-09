@@ -4,12 +4,14 @@
 
 pub mod approx;
 pub mod bit;
+pub mod error;
 pub mod math;
 pub mod ring;
 pub mod sign;
 
 pub use approx::*;
 pub use bit::*;
+pub use error::*;
 pub use math::*;
 pub use ring::*;
 pub use sign::*;

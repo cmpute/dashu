@@ -30,7 +30,7 @@ impl ModuloRing {
     /// ```
     /// # use dashu_int::{modular::ModuloRing, UBig};
     /// let ring = ModuloRing::new(UBig::from(100u8));
-    /// assert_eq!(ring.modulus(), 100);
+    /// assert_eq!(ring.modulus(), UBig::from(100u8));
     /// ```
     #[inline]
     pub fn modulus(&self) -> UBig {
@@ -67,7 +67,7 @@ impl Modulo<'_> {
     /// # use dashu_int::{modular::ModuloRing, UBig};
     /// let ring = ModuloRing::new(UBig::from(100u8));
     /// let x = ring.convert(-1234);
-    /// assert_eq!(x.residue(), 66);
+    /// assert_eq!(x.residue(), UBig::from(66u8));
     /// ```
     #[inline]
     pub fn residue(&self) -> UBig {

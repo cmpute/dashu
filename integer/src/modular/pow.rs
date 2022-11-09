@@ -7,6 +7,7 @@ use crate::{
     repr::TypedReprRef::*,
     ubig::UBig,
 };
+use dashu_base::BitTest;
 
 use super::{
     modulo::{Modulo, ModuloDoubleRaw, ModuloLargeRaw, ModuloRepr, ModuloSingleRaw},
@@ -16,7 +17,7 @@ use super::{
 impl<'a> Modulo<'a> {
     /// Exponentiation.
     ///
-    /// If you want use negative exponent, you can first use [inv()][Self::inv] to
+    /// If you want use a negative exponent, you can first use [inv()][Self::inv] to
     /// convert the base to its inverse, and then call this method.
     ///
     /// # Examples

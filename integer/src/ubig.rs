@@ -27,7 +27,8 @@ use crate::repr::{Repr, TypedRepr, TypedReprRef};
 /// the least and most significant (decimal) digits.
 ///
 /// ```
-/// # use dashu_int::{error::ParseError, UBig, Word};
+/// # use dashu_base::ParseError;
+/// # use dashu_int::{UBig, Word};
 /// // parsing
 /// let a = UBig::from(408580953453092208335085386466371u128);
 /// let b = UBig::from(0x1231abcd4134u64);
@@ -185,7 +186,6 @@ impl Clone for UBig {
     fn clone(&self) -> UBig {
         UBig(self.0.clone())
     }
-
     #[inline]
     fn clone_from(&mut self, source: &UBig) {
         self.0.clone_from(&source.0)

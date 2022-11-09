@@ -247,7 +247,10 @@ fn test_mul() {
 
 #[test]
 fn test_inv() {
-    // small ring
+    // small ring    
+    let ring = ModuloRing::new(ubig!(1));
+    assert_eq!(ring.convert(0).inv(), Some(ring.convert(0)));
+
     let ring = ModuloRing::new(ubig!(100));
     let x = ring.convert(9);
     let y = x.clone().inv().unwrap();
@@ -319,6 +322,27 @@ fn test_inv() {
 }
 
 #[test]
+fn test_div() {
+    let ring = ModuloRing::new(ubig!(10));
+    // 3 * 4 == 2 mod 10
+    let a = ring.convert(2);
+    let b = ring.convert(3);
+    let res = ring.convert(4);
+    assert_eq!(a.clone() / b.clone(), res);
+    assert_eq!(a.clone() / &b, res);
+    assert_eq!(&a / b.clone(), res);
+    assert_eq!(&a / &b, res);
+
+    let mut a = ring.convert(2);
+    a /= b.clone();
+    assert_eq!(a, res);
+
+    let mut a = ring.convert(2);
+    a /= &b;
+    assert_eq!(a, res);
+}
+
+#[test]
 #[should_panic]
 fn test_add_different_rings() {
     let ring1 = ModuloRing::new(ubig!(100));
@@ -336,6 +360,24 @@ fn test_sub_different_rings() {
     let x = ring1.convert(5);
     let y = ring2.convert(5);
     let _ = x - y;
+}
+#[test]
+#[should_panic]
+fn test_div_different_rings() {
+    let ring1 = ModuloRing::new(ubig!(100));
+    let ring2 = ModuloRing::new(ubig!(200));
+    let x = ring1.convert(1);
+    let y = ring2.convert(1);
+    let _ = x / y;
+}
+
+#[test]
+#[should_panic]
+fn test_div_by_noninvertible() {
+    let ring = ModuloRing::new(ubig!(100));
+    let x = ring.convert(10);
+    let y = ring.convert(2);
+    let _ = x / y;
 }
 
 #[test]

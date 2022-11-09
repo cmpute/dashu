@@ -5,17 +5,9 @@ use crate::{
     ibig::IBig,
     ops::{DivEuclid, DivRem, DivRemAssign, DivRemEuclid, RemEuclid},
     ubig::UBig,
-    Sign::{self, *},
+    Sign::*,
 };
 use core::ops::{Div, DivAssign, Rem, RemAssign};
-
-#[inline]
-fn sign_as_int(s: Sign) -> IBig {
-    match s {
-        Positive => IBig::ONE,
-        Negative => IBig::NEG_ONE,
-    }
-}
 
 // Ops for UBig
 
@@ -85,11 +77,11 @@ helper_macros::forward_ibig_binop_to_repr!(
 macro_rules! impl_ibig_div_euclid {
     ($sign0:ident, $mag0:ident, $sign1:ident, $mag1:ident) => {{
         let (q, r) = $mag0.div_rem($mag1);
-        let q = IBig(q.with_sign($sign0 * $sign1));
-        match ($sign0, r.is_zero()) {
+        let q = match ($sign0, r.is_zero()) {
             (Positive, _) | (Negative, true) => q,
-            (Negative, false) => q - sign_as_int($sign1),
-        }
+            (Negative, false) => q.into_typed().add_one(),
+        };
+        IBig(q.with_sign($sign0 * $sign1))
     }};
 }
 macro_rules! impl_ibig_rem_euclid {
@@ -130,13 +122,12 @@ macro_rules! impl_ibig_divrem_euclid {
                 (IBig(q.with_sign($sign1)), UBig(r))
             }
             Negative => {
-                let (q, mut r) = $mag0.div_rem($mag1.as_ref());
-                let mut q = IBig(q.with_sign(-$sign1));
+                let (mut q, mut r) = $mag0.div_rem($mag1.as_ref());
                 if !r.is_zero() {
-                    q -= sign_as_int($sign1);
+                    q = q.into_typed().add_one();
                     r = $mag1 - r.into_typed();
                 }
-                (q, UBig(r))
+                (IBig(q.with_sign(-$sign1)), UBig(r))
             }
         }
     };
@@ -164,8 +155,15 @@ macro_rules! impl_ubig_ibig_rem {
         UBig($mag0 % $mag1)
     }};
 }
+macro_rules! impl_ubig_ibig_divrem {
+    ($mag0:ident, $sign1:ident, $mag1:ident) => {{
+        let (q, r) = $mag0.div_rem($mag1);
+        (IBig(q.with_sign($sign1)), UBig(r))
+    }};
+}
 helper_macros::forward_ubig_ibig_binop_to_repr!(impl Div, div, Output = IBig, impl_ubig_ibig_div);
 helper_macros::forward_ubig_ibig_binop_to_repr!(impl Rem, rem, Output = UBig, impl_ubig_ibig_rem);
+helper_macros::forward_ubig_ibig_binop_to_repr!(impl DivRem, div_rem -> (IBig, UBig), OutputDiv = IBig, OutputRem = UBig, impl_ubig_ibig_divrem);
 helper_macros::impl_binop_assign_by_taking!(impl RemAssign<IBig> for UBig, rem_assign, rem);
 
 macro_rules! impl_ibig_ubig_div {
@@ -180,8 +178,16 @@ macro_rules! impl_ibig_ubig_rem {
         IBig(($mag0 % $mag1).with_sign($sign0))
     }};
 }
+macro_rules! impl_ibig_ubig_divrem {
+    ($sign0:ident, $mag0:ident, $mag1:ident) => {{
+        // remainder with truncating division has same sign as lhs.
+        let (q, r) = $mag0.div_rem($mag1);
+        (IBig(q.with_sign($sign0)), IBig(r.with_sign($sign0)))
+    }};
+}
 helper_macros::forward_ibig_ubig_binop_to_repr!(impl Div, div, Output = IBig, impl_ibig_ubig_div);
 helper_macros::forward_ibig_ubig_binop_to_repr!(impl Rem, rem, Output = IBig, impl_ibig_ubig_rem);
+helper_macros::forward_ibig_ubig_binop_to_repr!(impl DivRem, div_rem -> (IBig, IBig), OutputDiv = IBig, OutputRem = IBig, impl_ibig_ubig_divrem);
 helper_macros::impl_binop_assign_by_taking!(impl DivAssign<UBig> for IBig, div_assign, div);
 helper_macros::impl_binop_assign_by_taking!(impl RemAssign<UBig> for IBig, rem_assign, rem);
 

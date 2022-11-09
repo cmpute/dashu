@@ -30,17 +30,17 @@
 //! # Examples
 //!
 //! ```
-//! # use dashu_int::error::ParseError;
+//! # use dashu_base::ParseError;
 //! use dashu_int::{IBig, modular::ModuloRing, UBig};
 //!
 //! let a = UBig::from(12345678u32);
-//! let b = UBig::from(0x10ffu16);
+//! let b = IBig::from(-0x10ff);
 //! let c = IBig::from_str_radix("-azz", 36).unwrap();
 //! let d: UBig = "15033211231241234523452345345787".parse()?;
-//! let e = 2u8 * &b + 1u8;
+//! let e = 2 * &b - 1;
 //! let f = a * b.pow(10);
 //!
-//! assert_eq!(e, 0x21ff); // direct comparison with primitive integers
+//! assert_eq!(e, IBig::from(-0x21ff));
 //! assert_eq!(c.to_string(), "-14255");
 //! assert_eq!(
 //!     f.in_radix(16).to_string(),
@@ -66,6 +66,7 @@
 //! * `num-order` (*default*): support traits from crate `num-order`.
 //! * `rand` (*default*): support random number generation based on crate `rand`.
 //! * `serde`: support serialization and deserialization based on crate `serde`.
+//! * `zeroize`: support traits from crate `zeroize`
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -96,7 +97,7 @@ mod cmp;
 mod convert;
 mod div;
 mod div_ops;
-pub mod error;
+mod error;
 pub mod fast_div;
 pub mod fmt;
 mod gcd;

@@ -26,7 +26,7 @@
 //! # Examples
 //!
 //! ```
-//! # use dashu_int::error::ParseError;
+//! # use dashu_base::ParseError;
 //! use core::convert::TryFrom;
 //! use dashu_float::DBig;
 //!
@@ -77,6 +77,7 @@ mod mul;
 mod parse;
 mod repr;
 mod root;
+mod round_ops;
 pub mod round;
 mod shift;
 mod sign;

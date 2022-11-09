@@ -31,7 +31,34 @@ pub trait UnsignedAbs {
     fn unsigned_abs(self) -> Self::Output;
 }
 
+ /// Check whether the magnitude of this number is equal the magnitude of the other number
+pub trait AbsEq<Rhs = Self> {
+    fn abs_eq(&self, rhs: &Rhs) -> bool;
+}
+
+/// Compare the magnitude of this number to the magnitude of the other number
+pub trait AbsCmp<Rhs = Self> {
+    fn abs_cmp(&self, rhs: &Rhs) -> Ordering;
+}
+
+pub trait Signed {
+    fn sign(&self) -> Sign;
+}
+
 macro_rules! impl_abs_ops_prim {
+    ($($signed:ty;)*) => {$( // this branch is only for float
+        impl Abs for $signed {
+            type Output = $signed;
+            #[inline]
+            fn abs(self) -> Self::Output {
+                if self.is_nan() || self >= 0. {
+                    self
+                } else {
+                    -self
+                }
+            }
+        }
+    )*};
     ($($signed:ty => $unsigned:ty;)*) => {$(
         impl Abs for $signed {
             type Output = $signed;
@@ -51,8 +78,11 @@ macro_rules! impl_abs_ops_prim {
     )*}
 }
 impl_abs_ops_prim!(i8 => u8; i16 => u16; i32 => u32; i64 => u64; i128 => u128; isize => usize;);
+impl_abs_ops_prim!(f32; f64;);
 
 /// An enum representing the sign of a number
+///
+/// A sign can be converted to or from a boolean value, assuming `true` is [Negative].
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Sign {
     Positive,
@@ -60,6 +90,28 @@ pub enum Sign {
 }
 
 use Sign::*;
+
+impl From<bool> for Sign {
+    /// Convert boolean value to [Sign], returns [Negative] for `true`
+    #[inline]
+    fn from(v: bool) -> Self {
+        match v {
+            true => Self::Negative,
+            false => Self::Positive,
+        }
+    }
+}
+
+impl From<Sign> for bool {
+    /// Convert [Sign] to boolean value, returns `true` for [Negative]
+    #[inline]
+    fn from(v: Sign) -> Self {
+        match v {
+            Sign::Negative => true,
+            Sign::Positive => false,
+        }
+    }
+}
 
 impl Neg for Sign {
     type Output = Sign;
@@ -134,7 +186,7 @@ impl Ord for Sign {
     }
 }
 
-macro_rules! impl_mul_sign_for_primitives {
+macro_rules! impl_sign_ops_for_primitives {
     ($($t:ty)*) => {$(
         impl Mul<$t> for Sign {
             type Output = $t;
@@ -161,5 +213,55 @@ macro_rules! impl_mul_sign_for_primitives {
         }
     )*};
 }
+impl_sign_ops_for_primitives!(i8 i16 i32 i64 i128 isize f32 f64);
 
-impl_mul_sign_for_primitives!(i8 i16 i32 i64 i128 isize f32 f64);
+macro_rules! impl_signed_for_int {
+    ($($t:ty)*) => {$(
+        impl Signed for $t {
+            #[inline]
+            fn sign(&self) -> Sign {
+                Sign::from(*self < 0)
+            }
+        }
+    )*};
+}
+impl_signed_for_int!(i8 i16 i32 i64 i128 isize);
+
+macro_rules! impl_signed_for_float {
+    ($t:ty, $shift:literal) => {
+        impl Signed for $t {
+            #[inline]
+            fn sign(&self) -> Sign {
+                if self.is_nan() {
+                    panic!("nan doesn't have a sign")
+                }
+                Sign::from(self.to_bits() >> $shift > 0)
+            }
+        }
+    };
+}
+impl_signed_for_float!(f32, 31);
+impl_signed_for_float!(f64, 63);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_signed() {
+        assert_eq!(0i32.sign(), Sign::Positive);
+        assert_eq!(1i32.sign(), Sign::Positive);
+        assert_eq!((-1i32).sign(), Sign::Negative);
+
+        assert_eq!(0f32.sign(), Sign::Positive);
+        assert_eq!((-0f32).sign(), Sign::Negative);
+        assert_eq!(1f32.sign(), Sign::Positive);
+        assert_eq!((-1f32).sign(), Sign::Negative);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_signed_nan() {
+        let _ = f32::NAN.sign();
+    }
+}

@@ -1,8 +1,8 @@
 //! Implement num-traits traits.
 
-use dashu_base::{DivEuclid, RemEuclid};
+use dashu_base::{DivEuclid, ParseError, RemEuclid};
 
-use crate::{error::ParseError, ibig::IBig, ops::Abs, ubig::UBig, Sign};
+use crate::{ibig::IBig, ops::Abs, ubig::UBig, Sign};
 
 impl num_traits::Zero for UBig {
     #[inline]
@@ -220,7 +220,14 @@ impl num_traits::FromPrimitive for UBig {
     fn from_u128(n: u128) -> Option<Self> {
         n.try_into().ok()
     }
-    // TODO(next): f64 is not yet correctly handled
+    #[inline]
+    fn from_f32(n: f32) -> Option<Self> {
+        n.try_into().ok()
+    }
+    #[inline]
+    fn from_f64(n: f64) -> Option<Self> {
+        n.try_into().ok()
+    }
 }
 
 impl num_traits::FromPrimitive for IBig {
@@ -240,5 +247,12 @@ impl num_traits::FromPrimitive for IBig {
     fn from_u128(n: u128) -> Option<Self> {
         n.try_into().ok()
     }
-    // TODO(next): f64 is not yet correctly handled
+    #[inline]
+    fn from_f32(n: f32) -> Option<Self> {
+        n.try_into().ok()
+    }
+    #[inline]
+    fn from_f64(n: f64) -> Option<Self> {
+        n.try_into().ok()
+    }
 }

@@ -27,7 +27,8 @@ use crate::{
 ///
 /// ```
 /// // parsing
-/// # use dashu_int::{error::ParseError, IBig, Word};
+/// # use dashu_base::ParseError;
+/// # use dashu_int::{IBig, Word};
 /// let a = IBig::from(408580953453092208335085386466371u128);
 /// let b = IBig::from(-0x1231abcd4134i64);
 /// let c = IBig::from_str_radix("a2a123bbb127779cccc123", 32)?;
@@ -199,7 +200,6 @@ impl Clone for IBig {
     fn clone(&self) -> IBig {
         IBig(self.0.clone())
     }
-
     #[inline]
     fn clone_from(&mut self, source: &IBig) {
         self.0.clone_from(&source.0)

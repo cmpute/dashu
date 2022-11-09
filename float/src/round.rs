@@ -272,7 +272,7 @@ impl Round for mode::HalfEven {
             // |rem| = 1/2
             Ordering::Equal => {
                 // if integer is odd, +1 if rem > 0, -1 if rem < 0
-                if integer & 1 == 1 {
+                if integer & 1 == IBig::ONE {
                     match low_sign {
                         Sign::Positive => Rounding::AddOne,
                         Sign::Negative => Rounding::SubOne,
@@ -295,7 +295,7 @@ impl Round for mode::HalfEven {
 
 impl Add<Rounding> for IBig {
     type Output = IBig;
-
+    #[inline]
     fn add(self, rhs: Rounding) -> Self::Output {
         match rhs {
             Rounding::NoOp => self,
@@ -307,7 +307,7 @@ impl Add<Rounding> for IBig {
 
 impl Add<Rounding> for &IBig {
     type Output = IBig;
-
+    #[inline]
     fn add(self, rhs: Rounding) -> Self::Output {
         match rhs {
             Rounding::NoOp => self.clone(),
@@ -318,6 +318,7 @@ impl Add<Rounding> for &IBig {
 }
 
 impl AddAssign<Rounding> for IBig {
+    #[inline]
     fn add_assign(&mut self, rhs: Rounding) {
         match rhs {
             Rounding::NoOp => {}

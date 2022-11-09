@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0 (WIP)
+
+- Conversion from FBig to `f32`/`f64` support subnormal values now.
+- Add a `split_at_point()` function to `FBig`
+
 ## 0.2.1
 
 - Implement `core::iter::{Sum, Product}` for `FBig`
