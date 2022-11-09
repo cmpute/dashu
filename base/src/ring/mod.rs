@@ -118,26 +118,28 @@ pub trait ExtendedGcd<Rhs = Self> {
     fn gcd_ext(self, rhs: Rhs) -> (Self::OutputGcd, Self::OutputCoeff, Self::OutputCoeff);
 }
 
-// TODO: more docs
-
+/// Compute the square root of the number
 pub trait SquareRoot {
     type Output;
 
     fn sqrt(&self) -> Self::Output;
 }
 
+/// Compute the cubic root of the number
 pub trait CubicRoot {
     type Output;
 
     fn cbrt(&self) -> Self::Output;
 }
 
+/// Computer the floored square root of the number and return the remainder at the same time.
 pub trait SquareRootRem {
     type Output;
 
     fn sqrt_rem(&self) -> (Self::Output, Self);
 }
 
+/// Computer the floored cubic root of the number and return the remainder at the same time.
 pub trait CubicRootRem {
     type Output;
 

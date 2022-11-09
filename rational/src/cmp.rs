@@ -1,4 +1,4 @@
-use crate::{repr::Repr, RBig};
+use crate::{repr::Repr, RBig, Relaxed};
 use core::cmp::Ordering;
 use dashu_base::{Sign::*, BitTest};
 
@@ -81,4 +81,27 @@ impl Ord for Repr {
     }
 }
 
-// TODO(v0.3): impl cmp and ord between RBig and Relaxed
+impl PartialEq<RBig> for Relaxed {
+    #[inline]
+    fn eq(&self, other: &RBig) -> bool {
+        self.0.eq(&other.0)
+    }
+}
+impl PartialOrd<RBig> for Relaxed {
+    #[inline]
+    fn partial_cmp(&self, other: &RBig) -> Option<Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
+impl PartialEq<Relaxed> for RBig {
+    #[inline]
+    fn eq(&self, other: &Relaxed) -> bool {
+        self.0.eq(&other.0)
+    }
+}
+impl PartialOrd<Relaxed> for RBig {
+    #[inline]
+    fn partial_cmp(&self, other: &Relaxed) -> Option<Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}

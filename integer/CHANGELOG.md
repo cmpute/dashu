@@ -10,6 +10,7 @@
 - Implement `Div` and `DivAssign` for `Modulo`
 - Add `trailing_ones` for `UBig` and `IBig`
 - Implement `TryFrom<f32>` and `TryFrom<f64>` for `UBig` and `IBig`
+- Implement `num_order::{NumOrd<f32>, NumOrd<f64>` for `UBig` and `IBig`
 
 ### Change
 
@@ -26,10 +27,9 @@
 - `error::{OutOfBoundsError, ParseError}` are removed, related error types are added to `dashu-base`
 - `PartialOrd` and `PartialEq` is not implemented for primitive integers any more. Please use `num_order::NumOrd`
   for comparison. (See [`num-bigint`#150](https://github.com/rust-num/num-bigint/issues/150))
+- `num-integer` feature is not enabled by default now.
 
 ## 0.2.1
-
-### Add
 
 - Add `sqrt`, `sqrt_rem`, `nth_root` for `UBig` and `IBig`
 - Implement `core::iter::{Sum, Product}` for `UBig` and `IBig`
@@ -71,8 +71,6 @@
 - Improve speed for power function `pow()`
 
 ## 0.1.1
-
-### Add
 
 - Implemented modular inverse for the `Modulo` type.
 - Implemented `gcd` and `extended_gcd` for `UBig` and `IBig`.

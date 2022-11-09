@@ -13,6 +13,9 @@ readme = "README.md"
 license = "MIT OR Apache-2.0"
 rust-version = "1.61"
 
+[package.metadata.docs.rs]
+all-features = true
+
 [workspace]
 members = [
     "base",
@@ -23,6 +26,15 @@ members = [
     "rational"
 ]
 default-members = ["base", "integer", "float", "rational", "macros"]
+
+[features]
+default = ["std", "rand", "num-traits", "num-order"]
+std = ["dashu-base/std", "dashu-int/std", "dashu-float/std"]
+rand = ["dashu-int/rand"]
+serde = ["dashu-int/serde"]
+num-traits = ["dashu-int/num-traits"]
+num-order = ["dashu-int/num-order"]
+zeroize = ["dashu-int/zeroize"]
 
 [dependencies]
 # all crates under dashu will have the same major version,
@@ -53,11 +65,3 @@ path = "./macros"
 version = "0.2.0"
 default-features = false
 features = ["embedded"]
-
-[features]
-default = ["std", "rand", "num-traits"]
-# TODO(v0.3): update dependencies. std is not triggered for dashu-float by default?
-std = ["dashu-base/std", "dashu-int/std", "dashu-float/std"]
-rand = ["dashu-int/rand"]
-serde = ["dashu-int/serde"]
-num-traits = ["dashu-int/num-traits"]

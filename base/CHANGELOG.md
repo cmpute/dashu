@@ -11,6 +11,7 @@
 - Implement `Abs` for `f32` and `f64`
 - Add types `error::{ConversionError, ParseError}` (originates from `dashu-int`)
 - Add trait `SquareRoot`, `SquareRootRem`, `CubicRoot`, `CubicRootRem`
+- Implement `EstimatedLog2` for `f32`, `f64` and signed integers
 
 ### Change
 

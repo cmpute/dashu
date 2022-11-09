@@ -66,6 +66,7 @@
 //! * `num-order` (*default*): support traits from crate `num-order`.
 //! * `rand` (*default*): support random number generation based on crate `rand`.
 //! * `serde`: support serialization and deserialization based on crate `serde`.
+//! * `zeroize`: support traits from crate `zeroize`
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
