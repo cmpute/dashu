@@ -70,12 +70,28 @@ use dashu_int::{DoubleWord, IBig};
 ///
 /// For detailed information of parsing, refer to the [from_str_native()][FBig::from_str_native] method.
 ///
-/// # Binary operations
+/// # Restriction on binary operators
 ///
-/// Binary operations on [FBig] instances are restricted to the same base and same rounding mode. This is
-/// designed to make sure that no hidden conversion is performed during the operations. However, for equality
+/// Binary operators on [FBig] instances are restricted to the same base and same rounding mode. This is
+/// designed to make sure that no hidden conversion is performed during the operators. However, for equality
 /// test and comparsion, two [FBig] instances can have different rounding modes (but not different bases),
 /// because rounding will never happends during comparison.
+///
+/// The infinities are converted as it is, and the subnormals are converted using its actual values.
+///
+/// # IEEE 754 behavior compliance
+/// 
+/// The representation of the floating point number doesn't follows the IEEE 754 standard, as it's not
+/// designed for arbitrary precision numbers. The key differences include:
+/// * [FBig] doesn't support NaN values. In places where IEEE 754 operations generate NaNs, `FBig` will panic.
+/// * [FBig] doesn't have subnormal values.
+/// * [FBig] doesn't have negative zeros¹. There is only on zero value ([FBig::ZERO]).
+/// * Division by zero and logarithm on zero panic instead of returning infinities.
+/// * [FBig] operations will panic if the result overflows or underflows¹.
+/// * [FBig] does support infinities, but currently infinities are not allowed to be operated with, except for
+///   equality test and comparison¹.
+/// 
+/// ¹ These behaviors are subject to changes in the future.
 ///
 /// # Convert from/to `f32`/`f64`
 ///
@@ -87,11 +103,6 @@ use dashu_int::{DoubleWord, IBig};
 /// that `NAN` values will result in an [Err]. Converting to [f32]/[f64] (using [to_f32()][FBig::to_f32]
 /// and [to_f64()][FBig::to_f64]) is lossy, and the rounding direction is contained in the result of these
 /// two methods.
-///
-/// The infinities are converted as it is, and the subnormals are converted using its actual values.
-///
-/// TODO(v0.3): explain the difference with IEEE float (no neg zero, no nan values)
-///
 pub struct FBig<RoundingMode: Round = mode::Zero, const BASE: Word = 2> {
     pub(crate) repr: Repr<BASE>,
     pub(crate) context: Context<RoundingMode>,

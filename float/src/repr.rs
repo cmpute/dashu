@@ -119,6 +119,9 @@ impl<const B: Word> Repr<B> {
             exponent: -1,
         }
     }
+    
+    // TODO: Add support for representing NEG_ZERO, but don't provide method to generate it.
+    // neg_zero: exponent -1, infinity: exponent: isize::MAX, neg_infinity: exponent: isize::MIN
 
     /// Determine if the [Repr] represents zero
     ///

@@ -9,7 +9,7 @@ use crate::{
     ubig::UBig,
     Sign::*,
 };
-use alloc::vec::Vec;
+use alloc::{vec::Vec, boxed::Box};
 use core::convert::{TryFrom, TryInto};
 use dashu_base::{
     Approximation::{self, *},
@@ -119,15 +119,14 @@ impl UBig {
     /// ```
     /// # use dashu_int::UBig;
     /// assert!(UBig::ZERO.to_le_bytes().is_empty());
-    /// assert_eq!(UBig::from(0x010203u32).to_le_bytes(), [3, 2, 1]);
+    /// assert_eq!(*UBig::from(0x010203u32).to_le_bytes(), [3, 2, 1]);
     /// ```
-    // TODO(v0.3): return Box<[u8]> instead?
-    pub fn to_le_bytes(&self) -> Vec<u8> {
+    pub fn to_le_bytes(&self) -> Box<[u8]> {
         match self.repr() {
             RefSmall(x) => {
                 let bytes = x.to_le_bytes();
                 let skip_bytes = x.leading_zeros() as usize / 8;
-                bytes[..DWORD_BYTES - skip_bytes].to_vec()
+                bytes[..DWORD_BYTES - skip_bytes].into()
             }
             RefLarge(words) => {
                 let n = words.len();
@@ -139,7 +138,7 @@ impl UBig {
                 }
                 let last_bytes = last.to_le_bytes();
                 bytes.extend_from_slice(&last_bytes[..WORD_BYTES - skip_last_bytes]);
-                bytes
+                bytes.into_boxed_slice()
             }
         }
     }
@@ -151,14 +150,14 @@ impl UBig {
     /// ```
     /// # use dashu_int::UBig;
     /// assert!(UBig::ZERO.to_be_bytes().is_empty());
-    /// assert_eq!(UBig::from(0x010203u32).to_be_bytes(), [1, 2, 3]);
+    /// assert_eq!(*UBig::from(0x010203u32).to_be_bytes(), [1, 2, 3]);
     /// ```
-    pub fn to_be_bytes(&self) -> Vec<u8> {
+    pub fn to_be_bytes(&self) -> Box<[u8]> {
         match self.repr() {
             RefSmall(x) => {
                 let bytes = x.to_be_bytes();
                 let skip_bytes = x.leading_zeros() as usize / 8;
-                bytes[skip_bytes..].to_vec()
+                bytes[skip_bytes..].into()
             }
             RefLarge(words) => {
                 let n = words.len();
@@ -170,7 +169,7 @@ impl UBig {
                 for word in words[..n - 1].iter().rev() {
                     bytes.extend_from_slice(&word.to_be_bytes());
                 }
-                bytes
+                bytes.into_boxed_slice()
             }
         }
     }

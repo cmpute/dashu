@@ -77,6 +77,7 @@ mod mul;
 mod parse;
 mod repr;
 mod root;
+mod round_ops;
 pub mod round;
 mod shift;
 mod sign;

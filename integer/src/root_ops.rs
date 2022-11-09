@@ -7,8 +7,20 @@ use crate::{
 };
 
 impl UBig {
-    // TODO(next): add docs
-    /// Calculate the nth-root of the integer
+    /// Calculate the nth-root of the integer rounding towards zero
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::UBig;
+    /// assert_eq!(UBig::from(4u8).nth_root(2), UBig::from(2u8));
+    /// assert_eq!(UBig::from(4u8).nth_root(3), UBig::from(1u8));
+    /// assert_eq!(UBig::from(1024u16).nth_root(5), UBig::from(4u8));
+    /// ```
+    /// 
+    /// # Panics
+    /// 
+    /// If `n` is zero
     #[inline]
     pub fn nth_root(&self, n: usize) -> UBig {
         UBig(self.repr().nth_root(n))
@@ -51,7 +63,20 @@ impl CubicRootRem for UBig {
 }
 
 impl IBig {
-    /// Calculate the nth-root of the integer
+    /// Calculate the nth-root of the integer rounding towards zero
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_int::IBig;
+    /// assert_eq!(IBig::from(4).nth_root(2), IBig::from(2));
+    /// assert_eq!(IBig::from(-4).nth_root(3), IBig::from(-1));
+    /// assert_eq!(IBig::from(-1024).nth_root(5), IBig::from(-4));
+    /// ```
+    /// 
+    /// # Panics
+    /// 
+    /// If `n` is zero, or if `n` is even when the integer is negative.
     #[inline]
     pub fn nth_root(&self, n: usize) -> IBig {
         if n == 0 {

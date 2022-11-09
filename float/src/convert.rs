@@ -8,10 +8,10 @@ use crate::{
     fbig::FBig,
     repr::{Context, Repr},
     round::{
-        mode::{self, HalfEven},
+        mode::HalfEven,
         Round, Rounded, Rounding,
     },
-    utils::{ilog_exact, shr_digits, split_digits_ref},
+    utils::ilog_exact,
 };
 use dashu_base::{
     Approximation::*, BitTest, ConversionError, DivRemEuclid, EstimatedLog2, FloatEncoding, Sign,
@@ -444,164 +444,15 @@ impl<R: Round, const B: Word> FBig<R, B> {
             );
         }
 
-        let (hi, lo, precision) = self.split_at_point();
+        let (hi, lo, precision) = self.split_at_point_internal();
         let adjust = R::round_fract::<B>(&hi, lo, precision);
         Inexact(hi + adjust, adjust)
-    }
-
-    /// Get the integral part of the float
-    ///
-    /// **Note**: this function will adjust the precision accordingly.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use dashu_base::ParseError;
-    /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("1.234")?;
-    /// assert_eq!(a.trunc(), DBig::from_str_native("1")?);
-    /// // the actual precision of the integral part is 1 digit
-    /// assert_eq!(a.trunc().precision(), 1);
-    /// # Ok::<(), ParseError>(())
-    /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if the number is infinte
-    #[inline]
-    pub fn trunc(&self) -> Self {
-        check_inf(&self.repr);
-
-        let exponent = self.repr.exponent;
-        if exponent >= 0 {
-            return self.clone();
-        } else if exponent + (self.repr.digits_ub() as isize) < 0 {
-            return Self::ZERO;
-        }
-
-        let shift = (-exponent) as usize;
-        let signif = shr_digits::<B>(&self.repr.significand, shift);
-        let context = Context::new(self.precision() - shift);
-        FBig::new(Repr::new(signif, 0), context)
-    }
-
-    // TODO(next): move floor ceil etc to round_ops.rs
-    // TODO(next): expose a verison to split at point but taking ownership
-
-    // Split the float number at the radix point, assuming it exists (the number is not a integer).
-    // The method returns (integral part, fractional part, fraction precision).
-    fn split_at_point(&self) -> (IBig, IBig, usize) {
-        debug_assert!(self.repr.exponent < 0);
-
-        let exponent = self.repr.exponent;
-        if exponent + (self.repr.digits_ub() as isize) < 0 {
-            return (IBig::ZERO, self.repr.significand.clone(), self.context.precision);
-        }
-
-        let shift = (-exponent) as usize;
-        let (hi, lo) = split_digits_ref::<B>(&self.repr.significand, shift);
-        (hi, lo, shift)
-    }
-
-    /// Get the fractional part of the float
-    ///
-    /// **Note**: this function will adjust the precision accordingly!
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use dashu_base::ParseError;
-    /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("1.234")?;
-    /// assert_eq!(a.fract(), DBig::from_str_native("0.234")?);
-    /// // the actual precision of the integral part is 3 digits
-    /// assert_eq!(a.fract().precision(), 3);
-    /// # Ok::<(), ParseError>(())
-    /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if the number is infinte
-    #[inline]
-    pub fn fract(&self) -> Self {
-        check_inf(&self.repr);
-        if self.repr.exponent >= 0 {
-            return Self::ZERO;
-        }
-
-        let (_, lo, precision) = self.split_at_point();
-        let context = Context::new(precision);
-        FBig::new(Repr::new(lo, self.repr.exponent), context)
-    }
-
-    /// Returns the smallest integer greater than or equal to self.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use dashu_base::ParseError;
-    /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("1.234")?;
-    /// assert_eq!(a.ceil(), DBig::from_str_native("2")?);
-    ///
-    /// // works for very large exponent
-    /// let b = DBig::from_str_native("1.234e10000")?;
-    /// assert_eq!(b.ceil(), b);
-    /// # Ok::<(), ParseError>(())
-    /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if the number is infinte
-    #[inline]
-    pub fn ceil(&self) -> Self {
-        check_inf(&self.repr);
-        if self.repr.exponent >= 0 {
-            return self.clone();
-        }
-
-        let (hi, lo, precision) = self.split_at_point();
-        let rounding = mode::Up::round_fract::<B>(&hi, lo, precision);
-        let context = Context::new(self.precision() - precision);
-        FBig::new(Repr::new(hi + rounding, 0), context)
-    }
-
-    /// Returns the largest integer less than or equal to self.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use dashu_base::ParseError;
-    /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("1.234")?;
-    /// assert_eq!(a.floor(), DBig::from_str_native("1")?);
-    ///
-    /// // works for very large exponent
-    /// let b = DBig::from_str_native("1.234e10000")?;
-    /// assert_eq!(b.floor(), b);
-    /// # Ok::<(), ParseError>(())
-    /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if the number is infinte
-    #[inline]
-    pub fn floor(&self) -> Self {
-        check_inf(&self.repr);
-        if self.repr.exponent >= 0 {
-            return self.clone();
-        }
-
-        let (hi, lo, precision) = self.split_at_point();
-        let rounding = mode::Down::round_fract::<B>(&hi, lo, precision);
-        let context = Context::new(self.precision() - precision);
-        FBig::new(Repr::new(hi + rounding, 0), context)
     }
 }
 
 impl<R: Round> FBig<R, 2> {
-    // TODO(v0.3): support conversion to f32/f64 with arbitrary bases
-    // TODO(v0.3): support custom rounding (which can be different from the associated rounding)
+    // TODO: support conversion to f32/f64 with arbitrary bases
+
     /// Convert the float number to [f32] with [HalfEven] rounding mode regardless of the mode associated with this number.
     ///
     /// This method is only available to base 2 float number. For other bases, it's required

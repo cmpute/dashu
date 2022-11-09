@@ -18,6 +18,7 @@
 - `abs_eq` is only exposed throught the `dashu_base::AbsEq` trait now.
 - `bit_len` and `bit` are only exposed throught the `dashu_base::BitTest` trait now.
 - `Modulo::inv` now takes the reference of a `Modulo`.
+- `to_le_bytes` and `to_be_bytes` now return a boxed array `Box<[u8]>` instead of a `Vec<u8>`
 
 ### Remove
 

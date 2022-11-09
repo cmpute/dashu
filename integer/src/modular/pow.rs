@@ -17,7 +17,7 @@ use super::{
 impl<'a> Modulo<'a> {
     /// Exponentiation.
     ///
-    /// If you want use negative exponent, you can first use [inverse()][Self::inverse] to
+    /// If you want use a negative exponent, you can first use [inv()][Self::inv] to
     /// convert the base to its inverse, and then call this method.
     ///
     /// # Examples
