@@ -1,6 +1,6 @@
 [package]
 name = "dashu"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 description = "A library set of big numbers"
@@ -42,26 +42,26 @@ zeroize = ["dashu-int/zeroize"]
 
 [dependencies.dashu-base]
 path = "./base"
-version = "0.2.0"
+version = "0.3.0"
 default-features = false
 
 [dependencies.dashu-int]
 path = "./integer"
-version = "0.2.0"
+version = "0.3.0"
 default-features = false
 
 [dependencies.dashu-float]
 path = "./float"
-version = "0.2.0"
+version = "0.3.0"
 default-features = false
 
 [dependencies.dashu-ratio]
 path = "./rational"
-version = "0.2.0"
+version = "0.3.0"
 default-features = false
 
 [dependencies.dashu-macros]
 path = "./macros"
-version = "0.2.0"
+version = "0.3.0"
 default-features = false
 features = ["embedded"]

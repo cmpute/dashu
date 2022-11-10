@@ -1,6 +1,6 @@
 [package]
 name = "dashu-ratio"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2021"
 description = "A big rational library with good performance"
@@ -22,12 +22,12 @@ std = ["dashu-base/std", "dashu-int/std"]
 
 [dependencies.dashu-base]
 path = "../base"
-version = "0.2.0"
+version = "0.3.0"
 default-features = false
 
 [dependencies.dashu-int]
 path = "../integer"
-version = "0.2.0"
+version = "0.3.0"
 default-features = false
 
 [dev-dependencies.criterion]

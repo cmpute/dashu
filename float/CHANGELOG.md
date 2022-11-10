@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.3.0 (WIP)
+## 0.3.0
+
+### Add
 
 - Conversion from FBig to `f32`/`f64` support subnormal values now.
 - Add a `split_at_point()` function to `FBig`

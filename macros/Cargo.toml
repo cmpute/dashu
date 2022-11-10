@@ -1,6 +1,6 @@
 [package]
 name = "dashu-macros"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2021"
 description = "Procedure macros for creating big numbers"
@@ -25,22 +25,22 @@ proc-macro2 = "1"
 
 [dependencies.dashu-base]
 path = "../base"
-version = "0.2.0"
+version = "0.3.0"
 default-features = false
 
 [dependencies.dashu-int]
 path = "../integer"
-version = "0.2.0"
+version = "0.3.0"
 default-features = false
 
 [dependencies.dashu-float]
 path = "../float"
-version = "0.2.0"
+version = "0.3.0"
 default-features = false
 
 [dependencies.dashu-ratio]
 path = "../rational"
-version = "0.2.0"
+version = "0.3.0"
 default-features = false
 
 [features]

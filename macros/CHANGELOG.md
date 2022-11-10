@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 (WIP)
+## 0.3.0
 
 - Now only numbers that fit in `u32`s can be created in a const context. (Previously any numbers fit in `DoubleWord`s is permitted.)
 - Add feature `embedded` to improve ergonomics when embedded in the `dashu` meta crate.
