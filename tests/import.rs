@@ -1,14 +1,33 @@
 //! Test for importing items from dashu, and do basic operations
 
-use dashu::*;
+use dashu::{*, integer::*, float::*, rational::*};
 
 #[test]
 fn test_macros() {
-    let a = ubig!(1234);
-    let b = ibig!(-1234);
-    assert_eq!(a + b, ubig!(0));
+    // small numbers
+    const A: UBig = ubig!(1234);
+    const B: IBig = ibig!(-1234);
+    assert_eq!(A + B, ubig!(0));
 
-    let c = fbig!(0x1234p-4);
-    let d = dbig!(12.34);
-    assert!(c.to_decimal().value() > d);
+    const C: FBig = fbig!(0x1234p-4);
+    const D: DBig = dbig!(12.34);
+    assert!(C.to_decimal().value() > D);
+
+    const E: RBig = rbig!(2/5);
+    const F: Relaxed = rbig!(~2/7);
+    assert!(E > F);
+
+    // large numbers
+    let a = ubig!(0xfffffffffffffffffffffffffffffffffffffffffffffffe);
+    let b = ibig!(-0xffffffffffffffffffffffffffffffffffffffffffffffff);
+    assert_eq!(a + b, ibig!(-1));
+
+    let c = fbig!(0xffffffffffffffffffffffffffffffffffffffffffffffffp-192);
+    let d = dbig!(999999999999999999999999999999999999999999999999999999999999e-60);
+    assert!(c < d.to_binary().value());
+
+    // let e = rbig!(0xfffffffffffffffffffffffffffffffffffffffffffffffe/0xffffffffffffffffffffffffffffffffffffffffffffffff);
+    let e = rbig!(6277101735386680763835789423207666416102355444464034512894/6277101735386680763835789423207666416102355444464034512895);
+    let f = rbig!(~999999999999999999999999999999999999999999999999999999999998/999999999999999999999999999999999999999999999999999999999999);
+    assert!(e < f);
 }

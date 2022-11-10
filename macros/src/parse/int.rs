@@ -145,5 +145,5 @@ pub fn quote_ibig(int: IBig) -> TokenStream {
     #[cfg(not(feature = "embedded"))]
     quote! { ::dashu_int::IBig::from_parts(#sign, #mag_tt) }
     #[cfg(feature = "embedded")]
-    quote! { ::dashu::int::IBig::from_parts(#sign, #mag_tt) }
+    quote! { ::dashu::integer::IBig::from_parts(#sign, #mag_tt) }
 }

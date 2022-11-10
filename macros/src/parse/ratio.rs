@@ -52,12 +52,12 @@ pub fn parse_ratio(input: TokenStream) -> TokenStream {
             #[cfg(not(feature = "embedded"))]
             quote! { ::dashu_ratio::Relaxed::from_parts_const(#sign, #num as _, #den as _) }
             #[cfg(feature = "embedded")]
-            quote! { ::dashu::ratio::Relaxed::from_parts_const(#sign, #num as _, #den as _) }
+            quote! { ::dashu::rational::Relaxed::from_parts_const(#sign, #num as _, #den as _) }
         } else {
             #[cfg(not(feature = "embedded"))]
             quote! { ::dashu_ratio::RBig::from_parts_const(#sign, #num as _, #den as _) }
             #[cfg(feature = "embedded")]
-            quote! { ::dashu::ratio::RBig::from_parts_const(#sign, #num as _, #den as _) }
+            quote! { ::dashu::rational::RBig::from_parts_const(#sign, #num as _, #den as _) }
         }
     } else {
         let (num_tt, den_tt) = (quote_ibig(num), quote_ubig(den));
@@ -66,12 +66,12 @@ pub fn parse_ratio(input: TokenStream) -> TokenStream {
             #[cfg(not(feature = "embedded"))]
             quote! { ::dashu_ratio::Relaxed::from_parts(#num_tt, #den_tt) }
             #[cfg(feature = "embedded")]
-            quote! { ::dashu::ratio::Relaxed::from_parts(#num_tt, #den_tt) }
+            quote! { ::dashu::rational::Relaxed::from_parts(#num_tt, #den_tt) }
         } else {
             #[cfg(not(feature = "embedded"))]
             quote! { ::dashu_ratio::RBig::from_parts(#num_tt, #den_tt) }
             #[cfg(feature = "embedded")]
-            quote! { ::dashu::ratio::RBig::from_parts(#num_tt, #den_tt) }
+            quote! { ::dashu::rational::RBig::from_parts(#num_tt, #den_tt) }
         }
     }
 }
