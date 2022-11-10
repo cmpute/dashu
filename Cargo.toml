@@ -23,7 +23,8 @@ members = [
     "integer",
     "float",
     "macros",
-    "rational"
+    "rational",
+    "rational/bench"
 ]
 default-members = ["base", "integer", "float", "rational", "macros"]
 
