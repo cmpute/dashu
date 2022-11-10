@@ -11,7 +11,7 @@ use crate::{
 
 impl RBig {
     /// Compute the square of the number (`self * self`).
-    /// 
+    ///
     /// # Examples
     ///
     /// ```
@@ -49,7 +49,7 @@ impl_binop_assign_by_taking!(impl MulAssign<RBig> for RBig, mul_assign, mul);
 
 impl Relaxed {
     /// Compute the square of the number (`self * self`).
-    /// 
+    ///
     /// See [RBig::square] for details.
     #[inline]
     pub fn square(&self) -> Self {

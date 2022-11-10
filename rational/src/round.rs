@@ -58,16 +58,16 @@ impl Repr {
 
 impl RBig {
     /// Split the rational number into integral and fractional parts (split at the radix point).
-    /// 
+    ///
     /// It's return is equivalent to `(self.trunc(), self.fract())`
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::IBig;
     /// # use dashu_ratio::RBig;
     /// assert_eq!(RBig::ONE.split_at_point(), (IBig::ONE, RBig::ZERO));
-    /// 
+    ///
     /// let a = RBig::from_parts(22.into(), 7u8.into());
     /// let (trunc, fract) = a.split_at_point();
     /// assert_eq!(trunc, IBig::from(3));
@@ -80,14 +80,14 @@ impl RBig {
     }
 
     /// Compute the smallest integer that is greater than or equal to this number.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::IBig;
     /// # use dashu_ratio::RBig;
     /// assert_eq!(RBig::ONE.ceil(), IBig::ONE);
-    /// 
+    ///
     /// let a = RBig::from_parts(22.into(), 7u8.into());
     /// assert_eq!(a.ceil(), IBig::from(4));
     /// ```
@@ -97,14 +97,14 @@ impl RBig {
     }
 
     /// Compute the largest integer that is less than or equal to this number.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::IBig;
     /// # use dashu_ratio::RBig;
     /// assert_eq!(RBig::ONE.floor(), IBig::ONE);
-    /// 
+    ///
     /// let a = RBig::from_parts(22.into(), 7u8.into());
     /// assert_eq!(a.floor(), IBig::from(3));
     /// ```
@@ -114,16 +114,16 @@ impl RBig {
     }
 
     /// Returns the integral part of the rational number.
-    /// 
+    ///
     /// It's guaranteed that `self == self.trunc() + self.fract()`.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::IBig;
     /// # use dashu_ratio::RBig;
     /// assert_eq!(RBig::ONE.trunc(), IBig::ONE);
-    /// 
+    ///
     /// let a = RBig::from_parts(22.into(), 7u8.into());
     /// assert_eq!(a.trunc(), IBig::from(3));
     /// ```
@@ -133,16 +133,16 @@ impl RBig {
     }
 
     /// Returns the fractional part of the rational number
-    /// 
+    ///
     /// It's guaranteed that `self == self.trunc() + self.fract()`.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::IBig;
     /// # use dashu_ratio::RBig;
     /// assert_eq!(RBig::ONE.fract(), RBig::ZERO);
-    /// 
+    ///
     /// let a = RBig::from_parts(22.into(), 7u8.into());
     /// assert_eq!(a.fract(), RBig::from_parts(1.into(), 7u8.into()));
     /// ```
@@ -154,7 +154,7 @@ impl RBig {
 
 impl Relaxed {
     /// Split the rational number into integral and fractional parts (split at the radix point).
-    /// 
+    ///
     /// See [RBig::split_at_point] for details.
     #[inline]
     pub fn split_at_point(self) -> (IBig, Self) {
@@ -163,7 +163,7 @@ impl Relaxed {
     }
 
     /// Compute the smallest integer that is greater than this number.
-    /// 
+    ///
     /// See [RBig::ceil] for details.
     #[inline]
     pub fn ceil(&self) -> IBig {
@@ -171,7 +171,7 @@ impl Relaxed {
     }
 
     /// Compute the largest integer that is less than or equal to this number.
-    /// 
+    ///
     /// See [RBig::floor] for details.
     #[inline]
     pub fn floor(&self) -> IBig {
@@ -179,7 +179,7 @@ impl Relaxed {
     }
 
     /// Returns the integral part of the rational number.
-    /// 
+    ///
     /// See [RBig::trunc] for details.
     #[inline]
     pub fn trunc(&self) -> IBig {
@@ -187,7 +187,7 @@ impl Relaxed {
     }
 
     /// Returns the fractional part of the rational number
-    /// 
+    ///
     /// See [RBig::fract] for details.
     #[inline]
     pub fn fract(&self) -> Self {

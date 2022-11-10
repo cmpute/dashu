@@ -1,4 +1,7 @@
-use crate::{rbig::{RBig, Relaxed}, repr::Repr};
+use crate::{
+    rbig::{RBig, Relaxed},
+    repr::Repr,
+};
 use core::str::FromStr;
 use dashu_base::ParseError;
 use dashu_int::{IBig, UBig};
@@ -11,13 +14,13 @@ impl Repr {
             let (sign, den) = den.into_parts();
             Ok(Repr {
                 numerator: num * sign,
-                denominator: den
+                denominator: den,
             })
         } else {
             let n = IBig::from_str_radix(src, radix)?;
             Ok(Repr {
                 numerator: n,
-                denominator: UBig::ONE
+                denominator: UBig::ONE,
             })
         }
     }

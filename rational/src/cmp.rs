@@ -1,5 +1,8 @@
 use crate::{repr::Repr, RBig, Relaxed};
-use core::{cmp::Ordering, hash::{Hash, Hasher}};
+use core::{
+    cmp::Ordering,
+    hash::{Hash, Hasher},
+};
 use dashu_base::{BitTest, Sign::*};
 
 impl PartialEq for Repr {

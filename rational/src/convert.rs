@@ -413,17 +413,17 @@ impl RBig {
     ///
     /// The rounding follows the default IEEE 754 behavior (rounds to nearest,
     /// ties to even).
-    /// 
+    ///
     /// The rounding will be correct at most of the time, but in rare cases the
     /// mantissa can be off by one bit. Use [RBig::to_f32_fast] for ensured correct
     /// rounding.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_ratio::RBig;
     /// assert_eq!(RBig::ONE.to_f32_fast(), 1f32);
-    /// 
+    ///
     /// let r = RBig::from_parts(22.into(), 7u8.into());
     /// assert_eq!(r.to_f32_fast(), 22./7.)
     /// ```
@@ -436,17 +436,17 @@ impl RBig {
     ///
     /// The rounding follows the default IEEE 754 behavior (rounds to nearest,
     /// ties to even).
-    /// 
+    ///
     /// The rounding will be correct at most of the time, but in rare cases the
     /// mantissa can be off by one bit. Use [RBig::to_f32_fast] for ensured correct
     /// rounding.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_ratio::RBig;
     /// assert_eq!(RBig::ONE.to_f64_fast(), 1f64);
-    /// 
+    ///
     /// let r = RBig::from_parts(22.into(), 7u8.into());
     /// assert_eq!(r.to_f64_fast(), 22./7.)
     /// ```
@@ -456,21 +456,21 @@ impl RBig {
     }
 
     /// Convert the rational number to a [f32] with guaranteed correct rounding.
-    /// 
+    ///
     /// The rounding follows the default IEEE 754 behavior (rounds to nearest,
     /// ties to even).
-    /// 
+    ///
     /// Because of the guaranteed rounding, it might take a long time to convert
     /// when the numerator and denominator are large. In this case [RBig::to_f32_fast]
     /// can be used if the correct rounding is not required.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_base::{Approximation::*, Sign::*};
     /// # use dashu_ratio::RBig;
     /// assert_eq!(RBig::ONE.to_f32(), Exact(1f32));
-    /// 
+    ///
     /// let r = RBig::from_parts(22.into(), 7u8.into());
     /// // f32 representation of 22/7 is smaller than the actual 22/7
     /// assert_eq!(r.to_f32(), Inexact(22./7., Negative));
@@ -481,21 +481,21 @@ impl RBig {
     }
 
     /// Convert the rational number to a [f64] with guaranteed correct rounding.
-    /// 
+    ///
     /// The rounding follows the default IEEE 754 behavior (rounds to nearest,
     /// ties to even).
-    /// 
+    ///
     /// Because of the guaranteed rounding, it might take a long time to convert
     /// when the numerator and denominator are large. In this case [RBig::to_f32_fast]
     /// can be used if the correct rounding is not required.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_base::{Approximation::*, Sign::*};
     /// # use dashu_ratio::RBig;
     /// assert_eq!(RBig::ONE.to_f64(), Exact(1f64));
-    /// 
+    ///
     /// let r = RBig::from_parts(22.into(), 7u8.into());
     /// // f64 representation of 22/7 is smaller than the actual 22/7
     /// assert_eq!(r.to_f64(), Inexact(22./7., Negative));
@@ -506,19 +506,19 @@ impl RBig {
     }
 
     /// Convert the rational number to an [IBig].
-    /// 
+    ///
     /// The conversion rounds toward zero. It's equivalent to [RBig::trunc],
     /// but it returns the fractional part if the rational number is not an integer.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_base::Approximation::*;
     /// # use dashu_int::{IBig, UBig};
     /// # use dashu_ratio::RBig;
     /// let a = RBig::from_parts(22.into(), UBig::ONE);
     /// assert_eq!(a.to_int(), Exact(IBig::from(22)));
-    /// 
+    ///
     /// let b = RBig::from_parts(22.into(), 7u8.into());
     /// assert_eq!(b.to_int(), Inexact(
     ///     IBig::from(3), RBig::from_parts(1.into(), 7u8.into())

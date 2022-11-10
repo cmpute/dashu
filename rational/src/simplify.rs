@@ -124,22 +124,22 @@ impl RBig {
     }
 
     /// Find the simplest rational number in the rounding interval of the [f32] number.
-    /// 
+    ///
     /// This method returns None when the floating point value is not representable by a rational number,
     /// such as infinities or nans.
-    /// 
+    ///
     /// See [RBig::simplest_in] for the definition of `simplicity`.
-    /// 
+    ///
     /// The rounding interval of a [f32] value is an interval such that all numbers in this
     /// range will rounded to this [f32] value. For example the rounding interval for `1f32`
     /// is `[1. - f32::EPSILON / 2, 1. + f32::EPSILON / 2]`. That is, the error of result value will
     /// be less than 1/2 ULP.
-    /// 
+    ///
     /// This method can be used to recover the original fraction represented as a division of [f32].
     /// See the examples below.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_ratio::RBig;
     /// assert_eq!(
@@ -156,22 +156,22 @@ impl RBig {
     }
 
     /// Find the simplest rational number in the rounding interval of the [f64] number.
-    /// 
+    ///
     /// This method returns None when the floating point value is not representable by a rational number,
     /// such as infinities or nans.
-    /// 
+    ///
     /// See [RBig::simplest_in] for the definition of `simplicity`.
-    /// 
+    ///
     /// The rounding interval of a [f64] value is an interval such that all numbers in this
     /// range will rounded to this [f64] value. For example the rounding interval for `1f64`
     /// is `[1. - f64::EPSILON / 2, 1. + f64::EPSILON / 2]`. That is, the error of result value will
     /// be less than 1/2 ULP.
-    /// 
+    ///
     /// This method can be used to recover the original fraction represented as a division of [f64].
     /// See the examples below.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_ratio::RBig;
     /// assert_eq!(
@@ -187,7 +187,7 @@ impl RBig {
     }
 
     /// Find the simplest rational number in the open interval `(lower, upper)`.
-    /// 
+    ///
     /// A rational `n₁/d₁` is simpler than another rational number `n₂/d₂` if:
     /// * `d₁ < d₂` (compare denominator)
     /// * or `|n₁| < |n₂|` (then compare the magnitude of numerator)
@@ -195,9 +195,9 @@ impl RBig {
     ///
     /// `lower` and `upper` will be swapped if necessary. If `lower` and `upper` are
     /// the same number, then this number will be directly returned.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_ratio::RBig;
     /// let a = RBig::from_parts(1234.into(), 5678u16.into());
@@ -206,7 +206,7 @@ impl RBig {
     /// // 1234/5678 < 5/23 < 1235/5679
     /// assert_eq!(s, RBig::from_parts(5.into(), 23u8.into()));
     /// ```
-    /// 
+    ///
     #[inline]
     pub fn simplest_in(lower: Self, upper: Self) -> Self {
         Self(Repr::simplest_in(lower.0, upper.0).reduce())
@@ -251,16 +251,16 @@ impl RBig {
     }
 
     /// Find the closest rational number to this number with a limit of the denominator.
-    /// 
+    ///
     /// If the denominator of this number is larger than the limit, then it returns the closest one
     /// between `self.next_up()` and `self.next_down()` to `self`. If the denominator of this number
     /// is already less than or equal to the limit, then `Exact(self)` will be returned.
-    /// 
+    ///
     /// The error `|self - self.nearest()|` will be less than `1/(2*limit)`, and the sign of
     /// the error `self - self.nearest()` will be returned if the result is not [Exact][Approximation::Exact].
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_base::{Approximation::*, Sign};
     /// # use dashu_ratio::RBig;
@@ -297,9 +297,9 @@ impl RBig {
     ///
     /// It's equivalent to finding the next element in Farey sequence of order `limit`. The error
     /// `|self - self.next_up()|` will be less than `1/limit`.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_ratio::RBig;
     /// let a: RBig = 3.141592653.try_into().unwrap();
@@ -334,7 +334,7 @@ impl RBig {
     /// `|self - self.next_down()|` will be less than `1/limit`.
     ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_ratio::RBig;
     /// let a: RBig = 3.141592653.try_into().unwrap();

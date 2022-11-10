@@ -143,7 +143,7 @@ impl IBig {
     }
 
     /// Create an IBig in a const context.
-    /// 
+    ///
     /// The magnitude is limited to a [DoubleWord][crate::DoubleWord].
     ///
     /// # Examples

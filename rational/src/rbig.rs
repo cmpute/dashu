@@ -4,7 +4,7 @@ use dashu_int::{DoubleWord, IBig, UBig};
 use crate::{error::panic_divide_by_0, repr::Repr};
 
 /// An arbitrary precision rational number.
-/// 
+///
 /// This struct represents an rational number with arbitrarily large numerator and denominator
 /// based on [UBig] and [IBig].
 #[derive(PartialOrd, Ord)]
@@ -12,16 +12,16 @@ use crate::{error::panic_divide_by_0, repr::Repr};
 pub struct RBig(pub(crate) Repr);
 
 /// An arbitrary precision rational number without strict reduction.
-/// 
+///
 /// This struct is almost the same as [RBig], except for that the numerator and the
 /// denominator are allowed to have common divisors **other than a power of 2**. This allows
 /// faster computation because [Gcd][dashu_base::Gcd] is not required for each operation.
-/// 
+///
 /// Since the representation is not canonicalized, [Hash] is not implemented for [Relaxed].
 /// Please use [RBig] if you want to store the rational number in a hash set, or use `num_order::NumHash`.
-/// 
+///
 /// # Conversion from/to [RBig]
-/// 
+///
 /// To convert from [RBig], use [RBig::relax()]. To convert to [RBig], use [Relaxed::canonicalize()].
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
@@ -61,7 +61,7 @@ impl RBig {
         )
     }
     /// Convert the rational number into (numerator, denumerator) parts.
-    /// 
+    ///
     /// # Examples
     ///
     /// ```
@@ -77,9 +77,9 @@ impl RBig {
     }
 
     /// Create a rational number from a signed numerator and a signed denominator
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::{IBig, UBig};
     /// # use dashu_ratio::RBig;
@@ -93,12 +93,12 @@ impl RBig {
     }
 
     /// Create a rational number in a const context
-    /// 
+    ///
     /// The magnitude of the numerator and the denominator is limited to
     /// a [DoubleWord][dashu_int::DoubleWord].
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::Sign;
     /// # use dashu_ratio::{RBig, Relaxed};
@@ -140,9 +140,9 @@ impl RBig {
     }
 
     /// Get the numerator of the rational number
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::IBig;
     /// # use dashu_ratio::RBig;
@@ -155,9 +155,9 @@ impl RBig {
     }
 
     /// Get the denominator of the rational number
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::UBig;
     /// # use dashu_ratio::RBig;
@@ -170,9 +170,9 @@ impl RBig {
     }
 
     /// Convert this rational number into a [Relaxed] version
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_ratio::{RBig, Relaxed};
     /// assert_eq!(RBig::ZERO.relax(), Relaxed::ZERO);
@@ -240,7 +240,7 @@ impl Relaxed {
     pub const NEG_ONE: Self = Self(Repr::neg_one());
 
     /// Create a rational number from a signed numerator and a signed denominator
-    /// 
+    ///
     /// See [RBig::from_parts] for details.
     #[inline]
     pub fn from_parts(numerator: IBig, denominator: UBig) -> Self {
@@ -257,8 +257,8 @@ impl Relaxed {
         )
     }
 
-     /// Convert the rational number into (numerator, denumerator) parts.
-     /// 
+    /// Convert the rational number into (numerator, denumerator) parts.
+    ///
     /// See [RBig::into_parts] for details.
     #[inline]
     pub fn into_parts(self) -> (IBig, UBig) {
@@ -266,7 +266,7 @@ impl Relaxed {
     }
 
     /// Create a rational number from a signed numerator and a signed denominator
-    /// 
+    ///
     /// See [RBig::from_parts_signed] for details.
     #[inline]
     pub fn from_parts_signed(numerator: IBig, denominator: IBig) -> Self {
@@ -275,7 +275,7 @@ impl Relaxed {
     }
 
     /// Create a rational number in a const context
-    /// 
+    ///
     /// See [RBig::from_parts_const] for details.
     #[inline]
     pub const fn from_parts_const(
@@ -299,7 +299,7 @@ impl Relaxed {
     }
 
     /// Get the numerator of the rational number
-    /// 
+    ///
     /// See [RBig::numerator] for details.
     #[inline]
     pub fn numerator(&self) -> &IBig {
@@ -307,7 +307,7 @@ impl Relaxed {
     }
 
     /// Get the denominator of the rational number
-    /// 
+    ///
     /// See [RBig::denominator] for details.
     #[inline]
     pub fn denominator(&self) -> &UBig {
@@ -315,14 +315,14 @@ impl Relaxed {
     }
 
     /// Convert this rational number into an [RBig] version
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use dashu_int::IBig;
     /// # use dashu_ratio::{RBig, Relaxed};
     /// assert_eq!(Relaxed::ONE.canonicalize(), RBig::ONE);
-    /// 
+    ///
     /// let r = Relaxed::from_parts(10.into(), 5u8.into());
     /// assert_eq!(r.canonicalize().numerator(), &IBig::from(2));
     /// ```
@@ -332,15 +332,15 @@ impl Relaxed {
     }
 
     /// Check whether the number is 0
-    /// 
+    ///
     /// See [RBig::is_zero] for details.
     #[inline]
     pub const fn is_zero(&self) -> bool {
         self.0.numerator.is_zero()
     }
-    
+
     /// Check whether the number is 1
-    /// 
+    ///
     /// See [RBig::is_one] for details.
     #[inline]
     pub const fn is_one(&self) -> bool {
