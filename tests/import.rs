@@ -1,6 +1,6 @@
 //! Test for importing items from dashu, and do basic operations
 
-use dashu::{*, integer::*, float::*, rational::*};
+use dashu::{float::*, integer::*, rational::*, *};
 
 #[test]
 fn test_macros() {
@@ -13,7 +13,7 @@ fn test_macros() {
     const D: DBig = dbig!(12.34);
     assert!(C.to_decimal().value() > D);
 
-    const E: RBig = rbig!(2/5);
+    const E: RBig = rbig!(2 / 5);
     const F: Relaxed = rbig!(~2/7);
     assert!(E > F);
 

@@ -13,6 +13,7 @@ A library set of big numbers. It's intended to be a rust native alternative to G
 - [`dashu-base`](./base): Common trait definitions
 - [`dashu-int`](./integer): Arbitrary precision integers
 - [`dashu-float`](./float): Arbitrary precision floating point numbers
+- [`dashu-ratio`](./rational): Arbitrary precision rational numbers
 - [`dashu-macros`](./macros): Macros for creating big numbers
 
 `dashu` is a meta crate that re-exports all the types from these sub-crates. Please see the README.md in each subdirectory for crate-specific introduction.
