@@ -10,6 +10,16 @@ use crate::{
 };
 
 impl RBig {
+    /// Compute the square of the number (`self * self`).
+    /// 
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_ratio::RBig;
+    /// let a = RBig::from_parts(2.into(), 3u8.into());
+    /// let a2 = RBig::from_parts(4.into(), 9u8.into());
+    /// assert_eq!(a.square(), a2);
+    /// ```
     #[inline]
     pub fn square(&self) -> Self {
         Self(Repr {
@@ -38,6 +48,9 @@ impl_binop_with_macro!(Mul, mul, impl_mul_with_rbig);
 impl_binop_assign_by_taking!(impl MulAssign<RBig> for RBig, mul_assign, mul);
 
 impl Relaxed {
+    /// Compute the square of the number (`self * self`).
+    /// 
+    /// See [RBig::square] for details.
     #[inline]
     pub fn square(&self) -> Self {
         Self(Repr {

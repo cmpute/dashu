@@ -113,9 +113,9 @@ macro_rules! impl_simplest_from_float {
 }
 
 impl RBig {
-    /// Determine if this rational number is simpler than the other number
+    /// Determine if this rational number is simpler than the other number.
     ///
-    /// This method only make sense for canonicalized ratios
+    /// This method only make sense for canonicalized ratios.
     #[inline]
     fn is_simpler_than(&self, other: &Self) -> bool {
         (self.denominator() < other.denominator()) // first compare denominator
@@ -123,18 +123,90 @@ impl RBig {
             && self.sign() > other.sign() // then compare sign
     }
 
+    /// Find the simplest rational number in the rounding interval of the [f32] number.
+    /// 
+    /// This method returns None when the floating point value is not representable by a rational number,
+    /// such as infinities or nans.
+    /// 
+    /// See [RBig::simplest_in] for the definition of `simplicity`.
+    /// 
+    /// The rounding interval of a [f32] value is an interval such that all numbers in this
+    /// range will rounded to this [f32] value. For example the rounding interval for `1f32`
+    /// is `[1. - f32::EPSILON / 2, 1. + f32::EPSILON / 2]`. That is, the error of result value will
+    /// be less than 1/2 ULP.
+    /// 
+    /// This method can be used to recover the original fraction represented as a division of [f32].
+    /// See the examples below.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_ratio::RBig;
+    /// assert_eq!(
+    ///     RBig::simplest_from_f32(1e-1).unwrap(),
+    ///     RBig::from_parts(1.into(), 10u8.into())
+    /// );
+    /// assert_eq!(
+    ///     RBig::simplest_from_f32(22./7.).unwrap(),
+    ///     RBig::from_parts(22.into(), 7u8.into())
+    /// );
+    /// ```
     pub fn simplest_from_f32(f: f32) -> Option<Self> {
         impl_simplest_from_float!(f)
     }
 
+    /// Find the simplest rational number in the rounding interval of the [f64] number.
+    /// 
+    /// This method returns None when the floating point value is not representable by a rational number,
+    /// such as infinities or nans.
+    /// 
+    /// See [RBig::simplest_in] for the definition of `simplicity`.
+    /// 
+    /// The rounding interval of a [f64] value is an interval such that all numbers in this
+    /// range will rounded to this [f64] value. For example the rounding interval for `1f64`
+    /// is `[1. - f64::EPSILON / 2, 1. + f64::EPSILON / 2]`. That is, the error of result value will
+    /// be less than 1/2 ULP.
+    /// 
+    /// This method can be used to recover the original fraction represented as a division of [f64].
+    /// See the examples below.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_ratio::RBig;
+    /// assert_eq!(
+    ///     RBig::simplest_from_f64(1e-1).unwrap(),
+    ///     RBig::from_parts(1.into(), 10u8.into())
+    /// );
+    /// assert_eq!(
+    ///     RBig::simplest_from_f64(22./7.).unwrap(),
+    ///     RBig::from_parts(22.into(), 7u8.into())
+    /// );
     pub fn simplest_from_f64(f: f64) -> Option<Self> {
         impl_simplest_from_float!(f)
     }
 
     /// Find the simplest rational number in the open interval `(lower, upper)`.
+    /// 
+    /// A rational `n₁/d₁` is simpler than another rational number `n₂/d₂` if:
+    /// * `d₁ < d₂` (compare denominator)
+    /// * or `|n₁| < |n₂|` (then compare the magnitude of numerator)
+    /// * or `n₂ < 0 < n₁` (then compare the sign)
     ///
     /// `lower` and `upper` will be swapped if necessary. If `lower` and `upper` are
     /// the same number, then this number will be directly returned.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_ratio::RBig;
+    /// let a = RBig::from_parts(1234.into(), 5678u16.into());
+    /// let b = RBig::from_parts(1235.into(), 5679u16.into());
+    /// let s = RBig::simplest_in(a, b);
+    /// // 1234/5678 < 5/23 < 1235/5679
+    /// assert_eq!(s, RBig::from_parts(5.into(), 23u8.into()));
+    /// ```
+    /// 
     #[inline]
     pub fn simplest_in(lower: Self, upper: Self) -> Self {
         Self(Repr::simplest_in(lower.0, upper.0).reduce())
@@ -178,8 +250,26 @@ impl RBig {
         }
     }
 
-    // Find the closest rational number to this number, such that the denominators of
-    // the result numbers is less than or equal to the limit.
+    /// Find the closest rational number to this number with a limit of the denominator.
+    /// 
+    /// If the denominator of this number is larger than the limit, then it returns the closest one
+    /// between `self.next_up()` and `self.next_down()` to `self`. If the denominator of this number
+    /// is already less than or equal to the limit, then `Exact(self)` will be returned.
+    /// 
+    /// The error `|self - self.nearest()|` will be less than `1/(2*limit)`, and the sign of
+    /// the error `self - self.nearest()` will be returned if the result is not [Exact][Approximation::Exact].
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_base::{Approximation::*, Sign};
+    /// # use dashu_ratio::RBig;
+    /// let a: RBig = 3.141592653.try_into().unwrap();
+    /// assert_eq!(a.nearest(&10u8.into()), Inexact(
+    ///     RBig::from_parts(22.into(), 7u8.into()),
+    ///     Sign::Positive // 22/7 > 3.141592653
+    /// ));
+    /// ```
     pub fn nearest(&self, limit: &UBig) -> Approximation<Self, Sign> {
         if limit.is_zero() {
             panic_divide_by_0()
@@ -205,7 +295,16 @@ impl RBig {
 
     /// Find the closest rational number that is greater than this number and has a denominator less than `limit`.
     ///
-    /// It's equivalent to finding the next element in Farey sequence of order `limit`.
+    /// It's equivalent to finding the next element in Farey sequence of order `limit`. The error
+    /// `|self - self.next_up()|` will be less than `1/limit`.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_ratio::RBig;
+    /// let a: RBig = 3.141592653.try_into().unwrap();
+    /// assert_eq!(a.next_up(&10u8.into()), RBig::from_parts(22.into(), 7u8.into()));
+    /// ```
     pub fn next_up(&self, limit: &UBig) -> Self {
         if limit.is_zero() {
             panic_divide_by_0()
@@ -231,10 +330,16 @@ impl RBig {
 
     /// Find the closest rational number that is less than this number and has a denominator less than `limit`.
     ///
-    /// It's equivalent to finding the previous element in Farey sequence of order `limit`.
+    /// It's equivalent to finding the previous element in Farey sequence of order `limit`. The error
+    /// `|self - self.next_down()|` will be less than `1/limit`.
     ///
-    /// This method requires the denominator of this number is less than the limit, otherwise
-    /// please use [RBig::nearest]
+    /// # Examples
+    /// 
+    /// ```
+    /// # use dashu_ratio::RBig;
+    /// let a: RBig = 3.141592653.try_into().unwrap();
+    /// assert_eq!(a.next_down(&10u8.into()), RBig::from_parts(25.into(), 8u8.into()));
+    /// ```
     pub fn next_down(&self, limit: &UBig) -> Self {
         if limit.is_zero() {
             panic_divide_by_0()

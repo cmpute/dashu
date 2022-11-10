@@ -56,6 +56,7 @@ fn test_from_f32() {
     assert_eq!(RBig::try_from(f32::INFINITY), Err(OutOfBounds));
     assert_eq!(RBig::try_from(f32::NEG_INFINITY), Err(OutOfBounds));
     assert_eq!(RBig::try_from(f32::NAN), Err(OutOfBounds));
+    dbg!(RBig::try_from(3.1415926f32).unwrap());
 }
 
 #[test]

@@ -1,5 +1,5 @@
 use crate::{repr::Repr, RBig, Relaxed};
-use core::{cmp::Ordering, hash::Hash};
+use core::{cmp::Ordering, hash::{Hash, Hasher}};
 use dashu_base::{BitTest, Sign::*};
 
 impl PartialEq for Repr {
@@ -35,7 +35,7 @@ impl Eq for RBig {}
 // is not unique for Relaxed.
 impl Hash for RBig {
     #[inline]
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.numerator.hash(state);
         self.0.denominator.hash(state);
     }

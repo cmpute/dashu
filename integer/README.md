@@ -6,6 +6,7 @@ Arbitrary precision integer implementation as a part of the `dashu` library. See
 
 ## Features
 
+- Supports `no_std` and written in pure Rust.
 - Support for both **unsigned** and **signed** big integers.
 - Small integers are **inlined** on stack with specialized algorithms.
 - **Efficient** implementation for basic arithmetic operations (`+`,`-`,`*`,`/`,`%`,`<<`,`>>`).

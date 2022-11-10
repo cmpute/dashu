@@ -7,6 +7,17 @@ use crate::{
 };
 
 impl RBig {
+    /// Get the sign of the number. Zero value has a positive sign.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_base::Sign;
+    /// # use dashu_ratio::RBig;
+    /// assert_eq!(RBig::ZERO.sign(), Sign::Positive);
+    /// assert_eq!(RBig::ONE.sign(), Sign::Positive);
+    /// assert_eq!(RBig::NEG_ONE.sign(), Sign::Negative);
+    /// ```
     #[inline]
     pub const fn sign(&self) -> Sign {
         self.0.numerator.sign()
@@ -14,6 +25,9 @@ impl RBig {
 }
 
 impl Relaxed {
+    /// Get the sign of the number. Zero value has a positive sign.
+    ///
+    /// See [RBig::sign] for details.
     #[inline]
     pub const fn sign(&self) -> Sign {
         self.0.numerator.sign()

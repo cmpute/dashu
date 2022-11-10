@@ -4,6 +4,7 @@ Arbitrary precision floating point number implementation as a part of the `dashu
 
 # Features
 
+- Supports `no_std` and written in pure Rust.
 - Support **arbitrary base** and **arbitrary rounding mode**.
 - Support efficient **base conversion**.
 - Small float numbers are **inlined** on stack.

@@ -142,7 +142,9 @@ impl IBig {
         IBig(magnitude.0.with_sign(sign))
     }
 
-    /// Create an IBig from a [Sign] and a [DoubleWord][crate::DoubleWord]
+    /// Create an IBig in a const context.
+    /// 
+    /// The magnitude is limited to a [DoubleWord][crate::DoubleWord].
     ///
     /// # Examples
     ///
@@ -165,7 +167,7 @@ impl IBig {
     /// [IBig] with value -1
     pub const NEG_ONE: Self = Self(Repr::neg_one());
 
-    /// Check whether the value is 0
+    /// Check whether the number is 0
     ///
     /// # Examples
     ///
@@ -179,7 +181,7 @@ impl IBig {
         self.0.is_zero()
     }
 
-    /// Check whether the value is 1
+    /// Check whether the number is 1
     ///
     /// # Examples
     ///

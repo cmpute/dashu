@@ -63,7 +63,7 @@ impl UBig {
 }
 
 impl IBig {
-    /// Calculate the square of the number (`self * self`).
+    /// Compute the square of the number (`self * self`).
     ///
     /// # Examples
     ///
