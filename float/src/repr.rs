@@ -298,7 +298,7 @@ impl<const B: Word> Repr<B> {
     /// assert_eq!(Repr::<2>::zero().digits_lb(), 0);
     /// assert_eq!(Repr::<2>::one().digits_lb(), 0);
     /// assert_eq!(Repr::<10>::one().digits_lb(), 0);
-    /// assert_eq!(Repr::<10>::new(1001.into(), 0).digits_lb(), 3);
+    /// assert!(Repr::<10>::new(1001.into(), 0).digits_lb() <= 3);
     /// ```
     #[inline]
     pub fn digits_lb(&self) -> usize {
