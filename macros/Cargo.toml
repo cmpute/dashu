@@ -1,6 +1,6 @@
 [package]
 name = "dashu-macros"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2021"
 description = "Procedure macros for creating big numbers"

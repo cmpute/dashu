@@ -105,7 +105,7 @@ jobs:
           args: --no-default-features --workspace --exclude dashu-macros --exclude benchmark
 
   test-macros:
-    name: Test no-std
+    name: Test macros
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: -D warnings

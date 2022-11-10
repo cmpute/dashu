@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.1 (WIP)
+## 0.3.1
 
 - Fix the problem of `ibig` and `rbig` using incorrect crate names.
 
