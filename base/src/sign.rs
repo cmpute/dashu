@@ -41,6 +41,7 @@ pub trait AbsCmp<Rhs = Self> {
     fn abs_cmp(&self, rhs: &Rhs) -> Ordering;
 }
 
+// TODO: doc
 pub trait Signed {
     fn sign(&self) -> Sign;
 }
