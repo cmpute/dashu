@@ -14,7 +14,7 @@ fn panic_rbig_syntax() -> ! {
 }
 
 pub fn parse_ratio(input: TokenStream) -> TokenStream {
-    // TODO: support parsing from non-trivial base and with optional prefix
+    // TODO: support parsing from non-trivial base and with optional prefix and add docs examples
     let mut value_str = String::new();
     input
         .into_iter()

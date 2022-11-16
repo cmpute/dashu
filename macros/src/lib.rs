@@ -241,7 +241,6 @@ pub fn dbig(input: TokenStream) -> TokenStream {
 /// const A: RBig = rbig!(-1/2);
 /// const B: Relaxed = rbig!(~3355/15);
 /// ```
-// TODO: add a 0xfffffffe/0xffffffff example
 #[proc_macro]
 pub fn rbig(input: TokenStream) -> TokenStream {
     parse::ratio::parse_ratio(input.into()).into()

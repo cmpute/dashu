@@ -1,0 +1,7 @@
+[book]
+title = "Dashu user guide"
+description = "User guide of the dashu arbitrary precision library"
+authors = ["Jacob Zhong"]
+language = "en"
+multilingual = false
+src = "src"

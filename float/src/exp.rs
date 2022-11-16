@@ -184,7 +184,7 @@ impl<R: Round> Context<R> {
             panic_power_negative_base()
         }
 
-        // x^y = exp(y*log(x)), use a simple rule for guard bits
+        // x^y = exp(y*ln(x)), use a simple rule for guard bits
         let guard_digits = 10 + self.precision.log2_est() as usize;
         let work_context = Context::<R>::new(self.precision + guard_digits);
 

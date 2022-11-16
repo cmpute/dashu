@@ -28,7 +28,7 @@ impl UBig {
         self.0 = mem::take(self).into_repr().set_bit(n);
     }
 
-    /// Clear the `n`-th bit, n starts from 0.
+    /// Clear the `n`-th bit, `n` starts from 0.
     ///
     /// # Examples
     ///
@@ -106,7 +106,7 @@ impl UBig {
         (UBig(lo), UBig(hi))
     }
 
-    /// Clear the high bits from (n+1)-th bit.
+    /// Clear the high bits from `n+1`-th bit.
     ///
     /// This operation is equivalent to getting the lowest n bits on the integer
     /// i.e. `self &= ((1 << n) - 1)`.

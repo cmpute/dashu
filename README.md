@@ -1,6 +1,6 @@
 # dashu
 
-A library set of big numbers. It's intended to be a rust native alternative to GNU GMP + MPFR (+ MPC in future).
+A library set of arbitrary precision numbers (aka. big numbers) implemented in Rust. It's intended to be a Rust native alternative to GNU GMP + MPFR (+ MPC in future).
 
 ## Features
 
