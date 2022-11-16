@@ -8,7 +8,8 @@ Arbitrary precision floating point number implementation as a part of the `dashu
 - Support **arbitrary base** and **arbitrary rounding mode**.
 - Support efficient **base conversion**.
 - Small float numbers are **inlined** on stack.
-- Efficient integer **parsing and printing** with base 2~36.
+- Efficient float number **parsing and printing** with base 2~36.
+- Supports the **hexadecimal float format** used by C++.
 - **Developer friendly** debug printing for float numbers.
 
 ## Optional dependencies

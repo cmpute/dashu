@@ -299,7 +299,6 @@ struct InRadixWriter<'a> {
 }
 
 /// Representation for printing only head and tail of the number, only decimal is supported
-// TODO: support hexadecimal, which is used by the `{:x?}` and `{:X?}` format.
 struct DoubleEnd<'a> {
     sign: Sign,
     magnitude: TypedReprRef<'a>,

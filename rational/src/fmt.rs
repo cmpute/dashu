@@ -67,12 +67,3 @@ impl fmt::Display for Relaxed {
         fmt::Display::fmt(&self.0, f)
     }
 }
-
-// TODO: support formatting as decimal (see below)
-/*
- * format!("{}", rbig!(1/3)) -> 1/3
- * format!("{:.4}", rbig!(1/3)) -> 1.3333
- * format!("{:#.4}", rbig!(1/3)) -> 1.(3)
- * format!("{:e}", rbig!(1/3)) -> 1.3e0
- * format!("{:.4e}", rbig!(1/3)) -> 1.3333e0
- */

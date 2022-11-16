@@ -118,5 +118,3 @@ impl<R: Round, const B: Word> Ord for FBig<R, B> {
         repr_cmp(&self.repr, &other.repr, Some((self.context.precision, other.context.precision)))
     }
 }
-
-// TODO: implement comparison with IBig
