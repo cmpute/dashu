@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1 (WIP)
+
+- Add trait `Inverse`.
+
 ## 0.3.0
 
 ### Add

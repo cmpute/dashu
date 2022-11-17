@@ -27,6 +27,10 @@ impl RBig {
             denominator: self.denominator().square(),
         })
     }
+
+    pub fn cubic(&self) -> Self {
+        unimplemented!() // TODO
+    }
 }
 
 macro_rules! impl_mul_with_rbig {

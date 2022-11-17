@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1 (WIP)
+
+- Add `count_ones()` and `count_zeros()` for `UBig`
+- Add `cubic()` for `UBig`
+
 ## 0.3.0
 
 ### Add

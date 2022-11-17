@@ -75,6 +75,19 @@ impl IBig {
     pub fn square(&self) -> UBig {
         UBig(self.as_sign_repr().1.square())
     }
+
+    /// Compute the cubic of the number (`self * self * self`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::IBig;
+    /// assert_eq!(IBig::from(-3).cubic(), IBig::from(-27));
+    /// ```
+    #[inline]
+    pub fn cubic(&self) -> IBig {
+        self * self.square()
+    }
 }
 
 pub(crate) mod repr {

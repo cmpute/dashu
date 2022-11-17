@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1 (WIP)
+
+- Implement `dashu_base::Inverse` for `FBig`
+
 ## 0.3.0
 
 ### Add
