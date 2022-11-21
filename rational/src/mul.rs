@@ -9,6 +9,24 @@ use crate::{
     repr::Repr,
 };
 
+impl Repr {
+    #[inline]
+    fn square(&self) -> Self {
+        Self {
+            numerator: self.numerator.square().into(),
+            denominator: self.denominator.square(),
+        }
+    }
+
+    #[inline]
+    fn cubic(&self) -> Self {
+        Self {
+            numerator: self.numerator.cubic().into(),
+            denominator: self.denominator.cubic(),
+        }
+    }
+}
+
 impl RBig {
     /// Compute the square of the number (`self * self`).
     ///
@@ -22,14 +40,22 @@ impl RBig {
     /// ```
     #[inline]
     pub fn square(&self) -> Self {
-        Self(Repr {
-            numerator: self.numerator().square().into(),
-            denominator: self.denominator().square(),
-        })
+        Self(self.0.square())
     }
 
+    /// Compute the cubic of the number (`self * self * self`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_ratio::RBig;
+    /// let a = RBig::from_parts(2.into(), 3u8.into());
+    /// let a3 = RBig::from_parts(8.into(), 27u8.into());
+    /// assert_eq!(a.cubic(), a3);
+    /// ```
+    #[inline]
     pub fn cubic(&self) -> Self {
-        unimplemented!() // TODO
+        Self(self.0.cubic())
     }
 }
 
@@ -57,10 +83,15 @@ impl Relaxed {
     /// See [RBig::square] for details.
     #[inline]
     pub fn square(&self) -> Self {
-        Self(Repr {
-            numerator: self.numerator().square().into(),
-            denominator: self.denominator().square(),
-        })
+        Self(self.0.square())
+    }
+
+    /// Compute the cubic of the number (`self * self * self`).
+    ///
+    /// See [RBig::cubic] for details.
+    #[inline]
+    pub fn cubic(&self) -> Self {
+        Self(self.0.cubic())
     }
 }
 

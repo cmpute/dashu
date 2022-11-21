@@ -60,6 +60,19 @@ impl UBig {
     pub fn square(&self) -> UBig {
         UBig(self.repr().square())
     }
+
+    /// Compute the cubic of the number (`self * self * self`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::UBig;
+    /// assert_eq!(UBig::from(3u8).cubic(), UBig::from(27u8));
+    /// ```
+    #[inline]
+    pub fn cubic(&self) -> UBig {
+        self * self.square()
+    }
 }
 
 impl IBig {

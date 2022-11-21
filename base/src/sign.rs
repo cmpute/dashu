@@ -41,8 +41,21 @@ pub trait AbsCmp<Rhs = Self> {
     fn abs_cmp(&self, rhs: &Rhs) -> Ordering;
 }
 
-// TODO: doc
+/// This trait marks the number is signed.
+/// 
+/// Notice that the negative zeros (of [f32] and [f64]) are still considered
+/// to have a positive sign.
+/// 
+/// # Examples
+/// 
+/// ```
+/// # use dashu_base::{Signed, Sign};
+/// assert_eq!(-2.sign(), Sign::Negative);
+/// assert_eq!(-2.4.sign(), Sign::Negative);
+/// assert_eq!((0.).sign(), Sign::Positive);
+/// ```
 pub trait Signed {
+    /// Get the sign of the number
     fn sign(&self) -> Sign;
 }
 
@@ -235,6 +248,8 @@ macro_rules! impl_signed_for_float {
             fn sign(&self) -> Sign {
                 if self.is_nan() {
                     panic!("nan doesn't have a sign")
+                } else if *self == -0. {
+                    return Sign::Positive;
                 }
                 Sign::from(self.to_bits() >> $shift > 0)
             }
@@ -255,7 +270,7 @@ mod tests {
         assert_eq!((-1i32).sign(), Sign::Negative);
 
         assert_eq!(0f32.sign(), Sign::Positive);
-        assert_eq!((-0f32).sign(), Sign::Negative);
+        assert_eq!((-0f32).sign(), Sign::Positive);
         assert_eq!(1f32.sign(), Sign::Positive);
         assert_eq!((-1f32).sign(), Sign::Negative);
     }
