@@ -1,3 +1,5 @@
+#![allow(clippy::approx_constant)]
+
 use dashu_base::{Approximation::*, ConversionError::*, Sign::*};
 use dashu_ratio::RBig;
 

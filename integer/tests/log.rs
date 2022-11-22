@@ -1,3 +1,5 @@
+#![allow(clippy::approx_constant)]
+
 use dashu_base::EstimatedLog2;
 
 mod helper_macros;

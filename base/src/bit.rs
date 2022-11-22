@@ -407,6 +407,7 @@ impl FloatEncoding for f64 {
     }
 }
 
+#[allow(clippy::approx_constant)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -436,7 +437,7 @@ mod tests {
             f32::from_bits(0x7fffff), // largest subnormal number
             f32::from_bits(0x800000), // smallest normal number
             -123.4567,
-            3.14159265,
+            3.1415927,
         ];
         for f in f32_cases {
             let (man, exp) = f.decode().unwrap();
