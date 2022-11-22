@@ -64,4 +64,3 @@ default-features = false
 path = "./macros"
 version = "0.3.0"
 default-features = false
-features = ["embedded"]

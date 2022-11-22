@@ -13,7 +13,7 @@ fn panic_rbig_syntax() -> ! {
     panic!("Incorrect syntax, please refer to the docs for acceptable rational formats.")
 }
 
-pub fn parse_ratio(input: TokenStream) -> TokenStream {
+pub fn parse_ratio(embedded: bool, input: TokenStream) -> TokenStream {
     // TODO: support parsing from non-trivial base and with optional prefix and add docs examples
     let mut value_str = String::new();
     input
@@ -44,33 +44,33 @@ pub fn parse_ratio(input: TokenStream) -> TokenStream {
     if num.bit_len() <= 32 && den.bit_len() <= 32 {
         // if the numerator and denominator fit in a u32, generates const expression
         let (sign, num) = num.into_parts();
-        let sign = quote_sign(sign);
+        let sign = quote_sign(embedded, sign);
         let num: u32 = num.try_into().unwrap();
         let den: u32 = den.try_into().unwrap();
 
         if relaxed {
-            #[cfg(not(feature = "embedded"))]
-            quote! { ::dashu_ratio::Relaxed::from_parts_const(#sign, #num as _, #den as _) }
-            #[cfg(feature = "embedded")]
-            quote! { ::dashu::rational::Relaxed::from_parts_const(#sign, #num as _, #den as _) }
-        } else {
-            #[cfg(not(feature = "embedded"))]
+            if !embedded {
+                quote! { ::dashu_ratio::Relaxed::from_parts_const(#sign, #num as _, #den as _) }
+            } else {
+                quote! { ::dashu::rational::Relaxed::from_parts_const(#sign, #num as _, #den as _) }
+            }
+        } else if !embedded {
             quote! { ::dashu_ratio::RBig::from_parts_const(#sign, #num as _, #den as _) }
-            #[cfg(feature = "embedded")]
+        } else {
             quote! { ::dashu::rational::RBig::from_parts_const(#sign, #num as _, #den as _) }
         }
     } else {
-        let (num_tt, den_tt) = (quote_ibig(num), quote_ubig(den));
+        let (num_tt, den_tt) = (quote_ibig(embedded, num), quote_ubig(embedded, den));
 
         if relaxed {
-            #[cfg(not(feature = "embedded"))]
-            quote! { ::dashu_ratio::Relaxed::from_parts(#num_tt, #den_tt) }
-            #[cfg(feature = "embedded")]
-            quote! { ::dashu::rational::Relaxed::from_parts(#num_tt, #den_tt) }
-        } else {
-            #[cfg(not(feature = "embedded"))]
+            if !embedded {
+                quote! { ::dashu_ratio::Relaxed::from_parts(#num_tt, #den_tt) }
+            } else {
+                quote! { ::dashu::rational::Relaxed::from_parts(#num_tt, #den_tt) }
+            }
+        } else if !embedded {
             quote! { ::dashu_ratio::RBig::from_parts(#num_tt, #den_tt) }
-            #[cfg(feature = "embedded")]
+        } else {
             quote! { ::dashu::rational::RBig::from_parts(#num_tt, #den_tt) }
         }
     }
