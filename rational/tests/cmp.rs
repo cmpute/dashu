@@ -1,3 +1,5 @@
+#![allow(clippy::nonminimal_bool)]
+
 use dashu_ratio::{RBig, Relaxed};
 use std::{
     collections::hash_map::DefaultHasher,

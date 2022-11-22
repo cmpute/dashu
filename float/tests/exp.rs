@@ -367,7 +367,7 @@ fn test_powf_binary() {
         } else {
             panic!("the result should be inexact!")
         }
-        if let Inexact(v, e) = x.context().powf(x.repr(), &(-x).repr()) {
+        if let Inexact(v, e) = x.context().powf(x.repr(), (-x).repr()) {
             assert_eq!(v, *npow);
             assert_eq!(e, NoOp);
         } else {
@@ -407,7 +407,7 @@ fn test_powf_decimal() {
         } else {
             panic!("the result should be inexact!")
         }
-        if let Inexact(v, e) = x.context().powf(x.repr(), &(-x).repr()) {
+        if let Inexact(v, e) = x.context().powf(x.repr(), (-x).repr()) {
             assert_eq!(v, *npow);
             assert_eq!(e, *nrnd);
         } else {

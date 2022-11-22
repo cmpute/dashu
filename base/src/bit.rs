@@ -409,6 +409,7 @@ impl FloatEncoding for f64 {
 
 #[allow(clippy::approx_constant)]
 #[cfg(test)]
+#[allow(clippy::approx_constant)]
 mod tests {
     use super::*;
 
