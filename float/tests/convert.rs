@@ -155,11 +155,11 @@ fn test_to_f32() {
     assert_eq!(fbig!(-0x1).to_f32(), Exact(-1.));
     assert_eq!(fbig!(-0x1234).to_f32(), Exact(-4660.));
     assert_eq!(fbig!(0x1234p-3).to_f32(), Exact(582.5));
-    assert_eq!(fbig!(0x1234p-16).to_f32(), Exact(0.07110595703125));
+    assert_eq!(fbig!(0x1234p-16).to_f32(), Exact(0.07110596));
     // exact value: 3.8549410571968246689670642581279215812574412414193147924379... × 10^-21
-    assert_eq!(fbig!(0x123456789p-100).to_f32(), Inexact(3.85494115107127239027e-21, AddOne));
+    assert_eq!(fbig!(0x123456789p-100).to_f32(), Inexact(3.854941e-21, AddOne));
     // exact value: -46078879240071936454164480
-    assert_eq!(fbig!(-0x987654321p50).to_f32(), Inexact(-4.60788783382261110732e+25, NoOp));
+    assert_eq!(fbig!(-0x987654321p50).to_f32(), Inexact(-4.607888e25, NoOp));
 
     assert_eq!(FBig::<Zero, 2>::INFINITY.to_f32(), Inexact(f32::INFINITY, NoOp));
     assert_eq!(FBig::<Zero, 2>::NEG_INFINITY.to_f32(), Inexact(f32::NEG_INFINITY, NoOp));
@@ -187,17 +187,17 @@ fn test_to_f64() {
     assert_eq!(fbig!(-0x1234).to_f64(), Exact(-4660.));
     assert_eq!(fbig!(0x1234p-3).to_f64(), Exact(582.5));
     assert_eq!(fbig!(0x1234p-16).to_f64(), Exact(0.07110595703125));
-    assert_eq!(fbig!(0x123456789p-100).to_f64(), Exact(3.85494105719682466897e-21));
-    assert_eq!(fbig!(-0x987654321p50).to_f64(), Exact(-4.60788792400719364542e+25));
+    assert_eq!(fbig!(0x123456789p-100).to_f64(), Exact(3.854941057196825e-21));
+    assert_eq!(fbig!(-0x987654321p50).to_f64(), Exact(-4.607887924007194e25));
     // exact value: 3.3436283752161326232549204599099774676691163414240905497490... × 10^-39
     assert_eq!(
         fbig!(0x1234567890123456789p-200).to_f64(),
-        Inexact(3.34362837521613240285e-39, NoOp)
+        Inexact(3.3436283752161324e-39, NoOp)
     );
     // exact value: 72310453210697978489701299687443815627510656356042859969687735028883143242326999040
     assert_eq!(
         fbig!(-0x9876543210987654321p200).to_f64(),
-        Inexact(-7.23104532106979813055e+82, SubOne)
+        Inexact(-7.231045321069798e82, SubOne)
     );
 
     assert_eq!(FBig::<Zero, 2>::INFINITY.to_f64(), Inexact(f64::INFINITY, NoOp));

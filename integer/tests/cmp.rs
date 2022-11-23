@@ -1,3 +1,5 @@
+#![allow(clippy::cmp_owned)]
+
 use core::cmp::Ordering;
 
 mod helper_macros;

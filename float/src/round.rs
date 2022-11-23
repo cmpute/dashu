@@ -346,7 +346,7 @@ mod tests {
             assert_eq!(Up::round_fract::<B>(&value, fract.clone(), D), rnd_up);
             assert_eq!(Down::round_fract::<B>(&value, fract.clone(), D), rnd_down);
             assert_eq!(HalfEven::round_fract::<B>(&value, fract.clone(), D), rnd_halfeven);
-            assert_eq!(HalfAway::round_fract::<B>(&value, fract.clone(), D), rnd_halfaway);
+            assert_eq!(HalfAway::round_fract::<B>(&value, fract, D), rnd_halfaway);
         }
 
         // cases for radix = 2, 2 digit fraction
@@ -444,7 +444,7 @@ mod tests {
             assert_eq!(Up::round_ratio(&value, num.clone(), &den), rnd_up);
             assert_eq!(Down::round_ratio(&value, num.clone(), &den), rnd_down);
             assert_eq!(HalfEven::round_ratio(&value, num.clone(), &den), rnd_halfeven);
-            assert_eq!(HalfAway::round_ratio(&value, num.clone(), &den), rnd_halfaway);
+            assert_eq!(HalfAway::round_ratio(&value, num, &den), rnd_halfaway);
         }
 
         // cases for radix = 2, 2 digit fraction

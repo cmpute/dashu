@@ -55,7 +55,7 @@ fn test_ibig() {
     assert_eq!(ibig!(+00000001), IBig::ONE);
     assert_eq!(ibig!(-00000001), IBig::NEG_ONE);
     assert_eq!(ibig!(-12341234), IBig::from(-12341234));
-    assert_eq!(ibig!(-12_34_12_34_), IBig::from(-12_34_12_34_));
+    assert_eq!(ibig!(-12_34_12_34_), IBig::from(-12341234));
     assert_eq!(
         ibig!(123456789012345678901234567890123456789012345678901234567890),
         IBig::from_str("123456789012345678901234567890123456789012345678901234567890").unwrap()
