@@ -68,7 +68,10 @@ fn test_from_f64() {
     assert_eq!(RBig::try_from(2.25f64), Ok(rbig!(9 / 4)));
     assert_eq!(RBig::try_from(-2.25e4f64), Ok(rbig!(-22500)));
     assert_eq!(RBig::try_from(1.1773109436035156e-2f64), Ok(rbig!(12345 / 1048576)));
-    assert_eq!(RBig::try_from(core::f64::consts::PI), Ok(rbig!(884279719003555 / 281474976710656)));
+    assert_eq!(
+        RBig::try_from(core::f64::consts::PI),
+        Ok(rbig!(884279719003555 / 281474976710656))
+    );
 
     assert_eq!(RBig::try_from(f64::INFINITY), Err(OutOfBounds));
     assert_eq!(RBig::try_from(f64::NEG_INFINITY), Err(OutOfBounds));
