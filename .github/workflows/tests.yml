@@ -186,4 +186,4 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --all-features -- -D warnings
+          args: --all-features --all-targets --workspace --exclude dashu-macros --exclude benchmark -- -D warnings
