@@ -129,3 +129,5 @@ mod ubig;
 
 // All the public items from third_party will be exposed
 pub use third_party::*;
+
+// TODO(next): add clippy::undocumented_unsafe_blocks check

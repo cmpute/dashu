@@ -1,10 +1,40 @@
 use dashu_int::{
     ops::{DivRem, ExtendedGcd, Gcd},
-    UBig,
+    rand::UniformBits,
+    IBig, UBig,
 };
 use rand::{distributions::uniform::Uniform, prelude::*};
 
 mod helper_macros;
+
+#[test]
+fn test_uniform_bits() {
+    let mut rng = StdRng::seed_from_u64(1);
+
+    let distr = UniformBits::new(0);
+    let x: UBig = (&mut rng).sample_iter(&distr).take(1000).max().unwrap();
+    assert!(x.is_zero());
+    let x: IBig = (&mut rng).sample_iter(&distr).take(1000).max().unwrap();
+    assert!(x.is_zero());
+
+    let distr = UniformBits::new(2);
+    let x: UBig = (&mut rng).sample_iter(&distr).take(1000).min().unwrap();
+    assert_eq!(x, UBig::ZERO);
+    let x: UBig = (&mut rng).sample_iter(&distr).take(1000).max().unwrap();
+    assert_eq!(x, UBig::from(3u8));
+    let x: IBig = (&mut rng).sample_iter(&distr).take(1000).min().unwrap();
+    assert_eq!(x, IBig::from(-3));
+    let x: IBig = (&mut rng).sample_iter(&distr).take(1000).max().unwrap();
+    assert_eq!(x, IBig::from(3));
+
+    let distr = UniformBits::new(200);
+    let x: UBig = (&mut rng).sample_iter(&distr).take(1000).max().unwrap();
+    assert!(x < UBig::ONE << 200);
+    let x: IBig = (&mut rng).sample_iter(&distr).take(1000).max().unwrap();
+    assert!(x < IBig::ONE << 200);
+    let x: IBig = (&mut rng).sample_iter(&distr).take(1000).min().unwrap();
+    assert!(x > IBig::NEG_ONE << 200);
+}
 
 #[test]
 fn test_uniform_ubig() {

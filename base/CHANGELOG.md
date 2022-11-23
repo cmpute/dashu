@@ -3,6 +3,7 @@
 ## 0.3.1 (WIP)
 
 - Add trait `Inverse`.
+- Implement `AbsCmp` and `AbsEq` for primitive types.
 
 ## 0.3.0
 

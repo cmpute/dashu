@@ -21,7 +21,7 @@ impl Repr {
     #[inline]
     fn cubic(&self) -> Self {
         Self {
-            numerator: self.numerator.cubic().into(),
+            numerator: self.numerator.cubic(),
             denominator: self.denominator.cubic(),
         }
     }
