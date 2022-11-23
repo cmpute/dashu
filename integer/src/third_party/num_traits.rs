@@ -206,18 +206,18 @@ impl num_traits::ToPrimitive for IBig {
 impl num_traits::FromPrimitive for UBig {
     #[inline]
     fn from_u64(n: u64) -> Option<Self> {
-        n.try_into().ok()
+        Some(n.into())
     }
     #[inline]
     fn from_i64(n: i64) -> Option<Self> {
         n.try_into().ok()
     }
     #[inline]
-    fn from_i128(n: i128) -> Option<Self> {
-        n.try_into().ok()
+    fn from_u128(n: u128) -> Option<Self> {
+        Some(n.into())
     }
     #[inline]
-    fn from_u128(n: u128) -> Option<Self> {
+    fn from_i128(n: i128) -> Option<Self> {
         n.try_into().ok()
     }
     #[inline]
@@ -233,19 +233,19 @@ impl num_traits::FromPrimitive for UBig {
 impl num_traits::FromPrimitive for IBig {
     #[inline]
     fn from_u64(n: u64) -> Option<Self> {
-        n.try_into().ok()
+        Some(n.into())
     }
     #[inline]
     fn from_i64(n: i64) -> Option<Self> {
-        n.try_into().ok()
+        Some(n.into())
     }
     #[inline]
     fn from_i128(n: i128) -> Option<Self> {
-        n.try_into().ok()
+        Some(n.into())
     }
     #[inline]
     fn from_u128(n: u128) -> Option<Self> {
-        n.try_into().ok()
+        Some(n.into())
     }
     #[inline]
     fn from_f32(n: f32) -> Option<Self> {

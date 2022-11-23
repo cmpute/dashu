@@ -1,14 +1,11 @@
-use num_traits::{FromPrimitive, One, ToPrimitive, Zero};
-
+use crate::{fbig::FBig, round::Round};
 use dashu_int::Word;
-
-use crate::round::Round;
-use crate::FBig;
+use num_traits::{FromPrimitive, One, ToPrimitive, Zero};
 
 impl<R: Round, const B: Word> Zero for FBig<R, B> {
     #[inline]
     fn zero() -> Self {
-        FBig::from(0)
+        FBig::ZERO
     }
 
     #[inline]
@@ -20,18 +17,15 @@ impl<R: Round, const B: Word> Zero for FBig<R, B> {
 impl<R: Round, const B: Word> One for FBig<R, B> {
     #[inline]
     fn one() -> Self {
-        FBig::from(1)
+        FBig::ONE
     }
     #[inline]
-    fn is_one(&self) -> bool
-    where
-        Self: PartialEq,
-    {
+    fn is_one(&self) -> bool {
         self.repr.is_one()
     }
 }
 
-impl<R: Round, const B: Word> FromPrimitive for FBig<R, { B }> {
+impl<R: Round, const B: Word> FromPrimitive for FBig<R, B> {
     #[inline]
     fn from_isize(n: isize) -> Option<Self> {
         Some(FBig::from(n))
@@ -83,16 +77,18 @@ impl<R: Round, const B: Word> FromPrimitive for FBig<R, { B }> {
 
     #[track_caller]
     fn from_f32(_: f32) -> Option<Self> {
+        // TODO: implement this
         panic!("Unsupported BASE `{B}`")
     }
 
     #[track_caller]
     fn from_f64(_: f64) -> Option<Self> {
+        // TODO: implement this
         panic!("Unsupported BASE `{B}`")
     }
 }
 
-impl<R: Round, const B: Word> ToPrimitive for FBig<R, { B }> {
+impl<R: Round, const B: Word> ToPrimitive for FBig<R, B> {
     #[inline]
     fn to_isize(&self) -> Option<isize> {
         self.to_int().value().to_isize()
@@ -141,15 +137,20 @@ impl<R: Round, const B: Word> ToPrimitive for FBig<R, { B }> {
     fn to_u128(&self) -> Option<u128> {
         self.to_int().value().to_u128()
     }
+    fn to_f32(&self) -> Option<f32> {
+        // TODO: implement this
+        todo!()
+    }
+    fn to_f64(&self) -> Option<f64> {
+        // TODO: implement this
+        todo!()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Neg;
-
-    use crate::DBig;
-
     use super::*;
+    use crate::DBig;
 
     #[test]
     fn test_01() {
@@ -165,14 +166,6 @@ mod tests {
     #[test]
     fn test_from() {
         assert_eq!(DBig::from_usize(1), Some(DBig::one()));
-        assert_eq!(DBig::from_isize(-1), Some(DBig::one().neg()));
-        // assert_eq!(
-        //     DBig::from_str_native("2.0")
-        //         .unwrap()
-        //         .with_base::<2>()
-        //         .value()
-        //         .to_f32(),
-        //     Some(2.0)
-        // );
+        assert_eq!(DBig::from_isize(-1), Some(-DBig::one()));
     }
 }

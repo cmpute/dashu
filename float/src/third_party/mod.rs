@@ -1,2 +1,2 @@
 #[cfg(feature = "num-traits")]
-mod for_num;
+mod num_traits;
