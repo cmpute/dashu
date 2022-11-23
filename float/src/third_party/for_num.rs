@@ -31,7 +31,7 @@ impl<R: Round, const B: Word> One for FBig<R, B> {
     }
 }
 
-impl<R: Round, const B: Word> FromPrimitive for FBig<R, B> {
+impl<R: Round, const B: Word> FromPrimitive for FBig<R, { B }> {
     #[inline]
     fn from_isize(n: isize) -> Option<Self> {
         Some(FBig::from(n))
@@ -80,21 +80,73 @@ impl<R: Round, const B: Word> FromPrimitive for FBig<R, B> {
     fn from_u128(n: u128) -> Option<Self> {
         Some(FBig::from(n))
     }
-    // #[inline]
-    // fn from_f32(n: f32) -> Option<Self> {
-    //     FBig::to_f32()
-    // }
-    // #[inline]
-    // fn from_f64(n: f64) -> Option<Self> {
-    //     FBig::try_from(n).ok()
-    // }
+
+    #[track_caller]
+    fn from_f32(_: f32) -> Option<Self> {
+        panic!("Unsupported BASE `{B}`")
+    }
+
+    #[track_caller]
+    fn from_f64(_: f64) -> Option<Self> {
+        panic!("Unsupported BASE `{B}`")
+    }
 }
 
-
+impl<R: Round, const B: Word> ToPrimitive for FBig<R, { B }> {
+    #[inline]
+    fn to_isize(&self) -> Option<isize> {
+        self.to_int().value().to_isize()
+    }
+    #[inline]
+    fn to_i8(&self) -> Option<i8> {
+        self.to_int().value().to_i8()
+    }
+    #[inline]
+    fn to_i16(&self) -> Option<i16> {
+        self.to_int().value().to_i16()
+    }
+    #[inline]
+    fn to_i32(&self) -> Option<i32> {
+        self.to_int().value().to_i32()
+    }
+    #[inline]
+    fn to_i64(&self) -> Option<i64> {
+        self.to_int().value().to_i64()
+    }
+    #[inline]
+    fn to_i128(&self) -> Option<i128> {
+        self.to_int().value().to_i128()
+    }
+    #[inline]
+    fn to_usize(&self) -> Option<usize> {
+        self.to_int().value().to_usize()
+    }
+    #[inline]
+    fn to_u8(&self) -> Option<u8> {
+        self.to_int().value().to_u8()
+    }
+    #[inline]
+    fn to_u16(&self) -> Option<u16> {
+        self.to_int().value().to_u16()
+    }
+    #[inline]
+    fn to_u32(&self) -> Option<u32> {
+        self.to_int().value().to_u32()
+    }
+    #[inline]
+    fn to_u64(&self) -> Option<u64> {
+        self.to_int().value().to_u64()
+    }
+    #[inline]
+    fn to_u128(&self) -> Option<u128> {
+        self.to_int().value().to_u128()
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use std::ops::Neg;
+
     use crate::DBig;
 
     use super::*;
@@ -114,5 +166,13 @@ mod tests {
     fn test_from() {
         assert_eq!(DBig::from_usize(1), Some(DBig::one()));
         assert_eq!(DBig::from_isize(-1), Some(DBig::one().neg()));
+        // assert_eq!(
+        //     DBig::from_str_native("2.0")
+        //         .unwrap()
+        //         .with_base::<2>()
+        //         .value()
+        //         .to_f32(),
+        //     Some(2.0)
+        // );
     }
 }

@@ -3,6 +3,12 @@ use core::{
     num::FpCategory,
 };
 
+use dashu_base::{
+    Approximation::*, BitTest, ConversionError, DivRemEuclid, EstimatedLog2, FloatEncoding, Sign,
+    Signed,
+};
+use dashu_int::{IBig, UBig, Word};
+
 use crate::{
     error::{check_inf, panic_unlimited_precision},
     fbig::FBig,
@@ -10,11 +16,6 @@ use crate::{
     round::{mode::HalfEven, Round, Rounded, Rounding},
     utils::ilog_exact,
 };
-use dashu_base::{
-    Approximation::*, BitTest, ConversionError, DivRemEuclid, EstimatedLog2, FloatEncoding, Sign,
-    Signed,
-};
-use dashu_int::{IBig, UBig, Word};
 
 impl<R: Round> Context<R> {
     /// Convert an [IBig] instance to a [FBig] instance with precision
@@ -447,9 +448,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     }
 }
 
-impl<R: Round> FBig<R, 2> {
-    // TODO: support conversion to f32/f64 with arbitrary bases
-
+impl<R: Round, const B: Word> FBig<R, B> {
     /// Convert the float number to [f32] with [HalfEven] rounding mode regardless of the mode associated with this number.
     ///
     /// This method is only available to base 2 float number. For other bases, it's required
@@ -469,6 +468,10 @@ impl<R: Round> FBig<R, 2> {
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn to_f32(&self) -> Rounded<f32> {
+        if B != 2 {
+            // TODO: support conversion to f32 with arbitrary bases
+            panic!("Unsupported base `{B}` , try `n.with_base::<2>()`")
+        }
         let sign = self.repr.sign();
         if self.repr.is_infinite() {
             return Inexact(sign * f32::INFINITY, Rounding::NoOp);
@@ -515,6 +518,10 @@ impl<R: Round> FBig<R, 2> {
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn to_f64(&self) -> Rounded<f64> {
+        if B != 2 {
+            // TODO: support conversion to f64 with arbitrary bases
+            panic!("Unsupported base `{B}` , try `n.with_base::<2>()`")
+        }
         let sign = self.repr.sign();
         if self.repr.is_infinite() {
             return Inexact(sign * f64::INFINITY, Rounding::NoOp);
