@@ -32,7 +32,7 @@ default = ["std", "rand", "num-traits", "num-order"]
 std = ["dashu-base/std", "dashu-int/std", "dashu-float/std"]
 rand = ["dashu-int/rand"]
 serde = ["dashu-int/serde"]
-num-traits = ["dashu-int/num-traits"]
+num-traits = ["dashu-int/num-traits", "dashu-float/num-traits"]
 num-order = ["dashu-int/num-order"]
 zeroize = ["dashu-int/zeroize"]
 
