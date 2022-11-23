@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1 (WIP)
+
+- Implement `rand::distributions::uniform::UniformSampler` for `FBig` through `crate::rand::UniformFBig`
+- Implement `rand::distributions::{Open01, OpenClosed01, Standard}` for `FBig`
+- Implement `dashu_base::Inverse` for `FBig`
+
 ## 0.3.0
 
 ### Add

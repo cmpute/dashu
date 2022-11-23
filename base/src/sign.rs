@@ -22,7 +22,7 @@ pub trait Abs {
 ///
 /// # Examples
 /// ```
-/// use dashu_base::UnsignedAbs;
+/// # use dashu_base::UnsignedAbs;
 /// assert_eq!((-5i8).unsigned_abs(), 5u8);
 /// ```
 pub trait UnsignedAbs {
@@ -31,17 +31,51 @@ pub trait UnsignedAbs {
     fn unsigned_abs(self) -> Self::Output;
 }
 
+// TODO(next): implement abs_eq, abs_cmp among UBig/IBig/FBig/RBig
+
 /// Check whether the magnitude of this number is equal the magnitude of the other number
+///
+/// # Examples
+///
+/// ```
+/// # use dashu_base::AbsEq;
+/// assert!(5.abs_eq(&-5));
+/// assert!(12.3.abs_eq(&-12.3));
+/// ```
 pub trait AbsEq<Rhs = Self> {
     fn abs_eq(&self, rhs: &Rhs) -> bool;
 }
 
+// TODO(v0.4): rename AbsCmp to AbsOrd
+
 /// Compare the magnitude of this number to the magnitude of the other number
+///
+/// Note that this function will panic if either of the numbers is NaN.
+///
+/// # Examples
+///
+/// ```
+/// # use dashu_base::AbsCmp;
+/// assert!(5.abs_cmp(&-6).is_le());
+/// assert!(12.3.abs_cmp(&-12.3).is_eq());
+/// ```
 pub trait AbsCmp<Rhs = Self> {
     fn abs_cmp(&self, rhs: &Rhs) -> Ordering;
 }
 
-// TODO: doc
+/// This trait marks the number is signed.
+///
+/// Notice that the negative zeros (of [f32] and [f64]) are still considered
+/// to have a positive sign.
+///
+/// # Examples
+///
+/// ```
+/// # use dashu_base::{Signed, Sign};
+/// assert_eq!(-2.sign(), Sign::Negative);
+/// assert_eq!(-2.4.sign(), Sign::Negative);
+/// assert_eq!((0.).sign(), Sign::Positive);
+/// ```
 pub trait Signed {
     fn sign(&self) -> Sign;
 }
@@ -224,6 +258,20 @@ macro_rules! impl_signed_for_int {
                 Sign::from(*self < 0)
             }
         }
+
+        impl AbsEq for $t {
+            #[inline]
+            fn abs_eq(&self, rhs: &Self) -> bool {
+                self.abs() == rhs.abs()
+            }
+        }
+
+        impl AbsCmp for $t {
+            #[inline]
+            fn abs_cmp(&self, rhs: &Self) -> Ordering {
+                self.abs().cmp(&rhs.abs())
+            }
+        }
     )*};
 }
 impl_signed_for_int!(i8 i16 i32 i64 i128 isize);
@@ -235,8 +283,26 @@ macro_rules! impl_signed_for_float {
             fn sign(&self) -> Sign {
                 if self.is_nan() {
                     panic!("nan doesn't have a sign")
+                } else if *self == -0. {
+                    return Sign::Positive;
                 }
                 Sign::from(self.to_bits() >> $shift > 0)
+            }
+        }
+
+        impl AbsEq for $t {
+            #[inline]
+            fn abs_eq(&self, rhs: &Self) -> bool {
+                self.abs() == rhs.abs()
+            }
+        }
+
+        impl AbsCmp for $t {
+            #[inline]
+            fn abs_cmp(&self, rhs: &Self) -> Ordering {
+                self.abs()
+                    .partial_cmp(&rhs.abs())
+                    .expect("abs_cmp is not allowed on NaNs!")
             }
         }
     };
@@ -255,7 +321,7 @@ mod tests {
         assert_eq!((-1i32).sign(), Sign::Negative);
 
         assert_eq!(0f32.sign(), Sign::Positive);
-        assert_eq!((-0f32).sign(), Sign::Negative);
+        assert_eq!((-0f32).sign(), Sign::Positive);
         assert_eq!(1f32.sign(), Sign::Positive);
         assert_eq!((-1f32).sign(), Sign::Negative);
     }
@@ -264,5 +330,11 @@ mod tests {
     #[should_panic]
     fn test_signed_nan() {
         let _ = f32::NAN.sign();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_abs_cmp_nan() {
+        let _ = f32::NAN.abs_cmp(&f32::NAN);
     }
 }
