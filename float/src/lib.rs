@@ -82,6 +82,7 @@ mod round_ops;
 mod shift;
 mod sign;
 mod utils;
+mod third_party;
 
 pub use fbig::FBig;
 pub use repr::{Context, Repr};
