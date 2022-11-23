@@ -1,5 +1,3 @@
-#![allow(clippy::approx_constant)]
-
 use dashu_base::{Approximation::*, ConversionError::*, Sign::*};
 use dashu_ratio::RBig;
 
@@ -54,11 +52,11 @@ fn test_from_f32() {
     assert_eq!(RBig::try_from(2.25f32), Ok(rbig!(9 / 4)));
     assert_eq!(RBig::try_from(-2.25e4f32), Ok(rbig!(-22500)));
     assert_eq!(RBig::try_from(1.1773109e-2f32), Ok(rbig!(12345 / 1048576)));
+    assert!(RBig::try_from(core::f32::consts::PI).is_ok());
 
     assert_eq!(RBig::try_from(f32::INFINITY), Err(OutOfBounds));
     assert_eq!(RBig::try_from(f32::NEG_INFINITY), Err(OutOfBounds));
     assert_eq!(RBig::try_from(f32::NAN), Err(OutOfBounds));
-    dbg!(RBig::try_from(3.1415926f32).unwrap());
 }
 
 #[test]
@@ -70,6 +68,7 @@ fn test_from_f64() {
     assert_eq!(RBig::try_from(2.25f64), Ok(rbig!(9 / 4)));
     assert_eq!(RBig::try_from(-2.25e4f64), Ok(rbig!(-22500)));
     assert_eq!(RBig::try_from(1.1773109436035156e-2f64), Ok(rbig!(12345 / 1048576)));
+    assert!(RBig::try_from(core::f64::consts::PI).is_ok());
 
     assert_eq!(RBig::try_from(f64::INFINITY), Err(OutOfBounds));
     assert_eq!(RBig::try_from(f64::NEG_INFINITY), Err(OutOfBounds));
