@@ -19,11 +19,9 @@ impl<'de> Visitor<'de> for LosslessSign {
     fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
         write!(formatter, "expect `true | 'Positive' | 'Negative'`")
     }
+    #[inline]
     fn visit_bool<E: Error>(self, v: bool) -> Result<Self::Value, E> {
-        match v {
-            true => Ok(Sign::Positive),
-            false => Ok(Sign::Negative),
-        }
+        Ok(Sign::from(v))
     }
     fn visit_i8<E: Error>(self, v: i8) -> Result<Self::Value, E> {
         match v {

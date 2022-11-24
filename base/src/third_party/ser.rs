@@ -10,10 +10,7 @@ impl Serialize for Sign {
                 Sign::Negative => serializer.serialize_str("Negative"),
             }
         } else {
-            match self {
-                Sign::Positive => serializer.serialize_u8(1),
-                Sign::Negative => serializer.serialize_u8(0),
-            }
+            serializer.serialize_bool(bool::from(*self))
         }
     }
 }

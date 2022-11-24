@@ -1,6 +1,7 @@
-use serde::{Deserialize, Serialize, Serializer};
+use serde::ser::SerializeStruct;
+use serde::{Serialize, Serializer};
+
 use dashu_base::Sign;
-use dashu_int::UBig;
 
 use crate::RBig;
 
@@ -9,10 +10,19 @@ impl Serialize for RBig {
         if serializer.is_human_readable() {
             serializer.serialize_str(&self.to_string())
         } else {
-            todo!()
+            let sign = self.sign();
+            let numerator = self.numerator().clone().into_parts().1.to_le_bytes();
+            let denominator = self.denominator().to_le_bytes();
+            let mut ser = Serializer::serialize_struct(
+                serializer,
+                "Rational",
+                1 + numerator.len() + denominator.len(),
+            )?;
+            SerializeStruct::serialize_field(&mut ser, "sign", &sign)?;
+            SerializeStruct::serialize_field(&mut ser, "numerator", &numerator)?;
+            SerializeStruct::serialize_field(&mut ser, "denominator", &denominator)?;
+            SerializeStruct::end(ser)
         }
-
-        // self.0.numerator.serialize(serializer)
     }
 }
 
@@ -22,28 +32,12 @@ pub struct LosslessRational {
     pub denominator: Vec<u8>,
 }
 
-impl Default for LosslessRational {
-    fn default() -> Self {
-        Self {
-            sign: Sign::Positive,
-            numerator: vec![],
-            denominator: vec![],
-        }
-    }
-}
-
-impl RBig {
-    fn as_lossless(&self) -> LosslessRational {
-        todo!()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_json() {
-        println!("{}", serde_json::to_string(&RBig::from(0)).unwrap());
+        assert_eq!(r#"0"#, serde_json::to_string(&RBig::from(0)).unwrap());
     }
 }
