@@ -70,5 +70,6 @@ mod repr;
 mod round;
 mod sign;
 mod simplify;
+mod third_party;
 
 pub use rbig::{RBig, Relaxed};

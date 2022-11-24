@@ -23,7 +23,7 @@ std = ["dashu-base/std", "dashu-int/std"]
 num-traits = ["dep:num-traits", "dashu-int/num-traits"]
 
 [dependencies]
-num-traits = { version = "0.2.15", optional = true }
+num-traits = { version = "0.2.15", optional = true, default-features = false }
 
 [dependencies.static_assertions]
 version = "1.1"
