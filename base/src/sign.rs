@@ -119,9 +119,10 @@ impl_abs_ops_prim!(f32; f64;);
 ///
 /// A sign can be converted to or from a boolean value, assuming `true` is [Negative].
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[repr(u8)]
 pub enum Sign {
-    Positive,
-    Negative,
+    Positive = 1,
+    Negative = 0,
 }
 
 use Sign::*;

@@ -16,6 +16,9 @@ rust-version = "1.61"
 [package.metadata.docs.rs]
 all-features = true
 
+[dependencies]
+serde = { version = "1.0.147", optional = true, default-features = false }
+
 [dev-dependencies.rand]
 version = "0.8.3"
 

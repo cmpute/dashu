@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 
-use serde::de::{Error, Visitor};
+use serde::de::{Error, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use dashu_int::{IBig, UBig};
@@ -47,22 +47,41 @@ impl<'de> Visitor<'de> for LosslessRational {
             Err(e) => Err(Error::custom(e.to_string())),
         }
     }
+    fn visit_map<A: MapAccess<'de>>(mut self, mut map: A) -> Result<Self::Value, A::Error> {
+        while let Some(key) = map.next_key::<&str>()? {
+            match key {
+                "numerator" => self.numerator = map.next_value::<Vec<u8>>()?,
+                "denominator" => self.numerator = map.next_value::<Vec<u8>>()?,
+                _ => {
+                    return Err(Error::custom(format!("Unexcepted field `{}`", key)))
+                }
+            }
+        }
+        Ok(self.as_rational())
+    }
 }
+
 
 #[cfg(test)]
 mod tests {
+    use serde_json::from_str;
+
     use super::*;
 
     #[test]
     fn test_json() {
-        println!(
-            "{}",
-            serde_json::from_str::<RBig>(
-                r#"
-        "-5/11"
-        "#
-            )
-            .unwrap()
+        // short string form
+        assert_eq!(
+            from_str::<RBig>("\"-5/11\"").unwrap(),
+            RBig::from_parts(IBig::from(-5), UBig::from(11u32))
+        );
+        // binary object form
+        assert_eq!(
+            from_str::<RBig>(r#"{
+                "numerator": [0],
+                "denominator": [11]
+            }"#).unwrap(),
+            RBig::from_parts(IBig::from(-5), UBig::from(11u32))
         );
     }
 }

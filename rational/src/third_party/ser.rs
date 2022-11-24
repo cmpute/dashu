@@ -16,7 +16,6 @@ impl Serialize for RBig {
     }
 }
 
-
 pub struct LosslessRational {
     pub sign: Sign,
     pub numerator: Vec<u8>,
