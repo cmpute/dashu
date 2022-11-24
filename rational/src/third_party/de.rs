@@ -1,4 +1,4 @@
-use std::fmt::Formatter;
+use core::fmt::Formatter;
 
 use serde::de::{Error, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -6,8 +6,13 @@ use serde::{Deserialize, Deserializer};
 use dashu_base::Sign;
 use dashu_int::{IBig, UBig};
 
-use crate::third_party::ser::LosslessRational;
 use crate::RBig;
+
+pub struct LosslessRational {
+    pub sign: Sign,
+    pub numerator: Vec<u8>,
+    pub denominator: Vec<u8>,
+}
 
 impl Default for LosslessRational {
     fn default() -> Self {
@@ -37,17 +42,11 @@ impl LosslessRational {
 impl<'de> Visitor<'de> for LosslessRational {
     type Value = RBig;
 
-    fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+    fn expecting(&self, formatter: &mut Formatter) -> core::fmt::Result {
         write!(formatter, "expect `String`")
     }
     fn visit_str<E: Error>(self, v: &str) -> Result<Self::Value, E> {
         match RBig::from_str_radix(v, 10) {
-            Ok(o) => Ok(o),
-            Err(e) => Err(Error::custom(e.to_string())),
-        }
-    }
-    fn visit_string<E: Error>(self, v: String) -> Result<Self::Value, E> {
-        match RBig::from_str_radix(&v, 10) {
             Ok(o) => Ok(o),
             Err(e) => Err(Error::custom(e.to_string())),
         }
@@ -58,7 +57,7 @@ impl<'de> Visitor<'de> for LosslessRational {
                 "sign" => self.sign = map.next_value::<Sign>()?,
                 "numerator" => self.numerator = map.next_value::<Vec<u8>>()?,
                 "denominator" => self.denominator = map.next_value::<Vec<u8>>()?,
-                _ => return Err(Error::custom(format!("Unexcepted field `{}`", key))),
+                _ => return Err(Error::custom(format!("Unexpected field `{}`", key))),
             }
         }
         Ok(self.as_rational())

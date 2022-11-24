@@ -1,4 +1,4 @@
-use std::fmt::Formatter;
+use core::fmt::Formatter;
 
 use serde::de::{Error, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -16,7 +16,7 @@ impl<'de> Deserialize<'de> for Sign {
 impl<'de> Visitor<'de> for LosslessSign {
     type Value = Sign;
 
-    fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+    fn expecting(&self, formatter: &mut Formatter) -> core::fmt::Result {
         write!(formatter, "expect `true | 'Positive' | 'Negative'`")
     }
     #[inline]
@@ -51,11 +51,10 @@ impl<'de> Visitor<'de> for LosslessSign {
         match v {
             "Positive" => Ok(Sign::Positive),
             "Negative" => Ok(Sign::Negative),
+            #[cfg(feature = "std")]
             _ => Err(Error::custom(format!("Unexpect variant `{}`", v))),
+            #[cfg(not(feature = "std"))]
+            _ => Err(Error::custom("Unexpect variant")),
         }
-    }
-    #[inline]
-    fn visit_string<E: Error>(self, v: String) -> Result<Self::Value, E> {
-        self.visit_str(&v)
     }
 }

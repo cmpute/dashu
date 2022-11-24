@@ -1,8 +1,6 @@
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
-use dashu_base::Sign;
-
 use crate::RBig;
 
 impl Serialize for RBig {
@@ -18,18 +16,12 @@ impl Serialize for RBig {
                 "Rational",
                 1 + numerator.len() + denominator.len(),
             )?;
-            SerializeStruct::serialize_field(&mut ser, "sign", &sign)?;
-            SerializeStruct::serialize_field(&mut ser, "numerator", &numerator)?;
-            SerializeStruct::serialize_field(&mut ser, "denominator", &denominator)?;
-            SerializeStruct::end(ser)
+            ser.serialize_field("sign", &sign)?;
+            ser.serialize_field("numerator", &numerator)?;
+            ser.serialize_field("denominator", &denominator)?;
+            ser.end()
         }
     }
-}
-
-pub struct LosslessRational {
-    pub sign: Sign,
-    pub numerator: Vec<u8>,
-    pub denominator: Vec<u8>,
 }
 
 #[cfg(test)]
@@ -38,6 +30,6 @@ mod tests {
 
     #[test]
     fn test_json() {
-        assert_eq!(r#"0"#, serde_json::to_string(&RBig::from(0)).unwrap());
+        assert_eq!(r#""0""#, serde_json::to_string(&RBig::from(0)).unwrap());
     }
 }
