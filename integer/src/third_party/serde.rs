@@ -1,3 +1,12 @@
+use alloc::{string::ToString, vec::Vec};
+use core::fmt::{self, Formatter};
+
+use serde::{
+    de::{Deserialize, Deserializer, SeqAccess, Visitor},
+    ser::{Serialize, SerializeSeq, SerializeTuple, Serializer},
+};
+use static_assertions::const_assert;
+
 use crate::{
     arch::word::Word,
     buffer::Buffer,
@@ -7,13 +16,6 @@ use crate::{
     ubig::UBig,
     Sign,
 };
-use alloc::{string::ToString, vec::Vec};
-use core::fmt::{self, Formatter};
-use serde::{
-    de::{Deserialize, Deserializer, SeqAccess, Visitor},
-    ser::{Serialize, SerializeSeq, SerializeTuple, Serializer},
-};
-use static_assertions::const_assert;
 
 // We ensure that the max size of a word is 64-bit, if we are going to
 // support 128 bit word, it's going to be a break change.

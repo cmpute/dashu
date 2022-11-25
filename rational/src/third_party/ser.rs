@@ -1,5 +1,9 @@
-use serde::ser::SerializeStruct;
+use std::ops::Neg;
+
+use serde::ser::SerializeSeq;
 use serde::{Serialize, Serializer};
+
+use dashu_base::Sign;
 
 use crate::RBig;
 
@@ -8,18 +12,39 @@ impl Serialize for RBig {
         if serializer.is_human_readable() {
             serializer.serialize_str(&self.to_string())
         } else {
-            let sign = self.sign();
-            let numerator = self.numerator().clone().into_parts().1.to_le_bytes();
-            let denominator = self.denominator().to_le_bytes();
-            let mut ser = Serializer::serialize_struct(
-                serializer,
-                "Rational",
-                1 + numerator.len() + denominator.len(),
-            )?;
-            ser.serialize_field("sign", &sign)?;
-            ser.serialize_field("numerator", &numerator)?;
-            ser.serialize_field("denominator", &denominator)?;
-            ser.end()
+            // i64, bytes, [u64, bytes]
+            let mut seq = serializer.serialize_seq(None)?;
+            // numerator omitted
+            if self.is_zero() {
+                return seq.end();
+            }
+            // write numerator bytes
+            let (sign, numerator) = self.numerator().clone().into_parts();
+            let numerator = &numerator.to_le_bytes();
+            let head = match sign {
+                Sign::Positive => numerator.len() as i64,
+                Sign::Negative => -(numerator.len() as i64),
+            };
+            for byte in head.neg().to_le_bytes() {
+                seq.serialize_element(&byte)?;
+            }
+            for byte in numerator.iter() {
+                seq.serialize_element(&byte)?;
+            }
+            // denominator omitted
+            if self.denominator().is_one() {
+                return seq.end();
+            }
+            // write numerator bytes
+            let denominator = &self.denominator().to_le_bytes();
+            let head = denominator.len() as u64;
+            for byte in head.to_le_bytes() {
+                seq.serialize_element(&byte)?;
+            }
+            for byte in denominator.iter() {
+                seq.serialize_element(&byte)?;
+            }
+            seq.end()
         }
     }
 }
