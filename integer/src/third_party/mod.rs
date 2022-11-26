@@ -1,4 +1,4 @@
-//! Implementations for third party traits
+//! Implementations for third party crates and traits
 
 #[cfg(feature = "num-integer")]
 mod num_integer;

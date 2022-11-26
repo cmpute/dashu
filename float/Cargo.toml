@@ -17,13 +17,10 @@ rust-version = "1.61"
 all-features = true
 
 [features]
-default = ["std", "rand"]
-rand = ["dep:rand", "dashu-int/rand"]
+default = ["std", "rand", "num-traits"]
 std = ["dashu-base/std", "dashu-int/std"]
+rand = ["dep:rand", "dashu-int/rand"]
 num-traits = ["dep:num-traits", "dashu-int/num-traits"]
-
-[dependencies]
-num-traits = { version = "0.2.15", optional = true }
 
 [dependencies.static_assertions]
 version = "1.1"
@@ -38,7 +35,19 @@ path = "../integer"
 version = "0.3.0"
 default-features = false
 
+[dependencies.num-traits]
+optional = true
+version = "0.2.15"
+default-features = false
+
 [dependencies.rand]
 optional = true
 version = "0.8.3"
 default-features = false
+
+[dev-dependencies.rand]
+version = "0.8.3"
+
+[[test]]
+name = "random"
+required-features = ["rand"]

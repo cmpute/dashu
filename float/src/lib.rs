@@ -84,6 +84,9 @@ mod sign;
 mod third_party;
 mod utils;
 
+// All the public items from third_party will be exposed
+pub use third_party::*;
+
 pub use fbig::FBig;
 pub use repr::{Context, Repr};
 

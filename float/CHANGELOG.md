@@ -2,9 +2,12 @@
 
 ## 0.3.1 (WIP)
 
+- Implement `num_traits::{Zero, One, FromPrimitive, ToPrimitive}` for `FBig` (#19)
 - Implement `rand::distributions::uniform::UniformSampler` for `FBig` through `crate::rand::UniformFBig`
 - Implement `rand::distributions::{Open01, OpenClosed01, Standard}` for `FBig`
 - Implement `dashu_base::Inverse` for `FBig`
+- Add support of random floating point numbers generation through `Uniform01` and `UniformFBig`.
+- Implement `rand::distributions::uniform::SampleUniform` for `FBig`.
 
 ## 0.3.0
 

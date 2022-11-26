@@ -29,10 +29,10 @@ default-members = ["base", "integer", "float", "rational", "macros"]
 
 [features]
 default = ["std", "rand", "num-traits", "num-order"]
-std = ["dashu-base/std", "dashu-int/std", "dashu-float/std"]
-rand = ["dashu-int/rand"]
+std = ["dashu-base/std", "dashu-int/std", "dashu-float/std", "dashu-ratio/std"]
+rand = ["dashu-int/rand", "dashu-float/rand", "dashu-ratio/rand"]
 serde = ["dashu-int/serde"]
-num-traits = ["dashu-int/num-traits", "dashu-float/num-traits"]
+num-traits = ["dashu-int/num-traits", "dashu-float/num-traits", "dashu-ratio/num-traits"]
 num-order = ["dashu-int/num-order"]
 zeroize = ["dashu-int/zeroize"]
 
@@ -59,6 +59,7 @@ default-features = false
 path = "./rational"
 version = "0.3.0"
 default-features = false
+features = ['dashu-float']
 
 [dependencies.dashu-macros]
 path = "./macros"

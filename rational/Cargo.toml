@@ -17,8 +17,10 @@ rust-version = "1.61"
 all-features = true
 
 [features]
-default = ["std"]
+default = ["std", "rand", "num-traits"]
 std = ["dashu-base/std", "dashu-int/std"]
+rand = ["dep:rand", "dashu-int/rand"]
+num-traits = ["dep:num-traits", "dashu-int/num-traits"]
 
 [dependencies.dashu-base]
 path = "../base"
@@ -30,6 +32,22 @@ path = "../integer"
 version = "0.3.0"
 default-features = false
 
+[dependencies.dashu-float]
+optional = true
+path = "../float"
+version = "0.3.0"
+default-features = false
+
+[dependencies.num-traits]
+optional = true
+version = "0.2.14"
+default-features = false
+
+[dependencies.rand]
+optional = true
+version = "0.8.3"
+default-features = false
+
 [dev-dependencies.criterion]
 version = "0.4.0"
 features = ["html_reports"]
@@ -39,3 +57,7 @@ version = "0.8.3"
 
 [lib]
 bench = false
+
+[[test]]
+name = "random"
+required-features = ["rand"]

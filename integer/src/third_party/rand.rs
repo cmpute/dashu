@@ -1,9 +1,9 @@
-//! Support random integers generation with the `rand` crate.
+//! Random integers generation with the `rand` crate.
 //!
-//! There are three distributions for generating random integers. One is [UniformBits],
-//! which limit the bit size of the generated integer. The other two are [UniformUBig]
-//! and [UniformIBig], which supports generating random integers uniformly in a given
-//! range. These traits are also the backends for the [SampleUniform] trait.
+//! There are four distributions for generating random integers. The first two are [UniformBits],
+//! and [UniformBelow] which limit the bit size or the magnitude of the generated integer.
+//! The other two are [UniformUBig] and [UniformIBig], which supports generating random integers
+//! uniformly in a given range. These traits are also the backends for the [SampleUniform] trait.
 //!
 //! # Examples
 //!
@@ -23,12 +23,19 @@
 //! assert!(a >= IBig::from(3) && a < IBig::from(10));
 //! assert!(b >= IBig::from(-5) && b < a);
 //!
-//! // generate UBigs and IBigs with given bit size limit.
+//! // generate UBigs and IBigs with a given bit size limit.
 //! use dashu_base::BitTest;
 //! use dashu_int::rand::UniformBits;
 //! let a: UBig = thread_rng().sample(UniformBits::new(10));
 //! let b: IBig = thread_rng().sample(UniformBits::new(10));
 //! assert!(a.bit_len() <= 10 && b.bit_len() <= 10);
+//!
+//! // generate UBigs and IBigs with a given magnitude limit.
+//! use dashu_int::rand::UniformBelow;
+//! let a: UBig = thread_rng().sample(UniformBelow::new(&10u8.into()));
+//! let b: IBig = thread_rng().sample(UniformBelow::new(&10u8.into()));
+//! assert!(a < UBig::from(10u8));
+//! assert!(b < IBig::from(10) && b > IBig::from(-10));
 //! ```
 
 use crate::{
@@ -60,6 +67,7 @@ pub struct UniformBits {
 
 impl UniformBits {
     /// Create a [UniformBits] distribution with a given limit on the integer's bit length.
+    #[inline]
     pub const fn new(bits: usize) -> Self {
         UniformBits { bits }
     }
@@ -93,6 +101,45 @@ impl Distribution<IBig> for UniformBits {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> IBig {
         loop {
             let mag: UBig = self.sample(rng);
+            let neg = rng.gen();
+            if mag.is_zero() && neg {
+                // Reject negative zero so that all possible integers
+                // have the same probability. This branch should happen
+                // very rarely.
+                continue;
+            }
+            break IBig::from_parts(Sign::from(neg), mag);
+        }
+    }
+}
+
+/// Uniform distribution around zero for both [UBig] and [IBig] specified by a limit of the magnitude.
+///
+/// This distribution generate random integers uniformly between `[0, limit)` for [UBig],
+/// between `(-limit, limit)` for [IBig].
+pub struct UniformBelow<'a> {
+    limit: &'a UBig,
+}
+
+impl<'a> UniformBelow<'a> {
+    /// Create a [UniformBelow] distribution with a given limit on the integer's magnitude.
+    #[inline]
+    pub const fn new(limit: &'a UBig) -> Self {
+        Self { limit }
+    }
+}
+
+impl<'a> Distribution<UBig> for UniformBelow<'a> {
+    #[inline]
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> UBig {
+        UBig::uniform(self.limit, rng)
+    }
+}
+
+impl<'a> Distribution<IBig> for UniformBelow<'a> {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> IBig {
+        loop {
+            let mag: UBig = UBig::uniform(self.limit, rng);
             let neg = rng.gen();
             if mag.is_zero() && neg {
                 // Reject negative zero so that all possible integers
