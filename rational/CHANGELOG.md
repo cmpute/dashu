@@ -7,6 +7,7 @@
 - Add `cubic()` for `RBig` and `Relaxed`.
 - Add support of random rational numbers generation through `Uniform01` and `UniformRBig`.
 - Implement `rand::distributions::uniform::SampleUniform` for `RBig`.
+- Implement `serde::{Serialize, Deserialize}` for `RBig` and `Relaxed`
 - Fix the bug in number comparison.
 
 ## 0.3.0 (Initial release)

@@ -41,7 +41,7 @@ fn test_uniform01_rbig() {
     assert!(x.denominator() <= &limit);
 
     // test the standard distribution
-    let x: RBig = (&mut rng).gen();
+    let x: RBig = rng.gen();
     assert!(x >= rbig!(0) && x < rbig!(1));
 }
 
@@ -83,7 +83,7 @@ fn test_uniform01_relaxed() {
     assert!(x.denominator() <= &limit);
 
     // test the standard distribution
-    let x: Relaxed = (&mut rng).gen();
+    let x: Relaxed = rng.gen();
     assert!(x >= rbig!(~0) && x < rbig!(~1));
 }
 

@@ -45,7 +45,7 @@ fn test_uniform01_binary() {
     assert_eq!(x.precision(), 8);
 
     // test the standard distribution
-    let x: FBig = (&mut rng).gen();
+    let x: FBig = rng.gen();
     assert!(x >= fbig!(0) && x < fbig!(1));
 }
 
@@ -123,7 +123,7 @@ fn test_uniform01_decimal() {
     assert_eq!(x.precision(), 2);
 
     // test the standard distribution
-    let x: DBig = (&mut rng).gen();
+    let x: DBig = rng.gen();
     assert!(x >= dbig!(0) && x < dbig!(1));
 }
 

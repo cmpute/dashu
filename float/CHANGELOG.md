@@ -8,6 +8,7 @@
 - Implement `dashu_base::Inverse` for `FBig`
 - Add support of random floating point numbers generation through `Uniform01` and `UniformFBig`.
 - Implement `rand::distributions::uniform::SampleUniform` for `FBig`.
+- Implement `serde::{Serialize, Deserialize}` for `FBig` and `Repr`
 
 ## 0.3.0
 

@@ -55,7 +55,6 @@ default-features = false
 optional = true
 version = "1.0.130"
 default-features = false
-features = ["derive"]
 
 [dependencies.zeroize]
 optional = true

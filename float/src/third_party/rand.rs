@@ -133,7 +133,7 @@ impl<R: Round, const B: Word> UniformSampler for UniformFBig<R, B> {
 
     #[inline]
     fn sample<RNG: Rng + ?Sized>(&self, rng: &mut RNG) -> Self::X {
-        <Self as Distribution<FBig<R, B>>>::sample(&self, rng)
+        <Self as Distribution<FBig<R, B>>>::sample(self, rng)
     }
 }
 

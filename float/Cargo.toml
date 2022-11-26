@@ -21,6 +21,7 @@ default = ["std", "rand", "num-traits"]
 std = ["dashu-base/std", "dashu-int/std"]
 rand = ["dep:rand", "dashu-int/rand"]
 num-traits = ["dep:num-traits", "dashu-int/num-traits"]
+serde = ["dep:serde", "dashu-int/serde"]
 
 [dependencies.static_assertions]
 version = "1.1"
@@ -45,9 +46,28 @@ optional = true
 version = "0.8.3"
 default-features = false
 
+[dependencies.serde]
+optional = true
+version = "1.0.130"
+default-features = false
+
 [dev-dependencies.rand]
 version = "0.8.3"
+
+[dev-dependencies.postcard]
+version = "1.0.2"
+features = ["alloc"]
+
+[dev-dependencies.serde_test]
+version = "1.0.130"
+
+[dev-dependencies.serde_json]
+version = "1.0"
 
 [[test]]
 name = "random"
 required-features = ["rand"]
+
+[[test]]
+name = "serde"
+required-features = ["serde"]
