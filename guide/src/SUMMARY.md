@@ -15,5 +15,8 @@
   - [Exponential and Logarithm](./ops/exp_log.md)
   - [Bit Manipulation](./ops/bit.md)
   - [Number Theoretic](./ops/num_theory.md)
+- [Cargo Features and Config Flags](./features.md)
+- [Interop with other Crates](./interop/index.md)
+  - [`num`](./interop/num.md)
 - [FAQ](./faq.md)
 - [Cheatsheet](./cheatsheet.md)
