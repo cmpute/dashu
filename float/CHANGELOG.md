@@ -9,6 +9,7 @@
 - Add support of random floating point numbers generation through `Uniform01` and `UniformFBig`.
 - Implement `rand::distributions::uniform::SampleUniform` for `FBig`.
 - Implement `serde::{Serialize, Deserialize}` for `FBig` and `Repr`
+- Add `from_str_native()` for `Repr`
 
 ## 0.3.0
 

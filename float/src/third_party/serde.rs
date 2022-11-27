@@ -20,7 +20,7 @@ impl<const B: Word> Serialize for Repr<B> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
             // serialize to formatted string if the serializer is human readable
-            serializer.serialize_str(&self.to_string())
+            serializer.collect_str(self)
         } else {
             // otherwise serialize as a (significand, exponent) struct
             let mut se = serializer.serialize_struct("FBigRepr", 2)?;
@@ -37,7 +37,7 @@ impl<R: Round, const B: Word> Serialize for FBig<R, B> {
         if serializer.is_human_readable() {
             // serialize to formatted string if the serializer is human readable
             // TODO(next): pad the output with leading zeros to make the result contains the correct precision
-            serializer.serialize_str(&self.to_string())
+            serializer.collect_str(self)
         } else {
             // otherwise serialize as a (significand, exponent, precision) struct
             let mut se = serializer.serialize_struct("FBig", 3)?;

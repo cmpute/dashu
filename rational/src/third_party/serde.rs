@@ -18,7 +18,7 @@ fn serialize_repr<S: Serializer>(
 ) -> Result<S::Ok, S::Error> {
     if serializer.is_human_readable() {
         // serialize to formatted string if the serializer is human readable
-        serializer.serialize_str(&repr.to_string())
+        serializer.collect_str(repr)
     } else {
         // otherwise serialize as a (numerator, denominator) struct
         let mut se = serializer.serialize_struct(name, 2)?;

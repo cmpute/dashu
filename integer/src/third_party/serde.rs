@@ -7,7 +7,7 @@ use crate::{
     ubig::UBig,
     Sign,
 };
-use alloc::{string::ToString, vec::Vec};
+use alloc::vec::Vec;
 use core::fmt::{self, Formatter};
 use serde::{
     de::{Deserialize, Deserializer, SeqAccess, Visitor},
@@ -67,7 +67,7 @@ impl Serialize for UBig {
     #[inline]
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
-            serializer.serialize_str(&self.to_string())
+            serializer.collect_str(self)
         } else {
             self.repr().serialize(serializer)
         }
@@ -156,7 +156,7 @@ fn len_64_to_max_len(len_64: usize) -> usize {
 impl Serialize for IBig {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
-            serializer.serialize_str(&self.to_string())
+            serializer.collect_str(self)
         } else {
             let (sign, repr) = self.as_sign_repr();
             let mut tup = serializer.serialize_tuple(2)?;

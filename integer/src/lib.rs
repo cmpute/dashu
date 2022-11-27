@@ -70,6 +70,12 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+// TODO: #![deny(missing_docs)]
+// TODO: #![deny(clippy::allow_attributes_without_reason)]
+#![deny(clippy::dbg_macro)]
+#![deny(clippy::undocumented_unsafe_blocks)]
+#![deny(clippy::let_underscore_must_use)]
+
 extern crate alloc;
 
 pub use crate::{ibig::IBig, ubig::UBig};
@@ -129,5 +135,3 @@ mod ubig;
 
 // All the public items from third_party will be exposed
 pub use third_party::*;
-
-// TODO(next): add clippy::undocumented_unsafe_blocks check
