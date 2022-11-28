@@ -69,7 +69,6 @@
 //! * `zeroize`: support traits from crate `zeroize`
 
 #![cfg_attr(not(feature = "std"), no_std)]
-
 // TODO: #![deny(missing_docs)]
 // TODO: #![deny(clippy::allow_attributes_without_reason)]
 #![deny(clippy::dbg_macro)]

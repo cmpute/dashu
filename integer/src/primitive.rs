@@ -55,7 +55,7 @@ pub const fn shrink_dword(dw: DoubleWord) -> Option<Word> {
 }
 
 /// Get the lowest double word of a slice of words
-/// 
+///
 /// Note that then length is only checked in the debug mode.
 #[inline]
 pub fn lowest_dword(words: &[Word]) -> DoubleWord {
@@ -70,13 +70,13 @@ pub fn lowest_dword(words: &[Word]) -> DoubleWord {
 }
 
 /// Get the highest double word of a slice of words
-/// 
+///
 /// Note that then length is only checked in the debug mode.
 #[inline]
 pub fn highest_dword(words: &[Word]) -> DoubleWord {
     let len = words.len();
     debug_assert!(len >= 2);
-    
+
     // SAFETY: length checked by the assertion above
     unsafe {
         let lo = *words.get_unchecked(len - 2);

@@ -14,7 +14,7 @@ use crate::{
     fbig::FBig,
     repr::{Context, Repr},
     round::{mode::HalfEven, Round, Rounded, Rounding},
-    utils::ilog_exact,
+    utils::{ilog_exact, shl_digits, shl_digits_in_place, shr_digits},
 };
 
 impl<R: Round> Context<R> {
@@ -75,6 +75,7 @@ impl_from_float_for_fbig!(f32);
 impl_from_float_for_fbig!(f64);
 
 impl<R: Round, const B: Word> FBig<R, B> {
+    // TODO(v0.4): change the result rounding to HalfEven, so that the output is directly a DBig
     /// Convert the float number to base 10 (with decimal exponents).
     ///
     /// It's equivalent to `self.with_base::<10>()`. See [with_base()][Self::with_base]
@@ -112,6 +113,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
         self.clone().with_base::<10>()
     }
 
+    // TODO(v0.4): change the result rounding to Zero, so that the output is directly a default FBig
     /// Convert the float number to base 2 (with binary exponents).
     ///
     /// It's equivalent to `self.with_base::<2>()`. See [with_base()][Self::with_base]
@@ -313,98 +315,25 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Panics if the associated context has unlimited precision and the conversion
     /// cannot be performed losslessly.
     #[allow(non_upper_case_globals)]
+    #[inline]
     pub fn with_base_and_precision<const NewB: Word>(
         self,
         precision: usize,
     ) -> Rounded<FBig<R, NewB>> {
-        // shortcut if NewB is the same as B
-        if NewB == B {
-            return Exact(FBig {
-                repr: Repr {
-                    significand: self.repr.significand,
-                    exponent: self.repr.exponent,
-                },
-                context: self.context,
-            });
-        }
-
-        // shortcut for infinities
         let context = Context::<R>::new(precision);
-        if self.repr.is_infinite() {
-            return Inexact(
-                FBig::new(
-                    Repr {
-                        significand: self.repr.significand,
-                        exponent: self.repr.exponent,
-                    },
-                    context,
-                ),
-                Rounding::NoOp,
-            );
-        }
-
-        if NewB > B {
-            // shortcut if NewB is a power of B
-            let n = ilog_exact(NewB, B);
-            if n > 1 {
-                let (exp, rem) = self.repr.exponent.div_rem_euclid(n as isize);
-                let signif = self.repr.significand * B.pow(rem as u32);
-                let repr = Repr::new(signif, exp);
-                return context.repr_round(repr).map(|v| FBig::new(v, context));
-            }
-        } else {
-            // shortcut if B is a power of NewB
-            let n = ilog_exact(B, NewB);
-            if n > 1 {
-                let exp = self.repr.exponent * n as isize;
-                let repr = Repr::new(self.repr.significand, exp);
-                return Exact(FBig::new(repr, context));
-            }
-        }
-
-        // if the base cannot be converted losslessly, the precision must be set
-        if precision == 0 {
-            panic_unlimited_precision();
-        }
-
-        // XXX: there's a potential optimization: if B is a multiple of NewB, then the factor B
-        // should be trivially removed first, but this requires full support of const generics.
-
-        // choose a exponent threshold such that number with exponent smaller than this value
-        // will be converted by directly evaluating the power. The threshold here is chosen such
-        // that the power under base 10 will fit in a double word.
-        const THRESHOLD_SMALL_EXP: isize = (Word::BITS as f32 * 0.60206) as isize; // word bits * 2 / log2(10)
-        if self.repr.exponent.abs() <= THRESHOLD_SMALL_EXP {
-            // if the exponent is small enough, directly evaluate the exponent
-            if self.repr.exponent >= 0 {
-                let signif =
-                    self.repr.significand * Repr::<B>::BASE.pow(self.repr.exponent as usize);
-                Exact(FBig::new(Repr::new(signif, 0), context))
-            } else {
-                let num = Repr::new(self.repr.significand, 0);
-                let den = Repr::new(Repr::<B>::BASE.pow(-self.repr.exponent as usize), 0);
-                context.repr_div(num, &den).map(|v| FBig::new(v, context))
-            }
-        } else {
-            // if the exponent is large, then we first estimate the result exponent as floor(exponent * log(B) / log(NewB)),
-            // then the fractional part is multiplied with the original significand
-            let work_context = Context::<R>::new(2 * precision); // double the precision to get the precision logarithm
-            let new_exp =
-                self.repr.exponent * work_context.ln(&Repr::new(Repr::<B>::BASE, 0)).value();
-            let (exponent, rem) = new_exp.div_rem_euclid(work_context.ln_base::<NewB>());
-            let exponent: isize = exponent.try_into().unwrap();
-            let exp_rem = rem.exp();
-            let significand = self.repr.significand * exp_rem.repr.significand;
-            let repr = Repr::new(significand, exponent + exp_rem.repr.exponent);
-            context.repr_round(repr).map(|v| FBig::new(v, context))
-        }
+        context
+            .convert_base(self.repr)
+            .map(|repr| FBig::new(repr, context))
     }
 
     /// Convert the float number to integer with the given rounding mode.
     ///
     /// # Warning
+    ///
     /// If the float number has a very large exponent, it will be evaluated and result
     /// in allocating an huge integer and it might eat up all your memory.
+    ///
+    /// To get a rough idea of how big the number is, it's recommended to use [EstimatedLog2].
     ///
     /// # Examples
     ///
@@ -437,116 +366,276 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
         // shortcut when the number is already an integer
         if self.repr.exponent >= 0 {
-            return Exact(
-                &self.repr.significand * Repr::<B>::BASE.pow(self.repr.exponent as usize),
-            );
+            return Exact(shl_digits::<B>(&self.repr.significand, self.repr.exponent as usize));
         }
 
         let (hi, lo, precision) = self.split_at_point_internal();
         let adjust = R::round_fract::<B>(&hi, lo, precision);
         Inexact(hi + adjust, adjust)
     }
-}
 
-impl<R: Round, const B: Word> FBig<R, B> {
     /// Convert the float number to [f32] with [HalfEven] rounding mode regardless of the mode associated with this number.
-    ///
-    /// This method is only available to base 2 float number. For other bases, it's required
-    /// to convert the number to base 2 explicitly using `self.with_base_and_precision::<2>(23)`
-    /// first, and then convert to [f32].
     ///
     /// # Examples
     ///
     /// ```
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("1.234")?;
-    /// assert_eq!(a.with_base_and_precision::<2>(23).value().to_f32().value(), 1.234);
-    ///
-    /// let b = DBig::INFINITY;
-    /// assert_eq!(b.with_base_and_precision::<2>(23).value().to_f32().value(), f32::INFINITY);
+    /// assert_eq!(DBig::from_str_native("1.234")?.to_f32().value(), 1.234);
+    /// assert_eq!(DBig::INFINITY.to_f32().value(), f32::INFINITY);
     /// # Ok::<(), ParseError>(())
     /// ```
+    #[inline]
     pub fn to_f32(&self) -> Rounded<f32> {
-        if B != 2 {
-            // TODO: support conversion to f32 with arbitrary bases
-            panic!("Unsupported base `{B}` , try `n.with_base::<2>()`")
-        }
-        let sign = self.repr.sign();
-        if self.repr.is_infinite() {
-            return Inexact(sign * f32::INFINITY, Rounding::NoOp);
-        }
-
-        let context = Context::<HalfEven>::new(24);
-        context.repr_round_ref(&self.repr).and_then(|v| {
-            let man24: i32 = v.significand.try_into().unwrap();
-            if v.exponent >= 128 {
-                // max f32 = 2^128 * (1 - 2^-24)
-                match sign {
-                    Sign::Positive => Inexact(f32::INFINITY, Rounding::AddOne),
-                    Sign::Negative => Inexact(f32::NEG_INFINITY, Rounding::SubOne),
-                }
-            } else if v.exponent < -149 - 24 {
-                // min f32 = 2^-149
-                Inexact(sign * 0f32, Rounding::NoOp)
-            } else {
-                match f32::encode(man24, v.exponent as i16) {
-                    Exact(v) => Exact(v),
-                    // this branch only happens when the result underflows
-                    Inexact(v, _) => Inexact(v, Rounding::NoOp),
-                }
-            }
-        })
+        // TODO(v0.4): use the rounding mode specified by this type
+        self.repr.to_f32()
     }
 
     /// Convert the float number to [f64] with [HalfEven] rounding mode regardless of the mode associated with this number.
     ///
-    /// This method is only available to base 2 float number. For other bases, it's required
-    /// to convert the number to base 2 explicitly using `self.with_base_and_precision::<2>(53)`
-    /// first, and then convert to [f32].
-    ///
     /// # Examples
     ///
     /// ```
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("1.234")?;
-    /// assert_eq!(a.with_base_and_precision::<2>(53).value().to_f64().value(), 1.234);
-    ///
-    /// let b = DBig::INFINITY;
-    /// assert_eq!(b.with_base_and_precision::<2>(53).value().to_f64().value(), f64::INFINITY);
+    /// assert_eq!(DBig::from_str_native("1.234")?.to_f64().value(), 1.234);
+    /// assert_eq!(DBig::INFINITY.to_f64().value(), f64::INFINITY);
     /// # Ok::<(), ParseError>(())
     /// ```
+    #[inline]
     pub fn to_f64(&self) -> Rounded<f64> {
-        if B != 2 {
-            // TODO: support conversion to f64 with arbitrary bases
-            panic!("Unsupported base `{B}` , try `n.with_base::<2>()`")
+        // TODO(v0.4): use the rounding mode specified by this type
+        self.repr.to_f64()
+    }
+}
+
+impl<R: Round> Context<R> {
+    // Convert the [Repr] from base B to base NewB, with the precision under the target base from this context.
+    #[allow(non_upper_case_globals)]
+    fn convert_base<const B: Word, const NewB: Word>(&self, repr: Repr<B>) -> Rounded<Repr<NewB>> {
+        // shortcut if NewB is the same as B
+        if NewB == B {
+            return Exact(Repr {
+                significand: repr.significand,
+                exponent: repr.exponent,
+            });
         }
-        let sign = self.repr.sign();
-        if self.repr.is_infinite() {
-            return Inexact(sign * f64::INFINITY, Rounding::NoOp);
+
+        // shortcut for infinities, no rounding happens but the result is inexact
+        if repr.is_infinite() {
+            return Inexact(
+                Repr {
+                    significand: repr.significand,
+                    exponent: repr.exponent,
+                },
+                Rounding::NoOp,
+            );
+        }
+
+        if NewB > B {
+            // shortcut if NewB is a power of B
+            let n = ilog_exact(NewB, B);
+            if n > 1 {
+                let (exp, rem) = repr.exponent.div_rem_euclid(n as isize);
+                let signif = repr.significand * B.pow(rem as u32);
+                let repr = Repr::new(signif, exp);
+                return self.repr_round(repr);
+            }
+        } else {
+            // shortcut if B is a power of NewB
+            let n = ilog_exact(B, NewB);
+            if n > 1 {
+                let exp = repr.exponent * n as isize;
+                return Exact(Repr::new(repr.significand, exp));
+            }
+        }
+
+        // if the base cannot be converted losslessly, the precision must be set
+        if self.precision == 0 {
+            panic_unlimited_precision();
+        }
+
+        // XXX: there's a potential optimization: if B is a multiple of NewB, then the factor B
+        // should be trivially removed first, but this requires full support of const generics.
+
+        // choose a exponent threshold such that number with exponent smaller than this value
+        // will be converted by directly evaluating the power. The threshold here is chosen such
+        // that the power under base 10 will fit in a double word.
+        const THRESHOLD_SMALL_EXP: isize = (Word::BITS as f32 * 0.60206) as isize; // word bits * 2 / log2(10)
+        if repr.exponent.abs() <= THRESHOLD_SMALL_EXP {
+            // if the exponent is small enough, directly evaluate the exponent
+            if repr.exponent >= 0 {
+                let signif = repr.significand * Repr::<B>::BASE.pow(repr.exponent as usize);
+                Exact(Repr::new(signif, 0))
+            } else {
+                let num = Repr::new(repr.significand, 0);
+                let den = Repr::new(Repr::<B>::BASE.pow(-repr.exponent as usize), 0);
+                self.repr_div(num, &den)
+            }
+        } else {
+            // if the exponent is large, then we first estimate the result exponent as floor(exponent * log(B) / log(NewB)),
+            // then the fractional part is multiplied with the original significand
+            let work_context = Context::<R>::new(2 * self.precision); // double the precision to get the precise logarithm
+            let new_exp = repr.exponent * work_context.ln(&Repr::new(Repr::<B>::BASE, 0)).value();
+            let (exponent, rem) = new_exp.div_rem_euclid(work_context.ln_base::<NewB>());
+            let exponent: isize = exponent.try_into().unwrap();
+            let exp_rem = rem.exp();
+            let significand = repr.significand * exp_rem.repr.significand;
+            let repr = Repr::new(significand, exponent + exp_rem.repr.exponent);
+            self.repr_round(repr)
+        }
+    }
+}
+
+impl<const B: Word> Repr<B> {
+    // this method requires that the representation is already rounded to 24 binary bits
+    fn to_f32_internal(self) -> Rounded<f32> {
+        assert!(B == 2);
+        debug_assert!(self.is_finite());
+        debug_assert!(self.significand.bit_len() <= 24);
+
+        let sign = self.sign();
+        let man24: i32 = self.significand.try_into().unwrap();
+        if self.exponent >= 128 {
+            // max f32 = 2^128 * (1 - 2^-24)
+            match sign {
+                Sign::Positive => Inexact(f32::INFINITY, Rounding::AddOne),
+                Sign::Negative => Inexact(f32::NEG_INFINITY, Rounding::SubOne),
+            }
+        } else if self.exponent < -149 - 24 {
+            // min f32 = 2^-149
+            Inexact(sign * 0f32, Rounding::NoOp)
+        } else {
+            match f32::encode(man24, self.exponent as i16) {
+                Exact(v) => Exact(v),
+                // this branch only happens when the result underflows
+                Inexact(v, _) => Inexact(v, Rounding::NoOp),
+            }
+        }
+    }
+
+    /// Convert the float number representation to a [f32] with the default IEEE 754 rounding mode.
+    ///
+    /// The default IEEE 754 rounding mode is [HalfEven] (rounding to nearest, ties to even). To convert
+    /// the float number with a specific rounding mode, please use [FBig::to_f32].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_base::Approximation::*;
+    /// # use dashu_float::{Repr, round::Rounding::*};
+    /// assert_eq!(Repr::<2>::one().to_f32(), Exact(1.0));
+    /// assert_eq!(Repr::<10>::infinity().to_f32(), Inexact(f32::INFINITY, NoOp));
+    /// ```
+    #[inline]
+    pub fn to_f32(&self) -> Rounded<f32> {
+        if self.is_infinite() {
+            return Inexact(self.sign() * f32::INFINITY, Rounding::NoOp);
+        }
+
+        let context = Context::<HalfEven>::new(24);
+        if B != 2 {
+            let rounded: Rounded<Repr<2>> = context.convert_base(self.clone());
+            rounded.and_then(|v| v.to_f32_internal())
+        } else {
+            context
+                .repr_round_ref(self)
+                .and_then(|v| v.to_f32_internal())
+        }
+    }
+
+    // this method requires that the representation is already rounded to 53 binary bits
+    fn to_f64_internal(self) -> Rounded<f64> {
+        assert!(B == 2);
+        debug_assert!(self.is_finite());
+        debug_assert!(self.significand.bit_len() <= 53);
+
+        let sign = self.sign();
+        let man53: i64 = self.significand.try_into().unwrap();
+        if self.exponent >= 1024 {
+            // max f64 = 2^1024 × (1 − 2^−53)
+            match sign {
+                Sign::Positive => Inexact(f64::INFINITY, Rounding::AddOne),
+                Sign::Negative => Inexact(f64::NEG_INFINITY, Rounding::SubOne),
+            }
+        } else if self.exponent < -1074 - 53 {
+            // min f64 = 2^-1074
+            Inexact(sign * 0f64, Rounding::NoOp)
+        } else {
+            match f64::encode(man53, self.exponent as i16) {
+                Exact(v) => Exact(v),
+                // this branch only happens when the result underflows
+                Inexact(v, _) => Inexact(v, Rounding::NoOp),
+            }
+        }
+    }
+
+    /// Convert the float number representation to a [f64] with the default IEEE 754 rounding mode.
+    ///
+    /// The default IEEE 754 rounding mode is [HalfEven] (rounding to nearest, ties to even). To convert
+    /// the float number with a specific rounding mode, please use [FBig::to_f64].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_base::Approximation::*;
+    /// # use dashu_float::{Repr, round::Rounding::*};
+    /// assert_eq!(Repr::<2>::one().to_f64(), Exact(1.0));
+    /// assert_eq!(Repr::<10>::infinity().to_f64(), Inexact(f64::INFINITY, NoOp));
+    /// ```
+    #[inline]
+    pub fn to_f64(&self) -> Rounded<f64> {
+        if self.is_infinite() {
+            return Inexact(self.sign() * f64::INFINITY, Rounding::NoOp);
         }
 
         let context = Context::<HalfEven>::new(53);
-        context.repr_round_ref(&self.repr).and_then(|v| {
-            let man53: i64 = v.significand.try_into().unwrap();
-            if v.exponent >= 1024 {
-                // max f64 = 2^1024 × (1 − 2^−53)
-                match sign {
-                    Sign::Positive => Inexact(f64::INFINITY, Rounding::AddOne),
-                    Sign::Negative => Inexact(f64::NEG_INFINITY, Rounding::SubOne),
-                }
-            } else if v.exponent < -1074 - 53 {
-                // min f64 = 2^-1074
-                Inexact(sign * 0f64, Rounding::NoOp)
-            } else {
-                match f64::encode(man53, v.exponent as i16) {
-                    Exact(v) => Exact(v),
-                    // this branch only happens when the result underflows
-                    Inexact(v, _) => Inexact(v, Rounding::NoOp),
-                }
-            }
-        })
+        if B != 2 {
+            let rounded: Rounded<Repr<2>> = context.convert_base(self.clone());
+            rounded.and_then(|v| v.to_f64_internal())
+        } else {
+            context
+                .repr_round_ref(self)
+                .and_then(|v| v.to_f64_internal())
+        }
+    }
+
+    /// Convert the float number representation to a [IBig].
+    ///
+    /// The fractional part is always rounded to zero.
+    ///
+    /// # Warning
+    ///
+    /// If the float number has a very large exponent, it will be evaluated and result
+    /// in allocating an huge integer and it might eat up all your memory.
+    ///
+    /// To get a rough idea of how big the number is, it's recommended to use [EstimatedLog2].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_base::Approximation::*;
+    /// # use dashu_int::IBig;
+    /// # use dashu_float::{Repr, round::Rounding::*};
+    /// assert_eq!(Repr::<2>::neg_one().to_int(), Exact(IBig::NEG_ONE));
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the number is infinte
+    pub fn to_int(&self) -> Rounded<IBig> {
+        check_inf(self);
+
+        if self.exponent >= 0 {
+            // the number is already an integer
+            Exact(shl_digits::<B>(&self.significand, self.exponent as usize))
+        } else if self.exponent + (self.digits_ub() as isize) < 0 {
+            // the number is less than 1
+            Inexact(IBig::ZERO, Rounding::NoOp)
+        } else {
+            let int = shr_digits::<B>(&self.significand, (-self.exponent) as usize);
+            Inexact(int, Rounding::NoOp)
+        }
     }
 }
 
@@ -563,6 +652,33 @@ impl<R: Round, const B: Word> From<UBig> for FBig<R, B> {
     #[inline]
     fn from(n: UBig) -> Self {
         IBig::from(n).into()
+    }
+}
+
+impl<R: Round, const B: Word> TryFrom<FBig<R, B>> for IBig {
+    type Error = ConversionError;
+
+    #[inline]
+    fn try_from(value: FBig<R, B>) -> Result<Self, Self::Error> {
+        if value.repr.is_infinite() {
+            Err(ConversionError::OutOfBounds)
+        } else if value.repr.exponent < 0 {
+            Err(ConversionError::LossOfPrecision)
+        } else {
+            let mut int = value.repr.significand;
+            shl_digits_in_place::<B>(&mut int, value.repr.exponent as usize);
+            Ok(int)
+        }
+    }
+}
+
+impl<R: Round, const B: Word> TryFrom<FBig<R, B>> for UBig {
+    type Error = ConversionError;
+
+    #[inline]
+    fn try_from(value: FBig<R, B>) -> Result<Self, Self::Error> {
+        let int: IBig = value.try_into()?;
+        int.try_into()
     }
 }
 

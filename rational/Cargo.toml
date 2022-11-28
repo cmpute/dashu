@@ -17,7 +17,7 @@ rust-version = "1.61"
 all-features = true
 
 [features]
-default = ["std", "rand", "num-traits"]
+default = ["std", "rand", "num-traits", "dashu-float"]
 std = ["dashu-base/std", "dashu-int/std"]
 rand = ["dep:rand", "dashu-int/rand"]
 serde = ["dep:serde", "dashu-int/serde"]

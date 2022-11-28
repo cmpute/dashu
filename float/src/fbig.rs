@@ -95,14 +95,22 @@ use dashu_int::{DoubleWord, IBig};
 ///
 /// # Convert from/to `f32`/`f64`
 ///
-/// The conversion between [FBig] and [f32]/[f64] is only defined for base 2 [FBig]. To convert
-/// from/to other bases, please first convert to base 2, and then change the base using [with_base()][FBig::with_base]
-/// or [with_base_and_precision()][FBig::with_base_and_precision].
+/// Converting from [f32]/[f64] to [FBig] is only defined for base 2 [FBig] (using [TryFrom][core::convert::TryFrom])
+/// to ensure the conversion is lossless. Since [FBig] doesn't support `NAN`s, converting `f32::NAN` or `f64::NAN` will
+/// return [Err].
 ///
-/// Converting from [f32]/[f64] (using [TryFrom][core::convert::TryFrom]) is lossless, except for
-/// that `NAN` values will result in an [Err]. Converting to [f32]/[f64] (using [to_f32()][FBig::to_f32]
-/// and [to_f64()][FBig::to_f64]) is lossy, and the rounding direction is contained in the result of these
-/// two methods.
+/// Converting to [f32]/[f64] (using [to_f32()][FBig::to_f32] and [to_f64()][FBig::to_f64]) can be lossy, and the rounding
+/// direction is contained in the result of these two methods. To use the default IEEE 754 rounding mode (rounding to
+/// nearest), the [Repr::to_f32] and [Repr::to_f64] methods can be used for convenience.
+///
+/// # Convert from/to `UBig`/`IBig`
+///
+/// Converting from `UBig` and `IBig` is trivial and lossless through [From]. However, the reverse direction can be lossy.
+///
+/// The [TryFrom] trait and [to_int()][FBig::to_int] method are the two supported ways to convert from [FBig] to [IBig].
+/// To convert to [UBig][dashu_int::UBig], please first convert to [IBig]. When converting to [IBig], [TryFrom] returns
+/// [Ok] only when the floating point number is not infinite and doesn't have fractional part. To convert with rounding,
+/// use [to_int()][FBig::to_int] instead.
 pub struct FBig<RoundingMode: Round = mode::Zero, const BASE: Word = 2> {
     pub(crate) repr: Repr<BASE>,
     pub(crate) context: Context<RoundingMode>,

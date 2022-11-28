@@ -74,6 +74,7 @@ mod helper_macros;
 mod iter;
 mod log;
 mod mul;
+pub mod ops;
 mod parse;
 mod repr;
 mod root;

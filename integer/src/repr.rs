@@ -9,10 +9,11 @@ use crate::{
 use core::{
     fmt::{self, Write},
     hash::{Hash, Hasher},
+    hint::unreachable_unchecked,
     mem,
     num::NonZeroIsize,
     ptr::{self, NonNull},
-    slice, hint::unreachable_unchecked,
+    slice,
 };
 use static_assertions::const_assert_eq;
 
@@ -80,7 +81,6 @@ impl Repr {
     /// Get the length of the number (in `Word`s), return 0 when the number is zero.
     #[inline]
     pub const fn len(&self) -> usize {
-        
         // SAFETY: the capacity is checked before accessing the fields.
         //         see the documentation for the `capacity` fields for invariants.
         unsafe {
@@ -132,9 +132,7 @@ impl Repr {
         };
         if !self.is_zero() && (is_positive ^ (self.capacity.get() > 0)) {
             // SAFETY: capacity is not allowed to be zero
-            self.capacity = unsafe {
-                NonZeroIsize::new_unchecked(-self.capacity.get())
-            }
+            self.capacity = unsafe { NonZeroIsize::new_unchecked(-self.capacity.get()) }
         }
         self
     }
@@ -202,9 +200,7 @@ impl Repr {
     pub fn into_sign_typed(mut self) -> (Sign, TypedRepr) {
         let (abs_capacity, sign) = self.sign_capacity();
         // SAFETY: capacity != 0 is an invariant
-        self.capacity = unsafe {
-            NonZeroIsize::new_unchecked(abs_capacity as isize)
-        };
+        self.capacity = unsafe { NonZeroIsize::new_unchecked(abs_capacity as isize) };
         (sign, self.into_typed())
     }
 

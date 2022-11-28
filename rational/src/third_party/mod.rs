@@ -1,6 +1,6 @@
 //! Implementations for third party crates and traits
 
-#[cfg(feature = "dashu_float")]
+#[cfg(feature = "dashu-float")]
 mod dashu_float;
 
 #[cfg(feature = "rand")]

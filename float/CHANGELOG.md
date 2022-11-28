@@ -10,6 +10,10 @@
 - Implement `rand::distributions::uniform::SampleUniform` for `FBig`.
 - Implement `serde::{Serialize, Deserialize}` for `FBig` and `Repr`
 - Add `from_str_native()` for `Repr`
+- Add `to_f32()`, `to_f64()` for `Repr`, and these two methods supports all bases for both `Repr` and `FBig`.
+- Add `to_int()` for `Repr`, which is equivalent to `FBig::trunc()`
+- Add `TryFrom<FBig>` for `UBig` and `IBig`
+- Re-export operation traits through the `ops` module.
 
 ## 0.3.0
 

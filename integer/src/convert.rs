@@ -437,6 +437,7 @@ impl From<UBig> for IBig {
     }
 }
 
+// TODO(v0.4): deprecate this conversion (because of implicit clone)
 impl From<&UBig> for IBig {
     #[inline]
     fn from(x: &UBig) -> IBig {
@@ -456,6 +457,7 @@ impl TryFrom<IBig> for UBig {
     }
 }
 
+// TODO(v0.4): deprecate this conversion (because of implicit clone)
 impl TryFrom<&IBig> for UBig {
     type Error = ConversionError;
 

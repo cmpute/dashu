@@ -15,6 +15,10 @@ use serde::{
 };
 use static_assertions::const_assert;
 
+// TODO(v0.4): change to a more portable serialization format
+// if the number is small enough (fit in a i64), serialize as i64
+// otherwise serialize as a sequence of bytes. By this way we can achieve maximum space efficiency
+
 // We ensure that the max size of a word is 64-bit, if we are going to
 // support 128 bit word, it's going to be a break change.
 const_assert!(64 % WORD_BITS_USIZE == 0);
