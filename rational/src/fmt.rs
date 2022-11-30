@@ -21,9 +21,9 @@ impl fmt::Display for Repr {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.denominator.is_one() {
-            f.write_fmt(format_args!("{:?}", &self.numerator))
+            f.write_fmt(format_args!("{}", &self.numerator))
         } else {
-            f.write_fmt(format_args!("{:?}/{:?}", &self.numerator, &self.denominator))
+            f.write_fmt(format_args!("{}/{}", &self.numerator, &self.denominator))
         }
     }
 }
