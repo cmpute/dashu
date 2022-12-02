@@ -1,5 +1,5 @@
 use crate::{
-    error::{check_inf_operands, check_precision_limited},
+    error::{check_finite_operands, check_precision_limited},
     fbig::FBig,
     helper_macros,
     repr::{Context, Repr, Word},
@@ -174,13 +174,14 @@ impl<'l, 'r, R: Round, const B: Word> DivRemEuclid<&'r FBig<R, B>> for &'l FBig<
     }
 }
 
-macro_rules! impl_add_sub_primitive_with_fbig {
+macro_rules! impl_div_primitive_with_fbig {
     ($($t:ty)*) => {$(
-        helper_macros::impl_commutative_binop_with_primitive!(impl Div<$t>, div);
+        helper_macros::impl_binop_with_primitive!(impl Div<$t>, div);
         helper_macros::impl_binop_assign_with_primitive!(impl DivAssign<$t>, div_assign);
     )*};
 }
-impl_add_sub_primitive_with_fbig!(u8 u16 u32 u64 u128 usize UBig i8 i16 i32 i64 i128 isize IBig);
+impl_div_primitive_with_fbig!(u8 u16 u32 u64 u128 usize UBig i8 i16 i32 i64 i128 isize IBig);
+// TODO: we should specialize FBig / UBig or FBig / IBig for better efficiency
 
 impl<R: Round, const B: Word> Inverse for FBig<R, B> {
     type Output = FBig<R, B>;
@@ -214,7 +215,7 @@ fn align_as_int<R: Round, const B: Word>(lhs: FBig<R, B>, rhs: FBig<R, B>) -> (I
 
 impl<R: Round> Context<R> {
     pub(crate) fn repr_div<const B: Word>(&self, lhs: Repr<B>, rhs: &Repr<B>) -> Rounded<Repr<B>> {
-        check_inf_operands(&lhs, rhs);
+        check_finite_operands(&lhs, rhs);
         check_precision_limited(self.precision);
 
         // this method don't deal with the case where lhs significand is too large
@@ -282,7 +283,7 @@ impl<R: Round> Context<R> {
     /// `fmod` and `remquo`), please use the methods provided by traits [DivEuclid], [RemEuclid] and [DivRemEuclid].
     ///
     pub fn div<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Rounded<FBig<R, B>> {
-        check_inf_operands(lhs, rhs);
+        check_finite_operands(lhs, rhs);
 
         let lhs_repr = if !lhs.is_zero() && lhs.digits_ub() > rhs.digits_lb() + self.precision {
             // shrink lhs if it's larger than necessary

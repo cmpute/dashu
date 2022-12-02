@@ -20,28 +20,13 @@ all-features = true
 proc-macro = true
 
 [dependencies]
+dashu-base = { version = "0.3.0", default-features = false, path = "../base" }
+dashu-int = { version = "0.3.0", default-features = false, path = "../integer" }
+dashu-float = { version = "0.3.0", default-features = false, path = "../float" }
+dashu-ratio = { version = "0.3.0", default-features = false, path = "../rational" }
+
 quote = "1"
 proc-macro2 = "1"
-
-[dependencies.dashu-base]
-path = "../base"
-version = "0.3.0"
-default-features = false
-
-[dependencies.dashu-int]
-path = "../integer"
-version = "0.3.0"
-default-features = false
-
-[dependencies.dashu-float]
-path = "../float"
-version = "0.3.0"
-default-features = false
-
-[dependencies.dashu-ratio]
-path = "../rational"
-version = "0.3.0"
-default-features = false
 
 [features]
 embedded = [] # whether it's used with the `dashu` crate

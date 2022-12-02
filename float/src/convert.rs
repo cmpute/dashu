@@ -10,7 +10,7 @@ use dashu_base::{
 use dashu_int::{IBig, UBig, Word};
 
 use crate::{
-    error::{check_inf, panic_unlimited_precision},
+    error::{check_finite, panic_unlimited_precision},
     fbig::FBig,
     repr::{Context, Repr},
     round::{mode::HalfEven, Round, Rounded, Rounding},
@@ -228,8 +228,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ///
     /// `NewB ^ new_precision <= B ^ old_precision`
     ///
-    /// If any rounding happens during the conversion, if will follow
-    /// the rounding mode specified by the generic parameter.
+    /// If any rounding happens during the conversion, it follows the rounding mode specified
+    /// by the generic parameter.
     ///
     /// # Examples
     ///
@@ -362,7 +362,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ///
     /// Panics if the number is infinte
     pub fn to_int(&self) -> Rounded<IBig> {
-        check_inf(&self.repr);
+        check_finite(&self.repr);
 
         // shortcut when the number is already an integer
         if self.repr.exponent >= 0 {
@@ -624,7 +624,7 @@ impl<const B: Word> Repr<B> {
     ///
     /// Panics if the number is infinte
     pub fn to_int(&self) -> Rounded<IBig> {
-        check_inf(self);
+        check_finite(self);
 
         if self.exponent >= 0 {
             // the number is already an integer

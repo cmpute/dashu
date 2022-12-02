@@ -39,30 +39,9 @@ zeroize = ["dashu-int/zeroize"]
 [dependencies]
 # all crates under dashu will have the same major version,
 # but the minor and patch versions can be different.
+dashu-base = { version = "0.3.0", default-features = false, path = "./base" }
+dashu-int = { version = "0.3.0", default-features = false, path = "./integer" }
+dashu-float = { version = "0.3.0", default-features = false, path = "./float" }
+dashu-ratio = { version = "0.3.0", default-features = false, path = "./rational", features = ['dashu-float'] }
+dashu-macros = { version = "0.3.0", default-features = false, path = "./macros", features = ["embedded"] }
 
-[dependencies.dashu-base]
-path = "./base"
-version = "0.3.0"
-default-features = false
-
-[dependencies.dashu-int]
-path = "./integer"
-version = "0.3.0"
-default-features = false
-
-[dependencies.dashu-float]
-path = "./float"
-version = "0.3.0"
-default-features = false
-
-[dependencies.dashu-ratio]
-path = "./rational"
-version = "0.3.0"
-default-features = false
-features = ['dashu-float']
-
-[dependencies.dashu-macros]
-path = "./macros"
-version = "0.3.0"
-default-features = false
-features = ["embedded"]

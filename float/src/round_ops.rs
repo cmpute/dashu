@@ -1,5 +1,5 @@
 use crate::{
-    error::check_inf,
+    error::check_finite,
     fbig::FBig,
     repr::{Context, Repr},
     round::{mode, Round},
@@ -29,7 +29,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Panics if the number is infinte
     #[inline]
     pub fn trunc(&self) -> Self {
-        check_inf(&self.repr);
+        check_finite(&self.repr);
 
         let exponent = self.repr.exponent;
         if exponent >= 0 {
@@ -122,7 +122,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Panics if the number is infinte
     #[inline]
     pub fn fract(&self) -> Self {
-        check_inf(&self.repr);
+        check_finite(&self.repr);
         if self.repr.exponent >= 0 {
             return Self::ZERO;
         }
@@ -153,7 +153,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Panics if the number is infinte
     #[inline]
     pub fn ceil(&self) -> Self {
-        check_inf(&self.repr);
+        check_finite(&self.repr);
         if self.repr.exponent >= 0 {
             return self.clone();
         }
@@ -185,7 +185,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Panics if the number is infinte
     #[inline]
     pub fn floor(&self) -> Self {
-        check_inf(&self.repr);
+        check_finite(&self.repr);
         if self.repr.exponent >= 0 {
             return self.clone();
         }

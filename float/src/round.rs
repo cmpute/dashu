@@ -118,6 +118,7 @@ pub trait Round: Copy {
         Self::round_low_part::<_>(integer, fsign, test)
     }
 
+    // TODO(v0.4): change the type of den to UBig
     /// Calculate the rounding of the number (integer + numerator / denominator),
     /// assuming |numerator / denominator| < 1. Return the adjustment.
     #[inline]
