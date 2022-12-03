@@ -5,7 +5,7 @@ In `dashu` crates, there are standalone types for each kind of numbers with arbi
 - `dashu_int::UBig` (alias `dashu::Natural`) represents unsigned integers (i.e. natural numbers).
 - `dashu_int::IBig` (alias `dashu::Integer`) represents (signed) integers.
 - `dashu_float::FBig` (alias `dashu::Real`) represents real numbers with floating point representation (`signficand * base ^ exponent`)
-- `dashu_float::DBig` (alias `dashu::Decimal`) is a special case of `FBig` with `base = 10`.
+- `dashu_float::DBig` (alias `dashu::Decimal`) is a specialization of `FBig` with `base = 10`.
 - `dashu_ratio::RBig` (alias `dashu::Rational`) represents rational numbers.
 
 Common operations are implemented for all these numeric types, please refer to the other sections or the API docs for the usages.
