@@ -1,3 +1,5 @@
+//! Implement zeroize traits.
+
 use zeroize::Zeroize;
 
 use crate::{

@@ -1,3 +1,5 @@
+//! Implement serde traits.
+
 use crate::{
     arch::word::Word,
     buffer::Buffer,

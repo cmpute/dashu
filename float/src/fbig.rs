@@ -144,9 +144,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Note that this condition is not checked in release build.
     #[inline]
     pub fn from_repr(repr: Repr<B>, context: Context<R>) -> Self {
-        debug_assert!(
-            repr.is_infinite() || !context.is_limited() || repr.digits() <= context.precision
-        );
+        assert!(repr.is_infinite() || !context.is_limited() || repr.digits() <= context.precision);
         Self { repr, context }
     }
 

@@ -1,3 +1,5 @@
+//! Implement num-traits traits.
+
 use crate::{fbig::FBig, round::Round};
 use dashu_int::Word;
 use num_traits::{FromPrimitive, One, ToPrimitive, Zero};

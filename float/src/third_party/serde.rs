@@ -1,3 +1,5 @@
+//! Implement serde traits.
+
 extern crate alloc;
 
 use core::marker::PhantomData;

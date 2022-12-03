@@ -1,3 +1,5 @@
+//! Implement zeroize traits.
+
 use crate::{
     fbig::FBig,
     repr::{Context, Repr, Word},

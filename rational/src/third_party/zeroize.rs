@@ -1,4 +1,7 @@
-use crate::{repr::Repr, rbig::{RBig, Relaxed}};
+use crate::{
+    rbig::{RBig, Relaxed},
+    repr::Repr,
+};
 use zeroize::Zeroize;
 
 impl Zeroize for Repr {

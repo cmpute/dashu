@@ -1,6 +1,7 @@
-use dashu_base::{BitTest, CubicRoot, DivRem, ExtendedGcd, Gcd, Sign, SquareRoot};
+//! Implement num-integer traits.
 
 use crate::{ibig::IBig, ubig::UBig};
+use dashu_base::{BitTest, CubicRoot, DivRem, ExtendedGcd, Gcd, Sign, SquareRoot};
 
 impl num_integer::Integer for UBig {
     #[inline]
