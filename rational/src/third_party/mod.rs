@@ -8,3 +8,6 @@ pub mod rand;
 
 #[cfg(feature = "serde")]
 mod serde;
+
+#[cfg(feature = "zeroize")]
+mod zeroize;

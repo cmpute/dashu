@@ -1,12 +1,21 @@
-use crate::{repr::Repr, rbig::{RBig, Relaxed}};
-use dashu_base::{ConversionError, DivRem, Approximation};
-use dashu_float::{FBig, Repr as FBigRepr, round::{Round, Rounded}, Context};
-use dashu_int::{Word, UBig};
+use crate::{
+    rbig::{RBig, Relaxed},
+    repr::Repr,
+};
+use dashu_base::{Approximation, ConversionError, DivRem};
+use dashu_float::{
+    round::{Round, Rounded},
+    Context, FBig, Repr as FBigRepr,
+};
+use dashu_int::{UBig, Word};
 
 impl<R: Round, const B: Word> From<Repr> for FBig<R, B> {
     #[inline]
     fn from(v: Repr) -> Self {
-        let Repr { numerator, denominator } = v;
+        let Repr {
+            numerator,
+            denominator,
+        } = v;
         FBig::from(numerator) / FBig::from(denominator)
     }
 }
@@ -23,7 +32,10 @@ impl<const B: Word> TryFrom<FBigRepr<B>> for Repr {
             } else {
                 (signif, UBig::from_word(B).pow((-exp) as usize))
             };
-            Ok(Repr { numerator, denominator })
+            Ok(Repr {
+                numerator,
+                denominator,
+            })
         }
     }
 }
@@ -66,10 +78,33 @@ forward_conversion_to_repr!(RBig, reduce);
 forward_conversion_to_repr!(Relaxed, reduce2);
 
 impl Repr {
+    // There are some cases where the result is exactly representable by a FBig
+    // without loss of significance (it's an integer or its denominator is a power of B).
+    // However, it's better to explicitly prohibit it because it's still failing
+    // in other cases and a method that panics occasionally is not good.
     fn to_float<R: Round, const B: Word>(&self, precision: usize) -> Rounded<FBig<R, B>> {
         assert!(precision > 0);
 
-        let (q, r) = (&self.numerator).div_rem(&self.denominator);
+        if self.numerator.is_zero() {
+            return Approximation::Exact(FBig::ZERO);
+        }
+
+        let base = UBig::from_word(B);
+        let num_digits = self.numerator.ilog(&base);
+        let den_digits = self.denominator.ilog(&base);
+
+        let shift;
+        let (q, r) = if num_digits >= precision + den_digits {
+            shift = 0;
+            (&self.numerator).div_rem(&self.denominator)
+        } else {
+            shift = (precision + den_digits) - num_digits;
+            if B == 2 {
+                (&self.numerator << shift).div_rem(&self.denominator)
+            } else {
+                (&self.numerator * base.pow(shift)).div_rem(&self.denominator)
+            }
+        };
         let rounded = if r.is_zero() {
             Approximation::Exact(q)
         } else {
@@ -80,11 +115,27 @@ impl Repr {
         };
 
         let context = Context::<R>::new(precision);
-        rounded.and_then(|n| context.convert_int(n))
+        rounded
+            .and_then(|n| context.convert_int(n))
+            .map(|f| f >> (shift as isize))
     }
 }
 
 impl RBig {
+    /// Convert the rational number to a [FBig] with guaranteed correct rounding.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_base::Approximation::*;
+    /// # use dashu_ratio::RBig;
+    /// use dashu_float::{DBig, round::Rounding::*};
+    ///
+    /// assert_eq!(RBig::ONE.to_float(1), Exact(DBig::ONE));
+    /// assert_eq!(RBig::from(1000).to_float(4), Exact(DBig::from(1000)));
+    /// assert_eq!(RBig::from_parts(1000.into(), 6u8.into()).to_float(4),
+    ///     Inexact(DBig::from_parts(1667.into(), -1), AddOne));
+    /// ```
     #[inline]
     pub fn to_float<R: Round, const B: Word>(&self, precision: usize) -> Rounded<FBig<R, B>> {
         self.0.to_float(precision)
@@ -97,6 +148,9 @@ impl RBig {
 }
 
 impl Relaxed {
+    /// Convert the rational number to a [FBig] with guaranteed correct rounding.
+    ///
+    /// See [RBig::to_float] for details.
     #[inline]
     pub fn to_float<R: Round, const B: Word>(&self, precision: usize) -> Rounded<FBig<R, B>> {
         self.0.to_float(precision)

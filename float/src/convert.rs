@@ -489,7 +489,7 @@ impl<R: Round> Context<R> {
 
 impl<const B: Word> Repr<B> {
     // this method requires that the representation is already rounded to 24 binary bits
-    fn to_f32_internal(self) -> Rounded<f32> {
+    fn into_f32_internal(self) -> Rounded<f32> {
         assert!(B == 2);
         debug_assert!(self.is_finite());
         debug_assert!(self.significand.bit_len() <= 24);
@@ -536,16 +536,16 @@ impl<const B: Word> Repr<B> {
         let context = Context::<HalfEven>::new(24);
         if B != 2 {
             let rounded: Rounded<Repr<2>> = context.convert_base(self.clone());
-            rounded.and_then(|v| v.to_f32_internal())
+            rounded.and_then(|v| v.into_f32_internal())
         } else {
             context
                 .repr_round_ref(self)
-                .and_then(|v| v.to_f32_internal())
+                .and_then(|v| v.into_f32_internal())
         }
     }
 
     // this method requires that the representation is already rounded to 53 binary bits
-    fn to_f64_internal(self) -> Rounded<f64> {
+    fn into_f64_internal(self) -> Rounded<f64> {
         assert!(B == 2);
         debug_assert!(self.is_finite());
         debug_assert!(self.significand.bit_len() <= 53);
@@ -592,11 +592,11 @@ impl<const B: Word> Repr<B> {
         let context = Context::<HalfEven>::new(53);
         if B != 2 {
             let rounded: Rounded<Repr<2>> = context.convert_base(self.clone());
-            rounded.and_then(|v| v.to_f64_internal())
+            rounded.and_then(|v| v.into_f64_internal())
         } else {
             context
                 .repr_round_ref(self)
-                .and_then(|v| v.to_f64_internal())
+                .and_then(|v| v.into_f64_internal())
         }
     }
 

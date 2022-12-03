@@ -22,6 +22,7 @@ std = ["dashu-base/std", "dashu-int/std"]
 rand = ["dep:rand", "dashu-int/rand"]
 serde = ["dep:serde", "dashu-int/serde"]
 num-traits = ["dep:num-traits", "dashu-int/num-traits"]
+zeroize = ["dep:zeroize", "dashu-int/zeroize"]
 
 [dependencies]
 dashu-base = { version = "0.3.0", default-features = false, path = "../base" }
@@ -31,6 +32,7 @@ dashu-float = { version = "0.3.0", default-features = false, optional = true, pa
 num-traits = { optional = true, version = "0.2.14", default-features = false }
 rand = { optional = true, version = "0.8.3", default-features = false }
 serde = { optional = true, version = "1.0.130", default-features = false }
+zeroize = { optional = true, version = "1.5.7", default-features = false }
 
 [dev-dependencies]
 criterion = { version = "0.4.0", features = ["html_reports"] }

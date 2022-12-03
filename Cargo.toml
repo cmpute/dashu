@@ -34,7 +34,10 @@ rand = ["dashu-int/rand", "dashu-float/rand", "dashu-ratio/rand"]
 serde = ["dashu-int/serde", "dashu-float/serde", "dashu-ratio/serde"]
 num-traits = ["dashu-int/num-traits", "dashu-float/num-traits", "dashu-ratio/num-traits"]
 num-order = ["dashu-int/num-order"]
-zeroize = ["dashu-int/zeroize"]
+zeroize = ["dashu-int/zeroize", "dashu-float/zeroize", "dashu-ratio/zeroize"]
+
+# this feature enables all related features related to decimal crates.
+decimal_extras = ["dashu-float/postgres-types", "dashu-float/diesel2"]
 
 [dependencies]
 # all crates under dashu will have the same major version,

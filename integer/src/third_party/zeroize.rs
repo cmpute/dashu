@@ -7,7 +7,6 @@ use crate::{
 };
 
 impl Zeroize for Buffer {
-    #[inline]
     fn zeroize(&mut self) {
         self.as_full_slice().zeroize();
         self.truncate(0)
@@ -15,7 +14,6 @@ impl Zeroize for Buffer {
 }
 
 impl Zeroize for Repr {
-    #[inline]
     fn zeroize(&mut self) {
         self.as_full_slice().zeroize();
         self.clone_from(&Repr::zero());
