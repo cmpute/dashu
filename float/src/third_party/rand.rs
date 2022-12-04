@@ -35,7 +35,7 @@
 //! * [Uniform01] will generate floats with the precision decided by the constructor.
 //! * [Standard], [Open01], [OpenClosed01] will generate floats with the max precision
 //!   such that the significand fits in a [DoubleWord].
-//! * [UniformFBig] (and therefore [Uniform][rand::distributions::Uniform]) will generate floats
+//! * [UniformFBig] (and therefore [Uniform][rand_v08::distributions::Uniform]) will generate floats
 //!   the precision being the maximum between the interval boundaries.
 //!
 //! The rounding of the [FBig] type doesn't affect the number generation process.
