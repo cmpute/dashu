@@ -20,21 +20,29 @@ all-features = true
 default = ["std", "rand", "num-traits", "num-order"]
 std = ["dashu-base/std"]
 
+# unstable dependencies
+rand = ["rand_v08"]
+num-traits = ["num-traits_v02"]
+num-integer = ["num-integer_v01"]
+
 [dependencies]
 dashu-base = { version = "0.3.0", default-features = false, path = "../base" }
 cfg-if = { version = "1.0.0" }
 static_assertions = { version = "1.1" }
 
-rand = { optional = true, version = "0.8.3", default-features = false }
-num-traits = { optional = true, version = "0.2.14", default-features = false }
+# stable dependencies
 num-order = { optional = true, version = "1.0.4", default-features = false }
-num-integer = { optional = true, version = "0.1.45", default-features = false }
 serde = { optional = true, version = "1.0.130", default-features = false }
 zeroize = { optional = true, version = "1.5.7", default-features = false }
 
+# unstable dependencies
+rand_v08 = { optional = true, version = "0.8.3", package = "rand", default-features = false }
+num-traits_v02 = { optional = true, version = "0.2.14", package = "num-traits", default-features = false }
+num-integer_v01 = { optional = true, version = "0.1.45", package = "num-integer", default-features = false }
+
 [dev-dependencies]
+rand_v08 = { version = "0.8.3", package = "rand" }
 criterion = { version = "0.4.0", features = ["html_reports"] }
-rand = { version = "0.8.3" }
 serde_test = { version = "1.0.130" }
 
 [lib]

@@ -2,7 +2,7 @@ use dashu_float::{
     rand::{Uniform01, UniformFBig},
     DBig,
 };
-use rand::{distributions::uniform::Uniform, prelude::*};
+use rand_v08::{distributions::uniform::Uniform, prelude::*};
 
 mod helper_macros;
 

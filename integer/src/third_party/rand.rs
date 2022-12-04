@@ -9,7 +9,9 @@
 //!
 //! ```
 //! # use dashu_int::{UBig, IBig};
-//! use rand::{distributions::uniform::Uniform, thread_rng, Rng};
+//! # use rand_v08::{distributions::uniform::Uniform, thread_rng, Rng};
+//! use dashu_base::BitTest;
+//! use dashu_int::rand::{UniformBits, UniformBelow};
 //!
 //! // generate UBigs in a range
 //! let a = thread_rng().gen_range(UBig::from(3u8)..UBig::from(10u8));
@@ -24,14 +26,11 @@
 //! assert!(b >= IBig::from(-5) && b < a);
 //!
 //! // generate UBigs and IBigs with a given bit size limit.
-//! use dashu_base::BitTest;
-//! use dashu_int::rand::UniformBits;
 //! let a: UBig = thread_rng().sample(UniformBits::new(10));
 //! let b: IBig = thread_rng().sample(UniformBits::new(10));
 //! assert!(a.bit_len() <= 10 && b.bit_len() <= 10);
 //!
 //! // generate UBigs and IBigs with a given magnitude limit.
-//! use dashu_int::rand::UniformBelow;
 //! let a: UBig = thread_rng().sample(UniformBelow::new(&10u8.into()));
 //! let b: IBig = thread_rng().sample(UniformBelow::new(&10u8.into()));
 //! assert!(a < UBig::from(10u8));
@@ -41,7 +40,6 @@
 use crate::{
     arch::word::{DoubleWord, Word},
     buffer::Buffer,
-    error::panic_empty_range,
     ibig::IBig,
     math::ceil_div,
     ops::UnsignedAbs,
@@ -51,7 +49,7 @@ use crate::{
 };
 
 use dashu_base::Sign;
-use rand::{
+use rand_v08::{
     distributions::uniform::{SampleBorrow, SampleUniform, UniformSampler},
     prelude::Distribution,
     Rng,
@@ -217,6 +215,11 @@ pub struct UniformUBig {
     offset: UBig,
 }
 
+/// Panics when the range input for the random generator in empty
+const fn panic_empty_range() -> ! {
+    panic!("empty range for random generation")
+}
+
 impl UniformSampler for UniformUBig {
     type X = UBig;
 
@@ -226,10 +229,11 @@ impl UniformSampler for UniformUBig {
         B1: SampleBorrow<UBig>,
         B2: SampleBorrow<UBig>,
     {
-        let range = high.borrow() - low.borrow();
-        if range.is_zero() {
+        if high.borrow() <= low.borrow() {
             panic_empty_range()
         }
+
+        let range = high.borrow() - low.borrow();
         UniformUBig {
             range,
             offset: low.borrow().clone(),
@@ -242,6 +246,10 @@ impl UniformSampler for UniformUBig {
         B1: SampleBorrow<UBig>,
         B2: SampleBorrow<UBig>,
     {
+        if high.borrow() < low.borrow() {
+            panic_empty_range()
+        }
+
         let range = high.borrow() - low.borrow() + UBig::ONE;
         UniformUBig {
             range,
@@ -275,10 +283,11 @@ impl UniformSampler for UniformIBig {
         B1: SampleBorrow<IBig>,
         B2: SampleBorrow<IBig>,
     {
-        let range = high.borrow() - low.borrow();
-        if range <= IBig::ZERO {
-            panic_empty_range();
+        if high.borrow() <= low.borrow() {
+            panic_empty_range()
         }
+
+        let range = high.borrow() - low.borrow();
         UniformIBig {
             range: range.unsigned_abs(),
             offset: low.borrow().clone(),
@@ -291,10 +300,11 @@ impl UniformSampler for UniformIBig {
         B1: SampleBorrow<IBig>,
         B2: SampleBorrow<IBig>,
     {
-        let range = high.borrow() - low.borrow() + IBig::from(1u8);
-        if range <= IBig::ZERO {
+        if high.borrow() < low.borrow() {
             panic_empty_range()
         }
+
+        let range = high.borrow() - low.borrow() + IBig::ONE;
         UniformIBig {
             range: range.unsigned_abs(),
             offset: low.borrow().clone(),

@@ -19,27 +19,36 @@ all-features = true
 [features]
 default = ["std", "rand", "num-traits", "dashu-float"]
 std = ["dashu-base/std", "dashu-int/std"]
-rand = ["dep:rand", "dashu-int/rand"]
+
+# stable dependencies
 serde = ["dep:serde", "dashu-int/serde"]
-num-traits = ["dep:num-traits", "dashu-int/num-traits"]
 zeroize = ["dep:zeroize", "dashu-int/zeroize"]
+
+# unstable dependencies
+num-traits = ["num-traits_v02"]
+num-traits_v02 = ["dep:num-traits_v02", "dashu-int/num-traits_v02"]
+rand = ["rand_v08"]
+rand_v08 = ["dep:rand_v08", "dashu-int/rand_v08"]
 
 [dependencies]
 dashu-base = { version = "0.3.0", default-features = false, path = "../base" }
 dashu-int = { version = "0.3.0", default-features = false, path = "../integer" }
 dashu-float = { version = "0.3.0", default-features = false, optional = true, path = "../float" }
 
-num-traits = { optional = true, version = "0.2.14", default-features = false }
-rand = { optional = true, version = "0.8.3", default-features = false }
+# stable dependencies
 serde = { optional = true, version = "1.0.130", default-features = false }
 zeroize = { optional = true, version = "1.5.7", default-features = false }
 
+# unstable dependencies
+rand_v08 = { optional = true, version = "0.8.3", package = "rand", default-features = false }
+num-traits_v02 = { optional = true, version = "0.2.15", package = "num-traits", default-features = false }
+
 [dev-dependencies]
 criterion = { version = "0.4.0", features = ["html_reports"] }
-rand = { version = "0.8.3" }
 postcard = { version = "1.0.2", features = ["alloc"] }
 serde_test = { version = "1.0.130" }
 serde_json = { version = "1.0" }
+rand_v08 = { version = "0.8.3", package = "rand" }
 
 [lib]
 bench = false

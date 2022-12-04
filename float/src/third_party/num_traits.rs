@@ -1,22 +1,21 @@
 //! Implement num-traits traits.
 
 use crate::{fbig::FBig, round::Round};
-use dashu_int::Word;
-use num_traits::{FromPrimitive, One, ToPrimitive, Zero};
+use dashu_int::{IBig, Word};
+use num_traits_v02 as num_traits;
 
-impl<R: Round, const B: Word> Zero for FBig<R, B> {
+impl<R: Round, const B: Word> num_traits::Zero for FBig<R, B> {
     #[inline]
     fn zero() -> Self {
         FBig::ZERO
     }
-
     #[inline]
     fn is_zero(&self) -> bool {
         self.repr.is_zero()
     }
 }
 
-impl<R: Round, const B: Word> One for FBig<R, B> {
+impl<R: Round, const B: Word> num_traits::One for FBig<R, B> {
     #[inline]
     fn one() -> Self {
         FBig::ONE
@@ -27,131 +26,98 @@ impl<R: Round, const B: Word> One for FBig<R, B> {
     }
 }
 
-impl<R: Round, const B: Word> FromPrimitive for FBig<R, B> {
-    #[inline]
-    fn from_isize(n: isize) -> Option<Self> {
-        Some(FBig::from(n))
-    }
-    #[inline]
-    fn from_i8(n: i8) -> Option<Self> {
-        Some(FBig::from(n))
-    }
-    #[inline]
-    fn from_i16(n: i16) -> Option<Self> {
-        Some(FBig::from(n))
-    }
-    #[inline]
-    fn from_i32(n: i32) -> Option<Self> {
-        Some(FBig::from(n))
-    }
-    #[inline]
-    fn from_i64(n: i64) -> Option<Self> {
-        Some(FBig::from(n))
-    }
-    #[inline]
-    fn from_i128(n: i128) -> Option<Self> {
-        Some(FBig::from(n))
-    }
-    #[inline]
-    fn from_usize(n: usize) -> Option<Self> {
-        Some(FBig::from(n))
-    }
-    #[inline]
-    fn from_u8(n: u8) -> Option<Self> {
-        Some(FBig::from(n))
-    }
-    #[inline]
-    fn from_u16(n: u16) -> Option<Self> {
-        Some(FBig::from(n))
-    }
-    #[inline]
-    fn from_u32(n: u32) -> Option<Self> {
-        Some(FBig::from(n))
-    }
-    #[inline]
-    fn from_u64(n: u64) -> Option<Self> {
-        Some(FBig::from(n))
-    }
-    #[inline]
-    fn from_u128(n: u128) -> Option<Self> {
-        Some(FBig::from(n))
-    }
+macro_rules! impl_from_primitive_int {
+    ($t:ty, $method:ident) => {
+        #[inline]
+        fn $method(n: $t) -> Option<Self> {
+            Some(FBig::from(n))
+        }
+    };
+}
 
-    #[track_caller]
-    fn from_f32(_: f32) -> Option<Self> {
-        // TODO: implement this
-        panic!("Unsupported BASE `{B}`")
-    }
+impl<R: Round, const B: Word> num_traits::FromPrimitive for FBig<R, B> {
+    impl_from_primitive_int!(i8, from_i8);
+    impl_from_primitive_int!(i16, from_i16);
+    impl_from_primitive_int!(i32, from_i32);
+    impl_from_primitive_int!(i64, from_i64);
+    impl_from_primitive_int!(i128, from_i128);
+    impl_from_primitive_int!(isize, from_isize);
+    impl_from_primitive_int!(u8, from_u8);
+    impl_from_primitive_int!(u16, from_u16);
+    impl_from_primitive_int!(u32, from_u32);
+    impl_from_primitive_int!(u64, from_u64);
+    impl_from_primitive_int!(u128, from_u128);
+    impl_from_primitive_int!(usize, from_usize);
 
-    #[track_caller]
-    fn from_f64(_: f64) -> Option<Self> {
-        // TODO: implement this
-        panic!("Unsupported BASE `{B}`")
+    #[inline]
+    fn from_f32(f: f32) -> Option<Self> {
+        match FBig::<R, 2>::try_from(f) {
+            Ok(val) => Some(val.with_base::<B>().value()),
+            Err(_) => None,
+        }
+    }
+    #[inline]
+    fn from_f64(f: f64) -> Option<Self> {
+        match FBig::<R, 2>::try_from(f) {
+            Ok(val) => Some(val.with_base::<B>().value()),
+            Err(_) => None,
+        }
     }
 }
 
-impl<R: Round, const B: Word> ToPrimitive for FBig<R, B> {
+macro_rules! impl_to_primitive_int {
+    ($t:ty, $method:ident) => {
+        #[inline]
+        fn $method(&self) -> Option<$t> {
+            num_traits::ToPrimitive::$method(&self.to_int().value())
+        }
+    };
+}
+
+impl<R: Round, const B: Word> num_traits::ToPrimitive for FBig<R, B> {
+    impl_to_primitive_int!(i8, to_i8);
+    impl_to_primitive_int!(i16, to_i16);
+    impl_to_primitive_int!(i32, to_i32);
+    impl_to_primitive_int!(i64, to_i64);
+    impl_to_primitive_int!(i128, to_i128);
+    impl_to_primitive_int!(isize, to_isize);
+    impl_to_primitive_int!(u8, to_u8);
+    impl_to_primitive_int!(u16, to_u16);
+    impl_to_primitive_int!(u32, to_u32);
+    impl_to_primitive_int!(u64, to_u64);
+    impl_to_primitive_int!(u128, to_u128);
+    impl_to_primitive_int!(usize, to_usize);
+
     #[inline]
-    fn to_isize(&self) -> Option<isize> {
-        self.to_int().value().to_isize()
-    }
-    #[inline]
-    fn to_i8(&self) -> Option<i8> {
-        self.to_int().value().to_i8()
-    }
-    #[inline]
-    fn to_i16(&self) -> Option<i16> {
-        self.to_int().value().to_i16()
-    }
-    #[inline]
-    fn to_i32(&self) -> Option<i32> {
-        self.to_int().value().to_i32()
-    }
-    #[inline]
-    fn to_i64(&self) -> Option<i64> {
-        self.to_int().value().to_i64()
-    }
-    #[inline]
-    fn to_i128(&self) -> Option<i128> {
-        self.to_int().value().to_i128()
-    }
-    #[inline]
-    fn to_usize(&self) -> Option<usize> {
-        self.to_int().value().to_usize()
-    }
-    #[inline]
-    fn to_u8(&self) -> Option<u8> {
-        self.to_int().value().to_u8()
-    }
-    #[inline]
-    fn to_u16(&self) -> Option<u16> {
-        self.to_int().value().to_u16()
-    }
-    #[inline]
-    fn to_u32(&self) -> Option<u32> {
-        self.to_int().value().to_u32()
-    }
-    #[inline]
-    fn to_u64(&self) -> Option<u64> {
-        self.to_int().value().to_u64()
-    }
-    #[inline]
-    fn to_u128(&self) -> Option<u128> {
-        self.to_int().value().to_u128()
-    }
     fn to_f32(&self) -> Option<f32> {
-        // TODO: implement this
-        todo!()
+        Some(self.to_f32().value())
     }
+    #[inline]
     fn to_f64(&self) -> Option<f64> {
-        // TODO: implement this
-        todo!()
+        Some(self.to_f64().value())
     }
 }
+
+impl<R: Round, const B: Word> num_traits::Pow<IBig> for FBig<R, B> {
+    type Output = FBig<R, B>;
+
+    fn pow(self, rhs: IBig) -> Self {
+        self.powi(rhs)
+    }
+}
+impl<R: Round, const B: Word> num_traits::Pow<&FBig<R, B>> for FBig<R, B> {
+    type Output = FBig<R, B>;
+
+    fn pow(self, rhs: &Self) -> Self {
+        self.powf(rhs)
+    }
+}
+
+// TODO: num_traits::{Num, Euclid, Signed} are not implemented for FBig, because we currently don't implement Rem for FBig.
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::num_traits::{FromPrimitive, One, Zero};
     use crate::DBig;
 
     #[test]

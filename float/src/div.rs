@@ -214,6 +214,7 @@ fn align_as_int<R: Round, const B: Word>(lhs: FBig<R, B>, rhs: FBig<R, B>) -> (I
 }
 
 impl<R: Round> Context<R> {
+    // TODO(v0.4): implement Rem operator by calculating x % y = x - (x / y).to_int() * y
     pub(crate) fn repr_div<const B: Word>(&self, lhs: Repr<B>, rhs: &Repr<B>) -> Rounded<Repr<B>> {
         check_finite_operands(&lhs, rhs);
         check_precision_limited(self.precision);

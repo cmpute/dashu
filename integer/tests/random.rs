@@ -3,7 +3,7 @@ use dashu_int::{
     rand::UniformBits,
     IBig, UBig,
 };
-use rand::{distributions::uniform::Uniform, prelude::*};
+use rand_v08::{distributions::uniform::Uniform, prelude::*};
 
 mod helper_macros;
 

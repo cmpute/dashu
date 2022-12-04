@@ -10,7 +10,7 @@
 //!
 //! ```
 //! use dashu_float::rand::Uniform01;
-//! use rand::{distributions::uniform::Uniform, thread_rng, Rng};
+//! # use rand_v08::{distributions::uniform::Uniform, thread_rng, Rng};
 //!
 //! type FBig = dashu_float::FBig;
 //!
@@ -53,7 +53,7 @@ use dashu_int::{
     rand::{UniformBelow, UniformBits},
     DoubleWord, UBig,
 };
-use rand::{
+use rand_v08::{
     distributions::{
         uniform::{SampleBorrow, SampleUniform, UniformSampler},
         Open01, OpenClosed01, Standard,

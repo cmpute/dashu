@@ -1,5 +1,5 @@
 use dashu_ratio::{rand::Uniform01, RBig, Relaxed};
-use rand::{distributions::uniform::Uniform, prelude::*};
+use rand_v08::{distributions::uniform::Uniform, prelude::*};
 
 mod helper_macros;
 

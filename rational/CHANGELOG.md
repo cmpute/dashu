@@ -9,6 +9,8 @@
 - Implement `rand::distributions::uniform::SampleUniform` for `RBig`.
 - Implement `serde::{Serialize, Deserialize}` for `RBig` and `Relaxed`
 - Fix the bug in number comparison.
+- Implement `num_traits::{Zero, One, FromPrimitive, ToPrimitive}` for `RBig` and `Relaxed`
+- Add `rand_v08` and `num-traits_v02` feature flags to prevent breaking changes due to dependency updates in future 
 
 ## 0.3.0 (Initial release)
 

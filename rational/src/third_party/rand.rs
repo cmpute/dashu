@@ -13,7 +13,7 @@
 //!
 //! ```
 //! use dashu_ratio::{RBig, Relaxed, rand::Uniform01};
-//! use rand::{distributions::uniform::Uniform, thread_rng, Rng};
+//! # use rand_v08::{distributions::uniform::Uniform, thread_rng, Rng};
 //!
 //! // generate RBigs in a [0, 1) or [0, 1] with a given precision
 //! let a: RBig = thread_rng().sample(Uniform01::new(&10u8.into()));
@@ -50,7 +50,7 @@ use dashu_int::{
     rand::{UniformBelow, UniformIBig},
     DoubleWord, IBig, UBig,
 };
-use rand::{
+use rand_v08::{
     distributions::{
         uniform::{SampleBorrow, SampleUniform, UniformSampler},
         Open01, OpenClosed01, Standard,

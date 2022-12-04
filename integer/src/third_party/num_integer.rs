@@ -2,6 +2,7 @@
 
 use crate::{ibig::IBig, ubig::UBig};
 use dashu_base::{BitTest, CubicRoot, DivRem, ExtendedGcd, Gcd, Sign, SquareRoot};
+use num_integer_v01 as num_integer;
 
 impl num_integer::Integer for UBig {
     #[inline]

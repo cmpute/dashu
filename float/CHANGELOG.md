@@ -15,6 +15,7 @@
 - Add `to_int()` for `Repr`, which is equivalent to `FBig::trunc()`
 - Add `TryFrom<FBig>` for `UBig` and `IBig`
 - Re-export operation traits through the `ops` module.
+- Add `rand_v08` and `num-traits_v02` feature flags to prevent breaking changes due to dependency updates in future 
 
 ## 0.3.0
 

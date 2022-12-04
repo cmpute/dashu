@@ -321,7 +321,7 @@ impl FastDivideNormalized2 {
 mod tests {
     use super::*;
     use crate::primitive::WORD_BITS;
-    use rand::prelude::*;
+    use rand_v08::prelude::*;
 
     #[test]
     fn test_fast_divide_small() {
