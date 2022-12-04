@@ -1,7 +1,7 @@
 use crate::{fbig::FBig, repr::Repr, round::Round};
 use _bytes::BufMut;
 use dashu_base::{ConversionError, Sign};
-use postgres_types::{private::BytesMut, to_sql_checked, FromSql, IsNull, ToSql, Type};
+use postgres_types_v02::{private::BytesMut, to_sql_checked, FromSql, IsNull, ToSql, Type};
 use std::error;
 
 use super::Numeric;
@@ -13,7 +13,7 @@ impl<'a> FromSql<'a> for Numeric {
     }
 
     fn from_sql(ty: &Type, raw: &'a [u8]) -> Result<Self, Box<dyn error::Error + Sync + Send>> {
-        assert!(raw.len() > 8);
+        assert!(raw.len() >= 8);
         assert!(*ty == Type::NUMERIC);
 
         #[inline(always)]
@@ -31,7 +31,7 @@ impl<'a> FromSql<'a> for Numeric {
         let sign = match read16(&raw[4..6]) {
             0x0000 => Sign::Positive,
             0x4000 => Sign::Negative,
-            0xC000 => return Err(ConversionError::OutOfBounds.into()),
+            0xC000 => return Err(ConversionError::OutOfBounds.into()), // nan
             0xD000 => return Ok(Numeric::infinity()),
             0xF000 => return Ok(Numeric::neg_infinity()),
             _ => panic!(),
@@ -91,7 +91,6 @@ impl ToSql for Numeric {
         out: &mut BytesMut,
     ) -> Result<IsNull, Box<dyn error::Error + Sync + Send>> {
         assert!(*ty == Type::NUMERIC);
-        // TODO(next): support inf
 
         let num_digits = self.digits.len();
 
@@ -101,9 +100,11 @@ impl ToSql for Numeric {
         // put headers
         out.put_u16(num_digits.try_into().unwrap());
         out.put_i16(self.weight);
-        out.put_u16(match self.sign {
-            Sign::Positive => 0x0000,
-            Sign::Negative => 0x4000,
+        out.put_u16(match (self.sign, self.is_inf) {
+            (Sign::Positive, false) => 0x0000,
+            (Sign::Negative, false) => 0x4000,
+            (Sign::Positive, true) => 0xD000,
+            (Sign::Negative, true) => 0xF000,
         });
         out.put_u16(self.dscale);
 

@@ -6,7 +6,8 @@
 - Implement `rand::distributions::uniform::UniformSampler` for `FBig` through `crate::rand::UniformFBig`
 - Implement `rand::distributions::{Open01, OpenClosed01, Standard}` for `FBig`
 - Implement `dashu_base::Inverse` for `FBig`
-- Add support of random floating point numbers generation through `Uniform01` and `UniformFBig`.
+- Add support of random floating point numbers generation through `crate::rand::Uniform01` and `crate::rand::UniformFBig`.
+- Add support for serialization from/to PostgreSQL arguments through `diesel::{deserialize::FromSql, serialize::ToSql}` and `postgres_types::{FromSql, ToSql}`.
 - Implement `rand::distributions::uniform::SampleUniform` for `FBig`.
 - Implement `serde::{Serialize, Deserialize}` for `FBig` and `Repr`
 - Add `from_str_native()` for `Repr`

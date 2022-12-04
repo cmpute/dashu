@@ -28,6 +28,9 @@ members = [
 default-members = ["base", "integer", "float", "rational", "macros"]
 
 [features]
+# TODO(v0.4): Assign a version name to all crates that haven't reached v1. For crates that already reaches v1, we assume that the update frequency of that crate is low, so it's unnecessary to create a version tag until v2.0 is released
+#             Our strategy for pre v1 dependencies: the bump of default version is not considered a break change, only minor version is required to bump.
+#             Our strategy for v1 dependencies: the bump of default version is considered a break change, the support for new version will be release through a versioned feature flag, and the default version will be bumped in the next major version.
 default = ["std", "rand", "num-traits", "num-order"]
 std = ["dashu-base/std", "dashu-int/std", "dashu-float/std", "dashu-ratio/std"]
 rand = ["dashu-int/rand", "dashu-float/rand", "dashu-ratio/rand"]
@@ -37,7 +40,7 @@ num-order = ["dashu-int/num-order"]
 zeroize = ["dashu-int/zeroize", "dashu-float/zeroize", "dashu-ratio/zeroize"]
 
 # this feature enables all related features related to decimal crates.
-decimal_extras = ["dashu-float/postgres-types", "dashu-float/diesel2"]
+decimal-extras = ["dashu-float/postgres-types", "dashu-float/diesel"]
 
 [dependencies]
 # all crates under dashu will have the same major version,

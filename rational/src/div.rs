@@ -118,7 +118,7 @@ macro_rules! impl_relaxed_div_ubig {
 }
 impl_binop_with_int!(impl Div<UBig>, div, Relaxed, impl_relaxed_div_ubig);
 
-// TODO: implement div_euclid, rem_euclid, div_rem_euclid
+// TODO(next): implement div_euclid, rem_euclid, div_rem_euclid
 
 impl Inverse for Repr {
     type Output = Repr;

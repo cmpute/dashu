@@ -76,6 +76,7 @@ pub struct Context<RoundingMode: Round> {
 }
 
 impl<const B: Word> Repr<B> {
+    // TODO(v0.4): expose BASE as UBig
     /// The base of the representation. It's exposed as an [IBig] constant.
     pub const BASE: IBig = base_as_ibig::<B>();
 

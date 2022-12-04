@@ -1,10 +1,9 @@
 use super::Numeric;
 use crate::{fbig::FBig, repr::Repr, round::Round};
 use dashu_base::Sign;
-use diesel2::{
+use diesel_v2::{
     deserialize::{self, FromSql},
-    pg::data_types::PgNumeric,
-    pg::{Pg, PgValue},
+    pg::{data_types::PgNumeric, Pg, PgValue},
     serialize::{self, Output, ToSql},
     sql_types::Numeric as DieselNumeric,
 };
