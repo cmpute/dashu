@@ -10,7 +10,7 @@ use dashu_base::{
 use dashu_int::{IBig, UBig, Word};
 
 use crate::{
-    error::{check_finite, panic_unlimited_precision},
+    error::{assert_finite, panic_unlimited_precision},
     fbig::FBig,
     repr::{Context, Repr},
     round::{mode::HalfEven, Round, Rounded, Rounding},
@@ -362,7 +362,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ///
     /// Panics if the number is infinte
     pub fn to_int(&self) -> Rounded<IBig> {
-        check_finite(&self.repr);
+        assert_finite(&self.repr);
 
         // shortcut when the number is already an integer
         if self.repr.exponent >= 0 {
@@ -470,7 +470,7 @@ impl<R: Round> Context<R> {
             } else {
                 let num = Repr::new(repr.significand, 0);
                 let den = Repr::new(Repr::<B>::BASE.pow(-repr.exponent as usize), 0);
-                self.repr_div(num, &den)
+                self.repr_div(num, den)
             }
         } else {
             // if the exponent is large, then we first estimate the result exponent as floor(exponent * log(B) / log(NewB)),
@@ -602,7 +602,8 @@ impl<const B: Word> Repr<B> {
 
     /// Convert the float number representation to a [IBig].
     ///
-    /// The fractional part is always rounded to zero.
+    /// The fractional part is always rounded to zero. To convert with other rounding modes,
+    /// please use [FBig::to_int()].
     ///
     /// # Warning
     ///
@@ -622,15 +623,15 @@ impl<const B: Word> Repr<B> {
     ///
     /// # Panics
     ///
-    /// Panics if the number is infinte
+    /// Panics if the number is infinte.
     pub fn to_int(&self) -> Rounded<IBig> {
-        check_finite(self);
+        assert_finite(self);
 
         if self.exponent >= 0 {
             // the number is already an integer
             Exact(shl_digits::<B>(&self.significand, self.exponent as usize))
-        } else if self.exponent + (self.digits_ub() as isize) < 0 {
-            // the number is less than 1
+        } else if self.smaller_than_one() {
+            // the number is definitely smaller than 
             Inexact(IBig::ZERO, Rounding::NoOp)
         } else {
             let int = shr_digits::<B>(&self.significand, (-self.exponent) as usize);

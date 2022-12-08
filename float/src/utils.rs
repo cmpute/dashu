@@ -126,8 +126,8 @@ pub fn split_digits_ref<const B: Word>(value: &IBig, pos: usize) -> (IBig, IBig)
 /// and the sign is applied to both parts.
 ///
 /// For example in base 10:
-/// * split_digits(123, 1) returns (12, 3)
-/// * split_digits(-123, 2) returns (-1, -23)
+/// * `split_digits(123, 1)` returns `(12, 3)`
+/// * `split_digits(-123, 2)` returns `(-1, -23)`
 #[inline]
 pub fn split_digits<const B: Word>(value: IBig, pos: usize) -> (IBig, IBig) {
     if pos != 0 {

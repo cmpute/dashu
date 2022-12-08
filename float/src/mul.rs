@@ -1,7 +1,7 @@
 use dashu_int::{IBig, UBig};
 
 use crate::{
-    error::{check_finite, check_finite_operands},
+    error::{assert_finite, assert_finite_operands},
     fbig::FBig,
     helper_macros,
     repr::{Context, Repr, Word},
@@ -14,7 +14,7 @@ impl<'l, 'r, R: Round, const B: Word> Mul<&'r FBig<R, B>> for &'l FBig<R, B> {
 
     #[inline]
     fn mul(self, rhs: &FBig<R, B>) -> Self::Output {
-        check_finite_operands(&self.repr, &rhs.repr);
+        assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
         let repr = Repr::new(
@@ -30,7 +30,7 @@ impl<'r, R: Round, const B: Word> Mul<&'r FBig<R, B>> for FBig<R, B> {
 
     #[inline]
     fn mul(self, rhs: &FBig<R, B>) -> Self::Output {
-        check_finite_operands(&self.repr, &rhs.repr);
+        assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
         let repr = Repr::new(
@@ -46,7 +46,7 @@ impl<'l, R: Round, const B: Word> Mul<FBig<R, B>> for &'l FBig<R, B> {
 
     #[inline]
     fn mul(self, rhs: FBig<R, B>) -> Self::Output {
-        check_finite_operands(&self.repr, &rhs.repr);
+        assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
         let repr = Repr::new(
@@ -62,7 +62,7 @@ impl<R: Round, const B: Word> Mul<FBig<R, B>> for FBig<R, B> {
 
     #[inline]
     fn mul(self, rhs: FBig<R, B>) -> Self::Output {
-        check_finite_operands(&self.repr, &rhs.repr);
+        assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
         let repr = Repr::new(
@@ -138,7 +138,7 @@ impl<R: Round> Context<R> {
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn mul<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Rounded<FBig<R, B>> {
-        check_finite_operands(lhs, rhs);
+        assert_finite_operands(lhs, rhs);
 
         // at most double the precision is required to get a correct result
         // shrink the input operands if necessary
@@ -187,7 +187,7 @@ impl<R: Round> Context<R> {
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn square<const B: Word>(&self, f: &Repr<B>) -> Rounded<FBig<R, B>> {
-        check_finite(f);
+        assert_finite(f);
 
         // shrink the input operands if necessary
         let max_precision = if self.is_limited() {
@@ -224,7 +224,7 @@ impl<R: Round> Context<R> {
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn cubic<const B: Word>(&self, f: &Repr<B>) -> Rounded<FBig<R, B>> {
-        check_finite(f);
+        assert_finite(f);
 
         // shrink the input operands if necessary
         let max_precision = if self.is_limited() {

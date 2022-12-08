@@ -1,5 +1,5 @@
 use crate::{
-    error::check_finite_operands,
+    error::assert_finite_operands,
     fbig::FBig,
     helper_macros,
     repr::{Context, Repr, Word},
@@ -104,7 +104,7 @@ fn add_val_val<R: Round, const B: Word>(
     mut rhs: FBig<R, B>,
     rhs_sign: Sign,
 ) -> FBig<R, B> {
-    check_finite_operands(&lhs.repr, &rhs.repr);
+    assert_finite_operands(&lhs.repr, &rhs.repr);
 
     let context = Context::max(lhs.context, rhs.context);
     rhs.repr.significand *= rhs_sign;
@@ -131,7 +131,7 @@ fn add_val_ref<R: Round, const B: Word>(
     rhs: &FBig<R, B>,
     rhs_sign: Sign,
 ) -> FBig<R, B> {
-    check_finite_operands(&lhs.repr, &rhs.repr);
+    assert_finite_operands(&lhs.repr, &rhs.repr);
 
     let context = Context::max(lhs.context, rhs.context);
     let sum = if lhs.repr.is_zero() {
@@ -162,7 +162,7 @@ fn add_ref_val<R: Round, const B: Word>(
     mut rhs: FBig<R, B>,
     rhs_sign: Sign,
 ) -> FBig<R, B> {
-    check_finite_operands(&lhs.repr, &rhs.repr);
+    assert_finite_operands(&lhs.repr, &rhs.repr);
 
     let context = Context::max(lhs.context, rhs.context);
     rhs.repr.significand *= rhs_sign;
@@ -189,7 +189,7 @@ fn add_ref_ref<R: Round, const B: Word>(
     rhs: &FBig<R, B>,
     rhs_sign: Sign,
 ) -> FBig<R, B> {
-    check_finite_operands(&lhs.repr, &rhs.repr);
+    assert_finite_operands(&lhs.repr, &rhs.repr);
 
     let context = Context::max(lhs.context, rhs.context);
     let sum = if lhs.repr.is_zero() {
@@ -462,7 +462,7 @@ impl<R: Round> Context<R> {
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn add<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Rounded<FBig<R, B>> {
-        check_finite_operands(lhs, rhs);
+        assert_finite_operands(lhs, rhs);
 
         let sum = if lhs.is_zero() {
             self.repr_round_ref(rhs)
@@ -500,7 +500,7 @@ impl<R: Round> Context<R> {
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn sub<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Rounded<FBig<R, B>> {
-        check_finite_operands(lhs, rhs);
+        assert_finite_operands(lhs, rhs);
 
         let sum = if lhs.is_zero() {
             self.repr_round_ref(rhs).map(|v| -v)
