@@ -10,7 +10,7 @@ use crate::{
     repr::Repr,
 };
 
-macro_rules! impl_addsub_with_rbig {
+macro_rules! impl_add_or_sub_with_rbig {
     (
         $a:ident, $b:ident, $c:ident, $d:ident,
         $ra:ident, $rb:ident, $rc:ident, $rd:ident, $method:ident
@@ -40,10 +40,10 @@ macro_rules! impl_addsub_with_rbig {
         RBig(repr)
     }};
 }
-impl_binop_with_macro!(Add, add, impl_addsub_with_rbig);
-impl_binop_with_macro!(Sub, sub, impl_addsub_with_rbig);
-impl_binop_assign_by_taking!(impl AddAssign<RBig> for RBig, add_assign, add);
-impl_binop_assign_by_taking!(impl SubAssign<RBig> for RBig, sub_assign, sub);
+impl_binop_with_macro!(impl Add, add, impl_add_or_sub_with_rbig);
+impl_binop_with_macro!(impl Sub, sub, impl_add_or_sub_with_rbig);
+impl_binop_assign_by_taking!(impl AddAssign for RBig, add_assign, add);
+impl_binop_assign_by_taking!(impl SubAssign for RBig, sub_assign, sub);
 
 macro_rules! impl_addsub_with_relaxed {
     (
@@ -54,12 +54,12 @@ macro_rules! impl_addsub_with_relaxed {
         Relaxed::from_parts(($a * $rd).$method($c * $rb), $b * $d)
     }};
 }
-impl_binop_with_macro!(Add, add, Relaxed, impl_addsub_with_relaxed);
-impl_binop_with_macro!(Sub, sub, Relaxed, impl_addsub_with_relaxed);
-impl_binop_assign_by_taking!(impl AddAssign<Relaxed> for Relaxed, add_assign, add);
-impl_binop_assign_by_taking!(impl SubAssign<Relaxed> for Relaxed, sub_assign, sub);
+impl_binop_with_macro!(impl Add for Relaxed, add, impl_addsub_with_relaxed);
+impl_binop_with_macro!(impl Sub for Relaxed, sub, impl_addsub_with_relaxed);
+impl_binop_assign_by_taking!(impl AddAssign for Relaxed, add_assign, add);
+impl_binop_assign_by_taking!(impl SubAssign for Relaxed, sub_assign, sub);
 
-macro_rules! impl_addsub_int_with_rbig {
+macro_rules! impl_add_or_sub_int_with_rbig {
     (
         $a:ident, $b:ident, $i:ident,
         $ra:ident, $rb:ident, $ri:ident, $method:ident
@@ -84,12 +84,12 @@ macro_rules! impl_int_sub_rbig {
         })
     }};
 }
-impl_binop_with_int!(impl Add<UBig>, add, impl_addsub_int_with_rbig);
-impl_binop_with_int!(impl Add<IBig>, add, impl_addsub_int_with_rbig);
-impl_binop_with_int!(impl Sub<UBig>, sub, impl_addsub_int_with_rbig);
-impl_binop_with_int!(impl Sub<IBig>, sub, impl_addsub_int_with_rbig);
-impl_binop_with_int!(impl Add for UBig, add, impl_addsub_int_with_rbig);
-impl_binop_with_int!(impl Add for IBig, add, impl_addsub_int_with_rbig);
+impl_binop_with_int!(impl Add<UBig>, add, impl_add_or_sub_int_with_rbig);
+impl_binop_with_int!(impl Add<IBig>, add, impl_add_or_sub_int_with_rbig);
+impl_binop_with_int!(impl Sub<UBig>, sub, impl_add_or_sub_int_with_rbig);
+impl_binop_with_int!(impl Sub<IBig>, sub, impl_add_or_sub_int_with_rbig);
+impl_binop_with_int!(impl Add for UBig, add, impl_add_or_sub_int_with_rbig);
+impl_binop_with_int!(impl Add for IBig, add, impl_add_or_sub_int_with_rbig);
 impl_binop_with_int!(impl Sub for UBig, sub, impl_int_sub_rbig);
 impl_binop_with_int!(impl Sub for IBig, sub, impl_int_sub_rbig);
 

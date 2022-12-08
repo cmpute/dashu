@@ -7,10 +7,10 @@ use crate::{
     utils::{digit_len, shl_digits_in_place, split_digits},
 };
 use core::ops::{Div, DivAssign, Rem, RemAssign};
-use dashu_base::{Approximation, DivEuclid, DivRem, DivRemEuclid, Inverse, RemEuclid, Sign};
-use dashu_int::{IBig, UBig, modular::ModuloRing};
+use dashu_base::{Approximation, DivEuclid, DivRem, DivRemEuclid, Inverse, RemEuclid};
+use dashu_int::{modular::ModuloRing, IBig, UBig};
 
-macro_rules! impl_div_rem_for_fbig {
+macro_rules! impl_div_or_rem_for_fbig {
     (impl $op:ident, $method:ident, $repr_method:ident) => {
         impl<R: Round, const B: Word> $op<FBig<R, B>> for FBig<R, B> {
             type Output = FBig<R, B>;
@@ -40,14 +40,18 @@ macro_rules! impl_div_rem_for_fbig {
             type Output = FBig<R, B>;
             fn $method(self, rhs: &FBig<R, B>) -> Self::Output {
                 let context = Context::max(self.context, rhs.context);
-                FBig::new(context.$repr_method(self.repr.clone(), rhs.repr.clone()).value(), context)
+                FBig::new(
+                    context
+                        .$repr_method(self.repr.clone(), rhs.repr.clone())
+                        .value(),
+                    context,
+                )
             }
         }
     };
 }
-impl_div_rem_for_fbig!(impl Div, div, repr_div);
-impl_div_rem_for_fbig!(impl Rem, rem, repr_rem);
-
+impl_div_or_rem_for_fbig!(impl Div, div, repr_div);
+impl_div_or_rem_for_fbig!(impl Rem, rem, repr_rem);
 impl_binop_assign_by_taking!(impl DivAssign<Self>, div_assign, div);
 impl_binop_assign_by_taking!(impl RemAssign<Self>, rem_assign, rem);
 
@@ -263,16 +267,16 @@ impl<R: Round> Context<R> {
         let (_, rhs_signif) = rhs.significand.into_parts();
 
         use core::cmp::Ordering;
-        let (rem, neg) = match lhs.exponent.cmp(&rhs.exponent) {
+        let significand = match lhs.exponent.cmp(&rhs.exponent) {
             Ordering::Equal => {
                 let r1 = lhs_signif % &rhs_signif;
                 let r2 = rhs_signif - &r1;
-                if r1 <= r2 {
-                    (r1, false)
+                if r1 < r2 {
+                    IBig::from_parts(lhs_sign, r1)
                 } else {
-                    (r2, true)
+                    IBig::from_parts(-lhs_sign, r2)
                 }
-            },
+            }
             Ordering::Greater => {
                 // if the least significant digit of lhs is higher than rhs, then we can
                 // align lhs to rhs and do simple modulo operations
@@ -286,33 +290,35 @@ impl<R: Round> Context<R> {
                 let r = modulo.convert(lhs_signif) * scaling;
                 let r1 = r.residue();
                 let r2 = (-r).residue();
-                if r1 <= r2 {
-                    (r1, false)
+                if r1 < r2 {
+                    IBig::from_parts(lhs_sign, r1)
                 } else {
-                    (r2, true)
+                    IBig::from_parts(-lhs_sign, r2)
                 }
-            },
+            }
             Ordering::Less => {
                 // otherwise we have to split lhs into two parts
                 let shift = (rhs.exponent - lhs.exponent) as usize;
                 let (hi, lo) = split_digits::<B>(lhs_signif.into(), shift);
+
                 let mut r1 = hi % &rhs_signif;
-                let mut r2 = rhs_signif - &r1; // note that r2 >= 1
-                if r1 <= r2 {
-                    shl_digits_in_place::<B>(&mut r1, shift);
-                    r1 += lo;
-                    (r1.try_into().unwrap(), false)
+                let mut r2 = rhs_signif - &r1;
+
+                shl_digits_in_place::<B>(&mut r1, shift);
+                r1 += &lo;
+
+                shl_digits_in_place::<B>(&mut r2, shift);
+                r2 -= lo;
+
+                if r1 < r2 {
+                    lhs_sign * r1
                 } else {
-                    r2 -= UBig::ONE;
-                    shl_digits_in_place::<B>(&mut r2, shift);
-                    r2 -= lo;
-                    (r2.try_into().unwrap(), true)
+                    (-lhs_sign) * r2
                 }
             }
         };
 
         let exponent = lhs.exponent.min(rhs.exponent);
-        let significand = Sign::from(neg) * lhs_sign * rem;
         if significand.is_zero() {
             Approximation::Exact(Repr::zero())
         } else {
@@ -353,11 +359,12 @@ impl<R: Round> Context<R> {
         } else {
             lhs.clone()
         };
-        self.repr_div(lhs_repr, rhs.clone()).map(|v| FBig::new(v, *self))
+        self.repr_div(lhs_repr, rhs.clone())
+            .map(|v| FBig::new(v, *self))
     }
 
     /// Calculate the remainder of `⌈lhs / rhs⌋`.
-    /// 
+    ///
     /// The remainder is calculated as `r = lhs - ⌈lhs / rhs⌋ * rhs`, the division rounds to the nearest and ties to away.
     /// So if `n = (lhs / rhs).round()`, then `lhs == n * rhs + r` (given enough precision).
     ///
@@ -377,7 +384,8 @@ impl<R: Round> Context<R> {
     /// ```
     pub fn rem<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Rounded<FBig<R, B>> {
         assert_finite_operands(lhs, rhs);
-        self.repr_rem(lhs.clone(), rhs.clone()).map(|v| FBig::new(v, *self))
+        self.repr_rem(lhs.clone(), rhs.clone())
+            .map(|v| FBig::new(v, *self))
     }
 
     /// Compute the multiplicative inverse of an `FBig`
@@ -395,6 +403,7 @@ impl<R: Round> Context<R> {
     /// ```
     #[inline]
     pub fn inv<const B: Word>(&self, f: &Repr<B>) -> Rounded<FBig<R, B>> {
-        self.repr_div(Repr::one(), f.clone()).map(|v| FBig::new(v, *self))
+        self.repr_div(Repr::one(), f.clone())
+            .map(|v| FBig::new(v, *self))
     }
 }

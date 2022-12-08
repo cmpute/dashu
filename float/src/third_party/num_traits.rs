@@ -1,6 +1,7 @@
 //! Implement num-traits traits.
 
 use crate::{fbig::FBig, round::Round};
+use dashu_base::{Abs, DivEuclid, ParseError, RemEuclid, Sign};
 use dashu_int::{IBig, Word};
 use num_traits_v02 as num_traits;
 
@@ -105,6 +106,13 @@ impl<R: Round, const B: Word> num_traits::Pow<IBig> for FBig<R, B> {
         self.powi(rhs)
     }
 }
+impl<R: Round, const B: Word> num_traits::Pow<IBig> for &FBig<R, B> {
+    type Output = FBig<R, B>;
+
+    fn pow(self, rhs: IBig) -> FBig<R, B> {
+        self.powi(rhs)
+    }
+}
 impl<R: Round, const B: Word> num_traits::Pow<&FBig<R, B>> for FBig<R, B> {
     type Output = FBig<R, B>;
 
@@ -112,8 +120,64 @@ impl<R: Round, const B: Word> num_traits::Pow<&FBig<R, B>> for FBig<R, B> {
         self.powf(rhs)
     }
 }
+impl<R: Round, const B: Word> num_traits::Pow<&FBig<R, B>> for &FBig<R, B> {
+    type Output = FBig<R, B>;
 
-// TODO: num_traits::{Num, Euclid, Signed} are not implemented for FBig, because we currently don't implement Rem for FBig.
+    fn pow(self, rhs: &FBig<R, B>) -> FBig<R, B> {
+        self.powf(rhs)
+    }
+}
+
+impl<R: Round, const B: Word> num_traits::Num for FBig<R, B> {
+    type FromStrRadixErr = ParseError;
+    #[inline]
+    fn from_str_radix(str: &str, radix: u32) -> Result<Self, Self::FromStrRadixErr> {
+        let r: Word = radix.try_into().map_err(|_| ParseError::UnsupportedRadix)?;
+        if r == B {
+            Self::from_str_native(str)
+        } else {
+            Err(ParseError::UnsupportedRadix)
+        }
+    }
+}
+
+impl<R: Round, const B: Word> num_traits::Euclid for FBig<R, B> {
+    #[inline]
+    fn div_euclid(&self, v: &Self) -> Self {
+        DivEuclid::div_euclid(self, v).into()
+    }
+    #[inline]
+    fn rem_euclid(&self, v: &Self) -> Self {
+        RemEuclid::rem_euclid(self, v)
+    }
+}
+
+impl<R: Round, const B: Word> num_traits::Signed for FBig<R, B> {
+    #[inline]
+    fn abs(&self) -> Self {
+        Abs::abs(self.clone())
+    }
+
+    #[inline]
+    fn abs_sub(&self, other: &Self) -> Self {
+        Abs::abs(self - other)
+    }
+
+    #[inline]
+    fn signum(&self) -> Self {
+        FBig::signum(self)
+    }
+
+    #[inline]
+    fn is_positive(&self) -> bool {
+        !self.repr.is_zero() && self.repr.sign() == Sign::Positive
+    }
+
+    #[inline]
+    fn is_negative(&self) -> bool {
+        self.repr.sign() == Sign::Negative
+    }
+}
 
 #[cfg(test)]
 mod tests {

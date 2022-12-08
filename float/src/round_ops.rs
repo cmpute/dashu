@@ -10,7 +10,7 @@ use dashu_int::{IBig, Word};
 
 impl<R: Round, const B: Word> FBig<R, B> {
     /// Get the integral part of the float
-    /// 
+    ///
     /// See [FBig::round] for how the output precision is determined.
     ///
     /// # Examples
@@ -128,7 +128,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     }
 
     /// Returns the smallest integer greater than or equal to self.
-    /// 
+    ///
     /// See [FBig::round] for how the output precision is determined.
     ///
     /// # Examples
@@ -156,7 +156,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
         } else if self.repr.smaller_than_one() {
             return match self.repr.sign() {
                 Sign::Positive => Self::ONE,
-                Sign::Negative => Self::ZERO
+                Sign::Negative => Self::ZERO,
             };
         }
 
@@ -167,7 +167,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     }
 
     /// Returns the largest integer less than or equal to self.
-    /// 
+    ///
     /// See [FBig::round] for how the output precision is determined.
     ///
     /// # Examples
@@ -195,7 +195,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
         } else if self.repr.smaller_than_one() {
             return match self.repr.sign() {
                 Sign::Positive => Self::ZERO,
-                Sign::Negative => Self::NEG_ONE
+                Sign::Negative => Self::NEG_ONE,
             };
         }
 
@@ -206,9 +206,9 @@ impl<R: Round, const B: Word> FBig<R, B> {
     }
 
     /// Returns the integer nearest to self.
-    /// 
+    ///
     /// If there are two integers equally close, then the one farther from zero is chosen.
-    /// 
+    ///
     /// # Examples
     ///
     /// ```
@@ -222,16 +222,16 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// assert_eq!(b.round(), b);
     /// # Ok::<(), ParseError>(())
     /// ```
-    /// 
+    ///
     /// # Precision
-    /// 
+    ///
     /// If `self` is an integer, the result will have the same precision as `self`.
     /// If `self` has fractional part, then the precision will be subtracted by the digits
     /// in the fractional part. Examples:
     /// * `1.00e100` (precision = 3) rounds to `1.00e100` (precision = 3)
     /// * `1.234` (precision = 4) rounds to `1.` (precision = 1)
     /// * `1.234e-10` (precision = 4) rounds to `0.` (precision = 0, i.e arbitrary precision)
-    /// 
+    ///
     /// # Panics
     ///
     /// Panics if the number is infinte

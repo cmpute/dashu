@@ -33,6 +33,32 @@ where
     assert_eq!(x, *c);
 }
 
+fn test_rem<'a, T>(a: &'a T, b: &'a T, c: &'a T)
+where
+    T: Rem<T, Output = T>,
+    T: Rem<&'a T, Output = T>,
+    &'a T: Rem<T, Output = T>,
+    &'a T: Rem<&'a T, Output = T>,
+    T: RemAssign<T>,
+    T: RemAssign<&'a T>,
+    T: Clone,
+    T: Debug,
+    T: Eq,
+{
+    assert_eq!(a % b, *c);
+    assert_eq!(a.clone() % b, *c);
+    assert_eq!(a % b.clone(), *c);
+    assert_eq!(a.clone() % b.clone(), *c);
+
+    let mut x = a.clone();
+    x %= b;
+    assert_eq!(x, *c);
+
+    let mut x = a.clone();
+    x %= b.clone();
+    assert_eq!(x, *c);
+}
+
 #[test]
 fn test_div_binary() {
     let exact_cases = [
@@ -141,32 +167,6 @@ fn test_div_by_unlimited_precision() {
     let _ = dbig!(1).with_precision(0).value() / dbig!(3).with_precision(0).value();
 }
 
-fn test_rem<'a, T>(a: &'a T, b: &'a T, c: &'a T)
-where
-    T: Rem<T, Output = T>,
-    T: Rem<&'a T, Output = T>,
-    &'a T: Rem<T, Output = T>,
-    &'a T: Rem<&'a T, Output = T>,
-    T: RemAssign<T>,
-    T: RemAssign<&'a T>,
-    T: Clone,
-    T: Debug,
-    T: Eq,
-{
-    assert_eq!(a % b, *c);
-    assert_eq!(a.clone() % b, *c);
-    assert_eq!(a % b.clone(), *c);
-    assert_eq!(a.clone() % b.clone(), *c);
-
-    let mut x = a.clone();
-    x %= b;
-    assert_eq!(x, *c);
-
-    let mut x = a.clone();
-    x %= b.clone();
-    assert_eq!(x, *c);
-}
-
 #[test]
 fn test_rem_binary() {
     // test cases: n, d, remainder
@@ -176,6 +176,9 @@ fn test_rem_binary() {
         (fbig!(0x1000), fbig!(0x1000), fbig!(0)),
         (fbig!(0x1000), fbig!(0x10), fbig!(0)),
         (fbig!(0x1000), fbig!(-0x10), fbig!(0)),
+        (fbig!(0x3), fbig!(0x2), fbig!(-0x1)),
+        (fbig!(0x3), fbig!(-0x2), fbig!(-0x1)),
+        (fbig!(-0x3), fbig!(0x2), fbig!(0x1)),
         (fbig!(0x43), fbig!(0x21), fbig!(0x1)),
         (fbig!(0x43), fbig!(0x23), fbig!(-0x3)),
         (fbig!(0x654), fbig!(-0x321), fbig!(0x12)),
@@ -202,6 +205,9 @@ fn test_rem_decimal() {
         (dbig!(1000), dbig!(10), dbig!(0)),
         (dbig!(1000), dbig!(-10), dbig!(0)),
         (dbig!(-9999), dbig!(-99), dbig!(0)),
+        (dbig!(3), dbig!(2), dbig!(-1)),
+        (dbig!(3), dbig!(-2), dbig!(-1)),
+        (dbig!(-3), dbig!(2), dbig!(1)),
         (dbig!(27), dbig!(3), dbig!(0)),
         (dbig!(43), dbig!(21), dbig!(1)),
         (dbig!(43), dbig!(23), dbig!(-3)),

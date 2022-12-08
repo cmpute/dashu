@@ -1,51 +1,97 @@
 //! Implement num-traits traits.
 
 use crate::rbig::{RBig, Relaxed};
+use dashu_base::{Abs, DivEuclid, ParseError, RemEuclid, Sign};
 use num_traits_v02 as num_traits;
 
-impl num_traits::Zero for RBig {
-    #[inline]
-    fn zero() -> Self {
-        RBig::ZERO
-    }
-    #[inline]
-    fn is_zero(&self) -> bool {
-        RBig::is_zero(self)
-    }
-}
+macro_rules! impl_num_traits {
+    ($t:ty) => {
+        impl num_traits::Zero for $t {
+            #[inline]
+            fn zero() -> Self {
+                <$t>::ZERO
+            }
+            #[inline]
+            fn is_zero(&self) -> bool {
+                <$t>::is_zero(self)
+            }
+        }
 
-impl num_traits::Zero for Relaxed {
-    #[inline]
-    fn zero() -> Self {
-        Relaxed::ZERO
-    }
-    #[inline]
-    fn is_zero(&self) -> bool {
-        Relaxed::is_zero(self)
-    }
-}
+        impl num_traits::One for $t {
+            #[inline]
+            fn one() -> Self {
+                <$t>::ONE
+            }
+            #[inline]
+            fn is_one(&self) -> bool {
+                <$t>::is_one(self)
+            }
+        }
 
-impl num_traits::One for RBig {
-    #[inline]
-    fn one() -> Self {
-        RBig::ONE
-    }
-    #[inline]
-    fn is_one(&self) -> bool {
-        RBig::is_one(self)
-    }
-}
+        impl num_traits::Num for $t {
+            type FromStrRadixErr = ParseError;
+            #[inline]
+            fn from_str_radix(src: &str, radix: u32) -> Result<Self, Self::FromStrRadixErr> {
+                <$t>::from_str_radix(src, radix)
+            }
+        }
 
-impl num_traits::One for Relaxed {
-    #[inline]
-    fn one() -> Self {
-        Relaxed::ONE
-    }
-    #[inline]
-    fn is_one(&self) -> bool {
-        Relaxed::is_one(self)
-    }
+        impl num_traits::Signed for $t {
+            #[inline]
+            fn abs(&self) -> Self {
+                Abs::abs(self.clone())
+            }
+
+            #[inline]
+            fn abs_sub(&self, other: &Self) -> Self {
+                Abs::abs(self - other)
+            }
+
+            #[inline]
+            fn signum(&self) -> Self {
+                <$t>::signum(self)
+            }
+
+            #[inline]
+            fn is_positive(&self) -> bool {
+                !self.is_zero() && self.sign() == Sign::Positive
+            }
+
+            #[inline]
+            fn is_negative(&self) -> bool {
+                self.sign() == Sign::Negative
+            }
+        }
+
+        impl num_traits::Euclid for $t {
+            #[inline]
+            fn div_euclid(&self, v: &Self) -> Self {
+                DivEuclid::div_euclid(self, v).into()
+            }
+            #[inline]
+            fn rem_euclid(&self, v: &Self) -> Self {
+                RemEuclid::rem_euclid(self, v)
+            }
+        }
+
+        impl num_traits::Pow<usize> for $t {
+            type Output = $t;
+            #[inline]
+            fn pow(self, rhs: usize) -> $t {
+                <$t>::pow(&self, rhs)
+            }
+        }
+        impl num_traits::Pow<usize> for &$t {
+            type Output = $t;
+            #[inline]
+            fn pow(self, rhs: usize) -> $t {
+                <$t>::pow(self, rhs)
+            }
+        }
+    };
 }
+impl_num_traits!(RBig);
+impl_num_traits!(Relaxed);
 
 macro_rules! impl_from_primitive_int {
     ($t:ty, $method:ident) => {
@@ -160,5 +206,3 @@ impl num_traits::ToPrimitive for Relaxed {
         Some(self.to_f64().value())
     }
 }
-
-// TODO: num_traits::{Num, Euclid, Signed} are not implemented for FBig, because we currently don't implement Rem for FBig.

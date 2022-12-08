@@ -631,7 +631,7 @@ impl<const B: Word> Repr<B> {
             // the number is already an integer
             Exact(shl_digits::<B>(&self.significand, self.exponent as usize))
         } else if self.smaller_than_one() {
-            // the number is definitely smaller than 
+            // the number is definitely smaller than
             Inexact(IBig::ZERO, Rounding::NoOp)
         } else {
             let int = shr_digits::<B>(&self.significand, (-self.exponent) as usize);

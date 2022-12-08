@@ -25,6 +25,14 @@ impl Repr {
             denominator: self.denominator.cubic(),
         }
     }
+
+    #[inline]
+    fn pow(&self, n: usize) -> Self {
+        Self {
+            numerator: self.numerator.pow(n),
+            denominator: self.denominator.pow(n),
+        }
+    }
 }
 
 impl RBig {
@@ -57,6 +65,21 @@ impl RBig {
     pub fn cubic(&self) -> Self {
         Self(self.0.cubic())
     }
+
+    /// Raise this number to a power of `n`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_ratio::RBig;
+    /// let a = RBig::from_parts(2.into(), 3u8.into());
+    /// let a5 = RBig::from_parts(32.into(), 243u8.into());
+    /// assert_eq!(a.pow(5), a5);
+    /// ```
+    #[inline]
+    pub fn pow(&self, n: usize) -> Self {
+        Self(self.0.pow(n))
+    }
 }
 
 macro_rules! impl_mul_with_rbig {
@@ -74,8 +97,8 @@ macro_rules! impl_mul_with_rbig {
     }};
 }
 
-impl_binop_with_macro!(Mul, mul, impl_mul_with_rbig);
-impl_binop_assign_by_taking!(impl MulAssign<RBig> for RBig, mul_assign, mul);
+impl_binop_with_macro!(impl Mul, mul, impl_mul_with_rbig);
+impl_binop_assign_by_taking!(impl MulAssign for RBig, mul_assign, mul);
 
 impl Relaxed {
     /// Compute the square of the number (`self * self`).
@@ -93,6 +116,14 @@ impl Relaxed {
     pub fn cubic(&self) -> Self {
         Self(self.0.cubic())
     }
+
+    /// Raise this number to a power of `n`.
+    ///
+    /// See [RBig::pow] for details.
+    #[inline]
+    pub fn pow(&self, n: usize) -> Self {
+        Self(self.0.pow(n))
+    }
 }
 
 macro_rules! impl_mul_with_relaxed {
@@ -104,8 +135,8 @@ macro_rules! impl_mul_with_relaxed {
         Relaxed::from_parts($a.$method($c), $b.$method($d))
     }};
 }
-impl_binop_with_macro!(Mul, mul, Relaxed, impl_mul_with_relaxed);
-impl_binop_assign_by_taking!(impl MulAssign<Relaxed> for Relaxed, mul_assign, mul);
+impl_binop_with_macro!(impl Mul for Relaxed, mul, impl_mul_with_relaxed);
+impl_binop_assign_by_taking!(impl MulAssign for Relaxed, mul_assign, mul);
 
 macro_rules! impl_mul_int_with_rbig {
     (
