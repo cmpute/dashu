@@ -90,6 +90,10 @@ fn split_bits_ref(value: &IBig, n: usize) -> (IBig, IBig) {
 
     let (sign, words) = value.as_sign_words();
     let n_words = n / Word::BITS as usize;
+    if n_words >= words.len() {
+        // shortcut if n is very large
+        return (IBig::ZERO, value.clone());
+    }
 
     let mut hi = UBig::from_words(&words[n_words..]);
     hi >>= n % Word::BITS as usize;
@@ -122,8 +126,8 @@ pub fn split_digits_ref<const B: Word>(value: &IBig, pos: usize) -> (IBig, IBig)
 /// and the sign is applied to both parts.
 ///
 /// For example in base 10:
-/// * split_digits(123, 1) returns (12, 3)
-/// * split_digits(-123, 2) returns (-1, -23)
+/// * `split_digits(123, 1)` returns `(12, 3)`
+/// * `split_digits(-123, 2)` returns `(-1, -23)`
 #[inline]
 pub fn split_digits<const B: Word>(value: IBig, pos: usize) -> (IBig, IBig) {
     if pos != 0 {

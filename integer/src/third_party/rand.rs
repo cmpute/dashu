@@ -1,26 +1,153 @@
-//! Random distributions.
+//! Random integers generation with the `rand` crate.
+//!
+//! There are four distributions for generating random integers. The first two are [UniformBits],
+//! and [UniformBelow] which limit the bit size or the magnitude of the generated integer.
+//! The other two are [UniformUBig] and [UniformIBig], which supports generating random integers
+//! uniformly in a given range. These traits are also the backends for the [SampleUniform] trait.
+//!
+//! # Examples
+//!
+//! ```
+//! # use dashu_int::{UBig, IBig};
+//! # use rand_v08::{distributions::uniform::Uniform, thread_rng, Rng};
+//! use dashu_base::BitTest;
+//! use dashu_int::rand::{UniformBits, UniformBelow};
+//!
+//! // generate UBigs in a range
+//! let a = thread_rng().gen_range(UBig::from(3u8)..UBig::from(10u8));
+//! let b = thread_rng().sample(Uniform::new(UBig::ZERO, &a));
+//! assert!(a >= UBig::from(3u8) && a < UBig::from(10u8));
+//! assert!(b >= UBig::ZERO && b < a);
+//!
+//! // generate IBigs in a range
+//! let a = thread_rng().gen_range(IBig::from(3)..IBig::from(10));
+//! let b = thread_rng().sample(Uniform::new(IBig::from(-5), &a));
+//! assert!(a >= IBig::from(3) && a < IBig::from(10));
+//! assert!(b >= IBig::from(-5) && b < a);
+//!
+//! // generate UBigs and IBigs with a given bit size limit.
+//! let a: UBig = thread_rng().sample(UniformBits::new(10));
+//! let b: IBig = thread_rng().sample(UniformBits::new(10));
+//! assert!(a.bit_len() <= 10 && b.bit_len() <= 10);
+//!
+//! // generate UBigs and IBigs with a given magnitude limit.
+//! let a: UBig = thread_rng().sample(UniformBelow::new(&10u8.into()));
+//! let b: IBig = thread_rng().sample(UniformBelow::new(&10u8.into()));
+//! assert!(a < UBig::from(10u8));
+//! assert!(b < IBig::from(10) && b > IBig::from(-10));
+//! ```
 
 use crate::{
-    arch::word::Word,
+    arch::word::{DoubleWord, Word},
     buffer::Buffer,
-    error::panic_empty_range,
     ibig::IBig,
+    math::ceil_div,
     ops::UnsignedAbs,
+    primitive::{DWORD_BITS_USIZE, WORD_BITS_USIZE},
     repr::{Repr, TypedReprRef::*},
     ubig::UBig,
 };
 
-use rand::{
+use dashu_base::Sign;
+use rand_v08::{
     distributions::uniform::{SampleBorrow, SampleUniform, UniformSampler},
+    prelude::Distribution,
     Rng,
 };
 
-impl SampleUniform for UBig {
-    type Sampler = UniformUBig;
+/// Uniform distribution for both [UBig] and [IBig] specified by bits.
+///
+/// This distribution generate random integers uniformly between `[0, 2^bits)` for [UBig],
+/// between `(-2^bits, 2^bits)` for [IBig].
+pub struct UniformBits {
+    bits: usize,
 }
 
-impl SampleUniform for IBig {
-    type Sampler = UniformIBig;
+impl UniformBits {
+    /// Create a [UniformBits] distribution with a given limit on the integer's bit length.
+    #[inline]
+    pub const fn new(bits: usize) -> Self {
+        UniformBits { bits }
+    }
+}
+
+impl Distribution<UBig> for UniformBits {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> UBig {
+        if self.bits == 0 {
+            UBig::ZERO
+        } else if self.bits <= DWORD_BITS_USIZE {
+            let dword: DoubleWord = rng.gen();
+            UBig::from_dword(dword >> (DWORD_BITS_USIZE - self.bits))
+        } else {
+            let num_words = ceil_div(self.bits, WORD_BITS_USIZE);
+            let mut buffer = Buffer::allocate(num_words);
+            buffer.push_zeros(num_words);
+
+            rng.fill(buffer.as_mut());
+
+            let rem = self.bits % WORD_BITS_USIZE;
+            if rem != 0 {
+                *buffer.last_mut().unwrap() >>= WORD_BITS_USIZE - rem;
+            }
+
+            UBig(Repr::from_buffer(buffer))
+        }
+    }
+}
+
+impl Distribution<IBig> for UniformBits {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> IBig {
+        loop {
+            let mag: UBig = self.sample(rng);
+            let neg = rng.gen();
+            if mag.is_zero() && neg {
+                // Reject negative zero so that all possible integers
+                // have the same probability. This branch should happen
+                // very rarely.
+                continue;
+            }
+            break IBig::from_parts(Sign::from(neg), mag);
+        }
+    }
+}
+
+/// Uniform distribution around zero for both [UBig] and [IBig] specified by a limit of the magnitude.
+///
+/// This distribution generate random integers uniformly between `[0, limit)` for [UBig],
+/// between `(-limit, limit)` for [IBig].
+pub struct UniformBelow<'a> {
+    limit: &'a UBig,
+}
+
+impl<'a> UniformBelow<'a> {
+    /// Create a [UniformBelow] distribution with a given limit on the integer's magnitude.
+    #[inline]
+    pub const fn new(limit: &'a UBig) -> Self {
+        Self { limit }
+    }
+}
+
+impl<'a> Distribution<UBig> for UniformBelow<'a> {
+    #[inline]
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> UBig {
+        UBig::uniform(self.limit, rng)
+    }
+}
+
+impl<'a> Distribution<IBig> for UniformBelow<'a> {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> IBig {
+        loop {
+            let mag: UBig = UBig::uniform(self.limit, rng);
+            let neg = rng.gen();
+            if mag.is_zero() && neg {
+                // Reject negative zero so that all possible integers
+                // have the same probability. This branch should happen
+                // very rarely.
+                continue;
+            }
+            break IBig::from_parts(Sign::from(neg), mag);
+        }
+    }
 }
 
 impl UBig {
@@ -80,21 +207,17 @@ where
     true
 }
 
-/// Uniform [UBig] distribution.
+/// The back-end implementing [UniformSampler] for [UBig].
 ///
-/// # Examples
-///
-/// ```
-/// use dashu_int::UBig;
-/// use rand::{distributions::uniform::Uniform, thread_rng, Rng};
-/// let a = thread_rng().gen_range(UBig::from(3u8)..UBig::from(10u8));
-/// let b = thread_rng().sample(Uniform::new(UBig::ZERO, &a));
-/// assert!(a >= UBig::from(3u8) && a < UBig::from(10u8));
-/// assert!(b >= UBig::ZERO && b < a);
-/// ```
+/// See the module ([rand][crate::rand]) level documentation for examples.
 pub struct UniformUBig {
     range: UBig,
     offset: UBig,
+}
+
+/// Panics when the range input for the random generator in empty
+const fn panic_empty_range() -> ! {
+    panic!("empty range for random generation")
 }
 
 impl UniformSampler for UniformUBig {
@@ -106,10 +229,11 @@ impl UniformSampler for UniformUBig {
         B1: SampleBorrow<UBig>,
         B2: SampleBorrow<UBig>,
     {
-        let range = high.borrow() - low.borrow();
-        if range.is_zero() {
+        if high.borrow() <= low.borrow() {
             panic_empty_range()
         }
+
+        let range = high.borrow() - low.borrow();
         UniformUBig {
             range,
             offset: low.borrow().clone(),
@@ -122,6 +246,10 @@ impl UniformSampler for UniformUBig {
         B1: SampleBorrow<UBig>,
         B2: SampleBorrow<UBig>,
     {
+        if high.borrow() < low.borrow() {
+            panic_empty_range()
+        }
+
         let range = high.borrow() - low.borrow() + UBig::ONE;
         UniformUBig {
             range,
@@ -138,18 +266,9 @@ impl UniformSampler for UniformUBig {
     }
 }
 
-/// Uniform [IBig] distribution.
+/// The back-end implementing [UniformSampler] for [IBig].
 ///
-/// # Examples
-///
-/// ```
-/// use dashu_int::IBig;
-/// use rand::{distributions::uniform::Uniform, thread_rng, Rng};
-/// let a = thread_rng().gen_range(IBig::from(3)..IBig::from(10));
-/// let b = thread_rng().sample(Uniform::new(IBig::from(-5), &a));
-/// assert!(a >= IBig::from(3) && a < IBig::from(10));
-/// assert!(b >= IBig::from(-5) && b < a);
-/// ```
+/// See the module ([rand][crate::rand]) level documentation for examples.
 pub struct UniformIBig {
     range: UBig,
     offset: IBig,
@@ -164,10 +283,11 @@ impl UniformSampler for UniformIBig {
         B1: SampleBorrow<IBig>,
         B2: SampleBorrow<IBig>,
     {
-        let range = high.borrow() - low.borrow();
-        if range <= IBig::ZERO {
-            panic_empty_range();
+        if high.borrow() <= low.borrow() {
+            panic_empty_range()
         }
+
+        let range = high.borrow() - low.borrow();
         UniformIBig {
             range: range.unsigned_abs(),
             offset: low.borrow().clone(),
@@ -180,10 +300,11 @@ impl UniformSampler for UniformIBig {
         B1: SampleBorrow<IBig>,
         B2: SampleBorrow<IBig>,
     {
-        let range = high.borrow() - low.borrow() + IBig::from(1u8);
-        if range <= IBig::ZERO {
+        if high.borrow() < low.borrow() {
             panic_empty_range()
         }
+
+        let range = high.borrow() - low.borrow() + IBig::ONE;
         UniformIBig {
             range: range.unsigned_abs(),
             offset: low.borrow().clone(),
@@ -197,4 +318,12 @@ impl UniformSampler for UniformIBig {
     {
         IBig::from(UBig::uniform(&self.range, rng)) + &self.offset
     }
+}
+
+impl SampleUniform for UBig {
+    type Sampler = UniformUBig;
+}
+
+impl SampleUniform for IBig {
+    type Sampler = UniformIBig;
 }

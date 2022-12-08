@@ -53,6 +53,7 @@ pub fn shr_in_place_with_carry(words: &mut [Word], shift: u32, mut carry: Word) 
 
 /// Shift right by WORD_BITS in place
 pub fn shr_in_place_one_word(words: &mut [Word]) -> Word {
+    // SAFETY: the ptr and len all comes from the slice, so it's safe
     unsafe {
         let ptr = words.as_mut_ptr();
         let rem = ptr.read();

@@ -1,5 +1,5 @@
 use core::ops::{Mul, Neg};
-use dashu_base::{Sign, Signed};
+use dashu_base::{Abs, Sign, Signed};
 use dashu_int::UBig;
 
 use crate::{
@@ -29,12 +29,12 @@ impl RBig {
     /// * [RBig::ONE] if the number is positive (including `inf`)
     /// * [RBig::ZERO] if the number is zero
     /// * [RBig::NEG_ONE] if the number is negative (including `-inf`)
-    /// 
+    ///
     /// # Examples
     ///
     /// ```
     /// # use dashu_ratio::RBig;
-    /// 
+    ///
     /// let r = RBig::from_parts((-10).into(), 5u8.into());
     /// assert_eq!(r.signum(), RBig::NEG_ONE);
     /// ```
@@ -42,7 +42,7 @@ impl RBig {
     pub const fn signum(&self) -> Self {
         RBig(Repr {
             numerator: self.0.numerator.signum(),
-            denominator: UBig::ONE
+            denominator: UBig::ONE,
         })
     }
 }
@@ -57,13 +57,13 @@ impl Relaxed {
     }
 
     /// A number representing the sign of `self`.
-    /// 
+    ///
     /// See [RBig::signum] for details.
     #[inline]
     pub const fn signum(&self) -> Self {
         Relaxed(Repr {
             numerator: self.0.numerator.signum(),
-            denominator: UBig::ONE
+            denominator: UBig::ONE,
         })
     }
 }
@@ -162,5 +162,36 @@ impl Signed for Relaxed {
     #[inline]
     fn sign(&self) -> Sign {
         self.0.numerator.sign()
+    }
+}
+
+impl Abs for Repr {
+    type Output = Self;
+    #[inline]
+    fn abs(self) -> Self::Output {
+        let Repr {
+            numerator,
+            denominator,
+        } = self;
+        Repr {
+            numerator: numerator.abs(),
+            denominator,
+        }
+    }
+}
+
+impl Abs for RBig {
+    type Output = Self;
+    #[inline]
+    fn abs(self) -> Self::Output {
+        RBig(self.0.abs())
+    }
+}
+
+impl Abs for Relaxed {
+    type Output = Self;
+    #[inline]
+    fn abs(self) -> Self::Output {
+        Relaxed(self.0.abs())
     }
 }

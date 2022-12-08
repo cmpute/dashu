@@ -69,6 +69,12 @@
 //! * `zeroize`: support traits from crate `zeroize`
 
 #![cfg_attr(not(feature = "std"), no_std)]
+// TODO: apply these attributes to all crates
+// TODO: #![deny(missing_docs)]
+// TODO: #![deny(clippy::allow_attributes_without_reason)]
+#![deny(clippy::dbg_macro)]
+#![deny(clippy::undocumented_unsafe_blocks)]
+#![deny(clippy::let_underscore_must_use)]
 
 extern crate alloc;
 

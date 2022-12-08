@@ -33,6 +33,15 @@ jobs:
       matrix:
         bits: [16, 32, 64]
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_PASSWORD: ''
+          POSTGRES_HOST_AUTH_METHOD: 'trust'
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     env:
       RUST_BACKTRACE: 1
       RUSTFLAGS: -D warnings --cfg force_bits="${{ matrix.bits }}$"
@@ -67,7 +76,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all-features --workspace --exclude dashu-macros --exclude benchmark
+          args: --no-default-features --features rand --workspace --exclude dashu-macros --exclude benchmark
 
   test-x86_64:
     name: Test x86_64
@@ -85,7 +94,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all-features --workspace --exclude dashu-macros --exclude benchmark
+          args: --no-default-features --features rand --workspace --exclude dashu-macros --exclude benchmark
 
   test-no-std:
     name: Test no-std
@@ -186,4 +195,4 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --all-features -- -D warnings
+          args: --all-features --all-targets --workspace --exclude dashu-macros --exclude benchmark -- -D warnings

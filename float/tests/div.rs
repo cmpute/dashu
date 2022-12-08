@@ -1,6 +1,6 @@
 use core::{
     fmt::Debug,
-    ops::{Div, DivAssign},
+    ops::{Div, DivAssign, Rem, RemAssign},
 };
 use dashu_base::{Approximation::*, DivEuclid, DivRemEuclid, RemEuclid};
 use dashu_float::{round::Rounding::*, Context};
@@ -30,6 +30,32 @@ where
 
     let mut x = a.clone();
     x /= b.clone();
+    assert_eq!(x, *c);
+}
+
+fn test_rem<'a, T>(a: &'a T, b: &'a T, c: &'a T)
+where
+    T: Rem<T, Output = T>,
+    T: Rem<&'a T, Output = T>,
+    &'a T: Rem<T, Output = T>,
+    &'a T: Rem<&'a T, Output = T>,
+    T: RemAssign<T>,
+    T: RemAssign<&'a T>,
+    T: Clone,
+    T: Debug,
+    T: Eq,
+{
+    assert_eq!(a % b, *c);
+    assert_eq!(a.clone() % b, *c);
+    assert_eq!(a % b.clone(), *c);
+    assert_eq!(a.clone() % b.clone(), *c);
+
+    let mut x = a.clone();
+    x %= b;
+    assert_eq!(x, *c);
+
+    let mut x = a.clone();
+    x %= b.clone();
     assert_eq!(x, *c);
 }
 
@@ -139,6 +165,76 @@ fn test_div_by_0() {
 #[should_panic]
 fn test_div_by_unlimited_precision() {
     let _ = dbig!(1).with_precision(0).value() / dbig!(3).with_precision(0).value();
+}
+
+#[test]
+fn test_rem_binary() {
+    // test cases: n, d, remainder
+    let test_cases = [
+        (fbig!(0), fbig!(1), fbig!(0)),
+        (fbig!(1), fbig!(1), fbig!(0)),
+        (fbig!(0x1000), fbig!(0x1000), fbig!(0)),
+        (fbig!(0x1000), fbig!(0x10), fbig!(0)),
+        (fbig!(0x1000), fbig!(-0x10), fbig!(0)),
+        (fbig!(0x3), fbig!(0x2), fbig!(-0x1)),
+        (fbig!(0x3), fbig!(-0x2), fbig!(-0x1)),
+        (fbig!(-0x3), fbig!(0x2), fbig!(0x1)),
+        (fbig!(0x43), fbig!(0x21), fbig!(0x1)),
+        (fbig!(0x43), fbig!(0x23), fbig!(-0x3)),
+        (fbig!(0x654), fbig!(-0x321), fbig!(0x12)),
+        (fbig!(-0x98765), fbig!(-0x43210), fbig!(-0x12345)),
+        (fbig!(0x1), fbig!(0x9), fbig!(0x1)),
+        (fbig!(0x1), fbig!(0x9p-4), fbig!(-0x1p-3)),
+        (fbig!(0x1), fbig!(0x9p-8), fbig!(0x4p-8)),
+        (fbig!(0x13), fbig!(-0x9), fbig!(0x1)),
+        (fbig!(0x169), fbig!(-0x9), fbig!(0x1)),
+    ];
+
+    for (n, d, r) in &test_cases {
+        test_rem(n, d, r);
+    }
+}
+
+#[test]
+fn test_rem_decimal() {
+    // test cases: n, d, remainder
+    let test_cases = [
+        (dbig!(0), dbig!(1), dbig!(0)),
+        (dbig!(1), dbig!(1), dbig!(0)),
+        (dbig!(1000), dbig!(1000), dbig!(0)),
+        (dbig!(1000), dbig!(10), dbig!(0)),
+        (dbig!(1000), dbig!(-10), dbig!(0)),
+        (dbig!(-9999), dbig!(-99), dbig!(0)),
+        (dbig!(3), dbig!(2), dbig!(-1)),
+        (dbig!(3), dbig!(-2), dbig!(-1)),
+        (dbig!(-3), dbig!(2), dbig!(1)),
+        (dbig!(27), dbig!(3), dbig!(0)),
+        (dbig!(43), dbig!(21), dbig!(1)),
+        (dbig!(43), dbig!(23), dbig!(-3)),
+        (dbig!(654), dbig!(-321), dbig!(12)),
+        (dbig!(-98765), dbig!(-43210), dbig!(-12345)),
+        (dbig!(1), dbig!(9), dbig!(1)),
+        (dbig!(1), dbig!(9e-1), dbig!(1e-1)),
+        (dbig!(1), dbig!(9e-2), dbig!(1e-2)),
+        (dbig!(13), dbig!(-9), dbig!(4)),
+        (dbig!(169), dbig!(-9), dbig!(-2)),
+    ];
+
+    for (n, d, r) in &test_cases {
+        test_rem(n, d, r);
+    }
+}
+
+#[test]
+#[should_panic]
+fn test_rem_by_inf() {
+    let _ = dashu_float::DBig::ONE % dashu_float::DBig::INFINITY;
+}
+
+#[test]
+#[should_panic]
+fn test_rem_by_0() {
+    let _ = dashu_float::DBig::ONE % dashu_float::DBig::ZERO;
 }
 
 #[test]

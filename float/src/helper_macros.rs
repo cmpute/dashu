@@ -1,5 +1,5 @@
 /// Implement `impl Op<A> for FBig` by converting A to FBig. This macro includes operations taking by references.
-macro_rules! impl_binop_with_primitive {
+macro_rules! impl_binop_with_primitive_one_way {
     (impl $trait:ident<$target:ty>, $method:ident) => {
         impl<R: Round, const B: Word> $trait<$target> for FBig<R, B> {
             type Output = FBig<R, B>;
@@ -36,9 +36,9 @@ macro_rules! impl_binop_with_primitive {
 }
 
 /// Implement `impl Op<A> for FBig` and `impl Op<FBig> for A` by converting A to FBig.
-macro_rules! impl_commutative_binop_with_primitive {
+macro_rules! impl_binop_with_primitive {
     (impl $trait:ident<$target:ty>, $method:ident) => {
-        crate::helper_macros::impl_binop_with_primitive!(impl $trait<$target>, $method);
+        crate::helper_macros::impl_binop_with_primitive_one_way!(impl $trait<$target>, $method);
 
         impl<R: Round, const B: Word> $trait<FBig<R, B>> for $target {
             type Output = FBig<R, B>;
@@ -114,4 +114,4 @@ macro_rules! impl_binop_assign_by_taking {
 pub(crate) use impl_binop_assign_by_taking;
 pub(crate) use impl_binop_assign_with_primitive;
 pub(crate) use impl_binop_with_primitive;
-pub(crate) use impl_commutative_binop_with_primitive;
+pub(crate) use impl_binop_with_primitive_one_way;

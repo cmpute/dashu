@@ -1,4 +1,4 @@
-use dashu_base::Sign;
+use dashu_base::{EstimatedLog2, Sign};
 use dashu_int::{DoubleWord, IBig, UBig};
 
 use crate::{error::panic_divide_by_0, repr::Repr};
@@ -231,6 +231,17 @@ impl Default for RBig {
     }
 }
 
+impl EstimatedLog2 for RBig {
+    #[inline]
+    fn log2_bounds(&self) -> (f32, f32) {
+        self.0.log2_bounds()
+    }
+    #[inline]
+    fn log2_est(&self) -> f32 {
+        self.0.log2_est()
+    }
+}
+
 impl Relaxed {
     /// [Relaxed] with value 0
     pub const ZERO: Self = Self(Repr::zero());
@@ -364,5 +375,16 @@ impl Default for Relaxed {
     #[inline]
     fn default() -> Self {
         Self::ZERO
+    }
+}
+
+impl EstimatedLog2 for Relaxed {
+    #[inline]
+    fn log2_bounds(&self) -> (f32, f32) {
+        self.0.log2_bounds()
+    }
+    #[inline]
+    fn log2_est(&self) -> f32 {
+        self.0.log2_est()
     }
 }

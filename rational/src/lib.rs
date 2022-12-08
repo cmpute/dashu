@@ -64,11 +64,16 @@ mod error;
 mod fmt;
 mod helper_macros;
 mod mul;
+pub mod ops;
 mod parse;
 mod rbig;
 mod repr;
 mod round;
 mod sign;
 mod simplify;
+mod third_party;
+
+// All the public items from third_party will be exposed
+pub use third_party::*;
 
 pub use rbig::{RBig, Relaxed};

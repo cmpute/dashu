@@ -9,6 +9,7 @@ use crate::{
 use core::{
     fmt::{self, Write},
     hash::{Hash, Hasher},
+    hint::unreachable_unchecked,
     mem,
     num::NonZeroIsize,
     ptr::{self, NonNull},
@@ -38,7 +39,7 @@ pub struct Repr {
     /// The words in the `data` field are ordered from the least significant to the most significant.
     data: ReprData,
 
-    /// The capacity is designed to be not zero so that it provides a niche value for layout optimization.
+    /// The capacity is guaranteed to be not zero so that it provides a niche value for layout optimization.
     ///
     /// How to intepret the `data` field:
     /// - `capacity` = 1: the words are inlined and the high word is 0. (including the case where low word is also 0)
@@ -80,11 +81,15 @@ impl Repr {
     /// Get the length of the number (in `Word`s), return 0 when the number is zero.
     #[inline]
     pub const fn len(&self) -> usize {
-        match self.capacity() {
-            0 => unreachable!(),
-            1 => (unsafe { self.data.inline[0] } != 0) as usize,
-            2 => 2,
-            _ => unsafe { self.data.heap.1 },
+        // SAFETY: the capacity is checked before accessing the fields.
+        //         see the documentation for the `capacity` fields for invariants.
+        unsafe {
+            match self.capacity() {
+                0 => unreachable_unchecked(),
+                1 => (self.data.inline[0] != 0) as usize,
+                2 => 2,
+                _ => self.data.heap.1,
+            }
         }
     }
 
@@ -126,10 +131,8 @@ impl Repr {
             Sign::Negative => false,
         };
         if !self.is_zero() && (is_positive ^ (self.capacity.get() > 0)) {
-            self.capacity = unsafe {
-                // SAFETY: capacity is not allowed to be zero
-                NonZeroIsize::new_unchecked(-self.capacity.get())
-            }
+            // SAFETY: capacity is not allowed to be zero
+            self.capacity = unsafe { NonZeroIsize::new_unchecked(-self.capacity.get()) }
         }
         self
     }
@@ -151,8 +154,11 @@ impl Repr {
     pub fn as_sign_typed(&self) -> (Sign, TypedReprRef<'_>) {
         let (abs_capacity, sign) = self.sign_capacity();
 
+        // SAFETY: the capacity is checked before accessing the fields.
+        //         see the documentation for the `capacity` fields for invariants.
         let typed = unsafe {
             match abs_capacity {
+                0 => unreachable_unchecked(),
                 1 | 2 => {
                     TypedReprRef::RefSmall(double_word(self.data.inline[0], self.data.inline[1]))
                 }
@@ -172,10 +178,13 @@ impl Repr {
     /// Panics if the `capacity` is negative
     #[inline]
     pub fn into_typed(self) -> TypedRepr {
-        assert!(self.capacity.get() > 0);
+        debug_assert!(self.capacity.get() > 0);
 
+        // SAFETY: the capacity is checked before accessing the fields.
+        //         see the documentation for the `capacity` fields for invariants.
         unsafe {
             match self.capacity.get() {
+                0 => unreachable_unchecked(),
                 1 | 2 => TypedRepr::Small(double_word(self.data.inline[0], self.data.inline[1])),
                 _ => {
                     // SAFETY: An `Buffer` and `Repr` have the same layout
@@ -190,10 +199,8 @@ impl Repr {
     #[inline]
     pub fn into_sign_typed(mut self) -> (Sign, TypedRepr) {
         let (abs_capacity, sign) = self.sign_capacity();
-        self.capacity = unsafe {
-            // SAFETY: capacity is not allowed to be zero
-            NonZeroIsize::new_unchecked(abs_capacity as isize)
-        };
+        // SAFETY: capacity != 0 is an invariant
+        self.capacity = unsafe { NonZeroIsize::new_unchecked(abs_capacity as isize) };
         (sign, self.into_typed())
     }
 
@@ -212,9 +219,12 @@ impl Repr {
     /// Get a reference to the words in the `Repr`, together with the sign.
     pub fn as_sign_slice(&self) -> (Sign, &[Word]) {
         let (capacity, sign) = self.sign_capacity();
+
+        // SAFETY: the capacity is checked before accessing the fields.
+        //         see the documentation for the `capacity` fields for invariants.
         let words = unsafe {
             match capacity {
-                0 => unreachable!(),
+                0 => unreachable_unchecked(),
                 1 => {
                     if self.data.inline[0] == 0 {
                         &[]
@@ -230,7 +240,10 @@ impl Repr {
     }
 
     #[cfg(feature = "zeroize")]
+    /// Get all the allocated space as a mutable slice
     pub fn as_full_slice(&mut self) -> &mut [Word] {
+        // SAFETY: the capacity is checked before accessing the union fields.
+        //         see the documentation for the `capacity` fields for invariants.
         unsafe {
             let capacity = self.capacity();
             if capacity <= 2 {
@@ -246,6 +259,8 @@ impl Repr {
     pub const fn from_word(n: Word) -> Self {
         Repr {
             data: ReprData { inline: [n, 0] },
+            // SAFETY: it's safe. The unsafe constructor is necessary
+            //         because it's in a const context.
             capacity: unsafe { NonZeroIsize::new_unchecked(1) },
         }
     }
@@ -256,6 +271,8 @@ impl Repr {
         let (lo, hi) = split_dword(n);
         Repr {
             data: ReprData { inline: [lo, hi] },
+            // SAFETY: it's safe. The unsafe constructor is necessary
+            //         because it's in a const context.
             capacity: unsafe { NonZeroIsize::new_unchecked(1 + (hi != 0) as isize) },
         }
     }
@@ -297,10 +314,13 @@ impl Repr {
     ///
     /// Panics if the `capacity` is negative
     pub fn into_buffer(self) -> Buffer {
-        assert!(self.capacity.get() > 0);
+        debug_assert!(self.capacity.get() > 0); // invariant
 
+        // SAFETY: the capacity is checked before accessing the union fields.
+        //         see the documentation for the `capacity` fields for invariants.
         unsafe {
             match self.capacity.get() {
+                0 => unreachable_unchecked(),
                 1 => {
                     let mut buffer = Buffer::allocate(1);
                     if self.data.inline[0] != 0 {
@@ -309,7 +329,7 @@ impl Repr {
                     buffer
                 }
                 2 => {
-                    debug_assert!(self.data.inline[1] != 0);
+                    debug_assert!(self.data.inline[1] != 0); // invariant
                     let mut buffer = Buffer::allocate(2);
                     buffer.push(self.data.inline[0]);
                     buffer.push(self.data.inline[1]);
@@ -333,6 +353,8 @@ impl Repr {
     /// Check if the underlying value is zero
     #[inline]
     pub const fn is_zero(&self) -> bool {
+        // SAFETY: accessing the union field is safe because the
+        //         first condition is checked before access
         self.capacity() == 1 && unsafe { self.data.inline[0] == 0 }
     }
 
@@ -345,6 +367,8 @@ impl Repr {
     /// Check if the underlying value is zero
     #[inline]
     pub const fn is_one(&self) -> bool {
+        // SAFETY: accessing the union field is safe because the
+        //         first condition is checked before access
         self.capacity.get() == 1 && unsafe { self.data.inline[0] == 1 }
     }
 
@@ -357,6 +381,7 @@ impl Repr {
     /// Flip the sign bit of the Repr and return it
     pub const fn neg(mut self) -> Self {
         if !self.is_zero() {
+            // SAFETY: the capacity != 0 is an invariant
             self.capacity = unsafe { NonZeroIsize::new_unchecked(-self.capacity.get()) }
         }
         self
@@ -383,6 +408,7 @@ impl Clone for Repr {
     fn clone(&self) -> Self {
         let (capacity, sign) = self.sign_capacity();
 
+        // SAFETY: see the comments inside the block
         let new = unsafe {
             // inline the data if the length is less than 3
             // SAFETY: we check the capacity before accessing the variants
@@ -391,10 +417,12 @@ impl Clone for Repr {
                     data: ReprData {
                         inline: self.data.inline,
                     },
+                    // SAFETY: the capacity is from self, which guarantees it to be zero
                     capacity: NonZeroIsize::new_unchecked(capacity as isize),
                 }
             } else {
                 let (ptr, len) = self.data.heap;
+                // SAFETY: len is at least 2 when it's heap allocated (invariant of Repr)
                 let mut new_buffer = Buffer::allocate(len);
                 new_buffer.push_slice(slice::from_raw_parts(ptr, len));
 
@@ -410,6 +438,7 @@ impl Clone for Repr {
         let (src_cap, src_sign) = src.sign_capacity();
         let (cap, _) = self.sign_capacity();
 
+        // SAFETY: see the comments inside the block
         unsafe {
             // shortcut for inlined data
             if src_cap <= 2 {
@@ -458,6 +487,7 @@ impl Drop for Repr {
     fn drop(&mut self) {
         let cap = self.capacity();
         if cap > 2 {
+            // SAFETY: the data is heap allocated when abs(capacity) > 2 (invariant of Repr)
             unsafe {
                 Buffer::deallocate_raw(NonNull::new_unchecked(self.data.heap.0), cap);
             }

@@ -1,4 +1,4 @@
-//! Re-exported operator traits from `dashu-base`
+//! Re-exported relevant operator traits from `dashu-base`
 
 pub use dashu_base::bit::{BitTest, PowerOfTwo};
 pub use dashu_base::math::EstimatedLog2;

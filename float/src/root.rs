@@ -2,7 +2,7 @@ use dashu_base::{Approximation, Sign, SquareRootRem, UnsignedAbs};
 use dashu_int::IBig;
 
 use crate::{
-    error::{check_inf, check_precision_limited, panic_root_negative},
+    error::{assert_finite, assert_limited_precision, panic_root_negative},
     fbig::FBig,
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
@@ -48,8 +48,8 @@ impl<R: Round> Context<R> {
     ///
     /// Panics if the precision is unlimited.
     pub fn sqrt<const B: Word>(&self, x: &Repr<B>) -> Rounded<FBig<R, B>> {
-        check_inf(x);
-        check_precision_limited(self.precision);
+        assert_finite(x);
+        assert_limited_precision(self.precision);
         if x.sign() == Sign::Negative {
             panic_root_negative()
         }

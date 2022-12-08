@@ -465,7 +465,8 @@ impl_rootrem_using_normalized!(u32, u16);
 impl_rootrem_using_normalized!(u64, u32);
 impl_rootrem_using_normalized!(u128, u64);
 
-// TODO: forward sqrt to f32/f64 if std is enabled and the input is small enough. See https://github.com/Aatch/ramp/blob/master/src/int.rs#L579
+// TODO(next): forward sqrt to f32/f64 if std is enabled and the input is small enough.
+//             Implement after we have a benchmark. See https://github.com/Aatch/ramp/blob/master/src/int.rs#L579.
 
 #[cfg(test)]
 mod tests {

@@ -118,6 +118,7 @@ pub trait Round: Copy {
         Self::round_low_part::<_>(integer, fsign, test)
     }
 
+    // TODO(v0.4): change the type of den to UBig
     /// Calculate the rounding of the number (integer + numerator / denominator),
     /// assuming |numerator / denominator| < 1. Return the adjustment.
     #[inline]
@@ -346,7 +347,7 @@ mod tests {
             assert_eq!(Up::round_fract::<B>(&value, fract.clone(), D), rnd_up);
             assert_eq!(Down::round_fract::<B>(&value, fract.clone(), D), rnd_down);
             assert_eq!(HalfEven::round_fract::<B>(&value, fract.clone(), D), rnd_halfeven);
-            assert_eq!(HalfAway::round_fract::<B>(&value, fract.clone(), D), rnd_halfaway);
+            assert_eq!(HalfAway::round_fract::<B>(&value, fract, D), rnd_halfaway);
         }
 
         // cases for radix = 2, 2 digit fraction
@@ -444,7 +445,7 @@ mod tests {
             assert_eq!(Up::round_ratio(&value, num.clone(), &den), rnd_up);
             assert_eq!(Down::round_ratio(&value, num.clone(), &den), rnd_down);
             assert_eq!(HalfEven::round_ratio(&value, num.clone(), &den), rnd_halfeven);
-            assert_eq!(HalfAway::round_ratio(&value, num.clone(), &den), rnd_halfaway);
+            assert_eq!(HalfAway::round_ratio(&value, num, &den), rnd_halfaway);
         }
 
         // cases for radix = 2, 2 digit fraction

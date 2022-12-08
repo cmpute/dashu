@@ -11,7 +11,7 @@ use dashu_int::{
     ops::{DivRem, ExtendedGcd, Gcd},
     UBig,
 };
-use rand::prelude::*;
+use rand_v08::prelude::*;
 use std::fmt::Write;
 
 fn random_ubig<R>(bits: usize, rng: &mut R) -> UBig

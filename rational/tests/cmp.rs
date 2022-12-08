@@ -1,3 +1,5 @@
+#![allow(clippy::nonminimal_bool)]
+
 use dashu_ratio::{RBig, Relaxed};
 use std::{
     collections::hash_map::DefaultHasher,
@@ -24,6 +26,8 @@ fn test_eq_hash() {
     assert_ne!(rbig!(0), rbig!(-1));
     assert_ne!(rbig!(~0), rbig!(~-1));
     assert_ne!(rbig!(~0/4), rbig!(~-1));
+    assert_ne!(rbig!(0), rbig!(1 / 2));
+    assert_ne!(rbig!(~0), rbig!(~1/2));
     assert_eq!(rbig!(1), rbig!(1));
     assert_eq!(rbig!(~1), rbig!(~1));
     assert_ne!(rbig!(1), rbig!(-1));
@@ -66,14 +70,16 @@ fn test_eq_hash() {
 #[test]
 fn test_cmp() {
     // case 1: compare sign
-    assert!(!(rbig!(0) > rbig!(0)));
     assert!(rbig!(1) > rbig!(-1));
     assert!(rbig!(-2) < rbig!(1 / 2));
-    assert!(!(rbig!(~0) > rbig!(~0)));
     assert!(rbig!(~1) > rbig!(~-1));
     assert!(rbig!(~-2) < rbig!(~2/4));
 
-    // case 2: compare integers
+    // case 2: compare integers and with zero
+    assert!(!(rbig!(0) > rbig!(0)));
+    assert!(rbig!(1) > rbig!(0));
+    assert!(rbig!(1 / 10) > rbig!(0));
+    assert!(rbig!(~1/10) > rbig!(~0));
     assert!(rbig!(10) > rbig!(1));
     assert!(rbig!(-10) < rbig!(-1));
     assert!(rbig!(~-10) < rbig!(~-1));

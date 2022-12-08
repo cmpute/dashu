@@ -1,14 +1,14 @@
 use crate::repr::{Repr, Word};
 
 #[inline]
-pub fn check_inf<const B: Word>(repr: &Repr<B>) {
+pub const fn assert_finite<const B: Word>(repr: &Repr<B>) {
     if repr.is_infinite() {
         panic_operate_with_inf()
     }
 }
 
 #[inline]
-pub fn check_inf_operands<const B: Word>(lhs: &Repr<B>, rhs: &Repr<B>) {
+pub const fn assert_finite_operands<const B: Word>(lhs: &Repr<B>, rhs: &Repr<B>) {
     if lhs.is_infinite() || rhs.is_infinite() {
         panic_operate_with_inf()
     }
@@ -20,7 +20,7 @@ pub const fn panic_operate_with_inf() -> ! {
 }
 
 /// Panics if precision is set to 0
-pub const fn check_precision_limited(precision: usize) {
+pub const fn assert_limited_precision(precision: usize) {
     if precision == 0 {
         panic_unlimited_precision()
     }

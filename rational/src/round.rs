@@ -1,5 +1,5 @@
 use crate::{repr::Repr, RBig, Relaxed};
-use dashu_base::DivRem;
+use dashu_base::{DivRem, Sign, UnsignedAbs};
 use dashu_int::IBig;
 
 impl Repr {
@@ -54,6 +54,18 @@ impl Repr {
             }
         }
     }
+
+    #[inline]
+    pub fn round(&self) -> IBig {
+        let (mut q, r) = (&self.numerator).div_rem(&self.denominator);
+        if (r.unsigned_abs() << 1) >= self.denominator {
+            match self.numerator.sign() {
+                Sign::Positive => q += IBig::ONE,
+                Sign::Negative => q -= IBig::ONE,
+            }
+        }
+        q
+    }
 }
 
 impl RBig {
@@ -79,7 +91,7 @@ impl RBig {
         (trunc, Self(fract))
     }
 
-    /// Compute the smallest integer that is greater than or equal to this number.
+    /// Compute the least integer that is greater than or equal to this number.
     ///
     /// # Examples
     ///
@@ -96,7 +108,7 @@ impl RBig {
         self.0.ceil()
     }
 
-    /// Compute the largest integer that is less than or equal to this number.
+    /// Compute the greatest integer that is less than or equal to this number.
     ///
     /// # Examples
     ///
@@ -111,6 +123,25 @@ impl RBig {
     #[inline]
     pub fn floor(&self) -> IBig {
         self.0.floor()
+    }
+
+    /// Compute the integer that closest to this number.
+    ///
+    /// It will return the one farther from zero when the number has the 1/2 as its fractional part.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::IBig;
+    /// # use dashu_ratio::RBig;
+    /// assert_eq!(RBig::ONE.round(), IBig::ONE);
+    ///
+    /// let a = RBig::from_parts(22.into(), 7u8.into());
+    /// assert_eq!(a.round(), IBig::from(3));
+    /// ```
+    #[inline]
+    pub fn round(&self) -> IBig {
+        self.0.round()
     }
 
     /// Returns the integral part of the rational number.
@@ -176,6 +207,14 @@ impl Relaxed {
     #[inline]
     pub fn floor(&self) -> IBig {
         self.0.floor()
+    }
+
+    /// Compute the integer that closest to this number.
+    ///
+    /// See [RBig::round] for details.
+    #[inline]
+    pub fn round(&self) -> IBig {
+        self.0.round()
     }
 
     /// Returns the integral part of the rational number.
