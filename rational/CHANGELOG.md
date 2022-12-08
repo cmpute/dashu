@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.1 (WIP)
+## 0.3.1
 
 - Implement `Sum` and `Product` traits for `RBig` and `Relaxed`.
 - Implement `Rem` trait for `RBig` and `Relaxed`.

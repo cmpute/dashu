@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.1 (WIP)
+## 0.3.1
 
 - Add struct `crate::rand::UniformBits` for generating random integers with given bit lenght limit.
 - Add `count_ones()` and `count_zeros()` for `UBig`

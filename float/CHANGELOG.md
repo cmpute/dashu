@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.1 (WIP)
+## 0.3.1
 
 - Implement `num_traits::{Zero, One, FromPrimitive, ToPrimitive, Num, Signed, Euclid, Pow}` for `FBig` (#19)
 - Implement `rand::distributions::uniform::UniformSampler` for `FBig` through `crate::rand::UniformFBig`
