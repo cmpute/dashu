@@ -121,7 +121,7 @@ impl<const B: Word> Repr<B> {
         }
     }
 
-    // TODO: Add support for representing NEG_ZERO, but don't provide method to generate it.
+    // TODO(v0.4): Add support for representing NEG_ZERO, but don't provide method to generate it.
     // neg_zero: exponent -1, infinity: exponent: isize::MAX, neg_infinity: exponent: isize::MIN
 
     /// Determine if the [Repr] represents zero
@@ -459,7 +459,7 @@ impl<R: Round> Context<R> {
 
     /// Round the repr to the desired precision
     pub(crate) fn repr_round_ref<const B: Word>(&self, repr: &Repr<B>) -> Rounded<Repr<B>> {
-        assert_finite(&repr);
+        assert_finite(repr);
         if !self.is_limited() {
             return Exact(repr.clone());
         }

@@ -64,6 +64,7 @@ mod error;
 mod fmt;
 mod helper_macros;
 mod mul;
+pub mod ops;
 mod parse;
 mod rbig;
 mod repr;

@@ -8,7 +8,7 @@ pub enum ConversionError {
     /// The number is not in the representation range
     OutOfBounds,
     /// The conversion will cause a loss of precision
-    LossOfPrecision, // TODO(next): whether call it LossOfSignificance?
+    LossOfPrecision,
 }
 
 impl Display for ConversionError {
