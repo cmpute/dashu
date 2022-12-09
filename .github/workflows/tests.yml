@@ -29,7 +29,7 @@ jobs:
 
   test:
     name: Test
-    strategy: 
+    strategy:
       matrix:
         bits: [16, 32, 64]
     runs-on: ubuntu-latest
@@ -55,7 +55,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all-features --workspace --exclude dashu-macros --exclude benchmark
+          args: --all-features --workspace --exclude benchmark
 
   test-x86:
     name: Test x86
@@ -76,7 +76,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --no-default-features --features rand --workspace --exclude dashu-macros --exclude benchmark
+          args: --no-default-features --features rand --workspace --exclude benchmark
 
   test-x86_64:
     name: Test x86_64
@@ -94,7 +94,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --no-default-features --features rand --workspace --exclude dashu-macros --exclude benchmark
+          args: --no-default-features --features rand --workspace --exclude benchmark
 
   test-no-std:
     name: Test no-std
@@ -112,23 +112,6 @@ jobs:
         with:
           command: test
           args: --no-default-features --workspace --exclude dashu-macros --exclude benchmark
-
-  test-macros:
-    name: Test macros
-    runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: -D warnings
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: -p dashu-macros
 
   build-benchmark:
     name: Build benchmark
@@ -163,7 +146,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --target aarch64-unknown-linux-gnu --all-features --workspace --exclude dashu-macros --exclude benchmark
+          args: --target aarch64-unknown-linux-gnu --all-features --workspace --exclude benchmark
 
   fmt:
     name: Rustfmt
@@ -195,4 +178,4 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --all-features --all-targets --workspace --exclude dashu-macros --exclude benchmark -- -D warnings
+          args: --all-features --all-targets --workspace --exclude benchmark -- -D warnings
