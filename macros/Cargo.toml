@@ -27,6 +27,3 @@ dashu-ratio = { version = "0.3.0", default-features = false, path = "../rational
 
 quote = "1"
 proc-macro2 = "1"
-
-[features]
-embedded = [] # whether it's used with the `dashu` crate

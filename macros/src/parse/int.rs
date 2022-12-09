@@ -21,7 +21,7 @@ fn panic_base_invalid() -> ! {
     panic!("Empty or invalid base literal")
 }
 
-pub fn parse_integer<const SIGNED: bool>(input: TokenStream) -> TokenStream {
+pub fn parse_integer<const SIGNED: bool>(embedded: bool, input: TokenStream) -> TokenStream {
     let mut val: Option<_> = None;
     let mut neg = false;
     let mut base_marked: bool = false;
@@ -98,52 +98,55 @@ pub fn parse_integer<const SIGNED: bool>(input: TokenStream) -> TokenStream {
     let sign = if neg { Sign::Negative } else { Sign::Positive };
     if big.bit_len() <= 32 {
         let u: u32 = big.try_into().unwrap();
-        let sign = quote_sign(sign);
+        let sign = quote_sign(embedded, sign);
         if SIGNED {
-            #[cfg(not(feature = "embedded"))]
-            quote! { ::dashu_int::IBig::from_parts_const(#sign, #u as _) }
-            #[cfg(feature = "embedded")]
-            quote! { ::dashu::integer::IBig::from_parts_const(#sign, #u as _) }
-        } else {
-            #[cfg(not(feature = "embedded"))]
+            if !embedded {
+                quote! { ::dashu_int::IBig::from_parts_const(#sign, #u as _) }
+            } else {
+                quote! { ::dashu::integer::IBig::from_parts_const(#sign, #u as _) }
+            }
+        } else if !embedded {
             quote! { ::dashu_int::UBig::from_dword(#u as _) }
-            #[cfg(feature = "embedded")]
+        } else {
             quote! { ::dashu::integer::UBig::from_dword(#u as _) }
         }
     } else if SIGNED {
-        quote_ibig(IBig::from_parts(sign, big))
+        quote_ibig(embedded, IBig::from_parts(sign, big))
     } else {
-        quote_ubig(big)
+        quote_ubig(embedded, big)
     }
 }
 
 /// Generate tokens for creating a [UBig] instance (non-const)
-pub fn quote_ubig(int: UBig) -> TokenStream {
+pub fn quote_ubig(embedded: bool, int: UBig) -> TokenStream {
     debug_assert!(int.bit_len() > 32);
     let bytes = int.to_le_bytes();
     let len = bytes.len();
     let bytes_tt = quote_bytes(&bytes);
-    #[cfg(not(feature = "embedded"))]
-    quote! {{
-        const BYTES: [u8; #len] = #bytes_tt;
-        ::dashu_int::UBig::from_le_bytes(&BYTES)
-    }}
-    #[cfg(feature = "embedded")]
-    quote! {{
-        const BYTES: [u8; #len] = #bytes_tt;
-        ::dashu::integer::UBig::from_le_bytes(&BYTES)
-    }}
+
+    if !embedded {
+        quote! {{
+            const BYTES: [u8; #len] = #bytes_tt;
+            ::dashu_int::UBig::from_le_bytes(&BYTES)
+        }}
+    } else {
+        quote! {{
+            const BYTES: [u8; #len] = #bytes_tt;
+            ::dashu::integer::UBig::from_le_bytes(&BYTES)
+        }}
+    }
 }
 
 /// Generate tokens for creating a [IBig] instance (non-const)
-pub fn quote_ibig(int: IBig) -> TokenStream {
+pub fn quote_ibig(embedded: bool, int: IBig) -> TokenStream {
     debug_assert!(int.bit_len() > 32);
     let (sign, mag) = int.into_parts();
-    let sign = quote_sign(sign);
-    let mag_tt = quote_ubig(mag);
+    let sign = quote_sign(embedded, sign);
+    let mag_tt = quote_ubig(embedded, mag);
 
-    #[cfg(not(feature = "embedded"))]
-    quote! { ::dashu_int::IBig::from_parts(#sign, #mag_tt) }
-    #[cfg(feature = "embedded")]
-    quote! { ::dashu::integer::IBig::from_parts(#sign, #mag_tt) }
+    if !embedded {
+        quote! { ::dashu_int::IBig::from_parts(#sign, #mag_tt) }
+    } else {
+        quote! { ::dashu::integer::IBig::from_parts(#sign, #mag_tt) }
+    }
 }

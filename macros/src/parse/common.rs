@@ -15,15 +15,16 @@ pub fn quote_bytes(bytes: &[u8]) -> Group {
     Group::new(Delimiter::Bracket, words_stream)
 }
 
-pub fn quote_sign(sign: Sign) -> TokenStream {
-    #[cfg(not(feature = "embedded"))]
-    match sign {
-        Sign::Positive => quote! { ::dashu_base::Sign::Positive },
-        Sign::Negative => quote! { ::dashu_base::Sign::Negative },
-    }
-    #[cfg(feature = "embedded")]
-    match sign {
-        Sign::Positive => quote! { ::dashu::base::Sign::Positive },
-        Sign::Negative => quote! { ::dashu::base::Sign::Negative },
+pub fn quote_sign(embedded: bool, sign: Sign) -> TokenStream {
+    if !embedded {
+        match sign {
+            Sign::Positive => quote! { ::dashu_base::Sign::Positive },
+            Sign::Negative => quote! { ::dashu_base::Sign::Negative },
+        }
+    } else {
+        match sign {
+            Sign::Positive => quote! { ::dashu::base::Sign::Positive },
+            Sign::Negative => quote! { ::dashu::base::Sign::Negative },
+        }
     }
 }

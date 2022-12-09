@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Remove the `embedded` feature. [#18](https://github.com/cmpute/dashu/pull/18)
+
 ## 0.3.1
 
 - Fix the problem of `ibig` and `rbig` using incorrect crate names.

@@ -77,7 +77,13 @@ mod parse;
 /// ```
 #[proc_macro]
 pub fn ubig(input: TokenStream) -> TokenStream {
-    parse::int::parse_integer::<false>(input.into()).into()
+    parse::int::parse_integer::<false>(false, input.into()).into()
+}
+
+#[doc(hidden)]
+#[proc_macro]
+pub fn ubig_embedded(input: TokenStream) -> TokenStream {
+    parse::int::parse_integer::<false>(true, input.into()).into()
 }
 
 /// Create an arbitrary precision signed integer ([dashu_int::IBig])
@@ -122,7 +128,13 @@ pub fn ubig(input: TokenStream) -> TokenStream {
 /// ```
 #[proc_macro]
 pub fn ibig(input: TokenStream) -> TokenStream {
-    parse::int::parse_integer::<true>(input.into()).into()
+    parse::int::parse_integer::<true>(false, input.into()).into()
+}
+
+#[doc(hidden)]
+#[proc_macro]
+pub fn ibig_embedded(input: TokenStream) -> TokenStream {
+    parse::int::parse_integer::<true>(true, input.into()).into()
 }
 
 /// Create an arbitrary precision float number ([dashu_float::FBig]) with base 2 rounding towards zero.
@@ -178,7 +190,13 @@ pub fn ibig(input: TokenStream) -> TokenStream {
 /// ```
 #[proc_macro]
 pub fn fbig(input: TokenStream) -> TokenStream {
-    parse::float::parse_binary_float(input.into()).into()
+    parse::float::parse_binary_float(false, input.into()).into()
+}
+
+#[doc(hidden)]
+#[proc_macro]
+pub fn fbig_embedded(input: TokenStream) -> TokenStream {
+    parse::float::parse_binary_float(true, input.into()).into()
 }
 
 /// Create an arbitrary precision float number ([dashu_float::DBig]) with base 10 rounding to the nearest.
@@ -217,7 +235,13 @@ pub fn fbig(input: TokenStream) -> TokenStream {
 /// ```
 #[proc_macro]
 pub fn dbig(input: TokenStream) -> TokenStream {
-    parse::float::parse_decimal_float(input.into()).into()
+    parse::float::parse_decimal_float(false, input.into()).into()
+}
+
+#[doc(hidden)]
+#[proc_macro]
+pub fn dbig_embedded(input: TokenStream) -> TokenStream {
+    parse::float::parse_decimal_float(true, input.into()).into()
 }
 
 /// Create an arbitrary precision rational number ([dashu_ratio::RBig] or [dashu_ratio::Relaxed]).
@@ -243,5 +267,11 @@ pub fn dbig(input: TokenStream) -> TokenStream {
 /// ```
 #[proc_macro]
 pub fn rbig(input: TokenStream) -> TokenStream {
-    parse::ratio::parse_ratio(input.into()).into()
+    parse::ratio::parse_ratio(false, input.into()).into()
+}
+
+#[doc(hidden)]
+#[proc_macro]
+pub fn rbig_embedded(input: TokenStream) -> TokenStream {
+    parse::ratio::parse_ratio(true, input.into()).into()
 }

@@ -11,7 +11,7 @@ fn panic_fbig_syntax() -> ! {
     panic!("Incorrect syntax, please refer to the docs for acceptable float literal formats.")
 }
 
-pub fn parse_binary_float(input: TokenStream) -> TokenStream {
+pub fn parse_binary_float(embedded: bool, input: TokenStream) -> TokenStream {
     let mut value_str = String::new();
     input
         .into_iter()
@@ -42,34 +42,40 @@ pub fn parse_binary_float(input: TokenStream) -> TokenStream {
 
     if mag.bit_len() <= 32 {
         // if the significand fits in a u32, generates const expression
-        let sign = quote_sign(sign);
+        let sign = quote_sign(embedded, sign);
         let u: u32 = mag.try_into().unwrap();
 
-        #[cfg(not(feature = "embedded"))]
-        quote! { ::dashu_float::FBig::<::dashu_float::round::mode::Zero, 2>
-        ::from_parts_const(#sign, #u as _, #exp, Some(#prec)) }
-        #[cfg(feature = "embedded")]
-        quote! { ::dashu::float::FBig::<::dashu::float::round::mode::Zero, 2>
-        ::from_parts_const(#sign, #u as _, #exp, Some(#prec)) }
+        if !embedded {
+            quote! {
+                ::dashu_float::FBig::<::dashu_float::round::mode::Zero, 2>
+                ::from_parts_const(#sign, #u as _, #exp, Some(#prec))
+            }
+        } else {
+            quote! {
+                ::dashu::float::FBig::<::dashu::float::round::mode::Zero, 2>
+                ::from_parts_const(#sign, #u as _, #exp, Some(#prec))
+            }
+        }
     } else {
-        let signif_tt = quote_ibig(IBig::from_parts(sign, mag));
+        let signif_tt = quote_ibig(embedded, IBig::from_parts(sign, mag));
 
-        #[cfg(not(feature = "embedded"))]
-        quote! {{
-            let repr = ::dashu_float::Repr::<2>::new(#signif_tt, #exp);
-            let context = ::dashu_float::Context::<::dashu_float::round::mode::Zero>::new(#prec);
-            ::dashu_float::FBig::from_repr(repr, context)
-        }}
-        #[cfg(feature = "embedded")]
-        quote! {{
-            let repr = ::dashu::float::Repr::<2>::new(#signif_tt, #exp);
-            let context = ::dashu::float::Context::<::dashu::float::round::mode::Zero>::new(#prec);
-            ::dashu::float::FBig::from_repr(repr, context)
-        }}
+        if !embedded {
+            quote! {{
+                let repr = ::dashu_float::Repr::<2>::new(#signif_tt, #exp);
+                let context = ::dashu_float::Context::<::dashu_float::round::mode::Zero>::new(#prec);
+                ::dashu_float::FBig::from_repr(repr, context)
+            }}
+        } else {
+            quote! {{
+                let repr = ::dashu::float::Repr::<2>::new(#signif_tt, #exp);
+                let context = ::dashu::float::Context::<::dashu::float::round::mode::Zero>::new(#prec);
+                ::dashu::float::FBig::from_repr(repr, context)
+            }}
+        }
     }
 }
 
-pub fn parse_decimal_float(input: TokenStream) -> TokenStream {
+pub fn parse_decimal_float(embedded: bool, input: TokenStream) -> TokenStream {
     let mut value_str = String::new();
     input
         .into_iter()
@@ -83,25 +89,28 @@ pub fn parse_decimal_float(input: TokenStream) -> TokenStream {
         // if the significand fits in a u32, generates const expression
         let (sign, mag) = signif.into_parts();
         let u: u32 = mag.try_into().unwrap();
-        let sign = quote_sign(sign);
-        #[cfg(not(feature = "embedded"))]
-        quote! { ::dashu_float::DBig::from_parts_const(#sign, #u as _, #exp, Some(#prec)) }
-        #[cfg(feature = "embedded")]
-        quote! { ::dashu::float::DBig::from_parts_const(#sign, #u as _, #exp, Some(#prec)) }
-    } else {
-        let signif_tt = quote_ibig(signif);
+        let sign = quote_sign(embedded, sign);
 
-        #[cfg(not(feature = "embedded"))]
-        quote! {{
-            let repr = ::dashu_float::Repr::<10>::new(#signif_tt, #exp);
-            let context = ::dashu_float::Context::new(#prec);
-            ::dashu_float::DBig::from_repr(repr, context)
-        }}
-        #[cfg(feature = "embedded")]
-        quote! {{
-            let repr = ::dashu::float::Repr::<10>::new(#signif_tt, #exp);
-            let context = ::dashu::float::Context::new(#prec);
-            ::dashu::float::DBig::from_repr(repr, context)
-        }}
+        if !embedded {
+            quote! { ::dashu_float::DBig::from_parts_const(#sign, #u as _, #exp, Some(#prec)) }
+        } else {
+            quote! { ::dashu::float::DBig::from_parts_const(#sign, #u as _, #exp, Some(#prec)) }
+        }
+    } else {
+        let signif_tt = quote_ibig(embedded, signif);
+
+        if !embedded {
+            quote! {{
+                let repr = ::dashu_float::Repr::<10>::new(#signif_tt, #exp);
+                let context = ::dashu_float::Context::new(#prec);
+                ::dashu_float::DBig::from_repr(repr, context)
+            }}
+        } else {
+            quote! {{
+                let repr = ::dashu::float::Repr::<10>::new(#signif_tt, #exp);
+                let context = ::dashu::float::Context::new(#prec);
+                ::dashu::float::DBig::from_repr(repr, context)
+            }}
+        }
     }
 }
