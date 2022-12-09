@@ -15,26 +15,26 @@ fn test_fbig_serde() {
         fbig!(-0x1234567890123456789p-40),
         fbig!(-0x123456789012345678901234567890123456789p-200),
     ];
-    for ratio in &test_numbers {
+    for float in &test_numbers {
         // test binary serialization
-        let output = to_allocvec(ratio).unwrap();
+        let output = to_allocvec(float).unwrap();
         let parsed: FBig = from_bytes(&output).unwrap();
-        assert_eq!(&parsed, ratio);
+        assert_eq!(&parsed, float);
 
         // test binary serialization of repr
-        let output = to_allocvec(ratio.repr()).unwrap();
+        let output = to_allocvec(float.repr()).unwrap();
         let parsed: Repr<2> = from_bytes(&output).unwrap();
-        assert_eq!(&parsed, ratio.repr());
+        assert_eq!(&parsed, float.repr());
 
         // test string serialization
-        let output = to_string(ratio).unwrap();
+        let output = to_string(float).unwrap();
         let parsed: FBig = from_str(&output).unwrap();
-        assert_eq!(&parsed, ratio);
+        assert_eq!(&parsed, float);
 
         // test string serialization of repr
-        let output = to_string(ratio.repr()).unwrap();
+        let output = to_string(float.repr()).unwrap();
         let parsed: Repr<2> = from_str(&output).unwrap();
-        assert_eq!(&parsed, ratio.repr());
+        assert_eq!(&parsed, float.repr());
     }
 }
 
@@ -48,25 +48,25 @@ fn test_dbig_serde() {
         dbig!(-123456789.0123456789),
         dbig!(-1.2345678901234567890123456789e-100),
     ];
-    for ratio in &test_numbers {
+    for float in &test_numbers {
         // test binary serialization
-        let output = to_allocvec(ratio).unwrap();
+        let output = to_allocvec(float).unwrap();
         let parsed: DBig = from_bytes(&output).unwrap();
-        assert_eq!(&parsed, ratio);
+        assert_eq!(&parsed, float);
 
         // test binary serialization of repr
-        let output = to_allocvec(ratio.repr()).unwrap();
+        let output = to_allocvec(float.repr()).unwrap();
         let parsed: Repr<10> = from_bytes(&output).unwrap();
-        assert_eq!(&parsed, ratio.repr());
+        assert_eq!(&parsed, float.repr());
 
         // test string serialization
-        let output = to_string(ratio).unwrap();
+        let output = to_string(float).unwrap();
         let parsed: DBig = from_str(&output).unwrap();
-        assert_eq!(&parsed, ratio);
+        assert_eq!(&parsed, float);
 
         // test string serialization of repr
-        let output = to_string(ratio.repr()).unwrap();
+        let output = to_string(float.repr()).unwrap();
         let parsed: Repr<10> = from_str(&output).unwrap();
-        assert_eq!(&parsed, ratio.repr());
+        assert_eq!(&parsed, float.repr());
     }
 }

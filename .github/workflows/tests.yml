@@ -111,7 +111,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --no-default-features --workspace --exclude dashu-macros --exclude benchmark
+          args: --no-default-features --workspace --exclude benchmark
 
   build-benchmark:
     name: Build benchmark

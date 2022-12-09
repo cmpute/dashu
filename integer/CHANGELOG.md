@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Change
+
+- The serialization format with `serde` for `UBig` and `IBig` has been changed. Now both types will be serialize as a sequence of little-endian bytes.
+
 ## 0.3.1
 
 - Add struct `crate::rand::UniformBits` for generating random integers with given bit lenght limit.
