@@ -33,16 +33,3 @@ fn test_cmp() {
     assert!(ibig!(-10) < ibig!(-5));
     assert!(ibig!(-5) > ibig!(-10));
 }
-
-#[test]
-fn test_cross_type_cmp() {
-    assert_eq!(ubig!(500), ibig!(500));
-    assert_ne!(ubig!(500), ibig!(-500));
-    assert_eq!(ibig!(500), ubig!(500));
-    assert_ne!(ibig!(-500), ubig!(500));
-
-    assert!(ubig!(500) > ibig!(499));
-    assert!(ibig!(500) > ubig!(499));
-    assert!(ubig!(500) > ibig!(-500));
-    assert!(ibig!(-500) < ubig!(500));
-}

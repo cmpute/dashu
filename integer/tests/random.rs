@@ -118,7 +118,7 @@ fn test_random_arithmetic() {
                 assert_eq!(g, (&a).gcd(&b));
                 assert_eq!(&a % &g, ubig!(0));
                 assert_eq!(&b % &g, ubig!(0));
-                assert_eq!(g, a * ca + b * cb);
+                assert_eq!(a * ca + b * cb, g.into());
             }
         }
     }

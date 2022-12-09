@@ -84,44 +84,6 @@ impl PartialOrd for IBig {
     }
 }
 
-impl PartialEq<IBig> for UBig {
-    #[inline]
-    fn eq(&self, other: &IBig) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl PartialEq<UBig> for IBig {
-    #[inline]
-    fn eq(&self, other: &UBig) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl PartialOrd<IBig> for UBig {
-    #[inline]
-    fn partial_cmp(&self, other: &IBig) -> Option<Ordering> {
-        let (rhs_sign, rhs_mag) = other.as_sign_repr();
-        let ord = match rhs_sign {
-            Positive => self.repr().cmp(&rhs_mag),
-            Negative => Ordering::Greater,
-        };
-        Some(ord)
-    }
-}
-
-impl PartialOrd<UBig> for IBig {
-    #[inline]
-    fn partial_cmp(&self, other: &UBig) -> Option<Ordering> {
-        let (lhs_sign, lhs_mag) = self.as_sign_repr();
-        let ord = match lhs_sign {
-            Positive => lhs_mag.cmp(&other.repr()),
-            Negative => Ordering::Less,
-        };
-        Some(ord)
-    }
-}
-
 impl AbsEq for IBig {
     #[inline]
     fn abs_eq(&self, rhs: &Self) -> bool {

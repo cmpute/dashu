@@ -2,9 +2,17 @@
 
 ## Unreleased
 
+### Add
+
+- Implement `num_order::NumOrd` trait between `UBig` and `IBig`
+
 ### Change
 
 - The serialization format with `serde` for `UBig` and `IBig` has been changed. Now both types will be serialize as a sequence of little-endian bytes.
+
+### Remove
+
+- The comparison traits `PartialOrd` and `PartialEq` are no longer implemented between `UBig` and `IBig`. Use `num_order::NumOrd` instead.
 
 ## 0.3.1
 

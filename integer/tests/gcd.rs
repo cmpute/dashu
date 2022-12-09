@@ -117,17 +117,17 @@ fn test_gcd_ubig_ibig() {
 
         let (g, x, y) = a.gcd_ext(b);
         assert_eq!(&g, c);
-        assert_eq!(x * a + y * b, g);
+        assert_eq!(x * a + y * b, g.into());
         let (g, y, x) = b.gcd_ext(a);
         assert_eq!(&g, c);
-        assert_eq!(x * a + y * b, g);
+        assert_eq!(x * a + y * b, g.into());
 
         let (g, x, y) = (&ia).gcd_ext(&ib);
         assert_eq!(&g, c);
-        assert_eq!(x * &ia + y * &ib, g);
+        assert_eq!(x * &ia + y * &ib, g.into());
         let (g, y, x) = (&ib).gcd_ext(&ia);
         assert_eq!(&g, c);
-        assert_eq!(x * &ia + y * &ib, g);
+        assert_eq!(x * &ia + y * &ib, g.into());
     }
 }
 

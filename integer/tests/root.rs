@@ -27,8 +27,8 @@ fn test_sqrt() {
         )
     );
 
-    assert_eq!(ibig!(10000).sqrt(), ibig!(100));
-    assert_eq!(ibig!(100000).sqrt(), ibig!(316));
+    assert_eq!(ibig!(10000).sqrt(), ubig!(100));
+    assert_eq!(ibig!(100000).sqrt(), ubig!(316));
 
     // sqrt on 2^i - 1
     for i in [10, 20, 50, 64, 100, 128, 200, 256, 512, 400, 512] {

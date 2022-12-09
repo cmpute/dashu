@@ -7,7 +7,7 @@ fn test_macros() {
     // small numbers
     const A: UBig = ubig!(1234);
     const B: IBig = ibig!(-1234);
-    assert_eq!(A + B, ubig!(0));
+    assert_eq!(A + B, ibig!(0));
 
     const C: FBig = fbig!(0x1234p-4);
     const D: DBig = dbig!(12.34);
