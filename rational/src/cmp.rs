@@ -12,6 +12,9 @@ impl PartialEq for Repr {
         if self.numerator.sign() != other.numerator.sign() {
             return false;
         }
+        if self.numerator.is_zero() {
+            return other.numerator.is_zero();
+        }
 
         let n1d2_bits = self.numerator.bit_len() as isize + other.denominator.bit_len() as isize;
         let n2d1_bits = other.numerator.bit_len() as isize + self.denominator.bit_len() as isize;
@@ -61,10 +64,16 @@ impl Ord for Repr {
             (Negative, Negative) => true,
         };
 
-        // step2: if both numbers are integers
+        // step2: if both numbers are integers or one of them is zero
         if self.denominator.is_one() && other.denominator.is_one() {
             return self.numerator.cmp(&other.numerator);
         }
+        match (self.numerator.is_zero(), other.numerator.is_zero()) {
+            (true, true) => return Ordering::Equal,
+            (true, false) => return Ordering::Less, // `other` must be strictly positive
+            (false, true) => return Ordering::Greater, // `self` must be strictly positive
+            _ => {}
+        };
 
         // step3: test bit size
         let n1d2_bits = self.numerator.bit_len() as isize + other.denominator.bit_len() as isize;

@@ -1,12 +1,17 @@
 # dashu
 
-A library set of arbitrary precision numbers (aka. big numbers) implemented in Rust. It's intended to be a Rust native alternative to GNU GMP + MPFR (+ MPC in future).
+[![Crate](https://img.shields.io/crates/v/dashu.svg)](https://crates.io/crates/dashu)
+![MSRV 1.61](https://img.shields.io/badge/rustc-1.61%2B-informational.svg)
+[![Docs](https://docs.rs/dashu/badge.svg)](https://docs.rs/dashu)
+[![Tests](https://github.com/cmpute/dashu/actions/workflows/tests.yml/badge.svg)](https://github.com/cmpute/dashu/actions)
+![License](https://img.shields.io/crates/l/dashu)
+<!-- [![Book](https://img.shields.io/badge/book-master-yellow.svg)]() -->
 
-## Features
-
+A library set of arbitrary precision numbers (aka. big numbers) implemented in Rust. It's intended to be a Rust native alternative to GNU GMP + MPFR (+ MPC in future). It features:
 - Pure rust, full `no_std` support.
 - Focus on ergonomics & readability, and then efficiency.
-- Current MSRV is 1.61
+- Optimized speed and memory usage.
+- Current MSRV is 1.61.
 
 ## Sub-crates
 

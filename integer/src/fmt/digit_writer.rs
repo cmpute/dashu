@@ -51,7 +51,7 @@ impl<'a> DigitWriter<'a> {
             arch::digits::digit_chunk_raw_to_ascii(chunk.try_into().unwrap(), self.digit_case);
         }
         let b = &self.buffer[..self.buffer_len];
-        // Safe because the buffer contains only ASCII characters 0-9, a-z, A-Z.
+        // SAFETY: the buffer contains only ASCII characters 0-9, a-z, A-Z.
         let s = unsafe { str::from_utf8_unchecked(b) };
         self.writer.write_str(s)?;
         self.buffer_len = 0;

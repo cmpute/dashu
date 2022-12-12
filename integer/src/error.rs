@@ -5,12 +5,6 @@ pub(crate) const fn panic_divide_by_0() -> ! {
     panic!("divisor must not be 0")
 }
 
-/// Panics when the range input for the random generator in empty
-#[cfg(feature = "rand")]
-pub(crate) const fn panic_empty_range() -> ! {
-    panic!("empty range for random generation")
-}
-
 /// Panics when try to allocate memory with size exceeding usize range
 pub(crate) const fn panic_allocate_too_much() -> ! {
     panic!("try to allocate too much memory")

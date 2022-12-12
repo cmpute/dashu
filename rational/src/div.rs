@@ -1,7 +1,7 @@
 #![allow(clippy::suspicious_arithmetic_impl)] // Clippy doesn't like that div is implemented with mul.
 
 use core::ops::{Div, DivAssign};
-use dashu_base::{Gcd, UnsignedAbs};
+use dashu_base::{Gcd, Inverse, UnsignedAbs};
 use dashu_int::{IBig, UBig};
 
 use crate::{
@@ -118,4 +118,49 @@ macro_rules! impl_relaxed_div_ubig {
 }
 impl_binop_with_int!(impl Div<UBig>, div, Relaxed, impl_relaxed_div_ubig);
 
-// TODO: implement div_euclid, rem_euclid, div_rem_euclid
+// TODO(next): implement div_euclid, rem_euclid, div_rem_euclid
+
+impl Inverse for Repr {
+    type Output = Repr;
+
+    #[inline]
+    fn inv(self) -> Repr {
+        let (sign, num) = self.numerator.into_parts();
+        Repr {
+            numerator: IBig::from_parts(sign, self.denominator),
+            denominator: num,
+        }
+    }
+}
+
+impl Inverse for RBig {
+    type Output = RBig;
+    #[inline]
+    fn inv(self) -> RBig {
+        RBig(self.0.inv())
+    }
+}
+
+impl Inverse for &RBig {
+    type Output = RBig;
+    #[inline]
+    fn inv(self) -> RBig {
+        RBig(self.0.clone().inv())
+    }
+}
+
+impl Inverse for Relaxed {
+    type Output = Relaxed;
+    #[inline]
+    fn inv(self) -> Relaxed {
+        Relaxed(self.0.inv())
+    }
+}
+
+impl Inverse for &Relaxed {
+    type Output = Relaxed;
+    #[inline]
+    fn inv(self) -> Relaxed {
+        Relaxed(self.0.clone().inv())
+    }
+}

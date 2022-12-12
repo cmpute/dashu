@@ -118,6 +118,8 @@ pub trait ExtendedGcd<Rhs = Self> {
     fn gcd_ext(self, rhs: Rhs) -> (Self::OutputGcd, Self::OutputCoeff, Self::OutputCoeff);
 }
 
+// TODO(v0.4): move SquareRoot and CubicRoot to the math module.
+
 /// Compute the square root of the number
 pub trait SquareRoot {
     type Output;

@@ -191,7 +191,7 @@ pub(crate) enum ConstDivisorRepr {
     Large(ConstLargeDivisor),
 }
 
-// TODO: add docs for ConstDivisor (and mention it in the top level doc)
+// TODO(v0.4): add docs for ConstDivisor (and mention it in the top level doc)
 pub struct ConstDivisor(pub(crate) ConstDivisorRepr);
 
 impl ConstDivisor {

@@ -16,16 +16,13 @@ rust-version = "1.61"
 [package.metadata.docs.rs]
 all-features = true
 
-[dev-dependencies.rand]
-version = "0.8.3"
-
-[dev-dependencies.criterion]
-version = "0.4.0"
-features = ["html_reports"]
-
 [features]
 default = ["std"]
 std = []
+
+[dev-dependencies]
+rand = { version = "0.8.3" }
+criterion = { version = "0.4.0", features = ["html_reports"] }
 
 [[bench]]
 name = "benchmarks"

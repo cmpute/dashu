@@ -1,5 +1,5 @@
 use crate::{
-    error::{check_inf_operands, check_precision_limited},
+    error::{check_finite_operands, check_precision_limited},
     fbig::FBig,
     helper_macros,
     repr::{Context, Repr, Word},
@@ -7,7 +7,7 @@ use crate::{
     utils::{digit_len, shl_digits_in_place},
 };
 use core::ops::{Div, DivAssign};
-use dashu_base::{Approximation, DivEuclid, DivRem, DivRemEuclid, RemEuclid};
+use dashu_base::{Approximation, DivEuclid, DivRem, DivRemEuclid, Inverse, RemEuclid};
 use dashu_int::{IBig, UBig};
 
 impl<R: Round, const B: Word> Div<FBig<R, B>> for FBig<R, B> {
@@ -174,13 +174,32 @@ impl<'l, 'r, R: Round, const B: Word> DivRemEuclid<&'r FBig<R, B>> for &'l FBig<
     }
 }
 
-macro_rules! impl_add_sub_primitive_with_fbig {
+macro_rules! impl_div_primitive_with_fbig {
     ($($t:ty)*) => {$(
-        helper_macros::impl_commutative_binop_with_primitive!(impl Div<$t>, div);
+        helper_macros::impl_binop_with_primitive!(impl Div<$t>, div);
         helper_macros::impl_binop_assign_with_primitive!(impl DivAssign<$t>, div_assign);
     )*};
 }
-impl_add_sub_primitive_with_fbig!(u8 u16 u32 u64 u128 usize UBig i8 i16 i32 i64 i128 isize IBig);
+impl_div_primitive_with_fbig!(u8 u16 u32 u64 u128 usize UBig i8 i16 i32 i64 i128 isize IBig);
+// TODO: we should specialize FBig / UBig or FBig / IBig for better efficiency
+
+impl<R: Round, const B: Word> Inverse for FBig<R, B> {
+    type Output = FBig<R, B>;
+
+    #[inline]
+    fn inv(self) -> Self::Output {
+        self.context.inv(&self.repr).value()
+    }
+}
+
+impl<R: Round, const B: Word> Inverse for &FBig<R, B> {
+    type Output = FBig<R, B>;
+
+    #[inline]
+    fn inv(self) -> Self::Output {
+        self.context.inv(&self.repr).value()
+    }
+}
 
 // Align two float by exponent such that they are both turned into integers
 fn align_as_int<R: Round, const B: Word>(lhs: FBig<R, B>, rhs: FBig<R, B>) -> (IBig, IBig) {
@@ -195,8 +214,9 @@ fn align_as_int<R: Round, const B: Word>(lhs: FBig<R, B>, rhs: FBig<R, B>) -> (I
 }
 
 impl<R: Round> Context<R> {
+    // TODO(v0.4): implement Rem operator by calculating x % y = x - (x / y).to_int() * y
     pub(crate) fn repr_div<const B: Word>(&self, lhs: Repr<B>, rhs: &Repr<B>) -> Rounded<Repr<B>> {
-        check_inf_operands(&lhs, rhs);
+        check_finite_operands(&lhs, rhs);
         check_precision_limited(self.precision);
 
         // this method don't deal with the case where lhs significand is too large
@@ -264,7 +284,7 @@ impl<R: Round> Context<R> {
     /// `fmod` and `remquo`), please use the methods provided by traits [DivEuclid], [RemEuclid] and [DivRemEuclid].
     ///
     pub fn div<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Rounded<FBig<R, B>> {
-        check_inf_operands(lhs, rhs);
+        check_finite_operands(lhs, rhs);
 
         let lhs_repr = if !lhs.is_zero() && lhs.digits_ub() > rhs.digits_lb() + self.precision {
             // shrink lhs if it's larger than necessary
@@ -275,5 +295,23 @@ impl<R: Round> Context<R> {
             lhs.clone()
         };
         self.repr_div(lhs_repr, rhs).map(|v| FBig::new(v, *self))
+    }
+
+    /// Compute the multiplicative inverse of an `FBig`
+    ///
+    /// ```
+    /// # use dashu_base::ParseError;
+    /// # use dashu_float::DBig;
+    /// use dashu_base::Approximation::*;
+    /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
+    ///
+    /// let context = Context::<HalfAway>::new(2);
+    /// let a = DBig::from_str_native("-1.234")?;
+    /// assert_eq!(context.inv(&a.repr()), Inexact(DBig::from_str_native("-0.81")?, NoOp));
+    /// # Ok::<(), ParseError>(())
+    /// ```
+    #[inline]
+    pub fn inv<const B: Word>(&self, f: &Repr<B>) -> Rounded<FBig<R, B>> {
+        self.repr_div(Repr::one(), f).map(|v| FBig::new(v, *self))
     }
 }

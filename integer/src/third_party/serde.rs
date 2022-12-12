@@ -1,3 +1,5 @@
+//! Implement serde traits.
+
 use crate::{
     arch::word::Word,
     buffer::Buffer,
@@ -7,13 +9,17 @@ use crate::{
     ubig::UBig,
     Sign,
 };
-use alloc::{string::ToString, vec::Vec};
+use alloc::vec::Vec;
 use core::fmt::{self, Formatter};
 use serde::{
     de::{Deserialize, Deserializer, SeqAccess, Visitor},
     ser::{Serialize, SerializeSeq, SerializeTuple, Serializer},
 };
 use static_assertions::const_assert;
+
+// TODO(v0.4): change to a more portable serialization format
+// if the number is small enough (fit in a i64), serialize as i64
+// otherwise serialize as a sequence of bytes. By this way we can achieve maximum space efficiency
 
 // We ensure that the max size of a word is 64-bit, if we are going to
 // support 128 bit word, it's going to be a break change.
@@ -67,7 +73,7 @@ impl Serialize for UBig {
     #[inline]
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
-            serializer.serialize_str(&self.to_string())
+            serializer.collect_str(self)
         } else {
             self.repr().serialize(serializer)
         }
@@ -156,7 +162,7 @@ fn len_64_to_max_len(len_64: usize) -> usize {
 impl Serialize for IBig {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
-            serializer.serialize_str(&self.to_string())
+            serializer.collect_str(self)
         } else {
             let (sign, repr) = self.as_sign_repr();
             let mut tup = serializer.serialize_tuple(2)?;

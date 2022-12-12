@@ -28,40 +28,33 @@ members = [
 default-members = ["base", "integer", "float", "rational", "macros"]
 
 [features]
+# TODO(v0.4): Don't enable dependencies with pre v1 versions by default, therefore we don't need to hold the compatibility for it.
+# TODO(next): Assign a version name to all crates that haven't reached v1. For crates that already reaches v1, we assume that the update frequency of that crate is low, so it's unnecessary to create a version tag until v2.0 is released
+#             Our strategy for pre v1 dependencies: the bump of default version is not considered a break change, only minor version is required to bump.
+#             Our strategy for v1 dependencies: the bump of default version is considered a break change, the support for new version will be release through a versioned feature flag, and the default version will be bumped in the next major version.
 default = ["std", "rand", "num-traits", "num-order"]
-std = ["dashu-base/std", "dashu-int/std", "dashu-float/std"]
-rand = ["dashu-int/rand"]
-serde = ["dashu-int/serde"]
-num-traits = ["dashu-int/num-traits"]
+std = ["dashu-base/std", "dashu-int/std", "dashu-float/std", "dashu-ratio/std"]
+
+# stable features
+serde = ["dashu-int/serde", "dashu-float/serde", "dashu-ratio/serde"]
 num-order = ["dashu-int/num-order"]
-zeroize = ["dashu-int/zeroize"]
+zeroize = ["dashu-int/zeroize", "dashu-float/zeroize", "dashu-ratio/zeroize"]
+
+# unstable features
+rand = ["dashu-int/rand", "dashu-float/rand", "dashu-ratio/rand"]
+rand_v08 = ["dashu-int/rand_v08", "dashu-float/rand_v08", "dashu-ratio/rand_v08"]
+num-traits = ["dashu-int/num-traits", "dashu-float/num-traits", "dashu-ratio/num-traits"]
+num-traits_v02 = ["dashu-int/num-traits_v02", "dashu-float/num-traits_v02", "dashu-ratio/num-traits_v02"]
+
+# this feature enables all related features related to decimal crates.
+decimal-extras = ["dashu-float/postgres-types", "dashu-float/diesel"]
 
 [dependencies]
 # all crates under dashu will have the same major version,
 # but the minor and patch versions can be different.
+dashu-base = { version = "0.3.0", default-features = false, path = "./base" }
+dashu-int = { version = "0.3.0", default-features = false, path = "./integer" }
+dashu-float = { version = "0.3.0", default-features = false, path = "./float" }
+dashu-ratio = { version = "0.3.0", default-features = false, path = "./rational", features = ['dashu-float'] }
+dashu-macros = { version = "0.3.0", default-features = false, path = "./macros", features = ["embedded"] }
 
-[dependencies.dashu-base]
-path = "./base"
-version = "0.3.0"
-default-features = false
-
-[dependencies.dashu-int]
-path = "./integer"
-version = "0.3.0"
-default-features = false
-
-[dependencies.dashu-float]
-path = "./float"
-version = "0.3.0"
-default-features = false
-
-[dependencies.dashu-ratio]
-path = "./rational"
-version = "0.3.0"
-default-features = false
-
-[dependencies.dashu-macros]
-path = "./macros"
-version = "0.3.0"
-default-features = false
-features = ["embedded"]

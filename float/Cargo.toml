@@ -17,18 +17,54 @@ rust-version = "1.61"
 all-features = true
 
 [features]
-default = ["std"]
+default = ["std", "rand", "num-traits"]
 std = ["dashu-base/std", "dashu-int/std"]
 
-[dependencies.static_assertions]
-version = "1.1"
+# stable dependencies
+diesel = ["diesel_v2"]
+serde = ["dep:serde", "dashu-int/serde"]
+zeroize = ["dep:zeroize", "dashu-int/zeroize"]
 
-[dependencies.dashu-base]
-path = "../base"
-version = "0.3.0"
-default-features = false
+# unstable dependencies
+num-traits = ["num-traits_v02"]
+num-traits_v02 = ["dep:num-traits_v02", "dashu-int/num-traits_v02"]
+rand = ["rand_v08"]
+rand_v08 = ["dep:rand_v08", "dashu-int/rand_v08"]
+postgres-types = ["postgres-types_v02"]
+postgres-types_v02 = ["dep:postgres-types_v02", "dep:_bytes", "std"]
 
-[dependencies.dashu-int]
-path = "../integer"
-version = "0.3.0"
-default-features = false
+[dependencies]
+dashu-base = { version = "0.3.0", default-features = false, path = "../base" }
+dashu-int = { version = "0.3.0", default-features = false, path = "../integer" }
+static_assertions = { version = "1.1"}
+
+# stable dependencies
+serde = { optional = true, version = "1.0.130", default-features = false }
+zeroize = { optional = true, version = "1.5.7", default-features = false }
+diesel_v1 = { optional = true, version = "1.4.0", package = "diesel", default-features = false, features = ["postgres"]}
+diesel_v2 = { optional = true, version = "2.0.0", package = "diesel", default-features = false, features = ["postgres_backend"]}
+_bytes = { optional = true, version = "1.0", package = "bytes", default-features = false }
+
+# unstable dependencies
+rand_v08 = { optional = true, version = "0.8.3", package = "rand", default-features = false }
+num-traits_v02 = { optional = true, version = "0.2.15", package = "num-traits", default-features = false }
+postgres-types_v02 = { optional = true, version = "0.2.4", package = "postgres-types", default-features = false }
+
+[dev-dependencies]
+rand_v08 = { version = "0.8.3", package = "rand" }
+postcard = { version = "1.0.2", features = ["alloc"] }
+serde_test = { version = "1.0.130" }
+serde_json = { version = "1.0" }
+postgres = { version = "0.19.4" }
+
+[[test]]
+name = "random"
+required-features = ["rand"]
+
+[[test]]
+name = "serde"
+required-features = ["serde"]
+
+[[test]]
+name = "postgres"
+required-features = ["postgres-types", "diesel_v1", "diesel_v2", "diesel_v2/postgres"]

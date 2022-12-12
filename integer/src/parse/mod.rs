@@ -52,7 +52,7 @@ impl UBig {
     /// Convert a string with an optional radix prefix to [UBig], returns the
     /// parsed integer and radix.
     ///
-    /// `src` may contain an optional `+` after the radix prefix.
+    /// `src` may contain an optional `+` before the radix prefix.
     ///
     /// Allowed prefixes: `0b` for binary, `0o` for octal, `0x` for hexadecimal.
     ///
@@ -67,6 +67,7 @@ impl UBig {
     /// ```
     #[inline]
     pub fn from_str_with_radix_prefix(src: &str) -> Result<(UBig, Digit), ParseError> {
+        // TODO(v0.4): add an argment to specify the default radix instead of always using 10
         let src = src.strip_prefix('+').unwrap_or(src);
         UBig::from_str_with_radix_prefix_no_sign(src)
     }
@@ -121,17 +122,16 @@ impl IBig {
             return Err(ParseError::UnsupportedRadix);
         }
 
-        let sign;
-        match src.strip_prefix('-') {
+        let sign = match src.strip_prefix('-') {
             Some(s) => {
-                sign = Negative;
                 src = s;
+                Negative
             }
             None => {
-                sign = Positive;
                 src = src.strip_prefix('+').unwrap_or(src);
+                Positive
             }
-        }
+        };
         let mag = UBig::from_str_radix_no_sign(src, radix)?;
         Ok(IBig(mag.0.with_sign(sign)))
     }
@@ -139,7 +139,7 @@ impl IBig {
     /// Convert a string with an optional radix prefix to [IBig], return the
     /// parsed integer and radix.
     ///
-    /// `src` may contain an '+' or `-` prefix after the radix prefix.
+    /// `src` may contain an '+' or `-` prefix before the radix prefix.
     ///
     /// Allowed prefixes: `0b` for binary, `0o` for octal, `0x` for hexadecimal.
     ///

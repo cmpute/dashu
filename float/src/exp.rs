@@ -1,7 +1,7 @@
 use core::convert::TryInto;
 
 use crate::{
-    error::{check_inf, check_precision_limited, panic_power_negative_base},
+    error::{check_finite, check_precision_limited, panic_power_negative_base},
     fbig::FBig,
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
@@ -101,7 +101,7 @@ impl<R: Round> Context<R> {
     /// Panics if the precision is unlimited and the exponent is negative. In this case, the exact
     /// result is likely to have infinite digits.
     pub fn powi<const B: Word>(&self, base: &Repr<B>, exp: IBig) -> Rounded<FBig<R, B>> {
-        check_inf(base);
+        check_finite(base);
 
         let (exp_sign, exp) = exp.into_parts();
         if exp_sign == Sign::Negative {
@@ -169,7 +169,7 @@ impl<R: Round> Context<R> {
     ///
     /// Panics if the precision is unlimited.
     pub fn powf<const B: Word>(&self, base: &Repr<B>, exp: &Repr<B>) -> Rounded<FBig<R, B>> {
-        check_inf(base);
+        check_finite(base);
         check_precision_limited(self.precision); // TODO: we can allow it if exp is integer
 
         // shortcuts
@@ -240,7 +240,7 @@ impl<R: Round> Context<R> {
     //       consider this change after having a benchmark
 
     fn exp_internal<const B: Word>(&self, x: &Repr<B>, minus_one: bool) -> Rounded<FBig<R, B>> {
-        check_inf(x);
+        check_finite(x);
         check_precision_limited(self.precision);
 
         if x.is_zero() {

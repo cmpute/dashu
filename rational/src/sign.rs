@@ -1,5 +1,6 @@
 use core::ops::{Mul, Neg};
-use dashu_base::Sign;
+use dashu_base::{Sign, Signed};
+use dashu_int::UBig;
 
 use crate::{
     rbig::{RBig, Relaxed},
@@ -22,6 +23,28 @@ impl RBig {
     pub const fn sign(&self) -> Sign {
         self.0.numerator.sign()
     }
+
+    /// A number representing the sign of `self`.
+    ///
+    /// * [RBig::ONE] if the number is positive (including `inf`)
+    /// * [RBig::ZERO] if the number is zero
+    /// * [RBig::NEG_ONE] if the number is negative (including `-inf`)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_ratio::RBig;
+    ///
+    /// let r = RBig::from_parts((-10).into(), 5u8.into());
+    /// assert_eq!(r.signum(), RBig::NEG_ONE);
+    /// ```
+    #[inline]
+    pub const fn signum(&self) -> Self {
+        RBig(Repr {
+            numerator: self.0.numerator.signum(),
+            denominator: UBig::ONE,
+        })
+    }
 }
 
 impl Relaxed {
@@ -31,6 +54,17 @@ impl Relaxed {
     #[inline]
     pub const fn sign(&self) -> Sign {
         self.0.numerator.sign()
+    }
+
+    /// A number representing the sign of `self`.
+    ///
+    /// See [RBig::signum] for details.
+    #[inline]
+    pub const fn signum(&self) -> Self {
+        Relaxed(Repr {
+            numerator: self.0.numerator.signum(),
+            denominator: UBig::ONE,
+        })
     }
 }
 
@@ -114,5 +148,19 @@ impl Mul<Sign> for Relaxed {
     fn mul(mut self, rhs: Sign) -> Self::Output {
         self.0.numerator *= rhs;
         self
+    }
+}
+
+impl Signed for RBig {
+    #[inline]
+    fn sign(&self) -> Sign {
+        self.0.numerator.sign()
+    }
+}
+
+impl Signed for Relaxed {
+    #[inline]
+    fn sign(&self) -> Sign {
+        self.0.numerator.sign()
     }
 }

@@ -90,6 +90,10 @@ fn split_bits_ref(value: &IBig, n: usize) -> (IBig, IBig) {
 
     let (sign, words) = value.as_sign_words();
     let n_words = n / Word::BITS as usize;
+    if n_words >= words.len() {
+        // shortcut if n is very large
+        return (IBig::ZERO, value.clone());
+    }
 
     let mut hi = UBig::from_words(&words[n_words..]);
     hi >>= n % Word::BITS as usize;

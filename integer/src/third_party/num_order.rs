@@ -1,8 +1,8 @@
-use core::{cmp::Ordering, hash::Hash};
-
-use dashu_base::{BitTest, FloatEncoding, Sign, Signed};
+//! Implement num-order traits.
 
 use crate::{ibig::IBig, ubig::UBig};
+use core::{cmp::Ordering, hash::Hash};
+use dashu_base::{BitTest, FloatEncoding, Sign, Signed};
 
 impl num_order::NumHash for UBig {
     fn num_hash<H: core::hash::Hasher>(&self, state: &mut H) {
