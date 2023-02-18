@@ -291,13 +291,18 @@ impl Buffer {
     pub fn pop_zeros(&mut self) {
         if self.len > 0 {
             // SAFETY: tail_ptr = self.ptr + self.len - 1 is valid because self.len > 0
-            //         is always checked. self.ptr is also properly aligned.
+            //         is checked on entry to this function, and we skip the ptr::sub call
+            //         on the iteration where self.len becomes 0.
+            //         self.ptr is also properly aligned.
             unsafe {
                 // adjust len until leading zeros are removed
                 let mut tail_ptr = self.ptr.as_ptr().add(self.len - 1);
-                while ptr::read(tail_ptr) == 0 && self.len > 0 {
-                    tail_ptr = tail_ptr.sub(1);
+                while ptr::read(tail_ptr) == 0 {
                     self.len -= 1;
+                    if self.len == 0 {
+                        break;
+                    }
+                    tail_ptr = tail_ptr.sub(1);
                 }
             }
         }
@@ -654,5 +659,13 @@ mod tests {
         buffer.push(2);
         let slice = buffer.into_boxed_slice();
         assert_eq!(*slice, [1, 2]);
+    }
+
+    #[test]
+    fn test_pop_all_zeros() {
+        let mut buffer = Buffer::allocate(1);
+        buffer.push(0);
+        buffer.pop_zeros();
+        assert_eq!(buffer.len, 0);
     }
 }
