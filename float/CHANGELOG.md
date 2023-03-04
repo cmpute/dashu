@@ -1,5 +1,9 @@
 # Changelog
 
+### Bug fix
+
+- The default precision for float numbers converted from `UBig`/`IBig` are now based on the actual digits on the integers, rather than the digits after simplification. (#28)
+
 ## 0.3.1
 
 - Implement `num_traits::{Zero, One, FromPrimitive, ToPrimitive, Num, Signed, Euclid, Pow}` for `FBig` (#19)
