@@ -14,7 +14,7 @@ use crate::{
     fbig::FBig,
     repr::{Context, Repr},
     round::{mode::HalfEven, Round, Rounded, Rounding},
-    utils::{ilog_exact, shl_digits, shl_digits_in_place, shr_digits, digit_len},
+    utils::{ilog_exact, shl_digits, shl_digits_in_place, shr_digits},
 };
 
 impl<R: Round> Context<R> {
@@ -643,10 +643,7 @@ impl<const B: Word> Repr<B> {
 impl<R: Round, const B: Word> From<IBig> for FBig<R, B> {
     #[inline]
     fn from(n: IBig) -> Self {
-        let digits = digit_len::<B>(&n);
-        let repr = Repr::new(n, 0);
-        let context = Context::new(digits);
-        Self::new(repr, context)
+        Self::from_parts(n, 0)
     }
 }
 
