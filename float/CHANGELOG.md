@@ -1,8 +1,8 @@
 # Changelog
 
-### Bug fix
+## 0.3.2
 
-- The default precision for float numbers converted from `UBig`/`IBig` are now based on the actual digits on the integers, rather than the digits after simplification. (#28)
+- The default precision for float numbers from `from_parts`/`From<UBig>`/`From<IBig>` are now based on the actual digits on the integers, rather than the digits after simplification. (#28)
 
 ## 0.3.1
 
