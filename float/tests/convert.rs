@@ -217,3 +217,22 @@ fn test_to_f64() {
     assert_eq!(fbig!(0xffffffffffffffffp-1139).to_f64(), Inexact(0f64, NoOp));
     assert_eq!(fbig!(-0xffffffffffffffffp-1139).to_f64(), Inexact(-0f64, NoOp));
 }
+
+#[test]
+fn test_from_ibig() {
+    assert_eq!(FBin::from(ibig!(0)), fbig!(0));
+    assert_eq!(FBin::from(ibig!(1)), fbig!(1));
+    assert_eq!(FBin::from(ibig!(-1)), fbig!(-1));
+    assert_eq!(FBin::from(ibig!(-0x1234)), fbig!(-0x1234));
+
+    // digits test
+    assert_eq!(FBin::from(ibig!(-0x1234)).precision(), 13);
+    assert_eq!(FBin::from_parts(ibig!(0x1234), 12).precision(), 13);
+    assert_eq!(DBig::from(ibig!(-1230)).precision(), 4);
+    assert_eq!(DBig::from_parts(ibig!(0x1234), 12).precision(), 4);
+    assert_eq!(FHex::from(ibig!(-0x1230)).precision(), 4);
+    assert_eq!(FHex::from_parts(ibig!(0x1230), 12).precision(), 4);
+
+    // use addition to test the digits (#28)
+    assert_eq!(DBig::from(ubig!(10)) + DBig::from(ubig!(5)), DBig::from(ubig!(15)));
+}

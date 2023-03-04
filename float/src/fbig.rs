@@ -1,6 +1,6 @@
 use crate::{
     repr::{Context, Repr, Word},
-    round::{mode, Round},
+    round::{mode, Round}, utils::digit_len,
 };
 use dashu_base::Sign;
 use dashu_int::{DoubleWord, IBig};
@@ -258,8 +258,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn from_parts(significand: IBig, exponent: isize) -> Self {
+        let precision = digit_len::<B>(&significand).max(1); // set precision to 1 if signficand is zero
         let repr = Repr::new(significand, exponent);
-        let precision = repr.digits().max(1); // set precision to 1 if signficand is zero
         let context = Context::new(precision);
         Self::new(repr, context)
     }

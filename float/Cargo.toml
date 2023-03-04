@@ -1,6 +1,6 @@
 [package]
 name = "dashu-float"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2021"
 description = "A big float library supporting arbitrary precision, arbitrary base and arbitrary rounding mode"

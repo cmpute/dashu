@@ -643,9 +643,7 @@ impl<const B: Word> Repr<B> {
 impl<R: Round, const B: Word> From<IBig> for FBig<R, B> {
     #[inline]
     fn from(n: IBig) -> Self {
-        let repr = Repr::new(n, 0);
-        let context = Context::new(repr.digits());
-        Self::new(repr, context)
+        Self::from_parts(n, 0)
     }
 }
 
