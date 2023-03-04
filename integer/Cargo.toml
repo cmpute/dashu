@@ -17,7 +17,7 @@ rust-version = "1.61"
 all-features = true
 
 [features]
-default = ["std", "rand", "num-traits", "num-order"]
+default = ["std", "num-order"]
 std = ["dashu-base/std"]
 
 # unstable dependencies

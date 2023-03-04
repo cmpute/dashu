@@ -84,3 +84,6 @@ impl<R: Round> Context<R> {
             .map(|v| FBig::new(v, *self))
     }
 }
+
+// TODO(next): implement sqrt as the Sqrt trait
+// TODO(v0.4): implement cbrt, nth_root

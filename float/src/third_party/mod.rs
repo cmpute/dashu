@@ -3,6 +3,9 @@
 #[cfg(feature = "num-traits_v02")]
 mod num_traits;
 
+#[cfg(feature = "num-order")]
+mod num_order;
+
 #[cfg(feature = "rand_v08")]
 pub mod rand;
 

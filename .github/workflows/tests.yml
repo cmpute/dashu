@@ -76,7 +76,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --no-default-features --features rand --workspace --exclude benchmark
+          args: --workspace --exclude benchmark
 
   test-x86_64:
     name: Test x86_64
@@ -94,7 +94,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --no-default-features --features rand --workspace --exclude benchmark
+          args: --workspace --exclude benchmark
 
   test-no-std:
     name: Test no-std
@@ -111,7 +111,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --no-default-features --workspace --exclude benchmark
+          args: --no-default-features --features rand --workspace --exclude benchmark
 
   build-benchmark:
     name: Build benchmark

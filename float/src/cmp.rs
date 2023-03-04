@@ -6,7 +6,7 @@ impl<R1: Round, R2: Round, const B: Word> PartialEq<FBig<R2, B>> for FBig<R1, B>
     #[inline]
     fn eq(&self, other: &FBig<R2, B>) -> bool {
         match (self.repr.is_infinite(), other.repr.is_infinite()) {
-            // +inf = +inf, -inf = -inf
+            // +inf == +inf, -inf == -inf
             (true, true) => !((self.repr.exponent >= 0) ^ (other.repr.exponent >= 0)),
 
             // the representation is normalized so direct comparing is okay,

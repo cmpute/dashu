@@ -9,6 +9,9 @@ pub mod rand;
 #[cfg(feature = "num-traits_v02")]
 mod num_traits;
 
+#[cfg(feature = "num-order")]
+mod num_order;
+
 #[cfg(feature = "serde")]
 mod serde;
 

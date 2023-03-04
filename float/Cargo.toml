@@ -17,7 +17,7 @@ rust-version = "1.61"
 all-features = true
 
 [features]
-default = ["std", "rand", "num-traits"]
+default = ["std", "num-order"]
 std = ["dashu-base/std", "dashu-int/std"]
 
 # stable dependencies
@@ -39,6 +39,7 @@ dashu-int = { version = "0.3.1", default-features = false, path = "../integer" }
 static_assertions = { version = "1.1"}
 
 # stable dependencies
+num-order = { optional = true, version = "1.0.4", default-features = false }
 serde = { optional = true, version = "1.0.130", default-features = false }
 zeroize = { optional = true, version = "1.5.7", default-features = false }
 diesel_v1 = { optional = true, version = "1.4.0", package = "diesel", default-features = false, features = ["postgres"]}

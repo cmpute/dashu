@@ -9,6 +9,7 @@
 ### Change
 
 - The serialization format with `serde` for `UBig` and `IBig` has been changed. Now both types will be serialize as a sequence of little-endian bytes.
+- Now feature `num-traits` and `rand` are not enabled by default, feature `num-order` is enabled instead.
 
 ### Remove
 

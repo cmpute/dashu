@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Change
+
+- Now feature `num-traits` and `rand` are not enabled by default, feature `num-order` is enabled instead.
+
 ## 0.3.1
 
 - Implement `Sum` and `Product` traits for `RBig` and `Relaxed`.
