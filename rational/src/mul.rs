@@ -146,7 +146,7 @@ macro_rules! impl_mul_int_with_rbig {
         let _unused = ($ra, $rb, $ri);
         let g = $rb.gcd($ri);
         RBig(Repr {
-            numerator: ($a / &g).$method($i),
+            numerator: $a.$method($i / &g),
             denominator: $b / g,
         })
     }};

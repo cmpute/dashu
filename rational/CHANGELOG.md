@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2
+
+Fix the Bug in multiplication between `RBig` and `IBig`.
+
 ## 0.3.1
 
 - Implement `Sum` and `Product` traits for `RBig` and `Relaxed`.
