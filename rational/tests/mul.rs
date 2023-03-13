@@ -62,3 +62,24 @@ fn test_mul_relaxed() {
         test_mul(a, b, c);
     }
 }
+
+#[test]
+fn test_add_with_ibig() {
+    let test_cases = [
+        (rbig!(0), ibig!(0), rbig!(0)),
+        (rbig!(1), ibig!(1), rbig!(1)),
+        (rbig!(1), ibig!(-1), rbig!(-1)),
+        (rbig!(-1), ibig!(-1), rbig!(1)),
+        (rbig!(1 / 2), ibig!(-2), rbig!(-1)),
+        (rbig!(10 / 7), ibig!(7), rbig!(10)),
+    ];
+
+    for (a, b, c) in &test_cases {
+        assert_eq!(a * b, *c);
+        assert_eq!(b * a, *c);
+
+        let r = &a.clone().relax();
+        assert_eq!(r * b, *c);
+        assert_eq!(b * r, *c);
+    }
+}

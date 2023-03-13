@@ -6,6 +6,10 @@
 
 - Now feature `num-traits` and `rand` are not enabled by default, feature `num-order` is enabled instead.
 
+## 0.3.2
+
+Fix the Bug in multiplication between `RBig` and `IBig`.
+
 ## 0.3.1
 
 - Implement `Sum` and `Product` traits for `RBig` and `Relaxed`.

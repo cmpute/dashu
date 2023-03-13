@@ -1,6 +1,6 @@
 [package]
 name = "dashu-ratio"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2021"
 description = "A big rational library with good performance"
