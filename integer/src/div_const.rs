@@ -5,8 +5,8 @@ use core::{
     ops::{Div, DivAssign, Rem, RemAssign},
 };
 use dashu_base::{DivRem, DivRemAssign};
+use num_modular::{Normalized3by2Divisor, PreMulInv2by1, PreMulInv3by2};
 
-use super::{FastDivideNormalized, FastDivideNormalized2};
 use crate::{
     arch::word::{DoubleWord, Word},
     buffer::Buffer,
@@ -16,26 +16,20 @@ use crate::{
     math::shl_dword,
     memory::MemoryAllocation,
     primitive::{double_word, extend_word, shrink_dword},
-    repr::TypedRepr,
+    repr::Repr,
+    repr::{TypedRepr, TypedReprRef},
     shift,
     ubig::UBig,
     IBig,
 };
 use alloc::boxed::Box;
 
-pub(crate) struct ConstSingleDivisor {
-    pub(crate) shift: u32,
-    pub(crate) fast_div: FastDivideNormalized,
-}
-
-pub(crate) struct ConstDoubleDivisor {
-    pub(crate) shift: u32,
-    pub(crate) fast_div: FastDivideNormalized2,
-}
+pub(crate) struct ConstSingleDivisor(pub(crate) PreMulInv2by1<Word>);
+pub(crate) struct ConstDoubleDivisor(pub(crate) PreMulInv3by2<Word, DoubleWord>);
 pub(crate) struct ConstLargeDivisor {
     pub(crate) normalized_modulus: Box<[Word]>,
     pub(crate) shift: u32,
-    pub(crate) fast_div_top: FastDivideNormalized2,
+    pub(crate) fast_div_top: Normalized3by2Divisor<Word, DoubleWord>,
 }
 
 impl ConstSingleDivisor {
@@ -43,44 +37,49 @@ impl ConstSingleDivisor {
     #[inline]
     pub const fn new(n: Word) -> Self {
         debug_assert!(n != 0);
-        let shift = n.leading_zeros();
-        let fast_div = FastDivideNormalized::new(n << shift);
-        Self { shift, fast_div }
+        Self(PreMulInv2by1::<Word>::new(n))
     }
 
     /// Get the original (unnormalized) divisor
     #[inline]
     pub const fn divisor(&self) -> Word {
-        self.fast_div.divisor >> self.shift
+        self.0.divisor()
     }
 
     /// Calculate (word << self.shift) % self
     #[inline]
     pub const fn rem_word(&self, word: Word) -> Word {
-        if self.shift == 0 {
-            self.fast_div.div_rem_word(word).1
+        if self.0.shift() == 0 {
+            self.0.divider().div_rem_1by1(word).1
         } else {
-            self.fast_div.div_rem(extend_word(word) << self.shift).1
+            self.0
+                .divider()
+                .div_rem_2by1(extend_word(word) << self.0.shift())
+                .1
         }
     }
 
     /// Calculate (dword << self.shift) % self
     #[inline]
     pub const fn rem_dword(&self, dword: DoubleWord) -> Word {
-        if self.shift == 0 {
-            self.fast_div.div_rem(dword).1
+        if self.0.shift() == 0 {
+            self.0.divider().div_rem_2by1(dword).1
         } else {
-            let (n0, n1, n2) = shl_dword(dword, self.shift);
-            let (_, r1) = self.fast_div.div_rem(double_word(n1, n2));
-            self.fast_div.div_rem(double_word(n0, r1)).1
+            let (n0, n1, n2) = shl_dword(dword, self.0.shift());
+            let (_, r1) = self.0.divider().div_rem_2by1(double_word(n1, n2));
+            self.0.divider().div_rem_2by1(double_word(n0, r1)).1
         }
     }
 
     /// Calculate (words << self.shift) % self
     pub fn rem_large(&self, words: &[Word]) -> Word {
-        let mut rem = div::fast_rem_by_normalized_word(words, self.fast_div);
-        if self.shift != 0 {
-            rem = self.fast_div.div_rem(extend_word(rem) << self.shift).1
+        let mut rem = div::fast_rem_by_normalized_word(words, *self.0.divider());
+        if self.0.shift() != 0 {
+            rem = self
+                .0
+                .divider()
+                .div_rem_2by1(extend_word(rem) << self.0.shift())
+                .1
         }
         rem
     }
@@ -91,34 +90,32 @@ impl ConstDoubleDivisor {
     #[inline]
     pub const fn new(n: DoubleWord) -> Self {
         debug_assert!(n > Word::MAX as DoubleWord);
-        let shift = n.leading_zeros();
-        let fast_div = FastDivideNormalized2::new(n << shift);
-        Self { shift, fast_div }
+        Self(PreMulInv3by2::<Word, DoubleWord>::new(n))
     }
 
     /// Get the original (unnormalized) divisor
     #[inline]
     pub const fn divisor(&self) -> DoubleWord {
-        self.fast_div.divisor >> self.shift
+        self.0.divisor()
     }
 
     /// Calculate (dword << self.shift) % self
     #[inline]
     pub const fn rem_dword(&self, dword: DoubleWord) -> DoubleWord {
-        if self.shift == 0 {
-            self.fast_div.div_rem_dword(dword).1
+        if self.0.shift() == 0 {
+            self.0.divider().div_rem_2by2(dword).1
         } else {
-            let (n0, n1, n2) = shl_dword(dword, self.shift);
-            self.fast_div.div_rem(n0, double_word(n1, n2)).1
+            let (n0, n1, n2) = shl_dword(dword, self.0.shift());
+            self.0.divider().div_rem_3by2(n0, double_word(n1, n2)).1
         }
     }
 
     /// Calculate (words << self.shift) % self
     pub fn rem_large(&self, words: &[Word]) -> DoubleWord {
-        let mut rem = div::fast_rem_by_normalized_dword(words, self.fast_div);
-        if self.shift != 0 {
-            let (r0, r1, r2) = shl_dword(rem, self.shift);
-            rem = self.fast_div.div_rem(r0, double_word(r1, r2)).1
+        let mut rem = div::fast_rem_by_normalized_dword(words, *self.0.divider());
+        if self.0.shift() != 0 {
+            let (r0, r1, r2) = shl_dword(rem, self.0.shift());
+            rem = self.0.divider().div_rem_3by2(r0, double_word(r1, r2)).1
         }
         rem
     }
@@ -228,6 +225,24 @@ impl ConstDivisor {
         } else {
             ConstDivisorRepr::Double(ConstDoubleDivisor::new(dword))
         })
+    }
+
+    #[inline]
+    pub fn divisor(&self) -> UBig {
+        UBig(match &self.0 {
+            ConstDivisorRepr::Single(d) => Repr::from_word(d.divisor()),
+            ConstDivisorRepr::Double(d) => Repr::from_dword(d.divisor()),
+            ConstDivisorRepr::Large(d) => Repr::from_buffer(d.divisor()),
+        })
+    }
+
+    #[inline]
+    pub(crate) fn shift(&self) -> u32 {
+        match &self.0 {
+            ConstDivisorRepr::Single(d) => d.0.shift(),
+            ConstDivisorRepr::Double(d) => d.0.shift(),
+            ConstDivisorRepr::Large(d) => d.shift,
+        }
     }
 }
 
@@ -412,12 +427,19 @@ mod repr {
                     Repr::zero()
                 }
                 (Large(mut buffer), ConstDivisorRepr::Single(div)) => {
-                    let _rem = div::fast_div_by_word_in_place(&mut buffer, div.shift, div.fast_div);
+                    let _rem = div::fast_div_by_word_in_place(
+                        &mut buffer,
+                        div.0.shift(),
+                        *div.0.divider(),
+                    );
                     Repr::from_buffer(buffer)
                 }
                 (Large(mut buffer), ConstDivisorRepr::Double(div)) => {
-                    let _rem =
-                        div::fast_div_by_dword_in_place(&mut buffer, div.shift, div.fast_div);
+                    let _rem = div::fast_div_by_dword_in_place(
+                        &mut buffer,
+                        div.0.shift(),
+                        *div.0.divider(),
+                    );
                     Repr::from_buffer(buffer)
                 }
                 (Large(mut buffer), ConstDivisorRepr::Large(div)) => {
@@ -451,20 +473,20 @@ mod repr {
         fn rem(self, rhs: &ConstDivisorRepr) -> Repr {
             match (self, rhs) {
                 (Small(dword), ConstDivisorRepr::Single(div)) => {
-                    Repr::from_word(div.rem_dword(dword) >> div.shift)
+                    Repr::from_word(div.rem_dword(dword) >> div.0.shift())
                 }
                 (Small(dword), ConstDivisorRepr::Double(div)) => {
-                    Repr::from_dword(div.rem_dword(dword) >> div.shift)
+                    Repr::from_dword(div.rem_dword(dword) >> div.0.shift())
                 }
                 (Small(dword), ConstDivisorRepr::Large(_)) => {
                     // lhs must be less than rhs
                     Repr::from_dword(dword)
                 }
                 (Large(buffer), ConstDivisorRepr::Single(div)) => {
-                    Repr::from_word(div.rem_large(&buffer) >> div.shift)
+                    Repr::from_word(div.rem_large(&buffer) >> div.0.shift())
                 }
                 (Large(buffer), ConstDivisorRepr::Double(div)) => {
-                    Repr::from_dword(div.rem_large(&buffer) >> div.shift)
+                    Repr::from_dword(div.rem_large(&buffer) >> div.0.shift())
                 }
                 (Large(buffer), ConstDivisorRepr::Large(div)) => rem_large_large(buffer, div),
             }
@@ -477,20 +499,20 @@ mod repr {
         fn rem(self, rhs: &ConstDivisorRepr) -> Repr {
             match (self, rhs) {
                 (RefSmall(dword), ConstDivisorRepr::Single(div)) => {
-                    Repr::from_word(div.rem_dword(dword) >> div.shift)
+                    Repr::from_word(div.rem_dword(dword) >> div.0.shift())
                 }
                 (RefSmall(dword), ConstDivisorRepr::Double(div)) => {
-                    Repr::from_dword(div.rem_dword(dword) >> div.shift)
+                    Repr::from_dword(div.rem_dword(dword) >> div.0.shift())
                 }
                 (RefSmall(dword), ConstDivisorRepr::Large(_)) => {
                     // lhs must be less than rhs
                     Repr::from_dword(dword)
                 }
                 (RefLarge(words), ConstDivisorRepr::Single(div)) => {
-                    Repr::from_word(div.rem_large(words) >> div.shift)
+                    Repr::from_word(div.rem_large(words) >> div.0.shift())
                 }
                 (RefLarge(words), ConstDivisorRepr::Double(div)) => {
-                    Repr::from_dword(div.rem_large(words) >> div.shift)
+                    Repr::from_dword(div.rem_large(words) >> div.0.shift())
                 }
                 (RefLarge(words), ConstDivisorRepr::Large(div)) => {
                     rem_large_large(words.into(), div)
@@ -518,11 +540,19 @@ mod repr {
                     (Repr::zero(), Repr::from_dword(dword))
                 }
                 (Large(mut buffer), ConstDivisorRepr::Single(div)) => {
-                    let r = div::fast_div_by_word_in_place(&mut buffer, div.shift, div.fast_div);
+                    let r = div::fast_div_by_word_in_place(
+                        &mut buffer,
+                        div.0.shift(),
+                        *div.0.divider(),
+                    );
                     (Repr::from_buffer(buffer), Repr::from_word(r))
                 }
                 (Large(mut buffer), ConstDivisorRepr::Double(div)) => {
-                    let r = div::fast_div_by_dword_in_place(&mut buffer, div.shift, div.fast_div);
+                    let r = div::fast_div_by_dword_in_place(
+                        &mut buffer,
+                        div.0.shift(),
+                        *div.0.divider(),
+                    );
                     (Repr::from_buffer(buffer), Repr::from_dword(r))
                 }
                 (Large(mut buffer), ConstDivisorRepr::Large(div)) => {
@@ -554,16 +584,16 @@ mod repr {
     }
 
     fn div_rem_small_single(lhs: DoubleWord, rhs: &ConstSingleDivisor) -> (DoubleWord, Word) {
-        let (lo, mid, hi) = shl_dword(lhs, rhs.shift);
-        let (q1, r1) = rhs.fast_div.div_rem(double_word(mid, hi));
-        let (q0, r0) = rhs.fast_div.div_rem(double_word(lo, r1));
-        (double_word(q0, q1), r0 >> rhs.shift)
+        let (lo, mid, hi) = shl_dword(lhs, rhs.0.shift());
+        let (q1, r1) = rhs.0.divider().div_rem_2by1(double_word(mid, hi));
+        let (q0, r0) = rhs.0.divider().div_rem_2by1(double_word(lo, r1));
+        (double_word(q0, q1), r0 >> rhs.0.shift())
     }
 
     fn div_rem_small_double(lhs: DoubleWord, rhs: &ConstDoubleDivisor) -> (Word, DoubleWord) {
-        let (lo, mid, hi) = shl_dword(lhs, rhs.shift);
-        let (q, r) = rhs.fast_div.div_rem(lo, double_word(mid, hi));
-        (q, r >> rhs.shift)
+        let (lo, mid, hi) = shl_dword(lhs, rhs.0.shift());
+        let (q, r) = rhs.0.divider().div_rem_3by2(lo, double_word(mid, hi));
+        (q, r >> rhs.0.shift())
     }
 
     fn rem_large_large(mut lhs: Buffer, rhs: &ConstLargeDivisor) -> Repr {

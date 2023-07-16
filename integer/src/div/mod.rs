@@ -2,7 +2,6 @@
 
 use crate::{
     arch::word::{DoubleWord, Word},
-    fast_div::{FastDivideNormalized, FastDivideNormalized2},
     helper_macros::debug_assert_zero,
     math::{shl_dword, shr_word},
     memory::{self, Memory},
@@ -10,6 +9,9 @@ use crate::{
     shift,
 };
 use alloc::alloc::Layout;
+
+type FastDivideNormalized = num_modular::Normalized2by1Divisor<Word>;
+type FastDivideNormalized2 = num_modular::Normalized3by2Divisor<Word, DoubleWord>;
 
 mod divide_conquer;
 mod simple;
@@ -64,7 +66,7 @@ pub(crate) fn fast_div_by_word_in_place(
 
     for word in words.iter_mut().rev() {
         let a = double_word(*word, rem);
-        let (q, r) = fast_div_rhs.div_rem(a);
+        let (q, r) = fast_div_rhs.div_rem_2by1(a);
         *word = q;
         rem = r;
     }
@@ -87,7 +89,7 @@ pub fn rem_by_word(words: &[Word], rhs: Word) -> Word {
 
     // normalize the remainder
     let a = extend_word(rem) << shift;
-    let (_, rem) = fast_div_rhs.div_rem(a);
+    let (_, rem) = fast_div_rhs.div_rem_2by1(a);
     rem >> shift
 }
 
@@ -99,12 +101,12 @@ pub(crate) fn fast_rem_by_normalized_word(
 
     // first calculate the highest remainder
     let (last, words_lo) = words.split_last().unwrap();
-    let mut rem = fast_div_rhs.div_rem_word(*last).1;
+    let mut rem = fast_div_rhs.div_rem_1by1(*last).1;
 
     // then iterate through the words
     for word in words_lo.iter().rev() {
         let a = double_word(*word, rem);
-        rem = fast_div_rhs.div_rem(a).1;
+        rem = fast_div_rhs.div_rem_2by1(a).1;
     }
 
     rem
@@ -152,7 +154,7 @@ pub(crate) fn fast_div_by_dword_in_place(
     // first div [hi, last word, second last word] by rhs
     let (top_hi, words_lo) = words.split_last_mut().unwrap();
     let (top_lo, words_lo) = words_lo.split_last_mut().unwrap();
-    let (q, mut rem) = fast_div_rhs.div_rem(*top_lo, double_word(*top_hi, hi));
+    let (q, mut rem) = fast_div_rhs.div_rem_3by2(*top_lo, double_word(*top_hi, hi));
     *top_hi = 0;
     *top_lo = q;
 
@@ -160,7 +162,7 @@ pub(crate) fn fast_div_by_dword_in_place(
     let mut dwords = words_lo.rchunks_exact_mut(2);
     for chunk in &mut dwords {
         let dword = lowest_dword(chunk);
-        let (q, new_rem) = fast_div_rhs.div_rem_double(dword, rem);
+        let (q, new_rem) = fast_div_rhs.div_rem_4by2(dword, rem);
         let (new_lo, new_hi) = split_dword(q);
         *chunk.first_mut().unwrap() = new_lo;
         *chunk.last_mut().unwrap() = new_hi;
@@ -172,7 +174,7 @@ pub(crate) fn fast_div_by_dword_in_place(
     if !r.is_empty() {
         debug_assert!(r.len() == 1);
         let r0 = r.first_mut().unwrap();
-        let (q, new_rem) = fast_div_rhs.div_rem(*r0, rem);
+        let (q, new_rem) = fast_div_rhs.div_rem_3by2(*r0, rem);
         *r0 = q;
         rem = new_rem;
     }
@@ -197,7 +199,7 @@ pub fn rem_by_dword(words: &[Word], rhs: DoubleWord) -> DoubleWord {
 
     // normalize the remainder
     let (a0, a1, a2) = shl_dword(rem, shift);
-    let (_, rem) = fast_div_rhs.div_rem(a0, double_word(a1, a2));
+    let (_, rem) = fast_div_rhs.div_rem_3by2(a0, double_word(a1, a2));
     rem >> shift
 }
 
@@ -210,14 +212,14 @@ pub(crate) fn fast_rem_by_normalized_dword(
     // first calculate the highest remainder
     let (top_hi, words_lo) = words.split_last().unwrap();
     let (top_lo, words_lo) = words_lo.split_last().unwrap();
-    let mut rem = fast_div_rhs.div_rem_dword(double_word(*top_lo, *top_hi)).1;
+    let mut rem = fast_div_rhs.div_rem_2by2(double_word(*top_lo, *top_hi)).1;
 
     // then iterate through the words
     // chunk the words into double words, and do 4by2 divisions
     let mut dwords = words_lo.rchunks_exact(2);
     for chunk in &mut dwords {
         let dword = lowest_dword(chunk);
-        rem = fast_div_rhs.div_rem_double(dword, rem).1;
+        rem = fast_div_rhs.div_rem_4by2(dword, rem).1;
     }
 
     // there might be a single word left, do a 3by2 division
@@ -225,7 +227,7 @@ pub(crate) fn fast_rem_by_normalized_dword(
     if !r.is_empty() {
         debug_assert!(r.len() == 1);
         let r0 = r.first().unwrap();
-        rem = fast_div_rhs.div_rem(*r0, rem).1;
+        rem = fast_div_rhs.div_rem_3by2(*r0, rem).1;
     }
 
     rem

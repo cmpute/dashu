@@ -93,14 +93,14 @@ impl ModuloRingSingle {
     #[inline]
     pub const fn mul(&self, lhs: ModuloSingleRaw, rhs: ModuloSingleRaw) -> ModuloSingleRaw {
         let product = extend_word(lhs.0 >> self.shift()) * extend_word(rhs.0);
-        let (_, rem) = self.fast_div().div_rem(product);
+        let (_, rem) = self.fast_div().div_rem_2by1(product);
         ModuloSingleRaw(rem)
     }
 
     #[inline]
     pub const fn sqr(&self, raw: ModuloSingleRaw) -> ModuloSingleRaw {
         let product = (extend_word(raw.0) * extend_word(raw.0)) >> self.shift();
-        let (_, rem) = self.fast_div().div_rem(product);
+        let (_, rem) = self.fast_div().div_rem_2by1(product);
         ModuloSingleRaw(rem)
     }
 }
@@ -109,14 +109,14 @@ impl ModuloRingDouble {
     #[inline]
     pub const fn mul(&self, lhs: ModuloDoubleRaw, rhs: ModuloDoubleRaw) -> ModuloDoubleRaw {
         let (prod0, prod1) = math::mul_add_carry_dword(lhs.0 >> self.shift(), rhs.0, 0);
-        let (_, rem) = self.fast_div().div_rem_double(prod0, prod1);
+        let (_, rem) = self.fast_div().div_rem_4by2(prod0, prod1);
         ModuloDoubleRaw(rem)
     }
 
     #[inline]
     pub const fn sqr(&self, raw: ModuloDoubleRaw) -> ModuloDoubleRaw {
         let (prod0, prod1) = math::mul_add_carry_dword(raw.0 >> self.shift(), raw.0, 0);
-        let (_, rem) = self.fast_div().div_rem_double(prod0, prod1);
+        let (_, rem) = self.fast_div().div_rem_4by2(prod0, prod1);
         ModuloDoubleRaw(rem)
     }
 }

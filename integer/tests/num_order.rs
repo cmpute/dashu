@@ -1,5 +1,5 @@
 use dashu_int::{IBig, UBig};
-use num_order::{NumOrd, NumHash};
+use num_order::{NumHash, NumOrd};
 
 mod helper_macros;
 
@@ -38,8 +38,8 @@ fn test_ord_between_ubig_ibig() {
 #[test]
 fn test_hash() {
     fn hash<T: NumHash>(value: &T) -> u64 {
-        use std::hash::Hasher;
         use std::collections::hash_map::DefaultHasher;
+        use std::hash::Hasher;
         let mut hasher = DefaultHasher::new();
         value.num_hash(&mut hasher);
         hasher.finish()
@@ -52,7 +52,15 @@ fn test_hash() {
 
     // small numbers
     let small_cases = [
-        12i64, -123, 1234, -12345, 123456, -12345678, 1234567890, -12345678901234, 1234567890123456789
+        12i64,
+        -123,
+        1234,
+        -12345,
+        123456,
+        -12345678,
+        1234567890,
+        -12345678901234,
+        1234567890123456789,
     ];
     for v in small_cases {
         let i = IBig::from(v);
@@ -65,14 +73,7 @@ fn test_hash() {
     }
 
     // large numbers
-    let big_cases = [
-        1e10f64,
-        -1e20,
-        1e30,
-        -1e40,
-        1e60,
-        -1e100
-    ];
+    let big_cases = [1e10f64, -1e20, 1e30, -1e40, 1e60, -1e100];
     for v in big_cases {
         let i = IBig::try_from(v).unwrap();
         assert_eq!(hash(&v), hash(&i));

@@ -71,7 +71,9 @@ fn test_add_with_ibig() {
         (rbig!(1), ibig!(-1), rbig!(-1)),
         (rbig!(-1), ibig!(-1), rbig!(1)),
         (rbig!(1 / 2), ibig!(-2), rbig!(-1)),
+        (rbig!(1 / 2), ibig!(-4), rbig!(-2)),
         (rbig!(10 / 7), ibig!(7), rbig!(10)),
+        (rbig!(-7 / 6), ibig!(9), rbig!(-21 / 2)),
     ];
 
     for (a, b, c) in &test_cases {

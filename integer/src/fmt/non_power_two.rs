@@ -135,7 +135,7 @@ impl PreparedWord {
 
         let max_start = radix::MAX_WORD_DIGITS_NON_POW_2 - min_digits;
         while prepared.start_index > max_start || word != 0 {
-            let (new_word, d) = radix_info.fast_div_radix.div_rem(word);
+            let (new_word, d) = radix_info.fast_div_radix.div_rem(word, radix as _);
             word = new_word;
             prepared.start_index -= 1;
             prepared.digits[prepared.start_index] = d as u8;
@@ -179,8 +179,8 @@ impl PreparedDword {
         let range_div = &radix_info.fast_div_range_per_word;
 
         let (lo, mid, hi) = shl_dword(dword, shift);
-        let (q1, r) = range_div.div_rem(double_word(mid, hi));
-        let (q0, mut p0) = range_div.div_rem(double_word(lo, r));
+        let (q1, r) = range_div.div_rem_2by1(double_word(mid, hi));
+        let (q0, mut p0) = range_div.div_rem_2by1(double_word(lo, r));
         p0 >>= shift;
 
         // since: hi < 2^shift, range_per_word < 2^(WORD_BITS - shift),
@@ -188,12 +188,12 @@ impl PreparedDword {
         // meanwhile, for radix 2~36 it can be verified that: shift <= 4 for WORD_BITS = 16 or 32 or 64
         // so q1 * 2^shift < 2^(3*shift) < 2^16, the shifting below won't overflow
         let q = double_word(q0, q1) << shift;
-        let (mut p2, mut p1) = range_div.div_rem(q);
+        let (mut p2, mut p1) = range_div.div_rem_2by1(q);
         p1 >>= shift;
 
         // extract digits from each part
         let mut get_digit = |p: &mut Word| {
-            let (new_p, d) = radix_info.fast_div_radix.div_rem(*p);
+            let (new_p, d) = radix_info.fast_div_radix.div_rem(*p, radix as _);
             *p = new_p;
             prepared.start_index -= 1;
             prepared.digits[prepared.start_index] = d as u8;
