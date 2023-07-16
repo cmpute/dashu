@@ -2,6 +2,7 @@
 
 use super::modulo_ring::ModuloRingDouble;
 use super::modulo_ring::{ModuloRingLarge, ModuloRingSingle};
+use crate::fast_div::{ConstDoubleDivisor, ConstLargeDivisor, ConstSingleDivisor};
 use crate::{
     arch::word::{DoubleWord, Word},
     buffer::Buffer,
@@ -23,9 +24,9 @@ use alloc::boxed::Box;
 pub struct Modulo<'a>(ModuloRepr<'a>);
 
 pub(crate) enum ModuloRepr<'a> {
-    Single(ModuloSingleRaw, &'a ModuloRingSingle),
-    Double(ModuloDoubleRaw, &'a ModuloRingDouble),
-    Large(ModuloLargeRaw, &'a ModuloRingLarge),
+    Single(Word, &'a ConstSingleDivisor),
+    Double(DoubleWord, &'a ConstDoubleDivisor),
+    Large(ModuloLargeRaw, &'a ConstLargeDivisor),
 }
 
 /// Single word modular value in some unknown ring. The ring must be provided to operations.
@@ -63,39 +64,39 @@ impl<'a> Modulo<'a> {
     }
 
     #[inline]
-    pub(crate) const fn from_single(raw: ModuloSingleRaw, ring: &'a ModuloRingSingle) -> Self {
-        debug_assert!(ring.is_valid(raw));
+    pub(crate) const fn from_single(raw: Word, ring: &'a ConstSingleDivisor) -> Self {
+        // debug_assert!(ring.is_valid(raw));
         Modulo(ModuloRepr::Single(raw, ring))
     }
 
     #[inline]
-    pub(crate) const fn from_double(raw: ModuloDoubleRaw, ring: &'a ModuloRingDouble) -> Self {
-        debug_assert!(ring.is_valid(raw));
+    pub(crate) const fn from_double(raw: DoubleWord, ring: &'a ConstDoubleDivisor) -> Self {
+        // debug_assert!(ring.is_valid(raw));
         Modulo(ModuloRepr::Double(raw, ring))
     }
 
     #[inline]
-    pub(crate) fn from_large(raw: ModuloLargeRaw, ring: &'a ModuloRingLarge) -> Self {
-        debug_assert!(ring.is_valid(&raw));
+    pub(crate) fn from_large(raw: ModuloLargeRaw, ring: &'a ConstLargeDivisor) -> Self {
+        // debug_assert!(ring.is_valid(&raw));
         Modulo(ModuloRepr::Large(raw, ring))
     }
 
     #[inline]
-    pub(crate) fn check_same_ring_single(lhs: &ModuloRingSingle, rhs: &ModuloRingSingle) {
+    pub(crate) fn check_same_ring_single(lhs: &ConstSingleDivisor, rhs: &ConstSingleDivisor) {
         if lhs != rhs {
             panic_different_rings();
         }
     }
 
     #[inline]
-    pub(crate) fn check_same_ring_double(lhs: &ModuloRingDouble, rhs: &ModuloRingDouble) {
+    pub(crate) fn check_same_ring_double(lhs: &ConstDoubleDivisor, rhs: &ConstDoubleDivisor) {
         if lhs != rhs {
             panic_different_rings();
         }
     }
 
     #[inline]
-    pub(crate) fn check_same_ring_large(lhs: &ModuloRingLarge, rhs: &ModuloRingLarge) {
+    pub(crate) fn check_same_ring_large(lhs: &ConstLargeDivisor, rhs: &ConstLargeDivisor) {
         if lhs != rhs {
             panic_different_rings();
         }
@@ -105,7 +106,7 @@ impl<'a> Modulo<'a> {
 impl ModuloSingleRaw {
     pub const fn one(ring: &ModuloRingSingle) -> Self {
         let modulo = Self(1 << ring.shift());
-        debug_assert!(ring.is_valid(modulo));
+        debug_assert!(ring.is_valid(modulo.0));
         modulo
     }
 }
@@ -113,7 +114,7 @@ impl ModuloSingleRaw {
 impl ModuloDoubleRaw {
     pub const fn one(ring: &ModuloRingDouble) -> Self {
         let modulo = Self(1 << ring.shift());
-        debug_assert!(ring.is_valid(modulo));
+        debug_assert!(ring.is_valid(modulo.0));
         modulo
     }
 }

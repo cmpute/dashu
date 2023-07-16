@@ -4,8 +4,9 @@ use super::{
     modulo::{Modulo, ModuloDoubleRaw, ModuloLargeRaw, ModuloRepr, ModuloSingleRaw},
     modulo_ring::{ModuloRingDouble, ModuloRingLarge, ModuloRingSingle},
 };
-use crate::{add, cmp, error::panic_different_rings};
+use crate::{add, cmp, error::panic_different_rings, fast_div::ConstDivisor, UBig, div_const::ConstDivisorRepr};
 use core::ops::{Add, AddAssign, Neg, Sub, SubAssign};
+use num_modular::Reducer;
 
 impl<'a> Neg for Modulo<'a> {
     type Output = Modulo<'a>;
@@ -82,11 +83,11 @@ impl<'a> AddAssign<&Modulo<'a>> for Modulo<'a> {
         match (self.repr_mut(), rhs.repr()) {
             (ModuloRepr::Single(raw0, ring), ModuloRepr::Single(raw1, ring1)) => {
                 Modulo::check_same_ring_single(ring, ring1);
-                *raw0 = ring.add(*raw0, *raw1);
+                *raw0 = ring.0.add(raw0, raw1);
             }
             (ModuloRepr::Double(raw0, ring), ModuloRepr::Double(raw1, ring1)) => {
                 Modulo::check_same_ring_double(ring, ring1);
-                *raw0 = ring.add(*raw0, *raw1);
+                *raw0 = ring.0.add(raw0, raw1);
             }
             (ModuloRepr::Large(raw0, ring), ModuloRepr::Large(raw1, ring1)) => {
                 Modulo::check_same_ring_large(ring, ring1);

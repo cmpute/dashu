@@ -102,9 +102,9 @@ mod buffer;
 mod cmp;
 mod convert;
 mod div;
+mod div_const;
 mod div_ops;
 mod error;
-pub mod fast_div;
 pub mod fmt;
 mod gcd;
 mod gcd_ops;
@@ -135,3 +135,8 @@ mod ubig;
 
 // All the public items from third_party will be exposed
 pub use third_party::*;
+
+// Re-export types for fast division
+pub mod fast_div {
+    pub use super::div_const::ConstDivisor;
+}

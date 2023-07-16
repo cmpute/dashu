@@ -15,16 +15,18 @@
 //! assert_eq!(format!("{}", x - y), "6902 (mod 10000)");
 //! ```
 
-pub use convert::IntoModulo;
-pub use modulo::Modulo;
-pub use modulo_ring::ModuloRing;
+// pub use convert::IntoModulo;
+// pub use modulo::Modulo;
+// pub use modulo_ring::ModuloRing;
 
-mod add;
-pub(crate) mod convert;
-mod div;
-mod eq;
-mod fmt;
-pub(crate) mod modulo;
-pub(crate) mod modulo_ring;
-mod mul;
-mod pow;
+// mod add;
+// pub(crate) mod convert;
+// mod div;
+// mod eq;
+// mod fmt;
+// pub(crate) mod modulo;
+// pub(crate) mod modulo_ring;
+// mod mul;
+// mod pow;
+
+mod reducer;

@@ -1,16 +1,15 @@
 //! A ring of integers modulo a positive integer.
 
+use num_modular::{PreMulInv2by1, PreMulInv3by2};
+
 use super::modulo::{ModuloDoubleRaw, ModuloLargeRaw, ModuloSingleRaw};
 use crate::{
     arch::word::{DoubleWord, Word},
     buffer::Buffer,
     cmp,
     error::panic_divide_by_0,
-    fast_div::{
-        ConstDoubleDivisor, ConstLargeDivisor, ConstSingleDivisor, FastDivideNormalized,
-        FastDivideNormalized2,
-    },
-    math,
+    fast_div::{ConstDoubleDivisor, ConstLargeDivisor, ConstSingleDivisor},
+    math::{self, FastDivideNormalized, FastDivideNormalized2},
     primitive::shrink_dword,
     repr::{Repr, TypedRepr},
     ubig::UBig,
@@ -29,9 +28,9 @@ use core::cmp::Ordering;
 pub struct ModuloRing(ModuloRingRepr);
 
 pub(crate) enum ModuloRingRepr {
-    Single(ModuloRingSingle),
-    Double(ModuloRingDouble),
-    Large(ModuloRingLarge),
+    Single(ConstSingleDivisor),
+    Double(ConstDoubleDivisor),
+    Large(ConstLargeDivisor),
 }
 
 pub(crate) struct ModuloRingSingle(pub(super) ConstSingleDivisor);
@@ -65,12 +64,12 @@ impl ModuloRing {
             TypedRepr::Small(0) => panic_divide_by_0(),
             TypedRepr::Small(dword) => {
                 if let Some(word) = shrink_dword(dword) {
-                    ModuloRingRepr::Single(ModuloRingSingle::new(word))
+                    ModuloRingRepr::Single(ConstSingleDivisor::new(word))
                 } else {
-                    ModuloRingRepr::Double(ModuloRingDouble::new(dword))
+                    ModuloRingRepr::Double(ConstDoubleDivisor::new(dword))
                 }
             }
-            TypedRepr::Large(words) => ModuloRingRepr::Large(ModuloRingLarge::new(words)),
+            TypedRepr::Large(words) => ModuloRingRepr::Large(ConstLargeDivisor::new(words)),
         })
     }
 
@@ -87,10 +86,15 @@ impl ModuloRingSingle {
         Self(ConstSingleDivisor::new(n))
     }
 
+    #[inline]
+    pub const fn reducer(&self) -> &PreMulInv2by1<Word> {
+        &self.0 .0
+    }
+
     // Directly expose this through public field?
     #[inline]
     pub const fn normalized_modulus(&self) -> Word {
-        self.0.fast_div.divisor
+        self.0.divisor()
     }
 
     #[inline]
@@ -109,8 +113,8 @@ impl ModuloRingSingle {
     }
 
     #[inline]
-    pub const fn is_valid(&self, val: ModuloSingleRaw) -> bool {
-        val.0 < self.normalized_modulus() && val.0 & math::ones_word(self.shift()) == 0
+    pub const fn is_valid(&self, val: Word) -> bool {
+        val < self.normalized_modulus() && val & math::ones_word(self.shift()) == 0
     }
 }
 
@@ -119,6 +123,11 @@ impl ModuloRingDouble {
     #[inline]
     pub const fn new(n: DoubleWord) -> Self {
         Self(ConstDoubleDivisor::new(n))
+    }
+
+    #[inline]
+    pub const fn reducer(&self) -> &PreMulInv3by2<Word, DoubleWord> {
+        &self.0 .0
     }
 
     #[inline]
@@ -142,8 +151,8 @@ impl ModuloRingDouble {
     }
 
     #[inline]
-    pub const fn is_valid(&self, val: ModuloDoubleRaw) -> bool {
-        val.0 < self.normalized_modulus() && val.0 & math::ones_dword(self.shift()) == 0
+    pub const fn is_valid(&self, val: DoubleWord) -> bool {
+        val < self.normalized_modulus() && val & math::ones_dword(self.shift()) == 0
     }
 }
 

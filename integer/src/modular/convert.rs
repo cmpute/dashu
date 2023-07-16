@@ -12,6 +12,7 @@ use crate::{
     Sign::*,
 };
 use dashu_base::UnsignedAbs;
+use num_modular::Reducer;
 
 use super::{
     modulo::{Modulo, ModuloDoubleRaw, ModuloLargeRaw, ModuloRepr, ModuloSingleRaw},
@@ -82,8 +83,8 @@ impl Modulo<'_> {
 
 impl ModuloSingleRaw {
     #[inline]
-    pub const fn from_word(word: Word, ring: &ModuloRingSingle) -> Self {
-        Self(ring.0.rem_word(word))
+    pub fn from_word(word: Word, ring: &ModuloRingSingle) -> Self {
+        Self(ring.0.transform(word))
     }
 
     #[inline]
@@ -91,9 +92,9 @@ impl ModuloSingleRaw {
         Self(match x.repr() {
             RefSmall(dword) => {
                 if let Some(word) = shrink_dword(dword) {
-                    ring.0.rem_word(word)
+                    ring.0.transform(word)
                 } else {
-                    ring.0.rem_dword(dword)
+                    ring.0.transform(dword)
                 }
             }
             RefLarge(words) => ring.0.rem_large(words),
