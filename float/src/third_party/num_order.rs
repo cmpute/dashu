@@ -1,9 +1,9 @@
 use core::cmp::Ordering;
 use dashu_base::Sign;
-use dashu_int::{Word, IBig};
+use dashu_int::{IBig, Word};
 use num_order::NumOrd;
 
-use crate::{FBig, round::Round, Repr};
+use crate::{round::Round, FBig, Repr};
 
 impl<R1: Round, R2: Round, const B1: Word, const B2: Word> NumOrd<FBig<R2, B2>> for FBig<R1, B1> {
     fn num_cmp(&self, other: &FBig<R2, B2>) -> Ordering {

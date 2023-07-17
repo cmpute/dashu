@@ -1,4 +1,4 @@
-use num_order::{NumOrd, NumHash};
+use num_order::{NumHash, NumOrd};
 
 #[cfg(feature = "dashu-float")]
 mod with_float {

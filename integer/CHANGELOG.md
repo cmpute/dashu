@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## Unreleased (target 0.4.0)
 
 ### Add
 
@@ -10,6 +10,9 @@
 
 - The serialization format with `serde` for `UBig` and `IBig` has been changed. Now both types will be serialize as a sequence of little-endian bytes.
 - Now feature `num-traits` and `rand` are not enabled by default, feature `num-order` is enabled instead.
+- The `IntoModule` trait is refactored into the `IntoRing` trait, which has an additional type parameter for the ring. This is used for potential Montgomery implementation in future.
+- The `IntoRing` trait is no longer implemented for reference types `&UBig` and `&IBig` to make the copying explicit.
+- The `Modulo` type is renamed as `Reduced` to prevent confusion.
 
 ### Remove
 

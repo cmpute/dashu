@@ -1,6 +1,7 @@
 use crate::{
     repr::{Context, Repr, Word},
-    round::{mode, Round}, utils::digit_len,
+    round::{mode, Round},
+    utils::digit_len,
 };
 use dashu_base::Sign;
 use dashu_int::{DoubleWord, IBig};

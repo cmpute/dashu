@@ -1,6 +1,7 @@
 //! Public interface for creating a constant divisor.
 
 use core::{
+    fmt::{Display, Formatter},
     mem,
     ops::{Div, DivAssign, Rem, RemAssign},
 };
@@ -17,17 +18,22 @@ use crate::{
     memory::MemoryAllocation,
     primitive::{double_word, extend_word, shrink_dword},
     repr::Repr,
-    repr::{TypedRepr, TypedReprRef},
+    repr::TypedRepr,
     shift,
     ubig::UBig,
     IBig,
 };
 use alloc::boxed::Box;
 
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct ConstSingleDivisor(pub(crate) PreMulInv2by1<Word>);
+
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct ConstDoubleDivisor(pub(crate) PreMulInv3by2<Word, DoubleWord>);
+
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct ConstLargeDivisor {
-    pub(crate) normalized_modulus: Box<[Word]>,
+    pub(crate) normalized_divisor: Box<[Word]>,
     pub(crate) shift: u32,
     pub(crate) fast_div_top: Normalized3by2Divisor<Word, DoubleWord>,
 }
@@ -43,7 +49,15 @@ impl ConstSingleDivisor {
     /// Get the original (unnormalized) divisor
     #[inline]
     pub const fn divisor(&self) -> Word {
+        self.0.divisor() >> self.0.shift()
+    }
+
+    #[inline]
+    pub const fn normalized_divisor(&self) -> Word {
         self.0.divisor()
+    }
+    pub const fn shift(&self) -> u32 {
+        self.0.shift()
     }
 
     /// Calculate (word << self.shift) % self
@@ -96,7 +110,15 @@ impl ConstDoubleDivisor {
     /// Get the original (unnormalized) divisor
     #[inline]
     pub const fn divisor(&self) -> DoubleWord {
+        self.0.divisor() >> self.0.shift()
+    }
+
+    #[inline]
+    pub const fn normalized_divisor(&self) -> DoubleWord {
         self.0.divisor()
+    }
+    pub const fn shift(&self) -> u32 {
+        self.0.shift()
     }
 
     /// Calculate (dword << self.shift) % self
@@ -126,7 +148,7 @@ impl ConstLargeDivisor {
     pub fn new(mut n: Buffer) -> Self {
         let (shift, fast_div_top) = crate::div::normalize(&mut n);
         Self {
-            normalized_modulus: n.into_boxed_slice(),
+            normalized_divisor: n.into_boxed_slice(),
             shift,
             fast_div_top,
         }
@@ -134,7 +156,7 @@ impl ConstLargeDivisor {
 
     /// Get the original (unnormalized) divisor
     pub fn divisor(&self) -> Buffer {
-        let mut buffer = Buffer::from(self.normalized_modulus.as_ref());
+        let mut buffer = Buffer::from(self.normalized_divisor.as_ref());
         debug_assert_zero!(shift::shr_in_place(&mut buffer, self.shift));
         buffer
     }
@@ -147,7 +169,7 @@ impl ConstLargeDivisor {
         words.push_resizing(carry);
 
         // reduce
-        let modulus = &self.normalized_modulus;
+        let modulus = &self.normalized_divisor;
         if words.len() >= modulus.len() {
             let mut allocation =
                 MemoryAllocation::new(div::memory_requirement_exact(words.len(), modulus.len()));
@@ -168,7 +190,7 @@ impl ConstLargeDivisor {
         match x {
             TypedRepr::Small(dword) => {
                 let (lo, mid, hi) = shl_dword(dword, self.shift);
-                let mut buffer = Buffer::allocate_exact(self.normalized_modulus.len());
+                let mut buffer = Buffer::allocate_exact(self.normalized_divisor.len());
                 buffer.push(lo);
                 buffer.push(mid);
                 buffer.push(hi);
@@ -182,6 +204,7 @@ impl ConstLargeDivisor {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ConstDivisorRepr {
     Single(ConstSingleDivisor),
     Double(ConstDoubleDivisor),
@@ -189,6 +212,7 @@ pub(crate) enum ConstDivisorRepr {
 }
 
 // TODO(v0.4): add docs for ConstDivisor (and mention it in the top level doc)
+#[derive(Debug, PartialEq, Eq)]
 pub struct ConstDivisor(pub(crate) ConstDivisorRepr);
 
 impl ConstDivisor {
@@ -228,21 +252,18 @@ impl ConstDivisor {
     }
 
     #[inline]
-    pub fn divisor(&self) -> UBig {
+    pub fn value(&self) -> UBig {
         UBig(match &self.0 {
             ConstDivisorRepr::Single(d) => Repr::from_word(d.divisor()),
             ConstDivisorRepr::Double(d) => Repr::from_dword(d.divisor()),
             ConstDivisorRepr::Large(d) => Repr::from_buffer(d.divisor()),
         })
     }
+}
 
-    #[inline]
-    pub(crate) fn shift(&self) -> u32 {
-        match &self.0 {
-            ConstDivisorRepr::Single(d) => d.0.shift(),
-            ConstDivisorRepr::Double(d) => d.0.shift(),
-            ConstDivisorRepr::Large(d) => d.shift,
-        }
+impl Display for ConstDivisor {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        Display::fmt(&self.value(), f)
     }
 }
 
@@ -443,7 +464,7 @@ mod repr {
                     Repr::from_buffer(buffer)
                 }
                 (Large(mut buffer), ConstDivisorRepr::Large(div)) => {
-                    let div_len = div.normalized_modulus.len();
+                    let div_len = div.normalized_divisor.len();
                     if buffer.len() < div_len {
                         Repr::zero()
                     } else {
@@ -453,7 +474,7 @@ mod repr {
                         ));
                         let q_top = div::div_rem_unshifted_in_place(
                             &mut buffer,
-                            &div.normalized_modulus,
+                            &div.normalized_divisor,
                             div.shift,
                             div.fast_div_top,
                             &mut allocation.memory(),
@@ -556,7 +577,7 @@ mod repr {
                     (Repr::from_buffer(buffer), Repr::from_dword(r))
                 }
                 (Large(mut buffer), ConstDivisorRepr::Large(div)) => {
-                    let div_len = div.normalized_modulus.len();
+                    let div_len = div.normalized_divisor.len();
                     if buffer.len() < div_len {
                         (Repr::zero(), Repr::from_buffer(buffer))
                     } else {
@@ -566,7 +587,7 @@ mod repr {
                         ));
                         let q_top = div::div_rem_unshifted_in_place(
                             &mut buffer,
-                            &div.normalized_modulus,
+                            &div.normalized_divisor,
                             div.shift,
                             div.fast_div_top,
                             &mut allocation.memory(),
@@ -597,7 +618,7 @@ mod repr {
     }
 
     fn rem_large_large(mut lhs: Buffer, rhs: &ConstLargeDivisor) -> Repr {
-        let modulus = &rhs.normalized_modulus;
+        let modulus = &rhs.normalized_divisor;
 
         // only reduce if lhs can be larger than rhs
         if lhs.len() >= modulus.len() {

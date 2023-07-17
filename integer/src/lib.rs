@@ -31,7 +31,7 @@
 //!
 //! ```
 //! # use dashu_base::ParseError;
-//! use dashu_int::{IBig, modular::ModuloRing, UBig};
+//! use dashu_int::{IBig, fast_div::ConstDivisor, UBig};
 //!
 //! let a = UBig::from(12345678u32);
 //! let b = IBig::from(-0x10ff);
@@ -51,9 +51,9 @@
 //!     "hello 0x1a7e7c487267d2658a93"
 //! );
 //!
-//! let ring = ModuloRing::new(UBig::from(10000u32));
-//! let x = ring.convert(12345);
-//! let y = ring.convert(55443);
+//! let ring = ConstDivisor::new(UBig::from(10000u32));
+//! let x = ring.reduce(12345);
+//! let y = ring.reduce(55443);
 //! assert_eq!(format!("{}", x - y), "6902 (mod 10000)");
 //! # Ok::<(), ParseError>(())
 //! ```

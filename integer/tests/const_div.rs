@@ -4,6 +4,15 @@ use dashu_int::fast_div::ConstDivisor;
 mod helper_macros;
 
 #[test]
+fn test_value() {
+    let ring = ConstDivisor::new(ubig!(100));
+    assert_eq!(ring.value(), ubig!(100));
+
+    let ring = ConstDivisor::new(ubig!(10).pow(100));
+    assert_eq!(ring.value(), ubig!(10).pow(100));
+}
+
+#[test]
 fn test_const_div() {
     let divisors = [
         ubig!(1),

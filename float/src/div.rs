@@ -8,7 +8,7 @@ use crate::{
 };
 use core::ops::{Div, DivAssign, Rem, RemAssign};
 use dashu_base::{Approximation, DivEuclid, DivRem, DivRemEuclid, Inverse, RemEuclid};
-use dashu_int::{modular::ModuloRing, IBig, UBig};
+use dashu_int::{fast_div::ConstDivisor, modular::IntoRing, IBig, UBig};
 
 macro_rules! impl_div_or_rem_for_fbig {
     (impl $op:ident, $method:ident, $repr_method:ident) => {
@@ -280,21 +280,22 @@ impl<R: Round> Context<R> {
             Ordering::Greater => {
                 // if the least significant digit of lhs is higher than rhs, then we can
                 // align lhs to rhs and do simple modulo operations
-                let modulo = ModuloRing::new(rhs_signif);
-                let shift = (lhs.exponent - rhs.exponent) as usize;
-                let scaling = if B == 2 {
-                    modulo.convert(UBig::ONE << shift)
-                } else {
-                    modulo.convert(UBig::from_word(B)).pow(&shift.into())
-                };
-                let r = modulo.convert(lhs_signif) * scaling;
-                let r1 = r.residue();
-                let r2 = (-r).residue();
-                if r1 < r2 {
-                    IBig::from_parts(lhs_sign, r1)
-                } else {
-                    IBig::from_parts(-lhs_sign, r2)
-                }
+                todo!()
+                // let modulo = ConstDivisor::new(rhs_signif);
+                // let shift = (lhs.exponent - rhs.exponent) as usize;
+                // let scaling = if B == 2 {
+                //     (UBig::ONE << shift).into_ring(&modulo)
+                // } else {
+                //     UBig::from_word(B).into_ring(&modulo).pow(&shift.into())
+                // };
+                // let r = lhs_signif.into_ring(&modulo) * scaling;
+                // let r1 = r.residue();
+                // let r2 = (-r).residue();
+                // if r1 < r2 {
+                //     IBig::from_parts(lhs_sign, r1)
+                // } else {
+                //     IBig::from_parts(-lhs_sign, r2)
+                // }
             }
             Ordering::Less => {
                 // otherwise we have to split lhs into two parts
