@@ -60,6 +60,15 @@ impl RBig {
             .reduce(),
         )
     }
+
+    #[inline]
+    pub fn is_integer(&self) -> bool {
+        let denom = self.denominator();
+
+        denom.repr().len() == 1 
+
+    }
+
     /// Convert the rational number into (numerator, denumerator) parts.
     ///
     /// # Examples

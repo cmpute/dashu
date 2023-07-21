@@ -1,5 +1,7 @@
 //! Signed big integer.
 
+use core::ops::{Div, Rem};
+
 use crate::{
     repr::{Repr, TypedRepr, TypedReprRef},
     Sign, UBig,
@@ -68,6 +70,23 @@ use crate::{
 pub struct IBig(pub(crate) Repr);
 
 impl IBig {
+    #[inline]
+    pub fn div_rem_floor_ref(&self, rhs: &IBig) -> (IBig, IBig) {
+        let div = self.div(rhs);
+        let rem = self.rem(rhs);
+
+        (div, rem)
+    }
+
+    #[inline]
+    pub fn is_odd(&self) -> bool {
+        if let Some(&last_digit) = self.0.as_slice().last() { 
+            last_digit % 2 == 1
+        } else {
+            false
+        }
+    }
+
     #[inline]
     pub(crate) fn as_sign_repr(&self) -> (Sign, TypedReprRef<'_>) {
         self.0.as_sign_typed()

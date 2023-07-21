@@ -5,7 +5,7 @@ use crate::{
     primitive::{double_word, extend_word, split_dword, PrimitiveUnsigned, DWORD_BITS, WORD_BITS},
 };
 
-pub type FastDivideNormalized = num_modular::Normalized2by1Divisor<Word>;
+// pub type FastDivideNormalized = num_modular::Normalized2by1Divisor<Word>;
 pub type FastDivideNormalized2 = num_modular::Normalized3by2Divisor<Word, DoubleWord>;
 
 /// The length of an integer in bits.

@@ -8,7 +8,7 @@ use crate::{
 };
 use core::ops::{Div, DivAssign, Rem, RemAssign};
 use dashu_base::{Approximation, DivEuclid, DivRem, DivRemEuclid, Inverse, RemEuclid};
-use dashu_int::{fast_div::ConstDivisor, modular::IntoRing, IBig, UBig};
+use dashu_int::{IBig, UBig};
 
 macro_rules! impl_div_or_rem_for_fbig {
     (impl $op:ident, $method:ident, $repr_method:ident) => {

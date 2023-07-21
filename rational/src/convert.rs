@@ -1,4 +1,6 @@
 use core::cmp::Ordering;
+use core::ops::{Mul, MulAssign};
+
 
 use dashu_base::{
     Approximation::{self, *},
@@ -106,6 +108,36 @@ macro_rules! impl_conversion_for_prim_ints {
     )*};
 }
 impl_conversion_for_prim_ints!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);
+
+macro_rules! impl_mul_for_prim_ints {
+    ($($t:ty)*) => {$(
+        impl Mul<$t> for RBig {
+            type Output = RBig;
+            #[inline]
+            fn mul(mut self, rhs: $t) -> RBig {
+                self *= RBig::from(rhs);
+                self
+            }
+        }
+
+        impl Mul<RBig> for $t {
+            type Output = RBig;
+            #[inline]
+            fn mul(self, mut rhs: RBig) -> RBig {
+                rhs *= RBig::from(self);
+                rhs
+            }
+        }
+
+        impl MulAssign<$t> for RBig {
+            #[inline]
+            fn mul_assign(&mut self, rhs: $t) {
+                *self *= RBig::from(rhs)
+            }
+        }
+    )*};
+}
+impl_mul_for_prim_ints!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);
 
 macro_rules! impl_conversion_from_float {
     ($t:ty) => {

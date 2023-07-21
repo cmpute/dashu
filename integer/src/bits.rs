@@ -241,6 +241,11 @@ impl IBig {
             Negative => repr.trailing_ones_neg(),
         }
     }
+
+    #[inline]
+    pub fn count_ones(&self) -> usize {
+        self.0.as_typed().count_ones()
+    }
 }
 
 impl BitTest for IBig {

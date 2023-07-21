@@ -77,7 +77,7 @@ impl Reducer<UBig> for ConstDivisor {
     fn add(&self, lhs: &UBig, rhs: &UBig) -> UBig {
         (self.reduce(lhs.clone()) + self.reduce(rhs.clone())).residue()
     }
-    fn double(&self, target: UBig) -> UBig {
+    fn double(&self, _target: UBig) -> UBig {
         todo!()
     }
     #[inline]
@@ -92,7 +92,7 @@ impl Reducer<UBig> for ConstDivisor {
     fn mul(&self, lhs: &UBig, rhs: &UBig) -> UBig {
         (self.reduce(lhs.clone()) + self.reduce(rhs.clone())).residue()
     }
-    fn square(&self, target: UBig) -> UBig {
+    fn square(&self, _target: UBig) -> UBig {
         todo!()
     }
     #[inline]

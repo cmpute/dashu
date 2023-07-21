@@ -4,6 +4,7 @@ use core::{
     hash::{Hash, Hasher},
 };
 use dashu_base::{BitTest, Sign::*};
+use dashu_int::IBig;
 
 impl PartialEq for Repr {
     #[inline]
@@ -121,5 +122,82 @@ impl PartialOrd<Relaxed> for RBig {
     #[inline]
     fn partial_cmp(&self, other: &Relaxed) -> Option<Ordering> {
         self.0.partial_cmp(&other.0)
+    }
+}
+
+macro_rules! impl_partial_ord_for_prim_ratio {
+    ($($t:ty)*) => {$(
+        impl PartialOrd<$t> for RBig {
+            #[inline]
+            fn lt(&self, rhs: &$t) -> bool {
+                *self < RBig::from(*rhs)
+            }
+
+            #[inline]
+            fn partial_cmp(&self, rhs: &$t) -> Option<Ordering> {
+                Some(self.cmp(&RBig::from(*rhs)))
+            }
+        }
+
+        impl PartialOrd<RBig> for $t {
+            #[inline]
+            fn lt(&self, rhs: &RBig) -> bool {
+                *rhs < RBig::from(*self)
+            }
+
+            #[inline]
+            fn partial_cmp(&self, rhs: &RBig) -> Option<Ordering> {
+                Some(rhs.cmp(&RBig::from(*self)))
+            }
+        }
+    )*};
+}
+impl_partial_ord_for_prim_ratio!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);
+
+impl PartialEq<IBig> for RBig {
+    fn eq(&self, other: &IBig) -> bool {
+        let val = self.0.numerator.clone() / self.0.denominator.clone();
+        other.cmp(&val) == Ordering::Equal
+    }
+}
+
+impl PartialEq<RBig> for IBig {
+    fn eq(&self, other: &RBig) -> bool {
+        let val = other.0.numerator.clone() / other.0.denominator.clone();
+        self.cmp(&val) == Ordering::Equal
+    }
+}
+
+impl PartialOrd<IBig> for RBig {
+    #[inline]
+    fn lt(&self, rhs: &IBig) -> bool {
+        *rhs < RBig::from(rhs.clone())
+    }
+
+    #[inline]
+    fn gt(&self, rhs: &IBig) -> bool {
+        *rhs > RBig::from(rhs.clone())
+    }
+
+    #[inline]
+    fn partial_cmp(&self, rhs: &IBig) -> Option<Ordering> {
+        Some(self.cmp(&RBig::from(rhs.clone())))
+    }
+}
+
+impl PartialOrd<RBig> for IBig {
+    #[inline]
+    fn lt(&self, rhs: &RBig) -> bool {
+        *rhs < RBig::from(self.clone())
+    }
+
+    #[inline]
+    fn gt(&self, rhs: &RBig) -> bool {
+        *rhs > RBig::from(self.clone())
+    }
+
+    #[inline]
+    fn partial_cmp(&self, rhs: &RBig) -> Option<Ordering> {
+        Some(rhs.cmp(&RBig::from(self.clone())))
     }
 }

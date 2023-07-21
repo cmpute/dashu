@@ -1,5 +1,4 @@
 use core::cmp::Ordering;
-use dashu_base::Sign;
 use dashu_int::{IBig, Word};
 use num_order::NumOrd;
 

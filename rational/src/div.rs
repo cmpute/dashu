@@ -281,3 +281,22 @@ impl Inverse for &Relaxed {
         Relaxed(self.0.clone().inv())
     }
 }
+
+macro_rules! impl_eq_for_prim_ints {
+    ($($t:ty)*) => {$(
+        impl PartialEq<$t> for RBig {
+            #[inline]
+            fn eq(&self, rhs: &$t) -> bool {
+                *self == RBig::from(*rhs)
+            }
+        }
+
+        impl PartialEq<RBig> for $t {
+            #[inline]
+            fn eq(&self, rhs: &RBig) -> bool {
+                *rhs == RBig::from(*self)
+            }
+        }
+    )*};
+}
+impl_eq_for_prim_ints!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);

@@ -121,3 +121,32 @@ impl AbsCmp<IBig> for UBig {
         self.0.as_typed().cmp(&rhs.0.as_sign_typed().1)
     }
 }
+
+macro_rules! impl_partial_ord_for_prim_ints {
+    ($($t:ty)*) => {$(
+        impl PartialOrd<$t> for IBig {
+            #[inline]
+            fn lt(&self, rhs: &$t) -> bool {
+                *self < IBig::from(*rhs)
+            }
+
+            #[inline]
+            fn partial_cmp(&self, rhs: &$t) -> Option<Ordering> {
+                Some(self.cmp(&IBig::from(*rhs)))
+            }
+        }
+
+        impl PartialOrd<IBig> for $t {
+            #[inline]
+            fn lt(&self, rhs: &IBig) -> bool {
+                *rhs < IBig::from(*self)
+            }
+
+            #[inline]
+            fn partial_cmp(&self, rhs: &IBig) -> Option<Ordering> {
+                Some(rhs.cmp(&IBig::from(*self)))
+            }
+        }
+    )*};
+}
+impl_partial_ord_for_prim_ints!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);

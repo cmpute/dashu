@@ -638,3 +638,22 @@ mod repr {
         Repr::from_buffer(lhs)
     }
 }
+
+macro_rules! impl_eq_for_prim_ints {
+    ($($t:ty)*) => {$(
+        impl PartialEq<$t> for IBig {
+            #[inline]
+            fn eq(&self, rhs: &$t) -> bool {
+                *self == IBig::from(*rhs)
+            }
+        }
+
+        impl PartialEq<IBig> for $t {
+            #[inline]
+            fn eq(&self, rhs: &IBig) -> bool {
+                *rhs == IBig::from(*self)
+            }
+        }
+    )*};
+}
+impl_eq_for_prim_ints!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);

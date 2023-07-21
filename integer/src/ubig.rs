@@ -71,7 +71,7 @@ pub struct UBig(pub(crate) Repr);
 impl UBig {
     /// Get the representation of UBig.
     #[inline]
-    pub(crate) fn repr(&self) -> TypedReprRef<'_> {
+    pub fn repr(&self) -> TypedReprRef<'_> {
         self.0.as_typed()
     }
 

@@ -13,7 +13,7 @@ use alloc::{boxed::Box, vec::Vec};
 use core::convert::{TryFrom, TryInto};
 use dashu_base::{
     Approximation::{self, *},
-    ConversionError, FloatEncoding, Sign,
+    ConversionError, FloatEncoding, Sign, Abs,
 };
 
 impl Default for UBig {
@@ -258,6 +258,62 @@ impl IBig {
             Exact(val) => Exact(sign * val),
             Inexact(val, diff) => Inexact(sign * val, sign * diff),
         }
+    }
+
+    #[inline]
+    pub fn to_i32(&self) -> Option<i32> {
+        let value = self.to_f32().value();
+
+        return core::option::Option::Some(value as i32)
+    }
+
+    #[inline]
+    pub fn to_i64(&self) -> Option<i64> {
+        let value = self.to_f64().value();
+
+        return core::option::Option::Some(value as i64)
+    }
+
+    #[inline]
+    pub fn to_u32(&self) -> Option<u32> {
+        let value = self.to_i32().unwrap();
+
+        return core::option::Option::Some(value as u32)
+    }
+
+    #[inline]
+    pub fn to_u8(&self) -> Option<u8> {
+        let value = self.to_i32().unwrap();
+
+        return core::option::Option::Some(value as u8)
+    }
+
+    #[inline]
+    pub fn to_u16(&self) -> Option<u16> {
+        let value = self.to_i32().unwrap();
+
+        return core::option::Option::Some(value as u16)
+    }
+
+    #[inline]
+    pub fn to_u64(&self) -> Option<u64> {
+        let value = self.abs().to_i64().unwrap();
+
+        return core::option::Option::Some(value as u64)
+    }
+
+    #[inline]
+    pub fn to_usize(&self) -> Option<usize> {
+        let value = self.to_i64().unwrap();
+
+        return core::option::Option::Some(value as usize)
+    }
+
+    #[inline]
+    pub fn to_isize(&self) -> Option<isize> {
+        let value = self.to_i64().unwrap();
+
+        return core::option::Option::Some(value as isize)
     }
 }
 
