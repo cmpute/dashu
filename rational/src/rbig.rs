@@ -63,10 +63,7 @@ impl RBig {
 
     #[inline]
     pub fn is_integer(&self) -> bool {
-        let denom = self.denominator();
-
-        denom.repr().len() == 1 
-
+        self.denominator().is_one()
     }
 
     /// Convert the rational number into (numerator, denumerator) parts.
