@@ -4,7 +4,9 @@
 
 ### Add
 
+- Add a `ConstDivisor` type that supports faster division when you have an invariant number as the divisor.
 - Implement `num_order::NumOrd` trait between `UBig` and `IBig`
+- Implement `num_modular::Reducer` trait for `ConstDivisor`
 
 ### Change
 
@@ -13,6 +15,7 @@
 - The `IntoModule` trait is refactored into the `IntoRing` trait, which has an additional type parameter for the ring. This is used for potential Montgomery implementation in future.
 - The `IntoRing` trait is no longer implemented for reference types `&UBig` and `&IBig` to make the copying explicit.
 - The `Modulo` type is renamed as `Reduced` to prevent confusion.
+- `Modulo::inv` is renamed as `Reduced::inverse`
 
 ### Remove
 

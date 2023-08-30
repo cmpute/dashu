@@ -6,7 +6,7 @@ use core::{
     ops::{Div, DivAssign, Rem, RemAssign},
 };
 use dashu_base::{DivRem, DivRemAssign};
-use num_modular::{Normalized3by2Divisor, PreMulInv2by1, PreMulInv3by2};
+use num_modular::{PreMulInv2by1, PreMulInv3by2};
 
 use crate::{
     arch::word::{DoubleWord, Word},
@@ -14,7 +14,7 @@ use crate::{
     div,
     error::panic_divide_by_0,
     helper_macros::debug_assert_zero,
-    math::shl_dword,
+    math::{shl_dword, FastDivideNormalized2},
     memory::MemoryAllocation,
     primitive::{double_word, extend_word, shrink_dword},
     repr::Repr,
@@ -35,7 +35,7 @@ pub(crate) struct ConstDoubleDivisor(pub(crate) PreMulInv3by2<Word, DoubleWord>)
 pub(crate) struct ConstLargeDivisor {
     pub(crate) normalized_divisor: Box<[Word]>,
     pub(crate) shift: u32,
-    pub(crate) fast_div_top: Normalized3by2Divisor<Word, DoubleWord>,
+    pub(crate) fast_div_top: FastDivideNormalized2,
 }
 
 impl ConstSingleDivisor {

@@ -1,4 +1,5 @@
 use crate::{
+    add_ops::repr::{sub_large, sub_large_dword, sub_large_ref_val},
     cmp,
     div_const::{ConstDivisor, ConstDivisorRepr},
     helper_macros::debug_assert_zero,
@@ -10,7 +11,44 @@ use crate::{
 };
 use num_modular::Reducer;
 
-use super::repr::{ReducedDword, ReducedWord};
+use super::{
+    repr::{ReducedDword, ReducedWord},
+    IntoRing,
+};
+
+impl ConstDivisor {
+    /// If target is larger than the normalized divisor, then subtract it once.
+    fn reduce_once(&self, target: UBig) -> UBig {
+        if !self.check(&target) {
+            match &self.0 {
+                ConstDivisorRepr::Single(d) => target - d.normalized_divisor(),
+                ConstDivisorRepr::Double(d) => target - d.normalized_divisor(),
+                ConstDivisorRepr::Large(d) => {
+                    match target.into_repr() {
+                        TypedRepr::Small(s) => UBig::from_dword(s), // no need to reduce
+                        TypedRepr::Large(s) => UBig(sub_large(s, &d.normalized_divisor)),
+                    }
+                }
+            }
+        } else {
+            target
+        }
+    }
+
+    /// Reduce -target
+    fn reduce_negate(&self, target: UBig) -> UBig {
+        match &self.0 {
+            ConstDivisorRepr::Single(d) => d.normalized_divisor() - target,
+            ConstDivisorRepr::Double(d) => d.normalized_divisor() - target,
+            ConstDivisorRepr::Large(d) => match target.into_repr() {
+                TypedRepr::Small(s) => {
+                    UBig(sub_large_dword(d.normalized_divisor.as_ref().into(), s))
+                }
+                TypedRepr::Large(s) => UBig(sub_large_ref_val(&d.normalized_divisor, s)),
+            },
+        }
+    }
+}
 
 impl Reducer<UBig> for ConstDivisor {
     #[inline]
@@ -75,32 +113,48 @@ impl Reducer<UBig> for ConstDivisor {
 
     #[inline]
     fn add(&self, lhs: &UBig, rhs: &UBig) -> UBig {
-        (self.reduce(lhs.clone()) + self.reduce(rhs.clone())).residue()
+        self.reduce_once(lhs + rhs)
     }
-    fn double(&self, target: UBig) -> UBig {
-        todo!()
+    #[inline]
+    fn dbl(&self, target: UBig) -> UBig {
+        self.reduce_once(target << 1)
     }
     #[inline]
     fn sub(&self, lhs: &UBig, rhs: &UBig) -> UBig {
-        (self.reduce(lhs.clone()) - self.reduce(rhs.clone())).residue()
+        if lhs >= rhs {
+            lhs - rhs
+        } else {
+            self.reduce_negate(rhs - lhs)
+        }
     }
     #[inline]
     fn neg(&self, target: UBig) -> UBig {
-        (-self.reduce(target)).residue()
+        if target.is_zero() {
+            target
+        } else {
+            self.reduce_negate(target)
+        }
     }
+
+    // for the following operations, copying is relatively cheap and the implementations of
+    // the `Reduced` type are relied on.
+
     #[inline]
     fn mul(&self, lhs: &UBig, rhs: &UBig) -> UBig {
-        (self.reduce(lhs.clone()) + self.reduce(rhs.clone())).residue()
+        let lhs = lhs.clone().into_ring(self);
+        let rhs = rhs.clone().into_ring(self);
+        (lhs * rhs).residue()
     }
-    fn square(&self, target: UBig) -> UBig {
-        todo!()
+    #[inline]
+    fn sqr(&self, target: UBig) -> UBig {
+        target.into_ring(self).sqr().residue()
     }
     #[inline]
     fn inv(&self, target: UBig) -> Option<UBig> {
-        self.reduce(target).inv().map(|x| x.residue())
+        target.into_ring(self).inv().map(|v| v.residue())
     }
     #[inline]
     fn pow(&self, base: UBig, exp: &UBig) -> UBig {
-        self.reduce(base).pow(exp).residue()
+        base.into_ring(self).pow(exp).residue()
     }
 }

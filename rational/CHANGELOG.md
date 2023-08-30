@@ -2,9 +2,14 @@
 
 ## Unreleased
 
+### Add
+
+- Add `is_int` to `RBig`
+
 ### Change
 
 - Now feature `num-traits` and `rand` are not enabled by default, feature `num-order` is enabled instead.
+- Fix the bug in `is_one` of `RBig` and `Relaxed`.
 
 ## 0.3.2
 

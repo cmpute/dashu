@@ -342,7 +342,6 @@ pub fn memory_requirement_ext_up_to(lhs_len: usize, rhs_len: usize) -> Layout {
     )
 }
 
-/// Extended binary GCD for two multi-digits numbers
 pub fn gcd_ext_in_place(
     lhs: &mut [Word],
     rhs: &mut [Word],

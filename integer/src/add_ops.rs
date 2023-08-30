@@ -277,7 +277,7 @@ pub mod repr {
     }
 
     #[inline]
-    fn sub_large(mut lhs: Buffer, rhs: &[Word]) -> Repr {
+    pub(crate) fn sub_large(mut lhs: Buffer, rhs: &[Word]) -> Repr {
         if lhs.len() < rhs.len() || add::sub_in_place(&mut lhs, rhs) {
             panic_negative_ubig();
         }

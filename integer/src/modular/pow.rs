@@ -50,7 +50,7 @@ macro_rules! impl_mod_pow_for_primitive {
                 match exp {
                     0 => <$raw>::one(ring),
                     1 => raw, // no-op
-                    2 => $raw(ring.0.square(raw.0)),
+                    2 => $raw(ring.0.sqr(raw.0)),
                     _ => {
                         let bits = WORD_BITS - 1 - exp.leading_zeros();
                         pow_helper(ring, raw, raw, exp, bits)
@@ -60,16 +60,10 @@ macro_rules! impl_mod_pow_for_primitive {
 
             /// lhs^2^bits * rhs^exp[..bits] (in the modulo ring)
             #[inline]
-            fn pow_helper(
-                ring: &$ring,
-                lhs: $raw,
-                rhs: $raw,
-                exp: Word,
-                mut bits: u32,
-            ) -> $raw {
+            fn pow_helper(ring: &$ring, lhs: $raw, rhs: $raw, exp: Word, mut bits: u32) -> $raw {
                 let mut res = lhs;
                 while bits > 0 {
-                    res.0 = ring.0.square(res.0);
+                    res.0 = ring.0.sqr(res.0);
                     bits -= 1;
                     if exp & (1 << bits) != 0 {
                         res.0 = ring.0.mul(&res.0, &rhs.0);
@@ -247,7 +241,7 @@ mod tests {
     #[test]
     fn test_pow_word() {
         let ring = ConstSingleDivisor::new(100);
-        let modulo = ReducedWord::from_word(17, &ring);
+        let modulo = ReducedWord(ring.0.transform(17));
         assert_eq!(single::pow_word(&ring, modulo, 0).residue(&ring), 1);
         assert_eq!(single::pow_word(&ring, modulo, 15).residue(&ring), 93);
     }

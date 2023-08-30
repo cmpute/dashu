@@ -6,6 +6,7 @@ use crate::mul::ntt::{Prime, NUM_PRIMES};
 pub const MAX_ORDER: u32 = 57;
 
 /// Primes to be used for the number-theoretic transform.
+#[allow(dead_code)]
 pub const PRIMES: [Prime; NUM_PRIMES] = [
     Prime {
         prime: 0xbe00000000000001,

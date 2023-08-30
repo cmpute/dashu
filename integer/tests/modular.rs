@@ -161,7 +161,6 @@ fn test_add_sub() {
     }
 }
 
-/*
 #[test]
 fn test_mul() {
     let ring1 = ConstDivisor::new(ubig!(100));
@@ -283,13 +282,9 @@ fn test_inv() {
     let x = ring.reduce(ubig!(0x123456789123456789123456788));
     assert!(x.inv().is_none());
 
-    let x = ring.reduce(ubig!(
-        0x123456789123456789123456789123456789123456789123456789
-    ));
+    let x = ring.reduce(ubig!(0x123456789123456789123456789123456789123456789123456789));
     let y = x.inv().unwrap();
-    let x = ring.reduce(ubig!(
-        0x123456789123456789123456789123456789123456789000000000
-    ));
+    let x = ring.reduce(ubig!(0x123456789123456789123456789123456789123456789000000000));
     assert!(x.inv().is_none());
     assert_eq!(
         y.residue(),
@@ -390,7 +385,7 @@ fn test_pow() {
 fn test_format() {
     let ring = ConstDivisor::new(ubig!(100));
     let x = ring.reduce(105);
-    assert_eq!(format!("{}", ring), "mod 100");
+    assert_eq!(format!("{}", ring), "100");
     assert_eq!(format!("{}", x), "5 (mod 100)");
     assert_eq!(format!("{:=^5}", x), "==5== (mod =100=)");
     assert_eq!(format!("{:b}", x), "101 (mod 1100100)");
@@ -400,7 +395,7 @@ fn test_format() {
     assert_eq!(format!("{:?}", x), "5 (mod 100)");
     assert_eq!(
         format!("{:#?}", x),
-        r#"Modulo {
+        r#"Reduced {
     residue: 5 (1 digits, 3 bits),
     modulus: 100 (3 digits, 7 bits),
 }"#
@@ -409,7 +404,7 @@ fn test_format() {
     // 1000000000000000000000000000000000000000 has 130 bits
     let ring = ConstDivisor::new(ubig!(1000000000000000000000000000000000000000));
     let x = -ring.reduce(1);
-    assert_eq!(format!("{}", ring), "mod 1000000000000000000000000000000000000000");
+    assert_eq!(format!("{}", ring), "1000000000000000000000000000000000000000");
     assert_eq!(
         format!("{:45}", x),
         "      999999999999999999999999999999999999999 (mod      1000000000000000000000000000000000000000)"
@@ -436,12 +431,10 @@ fn test_format() {
         );
         assert_eq!(
             format!("{:#?}", x),
-            r#"Modulo {
+            r#"Reduced {
     residue: 9999999999999999999..9999999999999999999 (39 digits, 130 bits),
     modulus: 1000000000000000000..0000000000000000000 (40 digits, 130 bits),
 }"#
         );
     }
 }
-
- */

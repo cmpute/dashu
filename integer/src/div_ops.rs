@@ -265,7 +265,7 @@ macro_rules! impl_div_primitive_with_ibig {
 }
 impl_div_primitive_with_ibig!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);
 
-mod repr {
+pub(crate) mod repr {
     use super::*;
     use crate::{
         arch::word::{DoubleWord, Word},
@@ -621,7 +621,7 @@ mod repr {
         }
     }
 
-    fn rem_large(mut lhs: Buffer, mut rhs: Buffer) -> Repr {
+    pub(crate) fn rem_large(mut lhs: Buffer, mut rhs: Buffer) -> Repr {
         let shift = div_rem_in_lhs(&mut lhs, &mut rhs);
         let n = rhs.len();
         rhs.copy_from_slice(&lhs[..n]);

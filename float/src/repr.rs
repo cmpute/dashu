@@ -182,6 +182,26 @@ impl<const B: Word> Repr<B> {
         !self.is_infinite()
     }
 
+    /// Determine if the number can be regarded as an integer.
+    ///
+    /// Note that this function returns false when the number is infinite.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_float::Repr;
+    /// assert!(Repr::<2>::zero().is_int());
+    /// assert!(Repr::<10>::one().is_int());
+    /// assert!(!Repr::<16>::new(123.into(), -1).is_int());
+    /// ```
+    pub fn is_int(&self) -> bool {
+        if self.is_infinite() {
+            false
+        } else {
+            self.exponent >= 0
+        }
+    }
+
     /// Get the sign of the number
     ///
     /// # Examples
