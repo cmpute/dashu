@@ -1,19 +1,19 @@
 use crate::{
     add_ops::repr::{sub_large, sub_large_dword, sub_large_ref_val},
+    buffer::Buffer,
     cmp,
     div_const::{ConstDivisor, ConstDivisorRepr},
     helper_macros::debug_assert_zero,
     math,
     primitive::shrink_dword,
     repr::{Repr, TypedRepr, TypedReprRef},
-    buffer::Buffer,
     shift,
     ubig::UBig,
 };
 use num_modular::Reducer;
 
 use super::{
-    repr::{ReducedDword, ReducedWord, ReducedLarge, ReducedRepr},
+    repr::{ReducedDword, ReducedLarge, ReducedRepr, ReducedWord},
     Reduced,
 };
 
@@ -52,8 +52,12 @@ impl ConstDivisor {
 
     fn convert_from_normalized(&self, target: &UBig) -> Reduced {
         match &self.0 {
-            ConstDivisorRepr::Single(d) => Reduced::from_single(ReducedWord(target.try_into().unwrap()), d),
-            ConstDivisorRepr::Double(d) => Reduced::from_double(ReducedDword(target.try_into().unwrap()), d),
+            ConstDivisorRepr::Single(d) => {
+                Reduced::from_single(ReducedWord(target.try_into().unwrap()), d)
+            }
+            ConstDivisorRepr::Double(d) => {
+                Reduced::from_double(ReducedDword(target.try_into().unwrap()), d)
+            }
             ConstDivisorRepr::Large(d) => {
                 let mut buf = Buffer::allocate_exact(d.normalized_divisor.len());
                 let words = target.as_words();
@@ -74,7 +78,7 @@ impl ConstDivisor {
                 let mut buf = Buffer::from(raw.0.as_ref());
                 buf.pop_zeros();
                 UBig(Repr::from_buffer(buf))
-            },
+            }
         }
     }
 }
@@ -180,7 +184,9 @@ impl Reducer<UBig> for ConstDivisor {
     }
     #[inline]
     fn inv(&self, target: UBig) -> Option<UBig> {
-        self.convert_from_normalized(&target).inv().map(|v| self.convert_to_normalized(v))
+        self.convert_from_normalized(&target)
+            .inv()
+            .map(|v| self.convert_to_normalized(v))
     }
     #[inline]
     fn pow(&self, base: UBig, exp: &UBig) -> UBig {

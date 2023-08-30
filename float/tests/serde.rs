@@ -6,6 +6,7 @@ mod helper_macros;
 type FBig = dashu_float::FBig;
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_fbig_serde() {
     let test_numbers = [
         fbig!(0),

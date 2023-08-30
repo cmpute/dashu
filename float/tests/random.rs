@@ -9,6 +9,7 @@ mod helper_macros;
 type FBig = dashu_float::FBig;
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_uniform01_binary() {
     let mut rng = StdRng::seed_from_u64(1);
 
@@ -50,6 +51,7 @@ fn test_uniform01_binary() {
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_uniform_binary() {
     let mut rng = StdRng::seed_from_u64(1);
 

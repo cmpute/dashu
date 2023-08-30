@@ -249,6 +249,7 @@ fn test_from_parts() {
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_format_binary() {
     assert_eq!(format!("{}", fbig!(0x0)), "0");
     assert_eq!(format!("{}", fbig!(0x1)), "1");
@@ -501,6 +502,7 @@ fn test_format_decimal() {
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_format_debug() {
     assert_eq!(format!("{:?}", DBig::INFINITY), "inf");
     assert_eq!(format!("{:?}", DBig::NEG_INFINITY), "-inf");

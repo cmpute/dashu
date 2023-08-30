@@ -3,6 +3,7 @@
 use dashu::{float::*, integer::*, rational::*, *};
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_macros() {
     // small numbers
     const A: UBig = ubig!(1234);
@@ -27,7 +28,10 @@ fn test_macros() {
     assert!(c < d.to_binary().value());
 
     // let e = rbig!(0xfffffffffffffffffffffffffffffffffffffffffffffffe/0xffffffffffffffffffffffffffffffffffffffffffffffff);
-    let e = rbig!(6277101735386680763835789423207666416102355444464034512894/6277101735386680763835789423207666416102355444464034512895);
+    let e = rbig!(
+        6277101735386680763835789423207666416102355444464034512894
+            / 6277101735386680763835789423207666416102355444464034512895
+    );
     let f = rbig!(~999999999999999999999999999999999999999999999999999999999998/999999999999999999999999999999999999999999999999999999999999);
     assert!(e < f);
 }

@@ -62,6 +62,7 @@ where
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_add_binary() {
     // cases without rounding
     let exact_cases = [
@@ -196,6 +197,7 @@ fn test_add_decimal() {
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_sub_binary() {
     let inexact_cases = [
         (fbig!(0x100), fbig!(0x1p-10), fbig!(0xfffp-4), SubOne),
@@ -280,6 +282,7 @@ fn test_sub_by_inf() {
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_add_sub_unlimited_precision() {
     let a = fbig!(0xffff).with_precision(0).value();
     let b = fbig!(-0xffff).with_precision(0).value();

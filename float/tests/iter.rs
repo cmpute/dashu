@@ -4,6 +4,7 @@ type FBig = dashu_float::FBig;
 mod helper_macros;
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_sum() {
     let nums = [
         fbig!(-0x1p2),
@@ -49,6 +50,7 @@ fn test_sum() {
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_prod() {
     let nums = [
         fbig!(-0x1p2),

@@ -4,6 +4,7 @@ use dashu_float::{round::Rounding::*, DBig};
 mod helper_macros;
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_sqrt_binary() {
     let exact_cases = [
         (fbig!(0), fbig!(0)),

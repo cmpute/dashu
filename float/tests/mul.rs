@@ -34,6 +34,7 @@ where
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_mul_binary() {
     let exact_cases = [
         (fbig!(0), fbig!(0), fbig!(0)),

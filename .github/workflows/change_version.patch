@@ -1,0 +1,13 @@
+﻿diff --git a/float/Cargo.toml b/float/Cargo.toml
+index 25f5bac..8b3ad61 100644
+--- a/float/Cargo.toml
++++ b/float/Cargo.toml
+@@ -43,7 +43,7 @@ num-order = { optional = true, version = "1.1.0", default-features = false }
+ serde = { optional = true, version = "1.0.130", default-features = false }
+ zeroize = { optional = true, version = "1.5.7", default-features = false }
+ diesel_v1 = { optional = true, version = "1.4.0", package = "diesel", default-features = false, features = ["postgres"]}
+-diesel_v2 = { optional = true, version = "2.0.0", package = "diesel", default-features = false, features = ["postgres_backend"]}
++diesel_v2 = { optional = true, version = "=2.0.0", package = "diesel", default-features = false, features = ["postgres_backend"]}
+ _bytes = { optional = true, version = "1.0", package = "bytes", default-features = false }
+ 
+ # unstable dependencies

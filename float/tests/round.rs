@@ -3,6 +3,7 @@ use dashu_float::DBig;
 mod helper_macros;
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_ceil_floor() {
     assert_eq!(fbig!(0x0).ceil(), fbig!(0x0));
     assert_eq!(fbig!(0x1p1).ceil(), fbig!(0x1p1));
@@ -38,6 +39,7 @@ fn test_ceil_floor() {
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_trunc_fract() {
     // binary
     assert_eq!(fbig!(0x0).trunc(), fbig!(0x0));

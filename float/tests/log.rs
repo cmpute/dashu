@@ -4,6 +4,7 @@ use dashu_float::{round::Rounding::*, DBig};
 mod helper_macros;
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_ln_binary() {
     assert_eq!(fbig!(1).ln(), fbig!(0));
 
@@ -100,6 +101,7 @@ fn test_ln_inf() {
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_ln_1p_binary() {
     assert_eq!(fbig!(0).ln_1p(), fbig!(0));
 

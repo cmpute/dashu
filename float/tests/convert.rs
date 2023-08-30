@@ -14,50 +14,138 @@ type FBin = FBig;
 type FHex = FBig<Zero, 16>;
 
 #[test]
-#[rustfmt::skip]
+#[rustfmt::skip::macros(fbig)]
 fn test_base_change() {
     // binary -> decimal
     // 5 decimal digits precision < 20 binary digits precision
     assert_eq!(fbig!(0x12345).with_rounding::<HalfAway>().to_decimal(), Exact(dbig!(74565)));
-    assert_eq!(fbig!(-0x12345p1).with_rounding::<HalfAway>().to_decimal(), Exact(dbig!(-149130)));
-    assert_eq!(fbig!(0x12345p100).with_rounding::<HalfAway>().to_decimal(), Inexact(dbig!(945224e29), AddOne));
-    assert_eq!(fbig!(0x12345p-1).with_rounding::<HalfAway>().to_decimal(), Exact(dbig!(372825e-1)));
-    assert_eq!(fbig!(-0x12345p-100).with_rounding::<HalfAway>().to_decimal(), Inexact(dbig!(-588214e-31), NoOp));
+    assert_eq!(
+        fbig!(-0x12345p1).with_rounding::<HalfAway>().to_decimal(),
+        Exact(dbig!(-149130))
+    );
+    assert_eq!(
+        fbig!(0x12345p100).with_rounding::<HalfAway>().to_decimal(),
+        Inexact(dbig!(945224e29), AddOne)
+    );
+    assert_eq!(
+        fbig!(0x12345p-1).with_rounding::<HalfAway>().to_decimal(),
+        Exact(dbig!(372825e-1))
+    );
+    assert_eq!(
+        fbig!(-0x12345p-100)
+            .with_rounding::<HalfAway>()
+            .to_decimal(),
+        Inexact(dbig!(-588214e-31), NoOp)
+    );
     assert_eq!(FBig::<HalfAway, 2>::INFINITY.to_decimal(), Inexact(DBig::INFINITY, NoOp));
-    assert_eq!(FBig::<HalfAway, 2>::NEG_INFINITY.to_decimal(), Inexact(DBig::NEG_INFINITY, NoOp));
+    assert_eq!(
+        FBig::<HalfAway, 2>::NEG_INFINITY.to_decimal(),
+        Inexact(DBig::NEG_INFINITY, NoOp)
+    );
 
-    assert_eq!(fbig!(0x12345).with_rounding::<HalfAway>().with_base_and_precision::<10>(10), Exact(dbig!(74565)));
-    assert_eq!(fbig!(-0x12345p1).with_rounding::<HalfAway>().with_base_and_precision::<10>(10), Exact(dbig!(-149130)));
-    assert_eq!(fbig!(0x12345p100).with_rounding::<HalfAway>().with_base_and_precision::<10>(10), Inexact(dbig!(9452236701e25), AddOne));
-    assert_eq!(fbig!(0x12345p-1).with_rounding::<HalfAway>().with_base_and_precision::<10>(10), Exact(dbig!(372825e-1)));
-    assert_eq!(fbig!(-0x12345p-100).with_rounding::<HalfAway>().with_base_and_precision::<10>(10), Inexact(dbig!(-5882141340e-35), SubOne));
+    assert_eq!(
+        fbig!(0x12345)
+            .with_rounding::<HalfAway>()
+            .with_base_and_precision::<10>(10),
+        Exact(dbig!(74565))
+    );
+    assert_eq!(
+        fbig!(-0x12345p1)
+            .with_rounding::<HalfAway>()
+            .with_base_and_precision::<10>(10),
+        Exact(dbig!(-149130))
+    );
+    assert_eq!(
+        fbig!(0x12345p100)
+            .with_rounding::<HalfAway>()
+            .with_base_and_precision::<10>(10),
+        Inexact(dbig!(9452236701e25), AddOne)
+    );
+    assert_eq!(
+        fbig!(0x12345p-1)
+            .with_rounding::<HalfAway>()
+            .with_base_and_precision::<10>(10),
+        Exact(dbig!(372825e-1))
+    );
+    assert_eq!(
+        fbig!(-0x12345p-100)
+            .with_rounding::<HalfAway>()
+            .with_base_and_precision::<10>(10),
+        Inexact(dbig!(-5882141340e-35), SubOne)
+    );
 
     // decimal -> binary
     // 16 binary digits precision < 5 decimal digits precision
     assert_eq!(dbig!(12345).with_rounding::<Zero>().to_binary(), Exact(fbig!(0x3039)));
     assert_eq!(dbig!(-12345e1).with_rounding::<Zero>().to_binary(), Exact(fbig!(-0xf11dp1)));
-    assert_eq!(dbig!(12345e100).with_rounding::<Zero>().to_binary(), Inexact(fbig!(0xdc78p330), NoOp));
+    assert_eq!(
+        dbig!(12345e100).with_rounding::<Zero>().to_binary(),
+        Inexact(fbig!(0xdc78p330), NoOp)
+    );
     assert_eq!(dbig!(12345e-1).with_rounding::<Zero>().to_binary(), Exact(fbig!(0x9a5p-1)));
-    assert_eq!(dbig!(-12345e-100).with_rounding::<Zero>().to_binary(), Inexact(fbig!(-0xa8c2p-334), NoOp));
+    assert_eq!(
+        dbig!(-12345e-100).with_rounding::<Zero>().to_binary(),
+        Inexact(fbig!(-0xa8c2p-334), NoOp)
+    );
     assert_eq!(DBig::INFINITY.to_binary(), Inexact(FBig::<HalfAway, 2>::INFINITY, NoOp));
     assert_eq!(DBig::NEG_INFINITY.to_binary(), Inexact(FBig::<HalfAway, 2>::NEG_INFINITY, NoOp));
 
-    assert_eq!(dbig!(12345).with_rounding::<Zero>().with_base_and_precision::<2>(30), Exact(fbig!(0x3039)));
-    assert_eq!(dbig!(-12345e1).with_rounding::<Zero>().with_base_and_precision::<2>(30), Exact(fbig!(-0xf11dp1)));
-    assert_eq!(dbig!(12345e100).with_rounding::<Zero>().with_base_and_precision::<2>(30), Inexact(fbig!(0x371e2de9p316), NoOp));
-    assert_eq!(dbig!(12345e-1).with_rounding::<Zero>().with_base_and_precision::<2>(30), Exact(fbig!(0x9a5p-1)));
-    assert_eq!(dbig!(-12345e-100).with_rounding::<Zero>().with_base_and_precision::<2>(30), Inexact(fbig!(-0x2a30a4e2p-348), NoOp));
+    assert_eq!(
+        dbig!(12345)
+            .with_rounding::<Zero>()
+            .with_base_and_precision::<2>(30),
+        Exact(fbig!(0x3039))
+    );
+    assert_eq!(
+        dbig!(-12345e1)
+            .with_rounding::<Zero>()
+            .with_base_and_precision::<2>(30),
+        Exact(fbig!(-0xf11dp1))
+    );
+    assert_eq!(
+        dbig!(12345e100)
+            .with_rounding::<Zero>()
+            .with_base_and_precision::<2>(30),
+        Inexact(fbig!(0x371e2de9p316), NoOp)
+    );
+    assert_eq!(
+        dbig!(12345e-1)
+            .with_rounding::<Zero>()
+            .with_base_and_precision::<2>(30),
+        Exact(fbig!(0x9a5p-1))
+    );
+    assert_eq!(
+        dbig!(-12345e-100)
+            .with_rounding::<Zero>()
+            .with_base_and_precision::<2>(30),
+        Inexact(fbig!(-0x2a30a4e2p-348), NoOp)
+    );
 
     // binary -> hexadecimal
     assert_eq!(fbig!(0x12345).with_base::<16>(), Exact(FHex::from_parts(ibig!(0x12345), 0)));
     assert_eq!(fbig!(-0x12345p1).with_base::<16>(), Exact(FHex::from_parts(ibig!(-0x2468a), 0)));
-    assert_eq!(fbig!(0x12345p100).with_base::<16>(), Exact(FHex::from_parts(ibig!(0x12345), 25)));
-    assert_eq!(fbig!(0x54321p111).with_base::<16>(), Inexact(FHex::from_parts(ibig!(0x2a190), 28), NoOp));
+    assert_eq!(
+        fbig!(0x12345p100).with_base::<16>(),
+        Exact(FHex::from_parts(ibig!(0x12345), 25))
+    );
+    assert_eq!(
+        fbig!(0x54321p111).with_base::<16>(),
+        Inexact(FHex::from_parts(ibig!(0x2a190), 28), NoOp)
+    );
     assert_eq!(fbig!(0x12345p-1).with_base::<16>(), Exact(FHex::from_parts(ibig!(0x91a28), -1)));
-    assert_eq!(fbig!(-0x12345p-100).with_base::<16>(), Exact(FHex::from_parts(ibig!(-0x12345), -25)));
-    assert_eq!(fbig!(-0x12345p-111).with_base::<16>(), Exact(FHex::from_parts(ibig!(-0x2468a), -28)));
+    assert_eq!(
+        fbig!(-0x12345p-100).with_base::<16>(),
+        Exact(FHex::from_parts(ibig!(-0x12345), -25))
+    );
+    assert_eq!(
+        fbig!(-0x12345p-111).with_base::<16>(),
+        Exact(FHex::from_parts(ibig!(-0x2468a), -28))
+    );
     assert_eq!(FBig::<Zero, 2>::INFINITY.with_base::<16>(), Inexact(FHex::INFINITY, NoOp));
-    assert_eq!(FBig::<Zero, 2>::NEG_INFINITY.with_base::<16>(), Inexact(FHex::NEG_INFINITY, NoOp));
+    assert_eq!(
+        FBig::<Zero, 2>::NEG_INFINITY.with_base::<16>(),
+        Inexact(FHex::NEG_INFINITY, NoOp)
+    );
 
     // hexadecimal -> binary
     assert_eq!(FHex::from_parts(ibig!(0x12345), 0).to_binary(), Exact(fbig!(0x12345)));
@@ -72,10 +160,11 @@ fn test_base_change() {
 #[test]
 #[should_panic]
 fn test_base_change_unlimited_precision() {
-    let _ = dbig!(0x1234p-1).with_precision(0).value().with_base::<2>();
+    let _ = dbig!(1234e-1).with_precision(0).value().with_base::<2>();
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_from_f32() {
     assert_eq!(FBin::try_from(0f32).unwrap(), fbig!(0x0));
     assert_eq!(FBin::try_from(-0f32).unwrap(), fbig!(0x0));
@@ -97,6 +186,7 @@ fn test_from_f32() {
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_from_f64() {
     assert_eq!(FBin::try_from(0f64).unwrap(), fbig!(0x0));
     assert_eq!(FBin::try_from(-0f64).unwrap(), fbig!(0x0));
@@ -118,6 +208,7 @@ fn test_from_f64() {
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_to_int() {
     assert_eq!(fbig!(0x0).to_int(), Exact(ibig!(0)));
     assert_eq!(fbig!(0x1).to_int(), Exact(ibig!(1)));
@@ -149,6 +240,7 @@ fn test_inf_to_int() {
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_to_f32() {
     assert_eq!(fbig!(0x0).to_f32(), Exact(0.));
     assert_eq!(fbig!(0x1).to_f32(), Exact(1.));
@@ -180,6 +272,7 @@ fn test_to_f32() {
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_to_f64() {
     assert_eq!(fbig!(0x0).to_f64(), Exact(0.));
     assert_eq!(fbig!(0x1).to_f64(), Exact(1.));

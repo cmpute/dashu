@@ -60,6 +60,7 @@ where
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_div_binary() {
     let exact_cases = [
         (fbig!(0), fbig!(1), fbig!(0)),
@@ -168,6 +169,7 @@ fn test_div_by_unlimited_precision() {
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_rem_binary() {
     // test cases: n, d, remainder
     let test_cases = [
@@ -238,6 +240,7 @@ fn test_rem_by_0() {
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_div_rem_euclid_binary() {
     // test cases: n, d, quotient, remainder
     let test_cases = [

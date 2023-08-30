@@ -6,6 +6,7 @@ type FBig = dashu_float::FBig;
 mod helper_macros;
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_eq_binary() {
     assert_eq!(fbig!(0x0p1), fbig!(-0x0p-1));
     assert_ne!(fbig!(0x0p1), fbig!(0x1p1));
@@ -40,6 +41,7 @@ fn test_eq_decimal() {
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_cmp_binary() {
     // case 1: compare with inf
     assert_eq!(FBig::INFINITY.cmp(&FBig::INFINITY), Ordering::Equal);

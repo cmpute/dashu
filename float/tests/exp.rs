@@ -4,6 +4,7 @@ use dashu_float::{round::Rounding::*, DBig};
 mod helper_macros;
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_powi_binary() {
     // simple cases
     assert_eq!(fbig!(0x0).powi(ibig!(0)), fbig!(0x1));
@@ -102,6 +103,7 @@ fn test_powi_decimal() {
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_powi_unlimited_precision() {
     assert_eq!(fbig!(0x1p-3).with_precision(0).value().powi(ibig!(100)), fbig!(0x1p-300));
     assert_eq!(
@@ -112,11 +114,13 @@ fn test_powi_unlimited_precision() {
 
 #[test]
 #[should_panic]
+#[rustfmt::skip::macros(fbig)]
 fn test_powi_unlimited_precision_neg_exp() {
     let _ = fbig!(0x3p-3).with_precision(0).value().powi(ibig!(-100));
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_exp_binary() {
     assert_eq!(fbig!(0).exp(), fbig!(1));
 
@@ -223,6 +227,7 @@ fn test_exp_inf() {
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_exp_m1_binary() {
     assert_eq!(fbig!(0).exp_m1(), fbig!(0));
 
@@ -331,6 +336,7 @@ fn test_exp_m1_inf() {
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_powf_binary() {
     assert_eq!(fbig!(0).powf(&fbig!(0)), fbig!(1));
     assert_eq!(fbig!(1).powf(&fbig!(0)), fbig!(1));
