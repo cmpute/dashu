@@ -6,14 +6,15 @@ use crate::{
     math,
     primitive::shrink_dword,
     repr::{Repr, TypedRepr, TypedReprRef},
+    buffer::Buffer,
     shift,
     ubig::UBig,
 };
 use num_modular::Reducer;
 
 use super::{
-    repr::{ReducedDword, ReducedWord},
-    IntoRing,
+    repr::{ReducedDword, ReducedWord, ReducedLarge, ReducedRepr},
+    Reduced,
 };
 
 impl ConstDivisor {
@@ -45,6 +46,34 @@ impl ConstDivisor {
                     UBig(sub_large_dword(d.normalized_divisor.as_ref().into(), s))
                 }
                 TypedRepr::Large(s) => UBig(sub_large_ref_val(&d.normalized_divisor, s)),
+            },
+        }
+    }
+
+    fn convert_from_normalized(&self, target: &UBig) -> Reduced {
+        match &self.0 {
+            ConstDivisorRepr::Single(d) => Reduced::from_single(ReducedWord(target.try_into().unwrap()), d),
+            ConstDivisorRepr::Double(d) => Reduced::from_double(ReducedDword(target.try_into().unwrap()), d),
+            ConstDivisorRepr::Large(d) => {
+                let mut buf = Buffer::allocate_exact(d.normalized_divisor.len());
+                let words = target.as_words();
+                buf.push_slice(words);
+                buf.push_zeros(d.normalized_divisor.len() - words.len());
+                Reduced::from_large(ReducedLarge(buf.into_boxed_slice()), d)
+            }
+        }
+    }
+
+    fn convert_to_normalized(&self, target: Reduced) -> UBig {
+        // this function is for internal use only!
+        // it's not checked whether `target` is using `self` as the ring!
+        match target.repr() {
+            ReducedRepr::Single(raw, _) => UBig(Repr::from_word(raw.0)),
+            ReducedRepr::Double(raw, _) => UBig(Repr::from_dword(raw.0)),
+            ReducedRepr::Large(raw, _) => {
+                let mut buf = Buffer::from(raw.0.as_ref());
+                buf.pop_zeros();
+                UBig(Repr::from_buffer(buf))
             },
         }
     }
@@ -141,20 +170,20 @@ impl Reducer<UBig> for ConstDivisor {
 
     #[inline]
     fn mul(&self, lhs: &UBig, rhs: &UBig) -> UBig {
-        let lhs = lhs.clone().into_ring(self);
-        let rhs = rhs.clone().into_ring(self);
-        (lhs * rhs).residue()
+        let lhs = self.convert_from_normalized(lhs);
+        let rhs = self.convert_from_normalized(rhs);
+        self.convert_to_normalized(lhs * rhs)
     }
     #[inline]
     fn sqr(&self, target: UBig) -> UBig {
-        target.into_ring(self).sqr().residue()
+        self.convert_to_normalized(self.convert_from_normalized(&target).sqr())
     }
     #[inline]
     fn inv(&self, target: UBig) -> Option<UBig> {
-        target.into_ring(self).inv().map(|v| v.residue())
+        self.convert_from_normalized(&target).inv().map(|v| self.convert_to_normalized(v))
     }
     #[inline]
     fn pow(&self, base: UBig, exp: &UBig) -> UBig {
-        base.into_ring(self).pow(exp).residue()
+        self.convert_to_normalized(self.convert_from_normalized(&base).pow(exp))
     }
 }
