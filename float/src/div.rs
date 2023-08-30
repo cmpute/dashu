@@ -280,22 +280,21 @@ impl<R: Round> Context<R> {
             Ordering::Greater => {
                 // if the least significant digit of lhs is higher than rhs, then we can
                 // align lhs to rhs and do simple modulo operations
-                todo!()
-                // let modulo = ConstDivisor::new(rhs_signif);
-                // let shift = (lhs.exponent - rhs.exponent) as usize;
-                // let scaling = if B == 2 {
-                //     (UBig::ONE << shift).into_ring(&modulo)
-                // } else {
-                //     UBig::from_word(B).into_ring(&modulo).pow(&shift.into())
-                // };
-                // let r = lhs_signif.into_ring(&modulo) * scaling;
-                // let r1 = r.residue();
-                // let r2 = (-r).residue();
-                // if r1 < r2 {
-                //     IBig::from_parts(lhs_sign, r1)
-                // } else {
-                //     IBig::from_parts(-lhs_sign, r2)
-                // }
+                let modulo = ConstDivisor::new(rhs_signif);
+                let shift = (lhs.exponent - rhs.exponent) as usize;
+                let scaling = if B == 2 {
+                    (UBig::ONE << shift).into_ring(&modulo)
+                } else {
+                    UBig::from_word(B).into_ring(&modulo).pow(&shift.into())
+                };
+                let r = lhs_signif.into_ring(&modulo) * scaling;
+                let r1 = r.residue();
+                let r2 = (-r).residue();
+                if r1 < r2 {
+                    IBig::from_parts(lhs_sign, r1)
+                } else {
+                    IBig::from_parts(-lhs_sign, r2)
+                }
             }
             Ordering::Less => {
                 // otherwise we have to split lhs into two parts

@@ -26,3 +26,6 @@ mod mul;
 mod pow;
 mod reducer;
 pub(crate) mod repr;
+
+// TODO: Also support Montgomery form reductions, use relaxed form described
+//       in https://cetinkayakoc.net/docs/j56.pdf and https://eprint.iacr.org/2011/239.pdf

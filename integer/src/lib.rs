@@ -137,6 +137,7 @@ mod ubig;
 pub use third_party::*;
 
 // Re-export types for fast division
+/// Prepared divisor types for fast division
 pub mod fast_div {
     pub use super::div_const::ConstDivisor;
 }

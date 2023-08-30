@@ -4,7 +4,6 @@ use crate::arch::{
     ntt::{MAX_ORDER, PRIMES},
     word::Word,
 };
-#[allow(dead_code)]
 const _UNUSED: u32 = MAX_ORDER; // TODO: implement Schönhage-Strassen multiplication
 
 type ModuloWord = num_modular::Normalized2by1Divisor<Word>;

@@ -1,7 +1,7 @@
 //! Modular addition and subtraction.
 
 use super::repr::{Reduced, ReducedDword, ReducedLarge, ReducedRepr, ReducedWord};
-use crate::{add, cmp, div_const::ConstLargeDivisor, error::panic_different_rings};
+use crate::{add, cmp, div_const::ConstLargeDivisor, error::panic_different_rings, shift};
 use core::ops::{Add, AddAssign, Neg, Sub, SubAssign};
 use num_modular::Reducer;
 
@@ -179,6 +179,34 @@ impl<'a> SubAssign<&Reduced<'a>> for Reduced<'a> {
     }
 }
 
+impl<'a> Reduced<'a> {
+    /// Calculate 2*target mod m in reduced form
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::{fast_div::ConstDivisor, UBig};
+    /// let p = UBig::from(0x1234u16);
+    /// let ring = ConstDivisor::new(p.clone());
+    /// let a = ring.reduce(4000);
+    /// assert_eq!(a.dbl(), ring.reduce(4000 + 4000));
+    /// ```
+    pub fn dbl(self) -> Self {
+        match self.into_repr() {
+            ReducedRepr::Single(raw, ring) => {
+                Reduced::from_single(ReducedWord(ring.0.dbl(raw.0)), ring)
+            }
+            ReducedRepr::Double(raw, ring) => {
+                Reduced::from_double(ReducedDword(ring.0.dbl(raw.0)), ring)
+            }
+            ReducedRepr::Large(mut raw, ring) => {
+                dbl_in_place(ring, &mut raw);
+                Reduced::from_large(raw, ring)
+            }
+        }
+    }
+}
+
 pub(crate) fn negate_in_place(ring: &ConstLargeDivisor, raw: &mut ReducedLarge) {
     debug_assert!(raw.is_valid(ring));
     if !raw.0.iter().all(|w| *w == 0) {
@@ -193,6 +221,16 @@ fn add_in_place(ring: &ConstLargeDivisor, lhs: &mut ReducedLarge, rhs: &ReducedL
     let overflow = add::add_same_len_in_place(&mut lhs.0, &rhs.0);
     if overflow || cmp::cmp_same_len(&lhs.0, modulus).is_ge() {
         let overflow2 = add::sub_same_len_in_place(&mut lhs.0, modulus);
+        debug_assert_eq!(overflow, overflow2);
+    }
+}
+
+fn dbl_in_place(ring: &ConstLargeDivisor, raw: &mut ReducedLarge) {
+    debug_assert!(raw.is_valid(ring));
+    let modulus = &ring.normalized_divisor;
+    let overflow = shift::shl_in_place(&mut raw.0, 1) > 0;
+    if overflow || cmp::cmp_same_len(&raw.0, modulus).is_ge() {
+        let overflow2 = add::sub_same_len_in_place(&mut raw.0, modulus);
         debug_assert_eq!(overflow, overflow2);
     }
 }

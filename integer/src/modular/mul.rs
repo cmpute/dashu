@@ -15,7 +15,7 @@ use alloc::alloc::Layout;
 use core::ops::{Deref, Mul, MulAssign};
 use num_modular::Reducer;
 
-use super::repr::ReducedLarge;
+use super::repr::{ReducedDword, ReducedLarge, ReducedWord};
 
 impl<'a> Mul<Reduced<'a>> for Reduced<'a> {
     type Output = Reduced<'a>;
@@ -80,6 +80,37 @@ impl<'a> MulAssign<&Reduced<'a>> for Reduced<'a> {
                 mul_in_place(ring, raw0, raw1, &mut allocation.memory());
             }
             _ => panic_different_rings(),
+        }
+    }
+}
+
+impl<'a> Reduced<'a> {
+    /// Calculate target^2 mod m in reduced form
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::{fast_div::ConstDivisor, UBig};
+    /// let p = UBig::from(0x1234u16);
+    /// let ring = ConstDivisor::new(p.clone());
+    /// let a = ring.reduce(4000);
+    /// assert_eq!(a.sqr(), ring.reduce(4000 * 4000));
+    /// ```
+    pub fn sqr(&self) -> Self {
+        match self.repr() {
+            ReducedRepr::Single(raw, ring) => {
+                Reduced::from_single(ReducedWord(ring.0.sqr(raw.0)), ring)
+            }
+            ReducedRepr::Double(raw, ring) => {
+                Reduced::from_double(ReducedDword(ring.0.sqr(raw.0)), ring)
+            }
+            ReducedRepr::Large(raw, ring) => {
+                let mut result = raw.clone();
+                let memory_requirement = mul_memory_requirement(ring);
+                let mut allocation = MemoryAllocation::new(memory_requirement);
+                sqr_in_place(ring, &mut result, &mut allocation.memory());
+                Reduced::from_large(result, ring)
+            }
         }
     }
 }

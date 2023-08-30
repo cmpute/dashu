@@ -3,15 +3,12 @@
 use crate::{
     arch::word::{DoubleWord, Word},
     helper_macros::debug_assert_zero,
-    math::{shl_dword, shr_word},
+    math::{shl_dword, shr_word, FastDivideNormalized, FastDivideNormalized2},
     memory::{self, Memory},
     primitive::{double_word, extend_word, highest_dword, lowest_dword, split_dword, WORD_BITS},
     shift,
 };
 use alloc::alloc::Layout;
-
-type FastDivideNormalized = num_modular::Normalized2by1Divisor<Word>;
-type FastDivideNormalized2 = num_modular::Normalized3by2Divisor<Word, DoubleWord>;
 
 mod divide_conquer;
 mod simple;

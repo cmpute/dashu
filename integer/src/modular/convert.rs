@@ -14,7 +14,6 @@ use crate::{
     Sign::*,
 };
 use dashu_base::UnsignedAbs;
-use num_modular::Reducer;
 
 use super::repr::{Reduced, ReducedDword, ReducedLarge, ReducedRepr, ReducedWord};
 
@@ -51,11 +50,6 @@ impl Reduced<'_> {
 }
 
 impl ReducedWord {
-    #[inline]
-    pub fn from_word(word: Word, ring: &ConstSingleDivisor) -> Self {
-        Self(ring.0.transform(word))
-    }
-
     #[inline]
     pub fn from_ubig(x: &UBig, ring: &ConstSingleDivisor) -> Self {
         Self(match x.repr() {

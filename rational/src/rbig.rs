@@ -1,4 +1,4 @@
-use dashu_base::{EstimatedLog2, Sign};
+use dashu_base::{AbsEq, EstimatedLog2, Sign};
 use dashu_int::{DoubleWord, IBig, UBig};
 
 use crate::{error::panic_divide_by_0, repr::Repr};
@@ -214,7 +214,21 @@ impl RBig {
     /// ```
     #[inline]
     pub const fn is_one(&self) -> bool {
-        self.0.numerator.is_one()
+        self.0.numerator.is_one() && self.0.denominator.is_one()
+    }
+
+    /// Determine if the number can be regarded as an integer.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_ratio::RBig;
+    /// assert!(RBig::ZERO.is_int());
+    /// assert!(RBig::ONE.is_int());
+    /// ```
+    #[inline]
+    pub const fn is_int(&self) -> bool {
+        self.0.denominator.is_one()
     }
 }
 
@@ -360,8 +374,8 @@ impl Relaxed {
     ///
     /// See [RBig::is_one] for details.
     #[inline]
-    pub const fn is_one(&self) -> bool {
-        self.0.numerator.is_one()
+    pub fn is_one(&self) -> bool {
+        self.0.numerator.sign() == Sign::Positive && self.0.numerator.abs_eq(&self.0.denominator)
     }
 }
 
