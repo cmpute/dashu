@@ -53,7 +53,7 @@ impl<R: Round> FromSql<DieselNumeric, Pg> for FBig<R, 10> {
     }
 }
 
-fn numeric_to_sql<'b>(num: Numeric, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+fn numeric_to_sql(num: Numeric, out: &mut Output<'_, '_, Pg>) -> serialize::Result {
     let num = match num {
         Numeric {
             is_inf: false,

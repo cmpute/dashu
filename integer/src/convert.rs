@@ -445,14 +445,6 @@ impl From<UBig> for IBig {
     }
 }
 
-// TODO(v0.4): deprecate this conversion (because of implicit clone)
-impl From<&UBig> for IBig {
-    #[inline]
-    fn from(x: &UBig) -> IBig {
-        IBig::from(x.clone())
-    }
-}
-
 impl TryFrom<IBig> for UBig {
     type Error = ConversionError;
 
@@ -616,6 +608,7 @@ mod repr {
         }
 
         #[inline]
+        #[allow(clippy::unnecessary_cast)] // because DoubleWord is not always u128
         pub fn to_f32(self) -> Approximation<f32, Sign> {
             match self {
                 RefSmall(dword) => to_f32_small(dword as u128),
@@ -641,6 +634,7 @@ mod repr {
         }
 
         #[inline]
+        #[allow(clippy::unnecessary_cast)] // because DoubleWord is not always u128
         pub fn to_f64(self) -> Approximation<f64, Sign> {
             match self {
                 RefSmall(dword) => to_f64_small(dword as u128),

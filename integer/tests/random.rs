@@ -124,4 +124,4 @@ fn test_random_arithmetic() {
     }
 }
 
-// TODO: test random modular arithmetic
+// TODO(v0.4): test random modular arithmetic

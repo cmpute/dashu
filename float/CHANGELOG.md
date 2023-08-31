@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Add
+
+- Implement `num-order::NumOrd` between `FBig` and `RBig` and between different bases.
+
 ### Change
 
 - Now feature `num-traits` and `rand` are not enabled by default, feature `num-order` is enabled instead.

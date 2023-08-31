@@ -104,7 +104,7 @@ impl DoubleEnd<'_> {
 
                 self.format_prepared(
                     f,
-                    exp as usize + 1,
+                    exp + 1,
                     &mut prepared_high,
                     Some(&mut prepared_low),
                 )

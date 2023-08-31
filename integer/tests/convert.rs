@@ -162,7 +162,6 @@ fn test_ibig_to_signed() {
 fn test_ubig_to_ibig() {
     assert_eq!(IBig::from(UBig::from(0u32)), IBig::from(0i32));
     assert_eq!(IBig::from(UBig::from(100u32)), IBig::from(100i32));
-    assert_eq!(IBig::from(&UBig::from(100u32)), IBig::from(100i32));
 }
 
 #[test]

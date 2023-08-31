@@ -7,7 +7,7 @@ use criterion::{
     PlotConfiguration,
 };
 use dashu_int::{
-    modular::ModuloRing,
+    fast_div::ConstDivisor,
     ops::{DivRem, ExtendedGcd, Gcd},
     UBig,
 };
@@ -221,9 +221,9 @@ fn bench_modulo_mul(criterion: &mut Criterion) {
     for log_bits in 1..=6 {
         let bits = 10usize.pow(log_bits);
         let m = random_ubig(bits, &mut rng);
-        let ring = ModuloRing::new(m);
-        let a = ring.convert(&random_ubig(bits, &mut rng));
-        let b = ring.convert(&random_ubig(bits, &mut rng));
+        let ring = ConstDivisor::new(m);
+        let a = ring.reduce(random_ubig(bits, &mut rng));
+        let b = ring.reduce(random_ubig(bits, &mut rng));
         group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
             bencher.iter(|| black_box(&a) * black_box(&b))
         });
@@ -243,8 +243,8 @@ fn bench_modulo_pow(criterion: &mut Criterion) {
         }
         let bits = 10usize.pow(log_bits);
         let m = random_ubig(bits, &mut rng);
-        let ring = ModuloRing::new(m);
-        let a = ring.convert(&random_ubig(2048, &mut rng));
+        let ring = ConstDivisor::new(m);
+        let a = ring.reduce(random_ubig(2048, &mut rng));
         let b = random_ubig(bits, &mut rng);
         group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
             bencher.iter(|| black_box(&a).pow(&b))

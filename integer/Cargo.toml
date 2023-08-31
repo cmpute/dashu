@@ -29,10 +29,10 @@ num-integer = ["num-integer_v01"]
 dashu-base = { version = "0.3.1", default-features = false, path = "../base" }
 cfg-if = { version = "1.0.0" }
 static_assertions = { version = "1.1" }
-num-modular = { version = "0.6.0" }
+num-modular = { version = "0.6.1" }
 
 # stable dependencies
-num-order = { optional = true, version = "1.1.0", default-features = false }
+num-order = { optional = true, version = "1.2.0", default-features = false }
 serde = { optional = true, version = "1.0.130", default-features = false }
 zeroize = { optional = true, version = "1.5.7", default-features = false }
 

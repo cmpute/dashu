@@ -32,6 +32,7 @@ rand = ["rand_v08"]
 rand_v08 = ["dep:rand_v08", "dashu-int/rand_v08"]
 postgres-types = ["postgres-types_v02"]
 postgres-types_v02 = ["dep:postgres-types_v02", "dep:_bytes", "std"]
+num-order = ["dep:num-order", "dep:_num-modular"]
 
 [dependencies]
 dashu-base = { version = "0.3.1", default-features = false, path = "../base" }
@@ -39,7 +40,7 @@ dashu-int = { version = "0.3.1", default-features = false, path = "../integer" }
 static_assertions = { version = "1.1"}
 
 # stable dependencies
-num-order = { optional = true, version = "1.1.0", default-features = false }
+num-order = { optional = true, version = "1.2.0", default-features = false }
 serde = { optional = true, version = "1.0.130", default-features = false }
 zeroize = { optional = true, version = "1.5.7", default-features = false }
 diesel_v1 = { optional = true, version = "1.4.0", package = "diesel", default-features = false, features = ["postgres"]}
@@ -50,6 +51,7 @@ _bytes = { optional = true, version = "1.0", package = "bytes", default-features
 rand_v08 = { optional = true, version = "0.8.3", package = "rand", default-features = false }
 num-traits_v02 = { optional = true, version = "0.2.15", package = "num-traits", default-features = false }
 postgres-types_v02 = { optional = true, version = "0.2.4", package = "postgres-types", default-features = false }
+_num-modular = { optional = true, version = "0.6.1", package = "num-modular", default-features = false }
 
 [dev-dependencies]
 rand_v08 = { version = "0.8.3", package = "rand" }
@@ -65,6 +67,10 @@ required-features = ["rand"]
 [[test]]
 name = "serde"
 required-features = ["serde"]
+
+[[test]]
+name = "num_order"
+required-features = ["num-order", "dashu-int/num-order"]
 
 [[test]]
 name = "postgres"

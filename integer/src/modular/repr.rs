@@ -78,7 +78,7 @@ impl<'a> Reduced<'a> {
 
     #[inline]
     pub(crate) fn from_large(raw: ReducedLarge, ring: &'a ConstLargeDivisor) -> Self {
-        debug_assert!(raw.is_valid(&ring));
+        debug_assert!(raw.is_valid(ring));
         Reduced(ReducedRepr::Large(raw, ring))
     }
 

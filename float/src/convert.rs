@@ -64,7 +64,7 @@ macro_rules! impl_from_float_for_fbig {
                         Sign::Positive => Ok(FBig::INFINITY),
                         Sign::Negative => Ok(FBig::NEG_INFINITY),
                     },
-                    _ => Err(ConversionError::OutOfBounds),
+                    _ => Err(ConversionError::OutOfBounds), // NaN
                 }
             }
         }

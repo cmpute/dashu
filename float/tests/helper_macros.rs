@@ -1,7 +1,7 @@
 //! Helper macros for constructing numbers
 //!
 //! These macros are the simpler versions of the ones in `dashu-macros`, meant
-//! to be used in testing only.
+//! to be used in testing only. These macros don't support the radix point.
 //!
 //! These macros rely on string parsing, so do not use
 //! these macros when testing string parsing!
