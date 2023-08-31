@@ -1,7 +1,7 @@
 use _num_modular::{FixedMersenneInt, ModularAbs, ModularInteger};
 use core::cmp::Ordering;
 use dashu_base::{EstimatedLog2, Sign};
-use dashu_int::{IBig, Word};
+use dashu_int::{IBig, UBig, Word};
 use num_order::{NumHash, NumOrd};
 
 use crate::{
@@ -42,16 +42,10 @@ impl<const B1: Word, const B2: Word> NumOrd<Repr<B2>> for Repr<B1> {
         let (self_lo, self_hi) = self.log2_bounds();
         let (other_lo, other_hi) = other.log2_bounds();
         if self_lo > other_hi {
-            return match sign {
-                Sign::Positive => Ordering::Greater,
-                Sign::Negative => Ordering::Less,
-            };
+            return sign * Ordering::Greater;
         }
         if self_hi < other_lo {
-            return match sign {
-                Sign::Positive => Ordering::Less,
-                Sign::Negative => Ordering::Greater,
-            };
+            return sign * Ordering::Less;
         }
 
         // case 4: compare the exact values
@@ -85,6 +79,80 @@ impl<R1: Round, R2: Round, const B1: Word, const B2: Word> NumOrd<FBig<R2, B2>> 
     }
 }
 
+impl<const B: Word> NumOrd<UBig> for Repr<B> {
+    fn num_cmp(&self, other: &UBig) -> Ordering {
+        // case 1: compare with inf
+        if self.is_infinite() {
+            return if self.exponent > 0 {
+                Ordering::Greater
+            } else {
+                Ordering::Less
+            };
+        }
+
+        // case 2: compare sign
+        if self.significand.sign() == Sign::Negative {
+            return Ordering::Less;
+        }
+
+        // case 3: compare log2 estimations
+        let (self_lo, self_hi) = self.log2_bounds();
+        let (other_lo, other_hi) = other.log2_bounds();
+        if self_lo > other_hi {
+            return Ordering::Greater;
+        }
+        if self_hi < other_lo {
+            return Ordering::Less;
+        }
+
+        // case 4: compare the exact values
+        let mut other: IBig = other.clone().into();
+        if self.exponent < 0 {
+            shl_digits_in_place::<B>(&mut other, (-self.exponent) as usize);
+            self.significand.cmp(&other)
+        } else {
+            shl_digits::<B>(&self.significand, self.exponent as usize).cmp(&other)
+        }
+    }
+    #[inline]
+    fn num_partial_cmp(&self, other: &UBig) -> Option<Ordering> {
+        Some(self.num_cmp(other))
+    }
+}
+
+impl<const B: Word> NumOrd<Repr<B>> for UBig {
+    #[inline]
+    fn num_cmp(&self, other: &Repr<B>) -> Ordering {
+        other.num_cmp(self).reverse()
+    }
+    #[inline]
+    fn num_partial_cmp(&self, other: &Repr<B>) -> Option<Ordering> {
+        Some(other.num_cmp(self).reverse())
+    }
+}
+
+impl<R: Round, const B: Word> NumOrd<UBig> for FBig<R, B> {
+    #[inline]
+    fn num_cmp(&self, other: &UBig) -> Ordering {
+        self.repr.num_cmp(other)
+    }
+    #[inline]
+    fn num_partial_cmp(&self, other: &UBig) -> Option<Ordering> {
+        self.repr.num_partial_cmp(other)
+    }
+}
+
+impl<R: Round, const B: Word> NumOrd<FBig<R, B>> for UBig {
+    #[inline]
+    fn num_cmp(&self, other: &FBig<R, B>) -> Ordering {
+        self.num_cmp(&other.repr)
+    }
+    #[inline]
+    fn num_partial_cmp(&self, other: &FBig<R, B>) -> Option<Ordering> {
+        self.num_partial_cmp(&other.repr)
+    }
+}
+
 impl<const B: Word> NumOrd<IBig> for Repr<B> {
     fn num_cmp(&self, other: &IBig) -> Ordering {
         // case 1: compare with inf
@@ -108,16 +176,10 @@ impl<const B: Word> NumOrd<IBig> for Repr<B> {
         let (self_lo, self_hi) = self.log2_bounds();
         let (other_lo, other_hi) = other.log2_bounds();
         if self_lo > other_hi {
-            return match sign {
-                Sign::Positive => Ordering::Greater,
-                Sign::Negative => Ordering::Less,
-            };
+            return sign * Ordering::Greater;
         }
         if self_hi < other_lo {
-            return match sign {
-                Sign::Positive => Ordering::Less,
-                Sign::Negative => Ordering::Greater,
-            };
+            return sign * Ordering::Less;
         }
 
         // case 4: compare the exact values
@@ -141,7 +203,7 @@ impl<const B: Word> NumOrd<Repr<B>> for IBig {
     }
     #[inline]
     fn num_partial_cmp(&self, other: &Repr<B>) -> Option<Ordering> {
-        Some(self.num_cmp(other))
+        Some(other.num_cmp(self).reverse())
     }
 }
 
@@ -166,9 +228,6 @@ impl<R: Round, const B: Word> NumOrd<FBig<R, B>> for IBig {
         self.num_partial_cmp(&other.repr)
     }
 }
-
-// TODO(v0.4): add NumOrd with UBig
-
 impl<const B: Word> NumHash for Repr<B> {
     fn num_hash<H: core::hash::Hasher>(&self, state: &mut H) {
         // 2^127 - 1 is used in the num-order crate

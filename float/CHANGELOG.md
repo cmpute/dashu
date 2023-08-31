@@ -4,7 +4,8 @@
 
 ### Add
 
-- Implement `num-order::NumOrd` between `FBig` and `RBig` and between different bases.
+- Implement `num-order::NumOrd` between `FBig` and `UBig`/`IBig` and between `FBig` with different bases.
+- Implement `num-order::NumHash` for `FBig` and `Repr`.
 
 ### Change
 

@@ -47,17 +47,31 @@ fn test_ord_between_fbig() {
 
 #[test]
 #[rustfmt::skip::macros(fbig)]
-fn test_ord_with_ibig() {
+fn test_ord_with_ubig_ibig() {
+    assert!(fbig!(0).num_eq(&ubig!(0)));
     assert!(fbig!(0).num_eq(&ibig!(0)));
+    assert!(fbig!(0).num_le(&ubig!(1)));
     assert!(fbig!(0).num_le(&ibig!(1)));
     assert!(fbig!(0).num_ge(&ibig!(-1)));
+    assert!(fbig!(1).num_eq(&ubig!(1)));
     assert!(fbig!(1).num_eq(&ibig!(1)));
     assert!(fbig!(1).num_ge(&ibig!(-1)));
+    assert!(fbig!(-1).num_le(&ubig!(1)));
     assert!(fbig!(-1).num_le(&ibig!(1)));
     assert!(fbig!(-1).num_eq(&ibig!(-1)));
     assert!(fbig!(-1).num_eq(&ibig!(-1)));
+    assert!(FBin::INFINITY.num_ge(&ubig!(0)));
     assert!(FBin::INFINITY.num_ge(&ibig!(0)));
+    assert!(FBin::NEG_INFINITY.num_le(&ubig!(0)));
     assert!(FBin::NEG_INFINITY.num_le(&ibig!(0)));
+
+    assert!(ubig!(0).num_eq(&fbig!(0)));
+    assert!(ubig!(0).num_le(&fbig!(1)));
+    assert!(ubig!(0).num_ge(&fbig!(-1)));
+    assert!(ubig!(1).num_eq(&fbig!(1)));
+    assert!(ubig!(1).num_ge(&fbig!(-1)));
+    assert!(ubig!(0).num_le(&FBin::INFINITY));
+    assert!(ubig!(0).num_ge(&FBin::NEG_INFINITY));
 
     assert!(ibig!(0).num_eq(&fbig!(0)));
     assert!(ibig!(0).num_le(&fbig!(1)));
@@ -70,13 +84,19 @@ fn test_ord_with_ibig() {
     assert!(ibig!(0).num_le(&FBin::INFINITY));
     assert!(ibig!(0).num_ge(&FBin::NEG_INFINITY));
 
+    assert!(fbig!(0x1p-10).num_ge(&ubig!(0)));
     assert!(fbig!(0x1p-10).num_ge(&ibig!(0)));
+    assert!(fbig!(0x1p-10).num_le(&ubig!(1)));
     assert!(fbig!(0x1p-10).num_le(&ibig!(1)));
     assert!(fbig!(-0x1p-10).num_ge(&ibig!(-1)));
+    assert!(fbig!(-0x1p-10).num_le(&ubig!(0)));
     assert!(fbig!(-0x1p-10).num_le(&ibig!(0)));
-    assert!(fbig!(0x1p10).num_ge(&ibig!(0x399)));
-    assert!(fbig!(0x1p10).num_eq(&ibig!(0x400)));
-    assert!(fbig!(0x1p10).num_le(&ibig!(0x401)));
+    assert!(fbig!(0x1p10).num_ge(&ubig!(0x399)));
+    assert!(fbig!(0x1p10).num_eq(&ubig!(0x400)));
+    assert!(fbig!(0x1p10).num_le(&ubig!(0x401)));
+    assert!(fbig!(-0x1p10).num_le(&ibig!(-0x399)));
+    assert!(fbig!(-0x1p10).num_eq(&ibig!(-0x400)));
+    assert!(fbig!(-0x1p10).num_ge(&ibig!(-0x401)));
 }
 
 #[test]

@@ -457,21 +457,6 @@ impl TryFrom<IBig> for UBig {
     }
 }
 
-// TODO(v0.4): consider deprecating this conversion (because of implicit clone)
-//      We might need to scan through all the unary operators with implicit clone and find
-//      unnecessary ones
-impl TryFrom<&IBig> for UBig {
-    type Error = ConversionError;
-
-    #[inline]
-    fn try_from(x: &IBig) -> Result<UBig, ConversionError> {
-        match x.sign() {
-            Positive => Ok(UBig(x.0.clone())),
-            Negative => Err(ConversionError::OutOfBounds),
-        }
-    }
-}
-
 impl UBig {
     /// Convert an unsigned primitive to [UBig].
     #[inline]

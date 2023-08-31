@@ -102,12 +102,7 @@ impl DoubleEnd<'_> {
                 let mut prepared_high =
                     PreparedWord::new(high_digits, 10, radix::RADIX10_INFO.digits_per_word);
 
-                self.format_prepared(
-                    f,
-                    exp + 1,
-                    &mut prepared_high,
-                    Some(&mut prepared_low),
-                )
+                self.format_prepared(f, exp + 1, &mut prepared_high, Some(&mut prepared_low))
             }
         }
     }

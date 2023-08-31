@@ -23,7 +23,7 @@ jobs:
           toolchain: ${{ matrix.rust }}
           override: true
       - name: Change dependency versions
-        run: git apply .github\workflows\change_version.patch
+        run: git apply .github/workflows/change_version.patch
       - uses: actions-rs/cargo@v1
         with:
           command: check

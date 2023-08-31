@@ -2,7 +2,7 @@
 //!
 //! Modular arithmetic is performed on [Reduced] values attached to a [ConstDivisor][crate::div_const::ConstDivisor].
 //!
-//! Trying to mix different [ConstDivisor] instances (even with the same modulus!) will cause a panic.
+//! Trying to mix different [ConstDivisor][crate::fast_div::ConstDivisor] instances (even with the same modulus!) will cause a panic.
 //!
 //! # Examples
 //!

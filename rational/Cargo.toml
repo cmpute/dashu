@@ -23,6 +23,7 @@ std = ["dashu-base/std", "dashu-int/std"]
 # stable dependencies
 serde = ["dep:serde", "dashu-int/serde"]
 zeroize = ["dep:zeroize", "dashu-int/zeroize"]
+num-order = ["dep:num-order", "dep:_num-modular"]
 
 # unstable dependencies
 num-traits = ["num-traits_v02"]
@@ -43,6 +44,7 @@ zeroize = { optional = true, version = "1.5.7", default-features = false }
 # unstable dependencies
 rand_v08 = { optional = true, version = "0.8.3", package = "rand", default-features = false }
 num-traits_v02 = { optional = true, version = "0.2.15", package = "num-traits", default-features = false }
+_num-modular = { optional = true, version = "0.6.1", package = "num-modular", default-features = false }
 
 [dev-dependencies]
 criterion = { version = "0.4.0", features = ["html_reports"] }
@@ -65,3 +67,7 @@ required-features = ["serde"]
 [[test]]
 name = "convert_fbig"
 required-features = ["dashu-float"]
+
+[[test]]
+name = "num_order"
+required-features = ["num-order", "dashu-float", "dashu-int/num-order"]

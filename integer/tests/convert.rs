@@ -168,9 +168,7 @@ fn test_ubig_to_ibig() {
 fn test_ibig_to_ubig() {
     assert_eq!(UBig::try_from(IBig::from(0i32)), Ok(UBig::from(0u32)));
     assert_eq!(UBig::try_from(IBig::from(1000i32)), Ok(UBig::from(1000u32)));
-    assert_eq!(UBig::try_from(&IBig::from(1000i32)), Ok(UBig::from(1000u32)));
     assert!(UBig::try_from(IBig::from(-1000i32)).is_err());
-    assert!(UBig::try_from(&IBig::from(-1000i32)).is_err());
 }
 
 #[test]

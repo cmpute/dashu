@@ -5,6 +5,8 @@
 ### Add
 
 - Add `is_int` to `RBig`
+- Implement `num-order::NumOrd` between `RBig` and `UBig`/`IBig`/`FBig`.
+- Implement `num-order::NumHash` for `RBig` and `Relaxed`
 
 ### Change
 
