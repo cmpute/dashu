@@ -1,6 +1,6 @@
 //! Comparisons operators.
 
-use dashu_base::{AbsCmp, AbsEq};
+use dashu_base::{AbsEq, AbsOrd};
 
 use crate::{
     arch::word::Word,
@@ -103,19 +103,19 @@ impl AbsEq<IBig> for UBig {
     }
 }
 
-impl AbsCmp for IBig {
+impl AbsOrd for IBig {
     #[inline]
     fn abs_cmp(&self, rhs: &Self) -> Ordering {
         self.0.as_sign_typed().1.cmp(&rhs.0.as_sign_typed().1)
     }
 }
-impl AbsCmp<UBig> for IBig {
+impl AbsOrd<UBig> for IBig {
     #[inline]
     fn abs_cmp(&self, rhs: &UBig) -> Ordering {
         self.0.as_sign_typed().1.cmp(&rhs.0.as_typed())
     }
 }
-impl AbsCmp<IBig> for UBig {
+impl AbsOrd<IBig> for UBig {
     #[inline]
     fn abs_cmp(&self, rhs: &IBig) -> Ordering {
         self.0.as_typed().cmp(&rhs.0.as_sign_typed().1)

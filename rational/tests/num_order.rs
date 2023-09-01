@@ -83,6 +83,18 @@ fn test_ord_with_fbig() {
     assert!(rbig!(1 / 3).num_le(&FBin::from_str_native("0x55556p-20").unwrap()));
     assert!(rbig!(-1 / 3).num_ge(&DBig::from_str_native("-0.33334").unwrap()));
     assert!(rbig!(-1 / 3).num_le(&DBig::from_str_native("-0.33333").unwrap()));
+    assert!(FBin::from_str_native("0x55555p-20")
+        .unwrap()
+        .num_le(&rbig!(1 / 3)));
+    assert!(FBin::from_str_native("0x55556p-20")
+        .unwrap()
+        .num_ge(&rbig!(1 / 3)));
+    assert!(DBig::from_str_native("-0.33334")
+        .unwrap()
+        .num_le(&rbig!(-1 / 3)));
+    assert!(DBig::from_str_native("-0.33333")
+        .unwrap()
+        .num_ge(&rbig!(-1 / 3)));
 }
 
 #[test]

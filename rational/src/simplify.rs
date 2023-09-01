@@ -5,7 +5,7 @@
 
 use crate::{error::panic_divide_by_0, rbig::RBig, repr::Repr};
 use core::{cmp::Ordering, mem};
-use dashu_base::{AbsCmp, Approximation, DivRem, UnsignedAbs};
+use dashu_base::{AbsOrd, Approximation, DivRem, UnsignedAbs};
 use dashu_int::{IBig, Sign, UBig};
 
 impl Repr {

@@ -58,5 +58,40 @@ pub trait Inverse {
     fn inv(self) -> Self::Output;
 }
 
+/// Compute the square root of the number.
+///
+/// The result should be rounded towards zero by default.
+///
+/// # Examples
+///
+/// ```
+/// # use dashu_base::SquareRoot;
+/// assert_eq!(256u32.sqrt(), 16);
+/// assert_eq!(257u32.sqrt(), 16);
+/// ```
+pub trait SquareRoot {
+    type Output;
+
+    fn sqrt(&self) -> Self::Output;
+}
+
+/// Compute the cubic root of the number.
+///
+/// The result should be rounded towards zero by default.
+///
+/// # Examples
+///
+/// ```
+/// # use dashu_base::CubicRoot;
+/// assert_eq!(216u32.cbrt(), 6);
+/// assert_eq!(217u32.cbrt(), 6);
+/// ```
+pub trait CubicRoot {
+    type Output;
+
+    fn cbrt(&self) -> Self::Output;
+}
+
 mod inv;
 mod log;
+mod root;

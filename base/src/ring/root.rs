@@ -1,7 +1,7 @@
-use super::{CubicRoot, CubicRootRem, SquareRoot, SquareRootRem};
+use super::{CubicRootRem, SquareRootRem};
 use crate::DivRem;
 
-trait NormalizedRootRem: Sized {
+pub(crate) trait NormalizedRootRem: Sized {
     type OutputRoot;
 
     /// Square root with the normalized input such that highest or second
@@ -367,42 +367,8 @@ impl CubicRootRem for u8 {
     }
 }
 
-impl SquareRoot for u8 {
-    type Output = u8;
-
-    #[inline]
-    fn sqrt(&self) -> Self::Output {
-        self.sqrt_rem().0
-    }
-}
-
-impl CubicRoot for u8 {
-    type Output = u8;
-
-    #[inline]
-    fn cbrt(&self) -> Self::Output {
-        self.cbrt_rem().0
-    }
-}
-
 macro_rules! impl_rootrem_using_normalized {
     ($t:ty, $half:ty) => {
-        impl SquareRoot for $t {
-            type Output = $half;
-
-            #[inline]
-            fn sqrt(&self) -> $half {
-                if *self == 0 {
-                    return 0;
-                }
-
-                // normalize the input and call the normalized subroutine
-                let shift = self.leading_zeros() & !1; // make sure shift is divisible by 2
-                let (root, _) = (self << shift).normalized_sqrt_rem();
-                root >> (shift / 2)
-            }
-        }
-
         impl SquareRootRem for $t {
             type Output = $half;
 
@@ -419,23 +385,6 @@ macro_rules! impl_rootrem_using_normalized {
                     rem = self - (root as $t).pow(2);
                 }
                 (root, rem)
-            }
-        }
-
-        impl CubicRoot for $t {
-            type Output = $half;
-
-            #[inline]
-            fn cbrt(&self) -> $half {
-                if *self == 0 {
-                    return 0;
-                }
-
-                // normalize the input and call the normalized subroutine
-                let mut shift = self.leading_zeros();
-                shift -= shift % 3; // make sure shift is divisible by 3
-                let (root, _) = (self << shift).normalized_cbrt_rem();
-                root >> (shift / 3)
             }
         }
 
@@ -465,12 +414,10 @@ impl_rootrem_using_normalized!(u32, u16);
 impl_rootrem_using_normalized!(u64, u32);
 impl_rootrem_using_normalized!(u128, u64);
 
-// TODO(next): forward sqrt to f32/f64 if std is enabled and the input is small enough.
-//             Implement after we have a benchmark. See https://github.com/Aatch/ramp/blob/master/src/int.rs#L579.
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::math::{CubicRoot, SquareRoot};
     use rand::random;
 
     #[test]

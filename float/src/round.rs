@@ -2,7 +2,7 @@
 
 use core::cmp::Ordering;
 use core::ops::{Add, AddAssign};
-use dashu_base::{Approximation, EstimatedLog2, Sign, UnsignedAbs};
+use dashu_base::{Approximation, EstimatedLog2, Sign, Signed, UnsignedAbs};
 use dashu_int::{IBig, UBig, Word};
 
 /// Built-in rounding modes of the floating numbers.
@@ -132,7 +132,7 @@ pub trait Round: Copy {
         }
         let (nsign, nmag) = num.into_parts();
         Self::round_low_part::<_>(integer, nsign * den.sign(), || {
-            if den.sign() == Sign::Positive {
+            if den.is_positive() {
                 IBig::from(nmag << 1).cmp(den)
             } else {
                 den.cmp(&-(nmag << 1))

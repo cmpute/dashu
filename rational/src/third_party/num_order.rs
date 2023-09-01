@@ -1,7 +1,7 @@
 use crate::{rbig::RBig, repr::Repr, Relaxed};
 use _num_modular::{FixedMersenneInt, ModularInteger};
 use core::cmp::Ordering;
-use dashu_base::{AbsCmp, EstimatedLog2, Sign};
+use dashu_base::{AbsOrd, EstimatedLog2, Sign, Signed};
 use dashu_int::{IBig, UBig};
 use num_order::{NumHash, NumOrd};
 
@@ -102,7 +102,7 @@ impl NumHash for Repr {
             MInt::new(ub, &M127U).inv().unwrap()
         } else {
             // no modular inverse, use INF or NEGINF as the result
-            return if self.numerator.sign() == Sign::Positive {
+            return if self.numerator.is_positive() {
                 HASH_INF.num_hash(state)
             } else {
                 HASH_NEGINF.num_hash(state)
@@ -210,6 +210,28 @@ mod with_float {
         #[inline]
         fn num_partial_cmp(&self, other: &FBig<R, B>) -> Option<Ordering> {
             self.0.num_partial_cmp(other.repr())
+        }
+    }
+
+    impl<R: Round, const B: Word> NumOrd<RBig> for FBig<R, B> {
+        #[inline]
+        fn num_cmp(&self, other: &RBig) -> Ordering {
+            other.0.num_cmp(self.repr()).reverse()
+        }
+        #[inline]
+        fn num_partial_cmp(&self, other: &RBig) -> Option<Ordering> {
+            Some(self.num_cmp(other))
+        }
+    }
+
+    impl<R: Round, const B: Word> NumOrd<Relaxed> for FBig<R, B> {
+        #[inline]
+        fn num_cmp(&self, other: &Relaxed) -> Ordering {
+            other.0.num_cmp(self.repr()).reverse()
+        }
+        #[inline]
+        fn num_partial_cmp(&self, other: &Relaxed) -> Option<Ordering> {
+            Some(self.num_cmp(other))
         }
     }
 }

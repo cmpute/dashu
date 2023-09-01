@@ -46,8 +46,6 @@ pub trait AbsEq<Rhs = Self> {
     fn abs_eq(&self, rhs: &Rhs) -> bool;
 }
 
-// TODO(v0.4): rename AbsCmp to AbsOrd
-
 /// Compare the magnitude of this number to the magnitude of the other number
 ///
 /// Note that this function will panic if either of the numbers is NaN.
@@ -55,11 +53,11 @@ pub trait AbsEq<Rhs = Self> {
 /// # Examples
 ///
 /// ```
-/// # use dashu_base::AbsCmp;
+/// # use dashu_base::AbsOrd;
 /// assert!(5.abs_cmp(&-6).is_le());
 /// assert!(12.3.abs_cmp(&-12.3).is_eq());
 /// ```
-pub trait AbsCmp<Rhs = Self> {
+pub trait AbsOrd<Rhs = Self> {
     fn abs_cmp(&self, rhs: &Rhs) -> Ordering;
 }
 
@@ -72,12 +70,25 @@ pub trait AbsCmp<Rhs = Self> {
 ///
 /// ```
 /// # use dashu_base::{Signed, Sign};
-/// assert_eq!(-2.sign(), Sign::Negative);
-/// assert_eq!(-2.4.sign(), Sign::Negative);
+/// assert_eq!((-2).sign(), Sign::Negative);
+/// assert_eq!((-2.4).sign(), Sign::Negative);
 /// assert_eq!((0.).sign(), Sign::Positive);
+///
+/// assert!(2.is_positive());
+/// assert!((-2.4).is_negative());
+/// assert!((0.).is_positive());
 /// ```
 pub trait Signed {
     fn sign(&self) -> Sign;
+
+    #[inline]
+    fn is_positive(&self) -> bool {
+        self.sign() == Sign::Positive
+    }
+    #[inline]
+    fn is_negative(&self) -> bool {
+        self.sign() == Sign::Negative
+    }
 }
 
 // TODO(v0.4): add is_positive and is_negative to the trait, and replace all the places where this is used
@@ -268,7 +279,7 @@ macro_rules! impl_signed_for_int {
             }
         }
 
-        impl AbsCmp for $t {
+        impl AbsOrd for $t {
             #[inline]
             fn abs_cmp(&self, rhs: &Self) -> Ordering {
                 self.abs().cmp(&rhs.abs())
@@ -299,7 +310,7 @@ macro_rules! impl_signed_for_float {
             }
         }
 
-        impl AbsCmp for $t {
+        impl AbsOrd for $t {
             #[inline]
             fn abs_cmp(&self, rhs: &Self) -> Ordering {
                 self.abs()

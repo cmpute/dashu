@@ -1,7 +1,7 @@
 use super::{common::quote_sign, int::quote_ibig};
 use core::str::FromStr;
 
-use dashu_base::BitTest;
+use dashu_base::{BitTest, Signed};
 use dashu_float::{round::mode, DBig, FBig};
 use dashu_int::{IBig, Sign};
 use proc_macro2::TokenStream;
@@ -37,7 +37,7 @@ pub fn parse_binary_float(embedded: bool, input: TokenStream) -> TokenStream {
     let f = FBig::<mode::Zero, 2>::from_str(value_str).unwrap_or_else(|_| panic_fbig_syntax());
     let prec = f.precision();
     let (signif, exp) = f.into_repr().into_parts();
-    assert!(signif.sign() == Sign::Positive);
+    assert!(signif.is_positive());
     let mag = signif.into_parts().1;
 
     if mag.bit_len() <= 32 {
