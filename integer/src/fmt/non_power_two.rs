@@ -325,7 +325,7 @@ impl PreparedLarge {
             }
 
             // 2 * prev.len() is at most 1 larger than number.len().
-            let new = prev.as_typed().square();
+            let new = prev.as_typed().sqr();
             if new.as_typed() > number {
                 break;
             }

@@ -133,7 +133,7 @@ impl<R: Round> Context<R> {
 
         // binary exponentiation from left to right
         let mut p = exp.bit_len() - 2;
-        let mut res = work_context.square(base);
+        let mut res = work_context.sqr(base);
         loop {
             if exp.bit(p) {
                 res = res.and_then(|v| work_context.mul(v.repr(), base));
@@ -142,7 +142,7 @@ impl<R: Round> Context<R> {
                 break;
             }
             p -= 1;
-            res = res.and_then(|v| work_context.square(v.repr()));
+            res = res.and_then(|v| work_context.sqr(v.repr()));
         }
 
         res.and_then(|v| v.with_precision(self.precision))
@@ -317,11 +317,11 @@ impl<R: Round> Context<R> {
         } else if minus_one {
             // add extra digits to compensate for the subtraction
             Context::<R>::new(self.precision + self.precision / 8 + 1) // heuristic
-                .powi(sum.repr(), Repr::<B>::BASE.pow(n))
+                .powi(sum.repr(), Repr::<B>::BASE.pow(n).into())
                 .map(|v| (v << s) - FBig::ONE)
                 .and_then(|v| v.with_precision(self.precision))
         } else {
-            self.powi(sum.repr(), Repr::<B>::BASE.pow(n))
+            self.powi(sum.repr(), Repr::<B>::BASE.pow(n).into())
                 .map(|v| v << s)
         }
     }

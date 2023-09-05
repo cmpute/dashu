@@ -14,7 +14,7 @@
 - Now feature `num-traits` and `rand` are not enabled by default, feature `num-order` is enabled instead.
 - The `IntoModule` trait is refactored into the `IntoRing` trait, which has an additional type parameter for the ring. This is used for potential Montgomery implementation in future.
 - The `IntoRing` trait is no longer implemented for reference types `&UBig` and `&IBig` to make the copying explicit.
-- The `Modulo` type is renamed as `Reduced` to prevent confusion.
+- The `Modulo` type is renamed to `Reduced` to prevent confusion.
 - `From<&UBig>` implementation for `IBig` and `TryFrom<&IBig>` for `UBig` are removed to prevent implicit cloning.
 
 ### Remove

@@ -103,7 +103,7 @@ pub fn sqrt_rem(b: &mut [Word], a: &mut [Word], memory: &mut Memory) -> bool {
             a_hi[0] = b2_lo;
             a_hi[1] = b2_hi;
         } else {
-            sqr::square(&mut a_hi[..2 * split], &b[..split], memory);
+            sqr::sqr(&mut a_hi[..2 * split], &b[..split], memory);
         }
     }
     if 2 * split < n {

@@ -11,10 +11,10 @@ use crate::{
 
 impl Repr {
     #[inline]
-    fn square(&self) -> Self {
+    fn sqr(&self) -> Self {
         Self {
-            numerator: self.numerator.square().into(),
-            denominator: self.denominator.square(),
+            numerator: self.numerator.sqr().into(),
+            denominator: self.denominator.sqr(),
         }
     }
 
@@ -44,11 +44,11 @@ impl RBig {
     /// # use dashu_ratio::RBig;
     /// let a = RBig::from_parts(2.into(), 3u8.into());
     /// let a2 = RBig::from_parts(4.into(), 9u8.into());
-    /// assert_eq!(a.square(), a2);
+    /// assert_eq!(a.sqr(), a2);
     /// ```
     #[inline]
-    pub fn square(&self) -> Self {
-        Self(self.0.square())
+    pub fn sqr(&self) -> Self {
+        Self(self.0.sqr())
     }
 
     /// Compute the cubic of the number (`self * self * self`).
@@ -103,10 +103,10 @@ impl_binop_assign_by_taking!(impl MulAssign for RBig, mul_assign, mul);
 impl Relaxed {
     /// Compute the square of the number (`self * self`).
     ///
-    /// See [RBig::square] for details.
+    /// See [RBig::sqr] for details.
     #[inline]
-    pub fn square(&self) -> Self {
-        Self(self.0.square())
+    pub fn sqr(&self) -> Self {
+        Self(self.0.sqr())
     }
 
     /// Compute the cubic of the number (`self * self * self`).

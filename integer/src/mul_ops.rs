@@ -48,18 +48,17 @@ macro_rules! impl_div_primitive_with_ibig {
 impl_div_primitive_with_ibig!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);
 
 impl UBig {
-    // TODO(v0.4): rename to sqr
     /// Calculate the square of the number (`x * x`).
     ///
     /// # Examples
     ///
     /// ```
     /// # use dashu_int::UBig;
-    /// assert_eq!(UBig::from(3u8).square(), UBig::from(9u8));
+    /// assert_eq!(UBig::from(3u8).sqr(), UBig::from(9u8));
     /// ```
     #[inline]
-    pub fn square(&self) -> UBig {
-        UBig(self.repr().square())
+    pub fn sqr(&self) -> UBig {
+        UBig(self.repr().sqr())
     }
 
     /// Compute the cubic of the number (`self * self * self`).
@@ -72,7 +71,7 @@ impl UBig {
     /// ```
     #[inline]
     pub fn cubic(&self) -> UBig {
-        self * self.square()
+        self * self.sqr()
     }
 }
 
@@ -83,11 +82,11 @@ impl IBig {
     ///
     /// ```
     /// # use dashu_int::{UBig, IBig};
-    /// assert_eq!(IBig::from(-3).square(), UBig::from(9u8));
+    /// assert_eq!(IBig::from(-3).sqr(), UBig::from(9u8));
     /// ```
     #[inline]
-    pub fn square(&self) -> UBig {
-        UBig(self.as_sign_repr().1.square())
+    pub fn sqr(&self) -> UBig {
+        UBig(self.as_sign_repr().1.sqr())
     }
 
     /// Compute the cubic of the number (`self * self * self`).
@@ -100,7 +99,7 @@ impl IBig {
     /// ```
     #[inline]
     pub fn cubic(&self) -> IBig {
-        self * self.square()
+        self * self.sqr()
     }
 }
 
@@ -244,7 +243,7 @@ pub(crate) mod repr {
     }
 
     impl TypedReprRef<'_> {
-        pub fn square(&self) -> Repr {
+        pub fn sqr(&self) -> Repr {
             match self {
                 TypedReprRef::RefSmall(dword) => {
                     if let Some(word) = shrink_dword(*dword) {
@@ -277,7 +276,7 @@ pub(crate) mod repr {
         buffer.push_zeros(words.len() * 2);
 
         let mut allocation = MemoryAllocation::new(sqr::memory_requirement_exact(words.len()));
-        sqr::square(&mut buffer, words, &mut allocation.memory());
+        sqr::sqr(&mut buffer, words, &mut allocation.memory());
         Repr::from_buffer(buffer)
     }
 }

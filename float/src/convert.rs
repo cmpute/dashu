@@ -469,14 +469,17 @@ impl<R: Round> Context<R> {
                 Exact(Repr::new(signif, 0))
             } else {
                 let num = Repr::new(repr.significand, 0);
-                let den = Repr::new(Repr::<B>::BASE.pow(-repr.exponent as usize), 0);
+                let den = Repr::new(Repr::<B>::BASE.pow(-repr.exponent as usize).into(), 0);
                 self.repr_div(num, den)
             }
         } else {
             // if the exponent is large, then we first estimate the result exponent as floor(exponent * log(B) / log(NewB)),
             // then the fractional part is multiplied with the original significand
             let work_context = Context::<R>::new(2 * self.precision); // double the precision to get the precise logarithm
-            let new_exp = repr.exponent * work_context.ln(&Repr::new(Repr::<B>::BASE, 0)).value();
+            let new_exp = repr.exponent
+                * work_context
+                    .ln(&Repr::new(Repr::<B>::BASE.into(), 0))
+                    .value();
             let (exponent, rem) = new_exp.div_rem_euclid(work_context.ln_base::<NewB>());
             let exponent: isize = exponent.try_into().unwrap();
             let exp_rem = rem.exp();

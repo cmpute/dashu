@@ -265,7 +265,7 @@ macro_rules! impl_div_primitive_with_ibig {
 }
 impl_div_primitive_with_ibig!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);
 
-// TODO(v0.4): determine what is the behavior of IBig % UBig
+// TODO(v0.4): determine what is the behavior of IBig % UBig and document it in the guide
 
 pub(crate) mod repr {
     use super::*;

@@ -75,7 +75,7 @@ impl<R: Round> Context<R> {
             let adjust = R::round_low_part(&root, Sign::Positive, || {
                 (Sign::Positive * rem)
                     .cmp(&root)
-                    .then_with(|| (low * 4u8).cmp(&Repr::<B>::BASE.pow(low_digits)))
+                    .then_with(|| (low * 4u8).cmp(&Repr::<B>::BASE.pow(low_digits).into()))
             });
             Approximation::Inexact(root + adjust, adjust)
         };

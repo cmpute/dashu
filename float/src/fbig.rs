@@ -181,10 +181,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
+    /// # use dashu_int::IBig;
     /// use dashu_float::Repr;
     ///
     /// let a = DBig::from_str_native("1.234")?;
-    /// assert!(a.repr().significand() <= &Repr::<10>::BASE.pow(a.precision()));
+    /// assert!(a.repr().significand() <= &IBig::from(10).pow(a.precision()));
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]

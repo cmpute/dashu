@@ -1,7 +1,7 @@
 use crate::{
     error::assert_finite,
     round::{Round, Rounded},
-    utils::{base_as_ibig, digit_len, split_digits, split_digits_ref},
+    utils::{digit_len, split_digits, split_digits_ref},
 };
 use core::marker::PhantomData;
 use dashu_base::{Approximation::*, EstimatedLog2, Sign};
@@ -76,9 +76,8 @@ pub struct Context<RoundingMode: Round> {
 }
 
 impl<const B: Word> Repr<B> {
-    // TODO(v0.4): expose BASE as UBig
     /// The base of the representation. It's exposed as an [IBig] constant.
-    pub const BASE: IBig = base_as_ibig::<B>();
+    pub const BASE: UBig = UBig::from_word(B);
 
     /// Create a [Repr] instance representing value zero
     #[inline]
@@ -121,7 +120,7 @@ impl<const B: Word> Repr<B> {
         }
     }
 
-    // TODO(v0.4): Add support for representing NEG_ZERO, but don't provide method to generate it.
+    // XXX: Add support for representing NEG_ZERO, but don't provide method to generate it.
     // neg_zero: exponent -1, infinity: exponent: isize::MAX, neg_infinity: exponent: isize::MIN
 
     /// Determine if the [Repr] represents zero

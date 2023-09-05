@@ -318,7 +318,7 @@ impl RBig {
             let target = fract
                 + Self(Repr {
                     numerator: IBig::ONE,
-                    denominator: limit.square(),
+                    denominator: limit.sqr(),
                 });
             Self::farey_neighbors(&target, limit).1
         } else {
@@ -351,7 +351,7 @@ impl RBig {
             let target = fract
                 - Self(Repr {
                     numerator: IBig::ONE,
-                    denominator: limit.square(),
+                    denominator: limit.sqr(),
                 });
             Self::farey_neighbors(&target, limit).0
         } else {

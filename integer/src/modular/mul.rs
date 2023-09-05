@@ -207,7 +207,7 @@ pub(crate) fn sqr_normalized<'a>(
         product[0] = lo;
         product[1] = hi;
     } else {
-        sqr::square(&mut product[..na * 2], &a[..na], &mut memory);
+        sqr::sqr(&mut product[..na * 2], &a[..na], &mut memory);
     }
 
     // return (product >> shift) % normalized_modulus

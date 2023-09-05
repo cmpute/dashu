@@ -91,8 +91,6 @@ pub trait Signed {
     }
 }
 
-// TODO(v0.4): add is_positive and is_negative to the trait, and replace all the places where this is used
-
 macro_rules! impl_abs_ops_prim {
     ($($signed:ty;)*) => {$( // this branch is only for float
         impl Abs for $signed {

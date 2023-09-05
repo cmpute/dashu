@@ -90,7 +90,7 @@ pub(crate) mod repr {
             match exp {
                 0 => return Repr::one(),
                 1 => return Repr::from_ref(self),
-                2 => return self.square(),
+                2 => return self.sqr(),
                 _ => {}
             };
 
@@ -161,7 +161,7 @@ pub(crate) mod repr {
             let (tmp, mut memory) = memory.allocate_slice_copy(&res);
             res.fill(0);
             res.push_zeros(res.len());
-            sqr::square(&mut res, tmp, &mut memory);
+            sqr::sqr(&mut res, tmp, &mut memory);
         }
 
         // carry out the remaining multiplications
@@ -212,7 +212,7 @@ pub(crate) mod repr {
             let (tmp, mut memory) = memory.allocate_slice_copy(&res);
             res.fill(0);
             res.push_zeros(res.len());
-            sqr::square(&mut res, tmp, &mut memory);
+            sqr::sqr(&mut res, tmp, &mut memory);
         }
 
         Repr::from_buffer(res)

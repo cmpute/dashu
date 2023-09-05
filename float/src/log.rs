@@ -114,7 +114,7 @@ impl<R: Round> Context<R> {
             2 => self.ln2(),
             10 => self.ln10(),
             i if i.is_power_of_two() => self.ln2() * i.trailing_zeros(),
-            _ => self.ln(&Repr::new(Repr::<B>::BASE, 0)).value(),
+            _ => self.ln(&Repr::new(Repr::<B>::BASE.into(), 0)).value(),
         }
     }
 
@@ -150,7 +150,7 @@ impl<R: Round> Context<R> {
 
         let n = work_context.convert_int(n).value();
         let inv = FBig::ONE / n;
-        let inv2 = inv.square();
+        let inv2 = inv.sqr();
         let mut sum = inv.clone();
         let mut pow = inv;
 
@@ -262,7 +262,7 @@ impl<R: Round> Context<R> {
         } else {
             (&x_scaled - FBig::ONE) / (x_scaled + FBig::ONE)
         };
-        let z2 = z.square();
+        let z2 = z.sqr();
         let mut pow = z.clone();
         let mut sum = z;
 

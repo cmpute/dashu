@@ -192,8 +192,8 @@ fn test_sqr() {
     ];
 
     for (a, b) in test_cases {
-        assert_eq!(a.square(), b);
-        assert_eq!((-a).square(), b);
+        assert_eq!(a.sqr(), b);
+        assert_eq!((-a).sqr(), b);
     }
 
     // 3^[25, 50, 100, 200, 400, 800]
@@ -208,7 +208,7 @@ fn test_sqr() {
     for ab in pow3.windows(2) {
         let a = ab.first().unwrap();
         let b = ab.last().unwrap();
-        assert_eq!(&a.square(), b);
-        assert_eq!(&(-a).square(), b);
+        assert_eq!(&a.sqr(), b);
+        assert_eq!(&(-a).sqr(), b);
     }
 }

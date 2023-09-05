@@ -9,7 +9,8 @@
 ### Change
 
 - `SquareRoot` and `CubicRoot` are moved to `dashu_base::math`.
-- `AbsCmp` is renamed as `AbsOrd`.
+- `AbsCmp` is renamed to `AbsOrd`.
+- `FBig::square` and `Context::square` are renamed to `sqr`.
 
 ## 0.3.1
 

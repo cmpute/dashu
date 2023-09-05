@@ -105,7 +105,7 @@ fn test_random_arithmetic() {
             assert_eq!(quot, b);
             assert_eq!(rem, c);
             assert_eq!(UBig::from_str_radix(&a.in_radix(radix).to_string(), radix).unwrap(), a);
-            assert_eq!((&a + UBig::ONE) * (&a - UBig::ONE), a.square() - UBig::ONE);
+            assert_eq!((&a + UBig::ONE) * (&a - UBig::ONE), a.sqr() - UBig::ONE);
 
             // pow can be very slow when exponent is too large
             if log_num_bits <= 5 && i % 8 == 0 {

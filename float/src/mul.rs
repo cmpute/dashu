@@ -92,12 +92,12 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// let a = DBig::from_str_native("-1.234")?;
-    /// assert_eq!(a.square(), DBig::from_str_native("1.523")?);
+    /// assert_eq!(a.sqr(), DBig::from_str_native("1.523")?);
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
-    pub fn square(&self) -> Self {
-        self.context.square(&self.repr).value()
+    pub fn sqr(&self) -> Self {
+        self.context.sqr(&self.repr).value()
     }
 
     /// Compute the square of this number (`self * self`)
@@ -183,10 +183,10 @@ impl<R: Round> Context<R> {
     ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str_native("-1.234")?;
-    /// assert_eq!(context.square(&a.repr()), Inexact(DBig::from_str_native("1.5")?, NoOp));
+    /// assert_eq!(context.sqr(&a.repr()), Inexact(DBig::from_str_native("1.5")?, NoOp));
     /// # Ok::<(), ParseError>(())
     /// ```
-    pub fn square<const B: Word>(&self, f: &Repr<B>) -> Rounded<FBig<R, B>> {
+    pub fn sqr<const B: Word>(&self, f: &Repr<B>) -> Rounded<FBig<R, B>> {
         assert_finite(f);
 
         // shrink the input operands if necessary
@@ -204,7 +204,7 @@ impl<R: Round> Context<R> {
             f
         };
 
-        let repr = Repr::new(f_repr.significand.square().into(), 2 * f_repr.exponent);
+        let repr = Repr::new(f_repr.significand.sqr().into(), 2 * f_repr.exponent);
         self.repr_round(repr).map(|v| FBig::new(v, *self))
     }
 
