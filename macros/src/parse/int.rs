@@ -1,37 +1,45 @@
-use dashu_base::BitTest;
+use dashu_base::{BitTest, ParseError};
 use dashu_int::{IBig, Sign, UBig};
 use proc_macro2::{TokenStream, TokenTree};
 use quote::quote;
 
-use super::common::{quote_bytes, quote_sign};
-
-fn panic_ubig_syntax() -> ! {
-    panic!("Incorrect syntax, the correct syntax is like ubig!(1230) or ubig(1230 base 4)")
-}
-
-fn panic_ibig_syntax() -> ! {
-    panic!("Incorrect syntax, the correct syntax is like ibig!(-1230) or ibig(-1230 base 4)")
-}
-
-fn panic_ubig_no_sign() -> ! {
-    panic!("`ubig!` expression shouldn't contain a sign.")
-}
-
-fn panic_base_invalid() -> ! {
-    panic!("Empty or invalid base literal")
-}
+use super::common::{print_error_msg, quote_bytes, quote_sign};
 
 pub fn parse_integer<const SIGNED: bool>(embedded: bool, input: TokenStream) -> TokenStream {
+    match parse_integer_with_error::<SIGNED>(input) {
+        Ok((sign, big)) => {
+            // if the integer fits in a u32, generates const expression
+            if big.bit_len() <= 32 {
+                let u: u32 = big.try_into().unwrap();
+                let sign = quote_sign(embedded, sign);
+                if SIGNED {
+                    if !embedded {
+                        quote! { ::dashu_int::IBig::from_parts_const(#sign, #u as _) }
+                    } else {
+                        quote! { ::dashu::integer::IBig::from_parts_const(#sign, #u as _) }
+                    }
+                } else if !embedded {
+                    quote! { ::dashu_int::UBig::from_dword(#u as _) }
+                } else {
+                    quote! { ::dashu::integer::UBig::from_dword(#u as _) }
+                }
+            } else if SIGNED {
+                quote_ibig(embedded, IBig::from_parts(sign, big))
+            } else {
+                quote_ubig(embedded, big)
+            }
+        }
+        Err(e) => print_error_msg(e),
+    }
+}
+
+fn parse_integer_with_error<const SIGNED: bool>(
+    input: TokenStream,
+) -> Result<(Sign, UBig), ParseError> {
     let mut val: Option<_> = None;
     let mut neg = false;
-    let mut base_marked: bool = false;
+    let mut base_marked = false;
     let mut base: Option<_> = None;
-
-    let panic_syntax = if SIGNED {
-        panic_ibig_syntax
-    } else {
-        panic_ubig_syntax
-    };
 
     // parse tokens
     for token in input {
@@ -42,16 +50,16 @@ pub fn parse_integer<const SIGNED: bool>(embedded: bool, input: TokenStream) -> 
                 } else if base.is_none() && base_marked {
                     base = Some(lit.to_string());
                 } else {
-                    panic_syntax();
+                    return Err(ParseError::InvalidDigit);
                 }
             }
             TokenTree::Ident(ident) => {
                 if val.is_none() {
-                    val = Some(ident.to_string())
+                    val = Some(ident.to_string()) // this accepts numbers starting with non-base 10 digits
                 } else if base.is_none() && ident == "base" {
                     base_marked = true
                 } else {
-                    panic_syntax();
+                    return Err(ParseError::InvalidDigit);
                 }
             }
             TokenTree::Punct(punct) => {
@@ -59,17 +67,17 @@ pub fn parse_integer<const SIGNED: bool>(embedded: bool, input: TokenStream) -> 
                     if SIGNED {
                         neg = true;
                     } else {
-                        panic_ubig_no_sign()
+                        return Err(ParseError::InvalidDigit);
                     }
                 } else if val.is_none() && punct.as_char() == '+' {
                     if !SIGNED {
-                        panic_ubig_no_sign()
+                        return Err(ParseError::InvalidDigit);
                     }
                 } else {
-                    panic_syntax()
+                    return Err(ParseError::InvalidDigit);
                 }
             }
-            _ => panic_syntax(),
+            _ => return Err(ParseError::InvalidDigit),
         }
     }
 
@@ -77,44 +85,19 @@ pub fn parse_integer<const SIGNED: bool>(embedded: bool, input: TokenStream) -> 
     let val = val.unwrap();
     let big = match base {
         Some(b) => {
-            let b = b.parse::<u32>().unwrap();
-            match UBig::from_str_radix(&val, b) {
-                Ok(v) => v,
-                Err(_) => panic_base_invalid(),
-            }
+            let b = b.parse::<u32>().or(Err(ParseError::UnsupportedRadix))?;
+            UBig::from_str_radix(&val, b)?
         }
         None => {
             if base_marked {
-                panic_base_invalid()
+                return Err(ParseError::UnsupportedRadix);
             } else {
-                UBig::from_str_with_radix_prefix(&val)
-                    .expect("Some digits are not valid")
-                    .0
+                UBig::from_str_with_radix_prefix(&val)?.0
             }
         }
     };
 
-    // if the integer fits in a u32, generates const expression
-    let sign = if neg { Sign::Negative } else { Sign::Positive };
-    if big.bit_len() <= 32 {
-        let u: u32 = big.try_into().unwrap();
-        let sign = quote_sign(embedded, sign);
-        if SIGNED {
-            if !embedded {
-                quote! { ::dashu_int::IBig::from_parts_const(#sign, #u as _) }
-            } else {
-                quote! { ::dashu::integer::IBig::from_parts_const(#sign, #u as _) }
-            }
-        } else if !embedded {
-            quote! { ::dashu_int::UBig::from_dword(#u as _) }
-        } else {
-            quote! { ::dashu::integer::UBig::from_dword(#u as _) }
-        }
-    } else if SIGNED {
-        quote_ibig(embedded, IBig::from_parts(sign, big))
-    } else {
-        quote_ubig(embedded, big)
-    }
+    Ok((Sign::from(neg), big))
 }
 
 /// Generate tokens for creating a [UBig] instance (non-const)

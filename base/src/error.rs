@@ -32,6 +32,8 @@ pub enum ParseError {
     InvalidDigit,
     /// The radix is not supported.
     UnsupportedRadix,
+    /// The radices of different components of the number are different
+    InconsistentRadix,
 }
 
 impl Display for ParseError {
@@ -40,6 +42,7 @@ impl Display for ParseError {
             ParseError::NoDigits => f.write_str("no digits"),
             ParseError::InvalidDigit => f.write_str("invalid digit"),
             ParseError::UnsupportedRadix => f.write_str("unsupported radix"),
+            ParseError::InconsistentRadix => f.write_str("inconsistent radix"),
         }
     }
 }

@@ -1,4 +1,4 @@
-use dashu_base::Sign;
+use dashu_base::{ParseError, Sign};
 use proc_macro2::{Delimiter, Group, Literal, Punct, Spacing, TokenStream, TokenTree};
 use quote::quote;
 
@@ -26,5 +26,14 @@ pub fn quote_sign(embedded: bool, sign: Sign) -> TokenStream {
             Sign::Positive => quote! { ::dashu::base::Sign::Positive },
             Sign::Negative => quote! { ::dashu::base::Sign::Negative },
         }
+    }
+}
+
+pub fn print_error_msg(error_type: ParseError) -> ! {
+    match error_type {
+        ParseError::NoDigits => panic!("Missing digits in the number components!"),
+        ParseError::InvalidDigit => panic!("Invalid digits or syntax in the literal! Please refer to the documentation of this macro."),
+        ParseError::UnsupportedRadix => panic!("The given radix is invalid or unsupported!"),
+        ParseError::InconsistentRadix => panic!("Radix of different components are different!"),
     }
 }

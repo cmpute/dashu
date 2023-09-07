@@ -99,6 +99,7 @@ impl Ord for Repr {
     }
 }
 
+// TODO(v0.4): deprecate comparison between RBig and Relaxed, use num-order instead
 impl PartialEq<RBig> for Relaxed {
     #[inline]
     fn eq(&self, other: &RBig) -> bool {

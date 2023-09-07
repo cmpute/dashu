@@ -52,6 +52,16 @@ impl UBig {
     /// Convert a string with an optional radix prefix to [UBig], returns the
     /// parsed integer and radix.
     ///
+    /// It's equivalent to [UBig::from_str_with_radix_default] with 10 as the default radix.
+    #[inline]
+    pub fn from_str_with_radix_prefix(src: &str) -> Result<(UBig, Digit), ParseError> {
+        UBig::from_str_with_radix_default(src, 10)
+    }
+
+    /// Convert a string with an optional radix prefix to [UBig], returns the
+    /// parsed integer and radix. If no prefix is present, then the default radix input
+    /// will be used for parsing.
+    ///
     /// `src` may contain an optional `+` before the radix prefix.
     ///
     /// Allowed prefixes: `0b` for binary, `0o` for octal, `0x` for hexadecimal.
@@ -61,19 +71,24 @@ impl UBig {
     /// ```
     /// # use dashu_base::ParseError;
     /// # use dashu_int::UBig;
-    /// assert_eq!(UBig::from_str_with_radix_prefix("+0o17")?, (UBig::from(0o17u8), 8));
-    /// assert_eq!(UBig::from_str_with_radix_prefix("0x1f")?.0, UBig::from(0x1fu8));
+    /// assert_eq!(UBig::from_str_with_radix_default("+0o17", 10)?, (UBig::from(0o17u8), 8));
+    /// assert_eq!(UBig::from_str_with_radix_default("0x1f", 10)?.0, UBig::from(0x1fu8));
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
-    pub fn from_str_with_radix_prefix(src: &str) -> Result<(UBig, Digit), ParseError> {
-        // TODO(v0.4): add an argment to specify the default radix instead of always using 10
+    pub fn from_str_with_radix_default(
+        src: &str,
+        default_radix: Digit,
+    ) -> Result<(UBig, Digit), ParseError> {
         let src = src.strip_prefix('+').unwrap_or(src);
-        UBig::from_str_with_radix_prefix_no_sign(src)
+        UBig::from_str_with_radix_prefix_no_sign(src, default_radix)
     }
 
     /// Convert an unsigned string with an optional radix prefix to [UBig].
-    fn from_str_with_radix_prefix_no_sign(src: &str) -> Result<(UBig, Digit), ParseError> {
+    fn from_str_with_radix_prefix_no_sign(
+        src: &str,
+        default_radix: Digit,
+    ) -> Result<(UBig, Digit), ParseError> {
         if let Some(bin) = src.strip_prefix("0b") {
             UBig::from_str_radix_no_sign(bin, 2).map(|v| (v, 2))
         } else if let Some(oct) = src.strip_prefix("0o") {
@@ -81,7 +96,7 @@ impl UBig {
         } else if let Some(hex) = src.strip_prefix("0x") {
             UBig::from_str_radix_no_sign(hex, 16).map(|v| (v, 16))
         } else {
-            UBig::from_str_radix_no_sign(src, 10).map(|v| (v, 10))
+            UBig::from_str_radix_no_sign(src, default_radix).map(|v| (v, default_radix))
         }
     }
 
@@ -139,6 +154,15 @@ impl IBig {
     /// Convert a string with an optional radix prefix to [IBig], return the
     /// parsed integer and radix.
     ///
+    /// It's equivalent to [IBig::from_str_with_radix_default] with 10 as the default radix.
+    pub fn from_str_with_radix_prefix(src: &str) -> Result<(IBig, Digit), ParseError> {
+        IBig::from_str_with_radix_default(src, 10)
+    }
+
+    /// Convert a string with an optional radix prefix to [IBig], return the
+    /// parsed integer and radix. If no prefix is present, then the default radix input
+    /// will be used for parsing.
+    ///
     /// `src` may contain an '+' or `-` prefix before the radix prefix.
     ///
     /// Allowed prefixes: `0b` for binary, `0o` for octal, `0x` for hexadecimal.
@@ -147,22 +171,20 @@ impl IBig {
     /// ```
     /// # use dashu_base::ParseError;
     /// # use dashu_int::IBig;
-    /// assert_eq!(IBig::from_str_with_radix_prefix("+0o17")?, (IBig::from(0o17), 8));
-    /// assert_eq!(IBig::from_str_with_radix_prefix("-0x1f")?.0, IBig::from(-0x1f));
+    /// assert_eq!(IBig::from_str_with_radix_default("+0o17", 10)?, (IBig::from(0o17), 8));
+    /// assert_eq!(IBig::from_str_with_radix_default("-0x1f", 10)?.0, IBig::from(-0x1f));
     /// # Ok::<(), ParseError>(())
     /// ```
-    pub fn from_str_with_radix_prefix(mut src: &str) -> Result<(IBig, Digit), ParseError> {
-        let sign = match src.strip_prefix('-') {
-            Some(s) => {
-                src = s;
-                Negative
-            }
-            None => {
-                src = src.strip_prefix('+').unwrap_or(src);
-                Positive
-            }
+    #[inline]
+    pub fn from_str_with_radix_default(
+        src: &str,
+        default_radix: Digit,
+    ) -> Result<(IBig, Digit), ParseError> {
+        let (src, sign) = match src.strip_prefix('-') {
+            Some(s) => (s, Negative),
+            None => (src.strip_prefix('+').unwrap_or(src), Positive),
         };
-        let (mag, radix) = UBig::from_str_with_radix_prefix_no_sign(src)?;
+        let (mag, radix) = UBig::from_str_with_radix_prefix_no_sign(src, default_radix)?;
         Ok((IBig(mag.0.with_sign(sign)), radix))
     }
 }

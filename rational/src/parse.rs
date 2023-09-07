@@ -3,7 +3,7 @@ use crate::{
     repr::Repr,
 };
 use core::str::FromStr;
-use dashu_base::{ParseError, Sign};
+use dashu_base::ParseError;
 use dashu_int::{IBig, UBig};
 
 impl Repr {
@@ -25,42 +25,19 @@ impl Repr {
         }
     }
 
-    pub fn from_str_with_radix_prefix(mut src: &str) -> Result<(Self, u32), ParseError> {
+    pub fn from_str_with_radix_prefix(src: &str) -> Result<(Self, u32), ParseError> {
         if let Some(slash) = src.find('/') {
             // first parse the numerator part
             let (num, num_radix) = IBig::from_str_with_radix_prefix(&src[..slash])?;
-            src = &src[slash + 1..];
-
-            // then strip the prefixes of the denominator
-            // TODO(v0.4): use the updated IBig::from_str_with_radix_prefix so we don't have to duplicate the code
-            let sign = match src.strip_prefix('-') {
-                Some(s) => {
-                    src = s;
-                    Sign::Negative
-                }
-                None => {
-                    src = src.strip_prefix('+').unwrap_or(src);
-                    Sign::Positive
-                }
-            };
-
-            let (den, den_radix) = if let Some(bin) = src.strip_prefix("0b") {
-                (UBig::from_str_radix(bin, 2)?, 2)
-            } else if let Some(oct) = src.strip_prefix("0o") {
-                (UBig::from_str_radix(oct, 8)?, 8)
-            } else if let Some(hex) = src.strip_prefix("0x") {
-                (UBig::from_str_radix(hex, 16)?, 16)
-            } else {
-                (UBig::from_str_radix(src, num_radix)?, num_radix)
-            };
+            let (den, den_radix) = IBig::from_str_with_radix_default(&src[slash + 1..], num_radix)?;
+            let (den_sign, den) = den.into_parts();
 
             if num_radix != den_radix {
-                // TODO(v0.4): add a separate error for this
-                return Err(ParseError::UnsupportedRadix);
+                return Err(ParseError::InconsistentRadix);
             }
             Ok((
                 Repr {
-                    numerator: num * sign,
+                    numerator: num * den_sign,
                     denominator: den,
                 },
                 num_radix,
@@ -101,15 +78,17 @@ impl RBig {
     }
 
     /// Convert a string with optional radix prefixes to [RBig], return the
-    /// parsed integer and radix.
+    /// parsed integer and radix. If no prefix is present, then the default radix 10
+    /// will be used for parsing.
     ///
-    /// `src` may contain an '+' or `-` prefix before the radix prefix.
+    /// `src` may contain an '+' or `-` prefix before the radix prefix of both the
+    /// numerator and denominator.
     ///
     /// Allowed prefixes: `0b` for binary, `0o` for octal, `0x` for hexadecimal.
     ///
     /// If the radix prefixes for the numerator and the denominator are not the same,
     /// then a ParseError will be returned. The radix prefix for the denominator can be
-    /// omitted, and the radix for the numerator will used in the conversion.
+    /// omitted, and the radix for the numerator will used for parsing.
     ///
     /// # Examples
     /// ```
