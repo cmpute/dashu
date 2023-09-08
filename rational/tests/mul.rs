@@ -81,7 +81,7 @@ fn test_add_with_ibig() {
         assert_eq!(b * a, *c);
 
         let r = &a.clone().relax();
-        assert_eq!(r * b, *c);
-        assert_eq!(b * r, *c);
+        assert_eq!(r * b, c.clone().relax());
+        assert_eq!(b * r, c.clone().relax());
     }
 }

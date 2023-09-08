@@ -5,7 +5,7 @@
 ### Add
 
 - Add `is_int` to `RBig`
-- Implement `num-order::NumOrd` between `RBig` and `UBig`/`IBig`/`FBig`.
+- Implement `num-order::NumOrd` between `RBig`/`Relaxed` and `UBig`/`IBig`/`FBig`.
 - Implement `num-order::NumHash` for `RBig` and `Relaxed`
 
 ### Change
@@ -13,6 +13,10 @@
 - Now feature `num-traits` and `rand` are not enabled by default, feature `num-order` is enabled instead.
 - Fix the bug in `is_one` of `RBig` and `Relaxed`.
 - `RBig::square` and `Relaxed::square` are renamed to `sqr`
+
+### Remove
+
+- `PartialOrd` is no longer implemented between `RBig` and `Relaxed`. Please use `num-order::NumOrd` instead.
 
 ## 0.3.2
 

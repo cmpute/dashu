@@ -215,6 +215,22 @@ impl UBig {
     pub fn to_f64(&self) -> Approximation<f64, Sign> {
         self.repr().to_f64()
     }
+
+    /// Regard the number as a [IBig] number and return a reference of [IBig] type.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::{IBig, UBig};
+    /// assert_eq!(UBig::from(123u8).as_ibig(), &IBig::from(123));
+    /// ```
+    #[inline]
+    pub fn as_ibig(&self) -> &IBig {
+        // SAFETY: UBig and IBig are both transparent wrapper around the Repr type.
+        //         This conversion is only available for immutable references, so that
+        //         the sign will not be messed up.
+        unsafe { core::mem::transmute(self) }
+    }
 }
 
 impl IBig {

@@ -2,7 +2,7 @@
 
 use core::cmp::Ordering;
 use core::ops::{Add, AddAssign};
-use dashu_base::{Approximation, EstimatedLog2, Sign, Signed, UnsignedAbs};
+use dashu_base::{AbsOrd, Approximation, EstimatedLog2, Sign, Signed, UnsignedAbs};
 use dashu_int::{IBig, UBig, Word};
 
 /// Built-in rounding modes of the floating numbers.
@@ -118,14 +118,11 @@ pub trait Round: Copy {
         Self::round_low_part::<_>(integer, fsign, test)
     }
 
-    // TODO(v0.4): change the type of den to UBig
     /// Calculate the rounding of the number (integer + numerator / denominator),
     /// assuming |numerator / denominator| < 1. Return the adjustment.
     #[inline]
     fn round_ratio(integer: &IBig, num: IBig, den: &IBig) -> Rounding {
-        assert!(!den.is_zero());
-        // this assertion can be costly, so only check in debug mode
-        debug_assert!(num.clone().unsigned_abs() < den.clone().unsigned_abs());
+        assert!(!den.is_zero() && num.abs_cmp(den).is_le());
 
         if num.is_zero() {
             return Rounding::NoOp;

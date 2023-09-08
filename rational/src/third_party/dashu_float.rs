@@ -108,9 +108,7 @@ impl Repr {
         let rounded = if r.is_zero() {
             Approximation::Exact(q)
         } else {
-            // TODO(v0.4): prevent this when we have unsigned round_ratio
-            let den = self.denominator.clone().into();
-            let adjust = R::round_ratio(&q, r, &den);
+            let adjust = R::round_ratio(&q, r, self.denominator.as_ibig());
             Approximation::Inexact(q + adjust, adjust)
         };
 

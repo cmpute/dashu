@@ -1,4 +1,4 @@
-use crate::{repr::Repr, RBig, Relaxed};
+use crate::{repr::Repr, RBig};
 use core::{
     cmp::Ordering,
     hash::{Hash, Hasher},
@@ -96,31 +96,5 @@ impl Ord for Repr {
         let n1d2 = (&self.numerator) * (&other.denominator);
         let n2d1 = (&other.numerator) * (&self.denominator);
         n1d2.cmp(&n2d1)
-    }
-}
-
-// TODO(v0.4): deprecate comparison between RBig and Relaxed, use num-order instead
-impl PartialEq<RBig> for Relaxed {
-    #[inline]
-    fn eq(&self, other: &RBig) -> bool {
-        self.0.eq(&other.0)
-    }
-}
-impl PartialOrd<RBig> for Relaxed {
-    #[inline]
-    fn partial_cmp(&self, other: &RBig) -> Option<Ordering> {
-        self.0.partial_cmp(&other.0)
-    }
-}
-impl PartialEq<Relaxed> for RBig {
-    #[inline]
-    fn eq(&self, other: &Relaxed) -> bool {
-        self.0.eq(&other.0)
-    }
-}
-impl PartialOrd<Relaxed> for RBig {
-    #[inline]
-    fn partial_cmp(&self, other: &Relaxed) -> Option<Ordering> {
-        self.0.partial_cmp(&other.0)
     }
 }

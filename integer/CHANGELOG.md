@@ -5,6 +5,7 @@
 ### Add
 
 - Add a `ConstDivisor` type that supports faster division when you have an invariant number as the divisor.
+- Add `as_ibig` method to `UBig`.
 - Implement `num_order::NumOrd` trait between `UBig` and `IBig`
 - Implement `num_modular::Reducer` trait for `ConstDivisor`
 
@@ -16,6 +17,7 @@
 - The `IntoRing` trait is no longer implemented for reference types `&UBig` and `&IBig` to make the copying explicit.
 - The `Modulo` type is renamed to `Reduced` to prevent confusion.
 - `From<&UBig>` implementation for `IBig` and `TryFrom<&IBig>` for `UBig` are removed to prevent implicit cloning.
+- `BitAnd` for `UBig` and other primitive integer types now will always return the result with primitive integer type.
 
 ### Remove
 

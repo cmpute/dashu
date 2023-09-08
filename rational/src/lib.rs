@@ -21,7 +21,9 @@
 //! rational number as a pair of integers (numerator and denominator) and their APIs
 //! are mostly the same. However only with [RBig], the numerator and denominator are
 //! reduced so that they don't have common divisors other than one. Therefore, [Relaxed]
-//! can be much faster if you don't care about a reduced representation of the rational number.
+//! sometimes can be much faster if you don't care about a reduced representation of
+//! the rational number. However, benchmarking is always recommended before choosing
+//! which representation to use.
 //!
 //! To construct big rationals from literals, please use the [`dashu-macro`](https://docs.rs/dashu-macros/latest/dashu_macros/)
 //! crate for your convenience.
@@ -48,9 +50,6 @@
 //! assert_eq!(e.numerator(), &IBig::from(-807));
 //! let f: RBig = e.clone().canonicalize(); // e = -269 / 102
 //! assert_eq!(f.numerator(), &IBig::from(-269));
-//!
-//! // comparison is allowed between RBig and Relaxed
-//! assert_eq!(e, f);
 //! # Ok::<(), ParseError>(())
 //! ```
 

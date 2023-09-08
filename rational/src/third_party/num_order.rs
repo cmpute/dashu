@@ -5,10 +5,31 @@ use dashu_base::{AbsOrd, EstimatedLog2, Sign, Signed};
 use dashu_int::{IBig, UBig};
 use num_order::{NumHash, NumOrd};
 
-impl NumOrd<UBig> for RBig {
+macro_rules! impl_ord_between_ratio {
+    ($t1:ty, $t2:ty) => {
+        impl NumOrd<$t2> for $t1 {
+            #[inline]
+            fn num_eq(&self, other: &$t2) -> bool {
+                self.0.eq(&other.0)
+            }
+            #[inline]
+            fn num_partial_cmp(&self, other: &$t2) -> Option<Ordering> {
+                Some(self.0.cmp(&other.0))
+            }
+            #[inline]
+            fn num_cmp(&self, other: &$t2) -> Ordering {
+                self.0.cmp(&other.0)
+            }
+        }
+    };
+}
+impl_ord_between_ratio!(RBig, Relaxed);
+impl_ord_between_ratio!(Relaxed, RBig);
+
+impl NumOrd<UBig> for Repr {
     fn num_cmp(&self, other: &UBig) -> Ordering {
         // case 1: compare sign
-        if self.sign() == Sign::Negative {
+        if self.numerator.sign() == Sign::Negative {
             return Ordering::Less;
         }
 
@@ -23,7 +44,7 @@ impl NumOrd<UBig> for RBig {
         }
 
         // case 3: compare the exact values
-        self.numerator().abs_cmp(&(other * self.denominator()))
+        self.numerator.abs_cmp(&(other * &self.denominator))
     }
     #[inline]
     fn num_partial_cmp(&self, other: &UBig) -> Option<Ordering> {
@@ -31,26 +52,15 @@ impl NumOrd<UBig> for RBig {
     }
 }
 
-impl NumOrd<RBig> for UBig {
-    #[inline]
-    fn num_cmp(&self, other: &RBig) -> Ordering {
-        other.num_cmp(self).reverse()
-    }
-    #[inline]
-    fn num_partial_cmp(&self, other: &RBig) -> Option<Ordering> {
-        Some(other.num_cmp(self).reverse())
-    }
-}
-
-impl NumOrd<IBig> for RBig {
+impl NumOrd<IBig> for Repr {
     fn num_cmp(&self, other: &IBig) -> Ordering {
         // case 1: compare sign
-        match self.numerator().signum().cmp(&other.signum()) {
+        match self.numerator.signum().cmp(&other.signum()) {
             Ordering::Greater => return Ordering::Greater,
             Ordering::Less => return Ordering::Less,
             _ => {}
         };
-        let sign = self.sign();
+        let sign = self.numerator.sign();
 
         // case 2: compare log2 estimations
         let (self_lo, self_hi) = self.log2_bounds();
@@ -69,7 +79,7 @@ impl NumOrd<IBig> for RBig {
         }
 
         // case 3: compare the exact values
-        self.numerator().cmp(&(other * self.denominator()))
+        self.numerator.cmp(&(other * &self.denominator))
     }
     #[inline]
     fn num_partial_cmp(&self, other: &IBig) -> Option<Ordering> {
@@ -77,16 +87,34 @@ impl NumOrd<IBig> for RBig {
     }
 }
 
-impl NumOrd<RBig> for IBig {
-    #[inline]
-    fn num_cmp(&self, other: &RBig) -> Ordering {
-        other.num_cmp(self).reverse()
-    }
-    #[inline]
-    fn num_partial_cmp(&self, other: &RBig) -> Option<Ordering> {
-        Some(other.num_cmp(self).reverse())
-    }
+macro_rules! forward_ratio_cmp_to_repr {
+    ($R:ty, $T:ty) => {
+        impl NumOrd<$T> for $R {
+            #[inline]
+            fn num_cmp(&self, other: &$T) -> Ordering {
+                self.0.num_cmp(other)
+            }
+            #[inline]
+            fn num_partial_cmp(&self, other: &$T) -> Option<Ordering> {
+                Some(self.0.num_cmp(other))
+            }
+        }
+        impl NumOrd<$R> for $T {
+            #[inline]
+            fn num_cmp(&self, other: &$R) -> Ordering {
+                other.0.num_cmp(self).reverse()
+            }
+            #[inline]
+            fn num_partial_cmp(&self, other: &$R) -> Option<Ordering> {
+                Some(other.0.num_cmp(self).reverse())
+            }
+        }
+    };
 }
+forward_ratio_cmp_to_repr!(RBig, UBig);
+forward_ratio_cmp_to_repr!(Relaxed, UBig);
+forward_ratio_cmp_to_repr!(RBig, IBig);
+forward_ratio_cmp_to_repr!(Relaxed, IBig);
 
 impl NumHash for Repr {
     fn num_hash<H: core::hash::Hasher>(&self, state: &mut H) {
