@@ -87,8 +87,8 @@ fn test_base_change() {
         dbig!(-12345e-100).with_rounding::<Zero>().to_binary(),
         Inexact(fbig!(-0xa8c2p-334), NoOp)
     );
-    assert_eq!(DBig::INFINITY.to_binary(), Inexact(FBig::<HalfAway, 2>::INFINITY, NoOp));
-    assert_eq!(DBig::NEG_INFINITY.to_binary(), Inexact(FBig::<HalfAway, 2>::NEG_INFINITY, NoOp));
+    assert_eq!(DBig::INFINITY.to_binary(), Inexact(FBig::INFINITY, NoOp));
+    assert_eq!(DBig::NEG_INFINITY.to_binary(), Inexact(FBig::NEG_INFINITY, NoOp));
 
     assert_eq!(
         dbig!(12345)
@@ -160,7 +160,7 @@ fn test_base_change() {
 #[test]
 #[should_panic]
 fn test_base_change_unlimited_precision() {
-    let _ = dbig!(1234e-1).with_precision(0).value().with_base::<2>();
+    let _ = dbig!(1234e-1).with_precision(0).unwrap().with_base::<2>();
 }
 
 #[test]
@@ -249,8 +249,9 @@ fn test_to_f32() {
     assert_eq!(fbig!(0x1234p-3).to_f32(), Exact(582.5));
     assert_eq!(fbig!(0x1234p-16).to_f32(), Exact(0.07110596));
     // exact value: 3.8549410571968246689670642581279215812574412414193147924379... × 10^-21
-    assert_eq!(fbig!(0x123456789p-100).to_f32(), Inexact(3.854941e-21, AddOne));
-    // exact value: -46078879240071936454164480
+    assert_eq!(fbig!(0x123456789p-100).to_f32(), Inexact(3.8549407e-21, NoOp)); // round toward zero
+    assert_eq!(fbig!(0x123456789p-100).repr().to_f32(), Inexact(3.854941e-21, AddOne)); // round to even
+                                                                                        // exact value: -46078879240071936454164480
     assert_eq!(fbig!(-0x987654321p50).to_f32(), Inexact(-4.607888e25, NoOp));
 
     assert_eq!(FBig::<Zero, 2>::INFINITY.to_f32(), Inexact(f32::INFINITY, NoOp));
@@ -259,8 +260,10 @@ fn test_to_f32() {
     assert_eq!(fbig!(-0x1p200).to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
     assert_eq!(fbig!(0x1p128).to_f32(), Inexact(f32::INFINITY, AddOne)); // boundary for overflow
     assert_eq!(fbig!(-0x1p128).to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
-    assert_eq!(fbig!(0xffffffffp96).to_f32(), Inexact(f32::INFINITY, AddOne));
-    assert_eq!(fbig!(-0xffffffffp96).to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
+    assert_eq!(fbig!(0xffffffffp96).to_f32(), Inexact(f32::MAX, NoOp));
+    assert_eq!(fbig!(0xffffffffp96).repr().to_f32(), Inexact(f32::INFINITY, AddOne));
+    assert_eq!(fbig!(-0xffffffffp96).to_f32(), Inexact(f32::MIN, NoOp));
+    assert_eq!(fbig!(-0xffffffffp96).repr().to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
     assert_eq!(fbig!(0x1p-140).to_f32(), Exact(f32::from_bits(0x200))); // subnormal
     assert_eq!(fbig!(-0x1p-140).to_f32(), Exact(-f32::from_bits(0x200)));
     assert_eq!(fbig!(0x1p-149).to_f32(), Exact(f32::from_bits(0x1)));

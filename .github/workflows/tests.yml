@@ -57,7 +57,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all-features --workspace --exclude benchmark
+          args: --all-features --workspace --exclude benchmark --no-fail-fast
 
   test-x86:
     name: Test x86

@@ -79,8 +79,6 @@ fn test_ubig_round_trip() {
         ubig!(0x123456789012345678901234567890123456789),
     ];
     for int in &test_numbers {
-        dbg!(int);
-
         // test binary serialization
         let output = to_allocvec(int).unwrap();
         let parsed: UBig = from_bytes(&output).unwrap();

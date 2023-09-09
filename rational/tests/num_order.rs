@@ -123,7 +123,6 @@ fn test_hash() {
     ];
     for v in small_cases {
         let r = RBig::simplest_from_f64(v).unwrap();
-        dbg!(v, &r);
         assert_eq!(hash(&v), hash(&r));
     }
 }

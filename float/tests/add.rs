@@ -284,25 +284,25 @@ fn test_sub_by_inf() {
 #[test]
 #[rustfmt::skip::macros(fbig)]
 fn test_add_sub_unlimited_precision() {
-    let a = fbig!(0xffff).with_precision(0).value();
-    let b = fbig!(-0xffff).with_precision(0).value();
+    let a = fbig!(0xffff).with_precision(0).unwrap();
+    let b = fbig!(-0xffff).with_precision(0).unwrap();
     test_add(&a, &a, &fbig!(0x1fffe));
     test_add(&a, &b, &fbig!(0x0));
     test_add(&b, &b, &fbig!(-0x1fffe));
 
-    let a = dbig!(9999).with_precision(0).value();
-    let b = dbig!(-9999).with_precision(0).value();
+    let a = dbig!(9999).with_precision(0).unwrap();
+    let b = dbig!(-9999).with_precision(0).unwrap();
     test_add(&a, &a, &dbig!(19998));
     test_add(&a, &b, &dbig!(0));
     test_add(&b, &b, &dbig!(-19998));
 
-    let a = fbig!(0x1p16).with_precision(0).value();
-    let b = fbig!(0x1p-16).with_precision(0).value();
+    let a = fbig!(0x1p16).with_precision(0).unwrap();
+    let b = fbig!(0x1p-16).with_precision(0).unwrap();
     test_add(&a, &fbig!(0x1p-16), &a);
     test_add(&a, &b, &fbig!(0x100000001p-16));
 
-    let a = dbig!(1e4).with_precision(0).value();
-    let b = dbig!(1e-4).with_precision(0).value();
+    let a = dbig!(1e4).with_precision(0).unwrap();
+    let b = dbig!(1e-4).with_precision(0).unwrap();
     test_add(&a, &dbig!(1e-4), &a);
     test_add(&a, &b, &dbig!(100000001e-4));
 }

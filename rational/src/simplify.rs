@@ -117,7 +117,7 @@ impl RBig {
     ///
     /// This method only make sense for canonicalized ratios.
     #[inline]
-    fn is_simpler_than(&self, other: &Self) -> bool {
+    pub fn is_simpler_than(&self, other: &Self) -> bool {
         (self.denominator() < other.denominator()) // first compare denominator
             && self.numerator().abs_cmp(other.numerator()).is_le() // then compare numerator
             && self.sign() > other.sign() // then compare sign

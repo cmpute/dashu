@@ -1,4 +1,5 @@
 use crate::{
+    error::panic_unlimited_precision,
     repr::{Context, Repr, Word},
     round::{mode, Round},
     utils::digit_len,
@@ -354,8 +355,15 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// assert_eq!(DBig::from_str_native("01.23")?.ulp(), DBig::from_str_native("0.001")?);
     /// # Ok::<(), ParseError>(())
     /// ```
+    ///
+    /// # Panics
+    /// Panics if the precision of the number is 0 (unlimited).
+    ///
     #[inline]
     pub fn ulp(&self) -> Self {
+        if self.context.precision == 0 {
+            panic_unlimited_precision();
+        }
         if self.repr.is_infinite() {
             return self.clone();
         }

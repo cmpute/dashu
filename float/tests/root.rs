@@ -1,5 +1,5 @@
 use dashu_base::Approximation::*;
-use dashu_float::{round::Rounding::*, DBig};
+use dashu_float::{ops::SquareRoot, round::Rounding::*, DBig};
 
 mod helper_macros;
 
@@ -26,7 +26,7 @@ fn test_sqrt_binary() {
         (fbig!(0x0003), fbig!(0xddb3p-15)),
         (fbig!(0x0000000000000003), fbig!(0xddb3d742c265539dp-63)),
         (
-            fbig!(0x3).with_precision(200).value(),
+            fbig!(0x3).with_precision(200).unwrap(),
             fbig!(0xddb3d742c265539d92ba16b83c5c1dc492ec1a6629ed23cc63p-199),
         ),
         (fbig!(0x3000), fbig!(0xddb3p-9)),
@@ -68,7 +68,7 @@ fn test_sqrt_decimal() {
         (dbig!(0003), dbig!(1732e-3), NoOp),
         (dbig!(0000000000000003), dbig!(1732050807568877e-15), NoOp),
         (
-            dbig!(3).with_precision(60).value(),
+            dbig!(3).with_precision(60).unwrap(),
             dbig!(173205080756887729352744634150587236694280525381038062805581e-59),
             AddOne,
         ),
@@ -91,7 +91,7 @@ fn test_sqrt_decimal() {
 #[test]
 #[should_panic]
 fn test_sqrt_unlimited_precision() {
-    let _ = dbig!(2).with_precision(0).value().sqrt();
+    let _ = dbig!(2).with_precision(0).unwrap().sqrt();
 }
 
 #[test]

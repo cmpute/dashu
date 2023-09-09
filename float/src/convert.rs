@@ -13,7 +13,10 @@ use crate::{
     error::{assert_finite, panic_unlimited_precision},
     fbig::FBig,
     repr::{Context, Repr},
-    round::{mode::HalfEven, Round, Rounded, Rounding},
+    round::{
+        mode::{HalfAway, HalfEven, Zero},
+        Round, Rounded, Rounding,
+    },
     utils::{ilog_exact, shl_digits, shl_digits_in_place, shr_digits},
 };
 
@@ -75,11 +78,13 @@ impl_from_float_for_fbig!(f32);
 impl_from_float_for_fbig!(f64);
 
 impl<R: Round, const B: Word> FBig<R, B> {
-    // TODO(v0.4): change the result rounding to HalfEven, so that the output is directly a DBig
-    /// Convert the float number to base 10 (with decimal exponents).
+    /// Convert the float number to base 10 (with decimal exponents) rounding to even
+    /// and tying away from zero.
     ///
-    /// It's equivalent to `self.with_base::<10>()`. See [with_base()][Self::with_base]
-    /// for the precision and rounding behavior.
+    /// It's equivalent to `self.with_rounding::<HalfAway>().with_base::<10>()`.
+    /// The output is directly of type [DBig][crate::DBig].
+    ///
+    /// See [with_base()][Self::with_base] for the precision behavior.
     ///
     /// # Examples
     ///
@@ -87,18 +92,20 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
-    /// use dashu_float::round::{mode::HalfAway, Rounding::*};
+    /// use dashu_float::round::Rounding::*;
+    ///
+    /// type Real = FBig;
     ///
     /// assert_eq!(
-    ///     FBig::<HalfAway, 2>::from_str_native("0x1234")?.to_decimal(),
+    ///     Real::from_str_native("0x1234")?.to_decimal(),
     ///     Exact(DBig::from_str_native("4660")?)
     /// );
     /// assert_eq!(
-    ///     FBig::<HalfAway, 2>::from_str_native("0x12.34")?.to_decimal(),
+    ///     Real::from_str_native("0x12.34")?.to_decimal(),
     ///     Inexact(DBig::from_str_native("18.20")?, NoOp)
     /// );
     /// assert_eq!(
-    ///     FBig::<HalfAway, 2>::from_str_native("0x1.234p-4")?.to_decimal(),
+    ///     Real::from_str_native("0x1.234p-4")?.to_decimal(),
     ///     Inexact(DBig::from_str_native("0.07111")?, AddOne)
     /// );
     /// # Ok::<(), ParseError>(())
@@ -109,15 +116,15 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Panics if the associated context has unlimited precision and the conversion
     /// cannot be performed losslessly.
     #[inline]
-    pub fn to_decimal(&self) -> Rounded<FBig<R, 10>> {
-        self.clone().with_base::<10>()
+    pub fn to_decimal(&self) -> Rounded<FBig<HalfAway, 10>> {
+        self.clone().with_rounding().with_base::<10>()
     }
 
-    // TODO(v0.4): change the result rounding to Zero, so that the output is directly a default FBig
-    /// Convert the float number to base 2 (with binary exponents).
+    /// Convert the float number to base 2 (with binary exponents) rounding towards zero.
     ///
-    /// It's equivalent to `self.with_base::<2>()`. See [with_base()][Self::with_base]
-    /// for the precision and rounding behavior.
+    /// It's equivalent to `self.with_rounding::<Zero>().with_base::<2>()`.
+    ///
+    /// See [with_base()][Self::with_base] for the precision and rounding behavior.
     ///
     /// # Examples
     ///
@@ -127,17 +134,19 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::{mode::HalfAway, Rounding::*};
     ///
+    /// type Real = FBig;
+    ///
     /// assert_eq!(
     ///     DBig::from_str_native("1234")?.to_binary(),
-    ///     Exact(FBig::<HalfAway, 2>::from_str_native("0x4d2")?)
+    ///     Exact(Real::from_str_native("0x4d2")?)
     /// );
     /// assert_eq!(
     ///     DBig::from_str_native("12.34")?.to_binary(),
-    ///     Inexact(FBig::<HalfAway, 2>::from_str_native("0xc.57")?, NoOp)
+    ///     Inexact(Real::from_str_native("0xc.57")?, NoOp)
     /// );
     /// assert_eq!(
     ///     DBig::from_str_native("1.234e-1")?.to_binary(),
-    ///     Inexact(FBig::<HalfAway, 2>::from_str_native("0x1.f97p-4")?, NoOp)
+    ///     Inexact(Real::from_str_native("0x1.f97p-4")?, NoOp)
     /// );
     /// # Ok::<(), ParseError>(())
     /// ```
@@ -147,8 +156,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Panics if the associated context has unlimited precision and the conversion
     /// cannot be performed losslessly.
     #[inline]
-    pub fn to_binary(&self) -> Rounded<FBig<R, 2>> {
-        self.clone().with_base::<2>()
+    pub fn to_binary(&self) -> Rounded<FBig<Zero, 2>> {
+        self.clone().with_rounding().with_base::<2>()
     }
 
     /// Explicitly change the precision of the float number.
@@ -374,7 +383,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
         Inexact(hi + adjust, adjust)
     }
 
-    /// Convert the float number to [f32] with [HalfEven] rounding mode regardless of the mode associated with this number.
+    /// Convert the float number to [f32] with the rounding mode associated with the type.
     ///
     /// # Examples
     ///
@@ -387,8 +396,19 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn to_f32(&self) -> Rounded<f32> {
-        // TODO(v0.4): use the rounding mode specified by this type
-        self.repr.to_f32()
+        if self.repr.is_infinite() {
+            return Inexact(self.sign() * f32::INFINITY, Rounding::NoOp);
+        }
+
+        let context = Context::<R>::new(24);
+        if B != 2 {
+            let rounded: Rounded<Repr<2>> = context.convert_base(self.repr.clone());
+            rounded.and_then(|v| v.into_f32_internal())
+        } else {
+            context
+                .repr_round_ref(&self.repr)
+                .and_then(|v| v.into_f32_internal())
+        }
     }
 
     /// Convert the float number to [f64] with [HalfEven] rounding mode regardless of the mode associated with this number.
@@ -404,8 +424,19 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn to_f64(&self) -> Rounded<f64> {
-        // TODO(v0.4): use the rounding mode specified by this type
-        self.repr.to_f64()
+        if self.repr.is_infinite() {
+            return Inexact(self.sign() * f64::INFINITY, Rounding::NoOp);
+        }
+
+        let context = Context::<HalfEven>::new(53);
+        if B != 2 {
+            let rounded: Rounded<Repr<2>> = context.convert_base(self.repr.clone());
+            rounded.and_then(|v| v.into_f64_internal())
+        } else {
+            context
+                .repr_round_ref(&self.repr)
+                .and_then(|v| v.into_f64_internal())
+        }
     }
 }
 
@@ -532,6 +563,8 @@ impl<const B: Word> Repr<B> {
     /// ```
     #[inline]
     pub fn to_f32(&self) -> Rounded<f32> {
+        // Note: the implementation here should be kept consistent with FBig::to_f32
+
         if self.is_infinite() {
             return Inexact(self.sign() * f32::INFINITY, Rounding::NoOp);
         }
@@ -588,6 +621,8 @@ impl<const B: Word> Repr<B> {
     /// ```
     #[inline]
     pub fn to_f64(&self) -> Rounded<f64> {
+        // Note: the implementation here should be kept consistent with FBig::to_f64
+
         if self.is_infinite() {
             return Inexact(self.sign() * f64::INFINITY, Rounding::NoOp);
         }

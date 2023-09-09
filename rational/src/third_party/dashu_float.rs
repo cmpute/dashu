@@ -4,7 +4,7 @@ use crate::{
 };
 use dashu_base::{Approximation, ConversionError, DivRem};
 use dashu_float::{
-    round::{Round, Rounded},
+    round::{ErrorBounds, Round, Rounded},
     Context, FBig, Repr as FBigRepr,
 };
 use dashu_int::{UBig, Word};
@@ -139,10 +139,44 @@ impl RBig {
         self.0.to_float(precision)
     }
 
-    // TODO(v0.4): implement fn simplest_from_float<R: Round, const B: Word>(float: &FBig<R, B>) -> Self
-    //     We need to add a method to the Round trait, that reports the range where a number can be rounded
-    //     to this value, together with an interval type (Open, OpenClosed, ClosedOpen, Closed). This type is
-    //     also useful for the Uniform01 type.
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_base::ParseError;
+    /// # use dashu_ratio::RBig;
+    /// use dashu_float::DBig;
+    ///
+    /// let f = DBig::from_str_native("4.00")? / DBig::from_str_native("3.00")?;
+    /// let r = RBig::from_str_radix("4/3", 10)?;
+    /// assert_eq!(RBig::simplest_from_float(&f), Some(r));
+    /// assert_eq!(RBig::simplest_from_float(&DBig::INFINITY), None);
+    ///
+    /// # Ok::<(), ParseError>(())
+    /// ```
+    pub fn simplest_from_float<R: ErrorBounds, const B: Word>(f: &FBig<R, B>) -> Option<Self> {
+        if f.repr().is_infinite() {
+            return None;
+        } else if f.repr().is_zero() {
+            return Some(Self::ZERO);
+        }
+
+        // calculate lower and upper bound
+        let (l, r, incl_l, incl_r) = R::error_bounds(f);
+        let lb = f - l.with_precision(f.precision() + 1).unwrap();
+        let rb = f + r.with_precision(f.precision() + 1).unwrap();
+
+        // select the simplest in this range
+        let left = Self::try_from(lb).unwrap();
+        let right = Self::try_from(rb).unwrap();
+        let mut simplest = Self::simplest_in(left.clone(), right.clone());
+        if incl_l && left.is_simpler_than(&simplest) {
+            simplest = left;
+        }
+        if incl_r && right.is_simpler_than(&simplest) {
+            simplest = right;
+        }
+        Some(simplest)
+    }
 }
 
 impl Relaxed {

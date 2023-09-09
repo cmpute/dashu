@@ -1,4 +1,4 @@
-use dashu_base::{Approximation, Sign, SquareRootRem, UnsignedAbs};
+use dashu_base::{Approximation, Sign, SquareRoot, SquareRootRem, UnsignedAbs};
 use dashu_int::IBig;
 
 use crate::{
@@ -9,20 +9,10 @@ use crate::{
     utils::{shl_digits, split_digits_ref},
 };
 
-impl<R: Round, const B: Word> FBig<R, B> {
-    /// Calculate the square root of the floating point number.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use dashu_base::ParseError;
-    /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("1.23")?;
-    /// assert_eq!(a.sqrt(), DBig::from_str_native("1.11")?);
-    /// # Ok::<(), ParseError>(())
-    /// ```
+impl<R: Round, const B: Word> SquareRoot for FBig<R, B> {
+    type Output = Self;
     #[inline]
-    pub fn sqrt(&self) -> Self {
+    fn sqrt(&self) -> Self {
         self.context.sqrt(self.repr()).value()
     }
 }
@@ -85,5 +75,4 @@ impl<R: Round> Context<R> {
     }
 }
 
-// TODO(next): implement sqrt as the Sqrt trait
-// TODO(v0.4): implement cbrt, nth_root
+// TODO(next): implement cbrt, nth_root

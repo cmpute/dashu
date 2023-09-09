@@ -105,9 +105,9 @@ fn test_powi_decimal() {
 #[test]
 #[rustfmt::skip::macros(fbig)]
 fn test_powi_unlimited_precision() {
-    assert_eq!(fbig!(0x1p-3).with_precision(0).value().powi(ibig!(100)), fbig!(0x1p-300));
+    assert_eq!(fbig!(0x1p-3).with_precision(0).unwrap().powi(ibig!(100)), fbig!(0x1p-300));
     assert_eq!(
-        fbig!(0x11p-3).with_precision(0).value().powi(ibig!(100)),
+        fbig!(0x11p-3).with_precision(0).unwrap().powi(ibig!(100)),
         fbig!(0x1ad6e751d93a86b6ee122b6be4254d4ee2283adf63955e927dd2ccf8c9ed1fceec29ee2d0e93474283c3edae5b313516ad69c41p-300)
     );
 }
@@ -116,7 +116,7 @@ fn test_powi_unlimited_precision() {
 #[should_panic]
 #[rustfmt::skip::macros(fbig)]
 fn test_powi_unlimited_precision_neg_exp() {
-    let _ = fbig!(0x3p-3).with_precision(0).value().powi(ibig!(-100));
+    let _ = fbig!(0x3p-3).with_precision(0).unwrap().powi(ibig!(-100));
 }
 
 #[test]
@@ -129,14 +129,14 @@ fn test_exp_binary() {
         (fbig!(0x0001), fbig!(0xadf8p-14)),
         (fbig!(0x0000000000000001), fbig!(0xadf85458a2bb4a9ap-62)),
         (
-            fbig!(1).with_precision(200).value(),
+            fbig!(1).with_precision(200).unwrap(),
             fbig!(0xadf85458a2bb4a9aafdc5620273d3cf1d8b9c583ce2d3695a9p-198),
         ),
         (fbig!(-0x1), fbig!(0xbp-5)),
         (fbig!(-0x0001), fbig!(0xbc5ap-17)),
         (fbig!(-0x0000000000000001), fbig!(0xbc5ab1b16779be35p-65)),
         (
-            fbig!(-1).with_precision(200).value(),
+            fbig!(-1).with_precision(200).unwrap(),
             fbig!(0xbc5ab1b16779be3575bd8f0520a9f21bb5300b556ad8ee6660p-201),
         ),
         (fbig!(0x12p-4), fbig!(0xc5p-6)),
@@ -174,7 +174,7 @@ fn test_exp_decimal() {
         (dbig!(0001), dbig!(2718e-3), NoOp),
         (dbig!(0000000000000001), dbig!(2718281828459045e-15), NoOp),
         (
-            dbig!(1).with_precision(60).value(),
+            dbig!(1).with_precision(60).unwrap(),
             dbig!(271828182845904523536028747135266249775724709369995957496697e-59),
             AddOne,
         ),
@@ -182,7 +182,7 @@ fn test_exp_decimal() {
         (dbig!(-0001), dbig!(3679e-4), AddOne),
         (dbig!(-0000000000000001), dbig!(3678794411714423e-16), NoOp),
         (
-            dbig!(-1).with_precision(60).value(),
+            dbig!(-1).with_precision(60).unwrap(),
             dbig!(367879441171442321595523770161460867445811131031767834507837e-60),
             AddOne,
         ),
@@ -217,7 +217,7 @@ fn test_exp_decimal() {
 #[test]
 #[should_panic]
 fn test_exp_unlimited_precision() {
-    let _ = dbig!(2).with_precision(0).value().exp();
+    let _ = dbig!(2).with_precision(0).unwrap().exp();
 }
 
 #[test]
@@ -236,14 +236,14 @@ fn test_exp_m1_binary() {
         (fbig!(0x0001), fbig!(0xdbf0p-15)),
         (fbig!(0x0000000000000001), fbig!(0xdbf0a8b145769535p-63)),
         (
-            fbig!(1).with_precision(200).value(),
+            fbig!(1).with_precision(200).unwrap(),
             fbig!(0xdbf0a8b1457695355fb8ac404e7a79e3b1738b079c5a6d2b53p-199),
         ),
         (fbig!(-0x1), fbig!(-0xap-4)),
         (fbig!(-0x0001), fbig!(-0xa1d2p-16)),
         (fbig!(-0x0000000000000001), fbig!(-0xa1d2a7274c4320e5p-64)),
         (
-            fbig!(-1).with_precision(200).value(),
+            fbig!(-1).with_precision(200).unwrap(),
             fbig!(-0xa1d2a7274c4320e54521387d6fab06f22567fa554a9388cccfp-200),
         ),
         (fbig!(0x12p-8), fbig!(0x95p-11)),
@@ -282,7 +282,7 @@ fn test_exp_m1_decimal() {
         (dbig!(0001), dbig!(1718e-3), NoOp),
         (dbig!(0000000000000001), dbig!(1718281828459045e-15), NoOp),
         (
-            dbig!(1).with_precision(60).value(),
+            dbig!(1).with_precision(60).unwrap(),
             dbig!(171828182845904523536028747135266249775724709369995957496697e-59),
             AddOne,
         ),
@@ -290,7 +290,7 @@ fn test_exp_m1_decimal() {
         (dbig!(-0001), dbig!(-6321e-4), NoOp),
         (dbig!(-0000000000000001), dbig!(-6321205588285577e-16), SubOne),
         (
-            dbig!(-1).with_precision(60).value(),
+            dbig!(-1).with_precision(60).unwrap(),
             dbig!(-632120558828557678404476229838539132554188868968232165492163e-60),
             NoOp,
         ),
@@ -326,7 +326,7 @@ fn test_exp_m1_decimal() {
 #[test]
 #[should_panic]
 fn test_exp_m1_unlimited_precision() {
-    let _ = dbig!(2).with_precision(0).value().exp_m1();
+    let _ = dbig!(2).with_precision(0).unwrap().exp_m1();
 }
 
 #[test]
@@ -427,8 +427,8 @@ fn test_powf_decimal() {
 fn test_pow_unlimited_precision() {
     let _ = dbig!(2)
         .with_precision(0)
-        .value()
-        .powf(&dbig!(2.1).with_precision(0).value());
+        .unwrap()
+        .powf(&dbig!(2.1).with_precision(0).unwrap());
 }
 
 #[test]

@@ -24,9 +24,9 @@ fn get_test_cases() -> [(u32, i32, &'static str, DBig); 21] {
         (5, 4, "1", dbig!(1.0000)),
         (5, 1, "1e3", dbig!(1000.0)),
         (1, -4, "1e4", dbig!(10000)),
-        (31, 0, "1e30", dbig!(1e30).with_precision(31).value()),
-        (32, 1, "1e30", dbig!(1e30).with_precision(32).value()),
-        (41, 10, "1e30", dbig!(1e30).with_precision(41).value()),
+        (31, 0, "1e30", dbig!(1e30).with_precision(31).unwrap()),
+        (32, 1, "1e30", dbig!(1e30).with_precision(32).unwrap()),
+        (41, 10, "1e30", dbig!(1e30).with_precision(41).unwrap()),
         (9, 0, "123456789", dbig!(123456789)),
         // fractionals
         (1, 1, "0.1", dbig!(1e-1)),

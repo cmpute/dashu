@@ -13,7 +13,7 @@ fn test_ln_binary() {
         (fbig!(0x0003), fbig!(0x8c9fp-15)),
         (fbig!(0x0000000000000003), fbig!(0x8c9f53d5681854bbp-63)),
         (
-            fbig!(0x3).with_precision(200).value(),
+            fbig!(0x3).with_precision(200).unwrap(),
             fbig!(0x8c9f53d5681854bb520cc6aa829dbe5adf0a216cdbf046f81ep-199),
         ),
         (fbig!(0x3000), fbig!(0x96a9p-12)),
@@ -54,7 +54,7 @@ fn test_ln_decimal() {
         (dbig!(0003), dbig!(1099e-3), AddOne),
         (dbig!(0000000000000003), dbig!(1098612288668110e-15), AddOne),
         (
-            dbig!(3).with_precision(60).value(),
+            dbig!(3).with_precision(60).unwrap(),
             dbig!(109861228866810969139524523692252570464749055782274945173469e-59),
             NoOp,
         ),
@@ -91,7 +91,7 @@ fn test_ln_decimal() {
 #[test]
 #[should_panic]
 fn test_ln_unlimited_precision() {
-    let _ = dbig!(2).with_precision(0).value().ln();
+    let _ = dbig!(2).with_precision(0).unwrap().ln();
 }
 
 #[test]
@@ -110,7 +110,7 @@ fn test_ln_1p_binary() {
         (fbig!(0x0001), fbig!(0xb172p-16)),
         (fbig!(0x0000000000000001), fbig!(0xb17217f7d1cf79abp-64)),
         (
-            fbig!(1).with_precision(200).value(),
+            fbig!(1).with_precision(200).unwrap(),
             fbig!(0xb17217f7d1cf79abc9e3b39803f2f6af40f343267298b62d8ap-200),
         ),
         (fbig!(-0xfp-4), fbig!(-0xbp-2)),
@@ -151,7 +151,7 @@ fn test_ln_1p_decimal() {
         (dbig!(0001), dbig!(6931e-4), NoOp),
         (dbig!(0000000000000001), dbig!(6931471805599453e-16), NoOp),
         (
-            dbig!(1).with_precision(60).value(),
+            dbig!(1).with_precision(60).unwrap(),
             dbig!(693147180559945309417232121458176568075500134360255254120680e-60),
             NoOp,
         ),
@@ -189,7 +189,7 @@ fn test_ln_1p_decimal() {
 #[test]
 #[should_panic]
 fn test_ln_1p_unlimited_precision() {
-    let _ = dbig!(2).with_precision(0).value().ln_1p();
+    let _ = dbig!(2).with_precision(0).unwrap().ln_1p();
 }
 
 #[test]

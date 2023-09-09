@@ -65,7 +65,7 @@ name = "serde"
 required-features = ["serde"]
 
 [[test]]
-name = "convert_fbig"
+name = "dashu_float"
 required-features = ["dashu-float"]
 
 [[test]]

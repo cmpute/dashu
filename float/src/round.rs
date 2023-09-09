@@ -5,6 +5,8 @@ use core::ops::{Add, AddAssign};
 use dashu_base::{AbsOrd, Approximation, EstimatedLog2, Sign, Signed, UnsignedAbs};
 use dashu_int::{IBig, UBig, Word};
 
+use crate::FBig;
+
 /// Built-in rounding modes of the floating numbers.
 ///
 /// # Rounding Error
@@ -138,6 +140,17 @@ pub trait Round: Copy {
     }
 }
 
+/// A trait providing the function to retrieve the error bounds of the rounded value.
+pub trait ErrorBounds: Round {
+    /// Given a floating point number `f`, the output (L, R, incl_L, incl_R) represents the relative
+    /// error range with left bound `f - L` and right bound `f + R`. The two boolean values `incl_L`
+    /// and `incl_R` represents whether the bounds `f - L` and `f + R` are inclusive respectively.
+    ///
+    /// When the input number has unlimited precision, the output must be (ZERO, ZERO, true, true).
+    fn error_bounds<const B: Word>(f: &FBig<Self, B>)
+        -> (FBig<Self, B>, FBig<Self, B>, bool, bool);
+}
+
 impl Round for mode::Zero {
     type Reverse = mode::Away;
 
@@ -154,6 +167,24 @@ impl Round for mode::Zero {
             (Sign::Positive, Sign::Positive) | (Sign::Negative, Sign::Negative) => Rounding::NoOp,
             (Sign::Positive, Sign::Negative) => Rounding::SubOne,
             (Sign::Negative, Sign::Positive) => Rounding::AddOne,
+        }
+    }
+}
+
+impl ErrorBounds for mode::Zero {
+    #[inline]
+    fn error_bounds<const B: Word>(
+        f: &FBig<Self, B>,
+    ) -> (FBig<Self, B>, FBig<Self, B>, bool, bool) {
+        if f.precision() == 0 {
+            return (FBig::ZERO, FBig::ZERO, true, true);
+        } else if f.repr().is_zero() {
+            return (f.ulp(), f.ulp(), false, false);
+        } else {
+            match f.repr().sign() {
+                Sign::Positive => (FBig::ZERO, f.ulp(), true, false),
+                Sign::Negative => (f.ulp(), FBig::ZERO, false, false),
+            }
         }
     }
 }
@@ -252,6 +283,23 @@ impl Round for mode::HalfAway {
                 }
             }
         }
+    }
+}
+
+impl ErrorBounds for mode::HalfAway {
+    #[inline]
+    fn error_bounds<const B: Word>(
+        f: &FBig<Self, B>,
+    ) -> (FBig<Self, B>, FBig<Self, B>, bool, bool) {
+        if f.precision() == 0 {
+            return (FBig::ZERO, FBig::ZERO, true, true);
+        }
+
+        let mut half_ulp = f.ulp();
+        half_ulp.repr.exponent -= 1;
+        half_ulp.repr.significand = UBig::from_word((B + 1) / 2).into(); // ceil division
+
+        (half_ulp.clone(), half_ulp, false, false)
     }
 }
 

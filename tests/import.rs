@@ -16,7 +16,7 @@ fn test_macros() {
 
     const E: RBig = rbig!(2 / 5);
     const F: Relaxed = rbig!(~2/7);
-    assert!(E > F);
+    assert!(E.relax() > F);
 
     // large numbers
     let a = ubig!(0xfffffffffffffffffffffffffffffffffffffffffffffffe);
@@ -33,5 +33,5 @@ fn test_macros() {
             / 6277101735386680763835789423207666416102355444464034512895
     );
     let f = rbig!(~999999999999999999999999999999999999999999999999999999999998/999999999999999999999999999999999999999999999999999999999999);
-    assert!(e < f);
+    assert!(e < f.canonicalize());
 }

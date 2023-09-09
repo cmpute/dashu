@@ -11,7 +11,10 @@
 
 - Now feature `num-traits` and `rand` are not enabled by default, feature `num-order` is enabled instead.
 - The type of `Repr::BASE` is changed from `IBig` to `UBig`
-- `UBig::square` and `IBig::square` are renamed to sqr
+- `UBig::square` and `IBig::square` are renamed to `sqr`.
+- The implementation of square root is now implemented by the `dashu_base::SquareRoot` trait instead of a standalone method of `FBig`.
+- The rounding behaviors of `FBig::to_decimal` and `FBig::to_binary` are changed for better ergonomics.
+- The rounding behaviors of `FBig::to_f32` and `FBig::to_f64` now follow the mode specified by the type argument.
 
 ## 0.3.2
 
