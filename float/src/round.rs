@@ -2,7 +2,7 @@
 
 use core::cmp::Ordering;
 use core::ops::{Add, AddAssign};
-use dashu_base::{AbsOrd, Approximation, EstimatedLog2, Sign, Signed, UnsignedAbs};
+use dashu_base::{AbsOrd, Approximation, BitTest, EstimatedLog2, Sign, Signed, UnsignedAbs};
 use dashu_int::{IBig, UBig, Word};
 
 use crate::FBig;
@@ -177,13 +177,13 @@ impl ErrorBounds for mode::Zero {
         f: &FBig<Self, B>,
     ) -> (FBig<Self, B>, FBig<Self, B>, bool, bool) {
         if f.precision() == 0 {
-            return (FBig::ZERO, FBig::ZERO, true, true);
+            (FBig::ZERO, FBig::ZERO, true, true)
         } else if f.repr().is_zero() {
-            return (f.ulp(), f.ulp(), false, false);
+            (f.ulp(), f.ulp(), false, false)
         } else {
             match f.repr().sign() {
                 Sign::Positive => (FBig::ZERO, f.ulp(), true, false),
-                Sign::Negative => (f.ulp(), FBig::ZERO, false, false),
+                Sign::Negative => (f.ulp(), FBig::ZERO, false, true),
             }
         }
     }
@@ -215,6 +215,22 @@ impl Round for mode::Away {
     }
 }
 
+impl ErrorBounds for mode::Away {
+    #[inline]
+    fn error_bounds<const B: Word>(
+        f: &FBig<Self, B>,
+    ) -> (FBig<Self, B>, FBig<Self, B>, bool, bool) {
+        if f.precision() == 0 && f.repr().is_zero() {
+            (FBig::ZERO, FBig::ZERO, true, true)
+        } else {
+            match f.repr().sign() {
+                Sign::Positive => (f.ulp(), FBig::ZERO, false, true),
+                Sign::Negative => (FBig::ZERO, f.ulp(), true, false),
+            }
+        }
+    }
+}
+
 impl Round for mode::Down {
     type Reverse = mode::Up;
 
@@ -233,6 +249,15 @@ impl Round for mode::Down {
     }
 }
 
+impl ErrorBounds for mode::Down {
+    #[inline]
+    fn error_bounds<const B: Word>(
+        f: &FBig<Self, B>,
+    ) -> (FBig<Self, B>, FBig<Self, B>, bool, bool) {
+        (FBig::ZERO, f.ulp(), true, false)
+    }
+}
+
 impl Round for mode::Up {
     type Reverse = mode::Down;
 
@@ -248,6 +273,15 @@ impl Round for mode::Up {
         } else {
             Rounding::NoOp
         }
+    }
+}
+
+impl ErrorBounds for mode::Up {
+    #[inline]
+    fn error_bounds<const B: Word>(
+        f: &FBig<Self, B>,
+    ) -> (FBig<Self, B>, FBig<Self, B>, bool, bool) {
+        (f.ulp(), FBig::ZERO, false, true)
     }
 }
 
@@ -299,7 +333,14 @@ impl ErrorBounds for mode::HalfAway {
         half_ulp.repr.exponent -= 1;
         half_ulp.repr.significand = UBig::from_word((B + 1) / 2).into(); // ceil division
 
-        (half_ulp.clone(), half_ulp, false, false)
+        let (incl_l, incl_r) = if f.repr.is_zero() {
+            (false, false)
+        } else if f.repr.sign() == Sign::Negative {
+            (false, true)
+        } else {
+            (true, false)
+        };
+        (half_ulp.clone(), half_ulp, incl_l, incl_r)
     }
 }
 
@@ -318,7 +359,7 @@ impl Round for mode::HalfEven {
             // |rem| = 1/2
             Ordering::Equal => {
                 // if integer is odd, +1 if rem > 0, -1 if rem < 0
-                if integer & 1 == IBig::ONE {
+                if integer.bit(0) {
                     match low_sign {
                         Sign::Positive => Rounding::AddOne,
                         Sign::Negative => Rounding::SubOne,
@@ -336,6 +377,24 @@ impl Round for mode::HalfEven {
                 }
             }
         }
+    }
+}
+
+impl ErrorBounds for mode::HalfEven {
+    #[inline]
+    fn error_bounds<const B: Word>(
+        f: &FBig<Self, B>,
+    ) -> (FBig<Self, B>, FBig<Self, B>, bool, bool) {
+        if f.precision() == 0 {
+            return (FBig::ZERO, FBig::ZERO, true, true);
+        }
+
+        let mut half_ulp = f.ulp();
+        half_ulp.repr.exponent -= 1;
+        half_ulp.repr.significand = UBig::from_word((B + 1) / 2).into(); // ceil division
+
+        let incl = f.repr.significand.bit(0);
+        (half_ulp.clone(), half_ulp, incl, incl)
     }
 }
 

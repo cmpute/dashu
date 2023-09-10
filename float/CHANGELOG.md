@@ -6,6 +6,7 @@
 
 - Implement `num-order::NumOrd` between `FBig` and `UBig`/`IBig` and between `FBig` with different bases.
 - Implement `num-order::NumHash` for `FBig` and `Repr`.
+- Add `ErrorBounds` trait that calculate the rounding range for a floating point number.
 
 ### Change
 

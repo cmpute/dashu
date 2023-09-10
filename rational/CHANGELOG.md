@@ -7,6 +7,7 @@
 - Add `is_int` to `RBig`
 - Implement `num-order::NumOrd` between `RBig`/`Relaxed` and `UBig`/`IBig`/`FBig`.
 - Implement `num-order::NumHash` for `RBig` and `Relaxed`
+- Implement `simpliest_from_float` for `RBig`.
 
 ### Change
 
