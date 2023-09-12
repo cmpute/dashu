@@ -22,7 +22,7 @@
 //!
 //! The two main integer types are [UBig] (for unsigned integers) and [IBig] (for signed integers).
 //!
-//! Modular arithmetic is supported by the module [modular].
+//! Modular arithmetic is supported by the module [modular]. Some utilities for fast division is provided in the module [fast_div].
 //!
 //! To construct big integers from literals, please use the [`dashu-macro`](https://docs.rs/dashu-macros/latest/dashu_macros/)
 //! crate for your convenience.

@@ -211,7 +211,7 @@ pub(crate) enum ConstDivisorRepr {
     Large(ConstLargeDivisor),
 }
 
-// TODO(v0.4): add docs for ConstDivisor (and mention it in the top level doc)
+/// An [UBig] with some pre-computed fields to support faster division.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ConstDivisor(pub(crate) ConstDivisorRepr);
 
