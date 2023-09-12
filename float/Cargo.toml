@@ -1,6 +1,6 @@
 [package]
 name = "dashu-float"
-version = "0.3.2"
+version = "0.4.0"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2021"
 description = "A big float library supporting arbitrary precision, arbitrary base and arbitrary rounding mode"
@@ -24,6 +24,7 @@ std = ["dashu-base/std", "dashu-int/std"]
 diesel = ["diesel_v2"]
 serde = ["dep:serde", "dashu-int/serde"]
 zeroize = ["dep:zeroize", "dashu-int/zeroize"]
+num-order = ["dep:num-order", "dep:_num-modular"]
 
 # unstable dependencies
 num-traits = ["num-traits_v02"]
@@ -32,11 +33,10 @@ rand = ["rand_v08"]
 rand_v08 = ["dep:rand_v08", "dashu-int/rand_v08"]
 postgres-types = ["postgres-types_v02"]
 postgres-types_v02 = ["dep:postgres-types_v02", "dep:_bytes", "std"]
-num-order = ["dep:num-order", "dep:_num-modular"]
 
 [dependencies]
-dashu-base = { version = "0.3.1", default-features = false, path = "../base" }
-dashu-int = { version = "0.3.1", default-features = false, path = "../integer" }
+dashu-base = { version = "0.4.0", default-features = false, path = "../base" }
+dashu-int = { version = "0.4.0", default-features = false, path = "../integer" }
 static_assertions = { version = "1.1"}
 
 # stable dependencies

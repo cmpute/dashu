@@ -1,6 +1,6 @@
 [package]
 name = "dashu"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 description = "A library set of big numbers"
@@ -48,8 +48,8 @@ decimal-extras = ["dashu-float/postgres-types", "dashu-float/diesel"]
 [dependencies]
 # all crates under dashu will have the same major version,
 # but the minor and patch versions can be different.
-dashu-base = { version = "0.3.1", default-features = false, path = "./base" }
-dashu-int = { version = "0.3.1", default-features = false, path = "./integer" }
-dashu-float = { version = "0.3.1", default-features = false, path = "./float" }
-dashu-ratio = { version = "0.3.1", default-features = false, path = "./rational", features = ['dashu-float'] }
-dashu-macros = { version = "0.3.1", default-features = false, path = "./macros" }
+dashu-base = { version = "0.4.0", default-features = false, path = "./base" }
+dashu-int = { version = "0.4.0", default-features = false, path = "./integer" }
+dashu-float = { version = "0.4.0", default-features = false, path = "./float" }
+dashu-ratio = { version = "0.4.0", default-features = false, path = "./rational", features = ['dashu-float'] }
+dashu-macros = { version = "0.4.0", default-features = false, path = "./macros" }

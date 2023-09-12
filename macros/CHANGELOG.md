@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - Remove the `embedded` feature. [#18](https://github.com/cmpute/dashu/pull/18)
 
