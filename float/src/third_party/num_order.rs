@@ -265,3 +265,5 @@ impl<R: Round, const B: Word> NumHash for FBig<R, B> {
         self.repr.num_hash(state)
     }
 }
+
+// TODO(next): implement NumOrd between FBig and primitives
