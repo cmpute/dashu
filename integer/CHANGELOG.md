@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Implemented `AbsEq` and `AbsOrd` for `UBig` and `IBig`.
+
 ## 0.4.0
 
 ### Add

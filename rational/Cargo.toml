@@ -69,5 +69,9 @@ name = "dashu_float"
 required-features = ["dashu-float"]
 
 [[test]]
+name = "cmp"
+required-features = ["dashu-float"]
+
+[[test]]
 name = "num_order"
 required-features = ["num-order", "dashu-float", "dashu-int/num-order"]

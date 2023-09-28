@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use dashu_float::{DBig, FBig};
 use dashu_ratio::RBig;
 use num_order::{NumHash, NumOrd};
@@ -8,93 +10,96 @@ type FBin = FBig;
 
 #[test]
 fn test_ord_with_ubig_ibig() {
-    assert!(rbig!(0).num_eq(&ubig!(0)));
-    assert!(rbig!(0).num_eq(&ibig!(0)));
-    assert!(rbig!(0).num_le(&ubig!(1)));
-    assert!(rbig!(0).num_le(&ibig!(1)));
-    assert!(rbig!(0).num_ge(&ibig!(-1)));
-    assert!(rbig!(1).num_eq(&ubig!(1)));
-    assert!(rbig!(1).num_eq(&ibig!(1)));
-    assert!(rbig!(1).num_ge(&ibig!(-1)));
-    assert!(rbig!(-1).num_le(&ubig!(1)));
-    assert!(rbig!(-1).num_le(&ibig!(1)));
-    assert!(rbig!(-1).num_eq(&ibig!(-1)));
-    assert!(rbig!(-1).num_eq(&ibig!(-1)));
+    let ubig_cases = [
+        (rbig!(0), ubig!(0), Ordering::Equal),
+        (rbig!(0), ubig!(1), Ordering::Less),
+        (rbig!(1), ubig!(1), Ordering::Equal),
+        (rbig!(-1), ubig!(1), Ordering::Less),
+        (rbig!(1 / 10), ubig!(0), Ordering::Greater),
+        (rbig!(1 / 10), ubig!(1), Ordering::Less),
+        (rbig!(-1 / 10), ubig!(0), Ordering::Less),
+        (rbig!(999999 / 100), ubig!(9999), Ordering::Greater),
+        (rbig!(999999 / 100), ubig!(10000), Ordering::Less),
+    ];
 
-    assert!(ubig!(0).num_eq(&rbig!(0)));
-    assert!(ubig!(0).num_le(&rbig!(1)));
-    assert!(ubig!(0).num_ge(&rbig!(-1)));
-    assert!(ubig!(1).num_eq(&rbig!(1)));
-    assert!(ubig!(1).num_ge(&rbig!(-1)));
+    for (r, i, order) in ubig_cases {
+        assert_eq!(r.num_cmp(&i), order, "{}, {}", r, i);
+        assert_eq!(i.num_cmp(&r), order.reverse());
+    }
 
-    assert!(ibig!(0).num_eq(&rbig!(0)));
-    assert!(ibig!(0).num_le(&rbig!(1)));
-    assert!(ibig!(0).num_ge(&rbig!(-1)));
-    assert!(ibig!(1).num_eq(&rbig!(1)));
-    assert!(ibig!(1).num_ge(&rbig!(-1)));
-    assert!(ibig!(-1).num_le(&rbig!(1)));
-    assert!(ibig!(-1).num_eq(&rbig!(-1)));
-    assert!(ibig!(-1).num_eq(&rbig!(-1)));
+    let ibig_cases = [
+        (rbig!(0), ibig!(0), Ordering::Equal),
+        (rbig!(0), ibig!(1), Ordering::Less),
+        (rbig!(0), ibig!(-1), Ordering::Greater),
+        (rbig!(1), ibig!(1), Ordering::Equal),
+        (rbig!(1), ibig!(-1), Ordering::Greater),
+        (rbig!(-1), ibig!(1), Ordering::Less),
+        (rbig!(-1), ibig!(-1), Ordering::Equal),
+        (rbig!(1 / 10), ibig!(0), Ordering::Greater),
+        (rbig!(1 / 10), ibig!(1), Ordering::Less),
+        (rbig!(-1 / 10), ibig!(0), Ordering::Less),
+        (rbig!(-1 / 10), ibig!(-1), Ordering::Greater),
+        (rbig!(999999 / 100), ibig!(9999), Ordering::Greater),
+        (rbig!(999999 / 100), ibig!(10000), Ordering::Less),
+        (rbig!(-999999 / 100), ibig!(-9999), Ordering::Less),
+        (rbig!(-999999 / 100), ibig!(-10000), Ordering::Greater),
+    ];
 
-    assert!(rbig!(1 / 10).num_ge(&ubig!(0)));
-    assert!(rbig!(1 / 10).num_ge(&ibig!(0)));
-    assert!(rbig!(1 / 10).num_le(&ubig!(1)));
-    assert!(rbig!(1 / 10).num_le(&ibig!(1)));
-    assert!(rbig!(-1 / 10).num_ge(&ibig!(-1)));
-    assert!(rbig!(-1 / 10).num_le(&ubig!(0)));
-    assert!(rbig!(-1 / 10).num_le(&ibig!(0)));
-    assert!(rbig!(999999 / 100).num_ge(&ubig!(9999)));
-    assert!(rbig!(999999 / 100).num_le(&ubig!(10000)));
-    assert!(rbig!(-999999 / 100).num_le(&ibig!(-9999)));
-    assert!(rbig!(-999999 / 100).num_ge(&ibig!(-10000)));
+    for (r, i, order) in ibig_cases {
+        assert_eq!(r.num_cmp(&i), order, "{}, {}", r, i);
+        assert_eq!(i.num_cmp(&r), order.reverse());
+    }
 }
 
 #[test]
 fn test_ord_with_fbig() {
-    assert!(rbig!(0).num_eq(&FBin::ZERO));
-    assert!(rbig!(0).num_eq(&DBig::ZERO));
-    assert!(rbig!(0).num_le(&FBin::ONE));
-    assert!(rbig!(0).num_le(&DBig::ONE));
-    assert!(rbig!(0).num_ge(&FBin::NEG_ONE));
-    assert!(rbig!(0).num_ge(&DBig::NEG_ONE));
-    assert!(rbig!(1).num_eq(&FBin::ONE));
-    assert!(rbig!(1).num_eq(&DBig::ONE));
-    assert!(rbig!(1).num_ge(&FBin::NEG_ONE));
-    assert!(rbig!(1).num_ge(&DBig::NEG_ONE));
-    assert!(rbig!(-1).num_le(&FBin::ONE));
-    assert!(rbig!(-1).num_le(&DBig::ONE));
-    assert!(rbig!(-1).num_eq(&FBin::NEG_ONE));
-    assert!(rbig!(-1).num_eq(&DBig::NEG_ONE));
+    let fbig_cases = [
+        (rbig!(0), FBin::ZERO, Ordering::Equal),
+        (rbig!(0), FBin::ONE, Ordering::Less),
+        (rbig!(0), FBin::NEG_ONE, Ordering::Greater),
+        (rbig!(1), FBin::ONE, Ordering::Equal),
+        (rbig!(1), FBin::NEG_ONE, Ordering::Greater),
+        (rbig!(-1), FBin::ONE, Ordering::Less),
+        (rbig!(-1), FBin::NEG_ONE, Ordering::Equal),
+        (rbig!(1 / 2), FBin::from_str_native("0x1p-1").unwrap(), Ordering::Equal),
+        (rbig!(-9 / 2), FBin::from_str_native("-0x9p-1").unwrap(), Ordering::Equal),
+        (rbig!(1 / 1024), FBin::from_str_native("0x1p-10").unwrap(), Ordering::Equal),
+        (
+            rbig!(1 / 1267650600228229401496703205376),
+            FBin::from_str_native("0x1p-100").unwrap(),
+            Ordering::Equal,
+        ),
+        (rbig!(1 / 3), FBin::from_str_native("0x55555p-20").unwrap(), Ordering::Greater),
+        (rbig!(1 / 3), FBin::from_str_native("0x55556p-20").unwrap(), Ordering::Less),
+    ];
+    for (r, f, ord) in fbig_cases {
+        assert_eq!(r.num_cmp(&f), ord);
+        assert_eq!(f.num_cmp(&r), ord.reverse());
+    }
 
-    assert!(rbig!(1 / 2).num_eq(&FBin::from_str_native("0x1p-1").unwrap()));
-    assert!(rbig!(-9 / 2).num_eq(&FBin::from_str_native("-0x9p-1").unwrap()));
-    assert!(rbig!(1 / 1024).num_eq(&FBin::from_str_native("0x1p-10").unwrap()));
-    assert!(rbig!(1 / 1267650600228229401496703205376)
-        .num_eq(&FBin::from_str_native("0x1p-100").unwrap()));
-    assert!(rbig!(1 / 10).num_eq(&DBig::from_str_native("0.1").unwrap()));
-    assert!(rbig!(-11 / 10).num_eq(&DBig::from_str_native("-1.1").unwrap()));
-    assert!(rbig!(1 / 9765625).num_eq(&DBig::from_str_native("1.024e-7").unwrap()));
-    assert!(
-        rbig!(1 / 7888609052210118054117285652827862296732064351090230047702789306640625)
-            .num_eq(&DBig::from_str_native("1.267650600228229401496703205376e-70").unwrap())
-    );
-
-    assert!(rbig!(1 / 3).num_ge(&FBin::from_str_native("0x55555p-20").unwrap()));
-    assert!(rbig!(1 / 3).num_le(&FBin::from_str_native("0x55556p-20").unwrap()));
-    assert!(rbig!(-1 / 3).num_ge(&DBig::from_str_native("-0.33334").unwrap()));
-    assert!(rbig!(-1 / 3).num_le(&DBig::from_str_native("-0.33333").unwrap()));
-    assert!(FBin::from_str_native("0x55555p-20")
-        .unwrap()
-        .num_le(&rbig!(1 / 3)));
-    assert!(FBin::from_str_native("0x55556p-20")
-        .unwrap()
-        .num_ge(&rbig!(1 / 3)));
-    assert!(DBig::from_str_native("-0.33334")
-        .unwrap()
-        .num_le(&rbig!(-1 / 3)));
-    assert!(DBig::from_str_native("-0.33333")
-        .unwrap()
-        .num_ge(&rbig!(-1 / 3)));
+    let dbig_cases = [
+        (rbig!(0), DBig::ZERO, Ordering::Equal),
+        (rbig!(0), DBig::ONE, Ordering::Less),
+        (rbig!(0), DBig::NEG_ONE, Ordering::Greater),
+        (rbig!(1), DBig::ONE, Ordering::Equal),
+        (rbig!(1), DBig::NEG_ONE, Ordering::Greater),
+        (rbig!(-1), DBig::ONE, Ordering::Less),
+        (rbig!(-1), DBig::NEG_ONE, Ordering::Equal),
+        (rbig!(1 / 10), DBig::from_str_native("0.1").unwrap(), Ordering::Equal),
+        (rbig!(-11 / 10), DBig::from_str_native("-1.1").unwrap(), Ordering::Equal),
+        (rbig!(1 / 9765625), DBig::from_str_native("1.024e-7").unwrap(), Ordering::Equal),
+        (
+            rbig!(1 / 7888609052210118054117285652827862296732064351090230047702789306640625),
+            DBig::from_str_native("1.267650600228229401496703205376e-70").unwrap(),
+            Ordering::Equal,
+        ),
+        (rbig!(-1 / 3), DBig::from_str_native("-0.33334").unwrap(), Ordering::Greater),
+        (rbig!(-1 / 3), DBig::from_str_native("-0.33333").unwrap(), Ordering::Less),
+    ];
+    for (r, d, ord) in dbig_cases {
+        assert_eq!(r.num_cmp(&d), ord);
+        assert_eq!(d.num_cmp(&r), ord.reverse());
+    }
 }
 
 #[test]

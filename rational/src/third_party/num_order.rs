@@ -1,7 +1,12 @@
-use crate::{rbig::RBig, repr::Repr, Relaxed};
+use crate::{
+    cmp::{repr_cmp_ibig, repr_cmp_ubig},
+    rbig::RBig,
+    repr::Repr,
+    Relaxed,
+};
 use _num_modular::{FixedMersenneInt, ModularInteger};
 use core::cmp::Ordering;
-use dashu_base::{AbsOrd, EstimatedLog2, Sign, Signed};
+use dashu_base::Signed;
 use dashu_int::{IBig, UBig};
 use num_order::{NumHash, NumOrd};
 
@@ -28,66 +33,26 @@ impl_ord_between_ratio!(Relaxed, RBig);
 
 impl NumOrd<UBig> for Repr {
     fn num_cmp(&self, other: &UBig) -> Ordering {
-        // case 1: compare sign
-        if self.numerator.sign() == Sign::Negative {
-            return Ordering::Less;
-        }
-
-        // case 2: compare log2 estimations
-        let (self_lo, self_hi) = self.log2_bounds();
-        let (other_lo, other_hi) = other.log2_bounds();
-        if self_lo > other_hi {
-            return Ordering::Greater;
-        }
-        if self_hi < other_lo {
-            return Ordering::Less;
-        }
-
-        // case 3: compare the exact values
-        self.numerator.abs_cmp(&(other * &self.denominator))
+        repr_cmp_ubig::<false>(self, other)
     }
     #[inline]
     fn num_partial_cmp(&self, other: &UBig) -> Option<Ordering> {
-        Some(self.num_cmp(other))
+        Some(repr_cmp_ubig::<false>(self, other))
     }
 }
 
 impl NumOrd<IBig> for Repr {
+    #[inline]
     fn num_cmp(&self, other: &IBig) -> Ordering {
-        // case 1: compare sign
-        match self.numerator.signum().cmp(&other.signum()) {
-            Ordering::Greater => return Ordering::Greater,
-            Ordering::Less => return Ordering::Less,
-            _ => {}
-        };
-        let sign = self.numerator.sign();
-
-        // case 2: compare log2 estimations
-        let (self_lo, self_hi) = self.log2_bounds();
-        let (other_lo, other_hi) = other.log2_bounds();
-        if self_lo > other_hi {
-            return match sign {
-                Sign::Positive => Ordering::Greater,
-                Sign::Negative => Ordering::Less,
-            };
-        }
-        if self_hi < other_lo {
-            return match sign {
-                Sign::Positive => Ordering::Less,
-                Sign::Negative => Ordering::Greater,
-            };
-        }
-
-        // case 3: compare the exact values
-        self.numerator.cmp(&(other * &self.denominator))
+        repr_cmp_ibig::<false>(self, other)
     }
     #[inline]
     fn num_partial_cmp(&self, other: &IBig) -> Option<Ordering> {
-        Some(self.num_cmp(other))
+        Some(repr_cmp_ibig::<false>(self, other))
     }
 }
 
-macro_rules! forward_ratio_cmp_to_repr {
+macro_rules! forward_num_ord_to_repr {
     ($R:ty, $T:ty) => {
         impl NumOrd<$T> for $R {
             #[inline]
@@ -111,10 +76,10 @@ macro_rules! forward_ratio_cmp_to_repr {
         }
     };
 }
-forward_ratio_cmp_to_repr!(RBig, UBig);
-forward_ratio_cmp_to_repr!(Relaxed, UBig);
-forward_ratio_cmp_to_repr!(RBig, IBig);
-forward_ratio_cmp_to_repr!(Relaxed, IBig);
+forward_num_ord_to_repr!(RBig, UBig);
+forward_num_ord_to_repr!(Relaxed, UBig);
+forward_num_ord_to_repr!(RBig, IBig);
+forward_num_ord_to_repr!(Relaxed, IBig);
 
 impl NumHash for Repr {
     fn num_hash<H: core::hash::Hasher>(&self, state: &mut H) {
@@ -161,61 +126,18 @@ impl NumHash for Relaxed {
 #[cfg(feature = "dashu-float")]
 mod with_float {
     use super::*;
+    use crate::cmp::with_float::repr_cmp_fbig;
     use dashu_float::{round::Round, FBig, Repr as FloatRepr};
     use dashu_int::Word;
 
     impl<const B: Word> NumOrd<FloatRepr<B>> for Repr {
+        #[inline]
         fn num_cmp(&self, other: &FloatRepr<B>) -> Ordering {
-            // case 1: compare with inf
-            if other.is_infinite() {
-                return if other.exponent() > 0 {
-                    Ordering::Less
-                } else {
-                    Ordering::Greater
-                };
-            }
-
-            // case 2: compare sign
-            match self.numerator.signum().cmp(&other.significand().signum()) {
-                Ordering::Greater => return Ordering::Greater,
-                Ordering::Less => return Ordering::Less,
-                _ => {}
-            };
-            let sign = self.numerator.sign();
-
-            // case 3: compare log2 estimations
-            let (self_lo, self_hi) = self.log2_bounds();
-            let (other_lo, other_hi) = other.log2_bounds();
-            if self_lo > other_hi {
-                return sign * Ordering::Greater;
-            }
-            if self_hi < other_lo {
-                return sign * Ordering::Less;
-            }
-
-            // case 4: compare the exact values
-            let (mut lhs, mut rhs) =
-                (self.numerator.clone(), other.significand() * &self.denominator);
-            if other.exponent() < 0 {
-                let exp = -other.exponent() as usize;
-                if B.is_power_of_two() {
-                    lhs <<= exp * B.trailing_zeros() as usize;
-                } else {
-                    lhs *= UBig::from_word(B).pow(exp);
-                }
-            } else {
-                let exp = other.exponent() as usize;
-                if B.is_power_of_two() {
-                    rhs <<= exp * B.trailing_zeros() as usize;
-                } else {
-                    rhs *= UBig::from_word(B).pow(exp);
-                }
-            }
-            lhs.cmp(&rhs)
+            repr_cmp_fbig::<B, false>(self, other)
         }
         #[inline]
         fn num_partial_cmp(&self, other: &FloatRepr<B>) -> Option<Ordering> {
-            Some(self.num_cmp(other))
+            Some(repr_cmp_fbig::<B, false>(self, other))
         }
     }
 

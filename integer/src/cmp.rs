@@ -84,6 +84,12 @@ impl PartialOrd for IBig {
     }
 }
 
+impl AbsEq for UBig {
+    #[inline]
+    fn abs_eq(&self, rhs: &Self) -> bool {
+        self.eq(rhs)
+    }
+}
 impl AbsEq for IBig {
     #[inline]
     fn abs_eq(&self, rhs: &Self) -> bool {
@@ -103,6 +109,12 @@ impl AbsEq<IBig> for UBig {
     }
 }
 
+impl AbsOrd for UBig {
+    #[inline]
+    fn abs_cmp(&self, rhs: &Self) -> Ordering {
+        self.0.as_typed().cmp(&rhs.0.as_typed())
+    }
+}
 impl AbsOrd for IBig {
     #[inline]
     fn abs_cmp(&self, rhs: &Self) -> Ordering {
