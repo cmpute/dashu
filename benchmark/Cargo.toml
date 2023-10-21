@@ -1,10 +1,11 @@
 [package]
 name = "benchmark"
 version = "0.0.0"
+edition = "2021"
 publish = false
 
 [dependencies]
-clap = "2.33.3"
+clap = { version = "4.4.6", features = ["derive"] }
 ibig = "0.3.4"
 num-bigint = "0.4.3"
 ramp = { version = "0.7.0", optional = true }
