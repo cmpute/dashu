@@ -47,7 +47,7 @@ num-traits_v02 = { optional = true, version = "0.2.15", package = "num-traits", 
 _num-modular = { optional = true, version = "0.6.1", package = "num-modular", default-features = false }
 
 [dev-dependencies]
-criterion = { version = "0.4.0", features = ["html_reports"] }
+criterion = { version = "0.5.1", features = ["html_reports"] }
 postcard = { version = "1.0.2", features = ["alloc"] }
 serde_test = { version = "1.0.130" }
 serde_json = { version = "1.0" }
