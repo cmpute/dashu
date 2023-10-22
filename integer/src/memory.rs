@@ -1,69 +1,40 @@
 //! Memory allocation.
 
-use crate::error::{panic_allocate_too_much, panic_out_of_memory};
+use crate::error::panic_allocate_too_much;
 use crate::Word;
-use alloc::alloc::Layout;
-use core::{fmt, marker::PhantomData, slice};
+use alloc::vec::Vec;
+use core::fmt;
+use core::mem::{transmute, MaybeUninit};
 
 /// Chunk of memory directly allocated from the global allocator.
 pub struct MemoryAllocation<T: Copy> {
-    capacity: usize,
-    start: *mut T,
+    storage: Vec<T>,
 }
 
 /// Chunk of memory.
 pub struct Memory<'a, T: Copy = Word> {
-    /// Start pointer.
-    start: *mut T,
-    /// Capacity.
-    capacity: usize,
-    /// Logically, Memory contains a reference to some data with lifetime 'a.
-    phantom_data: PhantomData<&'a mut T>,
+    slice: &'a mut [MaybeUninit<T>],
 }
 
 impl<T: Copy> fmt::Debug for Memory<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Memory chunk ({} items)", self.capacity)
+        write!(f, "Memory chunk ({} items)", self.slice.len())
     }
 }
 
 impl<T: Copy> MemoryAllocation<T> {
     /// Allocate memory.
     pub fn new(capacity: usize) -> Self {
-        let start = if capacity == 0 {
-            // We should use layout.dangling(), but that is unstable.
-            core::ptr::NonNull::dangling().as_ptr()
-        } else {
-            let layout = Layout::array::<T>(capacity).unwrap_or_else(|_| panic_allocate_too_much());
-            // SAFETY: it's checked above that layout.size() != 0.
-            let ptr = unsafe { alloc::alloc::alloc(layout) };
-            if ptr.is_null() {
-                panic_out_of_memory();
-            }
-            ptr.cast()
-        };
-
-        Self { capacity, start }
+        Self {
+            storage: Vec::with_capacity(capacity),
+        }
     }
 
     /// Get memory.
     #[inline]
     pub fn memory(&mut self) -> Memory<T> {
         Memory {
-            start: self.start,
-            capacity: self.capacity,
-            phantom_data: PhantomData,
-        }
-    }
-}
-
-impl<T: Copy> Drop for MemoryAllocation<T> {
-    fn drop(&mut self) {
-        if self.capacity != 0 {
-            // SAFETY: the memory was allocated with the same layout.
-            unsafe {
-                alloc::alloc::dealloc(self.start.cast(), Layout::array::<T>(self.capacity).unwrap())
-            };
+            slice: self.storage.spare_capacity_mut(),
         }
     }
 }
@@ -77,13 +48,12 @@ impl<T: Copy> Memory<'_, T> {
     ///
     /// The elements of the slice never get dropped!
     pub fn allocate_slice_fill(&mut self, n: usize, val: T) -> (&mut [T], Memory<'_, T>) {
-        self.allocate_slice_initialize(n, |ptr| {
-            for i in 0..n {
-                // SAFETY: ptr is properly aligned and has enough space.
-                unsafe {
-                    ptr.add(i).write(val);
-                };
+        self.allocate_slice_initialize(n, |slice| {
+            for item in slice.iter_mut() {
+                item.write(val);
             }
+            // SAFETY: Slice has just been initialized
+            unsafe { transmute(slice) }
         })
     }
 
@@ -95,13 +65,12 @@ impl<T: Copy> Memory<'_, T> {
     ///
     /// The elements of the slice never get dropped!
     pub fn allocate_slice_copy(&mut self, source: &[T]) -> (&mut [T], Memory<'_, T>) {
-        self.allocate_slice_initialize(source.len(), |ptr| {
-            for (i, v) in source.iter().enumerate() {
-                // SAFETY: ptr is properly aligned and has enough space.
-                unsafe {
-                    ptr.add(i).write(*v);
-                };
+        self.allocate_slice_initialize(source.len(), |slice| {
+            for (item, &source) in slice.iter_mut().zip(source) {
+                item.write(source);
             }
+            // SAFETY: Slice has just been initialized
+            unsafe { transmute(slice) }
         })
     }
 
@@ -120,19 +89,15 @@ impl<T: Copy> Memory<'_, T> {
     ) -> (&mut [T], Memory<'_, T>) {
         assert!(n >= source.len());
 
-        self.allocate_slice_initialize(n, |ptr| {
-            for (i, v) in source.iter().enumerate() {
-                // SAFETY: ptr is properly aligned and has enough space.
-                unsafe {
-                    ptr.add(i).write(*v);
-                };
+        self.allocate_slice_initialize(n, |slice| {
+            for (item, &source) in slice.iter_mut().zip(source) {
+                item.write(source);
             }
-            for i in source.len()..n {
-                // SAFETY: ptr is properly aligned and has enough space.
-                unsafe {
-                    ptr.add(i).write(val);
-                };
+            for item in slice[source.len()..].iter_mut() {
+                item.write(val);
             }
+            // SAFETY: Slice has just been initialized
+            unsafe { transmute(slice) }
         })
     }
 
@@ -140,33 +105,14 @@ impl<T: Copy> Memory<'_, T> {
     /// The initializer `F` must ensure that all allocated words are initialized.
     fn allocate_slice_initialize<F>(&mut self, n: usize, init: F) -> (&mut [T], Memory<'_, T>)
     where
-        F: FnOnce(*mut T),
+        F: FnOnce(&mut [MaybeUninit<T>]) -> &mut [T],
     {
-        #[allow(clippy::redundant_closure)]
-        let (ptr, slice_end) = self
-            .try_find_memory_for_slice(n)
-            .expect("internal error: not enough memory allocated");
+        let (slice, remaining) = self.slice.split_at_mut(n);
+        let slice = init(slice);
 
-        init(ptr);
-
-        // SAFETY: ptr is properly sized and aligned guaranteed by `try_find_memory_for_slice`.
-        let slice = unsafe { slice::from_raw_parts_mut(ptr, n) };
-        let new_memory = Self {
-            start: slice_end,
-            capacity: self.capacity - n,
-            phantom_data: PhantomData,
-        };
+        let new_memory = Memory { slice: remaining };
 
         (slice, new_memory)
-    }
-
-    fn try_find_memory_for_slice(&self, n: usize) -> Option<(*mut T, *mut T)> {
-        if n <= self.capacity {
-            // SAFETY: We just checked there is enough capacity
-            unsafe { Some((self.start, self.start.add(n))) }
-        } else {
-            None
-        }
     }
 }
 
