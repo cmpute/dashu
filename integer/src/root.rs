@@ -3,25 +3,21 @@ use crate::{
     arch::word::{DoubleWord, Word},
     div,
     math::FastDivideNormalized2,
-    memory::{self, Memory},
+    memory::Memory,
     mul::add_mul_word_in_place,
     primitive::{double_word, extend_word, highest_dword, split_dword, WORD_BITS},
     shift::shr_in_place_with_carry,
     sqr,
 };
-use alloc::alloc::Layout;
 use dashu_base::{DivRem, SquareRootRem};
 
 // n is the size of the output, or half the size of the input
-pub fn memory_requirement_sqrt_rem(n: usize) -> Layout {
+pub fn memory_requirement_sqrt_rem(n: usize) -> usize {
     if n == 2 {
-        memory::zero_layout()
+        0
     } else {
         // We need to perform a squaring with n words and an n by n/2 division
-        memory::max_layout(
-            sqr::memory_requirement_exact(n),
-            div::memory_requirement_exact(n, n - n / 2),
-        )
+        sqr::memory_requirement_exact(n).max(div::memory_requirement_exact(n, n - n / 2))
     }
 }
 

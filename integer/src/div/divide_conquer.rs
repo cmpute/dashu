@@ -9,11 +9,10 @@ use crate::{
     mul,
     Sign::*,
 };
-use alloc::alloc::Layout;
 use static_assertions::const_assert;
 
 /// Memory requirement for division.
-pub fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> Layout {
+pub fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> usize {
     assert!(lhs_len >= rhs_len);
     // We need space for multiplications summing up to rhs.len(),
     // and at most lhs_len - rhs_len long.

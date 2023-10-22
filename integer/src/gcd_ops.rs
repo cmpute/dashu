@@ -295,21 +295,17 @@ mod repr {
         let (lhs_len, rhs_len) = (lhs.len(), rhs.len());
 
         // allocate memory
-        let clone_mem = memory::array_layout::<Word>(lhs_len + rhs_len);
+        let clone_mem = memory::add_capacity(lhs_len, rhs_len);
         let gcd_mem = gcd::memory_requirement_ext_exact(lhs_len, rhs_len);
-        let post_mem = memory::add_layout(
+        let post_mem = memory::add_capacity(
             // temporary space to store residue
-            memory::array_layout::<Word>(lhs_len + rhs_len),
-            memory::max_layout(
-                // memory required for post processing: one multiplication + one division
-                mul::memory_requirement_exact(lhs_len + rhs_len, rhs_len),
-                div::memory_requirement_exact(lhs_len + rhs_len + 1, rhs_len),
-            ),
-        );
-        let mut allocation = MemoryAllocation::new(memory::add_layout(
             clone_mem,
-            memory::max_layout(gcd_mem, post_mem),
-        ));
+            // memory required for post processing: one multiplication + one division
+            mul::memory_requirement_exact(clone_mem, rhs_len)
+                .max(div::memory_requirement_exact(memory::add_capacity(clone_mem, 1), rhs_len)),
+        );
+        let mut allocation =
+            MemoryAllocation::new(memory::add_capacity(clone_mem, gcd_mem.max(post_mem)));
         let mut memory = allocation.memory();
 
         // copy oprands for post processing

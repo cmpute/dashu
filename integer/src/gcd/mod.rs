@@ -8,7 +8,6 @@ use crate::{
     primitive::{extend_word, shrink_dword, PrimitiveSigned},
     Sign,
 };
-use alloc::alloc::Layout;
 use dashu_base::ExtendedGcd;
 
 mod lehmer;
@@ -30,7 +29,7 @@ pub fn gcd_in_place(lhs: &mut [Word], rhs: &mut [Word], memory: &mut Memory) -> 
 }
 
 /// Memory requirement for GCD.
-pub fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> Layout {
+pub fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> usize {
     lehmer::memory_requirement_up_to(lhs_len, rhs_len)
 }
 
@@ -53,7 +52,7 @@ pub fn gcd_ext_in_place(
 }
 
 /// Memory requirement for extended GCD.
-pub fn memory_requirement_ext_exact(lhs_len: usize, rhs_len: usize) -> Layout {
+pub fn memory_requirement_ext_exact(lhs_len: usize, rhs_len: usize) -> usize {
     lehmer::memory_requirement_ext_up_to(lhs_len, rhs_len)
 }
 

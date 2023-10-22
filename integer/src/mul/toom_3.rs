@@ -6,12 +6,11 @@ use crate::{
     div,
     helper_macros::debug_assert_zero,
     math,
-    memory::{self, Memory},
+    memory::Memory,
     mul::{self, helpers},
     shift,
     Sign::{self, *},
 };
-use alloc::alloc::Layout;
 
 /* We must have:
  * 2 * (n+2) <= n
@@ -31,7 +30,7 @@ pub const MIN_LEN: usize = 16;
 /// Temporary memory required for multiplication.
 ///
 /// n bounds the length of the Smaller factor in words.
-pub fn memory_requirement_up_to(n: usize) -> Layout {
+pub fn memory_requirement_up_to(n: usize) -> usize {
     /* In each level of recursion we use:
      * a_eval: n3 + 1
      * b_eval: n3 + 1
@@ -54,8 +53,7 @@ pub fn memory_requirement_up_to(n: usize) -> Layout {
 
     // Note: the recurence also works when we transition to Karatsuba, because
     // Karatsuba memory requirements are Smaller.
-    let num_words = 4 * n + 13 * (math::ceil_log2(n) as usize);
-    memory::array_layout::<Word>(num_words)
+    4 * n + 13 * (math::ceil_log2(n) as usize)
 }
 
 /// c += sign * a * b
