@@ -29,10 +29,13 @@ enum Lib {
     Dashu,
     #[value(name = "num-bigint")]
     NumBigint,
+    #[cfg(feature = "ramp")]
     #[value(name = "ramp")]
     Ramp,
+    #[cfg(feature = "rug")]
     #[value(name = "rug")]
     Rug,
+    #[cfg(feature = "rust-gmp")]
     #[value(name = "rust-gmp")]
     RustGmp,
     #[value(name = "malachite")]
@@ -53,8 +56,8 @@ enum Task {
 enum SubCommand {
     #[command(name = "print")]
     Print,
-    #[command(name = "benchmark")]
-    Benchmark,
+    #[command(name = "exec")]
+    Execute,
 }
 
 fn main() {
@@ -62,7 +65,7 @@ fn main() {
 
     match args.subcommand {
         SubCommand::Print => command_print(&args.libs, args.task, args.n),
-        SubCommand::Benchmark => command_benchmark(&args.libs, args.task, args.n),
+        SubCommand::Execute => command_benchmark(&args.libs, args.task, args.n),
     }
 }
 
@@ -132,9 +135,9 @@ fn run_task(lib: Lib, task: Task, n: u32, iter: u32) -> (String, Duration) {
         Lib::NumBigint => run_task_using::<num_bigint::BigUint>(task, n, iter),
         #[cfg(feature = "ramp")]
         Lib::Ramp => run_task_using::<ramp::Int>(task, n, iter),
-        #[cfg(not(feature = "ramp"))]
-        Lib::Ramp => unreachable!("ramp is only supported with nightly rust!"),
+        #[cfg(feature = "rug")]
         Lib::Rug => run_task_using::<rug::Integer>(task, n, iter),
+        #[cfg(feature = "rust_gmp")]
         Lib::RustGmp => run_task_using::<gmp::mpz::Mpz>(task, n, iter),
         Lib::Malachite => run_task_using::<malachite_nz::natural::Natural>(task, n, iter),
     }
