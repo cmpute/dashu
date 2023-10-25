@@ -130,7 +130,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: build
-          args: -p benchmark
+          args: -p benchmark --features gmp
 
   build-aarch64:
     name: Build aarch64
