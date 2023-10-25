@@ -43,14 +43,4 @@ fn test_cross_type_cmp() {
     assert!(ibig!(500) > ubig!(499));
     assert!(ubig!(500) > ibig!(-500));
     assert!(ibig!(-500) < ubig!(500));
-
-    assert_eq!(ubig!(500), 500);
-    assert_ne!(ubig!(500), -500);
-    assert_eq!(ibig!(500), 500);
-    assert_ne!(ibig!(-500), 500);
-
-    assert!(ubig!(500) > 499);
-    assert!(ibig!(500) > 499);
-    assert!(ubig!(500) > -500);
-    assert!(ibig!(-500) < 500);
 }

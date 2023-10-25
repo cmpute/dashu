@@ -11,126 +11,7 @@ use dashu_float::{
 mod helper_macros;
 
 type FBin = FBig;
-
-#[test]
-fn test_ceil_floor() {
-    assert_eq!(fbig!(0x0).ceil(), fbig!(0x0));
-    assert_eq!(fbig!(0x1p1).ceil(), fbig!(0x1p1));
-    assert_eq!(fbig!(0x1).ceil(), fbig!(0x1));
-    assert_eq!(fbig!(0x1p-1).ceil(), fbig!(0x1));
-    assert_eq!(fbig!(-0x1p1).ceil(), fbig!(-0x1p1));
-    assert_eq!(fbig!(-0x1).ceil(), fbig!(-0x1));
-    assert_eq!(fbig!(-0x1p-1).ceil(), fbig!(0x0));
-
-    assert_eq!(fbig!(0x0).floor(), fbig!(0x0));
-    assert_eq!(fbig!(0x1p1).floor(), fbig!(0x1p1));
-    assert_eq!(fbig!(0x1).floor(), fbig!(0x1));
-    assert_eq!(fbig!(0x1p-1).floor(), fbig!(0x0));
-    assert_eq!(fbig!(-0x1p1).floor(), fbig!(-0x1p1));
-    assert_eq!(fbig!(-0x1).floor(), fbig!(-0x1));
-    assert_eq!(fbig!(-0x1p-1).floor(), fbig!(-0x1));
-
-    assert_eq!(dbig!(0).ceil(), dbig!(0));
-    assert_eq!(dbig!(1e1).ceil(), dbig!(1e1));
-    assert_eq!(dbig!(1).ceil(), dbig!(1));
-    assert_eq!(dbig!(1e-1).ceil(), dbig!(1));
-    assert_eq!(dbig!(-1e1).ceil(), dbig!(-1e1));
-    assert_eq!(dbig!(-1).ceil(), dbig!(-1));
-    assert_eq!(dbig!(-1e-1).ceil(), dbig!(0));
-
-    assert_eq!(dbig!(0).floor(), dbig!(0));
-    assert_eq!(dbig!(1e1).floor(), dbig!(1e1));
-    assert_eq!(dbig!(1).floor(), dbig!(1));
-    assert_eq!(dbig!(1e-1).floor(), dbig!(0));
-    assert_eq!(dbig!(-1e1).floor(), dbig!(-1e1));
-    assert_eq!(dbig!(-1).floor(), dbig!(-1));
-    assert_eq!(dbig!(-1e-1).floor(), dbig!(-1));
-}
-
-#[test]
-fn test_trunc_fract() {
-    // binary
-    assert_eq!(fbig!(0x0).trunc(), fbig!(0x0));
-    assert_eq!(fbig!(0x12p4).trunc(), fbig!(0x12p4));
-    assert_eq!(fbig!(0x12).trunc(), fbig!(0x12));
-    assert_eq!(fbig!(0x12p-4).trunc(), fbig!(0x1));
-    assert_eq!(fbig!(0x12p-8).trunc(), fbig!(0x0));
-    assert_eq!(fbig!(0x12p-12).trunc(), fbig!(0x0));
-    assert_eq!(fbig!(-0x12p4).trunc(), fbig!(-0x12p4));
-    assert_eq!(fbig!(-0x12).trunc(), fbig!(-0x12));
-    assert_eq!(fbig!(-0x12p-4).trunc(), fbig!(-0x1));
-    assert_eq!(fbig!(-0x12p-8).trunc(), fbig!(-0x0));
-    assert_eq!(fbig!(-0x12p-12).trunc(), fbig!(0x0));
-
-    assert_eq!(fbig!(0x0).fract(), fbig!(0x0));
-    assert_eq!(fbig!(0x12p4).fract(), fbig!(0x0));
-    assert_eq!(fbig!(0x12).fract(), fbig!(0x0));
-    assert_eq!(fbig!(0x12p-4).fract(), fbig!(0x2p-4));
-    assert_eq!(fbig!(0x12p-8).fract(), fbig!(0x12p-8));
-    assert_eq!(fbig!(0x12p-12).fract(), fbig!(0x12p-12));
-    assert_eq!(fbig!(-0x12p4).fract(), fbig!(0x0));
-    assert_eq!(fbig!(-0x12).fract(), fbig!(0x0));
-    assert_eq!(fbig!(-0x12p-4).fract(), fbig!(-0x2p-4));
-    assert_eq!(fbig!(-0x12p-8).fract(), fbig!(-0x12p-8));
-    assert_eq!(fbig!(-0x12p-12).fract(), fbig!(-0x12p-12));
-
-    // decimal
-    assert_eq!(dbig!(0).trunc(), dbig!(0));
-    assert_eq!(dbig!(12e1).trunc(), dbig!(12e1));
-    assert_eq!(dbig!(12).trunc(), dbig!(12));
-    assert_eq!(dbig!(12e-1).trunc(), dbig!(1));
-    assert_eq!(dbig!(12e-2).trunc(), dbig!(0));
-    assert_eq!(dbig!(12e-3).trunc(), dbig!(0));
-    assert_eq!(dbig!(-12e1).trunc(), dbig!(-12e1));
-    assert_eq!(dbig!(-12).trunc(), dbig!(-12));
-    assert_eq!(dbig!(-12e-1).trunc(), dbig!(-1));
-    assert_eq!(dbig!(-12e-2).trunc(), dbig!(-0));
-    assert_eq!(dbig!(-12e-3).trunc(), dbig!(0));
-
-    assert_eq!(dbig!(0).fract(), dbig!(0));
-    assert_eq!(dbig!(12e1).fract(), dbig!(0));
-    assert_eq!(dbig!(12).fract(), dbig!(0));
-    assert_eq!(dbig!(12e-1).fract(), dbig!(2e-1));
-    assert_eq!(dbig!(12e-2).fract(), dbig!(12e-2));
-    assert_eq!(dbig!(12e-3).fract(), dbig!(12e-3));
-    assert_eq!(dbig!(-12e1).fract(), dbig!(0));
-    assert_eq!(dbig!(-12).fract(), dbig!(0));
-    assert_eq!(dbig!(-12e-1).fract(), dbig!(-2e-1));
-    assert_eq!(dbig!(-12e-2).fract(), dbig!(-12e-2));
-    assert_eq!(dbig!(-12e-3).fract(), dbig!(-12e-3));
-
-    // precision test
-    assert_eq!(dbig!(12).trunc().precision(), 2);
-    assert_eq!(dbig!(12).fract().precision(), 0);
-    assert_eq!(dbig!(12e-1).trunc().precision(), 1);
-    assert_eq!(dbig!(12e-1).fract().precision(), 1);
-    assert_eq!(dbig!(12e-2).trunc().precision(), 0);
-    assert_eq!(dbig!(12e-2).fract().precision(), 2);
-}
-
-#[test]
-#[should_panic]
-fn test_floor_inf() {
-    let _ = DBig::INFINITY.floor();
-}
-
-#[test]
-#[should_panic]
-fn test_ceil_inf() {
-    let _ = DBig::INFINITY.ceil();
-}
-
-#[test]
-#[should_panic]
-fn test_trunc_inf() {
-    let _ = DBig::INFINITY.trunc();
-}
-
-#[test]
-#[should_panic]
-fn test_fract_inf() {
-    let _ = DBig::INFINITY.fract();
-}
+type FHex = FBig<Zero, 16>;
 
 #[test]
 #[rustfmt::skip]
@@ -167,8 +48,6 @@ fn test_base_change() {
     assert_eq!(dbig!(12345e-1).with_rounding::<Zero>().with_base_and_precision::<2>(30), Exact(fbig!(0x9a5p-1)));
     assert_eq!(dbig!(-12345e-100).with_rounding::<Zero>().with_base_and_precision::<2>(30), Inexact(fbig!(-0x2a30a4e2p-348), NoOp));
 
-    type FHex = FBig<Zero, 16>;
-
     // binary -> hexadecimal
     assert_eq!(fbig!(0x12345).with_base::<16>(), Exact(FHex::from_parts(ibig!(0x12345), 0)));
     assert_eq!(fbig!(-0x12345p1).with_base::<16>(), Exact(FHex::from_parts(ibig!(-0x2468a), 0)));
@@ -202,14 +81,16 @@ fn test_from_f32() {
     assert_eq!(FBin::try_from(-0f32).unwrap(), fbig!(0x0));
     assert_eq!(FBin::try_from(1f32).unwrap(), fbig!(0x1));
     assert_eq!(FBin::try_from(-1f32).unwrap(), fbig!(-0x1));
+    assert_eq!(FBin::try_from(-1f32).unwrap().precision(), 24);
     assert_eq!(FBin::try_from(1234f32).unwrap(), fbig!(0x4d2));
     assert_eq!(FBin::try_from(-1234f32).unwrap(), fbig!(-0x4d2));
     assert_eq!(12.34f32.to_bits(), 0x414570a4); // exact value: 12.340000152587890625
     assert_eq!(FBin::try_from(12.34f32).unwrap(), fbig!(0x315c29p-18));
     assert_eq!(FBin::try_from(-12.34f32).unwrap(), fbig!(-0x315c29p-18));
     assert_eq!(1e-40_f32.to_bits(), 0x000116c2); // subnormal
-    assert_eq!(FBin::try_from(1e-40_f32).unwrap(), fbig!(0x116c2p-126));
-    assert_eq!(FBin::try_from(-1e-40_f32).unwrap(), fbig!(-0x116c2p-126));
+    assert_eq!(FBin::try_from(1e-40_f32).unwrap(), fbig!(0x116c2p-149));
+    assert_eq!(FBin::try_from(-1e-40_f32).unwrap(), fbig!(-0x116c2p-149));
+    assert_eq!(FBin::try_from(-1e-40_f32).unwrap().precision(), 17);
     assert_eq!(FBin::try_from(f32::INFINITY).unwrap(), FBin::INFINITY);
     assert_eq!(FBin::try_from(f32::NEG_INFINITY).unwrap(), FBin::NEG_INFINITY);
     assert!(FBin::try_from(f32::NAN).is_err());
@@ -221,14 +102,16 @@ fn test_from_f64() {
     assert_eq!(FBin::try_from(-0f64).unwrap(), fbig!(0x0));
     assert_eq!(FBin::try_from(1f64).unwrap(), fbig!(0x1));
     assert_eq!(FBin::try_from(-1f64).unwrap(), fbig!(-0x1));
+    assert_eq!(FBin::try_from(-1f64).unwrap().precision(), 53);
     assert_eq!(FBin::try_from(1234f64).unwrap(), fbig!(0x4d2));
     assert_eq!(FBin::try_from(-1234f64).unwrap(), fbig!(-0x4d2));
     assert_eq!(12.34f64.to_bits(), 0x4028ae147ae147ae); // exact value: 12.339999999999999857891452847979962825775146484375
     assert_eq!(FBin::try_from(12.34f64).unwrap(), fbig!(0xc570a3d70a3d7p-48));
     assert_eq!(FBin::try_from(-12.34f64).unwrap(), fbig!(-0xc570a3d70a3d7p-48));
     assert_eq!(1e-308_f64.to_bits(), 0x000730d67819e8d2); // subnormal
-    assert_eq!(FBin::try_from(1e-308_f64).unwrap(), fbig!(0x730d67819e8d2p-1022));
-    assert_eq!(FBin::try_from(-1e-308_f64).unwrap(), fbig!(-0x730d67819e8d2p-1022));
+    assert_eq!(FBin::try_from(1e-308_f64).unwrap(), fbig!(0x730d67819e8d2p-1074));
+    assert_eq!(FBin::try_from(-1e-308_f64).unwrap(), fbig!(-0x730d67819e8d2p-1074));
+    assert_eq!(FBin::try_from(-1e-308_f64).unwrap().precision(), 51);
     assert_eq!(FBin::try_from(f64::INFINITY).unwrap(), FBin::INFINITY);
     assert_eq!(FBin::try_from(f64::NEG_INFINITY).unwrap(), FBin::NEG_INFINITY);
     assert!(FBin::try_from(f64::NAN).is_err());
@@ -280,8 +163,20 @@ fn test_to_f32() {
 
     assert_eq!(FBig::<Zero, 2>::INFINITY.to_f32(), Inexact(f32::INFINITY, NoOp));
     assert_eq!(FBig::<Zero, 2>::NEG_INFINITY.to_f32(), Inexact(f32::NEG_INFINITY, NoOp));
-    assert_eq!((fbig!(0x1) << 200).to_f32(), Inexact(f32::INFINITY, AddOne));
-    assert_eq!((fbig!(-0x1) << 200).to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
+    assert_eq!(fbig!(0x1p200).to_f32(), Inexact(f32::INFINITY, AddOne)); // overflow
+    assert_eq!(fbig!(-0x1p200).to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
+    assert_eq!(fbig!(0x1p128).to_f32(), Inexact(f32::INFINITY, AddOne)); // boundary for overflow
+    assert_eq!(fbig!(-0x1p128).to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
+    assert_eq!(fbig!(0xffffffffp96).to_f32(), Inexact(f32::INFINITY, AddOne));
+    assert_eq!(fbig!(-0xffffffffp96).to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
+    assert_eq!(fbig!(0x1p-140).to_f32(), Exact(f32::from_bits(0x200))); // subnormal
+    assert_eq!(fbig!(-0x1p-140).to_f32(), Exact(-f32::from_bits(0x200)));
+    assert_eq!(fbig!(0x1p-149).to_f32(), Exact(f32::from_bits(0x1)));
+    assert_eq!(fbig!(-0x1p-149).to_f32(), Exact(-f32::from_bits(0x1)));
+    assert_eq!(fbig!(0x1p-150).to_f32(), Inexact(0f32, NoOp)); // boundary for underflow
+    assert_eq!(fbig!(-0x1p-150).to_f32(), Inexact(-0f32, NoOp));
+    assert_eq!(fbig!(0xffffffffp-182).to_f32(), Inexact(0f32, NoOp));
+    assert_eq!(fbig!(-0xffffffffp-182).to_f32(), Inexact(-0f32, NoOp));
 }
 
 #[test]
@@ -307,6 +202,18 @@ fn test_to_f64() {
 
     assert_eq!(FBig::<Zero, 2>::INFINITY.to_f64(), Inexact(f64::INFINITY, NoOp));
     assert_eq!(FBig::<Zero, 2>::NEG_INFINITY.to_f64(), Inexact(f64::NEG_INFINITY, NoOp));
-    assert_eq!((fbig!(0x1) << 2000).to_f64(), Inexact(f64::INFINITY, AddOne));
-    assert_eq!((fbig!(-0x1) << 2000).to_f64(), Inexact(f64::NEG_INFINITY, SubOne));
+    assert_eq!(fbig!(0x1p2000).to_f64(), Inexact(f64::INFINITY, AddOne)); // overflow
+    assert_eq!(fbig!(-0x1p2000).to_f64(), Inexact(f64::NEG_INFINITY, SubOne));
+    assert_eq!(fbig!(0x1p1024).to_f32(), Inexact(f32::INFINITY, AddOne)); // boundary for overflow
+    assert_eq!(fbig!(-0x1p1024).to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
+    assert_eq!(fbig!(0xffffffffffffffffp960).to_f32(), Inexact(f32::INFINITY, AddOne));
+    assert_eq!(fbig!(-0xffffffffffffffffp960).to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
+    assert_eq!(fbig!(0x1p-1060).to_f64(), Exact(f64::from_bits(0x4000))); // subnormal
+    assert_eq!(fbig!(-0x1p-1060).to_f64(), Exact(-f64::from_bits(0x4000)));
+    assert_eq!(fbig!(0x1p-1074).to_f64(), Exact(f64::from_bits(0x1)));
+    assert_eq!(fbig!(-0x1p-1074).to_f64(), Exact(-f64::from_bits(0x1)));
+    assert_eq!(fbig!(0x1p-1075).to_f64(), Inexact(0f64, NoOp)); // boundary for underflow
+    assert_eq!(fbig!(-0x1p-1075).to_f64(), Inexact(-0f64, NoOp));
+    assert_eq!(fbig!(0xffffffffffffffffp-1139).to_f64(), Inexact(0f64, NoOp));
+    assert_eq!(fbig!(-0xffffffffffffffffp-1139).to_f64(), Inexact(-0f64, NoOp));
 }

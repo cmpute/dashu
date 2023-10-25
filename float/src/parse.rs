@@ -4,9 +4,8 @@ use crate::{
     round::Round,
 };
 use core::{num::IntErrorKind, str::FromStr};
-use dashu_base::Sign;
+use dashu_base::{ParseError, Sign};
 use dashu_int::{
-    error::ParseError,
     fmt::{MAX_RADIX, MIN_RADIX},
     UBig,
 };
@@ -63,7 +62,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     ///
@@ -115,7 +114,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
         // parse scale and remove the scale part from the str
         let (scale, pmarker) = if let Some(pos) = scale_pos {
-            let value = match (&src[pos + 1..]).parse::<isize>() {
+            let value = match src[pos + 1..].parse::<isize>() {
                 Err(e) => match e.kind() {
                     IntErrorKind::Empty => return Err(ParseError::NoDigits),
                     _ => return Err(ParseError::InvalidDigit),

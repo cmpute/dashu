@@ -42,16 +42,7 @@ fn test_ubig() {
     // const test
     const _: UBig = ubig!(0);
     const _: UBig = ubig!(1);
-    #[cfg(all(
-        target_pointer_width = "64",
-        not(force_bits = "16"),
-        not(force_bits = "32")
-    ))]
-    {
-        assert!(dashu_int::Word::BITS == 64); // assumption only for testing
-        const _: UBig = ubig!(0xffffffffffffffff);
-        const _: UBig = ubig!(0xffffffffffffffffffffffffffffffff);
-    }
+    const _: UBig = ubig!(0xffffffff);
 }
 
 #[test]
@@ -126,14 +117,5 @@ fn test_ibig() {
     // const test
     const _: IBig = ibig!(0);
     const _: IBig = ibig!(-1);
-    #[cfg(all(
-        target_pointer_width = "64",
-        not(force_bits = "16"),
-        not(force_bits = "32")
-    ))]
-    {
-        assert!(dashu_int::Word::BITS == 64); // assumption only for testing
-        const _: IBig = ibig!(-0xffffffffffffffff);
-        const _: IBig = ibig!(-0xffffffffffffffffffffffffffffffff);
-    }
+    const _: IBig = ibig!(-0xffffffff);
 }

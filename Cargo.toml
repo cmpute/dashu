@@ -1,6 +1,6 @@
 [package]
 name = "dashu"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 description = "A library set of big numbers"
@@ -8,8 +8,13 @@ keywords = ["mathematics", "bignum"]
 categories = ["mathematics", "no-std"]
 repository = "https://github.com/cmpute/dashu"
 homepage = "https://github.com/cmpute/dashu"
+documentation = "https://docs.rs/dashu"
+readme = "README.md"
 license = "MIT OR Apache-2.0"
 rust-version = "1.61"
+
+[package.metadata.docs.rs]
+all-features = true
 
 [workspace]
 members = [
@@ -19,36 +24,46 @@ members = [
     "float",
     "float/bench",
     "macros",
+    "rational",
+    "rational/bench"
 ]
-default-members = ["base", "integer", "float", "macros"]
+default-members = ["base", "integer", "float", "rational", "macros"]
+
+[features]
+default = ["std", "rand", "num-traits", "num-order"]
+std = ["dashu-base/std", "dashu-int/std", "dashu-float/std"]
+rand = ["dashu-int/rand"]
+serde = ["dashu-int/serde"]
+num-traits = ["dashu-int/num-traits"]
+num-order = ["dashu-int/num-order"]
+zeroize = ["dashu-int/zeroize"]
 
 [dependencies]
-# all crates under dashu will have the same major and minor version,
-# but the patch version can be different.
+# all crates under dashu will have the same major version,
+# but the minor and patch versions can be different.
 
 [dependencies.dashu-base]
 path = "./base"
-version = "0.1.1"
+version = "0.3.0"
 default-features = false
 
 [dependencies.dashu-int]
 path = "./integer"
-version = "0.1.1"
+version = "0.3.0"
 default-features = false
 
 [dependencies.dashu-float]
 path = "./float"
-version = "0.1.0"
+version = "0.3.0"
+default-features = false
+
+[dependencies.dashu-ratio]
+path = "./rational"
+version = "0.3.0"
 default-features = false
 
 [dependencies.dashu-macros]
 path = "./macros"
-version = "0.1.0"
+version = "0.3.0"
 default-features = false
-
-[features]
-default = ["std", "rand", "num-traits"]
-std = ["dashu-base/std", "dashu-int/std", "dashu-float/std"]
-rand = ["dashu-int/rand"]
-serde = ["dashu-int/serde"]
-"num-traits" = ["dashu-int/num-traits"]
+features = ["embedded"]

@@ -2,6 +2,7 @@ use dashu_base::ExtendedGcd;
 
 use crate::{
     buffer::Buffer,
+    error::panic_divide_by_invalid_modulo,
     gcd,
     helper_macros::debug_assert_zero,
     memory::MemoryAllocation,
@@ -9,6 +10,8 @@ use crate::{
     shift::{shl_in_place, shr_in_place},
     Sign,
 };
+
+use core::ops::{Div, DivAssign};
 
 use super::{
     modulo::{Modulo, ModuloDoubleRaw, ModuloLargeRaw, ModuloRepr, ModuloSingleRaw},
@@ -29,14 +32,16 @@ impl<'a> Modulo<'a> {
     /// let a = ring.convert(123);
     /// let ainv = a.clone().inv().unwrap();
     /// assert_eq!(ainv, a.pow(&(p - UBig::from(2u8))));
-    /// assert_eq!((a * ainv).residue(), 1);
+    /// assert_eq!((a * ainv).residue(), UBig::ONE);
     /// ```
     #[inline]
-    pub fn inv(self) -> Option<Modulo<'a>> {
-        match self.into_repr() {
+    pub fn inv(&self) -> Option<Modulo<'a>> {
+        match self.repr() {
             ModuloRepr::Single(raw, ring) => ring.inv(raw).map(|v| Modulo::from_single(v, ring)),
             ModuloRepr::Double(raw, ring) => ring.inv(raw).map(|v| Modulo::from_double(v, ring)),
-            ModuloRepr::Large(raw, ring) => ring.inv(raw).map(|v| Modulo::from_large(v, ring)),
+            ModuloRepr::Large(raw, ring) => {
+                ring.inv(raw.clone()).map(|v| Modulo::from_large(v, ring))
+            }
         }
     }
 }
@@ -46,14 +51,12 @@ macro_rules! impl_mod_inv_for_primitive {
         impl $ring {
             #[inline]
             /// Modular inverse.
-            fn inv(&self, raw: $raw) -> Option<$raw> {
-                if raw.0 == 0 {
-                    return None;
-                }
-                let (g, _, coeff) = self.0.divisor().gcd_ext(raw.0 >> self.shift());
+            fn inv(&self, raw: &$raw) -> Option<$raw> {
+                let (g, _, coeff) = self.0.divisor().gcd_ext(&raw.0 >> self.shift());
                 if g != 1 {
                     return None;
                 }
+
                 let (sign, coeff) = coeff.to_sign_magnitude();
                 let coeff = $raw(coeff << self.shift());
                 if sign == Sign::Negative {
@@ -119,5 +122,60 @@ impl ModuloRingLarge {
             self.negate_in_place(&mut inv);
         }
         Some(inv)
+    }
+}
+
+impl<'a> Div<Modulo<'a>> for Modulo<'a> {
+    type Output = Modulo<'a>;
+
+    #[inline]
+    fn div(self, rhs: Modulo<'a>) -> Modulo<'a> {
+        (&self).div(&rhs)
+    }
+}
+
+impl<'a> Div<&Modulo<'a>> for Modulo<'a> {
+    type Output = Modulo<'a>;
+
+    #[inline]
+    fn div(self, rhs: &Modulo<'a>) -> Modulo<'a> {
+        (&self).div(rhs)
+    }
+}
+
+impl<'a> Div<Modulo<'a>> for &Modulo<'a> {
+    type Output = Modulo<'a>;
+
+    #[inline]
+    fn div(self, rhs: Modulo<'a>) -> Modulo<'a> {
+        self.div(&rhs)
+    }
+}
+
+impl<'a> Div<&Modulo<'a>> for &Modulo<'a> {
+    type Output = Modulo<'a>;
+
+    #[inline]
+    fn div(self, rhs: &Modulo<'a>) -> Modulo<'a> {
+        // Clippy doesn't like that div is implemented using mul.
+        #[allow(clippy::suspicious_arithmetic_impl)]
+        match rhs.inv() {
+            None => panic_divide_by_invalid_modulo(),
+            Some(inv_rhs) => self * inv_rhs,
+        }
+    }
+}
+
+impl<'a> DivAssign<Modulo<'a>> for Modulo<'a> {
+    #[inline]
+    fn div_assign(&mut self, rhs: Modulo<'a>) {
+        self.div_assign(&rhs)
+    }
+}
+
+impl<'a> DivAssign<&Modulo<'a>> for Modulo<'a> {
+    #[inline]
+    fn div_assign(&mut self, rhs: &Modulo<'a>) {
+        *self = (&*self).div(rhs)
     }
 }

@@ -1,10 +1,20 @@
 [package]
 name = "dashu-macros"
-version = "0.1.0"
-edition = "2021"
+version = "0.3.0"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
-description = "Procedure macros to create big numbers"
+edition = "2021"
+description = "Procedure macros for creating big numbers"
+keywords = ["mathematics", "numerics", "arbitrary-precision"]
+categories = ["mathematics", "no-std"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/cmpute/dashu"
+homepage = "https://github.com/cmpute/dashu"
+documentation = "https://docs.rs/dashu-macros"
+readme = "README.md"
 rust-version = "1.61"
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lib]
 proc-macro = true
@@ -13,10 +23,25 @@ proc-macro = true
 quote = "1"
 proc-macro2 = "1"
 
+[dependencies.dashu-base]
+path = "../base"
+version = "0.3.0"
+default-features = false
+
 [dependencies.dashu-int]
 path = "../integer"
-version = "0.1.1"
+version = "0.3.0"
+default-features = false
 
 [dependencies.dashu-float]
 path = "../float"
-version = "0.1.0"
+version = "0.3.0"
+default-features = false
+
+[dependencies.dashu-ratio]
+path = "../rational"
+version = "0.3.0"
+default-features = false
+
+[features]
+embedded = [] # whether it's used with the `dashu` crate

@@ -7,7 +7,7 @@ use crate::{
     ubig::UBig,
     Sign,
 };
-use alloc::vec::Vec;
+use alloc::{string::ToString, vec::Vec};
 use core::fmt::{self, Formatter};
 use serde::{
     de::{Deserialize, Deserializer, SeqAccess, Visitor},
@@ -19,6 +19,10 @@ use static_assertions::const_assert;
 // support 128 bit word, it's going to be a break change.
 const_assert!(64 % WORD_BITS_USIZE == 0);
 const WORDS_PER_U64: usize = 64 / WORD_BITS_USIZE;
+
+// XXX: shall we directly serialize to bytes array (either little- or big-endian). This improves portability
+//      but affects efficiency. We might also consider implement different serialization strategy using other
+//      crates (like tkyv)? see https://github.com/djkoloski/rust_serialization_benchmark
 
 impl<'a> Serialize for TypedReprRef<'a> {
     #[allow(clippy::useless_conversion)]
@@ -66,13 +70,21 @@ impl<'a> Serialize for TypedReprRef<'a> {
 impl Serialize for UBig {
     #[inline]
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.repr().serialize(serializer)
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&self.to_string())
+        } else {
+            self.repr().serialize(serializer)
+        }
     }
 }
 
 impl<'de> Deserialize<'de> for UBig {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_seq(UBigVisitor)
+        if deserializer.is_human_readable() {
+            deserializer.deserialize_str(UBigVisitor)
+        } else {
+            deserializer.deserialize_seq(UBigVisitor)
+        }
     }
 }
 
@@ -83,7 +95,17 @@ impl<'de> Visitor<'de> for UBigVisitor {
     type Value = UBig;
 
     fn expecting(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "a sequence of 64-bit words")
+        write!(f, "a string or a sequence of 64-bit words")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        match UBig::from_str_with_radix_prefix(v) {
+            Ok((n, _)) => Ok(n),
+            Err(e) => Err(serde::de::Error::custom(e)),
+        }
     }
 
     fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<UBig, A::Error> {
@@ -137,18 +159,30 @@ fn len_64_to_max_len(len_64: usize) -> usize {
 
 impl Serialize for IBig {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let (sign, repr) = self.as_sign_repr();
-        let mut tup = serializer.serialize_tuple(2)?;
-        tup.serialize_element(&(sign == Sign::Negative))?;
-        tup.serialize_element(&repr)?;
-        tup.end()
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&self.to_string())
+        } else {
+            let (sign, repr) = self.as_sign_repr();
+            let mut tup = serializer.serialize_tuple(2)?;
+            tup.serialize_element(&(sign == Sign::Negative))?;
+            tup.serialize_element(&repr)?;
+            tup.end()
+        }
     }
 }
 
 impl<'de> Deserialize<'de> for IBig {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let (sign, magnitude): (bool, UBig) = Deserialize::deserialize(deserializer)?;
-        let sign = if sign { Sign::Negative } else { Sign::Positive };
-        Ok(IBig(magnitude.0.with_sign(sign)))
+        if deserializer.is_human_readable() {
+            let s: &str = Deserialize::deserialize(deserializer)?;
+            match IBig::from_str_with_radix_prefix(s) {
+                Ok((n, _)) => Ok(n),
+                Err(e) => Err(serde::de::Error::custom(e)),
+            }
+        } else {
+            let (sign, magnitude): (bool, UBig) = Deserialize::deserialize(deserializer)?;
+            let sign = if sign { Sign::Negative } else { Sign::Positive };
+            Ok(IBig(magnitude.0.with_sign(sign)))
+        }
     }
 }

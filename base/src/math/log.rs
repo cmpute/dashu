@@ -91,9 +91,32 @@ const fn ceil_log2_fp8(n: u16) -> u16 {
     }
 }
 
-#[cfg(not(feature = "std"))]
-fn panic_log_base_0() -> ! {
-    panic!("logarithm is not defined for 0!");
+/// Implementation of the nightly f32::next_up()
+#[cfg(feature = "std")]
+#[inline]
+fn next_up(f: f32) -> f32 {
+    debug_assert!(!f.is_nan() && !f.is_infinite());
+    use std::cmp::Ordering::*;
+
+    match f.partial_cmp(&0.).unwrap() {
+        Equal => f32::from_bits(1),
+        Less => f32::from_bits(f.to_bits() - 1),
+        Greater => f32::from_bits(f.to_bits() + 1),
+    }
+}
+
+/// Implementation of the nightly f32::next_down()
+#[cfg(feature = "std")]
+#[inline]
+fn next_down(f: f32) -> f32 {
+    debug_assert!(!f.is_nan() && !f.is_infinite());
+    use std::cmp::Ordering::*;
+
+    match f.partial_cmp(&0.).unwrap() {
+        Equal => f32::from_bits(1 | (1 << 31)),
+        Less => f32::from_bits(f.to_bits() + 1),
+        Greater => f32::from_bits(f.to_bits() - 1),
+    }
 }
 
 #[cfg(not(feature = "std"))]
@@ -101,7 +124,7 @@ impl EstimatedLog2 for u8 {
     #[inline]
     fn log2_bounds(&self) -> (f32, f32) {
         match *self {
-            0 => panic_log_base_0(),
+            0 => (f32::NEG_INFINITY, f32::NEG_INFINITY),
             1 => (0., 0.),
             i if i.is_power_of_two() => {
                 let log = self.trailing_zeros() as f32;
@@ -142,7 +165,7 @@ impl EstimatedLog2 for u16 {
 }
 
 #[cfg(not(feature = "std"))]
-macro_rules! impl_log2_bounds_for_large_ints {
+macro_rules! impl_log2_bounds_for_uint {
     ($($t:ty)*) => {$(
         impl EstimatedLog2 for $t {
             #[inline]
@@ -180,44 +203,123 @@ macro_rules! impl_log2_bounds_for_large_ints {
 }
 
 #[cfg(not(feature = "std"))]
-impl_log2_bounds_for_large_ints!(u32 u64 u128 usize);
+impl_log2_bounds_for_uint!(u32 u64 u128 usize);
 
 #[cfg(feature = "std")]
-macro_rules! impl_log2_bounds_for_ints {
+macro_rules! impl_log2_bounds_for_uint {
     ($($t:ty)*) => {$(
         impl EstimatedLog2 for $t {
             fn log2_bounds(&self) -> (f32, f32) {
-                assert!(*self > 0);
+                if *self == 0 {
+                    return (f32::NEG_INFINITY, f32::NEG_INFINITY);
+                }
 
                 if self.is_power_of_two() {
                     let log = self.trailing_zeros() as f32;
                     (log, log)
                 } else {
-                    /// Adjustment required to ensure floor or ceil operation
-                    const ADJUST_UP: f32 = 1. + 2. * f32::EPSILON;
-                    const ADJUST_DOWN: f32 = 1. - 2. * f32::EPSILON;
-
                     let nbits = Self::BITS - self.leading_zeros();
                     if nbits <= 24 {
                         // 24bit integer converted to f32 is lossless
                         let log = (*self as f32).log2();
-                        (log * ADJUST_DOWN, log * ADJUST_UP)
+                        (next_down(log), next_up(log))
                     } else {
                         let shifted = (self >> (nbits - 24)) as f32;
-                        let est_lb = shifted.log2() * ADJUST_DOWN;
-                        let est_ub = (shifted + 1.).log2() * ADJUST_UP;
+                        let est_lb = shifted.log2();
+                        let est_ub = (shifted + 1.).log2();
 
                         let shift = (nbits - 24) as f32;
-                        (est_lb + shift, est_ub + shift)
+                        (next_down(est_lb + shift), next_up(est_ub + shift))
                     }
                 }
+            }
+
+            #[inline]
+            fn log2_est(&self) -> f32 {
+                (*self as f32).log2()
             }
         }
     )*}
 }
 
 #[cfg(feature = "std")]
-impl_log2_bounds_for_ints!(u8 u16 u32 u64 u128 usize);
+impl_log2_bounds_for_uint!(u8 u16 u32 u64 u128 usize);
+
+macro_rules! impl_log2_bounds_for_int {
+    ($($t:ty)*) => {$(
+        impl EstimatedLog2 for $t {
+            fn log2_bounds(&self) -> (f32, f32) {
+                self.unsigned_abs().log2_bounds()
+            }
+        }
+    )*};
+}
+impl_log2_bounds_for_int!(i8 i16 i32 i64 i128 isize);
+
+#[cfg(not(feature = "std"))]
+macro_rules! impl_log2_bounds_for_float {
+    ($($t:ty)*) => {$(
+        impl EstimatedLog2 for $t {
+            fn log2_bounds(&self) -> (f32, f32) {
+                use crate::FloatEncoding;
+                use core::num::FpCategory::*;
+
+                if *self == 0. {
+                    (f32::NEG_INFINITY, f32::NEG_INFINITY)
+                } else {
+                    match self.decode() {
+                        Ok((man, exp)) => {
+                            let (est_lb, est_ub) = man.log2_bounds();
+                            (est_lb + exp as f32, est_ub + exp as f32)
+                        },
+                        Err(Nan) => panic!("calling log2 on nans is forbidden!"),
+                        Err(Infinite) => (f32::INFINITY, f32::INFINITY),
+                        _ => unreachable!()
+                    }
+                }
+            }
+        }
+    )*};
+}
+#[cfg(not(feature = "std"))]
+impl_log2_bounds_for_float!(f32 f64);
+
+#[cfg(feature = "std")]
+macro_rules! impl_log2_bounds_for_float {
+    ($($t:ty)*) => {$(
+        impl EstimatedLog2 for $t {
+            #[inline]
+            fn log2_bounds(&self) -> (f32, f32) {
+                assert!(!self.is_nan());
+
+                if *self == 0. {
+                    (f32::NEG_INFINITY, f32::NEG_INFINITY)
+                } else if self.is_infinite() {
+                    (f32::INFINITY, f32::INFINITY)
+                } else {
+                    let log2 = self.abs().log2() as f32;
+                    (next_down(log2), next_up(log2))
+                }
+            }
+
+            #[inline]
+            fn log2_est(&self) -> f32 {
+                assert!(!self.is_nan());
+
+                if *self == 0. {
+                    f32::NEG_INFINITY
+                } else if self.is_infinite() {
+                    f32::INFINITY
+                } else {
+                    self.abs().log2() as f32
+                }
+            }
+        }
+    )*};
+}
+
+#[cfg(feature = "std")]
+impl_log2_bounds_for_float!(f32 f64);
 
 #[cfg(test)]
 mod tests {
@@ -242,9 +344,22 @@ mod tests {
 
     #[test]
     fn test_log2_bounds() {
+        assert_eq!(0u8.log2_bounds(), (f32::NEG_INFINITY, f32::NEG_INFINITY));
+        assert_eq!(0i8.log2_bounds(), (f32::NEG_INFINITY, f32::NEG_INFINITY));
+        assert_eq!(0f32.log2_bounds(), (f32::NEG_INFINITY, f32::NEG_INFINITY));
+
         // small tests
         for i in 1..1000u16 {
             let (lb, ub) = i.log2_bounds();
+            assert!(2f64.powf(lb as f64) <= i as f64);
+            assert!(2f64.powf(ub as f64) >= i as f64);
+            assert_eq!((-(i as i16)).log2_bounds(), (lb, ub));
+
+            let (lb, ub) = (i as f32).log2_bounds();
+            assert!(2f64.powf(lb as f64) <= i as f64);
+            assert!(2f64.powf(ub as f64) >= i as f64);
+
+            let (lb, ub) = (i as f64).log2_bounds();
             assert!(2f64.powf(lb as f64) <= i as f64);
             assert!(2f64.powf(ub as f64) >= i as f64);
         }
@@ -255,11 +370,15 @@ mod tests {
             assert!(2f64.powf(lb as f64) <= i as f64);
             assert!(2f64.powf(ub as f64) >= i as f64);
         }
-    }
 
-    #[test]
-    #[should_panic]
-    fn test_log2_bounds_panic() {
-        let _ = 0u16.log2_bounds();
+        let (lb, ub) = 1e20f32.log2_bounds();
+        assert!(2f64.powf(lb as f64) <= 1e20);
+        assert!(2f64.powf(ub as f64) >= 1e20);
+        assert_eq!((-1e20f32).log2_bounds(), (lb, ub));
+
+        let (lb, ub) = 1e40f64.log2_bounds();
+        assert!(2f64.powf(lb as f64) <= 1e40);
+        assert!(2f64.powf(ub as f64) >= 1e40);
+        assert_eq!((-1e40f64).log2_bounds(), (lb, ub));
     }
 }

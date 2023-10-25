@@ -25,22 +25,22 @@
 //! Modular arithmetic is supported by the module [modular].
 //!
 //! To construct big integers from literals, please use the [`dashu-macro`](https://docs.rs/dashu-macros/latest/dashu_macros/)
-//! crate for your convenience..
+//! crate for your convenience.
 //!
 //! # Examples
 //!
 //! ```
-//! # use dashu_int::error::ParseError;
+//! # use dashu_base::ParseError;
 //! use dashu_int::{IBig, modular::ModuloRing, UBig};
 //!
 //! let a = UBig::from(12345678u32);
-//! let b = UBig::from(0x10ffu16);
+//! let b = IBig::from(-0x10ff);
 //! let c = IBig::from_str_radix("-azz", 36).unwrap();
 //! let d: UBig = "15033211231241234523452345345787".parse()?;
-//! let e = 2u8 * &b + 1u8;
+//! let e = 2 * &b - 1;
 //! let f = a * b.pow(10);
 //!
-//! assert_eq!(e, 0x21ff); // direct comparison with primitive integers
+//! assert_eq!(e, IBig::from(-0x21ff));
 //! assert_eq!(c.to_string(), "-14255");
 //! assert_eq!(
 //!     f.in_radix(16).to_string(),
@@ -61,9 +61,12 @@
 //! # Optional dependencies
 //!
 //! * `std` (*default*): for `std::error::Error` and some internal usages of `std` functions.
-//! * `num-traits` (*default*): support integral traits from crate `num-traits`.
+//! * `num-traits` (*default*): support traits from crate `num-traits`.
+//! * `num-integer` (*default*): support traits from crate `num-integer`.
+//! * `num-order` (*default*): support traits from crate `num-order`.
 //! * `rand` (*default*): support random number generation based on crate `rand`.
 //! * `serde`: support serialization and deserialization based on crate `serde`.
+//! * `zeroize`: support traits from crate `zeroize`
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -94,13 +97,14 @@ mod cmp;
 mod convert;
 mod div;
 mod div_ops;
-pub mod error;
+mod error;
 pub mod fast_div;
 pub mod fmt;
 mod gcd;
 mod gcd_ops;
 mod helper_macros;
 mod ibig;
+mod iter;
 mod log;
 mod math;
 mod memory;
@@ -114,17 +118,14 @@ mod primitive;
 mod radix;
 mod remove;
 mod repr;
+mod root;
+mod root_ops;
 mod shift;
 mod shift_ops;
 mod sign;
 mod sqr;
+mod third_party;
 mod ubig;
 
-#[cfg(feature = "rand")]
-pub mod rand;
-
-#[cfg(feature = "num-traits")]
-mod num_traits;
-
-#[cfg(feature = "serde")]
-mod serde;
+// All the public items from third_party will be exposed
+pub use third_party::*;

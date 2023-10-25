@@ -7,6 +7,7 @@ use crate::{
     repr::TypedReprRef::*,
     ubig::UBig,
 };
+use dashu_base::BitTest;
 
 use super::{
     modulo::{Modulo, ModuloDoubleRaw, ModuloLargeRaw, ModuloRepr, ModuloSingleRaw},
@@ -16,7 +17,7 @@ use super::{
 impl<'a> Modulo<'a> {
     /// Exponentiation.
     ///
-    /// If you want use negative exponent, you can first use [inv()][Self::inv] to
+    /// If you want use a negative exponent, you can first use [inv()][Self::inv] to
     /// convert the base to its inverse, and then call this method.
     ///
     /// # Examples
@@ -140,7 +141,7 @@ impl ModuloRingLarge {
             let (prev, cur) = if i == 1 {
                 (raw.0.as_ref(), &mut table[0..n])
             } else {
-                let (prev, cur) = (&mut table[(i - 2) * n..i * n]).split_at_mut(n);
+                let (prev, cur) = table[(i - 2) * n..i * n].split_at_mut(n);
                 (&*prev, cur)
             };
             cur.copy_from_slice(self.mul_normalized(prev, &val.0, &mut memory));

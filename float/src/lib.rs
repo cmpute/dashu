@@ -26,20 +26,20 @@
 //! # Examples
 //!
 //! ```
-//! # use dashu_int::error::ParseError;
+//! # use dashu_base::ParseError;
 //! use core::convert::TryFrom;
-//! use dashu_float::{FBig, DBig};
+//! use dashu_float::DBig;
 //!
 //! // due to the limit of rust generics, the default float type
 //! // need to be instantiate explicitly
-//! type FBin = FBig;
+//! type FBig = dashu_float::FBig;
 //!
-//! let a = FBin::try_from(-12.34_f32).unwrap();
+//! let a = FBig::try_from(-12.34_f32).unwrap();
 //! let b = DBig::from_str_native("6.022e23")?;
 //! let c = DBig::from_parts(271828.into(), -5);
 //! let d: DBig = "-0.0123456789".parse()?;
-//! let e = b.ln() + DBig::ONE;
-//! let f = &c * d.powi(10.into());
+//! let e = 2 * b.ln() + DBig::ONE;
+//! let f = &c * d.powi(10.into()) / 7;
 //!
 //! assert_eq!(a.precision(), 24); // IEEE 754 single has 24 significant bits
 //! assert_eq!(b.precision(), 4); // 4 decimal digits
@@ -71,11 +71,14 @@ mod exp;
 mod fbig;
 mod fmt;
 mod helper_macros;
+mod iter;
 mod log;
 mod mul;
 mod parse;
 mod repr;
+mod root;
 pub mod round;
+mod round_ops;
 mod shift;
 mod sign;
 mod utils;
@@ -85,3 +88,5 @@ pub use repr::{Context, Repr};
 
 /// Multi-precision float number with decimal exponent and [HalfAway][round::mode::HalfAway] rounding mode
 pub type DBig = FBig<round::mode::HalfAway, 10>;
+
+// TODO: allow operations with inf, but only panic when the result is nan (inf - inf and inf / inf)

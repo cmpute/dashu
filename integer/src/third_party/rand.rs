@@ -89,8 +89,8 @@ where
 /// use rand::{distributions::uniform::Uniform, thread_rng, Rng};
 /// let a = thread_rng().gen_range(UBig::from(3u8)..UBig::from(10u8));
 /// let b = thread_rng().sample(Uniform::new(UBig::ZERO, &a));
-/// assert!(a >= 3 && a < 10);
-/// assert!(b >= 0 && b < a);
+/// assert!(a >= UBig::from(3u8) && a < UBig::from(10u8));
+/// assert!(b >= UBig::ZERO && b < a);
 /// ```
 pub struct UniformUBig {
     range: UBig,
@@ -147,8 +147,8 @@ impl UniformSampler for UniformUBig {
 /// use rand::{distributions::uniform::Uniform, thread_rng, Rng};
 /// let a = thread_rng().gen_range(IBig::from(3)..IBig::from(10));
 /// let b = thread_rng().sample(Uniform::new(IBig::from(-5), &a));
-/// assert!(a >= 3 && a < 10);
-/// assert!(b >= -5 && b < a);
+/// assert!(a >= IBig::from(3) && a < IBig::from(10));
+/// assert!(b >= IBig::from(-5) && b < a);
 /// ```
 pub struct UniformIBig {
     range: UBig,

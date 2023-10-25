@@ -1,5 +1,7 @@
 //! Comparisons operators.
 
+use dashu_base::{AbsCmp, AbsEq};
+
 use crate::{
     arch::word::Word,
     ibig::IBig,
@@ -8,6 +10,25 @@ use crate::{
     Sign::*,
 };
 use core::cmp::Ordering;
+
+/// Compare lhs with rhs of the same length as numbers.
+#[inline]
+pub fn cmp_same_len(lhs: &[Word], rhs: &[Word]) -> Ordering {
+    debug_assert!(lhs.len() == rhs.len());
+    lhs.iter().rev().cmp(rhs.iter().rev())
+}
+
+/// Compare lhs with rhs as numbers. The leading zero words of the input must be trimmed.
+///
+/// # Panics
+///
+/// Panic if lhs or rhs has leading zero words (including the case where lhs == 0 or rhs == 0)
+pub fn cmp_in_place(lhs: &[Word], rhs: &[Word]) -> Ordering {
+    debug_assert!(*lhs.last().unwrap() != 0 && *rhs.last().unwrap() != 0);
+    lhs.len()
+        .cmp(&rhs.len())
+        .then_with(|| cmp_same_len(lhs, rhs))
+}
 
 impl<'a> PartialOrd for TypedReprRef<'a> {
     #[inline]
@@ -101,137 +122,40 @@ impl PartialOrd<UBig> for IBig {
     }
 }
 
-impl IBig {
-    /// Check whether the magnitude of this number is equal the magnitude of the other number
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use dashu_int::IBig;
-    /// assert!(IBig::from(2).abs_eq(&IBig::from(-2)));
-    /// assert!(IBig::from(-3).abs_eq(&IBig::from(-3)));
-    /// ```
-    pub fn abs_eq(&self, other: &IBig) -> bool {
-        self.0.as_sign_slice().1.eq(other.0.as_sign_slice().1)
+impl AbsEq for IBig {
+    #[inline]
+    fn abs_eq(&self, rhs: &Self) -> bool {
+        self.0.as_sign_slice().1.eq(rhs.0.as_sign_slice().1)
     }
-
-    /// Compare the magnitude of this number to the magnitude of the other number
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use dashu_int::IBig;
-    /// assert!(IBig::from(2).abs_cmp(&IBig::from(-3)).is_le());
-    /// assert!(IBig::from(-2).abs_cmp(&IBig::from(3)).is_le());
-    /// ```
-    pub fn abs_cmp(&self, other: &IBig) -> Ordering {
-        self.0.as_sign_typed().1.cmp(&other.0.as_sign_typed().1)
+}
+impl AbsEq<UBig> for IBig {
+    #[inline]
+    fn abs_eq(&self, rhs: &UBig) -> bool {
+        self.0.as_sign_slice().1.eq(rhs.0.as_slice())
+    }
+}
+impl AbsEq<IBig> for UBig {
+    #[inline]
+    fn abs_eq(&self, rhs: &IBig) -> bool {
+        self.0.as_slice().eq(rhs.0.as_sign_slice().1)
     }
 }
 
-macro_rules! impl_cmp_with_primitive {
-    ($big:ty, $prim:ty) => {
-        impl PartialEq<$prim> for $big {
-            #[inline]
-            fn eq(&self, other: &$prim) -> bool {
-                self == &<$big>::from(*other)
-            }
-        }
-
-        impl PartialEq<$big> for $prim {
-            #[inline]
-            fn eq(&self, other: &$big) -> bool {
-                other == &<$big>::from(*self)
-            }
-        }
-
-        impl PartialOrd<$prim> for $big {
-            #[inline]
-            fn partial_cmp(&self, other: &$prim) -> Option<Ordering> {
-                self.partial_cmp(&<$big>::from(*other))
-            }
-        }
-
-        impl PartialOrd<$big> for $prim {
-            #[inline]
-            fn partial_cmp(&self, other: &$big) -> Option<Ordering> {
-                <$big>::from(*self).partial_cmp(other)
-            }
-        }
-    };
+impl AbsCmp for IBig {
+    #[inline]
+    fn abs_cmp(&self, rhs: &Self) -> Ordering {
+        self.0.as_sign_typed().1.cmp(&rhs.0.as_sign_typed().1)
+    }
 }
-impl_cmp_with_primitive!(UBig, u8);
-impl_cmp_with_primitive!(UBig, u16);
-impl_cmp_with_primitive!(UBig, u32);
-impl_cmp_with_primitive!(UBig, u64);
-impl_cmp_with_primitive!(UBig, u128);
-impl_cmp_with_primitive!(UBig, usize);
-impl_cmp_with_primitive!(IBig, u8);
-impl_cmp_with_primitive!(IBig, u16);
-impl_cmp_with_primitive!(IBig, u32);
-impl_cmp_with_primitive!(IBig, u64);
-impl_cmp_with_primitive!(IBig, u128);
-impl_cmp_with_primitive!(IBig, usize);
-impl_cmp_with_primitive!(IBig, i8);
-impl_cmp_with_primitive!(IBig, i16);
-impl_cmp_with_primitive!(IBig, i32);
-impl_cmp_with_primitive!(IBig, i64);
-impl_cmp_with_primitive!(IBig, i128);
-impl_cmp_with_primitive!(IBig, isize);
-
-macro_rules! impl_cmp_ubig_with_signed_primitive {
-    ($prim:ty) => {
-        impl PartialEq<$prim> for UBig {
-            #[inline]
-            fn eq(&self, other: &$prim) -> bool {
-                self == &IBig::from_signed(*other)
-            }
-        }
-
-        impl PartialEq<UBig> for $prim {
-            #[inline]
-            fn eq(&self, other: &UBig) -> bool {
-                other == &IBig::from_signed(*self)
-            }
-        }
-
-        impl PartialOrd<$prim> for UBig {
-            #[inline]
-            fn partial_cmp(&self, other: &$prim) -> Option<Ordering> {
-                self.partial_cmp(&IBig::from_signed(*other))
-            }
-        }
-
-        impl PartialOrd<UBig> for $prim {
-            #[inline]
-            fn partial_cmp(&self, other: &UBig) -> Option<Ordering> {
-                IBig::from_signed(*self).partial_cmp(other)
-            }
-        }
-    };
+impl AbsCmp<UBig> for IBig {
+    #[inline]
+    fn abs_cmp(&self, rhs: &UBig) -> Ordering {
+        self.0.as_sign_typed().1.cmp(&rhs.0.as_typed())
+    }
 }
-impl_cmp_ubig_with_signed_primitive!(i8);
-impl_cmp_ubig_with_signed_primitive!(i16);
-impl_cmp_ubig_with_signed_primitive!(i32);
-impl_cmp_ubig_with_signed_primitive!(i64);
-impl_cmp_ubig_with_signed_primitive!(i128);
-impl_cmp_ubig_with_signed_primitive!(isize);
-
-/// Compare lhs with rhs of the same length as numbers.
-#[inline]
-pub fn cmp_same_len(lhs: &[Word], rhs: &[Word]) -> Ordering {
-    debug_assert!(lhs.len() == rhs.len());
-    lhs.iter().rev().cmp(rhs.iter().rev())
-}
-
-/// Compare lhs with rhs as numbers. The leading zero words of the input must be trimmed.
-///
-/// # Panics
-///
-/// Panic if lhs or rhs has leading zero words (including the case where lhs == 0 or rhs == 0)
-pub fn cmp_in_place(lhs: &[Word], rhs: &[Word]) -> Ordering {
-    debug_assert!(*lhs.last().unwrap() != 0 && *rhs.last().unwrap() != 0);
-    lhs.len()
-        .cmp(&rhs.len())
-        .then_with(|| cmp_same_len(lhs, rhs))
+impl AbsCmp<IBig> for UBig {
+    #[inline]
+    fn abs_cmp(&self, rhs: &IBig) -> Ordering {
+        self.0.as_typed().cmp(&rhs.0.as_sign_typed().1)
+    }
 }

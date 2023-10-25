@@ -96,7 +96,7 @@ impl<R: Round> Context<R> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
@@ -149,7 +149,7 @@ impl<R: Round> Context<R> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
@@ -177,7 +177,7 @@ impl<R: Round> Context<R> {
             f
         };
 
-        let repr = Repr::new(f_repr.significand.square(), 2 * f_repr.exponent);
+        let repr = Repr::new(f_repr.significand.square().into(), 2 * f_repr.exponent);
         self.repr_round(repr).map(|v| FBig::new(v, *self))
     }
 }

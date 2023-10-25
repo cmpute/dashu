@@ -21,8 +21,10 @@ where
     rng.gen_range(UBig::ONE << (bits - 1)..UBig::ONE << bits)
 }
 
+const SEED: u64 = 1;
+
 fn bench_add(criterion: &mut Criterion) {
-    let mut rng = StdRng::seed_from_u64(1);
+    let mut rng = StdRng::seed_from_u64(SEED);
     let mut group = criterion.benchmark_group("add");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
@@ -39,7 +41,7 @@ fn bench_add(criterion: &mut Criterion) {
 }
 
 fn bench_sub(criterion: &mut Criterion) {
-    let mut rng = StdRng::seed_from_u64(1);
+    let mut rng = StdRng::seed_from_u64(SEED);
     let mut group = criterion.benchmark_group("sub");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
@@ -57,7 +59,7 @@ fn bench_sub(criterion: &mut Criterion) {
 }
 
 fn bench_mul(criterion: &mut Criterion) {
-    let mut rng = StdRng::seed_from_u64(1);
+    let mut rng = StdRng::seed_from_u64(SEED);
     let mut group = criterion.benchmark_group("mul");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
@@ -74,7 +76,7 @@ fn bench_mul(criterion: &mut Criterion) {
 }
 
 fn bench_div(criterion: &mut Criterion) {
-    let mut rng = StdRng::seed_from_u64(1);
+    let mut rng = StdRng::seed_from_u64(SEED);
     let mut group = criterion.benchmark_group("div");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
@@ -91,7 +93,7 @@ fn bench_div(criterion: &mut Criterion) {
 }
 
 fn bench_gcd(criterion: &mut Criterion) {
-    let mut rng = StdRng::seed_from_u64(1);
+    let mut rng = StdRng::seed_from_u64(SEED);
     let mut group = criterion.benchmark_group("gcd");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
@@ -106,7 +108,7 @@ fn bench_gcd(criterion: &mut Criterion) {
 
     group.finish();
 
-    let mut group = criterion.benchmark_group("extended_gcd");
+    let mut group = criterion.benchmark_group("gcd_ext");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
     for log_bits in 3..=5 {
@@ -122,7 +124,7 @@ fn bench_gcd(criterion: &mut Criterion) {
 }
 
 fn bench_to_hex(criterion: &mut Criterion) {
-    let mut rng = StdRng::seed_from_u64(1);
+    let mut rng = StdRng::seed_from_u64(SEED);
     let mut group = criterion.benchmark_group("to_hex");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
@@ -143,7 +145,7 @@ fn bench_to_hex(criterion: &mut Criterion) {
 }
 
 fn bench_to_dec(criterion: &mut Criterion) {
-    let mut rng = StdRng::seed_from_u64(1);
+    let mut rng = StdRng::seed_from_u64(SEED);
     let mut group = criterion.benchmark_group("to_dec");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
@@ -164,7 +166,7 @@ fn bench_to_dec(criterion: &mut Criterion) {
 }
 
 fn bench_from_hex(criterion: &mut Criterion) {
-    let mut rng = StdRng::seed_from_u64(1);
+    let mut rng = StdRng::seed_from_u64(SEED);
     let mut group = criterion.benchmark_group("from_hex");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
@@ -181,7 +183,7 @@ fn bench_from_hex(criterion: &mut Criterion) {
 }
 
 fn bench_from_dec(criterion: &mut Criterion) {
-    let mut rng = StdRng::seed_from_u64(1);
+    let mut rng = StdRng::seed_from_u64(SEED);
     let mut group = criterion.benchmark_group("from_dec");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
@@ -212,7 +214,7 @@ fn bench_pow(criterion: &mut Criterion) {
 }
 
 fn bench_modulo_mul(criterion: &mut Criterion) {
-    let mut rng = StdRng::seed_from_u64(1);
+    let mut rng = StdRng::seed_from_u64(SEED);
     let mut group = criterion.benchmark_group("modulo_mul");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
@@ -231,7 +233,7 @@ fn bench_modulo_mul(criterion: &mut Criterion) {
 }
 
 fn bench_modulo_pow(criterion: &mut Criterion) {
-    let mut rng = StdRng::seed_from_u64(1);
+    let mut rng = StdRng::seed_from_u64(SEED);
     let mut group = criterion.benchmark_group("modulo_pow");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 

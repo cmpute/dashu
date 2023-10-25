@@ -1,16 +1,32 @@
 [package]
 name = "dashu-base"
-version = "0.1.1"
+version = "0.3.0"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2021"
 description = "Common trait definitions and tools for the `dashu` libraries"
+keywords = ["mathematics", "numerics"]
+categories = ["mathematics", "no-std"]
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/cmpute/dashu"
 homepage = "https://github.com/cmpute/dashu"
-license = "MIT OR Apache-2.0"
+documentation = "https://docs.rs/dashu-base"
+readme = "README.md"
+rust-version = "1.61"
+
+[package.metadata.docs.rs]
+all-features = true
 
 [dev-dependencies.rand]
 version = "0.8.3"
 
+[dev-dependencies.criterion]
+version = "0.4.0"
+features = ["html_reports"]
+
 [features]
 default = ["std"]
 std = []
+
+[[bench]]
+name = "benchmarks"
+harness = false

@@ -27,7 +27,8 @@ use crate::{
 ///
 /// ```
 /// // parsing
-/// # use dashu_int::{error::ParseError, IBig, Word};
+/// # use dashu_base::ParseError;
+/// # use dashu_int::{IBig, Word};
 /// let a = IBig::from(408580953453092208335085386466371u128);
 /// let b = IBig::from(-0x1231abcd4134i64);
 /// let c = IBig::from_str_radix("a2a123bbb127779cccc123", 32)?;
@@ -141,7 +142,9 @@ impl IBig {
         IBig(magnitude.0.with_sign(sign))
     }
 
-    /// Create an IBig from a [Sign] and a [DoubleWord][crate::DoubleWord]
+    /// Create an IBig in a const context.
+    ///
+    /// The magnitude is limited to a [DoubleWord][crate::DoubleWord].
     ///
     /// # Examples
     ///
@@ -164,7 +167,7 @@ impl IBig {
     /// [IBig] with value -1
     pub const NEG_ONE: Self = Self(Repr::neg_one());
 
-    /// Check whether the value is 0
+    /// Check whether the number is 0
     ///
     /// # Examples
     ///
@@ -178,7 +181,7 @@ impl IBig {
         self.0.is_zero()
     }
 
-    /// Check whether the value is 1
+    /// Check whether the number is 1
     ///
     /// # Examples
     ///
@@ -199,7 +202,6 @@ impl Clone for IBig {
     fn clone(&self) -> IBig {
         IBig(self.0.clone())
     }
-
     #[inline]
     fn clone_from(&mut self, source: &IBig) {
         self.0.clone_from(&source.0)

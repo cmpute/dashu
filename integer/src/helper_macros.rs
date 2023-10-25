@@ -269,7 +269,7 @@ macro_rules! forward_ibig_binop_to_repr {
             }
         }
     };
-    (impl $trait:ident, $method:ident -> $omethod: ty, $o1:ident = $ty_o1:ty, $o2:ident = $ty_o2:ty, $impl:ident) => {
+    (impl $trait:ident, $method:ident -> $omethod:ty, $o1:ident = $ty_o1:ty, $o2:ident = $ty_o2:ty, $impl:ident) => {
         impl $trait<IBig> for IBig {
             type $o1 = $ty_o1;
             type $o2 = $ty_o2;
@@ -407,6 +407,55 @@ macro_rules! forward_ubig_ibig_binop_to_repr {
             }
         }
     };
+    (impl $trait:ident, $method:ident -> $omethod:ty, $o1:ident = $ty_o1:ty, $o2:ident = $ty_o2:ty, $impl:ident) => {
+        impl $trait<IBig> for UBig {
+            type $o1 = $ty_o1;
+            type $o2 = $ty_o2;
+
+            #[inline]
+            fn $method(self, rhs: IBig) -> $omethod {
+                let lhs_mag = self.into_repr();
+                let (rhs_sign, rhs_mag) = rhs.into_sign_repr();
+                $impl!(lhs_mag, rhs_sign, rhs_mag)
+            }
+        }
+
+        impl<'r> $trait<&'r IBig> for UBig {
+            type $o1 = $ty_o1;
+            type $o2 = $ty_o2;
+
+            #[inline]
+            fn $method(self, rhs: &IBig) -> $omethod {
+                let lhs_mag = self.into_repr();
+                let (rhs_sign, rhs_mag) = rhs.as_sign_repr();
+                $impl!(lhs_mag, rhs_sign, rhs_mag)
+            }
+        }
+
+        impl<'l> $trait<IBig> for &'l UBig {
+            type $o1 = $ty_o1;
+            type $o2 = $ty_o2;
+
+            #[inline]
+            fn $method(self, rhs: IBig) -> $omethod {
+                let lhs_mag = self.repr();
+                let (rhs_sign, rhs_mag) = rhs.into_sign_repr();
+                $impl!(lhs_mag, rhs_sign, rhs_mag)
+            }
+        }
+
+        impl<'l, 'r> $trait<&'r IBig> for &'l UBig {
+            type $o1 = $ty_o1;
+            type $o2 = $ty_o2;
+
+            #[inline]
+            fn $method(self, rhs: &IBig) -> $omethod {
+                let lhs_mag = self.repr();
+                let (rhs_sign, rhs_mag) = rhs.as_sign_repr();
+                $impl!(lhs_mag, rhs_sign, rhs_mag)
+            }
+        }
+    };
 }
 
 /// Implement `impl Op<UBig> for IBig` by forwarding to the macro `$impl` with arguments
@@ -451,6 +500,55 @@ macro_rules! forward_ibig_ubig_binop_to_repr {
 
             #[inline]
             fn $method(self, rhs: &UBig) -> $ty_output {
+                let (lhs_sign, lhs_mag) = self.as_sign_repr();
+                let rhs_mag = rhs.repr();
+                $impl!(lhs_sign, lhs_mag, rhs_mag)
+            }
+        }
+    };
+    (impl $trait:ident, $method:ident -> $omethod:ty, $o1:ident = $ty_o1:ty, $o2:ident = $ty_o2:ty, $impl:ident) => {
+        impl $trait<UBig> for IBig {
+            type $o1 = $ty_o1;
+            type $o2 = $ty_o2;
+
+            #[inline]
+            fn $method(self, rhs: UBig) -> $omethod {
+                let (lhs_sign, lhs_mag) = self.into_sign_repr();
+                let rhs_mag = rhs.into_repr();
+                $impl!(lhs_sign, lhs_mag, rhs_mag)
+            }
+        }
+
+        impl<'r> $trait<&'r UBig> for IBig {
+            type $o1 = $ty_o1;
+            type $o2 = $ty_o2;
+
+            #[inline]
+            fn $method(self, rhs: &UBig) -> $omethod {
+                let (lhs_sign, lhs_mag) = self.into_sign_repr();
+                let rhs_mag = rhs.repr();
+                $impl!(lhs_sign, lhs_mag, rhs_mag)
+            }
+        }
+
+        impl<'l> $trait<UBig> for &'l IBig {
+            type $o1 = $ty_o1;
+            type $o2 = $ty_o2;
+
+            #[inline]
+            fn $method(self, rhs: UBig) -> $omethod {
+                let (lhs_sign, lhs_mag) = self.as_sign_repr();
+                let rhs_mag = rhs.into_repr();
+                $impl!(lhs_sign, lhs_mag, rhs_mag)
+            }
+        }
+
+        impl<'l, 'r> $trait<&'r UBig> for &'l IBig {
+            type $o1 = $ty_o1;
+            type $o2 = $ty_o2;
+
+            #[inline]
+            fn $method(self, rhs: &UBig) -> $omethod {
                 let (lhs_sign, lhs_mag) = self.as_sign_repr();
                 let rhs_mag = rhs.repr();
                 $impl!(lhs_sign, lhs_mag, rhs_mag)

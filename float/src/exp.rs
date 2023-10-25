@@ -1,7 +1,7 @@
 use core::convert::TryInto;
 
 use crate::{
-    error::{check_inf, check_precision_limited},
+    error::{check_inf, check_precision_limited, panic_power_negative_base},
     fbig::FBig,
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
@@ -15,7 +15,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// let a = DBig::from_str_native("-1.234")?;
     /// assert_eq!(a.powi(10.into()), DBig::from_str_native("8.188")?);
@@ -26,12 +26,30 @@ impl<R: Round, const B: Word> FBig<R, B> {
         self.context.powi(&self.repr, exp).value()
     }
 
+    /// Raise the floating point number to an floating point power.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_base::ParseError;
+    /// # use dashu_float::DBig;
+    /// let x = DBig::from_str_native("1.23")?;
+    /// let y = DBig::from_str_native("-4.56")?;
+    /// assert_eq!(x.powf(&y), DBig::from_str_native("0.389")?);
+    /// # Ok::<(), ParseError>(())
+    /// ```
+    #[inline]
+    pub fn powf(&self, exp: &Self) -> Self {
+        let context = Context::max(self.context, exp.context);
+        context.powf(&self.repr, &exp.repr).value()
+    }
+
     /// Calculate the exponential function (`eˣ`) on the floating point number.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// let a = DBig::from_str_native("-1.234")?;
     /// assert_eq!(a.exp(), DBig::from_str_native("0.2911")?);
@@ -47,7 +65,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// let a = DBig::from_str_native("-0.1234")?;
     /// assert_eq!(a.exp_m1(), DBig::from_str_native("-0.11609")?);
@@ -67,7 +85,7 @@ impl<R: Round> Context<R> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
@@ -130,14 +148,59 @@ impl<R: Round> Context<R> {
         res.and_then(|v| v.with_precision(self.precision))
     }
 
-    // TODO: implement powf
+    /// Raise the floating point number to an floating point power under this context.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_base::ParseError;
+    /// # use dashu_float::DBig;
+    /// use dashu_base::Approximation::*;
+    /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
+    ///
+    /// let context = Context::<HalfAway>::new(2);
+    /// let x = DBig::from_str_native("1.23")?;
+    /// let y = DBig::from_str_native("-4.56")?;
+    /// assert_eq!(context.powf(&x.repr(), &y.repr()), Inexact(DBig::from_str_native("0.39")?, AddOne));
+    /// # Ok::<(), ParseError>(())
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is unlimited.
+    pub fn powf<const B: Word>(&self, base: &Repr<B>, exp: &Repr<B>) -> Rounded<FBig<R, B>> {
+        check_inf(base);
+        check_precision_limited(self.precision); // TODO: we can allow it if exp is integer
+
+        // shortcuts
+        if exp.is_zero() {
+            return Exact(FBig::ONE);
+        } else if exp.is_one() {
+            let repr = self.repr_round_ref(base);
+            return repr.map(|v| FBig::new(v, *self));
+        }
+        if base.sign() == Sign::Negative {
+            // TODO: we should allow negative base when exp is an integer
+            panic_power_negative_base()
+        }
+
+        // x^y = exp(y*log(x)), use a simple rule for guard bits
+        let guard_digits = 10 + self.precision.log2_est() as usize;
+        let work_context = Context::<R>::new(self.precision + guard_digits);
+
+        let res = work_context
+            .ln(base)
+            .and_then(|v| work_context.mul(&v.repr, exp))
+            .and_then(|v| work_context.exp(&v.repr));
+        res.and_then(|v| v.with_precision(self.precision))
+    }
 
     /// Calculate the exponential function (`eˣ`) on the floating point number under this context.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
@@ -157,7 +220,7 @@ impl<R: Round> Context<R> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::error::ParseError;
+    /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
