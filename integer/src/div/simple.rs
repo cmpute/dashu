@@ -4,7 +4,7 @@ use crate::{
     add,
     arch::word::Word,
     cmp,
-    fast_div::FastDivideNormalized2,
+    math::FastDivideNormalized2,
     mul,
     primitive::{double_word, highest_dword, split_dword},
 };
@@ -83,7 +83,7 @@ pub(crate) fn div_rem_highest_word(
     // q = floor([lhs0, lhs1, lhs2] / [rhs0, rhs1])
     // q may be too large (by 1), but never too Small
     let mut q = if lhs_top < *rhs_top {
-        fast_div_rhs_top.div_rem(lhs2, lhs01).0
+        fast_div_rhs_top.div_rem_3by2(lhs2, lhs01).0
     } else {
         // In this case MAX is accurate (r is already overflown).
         Word::MAX

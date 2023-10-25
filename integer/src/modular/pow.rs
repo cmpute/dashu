@@ -1,20 +1,15 @@
 use crate::{
     arch::word::Word,
-    error::panic_allocate_too_much,
-    math,
-    memory::{self, MemoryAllocation},
-    primitive::{double_word, split_dword, PrimitiveUnsigned, WORD_BITS, WORD_BITS_USIZE},
+    div_const::{ConstDoubleDivisor, ConstSingleDivisor},
+    primitive::{split_dword, WORD_BITS},
     repr::TypedReprRef::*,
     ubig::UBig,
 };
-use dashu_base::BitTest;
 
-use super::{
-    modulo::{Modulo, ModuloDoubleRaw, ModuloLargeRaw, ModuloRepr, ModuloSingleRaw},
-    modulo_ring::{ModuloRingDouble, ModuloRingLarge, ModuloRingSingle},
-};
+use super::repr::{Reduced, ReducedDword, ReducedRepr, ReducedWord};
+use num_modular::Reducer;
 
-impl<'a> Modulo<'a> {
+impl<'a> Reduced<'a> {
     /// Exponentiation.
     ///
     /// If you want use a negative exponent, you can first use [inv()][Self::inv] to
@@ -23,49 +18,55 @@ impl<'a> Modulo<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use dashu_int::{modular::ModuloRing, UBig};
+    /// # use dashu_int::{fast_div::ConstDivisor, UBig};
     /// // A Mersenne prime.
     /// let p = UBig::from(2u8).pow(607) - UBig::ONE;
-    /// let ring = ModuloRing::new(p.clone());
+    /// let ring = ConstDivisor::new(p.clone());
     /// // Fermat's little theorem: a^(p-1) = 1 (mod p)
-    /// let a = ring.convert(123);
-    /// assert_eq!(a.pow(&(p - UBig::ONE)), ring.convert(1));
+    /// let a = ring.reduce(123);
+    /// assert_eq!(a.pow(&(p - UBig::ONE)), ring.reduce(1));
     /// ```
     #[inline]
-    pub fn pow(&self, exp: &UBig) -> Modulo<'a> {
+    pub fn pow(&self, exp: &UBig) -> Reduced<'a> {
         match self.repr() {
-            ModuloRepr::Single(raw, ring) => Modulo::from_single(ring.pow(*raw, exp), ring),
-            ModuloRepr::Double(raw, ring) => Modulo::from_double(ring.pow(*raw, exp), ring),
-            ModuloRepr::Large(raw, ring) => Modulo::from_large(ring.pow(raw, exp), ring),
+            ReducedRepr::Single(raw, ring) => {
+                Reduced::from_single(single::pow(ring, *raw, exp), ring)
+            }
+            ReducedRepr::Double(raw, ring) => {
+                Reduced::from_double(double::pow(ring, *raw, exp), ring)
+            }
+            ReducedRepr::Large(raw, ring) => Reduced::from_large(large::pow(ring, raw, exp), ring),
         }
     }
 }
 
 macro_rules! impl_mod_pow_for_primitive {
-    ($ring:ty, $raw:ty) => {
-        impl $ring {
+    ($ns:ident, $ring:ty, $raw:ident) => {
+        mod $ns {
+            use super::*;
+
             #[inline]
-            pub const fn pow_word(&self, raw: $raw, exp: Word) -> $raw {
+            pub(super) fn pow_word(ring: &$ring, raw: $raw, exp: Word) -> $raw {
                 match exp {
-                    0 => <$raw>::one(self),
+                    0 => <$raw>::one(ring),
                     1 => raw, // no-op
-                    2 => self.sqr(raw),
+                    2 => $raw(ring.0.sqr(raw.0)),
                     _ => {
                         let bits = WORD_BITS - 1 - exp.leading_zeros();
-                        self.pow_helper(raw, raw, exp, bits)
+                        pow_helper(ring, raw, raw, exp, bits)
                     }
                 }
             }
 
             /// lhs^2^bits * rhs^exp[..bits] (in the modulo ring)
             #[inline]
-            const fn pow_helper(&self, lhs: $raw, rhs: $raw, exp: Word, mut bits: u32) -> $raw {
+            fn pow_helper(ring: &$ring, lhs: $raw, rhs: $raw, exp: Word, mut bits: u32) -> $raw {
                 let mut res = lhs;
                 while bits > 0 {
-                    res = self.sqr(res);
+                    res.0 = ring.0.sqr(res.0);
                     bits -= 1;
                     if exp & (1 << bits) != 0 {
-                        res = self.mul(res, rhs);
+                        res.0 = ring.0.mul(&res.0, &rhs.0);
                     }
                 }
                 res
@@ -73,50 +74,65 @@ macro_rules! impl_mod_pow_for_primitive {
 
             /// Exponentiation.
             #[inline]
-            pub fn pow(&self, raw: $raw, exp: &UBig) -> $raw {
+            pub(super) fn pow(ring: &$ring, raw: $raw, exp: &UBig) -> $raw {
                 match exp.repr() {
                     RefSmall(dword) => {
                         let (lo, hi) = split_dword(dword);
                         if hi == 0 {
-                            self.pow_word(raw, lo)
+                            pow_word(ring, raw, lo)
                         } else {
-                            let res = self.pow_word(raw, hi);
-                            self.pow_helper(res, raw, lo, WORD_BITS)
+                            let res = pow_word(ring, raw, hi);
+                            pow_helper(ring, res, raw, lo, WORD_BITS)
                         }
                     }
-                    RefLarge(words) => self.pow_nontrivial(raw, words),
+                    RefLarge(words) => pow_nontrivial(ring, raw, words),
                 }
             }
 
-            fn pow_nontrivial(&self, raw: $raw, exp_words: &[Word]) -> $raw {
+            fn pow_nontrivial(ring: &$ring, raw: $raw, exp_words: &[Word]) -> $raw {
                 let mut n = exp_words.len() - 1;
-                let mut res = self.pow_word(raw, exp_words[n]); // apply the top word
+                let mut res = pow_word(ring, raw, exp_words[n]); // apply the top word
                 while n != 0 {
                     n -= 1;
-                    res = self.pow_helper(res, raw, exp_words[n], WORD_BITS);
+                    res = pow_helper(ring, res, raw, exp_words[n], WORD_BITS);
                 }
                 res
             }
         }
     };
 }
-impl_mod_pow_for_primitive!(ModuloRingSingle, ModuloSingleRaw);
-impl_mod_pow_for_primitive!(ModuloRingDouble, ModuloDoubleRaw);
+impl_mod_pow_for_primitive!(single, ConstSingleDivisor, ReducedWord);
+impl_mod_pow_for_primitive!(double, ConstDoubleDivisor, ReducedDword);
 
-impl ModuloRingLarge {
-    pub fn pow(&self, raw: &ModuloLargeRaw, exp: &UBig) -> ModuloLargeRaw {
+mod large {
+    use dashu_base::BitTest;
+
+    use super::{
+        super::mul::{mul_memory_requirement, mul_normalized, sqr_in_place},
+        *,
+    };
+    use crate::{
+        div_const::ConstLargeDivisor,
+        error::panic_allocate_too_much,
+        math,
+        memory::{self, MemoryAllocation},
+        modular::repr::ReducedLarge,
+        primitive::{double_word, split_dword, PrimitiveUnsigned, WORD_BITS_USIZE},
+    };
+
+    pub(super) fn pow(ring: &ConstLargeDivisor, raw: &ReducedLarge, exp: &UBig) -> ReducedLarge {
         if exp.is_zero() {
-            ModuloLargeRaw::one(self)
+            ReducedLarge::one(ring)
         } else if exp.is_one() {
             raw.clone()
         } else {
-            self.pow_nontrivial(raw, exp)
+            pow_nontrivial(ring, raw, exp)
         }
     }
 
-    fn pow_nontrivial(&self, raw: &ModuloLargeRaw, exp: &UBig) -> ModuloLargeRaw {
-        let n = self.normalized_modulus().len();
-        let window_len = Self::choose_pow_window_len(exp.bit_len());
+    fn pow_nontrivial(ring: &ConstLargeDivisor, raw: &ReducedLarge, exp: &UBig) -> ReducedLarge {
+        let n = ring.normalized_divisor.len();
+        let window_len = choose_pow_window_len(exp.bit_len());
 
         // Precomputed table of small odd powers up to 2^window_len, starting from raw^3.
         #[allow(clippy::redundant_closure)]
@@ -126,7 +142,7 @@ impl ModuloRingLarge {
 
         let memory_requirement = memory::add_layout(
             memory::array_layout::<Word>(table_words),
-            self.mul_memory_requirement(),
+            mul_memory_requirement(ring),
         );
         let mut allocation = MemoryAllocation::new(memory_requirement);
         let mut memory = allocation.memory();
@@ -134,7 +150,7 @@ impl ModuloRingLarge {
 
         // val = raw^2
         let mut val = raw.clone();
-        self.sqr_in_place(&mut val, &mut memory);
+        sqr_in_place(ring, &mut val, &mut memory);
 
         // raw^(2*i+1) = raw^(2*i-1) * val
         for i in 1..(1 << (window_len - 1)) {
@@ -144,7 +160,7 @@ impl ModuloRingLarge {
                 let (prev, cur) = table[(i - 2) * n..i * n].split_at_mut(n);
                 (&*prev, cur)
             };
-            cur.copy_from_slice(self.mul_normalized(prev, &val.0, &mut memory));
+            cur.copy_from_slice(mul_normalized(ring, prev, &val.0, &mut memory));
         }
 
         let exp_words = exp.as_words();
@@ -173,7 +189,7 @@ impl ModuloRingLarge {
                 window >>= window_len - num_bits;
                 // val := val^2^(num_bits-1)
                 for _ in 0..num_bits - 1 {
-                    self.sqr_in_place(&mut val, &mut memory);
+                    sqr_in_place(ring, &mut val, &mut memory);
                 }
                 bit -= (num_bits as usize) - 1;
                 // Now val = raw ^ exp[bit..] ignoring the num_bits lowest bits.
@@ -185,7 +201,7 @@ impl ModuloRingLarge {
                 } else {
                     &table[(entry_idx - 1) * n..entry_idx * n]
                 };
-                let prod = self.mul_normalized(&val.0, entry, &mut memory);
+                let prod = mul_normalized(ring, &val.0, entry, &mut memory);
                 val.0.copy_from_slice(prod);
             }
             // val = raw ^ exp[bit..]
@@ -193,7 +209,7 @@ impl ModuloRingLarge {
                 break;
             }
             bit -= 1;
-            self.sqr_in_place(&mut val, &mut memory);
+            sqr_in_place(ring, &mut val, &mut memory);
         }
         val
     }
@@ -224,9 +240,9 @@ mod tests {
 
     #[test]
     fn test_pow_word() {
-        let ring = ModuloRingSingle::new(100);
-        let modulo = ModuloSingleRaw::from_word(17, &ring);
-        assert_eq!(ring.pow_word(modulo, 0).residue(&ring), 1);
-        assert_eq!(ring.pow_word(modulo, 15).residue(&ring), 93);
+        let ring = ConstSingleDivisor::new(100);
+        let modulo = ReducedWord(ring.0.transform(17));
+        assert_eq!(single::pow_word(&ring, modulo, 0).residue(&ring), 1);
+        assert_eq!(single::pow_word(&ring, modulo, 15).residue(&ring), 93);
     }
 }

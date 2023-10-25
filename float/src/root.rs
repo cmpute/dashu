@@ -1,28 +1,18 @@
-use dashu_base::{Approximation, Sign, SquareRootRem, UnsignedAbs};
+use dashu_base::{Approximation, Sign, SquareRoot, SquareRootRem, UnsignedAbs};
 use dashu_int::IBig;
 
 use crate::{
-    error::{check_inf, check_precision_limited, panic_root_negative},
+    error::{assert_finite, assert_limited_precision, panic_root_negative},
     fbig::FBig,
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
     utils::{shl_digits, split_digits_ref},
 };
 
-impl<R: Round, const B: Word> FBig<R, B> {
-    /// Calculate the square root of the floating point number.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use dashu_base::ParseError;
-    /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("1.23")?;
-    /// assert_eq!(a.sqrt(), DBig::from_str_native("1.11")?);
-    /// # Ok::<(), ParseError>(())
-    /// ```
+impl<R: Round, const B: Word> SquareRoot for FBig<R, B> {
+    type Output = Self;
     #[inline]
-    pub fn sqrt(&self) -> Self {
+    fn sqrt(&self) -> Self {
         self.context.sqrt(self.repr()).value()
     }
 }
@@ -48,8 +38,8 @@ impl<R: Round> Context<R> {
     ///
     /// Panics if the precision is unlimited.
     pub fn sqrt<const B: Word>(&self, x: &Repr<B>) -> Rounded<FBig<R, B>> {
-        check_inf(x);
-        check_precision_limited(self.precision);
+        assert_finite(x);
+        assert_limited_precision(self.precision);
         if x.sign() == Sign::Negative {
             panic_root_negative()
         }
@@ -75,7 +65,7 @@ impl<R: Round> Context<R> {
             let adjust = R::round_low_part(&root, Sign::Positive, || {
                 (Sign::Positive * rem)
                     .cmp(&root)
-                    .then_with(|| (low * 4u8).cmp(&Repr::<B>::BASE.pow(low_digits)))
+                    .then_with(|| (low * 4u8).cmp(&Repr::<B>::BASE.pow(low_digits).into()))
             });
             Approximation::Inexact(root + adjust, adjust)
         };
@@ -84,3 +74,5 @@ impl<R: Round> Context<R> {
             .map(|v| FBig::new(v, *self))
     }
 }
+
+// TODO(next): implement cbrt, nth_root

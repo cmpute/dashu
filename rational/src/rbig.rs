@@ -1,4 +1,4 @@
-use dashu_base::Sign;
+use dashu_base::{EstimatedLog2, Sign};
 use dashu_int::{DoubleWord, IBig, UBig};
 
 use crate::{error::panic_divide_by_0, repr::Repr};
@@ -208,7 +208,21 @@ impl RBig {
     /// ```
     #[inline]
     pub const fn is_one(&self) -> bool {
-        self.0.numerator.is_one()
+        self.0.numerator.is_one() && self.0.denominator.is_one()
+    }
+
+    /// Determine if the number can be regarded as an integer.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_ratio::RBig;
+    /// assert!(RBig::ZERO.is_int());
+    /// assert!(RBig::ONE.is_int());
+    /// ```
+    #[inline]
+    pub const fn is_int(&self) -> bool {
+        self.0.denominator.is_one()
     }
 }
 
@@ -228,6 +242,17 @@ impl Default for RBig {
     #[inline]
     fn default() -> Self {
         Self::ZERO
+    }
+}
+
+impl EstimatedLog2 for RBig {
+    #[inline]
+    fn log2_bounds(&self) -> (f32, f32) {
+        self.0.log2_bounds()
+    }
+    #[inline]
+    fn log2_est(&self) -> f32 {
+        self.0.log2_est()
     }
 }
 
@@ -343,8 +368,8 @@ impl Relaxed {
     ///
     /// See [RBig::is_one] for details.
     #[inline]
-    pub const fn is_one(&self) -> bool {
-        self.0.numerator.is_one()
+    pub fn is_one(&self) -> bool {
+        self.0.denominator.as_ibig() == &self.0.numerator
     }
 }
 
@@ -364,5 +389,16 @@ impl Default for Relaxed {
     #[inline]
     fn default() -> Self {
         Self::ZERO
+    }
+}
+
+impl EstimatedLog2 for Relaxed {
+    #[inline]
+    fn log2_bounds(&self) -> (f32, f32) {
+        self.0.log2_bounds()
+    }
+    #[inline]
+    fn log2_est(&self) -> f32 {
+        self.0.log2_est()
     }
 }

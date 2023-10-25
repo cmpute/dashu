@@ -90,6 +90,10 @@ fn split_bits_ref(value: &IBig, n: usize) -> (IBig, IBig) {
 
     let (sign, words) = value.as_sign_words();
     let n_words = n / Word::BITS as usize;
+    if n_words >= words.len() {
+        // shortcut if n is very large
+        return (IBig::ZERO, value.clone());
+    }
 
     let mut hi = UBig::from_words(&words[n_words..]);
     hi >>= n % Word::BITS as usize;
@@ -122,8 +126,8 @@ pub fn split_digits_ref<const B: Word>(value: &IBig, pos: usize) -> (IBig, IBig)
 /// and the sign is applied to both parts.
 ///
 /// For example in base 10:
-/// * split_digits(123, 1) returns (12, 3)
-/// * split_digits(-123, 2) returns (-1, -23)
+/// * `split_digits(123, 1)` returns `(12, 3)`
+/// * `split_digits(-123, 2)` returns `(-1, -23)`
 #[inline]
 pub fn split_digits<const B: Word>(value: IBig, pos: usize) -> (IBig, IBig) {
     if pos != 0 {
@@ -168,19 +172,19 @@ pub const fn ilog_exact(n: Word, base: Word) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dashu_base::UnsignedAbs;
+    use dashu_base::{Abs, UnsignedAbs};
 
     #[test]
     fn test_shr_ref() {
         let a = IBig::from(0x1234567890abcdefu64).pow(12); // 723 bits
-        assert_eq!(shr_ref(&a, 10), (&a).unsigned_abs() >> 10);
-        assert_eq!(shr_ref(&a, 100), (&a).unsigned_abs() >> 100);
-        assert_eq!(shr_ref(&a, 1000), (&a).unsigned_abs() >> 1000);
+        assert_eq!(shr_ref(&a, 10), (&a).abs() >> 10);
+        assert_eq!(shr_ref(&a, 100), (&a).abs() >> 100);
+        assert_eq!(shr_ref(&a, 1000), (&a).abs() >> 1000);
 
         let a = IBig::from(-0x1234567890abcdefi64).pow(7); // 422 bits
-        assert_eq!(-shr_ref(&a, 10), (&a).unsigned_abs() >> 10);
-        assert_eq!(-shr_ref(&a, 100), (&a).unsigned_abs() >> 100);
-        assert_eq!(-shr_ref(&a, 1000), (&a).unsigned_abs() >> 1000);
+        assert_eq!(-shr_ref(&a, 10), (&a).abs() >> 10);
+        assert_eq!(-shr_ref(&a, 100), (&a).abs() >> 100);
+        assert_eq!(-shr_ref(&a, 1000), (&a).abs() >> 1000);
     }
 
     #[test]
@@ -188,23 +192,23 @@ mod tests {
         let a = IBig::from(0x1234567890abcdefu64).pow(12);
         let (hi, lo) = split_bits_ref(&a, 100);
         let (rlo, rhi) = (&a).unsigned_abs().split_bits(100);
-        assert_eq!(lo, rlo);
-        assert_eq!(hi, rhi);
+        assert_eq!(lo, rlo.into());
+        assert_eq!(hi, rhi.into());
 
         let (hi, lo) = split_bits_ref(&a, 192);
         let (rlo, rhi) = (&a).unsigned_abs().split_bits(192);
-        assert_eq!(lo, rlo);
-        assert_eq!(hi, rhi);
+        assert_eq!(lo, rlo.into());
+        assert_eq!(hi, rhi.into());
 
         let a = IBig::from(-0x1234567890abcdefi64).pow(7);
         let (hi, lo) = split_bits_ref(&a, 100);
         let (rlo, rhi) = (&a).unsigned_abs().split_bits(100);
-        assert_eq!(-lo, rlo);
-        assert_eq!(-hi, rhi);
+        assert_eq!(-lo, rlo.into());
+        assert_eq!(-hi, rhi.into());
 
         let (hi, lo) = split_bits_ref(&a, 192);
         let (rlo, rhi) = (&a).unsigned_abs().split_bits(192);
-        assert_eq!(-lo, rlo);
-        assert_eq!(-hi, rhi);
+        assert_eq!(-lo, rlo.into());
+        assert_eq!(-hi, rhi.into());
     }
 }

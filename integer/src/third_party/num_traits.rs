@@ -1,15 +1,14 @@
 //! Implement num-traits traits.
 
-use dashu_base::{DivEuclid, ParseError, RemEuclid};
-
 use crate::{ibig::IBig, ops::Abs, ubig::UBig, Sign};
+use dashu_base::{DivEuclid, ParseError, RemEuclid};
+use num_traits_v02 as num_traits;
 
 impl num_traits::Zero for UBig {
     #[inline]
     fn zero() -> Self {
         UBig::ZERO
     }
-
     #[inline]
     fn is_zero(&self) -> bool {
         UBig::is_zero(self)
@@ -21,7 +20,6 @@ impl num_traits::Zero for IBig {
     fn zero() -> Self {
         IBig::ZERO
     }
-
     #[inline]
     fn is_zero(&self) -> bool {
         IBig::is_zero(self)
@@ -33,7 +31,6 @@ impl num_traits::One for UBig {
     fn one() -> Self {
         UBig::ONE
     }
-
     #[inline]
     fn is_one(&self) -> bool {
         UBig::is_one(self)
@@ -45,7 +42,6 @@ impl num_traits::One for IBig {
     fn one() -> Self {
         IBig::ONE
     }
-
     #[inline]
     fn is_one(&self) -> bool {
         IBig::is_one(self)
@@ -157,22 +153,32 @@ impl num_traits::Euclid for IBig {
     }
 }
 
+macro_rules! impl_to_primitive_int {
+    ($t:ty, $method:ident) => {
+        #[inline]
+        fn $method(&self) -> Option<$t> {
+            self.try_into().ok()
+        }
+    };
+}
+
 impl num_traits::ToPrimitive for UBig {
+    impl_to_primitive_int!(i8, to_i8);
+    impl_to_primitive_int!(i16, to_i16);
+    impl_to_primitive_int!(i32, to_i32);
+    impl_to_primitive_int!(i64, to_i64);
+    impl_to_primitive_int!(i128, to_i128);
+    impl_to_primitive_int!(isize, to_isize);
+    impl_to_primitive_int!(u8, to_u8);
+    impl_to_primitive_int!(u16, to_u16);
+    impl_to_primitive_int!(u32, to_u32);
+    impl_to_primitive_int!(u64, to_u64);
+    impl_to_primitive_int!(u128, to_u128);
+    impl_to_primitive_int!(usize, to_usize);
+
     #[inline]
-    fn to_u64(&self) -> Option<u64> {
-        self.try_into().ok()
-    }
-    #[inline]
-    fn to_i64(&self) -> Option<i64> {
-        self.try_into().ok()
-    }
-    #[inline]
-    fn to_u128(&self) -> Option<u128> {
-        self.try_into().ok()
-    }
-    #[inline]
-    fn to_i128(&self) -> Option<i128> {
-        self.try_into().ok()
+    fn to_f32(&self) -> Option<f32> {
+        Some(self.to_f32().value())
     }
     #[inline]
     fn to_f64(&self) -> Option<f64> {
@@ -181,21 +187,22 @@ impl num_traits::ToPrimitive for UBig {
 }
 
 impl num_traits::ToPrimitive for IBig {
+    impl_to_primitive_int!(i8, to_i8);
+    impl_to_primitive_int!(i16, to_i16);
+    impl_to_primitive_int!(i32, to_i32);
+    impl_to_primitive_int!(i64, to_i64);
+    impl_to_primitive_int!(i128, to_i128);
+    impl_to_primitive_int!(isize, to_isize);
+    impl_to_primitive_int!(u8, to_u8);
+    impl_to_primitive_int!(u16, to_u16);
+    impl_to_primitive_int!(u32, to_u32);
+    impl_to_primitive_int!(u64, to_u64);
+    impl_to_primitive_int!(u128, to_u128);
+    impl_to_primitive_int!(usize, to_usize);
+
     #[inline]
-    fn to_u64(&self) -> Option<u64> {
-        self.try_into().ok()
-    }
-    #[inline]
-    fn to_i64(&self) -> Option<i64> {
-        self.try_into().ok()
-    }
-    #[inline]
-    fn to_u128(&self) -> Option<u128> {
-        self.try_into().ok()
-    }
-    #[inline]
-    fn to_i128(&self) -> Option<i128> {
-        self.try_into().ok()
+    fn to_f32(&self) -> Option<f32> {
+        Some(self.to_f32().value())
     }
     #[inline]
     fn to_f64(&self) -> Option<f64> {
@@ -203,23 +210,38 @@ impl num_traits::ToPrimitive for IBig {
     }
 }
 
+macro_rules! impl_from_primitive_int {
+    ($t:ty, $method:ident) => {
+        #[inline]
+        fn $method(n: $t) -> Option<Self> {
+            Some(n.into())
+        }
+    };
+}
+
+macro_rules! impl_unsigned_from_primitive_int {
+    ($t:ty, $method:ident) => {
+        #[inline]
+        fn $method(n: $t) -> Option<Self> {
+            n.try_into().ok()
+        }
+    };
+}
+
 impl num_traits::FromPrimitive for UBig {
-    #[inline]
-    fn from_u64(n: u64) -> Option<Self> {
-        n.try_into().ok()
-    }
-    #[inline]
-    fn from_i64(n: i64) -> Option<Self> {
-        n.try_into().ok()
-    }
-    #[inline]
-    fn from_i128(n: i128) -> Option<Self> {
-        n.try_into().ok()
-    }
-    #[inline]
-    fn from_u128(n: u128) -> Option<Self> {
-        n.try_into().ok()
-    }
+    impl_unsigned_from_primitive_int!(i8, from_i8);
+    impl_unsigned_from_primitive_int!(i16, from_i16);
+    impl_unsigned_from_primitive_int!(i32, from_i32);
+    impl_unsigned_from_primitive_int!(i64, from_i64);
+    impl_unsigned_from_primitive_int!(i128, from_i128);
+    impl_unsigned_from_primitive_int!(isize, from_isize);
+    impl_from_primitive_int!(u8, from_u8);
+    impl_from_primitive_int!(u16, from_u16);
+    impl_from_primitive_int!(u32, from_u32);
+    impl_from_primitive_int!(u64, from_u64);
+    impl_from_primitive_int!(u128, from_u128);
+    impl_from_primitive_int!(usize, from_usize);
+
     #[inline]
     fn from_f32(n: f32) -> Option<Self> {
         n.try_into().ok()
@@ -231,22 +253,19 @@ impl num_traits::FromPrimitive for UBig {
 }
 
 impl num_traits::FromPrimitive for IBig {
-    #[inline]
-    fn from_u64(n: u64) -> Option<Self> {
-        n.try_into().ok()
-    }
-    #[inline]
-    fn from_i64(n: i64) -> Option<Self> {
-        n.try_into().ok()
-    }
-    #[inline]
-    fn from_i128(n: i128) -> Option<Self> {
-        n.try_into().ok()
-    }
-    #[inline]
-    fn from_u128(n: u128) -> Option<Self> {
-        n.try_into().ok()
-    }
+    impl_from_primitive_int!(i8, from_i8);
+    impl_from_primitive_int!(i16, from_i16);
+    impl_from_primitive_int!(i32, from_i32);
+    impl_from_primitive_int!(i64, from_i64);
+    impl_from_primitive_int!(i128, from_i128);
+    impl_from_primitive_int!(isize, from_isize);
+    impl_from_primitive_int!(u8, from_u8);
+    impl_from_primitive_int!(u16, from_u16);
+    impl_from_primitive_int!(u32, from_u32);
+    impl_from_primitive_int!(u64, from_u64);
+    impl_from_primitive_int!(u128, from_u128);
+    impl_from_primitive_int!(usize, from_usize);
+
     #[inline]
     fn from_f32(n: f32) -> Option<Self> {
         n.try_into().ok()

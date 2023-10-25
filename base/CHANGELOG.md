@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.0
+
+### Add
+
+- Add `is_positive()` and `is_negative()` to the `Signed` trait.
+
+### Change
+
+- `SquareRoot` and `CubicRoot` are moved to `dashu_base::math`.
+- `AbsCmp` is renamed to `AbsOrd`.
+- `FBig::square` and `Context::square` are renamed to `sqr`.
+
+## 0.3.1
+
+- Add trait `Inverse`.
+- Implement `AbsCmp` and `AbsEq` for primitive types.
+
 ## 0.3.0
 
 ### Add

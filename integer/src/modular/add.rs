@@ -1,295 +1,257 @@
 //! Modular addition and subtraction.
 
-use super::{
-    modulo::{Modulo, ModuloDoubleRaw, ModuloLargeRaw, ModuloRepr, ModuloSingleRaw},
-    modulo_ring::{ModuloRingDouble, ModuloRingLarge, ModuloRingSingle},
-};
-use crate::{add, cmp, error::panic_different_rings};
+use super::repr::{Reduced, ReducedDword, ReducedLarge, ReducedRepr, ReducedWord};
+use crate::{add, cmp, div_const::ConstLargeDivisor, error::panic_different_rings, shift};
 use core::ops::{Add, AddAssign, Neg, Sub, SubAssign};
+use num_modular::Reducer;
 
-impl<'a> Neg for Modulo<'a> {
-    type Output = Modulo<'a>;
+impl<'a> Neg for Reduced<'a> {
+    type Output = Reduced<'a>;
 
     #[inline]
-    fn neg(self) -> Modulo<'a> {
+    fn neg(self) -> Reduced<'a> {
         match self.into_repr() {
-            ModuloRepr::Single(raw, ring) => Self::from_single(ring.negate(raw), ring),
-            ModuloRepr::Double(raw, ring) => Self::from_double(ring.negate(raw), ring),
-            ModuloRepr::Large(mut raw, ring) => {
-                ring.negate_in_place(&mut raw);
+            ReducedRepr::Single(raw, ring) => {
+                Self::from_single(ReducedWord(ring.0.neg(raw.0)), ring)
+            }
+            ReducedRepr::Double(raw, ring) => {
+                Self::from_double(ReducedDword(ring.0.neg(raw.0)), ring)
+            }
+            ReducedRepr::Large(mut raw, ring) => {
+                negate_in_place(ring, &mut raw);
                 Self::from_large(raw, ring)
             }
         }
     }
 }
 
-impl<'a> Neg for &Modulo<'a> {
-    type Output = Modulo<'a>;
+impl<'a> Neg for &Reduced<'a> {
+    type Output = Reduced<'a>;
 
     #[inline]
-    fn neg(self) -> Modulo<'a> {
+    fn neg(self) -> Reduced<'a> {
         self.clone().neg()
     }
 }
 
-impl<'a> Add<Modulo<'a>> for Modulo<'a> {
-    type Output = Modulo<'a>;
+impl<'a> Add<Reduced<'a>> for Reduced<'a> {
+    type Output = Reduced<'a>;
 
     #[inline]
-    fn add(self, rhs: Modulo<'a>) -> Modulo<'a> {
+    fn add(self, rhs: Reduced<'a>) -> Reduced<'a> {
         self.add(&rhs)
     }
 }
 
-impl<'a> Add<&Modulo<'a>> for Modulo<'a> {
-    type Output = Modulo<'a>;
+impl<'a> Add<&Reduced<'a>> for Reduced<'a> {
+    type Output = Reduced<'a>;
 
     #[inline]
-    fn add(mut self, rhs: &Modulo<'a>) -> Modulo<'a> {
+    fn add(mut self, rhs: &Reduced<'a>) -> Reduced<'a> {
         self.add_assign(rhs);
         self
     }
 }
 
-impl<'a> Add<Modulo<'a>> for &Modulo<'a> {
-    type Output = Modulo<'a>;
+impl<'a> Add<Reduced<'a>> for &Reduced<'a> {
+    type Output = Reduced<'a>;
 
     #[inline]
-    fn add(self, rhs: Modulo<'a>) -> Modulo<'a> {
+    fn add(self, rhs: Reduced<'a>) -> Reduced<'a> {
         rhs.add(self)
     }
 }
 
-impl<'a> Add<&Modulo<'a>> for &Modulo<'a> {
-    type Output = Modulo<'a>;
+impl<'a> Add<&Reduced<'a>> for &Reduced<'a> {
+    type Output = Reduced<'a>;
 
     #[inline]
-    fn add(self, rhs: &Modulo<'a>) -> Modulo<'a> {
+    fn add(self, rhs: &Reduced<'a>) -> Reduced<'a> {
         self.clone().add(rhs)
     }
 }
 
-impl<'a> AddAssign<Modulo<'a>> for Modulo<'a> {
+impl<'a> AddAssign<Reduced<'a>> for Reduced<'a> {
     #[inline]
-    fn add_assign(&mut self, rhs: Modulo<'a>) {
+    fn add_assign(&mut self, rhs: Reduced<'a>) {
         self.add_assign(&rhs)
     }
 }
 
-impl<'a> AddAssign<&Modulo<'a>> for Modulo<'a> {
+impl<'a> AddAssign<&Reduced<'a>> for Reduced<'a> {
     #[inline]
-    fn add_assign(&mut self, rhs: &Modulo<'a>) {
+    fn add_assign(&mut self, rhs: &Reduced<'a>) {
         match (self.repr_mut(), rhs.repr()) {
-            (ModuloRepr::Single(raw0, ring), ModuloRepr::Single(raw1, ring1)) => {
-                Modulo::check_same_ring_single(ring, ring1);
-                *raw0 = ring.add(*raw0, *raw1);
+            (ReducedRepr::Single(raw0, ring), ReducedRepr::Single(raw1, ring1)) => {
+                Reduced::check_same_ring_single(ring, ring1);
+                ring.0.add_in_place(&mut raw0.0, &raw1.0);
             }
-            (ModuloRepr::Double(raw0, ring), ModuloRepr::Double(raw1, ring1)) => {
-                Modulo::check_same_ring_double(ring, ring1);
-                *raw0 = ring.add(*raw0, *raw1);
+            (ReducedRepr::Double(raw0, ring), ReducedRepr::Double(raw1, ring1)) => {
+                Reduced::check_same_ring_double(ring, ring1);
+                ring.0.add_in_place(&mut raw0.0, &raw1.0);
             }
-            (ModuloRepr::Large(raw0, ring), ModuloRepr::Large(raw1, ring1)) => {
-                Modulo::check_same_ring_large(ring, ring1);
-                ring.add_in_place(raw0, raw1);
+            (ReducedRepr::Large(raw0, ring), ReducedRepr::Large(raw1, ring1)) => {
+                Reduced::check_same_ring_large(ring, ring1);
+                add_in_place(ring, raw0, raw1);
             }
             _ => panic_different_rings(),
         }
     }
 }
 
-impl<'a> Sub<Modulo<'a>> for Modulo<'a> {
-    type Output = Modulo<'a>;
+impl<'a> Sub<Reduced<'a>> for Reduced<'a> {
+    type Output = Reduced<'a>;
 
     #[inline]
-    fn sub(self, rhs: Modulo<'a>) -> Modulo<'a> {
+    fn sub(self, rhs: Reduced<'a>) -> Reduced<'a> {
         self.sub(&rhs)
     }
 }
 
-impl<'a> Sub<&Modulo<'a>> for Modulo<'a> {
-    type Output = Modulo<'a>;
+impl<'a> Sub<&Reduced<'a>> for Reduced<'a> {
+    type Output = Reduced<'a>;
 
     #[inline]
-    fn sub(mut self, rhs: &Modulo<'a>) -> Modulo<'a> {
+    fn sub(mut self, rhs: &Reduced<'a>) -> Reduced<'a> {
         self.sub_assign(rhs);
         self
     }
 }
 
-impl<'a> Sub<Modulo<'a>> for &Modulo<'a> {
-    type Output = Modulo<'a>;
+impl<'a> Sub<Reduced<'a>> for &Reduced<'a> {
+    type Output = Reduced<'a>;
 
     #[inline]
-    fn sub(self, rhs: Modulo<'a>) -> Modulo<'a> {
-        match (self.repr(), rhs.into_repr()) {
-            (ModuloRepr::Single(raw0, ring), ModuloRepr::Single(raw1, ring1)) => {
-                Modulo::check_same_ring_single(ring, ring1);
-                Modulo::from_single(ring.sub(*raw0, raw1), ring)
+    fn sub(self, mut rhs: Reduced<'a>) -> Reduced<'a> {
+        match (self.repr(), rhs.repr_mut()) {
+            (ReducedRepr::Single(raw0, ring), ReducedRepr::Single(raw1, ring1)) => {
+                Reduced::check_same_ring_single(ring, ring1);
+                raw1.0 = ring.0.sub(&raw0.0, &raw1.0);
             }
-            (ModuloRepr::Double(raw0, ring), ModuloRepr::Double(raw1, ring1)) => {
-                Modulo::check_same_ring_double(ring, ring1);
-                Modulo::from_double(ring.sub(*raw0, raw1), ring)
+            (ReducedRepr::Double(raw0, ring), ReducedRepr::Double(raw1, ring1)) => {
+                Reduced::check_same_ring_double(ring, ring1);
+                raw1.0 = ring.0.sub(&raw0.0, &raw1.0);
             }
-            (ModuloRepr::Large(raw0, ring), ModuloRepr::Large(mut raw1, ring1)) => {
-                Modulo::check_same_ring_large(ring, ring1);
-                ring.sub_in_place_swap(raw0, &mut raw1);
-                Modulo::from_large(raw1, ring)
+            (ReducedRepr::Large(raw0, ring), ReducedRepr::Large(raw1, ring1)) => {
+                Reduced::check_same_ring_large(ring, ring1);
+                sub_in_place_swap(ring, raw0, raw1);
             }
             _ => panic_different_rings(),
         }
+        rhs
     }
 }
 
-impl<'a> Sub<&Modulo<'a>> for &Modulo<'a> {
-    type Output = Modulo<'a>;
+impl<'a> Sub<&Reduced<'a>> for &Reduced<'a> {
+    type Output = Reduced<'a>;
 
     #[inline]
-    fn sub(self, rhs: &Modulo<'a>) -> Modulo<'a> {
+    fn sub(self, rhs: &Reduced<'a>) -> Reduced<'a> {
         self.clone().sub(rhs)
     }
 }
 
-impl<'a> SubAssign<Modulo<'a>> for Modulo<'a> {
+impl<'a> SubAssign<Reduced<'a>> for Reduced<'a> {
     #[inline]
-    fn sub_assign(&mut self, rhs: Modulo<'a>) {
+    fn sub_assign(&mut self, rhs: Reduced<'a>) {
         self.sub_assign(&rhs)
     }
 }
 
-impl<'a> SubAssign<&Modulo<'a>> for Modulo<'a> {
+impl<'a> SubAssign<&Reduced<'a>> for Reduced<'a> {
     #[inline]
-    fn sub_assign(&mut self, rhs: &Modulo<'a>) {
+    fn sub_assign(&mut self, rhs: &Reduced<'a>) {
         match (self.repr_mut(), rhs.repr()) {
-            (ModuloRepr::Single(raw0, ring), ModuloRepr::Single(raw1, ring1)) => {
-                Modulo::check_same_ring_single(ring, ring1);
-                *raw0 = ring.sub(*raw0, *raw1);
+            (ReducedRepr::Single(raw0, ring), ReducedRepr::Single(raw1, ring1)) => {
+                Reduced::check_same_ring_single(ring, ring1);
+                ring.0.sub_in_place(&mut raw0.0, &raw1.0);
             }
-            (ModuloRepr::Double(raw0, ring), ModuloRepr::Double(raw1, ring1)) => {
-                Modulo::check_same_ring_double(ring, ring1);
-                *raw0 = ring.sub(*raw0, *raw1);
+            (ReducedRepr::Double(raw0, ring), ReducedRepr::Double(raw1, ring1)) => {
+                Reduced::check_same_ring_double(ring, ring1);
+                ring.0.sub_in_place(&mut raw0.0, &raw1.0);
             }
-            (ModuloRepr::Large(raw0, ring), ModuloRepr::Large(raw1, ring1)) => {
-                Modulo::check_same_ring_large(ring, ring1);
-                ring.sub_in_place(raw0, raw1);
+            (ReducedRepr::Large(raw0, ring), ReducedRepr::Large(raw1, ring1)) => {
+                Reduced::check_same_ring_large(ring, ring1);
+                sub_in_place(ring, raw0, raw1);
             }
             _ => panic_different_rings(),
         }
     }
 }
 
-impl ModuloRingSingle {
-    #[inline]
-    pub const fn negate(&self, raw: ModuloSingleRaw) -> ModuloSingleRaw {
-        debug_assert!(self.is_valid(raw));
-        let val = match raw.0 {
-            0 => 0,
-            x => self.normalized_modulus() - x,
-        };
-        ModuloSingleRaw(val)
-    }
-
-    #[inline]
-    const fn add(&self, lhs: ModuloSingleRaw, rhs: ModuloSingleRaw) -> ModuloSingleRaw {
-        debug_assert!(self.is_valid(lhs) && self.is_valid(rhs));
-        let (mut val, overflow) = lhs.0.overflowing_add(rhs.0);
-        let m = self.normalized_modulus();
-        if overflow || val >= m {
-            let (v, overflow2) = val.overflowing_sub(m);
-            debug_assert!(overflow == overflow2);
-            val = v;
+impl<'a> Reduced<'a> {
+    /// Calculate 2*target mod m in reduced form
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::{fast_div::ConstDivisor, UBig};
+    /// let p = UBig::from(0x1234u16);
+    /// let ring = ConstDivisor::new(p.clone());
+    /// let a = ring.reduce(4000);
+    /// assert_eq!(a.dbl(), ring.reduce(4000 + 4000));
+    /// ```
+    pub fn dbl(self) -> Self {
+        match self.into_repr() {
+            ReducedRepr::Single(raw, ring) => {
+                Reduced::from_single(ReducedWord(ring.0.dbl(raw.0)), ring)
+            }
+            ReducedRepr::Double(raw, ring) => {
+                Reduced::from_double(ReducedDword(ring.0.dbl(raw.0)), ring)
+            }
+            ReducedRepr::Large(mut raw, ring) => {
+                dbl_in_place(ring, &mut raw);
+                Reduced::from_large(raw, ring)
+            }
         }
-        ModuloSingleRaw(val)
-    }
-
-    #[inline]
-    const fn sub(&self, lhs: ModuloSingleRaw, rhs: ModuloSingleRaw) -> ModuloSingleRaw {
-        debug_assert!(self.is_valid(lhs) && self.is_valid(rhs));
-        let (mut val, overflow) = lhs.0.overflowing_sub(rhs.0);
-        if overflow {
-            let m = self.normalized_modulus();
-            let (v, overflow2) = val.overflowing_add(m);
-            debug_assert!(overflow2);
-            val = v;
-        }
-        ModuloSingleRaw(val)
     }
 }
 
-impl ModuloRingDouble {
-    #[inline]
-    pub const fn negate(&self, raw: ModuloDoubleRaw) -> ModuloDoubleRaw {
-        debug_assert!(self.is_valid(raw));
-        let val = match raw.0 {
-            0 => 0,
-            x => self.normalized_modulus() - x,
-        };
-        ModuloDoubleRaw(val)
-    }
-
-    #[inline]
-    const fn add(&self, lhs: ModuloDoubleRaw, rhs: ModuloDoubleRaw) -> ModuloDoubleRaw {
-        debug_assert!(self.is_valid(lhs) && self.is_valid(rhs));
-        let (mut val, overflow) = lhs.0.overflowing_add(rhs.0);
-        let m = self.normalized_modulus();
-        if overflow || val >= m {
-            let (v, overflow2) = val.overflowing_sub(m);
-            debug_assert!(overflow == overflow2);
-            val = v;
-        }
-        ModuloDoubleRaw(val)
-    }
-
-    #[inline]
-    const fn sub(&self, lhs: ModuloDoubleRaw, rhs: ModuloDoubleRaw) -> ModuloDoubleRaw {
-        debug_assert!(self.is_valid(lhs) && self.is_valid(rhs));
-        let (mut val, overflow) = lhs.0.overflowing_sub(rhs.0);
-        if overflow {
-            let m = self.normalized_modulus();
-            let (v, overflow2) = val.overflowing_add(m);
-            debug_assert!(overflow2);
-            val = v;
-        }
-        ModuloDoubleRaw(val)
+pub(crate) fn negate_in_place(ring: &ConstLargeDivisor, raw: &mut ReducedLarge) {
+    debug_assert!(raw.is_valid(ring));
+    if !raw.0.iter().all(|w| *w == 0) {
+        let overflow = add::sub_same_len_in_place_swap(&ring.normalized_divisor, &mut raw.0);
+        debug_assert!(!overflow);
     }
 }
 
-impl ModuloRingLarge {
-    pub fn negate_in_place(&self, raw: &mut ModuloLargeRaw) {
-        debug_assert!(self.is_valid(raw));
-        if !raw.0.iter().all(|w| *w == 0) {
-            let overflow = add::sub_same_len_in_place_swap(self.normalized_modulus(), &mut raw.0);
-            debug_assert!(!overflow);
-        }
+fn add_in_place(ring: &ConstLargeDivisor, lhs: &mut ReducedLarge, rhs: &ReducedLarge) {
+    debug_assert!(lhs.is_valid(ring) && rhs.is_valid(ring));
+    let modulus = &ring.normalized_divisor;
+    let overflow = add::add_same_len_in_place(&mut lhs.0, &rhs.0);
+    if overflow || cmp::cmp_same_len(&lhs.0, modulus).is_ge() {
+        let overflow2 = add::sub_same_len_in_place(&mut lhs.0, modulus);
+        debug_assert_eq!(overflow, overflow2);
     }
+}
 
-    fn add_in_place(&self, lhs: &mut ModuloLargeRaw, rhs: &ModuloLargeRaw) {
-        debug_assert!(self.is_valid(lhs) && self.is_valid(rhs));
-        let modulus = self.normalized_modulus();
-        let overflow = add::add_same_len_in_place(&mut lhs.0, &rhs.0);
-        if overflow || cmp::cmp_same_len(&lhs.0, modulus).is_ge() {
-            let overflow2 = add::sub_same_len_in_place(&mut lhs.0, modulus);
-            debug_assert_eq!(overflow, overflow2);
-        }
+fn dbl_in_place(ring: &ConstLargeDivisor, raw: &mut ReducedLarge) {
+    debug_assert!(raw.is_valid(ring));
+    let modulus = &ring.normalized_divisor;
+    let overflow = shift::shl_in_place(&mut raw.0, 1) > 0;
+    if overflow || cmp::cmp_same_len(&raw.0, modulus).is_ge() {
+        let overflow2 = add::sub_same_len_in_place(&mut raw.0, modulus);
+        debug_assert_eq!(overflow, overflow2);
     }
+}
 
-    fn sub_in_place(&self, lhs: &mut ModuloLargeRaw, rhs: &ModuloLargeRaw) {
-        debug_assert!(self.is_valid(lhs) && self.is_valid(rhs));
-        let modulus = self.normalized_modulus();
-        let overflow = add::sub_same_len_in_place(&mut lhs.0, &rhs.0);
-        if overflow {
-            let overflow2 = add::add_same_len_in_place(&mut lhs.0, modulus);
-            debug_assert!(overflow2);
-        }
+fn sub_in_place(ring: &ConstLargeDivisor, lhs: &mut ReducedLarge, rhs: &ReducedLarge) {
+    debug_assert!(lhs.is_valid(ring) && rhs.is_valid(ring));
+    let modulus = &ring.normalized_divisor;
+    let overflow = add::sub_same_len_in_place(&mut lhs.0, &rhs.0);
+    if overflow {
+        let overflow2 = add::add_same_len_in_place(&mut lhs.0, modulus);
+        debug_assert!(overflow2);
     }
+}
 
-    /// rhs = self - rhs
-    fn sub_in_place_swap(&self, lhs: &ModuloLargeRaw, rhs: &mut ModuloLargeRaw) {
-        debug_assert!(self.is_valid(lhs) && self.is_valid(rhs));
-        let modulus = self.normalized_modulus();
-        let overflow = add::sub_same_len_in_place_swap(&lhs.0, &mut rhs.0);
-        if overflow {
-            let overflow2 = add::add_same_len_in_place(&mut rhs.0, modulus);
-            debug_assert!(overflow2);
-        }
+/// rhs = self - rhs
+fn sub_in_place_swap(ring: &ConstLargeDivisor, lhs: &ReducedLarge, rhs: &mut ReducedLarge) {
+    debug_assert!(lhs.is_valid(ring) && rhs.is_valid(ring));
+    let modulus = &ring.normalized_divisor;
+    let overflow = add::sub_same_len_in_place_swap(&lhs.0, &mut rhs.0);
+    if overflow {
+        let overflow2 = add::add_same_len_in_place(&mut rhs.0, modulus);
+        debug_assert!(overflow2);
     }
 }

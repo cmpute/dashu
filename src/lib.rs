@@ -22,7 +22,48 @@ pub mod rational {
     pub use dashu_ratio::*;
 }
 
-pub use dashu_macros::{dbig, fbig, ibig, rbig, ubig};
+#[doc(hidden)]
+pub use dashu_macros as __dashu_macros;
+
+#[macro_export]
+#[doc = include_str!("../macros/docs/ubig.md")]
+macro_rules! ubig {
+    ($($t:tt)+) => {
+        $crate::__dashu_macros::ubig_embedded!($($t)+)
+    }
+}
+
+#[macro_export]
+#[doc = include_str!("../macros/docs/ibig.md")]
+macro_rules! ibig {
+    ($($t:tt)+) => {
+        $crate::__dashu_macros::ibig_embedded!($($t)+)
+    }
+}
+
+#[macro_export]
+#[doc = include_str!("../macros/docs/fbig.md")]
+macro_rules! fbig {
+    ($($t:tt)+) => {
+        $crate::__dashu_macros::fbig_embedded!($($t)+)
+    }
+}
+
+#[macro_export]
+#[doc = include_str!("../macros/docs/dbig.md")]
+macro_rules! dbig {
+    ($($t:tt)+) => {
+        $crate::__dashu_macros::dbig_embedded!($($t)+)
+    }
+}
+
+#[macro_export]
+#[doc = include_str!("../macros/docs/rbig.md")]
+macro_rules! rbig {
+    ($($t:tt)+) => {
+        $crate::__dashu_macros::rbig_embedded!($($t)+)
+    }
+}
 
 /// A verbose alias for [UBig][dashu_int::UBig]
 pub type Natural = dashu_int::UBig;

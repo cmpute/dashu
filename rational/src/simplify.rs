@@ -5,7 +5,7 @@
 
 use crate::{error::panic_divide_by_0, rbig::RBig, repr::Repr};
 use core::{cmp::Ordering, mem};
-use dashu_base::{AbsCmp, Approximation, DivRem, UnsignedAbs};
+use dashu_base::{AbsOrd, Approximation, DivRem, UnsignedAbs};
 use dashu_int::{IBig, Sign, UBig};
 
 impl Repr {
@@ -117,7 +117,7 @@ impl RBig {
     ///
     /// This method only make sense for canonicalized ratios.
     #[inline]
-    fn is_simpler_than(&self, other: &Self) -> bool {
+    pub fn is_simpler_than(&self, other: &Self) -> bool {
         (self.denominator() < other.denominator()) // first compare denominator
             && self.numerator().abs_cmp(other.numerator()).is_le() // then compare numerator
             && self.sign() > other.sign() // then compare sign
@@ -318,7 +318,7 @@ impl RBig {
             let target = fract
                 + Self(Repr {
                     numerator: IBig::ONE,
-                    denominator: limit.square(),
+                    denominator: limit.sqr(),
                 });
             Self::farey_neighbors(&target, limit).1
         } else {
@@ -351,7 +351,7 @@ impl RBig {
             let target = fract
                 - Self(Repr {
                     numerator: IBig::ONE,
-                    denominator: limit.square(),
+                    denominator: limit.sqr(),
                 });
             Self::farey_neighbors(&target, limit).0
         } else {

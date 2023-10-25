@@ -1,4 +1,4 @@
-use dashu_base::Gcd;
+use dashu_base::{EstimatedLog2, Gcd};
 use dashu_int::{IBig, UBig};
 
 pub struct Repr {
@@ -91,5 +91,18 @@ impl Clone for Repr {
     fn clone_from(&mut self, source: &Self) {
         self.numerator.clone_from(&source.numerator);
         self.denominator.clone_from(&source.denominator);
+    }
+}
+
+impl EstimatedLog2 for Repr {
+    #[inline]
+    fn log2_est(&self) -> f32 {
+        self.numerator.log2_est() - self.denominator.log2_est()
+    }
+
+    fn log2_bounds(&self) -> (f32, f32) {
+        let (n_lb, n_ub) = self.numerator.log2_bounds();
+        let (d_lb, d_ub) = self.denominator.log2_bounds();
+        (n_lb - d_ub, n_ub - d_lb)
     }
 }

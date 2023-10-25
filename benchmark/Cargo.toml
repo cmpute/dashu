@@ -1,15 +1,19 @@
 [package]
 name = "benchmark"
 version = "0.0.0"
+edition = "2021"
 publish = false
 
 [dependencies]
-clap = "2.33.3"
-ibig = "0.3.4"
-num-bigint = "0.4.3"
+clap = { version = "4.4.6", features = ["derive"] }
+ibig = "0.3.6"
+num-bigint = "0.4.4"
 ramp = { version = "0.7.0", optional = true }
-rug = "1.13.0"
-rust-gmp = "0.5.0"
-malachite-base = "0.2.2"
-malachite-nz = "0.2.2"
+rug = { version = "1.22.0", optional = true }
+rust-gmp = { version = "0.5.0", optional = true }
+malachite-base = "0.4.2"
+malachite-nz = "0.4.2"
 dashu-int = { path = "../integer" }
+
+[features]
+gmp = ["rug", "rust-gmp"]

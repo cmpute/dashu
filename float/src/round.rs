@@ -2,8 +2,10 @@
 
 use core::cmp::Ordering;
 use core::ops::{Add, AddAssign};
-use dashu_base::{Approximation, EstimatedLog2, Sign, UnsignedAbs};
+use dashu_base::{AbsOrd, Approximation, BitTest, EstimatedLog2, Sign, Signed, UnsignedAbs};
 use dashu_int::{IBig, UBig, Word};
+
+use crate::FBig;
 
 /// Built-in rounding modes of the floating numbers.
 ///
@@ -122,22 +124,31 @@ pub trait Round: Copy {
     /// assuming |numerator / denominator| < 1. Return the adjustment.
     #[inline]
     fn round_ratio(integer: &IBig, num: IBig, den: &IBig) -> Rounding {
-        assert!(!den.is_zero());
-        // this assertion can be costly, so only check in debug mode
-        debug_assert!(num.clone().unsigned_abs() < den.clone().unsigned_abs());
+        assert!(!den.is_zero() && num.abs_cmp(den).is_le());
 
         if num.is_zero() {
             return Rounding::NoOp;
         }
         let (nsign, nmag) = num.into_parts();
         Self::round_low_part::<_>(integer, nsign * den.sign(), || {
-            if den.sign() == Sign::Positive {
+            if den.is_positive() {
                 IBig::from(nmag << 1).cmp(den)
             } else {
                 den.cmp(&-(nmag << 1))
             }
         })
     }
+}
+
+/// A trait providing the function to retrieve the error bounds of the rounded value.
+pub trait ErrorBounds: Round {
+    /// Given a floating point number `f`, the output (L, R, incl_L, incl_R) represents the relative
+    /// error range with left bound `f - L` and right bound `f + R`. The two boolean values `incl_L`
+    /// and `incl_R` represents whether the bounds `f - L` and `f + R` are inclusive respectively.
+    ///
+    /// When the input number has unlimited precision, the output must be (ZERO, ZERO, true, true).
+    fn error_bounds<const B: Word>(f: &FBig<Self, B>)
+        -> (FBig<Self, B>, FBig<Self, B>, bool, bool);
 }
 
 impl Round for mode::Zero {
@@ -156,6 +167,24 @@ impl Round for mode::Zero {
             (Sign::Positive, Sign::Positive) | (Sign::Negative, Sign::Negative) => Rounding::NoOp,
             (Sign::Positive, Sign::Negative) => Rounding::SubOne,
             (Sign::Negative, Sign::Positive) => Rounding::AddOne,
+        }
+    }
+}
+
+impl ErrorBounds for mode::Zero {
+    #[inline]
+    fn error_bounds<const B: Word>(
+        f: &FBig<Self, B>,
+    ) -> (FBig<Self, B>, FBig<Self, B>, bool, bool) {
+        if f.precision() == 0 {
+            (FBig::ZERO, FBig::ZERO, true, true)
+        } else if f.repr().is_zero() {
+            (f.ulp(), f.ulp(), false, false)
+        } else {
+            match f.repr().sign() {
+                Sign::Positive => (FBig::ZERO, f.ulp(), true, false),
+                Sign::Negative => (f.ulp(), FBig::ZERO, false, true),
+            }
         }
     }
 }
@@ -186,6 +215,22 @@ impl Round for mode::Away {
     }
 }
 
+impl ErrorBounds for mode::Away {
+    #[inline]
+    fn error_bounds<const B: Word>(
+        f: &FBig<Self, B>,
+    ) -> (FBig<Self, B>, FBig<Self, B>, bool, bool) {
+        if f.precision() == 0 && f.repr().is_zero() {
+            (FBig::ZERO, FBig::ZERO, true, true)
+        } else {
+            match f.repr().sign() {
+                Sign::Positive => (f.ulp(), FBig::ZERO, false, true),
+                Sign::Negative => (FBig::ZERO, f.ulp(), true, false),
+            }
+        }
+    }
+}
+
 impl Round for mode::Down {
     type Reverse = mode::Up;
 
@@ -204,6 +249,15 @@ impl Round for mode::Down {
     }
 }
 
+impl ErrorBounds for mode::Down {
+    #[inline]
+    fn error_bounds<const B: Word>(
+        f: &FBig<Self, B>,
+    ) -> (FBig<Self, B>, FBig<Self, B>, bool, bool) {
+        (FBig::ZERO, f.ulp(), true, false)
+    }
+}
+
 impl Round for mode::Up {
     type Reverse = mode::Down;
 
@@ -219,6 +273,15 @@ impl Round for mode::Up {
         } else {
             Rounding::NoOp
         }
+    }
+}
+
+impl ErrorBounds for mode::Up {
+    #[inline]
+    fn error_bounds<const B: Word>(
+        f: &FBig<Self, B>,
+    ) -> (FBig<Self, B>, FBig<Self, B>, bool, bool) {
+        (f.ulp(), FBig::ZERO, false, true)
     }
 }
 
@@ -257,6 +320,30 @@ impl Round for mode::HalfAway {
     }
 }
 
+impl ErrorBounds for mode::HalfAway {
+    #[inline]
+    fn error_bounds<const B: Word>(
+        f: &FBig<Self, B>,
+    ) -> (FBig<Self, B>, FBig<Self, B>, bool, bool) {
+        if f.precision() == 0 {
+            return (FBig::ZERO, FBig::ZERO, true, true);
+        }
+
+        let mut half_ulp = f.ulp();
+        half_ulp.repr.exponent -= 1;
+        half_ulp.repr.significand = UBig::from_word((B + 1) / 2).into(); // ceil division
+
+        let (incl_l, incl_r) = if f.repr.is_zero() {
+            (false, false)
+        } else if f.repr.sign() == Sign::Negative {
+            (false, true)
+        } else {
+            (true, false)
+        };
+        (half_ulp.clone(), half_ulp, incl_l, incl_r)
+    }
+}
+
 impl Round for mode::HalfEven {
     type Reverse = Self;
 
@@ -272,7 +359,7 @@ impl Round for mode::HalfEven {
             // |rem| = 1/2
             Ordering::Equal => {
                 // if integer is odd, +1 if rem > 0, -1 if rem < 0
-                if integer & 1 == IBig::ONE {
+                if integer.bit(0) {
                     match low_sign {
                         Sign::Positive => Rounding::AddOne,
                         Sign::Negative => Rounding::SubOne,
@@ -290,6 +377,24 @@ impl Round for mode::HalfEven {
                 }
             }
         }
+    }
+}
+
+impl ErrorBounds for mode::HalfEven {
+    #[inline]
+    fn error_bounds<const B: Word>(
+        f: &FBig<Self, B>,
+    ) -> (FBig<Self, B>, FBig<Self, B>, bool, bool) {
+        if f.precision() == 0 {
+            return (FBig::ZERO, FBig::ZERO, true, true);
+        }
+
+        let mut half_ulp = f.ulp();
+        half_ulp.repr.exponent -= 1;
+        half_ulp.repr.significand = UBig::from_word((B + 1) / 2).into(); // ceil division
+
+        let incl = f.repr.significand.bit(0);
+        (half_ulp.clone(), half_ulp, incl, incl)
     }
 }
 
@@ -346,7 +451,7 @@ mod tests {
             assert_eq!(Up::round_fract::<B>(&value, fract.clone(), D), rnd_up);
             assert_eq!(Down::round_fract::<B>(&value, fract.clone(), D), rnd_down);
             assert_eq!(HalfEven::round_fract::<B>(&value, fract.clone(), D), rnd_halfeven);
-            assert_eq!(HalfAway::round_fract::<B>(&value, fract.clone(), D), rnd_halfaway);
+            assert_eq!(HalfAway::round_fract::<B>(&value, fract, D), rnd_halfaway);
         }
 
         // cases for radix = 2, 2 digit fraction
@@ -444,7 +549,7 @@ mod tests {
             assert_eq!(Up::round_ratio(&value, num.clone(), &den), rnd_up);
             assert_eq!(Down::round_ratio(&value, num.clone(), &den), rnd_down);
             assert_eq!(HalfEven::round_ratio(&value, num.clone(), &den), rnd_halfeven);
-            assert_eq!(HalfAway::round_ratio(&value, num.clone(), &den), rnd_halfaway);
+            assert_eq!(HalfAway::round_ratio(&value, num, &den), rnd_halfaway);
         }
 
         // cases for radix = 2, 2 digit fraction

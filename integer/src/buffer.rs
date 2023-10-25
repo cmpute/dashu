@@ -91,8 +91,9 @@ impl Buffer {
     /// This function should NOT BE EXPOSED to public!
     #[inline]
     pub fn allocate_raw(capacity: usize) -> NonNull<Word> {
-        debug_assert!(capacity <= Self::MAX_CAPACITY);
+        assert!(capacity > 0 && capacity <= Self::MAX_CAPACITY);
 
+        // SAFETY: capacity was checked to be non-zero
         unsafe {
             let layout = Layout::array::<Word>(capacity).unwrap();
             let ptr = alloc::alloc::alloc(layout);
@@ -141,8 +142,9 @@ impl Buffer {
     ///
     /// Panics if `capacity < len()`.
     fn reallocate_raw(&mut self, capacity: usize) {
-        debug_assert!(capacity >= self.len());
+        assert!(capacity > 0 && capacity >= self.len());
 
+        // SAFETY: capacity was checked to be non-zero and the pointer is properly aligned
         unsafe {
             let old_layout = Layout::array::<Word>(self.capacity).unwrap();
             let new_layout = Layout::array::<Word>(capacity).unwrap();
@@ -203,6 +205,7 @@ impl Buffer {
     pub fn push(&mut self, word: Word) {
         assert!(self.len < self.capacity);
 
+        // SAFETY: self.len was checked to be less than capacity, self.ptr is properly aligned
         unsafe {
             let end = self.ptr.as_ptr().add(self.len);
             core::ptr::write(end, word);
@@ -227,6 +230,8 @@ impl Buffer {
     pub fn push_zeros(&mut self, n: usize) {
         assert!(n <= self.capacity - self.len);
 
+        // SAFETY: it's checked that n + self.len <= self.capacity
+        //         and the pointers are all properly aligned
         unsafe {
             let mut ptr = self.ptr.as_ptr().add(self.len);
             for _ in 0..n {
@@ -245,6 +250,9 @@ impl Buffer {
     pub fn push_zeros_front(&mut self, n: usize) {
         assert!(n <= self.capacity - self.len);
 
+        // SAFETY: it's checked that n + self.len <= self.capacity,
+        //         therefore ptr + self.len and ptr + n + self.len are all valid.
+        //         They are also properly aligned.
         unsafe {
             // move data
             let mut ptr = self.ptr.as_ptr();
@@ -269,6 +277,9 @@ impl Buffer {
         let (src_ptr, src_len) = (words.as_ptr(), words.len());
         assert!(src_len <= self.capacity - self.len);
 
+        // SAFETY: src_ptr and self.ptr are not overlapping thanks to rust's exclusive ownership.
+        //         src_ptr + src_len is valid guaranteed by the slice,
+        //         self.ptr + src_len is valid checked by the assertion above.
         unsafe {
             ptr::copy_nonoverlapping(src_ptr, self.ptr.as_ptr().add(self.len), src_len);
             self.len += src_len;
@@ -278,13 +289,20 @@ impl Buffer {
     /// Pop leading zero words.
     #[inline]
     pub fn pop_zeros(&mut self) {
-        unsafe {
-            if self.len > 0 {
+        if self.len > 0 {
+            // SAFETY: tail_ptr = self.ptr + self.len - 1 is valid because self.len > 0
+            //         is checked on entry to this function, and we skip the ptr::sub call
+            //         on the iteration where self.len becomes 0.
+            //         self.ptr is also properly aligned.
+            unsafe {
                 // adjust len until leading zeros are removed
                 let mut tail_ptr = self.ptr.as_ptr().add(self.len - 1);
-                while ptr::read(tail_ptr) == 0 && self.len > 0 {
-                    tail_ptr = tail_ptr.sub(1);
+                while ptr::read(tail_ptr) == 0 {
                     self.len -= 1;
+                    if self.len == 0 {
+                        break;
+                    }
+                    tail_ptr = tail_ptr.sub(1);
                 }
             }
         }
@@ -308,6 +326,8 @@ impl Buffer {
 
         let ptr = self.ptr.as_ptr();
         let new_len = self.len - n;
+        // SAFETY: it's checked that n <= self.len, self.len <= self.capacity is
+        //         invariant for the Buffer type. self.ptr is also properly aligned.
         unsafe {
             // move data
             ptr::copy(ptr.add(n), ptr, new_len);
@@ -324,6 +344,7 @@ impl Buffer {
     pub fn lowest_dword(&self) -> DoubleWord {
         assert!(self.len >= 2);
 
+        // SAFETY: it's checked that self.len is at least 2 and self.ptr is properly aligned.
         unsafe {
             let lo = ptr::read(self.ptr.as_ptr());
             let hi = ptr::read(self.ptr.as_ptr().add(1));
@@ -341,6 +362,7 @@ impl Buffer {
     pub fn lowest_dword_mut(&mut self) -> (&mut Word, &mut Word) {
         assert!(self.len >= 2);
 
+        // SAFETY: it's checked that self.len is at least 2 and self.ptr is properly aligned.
         unsafe {
             let ptr = self.ptr.as_ptr();
             (&mut *ptr, &mut *ptr.add(1))
@@ -353,9 +375,10 @@ impl Buffer {
     pub fn clone_from_slice(&mut self, src: &[Word]) {
         if self.capacity >= src.len() {
             // direct copy if the capacity is enough
+
+            // SAFETY: src.ptr and self.ptr are properly aligned.
+            //         src.ptr and self.ptr cannot overlap thanks to rust's exclusive ownership.
             unsafe {
-                // SAFETY: src.ptr and self.ptr are both properly allocated by `Buffer::allocate()`.
-                //         src.ptr and self.ptr cannot alias, because the ptr should be uniquely owned by the Buffer
                 ptr::copy_nonoverlapping(src.as_ptr(), self.ptr.as_ptr(), src.len());
             }
             self.len = src.len();
@@ -370,7 +393,10 @@ impl Buffer {
             return Box::new([]);
         }
 
+        // SAFETY: self.ptr is properly aligned. The shrinked array is non-null checked by the if block above,
+        //         so that `realloc` will not cause UB.
         unsafe {
+            // The ownership will be handed to the Box, so we can't drop here
             let me = mem::ManuallyDrop::new(self);
 
             // first shrink the buffer to tight
@@ -389,18 +415,19 @@ impl Buffer {
     // This method is meant for implementation of zeroize traits
     #[cfg(feature = "zeroize")]
     pub fn as_full_slice(&mut self) -> &mut [Word] {
+        // SAFETY: self.ptr is properly aligned and the length of allocated words is stored in self.capacity.
         unsafe { slice::from_raw_parts_mut(self.ptr.as_mut(), self.capacity) }
     }
 }
 
 impl Clone for Buffer {
-    /// New buffer will be sized as `Buffer::allocate(self.len())`.
+    // new buffer will be sized as `Buffer::allocate(self.len())`.
     #[inline]
     fn clone(&self) -> Self {
         let mut new_buffer = Buffer::allocate(self.len);
+        // SAFETY: src.ptr and self.ptr are both properly allocated by `Buffer::allocate()`.
+        //         src.ptr and self.ptr are not overlapping thanks to rust's exclusive ownership.
         unsafe {
-            // SAFETY: src.ptr and self.ptr are both properly allocated by `Buffer::allocate()`.
-            //         src.ptr and self.ptr cannot alias, because the ptr should be uniquely owned by the Buffer
             let new_ptr = new_buffer.ptr.as_ptr();
             ptr::copy_nonoverlapping(self.ptr.as_ptr(), new_ptr, self.len);
         }
@@ -408,14 +435,15 @@ impl Clone for Buffer {
         new_buffer
     }
 
-    /// Reallocating if capacity is too small or too large.
+    // reallocating if capacity is too small or too large.
     #[inline]
     fn clone_from(&mut self, src: &Self) {
         if self.capacity >= src.len && self.capacity <= Buffer::max_compact_capacity(src.len) {
-            // direct copy if the capacity is enough
+            // direct copy if the capacity is enough and not too large
+
+            // SAFETY: src.ptr and self.ptr are both properly allocated by `Buffer::allocate()`.
+            //         src.ptr and self.ptr are not overlapping thanks to rust's exclusive ownership.
             unsafe {
-                // SAFETY: src.ptr and self.ptr are both properly allocated by `Buffer::allocate()`.
-                //         src.ptr and self.ptr cannot alias, because the ptr should be uniquely owned by the Buffer
                 ptr::copy_nonoverlapping(src.ptr.as_ptr(), self.ptr.as_ptr(), src.len);
             }
             self.len = src.len;
@@ -428,6 +456,7 @@ impl Clone for Buffer {
 
 impl Drop for Buffer {
     fn drop(&mut self) {
+        // SAFETY: self.ptr was allocated with self.capacity space
         unsafe {
             Self::deallocate_raw(self.ptr, self.capacity);
         }
@@ -439,6 +468,7 @@ impl Deref for Buffer {
 
     #[inline]
     fn deref(&self) -> &[Word] {
+        // SAFETY: self.len <= self.capacity, so the pointers are valid in this range
         unsafe { slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
     }
 }
@@ -446,6 +476,7 @@ impl Deref for Buffer {
 impl DerefMut for Buffer {
     #[inline]
     fn deref_mut(&mut self) -> &mut [Word] {
+        // SAFETY: self.len <= self.capacity, so the pointers are valid in this range
         unsafe { slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len) }
     }
 }
@@ -628,5 +659,13 @@ mod tests {
         buffer.push(2);
         let slice = buffer.into_boxed_slice();
         assert_eq!(*slice, [1, 2]);
+    }
+
+    #[test]
+    fn test_pop_all_zeros() {
+        let mut buffer = Buffer::allocate(1);
+        buffer.push(0);
+        buffer.pop_zeros();
+        assert_eq!(buffer.len, 0);
     }
 }

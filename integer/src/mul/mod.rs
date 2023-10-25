@@ -24,6 +24,7 @@ const_assert!(THRESHOLD_KARATSUBA + 1 >= toom_3::MIN_LEN);
 
 mod helpers;
 mod karatsuba;
+#[allow(dead_code)]
 pub(crate) mod ntt;
 mod simple;
 mod toom_3;

@@ -22,7 +22,7 @@ impl<T, E> Approximation<T, E> {
 
     /// Get a reference to the calculation result
     #[inline]
-    pub fn value_ref(&self) -> &T {
+    pub const fn value_ref(&self) -> &T {
         match self {
             Self::Exact(v) => v,
             Self::Inexact(v, _) => v,
@@ -30,7 +30,23 @@ impl<T, E> Approximation<T, E> {
     }
 
     #[inline]
-    pub fn error(&self) -> Option<&E> {
+    pub fn unwrap(self) -> T {
+        match self {
+            Self::Exact(val) => val,
+            Self::Inexact(_, _) => panic!("called `Approximation::unwrap()` on a `Inexact` value"),
+        }
+    }
+
+    #[inline]
+    pub fn error(self) -> Option<E> {
+        match self {
+            Self::Exact(_) => None,
+            Self::Inexact(_, e) => Some(e),
+        }
+    }
+
+    #[inline]
+    pub const fn error_ref(&self) -> Option<&E> {
         match self {
             Self::Exact(_) => None,
             Self::Inexact(_, e) => Some(e),

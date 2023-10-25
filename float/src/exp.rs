@@ -1,7 +1,7 @@
 use core::convert::TryInto;
 
 use crate::{
-    error::{check_inf, check_precision_limited, panic_power_negative_base},
+    error::{assert_finite, assert_limited_precision, panic_power_negative_base},
     fbig::FBig,
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
@@ -101,18 +101,18 @@ impl<R: Round> Context<R> {
     /// Panics if the precision is unlimited and the exponent is negative. In this case, the exact
     /// result is likely to have infinite digits.
     pub fn powi<const B: Word>(&self, base: &Repr<B>, exp: IBig) -> Rounded<FBig<R, B>> {
-        check_inf(base);
+        assert_finite(base);
 
         let (exp_sign, exp) = exp.into_parts();
         if exp_sign == Sign::Negative {
             // if the exponent is negative, then negate the exponent
             // note that do the inverse at last requires less guard bits
-            check_precision_limited(self.precision); // TODO: we can allow this if the inverse is exact (only when significand is one?)
+            assert_limited_precision(self.precision); // TODO: we can allow this if the inverse is exact (only when significand is one?)
 
             let guard_bits = self.precision.bit_len() * 2; // heuristic
             let rev_context = Context::<R::Reverse>::new(self.precision + guard_bits);
             let pow = rev_context.powi(base, exp.into()).value();
-            let inv = rev_context.repr_div(Repr::one(), &pow.repr);
+            let inv = rev_context.repr_div(Repr::one(), pow.repr);
             let repr = inv.and_then(|v| self.repr_round(v));
             return repr.map(|v| FBig::new(v, *self));
         }
@@ -133,7 +133,7 @@ impl<R: Round> Context<R> {
 
         // binary exponentiation from left to right
         let mut p = exp.bit_len() - 2;
-        let mut res = work_context.square(base);
+        let mut res = work_context.sqr(base);
         loop {
             if exp.bit(p) {
                 res = res.and_then(|v| work_context.mul(v.repr(), base));
@@ -142,7 +142,7 @@ impl<R: Round> Context<R> {
                 break;
             }
             p -= 1;
-            res = res.and_then(|v| work_context.square(v.repr()));
+            res = res.and_then(|v| work_context.sqr(v.repr()));
         }
 
         res.and_then(|v| v.with_precision(self.precision))
@@ -169,8 +169,8 @@ impl<R: Round> Context<R> {
     ///
     /// Panics if the precision is unlimited.
     pub fn powf<const B: Word>(&self, base: &Repr<B>, exp: &Repr<B>) -> Rounded<FBig<R, B>> {
-        check_inf(base);
-        check_precision_limited(self.precision); // TODO: we can allow it if exp is integer
+        assert_finite(base);
+        assert_limited_precision(self.precision); // TODO: we can allow it if exp is integer
 
         // shortcuts
         if exp.is_zero() {
@@ -184,7 +184,7 @@ impl<R: Round> Context<R> {
             panic_power_negative_base()
         }
 
-        // x^y = exp(y*log(x)), use a simple rule for guard bits
+        // x^y = exp(y*ln(x)), use a simple rule for guard bits
         let guard_digits = 10 + self.precision.log2_est() as usize;
         let work_context = Context::<R>::new(self.precision + guard_digits);
 
@@ -240,8 +240,8 @@ impl<R: Round> Context<R> {
     //       consider this change after having a benchmark
 
     fn exp_internal<const B: Word>(&self, x: &Repr<B>, minus_one: bool) -> Rounded<FBig<R, B>> {
-        check_inf(x);
-        check_precision_limited(self.precision);
+        assert_finite(x);
+        assert_limited_precision(self.precision);
 
         if x.is_zero() {
             return match minus_one {
@@ -317,11 +317,11 @@ impl<R: Round> Context<R> {
         } else if minus_one {
             // add extra digits to compensate for the subtraction
             Context::<R>::new(self.precision + self.precision / 8 + 1) // heuristic
-                .powi(sum.repr(), Repr::<B>::BASE.pow(n))
+                .powi(sum.repr(), Repr::<B>::BASE.pow(n).into())
                 .map(|v| (v << s) - FBig::ONE)
                 .and_then(|v| v.with_precision(self.precision))
         } else {
-            self.powi(sum.repr(), Repr::<B>::BASE.pow(n))
+            self.powi(sum.repr(), Repr::<B>::BASE.pow(n).into())
                 .map(|v| v << s)
         }
     }

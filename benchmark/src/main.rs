@@ -1,90 +1,102 @@
-extern crate clap;
-use clap::{App, AppSettings, Arg, SubCommand};
-use number::Number;
 use std::time::{Duration, Instant};
+
+use clap::ValueEnum as _;
+use number::Number;
 
 mod digits_of_e;
 mod fib;
 mod number;
 
+#[derive(clap::Parser)]
+#[command(name = "Bigint benchmarks")]
+struct Cli {
+    #[arg(long = "lib", required = true)]
+    libs: Vec<Lib>,
+    #[arg(long = "task")]
+    task: Task,
+    #[arg(short = 'n')]
+    n: u32,
+
+    #[command(subcommand)]
+    subcommand: SubCommand,
+}
+
+#[derive(Copy, Clone, clap::ValueEnum)]
+enum Lib {
+    #[value(name = "ibig")]
+    IBig,
+    #[value(name = "dashu")]
+    Dashu,
+    #[value(name = "num-bigint")]
+    NumBigint,
+    #[cfg(feature = "ramp")]
+    #[value(name = "ramp")]
+    Ramp,
+    #[cfg(feature = "rug")]
+    #[value(name = "rug")]
+    Rug,
+    #[cfg(feature = "rust-gmp")]
+    #[value(name = "rust-gmp")]
+    RustGmp,
+    #[value(name = "malachite")]
+    Malachite,
+}
+
+#[derive(Copy, Clone, clap::ValueEnum)]
+enum Task {
+    #[value(name = "e")]
+    E,
+    #[value(name = "fib")]
+    Fib,
+    #[value(name = "fib_hex")]
+    FibHex,
+}
+
+#[derive(clap::Subcommand)]
+enum SubCommand {
+    #[command(name = "print")]
+    Print,
+    #[command(name = "exec")]
+    Execute,
+}
+
 fn main() {
-    let args = App::new("Bigint benchmarks")
-        .arg(
-            Arg::with_name("lib")
-                .long("lib")
-                .possible_values(&[
-                    "ibig",
-                    "dashu",
-                    "num-bigint",
-                    "ramp",
-                    "rug",
-                    "rust-gmp",
-                    "malachite",
-                ])
-                .multiple(true)
-                .number_of_values(1)
-                .required(true)
-                .min_values(1),
-        )
-        .arg(
-            Arg::with_name("task")
-                .long("task")
-                .takes_value(true)
-                .possible_values(&["e", "fib", "fib_hex"])
-                .required(true),
-        )
-        .arg(
-            Arg::with_name("n")
-                .short("n")
-                .takes_value(true)
-                .required(true),
-        )
-        .subcommand(SubCommand::with_name("print"))
-        .subcommand(SubCommand::with_name("benchmark"))
-        .settings(&[AppSettings::SubcommandRequired])
-        .get_matches();
+    let args: Cli = clap::Parser::parse();
 
-    let libs: Vec<String> = args
-        .values_of("lib")
-        .unwrap()
-        .map(|s| s.to_string())
-        .collect();
-    let task = args.value_of("task").unwrap();
-    let n: u32 = args.value_of("n").unwrap().parse().expect("invalid n");
-
-    match args.subcommand() {
-        ("print", _) => command_print(&libs, task, n),
-        ("benchmark", _) => command_benchmark(&libs, task, n),
-        _ => unreachable!(),
+    match args.subcommand {
+        SubCommand::Print => command_print(&args.libs, args.task, args.n),
+        SubCommand::Execute => command_benchmark(&args.libs, args.task, args.n),
     }
 }
 
-fn command_print(libs: &[String], task: &str, n: u32) {
+fn command_print(libs: &[Lib], task: Task, n: u32) {
     let mut answer: Option<String> = None;
-    for lib_name in libs {
-        let (a, _) = run_task(lib_name, task, n, 1);
+    for &lib in libs {
+        let lib_name = lib.to_possible_value().unwrap();
+        let (a, _) = run_task(lib, task, n, 1);
         match &answer {
             None => {
                 println!("answer = {}", a);
-                println!("{:10} agrees", lib_name);
+                println!("{:10} agrees", lib_name.get_name());
                 answer = Some(a);
             }
             Some(ans) => {
                 if *ans == a {
-                    println!("{:10} agrees", lib_name);
+                    println!("{:10} agrees", lib_name.get_name());
                 } else {
-                    println!("{} disagrees!", lib_name);
+                    println!("{} disagrees!", lib_name.get_name());
                 }
             }
         }
     }
 }
 
-fn command_benchmark(libs: &[String], task: &str, n: u32) {
+fn command_benchmark(libs: &[Lib], task: Task, n: u32) {
     let mut answer: Option<String> = None;
-    let mut results: Vec<(&String, Duration)> = Vec::new();
-    for lib_name in libs {
-        println!("{}", lib_name);
+    let mut results: Vec<(Lib, Duration)> = Vec::new();
+    for &lib in libs {
+        let lib_name = lib.to_possible_value().unwrap();
+        println!("{}", lib_name.get_name());
         // Take the median of 5 attempts, each attempt at least 10 seconds.
         let mut durations: Vec<Duration> = Vec::new();
         for sample_number in 0..5 {
@@ -92,7 +104,7 @@ fn command_benchmark(libs: &[String], task: &str, n: u32) {
             let mut duration = Duration::from_secs(0);
             while duration < Duration::from_secs(10) {
                 let i = iter.max(1);
-                let (a, d) = run_task(lib_name, task, n, i);
+                let (a, d) = run_task(lib, task, n, i);
                 match &answer {
                     None => answer = Some(a),
                     Some(ans) => assert!(*ans == a),
@@ -106,41 +118,39 @@ fn command_benchmark(libs: &[String], task: &str, n: u32) {
         }
         durations.sort();
         let duration = durations[0];
-        results.push((lib_name, duration));
+        results.push((lib, duration));
     }
     results.sort_by_key(|&(_, d)| d);
     println!("Results");
-    for (lib_name, duration) in results {
-        println!("{:10} {} ms", lib_name, duration.as_millis());
+    for (lib, duration) in results {
+        let lib_name = lib.to_possible_value().unwrap();
+        println!("{:10} {} ms", lib_name.get_name(), duration.as_millis());
     }
 }
 
-fn run_task(lib: &str, task: &str, n: u32, iter: u32) -> (String, Duration) {
+fn run_task(lib: Lib, task: Task, n: u32, iter: u32) -> (String, Duration) {
     match lib {
-        "ibig" => run_task_using::<ibig::UBig>(task, n, iter),
-        "dashu" => run_task_using::<dashu_int::UBig>(task, n, iter),
-        "num-bigint" => run_task_using::<num_bigint::BigUint>(task, n, iter),
+        Lib::IBig => run_task_using::<ibig::UBig>(task, n, iter),
+        Lib::Dashu => run_task_using::<dashu_int::UBig>(task, n, iter),
+        Lib::NumBigint => run_task_using::<num_bigint::BigUint>(task, n, iter),
         #[cfg(feature = "ramp")]
-        "ramp" => run_task_using::<ramp::Int>(task, n, iter),
-        "rug" => run_task_using::<rug::Integer>(task, n, iter),
-        "rust-gmp" => run_task_using::<gmp::mpz::Mpz>(task, n, iter),
-        "malachite" => run_task_using::<malachite_nz::natural::Natural>(task, n, iter),
-        #[cfg(feature = "ramp")]
-        _ => unreachable!(),
-        #[cfg(not(feature = "ramp"))]
-        _ => unreachable!("ramp is only supported with nightly rust!"),
+        Lib::Ramp => run_task_using::<ramp::Int>(task, n, iter),
+        #[cfg(feature = "rug")]
+        Lib::Rug => run_task_using::<rug::Integer>(task, n, iter),
+        #[cfg(feature = "rust_gmp")]
+        Lib::RustGmp => run_task_using::<gmp::mpz::Mpz>(task, n, iter),
+        Lib::Malachite => run_task_using::<malachite_nz::natural::Natural>(task, n, iter),
     }
 }
 
-fn run_task_using<T: Number>(task: &str, n: u32, iter: u32) -> (String, Duration) {
+fn run_task_using<T: Number>(task: Task, n: u32, iter: u32) -> (String, Duration) {
     let mut answer = None;
     let start_time = Instant::now();
     for _ in 0..iter {
         let a = match task {
-            "e" => digits_of_e::calculate::<T>(n),
-            "fib" => fib::calculate_decimal::<T>(n),
-            "fib_hex" => fib::calculate_hex::<T>(n),
-            _ => unreachable!(),
+            Task::E => digits_of_e::calculate::<T>(n),
+            Task::Fib => fib::calculate_decimal::<T>(n),
+            Task::FibHex => fib::calculate_hex::<T>(n),
         };
         match &answer {
             None => answer = Some(a),

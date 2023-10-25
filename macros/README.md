@@ -6,6 +6,7 @@ Utility macros to create number literals. See [Docs.rs](https://docs.rs/dashu-ma
 
 - Support creating **big integers** with literals using `ubig!` and `ibig!`.
 - Support creating **big floats** with literals using `fbig!` and `dbig!`.
+- Support creating **big rationals** with literals using `rbig!`.
 - All macros can be used to create **const** numbers if they are small enough.
 
 ## License

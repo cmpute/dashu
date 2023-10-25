@@ -23,6 +23,7 @@ pub struct Memory<'a> {
 impl fmt::Debug for Memory<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Memory chunk (")?;
+        // SAFETY: the safety here is guaranteed by the constructors of `Memory`.
         let offset = unsafe { self.end.offset_from(self.start) };
         offset.fmt(f)?;
         f.write_str(" bytes)")
@@ -38,7 +39,7 @@ impl MemoryAllocation {
         } else if layout.size() > isize::MAX as usize {
             panic_allocate_too_much()
         } else {
-            // Safe because size is non-zero.
+            // SAFETY: it's checked above that layout.size() != 0.
             let ptr = unsafe { alloc::alloc::alloc(layout) };
             if ptr.is_null() {
                 panic_out_of_memory();
@@ -63,7 +64,7 @@ impl MemoryAllocation {
 impl Drop for MemoryAllocation {
     fn drop(&mut self) {
         if self.layout.size() != 0 {
-            // Safe because the memory was allocated with the same layout.
+            // SAFETY: the memory was allocated with the same layout.
             unsafe { alloc::alloc::dealloc(self.start, self.layout) };
         }
     }
@@ -80,7 +81,7 @@ impl Memory<'_> {
     pub fn allocate_slice_fill<T: Copy>(&mut self, n: usize, val: T) -> (&mut [T], Memory) {
         self.allocate_slice_initialize::<T, _>(n, |ptr| {
             for i in 0..n {
-                // Safe because ptr is properly aligned and has enough space.
+                // SAFETY: ptr is properly aligned and has enough space.
                 unsafe {
                     ptr.add(i).write(val);
                 };
@@ -98,7 +99,7 @@ impl Memory<'_> {
     pub fn allocate_slice_copy<T: Copy>(&mut self, source: &[T]) -> (&mut [T], Memory) {
         self.allocate_slice_initialize::<T, _>(source.len(), |ptr| {
             for (i, v) in source.iter().enumerate() {
-                // Safe because ptr is properly aligned and has enough space.
+                // SAFETY: ptr is properly aligned and has enough space.
                 unsafe {
                     ptr.add(i).write(*v);
                 };
@@ -123,13 +124,13 @@ impl Memory<'_> {
 
         self.allocate_slice_initialize::<T, _>(n, |ptr| {
             for (i, v) in source.iter().enumerate() {
-                // Safe because ptr is properly aligned and has enough space.
+                // SAFETY: ptr is properly aligned and has enough space.
                 unsafe {
                     ptr.add(i).write(*v);
                 };
             }
             for i in source.len()..n {
-                // Safe because ptr is properly aligned and has enough space.
+                // SAFETY: ptr is properly aligned and has enough space.
                 unsafe {
                     ptr.add(i).write(val);
                 };
@@ -137,6 +138,8 @@ impl Memory<'_> {
         })
     }
 
+    /// First allocate a slice of size n, and then initialize the memory with `F`.
+    /// The initializer `F` must ensure that all allocated words are initialized.
     fn allocate_slice_initialize<T, F>(&mut self, n: usize, init: F) -> (&mut [T], Memory)
     where
         F: FnOnce(*mut T),
@@ -148,7 +151,7 @@ impl Memory<'_> {
 
         init(ptr);
 
-        // Safe because ptr is properly sized and aligned and has been initialized.
+        // SAFETY: ptr is properly sized and aligned guaranteed by `try_find_memory_for_slice`.
         let slice = unsafe { slice::from_raw_parts_mut(ptr, n) };
         let new_memory = Memory {
             start: slice_end,

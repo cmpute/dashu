@@ -3,6 +3,7 @@ use dashu_float::DBig;
 mod helper_macros;
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_shift() {
     assert_eq!(fbig!(0x0) << 1, fbig!(0x0));
     assert_eq!(fbig!(0x0) >> 1, fbig!(0x0));

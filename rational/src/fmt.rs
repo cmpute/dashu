@@ -2,7 +2,7 @@ use crate::{
     rbig::{RBig, Relaxed},
     repr::Repr,
 };
-use core::fmt;
+use core::fmt::{self, Write};
 
 impl fmt::Debug for Repr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -21,9 +21,11 @@ impl fmt::Display for Repr {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.denominator.is_one() {
-            f.write_fmt(format_args!("{:?}", &self.numerator))
+            fmt::Display::fmt(&self.numerator, f)
         } else {
-            f.write_fmt(format_args!("{:?}/{:?}", &self.numerator, &self.denominator))
+            fmt::Display::fmt(&self.numerator, f)?;
+            f.write_char('/')?;
+            fmt::Display::fmt(&self.denominator, f)
         }
     }
 }
@@ -67,12 +69,3 @@ impl fmt::Display for Relaxed {
         fmt::Display::fmt(&self.0, f)
     }
 }
-
-// TODO: support formatting as decimal (see below)
-/*
- * format!("{}", rbig!(1/3)) -> 1/3
- * format!("{:.4}", rbig!(1/3)) -> 1.3333
- * format!("{:#.4}", rbig!(1/3)) -> 1.(3)
- * format!("{:e}", rbig!(1/3)) -> 1.3e0
- * format!("{:.4e}", rbig!(1/3)) -> 1.3333e0
- */

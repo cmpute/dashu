@@ -1,10 +1,41 @@
 use dashu_int::{
+    fast_div::ConstDivisor,
     ops::{DivRem, ExtendedGcd, Gcd},
-    UBig,
+    rand::UniformBits,
+    IBig, UBig,
 };
-use rand::{distributions::uniform::Uniform, prelude::*};
+use rand_v08::{distributions::uniform::Uniform, prelude::*};
 
 mod helper_macros;
+
+#[test]
+fn test_uniform_bits() {
+    let mut rng = StdRng::seed_from_u64(1);
+
+    let distr = UniformBits::new(0);
+    let x: UBig = (&mut rng).sample_iter(&distr).take(1000).max().unwrap();
+    assert!(x.is_zero());
+    let x: IBig = (&mut rng).sample_iter(&distr).take(1000).max().unwrap();
+    assert!(x.is_zero());
+
+    let distr = UniformBits::new(2);
+    let x: UBig = (&mut rng).sample_iter(&distr).take(1000).min().unwrap();
+    assert_eq!(x, UBig::ZERO);
+    let x: UBig = (&mut rng).sample_iter(&distr).take(1000).max().unwrap();
+    assert_eq!(x, UBig::from(3u8));
+    let x: IBig = (&mut rng).sample_iter(&distr).take(1000).min().unwrap();
+    assert_eq!(x, IBig::from(-3));
+    let x: IBig = (&mut rng).sample_iter(&distr).take(1000).max().unwrap();
+    assert_eq!(x, IBig::from(3));
+
+    let distr = UniformBits::new(200);
+    let x: UBig = (&mut rng).sample_iter(&distr).take(1000).max().unwrap();
+    assert!(x < UBig::ONE << 200);
+    let x: IBig = (&mut rng).sample_iter(&distr).take(1000).max().unwrap();
+    assert!(x < IBig::ONE << 200);
+    let x: IBig = (&mut rng).sample_iter(&distr).take(1000).min().unwrap();
+    assert!(x > IBig::NEG_ONE << 200);
+}
 
 #[test]
 fn test_uniform_ubig() {
@@ -61,35 +92,62 @@ fn test_random_arithmetic() {
         };
         let num_cases = 10u32.pow(7 - log_num_bits);
         for i in 0..num_cases {
-            let len_a = (&mut rng).gen_range(10..num_bits);
-            let len_b = (&mut rng).gen_range(10..num_bits);
-            let a = (&mut rng).gen_range(ubig!(100)..ubig!(1) << len_a);
-            let b = (&mut rng).gen_range(ubig!(100)..ubig!(1) << len_b);
-            let c = (&mut rng).sample(Uniform::new(ubig!(0), &a));
-            let radix = (&mut rng).gen_range(2..=36);
+            let len_a = rng.gen_range(10..num_bits);
+            let len_b = rng.gen_range(10..num_bits);
+            let a = rng.gen_range(ubig!(100)..ubig!(1) << len_a);
+            let b = rng.gen_range(ubig!(100)..ubig!(1) << len_b);
+            let c = rng.sample(Uniform::new(ubig!(0), &a));
+
+            let radix = rng.gen_range(2..=36);
+            assert_eq!(UBig::from_str_radix(&a.in_radix(radix).to_string(), radix).unwrap(), a);
 
             assert_eq!((&a + &b) % &p, ((&a % &p) + (&b % &p)) % &p);
             assert_eq!(&a + &b - &a, b);
             assert_eq!((&a * &b) % &p, ((&a % &p) * (&b % &p)) % &p);
-            let (quot, rem) = (&a * &b + &c).div_rem(&a);
-            assert_eq!(quot, b);
-            assert_eq!(rem, c);
-            assert_eq!(UBig::from_str_radix(&a.in_radix(radix).to_string(), radix).unwrap(), a);
-            assert_eq!((&a + UBig::ONE) * (&a - UBig::ONE), a.square() - UBig::ONE);
+            assert_eq!((&a * &b + &c).div_rem(&a), (b.clone(), c.clone()));
+            assert_eq!((&a + ubig!(1)) * (&a - ubig!(1)), a.sqr() - ubig!(1));
 
-            // pow can be very slow when exponent is too large
+            // pow can be very slow when exponent is too large, test with lower frequency
             if log_num_bits <= 5 && i % 8 == 0 {
                 assert_eq!((ubig!(5).pow(num_bits) + 1u8).ilog(&ubig!(25)), num_bits / 2);
             }
 
-            // gcd is much slower than primitive operations, test with lower frequency
+            // gcd is much slower than primitive operations, test with even lower frequency
             if i % 32 == 0 {
                 let (g, ca, cb) = (&a).gcd_ext(&b);
                 assert_eq!(g, (&a).gcd(&b));
                 assert_eq!(&a % &g, ubig!(0));
                 assert_eq!(&b % &g, ubig!(0));
-                assert_eq!(g, a * ca + b * cb);
+                assert_eq!(a * ca + b * cb, g.into());
             }
+        }
+    }
+}
+
+#[test]
+fn test_random_modular_arithmetic() {
+    let mut rng = StdRng::seed_from_u64(3);
+    let p = ConstDivisor::new(ubig!(1000000007));
+    let one = p.reduce(ubig!(1));
+
+    // 10^2 bits: 10^5 cases
+    // ..to..
+    // 10^6 bits: 10 cases
+    for log_num_bits in 2..=6 {
+        let num_bits = match 10usize.checked_pow(log_num_bits) {
+            None => continue,
+            Some(x) => x,
+        };
+        let num_cases = 10u32.pow(7 - log_num_bits);
+        for _ in 0..num_cases {
+            let len_a = rng.gen_range(10..num_bits);
+            let len_b = rng.gen_range(10..num_bits);
+            let a = p.reduce(rng.gen_range(ubig!(100)..ubig!(1) << len_a));
+            let b = p.reduce(rng.gen_range(ubig!(100)..ubig!(1) << len_b));
+
+            assert_eq!(&a + &b - &a, b);
+            assert_eq!(&a * &b / &a, b);
+            assert_eq!((&a + &one) * (&a - &one), a.sqr() - &one);
         }
     }
 }

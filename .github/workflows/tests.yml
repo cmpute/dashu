@@ -22,6 +22,8 @@ jobs:
           profile: minimal
           toolchain: ${{ matrix.rust }}
           override: true
+      - name: Change dependency versions
+        run: git apply .github/workflows/change_version.patch
       - uses: actions-rs/cargo@v1
         with:
           command: check
@@ -29,10 +31,19 @@ jobs:
 
   test:
     name: Test
-    strategy: 
+    strategy:
       matrix:
         bits: [16, 32, 64]
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_PASSWORD: ''
+          POSTGRES_HOST_AUTH_METHOD: 'trust'
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     env:
       RUST_BACKTRACE: 1
       RUSTFLAGS: -D warnings --cfg force_bits="${{ matrix.bits }}$"
@@ -46,7 +57,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all-features --workspace --exclude dashu-macros --exclude benchmark
+          args: --all-features --workspace --exclude benchmark --no-fail-fast
 
   test-x86:
     name: Test x86
@@ -67,7 +78,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all-features --workspace --exclude dashu-macros --exclude benchmark
+          args: --workspace --exclude benchmark
 
   test-x86_64:
     name: Test x86_64
@@ -85,10 +96,10 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all-features --workspace --exclude dashu-macros --exclude benchmark
+          args: --workspace --exclude benchmark
 
-  build-no-std:
-    name: Build no-std
+  test-no-std:
+    name: Test no-std
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: -D warnings
@@ -101,8 +112,8 @@ jobs:
           override: true
       - uses: actions-rs/cargo@v1
         with:
-          command: build
-          args: -p dashu --no-default-features --features "rand, num-traits, serde"
+          command: test
+          args: --no-default-features --features rand --workspace --exclude benchmark
 
   build-benchmark:
     name: Build benchmark
@@ -119,7 +130,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: build
-          args: -p benchmark
+          args: -p benchmark --features gmp
 
   build-aarch64:
     name: Build aarch64
@@ -137,7 +148,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --target aarch64-unknown-linux-gnu --all-features --workspace --exclude dashu-macros --exclude benchmark
+          args: --target aarch64-unknown-linux-gnu --all-features --workspace --exclude benchmark
 
   fmt:
     name: Rustfmt
@@ -169,4 +180,4 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --all-features -- -D warnings
+          args: --all-features --all-targets --workspace --exclude benchmark -- -D warnings

@@ -6,14 +6,14 @@ use crate::{
     ubig::UBig,
 };
 use core::ops::{Mul, MulAssign, Neg};
-use dashu_base::Sign;
+use dashu_base::{Sign, Signed};
 
 impl IBig {
     /// A number representing the sign of `self`.
     ///
-    /// * -1 if the number is negative
-    /// * 0 if the number is zero
-    /// * 1 if the number is positive
+    /// * [IBig::ONE] if the number is positive
+    /// * [IBig::ZERO] if the number is zero
+    /// * [IBig::NEG_ONE] if the number is negative
     ///
     /// # Examples
     /// ```
@@ -137,7 +137,15 @@ impl Mul<IBig> for Sign {
 }
 
 impl MulAssign<Sign> for IBig {
+    #[inline]
     fn mul_assign(&mut self, rhs: Sign) {
         *self = core::mem::take(self) * rhs;
+    }
+}
+
+impl Signed for IBig {
+    #[inline]
+    fn sign(&self) -> Sign {
+        self.0.sign()
     }
 }

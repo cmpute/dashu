@@ -1,6 +1,7 @@
 //! Comparisons operators.
+#![allow(deprecated)] // TODO(v0.5): remove after the implementations for AbsEq are removed.
 
-use dashu_base::{AbsCmp, AbsEq};
+use dashu_base::{AbsEq, AbsOrd};
 
 use crate::{
     arch::word::Word,
@@ -84,44 +85,12 @@ impl PartialOrd for IBig {
     }
 }
 
-impl PartialEq<IBig> for UBig {
+impl AbsEq for UBig {
     #[inline]
-    fn eq(&self, other: &IBig) -> bool {
-        self.0 == other.0
+    fn abs_eq(&self, rhs: &Self) -> bool {
+        self.eq(rhs)
     }
 }
-
-impl PartialEq<UBig> for IBig {
-    #[inline]
-    fn eq(&self, other: &UBig) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl PartialOrd<IBig> for UBig {
-    #[inline]
-    fn partial_cmp(&self, other: &IBig) -> Option<Ordering> {
-        let (rhs_sign, rhs_mag) = other.as_sign_repr();
-        let ord = match rhs_sign {
-            Positive => self.repr().cmp(&rhs_mag),
-            Negative => Ordering::Greater,
-        };
-        Some(ord)
-    }
-}
-
-impl PartialOrd<UBig> for IBig {
-    #[inline]
-    fn partial_cmp(&self, other: &UBig) -> Option<Ordering> {
-        let (lhs_sign, lhs_mag) = self.as_sign_repr();
-        let ord = match lhs_sign {
-            Positive => lhs_mag.cmp(&other.repr()),
-            Negative => Ordering::Less,
-        };
-        Some(ord)
-    }
-}
-
 impl AbsEq for IBig {
     #[inline]
     fn abs_eq(&self, rhs: &Self) -> bool {
@@ -141,19 +110,25 @@ impl AbsEq<IBig> for UBig {
     }
 }
 
-impl AbsCmp for IBig {
+impl AbsOrd for UBig {
+    #[inline]
+    fn abs_cmp(&self, rhs: &Self) -> Ordering {
+        self.0.as_typed().cmp(&rhs.0.as_typed())
+    }
+}
+impl AbsOrd for IBig {
     #[inline]
     fn abs_cmp(&self, rhs: &Self) -> Ordering {
         self.0.as_sign_typed().1.cmp(&rhs.0.as_sign_typed().1)
     }
 }
-impl AbsCmp<UBig> for IBig {
+impl AbsOrd<UBig> for IBig {
     #[inline]
     fn abs_cmp(&self, rhs: &UBig) -> Ordering {
         self.0.as_sign_typed().1.cmp(&rhs.0.as_typed())
     }
 }
-impl AbsCmp<IBig> for UBig {
+impl AbsOrd<IBig> for UBig {
     #[inline]
     fn abs_cmp(&self, rhs: &IBig) -> Ordering {
         self.0.as_typed().cmp(&rhs.0.as_sign_typed().1)

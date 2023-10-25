@@ -2,7 +2,7 @@ use crate::{
     add::{add_in_place, add_word_in_place, sub_in_place, sub_one_in_place},
     arch::word::{DoubleWord, Word},
     div,
-    fast_div::FastDivideNormalized2,
+    math::FastDivideNormalized2,
     memory::{self, Memory},
     mul::add_mul_word_in_place,
     primitive::{double_word, extend_word, highest_dword, split_dword, WORD_BITS},
@@ -103,7 +103,7 @@ pub fn sqrt_rem(b: &mut [Word], a: &mut [Word], memory: &mut Memory) -> bool {
             a_hi[0] = b2_lo;
             a_hi[1] = b2_hi;
         } else {
-            sqr::square(&mut a_hi[..2 * split], &b[..split], memory);
+            sqr::sqr(&mut a_hi[..2 * split], &b[..split], memory);
         }
     }
     if 2 * split < n {

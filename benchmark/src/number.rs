@@ -79,6 +79,7 @@ impl Number for ramp::Int {
     }
 }
 
+#[cfg(feature = "gmp")]
 impl Number for rug::Integer {
     fn pow(&self, exp: u32) -> Self {
         rug::ops::Pow::pow(self, exp).into()
@@ -93,6 +94,7 @@ impl Number for rug::Integer {
     }
 }
 
+#[cfg(feature = "gmp")]
 impl Number for gmp::mpz::Mpz {
     fn pow(&self, exp: u32) -> Self {
         self.pow(exp)

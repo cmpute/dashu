@@ -22,7 +22,7 @@
 //!
 //! The two main integer types are [UBig] (for unsigned integers) and [IBig] (for signed integers).
 //!
-//! Modular arithmetic is supported by the module [modular].
+//! Modular arithmetic is supported by the module [modular]. Some utilities for fast division is provided in the module [fast_div].
 //!
 //! To construct big integers from literals, please use the [`dashu-macro`](https://docs.rs/dashu-macros/latest/dashu_macros/)
 //! crate for your convenience.
@@ -31,7 +31,7 @@
 //!
 //! ```
 //! # use dashu_base::ParseError;
-//! use dashu_int::{IBig, modular::ModuloRing, UBig};
+//! use dashu_int::{IBig, fast_div::ConstDivisor, UBig};
 //!
 //! let a = UBig::from(12345678u32);
 //! let b = IBig::from(-0x10ff);
@@ -51,9 +51,9 @@
 //!     "hello 0x1a7e7c487267d2658a93"
 //! );
 //!
-//! let ring = ModuloRing::new(UBig::from(10000u32));
-//! let x = ring.convert(12345);
-//! let y = ring.convert(55443);
+//! let ring = ConstDivisor::new(UBig::from(10000u32));
+//! let x = ring.reduce(12345);
+//! let y = ring.reduce(55443);
 //! assert_eq!(format!("{}", x - y), "6902 (mod 10000)");
 //! # Ok::<(), ParseError>(())
 //! ```
@@ -69,6 +69,12 @@
 //! * `zeroize`: support traits from crate `zeroize`
 
 #![cfg_attr(not(feature = "std"), no_std)]
+// TODO: apply these attributes to all crates
+// TODO: #![deny(missing_docs)]
+// TODO: #![deny(clippy::allow_attributes_without_reason)]
+#![deny(clippy::dbg_macro)]
+#![deny(clippy::undocumented_unsafe_blocks)]
+#![deny(clippy::let_underscore_must_use)]
 
 extern crate alloc;
 
@@ -96,9 +102,9 @@ mod buffer;
 mod cmp;
 mod convert;
 mod div;
+mod div_const;
 mod div_ops;
 mod error;
-pub mod fast_div;
 pub mod fmt;
 mod gcd;
 mod gcd_ops;
@@ -129,3 +135,9 @@ mod ubig;
 
 // All the public items from third_party will be exposed
 pub use third_party::*;
+
+// Re-export types for fast division
+/// Prepared divisor types for fast division
+pub mod fast_div {
+    pub use super::div_const::ConstDivisor;
+}

@@ -74,6 +74,7 @@ mod helper_macros;
 mod iter;
 mod log;
 mod mul;
+pub mod ops;
 mod parse;
 mod repr;
 mod root;
@@ -81,7 +82,11 @@ pub mod round;
 mod round_ops;
 mod shift;
 mod sign;
+mod third_party;
 mod utils;
+
+// All the public items from third_party will be exposed
+pub use third_party::*;
 
 pub use fbig::FBig;
 pub use repr::{Context, Repr};
@@ -90,3 +95,5 @@ pub use repr::{Context, Repr};
 pub type DBig = FBig<round::mode::HalfAway, 10>;
 
 // TODO: allow operations with inf, but only panic when the result is nan (inf - inf and inf / inf)
+//       for division with zero (and other functions that has different limits at zero),
+//       we might forbidden it because we don't want to support negative zero in this library.

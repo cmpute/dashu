@@ -2,10 +2,12 @@
 
 use crate::{
     arch::word::Word,
-    fast_div::{FastDivideNormalized, FastDivideSmall},
     math::{max_exp_in_dword, max_exp_in_word},
 };
 use static_assertions::const_assert;
+
+type FastDivideSmall = num_modular::PreMulInv1by1<Word>;
+type FastDivideNormalized = num_modular::Normalized2by1Divisor<Word>;
 
 /// Digit and radix type, it's always u32.
 pub type Digit = u32;

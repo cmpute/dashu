@@ -95,7 +95,7 @@ impl IBig {
         self.0.as_sign_slice()
     }
 
-    /// Get the sign of the [IBig]. Zero value has a positive sign.
+    /// Get the sign of the number. Zero value has a positive sign.
     ///
     /// # Examples
     ///

@@ -5,6 +5,7 @@ use dashu_macros::{dbig, fbig};
 type FBig = dashu_float::FBig;
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_fbig() {
     // binary digits
     assert_eq!(fbig!(0), FBig::ZERO);

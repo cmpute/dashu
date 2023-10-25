@@ -27,7 +27,7 @@ impl UBig {
 
         // first stage, division with exponentially growing factors
         let mut exp = 1;
-        let mut pows = vec![factor.square()];
+        let mut pows = vec![factor.sqr()];
         loop {
             let last = pows.last().unwrap();
             let (new_q, r) = (&q).div_rem(last);
@@ -37,7 +37,7 @@ impl UBig {
 
             exp += 1 << pows.len();
             q = new_q;
-            let next_sq = last.square();
+            let next_sq = last.sqr();
             pows.push(next_sq);
         }
 

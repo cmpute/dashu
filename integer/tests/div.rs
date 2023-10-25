@@ -358,10 +358,10 @@ fn test_div_rem_euclid_ubig_ibig() {
 
             let x = || UBig::from(a);
             let y = || IBig::from(b);
-            assert_eq!((x() / y()) * y() + (x() % y()), x());
-            assert_eq!((&x() / y()) * y() + (&x() % y()), x());
-            assert_eq!((x() / &y()) * y() + (x() % &y()), x());
-            assert_eq!((&x() / &y()) * y() + (&x() % &y()), x());
+            assert_eq!((x() / y()) * y() + (x() % y()), x().into());
+            assert_eq!((&x() / y()) * y() + (&x() % y()), x().into());
+            assert_eq!((x() / &y()) * y() + (x() % &y()), x().into());
+            assert_eq!((&x() / &y()) * y() + (&x() % &y()), x().into());
 
             assert_eq!((y() / x()) * x() + (y() % x()), y());
             assert_eq!((&y() / x()) * x() + (&y() % x()), y());

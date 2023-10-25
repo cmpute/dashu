@@ -1,5 +1,39 @@
 # Changelog
 
+## Unreleased
+
+- Implemented `AbsEq` and `AbsOrd` for `UBig` and `IBig`.
+
+## 0.4.0
+
+### Add
+
+- Add a `ConstDivisor` type that supports faster division when you have an invariant number as the divisor.
+- Add `as_ibig` method to `UBig`.
+- Implement `num_order::NumOrd` trait between `UBig` and `IBig`
+- Implement `num_modular::Reducer` trait for `ConstDivisor`
+
+### Change
+
+- The serialization format with `serde` for `UBig` and `IBig` has been changed. Now both types will be serialize as a sequence of little-endian bytes.
+- Now feature `num-traits` and `rand` are not enabled by default, feature `num-order` is enabled instead.
+- The `IntoModule` trait is refactored into the `IntoRing` trait, which has an additional type parameter for the ring. This is used for potential Montgomery implementation in future.
+- The `IntoRing` trait is no longer implemented for reference types `&UBig` and `&IBig` to make the copying explicit.
+- The `Modulo` type is renamed to `Reduced` to prevent confusion.
+- `From<&UBig>` implementation for `IBig` and `TryFrom<&IBig>` for `UBig` are removed to prevent implicit cloning.
+- `BitAnd` for `UBig` and other primitive integer types now will always return the result with primitive integer type.
+
+### Remove
+
+- The comparison traits `PartialOrd` and `PartialEq` are no longer implemented between `UBig` and `IBig`. Use `num_order::NumOrd` instead.
+
+## 0.3.1
+
+- Add struct `crate::rand::UniformBits` for generating random integers with given bit lenght limit.
+- Add `count_ones()` and `count_zeros()` for `UBig`
+- Add `cubic()` for `UBig` and `IBig`
+- Add `rand_v08` and `num-traits_v02` feature flags to prevent breaking changes due to dependency updates in future 
+
 ## 0.3.0
 
 ### Add

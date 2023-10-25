@@ -54,11 +54,24 @@ impl UBig {
     ///
     /// ```
     /// # use dashu_int::UBig;
-    /// assert_eq!(UBig::from(3u8).square(), UBig::from(9u8));
+    /// assert_eq!(UBig::from(3u8).sqr(), UBig::from(9u8));
     /// ```
     #[inline]
-    pub fn square(&self) -> UBig {
-        UBig(self.repr().square())
+    pub fn sqr(&self) -> UBig {
+        UBig(self.repr().sqr())
+    }
+
+    /// Compute the cubic of the number (`self * self * self`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::UBig;
+    /// assert_eq!(UBig::from(3u8).cubic(), UBig::from(27u8));
+    /// ```
+    #[inline]
+    pub fn cubic(&self) -> UBig {
+        self * self.sqr()
     }
 }
 
@@ -69,11 +82,24 @@ impl IBig {
     ///
     /// ```
     /// # use dashu_int::{UBig, IBig};
-    /// assert_eq!(IBig::from(-3).square(), UBig::from(9u8));
+    /// assert_eq!(IBig::from(-3).sqr(), UBig::from(9u8));
     /// ```
     #[inline]
-    pub fn square(&self) -> UBig {
-        UBig(self.as_sign_repr().1.square())
+    pub fn sqr(&self) -> UBig {
+        UBig(self.as_sign_repr().1.sqr())
+    }
+
+    /// Compute the cubic of the number (`self * self * self`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::IBig;
+    /// assert_eq!(IBig::from(-3).cubic(), IBig::from(-27));
+    /// ```
+    #[inline]
+    pub fn cubic(&self) -> IBig {
+        self * self.sqr()
     }
 }
 
@@ -217,7 +243,7 @@ pub(crate) mod repr {
     }
 
     impl TypedReprRef<'_> {
-        pub fn square(&self) -> Repr {
+        pub fn sqr(&self) -> Repr {
             match self {
                 TypedReprRef::RefSmall(dword) => {
                     if let Some(word) = shrink_dword(*dword) {
@@ -250,7 +276,7 @@ pub(crate) mod repr {
         buffer.push_zeros(words.len() * 2);
 
         let mut allocation = MemoryAllocation::new(sqr::memory_requirement_exact(words.len()));
-        sqr::square(&mut buffer, words, &mut allocation.memory());
+        sqr::sqr(&mut buffer, words, &mut allocation.memory());
         Repr::from_buffer(buffer)
     }
 }

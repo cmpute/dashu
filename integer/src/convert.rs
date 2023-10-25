@@ -32,6 +32,36 @@ impl Default for IBig {
     }
 }
 
+pub(crate) fn words_to_le_bytes(words: &[Word]) -> Vec<u8> {
+    debug_assert!(!words.is_empty());
+
+    let n = words.len();
+    let last = words[n - 1];
+    let skip_last_bytes = last.leading_zeros() as usize / 8;
+    let mut bytes = Vec::with_capacity(n * WORD_BYTES - skip_last_bytes);
+    for word in &words[..n - 1] {
+        bytes.extend_from_slice(&word.to_le_bytes());
+    }
+    let last_bytes = last.to_le_bytes();
+    bytes.extend_from_slice(&last_bytes[..WORD_BYTES - skip_last_bytes]);
+    bytes
+}
+
+pub(crate) fn words_to_be_bytes(words: &[Word]) -> Vec<u8> {
+    debug_assert!(!words.is_empty());
+
+    let n = words.len();
+    let last = words[n - 1];
+    let skip_last_bytes = last.leading_zeros() as usize / 8;
+    let mut bytes = Vec::with_capacity(n * WORD_BYTES - skip_last_bytes);
+    let last_bytes = last.to_be_bytes();
+    bytes.extend_from_slice(&last_bytes[skip_last_bytes..]);
+    for word in words[..n - 1].iter().rev() {
+        bytes.extend_from_slice(&word.to_be_bytes());
+    }
+    bytes
+}
+
 impl Repr {
     #[inline]
     pub fn from_le_bytes(bytes: &[u8]) -> Repr {
@@ -128,18 +158,7 @@ impl UBig {
                 let skip_bytes = x.leading_zeros() as usize / 8;
                 bytes[..DWORD_BYTES - skip_bytes].into()
             }
-            RefLarge(words) => {
-                let n = words.len();
-                let last = words[n - 1];
-                let skip_last_bytes = last.leading_zeros() as usize / 8;
-                let mut bytes = Vec::with_capacity(n * WORD_BYTES - skip_last_bytes);
-                for word in &words[..n - 1] {
-                    bytes.extend_from_slice(&word.to_le_bytes());
-                }
-                let last_bytes = last.to_le_bytes();
-                bytes.extend_from_slice(&last_bytes[..WORD_BYTES - skip_last_bytes]);
-                bytes.into_boxed_slice()
-            }
+            RefLarge(words) => words_to_le_bytes(words).into_boxed_slice(),
         }
     }
 
@@ -159,18 +178,7 @@ impl UBig {
                 let skip_bytes = x.leading_zeros() as usize / 8;
                 bytes[skip_bytes..].into()
             }
-            RefLarge(words) => {
-                let n = words.len();
-                let last = words[n - 1];
-                let skip_last_bytes = last.leading_zeros() as usize / 8;
-                let mut bytes = Vec::with_capacity(n * WORD_BYTES - skip_last_bytes);
-                let last_bytes = last.to_be_bytes();
-                bytes.extend_from_slice(&last_bytes[skip_last_bytes..]);
-                for word in words[..n - 1].iter().rev() {
-                    bytes.extend_from_slice(&word.to_be_bytes());
-                }
-                bytes.into_boxed_slice()
-            }
+            RefLarge(words) => words_to_be_bytes(words).into_boxed_slice(),
         }
     }
 
@@ -206,6 +214,22 @@ impl UBig {
     #[inline]
     pub fn to_f64(&self) -> Approximation<f64, Sign> {
         self.repr().to_f64()
+    }
+
+    /// Regard the number as a [IBig] number and return a reference of [IBig] type.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::{IBig, UBig};
+    /// assert_eq!(UBig::from(123u8).as_ibig(), &IBig::from(123));
+    /// ```
+    #[inline]
+    pub fn as_ibig(&self) -> &IBig {
+        // SAFETY: UBig and IBig are both transparent wrapper around the Repr type.
+        //         This conversion is only available for immutable references, so that
+        //         the sign will not be messed up.
+        unsafe { core::mem::transmute(self) }
     }
 }
 
@@ -437,13 +461,6 @@ impl From<UBig> for IBig {
     }
 }
 
-impl From<&UBig> for IBig {
-    #[inline]
-    fn from(x: &UBig) -> IBig {
-        IBig::from(x.clone())
-    }
-}
-
 impl TryFrom<IBig> for UBig {
     type Error = ConversionError;
 
@@ -451,18 +468,6 @@ impl TryFrom<IBig> for UBig {
     fn try_from(x: IBig) -> Result<UBig, ConversionError> {
         match x.sign() {
             Positive => Ok(UBig(x.0)),
-            Negative => Err(ConversionError::OutOfBounds),
-        }
-    }
-}
-
-impl TryFrom<&IBig> for UBig {
-    type Error = ConversionError;
-
-    #[inline]
-    fn try_from(x: &IBig) -> Result<UBig, ConversionError> {
-        match x.sign() {
-            Positive => Ok(UBig(x.0.clone())),
             Negative => Err(ConversionError::OutOfBounds),
         }
     }
@@ -604,6 +609,7 @@ mod repr {
         }
 
         #[inline]
+        #[allow(clippy::unnecessary_cast)] // because DoubleWord is not always u128
         pub fn to_f32(self) -> Approximation<f32, Sign> {
             match self {
                 RefSmall(dword) => to_f32_small(dword as u128),
@@ -629,6 +635,7 @@ mod repr {
         }
 
         #[inline]
+        #[allow(clippy::unnecessary_cast)] // because DoubleWord is not always u128
         pub fn to_f64(self) -> Approximation<f64, Sign> {
             match self {
                 RefSmall(dword) => to_f64_small(dword as u128),

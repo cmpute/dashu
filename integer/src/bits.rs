@@ -16,7 +16,6 @@ impl UBig {
     ///
     /// ```
     /// # use dashu_int::UBig;
-    ///
     /// let mut a = UBig::from(0b100u8);
     /// a.set_bit(0);
     /// assert_eq!(a, UBig::from(0b101u8));
@@ -28,7 +27,7 @@ impl UBig {
         self.0 = mem::take(self).into_repr().set_bit(n);
     }
 
-    /// Clear the `n`-th bit, n starts from 0.
+    /// Clear the `n`-th bit, `n` starts from 0.
     ///
     /// # Examples
     ///
@@ -106,7 +105,7 @@ impl UBig {
         (UBig(lo), UBig(hi))
     }
 
-    /// Clear the high bits from (n+1)-th bit.
+    /// Clear the high bits from `n+1`-th bit.
     ///
     /// This operation is equivalent to getting the lowest n bits on the integer
     /// i.e. `self &= ((1 << n) - 1)`.
@@ -127,6 +126,43 @@ impl UBig {
     #[inline]
     pub fn clear_high_bits(&mut self, n: usize) {
         self.0 = mem::take(self).into_repr().clear_high_bits(n);
+    }
+
+    /// Count the 1 bits in the integer
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_base::BitTest;
+    /// # use dashu_int::UBig;
+    /// assert_eq!(UBig::from(0b10100011u8).count_ones(), 4);
+    /// assert_eq!(UBig::from(0x90ffff3450897234u64).count_ones(), 33);
+    ///
+    /// let x = (UBig::ONE << 150) - 1u8;
+    /// assert_eq!(x.count_ones(), x.bit_len());
+    /// ```
+    #[inline]
+    pub fn count_ones(&self) -> usize {
+        self.repr().count_ones()
+    }
+
+    /// Count the 0 bits in the integer after the leading bit 1.
+    ///
+    /// If the integer is zero, [None] will be returned.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_base::BitTest;
+    /// # use dashu_int::UBig;
+    /// assert_eq!(UBig::from(0b10100011u8).count_zeros(), Some(4));
+    /// assert_eq!(UBig::from(0x90ffff3450897234u64).count_zeros(), Some(31));
+    ///
+    /// let x = (UBig::ONE << 150) - 1u8;
+    /// assert_eq!(x.count_zeros(), Some(0));
+    /// ```
+    pub fn count_zeros(&self) -> Option<usize> {
+        self.repr().count_zeros()
     }
 }
 
@@ -310,6 +346,24 @@ mod repr {
             match self {
                 RefSmall(dword) => dword.trailing_ones() as usize,
                 RefLarge(words) => trailing_ones_large(words),
+            }
+        }
+
+        pub fn count_ones(self) -> usize {
+            match self {
+                RefSmall(dword) => dword.count_ones() as usize,
+                RefLarge(words) => words.iter().map(|w| w.count_ones() as usize).sum(),
+            }
+        }
+
+        pub fn count_zeros(self) -> Option<usize> {
+            match self {
+                RefSmall(0) => None,
+                RefSmall(dword) => Some((dword.count_zeros() - dword.leading_zeros()) as usize),
+                RefLarge(words) => {
+                    let zeros: usize = words.iter().map(|w| w.count_zeros() as usize).sum();
+                    Some(zeros - words.last().unwrap().leading_zeros() as usize)
+                }
             }
         }
 

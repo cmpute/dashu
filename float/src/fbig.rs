@@ -1,6 +1,8 @@
 use crate::{
+    error::panic_unlimited_precision,
     repr::{Context, Repr, Word},
     round::{mode, Round},
+    utils::digit_len,
 };
 use dashu_base::Sign;
 use dashu_int::{DoubleWord, IBig};
@@ -95,14 +97,22 @@ use dashu_int::{DoubleWord, IBig};
 ///
 /// # Convert from/to `f32`/`f64`
 ///
-/// The conversion between [FBig] and [f32]/[f64] is only defined for base 2 [FBig]. To convert
-/// from/to other bases, please first convert to base 2, and then change the base using [with_base()][FBig::with_base]
-/// or [with_base_and_precision()][FBig::with_base_and_precision].
+/// Converting from [f32]/[f64] to [FBig] is only defined for base 2 [FBig] (using [TryFrom][core::convert::TryFrom])
+/// to ensure the conversion is lossless. Since [FBig] doesn't support `NAN`s, converting `f32::NAN` or `f64::NAN` will
+/// return [Err].
 ///
-/// Converting from [f32]/[f64] (using [TryFrom][core::convert::TryFrom]) is lossless, except for
-/// that `NAN` values will result in an [Err]. Converting to [f32]/[f64] (using [to_f32()][FBig::to_f32]
-/// and [to_f64()][FBig::to_f64]) is lossy, and the rounding direction is contained in the result of these
-/// two methods.
+/// Converting to [f32]/[f64] (using [to_f32()][FBig::to_f32] and [to_f64()][FBig::to_f64]) can be lossy, and the rounding
+/// direction is contained in the result of these two methods. To use the default IEEE 754 rounding mode (rounding to
+/// nearest), the [Repr::to_f32] and [Repr::to_f64] methods can be used for convenience.
+///
+/// # Convert from/to `UBig`/`IBig`
+///
+/// Converting from `UBig` and `IBig` is trivial and lossless through [From]. However, the reverse direction can be lossy.
+///
+/// The [TryFrom] trait and [to_int()][FBig::to_int] method are the two supported ways to convert from [FBig] to [IBig].
+/// To convert to [UBig][dashu_int::UBig], please first convert to [IBig]. When converting to [IBig], [TryFrom] returns
+/// [Ok] only when the floating point number is not infinite and doesn't have fractional part. To convert with rounding,
+/// use [to_int()][FBig::to_int] instead.
 pub struct FBig<RoundingMode: Round = mode::Zero, const BASE: Word = 2> {
     pub(crate) repr: Repr<BASE>,
     pub(crate) context: Context<RoundingMode>,
@@ -136,9 +146,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Note that this condition is not checked in release build.
     #[inline]
     pub fn from_repr(repr: Repr<B>, context: Context<R>) -> Self {
-        debug_assert!(
-            repr.is_infinite() || !context.is_limited() || repr.digits() <= context.precision
-        );
+        assert!(repr.is_infinite() || !context.is_limited() || repr.digits() <= context.precision);
         Self { repr, context }
     }
 
@@ -174,10 +182,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
+    /// # use dashu_int::IBig;
     /// use dashu_float::Repr;
     ///
     /// let a = DBig::from_str_native("1.234")?;
-    /// assert!(a.repr().significand() <= &Repr::<10>::BASE.pow(a.precision()));
+    /// assert!(a.repr().significand() <= &IBig::from(10).pow(a.precision()));
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
@@ -252,8 +261,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn from_parts(significand: IBig, exponent: isize) -> Self {
+        let precision = digit_len::<B>(&significand).max(1); // set precision to 1 if signficand is zero
         let repr = Repr::new(significand, exponent);
-        let precision = repr.digits().max(1); // set precision to 1 if signficand is zero
         let context = Context::new(precision);
         Self::new(repr, context)
     }
@@ -346,8 +355,15 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// assert_eq!(DBig::from_str_native("01.23")?.ulp(), DBig::from_str_native("0.001")?);
     /// # Ok::<(), ParseError>(())
     /// ```
+    ///
+    /// # Panics
+    /// Panics if the precision of the number is 0 (unlimited).
+    ///
     #[inline]
     pub fn ulp(&self) -> Self {
+        if self.context.precision == 0 {
+            panic_unlimited_precision();
+        }
         if self.repr.is_infinite() {
             return self.clone();
         }

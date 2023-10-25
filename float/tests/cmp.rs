@@ -1,11 +1,13 @@
 use core::cmp::Ordering;
 
+use dashu_base::AbsOrd;
 use dashu_float::DBig;
 type FBig = dashu_float::FBig;
 
 mod helper_macros;
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_eq_binary() {
     assert_eq!(fbig!(0x0p1), fbig!(-0x0p-1));
     assert_ne!(fbig!(0x0p1), fbig!(0x1p1));
@@ -40,6 +42,7 @@ fn test_eq_decimal() {
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig)]
 fn test_cmp_binary() {
     // case 1: compare with inf
     assert_eq!(FBig::INFINITY.cmp(&FBig::INFINITY), Ordering::Equal);
@@ -131,4 +134,27 @@ fn test_cmp_decimal() {
     assert!(dbig!(9998e1) > dbig!(9999));
     assert!(dbig!(1234e4) < dbig!(12345678));
     assert!(dbig!(-1234e-4) > dbig!(-12345678e-8));
+}
+
+#[test]
+fn test_abs_ord() {
+    // case 1: compare with inf
+    assert_eq!(FBig::INFINITY.abs_cmp(&FBig::INFINITY), Ordering::Equal);
+    assert_eq!(FBig::NEG_INFINITY.abs_cmp(&FBig::INFINITY), Ordering::Equal);
+    assert_eq!(FBig::NEG_INFINITY.abs_cmp(&FBig::NEG_INFINITY), Ordering::Equal);
+
+    assert_eq!(FBig::INFINITY.abs_cmp(&fbig!(0x1)), Ordering::Greater);
+    assert_eq!(FBig::INFINITY.abs_cmp(&fbig!(-0x1)), Ordering::Greater);
+    assert_eq!(FBig::NEG_INFINITY.abs_cmp(&fbig!(0x1)), Ordering::Greater);
+    assert_eq!(FBig::NEG_INFINITY.abs_cmp(&fbig!(-0x1)), Ordering::Greater);
+
+    // case 2: compare exponent and precision
+    assert_eq!(dbig!(1e100).abs_cmp(&dbig!(1)), Ordering::Greater);
+    assert_eq!(dbig!(1e-100).abs_cmp(&dbig!(1)), Ordering::Less);
+    assert_eq!(dbig!(-1e100).abs_cmp(&dbig!(-1)), Ordering::Greater);
+    assert_eq!(dbig!(-1e-100).abs_cmp(&dbig!(-1)), Ordering::Less);
+
+    // case 3: compare exact values
+    assert_eq!(dbig!(1234e4).abs_cmp(&dbig!(12345678)), Ordering::Less);
+    assert_eq!(dbig!(-1234e-4).abs_cmp(&dbig!(-12345678e-8)), Ordering::Less);
 }

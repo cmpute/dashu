@@ -1,7 +1,7 @@
 use crate::{
-    error::panic_operate_with_inf,
+    error::assert_finite,
     round::{Round, Rounded},
-    utils::{base_as_ibig, digit_len, split_digits, split_digits_ref},
+    utils::{digit_len, split_digits, split_digits_ref},
 };
 use core::marker::PhantomData;
 use dashu_base::{Approximation::*, EstimatedLog2, Sign};
@@ -77,7 +77,7 @@ pub struct Context<RoundingMode: Round> {
 
 impl<const B: Word> Repr<B> {
     /// The base of the representation. It's exposed as an [IBig] constant.
-    pub const BASE: IBig = base_as_ibig::<B>();
+    pub const BASE: UBig = UBig::from_word(B);
 
     /// Create a [Repr] instance representing value zero
     #[inline]
@@ -120,7 +120,7 @@ impl<const B: Word> Repr<B> {
         }
     }
 
-    // TODO: Add support for representing NEG_ZERO, but don't provide method to generate it.
+    // XXX: Add support for representing NEG_ZERO, but don't provide method to generate it.
     // neg_zero: exponent -1, infinity: exponent: isize::MAX, neg_infinity: exponent: isize::MIN
 
     /// Determine if the [Repr] represents zero
@@ -179,6 +179,26 @@ impl<const B: Word> Repr<B> {
     #[inline]
     pub const fn is_finite(&self) -> bool {
         !self.is_infinite()
+    }
+
+    /// Determine if the number can be regarded as an integer.
+    ///
+    /// Note that this function returns false when the number is infinite.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_float::Repr;
+    /// assert!(Repr::<2>::zero().is_int());
+    /// assert!(Repr::<10>::one().is_int());
+    /// assert!(!Repr::<16>::new(123.into(), -1).is_int());
+    /// ```
+    pub fn is_int(&self) -> bool {
+        if self.is_infinite() {
+            false
+        } else {
+            self.exponent >= 0
+        }
     }
 
     /// Get the sign of the number
@@ -254,10 +274,7 @@ impl<const B: Word> Repr<B> {
     /// ```
     #[inline]
     pub fn digits(&self) -> usize {
-        if self.is_infinite() {
-            panic_operate_with_inf();
-        }
-
+        assert_finite(self);
         digit_len::<B>(&self.significand)
     }
 
@@ -275,9 +292,8 @@ impl<const B: Word> Repr<B> {
     /// ```
     #[inline]
     pub fn digits_ub(&self) -> usize {
-        if self.is_infinite() {
-            panic_operate_with_inf();
-        } else if self.significand.is_zero() {
+        assert_finite(self);
+        if self.significand.is_zero() {
             return 0;
         }
 
@@ -298,13 +314,12 @@ impl<const B: Word> Repr<B> {
     /// assert_eq!(Repr::<2>::zero().digits_lb(), 0);
     /// assert_eq!(Repr::<2>::one().digits_lb(), 0);
     /// assert_eq!(Repr::<10>::one().digits_lb(), 0);
-    /// assert_eq!(Repr::<10>::new(1001.into(), 0).digits_lb(), 3);
+    /// assert!(Repr::<10>::new(1001.into(), 0).digits_lb() <= 3);
     /// ```
     #[inline]
     pub fn digits_lb(&self) -> usize {
-        if self.is_infinite() {
-            panic_operate_with_inf();
-        } else if self.significand.is_zero() {
+        assert_finite(self);
+        if self.significand.is_zero() {
             return 0;
         }
 
@@ -314,6 +329,14 @@ impl<const B: Word> Repr<B> {
             _ => self.significand.log2_bounds().0 / Self::BASE.log2_bounds().1,
         };
         log as usize
+    }
+
+    /// Quickly test if `|self| < 1`. IT's not always correct,
+    /// but there are guaranteed to be no false postives.
+    #[inline]
+    pub(crate) fn smaller_than_one(&self) -> bool {
+        debug_assert!(self.is_finite());
+        self.exponent + (self.digits_ub() as isize) < -1
     }
 
     /// Create a [Repr] from the significand and exponent. This
@@ -437,7 +460,7 @@ impl<R: Round> Context<R> {
 
     /// Round the repr to the desired precision
     pub(crate) fn repr_round<const B: Word>(&self, repr: Repr<B>) -> Rounded<Repr<B>> {
-        assert!(repr.is_finite());
+        assert_finite(&repr);
         if !self.is_limited() {
             return Exact(repr);
         }
@@ -455,7 +478,7 @@ impl<R: Round> Context<R> {
 
     /// Round the repr to the desired precision
     pub(crate) fn repr_round_ref<const B: Word>(&self, repr: &Repr<B>) -> Rounded<Repr<B>> {
-        assert!(repr.is_finite());
+        assert_finite(repr);
         if !self.is_limited() {
             return Exact(repr.clone());
         }

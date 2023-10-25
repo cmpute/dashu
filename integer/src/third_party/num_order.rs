@@ -1,30 +1,83 @@
-use core::{cmp::Ordering, hash::Hash};
-
-use dashu_base::{BitTest, FloatEncoding, Sign, Signed};
+//! Implement num-order traits.
 
 use crate::{ibig::IBig, ubig::UBig};
+use core::{cmp::Ordering, hash::Hash};
+use dashu_base::{BitTest, FloatEncoding, Sign, Signed};
+use num_order::{NumHash, NumOrd};
 
-impl num_order::NumHash for UBig {
+impl NumHash for UBig {
     fn num_hash<H: core::hash::Hasher>(&self, state: &mut H) {
         let m = self % (i128::MAX as u128);
         (m as i128).hash(state)
     }
 }
-impl num_order::NumHash for IBig {
+impl NumHash for IBig {
     fn num_hash<H: core::hash::Hasher>(&self, state: &mut H) {
         (self % i128::MAX).hash(state)
     }
 }
 
+impl NumOrd<UBig> for UBig {
+    #[inline]
+    fn num_cmp(&self, other: &UBig) -> Ordering {
+        self.cmp(other)
+    }
+    #[inline]
+    fn num_partial_cmp(&self, other: &UBig) -> Option<Ordering> {
+        self.partial_cmp(other)
+    }
+}
+
+impl NumOrd<IBig> for UBig {
+    #[inline]
+    fn num_cmp(&self, other: &IBig) -> Ordering {
+        let (rhs_sign, rhs_mag) = other.as_sign_repr();
+        match rhs_sign {
+            Sign::Positive => self.repr().cmp(&rhs_mag),
+            Sign::Negative => Ordering::Greater,
+        }
+    }
+    #[inline]
+    fn num_partial_cmp(&self, other: &IBig) -> Option<Ordering> {
+        Some(self.num_cmp(other))
+    }
+}
+
+impl NumOrd<UBig> for IBig {
+    #[inline]
+    fn num_cmp(&self, other: &UBig) -> Ordering {
+        let (lhs_sign, lhs_mag) = self.as_sign_repr();
+        match lhs_sign {
+            Sign::Positive => lhs_mag.cmp(&other.repr()),
+            Sign::Negative => Ordering::Less,
+        }
+    }
+    #[inline]
+    fn num_partial_cmp(&self, other: &UBig) -> Option<Ordering> {
+        Some(self.num_cmp(other))
+    }
+}
+
+impl NumOrd<IBig> for IBig {
+    #[inline]
+    fn num_cmp(&self, other: &IBig) -> Ordering {
+        self.cmp(other)
+    }
+    #[inline]
+    fn num_partial_cmp(&self, other: &IBig) -> Option<Ordering> {
+        self.partial_cmp(other)
+    }
+}
+
 macro_rules! impl_num_ord_ubig_with_unsigned {
     ($($t:ty)*) => {$(
-        impl num_order::NumOrd<$t> for UBig {
+        impl NumOrd<$t> for UBig {
             #[inline]
             fn num_partial_cmp(&self, other: &$t) -> Option<Ordering> {
                 self.partial_cmp(&UBig::from_unsigned(*other))
             }
         }
-        impl num_order::NumOrd<UBig> for $t {
+        impl NumOrd<UBig> for $t {
             #[inline]
             fn num_partial_cmp(&self, other: &UBig) -> Option<Ordering> {
                 UBig::from_unsigned(*self).partial_cmp(other)
@@ -36,16 +89,16 @@ impl_num_ord_ubig_with_unsigned!(u8 u16 u32 u64 u128 usize);
 
 macro_rules! impl_num_ord_ubig_with_signed {
     ($($t:ty)*) => {$(
-        impl num_order::NumOrd<$t> for UBig {
+        impl NumOrd<$t> for UBig {
             #[inline]
             fn num_partial_cmp(&self, other: &$t) -> Option<Ordering> {
-                self.partial_cmp(&IBig::from_signed(*other))
+                self.num_partial_cmp(&IBig::from_signed(*other))
             }
         }
-        impl num_order::NumOrd<UBig> for $t {
+        impl NumOrd<UBig> for $t {
             #[inline]
             fn num_partial_cmp(&self, other: &UBig) -> Option<Ordering> {
-                IBig::from_signed(*self).partial_cmp(other)
+                IBig::from_signed(*self).num_partial_cmp(other)
             }
         }
     )*};
@@ -54,13 +107,13 @@ impl_num_ord_ubig_with_signed!(i8 i16 i32 i64 i128 isize);
 
 macro_rules! impl_num_ord_ibig_with_unsigned {
     ($($t:ty)*) => {$(
-        impl num_order::NumOrd<$t> for IBig {
+        impl NumOrd<$t> for IBig {
             #[inline]
             fn num_partial_cmp(&self, other: &$t) -> Option<Ordering> {
                 self.partial_cmp(&IBig::from_unsigned(*other))
             }
         }
-        impl num_order::NumOrd<IBig> for $t {
+        impl NumOrd<IBig> for $t {
             #[inline]
             fn num_partial_cmp(&self, other: &IBig) -> Option<Ordering> {
                 IBig::from_unsigned(*self).partial_cmp(other)
@@ -72,13 +125,13 @@ impl_num_ord_ibig_with_unsigned!(u8 u16 u32 u64 u128 usize);
 
 macro_rules! impl_num_ord_ibig_with_signed {
     ($($t:ty)*) => {$(
-        impl num_order::NumOrd<$t> for IBig {
+        impl NumOrd<$t> for IBig {
             #[inline]
             fn num_partial_cmp(&self, other: &$t) -> Option<Ordering> {
                 self.partial_cmp(&IBig::from_signed(*other))
             }
         }
-        impl num_order::NumOrd<IBig> for $t {
+        impl NumOrd<IBig> for $t {
             #[inline]
             fn num_partial_cmp(&self, other: &IBig) -> Option<Ordering> {
                 IBig::from_signed(*self).partial_cmp(other)
@@ -98,7 +151,7 @@ fn sign_to_ord(sign: Sign) -> Ordering {
 
 macro_rules! impl_num_ord_ubig_with_float {
     ($($t:ty)*) => {$(
-        impl num_order::NumOrd<$t> for UBig {
+        impl NumOrd<$t> for UBig {
             fn num_partial_cmp(&self, other: &$t) -> Option<Ordering> {
                 if other.is_nan() {
                     return None;
@@ -146,7 +199,7 @@ macro_rules! impl_num_ord_ubig_with_float {
             }
         }
 
-        impl num_order::NumOrd<UBig> for $t {
+        impl NumOrd<UBig> for $t {
             #[inline]
             fn num_partial_cmp(&self, other: &UBig) -> Option<Ordering> {
                 other.num_partial_cmp(self).map(|ord| ord.reverse())
@@ -158,7 +211,7 @@ impl_num_ord_ubig_with_float!(f32 f64);
 
 macro_rules! impl_num_ord_ibig_with_float {
     ($($t:ty)*) => {$(
-        impl num_order::NumOrd<$t> for IBig {
+        impl NumOrd<$t> for IBig {
             fn num_partial_cmp(&self, other: &$t) -> Option<Ordering> {
                 // step0: compare with nan and 0
                 if other.is_nan() {
@@ -210,7 +263,7 @@ macro_rules! impl_num_ord_ibig_with_float {
             }
         }
 
-        impl num_order::NumOrd<IBig> for $t {
+        impl NumOrd<IBig> for $t {
             #[inline]
             fn num_partial_cmp(&self, other: &IBig) -> Option<Ordering> {
                 other.num_partial_cmp(self).map(|ord| ord.reverse())

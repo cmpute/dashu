@@ -53,7 +53,7 @@ macro_rules! impl_commutative_binop_with_primitive {
         crate::helper_macros::impl_commutative_binop_with_primitive!(impl $trait<$target> for $t, $method -> $t);
     };
     (impl $trait:ident<$target:ty> for $t:ty, $method:ident -> $omethod:ty) => {
-        crate::helper_macros::impl_binop_with_primitive!(impl $trait<$target> for $t, $method);
+        crate::helper_macros::impl_binop_with_primitive!(impl $trait<$target> for $t, $method -> $omethod);
 
         impl $trait<$t> for $target {
             type Output = $omethod;

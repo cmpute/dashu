@@ -342,7 +342,6 @@ pub fn memory_requirement_ext_up_to(lhs_len: usize, rhs_len: usize) -> Layout {
     )
 }
 
-/// Extended binary GCD for two multi-digits numbers
 pub fn gcd_ext_in_place(
     lhs: &mut [Word],
     rhs: &mut [Word],
@@ -450,13 +449,17 @@ pub fn gcd_ext_in_place(
     // If y is zero, then the gcd result is in x now.
     // Note that y.len() == 0 is equivalent to y == 0, which is guaranteed by trim_leading_zeros.
     if y.is_empty() {
+        // SAFETY: see the comments in the block. The safety here need to be carefully managed.
         unsafe {
             if !swapped {
                 // if not swapped, then x is originated from lhs, copy it to rhs
                 debug_assert!(x.as_ptr() == lhs_ptr);
                 debug_assert!(x.len() <= rhs_len);
+
+                // SAFETY: at this point, x should be from lhs, so it's not overlapping with rhs
                 ptr::copy_nonoverlapping(x.as_ptr(), rhs_ptr, x.len());
             }
+            // SAFETY: t0 is temporarily allocated space, it won't overlap with lhs or rhs
             ptr::copy_nonoverlapping(t0.as_ptr(), lhs_ptr, t0_len);
         }
         let sign = if swapped {
@@ -487,10 +490,11 @@ pub fn gcd_ext_in_place(
 
     // let lhs stores |b| = |cx| * t0 + |cy| * t1
     // by now, number of words in |b| should be close to lhs
+
+    // SAFETY: we don't hold any reference to lhs and rhs now, so there will be no
+    // data racing. The pointer and length are from the original slice, so the slice
+    // will be valid.
     let (lhs, rhs) = unsafe {
-        // SAFETY: we don't hold any reference to lhs and rhs now, so there will be no
-        // data racing. The pointer and length are from the original slice, so the slice
-        // will be valid.
         (
             slice::from_raw_parts_mut(lhs_ptr, lhs_len),
             slice::from_raw_parts_mut(rhs_ptr, rhs_len),
