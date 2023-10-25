@@ -1,3 +1,5 @@
+#![allow(deprecated)] // TODO(v0.5): remove after the implementations for AbsEq are removed.
+
 use crate::{repr::Repr, RBig, Relaxed};
 use core::{
     cmp::Ordering,
@@ -269,10 +271,9 @@ pub(crate) mod with_float {
     ) -> Ordering {
         // case 1: compare with inf
         if rhs.is_infinite() {
-            return if ABS || rhs.exponent() > 0 {
-                Ordering::Less
-            } else {
-                Ordering::Greater
+            return match ABS || rhs.exponent() > 0 {
+                true => Ordering::Less,
+                false => Ordering::Greater,
             };
         }
 

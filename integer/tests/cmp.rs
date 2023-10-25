@@ -2,7 +2,7 @@
 
 use core::cmp::Ordering;
 
-use dashu_base::{AbsEq, AbsOrd, Sign};
+use dashu_base::{AbsOrd, Sign};
 use dashu_int::{IBig, UBig};
 
 mod helper_macros;
@@ -46,11 +46,11 @@ fn test_eq_and_cmp() {
 }
 
 #[test]
-fn test_abs_eq_and_cmp() {
-    assert!(ubig!(12).abs_eq(&ubig!(12)));
-    assert!(ubig!(12).abs_eq(&ibig!(-12)));
-    assert!(ibig!(-12).abs_eq(&ubig!(12)));
-    assert!(ibig!(12).abs_eq(&ibig!(-12)));
+fn test_abs_ord() {
+    // assert!(ubig!(12).abs_eq(&ubig!(12)));
+    // assert!(ubig!(12).abs_eq(&ibig!(-12)));
+    // assert!(ibig!(-12).abs_eq(&ubig!(12)));
+    // assert!(ibig!(12).abs_eq(&ibig!(-12)));
 
     assert!(ibig!(-12).abs_cmp(&ubig!(10)).is_ge());
     assert!(ibig!(-12).abs_cmp(&ubig!(12)).is_eq());

@@ -1,4 +1,5 @@
 //! Comparisons operators.
+#![allow(deprecated)] // TODO(v0.5): remove after the implementations for AbsEq are removed.
 
 use dashu_base::{AbsEq, AbsOrd};
 

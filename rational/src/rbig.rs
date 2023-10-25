@@ -1,4 +1,4 @@
-use dashu_base::{AbsEq, EstimatedLog2, Sign, Signed};
+use dashu_base::{EstimatedLog2, Sign};
 use dashu_int::{DoubleWord, IBig, UBig};
 
 use crate::{error::panic_divide_by_0, repr::Repr};
@@ -369,7 +369,7 @@ impl Relaxed {
     /// See [RBig::is_one] for details.
     #[inline]
     pub fn is_one(&self) -> bool {
-        self.0.numerator.is_positive() && self.0.numerator.abs_eq(&self.0.denominator)
+        self.0.denominator.as_ibig() == &self.0.numerator
     }
 }
 

@@ -42,7 +42,7 @@ pub trait UnsignedAbs {
 /// assert!(5.abs_eq(&-5));
 /// assert!(12.3.abs_eq(&-12.3));
 /// ```
-#[deprecated(since = "0.5", note = "AbsEq will be moved in AbsOrd in v0.5")] // TODO(v0.5): deprecate
+#[deprecated(since = "0.5.0", note = "AbsEq will be moved in AbsOrd in v0.5")] // TODO(v0.5): deprecate
 pub trait AbsEq<Rhs = Self> {
     fn abs_eq(&self, rhs: &Rhs) -> bool;
 }
@@ -271,6 +271,7 @@ macro_rules! impl_signed_for_int {
             }
         }
 
+        #[allow(deprecated)]
         impl AbsEq for $t {
             #[inline]
             fn abs_eq(&self, rhs: &Self) -> bool {
@@ -302,6 +303,7 @@ macro_rules! impl_signed_for_float {
             }
         }
 
+        #[allow(deprecated)]
         impl AbsEq for $t {
             #[inline]
             fn abs_eq(&self, rhs: &Self) -> bool {
