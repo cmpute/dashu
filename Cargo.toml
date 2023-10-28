@@ -22,10 +22,8 @@ members = [
     "benchmark",
     "integer",
     "float",
-    "float/bench",
     "macros",
     "rational",
-    "rational/bench"
 ]
 default-members = ["base", "integer", "float", "rational", "macros"]
 

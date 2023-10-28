@@ -64,6 +64,6 @@ name = "num_order"
 required-features = ["num-order"]
 
 [[bench]]
-name = "benchmarks"
+name = "primitive"
 required-features = ["rand"]
 harness = false

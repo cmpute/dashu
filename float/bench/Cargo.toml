@@ -1,5 +1,5 @@
 [package]
-name = "bench"
+name = "dashu-float-bench"
 version = "0.0.0"
 publish = false
 edition = "2021"

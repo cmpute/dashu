@@ -75,3 +75,8 @@ required-features = ["num-order", "dashu-int/num-order"]
 [[test]]
 name = "postgres"
 required-features = ["postgres-types", "diesel_v1", "diesel_v2", "diesel_v2/postgres"]
+
+[[bench]]
+name = "primitive"
+required-features = ["rand"]
+harness = false
