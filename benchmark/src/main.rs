@@ -217,4 +217,4 @@ fn run_decimal_task_using<T: Float>(task: Task, n: u32, iter: u32) -> (String, D
 
 // TODO: add task to test more operations, such as
 // - some complex calculation: a=2^n, b=3^n, sqrt((a+b)/(a-b)).gcd(sqrt((a+b)*(a-b))
-// - fibonacci reciprocal a_n = a_n-1 + 1 / a_n-2
+// - io: parse input and do square, then output

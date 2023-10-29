@@ -1,19 +1,22 @@
 //! Benchmarks.
-//! Run: cargo bench -p dashu-int --features rand -- --quick
+//! Run: cargo bench -p dashu-int --bench primitive --features rand -- --quick
 //!
 //! Note: these don't work on 16-bit machines.
 
+use std::ops::*;
 use criterion::{
     black_box, criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion,
     PlotConfiguration,
 };
 use dashu_int::{
     fast_div::ConstDivisor,
-    ops::{DivRem, ExtendedGcd, Gcd},
+    ops::{ExtendedGcd, Gcd},
     UBig,
 };
 use rand_v08::prelude::*;
 use std::fmt::Write;
+
+const SEED: u64 = 1;
 
 fn random_ubig<R>(bits: usize, rng: &mut R) -> UBig
 where
@@ -22,109 +25,35 @@ where
     rng.gen_range(UBig::ONE << (bits - 1)..UBig::ONE << bits)
 }
 
-const SEED: u64 = 1;
+macro_rules! add_binop_benchmark {
+    ($name:ident, $method:ident, $max_log_bits:literal) => {
+        fn $name(criterion: &mut Criterion) {
+            let mut rng = StdRng::seed_from_u64(SEED);
+            let mut group = criterion.benchmark_group(stringify!($name));
+            group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
-fn bench_add(criterion: &mut Criterion) {
-    let mut rng = StdRng::seed_from_u64(SEED);
-    let mut group = criterion.benchmark_group("ubig_add");
-    group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
+            for log_bits in 1..=$max_log_bits {
+                let bits = 10usize.pow(log_bits);
+                let a = random_ubig(bits, &mut rng);
+                let b = random_ubig(bits, &mut rng) + &a; // make b > a so that sub won't underflow
+                group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
+                    bencher.iter(|| black_box(&b).$method(black_box(&a)))
+                });
+            }
 
-    for log_bits in 1..=6 {
-        let bits = 10usize.pow(log_bits);
-        let a = random_ubig(bits, &mut rng);
-        let b = random_ubig(bits, &mut rng);
-        group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
-            bencher.iter(|| black_box(&a) + black_box(&b))
-        });
-    }
-
-    group.finish();
+            group.finish();
+        }
+    };
 }
 
-fn bench_sub(criterion: &mut Criterion) {
-    let mut rng = StdRng::seed_from_u64(SEED);
-    let mut group = criterion.benchmark_group("ubig_sub");
-    group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
+add_binop_benchmark!(ubig_add, add, 6);
+add_binop_benchmark!(ubig_sub, sub, 6);
+add_binop_benchmark!(ubig_mul, mul, 6);
+add_binop_benchmark!(ubig_div, div, 6);
+add_binop_benchmark!(ubig_gcd, gcd, 6);
+add_binop_benchmark!(ubig_gcd_ext, gcd_ext, 5);
 
-    for log_bits in 1..=6 {
-        let bits = 10usize.pow(log_bits);
-        let a = random_ubig(bits, &mut rng);
-        let b = random_ubig(bits, &mut rng);
-        let c = a + &b;
-        group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
-            bencher.iter(|| black_box(&c) - black_box(&b))
-        });
-    }
-
-    group.finish();
-}
-
-fn bench_mul(criterion: &mut Criterion) {
-    let mut rng = StdRng::seed_from_u64(SEED);
-    let mut group = criterion.benchmark_group("ubig_mul");
-    group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
-
-    for log_bits in 1..=6 {
-        let bits = 10usize.pow(log_bits);
-        let a = random_ubig(bits, &mut rng);
-        let b = random_ubig(bits, &mut rng);
-        group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
-            bencher.iter(|| black_box(&a) * black_box(&b))
-        });
-    }
-
-    group.finish();
-}
-
-fn bench_div(criterion: &mut Criterion) {
-    let mut rng = StdRng::seed_from_u64(SEED);
-    let mut group = criterion.benchmark_group("ubig_div");
-    group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
-
-    for log_bits in 1..=6 {
-        let bits = 10usize.pow(log_bits);
-        let a = random_ubig(2 * bits, &mut rng);
-        let b = random_ubig(bits, &mut rng);
-        group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
-            bencher.iter(|| black_box(&a).div_rem(black_box(&b)))
-        });
-    }
-
-    group.finish();
-}
-
-fn bench_gcd(criterion: &mut Criterion) {
-    let mut rng = StdRng::seed_from_u64(SEED);
-    let mut group = criterion.benchmark_group("ubig_gcd");
-    group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
-
-    for log_bits in 1..=5 {
-        let bits = 10usize.pow(log_bits);
-        let a = random_ubig(bits, &mut rng);
-        let b = random_ubig(bits, &mut rng);
-        group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
-            bencher.iter(|| black_box(&a).gcd(black_box(&b)))
-        });
-    }
-
-    group.finish();
-
-    let mut group = criterion.benchmark_group("ubig_gcd_ext");
-    group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
-
-    for log_bits in 3..=5 {
-        let bits = 10usize.pow(log_bits);
-        let a = random_ubig(bits, &mut rng);
-        let b = random_ubig(bits, &mut rng);
-        group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
-            bencher.iter(|| black_box(&a).gcd_ext(black_box(&b)))
-        });
-    }
-
-    group.finish();
-}
-
-fn bench_to_hex(criterion: &mut Criterion) {
+fn ubig_to_hex(criterion: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(SEED);
     let mut group = criterion.benchmark_group("ubig_to_hex");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
@@ -145,7 +74,7 @@ fn bench_to_hex(criterion: &mut Criterion) {
     group.finish();
 }
 
-fn bench_to_dec(criterion: &mut Criterion) {
+fn ubig_to_dec(criterion: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(SEED);
     let mut group = criterion.benchmark_group("ubig_to_dec");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
@@ -166,7 +95,7 @@ fn bench_to_dec(criterion: &mut Criterion) {
     group.finish();
 }
 
-fn bench_from_hex(criterion: &mut Criterion) {
+fn ubig_from_hex(criterion: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(SEED);
     let mut group = criterion.benchmark_group("ubig_from_hex");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
@@ -183,7 +112,7 @@ fn bench_from_hex(criterion: &mut Criterion) {
     group.finish();
 }
 
-fn bench_from_dec(criterion: &mut Criterion) {
+fn ubig_from_dec(criterion: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(SEED);
     let mut group = criterion.benchmark_group("ubig_from_dec");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
@@ -200,7 +129,7 @@ fn bench_from_dec(criterion: &mut Criterion) {
     group.finish();
 }
 
-fn bench_pow(criterion: &mut Criterion) {
+fn ubig_pow(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group("ubig_pow");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
@@ -214,7 +143,7 @@ fn bench_pow(criterion: &mut Criterion) {
     group.finish();
 }
 
-fn bench_modulo_mul(criterion: &mut Criterion) {
+fn ubig_modulo_mul(criterion: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(SEED);
     let mut group = criterion.benchmark_group("ubig_modulo_mul");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
@@ -233,7 +162,7 @@ fn bench_modulo_mul(criterion: &mut Criterion) {
     group.finish();
 }
 
-fn bench_modulo_pow(criterion: &mut Criterion) {
+fn ubig_modulo_pow(criterion: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(SEED);
     let mut group = criterion.benchmark_group("ubig_modulo_pow");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
@@ -257,18 +186,19 @@ fn bench_modulo_pow(criterion: &mut Criterion) {
 
 criterion_group!(
     benches,
-    bench_add,
-    bench_sub,
-    bench_mul,
-    bench_div,
-    bench_gcd,
-    bench_to_hex,
-    bench_to_dec,
-    bench_from_hex,
-    bench_from_dec,
-    bench_pow,
-    bench_modulo_mul,
-    bench_modulo_pow,
+    ubig_add,
+    ubig_sub,
+    ubig_mul,
+    ubig_div,
+    ubig_gcd,
+    ubig_gcd_ext,
+    ubig_to_hex,
+    ubig_to_dec,
+    ubig_from_hex,
+    ubig_from_dec,
+    ubig_pow,
+    ubig_modulo_mul,
+    ubig_modulo_pow,
 );
 
 criterion_main!(benches);

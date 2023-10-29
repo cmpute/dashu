@@ -20,6 +20,7 @@ where
     fn pow(&self, exp: u32) -> Self;
     fn to_hex(&self) -> String;
     fn mul_ref(&self, rhs: &Self) -> Self;
+    // fn parse(string: String) -> Self;
 }
 
 mod natural {

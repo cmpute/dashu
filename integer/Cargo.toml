@@ -43,10 +43,11 @@ num-integer_v01 = { optional = true, version = "0.1.45", package = "num-integer"
 
 [dev-dependencies]
 rand_v08 = { version = "0.8.3", package = "rand" }
-criterion = { version = "0.5.1", features = ["html_reports"] }
+postcard = { version = "1.0.2", features = ["alloc"] }
 serde_test = { version = "1.0.130" }
 serde_json = { version = "1.0" }
-postcard = { version = "1.0.2", features = ["alloc"] }
+
+criterion = { version = "0.5.1", features = ["html_reports"] }
 
 [lib]
 bench = false

@@ -60,6 +60,8 @@ serde_test = { version = "1.0.130" }
 serde_json = { version = "1.0" }
 postgres = { version = "0.19.4" }
 
+criterion = { version = "0.5.1", features = ["html_reports"] }
+
 [[test]]
 name = "random"
 required-features = ["rand"]
