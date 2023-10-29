@@ -1,8 +1,8 @@
-use crate::number::Number;
+use crate::number::Natural;
 use std::f64;
 
 /// n digits of the number e.
-pub(crate) fn calculate<T: Number>(n: u32) -> String {
+pub(crate) fn calculate<T: Natural>(n: u32) -> String {
     assert!(n > 0);
     // Find k such that log_10 k! is approximately n + 50.
     // This makes 1 / k! and subsequent terms small enough.
@@ -32,7 +32,7 @@ pub(crate) fn calculate<T: Number>(n: u32) -> String {
 /// a! * (1/(a+1)! + 1/(a+2)! + ... + 1/b!) as a fraction p / q.
 /// q = (a+1) * (a+2) * ... * (b-1) * b
 /// p = (a+2)...b + (a+3)...b + ... + 1
-fn sum_terms<T: Number>(a: u32, b: u32) -> (T, T) {
+fn sum_terms<T: Natural>(a: u32, b: u32) -> (T, T) {
     if b == a + 1 {
         (1u32.into(), b.into())
     } else {

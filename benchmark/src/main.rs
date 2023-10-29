@@ -1,9 +1,9 @@
 use std::time::{Duration, Instant};
 
 use clap::ValueEnum as _;
-use number::Number;
+use number::{Natural, Rational, Float};
 
-mod digits_of_e;
+mod e;
 mod fib;
 mod number;
 
@@ -27,8 +27,8 @@ enum Lib {
     IBig,
     #[value(name = "dashu")]
     Dashu,
-    #[value(name = "num-bigint")]
-    NumBigint,
+    #[value(name = "num")]
+    Num,
     #[cfg(feature = "ramp")]
     #[value(name = "ramp")]
     Ramp,
@@ -40,16 +40,22 @@ enum Lib {
     RustGmp,
     #[value(name = "malachite")]
     Malachite,
+    #[value(name = "bigdecimal")]
+    BigDecimal,
 }
 
 #[derive(Copy, Clone, clap::ValueEnum)]
 enum Task {
     #[value(name = "e")]
     E,
+    #[value(name = "e_decimal")]
+    DecimalE,
     #[value(name = "fib")]
     Fib,
     #[value(name = "fib_hex")]
     FibHex,
+    #[value(name = "fib_ratio")]
+    FibRatio,
 }
 
 #[derive(clap::Subcommand)]
@@ -130,27 +136,75 @@ fn command_benchmark(libs: &[Lib], task: Task, n: u32) {
 
 fn run_task(lib: Lib, task: Task, n: u32, iter: u32) -> (String, Duration) {
     match lib {
-        Lib::IBig => run_task_using::<ibig::UBig>(task, n, iter),
-        Lib::Dashu => run_task_using::<dashu_int::UBig>(task, n, iter),
-        Lib::NumBigint => run_task_using::<num_bigint::BigUint>(task, n, iter),
+        Lib::IBig => run_int_task_using::<ibig::UBig>(task, n, iter),
+        Lib::Dashu => match task {
+            Task::E | Task::Fib | Task::FibHex => run_int_task_using::<dashu::Natural>(task, n, iter),
+            Task::FibRatio => run_ratio_task_using::<dashu::Rational>(task, n, iter),
+            Task::DecimalE => run_decimal_task_using::<dashu::Decimal>(task, n, iter)
+        },
+        Lib::Num => match task {
+            Task::E | Task::Fib | Task::FibHex => run_int_task_using::<num::BigUint>(task, n, iter),
+            Task::FibRatio => run_ratio_task_using::<num::BigRational>(task, n, iter),
+            Task::DecimalE => panic!("Num crates don't support arbitrary precision float numbers yet.")
+        },
         #[cfg(feature = "ramp")]
-        Lib::Ramp => run_task_using::<ramp::Int>(task, n, iter),
+        Lib::Ramp => run_int_task_using::<ramp::Int>(task, n, iter),
         #[cfg(feature = "rug")]
-        Lib::Rug => run_task_using::<rug::Integer>(task, n, iter),
+        Lib::Rug => run_int_task_using::<rug::Integer>(task, n, iter),
         #[cfg(feature = "rust_gmp")]
-        Lib::RustGmp => run_task_using::<gmp::mpz::Mpz>(task, n, iter),
-        Lib::Malachite => run_task_using::<malachite_nz::natural::Natural>(task, n, iter),
+        Lib::RustGmp => run_int_task_using::<gmp::mpz::Mpz>(task, n, iter),
+        Lib::Malachite => match task {
+            Task::E | Task::Fib | Task::FibHex => run_int_task_using::<malachite::Natural>(task, n, iter),
+            Task::FibRatio => run_ratio_task_using::<malachite::Rational>(task, n, iter),
+            Task::DecimalE => panic!("Malachite crates don't support arbitrary precision float numbers yet.")
+        },
+        Lib::BigDecimal => run_decimal_task_using::<bigdecimal::BigDecimal>(task, n, iter),
     }
 }
 
-fn run_task_using<T: Number>(task: Task, n: u32, iter: u32) -> (String, Duration) {
+fn run_int_task_using<T: Natural>(task: Task, n: u32, iter: u32) -> (String, Duration) {
     let mut answer = None;
     let start_time = Instant::now();
     for _ in 0..iter {
         let a = match task {
-            Task::E => digits_of_e::calculate::<T>(n),
+            Task::E => e::calculate::<T>(n),
             Task::Fib => fib::calculate_decimal::<T>(n),
             Task::FibHex => fib::calculate_hex::<T>(n),
+            _ => panic!("One of the libraries is not adapted to integer benchmarks!")
+        };
+        match &answer {
+            None => answer = Some(a),
+            Some(ans) => assert!(a == *ans),
+        }
+    }
+    let time = start_time.elapsed();
+    (answer.unwrap(), time)
+}
+
+fn run_ratio_task_using<T: Rational>(task: Task, n: u32, iter: u32) -> (String, Duration) {
+    let mut answer: Option<String> = None;
+    let start_time = Instant::now();
+    for _ in 0..iter {
+        let a = match task {
+            Task::FibRatio => fib::calculate_ratio::<T>(n),
+            _ => panic!("One of the libraries is not adapted to rational benchmarking!")
+        };
+        match &answer {
+            None => answer = Some(a),
+            Some(ans) => assert!(a == *ans),
+        }
+    }
+    let time = start_time.elapsed();
+    (answer.unwrap(), time)
+}
+
+fn run_decimal_task_using<T: Float>(task: Task, n: u32, iter: u32) -> (String, Duration) {
+    let mut answer: Option<String> = None;
+    let start_time = Instant::now();
+    for _ in 0..iter {
+        let a = match task {
+            Task::DecimalE => T::e(n).to_string(),
+            _ => panic!("One of the libraries is not adapted to float benchmarking!")
         };
         match &answer {
             None => answer = Some(a),
@@ -163,4 +217,4 @@ fn run_task_using<T: Number>(task: Task, n: u32, iter: u32) -> (String, Duration
 
 // TODO: add task to test more operations, such as
 // - some complex calculation: a=2^n, b=3^n, sqrt((a+b)/(a-b)).gcd(sqrt((a+b)*(a-b))
-// - fibonacci reciprocal a_n = a_n-1 + 1 / a_n-2
+// - io: parse input and do square, then output

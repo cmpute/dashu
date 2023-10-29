@@ -60,6 +60,8 @@ serde_test = { version = "1.0.130" }
 serde_json = { version = "1.0" }
 postgres = { version = "0.19.4" }
 
+criterion = { version = "0.5.1", features = ["html_reports"] }
+
 [[test]]
 name = "random"
 required-features = ["rand"]
@@ -75,3 +77,8 @@ required-features = ["num-order", "dashu-int/num-order"]
 [[test]]
 name = "postgres"
 required-features = ["postgres-types", "diesel_v1", "diesel_v2", "diesel_v2/postgres"]
+
+[[bench]]
+name = "primitive"
+required-features = ["rand"]
+harness = false
