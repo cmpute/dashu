@@ -3,7 +3,6 @@
 //!
 //! Note: these don't work on 16-bit machines.
 
-use std::ops::*;
 use criterion::{
     black_box, criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion,
     PlotConfiguration,
@@ -15,6 +14,7 @@ use dashu_int::{
 };
 use rand_v08::prelude::*;
 use std::fmt::Write;
+use std::ops::*;
 
 const SEED: u64 = 1;
 

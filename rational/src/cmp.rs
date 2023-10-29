@@ -138,7 +138,7 @@ fn repr_cmp<const ABS: bool>(lhs: &Repr, rhs: &Repr) -> Ordering {
 impl PartialOrd for Repr {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(repr_cmp::<false>(self, other))
+        Some(self.cmp(other))
     }
 }
 

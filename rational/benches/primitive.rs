@@ -1,15 +1,15 @@
 //! Benchmarks.
 //! Run: cargo bench -p dashu-float --bench primitive --features rand -- --quick
 
-use std::ops::*;
 use criterion::{
     black_box, criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion,
     PlotConfiguration,
 };
 use dashu_base::Sign;
+use dashu_int::{IBig, UBig};
 use dashu_ratio::RBig;
-use dashu_int::{UBig, IBig};
 use rand_v08::prelude::*;
+use std::ops::*;
 
 const SEED: u64 = 1;
 
@@ -18,7 +18,8 @@ where
     R: Rng + ?Sized,
 {
     let sign = Sign::from(rng.gen_bool(0.5));
-    let numerator = IBig::from_parts(sign, rng.gen_range(UBig::ONE << (bits - 1)..UBig::ONE << bits));
+    let numerator =
+        IBig::from_parts(sign, rng.gen_range(UBig::ONE << (bits - 1)..UBig::ONE << bits));
     let denominator = rng.gen_range(UBig::ONE << (bits - 1)..UBig::ONE << bits);
     RBig::from_parts(numerator, denominator)
 }
@@ -49,12 +50,6 @@ add_binop_benchmark!(rbig_sub, sub, 6);
 add_binop_benchmark!(rbig_mul, mul, 6);
 add_binop_benchmark!(rbig_div, div, 6);
 
-criterion_group!(
-    benches,
-    rbig_add,
-    rbig_sub,
-    rbig_mul,
-    rbig_div,
-);
+criterion_group!(benches, rbig_add, rbig_sub, rbig_mul, rbig_div,);
 
 criterion_main!(benches);

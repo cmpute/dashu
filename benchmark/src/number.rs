@@ -25,16 +25,16 @@ where
 
 mod natural {
     use super::Natural;
-    
+
     impl Natural for dashu::Natural {
         fn pow(&self, exp: u32) -> Self {
             self.pow(exp as usize)
         }
-    
+
         fn to_hex(&self) -> String {
             format!("{:x}", self)
         }
-    
+
         fn mul_ref(&self, rhs: &Self) -> Self {
             self * rhs
         }
@@ -44,84 +44,84 @@ mod natural {
         fn pow(&self, exp: u32) -> Self {
             self.pow(exp as usize)
         }
-    
+
         fn to_hex(&self) -> String {
             format!("{:x}", self)
         }
-    
+
         fn mul_ref(&self, rhs: &Self) -> Self {
             self * rhs
         }
     }
-    
+
     impl Natural for num::BigUint {
         fn pow(&self, exp: u32) -> Self {
             self.pow(exp)
         }
-    
+
         fn to_hex(&self) -> String {
             format!("{:x}", self)
         }
-    
+
         fn mul_ref(&self, rhs: &Self) -> Self {
             self * rhs
         }
     }
-    
+
     #[cfg(feature = "ramp")]
     impl Natural for ramp::Int {
         fn pow(&self, exp: u32) -> Self {
             self.pow(exp as usize)
         }
-    
+
         fn to_hex(&self) -> String {
             format!("{:x}", self)
         }
-    
+
         fn mul_ref(&self, rhs: &Self) -> Self {
             self * rhs
         }
     }
-    
+
     #[cfg(feature = "gmp")]
     impl Natural for rug::Integer {
         fn pow(&self, exp: u32) -> Self {
             rug::ops::Pow::pow(self, exp).into()
         }
-    
+
         fn to_hex(&self) -> String {
             format!("{:x}", self)
         }
-    
+
         fn mul_ref(&self, rhs: &Self) -> Self {
             (self * rhs).into()
         }
     }
-    
+
     #[cfg(feature = "gmp")]
     impl Natural for gmp::mpz::Mpz {
         fn pow(&self, exp: u32) -> Self {
             self.pow(exp)
         }
-    
+
         fn to_hex(&self) -> String {
             self.to_str_radix(16)
         }
-    
+
         fn mul_ref(&self, rhs: &Self) -> Self {
             self * rhs
         }
     }
-    
+
     impl Natural for malachite::Natural {
         fn pow(&self, exp: u32) -> Self {
             malachite::num::arithmetic::traits::Pow::pow(self, exp.into())
         }
-    
+
         fn to_hex(&self) -> String {
             malachite::strings::ToLowerHexString::to_lower_hex_string(self)
         }
-    
+
         fn mul_ref(&self, rhs: &Self) -> Self {
             self * rhs
         }
@@ -201,7 +201,10 @@ mod float {
 
     impl Float for dashu::Decimal {
         fn e(precision: u32) -> Self {
-            dashu::Decimal::ONE.with_precision(precision as _).unwrap().exp()
+            dashu::Decimal::ONE
+                .with_precision(precision as _)
+                .unwrap()
+                .exp()
         }
     }
 

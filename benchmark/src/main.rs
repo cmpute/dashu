@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use clap::ValueEnum as _;
-use number::{Natural, Rational, Float};
+use number::{Float, Natural, Rational};
 
 mod e;
 mod fib;
@@ -138,14 +138,18 @@ fn run_task(lib: Lib, task: Task, n: u32, iter: u32) -> (String, Duration) {
     match lib {
         Lib::IBig => run_int_task_using::<ibig::UBig>(task, n, iter),
         Lib::Dashu => match task {
-            Task::E | Task::Fib | Task::FibHex => run_int_task_using::<dashu::Natural>(task, n, iter),
+            Task::E | Task::Fib | Task::FibHex => {
+                run_int_task_using::<dashu::Natural>(task, n, iter)
+            }
             Task::FibRatio => run_ratio_task_using::<dashu::Rational>(task, n, iter),
-            Task::DecimalE => run_decimal_task_using::<dashu::Decimal>(task, n, iter)
+            Task::DecimalE => run_decimal_task_using::<dashu::Decimal>(task, n, iter),
         },
         Lib::Num => match task {
             Task::E | Task::Fib | Task::FibHex => run_int_task_using::<num::BigUint>(task, n, iter),
             Task::FibRatio => run_ratio_task_using::<num::BigRational>(task, n, iter),
-            Task::DecimalE => panic!("Num crates don't support arbitrary precision float numbers yet.")
+            Task::DecimalE => {
+                panic!("Num crates don't support arbitrary precision float numbers yet.")
+            }
         },
         #[cfg(feature = "ramp")]
         Lib::Ramp => run_int_task_using::<ramp::Int>(task, n, iter),
@@ -154,9 +158,13 @@ fn run_task(lib: Lib, task: Task, n: u32, iter: u32) -> (String, Duration) {
         #[cfg(feature = "rust_gmp")]
         Lib::RustGmp => run_int_task_using::<gmp::mpz::Mpz>(task, n, iter),
         Lib::Malachite => match task {
-            Task::E | Task::Fib | Task::FibHex => run_int_task_using::<malachite::Natural>(task, n, iter),
+            Task::E | Task::Fib | Task::FibHex => {
+                run_int_task_using::<malachite::Natural>(task, n, iter)
+            }
             Task::FibRatio => run_ratio_task_using::<malachite::Rational>(task, n, iter),
-            Task::DecimalE => panic!("Malachite crates don't support arbitrary precision float numbers yet.")
+            Task::DecimalE => {
+                panic!("Malachite crates don't support arbitrary precision float numbers yet.")
+            }
         },
         Lib::BigDecimal => run_decimal_task_using::<bigdecimal::BigDecimal>(task, n, iter),
     }
@@ -170,7 +178,7 @@ fn run_int_task_using<T: Natural>(task: Task, n: u32, iter: u32) -> (String, Dur
             Task::E => e::calculate::<T>(n),
             Task::Fib => fib::calculate_decimal::<T>(n),
             Task::FibHex => fib::calculate_hex::<T>(n),
-            _ => panic!("One of the libraries is not adapted to integer benchmarks!")
+            _ => panic!("One of the libraries is not adapted to integer benchmarks!"),
         };
         match &answer {
             None => answer = Some(a),
@@ -187,7 +195,7 @@ fn run_ratio_task_using<T: Rational>(task: Task, n: u32, iter: u32) -> (String, 
     for _ in 0..iter {
         let a = match task {
             Task::FibRatio => fib::calculate_ratio::<T>(n),
-            _ => panic!("One of the libraries is not adapted to rational benchmarking!")
+            _ => panic!("One of the libraries is not adapted to rational benchmarking!"),
         };
         match &answer {
             None => answer = Some(a),
@@ -204,7 +212,7 @@ fn run_decimal_task_using<T: Float>(task: Task, n: u32, iter: u32) -> (String, D
     for _ in 0..iter {
         let a = match task {
             Task::DecimalE => T::e(n).to_string(),
-            _ => panic!("One of the libraries is not adapted to float benchmarking!")
+            _ => panic!("One of the libraries is not adapted to float benchmarking!"),
         };
         match &answer {
             None => answer = Some(a),
