@@ -63,11 +63,25 @@ fn repr_cmp_same_base<const B: Word, const ABS: bool>(
         lhs.significand.sign()
     };
 
-    // case 3: compare exponent and precision
+    // case 3: compare with 0
+    match (lhs.is_zero(), rhs.is_zero()) {
+        (true, true) => return Ordering::Equal,
+        (true, false) => {
+            // rhs must be positive, otherwise case 2 will return
+            return Ordering::Less
+        },
+        (false, true) => {
+            // lhs must be positive, otherwise case 2 will return
+            return Ordering::Greater
+        },
+        _ => {}
+    }
+
+    // case 4: compare exponent and precision
     let (lhs_exp, rhs_exp) = (lhs.exponent, rhs.exponent);
     if let Some((lhs_prec, rhs_prec)) = precision {
+        // only compare when both number are not having arbitrary precision
         if lhs_prec != 0 && rhs_prec != 0 {
-            // only compare when both number are not having arbitrary precision
             if lhs_exp > rhs_exp + rhs_prec as isize {
                 return sign * Ordering::Greater;
             }
@@ -77,7 +91,7 @@ fn repr_cmp_same_base<const B: Word, const ABS: bool>(
         }
     }
 
-    // case 4: compare exponent and digits
+    // case 5: compare exponent and digits
     let (lhs_digits, rhs_digits) = (lhs.digits_ub(), rhs.digits_ub());
     if lhs_exp > rhs_exp + rhs_digits as isize {
         return sign * Ordering::Greater;
@@ -86,7 +100,7 @@ fn repr_cmp_same_base<const B: Word, const ABS: bool>(
         return sign * Ordering::Less;
     }
 
-    // case 5: compare exact values by shifting
+    // case 6: compare exact values by shifting
     let (lhs_signif, rhs_signif) = (&lhs.significand, &rhs.significand);
     if ABS {
         match lhs_exp.cmp(&rhs_exp) {

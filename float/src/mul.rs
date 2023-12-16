@@ -241,7 +241,6 @@ impl<R: Round> Context<R> {
             f
         };
 
-        // TODO(next): increase dependency version on dashu_int because we use the new function cubic()
         let repr = Repr::new(f_repr.significand.cubic(), 3 * f_repr.exponent);
         self.repr_round(repr).map(|v| FBig::new(v, *self))
     }

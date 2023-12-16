@@ -306,3 +306,61 @@ fn test_add_sub_unlimited_precision() {
     test_add(&a, &dbig!(1e-4), &a);
     test_add(&a, &b, &dbig!(100000001e-4));
 }
+
+#[test]
+fn test_add_sub_rounding() {
+    use dashu_float::round::mode::*;
+
+    // rhs is about the magnitude of lhs.ulp()
+    let a = fbig!(0x1).with_rounding::<Zero>().with_precision(8).unwrap();
+    let b = fbig!(0x1p-8).with_rounding::<Zero>();
+    let c = fbig!(0xffp-8).with_rounding::<Zero>();
+    test_add(&a, &b, &a);
+    test_sub(&a, &b, &c);
+
+    let a = fbig!(0x1).with_rounding::<Up>().with_precision(8).unwrap();
+    let b = fbig!(0x1p-8).with_rounding::<Up>();
+    let c = fbig!(0x81p-7).with_rounding::<Up>();
+    let d = fbig!(0xffp-8).with_rounding::<Up>();
+    test_add(&a, &b, &c);
+    test_sub(&a, &b, &d);
+
+    let a = fbig!(0x1).with_rounding::<Down>().with_precision(8).unwrap();
+    let b = fbig!(0x1p-8).with_rounding::<Down>();
+    let c = fbig!(0xffp-8).with_rounding::<Down>();
+    test_add(&a, &b, &a);
+    test_sub(&a, &b, &c);
+
+    let a = fbig!(0x1).with_rounding::<HalfAway>().with_precision(8).unwrap();
+    let b = fbig!(0x1p-8).with_rounding::<HalfAway>();
+    let c = fbig!(0x81p-7).with_rounding::<HalfAway>();
+    let d = fbig!(0xffp-8).with_rounding::<HalfAway>();
+    test_add(&a, &b, &c);
+    test_sub(&a, &b, &d);
+
+    let a = fbig!(0x1).with_rounding::<HalfEven>().with_precision(8).unwrap();
+    let b = fbig!(0x1p-8).with_rounding::<HalfEven>();
+    let c = fbig!(0xffp-8).with_rounding::<HalfEven>();
+    test_add(&a, &b, &a);
+    test_sub(&a, &b, &c);
+
+    
+    // rhs much less than lhs
+    let a = fbig!(0x1).with_rounding::<Zero>().with_precision(8).unwrap();
+    let b = fbig!(0x1p-100).with_rounding::<Zero>();
+    let c = fbig!(0xffp-8).with_rounding::<Zero>();
+    test_add(&a, &b, &a);
+    test_sub(&a, &b, &c);
+
+    let a = fbig!(0x1).with_rounding::<Up>().with_precision(8).unwrap();
+    let b = fbig!(0x1p-100).with_rounding::<Up>();
+    let c = fbig!(0x81p-7).with_rounding::<Up>();
+    test_add(&a, &b, &c);
+    test_sub(&a, &b, &a);
+
+    let a = fbig!(0x1).with_rounding::<Down>().with_precision(8).unwrap();
+    let b = fbig!(0x1p-100).with_rounding::<Down>();
+    let c = fbig!(0xffp-8).with_rounding::<Down>();
+    test_add(&a, &b, &a);
+    test_sub(&a, &b, &c);
+}

@@ -149,6 +149,10 @@ fn test_abs_ord() {
     assert_eq!(FBig::NEG_INFINITY.abs_cmp(&fbig!(-0x1)), Ordering::Greater);
 
     // case 2: compare exponent and precision
+    assert_eq!(dbig!(1e100).abs_cmp(&dbig!(0)), Ordering::Greater);
+    assert_eq!(dbig!(1e-100).abs_cmp(&dbig!(0)), Ordering::Greater);
+    assert_eq!(dbig!(-1e100).abs_cmp(&dbig!(0)), Ordering::Greater);
+    assert_eq!(dbig!(-1e-100).abs_cmp(&dbig!(0)), Ordering::Greater);
     assert_eq!(dbig!(1e100).abs_cmp(&dbig!(1)), Ordering::Greater);
     assert_eq!(dbig!(1e-100).abs_cmp(&dbig!(1)), Ordering::Less);
     assert_eq!(dbig!(-1e100).abs_cmp(&dbig!(-1)), Ordering::Greater);

@@ -11,7 +11,7 @@ use crate::FBig;
 ///
 /// # Rounding Error
 ///
-/// For different rounding modes, the [Rounding][crate::round::Rounding] error
+/// For different rounding modes, the [Rounding] error
 /// in the output of operations tells the error range, as described in
 /// the table below.
 ///

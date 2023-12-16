@@ -255,8 +255,8 @@ impl<R: Round> Context<R> {
             }
             Ordering::Less => {
                 // Expand to low parts if the result has less digits than desired precision.
-                // It's necessary only when lhs and rhs has different sign and a cancellation might happen.
                 /*
+                 * A possible case when lhs and rhs have different sign:
                  * lhs:  |=========0000|
                  * rhs:  |=============|xxxxx|
                  * sum:          |=====|xxxxx|
@@ -264,7 +264,7 @@ impl<R: Round> Context<R> {
                  * shift:              |<>|
                  * expanded:     |========|xx|
                  */
-                if !low.0.is_zero() && is_sub {
+                if !low.0.is_zero() {
                     let (low_val, low_prec) = low;
                     let shift = low_prec.min(rnd_precision - digits);
                     let (pad, low_val) = split_digits::<B>(low_val, low_prec - shift);
