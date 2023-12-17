@@ -6,7 +6,7 @@ use crate::{
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
 };
-use dashu_base::{Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign, AbsOrd};
+use dashu_base::{AbsOrd, Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign};
 use dashu_int::IBig;
 
 impl<R: Round, const B: Word> FBig<R, B> {
@@ -149,7 +149,7 @@ impl<R: Round> Context<R> {
     }
 
     /// Raise the floating point number to an floating point power under this context.
-    /// 
+    ///
     /// Note that this method will not rely on [FBig::powi] even if the `exp` is actually an integer.
     ///
     /// # Examples
@@ -180,6 +180,8 @@ impl<R: Round> Context<R> {
         } else if exp.is_one() {
             let repr = self.repr_round_ref(base);
             return repr.map(|v| FBig::new(v, *self));
+        } else if base.is_zero() {
+            return Exact(FBig::ZERO);
         }
         if base.sign() == Sign::Negative {
             // TODO: we should allow negative base when exp is an integer

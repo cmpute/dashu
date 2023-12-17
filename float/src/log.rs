@@ -1,4 +1,4 @@
-use dashu_base::{Approximation::*, EstimatedLog2, Sign, AbsOrd};
+use dashu_base::{AbsOrd, Approximation::*, EstimatedLog2, Sign};
 use dashu_int::IBig;
 
 use crate::{

@@ -68,12 +68,12 @@ fn repr_cmp_same_base<const B: Word, const ABS: bool>(
         (true, true) => return Ordering::Equal,
         (true, false) => {
             // rhs must be positive, otherwise case 2 will return
-            return Ordering::Less
-        },
+            return Ordering::Less;
+        }
         (false, true) => {
             // lhs must be positive, otherwise case 2 will return
-            return Ordering::Greater
-        },
+            return Ordering::Greater;
+        }
         _ => {}
     }
 

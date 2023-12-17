@@ -1,5 +1,5 @@
 use dashu_base::Approximation::*;
-use dashu_float::{round::Rounding::*, FBig, DBig};
+use dashu_float::{round::Rounding::*, DBig, FBig};
 use dashu_int::Word;
 
 mod helper_macros;
@@ -204,18 +204,22 @@ fn test_ln_with_rounding() {
     use dashu_base::Abs;
     use dashu_float::round::{mode::*, Round};
 
-    fn test_ln_with_error<R: Round, OpR: Round, const B: Word>(base: &FBig<R, B>, target: &FBig<R, B>, atol: &FBig<R, B>) {
+    fn test_ln_with_error<R: Round, OpR: Round, const B: Word>(
+        base: &FBig<R, B>,
+        target: &FBig<R, B>,
+        atol: &FBig<R, B>,
+    ) {
         let result = base.clone().with_rounding::<OpR>().ln();
         let result_err = (result.with_rounding::<R>() - target).abs();
         assert!(result_err <= *atol, "ln({}), err: {} (>{})", base, result_err, atol);
     }
-    
+
     let binary_cases = [
         // base, target result
-        (fbig!(0x0010), fbig!(0xb172p-14)),
-        (fbig!(0x001f), fbig!(0xdbc6p-14)),
-        (fbig!(0x1234), fbig!(0x8726p-12)),
-        (fbig!(0x1abc), fbig!(0x8d4cp-12)),
+        (fbig!(0x0010), fbig!(0xb172p - 14)),
+        (fbig!(0x001f), fbig!(0xdbc6p - 14)),
+        (fbig!(0x1234), fbig!(0x8726p - 12)),
+        (fbig!(0x1abc), fbig!(0x8d4cp - 12)),
     ];
 
     for (base, target) in binary_cases {

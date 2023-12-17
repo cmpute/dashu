@@ -385,7 +385,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
         let repr = Repr {
             significand: IBig::ONE,
             exponent: self.repr.exponent + self.repr.digits_lb() as isize
-                - self.context.precision as isize - 1,
+                - self.context.precision as isize
+                - 1,
         };
         Self::new(repr, self.context)
     }

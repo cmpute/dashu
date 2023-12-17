@@ -1,5 +1,5 @@
 use dashu_base::Approximation::*;
-use dashu_float::{round::Rounding::*, FBig, DBig};
+use dashu_float::{round::Rounding::*, DBig, FBig};
 use dashu_int::Word;
 
 mod helper_macros;
@@ -344,6 +344,8 @@ fn test_powf_binary() {
     assert_eq!(fbig!(0).powf(&fbig!(1)), fbig!(0));
     assert_eq!(fbig!(1).powf(&fbig!(1)), fbig!(1));
     assert_eq!(fbig!(1).powf(&fbig!(-1)), fbig!(1));
+    assert_eq!(fbig!(0).powf(&fbig!(0x2)), fbig!(0));
+    assert_eq!(fbig!(1).powf(&fbig!(0x2)), fbig!(1));
 
     // cases for x^x and x^-x
     let xx_inexact_cases = [
@@ -390,6 +392,8 @@ fn test_powf_decimal() {
     assert_eq!(dbig!(0).powf(&dbig!(1)), dbig!(0));
     assert_eq!(dbig!(1).powf(&dbig!(1)), dbig!(1));
     assert_eq!(dbig!(1).powf(&dbig!(-1)), dbig!(1));
+    assert_eq!(dbig!(0).powf(&dbig!(2)), dbig!(0));
+    assert_eq!(dbig!(1).powf(&dbig!(2)), dbig!(1));
 
     // cases for x^x and x^-x
     let xx_inexact_cases = [
@@ -443,18 +447,26 @@ fn test_pow_with_rounding() {
     use dashu_base::Abs;
     use dashu_float::round::{mode::*, Round};
 
-    fn test_powf_with_error<R: Round, OpR: Round, const B: Word>(base: &FBig<R, B>, exp: &FBig<R, B>, target: &FBig<R, B>, atol: &FBig<R, B>) {
-        let result = base.clone().with_rounding::<OpR>().powf(&exp.clone().with_rounding::<OpR>());
+    fn test_powf_with_error<R: Round, OpR: Round, const B: Word>(
+        base: &FBig<R, B>,
+        exp: &FBig<R, B>,
+        target: &FBig<R, B>,
+        atol: &FBig<R, B>,
+    ) {
+        let result = base
+            .clone()
+            .with_rounding::<OpR>()
+            .powf(&exp.clone().with_rounding::<OpR>());
         let result_err = (result.with_rounding::<R>() - target).abs();
         assert!(result_err <= *atol, "{}^{}, err: {} (>{})", base, exp, result_err, atol);
     }
-    
+
     let binary_cases = [
         // base, exp, target result
         (fbig!(0x0010), fbig!(0x0001p4), fbig!(0x0001p64)),
-        (fbig!(0x0010), fbig!(-0x0001p4), fbig!(0x0001p-64)),
-        (fbig!(0x1234), fbig!(0x1234p-16), fbig!(0xe960p-15)),
-        (fbig!(0x1234), fbig!(-0x1234p-16), fbig!(0x8c69p-16)),
+        (fbig!(0x0010), fbig!(-0x0001p4), fbig!(0x0001p - 64)),
+        (fbig!(0x1234), fbig!(0x1234p - 16), fbig!(0xe960p - 15)),
+        (fbig!(0x1234), fbig!(-0x1234p - 16), fbig!(0x8c69p - 16)),
     ];
 
     for (base, exp, target) in binary_cases {
