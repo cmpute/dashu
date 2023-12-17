@@ -375,6 +375,20 @@ impl<R: Round, const B: Word> FBig<R, B> {
         };
         Self::new(repr, self.context)
     }
+
+    /// Similar to [FBig::ulp], but use approximated digits. It's guaranteed to be smaller than ulp(), for internal use only.
+    #[inline]
+    pub(crate) fn sub_ulp(&self) -> Self {
+        debug_assert!(self.context.precision != 0);
+        debug_assert!(self.repr.is_finite());
+
+        let repr = Repr {
+            significand: IBig::ONE,
+            exponent: self.repr.exponent + self.repr.digits_lb() as isize
+                - self.context.precision as isize - 1,
+        };
+        Self::new(repr, self.context)
+    }
 }
 
 // This custom implementation is necessary due to https://github.com/rust-lang/rust/issues/98374

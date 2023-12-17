@@ -1,4 +1,4 @@
-use dashu_base::{Approximation::*, EstimatedLog2, Sign};
+use dashu_base::{Approximation::*, EstimatedLog2, Sign, AbsOrd};
 use dashu_int::IBig;
 
 use crate::{
@@ -157,12 +157,13 @@ impl<R: Round> Context<R> {
         let mut k: usize = 3;
         loop {
             pow *= &inv2;
-            let next = &sum + &pow / work_context.convert_int::<B>(k.into()).value();
 
-            if next == sum {
+            let increase = &pow / work_context.convert_int::<B>(k.into()).value();
+            if increase < sum.sub_ulp() {
                 return sum;
             }
-            sum = next;
+
+            sum += increase;
             k += 2;
         }
     }
@@ -269,12 +270,13 @@ impl<R: Round> Context<R> {
         let mut k: usize = 3;
         loop {
             pow *= &z2;
-            let next = &sum + &pow / work_context.convert_int::<B>(k.into()).value();
 
-            if next == sum {
+            let increase = &pow / work_context.convert_int::<B>(k.into()).value();
+            if increase.abs_cmp(&sum.sub_ulp()).is_le() {
                 break;
             }
-            sum = next;
+
+            sum += increase;
             k += 2;
         }
 

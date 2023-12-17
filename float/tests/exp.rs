@@ -1,5 +1,6 @@
 use dashu_base::Approximation::*;
-use dashu_float::{round::Rounding::*, DBig};
+use dashu_float::{round::Rounding::*, FBig, DBig};
+use dashu_int::Word;
 
 mod helper_macros;
 
@@ -435,4 +436,32 @@ fn test_pow_unlimited_precision() {
 #[should_panic]
 fn test_pow_inf() {
     let _ = DBig::INFINITY.powf(&dbig!(2));
+}
+
+#[test]
+fn test_pow_with_rounding() {
+    use dashu_base::Abs;
+    use dashu_float::round::{mode::*, Round};
+
+    fn test_powf_with_error<R: Round, OpR: Round, const B: Word>(base: &FBig<R, B>, exp: &FBig<R, B>, target: &FBig<R, B>, atol: &FBig<R, B>) {
+        let result = base.clone().with_rounding::<OpR>().powf(&exp.clone().with_rounding::<OpR>());
+        let result_err = (result.with_rounding::<R>() - target).abs();
+        assert!(result_err <= *atol, "{}^{}, err: {} (>{})", base, exp, result_err, atol);
+    }
+    
+    let binary_cases = [
+        // base, exp, target result
+        (fbig!(0x0010), fbig!(0x0001p4), fbig!(0x0001p64)),
+        (fbig!(0x0010), fbig!(-0x0001p4), fbig!(0x0001p-64)),
+        (fbig!(0x1234), fbig!(0x1234p-16), fbig!(0xe960p-15)),
+        (fbig!(0x1234), fbig!(-0x1234p-16), fbig!(0x8c69p-16)),
+    ];
+
+    for (base, exp, target) in binary_cases {
+        test_powf_with_error::<_, Zero, 2>(&base, &exp, &target, &target.ulp());
+        test_powf_with_error::<_, Up, 2>(&base, &exp, &target, &target.ulp());
+        test_powf_with_error::<_, Down, 2>(&base, &exp, &target, &target.ulp());
+        test_powf_with_error::<_, HalfAway, 2>(&base, &exp, &target, &target.ulp());
+        test_powf_with_error::<_, HalfEven, 2>(&base, &exp, &target, &target.ulp());
+    }
 }

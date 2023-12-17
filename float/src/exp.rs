@@ -6,7 +6,7 @@ use crate::{
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
 };
-use dashu_base::{Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign};
+use dashu_base::{Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign, AbsOrd};
 use dashu_int::IBig;
 
 impl<R: Round, const B: Word> FBig<R, B> {
@@ -149,6 +149,8 @@ impl<R: Round> Context<R> {
     }
 
     /// Raise the floating point number to an floating point power under this context.
+    /// 
+    /// Note that this method will not rely on [FBig::powi] even if the `exp` is actually an integer.
     ///
     /// # Examples
     ///
@@ -302,13 +304,12 @@ impl<R: Round> Context<R> {
         loop {
             factorial *= k;
             pow *= &r;
-            // TODO: use &pow / &factorial < ulp as stop criteria?
 
-            let next = &sum + &pow / &factorial;
-            if next == sum {
+            let increase = &pow / &factorial;
+            if increase.abs_cmp(&sum.sub_ulp()).is_le() {
                 break;
             }
-            sum = next;
+            sum += increase;
             k += 1;
         }
 
