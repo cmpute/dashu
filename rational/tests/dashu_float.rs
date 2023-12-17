@@ -1,5 +1,8 @@
 use dashu_base::Approximation::*;
-use dashu_float::{round::Rounding::*, DBig};
+use dashu_float::{
+    round::{mode::*, Rounding::*},
+    DBig,
+};
 use dashu_ratio::RBig;
 
 mod helper_macros;
@@ -9,6 +12,7 @@ type FBin = dashu_float::FBig;
 #[test]
 fn test_to_float_decimal() {
     assert_eq!(rbig!(0).to_float(1), Exact(DBig::ZERO));
+    assert_eq!(rbig!(0).to_float::<HalfEven, 10>(20).unwrap().precision(), 20);
     assert_eq!(rbig!(1).to_float(1), Exact(DBig::ONE));
     assert_eq!(rbig!(-1).to_float(1), Exact(DBig::NEG_ONE));
     assert_eq!(rbig!(1 / 2).to_float(1), Exact(DBig::from_str_native("0.5").unwrap()));
@@ -31,6 +35,7 @@ fn test_to_float_decimal() {
 #[test]
 fn test_to_float_binary() {
     assert_eq!(rbig!(0).to_float(1), Exact(FBin::ZERO));
+    assert_eq!(rbig!(0).to_float::<Zero, 2>(20).unwrap().precision(), 20);
     assert_eq!(rbig!(1).to_float(1), Exact(FBin::ONE));
     assert_eq!(rbig!(-1).to_float(1), Exact(FBin::NEG_ONE));
     assert_eq!(rbig!(1 / 2).to_float(1), Exact(FBin::from_str_native("0x1p-1").unwrap()));

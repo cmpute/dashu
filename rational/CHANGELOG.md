@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Implement `AbsOrd` between `RBig`/`Relaxed` and `UBig`/`IBig`/`FBig`.
+- Method `RBig::to_float` now will enforce the precision of the output even for zero ([#45](https://github.com/cmpute/dashu/issues/45)). 
 
 ## 0.4.0
 

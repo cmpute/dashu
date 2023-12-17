@@ -86,7 +86,7 @@ impl Repr {
         assert!(precision > 0);
 
         if self.numerator.is_zero() {
-            return Approximation::Exact(FBig::ZERO);
+            return FBig::ZERO.with_precision(precision);
         }
 
         let base = UBig::from_word(B);

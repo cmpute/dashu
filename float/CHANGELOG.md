@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1
+
+- Fix the termination criteria for `ln` and `exp` series ([#44](https://github.com/cmpute/dashu/issues/44)).
+- Fix `powf` panicking when base is 0.
+
 ## 0.4.0
 
 ### Add
