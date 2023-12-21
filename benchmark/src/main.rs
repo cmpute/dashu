@@ -155,7 +155,7 @@ fn run_task(lib: Lib, task: Task, n: u32, iter: u32) -> (String, Duration) {
         Lib::Ramp => run_int_task_using::<ramp::Int>(task, n, iter),
         #[cfg(feature = "rug")]
         Lib::Rug => run_int_task_using::<rug::Integer>(task, n, iter),
-        #[cfg(feature = "rust_gmp")]
+        #[cfg(feature = "rust-gmp")]
         Lib::RustGmp => run_int_task_using::<gmp::mpz::Mpz>(task, n, iter),
         Lib::Malachite => match task {
             Task::E | Task::Fib | Task::FibHex => {

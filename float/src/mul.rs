@@ -100,7 +100,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
         self.context.sqr(&self.repr).value()
     }
 
-    /// Compute the square of this number (`self * self`)
+    /// Compute the cubic of this number (`self * self * self`)
     ///
     /// # Examples
     ///
@@ -208,7 +208,7 @@ impl<R: Round> Context<R> {
         self.repr_round(repr).map(|v| FBig::new(v, *self))
     }
 
-    /// Calculate the square of the floating point number under this context.
+    /// Calculate the cubic of the floating point number under this context.
     ///
     /// # Examples
     ///

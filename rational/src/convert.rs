@@ -415,7 +415,7 @@ impl RBig {
     /// ties to even).
     ///
     /// The rounding will be correct at most of the time, but in rare cases the
-    /// mantissa can be off by one bit. Use [RBig::to_f32_fast] for ensured correct
+    /// mantissa can be off by one bit. Use [RBig::to_f32] for ensured correct
     /// rounding.
     ///
     /// # Examples
@@ -438,7 +438,7 @@ impl RBig {
     /// ties to even).
     ///
     /// The rounding will be correct at most of the time, but in rare cases the
-    /// mantissa can be off by one bit. Use [RBig::to_f32_fast] for ensured correct
+    /// mantissa can be off by one bit. Use [RBig::to_f64] for ensured correct
     /// rounding.
     ///
     /// # Examples
@@ -486,7 +486,7 @@ impl RBig {
     /// ties to even).
     ///
     /// Because of the guaranteed rounding, it might take a long time to convert
-    /// when the numerator and denominator are large. In this case [RBig::to_f32_fast]
+    /// when the numerator and denominator are large. In this case [RBig::to_f64_fast]
     /// can be used if the correct rounding is not required.
     ///
     /// # Examples

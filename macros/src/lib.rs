@@ -97,4 +97,5 @@ pub fn rbig_embedded(input: TokenStream) -> TokenStream {
 
 // TODO(v0.5): add static_ubig!, static_ibig!, static_fbig!, static_dbig! (and their embedded versions)
 //             rbig won't be supported because gcd cannot be done in const). These methods are designed
-//             for big numbers, so the word array should be declared as static.
+//             for big numbers, so the word array should be declared as static. Besides, they should wrap
+//             the declaration to make sure the result number is immutable static.
