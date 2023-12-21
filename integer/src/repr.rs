@@ -277,6 +277,26 @@ impl Repr {
         }
     }
 
+    /// Creates a `Repr` with a reference to static word array.
+    ///
+    /// This method is unsafe, because the caller must make sure that
+    /// the created instance is immutable, and drop() must not be called.
+    #[inline]
+    pub const unsafe fn from_static_words(arr: &'static [Word]) -> Repr {
+        match arr.len() {
+            0 => Repr::from_word(0),
+            1 => Repr::from_word(arr[0]),
+            2 => Repr::from_dword(double_word(arr[0], arr[1])),
+            n => {
+                let ptr = arr.as_ptr() as _;
+                Repr {
+                    data: ReprData { heap: (ptr, n) },
+                    capacity: unsafe { NonZeroIsize::new_unchecked(n as _) },
+                }
+            }
+        }
+    }
+
     /// Create a `Repr` with a buffer allocated on heap. The leading zeros in the buffer
     /// will be trimmed and the buffer will be shrunk if there is exceeded capacity.
     pub fn from_buffer(mut buffer: Buffer) -> Self {

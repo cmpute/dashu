@@ -2,13 +2,14 @@ use crate::{
     rbig::{RBig, Relaxed},
     repr::Repr,
 };
-use dashu_base::{Approximation, ConversionError, DivRem};
+use dashu_base::{Approximation, ConversionError, DivRem, Gcd};
 use dashu_float::{
     round::{ErrorBounds, Round, Rounded},
     Context, FBig, Repr as FBigRepr,
 };
 use dashu_int::{UBig, Word};
 
+// TODO(v0.5): make this fallible, only succeed when the conversion is exact.
 impl<R: Round, const B: Word> From<Repr> for FBig<R, B> {
     #[inline]
     fn from(v: Repr) -> Self {
@@ -18,6 +19,30 @@ impl<R: Round, const B: Word> From<Repr> for FBig<R, B> {
         } = v;
         FBig::from(numerator) / FBig::from(denominator)
     }
+}
+
+// TODO(v0.5): substitute this function
+#[allow(dead_code)]
+fn fbig_try_from_rbig<R: Round, const B: Word>(v: Repr) -> Result<FBig<R, B>, ConversionError> {
+    let Repr {
+        numerator,
+        denominator,
+    } = v;
+
+    let float_den = FBig::from(denominator);
+    let float_num = FBig::from(numerator);
+
+    // TODO: specialize for RBig (gcd is unnecessary)
+    if !float_num
+        .repr()
+        .significand()
+        .gcd(float_den.repr().significand())
+        .is_one()
+    {
+        return Err(ConversionError::LossOfPrecision);
+    }
+
+    Ok(float_den / float_num)
 }
 
 impl<const B: Word> TryFrom<FBigRepr<B>> for Repr {

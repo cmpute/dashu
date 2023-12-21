@@ -94,3 +94,7 @@ pub fn rbig(input: TokenStream) -> TokenStream {
 pub fn rbig_embedded(input: TokenStream) -> TokenStream {
     parse::ratio::parse_ratio(true, input.into()).into()
 }
+
+// TODO(v0.5): add static_ubig!, static_ibig!, static_fbig!, static_dbig! (and their embedded versions)
+//             rbig won't be supported because gcd cannot be done in const). These methods are designed
+//             for big numbers, so the word array should be declared as static.

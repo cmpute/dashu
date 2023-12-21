@@ -160,6 +160,15 @@ impl IBig {
         Self(Repr::from_dword(dword).with_sign(sign))
     }
 
+    /// Create an IBig from a static sequence of [Word][crate::Word]s and a sign.
+    ///
+    /// See [UBig::from_static_words] for why this method is unsafe.
+    #[doc(hidden)]
+    #[inline]
+    pub const unsafe fn from_static_words(sign: Sign, words: &'static [crate::Word]) -> Self {
+        Self(Repr::from_static_words(words).with_sign(sign))
+    }
+
     /// [IBig] with value 0
     pub const ZERO: Self = Self(Repr::zero());
     /// [IBig] with value 1

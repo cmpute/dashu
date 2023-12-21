@@ -12,6 +12,17 @@ Please choose from the chapters on the left to jump to individual topics.
 - Focus on ergonomics & readability, and then efficiency.
 - Current MSRV is 1.61
 
+## The meta crate
+
+The crate `dashu` is a meta crate that exposes all the functionalities of the subcrates (`dashu-base`, `dashu-int`, `dashu-float`, `dashu-ratio` and `dashu-macros`). Each subcrate becomes a module in `dashu`, for example, `dashu-int` is re-exported as `dashu::int`. Besides, it creates more readable aliases for the numeric types:
+- `dashu::Natural` = `dashu::int::UBig` = `dashu_int::UBig`
+- `dashu::Integer` = `dashu::int::IBig` = `dashu_int::IBig`
+- `dashu::Ratio` = `dashu::ratio::RBig` = `dashu_ratio::RBig`
+- `dashu::Real` = `dashu::float::FBig` = `dashu_float::FBig`
+- `dashu::Decimal` = `dashu::float::DBig` = `dashu_float::DBig`
+
+In this guide, we will use the original names of the numeric types (i.e. `XBig`), but the explanations are also applicable to these re-exported types.
+
 ## Cargo Features
 
 Dashu has several optional features defined for cargo that supports various third-party crates. Most of them are not enabled by default. Specially, we use a special naming rule for the features.

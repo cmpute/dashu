@@ -343,6 +343,10 @@ impl<R: Round, const B: Word> FBig<R, B> {
         Self::new(repr, Context::new(precision))
     }
 
+    // TODO(v0.5): add from_static_words for const creation. This method should panic if
+    //             the input is not in reduced form (signif % B != 0). This check should
+    //             be feasible because is_multiple_of can be implemented in const.
+
     /// Return the value of the least significant digit of the float number x,
     /// such that `x + ulp` is the first float number greater than x (given the precision from the context).
     ///

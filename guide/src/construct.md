@@ -32,10 +32,14 @@ The components of different types are listed below:
 
 It's worth noting that, the constructors for `FBig` and `DBig` also determines the precision of the result floating numbers. A float number created from `::from_parts()` will have a precision of the digits in the magnitude (in the given radix). A float number created from `::from_parts_const()` will have a precision either inferred from the magnitude (same as `::from_parts()`) or from the argument `min_precision` of the method.
 
-To deconstruct these numeric types, use the `::into_parts()` functions to get the components without copying. However for `FBig`/`DBig`, you might need to use the `.into_repr()` to get the underlying representation `Repr`, and then use the `.into_parts()` method of `Repr` to get the magnitude and mantissa.
-
-`from_parts` and `into_parts` (`into_repr` for `FBig`)
+To deconstruct these numeric types, use the `::into_parts()` functions to get the components without copying. However for `FBig`/`DBig`, you should use the `.into_repr()` to get the underlying representation `Repr`, and then use the `.into_parts()` method of `Repr` to get the magnitude and mantissa.
 
 # `dashu-macros`
 
+We also provide a convenient and efficient way to create constant large numbers through the macros `ubig!`/`ibig!`/`fbig!`/`dbig!`/`rbig`. These macros can be obtained directly from the `dashu-macros` crate or from the `dashu` meta crate.
 
+You can directly put numeric literals as the argument without quotes (e.g. `dbig!(3.1415926535897932384626)`), and you don't need to worry about precision loss, because it's guaranteed that the number is faithfully created without approximations. Besides, the macros have minimal runtime overhead, since the numbers are preprocessed by the macros during compile-time. 
+
+When the number doesn't have a high precision, it can be used in a `const` environment, however this ability dependends on the precision and the machine word size.
+
+Please refer to [the docs of `dashu-macros`](https://docs.rs/dashu-macros/latest/dashu_macros/) for detailed usage of these macros.
