@@ -38,25 +38,31 @@ mod parse;
 #[proc_macro]
 #[doc = include_str!("../docs/ubig.md")]
 pub fn ubig(input: TokenStream) -> TokenStream {
-    parse::int::parse_integer::<false>(false, input.into()).into()
+    parse::int::parse_integer(false, false, false, input.into()).into()
+}
+
+#[proc_macro]
+#[doc = include_str!("../docs/static_ubig.md")]
+pub fn static_ubig(input: TokenStream) -> TokenStream {
+    parse::int::parse_integer(false, true, false, input.into()).into()
 }
 
 #[doc(hidden)]
 #[proc_macro]
 pub fn ubig_embedded(input: TokenStream) -> TokenStream {
-    parse::int::parse_integer::<false>(true, input.into()).into()
+    parse::int::parse_integer(false, false, true, input.into()).into()
 }
 
 #[proc_macro]
 #[doc = include_str!("../docs/ibig.md")]
 pub fn ibig(input: TokenStream) -> TokenStream {
-    parse::int::parse_integer::<true>(false, input.into()).into()
+    parse::int::parse_integer(true, false, false, input.into()).into()
 }
 
 #[doc(hidden)]
 #[proc_macro]
 pub fn ibig_embedded(input: TokenStream) -> TokenStream {
-    parse::int::parse_integer::<true>(true, input.into()).into()
+    parse::int::parse_integer(true, false, true, input.into()).into()
 }
 
 #[proc_macro]

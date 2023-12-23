@@ -3,39 +3,59 @@ use dashu_int::{IBig, Sign, UBig};
 use proc_macro2::{TokenStream, TokenTree};
 use quote::quote;
 
-use super::common::{print_error_msg, quote_bytes, quote_sign};
+use super::common::{print_error_msg, quote_bytes, quote_sign, quote_words};
 
-pub fn parse_integer<const SIGNED: bool>(embedded: bool, input: TokenStream) -> TokenStream {
-    match parse_integer_with_error::<SIGNED>(input) {
+pub fn parse_integer(
+    signed: bool,
+    static_: bool,
+    embedded: bool,
+    input: TokenStream,
+) -> TokenStream {
+    match parse_integer_with_error(signed, input) {
         Ok((sign, big)) => {
             // if the integer fits in a u32, generates const expression
             if big.bit_len() <= 32 {
                 let u: u32 = big.try_into().unwrap();
                 let sign = quote_sign(embedded, sign);
-                if SIGNED {
-                    if !embedded {
-                        quote! { ::dashu_int::IBig::from_parts_const(#sign, #u as _) }
-                    } else {
-                        quote! { ::dashu::integer::IBig::from_parts_const(#sign, #u as _) }
-                    }
-                } else if !embedded {
-                    quote! { ::dashu_int::UBig::from_dword(#u as _) }
+                let ns = if embedded {
+                    quote!(::dashu::integer)
                 } else {
-                    quote! { ::dashu::integer::UBig::from_dword(#u as _) }
+                    quote!(::dashu_int)
+                };
+                if signed {
+                    if static_ {
+                        todo!()
+                    } else {
+                        quote! { #ns::IBig::from_parts_const(#sign, #u as _) }
+                    }
+                } else {
+                    if static_ {
+                        quote! {{ static VALUE: #ns::UBig = #ns::UBig::from_dword(#u as _); &VALUE }}
+                    } else {
+                        quote! { #ns::UBig::from_dword(#u as _) }
+                    }
                 }
-            } else if SIGNED {
-                quote_ibig(embedded, IBig::from_parts(sign, big))
             } else {
-                quote_ubig(embedded, big)
+                if signed {
+                    if static_ {
+                        todo!()
+                    } else {
+                        quote_ibig(embedded, IBig::from_parts(sign, big))
+                    }
+                } else {
+                    if static_ {
+                        quote_static_ubig(embedded, big)
+                    } else {
+                        quote_ubig(embedded, big)
+                    }
+                }
             }
         }
         Err(e) => print_error_msg(e),
     }
 }
 
-fn parse_integer_with_error<const SIGNED: bool>(
-    input: TokenStream,
-) -> Result<(Sign, UBig), ParseError> {
+fn parse_integer_with_error(signed: bool, input: TokenStream) -> Result<(Sign, UBig), ParseError> {
     let mut val: Option<_> = None;
     let mut neg = false;
     let mut base_marked = false;
@@ -64,13 +84,13 @@ fn parse_integer_with_error<const SIGNED: bool>(
             }
             TokenTree::Punct(punct) => {
                 if val.is_none() && punct.as_char() == '-' {
-                    if SIGNED {
+                    if signed {
                         neg = true;
                     } else {
                         return Err(ParseError::InvalidDigit);
                     }
                 } else if val.is_none() && punct.as_char() == '+' {
-                    if !SIGNED {
+                    if !signed {
                         return Err(ParseError::InvalidDigit);
                     }
                 } else {
@@ -107,17 +127,40 @@ pub fn quote_ubig(embedded: bool, int: UBig) -> TokenStream {
     let len = bytes.len();
     let bytes_tt = quote_bytes(&bytes);
 
-    if !embedded {
-        quote! {{
-            const BYTES: [u8; #len] = #bytes_tt;
-            ::dashu_int::UBig::from_le_bytes(&BYTES)
-        }}
+    let ns = if embedded {
+        quote!(::dashu::integer)
     } else {
-        quote! {{
-            const BYTES: [u8; #len] = #bytes_tt;
-            ::dashu::integer::UBig::from_le_bytes(&BYTES)
-        }}
-    }
+        quote!(::dashu_int)
+    };
+    quote! {{
+        const BYTES: [u8; #len] = #bytes_tt;
+        #ns::UBig::from_le_bytes(&BYTES)
+    }}
+}
+
+/// Generate tokens for creating a [UBig] reference (static)
+pub fn quote_static_ubig(embedded: bool, int: UBig) -> TokenStream {
+    debug_assert!(int.bit_len() > 32);
+    let bytes = int.to_le_bytes();
+    let data_defs = quote_words(&bytes);
+    let ns: TokenStream = if embedded {
+        quote!(::dashu::integer)
+    } else {
+        quote!(::dashu_int)
+    };
+
+    quote! {{
+        #data_defs // defines data sources
+        type Select = DataSelector<{#ns::Word::BITS}>;
+        // copy to make sure the pointer to the data is valid all the time.
+        static DATA_COPY: [#ns::Word; Select::DATA.len()] = Select::DATA;
+
+        // here slicing has to be implemented through the unsafe block, because range expression is not const.
+        // See: https://users.rust-lang.org/t/constant-ranges-to-get-arrays-from-slices/67805
+        static DATA_COPY_SLICED: &'static [#ns::Word] = unsafe { core::slice::from_raw_parts(DATA_COPY.as_ptr(), Select::LEN) };
+        static VALUE: #ns::UBig = unsafe { #ns::UBig::from_static_words(&DATA_COPY_SLICED) };
+        &VALUE
+    }}
 }
 
 /// Generate tokens for creating a [IBig] instance (non-const)

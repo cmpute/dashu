@@ -153,6 +153,8 @@ impl UBig {
 
     /// Create an UBig from a static sequence of [Word][crate::Word]s. Similar to [from_words][UBig::from_words].
     ///
+    /// The input word array is required to be longer than two words, and the top word must not be zero.
+    ///
     /// This method is unsafe because it must be carefully handled. The generated instance
     /// must not be mutated or dropped. Therefore the correct usage is to assign it to an
     /// immutable static variable. Due to the risk, it's generally not recommended to use this method.
@@ -206,14 +208,22 @@ impl Clone for UBig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::buffer::Buffer;
+    use crate::{buffer::Buffer, DoubleWord, Word};
 
     impl UBig {
         /// Capacity in Words.
         #[inline]
-        pub(crate) fn capacity(&self) -> usize {
+        fn capacity(&self) -> usize {
             self.0.capacity()
         }
+    }
+
+    fn gen_ubig(num_words: u16) -> UBig {
+        let mut buf = Buffer::allocate(num_words.into());
+        for i in 0..num_words {
+            buf.push(i.into());
+        }
+        UBig(Repr::from_buffer(buf))
     }
 
     #[test]
@@ -297,11 +307,20 @@ mod tests {
         assert_eq!(a.capacity(), num.capacity());
     }
 
-    fn gen_ubig(num_words: u16) -> UBig {
-        let mut buf = Buffer::allocate(num_words.into());
-        for i in 0..num_words {
-            buf.push(i.into());
-        }
-        UBig(Repr::from_buffer(buf))
+    #[test]
+    fn test_const_generation() {
+        const ZERO: UBig = UBig::from_word(0);
+        const ONE_SINGLE: UBig = UBig::from_word(1);
+        const ONE_DOUBLE: UBig = UBig::from_dword(1);
+        const DMAX: UBig = UBig::from_dword(DoubleWord::MAX);
+        static DATA: [Word; 3] = [Word::MAX, Word::MAX, Word::MAX];
+        // SAFETY: DATA meets the requirements of from_static_words
+        static TMAX_ARR: UBig = unsafe { UBig::from_static_words(&DATA) };
+
+        assert_eq!(ZERO, UBig::ZERO);
+        assert_eq!(ONE_SINGLE, UBig::ONE);
+        assert_eq!(ONE_DOUBLE, UBig::ONE);
+        assert_eq!(DMAX.capacity(), 2);
+        assert_eq!(TMAX_ARR.capacity(), 3);
     }
 }

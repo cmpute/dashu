@@ -1,0 +1,1 @@
+Create an arbitrary precision unsigned integer ([dashu_int::UBig]) as a static reference.

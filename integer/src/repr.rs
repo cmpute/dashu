@@ -271,8 +271,7 @@ impl Repr {
         let (lo, hi) = split_dword(n);
         Repr {
             data: ReprData { inline: [lo, hi] },
-            // SAFETY: it's safe. The unsafe constructor is necessary
-            //         because it's in a const context.
+            // SAFETY: it's safe. The value is either 1 or 2.
             capacity: unsafe { NonZeroIsize::new_unchecked(1 + (hi != 0) as isize) },
         }
     }
@@ -283,17 +282,15 @@ impl Repr {
     /// the created instance is immutable, and drop() must not be called.
     #[inline]
     pub const unsafe fn from_static_words(arr: &'static [Word]) -> Repr {
-        match arr.len() {
-            0 => Repr::from_word(0),
-            1 => Repr::from_word(arr[0]),
-            2 => Repr::from_dword(double_word(arr[0], arr[1])),
-            n => {
-                let ptr = arr.as_ptr() as _;
-                Repr {
-                    data: ReprData { heap: (ptr, n) },
-                    capacity: unsafe { NonZeroIsize::new_unchecked(n as _) },
-                }
-            }
+        let n = arr.len();
+        assert!(n > 2, "this function is designed for large arrays only.");
+        assert!(arr[n - 1] != 0, "the array input must be normalized.");
+
+        let ptr = arr.as_ptr() as _;
+        Repr {
+            data: ReprData { heap: (ptr, n) },
+            // SAFETY: it's safe. The value has been checked by the assertion above.
+            capacity: unsafe { NonZeroIsize::new_unchecked(n as _) },
         }
     }
 
