@@ -34,10 +34,26 @@ macro_rules! ubig {
 }
 
 #[macro_export]
+#[doc = include_str!("../macros/docs/static_ubig.md")]
+macro_rules! static_ubig {
+    ($($t:tt)+) => {
+        $crate::__dashu_macros::static_ubig_embedded!($($t)+)
+    }
+}
+
+#[macro_export]
 #[doc = include_str!("../macros/docs/ibig.md")]
 macro_rules! ibig {
     ($($t:tt)+) => {
         $crate::__dashu_macros::ibig_embedded!($($t)+)
+    }
+}
+
+#[macro_export]
+#[doc = include_str!("../macros/docs/static_ibig.md")]
+macro_rules! static_ibig {
+    ($($t:tt)+) => {
+        $crate::__dashu_macros::static_ibig_embedded!($($t)+)
     }
 }
 

@@ -37,3 +37,5 @@ const A: UBig = ubig!(123);
 const B: UBig = ubig!(0x123);
 const C: UBig = ubig!(0xffff_ffff);
 ```
+
+Please use the [static_ubig!][crate::static_ubig!] macro if you want to create a big static number.

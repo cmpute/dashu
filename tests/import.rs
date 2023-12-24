@@ -10,6 +10,10 @@ fn test_macros() {
     const B: IBig = ibig!(-1234);
     assert_eq!(A + B, ibig!(0));
 
+    static SA: &'static UBig = static_ubig!(1234);
+    static SB: &'static IBig = static_ibig!(-1234);
+    assert_eq!(SA + SB, ibig!(0));
+
     const C: FBig = fbig!(0x1234p-4);
     const D: DBig = dbig!(12.34);
     assert!(C.to_decimal().value() > D);

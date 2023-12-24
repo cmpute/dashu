@@ -53,16 +53,36 @@ pub fn ubig_embedded(input: TokenStream) -> TokenStream {
     parse::int::parse_integer(false, false, true, input.into()).into()
 }
 
+#[doc(hidden)]
+#[proc_macro]
+#[doc = include_str!("../docs/static_ubig.md")]
+pub fn static_ubig_embedded(input: TokenStream) -> TokenStream {
+    parse::int::parse_integer(false, true, true, input.into()).into()
+}
+
 #[proc_macro]
 #[doc = include_str!("../docs/ibig.md")]
 pub fn ibig(input: TokenStream) -> TokenStream {
     parse::int::parse_integer(true, false, false, input.into()).into()
 }
 
+#[proc_macro]
+#[doc = include_str!("../docs/static_ibig.md")]
+pub fn static_ibig(input: TokenStream) -> TokenStream {
+    parse::int::parse_integer(true, true, false, input.into()).into()
+}
+
 #[doc(hidden)]
 #[proc_macro]
 pub fn ibig_embedded(input: TokenStream) -> TokenStream {
     parse::int::parse_integer(true, false, true, input.into()).into()
+}
+
+#[doc(hidden)]
+#[proc_macro]
+#[doc = include_str!("../docs/static_ibig.md")]
+pub fn static_ibig_embedded(input: TokenStream) -> TokenStream {
+    parse::int::parse_integer(true, true, true, input.into()).into()
 }
 
 #[proc_macro]

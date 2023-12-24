@@ -23,22 +23,24 @@ pub fn parse_integer(
                     quote!(::dashu_int)
                 };
                 if signed {
+                    let gen_expr = quote! { #ns::IBig::from_parts_const(#sign, #u as _) };
                     if static_ {
-                        todo!()
+                        quote! {{ static VALUE: #ns::IBig = #gen_expr; &VALUE }}
                     } else {
-                        quote! { #ns::IBig::from_parts_const(#sign, #u as _) }
+                        gen_expr
                     }
                 } else {
+                    let gen_expr = quote! { #ns::UBig::from_dword(#u as _) };
                     if static_ {
-                        quote! {{ static VALUE: #ns::UBig = #ns::UBig::from_dword(#u as _); &VALUE }}
+                        quote! {{ static VALUE: #ns::UBig = #gen_expr; &VALUE }}
                     } else {
-                        quote! { #ns::UBig::from_dword(#u as _) }
+                        gen_expr
                     }
                 }
             } else {
                 if signed {
                     if static_ {
-                        todo!()
+                        quote_static_ibig(embedded, IBig::from_parts(sign, big))
                     } else {
                         quote_ibig(embedded, IBig::from_parts(sign, big))
                     }
@@ -143,12 +145,12 @@ pub fn quote_static_ubig(embedded: bool, int: UBig) -> TokenStream {
     debug_assert!(int.bit_len() > 32);
     let bytes = int.to_le_bytes();
     let data_defs = quote_words(&bytes);
+
     let ns: TokenStream = if embedded {
         quote!(::dashu::integer)
     } else {
         quote!(::dashu_int)
     };
-
     quote! {{
         #data_defs // defines data sources
         type Select = DataSelector<{#ns::Word::BITS}>;
@@ -170,9 +172,33 @@ pub fn quote_ibig(embedded: bool, int: IBig) -> TokenStream {
     let sign = quote_sign(embedded, sign);
     let mag_tt = quote_ubig(embedded, mag);
 
-    if !embedded {
-        quote! { ::dashu_int::IBig::from_parts(#sign, #mag_tt) }
+    let ns: TokenStream = if embedded {
+        quote!(::dashu::integer)
     } else {
-        quote! { ::dashu::integer::IBig::from_parts(#sign, #mag_tt) }
-    }
+        quote!(::dashu_int)
+    };
+    quote! { #ns::IBig::from_parts(#sign, #mag_tt) }
+}
+
+/// Generate tokens for creating a [IBig] reference (static)
+pub fn quote_static_ibig(embedded: bool, int: IBig) -> TokenStream {
+    debug_assert!(int.bit_len() > 32);
+    let (sign, mag) = int.into_parts();
+    let bytes = mag.to_le_bytes();
+    let data_defs = quote_words(&bytes);
+
+    let ns: TokenStream = if embedded {
+        quote!(::dashu::integer)
+    } else {
+        quote!(::dashu_int)
+    };
+    let sign = quote_sign(embedded, sign);
+    quote! {{ // similar to quote_static_ubig()
+        #data_defs // defines data sources
+        type Select = DataSelector<{#ns::Word::BITS}>;
+        static DATA_COPY: [#ns::Word; Select::DATA.len()] = Select::DATA;
+        static DATA_COPY_SLICED: &'static [#ns::Word] = unsafe { core::slice::from_raw_parts(DATA_COPY.as_ptr(), Select::LEN) };
+        static VALUE: #ns::IBig = unsafe { #ns::IBig::from_static_words(#sign, &DATA_COPY_SLICED) };
+        &VALUE
+    }}
 }

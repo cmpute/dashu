@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use dashu_int::{IBig, UBig};
-use dashu_macros::{ibig, static_ubig, ubig};
+use dashu_macros::{ibig, static_ibig, static_ubig, ubig};
 
 #[test]
 fn test_ubig() {
@@ -134,4 +134,20 @@ fn test_ibig() {
     const _: IBig = ibig!(0);
     const _: IBig = ibig!(-1);
     const _: IBig = ibig!(-0xffffffff);
+}
+
+#[test]
+fn test_static_ibig() {
+    let zero: &'static IBig = static_ibig!(0);
+    assert_eq!(*zero, IBig::ZERO);
+
+    let one: &'static IBig = static_ibig!(1);
+    assert_eq!(*one, IBig::ONE);
+
+    let big: &'static IBig =
+        static_ibig!(-123456789012345678901234567890123456789012345678901234567890);
+    assert_eq!(
+        *big,
+        IBig::from_str("-123456789012345678901234567890123456789012345678901234567890").unwrap()
+    );
 }

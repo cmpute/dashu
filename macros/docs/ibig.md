@@ -37,3 +37,5 @@ const A: IBig = ibig!(-123);
 const B: IBig = ibig!(0x123);
 const C: IBig = ibig!(-0xffff_ffff);
 ```
+
+Please use the [static_ibig!][crate::static_ibig!] macro if you want to create a big static number.
