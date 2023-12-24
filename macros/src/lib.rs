@@ -23,7 +23,7 @@
 //! re-export types, it's required to add explicit dependency to the underlying crates
 //! when using the macros. Specifically, you need to add the following crates as dependencies
 //! to your `Cargo.toml`:
-//! * For [ubig!] and [ibig!]: `dashu-int`
+//! * For [ubig!]/[static_ubig!] and [ibig!]/[static_ibig!]: `dashu-int`
 //! * For [fbig!] and [dbig!]: `dashu-int`, `dashu-float`
 //! * For [rbig!]: `dashu-int`, `dashu-ratio`
 //!

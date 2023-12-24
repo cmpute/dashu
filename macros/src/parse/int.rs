@@ -22,34 +22,18 @@ pub fn parse_integer(
                 } else {
                     quote!(::dashu_int)
                 };
-                if signed {
-                    let gen_expr = quote! { #ns::IBig::from_parts_const(#sign, #u as _) };
-                    if static_ {
-                        quote! {{ static VALUE: #ns::IBig = #gen_expr; &VALUE }}
-                    } else {
-                        gen_expr
-                    }
-                } else {
-                    let gen_expr = quote! { #ns::UBig::from_dword(#u as _) };
-                    if static_ {
-                        quote! {{ static VALUE: #ns::UBig = #gen_expr; &VALUE }}
-                    } else {
-                        gen_expr
-                    }
+                match (signed, static_) {
+                    (false, false) => quote! { #ns::UBig::from_dword(#u as _) },
+                    (false, true) => quote! {{ static VALUE: #ns::UBig = #ns::UBig::from_dword(#u as _); &VALUE }},
+                    (true, false) => quote! { #ns::IBig::from_parts_const(#sign, #u as _) },
+                    (true, true) => quote! {{ static VALUE: #ns::IBig = #ns::IBig::from_parts_const(#sign, #u as _); &VALUE }},
                 }
             } else {
-                if signed {
-                    if static_ {
-                        quote_static_ibig(embedded, IBig::from_parts(sign, big))
-                    } else {
-                        quote_ibig(embedded, IBig::from_parts(sign, big))
-                    }
-                } else {
-                    if static_ {
-                        quote_static_ubig(embedded, big)
-                    } else {
-                        quote_ubig(embedded, big)
-                    }
+                match (signed, static_) {
+                    (false, false) => quote_ubig(embedded, big),
+                    (false, true) => quote_static_ubig(embedded, big),
+                    (true, false) => quote_ibig(embedded, IBig::from_parts(sign, big)),
+                    (true, true) => quote_static_ibig(embedded, IBig::from_parts(sign, big)),
                 }
             }
         }
