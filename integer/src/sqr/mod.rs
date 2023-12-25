@@ -1,22 +1,15 @@
 //! Square.
 
-use alloc::alloc::Layout;
-
-use crate::{
-    arch::word::Word,
-    helper_macros::debug_assert_zero,
-    memory::{self, Memory},
-    mul, Sign,
-};
+use crate::{arch::word::Word, helper_macros::debug_assert_zero, memory::Memory, mul, Sign};
 
 mod simple;
 
 /// If operand length <= this, simple squaring will be used.
 const MAX_LEN_SIMPLE: usize = 30;
 
-pub fn memory_requirement_exact(len: usize) -> Layout {
+pub fn memory_requirement_exact(len: usize) -> usize {
     if len <= MAX_LEN_SIMPLE {
-        memory::zero_layout()
+        0
     } else {
         mul::memory_requirement_up_to(2 * len, len)
     }

@@ -134,8 +134,8 @@ pub(crate) mod repr {
         let (exp, exp_rem) = exp.div_rem(wexp);
         let mut res = Buffer::allocate(exp + 1); // result is at most exp + 1 words
         let mut allocation = MemoryAllocation::new(
-            memory::add_layout(
-                memory::array_layout::<Word>(exp / 2 + 1), // store res before squaring
+            memory::add_capacity(
+                exp / 2 + 1, // store res before squaring
                 sqr::memory_requirement_exact(exp / 2 + 1),
             ), // memory for squaring
         );
@@ -177,8 +177,8 @@ pub(crate) mod repr {
 
         let mut res = Buffer::allocate(2 * exp); // result is at most 2 * exp words
         let mut allocation = MemoryAllocation::new(
-            memory::add_layout(
-                memory::array_layout::<Word>(exp), // store res before squaring
+            memory::add_capacity(
+                exp, // store res before squaring
                 sqr::memory_requirement_exact(exp),
             ), // memory for squaring
         );

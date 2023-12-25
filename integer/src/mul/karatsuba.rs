@@ -5,11 +5,10 @@ use crate::{
     arch::word::{SignedWord, Word},
     helper_macros::debug_assert_zero,
     math,
-    memory::{self, Memory},
+    memory::Memory,
     mul::{self, helpers},
     Sign::{self, *},
 };
-use alloc::alloc::Layout;
 
 // We must have 3 * floor((n+1)/2) <= 2n.
 //
@@ -21,7 +20,7 @@ pub const MIN_LEN: usize = 3;
 /// Temporary memory required for multiplication.
 ///
 /// n bounds the length of the Smaller factor in words.
-pub fn memory_requirement_up_to(n: usize) -> Layout {
+pub fn memory_requirement_up_to(n: usize) -> usize {
     /* We prove by induction that:
      * f(n) <= 2n + 2 log_2 (n-1)
      *
@@ -33,8 +32,7 @@ pub fn memory_requirement_up_to(n: usize) -> Layout {
      */
 
     // Use 2n + 2 ceil log_2 n.
-    let num_words = 2 * n + 2 * (math::ceil_log2(n) as usize);
-    memory::array_layout::<Word>(num_words)
+    2 * n + 2 * (math::ceil_log2(n) as usize)
 }
 
 /// c += sign * a * b
@@ -91,7 +89,7 @@ pub fn add_signed_mul_same_len(
     {
         // c_0 += a_lo * b_lo
         // c_1 += a_lo * b_lo
-        let (c_lo, mut memory) = memory.allocate_slice_fill::<Word>(2 * mid, 0);
+        let (c_lo, mut memory) = memory.allocate_slice_fill(2 * mid, 0);
         debug_assert_zero!(mul::add_signed_mul_same_len(c_lo, Positive, a_lo, b_lo, &mut memory));
         carry_c0 += add::add_signed_same_len_in_place(&mut c[..2 * mid], sign, c_lo);
         carry_c1 += add::add_signed_same_len_in_place(&mut c[mid..3 * mid], sign, c_lo);
@@ -99,7 +97,7 @@ pub fn add_signed_mul_same_len(
     {
         // c_2 += a_hi * b_hi
         // c_1 += a_hi * b_hi
-        let (c_hi, mut memory) = memory.allocate_slice_fill::<Word>(2 * (n - mid), 0);
+        let (c_hi, mut memory) = memory.allocate_slice_fill(2 * (n - mid), 0);
         debug_assert_zero!(mul::add_signed_mul_same_len(c_hi, Positive, a_hi, b_hi, &mut memory));
         carry += add::add_signed_same_len_in_place(&mut c[2 * mid..], sign, c_hi);
         carry_c1 += add::add_signed_in_place(&mut c[mid..3 * mid], sign, c_hi);

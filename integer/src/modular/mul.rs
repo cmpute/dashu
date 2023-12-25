@@ -11,7 +11,6 @@ use crate::{
     primitive::{extend_word, locate_top_word_plus_one, split_dword},
     shift, sqr,
 };
-use alloc::alloc::Layout;
 use core::ops::{Deref, Mul, MulAssign};
 use num_modular::Reducer;
 
@@ -115,14 +114,11 @@ impl<'a> Reduced<'a> {
     }
 }
 
-pub(crate) fn mul_memory_requirement(ring: &ConstLargeDivisor) -> Layout {
+pub(crate) fn mul_memory_requirement(ring: &ConstLargeDivisor) -> usize {
     let n = ring.normalized_divisor.len();
-    memory::add_layout(
-        memory::array_layout::<Word>(2 * n),
-        memory::max_layout(
-            mul::memory_requirement_exact(2 * n, n),
-            div::memory_requirement_exact(2 * n, n),
-        ),
+    memory::add_capacity(
+        2 * n,
+        mul::memory_requirement_exact(2 * n, n).max(div::memory_requirement_exact(2 * n, n)),
     )
 }
 
@@ -142,7 +138,7 @@ pub(crate) fn mul_normalized<'a>(
     let nb = locate_top_word_plus_one(b);
 
     // product = a * b
-    let (product, mut memory) = memory.allocate_slice_fill::<Word>(n.max(na + nb), 0);
+    let (product, mut memory) = memory.allocate_slice_fill(n.max(na + nb), 0);
     if na | nb == 0 {
         return product;
     } else if na == 1 && nb == 1 {
@@ -198,7 +194,7 @@ pub(crate) fn sqr_normalized<'a>(
     let na = locate_top_word_plus_one(a);
 
     // product = a * a
-    let (product, mut memory) = memory.allocate_slice_fill::<Word>(n.max(na * 2), 0);
+    let (product, mut memory) = memory.allocate_slice_fill(n.max(na * 2), 0);
     if na == 0 {
         return product;
     } else if na == 1 {

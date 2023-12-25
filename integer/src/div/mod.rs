@@ -4,11 +4,10 @@ use crate::{
     arch::word::{DoubleWord, Word},
     helper_macros::debug_assert_zero,
     math::{shl_dword, shr_word, FastDivideNormalized, FastDivideNormalized2},
-    memory::{self, Memory},
+    memory::Memory,
     primitive::{double_word, extend_word, highest_dword, lowest_dword, split_dword, WORD_BITS},
     shift,
 };
-use alloc::alloc::Layout;
 
 mod divide_conquer;
 mod simple;
@@ -231,10 +230,10 @@ pub(crate) fn fast_rem_by_normalized_dword(
 }
 
 /// Memory requirement for division.
-pub fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> Layout {
+pub fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> usize {
     assert!(lhs_len >= rhs_len && rhs_len >= 2);
     if rhs_len <= THRESHOLD_SIMPLE || lhs_len - rhs_len <= THRESHOLD_SIMPLE {
-        memory::zero_layout()
+        0
     } else {
         divide_conquer::memory_requirement_exact(lhs_len, rhs_len)
     }

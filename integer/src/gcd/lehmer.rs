@@ -1,4 +1,3 @@
-use alloc::alloc::Layout;
 use core::{mem, ptr, slice};
 use dashu_base::{ExtendedGcd, Gcd};
 
@@ -223,7 +222,7 @@ pub(crate) fn lehmer_step(x: &mut [Word], y: &mut [Word], a: Word, b: Word, c: W
 
 /// Temporary memory required for gcd.
 #[inline]
-pub fn memory_requirement_up_to(lhs_len: usize, rhs_len: usize) -> Layout {
+pub fn memory_requirement_up_to(lhs_len: usize, rhs_len: usize) -> usize {
     // Required memory:
     // - temporary space for the division in the euclidean step
     div::memory_requirement_exact(lhs_len, rhs_len)
@@ -328,15 +327,14 @@ fn lehmer_ext_step(
 }
 
 /// Temporary memory required for extended gcd.
-pub fn memory_requirement_ext_up_to(lhs_len: usize, rhs_len: usize) -> Layout {
+pub fn memory_requirement_ext_up_to(lhs_len: usize, rhs_len: usize) -> usize {
     // Required memory:
     // - two numbers (t0 & t1) with at most the same size as lhs, add 1 buffer word
     // - temporary space for a division (for euclidean step), and later a mulitplication (for coeff update)
     let t_words = 2 * lhs_len + 2;
-    memory::add_layout(
-        memory::array_layout::<Word>(t_words),
-        memory::max_layout(
-            div::memory_requirement_exact(lhs_len, rhs_len), //
+    memory::add_capacity(
+        t_words,
+        div::memory_requirement_exact(lhs_len, rhs_len).max(
             mul::memory_requirement_up_to(lhs_len, lhs_len / 2), // for coeff update
         ),
     )
@@ -358,8 +356,8 @@ pub fn gcd_ext_in_place(
     // the normal way is to have four variables s0, s1, t0, t1 and keep gcd(x, y) = gcd(lhs, rhs),
     // x = s0*lhs - t0*rhs, y = t1*rhs - s1*lhs. Here we simplify it by only tracking the
     // coefficient of rhs, so that x = -t0*rhs mod lhs, y = t1*rhs mod lhs,
-    let (mut t0, mut memory) = memory.allocate_slice_fill::<Word>(lhs_len + 1, 0);
-    let (mut t1, mut memory) = memory.allocate_slice_fill::<Word>(lhs_len + 1, 0);
+    let (mut t0, mut memory) = memory.allocate_slice_fill(lhs_len + 1, 0);
+    let (mut t1, mut memory) = memory.allocate_slice_fill(lhs_len + 1, 0);
     let (mut t0_len, mut t1_len) = (1, 1);
     *t1.first_mut().unwrap() = 1;
 

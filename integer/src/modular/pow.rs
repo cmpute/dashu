@@ -140,13 +140,10 @@ mod large {
             .checked_mul(n)
             .unwrap_or_else(|| panic_allocate_too_much());
 
-        let memory_requirement = memory::add_layout(
-            memory::array_layout::<Word>(table_words),
-            mul_memory_requirement(ring),
-        );
+        let memory_requirement = memory::add_capacity(table_words, mul_memory_requirement(ring));
         let mut allocation = MemoryAllocation::new(memory_requirement);
         let mut memory = allocation.memory();
-        let (table, mut memory) = memory.allocate_slice_fill::<Word>(table_words, 0);
+        let (table, mut memory) = memory.allocate_slice_fill(table_words, 0);
 
         // val = raw^2
         let mut val = raw.clone();

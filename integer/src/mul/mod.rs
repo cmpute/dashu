@@ -5,11 +5,10 @@ use crate::{
     arch::word::{DoubleWord, SignedWord, Word},
     helper_macros::debug_assert_zero,
     math,
-    memory::{self, Memory},
+    memory::Memory,
     primitive::{double_word, extend_word, split_dword},
     Sign,
 };
-use alloc::alloc::Layout;
 use core::mem;
 use static_assertions::const_assert;
 
@@ -158,9 +157,9 @@ pub fn sub_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Wor
 }
 
 /// Temporary scratch space required for multiplication.
-pub fn memory_requirement_up_to(_total_len: usize, smaller_len: usize) -> Layout {
+pub fn memory_requirement_up_to(_total_len: usize, smaller_len: usize) -> usize {
     if smaller_len <= THRESHOLD_SIMPLE {
-        memory::zero_layout()
+        0
     } else if smaller_len <= THRESHOLD_KARATSUBA {
         karatsuba::memory_requirement_up_to(smaller_len)
     } else {
@@ -169,7 +168,7 @@ pub fn memory_requirement_up_to(_total_len: usize, smaller_len: usize) -> Layout
 }
 
 /// Temporary scratch space required for multiplication.
-pub fn memory_requirement_exact(total_len: usize, smaller_len: usize) -> Layout {
+pub fn memory_requirement_exact(total_len: usize, smaller_len: usize) -> usize {
     memory_requirement_up_to(total_len, smaller_len)
 }
 
