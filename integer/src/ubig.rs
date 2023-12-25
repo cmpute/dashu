@@ -71,7 +71,7 @@ pub struct UBig(pub(crate) Repr);
 impl UBig {
     /// Get the representation of UBig.
     #[inline]
-    pub(crate) fn repr(&self) -> TypedReprRef<'_> {
+    pub(crate) const fn repr(&self) -> TypedReprRef<'_> {
         self.0.as_typed()
     }
 
@@ -313,14 +313,19 @@ mod tests {
         const ONE_SINGLE: UBig = UBig::from_word(1);
         const ONE_DOUBLE: UBig = UBig::from_dword(1);
         const DMAX: UBig = UBig::from_dword(DoubleWord::MAX);
+
+        const CDATA: [Word; 3] = [Word::MAX, Word::MAX, Word::MAX];
+        // SAFETY: DATA meets the requirements of from_static_words
+        static CONST_TMAX: UBig = unsafe { UBig::from_static_words(&CDATA) };
         static DATA: [Word; 3] = [Word::MAX, Word::MAX, Word::MAX];
         // SAFETY: DATA meets the requirements of from_static_words
-        static TMAX_ARR: UBig = unsafe { UBig::from_static_words(&DATA) };
+        static STATIC_TMAX: UBig = unsafe { UBig::from_static_words(&DATA) };
 
         assert_eq!(ZERO, UBig::ZERO);
         assert_eq!(ONE_SINGLE, UBig::ONE);
         assert_eq!(ONE_DOUBLE, UBig::ONE);
         assert_eq!(DMAX.capacity(), 2);
-        assert_eq!(TMAX_ARR.capacity(), 3);
+        assert_eq!(CONST_TMAX.capacity(), 3);
+        assert_eq!(STATIC_TMAX.capacity(), 3);
     }
 }

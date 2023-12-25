@@ -22,7 +22,7 @@ Nevertheless, there are other useful methods for lossy conversions:
 - `RBig` to `FBig`/`FBig`: `.to_float()`
 > The methods `.ceil()`, `.floor()` and `.trunc()` of `FBig` doesn't return `IBig`, because when `FBig` is very large (with a high exponent), the `IBig` result can consume a great amout of memory, which might not be a desirable behavior.
 
-Another useful conversion that is worth mentioning is `UBig::as_ibig()`. Due to the fact that `UBig` and `IBig` has the same memory layout, A `UBig` can be directed used as an `IBig` through this method.
+Another useful conversion that is worth mentioning is `UBig::as_ibig()`. Due to the fact that `UBig` and `IBig` has the same memory layout, A `UBig` can be directed used as an `IBig` through this method. Similarly, `RBig::as_relaxed()` can be helpful when you want to use an `RBig` instance as an `dashu_ratio::Relaxed`. 
 
 Besides these methods designed for conversions, the constructors and destructors can also be used for the purpose of type conversion, especially from compound types to its parts. Please refer to the [Construction and Destruction](./construct.md#Construct_from_Parts) page for this approach.
 

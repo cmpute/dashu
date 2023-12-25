@@ -183,6 +183,21 @@ impl RBig {
         Relaxed(self.0)
     }
 
+    /// Regard the number as a [Relaxed] number and return a reference of [Relaxed] type.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_ratio::{RBig, Relaxed};
+    /// assert_eq!(RBig::ONE.as_relaxed(), &Relaxed::ONE);
+    #[inline]
+    pub fn as_relaxed(&self) -> &Relaxed {
+        // SAFETY: RBig and Relaxed are both transparent wrapper around the Repr type.
+        //         This conversion is only available for immutable references, so that
+        //         the rational number will be kept reduced.
+        unsafe { core::mem::transmute(self) }
+    }
+
     /// Check whether the number is 0
     ///
     /// # Examples

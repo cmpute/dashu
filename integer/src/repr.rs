@@ -143,15 +143,20 @@ impl Repr {
     ///
     /// Panics if the `capacity` is negative
     #[inline]
-    pub fn as_typed(&self) -> TypedReprRef<'_> {
+    pub const fn as_typed(&self) -> TypedReprRef<'_> {
         let (sign, typed) = self.as_sign_typed();
-        assert!(sign == Sign::Positive);
+        match sign {
+            // sign check
+            Sign::Positive => {},
+            Sign::Negative => unreachable!()
+        }
+
         typed
     }
 
     /// Cast the reference of `Repr` to a strong typed representation, and return with the sign.
     #[inline]
-    pub fn as_sign_typed(&self) -> (Sign, TypedReprRef<'_>) {
+    pub const fn as_sign_typed(&self) -> (Sign, TypedReprRef<'_>) {
         let (abs_capacity, sign) = self.sign_capacity();
 
         // SAFETY: the capacity is checked before accessing the fields.
