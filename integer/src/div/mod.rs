@@ -5,7 +5,7 @@ use crate::{
     helper_macros::debug_assert_zero,
     math::{shl_dword, shr_word, FastDivideNormalized, FastDivideNormalized2},
     memory::{self, Memory},
-    primitive::{double_word, extend_word, highest_dword, lowest_dword, split_dword, WORD_BITS},
+    primitive::{double_word, extend_word, highest_dword, lowest_dword, split_dword, WORD_BITS, split_hi_word},
     shift,
 };
 use alloc::alloc::Layout;
@@ -71,7 +71,7 @@ pub(crate) fn fast_div_by_word_in_place(
 }
 
 /// Panics if `words` is empty
-pub fn rem_by_word(words: &[Word], rhs: Word) -> Word {
+pub const fn rem_by_word(words: &[Word], rhs: Word) -> Word {
     debug_assert!(rhs != 0 && !words.is_empty());
 
     // shortcut
@@ -90,20 +90,26 @@ pub fn rem_by_word(words: &[Word], rhs: Word) -> Word {
     rem >> shift
 }
 
-pub(crate) fn fast_rem_by_normalized_word(
+pub(crate) const fn fast_rem_by_normalized_word(
     words: &[Word],
     fast_div_rhs: FastDivideNormalized,
 ) -> Word {
     debug_assert!(!words.is_empty());
 
     // first calculate the highest remainder
-    let (last, words_lo) = words.split_last().unwrap();
-    let mut rem = fast_div_rhs.div_rem_1by1(*last).1;
+    let (last, words_lo) = split_hi_word(words);
+    let mut rem = fast_div_rhs.div_rem_1by1(last).1;
 
-    // then iterate through the words
-    for word in words_lo.iter().rev() {
-        let a = double_word(*word, rem);
+    // then iterate through the words. Use a manual loop because for loop is not yet const.
+    let mut i = words_lo.len() - 1;
+    loop {
+        let a = double_word(words_lo[i], rem);
         rem = fast_div_rhs.div_rem_2by1(a).1;
+
+        if i == 0 {
+            break;
+        }
+        i -= 1;
     }
 
     rem
@@ -180,12 +186,12 @@ pub(crate) fn fast_div_by_dword_in_place(
 }
 
 /// words % rhs, panics if `words` is too short (<= 2 words) or rhs fits in a single Word.
-pub fn rem_by_dword(words: &[Word], rhs: DoubleWord) -> DoubleWord {
+pub const fn rem_by_dword(words: &[Word], rhs: DoubleWord) -> DoubleWord {
     debug_assert!(rhs > Word::MAX as DoubleWord, "call div_by_word_in_place when rhs is small");
     debug_assert!(words.len() >= 2);
 
     if rhs.is_power_of_two() {
-        return lowest_dword(words) & (rhs - 1);
+        return double_word(words[0], words[1]) & (rhs - 1);
     }
 
     // calculate remainder without normalizing the words
@@ -200,31 +206,28 @@ pub fn rem_by_dword(words: &[Word], rhs: DoubleWord) -> DoubleWord {
     rem >> shift
 }
 
-pub(crate) fn fast_rem_by_normalized_dword(
+pub(crate) const fn fast_rem_by_normalized_dword(
     words: &[Word],
     fast_div_rhs: FastDivideNormalized2,
 ) -> DoubleWord {
     debug_assert!(words.len() >= 2);
 
     // first calculate the highest remainder
-    let (top_hi, words_lo) = words.split_last().unwrap();
-    let (top_lo, words_lo) = words_lo.split_last().unwrap();
-    let mut rem = fast_div_rhs.div_rem_2by2(double_word(*top_lo, *top_hi)).1;
+    let mut i = words.len() - 1;
+    let top_dword = double_word(words[i-1], words[i]);
+    let mut rem = fast_div_rhs.div_rem_2by2(top_dword).1;
 
     // then iterate through the words
     // chunk the words into double words, and do 4by2 divisions
-    let mut dwords = words_lo.rchunks_exact(2);
-    for chunk in &mut dwords {
-        let dword = lowest_dword(chunk);
-        rem = fast_div_rhs.div_rem_4by2(dword, rem).1;
+    while i > 2 {
+        i -= 2;
+        let top_dword = double_word(words[i-1], words[i]);
+        rem = fast_div_rhs.div_rem_4by2(top_dword, rem).1;
     }
 
     // there might be a single word left, do a 3by2 division
-    let r = dwords.remainder();
-    if !r.is_empty() {
-        debug_assert!(r.len() == 1);
-        let r0 = r.first().unwrap();
-        rem = fast_div_rhs.div_rem_3by2(*r0, rem).1;
+    if i == 2 {
+        rem = fast_div_rhs.div_rem_3by2(words[0], rem).1
     }
 
     rem

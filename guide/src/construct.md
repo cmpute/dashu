@@ -40,6 +40,6 @@ We also provide a convenient and efficient way to create constant large numbers 
 
 You can directly put numeric literals as the argument without quotes (e.g. `dbig!(3.1415926535897932384626)`), and you don't need to worry about precision loss, because it's guaranteed that the number is faithfully created without approximations. Besides, the macros have minimal runtime overhead, since the numbers are preprocessed by the macros during compile-time. 
 
-When the number doesn't have a high precision, it can be used in a `const` environment, however this ability dependends on the precision and the machine word size.
+When the number doesn't have a high precision, these macros can be used in a `const` environment, however this ability dependends on the precision and the machine word size. It's worth noting that, there are two macros `static_ubig!` and `static_ibig!` that can generate a (reference to) static constant without size limitations, which can be useful in some cases.
 
 Please refer to [the docs of `dashu-macros`](https://docs.rs/dashu-macros/latest/dashu_macros/) for detailed usage of these macros.

@@ -274,7 +274,7 @@ pub(crate) mod repr {
         error::panic_divide_by_0,
         helper_macros::debug_assert_zero,
         memory::MemoryAllocation,
-        primitive::shrink_dword,
+        primitive::{shrink_dword, extend_word},
         repr::{
             Repr,
             TypedRepr::{self, *},
@@ -627,5 +627,46 @@ pub(crate) mod repr {
         rhs.copy_from_slice(&lhs[..n]);
         debug_assert_zero!(shift::shr_in_place(&mut rhs, shift));
         Repr::from_buffer(rhs)
+    }
+
+    impl<'a> TypedReprRef<'a> {
+        pub(super) const fn is_multiple_of_dword(self, divisor: DoubleWord) -> bool {
+            if let Some(w) = shrink_dword(divisor) {
+                match self {
+                    TypedReprRef::RefSmall(dword) => dword % extend_word(w) == 0,
+                    TypedReprRef::RefLarge(words) => div::rem_by_word(words, w) == 0
+                }
+            } else {
+                match self {
+                    TypedReprRef::RefSmall(dword) => dword % divisor == 0,
+                    TypedReprRef::RefLarge(words) => div::rem_by_dword(words, divisor) == 0
+                }
+            }
+        }
+    }
+}
+
+impl UBig {
+    #[inline]
+    pub fn is_multiple_of(&self, divisor: &Self) -> bool {
+        (self % divisor).is_zero()
+    }
+
+    #[inline]
+    pub const fn is_multiple_of_const(&self, divisor: crate::DoubleWord) -> bool {
+        self.repr().is_multiple_of_dword(divisor)
+    }
+}
+
+impl IBig {
+    #[inline]
+    pub fn is_multiple_of(&self, divisor: &Self) -> bool {
+        (self % divisor).is_zero()
+    }
+
+    #[inline]
+    pub const fn is_multiple_of_const(&self, divisor: crate::DoubleWord) -> bool {
+        let (_, repr) = self.as_sign_repr();
+        repr.is_multiple_of_dword(divisor)
     }
 }

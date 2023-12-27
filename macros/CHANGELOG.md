@@ -2,11 +2,11 @@
 
 ## Unreleased
 
-- Add `static_ubig!` and `static_ibig!` macros to support static number creation.
+- Add `static_ubig!` and `static_ibig!` macros to support static integer creation ([#38](https://github.com/cmpute/dashu/issues/38)).
 
 ## 0.4.0
 
-- Remove the `embedded` feature. [#18](https://github.com/cmpute/dashu/pull/18)
+- Remove the `embedded` feature ([#18](https://github.com/cmpute/dashu/pull/18)).
 
 ## 0.3.1
 

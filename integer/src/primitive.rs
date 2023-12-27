@@ -9,6 +9,7 @@ use core::{
     fmt::Debug,
     mem,
     ops::{Add, Div, Mul, Shl, Shr, Sub},
+    hint::unreachable_unchecked
 };
 use dashu_base::ConversionError;
 
@@ -57,7 +58,7 @@ pub const fn shrink_dword(dw: DoubleWord) -> Option<Word> {
 /// Get the lowest double word of a slice of words
 ///
 /// Note that then length is only checked in the debug mode.
-#[inline]
+#[inline(always)]
 pub fn lowest_dword(words: &[Word]) -> DoubleWord {
     debug_assert!(words.len() >= 2);
 
@@ -72,7 +73,7 @@ pub fn lowest_dword(words: &[Word]) -> DoubleWord {
 /// Get the highest double word of a slice of words
 ///
 /// Note that then length is only checked in the debug mode.
-#[inline]
+#[inline(always)]
 pub fn highest_dword(words: &[Word]) -> DoubleWord {
     let len = words.len();
     debug_assert!(len >= 2);
@@ -82,6 +83,17 @@ pub fn highest_dword(words: &[Word]) -> DoubleWord {
         let lo = *words.get_unchecked(len - 2);
         let hi = *words.get_unchecked(len - 1);
         double_word(lo, hi)
+    }
+}
+
+/// Split the the highest word from the word array.
+#[inline]
+pub const fn split_hi_word(words: &[Word]) -> (Word, &[Word]) {
+    debug_assert!(words.len() >= 2);
+    match words.split_last() {
+        Some((hi, lo)) => (*hi, lo),
+        // SAFETY: the words length is checked by the assertion
+        None => unsafe { unreachable_unchecked() }
     }
 }
 
