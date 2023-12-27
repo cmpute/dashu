@@ -23,7 +23,7 @@ impl num_integer::Integer for UBig {
     }
     #[inline]
     fn is_multiple_of(&self, other: &Self) -> bool {
-        (self % other).is_zero()
+        UBig::is_multiple_of(self, other)
     }
     #[inline]
     fn is_even(&self) -> bool {
@@ -100,7 +100,7 @@ impl num_integer::Integer for IBig {
     }
     #[inline]
     fn is_multiple_of(&self, other: &Self) -> bool {
-        (self % other).is_zero()
+        IBig::is_multiple_of(self, other)
     }
     #[inline]
     fn is_even(&self) -> bool {

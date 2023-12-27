@@ -101,15 +101,11 @@ pub(crate) const fn fast_rem_by_normalized_word(
     let mut rem = fast_div_rhs.div_rem_1by1(last).1;
 
     // then iterate through the words. Use a manual loop because for loop is not yet const.
-    let mut i = words_lo.len() - 1;
-    loop {
+    let mut i = words_lo.len();
+    while i > 0 {
+        i -= 1;
         let a = double_word(words_lo[i], rem);
         rem = fast_div_rhs.div_rem_2by1(a).1;
-
-        if i == 0 {
-            break;
-        }
-        i -= 1;
     }
 
     rem
