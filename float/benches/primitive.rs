@@ -2,8 +2,7 @@
 //! Run: cargo bench -p dashu-float --bench primitive --features rand -- --quick
 
 use criterion::{
-    black_box, criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion,
-    PlotConfiguration,
+    criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion, PlotConfiguration,
 };
 use dashu_base::Sign;
 use dashu_float::{DBig, FBig};
@@ -52,8 +51,8 @@ macro_rules! add_binop_benchmark {
                 let b = random_fbig(precision, &mut rng);
                 group.bench_with_input(
                     BenchmarkId::from_parameter(precision),
-                    &precision,
-                    |bencher, _| bencher.iter(|| black_box(&a).$method(black_box(&b))),
+                    &(a, b),
+                    |bencher, (ta, tb)| bencher.iter(|| ta.$method(tb)),
                 );
             }
 
@@ -72,8 +71,8 @@ macro_rules! add_binop_benchmark {
                 let b = random_dbig(precision, &mut rng);
                 group.bench_with_input(
                     BenchmarkId::from_parameter(precision),
-                    &precision,
-                    |bencher, _| bencher.iter(|| black_box(&a).$method(black_box(&b))),
+                    &(a, b),
+                    |bencher, (ta, tb)| bencher.iter(|| ta.$method(tb)),
                 );
             }
 

@@ -24,9 +24,13 @@ pub fn parse_integer(
                 };
                 match (signed, static_) {
                     (false, false) => quote! { #ns::UBig::from_dword(#u as _) },
-                    (false, true) => quote! {{ static VALUE: #ns::UBig = #ns::UBig::from_dword(#u as _); &VALUE }},
+                    (false, true) => {
+                        quote! {{ static VALUE: #ns::UBig = #ns::UBig::from_dword(#u as _); &VALUE }}
+                    }
                     (true, false) => quote! { #ns::IBig::from_parts_const(#sign, #u as _) },
-                    (true, true) => quote! {{ static VALUE: #ns::IBig = #ns::IBig::from_parts_const(#sign, #u as _); &VALUE }},
+                    (true, true) => {
+                        quote! {{ static VALUE: #ns::IBig = #ns::IBig::from_parts_const(#sign, #u as _); &VALUE }}
+                    }
                 }
             } else {
                 match (signed, static_) {

@@ -4,8 +4,7 @@
 //! Note: these don't work on 16-bit machines.
 
 use criterion::{
-    black_box, criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion,
-    PlotConfiguration,
+    criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion, PlotConfiguration,
 };
 use dashu_int::{
     fast_div::ConstDivisor,
@@ -36,9 +35,11 @@ macro_rules! add_binop_benchmark {
                 let bits = 10usize.pow(log_bits);
                 let a = random_ubig(bits, &mut rng);
                 let b = random_ubig(bits, &mut rng) + &a; // make b > a so that sub won't underflow
-                group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
-                    bencher.iter(|| black_box(&b).$method(black_box(&a)))
-                });
+                group.bench_with_input(
+                    BenchmarkId::from_parameter(bits),
+                    &(a, b),
+                    |bencher, (ta, tb)| bencher.iter(|| tb.$method(ta)),
+                );
             }
 
             group.finish();
@@ -62,10 +63,10 @@ fn ubig_to_hex(criterion: &mut Criterion) {
         let bits = 10usize.pow(log_bits);
         let a = random_ubig(bits, &mut rng);
         let mut out = String::with_capacity(bits / 4 + 1);
-        group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
+        group.bench_with_input(BenchmarkId::from_parameter(bits), &a, |bencher, ta| {
             bencher.iter(|| {
                 out.clear();
-                write!(&mut out, "{:x}", black_box(&a)).unwrap();
+                write!(&mut out, "{:x}", &ta).unwrap();
                 out.len()
             })
         });
@@ -83,10 +84,10 @@ fn ubig_to_dec(criterion: &mut Criterion) {
         let bits = 10usize.pow(log_bits);
         let a = random_ubig(bits, &mut rng);
         let mut out = String::with_capacity(bits / 3 + 1);
-        group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
+        group.bench_with_input(BenchmarkId::from_parameter(bits), &a, |bencher, ta| {
             bencher.iter(|| {
                 out.clear();
-                write!(&mut out, "{}", black_box(&a)).unwrap();
+                write!(&mut out, "{}", &ta).unwrap();
                 out.len()
             })
         });
@@ -104,8 +105,8 @@ fn ubig_from_hex(criterion: &mut Criterion) {
         let bits = 10usize.pow(log_bits);
         let a = random_ubig(bits, &mut rng);
         let s = a.in_radix(16).to_string();
-        group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
-            bencher.iter(|| UBig::from_str_radix(black_box(&s), 16))
+        group.bench_with_input(BenchmarkId::from_parameter(bits), &s, |bencher, ts| {
+            bencher.iter(|| UBig::from_str_radix(ts, 16))
         });
     }
 
@@ -121,8 +122,8 @@ fn ubig_from_dec(criterion: &mut Criterion) {
         let bits = 10usize.pow(log_bits);
         let a = random_ubig(bits, &mut rng);
         let s = a.in_radix(10).to_string();
-        group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
-            bencher.iter(|| UBig::from_str_radix(black_box(&s), 10))
+        group.bench_with_input(BenchmarkId::from_parameter(bits), &s, |bencher, ts| {
+            bencher.iter(|| UBig::from_str_radix(ts, 10))
         });
     }
 
@@ -154,8 +155,8 @@ fn ubig_modulo_mul(criterion: &mut Criterion) {
         let ring = ConstDivisor::new(m);
         let a = ring.reduce(random_ubig(bits, &mut rng));
         let b = ring.reduce(random_ubig(bits, &mut rng));
-        group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
-            bencher.iter(|| black_box(&a) * black_box(&b))
+        group.bench_with_input(BenchmarkId::from_parameter(bits), &(a, b), |bencher, (ta, tb)| {
+            bencher.iter(|| ta * tb)
         });
     }
 
@@ -176,8 +177,8 @@ fn ubig_modulo_pow(criterion: &mut Criterion) {
         let ring = ConstDivisor::new(m);
         let a = ring.reduce(random_ubig(2048, &mut rng));
         let b = random_ubig(bits, &mut rng);
-        group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
-            bencher.iter(|| black_box(&a).pow(&b))
+        group.bench_with_input(BenchmarkId::from_parameter(bits), &(a, b), |bencher, (ta, tb)| {
+            bencher.iter(|| ta.pow(tb))
         });
     }
 

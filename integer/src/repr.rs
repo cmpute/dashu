@@ -147,8 +147,8 @@ impl Repr {
         let (sign, typed) = self.as_sign_typed();
         match sign {
             // sign check
-            Sign::Positive => {},
-            Sign::Negative => unreachable!()
+            Sign::Positive => {}
+            Sign::Negative => unreachable!(),
         }
 
         typed

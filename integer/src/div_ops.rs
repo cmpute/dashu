@@ -274,7 +274,7 @@ pub(crate) mod repr {
         error::panic_divide_by_0,
         helper_macros::debug_assert_zero,
         memory::MemoryAllocation,
-        primitive::{shrink_dword, extend_word},
+        primitive::{extend_word, shrink_dword},
         repr::{
             Repr,
             TypedRepr::{self, *},
@@ -634,12 +634,12 @@ pub(crate) mod repr {
             if let Some(w) = shrink_dword(divisor) {
                 match self {
                     TypedReprRef::RefSmall(dword) => dword % extend_word(w) == 0,
-                    TypedReprRef::RefLarge(words) => div::rem_by_word(words, w) == 0
+                    TypedReprRef::RefLarge(words) => div::rem_by_word(words, w) == 0,
                 }
             } else {
                 match self {
                     TypedReprRef::RefSmall(dword) => dword % divisor == 0,
-                    TypedReprRef::RefLarge(words) => div::rem_by_dword(words, divisor) == 0
+                    TypedReprRef::RefLarge(words) => div::rem_by_dword(words, divisor) == 0,
                 }
             }
         }

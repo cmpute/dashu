@@ -7,9 +7,9 @@ use crate::{
 use core::{
     convert::{TryFrom, TryInto},
     fmt::Debug,
+    hint::unreachable_unchecked,
     mem,
     ops::{Add, Div, Mul, Shl, Shr, Sub},
-    hint::unreachable_unchecked
 };
 use dashu_base::ConversionError;
 
@@ -93,7 +93,7 @@ pub const fn split_hi_word(words: &[Word]) -> (Word, &[Word]) {
     match words.split_last() {
         Some((hi, lo)) => (*hi, lo),
         // SAFETY: the words length is checked by the assertion
-        None => unsafe { unreachable_unchecked() }
+        None => unsafe { unreachable_unchecked() },
     }
 }
 

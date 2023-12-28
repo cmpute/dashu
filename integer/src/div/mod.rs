@@ -5,7 +5,10 @@ use crate::{
     helper_macros::debug_assert_zero,
     math::{shl_dword, shr_word, FastDivideNormalized, FastDivideNormalized2},
     memory::{self, Memory},
-    primitive::{double_word, extend_word, highest_dword, lowest_dword, split_dword, WORD_BITS, split_hi_word},
+    primitive::{
+        double_word, extend_word, highest_dword, lowest_dword, split_dword, split_hi_word,
+        WORD_BITS,
+    },
     shift,
 };
 use alloc::alloc::Layout;
@@ -210,14 +213,14 @@ pub(crate) const fn fast_rem_by_normalized_dword(
 
     // first calculate the highest remainder
     let mut i = words.len() - 1;
-    let top_dword = double_word(words[i-1], words[i]);
+    let top_dword = double_word(words[i - 1], words[i]);
     let mut rem = fast_div_rhs.div_rem_2by2(top_dword).1;
 
     // then iterate through the words
     // chunk the words into double words, and do 4by2 divisions
     while i > 2 {
         i -= 2;
-        let top_dword = double_word(words[i-1], words[i]);
+        let top_dword = double_word(words[i - 1], words[i]);
         rem = fast_div_rhs.div_rem_4by2(top_dword, rem).1;
     }
 

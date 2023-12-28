@@ -2,8 +2,7 @@
 //! Run: cargo bench -p dashu-float --bench primitive --features rand -- --quick
 
 use criterion::{
-    black_box, criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion,
-    PlotConfiguration,
+    criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion, PlotConfiguration,
 };
 use dashu_base::Sign;
 use dashu_int::{IBig, UBig};
@@ -35,9 +34,11 @@ macro_rules! add_binop_benchmark {
                 let bits = 10usize.pow(log_bits);
                 let a = random_rbig(bits, &mut rng);
                 let b = random_rbig(bits, &mut rng) + &a; // make b > a so that sub won't underflow
-                group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
-                    bencher.iter(|| black_box(&b).$method(black_box(&a)))
-                });
+                group.bench_with_input(
+                    BenchmarkId::from_parameter(bits),
+                    &(a, b),
+                    |bencher, (ta, tb)| bencher.iter(|| tb.$method(ta)),
+                );
             }
 
             group.finish();
