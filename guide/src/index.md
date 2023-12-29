@@ -10,7 +10,7 @@ Please choose from the chapters on the left to jump to individual topics.
 
 - Pure rust, full `no_std` support.
 - Focus on ergonomics & readability, and then efficiency.
-- Current MSRV is 1.61
+- Current MSRV is 1.64
 
 ## The meta crate
 

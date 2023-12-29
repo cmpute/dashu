@@ -167,7 +167,7 @@ impl Repr {
                 1 | 2 => {
                     TypedReprRef::RefSmall(double_word(self.data.inline[0], self.data.inline[1]))
                 }
-                _ => TypedReprRef::RefLarge(slice::from_raw_parts(
+                _ => TypedReprRef::RefLarge(slice::from_raw_parts( // need Rust 1.64 for const
                     self.data.heap.0,
                     self.data.heap.1,
                 )),
@@ -294,8 +294,7 @@ impl Repr {
         let ptr = arr.as_ptr() as _;
         Repr {
             data: ReprData { heap: (ptr, n) },
-            // SAFETY: it's safe. The value has been checked by the assertion above.
-            capacity: unsafe { NonZeroIsize::new_unchecked(n as _) },
+            capacity: NonZeroIsize::new_unchecked(n as _),
         }
     }
 

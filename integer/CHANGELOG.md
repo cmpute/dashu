@@ -4,6 +4,7 @@
 
 - Implemented `AbsEq` and `AbsOrd` for `UBig` and `IBig`.
 - Add `UBig::from_static_words` nad `IBig::from_static_words` to support the `static_ubig!` and `static_ibig!` macros.
+- MSRV is increased to 1.64 to support static slice operations.
 
 ## 0.4.0
 

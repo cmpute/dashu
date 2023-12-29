@@ -3,7 +3,7 @@
 [![Crate](https://img.shields.io/crates/v/dashu.svg)](https://crates.io/crates/dashu)
 [![Docs](https://docs.rs/dashu/badge.svg)](https://docs.rs/dashu)
 [![Tests](https://github.com/cmpute/dashu/actions/workflows/tests.yml/badge.svg)](https://github.com/cmpute/dashu/actions)
-[![MSRV 1.61](https://img.shields.io/badge/rustc-1.61%2B-informational.svg)](#dashu)
+[![MSRV 1.64](https://img.shields.io/badge/rustc-1.64%2B-informational.svg)](#dashu)
 [![License](https://img.shields.io/crates/l/dashu)](#license)
 <!-- [![Book](https://img.shields.io/badge/book-master-yellow.svg)]() -->
 
@@ -11,7 +11,7 @@ A library set of arbitrary precision numbers (aka. big numbers) implemented in R
 - Pure rust, full `no_std` support.
 - Focus on ergonomics & readability, and then efficiency.
 - Optimized speed and memory usage.
-- Current MSRV is 1.61.
+- Current MSRV is 1.64.
 
 ## Sub-crates
 
