@@ -134,6 +134,7 @@ mod third_party;
 mod ubig;
 
 // All the public items from third_party will be exposed
+#[allow(unused_imports)]
 pub use third_party::*;
 
 // Re-export types for fast division

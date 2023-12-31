@@ -131,9 +131,10 @@ fn test_add_sub() {
         ),
     ];
 
+    #[allow(clippy::map_identity)]
     let all_test_cases = test_cases
         .iter()
-        .map(|(a, b, c)| (a, b, c))
+        .map(|(a, b, c)| (a, b, c)) // Need identity map to convert tuple ref to ref tuple
         .chain(test_cases.iter().map(|(a, b, c)| (b, a, c)));
 
     for (a, b, c) in all_test_cases {
@@ -201,9 +202,10 @@ fn test_mul() {
         ),
     ];
 
+    #[allow(clippy::map_identity)]
     let all_test_cases = test_cases
         .iter()
-        .map(|(a, b, c)| (a, b, c))
+        .map(|(a, b, c)| (a, b, c)) // Need identity map to convert tuple ref to ref tuple
         .chain(test_cases.iter().map(|(a, b, c)| (b, a, c)));
 
     for (a, b, c) in all_test_cases {

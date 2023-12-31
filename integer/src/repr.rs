@@ -167,7 +167,8 @@ impl Repr {
                 1 | 2 => {
                     TypedReprRef::RefSmall(double_word(self.data.inline[0], self.data.inline[1]))
                 }
-                _ => TypedReprRef::RefLarge(slice::from_raw_parts( // need Rust 1.64 for const
+                _ => TypedReprRef::RefLarge(slice::from_raw_parts(
+                    // need Rust 1.64 for const
                     self.data.heap.0,
                     self.data.heap.1,
                 )),

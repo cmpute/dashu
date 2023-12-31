@@ -73,6 +73,7 @@ mod simplify;
 mod third_party;
 
 // All the public items from third_party will be exposed
+#[allow(unused_imports)]
 pub use third_party::*;
 
 pub use rbig::{RBig, Relaxed};
