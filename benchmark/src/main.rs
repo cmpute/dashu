@@ -1,10 +1,15 @@
-use std::time::{Duration, Instant};
+use std::{
+    fmt::Debug,
+    str::FromStr,
+    time::{Duration, Instant},
+};
 
 use clap::ValueEnum as _;
 use number::{Float, Natural, Rational};
 
 mod e;
 mod fib;
+mod io;
 mod number;
 
 #[derive(clap::Parser)]
@@ -55,7 +60,13 @@ enum Task {
     #[value(name = "fib_hex")]
     FibHex,
     #[value(name = "fib_ratio")]
-    FibRatio,
+    FibRational,
+    #[value(name = "io_int")]
+    IntegerIO,
+    #[value(name = "io_ratio")]
+    RationalIO,
+    #[value(name = "io_decimal")]
+    DecimalIO,
 }
 
 #[derive(clap::Subcommand)]
@@ -138,16 +149,24 @@ fn run_task(lib: Lib, task: Task, n: u32, iter: u32) -> (String, Duration) {
     match lib {
         Lib::IBig => run_int_task_using::<ibig::UBig>(task, n, iter),
         Lib::Dashu => match task {
-            Task::E | Task::Fib | Task::FibHex => {
+            Task::E | Task::Fib | Task::FibHex | Task::IntegerIO => {
                 run_int_task_using::<dashu::Natural>(task, n, iter)
             }
-            Task::FibRatio => run_ratio_task_using::<dashu::Rational>(task, n, iter),
-            Task::DecimalE => run_decimal_task_using::<dashu::Decimal>(task, n, iter),
+            Task::FibRational | Task::RationalIO => {
+                run_ratio_task_using::<dashu::Rational>(task, n, iter)
+            }
+            Task::DecimalE | Task::DecimalIO => {
+                run_decimal_task_using::<dashu::Decimal>(task, n, iter)
+            }
         },
         Lib::Num => match task {
-            Task::E | Task::Fib | Task::FibHex => run_int_task_using::<num::BigUint>(task, n, iter),
-            Task::FibRatio => run_ratio_task_using::<num::BigRational>(task, n, iter),
-            Task::DecimalE => {
+            Task::E | Task::Fib | Task::FibHex | Task::IntegerIO => {
+                run_int_task_using::<num::BigUint>(task, n, iter)
+            }
+            Task::FibRational | Task::RationalIO => {
+                run_ratio_task_using::<num::BigRational>(task, n, iter)
+            }
+            Task::DecimalE | Task::DecimalIO => {
                 panic!("Num crates don't support arbitrary precision float numbers yet.")
             }
         },
@@ -158,11 +177,13 @@ fn run_task(lib: Lib, task: Task, n: u32, iter: u32) -> (String, Duration) {
         #[cfg(feature = "rust-gmp")]
         Lib::RustGmp => run_int_task_using::<gmp::mpz::Mpz>(task, n, iter),
         Lib::Malachite => match task {
-            Task::E | Task::Fib | Task::FibHex => {
+            Task::E | Task::Fib | Task::FibHex | Task::IntegerIO => {
                 run_int_task_using::<malachite::Natural>(task, n, iter)
             }
-            Task::FibRatio => run_ratio_task_using::<malachite::Rational>(task, n, iter),
-            Task::DecimalE => {
+            Task::FibRational | Task::RationalIO => {
+                run_ratio_task_using::<malachite::Rational>(task, n, iter)
+            }
+            Task::DecimalE | Task::DecimalIO => {
                 panic!("Malachite crates don't support arbitrary precision float numbers yet.")
             }
         },
@@ -170,7 +191,10 @@ fn run_task(lib: Lib, task: Task, n: u32, iter: u32) -> (String, Duration) {
     }
 }
 
-fn run_int_task_using<T: Natural>(task: Task, n: u32, iter: u32) -> (String, Duration) {
+fn run_int_task_using<T: Natural>(task: Task, n: u32, iter: u32) -> (String, Duration)
+where
+    <T as FromStr>::Err: Debug,
+{
     let mut answer = None;
     let start_time = Instant::now();
     for _ in 0..iter {
@@ -178,6 +202,7 @@ fn run_int_task_using<T: Natural>(task: Task, n: u32, iter: u32) -> (String, Dur
             Task::E => e::calculate::<T>(n),
             Task::Fib => fib::calculate_decimal::<T>(n),
             Task::FibHex => fib::calculate_hex::<T>(n),
+            Task::IntegerIO => io::calculate_natural::<T>(n),
             _ => panic!("One of the libraries is not adapted to integer benchmarks!"),
         };
         match &answer {
@@ -189,12 +214,16 @@ fn run_int_task_using<T: Natural>(task: Task, n: u32, iter: u32) -> (String, Dur
     (answer.unwrap(), time)
 }
 
-fn run_ratio_task_using<T: Rational>(task: Task, n: u32, iter: u32) -> (String, Duration) {
+fn run_ratio_task_using<T: Rational>(task: Task, n: u32, iter: u32) -> (String, Duration)
+where
+    <T as FromStr>::Err: Debug,
+{
     let mut answer: Option<String> = None;
     let start_time = Instant::now();
     for _ in 0..iter {
         let a = match task {
-            Task::FibRatio => fib::calculate_ratio::<T>(n),
+            Task::FibRational => fib::calculate_rational::<T>(n),
+            Task::RationalIO => io::calculate_ratioal::<T>(n),
             _ => panic!("One of the libraries is not adapted to rational benchmarking!"),
         };
         match &answer {
@@ -206,12 +235,16 @@ fn run_ratio_task_using<T: Rational>(task: Task, n: u32, iter: u32) -> (String, 
     (answer.unwrap(), time)
 }
 
-fn run_decimal_task_using<T: Float>(task: Task, n: u32, iter: u32) -> (String, Duration) {
+fn run_decimal_task_using<T: Float + FromStr>(task: Task, n: u32, iter: u32) -> (String, Duration)
+where
+    <T as FromStr>::Err: Debug,
+{
     let mut answer: Option<String> = None;
     let start_time = Instant::now();
     for _ in 0..iter {
         let a = match task {
             Task::DecimalE => T::e(n).to_string(),
+            Task::DecimalIO => io::calculate_decimal::<T>(n),
             _ => panic!("One of the libraries is not adapted to float benchmarking!"),
         };
         match &answer {
@@ -222,7 +255,3 @@ fn run_decimal_task_using<T: Float>(task: Task, n: u32, iter: u32) -> (String, D
     let time = start_time.elapsed();
     (answer.unwrap(), time)
 }
-
-// TODO: add task to test more operations, such as
-// - some complex calculation: a=2^n, b=3^n, sqrt((a+b)/(a-b)).gcd(sqrt((a+b)*(a-b))
-// - io: parse input and do square, then output

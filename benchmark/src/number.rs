@@ -1,6 +1,7 @@
 use std::{
     fmt::Display,
     ops::{Add, Div, Mul, Sub},
+    str::FromStr,
 };
 
 pub(crate) trait Natural
@@ -16,11 +17,11 @@ where
     Self: for<'a> Mul<&'a Self, Output = Self>,
     Self: Div<Self, Output = Self>,
     Self: for<'a> Div<&'a Self, Output = Self>,
+    Self: FromStr,
 {
     fn pow(&self, exp: u32) -> Self;
     fn to_hex(&self) -> String;
     fn mul_ref(&self, rhs: &Self) -> Self;
-    // fn parse(string: String) -> Self;
 }
 
 mod natural {
@@ -140,6 +141,7 @@ where
     Self: for<'a> Mul<&'a Self, Output = Self>,
     Self: Div<Self, Output = Self>,
     Self: for<'a> Div<&'a Self, Output = Self>,
+    Self: FromStr,
 {
     fn recip(&self) -> Self;
     fn from_u32(n: u32) -> Self;
@@ -184,6 +186,7 @@ pub(crate) trait Float
 where
     Self: Sized,
     Self: Display,
+    Self: From<u32>,
     Self: Add<Self, Output = Self>,
     Self: for<'a> Add<&'a Self, Output = Self>,
     Self: Sub<Self, Output = Self>,

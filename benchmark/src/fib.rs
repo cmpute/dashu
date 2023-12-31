@@ -45,7 +45,7 @@ fn fib<T: Natural>(n: u32) -> (T, T) {
 
 // Modified fibonacci sequence for benchmarking rational numbers
 // F_n = F_{n-1} + 1 / F_{n-2}
-pub(crate) fn calculate_ratio<T: Rational>(n: u32) -> String {
+pub(crate) fn calculate_rational<T: Rational>(n: u32) -> String {
     let mut a = T::from_u32(1);
     let mut b = T::from_u32(1);
     for _ in 0..n {
