@@ -394,6 +394,18 @@ impl<const B: Word> Repr<B> {
     pub fn into_parts(self) -> (IBig, isize) {
         (self.significand, self.exponent)
     }
+
+    #[doc(hidden)]
+    #[inline]
+    pub const unsafe fn from_static_words(sign: Sign, significand: &'static [Word], exponent: isize) -> Self {
+        let significand = IBig::from_static_words(sign, significand);
+        assert!(!significand.is_multiple_of_const(B as _));
+    
+        Self {
+            significand,
+            exponent
+        }
+    }
 }
 
 // This custom implementation is necessary due to https://github.com/rust-lang/rust/issues/98374
@@ -448,7 +460,7 @@ impl<R: Round> Context<R> {
 
     /// Check whether the precision is limited (not zero)
     #[inline]
-    pub(crate) fn is_limited(&self) -> bool {
+    pub(crate) const fn is_limited(&self) -> bool {
         self.precision != 0
     }
 

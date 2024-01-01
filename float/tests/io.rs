@@ -514,7 +514,7 @@ fn test_format_debug() {
         format!("{:?}", fbig!(0x1234p-4).context()),
         "Context { precision: 16, rounding: Zero }"
     );
-    assert_eq!(format!("{:?}", fbig!(0x1234p-4)), "1165 * 2 ^ -2 (prec: 16, rnd: Zero)");
+    assert_eq!(format!("{:?}", fbig!(0x1234p-4)), "1165 * 2 ^ -2 (prec: 16)");
 
     assert_eq!(
         format!("{:#?}", fbig!(0x1234p-4).repr()),
@@ -545,7 +545,7 @@ fn test_format_debug() {
         format!("{:?}", dbig!(1234e-2).context()),
         "Context { precision: 4, rounding: HalfAway }"
     );
-    assert_eq!(format!("{:?}", dbig!(1234e-2)), "1234 * 10 ^ -2 (prec: 4, rnd: HalfAway)");
+    assert_eq!(format!("{:?}", dbig!(1234e-2)), "1234 * 10 ^ -2 (prec: 4)");
 
     assert_eq!(
         format!("{:#?}", dbig!(1234e-2).repr()),

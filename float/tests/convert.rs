@@ -164,6 +164,26 @@ fn test_base_change_unlimited_precision() {
 }
 
 #[test]
+fn test_precision_change() {
+    assert_eq!(FBin::ZERO.with_precision(1), Exact(FBin::ZERO));
+    assert_eq!(FBin::ZERO.with_precision(1).unwrap().precision(), 1);
+
+    assert_eq!(fbig!(0x1234).precision(), 16);
+    assert_eq!(fbig!(0x1234).with_precision(0), Exact(fbig!(0x1234)));
+    assert_eq!(fbig!(0x1234).with_precision(13), Exact(fbig!(0x1234)));
+    assert_eq!(fbig!(0x1234).with_precision(8), Inexact(fbig!(0x91p5), NoOp));
+    assert_eq!(fbig!(0x1234).with_precision(4), Inexact(fbig!(0x9p9), NoOp));
+
+    assert_eq!(DBig::ONE.with_precision(1), Exact(DBig::ONE));
+    assert_eq!(DBig::ONE.with_precision(1).unwrap().precision(), 1);
+    
+    assert_eq!(dbig!(1234).precision(), 4);
+    assert_eq!(dbig!(1234).with_precision(0), Exact(dbig!(1234)));
+    assert_eq!(dbig!(1234).with_precision(4), Exact(dbig!(1234)));
+    assert_eq!(dbig!(1234).with_precision(2), Inexact(dbig!(12e2), NoOp));
+}
+
+#[test]
 #[rustfmt::skip::macros(fbig)]
 fn test_from_f32() {
     assert_eq!(FBin::try_from(0f32).unwrap(), fbig!(0x0));

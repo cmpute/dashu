@@ -1,7 +1,7 @@
 use core::str::FromStr;
 
 use dashu_float::DBig;
-use dashu_macros::{dbig, fbig};
+use dashu_macros::{dbig, fbig, static_fbig};
 type FBig = dashu_float::FBig;
 
 #[test]
@@ -47,6 +47,23 @@ fn test_fbig() {
     const _: FBig = fbig!(-1);
     const _: FBig = fbig!(-10.01b100);
     const _: FBig = fbig!(0xffffffffp-1234);
+}
+
+
+#[test]
+fn test_static_fbig() {
+    let zero: &'static FBig = static_fbig!(0);
+    assert_eq!(*zero, FBig::ZERO);
+
+    let one: &'static FBig = static_fbig!(1);
+    assert_eq!(*one, FBig::ONE);
+
+    let big: &'static FBig =
+        static_fbig!(0x5a4653ca673768565b41f775d6947d55cf3813d1p-200);
+    assert_eq!(
+        *big,
+        FBig::from_str("0x5a4653ca673768565b41f775d6947d55cf3813d1p-200").unwrap()
+    );
 }
 
 #[test]

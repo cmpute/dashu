@@ -293,8 +293,8 @@ impl<R: Round, const B: Word> fmt::Debug for FBig<R, B> {
                 .finish()
         } else {
             f.write_fmt(format_args!(
-                "{:?} (prec: {}, rnd: {})",
-                &self.repr, &self.context.precision, &rnd_name
+                "{:?} (prec: {})",
+                &self.repr, &self.context.precision
             ))
         }
     }

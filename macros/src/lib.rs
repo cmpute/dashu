@@ -88,13 +88,25 @@ pub fn static_ibig_embedded(input: TokenStream) -> TokenStream {
 #[proc_macro]
 #[doc = include_str!("../docs/fbig.md")]
 pub fn fbig(input: TokenStream) -> TokenStream {
-    parse::float::parse_binary_float(false, input.into()).into()
+    parse::float::parse_binary_float(false, false, input.into()).into()
+}
+
+#[proc_macro]
+#[doc = include_str!("../docs/static_fbig.md")]
+pub fn static_fbig(input: TokenStream) -> TokenStream {
+    parse::float::parse_binary_float(true, false, input.into()).into()
 }
 
 #[doc(hidden)]
 #[proc_macro]
 pub fn fbig_embedded(input: TokenStream) -> TokenStream {
-    parse::float::parse_binary_float(true, input.into()).into()
+    parse::float::parse_binary_float(false, true, input.into()).into()
+}
+
+#[doc(hidden)]
+#[proc_macro]
+pub fn static_fbig_embedded(input: TokenStream) -> TokenStream {
+    parse::float::parse_binary_float(true, true, input.into()).into()
 }
 
 #[proc_macro]

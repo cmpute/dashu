@@ -647,11 +647,26 @@ pub(crate) mod repr {
 }
 
 impl UBig {
+    /// Determine whether the integer is perfectly divisible by the divisor.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::UBig;
+    /// let a = UBig::from(24u8);
+    /// let b = UBig::from(6u8);
+    /// assert!(a.is_multiple_of(&b));
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the divisor is zero.
     #[inline]
     pub fn is_multiple_of(&self, divisor: &Self) -> bool {
         (self % divisor).is_zero()
     }
 
+    /// A const version of [UBig::is_multiple_of], but only accepts [DoubleWord] divisors.
     #[inline]
     pub const fn is_multiple_of_const(&self, divisor: crate::DoubleWord) -> bool {
         self.repr().is_multiple_of_dword(divisor)
@@ -659,11 +674,26 @@ impl UBig {
 }
 
 impl IBig {
+    /// Determine whether the integer is perfectly divisible by the divisor.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::IBig;
+    /// let a = IBig::from(24);
+    /// let b = IBig::from(-6);
+    /// assert!(a.is_multiple_of(&b));
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the divisor is zero.
     #[inline]
     pub fn is_multiple_of(&self, divisor: &Self) -> bool {
         (self % divisor).is_zero()
     }
 
+    /// A const version of [IBig::is_multiple_of], but only accepts [DoubleWord] divisors.
     #[inline]
     pub const fn is_multiple_of_const(&self, divisor: crate::DoubleWord) -> bool {
         let (_, repr) = self.as_sign_repr();

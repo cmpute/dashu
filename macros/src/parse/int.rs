@@ -11,17 +11,18 @@ pub fn parse_integer(
     embedded: bool,
     input: TokenStream,
 ) -> TokenStream {
+    let ns = if embedded {
+        quote!(::dashu::integer)
+    } else {
+        quote!(::dashu_int)
+    };
+
     match parse_integer_with_error(signed, input) {
         Ok((sign, big)) => {
             // if the integer fits in a u32, generates const expression
             if big.bit_len() <= 32 {
                 let u: u32 = big.try_into().unwrap();
                 let sign = quote_sign(embedded, sign);
-                let ns = if embedded {
-                    quote!(::dashu::integer)
-                } else {
-                    quote!(::dashu_int)
-                };
                 match (signed, static_) {
                     (false, false) => quote! { #ns::UBig::from_dword(#u as _) },
                     (false, true) => {
@@ -35,9 +36,26 @@ pub fn parse_integer(
             } else {
                 match (signed, static_) {
                     (false, false) => quote_ubig(embedded, big),
-                    (false, true) => quote_static_ubig(embedded, big),
                     (true, false) => quote_ibig(embedded, IBig::from_parts(sign, big)),
-                    (true, true) => quote_static_ibig(embedded, IBig::from_parts(sign, big)),
+                    (false, true) => {
+                        let bytes = big.to_le_bytes();
+                        let data_defs = quote_words(&bytes, embedded);
+                        quote! {{
+                            #data_defs // defines data sources
+                            static VALUE: #ns::UBig = unsafe { #ns::UBig::from_static_words(&DATA) };
+                            &VALUE
+                        }}
+                    },
+                    (true, true) => {
+                        let bytes = big.to_le_bytes();
+                        let data_defs = quote_words(&bytes, embedded);
+                        let sign = quote_sign(embedded, sign);
+                        quote! {{
+                            #data_defs // defines data sources
+                            static VALUE: #ns::IBig = unsafe { #ns::IBig::from_static_words(#sign, &DATA) };
+                            &VALUE
+                        }}
+                    }
                 }
             }
         }
@@ -128,31 +146,6 @@ pub fn quote_ubig(embedded: bool, int: UBig) -> TokenStream {
     }}
 }
 
-/// Generate tokens for creating a [UBig] reference (static)
-pub fn quote_static_ubig(embedded: bool, int: UBig) -> TokenStream {
-    debug_assert!(int.bit_len() > 32);
-    let bytes = int.to_le_bytes();
-    let data_defs = quote_words(&bytes);
-
-    let ns: TokenStream = if embedded {
-        quote!(::dashu::integer)
-    } else {
-        quote!(::dashu_int)
-    };
-    quote! {{
-        #data_defs // defines data sources
-        type Select = DataSelector<{#ns::Word::BITS}>;
-        // copy to make sure the pointer to the data is valid all the time.
-        static DATA_COPY: [#ns::Word; Select::DATA.len()] = Select::DATA;
-
-        // here slicing has to be implemented through the unsafe block, because range expression is not const.
-        // See: https://users.rust-lang.org/t/constant-ranges-to-get-arrays-from-slices/67805
-        static DATA_COPY_SLICED: &'static [#ns::Word] = unsafe { core::slice::from_raw_parts(DATA_COPY.as_ptr(), Select::LEN) };
-        static VALUE: #ns::UBig = unsafe { #ns::UBig::from_static_words(&DATA_COPY_SLICED) };
-        &VALUE
-    }}
-}
-
 /// Generate tokens for creating a [IBig] instance (non-const)
 pub fn quote_ibig(embedded: bool, int: IBig) -> TokenStream {
     debug_assert!(int.bit_len() > 32);
@@ -166,27 +159,4 @@ pub fn quote_ibig(embedded: bool, int: IBig) -> TokenStream {
         quote!(::dashu_int)
     };
     quote! { #ns::IBig::from_parts(#sign, #mag_tt) }
-}
-
-/// Generate tokens for creating a [IBig] reference (static)
-pub fn quote_static_ibig(embedded: bool, int: IBig) -> TokenStream {
-    debug_assert!(int.bit_len() > 32);
-    let (sign, mag) = int.into_parts();
-    let bytes = mag.to_le_bytes();
-    let data_defs = quote_words(&bytes);
-
-    let ns: TokenStream = if embedded {
-        quote!(::dashu::integer)
-    } else {
-        quote!(::dashu_int)
-    };
-    let sign = quote_sign(embedded, sign);
-    quote! {{ // similar to quote_static_ubig()
-        #data_defs // defines data sources
-        type Select = DataSelector<{#ns::Word::BITS}>;
-        static DATA_COPY: [#ns::Word; Select::DATA.len()] = Select::DATA;
-        static DATA_COPY_SLICED: &'static [#ns::Word] = unsafe { core::slice::from_raw_parts(DATA_COPY.as_ptr(), Select::LEN) };
-        static VALUE: #ns::IBig = unsafe { #ns::IBig::from_static_words(#sign, &DATA_COPY_SLICED) };
-        &VALUE
-    }}
 }

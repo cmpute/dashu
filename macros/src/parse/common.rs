@@ -67,13 +67,19 @@ define_array_converter!(u32);
 define_array_converter!(u64);
 
 /// This function generates a data selector for compatibility with different word size.
-pub fn quote_words(le_bytes: &[u8]) -> TokenStream {
+pub fn quote_words(le_bytes: &[u8], embedded: bool) -> TokenStream {
     // Due to the limitations of Rust const generics, the arrays has to be padded to the same length.
     // See: https://users.rust-lang.org/t/how-to-use-associated-const-in-an-associated-type/104348
     let max_len = (le_bytes.len() + 1) / 2;
     let (u16_tokens, u16_len) = le_bytes_to_u16_tokens(le_bytes, max_len);
     let (u32_tokens, u32_len) = le_bytes_to_u32_tokens(le_bytes, max_len);
     let (u64_tokens, u64_len) = le_bytes_to_u64_tokens(le_bytes, max_len);
+
+    let ns: TokenStream = if embedded {
+        quote!(::dashu::integer)
+    } else {
+        quote!(::dashu_int)
+    };
 
     quote! {
         trait DataSource {
@@ -97,6 +103,14 @@ pub fn quote_words(le_bytes: &[u8]) -> TokenStream {
             const LEN: usize = #u64_len;
             const DATA: [u64; #max_len] = #u64_tokens;
         }
+
+        type Select = DataSelector<{#ns::Word::BITS}>;
+        // copy to make sure the pointer to the data is valid all the time.
+        static DATA_COPY: [#ns::Word; Select::DATA.len()] = Select::DATA;
+
+        // here slicing has to be implemented through the unsafe block, because range expression is not const.
+        // See: https://users.rust-lang.org/t/constant-ranges-to-get-arrays-from-slices/67805
+        static DATA: &'static [#ns::Word] = unsafe { core::slice::from_raw_parts(DATA_COPY.as_ptr(), Select::LEN) };
     }
 }
 

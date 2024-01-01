@@ -64,7 +64,7 @@ use dashu_int::{DoubleWord, IBig};
 ///     // number of digits to display depends on the word size
 ///     assert_eq!(
 ///         format!("{:?}", x.powi(100.into())),
-///         "1105115697720767968..1441386704950100001 * 10 ^ -200 (prec: 0, rnd: HalfAway)"
+///         "1105115697720767968..1441386704950100001 * 10 ^ -200 (prec: 0)"
 ///     );
 /// }
 /// # Ok::<(), ParseError>(())
@@ -143,11 +143,28 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Panics
     ///
     /// Panics if the [Repr] has more digits than the precision limit specified in the context.
-    /// Note that this condition is not checked in release build.
+    /// Note that this condition is not checked in release builds.
     #[inline]
     pub fn from_repr(repr: Repr<B>, context: Context<R>) -> Self {
-        assert!(repr.is_infinite() || !context.is_limited() || repr.digits() <= context.precision);
+        debug_assert!(repr.is_infinite() || !context.is_limited() || repr.digits() <= context.precision);
         Self { repr, context }
+    }
+
+    /// Create a [FBig] instance from [Repr]. Due to the limitation of const operations,
+    /// the precision of the float is set to unlimited.
+    /// 
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_float::DBig;
+    /// use dashu_float::{Repr, Context};
+    ///
+    /// assert_eq!(DBig::from_repr_const(Repr::one()), DBig::ONE);
+    /// assert_eq!(DBig::from_repr_const(Repr::infinity()), DBig::INFINITY);
+    /// ```
+    #[inline]
+    pub const fn from_repr_const(repr: Repr<B>) -> Self {
+        Self { repr, context: Context::new(0) }
     }
 
     /// [FBig] with value 0 and unlimited precision

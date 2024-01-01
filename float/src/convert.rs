@@ -191,6 +191,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
         // shrink if necessary
         let repr = if self.context.precision > precision {
+            // it also handles unlimited precision
             new_context.repr_round(self.repr)
         } else {
             Exact(self.repr)

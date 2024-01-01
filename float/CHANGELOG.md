@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Add
+
+- Add `Repr::from_static_words` to support the `static_fbig!` and `static_dbig!` macros.
+- Add `FBig::from_repr_const` to support create an `FBig` instance from repr in const context.
+
+### Change
+
+- Now the `Debug` output of `FBig` values will not contains the rounding mode information (when alternative flag is not set).
+
 ## 0.4.1
 
 - Fix the termination criteria for `ln` and `exp` series ([#44](https://github.com/cmpute/dashu/issues/44)).
