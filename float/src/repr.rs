@@ -397,13 +397,17 @@ impl<const B: Word> Repr<B> {
 
     #[doc(hidden)]
     #[inline]
-    pub const unsafe fn from_static_words(sign: Sign, significand: &'static [Word], exponent: isize) -> Self {
+    pub const unsafe fn from_static_words(
+        sign: Sign,
+        significand: &'static [Word],
+        exponent: isize,
+    ) -> Self {
         let significand = IBig::from_static_words(sign, significand);
         assert!(!significand.is_multiple_of_const(B as _));
-    
+
         Self {
             significand,
-            exponent
+            exponent,
         }
     }
 }

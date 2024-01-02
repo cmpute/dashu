@@ -3,7 +3,7 @@
 use dashu::{float::*, integer::*, rational::*, *};
 
 #[test]
-#[rustfmt::skip::macros(fbig)]
+#[rustfmt::skip::macros(fbig, static_fbig)]
 fn test_macros() {
     // small numbers
     const A: UBig = ubig!(1234);
@@ -17,6 +17,10 @@ fn test_macros() {
     const C: FBig = fbig!(0x1234p-4);
     const D: DBig = dbig!(12.34);
     assert!(C.to_decimal().value() > D);
+
+    static SC: &'static FBig = static_fbig!(0x1234p-4);
+    static SD: &'static DBig = static_dbig!(12.34);
+    assert!(SC.to_decimal().value() > *SD);
 
     const E: RBig = rbig!(2 / 5);
     const F: Relaxed = rbig!(~2/7);

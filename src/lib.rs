@@ -66,10 +66,26 @@ macro_rules! fbig {
 }
 
 #[macro_export]
+#[doc = include_str!("../macros/docs/static_fbig.md")]
+macro_rules! static_fbig {
+    ($($t:tt)+) => {
+        $crate::__dashu_macros::static_fbig_embedded!($($t)+)
+    }
+}
+
+#[macro_export]
 #[doc = include_str!("../macros/docs/dbig.md")]
 macro_rules! dbig {
     ($($t:tt)+) => {
         $crate::__dashu_macros::dbig_embedded!($($t)+)
+    }
+}
+
+#[macro_export]
+#[doc = include_str!("../macros/docs/static_dbig.md")]
+macro_rules! static_dbig {
+    ($($t:tt)+) => {
+        $crate::__dashu_macros::static_dbig_embedded!($($t)+)
     }
 }
 

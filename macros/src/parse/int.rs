@@ -45,7 +45,7 @@ pub fn parse_integer(
                             static VALUE: #ns::UBig = unsafe { #ns::UBig::from_static_words(&DATA) };
                             &VALUE
                         }}
-                    },
+                    }
                     (true, true) => {
                         let bytes = big.to_le_bytes();
                         let data_defs = quote_words(&bytes, embedded);

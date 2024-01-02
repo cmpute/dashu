@@ -292,10 +292,7 @@ impl<R: Round, const B: Word> fmt::Debug for FBig<R, B> {
                 .field("rounding", &format_args!("{}", rnd_name))
                 .finish()
         } else {
-            f.write_fmt(format_args!(
-                "{:?} (prec: {})",
-                &self.repr, &self.context.precision
-            ))
+            f.write_fmt(format_args!("{:?} (prec: {})", &self.repr, &self.context.precision))
         }
     }
 }

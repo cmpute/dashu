@@ -1,7 +1,7 @@
 use core::str::FromStr;
 
 use dashu_float::DBig;
-use dashu_macros::{dbig, fbig, static_fbig};
+use dashu_macros::{dbig, fbig, static_dbig, static_fbig};
 type FBig = dashu_float::FBig;
 
 #[test]
@@ -49,7 +49,6 @@ fn test_fbig() {
     const _: FBig = fbig!(0xffffffffp-1234);
 }
 
-
 #[test]
 fn test_static_fbig() {
     let zero: &'static FBig = static_fbig!(0);
@@ -58,12 +57,8 @@ fn test_static_fbig() {
     let one: &'static FBig = static_fbig!(1);
     assert_eq!(*one, FBig::ONE);
 
-    let big: &'static FBig =
-        static_fbig!(0x5a4653ca673768565b41f775d6947d55cf3813d1p-200);
-    assert_eq!(
-        *big,
-        FBig::from_str("0x5a4653ca673768565b41f775d6947d55cf3813d1p-200").unwrap()
-    );
+    let big: &'static FBig = static_fbig!(0x5a4653ca673768565b41f775d6947d55cf3813d1p - 200);
+    assert_eq!(*big, FBig::from_str("0x5a4653ca673768565b41f775d6947d55cf3813d1p-200").unwrap());
 }
 
 #[test]
@@ -98,4 +93,19 @@ fn test_dbig() {
     const _: DBig = dbig!(-1);
     const _: DBig = dbig!(-2.55e100);
     const _: DBig = dbig!(4294967295e-1234);
+}
+
+#[test]
+fn test_static_dbig() {
+    let zero: &'static DBig = static_dbig!(0);
+    assert_eq!(*zero, DBig::ZERO);
+
+    let one: &'static DBig = static_dbig!(1);
+    assert_eq!(*one, DBig::ONE);
+
+    let big: &'static DBig = static_dbig!(515377520732011331036461129765621272702107522001e-100);
+    assert_eq!(
+        *big,
+        DBig::from_str("515377520732011331036461129765621272702107522001e-100").unwrap()
+    );
 }

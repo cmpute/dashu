@@ -112,13 +112,25 @@ pub fn static_fbig_embedded(input: TokenStream) -> TokenStream {
 #[proc_macro]
 #[doc = include_str!("../docs/dbig.md")]
 pub fn dbig(input: TokenStream) -> TokenStream {
-    parse::float::parse_decimal_float(false, input.into()).into()
+    parse::float::parse_decimal_float(false, false, input.into()).into()
+}
+
+#[proc_macro]
+#[doc = include_str!("../docs/static_dbig.md")]
+pub fn static_dbig(input: TokenStream) -> TokenStream {
+    parse::float::parse_decimal_float(true, false, input.into()).into()
 }
 
 #[doc(hidden)]
 #[proc_macro]
 pub fn dbig_embedded(input: TokenStream) -> TokenStream {
-    parse::float::parse_decimal_float(true, input.into()).into()
+    parse::float::parse_decimal_float(false, true, input.into()).into()
+}
+
+#[doc(hidden)]
+#[proc_macro]
+pub fn static_dbig_embedded(input: TokenStream) -> TokenStream {
+    parse::float::parse_decimal_float(true, true, input.into()).into()
 }
 
 #[proc_macro]

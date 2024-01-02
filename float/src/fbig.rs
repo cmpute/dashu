@@ -146,13 +146,15 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Note that this condition is not checked in release builds.
     #[inline]
     pub fn from_repr(repr: Repr<B>, context: Context<R>) -> Self {
-        debug_assert!(repr.is_infinite() || !context.is_limited() || repr.digits() <= context.precision);
+        debug_assert!(
+            repr.is_infinite() || !context.is_limited() || repr.digits() <= context.precision
+        );
         Self { repr, context }
     }
 
     /// Create a [FBig] instance from [Repr]. Due to the limitation of const operations,
     /// the precision of the float is set to unlimited.
-    /// 
+    ///
     /// # Examples
     ///
     /// ```
@@ -164,7 +166,10 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub const fn from_repr_const(repr: Repr<B>) -> Self {
-        Self { repr, context: Context::new(0) }
+        Self {
+            repr,
+            context: Context::new(0),
+        }
     }
 
     /// [FBig] with value 0 and unlimited precision

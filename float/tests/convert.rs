@@ -176,7 +176,7 @@ fn test_precision_change() {
 
     assert_eq!(DBig::ONE.with_precision(1), Exact(DBig::ONE));
     assert_eq!(DBig::ONE.with_precision(1).unwrap().precision(), 1);
-    
+
     assert_eq!(dbig!(1234).precision(), 4);
     assert_eq!(dbig!(1234).with_precision(0), Exact(dbig!(1234)));
     assert_eq!(dbig!(1234).with_precision(4), Exact(dbig!(1234)));
