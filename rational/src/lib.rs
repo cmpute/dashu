@@ -77,3 +77,6 @@ mod third_party;
 pub use third_party::*;
 
 pub use rbig::{RBig, Relaxed};
+
+#[doc(hidden)]
+pub use dashu_int::Word; // for macros

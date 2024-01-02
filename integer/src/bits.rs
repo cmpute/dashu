@@ -58,7 +58,7 @@ impl UBig {
     /// assert_eq!(UBig::ZERO.trailing_zeros(), None);
     /// ```
     #[inline]
-    pub fn trailing_zeros(&self) -> Option<usize> {
+    pub const fn trailing_zeros(&self) -> Option<usize> {
         self.repr().trailing_zeros()
     }
 
@@ -78,7 +78,7 @@ impl UBig {
     /// assert_eq!(UBig::ZERO.trailing_ones(), Some(0));
     /// ```
     #[inline]
-    pub fn trailing_ones(&self) -> Option<usize> {
+    pub const fn trailing_ones(&self) -> Option<usize> {
         Some(self.repr().trailing_ones())
     }
 
@@ -214,7 +214,7 @@ impl IBig {
     /// assert_eq!(IBig::ZERO.trailing_zeros(), None);
     /// ```
     #[inline]
-    pub fn trailing_zeros(&self) -> Option<usize> {
+    pub const fn trailing_zeros(&self) -> Option<usize> {
         self.as_sign_repr().1.trailing_zeros()
     }
 
@@ -234,7 +234,7 @@ impl IBig {
     /// assert_eq!(IBig::from(-0b101000001).trailing_ones(), Some(6));
     /// assert_eq!(IBig::NEG_ONE.trailing_ones(), None);
     /// ```
-    pub fn trailing_ones(&self) -> Option<usize> {
+    pub const fn trailing_ones(&self) -> Option<usize> {
         let (sign, repr) = self.as_sign_repr();
         match sign {
             Positive => Some(repr.trailing_ones()),
@@ -334,7 +334,7 @@ mod repr {
             }
         }
 
-        pub fn trailing_zeros(self) -> Option<usize> {
+        pub const fn trailing_zeros(self) -> Option<usize> {
             match self {
                 RefSmall(0) => None,
                 RefSmall(dword) => Some(dword.trailing_zeros() as usize),
@@ -342,7 +342,7 @@ mod repr {
             }
         }
 
-        pub fn trailing_ones(self) -> usize {
+        pub const fn trailing_ones(self) -> usize {
             match self {
                 RefSmall(dword) => dword.trailing_ones() as usize,
                 RefLarge(words) => trailing_ones_large(words),
@@ -368,7 +368,7 @@ mod repr {
         }
 
         /// Number of trailing ones in (-self)
-        pub fn trailing_ones_neg(self) -> Option<usize> {
+        pub const fn trailing_ones_neg(self) -> Option<usize> {
             match self {
                 RefSmall(0) => Some(0),
                 RefSmall(1) => None,
@@ -546,8 +546,17 @@ mod repr {
     /// Count the trailing zero bits in the words.
     /// Panics if the input is zero.
     #[inline]
-    fn trailing_zeros_large(words: &[Word]) -> usize {
-        let zero_words = words.iter().position(|&word| word != 0).unwrap();
+    const fn trailing_zeros_large(words: &[Word]) -> usize {
+        // Const equivalent to:
+        // let zero_words = words.iter().position(|&word| word != 0).unwrap();
+        let mut zero_words = 0;
+        while zero_words < words.len() {
+            if words[zero_words] != 0 {
+                break;
+            }
+            zero_words += 1;
+        }
+
         let zero_bits = words[zero_words].trailing_zeros() as usize;
         zero_words * WORD_BITS_USIZE + zero_bits
     }
@@ -555,13 +564,23 @@ mod repr {
     /// Count the trailing zero bits in the words shifted right by one.
     /// Panics if the input is zero.
     #[inline]
-    fn trailing_zeros_large_shifted_by_one(words: &[Word]) -> usize {
+    const fn trailing_zeros_large_shifted_by_one(words: &[Word]) -> usize {
         debug_assert!(words.len() >= 2);
         let zero_begin = (words[0] >> 1).trailing_zeros() as usize;
         if zero_begin < (WORD_BITS_USIZE - 1) {
             zero_begin
         } else {
-            let zero_words = words.iter().skip(1).position(|&word| word != 0).unwrap();
+            // Const equivalent to:
+            // let zero_words: usize = words.iter().skip(1).position(|&word| word != 0).unwrap();
+            let mut zero_words = 1;
+            while zero_words < words.len() {
+                if words[zero_words] != 0 {
+                    break;
+                }
+                zero_words += 1;
+            }
+            zero_words -= 1;
+
             let zero_bits = words[zero_words].trailing_zeros() as usize;
             zero_words * WORD_BITS_USIZE + zero_bits + zero_begin
         }
@@ -569,8 +588,17 @@ mod repr {
 
     /// Count the trailing one bits in the words.
     #[inline]
-    fn trailing_ones_large(words: &[Word]) -> usize {
-        let one_words = words.iter().position(|&word| word != Word::MAX).unwrap();
+    const fn trailing_ones_large(words: &[Word]) -> usize {
+        // Const equivalent to:
+        // let one_words = words.iter().position(|&word| word != Word::MAX).unwrap();
+        let mut one_words = 1;
+        while one_words < words.len() {
+            if words[one_words] != Word::MAX {
+                break;
+            }
+            one_words += 1;
+        }
+
         let one_bits = words[one_words].trailing_ones() as usize;
         one_words * WORD_BITS_USIZE + one_bits
     }

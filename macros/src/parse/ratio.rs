@@ -1,5 +1,5 @@
 use super::{
-    common::{print_error_msg, quote_sign},
+    common::{quote_sign, unwrap_with_error_msg, quote_words},
     int::{quote_ibig, quote_ubig},
 };
 
@@ -10,43 +10,95 @@ use proc_macro2::{TokenStream, TokenTree};
 use quote::quote;
 
 pub fn parse_ratio(embedded: bool, input: TokenStream) -> TokenStream {
-    match parse_ratio_with_error(input) {
-        Ok((num, den, relaxed)) => {
-            // if the numerator and denominator fit in a u32, generates const expression
-            if num.bit_len() <= 32 && den.bit_len() <= 32 {
-                let (sign, num) = num.into_parts();
-                let sign = quote_sign(embedded, sign);
-                let num: u32 = num.try_into().unwrap();
-                let den: u32 = den.try_into().unwrap();
+    let (num, den, relaxed) = unwrap_with_error_msg(parse_ratio_with_error(input));
 
-                if relaxed {
-                    if !embedded {
-                        quote! { ::dashu_ratio::Relaxed::from_parts_const(#sign, #num as _, #den as _) }
-                    } else {
-                        quote! { ::dashu::rational::Relaxed::from_parts_const(#sign, #num as _, #den as _) }
-                    }
-                } else if !embedded {
-                    quote! { ::dashu_ratio::RBig::from_parts_const(#sign, #num as _, #den as _) }
-                } else {
-                    quote! { ::dashu::rational::RBig::from_parts_const(#sign, #num as _, #den as _) }
-                }
-            } else {
-                let (num_tt, den_tt) = (quote_ibig(embedded, num), quote_ubig(embedded, den));
+    let (ns, int_ns) = if embedded {
+        (quote!(::dashu::rational), quote!(::dashu::integer))
+    } else {
+        (quote!(::dashu_ratio), quote!(::dashu_int))
+    };
+    let type_tt = if relaxed {
+        quote!( #ns::Relaxed )
+    } else {
+        quote!( #ns::RBig )
+    };
 
-                if relaxed {
-                    if !embedded {
-                        quote! { ::dashu_ratio::Relaxed::from_parts(#num_tt, #den_tt) }
-                    } else {
-                        quote! { ::dashu::rational::Relaxed::from_parts(#num_tt, #den_tt) }
-                    }
-                } else if !embedded {
-                    quote! { ::dashu_ratio::RBig::from_parts(#num_tt, #den_tt) }
-                } else {
-                    quote! { ::dashu::rational::RBig::from_parts(#num_tt, #den_tt) }
-                }
-            }
-        }
-        Err(e) => print_error_msg(e),
+    // if the numerator and denominator fit in a u32, generates const expression
+    if num.bit_len() <= 32 && den.bit_len() <= 32 {
+        let (sign, num) = num.into_parts();
+        let sign = quote_sign(embedded, sign);
+        let num: u32 = num.try_into().unwrap();
+        let den: u32 = den.try_into().unwrap();
+        return quote! { #type_tt::from_parts_const(#sign, #num as _, #den as _) };
+    }
+
+    let num_tt = if num.bit_len() <= 32 {
+        let (sign, num) = num.into_parts();
+        let sign = quote_sign(embedded, sign);
+        let u: u32 = num.try_into().unwrap();
+        quote!( #int_ns::IBig::from_parts_const(#sign, #u as _) )
+    } else {
+        quote_ibig(embedded, num)
+    };
+    let den_tt = if den.bit_len() <= 32 {
+        let u: u32 = den.try_into().unwrap();
+        quote!( #int_ns::UBig::from_dword(#u as _) )
+    } else {
+        quote_ubig(embedded, den)
+    };
+    quote! { #type_tt::from_parts(#num_tt, #den_tt) }
+}
+
+pub fn parse_static_ratio(embedded: bool, input: TokenStream) -> TokenStream {
+    let (num, den, relaxed) = unwrap_with_error_msg(parse_ratio_with_error(input));
+    
+    let ns = if embedded {
+        quote!(::dashu::rational)
+    } else {
+        quote!(::dashu_ratio)
+    };
+    let type_tt = if relaxed {
+        quote!( #ns::Relaxed )
+    } else {
+        quote!( #ns::RBig )
+    };
+
+    // if the numerator and denominator fit in a u32, generates const expression
+    if num.bit_len() <= 32 && den.bit_len() <= 32 {
+        let (sign, num) = num.into_parts();
+        let sign = quote_sign(embedded, sign);
+        let num: u32 = num.try_into().unwrap();
+        let den: u32 = den.try_into().unwrap();
+        let value_tt = quote! { #type_tt::from_parts_const(#sign, #num as _, #den as _) };
+        return quote! {{ static VALUE: #type_tt = #value_tt; &VALUE }};
+    }
+
+    let (sign, num) = num.into_parts();
+    let num_data_defs = quote_words(&num.to_le_bytes(), embedded);
+    let den_data_defs = quote_words(&den.to_le_bytes(), embedded);
+    let sign = quote_sign(embedded, sign);
+    if relaxed {
+        quote! {{
+            static NUM_DATA: &'static [#ns::Word] = #num_data_defs;
+            static DEN_DATA: &'static [#ns::Word] = #den_data_defs;
+            static VALUE: #type_tt = unsafe {
+                #ns::Relaxed::from_static_words(#sign, NUM_DATA, DEN_DATA)
+            };
+            &VALUE
+        }}
+    } else {
+        quote! {{
+            static NUM_DATA: &'static [#ns::Word] = #num_data_defs;
+            static DEN_DATA: &'static [#ns::Word] = #den_data_defs;
+
+            // here transmuting is safe because
+            // 1) RBig and Relaxed has the same inner representation
+            // 2) The numerator and denominator are reduced during parsing
+            static VALUE: #type_tt = unsafe { core::mem::transmute(
+                #ns::Relaxed::from_static_words(#sign, NUM_DATA, DEN_DATA)
+            )};
+            &VALUE
+        }}
     }
 }
 

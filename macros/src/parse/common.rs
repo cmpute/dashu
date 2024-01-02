@@ -66,7 +66,8 @@ define_array_converter!(u16);
 define_array_converter!(u32);
 define_array_converter!(u64);
 
-/// This function generates a data selector for compatibility with different word size.
+/// This function generates a token tree whose content defines a data selector for
+/// compatibility with different word size, and returns a reference to the proper data source.
 pub fn quote_words(le_bytes: &[u8], embedded: bool) -> TokenStream {
     // Due to the limitations of Rust const generics, the arrays has to be padded to the same length.
     // See: https://users.rust-lang.org/t/how-to-use-associated-const-in-an-associated-type/104348
@@ -81,7 +82,7 @@ pub fn quote_words(le_bytes: &[u8], embedded: bool) -> TokenStream {
         quote!(::dashu_int)
     };
 
-    quote! {
+    quote! {{
         trait DataSource {
             type Int: 'static;
             const LEN: usize;
@@ -110,8 +111,8 @@ pub fn quote_words(le_bytes: &[u8], embedded: bool) -> TokenStream {
 
         // here slicing has to be implemented through the unsafe block, because range expression is not const.
         // See: https://users.rust-lang.org/t/constant-ranges-to-get-arrays-from-slices/67805
-        static DATA: &'static [#ns::Word] = unsafe { core::slice::from_raw_parts(DATA_COPY.as_ptr(), Select::LEN) };
-    }
+        unsafe { core::slice::from_raw_parts(DATA_COPY.as_ptr(), Select::LEN) }
+    }}
 }
 
 pub fn quote_sign(embedded: bool, sign: Sign) -> TokenStream {
@@ -134,6 +135,14 @@ pub fn print_error_msg(error_type: ParseError) -> ! {
         ParseError::InvalidDigit => panic!("Invalid digits or syntax in the literal! Please refer to the documentation of this macro."),
         ParseError::UnsupportedRadix => panic!("The given radix is invalid or unsupported!"),
         ParseError::InconsistentRadix => panic!("Radix of different components are different!"),
+    }
+}
+
+#[inline]
+pub fn unwrap_with_error_msg<T>(result: Result<T, ParseError>) -> T {
+    match result {
+        Ok(v) => v,
+        Err(e) => print_error_msg(e),
     }
 }
 

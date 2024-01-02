@@ -139,13 +139,20 @@ pub fn rbig(input: TokenStream) -> TokenStream {
     parse::ratio::parse_ratio(false, input.into()).into()
 }
 
+#[proc_macro]
+#[doc = include_str!("../docs/static_rbig.md")]
+pub fn static_rbig(input: TokenStream) -> TokenStream {
+    parse::ratio::parse_static_ratio(false, input.into()).into()
+}
+
 #[doc(hidden)]
 #[proc_macro]
 pub fn rbig_embedded(input: TokenStream) -> TokenStream {
     parse::ratio::parse_ratio(true, input.into()).into()
 }
 
-// TODO(v0.5): add static_ubig!, static_ibig!, static_fbig!, static_dbig! (and their embedded versions)
-//             rbig won't be supported because gcd cannot be done in const). These methods are designed
-//             for big numbers, so the word array should be declared as static. Besides, they should wrap
-//             the declaration to make sure the result number is immutable static.
+#[doc(hidden)]
+#[proc_macro]
+pub fn static_rbig_embedded(input: TokenStream) -> TokenStream {
+    parse::ratio::parse_static_ratio(true, input.into()).into()
+}

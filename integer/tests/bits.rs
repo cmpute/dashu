@@ -128,6 +128,11 @@ fn test_trailing_zeros() {
     assert_eq!(ibig!(0).trailing_zeros(), None);
     assert_eq!(ibig!(0xf0000).trailing_zeros(), Some(16));
     assert_eq!(ibig!(-0xf0000).trailing_zeros(), Some(16));
+    assert_eq!(
+        ibig!(-0xfffffffffffffffffffff00000000000000000000000000000000000000000000000000)
+            .trailing_zeros(),
+        Some(200)
+    );
 }
 
 #[test]
@@ -135,9 +140,9 @@ fn test_trailing_ones() {
     assert_eq!(ubig!(0).trailing_ones(), Some(0));
     assert_eq!(ubig!(0xffff).trailing_ones(), Some(16));
     assert_eq!(
-        ubig!(0xfffffffffffffffffffff000000000000000000000000000000000000000000ffffffff)
+        ubig!(0xffff0000000000000000000000000000000000000000000000000fffffffffffffffff)
             .trailing_ones(),
-        Some(32)
+        Some(68)
     );
 
     assert_eq!(ibig!(0).trailing_ones(), Some(0));
@@ -145,6 +150,10 @@ fn test_trailing_ones() {
     assert_eq!(ibig!(0xffff).trailing_ones(), Some(16));
     assert_eq!(ibig!(-0xf0000).trailing_ones(), Some(0));
     assert_eq!(ibig!(-0xf0001).trailing_ones(), Some(16));
+    assert_eq!(ibig!(-0x1000000000000001).trailing_ones(), Some(60));
+    assert_eq!(ibig!(-0x10000000000000001).trailing_ones(), Some(64));
+    assert_eq!(ibig!(-0x100000000000000001).trailing_ones(), Some(68));
+    assert_eq!(ibig!(-0xff00ff00100000000000000001).trailing_ones(), Some(68));
 }
 
 #[test]

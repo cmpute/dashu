@@ -95,6 +95,9 @@ pub use repr::{Context, Repr};
 /// Multi-precision float number with decimal exponent and [HalfAway][round::mode::HalfAway] rounding mode
 pub type DBig = FBig<round::mode::HalfAway, 10>;
 
+#[doc(hidden)]
+pub use dashu_int::Word; // for macros
+
 // TODO: allow operations with inf, but only panic when the result is nan (inf - inf and inf / inf)
 //       for division with zero (and other functions that has different limits at zero),
 //       we might forbidden it because we don't want to support negative zero in this library.

@@ -1,5 +1,5 @@
-use dashu_base::{EstimatedLog2, Gcd};
-use dashu_int::{IBig, UBig};
+use dashu_base::{EstimatedLog2, Gcd, Sign};
+use dashu_int::{IBig, UBig, Word, DoubleWord};
 
 pub struct Repr {
     pub(crate) numerator: IBig,
@@ -74,6 +74,47 @@ impl Repr {
             numerator: IBig::NEG_ONE,
             denominator: UBig::ONE,
         }
+    }
+
+    /// This methods only check if the numerator and denominator have common factor 2.
+    /// It should be prevented to use this method to directly generate an RBig instance.
+    pub const unsafe fn from_static_words(
+        sign: Sign,
+        numerator_words: &'static [Word],
+        denominator_words: &'static [Word],
+    ) -> Self {
+        let numerator = IBig::from_static_words(sign, numerator_words);
+        let denominator = UBig::from_static_words(denominator_words);
+
+        // check whether the numbers are reduced
+        let num_zeros = match numerator.trailing_zeros() {
+            Some(n) => n,
+            None => 0,
+        };
+        let den_zeros = match denominator.trailing_zeros() {
+            Some(n) => n,
+            None => 0,
+        };
+        assert!(!(num_zeros > 0 && den_zeros > 0));
+
+        Self {
+            numerator,
+            denominator,
+        }
+    }
+
+    pub const unsafe fn from_static_numerator_words(sign: Sign,
+        numerator_words: &'static [Word],
+        denominator_words: DoubleWord
+    ) -> Self {
+        todo!()
+    }
+
+    pub const unsafe fn from_static_denominator_words(sign: Sign,
+        numerator_words: &'static [Word],
+        denominator_words: DoubleWord
+    ) -> Self {
+        todo!()
     }
 }
 

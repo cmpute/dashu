@@ -3,7 +3,7 @@ use dashu_int::{IBig, Sign, UBig};
 use proc_macro2::{TokenStream, TokenTree};
 use quote::quote;
 
-use super::common::{print_error_msg, quote_bytes, quote_sign, quote_words};
+use super::common::{quote_bytes, quote_sign, quote_words, unwrap_with_error_msg};
 
 pub fn parse_integer(
     signed: bool,
@@ -11,55 +11,52 @@ pub fn parse_integer(
     embedded: bool,
     input: TokenStream,
 ) -> TokenStream {
+    let (sign, big) = unwrap_with_error_msg(parse_integer_with_error(signed, input));
+    
     let ns = if embedded {
         quote!(::dashu::integer)
     } else {
         quote!(::dashu_int)
     };
 
-    match parse_integer_with_error(signed, input) {
-        Ok((sign, big)) => {
-            // if the integer fits in a u32, generates const expression
-            if big.bit_len() <= 32 {
-                let u: u32 = big.try_into().unwrap();
-                let sign = quote_sign(embedded, sign);
-                match (signed, static_) {
-                    (false, false) => quote! { #ns::UBig::from_dword(#u as _) },
-                    (false, true) => {
-                        quote! {{ static VALUE: #ns::UBig = #ns::UBig::from_dword(#u as _); &VALUE }}
-                    }
-                    (true, false) => quote! { #ns::IBig::from_parts_const(#sign, #u as _) },
-                    (true, true) => {
-                        quote! {{ static VALUE: #ns::IBig = #ns::IBig::from_parts_const(#sign, #u as _); &VALUE }}
-                    }
-                }
-            } else {
-                match (signed, static_) {
-                    (false, false) => quote_ubig(embedded, big),
-                    (true, false) => quote_ibig(embedded, IBig::from_parts(sign, big)),
-                    (false, true) => {
-                        let bytes = big.to_le_bytes();
-                        let data_defs = quote_words(&bytes, embedded);
-                        quote! {{
-                            #data_defs // defines data sources
-                            static VALUE: #ns::UBig = unsafe { #ns::UBig::from_static_words(&DATA) };
-                            &VALUE
-                        }}
-                    }
-                    (true, true) => {
-                        let bytes = big.to_le_bytes();
-                        let data_defs = quote_words(&bytes, embedded);
-                        let sign = quote_sign(embedded, sign);
-                        quote! {{
-                            #data_defs // defines data sources
-                            static VALUE: #ns::IBig = unsafe { #ns::IBig::from_static_words(#sign, &DATA) };
-                            &VALUE
-                        }}
-                    }
-                }
-            }
+    // if the integer fits in a u32, generates const expression
+    if big.bit_len() <= 32 {
+        let u: u32 = big.try_into().unwrap();
+        let sign = quote_sign(embedded, sign);
+
+        let (type_tt, value_tt) = if signed {
+            (quote!( #ns::IBig ), quote! { #ns::IBig::from_parts_const(#sign, #u as _) })
+        } else {
+            (quote!( #ns::UBig ), quote! { #ns::UBig::from_dword(#u as _) })
+        };
+
+        return if static_ {
+            quote! {{ static VALUE: #type_tt = #value_tt; &VALUE }}
+        } else {
+            value_tt
+        };
+    }
+
+    match (signed, static_) {
+        (false, false) => quote_ubig(embedded, big),
+        (true, false) => quote_ibig(embedded, IBig::from_parts(sign, big)),
+        (false, true) => {
+            let data_defs = quote_words(&big.to_le_bytes(), embedded);
+            quote! {{
+                static DATA: &'static [#ns::Word] = #data_defs;
+                static VALUE: #ns::UBig = unsafe { #ns::UBig::from_static_words(DATA) };
+                &VALUE
+            }}
         }
-        Err(e) => print_error_msg(e),
+        (true, true) => {
+            let data_defs = quote_words(&big.to_le_bytes(), embedded);
+            let sign = quote_sign(embedded, sign);
+            quote! {{
+                static DATA: &'static [#ns::Word] = #data_defs;
+                static VALUE: #ns::IBig = unsafe { #ns::IBig::from_static_words(#sign, DATA) };
+                &VALUE
+            }}
+        }
     }
 }
 

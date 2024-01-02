@@ -1,5 +1,5 @@
 use dashu_base::{EstimatedLog2, Sign};
-use dashu_int::{DoubleWord, IBig, UBig};
+use dashu_int::{DoubleWord, IBig, UBig, Word};
 
 use crate::{error::panic_divide_by_0, repr::Repr};
 
@@ -60,6 +60,7 @@ impl RBig {
             .reduce(),
         )
     }
+
     /// Convert the rational number into (numerator, denumerator) parts.
     ///
     /// # Examples
@@ -336,6 +337,16 @@ impl Relaxed {
             numerator: IBig::from_parts_const(sign, numerator >> zeros),
             denominator: UBig::from_dword(denominator >> zeros),
         })
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub const unsafe fn from_static_words(
+        sign: Sign,
+        numerator_words: &'static [Word],
+        denominator_words: &'static [Word],
+    ) -> Self {
+        Self(Repr::from_static_words(sign, numerator_words, denominator_words))
     }
 
     /// Get the numerator of the rational number
