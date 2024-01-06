@@ -4,6 +4,7 @@
 
 - Add `static_ubig!` and `static_ibig!` macros to support static integer creation ([#38](https://github.com/cmpute/dashu/issues/38)).
 - Add `static_fbig!` macro to support static float numbers creation.
+- Add `static_rbig!` macro to support static rational numbers creation.
 
 ## 0.4.0
 

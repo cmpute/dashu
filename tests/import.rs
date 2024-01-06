@@ -1,45 +1,68 @@
 //! Test for importing items from dashu, and do basic operations
 
-use dashu::{float::*, integer::*, rational::*, *};
+use dashu::{rational::Relaxed, *};
 
 #[test]
 #[rustfmt::skip::macros(fbig, static_fbig)]
 fn test_macros() {
     // small numbers
-    const A: UBig = ubig!(1234);
-    const B: IBig = ibig!(-1234);
+    const A: Natural = ubig!(1234);
+    const B: Integer = ibig!(-1234);
     assert_eq!(A + B, ibig!(0));
 
-    static SA: &UBig = static_ubig!(1234);
-    static SB: &IBig = static_ibig!(-1234);
+    static SA: &Natural = static_ubig!(1234);
+    static SB: &Integer = static_ibig!(-1234);
     assert_eq!(SA + SB, ibig!(0));
 
-    const C: FBig = fbig!(0x1234p-4);
-    const D: DBig = dbig!(12.34);
+    const C: Real = fbig!(0x1234p-4);
+    const D: Decimal = dbig!(12.34);
     assert!(C.to_decimal().value() > D);
 
-    static SC: &'static FBig = static_fbig!(0x1234p-4);
-    static SD: &'static DBig = static_dbig!(12.34);
+    static SC: &Real = static_fbig!(0x1234p-4);
+    static SD: &Decimal = static_dbig!(12.34);
     assert!(SC.to_decimal().value() > *SD);
 
-    const E: RBig = rbig!(2 / 5);
+    const E: Rational = rbig!(2 / 5);
     const F: Relaxed = rbig!(~2/7);
     assert!(E.relax() > F);
+
+    static SE: &Rational = static_rbig!(2 / 5);
+    static SF: &Relaxed = static_rbig!(~2/7);
+    assert!(SE.as_relaxed() > SF);
 
     // large numbers
     let a = ubig!(0xfffffffffffffffffffffffffffffffffffffffffffffffe);
     let b = ibig!(-0xffffffffffffffffffffffffffffffffffffffffffffffff);
     assert_eq!(a + b, ibig!(-1));
 
+    static BA: &Natural = static_ubig!(0xfffffffffffffffffffffffffffffffffffffffffffffffe);
+    static BB: &Integer = static_ibig!(-0xffffffffffffffffffffffffffffffffffffffffffffffff);
+    assert_eq!(BA + BB, ibig!(-1));
+
     let c = fbig!(0xffffffffffffffffffffffffffffffffffffffffffffffffp-192);
     let d = dbig!(999999999999999999999999999999999999999999999999999999999999e-60);
     assert!(c < d.to_binary().value());
 
-    // let e = rbig!(0xfffffffffffffffffffffffffffffffffffffffffffffffe/0xffffffffffffffffffffffffffffffffffffffffffffffff);
+    static BC: &Real = static_fbig!(0xffffffffffffffffffffffffffffffffffffffffffffffffp-192);
+    static BD: &Decimal =
+        static_dbig!(999999999999999999999999999999999999999999999999999999999999e-60);
+    assert!(*BC < BD.clone().with_base_and_precision(200).value());
+
     let e = rbig!(
-        6277101735386680763835789423207666416102355444464034512894
-            / 6277101735386680763835789423207666416102355444464034512895
+        0xfffffffffffffffffffffffffffffffffffffffffffffffe
+            / 0xffffffffffffffffffffffffffffffffffffffffffffffff
     );
-    let f = rbig!(~999999999999999999999999999999999999999999999999999999999998/999999999999999999999999999999999999999999999999999999999999);
+    let f = rbig!(~
+        999999999999999999999999999999999999999999999999999999999998
+            / 999999999999999999999999999999999999999999999999999999999999);
     assert!(e < f.canonicalize());
+
+    static BE: &Rational = static_rbig!(
+        0xfffffffffffffffffffffffffffffffffffffffffffffffe
+            / 0xffffffffffffffffffffffffffffffffffffffffffffffff
+    );
+    static BF: &Relaxed = static_rbig!(~
+        999999999999999999999999999999999999999999999999999999999998
+            / 999999999999999999999999999999999999999999999999999999999999);
+    assert!(*BE < BF.clone().canonicalize());
 }

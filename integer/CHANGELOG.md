@@ -6,6 +6,7 @@
 - Add `UBig::from_static_words` and `IBig::from_static_words` (both Rust 1.64+) to support the `static_ubig!` and `static_ibig!` macros.
 - Add `is_multiple_of` and `is_multiple_of_const` (Rust 1.64+) for `UBig`/`IBig`
 - Constify `trailing_zeros` and `trailing_ones` of `UBig`/`IBig` (Rust 1.64+).
+- `IBig::trailing_ones` bug fixed.
 
 ## 0.4.0
 

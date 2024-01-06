@@ -12,7 +12,7 @@ Common operations are implemented for all these numeric types, please refer to t
 
 ## Word
 
-A `dashu_int::Word` is an unsigned integer representing a native machine word. The size of a `Word` usually depends on the platform, for example, the `Word` is `u32` on 32-bit platforms. However, the behavior can be overriden by setting the `force_bits` config flag. Since this type is not consistant across platforms, be careful to use it when writing portable programs.
+A `dashu_int::Word` is an unsigned integer representing a native machine word. The size of a `Word` usually depends on the platform, for example, the `Word` is `u32` on 32-bit platforms. However, the behavior can be overriden by setting the `force_bits` config flag (e.g. add `--cfg force_bits="32"` to the environment variable `RUSTFLAGS`). Since this type is not consistant across platforms, be careful to use it when writing portable programs.
 
 Moreover, there is another type `DoubleWord` representing an integer type with double the size of a `Word`. It's the maximum integer type that can fit in a `UBig` instance without heap allocation. It's also involved in some const constructors.
 

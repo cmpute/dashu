@@ -590,8 +590,6 @@ mod repr {
         if zero_begin < (WORD_BITS_USIZE - 1) {
             zero_begin
         } else {
-            // Const equivalent to:
-            // let zero_words: usize = words.iter().skip(1).position(|&word| word != 0).unwrap();
             let mut zero_words = 1;
             while zero_words < words.len() {
                 if words[zero_words] != 0 {
@@ -599,10 +597,9 @@ mod repr {
                 }
                 zero_words += 1;
             }
-            zero_words -= 1;
 
             let zero_bits = words[zero_words].trailing_zeros() as usize;
-            zero_words * WORD_BITS_USIZE + zero_bits + zero_begin
+            (zero_words - 1) * WORD_BITS_USIZE + zero_bits + zero_begin - 1
         }
     }
 

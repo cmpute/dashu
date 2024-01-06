@@ -138,9 +138,6 @@ impl Repr {
     }
 
     /// Cast the reference of `Repr` to a strong typed representation, assuming the underlying data is unsigned.
-    ///
-    /// # Panics
-    ///
     /// Panics if the `capacity` is negative
     #[rustversion::attr(since(1.64), const)]
     #[inline]
