@@ -395,7 +395,11 @@ impl<const B: Word> Repr<B> {
         (self.significand, self.exponent)
     }
 
+    /// Create an Repr from a static sequence of [Word][crate::Word]s representing the significand.
+    /// 
+    /// This method is intended for static creation macros.
     #[doc(hidden)]
+    #[rustversion::since(1.64)]
     #[inline]
     pub const unsafe fn from_static_words(
         sign: Sign,

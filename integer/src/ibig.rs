@@ -68,8 +68,9 @@ use crate::{
 pub struct IBig(pub(crate) Repr);
 
 impl IBig {
+    #[rustversion::attr(since(1.64), const)]
     #[inline]
-    pub(crate) const fn as_sign_repr(&self) -> (Sign, TypedReprRef<'_>) {
+    pub(crate) fn as_sign_repr(&self) -> (Sign, TypedReprRef<'_>) {
         self.0.as_sign_typed()
     }
 
@@ -162,7 +163,8 @@ impl IBig {
 
     /// Create an IBig from a static sequence of [Word][crate::Word]s and a sign.
     ///
-    /// See [UBig::from_static_words] for why this method is unsafe.
+    /// See [UBig::from_static_words] for why this method is unsafe. This method
+    /// is intended for the use of static creation macros.
     #[doc(hidden)]
     #[inline]
     pub const unsafe fn from_static_words(sign: Sign, words: &'static [crate::Word]) -> Self {

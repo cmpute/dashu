@@ -34,6 +34,7 @@ macro_rules! ubig {
 }
 
 #[macro_export]
+#[rustversion::since(1.64)]
 #[doc = include_str!("../macros/docs/static_ubig.md")]
 macro_rules! static_ubig {
     ($($t:tt)+) => {
@@ -50,6 +51,7 @@ macro_rules! ibig {
 }
 
 #[macro_export]
+#[rustversion::since(1.64)]
 #[doc = include_str!("../macros/docs/static_ibig.md")]
 macro_rules! static_ibig {
     ($($t:tt)+) => {
@@ -66,6 +68,7 @@ macro_rules! fbig {
 }
 
 #[macro_export]
+#[rustversion::since(1.64)]
 #[doc = include_str!("../macros/docs/static_fbig.md")]
 macro_rules! static_fbig {
     ($($t:tt)+) => {
@@ -82,6 +85,7 @@ macro_rules! dbig {
 }
 
 #[macro_export]
+#[rustversion::since(1.64)]
 #[doc = include_str!("../macros/docs/static_dbig.md")]
 macro_rules! static_dbig {
     ($($t:tt)+) => {

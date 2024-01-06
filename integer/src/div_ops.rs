@@ -666,7 +666,12 @@ impl UBig {
         (self % divisor).is_zero()
     }
 
-    /// A const version of [UBig::is_multiple_of], but only accepts [DoubleWord] divisors.
+    /// A const version of [UBig::is_multiple_of], but only accepts [DoubleWord][crate::DoubleWord] divisors.
+    /// 
+    /// # Availability
+    /// 
+    /// Since Rust 1.64
+    #[rustversion::since(1.64)]
     #[inline]
     pub const fn is_multiple_of_const(&self, divisor: crate::DoubleWord) -> bool {
         self.repr().is_multiple_of_dword(divisor)
@@ -693,7 +698,12 @@ impl IBig {
         (self % divisor).is_zero()
     }
 
-    /// A const version of [IBig::is_multiple_of], but only accepts [DoubleWord] divisors.
+    /// A const version of [IBig::is_multiple_of], but only accepts [DoubleWord][crate::DoubleWord] divisors.
+    /// 
+    /// # Availability
+    /// 
+    /// Since Rust 1.64
+    #[rustversion::since(1.64)]
     #[inline]
     pub const fn is_multiple_of_const(&self, divisor: crate::DoubleWord) -> bool {
         let (_, repr) = self.as_sign_repr();

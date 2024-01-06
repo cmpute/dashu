@@ -1,5 +1,5 @@
 use dashu_base::{EstimatedLog2, Gcd, Sign};
-use dashu_int::{IBig, UBig, Word, DoubleWord};
+use dashu_int::{IBig, UBig, Word};
 
 pub struct Repr {
     pub(crate) numerator: IBig,
@@ -78,6 +78,7 @@ impl Repr {
 
     /// This methods only check if the numerator and denominator have common factor 2.
     /// It should be prevented to use this method to directly generate an RBig instance.
+    #[rustversion::since(1.64)]
     pub const unsafe fn from_static_words(
         sign: Sign,
         numerator_words: &'static [Word],
@@ -101,20 +102,6 @@ impl Repr {
             numerator,
             denominator,
         }
-    }
-
-    pub const unsafe fn from_static_numerator_words(sign: Sign,
-        numerator_words: &'static [Word],
-        denominator_words: DoubleWord
-    ) -> Self {
-        todo!()
-    }
-
-    pub const unsafe fn from_static_denominator_words(sign: Sign,
-        numerator_words: &'static [Word],
-        denominator_words: DoubleWord
-    ) -> Self {
-        todo!()
     }
 }
 

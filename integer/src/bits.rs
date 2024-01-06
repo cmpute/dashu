@@ -57,8 +57,13 @@ impl UBig {
     /// assert_eq!(UBig::from(0b101000000u16).trailing_zeros(), Some(6));
     /// assert_eq!(UBig::ZERO.trailing_zeros(), None);
     /// ```
+    /// 
+    /// # Availability
+    /// 
+    /// Const since Rust 1.64
+    #[rustversion::attr(since(1.64), const)]
     #[inline]
-    pub const fn trailing_zeros(&self) -> Option<usize> {
+    pub fn trailing_zeros(&self) -> Option<usize> {
         self.repr().trailing_zeros()
     }
 
@@ -77,8 +82,13 @@ impl UBig {
     /// assert_eq!(UBig::from(0b101001111u16).trailing_ones(), Some(4));
     /// assert_eq!(UBig::ZERO.trailing_ones(), Some(0));
     /// ```
+    /// 
+    /// # Availability
+    /// 
+    /// Const since Rust 1.64
+    #[rustversion::attr(since(1.64), const)]
     #[inline]
-    pub const fn trailing_ones(&self) -> Option<usize> {
+    pub fn trailing_ones(&self) -> Option<usize> {
         Some(self.repr().trailing_ones())
     }
 
@@ -213,8 +223,13 @@ impl IBig {
     /// assert_eq!(IBig::from(-0b101000000).trailing_zeros(), Some(6));
     /// assert_eq!(IBig::ZERO.trailing_zeros(), None);
     /// ```
+    /// 
+    /// # Availability
+    /// 
+    /// Const since Rust 1.64
+    #[rustversion::attr(since(1.64), const)]
     #[inline]
-    pub const fn trailing_zeros(&self) -> Option<usize> {
+    pub fn trailing_zeros(&self) -> Option<usize> {
         self.as_sign_repr().1.trailing_zeros()
     }
 
@@ -234,7 +249,12 @@ impl IBig {
     /// assert_eq!(IBig::from(-0b101000001).trailing_ones(), Some(6));
     /// assert_eq!(IBig::NEG_ONE.trailing_ones(), None);
     /// ```
-    pub const fn trailing_ones(&self) -> Option<usize> {
+    /// 
+    /// # Availability
+    /// 
+    /// Const since Rust 1.64
+    #[rustversion::attr(since(1.64), const)]
+    pub fn trailing_ones(&self) -> Option<usize> {
         let (sign, repr) = self.as_sign_repr();
         match sign {
             Positive => Some(repr.trailing_ones()),

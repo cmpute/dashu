@@ -46,6 +46,8 @@ num-traits_v02 = ["dashu-int/num-traits_v02", "dashu-float/num-traits_v02", "das
 decimal-extras = ["dashu-float/postgres-types", "dashu-float/diesel"]
 
 [dependencies]
+rustversion = "1.0"
+
 # all crates under dashu will have the same major version,
 # but the minor and patch versions can be different.
 dashu-base = { version = "0.4.0", default-features = false, path = "./base" }

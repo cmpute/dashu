@@ -192,7 +192,7 @@ impl RBig {
     /// # use dashu_ratio::{RBig, Relaxed};
     /// assert_eq!(RBig::ONE.as_relaxed(), &Relaxed::ONE);
     #[inline]
-    pub fn as_relaxed(&self) -> &Relaxed {
+    pub const fn as_relaxed(&self) -> &Relaxed {
         // SAFETY: RBig and Relaxed are both transparent wrapper around the Repr type.
         //         This conversion is only available for immutable references, so that
         //         the rational number will be kept reduced.
@@ -339,7 +339,12 @@ impl Relaxed {
         })
     }
 
+    /// Create an Relaxed instance from two static sequences of [Word][crate::Word]s representing the
+    /// numerator and denominator.
+    /// 
+    /// This method is intended for static creation macros.
     #[doc(hidden)]
+    #[rustversion::since(1.64)]
     #[inline]
     pub const unsafe fn from_static_words(
         sign: Sign,

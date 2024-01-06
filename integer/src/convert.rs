@@ -225,7 +225,7 @@ impl UBig {
     /// assert_eq!(UBig::from(123u8).as_ibig(), &IBig::from(123));
     /// ```
     #[inline]
-    pub fn as_ibig(&self) -> &IBig {
+    pub const fn as_ibig(&self) -> &IBig {
         // SAFETY: UBig and IBig are both transparent wrapper around the Repr type.
         //         This conversion is only available for immutable references, so that
         //         the sign will not be messed up.

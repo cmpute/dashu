@@ -25,7 +25,7 @@ macro_rules! define_array_converter {
             /// Convert byte array to int array
             fn [<le_bytes_to_ $int _array>](bytes: &[u8]) -> Vec<$int> {
                 const INT_SIZE: usize = <$int>::BITS as usize / 8;
-                let mut ints = Vec::with_capacity((bytes.len() - 1) / INT_SIZE + 1);
+                let mut ints = Vec::with_capacity(bytes.len() / INT_SIZE + 1);
                 let mut chunks = bytes.chunks_exact(INT_SIZE);
                 for chunk in &mut chunks {
                     ints.push(<$int>::from_le_bytes(chunk.try_into().unwrap()));

@@ -20,20 +20,14 @@ pub fn parse_integer(
     };
 
     // if the integer fits in a u32, generates const expression
-    if big.bit_len() <= 32 {
+    if big.bit_len() <= 32 && !static_ {
         let u: u32 = big.try_into().unwrap();
         let sign = quote_sign(embedded, sign);
 
-        let (type_tt, value_tt) = if signed {
-            (quote!( #ns::IBig ), quote! { #ns::IBig::from_parts_const(#sign, #u as _) })
+        return if signed {
+            quote! { #ns::IBig::from_parts_const(#sign, #u as _) }
         } else {
-            (quote!( #ns::UBig ), quote! { #ns::UBig::from_dword(#u as _) })
-        };
-
-        return if static_ {
-            quote! {{ static VALUE: #type_tt = #value_tt; &VALUE }}
-        } else {
-            value_tt
+            quote! { #ns::UBig::from_dword(#u as _) }
         };
     }
 

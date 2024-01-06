@@ -63,16 +63,6 @@ pub fn parse_static_ratio(embedded: bool, input: TokenStream) -> TokenStream {
         quote!( #ns::RBig )
     };
 
-    // if the numerator and denominator fit in a u32, generates const expression
-    if num.bit_len() <= 32 && den.bit_len() <= 32 {
-        let (sign, num) = num.into_parts();
-        let sign = quote_sign(embedded, sign);
-        let num: u32 = num.try_into().unwrap();
-        let den: u32 = den.try_into().unwrap();
-        let value_tt = quote! { #type_tt::from_parts_const(#sign, #num as _, #den as _) };
-        return quote! {{ static VALUE: #type_tt = #value_tt; &VALUE }};
-    }
-
     let (sign, num) = num.into_parts();
     let num_data_defs = quote_words(&num.to_le_bytes(), embedded);
     let den_data_defs = quote_words(&den.to_le_bytes(), embedded);

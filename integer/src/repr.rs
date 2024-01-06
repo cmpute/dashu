@@ -142,8 +142,9 @@ impl Repr {
     /// # Panics
     ///
     /// Panics if the `capacity` is negative
+    #[rustversion::attr(since(1.64), const)]
     #[inline]
-    pub const fn as_typed(&self) -> TypedReprRef<'_> {
+    pub fn as_typed(&self) -> TypedReprRef<'_> {
         let (sign, typed) = self.as_sign_typed();
         match sign {
             // sign check
@@ -155,8 +156,9 @@ impl Repr {
     }
 
     /// Cast the reference of `Repr` to a strong typed representation, and return with the sign.
+    #[rustversion::attr(since(1.64), const)]
     #[inline]
-    pub const fn as_sign_typed(&self) -> (Sign, TypedReprRef<'_>) {
+    pub fn as_sign_typed(&self) -> (Sign, TypedReprRef<'_>) {
         let (abs_capacity, sign) = self.sign_capacity();
 
         // SAFETY: the capacity is checked before accessing the fields.
@@ -287,15 +289,26 @@ impl Repr {
     /// This method is unsafe, because the caller must make sure that
     /// the created instance is immutable, and drop() must not be called.
     #[inline]
-    pub const unsafe fn from_static_words(arr: &'static [Word]) -> Repr {
-        let n = arr.len();
-        assert!(n > 2, "this function is designed for large arrays only.");
-        assert!(arr[n - 1] != 0, "the array input must be normalized.");
+    pub const unsafe fn from_static_words(words: &'static [Word]) -> Repr {
+        match words {
+            &[] => Self::zero(),
+            &[n] => Self::from_word(n),
+            &[lo, hi] => {
+                assert!(hi > 0);
+                Self::from_dword(double_word(lo, hi))
+            },
+            large => {
+                // this condition is always true, use this expression because unwrap() is not const
+                if let Some(n) = large.last() {
+                    assert!(*n != 0, "the array input must be normalized.");
+                }
 
-        let ptr = arr.as_ptr() as _;
-        Repr {
-            data: ReprData { heap: (ptr, n) },
-            capacity: NonZeroIsize::new_unchecked(n as _),
+                let ptr = large.as_ptr() as _;
+                Self {
+                    data: ReprData { heap: (ptr, large.len()) },
+                    capacity: NonZeroIsize::new_unchecked(large.len() as _),
+                }
+            }
         }
     }
 

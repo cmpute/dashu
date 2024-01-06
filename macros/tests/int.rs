@@ -52,6 +52,11 @@ fn test_static_ubig() {
 
     let one: &'static UBig = static_ubig!(1);
     assert_eq!(*one, UBig::ONE);
+    
+    let medium1: &'static UBig = static_ubig!(0xfffffffffffffff);
+    assert_eq!(*medium1, UBig::from(0xfffffffffffffffu64));
+    let medium2: &'static UBig = static_ubig!(0xfffffffffffffffff);
+    assert_eq!(*medium2, UBig::from(0xfffffffffffffffffu128));
 
     let big: &'static UBig =
         static_ubig!(123456789012345678901234567890123456789012345678901234567890);
@@ -143,6 +148,11 @@ fn test_static_ibig() {
 
     let one: &'static IBig = static_ibig!(1);
     assert_eq!(*one, IBig::ONE);
+
+    let medium1: &'static IBig = static_ibig!(-0xfffffffffffffff);
+    assert_eq!(*medium1, IBig::from(-0xfffffffffffffffi64));
+    let medium2: &'static IBig = static_ibig!(-0xfffffffffffffffff);
+    assert_eq!(*medium2, IBig::from(-0xfffffffffffffffffi128));
 
     let big: &'static IBig =
         static_ibig!(-123456789012345678901234567890123456789012345678901234567890);

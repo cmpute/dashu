@@ -70,8 +70,9 @@ pub struct UBig(pub(crate) Repr);
 
 impl UBig {
     /// Get the representation of UBig.
+    #[rustversion::attr(since(1.64), const)]
     #[inline]
-    pub(crate) const fn repr(&self) -> TypedReprRef<'_> {
+    pub(crate) fn repr(&self) -> TypedReprRef<'_> {
         self.0.as_typed()
     }
 
@@ -153,11 +154,12 @@ impl UBig {
 
     /// Create an UBig from a static sequence of [Word][crate::Word]s. Similar to [from_words][UBig::from_words].
     ///
-    /// The input word array is required to be longer than two words, and the top word must not be zero.
+    /// The top word of the input word array must not be zero.
     ///
     /// This method is unsafe because it must be carefully handled. The generated instance
     /// must not be mutated or dropped. Therefore the correct usage is to assign it to an
     /// immutable static variable. Due to the risk, it's generally not recommended to use this method.
+    /// This method is intended for the use of static creation macros.
     #[doc(hidden)]
     #[inline]
     pub const unsafe fn from_static_words(words: &'static [crate::Word]) -> Self {

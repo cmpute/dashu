@@ -32,6 +32,13 @@ fn test_static_rbig() {
 
     let one: &'static RBig = static_rbig!(1);
     assert_eq!(*one, RBig::ONE);
+    
+    let medium: &'static RBig =
+        static_rbig!(-1234567890123456789/9876543210987654323);
+    assert_eq!(
+        *medium,
+        RBig::from_str("-1234567890123456789/9876543210987654323").unwrap()
+    );
 
     let big: &'static RBig =
         static_rbig!(-123456789012345678901234567/987654321098765432109876543);
@@ -61,4 +68,27 @@ fn test_relaxed() {
     const _: Relaxed = rbig!(~1);
     const _: Relaxed = rbig!(~0xffffffff/0xfffffffe);
     const _: Relaxed = rbig!(~0xffffffff00000000/0xfffffffe00000000);
+}
+
+#[test]
+fn test_static_relaxed() {
+    let zero: &'static Relaxed = static_rbig!(~0);
+    assert_eq!(*zero, Relaxed::ZERO);
+
+    let one: &'static Relaxed = static_rbig!(~1);
+    assert_eq!(*one, Relaxed::ONE);
+    
+    let medium: &'static Relaxed =
+        static_rbig!(~-123456789012345678/987654321098765432);
+    assert_eq!(
+        *medium,
+        Relaxed::from_str("-123456789012345678/987654321098765432").unwrap()
+    );
+
+    let big: &'static Relaxed =
+        static_rbig!(~-123456789012345678901234567/987654321098765432109876543);
+    assert_eq!(
+        *big,
+        Relaxed::from_str("-123456789012345678901234567/987654321098765432109876543").unwrap()
+    );
 }
