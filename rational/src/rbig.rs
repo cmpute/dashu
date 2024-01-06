@@ -341,7 +341,7 @@ impl Relaxed {
 
     /// Create an Relaxed instance from two static sequences of [Word][crate::Word]s representing the
     /// numerator and denominator.
-    /// 
+    ///
     /// This method is intended for static creation macros.
     #[doc(hidden)]
     #[rustversion::since(1.64)]

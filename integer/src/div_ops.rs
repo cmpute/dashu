@@ -667,9 +667,9 @@ impl UBig {
     }
 
     /// A const version of [UBig::is_multiple_of], but only accepts [DoubleWord][crate::DoubleWord] divisors.
-    /// 
+    ///
     /// # Availability
-    /// 
+    ///
     /// Since Rust 1.64
     #[rustversion::since(1.64)]
     #[inline]
@@ -699,9 +699,9 @@ impl IBig {
     }
 
     /// A const version of [IBig::is_multiple_of], but only accepts [DoubleWord][crate::DoubleWord] divisors.
-    /// 
+    ///
     /// # Availability
-    /// 
+    ///
     /// Since Rust 1.64
     #[rustversion::since(1.64)]
     #[inline]

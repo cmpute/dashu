@@ -296,7 +296,7 @@ impl Repr {
             &[lo, hi] => {
                 assert!(hi > 0);
                 Self::from_dword(double_word(lo, hi))
-            },
+            }
             large => {
                 // this condition is always true, use this expression because unwrap() is not const
                 if let Some(n) = large.last() {
@@ -305,7 +305,9 @@ impl Repr {
 
                 let ptr = large.as_ptr() as _;
                 Self {
-                    data: ReprData { heap: (ptr, large.len()) },
+                    data: ReprData {
+                        heap: (ptr, large.len()),
+                    },
                     capacity: NonZeroIsize::new_unchecked(large.len() as _),
                 }
             }

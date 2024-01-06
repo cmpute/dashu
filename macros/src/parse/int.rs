@@ -12,7 +12,7 @@ pub fn parse_integer(
     input: TokenStream,
 ) -> TokenStream {
     let (sign, big) = unwrap_with_error_msg(parse_integer_with_error(signed, input));
-    
+
     let ns = if embedded {
         quote!(::dashu::integer)
     } else {

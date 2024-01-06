@@ -396,7 +396,7 @@ impl<const B: Word> Repr<B> {
     }
 
     /// Create an Repr from a static sequence of [Word][crate::Word]s representing the significand.
-    /// 
+    ///
     /// This method is intended for static creation macros.
     #[doc(hidden)]
     #[rustversion::since(1.64)]

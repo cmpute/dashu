@@ -1,5 +1,5 @@
 use super::{
-    common::{quote_sign, unwrap_with_error_msg, quote_words},
+    common::{quote_sign, quote_words, unwrap_with_error_msg},
     int::{quote_ibig, quote_ubig},
 };
 
@@ -51,7 +51,7 @@ pub fn parse_ratio(embedded: bool, input: TokenStream) -> TokenStream {
 
 pub fn parse_static_ratio(embedded: bool, input: TokenStream) -> TokenStream {
     let (num, den, relaxed) = unwrap_with_error_msg(parse_ratio_with_error(input));
-    
+
     let ns = if embedded {
         quote!(::dashu::rational)
     } else {

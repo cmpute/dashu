@@ -52,7 +52,7 @@ fn test_static_ubig() {
 
     let one: &'static UBig = static_ubig!(1);
     assert_eq!(*one, UBig::ONE);
-    
+
     let medium1: &'static UBig = static_ubig!(0xfffffffffffffff);
     assert_eq!(*medium1, UBig::from(0xfffffffffffffffu64));
     let medium2: &'static UBig = static_ubig!(0xfffffffffffffffff);
