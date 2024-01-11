@@ -142,7 +142,10 @@ impl<R: Round, const B: Word> Distribution<FBig<R, B>> for UniformFBig<R, B> {
         let unit: FBig<mode::Down, B> = self.sampler.sample(rng);
         let context = unit.context();
         let scaled = context.mul(unit.repr(), &self.scale).value();
-        context.add(scaled.repr(), &self.offset).value().with_rounding()
+        context
+            .add(scaled.repr(), &self.offset)
+            .value()
+            .with_rounding()
     }
 }
 

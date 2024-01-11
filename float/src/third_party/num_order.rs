@@ -1,6 +1,6 @@
 use _num_modular::{FixedMersenneInt, ModularAbs, ModularInteger};
 use core::cmp::Ordering;
-use dashu_base::{EstimatedLog2, Sign, Signed, BitTest, FloatEncoding};
+use dashu_base::{BitTest, EstimatedLog2, FloatEncoding, Sign, Signed};
 use dashu_int::{IBig, UBig, Word};
 use num_order::{NumHash, NumOrd};
 
@@ -343,7 +343,7 @@ macro_rules! impl_num_ord_fbig_with_float {
                 Some(lhs.cmp(&rhs))
             }
         }
-        
+
         impl<const B: Word> NumOrd<Repr<B>> for $t {
             #[inline]
             fn num_partial_cmp(&self, other: &Repr<B>) -> Option<Ordering> {

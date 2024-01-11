@@ -53,9 +53,7 @@ macro_rules! impl_from_float_for_fbig {
 
             fn try_from(f: $t) -> Result<Self, Self::Error> {
                 match f.decode() {
-                    Ok((man, exp)) => {
-                        Ok(Repr::new(man.into(), exp as _))
-                    }
+                    Ok((man, exp)) => Ok(Repr::new(man.into(), exp as _)),
                     Err(FpCategory::Infinite) => match f.sign() {
                         Sign::Positive => Ok(Self::infinity()),
                         Sign::Negative => Ok(Self::neg_infinity()),
