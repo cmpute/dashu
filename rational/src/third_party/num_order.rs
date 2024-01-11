@@ -32,6 +32,7 @@ impl_ord_between_ratio!(RBig, Relaxed);
 impl_ord_between_ratio!(Relaxed, RBig);
 
 impl NumOrd<UBig> for Repr {
+    #[inline]
     fn num_cmp(&self, other: &UBig) -> Ordering {
         repr_cmp_ubig::<false>(self, other)
     }
@@ -186,4 +187,40 @@ mod with_float {
     }
 }
 
-// TODO(next): implement NumOrd between RBig and primitives
+macro_rules! impl_num_ord_with_unsigned {
+    ($($t:ty)*) => {$(
+        impl NumOrd<$t> for Repr {
+            #[inline]
+            fn num_cmp(&self, other: &$t) -> Ordering {
+                repr_cmp_ubig::<false>(self, &UBig::from(*other))
+            }
+            #[inline]
+            fn num_partial_cmp(&self, other: &$t) -> Option<Ordering> {
+                Some(repr_cmp_ubig::<false>(self, &UBig::from(*other)))
+            }
+        }
+        forward_num_ord_to_repr!(RBig, $t);
+        forward_num_ord_to_repr!(Relaxed, $t);
+    )*};
+}
+impl_num_ord_with_unsigned!(u8 u16 u32 u64 u128 usize);
+
+macro_rules! impl_num_ord_with_signed {
+    ($($t:ty)*) => {$(
+        impl NumOrd<$t> for Repr {
+            #[inline]
+            fn num_cmp(&self, other: &$t) -> Ordering {
+                repr_cmp_ibig::<false>(self, &IBig::from(*other))
+            }
+            #[inline]
+            fn num_partial_cmp(&self, other: &$t) -> Option<Ordering> {
+                Some(repr_cmp_ibig::<false>(self, &IBig::from(*other)))
+            }
+        }
+        forward_num_ord_to_repr!(RBig, $t);
+        forward_num_ord_to_repr!(Relaxed, $t);
+    )*};
+}
+impl_num_ord_with_signed!(i8 i16 i32 i64 i128 isize);
+
+// TODO(next): implement NumOrd between RBig and f32/f64

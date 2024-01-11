@@ -31,8 +31,6 @@ pub trait UnsignedAbs {
     fn unsigned_abs(self) -> Self::Output;
 }
 
-// TODO(next): implement abs_eq, abs_cmp among UBig/IBig/FBig/RBig
-
 /// Check whether the magnitude of this number is equal the magnitude of the other number
 ///
 /// # Examples

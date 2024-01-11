@@ -5,9 +5,11 @@ use dashu_int::{IBig, UBig, Word};
 use num_order::{NumHash, NumOrd};
 
 use crate::{
+    cmp::{repr_cmp_ibig, repr_cmp_ubig},
+    fbig::FBig,
+    repr::Repr,
     round::Round,
-    utils::{shl_digits, shl_digits_in_place},
-    FBig, Repr,
+    utils::shl_digits_in_place,
 };
 
 impl<const B1: Word, const B2: Word> NumOrd<Repr<B2>> for Repr<B1> {
@@ -79,113 +81,34 @@ impl<R1: Round, R2: Round, const B1: Word, const B2: Word> NumOrd<FBig<R2, B2>> 
     }
 }
 
-impl<const B: Word> NumOrd<UBig> for Repr<B> {
-    fn num_cmp(&self, other: &UBig) -> Ordering {
-        // case 1: compare with inf
-        if self.is_infinite() {
-            return if self.exponent > 0 {
-                Ordering::Greater
-            } else {
-                Ordering::Less
-            };
+macro_rules! impl_num_ord_with_method {
+    ($T:ty, $method:ident) => {
+        impl<const B: Word> NumOrd<$T> for Repr<B> {
+            #[inline]
+            fn num_cmp(&self, other: &$T) -> Ordering {
+                $method::<B, false>(self, other)
+            }
+            #[inline]
+            fn num_partial_cmp(&self, other: &$T) -> Option<Ordering> {
+                Some($method::<B, false>(self, other))
+            }
         }
-
-        // case 2: compare sign
-        if self.significand.sign() == Sign::Negative {
-            return Ordering::Less;
+        impl<const B: Word> NumOrd<Repr<B>> for $T {
+            #[inline]
+            fn num_cmp(&self, other: &Repr<B>) -> Ordering {
+                $method::<B, false>(other, self).reverse()
+            }
+            #[inline]
+            fn num_partial_cmp(&self, other: &Repr<B>) -> Option<Ordering> {
+                Some($method::<B, false>(other, self).reverse())
+            }
         }
-
-        // case 3: compare log2 estimations
-        let (self_lo, self_hi) = self.log2_bounds();
-        let (other_lo, other_hi) = other.log2_bounds();
-        if self_lo > other_hi {
-            return Ordering::Greater;
-        }
-        if self_hi < other_lo {
-            return Ordering::Less;
-        }
-
-        // case 4: compare the exact values
-        let mut other: IBig = other.clone().into();
-        if self.exponent < 0 {
-            shl_digits_in_place::<B>(&mut other, (-self.exponent) as usize);
-            self.significand.cmp(&other)
-        } else {
-            shl_digits::<B>(&self.significand, self.exponent as usize).cmp(&other)
-        }
-    }
-    #[inline]
-    fn num_partial_cmp(&self, other: &UBig) -> Option<Ordering> {
-        Some(self.num_cmp(other))
-    }
+    };
 }
+impl_num_ord_with_method!(UBig, repr_cmp_ubig);
+impl_num_ord_with_method!(IBig, repr_cmp_ibig);
 
-impl<const B: Word> NumOrd<Repr<B>> for UBig {
-    #[inline]
-    fn num_cmp(&self, other: &Repr<B>) -> Ordering {
-        other.num_cmp(self).reverse()
-    }
-    #[inline]
-    fn num_partial_cmp(&self, other: &Repr<B>) -> Option<Ordering> {
-        Some(other.num_cmp(self).reverse())
-    }
-}
-
-impl<const B: Word> NumOrd<IBig> for Repr<B> {
-    fn num_cmp(&self, other: &IBig) -> Ordering {
-        // case 1: compare with inf
-        if self.is_infinite() {
-            return if self.exponent > 0 {
-                Ordering::Greater
-            } else {
-                Ordering::Less
-            };
-        }
-
-        // case 2: compare sign
-        let sign = match (self.significand.sign(), other.sign()) {
-            (Sign::Positive, Sign::Positive) => Sign::Positive,
-            (Sign::Positive, Sign::Negative) => return Ordering::Greater,
-            (Sign::Negative, Sign::Positive) => return Ordering::Less,
-            (Sign::Negative, Sign::Negative) => Sign::Negative,
-        };
-
-        // case 3: compare log2 estimations
-        let (self_lo, self_hi) = self.log2_bounds();
-        let (other_lo, other_hi) = other.log2_bounds();
-        if self_lo > other_hi {
-            return sign * Ordering::Greater;
-        }
-        if self_hi < other_lo {
-            return sign * Ordering::Less;
-        }
-
-        // case 4: compare the exact values
-        if self.exponent < 0 {
-            self.significand
-                .cmp(&shl_digits::<B>(other, (-self.exponent) as usize))
-        } else {
-            shl_digits::<B>(&self.significand, self.exponent as usize).cmp(other)
-        }
-    }
-    #[inline]
-    fn num_partial_cmp(&self, other: &IBig) -> Option<Ordering> {
-        Some(self.num_cmp(other))
-    }
-}
-
-impl<const B: Word> NumOrd<Repr<B>> for IBig {
-    #[inline]
-    fn num_cmp(&self, other: &Repr<B>) -> Ordering {
-        other.num_cmp(self).reverse()
-    }
-    #[inline]
-    fn num_partial_cmp(&self, other: &Repr<B>) -> Option<Ordering> {
-        Some(other.num_cmp(self).reverse())
-    }
-}
-
-macro_rules! forward_fbig_num_ord_to_repr {
+macro_rules! forward_num_ord_to_repr {
     ($t:ty) => {
         impl<R: Round, const B: Word> NumOrd<$t> for FBig<R, B> {
             #[inline]
@@ -210,70 +133,70 @@ macro_rules! forward_fbig_num_ord_to_repr {
         }
     };
 }
-forward_fbig_num_ord_to_repr!(UBig);
-forward_fbig_num_ord_to_repr!(IBig);
+forward_num_ord_to_repr!(UBig);
+forward_num_ord_to_repr!(IBig);
 
-macro_rules! impl_num_ord_fbig_with_unsigned {
+macro_rules! impl_num_ord_fbig_unsigned {
     ($($t:ty)*) => {$(
         impl<const B: Word> NumOrd<$t> for Repr<B> {
             #[inline]
             fn num_partial_cmp(&self, other: &$t) -> Option<Ordering> {
-                self.num_partial_cmp(&UBig::from(*other))
+                Some(repr_cmp_ubig::<B, false>(self, &UBig::from(*other)))
             }
         }
         impl<const B: Word> NumOrd<Repr<B>> for $t {
             #[inline]
             fn num_partial_cmp(&self, other: &Repr<B>) -> Option<Ordering> {
-                UBig::from(*self).num_partial_cmp(other)
+                Some(repr_cmp_ubig::<B, false>(other, &UBig::from(*self)).reverse())
             }
         }
         impl<R: Round, const B: Word> NumOrd<$t> for FBig<R, B> {
             #[inline]
             fn num_partial_cmp(&self, other: &$t) -> Option<Ordering> {
-                self.num_partial_cmp(&UBig::from(*other))
+                Some(repr_cmp_ubig::<B, false>(&self.repr, &UBig::from(*other)))
             }
         }
         impl<R: Round, const B: Word> NumOrd<FBig<R, B>> for $t {
             #[inline]
             fn num_partial_cmp(&self, other: &FBig<R, B>) -> Option<Ordering> {
-                UBig::from(*self).num_partial_cmp(other)
+                Some(repr_cmp_ubig::<B, false>(&other.repr, &UBig::from(*self)).reverse())
             }
         }
     )*};
 }
-impl_num_ord_fbig_with_unsigned!(u8 u16 u32 u64 u128 usize);
+impl_num_ord_fbig_unsigned!(u8 u16 u32 u64 u128 usize);
 
-macro_rules! impl_num_ord_fbig_with_signed {
+macro_rules! impl_num_ord_with_signed {
     ($($t:ty)*) => {$(
         impl<const B: Word> NumOrd<$t> for Repr<B> {
             #[inline]
             fn num_partial_cmp(&self, other: &$t) -> Option<Ordering> {
-                self.num_partial_cmp(&IBig::from(*other))
+                Some(repr_cmp_ibig::<B, false>(self, &IBig::from(*other)))
             }
         }
         impl<const B: Word> NumOrd<Repr<B>> for $t {
             #[inline]
             fn num_partial_cmp(&self, other: &Repr<B>) -> Option<Ordering> {
-                IBig::from(*self).num_partial_cmp(other)
+                Some(repr_cmp_ibig::<B, false>(other, &IBig::from(*self)).reverse())
             }
         }
         impl<R: Round, const B: Word> NumOrd<$t> for FBig<R, B> {
             #[inline]
             fn num_partial_cmp(&self, other: &$t) -> Option<Ordering> {
-                self.num_partial_cmp(&IBig::from(*other))
+                Some(repr_cmp_ibig::<B, false>(&self.repr, &IBig::from(*other)))
             }
         }
         impl<R: Round, const B: Word> NumOrd<FBig<R, B>> for $t {
             #[inline]
             fn num_partial_cmp(&self, other: &FBig<R, B>) -> Option<Ordering> {
-                IBig::from(*self).num_partial_cmp(other)
+                Some(repr_cmp_ibig::<B, false>(&other.repr, &IBig::from(*self)).reverse())
             }
         }
     )*};
 }
-impl_num_ord_fbig_with_signed!(i8 i16 i32 i64 i128 isize);
+impl_num_ord_with_signed!(i8 i16 i32 i64 i128 isize);
 
-macro_rules! impl_num_ord_fbig_with_float {
+macro_rules! impl_num_ord_with_float {
     ($($t:ty)*) => {$(
         impl<const B: Word> NumOrd<$t> for Repr<B> {
             #[inline]
@@ -352,9 +275,9 @@ macro_rules! impl_num_ord_fbig_with_float {
         }
     )*};
 }
-impl_num_ord_fbig_with_float!(f32 f64);
-forward_fbig_num_ord_to_repr!(f32);
-forward_fbig_num_ord_to_repr!(f64);
+impl_num_ord_with_float!(f32 f64);
+forward_num_ord_to_repr!(f32);
+forward_num_ord_to_repr!(f64);
 
 impl<const B: Word> NumHash for Repr<B> {
     fn num_hash<H: core::hash::Hasher>(&self, state: &mut H) {

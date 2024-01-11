@@ -187,8 +187,6 @@ macro_rules! forward_abs_ord_to_repr {
         }
     };
 }
-// forward_abs_ord_to_repr!(RBig, IBig);
-// forward_abs_ord_to_repr!(Relaxed, IBig);
 
 pub(crate) fn repr_cmp_ubig<const ABS: bool>(lhs: &Repr, rhs: &UBig) -> Ordering {
     // case 1: compare sign

@@ -1,8 +1,15 @@
 use core::cmp::Ordering;
 
-use dashu_base::{AbsOrd, Sign};
+use dashu_base::{AbsOrd, EstimatedLog2, Sign};
+use dashu_int::{IBig, UBig};
 
-use crate::{fbig::FBig, repr::Repr, repr::Word, round::Round, utils::shl_digits};
+use crate::{
+    fbig::FBig,
+    repr::Repr,
+    repr::Word,
+    round::Round,
+    utils::{shl_digits, shl_digits_in_place},
+};
 
 impl<R1: Round, R2: Round, const B: Word> PartialEq<FBig<R2, B>> for FBig<R1, B> {
     #[inline]
@@ -171,3 +178,110 @@ impl<R: Round, const B: Word> AbsOrd for FBig<R, B> {
         )
     }
 }
+
+pub(crate) fn repr_cmp_ubig<const B: Word, const ABS: bool>(lhs: &Repr<B>, rhs: &UBig) -> Ordering {
+    // case 1: compare with inf
+    if lhs.is_infinite() {
+        return if lhs.exponent > 0 || ABS {
+            Ordering::Greater
+        } else {
+            Ordering::Less
+        };
+    }
+
+    // case 2: compare sign
+    if !ABS && lhs.significand.sign() == Sign::Negative {
+        return Ordering::Less;
+    }
+
+    // case 3: compare log2 estimations
+    let (lhs_lo, lhs_hi) = lhs.log2_bounds();
+    let (rhs_lo, rhs_hi) = rhs.log2_bounds();
+    if lhs_lo > rhs_hi {
+        return Ordering::Greater;
+    }
+    if lhs_hi < rhs_lo {
+        return Ordering::Less;
+    }
+
+    // case 4: compare the exact values
+    let mut rhs: IBig = rhs.clone().into();
+    if lhs.exponent < 0 {
+        shl_digits_in_place::<B>(&mut rhs, (-lhs.exponent) as usize);
+        lhs.significand.cmp(&rhs)
+    } else {
+        shl_digits::<B>(&lhs.significand, lhs.exponent as usize).cmp(&rhs)
+    }
+}
+
+pub(crate) fn repr_cmp_ibig<const B: Word, const ABS: bool>(lhs: &Repr<B>, rhs: &IBig) -> Ordering {
+    // case 1: compare with inf
+    if lhs.is_infinite() {
+        return if lhs.exponent > 0 || ABS {
+            Ordering::Greater
+        } else {
+            Ordering::Less
+        };
+    }
+
+    // case 2: compare sign
+    let sign = if ABS {
+        Sign::Positive
+    } else {
+        match (lhs.significand.sign(), rhs.sign()) {
+            (Sign::Positive, Sign::Positive) => Sign::Positive,
+            (Sign::Positive, Sign::Negative) => return Ordering::Greater,
+            (Sign::Negative, Sign::Positive) => return Ordering::Less,
+            (Sign::Negative, Sign::Negative) => Sign::Negative,
+        }
+    };
+
+    // case 3: compare log2 estimations
+    let (lhs_lo, lhs_hi) = lhs.log2_bounds();
+    let (rhs_lo, rhs_hi) = rhs.log2_bounds();
+    if lhs_lo > rhs_hi {
+        return sign * Ordering::Greater;
+    }
+    if lhs_hi < rhs_lo {
+        return sign * Ordering::Less;
+    }
+
+    // case 4: compare the exact values
+    if lhs.exponent < 0 {
+        lhs.significand
+            .cmp(&shl_digits::<B>(rhs, (-lhs.exponent) as usize))
+    } else {
+        shl_digits::<B>(&lhs.significand, lhs.exponent as usize).cmp(rhs)
+    }
+}
+
+macro_rules! impl_abs_ord_with_method {
+    ($T:ty, $method:ident) => {
+        impl<const B: Word> AbsOrd<$T> for Repr<B> {
+            #[inline]
+            fn abs_cmp(&self, other: &$T) -> Ordering {
+                $method::<B, true>(self, other)
+            }
+        }
+        impl<const B: Word> AbsOrd<Repr<B>> for $T {
+            #[inline]
+            fn abs_cmp(&self, other: &Repr<B>) -> Ordering {
+                $method::<B, true>(other, self).reverse()
+            }
+        }
+        impl<R: Round, const B: Word> AbsOrd<$T> for FBig<R, B> {
+            #[inline]
+            fn abs_cmp(&self, other: &$T) -> Ordering {
+                $method::<B, true>(&self.repr, other)
+            }
+        }
+        impl<R: Round, const B: Word> AbsOrd<FBig<R, B>> for $T {
+            #[inline]
+            fn abs_cmp(&self, other: &FBig<R, B>) -> Ordering {
+                $method::<B, true>(&other.repr, self).reverse()
+            }
+        }
+    };
+}
+impl_abs_ord_with_method!(UBig, repr_cmp_ubig);
+impl_abs_ord_with_method!(IBig, repr_cmp_ibig);

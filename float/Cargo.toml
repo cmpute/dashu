@@ -11,7 +11,7 @@ repository = "https://github.com/cmpute/dashu"
 homepage = "https://github.com/cmpute/dashu"
 documentation = "https://docs.rs/dashu-float"
 readme = "README.md"
-rust-version = "1.64"
+rust-version = "1.61"
 
 [package.metadata.docs.rs]
 all-features = true
