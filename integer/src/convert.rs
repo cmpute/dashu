@@ -687,3 +687,7 @@ mod repr {
         }
     }
 }
+
+// TODO(next): implement `to_digits`, that supports base up to DoubleWord::MAX.
+//             This method won't be optimized as much as the InRadix formatter,
+//             because InRadix has a limit on the radix.

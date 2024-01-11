@@ -141,18 +141,11 @@ macro_rules! impl_num_ord_ibig_with_signed {
 }
 impl_num_ord_ibig_with_signed!(i8 i16 i32 i64 i128 isize);
 
-#[inline]
-fn sign_to_ord(sign: Sign) -> Ordering {
-    match sign {
-        Sign::Positive => Ordering::Greater,
-        Sign::Negative => Ordering::Less,
-    }
-}
-
 macro_rules! impl_num_ord_ubig_with_float {
     ($($t:ty)*) => {$(
         impl NumOrd<$t> for UBig {
             fn num_partial_cmp(&self, other: &$t) -> Option<Ordering> {
+                // step0: compare with nan and 0
                 if other.is_nan() {
                     return None;
                 } else if *other == 0. {
@@ -219,7 +212,7 @@ macro_rules! impl_num_ord_ibig_with_float {
                 } else if *other == 0. {
                     return match self.is_zero() {
                         true => Some(Ordering::Equal),
-                        false => Some(sign_to_ord(self.sign()))
+                        false => Some(self.sign() * Ordering::Greater)
                     };
                 }
 
@@ -233,24 +226,24 @@ macro_rules! impl_num_ord_ibig_with_float {
 
                 // step2: compare with infinity and 0
                 if other.is_infinite() {
-                    return Some(sign_to_ord(-sign));
+                    return Some(-sign * Ordering::Less);
                 }
 
                 // step3: test if the integer is bigger than the max float value
                 let self_bits = self.bit_len();
                 if self_bits > (<$t>::MANTISSA_DIGITS as usize + <$t>::MAX_EXP as usize) {
-                    return Some(sign_to_ord(sign));
+                    return Some(sign * Ordering::Greater);
                 }
 
                 // step4: decode the float and compare the bits
                 let (man, exp) = other.decode().unwrap();
-                let other_bits = man.bit_len() as isize + exp as isize;
+                let other_bits = man.bit_len() as isize + exp as isize; // i.e. log2(x) + 1
                 if other_bits < 0 {
-                    return Some(sign_to_ord(sign));
+                    return Some(sign * Ordering::Greater);
                 } else if self_bits > other_bits as usize {
-                    return Some(sign_to_ord(sign));
+                    return Some(sign * Ordering::Greater);
                 } else if self_bits < other_bits as usize {
-                    return Some(sign_to_ord(-sign));
+                    return Some(sign * Ordering::Less);
                 }
 
                 // step5: do the final comparison

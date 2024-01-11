@@ -6,8 +6,9 @@ use core::{
     ops::{Add, Mul},
 };
 
-// XXX: implement precise summation of multiple floats, however,
-//      this requires rust support of the specialization.
+// TODO(v0.5): implement precise summation of multiple floats, however,
+//      this means what only Sum<Self> should be implemented, which requires
+//      narrowing the implementation
 impl<T, R: Round, const B: Word> Sum<T> for FBig<R, B>
 where
     Self: Add<T, Output = Self>,

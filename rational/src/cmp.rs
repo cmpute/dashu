@@ -224,12 +224,12 @@ pub(crate) fn repr_cmp_ibig<const ABS: bool>(lhs: &Repr, rhs: &IBig) -> Ordering
     let sign = if ABS {
         Sign::Positive
     } else {
-        match lhs.numerator.signum().cmp(&rhs.signum()) {
-            Ordering::Greater => return Ordering::Greater,
-            Ordering::Less => return Ordering::Less,
-            _ => {}
-        };
-        lhs.numerator.sign()
+        match (lhs.numerator.sign(), rhs.sign()) {
+            (Sign::Positive, Sign::Positive) => Sign::Positive,
+            (Sign::Positive, Sign::Negative) => return Ordering::Greater,
+            (Sign::Negative, Sign::Positive) => return Ordering::Less,
+            (Sign::Negative, Sign::Negative) => Sign::Negative,
+        }
     };
 
     // case 2: compare log2 estimations
@@ -281,12 +281,12 @@ pub(crate) mod with_float {
         let sign = if ABS {
             Sign::Positive
         } else {
-            match lhs.numerator.signum().cmp(&rhs.significand().signum()) {
-                Ordering::Greater => return Ordering::Greater,
-                Ordering::Less => return Ordering::Less,
-                _ => {}
-            };
-            lhs.numerator.sign()
+            match (lhs.numerator.sign(), rhs.significand().sign()) {
+                (Sign::Positive, Sign::Positive) => Sign::Positive,
+                (Sign::Positive, Sign::Negative) => return Ordering::Greater,
+                (Sign::Negative, Sign::Positive) => return Ordering::Less,
+                (Sign::Negative, Sign::Negative) => Sign::Negative,
+            }
         };
 
         // case 3: compare log2 estimations

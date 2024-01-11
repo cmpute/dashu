@@ -48,6 +48,23 @@ impl<R: Round> Context<R> {
 
 macro_rules! impl_from_float_for_fbig {
     ($t:ty) => {
+        impl TryFrom<$t> for Repr<2> {
+            type Error = ConversionError;
+
+            fn try_from(f: $t) -> Result<Self, Self::Error> {
+                match f.decode() {
+                    Ok((man, exp)) => {
+                        Ok(Repr::new(man.into(), exp as _))
+                    }
+                    Err(FpCategory::Infinite) => match f.sign() {
+                        Sign::Positive => Ok(Self::infinity()),
+                        Sign::Negative => Ok(Self::neg_infinity()),
+                    },
+                    _ => Err(ConversionError::OutOfBounds), // NaN
+                }
+            }
+        }
+
         impl<R: Round> TryFrom<$t> for FBig<R, 2> {
             type Error = ConversionError;
 
@@ -64,8 +81,8 @@ macro_rules! impl_from_float_for_fbig {
                         Ok(Self::new(repr, context))
                     }
                     Err(FpCategory::Infinite) => match f.sign() {
-                        Sign::Positive => Ok(FBig::INFINITY),
-                        Sign::Negative => Ok(FBig::NEG_INFINITY),
+                        Sign::Positive => Ok(Self::INFINITY),
+                        Sign::Negative => Ok(Self::NEG_INFINITY),
                     },
                     _ => Err(ConversionError::OutOfBounds), // NaN
                 }

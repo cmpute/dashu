@@ -55,12 +55,12 @@ fn repr_cmp_same_base<const B: Word, const ABS: bool>(
     let sign = if ABS {
         Sign::Positive
     } else {
-        match lhs.significand.signum().cmp(&rhs.significand.signum()) {
-            Ordering::Greater => return Ordering::Greater,
-            Ordering::Less => return Ordering::Less,
-            _ => {}
-        };
-        lhs.significand.sign()
+        match (lhs.significand.sign(), rhs.significand.sign()) {
+            (Sign::Positive, Sign::Positive) => Sign::Positive,
+            (Sign::Positive, Sign::Negative) => return Ordering::Greater,
+            (Sign::Negative, Sign::Positive) => return Ordering::Less,
+            (Sign::Negative, Sign::Negative) => Sign::Negative,
+        }
     };
 
     // case 3: compare with 0

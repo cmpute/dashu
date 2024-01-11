@@ -184,7 +184,7 @@ fn repr_to_numeric(repr: &Repr<10>, precision: Option<usize>) -> Result<Numeric,
 
     // calculate the actual digits
     while !signif.is_zero() {
-        // TODO: to achieve the best performance, it might worth adding a `to_digits`
+        // TODO(next): to achieve the best performance, it might worth adding a `to_digits`
         // method to `UBig`, and supporting arbitrary base (but limited to Word size).
         digits.push(signif.div_rem_assign(10000u16) as i16);
     }

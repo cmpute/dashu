@@ -68,10 +68,8 @@ use rand_v08::{
 pub struct UniformFBig<R: Round, const B: Word> {
     sampler: Uniform01<B>,
 
-    // XXX: there should be a way to prevent storing a context in this struct
-    //      (just like a complex number). It might require binop between FBig and Repr.
-    scale: FBig<mode::Down, B>,
-    offset: FBig<mode::Down, B>,
+    scale: Repr<B>,
+    offset: Repr<B>,
 
     /// This field is used to distinguish between uniform distributions
     /// with different rounding modes, no actual effect on the sampling.
@@ -87,8 +85,8 @@ impl<R: Round, const B: Word> UniformFBig<R, B> {
 
         Self {
             sampler: Uniform01::new(precision),
-            scale: (high - low).with_rounding(),
-            offset: low.clone().with_rounding(),
+            scale: (high - low).into_repr(),
+            offset: low.repr().clone(),
             _marker: PhantomData,
         }
     }
@@ -101,8 +99,8 @@ impl<R: Round, const B: Word> UniformFBig<R, B> {
 
         Self {
             sampler: Uniform01::new_closed(precision),
-            scale: (high - low).with_rounding(),
-            offset: low.clone().with_rounding(),
+            scale: (high - low).into_repr(),
+            offset: low.repr().clone(),
             _marker: PhantomData,
         }
     }
@@ -117,7 +115,7 @@ impl<R: Round, const B: Word> UniformSampler for UniformFBig<R, B> {
         B1: SampleBorrow<Self::X> + Sized,
         B2: SampleBorrow<Self::X> + Sized,
     {
-        let precision = low.borrow().precision().min(high.borrow().precision());
+        let precision = low.borrow().precision().max(high.borrow().precision());
         UniformFBig::new(low.borrow(), high.borrow(), precision)
     }
 
@@ -127,7 +125,7 @@ impl<R: Round, const B: Word> UniformSampler for UniformFBig<R, B> {
         B1: SampleBorrow<Self::X> + Sized,
         B2: SampleBorrow<Self::X> + Sized,
     {
-        let precision = low.borrow().precision().min(high.borrow().precision());
+        let precision = low.borrow().precision().max(high.borrow().precision());
         UniformFBig::new_inclusive(low.borrow(), high.borrow(), precision)
     }
 
@@ -142,7 +140,9 @@ impl<R: Round, const B: Word> Distribution<FBig<R, B>> for UniformFBig<R, B> {
         // After we have a sample in [0, 1), all the following operations are rounded down
         // so that we can ensure we don't reach the right bound.
         let unit: FBig<mode::Down, B> = self.sampler.sample(rng);
-        (unit * &self.scale + &self.offset).with_rounding()
+        let context = unit.context();
+        let scaled = context.mul(unit.repr(), &self.scale).value();
+        context.add(scaled.repr(), &self.offset).value().with_rounding()
     }
 }
 
@@ -181,7 +181,7 @@ impl<R: Round, const B: Word> Distribution<FBig<R, B>> for OpenClosed01 {
 /// [OpenClosed01] distributions from the `rand` crate when you want to customize the precision
 /// of the generated float number.
 pub struct Uniform01<const BASE: Word> {
-    precision: usize,
+    pub(crate) precision: usize,
     range: Option<UBig>, // BASE ^ precision (±1 if necessary)
     include_zero: bool,  // whether include the zero
     include_one: bool,   // whether include the one

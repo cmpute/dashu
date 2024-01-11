@@ -6,6 +6,8 @@
 
 - Add `Repr::from_static_words` to support the `static_fbig!` and `static_dbig!` macros.
 - Add `FBig::from_repr_const` to support create an `FBig` instance from repr in const context.
+- Add conversion from `f32`/`f64` to `Repr<2>`.
+- Add `NumOrd` implementations between `FBig` and primitive integers / floats. 
 
 ### Change
 

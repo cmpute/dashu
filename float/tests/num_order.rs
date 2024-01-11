@@ -1,5 +1,6 @@
 use dashu_float::{DBig, FBig};
 use num_order::{NumHash, NumOrd};
+use core::cmp::Ordering;
 
 mod helper_macros;
 
@@ -131,4 +132,74 @@ fn test_hash() {
         let i = FBin::try_from(v).unwrap();
         assert_eq!(hash(&v), hash(&i));
     }
+}
+
+#[test]
+fn test_primitive_floats() {
+    // trivial cases
+    assert_eq!(fbig!(0).num_cmp(&0f32), Ordering::Equal);
+    assert_eq!(fbig!(0).num_cmp(&1f32), Ordering::Less);
+    assert_eq!(fbig!(0).num_cmp(&-1f32), Ordering::Greater);
+    assert_eq!(fbig!(1).num_cmp(&1f32), Ordering::Equal);
+    assert_eq!(fbig!(1).num_cmp(&-1f32), Ordering::Greater);
+    assert_eq!(fbig!(-1).num_cmp(&1f32), Ordering::Less);
+    assert_eq!(fbig!(-1).num_cmp(&-1f32), Ordering::Equal);
+    assert_eq!(fbig!(0).num_cmp(&0f32), Ordering::Equal);
+    assert_eq!(FBin::INFINITY.num_cmp(&f32::INFINITY), Ordering::Equal);
+    assert_eq!(FBin::INFINITY.num_cmp(&0f32), Ordering::Greater);
+    assert_eq!(FBin::INFINITY.num_cmp(&f32::NEG_INFINITY), Ordering::Greater);
+    assert_eq!(FBin::NEG_INFINITY.num_cmp(&f32::INFINITY), Ordering::Less);
+    assert_eq!(FBin::NEG_INFINITY.num_cmp(&0f32), Ordering::Less);
+    assert_eq!(FBin::NEG_INFINITY.num_cmp(&f32::NEG_INFINITY), Ordering::Equal);
+    assert_eq!(fbig!(0).num_partial_cmp(&f32::NAN), None);
+    
+    assert_eq!(dbig!(0).num_cmp(&0f64), Ordering::Equal);
+    assert_eq!(dbig!(0).num_cmp(&1f64), Ordering::Less);
+    assert_eq!(dbig!(0).num_cmp(&-1f64), Ordering::Greater);
+    assert_eq!(dbig!(1).num_cmp(&1f64), Ordering::Equal);
+    assert_eq!(dbig!(1).num_cmp(&-1f64), Ordering::Greater);
+    assert_eq!(dbig!(-1).num_cmp(&1f64), Ordering::Less);
+    assert_eq!(dbig!(-1).num_cmp(&-1f64), Ordering::Equal);
+    assert_eq!(dbig!(0).num_cmp(&0f64), Ordering::Equal);
+    assert_eq!(DBig::INFINITY.num_cmp(&f64::INFINITY), Ordering::Equal);
+    assert_eq!(DBig::INFINITY.num_cmp(&0f64), Ordering::Greater);
+    assert_eq!(DBig::INFINITY.num_cmp(&f64::NEG_INFINITY), Ordering::Greater);
+    assert_eq!(DBig::NEG_INFINITY.num_cmp(&f64::INFINITY), Ordering::Less);
+    assert_eq!(DBig::NEG_INFINITY.num_cmp(&0f64), Ordering::Less);
+    assert_eq!(DBig::NEG_INFINITY.num_cmp(&f64::NEG_INFINITY), Ordering::Equal);
+    assert_eq!(dbig!(0).num_partial_cmp(&f64::NAN), None);
+
+    // numbers with very large difference in scale
+    assert_eq!(fbig!(0x1p100).num_cmp(&1e10f32), Ordering::Greater);
+    assert_eq!(fbig!(0x1p10).num_cmp(&1f32), Ordering::Greater);
+    assert_eq!(fbig!(0x1).num_cmp(&1e-10f32), Ordering::Greater);
+    assert_eq!(fbig!(0x1p-100).num_cmp(&1e-10f32), Ordering::Less);
+    assert_eq!(fbig!(0x1p-10).num_cmp(&1f32), Ordering::Less);
+    assert_eq!(fbig!(0x1).num_cmp(&1e10f32), Ordering::Less);
+    assert_eq!(fbig!(-0x1p100).num_cmp(&1e-10f32), Ordering::Less);
+    assert_eq!(fbig!(0x1p-100).num_cmp(&-1e10f32), Ordering::Greater);
+    
+    assert_eq!(dbig!(1e100).num_cmp(&1e10f64), Ordering::Greater);
+    assert_eq!(dbig!(1e10).num_cmp(&1f64), Ordering::Greater);
+    assert_eq!(dbig!(1).num_cmp(&1e-10f64), Ordering::Greater);
+    assert_eq!(dbig!(1e-100).num_cmp(&1e-10f64), Ordering::Less);
+    assert_eq!(dbig!(1e-10).num_cmp(&1f64), Ordering::Less);
+    assert_eq!(dbig!(1).num_cmp(&1e10f64), Ordering::Less);
+    assert_eq!(dbig!(-1e100).num_cmp(&1e-10f64), Ordering::Less);
+    assert_eq!(dbig!(1e100).num_cmp(&-1e10f64), Ordering::Greater);
+
+    // numbers that are close
+    assert_eq!(fbig!(0x1921fb4p-23).num_cmp(&3.1415926f32), Ordering::Equal);
+    assert_eq!(fbig!(0x1921fb4001p-35).num_cmp(&3.1415926f32), Ordering::Greater);
+    assert_eq!(fbig!(0x1921fb3fffp-35).num_cmp(&3.1415926f32), Ordering::Less);
+    assert_eq!(fbig!(0x1921fb54442d18p-51).num_cmp(&3.141592653589793f64), Ordering::Equal);
+    assert_eq!(fbig!(0x1921fb54442d180000000001p-91).num_cmp(&3.141592653589793f64), Ordering::Greater);
+    assert_eq!(fbig!(0x1921fb54442d17ffffffffffp-91).num_cmp(&3.141592653589793f64), Ordering::Less);
+    
+    // exact value 3.1415926f32 = 3.141592502593994140625​
+    assert_eq!(dbig!(3.1415926).num_cmp(&3.1415926f32), Ordering::Greater);
+    assert_eq!(dbig!(3.1415925).num_cmp(&3.1415926f32), Ordering::Less);
+    // exact value 3.141592653589793f64 = 3.141592653589793115997963468544185161590576171875​​
+    assert_eq!(dbig!(3.141592653589793).num_cmp(&3.141592653589793f64), Ordering::Less);
+    assert_eq!(dbig!(3.141592653589793238).num_cmp(&3.141592653589793f64), Ordering::Greater);
 }

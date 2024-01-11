@@ -457,6 +457,7 @@ impl<R: Round> Context<R> {
     #[inline]
     pub const fn max(lhs: Self, rhs: Self) -> Self {
         Self {
+            // this comparison also correctly handles ulimited precisions (precision = 0)
             precision: if lhs.precision > rhs.precision {
                 lhs.precision
             } else {
