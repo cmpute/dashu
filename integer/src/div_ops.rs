@@ -629,6 +629,7 @@ pub(crate) mod repr {
         Repr::from_buffer(rhs)
     }
 
+    #[rustversion::since(1.64)]
     impl<'a> TypedReprRef<'a> {
         pub(super) const fn is_multiple_of_dword(self, divisor: DoubleWord) -> bool {
             if let Some(w) = shrink_dword(divisor) {

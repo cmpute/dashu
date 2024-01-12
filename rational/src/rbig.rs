@@ -1,5 +1,5 @@
 use dashu_base::{EstimatedLog2, Sign};
-use dashu_int::{DoubleWord, IBig, UBig, Word};
+use dashu_int::{DoubleWord, IBig, UBig};
 
 use crate::{error::panic_divide_by_0, repr::Repr};
 
@@ -347,9 +347,9 @@ impl Relaxed {
     #[rustversion::since(1.64)]
     #[inline]
     pub const unsafe fn from_static_words(
-        sign: Sign,
-        numerator_words: &'static [Word],
-        denominator_words: &'static [Word],
+        sign: dashu_base::Sign,
+        numerator_words: &'static [dashu_int::Word],
+        denominator_words: &'static [dashu_int::Word],
     ) -> Self {
         Self(Repr::from_static_words(sign, numerator_words, denominator_words))
     }

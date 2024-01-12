@@ -49,6 +49,7 @@ pub fn parse_ratio(embedded: bool, input: TokenStream) -> TokenStream {
     quote! { #type_tt::from_parts(#num_tt, #den_tt) }
 }
 
+#[rustversion::since(1.64)]
 pub fn parse_static_ratio(embedded: bool, input: TokenStream) -> TokenStream {
     let (num, den, relaxed) = unwrap_with_error_msg(parse_ratio_with_error(input));
 

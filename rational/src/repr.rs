@@ -1,5 +1,5 @@
-use dashu_base::{EstimatedLog2, Gcd, Sign};
-use dashu_int::{IBig, UBig, Word};
+use dashu_base::{EstimatedLog2, Gcd};
+use dashu_int::{IBig, UBig};
 
 pub struct Repr {
     pub(crate) numerator: IBig,
@@ -80,9 +80,9 @@ impl Repr {
     /// It should be prevented to use this method to directly generate an RBig instance.
     #[rustversion::since(1.64)]
     pub const unsafe fn from_static_words(
-        sign: Sign,
-        numerator_words: &'static [Word],
-        denominator_words: &'static [Word],
+        sign: dashu_base::Sign,
+        numerator_words: &'static [dashu_int::Word],
+        denominator_words: &'static [dashu_int::Word],
     ) -> Self {
         let numerator = IBig::from_static_words(sign, numerator_words);
         let denominator = UBig::from_static_words(denominator_words);
