@@ -26,7 +26,7 @@ pub mod rational {
 pub use dashu_macros as __dashu_macros;
 
 #[macro_export]
-#[doc = include_str!("../macros/docs/ubig.md")]
+#[doc = include_str!("macro-docs/ubig.md")]
 macro_rules! ubig {
     ($($t:tt)+) => {
         $crate::__dashu_macros::ubig_embedded!($($t)+)
@@ -35,7 +35,7 @@ macro_rules! ubig {
 
 #[macro_export]
 #[rustversion::since(1.64)]
-#[doc = include_str!("../macros/docs/static_ubig.md")]
+#[doc = include_str!("macro-docs/static_ubig.md")]
 macro_rules! static_ubig {
     ($($t:tt)+) => {
         $crate::__dashu_macros::static_ubig_embedded!($($t)+)
@@ -43,7 +43,7 @@ macro_rules! static_ubig {
 }
 
 #[macro_export]
-#[doc = include_str!("../macros/docs/ibig.md")]
+#[doc = include_str!("macro-docs/ibig.md")]
 macro_rules! ibig {
     ($($t:tt)+) => {
         $crate::__dashu_macros::ibig_embedded!($($t)+)
@@ -52,7 +52,7 @@ macro_rules! ibig {
 
 #[macro_export]
 #[rustversion::since(1.64)]
-#[doc = include_str!("../macros/docs/static_ibig.md")]
+#[doc = include_str!("macro-docs/static_ibig.md")]
 macro_rules! static_ibig {
     ($($t:tt)+) => {
         $crate::__dashu_macros::static_ibig_embedded!($($t)+)
@@ -60,7 +60,7 @@ macro_rules! static_ibig {
 }
 
 #[macro_export]
-#[doc = include_str!("../macros/docs/fbig.md")]
+#[doc = include_str!("macro-docs/fbig.md")]
 macro_rules! fbig {
     ($($t:tt)+) => {
         $crate::__dashu_macros::fbig_embedded!($($t)+)
@@ -69,7 +69,7 @@ macro_rules! fbig {
 
 #[macro_export]
 #[rustversion::since(1.64)]
-#[doc = include_str!("../macros/docs/static_fbig.md")]
+#[doc = include_str!("macro-docs/static_fbig.md")]
 macro_rules! static_fbig {
     ($($t:tt)+) => {
         $crate::__dashu_macros::static_fbig_embedded!($($t)+)
@@ -77,7 +77,7 @@ macro_rules! static_fbig {
 }
 
 #[macro_export]
-#[doc = include_str!("../macros/docs/dbig.md")]
+#[doc = include_str!("macro-docs/dbig.md")]
 macro_rules! dbig {
     ($($t:tt)+) => {
         $crate::__dashu_macros::dbig_embedded!($($t)+)
@@ -86,7 +86,7 @@ macro_rules! dbig {
 
 #[macro_export]
 #[rustversion::since(1.64)]
-#[doc = include_str!("../macros/docs/static_dbig.md")]
+#[doc = include_str!("macro-docs/static_dbig.md")]
 macro_rules! static_dbig {
     ($($t:tt)+) => {
         $crate::__dashu_macros::static_dbig_embedded!($($t)+)
@@ -94,7 +94,7 @@ macro_rules! static_dbig {
 }
 
 #[macro_export]
-#[doc = include_str!("../macros/docs/rbig.md")]
+#[doc = include_str!("macro-docs/rbig.md")]
 macro_rules! rbig {
     ($($t:tt)+) => {
         $crate::__dashu_macros::rbig_embedded!($($t)+)
@@ -103,7 +103,7 @@ macro_rules! rbig {
 
 #[macro_export]
 #[rustversion::since(1.64)]
-#[doc = include_str!("../macros/docs/static_rbig.md")]
+#[doc = include_str!("macro-docs/static_rbig.md")]
 macro_rules! static_rbig {
     ($($t:tt)+) => {
         $crate::__dashu_macros::static_rbig_embedded!($($t)+)

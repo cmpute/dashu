@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1
 
 - Implement `AbsOrd` between `RBig`/`Relaxed` and `UBig`/`IBig`/`FBig`.
 - Implement `NumOrd` between `RBig`/`Relaxed` and primitive integers / floats.

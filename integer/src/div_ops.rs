@@ -274,7 +274,7 @@ pub(crate) mod repr {
         error::panic_divide_by_0,
         helper_macros::debug_assert_zero,
         memory::MemoryAllocation,
-        primitive::{extend_word, shrink_dword},
+        primitive::shrink_dword,
         repr::{
             Repr,
             TypedRepr::{self, *},
@@ -632,6 +632,7 @@ pub(crate) mod repr {
     #[rustversion::since(1.64)]
     impl<'a> TypedReprRef<'a> {
         pub(super) const fn is_multiple_of_dword(self, divisor: DoubleWord) -> bool {
+            use crate::primitive::extend_word;
             if let Some(w) = shrink_dword(divisor) {
                 match self {
                     TypedReprRef::RefSmall(dword) => dword % extend_word(w) == 0,

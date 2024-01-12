@@ -1,17 +1,12 @@
 # Changelog
 
-## Unreleased
-
-### Add
+## 0.4.2
 
 - Add `Repr::from_static_words` to support the `static_fbig!` and `static_dbig!` macros.
 - Add `FBig::from_repr_const` to support create an `FBig` instance from repr in const context.
 - Add conversion from `f32`/`f64` to `Repr<2>`.
 - Implement `NumOrd` between `FBig` and primitive integers / floats. 
 - Implement `AbsOrd` between `FBig` and `UBig`/`IBig`
-
-### Change
-
 - Now the `Debug` output of `FBig` values will not contains the rounding mode information (when alternative flag is not set).
 
 ## 0.4.1

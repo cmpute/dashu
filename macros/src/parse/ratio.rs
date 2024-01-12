@@ -1,5 +1,5 @@
 use super::{
-    common::{quote_sign, quote_words, unwrap_with_error_msg},
+    common::{quote_sign, unwrap_with_error_msg},
     int::{quote_ibig, quote_ubig},
 };
 
@@ -64,6 +64,7 @@ pub fn parse_static_ratio(embedded: bool, input: TokenStream) -> TokenStream {
         quote!( #ns::RBig )
     };
 
+    use super::common::quote_words;
     let (sign, num) = num.into_parts();
     let num_data_defs = quote_words(&num.to_le_bytes(), embedded);
     let den_data_defs = quote_words(&den.to_le_bytes(), embedded);
