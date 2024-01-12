@@ -6,7 +6,7 @@ use crate::{
 };
 use _num_modular::{FixedMersenneInt, ModularInteger};
 use core::cmp::Ordering;
-use dashu_base::Signed;
+use dashu_base::{BitTest, FloatEncoding, Sign, Signed};
 use dashu_int::{IBig, UBig};
 use num_order::{NumHash, NumOrd};
 
@@ -62,7 +62,7 @@ macro_rules! forward_num_ord_to_repr {
             }
             #[inline]
             fn num_partial_cmp(&self, other: &$T) -> Option<Ordering> {
-                Some(self.0.num_cmp(other))
+                self.0.num_partial_cmp(other)
             }
         }
         impl NumOrd<$R> for $T {
@@ -72,7 +72,7 @@ macro_rules! forward_num_ord_to_repr {
             }
             #[inline]
             fn num_partial_cmp(&self, other: &$R) -> Option<Ordering> {
-                Some(other.0.num_cmp(self).reverse())
+                other.0.num_partial_cmp(self).map(|ord| ord.reverse())
             }
         }
     };
@@ -223,4 +223,68 @@ macro_rules! impl_num_ord_with_signed {
 }
 impl_num_ord_with_signed!(i8 i16 i32 i64 i128 isize);
 
-// TODO(next): implement NumOrd between RBig and f32/f64
+macro_rules! impl_num_ord_with_float {
+    ($($t:ty)*) => {$(
+        impl NumOrd<$t> for Repr {
+            fn num_partial_cmp(&self, other: &$t) -> Option<Ordering> {
+                // step 1: compare with nan/inf/0
+                if other.is_nan() {
+                    return None;
+                } else if other.is_infinite() {
+                    return match other.sign() {
+                        Sign::Positive => Some(Ordering::Less),
+                        Sign::Negative => Some(Ordering::Greater),
+                    };
+                } else if *other == 0. {
+                    return match self.numerator.is_zero() {
+                        true => Some(Ordering::Equal),
+                        false => Some(self.numerator.sign() * Ordering::Greater)
+                    };
+                }
+
+                // step 2: compare sign
+                let sign = match (self.numerator.sign(), other.sign()) {
+                    (Sign::Positive, Sign::Positive) => Sign::Positive,
+                    (Sign::Positive, Sign::Negative) => return Some(Ordering::Greater),
+                    (Sign::Negative, Sign::Positive) => return Some(Ordering::Less),
+                    (Sign::Negative, Sign::Negative) => Sign::Negative,
+                };
+
+                // step 3: test if the number is bigger than the max float value
+                // Here we don't use EstimatedLog2, since a direct comparison is not that expensive.
+                // We just need a quick way to determine if one number is much larger than the other.
+                // The bit length (essentially ⌊log2(x)⌋ + 1) is used instead here.
+                let self_log2 = self.numerator.bit_len() as isize - self.denominator.bit_len() as isize;
+                let (self_log2_lb, self_log2_ub) = (self_log2 - 1, self_log2 + 1);
+                if self_log2_lb > (<$t>::MANTISSA_DIGITS as isize + <$t>::MAX_EXP as isize) {
+                    return Some(sign * Ordering::Greater);
+                }
+
+                // step 4: decode the float and compare the bits
+                let (other_man, other_exp) = other.decode().unwrap();
+                let other_log2 = other_man.bit_len() as isize + other_exp as isize - 1;
+                if self_log2_lb > other_log2 {
+                    return Some(sign * Ordering::Greater);
+                } else if self_log2_ub < other_log2 {
+                    return Some(sign * Ordering::Less);
+                }
+
+                // step 5: compare the exact values
+                let (other_man, other_exp) = other.decode().unwrap();
+                let (mut lhs, mut rhs) = (self.numerator.clone(), IBig::from(other_man) * &self.denominator);
+                if other_exp < 0 {
+                    lhs <<= -other_exp as usize;
+                } else {
+                    rhs <<= other_exp as usize;
+                }
+
+                Some(lhs.cmp(&rhs))
+            }
+        }
+    )*};
+}
+impl_num_ord_with_float!(f32 f64);
+forward_num_ord_to_repr!(RBig, f32);
+forward_num_ord_to_repr!(Relaxed, f32);
+forward_num_ord_to_repr!(RBig, f64);
+forward_num_ord_to_repr!(Relaxed, f64);

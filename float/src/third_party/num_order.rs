@@ -228,9 +228,9 @@ macro_rules! impl_num_ord_with_float {
                 };
 
                 // step3: test if the number is bigger than the max float value
-                // Here we don't use EstimatedLog2, since we direct comparison is not that expensive.
+                // Here we don't use EstimatedLog2, since a direct comparison is not that expensive.
                 // We just need a quick way to determine if one number is much larger than the other.
-                // The bit length (essential;y ⌊log2(x)⌋ + 1) is used instead here.
+                // The bit length (essentially ⌊log2(x)⌋ + 1) is used instead here.
                 let self_signif_log2 = self.significand.bit_len() as isize;
                 let self_log2 = self_signif_log2 + B.bit_len() as isize * self.exponent;
                 let (self_log2_lb, self_log2_ub) = if self.exponent >= 0 {

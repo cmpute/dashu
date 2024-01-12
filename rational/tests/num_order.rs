@@ -131,3 +131,56 @@ fn test_hash() {
         assert_eq!(hash(&v), hash(&r));
     }
 }
+
+#[test]
+fn test_primitive_floats() {
+    // trivial cases
+    assert_eq!(rbig!(0).num_cmp(&0f32), Ordering::Equal);
+    assert_eq!(rbig!(0).num_cmp(&1f32), Ordering::Less);
+    assert_eq!(rbig!(0).num_cmp(&-1f32), Ordering::Greater);
+    assert_eq!(rbig!(1).num_cmp(&1f32), Ordering::Equal);
+    assert_eq!(rbig!(1).num_cmp(&-1f32), Ordering::Greater);
+    assert_eq!(rbig!(-1).num_cmp(&1f32), Ordering::Less);
+    assert_eq!(rbig!(-1).num_cmp(&-1f32), Ordering::Equal);
+    assert_eq!(rbig!(0).num_partial_cmp(&f32::NAN), None);
+
+    assert_eq!(rbig!(~0).num_cmp(&0f64), Ordering::Equal);
+    assert_eq!(rbig!(~0).num_cmp(&1f64), Ordering::Less);
+    assert_eq!(rbig!(~0).num_cmp(&-1f64), Ordering::Greater);
+    assert_eq!(rbig!(~1).num_cmp(&1f64), Ordering::Equal);
+    assert_eq!(rbig!(~1).num_cmp(&-1f64), Ordering::Greater);
+    assert_eq!(rbig!(~-1).num_cmp(&1f64), Ordering::Less);
+    assert_eq!(rbig!(~-1).num_cmp(&-1f64), Ordering::Equal);
+    assert_eq!(rbig!(~0).num_partial_cmp(&f64::NAN), None);
+
+    // numbers with very large difference in scale
+    assert_eq!(rbig!(0x10000000000).num_cmp(&1e10f32), Ordering::Greater);
+    assert_eq!(rbig!(0x10).num_cmp(&1f32), Ordering::Greater);
+    assert_eq!(rbig!(1).num_cmp(&1e-10f32), Ordering::Greater);
+    assert_eq!(rbig!(1 / 0x10000000000).num_cmp(&1e-10f32), Ordering::Less);
+    assert_eq!(rbig!(1 / 0x10).num_cmp(&1f32), Ordering::Less);
+    assert_eq!(rbig!(1).num_cmp(&1e10f32), Ordering::Less);
+    assert_eq!(rbig!(-0x10000000000).num_cmp(&1e-10f32), Ordering::Less);
+    assert_eq!(rbig!(1 / 0x10000000000).num_cmp(&-1e10f32), Ordering::Greater);
+
+    assert_eq!(rbig!(~0x10000000000).num_cmp(&1e10f64), Ordering::Greater);
+    assert_eq!(rbig!(~0x10).num_cmp(&1f64), Ordering::Greater);
+    assert_eq!(rbig!(~1).num_cmp(&1e-10f64), Ordering::Greater);
+    assert_eq!(rbig!(~1/0x10000000000).num_cmp(&1e-10f64), Ordering::Less);
+    assert_eq!(rbig!(~1/0x10).num_cmp(&1f64), Ordering::Less);
+    assert_eq!(rbig!(~1).num_cmp(&1e10f64), Ordering::Less);
+    assert_eq!(rbig!(~-0x10000000000).num_cmp(&1e-10f64), Ordering::Less);
+    assert_eq!(rbig!(~1/0x10000000000).num_cmp(&-1e10f64), Ordering::Greater);
+
+    // numbers that are close
+    {
+        use core::f32::consts::PI;
+        assert_eq!(rbig!(355 / 113).num_cmp(&PI), Ordering::Greater);
+        assert_eq!(rbig!(355 / 114).num_cmp(&PI), Ordering::Less);
+    }
+    {
+        use core::f64::consts::PI;
+        assert_eq!(rbig!(~165707065/52746197).num_cmp(&PI), Ordering::Greater);
+        assert_eq!(rbig!(~165707065/52746198).num_cmp(&PI), Ordering::Less);
+    }
+}
