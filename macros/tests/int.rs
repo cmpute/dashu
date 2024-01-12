@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use dashu_int::{IBig, UBig};
-use dashu_macros::{ibig, static_ibig, static_ubig, ubig};
+use dashu_macros::{ibig, ubig};
 
 #[test]
 fn test_ubig() {
@@ -45,8 +45,11 @@ fn test_ubig() {
     const _: UBig = ubig!(0xffffffff);
 }
 
-#[test]
+#[rustversion::since(1.64)]
+#[rustversion::attr(since(1.64), test)]
 fn test_static_ubig() {
+    use dashu_macros::static_ubig;
+
     let zero: &'static UBig = static_ubig!(0);
     assert_eq!(*zero, UBig::ZERO);
 
@@ -141,8 +144,11 @@ fn test_ibig() {
     const _: IBig = ibig!(-0xffffffff);
 }
 
-#[test]
+#[rustversion::since(1.64)]
+#[rustversion::attr(since(1.64), test)]
 fn test_static_ibig() {
+    use dashu_macros::static_ibig;
+
     let zero: &'static IBig = static_ibig!(0);
     assert_eq!(*zero, IBig::ZERO);
 

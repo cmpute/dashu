@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use dashu_macros::{rbig, static_rbig};
+use dashu_macros::rbig;
 use dashu_ratio::{RBig, Relaxed};
 
 #[test]
@@ -31,8 +31,11 @@ fn test_rbig() {
     const _: RBig = rbig!(0xfffeffff0001 / 0xfffefffe0002); // has a common factor 0xffff
 }
 
-#[test]
+#[rustversion::since(1.64)]
+#[rustversion::attr(since(1.64), test)]
 fn test_static_rbig() {
+    use dashu_macros::static_rbig;
+
     let zero: &'static RBig = static_rbig!(0);
     assert_eq!(*zero, RBig::ZERO);
 
@@ -82,8 +85,11 @@ fn test_relaxed() {
     const _: Relaxed = rbig!(~0xffffffff00000000/0xfffffffe00000000);
 }
 
-#[test]
+#[rustversion::since(1.64)]
+#[rustversion::attr(since(1.64), test)]
 fn test_static_relaxed() {
+    use dashu_macros::static_rbig;
+
     let zero: &'static Relaxed = static_rbig!(~0);
     assert_eq!(*zero, Relaxed::ZERO);
 

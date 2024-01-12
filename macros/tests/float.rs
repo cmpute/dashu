@@ -1,7 +1,7 @@
 use core::str::FromStr;
 
 use dashu_float::DBig;
-use dashu_macros::{dbig, fbig, static_dbig, static_fbig};
+use dashu_macros::{dbig, fbig};
 type FBig = dashu_float::FBig;
 
 #[test]
@@ -49,8 +49,11 @@ fn test_fbig() {
     const _: FBig = fbig!(0xffffffffp-1234);
 }
 
-#[test]
+#[rustversion::since(1.64)]
+#[rustversion::attr(since(1.64), test)]
 fn test_static_fbig() {
+    use dashu_macros::static_fbig;
+
     let zero: &'static FBig = static_fbig!(0);
     assert_eq!(*zero, FBig::ZERO);
 
@@ -95,8 +98,11 @@ fn test_dbig() {
     const _: DBig = dbig!(4294967295e-1234);
 }
 
-#[test]
+#[rustversion::since(1.64)]
+#[rustversion::attr(since(1.64), test)]
 fn test_static_dbig() {
+    use dashu_macros::static_dbig;
+
     let zero: &'static DBig = static_dbig!(0);
     assert_eq!(*zero, DBig::ZERO);
 
