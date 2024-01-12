@@ -24,6 +24,8 @@ jobs:
           override: true
       - name: Change dependency versions
         run: git apply .github/workflows/change_version.patch
+      - name: Remove dev-deps for MSRV
+        run: git apply .github/workflows/remove_dev_deps.patch
       - uses: actions-rs/cargo@v1
         with:
           command: check
