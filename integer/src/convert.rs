@@ -450,10 +450,8 @@ macro_rules! ubig_float_conversions {
 }
 ubig_float_conversions!(f32 => u32; f64 => u64;);
 
-// TODO: implement TryFrom<IBig/FBig/RBig> for f32/f64, and document this in the guide and change log.
-
 macro_rules! ibig_float_conversions {
-    ($($t:ty)*) => {$(
+    ($($t:ty => $i:ty;)*) => {$(
         impl TryFrom<$t> for IBig {
             type Error = ConversionError;
 
@@ -468,9 +466,27 @@ macro_rules! ibig_float_conversions {
                 Ok(result)
             }
         }
+
+        impl TryFrom<IBig> for $t {
+            type Error = ConversionError;
+
+            fn try_from(value: IBig) -> Result<Self, Self::Error> {
+                const MAX_BIT_LEN: usize = (<$t>::MANTISSA_DIGITS + 1) as usize;
+                let (sign, value) = value.into_parts();
+                if value.bit_len() > MAX_BIT_LEN
+                    || (value.bit_len() == MAX_BIT_LEN && !value.is_power_of_two())
+                {
+                    // precision loss occurs when the integer has more digits than what the mantissa can store
+                    Err(ConversionError::LossOfPrecision)
+                } else {
+                    let float = <$i>::try_from(value).unwrap() as $t;
+                    Ok(sign * float)
+                }
+            }
+        }
     )*};
 }
-ibig_float_conversions!(f32 f64);
+ibig_float_conversions!(f32 => u32; f64 => u64;);
 
 impl From<UBig> for IBig {
     #[inline]
@@ -627,14 +643,10 @@ mod repr {
         }
 
         #[inline]
-        #[allow(clippy::unnecessary_cast)] // because DoubleWord is not always u128
         pub fn to_f32(self) -> Approximation<f32, Sign> {
             match self {
-                RefSmall(dword) => to_f32_small(dword as u128),
-                RefLarge(_) => match self.try_to_unsigned::<u128>() {
-                    Ok(val) => to_f32_small(val as u128),
-                    Err(_) => self.to_f32_nontrivial(),
-                },
+                RefSmall(dword) => to_f32_small(dword),
+                RefLarge(_) => self.to_f32_nontrivial(),
             }
         }
 
@@ -653,14 +665,10 @@ mod repr {
         }
 
         #[inline]
-        #[allow(clippy::unnecessary_cast)] // because DoubleWord is not always u128
         pub fn to_f64(self) -> Approximation<f64, Sign> {
             match self {
-                RefSmall(dword) => to_f64_small(dword as u128),
-                RefLarge(_) => match self.try_to_unsigned::<u128>() {
-                    Ok(val) => to_f64_small(val as u128),
-                    Err(_) => self.to_f64_nontrivial(),
-                },
+                RefSmall(dword) => to_f64_small(dword as DoubleWord),
+                RefLarge(_) => self.to_f64_nontrivial(),
             }
         }
 

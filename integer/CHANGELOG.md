@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Implement `TryFrom<UBig>` for `f32`/`f64`.
+- Implement `TryFrom<UBig>` and `TryFrom<IBig>` for `f32`/`f64`.
 
 ## 0.4.1
 

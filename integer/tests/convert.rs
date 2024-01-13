@@ -247,8 +247,15 @@ fn test_to_f32() {
     assert_eq!((ubig!(1) << 1000).to_f32(), Inexact(f32::INFINITY, Positive));
 
     assert_eq!(ibig!(0).to_f32(), Exact(0.0f32));
+    assert_eq!(f32::try_from(ibig!(0)).unwrap(), 0.0f32);
     assert_eq!(ibig!(7).to_f32(), Exact(7.0f32));
+    assert_eq!(f32::try_from(ibig!(7)).unwrap(), 7.0f32);
     assert_eq!(ibig!(-7).to_f32(), Exact(-7.0f32));
+    assert_eq!(f32::try_from(ibig!(-7)).unwrap(), -7.0f32);
+    assert_eq!(ibig!(-0x1000000).to_f32(), Exact(-16777216.0f32));
+    assert_eq!(f32::try_from(ibig!(-0x1000000)).unwrap(), -16777216.0f32);
+    assert_eq!(ibig!(-0x1000001).to_f32(), Inexact(-16777216.0f32, Positive));
+    assert_eq!(f32::try_from(ibig!(-0x1000001)), Err(LossOfPrecision));
     assert!((ibig!(-0xffffff7) << 100).to_f32().value() > -f32::INFINITY);
     assert_eq!((ibig!(-0xffffff8) << 100).to_f32(), Inexact(f32::NEG_INFINITY, Negative));
 }
@@ -322,8 +329,15 @@ fn test_to_f64() {
     assert_eq!((ubig!(1) << 10000).to_f64(), Inexact(f64::INFINITY, Positive));
 
     assert_eq!(ibig!(0).to_f64(), Exact(0.0f64));
+    assert_eq!(f64::try_from(ibig!(0)).unwrap(), 0.0f64);
     assert_eq!(ibig!(7).to_f64(), Exact(7.0f64));
+    assert_eq!(f64::try_from(ibig!(7)).unwrap(), 7.0f64);
     assert_eq!(ibig!(-7).to_f64(), Exact(-7.0f64));
+    assert_eq!(f64::try_from(ibig!(-7)).unwrap(), -7.0f64);
+    assert_eq!(ibig!(-0x20000000000000).to_f64(), Exact(-9007199254740992.0f64));
+    assert_eq!(f64::try_from(ibig!(-0x20000000000000)).unwrap(), -9007199254740992.0f64);
+    assert_eq!(ibig!(-0x20000000000001).to_f64(), Inexact(-9007199254740992.0f64, Positive));
+    assert_eq!(f64::try_from(ibig!(-0x20000000000001)), Err(LossOfPrecision));
     assert!((ibig!(-0x1fffffffffffff7) << 967).to_f64().value() > -f64::INFINITY);
     assert_eq!(
         (ibig!(-0x1fffffffffffff8) << 967).to_f64(),
