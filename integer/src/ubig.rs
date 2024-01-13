@@ -7,6 +7,8 @@
 
 use crate::repr::{Repr, TypedRepr, TypedReprRef};
 
+// TODO(v0.5): move all the detailed explanations of the num types from the docs to the guide, and leave some links or brief explanations.
+
 /// An unsigned arbitrary precision integer.
 ///
 /// This struct represents an arbitrarily large unsigned integer. Technically the size of the integer

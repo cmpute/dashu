@@ -9,6 +9,7 @@
   - [Parsing](./io/parse.md)
   - [Printing](./io/print.md)
   - [Serialization](./io/serialize.md)
+  - [Interoperability](./io/interop.md)
 - [Operations](./ops/index.md)
   - [Equality and Comparison](./ops/cmp.md)
   - [Basic Arithmetics](./ops/basic.md)

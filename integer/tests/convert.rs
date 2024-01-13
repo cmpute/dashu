@@ -1,4 +1,8 @@
-use dashu_base::{Approximation::*, ConversionError::*, Sign::*};
+use dashu_base::{
+    Approximation::*,
+    ConversionError::{self, *},
+    Sign::*,
+};
 use dashu_int::{IBig, UBig};
 use std::convert::TryFrom;
 
@@ -181,13 +185,19 @@ fn test_default() {
 #[allow(clippy::float_cmp)]
 fn test_to_f32() {
     assert_eq!(ubig!(0).to_f32(), Exact(0.0f32));
+    assert_eq!(f32::try_from(ubig!(0)).unwrap(), 0.0f32);
     assert_eq!(ubig!(7).to_f32(), Exact(7.0f32));
+    assert_eq!(f32::try_from(ubig!(7)).unwrap(), 7.0f32);
     // 2^24 - 1 is still exactly representable
     assert_eq!(ubig!(0xffffff).to_f32(), Exact(16777215.0f32));
+    assert_eq!(f32::try_from(ubig!(0xffffff)).unwrap(), 16777215.0f32);
     assert_eq!(ubig!(0x1000000).to_f32(), Exact(16777216.0f32));
+    assert_eq!(f32::try_from(ubig!(0x1000000)).unwrap(), 16777216.0f32);
     // Now round to even should begin.
     assert_eq!(ubig!(0x1000001).to_f32(), Inexact(16777216.0f32, Negative));
+    assert_eq!(f32::try_from(ubig!(0x1000001)), Err(ConversionError::LossOfPrecision));
     assert_eq!(ubig!(0x1000002).to_f32(), Exact(16777218.0f32));
+    assert_eq!(f32::try_from(ubig!(0x1000002)), Err(ConversionError::LossOfPrecision));
     assert_eq!(ubig!(0x1000003).to_f32(), Inexact(16777220.0f32, Positive));
     assert_eq!(ubig!(0x1000004).to_f32(), Exact(16777220.0f32));
     assert_eq!(ubig!(0x1000005).to_f32(), Inexact(16777220.0f32, Negative));
@@ -247,13 +257,19 @@ fn test_to_f32() {
 #[allow(clippy::float_cmp)]
 fn test_to_f64() {
     assert_eq!(ubig!(0).to_f64(), Exact(0.0f64));
+    assert_eq!(f64::try_from(ubig!(0)).unwrap(), 0.0f64);
     assert_eq!(ubig!(7).to_f64(), Exact(7.0f64));
+    assert_eq!(f64::try_from(ubig!(7)).unwrap(), 7.0f64);
     // 2^53 - 1 is still exactly representable
     assert_eq!(ubig!(0x1fffffffffffff).to_f64(), Exact(9007199254740991.0f64));
+    assert_eq!(f64::try_from(ubig!(0x1fffffffffffff)).unwrap(), 9007199254740991.0f64);
     assert_eq!(ubig!(0x20000000000000).to_f64(), Exact(9007199254740992.0f64));
+    assert_eq!(f64::try_from(ubig!(0x20000000000000)).unwrap(), 9007199254740992.0f64);
     // Now round to even should begin.
     assert_eq!(ubig!(0x20000000000001).to_f64(), Inexact(9007199254740992.0f64, Negative));
+    assert_eq!(f64::try_from(ubig!(0x20000000000001)), Err(ConversionError::LossOfPrecision));
     assert_eq!(ubig!(0x20000000000002).to_f64(), Exact(9007199254740994.0f64));
+    assert_eq!(f64::try_from(ubig!(0x20000000000002)), Err(ConversionError::LossOfPrecision));
     assert_eq!(ubig!(0x20000000000003).to_f64(), Inexact(9007199254740996.0f64, Positive));
     assert_eq!(ubig!(0x20000000000004).to_f64(), Exact(9007199254740996.0f64));
     assert_eq!(ubig!(0x20000000000005).to_f64(), Inexact(9007199254740996.0f64, Negative));

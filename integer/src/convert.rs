@@ -1,7 +1,7 @@
 //! Conversions between types.
 
 use crate::{
-    arch::word::Word,
+    arch::word::{DoubleWord, Word},
     buffer::Buffer,
     ibig::IBig,
     primitive::{self, PrimitiveSigned, PrimitiveUnsigned, DWORD_BYTES, WORD_BITS, WORD_BYTES},
@@ -13,7 +13,7 @@ use alloc::{boxed::Box, vec::Vec};
 use core::convert::{TryFrom, TryInto};
 use dashu_base::{
     Approximation::{self, *},
-    ConversionError, FloatEncoding, Sign,
+    BitTest, ConversionError, FloatEncoding, PowerOfTwo, Sign,
 };
 
 impl Default for UBig {
@@ -415,7 +415,7 @@ macro_rules! ibig_signed_conversions {
 ibig_signed_conversions!(i8 i16 i32 i64 i128 isize);
 
 macro_rules! ubig_float_conversions {
-    ($($t:ty)*) => {$(
+    ($($t:ty => $i:ty;)*) => {$(
         impl TryFrom<$t> for UBig {
             type Error = ConversionError;
 
@@ -430,9 +430,27 @@ macro_rules! ubig_float_conversions {
                 Ok(result)
             }
         }
+
+        impl TryFrom<UBig> for $t {
+            type Error = ConversionError;
+
+            fn try_from(value: UBig) -> Result<Self, Self::Error> {
+                const MAX_BIT_LEN: usize = (<$t>::MANTISSA_DIGITS + 1) as usize;
+                if value.bit_len() > MAX_BIT_LEN
+                    || (value.bit_len() == MAX_BIT_LEN && !value.is_power_of_two())
+                {
+                    // precision loss occurs when the integer has more digits than what the mantissa can store
+                    Err(ConversionError::LossOfPrecision)
+                } else {
+                    Ok(<$i>::try_from(value).unwrap() as $t)
+                }
+            }
+        }
     )*};
 }
-ubig_float_conversions!(f32 f64);
+ubig_float_conversions!(f32 => u32; f64 => u64;);
+
+// TODO: implement TryFrom<IBig/FBig/RBig> for f32/f64, and document this in the guide and change log.
 
 macro_rules! ibig_float_conversions {
     ($($t:ty)*) => {$(
@@ -661,13 +679,13 @@ mod repr {
         }
     }
 
-    fn to_f32_small(dword: u128) -> Approximation<f32, Sign> {
+    fn to_f32_small(dword: DoubleWord) -> Approximation<f32, Sign> {
         let f = dword as f32;
         if f.is_infinite() {
             return Inexact(f, Sign::Positive);
         }
 
-        let back = f as u128;
+        let back = f as DoubleWord;
         match back.partial_cmp(&dword).unwrap() {
             Ordering::Greater => Inexact(f, Sign::Positive),
             Ordering::Equal => Exact(f),
@@ -675,10 +693,10 @@ mod repr {
         }
     }
 
-    fn to_f64_small(dword: u128) -> Approximation<f64, Sign> {
-        const_assert!((u128::MAX as f64) < f64::MAX);
+    fn to_f64_small(dword: DoubleWord) -> Approximation<f64, Sign> {
+        const_assert!((DoubleWord::MAX as f64) < f64::MAX);
         let f = dword as f64;
-        let back = f as u128;
+        let back = f as DoubleWord;
 
         match back.partial_cmp(&dword).unwrap() {
             Ordering::Greater => Inexact(f, Sign::Positive),
@@ -688,6 +706,6 @@ mod repr {
     }
 }
 
-// TODO(next): implement `to_digits`, that supports base up to DoubleWord::MAX.
+// TODO(next): implement `to_digits` and `from_digits`, that supports base up to Word::MAX.
 //             This method won't be optimized as much as the InRadix formatter,
 //             because InRadix has a limit on the radix.

@@ -36,10 +36,10 @@ To deconstruct these numeric types, use the `::into_parts()` functions to get th
 
 # `dashu-macros`
 
-We also provide a convenient and efficient way to create constant large numbers through the macros `ubig!`/`ibig!`/`fbig!`/`dbig!`/`rbig`. These macros can be obtained directly from the `dashu-macros` crate or from the `dashu` meta crate.
+We also provide a convenient and efficient way to create large numbers from literals through the macros `ubig!`/`ibig!`/`fbig!`/`dbig!`/`rbig`. These macros can be obtained directly from the `dashu-macros` crate or from the `dashu` meta crate.
 
 You can directly put numeric literals as the argument without quotes (e.g. `dbig!(3.1415926535897932384626)`), and you don't need to worry about precision loss, because it's guaranteed that the number is faithfully created without approximations. Besides, the macros have minimal runtime overhead, since the numbers are preprocessed by the macros during compile-time. 
 
-When the number doesn't have a high precision, these macros can be used in a `const` environment, however this ability dependends on the precision and the machine word size. It's worth noting that, there are two macros `static_ubig!` and `static_ibig!` that can generate a (reference to) static constant without size limitations, which can be useful in some cases.
+When the number doesn't have a high precision, these macros can be used in a `const` environment, however this ability dependends on the precision and the machine word size. To create large constants, you can use the `static_*` macros (such as `static_ubig!`) in the crate. They have the same syntax as the normal macros, but the different is that the outputs of the macros are references to a static instance, rather than directly generating an instance. There are also other limitations about these macros for static creation.
 
 Please refer to [the docs of `dashu-macros`](https://docs.rs/dashu-macros/latest/dashu_macros/) for detailed usage of these macros.
