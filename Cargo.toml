@@ -1,11 +1,11 @@
 [package]
 name = "dashu"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 description = "A library set of big numbers"
-keywords = ["mathematics", "bignum"]
-categories = ["mathematics", "no-std"]
+keywords = ["bignum", "numerics", "mathematics", "math"]
+categories = ["mathematics", "no-std", "parsing", "value-formatting"]
 repository = "https://github.com/cmpute/dashu"
 homepage = "https://github.com/cmpute/dashu"
 documentation = "https://docs.rs/dashu"
