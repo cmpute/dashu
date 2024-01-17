@@ -401,6 +401,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
     /// Convert the float number to [f32] with the rounding mode associated with the type.
     ///
+    /// Note that the conversion is inexact even if the number is infinite.
+    ///
     /// # Examples
     ///
     /// ```
@@ -428,6 +430,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
     }
 
     /// Convert the float number to [f64] with [HalfEven] rounding mode regardless of the mode associated with this number.
+    ///
+    /// Note that the conversion is inexact even if the number is infinite.
     ///
     /// # Examples
     ///
@@ -694,17 +698,29 @@ impl<const B: Word> Repr<B> {
     }
 }
 
+impl<const B: Word> From<UBig> for Repr<B> {
+    #[inline]
+    fn from(n: UBig) -> Self {
+        Self::new(n.into(), 0)
+    }
+}
+impl<R: Round, const B: Word> From<UBig> for FBig<R, B> {
+    #[inline]
+    fn from(n: UBig) -> Self {
+        Self::from_parts(n.into(), 0)
+    }
+}
+
+impl<const B: Word> From<IBig> for Repr<B> {
+    #[inline]
+    fn from(n: IBig) -> Self {
+        Self::new(n, 0)
+    }
+}
 impl<R: Round, const B: Word> From<IBig> for FBig<R, B> {
     #[inline]
     fn from(n: IBig) -> Self {
         Self::from_parts(n, 0)
-    }
-}
-
-impl<R: Round, const B: Word> From<UBig> for FBig<R, B> {
-    #[inline]
-    fn from(n: UBig) -> Self {
-        IBig::from(n).into()
     }
 }
 
@@ -737,10 +753,43 @@ impl<R: Round, const B: Word> TryFrom<FBig<R, B>> for UBig {
 
 macro_rules! fbig_unsigned_conversions {
     ($($t:ty)*) => {$(
+        impl<const B: Word> From<$t> for Repr<B> {
+            #[inline]
+            fn from(value: $t) -> Repr<B> {
+                UBig::from(value).into()
+            }
+        }
         impl<R: Round, const B: Word> From<$t> for FBig<R, B> {
             #[inline]
             fn from(value: $t) -> FBig<R, B> {
                 UBig::from(value).into()
+            }
+        }
+
+        impl<const B: Word> TryFrom<Repr<B>> for $t {
+            type Error = ConversionError;
+
+            fn try_from(value: Repr<B>) -> Result<Self, Self::Error> {
+                if value.sign() == Sign::Negative || value.is_infinite() {
+                    Err(ConversionError::OutOfBounds)
+                } else {
+                    let (log2_lb, _) = value.log2_bounds();
+                    if log2_lb >= <$t>::BITS as f32 {
+                        Err(ConversionError::OutOfBounds)
+                    } else if value.exponent < 0 {
+                        Err(ConversionError::LossOfPrecision)
+                    } else {
+                        shl_digits::<B>(&value.significand, value.exponent as usize).try_into()
+                    }
+                }
+            }
+        }
+        impl<R: Round, const B: Word> TryFrom<FBig<R, B>> for $t {
+            type Error = ConversionError;
+
+            #[inline]
+            fn try_from(value: FBig<R, B>) -> Result<Self, Self::Error> {
+                value.repr.try_into()
             }
         }
     )*};
@@ -755,6 +804,77 @@ macro_rules! fbig_signed_conversions {
                 IBig::from(value).into()
             }
         }
+
+        impl<R: Round, const B: Word> TryFrom<FBig<R, B>> for $t {
+            type Error = ConversionError;
+
+            fn try_from(value: FBig<R, B>) -> Result<Self, Self::Error> {
+                if value.repr.is_infinite() {
+                    Err(ConversionError::OutOfBounds)
+                } else {
+                    let (log2_lb, _) = value.repr.log2_bounds();
+                    if log2_lb >= <$t>::BITS as f32 {
+                        Err(ConversionError::OutOfBounds)
+                    } else if value.repr.exponent < 0 {
+                        Err(ConversionError::LossOfPrecision)
+                    } else {
+                        shl_digits::<B>(&value.repr.significand, value.repr.exponent as usize).try_into()
+                    }
+                }
+            }
+        }
     )*};
 }
 fbig_signed_conversions!(i8 i16 i32 i64 i128 isize);
+
+macro_rules! impl_from_fbig_for_float {
+    ($t:ty, $method:ident) => {
+        impl TryFrom<Repr<2>> for $t {
+            type Error = ConversionError;
+
+            #[inline]
+            fn try_from(value: Repr<2>) -> Result<Self, Self::Error> {
+                if value.is_infinite() {
+                    Err(ConversionError::LossOfPrecision)
+                } else {
+                    match value.$method() {
+                        Exact(v) => Ok(v),
+                        Inexact(v, _) => {
+                            if v.is_infinite() {
+                                Err(ConversionError::OutOfBounds)
+                            } else {
+                                Err(ConversionError::LossOfPrecision)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        impl<R: Round> TryFrom<FBig<R, 2>> for $t {
+            type Error = ConversionError;
+
+            #[inline]
+            fn try_from(value: FBig<R, 2>) -> Result<Self, Self::Error> {
+                // this method is the same as the one for Repr, but it has to be re-implemented
+                // because the rounding behavior of to_32/to_64 is different.
+                if value.repr.is_infinite() {
+                    Err(ConversionError::LossOfPrecision)
+                } else {
+                    match value.$method() {
+                        Exact(v) => Ok(v),
+                        Inexact(v, _) => {
+                            if v.is_infinite() {
+                                Err(ConversionError::OutOfBounds)
+                            } else {
+                                Err(ConversionError::LossOfPrecision)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+}
+impl_from_fbig_for_float!(f32, to_f32);
+impl_from_fbig_for_float!(f64, to_f64);

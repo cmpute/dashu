@@ -92,31 +92,47 @@ const fn ceil_log2_fp8(n: u16) -> u16 {
 }
 
 /// Implementation of the nightly f32::next_up()
-#[cfg(feature = "std")]
+///
+/// This function will panic if the input is NaN or infinite.
 #[inline]
-fn next_up(f: f32) -> f32 {
-    debug_assert!(!f.is_nan() && !f.is_infinite());
-    use std::cmp::Ordering::*;
+pub fn next_up(f: f32) -> f32 {
+    assert!(!f.is_nan() && !f.is_infinite());
 
-    match f.partial_cmp(&0.).unwrap() {
-        Equal => f32::from_bits(1),
-        Less => f32::from_bits(f.to_bits() - 1),
-        Greater => f32::from_bits(f.to_bits() + 1),
-    }
+    const TINY_BITS: u32 = 0x1; // Smallest positive f32.
+    const CLEAR_SIGN_MASK: u32 = 0x7fff_ffff;
+
+    let bits = f.to_bits();
+    let abs = bits & CLEAR_SIGN_MASK;
+    let next_bits = if abs == 0 {
+        TINY_BITS
+    } else if bits == abs {
+        bits + 1
+    } else {
+        bits - 1
+    };
+    f32::from_bits(next_bits)
 }
 
 /// Implementation of the nightly f32::next_down()
-#[cfg(feature = "std")]
+///
+/// This function will panic if the input is NaN or infinite.
 #[inline]
-fn next_down(f: f32) -> f32 {
-    debug_assert!(!f.is_nan() && !f.is_infinite());
-    use std::cmp::Ordering::*;
+pub fn next_down(f: f32) -> f32 {
+    assert!(!f.is_nan() && !f.is_infinite());
 
-    match f.partial_cmp(&0.).unwrap() {
-        Equal => f32::from_bits(1 | (1 << 31)),
-        Less => f32::from_bits(f.to_bits() + 1),
-        Greater => f32::from_bits(f.to_bits() - 1),
-    }
+    const NEG_TINY_BITS: u32 = 0x8000_0001; // Smallest negative f32.
+    const CLEAR_SIGN_MASK: u32 = 0x7fff_ffff;
+
+    let bits = f.to_bits();
+    let abs = bits & CLEAR_SIGN_MASK;
+    let next_bits = if abs == 0 {
+        NEG_TINY_BITS
+    } else if bits == abs {
+        bits - 1
+    } else {
+        bits + 1
+    };
+    f32::from_bits(next_bits)
 }
 
 #[cfg(not(feature = "std"))]
@@ -195,7 +211,7 @@ macro_rules! impl_log2_bounds_for_uint {
                         ceil_log2_fp8(hi)
                     };
                     let ub = ub as f32 / 256.0;
-                    (lb + shift as f32, ub + shift as f32)
+                    (next_down(lb + shift as f32), next_up(ub + shift as f32))
                 }
             }
         }

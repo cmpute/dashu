@@ -1,4 +1,9 @@
-use dashu_base::{AbsOrd, Approximation::*, EstimatedLog2, Sign};
+use dashu_base::{
+    utils::{next_down, next_up},
+    AbsOrd,
+    Approximation::*,
+    EstimatedLog2, Sign,
+};
 use dashu_int::IBig;
 
 use crate::{
@@ -11,6 +16,10 @@ use crate::{
 impl<const B: Word> EstimatedLog2 for Repr<B> {
     // currently a Word has at most 64 bits, so log2() < f32::MAX
     fn log2_bounds(&self) -> (f32, f32) {
+        if self.significand.is_zero() {
+            return (f32::NEG_INFINITY, f32::NEG_INFINITY);
+        }
+
         // log(s*B^e) = log(s) + e*log(B)
         let (logs_lb, logs_ub) = self.significand.log2_bounds();
         let (logb_lb, logb_ub) = if B.is_power_of_two() {
@@ -20,11 +29,12 @@ impl<const B: Word> EstimatedLog2 for Repr<B> {
             B.log2_bounds()
         };
         let e = self.exponent as f32;
-        if self.exponent >= 0 {
+        let (lb, ub) = if self.exponent >= 0 {
             (logs_lb + e * logb_lb, logs_ub + e * logb_ub)
         } else {
             (logs_lb + e * logb_ub, logs_ub + e * logb_lb)
-        }
+        };
+        (next_down(lb), next_up(ub))
     }
 
     fn log2_est(&self) -> f32 {

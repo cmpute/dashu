@@ -1,8 +1,4 @@
-use dashu_base::{
-    Approximation::*,
-    ConversionError::{self, *},
-    Sign::*,
-};
+use dashu_base::{Approximation::*, ConversionError::*, Sign::*};
 use dashu_int::{IBig, UBig};
 use std::convert::TryFrom;
 
@@ -120,7 +116,7 @@ fn test_ubig_to_signed() {
 
 #[test]
 fn test_ibig_from_unsigned() {
-    assert_eq!(IBig::from(0u32), IBig::from(UBig::from(0u32)));
+    assert_eq!(IBig::ZERO, IBig::from(UBig::ZERO));
     assert_eq!(IBig::from(100u32), IBig::from(UBig::from(100u32)));
 }
 
@@ -132,14 +128,14 @@ fn test_ibig_from_bool() {
 
 #[test]
 fn test_ibig_from_signed() {
-    assert_eq!(IBig::from(0i32), IBig::from(UBig::from(0u32)));
+    assert_eq!(IBig::ZERO, IBig::from(UBig::ZERO));
     assert_eq!(IBig::from(100i32), IBig::from(UBig::from(100u32)));
     assert_eq!(IBig::from(-0xeei32).in_radix(16).to_string(), "-ee");
 }
 
 #[test]
 fn test_ibig_to_unsigned() {
-    assert_eq!(u8::try_from(IBig::from(0i32)), Ok(0u8));
+    assert_eq!(u8::try_from(IBig::ZERO), Ok(0u8));
     assert_eq!(u8::try_from(IBig::from(0x7fi32)), Ok(0x7fu8));
     assert_eq!(u8::try_from(&IBig::from(0xffi32)), Ok(0xffu8));
     assert!(u8::try_from(IBig::from(0x100i32)).is_err());
@@ -150,7 +146,7 @@ fn test_ibig_to_unsigned() {
 
 #[test]
 fn test_ibig_to_signed() {
-    assert_eq!(i8::try_from(IBig::from(0i32)), Ok(0i8));
+    assert_eq!(i8::try_from(IBig::ZERO), Ok(0i8));
     assert_eq!(i8::try_from(&IBig::from(0x7fi32)), Ok(0x7fi8));
     assert!(i8::try_from(IBig::from(0x80i32)).is_err());
     assert!(i8::try_from(IBig::from(0xffi32)).is_err());
@@ -164,21 +160,15 @@ fn test_ibig_to_signed() {
 
 #[test]
 fn test_ubig_to_ibig() {
-    assert_eq!(IBig::from(UBig::from(0u32)), IBig::from(0i32));
+    assert_eq!(IBig::from(UBig::ZERO), IBig::ZERO);
     assert_eq!(IBig::from(UBig::from(100u32)), IBig::from(100i32));
 }
 
 #[test]
 fn test_ibig_to_ubig() {
-    assert_eq!(UBig::try_from(IBig::from(0i32)), Ok(UBig::from(0u32)));
+    assert_eq!(UBig::try_from(IBig::ZERO), Ok(UBig::ZERO));
     assert_eq!(UBig::try_from(IBig::from(1000i32)), Ok(UBig::from(1000u32)));
     assert!(UBig::try_from(IBig::from(-1000i32)).is_err());
-}
-
-#[test]
-fn test_default() {
-    assert_eq!(UBig::default(), ubig!(0));
-    assert_eq!(IBig::default(), ibig!(0));
 }
 
 #[test]
@@ -195,9 +185,9 @@ fn test_to_f32() {
     assert_eq!(f32::try_from(ubig!(0x1000000)).unwrap(), 16777216.0f32);
     // Now round to even should begin.
     assert_eq!(ubig!(0x1000001).to_f32(), Inexact(16777216.0f32, Negative));
-    assert_eq!(f32::try_from(ubig!(0x1000001)), Err(ConversionError::LossOfPrecision));
+    assert_eq!(f32::try_from(ubig!(0x1000001)), Err(LossOfPrecision));
     assert_eq!(ubig!(0x1000002).to_f32(), Exact(16777218.0f32));
-    assert_eq!(f32::try_from(ubig!(0x1000002)), Err(ConversionError::LossOfPrecision));
+    assert_eq!(f32::try_from(ubig!(0x1000002)), Err(LossOfPrecision));
     assert_eq!(ubig!(0x1000003).to_f32(), Inexact(16777220.0f32, Positive));
     assert_eq!(ubig!(0x1000004).to_f32(), Exact(16777220.0f32));
     assert_eq!(ubig!(0x1000005).to_f32(), Inexact(16777220.0f32, Negative));
@@ -274,9 +264,9 @@ fn test_to_f64() {
     assert_eq!(f64::try_from(ubig!(0x20000000000000)).unwrap(), 9007199254740992.0f64);
     // Now round to even should begin.
     assert_eq!(ubig!(0x20000000000001).to_f64(), Inexact(9007199254740992.0f64, Negative));
-    assert_eq!(f64::try_from(ubig!(0x20000000000001)), Err(ConversionError::LossOfPrecision));
+    assert_eq!(f64::try_from(ubig!(0x20000000000001)), Err(LossOfPrecision));
     assert_eq!(ubig!(0x20000000000002).to_f64(), Exact(9007199254740994.0f64));
-    assert_eq!(f64::try_from(ubig!(0x20000000000002)), Err(ConversionError::LossOfPrecision));
+    assert_eq!(f64::try_from(ubig!(0x20000000000002)), Err(LossOfPrecision));
     assert_eq!(ubig!(0x20000000000003).to_f64(), Inexact(9007199254740996.0f64, Positive));
     assert_eq!(ubig!(0x20000000000004).to_f64(), Exact(9007199254740996.0f64));
     assert_eq!(ubig!(0x20000000000005).to_f64(), Inexact(9007199254740996.0f64, Negative));

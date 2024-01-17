@@ -1,5 +1,5 @@
 use core::convert::TryFrom;
-use dashu_base::Approximation::*;
+use dashu_base::{Approximation::*, ConversionError::*};
 use dashu_float::{
     round::{
         mode::{HalfAway, Zero},
@@ -184,6 +184,53 @@ fn test_precision_change() {
 }
 
 #[test]
+fn test_from_unsigned() {
+    assert_eq!(FBin::from(0u8), FBin::ZERO);
+    assert_eq!(FBin::from(1u8), FBin::ONE);
+    assert_eq!(FBin::from(0x10000u32), FBin::from_parts(ibig!(0x10000), 0));
+    assert_eq!(FBin::from(0xffffffffu32), FBin::from_parts(ibig!(0xffffffff), 0));
+}
+
+#[test]
+fn test_to_unsigned() {
+    assert_eq!(u8::try_from(FBin::ZERO), Ok(0u8));
+    assert_eq!(u8::try_from(FBin::ONE), Ok(1u8));
+    assert_eq!(u8::try_from(FBin::ONE << 1), Ok(2u8));
+    assert_eq!(u8::try_from(FBin::ONE >> 1), Err(LossOfPrecision));
+    assert_eq!(u8::try_from(FBin::NEG_ONE), Err(OutOfBounds));
+    assert_eq!(u8::try_from(FBin::from_parts(u8::MAX.into(), 0)), Ok(u8::MAX));
+    assert_eq!(u8::try_from(FBin::ONE << 8), Err(OutOfBounds));
+    assert_eq!(u128::try_from(FBin::from_parts(u128::MAX.into(), 0)), Ok(u128::MAX));
+    assert_eq!(u128::try_from(FBin::ONE << 128), Err(OutOfBounds));
+    assert_eq!(u8::try_from(FBin::INFINITY), Err(OutOfBounds));
+    assert_eq!(u128::try_from(FBin::NEG_INFINITY), Err(OutOfBounds));
+}
+
+#[test]
+fn test_from_signed() {
+    assert_eq!(FBin::from(0i8), FBin::ZERO);
+    assert_eq!(FBin::from(1i8), FBin::ONE);
+    assert_eq!(FBin::from(-1i8), FBin::NEG_ONE);
+    assert_eq!(FBin::from(-0x10000i32), FBin::from_parts(ibig!(-0x10000), 0));
+    assert_eq!(FBin::from(i32::MIN), FBin::from_parts(ibig!(-0x80000000), 0));
+}
+
+#[test]
+fn test_to_signed() {
+    assert_eq!(i8::try_from(FBin::ZERO), Ok(0i8));
+    assert_eq!(i8::try_from(FBin::ONE), Ok(1i8));
+    assert_eq!(i8::try_from(FBin::NEG_ONE << 1), Ok(-2i8));
+    assert_eq!(i8::try_from(FBin::ONE >> 1), Err(LossOfPrecision));
+    assert_eq!(i8::try_from(FBin::from_parts(i8::MAX.into(), 0)), Ok(i8::MAX));
+    assert_eq!(i8::try_from(FBin::ONE << 7), Err(OutOfBounds));
+    assert_eq!(i128::try_from(FBin::from_parts(i128::MAX.into(), 0)), Ok(i128::MAX));
+    assert_eq!(i128::try_from(FBin::from_parts(i128::MIN.into(), 0)), Ok(i128::MIN));
+    assert_eq!(i128::try_from(FBin::ONE << 127), Err(OutOfBounds));
+    assert_eq!(i8::try_from(FBin::INFINITY), Err(OutOfBounds));
+    assert_eq!(i128::try_from(FBin::NEG_INFINITY), Err(OutOfBounds));
+}
+
+#[test]
 #[rustfmt::skip::macros(fbig)]
 fn test_from_f32() {
     assert_eq!(FBin::try_from(0f32).unwrap(), fbig!(0x0));
@@ -262,34 +309,61 @@ fn test_inf_to_int() {
 #[test]
 #[rustfmt::skip::macros(fbig)]
 fn test_to_f32() {
-    assert_eq!(fbig!(0x0).to_f32(), Exact(0.));
-    assert_eq!(fbig!(0x1).to_f32(), Exact(1.));
-    assert_eq!(fbig!(-0x1).to_f32(), Exact(-1.));
-    assert_eq!(fbig!(-0x1234).to_f32(), Exact(-4660.));
-    assert_eq!(fbig!(0x1234p-3).to_f32(), Exact(582.5));
-    assert_eq!(fbig!(0x1234p-16).to_f32(), Exact(0.07110596));
-    // exact value: 3.8549410571968246689670642581279215812574412414193147924379... × 10^-21
-    assert_eq!(fbig!(0x123456789p-100).to_f32(), Inexact(3.8549407e-21, NoOp)); // round toward zero
-    assert_eq!(fbig!(0x123456789p-100).repr().to_f32(), Inexact(3.854941e-21, AddOne)); // round to even
-                                                                                        // exact value: -46078879240071936454164480
-    assert_eq!(fbig!(-0x987654321p50).to_f32(), Inexact(-4.607888e25, NoOp));
+    let fbig_cases = [
+        // fbig value, f32 value, conversion error
+        (fbig!(0x0), Exact(0.), None),
+        (fbig!(0x1), Exact(1.), None),
+        (fbig!(-0x1), Exact(-1.), None),
+        (fbig!(-0x1234), Exact(-4660.), None),
+        (fbig!(0x1234p-3), Exact(582.5), None),
+        (fbig!(0x1234p-16), Exact(0.07110596), None),
+        // exact value: 3.8549410571968246689670642581279215812574412414193147924379... × 10^-21
+        (fbig!(0x123456789p-100), Inexact(3.8549407e-21, NoOp), Some(LossOfPrecision)),
+        (fbig!(-0x987654321p50), Inexact(-4.607888e25, NoOp), Some(LossOfPrecision)),
+    ];
+    for (big, small, reason) in fbig_cases {
+        assert_eq!(big.to_f32(), small);
+        if let Some(reason) = reason {
+            assert_eq!(f32::try_from(big), Err(reason));
+        } else {
+            assert_eq!(f32::try_from(big), Ok(small.value()));
+        }
+    }
 
+    // some Repr cases, all round to even
+    assert_eq!(fbig!(0x123456789p-100).repr().to_f32(), Inexact(3.854941e-21, AddOne));
+
+    // boundary cases
     assert_eq!(FBig::<Zero, 2>::INFINITY.to_f32(), Inexact(f32::INFINITY, NoOp));
     assert_eq!(FBig::<Zero, 2>::NEG_INFINITY.to_f32(), Inexact(f32::NEG_INFINITY, NoOp));
+    assert_eq!(f32::try_from(FBig::<Zero, 2>::INFINITY), Err(LossOfPrecision));
+    assert_eq!(f32::try_from(FBig::<Zero, 2>::NEG_INFINITY), Err(LossOfPrecision));
     assert_eq!(fbig!(0x1p200).to_f32(), Inexact(f32::INFINITY, AddOne)); // overflow
     assert_eq!(fbig!(-0x1p200).to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
+    assert_eq!(f32::try_from(fbig!(0x1p200)), Err(OutOfBounds));
+    assert_eq!(f32::try_from(fbig!(-0x1p200)), Err(OutOfBounds));
     assert_eq!(fbig!(0x1p128).to_f32(), Inexact(f32::INFINITY, AddOne)); // boundary for overflow
     assert_eq!(fbig!(-0x1p128).to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
+    assert_eq!(f32::try_from(fbig!(0x1p128)), Err(OutOfBounds));
+    assert_eq!(f32::try_from(fbig!(-0x1p128)), Err(OutOfBounds));
     assert_eq!(fbig!(0xffffffffp96).to_f32(), Inexact(f32::MAX, NoOp));
     assert_eq!(fbig!(0xffffffffp96).repr().to_f32(), Inexact(f32::INFINITY, AddOne));
+    assert_eq!(f32::try_from(fbig!(0xffffffffp96)), Err(LossOfPrecision));
+    assert_eq!(f32::try_from(fbig!(0xffffffffp96).into_repr()), Err(OutOfBounds));
     assert_eq!(fbig!(-0xffffffffp96).to_f32(), Inexact(f32::MIN, NoOp));
     assert_eq!(fbig!(-0xffffffffp96).repr().to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
+    assert_eq!(f32::try_from(fbig!(0xffffffffp96)), Err(LossOfPrecision));
+    assert_eq!(f32::try_from(fbig!(0xffffffffp96).into_repr()), Err(OutOfBounds));
     assert_eq!(fbig!(0x1p-140).to_f32(), Exact(f32::from_bits(0x200))); // subnormal
     assert_eq!(fbig!(-0x1p-140).to_f32(), Exact(-f32::from_bits(0x200)));
     assert_eq!(fbig!(0x1p-149).to_f32(), Exact(f32::from_bits(0x1)));
     assert_eq!(fbig!(-0x1p-149).to_f32(), Exact(-f32::from_bits(0x1)));
+    assert_eq!(f32::try_from(fbig!(0x1p-149)).unwrap(), f32::from_bits(0x1));
+    assert_eq!(f32::try_from(fbig!(-0x1p-149)).unwrap(), -f32::from_bits(0x1));
     assert_eq!(fbig!(0x1p-150).to_f32(), Inexact(0f32, NoOp)); // boundary for underflow
     assert_eq!(fbig!(-0x1p-150).to_f32(), Inexact(-0f32, NoOp));
+    assert_eq!(f32::try_from(fbig!(0x1p-150)), Err(LossOfPrecision));
+    assert_eq!(f32::try_from(fbig!(-0x1p-150)), Err(LossOfPrecision));
     assert_eq!(fbig!(0xffffffffp-182).to_f32(), Inexact(0f32, NoOp));
     assert_eq!(fbig!(-0xffffffffp-182).to_f32(), Inexact(-0f32, NoOp));
 }
@@ -297,41 +371,64 @@ fn test_to_f32() {
 #[test]
 #[rustfmt::skip::macros(fbig)]
 fn test_to_f64() {
-    assert_eq!(fbig!(0x0).to_f64(), Exact(0.));
-    assert_eq!(fbig!(0x1).to_f64(), Exact(1.));
-    assert_eq!(fbig!(-0x1).to_f64(), Exact(-1.));
-    assert_eq!(fbig!(-0x1234).to_f64(), Exact(-4660.));
-    assert_eq!(fbig!(0x1234p-3).to_f64(), Exact(582.5));
-    assert_eq!(fbig!(0x1234p-16).to_f64(), Exact(0.07110595703125));
-    assert_eq!(fbig!(0x123456789p-100).to_f64(), Exact(3.854941057196825e-21));
-    assert_eq!(fbig!(-0x987654321p50).to_f64(), Exact(-4.607887924007194e25));
-    // exact value: 3.3436283752161326232549204599099774676691163414240905497490... × 10^-39
-    assert_eq!(
-        fbig!(0x1234567890123456789p-200).to_f64(),
-        Inexact(3.3436283752161324e-39, NoOp)
-    );
-    // exact value: 72310453210697978489701299687443815627510656356042859969687735028883143242326999040
-    assert_eq!(
-        fbig!(-0x9876543210987654321p200).to_f64(),
-        Inexact(-7.231045321069798e82, SubOne)
-    );
+    let fbig_cases = [
+        // fbig value, f64 value, conversion error
+        (fbig!(0x0), Exact(0.), None),
+        (fbig!(0x1), Exact(1.), None),
+        (fbig!(-0x1), Exact(-1.), None),
+        (fbig!(-0x1234), Exact(-4660.), None),
+        (fbig!(0x1234p-3), Exact(582.5), None),
+        (fbig!(0x1234p-16), Exact(0.07110595703125), None),
+        (fbig!(0x123456789p-100), Exact(3.854941057196825e-21), None),
+        (fbig!(-0x987654321p50), Exact(-4.607887924007194e25), None),
+        // exact value: 3.3436283752161326232549204599099774676691163414240905497490... × 10^-39
+        (
+            fbig!(0x1234567890123456789p-200),
+            Inexact(3.3436283752161324e-39, NoOp),
+            Some(LossOfPrecision),
+        ),
+        // exact value: 72310453210697978489701299687443815627510656356042859969687735028883143242326999040
+        (
+            fbig!(-0x9876543210987654321p200),
+            Inexact(-7.231045321069798e82, SubOne),
+            Some(LossOfPrecision),
+        ),
+    ];
+    for (big, small, reason) in fbig_cases {
+        assert_eq!(big.to_f64(), small);
+        if let Some(reason) = reason {
+            assert_eq!(f64::try_from(big), Err(reason));
+        } else {
+            assert_eq!(f64::try_from(big), Ok(small.value()));
+        }
+    }
 
     assert_eq!(FBig::<Zero, 2>::INFINITY.to_f64(), Inexact(f64::INFINITY, NoOp));
     assert_eq!(FBig::<Zero, 2>::NEG_INFINITY.to_f64(), Inexact(f64::NEG_INFINITY, NoOp));
+    assert_eq!(f64::try_from(FBig::<Zero, 2>::INFINITY), Err(LossOfPrecision));
+    assert_eq!(f64::try_from(FBig::<Zero, 2>::NEG_INFINITY), Err(LossOfPrecision));
     assert_eq!(fbig!(0x1p2000).to_f64(), Inexact(f64::INFINITY, AddOne)); // overflow
     assert_eq!(fbig!(-0x1p2000).to_f64(), Inexact(f64::NEG_INFINITY, SubOne));
-    assert_eq!(fbig!(0x1p1024).to_f32(), Inexact(f32::INFINITY, AddOne)); // boundary for overflow
-    assert_eq!(fbig!(-0x1p1024).to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
-    assert_eq!(fbig!(0xffffffffffffffffp960).to_f32(), Inexact(f32::INFINITY, AddOne));
-    assert_eq!(fbig!(-0xffffffffffffffffp960).to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
+    assert_eq!(f64::try_from(fbig!(0x1p2000)), Err(OutOfBounds));
+    assert_eq!(f64::try_from(fbig!(-0x1p2000)), Err(OutOfBounds));
+    assert_eq!(fbig!(0x1p1024).to_f64(), Inexact(f64::INFINITY, AddOne)); // boundary for overflow
+    assert_eq!(fbig!(-0x1p1024).to_f64(), Inexact(f64::NEG_INFINITY, SubOne));
+    assert_eq!(f64::try_from(fbig!(0x1p1024)), Err(OutOfBounds));
+    assert_eq!(f64::try_from(fbig!(-0x1p1024)), Err(OutOfBounds));
+    assert_eq!(fbig!(0xffffffffffffffffp960).to_f64(), Inexact(f64::INFINITY, AddOne));
+    assert_eq!(fbig!(-0xffffffffffffffffp960).to_f64(), Inexact(f64::NEG_INFINITY, SubOne));
     assert_eq!(fbig!(0x1p-1060).to_f64(), Exact(f64::from_bits(0x4000))); // subnormal
     assert_eq!(fbig!(-0x1p-1060).to_f64(), Exact(-f64::from_bits(0x4000)));
     assert_eq!(fbig!(0x1p-1074).to_f64(), Exact(f64::from_bits(0x1)));
     assert_eq!(fbig!(-0x1p-1074).to_f64(), Exact(-f64::from_bits(0x1)));
     assert_eq!(fbig!(0x1p-1075).to_f64(), Inexact(0f64, NoOp)); // boundary for underflow
     assert_eq!(fbig!(-0x1p-1075).to_f64(), Inexact(-0f64, NoOp));
+    assert_eq!(f64::try_from(fbig!(0x1p-1075)), Err(LossOfPrecision));
+    assert_eq!(f64::try_from(fbig!(-0x1p-1075)), Err(LossOfPrecision));
     assert_eq!(fbig!(0xffffffffffffffffp-1139).to_f64(), Inexact(0f64, NoOp));
     assert_eq!(fbig!(-0xffffffffffffffffp-1139).to_f64(), Inexact(-0f64, NoOp));
+    assert_eq!(f64::try_from(fbig!(0xffffffffffffffffp-1139)), Err(LossOfPrecision));
+    assert_eq!(f64::try_from(fbig!(-0xffffffffffffffffp-1139)), Err(LossOfPrecision));
 }
 
 #[test]

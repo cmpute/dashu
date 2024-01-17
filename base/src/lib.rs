@@ -9,6 +9,11 @@ pub mod math;
 pub mod ring;
 pub mod sign;
 
+/// Some useful utility functions that are also used internally in this crate.
+pub mod utils {
+    pub use super::math::log::{next_down, next_up};
+}
+
 pub use approx::*;
 pub use bit::*;
 pub use error::*;

@@ -93,5 +93,5 @@ pub trait CubicRoot {
 }
 
 mod inv;
-mod log;
+pub(crate) mod log;
 mod root;

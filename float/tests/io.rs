@@ -8,6 +8,12 @@ type FBin = FBig;
 type FOct = FBig<mode::Zero, 8>;
 type FHex = FBig<mode::Zero, 16>;
 
+#[test]
+fn test_default() {
+    assert_eq!(FBin::default(), fbig!(0));
+    assert_eq!(DBig::default(), dbig!(0));
+}
+
 // radix independent cases: (text, mantissa, exponent, precision)
 const FROM_STR_COMMON_CASES: [(&str, i64, isize, usize); 28] = [
     //

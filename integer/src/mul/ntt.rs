@@ -1,5 +1,7 @@
 //! Number-theoretic multiplication algorithm.
 
+// TODO(0.5): try the implementation of concrete-ntt
+
 use crate::arch::{
     ntt::{MAX_ORDER, PRIMES},
     word::Word,

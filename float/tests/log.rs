@@ -1,4 +1,4 @@
-use dashu_base::Approximation::*;
+use dashu_base::{Approximation::*, EstimatedLog2};
 use dashu_float::{round::Rounding::*, DBig, FBig};
 use dashu_int::Word;
 
@@ -228,5 +228,30 @@ fn test_ln_with_rounding() {
         test_ln_with_error::<_, Down, 2>(&base, &target, &target.ulp());
         test_ln_with_error::<_, HalfAway, 2>(&base, &target, &target.ulp());
         test_ln_with_error::<_, HalfEven, 2>(&base, &target, &target.ulp());
+    }
+}
+
+#[test]
+#[rustfmt::skip::macros(fbig)]
+fn test_log2_fbig() {
+    let test_cases = [
+        (fbig!(0x3), 1.584962500721156),
+        (fbig!(0x55p-4), 2.4093909361377017),
+        (fbig!(-0x1234567890123456789p-123), -50.81378119141385),
+        (fbig!(0x1) << 16, 16.0),
+        (fbig!(0x1) << 32, 32.0),
+        (fbig!(0x1) << 64, 64.0),
+        (fbig!(0x1) << 128, 128.0),
+        (fbig!(0xffffffff), 31.999999999664098),
+        (fbig!(0xffffffffffffffffffffffffffffffff), 128.0),
+        (fbig!(0xffffffff) << 96, 127.999999999664),
+    ];
+
+    const ERR_BOUND: f64 = 1. / 256.;
+    for (n, log2) in test_cases {
+        let (lb, ub) = n.log2_bounds();
+        let (lb, ub) = (lb as f64, ub as f64);
+        assert!(lb <= log2 && (log2 - lb) / log2 < ERR_BOUND);
+        assert!(ub >= log2 && (ub - log2) / log2 < ERR_BOUND);
     }
 }

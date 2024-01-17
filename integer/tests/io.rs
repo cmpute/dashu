@@ -4,6 +4,12 @@ use dashu_int::{IBig, UBig, Word};
 mod helper_macros;
 
 #[test]
+fn test_default() {
+    assert_eq!(UBig::default(), ubig!(0));
+    assert_eq!(IBig::default(), ibig!(0));
+}
+
+#[test]
 fn test_ubig_format() {
     assert_eq!(format!("{}", UBig::from(u8::MAX)), "255");
     assert_eq!(format!("{}", UBig::from(u16::MAX)), "65535");

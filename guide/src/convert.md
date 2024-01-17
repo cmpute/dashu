@@ -35,16 +35,6 @@ Another useful conversion is `UBig::as_ibig()`. Due to the fact that `UBig` and 
 
 Besides these methods designed for conversions, the constructors and destructors can also be used for the purpose of type conversion, especially from compound types to its parts. Please refer to the [Construction and Destruction](./construct.md#Construct_from_Parts) page for this approach.
 
-
-## Conversion for FBig/DBig
-
-TODO: `with_rounding`, `with_precision`, `with_base`, `to_binary`, `to_decimal`, etc.
-(how precision is determined)
-
-## Conversion from Floats to RBig
-
-TODO: `simplest_in()`, `simplest_from_*()`, `.nearest_in()`, `next_up()`, `next_down()`, etc.
-
 # Conversion between Big Numbers and Primitives
 
 All the numeric types in the `dashu` crates support conversion from and to primitive types.
@@ -70,3 +60,22 @@ To convert from big numbers to primitive numbers:
 | RBig      | TryInto      | TryInto      | TryInto/`.to_f*()`/`.to_f*_fast()` |
 
 In the table above, `.to_f*()` denotes `.to_f32()` and `.to_f64()`, similarly `.to_f*_fast()` denotes `.to_f32_fast()` and `.to_f64_fast()`. The *fast* methods don't guarantee corrent rounding so that they can be faster. It's recommended to use the `.to_f*()` methods over the `TryFrom`/`TryInto` trait, because `.to_f*()` will not fail and it also returns the rounding direction during the conversion (i.e. the sign of the rounding error).
+
+The conversions from and to primitive numbers are also implemented for the `dashu_float::Repr` type. Especially `.to_f32()` and `.to_f64()` are implemented which follows the default IEEE rounding mode.
+
+
+## Conversion for FBig/DBig
+
+
+## Conversion to different base / precision / rounding mode
+
+TODO: `with_rounding`, `with_precision`, `with_base`, `to_binary`, `to_decimal`, etc.
+(how precision is determined)
+
+## Conversion to integers or primitive floats
+
+TODO: convert from UBig/IBig to FBig, the precision will be inferred. convert from FBig to UBig/IBig
+
+## Conversion to RBig
+
+TODO: `simplest_in()`, `simplest_from_*()`, `.nearest_in()`, `next_up()`, `next_down()`, etc.
