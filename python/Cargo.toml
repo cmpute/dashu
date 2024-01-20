@@ -1,0 +1,33 @@
+[package]
+name = "dashu-python"
+version = "0.0.1"
+authors = ["Jacob Zhong <cmpute@gmail.com>"]
+edition = "2021"
+description = "Python binding for the dashu numeric types"
+keywords = ["mathematics", "numerics"]
+categories = ["mathematics", "no-std"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/cmpute/dashu"
+homepage = "https://github.com/cmpute/dashu"
+documentation = "https://docs.rs/dashu-python"
+readme = "README.md"
+rust-version = "1.61"
+
+[package.metadata.docs.rs]
+all-features = true
+
+[dependencies]
+dashu-base = { version = "0.4.0", default-features = false, path = "../base" }
+dashu-int = { version = "0.4.1", default-features = false, path = "../integer" }
+dashu-float = { version = "0.4.2", default-features = false, path = "../float" }
+dashu-ratio = { version = "0.4.1", default-features = false, path = "../rational", features = ['dashu-float'] }
+
+_num-modular = { optional = true, version = "0.6.1", package = "num-modular", default-features = false }
+
+[dependencies.pyo3]
+version = "0.20"
+features = ["extension-module"]
+
+[lib]
+name = "dashu"
+crate-type = ["cdylib"]
