@@ -17,10 +17,11 @@ rust-version = "1.61"
 all-features = true
 
 [dependencies]
-dashu-base = { version = "0.4.0", default-features = false, path = "../base" }
-dashu-int = { version = "0.4.1", default-features = false, path = "../integer" }
-dashu-float = { version = "0.4.2", default-features = false, path = "../float" }
-dashu-ratio = { version = "0.4.1", default-features = false, path = "../rational", features = ['dashu-float'] }
+dashu-base = { version = "0.4.0", path = "../base", features = ["std"]}
+dashu-int = { version = "0.4.1", path = "../integer", features = ["std", "num-order"] }
+dashu-float = { version = "0.4.2", path = "../float", features = ["std", "num-order"] }
+dashu-ratio = { version = "0.4.1", path = "../rational", features = ["std", "num-order", "dashu-float"] }
+num-order = "1.2.0"
 
 _num-modular = { optional = true, version = "0.6.1", package = "num-modular", default-features = false }
 

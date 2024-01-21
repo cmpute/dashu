@@ -9,6 +9,8 @@ use pyo3::prelude::*;
 /// import the module.
 #[pymodule]
 fn dashu(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<types::PySign>()?;
+    m.add_class::<types::PyWords>()?;
     m.add_class::<types::UPy>()?;
     m.add_class::<types::IPy>()?;
     m.add_class::<types::FPy>()?;
