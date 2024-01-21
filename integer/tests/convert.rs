@@ -8,22 +8,44 @@ mod helper_macros;
 fn test_from_to_le_bytes() {
     let empty: [u8; 0] = [];
     assert_eq!(*UBig::from_le_bytes(&[]).to_le_bytes(), empty);
+    assert_eq!(*UBig::ONE.to_le_bytes(), [1]);
     assert_eq!(*UBig::from_le_bytes(&[0; 100]).to_le_bytes(), empty);
     assert_eq!(*UBig::from_le_bytes(&[1, 2, 3, 0]).to_le_bytes(), [1, 2, 3]);
     let bytes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
     assert_eq!(*UBig::from_le_bytes(&bytes).to_le_bytes(), bytes);
+
+    assert_eq!(*IBig::ONE.to_le_bytes(), [1]);
+    assert_eq!(*IBig::ZERO.to_le_bytes(), empty);
+    assert_eq!(*IBig::NEG_ONE.to_le_bytes(), [255]);
+    assert_eq!(IBig::from_le_bytes(&[255]), IBig::NEG_ONE);
+    assert_eq!(IBig::from_le_bytes(&[255; 100]), IBig::NEG_ONE);
+    let bytes = [
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 217,
+    ];
+    assert_eq!(*IBig::from_le_bytes(&bytes).to_le_bytes(), bytes);
 }
 
 #[test]
 fn test_from_to_be_bytes() {
     let empty: [u8; 0] = [];
     assert_eq!(*UBig::from_be_bytes(&[]).to_be_bytes(), empty);
+    assert_eq!(*UBig::ONE.to_be_bytes(), [1]);
     assert_eq!(*UBig::from_be_bytes(&[0; 100]).to_be_bytes(), empty);
     assert_eq!(*UBig::from_be_bytes(&[0, 1, 2, 3]).to_be_bytes(), [1, 2, 3]);
     let bytes = [
         100, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
     ];
     assert_eq!(*UBig::from_be_bytes(&bytes).to_be_bytes(), bytes);
+
+    assert_eq!(*IBig::ONE.to_be_bytes(), [1]);
+    assert_eq!(*IBig::ZERO.to_be_bytes(), empty);
+    assert_eq!(*IBig::NEG_ONE.to_be_bytes(), [255]);
+    assert_eq!(IBig::from_be_bytes(&[255]), IBig::NEG_ONE);
+    assert_eq!(IBig::from_be_bytes(&[255; 100]), IBig::NEG_ONE);
+    let bytes = [
+        200, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+    ];
+    assert_eq!(*IBig::from_be_bytes(&bytes).to_be_bytes(), bytes);
 }
 
 #[test]

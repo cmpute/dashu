@@ -37,7 +37,7 @@ postgres-types_v02 = ["dep:postgres-types_v02", "dep:_bytes", "std"]
 [dependencies]
 dashu-base = { version = "0.4.0", default-features = false, path = "../base" }
 dashu-int = { version = "0.4.1", default-features = false, path = "../integer" }
-static_assertions = { version = "1.1"}
+static_assertions = { version = "1.1" }
 
 # stable dependencies
 rustversion = "1.0.0"

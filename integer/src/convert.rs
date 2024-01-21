@@ -1,11 +1,16 @@
 //! Conversions between types.
 
 use crate::{
+    add,
     arch::word::{DoubleWord, Word},
     buffer::Buffer,
+    helper_macros::debug_assert_zero,
     ibig::IBig,
     primitive::{self, PrimitiveSigned, PrimitiveUnsigned, DWORD_BYTES, WORD_BITS, WORD_BYTES},
-    repr::{Repr, TypedReprRef::*},
+    repr::{
+        Repr,
+        TypedReprRef::{self, *},
+    },
     ubig::UBig,
     Sign::*,
 };
@@ -32,7 +37,7 @@ impl Default for IBig {
     }
 }
 
-pub(crate) fn words_to_le_bytes(words: &[Word]) -> Vec<u8> {
+fn words_to_le_bytes<const FLIP: bool>(words: &[Word]) -> Vec<u8> {
     debug_assert!(!words.is_empty());
 
     let n = words.len();
@@ -40,78 +45,226 @@ pub(crate) fn words_to_le_bytes(words: &[Word]) -> Vec<u8> {
     let skip_last_bytes = last.leading_zeros() as usize / 8;
     let mut bytes = Vec::with_capacity(n * WORD_BYTES - skip_last_bytes);
     for word in &words[..n - 1] {
+        let word = if FLIP { !*word } else { *word };
         bytes.extend_from_slice(&word.to_le_bytes());
     }
+    let last = if FLIP { !last } else { last };
     let last_bytes = last.to_le_bytes();
     bytes.extend_from_slice(&last_bytes[..WORD_BYTES - skip_last_bytes]);
     bytes
 }
 
-pub(crate) fn words_to_be_bytes(words: &[Word]) -> Vec<u8> {
+fn words_to_be_bytes<const FLIP: bool>(words: &[Word]) -> Vec<u8> {
     debug_assert!(!words.is_empty());
 
     let n = words.len();
     let last = words[n - 1];
     let skip_last_bytes = last.leading_zeros() as usize / 8;
     let mut bytes = Vec::with_capacity(n * WORD_BYTES - skip_last_bytes);
+    let last = if FLIP { !last } else { last };
     let last_bytes = last.to_be_bytes();
     bytes.extend_from_slice(&last_bytes[skip_last_bytes..]);
     for word in words[..n - 1].iter().rev() {
+        let word = if FLIP { !*word } else { *word };
         bytes.extend_from_slice(&word.to_be_bytes());
     }
     bytes
 }
 
-impl Repr {
-    #[inline]
-    pub fn from_le_bytes(bytes: &[u8]) -> Repr {
-        if bytes.len() <= WORD_BYTES {
-            // fast path
-            Self::from_word(primitive::word_from_le_bytes_partial(bytes))
-        } else if bytes.len() <= DWORD_BYTES {
-            Self::from_dword(primitive::dword_from_le_bytes_partial(bytes))
-        } else {
-            // slow path
-            Self::from_le_bytes_large(bytes)
+impl TypedReprRef<'_> {
+    fn to_le_bytes(self) -> Vec<u8> {
+        match self {
+            RefSmall(x) => {
+                let bytes = x.to_le_bytes();
+                let skip_bytes = x.leading_zeros() as usize / 8;
+                bytes[..DWORD_BYTES - skip_bytes].into()
+            }
+            RefLarge(words) => words_to_le_bytes::<false>(words),
         }
     }
 
-    pub fn from_le_bytes_large(bytes: &[u8]) -> Repr {
+    fn to_signed_le_bytes(self, negate: bool) -> Vec<u8> {
+        // make sure to return empty for zero
+        if let RefSmall(v) = self {
+            if v == 0 {
+                return Vec::new();
+            }
+        }
+
+        let mut bytes = if negate {
+            match self {
+                RefSmall(x) => {
+                    let bytes = (!x + 1).to_le_bytes();
+                    let skip_bytes = x.leading_zeros() as usize / 8;
+                    bytes[..DWORD_BYTES - skip_bytes].into()
+                }
+                RefLarge(words) => {
+                    let mut buffer = Buffer::from(words);
+                    debug_assert_zero!(add::sub_one_in_place(&mut buffer));
+                    words_to_le_bytes::<true>(&buffer)
+                }
+            }
+        } else {
+            self.to_le_bytes()
+        };
+
+        let leading_zeros = match self {
+            RefSmall(x) => x.leading_zeros(),
+            RefLarge(words) => words.last().unwrap().leading_zeros(),
+        };
+        if leading_zeros % 8 == 0 {
+            // add extra byte representing the sign, because the top bit is used
+            bytes.push(if negate { 0xff } else { 0 });
+        }
+
+        bytes
+    }
+
+    fn to_be_bytes(self) -> Vec<u8> {
+        match self {
+            RefSmall(x) => {
+                let bytes = x.to_be_bytes();
+                let skip_bytes = x.leading_zeros() as usize / 8;
+                bytes[skip_bytes..].into()
+            }
+            RefLarge(words) => words_to_be_bytes::<false>(words),
+        }
+    }
+
+    fn to_signed_be_bytes(self, negate: bool) -> Vec<u8> {
+        // make sure to return empty for zero
+        if let RefSmall(v) = self {
+            if v == 0 {
+                return Vec::new();
+            }
+        }
+
+        let mut bytes = if negate {
+            match self {
+                RefSmall(x) => {
+                    let bytes = (!x + 1).to_be_bytes();
+                    let skip_bytes = x.leading_zeros() as usize / 8;
+                    bytes[skip_bytes..].into()
+                }
+                RefLarge(words) => {
+                    let mut buffer = Buffer::from(words);
+                    debug_assert_zero!(add::sub_one_in_place(&mut buffer));
+                    words_to_be_bytes::<true>(&buffer)
+                }
+            }
+        } else {
+            self.to_be_bytes()
+        };
+
+        let leading_zeros = match self {
+            RefSmall(x) => x.leading_zeros(),
+            RefLarge(words) => words.last().unwrap().leading_zeros(),
+        };
+        if leading_zeros % 8 == 0 {
+            // add extra byte representing the sign, because the top bit is used
+            bytes.insert(0, if negate { 0xff } else { 0 });
+        }
+
+        bytes
+    }
+}
+
+impl Repr {
+    fn from_le_bytes(bytes: &[u8]) -> Self {
+        if bytes.len() <= DWORD_BYTES {
+            // fast path
+            Self::from_dword(primitive::dword_from_le_bytes_partial::<false>(bytes))
+        } else {
+            // slow path
+            Self::from_le_bytes_large::<false>(bytes)
+        }
+    }
+
+    fn from_signed_le_bytes(bytes: &[u8]) -> Self {
+        if let Some(v) = bytes.last() {
+            if *v < 0x80 {
+                return Self::from_le_bytes(bytes);
+            }
+        } else {
+            return Self::zero();
+        }
+
+        // negative
+        let repr = if bytes.len() <= DWORD_BYTES {
+            // fast path
+            let dword = primitive::dword_from_le_bytes_partial::<true>(bytes);
+            Self::from_dword(!dword + 1)
+        } else {
+            // slow path
+            Self::from_le_bytes_large::<true>(bytes)
+        };
+        repr.with_sign(Sign::Negative)
+    }
+
+    fn from_le_bytes_large<const NEG: bool>(bytes: &[u8]) -> Self {
         debug_assert!(bytes.len() >= DWORD_BYTES);
         let mut buffer = Buffer::allocate((bytes.len() - 1) / WORD_BYTES + 1);
         let mut chunks = bytes.chunks_exact(WORD_BYTES);
         for chunk in &mut chunks {
-            buffer.push(Word::from_le_bytes(chunk.try_into().unwrap()));
+            let word = Word::from_le_bytes(chunk.try_into().unwrap());
+            buffer.push(if NEG { !word } else { word });
         }
         if !chunks.remainder().is_empty() {
-            buffer.push(primitive::word_from_le_bytes_partial(chunks.remainder()));
+            let word = primitive::word_from_le_bytes_partial::<NEG>(chunks.remainder());
+            buffer.push(if NEG { !word } else { word });
         }
-        Repr::from_buffer(buffer)
+        if NEG {
+            debug_assert_zero!(add::add_one_in_place(&mut buffer));
+        }
+        Self::from_buffer(buffer)
     }
 
-    pub fn from_be_bytes(bytes: &[u8]) -> Repr {
-        if bytes.len() <= WORD_BYTES {
-            // fast path
-            Repr::from_word(primitive::word_from_be_bytes_partial(bytes))
-        } else if bytes.len() <= DWORD_BYTES {
-            Repr::from_dword(primitive::dword_from_be_bytes_partial(bytes))
+    fn from_be_bytes(bytes: &[u8]) -> Self {
+        if bytes.len() <= DWORD_BYTES {
+            Self::from_dword(primitive::dword_from_be_bytes_partial::<false>(bytes))
         } else {
             // slow path
-            Self::from_be_bytes_large(bytes)
+            Self::from_be_bytes_large::<false>(bytes)
         }
     }
 
-    pub fn from_be_bytes_large(bytes: &[u8]) -> Repr {
+    fn from_signed_be_bytes(bytes: &[u8]) -> Self {
+        if let Some(v) = bytes.first() {
+            if *v < 0x80 {
+                return Self::from_be_bytes(bytes);
+            }
+        } else {
+            return Self::zero();
+        }
+
+        // negative
+        let repr = if bytes.len() <= DWORD_BYTES {
+            // fast path
+            let dword = primitive::dword_from_be_bytes_partial::<true>(bytes);
+            Self::from_dword(!dword + 1)
+        } else {
+            // slow path
+            Self::from_be_bytes_large::<true>(bytes)
+        };
+        repr.with_sign(Sign::Negative)
+    }
+
+    fn from_be_bytes_large<const NEG: bool>(bytes: &[u8]) -> Self {
         debug_assert!(bytes.len() >= DWORD_BYTES);
         let mut buffer = Buffer::allocate((bytes.len() - 1) / WORD_BYTES + 1);
         let mut chunks = bytes.rchunks_exact(WORD_BYTES);
         for chunk in &mut chunks {
-            buffer.push(Word::from_be_bytes(chunk.try_into().unwrap()));
+            let word = Word::from_be_bytes(chunk.try_into().unwrap());
+            buffer.push(if NEG { !word } else { word });
         }
         if !chunks.remainder().is_empty() {
-            buffer.push(primitive::word_from_be_bytes_partial(chunks.remainder()));
+            let word = primitive::word_from_be_bytes_partial::<NEG>(chunks.remainder());
+            buffer.push(if NEG { !word } else { word });
         }
-        Repr::from_buffer(buffer)
+        if NEG {
+            debug_assert_zero!(add::add_one_in_place(&mut buffer));
+        }
+        Self::from_buffer(buffer)
     }
 }
 
@@ -152,14 +305,7 @@ impl UBig {
     /// assert_eq!(*UBig::from(0x010203u32).to_le_bytes(), [3, 2, 1]);
     /// ```
     pub fn to_le_bytes(&self) -> Box<[u8]> {
-        match self.repr() {
-            RefSmall(x) => {
-                let bytes = x.to_le_bytes();
-                let skip_bytes = x.leading_zeros() as usize / 8;
-                bytes[..DWORD_BYTES - skip_bytes].into()
-            }
-            RefLarge(words) => words_to_le_bytes(words).into_boxed_slice(),
-        }
+        self.repr().to_le_bytes().into_boxed_slice()
     }
 
     /// Return big-endian bytes.
@@ -172,14 +318,7 @@ impl UBig {
     /// assert_eq!(*UBig::from(0x010203u32).to_be_bytes(), [1, 2, 3]);
     /// ```
     pub fn to_be_bytes(&self) -> Box<[u8]> {
-        match self.repr() {
-            RefSmall(x) => {
-                let bytes = x.to_be_bytes();
-                let skip_bytes = x.leading_zeros() as usize / 8;
-                bytes[skip_bytes..].into()
-            }
-            RefLarge(words) => words_to_be_bytes(words).into_boxed_slice(),
-        }
+        self.repr().to_be_bytes().into_boxed_slice()
     }
 
     /// Convert to f32.
@@ -234,6 +373,73 @@ impl UBig {
 }
 
 impl IBig {
+    /// Construct from signed little-endian bytes.
+    ///
+    /// The negative number must be represented in a two's complement format, assuming
+    /// the top bits are all ones. The number is assumed negative when the top bit of
+    /// the top byte is set.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::IBig;
+    /// assert_eq!(IBig::from_le_bytes(&[1, 2, 0xf3]), IBig::from(0xfff30201u32 as i32));
+    /// ```
+    #[inline]
+    pub fn from_le_bytes(bytes: &[u8]) -> IBig {
+        IBig(Repr::from_signed_le_bytes(bytes))
+    }
+
+    /// Construct from big-endian bytes.
+    ///
+    /// The negative number must be represented in a two's complement format, assuming
+    /// the top bits are all ones. The number is assumed negative when the top bit of
+    /// the top byte is set.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::IBig;
+    /// assert_eq!(IBig::from_be_bytes(&[0xf3, 2, 1]), IBig::from(0xfff30201u32 as i32));
+    /// ```
+    #[inline]
+    pub fn from_be_bytes(bytes: &[u8]) -> IBig {
+        IBig(Repr::from_signed_be_bytes(bytes))
+    }
+
+    /// Return little-endian bytes.
+    ///
+    /// The negative number will be represented in a two's complement format
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::IBig;
+    /// assert!(IBig::ZERO.to_le_bytes().is_empty());
+    /// assert_eq!(*IBig::from(0xfff30201u32 as i32).to_le_bytes(), [1, 2, 0xf3]);
+    /// ```
+    #[inline]
+    pub fn to_le_bytes(&self) -> Box<[u8]> {
+        let (sign, repr) = self.as_sign_repr();
+        repr.to_signed_le_bytes(sign.into()).into_boxed_slice()
+    }
+
+    /// Return big-endian bytes.
+    ///
+    /// The negative number will be represented in a two's complement format
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::IBig;
+    /// assert!(IBig::ZERO.to_be_bytes().is_empty());
+    /// assert_eq!(*IBig::from(0xfff30201u32 as i32).to_be_bytes(), [0xf3, 2, 1]);
+    /// ```
+    pub fn to_be_bytes(&self) -> Box<[u8]> {
+        let (sign, repr) = self.as_sign_repr();
+        repr.to_signed_be_bytes(sign.into()).into_boxed_slice()
+    }
+
     /// Convert to f32.
     ///
     /// Round to nearest, breaking ties to even last bit. The returned approximation
@@ -619,13 +825,11 @@ mod repr {
         where
             T: PrimitiveUnsigned,
         {
-            if let Ok(w) = x.try_into() {
-                Self::from_word(w)
-            } else if let Ok(dw) = x.try_into() {
+            if let Ok(dw) = x.try_into() {
                 Self::from_dword(dw)
             } else {
                 let repr = x.to_le_bytes();
-                Self::from_le_bytes_large(repr.as_ref())
+                Self::from_le_bytes_large::<false>(repr.as_ref())
             }
         }
     }

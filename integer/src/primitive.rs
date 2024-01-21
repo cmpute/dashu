@@ -233,29 +233,33 @@ pub const DWORD_BITS_USIZE: usize = DWORD_BITS as usize;
 pub const DWORD_BYTES: usize = DoubleWord::BYTE_SIZE;
 
 #[inline]
-pub fn word_from_le_bytes_partial(bytes: &[u8]) -> Word {
-    let mut word_bytes = [0; WORD_BYTES];
+pub fn word_from_le_bytes_partial<const ONE_PAD: bool>(bytes: &[u8]) -> Word {
+    let pad: u8 = if ONE_PAD { 0xff } else { 0 };
+    let mut word_bytes = [pad; WORD_BYTES];
     word_bytes[..bytes.len()].copy_from_slice(bytes);
     Word::from_le_bytes(word_bytes)
 }
 
 #[inline]
-pub fn dword_from_le_bytes_partial(bytes: &[u8]) -> DoubleWord {
-    let mut dword_bytes = [0; DWORD_BYTES];
+pub fn dword_from_le_bytes_partial<const ONE_PAD: bool>(bytes: &[u8]) -> DoubleWord {
+    let pad: u8 = if ONE_PAD { 0xff } else { 0 };
+    let mut dword_bytes = [pad; DWORD_BYTES];
     dword_bytes[..bytes.len()].copy_from_slice(bytes);
     DoubleWord::from_le_bytes(dword_bytes)
 }
 
 #[inline]
-pub fn word_from_be_bytes_partial(bytes: &[u8]) -> Word {
-    let mut word_bytes = [0; WORD_BYTES];
+pub fn word_from_be_bytes_partial<const ONE_PAD: bool>(bytes: &[u8]) -> Word {
+    let pad: u8 = if ONE_PAD { 0xff } else { 0 };
+    let mut word_bytes = [pad; WORD_BYTES];
     word_bytes[WORD_BYTES - bytes.len()..].copy_from_slice(bytes);
     Word::from_be_bytes(word_bytes)
 }
 
 #[inline]
-pub fn dword_from_be_bytes_partial(bytes: &[u8]) -> DoubleWord {
-    let mut dword_bytes = [0; DWORD_BYTES];
+pub fn dword_from_be_bytes_partial<const ONE_PAD: bool>(bytes: &[u8]) -> DoubleWord {
+    let pad: u8 = if ONE_PAD { 0xff } else { 0 };
+    let mut dword_bytes = [pad; DWORD_BYTES];
     dword_bytes[DWORD_BYTES - bytes.len()..].copy_from_slice(bytes);
     DoubleWord::from_be_bytes(dword_bytes)
 }
@@ -274,12 +278,12 @@ mod tests {
 
     #[test]
     fn test_word_from_le_bytes_partial() {
-        assert_eq!(word_from_le_bytes_partial(&[1, 2]), 0x0201);
+        assert_eq!(word_from_le_bytes_partial::<false>(&[1, 2]), 0x0201);
     }
 
     #[test]
     fn test_word_from_be_bytes_partial() {
-        assert_eq!(word_from_be_bytes_partial(&[1, 2]), 0x0102);
+        assert_eq!(word_from_be_bytes_partial::<false>(&[1, 2]), 0x0102);
     }
 
     #[test]
