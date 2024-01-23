@@ -1,4 +1,3 @@
-use std::vec::Vec;
 use pyo3::prelude::*;
 
 use dashu_base::Sign;
@@ -10,7 +9,7 @@ type FBig = dashu_float::FBig;
 #[pyclass]
 pub enum PySign {
     Positive,
-    Negative
+    Negative,
 }
 
 impl From<Sign> for PySign {
@@ -18,7 +17,7 @@ impl From<Sign> for PySign {
     fn from(value: Sign) -> Self {
         match value {
             Sign::Positive => Self::Positive,
-            Sign::Negative => Self::Negative
+            Sign::Negative => Self::Negative,
         }
     }
 }
@@ -79,4 +78,4 @@ impl From<RBig> for RPy {
 }
 
 #[pyclass]
-pub struct PyWords(Vec<dashu_int::Word>);
+pub struct PyWords(pub std::vec::Vec<dashu_int::Word>);

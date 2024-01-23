@@ -1,6 +1,7 @@
 mod int;
 mod types;
 mod utils;
+mod words;
 
 use pyo3::prelude::*;
 

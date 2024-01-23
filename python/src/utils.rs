@@ -1,16 +1,24 @@
 use dashu_base::ParseError;
-use pyo3::PyErr;
 use pyo3::exceptions::PySyntaxError;
+use pyo3::ffi::PyObject;
+use pyo3::{PyErr, PyAny};
 
 pub fn parse_error_to_py(error: ParseError) -> PyErr {
     let expl = match error {
         ParseError::NoDigits => "no valid digits in the string.",
         ParseError::InvalidDigit => "invalid digit for the given radix.",
         ParseError::UnsupportedRadix => "the radix is not supported.",
-        ParseError::InconsistentRadix => "the radices of different components of the number are different.",
+        ParseError::InconsistentRadix => {
+            "the radices of different components of the number are different."
+        }
     };
 
     PySyntaxError::new_err(expl).into()
+}
+
+pub fn auto(ob: PyAny) -> PyObject {
+    // convert input automatically to corresponding type (int -> IBig, float -> FBig, decimal -> DBig, fraction -> RBig)
+    todo!()
 }
 
 // TODO: split_dword, double_word, etc.

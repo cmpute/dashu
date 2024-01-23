@@ -3,8 +3,8 @@
 use crate::{
     arch::word::{DoubleWord, Word},
     buffer::Buffer,
-    primitive::{double_word, split_dword},
-    Sign,
+    primitive::{double_word, split_dword, WORD_BITS_USIZE, DWORD_BITS_USIZE},
+    Sign, math::{ones_word, ones_dword},
 };
 use core::{
     fmt::{self, Write},
@@ -327,7 +327,7 @@ impl Repr {
                 // there will be no reallocation here.
                 buffer.shrink_to_fit();
 
-                // SAFETY: the length has been checked and capacity >= lenght,
+                // SAFETY: the length has been checked and capacity >= length,
                 //         so capacity is nonzero and larger than 2
                 unsafe { mem::transmute(buffer) }
             }
@@ -410,6 +410,27 @@ impl Repr {
     #[inline]
     pub const fn neg_one() -> Self {
         Self::from_word(1).with_sign(Sign::Negative)
+    }
+
+    /// Create a `Repr` with n one bits
+    pub fn ones(n: usize) -> Self {
+        if n < WORD_BITS_USIZE {
+            Self::from_word(ones_word(n as _))
+        } else if n < DWORD_BITS_USIZE {
+            Self::from_dword(ones_dword(n as _))
+        } else {
+            let lo_words = n / WORD_BITS_USIZE;
+            let hi_bits = n % WORD_BITS_USIZE;
+            let mut buffer = Buffer::allocate(lo_words + 1);
+            buffer.push_repeat::<{ Word::MAX }>(lo_words);
+            if hi_bits > 0 {
+                buffer.push(ones_word(hi_bits as _));
+            }
+
+            // SAFETY: the bit length has been checked and capacity >= length,
+            //         so capacity is nonzero and larger than 2
+            unsafe { mem::transmute(buffer) }
+        }
     }
 
     /// Flip the sign bit of the Repr and return it

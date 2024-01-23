@@ -195,6 +195,22 @@ impl UBig {
     pub const fn is_one(&self) -> bool {
         self.0.is_one()
     }
+
+    /// Create an integer with `n` consecutive one bits (i.e. 2^n - 1).
+    /// 
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::UBig;
+    /// let mut n = UBig::ZERO;
+    /// n.set_bit(20);
+    /// n -= UBig::ONE;
+    /// assert_eq!(UBig::ones(20), n);
+    /// ```
+    #[inline]
+    pub fn ones(n: usize) -> Self {
+        Self(Repr::ones(n))
+    }
 }
 
 // This custom implementation is necessary due to https://github.com/rust-lang/rust/issues/98374

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `UBig::ones`.
 - Implement `TryFrom<UBig>` and `TryFrom<IBig>` for `f32`/`f64`.
 - Implement `IBig::{from_le_bytes, from_be_bytes}` and `IBig::{to_le_bytes, to_be_bytes}`.
 
