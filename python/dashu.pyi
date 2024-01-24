@@ -1,0 +1,9 @@
+from typing import Union
+
+class Words:
+    pass
+
+class UBig:
+    def __new__(obj: Union[int, str]): ...
+    def to_words(self) -> Words: ...
+    def from_words(self, words: Words): ...

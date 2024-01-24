@@ -1,7 +1,25 @@
 use dashu_base::ParseError;
 use pyo3::exceptions::PySyntaxError;
 use pyo3::ffi::PyObject;
-use pyo3::{PyErr, PyAny};
+use pyo3::{PyAny, PyErr};
+
+pub fn parse_signed_index(index: isize, length: usize, unlimited: bool) -> Option<usize> {
+    if index >= 0 {
+        let i = index as usize;
+        if unlimited || i <= length {
+            Some(i)
+        } else {
+            None
+        }
+    } else {
+        let i = index.unsigned_abs();
+        if i <= length {
+            Some(length - i)
+        } else {
+            None
+        }
+    }
+}
 
 pub fn parse_error_to_py(error: ParseError) -> PyErr {
     let expl = match error {

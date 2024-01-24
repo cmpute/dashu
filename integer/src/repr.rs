@@ -3,8 +3,9 @@
 use crate::{
     arch::word::{DoubleWord, Word},
     buffer::Buffer,
-    primitive::{double_word, split_dword, WORD_BITS_USIZE, DWORD_BITS_USIZE},
-    Sign, math::{ones_word, ones_dword},
+    math::{ones_dword, ones_word},
+    primitive::{double_word, split_dword, DWORD_BITS_USIZE, WORD_BITS_USIZE},
+    Sign,
 };
 use core::{
     fmt::{self, Write},

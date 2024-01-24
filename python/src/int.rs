@@ -1,5 +1,6 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
+use std::os::raw::c_longlong;
 
 use dashu_base::BitTest;
 use pyo3::exceptions::{PyIndexError, PyNotImplementedError};
@@ -12,18 +13,22 @@ use pyo3::{
 };
 
 use crate::types::{IPy, PyWords, UPy};
+use crate::utils::parse_signed_index;
 use dashu_int::{IBig, UBig};
 use num_order::NumHash;
 
 // error messages
 const ERRMSG_LENGTH_TOO_LARGE: &'static str = "the integer has too many bits for indexing";
-const ERRMSG_STEPSIZE_TOO_LARGE: &'static str = "the integer has too many bits for indexing";
-const ERRMSG_UBIG_WRONG_SRC_TYPE: &'static str = "only integers or strings can be converted to a UBig instance";
+const ERRMSG_STEPSIZE_TOO_LARGE: &'static str =
+    "bit slicing with step size larger than 1 is not supported yet";
+const ERRMSG_UBIG_WRONG_SRC_TYPE: &'static str =
+    "only integers or strings can be converted to a UBig instance";
 const ERRMSG_INT_WITH_RADIX: &'static str = "can't convert non-string with explicit base";
 const ERRMSG_WRONG_INDEX_TYPE: &'static str = "indices must be integers or slices";
 const ERRMSG_UBIG_FROM_NEG: &'static str = "can't convert negative int to unsigned";
+const ERRMSG_UBIG_BITS_OOR: &'static str = "bits index out of range";
 
-fn py_to_long_or_big(ob: &PyAny) -> PyResult<(i64, bool)> {
+fn py_to_long_or_big(ob: &PyAny) -> PyResult<(c_longlong, bool)> {
     let py = ob.py();
 
     unsafe {
@@ -114,11 +119,16 @@ impl UPy {
     }
     fn __getitem__(&self, index: &PyAny) -> PyResult<PyObject> {
         let py = index.py();
-        if let Ok(mut i) = <isize as FromPyObject>::extract(index) {
-            let i = if i <= 0 { self.0.bit_len() + i.unsigned_abs() } else { i as usize };
+        if let Ok(i) = <isize as FromPyObject>::extract(index) {
+            let i = parse_signed_index(i, self.0.bit_len(), true)
+                .ok_or(PyIndexError::new_err(ERRMSG_UBIG_BITS_OOR))?;
             Ok(self.0.bit(i).into_py(py))
         } else if let Ok(range) = index.downcast::<PySlice>() {
-            let len = self.0.bit_len().try_into().map_err(|_| PyNotImplementedError::new_err(ERRMSG_STEPSIZE_TOO_LARGE))?;
+            let len = self
+                .0
+                .bit_len()
+                .try_into()
+                .map_err(|_| PyNotImplementedError::new_err(ERRMSG_LENGTH_TOO_LARGE))?;
             let indices = range.indices(len)?;
             if indices.step != 1 {
                 return Err(PyNotImplementedError::new_err(ERRMSG_STEPSIZE_TOO_LARGE));
@@ -131,11 +141,11 @@ impl UPy {
         } else {
             Err(PyTypeError::new_err(ERRMSG_WRONG_INDEX_TYPE))
         }
-        
     }
     fn __setitem__(&mut self, index: &PyAny, set: bool) -> PyResult<()> {
         if let Ok(i) = <isize as FromPyObject>::extract(index) {
-            let i = if i <= 0 { self.0.bit_len() + i.unsigned_abs() } else { i as usize };
+            let i = parse_signed_index(i, self.0.bit_len(), true)
+                .ok_or(PyIndexError::new_err(ERRMSG_UBIG_BITS_OOR))?;
             if set {
                 self.0.set_bit(i)
             } else {
@@ -143,7 +153,11 @@ impl UPy {
             }
             Ok(())
         } else if let Ok(range) = index.downcast::<PySlice>() {
-            let len = self.0.bit_len().try_into().map_err(|_| PyNotImplementedError::new_err(ERRMSG_STEPSIZE_TOO_LARGE))?;
+            let len = self
+                .0
+                .bit_len()
+                .try_into()
+                .map_err(|_| PyNotImplementedError::new_err(ERRMSG_LENGTH_TOO_LARGE))?;
             let indices = range.indices(len)?;
             if indices.step != 1 {
                 return Err(PyNotImplementedError::new_err(ERRMSG_STEPSIZE_TOO_LARGE));
@@ -170,16 +184,53 @@ impl UPy {
             Err(PyTypeError::new_err(ERRMSG_WRONG_INDEX_TYPE))
         }
     }
-    fn __delitem__(&mut self, index: &PyAny) {
-        todo!() // TODO: allow remove low or top bits
+    fn __delitem__(&mut self, index: &PyAny) -> PyResult<()> {
+        fn remove_bits_in_middle(u: &mut UBig, start: usize, end: usize) {
+            let (mut left, right) = core::mem::take(u).split_bits(end);
+            left.clear_high_bits(end - start);
+            *u = (right << start) | left;
+        }
+
+        if let Ok(i) = <isize as FromPyObject>::extract(index) {
+            let i = parse_signed_index(i, self.0.bit_len(), true)
+                .ok_or(PyIndexError::new_err(ERRMSG_UBIG_BITS_OOR))?;
+            remove_bits_in_middle(&mut self.0, i, i + 1);
+            Ok(())
+        } else if let Ok(range) = index.downcast::<PySlice>() {
+            let len = self
+                .0
+                .bit_len()
+                .try_into()
+                .map_err(|_| PyNotImplementedError::new_err(ERRMSG_LENGTH_TOO_LARGE))?;
+            let indices = range.indices(len)?;
+            if indices.step != 1 {
+                return Err(PyNotImplementedError::new_err(ERRMSG_STEPSIZE_TOO_LARGE));
+            }
+
+            // shortcut for clearing high bits
+            if indices.stop == len as _ {
+                self.0.clear_high_bits(indices.start as _);
+            } else if indices.start == 0 {
+                self.0 >>= indices.stop as usize;
+            } else {
+                remove_bits_in_middle(&mut self.0, indices.start as _, indices.stop as _);
+            }
+            Ok(())
+        } else {
+            Err(PyTypeError::new_err(ERRMSG_WRONG_INDEX_TYPE))
+        }
     }
 
-    // interop
+    /********** interop **********/
+
+    /// Get the underlying words representing this integer
     fn to_words(&self) -> PyWords {
         PyWords(self.0.as_words().to_vec())
     }
+    /// Create an integer from a list of words
     #[staticmethod]
     fn from_words(words: &PyWords) -> Self {
+        // TODO: accept a list of integers, using Vec<Word>::extract
         UPy(UBig::from_words(&words.0))
     }
     fn to_bytes(&self, py: Python) -> PyObject {
@@ -240,7 +291,7 @@ impl IPy {
             Ok(IPy(n.map_err(crate::utils::parse_error_to_py)?))
         } else {
             Err(PyTypeError::new_err(
-                "only Python integers can be automatically converted to an IBig instance"
+                "only Python integers can be automatically converted to an IBig instance",
             ))
         }
     }

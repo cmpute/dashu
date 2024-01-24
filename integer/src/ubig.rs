@@ -197,7 +197,7 @@ impl UBig {
     }
 
     /// Create an integer with `n` consecutive one bits (i.e. 2^n - 1).
-    /// 
+    ///
     /// # Examples
     ///
     /// ```

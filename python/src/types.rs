@@ -1,4 +1,5 @@
 use pyo3::prelude::*;
+use std::os::raw::{c_double, c_longlong};
 
 use dashu_base::Sign;
 use dashu_float::DBig;
@@ -79,3 +80,13 @@ impl From<RBig> for RPy {
 
 #[pyclass]
 pub struct PyWords(pub std::vec::Vec<dashu_int::Word>);
+
+/// An input type that accepts all possible numeric types from Python
+pub enum UniInput<'a> {
+    SmallInt(c_longlong), // from int
+    BigInt(&'a IBig),     // from UPy
+    BigIntOwned(IBig),    // from int
+    SmallFloat(c_double), // from float
+    BigFloat(&'a FBig),   // from FPy
+    BigDecimal(&'a DBig), // from decimal.Decimal or DPy
+}

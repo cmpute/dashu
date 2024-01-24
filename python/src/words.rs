@@ -1,6 +1,10 @@
 use crate::types::PyWords;
 
-use pyo3::{prelude::*, exceptions::{PyIndexError, PyTypeError}, types::PySlice};
+use pyo3::{
+    exceptions::{PyIndexError, PyTypeError},
+    prelude::*,
+    types::PySlice,
+};
 
 use dashu_int::Word;
 
@@ -17,12 +21,15 @@ impl PyWords {
     }
     fn __getitem__(&self, index: &PyAny) -> PyResult<Word> {
         if let Ok(n) = <usize as FromPyObject>::extract(index) {
-            self.0.get(n).copied().ok_or(PyIndexError::new_err("words index out of range"))    
+            self.0
+                .get(n)
+                .copied()
+                .ok_or(PyIndexError::new_err("words index out of range"))
         } else if let Ok(slice) = index.downcast::<PySlice>() {
             todo!()
         } else {
             Err(PyTypeError::new_err("words indices must be integers or slices"))
-        }   
+        }
     }
     fn __setitem__(&mut self, index: &PyAny, value: Word) {
         todo!()
