@@ -84,9 +84,13 @@ pub struct PyWords(pub std::vec::Vec<dashu_int::Word>);
 /// An input type that accepts all possible numeric types from Python
 pub enum UniInput<'a> {
     SmallInt(c_longlong), // from int
-    BigInt(&'a IBig),     // from UPy
+    BigUint(PyRef<'a, UPy>),
+    BigInt(PyRef<'a, IPy>),
     BigIntOwned(IBig),    // from int
     SmallFloat(c_double), // from float
-    BigFloat(&'a FBig),   // from FPy
-    BigDecimal(&'a DBig), // from decimal.Decimal or DPy
+    BigFloat(PyRef<'a, FPy>),
+    BigDecimal(PyRef<'a, DPy>),
+    BigDecimalOwned(DBig), // from decimal.Decimal
+    BigRational(PyRef<'a, RPy>),
+    BigRationalOwned(RBig), // from fractions.Fraction
 }

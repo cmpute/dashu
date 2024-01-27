@@ -1,20 +1,24 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
-use std::os::raw::c_longlong;
+use std::vec::Vec;
 
-use dashu_base::BitTest;
-use pyo3::exceptions::{PyIndexError, PyNotImplementedError};
+use dashu_base::{BitTest, Signed};
+use pyo3::exceptions::{PyIndexError, PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PySlice;
 use pyo3::{
     exceptions::{PyOverflowError, PyTypeError},
-    ffi, intern,
-    types::{PyBytes, PyDict, PyLong},
+    types::{PyBytes, PyLong},
 };
 
-use crate::types::{IPy, PyWords, UPy};
-use crate::utils::parse_signed_index;
-use dashu_int::{IBig, UBig};
+use crate::{
+    convert::{
+        convert_from_ibig, convert_from_ubig, parse_error_to_py, parse_signed_index, parse_to_ibig,
+        parse_to_long, parse_to_ubig,
+    },
+    types::{IPy, PyWords, UPy},
+};
+use dashu_int::{IBig, UBig, Word};
 use num_order::NumHash;
 
 // error messages
@@ -22,75 +26,56 @@ const ERRMSG_LENGTH_TOO_LARGE: &'static str = "the integer has too many bits for
 const ERRMSG_STEPSIZE_TOO_LARGE: &'static str =
     "bit slicing with step size larger than 1 is not supported yet";
 const ERRMSG_UBIG_WRONG_SRC_TYPE: &'static str =
-    "only integers or strings can be converted to a UBig instance";
+    "only integers or strings can be used to construct a UBig instance";
+const ERRMSG_IBIG_WRONG_SRC_TYPE: &'static str =
+    "only integers or strings can be used to construct an IBig instance";
+const ERRMSG_FROM_WORDS_WRONG_TYPE: &'static str =
+    "only list of integers or Words instance can be used in UBig.from_words()";
+const ERRMSG_WRONG_ENDIANNESS: &'static str = "byteorder must be either 'little' or 'big'";
+const ERRMSG_NEGATIVE_TO_UNSIGNED: &'static str = "can't convert negative int to unsigned";
 const ERRMSG_INT_WITH_RADIX: &'static str = "can't convert non-string with explicit base";
 const ERRMSG_WRONG_INDEX_TYPE: &'static str = "indices must be integers or slices";
 const ERRMSG_UBIG_FROM_NEG: &'static str = "can't convert negative int to unsigned";
 const ERRMSG_UBIG_BITS_OOR: &'static str = "bits index out of range";
-
-fn py_to_long_or_big(ob: &PyAny) -> PyResult<(c_longlong, bool)> {
-    let py = ob.py();
-
-    unsafe {
-        let ptr = ob.as_ptr();
-        let mut overflow: i32 = 0;
-        let v = ffi::PyLong_AsLongLongAndOverflow(ptr, &mut overflow);
-
-        if v == -1 && PyErr::occurred(py) {
-            Err(PyErr::fetch(py))
-        } else {
-            Ok((v, overflow != 0))
-        }
-    }
-}
-
-impl UPy {
-    // Conversion from python integer object, without type checking.
-    //
-    // The most efficient way here is to use ffi::_PyLong_AsByteArray.
-    // However, the conversion should not performed frequently, so the stable
-    // API `to_bytes` is preferred here.
-    fn wrap(ob: &PyAny) -> PyResult<Self> {
-        let (v, overflow) = py_to_long_or_big(ob)?;
-        if !overflow {
-            if let Ok(n) = u64::try_from(v) {
-                Ok(UPy(UBig::from(n)))
-            } else {
-                Err(PyOverflowError::new_err(ERRMSG_UBIG_FROM_NEG))
-            }
-        } else {
-            let py = ob.py();
-            let bit_len: usize = ob.call_method0(intern!(py, "bit_length"))?.extract()?;
-            let byte_len = (bit_len + 7) / 8;
-            let bytes: &PyBytes = ob
-                .call_method1(intern!(py, "to_bytes"), (byte_len, intern!(py, "little")))?
-                .downcast()?;
-            Ok(UPy(UBig::from_le_bytes(bytes.as_bytes())))
-        }
-    }
-}
 
 #[pymethods]
 impl UPy {
     #[new]
     fn __new__(ob: &PyAny, radix: Option<u32>) -> PyResult<Self> {
         if ob.is_instance_of::<PyLong>() {
+            // create from int
             if radix.is_some() {
-                Err(PyTypeError::new_err(ERRMSG_INT_WITH_RADIX))
+                return Err(PyTypeError::new_err(ERRMSG_INT_WITH_RADIX));
+            }
+
+            let (v, overflow) = parse_to_long(ob)?;
+            if !overflow {
+                if let Ok(n) = u64::try_from(v) {
+                    Ok(UPy(UBig::from(n)))
+                } else {
+                    Err(PyOverflowError::new_err(ERRMSG_UBIG_FROM_NEG))
+                }
             } else {
-                Self::wrap(ob)
+                Ok(UPy(parse_to_ubig(ob)?))
             }
         } else if let Ok(s) = ob.extract() {
+            // create from string
             let n = if let Some(r) = radix {
                 UBig::from_str_radix(s, r)
             } else {
                 UBig::from_str_with_radix_prefix(s).map(|v| v.0)
             };
-            Ok(UPy(n.map_err(crate::utils::parse_error_to_py)?))
+            Ok(UPy(n.map_err(parse_error_to_py)?))
+        } else if let Ok(obj) = <PyRef<Self> as FromPyObject>::extract(ob) {
+            Ok(UPy(obj.0.clone()))
         } else {
             Err(PyTypeError::new_err(ERRMSG_UBIG_WRONG_SRC_TYPE))
         }
     }
+    fn unwrap(&self, py: Python) -> PyResult<PyObject> {
+        convert_from_ubig(&self.0, py)
+    }
+
     fn __repr__(&self) -> String {
         format!("<UBig {:#?}>", self.0)
     }
@@ -104,13 +89,6 @@ impl UPy {
         let mut hasher = DefaultHasher::new();
         self.0.num_hash(&mut hasher);
         hasher.finish()
-    }
-    fn __int__(&self, py: Python) -> PyResult<PyObject> {
-        let bytes = self.0.to_le_bytes();
-        let bytes_obj = PyBytes::new(py, &bytes);
-        py.get_type::<PyLong>()
-            .call_method1(intern!(py, "from_bytes"), (bytes_obj, intern!(py, "little")))
-            .map(PyObject::from)
     }
 
     // use as a bit vector
@@ -223,51 +201,49 @@ impl UPy {
 
     /********** interop **********/
 
+    fn __int__(&self, py: Python) -> PyResult<PyObject> {
+        convert_from_ubig(&self.0, py)
+    }
     /// Get the underlying words representing this integer
     fn to_words(&self) -> PyWords {
         PyWords(self.0.as_words().to_vec())
     }
     /// Create an integer from a list of words
     #[staticmethod]
-    fn from_words(words: &PyWords) -> Self {
-        // TODO: accept a list of integers, using Vec<Word>::extract
-        UPy(UBig::from_words(&words.0))
-    }
-    fn to_bytes(&self, py: Python) -> PyObject {
-        PyBytes::new(py, &self.0.to_le_bytes()).into()
-    }
-    #[staticmethod]
-    fn from_bytes(bytes: &PyBytes) -> Self {
-        todo!()
-    }
-}
-
-impl IPy {
-    // Conversion from python integer object, without type checking.
-    //
-    // The most efficient way here is to use ffi::_PyLong_AsByteArray.
-    // However, the conversion should not performed frequently, so the stable
-    // API `to_bytes` is preferred here.
-    fn wrap(ob: &PyAny) -> PyResult<Self> {
-        let (v, overflow) = py_to_long_or_big(ob)?;
-        if !overflow {
-            Ok(IPy(IBig::from(v)))
+    fn from_words(ob: &PyAny) -> PyResult<Self> {
+        if let Ok(vec) = <Vec<Word> as FromPyObject>::extract(ob) {
+            Ok(UPy(UBig::from_words(&vec)))
+        } else if let Ok(words) = <PyRef<PyWords> as FromPyObject>::extract(ob) {
+            Ok(UPy(UBig::from_words(&words.0)))
         } else {
-            let py = ob.py();
-            let bit_len: usize = ob.call_method0(intern!(py, "bit_length"))?.extract()?;
-            let byte_len = (bit_len + 7) / 8;
-
-            let kwargs = PyDict::new(py);
-            kwargs.set_item(intern!(py, "signed"), true).unwrap();
-            let bytes: &PyBytes = ob
-                .call_method(
-                    intern!(py, "to_bytes"),
-                    (byte_len, intern!(py, "little")),
-                    Some(kwargs),
-                )?
-                .downcast()?;
-            Ok(IPy(IBig::from_le_bytes(bytes.as_bytes())))
+            Err(PyTypeError::new_err(ERRMSG_FROM_WORDS_WRONG_TYPE))
         }
+    }
+    /// Convert the integer to bytes, like int.to_bytes().
+    // TODO: add the length option, just like the python int, and use the same logic
+    fn to_bytes(&self, byteorder: Option<&str>, py: Python) -> PyResult<PyObject> {
+        let byteorder = byteorder.unwrap_or(&"little");
+        let bytes = match byteorder {
+            "little" => PyBytes::new(py, &self.0.to_le_bytes()),
+            "big" => PyBytes::new(py, &self.0.to_be_bytes()),
+            _ => {
+                return Err(PyValueError::new_err(ERRMSG_WRONG_ENDIANNESS));
+            }
+        };
+        Ok(bytes.into())
+    }
+    /// Create UBig from bytes, like int.from_bytes().
+    #[staticmethod]
+    fn from_bytes(bytes: &PyBytes, byteorder: Option<&str>) -> PyResult<Self> {
+        let byteorder = byteorder.unwrap_or(&"little");
+        let uint = match byteorder {
+            "little" => UBig::from_le_bytes(bytes.as_bytes()),
+            "big" => UBig::from_be_bytes(bytes.as_bytes()),
+            _ => {
+                return Err(PyValueError::new_err(ERRMSG_WRONG_ENDIANNESS));
+            }
+        };
+        Ok(Self(uint))
     }
 }
 
@@ -277,24 +253,35 @@ impl IPy {
     #[inline]
     fn __new__(ob: &PyAny, radix: Option<u32>) -> PyResult<Self> {
         if ob.is_instance_of::<PyLong>() {
+            // create from int
             if radix.is_some() {
-                Err(PyTypeError::new_err("can't convert non-string with explicit base"))
+                return Err(PyTypeError::new_err(ERRMSG_INT_WITH_RADIX));
+            }
+
+            let (v, overflow) = parse_to_long(ob)?;
+            if !overflow {
+                Ok(IPy(IBig::from(v)))
             } else {
-                Self::wrap(ob)
+                Ok(IPy(parse_to_ibig(ob)?))
             }
         } else if let Ok(s) = ob.extract() {
+            // create from string
             let n = if let Some(r) = radix {
                 IBig::from_str_radix(s, r)
             } else {
                 IBig::from_str_with_radix_prefix(s).map(|v| v.0)
             };
-            Ok(IPy(n.map_err(crate::utils::parse_error_to_py)?))
+            Ok(IPy(n.map_err(parse_error_to_py)?))
+        } else if let Ok(obj) = <PyRef<Self> as FromPyObject>::extract(ob) {
+            Ok(IPy(obj.0.clone()))
         } else {
-            Err(PyTypeError::new_err(
-                "only Python integers can be automatically converted to an IBig instance",
-            ))
+            Err(PyTypeError::new_err(ERRMSG_IBIG_WRONG_SRC_TYPE))
         }
     }
+    fn unwrap(&self, py: Python) -> PyResult<PyObject> {
+        convert_from_ibig(&self.0, py)
+    }
+
     fn __repr__(&self) -> String {
         format!("<IBig {:#?}>", self.0)
     }
@@ -309,20 +296,6 @@ impl IPy {
         self.0.num_hash(&mut hasher);
         hasher.finish()
     }
-    fn __int__(&self, py: Python) -> PyResult<PyObject> {
-        let bytes = self.0.to_le_bytes();
-        let bytes_obj = PyBytes::new(py, &bytes);
-
-        let kwargs = PyDict::new(py);
-        kwargs.set_item(intern!(py, "signed"), true).unwrap();
-        py.get_type::<PyLong>()
-            .call_method(
-                intern!(py, "from_bytes"),
-                (bytes_obj, intern!(py, "little")),
-                Some(kwargs),
-            )
-            .map(PyObject::from)
-    }
 
     // use as a bit vector with very limited capabilities
     fn __len__(&self) -> usize {
@@ -330,5 +303,64 @@ impl IPy {
     }
     fn __getitem__(&self, i: usize) -> bool {
         self.0.bit(i)
+    }
+
+    /********** interop **********/
+
+    fn __int__(&self, py: Python) -> PyResult<PyObject> {
+        convert_from_ibig(&self.0, py)
+    }
+    /// Convert the integer to bytes, like int.to_bytes().
+    // TODO: add the length option, just like the python int, and use the same logic
+    fn to_bytes(
+        &self,
+        byteorder: Option<&str>,
+        signed: Option<bool>,
+        py: Python,
+    ) -> PyResult<PyObject> {
+        let signed = signed.unwrap_or(false);
+        if !signed && self.0.is_negative() {
+            return Err(PyOverflowError::new_err(ERRMSG_NEGATIVE_TO_UNSIGNED));
+        }
+
+        let byteorder = byteorder.unwrap_or(&"little");
+        let bytes = match byteorder {
+            "little" => PyBytes::new(py, &self.0.to_le_bytes()),
+            "big" => PyBytes::new(py, &self.0.to_be_bytes()),
+            _ => {
+                return Err(PyValueError::new_err(ERRMSG_WRONG_ENDIANNESS));
+            }
+        };
+        Ok(bytes.into())
+    }
+    /// Create IBig from bytes, like int.from_bytes().
+    #[staticmethod]
+    fn from_bytes(
+        bytes: &PyBytes,
+        byteorder: Option<&str>,
+        signed: Option<bool>,
+    ) -> PyResult<Self> {
+        let byteorder = byteorder.unwrap_or(&"little");
+        let signed = signed.unwrap_or(false);
+        let int = match byteorder {
+            "little" => {
+                if signed {
+                    IBig::from_le_bytes(bytes.as_bytes())
+                } else {
+                    UBig::from_le_bytes(bytes.as_bytes()).into()
+                }
+            }
+            "big" => {
+                if signed {
+                    IBig::from_be_bytes(bytes.as_bytes())
+                } else {
+                    UBig::from_be_bytes(bytes.as_bytes()).into()
+                }
+            }
+            _ => {
+                return Err(PyValueError::new_err(ERRMSG_WRONG_ENDIANNESS));
+            }
+        };
+        Ok(Self(int))
     }
 }

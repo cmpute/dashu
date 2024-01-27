@@ -1,4 +1,7 @@
+mod convert;
+mod float;
 mod int;
+mod ratio;
 mod types;
 mod utils;
 mod words;
@@ -17,5 +20,7 @@ fn dashu(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<types::FPy>()?;
     m.add_class::<types::DPy>()?;
     m.add_class::<types::RPy>()?;
+
+    m.add_function(wrap_pyfunction!(utils::auto, m)?)?;
     Ok(())
 }
