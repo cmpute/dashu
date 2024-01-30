@@ -7,6 +7,7 @@ use crate::{
     utils::{digit_len, split_digits_ref},
 };
 use core::fmt::{self, Alignment, Display, Formatter, Write};
+use alloc::string::String;
 use dashu_base::{Sign, UnsignedAbs};
 use dashu_int::{IBig, Word};
 
@@ -67,8 +68,8 @@ impl<R: Round> fmt::Debug for Context<R> {
 }
 
 impl<const B: Word> Repr<B> {
-    /// Print the float number with given rounding mode. The rounding may happen if the precision option
-    /// of the formatter is set.
+    /// Print the float number with given rounding mode.
+    /// The rounding may happen if the precision option of the formatter is set.
     fn fmt_round<R: Round>(&self, f: &mut Formatter<'_>) -> fmt::Result {
         // shortcut for infinities
         if self.is_infinite() {
@@ -95,6 +96,8 @@ impl<const B: Word> Repr<B> {
         } else {
             (&self.significand, self.exponent)
         };
+
+        // TODO: use String to simplify this. We don't have to calculate everything in advance.
 
         // calculate padding if necessary
         let (left_pad, right_pad) = if let Some(min_width) = f.width() {
@@ -259,6 +262,109 @@ impl<const B: Word> Repr<B> {
 
         Ok(())
     }
+
+    /// Print the float number in scientific notation with given rounding mode.
+    /// The rounding may happen if the precision option of the formatter is set.
+    /// 
+    /// When `use_hexadecimal` is True and base B is 2, the output will be represented
+    /// in the hexadecimal format 0xaaa.bbbpcc.
+    fn fmt_round_scientific<R: Round>(&self, f: &mut Formatter<'_>, upper: bool, use_hexadecimal: bool, exp_marker: Option<char>) -> fmt::Result {
+        assert!(!(B != 2 && use_hexadecimal), "hexadecimal is only relevant for base 2");
+
+        // shortcut for infinities
+        if self.is_infinite() {
+            return match self.sign() {
+                Sign::Positive => f.write_str("inf"),
+                Sign::Negative => f.write_str("-inf"),
+            };
+        }
+
+        // first perform rounding before actual printing if necessary
+        let negative: bool = self.significand.sign() == Sign::Negative;
+        let rounded_signif;
+        let (signif, exp) = if let Some(prec) = f.precision() {
+            let prec = (prec + 1) as isize; // always have one extra digit before the radix point
+            let diff = prec - self.digits() as isize;
+            if diff < 0 {
+                let shift = -diff as usize;
+                let (signif, rem) = split_digits_ref::<B>(&self.significand, shift);
+                let adjust = R::round_fract::<B>(&signif, rem, shift);
+                rounded_signif = signif + adjust;
+                (&rounded_signif, self.exponent - diff)
+            } else {
+                (&self.significand, self.exponent)
+            }
+        } else {
+            (&self.significand, self.exponent)
+        };
+
+        let (mut signif_str, mut exp_str) = (String::new(), String::new());
+        match (upper, use_hexadecimal) {
+            (false, false) => write!(&mut signif_str, "{}", signif.in_radix(B as _)),
+            (true, false) => write!(&mut signif_str, "{:#}", signif.in_radix(B as _)),
+            (false, true) => {
+                // f.write_str("0x")?;
+                write!(&mut signif_str, "{:#x}", signif)
+            },
+            (true, true) => {
+                // f.write_str("0x")?;
+                write!(&mut signif_str, "{:#X}", signif)
+            },
+        }?;
+        write!(&mut exp_str, "{}", exp)?;
+
+        let has_point = signif_str.len() > 1 && f.precision().unwrap_or(0) > 0; // whether print the radix point
+        let has_sign = negative || f.sign_plus();
+
+        // calculate padding if necessary
+        let (left_pad, right_pad) = if let Some(min_width) = f.width() {
+            let width = signif_str.len() + exp_str.len()
+                + /* exponent marker */ 1
+                + has_sign as usize
+                + has_point as usize
+                + use_hexadecimal as usize * 2;
+            if width >= min_width {
+                (0, 0)
+            } else {
+                match f.align() {
+                    Some(Alignment::Left) => (0, min_width - width),
+                    Some(Alignment::Right) | None => (min_width - width, 0),
+                    Some(Alignment::Center) => {
+                        let diff = min_width - width;
+                        (diff / 2, diff - diff / 2)
+                    }
+                }
+            }
+        } else {
+            (0, 0)
+        };
+
+        // print left padding
+        for _ in 0..left_pad {
+            f.write_char(f.fill())?;
+        }
+
+        // print the body
+        if !negative && f.sign_plus() {
+            f.write_char('+')?;
+        }
+        let split_loc = 1 + negative as usize + use_hexadecimal as usize * 2;
+        let (int, fract) = signif_str.split_at(split_loc);
+        f.write_str(int)?;
+        if fract.len() != 0 {
+            f.write_char('.')?;
+            f.write_str(fract)?;
+        }
+        f.write_char(exp_marker.unwrap_or('@'))?;
+        f.write_str(&exp_str)?;
+
+        // print right padding
+        for _ in 0..right_pad {
+            f.write_char(f.fill())?;
+        }
+
+        Ok(())
+    }
 }
 
 impl<const B: Word> Display for Repr<B> {
@@ -301,5 +407,71 @@ impl<R: Round, const B: Word> Display for FBig<R, B> {
     #[inline]
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         self.repr.fmt_round::<R>(f)
+    }
+}
+
+macro_rules! impl_fmt_with_base {
+    ($base:literal, $trait:ident, $upper: literal, $hex:literal, $marker:literal) => {
+        impl fmt::$trait for Repr<$base> {
+            #[inline]
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                self.fmt_round_scientific::<Zero>(f, $upper, $hex, Some($marker))
+            }
+        }
+
+        impl<R: Round> fmt::$trait for FBig<R, $base> {
+            #[inline]
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                self.repr.fmt_round_scientific::<R>(f, $upper, $hex, Some($marker))
+            }
+        }
+    };
+}
+
+impl_fmt_with_base!(2, LowerHex, false, true, 'p');
+impl_fmt_with_base!(2, UpperHex, true, true, 'P');
+impl_fmt_with_base!(2, Binary, false, false, 'b');
+impl_fmt_with_base!(8, Octal, false, false, 'o');
+impl_fmt_with_base!(16, LowerHex, false, false, 'h');
+impl_fmt_with_base!(16, UpperHex, true, false, 'H');
+
+impl<const B: Word> fmt::LowerExp for Repr<B> {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let marker = match B {
+            10 => Some('e'),
+            _ => None
+        };
+        self.fmt_round_scientific::<Zero>(f, false, false, marker)
+    }
+}
+impl<const B: Word> fmt::UpperExp for Repr<B> {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let marker = match B {
+            10 => Some('E'),
+            _ => None
+        };
+        self.fmt_round_scientific::<Zero>(f, true, false, marker)
+    }
+}
+impl<R: Round, const B: Word> fmt::LowerExp for FBig<R, B> {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let marker = match B {
+            10 => Some('e'),
+            _ => None
+        };
+        self.repr.fmt_round_scientific::<R>(f, false, false, marker)
+    }
+}
+impl<R: Round, const B: Word> fmt::UpperExp for FBig<R, B> {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let marker = match B {
+            10 => Some('E'),
+            _ => None
+        };
+        self.repr.fmt_round_scientific::<R>(f, true, false, marker)
     }
 }

@@ -1,7 +1,5 @@
 //! Implement serde traits.
 
-extern crate alloc;
-
 use core::marker::PhantomData;
 
 use crate::{fbig::FBig, repr::Repr, round::Round, Context};

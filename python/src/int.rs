@@ -220,7 +220,6 @@ impl UPy {
         }
     }
     /// Convert the integer to bytes, like int.to_bytes().
-    // TODO: add the length option, just like the python int, and use the same logic
     fn to_bytes(&self, byteorder: Option<&str>, py: Python) -> PyResult<PyObject> {
         let byteorder = byteorder.unwrap_or(&"little");
         let bytes = match byteorder {
@@ -311,7 +310,6 @@ impl IPy {
         convert_from_ibig(&self.0, py)
     }
     /// Convert the integer to bytes, like int.to_bytes().
-    // TODO: add the length option, just like the python int, and use the same logic
     fn to_bytes(
         &self,
         byteorder: Option<&str>,
@@ -343,20 +341,14 @@ impl IPy {
         let byteorder = byteorder.unwrap_or(&"little");
         let signed = signed.unwrap_or(false);
         let int = match byteorder {
-            "little" => {
-                if signed {
-                    IBig::from_le_bytes(bytes.as_bytes())
-                } else {
-                    UBig::from_le_bytes(bytes.as_bytes()).into()
-                }
-            }
-            "big" => {
-                if signed {
-                    IBig::from_be_bytes(bytes.as_bytes())
-                } else {
-                    UBig::from_be_bytes(bytes.as_bytes()).into()
-                }
-            }
+            "little" => match signed {
+                false => UBig::from_le_bytes(bytes.as_bytes()).into(),
+                true => IBig::from_le_bytes(bytes.as_bytes()),
+            },
+            "big" => match signed {
+                false => UBig::from_be_bytes(bytes.as_bytes()).into(),
+                true => IBig::from_be_bytes(bytes.as_bytes()),
+            },
             _ => {
                 return Err(PyValueError::new_err(ERRMSG_WRONG_ENDIANNESS));
             }

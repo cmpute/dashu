@@ -60,6 +60,7 @@ impl Serialize for IBig {
         } else if self.is_zero() {
             serializer.serialize_bytes(&[])
         } else {
+            // TODO(v0.5): Change to IBig::to_le_bytes(), which provides better interop robustness
             let (sign, words) = self.as_sign_words();
             let mut bytes = words_to_le_bytes(words);
 

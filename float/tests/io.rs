@@ -376,6 +376,39 @@ fn test_format_binary() {
 }
 
 #[test]
+fn test_scientific_format_binary() {
+    assert_eq!(format!("{:b}", fbig!(0x0)), "0b0");
+    assert_eq!(format!("{:b}", fbig!(0x1)), "1b0");
+    assert_eq!(format!("{:b}", fbig!(-0x1)), "-1b0");
+    assert_eq!(format!("{:b}", fbig!(0x1p4)), "1b4");
+    assert_eq!(format!("{:b}", fbig!(-0x1p4)), "-1b4");
+    assert_eq!(format!("{:b}", fbig!(0x1p-1)), "1b-1");
+    assert_eq!(format!("{:b}", fbig!(-0x1p-1)), "-1b-1");
+    assert_eq!(format!("{:b}", fbig!(0x1p-4)), "1b-4");
+    assert_eq!(format!("{:b}", fbig!(-0x1p-4)), "-1b-4");
+    
+    assert_eq!(format!("{:e}", fbig!(0x0)), "0@0");
+    assert_eq!(format!("{:e}", fbig!(0x1)), "1@0");
+    assert_eq!(format!("{:e}", fbig!(-0x1)), "-1@0");
+    assert_eq!(format!("{:e}", fbig!(0x1p4)), "1@4");
+    assert_eq!(format!("{:e}", fbig!(-0x1p4)), "-1@4");
+    assert_eq!(format!("{:e}", fbig!(0x1p-1)), "1@-1");
+    assert_eq!(format!("{:e}", fbig!(-0x1p-1)), "-1@-1");
+    assert_eq!(format!("{:e}", fbig!(0x1p-4)), "1@-4");
+    assert_eq!(format!("{:e}", fbig!(-0x1p-4)), "-1@-4");
+
+    assert_eq!(format!("{:x}", fbig!(0x0)), "0x0p0");
+    assert_eq!(format!("{:x}", fbig!(0x1)), "0x1p0");
+    assert_eq!(format!("{:x}", fbig!(-0x1)), "-0x1p0");
+    assert_eq!(format!("{:x}", fbig!(0x1p4)), "0x1p4");
+    assert_eq!(format!("{:x}", fbig!(-0x1p4)), "-0x1p4");
+    assert_eq!(format!("{:x}", fbig!(0x1p-1)), "0x1p-1");
+    assert_eq!(format!("{:x}", fbig!(-0x1p-1)), "-0x1p-1");
+    assert_eq!(format!("{:x}", fbig!(0x1p-4)), "0x1p-4");
+    assert_eq!(format!("{:x}", fbig!(-0x1p-4)), "-0x1p-4");
+}
+
+#[test]
 fn test_format_decimal() {
     assert_eq!(format!("{}", dbig!(0)), "0");
     assert_eq!(format!("{}", dbig!(1)), "1");
@@ -576,4 +609,9 @@ fn test_format_debug() {
     rounding: HalfAway,
 }"#
     );
+}
+
+#[test]
+fn test_format_roundtrip() {
+    todo!() // TODO: specifically test special bases
 }

@@ -5,8 +5,6 @@ use pyo3::prelude::*;
 /// (int -> IBig, float -> FBig, decimal -> DBig, fraction -> RBig)
 #[pyfunction]
 pub fn auto(ob: UniInput, py: Python<'_>) -> PyResult<PyObject> {
-    // TODO: accept str input and detect the best representation
-
     use UniInput::*;
     let obj = match ob {
         SmallInt(v) => IPy(v.into()).into_py(py),
@@ -26,6 +24,12 @@ pub fn auto(ob: UniInput, py: Python<'_>) -> PyResult<PyObject> {
         BigRationalOwned(v) => RPy(v).into_py(py),
     };
     Ok(obj)
+}
+
+#[pyfunction]
+pub fn autos(s: &str, py: Python<'_>) -> PyResult<PyObject> {
+    // TODO: accept str input and detect the best representation
+    todo!()
 }
 
 // TODO: split_dword, double_word, etc.
