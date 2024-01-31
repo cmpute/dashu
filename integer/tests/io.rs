@@ -453,3 +453,77 @@ fn test_ibig_debug() {
         );
     }
 }
+
+#[test]
+fn test_string_roundtrip() {
+    use std::str::FromStr;
+
+    let ubig_cases = [
+        ubig!(12345),
+        ubig!(1234567890123),
+        UBig::from(u32::MAX),
+        UBig::from(u32::MAX) + UBig::ONE,
+        UBig::from(u64::MAX),
+        UBig::from(u64::MAX) + UBig::ONE,
+        UBig::from(u128::MAX),
+        UBig::from(u128::MAX) + UBig::ONE,
+        UBig::from(u128::MAX) << 128 | UBig::from(u128::MAX),
+    ];
+
+    for case in ubig_cases {
+        assert_eq!(UBig::from_str(case.to_string().as_str()).unwrap(), case);
+        assert_eq!(UBig::from_str_radix(case.in_radix(2).to_string().as_str(), 2).unwrap(), case);
+        assert_eq!(UBig::from_str_radix(case.in_radix(36).to_string().as_str(), 36).unwrap(), case);
+        assert_eq!(
+            UBig::from_str_with_radix_prefix(format!("{:#b}", case).as_str()),
+            Ok((case.clone(), 2))
+        );
+        assert_eq!(
+            UBig::from_str_with_radix_prefix(format!("{:#010x}", case).as_str()),
+            Ok((case.clone(), 16))
+        );
+        assert_eq!(
+            UBig::from_str_with_radix_prefix(format!("{:+#010X}", case).as_str()),
+            Ok((case.clone(), 16))
+        );
+        assert_eq!(
+            UBig::from_str_radix(format!("{:#}", case.in_radix(36)).as_str(), 36),
+            Ok(case)
+        );
+    }
+
+    let ibig_cases = [
+        ibig!(-12345),
+        ibig!(-1234567890123),
+        IBig::from(i32::MIN),
+        IBig::from(i32::MIN) + UBig::ONE,
+        IBig::from(i64::MIN),
+        IBig::from(i64::MIN) + UBig::ONE,
+        IBig::from(i128::MIN),
+        IBig::from(i128::MIN) + UBig::ONE,
+        IBig::from(i128::MIN) << 128 | IBig::from(i128::MIN),
+    ];
+
+    for case in ibig_cases {
+        assert_eq!(IBig::from_str(case.to_string().as_str()).unwrap(), case);
+        assert_eq!(IBig::from_str_radix(case.in_radix(2).to_string().as_str(), 2).unwrap(), case);
+        assert_eq!(IBig::from_str_radix(case.in_radix(16).to_string().as_str(), 16).unwrap(), case);
+        assert_eq!(IBig::from_str_radix(case.in_radix(36).to_string().as_str(), 36).unwrap(), case);
+        assert_eq!(
+            IBig::from_str_with_radix_prefix(format!("{:#b}", case).as_str()),
+            Ok((case.clone(), 2))
+        );
+        assert_eq!(
+            IBig::from_str_with_radix_prefix(format!("{:#010x}", case).as_str()),
+            Ok((case.clone(), 16))
+        );
+        assert_eq!(
+            IBig::from_str_with_radix_prefix(format!("{:+#010X}", case).as_str()),
+            Ok((case.clone(), 16))
+        );
+        assert_eq!(
+            IBig::from_str_radix(format!("{:#}", case.in_radix(36)).as_str(), 36),
+            Ok(case)
+        );
+    }
+}
