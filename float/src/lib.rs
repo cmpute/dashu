@@ -27,6 +27,7 @@
 //!
 //! ```
 //! # use dashu_base::ParseError;
+//! use core::str::FromStr;
 //! use core::convert::TryFrom;
 //! use dashu_float::DBig;
 //!
@@ -35,7 +36,7 @@
 //! type FBig = dashu_float::FBig;
 //!
 //! let a = FBig::try_from(-12.34_f32).unwrap();
-//! let b = DBig::from_str_native("6.022e23")?;
+//! let b = DBig::from_str("6.022e23")?;
 //! let c = DBig::from_parts(271828.into(), -5);
 //! let d: DBig = "-0.0123456789".parse()?;
 //! let e = 2 * b.ln() + DBig::ONE;

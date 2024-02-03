@@ -1,3 +1,5 @@
+#![allow(deprecated)] // TODO(v0.5): remove after from_str_native is made private.
+
 use crate::{
     fbig::FBig,
     repr::{Context, Repr, Word},
@@ -18,6 +20,10 @@ impl<const B: Word> Repr<B> {
     ///
     /// This method is the underlying implementation of [FBig::from_str_native],
     /// see the docs for that function for details.
+    #[deprecated(
+        since = "0.5.0",
+        note = "from_str_native will be removed in v0.5. Use core::str::FromStr instead."
+    )] // TODO(v0.5): deprecate
     pub fn from_str_native(mut src: &str) -> Result<(Self, usize), ParseError> {
         assert!(MIN_RADIX as Word <= B && B <= MAX_RADIX as Word);
 
@@ -213,6 +219,10 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ///
     /// Panics if the base `B` is not between [MIN_RADIX] and [MAX_RADIX] inclusive.
     #[inline]
+    #[deprecated(
+        since = "0.5.0",
+        note = "from_str_native will be removed in v0.5. Use core::str::FromStr instead."
+    )] // TODO(v0.5): deprecate
     pub fn from_str_native(src: &str) -> Result<Self, ParseError> {
         let (repr, ndigits) = Repr::from_str_native(src)?;
         Ok(Self {

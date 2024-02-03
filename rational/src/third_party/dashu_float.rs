@@ -169,9 +169,10 @@ impl RBig {
     /// ```
     /// # use dashu_base::ParseError;
     /// # use dashu_ratio::RBig;
+    /// use core::str::FromStr;
     /// use dashu_float::DBig;
     ///
-    /// let f = DBig::from_str_native("4.00")? / DBig::from_str_native("3.00")?;
+    /// let f = DBig::from_str("4.00")? / DBig::from_str("3.00")?;
     /// let r = RBig::from_str_radix("4/3", 10)?;
     /// assert_eq!(RBig::simplest_from_float(&f), Some(r));
     /// assert_eq!(RBig::simplest_from_float(&DBig::INFINITY), None);

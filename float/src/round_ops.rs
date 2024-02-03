@@ -16,10 +16,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("1.234")?;
-    /// assert_eq!(a.trunc(), DBig::from_str_native("1")?);
+    /// let a = DBig::from_str("1.234")?;
+    /// assert_eq!(a.trunc(), DBig::from_str("1")?);
     /// // the actual precision of the integral part is 1 digit
     /// assert_eq!(a.trunc().precision(), 1);
     /// # Ok::<(), ParseError>(())
@@ -67,12 +68,13 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("1.234")?;
+    /// let a = DBig::from_str("1.234")?;
     /// let (trunc, fract) = a.split_at_point();
-    /// assert_eq!(trunc, DBig::from_str_native("1.0")?);
-    /// assert_eq!(fract, DBig::from_str_native("0.234")?);
+    /// assert_eq!(trunc, DBig::from_str("1.0")?);
+    /// assert_eq!(fract, DBig::from_str("0.234")?);
     /// // the actual precision of the fractional part is 3 digits
     /// assert_eq!(trunc.precision(), 1);
     /// assert_eq!(fract.precision(), 3);
@@ -103,10 +105,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("1.234")?;
-    /// assert_eq!(a.fract(), DBig::from_str_native("0.234")?);
+    /// let a = DBig::from_str("1.234")?;
+    /// assert_eq!(a.fract(), DBig::from_str("0.234")?);
     /// // the actual precision of the fractional part is 3 digits
     /// assert_eq!(a.fract().precision(), 3);
     /// # Ok::<(), ParseError>(())
@@ -134,13 +137,14 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("1.234")?;
-    /// assert_eq!(a.ceil(), DBig::from_str_native("2")?);
+    /// let a = DBig::from_str("1.234")?;
+    /// assert_eq!(a.ceil(), DBig::from_str("2")?);
     ///
     /// // works for very large exponent
-    /// let b = DBig::from_str_native("1.234e10000")?;
+    /// let b = DBig::from_str("1.234e10000")?;
     /// assert_eq!(b.ceil(), b);
     /// # Ok::<(), ParseError>(())
     /// ```
@@ -173,13 +177,14 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("1.234")?;
-    /// assert_eq!(a.floor(), DBig::from_str_native("1")?);
+    /// let a = DBig::from_str("1.234")?;
+    /// assert_eq!(a.floor(), DBig::from_str("1")?);
     ///
     /// // works for very large exponent
-    /// let b = DBig::from_str_native("1.234e10000")?;
+    /// let b = DBig::from_str("1.234e10000")?;
     /// assert_eq!(b.floor(), b);
     /// # Ok::<(), ParseError>(())
     /// ```
@@ -212,13 +217,14 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("1.234")?;
-    /// assert_eq!(a.round(), DBig::from_str_native("1")?);
+    /// let a = DBig::from_str("1.234")?;
+    /// assert_eq!(a.round(), DBig::from_str("1")?);
     ///
     /// // works for very large exponent
-    /// let b = DBig::from_str_native("1.234e10000")?;
+    /// let b = DBig::from_str("1.234e10000")?;
     /// assert_eq!(b.round(), b);
     /// # Ok::<(), ParseError>(())
     /// ```

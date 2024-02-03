@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::str::FromStr;
 
 use dashu_float::{DBig, FBig};
 use dashu_ratio::RBig;
@@ -61,16 +62,16 @@ fn test_ord_with_fbig() {
         (rbig!(1), FBin::NEG_ONE, Ordering::Greater),
         (rbig!(-1), FBin::ONE, Ordering::Less),
         (rbig!(-1), FBin::NEG_ONE, Ordering::Equal),
-        (rbig!(1 / 2), FBin::from_str_native("0x1p-1").unwrap(), Ordering::Equal),
-        (rbig!(-9 / 2), FBin::from_str_native("-0x9p-1").unwrap(), Ordering::Equal),
-        (rbig!(1 / 1024), FBin::from_str_native("0x1p-10").unwrap(), Ordering::Equal),
+        (rbig!(1 / 2), FBin::from_str("0x1p-1").unwrap(), Ordering::Equal),
+        (rbig!(-9 / 2), FBin::from_str("-0x9p-1").unwrap(), Ordering::Equal),
+        (rbig!(1 / 1024), FBin::from_str("0x1p-10").unwrap(), Ordering::Equal),
         (
             rbig!(1 / 1267650600228229401496703205376),
-            FBin::from_str_native("0x1p-100").unwrap(),
+            FBin::from_str("0x1p-100").unwrap(),
             Ordering::Equal,
         ),
-        (rbig!(1 / 3), FBin::from_str_native("0x55555p-20").unwrap(), Ordering::Greater),
-        (rbig!(1 / 3), FBin::from_str_native("0x55556p-20").unwrap(), Ordering::Less),
+        (rbig!(1 / 3), FBin::from_str("0x55555p-20").unwrap(), Ordering::Greater),
+        (rbig!(1 / 3), FBin::from_str("0x55556p-20").unwrap(), Ordering::Less),
     ];
     for (r, f, ord) in fbig_cases {
         assert_eq!(r.num_cmp(&f), ord);
@@ -85,16 +86,16 @@ fn test_ord_with_fbig() {
         (rbig!(1), DBig::NEG_ONE, Ordering::Greater),
         (rbig!(-1), DBig::ONE, Ordering::Less),
         (rbig!(-1), DBig::NEG_ONE, Ordering::Equal),
-        (rbig!(1 / 10), DBig::from_str_native("0.1").unwrap(), Ordering::Equal),
-        (rbig!(-11 / 10), DBig::from_str_native("-1.1").unwrap(), Ordering::Equal),
-        (rbig!(1 / 9765625), DBig::from_str_native("1.024e-7").unwrap(), Ordering::Equal),
+        (rbig!(1 / 10), DBig::from_str("0.1").unwrap(), Ordering::Equal),
+        (rbig!(-11 / 10), DBig::from_str("-1.1").unwrap(), Ordering::Equal),
+        (rbig!(1 / 9765625), DBig::from_str("1.024e-7").unwrap(), Ordering::Equal),
         (
             rbig!(1 / 7888609052210118054117285652827862296732064351090230047702789306640625),
-            DBig::from_str_native("1.267650600228229401496703205376e-70").unwrap(),
+            DBig::from_str("1.267650600228229401496703205376e-70").unwrap(),
             Ordering::Equal,
         ),
-        (rbig!(-1 / 3), DBig::from_str_native("-0.33334").unwrap(), Ordering::Greater),
-        (rbig!(-1 / 3), DBig::from_str_native("-0.33333").unwrap(), Ordering::Less),
+        (rbig!(-1 / 3), DBig::from_str("-0.33334").unwrap(), Ordering::Greater),
+        (rbig!(-1 / 3), DBig::from_str("-0.33333").unwrap(), Ordering::Less),
     ];
     for (r, d, ord) in dbig_cases {
         assert_eq!(r.num_cmp(&d), ord);

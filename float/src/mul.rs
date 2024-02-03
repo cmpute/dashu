@@ -89,10 +89,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("-1.234")?;
-    /// assert_eq!(a.sqr(), DBig::from_str_native("1.523")?);
+    /// let a = DBig::from_str("-1.234")?;
+    /// assert_eq!(a.sqr(), DBig::from_str("1.523")?);
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
@@ -105,10 +106,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("-1.234")?;
-    /// assert_eq!(a.cubic(), DBig::from_str_native("-1.879")?);
+    /// let a = DBig::from_str("-1.234")?;
+    /// assert_eq!(a.cubic(), DBig::from_str("-1.879")?);
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
@@ -123,17 +125,18 @@ impl<R: Round> Context<R> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
     ///
     /// let context = Context::<HalfAway>::new(2);
-    /// let a = DBig::from_str_native("-1.234")?;
-    /// let b = DBig::from_str_native("6.789")?;
+    /// let a = DBig::from_str("-1.234")?;
+    /// let b = DBig::from_str("6.789")?;
     /// assert_eq!(
     ///     context.mul(&a.repr(), &b.repr()),
-    ///     Inexact(DBig::from_str_native("-8.4")?, SubOne)
+    ///     Inexact(DBig::from_str("-8.4")?, SubOne)
     /// );
     /// # Ok::<(), ParseError>(())
     /// ```
@@ -176,14 +179,15 @@ impl<R: Round> Context<R> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
     ///
     /// let context = Context::<HalfAway>::new(2);
-    /// let a = DBig::from_str_native("-1.234")?;
-    /// assert_eq!(context.sqr(&a.repr()), Inexact(DBig::from_str_native("1.5")?, NoOp));
+    /// let a = DBig::from_str("-1.234")?;
+    /// assert_eq!(context.sqr(&a.repr()), Inexact(DBig::from_str("1.5")?, NoOp));
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn sqr<const B: Word>(&self, f: &Repr<B>) -> Rounded<FBig<R, B>> {
@@ -213,14 +217,15 @@ impl<R: Round> Context<R> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
     ///
     /// let context = Context::<HalfAway>::new(2);
-    /// let a = DBig::from_str_native("-1.234")?;
-    /// assert_eq!(context.cubic(&a.repr()), Inexact(DBig::from_str_native("-1.9")?, SubOne));
+    /// let a = DBig::from_str("-1.234")?;
+    /// assert_eq!(context.cubic(&a.repr()), Inexact(DBig::from_str("-1.9")?, SubOne));
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn cubic<const B: Word>(&self, f: &Repr<B>) -> Rounded<FBig<R, B>> {

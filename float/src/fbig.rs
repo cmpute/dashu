@@ -48,16 +48,18 @@ use dashu_int::{DoubleWord, IBig};
 /// ```
 /// # use dashu_base::ParseError;
 /// # use dashu_float::DBig;
+/// use core::str::FromStr;
+///
 /// // parsing
 /// let a = DBig::from_parts(123456789.into(), -5);
-/// let b = DBig::from_str_native("1234.56789")?;
-/// let c = DBig::from_str_native("1.23456789e3")?;
+/// let b = DBig::from_str("1234.56789")?;
+/// let c = DBig::from_str("1.23456789e3")?;
 /// assert_eq!(a, b);
 /// assert_eq!(b, c);
 ///
 /// // printing
-/// assert_eq!(format!("{}", DBig::from_str_native("12.34")?), "12.34");
-/// let x = DBig::from_str_native("10.01")?
+/// assert_eq!(format!("{}", DBig::from_str("12.34")?), "12.34");
+/// let x = DBig::from_str("10.01")?
 ///     .with_precision(0) // use unlimited precision
 ///     .value();
 /// if dashu_int::Word::BITS == 64 {
@@ -202,12 +204,13 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// # use dashu_int::IBig;
     /// use dashu_float::Repr;
     ///
-    /// let a = DBig::from_str_native("1.234")?;
+    /// let a = DBig::from_str("1.234")?;
     /// assert!(a.repr().significand() <= &IBig::from(10).pow(a.precision()));
     /// # Ok::<(), ParseError>(())
     /// ```
@@ -226,11 +229,12 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     ///
-    /// let a = DBig::from_str_native("-1.234e-3")?;
+    /// let a = DBig::from_str("-1.234e-3")?;
     /// assert_eq!(a.digits(), 4);
     /// assert!(matches!(a.clone().with_precision(4), Exact(_)));
     /// assert!(matches!(a.clone().with_precision(3), Inexact(_, _)));
@@ -276,8 +280,9 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
+    /// use core::str::FromStr;
     /// let a = DBig::from_parts((-1234).into(), -2);
-    /// assert_eq!(a, DBig::from_str_native("-12.34")?);
+    /// assert_eq!(a, DBig::from_str("-12.34")?);
     /// assert_eq!(a.precision(), 4); // 1234 has 4 (decimal) digits
     /// # Ok::<(), ParseError>(())
     /// ```
@@ -302,10 +307,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
+    /// use core::str::FromStr;
     /// use dashu_base::Sign;
     ///
     /// const A: DBig = DBig::from_parts_const(Sign::Negative, 1234, -2, None);
-    /// assert_eq!(A, DBig::from_str_native("-12.34")?);
+    /// assert_eq!(A, DBig::from_str("-12.34")?);
     /// assert_eq!(A.precision(), 4); // 1234 has 4 (decimal) digits
     ///
     /// const B: DBig = DBig::from_parts_const(Sign::Negative, 1234, -2, Some(5));
@@ -371,10 +377,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
-    /// assert_eq!(DBig::from_str_native("1.23")?.ulp(), DBig::from_str_native("0.01")?);
-    /// assert_eq!(DBig::from_str_native("01.23")?.ulp(), DBig::from_str_native("0.001")?);
+    /// assert_eq!(DBig::from_str("1.23")?.ulp(), DBig::from_str("0.01")?);
+    /// assert_eq!(DBig::from_str("01.23")?.ulp(), DBig::from_str("0.001")?);
     /// # Ok::<(), ParseError>(())
     /// ```
     ///

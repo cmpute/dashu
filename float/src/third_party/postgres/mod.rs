@@ -232,6 +232,7 @@ impl<R: Round> TryFrom<&FBig<R, 10>> for Numeric {
 mod tests {
     use super::*;
     use crate::DBig;
+    use core::str::FromStr;
 
     #[test]
     fn test_conversion_between_dbig_and_numeric() {
@@ -274,7 +275,7 @@ mod tests {
         assert_eq!(parsed, decimal);
         assert_eq!(parsed.precision(), 1);
 
-        let decimal = DBig::from_str_native("1e4").unwrap();
+        let decimal = DBig::from_str("1e4").unwrap();
         let expected = Numeric {
             sign: Sign::Positive,
             is_inf: false,
@@ -287,7 +288,7 @@ mod tests {
         assert_eq!(parsed, decimal);
         assert_eq!(parsed.precision(), 5); // integers always has full precision
 
-        let decimal = DBig::from_str_native("-10000.00").unwrap();
+        let decimal = DBig::from_str("-10000.00").unwrap();
         let expected = Numeric {
             sign: Sign::Negative,
             is_inf: false,
@@ -300,7 +301,7 @@ mod tests {
         assert_eq!(parsed, decimal);
         assert_eq!(parsed.precision(), 7);
 
-        let decimal = DBig::from_str_native("1e6").unwrap();
+        let decimal = DBig::from_str("1e6").unwrap();
         let expected = Numeric {
             sign: Sign::Positive,
             is_inf: false,
@@ -313,7 +314,7 @@ mod tests {
         assert_eq!(parsed, decimal);
         assert_eq!(parsed.precision(), 7); // integers always has full precision
 
-        let decimal = DBig::from_str_native("-1000000.0000").unwrap();
+        let decimal = DBig::from_str("-1000000.0000").unwrap();
         let expected = Numeric {
             sign: Sign::Negative,
             is_inf: false,
@@ -326,7 +327,7 @@ mod tests {
         assert_eq!(parsed, decimal);
         assert_eq!(parsed.precision(), 11);
 
-        let decimal = DBig::from_str_native("1e-4").unwrap();
+        let decimal = DBig::from_str("1e-4").unwrap();
         let expected = Numeric {
             sign: Sign::Positive,
             is_inf: false,
@@ -340,7 +341,7 @@ mod tests {
         assert_eq!(parsed.precision(), 1);
 
         // 000.0001 has a precision of 7 digits, so it's considered as "1.000000e-4"
-        let decimal = DBig::from_str_native("-000.0001").unwrap();
+        let decimal = DBig::from_str("-000.0001").unwrap();
         let expected = Numeric {
             sign: Sign::Negative,
             is_inf: false,
@@ -353,7 +354,7 @@ mod tests {
         assert_eq!(parsed, decimal);
         assert_eq!(parsed.precision(), 7);
 
-        let decimal = DBig::from_str_native("1e-6").unwrap();
+        let decimal = DBig::from_str("1e-6").unwrap();
         let expected = Numeric {
             sign: Sign::Positive,
             is_inf: false,
@@ -367,7 +368,7 @@ mod tests {
         assert_eq!(parsed.precision(), 1);
 
         // 00000.000001 has a precision of 11 digits, so it's considered as "1.0000000000e-6"
-        let decimal = DBig::from_str_native("-00000.000001").unwrap();
+        let decimal = DBig::from_str("-00000.000001").unwrap();
         let expected = Numeric {
             sign: Sign::Negative,
             is_inf: false,

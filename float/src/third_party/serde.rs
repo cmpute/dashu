@@ -63,6 +63,7 @@ impl<'de, const B: Word> Visitor<'de> for ReprVisitor<B> {
 
     #[inline]
     fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+        #[allow(deprecated)] // TODO(v0.5): remove after from_str_native is made private.
         match Repr::<B>::from_str_native(v) {
             Ok((repr, _)) => Ok(repr),
             Err(e) => Err(de::Error::custom(e)),
@@ -138,6 +139,7 @@ impl<'de, R: Round, const B: Word> Visitor<'de> for FBigVisitor<R, B> {
 
     #[inline]
     fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+        #[allow(deprecated)] // TODO(v0.5): remove after from_str_native is made private.
         FBig::from_str_native(v).map_err(de::Error::custom)
     }
 

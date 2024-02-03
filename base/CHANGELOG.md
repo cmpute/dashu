@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- Re-implement functions `next_up` and `next_down`, and expose them through the `utils`` module.
+- Mark `AbsEq` as deprecated.
+- Re-implement functions `next_up` and `next_down`, and expose them through the `utils` module.
 
 ## 0.4.0
 

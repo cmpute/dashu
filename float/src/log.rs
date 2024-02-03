@@ -66,10 +66,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("1.234")?;
-    /// assert_eq!(a.ln(), DBig::from_str_native("0.2103")?);
+    /// let a = DBig::from_str("1.234")?;
+    /// assert_eq!(a.ln(), DBig::from_str("0.2103")?);
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
@@ -82,10 +83,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
-    /// let a = DBig::from_str_native("0.1234")?;
-    /// assert_eq!(a.ln_1p(), DBig::from_str_native("0.11636")?);
+    /// let a = DBig::from_str("0.1234")?;
+    /// assert_eq!(a.ln_1p(), DBig::from_str("0.11636")?);
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
@@ -183,14 +185,15 @@ impl<R: Round> Context<R> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
     ///
     /// let context = Context::<HalfAway>::new(2);
-    /// let a = DBig::from_str_native("1.234")?;
-    /// assert_eq!(context.ln(&a.repr()), Inexact(DBig::from_str_native("0.21")?, NoOp));
+    /// let a = DBig::from_str("1.234")?;
+    /// assert_eq!(context.ln(&a.repr()), Inexact(DBig::from_str("0.21")?, NoOp));
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
@@ -203,14 +206,15 @@ impl<R: Round> Context<R> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
     ///
     /// let context = Context::<HalfAway>::new(2);
-    /// let a = DBig::from_str_native("0.1234")?;
-    /// assert_eq!(context.ln_1p(&a.repr()), Inexact(DBig::from_str_native("0.12")?, AddOne));
+    /// let a = DBig::from_str("0.1234")?;
+    /// assert_eq!(context.ln_1p(&a.repr()), Inexact(DBig::from_str("0.12")?, AddOne));
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]

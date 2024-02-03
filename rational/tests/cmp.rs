@@ -3,6 +3,7 @@
 use dashu_base::AbsOrd;
 use dashu_float::{DBig, FBig};
 use dashu_ratio::{RBig, Relaxed};
+use std::str::FromStr;
 use std::{
     cmp::Ordering,
     collections::hash_map::DefaultHasher,
@@ -164,12 +165,12 @@ fn test_abs_ord() {
         (rbig!(1), FBin::NEG_ONE, Ordering::Equal),
         (rbig!(-1), FBin::ONE, Ordering::Equal),
         (rbig!(-1), FBin::NEG_ONE, Ordering::Equal),
-        (rbig!(1 / 2), FBin::from_str_native("-0x1p-1").unwrap(), Ordering::Equal),
-        (rbig!(-9 / 2), FBin::from_str_native("-0x9p-1").unwrap(), Ordering::Equal),
-        (rbig!(-1 / 1024), FBin::from_str_native("0x1p-10").unwrap(), Ordering::Equal),
+        (rbig!(1 / 2), FBin::from_str("-0x1p-1").unwrap(), Ordering::Equal),
+        (rbig!(-9 / 2), FBin::from_str("-0x9p-1").unwrap(), Ordering::Equal),
+        (rbig!(-1 / 1024), FBin::from_str("0x1p-10").unwrap(), Ordering::Equal),
         (
             rbig!(1 / 1267650600228229401496703205376),
-            FBin::from_str_native("0x1p-100").unwrap(),
+            FBin::from_str("0x1p-100").unwrap(),
             Ordering::Equal,
         ),
     ];
@@ -187,12 +188,12 @@ fn test_abs_ord() {
         (rbig!(1), DBig::NEG_ONE, Ordering::Equal),
         (rbig!(-1), DBig::ONE, Ordering::Equal),
         (rbig!(-1), DBig::NEG_ONE, Ordering::Equal),
-        (rbig!(1 / 10), DBig::from_str_native("-0.1").unwrap(), Ordering::Equal),
-        (rbig!(-11 / 10), DBig::from_str_native("-1.1").unwrap(), Ordering::Equal),
-        (rbig!(-1 / 9765625), DBig::from_str_native("1.024e-7").unwrap(), Ordering::Equal),
+        (rbig!(1 / 10), DBig::from_str("-0.1").unwrap(), Ordering::Equal),
+        (rbig!(-11 / 10), DBig::from_str("-1.1").unwrap(), Ordering::Equal),
+        (rbig!(-1 / 9765625), DBig::from_str("1.024e-7").unwrap(), Ordering::Equal),
         (
             rbig!(1 / 7888609052210118054117285652827862296732064351090230047702789306640625),
-            DBig::from_str_native("1.267650600228229401496703205376e-70").unwrap(),
+            DBig::from_str("1.267650600228229401496703205376e-70").unwrap(),
             Ordering::Equal,
         ),
     ];

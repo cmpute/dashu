@@ -13,10 +13,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::{ParseError, Sign};
     /// # use dashu_float::DBig;
     /// assert_eq!(DBig::ZERO.sign(), Sign::Positive);
-    /// assert_eq!(DBig::from_str_native("-1.234")?.sign(), Sign::Negative);
+    /// assert_eq!(DBig::from_str("-1.234")?.sign(), Sign::Negative);
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
@@ -32,10 +33,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ///
     /// # Examples
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
-    /// assert_eq!(DBig::from_str_native("2.01")?.signum(), DBig::ONE);
-    /// assert_eq!(DBig::from_str_native("-1.234")?.signum(), DBig::NEG_ONE);
+    /// assert_eq!(DBig::from_str("2.01")?.signum(), DBig::ONE);
+    /// assert_eq!(DBig::from_str("-1.234")?.signum(), DBig::NEG_ONE);
     /// # Ok::<(), ParseError>(())
     /// ```
     pub const fn signum(&self) -> Self {

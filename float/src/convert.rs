@@ -27,16 +27,17 @@ impl<R: Round> Context<R> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
     /// use dashu_base::Approximation::*;
     /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
     ///
     /// let context = Context::<HalfAway>::new(2);
-    /// assert_eq!(context.convert_int::<10>((-12).into()), Exact(DBig::from_str_native("-12")?));
+    /// assert_eq!(context.convert_int::<10>((-12).into()), Exact(DBig::from_str("-12")?));
     /// assert_eq!(
     ///     context.convert_int::<10>(5678.into()),
-    ///     Inexact(DBig::from_str_native("5.7e3")?, AddOne)
+    ///     Inexact(DBig::from_str("5.7e3")?, AddOne)
     /// );
     /// # Ok::<(), ParseError>(())
     /// ```
@@ -104,6 +105,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
@@ -112,16 +114,16 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// type Real = FBig;
     ///
     /// assert_eq!(
-    ///     Real::from_str_native("0x1234")?.to_decimal(),
-    ///     Exact(DBig::from_str_native("4660")?)
+    ///     Real::from_str("0x1234")?.to_decimal(),
+    ///     Exact(DBig::from_str("4660")?)
     /// );
     /// assert_eq!(
-    ///     Real::from_str_native("0x12.34")?.to_decimal(),
-    ///     Inexact(DBig::from_str_native("18.20")?, NoOp)
+    ///     Real::from_str("0x12.34")?.to_decimal(),
+    ///     Inexact(DBig::from_str("18.20")?, NoOp)
     /// );
     /// assert_eq!(
-    ///     Real::from_str_native("0x1.234p-4")?.to_decimal(),
-    ///     Inexact(DBig::from_str_native("0.07111")?, AddOne)
+    ///     Real::from_str("0x1.234p-4")?.to_decimal(),
+    ///     Inexact(DBig::from_str("0.07111")?, AddOne)
     /// );
     /// # Ok::<(), ParseError>(())
     /// ```
@@ -144,6 +146,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
@@ -152,16 +155,16 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// type Real = FBig;
     ///
     /// assert_eq!(
-    ///     DBig::from_str_native("1234")?.to_binary(),
-    ///     Exact(Real::from_str_native("0x4d2")?)
+    ///     DBig::from_str("1234")?.to_binary(),
+    ///     Exact(Real::from_str("0x4d2")?)
     /// );
     /// assert_eq!(
-    ///     DBig::from_str_native("12.34")?.to_binary(),
-    ///     Inexact(Real::from_str_native("0xc.57")?, NoOp)
+    ///     DBig::from_str("12.34")?.to_binary(),
+    ///     Inexact(Real::from_str("0xc.57")?, NoOp)
     /// );
     /// assert_eq!(
-    ///     DBig::from_str_native("1.234e-1")?.to_binary(),
-    ///     Inexact(Real::from_str_native("0x1.f97p-4")?, NoOp)
+    ///     DBig::from_str("1.234e-1")?.to_binary(),
+    ///     Inexact(Real::from_str("0x1.f97p-4")?, NoOp)
     /// );
     /// # Ok::<(), ParseError>(())
     /// ```
@@ -183,20 +186,21 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```rust
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::{mode::HalfAway, Rounding::*};
     ///
-    /// let a = DBig::from_str_native("2.345")?;
+    /// let a = DBig::from_str("2.345")?;
     /// assert_eq!(a.precision(), 4);
     /// assert_eq!(
     ///     a.clone().with_precision(3),
-    ///     Inexact(DBig::from_str_native("2.35")?, AddOne)
+    ///     Inexact(DBig::from_str("2.35")?, AddOne)
     /// );
     /// assert_eq!(
     ///     a.clone().with_precision(5),
-    ///     Exact(DBig::from_str_native("2.345")?)
+    ///     Exact(DBig::from_str("2.345")?)
     /// );
     /// # Ok::<(), ParseError>(())
     /// ```
@@ -223,6 +227,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```rust
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
@@ -231,8 +236,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// type DBigHalfAway = DBig;
     /// type DBigZero = FBig::<Zero, 10>;
     ///
-    /// let a = DBigHalfAway::from_str_native("2.345")?;
-    /// let b = DBigZero::from_str_native("2.345")?;
+    /// let a = DBigHalfAway::from_str("2.345")?;
+    /// let b = DBigZero::from_str("2.345")?;
     /// assert_eq!(a.with_rounding::<Zero>(), b);
     /// # Ok::<(), ParseError>(())
     /// ```
@@ -259,6 +264,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```rust
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
@@ -268,16 +274,16 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// type FDec = FBig<Zero, 10>;
     /// type FHex = FBig<Zero, 16>;
     ///
-    /// let a = FBin::from_str_native("0x1.234")?; // 0x1234 * 2^-12
+    /// let a = FBin::from_str("0x1.234")?; // 0x1234 * 2^-12
     /// assert_eq!(
     ///     a.clone().with_base::<10>(),
     ///     // 1.1376953125 rounded towards zero
-    ///     Inexact(FDec::from_str_native("1.137")?, NoOp)
+    ///     Inexact(FDec::from_str("1.137")?, NoOp)
     /// );
     /// assert_eq!(
     ///     a.clone().with_base::<16>(),
     ///     // conversion is exact when the new base is a power of the old base
-    ///     Exact(FHex::from_str_native("1.234")?)
+    ///     Exact(FHex::from_str("1.234")?)
     /// );
     /// # Ok::<(), ParseError>(())
     /// ```
@@ -307,6 +313,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```rust
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
@@ -316,21 +323,21 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// type FDec = FBig<Zero, 10>;
     /// type FHex = FBig<Zero, 16>;
     ///
-    /// let a = FBin::from_str_native("0x1.234")?; // 0x1234 * 2^-12
+    /// let a = FBin::from_str("0x1.234")?; // 0x1234 * 2^-12
     /// assert_eq!(
     ///     a.clone().with_base_and_precision::<10>(8),
     ///     // 1.1376953125 rounded towards zero
-    ///     Inexact(FDec::from_str_native("1.1376953")?, NoOp)
+    ///     Inexact(FDec::from_str("1.1376953")?, NoOp)
     /// );
     /// assert_eq!(
     ///     a.clone().with_base_and_precision::<16>(8),
     ///     // conversion can be exact when the new base is a power of the old base
-    ///     Exact(FHex::from_str_native("1.234")?)
+    ///     Exact(FHex::from_str("1.234")?)
     /// );
     /// assert_eq!(
     ///     a.clone().with_base_and_precision::<16>(2),
     ///     // but the conversion is still inexact if the target precision is smaller
-    ///     Inexact(FHex::from_str_native("1.2")?, NoOp)
+    ///     Inexact(FHex::from_str("1.2")?, NoOp)
     /// );
     /// # Ok::<(), ParseError>(())
     /// ```
@@ -363,21 +370,22 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
     /// use dashu_float::round::Rounding::*;
     ///
     /// assert_eq!(
-    ///     DBig::from_str_native("1234")?.to_int(),
+    ///     DBig::from_str("1234")?.to_int(),
     ///     Exact(1234.into())
     /// );
     /// assert_eq!(
-    ///     DBig::from_str_native("1.234e6")?.to_int(),
+    ///     DBig::from_str("1.234e6")?.to_int(),
     ///     Exact(1234000.into())
     /// );
     /// assert_eq!(
-    ///     DBig::from_str_native("1.234")?.to_int(),
+    ///     DBig::from_str("1.234")?.to_int(),
     ///     Inexact(1.into(), NoOp)
     /// );
     /// # Ok::<(), ParseError>(())
@@ -406,9 +414,10 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
-    /// assert_eq!(DBig::from_str_native("1.234")?.to_f32().value(), 1.234);
+    /// assert_eq!(DBig::from_str("1.234")?.to_f32().value(), 1.234);
     /// assert_eq!(DBig::INFINITY.to_f32().value(), f32::INFINITY);
     /// # Ok::<(), ParseError>(())
     /// ```
@@ -436,9 +445,10 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Examples
     ///
     /// ```
+    /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
-    /// assert_eq!(DBig::from_str_native("1.234")?.to_f64().value(), 1.234);
+    /// assert_eq!(DBig::from_str("1.234")?.to_f64().value(), 1.234);
     /// assert_eq!(DBig::INFINITY.to_f64().value(), f64::INFINITY);
     /// # Ok::<(), ParseError>(())
     /// ```
