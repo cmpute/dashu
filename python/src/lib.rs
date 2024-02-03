@@ -22,5 +22,6 @@ fn dashu(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<types::RPy>()?;
 
     m.add_function(wrap_pyfunction!(utils::auto, m)?)?;
+    m.add_function(wrap_pyfunction!(utils::autos, m)?)?;
     Ok(())
 }

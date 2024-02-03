@@ -56,7 +56,7 @@ impl FPy {
     }
 
     fn __float__(&self) -> f64 {
-        todo!()
+        self.0.to_f64().value()
     }
 }
 
@@ -80,10 +80,10 @@ impl DPy {
         }
     }
     fn unwrap(&self, py: Python) -> PyResult<PyObject> {
-        // TODO(next): use scientific notation to convert
         let decimal = py.import(intern!(py, "decimal"))?;
         let decimal_type = decimal.getattr(intern!(py, "Decimal"))?;
-        Ok(decimal_type.call1((self.0.to_string(),))?.into())
+        let decimal_str = format!("{:e}", self.0);
+        Ok(decimal_type.call1((decimal_str,))?.into())
     }
 
     fn __repr__(&self) -> String {
