@@ -1,6 +1,6 @@
 [package]
 name = "dashu-base"
-version = "0.4.0"
+version = "0.4.1"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2021"
 description = "Common trait definitions and tools for the `dashu` libraries"

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1
 
 - Mark `AbsEq` as deprecated.
 - Re-implement functions `next_up` and `next_down`, and expose them through the `utils` module.

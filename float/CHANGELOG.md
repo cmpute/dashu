@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.4.3
 
+- Mark `FBig::from_str_native` as deprecated.
 - Implement `TryFrom<Repr>` and `TryFrom<FBig>` for primitive integers.
 - Implement `TryFrom<Repr<2>>` and `TryFrom<FBig<_, 2>>` for primitive floats.
 - Implement `From<UBig>` and `From<IBig>` for `Repr`.
