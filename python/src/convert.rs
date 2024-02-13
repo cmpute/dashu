@@ -10,7 +10,7 @@ use pyo3::{
     types::{PyBytes, PyDict, PyFloat, PyLong},
     FromPyObject, PyAny, PyErr, PyObject,
 };
-use std::os::raw::c_longlong;
+use std::os::raw::{c_double, c_longlong};
 
 use crate::types::*;
 use dashu_base::{ConversionError, ParseError};
@@ -160,23 +160,29 @@ impl<'source> FromPyObject<'source> for UniInput<'source> {
         if ob.is_instance_of::<PyLong>() {
             let (v, overflow) = parse_to_long(ob)?;
             if overflow {
-                Ok(Self::BigIntOwned(parse_to_ibig(ob)?))
+                Ok(Self::OBInt(parse_to_ibig(ob)?))
+            } else if v < 0 {
+                Ok(Self::Int(v))
             } else {
-                Ok(Self::SmallInt(v))
+                Ok(Self::Uint(v as _))
             }
         } else if ob.is_instance_of::<PyFloat>() {
-            let f = ob.extract()?;
-            Ok(Self::SmallFloat(f))
+            let f: c_double = ob.extract()?;
+            if f.is_nan() {
+                Err(PyValueError::new_err("nan values are not supported by dashu types"))
+            } else {
+                Ok(Self::Float(f))
+            }
         } else if let Ok(u) = <PyRef<'source, UPy> as FromPyObject>::extract(ob) {
-            Ok(Self::BigUint(u))
+            Ok(Self::BUint(u))
         } else if let Ok(i) = <PyRef<'source, IPy> as FromPyObject>::extract(ob) {
-            Ok(Self::BigInt(i))
+            Ok(Self::BInt(i))
         } else if let Ok(f) = <PyRef<'source, FPy> as FromPyObject>::extract(ob) {
-            Ok(Self::BigFloat(f))
+            Ok(Self::BFloat(f))
         } else if let Ok(d) = <PyRef<'source, DPy> as FromPyObject>::extract(ob) {
-            Ok(Self::BigDecimal(d))
+            Ok(Self::BDecimal(d))
         } else if let Ok(r) = <PyRef<'source, RPy> as FromPyObject>::extract(ob) {
-            Ok(Self::BigRational(r))
+            Ok(Self::BRational(r))
         } else {
             // slow path:
             // get relevant Python types
@@ -188,9 +194,9 @@ impl<'source> FromPyObject<'source> for UniInput<'source> {
 
             // and check whether the input is an instance of them
             if ob.is_instance(decimal_type)? {
-                Ok(Self::BigDecimalOwned(parse_to_dbig(ob)?))
+                Ok(Self::OBDecimal(parse_to_dbig(ob)?))
             } else if ob.is_instance(fraction_type)? {
-                Ok(Self::BigRationalOwned(parse_to_rbig(ob)?))
+                Ok(Self::OBRational(parse_to_rbig(ob)?))
             } else {
                 Err(PyTypeError::new_err("the input is an invalid number or unsupported"))
             }

@@ -1,5 +1,5 @@
 use pyo3::prelude::*;
-use std::os::raw::{c_double, c_longlong};
+use std::os::raw::{c_double, c_longlong, c_ulonglong};
 
 use dashu_base::Sign;
 use dashu_float::DBig;
@@ -82,15 +82,20 @@ impl From<RBig> for RPy {
 pub struct PyWords(pub std::vec::Vec<dashu_int::Word>);
 
 /// An input type that accepts all possible numeric types from Python
+///
+/// Notes:
+/// - Variants starting with 'B': big numbers
+/// - Variants starting with 'OB': owned big numbers
 pub enum UniInput<'a> {
-    SmallInt(c_longlong), // from int
-    BigUint(PyRef<'a, UPy>),
-    BigInt(PyRef<'a, IPy>),
-    BigIntOwned(IBig),    // from int
-    SmallFloat(c_double), // from float
-    BigFloat(PyRef<'a, FPy>),
-    BigDecimal(PyRef<'a, DPy>),
-    BigDecimalOwned(DBig), // from decimal.Decimal
-    BigRational(PyRef<'a, RPy>),
-    BigRationalOwned(RBig), // from fractions.Fraction
+    Uint(c_ulonglong), // from int
+    Int(c_longlong), // from int
+    BUint(PyRef<'a, UPy>),
+    BInt(PyRef<'a, IPy>),
+    OBInt(IBig),    // from int
+    Float(c_double), // from float
+    BFloat(PyRef<'a, FPy>),
+    BDecimal(PyRef<'a, DPy>),
+    OBDecimal(DBig), // from decimal.Decimal
+    BRational(PyRef<'a, RPy>),
+    OBRational(RBig), // from fractions.Fraction
 }

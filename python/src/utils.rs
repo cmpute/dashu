@@ -26,21 +26,22 @@ pub fn auto(ob: UniInput, py: Python<'_>) -> PyResult<PyObject> {
     };
 
     let obj = match ob {
-        SmallInt(v) => fit_ibig(v.into()),
-        BigUint(v) => v.clone().into_py(py),
-        BigInt(v) => fit_ibig(v.0.clone()),
-        BigIntOwned(v) => fit_ibig(v),
-        SmallFloat(v) => match v.try_into() {
+        Uint(v) => UPy(v.into()).into_py(py),
+        Int(v) => fit_ibig(v.into()),
+        BUint(v) => v.clone().into_py(py),
+        BInt(v) => fit_ibig(v.0.clone()),
+        OBInt(v) => fit_ibig(v),
+        Float(v) => match v.try_into() {
             Ok(big) => FPy(big).into_py(py),
             Err(e) => {
                 return Err(conversion_error_to_py(e));
             }
         },
-        BigFloat(v) => v.clone().into_py(py),
-        BigDecimal(v) => v.clone().into_py(py),
-        BigDecimalOwned(v) => DPy(v).into_py(py),
-        BigRational(v) => v.clone().into_py(py),
-        BigRationalOwned(v) => RPy(v).into_py(py),
+        BFloat(v) => v.clone().into_py(py),
+        BDecimal(v) => v.clone().into_py(py),
+        OBDecimal(v) => DPy(v).into_py(py),
+        BRational(v) => v.clone().into_py(py),
+        OBRational(v) => RPy(v).into_py(py),
     };
     Ok(obj)
 }

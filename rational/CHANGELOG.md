@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Implement `Div<RBig>` and `Div<Relaxed>` for `UBig`/`IBig`
+- Bugfix of division between big rational and big integers.
+
 ## 0.4.1
 
 - Implement `AbsOrd` between `RBig`/`Relaxed` and `UBig`/`IBig`/`FBig`.

@@ -110,7 +110,7 @@ macro_rules! impl_rbig_div_ubig {
         let g = $ra.gcd($ri);
         RBig(Repr {
             numerator: $a / &g,
-            denominator: ($b / g) * $i,
+            denominator: $b * ($i / g),
         })
     }};
 }
@@ -127,12 +127,31 @@ macro_rules! impl_rbig_div_ibig {
         let g = $ra.gcd($ri);
         RBig(Repr {
             numerator: $a / &g * $i.sign(),
-            denominator: ($b / g) * $i.unsigned_abs(),
+            denominator: $b * ($i.unsigned_abs() / g),
+        })
+    }};
+}
+macro_rules! impl_ubig_or_ibig_div_rbig {
+    (
+        $a:ident, $b:ident, $i:ident,
+        $ra:ident, $rb:ident, $ri:ident, $method:ident
+    ) => {{
+        if $ra.is_zero() {
+            panic_divide_by_0()
+        }
+
+        let _unused = $rb;
+        let g = $ra.gcd($ri);
+        RBig(Repr {
+            numerator: $b * ($i / &g) * $a.sign(),
+            denominator: $a.unsigned_abs() / g,
         })
     }};
 }
 impl_binop_with_int!(impl Div<UBig>, div, RBig, impl_rbig_div_ubig);
 impl_binop_with_int!(impl Div<IBig>, div, RBig, impl_rbig_div_ibig);
+impl_binop_with_int!(impl Div for UBig, div, RBig, impl_ubig_or_ibig_div_rbig);
+impl_binop_with_int!(impl Div for IBig, div, RBig, impl_ubig_or_ibig_div_rbig);
 
 macro_rules! impl_relaxed_div_ibig {
     (
@@ -160,8 +179,23 @@ macro_rules! impl_relaxed_div_ubig {
         Relaxed::from_parts($a, $b * $i)
     }};
 }
+macro_rules! impl_ubig_or_ibig_div_relaxed {
+    (
+        $a:ident, $b:ident, $i:ident,
+        $ra:ident, $rb:ident, $ri:ident, $method:ident
+    ) => {{
+        if $ra.is_zero() {
+            panic_divide_by_0()
+        }
+
+        let _unused = ($ra, $rb, $ri);
+        Relaxed::from_parts($b * $i * $a.sign(), $a.unsigned_abs())
+    }};
+}
 impl_binop_with_int!(impl Div<IBig>, div, Relaxed, impl_relaxed_div_ibig);
 impl_binop_with_int!(impl Div<UBig>, div, Relaxed, impl_relaxed_div_ubig);
+impl_binop_with_int!(impl Div for UBig, div, Relaxed, impl_ubig_or_ibig_div_relaxed);
+impl_binop_with_int!(impl Div for IBig, div, Relaxed, impl_ubig_or_ibig_div_relaxed);
 
 macro_rules! impl_euclid_div {
     (

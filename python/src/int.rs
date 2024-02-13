@@ -1,6 +1,7 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
 use std::vec::Vec;
+use std::ops::{Add, Sub, Mul, Div};
 
 use dashu_base::{BitTest, Signed};
 use pyo3::exceptions::{PyIndexError, PyNotImplementedError, PyValueError};
@@ -16,10 +17,11 @@ use crate::{
         convert_from_ibig, convert_from_ubig, parse_error_to_py, parse_signed_index, parse_to_ibig,
         parse_to_long, parse_to_ubig,
     },
-    types::{IPy, PyWords, UPy},
+    types::{IPy, PyWords, UPy, UniInput, FPy, RPy, DPy},
 };
 use dashu_int::{IBig, UBig, Word};
 use num_order::NumHash;
+type FBig = dashu_float::FBig;
 
 // error messages
 const ERRMSG_LENGTH_TOO_LARGE: &'static str = "the integer has too many bits for indexing";
@@ -37,6 +39,31 @@ const ERRMSG_INT_WITH_RADIX: &'static str = "can't convert non-string with expli
 const ERRMSG_WRONG_INDEX_TYPE: &'static str = "indices must be integers or slices";
 const ERRMSG_UBIG_FROM_NEG: &'static str = "can't convert negative int to unsigned";
 const ERRMSG_UBIG_BITS_OOR: &'static str = "bits index out of range";
+
+macro_rules! impl_ubig_binops {
+    ($py_method:ident, $rs_method:ident) => {
+        fn $py_method(slf: &UPy, other: UniInput<'_>, py: Python) -> PyObject {
+            match other {
+                UniInput::Uint(x) => UPy((&slf.0).$rs_method(x)).into_py(py),
+                UniInput::Int(x) => IPy(IBig::from((&slf.0).clone()).$rs_method(x)).into_py(py),
+                UniInput::BUint(x) => UPy((&slf.0).$rs_method(&x.0)).into_py(py),
+                UniInput::BInt(x) => IPy((&slf.0).$rs_method(&x.0)).into_py(py),
+                UniInput::OBInt(x) => IPy((&slf.0).$rs_method(x)).into_py(py),
+                UniInput::Float(x) => FPy((&slf.0).$rs_method(FBig::try_from(x).unwrap())).into_py(py),
+                UniInput::BFloat(x) => FPy((&slf.0).$rs_method(&x.0)).into_py(py),
+                UniInput::BDecimal(x) => DPy((&slf.0).$rs_method(&x.0)).into_py(py),
+                UniInput::OBDecimal(x) => DPy((&slf.0).$rs_method(x)).into_py(py),
+                UniInput::BRational(x) => RPy((&slf.0).$rs_method(&x.0)).into_py(py),
+                UniInput::OBRational(x) => RPy((&slf.0).$rs_method(x)).into_py(py),
+            }
+        }
+    };
+}
+
+impl_ubig_binops!(upy_add, add);
+impl_ubig_binops!(upy_sub, sub);
+impl_ubig_binops!(upy_mul, mul);
+impl_ubig_binops!(upy_div, div);
 
 #[pymethods]
 impl UPy {
@@ -243,6 +270,40 @@ impl UPy {
             }
         };
         Ok(Self(uint))
+    }
+
+    /********** operators **********/
+    // fn __add__(&self, other: UniInput<'_>, py: Python) -> PyObject {
+    //     match other {
+    //         UniInput::Uint(x) => UPy(&self.0 + x).into_py(py),
+    //         UniInput::Int(x) => IPy(IBig::from(self.0.clone()) + x).into_py(py),
+    //         UniInput::BUint(x) => UPy(&self.0 + &x.0).into_py(py),
+    //         UniInput::BInt(x) => IPy(&self.0 + &x.0).into_py(py),
+    //         UniInput::OBInt(x) => IPy(&self.0 + x).into_py(py),
+    //         UniInput::Float(x) => FPy(&self.0 + FBig::try_from(x).unwrap()).into_py(py),
+    //         UniInput::BFloat(x) => FPy(&self.0 + &x.0).into_py(py),
+    //         UniInput::BDecimal(x) => DPy(&self.0 + &x.0).into_py(py),
+    //         UniInput::OBDecimal(x) => DPy(&self.0 + x).into_py(py),
+    //         UniInput::BRational(x) => RPy(&self.0 + &x.0).into_py(py),
+    //         UniInput::OBRational(x) => RPy(&self.0 + x).into_py(py),
+    //     }
+    // }
+
+    #[inline]
+    fn __add__(&self, other: UniInput<'_>, py: Python) -> PyObject {
+        upy_add(&self, other, py)
+    }
+    #[inline]
+    fn __sub__(&self, other: UniInput<'_>, py: Python) -> PyObject {
+        upy_sub(&self, other, py)
+    }
+    #[inline]
+    fn __mul__(&self, other: UniInput<'_>, py: Python) -> PyObject {
+        upy_mul(&self, other, py)
+    }
+    #[inline]
+    fn __div__(&self, other: UniInput<'_>, py: Python) -> PyObject {
+        upy_div(&self, other, py)
     }
 }
 
