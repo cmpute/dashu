@@ -1,9 +1,9 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
 use std::vec::Vec;
-use std::ops::{Add, Sub, Mul, Div};
+use std::ops::*;
 
-use dashu_base::{BitTest, Signed};
+use dashu_base::{BitTest, Sign, Signed, UnsignedAbs};
 use pyo3::exceptions::{PyIndexError, PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PySlice;
@@ -19,7 +19,7 @@ use crate::{
     },
     types::{IPy, PyWords, UPy, UniInput, FPy, RPy, DPy},
 };
-use dashu_int::{IBig, UBig, Word};
+use dashu_int::{IBig, UBig, Word, fast_div};
 use num_order::NumHash;
 type FBig = dashu_float::FBig;
 
@@ -37,33 +37,48 @@ const ERRMSG_WRONG_ENDIANNESS: &'static str = "byteorder must be either 'little'
 const ERRMSG_NEGATIVE_TO_UNSIGNED: &'static str = "can't convert negative int to unsigned";
 const ERRMSG_INT_WITH_RADIX: &'static str = "can't convert non-string with explicit base";
 const ERRMSG_WRONG_INDEX_TYPE: &'static str = "indices must be integers or slices";
-const ERRMSG_UBIG_FROM_NEG: &'static str = "can't convert negative int to unsigned";
 const ERRMSG_UBIG_BITS_OOR: &'static str = "bits index out of range";
 
 macro_rules! impl_ubig_binops {
-    ($py_method:ident, $rs_method:ident) => {
-        fn $py_method(slf: &UPy, other: UniInput<'_>, py: Python) -> PyObject {
-            match other {
-                UniInput::Uint(x) => UPy((&slf.0).$rs_method(x)).into_py(py),
-                UniInput::Int(x) => IPy(IBig::from((&slf.0).clone()).$rs_method(x)).into_py(py),
-                UniInput::BUint(x) => UPy((&slf.0).$rs_method(&x.0)).into_py(py),
-                UniInput::BInt(x) => IPy((&slf.0).$rs_method(&x.0)).into_py(py),
-                UniInput::OBInt(x) => IPy((&slf.0).$rs_method(x)).into_py(py),
-                UniInput::Float(x) => FPy((&slf.0).$rs_method(FBig::try_from(x).unwrap())).into_py(py),
-                UniInput::BFloat(x) => FPy((&slf.0).$rs_method(&x.0)).into_py(py),
-                UniInput::BDecimal(x) => DPy((&slf.0).$rs_method(&x.0)).into_py(py),
-                UniInput::OBDecimal(x) => DPy((&slf.0).$rs_method(x)).into_py(py),
-                UniInput::BRational(x) => RPy((&slf.0).$rs_method(&x.0)).into_py(py),
-                UniInput::OBRational(x) => RPy((&slf.0).$rs_method(x)).into_py(py),
+    ($py_method:ident, $py_method_rev:ident, $rs_method:ident) => {
+        fn $py_method(lhs: &UPy, rhs: UniInput<'_>, py: Python) -> PyObject {
+            match rhs {
+                UniInput::Uint(x) => UPy((&lhs.0).$rs_method(x)).into_py(py),
+                UniInput::Int(x) => IPy(lhs.0.as_ibig().$rs_method(x)).into_py(py),
+                UniInput::BUint(x) => UPy((&lhs.0).$rs_method(&x.0)).into_py(py),
+                UniInput::BInt(x) => IPy((&lhs.0).$rs_method(&x.0)).into_py(py),
+                UniInput::OBInt(x) => IPy((&lhs.0).$rs_method(x)).into_py(py),
+                UniInput::Float(x) => FPy((&lhs.0).$rs_method(FBig::try_from(x).unwrap())).into_py(py),
+                UniInput::BFloat(x) => FPy((&lhs.0).$rs_method(&x.0)).into_py(py),
+                UniInput::BDecimal(x) => DPy((&lhs.0).$rs_method(&x.0)).into_py(py),
+                UniInput::OBDecimal(x) => DPy((&lhs.0).$rs_method(x)).into_py(py),
+                UniInput::BRational(x) => RPy((&lhs.0).$rs_method(&x.0)).into_py(py),
+                UniInput::OBRational(x) => RPy((&lhs.0).$rs_method(x)).into_py(py),
+            }
+        }
+
+        fn $py_method_rev(lhs: UniInput<'_>, rhs: &UPy, py: Python) -> PyObject {
+            match lhs {
+                UniInput::Uint(x) => UPy(x.$rs_method(&rhs.0).into()).into_py(py),
+                UniInput::Int(x) => IPy(x.$rs_method(rhs.0.as_ibig()).into()).into_py(py),
+                UniInput::BUint(x) => UPy((&x.0).$rs_method(&rhs.0)).into_py(py),
+                UniInput::BInt(x) => IPy((&x.0).$rs_method(&rhs.0)).into_py(py),
+                UniInput::OBInt(x) => IPy(x.$rs_method(&rhs.0)).into_py(py),
+                UniInput::Float(x) => FPy(FBig::try_from(x).unwrap().$rs_method(&rhs.0)).into_py(py),
+                UniInput::BFloat(x) => FPy((&x.0).$rs_method(&rhs.0)).into_py(py),
+                UniInput::BDecimal(x) => DPy((&x.0).$rs_method(&rhs.0)).into_py(py),
+                UniInput::OBDecimal(x) => DPy(x.$rs_method(&rhs.0)).into_py(py),
+                UniInput::BRational(x) => RPy((&x.0).$rs_method(&rhs.0)).into_py(py),
+                UniInput::OBRational(x) => RPy(x.$rs_method(&rhs.0)).into_py(py),
             }
         }
     };
 }
 
-impl_ubig_binops!(upy_add, add);
-impl_ubig_binops!(upy_sub, sub);
-impl_ubig_binops!(upy_mul, mul);
-impl_ubig_binops!(upy_div, div);
+impl_ubig_binops!(upy_add, upy_radd, add);
+impl_ubig_binops!(upy_sub, upy_rsub, sub);
+impl_ubig_binops!(upy_mul, upy_rmul, mul);
+impl_ubig_binops!(upy_div, upy_rdiv, div);
 
 #[pymethods]
 impl UPy {
@@ -80,7 +95,7 @@ impl UPy {
                 if let Ok(n) = u64::try_from(v) {
                     Ok(UPy(UBig::from(n)))
                 } else {
-                    Err(PyOverflowError::new_err(ERRMSG_UBIG_FROM_NEG))
+                    Err(PyOverflowError::new_err(ERRMSG_NEGATIVE_TO_UNSIGNED))
                 }
             } else {
                 Ok(UPy(parse_to_ubig(ob)?))
@@ -273,37 +288,116 @@ impl UPy {
     }
 
     /********** operators **********/
-    // fn __add__(&self, other: UniInput<'_>, py: Python) -> PyObject {
-    //     match other {
-    //         UniInput::Uint(x) => UPy(&self.0 + x).into_py(py),
-    //         UniInput::Int(x) => IPy(IBig::from(self.0.clone()) + x).into_py(py),
-    //         UniInput::BUint(x) => UPy(&self.0 + &x.0).into_py(py),
-    //         UniInput::BInt(x) => IPy(&self.0 + &x.0).into_py(py),
-    //         UniInput::OBInt(x) => IPy(&self.0 + x).into_py(py),
-    //         UniInput::Float(x) => FPy(&self.0 + FBig::try_from(x).unwrap()).into_py(py),
-    //         UniInput::BFloat(x) => FPy(&self.0 + &x.0).into_py(py),
-    //         UniInput::BDecimal(x) => DPy(&self.0 + &x.0).into_py(py),
-    //         UniInput::OBDecimal(x) => DPy(&self.0 + x).into_py(py),
-    //         UniInput::BRational(x) => RPy(&self.0 + &x.0).into_py(py),
-    //         UniInput::OBRational(x) => RPy(&self.0 + x).into_py(py),
-    //     }
-    // }
-
     #[inline]
     fn __add__(&self, other: UniInput<'_>, py: Python) -> PyObject {
         upy_add(&self, other, py)
+    }
+    #[inline]
+    fn __radd__(&self, other: UniInput<'_>, py: Python) -> PyObject {
+        upy_radd(other, &self, py)
     }
     #[inline]
     fn __sub__(&self, other: UniInput<'_>, py: Python) -> PyObject {
         upy_sub(&self, other, py)
     }
     #[inline]
+    fn __rsub__(&self, other: UniInput<'_>, py: Python) -> PyObject {
+        upy_rsub(other, &self, py)
+    }
+    #[inline]
     fn __mul__(&self, other: UniInput<'_>, py: Python) -> PyObject {
         upy_mul(&self, other, py)
     }
     #[inline]
-    fn __div__(&self, other: UniInput<'_>, py: Python) -> PyObject {
+    fn __rmul__(&self, other: UniInput<'_>, py: Python) -> PyObject {
+        upy_rmul(other, &self, py)
+    }
+    #[inline]
+    fn __truediv__(&self, other: UniInput<'_>, py: Python) -> PyObject {
         upy_div(&self, other, py)
+    }
+    #[inline]
+    fn __rtruediv__(&self, other: UniInput<'_>, py: Python) -> PyObject {
+        upy_rdiv(other, &self, py)
+    }
+    #[inline]
+    fn __mod__(&self, other: UniInput<'_>, py: Python) -> PyObject {
+        fn upy_mod(lhs: &UPy, rhs: UniInput<'_>, py: Python) -> PyObject {
+            match rhs {
+                UniInput::Uint(x) => (&lhs.0).rem(x).into_py(py),
+                UniInput::Int(x) => lhs.0.as_ibig().rem(x).into_py(py),
+                UniInput::BUint(x) => UPy((&lhs.0).rem(&x.0)).into_py(py),
+                UniInput::BInt(x) => UPy((&lhs.0).rem(&x.0)).into_py(py),
+                UniInput::OBInt(x) => UPy((&lhs.0).rem(x)).into_py(py),
+                _ => todo!()
+            }
+        }
+        upy_mod(self, other, py)
+    }
+    #[inline]
+    fn __pow__(&self, other: UniInput, modulus: Option<UniInput>, py: Python) -> PyResult<PyObject> {
+        use fast_div::ConstDivisor;
+
+        if let Some(m) = modulus {
+            // first parse the modulus
+            let (_sign, ring) = match m {
+                UniInput::Uint(x) => (Sign::Positive, ConstDivisor::new(x.into())),
+                UniInput::BUint(x) => (Sign::Positive, ConstDivisor::new(x.0.clone())),
+                UniInput::Int(x) => (x.sign(), ConstDivisor::new(x.unsigned_abs().into())),
+                UniInput::BInt(x) => (x.0.sign(), ConstDivisor::new((&x.0).unsigned_abs())),
+                UniInput::OBInt(x) => {
+                    let (sign, m) = x.into_parts();
+                    (sign, ConstDivisor::new(m))
+                }
+                _ => todo!()
+            };
+
+            match other {
+                UniInput::Uint(x) => Ok(UPy(ring.reduce(self.0.clone()).pow(&x.into()).residue()).into_py(py)),
+                _ => todo!()
+            }
+        } else {
+            match other {
+                UniInput::Uint(x) => Ok(UPy(self.0.pow(x as _)).into_py(py)),
+                _ => todo!()
+            }
+        }
+    }
+    #[inline]
+    fn __pos__(&self, py: Python) -> PyObject {
+        todo!()
+    }
+    #[inline]
+    fn __neg__(&self, py: Python) -> PyObject {
+        todo!()
+    }
+    #[inline]
+    fn __abs__(&self, py: Python) -> PyObject {
+        todo!()
+    }
+    #[inline]
+    fn __nonzero__(&self, py: Python) -> PyObject {
+        todo!()
+    }
+    #[inline]
+    fn __lshift__(&self, other: usize, py: Python) -> PyObject {
+        todo!()
+    }
+    #[inline]
+    fn __rshift__(&self, other: usize, py: Python) -> PyObject {
+        todo!()
+    }
+    #[inline]
+    fn __and__(&self, other: &PyAny, py: Python) -> PyObject {
+        todo!()
+    }
+    #[inline]
+    fn __or__(&self, other: &PyAny, py: Python) -> PyObject {
+        todo!()
+    }
+    #[inline]
+    fn __xor__(&self, other: &PyAny, py: Python) -> PyObject {
+        todo!()
     }
 }
 

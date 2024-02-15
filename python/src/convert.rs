@@ -104,7 +104,7 @@ pub fn convert_from_ubig(ob: &UBig, py: Python) -> PyResult<PyObject> {
 pub fn parse_to_ibig(ob: &PyAny) -> PyResult<IBig> {
     let py = ob.py();
     let bit_len: usize = ob.call_method0(intern!(py, "bit_length"))?.extract()?;
-    let byte_len = (bit_len + 7) / 8;
+    let byte_len = bit_len / 8 + 1; // extra byte for sign
 
     // The stable API `to_bytes` is also chosen over ffi::_PyLong_AsByteArray here.
     let kwargs = PyDict::new(py);
