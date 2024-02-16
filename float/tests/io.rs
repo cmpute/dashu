@@ -818,7 +818,7 @@ fn test_format_debug() {
     assert_eq!(
         format!("{:#?}", dbig!(1234e-2).repr()),
         r#"Repr {
-    significand: 1234 (4 digits, 11 bits),
+    significand: 1234 (digits: 4, bits: 11),
     exponent: 10 ^ -2,
 }"#
     );
@@ -832,7 +832,7 @@ fn test_format_debug() {
     assert_eq!(
         format!("{:#?}", dbig!(1234e-2)),
         r#"FBig {
-    significand: 1234 (4 digits, 11 bits),
+    significand: 1234 (digits: 4, bits: 11),
     exponent: 10 ^ -2,
     precision: 4,
     rounding: HalfAway,
@@ -843,7 +843,7 @@ fn test_format_debug() {
 #[test]
 fn test_string_roundtrip() {
     let fbig_cases = [
-        fbig!(0x12345p-67),
+        fbig!(0x12345p - 67),
         fbig!(-0x123456789abcdef0123p45),
         FBin::try_from(f32::MAX).unwrap(),
         FBin::try_from(f32::MIN).unwrap(),
@@ -862,7 +862,7 @@ fn test_string_roundtrip() {
 
     let dbig_cases = [
         dbig!(0.00012345),
-        dbig!(-1234567890.12345678901234567890123456789)
+        dbig!(-1234567890.12345678901234567890123456789),
     ];
 
     for case in dbig_cases {

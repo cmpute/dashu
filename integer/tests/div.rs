@@ -297,6 +297,11 @@ fn test_div_rem_ubig_unsigned() {
     let mut x = ubig!(23);
     x /= &10u8;
     assert_eq!(x, ubig!(2));
+    
+    assert_eq!(23u8 / ubig!(10), 2);
+    assert_eq!(23u8 / &ubig!(10), 2);
+    assert_eq!(&23u8 / ubig!(10), 2);
+    assert_eq!(&23u8 / &ubig!(10), 2);
 
     assert_eq!(ubig!(23) % 10u8, 3u8);
     assert_eq!(ubig!(23) % &10u8, 3u8);
@@ -329,6 +334,11 @@ fn test_div_rem_ibig_signed() {
     let mut x = ibig!(-23);
     x /= &(-10i8);
     assert_eq!(x, ibig!(2));
+
+    assert_eq!((-23i8) / ibig!(-10), 2);
+    assert_eq!((-23i8) / &ibig!(-10), 2);
+    assert_eq!(&(-23i8) / ibig!(-10), 2);
+    assert_eq!(&(-23i8) / &ibig!(-10), 2);
 
     assert_eq!(ibig!(-23) % (-10i8), -3);
     assert_eq!(ibig!(-23) % &(-10i8), -3);

@@ -241,9 +241,50 @@ macro_rules! impl_divrem_with_primitive {
     };
 }
 
+macro_rules! impl_div_by_primitive {
+    (impl <$target:ty> for $t:ty) => {
+        impl Div<$t> for $target {
+            type Output = $target;
+
+            #[inline]
+            fn div(self, rhs: $t) -> $target {
+                <$t>::from(self).div(rhs).try_into().unwrap()
+            }
+        }
+
+        impl<'l> Div<$t> for &'l $target {
+            type Output = $target;
+
+            #[inline]
+            fn div(self, rhs: $t) -> $target {
+                <$t>::from(*self).div(rhs).try_into().unwrap()
+            }
+        }
+
+        impl<'r> Div<&'r $t> for $target {
+            type Output = $target;
+
+            #[inline]
+            fn div(self, rhs: &$t) -> $target {
+                <$t>::from(self).div(rhs).try_into().unwrap()
+            }
+        }
+
+        impl<'l, 'r> Div<&'r $t> for &'l $target {
+            type Output = $target;
+
+            #[inline]
+            fn div(self, rhs: &$t) -> $target {
+                <$t>::from(*self).div(rhs).try_into().unwrap()
+            }
+        }
+    };
+}
+
 macro_rules! impl_div_primitive_with_ubig {
     ($($t:ty)*) => {$(
         helper_macros::impl_binop_with_primitive!(impl Div<$t> for UBig, div);
+        impl_div_by_primitive!(impl <$t> for UBig);
         helper_macros::impl_binop_with_primitive!(impl Rem<$t> for UBig, rem -> $t);
         helper_macros::impl_binop_assign_with_primitive!(impl DivAssign<$t> for UBig, div_assign);
 
@@ -256,6 +297,7 @@ impl_div_primitive_with_ubig!(u8 u16 u32 u64 u128 usize);
 macro_rules! impl_div_primitive_with_ibig {
     ($($t:ty)*) => {$(
         helper_macros::impl_binop_with_primitive!(impl Div<$t> for IBig, div);
+        impl_div_by_primitive!(impl <$t> for IBig);
         helper_macros::impl_binop_with_primitive!(impl Rem<$t> for IBig, rem -> $t);
         helper_macros::impl_binop_assign_with_primitive!(impl DivAssign<$t> for IBig, div_assign);
 

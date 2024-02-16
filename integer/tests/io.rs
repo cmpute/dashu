@@ -385,20 +385,20 @@ fn test_macros() {
 #[test]
 fn test_ubig_debug() {
     assert_eq!(format!("{:?}", ubig!(0)), "0");
-    assert_eq!(format!("{:#?}", ubig!(0)), "0 (0 digits, 0 bits)");
+    assert_eq!(format!("{:#?}", ubig!(0)), "0 (digits: 0, bits: 0)");
     assert_eq!(format!("{:?}", ubig!(100)), "100");
-    assert_eq!(format!("{:#?}", ubig!(100)), "100 (3 digits, 7 bits)");
+    assert_eq!(format!("{:#?}", ubig!(100)), "100 (digits: 3, bits: 7)");
     assert_eq!(format!("{:?}", ubig!(12345678)), "12345678");
-    assert_eq!(format!("{:#?}", ubig!(12345678)), "12345678 (8 digits, 24 bits)");
+    assert_eq!(format!("{:#?}", ubig!(12345678)), "12345678 (digits: 8, bits: 24)");
     assert_eq!(format!("{:?}", (ubig!(1) << 31) - 1u8), "2147483647");
-    assert_eq!(format!("{:#?}", (ubig!(1) << 31) - 1u8), "2147483647 (10 digits, 31 bits)");
+    assert_eq!(format!("{:#?}", (ubig!(1) << 31) - 1u8), "2147483647 (digits: 10, bits: 31)");
 
     if Word::BITS == 64 {
         // the number of displayed digits dependends on Word size
         assert_eq!(format!("{:?}", ubig!(1) << 128), "3402823669209384634..3374607431768211456");
         assert_eq!(
             format!("{:#?}", ubig!(1) << 128),
-            "3402823669209384634..3374607431768211456 (39 digits, 129 bits)"
+            "3402823669209384634..3374607431768211456 (digits: 39, bits: 129)"
         );
         assert_eq!(
             format!("{:?}", (ubig!(1) << 129) - 1u8),
@@ -406,7 +406,7 @@ fn test_ubig_debug() {
         );
         assert_eq!(
             format!("{:#?}", (ubig!(1) << 129) - 1u8),
-            "6805647338418769269..6749214863536422911 (39 digits, 129 bits)"
+            "6805647338418769269..6749214863536422911 (digits: 39, bits: 129)"
         );
         assert_eq!(
             format!("{:?}", (ubig!(1) << 200) - 1u8),
@@ -414,7 +414,7 @@ fn test_ubig_debug() {
         );
         assert_eq!(
             format!("{:#?}", (ubig!(1) << 200) - 1u8),
-            "1606938044258990275..2993782792835301375 (61 digits, 200 bits)"
+            "1606938044258990275..2993782792835301375 (digits: 61, bits: 200)"
         );
         assert_eq!(
             format!("{:?}", (ubig!(1) << 2000) - 1u8),
@@ -422,7 +422,7 @@ fn test_ubig_debug() {
         );
         assert_eq!(
             format!("{:#?}", (ubig!(1) << 2000) - 1u8),
-            "1148130695274254524..3762184851149029375 (603 digits, 2000 bits)"
+            "1148130695274254524..3762184851149029375 (digits: 603, bits: 2000)"
         );
     }
 }
@@ -430,18 +430,18 @@ fn test_ubig_debug() {
 #[test]
 fn test_ibig_debug() {
     assert_eq!(format!("{:?}", ibig!(-0)), "0");
-    assert_eq!(format!("{:#?}", ibig!(-0)), "0 (0 digits, 0 bits)");
+    assert_eq!(format!("{:#?}", ibig!(-0)), "0 (digits: 0, bits: 0)");
     assert_eq!(format!("{:?}", ibig!(-100)), "-100");
     assert_eq!(format!("{:+?}", ibig!(100)), "+100");
-    assert_eq!(format!("{:#?}", ibig!(-100)), "-100 (3 digits, 7 bits)");
-    assert_eq!(format!("{:+#?}", ibig!(100)), "+100 (3 digits, 7 bits)");
+    assert_eq!(format!("{:#?}", ibig!(-100)), "-100 (digits: 3, bits: 7)");
+    assert_eq!(format!("{:+#?}", ibig!(100)), "+100 (digits: 3, bits: 7)");
 
     if Word::BITS == 64 {
         // the number of displayed digits dependends on Word size
         assert_eq!(format!("{:?}", ibig!(-1) << 128), "-3402823669209384634..3374607431768211456");
         assert_eq!(
             format!("{:#?}", ibig!(-1) << 128),
-            "-3402823669209384634..3374607431768211456 (39 digits, 129 bits)"
+            "-3402823669209384634..3374607431768211456 (digits: 39, bits: 129)"
         );
         assert_eq!(
             format!("{:?}", (ibig!(-1) << 200) + 1),
@@ -449,7 +449,7 @@ fn test_ibig_debug() {
         );
         assert_eq!(
             format!("{:#?}", (ibig!(-1) << 200) + 1),
-            "-1606938044258990275..2993782792835301375 (61 digits, 200 bits)"
+            "-1606938044258990275..2993782792835301375 (digits: 61, bits: 200)"
         );
     }
 }
@@ -486,10 +486,7 @@ fn test_string_roundtrip() {
             UBig::from_str_with_radix_prefix(format!("{:+#010X}", case).as_str()),
             Ok((case.clone(), 16))
         );
-        assert_eq!(
-            UBig::from_str_radix(format!("{:#}", case.in_radix(36)).as_str(), 36),
-            Ok(case)
-        );
+        assert_eq!(UBig::from_str_radix(format!("{:#}", case.in_radix(36)).as_str(), 36), Ok(case));
     }
 
     let ibig_cases = [
@@ -521,9 +518,6 @@ fn test_string_roundtrip() {
             IBig::from_str_with_radix_prefix(format!("{:+#010X}", case).as_str()),
             Ok((case.clone(), 16))
         );
-        assert_eq!(
-            IBig::from_str_radix(format!("{:#}", case.in_radix(36)).as_str(), 36),
-            Ok(case)
-        );
+        assert_eq!(IBig::from_str_radix(format!("{:#}", case.in_radix(36)).as_str(), 36), Ok(case));
     }
 }

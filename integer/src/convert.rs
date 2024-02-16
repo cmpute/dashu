@@ -483,15 +483,15 @@ impl IBig {
     }
 
     /// Regard the number as a [UBig] number and return a reference of [UBig] type.
-    /// 
+    ///
     /// The conversion is only successful when the number is positive
     ///
     /// # Examples
     ///
     /// ```
     /// # use dashu_int::{IBig, UBig};
-    /// assert_eq!(IBig::from(123).as_ibig(), &UBig::from(123));
-    /// assert_eq!(IBig::from(-123).as_ibig(), None);
+    /// assert_eq!(IBig::from(123).as_ubig(), Some(&UBig::from(123u8)));
+    /// assert_eq!(IBig::from(-123).as_ubig(), None);
     /// ```
     #[inline]
     pub const fn as_ubig(&self) -> Option<&UBig> {
@@ -501,8 +501,8 @@ impl IBig {
                 //         This conversion is only available for immutable references and
                 //         positive numbers, so that the sign will not be messed up.
                 unsafe { Some(core::mem::transmute(self)) }
-            },
-            Sign::Negative => None
+            }
+            Sign::Negative => None,
         }
     }
 }

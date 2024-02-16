@@ -182,17 +182,17 @@ fn test_div_with_int() {
     assert_eq!(rbig!(~0) / ubig!(1), rbig!(~0));
     assert_eq!(rbig!(1) / ubig!(1), rbig!(1));
     assert_eq!(rbig!(~1) / ubig!(1), rbig!(~1));
-    assert_eq!(rbig!(-1) / ibig!(10), rbig!(-1/10));
+    assert_eq!(rbig!(-1) / ibig!(10), rbig!(-1 / 10));
     assert_eq!(rbig!(~-1) / ibig!(10), rbig!(~-1/10));
-    assert_eq!(rbig!(9/5) / ibig!(-3), rbig!(-3/5));
+    assert_eq!(rbig!(9 / 5) / ibig!(-3), rbig!(-3 / 5));
     assert_eq!(rbig!(~9/5) / ibig!(-3), rbig!(~-3/5));
-    
+
     assert_eq!(ubig!(0) / rbig!(1), rbig!(0));
     assert_eq!(ubig!(0) / rbig!(~1), rbig!(~0));
     assert_eq!(ubig!(1) / rbig!(1), rbig!(1));
     assert_eq!(ubig!(1) / rbig!(~1), rbig!(~1));
-    assert_eq!(ibig!(-1) / rbig!(10), rbig!(-1/10));
+    assert_eq!(ibig!(-1) / rbig!(10), rbig!(-1 / 10));
     assert_eq!(ibig!(-1) / rbig!(~10), rbig!(~-1/10));
-    assert_eq!(ibig!(-3) / rbig!(9/5), rbig!(-5/3));
+    assert_eq!(ibig!(-3) / rbig!(9 / 5), rbig!(-5 / 3));
     assert_eq!(ibig!(-3) / rbig!(~9/5), rbig!(~-5/3));
 }

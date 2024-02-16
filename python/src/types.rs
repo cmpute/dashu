@@ -88,10 +88,10 @@ pub struct PyWords(pub std::vec::Vec<dashu_int::Word>);
 /// - Variants starting with 'OB': owned big numbers
 pub enum UniInput<'a> {
     Uint(c_ulonglong), // from int
-    Int(c_longlong), // from int
+    Int(c_longlong),   // from int
     BUint(PyRef<'a, UPy>),
     BInt(PyRef<'a, IPy>),
-    OBInt(IBig),    // from int
+    OBInt(IBig),     // from int
     Float(c_double), // from float
     BFloat(PyRef<'a, FPy>),
     BDecimal(PyRef<'a, DPy>),

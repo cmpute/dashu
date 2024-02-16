@@ -1,7 +1,7 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
-use std::vec::Vec;
 use std::ops::*;
+use std::vec::Vec;
 
 use dashu_base::{BitTest, Sign, Signed, UnsignedAbs};
 use pyo3::exceptions::{PyIndexError, PyNotImplementedError, PyValueError};
@@ -17,9 +17,9 @@ use crate::{
         convert_from_ibig, convert_from_ubig, parse_error_to_py, parse_signed_index, parse_to_ibig,
         parse_to_long, parse_to_ubig,
     },
-    types::{IPy, PyWords, UPy, UniInput, FPy, RPy, DPy},
+    types::{DPy, FPy, IPy, PyWords, RPy, UPy, UniInput},
 };
-use dashu_int::{IBig, UBig, Word, fast_div};
+use dashu_int::{fast_div, IBig, UBig, Word};
 use num_order::NumHash;
 type FBig = dashu_float::FBig;
 
@@ -48,7 +48,9 @@ macro_rules! impl_ubig_binops {
                 UniInput::BUint(x) => UPy((&lhs.0).$rs_method(&x.0)).into_py(py),
                 UniInput::BInt(x) => IPy((&lhs.0).$rs_method(&x.0)).into_py(py),
                 UniInput::OBInt(x) => IPy((&lhs.0).$rs_method(x)).into_py(py),
-                UniInput::Float(x) => FPy((&lhs.0).$rs_method(FBig::try_from(x).unwrap())).into_py(py),
+                UniInput::Float(x) => {
+                    FPy((&lhs.0).$rs_method(FBig::try_from(x).unwrap())).into_py(py)
+                }
                 UniInput::BFloat(x) => FPy((&lhs.0).$rs_method(&x.0)).into_py(py),
                 UniInput::BDecimal(x) => DPy((&lhs.0).$rs_method(&x.0)).into_py(py),
                 UniInput::OBDecimal(x) => DPy((&lhs.0).$rs_method(x)).into_py(py),
@@ -64,7 +66,9 @@ macro_rules! impl_ubig_binops {
                 UniInput::BUint(x) => UPy((&x.0).$rs_method(&rhs.0)).into_py(py),
                 UniInput::BInt(x) => IPy((&x.0).$rs_method(&rhs.0)).into_py(py),
                 UniInput::OBInt(x) => IPy(x.$rs_method(&rhs.0)).into_py(py),
-                UniInput::Float(x) => FPy(FBig::try_from(x).unwrap().$rs_method(&rhs.0)).into_py(py),
+                UniInput::Float(x) => {
+                    FPy(FBig::try_from(x).unwrap().$rs_method(&rhs.0)).into_py(py)
+                }
                 UniInput::BFloat(x) => FPy((&x.0).$rs_method(&rhs.0)).into_py(py),
                 UniInput::BDecimal(x) => DPy((&x.0).$rs_method(&rhs.0)).into_py(py),
                 UniInput::OBDecimal(x) => DPy(x.$rs_method(&rhs.0)).into_py(py),
@@ -329,13 +333,18 @@ impl UPy {
                 UniInput::BUint(x) => UPy((&lhs.0).rem(&x.0)).into_py(py),
                 UniInput::BInt(x) => UPy((&lhs.0).rem(&x.0)).into_py(py),
                 UniInput::OBInt(x) => UPy((&lhs.0).rem(x)).into_py(py),
-                _ => todo!()
+                _ => todo!(),
             }
         }
         upy_mod(self, other, py)
     }
     #[inline]
-    fn __pow__(&self, other: UniInput, modulus: Option<UniInput>, py: Python) -> PyResult<PyObject> {
+    fn __pow__(
+        &self,
+        other: UniInput,
+        modulus: Option<UniInput>,
+        py: Python,
+    ) -> PyResult<PyObject> {
         use fast_div::ConstDivisor;
 
         if let Some(m) = modulus {
@@ -349,17 +358,19 @@ impl UPy {
                     let (sign, m) = x.into_parts();
                     (sign, ConstDivisor::new(m))
                 }
-                _ => todo!()
+                _ => todo!(),
             };
 
             match other {
-                UniInput::Uint(x) => Ok(UPy(ring.reduce(self.0.clone()).pow(&x.into()).residue()).into_py(py)),
-                _ => todo!()
+                UniInput::Uint(x) => {
+                    Ok(UPy(ring.reduce(self.0.clone()).pow(&x.into()).residue()).into_py(py))
+                }
+                _ => todo!(),
             }
         } else {
             match other {
                 UniInput::Uint(x) => Ok(UPy(self.0.pow(x as _)).into_py(py)),
-                _ => todo!()
+                _ => todo!(),
             }
         }
     }
