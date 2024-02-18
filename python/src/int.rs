@@ -3,14 +3,11 @@ use std::hash::Hasher;
 use std::ops::*;
 use std::vec::Vec;
 
-use dashu_base::{BitTest, Sign, Signed, UnsignedAbs};
-use pyo3::exceptions::{PyIndexError, PyNotImplementedError, PyValueError};
-use pyo3::prelude::*;
-use pyo3::types::PySlice;
-use pyo3::{
-    exceptions::{PyOverflowError, PyTypeError},
-    types::{PyBytes, PyLong},
+use pyo3::exceptions::{
+    PyIndexError, PyNotImplementedError, PyOverflowError, PyTypeError, PyValueError,
 };
+use pyo3::prelude::*;
+use pyo3::types::{PyBytes, PyLong, PySlice};
 
 use crate::{
     convert::{
@@ -19,6 +16,8 @@ use crate::{
     },
     types::{DPy, FPy, IPy, PyWords, RPy, UPy, UniInput},
 };
+
+use dashu_base::{BitTest, Sign, Signed, UnsignedAbs};
 use dashu_int::{fast_div, IBig, UBig, Word};
 use num_order::NumHash;
 type FBig = dashu_float::FBig;
@@ -375,32 +374,39 @@ impl UPy {
         }
     }
     #[inline]
-    fn __pos__(&self, py: Python) -> PyObject {
+    fn __pos__(&self) -> UPy {
         todo!()
     }
     #[inline]
-    fn __neg__(&self, py: Python) -> PyObject {
+    fn __neg__(&self) -> IPy {
+        IPy((&self.0).neg())
+    }
+    #[inline]
+    fn __abs__(&self) -> UPy {
         todo!()
     }
     #[inline]
-    fn __abs__(&self, py: Python) -> PyObject {
-        todo!()
+    fn __nonzero__(&self) -> bool {
+        !self.0.is_zero()
     }
     #[inline]
-    fn __nonzero__(&self, py: Python) -> PyObject {
-        todo!()
+    fn __lshift__(&self, other: usize) -> UPy {
+        UPy((&self.0) << other)
     }
     #[inline]
-    fn __lshift__(&self, other: usize, py: Python) -> PyObject {
-        todo!()
+    fn __rshift__(&self, other: usize) -> UPy {
+        UPy((&self.0) >> other)
     }
     #[inline]
-    fn __rshift__(&self, other: usize, py: Python) -> PyObject {
-        todo!()
-    }
-    #[inline]
-    fn __and__(&self, other: &PyAny, py: Python) -> PyObject {
-        todo!()
+    fn __and__(&self, other: UniInput, py: Python) -> PyObject {
+        match other {
+            UniInput::Uint(x) => (&self.0).bitand(x).into_py(py),
+            UniInput::BUint(x) => UPy((&self.0).bitand(&x.0)).into_py(py),
+            UniInput::Int(x) => UPy((&self.0).bitand(IBig::from(x))).into_py(py),
+            UniInput::BInt(x) => UPy((&self.0).bitand(&x.0)).into_py(py),
+            UniInput::OBInt(x) => UPy((&self.0).bitand(x)).into_py(py),
+            _ => todo!(), // TODO: raise TypeError
+        }
     }
     #[inline]
     fn __or__(&self, other: &PyAny, py: Python) -> PyObject {

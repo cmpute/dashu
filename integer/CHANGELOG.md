@@ -7,6 +7,7 @@
 - Implement `TryFrom<UBig>` and `TryFrom<IBig>` for `f32`/`f64`.
 - Implement `IBig::{from_le_bytes, from_be_bytes}` and `IBig::{to_le_bytes, to_be_bytes}`.
 - The alterative `Debug` output of `UBig` and `IBig` will include `(digits: x, bits: y)` instead of `(x digits, y bits)`.
+- Implement bit operations (`BitAnd`, `BitOr`, `BitXor`) between `UBig` and `IBig`, and between `IBig` and unsigned primitive integers.
 
 ## 0.4.1
 
