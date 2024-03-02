@@ -11,6 +11,7 @@ use pyo3::{
     FromPyObject, PyAny, PyErr, PyObject,
 };
 use std::os::raw::{c_double, c_longlong};
+use std::str::FromStr;
 
 use crate::types::*;
 use dashu_base::{ConversionError, ParseError};
@@ -42,7 +43,7 @@ pub fn conversion_error_to_py(error: ConversionError) -> PyErr {
         ConversionError::LossOfPrecision => "precision loss happened during converison",
     };
 
-    PyValueError::new_err(expl).into()
+    PyValueError::new_err(expl)
 }
 
 pub fn parse_error_to_py(error: ParseError) -> PyErr {
@@ -55,7 +56,7 @@ pub fn parse_error_to_py(error: ParseError) -> PyErr {
         }
     };
 
-    PySyntaxError::new_err(expl).into()
+    PySyntaxError::new_err(expl)
 }
 
 /// Conversion from python integer object to rust int, without type checking.
@@ -133,7 +134,7 @@ pub fn parse_to_dbig(ob: &PyAny) -> PyResult<DBig> {
     // produce string in scientific notation. It will not produce many zeros when the
     // exponent is large.
     let s = ob.str()?;
-    Ok(DBig::from_str_native(s.to_str()?).map_err(parse_error_to_py)?)
+    DBig::from_str(s.to_str()?).map_err(parse_error_to_py)
 }
 
 /// Conversion from fractions.Fraction object to RBig instance, without type checking.

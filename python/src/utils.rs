@@ -56,9 +56,9 @@ pub fn autos(s: &str, py: Python<'_>) -> PyResult<PyObject> {
             .map_err(parse_error_to_py)?
             .0)
         .into_py(py)
-    } else if s.contains(&['p', 'P']) {
+    } else if s.contains(['p', 'P']) {
         FPy(FBig::from_str(s).map_err(parse_error_to_py)?).into_py(py)
-    } else if s.contains('.') || (!s.contains("0x") && s.contains(&['e', 'E'])) {
+    } else if s.contains('.') || (!s.contains("0x") && s.contains(['e', 'E'])) {
         DPy(DBig::from_str(s).map_err(parse_error_to_py)?).into_py(py)
     } else if s.contains('-') {
         IPy(IBig::from_str_with_radix_prefix(s)

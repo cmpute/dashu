@@ -1,5 +1,6 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
+use std::str::FromStr;
 
 use dashu_float::DBig;
 use num_order::NumHash;
@@ -11,9 +12,9 @@ use crate::{
     types::{DPy, FPy, IPy},
 };
 
-const ERRMSG_FBIG_WRONG_SRC_TYPE: &'static str =
+const ERRMSG_FBIG_WRONG_SRC_TYPE: &str =
     "only floats or strings can be used to construct an FBig instance";
-const ERRMSG_DBIG_WRONG_SRC_TYPE: &'static str =
+const ERRMSG_DBIG_WRONG_SRC_TYPE: &str =
     "only Decimal instances or strings can be used to construct a DBig instance";
 
 #[pymethods]
@@ -27,7 +28,7 @@ impl FPy {
             Ok(FPy(f))
         } else if let Ok(s) = ob.extract() {
             // create from string
-            let f = FBig::from_str_native(s);
+            let f = FBig::from_str(s);
             Ok(FPy(f.map_err(parse_error_to_py)?))
         } else if let Ok(obj) = <PyRef<Self> as FromPyObject>::extract(ob) {
             Ok(FPy(obj.0.clone()))
@@ -71,7 +72,7 @@ impl DPy {
             Ok(DPy(parse_to_dbig(ob)?))
         } else if let Ok(s) = ob.extract() {
             // create from string
-            let d = DBig::from_str_native(s);
+            let d = DBig::from_str(s);
             Ok(DPy(d.map_err(parse_error_to_py)?))
         } else if let Ok(obj) = <PyRef<Self> as FromPyObject>::extract(ob) {
             Ok(DPy(obj.0.clone()))

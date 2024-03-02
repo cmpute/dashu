@@ -8,7 +8,7 @@ use pyo3::{
 
 use dashu_int::Word;
 
-const ERRMSG_WORDS_WRONG_SRC_TYPE: &'static str =
+const ERRMSG_WORDS_WRONG_SRC_TYPE: &str =
     "only a list of word-length integers can be used to construct a Words instance";
 const ERRMSG_WORDS_OOR: &str = "words index out of range";
 const ERRMSG_WORDS_INVALID_INDEX: &str = "words indices must be integers or slices";
@@ -214,7 +214,7 @@ impl PyWords {
     fn __add__(&self, other: &PyAny) -> PyResult<Self> {
         let mut out = self.0.clone();
         if let Ok(list) = <Vec<Word> as FromPyObject>::extract(other) {
-            out.extend(list.into_iter());
+            out.extend(list);
         } else if let Ok(obj) = <PyRef<Self> as FromPyObject>::extract(other) {
             out.extend(obj.0.iter());
         } else {

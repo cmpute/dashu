@@ -115,7 +115,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --no-default-features --features rand --workspace --exclude benchmark
+          args: --no-default-features --features rand --workspace --exclude benchmark --exclude python
 
   build-benchmark:
     name: Build benchmark
@@ -150,7 +150,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --target aarch64-unknown-linux-gnu --all-features --workspace --exclude benchmark
+          args: --target aarch64-unknown-linux-gnu --all-features --workspace --exclude benchmark --exclude python
 
   fmt:
     name: Rustfmt

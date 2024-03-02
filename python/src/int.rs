@@ -23,21 +23,21 @@ use num_order::NumHash;
 type FBig = dashu_float::FBig;
 
 // error messages
-const ERRMSG_LENGTH_TOO_LARGE: &'static str = "the integer has too many bits for indexing";
-const ERRMSG_STEPSIZE_TOO_LARGE: &'static str =
+const ERRMSG_LENGTH_TOO_LARGE: &str = "the integer has too many bits for indexing";
+const ERRMSG_STEPSIZE_TOO_LARGE: &str =
     "bit slicing with step size larger than 1 is not supported yet";
-const ERRMSG_UBIG_WRONG_SRC_TYPE: &'static str =
+const ERRMSG_UBIG_WRONG_SRC_TYPE: &str =
     "only integers or strings can be used to construct a UBig instance";
-const ERRMSG_IBIG_WRONG_SRC_TYPE: &'static str =
+const ERRMSG_IBIG_WRONG_SRC_TYPE: &str =
     "only integers or strings can be used to construct an IBig instance";
-const ERRMSG_FROM_WORDS_WRONG_TYPE: &'static str =
+const ERRMSG_FROM_WORDS_WRONG_TYPE: &str =
     "only list of integers or Words instance can be used in UBig.from_words()";
-const ERRMSG_WRONG_ENDIANNESS: &'static str = "byteorder must be either 'little' or 'big'";
-const ERRMSG_NEGATIVE_TO_UNSIGNED: &'static str = "can't convert negative int to unsigned";
-const ERRMSG_INT_WITH_RADIX: &'static str = "can't convert non-string with explicit base";
-const ERRMSG_WRONG_INDEX_TYPE: &'static str = "indices must be integers or slices";
-const ERRMSG_UBIG_BITS_OOR: &'static str = "bits index out of range";
-const ERRMSG_BITOPS_TYPE: &'static str = "bit operations are only defined between integers";
+const ERRMSG_WRONG_ENDIANNESS: &str = "byteorder must be either 'little' or 'big'";
+const ERRMSG_NEGATIVE_TO_UNSIGNED: &str = "can't convert negative int to unsigned";
+const ERRMSG_INT_WITH_RADIX: &str = "can't convert non-string with explicit base";
+const ERRMSG_WRONG_INDEX_TYPE: &str = "indices must be integers or slices";
+const ERRMSG_UBIG_BITS_OOR: &str = "bits index out of range";
+const ERRMSG_BITOPS_TYPE: &str = "bit operations are only defined between integers";
 
 macro_rules! impl_binops {
     ($ty_variant:ident, $py_method:ident, $rs_method:ident) => {
@@ -373,7 +373,7 @@ impl UPy {
     }
     /// Convert the integer to bytes, like int.to_bytes().
     fn to_bytes(&self, byteorder: Option<&str>, py: Python) -> PyResult<PyObject> {
-        let byteorder = byteorder.unwrap_or(&"little");
+        let byteorder = byteorder.unwrap_or("little");
         let bytes = match byteorder {
             "little" => PyBytes::new(py, &self.0.to_le_bytes()),
             "big" => PyBytes::new(py, &self.0.to_be_bytes()),
@@ -386,7 +386,7 @@ impl UPy {
     /// Create UBig from bytes, like int.from_bytes().
     #[staticmethod]
     fn from_bytes(bytes: &PyBytes, byteorder: Option<&str>) -> PyResult<Self> {
-        let byteorder = byteorder.unwrap_or(&"little");
+        let byteorder = byteorder.unwrap_or("little");
         let uint = match byteorder {
             "little" => UBig::from_le_bytes(bytes.as_bytes()),
             "big" => UBig::from_be_bytes(bytes.as_bytes()),
@@ -400,35 +400,35 @@ impl UPy {
     /********** operators **********/
     #[inline]
     fn __add__(&self, other: UniInput<'_>, py: Python) -> PyObject {
-        upy_add(&self, other, py)
+        upy_add(self, other, py)
     }
     #[inline]
     fn __radd__(&self, other: UniInput<'_>, py: Python) -> PyObject {
-        upy_add(&self, other, py)
+        upy_add(self, other, py)
     }
     #[inline]
     fn __sub__(&self, other: UniInput<'_>, py: Python) -> PyObject {
-        upy_sub(&self, other, py)
+        upy_sub(self, other, py)
     }
     #[inline]
     fn __rsub__(&self, other: UniInput<'_>, py: Python) -> PyObject {
-        upy_rsub(other, &self, py)
+        upy_rsub(other, self, py)
     }
     #[inline]
     fn __mul__(&self, other: UniInput<'_>, py: Python) -> PyObject {
-        upy_mul(&self, other, py)
+        upy_mul(self, other, py)
     }
     #[inline]
     fn __rmul__(&self, other: UniInput<'_>, py: Python) -> PyObject {
-        upy_mul(&self, other, py)
+        upy_mul(self, other, py)
     }
     #[inline]
     fn __truediv__(&self, other: UniInput<'_>, py: Python) -> PyObject {
-        upy_div(&self, other, py)
+        upy_div(self, other, py)
     }
     #[inline]
     fn __rtruediv__(&self, other: UniInput<'_>, py: Python) -> PyObject {
-        upy_rdiv(other, &self, py)
+        upy_rdiv(other, self, py)
     }
     #[inline]
     fn __mod__(&self, other: UniInput<'_>, py: Python) -> PyObject {
@@ -546,35 +546,35 @@ impl IPy {
     /********** operators **********/
     #[inline]
     fn __add__(&self, other: UniInput<'_>, py: Python) -> PyObject {
-        ipy_add(&self, other, py)
+        ipy_add(self, other, py)
     }
     #[inline]
     fn __radd__(&self, other: UniInput<'_>, py: Python) -> PyObject {
-        ipy_add(&self, other, py)
+        ipy_add(self, other, py)
     }
     #[inline]
     fn __sub__(&self, other: UniInput<'_>, py: Python) -> PyObject {
-        ipy_sub(&self, other, py)
+        ipy_sub(self, other, py)
     }
     #[inline]
     fn __rsub__(&self, other: UniInput<'_>, py: Python) -> PyObject {
-        ipy_rsub(other, &self, py)
+        ipy_rsub(other, self, py)
     }
     #[inline]
     fn __mul__(&self, other: UniInput<'_>, py: Python) -> PyObject {
-        ipy_mul(&self, other, py)
+        ipy_mul(self, other, py)
     }
     #[inline]
     fn __rmul__(&self, other: UniInput<'_>, py: Python) -> PyObject {
-        ipy_mul(&self, other, py)
+        ipy_mul(self, other, py)
     }
     #[inline]
     fn __truediv__(&self, other: UniInput<'_>, py: Python) -> PyObject {
-        ipy_div(&self, other, py)
+        ipy_div(self, other, py)
     }
     #[inline]
     fn __rtruediv__(&self, other: UniInput<'_>, py: Python) -> PyObject {
-        ipy_rdiv(other, &self, py)
+        ipy_rdiv(other, self, py)
     }
     #[inline]
     fn __mod__(&self, other: UniInput<'_>, py: Python) -> PyObject {
@@ -645,7 +645,7 @@ impl IPy {
             return Err(PyOverflowError::new_err(ERRMSG_NEGATIVE_TO_UNSIGNED));
         }
 
-        let byteorder = byteorder.unwrap_or(&"little");
+        let byteorder = byteorder.unwrap_or("little");
         let bytes = match byteorder {
             "little" => PyBytes::new(py, &self.0.to_le_bytes()),
             "big" => PyBytes::new(py, &self.0.to_be_bytes()),
@@ -662,7 +662,7 @@ impl IPy {
         byteorder: Option<&str>,
         signed: Option<bool>,
     ) -> PyResult<Self> {
-        let byteorder = byteorder.unwrap_or(&"little");
+        let byteorder = byteorder.unwrap_or("little");
         let signed = signed.unwrap_or(false);
         let int = match byteorder {
             "little" => match signed {

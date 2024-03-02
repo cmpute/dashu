@@ -10,7 +10,7 @@ use crate::{
     types::RPy,
 };
 
-const ERRMSG_RBIG_WRONG_SRC_TYPE: &'static str =
+const ERRMSG_RBIG_WRONG_SRC_TYPE: &str =
     "only Fraction instances or strings can be used to construct an RBig instance";
 
 #[pymethods]
