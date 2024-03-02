@@ -25,6 +25,7 @@ pub fn auto(ob: UniInput, py: Python<'_>) -> PyResult<PyObject> {
         }
     };
 
+    // TODO: shrink each type to the minimal representation (FBig/RBig -> IBig -> UBig)
     let obj = match ob {
         Uint(v) => UPy(v.into()).into_py(py),
         Int(v) => fit_ibig(v.into()),

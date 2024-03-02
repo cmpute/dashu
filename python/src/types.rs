@@ -78,7 +78,7 @@ impl From<RBig> for RPy {
     }
 }
 
-#[pyclass]
+#[pyclass(name = "Words")]
 pub struct PyWords(pub std::vec::Vec<dashu_int::Word>);
 
 /// An input type that accepts all possible numeric types from Python

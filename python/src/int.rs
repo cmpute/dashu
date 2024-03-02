@@ -17,7 +17,7 @@ use crate::{
     types::{DPy, FPy, IPy, PyWords, RPy, UPy, UniInput},
 };
 
-use dashu_base::{BitTest, Sign, Signed, UnsignedAbs};
+use dashu_base::{Abs, BitTest, Sign, Signed, UnsignedAbs};
 use dashu_int::{fast_div, IBig, UBig, Word};
 use num_order::NumHash;
 type FBig = dashu_float::FBig;
@@ -37,14 +37,15 @@ const ERRMSG_NEGATIVE_TO_UNSIGNED: &'static str = "can't convert negative int to
 const ERRMSG_INT_WITH_RADIX: &'static str = "can't convert non-string with explicit base";
 const ERRMSG_WRONG_INDEX_TYPE: &'static str = "indices must be integers or slices";
 const ERRMSG_UBIG_BITS_OOR: &'static str = "bits index out of range";
+const ERRMSG_BITOPS_TYPE: &'static str = "bit operations are only defined between integers";
 
-macro_rules! impl_ubig_binops {
-    ($py_method:ident, $py_method_rev:ident, $rs_method:ident) => {
-        fn $py_method(lhs: &UPy, rhs: UniInput<'_>, py: Python) -> PyObject {
+macro_rules! impl_binops {
+    ($ty_variant:ident, $py_method:ident, $rs_method:ident) => {
+        fn $py_method(lhs: &$ty_variant, rhs: UniInput<'_>, py: Python) -> PyObject {
             match rhs {
-                UniInput::Uint(x) => UPy((&lhs.0).$rs_method(x)).into_py(py),
-                UniInput::Int(x) => IPy(lhs.0.as_ibig().$rs_method(x)).into_py(py),
-                UniInput::BUint(x) => UPy((&lhs.0).$rs_method(&x.0)).into_py(py),
+                UniInput::Uint(x) => $ty_variant((&lhs.0).$rs_method(x)).into_py(py),
+                UniInput::Int(x) => IPy((&lhs.0).$rs_method(IBig::from(x))).into_py(py),
+                UniInput::BUint(x) => $ty_variant((&lhs.0).$rs_method(&x.0)).into_py(py),
                 UniInput::BInt(x) => IPy((&lhs.0).$rs_method(&x.0)).into_py(py),
                 UniInput::OBInt(x) => IPy((&lhs.0).$rs_method(x)).into_py(py),
                 UniInput::Float(x) => {
@@ -57,12 +58,15 @@ macro_rules! impl_ubig_binops {
                 UniInput::OBRational(x) => RPy((&lhs.0).$rs_method(x)).into_py(py),
             }
         }
+    };
+    ($ty_variant:ident, $py_method:ident, $py_method_rev:ident, $rs_method:ident) => {
+        impl_binops!($ty_variant, $py_method, $rs_method);
 
-        fn $py_method_rev(lhs: UniInput<'_>, rhs: &UPy, py: Python) -> PyObject {
+        fn $py_method_rev(lhs: UniInput<'_>, rhs: &$ty_variant, py: Python) -> PyObject {
             match lhs {
-                UniInput::Uint(x) => UPy(x.$rs_method(&rhs.0).into()).into_py(py),
-                UniInput::Int(x) => IPy(x.$rs_method(rhs.0.as_ibig()).into()).into_py(py),
-                UniInput::BUint(x) => UPy((&x.0).$rs_method(&rhs.0)).into_py(py),
+                UniInput::Uint(x) => $ty_variant(x.$rs_method(&rhs.0).into()).into_py(py),
+                UniInput::Int(x) => IPy(IBig::from(x).$rs_method(&rhs.0).into()).into_py(py),
+                UniInput::BUint(x) => $ty_variant((&x.0).$rs_method(&rhs.0)).into_py(py),
                 UniInput::BInt(x) => IPy((&x.0).$rs_method(&rhs.0)).into_py(py),
                 UniInput::OBInt(x) => IPy(x.$rs_method(&rhs.0)).into_py(py),
                 UniInput::Float(x) => {
@@ -78,10 +82,113 @@ macro_rules! impl_ubig_binops {
     };
 }
 
-impl_ubig_binops!(upy_add, upy_radd, add);
-impl_ubig_binops!(upy_sub, upy_rsub, sub);
-impl_ubig_binops!(upy_mul, upy_rmul, mul);
-impl_ubig_binops!(upy_div, upy_rdiv, div);
+impl_binops!(UPy, upy_add, add);
+impl_binops!(UPy, upy_sub, upy_rsub, sub);
+impl_binops!(UPy, upy_mul, mul);
+impl_binops!(UPy, upy_div, upy_rdiv, div);
+impl_binops!(IPy, ipy_add, add);
+impl_binops!(IPy, ipy_sub, ipy_rsub, sub);
+impl_binops!(IPy, ipy_mul, mul);
+impl_binops!(IPy, ipy_div, ipy_rdiv, div);
+
+fn upy_bitand(lhs: &UPy, rhs: UniInput<'_>, py: Python) -> PyResult<PyObject> {
+    let result: Py<PyAny> = match rhs {
+        UniInput::Uint(x) => UPy((&lhs.0).bitand(x).into()).into_py(py),
+        UniInput::BUint(x) => UPy((&lhs.0).bitand(&x.0)).into_py(py),
+        UniInput::Int(x) => UPy((&lhs.0).bitand(IBig::from(x))).into_py(py),
+        UniInput::BInt(x) => UPy((&lhs.0).bitand(&x.0)).into_py(py),
+        UniInput::OBInt(x) => UPy((&lhs.0).bitand(x)).into_py(py),
+        _ => return Err(PyTypeError::new_err(ERRMSG_BITOPS_TYPE)),
+    };
+    Ok(result)
+}
+fn ipy_bitand(lhs: &IPy, rhs: UniInput<'_>, py: Python) -> PyResult<PyObject> {
+    let result: Py<PyAny> = match rhs {
+        UniInput::Uint(x) => UPy((&lhs.0).bitand(x).into()).into_py(py),
+        UniInput::BUint(x) => UPy((&lhs.0).bitand(&x.0)).into_py(py),
+        UniInput::Int(x) => IPy((&lhs.0).bitand(x)).into_py(py),
+        UniInput::BInt(x) => IPy((&lhs.0).bitand(&x.0)).into_py(py),
+        UniInput::OBInt(x) => IPy((&lhs.0).bitand(x)).into_py(py),
+        _ => return Err(PyTypeError::new_err(ERRMSG_BITOPS_TYPE)),
+    };
+    Ok(result)
+}
+
+macro_rules! impl_ubig_bit_binops {
+    ($ty_variant:ident, $py_method:ident, $rs_method:ident) => {
+        fn $py_method(lhs: &$ty_variant, rhs: UniInput<'_>, py: Python) -> PyResult<PyObject> {
+            let result = match rhs {
+                UniInput::Uint(x) => $ty_variant((&lhs.0).$rs_method(x)).into_py(py),
+                UniInput::BUint(x) => $ty_variant((&lhs.0).$rs_method(&x.0)).into_py(py),
+                UniInput::Int(x) => IPy((&lhs.0).$rs_method(IBig::from(x))).into_py(py),
+                UniInput::BInt(x) => IPy((&lhs.0).$rs_method(&x.0)).into_py(py),
+                UniInput::OBInt(x) => IPy((&lhs.0).$rs_method(x)).into_py(py),
+                _ => return Err(PyTypeError::new_err(ERRMSG_BITOPS_TYPE)),
+            };
+            Ok(result)
+        }
+    };
+}
+impl_ubig_bit_binops!(UPy, upy_bitor, bitor);
+impl_ubig_bit_binops!(UPy, upy_bitxor, bitxor);
+impl_ubig_bit_binops!(IPy, ipy_bitor, bitor);
+impl_ubig_bit_binops!(IPy, ipy_bitxor, bitxor);
+
+fn upy_mod(lhs: &UPy, rhs: UniInput<'_>, py: Python) -> PyObject {
+    match rhs {
+        UniInput::Uint(x) => UPy((&lhs.0).rem(x).into()).into_py(py),
+        UniInput::Int(x) => UPy((&lhs.0).rem(IBig::from(x))).into_py(py),
+        UniInput::BUint(x) => UPy((&lhs.0).rem(&x.0)).into_py(py),
+        UniInput::BInt(x) => UPy((&lhs.0).rem(&x.0)).into_py(py),
+        UniInput::OBInt(x) => UPy((&lhs.0).rem(x)).into_py(py),
+        _ => todo!(),
+    }
+}
+fn ipy_mod(lhs: &IPy, rhs: UniInput<'_>, py: Python) -> PyObject {
+    match rhs {
+        UniInput::Uint(x) => UPy((&lhs.0).rem(x).into()).into_py(py),
+        UniInput::Int(x) => IPy((&lhs.0).rem(x).into()).into_py(py),
+        UniInput::BUint(x) => IPy((&lhs.0).rem(&x.0)).into_py(py),
+        UniInput::BInt(x) => IPy((&lhs.0).rem(&x.0)).into_py(py),
+        UniInput::OBInt(x) => IPy((&lhs.0).rem(x)).into_py(py),
+        _ => todo!(),
+    }
+}
+fn ipy_pow(base: &IBig, exp: UniInput, modulus: Option<UniInput>) -> PyResult<IBig> {
+    use fast_div::ConstDivisor;
+
+    if let Some(m) = modulus {
+        // first parse the modulus
+        let (_sign, ring) = match m {
+            UniInput::Uint(x) => (Sign::Positive, ConstDivisor::new(x.into())),
+            UniInput::BUint(x) => (Sign::Positive, ConstDivisor::new(x.0.clone())),
+            UniInput::Int(x) => (x.sign(), ConstDivisor::new(x.unsigned_abs().into())),
+            UniInput::BInt(x) => (x.0.sign(), ConstDivisor::new((&x.0).unsigned_abs())),
+            UniInput::OBInt(x) => {
+                let (sign, m) = x.into_parts();
+                (sign, ConstDivisor::new(m))
+            }
+            _ => todo!(),
+        };
+
+        match exp {
+            UniInput::Uint(x) => {
+                let (sign, u) = base.clone().into_parts();
+                let mut r = ring.reduce(u);
+                if sign == Sign::Negative {
+                    r = r.neg();
+                }
+                Ok(r.pow(&x.into()).residue().into())
+            }
+            _ => todo!(),
+        }
+    } else {
+        match exp {
+            UniInput::Uint(x) => Ok(base.pow(x as _)),
+            _ => todo!(),
+        }
+    }
+}
 
 #[pymethods]
 impl UPy {
@@ -136,7 +243,7 @@ impl UPy {
         hasher.finish()
     }
 
-    // use as a bit vector
+    /********** use as a bit vector **********/
     fn __len__(&self) -> usize {
         self.0.bit_len()
     }
@@ -297,7 +404,7 @@ impl UPy {
     }
     #[inline]
     fn __radd__(&self, other: UniInput<'_>, py: Python) -> PyObject {
-        upy_radd(other, &self, py)
+        upy_add(&self, other, py)
     }
     #[inline]
     fn __sub__(&self, other: UniInput<'_>, py: Python) -> PyObject {
@@ -313,7 +420,7 @@ impl UPy {
     }
     #[inline]
     fn __rmul__(&self, other: UniInput<'_>, py: Python) -> PyObject {
-        upy_rmul(other, &self, py)
+        upy_mul(&self, other, py)
     }
     #[inline]
     fn __truediv__(&self, other: UniInput<'_>, py: Python) -> PyObject {
@@ -325,16 +432,6 @@ impl UPy {
     }
     #[inline]
     fn __mod__(&self, other: UniInput<'_>, py: Python) -> PyObject {
-        fn upy_mod(lhs: &UPy, rhs: UniInput<'_>, py: Python) -> PyObject {
-            match rhs {
-                UniInput::Uint(x) => (&lhs.0).rem(x).into_py(py),
-                UniInput::Int(x) => lhs.0.as_ibig().rem(x).into_py(py),
-                UniInput::BUint(x) => UPy((&lhs.0).rem(&x.0)).into_py(py),
-                UniInput::BInt(x) => UPy((&lhs.0).rem(&x.0)).into_py(py),
-                UniInput::OBInt(x) => UPy((&lhs.0).rem(x)).into_py(py),
-                _ => todo!(),
-            }
-        }
         upy_mod(self, other, py)
     }
     #[inline]
@@ -344,51 +441,26 @@ impl UPy {
         modulus: Option<UniInput>,
         py: Python,
     ) -> PyResult<PyObject> {
-        use fast_div::ConstDivisor;
-
-        if let Some(m) = modulus {
-            // first parse the modulus
-            let (_sign, ring) = match m {
-                UniInput::Uint(x) => (Sign::Positive, ConstDivisor::new(x.into())),
-                UniInput::BUint(x) => (Sign::Positive, ConstDivisor::new(x.0.clone())),
-                UniInput::Int(x) => (x.sign(), ConstDivisor::new(x.unsigned_abs().into())),
-                UniInput::BInt(x) => (x.0.sign(), ConstDivisor::new((&x.0).unsigned_abs())),
-                UniInput::OBInt(x) => {
-                    let (sign, m) = x.into_parts();
-                    (sign, ConstDivisor::new(m))
-                }
-                _ => todo!(),
-            };
-
-            match other {
-                UniInput::Uint(x) => {
-                    Ok(UPy(ring.reduce(self.0.clone()).pow(&x.into()).residue()).into_py(py))
-                }
-                _ => todo!(),
-            }
-        } else {
-            match other {
-                UniInput::Uint(x) => Ok(UPy(self.0.pow(x as _)).into_py(py)),
-                _ => todo!(),
-            }
-        }
+        ipy_pow(self.0.as_ibig(), other, modulus).map(|n| UPy(n.try_into().unwrap()).into_py(py))
     }
+
     #[inline]
-    fn __pos__(&self) -> UPy {
-        todo!()
+    fn __pos__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
     }
     #[inline]
     fn __neg__(&self) -> IPy {
         IPy((&self.0).neg())
     }
     #[inline]
-    fn __abs__(&self) -> UPy {
-        todo!()
+    fn __abs__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
     }
     #[inline]
     fn __nonzero__(&self) -> bool {
         !self.0.is_zero()
     }
+
     #[inline]
     fn __lshift__(&self, other: usize) -> UPy {
         UPy((&self.0) << other)
@@ -398,23 +470,16 @@ impl UPy {
         UPy((&self.0) >> other)
     }
     #[inline]
-    fn __and__(&self, other: UniInput, py: Python) -> PyObject {
-        match other {
-            UniInput::Uint(x) => (&self.0).bitand(x).into_py(py),
-            UniInput::BUint(x) => UPy((&self.0).bitand(&x.0)).into_py(py),
-            UniInput::Int(x) => UPy((&self.0).bitand(IBig::from(x))).into_py(py),
-            UniInput::BInt(x) => UPy((&self.0).bitand(&x.0)).into_py(py),
-            UniInput::OBInt(x) => UPy((&self.0).bitand(x)).into_py(py),
-            _ => todo!(), // TODO: raise TypeError
-        }
+    fn __and__(&self, other: UniInput, py: Python) -> PyResult<PyObject> {
+        upy_bitand(self, other, py)
     }
     #[inline]
-    fn __or__(&self, other: &PyAny, py: Python) -> PyObject {
-        todo!()
+    fn __or__(&self, other: UniInput, py: Python) -> PyResult<PyObject> {
+        upy_bitor(self, other, py)
     }
     #[inline]
-    fn __xor__(&self, other: &PyAny, py: Python) -> PyObject {
-        todo!()
+    fn __xor__(&self, other: UniInput, py: Python) -> PyResult<PyObject> {
+        upy_bitxor(self, other, py)
     }
 }
 
@@ -443,6 +508,8 @@ impl IPy {
                 IBig::from_str_with_radix_prefix(s).map(|v| v.0)
             };
             Ok(IPy(n.map_err(parse_error_to_py)?))
+        } else if let Ok(obj) = <PyRef<UPy> as FromPyObject>::extract(ob) {
+            Ok(IPy(obj.0.clone().into()))
         } else if let Ok(obj) = <PyRef<Self> as FromPyObject>::extract(ob) {
             Ok(IPy(obj.0.clone()))
         } else {
@@ -468,12 +535,97 @@ impl IPy {
         hasher.finish()
     }
 
-    // use as a bit vector with very limited capabilities
+    /********** use as a bit vector with very limited capabilities **********/
     fn __len__(&self) -> usize {
         self.0.bit_len()
     }
     fn __getitem__(&self, i: usize) -> bool {
         self.0.bit(i)
+    }
+
+    /********** operators **********/
+    #[inline]
+    fn __add__(&self, other: UniInput<'_>, py: Python) -> PyObject {
+        ipy_add(&self, other, py)
+    }
+    #[inline]
+    fn __radd__(&self, other: UniInput<'_>, py: Python) -> PyObject {
+        ipy_add(&self, other, py)
+    }
+    #[inline]
+    fn __sub__(&self, other: UniInput<'_>, py: Python) -> PyObject {
+        ipy_sub(&self, other, py)
+    }
+    #[inline]
+    fn __rsub__(&self, other: UniInput<'_>, py: Python) -> PyObject {
+        ipy_rsub(other, &self, py)
+    }
+    #[inline]
+    fn __mul__(&self, other: UniInput<'_>, py: Python) -> PyObject {
+        ipy_mul(&self, other, py)
+    }
+    #[inline]
+    fn __rmul__(&self, other: UniInput<'_>, py: Python) -> PyObject {
+        ipy_mul(&self, other, py)
+    }
+    #[inline]
+    fn __truediv__(&self, other: UniInput<'_>, py: Python) -> PyObject {
+        ipy_div(&self, other, py)
+    }
+    #[inline]
+    fn __rtruediv__(&self, other: UniInput<'_>, py: Python) -> PyObject {
+        ipy_rdiv(other, &self, py)
+    }
+    #[inline]
+    fn __mod__(&self, other: UniInput<'_>, py: Python) -> PyObject {
+        ipy_mod(self, other, py)
+    }
+    #[inline]
+    fn __pow__(
+        &self,
+        other: UniInput,
+        modulus: Option<UniInput>,
+        py: Python,
+    ) -> PyResult<PyObject> {
+        ipy_pow(&self.0, other, modulus).map(|n| IPy(n).into_py(py))
+    }
+
+    #[inline]
+    fn __pos__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+    #[inline]
+    fn __neg__(&self) -> IPy {
+        IPy((&self.0).neg())
+    }
+    #[inline]
+    fn __abs__(&self) -> IPy {
+        IPy((&self.0).abs())
+    }
+    #[inline]
+    fn __nonzero__(&self) -> bool {
+        !self.0.is_zero()
+    }
+
+    #[inline]
+    fn __lshift__(&self, other: usize) -> IPy {
+        IPy((&self.0) << other)
+    }
+    #[inline]
+    fn __rshift__(&self, other: usize) -> IPy {
+        IPy((&self.0) >> other)
+    }
+    #[inline]
+    fn __and__(&self, other: UniInput, py: Python) -> PyResult<PyObject> {
+        ipy_bitand(self, other, py)
+    }
+    #[inline]
+    fn __or__(&self, other: UniInput, py: Python) -> PyResult<PyObject> {
+        ipy_bitor(self, other, py)
+    }
+    #[inline]
+    fn __xor__(&self, other: UniInput, py: Python) -> PyResult<PyObject> {
+        ipy_bitxor(self, other, py)
     }
 
     /********** interop **********/
