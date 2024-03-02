@@ -358,6 +358,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
             .map(|repr| FBig::new(repr, context))
     }
 
+    // TODO: implement quantize() (like the python decimal)
+
     /// Convert the float number to integer with the given rounding mode.
     ///
     /// # Warning

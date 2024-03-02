@@ -63,6 +63,8 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+extern crate alloc;
+
 mod add;
 mod cmp;
 mod convert;

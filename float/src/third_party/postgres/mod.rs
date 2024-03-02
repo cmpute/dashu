@@ -17,7 +17,6 @@ use crate::{
     repr::{Context, Repr},
     round::Round,
 };
-extern crate alloc;
 use alloc::vec::Vec;
 
 /// Represents the NUMERIC value in PostgreSQL, closely mirroring the PG wire protocol without NaN.

@@ -417,11 +417,11 @@ impl DoubleEnd<'_> {
         }
 
         if self.verbose {
-            f.write_str(" (")?;
+            f.write_str(" (digits: ")?;
             non_power_two::write_usize_decimals(f, digits)?;
-            f.write_str(" digits, ")?;
+            f.write_str(", bits: ")?;
             non_power_two::write_usize_decimals(f, self.magnitude.bit_len())?;
-            f.write_str(" bits)")?;
+            f.write_str(")")?;
         }
 
         Ok(())

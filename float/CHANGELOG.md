@@ -6,6 +6,7 @@
 - Implement `TryFrom<Repr>` and `TryFrom<FBig>` for primitive integers.
 - Implement `TryFrom<Repr<2>>` and `TryFrom<FBig<_, 2>>` for primitive floats.
 - Implement `From<UBig>` and `From<IBig>` for `Repr`.
+- Implement `core::fmt::{Binary, Oct, LowerExp, UpperExp, LowerHex, UpperHex}` for `Repr`, `FBig` (some are limited to certain bases).
 
 ## 0.4.2
 

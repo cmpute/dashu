@@ -92,3 +92,24 @@ fn test_add_relaxed() {
         test_add_sub(b, a, c);
     }
 }
+
+#[test]
+fn test_add_with_int() {
+    assert_eq!(rbig!(0) + ubig!(1), rbig!(1));
+    assert_eq!(rbig!(~0) + ubig!(1), rbig!(~1));
+    assert_eq!(rbig!(1) + ubig!(1), rbig!(2));
+    assert_eq!(rbig!(~1) + ubig!(1), rbig!(~2));
+    assert_eq!(rbig!(-1 / 2) + ibig!(10), rbig!(19 / 2));
+    assert_eq!(rbig!(~-1/2) + ibig!(10), rbig!(~19/2));
+    assert_eq!(rbig!(9 / 5) + ibig!(-3), rbig!(-6 / 5));
+    assert_eq!(rbig!(~9/5) + ibig!(-3), rbig!(~-6/5));
+
+    assert_eq!(ubig!(0) + rbig!(1), rbig!(1));
+    assert_eq!(ubig!(0) + rbig!(~1), rbig!(~1));
+    assert_eq!(ubig!(1) + rbig!(1), rbig!(2));
+    assert_eq!(ubig!(1) + rbig!(~1), rbig!(~2));
+    assert_eq!(ibig!(-10) + rbig!(1 / 2), rbig!(-19 / 2));
+    assert_eq!(ibig!(-10) + rbig!(~1/2), rbig!(~-19/2));
+    assert_eq!(ibig!(3) + rbig!(-9 / 5), rbig!(6 / 5));
+    assert_eq!(ibig!(3) + rbig!(~-9/5), rbig!(~6/5));
+}

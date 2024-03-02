@@ -1,6 +1,16 @@
-use dashu_int::{ops::*, IBig};
+use dashu_int::{ops::*, IBig, UBig};
 
 mod helper_macros;
+
+#[test]
+fn test_ones() {
+    assert_eq!(UBig::ones(0), ubig!(0));
+    assert_eq!(UBig::ones(1), ubig!(1));
+    assert_eq!(UBig::ones(2), ubig!(3));
+    assert_eq!(UBig::ones(16), ubig!(0xffff));
+    assert_eq!(UBig::ones(128), UBig::from(u128::MAX));
+    assert_eq!(UBig::ones(200), (ubig!(1) << 200) - ubig!(1));
+}
 
 #[test]
 #[allow(clippy::bool_assert_comparison)]

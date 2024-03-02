@@ -43,34 +43,10 @@ forward_ibig_binop_to_repr!(
     impl_ibig_gcd_ext
 );
 
-macro_rules! impl_ubig_ibig_gcd {
-    ($mag0:ident, $sign1:ident, $mag1:ident) => {{
-        let _unused = $sign1;
-        UBig($mag0.gcd($mag1))
-    }};
-}
-macro_rules! impl_ibig_ubig_gcd {
-    ($sign0:ident, $mag0:ident, $mag1:ident) => {{
-        let _unused = $sign0;
-        UBig($mag0.gcd($mag1))
-    }};
-}
-macro_rules! impl_ubig_ibig_gcd_ext {
-    ($mag0:ident, $sign1:ident, $mag1:ident) => {{
-        let (r, s, t) = $mag0.gcd_ext($mag1);
-        (UBig(r), IBig(s), $sign1 * IBig(t))
-    }};
-}
-macro_rules! impl_ibig_ubig_gcd_ext {
-    ($sign0:ident, $mag0:ident, $mag1:ident) => {{
-        let (r, s, t) = $mag0.gcd_ext($mag1);
-        (UBig(r), $sign0 * IBig(s), IBig(t))
-    }};
-}
-forward_ubig_ibig_binop_to_repr!(impl Gcd, gcd, Output = UBig, impl_ubig_ibig_gcd);
-forward_ibig_ubig_binop_to_repr!(impl Gcd, gcd, Output = UBig, impl_ibig_ubig_gcd);
-forward_ubig_ibig_binop_to_repr!(impl ExtendedGcd, gcd_ext -> (UBig, IBig, IBig), OutputGcd = UBig, OutputCoeff = IBig, impl_ubig_ibig_gcd_ext);
-forward_ibig_ubig_binop_to_repr!(impl ExtendedGcd, gcd_ext -> (UBig, IBig, IBig), OutputGcd = UBig, OutputCoeff = IBig, impl_ibig_ubig_gcd_ext);
+forward_ubig_ibig_binop_to_repr!(impl Gcd, gcd, Output = UBig, impl_ibig_gcd);
+forward_ibig_ubig_binop_to_repr!(impl Gcd, gcd, Output = UBig, impl_ibig_gcd);
+forward_ubig_ibig_binop_to_repr!(impl ExtendedGcd, gcd_ext -> (UBig, IBig, IBig), OutputGcd = UBig, OutputCoeff = IBig, impl_ibig_gcd_ext);
+forward_ibig_ubig_binop_to_repr!(impl ExtendedGcd, gcd_ext -> (UBig, IBig, IBig), OutputGcd = UBig, OutputCoeff = IBig, impl_ibig_gcd_ext);
 
 mod repr {
     use super::*;

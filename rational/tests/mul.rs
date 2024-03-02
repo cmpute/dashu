@@ -85,3 +85,24 @@ fn test_add_with_ibig() {
         assert_eq!(b * r, c.clone().relax());
     }
 }
+
+#[test]
+fn test_mul_with_int() {
+    assert_eq!(rbig!(0) * ubig!(1), rbig!(0));
+    assert_eq!(rbig!(~0) * ubig!(1), rbig!(~0));
+    assert_eq!(rbig!(1) * ubig!(1), rbig!(1));
+    assert_eq!(rbig!(~1) * ubig!(1), rbig!(~1));
+    assert_eq!(rbig!(-1 / 2) * ibig!(-2), rbig!(1));
+    assert_eq!(rbig!(~-1/2) * ibig!(-2), rbig!(~1));
+    assert_eq!(rbig!(5 / 12) * ibig!(-3), rbig!(-5 / 4));
+    assert_eq!(rbig!(~5/12) * ibig!(-3), rbig!(~-5/4));
+
+    assert_eq!(ubig!(0) * rbig!(1), rbig!(0));
+    assert_eq!(ubig!(0) * rbig!(~1), rbig!(~0));
+    assert_eq!(ubig!(1) * rbig!(1), rbig!(1));
+    assert_eq!(ubig!(1) * rbig!(~1), rbig!(~1));
+    assert_eq!(ibig!(-2) * rbig!(-1 / 2), rbig!(1));
+    assert_eq!(ibig!(-2) * rbig!(~-1/2), rbig!(~1));
+    assert_eq!(ibig!(-3) * rbig!(5 / 12), rbig!(-5 / 4));
+    assert_eq!(ibig!(-3) * rbig!(~5/12), rbig!(~-5/4));
+}

@@ -6,8 +6,9 @@ use crate::{
     round::{mode::Zero, Round},
     utils::{digit_len, split_digits_ref},
 };
+use alloc::string::String;
 use core::fmt::{self, Alignment, Display, Formatter, Write};
-use dashu_base::{Sign, UnsignedAbs};
+use dashu_base::Sign;
 use dashu_int::{IBig, Word};
 
 trait DebugStructHelper {
@@ -67,8 +68,8 @@ impl<R: Round> fmt::Debug for Context<R> {
 }
 
 impl<const B: Word> Repr<B> {
-    /// Print the float number with given rounding mode. The rounding may happen if the precision option
-    /// of the formatter is set.
+    /// Print the float number with given rounding mode.
+    /// The rounding may happen if the precision option of the formatter is set.
     fn fmt_round<R: Round>(&self, f: &mut Formatter<'_>) -> fmt::Result {
         // shortcut for infinities
         if self.is_infinite() {
@@ -96,13 +97,20 @@ impl<const B: Word> Repr<B> {
             (&self.significand, self.exponent)
         };
 
+        // then print the digits to a buffer, without the sign
+        let mut signif_str = String::new();
+        write!(&mut signif_str, "{}", signif.in_radix(B as _))?;
+        let signif_str = if negative {
+            &signif_str[1..]
+        } else {
+            signif_str.as_str()
+        };
+
         // calculate padding if necessary
         let (left_pad, right_pad) = if let Some(min_width) = f.width() {
-            // first calculate the with of the formatted digits without padding
-
-            let mut signif_digits = digit_len::<B>(signif);
+            let mut signif_digits = signif_str.len();
             // the leading zeros needs to be printed (when the exponent of the number is very small).
-            let leading_zeros = -(exp + signif_digits as isize - 1).min(0) as usize;
+            let leading_zeros = -(exp + signif_str.len() as isize - 1).min(0) as usize;
             // the trailing zeros needs to be printed (when the exponent of the number is very large)
             let mut trailing_zeros = exp.max(0) as usize;
 
@@ -119,7 +127,7 @@ impl<const B: Word> Repr<B> {
             }
 
             let has_sign = (negative || f.sign_plus()) as usize;
-            let has_float_point = if exp > 0 {
+            let has_radix_point = if exp > 0 {
                 // if there's no fractional part, the result has the floating point
                 // only if the precision is set to be non-zero
                 f.precision().unwrap_or(0) > 0
@@ -129,7 +137,7 @@ impl<const B: Word> Repr<B> {
                 f.precision() != Some(0) // non-zero or none
             } as usize;
 
-            let width = signif_digits + has_sign + has_float_point + leading_zeros + trailing_zeros;
+            let width = signif_digits + has_sign + has_radix_point + leading_zeros + trailing_zeros;
 
             // check alignment and calculate padding
             if width >= min_width {
@@ -150,40 +158,40 @@ impl<const B: Word> Repr<B> {
             (0, 0)
         };
 
-        // print left padding
-        let fill = if f.sign_aware_zero_pad() {
-            '0'
-        } else {
-            f.fill()
-        };
-        for _ in 0..left_pad {
-            f.write_char(fill)?;
+        // print sign and left padding
+        if !f.sign_aware_zero_pad() {
+            for _ in 0..left_pad {
+                f.write_char(f.fill())?;
+            }
+        }
+        if negative {
+            f.write_char('-')?;
+        } else if f.sign_plus() {
+            f.write_char('+')?;
+        }
+        if f.sign_aware_zero_pad() {
+            for _ in 0..left_pad {
+                f.write_char('0')?;
+            }
         }
 
         // print the actual digits
         if exp < 0 {
             // If the exponent is negative, then the float number has fractional part
             let exp = -exp as usize;
-            let (int, fract) = split_digits_ref::<B>(signif, exp);
+            let (int, fract) = signif_str.split_at(signif_str.len().saturating_sub(exp));
 
-            let frac_digits = digit_len::<B>(&fract);
+            let frac_digits = fract.len();
             debug_assert!(frac_digits <= exp);
 
-            // print the integral part.
-            if !negative && f.sign_plus() {
-                f.write_char('+')?;
-            }
-            if int.is_zero() {
-                if negative {
-                    f.write_char('-')?;
-                }
+            // print the integral part, at least print a zero.
+            if int.is_empty() {
                 f.write_char('0')?;
             } else {
-                f.write_fmt(format_args!("{}", int.in_radix(B as u32)))?;
+                f.write_str(int)?;
             }
 
             // print the fractional part, it has exactly `exp` digits (with left zero padding)
-            let fract = fract.unsigned_abs(); // don't print sign for fractional part
             if let Some(prec) = f.precision() {
                 // don't print any fractional part if precision is zero
                 if prec != 0 {
@@ -199,14 +207,14 @@ impl<const B: Word> Repr<B> {
                             }
                         }
                         if frac_digits > 0 {
-                            f.write_fmt(format_args!("{}", fract.in_radix(B as u32)))?;
+                            f.write_str(fract)?;
                         }
                     } else {
                         // append zeros if the required precision is larger
                         for _ in 0..exp - frac_digits {
                             f.write_char('0')?;
                         }
-                        f.write_fmt(format_args!("{}", fract.in_radix(B as u32)))?;
+                        f.write_str(fract)?;
                         for _ in 0..prec - exp {
                             f.write_char('0')?;
                         }
@@ -217,26 +225,19 @@ impl<const B: Word> Repr<B> {
                 for _ in 0..(exp - frac_digits) {
                     f.write_char('0')?;
                 }
-                f.write_fmt(format_args!("{}", fract.in_radix(B as u32)))?;
+                f.write_str(fract)?;
             }
         } else {
             // In this case, the number is actually an integer and it can be trivially formatted.
             // However, when the precision option is set, we need to append zeros.
 
-            // print the significand
-            if !negative && f.sign_plus() {
-                f.write_char('+')?;
-            }
-            if signif.is_zero() {
-                if negative {
-                    f.write_char('-')?;
-                }
+            // print the significand and append zeros if needed
+            if signif_str.is_empty() {
+                // this branch can happend when a negative float is rounded to zero.
                 f.write_char('0')?;
             } else {
-                f.write_fmt(format_args!("{}", signif.in_radix(B as u32)))?;
+                f.write_str(signif_str)?;
             }
-
-            // append zeros if needed
             for _ in 0..exp {
                 f.write_char('0')?;
             }
@@ -251,6 +252,158 @@ impl<const B: Word> Repr<B> {
                 }
             }
         };
+
+        // print right padding
+        for _ in 0..right_pad {
+            f.write_char(f.fill())?;
+        }
+
+        Ok(())
+    }
+
+    /// Print the float number in scientific notation with given rounding mode.
+    /// The rounding may happen if the precision option of the formatter is set.
+    ///
+    /// When `use_hexadecimal` is True and base B is 2, the output will be represented
+    /// in the hexadecimal format 0xaaa.bbbpcc.
+    fn fmt_round_scientific<R: Round>(
+        &self,
+        f: &mut Formatter<'_>,
+        upper: bool,
+        use_hexadecimal: bool,
+        exp_marker: Option<char>,
+    ) -> fmt::Result {
+        assert!(!(B != 2 && use_hexadecimal), "hexadecimal is only relevant for base 2");
+
+        // shortcut for infinities
+        if self.is_infinite() {
+            return match self.sign() {
+                Sign::Positive => f.write_str("inf"),
+                Sign::Negative => f.write_str("-inf"),
+            };
+        }
+
+        // first perform rounding before actual printing if necessary
+        let negative = self.significand.sign() == Sign::Negative;
+        let rounded_signif;
+        let (signif, exp) = if let Some(prec) = f.precision() {
+            // add one because always have one extra digit before the radix point
+            let prec = if use_hexadecimal {
+                (prec * 4 + 4) as isize
+            } else {
+                (prec + 1) as isize
+            };
+            let diff = prec - self.digits() as isize;
+            if diff < 0 {
+                let shift = -diff as usize;
+                let (signif, rem) = split_digits_ref::<B>(&self.significand, shift);
+                let adjust = R::round_fract::<B>(&signif, rem, shift);
+                rounded_signif = signif + adjust;
+                (&rounded_signif, self.exponent - diff)
+            } else {
+                (&self.significand, self.exponent)
+            }
+        } else {
+            (&self.significand, self.exponent)
+        };
+
+        // then print the digits to a buffer, without the prefix or sign
+        let (mut signif_str, mut exp_str) = (String::new(), String::new());
+        match (upper, use_hexadecimal) {
+            (false, false) => write!(&mut signif_str, "{}", signif.in_radix(B as _)),
+            (true, false) => write!(&mut signif_str, "{:#}", signif.in_radix(B as _)),
+            (false, true) => write!(&mut signif_str, "{:}", signif.in_radix(16)),
+            (true, true) => write!(&mut signif_str, "{:#}", signif.in_radix(16)),
+        }?;
+        let signif_str = if negative {
+            &signif_str[1..]
+        } else {
+            signif_str.as_str()
+        };
+        // adjust exp because the radix point is put after the first digit
+        let exp_adjust = if use_hexadecimal {
+            exp + (signif_str.len() as isize - 1) * 4
+        } else {
+            exp + signif_str.len() as isize - 1
+        };
+        write!(&mut exp_str, "{}", exp_adjust)?;
+        let exp_str = exp_str.as_str();
+
+        // calculate padding if necessary
+        let (left_pad, right_pad) = if let Some(min_width) = f.width() {
+            let prec = f.precision().unwrap_or(0);
+            let has_point = signif_str.len() > 1 || prec > 0; // whether print the radix point
+            let has_sign = negative || f.sign_plus();
+
+            // if the precision option is set, there might be extra trailing zeros
+            let trailing_zeros = if prec > signif_str.len() - 1 {
+                prec - (signif_str.len() - 1)
+            } else {
+                0
+            };
+
+            let width = signif_str.len() + exp_str.len()
+                + /* exponent marker */ 1
+                + has_sign as usize
+                + has_point as usize
+                + use_hexadecimal as usize * 2
+                + trailing_zeros;
+
+            if width >= min_width {
+                (0, 0)
+            } else {
+                match f.align() {
+                    Some(Alignment::Left) => (0, min_width - width),
+                    Some(Alignment::Right) | None => (min_width - width, 0),
+                    Some(Alignment::Center) => {
+                        let diff = min_width - width;
+                        (diff / 2, diff - diff / 2)
+                    }
+                }
+            }
+        } else {
+            (0, 0)
+        };
+
+        // print sign and left padding
+        if !f.sign_aware_zero_pad() {
+            for _ in 0..left_pad {
+                f.write_char(f.fill())?;
+            }
+        }
+        if negative {
+            f.write_char('-')?;
+        } else if f.sign_plus() {
+            f.write_char('+')?;
+        }
+        if use_hexadecimal {
+            f.write_str("0x")?;
+        }
+        if f.sign_aware_zero_pad() {
+            for _ in 0..left_pad {
+                f.write_char('0')?;
+            }
+        }
+
+        // print the body
+        let (int, fract) = signif_str.split_at(1);
+        f.write_str(int)?;
+        if !fract.is_empty() {
+            f.write_char('.')?;
+            f.write_str(fract)?;
+        }
+        let prec = f.precision().unwrap_or(0);
+        if prec > 0 {
+            if fract.is_empty() {
+                f.write_char('.')?
+            }
+            for _ in fract.len()..prec {
+                f.write_char('0')?;
+            }
+        }
+
+        f.write_char(exp_marker.unwrap_or('@'))?;
+        f.write_str(exp_str)?;
 
         // print right padding
         for _ in 0..right_pad {
@@ -301,5 +454,75 @@ impl<R: Round, const B: Word> Display for FBig<R, B> {
     #[inline]
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         self.repr.fmt_round::<R>(f)
+    }
+}
+
+macro_rules! impl_fmt_with_base {
+    ($base:literal, $trait:ident, $upper: literal, $hex:literal, $marker:literal) => {
+        impl fmt::$trait for Repr<$base> {
+            #[inline]
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                self.fmt_round_scientific::<Zero>(f, $upper, $hex, Some($marker))
+            }
+        }
+
+        impl<R: Round> fmt::$trait for FBig<R, $base> {
+            #[inline]
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                self.repr
+                    .fmt_round_scientific::<R>(f, $upper, $hex, Some($marker))
+            }
+        }
+    };
+}
+
+// TODO(v1.0): Alternate flags can be used to print upper separator, for example 'p' -> 'P'.
+//             In case of base ten, it can be used to switch between '@' and 'e'/'E'.
+//             Need to investigate what is the best way to utilize the alternate flag before implementing.
+impl_fmt_with_base!(2, LowerHex, false, true, 'p');
+impl_fmt_with_base!(2, UpperHex, true, true, 'p');
+impl_fmt_with_base!(2, Binary, false, false, 'b');
+impl_fmt_with_base!(8, Octal, false, false, 'o');
+impl_fmt_with_base!(16, LowerHex, false, false, 'h');
+impl_fmt_with_base!(16, UpperHex, true, false, 'h');
+
+impl<const B: Word> fmt::LowerExp for Repr<B> {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let marker = match B {
+            10 => Some('e'),
+            _ => None,
+        };
+        self.fmt_round_scientific::<Zero>(f, false, false, marker)
+    }
+}
+impl<const B: Word> fmt::UpperExp for Repr<B> {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let marker = match B {
+            10 => Some('E'),
+            _ => None,
+        };
+        self.fmt_round_scientific::<Zero>(f, true, false, marker)
+    }
+}
+impl<R: Round, const B: Word> fmt::LowerExp for FBig<R, B> {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let marker = match B {
+            10 => Some('e'),
+            _ => None,
+        };
+        self.repr.fmt_round_scientific::<R>(f, false, false, marker)
+    }
+}
+impl<R: Round, const B: Word> fmt::UpperExp for FBig<R, B> {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let marker = match B {
+            10 => Some('E'),
+            _ => None,
+        };
+        self.repr.fmt_round_scientific::<R>(f, true, false, marker)
     }
 }

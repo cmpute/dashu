@@ -15,7 +15,7 @@ impl Serialize for UBig {
         } else if self.is_zero() {
             serializer.serialize_bytes(&[])
         } else {
-            let bytes = words_to_le_bytes(self.as_words());
+            let bytes = words_to_le_bytes::<false>(self.as_words());
             serializer.serialize_bytes(&bytes)
         }
     }
@@ -60,8 +60,9 @@ impl Serialize for IBig {
         } else if self.is_zero() {
             serializer.serialize_bytes(&[])
         } else {
+            // TODO(v0.5): Change to IBig::to_le_bytes(), which provides better interop robustness
             let (sign, words) = self.as_sign_words();
-            let mut bytes = words_to_le_bytes(words);
+            let mut bytes = words_to_le_bytes::<false>(words);
 
             // use the length to encode the sign, postive <=> even, negative <=> odd.
             // pad zeros when necessary

@@ -222,12 +222,12 @@ impl Buffer {
         }
     }
 
-    /// Append `n` zeros.
+    /// Append `n` same elements, specified by the generic param.
     ///
     /// # Panics
     ///
     /// Panics if there is not enough capacity.
-    pub fn push_zeros(&mut self, n: usize) {
+    pub fn push_repeat<const ELEM: Word>(&mut self, n: usize) {
         assert!(n <= self.capacity - self.len);
 
         // SAFETY: it's checked that n + self.len <= self.capacity
@@ -235,11 +235,21 @@ impl Buffer {
         unsafe {
             let mut ptr = self.ptr.as_ptr().add(self.len);
             for _ in 0..n {
-                ptr::write(ptr, 0);
+                ptr::write(ptr, ELEM);
                 ptr = ptr.add(1);
             }
             self.len += n;
         }
+    }
+
+    /// Append `n` zeros.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is not enough capacity.
+    #[inline]
+    pub fn push_zeros(&mut self, n: usize) {
+        self.push_repeat::<0>(n);
     }
 
     /// Insert `n` zeros in front.

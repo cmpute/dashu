@@ -292,6 +292,15 @@ fn test_format_binary() {
     assert_eq!(format!("{:8.0}", fbig!(-0x1p-1)), "      -0");
     assert_eq!(format!("{:8.0}", fbig!(0x1p-4)), "       0");
     assert_eq!(format!("{:8.0}", fbig!(-0x1p-4)), "      -0");
+    assert_eq!(format!("{:08.0}", fbig!(0x0)), "00000000");
+    assert_eq!(format!("{:08.0}", fbig!(0x1)), "00000001");
+    assert_eq!(format!("{:08.0}", fbig!(-0x1)), "-0000001");
+    assert_eq!(format!("{:08.0}", fbig!(0x1p4)), "00010000");
+    assert_eq!(format!("{:08.0}", fbig!(-0x1p4)), "-0010000");
+    assert_eq!(format!("{:08.0}", fbig!(0x1p-1)), "00000000");
+    assert_eq!(format!("{:08.0}", fbig!(-0x1p-1)), "-0000000");
+    assert_eq!(format!("{:08.0}", fbig!(0x1p-4)), "00000000");
+    assert_eq!(format!("{:08.0}", fbig!(-0x1p-4)), "-0000000");
 
     assert_eq!(format!("{:.8}", fbig!(0x0)), "0.00000000");
     assert_eq!(format!("{:.8}", fbig!(0x1)), "1.00000000");
@@ -313,11 +322,26 @@ fn test_format_binary() {
     assert_eq!(format!("{:8.4}", fbig!(-0x1p-4)), " -0.0001");
     assert_eq!(format!("{:8.4}", fbig!(0x1p-5)), "  0.0000");
     assert_eq!(format!("{:8.4}", fbig!(-0x1p-5)), " -0.0000");
+    assert_eq!(format!("{:08.4}", fbig!(0x0)), "000.0000");
+    assert_eq!(format!("{:08.4}", fbig!(0x1)), "001.0000");
+    assert_eq!(format!("{:08.4}", fbig!(-0x1)), "-01.0000");
+    assert_eq!(format!("{:08.4}", fbig!(0x1p4)), "10000.0000");
+    assert_eq!(format!("{:08.4}", fbig!(-0x1p4)), "-10000.0000");
+    assert_eq!(format!("{:08.4}", fbig!(0x1p-1)), "000.1000");
+    assert_eq!(format!("{:08.4}", fbig!(-0x1p-1)), "-00.1000");
+    assert_eq!(format!("{:08.4}", fbig!(0x1p-4)), "000.0001");
+    assert_eq!(format!("{:08.4}", fbig!(-0x1p-4)), "-00.0001");
+    assert_eq!(format!("{:08.4}", fbig!(0x1p-5)), "000.0000");
+    assert_eq!(format!("{:08.4}", fbig!(-0x1p-5)), "-00.0000");
 
     assert_eq!(format!("{:16}", fbig!(0x123p-4)), "      10010.0011");
     assert_eq!(format!("{:16}", fbig!(-0x123p-4)), "     -10010.0011");
     assert_eq!(format!("{:+16}", fbig!(0x123p-4)), "     +10010.0011");
     assert_eq!(format!("{:+16}", fbig!(-0x123p-4)), "     -10010.0011");
+    assert_eq!(format!("{:016}", fbig!(0x123p-4)), "00000010010.0011");
+    assert_eq!(format!("{:016}", fbig!(-0x123p-4)), "-0000010010.0011");
+    assert_eq!(format!("{:+016}", fbig!(0x123p-4)), "+0000010010.0011");
+    assert_eq!(format!("{:+016}", fbig!(-0x123p-4)), "-0000010010.0011");
     assert_eq!(format!("{:<16}", fbig!(0x123p-4)), "10010.0011      ");
     assert_eq!(format!("{:<16}", fbig!(-0x123p-4)), "-10010.0011     ");
     assert_eq!(format!("{:<+16}", fbig!(0x123p-4)), "+10010.0011     ");
@@ -338,6 +362,10 @@ fn test_format_binary() {
     assert_eq!(format!("{:16.0}", fbig!(-0x123p-4)), "          -10010");
     assert_eq!(format!("{:+16.0}", fbig!(0x123p-4)), "          +10010");
     assert_eq!(format!("{:+16.0}", fbig!(-0x123p-4)), "          -10010");
+    assert_eq!(format!("{:016.0}", fbig!(0x123p-4)), "0000000000010010");
+    assert_eq!(format!("{:016.0}", fbig!(-0x123p-4)), "-000000000010010");
+    assert_eq!(format!("{:+016.0}", fbig!(0x123p-4)), "+000000000010010");
+    assert_eq!(format!("{:+016.0}", fbig!(-0x123p-4)), "-000000000010010");
     assert_eq!(format!("{:<16.0}", fbig!(0x123p-4)), "10010           ");
     assert_eq!(format!("{:<16.0}", fbig!(-0x123p-4)), "-10010          ");
     assert_eq!(format!("{:<+16.0}", fbig!(0x123p-4)), "+10010          ");
@@ -358,6 +386,10 @@ fn test_format_binary() {
     assert_eq!(format!("{:16.8}", fbig!(-0x123p-4)), " -10010.00110000");
     assert_eq!(format!("{:+16.8}", fbig!(0x123p-4)), " +10010.00110000");
     assert_eq!(format!("{:+16.8}", fbig!(-0x123p-4)), " -10010.00110000");
+    assert_eq!(format!("{:016.8}", fbig!(0x123p-4)), "0010010.00110000");
+    assert_eq!(format!("{:016.8}", fbig!(-0x123p-4)), "-010010.00110000");
+    assert_eq!(format!("{:+016.8}", fbig!(0x123p-4)), "+010010.00110000");
+    assert_eq!(format!("{:+016.8}", fbig!(-0x123p-4)), "-010010.00110000");
     assert_eq!(format!("{:<16.8}", fbig!(0x123p-4)), "10010.00110000  ");
     assert_eq!(format!("{:<16.8}", fbig!(-0x123p-4)), "-10010.00110000 ");
     assert_eq!(format!("{:<+16.8}", fbig!(0x123p-4)), "+10010.00110000 ");
@@ -373,6 +405,110 @@ fn test_format_binary() {
     assert_eq!(format!("{:=<+16.8}", fbig!(0x123p-4)), "+10010.00110000=");
     assert_eq!(format!("{:=^+16.8}", fbig!(0x123p-4)), "+10010.00110000=");
     assert_eq!(format!("{:=>+16.8}", fbig!(0x123p-4)), "=+10010.00110000");
+}
+
+#[test]
+#[rustfmt::skip::macros(fbig)]
+fn test_scientific_format_binary() {
+    assert_eq!(format!("{:b}", fbig!(0x0)), "0b0");
+    assert_eq!(format!("{:b}", fbig!(0x1)), "1b0");
+    assert_eq!(format!("{:b}", fbig!(-0x1)), "-1b0");
+    assert_eq!(format!("{:b}", fbig!(0x1p4)), "1b4");
+    assert_eq!(format!("{:b}", fbig!(-0x1p4)), "-1b4");
+    assert_eq!(format!("{:b}", fbig!(0x1p-1)), "1b-1");
+    assert_eq!(format!("{:b}", fbig!(-0x1p-1)), "-1b-1");
+    assert_eq!(format!("{:b}", fbig!(0x1p-4)), "1b-4");
+    assert_eq!(format!("{:b}", fbig!(-0x1p-4)), "-1b-4");
+
+    assert_eq!(format!("{:b}", FBin::INFINITY), "inf");
+    assert_eq!(format!("{:b}", FBin::NEG_INFINITY), "-inf");
+    assert_eq!(format!("{:b}", FBin::from_parts(i8::MAX.into(), -4)), "1.111111b2");
+    assert_eq!(format!("{:b}", FBin::from_parts(i8::MIN.into(), -4)), "-1b3");
+    assert_eq!(format!("{:b}", FBin::from_parts(i16::MAX.into(), -8)), "1.11111111111111b6");
+    assert_eq!(format!("{:b}", FBin::from_parts(i16::MIN.into(), -8)), "-1b7");
+
+    assert_eq!(format!("{:e}", fbig!(0x0)), "0@0");
+    assert_eq!(format!("{:e}", fbig!(0x1)), "1@0");
+    assert_eq!(format!("{:e}", fbig!(-0x1)), "-1@0");
+    assert_eq!(format!("{:e}", fbig!(0x1p4)), "1@4");
+    assert_eq!(format!("{:e}", fbig!(-0x1p4)), "-1@4");
+    assert_eq!(format!("{:e}", fbig!(0x1p-1)), "1@-1");
+    assert_eq!(format!("{:e}", fbig!(-0x1p-1)), "-1@-1");
+    assert_eq!(format!("{:e}", fbig!(0x1p-4)), "1@-4");
+    assert_eq!(format!("{:e}", fbig!(-0x1p-4)), "-1@-4");
+
+    assert_eq!(format!("{:e}", FBin::INFINITY), "inf");
+    assert_eq!(format!("{:e}", FBin::NEG_INFINITY), "-inf");
+    assert_eq!(format!("{:e}", FBin::from_parts(i8::MAX.into(), -4)), "1.111111@2");
+    assert_eq!(format!("{:e}", FBin::from_parts(i8::MIN.into(), -4)), "-1@3");
+    assert_eq!(format!("{:e}", FBin::from_parts(i16::MAX.into(), -8)), "1.11111111111111@6");
+    assert_eq!(format!("{:e}", FBin::from_parts(i16::MIN.into(), -8)), "-1@7");
+
+    assert_eq!(format!("{:x}", fbig!(0x0)), "0x0p0");
+    assert_eq!(format!("{:x}", fbig!(0x1)), "0x1p0");
+    assert_eq!(format!("{:x}", fbig!(-0x1)), "-0x1p0");
+    assert_eq!(format!("{:x}", fbig!(0x1p4)), "0x1p4");
+    assert_eq!(format!("{:x}", fbig!(-0x1p4)), "-0x1p4");
+    assert_eq!(format!("{:x}", fbig!(0x1p-1)), "0x1p-1");
+    assert_eq!(format!("{:x}", fbig!(-0x1p-1)), "-0x1p-1");
+    assert_eq!(format!("{:x}", fbig!(0x1p-4)), "0x1p-4");
+    assert_eq!(format!("{:x}", fbig!(-0x1p-4)), "-0x1p-4");
+
+    assert_eq!(format!("{:x}", FBin::INFINITY), "inf");
+    assert_eq!(format!("{:x}", FBin::NEG_INFINITY), "-inf");
+    assert_eq!(format!("{:x}", FBin::from_parts(i8::MAX.into(), -4)), "0x7.fp0");
+    assert_eq!(format!("{:x}", FBin::from_parts(i8::MIN.into(), -4)), "-0x1p3");
+    assert_eq!(format!("{:x}", FBin::from_parts(i16::MAX.into(), -8)), "0x7.fffp4");
+    assert_eq!(format!("{:x}", FBin::from_parts(i16::MIN.into(), -8)), "-0x1p7");
+
+    assert_eq!(format!("{:X}", fbig!(0x0)), "0x0p0");
+    assert_eq!(format!("{:X}", fbig!(0x1)), "0x1p0");
+    assert_eq!(format!("{:X}", fbig!(-0x1)), "-0x1p0");
+    assert_eq!(format!("{:X}", fbig!(0x1p4)), "0x1p4");
+    assert_eq!(format!("{:X}", fbig!(-0x1p4)), "-0x1p4");
+    assert_eq!(format!("{:X}", fbig!(0x1p-1)), "0x1p-1");
+    assert_eq!(format!("{:X}", fbig!(-0x1p-1)), "-0x1p-1");
+    assert_eq!(format!("{:X}", fbig!(0x1p-4)), "0x1p-4");
+    assert_eq!(format!("{:X}", fbig!(-0x1p-4)), "-0x1p-4");
+
+    assert_eq!(format!("{:X}", FBin::INFINITY), "inf");
+    assert_eq!(format!("{:X}", FBin::NEG_INFINITY), "-inf");
+    assert_eq!(format!("{:X}", FBin::from_parts(i8::MAX.into(), -4)), "0x7.Fp0");
+    assert_eq!(format!("{:X}", FBin::from_parts(i8::MIN.into(), -4)), "-0x1p3");
+    assert_eq!(format!("{:X}", FBin::from_parts(i16::MAX.into(), -8)), "0x7.FFFp4");
+    assert_eq!(format!("{:X}", FBin::from_parts(i16::MIN.into(), -8)), "-0x1p7");
+
+    assert_eq!(format!("{:.0x}", fbig!(0x0)), "0x0p0");
+    assert_eq!(format!("{:.0x}", fbig!(0x1)), "0x1p0");
+    assert_eq!(format!("{:.0x}", fbig!(-0x1)), "-0x1p0");
+    assert_eq!(format!("{:.0x}", fbig!(0x1p-1)), "0x1p-1");
+    assert_eq!(format!("{:.0x}", fbig!(-0x1p-1)), "-0x1p-1");
+    assert_eq!(format!("{:8.0x}", fbig!(0x0)), "   0x0p0");
+    assert_eq!(format!("{:8.0x}", fbig!(0x1)), "   0x1p0");
+    assert_eq!(format!("{:8.0x}", fbig!(-0x1)), "  -0x1p0");
+    assert_eq!(format!("{:8.0x}", fbig!(0x1p-1)), "  0x1p-1");
+    assert_eq!(format!("{:8.0x}", fbig!(-0x1p-1)), " -0x1p-1");
+    assert_eq!(format!("{:08.0x}", fbig!(0x0)), "0x0000p0");
+    assert_eq!(format!("{:08.0x}", fbig!(0x1)), "0x0001p0");
+    assert_eq!(format!("{:08.0x}", fbig!(-0x1)), "-0x001p0");
+    assert_eq!(format!("{:08.0x}", fbig!(0x1p-1)), "0x001p-1");
+    assert_eq!(format!("{:08.0x}", fbig!(-0x1p-1)), "-0x01p-1");
+
+    assert_eq!(format!("{:.8x}", fbig!(0x0)), "0x0.00000000p0");
+    assert_eq!(format!("{:.8x}", fbig!(0x1)), "0x1.00000000p0");
+    assert_eq!(format!("{:.8x}", fbig!(-0x1)), "-0x1.00000000p0");
+    assert_eq!(format!("{:.8x}", fbig!(0x1p-1)), "0x1.00000000p-1");
+    assert_eq!(format!("{:.8x}", fbig!(-0x1p-1)), "-0x1.00000000p-1");
+    assert_eq!(format!("{:12.4x}", fbig!(0x0)), "  0x0.0000p0");
+    assert_eq!(format!("{:12.4x}", fbig!(0x1)), "  0x1.0000p0");
+    assert_eq!(format!("{:12.4x}", fbig!(-0x1)), " -0x1.0000p0");
+    assert_eq!(format!("{:12.4x}", fbig!(0x1p-1)), " 0x1.0000p-1");
+    assert_eq!(format!("{:12.4x}", fbig!(-0x1p-1)), "-0x1.0000p-1");
+    assert_eq!(format!("{:012.4x}", fbig!(0x0)), "0x000.0000p0");
+    assert_eq!(format!("{:012.4x}", fbig!(0x1)), "0x001.0000p0");
+    assert_eq!(format!("{:012.4x}", fbig!(-0x1)), "-0x01.0000p0");
+    assert_eq!(format!("{:012.4x}", fbig!(0x1p-1)), "0x01.0000p-1");
+    assert_eq!(format!("{:012.4x}", fbig!(-0x1p-1)), "-0x1.0000p-1");
 }
 
 #[test]
@@ -420,6 +556,19 @@ fn test_format_decimal() {
     assert_eq!(format!("{:8.0}", dbig!(-9e-1)), "      -1");
     assert_eq!(format!("{:8.0}", dbig!(99e-1)), "      10");
     assert_eq!(format!("{:8.0}", dbig!(-99e-1)), "     -10");
+    assert_eq!(format!("{:08.0}", dbig!(0)), "00000000");
+    assert_eq!(format!("{:08.0}", dbig!(1)), "00000001");
+    assert_eq!(format!("{:08.0}", dbig!(-1)), "-0000001");
+    assert_eq!(format!("{:08.0}", dbig!(1e4)), "00010000");
+    assert_eq!(format!("{:08.0}", dbig!(-1e4)), "-0010000");
+    assert_eq!(format!("{:08.0}", dbig!(1e-1)), "00000000");
+    assert_eq!(format!("{:08.0}", dbig!(-1e-1)), "-0000000");
+    assert_eq!(format!("{:08.0}", dbig!(1e-4)), "00000000");
+    assert_eq!(format!("{:08.0}", dbig!(-1e-4)), "-0000000");
+    assert_eq!(format!("{:08.0}", dbig!(9e-1)), "00000001");
+    assert_eq!(format!("{:08.0}", dbig!(-9e-1)), "-0000001");
+    assert_eq!(format!("{:08.0}", dbig!(99e-1)), "00000010");
+    assert_eq!(format!("{:08.0}", dbig!(-99e-1)), "-0000010");
 
     assert_eq!(format!("{:.8}", dbig!(0)), "0.00000000");
     assert_eq!(format!("{:.8}", dbig!(1)), "1.00000000");
@@ -445,11 +594,30 @@ fn test_format_decimal() {
     assert_eq!(format!("{:8.4}", dbig!(-9e-5)), " -0.0001");
     assert_eq!(format!("{:8.4}", dbig!(99e-5)), "  0.0010");
     assert_eq!(format!("{:8.4}", dbig!(-99e-5)), " -0.0010");
+    assert_eq!(format!("{:08.4}", dbig!(0)), "000.0000");
+    assert_eq!(format!("{:08.4}", dbig!(1)), "001.0000");
+    assert_eq!(format!("{:08.4}", dbig!(-1)), "-01.0000");
+    assert_eq!(format!("{:08.4}", dbig!(1e4)), "10000.0000");
+    assert_eq!(format!("{:08.4}", dbig!(-1e4)), "-10000.0000");
+    assert_eq!(format!("{:08.4}", dbig!(1e-1)), "000.1000");
+    assert_eq!(format!("{:08.4}", dbig!(-1e-1)), "-00.1000");
+    assert_eq!(format!("{:08.4}", dbig!(1e-4)), "000.0001");
+    assert_eq!(format!("{:08.4}", dbig!(-1e-4)), "-00.0001");
+    assert_eq!(format!("{:08.4}", dbig!(1e-5)), "000.0000");
+    assert_eq!(format!("{:08.4}", dbig!(-1e-5)), "-00.0000");
+    assert_eq!(format!("{:08.4}", dbig!(9e-5)), "000.0001");
+    assert_eq!(format!("{:08.4}", dbig!(-9e-5)), "-00.0001");
+    assert_eq!(format!("{:08.4}", dbig!(99e-5)), "000.0010");
+    assert_eq!(format!("{:08.4}", dbig!(-99e-5)), "-00.0010");
 
     assert_eq!(format!("{:8}", dbig!(123e-2)), "    1.23");
     assert_eq!(format!("{:8}", dbig!(-123e-2)), "   -1.23");
     assert_eq!(format!("{:+8}", dbig!(123e-2)), "   +1.23");
     assert_eq!(format!("{:+8}", dbig!(-123e-2)), "   -1.23");
+    assert_eq!(format!("{:08}", dbig!(123e-2)), "00001.23");
+    assert_eq!(format!("{:08}", dbig!(-123e-2)), "-0001.23");
+    assert_eq!(format!("{:+08}", dbig!(123e-2)), "+0001.23");
+    assert_eq!(format!("{:+08}", dbig!(-123e-2)), "-0001.23");
     assert_eq!(format!("{:<8}", dbig!(123e-2)), "1.23    ");
     assert_eq!(format!("{:<8}", dbig!(-123e-2)), "-1.23   ");
     assert_eq!(format!("{:<+8}", dbig!(123e-2)), "+1.23   ");
@@ -470,6 +638,10 @@ fn test_format_decimal() {
     assert_eq!(format!("{:8.0}", dbig!(-123e-2)), "      -1");
     assert_eq!(format!("{:+8.0}", dbig!(123e-2)), "      +1");
     assert_eq!(format!("{:+8.0}", dbig!(-123e-2)), "      -1");
+    assert_eq!(format!("{:08.0}", dbig!(123e-2)), "00000001");
+    assert_eq!(format!("{:08.0}", dbig!(-123e-2)), "-0000001");
+    assert_eq!(format!("{:+08.0}", dbig!(123e-2)), "+0000001");
+    assert_eq!(format!("{:+08.0}", dbig!(-123e-2)), "-0000001");
     assert_eq!(format!("{:<8.0}", dbig!(123e-2)), "1       ");
     assert_eq!(format!("{:<8.0}", dbig!(-123e-2)), "-1      ");
     assert_eq!(format!("{:<+8.0}", dbig!(123e-2)), "+1      ");
@@ -490,6 +662,10 @@ fn test_format_decimal() {
     assert_eq!(format!("{:8.4}", dbig!(-123e-2)), " -1.2300");
     assert_eq!(format!("{:+8.4}", dbig!(123e-2)), " +1.2300");
     assert_eq!(format!("{:+8.4}", dbig!(-123e-2)), " -1.2300");
+    assert_eq!(format!("{:08.4}", dbig!(123e-2)), "001.2300");
+    assert_eq!(format!("{:08.4}", dbig!(-123e-2)), "-01.2300");
+    assert_eq!(format!("{:+08.4}", dbig!(123e-2)), "+01.2300");
+    assert_eq!(format!("{:+08.4}", dbig!(-123e-2)), "-01.2300");
     assert_eq!(format!("{:<8.4}", dbig!(123e-2)), "1.2300  ");
     assert_eq!(format!("{:<8.4}", dbig!(-123e-2)), "-1.2300 ");
     assert_eq!(format!("{:<+8.4}", dbig!(123e-2)), "+1.2300 ");
@@ -505,6 +681,92 @@ fn test_format_decimal() {
     assert_eq!(format!("{:=<+8.4}", dbig!(123e-2)), "+1.2300=");
     assert_eq!(format!("{:=^+8.4}", dbig!(123e-2)), "+1.2300=");
     assert_eq!(format!("{:=>+8.4}", dbig!(123e-2)), "=+1.2300");
+}
+
+#[test]
+#[rustfmt::skip::macros(fbig)]
+fn test_scientific_format_decimal() {
+    assert_eq!(format!("{:e}", dbig!(0)), "0e0");
+    assert_eq!(format!("{:e}", dbig!(1)), "1e0");
+    assert_eq!(format!("{:e}", dbig!(-1)), "-1e0");
+    assert_eq!(format!("{:e}", dbig!(1e4)), "1e4");
+    assert_eq!(format!("{:e}", dbig!(-1e4)), "-1e4");
+    assert_eq!(format!("{:e}", dbig!(1e-1)), "1e-1");
+    assert_eq!(format!("{:e}", dbig!(-1e-1)), "-1e-1");
+    assert_eq!(format!("{:e}", dbig!(1e-4)), "1e-4");
+    assert_eq!(format!("{:e}", dbig!(-1e-4)), "-1e-4");
+
+    assert_eq!(format!("{:e}", DBig::INFINITY), "inf");
+    assert_eq!(format!("{:e}", DBig::NEG_INFINITY), "-inf");
+    assert_eq!(format!("{:e}", DBig::from_parts(i8::MAX.into(), -1)), "1.27e1");
+    assert_eq!(format!("{:e}", DBig::from_parts(i8::MIN.into(), -1)), "-1.28e1");
+    assert_eq!(format!("{:e}", DBig::from_parts(i16::MAX.into(), -2)), "3.2767e2");
+    assert_eq!(format!("{:e}", DBig::from_parts(i16::MIN.into(), -2)), "-3.2768e2");
+
+    assert_eq!(format!("{:E}", dbig!(0)), "0E0");
+    assert_eq!(format!("{:E}", dbig!(1)), "1E0");
+    assert_eq!(format!("{:E}", dbig!(-1)), "-1E0");
+    assert_eq!(format!("{:E}", dbig!(1e4)), "1E4");
+    assert_eq!(format!("{:E}", dbig!(-1e4)), "-1E4");
+    assert_eq!(format!("{:E}", dbig!(1e-1)), "1E-1");
+    assert_eq!(format!("{:E}", dbig!(-1e-1)), "-1E-1");
+    assert_eq!(format!("{:E}", dbig!(1e-4)), "1E-4");
+    assert_eq!(format!("{:E}", dbig!(-1e-4)), "-1E-4");
+
+    assert_eq!(format!("{:E}", DBig::INFINITY), "inf");
+    assert_eq!(format!("{:E}", DBig::NEG_INFINITY), "-inf");
+    assert_eq!(format!("{:E}", DBig::from_parts(i8::MAX.into(), -1)), "1.27E1");
+    assert_eq!(format!("{:E}", DBig::from_parts(i8::MIN.into(), -1)), "-1.28E1");
+    assert_eq!(format!("{:E}", DBig::from_parts(i16::MAX.into(), -2)), "3.2767E2");
+    assert_eq!(format!("{:E}", DBig::from_parts(i16::MIN.into(), -2)), "-3.2768E2");
+
+    assert_eq!(format!("{:.0e}", dbig!(0)), "0e0");
+    assert_eq!(format!("{:.0e}", dbig!(1)), "1e0");
+    assert_eq!(format!("{:.0e}", dbig!(-1)), "-1e0");
+    assert_eq!(format!("{:.0e}", dbig!(1e-1)), "1e-1");
+    assert_eq!(format!("{:.0e}", dbig!(-1e-1)), "-1e-1");
+    assert_eq!(format!("{:.0e}", dbig!(1e-4)), "1e-4");
+    assert_eq!(format!("{:.0e}", dbig!(-1e-4)), "-1e-4");
+    assert_eq!(format!("{:8.0e}", dbig!(0)), "     0e0");
+    assert_eq!(format!("{:8.0e}", dbig!(1)), "     1e0");
+    assert_eq!(format!("{:8.0e}", dbig!(-1)), "    -1e0");
+    assert_eq!(format!("{:8.0e}", dbig!(1e-1)), "    1e-1");
+    assert_eq!(format!("{:8.0e}", dbig!(-1e-1)), "   -1e-1");
+    assert_eq!(format!("{:08.0e}", dbig!(0)), "000000e0");
+    assert_eq!(format!("{:08.0e}", dbig!(1)), "000001e0");
+    assert_eq!(format!("{:08.0e}", dbig!(-1)), "-00001e0");
+    assert_eq!(format!("{:08.0e}", dbig!(1e-1)), "00001e-1");
+    assert_eq!(format!("{:08.0e}", dbig!(-1e-1)), "-0001e-1");
+
+    assert_eq!(format!("{:.8e}", dbig!(0)), "0.00000000e0");
+    assert_eq!(format!("{:.8e}", dbig!(1)), "1.00000000e0");
+    assert_eq!(format!("{:.8e}", dbig!(-1)), "-1.00000000e0");
+    assert_eq!(format!("{:.8e}", dbig!(1e-1)), "1.00000000e-1");
+    assert_eq!(format!("{:.8e}", dbig!(-1e-1)), "-1.00000000e-1");
+    assert_eq!(format!("{:10.4e}", dbig!(0)), "  0.0000e0");
+    assert_eq!(format!("{:10.4e}", dbig!(1)), "  1.0000e0");
+    assert_eq!(format!("{:10.4e}", dbig!(-1)), " -1.0000e0");
+    assert_eq!(format!("{:10.4e}", dbig!(1e-1)), " 1.0000e-1");
+    assert_eq!(format!("{:10.4e}", dbig!(-1e-1)), "-1.0000e-1");
+    assert_eq!(format!("{:010.4e}", dbig!(0)), "000.0000e0");
+    assert_eq!(format!("{:010.4e}", dbig!(1)), "001.0000e0");
+    assert_eq!(format!("{:010.4e}", dbig!(-1)), "-01.0000e0");
+    assert_eq!(format!("{:010.4e}", dbig!(1e-1)), "01.0000e-1");
+    assert_eq!(format!("{:010.4e}", dbig!(-1e-1)), "-1.0000e-1");
+}
+
+#[test]
+fn test_format_other_bases() {
+    assert_eq!(format!("{}", FBig::<mode::Zero, 3>::from_parts(ibig!(52), -2)), "12.21");
+    assert_eq!(format!("{:o}", FBig::<mode::Zero, 8>::from_parts(ibig!(100), -2)), "1.44o0");
+    assert_eq!(
+        format!("{:e}", FBig::<mode::Zero, 20>::from_parts(ibig!(134757), 10)),
+        "g.ghh@13"
+    );
+    assert_eq!(
+        format!("{:e}", FBig::<mode::Zero, 30>::from_parts(ibig!(446927), -14)),
+        "g.ghh@-11"
+    );
 }
 
 #[test]
@@ -556,7 +818,7 @@ fn test_format_debug() {
     assert_eq!(
         format!("{:#?}", dbig!(1234e-2).repr()),
         r#"Repr {
-    significand: 1234 (4 digits, 11 bits),
+    significand: 1234 (digits: 4, bits: 11),
     exponent: 10 ^ -2,
 }"#
     );
@@ -570,10 +832,42 @@ fn test_format_debug() {
     assert_eq!(
         format!("{:#?}", dbig!(1234e-2)),
         r#"FBig {
-    significand: 1234 (4 digits, 11 bits),
+    significand: 1234 (digits: 4, bits: 11),
     exponent: 10 ^ -2,
     precision: 4,
     rounding: HalfAway,
 }"#
     );
+}
+
+#[test]
+fn test_string_roundtrip() {
+    let fbig_cases = [
+        fbig!(0x12345p - 67),
+        fbig!(-0x123456789abcdef0123p45),
+        FBin::try_from(f32::MAX).unwrap(),
+        FBin::try_from(f32::MIN).unwrap(),
+        FBin::try_from(f32::EPSILON).unwrap(),
+        FBin::try_from(f64::MAX).unwrap(),
+        FBin::try_from(f64::MIN).unwrap(),
+        FBin::try_from(f64::EPSILON).unwrap(),
+    ];
+
+    for case in fbig_cases {
+        assert_eq!(FBin::from_str(case.to_string().as_str()).unwrap(), case);
+        assert_eq!(FBin::from_str(format!("{:b}", case).as_str()).unwrap(), case);
+        assert_eq!(FBin::from_str(format!("{:010x}", case).as_str()).unwrap(), case);
+        assert_eq!(FBin::from_str(format!("{:+010X}", case).as_str()).unwrap(), case);
+    }
+
+    let dbig_cases = [
+        dbig!(0.00012345),
+        dbig!(-1234567890.12345678901234567890123456789),
+    ];
+
+    for case in dbig_cases {
+        assert_eq!(DBig::from_str(case.to_string().as_str()).unwrap(), case);
+        assert_eq!(DBig::from_str(format!("{:e}", case).as_str()).unwrap(), case);
+        assert_eq!(DBig::from_str(format!("{:+010E}", case).as_str()).unwrap(), case);
+    }
 }

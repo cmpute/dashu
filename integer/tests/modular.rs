@@ -398,8 +398,8 @@ fn test_format() {
     assert_eq!(
         format!("{:#?}", x),
         r#"Reduced {
-    residue: 5 (1 digits, 3 bits),
-    modulus: 100 (3 digits, 7 bits),
+    residue: 5 (digits: 1, bits: 3),
+    modulus: 100 (digits: 3, bits: 7),
 }"#
     );
 
@@ -434,8 +434,8 @@ fn test_format() {
         assert_eq!(
             format!("{:#?}", x),
             r#"Reduced {
-    residue: 9999999999999999999..9999999999999999999 (39 digits, 130 bits),
-    modulus: 1000000000000000000..0000000000000000000 (40 digits, 130 bits),
+    residue: 9999999999999999999..9999999999999999999 (digits: 39, bits: 130),
+    modulus: 1000000000000000000..0000000000000000000 (digits: 40, bits: 130),
 }"#
         );
     }

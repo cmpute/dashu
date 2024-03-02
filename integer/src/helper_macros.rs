@@ -220,6 +220,8 @@ macro_rules! forward_ubig_binop_to_repr {
     };
 }
 
+// TODO(next): modify this macro so that the $impl function can be shared between ibig op ibig and ubig op ibig
+
 /// Implement `impl Op<IBig> for IBig` by forwarding to the function-like macro `$impl` with arguments
 /// `(lhs_sign, lhs_repr, rhs_sign, rhs_repr)`, including &IBig.
 /// The output type is IBig.
@@ -323,16 +325,17 @@ macro_rules! forward_ibig_binop_to_repr {
 /// Implement `impl OpAssign<B> for A` by forwarding to `*A = mem::take(A).op(B)`, including &B.
 macro_rules! impl_binop_assign_by_taking {
     (impl $trait:ident<$t2:ty> for $t1:ty, $methodassign:ident, $method:ident) => {
+        // the .into() conversion at the end is to convert UBig to IBig in bitand_assign
         impl $trait<$t2> for $t1 {
             #[inline]
             fn $methodassign(&mut self, rhs: $t2) {
-                *self = core::mem::take(self).$method(rhs);
+                *self = core::mem::take(self).$method(rhs).into();
             }
         }
         impl $trait<&$t2> for $t1 {
             #[inline]
             fn $methodassign(&mut self, rhs: &$t2) {
-                *self = core::mem::take(self).$method(rhs);
+                *self = core::mem::take(self).$method(rhs).into();
             }
         }
     };
@@ -368,9 +371,9 @@ macro_rules! forward_ubig_ibig_binop_to_repr {
 
             #[inline]
             fn $method(self, rhs: IBig) -> $ty_output {
-                let lhs_mag = self.into_repr();
+                let (lhs_sign, lhs_mag) = (dashu_base::Sign::Positive, self.into_repr());
                 let (rhs_sign, rhs_mag) = rhs.into_sign_repr();
-                $impl!(lhs_mag, rhs_sign, rhs_mag)
+                $impl!(lhs_sign, lhs_mag, rhs_sign, rhs_mag)
             }
         }
 
@@ -379,9 +382,9 @@ macro_rules! forward_ubig_ibig_binop_to_repr {
 
             #[inline]
             fn $method(self, rhs: &IBig) -> $ty_output {
-                let lhs_mag = self.into_repr();
+                let (lhs_sign, lhs_mag) = (dashu_base::Sign::Positive, self.into_repr());
                 let (rhs_sign, rhs_mag) = rhs.as_sign_repr();
-                $impl!(lhs_mag, rhs_sign, rhs_mag)
+                $impl!(lhs_sign, lhs_mag, rhs_sign, rhs_mag)
             }
         }
 
@@ -390,9 +393,9 @@ macro_rules! forward_ubig_ibig_binop_to_repr {
 
             #[inline]
             fn $method(self, rhs: IBig) -> $ty_output {
-                let lhs_mag = self.repr();
+                let (lhs_sign, lhs_mag) = (dashu_base::Sign::Positive, self.repr());
                 let (rhs_sign, rhs_mag) = rhs.into_sign_repr();
-                $impl!(lhs_mag, rhs_sign, rhs_mag)
+                $impl!(lhs_sign, lhs_mag, rhs_sign, rhs_mag)
             }
         }
 
@@ -401,9 +404,9 @@ macro_rules! forward_ubig_ibig_binop_to_repr {
 
             #[inline]
             fn $method(self, rhs: &IBig) -> $ty_output {
-                let lhs_mag = self.repr();
+                let (lhs_sign, lhs_mag) = (dashu_base::Sign::Positive, self.repr());
                 let (rhs_sign, rhs_mag) = rhs.as_sign_repr();
-                $impl!(lhs_mag, rhs_sign, rhs_mag)
+                $impl!(lhs_sign, lhs_mag, rhs_sign, rhs_mag)
             }
         }
     };
@@ -414,9 +417,9 @@ macro_rules! forward_ubig_ibig_binop_to_repr {
 
             #[inline]
             fn $method(self, rhs: IBig) -> $omethod {
-                let lhs_mag = self.into_repr();
+                let (lhs_sign, lhs_mag) = (dashu_base::Sign::Positive, self.into_repr());
                 let (rhs_sign, rhs_mag) = rhs.into_sign_repr();
-                $impl!(lhs_mag, rhs_sign, rhs_mag)
+                $impl!(lhs_sign, lhs_mag, rhs_sign, rhs_mag)
             }
         }
 
@@ -426,9 +429,9 @@ macro_rules! forward_ubig_ibig_binop_to_repr {
 
             #[inline]
             fn $method(self, rhs: &IBig) -> $omethod {
-                let lhs_mag = self.into_repr();
+                let (lhs_sign, lhs_mag) = (dashu_base::Sign::Positive, self.into_repr());
                 let (rhs_sign, rhs_mag) = rhs.as_sign_repr();
-                $impl!(lhs_mag, rhs_sign, rhs_mag)
+                $impl!(lhs_sign, lhs_mag, rhs_sign, rhs_mag)
             }
         }
 
@@ -438,9 +441,9 @@ macro_rules! forward_ubig_ibig_binop_to_repr {
 
             #[inline]
             fn $method(self, rhs: IBig) -> $omethod {
-                let lhs_mag = self.repr();
+                let (lhs_sign, lhs_mag) = (dashu_base::Sign::Positive, self.repr());
                 let (rhs_sign, rhs_mag) = rhs.into_sign_repr();
-                $impl!(lhs_mag, rhs_sign, rhs_mag)
+                $impl!(lhs_sign, lhs_mag, rhs_sign, rhs_mag)
             }
         }
 
@@ -450,9 +453,9 @@ macro_rules! forward_ubig_ibig_binop_to_repr {
 
             #[inline]
             fn $method(self, rhs: &IBig) -> $omethod {
-                let lhs_mag = self.repr();
+                let (lhs_sign, lhs_mag) = (dashu_base::Sign::Positive, self.repr());
                 let (rhs_sign, rhs_mag) = rhs.as_sign_repr();
-                $impl!(lhs_mag, rhs_sign, rhs_mag)
+                $impl!(lhs_sign, lhs_mag, rhs_sign, rhs_mag)
             }
         }
     };
@@ -468,8 +471,8 @@ macro_rules! forward_ibig_ubig_binop_to_repr {
             #[inline]
             fn $method(self, rhs: UBig) -> $ty_output {
                 let (lhs_sign, lhs_mag) = self.into_sign_repr();
-                let rhs_mag = rhs.into_repr();
-                $impl!(lhs_sign, lhs_mag, rhs_mag)
+                let (rhs_sign, rhs_mag) = (dashu_base::Sign::Positive, rhs.into_repr());
+                $impl!(lhs_sign, lhs_mag, rhs_sign, rhs_mag)
             }
         }
 
@@ -479,8 +482,8 @@ macro_rules! forward_ibig_ubig_binop_to_repr {
             #[inline]
             fn $method(self, rhs: &UBig) -> $ty_output {
                 let (lhs_sign, lhs_mag) = self.into_sign_repr();
-                let rhs_mag = rhs.repr();
-                $impl!(lhs_sign, lhs_mag, rhs_mag)
+                let (rhs_sign, rhs_mag) = (dashu_base::Sign::Positive, rhs.repr());
+                $impl!(lhs_sign, lhs_mag, rhs_sign, rhs_mag)
             }
         }
 
@@ -490,8 +493,8 @@ macro_rules! forward_ibig_ubig_binop_to_repr {
             #[inline]
             fn $method(self, rhs: UBig) -> $ty_output {
                 let (lhs_sign, lhs_mag) = self.as_sign_repr();
-                let rhs_mag = rhs.into_repr();
-                $impl!(lhs_sign, lhs_mag, rhs_mag)
+                let (rhs_sign, rhs_mag) = (dashu_base::Sign::Positive, rhs.into_repr());
+                $impl!(lhs_sign, lhs_mag, rhs_sign, rhs_mag)
             }
         }
 
@@ -501,8 +504,8 @@ macro_rules! forward_ibig_ubig_binop_to_repr {
             #[inline]
             fn $method(self, rhs: &UBig) -> $ty_output {
                 let (lhs_sign, lhs_mag) = self.as_sign_repr();
-                let rhs_mag = rhs.repr();
-                $impl!(lhs_sign, lhs_mag, rhs_mag)
+                let (rhs_sign, rhs_mag) = (dashu_base::Sign::Positive, rhs.repr());
+                $impl!(lhs_sign, lhs_mag, rhs_sign, rhs_mag)
             }
         }
     };
@@ -514,8 +517,8 @@ macro_rules! forward_ibig_ubig_binop_to_repr {
             #[inline]
             fn $method(self, rhs: UBig) -> $omethod {
                 let (lhs_sign, lhs_mag) = self.into_sign_repr();
-                let rhs_mag = rhs.into_repr();
-                $impl!(lhs_sign, lhs_mag, rhs_mag)
+                let (rhs_sign, rhs_mag) = (dashu_base::Sign::Positive, rhs.into_repr());
+                $impl!(lhs_sign, lhs_mag, rhs_sign, rhs_mag)
             }
         }
 
@@ -526,8 +529,8 @@ macro_rules! forward_ibig_ubig_binop_to_repr {
             #[inline]
             fn $method(self, rhs: &UBig) -> $omethod {
                 let (lhs_sign, lhs_mag) = self.into_sign_repr();
-                let rhs_mag = rhs.repr();
-                $impl!(lhs_sign, lhs_mag, rhs_mag)
+                let (rhs_sign, rhs_mag) = (dashu_base::Sign::Positive, rhs.repr());
+                $impl!(lhs_sign, lhs_mag, rhs_sign, rhs_mag)
             }
         }
 
@@ -538,8 +541,8 @@ macro_rules! forward_ibig_ubig_binop_to_repr {
             #[inline]
             fn $method(self, rhs: UBig) -> $omethod {
                 let (lhs_sign, lhs_mag) = self.as_sign_repr();
-                let rhs_mag = rhs.into_repr();
-                $impl!(lhs_sign, lhs_mag, rhs_mag)
+                let (rhs_sign, rhs_mag) = (dashu_base::Sign::Positive, rhs.into_repr());
+                $impl!(lhs_sign, lhs_mag, rhs_sign, rhs_mag)
             }
         }
 
@@ -550,8 +553,8 @@ macro_rules! forward_ibig_ubig_binop_to_repr {
             #[inline]
             fn $method(self, rhs: &UBig) -> $omethod {
                 let (lhs_sign, lhs_mag) = self.as_sign_repr();
-                let rhs_mag = rhs.repr();
-                $impl!(lhs_sign, lhs_mag, rhs_mag)
+                let (rhs_sign, rhs_mag) = (dashu_base::Sign::Positive, rhs.repr());
+                $impl!(lhs_sign, lhs_mag, rhs_sign, rhs_mag)
             }
         }
     };
