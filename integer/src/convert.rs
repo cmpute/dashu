@@ -37,7 +37,7 @@ impl Default for IBig {
     }
 }
 
-fn words_to_le_bytes<const FLIP: bool>(words: &[Word]) -> Vec<u8> {
+pub(crate) fn words_to_le_bytes<const FLIP: bool>(words: &[Word]) -> Vec<u8> {
     debug_assert!(!words.is_empty());
 
     let n = words.len();

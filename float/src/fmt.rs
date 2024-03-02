@@ -403,7 +403,7 @@ impl<const B: Word> Repr<B> {
         }
 
         f.write_char(exp_marker.unwrap_or('@'))?;
-        f.write_str(&exp_str)?;
+        f.write_str(exp_str)?;
 
         // print right padding
         for _ in 0..right_pad {
