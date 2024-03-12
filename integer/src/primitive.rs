@@ -60,13 +60,10 @@ pub const fn shrink_dword(dw: DoubleWord) -> Option<Word> {
 /// Note that then length is only checked in the debug mode.
 #[inline(always)]
 pub fn lowest_dword(words: &[Word]) -> DoubleWord {
-    debug_assert!(words.len() >= 2);
-
-    // SAFETY: length checked by the assertion above
-    unsafe {
-        let lo = *words.get_unchecked(0);
-        let hi = *words.get_unchecked(1);
+    if let [lo, hi, ..] = *words {
         double_word(lo, hi)
+    } else {
+        panic!("expected at least two words");
     }
 }
 
@@ -75,14 +72,10 @@ pub fn lowest_dword(words: &[Word]) -> DoubleWord {
 /// Note that then length is only checked in the debug mode.
 #[inline(always)]
 pub fn highest_dword(words: &[Word]) -> DoubleWord {
-    let len = words.len();
-    debug_assert!(len >= 2);
-
-    // SAFETY: length checked by the assertion above
-    unsafe {
-        let lo = *words.get_unchecked(len - 2);
-        let hi = *words.get_unchecked(len - 1);
+    if let [.., lo, hi] = *words {
         double_word(lo, hi)
+    } else {
+        panic!("expected at least two words");
     }
 }
 
