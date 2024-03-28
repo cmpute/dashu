@@ -3,6 +3,7 @@ use std::hash::Hasher;
 use std::ops::*;
 use std::vec::Vec;
 
+use pyo3::basic::CompareOp;
 use pyo3::exceptions::{
     PyIndexError, PyNotImplementedError, PyOverflowError, PyTypeError, PyValueError,
 };
@@ -19,7 +20,7 @@ use crate::{
 
 use dashu_base::{Abs, BitTest, Sign, Signed, UnsignedAbs};
 use dashu_int::{fast_div, IBig, UBig, Word};
-use num_order::NumHash;
+use num_order::{NumHash, NumOrd};
 type FBig = dashu_float::FBig;
 
 // error messages
@@ -146,7 +147,7 @@ fn upy_mod(lhs: &UPy, rhs: UniInput<'_>, py: Python) -> PyObject {
 }
 fn ipy_mod(lhs: &IPy, rhs: UniInput<'_>, py: Python) -> PyObject {
     match rhs {
-        UniInput::Uint(x) => UPy((&lhs.0).rem(x).into()).into_py(py),
+        UniInput::Uint(x) => IPy((&lhs.0).rem(x).into()).into_py(py),
         UniInput::Int(x) => IPy((&lhs.0).rem(x).into()).into_py(py),
         UniInput::BUint(x) => IPy((&lhs.0).rem(&x.0)).into_py(py),
         UniInput::BInt(x) => IPy((&lhs.0).rem(&x.0)).into_py(py),
@@ -241,6 +242,22 @@ impl UPy {
         let mut hasher = DefaultHasher::new();
         self.0.num_hash(&mut hasher);
         hasher.finish()
+    }
+    fn __richcmp__(&self, other: UniInput<'_>, op: CompareOp) -> bool {
+        let order = match other {
+            UniInput::Uint(x) => self.0.num_cmp(&x),
+            UniInput::Int(x) => self.0.num_cmp(&x),
+            UniInput::BUint(x) => self.0.cmp(&x.0),
+            UniInput::BInt(x) => self.0.num_cmp(&x.0),
+            UniInput::OBInt(x) => self.0.num_cmp(&x),
+            UniInput::Float(x) => self.0.num_cmp(&x),
+            UniInput::BFloat(x) => self.0.num_cmp(&x.0),
+            UniInput::BDecimal(x) => self.0.num_cmp(&x.0),
+            UniInput::OBDecimal(x) => self.0.num_cmp(&x),
+            UniInput::BRational(x) => self.0.num_cmp(&x.0),
+            UniInput::OBRational(x) => self.0.num_cmp(&x),
+        };
+        op.matches(order)
     }
 
     /********** use as a bit vector **********/
@@ -533,6 +550,22 @@ impl IPy {
         let mut hasher = DefaultHasher::new();
         self.0.num_hash(&mut hasher);
         hasher.finish()
+    }
+    fn __richcmp__(&self, other: UniInput<'_>, op: CompareOp) -> bool {
+        let order = match other {
+            UniInput::Uint(x) => self.0.num_cmp(&x),
+            UniInput::Int(x) => self.0.num_cmp(&x),
+            UniInput::BUint(x) => self.0.num_cmp(&x.0),
+            UniInput::BInt(x) => self.0.cmp(&x.0),
+            UniInput::OBInt(x) => self.0.cmp(&x),
+            UniInput::Float(x) => self.0.num_cmp(&x),
+            UniInput::BFloat(x) => self.0.num_cmp(&x.0),
+            UniInput::BDecimal(x) => self.0.num_cmp(&x.0),
+            UniInput::OBDecimal(x) => self.0.num_cmp(&x),
+            UniInput::BRational(x) => self.0.num_cmp(&x.0),
+            UniInput::OBRational(x) => self.0.num_cmp(&x),
+        };
+        op.matches(order)
     }
 
     /********** use as a bit vector with very limited capabilities **********/

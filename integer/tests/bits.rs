@@ -123,6 +123,14 @@ fn test_split_bits() {
     let (a, b) = a.split_bits(65);
     assert_eq!(a, ubig!(0x2468acf12130eca));
     assert_eq!(b, ubig!(0x567890987654321));
+
+    let a = ubig!(0x3bc0495b81ab5b422d2b18c7e61a2309cf548cda8fbbd18d41aded48711b72d6);
+    let (a, b) = a.split_bits(128);
+    assert_eq!(a, ubig!(0xcf548cda8fbbd18d41aded48711b72d6));
+    assert_eq!(b, ubig!(0x3bc0495b81ab5b422d2b18c7e61a2309));
+    let (a, b) = a.split_bits(64);
+    assert_eq!(a, ubig!(0x41aded48711b72d6));
+    assert_eq!(b, ubig!(0xcf548cda8fbbd18d));
 }
 
 #[test]

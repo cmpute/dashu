@@ -45,5 +45,11 @@ def test_bit_ops():
     del n[1:3]
     assert int(n) == 0b10
 
+    ## misc
+    n = UBig("0x3bc0495b81ab5b422d2b18c7e61a2309cf548cda8fbbd18d41aded48711b72d6")
+    assert n[:32] == n & (2**32 - 1)
+    assert n[:64] == n & (2**64 - 1)
+    assert n[:128] == n & (2**128 - 1)
+
 if __name__ == "__main__":
     test_bit_ops()
