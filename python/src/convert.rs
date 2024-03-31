@@ -216,12 +216,14 @@ impl<'a> UniInput<'a> {
             Self::Uint(x) => Ok(x.into()),
             Self::BUint(x) => Ok(x.0.clone()),
             Self::OBInt(x) => x.try_into().map_err(|_| err),
-            Self::BInt(x) => if let Some(u) = x.0.as_ubig() {
-                Ok(u.clone())
-            } else {
-                Err(err)
+            Self::BInt(x) => {
+                if let Some(u) = x.0.as_ubig() {
+                    Ok(u.clone())
+                } else {
+                    Err(err)
+                }
             }
-            _ => Err(err)
+            _ => Err(err),
         }
     }
 }

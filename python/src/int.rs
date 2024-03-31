@@ -419,14 +419,19 @@ impl UPy {
         if chunk_bits == 0 {
             Err(PyValueError::new_err(ERRMSG_ZERO_CHUNK_SIZE))
         } else {
-            let iter = self.0.to_chunks(chunk_bits).into_vec().into_iter().map(|u| UPy(u).into_py(py));
+            let iter = self
+                .0
+                .to_chunks(chunk_bits)
+                .into_vec()
+                .into_iter()
+                .map(|u| UPy(u).into_py(py));
             Ok(PyTuple::new(py, iter).into_py(py))
         }
     }
     #[staticmethod]
     fn from_chunks(chunks: &PyAny, chunk_bits: usize) -> PyResult<Self> {
         if chunk_bits == 0 {
-            return Err(PyValueError::new_err(ERRMSG_ZERO_CHUNK_SIZE))
+            return Err(PyValueError::new_err(ERRMSG_ZERO_CHUNK_SIZE));
         }
 
         let mut input = Vec::new();
