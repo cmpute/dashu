@@ -8,7 +8,7 @@ use pyo3::exceptions::{
     PyIndexError, PyNotImplementedError, PyOverflowError, PyTypeError, PyValueError,
 };
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyLong, PySlice};
+use pyo3::types::{PyBytes, PyIterator, PyList, PyLong, PySlice, PyTuple};
 
 use crate::{
     convert::{
@@ -39,6 +39,8 @@ const ERRMSG_INT_WITH_RADIX: &str = "can't convert non-string with explicit base
 const ERRMSG_WRONG_INDEX_TYPE: &str = "indices must be integers or slices";
 const ERRMSG_UBIG_BITS_OOR: &str = "bits index out of range";
 const ERRMSG_BITOPS_TYPE: &str = "bit operations are only defined between integers";
+const ERRMSG_WRONG_CHUNKS_TYPE: &str = "the chunks input is not a recognized iterable";
+const ERRMSG_ZERO_CHUNK_SIZE: &str = "the chunk size must not be zero";
 
 macro_rules! impl_binops {
     ($ty_variant:ident, $py_method:ident, $rs_method:ident) => {
@@ -412,6 +414,41 @@ impl UPy {
             }
         };
         Ok(Self(uint))
+    }
+    fn to_chunks(&self, chunk_bits: usize, py: Python) -> PyResult<PyObject> {
+        if chunk_bits == 0 {
+            Err(PyValueError::new_err(ERRMSG_ZERO_CHUNK_SIZE))
+        } else {
+            let iter = self.0.to_chunks(chunk_bits).into_vec().into_iter().map(|u| UPy(u).into_py(py));
+            Ok(PyTuple::new(py, iter).into_py(py))
+        }
+    }
+    #[staticmethod]
+    fn from_chunks(chunks: &PyAny, chunk_bits: usize) -> PyResult<Self> {
+        if chunk_bits == 0 {
+            return Err(PyValueError::new_err(ERRMSG_ZERO_CHUNK_SIZE))
+        }
+
+        let mut input = Vec::new();
+        if let Ok(list) = chunks.downcast::<PyList>() {
+            input.reserve_exact(list.len());
+            for item in list {
+                input.push(UniInput::extract(item)?.to_ubig()?);
+            }
+        } else if let Ok(tuple) = chunks.downcast::<PyTuple>() {
+            input.reserve_exact(tuple.len());
+            for item in tuple {
+                input.push(UniInput::extract(item)?.to_ubig()?);
+            }
+        } else if let Ok(iter) = chunks.downcast::<PyIterator>() {
+            for item in iter {
+                input.push(UniInput::extract(item?)?.to_ubig()?);
+            }
+        } else {
+            return Err(PyTypeError::new_err(ERRMSG_WRONG_CHUNKS_TYPE));
+        }
+
+        Ok(UPy(UBig::from_chunks(input.iter(), chunk_bits)))
     }
 
     /********** operators **********/

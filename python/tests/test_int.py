@@ -51,5 +51,10 @@ def test_bit_ops():
     assert n[:64] == n & (2**64 - 1)
     assert n[:128] == n & (2**128 - 1)
 
+def test_conversion_to_chunks():
+    n = UBig("0x123456789abcdef")
+    assert UBig.from_chunks(n.to_chunks(10), 10) == n
+
 if __name__ == "__main__":
-    test_bit_ops()
+    # test_bit_ops()
+    test_conversion_to_chunks()

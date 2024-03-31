@@ -437,6 +437,10 @@ impl UBig {
     ///     UBig::from(0x010203u32)
     /// );
     /// ```
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if chunk_bits is zero.
     #[inline]
     pub fn from_chunks<'a, I: Iterator<Item = &'a UBig>>(chunks: I, chunk_bits: usize) -> Self {
         let chunks: Box<_> = chunks.into_iter().map(|u| u.as_words()).collect();
@@ -455,6 +459,10 @@ impl UBig {
     /// assert_eq!(*UBig::from(0x010203u32).to_chunks(8),
     ///     [0x3u8.into(), 0x2u8.into(), 0x1u8.into()]);
     /// ```
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if chunk_bits is zero.
     #[inline]
     pub fn to_chunks(&self, chunk_bits: usize) -> Box<[UBig]> {
         self.repr().to_chunks(chunk_bits).into_iter().map(|r| UBig(r)).collect()

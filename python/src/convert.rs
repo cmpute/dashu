@@ -19,6 +19,10 @@ use dashu_float::DBig;
 use dashu_int::{IBig, UBig};
 use dashu_ratio::RBig;
 
+const ERRMSG_NAN_NOT_SUPPORTED: &str = "nan values are not supported by dashu types";
+const ERRMSG_UNIINPUT_PARSE_FAILED: &str = "the input is an invalid number or unsupported";
+const ERRMSG_INPUT_NOT_UBIG: &str = "the input is not an unsigned integer";
+
 pub fn parse_signed_index(index: isize, length: usize, unlimited: bool) -> Option<usize> {
     if index >= 0 {
         let i = index as usize;
@@ -170,7 +174,7 @@ impl<'source> FromPyObject<'source> for UniInput<'source> {
         } else if ob.is_instance_of::<PyFloat>() {
             let f: c_double = ob.extract()?;
             if f.is_nan() {
-                Err(PyValueError::new_err("nan values are not supported by dashu types"))
+                Err(PyValueError::new_err(ERRMSG_NAN_NOT_SUPPORTED))
             } else {
                 Ok(Self::Float(f))
             }
@@ -199,8 +203,25 @@ impl<'source> FromPyObject<'source> for UniInput<'source> {
             } else if ob.is_instance(fraction_type)? {
                 Ok(Self::OBRational(parse_to_rbig(ob)?))
             } else {
-                Err(PyTypeError::new_err("the input is an invalid number or unsupported"))
+                Err(PyTypeError::new_err(ERRMSG_UNIINPUT_PARSE_FAILED))
             }
+        }
+    }
+}
+
+impl<'a> UniInput<'a> {
+    pub fn to_ubig(self) -> PyResult<UBig> {
+        let err = PyTypeError::new_err(ERRMSG_INPUT_NOT_UBIG);
+        match self {
+            Self::Uint(x) => Ok(x.into()),
+            Self::BUint(x) => Ok(x.0.clone()),
+            Self::OBInt(x) => x.try_into().map_err(|_| err),
+            Self::BInt(x) => if let Some(u) = x.0.as_ubig() {
+                Ok(u.clone())
+            } else {
+                Err(err)
+            }
+            _ => Err(err)
         }
     }
 }
