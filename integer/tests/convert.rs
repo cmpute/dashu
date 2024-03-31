@@ -49,6 +49,48 @@ fn test_from_to_be_bytes() {
 }
 
 #[test]
+fn test_from_to_chunks() {
+    let empty: [UBig; 0] = [];
+    assert_eq!(*UBig::ZERO.to_chunks(1), empty);
+    assert_eq!(*UBig::ONE.to_chunks(1), [UBig::ONE]);
+    assert_eq!(*UBig::ONE.to_chunks(10), [UBig::ONE]);
+    assert_eq!(*ubig!(0xabcd).to_chunks(4), [ubig!(0xd), ubig!(0xc), ubig!(0xb), ubig!(0xa)]);
+    assert_eq!(*ubig!(0xabcd).to_chunks(8), [ubig!(0xcd), ubig!(0xab)]);
+    assert_eq!(*ubig!(0xabcd).to_chunks(12), [ubig!(0xbcd), ubig!(0xa)]);
+    assert_eq!(*ubig!(0xabcd).to_chunks(16), [ubig!(0xabcd)]);
+    assert_eq!(*ubig!(0x123456789abcdef).to_chunks(17), [ubig!(0x1cdef), ubig!(0x1c4d5), ubig!(0xd159), ubig!(0x24)]);
+    assert_eq!(*ubig!(0x123456789abcdef0123456789abcdef0123456789abcdef).to_chunks(29), [
+        ubig!(0x9abcdef), ubig!(0x91a2b3c), ubig!(0xaf37bc0), ubig!(0x68acf13), ubig!(0x1cdef012), ubig!(0x2b3c4d5), ubig!(0x48d)
+    ]);
+    assert_eq!(*ubig!(0x123456789abcdef0123456789abcdef0123456789abcdef).to_chunks(64), [
+        ubig!(0x123456789abcdef), ubig!(0x123456789abcdef), ubig!(0x123456789abcdef)
+    ]);
+
+    assert_eq!(UBig::from_chunks(empty.iter(), 1), UBig::ZERO);
+    assert_eq!(UBig::from_chunks([ubig!(1)].iter(), 1), UBig::ONE);
+    assert_eq!(UBig::from_chunks([ubig!(1)].iter(), 10), UBig::ONE);
+
+    let test_cases = [
+        (ubig!(0xffff), vec![1, 3]),
+        (ubig!(0xfefefefe), vec![3, 4]),
+        (ubig!(0xffffffff000000001), vec![16, 32, 64, 65, 66]),
+        (ubig!(0xffffffff00000000ffffffff00000000ffffffff00000000ffffffff00000000), vec![13, 32, 64]),
+    ];
+    for (n, chunk_bits) in test_cases {
+        for bits in chunk_bits {
+            assert_eq!(UBig::from_chunks(n.to_chunks(bits).iter(), bits), n);
+        }
+    }
+}
+
+#[test]
+#[should_panic]
+fn test_from_to_chunks_error() {
+    let _ = UBig::ONE.to_chunks(0);
+    let _ = UBig::from_chunks([].iter(), 0);
+}
+
+#[test]
 fn test_ubig_from_unsigned() {
     assert_eq!(UBig::from(0xf1u8), UBig::from_be_bytes(&[0xf1]));
     assert_eq!(UBig::from(0xf123u16), UBig::from_be_bytes(&[0xf1, 0x23]));

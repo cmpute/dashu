@@ -1,20 +1,13 @@
 //! Conversions between types.
 
 use crate::{
-    add,
-    arch::word::{DoubleWord, Word},
-    buffer::Buffer,
-    helper_macros::debug_assert_zero,
-    ibig::IBig,
-    primitive::{self, PrimitiveSigned, PrimitiveUnsigned, DWORD_BYTES, WORD_BITS, WORD_BYTES},
-    repr::{
+    add, arch::word::{DoubleWord, Word}, buffer::Buffer, helper_macros::debug_assert_zero, ibig::IBig, math, primitive::{self, PrimitiveSigned, PrimitiveUnsigned, DWORD_BITS_USIZE, DWORD_BYTES, WORD_BITS, WORD_BITS_USIZE, WORD_BYTES}, repr::{
         Repr,
         TypedReprRef::{self, *},
-    },
-    ubig::UBig,
-    Sign::*,
+    }, shift, ubig::UBig, Sign::*
 };
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, vec::Vec, vec};
+use static_assertions::const_assert;
 use core::convert::{TryFrom, TryInto};
 use dashu_base::{
     Approximation::{self, *},
@@ -69,6 +62,61 @@ fn words_to_be_bytes<const FLIP: bool>(words: &[Word]) -> Vec<u8> {
         bytes.extend_from_slice(&word.to_be_bytes());
     }
     bytes
+}
+
+/// Convert a integer into an array of chunks by bit chunking
+/// 
+/// Requirements:
+/// - chunks_out.len() tightly fits all chunks.
+/// - All words in chunks_out must has enough length (i.e. ceil(chunk_bits / WORD_BITS))
+fn words_to_chunks(words: &[Word], chunks_out: &mut [&mut [Word]], chunk_bits: usize) {
+    assert!(words.len() > 0);
+
+    if chunk_bits % WORD_BITS_USIZE == 0 {
+        // shortcut for word aligned chunks
+        let words_per_chunk = chunk_bits / WORD_BITS_USIZE;
+        for (i, chunk_out) in chunks_out.iter_mut().enumerate() {
+            let start_pos = i * words_per_chunk;
+            let end_pos = start_pos + words_per_chunk;
+            chunk_out[..end_pos-start_pos].copy_from_slice(&words[start_pos..end_pos]);
+        }
+    } else {
+        let bit_len = words.len() * WORD_BITS_USIZE - words.last().unwrap().leading_zeros() as usize;
+        for (i, chunk_out) in chunks_out.iter_mut().enumerate() {
+            let start = i * chunk_bits;
+            let end = bit_len.min(start + chunk_bits);
+            debug_assert!(start < end); // make sure that there is no empty chunk
+    
+            let (start_pos, end_pos) = (start / WORD_BITS_USIZE, end / WORD_BITS_USIZE);
+            let end_bits = (end % WORD_BITS_USIZE) as u32;
+            let len;
+            if end_bits != 0 {
+                len = end_pos - start_pos;
+                chunk_out[..=len].copy_from_slice(&words[start_pos..=end_pos]);
+                chunk_out[len] &= math::ones_word(end_bits);
+            } else {
+                len = end_pos - start_pos - 1;
+                chunk_out[..=len].copy_from_slice(&words[start_pos..end_pos]);
+            }
+            shift::shr_in_place(&mut chunk_out[..=len], (start % WORD_BITS_USIZE) as u32);
+        }
+    }
+}
+
+/// Convert chunks to a single integer by shifting and adding.
+/// 
+/// Requirements:
+/// - words_out must have enough length
+/// - buffer must have enough length: buffer.len() > max(chunk.len()) for chunk in chunks
+fn chunks_to_words(words_out: &mut [Word], chunks: &[&[Word]], chunk_bits: usize, buffer: &mut [Word]) {
+    assert!(chunks.len() > 0);
+    for (i, chunk) in chunks.iter().enumerate() {
+        let shift = i * chunk_bits;
+        buffer[..chunk.len()].copy_from_slice(chunk);
+        buffer[chunk.len()] = 0;
+        shift::shl_in_place(&mut buffer[..=chunk.len()], (shift % WORD_BITS_USIZE) as u32);
+        debug_assert_zero!(add::add_in_place(&mut words_out[shift / WORD_BITS_USIZE..], &buffer[..=chunk.len()]));
+    }
 }
 
 impl TypedReprRef<'_> {
@@ -166,6 +214,41 @@ impl TypedReprRef<'_> {
         }
 
         bytes
+    }
+
+    fn to_chunks(self, chunk_bits: usize) -> Vec<Repr> {
+        assert!(chunk_bits > 0);
+        let chunk_count = math::ceil_div(self.bit_len(), chunk_bits);
+
+        match self {
+            RefSmall(x) => match chunk_count {
+                0 => Vec::new(),
+                1 => vec![Repr::from_dword(x)],
+                n => {
+                    const_assert!(u8::MAX as usize > DWORD_BITS_USIZE);
+                    let mut buffers = Vec::with_capacity(n);
+                    let chunk_bits = chunk_bits as u8; // chunk has at most DWORD_BITS bits, otherwise n <= 1
+                    for i in 0..n as u8 {
+                        let chunk = (x >> (i * chunk_bits)) & math::ones_dword(chunk_bits as _);
+                        buffers.push(Repr::from_dword(chunk));
+                    }
+                    buffers
+                }
+            },
+            RefLarge(words) =>{                
+                let mut buffers = Vec::<Buffer>::new();
+                let word_per_chunk = math::ceil_div(chunk_bits, WORD_BITS_USIZE);
+                buffers.resize_with(chunk_count, || {
+                    // allocate an extra word for shifting
+                    let mut buf: Buffer = Buffer::allocate(word_per_chunk + 1);
+                    buf.push_zeros(word_per_chunk + 1);
+                    buf
+                });
+                let mut buffer_refs: Box<[&mut [Word]]> = buffers.iter_mut().map(|buf| buf.as_mut()).collect();
+                words_to_chunks(words, &mut buffer_refs, chunk_bits);
+                buffers.into_iter().map(|buf| Repr::from_buffer(buf)).collect()
+            } 
+        }
     }
 }
 
@@ -266,6 +349,22 @@ impl Repr {
         }
         Self::from_buffer(buffer)
     }
+
+    fn from_chunks(chunks: &[&[Word]], chunk_bits: usize) -> Self {
+        if let Some(max_len) = chunks.iter().map(|words| words.len()).max() {
+            // allocate an extra word for shifting
+            let result_len = max_len + (chunks.len() - 1) * chunk_bits + 1;
+            let mut result = Buffer::allocate(result_len);
+            result.push_zeros(result_len);
+            let mut buffer = Buffer::allocate_exact(max_len + 1);
+            buffer.push_zeros(max_len + 1);
+
+            chunks_to_words(&mut result, chunks, chunk_bits, &mut buffer);
+            Self::from_buffer(result)
+        } else {
+            Self::zero()
+        }
+    }
 }
 
 impl UBig {
@@ -319,6 +418,46 @@ impl UBig {
     /// ```
     pub fn to_be_bytes(&self) -> Box<[u8]> {
         self.repr().to_be_bytes().into_boxed_slice()
+    }
+
+    /// Reconstruct an integer from a group of bit chunks.
+    /// 
+    /// Denote the chunks as C_i, then this function calculates sum(C_i * 2^(i * chunk_bits))
+    /// for i from 0 to len(chunks) - 1.
+    /// 
+    /// Note that it's allowed for each chunk to have more bits than chunk_bits, which is different
+    /// from the [UBig::to_chunks] method.
+    /// 
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::UBig;
+    /// assert_eq!(
+    ///     UBig::from_chunks([0x3u8.into(), 0x2u8.into(), 0x1u8.into()].iter(), 8),
+    ///     UBig::from(0x010203u32)
+    /// );
+    /// ```
+    #[inline]
+    pub fn from_chunks<'a, I: Iterator<Item = &'a UBig>>(chunks: I, chunk_bits: usize) -> Self {
+        let chunks: Box<_> = chunks.into_iter().map(|u| u.as_words()).collect();
+        Self(Repr::from_chunks(&chunks, chunk_bits))
+    }
+
+    /// Slice the integer into group of bit chunks from the least significant end to the most
+    /// significant end. Each chunk is represented as an integer, containing a subset of the
+    /// bits in the source integer.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::UBig;
+    /// assert!(UBig::ZERO.to_chunks(1).is_empty());
+    /// assert_eq!(*UBig::from(0x010203u32).to_chunks(8),
+    ///     [0x3u8.into(), 0x2u8.into(), 0x1u8.into()]);
+    /// ```
+    #[inline]
+    pub fn to_chunks(&self, chunk_bits: usize) -> Box<[UBig]> {
+        self.repr().to_chunks(chunk_bits).into_iter().map(|r| UBig(r)).collect()
     }
 
     /// Convert to f32.
