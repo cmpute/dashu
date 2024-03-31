@@ -5,6 +5,7 @@ mod ratio;
 mod types;
 mod utils;
 mod words;
+mod experimental;
 
 use pyo3::prelude::*;
 
@@ -12,7 +13,7 @@ use pyo3::prelude::*;
 /// the `lib.name` setting in the `Cargo.toml`, else Python will not be able to
 /// import the module.
 #[pymodule]
-fn dashu(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn dashu(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<types::PySign>()?;
     m.add_class::<types::PyWords>()?;
     m.add_class::<types::UPy>()?;
@@ -23,5 +24,6 @@ fn dashu(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
 
     m.add_function(wrap_pyfunction!(utils::auto, m)?)?;
     m.add_function(wrap_pyfunction!(utils::autos, m)?)?;
-    Ok(())
+
+    experimental::register(py, m)
 }
