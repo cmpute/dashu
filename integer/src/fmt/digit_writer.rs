@@ -41,6 +41,15 @@ impl<'a> DigitWriter<'a> {
         Ok(())
     }
 
+    pub fn write_digit(&mut self, digit: u8) -> fmt::Result {
+        self.buffer[self.buffer_len] = digit;
+        self.buffer_len += 1;
+        if self.buffer_len == BUFFER_LEN {
+            self.flush()?;
+        }
+        Ok(())
+    }
+
     /// Must call flush to make sure all the data is written.
     pub fn flush(&mut self) -> fmt::Result {
         let buffer_len_rounded = math::round_up(self.buffer_len, arch::digits::DIGIT_CHUNK_LEN);
