@@ -53,7 +53,7 @@ pub fn memory_requirement_up_to(n: usize) -> Layout {
      */
 
     // Note: the recurence also works when we transition to Karatsuba, because
-    // Karatsuba memory requirements are Smaller.
+    // Karatsuba memory requirements are smaller.
     let num_words = 4 * n + 13 * (math::ceil_log2(n) as usize);
     memory::array_layout::<Word>(num_words)
 }
