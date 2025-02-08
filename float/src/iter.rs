@@ -6,8 +6,9 @@ use core::{
     ops::{Add, Mul},
 };
 
-// XXX: implement precise summation of multiple floats, however,
-//      this requires rust support of the specialization.
+// TODO: implement precise summation of multiple floats: https://inria.hal.science/hal-01394289v2/file/ieeetc2017-mpfrsum-auth.pdf
+//       however, this requires rust support of the specialization.
+// TODO(v0.5): narrow the API first
 impl<T, R: Round, const B: Word> Sum<T> for FBig<R, B>
 where
     Self: Add<T, Output = Self>,

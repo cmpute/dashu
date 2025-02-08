@@ -1,0 +1,1 @@
+Generally, operations are implemented as many as possible between big numbers. For operations between big numbers and primitive numbers, a basic principle is that, operations that will expand the domain will not be implemented (e.g. UBig + i8 can result in negative number, so it's not implemented). The expanding direction is UBig -> IBig -> 
