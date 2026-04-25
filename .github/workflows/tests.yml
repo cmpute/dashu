@@ -8,30 +8,23 @@ on:
 
 name: Tests
 
-# TODO: test the python package with cross compilation settings
-
 jobs:
   check:
     name: Check
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable, 1.64, 1.61]
+        rust: [stable, "1.64", "1.61"]
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: ${{ matrix.rust }}
-          override: true
       - name: Change dependency versions
         run: git apply .github/workflows/change_version.patch
       - name: Remove dev-deps for MSRV
         run: git apply .github/workflows/remove_dev_deps.patch
-      - uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --all-features --tests
+      - run: cargo check --all-features --tests
 
   test:
     name: Test
@@ -52,16 +45,11 @@ jobs:
       RUST_BACKTRACE: 1
       RUSTFLAGS: -D warnings --cfg force_bits="${{ matrix.bits }}$"
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: stable
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all-features --workspace --exclude benchmark --no-fail-fast
+      - run: cargo test --all-features --workspace --exclude benchmark --no-fail-fast
 
   test-x86:
     name: Test x86
@@ -70,19 +58,14 @@ jobs:
       RUST_BACKTRACE: 1
       RUSTFLAGS: -D warnings
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: stable-i686-unknown-linux-gnu
-          override: true
       - run: |
           sudo apt update
           sudo apt install gcc-multilib
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --workspace --exclude benchmark --exclude dashu-python
+      - run: cargo test --workspace --exclude benchmark --exclude dashu-python
 
   test-x86_64:
     name: Test x86_64
@@ -91,16 +74,11 @@ jobs:
       RUST_BACKTRACE: 1
       RUSTFLAGS: -D warnings
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: stable-x86_64-unknown-linux-gnu
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --workspace --exclude benchmark
+      - run: cargo test --workspace --exclude benchmark
 
   test-no-std:
     name: Test no-std
@@ -108,16 +86,11 @@ jobs:
     env:
       RUSTFLAGS: -D warnings
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: stable
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --no-default-features --features rand --workspace --exclude benchmark --exclude dashu-python
+      - run: cargo test --no-default-features --features rand --workspace --exclude benchmark --exclude dashu-python
 
   build-benchmark:
     name: Build benchmark
@@ -125,16 +98,11 @@ jobs:
     env:
       RUSTFLAGS: -D warnings
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: stable
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: -p benchmark --features gmp
+      - run: cargo build -p benchmark --features gmp
 
   build-aarch64:
     name: Build aarch64
@@ -142,46 +110,31 @@ jobs:
     env:
       RUSTFLAGS: -D warnings
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: stable
-          target: aarch64-unknown-linux-gnu
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --target aarch64-unknown-linux-gnu --all-features --workspace --exclude benchmark --exclude dashu-python
+          targets: aarch64-unknown-linux-gnu
+      - run: cargo build --target aarch64-unknown-linux-gnu --all-features --workspace --exclude benchmark --exclude dashu-python
 
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: stable
-          override: true
           components: rustfmt
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+      - run: cargo fmt --all -- --check
 
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: stable
-          override: true
           components: clippy
-      - uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --all-features --all-targets --workspace --exclude benchmark -- -D warnings
+      - run: cargo clippy --all-features --all-targets --workspace --exclude benchmark -- -D warnings
