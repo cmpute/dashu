@@ -223,6 +223,7 @@ impl Repr {
     }
 
     /// Get a reference to the words in the `Repr`, together with the sign.
+    #[inline]
     pub fn as_sign_slice(&self) -> (Sign, &[Word]) {
         let (capacity, sign) = self.sign_capacity();
 
@@ -571,6 +572,7 @@ impl fmt::Debug for Repr {
 }
 
 impl Hash for Repr {
+    #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
         let (sign, arr) = self.as_sign_slice();
         sign.hash(state);
