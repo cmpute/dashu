@@ -540,6 +540,7 @@ impl Clone for Repr {
 }
 
 impl Drop for Repr {
+    #[inline]
     fn drop(&mut self) {
         let cap = self.capacity();
         if cap > 2 {

@@ -465,6 +465,7 @@ impl Clone for Buffer {
 }
 
 impl Drop for Buffer {
+    #[inline]
     fn drop(&mut self) {
         // SAFETY: self.ptr was allocated with self.capacity space
         unsafe {
