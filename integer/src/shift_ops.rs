@@ -282,6 +282,7 @@ pub(crate) mod repr {
     }
 
     /// Shift left large number of words by `rhs` bits.
+    #[inline]
     pub(crate) fn shl_large_ref(words: &[Word], rhs: usize) -> Repr {
         let shift_words = rhs / WORD_BITS_USIZE;
         let shift_bits = (rhs % WORD_BITS_USIZE) as u32;

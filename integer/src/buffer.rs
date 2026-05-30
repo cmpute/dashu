@@ -123,6 +123,7 @@ impl Buffer {
     }
 
     /// Creates a `Buffer` with exactly specified capacity (in words).
+    #[inline]
     pub fn allocate_exact(capacity: usize) -> Self {
         if capacity > Self::MAX_CAPACITY {
             panic_allocate_too_much()

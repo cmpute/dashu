@@ -113,7 +113,7 @@ pub(crate) mod repr {
     impl Mul<TypedRepr> for TypedRepr {
         type Output = Repr;
 
-        #[inline]
+        #[inline(always)]
         fn mul(self, rhs: TypedRepr) -> Repr {
             match (self, rhs) {
                 (Small(dword0), Small(dword1)) => mul_dword(dword0, dword1),
@@ -127,7 +127,7 @@ pub(crate) mod repr {
     impl<'l> Mul<TypedRepr> for TypedReprRef<'l> {
         type Output = Repr;
 
-        #[inline]
+        #[inline(always)]
         fn mul(self, rhs: TypedRepr) -> Repr {
             match (self, rhs) {
                 (RefSmall(dword0), Small(dword1)) => mul_dword(dword0, dword1),
@@ -141,7 +141,7 @@ pub(crate) mod repr {
     impl<'r> Mul<TypedReprRef<'r>> for TypedRepr {
         type Output = Repr;
 
-        #[inline]
+        #[inline(always)]
         fn mul(self, rhs: TypedReprRef) -> Self::Output {
             // mul is commutative
             rhs.mul(self)
@@ -151,7 +151,7 @@ pub(crate) mod repr {
     impl<'l, 'r> Mul<TypedReprRef<'r>> for TypedReprRef<'l> {
         type Output = Repr;
 
-        #[inline]
+        #[inline(always)]
         fn mul(self, rhs: TypedReprRef) -> Repr {
             match (self, rhs) {
                 (RefSmall(dword0), RefSmall(dword1)) => mul_dword(dword0, dword1),
@@ -185,6 +185,7 @@ pub(crate) mod repr {
     }
 
     /// Multiply a large number by a `DoubleWord`.
+    #[inline]
     pub(crate) fn mul_large_dword(mut buffer: Buffer, rhs: DoubleWord) -> Repr {
         match rhs {
             0 => Repr::zero(),

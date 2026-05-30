@@ -8,6 +8,7 @@ use crate::{
 
 /// Shift left by less than WORD_BITS in place.
 /// Returns carry.
+#[inline]
 pub fn shl_in_place(words: &mut [Word], shift: u32) -> Word {
     debug_assert!(shift < WORD_BITS);
     if shift == 0 {
