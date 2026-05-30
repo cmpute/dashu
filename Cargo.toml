@@ -12,7 +12,7 @@ documentation = "https://docs.rs/dashu"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
 include = ["/src"]
-rust-version = "1.61"
+rust-version = "1.73"
 
 [package.metadata.docs.rs]
 all-features = true
