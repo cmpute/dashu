@@ -372,6 +372,30 @@ fn test_not_ibig() {
 }
 
 #[test]
+fn test_not_ibig_large() {
+    // `!x == -x - 1`. With a >= 3-word magnitude this drives the heap
+    // increment/decrement helpers (`add_large_one` for positive operands,
+    // `sub_large_one` for negative ones), whose canonical-buffer fast path is
+    // otherwise unexercised by the small-value cases above.
+    let cases = [
+        ibig!(0x123456789abcdef00fedcba987654321000abcdef), // 3 words, low word != 0
+        -ibig!(0x123456789abcdef00fedcba987654321000abcdef),
+        ibig!(0xfedcba9876543210123456789abcdef0aa55cc33),
+        -ibig!(0xfedcba9876543210123456789abcdef0aa55cc33),
+        // Powers of two at a word boundary: `-1` borrows through the top word,
+        // zeroing it and shrinking the buffer (the `sub_large_one` fallback).
+        ibig!(1) << 192,
+        -(ibig!(1) << 192),
+        -(ibig!(1) << 256),
+    ];
+    for x in &cases {
+        let expected = -x - ibig!(1);
+        assert_eq!(!x.clone(), expected);
+        assert_eq!(!x, expected);
+    }
+}
+
+#[test]
 fn test_and_ibig() {
     for a in -20i8..=20i8 {
         for b in -20i8..=20i8 {

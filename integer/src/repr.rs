@@ -314,6 +314,7 @@ impl Repr {
 
     /// Create a `Repr` with a buffer allocated on heap. The leading zeros in the buffer
     /// will be trimmed and the buffer will be shrunk if there is exceeded capacity.
+    #[inline]
     pub fn from_buffer(mut buffer: Buffer) -> Self {
         buffer.pop_zeros();
 
@@ -333,6 +334,29 @@ impl Repr {
                 unsafe { mem::transmute::<Buffer, Repr>(buffer) }
             }
         }
+    }
+
+    /// Create a `Repr` from a buffer the caller asserts is already in canonical
+    /// heap form: `buffer.len() >= 3`, the top word is non-zero, and the
+    /// capacity is within `Buffer::max_compact_capacity(len)`.
+    ///
+    /// Skips the `pop_zeros` and `shrink_to_fit` work that [Repr::from_buffer]
+    /// performs. Intended for in-place arithmetic helpers where the result
+    /// shape is known from the operation: e.g. adding a small RHS into a
+    /// `Large` buffer cannot reduce `len` or zero the top word, so neither
+    /// trim is needed.
+    ///
+    /// In debug mode the preconditions are asserted; violating them in release
+    /// would leave a `Repr` whose invariants are broken.
+    #[inline]
+    pub(crate) fn from_buffer_normalized(buffer: Buffer) -> Self {
+        debug_assert!(buffer.len() >= 3);
+        debug_assert!(*buffer.last().unwrap() != 0);
+        debug_assert!(buffer.capacity() <= Buffer::max_compact_capacity(buffer.len()));
+        // SAFETY: Buffer and Repr have identical layout. The asserted
+        // preconditions match Repr's invariants for heap-resident values
+        // (capacity >= 3, top word non-zero, no excess capacity).
+        unsafe { mem::transmute(buffer) }
     }
 
     /// Create a [Repr] cloned from a reference to another [Repr]
