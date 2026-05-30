@@ -443,6 +443,34 @@ impl Repr {
         self
     }
 
+    /// Out-of-line slow path for `Clone::clone`. Heap-resident values only
+    /// (capacity > 2 in absolute value). Kept as a separate `#[cold]` +
+    /// `#[inline(never)]` function so the inline fast path stays tiny at
+    /// every `Clone::clone` call site — without `#[inline(never)]` LLVM
+    /// chooses to inline this back into `Clone::clone`, which both bloats
+    /// the inline path and (empirically) emits noticeably slower code for
+    /// the heap case itself than going through a regular function call.
+    #[cold]
+    #[inline(never)]
+    fn clone_heap(&self) -> Self {
+        debug_assert!(self.capacity.get().unsigned_abs() > 2);
+        // SAFETY: abs(capacity) > 2 ⇒ the `heap` variant of the union is
+        // the live one.
+        unsafe {
+            let (ptr, len) = self.data.heap;
+            debug_assert!(len >= 3);
+            let mut new_buffer = Buffer::allocate(len);
+            new_buffer.push_slice(slice::from_raw_parts(ptr, len));
+            // `Buffer::allocate(len)` gives a positive capacity; preserve
+            // self's sign by negating if necessary.
+            let mut new: Repr = mem::transmute(new_buffer);
+            if self.capacity.get() < 0 {
+                new.capacity = NonZeroIsize::new_unchecked(-new.capacity.get());
+            }
+            new
+        }
+    }
+
     /// Returns a number representing sign of self.
     ///
     /// * [Self::zero] if the number is zero
@@ -461,33 +489,28 @@ impl Repr {
 
 // Cloning for Repr is written in a verbose way because it's performance critical.
 impl Clone for Repr {
+    #[inline]
     fn clone(&self) -> Self {
-        let (capacity, sign) = self.sign_capacity();
-
-        // SAFETY: see the comments inside the block
-        let new = unsafe {
-            // inline the data if the length is less than 3
-            // SAFETY: we check the capacity before accessing the variants
-            if capacity <= 2 {
-                Repr {
-                    data: ReprData {
-                        inline: self.data.inline,
-                    },
-                    // SAFETY: the capacity is from self, which guarantees it to be zero
-                    capacity: NonZeroIsize::new_unchecked(capacity as isize),
-                }
-            } else {
-                let (ptr, len) = self.data.heap;
-                // SAFETY: len is at least 2 when it's heap allocated (invariant of Repr)
-                let mut new_buffer = Buffer::allocate(len);
-                new_buffer.push_slice(slice::from_raw_parts(ptr, len));
-
-                // SAFETY: abs(self.capacity) >= 3 => self.data.len >= 3
-                // so the capacity and len of new_buffer will be both >= 3
-                mem::transmute::<Buffer, Repr>(new_buffer)
-            }
-        };
-        new.with_sign(sign)
+        // Inline case (abs(capacity) <= 2): just copy the union and the
+        // signed capacity verbatim. Avoids the `sign_capacity` extract +
+        // `with_sign` re-apply round-trip the old implementation did.
+        //
+        // Profiled hegel-rust shrinker workloads spend ~13 % of total Ir
+        // in this function, almost entirely on the inline case (values
+        // are i64- or i128-sized). Inlining the trivial path here lets
+        // it disappear into the caller; the heavier heap path is split
+        // out into a `#[cold]` helper.
+        if self.capacity.get().unsigned_abs() <= 2 {
+            return Repr {
+                data: ReprData {
+                    // SAFETY: capacity in {-2,-1,1,2} ⇒ the `inline`
+                    // variant of the union is the live one.
+                    inline: unsafe { self.data.inline },
+                },
+                capacity: self.capacity,
+            };
+        }
+        self.clone_heap()
     }
 
     fn clone_from(&mut self, src: &Self) {
