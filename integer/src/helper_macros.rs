@@ -230,7 +230,7 @@ macro_rules! forward_ibig_binop_to_repr {
         impl $trait<IBig> for IBig {
             type $output = $ty_output;
 
-            #[inline]
+            #[inline(always)]
             fn $method(self, rhs: IBig) -> $ty_output {
                 let (sign0, mag0) = self.into_sign_repr();
                 let (sign1, mag1) = rhs.into_sign_repr();
@@ -241,7 +241,7 @@ macro_rules! forward_ibig_binop_to_repr {
         impl<'r> $trait<&'r IBig> for IBig {
             type $output = $ty_output;
 
-            #[inline]
+            #[inline(always)]
             fn $method(self, rhs: &IBig) -> $ty_output {
                 let (sign0, mag0) = self.into_sign_repr();
                 let (sign1, mag1) = rhs.as_sign_repr();
@@ -252,7 +252,7 @@ macro_rules! forward_ibig_binop_to_repr {
         impl<'l> $trait<IBig> for &'l IBig {
             type $output = $ty_output;
 
-            #[inline]
+            #[inline(always)]
             fn $method(self, rhs: IBig) -> $ty_output {
                 let (sign0, mag0) = self.as_sign_repr();
                 let (sign1, mag1) = rhs.into_sign_repr();
@@ -263,7 +263,7 @@ macro_rules! forward_ibig_binop_to_repr {
         impl<'l, 'r> $trait<&'r IBig> for &'l IBig {
             type $output = $ty_output;
 
-            #[inline]
+            #[inline(always)]
             fn $method(self, rhs: &IBig) -> $ty_output {
                 let (sign0, mag0) = self.as_sign_repr();
                 let (sign1, mag1) = rhs.as_sign_repr();
