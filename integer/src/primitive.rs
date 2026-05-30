@@ -130,7 +130,6 @@ where
 {
     const BYTE_SIZE: usize = mem::size_of::<Self>();
     const BIT_SIZE: u32 = 8 * Self::BYTE_SIZE as u32;
-    const MAX: Self;
     type ByteRepr: AsRef<[u8]> + AsMut<[u8]>;
 
     fn to_le_bytes(self) -> Self::ByteRepr;
@@ -156,7 +155,6 @@ macro_rules! impl_primitive_unsigned {
     ($t:ty) => {
         impl PrimitiveUnsigned for $t {
             type ByteRepr = [u8; Self::BYTE_SIZE];
-            const MAX: Self = Self::MAX;
 
             #[inline]
             fn to_le_bytes(self) -> Self::ByteRepr {
