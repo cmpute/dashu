@@ -64,7 +64,7 @@ impl<R: Round, const B: Word> DivEuclid<FBig<R, B>> for FBig<R, B> {
     }
 }
 
-impl<'l, R: Round, const B: Word> DivEuclid<FBig<R, B>> for &'l FBig<R, B> {
+impl<R: Round, const B: Word> DivEuclid<FBig<R, B>> for &FBig<R, B> {
     type Output = IBig;
     #[inline]
     fn div_euclid(self, rhs: FBig<R, B>) -> Self::Output {
@@ -72,7 +72,7 @@ impl<'l, R: Round, const B: Word> DivEuclid<FBig<R, B>> for &'l FBig<R, B> {
     }
 }
 
-impl<'r, R: Round, const B: Word> DivEuclid<&'r FBig<R, B>> for FBig<R, B> {
+impl<R: Round, const B: Word> DivEuclid<&FBig<R, B>> for FBig<R, B> {
     type Output = IBig;
     #[inline]
     fn div_euclid(self, rhs: &FBig<R, B>) -> Self::Output {
@@ -80,7 +80,7 @@ impl<'r, R: Round, const B: Word> DivEuclid<&'r FBig<R, B>> for FBig<R, B> {
     }
 }
 
-impl<'l, 'r, R: Round, const B: Word> DivEuclid<&'r FBig<R, B>> for &'l FBig<R, B> {
+impl<R: Round, const B: Word> DivEuclid<&FBig<R, B>> for &FBig<R, B> {
     type Output = IBig;
     #[inline]
     fn div_euclid(self, rhs: &FBig<R, B>) -> Self::Output {
@@ -105,7 +105,7 @@ impl<R: Round, const B: Word> RemEuclid<FBig<R, B>> for FBig<R, B> {
     }
 }
 
-impl<'l, R: Round, const B: Word> RemEuclid<FBig<R, B>> for &'l FBig<R, B> {
+impl<R: Round, const B: Word> RemEuclid<FBig<R, B>> for &FBig<R, B> {
     type Output = FBig<R, B>;
     #[inline]
     fn rem_euclid(self, rhs: FBig<R, B>) -> Self::Output {
@@ -113,7 +113,7 @@ impl<'l, R: Round, const B: Word> RemEuclid<FBig<R, B>> for &'l FBig<R, B> {
     }
 }
 
-impl<'r, R: Round, const B: Word> RemEuclid<&'r FBig<R, B>> for FBig<R, B> {
+impl<R: Round, const B: Word> RemEuclid<&FBig<R, B>> for FBig<R, B> {
     type Output = FBig<R, B>;
     #[inline]
     fn rem_euclid(self, rhs: &FBig<R, B>) -> Self::Output {
@@ -121,7 +121,7 @@ impl<'r, R: Round, const B: Word> RemEuclid<&'r FBig<R, B>> for FBig<R, B> {
     }
 }
 
-impl<'l, 'r, R: Round, const B: Word> RemEuclid<&'r FBig<R, B>> for &'l FBig<R, B> {
+impl<R: Round, const B: Word> RemEuclid<&FBig<R, B>> for &FBig<R, B> {
     type Output = FBig<R, B>;
     #[inline]
     fn rem_euclid(self, rhs: &FBig<R, B>) -> Self::Output {
@@ -147,7 +147,7 @@ impl<R: Round, const B: Word> DivRemEuclid<FBig<R, B>> for FBig<R, B> {
     }
 }
 
-impl<'l, R: Round, const B: Word> DivRemEuclid<FBig<R, B>> for &'l FBig<R, B> {
+impl<R: Round, const B: Word> DivRemEuclid<FBig<R, B>> for &FBig<R, B> {
     type OutputDiv = IBig;
     type OutputRem = FBig<R, B>;
     #[inline]
@@ -156,7 +156,7 @@ impl<'l, R: Round, const B: Word> DivRemEuclid<FBig<R, B>> for &'l FBig<R, B> {
     }
 }
 
-impl<'r, R: Round, const B: Word> DivRemEuclid<&'r FBig<R, B>> for FBig<R, B> {
+impl<R: Round, const B: Word> DivRemEuclid<&FBig<R, B>> for FBig<R, B> {
     type OutputDiv = IBig;
     type OutputRem = FBig<R, B>;
     #[inline]
@@ -165,7 +165,7 @@ impl<'r, R: Round, const B: Word> DivRemEuclid<&'r FBig<R, B>> for FBig<R, B> {
     }
 }
 
-impl<'l, 'r, R: Round, const B: Word> DivRemEuclid<&'r FBig<R, B>> for &'l FBig<R, B> {
+impl<R: Round, const B: Word> DivRemEuclid<&FBig<R, B>> for &FBig<R, B> {
     type OutputDiv = IBig;
     type OutputRem = FBig<R, B>;
     #[inline]

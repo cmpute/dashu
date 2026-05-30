@@ -47,7 +47,7 @@ pub struct Repr {
     /// - `capacity` = 2: the words are inlined
     /// - `capacity` >= 3: the words are on allocated on the heap. In this case, data.len >= 3 will also be forced.
     /// - `capacity` < 0: similiar to the cases above, but negative capacity value is used to mark the integer is negative.
-    ///     Note that in this case the inlined value is not allowed to be zero. (zero must have a positive sign)
+    ///   Note that in this case the inlined value is not allowed to be zero. (zero must have a positive sign)
     capacity: NonZeroIsize,
 }
 
@@ -195,7 +195,7 @@ impl Repr {
                 _ => {
                     // SAFETY: An `Buffer` and `Repr` have the same layout
                     //     and we have made sure that the data is allocated on heap
-                    TypedRepr::Large(mem::transmute(self))
+                    TypedRepr::Large(mem::transmute::<Repr, Buffer>(self))
                 }
             }
         }
@@ -330,7 +330,7 @@ impl Repr {
 
                 // SAFETY: the length has been checked and capacity >= length,
                 //         so capacity is nonzero and larger than 2
-                unsafe { mem::transmute(buffer) }
+                unsafe { mem::transmute::<Buffer, Repr>(buffer) }
             }
         }
     }
@@ -373,7 +373,7 @@ impl Repr {
                 _ => {
                     // SAFETY: An `Buffer` and `Repr` have the same layout
                     //     and we have made sure that the data is allocated on heap
-                    mem::transmute(self)
+                    mem::transmute::<Repr, Buffer>(self)
                 }
             }
         }
@@ -430,7 +430,7 @@ impl Repr {
 
             // SAFETY: the bit length has been checked and capacity >= length,
             //         so capacity is nonzero and larger than 2
-            unsafe { mem::transmute(buffer) }
+            unsafe { mem::transmute::<Buffer, Repr>(buffer) }
         }
     }
 
@@ -484,7 +484,7 @@ impl Clone for Repr {
 
                 // SAFETY: abs(self.capacity) >= 3 => self.data.len >= 3
                 // so the capacity and len of new_buffer will be both >= 3
-                mem::transmute(new_buffer)
+                mem::transmute::<Buffer, Repr>(new_buffer)
             }
         };
         new.with_sign(sign)
@@ -580,7 +580,7 @@ impl Hash for Repr {
 impl TypedRepr {
     /// Convert a reference of `TypedRef` to `TypedReprRef`
     #[inline]
-    pub fn as_ref(&self) -> TypedReprRef {
+    pub fn as_ref(&self) -> TypedReprRef<'_> {
         match self {
             Self::Small(dword) => TypedReprRef::RefSmall(*dword),
             Self::Large(words) => TypedReprRef::RefLarge(words),
@@ -608,7 +608,7 @@ impl<'a> TypedReprRef<'a> {
 
     /// This operation just return a copy of `self`. It's meant to be used in macros.
     #[inline]
-    pub fn as_ref(&self) -> TypedReprRef {
+    pub fn as_ref(&self) -> TypedReprRef<'a> {
         *self
     }
 }

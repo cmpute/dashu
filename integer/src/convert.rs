@@ -680,7 +680,7 @@ impl IBig {
                 // SAFETY: UBig and IBig are both transparent wrapper around the Repr type.
                 //         This conversion is only available for immutable references and
                 //         positive numbers, so that the sign will not be messed up.
-                unsafe { Some(core::mem::transmute(self)) }
+                unsafe { Some(core::mem::transmute::<&IBig, &UBig>(self)) }
             }
             Sign::Negative => None,
         }

@@ -71,7 +71,7 @@ define_array_converter!(u64);
 pub fn quote_words(le_bytes: &[u8], embedded: bool) -> TokenStream {
     // Due to the limitations of Rust const generics, the arrays has to be padded to the same length.
     // See: https://users.rust-lang.org/t/how-to-use-associated-const-in-an-associated-type/104348
-    let max_len = (le_bytes.len() + 1) / 2;
+    let max_len = le_bytes.len().div_ceil(2);
     let (u16_tokens, u16_len) = le_bytes_to_u16_tokens(le_bytes, max_len);
     let (u32_tokens, u32_len) = le_bytes_to_u32_tokens(le_bytes, max_len);
     let (u64_tokens, u64_len) = le_bytes_to_u64_tokens(le_bytes, max_len);

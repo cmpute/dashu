@@ -42,16 +42,16 @@ impl<const B: Word> Repr<B> {
         // determine the position of scale markers
         let has_prefix = src.starts_with("0x") || src.starts_with("0X");
         let scale_pos = match B {
-            10 => src.rfind(&['e', 'E', '@']),
+            10 => src.rfind(['e', 'E', '@']),
             2 => {
                 if has_prefix {
-                    src.rfind(&['p', 'P', '@'])
+                    src.rfind(['p', 'P', '@'])
                 } else {
-                    src.rfind(&['b', 'B', '@'])
+                    src.rfind(['b', 'B', '@'])
                 }
             }
-            8 => src.rfind(&['o', 'O', '@']),
-            16 => src.rfind(&['h', 'H', '@']),
+            8 => src.rfind(['o', 'O', '@']),
+            16 => src.rfind(['h', 'H', '@']),
             _ => src.rfind('@'),
         };
 

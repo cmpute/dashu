@@ -337,8 +337,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
             let shift = significand.trailing_zeros() / base_bits;
             significand >>= shift * base_bits;
             exponent += shift as isize;
-            digits = ((DoubleWord::BITS - significand.leading_zeros() + base_bits - 1) / base_bits)
-                as usize;
+            digits = (DoubleWord::BITS - significand.leading_zeros()).div_ceil(base_bits) as usize;
         } else {
             let mut pow: DoubleWord = 1;
             while significand % (B as DoubleWord) == 0 {

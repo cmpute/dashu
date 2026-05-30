@@ -112,7 +112,7 @@ pub trait IntoRing<'a, RingReducer> {
 impl<'a> IntoRing<'a, ConstDivisor> for UBig {
     type RingElement = Reduced<'a>;
     #[inline]
-    fn into_ring(self, ring: &ConstDivisor) -> Reduced {
+    fn into_ring(self, ring: &'a ConstDivisor) -> Reduced<'a> {
         match &ring.0 {
             ConstDivisorRepr::Single(ring) => {
                 Reduced::from_single(ReducedWord::from_ubig(&self, ring), ring)
@@ -131,7 +131,7 @@ impl<'a> IntoRing<'a, ConstDivisor> for IBig {
     type RingElement = Reduced<'a>;
 
     #[inline]
-    fn into_ring(self, ring: &ConstDivisor) -> Reduced {
+    fn into_ring(self, ring: &'a ConstDivisor) -> Reduced<'a> {
         let sign = self.sign();
         let modulo = self.unsigned_abs().into_ring(ring);
         match sign {
@@ -196,7 +196,7 @@ impl ConstDivisor {
     pub fn reduce<'a, T: IntoRing<'a, ConstDivisor, RingElement = Reduced<'a>>>(
         &'a self,
         x: T,
-    ) -> Reduced {
+    ) -> Reduced<'a> {
         x.into_ring(self)
     }
 }
