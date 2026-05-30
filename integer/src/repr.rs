@@ -513,14 +513,19 @@ impl Clone for Repr {
         self.clone_heap()
     }
 
+    #[inline]
     fn clone_from(&mut self, src: &Self) {
-        let (src_cap, src_sign) = src.sign_capacity();
-        let (cap, _) = self.sign_capacity();
+        let src_cap_raw = src.capacity.get();
+        let cap = self.capacity.get().unsigned_abs();
 
         // SAFETY: see the comments inside the block
         unsafe {
-            // shortcut for inlined data
-            if src_cap <= 2 {
+            // Fast path: src is inline. Same shape as `clone`'s fast path
+            // — copy union + signed capacity, with a rare dealloc when
+            // self was previously heap-resident. The shrinker's
+            // ChoiceNode = (IBig, IBig, IBig, IBig) clone pattern is
+            // dominated by inline-source clones.
+            if src_cap_raw.unsigned_abs() <= 2 {
                 if cap > 2 {
                     // release the old buffer if necessary
                     // SAFETY: self.data.heap.0 must be valid pointer if cap > 2
@@ -530,6 +535,7 @@ impl Clone for Repr {
                 self.capacity = src.capacity;
                 return;
             }
+            let src_sign = if src_cap_raw > 0 { Sign::Positive } else { Sign::Negative };
 
             // SAFETY: we checked that abs(src.capacity) > 2
             let (src_ptr, src_len) = src.data.heap;
