@@ -140,7 +140,7 @@ macro_rules! forward_ubig_binop_to_repr {
         impl $trait<UBig> for UBig {
             type Output = UBig;
 
-            #[inline]
+            #[inline(always)]
             fn $method(self, rhs: UBig) -> UBig {
                 UBig(self.into_repr().$forward(rhs.into_repr()))
             }
@@ -149,7 +149,7 @@ macro_rules! forward_ubig_binop_to_repr {
         impl<'r> $trait<&'r UBig> for UBig {
             type Output = UBig;
 
-            #[inline]
+            #[inline(always)]
             fn $method(self, rhs: &UBig) -> UBig {
                 UBig(self.into_repr().$forward(rhs.repr()))
             }
@@ -158,7 +158,7 @@ macro_rules! forward_ubig_binop_to_repr {
         impl<'l> $trait<UBig> for &'l UBig {
             type Output = UBig;
 
-            #[inline]
+            #[inline(always)]
             fn $method(self, rhs: UBig) -> UBig {
                 UBig(self.repr().$forward(rhs.into_repr()))
             }
@@ -167,7 +167,7 @@ macro_rules! forward_ubig_binop_to_repr {
         impl<'l, 'r> $trait<&'r UBig> for &'l UBig {
             type Output = UBig;
 
-            #[inline]
+            #[inline(always)]
             fn $method(self, rhs: &UBig) -> UBig {
                 UBig(self.repr().$forward(rhs.repr()))
             }
