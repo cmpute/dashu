@@ -443,31 +443,75 @@ impl Repr {
         self
     }
 
-    /// Out-of-line slow path for `Clone::clone`. Heap-resident values only
-    /// (capacity > 2 in absolute value). Kept as a separate `#[cold]` +
-    /// `#[inline(never)]` function so the inline fast path stays tiny at
-    /// every `Clone::clone` call site — without `#[inline(never)]` LLVM
-    /// chooses to inline this back into `Clone::clone`, which both bloats
-    /// the inline path and (empirically) emits noticeably slower code for
-    /// the heap case itself than going through a regular function call.
-    #[cold]
+    /// Slow path for `Clone::clone`. Heap-resident values only
+    /// (capacity > 2 in absolute value).
+    ///
+    /// Allocates directly via `alloc::alloc::alloc` rather than going
+    /// through `Buffer::allocate` + `push_slice` + `mem::transmute`.
+    /// That bypass saves:
+    ///
+    /// * the redundant `0 < capacity <= MAX_CAPACITY` assertion inside
+    ///   `Buffer::allocate_raw` (we just computed `new_cap` from a
+    ///   bounded `len`);
+    /// * `push_slice`'s `len <= capacity - 0` check (we own the buffer
+    ///   we just allocated, the only `len` ever written is the input
+    ///   `len`);
+    /// * `Buffer::allocate_exact`'s second check on the same bound;
+    /// * the `mem::transmute(Buffer) -> Repr` shape and the conditional
+    ///   sign-flip dance — the signed capacity is set directly.
+    ///
+    /// `#[inline(never)]` (without `#[cold]`) keeps the inline fast path
+    /// tiny at every `Clone::clone` instantiation and gives LLVM a stable
+    /// call boundary so the inline path's code-layout doesn't depend on
+    /// how aggressively the heap path gets considered for inlining.
+    ///
+    /// Removing the attribute lets LLVM occasionally inline this back —
+    /// which leaves the inline microbench unchanged but regresses
+    /// `ibig_clone/large` by ~5 pp (probably i-cache: the inlined
+    /// 30-instruction heap body lands inside the bench's hot loop).
+    /// `#[cold]` was also dropped (`shrinker_consider` gains ~3 pp without
+    /// it; see commit notes).
     #[inline(never)]
     fn clone_heap(&self) -> Self {
         debug_assert!(self.capacity.get().unsigned_abs() > 2);
-        // SAFETY: abs(capacity) > 2 ⇒ the `heap` variant of the union is
-        // the live one.
+        // SAFETY: abs(capacity) > 2 ⇒ the `heap` variant of the union
+        // is the live one, and `len >= 3`.
         unsafe {
-            let (ptr, len) = self.data.heap;
+            let (src_ptr, len) = self.data.heap;
             debug_assert!(len >= 3);
-            let mut new_buffer = Buffer::allocate(len);
-            new_buffer.push_slice(slice::from_raw_parts(ptr, len));
-            // `Buffer::allocate(len)` gives a positive capacity; preserve
-            // self's sign by negating if necessary.
-            let mut new: Repr = mem::transmute(new_buffer);
-            if self.capacity.get() < 0 {
-                new.capacity = NonZeroIsize::new_unchecked(-new.capacity.get());
+
+            // Mirrors `Buffer::default_capacity(len)`. `len <=
+            // Buffer::MAX_CAPACITY` is invariant for any heap Repr, and
+            // `default_capacity` is monotone, so `new_cap` is bounded
+            // and the bound check inside `Buffer::allocate_raw` would
+            // never fire.
+            let new_cap = len + len / 8 + 2;
+            debug_assert!(new_cap >= 3 && new_cap <= Buffer::MAX_CAPACITY);
+
+            let layout = core::alloc::Layout::from_size_align_unchecked(
+                new_cap * mem::size_of::<Word>(),
+                mem::align_of::<Word>(),
+            );
+            let new_ptr = alloc::alloc::alloc(layout) as *mut Word;
+            if new_ptr.is_null() {
+                crate::error::panic_out_of_memory();
             }
-            new
+
+            ptr::copy_nonoverlapping(src_ptr, new_ptr, len);
+
+            // Set the result's signed capacity in one shot so we never
+            // build a positive Repr only to negate it back.
+            let signed_cap = if self.capacity.get() < 0 {
+                -(new_cap as isize)
+            } else {
+                new_cap as isize
+            };
+            Repr {
+                data: ReprData {
+                    heap: (new_ptr, len),
+                },
+                capacity: NonZeroIsize::new_unchecked(signed_cap),
+            }
         }
     }
 
