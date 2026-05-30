@@ -514,7 +514,7 @@ impl Hash for Buffer {
 }
 
 impl From<&[Word]> for Buffer {
-    #[inline]
+    #[inline(always)]
     fn from(words: &[Word]) -> Self {
         let mut buffer = Buffer::allocate(words.len());
         buffer.push_slice(words);
