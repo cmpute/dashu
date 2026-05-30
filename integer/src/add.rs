@@ -15,6 +15,7 @@ use core::cmp::Ordering::*;
 ///
 /// Returns overflow.
 #[must_use]
+#[inline]
 pub fn add_one_in_place(words: &mut [Word]) -> bool {
     for word in words {
         let (a, overflow) = word.overflowing_add(1);
@@ -30,6 +31,7 @@ pub fn add_one_in_place(words: &mut [Word]) -> bool {
 ///
 /// Returns borrow.
 #[must_use]
+#[inline]
 pub fn sub_one_in_place(words: &mut [Word]) -> bool {
     for word in words {
         let (a, borrow) = word.overflowing_sub(1);
@@ -55,6 +57,7 @@ pub fn add_word_in_place(words: &mut [Word], rhs: Word) -> bool {
 /// Add a double word to a non-empty word sequence.
 ///
 /// Returns overflow.
+#[inline]
 pub fn add_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> bool {
     let (word_0, words_hi) = words.split_first_mut().unwrap();
     let (word_1, words_hi) = words_hi.split_first_mut().unwrap();
@@ -81,6 +84,7 @@ pub fn sub_word_in_place(words: &mut [Word], rhs: Word) -> bool {
 ///
 /// Returns borrow.
 #[must_use]
+#[inline]
 pub fn sub_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> bool {
     let (word_0, words_hi) = words.split_first_mut().unwrap();
     let (word_1, words_hi) = words_hi.split_first_mut().unwrap();
@@ -96,6 +100,7 @@ pub fn sub_dword_in_place(words: &mut [Word], rhs: DoubleWord) -> bool {
 ///
 /// Returns overflow.
 #[must_use]
+#[inline]
 pub fn add_same_len_in_place(words: &mut [Word], rhs: &[Word]) -> bool {
     debug_assert!(words.len() == rhs.len());
 
@@ -160,6 +165,7 @@ pub fn sub_same_len_in_place_swap(lhs: &[Word], rhs: &mut [Word]) -> bool {
 
 /// (sign, lhs) = lhs - rhs
 #[must_use]
+#[inline]
 pub fn sub_in_place_with_sign(lhs: &mut [Word], rhs: &[Word]) -> Sign {
     debug_assert!(lhs.len() >= rhs.len());
     let mut lhs_len = lhs.len();
