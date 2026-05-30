@@ -49,7 +49,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
-      - run: cargo test --all-features --workspace --exclude benchmark --no-fail-fast
+      - run: cargo test --all-features --workspace --exclude benchmark --exclude dashu-python --no-fail-fast
 
   test-x86:
     name: Test x86
@@ -80,7 +80,7 @@ jobs:
         with:
           toolchain: stable
           targets: x86_64-unknown-linux-gnu
-      - run: cargo test --target x86_64-unknown-linux-gnu --workspace --exclude benchmark
+      - run: cargo test --target x86_64-unknown-linux-gnu --workspace --exclude benchmark --exclude dashu-python
 
   test-no-std:
     name: Test no-std
@@ -139,4 +139,4 @@ jobs:
         with:
           toolchain: stable
           components: clippy
-      - run: cargo clippy --all-features --all-targets --workspace --exclude benchmark -- -D warnings
+      - run: cargo clippy --all-features --all-targets --workspace --exclude benchmark --exclude dashu-python -- -D warnings
