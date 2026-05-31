@@ -331,7 +331,7 @@ impl ErrorBounds for mode::HalfAway {
 
         let mut half_ulp = f.ulp();
         half_ulp.repr.exponent -= 1;
-        half_ulp.repr.significand = UBig::from_word(B.div_ceil(2)).into(); // ceil division
+        half_ulp.repr.significand = UBig::from_word((B + 1) / 2).into(); // ceil division
 
         let (incl_l, incl_r) = if f.repr.is_zero() {
             (false, false)
@@ -391,7 +391,7 @@ impl ErrorBounds for mode::HalfEven {
 
         let mut half_ulp = f.ulp();
         half_ulp.repr.exponent -= 1;
-        half_ulp.repr.significand = UBig::from_word(B.div_ceil(2)).into(); // ceil division
+        half_ulp.repr.significand = UBig::from_word((B + 1) / 2).into(); // ceil division
 
         let incl = f.repr.significand.bit(0);
         (half_ulp.clone(), half_ulp, incl, incl)

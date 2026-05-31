@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable, "1.73"]
+        rust: [stable, "1.68"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master

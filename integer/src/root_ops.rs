@@ -170,7 +170,7 @@ mod repr {
         // the top word is normalized. Note: shift <= 2 * WORD_BITS - 2
         let shift = WORD_BITS_USIZE * (words.len() & 1)
             + (words.last().unwrap().leading_zeros() & !1) as usize;
-        let n = words.len().div_ceil(2);
+        let n = (words.len() + 1) / 2;
         let mut buffer = shift_ops::repr::shl_large_ref(words, shift).into_buffer();
         let mut out = Buffer::allocate(n);
         out.push_zeros(n);
