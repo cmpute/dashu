@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Fix rounding issues in `to_32()` and `to_f64()`.
+- Fix rounding issues in `to_32()` and `to_f64()` (fixes [#53](https://github.com/cmpute/dashu/issues/53) and [#56](https://github.com/cmpute/dashu/issues/56)).
 
 ## 0.4.4
 
