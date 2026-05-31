@@ -194,7 +194,13 @@ mod repr {
             // s >>= shift/2, r >>= shift
             let _ = shift::shr_in_place(&mut out, shift as u32 / 2);
             if !root_only {
-                if shift > WORD_BITS_USIZE {
+                // Use `>=` (not `>`) so the boundary case `shift == WORD_BITS_USIZE`
+                // also drops a whole word. Otherwise the `shr_in_place(shift %
+                // WORD_BITS) == shr_in_place(0)` below is a no-op and the
+                // division by 2^shift is silently skipped. Hit on 16-bit
+                // Word for inputs like `2^400 - 1` (`words.len() = 25` odd,
+                // top word fully populated, so `shift = WORD_BITS + 0`).
+                if shift >= WORD_BITS_USIZE {
                     shift::shr_in_place_one_word(&mut buffer);
                     buffer.truncate(n);
                 } else {
