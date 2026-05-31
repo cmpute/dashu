@@ -69,6 +69,9 @@ jobs:
           open('float/src/third_party/mod.rs', 'w').write(text)
           PY
           rm -rf float/tests/postgres.rs float/src/third_party/postgres
+      - name: Regenerate lockfile for MSRV
+        if: matrix.rust != 'stable'
+        run: cargo generate-lockfile --workspace
       - run: cargo check --all-features --tests
 
   test:
