@@ -1,4 +1,5 @@
 use core::convert::TryFrom;
+use core::str::FromStr;
 use dashu_base::{Approximation::*, ConversionError::*};
 use dashu_float::{
     round::{
@@ -174,40 +175,43 @@ fn test_base_change_exact_unlimited_precision() {
     // B=10 → B=2, positive exponent (below threshold)
     assert_eq!(
         dbig!(5e1).with_precision(0).unwrap().with_base::<2>(),
-        Exact(FBinH::from_str_native("0x19p1").unwrap())
+        Exact(FBinH::from_str("0x19p1").unwrap())
     );
     // B=10 → B=2, positive exponent exceeding 32-bit threshold
     assert_eq!(
         dbig!(1e20).with_precision(0).unwrap().with_base::<2>(),
-        Exact(FBinH::from_str_native("0x56BC75E2D631p20").unwrap())
+        Exact(FBinH::from_str("0x56BC75E2D631p20").unwrap())
     );
     // B=10 → B=2, negative exponent, exact division by r^|exp|
     assert_eq!(
         dbig!(5e-1).with_precision(0).unwrap().with_base::<2>(),
-        Exact(FBinH::from_str_native("0x1p-1").unwrap())
+        Exact(FBinH::from_str("0x1p-1").unwrap())
     );
     assert_eq!(
         dbig!(125e-3).with_precision(0).unwrap().with_base::<2>(),
-        Exact(FBinH::from_str_native("0x1p-3").unwrap())
+        Exact(FBinH::from_str("0x1p-3").unwrap())
     );
     assert_eq!(
         dbig!(3125e-5).with_precision(0).unwrap().with_base::<2>(),
-        Exact(FBinH::from_str_native("0x1p-5").unwrap())
+        Exact(FBinH::from_str("0x1p-5").unwrap())
     );
     // B=10 → B=2, negative exponent exceeding 32-bit threshold, exact division
     // 5^20 = 95367431640625, and 95367431640625 × 10^(-20) = 2^(-20)
     assert_eq!(
-        dbig!(95367431640625e-20).with_precision(0).unwrap().with_base::<2>(),
-        Exact(FBinH::from_str_native("0x1p-20").unwrap())
+        dbig!(95367431640625e-20)
+            .with_precision(0)
+            .unwrap()
+            .with_base::<2>(),
+        Exact(FBinH::from_str("0x1p-20").unwrap())
     );
     // B=2 → B=10, positive exponent (NewB is a multiple of B)
     assert_eq!(
         fbig!(0x1p20).with_precision(0).unwrap().with_base::<10>(),
-        Exact(DBinZ::from_str_native("1048576").unwrap())
+        Exact(DBinZ::from_str("1048576").unwrap())
     );
     assert_eq!(
         fbig!(0x5p10).with_precision(0).unwrap().with_base::<10>(),
-        Exact(DBinZ::from_str_native("5120").unwrap())
+        Exact(DBinZ::from_str("5120").unwrap())
     );
 
     // --- Other base combinations ---
@@ -217,7 +221,10 @@ fn test_base_change_exact_unlimited_precision() {
     {
         type F6 = FBig<HalfAway, 6>;
         assert_eq!(
-            F6::from_parts(IBig::from(3), 2).with_precision(0).unwrap().with_base::<2>(),
+            F6::from_parts(IBig::from(3), 2)
+                .with_precision(0)
+                .unwrap()
+                .with_base::<2>(),
             Exact(FBinH::from_parts(IBig::from(27), 2))
         );
     }
@@ -227,7 +234,10 @@ fn test_base_change_exact_unlimited_precision() {
     {
         type F6 = FBig<HalfAway, 6>;
         assert_eq!(
-            F6::from_parts(IBig::from(9), -2).with_precision(0).unwrap().with_base::<2>(),
+            F6::from_parts(IBig::from(9), -2)
+                .with_precision(0)
+                .unwrap()
+                .with_base::<2>(),
             Exact(FBinH::from_parts(IBig::from(1), -2))
         );
     }
@@ -237,7 +247,10 @@ fn test_base_change_exact_unlimited_precision() {
     {
         type F12 = FBig<HalfAway, 12>;
         assert_eq!(
-            F12::from_parts(IBig::from(3), 2).with_precision(0).unwrap().with_base::<2>(),
+            F12::from_parts(IBig::from(3), 2)
+                .with_precision(0)
+                .unwrap()
+                .with_base::<2>(),
             Exact(FBinH::from_parts(IBig::from(27), 4))
         );
     }
@@ -248,7 +261,10 @@ fn test_base_change_exact_unlimited_precision() {
         type F12 = FBig<HalfAway, 12>;
         type F3 = FBig<HalfAway, 3>;
         assert_eq!(
-            F12::from_parts(IBig::from(5), 2).with_precision(0).unwrap().with_base::<3>(),
+            F12::from_parts(IBig::from(5), 2)
+                .with_precision(0)
+                .unwrap()
+                .with_base::<3>(),
             Exact(F3::from_parts(IBig::from(80), 2))
         );
     }
@@ -259,7 +275,10 @@ fn test_base_change_exact_unlimited_precision() {
         type F12 = FBig<HalfAway, 12>;
         type F4 = FBig<HalfAway, 4>;
         assert_eq!(
-            F12::from_parts(IBig::from(9), -1).with_precision(0).unwrap().with_base::<4>(),
+            F12::from_parts(IBig::from(9), -1)
+                .with_precision(0)
+                .unwrap()
+                .with_base::<4>(),
             Exact(F4::from_parts(IBig::from(3), -1))
         );
     }
@@ -270,7 +289,10 @@ fn test_base_change_exact_unlimited_precision() {
         type F3 = FBig<HalfAway, 3>;
         type F6 = FBig<HalfAway, 6>;
         assert_eq!(
-            F3::from_parts(IBig::from(5), 3).with_precision(0).unwrap().with_base::<6>(),
+            F3::from_parts(IBig::from(5), 3)
+                .with_precision(0)
+                .unwrap()
+                .with_base::<6>(),
             Exact(F6::from_parts(IBig::from(135), 0))
         );
     }
@@ -281,7 +303,10 @@ fn test_base_change_exact_unlimited_precision() {
         type F3 = FBig<HalfAway, 3>;
         type F9 = FBig<HalfAway, 9>;
         assert_eq!(
-            F3::from_parts(IBig::from(5), 3).with_precision(0).unwrap().with_base::<9>(),
+            F3::from_parts(IBig::from(5), 3)
+                .with_precision(0)
+                .unwrap()
+                .with_base::<9>(),
             Exact(F9::from_parts(IBig::from(15), 1))
         );
     }
@@ -292,7 +317,10 @@ fn test_base_change_exact_unlimited_precision() {
         type F64 = FBig<HalfAway, 64>;
         type F8 = FBig<HalfAway, 8>;
         assert_eq!(
-            F64::from_parts(IBig::from(7), 2).with_precision(0).unwrap().with_base::<8>(),
+            F64::from_parts(IBig::from(7), 2)
+                .with_precision(0)
+                .unwrap()
+                .with_base::<8>(),
             Exact(F8::from_parts(IBig::from(7), 4))
         );
     }
