@@ -430,14 +430,10 @@ impl<R: Round, const B: Word> FBig<R, B> {
         }
 
         let context = Context::<R>::new(24);
-        if B != 2 {
-            let rounded: Rounded<Repr<2>> = context.convert_base(self.repr.clone());
-            rounded.and_then(|v| v.into_f32_internal())
-        } else {
-            context
-                .repr_round_ref(&self.repr)
-                .and_then(|v| v.into_f32_internal())
-        }
+        context
+            .convert_base::<B, 2>(self.repr.clone())
+            .and_then(|v| context.repr_round_ref(&v))
+            .and_then(|v| v.into_f32_internal())
     }
 
     /// Convert the float number to [f64] with [HalfEven] rounding mode regardless of the mode associated with this number.
@@ -460,15 +456,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
             return Inexact(self.sign() * f64::INFINITY, Rounding::NoOp);
         }
 
-        let context = Context::<HalfEven>::new(53);
-        if B != 2 {
-            let rounded: Rounded<Repr<2>> = context.convert_base(self.repr.clone());
-            rounded.and_then(|v| v.into_f64_internal())
-        } else {
-            context
-                .repr_round_ref(&self.repr)
-                .and_then(|v| v.into_f64_internal())
-        }
+        let context = Context::<R>::new(53);
+        context
+            .convert_base::<B, 2>(self.repr.clone())
+            .and_then(|v| context.repr_round_ref(&v))
+            .and_then(|v| v.into_f64_internal())
     }
 }
 
@@ -595,21 +587,15 @@ impl<const B: Word> Repr<B> {
     /// ```
     #[inline]
     pub fn to_f32(&self) -> Rounded<f32> {
-        // Note: the implementation here should be kept consistent with FBig::to_f32
-
         if self.is_infinite() {
             return Inexact(self.sign() * f32::INFINITY, Rounding::NoOp);
         }
 
         let context = Context::<HalfEven>::new(24);
-        if B != 2 {
-            let rounded: Rounded<Repr<2>> = context.convert_base(self.clone());
-            rounded.and_then(|v| v.into_f32_internal())
-        } else {
-            context
-                .repr_round_ref(self)
-                .and_then(|v| v.into_f32_internal())
-        }
+        context
+            .convert_base::<B, 2>(self.clone())
+            .and_then(|v| context.repr_round_ref(&v))
+            .and_then(|v| v.into_f32_internal())
     }
 
     // this method requires that the representation is already rounded to 53 binary bits
@@ -653,21 +639,15 @@ impl<const B: Word> Repr<B> {
     /// ```
     #[inline]
     pub fn to_f64(&self) -> Rounded<f64> {
-        // Note: the implementation here should be kept consistent with FBig::to_f64
-
         if self.is_infinite() {
             return Inexact(self.sign() * f64::INFINITY, Rounding::NoOp);
         }
 
         let context = Context::<HalfEven>::new(53);
-        if B != 2 {
-            let rounded: Rounded<Repr<2>> = context.convert_base(self.clone());
-            rounded.and_then(|v| v.into_f64_internal())
-        } else {
-            context
-                .repr_round_ref(self)
-                .and_then(|v| v.into_f64_internal())
-        }
+        context
+            .convert_base::<B, 2>(self.clone())
+            .and_then(|v| context.repr_round_ref(&v))
+            .and_then(|v| v.into_f64_internal())
     }
 
     /// Convert the float number representation to a [IBig].

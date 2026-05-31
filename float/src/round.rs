@@ -59,6 +59,10 @@ pub mod mode {
 
 /// The adjustment of a rounding operation
 ///
+/// This enum represents the adjustment applied to the truncated significand
+/// (`NoOp = 0`, `AddOne = +1`, `SubOne = -1`), **not** the direction of the error
+/// relative to the true value.
+///
 /// See [the `mode` module][mode] for the corresponding error bounds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rounding {

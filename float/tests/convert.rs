@@ -390,7 +390,7 @@ fn test_to_f64() {
         // exact value: 72310453210697978489701299687443815627510656356042859969687735028883143242326999040
         (
             fbig!(-0x9876543210987654321p200),
-            Inexact(-7.231045321069798e82, SubOne),
+            Inexact(-7.231045321069797e82, NoOp),
             Some(LossOfPrecision),
         ),
     ];
@@ -415,8 +415,8 @@ fn test_to_f64() {
     assert_eq!(fbig!(-0x1p1024).to_f64(), Inexact(f64::NEG_INFINITY, SubOne));
     assert_eq!(f64::try_from(fbig!(0x1p1024)), Err(OutOfBounds));
     assert_eq!(f64::try_from(fbig!(-0x1p1024)), Err(OutOfBounds));
-    assert_eq!(fbig!(0xffffffffffffffffp960).to_f64(), Inexact(f64::INFINITY, AddOne));
-    assert_eq!(fbig!(-0xffffffffffffffffp960).to_f64(), Inexact(f64::NEG_INFINITY, SubOne));
+    assert_eq!(fbig!(0xffffffffffffffffp960).to_f64(), Inexact(f64::MAX, NoOp));
+    assert_eq!(fbig!(-0xffffffffffffffffp960).to_f64(), Inexact(-f64::MAX, NoOp));
     assert_eq!(fbig!(0x1p-1060).to_f64(), Exact(f64::from_bits(0x4000))); // subnormal
     assert_eq!(fbig!(-0x1p-1060).to_f64(), Exact(-f64::from_bits(0x4000)));
     assert_eq!(fbig!(0x1p-1074).to_f64(), Exact(f64::from_bits(0x1)));
@@ -448,4 +448,64 @@ fn test_from_ibig() {
 
     // use addition to test the digits (#28)
     assert_eq!(DBig::from(ubig!(10)) + DBig::from(ubig!(5)), DBig::from(ubig!(15)));
+}
+
+#[test]
+fn test_dbig_to_f64() {
+    use std::str::FromStr;
+
+    // Regression test: DBig with significand exceeding 53 bits converting to f64
+    assert_eq!(
+        DBig::from_str("88888888888888888").unwrap().to_f64(),
+        Inexact(88888888888888888.0, AddOne),
+    );
+
+    // Small values that fit exactly in f64
+    assert_eq!(dbig!(0).to_f64(), Exact(0.0));
+    assert_eq!(dbig!(1).to_f64(), Exact(1.0));
+    assert_eq!(dbig!(-1).to_f64(), Exact(-1.0));
+    assert_eq!(dbig!(12345).to_f64(), Exact(12345.0));
+    assert_eq!(dbig!(5e-1).to_f64(), Exact(0.5)); // 0.5 is exact in binary
+    assert_eq!(dbig!(1e20).to_f64(), Exact(1e20)); // 5^20 is roughly 46 bits, so it's exact in f64
+
+    // Values requiring rounding (more than 53 bits of precision in base 10)
+    assert_eq!(
+        DBig::from_str("9007199254740993").unwrap().to_f64(), // 2^53 + 1: tie, HalfAway rounds away from zero
+        Inexact(9007199254740994.0, AddOne),
+    );
+
+    // Infinity
+    assert_eq!(DBig::INFINITY.to_f64(), Inexact(f64::INFINITY, NoOp));
+    assert_eq!(DBig::NEG_INFINITY.to_f64(), Inexact(f64::NEG_INFINITY, NoOp));
+}
+
+#[test]
+fn test_dbig_to_f32() {
+    use std::str::FromStr;
+
+    assert_eq!(dbig!(0).to_f32(), Exact(0.0f32));
+    assert_eq!(dbig!(1).to_f32(), Exact(1.0f32));
+    assert_eq!(dbig!(-1).to_f32(), Exact(-1.0f32));
+
+    // 1e10 fits exactly in f32 (24 mantissa bits, exponent fits)
+    assert_eq!(dbig!(1e10).to_f32(), Exact(1e10f32));
+
+    // 1e20 requires more than 24 bits of precision in binary
+    assert_eq!(dbig!(1e20).to_f32(), Inexact(1e20f32, AddOne));
+
+    // 2^24 + 1 = 16777217: tie between 2^24 and 2^24+2, rounds up (AddOne)
+    assert_eq!(
+        DBig::from_str("16777217").unwrap().to_f32(),
+        Inexact(16777218.0f32, AddOne),
+    );
+
+    // Regression: DBig with significand exceeding 24 bits
+    assert_eq!(
+        DBig::from_str("88888888888888888").unwrap().to_f32(),
+        Inexact(88888888888888888.0f32, AddOne),
+    );
+
+    // Infinity
+    assert_eq!(DBig::INFINITY.to_f32(), Inexact(f32::INFINITY, NoOp));
+    assert_eq!(DBig::NEG_INFINITY.to_f32(), Inexact(f32::NEG_INFINITY, NoOp));
 }

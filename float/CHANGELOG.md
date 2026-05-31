@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fix rounding issues in `to_32()` and `to_f64()`.
+
 ## 0.4.4
 
 - Bump MSRV from 1.61 to 1.68.
