@@ -1,0 +1,60 @@
+# Standalone benchmark crate comparing dashu-int against other bigint
+# libraries. Kept out of the dashu workspace (see the root `exclude`) so it
+# never gets pulled into dashu-int's `--all-features` builds or its MSRV check
+# — this crate can require a newer toolchain (malachite needs Rust 1.90).
+#
+# Run (pure-Rust backends, no toolchain needed):
+#   cargo bench --manifest-path integer-bench/Cargo.toml
+# Add the rug (GNU GMP) backend (needs the GMP toolchain):
+#   cargo bench --manifest-path integer-bench/Cargo.toml --features gmp
+[package]
+name = "integer-bench"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "MIT OR Apache-2.0"
+rust-version = "1.90" # malachite 0.9 is edition 2024 / MSRV 1.90
+
+# Don't run libtest on the lib target under `cargo bench` — only the criterion
+# `[[bench]]` targets below should run, and they take criterion's CLI args.
+[lib]
+bench = false
+
+[features]
+default = []
+# Adds rug (links libgmp/libmpfr/libmpc) as an extra backend.
+gmp = ["dep:rug"]
+
+[dependencies]
+dashu-int = { path = "../integer", features = ["rand"] }
+rand_v08 = { version = "0.8.3", package = "rand" }
+
+# Comparison libraries (pure Rust; always built).
+ibig = "0.3.6"
+num-bigint = "0.4.6"
+num-integer = "0.1.46"
+num-traits = "0.2.19"
+malachite-nz = "0.9.1"
+malachite-base = "0.9.1"
+
+# rug links the system/GMP toolchain, so it is optional behind `gmp`.
+rug = { version = "1.30", optional = true }
+
+[dev-dependencies]
+criterion = { version = "0.5.1", features = ["html_reports"] }
+
+[[bench]]
+name = "primitive"
+harness = false
+
+[[bench]]
+name = "small_int"
+harness = false
+
+[[bench]]
+name = "workload"
+harness = false
+
+[[bench]]
+name = "shrinker"
+harness = false

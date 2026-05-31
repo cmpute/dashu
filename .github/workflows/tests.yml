@@ -127,6 +127,24 @@ jobs:
       - run: cargo build --features gmp
         working-directory: benchmark
 
+  smoke-test-integer-bench:
+    name: Smoke-test integer benchmarks
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      # Build every bench and run each one once (criterion `--test`): no
+      # measurement and no numbers reported, since CI is far too noisy for real
+      # benchmarking. This only checks the benches still compile and run.
+      # Pure-Rust backends only — the optional `gmp`/rug backend needs the GMP
+      # toolchain and is left out to keep this fast and dependency-free.
+      - run: cargo bench -- --test
+        working-directory: integer-bench
+
   build-aarch64:
     name: Build aarch64
     runs-on: ubuntu-latest

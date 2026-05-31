@@ -4,3 +4,5 @@
 /.vscode/settings.json
 benchmark/Cargo.lock
 benchmark/target
+integer-bench/Cargo.lock
+integer-bench/target
