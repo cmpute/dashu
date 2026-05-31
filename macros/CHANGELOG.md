@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.2
+
+- Replace `paste` dependency with `pastey` ([#58](https://github.com/cmpute/dashu/pull/58)).
+- Bump MSRV from 1.61 to 1.68.
+
 ## 0.4.1
 
 - Add `static_ubig!` and `static_ibig!` macros to support static integer creation ([#38](https://github.com/cmpute/dashu/issues/38)).

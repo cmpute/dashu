@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.2
 
 - Add `UBig::ones`.
 - Add `IBig::as_ubig`.
@@ -9,8 +9,11 @@
 - Implement `IBig::{from_le_bytes, from_be_bytes}` and `IBig::{to_le_bytes, to_be_bytes}`.
 - The alterative `Debug` output of `UBig` and `IBig` will include `(digits: x, bits: y)` instead of `(x digits, y bits)`.
 - Implement bit operations (`BitAnd`, `BitOr`, `BitXor`) between `UBig` and `IBig`, and between `IBig` and unsigned primitive integers.
-- Fix a bug in `UBig::split_bits` and `UBig::clear_high_bits`
-- Reduce unsafe code ([#52](https://github.com/cmpute/dashu/pull/52) thanks to @eduardosm)
+- Fix a bug in `UBig::split_bits` and `UBig::clear_high_bits`.
+- Reduce unsafe code ([#52](https://github.com/cmpute/dashu/pull/52) thanks to @eduardosm).
+- Fix `words_to_chunks` panic on 32-bit `Word` targets. ([#63](https://github.com/cmpute/dashu/pull/63)).
+- FIx bugs in `to_f64` and `sqrt_rem_large` ([#64](https://github.com/cmpute/dashu/pull/64)).
+- Bump MSRV from 1.61 to 1.68.
 
 ## 0.4.1
 

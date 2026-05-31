@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.4
+
+- Bump MSRV from 1.61 to 1.68.
+
 ## 0.4.3
 
 - Mark `FBig::from_str_native` as deprecated.

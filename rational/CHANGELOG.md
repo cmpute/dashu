@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.4.2
 
-- Implement `Div<RBig>` and `Div<Relaxed>` for `UBig`/`IBig`
+- Implement `Div<RBig>` and `Div<Relaxed>` for `UBig`/`IBig`.
 - Bugfix of division between big rational and big integers.
+- Bump MSRV from 1.61 to 1.68.
 
 ## 0.4.1
 

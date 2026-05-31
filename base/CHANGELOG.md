@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.2
+
+- Fix `log2_bounds` to return strictly enclosing bounds.
+- Bump MSRV from 1.61 to 1.68.
+
 ## 0.4.1
 
 - Mark `AbsEq` as deprecated.

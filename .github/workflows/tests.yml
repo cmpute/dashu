@@ -22,7 +22,7 @@ jobs:
           toolchain: ${{ matrix.rust }}
       - name: Drop postgres/diesel/dev-deps for Rust 1.68
         if: matrix.rust == '1.68'
-        run: python3 .github/workflows/drop_postgres_for_msrv.py
+        run: python3 .github/workflows/drop_incompatible_deps_for_msrv.py
       - name: Pin transitive deps for MSRV
         if: matrix.rust != 'stable'
         run: |
