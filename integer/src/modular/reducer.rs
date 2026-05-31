@@ -50,7 +50,7 @@ impl ConstDivisor {
         }
     }
 
-    fn convert_from_normalized(&self, target: &UBig) -> Reduced {
+    fn convert_from_normalized(&self, target: &UBig) -> Reduced<'_> {
         match &self.0 {
             ConstDivisorRepr::Single(d) => {
                 Reduced::from_single(ReducedWord(target.try_into().unwrap()), d)

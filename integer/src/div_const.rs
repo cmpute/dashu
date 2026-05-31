@@ -267,7 +267,7 @@ impl Display for ConstDivisor {
     }
 }
 
-impl<'r> Div<&'r ConstDivisor> for UBig {
+impl Div<&ConstDivisor> for UBig {
     type Output = UBig;
 
     #[inline]
@@ -275,7 +275,7 @@ impl<'r> Div<&'r ConstDivisor> for UBig {
         UBig(self.into_repr() / &rhs.0)
     }
 }
-impl<'l, 'r> Div<&'r ConstDivisor> for &'l UBig {
+impl Div<&ConstDivisor> for &UBig {
     type Output = UBig;
 
     #[inline]
@@ -283,14 +283,14 @@ impl<'l, 'r> Div<&'r ConstDivisor> for &'l UBig {
         UBig(self.clone().into_repr() / &rhs.0)
     }
 }
-impl<'r> DivAssign<&'r ConstDivisor> for UBig {
+impl DivAssign<&ConstDivisor> for UBig {
     #[inline]
-    fn div_assign(&mut self, rhs: &'r ConstDivisor) {
+    fn div_assign(&mut self, rhs: &ConstDivisor) {
         *self = mem::take(self) / rhs;
     }
 }
 
-impl<'r> Rem<&'r ConstDivisor> for UBig {
+impl Rem<&ConstDivisor> for UBig {
     type Output = UBig;
 
     #[inline]
@@ -298,7 +298,7 @@ impl<'r> Rem<&'r ConstDivisor> for UBig {
         UBig(self.into_repr() % &rhs.0)
     }
 }
-impl<'l, 'r> Rem<&'r ConstDivisor> for &'l UBig {
+impl Rem<&ConstDivisor> for &UBig {
     type Output = UBig;
 
     #[inline]
@@ -306,14 +306,14 @@ impl<'l, 'r> Rem<&'r ConstDivisor> for &'l UBig {
         UBig(self.repr() % &rhs.0)
     }
 }
-impl<'r> RemAssign<&'r ConstDivisor> for UBig {
+impl RemAssign<&ConstDivisor> for UBig {
     #[inline]
-    fn rem_assign(&mut self, rhs: &'r ConstDivisor) {
+    fn rem_assign(&mut self, rhs: &ConstDivisor) {
         *self = mem::take(self) % rhs;
     }
 }
 
-impl<'r> DivRem<&'r ConstDivisor> for UBig {
+impl DivRem<&ConstDivisor> for UBig {
     type OutputDiv = UBig;
     type OutputRem = UBig;
 
@@ -323,7 +323,7 @@ impl<'r> DivRem<&'r ConstDivisor> for UBig {
         (UBig(q), UBig(r))
     }
 }
-impl<'l, 'r> DivRem<&'r ConstDivisor> for &'l UBig {
+impl DivRem<&ConstDivisor> for &UBig {
     type OutputDiv = UBig;
     type OutputRem = UBig;
 
@@ -333,7 +333,7 @@ impl<'l, 'r> DivRem<&'r ConstDivisor> for &'l UBig {
         (UBig(q), UBig(r))
     }
 }
-impl<'r> DivRemAssign<&'r ConstDivisor> for UBig {
+impl DivRemAssign<&ConstDivisor> for UBig {
     type OutputRem = UBig;
     #[inline]
     fn div_rem_assign(&mut self, rhs: &ConstDivisor) -> UBig {
@@ -343,7 +343,7 @@ impl<'r> DivRemAssign<&'r ConstDivisor> for UBig {
     }
 }
 
-impl<'r> Div<&'r ConstDivisor> for IBig {
+impl Div<&ConstDivisor> for IBig {
     type Output = IBig;
 
     #[inline]
@@ -352,7 +352,7 @@ impl<'r> Div<&'r ConstDivisor> for IBig {
         IBig((repr / &rhs.0).with_sign(sign))
     }
 }
-impl<'l, 'r> Div<&'r ConstDivisor> for &'l IBig {
+impl Div<&ConstDivisor> for &IBig {
     type Output = IBig;
 
     #[inline]
@@ -361,14 +361,14 @@ impl<'l, 'r> Div<&'r ConstDivisor> for &'l IBig {
         IBig((repr / &rhs.0).with_sign(sign))
     }
 }
-impl<'r> DivAssign<&'r ConstDivisor> for IBig {
+impl DivAssign<&ConstDivisor> for IBig {
     #[inline]
-    fn div_assign(&mut self, rhs: &'r ConstDivisor) {
+    fn div_assign(&mut self, rhs: &ConstDivisor) {
         *self = mem::take(self) / rhs;
     }
 }
 
-impl<'r> Rem<&'r ConstDivisor> for IBig {
+impl Rem<&ConstDivisor> for IBig {
     type Output = IBig;
 
     #[inline]
@@ -377,7 +377,7 @@ impl<'r> Rem<&'r ConstDivisor> for IBig {
         IBig((repr % &rhs.0).with_sign(sign))
     }
 }
-impl<'l, 'r> Rem<&'r ConstDivisor> for &'l IBig {
+impl Rem<&ConstDivisor> for &IBig {
     type Output = IBig;
 
     #[inline]
@@ -386,14 +386,14 @@ impl<'l, 'r> Rem<&'r ConstDivisor> for &'l IBig {
         IBig((repr % &rhs.0).with_sign(sign))
     }
 }
-impl<'r> RemAssign<&'r ConstDivisor> for IBig {
+impl RemAssign<&ConstDivisor> for IBig {
     #[inline]
-    fn rem_assign(&mut self, rhs: &'r ConstDivisor) {
+    fn rem_assign(&mut self, rhs: &ConstDivisor) {
         *self = mem::take(self) % rhs;
     }
 }
 
-impl<'r> DivRem<&'r ConstDivisor> for IBig {
+impl DivRem<&ConstDivisor> for IBig {
     type OutputDiv = IBig;
     type OutputRem = IBig;
 
@@ -404,7 +404,7 @@ impl<'r> DivRem<&'r ConstDivisor> for IBig {
         (IBig(q.with_sign(sign)), IBig(r.with_sign(sign)))
     }
 }
-impl<'l, 'r> DivRem<&'r ConstDivisor> for &'l IBig {
+impl DivRem<&ConstDivisor> for &IBig {
     type OutputDiv = IBig;
     type OutputRem = IBig;
 
@@ -415,7 +415,7 @@ impl<'l, 'r> DivRem<&'r ConstDivisor> for &'l IBig {
         (IBig(q.with_sign(sign)), IBig(r.with_sign(sign)))
     }
 }
-impl<'r> DivRemAssign<&'r ConstDivisor> for IBig {
+impl DivRemAssign<&ConstDivisor> for IBig {
     type OutputRem = IBig;
     #[inline]
     fn div_rem_assign(&mut self, rhs: &ConstDivisor) -> IBig {
@@ -433,7 +433,7 @@ mod repr {
         TypedReprRef::{self, *},
     };
 
-    impl<'r> Div<&'r ConstDivisorRepr> for TypedRepr {
+    impl Div<&ConstDivisorRepr> for TypedRepr {
         type Output = Repr;
         fn div(self, rhs: &ConstDivisorRepr) -> Repr {
             match (self, rhs) {
@@ -488,7 +488,7 @@ mod repr {
         }
     }
 
-    impl<'r> Rem<&'r ConstDivisorRepr> for TypedRepr {
+    impl Rem<&ConstDivisorRepr> for TypedRepr {
         type Output = Repr;
 
         fn rem(self, rhs: &ConstDivisorRepr) -> Repr {
@@ -542,7 +542,7 @@ mod repr {
         }
     }
 
-    impl<'r> DivRem<&'r ConstDivisorRepr> for TypedRepr {
+    impl DivRem<&ConstDivisorRepr> for TypedRepr {
         type OutputDiv = Repr;
         type OutputRem = Repr;
 

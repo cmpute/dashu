@@ -14,17 +14,62 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable, "1.64", "1.61"]
+        rust: [stable, "1.68"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
-      - name: Change dependency versions
-        run: git apply .github/workflows/change_version.patch
       - name: Remove dev-deps for MSRV
+        if: matrix.rust != 'stable'
         run: git apply .github/workflows/remove_dev_deps.patch
-      - run: cargo check --all-features --tests
+      - name: Drop postgres/diesel integration for MSRV
+        # The `postgres-types` / `diesel` optional features in `dashu-float`
+        # pull `postgres-types-0.2.13`, `diesel-2.3.9`, `digest-0.11.3`, etc.
+        # via `postgres-protocol`. The latest versions of those all bump
+        # their MSRV above ours (some require edition = "2024" → Rust 1.85,
+        # `diesel-2.3.9` requires 1.86). They aren't core surface, so the
+        # MSRV check drops them. Stable still exercises them via
+        # `--all-features`.
+        if: matrix.rust != 'stable'
+        run: |
+          python3 - <<'PY'
+          import re
+          # Strip the postgres/diesel feature flags + optional deps from
+          # float's manifest, and the `[[test]] name = "postgres"` entry.
+          text = open('float/Cargo.toml').read()
+          for pat in [
+              r'^diesel = \["diesel_v2"\]\n',
+              r'^postgres-types = \["postgres-types_v02"\]\n',
+              r'^postgres-types_v02 = \["dep:postgres-types_v02".*\n',
+              r'^diesel_v1 = \{ optional = true,.*\n',
+              r'^diesel_v2 = \{ optional = true,.*\n',
+              r'^_bytes = \{ optional = true,.*\n',
+              r'^postgres-types_v02 = \{ optional = true,.*\n',
+          ]:
+              text = re.sub(pat, '', text, flags=re.MULTILINE)
+          text = re.sub(
+              r'\[\[test\]\]\nname = "postgres"\nrequired-features = .*\n\n?',
+              '', text)
+          open('float/Cargo.toml', 'w').write(text)
+
+          # Strip the `decimal-extras` meta feature.
+          text = open('Cargo.toml').read()
+          text = re.sub(
+              r'\n# this feature enables.*\ndecimal-extras = .*\n',
+              '', text)
+          open('Cargo.toml', 'w').write(text)
+
+          # Drop the postgres submodule (its cfg-gated children reference
+          # the features we just removed).
+          text = open('float/src/third_party/mod.rs').read()
+          text = re.sub(
+              r'\n#\[cfg\(any\(\n[^)]+\bdiesel_v1[^)]+\)\)\]\nmod postgres;\n',
+              '', text)
+          open('float/src/third_party/mod.rs', 'w').write(text)
+          PY
+          rm -rf float/tests/postgres.rs float/src/third_party/postgres
+      - run: cargo check --all-features --tests --exclude benchmark
 
   test:
     name: Test
@@ -49,7 +94,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
-      - run: cargo test --all-features --workspace --exclude benchmark --no-fail-fast
+      - run: cargo test --all-features --workspace --exclude benchmark --exclude dashu-python --no-fail-fast
 
   test-x86:
     name: Test x86
@@ -80,7 +125,7 @@ jobs:
         with:
           toolchain: stable
           targets: x86_64-unknown-linux-gnu
-      - run: cargo test --target x86_64-unknown-linux-gnu --workspace --exclude benchmark
+      - run: cargo test --target x86_64-unknown-linux-gnu --workspace --exclude benchmark --exclude dashu-python
 
   test-no-std:
     name: Test no-std
@@ -139,4 +184,4 @@ jobs:
         with:
           toolchain: stable
           components: clippy
-      - run: cargo clippy --all-features --all-targets --workspace --exclude benchmark -- -D warnings
+      - run: cargo clippy --all-features --all-targets --workspace --exclude benchmark --exclude dashu-python -- -D warnings

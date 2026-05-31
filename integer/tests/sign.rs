@@ -6,7 +6,12 @@ use dashu_int::{
 mod helper_macros;
 
 #[test]
-#[allow(clippy::double_neg)]
+// Old name `clippy::double_neg` was renamed in newer clippy to the rustc
+// `double_negations` lint. Allowing `unknown_lints` and
+// `renamed_and_removed_lints` lets either form be tolerated across
+// toolchains.
+#[allow(unknown_lints, renamed_and_removed_lints)]
+#[allow(clippy::double_neg, double_negations)]
 fn test_neg() {
     assert_eq!(-ubig!(123), ibig!(-123));
     assert_eq!(-ibig!(123), ibig!(-123));

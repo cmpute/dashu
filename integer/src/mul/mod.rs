@@ -24,7 +24,6 @@ const_assert!(THRESHOLD_KARATSUBA + 1 >= toom_3::MIN_LEN);
 
 mod helpers;
 mod karatsuba;
-mod schoenhagen;
 mod simple;
 mod toom_3;
 

@@ -90,8 +90,14 @@ fn words_to_chunks(words: &[Word], chunks_out: &mut [&mut [Word]], chunk_bits: u
         let words_per_chunk = chunk_bits / WORD_BITS_USIZE;
         for (i, chunk_out) in chunks_out.iter_mut().enumerate() {
             let start_pos = i * words_per_chunk;
-            let end_pos = start_pos + words_per_chunk;
-            chunk_out[..end_pos - start_pos].copy_from_slice(&words[start_pos..end_pos]);
+            // The last chunk may not have `words_per_chunk` source words —
+            // e.g. a 68-bit value chunked at 64 bits has `words = 3` on a
+            // 32-bit target but `words_per_chunk = 2`, so chunk index 1
+            // would otherwise index `words[2..4]` and panic. Clamp the read
+            // and leave the rest of the (zero-initialised) `chunk_out` alone.
+            let end_pos = (start_pos + words_per_chunk).min(words.len());
+            let copy_len = end_pos - start_pos;
+            chunk_out[..copy_len].copy_from_slice(&words[start_pos..end_pos]);
         }
     } else {
         let bit_len =
@@ -269,10 +275,7 @@ impl TypedReprRef<'_> {
                 let mut buffer_refs: Box<[&mut [Word]]> =
                     buffers.iter_mut().map(|buf| buf.as_mut()).collect();
                 words_to_chunks(words, &mut buffer_refs, chunk_bits);
-                buffers
-                    .into_iter()
-                    .map(Repr::from_buffer)
-                    .collect()
+                buffers.into_iter().map(Repr::from_buffer).collect()
             }
         }
     }
@@ -677,7 +680,7 @@ impl IBig {
                 // SAFETY: UBig and IBig are both transparent wrapper around the Repr type.
                 //         This conversion is only available for immutable references and
                 //         positive numbers, so that the sign will not be messed up.
-                unsafe { Some(core::mem::transmute(self)) }
+                unsafe { Some(core::mem::transmute::<&IBig, &UBig>(self)) }
             }
             Sign::Negative => None,
         }

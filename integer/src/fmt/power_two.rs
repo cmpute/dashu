@@ -119,7 +119,7 @@ struct PreparedLarge<'a> {
 
 impl PreparedLarge<'_> {
     /// Prepare a large number for formatting.
-    fn new(words: &[Word], radix: Digit) -> PreparedLarge {
+    fn new(words: &[Word], radix: Digit) -> PreparedLarge<'_> {
         debug_assert!(radix::is_radix_valid(radix) && radix.is_power_of_two());
         let log_radix = radix.trailing_zeros();
 
