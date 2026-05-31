@@ -4,9 +4,23 @@
 # their MSRV above ours (some require edition = "2024" -> Rust 1.85,
 # `diesel-2.3.9` requires 1.86). They aren't core surface, so the
 # MSRV check drops them. Stable still exercises them via `--all-features`.
+#
+# Also removes `criterion` and `postgres` dev-deps, whose transitive
+# dependencies are incompatible with older Cargo's dependency resolver.
 
 import re
 import shutil
+
+# Strip criterion from dev-dependencies and postgres from float's dev-deps.
+for manifest in ['base/Cargo.toml', 'integer/Cargo.toml', 'rational/Cargo.toml']:
+    text = open(manifest).read()
+    text = re.sub(r'\n*criterion = \{.*\n', '\n', text)
+    open(manifest, 'w').write(text)
+
+text = open('float/Cargo.toml').read()
+text = re.sub(r'\n*criterion = \{.*\n', '\n', text)
+text = re.sub(r'\n*postgres = \{.*\n', '\n', text)
+open('float/Cargo.toml', 'w').write(text)
 
 # Strip the postgres/diesel feature flags + optional deps from
 # float's manifest, and the `[[test]] name = "postgres"` entry.
@@ -22,7 +36,7 @@ for pat in [
 ]:
     text = re.sub(pat, '', text, flags=re.MULTILINE)
 text = re.sub(
-    r'\[\[test\]\]\nname = "postgres"\nrequired-features = .*\n\n?',
+    r'\[\[test\]\]\nname = "postgres"\nrequired-features = .*\n',
     '', text)
 open('float/Cargo.toml', 'w').write(text)
 
