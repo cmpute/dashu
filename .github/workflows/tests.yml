@@ -69,7 +69,7 @@ jobs:
           open('float/src/third_party/mod.rs', 'w').write(text)
           PY
           rm -rf float/tests/postgres.rs float/src/third_party/postgres
-      - run: cargo check --all-features --tests --exclude benchmark
+      - run: cargo check --all-features --tests
 
   test:
     name: Test
@@ -94,7 +94,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
-      - run: cargo test --all-features --workspace --exclude benchmark --exclude dashu-python --no-fail-fast
+      - run: cargo test --all-features --workspace --exclude dashu-python --no-fail-fast
 
   test-x86:
     name: Test x86
@@ -111,7 +111,7 @@ jobs:
       - run: |
           sudo apt update
           sudo apt install gcc-multilib
-      - run: cargo test --target i686-unknown-linux-gnu --workspace --exclude benchmark --exclude dashu-python
+      - run: cargo test --target i686-unknown-linux-gnu --workspace --exclude dashu-python
 
   test-x86_64:
     name: Test x86_64
@@ -125,7 +125,7 @@ jobs:
         with:
           toolchain: stable
           targets: x86_64-unknown-linux-gnu
-      - run: cargo test --target x86_64-unknown-linux-gnu --workspace --exclude benchmark --exclude dashu-python
+      - run: cargo test --target x86_64-unknown-linux-gnu --workspace --exclude dashu-python
 
   test-no-std:
     name: Test no-std
@@ -137,7 +137,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
-      - run: cargo test --no-default-features --features rand --workspace --exclude benchmark --exclude dashu-python
+      - run: cargo test --no-default-features --features rand --workspace --exclude dashu-python
 
   build-benchmark:
     name: Build benchmark
@@ -149,7 +149,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
-      - run: cargo build -p benchmark --features gmp
+      - run: cargo build --features gmp
+        working-directory: benchmark
 
   build-aarch64:
     name: Build aarch64
@@ -162,7 +163,7 @@ jobs:
         with:
           toolchain: stable
           targets: aarch64-unknown-linux-gnu
-      - run: cargo build --target aarch64-unknown-linux-gnu --all-features --workspace --exclude benchmark --exclude dashu-python
+      - run: cargo build --target aarch64-unknown-linux-gnu --all-features --workspace --exclude dashu-python
 
   fmt:
     name: Rustfmt
@@ -184,4 +185,4 @@ jobs:
         with:
           toolchain: stable
           components: clippy
-      - run: cargo clippy --all-features --all-targets --workspace --exclude benchmark --exclude dashu-python -- -D warnings
+      - run: cargo clippy --all-features --all-targets --workspace --exclude dashu-python -- -D warnings

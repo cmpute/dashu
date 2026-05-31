@@ -20,13 +20,13 @@ all-features = true
 [workspace]
 members = [
     "base",
-    "benchmark",
     "integer",
     "float",
     "macros",
     "python",
     "rational",
 ]
+exclude = ["benchmark"]
 default-members = ["base", "integer", "float", "rational", "macros"]
 
 [features]
