@@ -169,6 +169,18 @@ pub const fn ilog_exact(n: Word, base: Word) -> u32 {
     }
 }
 
+/// Factor `b` as `newb^a * r`, returning `(a, r)` where `gcd(r, newb) = 1`.
+/// Returns `(0, b)` if `newb` does not divide `b`.
+pub const fn factor_base(b: Word, newb: Word) -> (usize, Word) {
+    let mut a = 0;
+    let mut r = b;
+    while r % newb == 0 {
+        r /= newb;
+        a += 1;
+    }
+    (a, r)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

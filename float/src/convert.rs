@@ -17,7 +17,7 @@ use crate::{
         mode::{HalfAway, HalfEven, Zero},
         Round, Rounded, Rounding,
     },
-    utils::{ilog_exact, shl_digits, shl_digits_in_place, shr_digits},
+    utils::{factor_base, ilog_exact, shl_digits, shl_digits_in_place, shr_digits},
 };
 
 impl<R: Round> Context<R> {
@@ -505,13 +505,39 @@ impl<R: Round> Context<R> {
             }
         }
 
+        // Shortcut: when B and NewB share common factors, factor out the common part.
+        // B = NewB^a * r where gcd(r, NewB) = 1, so B^exp = NewB^(a*exp) * r^exp.
+        // For positive exponents the result is always exact (integer multiplication).
+        // For negative exponents, exact only when r^|exp| divides the significand.
+        let (a, r) = factor_base(B, NewB);
+        if a > 0 && r > 1 {
+            if repr.exponent >= 0 {
+                let r_exp = UBig::from_word(r).pow(repr.exponent as usize);
+                let significand = repr.significand * r_exp;
+                let new_repr = Repr::<NewB>::new(significand, a as isize * repr.exponent);
+                return self.repr_round(new_repr);
+            } else {
+                let r_exp: IBig = UBig::from_word(r).pow((-repr.exponent) as usize).into();
+                if repr.significand.is_multiple_of(&r_exp) {
+                    let new_repr =
+                        Repr::<NewB>::new(repr.significand / r_exp, a as isize * repr.exponent);
+                    return self.repr_round(new_repr);
+                }
+            }
+        }
+
+        // When NewB is a multiple of B: compute significand * B^exp directly
+        // as an integer, then express in base NewB.
+        if NewB % B == 0 && repr.exponent >= 0 {
+            let signif = repr.significand * Repr::<B>::BASE.pow(repr.exponent as usize);
+            let new_repr = Repr::<NewB>::new(signif, 0);
+            return self.repr_round(new_repr);
+        }
+
         // if the base cannot be converted losslessly, the precision must be set
         if self.precision == 0 {
             panic_unlimited_precision();
         }
-
-        // XXX: there's a potential optimization: if B is a multiple of NewB, then the factor B
-        // should be trivially removed first, but this requires full support of const generics.
 
         // choose a exponent threshold such that number with exponent smaller than this value
         // will be converted by directly evaluating the power. The threshold here is chosen such

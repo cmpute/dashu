@@ -164,6 +164,141 @@ fn test_base_change_unlimited_precision() {
 }
 
 #[test]
+#[rustfmt::skip::macros(fbig, dbig)]
+fn test_base_change_exact_unlimited_precision() {
+    use dashu_int::IBig;
+
+    type FBinH = FBig<HalfAway, 2>;
+    type DBinZ = FBig<Zero, 10>;
+
+    // B=10 → B=2, positive exponent (below threshold)
+    assert_eq!(
+        dbig!(5e1).with_precision(0).unwrap().with_base::<2>(),
+        Exact(FBinH::from_str_native("0x19p1").unwrap())
+    );
+    // B=10 → B=2, positive exponent exceeding 32-bit threshold
+    assert_eq!(
+        dbig!(1e20).with_precision(0).unwrap().with_base::<2>(),
+        Exact(FBinH::from_str_native("0x56BC75E2D631p20").unwrap())
+    );
+    // B=10 → B=2, negative exponent, exact division by r^|exp|
+    assert_eq!(
+        dbig!(5e-1).with_precision(0).unwrap().with_base::<2>(),
+        Exact(FBinH::from_str_native("0x1p-1").unwrap())
+    );
+    assert_eq!(
+        dbig!(125e-3).with_precision(0).unwrap().with_base::<2>(),
+        Exact(FBinH::from_str_native("0x1p-3").unwrap())
+    );
+    assert_eq!(
+        dbig!(3125e-5).with_precision(0).unwrap().with_base::<2>(),
+        Exact(FBinH::from_str_native("0x1p-5").unwrap())
+    );
+    // B=10 → B=2, negative exponent exceeding 32-bit threshold, exact division
+    // 5^20 = 95367431640625, and 95367431640625 × 10^(-20) = 2^(-20)
+    assert_eq!(
+        dbig!(95367431640625e-20).with_precision(0).unwrap().with_base::<2>(),
+        Exact(FBinH::from_str_native("0x1p-20").unwrap())
+    );
+    // B=2 → B=10, positive exponent (NewB is a multiple of B)
+    assert_eq!(
+        fbig!(0x1p20).with_precision(0).unwrap().with_base::<10>(),
+        Exact(DBinZ::from_str_native("1048576").unwrap())
+    );
+    assert_eq!(
+        fbig!(0x5p10).with_precision(0).unwrap().with_base::<10>(),
+        Exact(DBinZ::from_str_native("5120").unwrap())
+    );
+
+    // --- Other base combinations ---
+
+    // B=6 → B=2 (factor_base(6,2)=(1,3), positive exp)
+    // 3 × 6^2 = 108 = 27 × 2^2
+    {
+        type F6 = FBig<HalfAway, 6>;
+        assert_eq!(
+            F6::from_parts(IBig::from(3), 2).with_precision(0).unwrap().with_base::<2>(),
+            Exact(FBinH::from_parts(IBig::from(27), 2))
+        );
+    }
+
+    // B=6 → B=2 (factor_base(6,2)=(1,3), negative exp, exact)
+    // 9 × 6^(-2) = 9/36 = 0.25 = 1 × 2^(-2)
+    {
+        type F6 = FBig<HalfAway, 6>;
+        assert_eq!(
+            F6::from_parts(IBig::from(9), -2).with_precision(0).unwrap().with_base::<2>(),
+            Exact(FBinH::from_parts(IBig::from(1), -2))
+        );
+    }
+
+    // B=12 → B=2 (factor_base(12,2)=(2,3), positive exp)
+    // 3 × 12^2 = 432 = 27 × 2^4
+    {
+        type F12 = FBig<HalfAway, 12>;
+        assert_eq!(
+            F12::from_parts(IBig::from(3), 2).with_precision(0).unwrap().with_base::<2>(),
+            Exact(FBinH::from_parts(IBig::from(27), 4))
+        );
+    }
+
+    // B=12 → B=3 (factor_base(12,3)=(1,4), positive exp)
+    // 5 × 12^2 = 720 = 80 × 3^2
+    {
+        type F12 = FBig<HalfAway, 12>;
+        type F3 = FBig<HalfAway, 3>;
+        assert_eq!(
+            F12::from_parts(IBig::from(5), 2).with_precision(0).unwrap().with_base::<3>(),
+            Exact(F3::from_parts(IBig::from(80), 2))
+        );
+    }
+
+    // B=12 → B=4 (factor_base(12,4)=(1,3), negative exp, exact)
+    // 9 × 12^(-1) = 0.75 = 3 × 4^(-1)
+    {
+        type F12 = FBig<HalfAway, 12>;
+        type F4 = FBig<HalfAway, 4>;
+        assert_eq!(
+            F12::from_parts(IBig::from(9), -1).with_precision(0).unwrap().with_base::<4>(),
+            Exact(F4::from_parts(IBig::from(3), -1))
+        );
+    }
+
+    // B=3 → B=6 (NewB % B == 0, positive exp)
+    // 5 × 3^3 = 135
+    {
+        type F3 = FBig<HalfAway, 3>;
+        type F6 = FBig<HalfAway, 6>;
+        assert_eq!(
+            F3::from_parts(IBig::from(5), 3).with_precision(0).unwrap().with_base::<6>(),
+            Exact(F6::from_parts(IBig::from(135), 0))
+        );
+    }
+
+    // B=3 → B=9 (power of base: ilog_exact(9,3)=2)
+    // 5 × 3^3 = 135 = 15 × 9^1
+    {
+        type F3 = FBig<HalfAway, 3>;
+        type F9 = FBig<HalfAway, 9>;
+        assert_eq!(
+            F3::from_parts(IBig::from(5), 3).with_precision(0).unwrap().with_base::<9>(),
+            Exact(F9::from_parts(IBig::from(15), 1))
+        );
+    }
+
+    // B=64 → B=8 (power of base: ilog_exact(64,8)=2)
+    // 7 × 64^2 = 28672 = 7 × 8^4
+    {
+        type F64 = FBig<HalfAway, 64>;
+        type F8 = FBig<HalfAway, 8>;
+        assert_eq!(
+            F64::from_parts(IBig::from(7), 2).with_precision(0).unwrap().with_base::<8>(),
+            Exact(F8::from_parts(IBig::from(7), 4))
+        );
+    }
+}
+
+#[test]
 fn test_precision_change() {
     assert_eq!(FBin::ZERO.with_precision(1), Exact(FBin::ZERO));
     assert_eq!(FBin::ZERO.with_precision(1).unwrap().precision(), 1);
