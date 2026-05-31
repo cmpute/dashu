@@ -14,19 +14,40 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable, "1.68"]
+        rust: [stable, "1.85", "1.68"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
-      - name: Remove dev-deps for MSRV
+      # - name: Remove dev-deps for MSRV
+      #   if: matrix.rust != 'stable'
+      #   run: git apply .github/workflows/remove_dev_deps.patch
+      # - name: Drop postgres/diesel integration for MSRV
+      #   if: matrix.rust != 'stable'
+      #   run: python3 .github/workflows/drop_postgres_for_msrv.py
+      - name: Pin transitive deps for MSRV
         if: matrix.rust != 'stable'
-        run: git apply .github/workflows/remove_dev_deps.patch
-      - name: Drop postgres/diesel integration for MSRV
-        if: matrix.rust != 'stable'
-        run: python3 .github/workflows/drop_postgres_for_msrv.py
+        run: |
+          if [ "${{ matrix.rust }}" = "1.68" ]; then
+            echo "Pinning packages for Rust 1.68:"
+            echo "  lock_api      -> 0.4.12"
+            echo "  parking_lot   -> 0.12.3"
+            echo "  quote         -> 1.0.40"
+            echo "  unicode-ident -> 1.0.13"
+            cargo update -p lock_api@0.4.14 --precise 0.4.12
+            cargo update -p parking_lot@0.12.5 --precise 0.12.3
+            cargo update -p quote@1.0.45 --precise 1.0.40
+            cargo update -p unicode-ident@1.0.24 --precise 1.0.13
+          elif [ "${{ matrix.rust }}" = "1.85" ]; then
+            echo "Pinning packages for Rust 1.85:"
+            echo "  diesel        -> 2.2.12"
+            cargo update -p diesel@2.3.9 --precise 2.2.12
+          fi
       - run: cargo check --all-features --tests
+        if: matrix.rust != '1.68'
+      - run: cargo check --workspace --exclude dashu-python --features "std,num-order,serde,zeroize,rand,num-traits_v02"
+        if: matrix.rust == '1.68'
 
   test:
     name: Test
