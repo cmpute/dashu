@@ -1076,7 +1076,26 @@ mod repr {
         pub fn to_f64(self) -> Approximation<f64, Sign> {
             match self {
                 RefSmall(dword) => to_f64_small(dword as DoubleWord),
-                RefLarge(_) => self.to_f64_nontrivial(),
+                RefLarge(_) => {
+                    // On 16-bit Word targets a `RefLarge` value can have
+                    // `bit_len()` in [33, 64], which still fits in `u64`.
+                    // The `to_f64_nontrivial` path's shift arithmetic
+                    // assumes the value spans more than 64 bits, so route
+                    // small RefLarge values through the same direct cast
+                    // that `to_f64_small` uses.
+                    if self.bit_len() <= 64 {
+                        let v: u64 = self.try_to_unsigned().unwrap();
+                        let f = v as f64;
+                        let back = f as u64;
+                        match back.cmp(&v) {
+                            Ordering::Greater => Inexact(f, Sign::Positive),
+                            Ordering::Equal => Exact(f),
+                            Ordering::Less => Inexact(f, Sign::Negative),
+                        }
+                    } else {
+                        self.to_f64_nontrivial()
+                    }
+                }
             }
         }
 

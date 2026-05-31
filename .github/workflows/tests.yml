@@ -88,7 +88,7 @@ jobs:
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     env:
       RUST_BACKTRACE: 1
-      RUSTFLAGS: -D warnings --cfg force_bits="${{ matrix.bits }}$"
+      RUSTFLAGS: -D warnings --cfg force_bits="${{ matrix.bits }}"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
