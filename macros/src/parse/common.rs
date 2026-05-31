@@ -1,5 +1,5 @@
 use dashu_base::{ParseError, Sign};
-use paste::paste;
+use pastey::paste;
 use proc_macro2::{Delimiter, Group, Literal, Punct, Spacing, TokenStream, TokenTree};
 use quote::quote;
 
