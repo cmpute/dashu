@@ -497,8 +497,13 @@ mod repr {
 
     #[inline]
     fn are_dword_low_bits_nonzero(dword: DoubleWord, n: usize) -> bool {
-        let n = n.min(WORD_BITS_USIZE) as u32;
-        dword & ones_dword(n) != 0
+        // For n >= DWORD_BITS, every bit of the dword is "low" so just test for any
+        // set bit. `ones_dword(DWORD_BITS as u32)` would underflow its shift, so we
+        // must early-return here rather than rely on it.
+        if n >= DWORD_BITS_USIZE {
+            return dword != 0;
+        }
+        dword & ones_dword(n as u32) != 0
     }
 
     fn are_slice_low_bits_nonzero(words: &[Word], n: usize) -> bool {
