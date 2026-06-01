@@ -49,6 +49,21 @@ fn test_from_to_be_bytes() {
 }
 
 #[test]
+fn test_be_le_bytes_roundtrip_negative_power_of_two() {
+    for v in [
+        IBig::from(i64::MIN),
+        IBig::from(i128::MIN),
+        -(IBig::ONE << 128),
+        -(IBig::ONE << 192),
+        -(IBig::ONE << 256),
+        -(IBig::ONE << 1000),
+    ] {
+        assert_eq!(IBig::from_be_bytes(&v.to_be_bytes()), v, "be round-trip for {v}");
+        assert_eq!(IBig::from_le_bytes(&v.to_le_bytes()), v, "le round-trip for {v}");
+    }
+}
+
+#[test]
 fn test_from_to_chunks() {
     let empty: [UBig; 0] = [];
     assert_eq!(*UBig::ZERO.to_chunks(1), empty);

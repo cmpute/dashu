@@ -184,12 +184,11 @@ impl TypedReprRef<'_> {
             self.to_le_bytes()
         };
 
-        let leading_zeros = match self {
-            RefSmall(x) => x.leading_zeros(),
-            RefLarge(words) => words.last().unwrap().leading_zeros(),
+        let needs_sign_pad = match bytes.last() {
+            None => false, // pure zero, no bytes
+            Some(&b) => (b & 0x80 != 0) != negate,
         };
-        if leading_zeros % 8 == 0 {
-            // add extra byte representing the sign, because the top bit is used
+        if needs_sign_pad {
             bytes.push(if negate { 0xff } else { 0 });
         }
 
@@ -232,12 +231,11 @@ impl TypedReprRef<'_> {
             self.to_be_bytes()
         };
 
-        let leading_zeros = match self {
-            RefSmall(x) => x.leading_zeros(),
-            RefLarge(words) => words.last().unwrap().leading_zeros(),
+        let needs_sign_pad = match bytes.first() {
+            None => false, // pure zero, no bytes
+            Some(&b) => (b & 0x80 != 0) != negate,
         };
-        if leading_zeros % 8 == 0 {
-            // add extra byte representing the sign, because the top bit is used
+        if needs_sign_pad {
             bytes.insert(0, if negate { 0xff } else { 0 });
         }
 
