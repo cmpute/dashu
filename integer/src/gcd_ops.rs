@@ -326,11 +326,11 @@ mod repr {
             debug_assert!(residue.iter().all(|&w| w == 0));
             let g = Repr::from_buffer(g);
             let b = Repr::from_buffer(b).with_sign(b_sign);
-            return if swapped {
-                (g, b, Repr::zero())
+            if swapped {
+                return (g, b, Repr::zero());
             } else {
-                (g, Repr::zero(), b)
-            };
+                return (g, Repr::zero(), b);
+            }
         }
 
         let (shift, fast_div_top) = div::normalize(lhs_clone);
