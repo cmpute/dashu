@@ -57,7 +57,7 @@ mod repr {
         cmp, div, gcd, memory,
         memory::MemoryAllocation,
         mul,
-        primitive::{shrink_dword, PrimitiveSigned},
+        primitive::{locate_top_word_plus_one, shrink_dword, PrimitiveSigned},
         repr::{
             Repr,
             TypedRepr::{self, *},
@@ -316,7 +316,23 @@ mod repr {
             }
         };
 
-        // a = residue / lhs
+        // a = residue / lhs (an exact division)
+        //
+        // When `lhs` is a multiple of `rhs`, `a` is zero and `residue` is
+        // shorter than `lhs`. The division helper requires the dividend to be
+        // at least as long as the divisor, so handle that case directly instead
+        // of calling it with too short a dividend.
+        if locate_top_word_plus_one(residue) < lhs_len {
+            debug_assert!(residue.iter().all(|&w| w == 0));
+            let g = Repr::from_buffer(g);
+            let b = Repr::from_buffer(b).with_sign(b_sign);
+            if swapped {
+                return (g, b, Repr::zero());
+            } else {
+                return (g, Repr::zero(), b);
+            }
+        }
+
         let (shift, fast_div_top) = div::normalize(lhs_clone);
         let overflow =
             div::div_rem_unshifted_in_place(residue, lhs_clone, shift, fast_div_top, &mut memory);

@@ -132,6 +132,30 @@ fn test_gcd_ubig_ibig() {
 }
 
 #[test]
+fn test_gcd_ext_one_divides_the_other() {
+    // Regression: when one operand is a multiple of the other, the Bézout
+    // cofactor of the larger operand is zero, so reconstructing it as
+    // `(g - rhs*b) / lhs` divides a value with fewer words than `lhs`. For
+    // operands past the multi-word (≈5-word) threshold this tripped
+    // `assert!(lhs_len >= n)` in the divider, e.g. `gcd_ext(2^320, 2^160)`.
+    let cases = [
+        (ubig!(1) << 320, ubig!(1) << 160),
+        (ubig!(1) << 512, ubig!(1) << 64),
+        ((ubig!(1) << 320) * ubig!(3), ubig!(1) << 160),
+        (ubig!(1) << 4096, ubig!(1) << 320),
+    ];
+    for (a, b) in &cases {
+        let c = a.gcd(b);
+        let (g, x, y) = a.gcd_ext(b);
+        assert_eq!(&g, &c);
+        assert_eq!(x * a + y * b, g.into());
+        let (g, x, y) = b.gcd_ext(a);
+        assert_eq!(&g, &c);
+        assert_eq!(x * b + y * a, g.into());
+    }
+}
+
+#[test]
 #[should_panic]
 fn test_gcd_0() {
     let _ = ubig!(0).gcd(ubig!(0));
