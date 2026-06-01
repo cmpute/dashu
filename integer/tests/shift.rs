@@ -201,6 +201,7 @@ fn test_ibig_shr() {
         // A negative magnitude whose highest set bit sits in the upper word
         // of a DoubleWord, shifted by an amount that equals or exceeds its
         // bit length, must round toward -infinity to -1.
+        (-(ibig!(1) << 127), 127, ibig!(-1)),
         (-(ibig!(1) << 127), 128, ibig!(-1)),
         (-(ibig!(1) << 127), 200, ibig!(-1)),
         (-(ibig!(1) << 64), 128, ibig!(-1)),
