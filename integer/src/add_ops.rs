@@ -147,9 +147,7 @@ pub mod repr {
             buffer.push(lo);
             buffer.push(hi);
             buffer.push(1);
-            // Top word is the freshly-pushed 1, so the buffer is already
-            // normalised. Buffer::allocate(3)'s capacity is within the
-            // max_compact bound for len=3.
+            // Top word is the freshly-pushed 1: already canonical (len 3).
             Repr::from_buffer_normalized(buffer)
         } else {
             Repr::from_dword(res)
@@ -162,12 +160,8 @@ pub mod repr {
         if add::add_dword_in_place(&mut buffer, rhs) {
             buffer.push_resizing(1);
         }
-        // The original top word was non-zero (Repr invariant for Large) and
-        // adding into the low words can only preserve it or — if every
-        // upper word was Word::MAX and the carry chained all the way —
-        // zero it and push a fresh 1 above. Either way the new top word is
-        // non-zero. len only grows. push_resizing keeps capacity within
-        // default_capacity, which is ≤ max_compact_capacity.
+        // Canonical: adding a dword into a Large buffer only grows len and
+        // leaves a non-zero top word.
         Repr::from_buffer_normalized(buffer)
     }
 
@@ -182,12 +176,8 @@ pub mod repr {
         if overflow && add::add_one_in_place(&mut buffer[n..]) {
             buffer.push_resizing(1);
         }
-        // Callers pass `buffer` from a Large repr (len ≥ 3). Magnitude
-        // addition only ever grows the length. The final top word is either
-        // the longer operand's (already non-zero) top, a freshly-pushed
-        // carry-out 1, or — when both operands had the same length — the
-        // sum of two non-zero top words plus optional carry, which is
-        // non-zero because at least one input was non-zero.
+        // Canonical: magnitude addition only grows len and leaves a non-zero
+        // top word.
         debug_assert!(buffer.len() >= 3);
         Repr::from_buffer_normalized(buffer)
     }
@@ -256,11 +246,8 @@ pub mod repr {
     pub(crate) fn sub_large_dword(mut lhs: Buffer, rhs: DoubleWord) -> Repr {
         let overflow = add::sub_dword_in_place(&mut lhs, rhs);
         debug_assert!(!overflow);
-        // After subtracting a dword from a Large buffer, the top word ends
-        // up zero only when it was exactly 1 *and* a borrow propagated all
-        // the way up to it (every intermediate word was 0). In every other
-        // case the buffer remains in canonical heap form, so we can skip
-        // the pop_zeros + shrink_to_fit pass.
+        // Subtracting a dword only zeroes the top word on a full borrow chain;
+        // otherwise the buffer stays canonical and skips the trim.
         if *lhs.last().unwrap() != 0 {
             Repr::from_buffer_normalized(lhs)
         } else {
@@ -332,9 +319,7 @@ pub mod repr {
         if add::add_one_in_place(&mut buffer) {
             buffer.push_resizing(1);
         }
-        // Same reasoning as `add_large_dword`: starting from Large (len ≥ 3,
-        // top non-zero), adding one cannot shorten the buffer and the new
-        // top word is non-zero.
+        // Canonical: add-one from a Large buffer keeps len and a non-zero top.
         debug_assert!(buffer.len() >= 3);
         Repr::from_buffer_normalized(buffer)
     }

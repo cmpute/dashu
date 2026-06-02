@@ -336,18 +336,11 @@ impl Repr {
         }
     }
 
-    /// Create a `Repr` from a buffer the caller asserts is already in canonical
-    /// heap form: `buffer.len() >= 3`, the top word is non-zero, and the
-    /// capacity is within `Buffer::max_compact_capacity(len)`.
-    ///
-    /// Skips the `pop_zeros` and `shrink_to_fit` work that [Repr::from_buffer]
-    /// performs. Intended for in-place arithmetic helpers where the result
-    /// shape is known from the operation: e.g. adding a small RHS into a
-    /// `Large` buffer cannot reduce `len` or zero the top word, so neither
-    /// trim is needed.
-    ///
-    /// In debug mode the preconditions are asserted; violating them in release
-    /// would leave a `Repr` whose invariants are broken.
+    /// Create a `Repr` from a buffer the caller guarantees is already in
+    /// canonical heap form (`len >= 3`, top word non-zero, capacity within
+    /// `max_compact_capacity`), skipping the `pop_zeros` / `shrink_to_fit` that
+    /// [Repr::from_buffer] does. The preconditions are debug-asserted; violating
+    /// them in release leaves a `Repr` with broken invariants.
     #[inline]
     pub(crate) fn from_buffer_normalized(buffer: Buffer) -> Self {
         debug_assert!(buffer.len() >= 3);
