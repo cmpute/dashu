@@ -53,8 +53,8 @@ impl<'a> Ord for TypedReprRef<'a> {
 impl Ord for UBig {
     #[inline]
     fn cmp(&self, other: &UBig) -> Ordering {
-        // UBig capacities are always positive, so magnitude_cmp gives the
-        // correct ordering and we skip the sign-handling in signed_cmp.
+        // UBig is non-negative, so comparing magnitudes is the full
+        // comparison; no sign handling needed.
         self.0.magnitude_cmp(&other.0)
     }
 }
