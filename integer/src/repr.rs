@@ -486,7 +486,7 @@ impl Repr {
             // and the bound check inside `Buffer::allocate_raw` would
             // never fire.
             let new_cap = len + len / 8 + 2;
-            debug_assert!(new_cap >= 3 && new_cap <= Buffer::MAX_CAPACITY);
+            debug_assert!((3..=Buffer::MAX_CAPACITY).contains(&new_cap));
 
             let layout = core::alloc::Layout::from_size_align_unchecked(
                 new_cap * mem::size_of::<Word>(),
@@ -579,7 +579,11 @@ impl Clone for Repr {
                 self.capacity = src.capacity;
                 return;
             }
-            let src_sign = if src_cap_raw > 0 { Sign::Positive } else { Sign::Negative };
+            let src_sign = if src_cap_raw > 0 {
+                Sign::Positive
+            } else {
+                Sign::Negative
+            };
 
             // SAFETY: we checked that abs(src.capacity) > 2
             let (src_ptr, src_len) = src.data.heap;
