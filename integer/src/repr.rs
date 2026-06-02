@@ -428,12 +428,9 @@ impl Repr {
                 buffer.push(ones_word(hi_bits as _));
             }
 
-            // Route through `from_buffer` so the canonical encoding invariant
-            // is preserved (a 128-bit ones value has length 2 here and must
-            // be promoted to the inline DoubleWord form). Direct transmute
-            // would leave a heap-encoded value where `data.heap.1 < 3`, which
-            // is a representation that `PartialEq` no longer recognises as
-            // equal to its inline counterpart.
+            // Route through `from_buffer` to canonicalise: a 128-bit ones value
+            // has length 2 here and must become the inline form, otherwise the
+            // (now scale-sensitive) PartialEq wouldn't see it as equal.
             Self::from_buffer(buffer)
         }
     }
@@ -558,12 +555,9 @@ impl Drop for Repr {
 impl PartialEq for Repr {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        // The inline encoding is canonical: equal values share the same
-        // `(capacity_sign, capacity_magnitude, data.inline)` triple for any
-        // capacity ≤ 2, and the heap branch has its own canonicalisation via
-        // the `len` field. So sign+scale mismatch ⇒ unequal, and otherwise
-        // we can compare the relevant words directly without going through
-        // the `as_sign_slice` slice-materialisation path.
+        // The encoding is canonical, so a sign or scale (inline vs heap)
+        // mismatch is immediately unequal; otherwise compare the words directly
+        // instead of materialising slices via `as_sign_slice`.
         let cap_a = self.capacity.get();
         let cap_b = other.capacity.get();
         // Sign mismatch: zero is canonically positive (no negative zero), so
@@ -584,10 +578,7 @@ impl PartialEq for Repr {
         // SAFETY: capacity tells us which union variant is live.
         unsafe {
             if inline_a {
-                // Compare as a single DoubleWord rather than [Word; 2] —
-                // these compile to the same hardware comparison but LLVM
-                // emits tighter code (and no spurious memcmp call) when the
-                // operands are scalar u128s.
+                // Compare as one DoubleWord (tighter codegen than [Word; 2]).
                 let dw_a = double_word(self.data.inline[0], self.data.inline[1]);
                 let dw_b = double_word(other.data.inline[0], other.data.inline[1]);
                 dw_a == dw_b
