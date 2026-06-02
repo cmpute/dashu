@@ -443,34 +443,12 @@ impl Repr {
         self
     }
 
-    /// Slow path for `Clone::clone`. Heap-resident values only
-    /// (capacity > 2 in absolute value).
+    /// Slow path for `Clone::clone`: heap-resident values only (|capacity| > 2).
     ///
-    /// Allocates directly via `alloc::alloc::alloc` rather than going
-    /// through `Buffer::allocate` + `push_slice` + `mem::transmute`.
-    /// That bypass saves:
-    ///
-    /// * the redundant `0 < capacity <= MAX_CAPACITY` assertion inside
-    ///   `Buffer::allocate_raw` (we just computed `new_cap` from a
-    ///   bounded `len`);
-    /// * `push_slice`'s `len <= capacity - 0` check (we own the buffer
-    ///   we just allocated, the only `len` ever written is the input
-    ///   `len`);
-    /// * `Buffer::allocate_exact`'s second check on the same bound;
-    /// * the `mem::transmute(Buffer) -> Repr` shape and the conditional
-    ///   sign-flip dance — the signed capacity is set directly.
-    ///
-    /// `#[inline(never)]` (without `#[cold]`) keeps the inline fast path
-    /// tiny at every `Clone::clone` instantiation and gives LLVM a stable
-    /// call boundary so the inline path's code-layout doesn't depend on
-    /// how aggressively the heap path gets considered for inlining.
-    ///
-    /// Removing the attribute lets LLVM occasionally inline this back —
-    /// which leaves the inline microbench unchanged but regresses
-    /// `ibig_clone/large` by ~5 pp (probably i-cache: the inlined
-    /// 30-instruction heap body lands inside the bench's hot loop).
-    /// `#[cold]` was also dropped (`shrinker_consider` gains ~3 pp without
-    /// it; see commit notes).
+    /// Allocates directly instead of going through `Buffer::allocate` +
+    /// `push_slice` + `mem::transmute`, skipping the redundant capacity/length
+    /// bound checks and the sign-flip dance. Kept `#[inline(never)]` so the
+    /// inline fast path in `clone` stays small.
     #[inline(never)]
     fn clone_heap(&self) -> Self {
         debug_assert!(self.capacity.get().unsigned_abs() > 2);
@@ -535,15 +513,9 @@ impl Repr {
 impl Clone for Repr {
     #[inline]
     fn clone(&self) -> Self {
-        // Inline case (abs(capacity) <= 2): just copy the union and the
-        // signed capacity verbatim. Avoids the `sign_capacity` extract +
-        // `with_sign` re-apply round-trip the old implementation did.
-        //
-        // Profiled hegel-rust shrinker workloads spend ~13 % of total Ir
-        // in this function, almost entirely on the inline case (values
-        // are i64- or i128-sized). Inlining the trivial path here lets
-        // it disappear into the caller; the heavier heap path is split
-        // out into a `#[cold]` helper.
+        // Inline case (|capacity| <= 2): copy the union and signed capacity
+        // verbatim, avoiding the `sign_capacity` + `with_sign` round-trip the
+        // old implementation did. The heap path is split into `clone_heap`.
         if self.capacity.get().unsigned_abs() <= 2 {
             return Repr {
                 data: ReprData {
@@ -564,11 +536,8 @@ impl Clone for Repr {
 
         // SAFETY: see the comments inside the block
         unsafe {
-            // Fast path: src is inline. Same shape as `clone`'s fast path
-            // — copy union + signed capacity, with a rare dealloc when
-            // self was previously heap-resident. The shrinker's
-            // ChoiceNode = (IBig, IBig, IBig, IBig) clone pattern is
-            // dominated by inline-source clones.
+            // Fast path: src is inline. Copy union + signed capacity, with a
+            // rare dealloc when self was previously heap-resident.
             if src_cap_raw.unsigned_abs() <= 2 {
                 if cap > 2 {
                     // release the old buffer if necessary
