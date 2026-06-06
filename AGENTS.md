@@ -1,5 +1,3 @@
-# AGENTS.md
-
 ## Overview
 
 dashu is a library set of arbitrary precision numbers (big integers, floats, rationals) implemented in pure Rust. It aims to be a Rust-native alternative to GNU GMP + MPFR.
@@ -81,6 +79,10 @@ Keep the `## Unreleased` section updated as you go.
 - Common prefixes: `Fix`, `Add`, `Implement`, `Bump`, `Extract`, `Replace`
 - Branch naming: `fix-<topic>`, `feat/<topic>`
 - Squash-merge is used on PRs
+
+## dashu-int internals
+
+When implementing algorithms that manipulate word arrays (`&[Word]`), prefer the existing `Buffer` type over `Vec<Word>`. `Buffer` provides in-place operations like `erase_front`, `push_zeros_front`, `truncate`, and works with `MemoryAllocation` for scratch space — all without `std` or extra allocations. If you find yourself reaching for `Vec<Word>`, consider whether `Buffer` or `MemoryAllocation` would be a better fit.
 
 ## Common pitfalls
 

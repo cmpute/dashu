@@ -185,6 +185,38 @@ fn ubig_modulo_pow(criterion: &mut Criterion) {
     group.finish();
 }
 
+fn ubig_pow_large_base(criterion: &mut Criterion) {
+    let mut group = criterion.benchmark_group("ubig_pow_large_base");
+    group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
+
+    let base = UBig::from(12345u32);
+    for log_exp in 1..=6usize {
+        let exp = 10usize.pow(log_exp as u32);
+        group.bench_with_input(BenchmarkId::from_parameter(exp), &exp, |bencher, exp| {
+            bencher.iter(|| base.pow(*exp))
+        });
+    }
+
+    group.finish();
+}
+
+fn ubig_ilog_large(criterion: &mut Criterion) {
+    let mut rng = StdRng::seed_from_u64(SEED);
+    let mut group = criterion.benchmark_group("ubig_ilog_large");
+    group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
+
+    let base = UBig::from(3u8);
+    for log_bits in 1..=6usize {
+        let bits = 10usize.pow(log_bits as u32);
+        let n = random_ubig(bits, &mut rng);
+        group.bench_with_input(BenchmarkId::from_parameter(bits), &n, |bencher, tn| {
+            bencher.iter(|| tn.ilog(&base))
+        });
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     ubig_add,
@@ -200,6 +232,8 @@ criterion_group!(
     ubig_pow,
     ubig_modulo_mul,
     ubig_modulo_pow,
+    ubig_pow_large_base,
+    ubig_ilog_large,
 );
 
 criterion_main!(benches);

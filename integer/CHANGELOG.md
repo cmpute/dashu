@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Improve
+- Logarithm for very large values uses power-sequence decomposition, replacing iterative single-step multiplication.
+
 ## 0.4.2
 
 - Add `UBig::ones`.

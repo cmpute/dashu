@@ -67,6 +67,7 @@ impl EstimatedLog2 for IBig {
 }
 
 pub(crate) mod repr {
+    use alloc::vec::Vec;
     use core::cmp::Ordering;
 
     use dashu_base::EstimatedLog2;
@@ -78,7 +79,8 @@ pub(crate) mod repr {
         div,
         error::panic_invalid_log_oprand,
         helper_macros::debug_assert_zero,
-        math::max_exp_in_word,
+        math::{bit_len, max_exp_in_word},
+        memory::MemoryAllocation,
         mul, mul_ops, pow,
         primitive::{extend_word, highest_dword, shrink_dword, split_dword, WORD_BITS_USIZE},
         radix,
@@ -86,6 +88,7 @@ pub(crate) mod repr {
             Repr,
             TypedReprRef::{self, *},
         },
+        shift,
     };
 
     impl TypedReprRef<'_> {
@@ -229,34 +232,99 @@ pub(crate) mod repr {
     fn log_large(target: &[Word], base: &[Word]) -> (usize, Repr) {
         debug_assert!(cmp_in_place(target, base).is_ge()); // this ensures est >= 1
 
-        // first estimates the result
-        let log2_self = log2_bounds_large(target).0;
-        let log2_base = log2_bounds_large(base).1;
-        let mut est = (log2_self / log2_base) as usize; // float to int is underestimate
-        est = est.max(1); // sometimes est can be zero due to estimation error
-        let mut est_pow = if est == 1 {
+        // Use power-sequence decomposition:
+        // Build base^(2^i) by repeated squaring, then binary-decompose the target.
+        // This replaces O(est_error) trial multiplications with O(log(est)) squarings + divisions.
+        // Number of squarings until base^(2^i) exceeds target is at most
+        // floor(log2(target_bits / base_bits)) + 1, plus the initial entry.
+        let target_bits = target.len() * WORD_BITS_USIZE;
+        let base_bits = base.len() * WORD_BITS_USIZE;
+        let max_powers = bit_len(target_bits / base_bits) as usize + 2;
+        let mut powers: Vec<Repr> = Vec::with_capacity(max_powers);
+        powers.push(Repr::from_buffer(Buffer::from(base))); // base^(2^0) = base^1
+
+        loop {
+            let prev = powers.last().unwrap();
+            if 2 * prev.len() - 1 > target.len() {
+                break;
+            }
+            let next = mul_ops::repr::square_large(prev.as_slice());
+            if cmp_in_place(next.as_slice(), target).is_gt() {
+                break;
+            }
+            powers.push(next);
+        }
+
+        // Binary decomposition from largest power to smallest.
+        // current holds the un-decomposed part; est accumulates the exponent.
+        let mut current = Buffer::from(target);
+        let mut est = 0usize;
+
+        for (i, p) in powers.iter().enumerate().rev() {
+            let p_words = p.as_slice();
+            if current.len() < p_words.len() {
+                continue;
+            }
+            if current.len() == p_words.len() && cmp_in_place(&current, p_words).is_lt() {
+                continue;
+            }
+
+            // current >= base^(2^i): divide current by base^(2^i)
+            let mut p_buf = Buffer::from(p_words);
+            let mut allocation = MemoryAllocation::new(crate::memory::add_layout(
+                crate::memory::array_layout::<Word>(current.len() + 1),
+                div::memory_requirement_exact(current.len(), p_buf.len()),
+            ));
+            let (shift, fast_div_top) = div::normalize(&mut p_buf);
+            let quo_carry = div::div_rem_unshifted_in_place(
+                &mut current,
+                &p_buf,
+                shift,
+                fast_div_top,
+                &mut allocation.memory(),
+            );
+            current.push_resizing(quo_carry);
+
+            // After division: current = [remainder | quotient]
+            // We keep the quotient for further decomposition
+            let n = p_buf.len();
+            debug_assert_zero!(shift::shr_in_place(&mut current[..n], shift));
+
+            // Move quotient to the front of the buffer
+            let quo_len = current.len() - n;
+            if quo_len == 0 {
+                current.truncate(0);
+            } else {
+                current.erase_front(n);
+            }
+
+            est += 1 << i;
+        }
+
+        drop(powers);
+
+        // Compute base^est for the return value
+        let est_pow = compute_power(base, est);
+
+        // Verify and fix off-by-one (shouldn't happen with exact decomposition, but be safe)
+        debug_assert!(cmp_in_place(est_pow.as_slice(), target).is_le());
+        let next_pow = mul_ops::repr::mul_large(est_pow.as_slice(), base);
+        if cmp_in_place(next_pow.as_slice(), target).is_le() {
+            return (est + 1, next_pow);
+        }
+
+        (est, est_pow)
+    }
+
+    fn compute_power(base: &[Word], exp: usize) -> Repr {
+        if exp <= 1 {
             Repr::from_buffer(Buffer::from(base))
         } else if base.len() == 2 {
             let base_dword = highest_dword(base);
-            pow::repr::pow_dword_base(base_dword, est)
+            pow::repr::pow_dword_base(base_dword, exp)
         } else {
-            pow::repr::pow_large_base(base, est)
-        };
-        assert!(cmp_in_place(est_pow.as_slice(), target).is_le());
-
-        // then fix the error by trials
-        loop {
-            let next_pow = mul_ops::repr::mul_large(est_pow.as_slice(), base);
-            let cmp = cmp_in_place(next_pow.as_slice(), target);
-            if cmp.is_le() {
-                est_pow = next_pow;
-                est += 1;
-            }
-            if cmp.is_ge() {
-                break;
-            }
+            pow::repr::pow_large_base(base, exp)
         }
-        (est, est_pow)
     }
 
     #[inline]
