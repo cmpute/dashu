@@ -39,7 +39,7 @@ jobs:
           elif [ "${{ matrix.rust }}" = "1.85" ]; then
             echo "Pinning packages for Rust 1.85:"
             echo "  diesel        -> 2.2.12"
-            cargo update -p diesel --precise 2.2.12
+            cargo update -p diesel@2 --precise 2.2.12
           fi
       - run: cargo check --all-features --tests
         if: matrix.rust != '1.68'
