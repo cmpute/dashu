@@ -1139,6 +1139,10 @@ mod repr {
     }
 }
 
-// TODO(next): implement `to_digits` and `from_digits`, that supports base up to Word::MAX.
+// TODO(v0.5): implement `to_digits` and `from_digits`, that supports base up to Word::MAX.
 //             This method won't be optimized as much as the InRadix formatter,
 //             because InRadix has a limit on the radix.
+//
+//             For small bases, we should use the same algorithm with `InRadix` formatter,
+//             therefore we need break change here (limit the 'Digit' type to u8), and only
+//             share algorithm for base < 256

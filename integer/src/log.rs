@@ -307,7 +307,7 @@ pub(crate) mod repr {
         let est_pow = compute_power(base, est);
 
         // Verify and fix off-by-one (shouldn't happen with exact decomposition, but be safe)
-        debug_assert!(cmp_in_place(est_pow.as_slice(), target).is_le());
+        assert!(cmp_in_place(est_pow.as_slice(), target).is_le());
         let next_pow = mul_ops::repr::mul_large(est_pow.as_slice(), base);
         if cmp_in_place(next_pow.as_slice(), target).is_le() {
             return (est + 1, next_pow);

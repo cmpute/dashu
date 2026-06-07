@@ -1,6 +1,6 @@
 ## Overview
 
-dashu is a library set of arbitrary precision numbers (big integers, floats, rationals) implemented in pure Rust. It aims to be a Rust-native alternative to GNU GMP + MPFR.
+dashu is a library set of arbitrary precision numbers implemented in pure Rust, aiming to be a Rust-native alternative to GNU GMP + MPFR.
 
 **MSRV is a hard constraint** — do not bump it unless absolutely necessary. The current MSRV is maintained in `README.md`; when modifying code, ensure it remains compatible.
 
@@ -24,8 +24,8 @@ The `dashu` crate at the root is a meta-crate that re-exports all types from the
 # Check (matches CI for stable)
 cargo check --all-features --tests
 
-# Test
-cargo test --all-features --workspace --exclude dashu-python --no-fail-fast
+# Test (for local testing, differ from CI)
+cargo test --workspace --exclude dashu-python
 
 # Lint (warnings are errors)
 cargo clippy --all-features --all-targets --workspace --exclude dashu-python -- -D warnings
@@ -72,13 +72,10 @@ Format:
 
 Keep the `## Unreleased` section updated as you go. 
 
-## Commit style
+## dashu-float internals
 
-- Always run `cargo fmt --all` before committing — formatting is strictly enforced in CI
-- Imperative mood: "Fix overflow in division" not "Fixed overflow"
-- Common prefixes: `Fix`, `Add`, `Implement`, `Bump`, `Extract`, `Replace`
-- Branch naming: `fix-<topic>`, `feat/<topic>`
-- Squash-merge is used on PRs
+- Estimating the number of digits can be costly — prefer using `log2_bounds` and `repr.digits_ub`/`digits_lb` instead of computing exact digit counts.
+- The number of digits in an `FBig` floating point number must always be less than or equal to the context precision. This invariant can be temporarily violated during internal calculations, where functions on the `Context` type should be used instead of the public API.
 
 ## dashu-int internals
 

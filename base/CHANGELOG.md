@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Add
+- Fast path for integer `sqrt` using native `f64::sqrt` on small inputs (requires `std` feature)
+
 ## 0.4.2
 
 - Fix `log2_bounds` to return strictly enclosing bounds.
