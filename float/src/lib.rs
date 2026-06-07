@@ -76,6 +76,7 @@ mod fmt;
 mod helper_macros;
 mod iter;
 mod log;
+pub mod math;
 mod mul;
 pub mod ops;
 mod parse;

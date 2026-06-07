@@ -1,0 +1,11 @@
+[package]
+name = "fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+dashu-float = { path = "../float" }
+dashu-base = { path = "../base" }
+rand = "0.10.1"
+rug = "1.24"
