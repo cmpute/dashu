@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Add
+- `UBig::from_u64` and `IBig::from_i64`, const on 32-bit and 64-bit targets.
+
 ### Improve
 - Logarithm for very large values uses power-sequence decomposition, replacing iterative single-step multiplication.
 

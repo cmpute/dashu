@@ -139,6 +139,29 @@ impl UBig {
         Self(Repr::from_dword(dword))
     }
 
+    /// Create a UBig from a u64.
+    ///
+    /// This function is const on 32-bit and 64-bit targets.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::UBig;
+    /// assert_eq!(UBig::from_u64(42), UBig::from(42u64));
+    /// assert_eq!(UBig::from_u64(10_939_058_860_032_000), UBig::from(10_939_058_860_032_000u64));
+    /// ```
+    #[cfg(not(any(target_pointer_width = "16", force_bits = "16")))]
+    #[inline]
+    pub const fn from_u64(n: u64) -> Self {
+        Self(Repr::from_dword(n as crate::DoubleWord))
+    }
+
+    #[cfg(any(target_pointer_width = "16", force_bits = "16"))]
+    #[inline]
+    pub fn from_u64(n: u64) -> Self {
+        Self::from(n)
+    }
+
     /// Convert a sequence of [Word][crate::Word]s into a UBig
     ///
     /// # Examples

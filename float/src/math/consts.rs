@@ -75,7 +75,7 @@ fn chudnovsky_bs(a: usize, b: usize) -> (UBig, UBig, IBig) {
 
         let k = a as u64;
         let p = UBig::from(6 * k - 5) * (2 * k - 1) * (6 * k - 1);
-        let q = UBig::from(k).pow(3) * UBig::from(10_939_058_860_032_000_u64);
+        let q = UBig::from(k).pow(3) * UBig::from_u64(10_939_058_860_032_000);
         let t_val = IBig::from_parts_const(Sign::Positive, 13_591_409)
             + IBig::from_parts_const(Sign::Positive, 545_140_134) * k;
         let t_abs = &p * t_val.unsigned_abs();

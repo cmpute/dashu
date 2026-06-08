@@ -2,8 +2,16 @@
 
 ## Unreleased
 
+### Add
+- Implement trigonometric functions (`sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sin_cos`) for `FBig` and `Context<R>` ([#60](https://github.com/cmpute/dashu/pull/60)).
+- Add π constant computation (`FBig::pi()` and `Context::pi()`) using the Chudnovsky algorithm with binary splitting ([#60](https://github.com/cmpute/dashu/pull/60)).
+- Add `FpResult` enum to handle non-finite math operation results (NaN, Infinite, Overflow, Underflow) without panicking ([#60](https://github.com/cmpute/dashu/pull/60)).
+- Add `panic_nan`, `panic_overflow`, `panic_underflow`, and `panic_infinite` helpers to the `error` module.
+
+### Fix
 - Fix rounding issues in `to_32()` and `to_f64()` (fixes [#53](https://github.com/cmpute/dashu/issues/53) and [#56](https://github.com/cmpute/dashu/issues/56)).
 - Fix `FBig::fract()` inflating context precision for values smaller than one.
+- Fix `split_at_point_internal` using incorrect fractional scale for numbers smaller than one, causing incorrect rounding results.
 
 ## 0.4.4
 

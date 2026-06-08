@@ -434,6 +434,32 @@ fn test_to_f64() {
     );
 }
 
+#[cfg(not(any(target_pointer_width = "16", force_bits = "16")))]
+#[test]
+fn test_from_u64_i64_const() {
+    const U64_ZERO: UBig = UBig::from_u64(0);
+    const U64_SMALL: UBig = UBig::from_u64(42);
+    const U64_MAX: UBig = UBig::from_u64(u64::MAX);
+    const U64_LARGE: UBig = UBig::from_u64(10_939_058_860_032_000);
+
+    assert_eq!(U64_ZERO, UBig::ZERO);
+    assert_eq!(U64_SMALL, UBig::from(42u64));
+    assert_eq!(U64_MAX, UBig::from(u64::MAX));
+    assert_eq!(U64_LARGE, UBig::from(10_939_058_860_032_000u64));
+
+    const I64_ZERO: IBig = IBig::from_i64(0);
+    const I64_POSITIVE: IBig = IBig::from_i64(42);
+    const I64_NEGATIVE: IBig = IBig::from_i64(-42);
+    const I64_MAX: IBig = IBig::from_i64(i64::MAX);
+    const I64_MIN: IBig = IBig::from_i64(i64::MIN);
+
+    assert_eq!(I64_ZERO, IBig::ZERO);
+    assert_eq!(I64_POSITIVE, IBig::from(42i64));
+    assert_eq!(I64_NEGATIVE, IBig::from(-42i64));
+    assert_eq!(I64_MAX, IBig::from(i64::MAX));
+    assert_eq!(I64_MIN, IBig::from(i64::MIN));
+}
+
 #[test]
 fn test_from_f32() {
     assert_eq!(UBig::try_from(0f32), Ok(ubig!(0)));

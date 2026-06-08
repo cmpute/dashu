@@ -161,6 +161,35 @@ impl IBig {
         Self(Repr::from_dword(dword).with_sign(sign))
     }
 
+    /// Create an IBig from an i64.
+    ///
+    /// This function is const on 32-bit and 64-bit targets.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::IBig;
+    /// assert_eq!(IBig::from_i64(-42), IBig::from(-42i64));
+    /// assert_eq!(IBig::from_i64(42), IBig::from(42i64));
+    /// ```
+    #[cfg(not(any(target_pointer_width = "16", force_bits = "16")))]
+    #[inline]
+    pub const fn from_i64(n: i64) -> Self {
+        let sign = if n >= 0 {
+            Sign::Positive
+        } else {
+            Sign::Negative
+        };
+        let mag = n.unsigned_abs() as crate::DoubleWord;
+        Self(Repr::from_dword(mag).with_sign(sign))
+    }
+
+    #[cfg(any(target_pointer_width = "16", force_bits = "16"))]
+    #[inline]
+    pub fn from_i64(n: i64) -> Self {
+        Self::from(n)
+    }
+
     /// Create an IBig from a static sequence of [Word][crate::Word]s and a sign.
     ///
     /// See [UBig::from_static_words] for why this method is unsafe. This method
