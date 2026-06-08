@@ -46,17 +46,27 @@ impl<R: Round, const B: Word> FBig<R, B> {
     }
 
     // Split the float number at the radix point, assuming it exists (the number is not a integer).
-    // The method returns (integral part, fractional part, fraction precision).
+    // The method returns (integral part, fractional part, fractional scale).
     //
     // Different from the public `split_at_point()` API, this method doesn't take the ownership of
     // this number.
     pub(crate) fn split_at_point_internal(&self) -> (IBig, IBig, usize) {
         debug_assert!(self.repr.exponent < 0);
+        let shift = (-self.repr.exponent) as usize;
         if self.repr.smaller_than_one() {
-            return (IBig::ZERO, self.repr.significand.clone(), self.context.precision);
+            // For numbers smaller than 1, the integral part is zero and the stored
+            // significand is the whole fractional payload.
+            //
+            // The third return value is the fractional scale, i.e. the number of
+            // radix digits after the point. It must be -exponent, because callers
+            // such as round_fract use it as the denominator exponent B^scale.
+            //
+            // This is intentionally not self.context.precision: context precision is
+            // the significant-digit precision of the float, while this value describes
+            // the positional scale of the fractional part.
+            return (IBig::ZERO, self.repr.significand.clone(), shift);
         }
 
-        let shift = (-self.repr.exponent) as usize;
         let (hi, lo) = split_digits_ref::<B>(&self.repr.significand, shift);
         (hi, lo, shift)
     }
@@ -119,10 +129,13 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ///
     /// Panics if the number is infinte
     #[inline]
+    #[must_use]
     pub fn fract(&self) -> Self {
         assert_finite(&self.repr);
         if self.repr.exponent >= 0 {
             return Self::ZERO;
+        } else if self.repr.smaller_than_one() {
+            return self.clone();
         }
 
         let (_, lo, precision) = self.split_at_point_internal();

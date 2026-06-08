@@ -37,6 +37,26 @@ pub const fn panic_power_negative_base() -> ! {
 }
 
 /// Panics when taking an even order root of an negative number
-pub(crate) fn panic_root_negative() -> ! {
+pub fn panic_root_negative() -> ! {
     panic!("the root is a complex number!")
+}
+
+/// Panics when the result of an operation is NaN
+pub fn panic_nan() -> ! {
+    panic!("the result of the operation is NaN!")
+}
+
+/// Panics when the result of an operation overflows
+pub fn panic_overflow() -> ! {
+    panic!("the result of the operation overflowed!")
+}
+
+/// Panics when the result of an operation underflows
+pub fn panic_underflow() -> ! {
+    panic!("the result of the operation underflowed!")
+}
+
+/// Panics when the result of an operation is an exact infinity
+pub fn panic_infinite() -> ! {
+    panic!("the result of the operation is an exact infinity!")
 }

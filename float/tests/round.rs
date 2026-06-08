@@ -1,4 +1,7 @@
-use dashu_float::DBig;
+use core::str::FromStr;
+
+use dashu_base::{Approximation::*, ParseError};
+use dashu_float::{round::Rounding::NoOp, DBig};
 
 mod helper_macros;
 
@@ -122,6 +125,39 @@ fn test_trunc_fract() {
     assert_eq!(dbig!(12e-1).fract().precision(), 1);
     assert_eq!(dbig!(12e-2).trunc().precision(), 0);
     assert_eq!(dbig!(12e-2).fract().precision(), 2);
+}
+
+/// Numbers with |self| < 1 can be stored with a single significand digit and a
+/// negative exponent (e.g. 0.009 = 9e-3). Rounding must use `-exponent` as the
+/// fractional scale, not `context.precision`; otherwise 9 / 10^1 = 0.9 rounds up.
+#[test]
+fn test_round_smaller_than_one_uses_exponent_scale() -> Result<(), ParseError> {
+    let a = DBig::from_str("0.009")?.with_precision(1).unwrap();
+    assert_eq!(a.round(), DBig::ZERO);
+
+    let b = DBig::from_str("0.09")?.with_precision(1).unwrap();
+    assert_eq!(b.round(), DBig::ZERO);
+
+    let c = DBig::from_str("1e-5")?.with_precision(3).unwrap();
+    assert_eq!(c.round(), DBig::ZERO);
+    assert_eq!(c.to_int(), Inexact(ibig!(0), NoOp));
+
+    Ok(())
+}
+
+/// `.fract()` must not inflate context precision to `-exponent` when trailing
+/// zeros were normalized away from the significand.
+#[test]
+fn test_fract_preserves_context_precision() -> Result<(), ParseError> {
+    let a = DBig::from_str("1e-5")?.with_precision(3).unwrap();
+    assert_eq!(a.fract(), a);
+    assert_eq!(a.fract().precision(), 3);
+
+    let b = DBig::from_str("9e-5")?.with_precision(1).unwrap();
+    assert_eq!(b.fract(), b);
+    assert_eq!(b.fract().precision(), 1);
+
+    Ok(())
 }
 
 #[test]
