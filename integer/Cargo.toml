@@ -69,3 +69,8 @@ required-features = ["num-order"]
 name = "primitive"
 required-features = ["rand"]
 harness = false
+
+[[bench]]
+name = "io"
+required-features = ["rand"]
+harness = false

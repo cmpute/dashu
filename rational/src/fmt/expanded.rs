@@ -2,7 +2,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::{self, Display, Formatter, LowerExp, UpperExp, Write};
-use dashu_base::{Sign, UnsignedAbs};
+use dashu_base::{DivRem, Sign, UnsignedAbs};
 use dashu_int::{UBig, Word};
 
 use crate::rbig::{RBig, Relaxed};
@@ -42,10 +42,8 @@ struct Expanded {
 /// TODO(v0.5): use `RadixInfo` fast dividers from `dashu_int` for batched
 /// digit extraction instead of one-digit-at-a-time `rem * radix / den`.
 fn expand(num: &UBig, den: &UBig, radix: u8, max_digits: usize, track_repetend: bool) -> Expanded {
-    let int_part = num / den;
+    let (int_part, mut rem) = num.div_rem(den);
     let int_digits = ubig_to_digits(&int_part, radix);
-
-    let mut rem = num % den;
     let mut frac_digits: Vec<u8> = Vec::with_capacity(max_digits);
     let mut seen: Option<BTreeMap<UBig, usize>> = if track_repetend {
         Some(BTreeMap::new())
@@ -68,8 +66,8 @@ fn expand(num: &UBig, den: &UBig, radix: u8, max_digits: usize, track_repetend: 
 
         // rem = rem * radix
         let scaled = &rem * radix;
-        let digit = &scaled / den;
-        rem = &scaled % den;
+        let (digit, new_rem) = scaled.div_rem(den);
+        rem = new_rem;
 
         // digit is guaranteed 0..radix-1 (radix <= 36), so fits in u8
         frac_digits.push(u8::try_from(&digit).unwrap());
@@ -97,9 +95,9 @@ fn ubig_to_digits(n: &UBig, radix: u8) -> Vec<u8> {
     let mut cur = n.clone();
     let radix_ubig = UBig::from(radix);
     while !cur.is_zero() {
-        let d = &cur % &radix_ubig;
+        let (q, d) = cur.div_rem(&radix_ubig);
         digits.push(u8::try_from(&d).unwrap());
-        cur = &cur / &radix_ubig;
+        cur = q;
     }
     if digits.is_empty() {
         digits.push(0);
@@ -255,8 +253,7 @@ impl InExpanded<'_> {
         let exp_marker = if self.radix == 10 { exp_char } else { '@' };
 
         // Compute integer part and remainder
-        let int_part = &self.num_abs / self.denominator;
-        let rem = &self.num_abs % self.denominator;
+        let (int_part, rem) = (&self.num_abs).div_rem(self.denominator);
 
         let exp: isize;
         let mut significand_digits: Vec<u8>;
@@ -282,8 +279,8 @@ impl InExpanded<'_> {
                     break;
                 }
                 let scaled = &cur_rem * self.radix;
-                let d = &scaled / self.denominator;
-                cur_rem = &scaled % self.denominator;
+                let (d, new_rem) = scaled.div_rem(self.denominator);
+                cur_rem = new_rem;
                 if !d.is_zero() {
                     leading_zeros += 1;
                     exp = -leading_zeros;
@@ -340,8 +337,8 @@ fn expand_fraction(mut rem: UBig, den: &UBig, radix: u8, n: usize) -> Vec<u8> {
             digits.push(0);
         } else {
             let scaled = &rem * radix;
-            let digit = &scaled / den;
-            rem = &scaled % den;
+            let (digit, new_rem) = scaled.div_rem(den);
+            rem = new_rem;
             digits.push(u8::try_from(&digit).unwrap());
         }
     }

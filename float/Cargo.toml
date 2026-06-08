@@ -83,3 +83,8 @@ required-features = ["postgres-types", "diesel_v1", "diesel_v2", "diesel_v2/post
 name = "primitive"
 required-features = ["rand"]
 harness = false
+
+[[bench]]
+name = "io"
+required-features = ["rand"]
+harness = false
