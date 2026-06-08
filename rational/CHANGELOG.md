@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Add
+
+- Implement `Binary`, `Octal`, `LowerHex`, and `UpperHex` formatting for `RBig` and `Relaxed`.
+- Add `RBig::in_radix` and `Relaxed::in_radix` methods for formatting in arbitrary radices (2-36).
+- Add `RBig::in_expanded` and `Relaxed::in_expanded` methods for printing the positional expansion of a rational number, with support for precision control, repetend display (`#` flag), and scientific notation (`e`/`E`).
+
 ## 0.4.2
 
 - Implement `Div<RBig>` and `Div<Relaxed>` for `UBig`/`IBig`.

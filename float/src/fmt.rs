@@ -34,12 +34,8 @@ impl<'a, 'b> DebugStructHelper for fmt::DebugStruct<'a, 'b> {
 
 impl<const B: Word> fmt::Debug for Repr<B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // shortcut for infinities
-        if self.is_infinite() {
-            return match self.sign() {
-                Sign::Positive => f.write_str("inf"),
-                Sign::Negative => f.write_str("-inf"),
-            };
+        if let Some(result) = self.write_if_infinite(f) {
+            return result;
         }
 
         if f.alternate() {
@@ -68,15 +64,23 @@ impl<R: Round> fmt::Debug for Context<R> {
 }
 
 impl<const B: Word> Repr<B> {
+    /// If this value is infinite, write "inf" / "-inf" and return `Some(Ok(()))`.
+    fn write_if_infinite(&self, f: &mut Formatter<'_>) -> Option<fmt::Result> {
+        if self.is_infinite() {
+            Some(match self.sign() {
+                Sign::Positive => f.write_str("inf"),
+                Sign::Negative => f.write_str("-inf"),
+            })
+        } else {
+            None
+        }
+    }
+
     /// Print the float number with given rounding mode.
     /// The rounding may happen if the precision option of the formatter is set.
     fn fmt_round<R: Round>(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        // shortcut for infinities
-        if self.is_infinite() {
-            return match self.sign() {
-                Sign::Positive => f.write_str("inf"),
-                Sign::Negative => f.write_str("-inf"),
-            };
+        if let Some(result) = self.write_if_infinite(f) {
+            return result;
         }
 
         // first perform rounding before actual printing if necessary
@@ -275,12 +279,8 @@ impl<const B: Word> Repr<B> {
     ) -> fmt::Result {
         assert!(!(B != 2 && use_hexadecimal), "hexadecimal is only relevant for base 2");
 
-        // shortcut for infinities
-        if self.is_infinite() {
-            return match self.sign() {
-                Sign::Positive => f.write_str("inf"),
-                Sign::Negative => f.write_str("-inf"),
-            };
+        if let Some(result) = self.write_if_infinite(f) {
+            return result;
         }
 
         // first perform rounding before actual printing if necessary

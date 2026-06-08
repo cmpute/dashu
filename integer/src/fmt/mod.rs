@@ -324,13 +324,7 @@ impl InRadixWriter<'_> {
 
         // Adding sign and prefix to width will not overflow, because Buffer::MAX_CAPACITY leaves
         // (WORD_BITS - 1) spare bits before we would hit overflow.
-        let sign = if self.sign == Negative {
-            "-"
-        } else if f.sign_plus() {
-            "+"
-        } else {
-            ""
-        };
+        let sign = self.sign.as_sign_str(f.sign_plus());
         // In bytes, but it's OK because everything is ASCII.
         width += sign.len() + self.prefix.len();
 
@@ -395,13 +389,7 @@ impl DoubleEnd<'_> {
         prepared_high: &mut dyn PreparedForFormatting,
         prepared_low: Option<&mut dyn PreparedForFormatting>,
     ) -> fmt::Result {
-        let sign = if self.sign == Negative {
-            "-"
-        } else if f.sign_plus() {
-            "+"
-        } else {
-            ""
-        };
+        let sign = self.sign.as_sign_str(f.sign_plus());
         f.write_str(sign)?;
 
         let mut digit_writer = DigitWriter::new(f, DigitCase::NoLetters);

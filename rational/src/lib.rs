@@ -55,12 +55,14 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+extern crate alloc;
+
 mod add;
 mod cmp;
 mod convert;
 mod div;
 mod error;
-mod fmt;
+pub mod fmt;
 mod helper_macros;
 mod mul;
 pub mod ops;

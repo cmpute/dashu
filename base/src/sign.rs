@@ -136,6 +136,30 @@ pub enum Sign {
 
 use Sign::*;
 
+impl Sign {
+    /// Return the sign as a string slice for formatting.
+    ///
+    /// Returns `"-"` for [`Negative`], `"+"` for [`Positive`] when `sign_plus`
+    /// is true, or `""` for [`Positive`] when `sign_plus` is false.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_base::Sign;
+    /// assert_eq!(Sign::Negative.as_sign_str(false), "-");
+    /// assert_eq!(Sign::Positive.as_sign_str(true), "+");
+    /// assert_eq!(Sign::Positive.as_sign_str(false), "");
+    /// ```
+    #[inline]
+    pub const fn as_sign_str(self, sign_plus: bool) -> &'static str {
+        match self {
+            Sign::Negative => "-",
+            Sign::Positive if sign_plus => "+",
+            _ => "",
+        }
+    }
+}
+
 impl From<bool> for Sign {
     /// Convert boolean value to [Sign], returns [Negative] for `true`
     #[inline]
