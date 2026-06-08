@@ -7,6 +7,7 @@
 
 ### Improve
 - Logarithm for very large values uses power-sequence decomposition, replacing iterative single-step multiplication.
+- Improve power-of-two base formatting ([#3](https://github.com/cmpute/dashu/pull/3))
 
 ## 0.4.2
 
