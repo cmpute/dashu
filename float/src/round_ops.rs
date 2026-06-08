@@ -3,7 +3,7 @@ use crate::{
     fbig::FBig,
     repr::{Context, Repr},
     round::{mode, Round},
-    utils::{digit_len, shr_digits, split_digits, split_digits_ref},
+    utils::{shr_digits, split_digits, split_digits_ref},
 };
 use dashu_base::Sign;
 use dashu_int::{IBig, Word};
