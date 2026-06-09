@@ -88,3 +88,8 @@ harness = false
 name = "io"
 required-features = ["rand"]
 harness = false
+
+[[bench]]
+name = "math_cache"
+required-features = ["rand"]
+harness = false

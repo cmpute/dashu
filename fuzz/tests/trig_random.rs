@@ -21,18 +21,56 @@ fn test_reproduce_assertion_failure() {
 #[test]
 #[ignore]
 fn test_pi_fuzz() {
-    for prec in (10..1000).step_by(53) {
+    for prec in (10..10000).step_by(37) {
         let pi_dashu = DBig::pi(prec).with_rounding::<HalfEven>();
         let bits = (prec * 3322).div_ceil(1000) + 32;
         let pi_rug = Float::with_val(bits as u32, rug::float::Constant::Pi);
         let s_r_val = DBig::from_str(&pi_rug.to_string_radix(10, Some(prec)))
             .unwrap()
             .with_rounding::<HalfEven>();
-        assert!(
-            (pi_dashu.clone() - s_r_val).abs()
-                <= DBig::from_parts(10.into(), -(isize::try_from(prec).unwrap())),
-            "Pi mismatch at prec={prec}: dashu={pi_dashu}, rug={pi_rug}"
+        assert_eq!(
+            pi_dashu, s_r_val,
+            "Pi mismatch at prec={prec}: dashu={}, rug={}",
+            pi_dashu, s_r_val
         );
+    }
+}
+
+#[test]
+#[ignore]
+fn test_pi_fuzz_concurrent() {
+    use std::thread;
+
+    let mut handles = vec![];
+
+    // Spawn 16 threads
+    for thread_id in 0..16 {
+        let handle = thread::spawn(move || {
+            // Seed a local random generator so each thread tests different precisions
+            let mut rng = rand::rngs::StdRng::seed_from_u64(thread_id as u64 + 42);
+            for _ in 0..5000 {
+                // Random precision between 10 and 5000
+                let prec = rng.random_range(10..5000);
+
+                let pi_dashu = DBig::pi(prec).with_rounding::<HalfEven>();
+                let bits = (prec * 3322).div_ceil(1000) + 32;
+                let pi_rug = Float::with_val(bits as u32, rug::float::Constant::Pi);
+                let s_r_val = DBig::from_str(&pi_rug.to_string_radix(10, Some(prec)))
+                    .unwrap()
+                    .with_rounding::<HalfEven>();
+
+                assert_eq!(
+                    pi_dashu, s_r_val,
+                    "Pi mismatch at prec={prec} (thread {thread_id}): dashu={}, rug={}",
+                    pi_dashu, s_r_val
+                );
+            }
+        });
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        handle.join().unwrap();
     }
 }
 

@@ -7,6 +7,26 @@ use crate::{
 use dashu_base::{BitTest, Sign, UnsignedAbs};
 use dashu_int::{IBig, UBig};
 
+use crate::math::cache::MathCache;
+
+#[derive(Clone)]
+pub(crate) struct PiState {
+    pub num_terms: usize,
+    pub p: UBig,
+    pub q: UBig,
+    pub t: IBig,
+}
+
+static PI_CACHE: MathCache<PiState> = MathCache::new();
+
+/// Clears the global caches for mathematical constants.
+///
+/// This function is used to free the memory held by the global caches
+/// for high-precision mathematical constants (like π).
+pub fn clear_math_caches() {
+    PI_CACHE.clear();
+}
+
 impl<R: Round> Context<R> {
     /// Calculate π using the Chudnovsky algorithm with binary splitting.
     ///
@@ -20,9 +40,22 @@ impl<R: Round> Context<R> {
     /// multiplication algorithms (like Toom-3 or FFT) as the numbers grow,
     /// leading to significant performance gains over simple iterative summation.
     ///
-    /// // TODO: consider adding a static cache for π at common precisions.
+    /// # Performance Note
+    /// The incremental `MathCache` provides the most benefit for monotonically increasing
+    /// precision requests (e.g. iterative refinement). For completely random high-precision
+    /// requests, the overhead of merging large unbalanced binary-split blocks may sometimes
+    /// exceed the cost of recomputing the perfectly balanced tree from scratch.
     #[must_use]
     pub fn pi<const B: Word>(&self) -> Rounded<FBig<R, B>> {
+        const CACHE_REUSE_THRESHOLD: usize = 8;
+        const BITS_PER_TERM: usize = 47; // ~14.18 decimal digits * log2(10)
+
+        // Heuristic: below this threshold, the overhead of acquiring the lock and cloning
+        // the Arc can exceed the cost of computing from scratch under high concurrency.
+        // 100 terms (~1400 digits) is a conservative value that performs well across
+        // a range of hardware. Tune upward for highly parallel workloads.
+        const MIN_CACHE_TERMS: usize = 100;
+
         assert_limited_precision(self.precision);
 
         // Calculate required bits based on target precision in base B.
@@ -36,9 +69,52 @@ impl<R: Round> Context<R> {
         let num_terms = (bits * 100 / 4708) + 1;
         let guard_bits = num_terms.bit_len() + 32;
         let work_bits = bits + guard_bits;
+        let required_bits = num_terms * BITS_PER_TERM;
 
-        // Evaluate the series components using binary splitting
-        let (_p, q, t) = chudnovsky_bs(0, num_terms);
+        let (q, t) = if num_terms < MIN_CACHE_TERMS
+            || PI_CACHE
+                .peek(|state| {
+                    state.num_terms >= num_terms
+                        && state.q.bit_len() > required_bits * CACHE_REUSE_THRESHOLD
+                })
+                .unwrap_or(false)
+        {
+            let (_, q, t) = chudnovsky_bs(0, num_terms);
+            (q, t)
+        } else {
+            let state = PI_CACHE.get_or_compute(
+                num_terms,
+                |state| state.num_terms,
+                |existing_state, target_terms| {
+                    existing_state.map_or_else(
+                        || {
+                            let (p, q, t) = chudnovsky_bs(0, target_terms);
+                            PiState {
+                                num_terms: target_terms,
+                                p,
+                                q,
+                                t,
+                            }
+                        },
+                        |cached| {
+                            let (p_new, q_new, t_new) =
+                                chudnovsky_bs(cached.num_terms, target_terms);
+                            let p_total = &cached.p * p_new;
+                            let q_total = &cached.q * &q_new;
+                            let t_total = IBig::from(q_new) * &cached.t
+                                + IBig::from(cached.p.clone()) * t_new;
+                            PiState {
+                                num_terms: target_terms,
+                                p: p_total,
+                                q: q_total,
+                                t: t_total,
+                            }
+                        },
+                    )
+                },
+            );
+            (state.q.clone(), state.t.clone())
+        };
 
         // Final formula: pi = (426880 * sqrt(10005) * Q) / T
 
