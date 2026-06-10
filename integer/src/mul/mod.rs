@@ -22,8 +22,13 @@ const_assert!(THRESHOLD_SIMPLE + 1 >= karatsuba::MIN_LEN);
 const THRESHOLD_KARATSUBA: usize = 192;
 const_assert!(THRESHOLD_KARATSUBA + 1 >= toom_3::MIN_LEN);
 
+/// If smaller operand length > this, NTT multiplication will be used.
+const THRESHOLD_NTT: usize = ntt::THRESHOLD_NTT;
+const_assert!(THRESHOLD_NTT + 1 >= toom_3::MIN_LEN);
+
 mod helpers;
 mod karatsuba;
+pub(crate) mod ntt;
 mod simple;
 mod toom_3;
 
@@ -156,13 +161,15 @@ pub fn sub_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Wor
 }
 
 /// Temporary scratch space required for multiplication.
-pub fn memory_requirement_up_to(_total_len: usize, smaller_len: usize) -> Layout {
+pub fn memory_requirement_up_to(total_len: usize, smaller_len: usize) -> Layout {
     if smaller_len <= THRESHOLD_SIMPLE {
         memory::zero_layout()
     } else if smaller_len <= THRESHOLD_KARATSUBA {
         karatsuba::memory_requirement_up_to(smaller_len)
-    } else {
+    } else if smaller_len <= THRESHOLD_NTT {
         toom_3::memory_requirement_up_to(smaller_len)
+    } else {
+        ntt::memory_requirement_up_to(total_len, smaller_len)
     }
 }
 
@@ -199,8 +206,10 @@ pub fn add_signed_mul<'a>(
         simple::add_signed_mul(c, sign, a, b, memory)
     } else if b.len() <= THRESHOLD_KARATSUBA {
         karatsuba::add_signed_mul(c, sign, a, b, memory)
-    } else {
+    } else if b.len() <= THRESHOLD_NTT {
         toom_3::add_signed_mul(c, sign, a, b, memory)
+    } else {
+        ntt::add_signed_mul(c, sign, a, b, memory)
     }
 }
 
@@ -222,7 +231,9 @@ pub fn add_signed_mul_same_len(
         simple::add_signed_mul_same_len(c, sign, a, b, memory)
     } else if n <= THRESHOLD_KARATSUBA {
         karatsuba::add_signed_mul_same_len(c, sign, a, b, memory)
-    } else {
+    } else if n <= THRESHOLD_NTT {
         toom_3::add_signed_mul_same_len(c, sign, a, b, memory)
+    } else {
+        ntt::add_signed_mul_same_len(c, sign, a, b, memory)
     }
 }
