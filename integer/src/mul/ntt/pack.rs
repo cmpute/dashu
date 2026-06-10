@@ -9,24 +9,25 @@
 
 use crate::arch::word::Word;
 
-/// Pack a big integer (given as `&[Word]`, little-endian) into `n`
-/// coefficients of `b_pack` bits each, zero-padded to length `n`.
+/// Pack a big integer (given as `&[Word]`, little-endian) into `out`,
+/// producing `n` coefficients of `b_pack` bits each, zero-padded.
 ///
 /// Each coefficient `c_i` satisfies `0 ≤ c_i < 2^{b_pack}`.
-pub fn pack(words: &[Word], b_pack: u32, n: usize) -> alloc::vec::Vec<u64> {
-    let mut out = alloc::vec![0u64; n];
+/// Panics if `out.len() < n`.
+pub fn pack(out: &mut [u64], words: &[Word], b_pack: u32, n: usize) {
+    assert!(out.len() >= n);
     let mask = (1u64 << b_pack) - 1;
     let word_bits = Word::BITS;
     let mut word_idx = 0usize;
-    let mut bit_offset = 0u32; // bit position within words[word_idx]
+    let mut bit_offset = 0u32;
 
     for coeff in out.iter_mut().take(n) {
         if word_idx >= words.len() {
-            break; // rest stay zero (padding)
+            *coeff = 0;
+            continue;
         }
 
         if bit_offset + b_pack <= word_bits {
-            // Entire coefficient fits within the current word.
             *coeff = (words[word_idx] >> bit_offset) & mask;
             bit_offset += b_pack;
             if bit_offset == word_bits {
@@ -34,7 +35,6 @@ pub fn pack(words: &[Word], b_pack: u32, n: usize) -> alloc::vec::Vec<u64> {
                 word_idx += 1;
             }
         } else {
-            // Coefficient straddles a word boundary.
             let bits_first = word_bits - bit_offset;
             let bits_second = b_pack - bits_first;
             let mut val = (words[word_idx] >> bit_offset) & ((1u64 << bits_first) - 1);
@@ -46,8 +46,6 @@ pub fn pack(words: &[Word], b_pack: u32, n: usize) -> alloc::vec::Vec<u64> {
             bit_offset = bits_second;
         }
     }
-
-    out
 }
 
 /// Accumulate CRT-recovered convolution coefficients into the output limb
@@ -139,15 +137,13 @@ mod tests {
 
     #[test]
     fn test_pack_unpack_roundtrip() {
-        // Pack a number, then unpack-accumulate into a zero buffer.
-        // The accumulation should reconstruct the original number.
         let b_pack = 16u32;
         let test_words: Vec<Word> = vec![0xDEADBEEF_CAFEBABE, 0x12345678_9ABCDEF0];
         let coeffs_per_word = (Word::BITS / b_pack) as usize;
         let n = test_words.len() * coeffs_per_word;
 
-        let packed = pack(&test_words, b_pack, n);
-        assert_eq!(packed.len(), n);
+        let mut packed = vec![0u64; n];
+        pack(&mut packed, &test_words, b_pack, n);
 
         let output_len = test_words.len() + 1;
         let mut output = vec![0u64; output_len];
@@ -158,10 +154,9 @@ mod tests {
     #[test]
     fn test_pack_zero_pads() {
         let words = vec![0xFFFFu64];
-        let n = 32; // more coeffs than content
-        let packed = pack(&words, 16, n);
-        assert_eq!(packed.len(), 32);
-        // First coeff = 0xFFFF (least significant 16 bits), rest = 0
+        let n = 32;
+        let mut packed = vec![0u64; n];
+        pack(&mut packed, &words, 16, n);
         assert_eq!(packed[0], 0xFFFF);
         for &c in packed.iter().skip(1) {
             assert_eq!(c, 0);
@@ -170,7 +165,8 @@ mod tests {
 
     #[test]
     fn test_pack_empty_input() {
-        let packed = pack(&[], 16, 8);
+        let mut packed = vec![0u64; 8];
+        pack(&mut packed, &[], 16, 8);
         assert_eq!(packed, vec![0u64; 8]);
     }
 

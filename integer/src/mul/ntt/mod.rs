@@ -3,6 +3,7 @@
 //! Uses Number Theoretic Transforms over several 64-bit primes of the form
 //! `2^64 - 2^b + 1` combined with the Chinese Remainder Theorem (CRT).
 
+use crate::mul::ntt::crt::ModOps;
 use crate::{
     add,
     arch::word::{SignedWord, Word},
@@ -10,13 +11,14 @@ use crate::{
     Sign::{self, *},
 };
 use alloc::alloc::Layout;
+use num_modular::{FixedTrinomialSolinas64, Reducer};
 
 mod crt;
 mod pack;
 mod primes;
 mod transform;
 
-use crate::mul::ntt::crt::CrtConstants;
+use crate::mul::ntt::crt::U192;
 pub use primes::{K, PRIMES};
 
 /// Minimum smaller-operand length (in words) for the NTT path.
@@ -86,18 +88,15 @@ pub fn memory_requirement_up_to(total_len: usize, _smaller_len: usize) -> Layout
         (total_len as u64 * word_bits as u64 + B_PACK_MIN as u64 - 1) / B_PACK_MIN as u64;
     let n_max = ((max_coeffs + 1) as usize).next_power_of_two().max(2);
 
-    // Everything is in u64 units for simplicity.
     let lanes_u64 = 2 * n_max; // a_lane + b_lane
     let residues_u64 = K * n_max; // per-prime inverse results
-    let product_u64 = total_len; // product buffer (Word=u64 on 64-bit, else u64 takes more space)
+    let twiddles_u64 = n_max; // fwd + inv twiddle tables (n_max/2 each, reused)
+    let product_u64 = total_len;
 
-    // On 64-bit targets Word = u64.  On narrow targets (Word < u64),
-    // we need extra space for the u64 allocations.  Use the maximum
-    // of Word and u64 sizes.
     let u64_bytes = 8usize;
     let word_bytes = core::mem::size_of::<Word>();
     let factor = (u64_bytes + word_bytes - 1) / word_bytes;
-    let total_words = product_u64 + (lanes_u64 + residues_u64) * factor;
+    let total_words = product_u64 + (lanes_u64 + residues_u64 + twiddles_u64) * factor;
 
     memory::array_layout::<Word>(total_words)
 }
@@ -146,7 +145,6 @@ fn add_signed_mul_impl(
     let la = a.len();
     let lb = b.len();
 
-    // Skip zero-length or zero-value operands
     if la == 0 || lb == 0 {
         return 0;
     }
@@ -162,72 +160,65 @@ fn add_signed_mul_impl(
     let coeffs_b = coeff_count(lb_bits, b_pack);
     let output_coeffs = coeffs_a + coeffs_b - 1;
 
-    // CRT constants
-    let primes_p: alloc::vec::Vec<u64> = PRIMES[..k_eff].iter().map(|np| np.p).collect();
-    let crt_constants = CrtConstants::new(&primes_p);
+    // Per-prime CRT reducers (no allocation)
+    let r0 = FixedTrinomialSolinas64::<64, 32, 1>::new(&PRIMES[0].p);
+    let r1 = FixedTrinomialSolinas64::<64, 34, 1>::new(&PRIMES[1].p);
+    let r2 = FixedTrinomialSolinas64::<64, 40, 1>::new(&PRIMES[2].p);
+    let crt_reducers: [&dyn ModOps; 3] = [&r0, &r1, &r2];
 
     // ---- Memory carve (longest-lived first) ----
-    // All buffers are u64 since lane arithmetic is always u64.
 
     // 1. Product buffer
     let prod_len = la + lb;
     let (prod, mut mem) = memory.allocate_slice_fill::<u64>(prod_len, 0);
 
-    // 2. Residue storage (per-prime inverse results, as u64)
+    // 2. Residue storage (per-prime inverse results)
     let residues_len = k_eff * nn;
     let (residues, mut mem) = mem.allocate_slice_fill::<u64>(residues_len, 0);
 
-    // 3. Lane buffers (reused across primes, as u64)
+    // 3. Lane buffers (reused across primes)
     let (a_lane, mut mem) = mem.allocate_slice_fill::<u64>(nn, 0);
-    let (b_lane, _mem) = mem.allocate_slice_fill::<u64>(nn, 0);
+    let (b_lane, mut mem) = mem.allocate_slice_fill::<u64>(nn, 0);
 
-    // ---- Per-prime transforms ----
+    // 4. Twiddle tables (fwd + inv, reused per prime)
+    let (fwd_twiddles, mut mem) = mem.allocate_slice_fill::<u64>(nn / 2, 0);
+    let (inv_twiddles, _) = mem.allocate_slice_fill::<u64>(nn / 2, 0);
+
+    // ---- Per-prime transforms (const-generic dispatch) ----
     for (pi, prime) in PRIMES[..k_eff].iter().enumerate() {
-        let p = prime.p;
-        let b_exp = prime.b;
-
-        // Precompute twiddles
-        let fwd_twiddles = transform::precompute_twiddles(nn, p, b_exp, prime.omega_2_32, false);
-        let inv_twiddles = transform::precompute_twiddles(nn, p, b_exp, prime.omega_2_32, true);
-
-        // Pack operands into lane buffers
-        pack_into(a, b_pack, a_lane);
-        pack_into(b, b_pack, b_lane);
-
-        // Forward NTT
-        transform::bit_reverse(a_lane);
-        transform::bit_reverse(b_lane);
-        transform::forward(a_lane, &fwd_twiddles, p, b_exp);
-        transform::forward(b_lane, &fwd_twiddles, p, b_exp);
-        transform::pointwise_mul(a_lane, b_lane, b_exp);
-        transform::inverse(a_lane, &inv_twiddles, p, b_exp);
-
-        // Store residues for this prime
-        let offset = pi * nn;
-        residues[offset..offset + nn].copy_from_slice(a_lane);
+        let mut ctx = TransformCtx {
+            a_lane,
+            b_lane,
+            fwd_twiddles,
+            inv_twiddles,
+            p: prime.p,
+            omega_2_32: prime.omega_2_32,
+            nn,
+            b_pack,
+            residues,
+            pi,
+        };
+        match prime.b {
+            32 => process_prime::<32>(a, b, &mut ctx),
+            34 => process_prime::<34>(a, b, &mut ctx),
+            40 => process_prime::<40>(a, b, &mut ctx),
+            _ => unreachable!(),
+        }
     }
 
     // ---- CRT per coefficient + accumulate ----
-    // We'll accumulate each coefficient into the product buffer with
-    // b_pack-bit shift.
     let output_words = la + lb;
     for k in 0..output_coeffs {
         let mut coeff_residues = [0u64; 3];
         #[allow(clippy::needless_range_loop)]
         for pi in 0..k_eff {
-            let offset = pi * nn;
-            coeff_residues[pi] = residues[offset + k];
+            coeff_residues[pi] = residues[pi * nn + k];
         }
-        let crt_val = crt::garner_combine(&coeff_residues[..k_eff], &primes_p, &crt_constants);
-
-        // Unpack-accumulate this coefficient into prod
-        // crt_val is a small integer (≤ 3 u64 words)
+        let crt_val = crt::garner_combine(&coeff_residues[..k_eff], &crt_reducers[..k_eff]);
         add_shifted_to_prod(prod, &crt_val, k, b_pack);
     }
 
     // ---- Fold product into c with sign ----
-    // Convert u64 slice to Word slice for the add function.
-    // On 64-bit targets these are the same type.
     assert_eq!(
         core::mem::size_of::<Word>(),
         core::mem::size_of::<u64>(),
@@ -243,28 +234,55 @@ fn add_signed_mul_impl(
     }
 }
 
-/// Pack word slice into coefficient buffer (viewed as u64).
-fn pack_into(words: &[Word], b_pack: u32, out: &mut [u64]) {
-    let packed = pack::pack(words, b_pack, out.len());
-    out.copy_from_slice(&packed);
+/// Scratch buffers and parameters for one prime's NTT pipeline.
+struct TransformCtx<'a> {
+    a_lane: &'a mut [u64],
+    b_lane: &'a mut [u64],
+    fwd_twiddles: &'a mut [u64],
+    inv_twiddles: &'a mut [u64],
+    p: u64,
+    omega_2_32: u64,
+    nn: usize,
+    b_pack: u32,
+    residues: &'a mut [u64],
+    pi: usize,
 }
 
-/// Add a small multi-word integer (up to 3 u64 words) to `prod`, shifted
-/// left by `k * b_pack` bits.
-fn add_shifted_to_prod(prod: &mut [u64], val: &[u64], k: usize, b_pack: u32) {
-    if val.is_empty() {
-        return;
-    }
+/// Per-prime NTT pipeline, monomorphized for a specific `B`.
+#[inline(never)]
+fn process_prime<const B: u32>(a: &[Word], b: &[Word], ctx: &mut TransformCtx<'_>) {
+    pack::pack(ctx.a_lane, a, ctx.b_pack, ctx.nn);
+    pack::pack(ctx.b_lane, b, ctx.b_pack, ctx.nn);
+
+    transform::precompute_twiddles::<B>(ctx.fwd_twiddles, ctx.nn, ctx.p, ctx.omega_2_32, false);
+    transform::precompute_twiddles::<B>(ctx.inv_twiddles, ctx.nn, ctx.p, ctx.omega_2_32, true);
+
+    transform::bit_reverse(ctx.a_lane);
+    transform::bit_reverse(ctx.b_lane);
+    transform::forward::<B>(ctx.a_lane, ctx.fwd_twiddles, ctx.p);
+    transform::forward::<B>(ctx.b_lane, ctx.fwd_twiddles, ctx.p);
+    transform::pointwise_mul::<B>(ctx.a_lane, ctx.b_lane);
+    transform::inverse::<B>(ctx.a_lane, ctx.inv_twiddles, ctx.p);
+
+    let offset = ctx.pi * ctx.nn;
+    ctx.residues[offset..offset + ctx.nn].copy_from_slice(ctx.a_lane);
+}
+
+/// Add a CRT value to `prod`, shifted left by `k * b_pack` bits.
+fn add_shifted_to_prod(prod: &mut [u64], val: &U192, k: usize, b_pack: u32) {
+    let count = val.len_words() as usize;
     let shift_bits = (k as u32).wrapping_mul(b_pack);
     let word_idx = (shift_bits / 64) as usize;
     let bit_shift = shift_bits % 64;
 
     let mut carry: u64 = 0;
-    for (vi, &v) in val.iter().enumerate() {
+    #[allow(clippy::needless_range_loop)]
+    for vi in 0..count {
         let idx = word_idx + vi;
         if idx >= prod.len() {
             return;
         }
+        let v = val.0[vi];
         let v128 = v as u128;
 
         if bit_shift == 0 {
@@ -273,8 +291,6 @@ fn add_shifted_to_prod(prod: &mut [u64], val: &[u64], k: usize, b_pack: u32) {
             prod[idx] = r;
             carry = (sum >> 64) as u64 + c as u64;
         } else {
-            // v << bit_shift has high bits = v >> (64 - bit_shift) = lo_carry.
-            // No separate hi — lo_carry IS the high part.
             let lo = v128 << bit_shift;
             let sum = lo.wrapping_add(carry as u128);
             let lo_carry = (sum >> 64) as u64;
@@ -284,7 +300,6 @@ fn add_shifted_to_prod(prod: &mut [u64], val: &[u64], k: usize, b_pack: u32) {
             prod[idx] = r;
             carry = lo_carry + c1 as u64;
 
-            // Propagate to next word
             if idx + 1 < prod.len() && carry != 0 {
                 let (r2, c2) = prod[idx + 1].overflowing_add(carry);
                 prod[idx + 1] = r2;
@@ -293,8 +308,7 @@ fn add_shifted_to_prod(prod: &mut [u64], val: &[u64], k: usize, b_pack: u32) {
         }
     }
 
-    // Propagate final carry
-    let mut idx = word_idx + val.len();
+    let mut idx = word_idx + count;
     while carry != 0 && idx < prod.len() {
         let (r, c) = prod[idx].overflowing_add(carry);
         prod[idx] = r;
