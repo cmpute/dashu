@@ -147,8 +147,8 @@ mod tests {
 
     #[test]
     fn test_garner_with_ntt_primes() {
-        use num_modular::FixedTrinomialSolinas64;
         use super::super::primes::PRIMES;
+        use num_modular::FixedTrinomialSolinas64;
 
         let p0 = PRIMES[0].p;
         let p1 = PRIMES[1].p;

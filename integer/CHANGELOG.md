@@ -3,10 +3,13 @@
 ## Unreleased
 
 ### Add
-- NTT-based multiplication for very large integers (above 2048 words), using three Solinas primes of the form `2^64 − 2^b + 1` combined with the Chinese Remainder Theorem.
+- NTT-based multiplication for very large integers (above 50000 words / ~3.2M bits), using two Solinas primes of the form `2^64 − 2^b + 1` combined with the Chinese Remainder Theorem.
 - `UBig::from_u64` and `IBig::from_i64`, const on 32-bit and 64-bit targets.
 
 ### Improve
+- NTT coefficient width increased from 16 to 32 bits, halving the transform length and roughly doubling throughput.
+- NTT multiplication auto-selects `K_eff = 2` primes when headroom allows, skipping the third prime.
+- Multiplication thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE`, `DASHU_THRESHOLD_KARATSUBA`, and `DASHU_THRESHOLD_NTT` environment variables (requires `tuning` feature).
 - Logarithm for very large values uses power-sequence decomposition, replacing iterative single-step multiplication.
 - Improve power-of-two base formatting ([#3](https://github.com/cmpute/dashu/pull/3))
 

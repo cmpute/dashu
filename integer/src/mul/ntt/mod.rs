@@ -22,10 +22,20 @@ use crate::mul::ntt::crt::U192;
 pub use primes::{K, PRIMES};
 
 /// Minimum smaller-operand length (in words) for the NTT path.
-pub const THRESHOLD_NTT: usize = 2048;
+///
+/// With `b_pack = 32` the crossover is at ~30 000 words (~2 M bits) on
+/// Apple M4 Pro.  N double at 32 769 / 65 537 / 131 073 words causes
+/// small regression windows; radix-4 will shrink the step size.
+/// Chosen conservatively at 50 000 words where NTT is ≥20% faster.
+pub const THRESHOLD_NTT: usize = 50_000;
 
 /// Smallest admissible coefficient bit width (used for worst-case memory bound).
 const B_PACK_MIN: u32 = 16;
+
+/// Preferred coefficient bit width.  32 bits gives 2 coeffs/word and halves
+/// the transform length vs. 16 bits, while staying comfortably within the
+/// ~2^128 headroom of the two smallest primes.
+const B_PACK_PREFERRED: u32 = 32;
 
 /// Maximum `log2(transform length)`, set by `min(v2) = 32` across all primes.
 const MAX_LOG_N: u32 = 32;
@@ -34,34 +44,31 @@ const MAX_LOG_N: u32 = 32;
 ///
 /// Returns `(b_pack, N, K_eff)`.
 pub fn select_params(la_words: usize, lb_words: usize) -> (u32, usize, usize) {
-    let b_pack = B_PACK_MIN;
     let word_bits = Word::BITS;
-
     let la_bits = la_words as u64 * word_bits as u64;
     let lb_bits = lb_words as u64 * word_bits as u64;
+    let prod_2 = (PRIMES[0].p as u128) * (PRIMES[1].p as u128);
 
-    let coeffs_a = (la_bits + b_pack as u64 - 1) / b_pack as u64;
-    let coeffs_b = (lb_bits + b_pack as u64 - 1) / b_pack as u64;
-    let total_coeffs = (coeffs_a + coeffs_b - 1) as usize;
-    let n = total_coeffs.next_power_of_two().max(2);
+    // Try b_pack = 32 first (fewer coefficients → smaller N → faster transform).
+    for &b_pack in &[B_PACK_PREFERRED, B_PACK_MIN] {
+        let coeffs_a = (la_bits + b_pack as u64 - 1) / b_pack as u64;
+        let coeffs_b = (lb_bits + b_pack as u64 - 1) / b_pack as u64;
+        let total_coeffs = (coeffs_a + coeffs_b - 1) as usize;
+        let n = total_coeffs.next_power_of_two().max(2);
 
-    assert!(
-        (n.trailing_zeros()) <= MAX_LOG_N,
-        "N = {n} too large for prime set (max log2 = {MAX_LOG_N})"
-    );
+        if (n.trailing_zeros()) > MAX_LOG_N {
+            continue;
+        }
 
-    let k_eff = K;
+        let max_coeff = (n as u128 / 2) * ((1u128 << b_pack) - 1) * ((1u128 << b_pack) - 1);
 
-    // Headroom check: max convolution coefficient < product of K_eff primes.
-    // max_coeff fits in u128; compare against smallest prime p0.
-    let max_coeff = (n as u128 / 2) * ((1u128 << b_pack) - 1) * ((1u128 << b_pack) - 1);
-    let p0 = PRIMES[0].p as u128;
-    assert!(
-        max_coeff < p0,
-        "headroom check failed: max coeff {max_coeff} >= smallest prime {p0}"
-    );
+        // K_eff = 2 suffices when max_coeff < P0·P1 ≈ 2^128.
+        // K_eff = 3 covers the rest (product ≈ 2^192 ≫ max_coeff < 2^128).
+        let k_eff = if max_coeff < prod_2 { 2 } else { K };
+        return (b_pack, n, k_eff);
+    }
 
-    (b_pack, n, k_eff)
+    unreachable!("b_pack = 16 always passes the headroom check")
 }
 
 /// Estimate bit length from a word slice (excludes leading zeros).
@@ -324,18 +331,18 @@ mod tests {
     #[test]
     fn test_select_params_small() {
         let (b_pack, n, k_eff) = select_params(10, 10);
-        assert_eq!(b_pack, 16);
+        assert_eq!(b_pack, 32);
         assert!(n >= 2 && n.is_power_of_two());
-        assert_eq!(k_eff, K);
+        assert_eq!(k_eff, 2);
     }
 
     #[test]
     fn test_select_params_large() {
         let (b_pack, n, k_eff) = select_params(THRESHOLD_NTT, THRESHOLD_NTT);
-        assert_eq!(b_pack, 16);
+        assert_eq!(b_pack, 32);
         assert!(n.is_power_of_two());
-        assert_eq!(k_eff, K);
-        let coeffs_a = (THRESHOLD_NTT * Word::BITS as usize + 15) / 16;
+        assert_eq!(k_eff, 2);
+        let coeffs_a = (THRESHOLD_NTT * Word::BITS as usize + 31) / 32;
         let coeffs_b = coeffs_a;
         let min_n = (coeffs_a + coeffs_b).next_power_of_two().max(2);
         assert!(n >= min_n, "n={n} < min_n={min_n}");
@@ -347,8 +354,11 @@ mod tests {
         let lb = THRESHOLD_NTT;
         let (b_pack, n, _k_eff) = select_params(la, lb);
         let max_coeff = (n as u128 / 2) * ((1u128 << b_pack) - 1) * ((1u128 << b_pack) - 1);
-        let p0 = PRIMES[0].p as u128;
-        assert!(max_coeff < p0, "headroom violation: max_coeff={max_coeff} >= p0={p0}");
+        let prod_2 = (PRIMES[0].p as u128) * (PRIMES[1].p as u128);
+        assert!(
+            max_coeff < prod_2,
+            "headroom violation: max_coeff={max_coeff} >= prod_2={prod_2}"
+        );
     }
 
     #[test]
@@ -389,11 +399,14 @@ mod tests {
         assert_eq!(&c[..], &expected[..], "two-word mismatch");
     }
 
+    const NTT_TEST_LEN: usize = 1024;
+
     #[test]
     fn test_ntt_multiply_small() {
-        // Test NTT multiply with small operands that exceed THRESHOLD_NTT.
-        let a: Vec<Word> = vec![0xDEADBEEFu64; THRESHOLD_NTT];
-        let b: Vec<Word> = vec![0xCAFEBABEu64; THRESHOLD_NTT];
+        // Smoke test: NTT multiply with operands large enough to exercise
+        // the full pipeline (pack, forward, pointwise, inverse, CRT, accumulate).
+        let a: Vec<Word> = vec![0xDEADBEEFu64; NTT_TEST_LEN];
+        let b: Vec<Word> = vec![0xCAFEBABEu64; NTT_TEST_LEN];
         let mut c = vec![0u64; a.len() + b.len()];
 
         let layout = memory_requirement_up_to(c.len(), b.len());
@@ -541,5 +554,111 @@ mod tests {
         let mut memory = alloc.memory();
         add_signed_mul_impl(&mut c, Positive, &a, &b, &mut memory);
         assert_eq!(&c[..], &expected[..], "sparse operand mismatch");
+    }
+
+    /// Compare NTT against toom-3 at various sizes to find the crossover.
+    ///
+    /// Run with:
+    /// ```sh
+    /// # Pure toom-3 (prevent internal NTT recursion):
+    /// DASHU_THRESHOLD_NTT=99999999 cargo test -p dashu-int --release \
+    ///   -- ntt::tests::crossover --ignored --nocapture
+    /// ```
+    ///
+    /// The output is a table showing word count, transform length N,
+    /// toom-3 time, NTT time, and speedup ratio.  Use it to recalibrate
+    /// [`THRESHOLD_NTT`] after algorithmic changes.
+    #[test]
+    #[ignore]
+    #[allow(clippy::let_underscore_must_use)]
+    fn crossover() {
+        use std::time::Instant;
+
+        let sizes: &[usize] = &[
+            5_000, 10_000, 20_000, 30_000, 40_000, 50_000, 60_000, 80_000, 100_000, 120_000,
+            131_000,
+        ];
+
+        println!(
+            "{:>10} {:>4} {:>8} {:>12} {:>12} {:>10}",
+            "words", "bp", "N", "toom-3(ms)", "ntt(ms)", "ratio"
+        );
+        println!("{}", "-".repeat(68));
+
+        for &n in sizes {
+            let a: Vec<Word> = (0..n)
+                .map(|i| (i as u64 + 1).wrapping_mul(0x9E3779B97F4A7C15))
+                .collect();
+            let b: Vec<Word> = (0..n)
+                .map(|i| (i as u64 + 1).wrapping_mul(0xC6A4A7935BD1E995))
+                .collect();
+            let mut c_toom = vec![0u64; 2 * n];
+            let mut c_ntt = vec![0u64; 2 * n];
+
+            let layout = memory_requirement_up_to(2 * n, n);
+            let warmup = 2;
+            let iters = 5;
+
+            // toom-3 (may use NTT internally depending on DASHU_THRESHOLD_NTT)
+            let t_toom = {
+                let mut best = f64::MAX;
+                for _ in 0..warmup {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    c_toom.fill(0);
+                    let _ =
+                        crate::mul::toom_3::add_signed_mul(&mut c_toom, Positive, &a, &b, &mut mem);
+                }
+                for _ in 0..iters {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    c_toom.fill(0);
+                    let start = Instant::now();
+                    let _ =
+                        crate::mul::toom_3::add_signed_mul(&mut c_toom, Positive, &a, &b, &mut mem);
+                    let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+                    if elapsed < best {
+                        best = elapsed;
+                    }
+                }
+                best
+            };
+
+            // NTT (direct)
+            let t_ntt = {
+                let mut best = f64::MAX;
+                for _ in 0..warmup {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    c_ntt.fill(0);
+                    let _carry = add_signed_mul_impl(&mut c_ntt, Positive, &a, &b, &mut mem);
+                }
+                for _ in 0..iters {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    c_ntt.fill(0);
+                    let start = Instant::now();
+                    let _carry = add_signed_mul_impl(&mut c_ntt, Positive, &a, &b, &mut mem);
+                    let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+                    if elapsed < best {
+                        best = elapsed;
+                    }
+                }
+                best
+            };
+
+            assert_eq!(&c_ntt[..], &c_toom[..], "mismatch at n={n}");
+
+            let (_b_pack, nn, _k_eff) = select_params(n, n);
+            println!(
+                "{:>10} {:>4} {:>8} {:>12.3} {:>12.3} {:>9.2}x",
+                n,
+                _b_pack,
+                nn,
+                t_toom,
+                t_ntt,
+                t_ntt / t_toom
+            );
+        }
     }
 }
