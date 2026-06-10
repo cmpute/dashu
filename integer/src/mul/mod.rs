@@ -283,3 +283,205 @@ pub fn add_signed_mul_same_len(
         ntt::add_signed_mul_same_len(c, sign, a, b, memory)
     }
 }
+
+#[cfg(test)]
+mod threshold_tests {
+    use super::*;
+    use crate::arch::word::Word;
+    use crate::Sign::Positive;
+
+    /// Compare karatsuba vs toom-3 at various word counts to find [`THRESHOLD_KARATSUBA`].
+    /// Run with:
+    ///   cargo test -p dashu-int --release -- mul::threshold_tests::crossover_karatsuba --nocapture --ignored
+    #[test]
+    #[ignore]
+    fn crossover_karatsuba() {
+        use std::time::Instant;
+
+        let sizes: &[usize] = &[80, 100, 120, 140, 160, 180, 200, 240, 280, 320, 360, 400];
+
+        println!("{:>8} {:>14} {:>14} {:>10}", "words", "karatsuba(µs)", "toom-3(µs)", "ratio");
+        println!("{}", "-".repeat(50));
+
+        for &n in sizes {
+            let a: Vec<Word> = (0..n)
+                .map(|i| (i as u64 + 1).wrapping_mul(0x9E3779B97F4A7C15))
+                .collect();
+            let b: Vec<Word> = (0..n)
+                .map(|i| (i as u64 + 1).wrapping_mul(0xC6A4A7935BD1E995))
+                .collect();
+            let mut c_kara = vec![0u64; 2 * n];
+            let mut c_toom = vec![0u64; 2 * n];
+            let layout_kara = karatsuba::memory_requirement_up_to(n);
+            let layout_toom = toom_3::memory_requirement_up_to(n);
+            // Use the larger layout so both algorithms get enough memory.
+            let layout = if layout_kara.size() > layout_toom.size() {
+                layout_kara
+            } else {
+                layout_toom
+            };
+            let warmup = 5;
+            let iters = 20;
+
+            // Time karatsuba
+            let t_kara = {
+                let mut best = f64::MAX;
+                for _ in 0..warmup {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    c_kara.fill(0);
+                    let _c =
+                        karatsuba::add_signed_mul_same_len(&mut c_kara, Positive, &a, &b, &mut mem);
+                }
+                for _ in 0..iters {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    c_kara.fill(0);
+                    let start = Instant::now();
+                    let _c =
+                        karatsuba::add_signed_mul_same_len(&mut c_kara, Positive, &a, &b, &mut mem);
+                    let elapsed = start.elapsed().as_secs_f64() * 1_000_000.0;
+                    if elapsed < best {
+                        best = elapsed;
+                    }
+                }
+                best
+            };
+
+            // Time toom-3
+            let t_toom = {
+                let mut best = f64::MAX;
+                for _ in 0..warmup {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    c_toom.fill(0);
+                    let _c =
+                        toom_3::add_signed_mul_same_len(&mut c_toom, Positive, &a, &b, &mut mem);
+                }
+                for _ in 0..iters {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    c_toom.fill(0);
+                    let start = Instant::now();
+                    let _c =
+                        toom_3::add_signed_mul_same_len(&mut c_toom, Positive, &a, &b, &mut mem);
+                    let elapsed = start.elapsed().as_secs_f64() * 1_000_000.0;
+                    if elapsed < best {
+                        best = elapsed;
+                    }
+                }
+                best
+            };
+
+            assert_eq!(&c_kara[..], &c_toom[..], "mismatch at n={n}");
+            println!("{:>8} {:>14.1} {:>14.1} {:>9.2}x", n, t_kara, t_toom, t_toom / t_kara);
+        }
+    }
+
+    /// Compare NTT against toom-3 at various word counts to find [`THRESHOLD_NTT`].
+    ///
+    /// Run with (set a huge NTT threshold to keep toom-3 pure):
+    /// ```sh
+    /// DASHU_THRESHOLD_NTT=99999999 cargo test -p dashu-int --features tuning --release \
+    ///   -- mul::threshold_tests::crossover_ntt --ignored --nocapture
+    /// ```
+    ///
+    /// The output is a table: words, b_pack, N, toom-3 time, NTT time, ratio.
+    #[test]
+    #[ignore]
+    #[allow(clippy::let_underscore_must_use)]
+    fn crossover_ntt() {
+        use std::time::Instant;
+
+        let sizes: &[usize] = &[
+            5_000, 10_000, 20_000, 30_000, 40_000, 50_000, 60_000, 80_000, 100_000, 120_000,
+            131_000,
+        ];
+
+        println!(
+            "{:>10} {:>4} {:>8} {:>12} {:>12} {:>10}",
+            "words", "bp", "N", "toom-3(ms)", "ntt(ms)", "ratio"
+        );
+        println!("{}", "-".repeat(68));
+
+        for &n in sizes {
+            let a: Vec<Word> = (0..n)
+                .map(|i| (i as u64 + 1).wrapping_mul(0x9E3779B97F4A7C15))
+                .collect();
+            let b: Vec<Word> = (0..n)
+                .map(|i| (i as u64 + 1).wrapping_mul(0xC6A4A7935BD1E995))
+                .collect();
+            let mut c_toom = vec![0u64; 2 * n];
+            let mut c_ntt = vec![0u64; 2 * n];
+
+            let layout_ntt = super::ntt::memory_requirement_up_to(2 * n, n);
+            let layout_toom = super::toom_3::memory_requirement_up_to(n);
+            let layout = if layout_ntt.size() > layout_toom.size() {
+                layout_ntt
+            } else {
+                layout_toom
+            };
+            let warmup = 2;
+            let iters = 5;
+
+            // toom-3 (may use NTT internally depending on DASHU_THRESHOLD_NTT)
+            let t_toom = {
+                let mut best = f64::MAX;
+                for _ in 0..warmup {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    c_toom.fill(0);
+                    let _ = super::toom_3::add_signed_mul(&mut c_toom, Positive, &a, &b, &mut mem);
+                }
+                for _ in 0..iters {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    c_toom.fill(0);
+                    let start = Instant::now();
+                    let _ = super::toom_3::add_signed_mul(&mut c_toom, Positive, &a, &b, &mut mem);
+                    let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+                    if elapsed < best {
+                        best = elapsed;
+                    }
+                }
+                best
+            };
+
+            // NTT (via public entry, bypasses dispatch)
+            let t_ntt = {
+                let mut best = f64::MAX;
+                for _ in 0..warmup {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    c_ntt.fill(0);
+                    let _ = super::ntt::add_signed_mul(&mut c_ntt, Positive, &a, &b, &mut mem);
+                }
+                for _ in 0..iters {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    c_ntt.fill(0);
+                    let start = Instant::now();
+                    let _ = super::ntt::add_signed_mul(&mut c_ntt, Positive, &a, &b, &mut mem);
+                    let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+                    if elapsed < best {
+                        best = elapsed;
+                    }
+                }
+                best
+            };
+
+            assert_eq!(&c_ntt[..], &c_toom[..], "mismatch at n={n}");
+
+            let (b_pack, nn, _k_eff) = super::ntt::select_params(n, n);
+            println!(
+                "{:>10} {:>4} {:>8} {:>12.3} {:>12.3} {:>9.2}x",
+                n,
+                b_pack,
+                nn,
+                t_toom,
+                t_ntt,
+                t_ntt / t_toom
+            );
+        }
+    }
+}

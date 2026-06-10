@@ -48,7 +48,7 @@ macro_rules! add_binop_benchmark {
 
 add_binop_benchmark!(ubig_add, add, 6);
 add_binop_benchmark!(ubig_sub, sub, 6);
-add_binop_benchmark!(ubig_mul, mul, 6);
+add_binop_benchmark!(ubig_mul, mul, 7);
 add_binop_benchmark!(ubig_div, div, 6);
 add_binop_benchmark!(ubig_gcd, gcd, 6);
 add_binop_benchmark!(ubig_gcd_ext, gcd_ext, 5);
