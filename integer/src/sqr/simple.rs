@@ -30,7 +30,7 @@ pub fn square(b: &mut [Word], a: &[Word]) {
      */
 
     // first step (triangular part)
-    let mut c0 = false;
+    let mut c0: Word = 0;
     let mut offset = 1;
     let mut a_cur = a;
     while let Some((m, new_cur)) = a_cur.split_first() {
@@ -65,5 +65,5 @@ pub fn square(b: &mut [Word], a: &[Word]) {
     }
 
     // aggregate carry bits
-    *b.last_mut().unwrap() += c0 as Word + c1 as Word + c2 as Word;
+    *b.last_mut().unwrap() += c0 + c1 as Word + c2 as Word;
 }

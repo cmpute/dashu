@@ -87,14 +87,14 @@ fn add_signed_mul_chunk(
 fn add_mul_chunk(c: &mut [Word], a: &[Word], b: &[Word]) -> bool {
     debug_assert!(a.len() >= b.len() && c.len() == a.len() + b.len());
     debug_assert!(a.len() < 2 * CHUNK_LEN);
-    let mut carry = false;
+    let mut carry: Word = 0;
     for (i, m) in b.iter().enumerate() {
         let carry_word = mul::add_mul_word_same_len_in_place(&mut c[i..i + a.len()], *m, a);
         let (carry_word, carry_next) = arch::add::add_with_carry(c[i + a.len()], carry_word, carry);
         c[i + a.len()] = carry_word;
         carry = carry_next;
     }
-    carry
+    carry != 0
 }
 
 /// c -= a * b
@@ -104,7 +104,7 @@ fn add_mul_chunk(c: &mut [Word], a: &[Word], b: &[Word]) -> bool {
 fn sub_mul_chunk(c: &mut [Word], a: &[Word], b: &[Word]) -> bool {
     debug_assert!(a.len() >= b.len() && c.len() == a.len() + b.len());
     debug_assert!(a.len() < 2 * CHUNK_LEN);
-    let mut borrow = false;
+    let mut borrow: Word = 0;
     for (i, m) in b.iter().enumerate() {
         let borrow_word = mul::sub_mul_word_same_len_in_place(&mut c[i..i + a.len()], *m, a);
         let (borrow_word, borrow_next) =
@@ -112,5 +112,5 @@ fn sub_mul_chunk(c: &mut [Word], a: &[Word], b: &[Word]) -> bool {
         c[i + a.len()] = borrow_word;
         borrow = borrow_next;
     }
-    borrow
+    borrow != 0
 }

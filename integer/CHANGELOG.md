@@ -6,6 +6,9 @@
 - `UBig::from_u64` and `IBig::from_i64`, const on 32-bit and 64-bit targets.
 
 ### Improve
+- Addition and subtraction carry/borrow propagation now uses `Word` (u64/u32) instead of `bool` throughout the architecture-specific `add_with_carry` and `sub_with_borrow` functions, eliminating `bool`↔Word conversions in the inner loops. Combined with comparison-based overflow detection on the generic code path, this reduces the per-word instruction count from ~9 to ~7 on ARM64. ~36% faster addition and ~17% faster subtraction at 10000-bit operand sizes, bringing dashu roughly even with malachite at this scale. Added `#[inline]` annotations on the hot loop functions to ensure cross-function optimization.
+
+### Improve
 - Logarithm for very large values uses power-sequence decomposition, replacing iterative single-step multiplication.
 - Improve power-of-two base formatting ([#3](https://github.com/cmpute/dashu/pull/3))
 
