@@ -7,6 +7,8 @@
 - `UBig::from_u64` and `IBig::from_i64`, const on 32-bit and 64-bit targets.
 
 ### Improve
+- Basecase (schoolbook) multiplication now uses an `addmul_2` inner kernel (two multiplier words per sweep over the accumulator, mirroring GMP's `mpn_addmul_2`), roughly halving accumulator memory traffic. ~20% faster at ~1000-bit operands and ~10% faster at ~10000-bit operands, also benefiting downstream modular multiplication and exponentiation.
+- Added the matching `submul_2` kernel for the subtractive basecase path (the Karatsuba/Toom-3 middle term), ~1.3–1.6x faster than the previous `submul_1`-based loop at the kernel level.
 - Lowered the Karatsuba→Toom-3 multiplication threshold from 192 to 96 words, giving Toom-Cook-3 at ~6000 bits instead of ~12000 bits — closes the gap with malachite at ~10000-bit sizes.
 - NTT coefficient width increased from 16 to 64 bits (K_eff=3 for 64-bit, K_eff=2 otherwise), roughly halving the transform length at each step.
 - NTT multiplication auto-selects `K_eff = 2` primes when headroom allows, skipping the third prime.
