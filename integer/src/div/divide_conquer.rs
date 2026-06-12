@@ -122,7 +122,7 @@ fn div_rem_in_place_small_quotient(
 
     // Subtract q * (the rest of rhs) from rem.
     // The multiplication here is m words by * (n-m) words.
-    let mut rem_overflow: SignedWord = mul::add_signed_mul(rem, Negative, q, &rhs[..n - m], memory);
+    let mut rem_overflow: SignedWord = mul::add_signed_mul::<false>(rem, Negative, q, &rhs[..n - m], memory);
     if q_overflow != 0 {
         rem_overflow -= SignedWord::from(add::sub_same_len_in_place(&mut rem[m..], &rhs[..n - m]));
     }

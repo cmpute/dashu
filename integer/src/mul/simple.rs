@@ -20,7 +20,8 @@ pub const MAX_SMALLER_LEN: usize = CHUNK_LEN;
 /// Simple method: O(a.len() * b.len()).
 ///
 /// Returns carry.
-pub fn add_signed_mul(
+#[inline]
+pub fn add_signed_mul<const OUT_IS_ZERO: bool>(
     c: &mut [Word],
     sign: Sign,
     a: &[Word],
@@ -30,7 +31,7 @@ pub fn add_signed_mul(
     debug_assert!(a.len() >= b.len() && c.len() == a.len() + b.len());
     debug_assert!(b.len() <= MAX_SMALLER_LEN);
     if a.len() <= CHUNK_LEN {
-        add_signed_mul_chunk(c, sign, a, b, memory)
+        add_signed_mul_chunk::<OUT_IS_ZERO>(c, sign, a, b, memory)
     } else {
         helpers::add_signed_mul_split_into_chunks(
             c,
@@ -39,7 +40,7 @@ pub fn add_signed_mul(
             b,
             CHUNK_LEN,
             memory,
-            add_signed_mul_chunk,
+            add_signed_mul_chunk::<false>,
         )
     }
 }
@@ -48,6 +49,7 @@ pub fn add_signed_mul(
 /// Simple method: O(a.len() * b.len()).
 ///
 /// Returns carry.
+#[inline]
 pub fn add_signed_mul_same_len(
     c: &mut [Word],
     sign: Sign,
@@ -57,14 +59,15 @@ pub fn add_signed_mul_same_len(
 ) -> SignedWord {
     debug_assert!(a.len() == b.len() && c.len() == a.len() + b.len());
     debug_assert!(b.len() <= MAX_SMALLER_LEN);
-    add_signed_mul_chunk(c, sign, a, b, memory)
+    add_signed_mul_chunk::<false>(c, sign, a, b, memory)
 }
 
 /// c += sign * a * b
 /// Simple method: O(a.len() * b.len()).
 ///
 /// Returns carry.
-fn add_signed_mul_chunk(
+#[inline]
+fn add_signed_mul_chunk<const OUT_IS_ZERO: bool>(
     c: &mut [Word],
     sign: Sign,
     a: &[Word],
@@ -75,9 +78,24 @@ fn add_signed_mul_chunk(
     debug_assert!(a.len() <= CHUNK_LEN);
 
     match sign {
-        Positive => SignedWord::from(add_mul_chunk(c, a, b)),
+        Positive => SignedWord::from(add_mul_chunk::<OUT_IS_ZERO>(c, a, b)),
         Negative => -SignedWord::from(sub_mul_chunk(c, a, b)),
     }
+}
+
+/// `out[..=n] = a[..n] * b` (store, not add). Returns carry at `out[n]`.
+#[inline]
+fn mul_word_slice_to_out(out: &mut [Word], a: &[Word], b: Word) -> Word {
+    let n = a.len();
+    debug_assert!(out.len() >= n + 1);
+    let mut carry = 0;
+    for (o, &a_val) in out.iter_mut().zip(a.iter()) {
+        let (lo, hi) = math::mul_add_carry(a_val, b, carry);
+        *o = lo;
+        carry = hi;
+    }
+    out[n] = carry;
+    carry
 }
 
 /// `words[..n] += rhs[..n] * (mult0 + mult1 * B)`, where `n == rhs.len()`.
@@ -111,16 +129,31 @@ fn add_mul_dword_same_len_in_place(
 /// c += a * b
 /// Simple method: O(a.len() * b.len()).
 ///
+/// If `OUT_IS_ZERO`, the accumulator is known to be zero-initialized and the first
+/// limb uses pure store ([`mul_word_slice_to_out`]) instead of add.
+///
 /// Returns carry.
-fn add_mul_chunk(c: &mut [Word], a: &[Word], b: &[Word]) -> bool {
+#[inline]
+fn add_mul_chunk<const OUT_IS_ZERO: bool>(
+    c: &mut [Word],
+    a: &[Word],
+    b: &[Word],
+) -> bool {
     debug_assert!(a.len() >= b.len() && c.len() == a.len() + b.len());
     debug_assert!(a.len() < 2 * CHUNK_LEN);
     let n = a.len();
     let mut overflow = false;
-    let mut i = 0;
+    let mut i = if OUT_IS_ZERO {
+        if b.is_empty() {
+            return false;
+        }
+        mul_word_slice_to_out(&mut c[..=n], a, b[0]);
+        1
+    } else {
+        0
+    };
 
-    // Consume the multiplier two words at a time via the addmul_2 kernel.
-    let mut pairs = b.chunks_exact(2);
+    let mut pairs = b[i..].chunks_exact(2);
     for pair in &mut pairs {
         let (carry_lo, carry_hi) =
             add_mul_dword_same_len_in_place(&mut c[i..i + n], a, pair[0], pair[1]);
@@ -128,7 +161,6 @@ fn add_mul_chunk(c: &mut [Word], a: &[Word], b: &[Word]) -> bool {
         i += 2;
     }
 
-    // Handle the leftover odd multiplier word with a plain addmul_1.
     if let &[m] = pairs.remainder() {
         let carry_word = mul::add_mul_word_same_len_in_place(&mut c[i..i + n], m, a);
         overflow |= add::add_word_in_place(&mut c[i + n..], carry_word);
@@ -175,6 +207,7 @@ fn sub_mul_dword_same_len_in_place(
 /// Simple method: O(a.len() * b.len()).
 ///
 /// Returns borrow.
+#[inline]
 fn sub_mul_chunk(c: &mut [Word], a: &[Word], b: &[Word]) -> bool {
     debug_assert!(a.len() >= b.len() && c.len() == a.len() + b.len());
     debug_assert!(a.len() < 2 * CHUNK_LEN);
@@ -285,7 +318,7 @@ mod addmul2_tests {
             };
 
             let add1 = time_it(&ref_add_mul, &mut c);
-            let add2 = time_it(&|c, a, b| add_mul_chunk(c, a, b), &mut c);
+            let add2 = time_it(&|c, a, b| add_mul_chunk::<false>(c, a, b), &mut c);
             let sub1 = time_it(&ref_sub_mul, &mut c);
             let sub2 = time_it(&|c, a, b| sub_mul_chunk(c, a, b), &mut c);
             println!(
@@ -320,7 +353,7 @@ mod addmul2_tests {
                     let mut c_ref = c0.clone();
                     let exp_overflow = ref_add_mul(&mut c_ref, &a, &b);
                     let mut c = c0.clone();
-                    let overflow = add_mul_chunk(&mut c, &a, &b);
+                    let overflow = add_mul_chunk::<false>(&mut c, &a, &b);
                     assert_eq!(c, c_ref, "add value mismatch na={na} nb={nb}");
                     assert_eq!(overflow, exp_overflow, "add overflow mismatch na={na} nb={nb}");
 

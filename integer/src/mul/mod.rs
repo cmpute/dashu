@@ -228,14 +228,14 @@ pub fn memory_requirement_exact(total_len: usize, smaller_len: usize) -> Layout 
 #[inline]
 pub fn multiply<'a>(c: &mut [Word], a: &'a [Word], b: &'a [Word], memory: &mut Memory) {
     debug_assert!(c.iter().all(|&v| v == 0));
-    debug_assert_zero!(add_signed_mul(c, Sign::Positive, a, b, memory));
+    debug_assert_zero!(add_signed_mul::<true>(c, Sign::Positive, a, b, memory));
 }
 
 /// c += sign * a * b
 ///
 /// Returns carry.
 #[must_use]
-pub fn add_signed_mul<'a>(
+pub fn add_signed_mul<'a, const OUT_IS_ZERO: bool>(
     c: &mut [Word],
     sign: Sign,
     mut a: &'a [Word],
@@ -249,7 +249,7 @@ pub fn add_signed_mul<'a>(
     }
 
     if b.len() <= threshold::simple() {
-        simple::add_signed_mul(c, sign, a, b, memory)
+        simple::add_signed_mul::<OUT_IS_ZERO>(c, sign, a, b, memory)
     } else if b.len() <= threshold::karatsuba() {
         karatsuba::add_signed_mul(c, sign, a, b, memory)
     } else if b.len() <= threshold::ntt() {

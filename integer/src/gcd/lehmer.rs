@@ -389,7 +389,7 @@ pub fn gcd_ext_in_place(
 
             // update coefficient t0 += q*t1
             let qt1_len = q_lo.len() + t1_len;
-            let mut t_carry = mul::add_signed_mul(
+            let mut t_carry = mul::add_signed_mul::<false>(
                 &mut t0[..qt1_len],
                 Sign::Positive,
                 q_lo,
@@ -470,7 +470,7 @@ pub fn gcd_ext_in_place(
     let y_word = *y.first().unwrap();
     let x_word = div::div_by_word_in_place(x, y_word);
     t0_len = x.len() + t1_len;
-    debug_assert_zero!(mul::add_signed_mul(
+    debug_assert_zero!(mul::add_signed_mul::<false>(
         &mut t0[..t0_len],
         Sign::Positive,
         x,
