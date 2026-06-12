@@ -8,7 +8,6 @@ use crate::{
     ibig::IBig,
     repr::TypedReprRef::{self, *},
     ubig::UBig,
-    Sign::*,
 };
 use core::cmp::Ordering;
 
@@ -24,6 +23,7 @@ pub fn cmp_same_len(lhs: &[Word], rhs: &[Word]) -> Ordering {
 /// # Panics
 ///
 /// Panic if lhs or rhs has leading zero words (including the case where lhs == 0 or rhs == 0)
+#[inline]
 pub fn cmp_in_place(lhs: &[Word], rhs: &[Word]) -> Ordering {
     debug_assert!(*lhs.last().unwrap() != 0 && *rhs.last().unwrap() != 0);
     lhs.len()
@@ -53,7 +53,9 @@ impl<'a> Ord for TypedReprRef<'a> {
 impl Ord for UBig {
     #[inline]
     fn cmp(&self, other: &UBig) -> Ordering {
-        self.repr().cmp(&other.repr())
+        // UBig is non-negative, so comparing magnitudes is the full
+        // comparison; no sign handling needed.
+        self.0.magnitude_cmp(&other.0)
     }
 }
 
@@ -67,14 +69,7 @@ impl PartialOrd for UBig {
 impl Ord for IBig {
     #[inline]
     fn cmp(&self, other: &IBig) -> Ordering {
-        let (lhs_sign, lhs_mag) = self.as_sign_repr();
-        let (rhs_sign, rhs_mag) = other.as_sign_repr();
-        match (lhs_sign, rhs_sign) {
-            (Positive, Positive) => lhs_mag.cmp(&rhs_mag),
-            (Positive, Negative) => Ordering::Greater,
-            (Negative, Positive) => Ordering::Less,
-            (Negative, Negative) => rhs_mag.cmp(&lhs_mag),
-        }
+        self.0.signed_cmp(&other.0)
     }
 }
 
