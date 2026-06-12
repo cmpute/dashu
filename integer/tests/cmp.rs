@@ -59,3 +59,32 @@ fn test_abs_ord() {
     assert!(ubig!(12).abs_cmp(&ibig!(-12)).is_eq());
     assert!(ubig!(12).abs_cmp(&ibig!(-14)).is_le());
 }
+
+#[test]
+fn test_eq_across_representations() {
+    // Regression for Repr::eq's inline-DoubleWord path and its sign/scale
+    // short-circuits, plus the canonical-encoding requirement it relies on.
+    // inline equal / unequal (capacity 1 and capacity 2)
+    assert_eq!(ubig!(5), ubig!(5));
+    assert_ne!(ubig!(5), ubig!(7));
+    assert_eq!(ubig!(0x10000000000000000), ubig!(0x10000000000000000)); // 2^64 (cap 2)
+    assert_ne!(ubig!(0x10000000000000000), ubig!(0x10000000000000001));
+    // scale mismatch: an inline value can never equal a heap value
+    assert_ne!(ubig!(5), ubig!(1) << 200);
+    assert_ne!(ubig!(1) << 200, ubig!(5));
+    // heap equal / unequal, same length and different length
+    assert_eq!(ubig!(1) << 200, ubig!(1) << 200);
+    assert_ne!((ubig!(1) << 200) + ubig!(1), (ubig!(1) << 200) + ubig!(2));
+    assert_ne!(ubig!(1) << 200, ubig!(1) << 201);
+    // cross-representation canonical equality: `ones` must compare equal to the
+    // inline form of the same value (the from_buffer canonicalisation).
+    assert_eq!(UBig::ones(128), UBig::from(u128::MAX));
+    assert_eq!(UBig::ones(256), (ubig!(1) << 256) - ubig!(1));
+    // IBig: zero is canonically positive, so sign disagreement is never equal
+    assert_eq!(ibig!(-5), ibig!(-5));
+    assert_ne!(ibig!(5), ibig!(-5));
+    assert_eq!(ibig!(0), ibig!(0));
+    assert_ne!(ibig!(0), ibig!(1));
+    assert_eq!(-(ibig!(1) << 200), -(ibig!(1) << 200));
+    assert_ne!(-(ibig!(1) << 200), ibig!(1) << 200);
+}
