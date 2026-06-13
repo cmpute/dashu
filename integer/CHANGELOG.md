@@ -3,16 +3,16 @@
 ## Unreleased
 
 ### Add
-- NTT-based multiplication for very large integers (above 2048 words), using three Solinas primes of the form `2^64 − 2^b + 1` combined with the Chinese Remainder Theorem.
+- NTT-based multiplication for very large integers (above 50000 words / ~3.2M bits), using two Solinas primes of the form `2^64 − 2^b + 1` combined with the Chinese Remainder Theorem.
 - `UBig::from_u64` and `IBig::from_i64`, const on 32-bit and 64-bit targets.
 
 ### Improve
 - Basecase (schoolbook) multiplication now uses an dword mult inner kernel (two multiplier words per sweep over the accumulator, mirroring GMP's `mpn_addmul_2` and `mpn_submul_2`), roughly halving accumulator memory traffic.
 - Addition and subtraction carry/borrow propagation now uses `Word` (u64/u32) instead of `bool` throughout the architecture-specific `add_with_carry` and `sub_with_borrow` functions, eliminating `bool`↔Word conversions in the inner loops.
-
-### Improve
-- Logarithm for very large values uses power-sequence decomposition, replacing iterative single-step multiplication.
-- Improve power-of-two base formatting ([#3](https://github.com/cmpute/dashu/pull/3))
+- Lowered the Karatsuba→Toom-3 multiplication threshold from 192 to 96 words, giving Toom-Cook-3 at ~6000 bits instead of ~12000 bits — closes the gap with malachite at ~10000-bit sizes.
+- NTT coefficient width increased from 16 to 64 bits (K_eff=3 for 64-bit, K_eff=2 otherwise), roughly halving the transform length at each step.
+- NTT multiplication auto-selects `K_eff = 2` primes when headroom allows, skipping the third prime.
+- Multiplication thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE`, `DASHU_THRESHOLD_KARATSUBA`, and `DASHU_THRESHOLD_NTT` environment variables (requires `tuning` feature).
 
 ## 0.4.2
 

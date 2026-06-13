@@ -19,6 +19,7 @@ all-features = true
 [features]
 default = ["std", "num-order"]
 std = ["dashu-base/std"]
+tuning = ["std"]
 
 # unstable dependencies
 rand = ["rand_v08"]

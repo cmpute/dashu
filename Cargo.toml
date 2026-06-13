@@ -36,6 +36,7 @@ std = ["dashu-base/std", "dashu-int/std", "dashu-float/std", "dashu-ratio/std"]
 # stable features
 serde = ["dashu-int/serde", "dashu-float/serde", "dashu-ratio/serde"]
 num-order = ["dashu-int/num-order", "dashu-float/num-order", "dashu-ratio/num-order"]
+tuning = ["dashu-int/tuning"]
 zeroize = ["dashu-int/zeroize", "dashu-float/zeroize", "dashu-ratio/zeroize"]
 
 # unstable features

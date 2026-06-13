@@ -14,23 +14,67 @@ use core::mem;
 use static_assertions::const_assert;
 
 /// If smaller operand length <= this, simple multiplication will be used.
-const THRESHOLD_SIMPLE: usize = 24;
-const_assert!(THRESHOLD_SIMPLE <= simple::MAX_SMALLER_LEN);
-const_assert!(THRESHOLD_SIMPLE + 1 >= karatsuba::MIN_LEN);
+const THRESHOLD_SIMPLE_DEFAULT: usize = 24;
+const_assert!(THRESHOLD_SIMPLE_DEFAULT <= simple::MAX_SMALLER_LEN);
+const_assert!(THRESHOLD_SIMPLE_DEFAULT + 1 >= karatsuba::MIN_LEN);
 
 /// If smaller operand length <= this, Karatsuba multiplication will be used.
-const THRESHOLD_KARATSUBA: usize = 192;
-const_assert!(THRESHOLD_KARATSUBA + 1 >= toom_3::MIN_LEN);
+const THRESHOLD_KARATSUBA_DEFAULT: usize = 192;
+const_assert!(THRESHOLD_KARATSUBA_DEFAULT + 1 >= toom_3::MIN_LEN);
 
 /// If smaller operand length > this, NTT multiplication will be used.
-const THRESHOLD_NTT: usize = ntt::THRESHOLD_NTT;
-const_assert!(THRESHOLD_NTT + 1 >= toom_3::MIN_LEN);
+const THRESHOLD_NTT_DEFAULT: usize = ntt::THRESHOLD_NTT;
+const_assert!(THRESHOLD_NTT_DEFAULT + 1 >= toom_3::MIN_LEN);
+
+/// Environment-variable overrides for multiplication thresholds.
+///
+/// When the `tuning` feature is active the user may set `DASHU_THRESHOLD_SIMPLE`,
+/// `DASHU_THRESHOLD_KARATSUBA` or `DASHU_THRESHOLD_NTT` to override the
+/// compile-time defaults.
+mod threshold {
+    #[inline]
+    pub fn simple() -> usize {
+        #[cfg(feature = "tuning")]
+        {
+            if let Ok(s) = std::env::var("DASHU_THRESHOLD_SIMPLE") {
+                if let Ok(v) = s.parse() {
+                    return v;
+                }
+            }
+        }
+        super::THRESHOLD_SIMPLE_DEFAULT
+    }
+    #[inline]
+    pub fn karatsuba() -> usize {
+        #[cfg(feature = "tuning")]
+        {
+            if let Ok(s) = std::env::var("DASHU_THRESHOLD_KARATSUBA") {
+                if let Ok(v) = s.parse() {
+                    return v;
+                }
+            }
+        }
+        super::THRESHOLD_KARATSUBA_DEFAULT
+    }
+    #[inline]
+    pub fn ntt() -> usize {
+        #[cfg(feature = "tuning")]
+        {
+            if let Ok(s) = std::env::var("DASHU_THRESHOLD_NTT") {
+                if let Ok(v) = s.parse() {
+                    return v;
+                }
+            }
+        }
+        super::THRESHOLD_NTT_DEFAULT
+    }
+}
 
 mod helpers;
 mod karatsuba;
 pub(crate) mod ntt;
 mod simple;
-mod toom_3;
+pub(crate) mod toom_3;
 
 /// Multiply a word sequence by a `Word` in place.
 ///
@@ -162,11 +206,11 @@ pub fn sub_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Wor
 
 /// Temporary scratch space required for multiplication.
 pub fn memory_requirement_up_to(total_len: usize, smaller_len: usize) -> Layout {
-    if smaller_len <= THRESHOLD_SIMPLE {
+    if smaller_len <= threshold::simple() {
         memory::zero_layout()
-    } else if smaller_len <= THRESHOLD_KARATSUBA {
+    } else if smaller_len <= threshold::karatsuba() {
         karatsuba::memory_requirement_up_to(smaller_len)
-    } else if smaller_len <= THRESHOLD_NTT {
+    } else if smaller_len <= threshold::ntt() {
         toom_3::memory_requirement_up_to(smaller_len)
     } else {
         ntt::memory_requirement_up_to(total_len, smaller_len)
@@ -202,11 +246,11 @@ pub fn add_signed_mul<'a>(
         mem::swap(&mut a, &mut b);
     }
 
-    if b.len() <= THRESHOLD_SIMPLE {
+    if b.len() <= threshold::simple() {
         simple::add_signed_mul(c, sign, a, b, memory)
-    } else if b.len() <= THRESHOLD_KARATSUBA {
+    } else if b.len() <= threshold::karatsuba() {
         karatsuba::add_signed_mul(c, sign, a, b, memory)
-    } else if b.len() <= THRESHOLD_NTT {
+    } else if b.len() <= threshold::ntt() {
         toom_3::add_signed_mul(c, sign, a, b, memory)
     } else {
         ntt::add_signed_mul(c, sign, a, b, memory)
@@ -227,11 +271,11 @@ pub fn add_signed_mul_same_len(
     let n = a.len();
     debug_assert!(b.len() == n && c.len() == 2 * n);
 
-    if n <= THRESHOLD_SIMPLE {
+    if n <= threshold::simple() {
         simple::add_signed_mul_same_len(c, sign, a, b, memory)
-    } else if n <= THRESHOLD_KARATSUBA {
+    } else if n <= threshold::karatsuba() {
         karatsuba::add_signed_mul_same_len(c, sign, a, b, memory)
-    } else if n <= THRESHOLD_NTT {
+    } else if n <= threshold::ntt() {
         toom_3::add_signed_mul_same_len(c, sign, a, b, memory)
     } else {
         ntt::add_signed_mul_same_len(c, sign, a, b, memory)
