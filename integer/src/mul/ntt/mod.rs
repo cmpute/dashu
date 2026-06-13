@@ -352,7 +352,9 @@ fn add_shifted_to_prod(prod: &mut [u64], val: &U192, k: usize, b_pack: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(feature = "std"))]
     use alloc::vec;
+    #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
 
     #[test]

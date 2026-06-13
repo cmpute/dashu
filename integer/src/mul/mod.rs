@@ -366,7 +366,7 @@ pub fn add_signed_mul_same_len(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod threshold_tests {
     use super::*;
     use crate::arch::word::Word;
@@ -388,13 +388,13 @@ mod threshold_tests {
 
         for &n in sizes {
             let a: Vec<Word> = (0..n)
-                .map(|i| (i as u64 + 1).wrapping_mul(0x9E3779B97F4A7C15))
+                .map(|i| (i as Word + 1).wrapping_mul(0x9E3779B97F4A7C15u64 as Word))
                 .collect();
             let b: Vec<Word> = (0..n)
-                .map(|i| (i as u64 + 1).wrapping_mul(0xC6A4A7935BD1E995))
+                .map(|i| (i as Word + 1).wrapping_mul(0xC6A4A7935BD1E995u64 as Word))
                 .collect();
-            let mut c_kara = vec![0u64; 2 * n];
-            let mut c_toom = vec![0u64; 2 * n];
+            let mut c_kara = vec![0 as Word; 2 * n];
+            let mut c_toom = vec![0 as Word; 2 * n];
             let layout_kara = karatsuba::memory_requirement_up_to(n);
             let layout_toom = toom_3::memory_requirement_up_to(n);
             // Use the larger layout so both algorithms get enough memory.
@@ -475,7 +475,12 @@ mod threshold_tests {
     #[allow(clippy::let_underscore_must_use)]
     #[cfg(all(
         feature = "std",
-        not(any(force_bits = "16", force_bits = "32", target_pointer_width = "16", target_pointer_width = "32"))
+        not(any(
+            force_bits = "16",
+            force_bits = "32",
+            target_pointer_width = "16",
+            target_pointer_width = "32"
+        ))
     ))]
     fn crossover_ntt() {
         use std::time::Instant;

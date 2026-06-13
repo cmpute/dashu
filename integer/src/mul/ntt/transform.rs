@@ -135,9 +135,11 @@ pub fn pointwise_mul<const B: u32>(a_hat: &mut [u64], b_hat: &[u64]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::vec;
-    use alloc::vec::Vec;
     use crate::mul::ntt::primes::PRIMES;
+    #[cfg(not(feature = "std"))]
+    use alloc::vec;
+    #[cfg(not(feature = "std"))]
+    use alloc::vec::Vec;
 
     fn assert_all_eq(a: &[u64], b_val: &[u64]) {
         assert_eq!(a.len(), b_val.len());
