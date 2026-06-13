@@ -6,9 +6,8 @@
 - `UBig::from_u64` and `IBig::from_i64`, const on 32-bit and 64-bit targets.
 
 ### Improve
-- Basecase (schoolbook) multiplication now uses an `addmul_2` inner kernel (two multiplier words per sweep over the accumulator, mirroring GMP's `mpn_addmul_2`), roughly halving accumulator memory traffic. ~20% faster at ~1000-bit operands and ~10% faster at ~10000-bit operands, also benefiting downstream modular multiplication and exponentiation.
-- Added the matching `submul_2` kernel for the subtractive basecase path (the Karatsuba/Toom-3 middle term), ~1.3–1.6x faster than the previous `submul_1`-based loop at the kernel level.
-- Addition and subtraction carry/borrow propagation now uses `Word` (u64/u32) instead of `bool` throughout the architecture-specific `add_with_carry` and `sub_with_borrow` functions, eliminating `bool`↔Word conversions in the inner loops. Combined with comparison-based overflow detection on the generic code path, this reduces the per-word instruction count from ~9 to ~7 on ARM64. ~36% faster addition and ~17% faster subtraction at 10000-bit operand sizes, bringing dashu roughly even with malachite at this scale. Added `#[inline]` annotations on the hot loop functions to ensure cross-function optimization.
+- Basecase (schoolbook) multiplication now uses an dword mult inner kernel (two multiplier words per sweep over the accumulator, mirroring GMP's `mpn_addmul_2` and `mpn_submul_2`), roughly halving accumulator memory traffic.
+- Addition and subtraction carry/borrow propagation now uses `Word` (u64/u32) instead of `bool` throughout the architecture-specific `add_with_carry` and `sub_with_borrow` functions, eliminating `bool`↔Word conversions in the inner loops.
 
 ### Improve
 - Logarithm for very large values uses power-sequence decomposition, replacing iterative single-step multiplication.

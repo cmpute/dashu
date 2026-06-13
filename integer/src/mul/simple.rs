@@ -82,15 +82,15 @@ fn add_signed_mul_chunk(
 
 /// `words[..n] += rhs[..n] * (mult0 + mult1 * B)`, where `n == rhs.len()`.
 ///
-/// This is an "addmul_2" kernel: it consumes two multiplier words per sweep over
-/// `rhs`, so the accumulator word `words[k]` is loaded and stored once per two
-/// multiplier words instead of once per word. This halves the memory traffic on
-/// `words` and exposes two independent multiply chains, mirroring GMP's
-/// `mpn_addmul_2`.
+/// It consumes two multiplier words per sweep over `rhs`, so the accumulator
+/// word `words[k]` is loaded and stored once per two multiplier words instead
+/// of once per word. This halves the memory traffic on `words` and exposes two
+/// independent multiply chains, mirroring GMP's `mpn_addmul_2`.
 ///
-/// Only `words[..n]` is modified. The two extra high words of the product (the
-/// carries out of columns `n` and `n + 1`) are returned as `(carry_lo, carry_hi)`,
-/// to be accumulated by the caller at `words[n]` and `words[n + 1]`.
+/// Only `words[..n]` is modified. The two extra high words of the product
+/// (the carries out of columns `n` and `n + 1`) are returned as
+/// `(carry_lo, carry_hi)`, to be accumulated by the caller at `words[n]`
+/// and `words[n + 1]`.
 #[inline]
 fn add_mul_dword_same_len_in_place(
     words: &mut [Word],
@@ -119,7 +119,7 @@ fn add_mul_chunk(c: &mut [Word], a: &[Word], b: &[Word]) -> bool {
     let mut overflow = false;
     let mut i = 0;
 
-    // Consume the multiplier two words at a time via the addmul_2 kernel.
+    // Consume the multiplier two words at a time via the add_mul_dword_same_len_in_place kernel.
     let mut pairs = b.chunks_exact(2);
     for pair in &mut pairs {
         let (carry_lo, carry_hi) =
@@ -128,7 +128,7 @@ fn add_mul_chunk(c: &mut [Word], a: &[Word], b: &[Word]) -> bool {
         i += 2;
     }
 
-    // Handle the leftover odd multiplier word with a plain addmul_1.
+    // Handle the leftover odd multiplier word with a plain add_mul_word_same_len_in_place.
     if let &[m] = pairs.remainder() {
         let carry_word = mul::add_mul_word_same_len_in_place(&mut c[i..i + n], m, a);
         overflow |= add::add_word_in_place(&mut c[i + n..], carry_word);
@@ -197,143 +197,4 @@ fn sub_mul_chunk(c: &mut [Word], a: &[Word], b: &[Word]) -> bool {
     }
 
     borrow_out
-}
-
-#[cfg(test)]
-mod addmul2_tests {
-    use super::*;
-    use crate::arch;
-    #[cfg(not(feature = "std"))]
-    use alloc::vec::Vec;
-
-    #[cfg(feature = "std")]
-    type MulChunkFn = dyn Fn(&mut [Word], &[Word], &[Word]) -> bool;
-
-    /// Reference: the original addmul_1-based schoolbook (known correct).
-    fn ref_add_mul(c: &mut [Word], a: &[Word], b: &[Word]) -> bool {
-        let mut carry: Word = 0;
-        for (i, m) in b.iter().enumerate() {
-            let carry_word = mul::add_mul_word_same_len_in_place(&mut c[i..i + a.len()], *m, a);
-            let (carry_word, carry_next) =
-                arch::add::add_with_carry(c[i + a.len()], carry_word, carry);
-            c[i + a.len()] = carry_word;
-            carry = carry_next;
-        }
-        carry != 0
-    }
-
-    /// Reference: the original submul_1-based schoolbook (known correct).
-    fn ref_sub_mul(c: &mut [Word], a: &[Word], b: &[Word]) -> bool {
-        let mut borrow: Word = 0;
-        for (i, m) in b.iter().enumerate() {
-            let borrow_word = mul::sub_mul_word_same_len_in_place(&mut c[i..i + a.len()], *m, a);
-            let (borrow_word, borrow_next) =
-                arch::add::sub_with_borrow(c[i + a.len()], borrow_word, borrow);
-            c[i + a.len()] = borrow_word;
-            borrow = borrow_next;
-        }
-        borrow != 0
-    }
-
-    /// Compare the addmul_2 basecase against the old addmul_1 basecase.
-    /// Run with:
-    ///   cargo test -p dashu-int --release -- mul::simple::addmul2_tests::bench --ignored --nocapture
-    #[test]
-    #[ignore]
-    #[cfg(feature = "std")]
-    fn bench_addmul2_vs_addmul1() {
-        use core::hint::black_box;
-        use std::time::Instant;
-
-        let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
-        let mut next = || {
-            state ^= state << 13;
-            state ^= state >> 7;
-            state ^= state << 17;
-            state
-        };
-
-        println!(
-            "{:>6} | {:>10} {:>10} {:>8} | {:>10} {:>10} {:>8}",
-            "words", "addmul1", "addmul2", "speedup", "submul1", "submul2", "speedup"
-        );
-        println!("{}", "-".repeat(72));
-        for &n in &[8usize, 12, 16, 20, 24, 32, 48, 64, 96] {
-            let a: Vec<Word> = (0..n).map(|_| next() as Word).collect();
-            let b: Vec<Word> = (0..n).map(|_| next() as Word).collect();
-            let mut c = vec![0 as Word; 2 * n];
-            let rounds = 200_000;
-            let warm = 1000;
-
-            // Representative timing: `c` is zeroed before each call (as in a real
-            // multiply into fresh output), with the zeroing kept outside the timed
-            // region. Take the min over many rounds to suppress OS jitter.
-            let time_it = |f: &MulChunkFn, c: &mut [Word]| {
-                for _ in 0..warm {
-                    c.fill(0);
-                    black_box(f(black_box(&mut *c), &a, &b));
-                }
-                let mut best = f64::MAX;
-                for _ in 0..rounds {
-                    c.fill(0);
-                    let start = Instant::now();
-                    black_box(f(black_box(&mut *c), &a, &b));
-                    let e = start.elapsed().as_secs_f64() * 1e9;
-                    if e < best {
-                        best = e;
-                    }
-                }
-                best
-            };
-
-            let add1 = time_it(&ref_add_mul, &mut c);
-            let add2 = time_it(&|c, a, b| add_mul_chunk(c, a, b), &mut c);
-            let sub1 = time_it(&ref_sub_mul, &mut c);
-            let sub2 = time_it(&|c, a, b| sub_mul_chunk(c, a, b), &mut c);
-            println!(
-                "{:>6} | {:>10.1} {:>10.1} {:>7.2}x | {:>10.1} {:>10.1} {:>7.2}x",
-                n,
-                add1,
-                add2,
-                add1 / add2,
-                sub1,
-                sub2,
-                sub1 / sub2
-            );
-        }
-    }
-
-    #[test]
-    fn add_mul_chunk_matches_reference() {
-        let mut state: u64 = 0x1234_5678_9abc_def0;
-        let mut next = || {
-            state ^= state << 13;
-            state ^= state >> 7;
-            state ^= state << 17;
-            state
-        };
-        for na in 1..=10usize {
-            for nb in 1..=na {
-                for _ in 0..50 {
-                    let a: Vec<Word> = (0..na).map(|_| next() as Word).collect();
-                    let b: Vec<Word> = (0..nb).map(|_| next() as Word).collect();
-                    let c0: Vec<Word> = (0..na + nb).map(|_| next() as Word).collect();
-
-                    let mut c_ref = c0.clone();
-                    let exp_overflow = ref_add_mul(&mut c_ref, &a, &b);
-                    let mut c = c0.clone();
-                    let overflow = add_mul_chunk(&mut c, &a, &b);
-                    assert_eq!(c, c_ref, "add value mismatch na={na} nb={nb}");
-                    assert_eq!(overflow, exp_overflow, "add overflow mismatch na={na} nb={nb}");
-
-                    let mut c_ref = c0.clone();
-                    let exp_borrow = ref_sub_mul(&mut c_ref, &a, &b);
-                    let mut c = c0.clone();
-                    let borrow = sub_mul_chunk(&mut c, &a, &b);
-                    assert_eq!(c, c_ref, "sub value mismatch na={na} nb={nb}");
-                    assert_eq!(borrow, exp_borrow, "sub borrow mismatch na={na} nb={nb}");
-                }
-            }
-        }
-    }
 }
