@@ -50,7 +50,7 @@ macro_rules! add_binop_benchmark {
                 let a = random_fbig(precision, &mut rng);
                 let b = random_fbig(precision, &mut rng);
                 group.bench_with_input(
-                    BenchmarkId::from_parameter(precision),
+                    BenchmarkId::from_parameter(format!("1e{}", log_prec)),
                     &(a, b),
                     |bencher, (ta, tb)| bencher.iter(|| ta.$method(tb)),
                 );
@@ -70,7 +70,7 @@ macro_rules! add_binop_benchmark {
                 let a = random_dbig(precision, &mut rng);
                 let b = random_dbig(precision, &mut rng);
                 group.bench_with_input(
-                    BenchmarkId::from_parameter(precision),
+                    BenchmarkId::from_parameter(format!("1e{}", log_prec)),
                     &(a, b),
                     |bencher, (ta, tb)| bencher.iter(|| ta.$method(tb)),
                 );

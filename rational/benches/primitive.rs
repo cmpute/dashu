@@ -35,7 +35,7 @@ macro_rules! add_binop_benchmark {
                 let a = random_rbig(bits, &mut rng);
                 let b = random_rbig(bits, &mut rng) + &a; // make b > a so that sub won't underflow
                 group.bench_with_input(
-                    BenchmarkId::from_parameter(bits),
+                    BenchmarkId::from_parameter(format!("1e{}", log_bits)),
                     &(a, b),
                     |bencher, (ta, tb)| bencher.iter(|| tb.$method(ta)),
                 );

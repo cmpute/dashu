@@ -35,7 +35,7 @@ macro_rules! add_binop_benchmark {
                 let a = random_ubig(bits, &mut rng);
                 let b = random_ubig(bits, &mut rng) + &a; // make b > a so that sub won't underflow
                 group.bench_with_input(
-                    BenchmarkId::from_parameter(bits),
+                    BenchmarkId::from_parameter(format!("1e{}", log_bits)),
                     &(a, b),
                     |bencher, (ta, tb)| bencher.iter(|| tb.$method(ta)),
                 );
@@ -48,7 +48,7 @@ macro_rules! add_binop_benchmark {
 
 add_binop_benchmark!(ubig_add, add, 6);
 add_binop_benchmark!(ubig_sub, sub, 6);
-add_binop_benchmark!(ubig_mul, mul, 6);
+add_binop_benchmark!(ubig_mul, mul, 7);
 add_binop_benchmark!(ubig_div, div, 6);
 add_binop_benchmark!(ubig_gcd, gcd, 6);
 add_binop_benchmark!(ubig_gcd_ext, gcd_ext, 5);
@@ -59,9 +59,11 @@ fn ubig_pow(criterion: &mut Criterion) {
 
     for log_power in 1..=6 {
         let p = 10usize.pow(log_power);
-        group.bench_with_input(BenchmarkId::from_parameter(p), &p, |bencher, p| {
-            bencher.iter(|| UBig::from(3u8).pow(*p))
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("1e{}", log_power)),
+            &p,
+            |bencher, p| bencher.iter(|| UBig::from(3u8).pow(*p)),
+        );
     }
 
     group.finish();
@@ -78,9 +80,11 @@ fn ubig_modulo_mul(criterion: &mut Criterion) {
         let ring = ConstDivisor::new(m);
         let a = ring.reduce(random_ubig(bits, &mut rng));
         let b = ring.reduce(random_ubig(bits, &mut rng));
-        group.bench_with_input(BenchmarkId::from_parameter(bits), &(a, b), |bencher, (ta, tb)| {
-            bencher.iter(|| ta * tb)
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("1e{}", log_bits)),
+            &(a, b),
+            |bencher, (ta, tb)| bencher.iter(|| ta * tb),
+        );
     }
 
     group.finish();
@@ -100,9 +104,11 @@ fn ubig_modulo_pow(criterion: &mut Criterion) {
         let ring = ConstDivisor::new(m);
         let a = ring.reduce(random_ubig(2048, &mut rng));
         let b = random_ubig(bits, &mut rng);
-        group.bench_with_input(BenchmarkId::from_parameter(bits), &(a, b), |bencher, (ta, tb)| {
-            bencher.iter(|| ta.pow(tb))
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("1e{}", log_bits)),
+            &(a, b),
+            |bencher, (ta, tb)| bencher.iter(|| ta.pow(tb)),
+        );
     }
 
     group.finish();
@@ -115,9 +121,11 @@ fn ubig_pow_large_base(criterion: &mut Criterion) {
     let base = UBig::from(12345u32);
     for log_exp in 1..=6usize {
         let exp = 10usize.pow(log_exp as u32);
-        group.bench_with_input(BenchmarkId::from_parameter(exp), &exp, |bencher, exp| {
-            bencher.iter(|| base.pow(*exp))
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("1e{}", log_exp)),
+            &exp,
+            |bencher, exp| bencher.iter(|| base.pow(*exp)),
+        );
     }
 
     group.finish();
@@ -132,9 +140,11 @@ fn ubig_ilog_large(criterion: &mut Criterion) {
     for log_bits in 1..=6usize {
         let bits = 10usize.pow(log_bits as u32);
         let n = random_ubig(bits, &mut rng);
-        group.bench_with_input(BenchmarkId::from_parameter(bits), &n, |bencher, tn| {
-            bencher.iter(|| tn.ilog(&base))
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("1e{}", log_bits)),
+            &n,
+            |bencher, tn| bencher.iter(|| tn.ilog(&base)),
+        );
     }
 
     group.finish();

@@ -33,13 +33,17 @@ fn dbig_to_string(criterion: &mut Criterion) {
         let precision = 10usize.pow(log_prec);
         let a = random_dbig(precision, &mut rng);
         let mut out = String::new();
-        group.bench_with_input(BenchmarkId::from_parameter(precision), &a, |bencher, ta| {
-            bencher.iter(|| {
-                out.clear();
-                write!(&mut out, "{}", ta).unwrap();
-                out.len()
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("1e{}", log_prec)),
+            &a,
+            |bencher, ta| {
+                bencher.iter(|| {
+                    out.clear();
+                    write!(&mut out, "{}", ta).unwrap();
+                    out.len()
+                })
+            },
+        );
     }
 
     group.finish();
@@ -54,9 +58,11 @@ fn dbig_from_str(criterion: &mut Criterion) {
         let precision = 10usize.pow(log_prec);
         let a = random_dbig(precision, &mut rng);
         let s = a.to_string();
-        group.bench_with_input(BenchmarkId::from_parameter(precision), &s, |bencher, ts| {
-            bencher.iter(|| ts.parse::<DBig>())
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("1e{}", log_prec)),
+            &s,
+            |bencher, ts| bencher.iter(|| ts.parse::<DBig>()),
+        );
     }
 
     group.finish();
@@ -71,13 +77,17 @@ fn dbig_scientific_fmt(criterion: &mut Criterion) {
         let precision = 10usize.pow(log_prec);
         let a = random_dbig(precision, &mut rng);
         let mut out = String::new();
-        group.bench_with_input(BenchmarkId::from_parameter(precision), &a, |bencher, ta| {
-            bencher.iter(|| {
-                out.clear();
-                write!(&mut out, "{:e}", ta).unwrap();
-                out.len()
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("1e{}", log_prec)),
+            &a,
+            |bencher, ta| {
+                bencher.iter(|| {
+                    out.clear();
+                    write!(&mut out, "{:e}", ta).unwrap();
+                    out.len()
+                })
+            },
+        );
     }
 
     group.finish();

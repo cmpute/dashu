@@ -32,13 +32,17 @@ fn rbig_to_string(criterion: &mut Criterion) {
         let bits = 10usize.pow(log_bits);
         let a = random_rbig(bits, &mut rng);
         let mut out = String::new();
-        group.bench_with_input(BenchmarkId::from_parameter(bits), &a, |bencher, ta| {
-            bencher.iter(|| {
-                out.clear();
-                write!(&mut out, "{}", ta).unwrap();
-                out.len()
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("1e{}", log_bits)),
+            &a,
+            |bencher, ta| {
+                bencher.iter(|| {
+                    out.clear();
+                    write!(&mut out, "{}", ta).unwrap();
+                    out.len()
+                })
+            },
+        );
     }
 
     group.finish();
@@ -53,9 +57,11 @@ fn rbig_from_str(criterion: &mut Criterion) {
         let bits = 10usize.pow(log_bits);
         let a = random_rbig(bits, &mut rng);
         let s = a.to_string();
-        group.bench_with_input(BenchmarkId::from_parameter(bits), &s, |bencher, ts| {
-            bencher.iter(|| ts.parse::<RBig>())
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("1e{}", log_bits)),
+            &s,
+            |bencher, ts| bencher.iter(|| ts.parse::<RBig>()),
+        );
     }
 
     group.finish();
@@ -71,7 +77,7 @@ fn rbig_in_radix_fmt(criterion: &mut Criterion) {
             let bits = 10usize.pow(log_bits);
             let a = random_rbig(bits, &mut rng);
             let mut out = String::new();
-            let param = format!("radix={},bits={}", radix, bits);
+            let param = format!("radix={},1e{}", radix, log_bits);
             group.bench_with_input(
                 BenchmarkId::from_parameter(param),
                 &(a, radix),
@@ -96,15 +102,20 @@ fn rbig_in_expanded_fmt(criterion: &mut Criterion) {
 
     // Use moderate-size rationals and vary output precision.
     let a = random_rbig(1000, &mut rng);
-    for &prec in &[10, 100, 1000, 10000] {
+    for log_prec in 1..=4 {
+        let prec = 10usize.pow(log_prec);
         let mut out = String::new();
-        group.bench_with_input(BenchmarkId::from_parameter(prec), &prec, |bencher, prec| {
-            bencher.iter(|| {
-                out.clear();
-                write!(&mut out, "{:.prec$}", a.in_expanded(10), prec = prec).unwrap();
-                out.len()
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("1e{}", log_prec)),
+            &prec,
+            |bencher, prec| {
+                bencher.iter(|| {
+                    out.clear();
+                    write!(&mut out, "{:.prec$}", a.in_expanded(10), prec = prec).unwrap();
+                    out.len()
+                })
+            },
+        );
     }
 
     group.finish();
@@ -116,15 +127,20 @@ fn rbig_in_expanded_scientific(criterion: &mut Criterion) {
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
     let a = random_rbig(1000, &mut rng);
-    for &prec in &[10, 100, 1000, 10000] {
+    for log_prec in 1..=4 {
+        let prec = 10usize.pow(log_prec);
         let mut out = String::new();
-        group.bench_with_input(BenchmarkId::from_parameter(prec), &prec, |bencher, prec| {
-            bencher.iter(|| {
-                out.clear();
-                write!(&mut out, "{:.prec$e}", a.in_expanded(10), prec = prec).unwrap();
-                out.len()
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("1e{}", log_prec)),
+            &prec,
+            |bencher, prec| {
+                bencher.iter(|| {
+                    out.clear();
+                    write!(&mut out, "{:.prec$e}", a.in_expanded(10), prec = prec).unwrap();
+                    out.len()
+                })
+            },
+        );
     }
 
     group.finish();

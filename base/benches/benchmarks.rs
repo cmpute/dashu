@@ -14,9 +14,11 @@ macro_rules! uop_case {
     ($t:ty, $bits:literal, $method:ident, $rng:ident, $group:ident) => {
         let bits = $bits;
         let a: $t = $rng.gen_range(0..1 << $bits);
-        $group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
-            bencher.iter(|| black_box(a).$method())
-        });
+        $group.bench_with_input(
+            BenchmarkId::from_parameter(format!("{}b", bits)),
+            &bits,
+            |bencher, _| bencher.iter(|| black_box(a).$method()),
+        );
     };
 }
 
@@ -25,9 +27,11 @@ macro_rules! binop_case {
         let bits = $bits;
         let a: $t = $rng.gen_range(0..1 << $bits);
         let b: $t = $rng.gen_range(0..1 << $bits);
-        $group.bench_with_input(BenchmarkId::from_parameter(bits), &bits, |bencher, _| {
-            bencher.iter(|| black_box(a).$method(black_box(b)))
-        });
+        $group.bench_with_input(
+            BenchmarkId::from_parameter(format!("{}b", bits)),
+            &bits,
+            |bencher, _| bencher.iter(|| black_box(a).$method(black_box(b))),
+        );
     };
 }
 
