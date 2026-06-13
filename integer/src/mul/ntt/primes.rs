@@ -53,6 +53,14 @@ pub const PRIMES: [NttPrime; K] = [
     },
 ];
 
+/// Garner CRT constants: `inv(p_i mod p_j)` for i < j.
+/// Computed offline via `pow(p_i % p_j, -1, p_j)`.
+pub const CRT_INV_IJ: [[u64; 3]; 3] = [
+    [0, 0xfffffffbaaaaaaad, 0xfffffefffefeff01],
+    [0, 0, 0xfffffefffefbefc1],
+    [0, 0, 0],
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
