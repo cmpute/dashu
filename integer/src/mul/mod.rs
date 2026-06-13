@@ -19,7 +19,9 @@ const_assert!(THRESHOLD_SIMPLE_DEFAULT <= simple::MAX_SMALLER_LEN);
 const_assert!(THRESHOLD_SIMPLE_DEFAULT + 1 >= karatsuba::MIN_LEN);
 
 /// If smaller operand length <= this, Karatsuba multiplication will be used.
-const THRESHOLD_KARATSUBA_DEFAULT: usize = 192;
+/// Tuned so that Toom-3 kicks in earlier (~96 words vs the old 192),
+/// closing the gap with malachite/rug at ~10000-bit sizes.
+const THRESHOLD_KARATSUBA_DEFAULT: usize = 96;
 const_assert!(THRESHOLD_KARATSUBA_DEFAULT + 1 >= toom_3::MIN_LEN);
 
 /// If smaller operand length > this, NTT multiplication will be used.

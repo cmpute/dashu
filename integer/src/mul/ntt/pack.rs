@@ -16,7 +16,11 @@ use crate::arch::word::Word;
 /// Panics if `out.len() < n`.
 pub fn pack(out: &mut [u64], words: &[Word], b_pack: u32, n: usize) {
     assert!(out.len() >= n);
-    let mask = (1u64 << b_pack) - 1;
+    let mask = if b_pack < Word::BITS {
+        (1u64 << b_pack) - 1
+    } else {
+        u64::MAX
+    };
     let word_bits = Word::BITS;
     let mut word_idx = 0usize;
     let mut bit_offset = 0u32;

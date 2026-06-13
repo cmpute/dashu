@@ -3,7 +3,7 @@
 ## Unreleased
 
 ### Add
-- NTT-based multiplication for very large integers (above 50000 words / ~3.2M bits), using two Solinas primes of the form `2^64 − 2^b + 1` combined with the Chinese Remainder Theorem.
+- NTT-based multiplication for very large integers (above 40000 words / ~2.6M bits), using two or three Solinas primes of the form `2^64 − 2^b + 1` combined with the Chinese Remainder Theorem.
 - `UBig::from_u64` and `IBig::from_i64`, const on 32-bit and 64-bit targets.
 
 ### Improve

@@ -23,11 +23,11 @@ pub use primes::{K, PRIMES};
 
 /// Minimum smaller-operand length (in words) for the NTT path.
 ///
-/// With `b_pack = 32` the crossover is at ~30 000 words (~2 M bits) on
-/// Apple M4 Pro.  N double at 32 769 / 65 537 / 131 073 words causes
-/// small regression windows; radix-4 will shrink the step size.
-/// Chosen conservatively at 50 000 words where NTT is ≥20% faster.
-pub const THRESHOLD_NTT: usize = 50_000;
+/// With `b_pack = 64` the crossover is at ~25 000 words (~1.6 M bits) on
+/// Apple M4 Pro.  N-doubling at 32 769 / 65 537 words creates narrow
+/// regression windows; radix-4 will shrink the step size further.
+/// Chosen at 40 000 words where NTT is ≥18% faster.
+pub const THRESHOLD_NTT: usize = 40_000;
 
 /// Smallest admissible coefficient bit width (used for worst-case memory bound).
 const B_PACK_MIN: u32 = 16;
@@ -35,7 +35,9 @@ const B_PACK_MIN: u32 = 16;
 /// Preferred coefficient bit width.  32 bits gives 2 coeffs/word and halves
 /// the transform length vs. 16 bits, while staying comfortably within the
 /// ~2^128 headroom of the two smallest primes.
-const B_PACK_PREFERRED: u32 = 32;
+/// Coefficient bit widths to try, in descending preference.
+/// 64 uses K_eff = 3 primes; 32 and 16 use K_eff = 2.
+const B_PACK_CANDIDATES: &[u32] = &[64, 32, 16];
 
 /// Maximum `log2(transform length)`, set by `min(v2) = 32` across all primes.
 const MAX_LOG_N: u32 = 32;
@@ -49,8 +51,7 @@ pub fn select_params(la_words: usize, lb_words: usize) -> (u32, usize, usize) {
     let lb_bits = lb_words as u64 * word_bits as u64;
     let prod_2 = (PRIMES[0].p as u128) * (PRIMES[1].p as u128);
 
-    // Try b_pack = 32 first (fewer coefficients → smaller N → faster transform).
-    for &b_pack in &[B_PACK_PREFERRED, B_PACK_MIN] {
+    for &b_pack in B_PACK_CANDIDATES {
         let coeffs_a = (la_bits + b_pack as u64 - 1) / b_pack as u64;
         let coeffs_b = (lb_bits + b_pack as u64 - 1) / b_pack as u64;
         let total_coeffs = (coeffs_a + coeffs_b - 1) as usize;
@@ -60,11 +61,19 @@ pub fn select_params(la_words: usize, lb_words: usize) -> (u32, usize, usize) {
             continue;
         }
 
-        let max_coeff = (n as u128 / 2) * ((1u128 << b_pack) - 1) * ((1u128 << b_pack) - 1);
+        // Compute max coefficient value, guarding against u128 overflow for
+        // b_pack = 64 where (2^64−1)^2 ≈ 2^128 and n/2 can push it past 2^128.
+        let coeff_max = (1u128 << b_pack) - 1;
+        let max_coeff = coeff_max
+            .checked_mul(coeff_max)
+            .and_then(|sq| (n as u128 / 2).checked_mul(sq));
 
-        // K_eff = 2 suffices when max_coeff < P0·P1 ≈ 2^128.
-        // K_eff = 3 covers the rest (product ≈ 2^192 ≫ max_coeff < 2^128).
-        let k_eff = if max_coeff < prod_2 { 2 } else { K };
+        let k_eff = match max_coeff {
+            Some(mc) if mc < prod_2 => 2,
+            // Overflow or exceeds two-prime product → need all three primes.
+            // Three-prime product ≈ 2^192 ≫ any max_coeff we can encounter.
+            _ => K,
+        };
         return (b_pack, n, k_eff);
     }
 
@@ -261,6 +270,22 @@ fn process_prime<const B: u32>(a: &[Word], b: &[Word], ctx: &mut TransformCtx<'_
     pack::pack(ctx.a_lane, a, ctx.b_pack, ctx.nn);
     pack::pack(ctx.b_lane, b, ctx.b_pack, ctx.nn);
 
+    // For b_pack = 64 coefficients may reach 2^64−1, which can exceed p.
+    // Reduce each coefficient mod p (one conditional subtract suffices:
+    // c < 2^64 < 2p for all three primes).
+    if ctx.b_pack >= 64 {
+        for c in ctx.a_lane[..ctx.nn].iter_mut() {
+            if *c >= ctx.p {
+                *c -= ctx.p;
+            }
+        }
+        for c in ctx.b_lane[..ctx.nn].iter_mut() {
+            if *c >= ctx.p {
+                *c -= ctx.p;
+            }
+        }
+    }
+
     transform::precompute_twiddles::<B>(ctx.fwd_twiddles, ctx.nn, ctx.p, ctx.omega_2_32, false);
     transform::precompute_twiddles::<B>(ctx.inv_twiddles, ctx.nn, ctx.p, ctx.omega_2_32, true);
 
@@ -331,18 +356,19 @@ mod tests {
     #[test]
     fn test_select_params_small() {
         let (b_pack, n, k_eff) = select_params(10, 10);
-        assert_eq!(b_pack, 32);
+        assert_eq!(b_pack, 64);
         assert!(n >= 2 && n.is_power_of_two());
-        assert_eq!(k_eff, 2);
+        // b_pack = 64 needs K_eff = 3 primes.
+        assert_eq!(k_eff, K);
     }
 
     #[test]
     fn test_select_params_large() {
         let (b_pack, n, k_eff) = select_params(THRESHOLD_NTT, THRESHOLD_NTT);
-        assert_eq!(b_pack, 32);
+        assert_eq!(b_pack, 64);
         assert!(n.is_power_of_two());
-        assert_eq!(k_eff, 2);
-        let coeffs_a = (THRESHOLD_NTT * Word::BITS as usize + 31) / 32;
+        assert_eq!(k_eff, K);
+        let coeffs_a = (THRESHOLD_NTT * Word::BITS as usize + 63) / 64;
         let coeffs_b = coeffs_a;
         let min_n = (coeffs_a + coeffs_b).next_power_of_two().max(2);
         assert!(n >= min_n, "n={n} < min_n={min_n}");
@@ -353,12 +379,16 @@ mod tests {
         let la = THRESHOLD_NTT;
         let lb = THRESHOLD_NTT;
         let (b_pack, n, _k_eff) = select_params(la, lb);
-        let max_coeff = (n as u128 / 2) * ((1u128 << b_pack) - 1) * ((1u128 << b_pack) - 1);
-        let prod_2 = (PRIMES[0].p as u128) * (PRIMES[1].p as u128);
-        assert!(
-            max_coeff < prod_2,
-            "headroom violation: max_coeff={max_coeff} >= prod_2={prod_2}"
-        );
+        // For b_pack = 64 the product overflows u128; checked_mul in
+        // select_params handles this and falls back to K_eff = 3.
+        // Three-prime product ≈ 2^192 ≫ max_coeff for n ≤ 2^32.
+        let coeff_max = (1u128 << b_pack) - 1;
+        let overflow = coeff_max
+            .checked_mul(coeff_max)
+            .and_then(|sq| (n as u128 / 2).checked_mul(sq))
+            .is_none();
+        assert!(overflow || _k_eff == 2, "K_eff=2 only when max_coeff fits in u128");
+        assert_eq!(b_pack, 64);
     }
 
     #[test]
