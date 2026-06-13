@@ -27,25 +27,19 @@ const_assert!(THRESHOLD_KARATSUBA_DEFAULT + 1 >= toom_3::MIN_LEN);
 /// If smaller operand length > this, NTT multiplication will be used.
 #[cfg(not(any(
     force_bits = "16",
-    force_bits = "32",
-    target_pointer_width = "16",
-    target_pointer_width = "32"
+    target_pointer_width = "16"
 )))]
 const THRESHOLD_NTT_DEFAULT: usize = ntt::THRESHOLD_NTT;
 /// NTT unavailable on 16/32-bit word targets — use `usize::MAX` so dispatch never
 /// routes to the NTT path.
 #[cfg(any(
     force_bits = "16",
-    force_bits = "32",
-    target_pointer_width = "16",
-    target_pointer_width = "32"
+    target_pointer_width = "16"
 ))]
 const THRESHOLD_NTT_DEFAULT: usize = usize::MAX;
 #[cfg(not(any(
     force_bits = "16",
-    force_bits = "32",
-    target_pointer_width = "16",
-    target_pointer_width = "32"
+    target_pointer_width = "16"
 )))]
 const_assert!(THRESHOLD_NTT_DEFAULT + 1 >= toom_3::MIN_LEN);
 
@@ -97,9 +91,7 @@ mod helpers;
 mod karatsuba;
 #[cfg(not(any(
     force_bits = "16",
-    force_bits = "32",
-    target_pointer_width = "16",
-    target_pointer_width = "32"
+    target_pointer_width = "16"
 )))]
 pub(crate) mod ntt;
 mod simple;
@@ -260,12 +252,13 @@ pub fn memory_requirement_up_to(total_len: usize, smaller_len: usize) -> Layout 
         ))]
         {
             let _ = (total_len, smaller_len);
-            unreachable!("NTT requires 64-bit Word");
+            unreachable!("NTT unavailable on 16-bit targets");
         }
     }
 }
 
 /// Temporary scratch space required for multiplication.
+#[inline]
 pub fn memory_requirement_exact(total_len: usize, smaller_len: usize) -> Layout {
     memory_requirement_up_to(total_len, smaller_len)
 }
@@ -318,7 +311,7 @@ pub fn add_signed_mul<'a>(
         ))]
         {
             let _ = (c, sign, a, b, memory);
-            unreachable!("NTT requires 64-bit Word");
+            unreachable!("NTT unavailable on 16-bit targets");
         }
     }
 }
@@ -361,7 +354,7 @@ pub fn add_signed_mul_same_len(
         ))]
         {
             let _ = (c, sign, a, b, memory);
-            unreachable!("NTT requires 64-bit Word");
+            unreachable!("NTT unavailable on 16-bit targets");
         }
     }
 }
