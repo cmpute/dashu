@@ -26,13 +26,17 @@ fn ubig_to_hex(criterion: &mut Criterion) {
         let bits = 10usize.pow(log_bits);
         let a = random_ubig(bits, &mut rng);
         let mut out = String::with_capacity(bits / 4 + 1);
-        group.bench_with_input(BenchmarkId::from_parameter(bits), &a, |bencher, ta| {
-            bencher.iter(|| {
-                out.clear();
-                write!(&mut out, "{:x}", &ta).unwrap();
-                out.len()
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("1e{}", log_bits)),
+            &a,
+            |bencher, ta| {
+                bencher.iter(|| {
+                    out.clear();
+                    write!(&mut out, "{:x}", &ta).unwrap();
+                    out.len()
+                })
+            },
+        );
     }
 
     group.finish();
@@ -47,13 +51,17 @@ fn ubig_to_dec(criterion: &mut Criterion) {
         let bits = 10usize.pow(log_bits);
         let a = random_ubig(bits, &mut rng);
         let mut out = String::with_capacity(bits / 3 + 1);
-        group.bench_with_input(BenchmarkId::from_parameter(bits), &a, |bencher, ta| {
-            bencher.iter(|| {
-                out.clear();
-                write!(&mut out, "{}", &ta).unwrap();
-                out.len()
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("1e{}", log_bits)),
+            &a,
+            |bencher, ta| {
+                bencher.iter(|| {
+                    out.clear();
+                    write!(&mut out, "{}", &ta).unwrap();
+                    out.len()
+                })
+            },
+        );
     }
 
     group.finish();
@@ -68,9 +76,11 @@ fn ubig_from_hex(criterion: &mut Criterion) {
         let bits = 10usize.pow(log_bits);
         let a = random_ubig(bits, &mut rng);
         let s = a.in_radix(16).to_string();
-        group.bench_with_input(BenchmarkId::from_parameter(bits), &s, |bencher, ts| {
-            bencher.iter(|| UBig::from_str_radix(ts, 16))
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("1e{}", log_bits)),
+            &s,
+            |bencher, ts| bencher.iter(|| UBig::from_str_radix(ts, 16)),
+        );
     }
 
     group.finish();
@@ -85,9 +95,11 @@ fn ubig_from_dec(criterion: &mut Criterion) {
         let bits = 10usize.pow(log_bits);
         let a = random_ubig(bits, &mut rng);
         let s = a.in_radix(10).to_string();
-        group.bench_with_input(BenchmarkId::from_parameter(bits), &s, |bencher, ts| {
-            bencher.iter(|| UBig::from_str_radix(ts, 10))
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("1e{}", log_bits)),
+            &s,
+            |bencher, ts| bencher.iter(|| UBig::from_str_radix(ts, 10)),
+        );
     }
 
     group.finish();
