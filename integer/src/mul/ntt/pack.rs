@@ -1,13 +1,9 @@
 //! Bit-level packing / unpacking of `b`-bit coefficients.
-#![allow(
-    dead_code,
-    unused_assignments,
-    unused_mut,
-    unused_variables,
-    clippy::unnecessary_cast
-)]
+#![allow(clippy::unnecessary_cast)]
 
 use crate::arch::word::Word;
+
+// TODO: shall we specialize the packing function? Since we only have three b_pack options.
 
 /// Pack a big integer (given as `&[Word]`, little-endian) into `out`,
 /// producing `n` coefficients of `b_pack` bits each, zero-padded.
@@ -16,6 +12,17 @@ use crate::arch::word::Word;
 /// Panics if `out.len() < n`.
 pub fn pack(out: &mut [u64], words: &[Word], b_pack: u32, n: usize) {
     assert!(out.len() >= n);
+
+    // Fast path: one coefficient per word, no bit shifting needed.
+    if b_pack == Word::BITS {
+        let len = words.len().min(n);
+        // SAFETY: NTT path requires Word = u64 (asserted by caller).
+        let words_u64 = unsafe { &*(words as *const [Word] as *const [u64]) };
+        out[..len].copy_from_slice(&words_u64[..len]);
+        out[len..n].fill(0);
+        return;
+    }
+
     let mask = if b_pack < Word::BITS {
         (1u64 << b_pack) - 1
     } else {
@@ -52,92 +59,78 @@ pub fn pack(out: &mut [u64], words: &[Word], b_pack: u32, n: usize) {
     }
 }
 
-/// Accumulate CRT-recovered convolution coefficients into the output limb
-/// array with carry propagation.
-///
-/// Each coefficient `c_k` contributes `c_k << (k * b_pack)` bits to the
-/// output.  `output` must have capacity for `c.len()` coefficients plus any
-/// carry overflow.
-pub fn unpack_accumulate(output: &mut [Word], coeffs: &[u64], b_pack: u32, output_len: usize) {
-    let word_bits = Word::BITS as u32;
-    // For each coefficient, shift it by k*b_pack bits and add into the
-    // output with carry propagation.  We use a software accumulation
-    // because the coefficients can be larger than a single output word.
-
-    for (k, &coeff) in coeffs.iter().enumerate().take(output_len) {
-        if coeff == 0 {
-            continue;
-        }
-        let shift_bits = (k as u32).wrapping_mul(b_pack);
-        let word_idx = (shift_bits / word_bits) as usize;
-        let bit_shift = shift_bits % word_bits;
-
-        // The coefficient occupies up to ⌈bit_len(coeff) / word_bits⌉ words.
-        // We split it into word-sized chunks and add each with the
-        // appropriate shift to the output.
-        let lo = coeff as u64;
-        let _hi = 0u64; // coeff fits in one u64 since max CRT value < P ≈ 2^192
-                        // Actually, per-coefficient CRT values can be up to P-1 ≈ 2^192,
-                        // which needs up to 3 words.  We handle this by splitting the
-                        // coefficient itself into words and accumulating each.
-
-        // For the immediate case, coeff from CRT is already small enough
-        // to fit in one or two u64 words. We accumulate by repeated
-        // add-with-carry into the output slice.
-        let mut carry: Word = 0;
-        let mut idx = word_idx;
-
-        if bit_shift == 0 {
-            // Aligned: just add into output
-            let (sum, c) = overflowing_add_word(output.get(idx).copied().unwrap_or(0), lo);
-            carry = Word::from(c);
-            if idx < output.len() {
-                output[idx] = sum;
-            }
-            idx += 1;
-        } else {
-            // Split across two output words
-            let lo_part = lo << bit_shift;
-            let hi_part = if bit_shift > 0 {
-                lo >> (64 - bit_shift)
-            } else {
-                0
-            };
-
-            let (sum, c1) = overflowing_add_word(output.get(idx).copied().unwrap_or(0), lo_part);
-            carry = Word::from(c1);
-            if idx < output.len() {
-                output[idx] = sum;
-            }
-            idx += 1;
-
-            let (sum2, c2) =
-                overflowing_add_word(output.get(idx).copied().unwrap_or(0), hi_part + carry);
-            carry = Word::from(c2);
-            if idx < output.len() {
-                output[idx] = sum2;
-            }
-            idx += 1;
-        }
-
-        // Propagate remaining carry
-        while carry != 0 && idx < output.len() {
-            let (sum, c) = overflowing_add_word(output[idx], carry);
-            output[idx] = sum;
-            carry = Word::from(c);
-            idx += 1;
-        }
-    }
-}
-
-fn overflowing_add_word(a: Word, b: u64) -> (Word, bool) {
-    let (sum, overflow) = a.overflowing_add(b);
-    (sum, overflow)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Accumulate CRT-recovered convolution coefficients into the output limb
+    /// array with carry propagation.
+    ///
+    /// Each coefficient `c_k` contributes `c_k << (k * b_pack)` bits to the
+    /// output.  `output` must have capacity for `c.len()` coefficients plus any
+    /// carry overflow.
+    fn unpack_accumulate(output: &mut [Word], coeffs: &[u64], b_pack: u32, output_len: usize) {
+        let word_bits = Word::BITS as u32;
+
+        for (k, &coeff) in coeffs.iter().enumerate().take(output_len) {
+            if coeff == 0 {
+                continue;
+            }
+            let shift_bits = (k as u32).wrapping_mul(b_pack);
+            let word_idx = (shift_bits / word_bits) as usize;
+            let bit_shift = shift_bits % word_bits;
+
+            let lo = coeff as u64;
+            let mut carry: Word;
+            let mut idx = word_idx;
+
+            if bit_shift == 0 {
+                let (sum, c) = output.get(idx).copied().unwrap_or(0).overflowing_add(lo);
+                carry = Word::from(c);
+                if idx < output.len() {
+                    output[idx] = sum;
+                }
+                idx += 1;
+            } else {
+                let lo_part = lo << bit_shift;
+                let hi_part = if bit_shift > 0 {
+                    lo >> (64 - bit_shift)
+                } else {
+                    0
+                };
+
+                let (sum, c1) = output
+                    .get(idx)
+                    .copied()
+                    .unwrap_or(0)
+                    .overflowing_add(lo_part);
+                carry = Word::from(c1);
+                if idx < output.len() {
+                    output[idx] = sum;
+                }
+                idx += 1;
+
+                let (sum2, c2) = output
+                    .get(idx)
+                    .copied()
+                    .unwrap_or(0)
+                    .overflowing_add(hi_part + carry);
+                carry = Word::from(c2);
+                if idx < output.len() {
+                    output[idx] = sum2;
+                }
+                idx += 1;
+            }
+
+            // Propagate remaining carry
+            while carry != 0 && idx < output.len() {
+                let (sum, c) = output[idx].overflowing_add(carry);
+                output[idx] = sum;
+                carry = Word::from(c);
+                idx += 1;
+            }
+        }
+    }
 
     #[test]
     fn test_pack_unpack_roundtrip() {

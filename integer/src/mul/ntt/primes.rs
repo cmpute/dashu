@@ -13,10 +13,10 @@ pub struct NttPrime {
     /// The exponent `b` in the Solinas form.
     pub b: u32,
     /// The exponent of 2 in `p - 1`: `v2(p - 1)`.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub v2: u32,
     /// A primitive root modulo `p` that generates the full multiplicative group.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub g: u64,
     /// A primitive `2^32`-th root of unity: `ω = g^{(p-1) / 2^32} mod p`.
     pub omega_2_32: u64,
@@ -29,6 +29,26 @@ pub struct NttPrime {
 /// | GL   | 32  | `0xFFFFFFFF00000001` | 32        | 7       | `1753635133440165772`      |
 /// | P1   | 34  | `0xFFFFFFFC00000001` | 34        | 5       | `11315553352654630047`     |
 /// | P2   | 40  | `0xFFFFFF0000000001` | 40        | 19      | `551857376737322389`       |
+#[cfg(not(test))]
+pub const PRIMES: [NttPrime; K] = [
+    NttPrime {
+        p: 0xFFFFFFFF00000001,
+        b: 32,
+        omega_2_32: 1753635133440165772,
+    },
+    NttPrime {
+        p: 0xFFFFFFFC00000001,
+        b: 34,
+        omega_2_32: 11315553352654630047,
+    },
+    NttPrime {
+        p: 0xFFFFFF0000000001,
+        b: 40,
+        omega_2_32: 551857376737322389,
+    },
+];
+
+#[cfg(test)]
 pub const PRIMES: [NttPrime; K] = [
     NttPrime {
         p: 0xFFFFFFFF00000001,

@@ -9,20 +9,17 @@ use num_modular::Reducer;
 /// Subset of `Reducer<u64>` that is object-safe (no `new` or other
 /// non-`&self` methods).  Implemented automatically for every
 /// `Reducer<u64>` via a blanket impl.
-#[allow(dead_code)]
 pub trait ModOps {
-    fn add(&self, lhs: &u64, rhs: &u64) -> u64;
     fn sub(&self, lhs: &u64, rhs: &u64) -> u64;
     fn mul(&self, lhs: &u64, rhs: &u64) -> u64;
 }
 
 impl<T: Reducer<u64>> ModOps for T {
-    fn add(&self, lhs: &u64, rhs: &u64) -> u64 {
-        Reducer::add(self, lhs, rhs)
-    }
+    #[inline]
     fn sub(&self, lhs: &u64, rhs: &u64) -> u64 {
         Reducer::sub(self, lhs, rhs)
     }
+    #[inline]
     fn mul(&self, lhs: &u64, rhs: &u64) -> u64 {
         Reducer::mul(self, lhs, rhs)
     }

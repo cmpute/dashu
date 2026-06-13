@@ -47,10 +47,8 @@
   primes always suffice.  Third-prime fallback (`K_eff = 3`) is retained as a
   safety net for larger `b_pack`.
 
-- **Threshold calibrated.**  `THRESHOLD_NTT = 120 000` words (~7.7 M bits),
+- **Threshold calibrated.**  `THRESHOLD_NTT = 40 000` words (~2.6 M bits),
   the first measured crossover where NTT beats pure toom-3 on Apple M4 Pro.
-  At 131 072 words N doubles (1 048 576 → 2 097 152) and NTT regresses until
-  toom-3 catches up at ~190 k words — radix-4 will shrink this gap.
 
 - **Env-var overrides.**  `DASHU_THRESHOLD_SIMPLE`, `DASHU_THRESHOLD_KARATSUBA`,
   `DASHU_THRESHOLD_NTT` override the compile-time defaults at runtime.  Gated
@@ -64,24 +62,7 @@
 
 ## Remaining optimisation opportunities
 
-### 1. Increase `b_pack` from 16 → 32  (~2× speedup)
-
-Currently every coefficient is 16 bits (4 coeffs per 64-bit word).  With
-K_eff = 2 primes providing ~2^128 of headroom, 32-bit coefficients are safe:
-
-    max_coeff = N/2 · (2^32 − 1)^2  <  2^95  ≪  P0·P1 ≈ 2^128
-
-Doubling `b_pack` halves the coefficient count, halves N, and roughly halves
-the total transform work.  Additionally, 32-bit packing is simpler: exactly
-2 coefficients per word, no straddling of word boundaries.
-
-**Work items:**
-- Update `select_params` to choose `b_pack ∈ {16, 32}` based on headroom.
-- Adjust `memory_requirement_up_to` — the current worst-case bound uses
-  `B_PACK_MIN = 16`; need to handle the tighter N for `b_pack = 32`.
-- Benchmark the new packing path.
-
-### 2. Radix-4 or split-radix NTT  (~25–33% fewer twiddle multiplies)
+### 1. Radix-4 or split-radix NTT  (~25–33% fewer twiddle multiplies)
 
 Radix-4 processes 4 elements per butterfly with 3 twiddle multiplies and
 `log₄(N)` stages (half as many passes through memory).  Split-radix pushes
@@ -95,7 +76,7 @@ the savings closer to 33%.
 - A primitive 4-th root `j = ω_N^{N/4}` is needed for the butterfly core;
   derive it from the existing `ω_2_32` root.
 
-### 3. Harvey lazy-reduction butterflies  (~10–15%)
+### 2. Harvey lazy-reduction butterflies  (~10–15%)
 
 Currently every `add_mod` / `sub_mod` fully normalizes to `[0, p)`.  Harvey's
 approach keeps values in `[0, 2p)` across multiple butterfly stages, deferring
@@ -109,27 +90,43 @@ a branch + subtract with a no-op in the inner loop.
   dynamic range, so worst-case after log₂(N) stages is `[0, N·p)` — we need a
   cleanup before it overflows `u64`).
 
-### 4. Merge `bit_reverse` with `pack`  (~5–10%)
+### 3. Merge `bit_reverse` with `pack`  (~5–10%)
 
 Currently `pack` writes coefficients in natural order, then `bit_reverse`
 permutes them in a second pass.  Write packed coefficients directly to their
 bit-reversed positions, saving one full array pass.
 
-### 5. Shift-expressible twiddle factors  (stage-dependent)
+### 4. Shift-expressible twiddle factors  (stage-dependent)
 
 In Goldilocks primes, `2^k mod p = 2^k` when `2^k < p`.  The first few NTT
 stages have twiddle factors that are pure powers of 2, so `mul_mod(t, 2^k)`
 reduces to a shift + conditional subtract — no `u128` multiply needed.
 
-### 6. Specialize `b = 32` lane  (~5%)
+### 5. Specialize `b = 32` lane  (~5%)
 
 The `b = 32` prime (`0xFFFFFFFF00000001`) has the cleanest reduction identity
 (splits a `u128` product exactly into 32-bit limbs).  A dedicated code path
 for this prime alone could squeeze out a few more cycles vs. the generic
 `match B` dispatch in `mul_mod`.
 
-### 7. Asymmetric operand chunking  (conditional)
+### 6. Asymmetric operand chunking  (conditional)
 
 When `a ≫ b`, chunk the long operand, forward-transform the short operand
 once, and reuse `b̂` (the transformed short operand) across all chunks.  Only
 matters for extremely lopsided inputs.
+
+### 7. u32-word support via u32 Solinas primes
+
+The NTT path currently requires `Word = u64` and uses three 64-bit Solinas
+primes.  For 32-bit (and potentially 16-bit) targets, we need a separate set
+of u32-friendly Solinas primes of the form `2^32 − 2^b + 1`.
+
+**Work items:**
+- Find 2–3 primes `p = 2^32 − 2^b + 1` with `v2(p-1) ≥ 16` (enough for N up
+  to 2^16) and distinct `b` values.
+- Implement `FixedTrinomialSolinas32` (or equivalent) in `num-modular`, or
+  hand-roll the 32-bit reduction inline.
+- Generalize the NTT pipeline over `Word` size: the packing, transform, and
+  CRT layers need to work with `u32` coefficients instead of `u64`.
+- Assert `Word = u32` or `Word = u64` at entry and dispatch to the appropriate
+  prime set.
