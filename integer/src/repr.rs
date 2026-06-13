@@ -443,6 +443,56 @@ impl Repr {
         self
     }
 
+    /// Slow path for `Clone::clone`: heap-resident values only (|capacity| > 2).
+    ///
+    /// Allocates directly instead of going through `Buffer::allocate` +
+    /// `push_slice` + `mem::transmute`, skipping the redundant capacity/length
+    /// bound checks and the sign-flip dance. Kept `#[inline(never)]` so the
+    /// inline fast path in `clone` stays small.
+    #[inline(never)]
+    fn clone_heap(&self) -> Self {
+        debug_assert!(self.capacity.get().unsigned_abs() > 2);
+        // SAFETY: abs(capacity) > 2 ⇒ the `heap` variant of the union
+        // is the live one, and `len >= 3`.
+        unsafe {
+            let (src_ptr, len) = self.data.heap;
+            debug_assert!(len >= 3);
+
+            // Mirrors `Buffer::default_capacity(len)`. `len <=
+            // Buffer::MAX_CAPACITY` is invariant for any heap Repr, and
+            // `default_capacity` is monotone, so `new_cap` is bounded
+            // and the bound check inside `Buffer::allocate_raw` would
+            // never fire.
+            let new_cap = len + len / 8 + 2;
+            debug_assert!((3..=Buffer::MAX_CAPACITY).contains(&new_cap));
+
+            let layout = core::alloc::Layout::from_size_align_unchecked(
+                new_cap * mem::size_of::<Word>(),
+                mem::align_of::<Word>(),
+            );
+            let new_ptr = alloc::alloc::alloc(layout) as *mut Word;
+            if new_ptr.is_null() {
+                crate::error::panic_out_of_memory();
+            }
+
+            ptr::copy_nonoverlapping(src_ptr, new_ptr, len);
+
+            // Set the result's signed capacity in one shot so we never
+            // build a positive Repr only to negate it back.
+            let signed_cap = if self.capacity.get() < 0 {
+                -(new_cap as isize)
+            } else {
+                new_cap as isize
+            };
+            Repr {
+                data: ReprData {
+                    heap: (new_ptr, len),
+                },
+                capacity: NonZeroIsize::new_unchecked(signed_cap),
+            }
+        }
+    }
+
     /// Returns a number representing sign of self.
     ///
     /// * [Self::zero] if the number is zero
@@ -461,43 +511,34 @@ impl Repr {
 
 // Cloning for Repr is written in a verbose way because it's performance critical.
 impl Clone for Repr {
+    #[inline]
     fn clone(&self) -> Self {
-        let (capacity, sign) = self.sign_capacity();
-
-        // SAFETY: see the comments inside the block
-        let new = unsafe {
-            // inline the data if the length is less than 3
-            // SAFETY: we check the capacity before accessing the variants
-            if capacity <= 2 {
-                Repr {
-                    data: ReprData {
-                        inline: self.data.inline,
-                    },
-                    // SAFETY: the capacity is from self, which guarantees it to be zero
-                    capacity: NonZeroIsize::new_unchecked(capacity as isize),
-                }
-            } else {
-                let (ptr, len) = self.data.heap;
-                // SAFETY: len is at least 2 when it's heap allocated (invariant of Repr)
-                let mut new_buffer = Buffer::allocate(len);
-                new_buffer.push_slice(slice::from_raw_parts(ptr, len));
-
-                // SAFETY: abs(self.capacity) >= 3 => self.data.len >= 3
-                // so the capacity and len of new_buffer will be both >= 3
-                mem::transmute::<Buffer, Repr>(new_buffer)
-            }
-        };
-        new.with_sign(sign)
+        // Inline case (|capacity| <= 2): copy the union and signed capacity
+        // verbatim, avoiding the `sign_capacity` + `with_sign` round-trip the
+        // old implementation did. The heap path is split into `clone_heap`.
+        if self.capacity.get().unsigned_abs() <= 2 {
+            return Repr {
+                data: ReprData {
+                    // SAFETY: capacity in {-2,-1,1,2} ⇒ the `inline`
+                    // variant of the union is the live one.
+                    inline: unsafe { self.data.inline },
+                },
+                capacity: self.capacity,
+            };
+        }
+        self.clone_heap()
     }
 
+    #[inline]
     fn clone_from(&mut self, src: &Self) {
-        let (src_cap, src_sign) = src.sign_capacity();
-        let (cap, _) = self.sign_capacity();
+        let src_cap_raw = src.capacity.get();
+        let cap = self.capacity.get().unsigned_abs();
 
         // SAFETY: see the comments inside the block
         unsafe {
-            // shortcut for inlined data
-            if src_cap <= 2 {
+            // Fast path: src is inline. Copy union + signed capacity, with a
+            // rare dealloc when self was previously heap-resident.
+            if src_cap_raw.unsigned_abs() <= 2 {
                 if cap > 2 {
                     // release the old buffer if necessary
                     // SAFETY: self.data.heap.0 must be valid pointer if cap > 2
@@ -507,6 +548,11 @@ impl Clone for Repr {
                 self.capacity = src.capacity;
                 return;
             }
+            let src_sign = if src_cap_raw > 0 {
+                Sign::Positive
+            } else {
+                Sign::Negative
+            };
 
             // SAFETY: we checked that abs(src.capacity) > 2
             let (src_ptr, src_len) = src.data.heap;
