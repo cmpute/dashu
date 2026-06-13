@@ -141,6 +141,7 @@ pub fn garner_combine(residues: &[u64], reducers: &[&dyn ModOps]) -> U192 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     #[test]
     fn test_garner_with_ntt_primes() {

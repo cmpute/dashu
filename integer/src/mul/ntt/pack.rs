@@ -62,6 +62,8 @@ pub fn pack(out: &mut [u64], words: &[Word], b_pack: u32, n: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
+    use alloc::vec::Vec;
 
     /// Accumulate CRT-recovered convolution coefficients into the output limb
     /// array with carry propagation.

@@ -352,6 +352,8 @@ fn add_shifted_to_prod(prod: &mut [u64], val: &U192, k: usize, b_pack: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
+    use alloc::vec::Vec;
 
     #[test]
     fn test_select_params_small() {

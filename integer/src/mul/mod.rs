@@ -25,7 +25,28 @@ const THRESHOLD_KARATSUBA_DEFAULT: usize = 96;
 const_assert!(THRESHOLD_KARATSUBA_DEFAULT + 1 >= toom_3::MIN_LEN);
 
 /// If smaller operand length > this, NTT multiplication will be used.
+#[cfg(not(any(
+    force_bits = "16",
+    force_bits = "32",
+    target_pointer_width = "16",
+    target_pointer_width = "32"
+)))]
 const THRESHOLD_NTT_DEFAULT: usize = ntt::THRESHOLD_NTT;
+/// NTT unavailable on 16/32-bit word targets — use `usize::MAX` so dispatch never
+/// routes to the NTT path.
+#[cfg(any(
+    force_bits = "16",
+    force_bits = "32",
+    target_pointer_width = "16",
+    target_pointer_width = "32"
+))]
+const THRESHOLD_NTT_DEFAULT: usize = usize::MAX;
+#[cfg(not(any(
+    force_bits = "16",
+    force_bits = "32",
+    target_pointer_width = "16",
+    target_pointer_width = "32"
+)))]
 const_assert!(THRESHOLD_NTT_DEFAULT + 1 >= toom_3::MIN_LEN);
 
 /// Environment-variable overrides for multiplication thresholds.
@@ -74,6 +95,12 @@ mod threshold {
 
 mod helpers;
 mod karatsuba;
+#[cfg(not(any(
+    force_bits = "16",
+    force_bits = "32",
+    target_pointer_width = "16",
+    target_pointer_width = "32"
+)))]
 pub(crate) mod ntt;
 mod simple;
 pub(crate) mod toom_3;
@@ -215,7 +242,26 @@ pub fn memory_requirement_up_to(total_len: usize, smaller_len: usize) -> Layout 
     } else if smaller_len <= threshold::ntt() {
         toom_3::memory_requirement_up_to(smaller_len)
     } else {
-        ntt::memory_requirement_up_to(total_len, smaller_len)
+        // NTT path — only available on 64-bit word targets.
+        #[cfg(not(any(
+            force_bits = "16",
+            force_bits = "32",
+            target_pointer_width = "16",
+            target_pointer_width = "32"
+        )))]
+        {
+            ntt::memory_requirement_up_to(total_len, smaller_len)
+        }
+        #[cfg(any(
+            force_bits = "16",
+            force_bits = "32",
+            target_pointer_width = "16",
+            target_pointer_width = "32"
+        ))]
+        {
+            let _ = (total_len, smaller_len);
+            unreachable!("NTT requires 64-bit Word");
+        }
     }
 }
 
@@ -255,7 +301,25 @@ pub fn add_signed_mul<'a>(
     } else if b.len() <= threshold::ntt() {
         toom_3::add_signed_mul(c, sign, a, b, memory)
     } else {
-        ntt::add_signed_mul(c, sign, a, b, memory)
+        #[cfg(not(any(
+            force_bits = "16",
+            force_bits = "32",
+            target_pointer_width = "16",
+            target_pointer_width = "32"
+        )))]
+        {
+            ntt::add_signed_mul(c, sign, a, b, memory)
+        }
+        #[cfg(any(
+            force_bits = "16",
+            force_bits = "32",
+            target_pointer_width = "16",
+            target_pointer_width = "32"
+        ))]
+        {
+            let _ = (c, sign, a, b, memory);
+            unreachable!("NTT requires 64-bit Word");
+        }
     }
 }
 
@@ -280,7 +344,25 @@ pub fn add_signed_mul_same_len(
     } else if n <= threshold::ntt() {
         toom_3::add_signed_mul_same_len(c, sign, a, b, memory)
     } else {
-        ntt::add_signed_mul_same_len(c, sign, a, b, memory)
+        #[cfg(not(any(
+            force_bits = "16",
+            force_bits = "32",
+            target_pointer_width = "16",
+            target_pointer_width = "32"
+        )))]
+        {
+            ntt::add_signed_mul_same_len(c, sign, a, b, memory)
+        }
+        #[cfg(any(
+            force_bits = "16",
+            force_bits = "32",
+            target_pointer_width = "16",
+            target_pointer_width = "32"
+        ))]
+        {
+            let _ = (c, sign, a, b, memory);
+            unreachable!("NTT requires 64-bit Word");
+        }
     }
 }
 
@@ -295,6 +377,7 @@ mod threshold_tests {
     ///   cargo test -p dashu-int --release -- mul::threshold_tests::crossover_karatsuba --nocapture --ignored
     #[test]
     #[ignore]
+    #[cfg(feature = "std")]
     fn crossover_karatsuba() {
         use std::time::Instant;
 
@@ -390,6 +473,10 @@ mod threshold_tests {
     #[test]
     #[ignore]
     #[allow(clippy::let_underscore_must_use)]
+    #[cfg(all(
+        feature = "std",
+        not(any(force_bits = "16", force_bits = "32", target_pointer_width = "16", target_pointer_width = "32"))
+    ))]
     fn crossover_ntt() {
         use std::time::Instant;
 
