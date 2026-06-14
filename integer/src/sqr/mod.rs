@@ -11,6 +11,8 @@ use crate::{
 };
 
 mod karatsuba;
+#[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
+mod ntt;
 mod simple;
 pub(crate) mod toom_3;
 
@@ -109,7 +111,7 @@ pub fn sqr(b: &mut [Word], a: &[Word], memory: &mut Memory) {
     } else {
         #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
         {
-            debug_assert_zero!(crate::mul::ntt::add_signed_sqr_same_len(
+            debug_assert_zero!(ntt::add_signed_sqr_same_len(
                 b,
                 Sign::Positive,
                 a,

@@ -13,8 +13,8 @@ use alloc::alloc::Layout;
 use core::mem;
 
 pub(crate) mod crt;
-mod pack;
-mod transform;
+pub(crate) mod pack;
+pub(crate) mod transform;
 
 use crate::arch::ntt::{
     B_PACK_CANDIDATES, B_PACK_MIN, CRT_INV_IJ, K, MAX_LOG_N, MODULI, OMEGA_MAX, P0, P1, P2,
@@ -68,7 +68,7 @@ pub fn select_params(la_words: usize, lb_words: usize) -> (u32, usize, usize) {
 }
 
 /// Estimate bit length from a word slice (excludes leading zeros).
-fn bit_len(words: &[Word]) -> u64 {
+pub(crate) fn bit_len(words: &[Word]) -> u64 {
     let leading_zeros = words.iter().rev().take_while(|&&w| w == 0).count();
     let used = words.len() - leading_zeros;
     if used == 0 {
@@ -80,7 +80,7 @@ fn bit_len(words: &[Word]) -> u64 {
 }
 
 /// Count number of coefficients needed for a given bit length.
-fn coeff_count(bit_len: u64, b_pack: u32) -> usize {
+pub(crate) fn coeff_count(bit_len: u64, b_pack: u32) -> usize {
     ((bit_len + b_pack as u64 - 1) / b_pack as u64) as usize
 }
 
@@ -152,122 +152,6 @@ pub fn add_signed_mul(
         return add_signed_mul_chunked(c, sign, a, b, memory);
     }
     add_signed_mul_conv(c, sign, a, b, memory)
-}
-
-/// `c += sign * a²` with a.len() == c.len()/2.
-///
-/// Returns carry.
-#[must_use]
-#[inline]
-pub(crate) fn add_signed_sqr_same_len(
-    c: &mut [Word],
-    sign: Sign,
-    a: &[Word],
-    memory: &mut Memory,
-) -> SignedWord {
-    let n = a.len();
-    debug_assert!(c.len() == 2 * n);
-    add_signed_sqr_conv(c, sign, a, memory)
-}
-
-/// Core NTT squaring: transform `a` once, pointwise-square, inverse.
-fn add_signed_sqr_conv(
-    c: &mut [Word],
-    sign: Sign,
-    a: &[Word],
-    memory: &mut Memory,
-) -> SignedWord {
-    use crate::arch::ntt::Lane;
-
-    let la = a.len();
-    debug_assert!(la > 0);
-    let (b_pack, nn, k_eff) = select_params(la, la);
-    let la_bits = bit_len(a);
-    debug_assert!(la_bits > 0);
-
-    let coeffs_a = coeff_count(la_bits, b_pack);
-    let output_coeffs = 2 * coeffs_a - 1;
-    let out_words = 2 * la;
-
-    let geom = NttGeometry {
-        nn,
-        b_pack,
-        k_eff,
-        output_coeffs,
-    };
-
-    // Allocate: product, residues, a_lane, twiddle buffers.
-    let (prod, mut m) = memory.allocate_slice_fill::<Word>(out_words, 0);
-    let (residues, mut m) = m.allocate_slice_fill::<Lane>(k_eff * nn, 0);
-    let (a_lane, mut m) = m.allocate_slice_fill::<Lane>(nn, 0);
-    let (fwd_twiddles, mut m) = m.allocate_slice_fill::<Lane>(nn / 2, 0);
-    let (inv_twiddles, _) = m.allocate_slice_fill::<Lane>(nn / 2, 0);
-
-    for (pi, &omega) in OMEGA_MAX.iter().enumerate().take(k_eff) {
-        match pi {
-            0 => {
-                transform::precompute_twiddles(fwd_twiddles, nn, omega, false, &P0);
-                transform::precompute_twiddles(inv_twiddles, nn, omega, true, &P0);
-                process_prime_square(a, a_lane, fwd_twiddles, inv_twiddles, residues, pi, &geom, &P0);
-            }
-            1 => {
-                transform::precompute_twiddles(fwd_twiddles, nn, omega, false, &P1);
-                transform::precompute_twiddles(inv_twiddles, nn, omega, true, &P1);
-                process_prime_square(a, a_lane, fwd_twiddles, inv_twiddles, residues, pi, &geom, &P1);
-            }
-            2 => {
-                transform::precompute_twiddles(fwd_twiddles, nn, omega, false, &P2);
-                transform::precompute_twiddles(inv_twiddles, nn, omega, true, &P2);
-                process_prime_square(a, a_lane, fwd_twiddles, inv_twiddles, residues, pi, &geom, &P2);
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    do_crt::<crate::arch::word::TripleWord>(prod, residues, &geom, &MODULI, &CRT_INV_IJ);
-
-    match sign {
-        Positive => add::add_signed_in_place(&mut c[..out_words], Positive, &prod[..out_words]),
-        Negative => add::add_signed_in_place(&mut c[..out_words], Negative, &prod[..out_words]),
-    }
-}
-
-/// Per-prime NTT squaring pipeline.
-///
-/// Packs + Montgomery converts + forward transforms `a`, pointwise
-/// squares, inverse transforms, and stores the residues.
-#[allow(clippy::too_many_arguments)]
-fn process_prime_square<R: Reducer<crate::arch::ntt::Lane>>(
-    a: &[Word],
-    a_lane: &mut [crate::arch::ntt::Lane],
-    fwd_twiddles: &[crate::arch::ntt::Lane],
-    inv_twiddles: &[crate::arch::ntt::Lane],
-    residues: &mut [crate::arch::ntt::Lane],
-    pi: usize,
-    geom: &NttGeometry,
-    r: &R,
-) {
-    let nn = geom.nn;
-
-    // Transform a
-    pack::pack(a_lane, a, geom.b_pack, nn);
-    for c in a_lane[..nn].iter_mut() {
-        *c = r.transform(*c);
-    }
-    transform::bit_reverse(&mut a_lane[..nn]);
-    transform::forward(&mut a_lane[..nn], fwd_twiddles, r);
-
-    // Pointwise square (no separate b̂ needed)
-    transform::pointwise_square(&mut a_lane[..nn], r);
-
-    // Inverse transform
-    transform::inverse(&mut a_lane[..nn], inv_twiddles, r);
-    for c in a_lane[..nn].iter_mut() {
-        *c = r.residue(*c);
-    }
-
-    let offset = pi * nn;
-    residues[offset..offset + nn].copy_from_slice(&a_lane[..nn]);
 }
 
 /// NTT multiplication with asymmetric chunking.
@@ -462,7 +346,7 @@ fn add_signed_mul_conv(
 }
 
 /// CRT + accumulate, generic over the accumulator type.
-fn do_crt<A: CrtAccum>(
+pub(crate) fn do_crt<A: CrtAccum>(
     prod: &mut [Word],
     residues: &[A::Lane],
     geom: &NttGeometry,
@@ -484,11 +368,11 @@ fn do_crt<A: CrtAccum>(
 }
 
 /// Geometry constants for an NTT pipeline invocation.
-struct NttGeometry {
-    nn: usize,
-    b_pack: u32,
-    k_eff: usize,
-    output_coeffs: usize,
+pub(crate) struct NttGeometry {
+    pub(crate) nn: usize,
+    pub(crate) b_pack: u32,
+    pub(crate) k_eff: usize,
+    pub(crate) output_coeffs: usize,
 }
 
 /// Scratch buffers and geometry for the per-prime NTT pipeline.
@@ -608,7 +492,7 @@ fn process_prime<R: Reducer<crate::arch::ntt::Lane>>(
 
 /// Add a CRT value (as `Word`-sized limbs) to `prod`, shifted left by
 /// `k * b_pack` bits.
-fn add_shifted_to_prod(prod: &mut [Word], words: &[Word], count: u32, k: usize, b_pack: u32) {
+pub(crate) fn add_shifted_to_prod(prod: &mut [Word], words: &[Word], count: u32, k: usize, b_pack: u32) {
     let shift_bits = (k as u32).wrapping_mul(b_pack);
     let word_bits = Word::BITS;
     let start_idx = (shift_bits / word_bits) as usize;
