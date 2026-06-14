@@ -223,5 +223,4 @@ mod tests {
         bit_reverse(&mut a);
         assert_eq!(a, vec![0, 4, 2, 6, 1, 5, 3, 7]);
     }
-
 }
