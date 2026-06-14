@@ -19,8 +19,10 @@ pub const MIN_LEN: usize = 3;
 ///
 /// n bounds the operand length in words.
 pub fn memory_requirement_up_to(n: usize) -> Layout {
-    // Same formula as Karatsuba multiplication — conservative upper bound.
-    let num_words = 2 * n + 2 * (math::ceil_log2(n) as usize);
+    // 3n + 2 ceil_log2 n  (vs 2n + 2 ceil_log2 n for mul).
+    // The extra n accounts for the diff_sq temp buffer (2·mid words)
+    // that has no analogue in multiplication.
+    let num_words = 3 * n + 2 * (math::ceil_log2(n) as usize);
     memory::array_layout::<Word>(num_words)
 }
 

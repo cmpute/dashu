@@ -21,8 +21,10 @@ pub const MIN_LEN: usize = 16;
 ///
 /// n bounds the operand length in words.
 pub fn memory_requirement_up_to(n: usize) -> Layout {
-    // f(n) = 6*(ceil(n/3)+1) + f(ceil(n/3)+1), proves to <= 3n + 10 ceil_log2 n.
-    let num_words = 3 * n + 10 * (math::ceil_log2(n) as usize);
+    // Conservative bound matching the Toom-3 multiplication formula.
+    // Slightly tighter than mul (no b_eval/b02), but the recurrence
+    // includes recursive sqr calls which use the same formula.
+    let num_words = 4 * n + 13 * (math::ceil_log2(n) as usize);
     memory::array_layout::<Word>(num_words)
 }
 
