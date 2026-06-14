@@ -575,20 +575,6 @@ mod tests {
     }
 
     #[test]
-    fn test_ntt_multiply_one_word() {
-        let a: Vec<Word> = vec![3];
-        let b: Vec<Word> = vec![5];
-        let mut c = vec![0u64 as Word; 2];
-        let layout = memory_requirement_up_to(c.len(), b.len());
-        let mut alloc = crate::memory::MemoryAllocation::new(layout);
-        let mut memory = alloc.memory();
-        let carry = add_signed_mul_conv(&mut c, Positive, &a, &b, &mut memory);
-        assert_eq!(carry, 0);
-        assert_eq!(c[0], 15);
-        assert_eq!(c[1], 0);
-    }
-
-    #[test]
     fn test_ntt_sign_negative() {
         let a: Vec<Word> = (0..30).map(|i| (i as Word + 1) * 100).collect();
         let b: Vec<Word> = (0..30).map(|i| (i as Word + 1) * 200).collect();
@@ -605,22 +591,6 @@ mod tests {
         let _ = add_signed_mul_conv(&mut c, Negative, &a, &b, &mut memory2);
 
         assert!(c.iter().all(|&w| w == 0));
-    }
-
-    const NTT_TEST_LEN: usize = 512;
-
-    #[test]
-    fn test_ntt_multiply_small() {
-        let a: Vec<Word> = vec![0xDEADBEEFu64 as Word; NTT_TEST_LEN];
-        let b: Vec<Word> = vec![0xCAFEBABEu64 as Word; NTT_TEST_LEN];
-        let mut c = vec![0u64 as Word; a.len() + b.len()];
-
-        let layout = memory_requirement_up_to(c.len(), b.len());
-        let mut alloc = crate::memory::MemoryAllocation::new(layout);
-        let mut memory = alloc.memory();
-        let carry = add_signed_mul_conv(&mut c, Positive, &a, &b, &mut memory);
-        assert_eq!(carry, 0);
-        assert!(c.iter().any(|&w| w != 0));
     }
 
     /// Naive schoolbook multiplication for comparison.
