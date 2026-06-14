@@ -109,7 +109,7 @@ mod tests {
     use alloc::vec;
     #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
-    use num_modular::{ModularCoreOps, ModularPow, ModularUnaryOps};
+    use num_modular::ModularPow;
 
     fn assert_all_eq(a: &[Lane], b_val: &[Lane], context: &str) {
         assert_eq!(a.len(), b_val.len(), "{context}: length mismatch");

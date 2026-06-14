@@ -17,7 +17,7 @@ mod pack;
 mod transform;
 
 use crate::arch::ntt::{
-    B_PACK_CANDIDATES, B_PACK_MIN, K, MAX_LOG_N, MODULI, OMEGA_MAX, P0, P1, P2,
+    B_PACK_CANDIDATES, B_PACK_MIN, CRT_INV_IJ, K, MAX_LOG_N, MODULI, OMEGA_MAX, P0, P1, P2,
 };
 use crate::mul::ntt::crt::{garner_combine, CrtAccum};
 use num_modular::Reducer;
@@ -113,6 +113,7 @@ pub fn memory_requirement_up_to(total_len: usize, _smaller_len: usize) -> Layout
 ///
 /// Returns carry.
 #[must_use]
+#[inline]
 pub fn add_signed_mul_same_len(
     c: &mut [Word],
     sign: Sign,
@@ -122,13 +123,23 @@ pub fn add_signed_mul_same_len(
 ) -> SignedWord {
     let n = a.len();
     debug_assert!(b.len() == n && c.len() == 2 * n);
-    add_signed_mul_impl(c, sign, a, b, memory)
+    add_signed_mul_conv(c, sign, a, b, memory)
 }
 
 /// `c += sign * a * b` (general, a may be longer than b).
 ///
+/// When `a ≫ b` the implementation forks:
+/// - If `b` is below [`THRESHOLD_NTT`], dispatch already routes to
+///   `toom_3::add_signed_mul` (which uses
+///   `add_signed_mul_split_into_chunks` from
+///   [`helpers`](crate::mul::helpers)).
+/// - If `b` is above [`THRESHOLD_NTT`], this function pre-transforms
+///   `b` once per prime and reuses `b̂` across chunks of `a` via
+///   [`add_signed_mul_chunked`].
+///
 /// Returns carry.
 #[must_use]
+#[inline]
 pub fn add_signed_mul(
     c: &mut [Word],
     sign: Sign,
@@ -137,13 +148,166 @@ pub fn add_signed_mul(
     memory: &mut Memory,
 ) -> SignedWord {
     debug_assert!(a.len() >= b.len() && c.len() == a.len() + b.len());
-    add_signed_mul_impl(c, sign, a, b, memory)
+    if a.len() > 2 * b.len() {
+        return add_signed_mul_chunked(c, sign, a, b, memory);
+    }
+    add_signed_mul_conv(c, sign, a, b, memory)
+}
+
+/// NTT multiplication with asymmetric chunking.
+///
+/// When `la > 2 * lb`, transform `b` once and reuse `b̂` across chunks
+/// of `a`, reducing total transform work from O((la+lb)·log(la+lb))
+/// to O(la + lb·log(lb)).
+fn add_signed_mul_chunked(
+    c: &mut [Word],
+    sign: Sign,
+    a: &[Word],
+    b: &[Word],
+    memory: &mut Memory,
+) -> SignedWord {
+    use crate::arch::ntt::Lane;
+    use crate::mul::helpers::add_signed_mul_split_into_chunks;
+
+    let lb = b.len();
+    let chunk_len = lb * 2;
+
+    // Parameters for chunk-sized transforms.
+    let (b_pack, nn_chunk, k_eff) = select_params(chunk_len, lb); // a_chunk ≈ 2*lb
+
+    // ---- Allocate long-lived buffers ----
+
+    // Per-prime forward-transformed b̂ and cached twiddles (fwd + inv).
+    // Twiddles depend only on (pi, nn_chunk, omega_max) — precompute
+    // once so the per-chunk closure can copy instead of recomputing.
+    let b_hat_len = k_eff * nn_chunk;
+    let twiddle_len = k_eff * (nn_chunk / 2);
+    let (b_hat, mut mem) = memory.allocate_slice_fill::<Lane>(b_hat_len, 0);
+    let (fwd_tw_cache, mut mem) = mem.allocate_slice_fill::<Lane>(twiddle_len, 0);
+    let (inv_tw_cache, mut mem) = mem.allocate_slice_fill::<Lane>(twiddle_len, 0);
+
+    // ---- Transform b once per prime; also precompute twiddles ----
+    let geom = NttGeometry {
+        nn: nn_chunk,
+        b_pack,
+        k_eff,
+        output_coeffs: 0, // unused by prepare_b_hat_and_twiddles
+    };
+    prepare_b_hat_and_twiddles(b_hat, fwd_tw_cache, inv_tw_cache, b, &geom, &mut mem);
+
+    // ---- Setup for the closure ----
+    let lb_bits = bit_len(b);
+    let coeffs_b = coeff_count(lb_bits, b_pack);
+
+    // ---- Chunked multiply ----
+    let carry = add_signed_mul_split_into_chunks(
+        c,
+        sign,
+        a,
+        b,
+        chunk_len,
+        &mut mem,
+        |c_slice, sign, a_chunk, b, mem| {
+            let a_bits = bit_len(a_chunk);
+            if a_bits == 0 {
+                return 0;
+            }
+            let coeffs_a = coeff_count(a_bits, b_pack);
+            let output_coeffs = coeffs_a + coeffs_b - 1;
+            let out_words = a_chunk.len() + b.len();
+
+            let geom = NttGeometry {
+                nn: nn_chunk,
+                b_pack,
+                k_eff,
+                output_coeffs,
+            };
+            run_ntt_pipeline(
+                a_chunk,
+                b_hat,
+                fwd_tw_cache,
+                inv_tw_cache,
+                &geom,
+                out_words,
+                c_slice,
+                sign,
+                mem,
+            )
+        },
+    );
+
+    carry
+}
+
+/// Run the full NTT pipeline: allocate → per-prime transform → CRT → fold into `c_out`.
+///
+/// `b_hat`, `fwd_tw_cache`, and `inv_tw_cache` must have been precomputed by the
+/// caller (pack + Montgomery convert + bit-reverse + forward-transform for `b_hat`;
+/// forward/inverse twiddle tables for the caches).  See `transform_b_forward` and
+/// `transform::precompute_twiddles`.
+///
+/// Shared body of `add_signed_mul_conv` and the per-chunk callback in
+/// `add_signed_mul_chunked`.
+fn run_ntt_pipeline(
+    a: &[Word],
+    b_hat: &[crate::arch::ntt::Lane],
+    fwd_tw_cache: &[crate::arch::ntt::Lane],
+    inv_tw_cache: &[crate::arch::ntt::Lane],
+    geom: &NttGeometry,
+    out_words: usize,
+    c_out: &mut [Word],
+    sign: Sign,
+    mem: &mut Memory,
+) -> SignedWord {
+    use crate::arch::ntt::Lane;
+
+    let nn = geom.nn;
+    let k_eff = geom.k_eff;
+
+    let (prod, mut m) = mem.allocate_slice_fill::<Word>(out_words, 0);
+    let (residues, mut m) = m.allocate_slice_fill::<Lane>(k_eff * nn, 0);
+    let (a_lane, mut m) = m.allocate_slice_fill::<Lane>(nn, 0);
+    let (b_lane, mut m) = m.allocate_slice_fill::<Lane>(nn, 0);
+    let (fwd_twiddles, mut m) = m.allocate_slice_fill::<Lane>(nn / 2, 0);
+    let (inv_twiddles, _) = m.allocate_slice_fill::<Lane>(nn / 2, 0);
+
+    let mut ctx = TransformCtx {
+        a_lane,
+        b_lane,
+        fwd_twiddles,
+        inv_twiddles,
+        geom: NttGeometry { ..*geom },
+    };
+
+    for pi in 0..k_eff {
+        let tw_off = pi * (nn / 2);
+        ctx.fwd_twiddles
+            .copy_from_slice(&fwd_tw_cache[tw_off..tw_off + nn / 2]);
+        ctx.inv_twiddles
+            .copy_from_slice(&inv_tw_cache[tw_off..tw_off + nn / 2]);
+
+        let b_hat_slice = &b_hat[pi * nn..(pi + 1) * nn];
+
+        match pi {
+            0 => process_prime(a, b_hat_slice, &mut ctx, residues, pi, &P0),
+            1 => process_prime(a, b_hat_slice, &mut ctx, residues, pi, &P1),
+            2 => process_prime(a, b_hat_slice, &mut ctx, residues, pi, &P2),
+            _ => unreachable!(),
+        }
+    }
+
+    do_crt::<crate::arch::word::TripleWord>(prod, residues, &ctx, &MODULI, &CRT_INV_IJ);
+
+    match sign {
+        Positive => add::add_signed_in_place(&mut c_out[..out_words], Positive, &prod[..out_words]),
+        Negative => add::add_signed_in_place(&mut c_out[..out_words], Negative, &prod[..out_words]),
+    }
 }
 
 /// Core implementation: c += sign * a * b.
 ///
 /// Does a single NTT convolution of the full operands (no chunking).
-fn add_signed_mul_impl(
+fn add_signed_mul_conv(
     c: &mut [Word],
     sign: Sign,
     a: &[Word],
@@ -155,202 +319,178 @@ fn add_signed_mul_impl(
     let la = a.len();
     let lb = b.len();
 
-    if la == 0 || lb == 0 {
-        return 0;
-    }
-
+    debug_assert!(la > 0 && lb > 0);
     let (b_pack, nn, k_eff) = select_params(la, lb);
     let la_bits = bit_len(a);
     let lb_bits = bit_len(b);
-    if la_bits == 0 || lb_bits == 0 {
-        return 0;
-    }
+    debug_assert!(la_bits > 0 && lb_bits > 0);
 
     let coeffs_a = coeff_count(la_bits, b_pack);
     let coeffs_b = coeff_count(lb_bits, b_pack);
     let output_coeffs = coeffs_a + coeffs_b - 1;
 
-    // ---- Memory carve (longest-lived first) ----
+    // Pre-transform b and precompute twiddles.
+    let b_hat_len = k_eff * nn;
+    let twiddle_len = k_eff * (nn / 2);
+    let (b_hat, mut mem) = memory.allocate_slice_fill::<Lane>(b_hat_len, 0);
+    let (fwd_tw_cache, mut mem) = mem.allocate_slice_fill::<Lane>(twiddle_len, 0);
+    let (inv_tw_cache, mut mem) = mem.allocate_slice_fill::<Lane>(twiddle_len, 0);
 
-    // 1. Product buffer (Word-sized, CRT splits u64 words into Word limbs)
-    let prod_len = la + lb;
-    let (prod, mut mem) = memory.allocate_slice_fill::<Word>(prod_len, 0);
-
-    // 2. Residue storage (per-prime inverse results)
-    let residues_len = k_eff * nn;
-    let (residues, mut mem) = mem.allocate_slice_fill::<Lane>(residues_len, 0);
-
-    // 3. Lane buffers (reused across primes)
-    let (a_lane, mut mem) = mem.allocate_slice_fill::<Lane>(nn, 0);
-    let (b_lane, mut mem) = mem.allocate_slice_fill::<Lane>(nn, 0);
-
-    // 4. Twiddle tables (fwd + inv, reused per prime)
-    let (fwd_twiddles, mut mem) = mem.allocate_slice_fill::<Lane>(nn / 2, 0);
-    let (inv_twiddles, _) = mem.allocate_slice_fill::<Lane>(nn / 2, 0);
-
-    // ---- Per-prime transforms (monomorphized per reducer) ----
-    for pi in 0..k_eff {
-        let mut ctx = TransformCtx {
-            a_lane,
-            b_lane,
-            fwd_twiddles,
-            inv_twiddles,
-            omega_max: OMEGA_MAX[pi],
-            nn,
-            b_pack,
-            residues,
-            pi,
-        };
-        match pi {
-            0 => process_prime(a, b, &mut ctx, &P0),
-            1 => process_prime(a, b, &mut ctx, &P1),
-            2 => process_prime(a, b, &mut ctx, &P2),
-            _ => unreachable!(),
-        }
-    }
-
-    // ---- CRT per coefficient + accumulate ----
-    // Extract prime constants as both u64 and u32 so the Lane-size
-    // dispatch below type-checks correctly in both branches.
-    // The dead branch (wrong width) is eliminated by the compiler.
-    let primes_u64: [u64; K] = [MODULI[0] as u64, MODULI[1] as u64, MODULI[2] as u64];
-    let crt_inv_u64: [[u64; K]; K] = {
-        use crate::arch::ntt::CRT_INV_IJ;
-        let mut m = [[0u64; K]; K];
-        for i in 0..K {
-            for j in 0..K {
-                m[i][j] = CRT_INV_IJ[i][j] as u64;
-            }
-        }
-        m
+    let geom = NttGeometry {
+        nn,
+        b_pack,
+        k_eff,
+        output_coeffs,
     };
-    let primes_u32: [u32; K] = [MODULI[0] as u32, MODULI[1] as u32, MODULI[2] as u32];
-    let crt_inv_u32: [[u32; K]; K] = {
-        let mut m = [[0u32; K]; K];
-        for i in 0..K {
-            for j in 0..K {
-                m[i][j] = crt_inv_u64[i][j] as u32;
-            }
-        }
-        m
-    };
-
-    // CRT dispatch: one branch per Word size, gated by cfg so only
-    // one compiles — no dummy types needed in dead branches.
-    #[cfg(not(any(force_bits = "32", target_pointer_width = "32")))]
-    {
-        let residues_u64: &[u64] =
-            unsafe { core::slice::from_raw_parts(residues.as_ptr() as *const u64, residues.len()) };
-        do_crt::<crate::arch::word::TripleWord>(
-            prod,
-            residues_u64,
-            k_eff,
-            nn,
-            output_coeffs,
-            b_pack,
-            &primes_u64,
-            &crt_inv_u64,
-        );
-    }
-    #[cfg(any(force_bits = "32", target_pointer_width = "32"))]
-    {
-        let residues_u32: &[u32] =
-            unsafe { core::slice::from_raw_parts(residues.as_ptr() as *const u32, residues.len()) };
-        do_crt::<crate::arch::word::TripleWord>(
-            prod,
-            residues_u32,
-            k_eff,
-            nn,
-            output_coeffs,
-            b_pack,
-            &primes_u32,
-            &crt_inv_u32,
-        );
-    }
-
-    // ---- Fold product into c with sign ----
-    let output_words = la + lb;
-    match sign {
-        Positive => add::add_signed_in_place(c, Positive, &prod[..output_words]),
-        Negative => add::add_signed_in_place(c, Negative, &prod[..output_words]),
-    }
+    prepare_b_hat_and_twiddles(b_hat, fwd_tw_cache, inv_tw_cache, b, &geom, &mut mem);
+    run_ntt_pipeline(a, b_hat, fwd_tw_cache, inv_tw_cache, &geom, la + lb, c, sign, &mut mem)
 }
 
 /// CRT + accumulate, generic over the accumulator type.
-#[allow(clippy::too_many_arguments)]
-#[inline(never)]
 fn do_crt<A: CrtAccum>(
     prod: &mut [Word],
     residues: &[A::Lane],
-    k_eff: usize,
-    nn: usize,
-    output_coeffs: usize,
-    b_pack: u32,
+    ctx: &TransformCtx<'_>,
     primes: &[A::Lane; K],
     crt_inv: &[[A::Lane; K]; K],
 ) {
-    for k in 0..output_coeffs {
+    let g = &ctx.geom;
+    for k in 0..g.output_coeffs {
         let mut coeff_residues = [A::Lane::default(); 3];
         #[allow(clippy::needless_range_loop)]
-        for pi in 0..k_eff {
-            coeff_residues[pi] = residues[pi * nn + k];
+        for pi in 0..g.k_eff {
+            coeff_residues[pi] = residues[pi * g.nn + k];
         }
-        let crt_val = garner_combine::<A>(&coeff_residues[..k_eff], crt_inv, primes);
+        let crt_val = garner_combine::<A>(&coeff_residues[..g.k_eff], crt_inv, primes);
         let mut crt_buf = [Word::default(); 6];
         let crt_n = crt_val.write_words(&mut crt_buf);
-        add_shifted_to_prod(prod, &crt_buf[..crt_n as usize], crt_n, k, b_pack);
+        add_shifted_to_prod(prod, &crt_buf[..crt_n as usize], crt_n, k, g.b_pack);
     }
 }
 
-/// Scratch buffers and parameters for one prime's NTT pipeline.
+/// Geometry constants for an NTT pipeline invocation.
+struct NttGeometry {
+    nn: usize,
+    b_pack: u32,
+    k_eff: usize,
+    output_coeffs: usize,
+}
+
+/// Scratch buffers and geometry for the per-prime NTT pipeline.
 struct TransformCtx<'a> {
     a_lane: &'a mut [crate::arch::ntt::Lane],
     b_lane: &'a mut [crate::arch::ntt::Lane],
     fwd_twiddles: &'a mut [crate::arch::ntt::Lane],
     inv_twiddles: &'a mut [crate::arch::ntt::Lane],
-    omega_max: crate::arch::ntt::Lane,
-    nn: usize,
-    b_pack: u32,
-    residues: &'a mut [crate::arch::ntt::Lane],
-    pi: usize,
+    geom: NttGeometry,
 }
 
-/// Per-prime NTT pipeline, monomorphized for a specific reducer `R`.
-#[inline(never)]
-fn process_prime<R: Reducer<crate::arch::ntt::Lane>>(
-    a: &[Word],
+/// Transform `b` and leave the result in `b_lane` (forward-transformed,
+/// Montgomery form).  `fwd_twiddles` must already be precomputed.
+
+fn transform_b_forward<R: Reducer<crate::arch::ntt::Lane>>(
+    b_lane: &mut [crate::arch::ntt::Lane],
     b: &[Word],
-    ctx: &mut TransformCtx<'_>,
+    nn: usize,
+    b_pack: u32,
+    fwd_twiddles: &[crate::arch::ntt::Lane],
     r: &R,
 ) {
-    pack::pack(ctx.a_lane, a, ctx.b_pack, ctx.nn);
-    pack::pack(ctx.b_lane, b, ctx.b_pack, ctx.nn);
-
-    // Convert standard-form coefficients to Montgomery form.
-    for c in ctx.a_lane[..ctx.nn].iter_mut() {
+    pack::pack(b_lane, b, b_pack, nn);
+    for c in b_lane[..nn].iter_mut() {
         *c = r.transform(*c);
     }
-    for c in ctx.b_lane[..ctx.nn].iter_mut() {
+    transform::bit_reverse(&mut b_lane[..nn]);
+    transform::forward(&mut b_lane[..nn], fwd_twiddles, r);
+}
+
+/// Pre-transform `b` and precompute twiddles, storing results into the
+/// pre-allocated cache slices.
+///
+/// `b_hat` must have length `geom.k_eff * geom.nn`, `fwd_tw_cache` and
+/// `inv_tw_cache` each `geom.k_eff * (geom.nn / 2)`.
+fn prepare_b_hat_and_twiddles(
+    b_hat: &mut [crate::arch::ntt::Lane],
+    fwd_tw_cache: &mut [crate::arch::ntt::Lane],
+    inv_tw_cache: &mut [crate::arch::ntt::Lane],
+    b: &[Word],
+    geom: &NttGeometry,
+    mem: &mut Memory,
+) {
+    use crate::arch::ntt::Lane;
+
+    let nn = geom.nn;
+    let b_pack = geom.b_pack;
+    let k_eff = geom.k_eff;
+
+    for pi in 0..k_eff {
+        let (b_lane, mut rest) = mem.allocate_slice_fill::<Lane>(nn, 0);
+        let (fwd_tw, mut rest) = rest.allocate_slice_fill::<Lane>(nn / 2, 0);
+        let (inv_tw, _) = rest.allocate_slice_fill::<Lane>(nn / 2, 0);
+
+        let omega = OMEGA_MAX[pi];
+        match pi {
+            0 => {
+                transform::precompute_twiddles(fwd_tw, nn, omega, false, &P0);
+                transform::precompute_twiddles(inv_tw, nn, omega, true, &P0);
+                transform_b_forward(b_lane, b, nn, b_pack, fwd_tw, &P0);
+            }
+            1 => {
+                transform::precompute_twiddles(fwd_tw, nn, omega, false, &P1);
+                transform::precompute_twiddles(inv_tw, nn, omega, true, &P1);
+                transform_b_forward(b_lane, b, nn, b_pack, fwd_tw, &P1);
+            }
+            2 => {
+                transform::precompute_twiddles(fwd_tw, nn, omega, false, &P2);
+                transform::precompute_twiddles(inv_tw, nn, omega, true, &P2);
+                transform_b_forward(b_lane, b, nn, b_pack, fwd_tw, &P2);
+            }
+            _ => unreachable!(),
+        }
+
+        let b_off = pi * nn;
+        let tw_off = pi * (nn / 2);
+        b_hat[b_off..b_off + nn].copy_from_slice(b_lane);
+        fwd_tw_cache[tw_off..tw_off + nn / 2].copy_from_slice(fwd_tw);
+        inv_tw_cache[tw_off..tw_off + nn / 2].copy_from_slice(inv_tw);
+    }
+}
+
+/// Per-prime NTT pipeline.
+///
+/// `b_hat_slice` must already be forward-transformed (packed, Montgomery
+/// form, bit-reversed).  `ctx.fwd_twiddles` and `ctx.inv_twiddles` must
+/// already be precomputed.
+fn process_prime<R: Reducer<crate::arch::ntt::Lane>>(
+    a: &[Word],
+    b_hat_slice: &[crate::arch::ntt::Lane],
+    ctx: &mut TransformCtx<'_>,
+    residues: &mut [crate::arch::ntt::Lane],
+    pi: usize,
+    r: &R,
+) {
+    let nn = ctx.geom.nn;
+    let b_pack = ctx.geom.b_pack;
+
+    // Transform a
+    pack::pack(ctx.a_lane, a, b_pack, nn);
+    for c in ctx.a_lane[..nn].iter_mut() {
         *c = r.transform(*c);
     }
+    transform::bit_reverse(&mut ctx.a_lane[..nn]);
+    transform::forward(&mut ctx.a_lane[..nn], ctx.fwd_twiddles, r);
 
-    transform::precompute_twiddles(ctx.fwd_twiddles, ctx.nn, ctx.omega_max, false, r);
-    transform::precompute_twiddles(ctx.inv_twiddles, ctx.nn, ctx.omega_max, true, r);
+    // Copy pre-transformed b
+    ctx.b_lane[..nn].copy_from_slice(b_hat_slice);
 
-    transform::bit_reverse(ctx.a_lane);
-    transform::bit_reverse(ctx.b_lane);
-    transform::forward(ctx.a_lane, ctx.fwd_twiddles, r);
-    transform::forward(ctx.b_lane, ctx.fwd_twiddles, r);
-    transform::pointwise_mul(ctx.a_lane, ctx.b_lane, r);
-    transform::inverse(ctx.a_lane, ctx.inv_twiddles, r);
-
-    // Convert residues back from Montgomery to standard form.
-    for c in ctx.a_lane[..ctx.nn].iter_mut() {
+    transform::pointwise_mul(&mut ctx.a_lane[..nn], &ctx.b_lane[..nn], r);
+    transform::inverse(&mut ctx.a_lane[..nn], ctx.inv_twiddles, r);
+    for c in ctx.a_lane[..nn].iter_mut() {
         *c = r.residue(*c);
     }
 
-    let offset = ctx.pi * ctx.nn;
-    ctx.residues[offset..offset + ctx.nn].copy_from_slice(ctx.a_lane);
+    let offset = pi * nn;
+    residues[offset..offset + nn].copy_from_slice(&ctx.a_lane[..nn]);
 }
 
 /// Add a CRT value (as `Word`-sized limbs) to `prod`, shifted left by
@@ -445,23 +585,10 @@ mod tests {
         let layout = memory_requirement_up_to(c.len(), b.len());
         let mut alloc = crate::memory::MemoryAllocation::new(layout);
         let mut memory = alloc.memory();
-        let carry = add_signed_mul_impl(&mut c, Positive, &a, &b, &mut memory);
+        let carry = add_signed_mul_conv(&mut c, Positive, &a, &b, &mut memory);
         assert_eq!(carry, 0);
         assert_eq!(c[0], 15);
         assert_eq!(c[1], 0);
-    }
-
-    #[test]
-    fn test_ntt_zero_operand() {
-        let a = vec![0xDEADu64 as Word; 30];
-        let b = vec![0u64 as Word; 30];
-        let mut c = vec![0u64 as Word; a.len() + b.len()];
-        let layout = memory_requirement_up_to(c.len(), b.len());
-        let mut alloc = crate::memory::MemoryAllocation::new(layout);
-        let mut memory = alloc.memory();
-        let carry = add_signed_mul_impl(&mut c, Positive, &a, &b, &mut memory);
-        assert_eq!(carry, 0);
-        assert!(c.iter().all(|&w| w == 0));
     }
 
     #[test]
@@ -473,12 +600,12 @@ mod tests {
         let layout = memory_requirement_up_to(c.len(), b.len());
         let mut alloc = crate::memory::MemoryAllocation::new(layout);
         let mut memory = alloc.memory();
-        let _ = add_signed_mul_impl(&mut c, Positive, &a, &b, &mut memory);
+        let _ = add_signed_mul_conv(&mut c, Positive, &a, &b, &mut memory);
 
         let layout2 = memory_requirement_up_to(c.len(), b.len());
         let mut alloc2 = crate::memory::MemoryAllocation::new(layout2);
         let mut memory2 = alloc2.memory();
-        let _ = add_signed_mul_impl(&mut c, Negative, &a, &b, &mut memory2);
+        let _ = add_signed_mul_conv(&mut c, Negative, &a, &b, &mut memory2);
 
         assert!(c.iter().all(|&w| w == 0));
     }
@@ -494,7 +621,7 @@ mod tests {
         let layout = memory_requirement_up_to(c.len(), b.len());
         let mut alloc = crate::memory::MemoryAllocation::new(layout);
         let mut memory = alloc.memory();
-        let carry = add_signed_mul_impl(&mut c, Positive, &a, &b, &mut memory);
+        let carry = add_signed_mul_conv(&mut c, Positive, &a, &b, &mut memory);
         assert_eq!(carry, 0);
         assert!(c.iter().any(|&w| w != 0));
     }
@@ -534,7 +661,7 @@ mod tests {
         let layout = memory_requirement_up_to(c.len(), b.len());
         let mut alloc = crate::memory::MemoryAllocation::new(layout);
         let mut memory = alloc.memory();
-        let carry = add_signed_mul_impl(&mut c, Positive, &a, &b, &mut memory);
+        let carry = add_signed_mul_conv(&mut c, Positive, &a, &b, &mut memory);
         assert_eq!(carry, 0, "carry should be 0");
         assert_eq!(&c[..], &expected[..], "NTT mismatch: la={la}, lb={lb}");
     }
@@ -571,7 +698,7 @@ mod tests {
             let layout = memory_requirement_up_to(c.len(), b.len());
             let mut alloc = crate::memory::MemoryAllocation::new(layout);
             let mut memory = alloc.memory();
-            add_signed_mul_impl(&mut c, Positive, &a, &b, &mut memory);
+            add_signed_mul_conv(&mut c, Positive, &a, &b, &mut memory);
             assert_eq!(&c[..], &expected[..], "all-ones mismatch len={len}");
         }
     }
@@ -590,7 +717,7 @@ mod tests {
         let layout = memory_requirement_up_to(c.len(), b.len());
         let mut alloc = crate::memory::MemoryAllocation::new(layout);
         let mut memory = alloc.memory();
-        add_signed_mul_impl(&mut c, Positive, &a, &b, &mut memory);
+        add_signed_mul_conv(&mut c, Positive, &a, &b, &mut memory);
         assert_eq!(&c[..], &expected[..], "sparse operand mismatch");
     }
 }

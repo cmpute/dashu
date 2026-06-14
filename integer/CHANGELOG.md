@@ -3,7 +3,8 @@
 ## Unreleased
 
 ### Add
-- NTT-based multiplication for very large integers (above 40000 words / ~2.6M bits), using two or three Proth primes of the form `K·2^N + 1` combined with the Chinese Remainder Theorem. Supports both 64-bit and 32-bit Word targets.
+- NTT-based multiplication using Proth primes (`K·2^N + 1`), combined via Garner CRT.  Supports 64-bit and 32-bit Word targets.  Threshold at 4 000 words (~256 kbits).
+- Asymmetric NTT chunking: when one operand is much larger than the other, the shorter operand is forward-transformed once and reused across chunks.
 - `UBig::from_u64` and `IBig::from_i64`, const on 32-bit and 64-bit targets.
 
 ### Improve
@@ -13,6 +14,12 @@
 - NTT coefficient width increased from 16 to 64 bits (K_eff=3 for 64-bit, K_eff=2 otherwise), roughly halving the transform length at each step.
 - NTT multiplication auto-selects `K_eff = 2` primes when headroom allows, skipping the third prime.
 - Multiplication thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE`, `DASHU_THRESHOLD_KARATSUBA`, and `DASHU_THRESHOLD_NTT` environment variables (requires `tuning` feature).
+
+### Change
+- NTT multiplication now uses Proth primes (`K·2^N + 1`) instead of Solinas primes, improving modular reduction speed.
+- NTT threshold lowered from 40 000 to 4 000 words.
+- NTT enabled for 32-bit Word targets.
+- Arch-specific NTT prime definitions under `arch/generic_{32,64}_bit/ntt.rs`.
 
 ## 0.4.2
 

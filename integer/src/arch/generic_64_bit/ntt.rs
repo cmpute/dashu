@@ -6,14 +6,13 @@
 use num_modular::FixedProth64;
 
 // Proth reducer instances — each with a different (N, K) pair.
-pub const P0: FixedProth64<57, 29> = FixedProth64::<57, 29>;
-pub const P1: FixedProth64<57, 71> = FixedProth64::<57, 71>;
-pub const P2: FixedProth64<57, 75> = FixedProth64::<57, 75>;
-
-// Type aliases needed by for_each_prime! macro in transform tests.
 pub type Rp0 = FixedProth64<57, 29>;
 pub type Rp1 = FixedProth64<57, 71>;
 pub type Rp2 = FixedProth64<57, 75>;
+
+pub const P0: Rp0 = FixedProth64::<57, 29>;
+pub const P1: Rp1 = FixedProth64::<57, 71>;
+pub const P2: Rp2 = FixedProth64::<57, 75>;
 
 pub const K: usize = 3;
 pub const MAX_LOG_N: u32 = 57;
@@ -21,7 +20,6 @@ pub const B_PACK_MIN: u32 = 16;
 pub const B_PACK_CANDIDATES: &[u32] = &[64, 32, 16];
 
 pub type Lane = u64;
-pub type DoubleLane = u128;
 
 /// Primitive `MAX_LOG_N`-th roots of unity for each prime:
 /// `omega_max[i]` = `g^{(p_i-1) / 2^MAX_LOG_N} mod p_i`.
@@ -38,11 +36,7 @@ pub const CRT_INV_IJ: [[Lane; K]; K] = [
 ];
 
 /// Prime moduli indexed by PI.
-pub const MODULI: [Lane; K] = [
-    FixedProth64::<57, 29>::MODULUS,
-    FixedProth64::<57, 71>::MODULUS,
-    FixedProth64::<57, 75>::MODULUS,
-];
+pub const MODULI: [Lane; K] = [Rp0::MODULUS, Rp1::MODULUS, Rp2::MODULUS];
 
 #[cfg(test)]
 mod tests {

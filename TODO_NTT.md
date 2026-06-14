@@ -2,131 +2,56 @@
 
 ## Implemented
 
-### Core algorithm (Phases 1–6)
+### Core algorithm
 
-- **Primes.** Three Goldilocks-style Solinas primes `p = 2^64 − 2^b + 1` with
-  `b ∈ {32, 34, 40}`.  All support shift-based reduction via `2^64 ≡ 2^b − 1`.
-  Stored in `integer/src/mul/ntt/primes.rs` with a full `verify_primes()` test
-  (Miller–Rabin, exact root order, reduction-identity self-check).
+- **Primes.** Three Proth primes of the form `K·2^N + 1` per word size:
+  64-bit: `29·2^57+1`, `71·2^57+1`, `75·2^57+1` (MAX_LOG_N=57).
+  32-bit: `7·2^26+1`, `15·2^27+1`, `17·2^27+1` (MAX_LOG_N=26).
+  Defined in `integer/src/arch/generic_{64,32}_bit/ntt.rs` with per-prime
+  reducer instances `P0`/`P1`/`P2`.
 
-- **Modular arithmetic.** Lane arithmetic delegates to
-  `num_modular::FixedTrinomialSolinas64` for `add`/`sub`/`mul`/`reduce_double`.
-  `add`/`sub`/`mul` are monomorphized per `B` via const generics so the
-  compiler fully inlines each prime's hot path.
+- **Modular arithmetic.** Delegates to `num_modular::Reducer<Lane>` (Proth
+  Montgomery reduction).  Transform functions are generic over
+  `R: Reducer<Lane>`, monomorphized per prime at the `process_prime` call
+  site.  No per-prime wrapper functions.
 
-- **NTT transforms.** Iterative in-place radix-2 decimation-in-time
-  (`integer/src/mul/ntt/transform.rs`).  Forward transform: `bit_reverse →
-  forward(ω)`.  Inverse transform: `bit_reverse → forward(ω⁻¹) → scale by
-  N⁻¹`.  Twiddle tables precomputed once per prime per call.  Pointwise
-  multiply in the transform domain.
+- **NTT transforms.** Iterative in-place radix-2 DIT.  Forward:
+  `bit_reverse → forward(ω)`.  Inverse: `bit_reverse → forward(ω⁻¹) → scale`.
+  All arithmetic in Montgomery form; conversion at pipeline boundaries via
+  `r.transform`/`r.residue`.
 
-- **Packing / unpacking.** Bit-level `pack` slices `&[Word]` into `b_pack`-bit
-  coefficients (`integer/src/mul/ntt/pack.rs`).  CRT-recovered coefficients are
-  accumulated into the output limb array via shifted addition
-  (`add_shifted_to_prod`).
+- **CRT.** Garner's algorithm combining `K` residues into a `TripleWord`
+  (`[u64;3]` on 64-bit, `[u32;3]` on 32-bit).  `CrtAccum` trait in
+  `crt.rs`, impl gated by `#[cfg]` per word size.  Standard-form arithmetic
+  via `num_modular::ModularCoreOps::subm`/`mulm`.
 
-- **CRT.** Garner's algorithm combining `K` residues modulo `K` primes into a
-  `U192` (3 × u64) integer (`integer/src/mul/ntt/crt.rs`).  All Garner
-  precomputed constants are hardcoded in `primes.rs` (`CRT_INV_IJ`).  Uses an
-  object-safe `ModOps` trait (subset of `Reducer<u64>`) for dynamic dispatch
-  over the per-prime reducers.
+- **Dispatch.** `THRESHOLD_NTT = 4 000` words (256 kbits).  Asymmetric
+  chunking (`a > 2·b`): pre-transforms `b` once, reuses `b̂` across chunks of
+  `a`.  Shared entry point `process_prime(a, b: BInput<'_>, ctx, r)` handles
+  both raw `b` and cached `b̂`.
 
-- **Dispatch.**  Multiplication above `THRESHOLD_NTT` words routes to the NTT
-  path (`integer/src/mul/mod.rs`).  `add_signed_mul` (unequal lengths) and
-  `add_signed_mul_same_len` (equal lengths) share a single `add_signed_mul_impl`
-  that does one NTT convolution — no chunking for equal/similar lengths.
+### Architecture
 
-- **Memory.** Scratch space carved from the linear `Memory` arena.  Worst-case
-  bound computed in `memory_requirement_up_to` using `B_PACK_MIN = 16`
-  (largest possible N for a given operand size).
+- NTT constants and reducer instances live in arch-specific `ntt.rs` files,
+  re-exported through `arch/mod.rs` → `crate::arch::ntt`.
+- 16-bit Word targets excluded at compile time (`#[cfg]` on `pub(crate) mod ntt`).
 
-### Phase 7 optimisations (completed)
+### Benchmarking
 
-- **K_eff = 2 auto-selection.**  `select_params` checks headroom against
-  `P0·P1` (≈2^128).  For `b_pack = 16`, `max_coeff < 2^63 ≪ 2^128`, so two
-  primes always suffice.  Third-prime fallback (`K_eff = 3`) is retained as a
-  safety net for larger `b_pack`.
-
-- **Threshold calibrated.**  `THRESHOLD_NTT = 40 000` words (~2.6 M bits),
-  the first measured crossover where NTT beats pure toom-3 on Apple M4 Pro.
-
-- **Env-var overrides.**  `DASHU_THRESHOLD_SIMPLE`, `DASHU_THRESHOLD_KARATSUBA`,
-  `DASHU_THRESHOLD_NTT` override the compile-time defaults at runtime.  Gated
-  behind the `tuning` feature (implies `std`).
-
-- **Crossover benchmark.**  `#[ignore]` test `crossover()` in
-  `integer/src/mul/ntt/mod.rs` compares NTT against toom-3 at key sizes.
-  Run with `DASHU_THRESHOLD_NTT=99999999` to force pure toom-3.
+- `ubig_mul_asymmetric` in `integer/benches/primitive.rs` — fixed `b` (500 kbits),
+  varying `a` (1 kbit – 5 Mbits).  Exercises all chunked-mul code paths.
 
 ---
 
 ## Remaining optimisation opportunities
 
-### 1. Radix-4 or split-radix NTT  (~25–33% fewer twiddle multiplies)
+### 1. Radix-4 NTT  (~25–33% fewer twiddle multiplies)
 
-Radix-4 processes 4 elements per butterfly with 3 twiddle multiplies and
-`log₄(N)` stages (half as many passes through memory).  Split-radix pushes
-the savings closer to 33%.
-
-**Work items:**
-- Rewrite `ntt_core` in `transform.rs` with a radix-4 butterfly.
-- Handle N that is a power of 2 but not a power of 4: do one radix-2 stage
-  followed by radix-4 stages.
-- Update twiddle indexing; the twiddle table layout changes.
-- A primitive 4-th root `j = ω_N^{N/4}` is needed for the butterfly core;
-  derive it from the existing `ω_2_32` root.
+Attempted but reverted — the 4-point DFT output ordering within DIT/DIF
+interacts non-trivially with bit-reversal.  Needs careful re-analysis.
 
 ### 2. Harvey lazy-reduction butterflies  (~10–15%)
 
-Currently every `add_mod` / `sub_mod` fully normalizes to `[0, p)`.  Harvey's
-approach keeps values in `[0, 2p)` across multiple butterfly stages, deferring
-the conditional subtract to the end (or to the next `mul_mod`).  This replaces
-a branch + subtract with a no-op in the inner loop.
+Bypass `r.add`/`r.sub` normalization in `ntt_core`, deferring to a cleanup
+pass.  Trickiest due to interaction with `num_modular`'s `Reducer` API.
 
-**Work items:**
-- Change `add_mod` / `sub_mod` to allow `[0, 2p)` outputs.
-- Add a normalization pass at the end of `pointwise_mul` and `inverse`.
-- Verify no overflow in the radix-2 structure (each stage at most doubles the
-  dynamic range, so worst-case after log₂(N) stages is `[0, N·p)` — we need a
-  cleanup before it overflows `u64`).
-
-### 3. Merge `bit_reverse` with `pack`  (~5–10%)
-
-Currently `pack` writes coefficients in natural order, then `bit_reverse`
-permutes them in a second pass.  Write packed coefficients directly to their
-bit-reversed positions, saving one full array pass.
-
-### 4. Shift-expressible twiddle factors  (stage-dependent)
-
-In Goldilocks primes, `2^k mod p = 2^k` when `2^k < p`.  The first few NTT
-stages have twiddle factors that are pure powers of 2, so `mul_mod(t, 2^k)`
-reduces to a shift + conditional subtract — no `u128` multiply needed.
-
-### 5. Specialize `b = 32` lane  (~5%)
-
-The `b = 32` prime (`0xFFFFFFFF00000001`) has the cleanest reduction identity
-(splits a `u128` product exactly into 32-bit limbs).  A dedicated code path
-for this prime alone could squeeze out a few more cycles vs. the generic
-`match B` dispatch in `mul_mod`.
-
-### 6. Asymmetric operand chunking  (conditional)
-
-When `a ≫ b`, chunk the long operand, forward-transform the short operand
-once, and reuse `b̂` (the transformed short operand) across all chunks.  Only
-matters for extremely lopsided inputs.
-
-### 7. u32-word support via u32 Solinas primes
-
-The NTT path currently requires `Word = u64` and uses three 64-bit Solinas
-primes.  For 32-bit (and potentially 16-bit) targets, we need a separate set
-of u32-friendly Solinas primes of the form `2^32 − 2^b + 1`.
-
-**Work items:**
-- Find 2–3 primes `p = 2^32 − 2^b + 1` with `v2(p-1) ≥ 16` (enough for N up
-  to 2^16) and distinct `b` values.
-- Implement `FixedTrinomialSolinas32` (or equivalent) in `num-modular`, or
-  hand-roll the 32-bit reduction inline.
-- Generalize the NTT pipeline over `Word` size: the packing, transform, and
-  CRT layers need to work with `u32` coefficients instead of `u64`.
-- Assert `Word = u32` or `Word = u64` at entry and dispatch to the appropriate
-  prime set.

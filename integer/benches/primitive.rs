@@ -150,6 +150,31 @@ fn ubig_ilog_large(criterion: &mut Criterion) {
     group.finish();
 }
 
+fn ubig_mul_asymmetric(criterion: &mut Criterion) {
+    let mut rng = StdRng::seed_from_u64(SEED);
+    let mut group = criterion.benchmark_group("ubig_mul_asymmetric");
+    group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
+
+    // b just above the NTT threshold (4 000 words = 256 kbits → use 500 kbits).
+    let b_bits = 500_000;
+    let b = random_ubig(b_bits, &mut rng);
+
+    // a ranges from 1 kbit (below Karatsuba threshold) to heavily
+    // asymmetric (10×), exercising all chunked-mul code paths.
+    for &a_bits in &[
+        1_000, 10_000, 100_000, 500_000, 1_000_000, 2_000_000, 5_000_000,
+    ] {
+        let a = random_ubig(a_bits, &mut rng);
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("{a_bits}/{b_bits}")),
+            &(a, &b),
+            |bencher, (ta, tb)| bencher.iter(|| ta * *tb),
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     ubig_add,
@@ -163,6 +188,7 @@ criterion_group!(
     ubig_modulo_pow,
     ubig_pow_large_base,
     ubig_ilog_large,
+    ubig_mul_asymmetric,
 );
 
 criterion_main!(benches);
