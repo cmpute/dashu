@@ -117,7 +117,13 @@ mod triple_impl {
             out[0] = self.0[0];
             out[1] = self.0[1];
             out[2] = self.0[2];
-            if self.0[2] != 0 { 3 } else if self.0[1] != 0 { 2 } else { 1 }
+            if self.0[2] != 0 {
+                3
+            } else if self.0[1] != 0 {
+                2
+            } else {
+                1
+            }
         }
     }
 }
@@ -169,7 +175,13 @@ mod triple_impl {
             out[0] = self.0[0];
             out[1] = self.0[1];
             out[2] = self.0[2];
-            if self.0[2] != 0 { 3 } else if self.0[1] != 0 { 2 } else { 1 }
+            if self.0[2] != 0 {
+                3
+            } else if self.0[1] != 0 {
+                2
+            } else {
+                1
+            }
         }
     }
 }

@@ -30,11 +30,7 @@ pub const OMEGA_MAX: [Lane; K] = [
     0x1aa0ab5e, // P2
 ];
 
-pub const CRT_INV_IJ: [[Lane; K]; K] = [
-    [0, 0x4e42c85b, 0x5fb425ef],
-    [0, 0, 0x44000009],
-    [0, 0, 0],
-];
+pub const CRT_INV_IJ: [[Lane; K]; K] = [[0, 0x4e42c85b, 0x5fb425ef], [0, 0, 0x44000009], [0, 0, 0]];
 
 /// Prime moduli indexed by PI.
 pub const MODULI: [Lane; K] = [
@@ -67,28 +63,25 @@ mod tests {
     fn test_omega_order() {
         for (pi, &omega_max) in OMEGA_MAX.iter().enumerate() {
             let p = MODULI[pi];
-            let (sqr, to_m, from_m): (
-                fn(Lane) -> Lane,
-                fn(Lane) -> Lane,
-                fn(Lane) -> Lane,
-            ) = match pi {
-                0 => (
-                    |w| P0.reduce((w as u64) * (w as u64)),
-                    |v| P0.transform(v),
-                    |v| P0.residue(v),
-                ),
-                1 => (
-                    |w| P1.reduce((w as u64) * (w as u64)),
-                    |v| P1.transform(v),
-                    |v| P1.residue(v),
-                ),
-                2 => (
-                    |w| P2.reduce((w as u64) * (w as u64)),
-                    |v| P2.transform(v),
-                    |v| P2.residue(v),
-                ),
-                _ => unreachable!(),
-            };
+            let (sqr, to_m, from_m): (fn(Lane) -> Lane, fn(Lane) -> Lane, fn(Lane) -> Lane) =
+                match pi {
+                    0 => (
+                        |w| P0.reduce((w as u64) * (w as u64)),
+                        |v| P0.transform(v),
+                        |v| P0.residue(v),
+                    ),
+                    1 => (
+                        |w| P1.reduce((w as u64) * (w as u64)),
+                        |v| P1.transform(v),
+                        |v| P1.residue(v),
+                    ),
+                    2 => (
+                        |w| P2.reduce((w as u64) * (w as u64)),
+                        |v| P2.transform(v),
+                        |v| P2.residue(v),
+                    ),
+                    _ => unreachable!(),
+                };
 
             let mut w = to_m(omega_max);
             for _ in 0..MAX_LOG_N - 1 {

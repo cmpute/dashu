@@ -16,12 +16,17 @@ pub(crate) mod crt;
 mod pack;
 mod transform;
 
-use crate::arch::ntt::{B_PACK_CANDIDATES, B_PACK_MIN, K, MAX_LOG_N, MODULI, OMEGA_MAX, P0, P1, P2};
+use crate::arch::ntt::{
+    B_PACK_CANDIDATES, B_PACK_MIN, K, MAX_LOG_N, MODULI, OMEGA_MAX, P0, P1, P2,
+};
 use crate::mul::ntt::crt::{garner_combine, CrtAccum};
 use num_modular::Reducer;
 
 /// Minimum smaller-operand length (in words) for the NTT path.
-pub const THRESHOLD_NTT: usize = 40_000;
+///
+/// Crossover with Toom-3 lies at ~3 200 words; chosen at 4 000 where
+/// NTT is a clear 30%+ faster.
+pub const THRESHOLD_NTT: usize = 4_000;
 
 /// Select NTT parameters for operands with the given word lengths.
 ///
@@ -237,7 +242,14 @@ fn add_signed_mul_impl(
         let residues_u64: &[u64] =
             unsafe { core::slice::from_raw_parts(residues.as_ptr() as *const u64, residues.len()) };
         do_crt::<crate::arch::word::TripleWord>(
-            prod, residues_u64, k_eff, nn, output_coeffs, b_pack, &primes_u64, &crt_inv_u64,
+            prod,
+            residues_u64,
+            k_eff,
+            nn,
+            output_coeffs,
+            b_pack,
+            &primes_u64,
+            &crt_inv_u64,
         );
     }
     #[cfg(any(force_bits = "32", target_pointer_width = "32"))]
@@ -245,7 +257,14 @@ fn add_signed_mul_impl(
         let residues_u32: &[u32] =
             unsafe { core::slice::from_raw_parts(residues.as_ptr() as *const u32, residues.len()) };
         do_crt::<crate::arch::word::TripleWord>(
-            prod, residues_u32, k_eff, nn, output_coeffs, b_pack, &primes_u32, &crt_inv_u32,
+            prod,
+            residues_u32,
+            k_eff,
+            nn,
+            output_coeffs,
+            b_pack,
+            &primes_u32,
+            &crt_inv_u32,
         );
     }
 
@@ -315,12 +334,8 @@ fn process_prime<R: Reducer<crate::arch::ntt::Lane>>(
         *c = r.transform(*c);
     }
 
-    transform::precompute_twiddles(
-        ctx.fwd_twiddles, ctx.nn, ctx.omega_max, false, r,
-    );
-    transform::precompute_twiddles(
-        ctx.inv_twiddles, ctx.nn, ctx.omega_max, true, r,
-    );
+    transform::precompute_twiddles(ctx.fwd_twiddles, ctx.nn, ctx.omega_max, false, r);
+    transform::precompute_twiddles(ctx.inv_twiddles, ctx.nn, ctx.omega_max, true, r);
 
     transform::bit_reverse(ctx.a_lane);
     transform::bit_reverse(ctx.b_lane);

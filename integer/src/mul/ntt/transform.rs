@@ -105,11 +105,11 @@ pub fn pointwise_mul<R: Reducer<Lane>>(a_hat: &mut [Lane], b_hat: &[Lane], r: &R
 mod tests {
     use super::*;
     use crate::arch::ntt::{K, MODULI, OMEGA_MAX, P0, P1, P2};
-    use num_modular::{ModularCoreOps, ModularPow, ModularUnaryOps};
     #[cfg(not(feature = "std"))]
     use alloc::vec;
     #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
+    use num_modular::{ModularCoreOps, ModularPow, ModularUnaryOps};
 
     fn assert_all_eq(a: &[Lane], b_val: &[Lane], context: &str) {
         assert_eq!(a.len(), b_val.len(), "{context}: length mismatch");
@@ -154,7 +154,9 @@ mod tests {
                 let mut a: Vec<Lane> = (0..n)
                     .map(|i| ((i as Lane + 1).wrapping_mul(123456789)) % p)
                     .collect();
-                for val in a.iter_mut() { *val = r.transform(*val); }
+                for val in a.iter_mut() {
+                    *val = r.transform(*val);
+                }
                 let orig = a.clone();
 
                 bit_reverse(&mut a);
@@ -174,8 +176,7 @@ mod tests {
                     let conv_len: usize = len_a + len_b - 1;
                     let n = conv_len.next_power_of_two().max(2);
 
-                    let a: Vec<Lane> =
-                        (0..len_a).map(|i| ((i + 1) as Lane * 12345) % p).collect();
+                    let a: Vec<Lane> = (0..len_a).map(|i| ((i + 1) as Lane * 12345) % p).collect();
                     let b_vec: Vec<Lane> =
                         (0..len_b).map(|i| ((i + 1) as Lane * 67890) % p).collect();
 
@@ -194,8 +195,12 @@ mod tests {
 
                     let mut a_pad = vec![0u64 as Lane; n];
                     let mut b_pad = vec![0u64 as Lane; n];
-                    for i in 0..len_a { a_pad[i] = r.transform(a[i]); }
-                    for i in 0..len_b { b_pad[i] = r.transform(b_vec[i]); }
+                    for i in 0..len_a {
+                        a_pad[i] = r.transform(a[i]);
+                    }
+                    for i in 0..len_b {
+                        b_pad[i] = r.transform(b_vec[i]);
+                    }
 
                     bit_reverse(&mut a_pad);
                     bit_reverse(&mut b_pad);
@@ -203,7 +208,9 @@ mod tests {
                     forward(&mut b_pad, &fwd_twiddles, r);
                     pointwise_mul(&mut a_pad, &b_pad, r);
                     inverse(&mut a_pad, &inv_twiddles, r);
-                    for val in a_pad[..conv_len].iter_mut() { *val = r.residue(*val); }
+                    for val in a_pad[..conv_len].iter_mut() {
+                        *val = r.residue(*val);
+                    }
 
                     assert_all_eq(&a_pad[..conv_len], &expected, "convolution mismatch");
                 }
@@ -255,7 +262,9 @@ mod tests {
                 precompute_twiddles(&mut fwd_twiddles, n, omega, false, r);
                 forward(&mut a, &fwd_twiddles, r);
 
-                for val in a.iter_mut() { *val = r.residue(*val); }
+                for val in a.iter_mut() {
+                    *val = r.residue(*val);
+                }
                 let expected = ntt_naive_std(&x, omega_n, p);
                 assert_eq!(a, expected, "forward NTT mismatch");
             }
@@ -269,7 +278,11 @@ mod tests {
         let r = &P0;
 
         let a = [12345u64 as Lane % p];
-        let b_vec = [67890u64 as Lane % p, 135780u64 as Lane % p, 203670u64 as Lane % p];
+        let b_vec = [
+            67890u64 as Lane % p,
+            135780u64 as Lane % p,
+            203670u64 as Lane % p,
+        ];
         let conv_len = a.len() + b_vec.len() - 1;
         let n = 4;
 
@@ -288,8 +301,12 @@ mod tests {
 
         let mut a_pad = vec![0u64 as Lane; n];
         let mut b_pad = vec![0u64 as Lane; n];
-        for i in 0..a.len() { a_pad[i] = r.transform(a[i]); }
-        for i in 0..b_vec.len() { b_pad[i] = r.transform(b_vec[i]); }
+        for i in 0..a.len() {
+            a_pad[i] = r.transform(a[i]);
+        }
+        for i in 0..b_vec.len() {
+            b_pad[i] = r.transform(b_vec[i]);
+        }
 
         bit_reverse(&mut a_pad);
         bit_reverse(&mut b_pad);
@@ -297,7 +314,9 @@ mod tests {
         forward(&mut b_pad, &fwd_twiddles, r);
         pointwise_mul(&mut a_pad, &b_pad, r);
         inverse(&mut a_pad, &inv_twiddles, r);
-        for val in a_pad[..conv_len].iter_mut() { *val = r.residue(*val); }
+        for val in a_pad[..conv_len].iter_mut() {
+            *val = r.residue(*val);
+        }
 
         assert_eq!(&a_pad[..conv_len], &expected[..]);
     }
