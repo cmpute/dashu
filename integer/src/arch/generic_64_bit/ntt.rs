@@ -64,25 +64,24 @@ mod tests {
     fn test_omega_order() {
         for (pi, &omega_max) in OMEGA_MAX.iter().enumerate() {
             let p = MODULI[pi];
-            let (sqr, to_m, from_m): ReducerFns =
-                match pi {
-                    0 => (
-                        |w| P0.reduce((w as u128) * (w as u128)),
-                        |v| P0.transform(v),
-                        |v| P0.residue(v),
-                    ),
-                    1 => (
-                        |w| P1.reduce((w as u128) * (w as u128)),
-                        |v| P1.transform(v),
-                        |v| P1.residue(v),
-                    ),
-                    2 => (
-                        |w| P2.reduce((w as u128) * (w as u128)),
-                        |v| P2.transform(v),
-                        |v| P2.residue(v),
-                    ),
-                    _ => unreachable!(),
-                };
+            let (sqr, to_m, from_m): ReducerFns = match pi {
+                0 => (
+                    |w| P0.reduce((w as u128) * (w as u128)),
+                    |v| P0.transform(v),
+                    |v| P0.residue(v),
+                ),
+                1 => (
+                    |w| P1.reduce((w as u128) * (w as u128)),
+                    |v| P1.transform(v),
+                    |v| P1.residue(v),
+                ),
+                2 => (
+                    |w| P2.reduce((w as u128) * (w as u128)),
+                    |v| P2.transform(v),
+                    |v| P2.residue(v),
+                ),
+                _ => unreachable!(),
+            };
 
             let mut w = to_m(omega_max);
             for _ in 0..MAX_LOG_N - 1 {
