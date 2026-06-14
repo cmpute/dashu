@@ -21,6 +21,12 @@
 - NTT enabled for 32-bit Word targets.
 - Arch-specific NTT prime definitions under `arch/generic_{32,64}_bit/ntt.rs`.
 
+### Fix
+- `pack.rs` test used 64-bit literals that overflowed `Word` (`u32`) on 32-bit targets, breaking the test build.
+- `pack.rs` now uses native `Word`/`Lane` types throughout instead of `u64`/`u32`, fixing clippy `unnecessary_cast` warnings on 64-bit.
+- `test_unpack_carry_propagation` had a hardcoded 64-bit shift assumption; now derived from `Word::BITS` so it works on 32-bit.
+- Various clippy warnings (`let_and_return`, `too_many_arguments`, `needless_range_loop`, `type_complexity`) resolved across the NTT module.
+
 ## 0.4.2
 
 - Add `UBig::ones`.

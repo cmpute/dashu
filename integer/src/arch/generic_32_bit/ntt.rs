@@ -38,6 +38,8 @@ mod tests {
     use super::*;
     use num_modular::Reducer;
 
+    type ReducerFns = (fn(Lane) -> Lane, fn(Lane) -> Lane, fn(Lane) -> Lane);
+
     #[test]
     fn test_primes_proth_form() {
         assert_eq!(MODULI[0], 7u32 * (1u32 << 26) + 1);
@@ -57,7 +59,7 @@ mod tests {
     fn test_omega_order() {
         for (pi, &omega_max) in OMEGA_MAX.iter().enumerate() {
             let p = MODULI[pi];
-            let (sqr, to_m, from_m): (fn(Lane) -> Lane, fn(Lane) -> Lane, fn(Lane) -> Lane) =
+            let (sqr, to_m, from_m): ReducerFns =
                 match pi {
                     0 => (
                         |w| P0.reduce((w as u64) * (w as u64)),

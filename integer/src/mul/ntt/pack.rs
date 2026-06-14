@@ -14,20 +14,20 @@ pub fn pack(out: &mut [Lane], words: &[Word], b_pack: u32, n: usize) {
     // Fast path: one coefficient per word, no bit shifting needed.
     if b_pack == Word::BITS {
         let len = words.len().min(n);
-        #[allow(clippy::unnecessary_cast)]
         // SAFETY: NTT path requires Word and Lane have the same size.
+        #[allow(clippy::unnecessary_cast)]
         let words_lane = unsafe { &*(words as *const [Word] as *const [Lane]) };
         out[..len].copy_from_slice(&words_lane[..len]);
         out[len..n].fill(0);
         return;
     }
 
-    let mask = if b_pack < Word::BITS {
-        (1u64 << b_pack) - 1
-    } else {
-        u64::MAX
-    };
     let word_bits = Word::BITS;
+    let mask: Word = if b_pack < word_bits {
+        (1 << b_pack) - 1
+    } else {
+        Word::MAX
+    };
     let mut word_idx = 0usize;
     let mut bit_offset = 0u32;
 
@@ -38,7 +38,7 @@ pub fn pack(out: &mut [Lane], words: &[Word], b_pack: u32, n: usize) {
         }
 
         if bit_offset + b_pack <= word_bits {
-            *coeff = ((words[word_idx] as u64 >> bit_offset) & mask) as Lane;
+            *coeff = (words[word_idx] >> bit_offset) & mask;
             bit_offset += b_pack;
             if bit_offset == word_bits {
                 bit_offset = 0;
@@ -47,12 +47,12 @@ pub fn pack(out: &mut [Lane], words: &[Word], b_pack: u32, n: usize) {
         } else {
             let bits_first = word_bits - bit_offset;
             let bits_second = b_pack - bits_first;
-            let mut val = (words[word_idx] as u64 >> bit_offset) & ((1u64 << bits_first) - 1);
+            let mut val = (words[word_idx] >> bit_offset) & ((1 << bits_first) - 1);
             word_idx += 1;
             if word_idx < words.len() {
-                val |= (words[word_idx] as u64 & ((1u64 << bits_second) - 1)) << bits_first;
+                val |= (words[word_idx] & ((1 << bits_second) - 1)) << bits_first;
             }
-            *coeff = val as Lane;
+            *coeff = val;
             bit_offset = bits_second;
         }
     }
@@ -135,24 +135,24 @@ mod tests {
     #[test]
     fn test_pack_unpack_roundtrip() {
         let b_pack = 16u32;
-        let test_words: Vec<Word> = vec![0xDEADBEEF_CAFEBABE, 0x12345678_9ABCDEF0];
+        let test_words: Vec<Word> = vec![0xDEADBEEF, 0x12345678];
         let coeffs_per_word = (Word::BITS / b_pack) as usize;
         let n = test_words.len() * coeffs_per_word;
 
-        let mut packed = vec![0u64 as Lane; n];
+        let mut packed: Vec<Lane> = vec![0; n];
         pack(&mut packed, &test_words, b_pack, n);
 
         let output_len = test_words.len() + 1;
-        let mut output = vec![0u64 as Word; output_len];
+        let mut output: Vec<Word> = vec![0; output_len];
         unpack_accumulate(&mut output, &packed, b_pack, n);
         assert_eq!(&output[..test_words.len()], &test_words[..]);
     }
 
     #[test]
     fn test_pack_zero_pads() {
-        let words = vec![0xFFFFu64 as Word];
+        let words: Vec<Word> = vec![0xFFFF];
         let n = 32;
-        let mut packed = vec![0u64 as Lane; n];
+        let mut packed: Vec<Lane> = vec![0; n];
         pack(&mut packed, &words, 16, n);
         assert_eq!(packed[0], 0xFFFF);
         for &c in packed.iter().skip(1) {
@@ -162,14 +162,14 @@ mod tests {
 
     #[test]
     fn test_pack_empty_input() {
-        let mut packed = vec![0u64 as Lane; 8];
+        let mut packed: Vec<Lane> = vec![0; 8];
         pack(&mut packed, &[], 16, 8);
-        assert_eq!(packed, vec![0u64 as Lane; 8]);
+        assert_eq!(packed, vec![0; 8]);
     }
 
     #[test]
     fn test_unpack_single_coeff() {
-        let mut output = vec![0u64 as Word; 2];
+        let mut output: Vec<Word> = vec![0; 2];
         unpack_accumulate(&mut output, &[0xABCD], 16, 1);
         assert_eq!(output[0], 0xABCD);
         assert_eq!(output[1], 0);
@@ -177,9 +177,12 @@ mod tests {
 
     #[test]
     fn test_unpack_carry_propagation() {
-        // Coefficient at k=4 (shift by 64 bits = 1 word) + carry
-        let mut output = vec![0u64 as Word; 3];
-        unpack_accumulate(&mut output, &[0, 0, 0, 0, 1], 16, 5);
+        // Coefficient at k = Word::BITS/16 shifts by exactly Word::BITS bits = 1 word.
+        let k = (Word::BITS / 16) as usize;
+        let mut coeffs: Vec<Lane> = vec![0; k + 1];
+        coeffs[k] = 1;
+        let mut output: Vec<Word> = vec![0; 3];
+        unpack_accumulate(&mut output, &coeffs, 16, k + 1);
         assert_eq!(output[0], 0);
         assert_eq!(output[1], 1);
         assert_eq!(output[2], 0);

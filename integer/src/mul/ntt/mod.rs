@@ -200,7 +200,7 @@ fn add_signed_mul_chunked(
     let coeffs_b = coeff_count(lb_bits, b_pack);
 
     // ---- Chunked multiply ----
-    let carry = add_signed_mul_split_into_chunks(
+    add_signed_mul_split_into_chunks(
         c,
         sign,
         a,
@@ -234,9 +234,7 @@ fn add_signed_mul_chunked(
                 mem,
             )
         },
-    );
-
-    carry
+    )
 }
 
 /// Run the full NTT pipeline: allocate → per-prime transform → CRT → fold into `c_out`.
@@ -248,6 +246,7 @@ fn add_signed_mul_chunked(
 ///
 /// Shared body of `add_signed_mul_conv` and the per-chunk callback in
 /// `add_signed_mul_chunked`.
+#[allow(clippy::too_many_arguments)]
 fn run_ntt_pipeline(
     a: &[Word],
     b_hat: &[crate::arch::ntt::Lane],
@@ -387,7 +386,6 @@ struct TransformCtx<'a> {
 
 /// Transform `b` and leave the result in `b_lane` (forward-transformed,
 /// Montgomery form).  `fwd_twiddles` must already be precomputed.
-
 fn transform_b_forward<R: Reducer<crate::arch::ntt::Lane>>(
     b_lane: &mut [crate::arch::ntt::Lane],
     b: &[Word],
@@ -423,12 +421,11 @@ fn prepare_b_hat_and_twiddles(
     let b_pack = geom.b_pack;
     let k_eff = geom.k_eff;
 
-    for pi in 0..k_eff {
+    for (pi, &omega) in OMEGA_MAX.iter().enumerate().take(k_eff) {
         let (b_lane, mut rest) = mem.allocate_slice_fill::<Lane>(nn, 0);
         let (fwd_tw, mut rest) = rest.allocate_slice_fill::<Lane>(nn / 2, 0);
         let (inv_tw, _) = rest.allocate_slice_fill::<Lane>(nn / 2, 0);
 
-        let omega = OMEGA_MAX[pi];
         match pi {
             0 => {
                 transform::precompute_twiddles(fwd_tw, nn, omega, false, &P0);
@@ -503,8 +500,8 @@ fn add_shifted_to_prod(prod: &mut [Word], words: &[Word], count: u32, k: usize, 
 
     let mut carry: Word = 0;
 
-    for vi in 0..(count as usize) {
-        let limb = words[vi].wrapping_add(carry);
+    for (vi, &word) in words.iter().enumerate().take(count as usize) {
+        let limb = word.wrapping_add(carry);
         let idx = start_idx + vi;
         if idx >= prod.len() {
             return;

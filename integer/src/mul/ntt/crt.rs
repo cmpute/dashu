@@ -216,6 +216,6 @@ mod tests {
         let x = garner_combine::<TripleWord>(&residues[..1], &CRT_INV_IJ, &primes);
         let mut buf = [crate::arch::word::Word::default(); 6];
         x.write_words(&mut buf);
-        assert_eq!(buf[0] as u64, residues[0] as u64);
+        assert_eq!(buf[0], residues[0]);
     }
 }
