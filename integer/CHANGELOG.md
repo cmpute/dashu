@@ -6,6 +6,10 @@
 - NTT-based multiplication using Proth primes (`K·2^N + 1`), combined via Garner CRT.  Supports 64-bit and 32-bit Word targets.  Threshold at 4 000 words (~256 kbits).
 - Asymmetric NTT chunking: when one operand is much larger than the other, the shorter operand is forward-transformed once and reused across chunks.
 - `UBig::from_u64` and `IBig::from_i64`, const on 32-bit and 64-bit targets.
+- Specialized Karatsuba squaring: uses 3 recursive squarings instead of 3 multiplications, with simplified diff handling.
+- Specialized Toom-Cook-3 squaring: evaluates a single polynomial instead of two, 5 recursive squarings instead of multiplications.
+- Specialized NTT squaring: single forward transform instead of two, pointwise square instead of multiply.
+- Squaring thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE_SQR`, `DASHU_THRESHOLD_KARATSUBA_SQR`, and `DASHU_THRESHOLD_NTT_SQR` environment variables (requires `tuning` feature).
 
 ### Improve
 - Basecase (schoolbook) multiplication now uses an dword mult inner kernel (two multiplier words per sweep over the accumulator, mirroring GMP's `mpn_addmul_2` and `mpn_submul_2`), roughly halving accumulator memory traffic.
@@ -13,9 +17,10 @@
 - Lowered the Karatsuba→Toom-3 multiplication threshold from 192 to 96 words, giving Toom-Cook-3 at ~6000 bits instead of ~12000 bits — closes the gap with malachite at ~10000-bit sizes.
 - NTT coefficient width increased from 16 to 64 bits (K_eff=3 for 64-bit, K_eff=2 otherwise), roughly halving the transform length at each step.
 - NTT multiplication auto-selects `K_eff = 2` primes when headroom allows, skipping the third prime.
-- Multiplication thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE`, `DASHU_THRESHOLD_KARATSUBA`, and `DASHU_THRESHOLD_NTT` environment variables (requires `tuning` feature).
+- Multiplication thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE_MUL`, `DASHU_THRESHOLD_KARATSUBA_MUL`, and `DASHU_THRESHOLD_NTT_MUL` environment variables (requires `tuning` feature).
 
 ### Change
+- Multiplication threshold env vars renamed with `_MUL` suffix: `DASHU_THRESHOLD_SIMPLE_MUL`, `DASHU_THRESHOLD_KARATSUBA_MUL`, `DASHU_THRESHOLD_NTT_MUL` (was without suffix).
 - NTT multiplication now uses Proth primes (`K·2^N + 1`) instead of Solinas primes, improving modular reduction speed.
 - NTT threshold lowered from 40 000 to 4 000 words.
 - NTT enabled for 32-bit Word targets.
