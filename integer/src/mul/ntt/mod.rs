@@ -12,12 +12,13 @@ use crate::{
 use alloc::alloc::Layout;
 use core::mem;
 
-mod crt;
+pub(crate) mod crt;
 mod pack;
 mod transform;
 
-use crate::arch::ntt::{mul_mod, B_PACK_CANDIDATES, B_PACK_MIN, K, MAX_LOG_N, MODULI, OMEGA_MAX};
+use crate::arch::ntt::{B_PACK_CANDIDATES, B_PACK_MIN, K, MAX_LOG_N, MODULI, OMEGA_MAX, P0, P1, P2};
 use crate::mul::ntt::crt::{garner_combine, CrtAccum};
+use num_modular::Reducer;
 
 /// Minimum smaller-operand length (in words) for the NTT path.
 pub const THRESHOLD_NTT: usize = 40_000;
@@ -93,14 +94,12 @@ pub fn memory_requirement_up_to(total_len: usize, _smaller_len: usize) -> Layout
     let product = total_len;
 
     let lane_bytes = mem::size_of::<Lane>();
-    let u64_bytes = 8usize;
     let word_bytes = mem::size_of::<Word>();
 
     let lanes_words = lanes * lane_bytes / word_bytes;
     let residues_words = residues * lane_bytes / word_bytes;
     let twiddles_words = twiddles * lane_bytes / word_bytes;
-    let product_words = product * u64_bytes / word_bytes;
-    let total_words = product_words + lanes_words + residues_words + twiddles_words;
+    let total_words = product + lanes_words + residues_words + twiddles_words;
 
     memory::array_layout::<Word>(total_words)
 }
@@ -168,9 +167,9 @@ fn add_signed_mul_impl(
 
     // ---- Memory carve (longest-lived first) ----
 
-    // 1. Product buffer (always u64)
+    // 1. Product buffer (Word-sized, CRT splits u64 words into Word limbs)
     let prod_len = la + lb;
-    let (prod, mut mem) = memory.allocate_slice_fill::<u64>(prod_len, 0);
+    let (prod, mut mem) = memory.allocate_slice_fill::<Word>(prod_len, 0);
 
     // 2. Residue storage (per-prime inverse results)
     let residues_len = k_eff * nn;
@@ -184,14 +183,13 @@ fn add_signed_mul_impl(
     let (fwd_twiddles, mut mem) = mem.allocate_slice_fill::<Lane>(nn / 2, 0);
     let (inv_twiddles, _) = mem.allocate_slice_fill::<Lane>(nn / 2, 0);
 
-    // ---- Per-prime transforms (const-generic dispatch) ----
+    // ---- Per-prime transforms (monomorphized per reducer) ----
     for pi in 0..k_eff {
         let mut ctx = TransformCtx {
             a_lane,
             b_lane,
             fwd_twiddles,
             inv_twiddles,
-            p: MODULI[pi],
             omega_max: OMEGA_MAX[pi],
             nn,
             b_pack,
@@ -199,9 +197,9 @@ fn add_signed_mul_impl(
             pi,
         };
         match pi {
-            0 => process_prime::<0>(a, b, &mut ctx),
-            1 => process_prime::<1>(a, b, &mut ctx),
-            2 => process_prime::<2>(a, b, &mut ctx),
+            0 => process_prime(a, b, &mut ctx, &P0),
+            1 => process_prime(a, b, &mut ctx, &P1),
+            2 => process_prime(a, b, &mut ctx, &P2),
             _ => unreachable!(),
         }
     }
@@ -210,22 +208,18 @@ fn add_signed_mul_impl(
     // Extract prime constants as both u64 and u32 so the Lane-size
     // dispatch below type-checks correctly in both branches.
     // The dead branch (wrong width) is eliminated by the compiler.
-    let primes_u64: [u64; K] = [MODULI[0], MODULI[1], MODULI[2]];
+    let primes_u64: [u64; K] = [MODULI[0] as u64, MODULI[1] as u64, MODULI[2] as u64];
     let crt_inv_u64: [[u64; K]; K] = {
         use crate::arch::ntt::CRT_INV_IJ;
         let mut m = [[0u64; K]; K];
         for i in 0..K {
             for j in 0..K {
-                m[i][j] = CRT_INV_IJ[i][j];
+                m[i][j] = CRT_INV_IJ[i][j] as u64;
             }
         }
         m
     };
-    let primes_u32: [u32; K] = [
-        MODULI[0] as u32,
-        MODULI[1] as u32,
-        MODULI[2] as u32,
-    ];
+    let primes_u32: [u32; K] = [MODULI[0] as u32, MODULI[1] as u32, MODULI[2] as u32];
     let crt_inv_u32: [[u32; K]; K] = {
         let mut m = [[0u32; K]; K];
         for i in 0..K {
@@ -236,96 +230,56 @@ fn add_signed_mul_impl(
         m
     };
 
-    #[allow(clippy::unnecessary_cast)]
-    if mem::size_of::<Lane>() == 8 {
-        // SAFETY: mem::size_of::<Lane>() == 8, so Lane = u64 and
-        // residues is backed by u64 elements.
+    // CRT dispatch: one branch per Word size, gated by cfg so only
+    // one compiles — no dummy types needed in dead branches.
+    #[cfg(not(any(force_bits = "32", target_pointer_width = "32")))]
+    {
         let residues_u64: &[u64] =
             unsafe { core::slice::from_raw_parts(residues.as_ptr() as *const u64, residues.len()) };
-        do_crt_u64(
-            prod,
-            residues_u64,
-            k_eff,
-            nn,
-            output_coeffs,
-            b_pack,
-            &primes_u64,
-            &crt_inv_u64,
+        do_crt::<crate::arch::word::TripleWord>(
+            prod, residues_u64, k_eff, nn, output_coeffs, b_pack, &primes_u64, &crt_inv_u64,
         );
-    } else {
-        #[allow(clippy::unnecessary_cast)]
-        // SAFETY: mem::size_of::<Lane>() != 8, so Lane = u32 and
-        // residues is backed by u32 elements.
+    }
+    #[cfg(any(force_bits = "32", target_pointer_width = "32"))]
+    {
         let residues_u32: &[u32] =
             unsafe { core::slice::from_raw_parts(residues.as_ptr() as *const u32, residues.len()) };
-        do_crt_u32(
-            prod,
-            residues_u32,
-            k_eff,
-            nn,
-            output_coeffs,
-            b_pack,
-            &primes_u32,
-            &crt_inv_u32,
+        do_crt::<crate::arch::word::TripleWord>(
+            prod, residues_u32, k_eff, nn, output_coeffs, b_pack, &primes_u32, &crt_inv_u32,
         );
     }
 
     // ---- Fold product into c with sign ----
     let output_words = la + lb;
-    fold_prod_into_c(c, sign, prod, output_words)
-}
-
-/// CRT + accumulate for 64-bit lanes (U192 accumulator).
-#[allow(clippy::too_many_arguments)]
-#[inline(never)]
-fn do_crt_u64(
-    prod: &mut [u64],
-    residues: &[u64],
-    k_eff: usize,
-    nn: usize,
-    output_coeffs: usize,
-    b_pack: u32,
-    primes: &[u64; K],
-    crt_inv: &[[u64; K]; K],
-) {
-    use crate::mul::ntt::crt::U192;
-
-    for k in 0..output_coeffs {
-        let mut coeff_residues = [0u64; 3];
-        #[allow(clippy::needless_range_loop)]
-        for pi in 0..k_eff {
-            coeff_residues[pi] = residues[pi * nn + k];
-        }
-        let crt_val =
-            garner_combine::<U192>(&coeff_residues[..k_eff], crt_inv, primes);
-        add_shifted_to_prod(prod, crt_val.as_u64_slice(), crt_val.len_words(), k, b_pack);
+    match sign {
+        Positive => add::add_signed_in_place(c, Positive, &prod[..output_words]),
+        Negative => add::add_signed_in_place(c, Negative, &prod[..output_words]),
     }
 }
 
-/// CRT + accumulate for 32-bit lanes (U96 accumulator).
+/// CRT + accumulate, generic over the accumulator type.
 #[allow(clippy::too_many_arguments)]
 #[inline(never)]
-fn do_crt_u32(
-    prod: &mut [u64],
-    residues: &[u32],
+fn do_crt<A: CrtAccum>(
+    prod: &mut [Word],
+    residues: &[A::Lane],
     k_eff: usize,
     nn: usize,
     output_coeffs: usize,
     b_pack: u32,
-    primes: &[u32; K],
-    crt_inv: &[[u32; K]; K],
+    primes: &[A::Lane; K],
+    crt_inv: &[[A::Lane; K]; K],
 ) {
-    use crate::mul::ntt::crt::U96;
-
     for k in 0..output_coeffs {
-        let mut coeff_residues = [0u32; 3];
+        let mut coeff_residues = [A::Lane::default(); 3];
         #[allow(clippy::needless_range_loop)]
         for pi in 0..k_eff {
             coeff_residues[pi] = residues[pi * nn + k];
         }
-        let crt_val =
-            garner_combine::<U96>(&coeff_residues[..k_eff], crt_inv, primes);
-        add_shifted_to_prod(prod, crt_val.as_u64_slice(), crt_val.len_words(), k, b_pack);
+        let crt_val = garner_combine::<A>(&coeff_residues[..k_eff], crt_inv, primes);
+        let mut crt_buf = [Word::default(); 6];
+        let crt_n = crt_val.write_words(&mut crt_buf);
+        add_shifted_to_prod(prod, &crt_buf[..crt_n as usize], crt_n, k, b_pack);
     }
 }
 
@@ -335,7 +289,6 @@ struct TransformCtx<'a> {
     b_lane: &'a mut [crate::arch::ntt::Lane],
     fwd_twiddles: &'a mut [crate::arch::ntt::Lane],
     inv_twiddles: &'a mut [crate::arch::ntt::Lane],
-    p: crate::arch::ntt::Lane,
     omega_max: crate::arch::ntt::Lane,
     nn: usize,
     b_pack: u32,
@@ -343,156 +296,92 @@ struct TransformCtx<'a> {
     pi: usize,
 }
 
-/// Per-prime NTT pipeline, monomorphized for a specific prime index `PI`.
+/// Per-prime NTT pipeline, monomorphized for a specific reducer `R`.
 #[inline(never)]
-fn process_prime<const PI: usize>(
+fn process_prime<R: Reducer<crate::arch::ntt::Lane>>(
     a: &[Word],
     b: &[Word],
     ctx: &mut TransformCtx<'_>,
+    r: &R,
 ) {
-    use crate::arch::ntt::{to_monty, from_monty};
-
     pack::pack(ctx.a_lane, a, ctx.b_pack, ctx.nn);
     pack::pack(ctx.b_lane, b, ctx.b_pack, ctx.nn);
 
     // Convert standard-form coefficients to Montgomery form.
-    // transform() handles any value in [0, 2^BITS), no pre-reduction needed.
     for c in ctx.a_lane[..ctx.nn].iter_mut() {
-        *c = to_monty::<PI>(*c);
+        *c = r.transform(*c);
     }
     for c in ctx.b_lane[..ctx.nn].iter_mut() {
-        *c = to_monty::<PI>(*c);
+        *c = r.transform(*c);
     }
 
-    transform::precompute_twiddles::<PI>(ctx.fwd_twiddles, ctx.nn, ctx.p, ctx.omega_max, false);
-    transform::precompute_twiddles::<PI>(ctx.inv_twiddles, ctx.nn, ctx.p, ctx.omega_max, true);
+    transform::precompute_twiddles(
+        ctx.fwd_twiddles, ctx.nn, ctx.omega_max, false, r,
+    );
+    transform::precompute_twiddles(
+        ctx.inv_twiddles, ctx.nn, ctx.omega_max, true, r,
+    );
 
     transform::bit_reverse(ctx.a_lane);
     transform::bit_reverse(ctx.b_lane);
-    transform::forward::<PI>(ctx.a_lane, ctx.fwd_twiddles);
-    transform::forward::<PI>(ctx.b_lane, ctx.fwd_twiddles);
-    transform::pointwise_mul::<PI>(ctx.a_lane, ctx.b_lane);
-    transform::inverse::<PI>(ctx.a_lane, ctx.inv_twiddles, ctx.p);
+    transform::forward(ctx.a_lane, ctx.fwd_twiddles, r);
+    transform::forward(ctx.b_lane, ctx.fwd_twiddles, r);
+    transform::pointwise_mul(ctx.a_lane, ctx.b_lane, r);
+    transform::inverse(ctx.a_lane, ctx.inv_twiddles, r);
 
     // Convert residues back from Montgomery to standard form.
     for c in ctx.a_lane[..ctx.nn].iter_mut() {
-        *c = from_monty::<PI>(*c);
+        *c = r.residue(*c);
     }
 
     let offset = ctx.pi * ctx.nn;
     ctx.residues[offset..offset + ctx.nn].copy_from_slice(ctx.a_lane);
 }
 
-/// Add a CRT value (as u64 words) to `prod`, shifted left by `k * b_pack` bits.
-fn add_shifted_to_prod(prod: &mut [u64], words: &[u64], count: u32, k: usize, b_pack: u32) {
+/// Add a CRT value (as `Word`-sized limbs) to `prod`, shifted left by
+/// `k * b_pack` bits.
+fn add_shifted_to_prod(prod: &mut [Word], words: &[Word], count: u32, k: usize, b_pack: u32) {
     let shift_bits = (k as u32).wrapping_mul(b_pack);
-    let word_idx = (shift_bits / 64) as usize;
-    let bit_shift = shift_bits % 64;
+    let word_bits = Word::BITS;
+    let start_idx = (shift_bits / word_bits) as usize;
+    let bit_shift = shift_bits % word_bits;
 
-    let mut carry: u64 = 0;
-    #[allow(clippy::needless_range_loop)]
+    let mut carry: Word = 0;
+
     for vi in 0..(count as usize) {
-        let idx = word_idx + vi;
+        let limb = words[vi].wrapping_add(carry);
+        let idx = start_idx + vi;
         if idx >= prod.len() {
             return;
         }
-        let v = words[vi];
-        let v128 = v as u128;
 
         if bit_shift == 0 {
-            let sum = v128.wrapping_add(carry as u128);
-            let (r, c) = prod[idx].overflowing_add(sum as u64);
+            let (r, c) = prod[idx].overflowing_add(limb);
             prod[idx] = r;
-            carry = (sum >> 64) as u64 + c as u64;
+            carry = Word::from(c);
         } else {
-            let lo = v128 << bit_shift;
-            let sum = lo.wrapping_add(carry as u128);
-            let lo_carry = (sum >> 64) as u64;
-            let lo_word = sum as u64;
+            let val = (limb as u128) << bit_shift;
+            let lo = val as Word;
+            let hi = (val >> word_bits) as Word;
 
-            let (r, c1) = prod[idx].overflowing_add(lo_word);
+            let (r, c1) = prod[idx].overflowing_add(lo);
             prod[idx] = r;
-            carry = lo_carry + c1 as u64;
+            carry = Word::from(c1).wrapping_add(hi);
 
             if idx + 1 < prod.len() && carry != 0 {
                 let (r2, c2) = prod[idx + 1].overflowing_add(carry);
                 prod[idx + 1] = r2;
-                carry = c2 as u64;
+                carry = Word::from(c2);
             }
         }
     }
 
-    let mut idx = word_idx + count as usize;
+    let mut idx = start_idx + count as usize;
     while carry != 0 && idx < prod.len() {
         let (r, c) = prod[idx].overflowing_add(carry);
         prod[idx] = r;
-        carry = c as u64;
+        carry = Word::from(c);
         idx += 1;
-    }
-}
-
-/// Fold the u64 product buffer into the Word output array `c`.
-///
-/// For 64-bit Word targets, `u64` == `Word`, so a direct transmute suffices.
-/// For 32-bit Word targets, each u64 is split into two u32 words with carry.
-fn fold_prod_into_c(c: &mut [Word], sign: Sign, prod: &[u64], output_words: usize) -> SignedWord {
-    if mem::size_of::<Word>() == 8 {
-        // 64-bit Word: direct transmute
-        assert_eq!(
-            mem::size_of::<Word>(),
-            mem::size_of::<u64>(),
-            "NTT requires 64-bit Word"
-        );
-        // SAFETY: Word and u64 have the same size (asserted above) and
-        // prod is allocated with u64 alignment, compatible with Word.
-        let prod_words: &[Word] =
-            unsafe { core::slice::from_raw_parts(prod.as_ptr() as *const Word, output_words) };
-        match sign {
-            Positive => add::add_signed_in_place(c, Positive, prod_words),
-            Negative => add::add_signed_in_place(c, Negative, prod_words),
-        }
-    } else {
-        // 32-bit Word: split each u64 into two u32 words.
-        // For 64-bit Word targets this branch is dead (eliminated by the compiler)
-        // but must still type-check.
-        let mut carry: u32 = 0;
-        let double_output_words = output_words.min(prod.len() * 2);
-        for i in 0..double_output_words {
-            let prod_word = prod[i / 2];
-            let lo_word = if i % 2 == 0 {
-                (prod_word as u32).wrapping_add(carry)
-            } else {
-                ((prod_word >> 32) as u32).wrapping_add(carry)
-            };
-            // Carry out of the low-word addition
-            if i % 2 == 0 {
-                let lo_before = prod_word as u32;
-                carry = (prod_word >> 32) as u32;
-                if lo_word < lo_before {
-                    carry = carry.wrapping_add(1);
-                }
-            }
-            if i < c.len() {
-                let c_val = c[i] as u32;
-                match sign {
-                    Positive => {
-                        let (sum, c_out) = c_val.overflowing_add(lo_word);
-                        c[i] = sum as Word;
-                        carry = carry.wrapping_add(c_out as u32);
-                    }
-                    Negative => {
-                        let (diff, b) = c_val.overflowing_sub(lo_word);
-                        c[i] = diff as Word;
-                        carry = carry.wrapping_add(b as u32);
-                    }
-                }
-            }
-        }
-        if sign == Positive {
-            carry as SignedWord
-        } else {
-            -(carry as SignedWord)
-        }
     }
 }
 

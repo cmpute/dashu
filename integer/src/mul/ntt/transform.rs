@@ -1,38 +1,37 @@
 //! Iterative in-place radix-2 NTT over Proth primes `K * 2^N + 1`.
 //!
-//! All functions are const-generic over `PI` (the prime index `0..K`).
-//! Modular arithmetic delegates to `crate::arch::ntt`.
+//! All functions are generic over `R: Reducer<Lane>` so each prime's
+//! reducer is monomorphized at the call site.
 
-use crate::arch::ntt::{add_mod, mul_mod, sub_mod, to_monty, Lane, MAX_LOG_N};
-use num_modular::{ModularPow, ModularUnaryOps};
+use crate::arch::ntt::{Lane, MAX_LOG_N};
+use num_modular::Reducer;
 
 // ---- public API ----
 
 /// Fill `out[0..n/2]` with twiddle factors `omega_n^k` in Montgomery form.
 ///
 /// Panics if `out.len() < n / 2`.
-pub fn precompute_twiddles<const PI: usize>(
+pub fn precompute_twiddles<R: Reducer<Lane>>(
     out: &mut [Lane],
     n: usize,
-    p: Lane,
     omega_max: Lane,
     inverse: bool,
+    r: &R,
 ) {
     assert!(out.len() >= n / 2);
     let shift = MAX_LOG_N - n.trailing_zeros();
-    let omega_n = omega_max.powm(&((1u64 as Lane) << shift), &p);
+    let omega_max_mont = r.transform(omega_max);
+    let omega_n_mont = r.pow(omega_max_mont, &((1u64 as Lane) << shift));
 
-    let base = if inverse {
-        omega_n.invm(&p).expect("omega_n not invertible")
+    let base_mont = if inverse {
+        r.inv(omega_n_mont).expect("omega_n not invertible")
     } else {
-        omega_n
+        omega_n_mont
     };
 
-    // Convert base and 1 to Montgomery form
-    let base_mont = to_monty::<PI>(base);
-    out[0] = to_monty::<PI>(1);
+    out[0] = r.transform(1);
     for k in 1..(n / 2) {
-        out[k] = mul_mod::<PI>(out[k - 1], base_mont);
+        out[k] = r.mul(&out[k - 1], &base_mont);
     }
 }
 
@@ -50,8 +49,8 @@ pub fn bit_reverse(a: &mut [Lane]) {
 }
 
 /// Forward NTT in place (decimation-in-time, radix-2).
-pub fn forward<const PI: usize>(a: &mut [Lane], twiddles: &[Lane]) {
-    ntt_core::<PI>(a, twiddles);
+pub fn forward<R: Reducer<Lane>>(a: &mut [Lane], twiddles: &[Lane], r: &R) {
+    ntt_core(a, twiddles, r);
 }
 
 /// Inverse NTT in place.
@@ -60,21 +59,19 @@ pub fn forward<const PI: usize>(a: &mut [Lane], twiddles: &[Lane]) {
 /// in **natural order**.
 ///
 /// `twiddles` must have been precomputed with `inverse = true`.
-pub fn inverse<const PI: usize>(a: &mut [Lane], twiddles: &[Lane], p: Lane) {
+pub fn inverse<R: Reducer<Lane>>(a: &mut [Lane], twiddles: &[Lane], r: &R) {
     let n = a.len();
     bit_reverse(a);
-    ntt_core::<PI>(a, twiddles);
-    let n_val = n as Lane;
-    let n_inv = n_val.invm(&p).expect("n not invertible mod p");
-    // Convert n⁻¹ to Montgomery form so the result stays in Montgomery form.
-    let n_inv_mont = to_monty::<PI>(n_inv);
+    ntt_core(a, twiddles, r);
+    let n_mont = r.transform(n as Lane);
+    let n_inv_mont = r.inv(n_mont).expect("n not invertible mod p");
     for x in a.iter_mut() {
-        *x = mul_mod::<PI>(*x, n_inv_mont);
+        *x = r.mul(x, &n_inv_mont);
     }
 }
 
 /// In-place radix-2 DIT NTT (Cooley–Tukey).
-fn ntt_core<const PI: usize>(a: &mut [Lane], twiddles: &[Lane]) {
+fn ntt_core<R: Reducer<Lane>>(a: &mut [Lane], twiddles: &[Lane], r: &R) {
     let n = a.len();
     debug_assert!(n.is_power_of_two() && twiddles.len() == n / 2);
 
@@ -86,9 +83,9 @@ fn ntt_core<const PI: usize>(a: &mut [Lane], twiddles: &[Lane]) {
         for i in (0..n).step_by(sub_len) {
             for j in 0..half {
                 let u = a[i + j];
-                let v = mul_mod::<PI>(a[i + j + half], twiddles[j * step]);
-                a[i + j] = add_mod::<PI>(u, v);
-                a[i + j + half] = sub_mod::<PI>(u, v);
+                let v = r.mul(&a[i + j + half], &twiddles[j * step]);
+                a[i + j] = r.add(&u, &v);
+                a[i + j + half] = r.sub(&u, &v);
             }
         }
 
@@ -97,17 +94,18 @@ fn ntt_core<const PI: usize>(a: &mut [Lane], twiddles: &[Lane]) {
 }
 
 /// Pointwise multiply of two transformed vectors in place.
-pub fn pointwise_mul<const PI: usize>(a_hat: &mut [Lane], b_hat: &[Lane]) {
+pub fn pointwise_mul<R: Reducer<Lane>>(a_hat: &mut [Lane], b_hat: &[Lane], r: &R) {
     assert_eq!(a_hat.len(), b_hat.len());
     for (a, &b_val) in a_hat.iter_mut().zip(b_hat.iter()) {
-        *a = mul_mod::<PI>(*a, b_val);
+        *a = r.mul(a, &b_val);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::arch::ntt::{from_monty, to_monty, K, MODULI, OMEGA_MAX};
+    use crate::arch::ntt::{K, MODULI, OMEGA_MAX, P0, P1, P2};
+    use num_modular::{ModularCoreOps, ModularPow, ModularUnaryOps};
     #[cfg(not(feature = "std"))]
     use alloc::vec;
     #[cfg(not(feature = "std"))]
@@ -121,28 +119,22 @@ mod tests {
     }
 
     macro_rules! for_each_prime {
-        ($pi:ident, $p:ident, $omega:ident, $body:block) => {
+        ($r:ident, $p:ident, $omega:ident, $body:block) => {
             for idx in 0..K {
                 let $p = MODULI[idx];
                 let $omega = OMEGA_MAX[idx];
                 match idx {
                     0 => {
-                        let $pi: usize = 0;
-                        let _ = $pi;
-                        fn go<const PI: usize>($p: Lane, $omega: Lane) $body
-                        go::<0>($p, $omega);
+                        fn go<R: Reducer<Lane>>($r: &R, $p: Lane, $omega: Lane) $body
+                        go::<crate::arch::ntt::Rp0>(&P0, $p, $omega);
                     }
                     1 => {
-                        let $pi: usize = 1;
-                        let _ = $pi;
-                        fn go<const PI: usize>($p: Lane, $omega: Lane) $body
-                        go::<1>($p, $omega);
+                        fn go<R: Reducer<Lane>>($r: &R, $p: Lane, $omega: Lane) $body
+                        go::<crate::arch::ntt::Rp1>(&P1, $p, $omega);
                     }
                     2 => {
-                        let $pi: usize = 2;
-                        let _ = $pi;
-                        fn go<const PI: usize>($p: Lane, $omega: Lane) $body
-                        go::<2>($p, $omega);
+                        fn go<R: Reducer<Lane>>($r: &R, $p: Lane, $omega: Lane) $body
+                        go::<crate::arch::ntt::Rp2>(&P2, $p, $omega);
                     }
                     _ => unreachable!(),
                 }
@@ -152,25 +144,22 @@ mod tests {
 
     #[test]
     fn test_forward_inverse_roundtrip() {
-        for_each_prime!(pi, p, omega, {
+        for_each_prime!(r, p, omega, {
             for &n in &[2, 4, 8, 16, 32, 64, 128, 256, 512] {
                 let mut fwd_twiddles = alloc::vec![0u64 as Lane; n / 2];
                 let mut inv_twiddles = alloc::vec![0u64 as Lane; n / 2];
-                precompute_twiddles::<PI>(&mut fwd_twiddles, n, p, omega, false);
-                precompute_twiddles::<PI>(&mut inv_twiddles, n, p, omega, true);
+                precompute_twiddles(&mut fwd_twiddles, n, omega, false, r);
+                precompute_twiddles(&mut inv_twiddles, n, omega, true, r);
 
                 let mut a: Vec<Lane> = (0..n)
                     .map(|i| ((i as Lane + 1).wrapping_mul(123456789)) % p)
                     .collect();
-                // Convert to Montgomery form for the NTT pipeline
-                for val in a.iter_mut() {
-                    *val = to_monty::<PI>(*val);
-                }
+                for val in a.iter_mut() { *val = r.transform(*val); }
                 let orig = a.clone();
 
                 bit_reverse(&mut a);
-                forward::<PI>(&mut a, &fwd_twiddles);
-                inverse::<PI>(&mut a, &inv_twiddles, p);
+                forward(&mut a, &fwd_twiddles, r);
+                inverse(&mut a, &inv_twiddles, r);
 
                 assert_all_eq(&a, &orig, "roundtrip failed for n={n}");
             }
@@ -179,7 +168,7 @@ mod tests {
 
     #[test]
     fn test_convolution_via_ntt() {
-        for_each_prime!(pi, p, omega, {
+        for_each_prime!(r, p, omega, {
             for len_a in [1, 2, 3, 5] {
                 for len_b in [1, 2, 3, 5] {
                     let conv_len: usize = len_a + len_b - 1;
@@ -190,40 +179,31 @@ mod tests {
                     let b_vec: Vec<Lane> =
                         (0..len_b).map(|i| ((i + 1) as Lane * 67890) % p).collect();
 
-                    // Compute expected convolution in standard form
                     let mut expected = vec![0u64 as Lane; conv_len];
                     for (i, &ai) in a.iter().enumerate() {
                         for (j, &bj) in b_vec.iter().enumerate() {
                             let prod = (ai as u128 * bj as u128 % p as u128) as Lane;
-                            expected[i + j] = add_mod::<PI>(expected[i + j], prod);
+                            expected[i + j] = r.add(&expected[i + j], &prod);
                         }
                     }
 
-                        let mut fwd_twiddles = alloc::vec![0u64 as Lane; n / 2];
+                    let mut fwd_twiddles = alloc::vec![0u64 as Lane; n / 2];
                     let mut inv_twiddles = alloc::vec![0u64 as Lane; n / 2];
-                    precompute_twiddles::<PI>(&mut fwd_twiddles, n, p, omega, false);
-                    precompute_twiddles::<PI>(&mut inv_twiddles, n, p, omega, true);
+                    precompute_twiddles(&mut fwd_twiddles, n, omega, false, r);
+                    precompute_twiddles(&mut inv_twiddles, n, omega, true, r);
 
-                    // Convert inputs to Montgomery form
                     let mut a_pad = vec![0u64 as Lane; n];
                     let mut b_pad = vec![0u64 as Lane; n];
-                    for i in 0..len_a {
-                        a_pad[i] = to_monty::<PI>(a[i]);
-                    }
-                    for i in 0..len_b {
-                        b_pad[i] = to_monty::<PI>(b_vec[i]);
-                    }
+                    for i in 0..len_a { a_pad[i] = r.transform(a[i]); }
+                    for i in 0..len_b { b_pad[i] = r.transform(b_vec[i]); }
 
                     bit_reverse(&mut a_pad);
                     bit_reverse(&mut b_pad);
-                    forward::<PI>(&mut a_pad, &fwd_twiddles);
-                    forward::<PI>(&mut b_pad, &fwd_twiddles);
-                    pointwise_mul::<PI>(&mut a_pad, &b_pad);
-                    inverse::<PI>(&mut a_pad, &inv_twiddles, p);
-                    // Convert results back to standard form
-                    for val in a_pad[..conv_len].iter_mut() {
-                        *val = from_monty::<PI>(*val);
-                    }
+                    forward(&mut a_pad, &fwd_twiddles, r);
+                    forward(&mut b_pad, &fwd_twiddles, r);
+                    pointwise_mul(&mut a_pad, &b_pad, r);
+                    inverse(&mut a_pad, &inv_twiddles, r);
+                    for val in a_pad[..conv_len].iter_mut() { *val = r.residue(*val); }
 
                     assert_all_eq(&a_pad[..conv_len], &expected, "convolution mismatch");
                 }
@@ -240,49 +220,43 @@ mod tests {
 
     /// Naive O(n²) NTT using standard-form modular arithmetic.
     #[allow(clippy::needless_range_loop)]
-    fn ntt_naive_std<const PI: usize>(x: &[Lane], omega_n: Lane, p: Lane) -> Vec<Lane> {
+    fn ntt_naive_std(x: &[Lane], omega_n: Lane, p: Lane) -> Vec<Lane> {
+        use num_modular::ModularCoreOps;
         let n = x.len();
         let mut result = vec![0u64 as Lane; n];
         for k in 0..n {
-            let mut acc: u128 = 0;
+            let mut acc = 0u64 as Lane;
             for j in 0..n {
                 let twiddle = if k == 0 || j == 0 {
                     1
                 } else {
-                    omega_n.powm(&((k * j) as Lane), &p) as u128
+                    omega_n.powm(&((k * j) as Lane), &p)
                 };
-                acc = (acc + x[j] as u128 * twiddle) % p as u128;
+                acc = acc.addm(x[j].mulm(twiddle, &p), &p);
             }
-            result[k] = acc as Lane;
+            result[k] = acc;
         }
         result
     }
 
     #[test]
     fn test_forward_correctness() {
-        for_each_prime!(pi, p, omega, {
+        for_each_prime!(r, p, omega, {
             for &n in &[2usize, 4, 8] {
                 let x: Vec<Lane> = (0..n).map(|i| ((i + 1) as Lane * 11111) % p).collect();
-
 
                 let shift = MAX_LOG_N - n.trailing_zeros();
                 let omega_n = omega.powm(&((1u64 as Lane) << shift), &p);
 
-                // Convert to Montgomery form
-                let mut a: Vec<Lane> = x.iter().map(|&v| to_monty::<PI>(v)).collect();
+                let mut a: Vec<Lane> = x.iter().map(|&v| r.transform(v)).collect();
                 bit_reverse(&mut a);
 
                 let mut fwd_twiddles = alloc::vec![0u64 as Lane; n / 2];
-                precompute_twiddles::<PI>(&mut fwd_twiddles, n, p, omega, false);
-                forward::<PI>(&mut a, &fwd_twiddles);
+                precompute_twiddles(&mut fwd_twiddles, n, omega, false, r);
+                forward(&mut a, &fwd_twiddles, r);
 
-                // Convert forward output back to standard form for comparison
-                for val in a.iter_mut() {
-                    *val = from_monty::<PI>(*val);
-                }
-
-                // expected: compute naive NTT in standard form
-                let expected = ntt_naive_std::<PI>(&x, omega_n, p);
+                for val in a.iter_mut() { *val = r.residue(*val); }
+                let expected = ntt_naive_std(&x, omega_n, p);
                 assert_eq!(a, expected, "forward NTT mismatch");
             }
         });
@@ -292,68 +266,57 @@ mod tests {
     fn test_convolution_debug() {
         let p = MODULI[0];
         let omega = OMEGA_MAX[0];
+        let r = &P0;
 
         let a = [12345u64 as Lane % p];
-        let b_vec = [67890u64 as Lane % p,
-            135780u64 as Lane % p,
-            203670u64 as Lane % p];
+        let b_vec = [67890u64 as Lane % p, 135780u64 as Lane % p, 203670u64 as Lane % p];
         let conv_len = a.len() + b_vec.len() - 1;
         let n = 4;
 
-        // Expected values in standard form
         let mut expected = vec![0u64 as Lane; conv_len];
         for (i, &ai) in a.iter().enumerate() {
             for (j, &bj) in b_vec.iter().enumerate() {
                 let prod = (ai as u128 * bj as u128 % p as u128) as Lane;
-                expected[i + j] = add_mod::<0>(expected[i + j], prod);
+                expected[i + j] = r.add(&expected[i + j], &prod);
             }
         }
 
         let mut fwd_twiddles = alloc::vec![0u64 as Lane; n / 2];
         let mut inv_twiddles = alloc::vec![0u64 as Lane; n / 2];
-        precompute_twiddles::<0>(&mut fwd_twiddles, n, p, omega, false);
-        precompute_twiddles::<0>(&mut inv_twiddles, n, p, omega, true);
+        precompute_twiddles(&mut fwd_twiddles, n, omega, false, r);
+        precompute_twiddles(&mut inv_twiddles, n, omega, true, r);
 
-        // Convert to Montgomery form
         let mut a_pad = vec![0u64 as Lane; n];
         let mut b_pad = vec![0u64 as Lane; n];
-        for i in 0..a.len() {
-            a_pad[i] = to_monty::<0>(a[i]);
-        }
-        for i in 0..b_vec.len() {
-            b_pad[i] = to_monty::<0>(b_vec[i]);
-        }
+        for i in 0..a.len() { a_pad[i] = r.transform(a[i]); }
+        for i in 0..b_vec.len() { b_pad[i] = r.transform(b_vec[i]); }
 
         bit_reverse(&mut a_pad);
         bit_reverse(&mut b_pad);
-        forward::<0>(&mut a_pad, &fwd_twiddles);
-        forward::<0>(&mut b_pad, &fwd_twiddles);
-        pointwise_mul::<0>(&mut a_pad, &b_pad);
-        inverse::<0>(&mut a_pad, &inv_twiddles, p);
-        // Convert back to standard form
-        for val in a_pad[..conv_len].iter_mut() {
-            *val = from_monty::<0>(*val);
-        }
+        forward(&mut a_pad, &fwd_twiddles, r);
+        forward(&mut b_pad, &fwd_twiddles, r);
+        pointwise_mul(&mut a_pad, &b_pad, r);
+        inverse(&mut a_pad, &inv_twiddles, r);
+        for val in a_pad[..conv_len].iter_mut() { *val = r.residue(*val); }
 
         assert_eq!(&a_pad[..conv_len], &expected[..]);
     }
 
     #[test]
     fn test_length_two_edge_case() {
-        for_each_prime!(pi, p, omega, {
+        for_each_prime!(r, p, omega, {
             let n = 2;
             let mut fwd_twiddles = alloc::vec![0u64 as Lane; n / 2];
             let mut inv_twiddles = alloc::vec![0u64 as Lane; n / 2];
-            precompute_twiddles::<PI>(&mut fwd_twiddles, n, p, omega, false);
-            precompute_twiddles::<PI>(&mut inv_twiddles, n, p, omega, true);
+            precompute_twiddles(&mut fwd_twiddles, n, omega, false, r);
+            precompute_twiddles(&mut inv_twiddles, n, omega, true, r);
 
             let a_std = [1u64 as Lane % p, 2u64 as Lane % p];
-            // Convert to Montgomery form
-            let a_orig: Vec<Lane> = a_std.iter().map(|&v| to_monty::<PI>(v)).collect();
+            let a_orig: Vec<Lane> = a_std.iter().map(|&v| r.transform(v)).collect();
             let mut a = a_orig.clone();
             bit_reverse(&mut a);
-            forward::<PI>(&mut a, &fwd_twiddles);
-            inverse::<PI>(&mut a, &inv_twiddles, p);
+            forward(&mut a, &fwd_twiddles, r);
+            inverse(&mut a, &inv_twiddles, r);
             assert_all_eq(&a, &a_orig, "length two roundtrip");
         });
     }

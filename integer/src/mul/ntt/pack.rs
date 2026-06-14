@@ -38,7 +38,7 @@ pub fn pack(out: &mut [Lane], words: &[Word], b_pack: u32, n: usize) {
         }
 
         if bit_offset + b_pack <= word_bits {
-            *coeff = ((words[word_idx] >> bit_offset) & mask) as Lane;
+            *coeff = ((words[word_idx] as u64 >> bit_offset) & mask) as Lane;
             bit_offset += b_pack;
             if bit_offset == word_bits {
                 bit_offset = 0;
@@ -47,12 +47,10 @@ pub fn pack(out: &mut [Lane], words: &[Word], b_pack: u32, n: usize) {
         } else {
             let bits_first = word_bits - bit_offset;
             let bits_second = b_pack - bits_first;
-            let mut val =
-                (words[word_idx] >> bit_offset) & ((1u64 << bits_first) - 1);
+            let mut val = (words[word_idx] as u64 >> bit_offset) & ((1u64 << bits_first) - 1);
             word_idx += 1;
             if word_idx < words.len() {
-                val |= (words[word_idx] & ((1u64 << bits_second) - 1))
-                    << bits_first;
+                val |= (words[word_idx] as u64 & ((1u64 << bits_second) - 1)) << bits_first;
             }
             *coeff = val as Lane;
             bit_offset = bits_second;
@@ -90,19 +88,16 @@ mod tests {
             let mut idx = word_idx;
 
             if bit_shift == 0 {
-                let (sum, c) = output
-                    .get(idx)
-                    .copied()
-                    .unwrap_or(0)
-                    .overflowing_add(lo);
+                let (sum, c) = output.get(idx).copied().unwrap_or(0).overflowing_add(lo);
                 carry = Word::from(c);
                 if idx < output.len() {
                     output[idx] = sum;
                 }
                 idx += 1;
             } else {
-                let lo_part = lo << bit_shift;
-                let hi_part = if bit_shift > 0 { lo >> (64 - bit_shift) } else { 0 };
+                let val = (lo as u128) << bit_shift;
+                let lo_part = val as Word;
+                let hi_part = (val >> word_bits) as Word;
 
                 let (sum, c1) = output
                     .get(idx)

@@ -1,221 +1,32 @@
 //! Garner CRT: combine `K` residues modulo `K` primes into a small integer.
-//!
-//! Generic over the lane type — supports u64 (→[`U192`]) and u32 (→[`U128`]).
-#![allow(clippy::unnecessary_cast)]
 
 use crate::arch::ntt::K;
 use num_modular::ModularCoreOps;
 
-/// Accumulator for Garner CRT — either [`U192`] (64-bit lanes) or [`U96`] (32-bit).
+/// Accumulator for Garner CRT.
+///
+/// Implemented by [`crate::arch::word::TripleWord`] (192 bits on 64-bit
+/// targets, 96 bits on 32-bit targets).
 pub trait CrtAccum: Default + Copy {
-    type Lane: Copy + Into<u128> + for<'a> ModularCoreOps<Self::Lane, &'a Self::Lane, Output = Self::Lane>;
+    type Lane: Copy
+        + Default
+        + Into<u128>
+        + for<'a> ModularCoreOps<Self::Lane, &'a Self::Lane, Output = Self::Lane>;
     fn from_lane(v: Self::Lane) -> Self;
-    /// `self += t * factor` where `t` is a lane-sized coefficient.
+    /// `self += t * factor`
     fn add_product(&mut self, t: Self::Lane, factor: u128);
     /// `self mod m`
     fn rem_lane(&self, m: Self::Lane) -> Self::Lane;
-    /// Number of non-zero u64 words.
-    #[allow(dead_code)]
-    fn len_words(&self) -> u32;
-    /// View as `&[u64]`.
-    fn as_u64_slice(&self) -> &[u64];
-}
-
-// ── U192 (64-bit lanes) ────────────────────────────────────────────────
-
-/// A 192-bit unsigned integer (3 × u64, little-endian).
-///
-/// Used to hold Garner CRT results for three ≈2^64 primes (product < 2^192).
-#[derive(Clone, Copy, Debug, Default)]
-pub struct U192(pub [u64; 3]);
-
-impl U192 {
-    #[inline]
-    pub fn new(lo: u64) -> Self {
-        U192([lo, 0, 0])
-    }
-
-    /// `self += v` where `v` fits in 128 bits.
-    #[inline]
-    #[allow(dead_code)]
-    pub fn add_u128(&mut self, v: u128) {
-        let lo = v as u64;
-        let hi = (v >> 64) as u64;
-        let (r0, c0) = self.0[0].overflowing_add(lo);
-        self.0[0] = r0;
-        let (r1, c1) = self.0[1].overflowing_add(hi.wrapping_add(c0 as u64));
-        self.0[1] = r1;
-        self.0[2] = self.0[2].wrapping_add(c1 as u64);
-    }
-
-    /// `self += t * factor`  where `t` < 2^64, `factor` < 2^128.
-    #[inline]
-    pub fn add_mul_u64_u128(&mut self, t: u64, factor: u128) {
-        let fac_lo = factor as u64;
-        let fac_hi = (factor >> 64) as u64;
-
-        let m_lo_full = (t as u128) * (fac_lo as u128);
-        let lo = m_lo_full as u64;
-        let m_lo = (m_lo_full >> 64) as u64;
-
-        let m_hi_full = (t as u128) * (fac_hi as u128);
-        let m_hi = m_hi_full as u64;
-        let hi = (m_hi_full >> 64) as u64;
-
-        let (mid, c) = m_lo.overflowing_add(m_hi);
-        let hi_word = hi.wrapping_add(c as u64);
-
-        let (r0, c0) = self.0[0].overflowing_add(lo);
-        self.0[0] = r0;
-        let (r1, c1) = self.0[1].overflowing_add(mid.wrapping_add(c0 as u64));
-        self.0[1] = r1;
-        self.0[2] = self.0[2].wrapping_add(hi_word.wrapping_add(c1 as u64));
-    }
-
-    /// `self mod m`, where `m` < 2^64.
-    #[inline]
-    pub fn rem_u64(&self, m: u64) -> u64 {
-        let m128 = m as u128;
-        let mut r: u128 = 0;
-        for &word in self.0.iter().rev() {
-            r = (r << 64) | (word as u128);
-            r %= m128;
-        }
-        r as u64
-    }
-
-    #[inline]
-    pub fn len_words(&self) -> u32 {
-        if self.0[2] != 0 {
-            3
-        } else if self.0[1] != 0 {
-            2
-        } else {
-            1
-        }
-    }
-}
-
-impl CrtAccum for U192 {
-    type Lane = u64;
-
-    #[inline]
-    fn from_lane(v: u64) -> Self {
-        U192::new(v)
-    }
-
-    #[inline]
-    fn add_product(&mut self, t: u64, factor: u128) {
-        self.add_mul_u64_u128(t, factor);
-    }
-
-    #[inline]
-    fn rem_lane(&self, m: u64) -> u64 {
-        self.rem_u64(m)
-    }
-
-    #[inline]
-    fn len_words(&self) -> u32 {
-        self.len_words()
-    }
-
-    #[inline]
-    fn as_u64_slice(&self) -> &[u64] {
-        &self.0[..self.len_words() as usize]
-    }
-}
-
-// ── U96 (32-bit lanes) ─────────────────────────────────────────────────
-
-/// A value bounded by 2^96 (product of three ≈2^32 primes).
-///
-/// Stored as `[u64; 2]` (128 bits) so [`as_u64_slice`] can return a
-/// `&[u64]` for [`add_shifted_to_prod`].  The upper 32 bits of the
-/// second limb are always zero.
-///
-/// [`add_shifted_to_prod`]: super::add_shifted_to_prod
-#[derive(Clone, Copy, Debug, Default)]
-pub struct U96(pub [u64; 2]);
-
-impl U96 {
-    /// `self += t * factor` where `t` < 2^32.
-    #[inline]
-    pub fn add_mul_u32_u96(&mut self, t: u32, factor: u128) {
-        let fac_lo = factor as u64;
-        let fac_hi = (factor >> 64) as u64;
-
-        // t × fac_lo  (max 2^32 × 2^64 = 2^96 → fits in u128)
-        let m_lo_full = (t as u128) * (fac_lo as u128);
-        let lo = m_lo_full as u64;
-        let m_lo_carry = (m_lo_full >> 64) as u64;
-
-        // t × fac_hi + carry
-        let m_hi_full = (t as u64 as u128) * (fac_hi as u128) + m_lo_carry as u128;
-        let m_hi = m_hi_full as u64;
-
-        let (r0, c0) = self.0[0].overflowing_add(lo);
-        self.0[0] = r0;
-        let (r1, c1) = self.0[1].overflowing_add(m_hi.wrapping_add(c0 as u64));
-        self.0[1] = r1;
-        let _ = c1;
-    }
-
-    /// `self mod m`, where `m` < 2^32.
-    #[inline]
-    pub fn rem_u32(&self, m: u32) -> u32 {
-        let m128 = m as u128;
-        let mut r: u128 = 0;
-        for &word in self.0.iter().rev() {
-            r = (r << 64) | (word as u128);
-            r %= m128;
-        }
-        r as u32
-    }
-
-    #[inline]
-    pub fn len_words(&self) -> u32 {
-        if self.0[1] != 0 {
-            2
-        } else {
-            1
-        }
-    }
-}
-
-impl CrtAccum for U96 {
-    type Lane = u32;
-
-    #[inline]
-    fn from_lane(v: u32) -> Self {
-        U96([v as u64, 0])
-    }
-
-    #[inline]
-    fn add_product(&mut self, t: u32, factor: u128) {
-        self.add_mul_u32_u96(t, factor);
-    }
-
-    #[inline]
-    fn rem_lane(&self, m: u32) -> u32 {
-        self.rem_u32(m)
-    }
-
-    #[inline]
-    fn len_words(&self) -> u32 {
-        self.len_words()
-    }
-
-    #[inline]
-    fn as_u64_slice(&self) -> &[u64] {
-        &self.0[..self.len_words() as usize]
-    }
+    /// Write the value into `out` as little-endian `Word` values,
+    /// returning the number of non-zero words written.
+    fn write_words(&self, out: &mut [crate::arch::word::Word; 6]) -> u32;
 }
 
 // ── Garner combine ─────────────────────────────────────────────────────
 
 /// Combine `K` residues into a [`CrtAccum`] via Garner's algorithm.
 ///
-/// All arithmetic is standard-form (not Montgomery).  `crt_inv_ij[i][j]`
+/// All arithmetic is standard-form.  `crt_inv_ij[i][j]`
 /// holds `inv(p_i mod p_j) mod p_j` for `i < j`.
 /// `primes` contains the prime values (only `primes[0..k]` are used).
 pub fn garner_combine<A: CrtAccum>(
@@ -255,32 +66,144 @@ pub fn garner_combine<A: CrtAccum>(
     x
 }
 
+// ── TripleWord impls (cfg-gated per arch) ─────────────────────────────
+
+/// 64-bit: 3 × u64 = 192 bits.
+#[cfg(not(any(force_bits = "32", target_pointer_width = "32")))]
+mod triple_impl {
+    use super::CrtAccum;
+    use crate::arch::word::TripleWord;
+
+    impl CrtAccum for TripleWord {
+        type Lane = u64;
+
+        #[inline]
+        fn from_lane(v: u64) -> Self {
+            TripleWord([v, 0, 0])
+        }
+
+        #[inline]
+        fn add_product(&mut self, t: u64, factor: u128) {
+            let fac_lo = factor as u64;
+            let fac_hi = (factor >> 64) as u64;
+            let m_lo_full = (t as u128) * (fac_lo as u128);
+            let lo = m_lo_full as u64;
+            let m_lo = (m_lo_full >> 64) as u64;
+            let m_hi_full = (t as u128) * (fac_hi as u128);
+            let m_hi = m_hi_full as u64;
+            let hi = (m_hi_full >> 64) as u64;
+            let (mid, c) = m_lo.overflowing_add(m_hi);
+            let hi_word = hi.wrapping_add(c as u64);
+            let (r0, c0) = self.0[0].overflowing_add(lo);
+            self.0[0] = r0;
+            let (r1, c1) = self.0[1].overflowing_add(mid.wrapping_add(c0 as u64));
+            self.0[1] = r1;
+            self.0[2] = self.0[2].wrapping_add(hi_word.wrapping_add(c1 as u64));
+        }
+
+        #[inline]
+        fn rem_lane(&self, m: u64) -> u64 {
+            let m128 = m as u128;
+            let mut r: u128 = 0;
+            for &word in self.0.iter().rev() {
+                r = (r << 64) | (word as u128);
+                r %= m128;
+            }
+            r as u64
+        }
+
+        #[inline]
+        fn write_words(&self, out: &mut [crate::arch::word::Word; 6]) -> u32 {
+            out[0] = self.0[0];
+            out[1] = self.0[1];
+            out[2] = self.0[2];
+            if self.0[2] != 0 { 3 } else if self.0[1] != 0 { 2 } else { 1 }
+        }
+    }
+}
+
+/// 32-bit: 3 × u32 = 96 bits.
+#[cfg(any(force_bits = "32", target_pointer_width = "32"))]
+mod triple_impl {
+    use super::CrtAccum;
+    use crate::arch::word::TripleWord;
+
+    impl CrtAccum for TripleWord {
+        type Lane = u32;
+
+        #[inline]
+        fn from_lane(v: u32) -> Self {
+            TripleWord([v, 0, 0])
+        }
+
+        #[inline]
+        fn add_product(&mut self, t: u32, factor: u128) {
+            let factor_lo = factor as u32;
+            let factor_hi = (factor >> 32) as u32;
+            let m_lo = (t as u64) * (factor_lo as u64);
+            let lo = m_lo as u32;
+            let m_mid = (m_lo >> 32) as u32;
+            let m_hi = (t as u64) * (factor_hi as u64) + m_mid as u64;
+            let mid = m_hi as u32;
+            let hi = (m_hi >> 32) as u32;
+            let (r0, c0) = self.0[0].overflowing_add(lo);
+            self.0[0] = r0;
+            let (r1, c1) = self.0[1].overflowing_add(mid.wrapping_add(c0 as u32));
+            self.0[1] = r1;
+            self.0[2] = self.0[2].wrapping_add(hi.wrapping_add(c1 as u32));
+        }
+
+        #[inline]
+        fn rem_lane(&self, m: u32) -> u32 {
+            let m64 = m as u64;
+            let mut r: u64 = 0;
+            for &word in self.0.iter().rev() {
+                r = (r << 32) | (word as u64);
+                r %= m64;
+            }
+            r as u32
+        }
+
+        #[inline]
+        fn write_words(&self, out: &mut [crate::arch::word::Word; 6]) -> u32 {
+            out[0] = self.0[0];
+            out[1] = self.0[1];
+            out[2] = self.0[2];
+            if self.0[2] != 0 { 3 } else if self.0[1] != 0 { 2 } else { 1 }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::arch::word::TripleWord;
     #[cfg(not(feature = "std"))]
     use alloc::vec;
 
     #[test]
-    fn test_garner_with_u64_primes() {
+    fn test_garner_roundtrip() {
         use crate::arch::ntt::{CRT_INV_IJ, MODULI};
 
+        type Lane = <TripleWord as CrtAccum>::Lane;
         let p0 = MODULI[0];
         let p1 = MODULI[1];
         let p2 = MODULI[2];
         let primes = [p0, p1, p2];
 
-        let residues = vec![12345u64, 67890u64, 11111u64];
-        let x = garner_combine::<U192>(&residues, &CRT_INV_IJ, &primes);
-        assert_eq!(x.rem_u64(p0), residues[0]);
-        assert_eq!(x.rem_u64(p1), residues[1]);
-        assert_eq!(x.rem_u64(p2), residues[2]);
+        let residues = vec![12345u64 as Lane, 67890u64 as Lane, 11111u64 as Lane];
+        let x = garner_combine::<TripleWord>(&residues, &CRT_INV_IJ, &primes);
+        assert_eq!(x.rem_lane(p0), residues[0]);
+        assert_eq!(x.rem_lane(p1), residues[1]);
+        assert_eq!(x.rem_lane(p2), residues[2]);
 
-        let x = garner_combine::<U192>(&residues[..2], &CRT_INV_IJ, &primes);
-        assert_eq!(x.rem_u64(p0), residues[0]);
-        assert_eq!(x.rem_u64(p1), residues[1]);
+        let x = garner_combine::<TripleWord>(&residues[..2], &CRT_INV_IJ, &primes);
+        assert_eq!(x.rem_lane(p0), residues[0]);
+        assert_eq!(x.rem_lane(p1), residues[1]);
 
-        let x = garner_combine::<U192>(&residues[..1], &CRT_INV_IJ, &primes);
-        assert_eq!(x.0[0], residues[0]);
+        let x = garner_combine::<TripleWord>(&residues[..1], &CRT_INV_IJ, &primes);
+        let mut buf = [crate::arch::word::Word::default(); 6];
+        x.write_words(&mut buf);
+        assert_eq!(buf[0] as u64, residues[0] as u64);
     }
 }

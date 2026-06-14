@@ -3,12 +3,17 @@
 //! Uses Proth primes of the form `K * 2^N + 1`.
 //! All constants computed by `integer/src/mul/ntt/compute_constants.py`.
 
-use num_modular::{FixedProth32, Reducer};
+use num_modular::FixedProth32;
 
 // Proth reducer instances — each with a different (N, K) pair.
 pub const P0: FixedProth32<26, 7> = FixedProth32::<26, 7>;
 pub const P1: FixedProth32<27, 15> = FixedProth32::<27, 15>;
 pub const P2: FixedProth32<27, 17> = FixedProth32::<27, 17>;
+
+// Type aliases needed by for_each_prime! macro in transform tests.
+pub type Rp0 = FixedProth32<26, 7>;
+pub type Rp1 = FixedProth32<27, 15>;
+pub type Rp2 = FixedProth32<27, 17>;
 
 pub const K: usize = 3;
 pub const MAX_LOG_N: u32 = 26;
@@ -38,60 +43,10 @@ pub const MODULI: [Lane; K] = [
     FixedProth32::<27, 17>::MODULUS,
 ];
 
-#[inline]
-pub fn to_monty<const PI: usize>(val: Lane) -> Lane {
-    match PI {
-        0 => P0.transform(val),
-        1 => P1.transform(val),
-        2 => P2.transform(val),
-        _ => unreachable!(),
-    }
-}
-
-#[inline]
-pub fn from_monty<const PI: usize>(val: Lane) -> Lane {
-    match PI {
-        0 => P0.residue(val),
-        1 => P1.residue(val),
-        2 => P2.residue(val),
-        _ => unreachable!(),
-    }
-}
-
-#[inline]
-pub fn mul_mod<const PI: usize>(a: Lane, b_val: Lane) -> Lane {
-    let prod = (a as DoubleLane) * (b_val as DoubleLane);
-    match PI {
-        0 => P0.reduce(prod),
-        1 => P1.reduce(prod),
-        2 => P2.reduce(prod),
-        _ => unreachable!(),
-    }
-}
-
-#[inline]
-pub fn add_mod<const PI: usize>(a: Lane, b_val: Lane) -> Lane {
-    match PI {
-        0 => P0.add(&a, &b_val),
-        1 => P1.add(&a, &b_val),
-        2 => P2.add(&a, &b_val),
-        _ => unreachable!(),
-    }
-}
-
-#[inline]
-pub fn sub_mod<const PI: usize>(a: Lane, b_val: Lane) -> Lane {
-    match PI {
-        0 => P0.sub(&a, &b_val),
-        1 => P1.sub(&a, &b_val),
-        2 => P2.sub(&a, &b_val),
-        _ => unreachable!(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use num_modular::Reducer;
 
     #[test]
     fn test_primes_proth_form() {
@@ -112,39 +67,36 @@ mod tests {
     fn test_omega_order() {
         for (pi, &omega_max) in OMEGA_MAX.iter().enumerate() {
             let p = MODULI[pi];
-            let sqr = |w: Lane| -> Lane {
-                match pi {
-                    0 => P0.reduce((w as u64) * (w as u64)),
-                    1 => P1.reduce((w as u64) * (w as u64)),
-                    2 => P2.reduce((w as u64) * (w as u64)),
-                    _ => unreachable!(),
-                }
-            };
-
-            let mut w = match pi {
-                0 => to_monty::<0>(omega_max),
-                1 => to_monty::<1>(omega_max),
-                2 => to_monty::<2>(omega_max),
+            let (sqr, to_m, from_m): (
+                fn(Lane) -> Lane,
+                fn(Lane) -> Lane,
+                fn(Lane) -> Lane,
+            ) = match pi {
+                0 => (
+                    |w| P0.reduce((w as u64) * (w as u64)),
+                    |v| P0.transform(v),
+                    |v| P0.residue(v),
+                ),
+                1 => (
+                    |w| P1.reduce((w as u64) * (w as u64)),
+                    |v| P1.transform(v),
+                    |v| P1.residue(v),
+                ),
+                2 => (
+                    |w| P2.reduce((w as u64) * (w as u64)),
+                    |v| P2.transform(v),
+                    |v| P2.residue(v),
+                ),
                 _ => unreachable!(),
             };
+
+            let mut w = to_m(omega_max);
             for _ in 0..MAX_LOG_N - 1 {
                 w = sqr(w);
             }
-            let w_std = match pi {
-                0 => from_monty::<0>(w),
-                1 => from_monty::<1>(w),
-                2 => from_monty::<2>(w),
-                _ => unreachable!(),
-            };
-            assert_eq!(w_std, p - 1, "omega^(2^(MAX_LOG_N-1)) != -1 mod p for prime {pi}");
+            assert_eq!(from_m(w), p - 1, "omega^(2^(MAX_LOG_N-1)) != -1 mod p for prime {pi}");
             w = sqr(w);
-            let one = match pi {
-                0 => from_monty::<0>(w),
-                1 => from_monty::<1>(w),
-                2 => from_monty::<2>(w),
-                _ => unreachable!(),
-            };
-            assert_eq!(one, 1, "omega^(2^MAX_LOG_N) != 1 mod p for prime {pi}");
+            assert_eq!(from_m(w), 1, "omega^(2^MAX_LOG_N) != 1 mod p for prime {pi}");
         }
     }
 }
