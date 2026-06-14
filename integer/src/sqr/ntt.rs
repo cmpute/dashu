@@ -120,7 +120,9 @@ fn process_prime_square<R: num_modular::Reducer<crate::arch::ntt::Lane>>(
     transform::forward(&mut a_lane[..nn], fwd_twiddles, r);
 
     // Pointwise square (no separate b̂ needed)
-    transform::pointwise_square(&mut a_lane[..nn], r);
+    for c in a_lane[..nn].iter_mut() {
+        *c = r.sqr(*c);
+    }
 
     // Inverse transform
     transform::inverse(&mut a_lane[..nn], inv_twiddles, r);
