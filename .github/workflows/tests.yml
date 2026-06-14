@@ -162,4 +162,9 @@ jobs:
         with:
           toolchain: stable
           components: clippy
-      - run: cargo clippy --all-features --all-targets --workspace --exclude dashu-python -- -D warnings
+      - name: Clippy (default / 64-bit Word)
+        run: cargo clippy --all-features --all-targets --workspace --exclude dashu-python -- -D warnings
+      - name: Clippy (32-bit Word)
+        env:
+          RUSTFLAGS: --cfg force_bits="32"
+        run: cargo clippy --all-features --all-targets --workspace --exclude dashu-python -- -D warnings

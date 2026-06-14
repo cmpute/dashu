@@ -27,6 +27,12 @@ impl<const B: Word> Repr<B> {
     pub fn from_str_native(mut src: &str) -> Result<(Self, usize), ParseError> {
         assert!(MIN_RADIX as Word <= B && B <= MAX_RADIX as Word);
 
+        // B is guaranteed to be in 2..=36 by the assert above; the cast to u32
+        // is needed because `from_str_radix` takes a u32 radix. On 32-bit Word
+        // targets the cast is a no-op.
+        #[allow(clippy::unnecessary_cast)]
+        let radix: u32 = B as u32;
+
         // parse and remove the sign
         let sign = match src.strip_prefix('-') {
             Some(s) => {
@@ -100,14 +106,14 @@ impl<const B: Word> Repr<B> {
                     return Err(ParseError::UnsupportedRadix);
                 } else {
                     let digits = int_str.len() - int_str.matches('_').count();
-                    (UBig::from_str_radix(&src[..dot], B as u32)?, digits, B as u32)
+                    (UBig::from_str_radix(&src[..dot], radix)?, digits, radix)
                 }
             } else {
                 if pmarker {
                     // prefix is required for using `p` as scale marker
                     return Err(ParseError::UnsupportedRadix);
                 }
-                (UBig::ZERO, 0, B as u32)
+                (UBig::ZERO, 0, radix)
             };
 
             // parse fractional part
@@ -139,7 +145,7 @@ impl<const B: Word> Repr<B> {
                 return Err(ParseError::UnsupportedRadix);
             } else {
                 ndigits = src.len() - src.matches('_').count();
-                UBig::from_str_radix(src, B as u32)?
+                UBig::from_str_radix(src, radix)?
             }
         };
 

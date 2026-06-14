@@ -14,18 +14,76 @@ use core::mem;
 use static_assertions::const_assert;
 
 /// If smaller operand length <= this, simple multiplication will be used.
-const THRESHOLD_SIMPLE: usize = 24;
-const_assert!(THRESHOLD_SIMPLE <= simple::MAX_SMALLER_LEN);
-const_assert!(THRESHOLD_SIMPLE + 1 >= karatsuba::MIN_LEN);
+const THRESHOLD_SIMPLE_DEFAULT: usize = 24;
+const_assert!(THRESHOLD_SIMPLE_DEFAULT <= simple::MAX_SMALLER_LEN);
+const_assert!(THRESHOLD_SIMPLE_DEFAULT + 1 >= karatsuba::MIN_LEN);
 
 /// If smaller operand length <= this, Karatsuba multiplication will be used.
-const THRESHOLD_KARATSUBA: usize = 192;
-const_assert!(THRESHOLD_KARATSUBA + 1 >= toom_3::MIN_LEN);
+/// Tuned so that Toom-3 kicks in earlier (~96 words vs the old 192),
+/// closing the gap with malachite/rug at ~10000-bit sizes.
+const THRESHOLD_KARATSUBA_DEFAULT: usize = 96;
+const_assert!(THRESHOLD_KARATSUBA_DEFAULT + 1 >= toom_3::MIN_LEN);
+
+/// If smaller operand length > this, NTT multiplication will be used.
+#[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
+const THRESHOLD_NTT_DEFAULT: usize = ntt::THRESHOLD_NTT;
+/// NTT unavailable on 16/32-bit word targets — use `usize::MAX` so dispatch never
+/// routes to the NTT path.
+#[cfg(any(force_bits = "16", target_pointer_width = "16"))]
+const THRESHOLD_NTT_DEFAULT: usize = usize::MAX;
+#[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
+const_assert!(THRESHOLD_NTT_DEFAULT + 1 >= toom_3::MIN_LEN);
+
+/// Environment-variable overrides for multiplication thresholds.
+///
+/// When the `tuning` feature is active the user may set `DASHU_THRESHOLD_SIMPLE`,
+/// `DASHU_THRESHOLD_KARATSUBA` or `DASHU_THRESHOLD_NTT` to override the
+/// compile-time defaults.
+mod threshold {
+    #[inline]
+    pub fn simple() -> usize {
+        #[cfg(feature = "tuning")]
+        {
+            if let Ok(s) = std::env::var("DASHU_THRESHOLD_SIMPLE") {
+                if let Ok(v) = s.parse() {
+                    return v;
+                }
+            }
+        }
+        super::THRESHOLD_SIMPLE_DEFAULT
+    }
+    #[inline]
+    pub fn karatsuba() -> usize {
+        #[cfg(feature = "tuning")]
+        {
+            if let Ok(s) = std::env::var("DASHU_THRESHOLD_KARATSUBA") {
+                if let Ok(v) = s.parse() {
+                    return v;
+                }
+            }
+        }
+        super::THRESHOLD_KARATSUBA_DEFAULT
+    }
+    #[inline]
+    pub fn ntt() -> usize {
+        #[cfg(feature = "tuning")]
+        {
+            if let Ok(s) = std::env::var("DASHU_THRESHOLD_NTT") {
+                if let Ok(v) = s.parse() {
+                    return v;
+                }
+            }
+        }
+        super::THRESHOLD_NTT_DEFAULT
+    }
+}
 
 mod helpers;
 mod karatsuba;
+#[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
+pub(crate) mod ntt;
 mod simple;
-mod toom_3;
+pub(crate) mod toom_3;
 
 /// Multiply a word sequence by a `Word` in place.
 ///
@@ -156,17 +214,29 @@ pub fn sub_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Wor
 }
 
 /// Temporary scratch space required for multiplication.
-pub fn memory_requirement_up_to(_total_len: usize, smaller_len: usize) -> Layout {
-    if smaller_len <= THRESHOLD_SIMPLE {
+pub fn memory_requirement_up_to(total_len: usize, smaller_len: usize) -> Layout {
+    if smaller_len <= threshold::simple() {
         memory::zero_layout()
-    } else if smaller_len <= THRESHOLD_KARATSUBA {
+    } else if smaller_len <= threshold::karatsuba() {
         karatsuba::memory_requirement_up_to(smaller_len)
-    } else {
+    } else if smaller_len <= threshold::ntt() {
         toom_3::memory_requirement_up_to(smaller_len)
+    } else {
+        // NTT path — only available on 64-bit word targets.
+        #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
+        {
+            ntt::memory_requirement_up_to(total_len, smaller_len)
+        }
+        #[cfg(any(force_bits = "16", target_pointer_width = "16"))]
+        {
+            let _ = (total_len, smaller_len);
+            unreachable!("NTT unavailable on 16-bit targets");
+        }
     }
 }
 
 /// Temporary scratch space required for multiplication.
+#[inline]
 pub fn memory_requirement_exact(total_len: usize, smaller_len: usize) -> Layout {
     memory_requirement_up_to(total_len, smaller_len)
 }
@@ -195,12 +265,22 @@ pub fn add_signed_mul<'a>(
         mem::swap(&mut a, &mut b);
     }
 
-    if b.len() <= THRESHOLD_SIMPLE {
+    if b.len() <= threshold::simple() {
         simple::add_signed_mul(c, sign, a, b, memory)
-    } else if b.len() <= THRESHOLD_KARATSUBA {
+    } else if b.len() <= threshold::karatsuba() {
         karatsuba::add_signed_mul(c, sign, a, b, memory)
-    } else {
+    } else if b.len() <= threshold::ntt() {
         toom_3::add_signed_mul(c, sign, a, b, memory)
+    } else {
+        #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
+        {
+            ntt::add_signed_mul(c, sign, a, b, memory)
+        }
+        #[cfg(any(force_bits = "16", target_pointer_width = "16"))]
+        {
+            let _ = (c, sign, a, b, memory);
+            unreachable!("NTT unavailable on 16-bit targets");
+        }
     }
 }
 
@@ -218,11 +298,233 @@ pub fn add_signed_mul_same_len(
     let n = a.len();
     debug_assert!(b.len() == n && c.len() == 2 * n);
 
-    if n <= THRESHOLD_SIMPLE {
+    if n <= threshold::simple() {
         simple::add_signed_mul_same_len(c, sign, a, b, memory)
-    } else if n <= THRESHOLD_KARATSUBA {
+    } else if n <= threshold::karatsuba() {
         karatsuba::add_signed_mul_same_len(c, sign, a, b, memory)
-    } else {
+    } else if n <= threshold::ntt() {
         toom_3::add_signed_mul_same_len(c, sign, a, b, memory)
+    } else {
+        #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
+        {
+            ntt::add_signed_mul_same_len(c, sign, a, b, memory)
+        }
+        #[cfg(any(force_bits = "16", target_pointer_width = "16"))]
+        {
+            let _ = (c, sign, a, b, memory);
+            unreachable!("NTT unavailable on 16-bit targets");
+        }
+    }
+}
+
+#[cfg(all(test, feature = "std"))]
+mod threshold_tests {
+    use super::*;
+    use crate::arch::word::Word;
+    use crate::Sign::Positive;
+
+    /// Compare karatsuba vs toom-3 at various word counts to find [`THRESHOLD_KARATSUBA`].
+    /// Run with:
+    ///   cargo test -p dashu-int --release -- mul::threshold_tests::crossover_karatsuba --nocapture --ignored
+    #[test]
+    #[ignore]
+    #[cfg(feature = "std")]
+    fn crossover_karatsuba() {
+        use std::time::Instant;
+
+        let sizes: &[usize] = &[80, 100, 120, 140, 160, 180, 200, 240, 280, 320, 360, 400];
+
+        println!("{:>8} {:>14} {:>14} {:>10}", "words", "karatsuba(µs)", "toom-3(µs)", "ratio");
+        println!("{}", "-".repeat(50));
+
+        for &n in sizes {
+            let a: Vec<Word> = (0..n)
+                .map(|i| (i as Word + 1).wrapping_mul(0x9E3779B97F4A7C15u64 as Word))
+                .collect();
+            let b: Vec<Word> = (0..n)
+                .map(|i| (i as Word + 1).wrapping_mul(0xC6A4A7935BD1E995u64 as Word))
+                .collect();
+            let mut c_kara = vec![0 as Word; 2 * n];
+            let mut c_toom = vec![0 as Word; 2 * n];
+            let layout_kara = karatsuba::memory_requirement_up_to(n);
+            let layout_toom = toom_3::memory_requirement_up_to(n);
+            // Use the larger layout so both algorithms get enough memory.
+            let layout = if layout_kara.size() > layout_toom.size() {
+                layout_kara
+            } else {
+                layout_toom
+            };
+            let warmup = 5;
+            let iters = 20;
+
+            // Time karatsuba
+            let t_kara = {
+                let mut best = f64::MAX;
+                for _ in 0..warmup {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    c_kara.fill(0);
+                    let _c =
+                        karatsuba::add_signed_mul_same_len(&mut c_kara, Positive, &a, &b, &mut mem);
+                }
+                for _ in 0..iters {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    c_kara.fill(0);
+                    let start = Instant::now();
+                    let _c =
+                        karatsuba::add_signed_mul_same_len(&mut c_kara, Positive, &a, &b, &mut mem);
+                    let elapsed = start.elapsed().as_secs_f64() * 1_000_000.0;
+                    if elapsed < best {
+                        best = elapsed;
+                    }
+                }
+                best
+            };
+
+            // Time toom-3
+            let t_toom = {
+                let mut best = f64::MAX;
+                for _ in 0..warmup {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    c_toom.fill(0);
+                    let _c =
+                        toom_3::add_signed_mul_same_len(&mut c_toom, Positive, &a, &b, &mut mem);
+                }
+                for _ in 0..iters {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    c_toom.fill(0);
+                    let start = Instant::now();
+                    let _c =
+                        toom_3::add_signed_mul_same_len(&mut c_toom, Positive, &a, &b, &mut mem);
+                    let elapsed = start.elapsed().as_secs_f64() * 1_000_000.0;
+                    if elapsed < best {
+                        best = elapsed;
+                    }
+                }
+                best
+            };
+
+            assert_eq!(&c_kara[..], &c_toom[..], "mismatch at n={n}");
+            println!("{:>8} {:>14.1} {:>14.1} {:>9.2}x", n, t_kara, t_toom, t_toom / t_kara);
+        }
+    }
+
+    /// Compare NTT against toom-3 at various word counts to find [`THRESHOLD_NTT`].
+    ///
+    /// Run with (set a huge NTT threshold to keep toom-3 pure):
+    /// ```sh
+    /// DASHU_THRESHOLD_NTT=99999999 cargo test -p dashu-int --features tuning --release \
+    ///   -- mul::threshold_tests::crossover_ntt --ignored --nocapture
+    /// ```
+    ///
+    /// The output is a table: words, b_pack, N, toom-3 time, NTT time, ratio.
+    #[test]
+    #[ignore]
+    #[allow(clippy::let_underscore_must_use)]
+    #[cfg(all(
+        feature = "std",
+        not(any(
+            force_bits = "16",
+            force_bits = "32",
+            target_pointer_width = "16",
+            target_pointer_width = "32"
+        ))
+    ))]
+    fn crossover_ntt() {
+        use std::time::Instant;
+
+        let sizes: &[usize] = &[
+            1_000, 2_000, 3_000, 4_000, 5_000, 6_000, 7_000, 8_000, 9_000, 10_000, 20_000, 40_000,
+            80_000,
+        ];
+
+        println!(
+            "{:>10} {:>4} {:>8} {:>12} {:>12} {:>10}",
+            "words", "bp", "N", "toom-3(ms)", "ntt(ms)", "ratio"
+        );
+        println!("{}", "-".repeat(68));
+
+        for &n in sizes {
+            let a: Vec<Word> = (0..n)
+                .map(|i| (i as u64 + 1).wrapping_mul(0x9E3779B97F4A7C15))
+                .collect();
+            let b: Vec<Word> = (0..n)
+                .map(|i| (i as u64 + 1).wrapping_mul(0xC6A4A7935BD1E995))
+                .collect();
+            let mut c_toom = vec![0u64; 2 * n];
+            let mut c_ntt = vec![0u64; 2 * n];
+
+            let layout_ntt = super::ntt::memory_requirement_up_to(2 * n, n);
+            let layout_toom = super::toom_3::memory_requirement_up_to(n);
+            let layout = if layout_ntt.size() > layout_toom.size() {
+                layout_ntt
+            } else {
+                layout_toom
+            };
+            let warmup = 2;
+            let iters = 5;
+
+            // toom-3 (may use NTT internally depending on DASHU_THRESHOLD_NTT)
+            let t_toom = {
+                let mut best = f64::MAX;
+                for _ in 0..warmup {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    c_toom.fill(0);
+                    let _ = super::toom_3::add_signed_mul(&mut c_toom, Positive, &a, &b, &mut mem);
+                }
+                for _ in 0..iters {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    c_toom.fill(0);
+                    let start = Instant::now();
+                    let _ = super::toom_3::add_signed_mul(&mut c_toom, Positive, &a, &b, &mut mem);
+                    let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+                    if elapsed < best {
+                        best = elapsed;
+                    }
+                }
+                best
+            };
+
+            // NTT (via public entry, bypasses dispatch)
+            let t_ntt = {
+                let mut best = f64::MAX;
+                for _ in 0..warmup {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    c_ntt.fill(0);
+                    let _ = super::ntt::add_signed_mul(&mut c_ntt, Positive, &a, &b, &mut mem);
+                }
+                for _ in 0..iters {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    c_ntt.fill(0);
+                    let start = Instant::now();
+                    let _ = super::ntt::add_signed_mul(&mut c_ntt, Positive, &a, &b, &mut mem);
+                    let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+                    if elapsed < best {
+                        best = elapsed;
+                    }
+                }
+                best
+            };
+
+            assert_eq!(&c_ntt[..], &c_toom[..], "mismatch at n={n}");
+
+            let (b_pack, nn, _k_eff) = super::ntt::select_params(n, n);
+            println!(
+                "{:>10} {:>4} {:>8} {:>12.3} {:>12.3} {:>9.2}x",
+                n,
+                b_pack,
+                nn,
+                t_toom,
+                t_ntt,
+                t_ntt / t_toom
+            );
+        }
     }
 }

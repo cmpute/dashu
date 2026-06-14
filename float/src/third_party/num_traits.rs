@@ -133,7 +133,7 @@ impl<R: Round, const B: Word> num_traits::Num for FBig<R, B> {
     #[inline]
     fn from_str_radix(s: &str, radix: u32) -> Result<Self, Self::FromStrRadixErr> {
         // the conversion might a fail with 16-bit words.
-        #[allow(clippy::unnecessary_fallible_conversions)]
+        #[allow(clippy::unnecessary_fallible_conversions, clippy::useless_conversion)]
         let r: Word = radix.try_into().map_err(|_| ParseError::UnsupportedRadix)?;
         if r == B {
             #[allow(deprecated)] // TODO(v0.5): remove after from_str_native is made private.
