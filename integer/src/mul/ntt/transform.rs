@@ -101,6 +101,13 @@ pub fn pointwise_mul<R: Reducer<Lane>>(a_hat: &mut [Lane], b_hat: &[Lane], r: &R
     }
 }
 
+/// Pointwise square of a transformed vector in place.
+pub fn pointwise_square<R: Reducer<Lane>>(a_hat: &mut [Lane], r: &R) {
+    for a in a_hat.iter_mut() {
+        *a = r.sqr(*a);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
