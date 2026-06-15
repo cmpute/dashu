@@ -20,8 +20,19 @@ pub const MIN_LEN: usize = 3;
 /// n bounds the operand length in words.
 pub fn memory_requirement_up_to(n: usize) -> Layout {
     // 3n + 2 ceil_log2 n  (vs 2n + 2 ceil_log2 n for mul).
-    // The extra n accounts for the diff_sq temp buffer (2·mid words)
-    // that has no analogue in multiplication.
+    //
+    // The extra n is the diff_sq temp buffer (2·mid words) that holds the
+    // cross term (a_lo − a_hi)² before it is subtracted from the output.
+    //
+    // Multiplication avoids this temp by accumulating its difference product
+    // straight into the output (mul::add_signed_mul_same_len), but squaring
+    // cannot do so cheaply. The symmetric basecase (simple::square) adds the
+    // off-diagonal products once and finishes with an O(n) in-place doubling,
+    // which requires a *zeroed* target. Accumulating into a non-zero output
+    // would force a full-schoolbook basecase (~2× the multiply work), which
+    // measures ~25% slower across the Toom-3 range where Karatsuba is used
+    // recursively. The temp is therefore kept deliberately: it is the price
+    // of the efficient symmetric (in-place) squaring basecase.
     let num_words = 3 * n + 2 * (math::ceil_log2(n) as usize);
     memory::array_layout::<Word>(num_words)
 }
