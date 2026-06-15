@@ -13,6 +13,7 @@
 
 ### Improve
 - Basecase (schoolbook) multiplication now uses an dword mult inner kernel (two multiplier words per sweep over the accumulator, mirroring GMP's `mpn_addmul_2` and `mpn_submul_2`), roughly halving accumulator memory traffic.
+- Basecase (schoolbook) squaring's off-diagonal phase now uses the same two-word kernel as multiplication, pairing consecutive limbs `(a[i], a[i+1])` against their shared suffix `a[i+2..]`. This halves the accumulator traffic of the basecase, speeding up squaring ~25% in the schoolbook range (≤30 words) and ~12-17% through the Karatsuba/Toom-3 bands that recurse into it; `ubig_pow` improves likewise since exponentiation is squaring-dominated.
 - Addition and subtraction carry/borrow propagation now uses `Word` (u64/u32) instead of `bool` throughout the architecture-specific `add_with_carry` and `sub_with_borrow` functions, eliminating `bool`↔Word conversions in the inner loops.
 - Lowered the Karatsuba→Toom-3 multiplication threshold from 192 to 96 words, giving Toom-Cook-3 at ~6000 bits instead of ~12000 bits — closes the gap with malachite at ~10000-bit sizes.
 - NTT coefficient width increased from 16 to 64 bits (K_eff=3 for 64-bit, K_eff=2 otherwise), roughly halving the transform length at each step.
