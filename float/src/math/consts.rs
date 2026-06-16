@@ -132,6 +132,21 @@ pub(crate) fn iacoth_bs(n: u32, a: usize, b: usize) -> (UBig, UBig, IBig) {
     if a >= b {
         return (UBig::ONE, UBig::ONE, IBig::ZERO); // identity
     }
+    // Precomputed initial block [1, 1+K): skip its K leaves on every fresh
+    // computation. Because the merge is associative, the constant triple is
+    // identical to the recursively computed state regardless of split order.
+    // It only applies at the series start (a == 1); recursive/extend calls have
+    // a >= 1 + K and never reach this branch.
+    if a == 1 {
+        if let Some((k, p0, q0, t0)) = iacoth_initial_block(n) {
+            // the precomputed block covers [1, 1+k); use it when [a, b) reaches
+            // past its end (b > k)
+            if b > k {
+                let (pr, qr, tr) = iacoth_bs(n, 1 + k, b);
+                return merge(&p0, &q0, &t0, &pr, &qr, &tr);
+            }
+        }
+    }
     if b - a == 1 {
         // leaf at k = a (a >= 1): (p_a, q_a, p_a), p_a = 2a-1, q_a = (2a+1)·n²
         let pa = UBig::from(2 * a as u64 - 1);
@@ -146,11 +161,86 @@ pub(crate) fn iacoth_bs(n: u32, a: usize, b: usize) -> (UBig, UBig, IBig) {
     merge(&pl, &ql, &tl, &pr, &qr, &tr) // universal merge
 }
 
+/// Precomputed binary-splitting state for `L(n) = acoth(n)` over the first `K`
+/// terms `[1, 1+K)`, stored as `(K, P, Q, T)`. `K` is chosen (per `n`) so that
+/// `P`, `Q` and `|T|` each fit in a [`DoubleWord`][dashu_int::DoubleWord]; this
+/// keeps the triple a compile-time constant — instantiating it never touches the
+/// heap (the values use the inline small-integer representation).
+///
+/// Only the sub-series that back ln2 / ln10 (`n ∈ {6, 9, 99}`) are precomputed;
+/// π cannot use this trick because its 2-term `T` already overflows a `DoubleWord`.
+fn iacoth_initial_block(n: u32) -> Option<(usize, UBig, UBig, IBig)> {
+    match n {
+        // L(6) over [1, 8): 7 leaves.
+        6 => Some(IACOTH_6_INITIAL),
+        // L(9) over [1, 7): 6 leaves.
+        9 => Some(IACOTH_9_INITIAL),
+        // L(99) over [1, 5): 4 leaves.
+        99 => Some(IACOTH_99_INITIAL),
+        _ => None,
+    }
+}
+
+/// `(K, P, Q, T)` for `L(6)` over `[1, 8)` (7 leaves).
+const IACOTH_6_INITIAL: (usize, UBig, UBig, IBig) = (
+    7,
+    UBig::from_dword(135135),
+    UBig::from_dword(158846119726694400),
+    IBig::from_parts_const(Sign::Positive, 1495807822427715),
+);
+/// `(K, P, Q, T)` for `L(9)` over `[1, 7)` (6 leaves).
+const IACOTH_9_INITIAL: (usize, UBig, UBig, IBig) = (
+    6,
+    UBig::from_dword(10395),
+    UBig::from_dword(38166115412359935),
+    IBig::from_parts_const(Sign::Positive, 158235986058912),
+);
+/// `(K, P, Q, T)` for `L(99)` over `[1, 5)` (4 leaves).
+const IACOTH_99_INITIAL: (usize, UBig, UBig, IBig) = (
+    4,
+    UBig::from_dword(105),
+    UBig::from_dword(8719937362343844945),
+    IBig::from_parts_const(Sign::Positive, 296584403649144),
+);
+
 impl<R: Round, const B: Word> FBig<R, B> {
     /// Calculate π with the given precision and the default rounding mode.
     #[inline]
     #[must_use]
     pub fn pi(precision: usize) -> Self {
         Context::<R>::new(precision).pi().value()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Independently (left-fold) merge the first `k` leaves of `L(n)` and check
+    /// that the result matches the precomputed constant triple. Guards against
+    /// transcription errors in the `IACOTH_*_INITIAL` literals; correctness of the
+    /// finalized `L(n)` values is covered by `log::tests` and `cache::tests`.
+    #[test]
+    fn test_iacoth_initial_blocks() {
+        fn check(n: u32, expected: &(usize, UBig, UBig, IBig)) {
+            let k = expected.0;
+            // independently (left-fold) merge the first k leaves
+            let mut acc = (UBig::ONE, UBig::ONE, IBig::ZERO);
+            for kk in 1..=k {
+                let pa = UBig::from(2 * kk as u64 - 1);
+                let qa = UBig::from(2 * kk as u64 + 1) * UBig::from(n).pow(2);
+                let ta = IBig::from(pa.clone());
+                let (p, q, t) = merge(&acc.0, &acc.1, &acc.2, &pa, &qa, &ta);
+                acc = (p, q, t);
+            }
+            assert_eq!(acc.0, expected.1, "P mismatch for n={n}");
+            assert_eq!(acc.1, expected.2, "Q mismatch for n={n}");
+            assert_eq!(acc.2, expected.3, "T mismatch for n={n}");
+            // the seed branch must reproduce the same state as the full recursion
+            assert_eq!(iacoth_bs(n, 1, 1 + k), (acc.0, acc.1, acc.2));
+        }
+        check(6, &IACOTH_6_INITIAL);
+        check(9, &IACOTH_9_INITIAL);
+        check(99, &IACOTH_99_INITIAL);
     }
 }

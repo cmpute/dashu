@@ -11,6 +11,7 @@
 
 ### Change
 - `Context::iacoth` (used internally by `ln`) now evaluates the series with binary splitting instead of an iterative loop, reusing the shared `iacoth_bs` helper. This keeps `Q` at O(p) digits and improves high-precision performance; behavior is unchanged (pinned by existing fixtures).
+- `iacoth_bs` now skips its first several leaves via a compile-time constant basecase (the `L(6)`/`L(9)`/`L(99)` initial blocks), precomputed to the extent that the `(P, Q, T)` values fit in a `DoubleWord` (so they stay portable `const`s on both 32- and 64-bit `Word`).
 
 ### Fix
 - Fix rounding issues in `to_32()` and `to_f64()` (fixes [#53](https://github.com/cmpute/dashu/issues/53) and [#56](https://github.com/cmpute/dashu/issues/56)).
