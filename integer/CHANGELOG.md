@@ -19,6 +19,7 @@
 - Montgomery multiplication: the `sqr()` method and `pow_nontrivial` entry point now avoid a redundant clone+overwrite of the multi-word value, saving one `Box<[Word]>` allocation and an `s`-word copy per squaring.
 - Montgomery multiplication: `mul_in_place_large` uses pointer-identity instead of full element comparison to detect self-multiplication (`a *= a`), avoiding an `O(s)` scan on the common distinct-operands path.
 - Montgomery multiplication: `mul_normalized_large` and `sqr_normalized_large` share a common `finish_monty_product` helper for the REDC+canonicalize pipeline tail.
+- Montgomery multiplication: `&Montgomery * &Montgomery` for Large operands now builds the result directly from scratch memory instead of cloning one operand then overwriting every word via `mul_in_place_large`, saving an `s`-word copy per multiply. (Add, sub, and neg on references still clone since their in-place operations seed the output buffer from the operand value.)
 
 ### Change
 - NTT multiplication now uses Proth primes (`K·2^N + 1`) instead of Solinas primes, improving modular reduction speed.
