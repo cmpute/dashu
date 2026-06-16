@@ -100,11 +100,14 @@ impl<'a> Montgomery<'a> {
             MontgomeryInner::Single(raw, ring) => Montgomery::from_single(ring.0.sqr(*raw), ring),
             MontgomeryInner::Double(raw, ring) => Montgomery::from_double(ring.0.sqr(*raw), ring),
             MontgomeryInner::Large(raw, ring) => {
-                let mut result = raw.clone();
                 let memory_requirement = mul_memory_requirement(ring);
                 let mut allocation = MemoryAllocation::new(memory_requirement);
-                sqr_in_place_large(ring, &mut result, &mut allocation.memory());
-                Montgomery::from_large(result, ring)
+                let mut memory = allocation.memory();
+                let prod = sqr_normalized_large(ring, &raw.0, &mut memory);
+                Montgomery::from_large(
+                    MontgomeryLargeVal(Buffer::from(prod).into_boxed_slice()),
+                    ring,
+                )
             }
         }
     }
@@ -196,6 +199,14 @@ fn canonicalize<'a>(t: &'a mut [Word], ring: &MontgomeryLargeRepr) -> &'a [Word]
     &t[s..2 * s]
 }
 
+/// REDC + canonicalize — the shared tail of `mul_normalized_large` and
+/// `sqr_normalized_large`.
+#[inline]
+fn finish_monty_product<'a>(product: &'a mut [Word], ring: &MontgomeryLargeRepr) -> &'a [Word] {
+    redc_in_place(product, ring);
+    canonicalize(product, ring)
+}
+
 /// Returns `a * b` (Montgomery product) as an `s`-word slice allocated in `memory`.
 pub(crate) fn mul_normalized_large<'a>(
     ring: &MontgomeryLargeRepr,
@@ -221,8 +232,7 @@ pub(crate) fn mul_normalized_large<'a>(
         mul::multiply(&mut product[..na + nb], &a[..na], &b[..nb], &mut memory);
     }
 
-    redc_in_place(product, ring);
-    canonicalize(product, ring)
+    finish_monty_product(product, ring)
 }
 
 /// Returns `a^2` (Montgomery square) as an `s`-word slice allocated in `memory`.
@@ -248,8 +258,7 @@ pub(crate) fn sqr_normalized_large<'a>(
         sqr::sqr(&mut product[..2 * na], &a[..na], &mut memory);
     }
 
-    redc_in_place(product, ring);
-    canonicalize(product, ring)
+    finish_monty_product(product, ring)
 }
 
 /// Returns the plain residue `a * R^{-1} mod m` (i.e. exit Montgomery form) as an `s`-word
@@ -287,7 +296,10 @@ pub(crate) fn mul_in_place_large(
     rhs: &MontgomeryLargeVal,
     memory: &mut Memory,
 ) {
-    let prod = if lhs.0 == rhs.0 {
+    // Pointer-identity check: when lhs and rhs are the same allocation (e.g.
+    // `a *= a`), use the fast squaring path. Distinct-but-equal values are
+    // rare in practice and are handled correctly (just slower) by the mul path.
+    let prod = if lhs.0.as_ptr() == rhs.0.as_ptr() {
         sqr_normalized_large(ring, &lhs.0, memory)
     } else {
         mul_normalized_large(ring, &lhs.0, &rhs.0, memory)

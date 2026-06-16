@@ -32,8 +32,10 @@ mod threshold {
         #[cfg(feature = "tuning")]
         {
             if let Ok(s) = std::env::var("DASHU_THRESHOLD_SIMPLE_DIV") {
-                if let Ok(v) = s.parse() {
-                    return v;
+                if let Ok(v) = s.parse::<usize>() {
+                    // Values below 3 are unsupported: the divide-and-conquer split
+                    // (n_lo = n / 2) needs at least 2 low words.
+                    return v.max(3);
                 }
             }
         }

@@ -121,8 +121,11 @@ impl_monty_pow_for_primitive!(single, MontgomerySingleRepr, Word);
 impl_monty_pow_for_primitive!(double, MontgomeryDoubleRepr, crate::arch::word::DoubleWord);
 
 mod large {
-    use super::super::mul::{mul_memory_requirement, mul_normalized_large, sqr_in_place_large};
+    use super::super::mul::{
+        mul_memory_requirement, mul_normalized_large, sqr_in_place_large, sqr_normalized_large,
+    };
     use super::super::repr::{MontgomeryLargeRepr, MontgomeryLargeVal};
+    use crate::buffer::Buffer;
     use crate::ubig::UBig;
     use crate::{
         arch::word::Word,
@@ -170,8 +173,8 @@ mod large {
         let (table, mut memory) = memory.allocate_slice_fill::<Word>(table_words, 0);
 
         // val = raw^2
-        let mut val = raw.clone();
-        sqr_in_place_large(ring, &mut val, &mut memory);
+        let prod = sqr_normalized_large(ring, &raw.0, &mut memory);
+        let mut val = MontgomeryLargeVal(Buffer::from(prod).into_boxed_slice());
 
         // raw^(2*i+1) = raw^(2*i-1) * val
         for i in 1..(1 << (window_len - 1)) {

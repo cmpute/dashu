@@ -15,7 +15,10 @@
 - NTT coefficient width increased from 16 to 64 bits (K_eff=3 for 64-bit, K_eff=2 otherwise), roughly halving the transform length at each step.
 - NTT multiplication auto-selects `K_eff = 2` primes when headroom allows, skipping the third prime.
 - Multiplication thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE`, `DASHU_THRESHOLD_KARATSUBA`, and `DASHU_THRESHOLD_NTT` environment variables (requires `tuning` feature).
-- Division threshold (schoolbook ↔ divide-and-conquer crossover) can be overridden at runtime via the `DASHU_THRESHOLD_SIMPLE_DIV` environment variable (requires `tuning` feature).
+- Division threshold (schoolbook ↔ divide-and-conquer crossover) can be overridden at runtime via the `DASHU_THRESHOLD_SIMPLE_DIV` environment variable (requires `tuning` feature). Values below 3 are clamped to 3 to uphold the divide-and-conquer algorithm's `n_lo >= 2` invariant.
+- Montgomery multiplication: the `sqr()` method and `pow_nontrivial` entry point now avoid a redundant clone+overwrite of the multi-word value, saving one `Box<[Word]>` allocation and an `s`-word copy per squaring.
+- Montgomery multiplication: `mul_in_place_large` uses pointer-identity instead of full element comparison to detect self-multiplication (`a *= a`), avoiding an `O(s)` scan on the common distinct-operands path.
+- Montgomery multiplication: `mul_normalized_large` and `sqr_normalized_large` share a common `finish_monty_product` helper for the REDC+canonicalize pipeline tail.
 
 ### Change
 - NTT multiplication now uses Proth primes (`K·2^N + 1`) instead of Solinas primes, improving modular reduction speed.
