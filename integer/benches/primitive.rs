@@ -175,6 +175,27 @@ fn ubig_mul_asymmetric(criterion: &mut Criterion) {
     group.finish();
 }
 
+fn ubig_sqr(criterion: &mut Criterion) {
+    let mut rng = StdRng::seed_from_u64(SEED);
+    let mut group = criterion.benchmark_group("ubig_sqr");
+    group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
+
+    for log_bits in 1..=6 {
+        if log_bits >= 5 {
+            group.sample_size(10);
+        }
+        let bits = 10usize.pow(log_bits);
+        let a = random_ubig(bits, &mut rng);
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("1e{}", log_bits)),
+            &a,
+            |bencher, ta| bencher.iter(|| ta.sqr()),
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     ubig_add,
@@ -189,6 +210,7 @@ criterion_group!(
     ubig_pow_large_base,
     ubig_ilog_large,
     ubig_mul_asymmetric,
+    ubig_sqr,
 );
 
 criterion_main!(benches);

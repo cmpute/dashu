@@ -85,7 +85,7 @@ fn add_signed_mul_chunk(
 /// It consumes two multiplier words per sweep over `rhs`, so the accumulator
 /// word `words[k]` is loaded and stored once per two multiplier words instead
 /// of once per word. This halves the memory traffic on `words` and exposes two
-/// independent multiply chains, mirroring GMP's `mpn_addmul_2`.
+/// independent multiply chains.
 ///
 /// Only `words[..n]` is modified. The two extra high words of the product
 /// (the carries out of columns `n` and `n + 1`) are returned as
@@ -181,7 +181,7 @@ fn sub_mul_chunk(c: &mut [Word], a: &[Word], b: &[Word]) -> bool {
     let mut borrow_out = false;
     let mut i = 0;
 
-    // Consume the multiplier two words at a time via the submul_2 kernel.
+    // Consume the multiplier two words at a time via the sub_mul_dword_same_len_in_place kernel.
     let mut pairs = b.chunks_exact(2);
     for pair in &mut pairs {
         let (carry_lo, carry_hi) =

@@ -36,15 +36,15 @@ const_assert!(THRESHOLD_NTT_DEFAULT + 1 >= toom_3::MIN_LEN);
 
 /// Environment-variable overrides for multiplication thresholds.
 ///
-/// When the `tuning` feature is active the user may set `DASHU_THRESHOLD_SIMPLE`,
-/// `DASHU_THRESHOLD_KARATSUBA` or `DASHU_THRESHOLD_NTT` to override the
+/// When the `tuning` feature is active the user may set `DASHU_THRESHOLD_SIMPLE_MUL`,
+/// `DASHU_THRESHOLD_KARATSUBA_MUL` or `DASHU_THRESHOLD_NTT_MUL` to override the
 /// compile-time defaults.
 mod threshold {
     #[inline]
     pub fn simple() -> usize {
         #[cfg(feature = "tuning")]
         {
-            if let Ok(s) = std::env::var("DASHU_THRESHOLD_SIMPLE") {
+            if let Ok(s) = std::env::var("DASHU_THRESHOLD_SIMPLE_MUL") {
                 if let Ok(v) = s.parse() {
                     return v;
                 }
@@ -56,7 +56,7 @@ mod threshold {
     pub fn karatsuba() -> usize {
         #[cfg(feature = "tuning")]
         {
-            if let Ok(s) = std::env::var("DASHU_THRESHOLD_KARATSUBA") {
+            if let Ok(s) = std::env::var("DASHU_THRESHOLD_KARATSUBA_MUL") {
                 if let Ok(v) = s.parse() {
                     return v;
                 }
@@ -68,7 +68,7 @@ mod threshold {
     pub fn ntt() -> usize {
         #[cfg(feature = "tuning")]
         {
-            if let Ok(s) = std::env::var("DASHU_THRESHOLD_NTT") {
+            if let Ok(s) = std::env::var("DASHU_THRESHOLD_NTT_MUL") {
                 if let Ok(v) = s.parse() {
                     return v;
                 }
@@ -431,7 +431,7 @@ mod threshold_tests {
     ///
     /// Run with (set a huge NTT threshold to keep toom-3 pure):
     /// ```sh
-    /// DASHU_THRESHOLD_NTT=99999999 cargo test -p dashu-int --features tuning --release \
+    /// DASHU_THRESHOLD_NTT_MUL=99999999 cargo test -p dashu-int --features tuning --release \
     ///   -- mul::threshold_tests::crossover_ntt --ignored --nocapture
     /// ```
     ///
@@ -482,7 +482,7 @@ mod threshold_tests {
             let warmup = 2;
             let iters = 5;
 
-            // toom-3 (may use NTT internally depending on DASHU_THRESHOLD_NTT)
+            // toom-3 (may use NTT internally depending on DASHU_THRESHOLD_NTT_MUL)
             let t_toom = {
                 let mut best = f64::MAX;
                 for _ in 0..warmup {
