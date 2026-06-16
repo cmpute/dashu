@@ -12,7 +12,7 @@
 - Squaring thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE_SQR`, `DASHU_THRESHOLD_KARATSUBA_SQR`, and `DASHU_THRESHOLD_NTT_SQR` environment variables (requires `tuning` feature).
 
 ### Improve
-- Basecase (schoolbook) multiplication now uses an dword mult inner kernel (two multiplier words per sweep over the accumulator, mirroring GMP's `mpn_addmul_2` and `mpn_submul_2`), roughly halving accumulator memory traffic.
+- Basecase (schoolbook) multiplication now uses an dword mult inner kernel (two multiplier words per sweep over the accumulator, via the `add_mul_dword_same_len_in_place` and `sub_mul_dword_same_len_in_place` kernels), roughly halving accumulator memory traffic.
 - Basecase (schoolbook) squaring's off-diagonal phase now uses the same two-word kernel as multiplication, pairing consecutive limbs `(a[i], a[i+1])` against their shared suffix `a[i+2..]`. This halves the accumulator traffic of the basecase, speeding up squaring ~25% in the schoolbook range (≤30 words) and ~12-17% through the Karatsuba/Toom-3 bands that recurse into it; `ubig_pow` improves likewise since exponentiation is squaring-dominated.
 - Addition and subtraction carry/borrow propagation now uses `Word` (u64/u32) instead of `bool` throughout the architecture-specific `add_with_carry` and `sub_with_borrow` functions, eliminating `bool`↔Word conversions in the inner loops.
 - Lowered the Karatsuba→Toom-3 multiplication threshold from 192 to 96 words, giving Toom-Cook-3 at ~6000 bits instead of ~12000 bits — closes the gap with malachite at ~10000-bit sizes.
@@ -28,6 +28,8 @@
 - Arch-specific NTT prime definitions under `arch/generic_{32,64}_bit/ntt.rs`.
 
 ### Fix
+- Modular exponentiation and `Reduced::sqr` under-allocated scratch memory for squaring (they sized it using the multiplication budget), which could exhaust the scratch allocator mid-recursion for moduli in the Karatsuba band (e.g. the Mersenne-prime `test_pow` case). The pow path now reserves `max(mul, sqr)` scratch and `Reduced::sqr` uses the dedicated squaring budget.
+- Unused imports (`Sign`, `debug_assert_zero`) in `sqr/mod.rs` on 16-bit Word targets, where the NTT arm is compiled out.
 - `pack.rs` test used 64-bit literals that overflowed `Word` (`u32`) on 32-bit targets, breaking the test build.
 - `pack.rs` now uses native `Word`/`Lane` types throughout instead of `u64`/`u32`, fixing clippy `unnecessary_cast` warnings on 64-bit.
 - `test_unpack_carry_propagation` had a hardcoded 64-bit shift assumption; now derived from `Word::BITS` so it works on 32-bit.

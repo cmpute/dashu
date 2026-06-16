@@ -106,7 +106,7 @@ impl<'a> Reduced<'a> {
             }
             ReducedRepr::Large(raw, ring) => {
                 let mut result = raw.clone();
-                let memory_requirement = mul_memory_requirement(ring);
+                let memory_requirement = sqr_memory_requirement(ring);
                 let mut allocation = MemoryAllocation::new(memory_requirement);
                 sqr_in_place(ring, &mut result, &mut allocation.memory());
                 Reduced::from_large(result, ring)
@@ -121,6 +121,22 @@ pub(crate) fn mul_memory_requirement(ring: &ConstLargeDivisor) -> Layout {
         memory::array_layout::<Word>(2 * n),
         memory::max_layout(
             mul::memory_requirement_exact(2 * n, n),
+            div::memory_requirement_exact(2 * n, n),
+        ),
+    )
+}
+
+/// Scratch memory required to square a large reduced number in place.
+///
+/// Distinct from [`mul_memory_requirement`] because squaring needs more scratch
+/// than multiplication in the Karatsuba band (the cross-term temporary), so the
+/// mul budget would under-allocate and exhaust the bump allocator mid-recursion.
+pub(crate) fn sqr_memory_requirement(ring: &ConstLargeDivisor) -> Layout {
+    let n = ring.normalized_divisor.len();
+    memory::add_layout(
+        memory::array_layout::<Word>(2 * n),
+        memory::max_layout(
+            sqr::memory_requirement_exact(n),
             div::memory_requirement_exact(2 * n, n),
         ),
     )

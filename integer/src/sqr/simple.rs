@@ -21,7 +21,7 @@ pub fn square(b: &mut [Word], a: &[Word]) {
     // For each pair of source limbs (a[i], a[i+1]) we add their off-diagonal
     // products against the shared suffix a[i+2..]:
     //   * the lone corner product a[i] * a[i+1] (column 2i+1), and
-    //   * (a[i] + a[i+1]*B) * a[i+2..] via a two-word mpn_addmul_2-style kernel
+    //   * (a[i] + a[i+1]*B) * a[i+2..] via a two-word multiply-accumulate kernel
     //     (two independent mul-accumulate chains, one accumulator load/store
     //     per two multiplier limbs), mirroring the multiplication basecase.
     // This halves the accumulator memory traffic of the triangle versus a
@@ -102,4 +102,63 @@ pub fn square(b: &mut [Word], a: &[Word]) {
 
     // aggregate carry bits (cy is the triangle's trailing carry, ~always 0)
     *b.last_mut().unwrap() += cy + c1 as Word + c2 as Word;
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::arch::word::Word;
+    use crate::UBig;
+
+    fn lcg_words(seed: u64, words: usize) -> UBig {
+        let mut limbs: Vec<Word> = Vec::with_capacity(words);
+        let mut s = seed.wrapping_add(words as u64);
+        for _ in 0..words {
+            s = s
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            limbs.push(s as Word);
+        }
+        if let Some(top) = limbs.last_mut() {
+            *top |= 1; // ensure full width (no leading-zero stripping)
+        }
+        UBig::from_words(&limbs)
+    }
+
+    #[test]
+    fn sqr_matches_mul_simple_range() {
+        // sizes 2..=128 span simple directly (<=30) and as the basecase of karatsuba/toom
+        for words in 2..=128 {
+            for seed in 0..6u64 {
+                let a = lcg_words(seed, words);
+                assert_eq!(a.sqr(), &a * &a, "sqr != mul at words={words} seed={seed}");
+            }
+        }
+    }
+
+    #[test]
+    fn sqr_matches_mul_adversarial() {
+        // patterns that stress carry propagation: all-ones, single high bit, mixed
+        for words in [2, 3, 4, 5, 7, 8, 15, 16, 17, 30, 31, 32, 48] {
+            let ones = vec![Word::MAX; words];
+            let a = UBig::from_words(&ones);
+            assert_eq!(a.sqr(), &a * &a, "all-ones mismatch at words={words}");
+
+            let mut hi: Vec<Word> = vec![0; words];
+            hi[words - 1] = Word::MAX;
+            let a = UBig::from_words(&hi);
+            assert_eq!(a.sqr(), &a * &a, "single-high-bit mismatch at words={words}");
+
+            let mixed: Vec<Word> = (0..words)
+                .map(|k| {
+                    if k % 2 == 0 {
+                        Word::MAX
+                    } else {
+                        Word::from(1u8)
+                    }
+                })
+                .collect();
+            let a = UBig::from_words(&mixed);
+            assert_eq!(a.sqr(), &a * &a, "mixed mismatch at words={words}");
+        }
+    }
 }

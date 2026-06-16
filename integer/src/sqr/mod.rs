@@ -5,10 +5,10 @@ use static_assertions::const_assert;
 
 use crate::{
     arch::word::Word,
-    helper_macros::debug_assert_zero,
     memory::{self, Memory},
-    Sign,
 };
+#[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
+use crate::{helper_macros::debug_assert_zero, Sign};
 
 mod karatsuba;
 #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
@@ -111,12 +111,7 @@ pub fn sqr(b: &mut [Word], a: &[Word], memory: &mut Memory) {
     } else {
         #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
         {
-            debug_assert_zero!(ntt::add_signed_sqr_same_len(
-                b,
-                Sign::Positive,
-                a,
-                memory
-            ));
+            debug_assert_zero!(ntt::add_signed_sqr_same_len(b, Sign::Positive, a, memory));
         }
         #[cfg(any(force_bits = "16", target_pointer_width = "16"))]
         {
