@@ -19,6 +19,7 @@
 - NTT coefficient width increased from 16 to 64 bits (K_eff=3 for 64-bit, K_eff=2 otherwise), roughly halving the transform length at each step.
 - NTT multiplication auto-selects `K_eff = 2` primes when headroom allows, skipping the third prime.
 - Multiplication thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE_MUL`, `DASHU_THRESHOLD_KARATSUBA_MUL`, and `DASHU_THRESHOLD_NTT_MUL` environment variables (requires `tuning` feature).
+- Non-power-of-2 radix formatting now preallocates the `radix_powers`/`big_chunks` vectors (capacity estimated from the number's length) instead of growing them push-by-push.
 
 ### Change
 - Multiplication threshold env vars renamed with `_MUL` suffix: `DASHU_THRESHOLD_SIMPLE_MUL`, `DASHU_THRESHOLD_KARATSUBA_MUL`, `DASHU_THRESHOLD_NTT_MUL` (was without suffix).
