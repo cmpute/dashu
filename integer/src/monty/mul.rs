@@ -7,7 +7,7 @@ use crate::{
     error::panic_different_rings,
     memory::{self, Memory, MemoryAllocation},
     mul,
-    primitive::{extend_word, locate_top_word_plus_one, split_dword},
+    primitive::{double_word, extend_word, locate_top_word_plus_one, split_dword},
     sqr,
 };
 use alloc::alloc::Layout;
@@ -123,13 +123,50 @@ pub(crate) fn mul_memory_requirement(ring: &MontgomeryLargeRepr) -> Layout {
     )
 }
 
-/// Word-by-word Montgomery reduction (REDC) of a `(2s+1)`-word buffer `t` in place.
+/// Montgomery reduction (REDC) of a `(2s+1)`-word buffer `t` in place.
 ///
-/// Uses the per-word constant `n0 = -m^{-1} mod 2^WORD_BITS`: at step `i` the value
-/// `q = t[i]*n0 mod 2^WORD_BITS` is added (times the modulus) at position `i`, which makes word
-/// `i` cancel to zero. After `s` steps, `t[0..s]` is zero and the result — lying in `[0, 2m)` —
-/// occupies `t[s..2s+1]`.
+/// Uses the double-word constant `n0_dword = -m^{-1} mod 2^(2*WORD_BITS)`: each iteration takes the
+/// low double word `t[i..i+2]`, forms `q = t[i..i+2] * n0_dword mod 2^(2*WORD_BITS)`, and adds
+/// `q * modulus` at position `i` via the addmul_2 kernel — which clears two words at once. After
+/// `s` words are cleared, `t[0..s]` is zero and the result — lying in `[0, 2m)` — occupies
+/// `t[s..2s+1]`. (When `s` is odd the final lone word is handled with the single-word path.)
+///
+/// This variant is fastest on dense inputs (the full `a*b` product).
 pub(crate) fn redc_in_place(t: &mut [Word], ring: &MontgomeryLargeRepr) {
+    let s = ring.modulus.len();
+    let n0_dword = ring.n0_dword;
+    let n0 = ring.n0;
+    let modulus = &ring.modulus;
+    debug_assert_eq!(t.len(), 2 * s + 1);
+
+    let mut i = 0;
+    // Two words per iteration via the addmul_2 kernel (clears words i and i+1).
+    while i + 1 < s {
+        let ti = double_word(t[i], t[i + 1]);
+        let q = ti.wrapping_mul(n0_dword);
+        let (q0, q1) = split_dword(q);
+        let (carry_lo, carry_hi) =
+            mul::add_mul_dword_same_len_in_place(&mut t[i..i + s], modulus, q0, q1);
+        let overflow = add::add_dword_in_place(&mut t[i + s..], double_word(carry_lo, carry_hi));
+        debug_assert!(!overflow);
+        debug_assert_eq!(t[i], 0);
+        debug_assert_eq!(t[i + 1], 0);
+        i += 2;
+    }
+    // Handle the last word when the modulus has an odd word count.
+    if i < s {
+        let q = t[i].wrapping_mul(n0);
+        let carry = mul::add_mul_word_same_len_in_place(&mut t[i..i + s], q, modulus);
+        let overflow = add::add_word_in_place(&mut t[i + s..], carry);
+        debug_assert!(!overflow);
+        debug_assert_eq!(t[i], 0);
+    }
+}
+
+/// Single-word Montgomery reduction (one word per iteration). Used for the exit path
+/// ([`residue_normalized_large`]), where the input buffer is sparse (`[a, 0, …, 0]`) and this
+/// variant measures noticeably faster than the double-word [`redc_in_place`].
+pub(crate) fn redc_single_in_place(t: &mut [Word], ring: &MontgomeryLargeRepr) {
     let s = ring.modulus.len();
     let n0 = ring.n0;
     let modulus = &ring.modulus;
@@ -137,9 +174,7 @@ pub(crate) fn redc_in_place(t: &mut [Word], ring: &MontgomeryLargeRepr) {
 
     for i in 0..s {
         let q = t[i].wrapping_mul(n0);
-        // t[i..i+s] += q * modulus
         let carry = mul::add_mul_word_same_len_in_place(&mut t[i..i + s], q, modulus);
-        // propagate the carry into the upper words (fits within the buffer)
         let overflow = add::add_word_in_place(&mut t[i + s..], carry);
         debug_assert!(!overflow);
         debug_assert_eq!(t[i], 0);
@@ -230,7 +265,8 @@ pub(crate) fn residue_normalized_large<'a>(
     let (product, _memory) = memory.allocate_slice_fill::<Word>(2 * s + 1, 0);
     product[..s].copy_from_slice(a);
 
-    redc_in_place(product, ring);
+    // Sparse input: the single-word REDC measures faster here than the double-word one.
+    redc_single_in_place(product, ring);
     canonicalize(product, ring)
 }
 

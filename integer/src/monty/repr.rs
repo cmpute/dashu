@@ -5,7 +5,7 @@ use crate::{
     buffer::Buffer,
     cmp,
     error::panic_different_rings,
-    primitive::{shrink_dword, WORD_BITS, WORD_BITS_USIZE},
+    primitive::{double_word, shrink_dword, DWORD_BITS, WORD_BITS, WORD_BITS_USIZE},
     repr::TypedReprRef,
     ubig::UBig,
 };
@@ -55,6 +55,9 @@ pub(crate) struct MontgomeryLargeRepr {
     pub(crate) modulus: Box<[Word]>,
     /// `-m^{-1} mod 2^WORD_BITS`, the per-word Montgomery constant.
     pub(crate) n0: Word,
+    /// `-m^{-1} mod 2^(2*WORD_BITS)`, the double-word Montgomery constant (processes 2 words
+    /// per REDC iteration via the addmul_2 kernel).
+    pub(crate) n0_dword: DoubleWord,
     /// `R mod m` where `R = 2^(WORD_BITS * s)` — the Montgomery form of 1.
     pub(crate) r_mod_m: Box<[Word]>,
     /// `R^2 mod m` — used to convert plain values into Montgomery form.
@@ -132,6 +135,7 @@ impl MontgomeryLargeRepr {
             0,
             "n0 is not the negated modular inverse of the modulus"
         );
+        let n0_dword = neginv_dword(double_word(modulus[0], modulus[1]));
 
         // R mod m and R^2 mod m, computed once via UBig arithmetic.
         let r = UBig::ONE << (s * WORD_BITS_USIZE);
@@ -141,6 +145,7 @@ impl MontgomeryLargeRepr {
         Self {
             modulus,
             n0,
+            n0_dword,
             r_mod_m: to_exact_words(&r_mod_m, s),
             r2_mod_m: to_exact_words(&r2_mod_m, s),
         }
@@ -168,6 +173,19 @@ const fn neginv(m: Word) -> Word {
     let mut correct_bits: u32 = 1;
     while correct_bits < WORD_BITS {
         // i = i * (2 - m*i)  (mod 2^WORD_BITS); this doubles the number of correct bits.
+        i = i.wrapping_mul(two.wrapping_sub(m.wrapping_mul(i)));
+        correct_bits <<= 1;
+    }
+    i.wrapping_neg()
+}
+
+/// Compute `-m^{-1} mod 2^(2*WORD_BITS)` for an odd `m` (given by its low double word) using
+/// table-free Hensel lifting, the double-word analogue of [`neginv`].
+const fn neginv_dword(m: DoubleWord) -> DoubleWord {
+    let two: DoubleWord = 2;
+    let mut i: DoubleWord = 1; // m^{-1} mod 2 (m is odd)
+    let mut correct_bits: u32 = 1;
+    while correct_bits < DWORD_BITS {
         i = i.wrapping_mul(two.wrapping_sub(m.wrapping_mul(i)));
         correct_bits <<= 1;
     }

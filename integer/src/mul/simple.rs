@@ -92,7 +92,7 @@ fn add_signed_mul_chunk(
 /// `(carry_lo, carry_hi)`, to be accumulated by the caller at `words[n]`
 /// and `words[n + 1]`.
 #[inline]
-fn add_mul_dword_same_len_in_place(
+pub(crate) fn add_mul_dword_same_len_in_place(
     words: &mut [Word],
     rhs: &[Word],
     mult0: Word,

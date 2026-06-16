@@ -183,6 +183,21 @@ pub fn add_mul_word_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) -> Wo
     carry
 }
 
+/// `words += (mult0 + mult1 * 2^WORD_BITS) * rhs` where `words.len() == rhs.len()`.
+///
+/// This is the double-multiplier "addmul_2" kernel (mirrors GMP's `mpn_addmul_2`): it sweeps
+/// over `rhs` once while accumulating two independent multiply chains, returning the two carry
+/// words `(carry_lo, carry_hi)` to be added by the caller at `words[n]` and `words[n + 1]`.
+#[inline]
+pub(crate) fn add_mul_dword_same_len_in_place(
+    words: &mut [Word],
+    rhs: &[Word],
+    mult0: Word,
+    mult1: Word,
+) -> (Word, Word) {
+    simple::add_mul_dword_same_len_in_place(words, rhs, mult0, mult1)
+}
+
 /// words -= mult * rhs
 ///
 /// Returns borrow.
