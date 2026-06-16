@@ -25,6 +25,7 @@
 - Montgomery multiplication: `mul_in_place_large` uses pointer-identity instead of full element comparison to detect self-multiplication (`a *= a`), avoiding an `O(s)` scan on the common distinct-operands path.
 - Montgomery multiplication: `mul_normalized_large` and `sqr_normalized_large` share a common `finish_monty_product` helper for the REDC+canonicalize pipeline tail.
 - Multiplication thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE_MUL`, `DASHU_THRESHOLD_KARATSUBA_MUL`, and `DASHU_THRESHOLD_NTT_MUL` environment variables (requires `tuning` feature).
+- Montgomery multiplication: `&Montgomery * &Montgomery` for Large operands now builds the result directly from scratch memory instead of cloning one operand then overwriting every word via `mul_in_place_large`, saving an `s`-word copy per multiply. (Add, sub, and neg on references still clone since their in-place operations seed the output buffer from the operand value.)
 
 ### Change
 - Multiplication threshold env vars renamed with `_MUL` suffix: `DASHU_THRESHOLD_SIMPLE_MUL`, `DASHU_THRESHOLD_KARATSUBA_MUL`, `DASHU_THRESHOLD_NTT_MUL` (was without suffix).

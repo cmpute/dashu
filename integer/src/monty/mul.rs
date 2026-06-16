@@ -50,7 +50,28 @@ impl<'a> Mul<&Montgomery<'a>> for &Montgomery<'a> {
 
     #[inline]
     fn mul(self, rhs: &Montgomery<'a>) -> Montgomery<'a> {
-        self.clone().mul(rhs)
+        // For Large operands, build the result directly from scratch instead of
+        // cloning self then overwriting every word via mul_in_place_large.
+        // Single/Double are Copy — the clone path is zero-cost for them.
+        match (self.repr(), rhs.repr()) {
+            (MontgomeryInner::Large(raw0, ring), MontgomeryInner::Large(raw1, ring1)) => {
+                Montgomery::check_same_ring_large(ring, ring1);
+                let memory_requirement = mul_memory_requirement(ring);
+                let mut allocation = MemoryAllocation::new(memory_requirement);
+                let mut memory = allocation.memory();
+                // If lhs and rhs are the same allocation, use the fast squaring path.
+                let prod = if raw0.0.as_ptr() == raw1.0.as_ptr() {
+                    sqr_normalized_large(ring, &raw0.0, &mut memory)
+                } else {
+                    mul_normalized_large(ring, &raw0.0, &raw1.0, &mut memory)
+                };
+                Montgomery::from_large(
+                    MontgomeryLargeVal(Buffer::from(prod).into_boxed_slice()),
+                    ring,
+                )
+            }
+            _ => self.clone().mul(rhs),
+        }
     }
 }
 
