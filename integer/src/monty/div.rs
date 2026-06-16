@@ -19,6 +19,13 @@ use super::repr::{Montgomery, MontgomeryInner, MontgomeryLargeRepr, MontgomeryLa
 impl<'a> Montgomery<'a> {
     /// Multiplicative inverse.
     ///
+    /// # Performance
+    ///
+    /// This is notably slower than the Barrett-based
+    /// [`Reduced::inv`](crate::modular::Reduced::inv): it must exit Montgomery form, run the
+    /// extended GCD, then re-enter Montgomery form. For inverse-heavy computation, prefer
+    /// [`modular::Reduced`](crate::modular::Reduced).
+    ///
     /// # Examples
     ///
     /// ```
