@@ -23,12 +23,6 @@
 //! same sub-quadratic Lehmer algorithm in both backends — the difference is the conversion
 //! round-trip.)
 //!
-//! References (also cited by the sibling `modular` module):
-//! * Yanik, Savaş, Koç. *Incomplete Reduction in Modular Arithmetic.*
-//!   <https://cetinkayakoc.net/docs/j56.pdf>
-//! * Gueron. *Efficient Software Implementations of Modular Exponentiation.*
-//!   <https://eprint.iacr.org/2011/239.pdf>
-//!
 //! [Montgomery form]: https://en.wikipedia.org/wiki/Montgomery_modular_multiplication
 //! [`modular::Reduced`]: crate::modular::Reduced
 //!

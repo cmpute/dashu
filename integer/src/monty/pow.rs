@@ -1,5 +1,11 @@
 //! Modular exponentiation in Montgomery form.
 
+// XXX: the Almost-Montgomery-Multiplication (AMM) technique from Gueron, "Efficient Software
+// Implementations of Modular Exponentiation" (https://eprint.iacr.org/2011/239.pdf), could be
+// used here in the future to speed up exponentiation by keeping values in a relaxed range and
+// skipping per-step reductions inside the sliding window. Not applied yet — measured to give only
+// a marginal gain against the word-by-word REDC used in this crate.
+
 use crate::ubig::UBig;
 
 use super::repr::{Montgomery, MontgomeryInner};
