@@ -379,6 +379,7 @@ fn fmt_slot(f: &mut fmt::Formatter<'_>, name: &str, slot: &Option<CachedState>) 
 mod tests {
     use super::*;
     use crate::round::mode;
+    use alloc::format;
 
     #[test]
     fn test_pi_matches_context() {
