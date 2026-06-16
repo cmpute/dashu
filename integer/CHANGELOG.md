@@ -14,6 +14,7 @@
 - NTT coefficient width increased from 16 to 64 bits (K_eff=3 for 64-bit, K_eff=2 otherwise), roughly halving the transform length at each step.
 - NTT multiplication auto-selects `K_eff = 2` primes when headroom allows, skipping the third prime.
 - Multiplication thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE`, `DASHU_THRESHOLD_KARATSUBA`, and `DASHU_THRESHOLD_NTT` environment variables (requires `tuning` feature).
+- Division threshold (schoolbook ↔ divide-and-conquer crossover) can be overridden at runtime via the `DASHU_THRESHOLD_SIMPLE_DIV` environment variable (requires `tuning` feature).
 
 ### Change
 - NTT multiplication now uses Proth primes (`K·2^N + 1`) instead of Solinas primes, improving modular reduction speed.

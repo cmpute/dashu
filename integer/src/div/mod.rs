@@ -18,7 +18,28 @@ mod simple;
 pub(crate) use simple::div_rem_highest_word;
 
 /// If divisor or quotient is at most this length, use the simple division algorithm.
-const THRESHOLD_SIMPLE: usize = 32;
+const THRESHOLD_SIMPLE_DEFAULT: usize = 32;
+
+/// Environment-variable override for the division threshold.
+///
+/// When the `tuning` feature is active the user may set
+/// `DASHU_THRESHOLD_SIMPLE_DIV` to override the compile-time default. Values
+/// below 3 are unsupported: the divide-and-conquer split (`n_lo = n / 2`)
+/// needs at least 2 low words.
+mod threshold {
+    #[inline]
+    pub fn simple() -> usize {
+        #[cfg(feature = "tuning")]
+        {
+            if let Ok(s) = std::env::var("DASHU_THRESHOLD_SIMPLE_DIV") {
+                if let Ok(v) = s.parse() {
+                    return v;
+                }
+            }
+        }
+        super::THRESHOLD_SIMPLE_DEFAULT
+    }
+}
 
 /// Normalize a divisor represented as words.
 ///
@@ -235,7 +256,7 @@ pub(crate) const fn fast_rem_by_normalized_dword(
 /// Memory requirement for division.
 pub fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> Layout {
     assert!(lhs_len >= rhs_len && rhs_len >= 2);
-    if rhs_len <= THRESHOLD_SIMPLE || lhs_len - rhs_len <= THRESHOLD_SIMPLE {
+    if rhs_len <= threshold::simple() || lhs_len - rhs_len <= threshold::simple() {
         memory::zero_layout()
     } else {
         divide_conquer::memory_requirement_exact(lhs_len, rhs_len)
@@ -260,7 +281,7 @@ pub(crate) fn div_rem_in_place(
 ) -> bool {
     debug_assert!(lhs.len() >= rhs.len() && rhs.len() >= 2);
 
-    if rhs.len() <= THRESHOLD_SIMPLE || lhs.len() - rhs.len() <= THRESHOLD_SIMPLE {
+    if rhs.len() <= threshold::simple() || lhs.len() - rhs.len() <= threshold::simple() {
         simple::div_rem_in_place(lhs, rhs, fast_div_rhs_top)
     } else {
         divide_conquer::div_rem_in_place(lhs, rhs, fast_div_rhs_top, memory)
