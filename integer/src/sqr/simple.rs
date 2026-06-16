@@ -106,6 +106,8 @@ pub fn square(b: &mut [Word], a: &[Word]) {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
+    use alloc::vec::Vec;
     use crate::arch::word::Word;
     use crate::UBig;
 
