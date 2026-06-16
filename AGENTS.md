@@ -44,6 +44,8 @@ Note: always `--exclude dashu-python` when running workspace-wide commands, sinc
 - Doc comments use `# Examples` sections with runnable code — every public function on primitive number types must include a usage example
 - Modules are organized by operation (add, div, mul, cmp, convert, etc.)
 - Third-party trait implementations go in a `third_party/` module per crate, feature-gated
+- When borrowing an algorithm idea from GMP (or any other library), do **not** reference its function names in our docstrings or comments. Describe the algorithm in our own terms and use our own function names (e.g. write `add_mul_dword_same_len_in_place`, never `addmul_2` / `mpn_addmul_2`). External function names must not appear anywhere in the repo.
+- Tests for a specific algorithm/kernel belong in the same source file as the implementation, as a `#[cfg(test)] mod tests` block at the bottom — not in a separate integration test file under `tests/`. Reserve `tests/` for cross-cutting or public-API tests.
 
 ## Feature flags
 

@@ -106,7 +106,7 @@ impl<'a> Reduced<'a> {
             }
             ReducedRepr::Large(raw, ring) => {
                 let mut result = raw.clone();
-                let memory_requirement = mul_memory_requirement(ring);
+                let memory_requirement = sqr::sqr_memory_requirement(ring.normalized_divisor.len());
                 let mut allocation = MemoryAllocation::new(memory_requirement);
                 sqr_in_place(ring, &mut result, &mut allocation.memory());
                 Reduced::from_large(result, ring)

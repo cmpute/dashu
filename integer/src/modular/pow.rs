@@ -142,7 +142,10 @@ mod large {
 
         let memory_requirement = memory::add_layout(
             memory::array_layout::<Word>(table_words),
-            mul_memory_requirement(ring),
+            // pow performs both multiplications and squarings, so size for the
+            // larger of the two (squaring needs more scratch than mul in the
+            // Karatsuba band).
+            memory::max_layout(mul_memory_requirement(ring), crate::sqr::sqr_memory_requirement(n)),
         );
         let mut allocation = MemoryAllocation::new(memory_requirement);
         let mut memory = allocation.memory();
