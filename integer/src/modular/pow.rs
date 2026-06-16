@@ -108,7 +108,9 @@ mod large {
     use dashu_base::BitTest;
 
     use super::{
-        super::mul::{mul_memory_requirement, mul_normalized, sqr_in_place, sqr_memory_requirement},
+        super::mul::{
+            mul_memory_requirement, mul_normalized, sqr_in_place, sqr_memory_requirement,
+        },
         *,
     };
     use crate::{
