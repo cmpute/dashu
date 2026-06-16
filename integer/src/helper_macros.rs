@@ -220,8 +220,6 @@ macro_rules! forward_ubig_binop_to_repr {
     };
 }
 
-// TODO(next): modify this macro so that the $impl function can be shared between ibig op ibig and ubig op ibig
-
 /// Implement `impl Op<IBig> for IBig` by forwarding to the function-like macro `$impl` with arguments
 /// `(lhs_sign, lhs_repr, rhs_sign, rhs_repr)`, including &IBig.
 /// The output type is IBig.
