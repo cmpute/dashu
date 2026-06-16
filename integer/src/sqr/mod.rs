@@ -5,6 +5,7 @@ use static_assertions::const_assert;
 
 use crate::{
     arch::word::Word,
+    div,
     memory::{self, Memory},
 };
 #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
@@ -94,6 +95,21 @@ pub fn memory_requirement_exact(len: usize) -> Layout {
             unreachable!("NTT unavailable on 16/32-bit targets");
         }
     }
+}
+
+/// Scratch memory required to square an `n`-word operand and reduce the `2n`-word
+/// product back to `n` words (i.e. square then divide, as the modular arithmetic does).
+///
+/// This is the squaring analogue of `mul::memory_requirement_exact(2n, n)` augmented
+/// for the reduction step: it covers the `2n`-word product buffer and the larger of the
+/// squaring scratch and the reduction scratch. Squaring needs more scratch than
+/// multiplication in the Karatsuba band, so the modular code must use this rather than
+/// the multiplication budget (otherwise the bump allocator is exhausted mid-recursion).
+pub(crate) fn sqr_memory_requirement(n: usize) -> Layout {
+    memory::add_layout(
+        memory::array_layout::<Word>(2 * n),
+        memory::max_layout(memory_requirement_exact(n), div::memory_requirement_exact(2 * n, n)),
+    )
 }
 
 /// b = a * a. b must be filled with zeros. a.len() >= 2.

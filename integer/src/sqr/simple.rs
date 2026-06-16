@@ -106,10 +106,10 @@ pub fn square(b: &mut [Word], a: &[Word]) {
 
 #[cfg(test)]
 mod tests {
-    use alloc::vec;
-    use alloc::vec::Vec;
     use crate::arch::word::Word;
     use crate::UBig;
+    use alloc::vec;
+    use alloc::vec::Vec;
 
     fn lcg_words(seed: u64, words: usize) -> UBig {
         let mut limbs: Vec<Word> = Vec::with_capacity(words);

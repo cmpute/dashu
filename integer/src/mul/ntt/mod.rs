@@ -12,9 +12,9 @@ use crate::{
 use alloc::alloc::Layout;
 use core::mem;
 
-pub(crate) mod crt;
-pub(crate) mod pack;
-pub(crate) mod transform;
+pub mod crt;
+pub mod pack;
+pub mod transform;
 
 use crate::arch::ntt::{
     B_PACK_CANDIDATES, B_PACK_MIN, CRT_INV_IJ, K, MAX_LOG_N, MODULI, OMEGA_MAX, P0, P1, P2,
@@ -68,7 +68,7 @@ pub fn select_params(la_words: usize, lb_words: usize) -> (u32, usize, usize) {
 }
 
 /// Estimate bit length from a word slice (excludes leading zeros).
-pub(crate) fn bit_len(words: &[Word]) -> u64 {
+pub fn bit_len(words: &[Word]) -> u64 {
     let leading_zeros = words.iter().rev().take_while(|&&w| w == 0).count();
     let used = words.len() - leading_zeros;
     if used == 0 {
@@ -80,7 +80,7 @@ pub(crate) fn bit_len(words: &[Word]) -> u64 {
 }
 
 /// Count number of coefficients needed for a given bit length.
-pub(crate) fn coeff_count(bit_len: u64, b_pack: u32) -> usize {
+pub fn coeff_count(bit_len: u64, b_pack: u32) -> usize {
     ((bit_len + b_pack as u64 - 1) / b_pack as u64) as usize
 }
 
@@ -346,7 +346,7 @@ fn add_signed_mul_conv(
 }
 
 /// CRT + accumulate, generic over the accumulator type.
-pub(crate) fn do_crt<A: CrtAccum>(
+pub fn do_crt<A: CrtAccum>(
     prod: &mut [Word],
     residues: &[A::Lane],
     geom: &NttGeometry,
@@ -368,11 +368,11 @@ pub(crate) fn do_crt<A: CrtAccum>(
 }
 
 /// Geometry constants for an NTT pipeline invocation.
-pub(crate) struct NttGeometry {
-    pub(crate) nn: usize,
-    pub(crate) b_pack: u32,
-    pub(crate) k_eff: usize,
-    pub(crate) output_coeffs: usize,
+pub struct NttGeometry {
+    pub nn: usize,
+    pub b_pack: u32,
+    pub k_eff: usize,
+    pub output_coeffs: usize,
 }
 
 /// Scratch buffers and geometry for the per-prime NTT pipeline.
@@ -492,7 +492,7 @@ fn process_prime<R: Reducer<crate::arch::ntt::Lane>>(
 
 /// Add a CRT value (as `Word`-sized limbs) to `prod`, shifted left by
 /// `k * b_pack` bits.
-pub(crate) fn add_shifted_to_prod(prod: &mut [Word], words: &[Word], count: u32, k: usize, b_pack: u32) {
+pub fn add_shifted_to_prod(prod: &mut [Word], words: &[Word], count: u32, k: usize, b_pack: u32) {
     let shift_bits = (k as u32).wrapping_mul(b_pack);
     let word_bits = Word::BITS;
     let start_idx = (shift_bits / word_bits) as usize;

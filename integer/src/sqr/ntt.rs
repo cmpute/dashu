@@ -6,9 +6,10 @@
 
 use crate::{
     add,
+    arch::ntt::{Lane, CRT_INV_IJ, MODULI, OMEGA_MAX, P0, P1, P2},
     arch::word::{SignedWord, Word},
     memory::Memory,
-    mul::ntt::{self, NttGeometry},
+    mul::ntt::{self, bit_len, coeff_count, do_crt, pack, transform, NttGeometry},
     Sign::{self, *},
 };
 
@@ -29,15 +30,7 @@ pub(crate) fn add_signed_sqr_same_len(
 }
 
 /// Core NTT squaring: transform `a` once, pointwise-square, inverse.
-fn add_signed_sqr_conv(
-    c: &mut [Word],
-    sign: Sign,
-    a: &[Word],
-    memory: &mut Memory,
-) -> SignedWord {
-    use crate::arch::ntt::{Lane, OMEGA_MAX, P0, P1, P2};
-    use crate::mul::ntt::{bit_len, coeff_count, do_crt, transform};
-
+fn add_signed_sqr_conv(c: &mut [Word], sign: Sign, a: &[Word], memory: &mut Memory) -> SignedWord {
     let la = a.len();
     debug_assert!(la > 0);
     let (b_pack, nn, k_eff) = ntt::select_params(la, la);
@@ -67,23 +60,49 @@ fn add_signed_sqr_conv(
             0 => {
                 transform::precompute_twiddles(fwd_twiddles, nn, omega, false, &P0);
                 transform::precompute_twiddles(inv_twiddles, nn, omega, true, &P0);
-                process_prime_square(a, a_lane, fwd_twiddles, inv_twiddles, residues, pi, &geom, &P0);
+                process_prime_square(
+                    a,
+                    a_lane,
+                    fwd_twiddles,
+                    inv_twiddles,
+                    residues,
+                    pi,
+                    &geom,
+                    &P0,
+                );
             }
             1 => {
                 transform::precompute_twiddles(fwd_twiddles, nn, omega, false, &P1);
                 transform::precompute_twiddles(inv_twiddles, nn, omega, true, &P1);
-                process_prime_square(a, a_lane, fwd_twiddles, inv_twiddles, residues, pi, &geom, &P1);
+                process_prime_square(
+                    a,
+                    a_lane,
+                    fwd_twiddles,
+                    inv_twiddles,
+                    residues,
+                    pi,
+                    &geom,
+                    &P1,
+                );
             }
             2 => {
                 transform::precompute_twiddles(fwd_twiddles, nn, omega, false, &P2);
                 transform::precompute_twiddles(inv_twiddles, nn, omega, true, &P2);
-                process_prime_square(a, a_lane, fwd_twiddles, inv_twiddles, residues, pi, &geom, &P2);
+                process_prime_square(
+                    a,
+                    a_lane,
+                    fwd_twiddles,
+                    inv_twiddles,
+                    residues,
+                    pi,
+                    &geom,
+                    &P2,
+                );
             }
             _ => unreachable!(),
         }
     }
 
-    use crate::arch::ntt::{MODULI, CRT_INV_IJ};
     do_crt::<crate::arch::word::TripleWord>(prod, residues, &geom, &MODULI, &CRT_INV_IJ);
 
     match sign {
@@ -97,18 +116,16 @@ fn add_signed_sqr_conv(
 /// Packs + Montgomery converts + forward transforms `a`, pointwise
 /// squares, inverse transforms, and stores the residues.
 #[allow(clippy::too_many_arguments)]
-fn process_prime_square<R: num_modular::Reducer<crate::arch::ntt::Lane>>(
+fn process_prime_square<R: num_modular::Reducer<Lane>>(
     a: &[Word],
-    a_lane: &mut [crate::arch::ntt::Lane],
-    fwd_twiddles: &[crate::arch::ntt::Lane],
-    inv_twiddles: &[crate::arch::ntt::Lane],
-    residues: &mut [crate::arch::ntt::Lane],
+    a_lane: &mut [Lane],
+    fwd_twiddles: &[Lane],
+    inv_twiddles: &[Lane],
+    residues: &mut [Lane],
     pi: usize,
     geom: &NttGeometry,
     r: &R,
 ) {
-    use crate::mul::ntt::{pack, transform};
-
     let nn = geom.nn;
 
     // Transform a

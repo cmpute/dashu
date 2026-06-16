@@ -7,9 +7,7 @@ use crate::{
     helper_macros::debug_assert_zero,
     math,
     memory::{self, Memory},
-    mul,
-    shift,
-    sqr,
+    mul, shift, sqr,
     Sign::*,
 };
 use alloc::alloc::Layout;
