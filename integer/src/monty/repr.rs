@@ -5,7 +5,7 @@ use crate::{
     buffer::Buffer,
     cmp,
     error::panic_different_rings,
-    primitive::{double_word, shrink_dword, DWORD_BITS, WORD_BITS, WORD_BITS_USIZE},
+    primitive::{double_word, shrink_dword, split_dword, DWORD_BITS, WORD_BITS_USIZE},
     repr::TypedReprRef,
     ubig::UBig,
 };
@@ -53,14 +53,12 @@ pub(crate) struct MontgomeryDoubleRepr(pub(crate) NumMontgomery<DoubleWord>);
 pub(crate) struct MontgomeryLargeRepr {
     /// The odd modulus as little-endian words (no normalization shift).
     pub(crate) modulus: Box<[Word]>,
-    /// `-m^{-1} mod 2^WORD_BITS`, the per-word Montgomery constant.
-    pub(crate) n0: Word,
-    /// `-m^{-1} mod 2^(2*WORD_BITS)`, the double-word Montgomery constant (processes 2 words
-    /// per REDC iteration via the addmul_2 kernel).
+    /// `-m^{-1} mod 2^(2*WORD_BITS)`, the double-word Montgomery constant. The single-word
+    /// constant is just its low word (see [`MontgomeryLargeRepr::n0_word`]); REDC clears two
+    /// words per iteration via the addmul_2 kernel.
     pub(crate) n0_dword: DoubleWord,
-    /// `R mod m` where `R = 2^(WORD_BITS * s)` — the Montgomery form of 1.
-    pub(crate) r_mod_m: Box<[Word]>,
-    /// `R^2 mod m` — used to convert plain values into Montgomery form.
+    /// `R^2 mod m` (where `R = 2^(WORD_BITS * s)`) — used to convert plain values into
+    /// Montgomery form. The Montgomery form of 1 (`R mod m`) is derived from this on demand.
     pub(crate) r2_mod_m: Box<[Word]>,
 }
 
@@ -128,27 +126,32 @@ impl MontgomeryLargeRepr {
         let s = words.len();
         debug_assert!(s >= 3 && words[0] & 1 == 1);
 
-        let modulus: Box<[Word]> = words.into();
-        let n0 = neginv(modulus[0]);
-        debug_assert_eq!(
-            modulus[0].wrapping_mul(n0).wrapping_add(1),
-            0,
-            "n0 is not the negated modular inverse of the modulus"
-        );
+        let modulus = Buffer::from(words).into_boxed_slice();
         let n0_dword = neginv_dword(double_word(modulus[0], modulus[1]));
+        debug_assert_eq!(
+            double_word(modulus[0], modulus[1])
+                .wrapping_mul(n0_dword)
+                .wrapping_add(1),
+            0,
+            "n0_dword is not the negated modular inverse of the modulus's low double word"
+        );
 
-        // R mod m and R^2 mod m, computed once via UBig arithmetic.
+        // R^2 mod m, computed once via UBig arithmetic.
         let r = UBig::ONE << (s * WORD_BITS_USIZE);
-        let r_mod_m = &r % &m;
-        let r2_mod_m = (&r_mod_m * &r_mod_m) % &m;
+        let r2_mod_m = (&r * &r) % &m;
 
         Self {
             modulus,
-            n0,
             n0_dword,
-            r_mod_m: to_exact_words(&r_mod_m, s),
             r2_mod_m: to_exact_words(&r2_mod_m, s),
         }
+    }
+
+    /// The single-word Montgomery constant `-m^{-1} mod 2^WORD_BITS` (the low word of
+    /// [`Self::n0_dword`]), used by the single-word REDC path.
+    #[inline]
+    pub(crate) fn n0_word(&self) -> Word {
+        split_dword(self.n0_dword).0
     }
 }
 
@@ -162,25 +165,12 @@ pub(crate) fn to_exact_words(u: &UBig, s: usize) -> Box<[Word]> {
     buffer.into_boxed_slice()
 }
 
-/// Compute `-m^{-1} mod 2^WORD_BITS` for an odd `m` using table-free Hensel lifting.
+/// Compute `-m^{-1} mod 2^(2*WORD_BITS)` for an odd `m` (given by its low double word) using
+/// table-free Hensel lifting.
 ///
 /// Since `m` is odd, `m^{-1} ≡ 1 (mod 2)`, so `i = 1` is a valid 1-bit seed. The Newton
-/// step `i ← i·(2 − m·i)` (all wrapping) doubles the number of correct low bits each
-/// iteration: 1 → 2 → 4 → … → WORD_BITS. The result is then negated.
-const fn neginv(m: Word) -> Word {
-    let two: Word = 2;
-    let mut i: Word = 1; // m^{-1} mod 2 (m is odd)
-    let mut correct_bits: u32 = 1;
-    while correct_bits < WORD_BITS {
-        // i = i * (2 - m*i)  (mod 2^WORD_BITS); this doubles the number of correct bits.
-        i = i.wrapping_mul(two.wrapping_sub(m.wrapping_mul(i)));
-        correct_bits <<= 1;
-    }
-    i.wrapping_neg()
-}
-
-/// Compute `-m^{-1} mod 2^(2*WORD_BITS)` for an odd `m` (given by its low double word) using
-/// table-free Hensel lifting, the double-word analogue of [`neginv`].
+/// step `i ← i·(2 − m·i)` (all wrapping) doubles the number of correct low bits each iteration:
+/// 1 → 2 → 4 → … → `2*WORD_BITS`. The result is then negated.
 const fn neginv_dword(m: DoubleWord) -> DoubleWord {
     let two: DoubleWord = 2;
     let mut i: DoubleWord = 1; // m^{-1} mod 2 (m is odd)
@@ -249,9 +239,9 @@ impl<'a> Montgomery<'a> {
 }
 
 impl MontgomeryLargeVal {
-    /// The Montgomery form of 1, i.e. `R mod m` (already stored in the ring).
+    /// The Montgomery form of 1, i.e. `R mod m`, derived on demand as `REDC(R^2 mod m)`.
     pub(crate) fn one(ring: &MontgomeryLargeRepr) -> Self {
-        Self(ring.r_mod_m.clone())
+        super::mul::one_large(ring)
     }
 
     #[inline]

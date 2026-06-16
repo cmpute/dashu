@@ -3,6 +3,7 @@
 use crate::{
     add,
     arch::word::Word,
+    buffer::Buffer,
     cmp,
     error::panic_different_rings,
     memory::{self, Memory, MemoryAllocation},
@@ -135,7 +136,7 @@ pub(crate) fn mul_memory_requirement(ring: &MontgomeryLargeRepr) -> Layout {
 pub(crate) fn redc_in_place(t: &mut [Word], ring: &MontgomeryLargeRepr) {
     let s = ring.modulus.len();
     let n0_dword = ring.n0_dword;
-    let n0 = ring.n0;
+    let n0 = ring.n0_word();
     let modulus = &ring.modulus;
     debug_assert_eq!(t.len(), 2 * s + 1);
 
@@ -168,7 +169,7 @@ pub(crate) fn redc_in_place(t: &mut [Word], ring: &MontgomeryLargeRepr) {
 /// variant measures noticeably faster than the double-word [`redc_in_place`].
 pub(crate) fn redc_single_in_place(t: &mut [Word], ring: &MontgomeryLargeRepr) {
     let s = ring.modulus.len();
-    let n0 = ring.n0;
+    let n0 = ring.n0_word();
     let modulus = &ring.modulus;
     debug_assert_eq!(t.len(), 2 * s + 1);
 
@@ -268,6 +269,15 @@ pub(crate) fn residue_normalized_large<'a>(
     // Sparse input: the single-word REDC measures faster here than the double-word one.
     redc_single_in_place(product, ring);
     canonicalize(product, ring)
+}
+
+/// The Montgomery form of 1, i.e. `R mod m`, derived on demand as `REDC(R^2 mod m)`.
+pub(crate) fn one_large(ring: &MontgomeryLargeRepr) -> MontgomeryLargeVal {
+    let memory_requirement = mul_memory_requirement(ring);
+    let mut allocation = MemoryAllocation::new(memory_requirement);
+    let mut memory = allocation.memory();
+    let res = residue_normalized_large(ring, &ring.r2_mod_m, &mut memory);
+    MontgomeryLargeVal(Buffer::from(res).into_boxed_slice())
 }
 
 /// lhs *= rhs
