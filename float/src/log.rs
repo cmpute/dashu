@@ -134,50 +134,30 @@ impl<R: Round> Context<R> {
     ///
     /// This method is intended to be used in logarithm calculation,
     /// so the precision of the output will be larger than desired precision.
+    ///
+    /// Evaluated by binary splitting (see [`iacoth_bs`][crate::math::consts::iacoth_bs]):
+    /// the exact integer tree state `(P, Q, T)` over `[1, N)` satisfies
+    /// `L(n) = (Q + T)/(n·Q)`, with `Q` kept at O(p) digits by the ratio-form
+    /// term recurrence.
     fn iacoth<const B: Word>(&self, n: IBig) -> FBig<R, B> {
-        /*
-         * use Maclaurin series:
-         *       1    1     n+1             1
-         * atanh(—) = — log(———) =  Σ  ———————————
-         *       n    2     n-1    i≥0 n²ⁱ⁺¹(2i+1)
-         *
-         * Therefore to achieve precision B^p, the series should be stopped at
-         *    n²ⁱ⁺¹(2i+1) / n = B^p
-         * => 2i*ln(n) + ln(2i+1) = p ln(B)
-         * ~> 2i*ln(n) = p ln(B)
-         * => 2i = p/log_B(n)
-         *
-         * There will be i summations when calculating the series, to prevent
-         * loss of significant, we needs about log_B(i) guard digits.
-         *    log_B(i)
-         * <= log_B(p/2log_B(n))
-         *  = log_B(p/2) - log_B(log_B(n))
-         * <= log_B(p/2)
-         */
+        let n: u32 = (&n).try_into().expect("iacoth argument must fit in u32");
 
-        // extras digits are added to ensure precise result
-        // TODO: test if we can use log_B(p/2log_B(n)) directly
+        // number of series terms until r_k < B^{-p}:  (2k+1)·log_B(n) > p.
+        // The count is generously over-provisioned, so a truncating cast stands in
+        // for a ceiling.
+        let log_b_n = n.log2_est() / B.log2_est();
+        let num_terms = (self.precision as f32 / (2.0 * log_b_n)) as usize + 10;
+
+        let (_p, q, t) = crate::math::consts::iacoth_bs(n, 1, num_terms + 1);
+
+        // L(n) = (Q + T) / (n·Q). Extra guard digits absorb the division's rounding
+        // (the binary-splitting state is exact, so only this single round loses anything).
         let guard_digits = (self.precision.log2_est() / B.log2_est()) as usize;
         let work_context = Self::new(self.precision + guard_digits + 2);
 
-        let n = work_context.convert_int(n).value();
-        let inv = FBig::ONE / n;
-        let inv2 = inv.sqr();
-        let mut sum = inv.clone();
-        let mut pow = inv;
-
-        let mut k: usize = 3;
-        loop {
-            pow *= &inv2;
-
-            let increase = &pow / work_context.convert_int::<B>(k.into()).value();
-            if increase < sum.sub_ulp() {
-                return sum;
-            }
-
-            sum += increase;
-            k += 2;
-        }
+        let num = work_context.convert_int::<B>(q.as_ibig() + &t).value();
+        let denom = work_context.convert_int::<B>(IBig::from(n) * &q).value();
+        num / denom
     }
 
     /// Calculate the natural logarithm function (`log(x)`) on the float number under this context.

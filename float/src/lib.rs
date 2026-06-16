@@ -94,6 +94,7 @@ mod utils;
 pub use third_party::*;
 
 pub use fbig::FBig;
+pub use math::cache::MathCache;
 pub use repr::{Context, Repr};
 
 /// Multi-precision float number with decimal exponent and [HalfAway][round::mode::HalfAway] rounding mode

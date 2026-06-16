@@ -64,9 +64,35 @@ impl<R: Round> Context<R> {
     }
 }
 
+/// Universal binary-splitting merge:
+/// `combine((P_l,Q_l,T_l), (P_r,Q_r,T_r)) = (P_l·P_r, Q_l·Q_r, T_l·Q_r + P_l·T_r)`.
+///
+/// This operation is associative, so the `(P, Q, T)` for a range is independent of
+/// how the recursion splits it — which is exactly what lets a cached partial tree
+/// state be extended by merging in a freshly computed right half.
+pub(crate) fn merge(
+    pl: &UBig,
+    ql: &UBig,
+    tl: &IBig,
+    pr: &UBig,
+    qr: &UBig,
+    tr: &IBig,
+) -> (UBig, UBig, IBig) {
+    let p = pl * pr;
+    let q = ql * qr;
+    // re-interpret the magnitudes as signed without cloning the big integers
+    let t = qr.as_ibig() * tl + pl.as_ibig() * tr;
+    (p, q, t)
+}
+
 /// Binary splitting implementation for the Chudnovsky series.
-/// Returns (P, Q, T) for the range [a, b).
-fn chudnovsky_bs(a: usize, b: usize) -> (UBig, UBig, IBig) {
+/// Returns `(P, Q, T)` for the range `[a, b)`. An empty range `[a, a)` yields the
+/// identity `(1, 1, 0)`, so callers may safely merge a cached left state with a
+/// right half that starts exactly where the left one ended.
+pub(crate) fn chudnovsky_bs(a: usize, b: usize) -> (UBig, UBig, IBig) {
+    if a >= b {
+        return (UBig::ONE, UBig::ONE, IBig::ZERO);
+    }
     if b - a == 1 {
         // Base case: calculate single term
         if a == 0 {
@@ -88,11 +114,36 @@ fn chudnovsky_bs(a: usize, b: usize) -> (UBig, UBig, IBig) {
     let (p_l, q_l, t_l) = chudnovsky_bs(a, mid);
     let (p_r, q_r, t_r) = chudnovsky_bs(mid, b);
 
-    let p = &p_l * &p_r;
-    let q = &q_l * &q_r;
-    // T = T_L * Q_R + T_R * P_L
-    let t = IBig::from(q_r) * t_l + IBig::from(p_l) * t_r;
-    (p, q, t)
+    // T = T_L * Q_R + T_R * P_L  (the universal merge)
+    merge(&p_l, &q_l, &t_l, &p_r, &q_r, &t_r)
+}
+
+/// Binary splitting for `L(n) = acoth(n) = Σ_{k≥0} 1/(n^{2k+1}(2k+1))` over `[1, b)`.
+///
+/// Term ratio (k≥1): `r_k/r_{k-1} = p_k/q_k` with `p_k = 2k-1`, `q_k = (2k+1)·n²`.
+/// The `k=0` term `r_0 = 1/n` is pulled out; over `[1, b)` the tree state satisfies
+/// `T/Q = n · Σ_{k=1}^{b-1} 1/((2k+1)·n^{2k+1})`, hence `L(n) = (Q + T)/(n·Q)`.
+///
+/// Using the ratio form (rather than independent `1/q_k` terms) keeps
+/// `Q = Π(2k+1)·n²` at O(p) digits: each leaf multiplies only small integers
+/// (with `n²` folded in), no `n.pow(2k+1)` per leaf.
+pub(crate) fn iacoth_bs(n: u32, a: usize, b: usize) -> (UBig, UBig, IBig) {
+    debug_assert!(a >= 1, "iacoth_bs leaf index must be >= 1");
+    if a >= b {
+        return (UBig::ONE, UBig::ONE, IBig::ZERO); // identity
+    }
+    if b - a == 1 {
+        // leaf at k = a (a >= 1): (p_a, q_a, p_a), p_a = 2a-1, q_a = (2a+1)·n²
+        let pa = UBig::from(2 * a as u64 - 1);
+        let n2 = UBig::from(n).pow(2);
+        let qa = UBig::from(2 * a as u64 + 1) * n2;
+        let ta = IBig::from(pa.clone());
+        return (pa, qa, ta);
+    }
+    let mid = (a + b) / 2;
+    let (pl, ql, tl) = iacoth_bs(n, a, mid);
+    let (pr, qr, tr) = iacoth_bs(n, mid, b);
+    merge(&pl, &ql, &tl, &pr, &qr, &tr) // universal merge
 }
 
 impl<R: Round, const B: Word> FBig<R, B> {
