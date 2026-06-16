@@ -20,6 +20,7 @@
 - NTT multiplication auto-selects `K_eff = 2` primes when headroom allows, skipping the third prime.
 - Multiplication thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE_MUL`, `DASHU_THRESHOLD_KARATSUBA_MUL`, and `DASHU_THRESHOLD_NTT_MUL` environment variables (requires `tuning` feature).
 - Non-power-of-2 radix formatting now preallocates the `radix_powers`/`big_chunks` vectors (capacity estimated from the number's length) instead of growing them push-by-push.
+- The basecase addmul/submul-2 kernels (`add_mul_dword_same_len_in_place`, `sub_mul_dword_same_len_in_place`) now dispatch at runtime to a BMI2 build of identical arithmetic on x86-64 (when the `std` feature is enabled and the CPU supports `bmi2`); LLVM lowers the widening multiplies to the flag-free `mulx` instruction and unrolls the loop. This speeds the kernel ~4-5% in isolation. Other targets and `no_std` builds keep the portable path.
 
 ### Change
 - Multiplication threshold env vars renamed with `_MUL` suffix: `DASHU_THRESHOLD_SIMPLE_MUL`, `DASHU_THRESHOLD_KARATSUBA_MUL`, `DASHU_THRESHOLD_NTT_MUL` (was without suffix).
