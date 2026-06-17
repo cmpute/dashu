@@ -4,6 +4,7 @@ use crate::{
     buffer::Buffer,
     error::panic_divide_by_invalid_modulo,
     gcd,
+    helper_macros::forward_modular_binop_to_ref_ref,
     memory::MemoryAllocation,
     primitive::{locate_top_word_plus_one, lowest_dword},
     Sign,
@@ -108,32 +109,7 @@ fn inv_large(ring: &MontgomeryLargeRepr, raw: &MontgomeryLargeVal) -> Option<Mon
     Some(inv)
 }
 
-impl<'a> Div<Montgomery<'a>> for Montgomery<'a> {
-    type Output = Montgomery<'a>;
-
-    #[inline]
-    fn div(self, rhs: Montgomery<'a>) -> Montgomery<'a> {
-        (&self).div(&rhs)
-    }
-}
-
-impl<'a> Div<&Montgomery<'a>> for Montgomery<'a> {
-    type Output = Montgomery<'a>;
-
-    #[inline]
-    fn div(self, rhs: &Montgomery<'a>) -> Montgomery<'a> {
-        (&self).div(rhs)
-    }
-}
-
-impl<'a> Div<Montgomery<'a>> for &Montgomery<'a> {
-    type Output = Montgomery<'a>;
-
-    #[inline]
-    fn div(self, rhs: Montgomery<'a>) -> Montgomery<'a> {
-        self.div(&rhs)
-    }
-}
+forward_modular_binop_to_ref_ref!(impl Div, div, DivAssign, div_assign for Montgomery);
 
 impl<'a> Div<&Montgomery<'a>> for &Montgomery<'a> {
     type Output = Montgomery<'a>;
@@ -146,19 +122,5 @@ impl<'a> Div<&Montgomery<'a>> for &Montgomery<'a> {
             None => panic_divide_by_invalid_modulo(),
             Some(inv_rhs) => self * inv_rhs,
         }
-    }
-}
-
-impl<'a> DivAssign<Montgomery<'a>> for Montgomery<'a> {
-    #[inline]
-    fn div_assign(&mut self, rhs: Montgomery<'a>) {
-        self.div_assign(&rhs)
-    }
-}
-
-impl<'a> DivAssign<&Montgomery<'a>> for Montgomery<'a> {
-    #[inline]
-    fn div_assign(&mut self, rhs: &Montgomery<'a>) {
-        *self = (&*self).div(rhs)
     }
 }

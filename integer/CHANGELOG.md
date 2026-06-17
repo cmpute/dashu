@@ -42,6 +42,11 @@
 - `test_unpack_carry_propagation` had a hardcoded 64-bit shift assumption; now derived from `Word::BITS` so it works on 32-bit.
 - Various clippy warnings (`let_and_return`, `too_many_arguments`, `needless_range_loop`, `type_complexity`) resolved across the NTT module.
 
+### Refactor
+- Extracted `simple::MIN_LEN = 3` in the division module (analogous to `mul::karatsuba::MIN_LEN`); the tuning override now clamps against this named constant instead of a magic literal.
+- Moved the word-level multiplication kernels (`add_mul_word_same_len_in_place`, `add_mul_word_in_place`, `sub_mul_word_same_len_in_place`) from `mul/mod.rs` into `mul/simple.rs` alongside the other schoolbook kernels, and widened `add_mul_dword_same_len_in_place` from `pub(crate)` to `pub`. The old `mul::*` paths still work via re-exports.
+- Added `forward_modular_binop_to_assign!`, `impl_modular_commutative_op_for_ref!`, `impl_modular_binop_ref_ref_by_clone!`, and `forward_modular_binop_to_ref_ref!` macros in `helper_macros.rs` to generate the boilerplate `Op<T>`/`Op<&T>`/`OpAssign<T>` impls for any modular type parameterized by a lifetime (taking the target type as a parameter). Both `Montgomery` and `Reduced` Add, Sub, Mul and Div now share these macros instead of repeating the four-by-value/by-ref/assign variants per operator.
+
 ## 0.4.2
 
 - Add `UBig::ones`.

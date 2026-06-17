@@ -1,12 +1,11 @@
 //! Multiplication.
 
 use crate::{
-    add,
     arch::word::{DoubleWord, SignedWord, Word},
     helper_macros::debug_assert_zero,
     math,
     memory::{self, Memory},
-    primitive::{double_word, extend_word, split_dword},
+    primitive::{double_word, split_dword},
     Sign,
 };
 use alloc::alloc::Layout;
@@ -85,6 +84,11 @@ pub(crate) mod ntt;
 mod simple;
 pub(crate) mod toom_3;
 
+pub use simple::{
+    add_mul_dword_same_len_in_place, add_mul_word_in_place, add_mul_word_same_len_in_place,
+    sub_mul_word_same_len_in_place,
+};
+
 /// Multiply a word sequence by a `Word` in place.
 ///
 /// Returns carry.
@@ -144,88 +148,6 @@ pub fn mul_word_in_place_with_carry(words: &mut [Word], rhs: Word, mut carry: Wo
         carry = v_hi;
     }
     carry
-}
-
-/// words += mult * rhs
-///
-/// Returns carry.
-#[must_use]
-pub fn add_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) -> Word {
-    assert!(words.len() == rhs.len());
-    if mult == 0 {
-        return 0;
-    }
-
-    let mut carry: Word = 0;
-    for (a, b) in words.iter_mut().zip(rhs.iter()) {
-        let (v_lo, v_hi) = math::mul_add_2carry(mult, *b, *a, carry);
-        *a = v_lo;
-        carry = v_hi;
-    }
-    carry
-}
-
-/// words += mult * rhs
-///
-/// Returns carry.
-#[must_use]
-pub fn add_mul_word_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) -> Word {
-    assert!(words.len() >= rhs.len());
-    if mult == 0 {
-        return 0;
-    }
-
-    let n = rhs.len();
-    let mut carry = add_mul_word_same_len_in_place(&mut words[..n], mult, rhs);
-    if words.len() > n {
-        carry = Word::from(add::add_word_in_place(&mut words[n..], carry));
-    }
-    carry
-}
-
-/// `words += (mult0 + mult1 * 2^WORD_BITS) * rhs` where `words.len() == rhs.len()`.
-///
-/// This is the double-multiplier "addmul_2" kernel (mirrors GMP's `mpn_addmul_2`): it sweeps
-/// over `rhs` once while accumulating two independent multiply chains, returning the two carry
-/// words `(carry_lo, carry_hi)` to be added by the caller at `words[n]` and `words[n + 1]`.
-#[inline]
-pub(crate) fn add_mul_dword_same_len_in_place(
-    words: &mut [Word],
-    rhs: &[Word],
-    mult0: Word,
-    mult1: Word,
-) -> (Word, Word) {
-    simple::add_mul_dword_same_len_in_place(words, rhs, mult0, mult1)
-}
-
-/// words -= mult * rhs
-///
-/// Returns borrow.
-#[must_use]
-pub fn sub_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) -> Word {
-    assert!(words.len() == rhs.len());
-    if mult == 0 {
-        return 0;
-    }
-
-    // carry is in -Word::MAX..0
-    // carry_plus_max = carry + Word::MAX
-    let mut carry_plus_max = Word::MAX;
-    for (a, b) in words.iter_mut().zip(rhs.iter()) {
-        // Compute val = a - mult * b + carry_plus_max - MAX + (MAX << BITS)
-        // val >= 0 - MAX * MAX - MAX + MAX*(MAX+1) = 0
-        // val <= MAX - 0 + MAX - MAX + (MAX<<BITS) = DoubleWord::MAX
-        // This fits exactly in DoubleWord!
-        // We have to be careful to calculate in the correct order to avoid overflow.
-        let v = extend_word(*a)
-            + extend_word(carry_plus_max)
-            + (double_word(0, Word::MAX) - extend_word(Word::MAX))
-            - extend_word(mult) * extend_word(*b);
-        let (v_lo, v_hi) = split_dword(v);
-        *a = v_lo;
-        carry_plus_max = v_hi;
-    }
-    Word::MAX - carry_plus_max
 }
 
 /// Temporary scratch space required for multiplication.

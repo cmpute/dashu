@@ -1,7 +1,11 @@
 //! Montgomery addition and subtraction.
 
 use super::repr::{Montgomery, MontgomeryInner, MontgomeryLargeRepr, MontgomeryLargeVal};
-use crate::{add, cmp, error::panic_different_rings, shift};
+use crate::{
+    add, cmp, error::panic_different_rings, helper_macros::forward_modular_binop_to_assign,
+    helper_macros::impl_modular_binop_ref_ref_by_clone,
+    helper_macros::impl_modular_commutative_op_for_ref, shift,
+};
 use core::ops::{Add, AddAssign, Neg, Sub, SubAssign};
 use num_modular::Reducer;
 
@@ -30,49 +34,9 @@ impl<'a> Neg for &Montgomery<'a> {
     }
 }
 
-impl<'a> Add<Montgomery<'a>> for Montgomery<'a> {
-    type Output = Montgomery<'a>;
-
-    #[inline]
-    fn add(self, rhs: Montgomery<'a>) -> Montgomery<'a> {
-        self.add(&rhs)
-    }
-}
-
-impl<'a> Add<&Montgomery<'a>> for Montgomery<'a> {
-    type Output = Montgomery<'a>;
-
-    #[inline]
-    fn add(mut self, rhs: &Montgomery<'a>) -> Montgomery<'a> {
-        self.add_assign(rhs);
-        self
-    }
-}
-
-impl<'a> Add<Montgomery<'a>> for &Montgomery<'a> {
-    type Output = Montgomery<'a>;
-
-    #[inline]
-    fn add(self, rhs: Montgomery<'a>) -> Montgomery<'a> {
-        rhs.add(self)
-    }
-}
-
-impl<'a> Add<&Montgomery<'a>> for &Montgomery<'a> {
-    type Output = Montgomery<'a>;
-
-    #[inline]
-    fn add(self, rhs: &Montgomery<'a>) -> Montgomery<'a> {
-        self.clone().add(rhs)
-    }
-}
-
-impl<'a> AddAssign<Montgomery<'a>> for Montgomery<'a> {
-    #[inline]
-    fn add_assign(&mut self, rhs: Montgomery<'a>) {
-        self.add_assign(&rhs)
-    }
-}
+forward_modular_binop_to_assign!(impl Add, add, AddAssign, add_assign for Montgomery);
+impl_modular_commutative_op_for_ref!(impl Add, add for Montgomery);
+impl_modular_binop_ref_ref_by_clone!(impl Add, add for Montgomery);
 
 impl<'a> AddAssign<&Montgomery<'a>> for Montgomery<'a> {
     #[inline]
@@ -95,24 +59,8 @@ impl<'a> AddAssign<&Montgomery<'a>> for Montgomery<'a> {
     }
 }
 
-impl<'a> Sub<Montgomery<'a>> for Montgomery<'a> {
-    type Output = Montgomery<'a>;
-
-    #[inline]
-    fn sub(self, rhs: Montgomery<'a>) -> Montgomery<'a> {
-        self.sub(&rhs)
-    }
-}
-
-impl<'a> Sub<&Montgomery<'a>> for Montgomery<'a> {
-    type Output = Montgomery<'a>;
-
-    #[inline]
-    fn sub(mut self, rhs: &Montgomery<'a>) -> Montgomery<'a> {
-        self.sub_assign(rhs);
-        self
-    }
-}
+forward_modular_binop_to_assign!(impl Sub, sub, SubAssign, sub_assign for Montgomery);
+impl_modular_binop_ref_ref_by_clone!(impl Sub, sub for Montgomery);
 
 impl<'a> Sub<Montgomery<'a>> for &Montgomery<'a> {
     type Output = Montgomery<'a>;
@@ -135,22 +83,6 @@ impl<'a> Sub<Montgomery<'a>> for &Montgomery<'a> {
             _ => panic_different_rings(),
         }
         rhs
-    }
-}
-
-impl<'a> Sub<&Montgomery<'a>> for &Montgomery<'a> {
-    type Output = Montgomery<'a>;
-
-    #[inline]
-    fn sub(self, rhs: &Montgomery<'a>) -> Montgomery<'a> {
-        self.clone().sub(rhs)
-    }
-}
-
-impl<'a> SubAssign<Montgomery<'a>> for Montgomery<'a> {
-    #[inline]
-    fn sub_assign(&mut self, rhs: Montgomery<'a>) {
-        self.sub_assign(&rhs)
     }
 }
 

@@ -12,6 +12,7 @@ use crate::{
     shift,
 };
 use alloc::alloc::Layout;
+use static_assertions::const_assert;
 
 mod divide_conquer;
 mod simple;
@@ -19,13 +20,13 @@ pub(crate) use simple::div_rem_highest_word;
 
 /// If divisor or quotient is at most this length, use the simple division algorithm.
 const THRESHOLD_SIMPLE_DEFAULT: usize = 32;
+const_assert!(THRESHOLD_SIMPLE_DEFAULT >= simple::MIN_LEN);
 
 /// Environment-variable override for the division threshold.
 ///
 /// When the `tuning` feature is active the user may set
 /// `DASHU_THRESHOLD_SIMPLE_DIV` to override the compile-time default. Values
-/// below 3 are unsupported: the divide-and-conquer split (`n_lo = n / 2`)
-/// needs at least 2 low words.
+/// below [`simple::MIN_LEN`] are clamped to that constant.
 mod threshold {
     #[inline]
     pub fn simple() -> usize {
@@ -33,9 +34,7 @@ mod threshold {
         {
             if let Ok(s) = std::env::var("DASHU_THRESHOLD_SIMPLE_DIV") {
                 if let Ok(v) = s.parse::<usize>() {
-                    // Values below 3 are unsupported: the divide-and-conquer split
-                    // (n_lo = n / 2) needs at least 2 low words.
-                    return v.max(3);
+                    return v.max(super::simple::MIN_LEN);
                 }
             }
         }

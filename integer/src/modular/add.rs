@@ -1,7 +1,16 @@
 //! Modular addition and subtraction.
 
 use super::repr::{Reduced, ReducedDword, ReducedLarge, ReducedRepr, ReducedWord};
-use crate::{add, cmp, div_const::ConstLargeDivisor, error::panic_different_rings, shift};
+use crate::{
+    add, cmp,
+    div_const::ConstLargeDivisor,
+    error::panic_different_rings,
+    helper_macros::{
+        forward_modular_binop_to_assign, impl_modular_binop_ref_ref_by_clone,
+        impl_modular_commutative_op_for_ref,
+    },
+    shift,
+};
 use core::ops::{Add, AddAssign, Neg, Sub, SubAssign};
 use num_modular::Reducer;
 
@@ -34,49 +43,9 @@ impl<'a> Neg for &Reduced<'a> {
     }
 }
 
-impl<'a> Add<Reduced<'a>> for Reduced<'a> {
-    type Output = Reduced<'a>;
-
-    #[inline]
-    fn add(self, rhs: Reduced<'a>) -> Reduced<'a> {
-        self.add(&rhs)
-    }
-}
-
-impl<'a> Add<&Reduced<'a>> for Reduced<'a> {
-    type Output = Reduced<'a>;
-
-    #[inline]
-    fn add(mut self, rhs: &Reduced<'a>) -> Reduced<'a> {
-        self.add_assign(rhs);
-        self
-    }
-}
-
-impl<'a> Add<Reduced<'a>> for &Reduced<'a> {
-    type Output = Reduced<'a>;
-
-    #[inline]
-    fn add(self, rhs: Reduced<'a>) -> Reduced<'a> {
-        rhs.add(self)
-    }
-}
-
-impl<'a> Add<&Reduced<'a>> for &Reduced<'a> {
-    type Output = Reduced<'a>;
-
-    #[inline]
-    fn add(self, rhs: &Reduced<'a>) -> Reduced<'a> {
-        self.clone().add(rhs)
-    }
-}
-
-impl<'a> AddAssign<Reduced<'a>> for Reduced<'a> {
-    #[inline]
-    fn add_assign(&mut self, rhs: Reduced<'a>) {
-        self.add_assign(&rhs)
-    }
-}
+forward_modular_binop_to_assign!(impl Add, add, AddAssign, add_assign for Reduced);
+impl_modular_commutative_op_for_ref!(impl Add, add for Reduced);
+impl_modular_binop_ref_ref_by_clone!(impl Add, add for Reduced);
 
 impl<'a> AddAssign<&Reduced<'a>> for Reduced<'a> {
     #[inline]
@@ -99,24 +68,8 @@ impl<'a> AddAssign<&Reduced<'a>> for Reduced<'a> {
     }
 }
 
-impl<'a> Sub<Reduced<'a>> for Reduced<'a> {
-    type Output = Reduced<'a>;
-
-    #[inline]
-    fn sub(self, rhs: Reduced<'a>) -> Reduced<'a> {
-        self.sub(&rhs)
-    }
-}
-
-impl<'a> Sub<&Reduced<'a>> for Reduced<'a> {
-    type Output = Reduced<'a>;
-
-    #[inline]
-    fn sub(mut self, rhs: &Reduced<'a>) -> Reduced<'a> {
-        self.sub_assign(rhs);
-        self
-    }
-}
+forward_modular_binop_to_assign!(impl Sub, sub, SubAssign, sub_assign for Reduced);
+impl_modular_binop_ref_ref_by_clone!(impl Sub, sub for Reduced);
 
 impl<'a> Sub<Reduced<'a>> for &Reduced<'a> {
     type Output = Reduced<'a>;
@@ -139,22 +92,6 @@ impl<'a> Sub<Reduced<'a>> for &Reduced<'a> {
             _ => panic_different_rings(),
         }
         rhs
-    }
-}
-
-impl<'a> Sub<&Reduced<'a>> for &Reduced<'a> {
-    type Output = Reduced<'a>;
-
-    #[inline]
-    fn sub(self, rhs: &Reduced<'a>) -> Reduced<'a> {
-        self.clone().sub(rhs)
-    }
-}
-
-impl<'a> SubAssign<Reduced<'a>> for Reduced<'a> {
-    #[inline]
-    fn sub_assign(&mut self, rhs: Reduced<'a>) {
-        self.sub_assign(&rhs)
     }
 }
 

@@ -6,6 +6,7 @@ use crate::{
     buffer::Buffer,
     cmp,
     error::panic_different_rings,
+    helper_macros::{forward_modular_binop_to_assign, impl_modular_commutative_op_for_ref},
     memory::{self, Memory, MemoryAllocation},
     mul,
     primitive::{double_word, extend_word, locate_top_word_plus_one, split_dword},
@@ -17,33 +18,8 @@ use num_modular::Reducer;
 
 use super::repr::{Montgomery, MontgomeryInner, MontgomeryLargeRepr, MontgomeryLargeVal};
 
-impl<'a> Mul<Montgomery<'a>> for Montgomery<'a> {
-    type Output = Montgomery<'a>;
-
-    #[inline]
-    fn mul(self, rhs: Montgomery<'a>) -> Montgomery<'a> {
-        self.mul(&rhs)
-    }
-}
-
-impl<'a> Mul<&Montgomery<'a>> for Montgomery<'a> {
-    type Output = Montgomery<'a>;
-
-    #[inline]
-    fn mul(mut self, rhs: &Montgomery<'a>) -> Montgomery<'a> {
-        self.mul_assign(rhs);
-        self
-    }
-}
-
-impl<'a> Mul<Montgomery<'a>> for &Montgomery<'a> {
-    type Output = Montgomery<'a>;
-
-    #[inline]
-    fn mul(self, rhs: Montgomery<'a>) -> Montgomery<'a> {
-        rhs.mul(self)
-    }
-}
+forward_modular_binop_to_assign!(impl Mul, mul, MulAssign, mul_assign for Montgomery);
+impl_modular_commutative_op_for_ref!(impl Mul, mul for Montgomery);
 
 impl<'a> Mul<&Montgomery<'a>> for &Montgomery<'a> {
     type Output = Montgomery<'a>;
@@ -72,13 +48,6 @@ impl<'a> Mul<&Montgomery<'a>> for &Montgomery<'a> {
             }
             _ => self.clone().mul(rhs),
         }
-    }
-}
-
-impl<'a> MulAssign<Montgomery<'a>> for Montgomery<'a> {
-    #[inline]
-    fn mul_assign(&mut self, rhs: Montgomery<'a>) {
-        self.mul_assign(&rhs)
     }
 }
 
