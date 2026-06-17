@@ -53,6 +53,38 @@ add_binop_benchmark!(ubig_div, div, 6);
 add_binop_benchmark!(ubig_gcd, gcd, 6);
 add_binop_benchmark!(ubig_gcd_ext, gcd_ext, 5);
 
+/// Division with operands of very different sizes (asymmetric): a large dividend
+/// divided by a much smaller divisor, producing a large quotient.
+///
+/// This is the regime where the Newton (reciprocal based) division pays off:
+/// the cost of computing the divisor's reciprocal is amortized across many
+/// quotient blocks, each produced by plain multiplications. The symmetric
+/// `ubig_div` benchmark above produces only a tiny quotient, so it stays on the
+/// schoolbook path regardless of operand size.
+fn ubig_div_asymmetric(criterion: &mut Criterion) {
+    let mut rng = StdRng::seed_from_u64(SEED);
+    let mut group = criterion.benchmark_group("ubig_div_asymmetric");
+    group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
+
+    // divisor bit sizes large enough to reach the Newton regime, crossed with
+    // the dividend/divisor ratio.
+    for &divisor_bits in &[100_000usize, 300_000, 500_000, 1_000_000] {
+        for &ratio in &[4usize, 64] {
+            let divisor = random_ubig(divisor_bits, &mut rng);
+            let dividend = random_ubig(divisor_bits * ratio, &mut rng);
+            // dividend is far larger than the divisor, so the quotient has
+            // ~divisor_bits * (ratio-1) bits.
+            group.bench_with_input(
+                BenchmarkId::from_parameter(format!("{divisor_bits}/{ratio}")),
+                &(dividend, divisor),
+                |bencher, (n, d)| bencher.iter(|| n.div(d)),
+            );
+        }
+    }
+
+    group.finish();
+}
+
 fn ubig_pow(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group("ubig_pow");
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
@@ -202,6 +234,7 @@ criterion_group!(
     ubig_sub,
     ubig_mul,
     ubig_div,
+    ubig_div_asymmetric,
     ubig_gcd,
     ubig_gcd_ext,
     ubig_pow,

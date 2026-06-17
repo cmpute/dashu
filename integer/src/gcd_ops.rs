@@ -277,9 +277,12 @@ mod repr {
             // temporary space to store residue
             memory::array_layout::<Word>(lhs_len + rhs_len),
             memory::max_layout(
-                // memory required for post processing: one multiplication + one division
+                // memory required for post processing: one multiplication + one division.
+                // The post-division divides `residue` by `lhs_clone` (the larger operand,
+                // since gcd_ext_large swaps so that lhs > rhs), so the divisor length is
+                // `lhs_len`, not `rhs_len`.
                 mul::memory_requirement_exact(lhs_len + rhs_len, rhs_len),
-                div::memory_requirement_exact(lhs_len + rhs_len + 1, rhs_len),
+                div::memory_requirement_exact(lhs_len + rhs_len + 1, lhs_len),
             ),
         );
         let mut allocation = MemoryAllocation::new(memory::add_layout(

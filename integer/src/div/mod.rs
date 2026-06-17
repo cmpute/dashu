@@ -14,6 +14,7 @@ use crate::{
 use alloc::alloc::Layout;
 
 mod divide_conquer;
+mod newton;
 mod simple;
 pub(crate) use simple::div_rem_highest_word;
 
@@ -237,6 +238,8 @@ pub fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> Layout {
     assert!(lhs_len >= rhs_len && rhs_len >= 2);
     if rhs_len <= THRESHOLD_SIMPLE || lhs_len - rhs_len <= THRESHOLD_SIMPLE {
         memory::zero_layout()
+    } else if rhs_len > newton::threshold() && lhs_len - rhs_len > newton::threshold() {
+        newton::memory_requirement_exact(lhs_len, rhs_len)
     } else {
         divide_conquer::memory_requirement_exact(lhs_len, rhs_len)
     }
@@ -262,6 +265,8 @@ pub(crate) fn div_rem_in_place(
 
     if rhs.len() <= THRESHOLD_SIMPLE || lhs.len() - rhs.len() <= THRESHOLD_SIMPLE {
         simple::div_rem_in_place(lhs, rhs, fast_div_rhs_top)
+    } else if rhs.len() > newton::threshold() && lhs.len() - rhs.len() > newton::threshold() {
+        newton::div_rem_in_place(lhs, rhs, fast_div_rhs_top, memory)
     } else {
         divide_conquer::div_rem_in_place(lhs, rhs, fast_div_rhs_top, memory)
     }
