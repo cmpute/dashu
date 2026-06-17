@@ -163,44 +163,47 @@ pub(crate) fn iacoth_bs(n: u32, a: usize, b: usize) -> (UBig, UBig, IBig) {
 
 /// Precomputed binary-splitting state for `L(n) = acoth(n)` over the first `K`
 /// terms `[1, 1+K)`, stored as `(K, P, Q, T)`. `K` is chosen (per `n`) so that
-/// `P`, `Q` and `|T|` each fit in a [`DoubleWord`][dashu_int::DoubleWord]; this
-/// keeps the triple a compile-time constant — instantiating it never touches the
-/// heap (the values use the inline small-integer representation).
+/// `P`, `Q` and `|T|` each fit in a `u32`. Since `DoubleWord` is `u32`/`u64`/`u128`
+/// for `Word = u16`/`u32`/`u64`, a `u32`-sized literal is accepted by
+/// [`UBig::from_dword`] / [`IBig::from_parts_const`] on **every** configuration —
+/// so this single set of constants is portable without needing to detect the
+/// `Word` width (which is internal to `dashu-int`). The constants also use the
+/// inline small-integer representation, so instantiating them never allocates.
 ///
 /// Only the sub-series that back ln2 / ln10 (`n ∈ {6, 9, 99}`) are precomputed;
-/// π cannot use this trick because its 2-term `T` already overflows a `DoubleWord`.
+/// π cannot use this trick because its 2-term `T` already overflows a `u32`.
 fn iacoth_initial_block(n: u32) -> Option<(usize, UBig, UBig, IBig)> {
     match n {
-        // L(6) over [1, 8): 7 leaves.
+        // L(6) over [1, 5): 4 leaves.
         6 => Some(IACOTH_6_INITIAL),
-        // L(9) over [1, 7): 6 leaves.
+        // L(9) over [1, 4): 3 leaves.
         9 => Some(IACOTH_9_INITIAL),
-        // L(99) over [1, 5): 4 leaves.
+        // L(99) over [1, 3): 2 leaves.
         99 => Some(IACOTH_99_INITIAL),
         _ => None,
     }
 }
 
-/// `(K, P, Q, T)` for `L(6)` over `[1, 8)` (7 leaves).
+/// `(K, P, Q, T)` for `L(6)` over `[1, 5)` (4 leaves).
 const IACOTH_6_INITIAL: (usize, UBig, UBig, IBig) = (
-    7,
-    UBig::from_dword(135135),
-    UBig::from_dword(158846119726694400),
-    IBig::from_parts_const(Sign::Positive, 1495807822427715),
-);
-/// `(K, P, Q, T)` for `L(9)` over `[1, 7)` (6 leaves).
-const IACOTH_9_INITIAL: (usize, UBig, UBig, IBig) = (
-    6,
-    UBig::from_dword(10395),
-    UBig::from_dword(38166115412359935),
-    IBig::from_parts_const(Sign::Positive, 158235986058912),
-);
-/// `(K, P, Q, T)` for `L(99)` over `[1, 5)` (4 leaves).
-const IACOTH_99_INITIAL: (usize, UBig, UBig, IBig) = (
     4,
     UBig::from_dword(105),
-    UBig::from_dword(8719937362343844945),
-    IBig::from_parts_const(Sign::Positive, 296584403649144),
+    UBig::from_dword(1587237120),
+    IBig::from_parts_const(Sign::Positive, 14946549),
+);
+/// `(K, P, Q, T)` for `L(9)` over `[1, 4)` (3 leaves).
+const IACOTH_9_INITIAL: (usize, UBig, UBig, IBig) = (
+    3,
+    UBig::from_dword(15),
+    UBig::from_dword(55801305),
+    IBig::from_parts_const(Sign::Positive, 231351),
+);
+/// `(K, P, Q, T)` for `L(99)` over `[1, 3)` (2 leaves).
+const IACOTH_99_INITIAL: (usize, UBig, UBig, IBig) = (
+    2,
+    UBig::from_dword(3),
+    UBig::from_dword(1440894015),
+    IBig::from_parts_const(Sign::Positive, 49008),
 );
 
 impl<R: Round, const B: Word> FBig<R, B> {
