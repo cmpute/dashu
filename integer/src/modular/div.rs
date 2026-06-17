@@ -3,7 +3,7 @@ use crate::{
     div_const::ConstLargeDivisor,
     error::panic_divide_by_invalid_modulo,
     gcd,
-    helper_macros::debug_assert_zero,
+    helper_macros::{debug_assert_zero, forward_modular_binop_to_ref_ref},
     memory::MemoryAllocation,
     primitive::{locate_top_word_plus_one, lowest_dword},
     shift::{shl_in_place, shr_in_place},
@@ -100,32 +100,7 @@ fn inv_large(ring: &ConstLargeDivisor, mut raw: ReducedLarge) -> Option<ReducedL
     Some(inv)
 }
 
-impl<'a> Div<Reduced<'a>> for Reduced<'a> {
-    type Output = Reduced<'a>;
-
-    #[inline]
-    fn div(self, rhs: Reduced<'a>) -> Reduced<'a> {
-        (&self).div(&rhs)
-    }
-}
-
-impl<'a> Div<&Reduced<'a>> for Reduced<'a> {
-    type Output = Reduced<'a>;
-
-    #[inline]
-    fn div(self, rhs: &Reduced<'a>) -> Reduced<'a> {
-        (&self).div(rhs)
-    }
-}
-
-impl<'a> Div<Reduced<'a>> for &Reduced<'a> {
-    type Output = Reduced<'a>;
-
-    #[inline]
-    fn div(self, rhs: Reduced<'a>) -> Reduced<'a> {
-        self.div(&rhs)
-    }
-}
+forward_modular_binop_to_ref_ref!(impl Div, div, DivAssign, div_assign for Reduced);
 
 impl<'a> Div<&Reduced<'a>> for &Reduced<'a> {
     type Output = Reduced<'a>;
@@ -138,19 +113,5 @@ impl<'a> Div<&Reduced<'a>> for &Reduced<'a> {
             None => panic_divide_by_invalid_modulo(),
             Some(inv_rhs) => self * inv_rhs,
         }
-    }
-}
-
-impl<'a> DivAssign<Reduced<'a>> for Reduced<'a> {
-    #[inline]
-    fn div_assign(&mut self, rhs: Reduced<'a>) {
-        self.div_assign(&rhs)
-    }
-}
-
-impl<'a> DivAssign<&Reduced<'a>> for Reduced<'a> {
-    #[inline]
-    fn div_assign(&mut self, rhs: &Reduced<'a>) {
-        *self = (&*self).div(rhs)
     }
 }

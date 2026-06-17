@@ -9,6 +9,14 @@ use crate::{
     primitive::{double_word, highest_dword, split_dword},
 };
 
+/// Minimum supported operand length for the simple division algorithm.
+///
+/// The divide-and-conquer split (`n_lo = n / 2`) needs at least 2 low words, so the
+/// threshold that selects between simple and divide-and-conquer division must be
+/// `>= 3` (otherwise the recursion produces empty sub-problems). Values below 3 are
+/// silently clamped to this constant.
+pub const MIN_LEN: usize = 3;
+
 /// Division in place using the simple algorithm.
 ///
 /// Divide lhs by rhs, replacing the top words of lhs by the quotient and the

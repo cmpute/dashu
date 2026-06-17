@@ -6,6 +6,7 @@
 - NTT-based multiplication using Proth primes (`K·2^N + 1`), combined via Garner CRT.  Supports 64-bit and 32-bit Word targets.  Threshold at 4 000 words (~256 kbits).
 - Asymmetric NTT chunking: when one operand is much larger than the other, the shorter operand is forward-transformed once and reused across chunks.
 - `UBig::from_u64` and `IBig::from_i64`, const on 32-bit and 64-bit targets.
+- `monty` module: Montgomery modular arithmetic for odd moduli. New [`MontgomeryRepr`](integer::monty::MontgomeryRepr) (precomputed Montgomery constants) and [`Montgomery`](integer::monty::Montgomery) (values in Montgomery form) with multiplication, squaring, addition, subtraction, negation, doubling, exponentiation, and inversion. Single/double-word moduli delegate to `num-modular`; multi-word moduli use word-by-word REDC with a double-word "addmul_2" kernel (the operand product reuses the crate's fast multiply), beating the Barrett division path of `modular::Reduced` for multiplication/squaring/exponentiation at roughly 256–4096 bits. For inverse-heavy computation, `modular::Reduced` remains faster (a Montgomery inverse must convert out of and back into Montgomery form).
 - Specialized Karatsuba squaring: uses 3 recursive squarings instead of 3 multiplications, with simplified diff handling.
 - Specialized Toom-Cook-3 squaring: evaluates a single polynomial instead of two, 5 recursive squarings instead of multiplications.
 - Specialized NTT squaring: single forward transform instead of two, pointwise square instead of multiply.
@@ -18,7 +19,13 @@
 - Lowered the Karatsuba→Toom-3 multiplication threshold from 192 to 96 words, giving Toom-Cook-3 at ~6000 bits instead of ~12000 bits — closes the gap with malachite at ~10000-bit sizes.
 - NTT coefficient width increased from 16 to 64 bits (K_eff=3 for 64-bit, K_eff=2 otherwise), roughly halving the transform length at each step.
 - NTT multiplication auto-selects `K_eff = 2` primes when headroom allows, skipping the third prime.
+- Multiplication thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE`, `DASHU_THRESHOLD_KARATSUBA`, and `DASHU_THRESHOLD_NTT` environment variables (requires `tuning` feature).
+- Division threshold (schoolbook ↔ divide-and-conquer crossover) can be overridden at runtime via the `DASHU_THRESHOLD_SIMPLE_DIV` environment variable (requires `tuning` feature). Values below 3 are clamped to 3 to uphold the divide-and-conquer algorithm's `n_lo >= 2` invariant.
+- Montgomery multiplication: the `sqr()` method and `pow_nontrivial` entry point now avoid a redundant clone+overwrite of the multi-word value, saving one `Box<[Word]>` allocation and an `s`-word copy per squaring.
+- Montgomery multiplication: `mul_in_place_large` uses pointer-identity instead of full element comparison to detect self-multiplication (`a *= a`), avoiding an `O(s)` scan on the common distinct-operands path.
+- Montgomery multiplication: `mul_normalized_large` and `sqr_normalized_large` share a common `finish_monty_product` helper for the REDC+canonicalize pipeline tail.
 - Multiplication thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE_MUL`, `DASHU_THRESHOLD_KARATSUBA_MUL`, and `DASHU_THRESHOLD_NTT_MUL` environment variables (requires `tuning` feature).
+- Montgomery multiplication: `&Montgomery * &Montgomery` for Large operands now builds the result directly from scratch memory instead of cloning one operand then overwriting every word via `mul_in_place_large`, saving an `s`-word copy per multiply. (Add, sub, and neg on references still clone since their in-place operations seed the output buffer from the operand value.)
 
 ### Change
 - Multiplication threshold env vars renamed with `_MUL` suffix: `DASHU_THRESHOLD_SIMPLE_MUL`, `DASHU_THRESHOLD_KARATSUBA_MUL`, `DASHU_THRESHOLD_NTT_MUL` (was without suffix).
@@ -34,6 +41,11 @@
 - `pack.rs` now uses native `Word`/`Lane` types throughout instead of `u64`/`u32`, fixing clippy `unnecessary_cast` warnings on 64-bit.
 - `test_unpack_carry_propagation` had a hardcoded 64-bit shift assumption; now derived from `Word::BITS` so it works on 32-bit.
 - Various clippy warnings (`let_and_return`, `too_many_arguments`, `needless_range_loop`, `type_complexity`) resolved across the NTT module.
+
+### Refactor
+- Extracted `simple::MIN_LEN = 3` in the division module (analogous to `mul::karatsuba::MIN_LEN`); the tuning override now clamps against this named constant instead of a magic literal.
+- Moved the word-level multiplication kernels (`add_mul_word_same_len_in_place`, `add_mul_word_in_place`, `sub_mul_word_same_len_in_place`) from `mul/mod.rs` into `mul/simple.rs` alongside the other schoolbook kernels, and widened `add_mul_dword_same_len_in_place` from `pub(crate)` to `pub`. The old `mul::*` paths still work via re-exports.
+- Added `forward_modular_binop_to_assign!`, `impl_modular_commutative_op_for_ref!`, `impl_modular_binop_ref_ref_by_clone!`, and `forward_modular_binop_to_ref_ref!` macros in `helper_macros.rs` to generate the boilerplate `Op<T>`/`Op<&T>`/`OpAssign<T>` impls for any modular type parameterized by a lifetime (taking the target type as a parameter). Both `Montgomery` and `Reduced` Add, Sub, Mul and Div now share these macros instead of repeating the four-by-value/by-ref/assign variants per operator.
 
 ## 0.4.2
 
