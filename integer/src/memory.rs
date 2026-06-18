@@ -71,6 +71,12 @@ impl Drop for MemoryAllocation {
 }
 
 impl Memory<'_> {
+    /// Total number of bytes available in this chunk.
+    pub(crate) fn size_bytes(&self) -> usize {
+        // SAFETY: invariant guaranteed by constructors of `Memory`.
+        unsafe { self.end.offset_from(self.start) as usize }
+    }
+
     /// Allocate a slice with a given value.
     ///
     /// Returns the remaining chunk of memory.
