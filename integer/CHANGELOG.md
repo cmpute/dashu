@@ -27,6 +27,9 @@
 - Multiplication thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE_MUL`, `DASHU_THRESHOLD_KARATSUBA_MUL`, and `DASHU_THRESHOLD_NTT_MUL` environment variables (requires `tuning` feature).
 - Montgomery multiplication: `&Montgomery * &Montgomery` for Large operands now builds the result directly from scratch memory instead of cloning one operand then overwriting every word via `mul_in_place_large`, saving an `s`-word copy per multiply. (Add, sub, and neg on references still clone since their in-place operations seed the output buffer from the operand value.)
 
+### Improve
+- `UBig::nth_root` for large composite `n` decomposes into a chain of smaller roots via small-prime factor reduction (2, 3, 5, 7), avoiding the prohibitively expensive `x^{n-1}` term in Newton's method.  E.g. n=10000 → four `sqrt` + four 5th-root calls.
+
 ### Change
 - Multiplication threshold env vars renamed with `_MUL` suffix: `DASHU_THRESHOLD_SIMPLE_MUL`, `DASHU_THRESHOLD_KARATSUBA_MUL`, `DASHU_THRESHOLD_NTT_MUL` (was without suffix).
 - NTT multiplication now uses Proth primes (`K·2^N + 1`) instead of Solinas primes, improving modular reduction speed.

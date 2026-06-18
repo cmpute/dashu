@@ -7,7 +7,9 @@ use crate::{
 };
 
 impl UBig {
-    /// Calculate the nth-root of the integer rounding towards zero
+    /// Calculate the nth-root of the integer rounding towards zero.
+    ///
+    /// The result `r` is tight: `r`<sup>`n`</sup> ≤ `self` < `(r + 1)`<sup>`n`</sup>.
     ///
     /// # Examples
     ///
@@ -225,32 +227,82 @@ mod repr {
                 _ => {}
             }
 
-            // shortcut
             let bits = self.bit_len();
             if bits <= n {
-                // the result must be 1
                 return Repr::one();
             }
 
-            // then use newton's method
-            let nm1 = n - 1;
-            let mut guess = UBig::ONE << (self.bit_len() / n); // underestimate
-            let next = |x: &UBig| {
-                let y = UBig(self / x.pow(nm1).into_repr());
-                (y + x * nm1) / n
-            };
-
-            let mut fixpoint = next(&guess);
-            // first go up then go down, to ensure an underestimate
-            while fixpoint > guess {
-                guess = fixpoint;
-                fixpoint = next(&guess);
+            // Peel off powers of small primes (2, 3, 5, 7) to shrink the
+            // exponent.  Computing x^{n-1} in Newton is prohibitively
+            // expensive for large n, but reducing the exponent step-wise
+            // keeps the intermediate values small.
+            let (repr, remaining) = reduce_by_small_factors(self, n);
+            if remaining == 1 {
+                return repr;
             }
-            while fixpoint < guess {
-                guess = fixpoint;
-                fixpoint = next(&guess);
+            let typed = repr.as_typed();
+            if remaining == 2 {
+                return typed.sqrt();
             }
-            guess.0
+            newton_nth_root(typed, remaining)
         }
+    }
+
+    /// Strip powers of 2, 3, 5, and 7 from `n`, applying the corresponding
+    /// root operation at each step.  Returns `(intermediate_root, remaining_n)`.
+    fn reduce_by_small_factors(num: TypedReprRef<'_>, mut n: usize) -> (Repr, usize) {
+        // Factor 2 (specialized sqrt)
+        let twos = n.trailing_zeros() as usize;
+        n >>= twos;
+        let mut repr = if twos == 0 {
+            Repr::from_ref(num)
+        } else {
+            let mut r = num.sqrt();
+            for _ in 1..twos {
+                r = r.as_typed().sqrt();
+            }
+            r
+        };
+
+        // Factor 3
+        while n % 3 == 0 {
+            repr = newton_nth_root(repr.as_typed(), 3);
+            n /= 3;
+        }
+        // Factor 5
+        while n % 5 == 0 {
+            repr = newton_nth_root(repr.as_typed(), 5);
+            n /= 5;
+        }
+        // Factor 7
+        while n % 7 == 0 {
+            repr = newton_nth_root(repr.as_typed(), 7);
+            n /= 7;
+        }
+
+        (repr, n)
+    }
+
+    /// Newton's method for the integer nth root of a non-composite n.
+    fn newton_nth_root(num: TypedReprRef<'_>, n: usize) -> Repr {
+        debug_assert!(n > 2);
+        let nm1 = n - 1;
+        let mut guess = UBig::ONE << (num.bit_len() / n); // underestimate
+        let next = |x: &UBig| {
+            let y = UBig(num / x.pow(nm1).into_repr());
+            (y + x * nm1) / n
+        };
+
+        let mut fixpoint = next(&guess);
+        // first go up then go down, to ensure an underestimate
+        while fixpoint > guess {
+            guess = fixpoint;
+            fixpoint = next(&guess);
+        }
+        while fixpoint < guess {
+            guess = fixpoint;
+            fixpoint = next(&guess);
+        }
+        guess.0
     }
 }

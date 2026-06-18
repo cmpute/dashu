@@ -85,6 +85,11 @@ required-features = ["rand"]
 harness = false
 
 [[bench]]
+name = "exp"
+required-features = ["rand"]
+harness = false
+
+[[bench]]
 name = "io"
 required-features = ["rand"]
 harness = false
