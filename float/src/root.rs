@@ -28,6 +28,12 @@ impl<R: Round, const B: Word> CubicRoot for FBig<R, B> {
 impl<R: Round, const B: Word> FBig<R, B> {
     /// Calculate the nth root of the floating point number.
     ///
+    /// When `n` is large the computation can be expensive — the significand is
+    /// padded to `n · precision` digits before the integer root is taken, and
+    /// the integer Newton iteration works with numbers of that size. For large
+    /// `n` consider [`powf`][`FBig::powf`] with a rational exponent `1 / n`
+    /// as a faster approximate alternative.
+    ///
     /// # Examples
     ///
     /// ```

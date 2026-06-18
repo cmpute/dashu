@@ -111,6 +111,27 @@ fn test_cbrt_binary() {
             panic!("the result should be exact!")
         }
     }
+
+    let inexact_cases = [
+        (fbig!(0x3), fbig!(0xbp-3)),
+        (fbig!(0x0003), fbig!(0xb89bp-15)),
+        (fbig!(0x0000000000000003), fbig!(0xb89ba24891f7b2e6p-63)),
+        (
+            fbig!(0x3).with_precision(200).value(),
+            fbig!(0xb89ba24891f7b2e6ef3f8b62b71933e050c4a6157ab766ccfap-199),
+        ),
+        (fbig!(0x300000), fbig!(0x9285ffp-16)),
+        (fbig!(0x300000000000000000000000), fbig!(0x9285ff0d8417a7cdc6a6742ep-64)),
+    ];
+    for (x, root) in &inexact_cases {
+        assert_eq!(x.cbrt(), *root);
+        if let Inexact(v, e) = x.context().cbrt(x.repr()) {
+            assert_eq!(v, *root);
+            assert_eq!(e, NoOp);
+        } else {
+            panic!("the result should be inexact!")
+        }
+    }
 }
 
 #[test]
@@ -131,10 +152,34 @@ fn test_cbrt_decimal() {
             panic!("the result should be exact!")
         }
     }
+
+    let inexact_cases = [
+        (dbig!(3), dbig!(1), NoOp),
+        (dbig!(0003), dbig!(1442e-3), NoOp),
+        (dbig!(0000000000000003), dbig!(1442249570307408e-15), NoOp),
+        (
+            dbig!(3).with_precision(60).value(),
+            dbig!(144224957030740838232163831078010958839186925349935057754642e-59),
+            AddOne,
+        ),
+        (dbig!(300000), dbig!(669433e-4), AddOne),
+        (dbig!(300000000000000000000000), dbig!(669432950082169521882659e-16), NoOp),
+        (dbig!(999999), dbig!(100), AddOne),
+        (dbig!(999999e-6), dbig!(1.00000), AddOne),
+    ];
+    for (x, cbrt, rnd) in &inexact_cases {
+        assert_eq!(x.cbrt(), *cbrt);
+        if let Inexact(v, e) = x.context().cbrt(x.repr()) {
+            assert_eq!(v, *cbrt);
+            assert_eq!(e, *rnd);
+        } else {
+            panic!("the result should be inexact!")
+        }
+    }
 }
 
 #[test]
-fn test_nth_root_exact() {
+fn test_nth_root_exact_decimal() {
     // (input, n, expected)
     let cases: &[(DBig, usize, DBig)] = &[
         (dbig!(1), 7, dbig!(1)),
@@ -153,6 +198,28 @@ fn test_nth_root_exact() {
         }
         // the identity case returns the value unchanged
         assert_eq!(x.nth_root(1), *x);
+    }
+
+    let inexact_cases = [
+        // 20 digits
+        (dbig!(00000000000000000003), 4, dbig!(1.3160740129524924608), NoOp),
+        (dbig!(00000000000000000003), 5, dbig!(1.2457309396155173260), AddOne),
+        (dbig!(00000000000000000003), 6, dbig!(1.2009369551760027267), AddOne),
+        (dbig!(00000000000000000003), 7, dbig!(1.1699308127586868865), AddOne),
+        (dbig!(00000000000000000003), 8, dbig!(1.1472026904398770895), AddOne),
+        (dbig!(00000000000000000003), 9, dbig!(1.1298309639097530326), NoOp),
+        (dbig!(00000000000000000003), 10, dbig!(1.1161231740339044344), NoOp),
+        (dbig!(00000000000000000003), 11, dbig!(1.1050315033964666965), NoOp),
+        (dbig!(00000000000000000003), 10000, dbig!(1.0001098672638326159), NoOp),
+    ];
+    for (x, n, root, rnd) in &inexact_cases {
+        assert_eq!(x.nth_root(*n), *root);
+        if let Inexact(v, e) = x.context().nth_root(*n, x.repr()) {
+            assert_eq!(v, *root);
+            assert_eq!(e, *rnd);
+        } else {
+            panic!("the result should be inexact!")
+        }
     }
 }
 
