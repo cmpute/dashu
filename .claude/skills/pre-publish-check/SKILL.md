@@ -1,6 +1,6 @@
 ---
 name: pre-publish-check
-description: This skill should be used when the user asks to "publish dashu", "publish a sub-crate", "do pre-publish checks", "prepare a release", "cut a release", "bump the version", "check before publishing", or mentions publishing/releasing a new version of `dashu` or any sub-crate (`dashu-base`, `dashu-int`, `dashu-float`, `dashu-ratio`, `dashu-macros`). Runs formatting/lint/test checks, verifies the changelog is updated, validates backward-compatibility against the published version using SemVer rules, and confirms the MSRV is unchanged unless the changelog explicitly states otherwise.
+description: Runs formatting/lint/test/semver checks before publishing. This skill should be used when the user asks to "publish dashu", "publish a sub-crate", "do pre-publish checks", "prepare a release", "cut a release", "bump the version", "check before publishing", or mentions publishing/releasing a new version of `dashu` or any sub-crate (`dashu-base`, `dashu-int`, `dashu-float`, `dashu-ratio`, `dashu-macros`).
 ---
 
 # Pre-Publish Check for dashu
