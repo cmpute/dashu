@@ -436,7 +436,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
             .and_then(|v| v.into_f32_internal())
     }
 
-    /// Convert the float number to [f64] with [HalfEven] rounding mode regardless of the mode associated with this number.
+    /// Convert the float number to [f64] with the rounding mode associated with the type.
     ///
     /// Note that the conversion is inexact even if the number is infinite.
     ///
