@@ -12,6 +12,7 @@
 - Fix rounding issues in `to_32()` and `to_f64()` (fixes [#53](https://github.com/cmpute/dashu/issues/53) and [#56](https://github.com/cmpute/dashu/issues/56)).
 - Fix `FBig::fract()` inflating context precision for values smaller than one.
 - Fix `split_at_point_internal` using incorrect fractional scale for numbers smaller than one, causing incorrect rounding results.
+- Fix severe-cancellation errors in `FBig`/`Context` subtraction (and effective subtraction via addition): when the smaller operand reached into the larger operand's significant digits, the limited-precision alignment path could collapse a genuinely small difference to the wrong value (e.g. `1.00 - 0.99999999` at precision 3 returned `0` instead of `1e-8`). Such cases now form the exact difference at full operand width and round once.
 
 ## 0.4.4
 
