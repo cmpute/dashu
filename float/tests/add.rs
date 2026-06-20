@@ -134,6 +134,12 @@ fn test_add_decimal() {
         (dbig!(00001e2), dbig!(00001e-2), dbig!(10001e-2)),
         (dbig!(123e2), dbig!(-123e2), dbig!(0)),
         (dbig!(995), dbig!(005), dbig!(100e1)),
+        // effective subtractions whose smaller operand reaches the precision
+        // window edge: formed exactly at full width, the result carries one guard
+        // digit (precision+1) and is exact — see AGENTS.md on the guard digit.
+        (dbig!(100), dbig!(-12e-2), dbig!(9988e-2)),
+        (dbig!(100), dbig!(-15e-2), dbig!(9985e-2)),
+        (dbig!(100), dbig!(-18e-2), dbig!(9982e-2)),
     ];
 
     for (a, b, c) in &exact_cases {
@@ -170,9 +176,6 @@ fn test_add_decimal() {
         (dbig!(100), dbig!(-2e-2), dbig!(100), NoOp),
         (dbig!(100), dbig!(-5e-2), dbig!(100), NoOp),
         (dbig!(100), dbig!(-8e-2), dbig!(999e-1), SubOne),
-        (dbig!(100), dbig!(-12e-2), dbig!(999e-1), NoOp),
-        (dbig!(100), dbig!(-15e-2), dbig!(999e-1), NoOp),
-        (dbig!(100), dbig!(-18e-2), dbig!(998e-1), SubOne),
         (dbig!(100), dbig!(-1e-10), dbig!(100), NoOp),
         (dbig!(100), dbig!(-1e-100), dbig!(100), NoOp),
         (dbig!(995), dbig!(8), dbig!(100e1), NoOp),

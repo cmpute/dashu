@@ -13,6 +13,8 @@
 - Fix `FBig::fract()` inflating context precision for values smaller than one.
 - Fix `split_at_point_internal` using incorrect fractional scale for numbers smaller than one, causing incorrect rounding results.
 - Fix severe-cancellation errors in `FBig`/`Context` subtraction (and effective subtraction via addition): when the smaller operand reached into the larger operand's significant digits, the limited-precision alignment path could collapse a genuinely small difference to the wrong value (e.g. `1.00 - 0.99999999` at precision 3 returned `0` instead of `1e-8`). Such cases now form the exact difference at full operand width and round once.
+- Fix a spurious-ULP rounding error in `FBig`/`Context` addition and subtraction when the larger operand had fewer digits than the context precision and the smaller operand was negligible (e.g. `1 + 2^-100` at precision 10 returned `513·2^-9` instead of `1` under base-2 round-to-nearest). The negligible-operand sticky is now positioned at the operand's real magnitude instead of at `precision - digits`, so it can no longer land on a rounding tie.
+- Fix severe-cancellation errors at the window-edge boundary in `FBig`/`Context` subtraction: the guard fired only on strict overlap, missing the exact-edge case where the smaller operand's top digit lands on the precision-window edge, so a subtraction could still collapse (e.g. `0.5 - 0.4375 = 0.0625` at precision 1 returned `0`). The guard now fires on `>=`, i.e. whenever the smaller operand reaches the window; mild borrows there now return the exact `precision+1`-digit value (the guard digit), consistent with the documented add/sub precision behavior.
 
 ## 0.4.4
 

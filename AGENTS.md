@@ -77,7 +77,7 @@ Keep the `## Unreleased` section updated as you go.
 ## dashu-float internals
 
 - Estimating the number of digits can be costly — prefer using `log2_bounds` and `repr.digits_ub`/`digits_lb` instead of computing exact digit counts.
-- The number of digits in an `FBig` floating point number must always be less than or equal to the context precision. This invariant can be temporarily violated during internal calculations, where functions on the `Context` type should be used instead of the public API.
+- The number of digits in an `FBig` significand is at most the context precision, with one intentional exception: the result of an inexact addition or subtraction may carry a single **guard digit** (up to `precision + 1` digits). During internal calculations the bound can be violated more freely; use the methods on `Context` instead of the public API in that case.
 
 ## dashu-int internals
 
