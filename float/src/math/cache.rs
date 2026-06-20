@@ -106,7 +106,7 @@ fn bits_for_precision<const B: Word>(precision: usize) -> usize {
     } else {
         // ub ≥ log2(B) with error ≤ 2/256.  Multiply in f64 so the product
         // is exact for precision up to 2^53.  +1 guards float rounding.
-        let (_lb, ub) = B.log2_bounds();
+        let ub = B.log2_bounds().1;
         (precision as f64 * ub as f64).ceil() as usize + 1
     }
 }
@@ -117,14 +117,12 @@ fn bits_for_precision<const B: Word>(precision: usize) -> usize {
 /// division; for arbitrary bases it inverts the lower bound from
 /// [`EstimatedLog2`] to get a tight ceiling.
 fn precision_for_bits<const B: Word>(bits: usize) -> usize {
-    if B == 2 {
-        bits
-    } else if B.is_power_of_two() {
+    if B.is_power_of_two() {
         let log2 = B.ilog2() as usize;
         (bits + log2 - 1) / log2
     } else {
         // lb ≤ log2(B), so 1/lb ≥ 1/log2(B).  +1 guards float rounding.
-        let (lb, _ub) = B.log2_bounds();
+        let lb = B.log2_bounds().0;
         (bits as f64 / lb as f64).ceil() as usize + 1
     }
 }
@@ -361,6 +359,7 @@ impl MathCache {
     }
 }
 
+// TODO(claude): use the debug format for ubig
 impl fmt::Debug for MathCache {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Avoid dumping MB-sized big-integers: report term counts and bit lengths only.
