@@ -12,6 +12,7 @@ use crate::{
     math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
+    utils::ceil_usize,
 };
 
 impl<const B: Word> EstimatedLog2 for Repr<B> {
@@ -162,7 +163,7 @@ impl<R: Round> Context<R> {
 
         // L(n) = (Q + T) / (n·Q). Extra guard digits absorb the division's rounding
         // (the binary-splitting state is exact, so only this single round loses anything).
-        let guard_digits = (self.precision.log2_est() / B.log2_est()) as usize;
+        let guard_digits = ceil_usize(self.precision.log2_est() / B.log2_est());
         let work_context = Self::new(self.precision + guard_digits + 2);
 
         let num = work_context.convert_int::<B>(q.as_ibig() + &t).value();
@@ -236,7 +237,7 @@ impl<R: Round> Context<R> {
         // A simple algorithm:
         // - let log(x) = log(x/2^s) + slog2 where s = floor(log2(x))
         // - such that x*2^s is close to but larger than 1 (and x*2^s < 2)
-        let guard_digits = (self.precision.log2_est() / B.log2_est()) as usize + 2;
+        let guard_digits = ceil_usize(self.precision.log2_est() / B.log2_est()) + 2;
         let mut work_precision = self.precision + guard_digits + one_plus as usize;
         let context = Context::<R>::new(work_precision);
         let x = FBig::new(context.repr_round_ref(x).value(), context);

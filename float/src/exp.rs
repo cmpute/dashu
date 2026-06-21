@@ -6,6 +6,7 @@ use crate::{
     math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
+    utils::ceil_usize,
 };
 use dashu_base::{AbsOrd, Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign};
 use dashu_int::IBig;
@@ -195,7 +196,7 @@ impl<R: Round> Context<R> {
         }
 
         // x^y = exp(y*ln(x)), use a simple rule for guard bits
-        let guard_digits = 10 + self.precision.log2_est() as usize;
+        let guard_digits = 10 + ceil_usize(self.precision.log2_est());
         let work_context = Context::<R>::new(self.precision + guard_digits);
 
         // ln and exp each consult/extend the shared cache; reborrows are sequential.
@@ -283,7 +284,7 @@ impl<R: Round> Context<R> {
         // Maclaurin series: exp(r) = 1 + Σ(rⁱ/i!)
         // There will be about p/log_B(r) summations when calculating the series, to prevent
         // loss of significant, we needs about log_B(p) guard digits.
-        let series_guard_digits = (self.precision.log2_est() / B.log2_est()) as usize + 2;
+        let series_guard_digits = ceil_usize(self.precision.log2_est() / B.log2_est()) + 2;
         let pow_guard_digits = (self.precision.bit_len() as f32 * B.log2_est() * 2.) as usize; // heuristic
         let work_precision;
 

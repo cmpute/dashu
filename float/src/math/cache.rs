@@ -9,6 +9,7 @@ use crate::fbig::FBig;
 use crate::math::consts::{chudnovsky_bs, merge};
 use crate::repr::{Context, Repr, Word};
 use crate::round::{Round, Rounded};
+use crate::utils::ceil_usize;
 use crate::{error::assert_limited_precision, math::consts::iacoth_bs};
 
 /// Binary-splitting tree state — exact integers, losslessly extensible.
@@ -107,26 +108,29 @@ impl ConstCache {
 
     /// `L(n) = acoth(n)` at `precision` base-`B` digits, extending its cached
     /// series state. Only `n ∈ {6, 9, 99}` are cached (the sub-series of ln2 / ln10).
-    fn iacoth<const B: Word, R: Round>(&mut self, n: u32, precision: usize) -> FBig<R, B> {
+    fn iacoth<const N: u32, const B: Word, R: Round>(
+        &mut self,
+        precision: usize,
+    ) -> FBig<R, B> {
         // terms until r_k < B^{-p}: (2k+1)·log_B(n) > p. The count is generously
         // over-provisioned (extra terms only add precision), so a plain (truncating)
         // cast suffices in place of a ceiling.
-        let log_b_n = n.log2_est() / B.log2_est();
+        let log_b_n = N.log2_est() / B.log2_est();
         let required_terms = (precision as f32 / (2.0 * log_b_n)) as usize + 10;
 
-        let slot = match n {
+        let slot = match N {
             6 => &mut self.iacoth_6,
             9 => &mut self.iacoth_9,
             99 => &mut self.iacoth_99,
             _ => unreachable!("iacoth only caches n ∈ {{6, 9, 99}}"),
         };
-        let (_p, q, t) = extend_or_compute(slot, 1, required_terms, |a, b| iacoth_bs(n, a, b));
+        let (_p, q, t) = extend_or_compute(slot, 1, required_terms, |a, b| iacoth_bs(N, a, b));
 
         // L(n) = (Q + T) / (n·Q)
-        let guard = (precision.log2_est() / B.log2_est()) as usize + 2;
+        let guard = ceil_usize(precision.log2_est() / B.log2_est()) + 2;
         let work = Context::<R>::new(precision + guard);
         let num = work.convert_int::<B>(q.as_ibig() + &t).value();
-        let denom = work.convert_int::<B>(IBig::from(n) * &q).value();
+        let denom = work.convert_int::<B>(IBig::from(N) * &q).value();
         num / denom
     }
 
@@ -139,27 +143,26 @@ impl ConstCache {
     pub fn ln2<const B: Word, R: Round>(&mut self, precision: usize) -> FBig<R, B> {
         // log(2) = 4·L(6) + 2·L(99)  (Gourdon & Sebah, "Log 2")
         let work = precision + combine_guard::<B>(precision);
-        let l6 = self.iacoth::<B, R>(6, work);
-        let l99 = self.iacoth::<B, R>(99, work);
-        (4u8 * l6 + 2u8 * l99)
-            .with_precision(precision)
-            .value()
+        let l6 = self.iacoth::<6, B, R>(work);
+        let l99 = self.iacoth::<99, B, R>(work);
+        (4u8 * l6 + 2u8 * l99).with_precision(precision).value()
     }
 
-    /// ln(10) at `precision` base-`B` digits, reusing the cached ln2 and `L(9)`
-    /// sub-series.
+    /// ln(10) at `precision` base-`B` digits, reusing the cached `L(6)`, `L(99)`,
+    /// and `L(9)` sub-series.
     ///
     /// # Panics
     ///
     /// Panics if `precision` is 0.
     pub fn ln10<const B: Word, R: Round>(&mut self, precision: usize) -> FBig<R, B> {
-        // log(10) = log(2) + log(5) = 3·log(2) + 2·L(9).
-        // ln2 is requested at the elevated work precision so that the 3·ln2 term
-        // keeps enough guard digits through the final round.
+        // log(10) = 3·log(2) + 2·L(9) = 3·(4·L(6) + 2·L(99)) + 2·L(9)
+        //          = 12·L(6) + 6·L(99) + 2·L(9)
+        // Flattening avoids the intermediate rounding of ln2 inside the product.
         let work = precision + combine_guard::<B>(precision);
-        let l2 = self.ln2::<B, R>(work);
-        let l9 = self.iacoth::<B, R>(9, work);
-        (3u8 * l2 + 2u8 * l9)
+        let l6 = self.iacoth::<6, B, R>(work);
+        let l99 = self.iacoth::<99, B, R>(work);
+        let l9 = self.iacoth::<9, B, R>(work);
+        (12u8 * l6 + 6u8 * l99 + 2u8 * l9)
             .with_precision(precision)
             .value()
     }
@@ -261,19 +264,6 @@ pub(crate) fn reborrow_cache<'a>(
     cache.as_deref_mut()
 }
 
-/// `ceil(x) as usize` without `f64::ceil`, which is `std`-only on this crate's
-/// MSRV (the `f64` inherent methods only landed in `core` in Rust 1.85). Valid for
-/// non-negative `x` within `usize` range, which always holds for the precision/bit
-/// estimates computed here.
-fn ceil_usize(x: f64) -> usize {
-    let i = x as usize;
-    if x > i as f64 {
-        i + 1
-    } else {
-        i
-    }
-}
-
 /// Number of bits needed to represent `precision` base-`B` digits exactly.
 ///
 /// For power-of-two bases this is exact; for arbitrary bases it uses the upper
@@ -285,7 +275,7 @@ fn bits_for_precision<const B: Word>(precision: usize) -> usize {
         // ub ≥ log2(B) with error ≤ 2/256.  Multiply in f64 so the product
         // is exact for precision up to 2^53.  +1 guards float rounding.
         let ub = B.log2_bounds().1;
-        ceil_usize(precision as f64 * ub as f64) + 1
+        ceil_usize(precision as f32 * ub) + 1
     }
 }
 
@@ -301,7 +291,7 @@ fn precision_for_bits<const B: Word>(bits: usize) -> usize {
     } else {
         // lb ≤ log2(B), so 1/lb ≥ 1/log2(B).  +1 guards float rounding.
         let lb = B.log2_bounds().0;
-        ceil_usize(bits as f64 / lb as f64) + 1
+        ceil_usize(bits as f32 / lb) + 1
     }
 }
 
@@ -309,37 +299,36 @@ fn precision_for_bits<const B: Word>(bits: usize) -> usize {
 /// combination and its final round to `precision` are unaffected by summation
 /// rounding (a few digits cover the constant multipliers and term count).
 fn combine_guard<const B: Word>(precision: usize) -> usize {
-    (precision.log2_est() / B.log2_est()) as usize + 4
+    ceil_usize(precision.log2_est() / B.log2_est()) + 4
 }
 
 impl fmt::Debug for ConstCache {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Avoid dumping MB-sized big-integers: report term counts and bit lengths only.
-        f.debug_struct("ConstCache").finish()?;
-        f.write_str(" {\n")?;
-        fmt_slot(f, "pi", &self.pi)?;
-        fmt_slot(f, "iacoth_6", &self.iacoth_6)?;
-        fmt_slot(f, "iacoth_9", &self.iacoth_9)?;
-        fmt_slot(f, "iacoth_99", &self.iacoth_99)?;
-        f.write_str("}")
+        f.debug_struct("ConstCache")
+            .field("pi", &DebugSlot(&self.pi))
+            .field("iacoth_6", &DebugSlot(&self.iacoth_6))
+            .field("iacoth_9", &DebugSlot(&self.iacoth_9))
+            .field("iacoth_99", &DebugSlot(&self.iacoth_99))
+            .finish()
     }
 }
 
-fn fmt_slot(f: &mut fmt::Formatter<'_>, name: &str, slot: &Option<CachedState>) -> fmt::Result {
-    match slot {
-        Some(s) => f
-            .debug_struct(name)
-            .field("num_terms", &s.num_terms)
-            .field("p_bits", &s.p.bit_len())
-            .field("q_bits", &s.q.bit_len())
-            .field("t_bits", &s.t.bit_len())
-            .finish()
-            .and(f.write_str("\n")),
-        None => f
-            .debug_struct(name)
-            .field("num_terms", &0usize)
-            .finish()
-            .and(f.write_str("\n")),
+/// Newtype so we can implement `Debug` for `&Option<CachedState>` via the
+/// big-integer `Debug` formatters.
+struct DebugSlot<'a>(&'a Option<CachedState>);
+
+impl fmt::Debug for DebugSlot<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            Some(s) => f
+                .debug_struct("CachedState")
+                .field("num_terms", &s.num_terms)
+                .field("p", &s.p)
+                .field("q", &s.q)
+                .field("t", &s.t)
+                .finish(),
+            None => f.write_str("None"),
+        }
     }
 }
 
@@ -347,6 +336,7 @@ fn fmt_slot(f: &mut fmt::Formatter<'_>, name: &str, slot: &Option<CachedState>) 
 mod tests {
     use super::*;
     use crate::round::mode;
+    use alloc::format;
 
     #[test]
     fn test_pi_matches_context() {
@@ -437,13 +427,14 @@ mod tests {
     }
 
     #[test]
-    fn test_debug_does_not_dump_bigints() {
+    fn test_debug_shows_bigint_head_tail() {
         let mut cache = ConstCache::new();
         let _ = cache.pi::<10, mode::HalfAway>(100);
         let s = format!("{:?}", cache);
         assert!(s.contains("pi"));
         assert!(s.contains("num_terms"));
-        // a 100-digit cached π has large integers; the Debug output should stay small
+        // UBig/IBig Debug prints head..tail, so the output stays compact
+        assert!(s.contains(".."), "Debug output should use head..tail truncation");
         assert!(s.len() < 512);
     }
 }

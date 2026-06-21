@@ -10,8 +10,8 @@ dashu is a library set of arbitrary precision numbers implemented in pure Rust, 
 |---|---|---|
 | `dashu-base` | `base/` | Common trait definitions and utilities |
 | `dashu-int` | `integer/` | Arbitrary precision integers (`UBig`, `IBig`) |
-| `dashu-float` | `float/` | Arbitrary precision floats (`FBig`) |
-| `dashu-ratio` | `rational/` | Arbitrary precision rationals (`RBig`) |
+| `dashu-float` | `float/` | Arbitrary precision floats (`FBig`, `DBig`, `CachedFBig`) |
+| `dashu-ratio` | `rational/` | Arbitrary precision rationals (`RBig`, `Relaxed`) |
 | `dashu-macros` | `macros/` | Procedural macros for literal big numbers |
 | `dashu-python` | `python/` | PyO3 Python bindings (not in default members) |
 | *(benchmark)* | `benchmark/` | Profiling scratchpad, not a comprehensive benchmark suite |
@@ -46,6 +46,7 @@ Note: always `--exclude dashu-python` when running workspace-wide commands, sinc
 - Third-party trait implementations go in a `third_party/` module per crate, feature-gated
 - When borrowing an algorithm idea from GMP (or any other library), do **not** reference its function names in our docstrings or comments. Describe the algorithm in our own terms and use our own function names (e.g. write `add_mul_dword_same_len_in_place`, never `addmul_2` / `mpn_addmul_2`). External function names must not appear anywhere in the repo.
 - Tests for a specific algorithm/kernel belong in the same source file as the implementation, as a `#[cfg(test)] mod tests` block at the bottom — not in a separate integration test file under `tests/`. Reserve `tests/` for cross-cutting or public-API tests.
+- When debugging or writing test assertions, use `{:?}` (or `{:#?}` for the verbose form with digit/bit counts) to inspect arbitrary precision values. The [`Debug`] format prints a compact head‥tail representation (most significant digits `..` least significant digits) instead of dumping the entire number, making it readable even for thousand-digit integers.
 
 ## Feature flags
 

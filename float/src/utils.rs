@@ -169,6 +169,19 @@ pub const fn ilog_exact(n: Word, base: Word) -> u32 {
     }
 }
 
+/// `ceil(x) as usize` without `f64::ceil`, which is `std`-only on this crate's
+/// MSRV (the `f64` inherent methods only landed in `core` in Rust 1.85). Valid for
+/// non-negative `x` within `usize` range.
+#[inline]
+pub(crate) fn ceil_usize(x: f32) -> usize {
+    let i = x as usize;
+    if x > i as f32 {
+        i + 1
+    } else {
+        i
+    }
+}
+
 /// Factor `b` as `newb^a * r`, returning `(a, r)` where `gcd(r, newb) = 1`.
 /// Returns `(0, b)` if `newb` does not divide `b`.
 pub const fn factor_base(b: Word, newb: Word) -> (usize, Word) {
