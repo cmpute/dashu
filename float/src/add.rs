@@ -14,6 +14,16 @@ use core::{
 use dashu_base::Sign::{self, *};
 use dashu_int::{IBig, UBig};
 
+/// Build a `Repr` from a cancellation result, producing `-0` (instead of `+0`) when the
+/// significand is zero and the rounding mode is roundTowardNegative (IEEE 754 §6.3).
+fn cancel_zero<R: Round, const B: Word>(sig: IBig, exp: isize) -> Repr<B> {
+    if sig.is_zero() && R::IS_ROUND_TOWARD_NEGATIVE {
+        Repr::neg_zero()
+    } else {
+        Repr::new(sig, exp)
+    }
+}
+
 impl<R: Round, const B: Word> Add for FBig<R, B> {
     type Output = Self;
 
@@ -224,9 +234,20 @@ impl<R: Round> Context<R> {
         mut low: (IBig, usize),
         is_sub: bool,
     ) -> Rounded<Repr<B>> {
+        // A zero produced by exact cancellation is -0 only under roundTowardNegative (Down),
+        // +0 otherwise (IEEE 754 §6.3).
+        let neg_cancel = is_sub && R::IS_ROUND_TOWARD_NEGATIVE;
+        let make_repr = |sig: IBig, exp: isize| -> Repr<B> {
+            if sig.is_zero() && neg_cancel {
+                Repr::neg_zero()
+            } else {
+                Repr::new(sig, exp)
+            }
+        };
+
         if !self.is_limited() {
             // short cut for unlimited precision
-            return Rounded::Exact(Repr::new(significand, exponent));
+            return Rounded::Exact(make_repr(significand, exponent));
         }
 
         // use one extra digit to prevent cancellation in rounding
@@ -278,12 +299,12 @@ impl<R: Round> Context<R> {
 
         // perform rounding
         if low.0.is_zero() {
-            Rounded::Exact(Repr::new(significand, exponent))
+            Rounded::Exact(make_repr(significand, exponent))
         } else {
             // By now significand should have at least full precision. After adjustment, the digits length
             // could be one more than the precision. We don't shrink the extra digit.
             let adjust = R::round_fract::<B>(&significand, low.0, low.1);
-            Rounded::Inexact(Repr::new(significand + adjust, exponent), adjust)
+            Rounded::Inexact(make_repr(significand + adjust, exponent), adjust)
         }
     }
 
@@ -498,7 +519,8 @@ impl<R: Round> Context<R> {
         } else {
             match lhs.exponent.cmp(&rhs.exponent) {
                 Ordering::Equal => {
-                    self.repr_round(Repr::new(&lhs.significand + &rhs.significand, lhs.exponent))
+                    let sig = &lhs.significand + &rhs.significand;
+                    self.repr_round(cancel_zero::<R, B>(sig, lhs.exponent))
                 }
                 Ordering::Greater => self.repr_add_large_small(lhs.clone(), rhs, Positive),
                 Ordering::Less => self.repr_add_small_large(lhs.clone(), rhs, Positive),
@@ -541,7 +563,8 @@ impl<R: Round> Context<R> {
         } else {
             match lhs.exponent.cmp(&rhs.exponent) {
                 Ordering::Equal => {
-                    self.repr_round(Repr::new(&lhs.significand - &rhs.significand, lhs.exponent))
+                    let sig = &lhs.significand - &rhs.significand;
+                    self.repr_round(cancel_zero::<R, B>(sig, lhs.exponent))
                 }
                 Ordering::Greater => self.repr_add_large_small(lhs.clone(), rhs, Negative),
                 Ordering::Less => self.repr_add_small_large(lhs.clone(), rhs, Negative),

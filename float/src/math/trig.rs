@@ -21,6 +21,21 @@ enum Quadrant {
     Fourth,
 }
 
+/// Build a `Normal` result equal to `±0`, preserving the sign of `x` (used by `sin`/`tan`/`sin_cos`
+/// at zero input, where `sin(-0) = -0` and `tan(-0) = -0`).
+fn signed_zero_normal<R: Round, const B: Word>(ctx: &Context<R>, x: &Repr<B>) -> FpResult<B> {
+    let zero = if x.is_neg_zero() {
+        Repr::neg_zero()
+    } else {
+        Repr::zero()
+    };
+    FpResult::Normal(
+        FBig::<R, B>::new(zero, *ctx)
+            .with_precision(ctx.precision)
+            .map(|v| v.repr),
+    )
+}
+
 impl<R: Round> Context<R> {
     /// Calculate the internal work context for trigonometric functions based on input magnitude.
     ///
@@ -89,9 +104,9 @@ impl<R: Round> Context<R> {
         }
         assert_limited_precision(self.precision);
 
-        if x.is_zero() {
-            let res = FBig::<R, B>::ZERO.with_precision(self.precision);
-            return FpResult::Normal(res.map(|v| v.repr));
+        if x.significand.is_zero() {
+            // sin(±0) = ±0
+            return signed_zero_normal(self, x);
         }
 
         let (work_context, r, quadrant) = self.reduce_to_quadrant(x, reborrow_cache(&mut cache));
@@ -144,7 +159,8 @@ impl<R: Round> Context<R> {
         }
         assert_limited_precision(self.precision);
 
-        if x.is_zero() {
+        if x.significand.is_zero() {
+            // cos(±0) = 1
             let res = FBig::<R, B>::ONE.with_precision(self.precision);
             return FpResult::Normal(res.map(|v| v.repr));
         }
@@ -201,10 +217,14 @@ impl<R: Round> Context<R> {
         }
         assert_limited_precision(self.precision);
 
-        if x.is_zero() {
-            let s = FBig::<R, B>::ZERO.with_precision(self.precision);
-            let c = FBig::<R, B>::ONE.with_precision(self.precision);
-            return (FpResult::Normal(s.map(|v| v.repr)), FpResult::Normal(c.map(|v| v.repr)));
+        if x.significand.is_zero() {
+            // sin(±0) = ±0, cos(±0) = 1
+            let s = signed_zero_normal(self, x);
+            let c = {
+                let res = FBig::<R, B>::ONE.with_precision(self.precision);
+                FpResult::Normal(res.map(|v| v.repr))
+            };
+            return (s, c);
         }
 
         let (work_context, r, quadrant) = self.reduce_to_quadrant(x, reborrow_cache(&mut cache));
@@ -278,9 +298,9 @@ impl<R: Round> Context<R> {
         }
         assert_limited_precision(self.precision);
 
-        if x.is_zero() {
-            let res = FBig::<R, B>::ZERO.with_precision(self.precision);
-            return FpResult::Normal(res.map(|v| v.repr));
+        if x.significand.is_zero() {
+            // tan(±0) = ±0 / atan(±0) = ±0
+            return signed_zero_normal(self, x);
         }
 
         let (work_context, r, quadrant) = self.reduce_to_quadrant(x, reborrow_cache(&mut cache));
@@ -407,9 +427,9 @@ impl<R: Round> Context<R> {
 
         assert_limited_precision(self.precision);
 
-        if x.is_zero() {
-            let res = FBig::<R, B>::ZERO.with_precision(self.precision);
-            return FpResult::Normal(res.map(|v| v.repr));
+        if x.significand.is_zero() {
+            // tan(±0) = ±0 / atan(±0) = ±0
+            return signed_zero_normal(self, x);
         }
 
         let guard_digits = 50;

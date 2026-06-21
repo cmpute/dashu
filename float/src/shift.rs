@@ -6,7 +6,7 @@ impl<R: Round, const B: Word> Shl<isize> for FBig<R, B> {
     #[inline]
     fn shl(mut self, rhs: isize) -> Self::Output {
         assert_finite(&self.repr);
-        if !self.repr.is_zero() {
+        if !self.repr.significand.is_zero() {
             self.repr.exponent += rhs;
         }
         self
@@ -17,7 +17,7 @@ impl<R: Round, const B: Word> ShlAssign<isize> for FBig<R, B> {
     #[inline]
     fn shl_assign(&mut self, rhs: isize) {
         assert_finite(&self.repr);
-        if !self.repr.is_zero() {
+        if !self.repr.significand.is_zero() {
             self.repr.exponent += rhs;
         }
     }
@@ -28,7 +28,7 @@ impl<R: Round, const B: Word> Shr<isize> for FBig<R, B> {
     #[inline]
     fn shr(mut self, rhs: isize) -> Self::Output {
         assert_finite(&self.repr);
-        if !self.repr.is_zero() {
+        if !self.repr.significand.is_zero() {
             self.repr.exponent -= rhs;
         }
         self
@@ -39,7 +39,7 @@ impl<R: Round, const B: Word> ShrAssign<isize> for FBig<R, B> {
     #[inline]
     fn shr_assign(&mut self, rhs: isize) {
         assert_finite(&self.repr);
-        if !self.repr.is_zero() {
+        if !self.repr.significand.is_zero() {
             self.repr.exponent -= rhs;
         }
         self.repr.exponent -= rhs;

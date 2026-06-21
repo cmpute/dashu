@@ -173,7 +173,7 @@ impl<R: Round, const B: Word> num_traits::Signed for FBig<R, B> {
 
     #[inline]
     fn is_positive(&self) -> bool {
-        !self.repr.is_zero() && self.repr.sign() == Sign::Positive
+        self.repr.sign() == Sign::Positive
     }
 
     #[inline]

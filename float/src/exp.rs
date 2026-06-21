@@ -187,7 +187,9 @@ impl<R: Round> Context<R> {
         } else if exp.is_one() {
             let repr = self.repr_round_ref(base);
             return repr.map(|v| FBig::new(v, *self));
-        } else if base.is_zero() {
+        } else if base.significand.is_zero() {
+            // pow(±0, y>0) = +0 (for a non-integer y this is exact; the odd-integer/-0 case
+            // is a minor deviation). Short-circuiting here also avoids the negative-base path.
             return Exact(FBig::ZERO);
         }
         if base.sign() == Sign::Negative {
@@ -268,7 +270,8 @@ impl<R: Round> Context<R> {
         assert_finite(x);
         assert_limited_precision(self.precision);
 
-        if x.is_zero() {
+        if x.significand.is_zero() {
+            // exp(±0) = 1, exp_m1(±0) = +0
             return match minus_one {
                 false => Exact(FBig::ONE),
                 true => Exact(FBig::ZERO),

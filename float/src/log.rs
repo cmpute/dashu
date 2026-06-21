@@ -230,8 +230,17 @@ impl<R: Round> Context<R> {
         assert_finite(x);
         assert_limited_precision(self.precision);
 
-        if (one_plus && x.is_zero()) || (!one_plus && x.is_one()) {
-            return Exact(FBig::ZERO);
+        if !one_plus && x.is_one() {
+            return Exact(FBig::ZERO); // ln(1) = +0
+        }
+        if one_plus && x.significand.is_zero() {
+            // ln_1p(±0) = ±0
+            let zero = if x.is_neg_zero() {
+                FBig::new(Repr::neg_zero(), *self)
+            } else {
+                FBig::ZERO
+            };
+            return Exact(zero);
         }
 
         // A simple algorithm:

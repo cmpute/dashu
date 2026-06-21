@@ -35,7 +35,6 @@ use dashu_int::{IBig, UBig};
 /// layer). If an operation result is too large or too small, the operation will return an
 /// infinity (as a value) at the `Context` layer, or panic at the `FBig` layer.
 ///
-#[derive(PartialEq, Eq)]
 pub struct Repr<const BASE: Word> {
     /// The significand of the floating point number. If the significand is zero, then the
     /// number is a special value identified by the exponent (see the struct-level docs):
@@ -45,6 +44,26 @@ pub struct Repr<const BASE: Word> {
     /// The exponent of the floating point number.
     pub(crate) exponent: isize,
 }
+
+impl<const B: Word> PartialEq for Repr<B> {
+    /// Two representations are equal when they denote the same value. In particular `+0`
+    /// and `-0` compare equal, as do two infinities of the same sign.
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        if self.significand.is_zero() && other.significand.is_zero() {
+            let (self_inf, other_inf) = (self.is_infinite(), other.is_infinite());
+            match (self_inf, other_inf) {
+                (true, true) => self.sign() == other.sign(),
+                (false, false) => true, // both are ±0
+                _ => false,             // one is zero, the other is infinite
+            }
+        } else {
+            self.significand == other.significand && self.exponent == other.exponent
+        }
+    }
+}
+
+impl<const B: Word> Eq for Repr<B> {}
 
 /// The context containing runtime information for the floating point number and its operations.
 ///
@@ -81,6 +100,34 @@ pub struct Context<RoundingMode: Round> {
     /// If set to zero, then the precision is unlimited.
     pub(crate) precision: usize,
     _marker: PhantomData<RoundingMode>,
+}
+
+/// Flip the sign of a special-value exponent: `+0 (0) <-> -0 (-1)`, `+inf (MAX) <-> -inf (MIN)`.
+/// For any other (non-canonical) exponent the plain negation is used, which is safe because such
+/// values have magnitude strictly less than `isize::MAX`.
+#[inline]
+const fn negate_special_exponent(exp: isize) -> isize {
+    match exp {
+        0 => -1,
+        -1 => 0,
+        isize::MAX => isize::MIN,
+        isize::MIN => isize::MAX,
+        other => -other,
+    }
+}
+
+/// Build a `Repr` from a rounded significand, preserving the input sign when rounding
+/// produces zero (`significand * B^exponent` where the significand collapsed to `+0`).
+fn rounded_to_repr<const B: Word>(
+    significand: IBig,
+    exponent: isize,
+    input_negative: bool,
+) -> Repr<B> {
+    if significand.is_zero() && input_negative {
+        Repr::neg_zero()
+    } else {
+        Repr::new(significand, exponent)
+    }
 }
 
 impl<const B: Word> Repr<B> {
@@ -240,12 +287,15 @@ impl<const B: Word> Repr<B> {
 
     /// Get the sign of the number
     ///
+    /// Note that `-0` has a negative sign (so `1 / -0 = -inf`), while `+0` has a positive sign.
+    ///
     /// # Examples
     ///
     /// ```
     /// # use dashu_base::Sign;
     /// # use dashu_float::Repr;
     /// assert_eq!(Repr::<2>::zero().sign(), Sign::Positive);
+    /// assert_eq!(Repr::<2>::neg_zero().sign(), Sign::Negative);
     /// assert_eq!(Repr::<2>::neg_one().sign(), Sign::Negative);
     /// assert_eq!(Repr::<10>::neg_infinity().sign(), Sign::Negative);
     /// ```
@@ -262,15 +312,35 @@ impl<const B: Word> Repr<B> {
         }
     }
 
+    /// Negate the number, correctly toggling the sign of `±0` and `±inf` by flipping the
+    /// special-value exponent (negating the significand alone is a no-op for zero).
+    #[inline]
+    pub(crate) fn neg(self) -> Self {
+        if self.significand.is_zero() {
+            Self {
+                significand: self.significand,
+                exponent: negate_special_exponent(self.exponent),
+            }
+        } else {
+            Self {
+                significand: -self.significand,
+                exponent: self.exponent,
+            }
+        }
+    }
+
     /// Normalize the float representation so that the significand is not divisible by the base.
     ///
-    /// A zero significand with an infinity sentinel exponent (`isize::MAX`/`isize::MIN`) is
-    /// preserved; any other zero significand is normalized to `+0`. (The `-0` encoding at
-    /// exponent `-1` is introduced together with operations that produce it.)
+    /// A zero significand denotes a canonical special value (`+0`, `-0`, `+inf`, `-inf`) and is
+    /// returned unchanged; any other (non-canonical) zero significand is normalized to `+0`.
     pub(crate) fn normalize(self) -> Self {
         if self.significand.is_zero() {
-            // Preserve infinity sentinels; collapse any other zero significand to +0.
-            if self.exponent == isize::MAX || self.exponent == isize::MIN {
+            // Preserve the four canonical special-value encodings; collapse anything else to +0.
+            if self.exponent == 0
+                || self.exponent == -1
+                || self.exponent == isize::MAX
+                || self.exponent == isize::MIN
+            {
                 return self;
             }
             return Self::zero();
@@ -533,9 +603,12 @@ impl<R: Round> Context<R> {
         let digits = repr.digits();
         if digits > self.precision {
             let shift = digits - self.precision;
+            let input_neg = repr.sign() == Sign::Negative;
             let (signif_hi, signif_lo) = split_digits::<B>(repr.significand, shift);
             let adjust = R::round_fract::<B>(&signif_hi, signif_lo, shift);
-            Inexact(Repr::new(signif_hi + adjust, repr.exponent + shift as isize), adjust)
+            let sig = signif_hi + adjust;
+            let result = rounded_to_repr(sig, repr.exponent + shift as isize, input_neg);
+            Inexact(result, adjust)
         } else {
             Exact(repr)
         }
@@ -551,9 +624,12 @@ impl<R: Round> Context<R> {
         let digits = repr.digits();
         if digits > self.precision {
             let shift = digits - self.precision;
+            let input_neg = repr.sign() == Sign::Negative;
             let (signif_hi, signif_lo) = split_digits_ref::<B>(&repr.significand, shift);
             let adjust = R::round_fract::<B>(&signif_hi, signif_lo, shift);
-            Inexact(Repr::new(signif_hi + adjust, repr.exponent + shift as isize), adjust)
+            let sig = signif_hi + adjust;
+            let result = rounded_to_repr(sig, repr.exponent + shift as isize, input_neg);
+            Inexact(result, adjust)
         } else {
             Exact(repr.clone())
         }

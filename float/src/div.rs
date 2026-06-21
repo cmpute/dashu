@@ -10,6 +10,21 @@ use core::ops::{Div, DivAssign, Rem, RemAssign};
 use dashu_base::{Approximation, DivEuclid, DivRem, DivRemEuclid, Inverse, RemEuclid};
 use dashu_int::{fast_div::ConstDivisor, modular::IntoRing, IBig, UBig};
 
+/// Attach the dividend/divisor XOR sign to a zero quotient: the raw quotient significand is
+/// `+0`, so the sign of a zero result (`0/finite`, or a finite/finite that rounds to zero) is
+/// `sign(lhs) XOR sign(rhs)`.
+fn div_repr<const B: Word>(sign_negative: bool, significand: IBig, exponent: isize) -> Repr<B> {
+    if significand.is_zero() {
+        if sign_negative {
+            Repr::neg_zero()
+        } else {
+            Repr::zero()
+        }
+    } else {
+        Repr::new(significand, exponent)
+    }
+}
+
 macro_rules! impl_div_or_rem_for_fbig {
     (impl $op:ident, $method:ident, $repr_method:ident) => {
         impl<R: Round, const B: Word> $op<FBig<R, B>> for FBig<R, B> {
@@ -221,10 +236,11 @@ impl<R: Round> Context<R> {
         // this method don't deal with the case where lhs significand is too large
         debug_assert!(lhs.digits() <= self.precision + rhs.digits());
 
+        let sign_negative = lhs.sign() != rhs.sign();
         let (mut q, mut r) = lhs.significand.div_rem(&rhs.significand);
         let mut e = lhs.exponent - rhs.exponent;
         if r.is_zero() {
-            return Approximation::Exact(Repr::new(q, e));
+            return Approximation::Exact(div_repr(sign_negative, q, e));
         }
 
         let ddigits = digit_len::<B>(&rhs.significand);
@@ -253,16 +269,17 @@ impl<R: Round> Context<R> {
         }
 
         if r.is_zero() {
-            Approximation::Exact(Repr::new(q, e))
+            Approximation::Exact(div_repr(sign_negative, q, e))
         } else {
             let adjust = R::round_ratio(&q, r, &rhs.significand);
-            Approximation::Inexact(Repr::new(q + adjust, e), adjust)
+            Approximation::Inexact(div_repr(sign_negative, q + adjust, e), adjust)
         }
     }
 
     pub(crate) fn repr_rem<const B: Word>(&self, lhs: Repr<B>, rhs: Repr<B>) -> Rounded<Repr<B>> {
         assert_finite_operands(&lhs, &rhs);
 
+        let lhs_is_neg_zero = lhs.is_neg_zero();
         let (lhs_sign, lhs_signif) = lhs.significand.into_parts();
         let (_, rhs_signif) = rhs.significand.into_parts();
 
@@ -320,7 +337,12 @@ impl<R: Round> Context<R> {
 
         let exponent = lhs.exponent.min(rhs.exponent);
         if significand.is_zero() {
-            Approximation::Exact(Repr::zero())
+            // the sign of a zero remainder follows the dividend (±0)
+            Approximation::Exact(if lhs_is_neg_zero {
+                Repr::neg_zero()
+            } else {
+                Repr::zero()
+            })
         } else {
             self.repr_round(Repr::new(significand, exponent))
         }

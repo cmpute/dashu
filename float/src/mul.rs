@@ -9,6 +9,21 @@ use crate::{
 };
 use core::ops::{Mul, MulAssign};
 
+/// Raw product of two finite reprs, attaching the XOR sign of the operands to a zero product
+/// (the significand product alone is `+0`, losing the sign).
+fn mul_finite_reprs<const B: Word>(lhs: &Repr<B>, rhs: &Repr<B>) -> Repr<B> {
+    let significand = &lhs.significand * &rhs.significand;
+    if significand.is_zero() {
+        if lhs.sign() != rhs.sign() {
+            Repr::neg_zero()
+        } else {
+            Repr::zero()
+        }
+    } else {
+        Repr::new(significand, lhs.exponent + rhs.exponent)
+    }
+}
+
 impl<R: Round, const B: Word> Mul<&FBig<R, B>> for &FBig<R, B> {
     type Output = FBig<R, B>;
 
@@ -17,10 +32,7 @@ impl<R: Round, const B: Word> Mul<&FBig<R, B>> for &FBig<R, B> {
         assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
-        let repr = Repr::new(
-            &self.repr.significand * &rhs.repr.significand,
-            self.repr.exponent + rhs.repr.exponent,
-        );
+        let repr = mul_finite_reprs(&self.repr, &rhs.repr);
         FBig::new(context.repr_round(repr).value(), context)
     }
 }
@@ -33,10 +45,7 @@ impl<R: Round, const B: Word> Mul<&FBig<R, B>> for FBig<R, B> {
         assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
-        let repr = Repr::new(
-            self.repr.significand * &rhs.repr.significand,
-            self.repr.exponent + rhs.repr.exponent,
-        );
+        let repr = mul_finite_reprs(&self.repr, &rhs.repr);
         FBig::new(context.repr_round(repr).value(), context)
     }
 }
@@ -49,10 +58,7 @@ impl<R: Round, const B: Word> Mul<FBig<R, B>> for &FBig<R, B> {
         assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
-        let repr = Repr::new(
-            &self.repr.significand * rhs.repr.significand,
-            self.repr.exponent + rhs.repr.exponent,
-        );
+        let repr = mul_finite_reprs(&self.repr, &rhs.repr);
         FBig::new(context.repr_round(repr).value(), context)
     }
 }
@@ -65,10 +71,7 @@ impl<R: Round, const B: Word> Mul<FBig<R, B>> for FBig<R, B> {
         assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
-        let repr = Repr::new(
-            self.repr.significand * rhs.repr.significand,
-            self.repr.exponent + rhs.repr.exponent,
-        );
+        let repr = mul_finite_reprs(&self.repr, &rhs.repr);
         FBig::new(context.repr_round(repr).value(), context)
     }
 }
@@ -167,10 +170,7 @@ impl<R: Round> Context<R> {
             rhs
         };
 
-        let repr = Repr::new(
-            &lhs_repr.significand * &rhs_repr.significand,
-            lhs_repr.exponent + rhs_repr.exponent,
-        );
+        let repr = mul_finite_reprs(lhs_repr, rhs_repr);
         self.repr_round(repr).map(|v| FBig::new(v, *self))
     }
 
@@ -246,7 +246,16 @@ impl<R: Round> Context<R> {
             f
         };
 
-        let repr = Repr::new(f_repr.significand.cubic(), 3 * f_repr.exponent);
+        let repr = if f_repr.significand.is_zero() {
+            // cubic(±0) = ±0 (odd power preserves sign)
+            if f_repr.is_neg_zero() {
+                Repr::neg_zero()
+            } else {
+                Repr::zero()
+            }
+        } else {
+            Repr::new(f_repr.significand.cubic(), 3 * f_repr.exponent)
+        };
         self.repr_round(repr).map(|v| FBig::new(v, *self))
     }
 }

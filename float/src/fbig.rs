@@ -89,7 +89,9 @@ use dashu_int::{DoubleWord, IBig};
 /// designed for arbitrary precision numbers. The key differences include:
 /// * [FBig] doesn't support NaN values. In places where IEEE 754 operations generate NaNs, `FBig` will panic.
 /// * [FBig] doesn't have subnormal values.
-/// * [FBig] doesn't have negative zeros¹. There is only on zero value ([FBig::ZERO]).
+/// * [FBig] supports IEEE-754 signed zero (`-0`): operations that produce a zero result carry
+///   the sign mandated by IEEE 754 (e.g. `1 / -inf = -0`, `sqrt(-0) = -0`, `ceil(-0) = -0`).
+///   `+0` and `-0` compare equal.
 /// * Division by zero and logarithm on zero panic instead of returning infinities.
 /// * [FBig] operations will panic if the result overflows or underflows¹.
 /// * [FBig] does support infinities, but currently infinities are not allowed to be operated with, except for

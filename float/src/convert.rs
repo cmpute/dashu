@@ -55,7 +55,11 @@ macro_rules! impl_from_float_for_fbig {
 
             fn try_from(f: $t) -> Result<Self, Self::Error> {
                 match f.decode() {
-                    Ok((man, exp)) => Ok(Repr::new(man.into(), exp as _)),
+                    Ok((man, exp)) => Ok(if man == 0 && f.is_sign_negative() {
+                        Self::neg_zero()
+                    } else {
+                        Repr::new(man.into(), exp as _)
+                    }),
                     Err(FpCategory::Infinite) => match f.sign() {
                         Sign::Positive => Ok(Self::infinity()),
                         Sign::Negative => Ok(Self::neg_infinity()),
@@ -71,7 +75,12 @@ macro_rules! impl_from_float_for_fbig {
             fn try_from(f: $t) -> Result<Self, Self::Error> {
                 match f.decode() {
                     Ok((man, exp)) => {
-                        let repr = Repr::new(man.into(), exp as _);
+                        // preserve the sign of a signed zero (-0.0 -> Repr::neg_zero())
+                        let repr = if man == 0 && f.is_sign_negative() {
+                            Repr::neg_zero()
+                        } else {
+                            Repr::new(man.into(), exp as _)
+                        };
 
                         // The precision is inferenced from the mantissa, because the mantissa of
                         // normal float is always normalized. This will produce correct precision
@@ -583,6 +592,10 @@ impl<const B: Word> Repr<B> {
         debug_assert!(self.significand.bit_len() <= 24);
 
         let sign = self.sign();
+        if self.is_neg_zero() {
+            // encode() would drop the sign of -0; preserve it exactly
+            return Exact(sign * 0f32);
+        }
         let man24: i32 = self.significand.try_into().unwrap();
         if self.exponent >= 128 {
             // max f32 = 2^128 * (1 - 2^-24)
@@ -635,6 +648,10 @@ impl<const B: Word> Repr<B> {
         debug_assert!(self.significand.bit_len() <= 53);
 
         let sign = self.sign();
+        if self.is_neg_zero() {
+            // encode() would drop the sign of -0; preserve it exactly
+            return Exact(sign * 0f64);
+        }
         let man53: i64 = self.significand.try_into().unwrap();
         if self.exponent >= 1024 {
             // max f64 = 2^1024 × (1 − 2^−53)

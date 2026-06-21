@@ -78,6 +78,10 @@ impl<R: Round> Context<R> {
     pub fn sqrt<const B: Word>(&self, x: &Repr<B>) -> Rounded<FBig<R, B>> {
         assert_finite(x);
         assert_limited_precision(self.precision);
+        if x.significand.is_zero() {
+            // sqrt(+0) = +0, sqrt(-0) = -0 (preserve the sign of zero)
+            return Approximation::Exact(FBig::new(x.clone(), *self));
+        }
         if x.sign() == Sign::Negative {
             panic_root_negative()
         }
@@ -172,8 +176,10 @@ impl<R: Round> Context<R> {
             return self.repr_round_ref(x).map(|v| FBig::new(v, *self));
         }
         if x.significand.is_zero() {
-            // UBig::ZERO.nth_root(n) erroneously returns ONE, so short-circuit here
-            return Approximation::Exact(FBig::new(Repr::zero(), *self));
+            // UBig::ZERO.nth_root(n) erroneously returns ONE, so short-circuit here.
+            // An even root of -0 already panicked above, so reaching here the sign is
+            // preserved: odd root of ±0 is ±0.
+            return Approximation::Exact(FBig::new(x.clone(), *self));
         }
 
         // operate on the magnitude so that shifting/splitting keep a clean sign;

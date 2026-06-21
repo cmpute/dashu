@@ -9,6 +9,27 @@ use dashu_base::{Approximation::*, Sign};
 use dashu_int::{IBig, Word};
 
 impl<R: Round, const B: Word> FBig<R, B> {
+    /// Return `±0` carrying the same sign as `self` (used by trunc/round/fract where a zero
+    /// result inherits the sign of the input). The result has precision 0, matching `FBig::ZERO`.
+    fn signed_zero(&self) -> Self {
+        let zero = if self.repr.sign() == Sign::Negative {
+            Repr::neg_zero()
+        } else {
+            Repr::zero()
+        };
+        FBig::new(zero, Context::new(0))
+    }
+
+    /// Build an integer `Repr` (exponent 0) from `value`, attaching the input's sign when
+    /// `value` is zero (so e.g. `trunc(-0.5)` yields `-0`).
+    fn signed_int(&self, value: IBig) -> Repr<B> {
+        if value.is_zero() && self.repr.sign() == Sign::Negative {
+            Repr::neg_zero()
+        } else {
+            Repr::new(value, 0)
+        }
+    }
+
     /// Get the integral part of the float
     ///
     /// See [FBig::round] for how the output precision is determined.
@@ -36,13 +57,13 @@ impl<R: Round, const B: Word> FBig<R, B> {
         if self.repr.exponent >= 0 {
             return self.clone();
         } else if self.repr.smaller_than_one() {
-            return Self::ZERO;
+            return self.signed_zero();
         }
 
         let shift = (-self.repr.exponent) as usize;
         let signif = shr_digits::<B>(&self.repr.significand, shift);
         let context = Context::new(self.context.precision.saturating_sub(shift));
-        FBig::new(Repr::new(signif, 0), context)
+        FBig::new(self.signed_int(signif), context)
     }
 
     // Split the float number at the radix point, assuming it exists (the number is not a integer).
@@ -132,7 +153,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     pub fn fract(&self) -> Self {
         assert_finite(&self.repr);
         if self.repr.exponent >= 0 {
-            return Self::ZERO;
+            return self.signed_zero();
         } else if self.repr.smaller_than_one() {
             return self.clone();
         }
@@ -167,7 +188,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     pub fn ceil(&self) -> Self {
         assert_finite(&self.repr);
-        if self.repr.is_zero() || self.repr.exponent >= 0 {
+        if self.repr.significand.is_zero() || self.repr.exponent >= 0 {
             return self.clone();
         } else if self.repr.smaller_than_one() {
             return match self.repr.sign() {
@@ -207,7 +228,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     pub fn floor(&self) -> Self {
         assert_finite(&self.repr);
-        if self.repr.exponent >= 0 {
+        if self.repr.significand.is_zero() || self.repr.exponent >= 0 {
             return self.clone();
         } else if self.repr.smaller_than_one() {
             return match self.repr.sign() {
@@ -255,18 +276,18 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Panics if the number is infinte
     pub fn round(&self) -> Self {
         assert_finite(&self.repr);
-        if self.repr.exponent >= 0 {
+        if self.repr.significand.is_zero() || self.repr.exponent >= 0 {
             return self.clone();
         } else if self.repr.exponent + (self.repr.digits_ub() as isize) < -2 {
             // to determine if the number rounds to zero, we need to make sure |self| < 0.5
             // which is stricter than `self.repr.smaller_than_one()`
-            return Self::ZERO;
+            return self.signed_zero();
         }
 
         let (hi, lo, precision) = self.split_at_point_internal();
         let rounding = mode::HalfAway::round_fract::<B>(&hi, lo, precision);
         let context = Context::new(self.context.precision.saturating_sub(precision));
-        FBig::new(Repr::new(hi + rounding, 0), context)
+        FBig::new(self.signed_int(hi + rounding), context)
     }
 
     /// Round the number to the nearest multiple of `BASE^exp`.
