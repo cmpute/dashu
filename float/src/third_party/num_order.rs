@@ -286,6 +286,13 @@ impl<const B: Word> NumHash for Repr<B> {
         const M127: i128 = i128::MAX;
         const M127U: u128 = M127 as u128;
 
+        // Zero and infinities have a zero significand, so their residue hash is 0.
+        // Short-circuit to also avoid overflow when negating the isize::MIN sentinel
+        // exponent that encodes -inf.
+        if self.significand.is_zero() {
+            return 0i128.num_hash(state);
+        }
+
         let signif_residue = &self.significand % M127;
         let signif_hash = MInt::new(signif_residue.unsigned_abs(), &M127U);
         let exp_hash = if B == 2 {

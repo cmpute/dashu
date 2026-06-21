@@ -21,19 +21,25 @@ use dashu_int::{IBig, UBig};
 /// `base^(precision+1)`; the guard digit is what lets a much-smaller operand be reduced to a
 /// sign-only sticky bit during alignment without mis-rounding.
 ///
-/// # Infinity
+/// # Infinity and signed zero
 ///
-/// This struct supports representing the infinity, but the infinity is only supposed to be used
-/// as sentinels. That is, only equality test and comparison are implemented for the infinity.
-/// Any other operations on the infinity will lead to panic. If an operation result is too large
-/// or too small, the operation will **panic** instead of returning an infinity.
+/// Special values are encoded with a zero significand and a sentinel exponent:
+/// - value zero (`+0`): exponent = 0
+/// - negative zero (`-0`): exponent = -1
+/// - positive infinity (`+inf`): exponent = `isize::MAX`
+/// - negative infinity (`-inf`): exponent = `isize::MIN`
+///
+/// The infinities are only supposed to be consumed as sentinels: only equality test and
+/// comparison are implemented for them, and any arithmetic operation that takes an infinity
+/// as input will lead to panic (at the `FBig` layer) or return an error (at the `Context`
+/// layer). If an operation result is too large or too small, the operation will return an
+/// infinity (as a value) at the `Context` layer, or panic at the `FBig` layer.
 ///
 #[derive(PartialEq, Eq)]
 pub struct Repr<const BASE: Word> {
-    /// The significand of the floating point number. If the significand is zero, then the number is:
-    /// - Zero, if exponent = 0
-    /// - Positive infinity, if exponent > 0
-    /// - Negative infinity, if exponent < 0
+    /// The significand of the floating point number. If the significand is zero, then the
+    /// number is a special value identified by the exponent (see the struct-level docs):
+    /// `+0`, `-0`, `+inf`, or `-inf`.
     pub(crate) significand: IBig,
 
     /// The exponent of the floating point number.
@@ -110,7 +116,7 @@ impl<const B: Word> Repr<B> {
     pub const fn infinity() -> Self {
         Self {
             significand: IBig::ZERO,
-            exponent: 1,
+            exponent: isize::MAX,
         }
     }
     /// Create a [Repr] instance representing the negative infinity
@@ -118,25 +124,53 @@ impl<const B: Word> Repr<B> {
     pub const fn neg_infinity() -> Self {
         Self {
             significand: IBig::ZERO,
+            exponent: isize::MIN,
+        }
+    }
+    /// Create a [Repr] instance representing the negative zero (`-0`)
+    ///
+    /// Negative zero is produced by operations (e.g. `1 / -inf`, `ceil(-0)`, cancellation
+    /// under round-toward-negative) and is distinct from `+0` only in operations that are
+    /// sensitive to the sign of zero (e.g. `1 / -0 = -inf`). It compares equal to `+0`.
+    #[inline]
+    pub const fn neg_zero() -> Self {
+        Self {
+            significand: IBig::ZERO,
             exponent: -1,
         }
     }
 
-    // XXX: Add support for representing NEG_ZERO, but don't provide method to generate it.
-    // neg_zero: exponent -1, infinity: exponent: isize::MAX, neg_infinity: exponent: isize::MIN
-
     /// Determine if the [Repr] represents zero
+    ///
+    /// Note that this returns `true` only for `+0`; use [`Self::is_neg_zero`] to detect `-0`,
+    /// or check `self.significand.is_zero()` to detect either signed zero.
     ///
     /// # Examples
     ///
     /// ```
     /// # use dashu_float::Repr;
     /// assert!(Repr::<2>::zero().is_zero());
+    /// assert!(!Repr::<10>::neg_zero().is_zero());
     /// assert!(!Repr::<10>::one().is_zero());
     /// ```
     #[inline]
     pub const fn is_zero(&self) -> bool {
         self.significand.is_zero() && self.exponent == 0
+    }
+
+    /// Determine if the [Repr] represents the negative zero (`-0`)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_float::Repr;
+    /// assert!(Repr::<2>::neg_zero().is_neg_zero());
+    /// assert!(!Repr::<10>::zero().is_neg_zero());
+    /// assert!(!Repr::<10>::one().is_neg_zero());
+    /// ```
+    #[inline]
+    pub const fn is_neg_zero(&self) -> bool {
+        self.significand.is_zero() && self.exponent == -1
     }
 
     /// Determine if the [Repr] represents one
@@ -162,10 +196,11 @@ impl<const B: Word> Repr<B> {
     /// assert!(Repr::<2>::infinity().is_infinite());
     /// assert!(Repr::<10>::neg_infinity().is_infinite());
     /// assert!(!Repr::<10>::one().is_infinite());
+    /// assert!(!Repr::<10>::neg_zero().is_infinite());
     /// ```
     #[inline]
     pub const fn is_infinite(&self) -> bool {
-        self.significand.is_zero() && self.exponent != 0
+        self.significand.is_zero() && (self.exponent == isize::MAX || self.exponent == isize::MIN)
     }
 
     /// Determine if the [Repr] represents a finite number
@@ -228,16 +263,23 @@ impl<const B: Word> Repr<B> {
     }
 
     /// Normalize the float representation so that the significand is not divisible by the base.
-    /// Any floats with zero significand will be considered as zero value (instead of an `INFINITY`)
+    ///
+    /// A zero significand with an infinity sentinel exponent (`isize::MAX`/`isize::MIN`) is
+    /// preserved; any other zero significand is normalized to `+0`. (The `-0` encoding at
+    /// exponent `-1` is introduced together with operations that produce it.)
     pub(crate) fn normalize(self) -> Self {
+        if self.significand.is_zero() {
+            // Preserve infinity sentinels; collapse any other zero significand to +0.
+            if self.exponent == isize::MAX || self.exponent == isize::MIN {
+                return self;
+            }
+            return Self::zero();
+        }
+
         let Self {
             mut significand,
             mut exponent,
         } = self;
-        if significand.is_zero() {
-            return Self::zero();
-        }
-
         if B == 2 {
             let shift = significand.trailing_zeros().unwrap();
             significand >>= shift;
@@ -515,5 +557,55 @@ impl<R: Round> Context<R> {
         } else {
             Exact(repr.clone())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dashu_base::Sign;
+
+    #[test]
+    fn infinity_encoding() {
+        assert_eq!(Repr::<2>::infinity().exponent, isize::MAX);
+        assert_eq!(Repr::<10>::neg_infinity().exponent, isize::MIN);
+        assert!(Repr::<2>::infinity().is_infinite());
+        assert!(Repr::<10>::neg_infinity().is_infinite());
+        assert!(!Repr::<2>::infinity().is_finite());
+        assert_eq!(Repr::<2>::infinity().sign(), Sign::Positive);
+        assert_eq!(Repr::<10>::neg_infinity().sign(), Sign::Negative);
+    }
+
+    #[test]
+    fn neg_zero_encoding() {
+        assert_eq!(Repr::<2>::neg_zero().exponent, -1);
+        assert!(Repr::<2>::neg_zero().is_neg_zero());
+        assert!(!Repr::<2>::neg_zero().is_zero());
+        assert!(!Repr::<2>::neg_zero().is_infinite());
+        assert_eq!(Repr::<2>::neg_zero().sign(), Sign::Negative);
+        assert_eq!(Repr::<2>::zero().sign(), Sign::Positive);
+    }
+
+    #[test]
+    fn normalize_preserves_specials() {
+        // infinities are preserved (the previous clobbering bug)
+        assert_eq!(Repr::<2>::infinity(), Repr::<2>::infinity().normalize());
+        assert_eq!(Repr::<10>::neg_infinity(), Repr::<10>::neg_infinity().normalize());
+        // +0 is preserved
+        assert_eq!(Repr::<2>::zero(), Repr::<2>::zero().normalize());
+        // a stray zero significand with a non-sentinel exponent collapses to +0
+        let stray: Repr<2> = Repr {
+            significand: IBig::ZERO,
+            exponent: 7,
+        };
+        assert_eq!(Repr::<2>::zero(), stray.normalize());
+        // non-zero significands are still normalized
+        let r: Repr<2> = Repr {
+            significand: IBig::from(0b10100i32),
+            exponent: 0,
+        };
+        let r = r.normalize();
+        assert_eq!(r.significand, IBig::from(0b101i32));
+        assert_eq!(r.exponent, 2);
     }
 }
