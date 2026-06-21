@@ -1,223 +1,73 @@
-//! Random integers generation with the `rand` crate.
-//!
-//! There are four distributions for generating random integers. The first two are [UniformBits],
-//! and [UniformBelow] which limit the bit size or the magnitude of the generated integer.
-//! The other two are [UniformUBig] and [UniformIBig], which supports generating random integers
-//! uniformly in a given range. These traits are also the backends for the [SampleUniform] trait.
-//!
-//! # Examples
-//!
-//! ```
-//! # use dashu_int::{UBig, IBig};
-//! # use rand_v08::{distributions::uniform::Uniform, thread_rng, Rng};
-//! use dashu_base::BitTest;
-//! use dashu_int::rand::{UniformBits, UniformBelow};
-//!
-//! // generate UBigs in a range
-//! let a = thread_rng().gen_range(UBig::from(3u8)..UBig::from(10u8));
-//! let b = thread_rng().sample(Uniform::new(UBig::ZERO, &a));
-//! assert!(a >= UBig::from(3u8) && a < UBig::from(10u8));
-//! assert!(b >= UBig::ZERO && b < a);
-//!
-//! // generate IBigs in a range
-//! let a = thread_rng().gen_range(IBig::from(3)..IBig::from(10));
-//! let b = thread_rng().sample(Uniform::new(IBig::from(-5), &a));
-//! assert!(a >= IBig::from(3) && a < IBig::from(10));
-//! assert!(b >= IBig::from(-5) && b < a);
-//!
-//! // generate UBigs and IBigs with a given bit size limit.
-//! let a: UBig = thread_rng().sample(UniformBits::new(10));
-//! let b: IBig = thread_rng().sample(UniformBits::new(10));
-//! assert!(a.bit_len() <= 10 && b.bit_len() <= 10);
-//!
-//! // generate UBigs and IBigs with a given magnitude limit.
-//! let a: UBig = thread_rng().sample(UniformBelow::new(&10u8.into()));
-//! let b: IBig = thread_rng().sample(UniformBelow::new(&10u8.into()));
-//! assert!(a < UBig::from(10u8));
-//! assert!(b < IBig::from(10) && b > IBig::from(-10));
-//! ```
-
 use crate::{
     arch::word::{DoubleWord, Word},
-    buffer::Buffer,
     ibig::IBig,
-    math::ceil_div,
     ops::UnsignedAbs,
-    primitive::{DWORD_BITS_USIZE, WORD_BITS_USIZE},
-    repr::{Repr, TypedReprRef::*},
     ubig::UBig,
 };
-
-use dashu_base::Sign;
 use rand_v08::{
     distributions::uniform::{SampleBorrow, SampleUniform, UniformSampler},
     prelude::Distribution,
     Rng,
 };
 
-/// Uniform distribution for both [UBig] and [IBig] specified by bits.
-///
-/// This distribution generate random integers uniformly between `[0, 2^bits)` for [UBig],
-/// between `(-2^bits, 2^bits)` for [IBig].
-pub struct UniformBits {
-    bits: usize,
+use super::rand::*;
+
+/// Adapter exposing a rand 0.8 [`Rng`] as a [`BitRng`].
+pub struct RngBridge<'a, R: Rng + ?Sized>(pub &'a mut R);
+
+impl<'a, R: Rng + ?Sized> BitRng for RngBridge<'a, R> {
+    #[inline]
+    fn next_word(&mut self) -> Word {
+        self.0.gen()
+    }
+    #[inline]
+    fn next_double_word(&mut self) -> DoubleWord {
+        self.0.gen()
+    }
+    #[inline]
+    fn next_bool(&mut self) -> bool {
+        self.0.gen()
+    }
+    #[inline]
+    fn fill_words(&mut self, words: &mut [Word]) {
+        self.0.fill(words)
+    }
+    #[inline]
+    fn gen_word_inclusive(&mut self, high: Word) -> Word {
+        self.0.gen_range(0..=high)
+    }
+    #[inline]
+    fn gen_dword_exclusive(&mut self, high: DoubleWord) -> DoubleWord {
+        self.0.gen_range(0..high)
+    }
 }
 
-impl UniformBits {
-    /// Create a [UniformBits] distribution with a given limit on the integer's bit length.
-    #[inline]
-    pub const fn new(bits: usize) -> Self {
-        UniformBits { bits }
-    }
+fn bridge<R: Rng + ?Sized>(rng: &mut R) -> RngBridge<'_, R> {
+    RngBridge(rng)
 }
 
 impl Distribution<UBig> for UniformBits {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> UBig {
-        if self.bits == 0 {
-            UBig::ZERO
-        } else if self.bits <= DWORD_BITS_USIZE {
-            let dword: DoubleWord = rng.gen();
-            UBig::from_dword(dword >> (DWORD_BITS_USIZE - self.bits))
-        } else {
-            let num_words = ceil_div(self.bits, WORD_BITS_USIZE);
-            let mut buffer = Buffer::allocate(num_words);
-            buffer.push_zeros(num_words);
-
-            rng.fill(buffer.as_mut());
-
-            let rem = self.bits % WORD_BITS_USIZE;
-            if rem != 0 {
-                *buffer.last_mut().unwrap() >>= WORD_BITS_USIZE - rem;
-            }
-
-            UBig(Repr::from_buffer(buffer))
-        }
+        self.sample_ubig(&mut bridge(rng))
     }
 }
 
 impl Distribution<IBig> for UniformBits {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> IBig {
-        loop {
-            let mag: UBig = self.sample(rng);
-            let neg = rng.gen();
-            if mag.is_zero() && neg {
-                // Reject negative zero so that all possible integers
-                // have the same probability. This branch should happen
-                // very rarely.
-                continue;
-            }
-            break IBig::from_parts(Sign::from(neg), mag);
-        }
+        self.sample_ibig(&mut bridge(rng))
     }
 }
 
-/// Uniform distribution around zero for both [UBig] and [IBig] specified by a limit of the magnitude.
-///
-/// This distribution generate random integers uniformly between `[0, limit)` for [UBig],
-/// between `(-limit, limit)` for [IBig].
-pub struct UniformBelow<'a> {
-    limit: &'a UBig,
-}
-
-impl<'a> UniformBelow<'a> {
-    /// Create a [UniformBelow] distribution with a given limit on the integer's magnitude.
-    #[inline]
-    pub const fn new(limit: &'a UBig) -> Self {
-        Self { limit }
-    }
-}
-
-impl<'a> Distribution<UBig> for UniformBelow<'a> {
-    #[inline]
+impl Distribution<UBig> for UniformBelow<'_> {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> UBig {
-        UBig::uniform(self.limit, rng)
+        self.sample_ubig(&mut bridge(rng))
     }
 }
 
-impl<'a> Distribution<IBig> for UniformBelow<'a> {
+impl Distribution<IBig> for UniformBelow<'_> {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> IBig {
-        loop {
-            let mag: UBig = UBig::uniform(self.limit, rng);
-            let neg = rng.gen();
-            if mag.is_zero() && neg {
-                // Reject negative zero so that all possible integers
-                // have the same probability. This branch should happen
-                // very rarely.
-                continue;
-            }
-            break IBig::from_parts(Sign::from(neg), mag);
-        }
+        self.sample_ibig(&mut bridge(rng))
     }
-}
-
-impl UBig {
-    /// Random UBig in range [0..range)
-    #[inline]
-    fn uniform<R>(range: &UBig, rng: &mut R) -> UBig
-    where
-        R: Rng + ?Sized,
-    {
-        debug_assert!(!range.is_zero());
-
-        match range.repr() {
-            RefSmall(dword) => UBig::from(rng.gen_range(0..dword)),
-            RefLarge(words) => UBig::uniform_large(words, rng),
-        }
-    }
-
-    /// Random UBig in range [0..words)
-    fn uniform_large<R>(words: &[Word], rng: &mut R) -> UBig
-    where
-        R: Rng + ?Sized,
-    {
-        let mut buffer = Buffer::allocate(words.len());
-        buffer.push_zeros(words.len());
-        while !try_fill_uniform(words, rng, &mut buffer) {
-            // Repeat.
-        }
-        UBig(Repr::from_buffer(buffer))
-    }
-}
-
-/// Try to fill `sample` with random number in range [0..words).
-/// May fail randomly.
-///
-/// Returns true on success.
-fn try_fill_uniform<R>(words: &[Word], rng: &mut R, result: &mut [Word]) -> bool
-where
-    R: Rng + ?Sized,
-{
-    let n = words.len();
-    debug_assert!(n > 0 && result.len() == n);
-    let mut i = n - 1;
-    result[i] = rng.gen_range(0..=words[i]);
-    // With at least 50% probability this loop executes 0 times (and thus doesn't fail).
-    while result[i] == words[i] {
-        if i == 0 {
-            // result == words
-            return false;
-        }
-        i -= 1;
-        result[i] = rng.gen();
-        if result[i] > words[i] {
-            return false;
-        }
-    }
-    rng.fill(&mut result[..i]);
-    true
-}
-
-/// The back-end implementing [UniformSampler] for [UBig].
-///
-/// See the module ([rand][crate::rand]) level documentation for examples.
-pub struct UniformUBig {
-    range: UBig,
-    offset: UBig,
-}
-
-/// Panics when the range input for the random generator in empty
-const fn panic_empty_range() -> ! {
-    panic!("empty range for random generation")
 }
 
 impl UniformSampler for UniformUBig {
@@ -226,52 +76,34 @@ impl UniformSampler for UniformUBig {
     #[inline]
     fn new<B1, B2>(low: B1, high: B2) -> UniformUBig
     where
-        B1: SampleBorrow<UBig>,
-        B2: SampleBorrow<UBig>,
+        B1: SampleBorrow<UBig> + Sized,
+        B2: SampleBorrow<UBig> + Sized,
     {
         if high.borrow() <= low.borrow() {
-            panic_empty_range()
+            panic!("empty range for random generation");
         }
-
         let range = high.borrow() - low.borrow();
-        UniformUBig {
-            range,
-            offset: low.borrow().clone(),
-        }
+        UniformUBig::from_parts(range, low.borrow().clone())
     }
 
     #[inline]
     fn new_inclusive<B1, B2>(low: B1, high: B2) -> UniformUBig
     where
-        B1: SampleBorrow<UBig>,
-        B2: SampleBorrow<UBig>,
+        B1: SampleBorrow<UBig> + Sized,
+        B2: SampleBorrow<UBig> + Sized,
     {
         if high.borrow() < low.borrow() {
-            panic_empty_range()
+            panic!("empty range for random generation");
         }
-
         let range = high.borrow() - low.borrow() + UBig::ONE;
-        UniformUBig {
-            range,
-            offset: low.borrow().clone(),
-        }
+        UniformUBig::from_parts(range, low.borrow().clone())
     }
 
     #[inline]
-    fn sample<R>(&self, rng: &mut R) -> UBig
-    where
-        R: Rng + ?Sized,
-    {
-        UBig::uniform(&self.range, rng) + &self.offset
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> UBig {
+        let mut b = bridge(rng);
+        UniformUBig::sample(self, &mut b)
     }
-}
-
-/// The back-end implementing [UniformSampler] for [IBig].
-///
-/// See the module ([rand][crate::rand]) level documentation for examples.
-pub struct UniformIBig {
-    range: UBig,
-    offset: IBig,
 }
 
 impl UniformSampler for UniformIBig {
@@ -280,43 +112,33 @@ impl UniformSampler for UniformIBig {
     #[inline]
     fn new<B1, B2>(low: B1, high: B2) -> UniformIBig
     where
-        B1: SampleBorrow<IBig>,
-        B2: SampleBorrow<IBig>,
+        B1: SampleBorrow<IBig> + Sized,
+        B2: SampleBorrow<IBig> + Sized,
     {
         if high.borrow() <= low.borrow() {
-            panic_empty_range()
+            panic!("empty range for random generation");
         }
-
         let range = high.borrow() - low.borrow();
-        UniformIBig {
-            range: range.unsigned_abs(),
-            offset: low.borrow().clone(),
-        }
+        UniformIBig::from_parts(range.unsigned_abs(), low.borrow().clone())
     }
 
     #[inline]
     fn new_inclusive<B1, B2>(low: B1, high: B2) -> UniformIBig
     where
-        B1: SampleBorrow<IBig>,
-        B2: SampleBorrow<IBig>,
+        B1: SampleBorrow<IBig> + Sized,
+        B2: SampleBorrow<IBig> + Sized,
     {
         if high.borrow() < low.borrow() {
-            panic_empty_range()
+            panic!("empty range for random generation");
         }
-
         let range = high.borrow() - low.borrow() + IBig::ONE;
-        UniformIBig {
-            range: range.unsigned_abs(),
-            offset: low.borrow().clone(),
-        }
+        UniformIBig::from_parts(range.unsigned_abs(), low.borrow().clone())
     }
 
     #[inline]
-    fn sample<R>(&self, rng: &mut R) -> IBig
-    where
-        R: Rng + ?Sized,
-    {
-        IBig::from(UBig::uniform(&self.range, rng)) + &self.offset
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> IBig {
+        let mut b = bridge(rng);
+        UniformIBig::sample(self, &mut b)
     }
 }
 

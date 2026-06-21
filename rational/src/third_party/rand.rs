@@ -1,0 +1,155 @@
+//! Random rational number generation with the `rand` crate.
+//!
+//! There are two distributions for generating random rationals. [Uniform01] generates rationals
+//! between 0 and 1 (it also backs rand's `Standard` / `Open01` / `OpenClosed01`). [UniformRBig]
+//! generates rationals in a given range and is the backend for rand's `SampleUniform` trait.
+//!
+//! The distributions and their sampling algorithms are defined here once, generic over the
+//! [`BitRng`](dashu_int::rand::BitRng) trait. Each rand version's `Distribution` /
+//! `UniformSampler` / `SampleUniform` impls live in the `rand_v08` / `rand_v09` / `rand_v010`
+//! modules (enable the matching feature); adapt that version's RNG with
+//! `dashu_int::rand::bridge_v08` / `bridge_v09` / `bridge_v010`. See those modules for usage
+//! examples.
+
+use crate::{rbig::RBig, repr::Repr, Relaxed};
+use dashu_base::Gcd;
+use dashu_int::{
+    rand::{BitRng, UniformBelow, UniformIBig},
+    IBig, UBig,
+};
+
+/// A uniform distribution between 0 and 1, parameterized by a denominator limit. It can be used
+/// to replace the `Standard` / `Open01` / `OpenClosed01` distributions from the `rand` crate when
+/// you want to customize the denominator limit of the generated rational.
+pub struct Uniform01<'a> {
+    pub(crate) limit: &'a UBig,
+    pub(crate) include_zero: bool,
+    pub(crate) include_one: bool,
+}
+
+impl<'a> Uniform01<'a> {
+    /// Create a uniform distribution in `[0, 1)` with a given limit of the denominator.
+    #[inline]
+    pub fn new(limit: &'a UBig) -> Self {
+        Self {
+            limit,
+            include_zero: true,
+            include_one: false,
+        }
+    }
+
+    /// Create a uniform distribution in `[0, 1]` with a given limit of the denominator.
+    #[inline]
+    pub fn new_closed(limit: &'a UBig) -> Self {
+        Self {
+            limit,
+            include_zero: true,
+            include_one: true,
+        }
+    }
+
+    /// Create a uniform distribution in `(0, 1)` with a given limit of the denominator.
+    #[inline]
+    pub fn new_open(limit: &'a UBig) -> Self {
+        Self {
+            limit,
+            include_zero: false,
+            include_one: false,
+        }
+    }
+
+    /// Create a uniform distribution in `(0, 1]` with a given limit of the denominator.
+    #[inline]
+    pub fn new_open_closed(limit: &'a UBig) -> Self {
+        Self {
+            limit,
+            include_zero: false,
+            include_one: true,
+        }
+    }
+
+    /// Draw a random rational `Repr` (un-reduced).
+    pub fn sample_repr<BR: BitRng + ?Sized>(&self, rng: &mut BR) -> Repr {
+        match (self.include_zero, self.include_one) {
+            (true, false) => {
+                // sample in [0, 1)
+                let num: UBig = UniformBelow::new(self.limit).sample_ubig(rng);
+                Repr {
+                    numerator: num.into(),
+                    denominator: self.limit.clone(),
+                }
+            }
+            (true, true) => {
+                // sample in [0, 1]
+                let num: UBig = UniformBelow::new(self.limit).sample_ubig(rng);
+                Repr {
+                    numerator: num.into(),
+                    denominator: self.limit.clone() - UBig::ONE,
+                }
+            }
+            (false, false) => {
+                // sample in (0, 1)
+                let num = loop {
+                    // simply reject zero
+                    let n: UBig = UniformBelow::new(self.limit).sample_ubig(rng);
+                    if !n.is_zero() {
+                        break n;
+                    }
+                };
+                Repr {
+                    numerator: num.into(),
+                    denominator: self.limit.clone(),
+                }
+            }
+            (false, true) => {
+                // sample in (0, 1]
+                let num: UBig = UniformBelow::new(self.limit).sample_ubig(rng);
+                Repr {
+                    numerator: (num + UBig::ONE).into(),
+                    denominator: self.limit.clone(),
+                }
+            }
+        }
+    }
+
+    /// Draw a random [RBig] in this distribution.
+    #[inline]
+    pub fn sample_rbig<BR: BitRng + ?Sized>(&self, rng: &mut BR) -> RBig {
+        RBig(self.sample_repr(rng).reduce())
+    }
+
+    /// Draw a random [Relaxed] in this distribution.
+    #[inline]
+    pub fn sample_relaxed<BR: BitRng + ?Sized>(&self, rng: &mut BR) -> Relaxed {
+        Relaxed(self.sample_repr(rng).reduce2())
+    }
+}
+
+/// The back-end implementing `rand::distributions::uniform::UniformSampler` for [RBig].
+pub struct UniformRBig {
+    pub(crate) num_sampler: UniformIBig,
+    pub(crate) den: UBig,
+}
+
+impl UniformRBig {
+    // Parse the bounds `(low, high)` into `(low_numerator, high_numerator, denominator)`.
+    pub(crate) fn parse_bounds(low: &RBig, high: &RBig) -> (IBig, IBig, UBig) {
+        let (low_d, high_d) = (low.denominator(), high.denominator());
+        let g = low_d.gcd(high_d);
+        let low_n = high_d / &g * low.numerator();
+        let high_n = low_d / &g * high.numerator();
+        let den = low_d / g * high_d;
+        (low_n, high_n, den)
+    }
+
+    #[inline]
+    pub(crate) fn from_parts(num_sampler: UniformIBig, den: UBig) -> Self {
+        UniformRBig { num_sampler, den }
+    }
+
+    /// Draw a random [RBig] from this sampler's range.
+    #[inline]
+    pub fn sample_rbig<BR: BitRng + ?Sized>(&self, rng: &mut BR) -> RBig {
+        RBig::from_parts(self.num_sampler.sample(rng), self.den.clone())
+    }
+}

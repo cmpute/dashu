@@ -94,3 +94,7 @@ harness = false
 name = "io"
 required-features = ["rand"]
 harness = false
+
+[[example]]
+name = "random_fbig"
+required-features = ["rand"]

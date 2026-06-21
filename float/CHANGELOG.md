@@ -8,6 +8,7 @@
 - Add `FpResult` enum to handle non-finite math operation results (NaN, Infinite, Overflow, Underflow) without panicking ([#60](https://github.com/cmpute/dashu/pull/60)).
 - Add `panic_nan`, `panic_overflow`, `panic_underflow`, and `panic_infinite` helpers to the `error` module.
 - Optional `rand_v09` (rand 0.9, MSRV 1.63) and `rand_v010` (rand 0.10, MSRV 1.85) features mirroring `rand_v08`, exposing the random-float distributions (`Uniform01`, `UniformFBig`) under those rand versions. The default `rand` feature remains `rand_v08`.
+- The `rand` distributions and their sampling algorithms now live once in the version-agnostic `dashu_float::rand` module. The `rand_v08` / `rand_v09` / `rand_v010` modules are now private per-version trait bindings; access the distributions through `dashu_float::rand`.
 
 ### Fix
 - Fix rounding issues in `to_32()` and `to_f64()` (fixes [#53](https://github.com/cmpute/dashu/issues/53) and [#56](https://github.com/cmpute/dashu/issues/56)).

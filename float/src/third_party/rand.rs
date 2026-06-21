@@ -1,0 +1,200 @@
+//! Random floating-point number generation with the `rand` crate.
+//!
+//! There are two distributions for generating random floats. [Uniform01] generates floats
+//! between 0 and 1 (it also backs rand's `Standard` / `Open01` / `OpenClosed01`). [UniformFBig]
+//! generates floats in a given range and is the backend for rand's `SampleUniform` trait.
+//!
+//! The distributions and their sampling algorithms are defined here once, generic over the
+//! [`BitRng`](dashu_int::rand::BitRng) trait. Each rand version's `Distribution` /
+//! `UniformSampler` / `SampleUniform` impls live in the `rand_v08` / `rand_v09` / `rand_v010`
+//! modules (enable the matching feature); adapt that version's RNG with
+//! `dashu_int::rand::bridge_v08` / `bridge_v09` / `bridge_v010`. See those modules for usage
+//! examples.
+
+use core::marker::PhantomData;
+
+use crate::{
+    fbig::FBig,
+    repr::{Context, Repr, Word},
+    round::{mode, Round},
+};
+use dashu_base::EstimatedLog2;
+use dashu_int::{
+    rand::{BitRng, UniformBelow, UniformBits},
+    DoubleWord, UBig,
+};
+
+/// The back-end implementing `rand::distributions::uniform::UniformSampler` for [FBig]
+/// (and [DBig][crate::DBig]).
+pub struct UniformFBig<R: Round, const B: Word> {
+    pub(crate) sampler: Uniform01<B>,
+    pub(crate) scale: Repr<B>,
+    pub(crate) offset: Repr<B>,
+    /// Used to distinguish between uniform distributions with different rounding modes;
+    /// no actual effect on the sampling.
+    pub(crate) _marker: PhantomData<R>,
+}
+
+impl<R: Round, const B: Word> UniformFBig<R, B> {
+    /// Create a sampler over `[low, high)` at a given precision.
+    #[inline]
+    pub fn new(low: &FBig<R, B>, high: &FBig<R, B>, precision: usize) -> Self {
+        assert!(low <= high);
+        Self {
+            sampler: Uniform01::new(precision),
+            scale: (high - low).into_repr(),
+            offset: low.repr().clone(),
+            _marker: PhantomData,
+        }
+    }
+
+    /// Create a sampler over `[low, high]` at a given precision.
+    #[inline]
+    pub fn new_inclusive(low: &FBig<R, B>, high: &FBig<R, B>, precision: usize) -> Self {
+        assert!(low <= high);
+        Self {
+            sampler: Uniform01::new_closed(precision),
+            scale: (high - low).into_repr(),
+            offset: low.repr().clone(),
+            _marker: PhantomData,
+        }
+    }
+
+    /// Draw a random [FBig] from this sampler's range.
+    pub fn sample_fbig<BR: BitRng + ?Sized>(&self, rng: &mut BR) -> FBig<R, B> {
+        // After we have a sample in [0, 1), all the following operations are rounded down
+        // so that we can ensure we don't reach the right bound.
+        let unit: FBig<mode::Down, B> = self.sampler.sample01::<mode::Down, _>(rng);
+        let context = unit.context();
+        let scaled = context.mul(unit.repr(), &self.scale).value();
+        context
+            .add(scaled.repr(), &self.offset)
+            .value()
+            .with_rounding()
+    }
+}
+
+/// A uniform distribution between 0 and 1. It can be used to replace the `Standard`,
+/// `Open01`, `OpenClosed01` distributions from the `rand` crate when you want to customize the
+/// precision of the generated float number.
+pub struct Uniform01<const BASE: Word> {
+    pub(crate) precision: usize,
+    pub(crate) range: Option<UBig>, // BASE ^ precision (±1 if necessary)
+    pub(crate) include_zero: bool,  // whether include the zero
+    pub(crate) include_one: bool,   // whether include the one
+}
+
+impl<const B: Word> Uniform01<B> {
+    /// Create a uniform distribution in `[0, 1)` with a given precision.
+    #[inline]
+    pub fn new(precision: usize) -> Self {
+        let range = match B {
+            2 => None,
+            _ => Some(UBig::from_word(B).pow(precision)),
+        };
+        Self {
+            precision,
+            range,
+            include_zero: true,
+            include_one: false,
+        }
+    }
+
+    /// Create a uniform distribution in `[0, 1]` with a given precision.
+    #[inline]
+    pub fn new_closed(precision: usize) -> Self {
+        let range = Some(UBig::from_word(B).pow(precision) + UBig::ONE);
+        Self {
+            precision,
+            range,
+            include_zero: true,
+            include_one: true,
+        }
+    }
+
+    /// Create a uniform distribution in `(0, 1)` with a given precision.
+    #[inline]
+    pub fn new_open(precision: usize) -> Self {
+        let range = match B {
+            2 => None,
+            _ => Some(UBig::from_word(B).pow(precision) - UBig::ONE),
+        };
+        Self {
+            precision,
+            range,
+            include_zero: false,
+            include_one: false,
+        }
+    }
+
+    /// Create a uniform distribution in `(0, 1]` with a given precision.
+    #[inline]
+    pub fn new_open_closed(precision: usize) -> Self {
+        let range = match B {
+            2 => None,
+            _ => Some(UBig::from_word(B).pow(precision)),
+        };
+        Self {
+            precision,
+            range,
+            include_zero: false,
+            include_one: true,
+        }
+    }
+
+    /// Draw a random [FBig] in this distribution. Generic over the rounding mode `R` and the
+    /// [`BitRng`] driving the generation.
+    pub fn sample01<R: Round, BR: BitRng + ?Sized>(&self, rng: &mut BR) -> FBig<R, B> {
+        let repr = match (self.include_zero, self.include_one) {
+            (true, false) => {
+                // sample in [0, 1)
+                let signif: UBig = if B == 2 {
+                    UniformBits::new(self.precision).sample_ubig(rng)
+                } else {
+                    UniformBelow::new(self.range.as_ref().unwrap()).sample_ubig(rng)
+                };
+                Repr::<B>::new(signif.into(), -(self.precision as isize))
+            }
+            (true, true) => {
+                // sample in [0, 1]
+                let signif: UBig = UniformBelow::new(self.range.as_ref().unwrap()).sample_ubig(rng);
+                Repr::new(signif.into(), -(self.precision as isize))
+            }
+            (false, false) => {
+                // sample in (0, 1)
+                let signif = if B == 2 {
+                    loop {
+                        // simply reject zero
+                        let n: UBig = UniformBits::new(self.precision).sample_ubig(rng);
+                        if !n.is_zero() {
+                            break n;
+                        }
+                    }
+                } else {
+                    let n: UBig = UniformBelow::new(self.range.as_ref().unwrap()).sample_ubig(rng);
+                    n + UBig::ONE
+                };
+                Repr::<B>::new(signif.into(), -(self.precision as isize))
+            }
+            (false, true) => {
+                // sample in (0, 1]
+                let signif: UBig = if B == 2 {
+                    UniformBits::new(self.precision).sample_ubig(rng)
+                } else {
+                    UniformBelow::new(self.range.as_ref().unwrap()).sample_ubig(rng)
+                };
+                Repr::<B>::new((signif + UBig::ONE).into(), -(self.precision as isize))
+            }
+        };
+
+        let context = Context::<mode::Down>::new(self.precision);
+        FBig::new(repr, context).with_rounding()
+    }
+}
+
+// When sampling with the builtin distributions, the precision is chosen such that the
+// significand fits in a double word and no allocation is required.
+#[inline]
+pub(crate) fn get_inline_precision<const B: Word>() -> usize {
+    (DoubleWord::BITS as f32 / B.log2_bounds().1) as _
+}

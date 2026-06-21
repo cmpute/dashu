@@ -11,6 +11,7 @@
 - Specialized NTT squaring: single forward transform instead of two, pointwise square instead of multiply.
 - Squaring thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE_SQR`, `DASHU_THRESHOLD_KARATSUBA_SQR`, and `DASHU_THRESHOLD_NTT_SQR` environment variables (requires `tuning` feature).
 - Optional `rand_v09` (rand 0.9, MSRV 1.63) and `rand_v010` (rand 0.10, MSRV 1.85) features mirroring `rand_v08`, exposing the random-integer distributions (`UniformBits`, `UniformBelow`, `UniformUBig`, `UniformIBig`) under those rand versions. The default `rand` feature remains `rand_v08`.
+- The `rand` distributions and their sampling algorithms now live once in the version-agnostic `dashu_int::rand` module, which exposes a `BitRng` trait (for driving them from any RNG) and `bridge_v08` / `bridge_v09` / `bridge_v010` constructors (to adapt each rand version's RNG). The `rand_v08` / `rand_v09` / `rand_v010` modules are now private per-version trait bindings; access the distributions through `dashu_int::rand`.
 
 ### Improve
 - Basecase (schoolbook) multiplication now uses an dword mult inner kernel (two multiplier words per sweep over the accumulator, via the `add_mul_dword_same_len_in_place` and `sub_mul_dword_same_len_in_place` kernels), roughly halving accumulator memory traffic.

@@ -12,7 +12,7 @@
 use dashu_float::round::Round;
 use dashu_float::round::mode::*;
 use dashu_float::{Context, FBig, Repr, Word};
-use dashu_int::{rand_v010::UniformBits, IBig};
+use dashu_int::{rand::UniformBits, IBig};
 use rand::prelude::*;
 
 /// Random signed significand drawn directly as a random `IBig` of bounded bit length.

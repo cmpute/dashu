@@ -3,16 +3,19 @@
 #[cfg(feature = "dashu-float")]
 mod dashu_float;
 
+// Version-agnostic distributions + sampling algorithms (the `dashu_rational::rand` path).
+// The per-version rand trait impls live in `rand_v08` / `rand_v09` / `rand_v010`.
+#[cfg(any(feature = "rand_v08", feature = "rand_v09", feature = "rand_v010"))]
+pub mod rand;
+
 #[cfg(feature = "rand_v08")]
-pub mod rand_v08;
-#[cfg(feature = "rand_v08")]
-pub use rand_v08 as rand;
+mod rand_v08;
 
 #[cfg(feature = "rand_v09")]
-pub mod rand_v09;
+mod rand_v09;
 
 #[cfg(feature = "rand_v010")]
-pub mod rand_v010;
+mod rand_v010;
 
 #[cfg(feature = "num-traits_v02")]
 mod num_traits;
