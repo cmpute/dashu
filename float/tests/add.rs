@@ -134,6 +134,12 @@ fn test_add_decimal() {
         (dbig!(00001e2), dbig!(00001e-2), dbig!(10001e-2)),
         (dbig!(123e2), dbig!(-123e2), dbig!(0)),
         (dbig!(995), dbig!(005), dbig!(100e1)),
+        // effective subtractions whose smaller operand reaches the precision
+        // window edge: formed exactly at full width, the result carries one guard
+        // digit (precision+1) and is exact — see AGENTS.md on the guard digit.
+        (dbig!(100), dbig!(-12e-2), dbig!(9988e-2)),
+        (dbig!(100), dbig!(-15e-2), dbig!(9985e-2)),
+        (dbig!(100), dbig!(-18e-2), dbig!(9982e-2)),
     ];
 
     for (a, b, c) in &exact_cases {
@@ -170,9 +176,6 @@ fn test_add_decimal() {
         (dbig!(100), dbig!(-2e-2), dbig!(100), NoOp),
         (dbig!(100), dbig!(-5e-2), dbig!(100), NoOp),
         (dbig!(100), dbig!(-8e-2), dbig!(999e-1), SubOne),
-        (dbig!(100), dbig!(-12e-2), dbig!(999e-1), NoOp),
-        (dbig!(100), dbig!(-15e-2), dbig!(999e-1), NoOp),
-        (dbig!(100), dbig!(-18e-2), dbig!(998e-1), SubOne),
         (dbig!(100), dbig!(-1e-10), dbig!(100), NoOp),
         (dbig!(100), dbig!(-1e-100), dbig!(100), NoOp),
         (dbig!(995), dbig!(8), dbig!(100e1), NoOp),
@@ -362,4 +365,38 @@ fn test_add_sub_with_rounding() {
     let c = fbig!(0xffp - 8).with_rounding::<Down>();
     test_add(&a, &b, &a);
     test_sub(&a, &b, &c);
+}
+
+/// `Context::sub(0, b) = -b` must be rounded with the context's mode applied to `-b` directly.
+///
+/// An earlier implementation rounded `b` first and then negated. That is only valid for the
+/// sign-symmetric modes (Zero, Away, HalfEven, HalfAway); for the asymmetric directed modes
+/// `Up` (toward +∞) and `Down` (toward −∞), `round(-x) != -round(x)`, so `0 - b` landed one
+/// ULP off. These cases pin the correct rounding for both directions and both signs.
+#[test]
+fn test_sub_zero_operand_directed_rounding() {
+    use dashu_float::round::mode::*;
+    use dashu_float::{Context, Repr};
+    use dashu_int::IBig;
+
+    let zero = Repr::<10>::new(IBig::from(0), 0);
+    let repr = |sig: i64, exp: isize| Repr::<10>::new(IBig::from(sig), exp);
+
+    // b = -1234 → 0 - b = +1234, rounded to precision 2:
+    //   Up   (toward +∞): 1300     Down (toward −∞): 1200
+    let b = repr(-1234, 0);
+    assert_eq!(Context::<Up>::new(2).sub(&zero, &b).value().repr(), &repr(13, 2));
+    assert_eq!(Context::<Down>::new(2).sub(&zero, &b).value().repr(), &repr(12, 2));
+
+    // b = +1234 → 0 - b = -1234, rounded to precision 2:
+    //   Up   (toward +∞): -1200    Down (toward −∞): -1300
+    let b = repr(1234, 0);
+    assert_eq!(Context::<Up>::new(2).sub(&zero, &b).value().repr(), &repr(-12, 2));
+    assert_eq!(Context::<Down>::new(2).sub(&zero, &b).value().repr(), &repr(-13, 2));
+
+    // The symmetric `Away` mode is unaffected by the negation order: ±1234 → ±1300.
+    let b = repr(-1234, 0);
+    assert_eq!(Context::<Away>::new(2).sub(&zero, &b).value().repr(), &repr(13, 2));
+    let b = repr(1234, 0);
+    assert_eq!(Context::<Away>::new(2).sub(&zero, &b).value().repr(), &repr(-13, 2));
 }

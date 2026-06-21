@@ -11,6 +11,10 @@
 - Specialized Toom-Cook-3 squaring: evaluates a single polynomial instead of two, 5 recursive squarings instead of multiplications.
 - Specialized NTT squaring: single forward transform instead of two, pointwise square instead of multiply.
 - Squaring thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE_SQR`, `DASHU_THRESHOLD_KARATSUBA_SQR`, and `DASHU_THRESHOLD_NTT_SQR` environment variables (requires `tuning` feature).
+- Optional `rand_v09` (rand 0.9, MSRV 1.63) and `rand_v010` (rand 0.10, MSRV 1.85) features mirroring `rand_v08`, exposing the random-integer distributions (`UniformBits`, `UniformBelow`, `UniformUBig`, `UniformIBig`) under those rand versions. The default `rand` feature remains `rand_v08`.
+- The `rand` distributions and their sampling algorithms now live once in the version-agnostic `dashu_int::rand` module, which exposes a `BitRng` trait (for driving them from any RNG) and `bridge_v08` / `bridge_v09` / `bridge_v010` constructors (to adapt each rand version's RNG). The `rand_v08` / `rand_v09` / `rand_v010` modules are now private per-version trait bindings; access the distributions through `dashu_int::rand`.
+- Montgomery multiplication: `&Montgomery * &Montgomery` for Large operands now builds the result directly from scratch memory instead of cloning one operand then overwriting every word via `mul_in_place_large`, saving an `s`-word copy per multiply. (Add, sub, and neg on references still clone since their in-place operations seed the output buffer from the operand value.)
+
 
 ### Improve
 - Basecase (schoolbook) multiplication now uses an dword mult inner kernel (two multiplier words per sweep over the accumulator, via the `add_mul_dword_same_len_in_place` and `sub_mul_dword_same_len_in_place` kernels), roughly halving accumulator memory traffic.
@@ -25,9 +29,8 @@
 - Montgomery multiplication: `mul_in_place_large` uses pointer-identity instead of full element comparison to detect self-multiplication (`a *= a`), avoiding an `O(s)` scan on the common distinct-operands path.
 - Montgomery multiplication: `mul_normalized_large` and `sqr_normalized_large` share a common `finish_monty_product` helper for the REDC+canonicalize pipeline tail.
 - Multiplication thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE_MUL`, `DASHU_THRESHOLD_KARATSUBA_MUL`, and `DASHU_THRESHOLD_NTT_MUL` environment variables (requires `tuning` feature).
-- Montgomery multiplication: `&Montgomery * &Montgomery` for Large operands now builds the result directly from scratch memory instead of cloning one operand then overwriting every word via `mul_in_place_large`, saving an `s`-word copy per multiply. (Add, sub, and neg on references still clone since their in-place operations seed the output buffer from the operand value.)
-
-### Improve
+- Non-power-of-2 radix formatting now preallocates the `radix_powers`/`big_chunks` vectors (capacity estimated from the number's length) instead of growing them push-by-push.
+- The basecase addmul/submul-2 kernels (`add_mul_dword_same_len_in_place`, `sub_mul_dword_same_len_in_place`) now dispatch at runtime to a BMI2 build of identical arithmetic on x86-64 (when the `std` feature is enabled and the CPU supports `bmi2`); LLVM lowers the widening multiplies to the flag-free `mulx` instruction and unrolls the loop. This speeds the kernel ~4-5% in isolation. Other targets and `no_std` builds keep the portable path.
 - `UBig::nth_root` for large composite `n` decomposes into a chain of smaller roots via small-prime factor reduction (2, 3, 5, 7), avoiding the prohibitively expensive `x^{n-1}` term in Newton's method.  E.g. n=10000 → four `sqrt` + four 5th-root calls.
 
 ### Change
