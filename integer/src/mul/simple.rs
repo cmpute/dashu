@@ -367,6 +367,8 @@ fn sub_mul_chunk(c: &mut [Word], a: &[Word], b: &[Word]) -> bool {
 mod tests {
     use super::*;
     use crate::arch::word::Word;
+    use alloc::vec;
+    use alloc::vec::Vec;
 
     // SplitMix64-style PRNG: deterministic, well-spread test words.
     fn next_rand(state: &mut u64) -> u64 {
@@ -379,35 +381,33 @@ mod tests {
         z ^ (z >> 31)
     }
 
-    /// Independent reference for `words[..n] += rhs[..n] * (m0 + m1 * B)`,
-    /// returning the full `n + 2` result limbs (low `n` are the updated words,
-    /// the top two are the carry-out pair).
-    fn add_mul_dword_ref(words: &[Word], rhs: &[Word], m0: Word, m1: Word) -> Vec<u64> {
+    /// Independent reference for `words[..n] += rhs[..n] * (m0 + m1 * B)` (B = 2^Word::BITS),
+    /// returning the full `n + 2` result limbs (low `n` are the updated words, the top two are
+    /// the carry-out pair). Works for any `Word` width (16/32/64-bit).
+    fn add_mul_dword_ref(words: &[Word], rhs: &[Word], m0: Word, m1: Word) -> Vec<Word> {
         let n = rhs.len();
+        let bits = Word::BITS as usize;
+        let lo = (1u128 << bits) - 1; // mask for the low `bits` of a limb
+                                      // Accumulate in u128 (Word is at most u64, so two-word products fit with carry room).
         let mut col: Vec<u128> = (0..n + 2)
             .map(|i| if i < n { words[i] as u128 } else { 0 })
             .collect();
         for i in 0..n {
             let a = rhs[i] as u128 * m0 as u128;
-            col[i] += a & u64::MAX as u128;
-            col[i + 1] += a >> 64;
+            col[i] += a & lo;
+            col[i + 1] += a >> bits;
             let b = rhs[i] as u128 * m1 as u128;
-            col[i + 1] += b & u64::MAX as u128;
-            col[i + 2] += b >> 64;
+            col[i + 1] += b & lo;
+            col[i + 2] += b >> bits;
         }
-        let mut out = vec![0u64; n + 2];
         let mut carry: u128 = 0;
         for v in col.iter_mut() {
             let s = *v + carry;
-            // the low 64 bits land in `out` below; here we just propagate
-            carry = s >> 64;
-            *v = s; // temporarily hold the full sum
+            carry = s >> bits; // the high part propagates to the next limb
+            *v = s; // the low `bits` are extracted below
         }
         assert_eq!(carry, 0);
-        for i in 0..n + 2 {
-            out[i] = col[i] as u64;
-        }
-        out
+        col.iter().map(|&c| c as Word).collect()
     }
 
     #[test]
@@ -415,10 +415,10 @@ mod tests {
         let mut state = 0x1234_5678_9ABC_DEF0u64;
         for _ in 0..4000 {
             let n = (next_rand(&mut state) % 7) as usize; // 0..=6
-            let words: Vec<Word> = (0..n).map(|_| next_rand(&mut state)).collect();
-            let rhs: Vec<Word> = (0..n).map(|_| next_rand(&mut state)).collect();
-            let m0 = next_rand(&mut state);
-            let m1 = next_rand(&mut state);
+            let words: Vec<Word> = (0..n).map(|_| next_rand(&mut state) as Word).collect();
+            let rhs: Vec<Word> = (0..n).map(|_| next_rand(&mut state) as Word).collect();
+            let m0 = next_rand(&mut state) as Word;
+            let m1 = next_rand(&mut state) as Word;
 
             let expected = add_mul_dword_ref(&words, &rhs, m0, m1);
 
@@ -450,13 +450,18 @@ mod tests {
         let mut state = 0xDEAD_BEEF_CAFE_BABEu64;
         for _ in 0..4000 {
             let n = 1 + (next_rand(&mut state) % 6) as usize; // 1..=6
-            let words: Vec<Word> = (0..n).map(|_| next_rand(&mut state)).collect();
-            let rhs: Vec<Word> = (0..n).map(|_| next_rand(&mut state)).collect();
-            let m0 = next_rand(&mut state);
-            let m1 = next_rand(&mut state);
+            let words: Vec<Word> = (0..n).map(|_| next_rand(&mut state) as Word).collect();
+            let rhs: Vec<Word> = (0..n).map(|_| next_rand(&mut state) as Word).collect();
+            let m0 = next_rand(&mut state) as Word;
+            let m1 = next_rand(&mut state) as Word;
 
             let mut w_p = words.clone();
+            // The portable carries are only compared against the BMI2 kernel below; on
+            // targets without that cfg there is nothing to check them against.
+            #[cfg(all(target_arch = "x86_64", feature = "std"))]
             let (cl_p, ch_p) = sub_mul_dword_same_len_in_place_impl(&mut w_p, &rhs, m0, m1);
+            #[cfg(not(all(target_arch = "x86_64", feature = "std")))]
+            sub_mul_dword_same_len_in_place_impl(&mut w_p, &rhs, m0, m1);
 
             #[cfg(all(target_arch = "x86_64", feature = "std"))]
             {
@@ -476,11 +481,12 @@ mod tests {
     fn dword_kernel_edge_cases() {
         // Extremes: all-ones words with max multipliers, and zero multipliers.
         for &n in &[1usize, 2, 3, 9] {
-            let ones = vec![u64::MAX; n];
-            let expected = add_mul_dword_ref(&ones, &ones, u64::MAX, u64::MAX);
+            let ones = vec![Word::MAX; n];
+            let expected = add_mul_dword_ref(&ones, &ones, Word::MAX, Word::MAX);
 
             let mut w = ones.clone();
-            let (cl, ch) = add_mul_dword_same_len_in_place_impl(&mut w, &ones, u64::MAX, u64::MAX);
+            let (cl, ch) =
+                add_mul_dword_same_len_in_place_impl(&mut w, &ones, Word::MAX, Word::MAX);
             assert_eq!(&w[..], &expected[..n]);
             assert_eq!(cl, expected[n]);
             assert_eq!(ch, expected[n + 1]);
@@ -490,7 +496,7 @@ mod tests {
                 let mut w2 = ones.clone();
                 // SAFETY: bmi2 was just confirmed at runtime.
                 let (cl2, ch2) = unsafe {
-                    add_mul_dword_same_len_in_place_bmi2(&mut w2, &ones, u64::MAX, u64::MAX)
+                    add_mul_dword_same_len_in_place_bmi2(&mut w2, &ones, Word::MAX, Word::MAX)
                 };
                 assert_eq!(&w[..], &w2[..]);
                 assert_eq!((cl, ch), (cl2, ch2));
