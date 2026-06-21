@@ -531,7 +531,11 @@ impl<R: Round> Context<R> {
         assert_finite_operands(lhs, rhs);
 
         let sum = if lhs.is_zero() {
-            self.repr_round_ref(rhs).map(|v| -v)
+            // Round `-rhs` directly rather than negating *after* rounding. For the asymmetric
+            // modes (Up = toward +∞, Down = toward −∞), `round(-x) != -round(x)`: rounding
+            // `rhs` toward +∞ then negating rounds in the wrong direction, so `0 - rhs`
+            // would land one ULP off (e.g. truncated instead of rounded away from the result).
+            self.repr_round_ref(&Repr::new(-&rhs.significand, rhs.exponent))
         } else if rhs.is_zero() {
             self.repr_round_ref(lhs)
         } else {

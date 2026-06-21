@@ -7,6 +7,7 @@
 - Implement `Binary`, `Octal`, `LowerHex`, and `UpperHex` formatting for `RBig` and `Relaxed`.
 - Add `RBig::in_radix` and `Relaxed::in_radix` methods for formatting in arbitrary radices (2-36).
 - Add `RBig::in_expanded` and `Relaxed::in_expanded` methods for printing the positional expansion of a rational number, with support for precision control, repetend display (`#` flag), and scientific notation (`e`/`E`).
+- Optional `rand_v09` (rand 0.9, MSRV 1.63) and `rand_v010` (rand 0.10, MSRV 1.85) features mirroring `rand_v08`, exposing the random-rational distributions (`Uniform01`, `UniformRBig`) under those rand versions. The default `rand` feature remains `rand_v08`.
 
 ## 0.4.2
 

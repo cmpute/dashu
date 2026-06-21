@@ -10,6 +10,7 @@
 - Specialized Toom-Cook-3 squaring: evaluates a single polynomial instead of two, 5 recursive squarings instead of multiplications.
 - Specialized NTT squaring: single forward transform instead of two, pointwise square instead of multiply.
 - Squaring thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE_SQR`, `DASHU_THRESHOLD_KARATSUBA_SQR`, and `DASHU_THRESHOLD_NTT_SQR` environment variables (requires `tuning` feature).
+- Optional `rand_v09` (rand 0.9, MSRV 1.63) and `rand_v010` (rand 0.10, MSRV 1.85) features mirroring `rand_v08`, exposing the random-integer distributions (`UniformBits`, `UniformBelow`, `UniformUBig`, `UniformIBig`) under those rand versions. The default `rand` feature remains `rand_v08`.
 
 ### Improve
 - Basecase (schoolbook) multiplication now uses an dword mult inner kernel (two multiplier words per sweep over the accumulator, via the `add_mul_dword_same_len_in_place` and `sub_mul_dword_same_len_in_place` kernels), roughly halving accumulator memory traffic.

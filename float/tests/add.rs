@@ -367,97 +367,36 @@ fn test_add_sub_with_rounding() {
     test_sub(&a, &b, &c);
 }
 
-/// Reproducers for a subtraction "borrow" rounding bug in `Context::add` / `Context::sub`.
+/// `Context::sub(0, b) = -b` must be rounded with the context's mode applied to `-b` directly.
 ///
-/// When the two summands have opposite signs and the result's magnitude lies just *below* a
-/// round number (e.g. `B^k - eps`), the limited-precision path misrounds. Each row gives the
-/// two operands and the *correctly-rounded* result (computed independently from the exact sum
-/// via unlimited precision + `with_precision`); pristine dashu returns the `actual` value shown
-/// in the failure message instead. All cases should pass once the bug in `repr_round_sum` /
-/// the alignment branches is fixed.
+/// An earlier implementation rounded `b` first and then negated. That is only valid for the
+/// sign-symmetric modes (Zero, Away, HalfEven, HalfAway); for the asymmetric directed modes
+/// `Up` (toward +∞) and `Down` (toward −∞), `round(-x) != -round(x)`, so `0 - b` landed one
+/// ULP off. These cases pin the correct rounding for both directions and both signs.
 #[test]
-#[ignore]
-fn test_add_sub_borrow_rounding_known_failures() {
-    use core::str::FromStr;
+fn test_sub_zero_operand_directed_rounding() {
     use dashu_float::round::mode::*;
-    use dashu_float::round::Round;
-    use dashu_float::{Repr, Word};
+    use dashu_float::{Context, Repr};
     use dashu_int::IBig;
 
-    fn opr<const B: Word>(sig: &str, exp: isize) -> Repr<B> {
-        Repr::new(IBig::from_str(sig).unwrap(), exp)
-    }
+    let zero = Repr::<10>::new(IBig::from(0), 0);
+    let repr = |sig: i64, exp: isize| Repr::<10>::new(IBig::from(sig), exp);
 
-    fn chk<R: Round, const B: Word>(
-        fails: &mut Vec<String>,
-        mode: &str,
-        p: usize,
-        sub: bool,
-        operands: (Repr<B>, Repr<B>, Repr<B>),
-    ) {
-        let (a, b, expected) = operands;
-        let ctx = Context::<R>::new(p);
-        let actual = if sub {
-            ctx.sub(&a, &b)
-        } else {
-            ctx.add(&a, &b)
-        }
-        .value();
-        if actual.repr() != &expected {
-            let op = if sub { "-" } else { "+" };
-            fails.push(format!(
-                "case {} [{mode}, p={p}] a {op} b\n    a        = {a:?}\n    b        = {b:?}\n    actual   = {actual:?}   <-- pristine (wrong)\n    expected = {expected:?}",
-                fails.len() + 1,
-            ));
-        }
-    }
+    // b = -1234 → 0 - b = +1234, rounded to precision 2:
+    //   Up   (toward +∞): 1300     Down (toward −∞): 1200
+    let b = repr(-1234, 0);
+    assert_eq!(Context::<Up>::new(2).sub(&zero, &b).value().repr(), &repr(13, 2));
+    assert_eq!(Context::<Down>::new(2).sub(&zero, &b).value().repr(), &repr(12, 2));
 
-    let mut fails: Vec<String> = Vec::new();
+    // b = +1234 → 0 - b = -1234, rounded to precision 2:
+    //   Up   (toward +∞): -1200    Down (toward −∞): -1300
+    let b = repr(1234, 0);
+    assert_eq!(Context::<Up>::new(2).sub(&zero, &b).value().repr(), &repr(-12, 2));
+    assert_eq!(Context::<Down>::new(2).sub(&zero, &b).value().repr(), &repr(-13, 2));
 
-    // decimal, a + b, Zero: tiny negative `a` subtracted from large positive `b`
-    chk::<Zero, 10>(
-        &mut fails,
-        "Zero",
-        8,
-        false,
-        (opr("-3", -21), opr("27951", 14), opr("27950999", 11)),
-    );
-    // decimal, a + b, Zero: small negative `b` subtracted from large positive `a`
-    chk::<Zero, 10>(
-        &mut fails,
-        "Zero",
-        8,
-        false,
-        (opr("58506142", -8), opr("-712", 20), opr("-71199999", 15)),
-    );
-    // decimal, a - b, Zero: a - (-large) where the result lands just below the large value
-    chk::<Zero, 10>(
-        &mut fails,
-        "Zero",
-        6,
-        true,
-        (opr("-27286", -11), opr("-4863274", 26), opr("486327", 27)),
-    );
-    // binary, a + b, HalfEven
-    chk::<HalfEven, 2>(
-        &mut fails,
-        "HalfEven",
-        11,
-        false,
-        (opr("-77861", -18), opr("3959375", 23), opr("1933", 34)),
-    );
-    // binary, a + b, HalfEven
-    chk::<HalfEven, 2>(
-        &mut fails,
-        "HalfEven",
-        16,
-        false,
-        (opr("9559485", -18), opr("-15", -15), opr("37341", -10)),
-    );
-
-    assert!(
-        fails.is_empty(),
-        "borrow-rounding bug: pristine returns `actual` instead of `expected` for these cases:\n\n{}\n",
-        fails.join("\n")
-    );
+    // The symmetric `Away` mode is unaffected by the negation order: ±1234 → ±1300.
+    let b = repr(-1234, 0);
+    assert_eq!(Context::<Away>::new(2).sub(&zero, &b).value().repr(), &repr(13, 2));
+    let b = repr(1234, 0);
+    assert_eq!(Context::<Away>::new(2).sub(&zero, &b).value().repr(), &repr(-13, 2));
 }

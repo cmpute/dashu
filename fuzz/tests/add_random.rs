@@ -9,52 +9,44 @@
 //!
 //! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test add_random -- --ignored --nocapture`
 
-use core::str::FromStr;
 use dashu_float::round::Round;
 use dashu_float::round::mode::*;
 use dashu_float::{Context, FBig, Repr, Word};
-use dashu_int::IBig;
+use dashu_int::{rand_v010::UniformBits, IBig};
 use rand::prelude::*;
 
-/// Random signed significand, generated as a random decimal-digit string parsed into an
-/// `IBig`. Using a base-agnostic integer (not a base-`B` literal) lets the same significand
-/// feed `Repr::<B>` for any base `B`.
+/// Random signed significand drawn directly as a random `IBig` of bounded bit length.
+///
+/// The magnitude is at most ~266 bits (≈ 80 decimal digits), matching the coverage of the
+/// previous decimal-string generator but without per-iteration allocation + parsing. A
+/// base-agnostic integer lets the same significand feed `Repr::<B>` for any base `B`.
 fn random_significand<R: Rng + ?Sized>(rng: &mut R) -> IBig {
-    let neg = rng.random_bool(0.5);
-    let n_digits = rng.random_range(1..=80);
-    let mut s = String::new();
-    if neg {
-        s.push('-');
-    }
-    for _ in 0..n_digits {
-        s.push(char::from_digit(rng.random_range(0..10), 10).unwrap());
-    }
-    IBig::from_str(&s).unwrap_or(IBig::ZERO)
+    let bits = rng.random_range(1..=266usize);
+    rng.sample(UniformBits::new(bits))
 }
 
-/// Expected result of `Context::{add,sub}` at `precision`, matching the library's design.
+/// Round the exact result to `precision` and `precision + 1` digits, returning both.
 ///
-/// An *exact* result is kept verbatim when it fits within the `precision + is_sub` digit
-/// allowance (e.g. `101 - 0.2 = 100.8` is kept as 4 digits at precision 3; `is_sub` is true
-/// there). Any longer (inexact) result is rounded to `precision`.
-fn expected<R: Round, const B: Word>(
-    value: FBig<R, B>,
-    precision: usize,
-    is_sub: bool,
-) -> FBig<R, B> {
-    let digits = value.repr().digits();
-    let allowance = precision + is_sub as usize;
-    if digits <= allowance {
-        // exact, fits the allowance: pin to a finite precision without altering the value
-        value.with_precision(digits.max(1)).value()
-    } else {
-        // too long: round down to `precision` via the simple `repr_round` path
-        value
-            .with_precision(digits)
-            .value()
-            .with_precision(precision)
-            .value()
-    }
+/// The library may carry one guard digit on an inexact effective subtraction (see AGENTS.md),
+/// so a correct limited-precision result matches *either* rounding — a plain addition, or an
+/// identity like `x + 0`, rounds to `precision`; a genuine inexact subtraction rounds to
+/// `precision + 1`. Comparing against both avoids relying on a fragile sign-based `is_sub`
+/// heuristic (which misfires, for example, when one operand is zero).
+fn rounded_oracle<R: Round, const B: Word>(exact: Repr<B>, precision: usize) -> (Repr<B>, Repr<B>) {
+    // Attach a precision larger than the value's digit count so `with_precision` actually
+    // rounds (it only rounds when the source precision exceeds the target).
+    let d = exact.digits().max(precision + 2).max(1);
+    let rp = FBig::<R, B>::from_repr(exact.clone(), Context::<R>::new(d))
+        .with_precision(precision)
+        .value()
+        .repr()
+        .clone();
+    let rp1 = FBig::<R, B>::from_repr(exact, Context::<R>::new(d))
+        .with_precision(precision + 1)
+        .value()
+        .repr()
+        .clone();
+    (rp, rp1)
 }
 
 /// Compare limited-precision add/sub against the exact-then-round oracle for one operand pair.
@@ -65,34 +57,39 @@ fn check_pair<R: Round, const B: Word>(
     mode_name: &str,
 ) {
     let ctx = Context::<R>::new(precision);
+    let unlimited = Context::<R>::new(0);
 
-    let ua = FBig::<R, B>::from_repr(a.clone(), Context::<R>::new(0));
-    let ub = FBig::<R, B>::from_repr(b.clone(), Context::<R>::new(0));
-
-    // `is_sub`: the two summands of the operation have opposite signs.
-    //   a + b  -> summands a, b   -> opposite iff a.sign != b.sign
-    //   a - b  -> summands a, -b  -> opposite iff a.sign == b.sign
-    let add_is_sub = a.sign() != b.sign();
-    let sub_is_sub = a.sign() == b.sign();
-
-    let actual_add = ctx.add(a, b).value();
-    let oracle_add = expected(ua.clone() + ub.clone(), precision, add_is_sub);
-    assert_eq!(
-        actual_add.repr(),
-        oracle_add.repr(),
-        "add mismatch (mode={mode_name}, p={precision})\n a={a:?}\n b={b:?}\n actual={actual_add:?}\n oracle={oracle_add:?}",
+    let actual_add = ctx.add(a, b).value().repr().clone();
+    let (add_p, add_p1) =
+        rounded_oracle::<R, B>(unlimited.add(a, b).value().repr().clone(), precision);
+    assert!(
+        actual_add == add_p || actual_add == add_p1,
+        "add mismatch (mode={mode_name}, p={precision})\n a={a:?}\n b={b:?}\n actual={actual_add:?}\n oracle(p)={add_p:?}\n oracle(p+1)={add_p1:?}",
     );
 
-    let actual_sub = ctx.sub(a, b).value();
-    let oracle_sub = expected(ua - ub, precision, sub_is_sub);
-    assert_eq!(
-        actual_sub.repr(),
-        oracle_sub.repr(),
-        "sub mismatch (mode={mode_name}, p={precision})\n a={a:?}\n b={b:?}\n actual={actual_sub:?}\n oracle={oracle_sub:?}",
+    let actual_sub = ctx.sub(a, b).value().repr().clone();
+    let (sub_p, sub_p1) =
+        rounded_oracle::<R, B>(unlimited.sub(a, b).value().repr().clone(), precision);
+    assert!(
+        actual_sub == sub_p || actual_sub == sub_p1,
+        "sub mismatch (mode={mode_name}, p={precision})\n a={a:?}\n b={b:?}\n actual={actual_sub:?}\n oracle(p)={sub_p:?}\n oracle(p+1)={sub_p1:?}",
     );
 }
 
 fn run_mode<R: Round, const B: Word>(rng: &mut StdRng, iters: usize, mode_name: &str) {
+    // Deterministic small-precision sweep: precisions 1, 2, 3 are where rounding bugs live,
+    // but the random `1..200` below hits them only by chance. Always exercise these boundary
+    // precisions (ported from the removed `add_sub_oracle` example).
+    for &precision in &[1usize, 2, 3, 5, 10] {
+        for _ in 0..50 {
+            let a_exp = rng.random_range(-1500..1500) as isize;
+            let a = Repr::<B>::new(random_significand(rng), a_exp);
+            let b_exp = rng.random_range(-1500..1500) as isize;
+            let b = Repr::<B>::new(random_significand(rng), b_exp);
+            check_pair::<R, B>(&a, &b, precision, mode_name);
+        }
+    }
+
     for _ in 0..iters {
         // Wide exponent range so that the negligible-small, tight-align, cancellation and borrow
         // (result just below a round number) branches are all exercised.

@@ -10,7 +10,15 @@ mod num_order;
 mod num_traits;
 
 #[cfg(feature = "rand_v08")]
-pub mod rand;
+pub mod rand_v08;
+#[cfg(feature = "rand_v08")]
+pub use rand_v08 as rand;
+
+#[cfg(feature = "rand_v09")]
+pub mod rand_v09;
+
+#[cfg(feature = "rand_v010")]
+pub mod rand_v010;
 
 #[cfg(feature = "serde")]
 mod serde;
