@@ -459,6 +459,132 @@ macro_rules! forward_ubig_ibig_binop_to_repr {
     };
 }
 
+/// Forward a modular-type binary op to the canonical `OpAssign<&T>` impl, where the real
+/// per-repr work lives. `$target` must be a type parameterized by a single lifetime `'a`
+/// (e.g. `Montgomery`, `Reduced`). Generates three universally-uniform forwarding impls:
+/// - `Op<T> for T` → `self.op(&rhs)`
+/// - `Op<&T> for T` → `self.op_assign(rhs); self`
+/// - `OpAssign<T> for T` → `self.op_assign(&rhs)`
+///
+/// The caller still writes `OpAssign<&T>` (the real work), plus `Op<T> for &T` (e.g. via
+/// [`impl_modular_commutative_op_for_ref!`] or a specialized impl) and `Op<&T> for &T`
+/// (e.g. via [`impl_modular_binop_ref_ref_by_clone!`] or a specialized impl).
+macro_rules! forward_modular_binop_to_assign {
+    (impl $trait:ident, $method:ident, $trait_assign:ident, $method_assign:ident for $target:ident) => {
+        impl<'a> $trait<$target<'a>> for $target<'a> {
+            type Output = $target<'a>;
+
+            #[inline]
+            fn $method(self, rhs: $target<'a>) -> $target<'a> {
+                self.$method(&rhs)
+            }
+        }
+
+        impl<'a> $trait<&$target<'a>> for $target<'a> {
+            type Output = $target<'a>;
+
+            #[inline]
+            fn $method(mut self, rhs: &$target<'a>) -> $target<'a> {
+                self.$method_assign(rhs);
+                self
+            }
+        }
+
+        impl<'a> $trait_assign<$target<'a>> for $target<'a> {
+            #[inline]
+            fn $method_assign(&mut self, rhs: $target<'a>) {
+                self.$method_assign(&rhs)
+            }
+        }
+    };
+}
+
+/// For commutative modular binary ops (Add, Mul), implement `Op<T> for &T` as `rhs.op(self)`.
+macro_rules! impl_modular_commutative_op_for_ref {
+    (impl $trait:ident, $method:ident for $target:ident) => {
+        impl<'a> $trait<$target<'a>> for &$target<'a> {
+            type Output = $target<'a>;
+
+            #[inline]
+            fn $method(self, rhs: $target<'a>) -> $target<'a> {
+                rhs.$method(self)
+            }
+        }
+    };
+}
+
+/// Implement `Op<&T> for &T` as `self.clone().op(rhs)`. Skip this for ops that have a
+/// specialized clone-free path for certain repr variants (e.g. Mul's Large+Large shortcut
+/// that builds the product in place instead of cloning).
+macro_rules! impl_modular_binop_ref_ref_by_clone {
+    (impl $trait:ident, $method:ident for $target:ident) => {
+        impl<'a> $trait<&$target<'a>> for &$target<'a> {
+            type Output = $target<'a>;
+
+            #[inline]
+            fn $method(self, rhs: &$target<'a>) -> $target<'a> {
+                self.clone().$method(rhs)
+            }
+        }
+    };
+}
+
+/// Forward a modular-type binary op to the canonical `Op<&T> for &T` impl, where the real
+/// work lives (used for Div, whose impl needs a fresh output rather than an in-place
+/// mutation). `$target` must be a type parameterized by a single lifetime `'a`. Generates
+/// five forwarding impls:
+/// - `Op<T> for T` → `(&self).op(&rhs)`
+/// - `Op<&T> for T` → `(&self).op(rhs)`
+/// - `Op<T> for &T` → `self.op(&rhs)`
+/// - `OpAssign<T>` → `self.op_assign(&rhs)`
+/// - `OpAssign<&T>` → `*self = (&*self).op(rhs)`
+///
+/// The caller still writes `Op<&T> for &T` (the real work).
+macro_rules! forward_modular_binop_to_ref_ref {
+    (impl $trait:ident, $method:ident, $trait_assign:ident, $method_assign:ident for $target:ident) => {
+        impl<'a> $trait<$target<'a>> for $target<'a> {
+            type Output = $target<'a>;
+
+            #[inline]
+            fn $method(self, rhs: $target<'a>) -> $target<'a> {
+                (&self).$method(&rhs)
+            }
+        }
+
+        impl<'a> $trait<&$target<'a>> for $target<'a> {
+            type Output = $target<'a>;
+
+            #[inline]
+            fn $method(self, rhs: &$target<'a>) -> $target<'a> {
+                (&self).$method(rhs)
+            }
+        }
+
+        impl<'a> $trait<$target<'a>> for &$target<'a> {
+            type Output = $target<'a>;
+
+            #[inline]
+            fn $method(self, rhs: $target<'a>) -> $target<'a> {
+                self.$method(&rhs)
+            }
+        }
+
+        impl<'a> $trait_assign<$target<'a>> for $target<'a> {
+            #[inline]
+            fn $method_assign(&mut self, rhs: $target<'a>) {
+                self.$method_assign(&rhs)
+            }
+        }
+
+        impl<'a> $trait_assign<&$target<'a>> for $target<'a> {
+            #[inline]
+            fn $method_assign(&mut self, rhs: &$target<'a>) {
+                *self = (&*self).$method(rhs);
+            }
+        }
+    };
+}
+
 /// Implement `impl Op<UBig> for IBig` by forwarding to the macro `$impl` with arguments
 /// `(self_sign, self_repr, rhs_repr)`
 macro_rules! forward_ibig_ubig_binop_to_repr {
@@ -561,9 +687,13 @@ macro_rules! forward_ibig_ubig_binop_to_repr {
 pub(crate) use debug_assert_zero;
 pub(crate) use forward_ibig_binop_to_repr;
 pub(crate) use forward_ibig_ubig_binop_to_repr;
+pub(crate) use forward_modular_binop_to_assign;
+pub(crate) use forward_modular_binop_to_ref_ref;
 pub(crate) use forward_ubig_binop_to_repr;
 pub(crate) use forward_ubig_ibig_binop_to_repr;
 pub(crate) use impl_binop_assign_by_taking;
 pub(crate) use impl_binop_assign_with_primitive;
 pub(crate) use impl_binop_with_primitive;
 pub(crate) use impl_commutative_binop_with_primitive;
+pub(crate) use impl_modular_binop_ref_ref_by_clone;
+pub(crate) use impl_modular_commutative_op_for_ref;

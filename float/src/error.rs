@@ -41,6 +41,11 @@ pub fn panic_root_negative() -> ! {
     panic!("the root is a complex number!")
 }
 
+/// Panics when taking the zeroth root of a number
+pub fn panic_root_zeroth() -> ! {
+    panic!("finding 0th root is not allowed!")
+}
+
 /// Panics when the result of an operation is NaN
 pub fn panic_nan() -> ! {
     panic!("the result of the operation is NaN!")

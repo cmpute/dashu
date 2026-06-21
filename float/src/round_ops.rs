@@ -2,10 +2,10 @@ use crate::{
     error::assert_finite,
     fbig::FBig,
     repr::{Context, Repr},
-    round::{mode, Round},
+    round::{mode, Round, Rounded},
     utils::{shr_digits, split_digits, split_digits_ref},
 };
-use dashu_base::Sign;
+use dashu_base::{Approximation::*, Sign};
 use dashu_int::{IBig, Word};
 
 impl<R: Round, const B: Word> FBig<R, B> {
@@ -268,5 +268,73 @@ impl<R: Round, const B: Word> FBig<R, B> {
         let rounding = mode::HalfAway::round_fract::<B>(&hi, lo, precision);
         let context = Context::new(self.context.precision.saturating_sub(precision));
         FBig::new(Repr::new(hi + rounding, 0), context)
+    }
+
+    /// Round the number to the nearest multiple of `BASE^exp`.
+    ///
+    /// This is the dashu analog of Python's `Decimal.quantize()`. The result's
+    /// value is an exact multiple of `BASE^exp`, and its precision is set so that
+    /// [`ulp()`][FBig::ulp] equals `BASE^exp`. Because dashu floats are
+    /// normalized, trailing zeros are not preserved in storage (the stored
+    /// exponent may be coarser than `exp`), but the value and ULP are exact. The
+    /// result keeps `self`'s rounding mode.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use core::str::FromStr;
+    /// # use dashu_base::ParseError;
+    /// # use dashu_float::DBig;
+    /// use dashu_base::Approximation::*;
+    /// use dashu_float::round::Rounding::*;
+    ///
+    /// let a = DBig::from_str("1.234")?; // precision 4
+    ///
+    /// // round to 2 fractional digits (exp = -2): 3 significant figures remain
+    /// assert_eq!(a.quantize(-2), Inexact(DBig::from_str("1.23")?, NoOp));
+    /// assert_eq!(a.quantize(-2).value().precision(), 3);
+    ///
+    /// // a finer quantum is exact (no rounding) and *increases* the precision
+    /// assert_eq!(a.quantize(-10), Exact(DBig::from_str("1.234")?));
+    /// assert_eq!(a.quantize(-10).value().precision(), 11);
+    ///
+    /// // round to integer (exp = 0), or to the nearest 1000 (exp = 3)
+    /// assert_eq!(a.quantize(0), Inexact(DBig::from_str("1")?, NoOp));
+    /// assert_eq!(DBig::from_str("999")?.quantize(3), Inexact(DBig::from_str("1000")?, AddOne));
+    /// # Ok::<(), ParseError>(())
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the number is infinte
+    pub fn quantize(&self, exp: isize) -> Rounded<Self> {
+        assert_finite(&self.repr);
+        if self.repr.is_zero() {
+            return Exact(self.clone());
+        }
+
+        let self_exp = self.repr.exponent;
+        if exp <= self_exp {
+            // finer-or-equal quantum: self is already an exact multiple of BASE^exp,
+            // so only the precision changes (set so that ulp == BASE^exp).
+            let precision = (self_exp + self.repr.digits() as isize - exp) as usize;
+            return Exact(FBig::new(self.repr.clone(), Context::new(precision)));
+        }
+
+        // coarser quantum: round off (exp - self_exp) low-order digits.
+        // Because a normalized significand is never divisible by BASE, this branch
+        // is always inexact (its low part is never all-zero).
+        let shift = (exp - self_exp) as usize;
+        let (hi, lo) = split_digits_ref::<B>(&self.repr.significand, shift);
+        let adjust = R::round_fract::<B>(&hi, lo, shift);
+        let repr = Repr::new(hi + adjust, exp);
+        // precision is set so that ulp == BASE^exp; a result that rounds to zero
+        // has no meaningful ulp, so it gets unlimited precision (like `round()`).
+        let precision = if repr.is_zero() {
+            0
+        } else {
+            (repr.exponent + repr.digits() as isize - exp) as usize
+        };
+        Inexact(FBig::new(repr, Context::new(precision)), adjust)
     }
 }

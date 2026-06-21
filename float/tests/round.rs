@@ -1,7 +1,7 @@
 use core::str::FromStr;
 
 use dashu_base::{Approximation::*, ParseError};
-use dashu_float::{round::Rounding::NoOp, DBig};
+use dashu_float::{round::Rounding::*, DBig};
 
 mod helper_macros;
 
@@ -182,4 +182,119 @@ fn test_trunc_inf() {
 #[should_panic]
 fn test_fract_inf() {
     let _ = DBig::INFINITY.fract();
+}
+
+#[test]
+fn test_quantize_decimal() -> Result<(), ParseError> {
+    let a = DBig::from_str("1.234")?; // precision 4, exponent -3
+
+    // coarser quantum: rounding occurs (always inexact for a normalized input)
+    let q = a.quantize(-2);
+    assert_eq!(q, Inexact(DBig::from_str("1.23")?, NoOp));
+    assert_eq!(q.value().precision(), 3);
+
+    assert_eq!(a.quantize(0), Inexact(DBig::from_str("1")?, NoOp));
+    assert_eq!(a.quantize(0).value().precision(), 1);
+
+    // tie rounds away from zero under HalfAway (the DBig default)
+    let b = DBig::from_str("7.325")?;
+    assert_eq!(b.quantize(-2), Inexact(DBig::from_str("7.33")?, AddOne));
+    assert_eq!(b.quantize(-2).value().precision(), 3);
+    assert_eq!(b.quantize(0), Inexact(DBig::from_str("7")?, NoOp));
+
+    // round up across a digit boundary
+    assert_eq!(DBig::from_str("999")?.quantize(3), Inexact(DBig::from_str("1000")?, AddOne));
+    assert_eq!(DBig::from_str("999")?.quantize(3).value().precision(), 1);
+    assert_eq!(DBig::from_str("9.9")?.quantize(0), Inexact(DBig::from_str("10")?, AddOne));
+
+    // round toward zero (result is zero -> unlimited precision, like `round()`)
+    assert_eq!(DBig::from_str("10")?.quantize(2), Inexact(DBig::ZERO, NoOp));
+    assert_eq!(DBig::from_str("0.4")?.quantize(0), Inexact(DBig::ZERO, NoOp));
+
+    // finer-or-equal quantum: exact, value unchanged, precision increases
+    assert_eq!(a.quantize(-3), Exact(DBig::from_str("1.234")?));
+    assert_eq!(a.quantize(-3).value().precision(), 4);
+    assert_eq!(a.quantize(-5), Exact(DBig::from_str("1.234")?));
+    assert_eq!(a.quantize(-5).value().precision(), 6);
+    assert_eq!(a.quantize(-10), Exact(DBig::from_str("1.234")?));
+    assert_eq!(a.quantize(-10).value().precision(), 11);
+
+    // zero input is exact
+    assert_eq!(DBig::ZERO.quantize(3), Exact(DBig::ZERO));
+
+    // negatives: odd/even behavior mirrors the sign
+    let n = DBig::from_str("-1.234")?;
+    assert_eq!(n.quantize(-1), Inexact(DBig::from_str("-1.2")?, NoOp));
+    assert_eq!(n.quantize(-1).value().precision(), 2);
+
+    Ok(())
+}
+
+#[test]
+#[rustfmt::skip::macros(fbig)]
+fn test_quantize_binary() {
+    // binary FBig defaults to Zero (toward-zero) rounding.
+    // 0x3 (3, sig 3 exp 0, 2 bits): an equal/finer quantum is exact.
+    assert_eq!(fbig!(0x3).quantize(0), Exact(fbig!(0x3)));
+    assert_eq!(fbig!(0x3).quantize(0).value().precision(), 2);
+    assert_eq!(fbig!(0x3).quantize(-2), Exact(fbig!(0x3)));
+    assert_eq!(fbig!(0x3).quantize(-2).value().precision(), 4);
+
+    // 0x3p-2 (0.75) quantized toward zero:
+    //   to exp -1 (nearest 0.5) -> 0.5 ; to exp 0 (integer) -> 0
+    assert_eq!(fbig!(0x3p-2).quantize(-1), Inexact(fbig!(0x1p-1), NoOp));
+    assert_eq!(fbig!(0x3p-2).quantize(-1).value().precision(), 1);
+    assert_eq!(fbig!(0x3p-2).quantize(0), Inexact(fbig!(0x0), NoOp));
+}
+
+/// `quantize` must honor the type-level rounding mode `R`.
+#[test]
+fn test_quantize_modes() -> Result<(), ParseError> {
+    use dashu_float::{
+        round::mode::{Down, Up},
+        FBig,
+    };
+
+    let halfaway = DBig::from_str("7.325")?; // DBig == FBig<HalfAway, 10>
+    let down: FBig<Down, 10> = FBig::<Down, 10>::from_str("7.325")?;
+    let up: FBig<Up, 10> = FBig::<Up, 10>::from_str("7.325")?;
+
+    // 7.325 is exactly halfway between 7.32 and 7.33
+    assert_eq!(halfaway.quantize(-2), Inexact(DBig::from_str("7.33")?, AddOne));
+    assert_eq!(down.quantize(-2), Inexact(FBig::<Down, 10>::from_str("7.32")?, NoOp));
+    assert_eq!(up.quantize(-2), Inexact(FBig::<Up, 10>::from_str("7.33")?, AddOne));
+    Ok(())
+}
+
+/// For any nonzero result, `quantize(exp).ulp()` must equal `BASE^exp` exactly
+/// (this is how the result precision is defined).
+#[test]
+fn test_quantize_ulp_invariant() -> Result<(), ParseError> {
+    let inputs = [
+        "1.234",
+        "7.325",
+        "999",
+        "0.5",
+        "12345.6789",
+        "0.001",
+        "1e20",
+    ];
+    for s in &inputs {
+        let x = DBig::from_str(s)?;
+        for &exp in &[-10isize, -5, -2, -1, 0, 1, 2, 3, 5, 10] {
+            let q = x.quantize(exp).value();
+            // skip results that rounded to zero (they have unlimited precision)
+            if q.precision() != 0 {
+                let quantum = DBig::from_str(&format!("1e{exp}"))?;
+                assert_eq!(q.ulp(), quantum, "ulp mismatch for {s}.quantize({exp})");
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+#[should_panic]
+fn test_quantize_inf() {
+    let _ = DBig::INFINITY.quantize(0);
 }

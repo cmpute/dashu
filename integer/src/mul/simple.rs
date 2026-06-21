@@ -5,8 +5,8 @@ use crate::{
     arch::word::{SignedWord, Word},
     math,
     memory::Memory,
-    mul::{self, helpers},
-    primitive::double_word,
+    mul::helpers,
+    primitive::{double_word, extend_word, split_dword},
     Sign::{self, *},
 };
 
@@ -15,6 +15,73 @@ const CHUNK_LEN: usize = 1024;
 
 /// Max supported Smaller factor length.
 pub const MAX_SMALLER_LEN: usize = CHUNK_LEN;
+
+/// words += mult * rhs
+///
+/// Returns carry.
+#[must_use]
+pub fn add_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) -> Word {
+    assert!(words.len() == rhs.len());
+    if mult == 0 {
+        return 0;
+    }
+
+    let mut carry: Word = 0;
+    for (a, b) in words.iter_mut().zip(rhs.iter()) {
+        let (v_lo, v_hi) = math::mul_add_2carry(mult, *b, *a, carry);
+        *a = v_lo;
+        carry = v_hi;
+    }
+    carry
+}
+
+/// words += mult * rhs
+///
+/// Returns carry.
+#[must_use]
+pub fn add_mul_word_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) -> Word {
+    assert!(words.len() >= rhs.len());
+    if mult == 0 {
+        return 0;
+    }
+
+    let n = rhs.len();
+    let mut carry = add_mul_word_same_len_in_place(&mut words[..n], mult, rhs);
+    if words.len() > n {
+        carry = Word::from(add::add_word_in_place(&mut words[n..], carry));
+    }
+    carry
+}
+
+/// words -= mult * rhs
+///
+/// Returns borrow.
+#[must_use]
+pub fn sub_mul_word_same_len_in_place(words: &mut [Word], mult: Word, rhs: &[Word]) -> Word {
+    assert!(words.len() == rhs.len());
+    if mult == 0 {
+        return 0;
+    }
+
+    // carry is in -Word::MAX..0
+    // carry_plus_max = carry + Word::MAX
+    let mut carry_plus_max = Word::MAX;
+    for (a, b) in words.iter_mut().zip(rhs.iter()) {
+        // Compute val = a - mult * b + carry_plus_max - MAX + (MAX << BITS)
+        // val >= 0 - MAX * MAX - MAX + MAX*(MAX+1) = 0
+        // val <= MAX - 0 + MAX - MAX + (MAX<<BITS) = DoubleWord::MAX
+        // This fits exactly in DoubleWord!
+        // We have to be careful to calculate in the correct order to avoid overflow.
+        let v = extend_word(*a)
+            + extend_word(carry_plus_max)
+            + (double_word(0, Word::MAX) - extend_word(Word::MAX))
+            - extend_word(mult) * extend_word(*b);
+        let (v_lo, v_hi) = split_dword(v);
+        *a = v_lo;
+        carry_plus_max = v_hi;
+    }
+    Word::MAX - carry_plus_max
+}
 
 /// c += sign * a * b
 /// Simple method: O(a.len() * b.len()).
@@ -100,7 +167,7 @@ fn add_signed_mul_chunk(
 /// `-C target-cpu=native` or `-C target-cpu=x86-64-v3`), the portable build
 /// already lowers to `mulx`, so the runtime check is skipped entirely.
 #[inline]
-fn add_mul_dword_same_len_in_place(
+pub fn add_mul_dword_same_len_in_place(
     words: &mut [Word],
     rhs: &[Word],
     mult0: Word,
@@ -186,7 +253,7 @@ fn add_mul_chunk(c: &mut [Word], a: &[Word], b: &[Word]) -> bool {
 
     // Handle the leftover odd multiplier word with a plain add_mul_word_same_len_in_place.
     if let &[m] = pairs.remainder() {
-        let carry_word = mul::add_mul_word_same_len_in_place(&mut c[i..i + n], m, a);
+        let carry_word = add_mul_word_same_len_in_place(&mut c[i..i + n], m, a);
         overflow |= add::add_word_in_place(&mut c[i + n..], carry_word);
     }
 
@@ -289,7 +356,7 @@ fn sub_mul_chunk(c: &mut [Word], a: &[Word], b: &[Word]) -> bool {
 
     // Handle the leftover odd multiplier word with a plain submul_1.
     if let &[m] = pairs.remainder() {
-        let borrow_word = mul::sub_mul_word_same_len_in_place(&mut c[i..i + n], m, a);
+        let borrow_word = sub_mul_word_same_len_in_place(&mut c[i..i + n], m, a);
         borrow_out |= add::sub_word_in_place(&mut c[i + n..], borrow_word);
     }
 

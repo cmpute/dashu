@@ -4,7 +4,10 @@ use crate::{
     cmp, div,
     div_const::ConstLargeDivisor,
     error::panic_different_rings,
-    helper_macros::debug_assert_zero,
+    helper_macros::{
+        debug_assert_zero, forward_modular_binop_to_assign, impl_modular_binop_ref_ref_by_clone,
+        impl_modular_commutative_op_for_ref,
+    },
     memory::{self, Memory, MemoryAllocation},
     modular::repr::{Reduced, ReducedRepr},
     mul,
@@ -17,49 +20,9 @@ use num_modular::Reducer;
 
 use super::repr::{ReducedDword, ReducedLarge, ReducedWord};
 
-impl<'a> Mul<Reduced<'a>> for Reduced<'a> {
-    type Output = Reduced<'a>;
-
-    #[inline]
-    fn mul(self, rhs: Reduced<'a>) -> Reduced<'a> {
-        self.mul(&rhs)
-    }
-}
-
-impl<'a> Mul<&Reduced<'a>> for Reduced<'a> {
-    type Output = Reduced<'a>;
-
-    #[inline]
-    fn mul(mut self, rhs: &Reduced<'a>) -> Reduced<'a> {
-        self.mul_assign(rhs);
-        self
-    }
-}
-
-impl<'a> Mul<Reduced<'a>> for &Reduced<'a> {
-    type Output = Reduced<'a>;
-
-    #[inline]
-    fn mul(self, rhs: Reduced<'a>) -> Reduced<'a> {
-        rhs.mul(self)
-    }
-}
-
-impl<'a> Mul<&Reduced<'a>> for &Reduced<'a> {
-    type Output = Reduced<'a>;
-
-    #[inline]
-    fn mul(self, rhs: &Reduced<'a>) -> Reduced<'a> {
-        self.clone().mul(rhs)
-    }
-}
-
-impl<'a> MulAssign<Reduced<'a>> for Reduced<'a> {
-    #[inline]
-    fn mul_assign(&mut self, rhs: Reduced<'a>) {
-        self.mul_assign(&rhs)
-    }
-}
+forward_modular_binop_to_assign!(impl Mul, mul, MulAssign, mul_assign for Reduced);
+impl_modular_commutative_op_for_ref!(impl Mul, mul for Reduced);
+impl_modular_binop_ref_ref_by_clone!(impl Mul, mul for Reduced);
 
 impl<'a> MulAssign<&Reduced<'a>> for Reduced<'a> {
     #[inline]

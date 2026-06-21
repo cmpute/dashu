@@ -83,6 +83,8 @@ Keep the `## Unreleased` section updated as you go.
 
 When implementing algorithms that manipulate word arrays (`&[Word]`), prefer the existing `Buffer` type over `Vec<Word>`. `Buffer` provides in-place operations like `erase_front`, `push_zeros_front`, `truncate`, and works with `MemoryAllocation` for scratch space — all without `std` or extra allocations. If you find yourself reaching for `Vec<Word>`, consider whether `Buffer` or `MemoryAllocation` would be a better fit.
 
+**Double-word is a first-class citizen** in this crate. The `DoubleWord` type (from `dashu-base`) and `_dword` operation suffix (e.g. `add_dword_in_place`, `split_dword`, `div_rem_dword`) are treated as peer primitives to single-word ones, not special cases. Whenever planning a new feature or algorithm, actively consider a double-word variant from the start — many operations have a meaningfully faster path when the operand fits in two words, and the crate is structured to expose those paths as first-class APIs.
+
 ## Common pitfalls
 
 - **dashu-python is excluded** from workspace tests and clippy — always add `--exclude dashu-python`

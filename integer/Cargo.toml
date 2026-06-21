@@ -79,3 +79,8 @@ harness = false
 name = "io"
 required-features = ["rand"]
 harness = false
+
+[[bench]]
+name = "modular"
+required-features = ["rand"]
+harness = false
