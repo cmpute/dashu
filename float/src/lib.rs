@@ -53,7 +53,7 @@
 //! use dashu_base::Approximation::*;
 //! use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
 //! let ctxt = Context::<HalfAway>::new(6);
-//! assert_eq!(ctxt.exp(DBig::ONE.repr()), Inexact(c, NoOp));
+//! assert_eq!(ctxt.exp(DBig::ONE.repr(), None), Inexact(c, NoOp));
 //! # Ok::<(), ParseError>(())
 //! ```
 //!

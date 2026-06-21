@@ -183,7 +183,7 @@ impl<R: Round> Context<R> {
     ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str("1.234")?;
-    /// assert_eq!(context.ln(&a.repr()), Inexact(DBig::from_str("0.21")?, NoOp));
+    /// assert_eq!(context.ln(&a.repr(), None), Inexact(DBig::from_str("0.21")?, NoOp));
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
@@ -208,7 +208,7 @@ impl<R: Round> Context<R> {
     ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str("0.1234")?;
-    /// assert_eq!(context.ln_1p(&a.repr()), Inexact(DBig::from_str("0.12")?, AddOne));
+    /// assert_eq!(context.ln_1p(&a.repr(), None), Inexact(DBig::from_str("0.12")?, AddOne));
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
