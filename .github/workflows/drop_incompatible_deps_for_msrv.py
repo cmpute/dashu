@@ -47,6 +47,17 @@ text = re.sub(
     '', text)
 open('Cargo.toml', 'w').write(text)
 
+# Strip rand 0.9 / 0.10: rand 0.10 requires Rust 1.85, and its feature
+# table (getrandom as an optional dep with the `dep:` syntax) breaks the
+# resolver under the 1.68 build. The MSRV build only exercises `rand`
+# (== rand_v08); rand_v09 and rand_v010 are covered by the stable / 1.85
+# `--all-features` jobs.
+for manifest in ['Cargo.toml', 'integer/Cargo.toml', 'float/Cargo.toml', 'rational/Cargo.toml']:
+    text = open(manifest).read()
+    text = re.sub(r'^rand_v09 = .*\n', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^rand_v010 = .*\n', '', text, flags=re.MULTILINE)
+    open(manifest, 'w').write(text)
+
 # Drop the postgres submodule (its cfg-gated children reference
 # the features we just removed).
 text = open('float/src/third_party/mod.rs').read()
