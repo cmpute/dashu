@@ -16,6 +16,7 @@ fn bridge<R: Rng + ?Sized>(rng: &mut R) -> impl dashu_int::rand::BitRng + '_ {
 }
 
 impl<'a> Distribution<Repr> for Uniform01<'a> {
+    #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Repr {
         self.sample_repr(&mut bridge(rng))
     }

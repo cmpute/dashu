@@ -47,24 +47,28 @@ fn bridge<R: Rng + ?Sized>(rng: &mut R) -> RngBridge<'_, R> {
 }
 
 impl Distribution<UBig> for UniformBits {
+    #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> UBig {
         self.sample_ubig(&mut bridge(rng))
     }
 }
 
 impl Distribution<IBig> for UniformBits {
+    #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> IBig {
         self.sample_ibig(&mut bridge(rng))
     }
 }
 
 impl Distribution<UBig> for UniformBelow<'_> {
+    #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> UBig {
         self.sample_ubig(&mut bridge(rng))
     }
 }
 
 impl Distribution<IBig> for UniformBelow<'_> {
+    #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> IBig {
         self.sample_ibig(&mut bridge(rng))
     }

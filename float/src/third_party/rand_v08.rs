@@ -15,18 +15,21 @@ fn bridge<R: Rng + ?Sized>(rng: &mut R) -> impl dashu_int::rand::BitRng + '_ {
 }
 
 impl<R: Round, const B: Word> Distribution<FBig<R, B>> for UniformFBig<R, B> {
+    #[inline]
     fn sample<RNG: Rng + ?Sized>(&self, rng: &mut RNG) -> FBig<R, B> {
         self.sample_fbig(&mut bridge(rng))
     }
 }
 
 impl<R: Round, const B: Word> Distribution<FBig<R, B>> for Uniform01<B> {
+    #[inline]
     fn sample<RNG: Rng + ?Sized>(&self, rng: &mut RNG) -> FBig<R, B> {
         self.sample01::<R, _>(&mut bridge(rng))
     }
 }
 
 impl<R: Round, const B: Word> Distribution<FBig<R, B>> for Standard {
+    #[inline]
     fn sample<RNG: Rng + ?Sized>(&self, rng: &mut RNG) -> FBig<R, B> {
         Uniform01::<B>::new(get_inline_precision::<B>()).sample01::<R, _>(&mut bridge(rng))
     }
