@@ -1,6 +1,6 @@
 [package]
 name = "dashu-ratio"
-version = "0.4.2"
+version = "0.4.3"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2021"
 description = "A big rational library with good performance"
@@ -30,11 +30,13 @@ num-traits = ["num-traits_v02"]
 num-traits_v02 = ["dep:num-traits_v02", "dashu-int/num-traits_v02"]
 rand = ["rand_v08"]
 rand_v08 = ["dep:rand_v08", "dashu-int/rand_v08"]
+rand_v09 = ["dep:rand_v09", "dashu-int/rand_v09"]
+rand_v010 = ["dep:rand_v010", "dashu-int/rand_v010"]
 
 [dependencies]
-dashu-base = { version = "0.4.2", default-features = false, path = "../base" }
-dashu-int = { version = "0.4.2", default-features = false, path = "../integer" }
-dashu-float = { version = "0.4.4", default-features = false, optional = true, path = "../float" }
+dashu-base = { version = "0.4.3", default-features = false, path = "../base" }
+dashu-int = { version = "0.4.3", default-features = false, path = "../integer" }
+dashu-float = { version = "0.4.5", default-features = false, optional = true, path = "../float" }
 
 # stable dependencies
 rustversion = "1.0.0"
@@ -44,11 +46,15 @@ zeroize = { optional = true, version = "1.5.7", default-features = false }
 
 # unstable dependencies
 rand_v08 = { optional = true, version = "0.8.3", package = "rand", default-features = false }
+rand_v09 = { optional = true, version = "0.9", package = "rand", default-features = false }
+rand_v010 = { optional = true, version = "0.10", package = "rand", default-features = false }
 num-traits_v02 = { optional = true, version = "0.2.15", package = "num-traits", default-features = false }
 _num-modular = { optional = true, version = "0.6.1", package = "num-modular", default-features = false }
 
 [dev-dependencies]
 rand_v08 = { version = "0.8.3", package = "rand" }
+rand_v09 = { version = "0.9", package = "rand" }
+rand_v010 = { version = "0.10", package = "rand" }
 postcard = { version = "1.0.2", features = ["alloc"] }
 serde_test = { version = "1.0.130" }
 serde_json = { version = "1.0" }

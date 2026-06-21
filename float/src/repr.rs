@@ -16,8 +16,10 @@ use dashu_int::{IBig, UBig};
 /// with zero exponent).
 ///
 /// When it's used together with a [Context], its precision will be limited so that
-/// `|signficand| < base^precision`. However, the precision limit is not always enforced.
-/// In rare cases, the significand can have one more digit than the precision limit.
+/// `|significand| < base^precision`. As an intentional exception, the result of an inexact
+/// addition or subtraction may carry one extra guard digit, so `|significand|` can be up to
+/// `base^(precision+1)`; the guard digit is what lets a much-smaller operand be reduced to a
+/// sign-only sticky bit during alignment without mis-rounding.
 ///
 /// # Infinity
 ///

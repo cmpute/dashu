@@ -7,7 +7,7 @@ use crate::{
     div,
     helper_macros::debug_assert_zero,
     log,
-    math::shl_dword,
+    math::{bit_len, shl_dword},
     ops::DivRem,
     primitive::{double_word, shrink_dword, split_dword},
     radix::{self, Digit},
@@ -302,20 +302,26 @@ impl PreparedLarge {
         debug_assert!(radix::is_radix_valid(radix) && !radix.is_power_of_two());
         let radix_info = radix::radix_info(radix);
 
-        let mut radix_powers = Vec::new();
-        let mut big_chunks = Vec::new();
         let chunk_power = Repr::from_word(radix_info.range_per_word)
             .as_typed()
             .pow(CHUNK_LEN);
         if chunk_power.as_typed() > number {
             return PreparedLarge {
                 top_chunk: PreparedMedium::new(number, radix),
-                radix_powers,
-                big_chunks,
+                radix_powers: Vec::new(),
+                big_chunks: Vec::new(),
                 radix,
             };
         }
 
+        // Each successive radix_power is ~2x the length of the previous (built
+        // by repeated squaring), so the number of powers is logarithmic in the
+        // ratio of the number's length to the chunk length. big_chunks has at
+        // most one entry per power, so it shares the same capacity. Preallocate
+        // once to avoid regrowing the vectors during the loop.
+        let capacity = bit_len(number.len() / chunk_power.len()) as usize + 2;
+        let mut radix_powers = Vec::with_capacity(capacity);
+        let mut big_chunks = Vec::with_capacity(capacity);
         radix_powers.push(chunk_power);
         loop {
             let prev = radix_powers.last().unwrap();

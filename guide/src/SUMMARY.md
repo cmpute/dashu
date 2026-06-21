@@ -17,4 +17,5 @@
   - [Bit Manipulation](./ops/bit.md)
   - [Number Theoretic](./ops/num_theory.md)
 - [FAQ](./faq.md)
+- [Performance](./performance.md)
 - [Cheatsheet](./cheatsheet.md)

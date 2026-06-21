@@ -1,6 +1,6 @@
 [package]
 name = "dashu-int"
-version = "0.4.2"
+version = "0.4.3"
 authors = ["Jacob Zhong <cmpute@gmail.com>", "Tomek Czajka <tczajka@gmail.com>"]
 edition = "2021"
 description = "A big integer library with good performance"
@@ -27,7 +27,7 @@ num-traits = ["num-traits_v02"]
 num-integer = ["num-integer_v01"]
 
 [dependencies]
-dashu-base = { version = "0.4.1", default-features = false, path = "../base" }
+dashu-base = { version = "0.4.3", default-features = false, path = "../base" }
 cfg-if = { version = "1.0.0" }
 static_assertions = { version = "1.1" }
 rustversion = { version = "1.0.0" }
@@ -40,11 +40,15 @@ zeroize = { optional = true, version = "1.5.7", default-features = false }
 
 # unstable dependencies
 rand_v08 = { optional = true, version = "0.8.3", package = "rand", default-features = false }
+rand_v09 = { optional = true, version = "0.9", package = "rand", default-features = false }
+rand_v010 = { optional = true, version = "0.10", package = "rand", default-features = false }
 num-traits_v02 = { optional = true, version = "0.2.14", package = "num-traits", default-features = false }
 num-integer_v01 = { optional = true, version = "0.1.45", package = "num-integer", default-features = false }
 
 [dev-dependencies]
 rand_v08 = { version = "0.8.3", package = "rand" }
+rand_v09 = { version = "0.9", package = "rand" }
+rand_v010 = { version = "0.10", package = "rand" }
 postcard = { version = "1.0.2", features = ["alloc"] }
 serde_test = { version = "1.0.130" }
 serde_json = { version = "1.0" }
@@ -73,5 +77,10 @@ harness = false
 
 [[bench]]
 name = "io"
+required-features = ["rand"]
+harness = false
+
+[[bench]]
+name = "modular"
 required-features = ["rand"]
 harness = false

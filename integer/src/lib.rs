@@ -115,6 +115,7 @@ mod log;
 mod math;
 mod memory;
 pub mod modular;
+pub mod monty;
 mod mul;
 mod mul_ops;
 pub mod ops;

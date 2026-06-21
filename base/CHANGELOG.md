@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.4.3
 
 ### Add
-- Fast path for integer `sqrt` using native `f64::sqrt` on small inputs (requires `std` feature)
+- `Sign::as_sign_str` helper for rendering a sign as `+`/`-`/`` (empty), used by the formatting traits.
+- Fast path for integer `sqrt` using native `f64::sqrt` on small inputs (requires `std` feature).
 
 ## 0.4.2
 

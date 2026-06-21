@@ -306,82 +306,100 @@ impl<R: Round> Context<R> {
 
         // align the exponent
         let low: (IBig, usize); // (value of low part, precision of the low part)
-        let (significand, exponent) = if self.is_limited()
-            && rdigits_est + 1 < ediff
-            && rdigits_est + 1 + rnd_precision < ldigits + ediff
-        {
-            // if rhs is much smaller than lhs, direct round on the rhs
-            /*
-             * lhs: |=========|
-             * rhs:                  |========|
-             *                |<--- ediff --->|
-             *      |< precision >|
-             */
+        let (significand, exponent) =
+            if self.is_limited() && is_sub && rdigits_est + self.precision >= ldigits + ediff {
+                // The smaller operand (`rhs`, lower exponent) reaches the larger
+                // operand's `precision`-digit window — its top digit is at or above the
+                // window edge (`rdigits + precision >= ldigits + ediff`, i.e. `rhs`'s top
+                // position `rdigits - ediff` is `>= ldigits - precision`). An effective
+                // subtraction can then cancel and lose leading digits, which the trimmed
+                // path cannot recover (its single re-expand in `repr_round_sum` collapses
+                // a genuinely small difference to the wrong value — e.g. `1.00 -
+                // 0.99999999` at precision 3 to `0` instead of `1e-8`, or `0.5 - 0.4375`
+                // at precision 1 to `0` instead of `0.0625`). So form the exact difference
+                // at full operand width and let the shared `repr_round_sum` round it once
+                // (with the same guard digit as the trimmed path, so no low tail is
+                // needed). The complement (`<`) is the trimmed/negligible region where
+                // `rhs` stays strictly below the window and no cancellation is possible.
+                shl_digits_in_place::<B>(&mut lhs.significand, ediff);
+                low = (IBig::ZERO, 0);
+                match rhs_sign {
+                    Positive => (lhs.significand + &rhs.significand, rhs.exponent),
+                    Negative => (lhs.significand - &rhs.significand, rhs.exponent),
+                }
+            } else if self.is_limited()
+                && rdigits_est + 1 < ediff
+                && rdigits_est + 1 + rnd_precision < ldigits + ediff
+            {
+                // rhs is entirely below lhs's rounding window, so only its sign
+                // contributes to the rounding; replace it with a unit sticky tail
+                // (`|low| = 1`).
+                //
+                // The sticky must be positioned at rhs's *real* magnitude, i.e. `ediff`
+                // digits below lhs's exponent — NOT at `precision - ldigits`. Positioning
+                // by `ediff` keeps the sticky genuinely sub-ULP (|1| << B^ediff, and the
+                // branch guard guarantees ediff >= 3), so it can never land on a rounding
+                // tie. Positioning by `precision - ldigits` instead let the re-expand drag
+                // the sticky up to the LSB, where for base 2 + round-to-nearest it equals
+                // exactly half (1 == B^0 == ½·B^1) and injected a spurious ULP — e.g.
+                // `1 + 2^-100` at precision 10 returned `513·2^-9` instead of `1`.
+                low = (rhs_sign * rhs.significand.signum(), ediff);
+                (lhs.significand, lhs.exponent)
+            } else if self.is_limited() && ldigits >= self.precision {
+                // if the lhs already exceeds the desired precision, just align rhs
+                /* Before:
+                 * lhs: |==============|
+                 * rhs:      |==============|
+                 *              ediff  |<-->|
+                 *    precision  |<--->|
+                 *
+                 * After:
+                 * lhs: |==============|
+                 * rhs:      |=========|xxxx|
+                 */
+                let (rhs_signif, r) = split_digits_ref::<B>(&rhs.significand, ediff);
+                low = (rhs_sign * r, ediff);
+                (lhs.significand + rhs_sign * rhs_signif, lhs.exponent)
+            } else if self.is_limited() && ediff + ldigits > self.precision {
+                // if the shifted lhs exceeds the desired precision, align lhs and rhs to precision
+                /* Before:
+                 * lhs: |=========|
+                 * rhs:      |==============|
+                 *                |< ediff >|
+                 *      |< precision >|
+                 *
+                 * After:
+                 * lhs: |=========0000|
+                 * rhs:      |========|xxxxx|
+                 *        lshift  |<->|
+                 *            rshift  |<--->|
+                 */
+                let lshift = self.precision - ldigits;
+                let rshift = ediff - lshift;
+                let (rhs_signif, r) = split_digits_ref::<B>(&rhs.significand, rshift);
+                shl_digits_in_place::<B>(&mut lhs.significand, lshift);
 
-            // In this case, the actual significand of rhs doesn't matter,
-            // we can just replace it with 1 for correct rounding
-            let low_prec = if ldigits >= rnd_precision {
-                2
+                low = (rhs_sign * r, rshift);
+                (lhs.significand + rhs_sign * rhs_signif, lhs.exponent - lshift as isize)
             } else {
-                (rnd_precision - ldigits) + 1
-            }; // low_prec >= 2
-            low = (rhs_sign * rhs.significand.signum(), low_prec);
-            (lhs.significand, lhs.exponent)
-        } else if self.is_limited() && ldigits >= self.precision {
-            // if the lhs already exceeds the desired precision, just align rhs
-            /* Before:
-             * lhs: |==============|
-             * rhs:      |==============|
-             *              ediff  |<-->|
-             *    precision  |<--->|
-             *
-             * After:
-             * lhs: |==============|
-             * rhs:      |=========|xxxx|
-             */
-            let (rhs_signif, r) = split_digits_ref::<B>(&rhs.significand, ediff);
-            low = (rhs_sign * r, ediff);
-            (lhs.significand + rhs_sign * rhs_signif, lhs.exponent)
-        } else if self.is_limited() && ediff + ldigits > self.precision {
-            // if the shifted lhs exceeds the desired precision, align lhs and rhs to precision
-            /* Before:
-             * lhs: |=========|
-             * rhs:      |==============|
-             *                |< ediff >|
-             *      |< precision >|
-             *
-             * After:
-             * lhs: |=========0000|
-             * rhs:      |========|xxxxx|
-             *        lshift  |<->|
-             *            rshift  |<--->|
-             */
-            let lshift = self.precision - ldigits;
-            let rshift = ediff - lshift;
-            let (rhs_signif, r) = split_digits_ref::<B>(&rhs.significand, rshift);
-            shl_digits_in_place::<B>(&mut lhs.significand, lshift);
-
-            low = (rhs_sign * r, rshift);
-            (lhs.significand + rhs_sign * rhs_signif, lhs.exponent - lshift as isize)
-        } else {
-            // otherwise directly shift lhs to required position
-            /* Before:
-             * lhs: |==========|
-             * rhs:       |==============|
-             *                 |< ediff >|
-             *      |<------ precision ------>|
-             *
-             * After:
-             * lhs: |==========0000000000|
-             * rhs:       |==============|
-             */
-            shl_digits_in_place::<B>(&mut lhs.significand, ediff);
-            low = (IBig::ZERO, 0);
-            match rhs_sign {
-                Positive => (lhs.significand + &rhs.significand, rhs.exponent),
-                Negative => (lhs.significand - &rhs.significand, rhs.exponent),
-            }
-        };
+                // otherwise directly shift lhs to required position
+                /* Before:
+                 * lhs: |==========|
+                 * rhs:       |==============|
+                 *                 |< ediff >|
+                 *      |<------ precision ------>|
+                 *
+                 * After:
+                 * lhs: |==========0000000000|
+                 * rhs:       |==============|
+                 */
+                shl_digits_in_place::<B>(&mut lhs.significand, ediff);
+                low = (IBig::ZERO, 0);
+                match rhs_sign {
+                    Positive => (lhs.significand + &rhs.significand, rhs.exponent),
+                    Negative => (lhs.significand - &rhs.significand, rhs.exponent),
+                }
+            };
 
         self.repr_round_sum(significand, exponent, low, is_sub)
     }
@@ -406,41 +424,49 @@ impl<R: Round> Context<R> {
 
         // align the exponent
         let low: (IBig, usize);
-        let (significand, exponent) = if self.is_limited()
-            && ldigits_est + 1 < ediff
-            && ldigits_est + 1 + rnd_precision < rdigits + ediff
-        {
-            // if lhs is much smaller than rhs, direct round on the lhs
-            let low_prec = if rdigits >= rnd_precision {
-                2
-            } else {
-                (rnd_precision - rdigits) + 1
-            };
-            low = (lhs.significand.signum(), low_prec);
-            (rhs_sign * rhs.significand.clone(), rhs.exponent)
-        } else if self.is_limited() && rdigits >= self.precision {
-            // if the rhs already exceeds the desired precision, just align lhs
-            let (lhs_signif, r) = split_digits::<B>(lhs.significand, ediff);
-            low = (r, ediff);
-            match rhs_sign {
-                Positive => (lhs_signif + &rhs.significand, rhs.exponent),
-                Negative => (lhs_signif - &rhs.significand, rhs.exponent),
-            }
-        } else if self.is_limited() && ediff + rdigits > self.precision {
-            // if the shifted rhs exceeds the desired precision, align lhs and rhs to precision
-            let lshift = self.precision - rdigits;
-            let rshift = ediff - lshift;
-            let (lhs_signif, r) = split_digits::<B>(lhs.significand, rshift);
-            let rhs_signif = shl_digits::<B>(&rhs.significand, lshift);
+        let (significand, exponent) =
+            if self.is_limited() && is_sub && ldigits_est + self.precision >= rdigits + ediff {
+                // Symmetric counterpart of the guard in `repr_add_large_small` (see there
+                // for the rationale); here the lower-exponent operand is `lhs`. Form the
+                // exact difference at full operand width and let the shared
+                // `repr_round_sum` round it once.
+                let rhs_signif = shl_digits::<B>(&rhs.significand, ediff);
+                low = (IBig::ZERO, 0);
+                (rhs_sign * rhs_signif + lhs.significand, lhs.exponent)
+            } else if self.is_limited()
+                && ldigits_est + 1 < ediff
+                && ldigits_est + 1 + rnd_precision < rdigits + ediff
+            {
+                // lhs is entirely below rhs's rounding window, so only its sign
+                // contributes; replace it with a unit sticky tail positioned at lhs's
+                // real magnitude (`ediff` digits below rhs's exponent). See
+                // `repr_add_large_small` for why the position must be `ediff` and not
+                // `precision - rdigits`.
+                low = (lhs.significand.signum(), ediff);
+                (rhs_sign * rhs.significand.clone(), rhs.exponent)
+            } else if self.is_limited() && rdigits >= self.precision {
+                // if the rhs already exceeds the desired precision, just align lhs
+                let (lhs_signif, r) = split_digits::<B>(lhs.significand, ediff);
+                low = (r, ediff);
+                match rhs_sign {
+                    Positive => (lhs_signif + &rhs.significand, rhs.exponent),
+                    Negative => (lhs_signif - &rhs.significand, rhs.exponent),
+                }
+            } else if self.is_limited() && ediff + rdigits > self.precision {
+                // if the shifted rhs exceeds the desired precision, align lhs and rhs to precision
+                let lshift = self.precision - rdigits;
+                let rshift = ediff - lshift;
+                let (lhs_signif, r) = split_digits::<B>(lhs.significand, rshift);
+                let rhs_signif = shl_digits::<B>(&rhs.significand, lshift);
 
-            low = (r, rshift);
-            (rhs_sign * rhs_signif + lhs_signif, rhs.exponent - lshift as isize)
-        } else {
-            // otherwise directly shift rhs to required position
-            let rhs_signif = shl_digits::<B>(&rhs.significand, ediff);
-            low = (IBig::ZERO, 0);
-            (rhs_sign * rhs_signif + lhs.significand, lhs.exponent)
-        };
+                low = (r, rshift);
+                (rhs_sign * rhs_signif + lhs_signif, rhs.exponent - lshift as isize)
+            } else {
+                // otherwise directly shift rhs to required position
+                let rhs_signif = shl_digits::<B>(&rhs.significand, ediff);
+                low = (IBig::ZERO, 0);
+                (rhs_sign * rhs_signif + lhs.significand, lhs.exponent)
+            };
 
         self.repr_round_sum(significand, exponent, low, is_sub)
     }
@@ -505,7 +531,11 @@ impl<R: Round> Context<R> {
         assert_finite_operands(lhs, rhs);
 
         let sum = if lhs.is_zero() {
-            self.repr_round_ref(rhs).map(|v| -v)
+            // Round `-rhs` directly rather than negating *after* rounding. For the asymmetric
+            // modes (Up = toward +∞, Down = toward −∞), `round(-x) != -round(x)`: rounding
+            // `rhs` toward +∞ then negating rounds in the wrong direction, so `0 - rhs`
+            // would land one ULP off (e.g. truncated instead of rounded away from the result).
+            self.repr_round_ref(&Repr::new(-&rhs.significand, rhs.exponent))
         } else if rhs.is_zero() {
             self.repr_round_ref(lhs)
         } else {
@@ -518,5 +548,123 @@ impl<R: Round> Context<R> {
             }
         };
         sum.map(|v| FBig::new(v, *self))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::round::mode::{HalfAway, HalfEven};
+
+    // Build a normalized Repr from a small integer significand and an exponent.
+    fn r<const B: Word>(sig: i128, exp: isize) -> Repr<B> {
+        Repr::new(IBig::from(sig), exp)
+    }
+
+    // Severe cancellation must not collapse a genuinely small difference to 0.
+    // Pristine returned `0` for the first two rows: the trimmed alignment path
+    // keeps only a bounded low tail and its single re-expand can't recover the
+    // lost leading digits.
+    #[test]
+    fn sub_severe_cancellation_decimal() {
+        let ctx = Context::<HalfAway>::new(3);
+        // 1.00 - 0.99999999 = 1e-8 (exactly representable at precision 3)
+        assert_eq!(
+            ctx.sub(&r::<10>(100, -2), &r::<10>(99999999, -8))
+                .value()
+                .repr(),
+            &r::<10>(1, -8)
+        );
+        // 1.00 - 0.99950001 = 4.9999e-4, rounds to 5.00e-4 (HalfAway)
+        assert_eq!(
+            ctx.sub(&r::<10>(100, -2), &r::<10>(99950001, -8))
+                .value()
+                .repr(),
+            &r::<10>(500, -6)
+        );
+    }
+
+    #[test]
+    fn sub_severe_cancellation_binary() {
+        let ctx = Context::<HalfEven>::new(10);
+        // 2^20 - (2^20 - 1) = 1, with the operands 20 exponent positions apart
+        assert_eq!(
+            ctx.sub(&r::<2>(1, 20), &r::<2>((1i128 << 20) - 1, 0))
+                .value()
+                .repr(),
+            &r::<2>(1, 0)
+        );
+        // same magnitude gap but the smaller-exponent operand is on the left
+        assert_eq!(
+            ctx.sub(&r::<2>((1i128 << 20) - 1, 0), &r::<2>(1, 20))
+                .value()
+                .repr(),
+            &r::<2>(-1, 0)
+        );
+        // 2^30 - (2^30 - 1) = 1
+        assert_eq!(
+            ctx.sub(&r::<2>(1, 30), &r::<2>((1i128 << 30) - 1, 0))
+                .value()
+                .repr(),
+            &r::<2>(1, 0)
+        );
+    }
+
+    // Effective subtraction reached through `Context::add` (opposite signs) must
+    // be fixed as well.
+    #[test]
+    fn add_effective_severe_cancellation() {
+        let ctx = Context::<HalfEven>::new(10);
+        // 2^20 + (-(2^20 - 1)) = 1
+        assert_eq!(
+            ctx.add(&r::<2>(1, 20), &r::<2>(-((1i128 << 20) - 1), 0))
+                .value()
+                .repr(),
+            &r::<2>(1, 0)
+        );
+    }
+
+    // The public operator path (`a - b`) routes through the same kernel.
+    #[test]
+    fn sub_operator_severe_cancellation() {
+        let a = FBig::<HalfEven, 2>::from_parts(IBig::from(1), 20);
+        let b = FBig::<HalfEven, 2>::from_parts(IBig::from((1i128 << 20) - 1), 0);
+        assert_eq!((a - b).repr(), &r::<2>(1, 0));
+    }
+
+    // Mild subtractions — the smaller operand stays below the larger's precision
+    // window — must keep their existing behavior and not be diverted to the
+    // full-width path.
+    #[test]
+    fn sub_mild_unchanged() {
+        let ctx = Context::<HalfAway>::new(3);
+        // 101 - 0.2 = 100.8, kept as 1008 * 10^-1 (one guard digit, as before)
+        assert_eq!(ctx.sub(&r::<10>(101, 0), &r::<10>(2, -1)).value().repr(), &r::<10>(1008, -1));
+    }
+
+    // Regression for the branch-1 signum-proxy bug (SUM-BUG.md §2c): when the larger
+    // operand has fewer digits than the precision and a negligible operand is added,
+    // the sticky proxy must be positioned at the operand's *real* magnitude (`ediff`),
+    // not at `precision - ldigits`. The old positioning let the re-expand drag the
+    // sticky up to the LSB, where for base 2 + round-to-nearest it equals exactly half
+    // and injected a spurious ULP: `1 + 2^-100` at precision 10 gave `513*2^-9` (=
+    // 1.00195…) instead of `1`.
+    #[test]
+    fn add_negligible_short_operand_no_spurious_ulp() {
+        // base 2 + HalfAway: the exact tie case
+        let ctx = Context::<HalfAway>::new(10);
+        assert_eq!(ctx.add(&r::<2>(1, 0), &r::<2>(1, -100)).value().repr(), &r::<2>(1, 0));
+        assert_eq!(ctx.sub(&r::<2>(1, 0), &r::<2>(1, -100)).value().repr(), &r::<2>(1, 0));
+        // larger short operand (digits < precision), negligible addend
+        let ctx = Context::<HalfAway>::new(50);
+        assert_eq!(
+            ctx.add(&r::<2>(0x12345, 0), &r::<2>(1, -200))
+                .value()
+                .repr(),
+            &r::<2>(0x12345, 0)
+        );
+        // base 10 was never affected (1 < ½·10), but check it stays correct
+        let ctx = Context::<HalfAway>::new(10);
+        assert_eq!(ctx.add(&r::<10>(1, 0), &r::<10>(1, -100)).value().repr(), &r::<10>(1, 0));
     }
 }
