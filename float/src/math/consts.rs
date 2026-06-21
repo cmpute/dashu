@@ -20,8 +20,6 @@ impl<R: Round> Context<R> {
     /// terms into large products, it allows the library to leverage fast
     /// multiplication algorithms (like Toom-3 or FFT) as the numbers grow,
     /// leading to significant performance gains over simple iterative summation.
-    ///
-    /// // TODO: consider adding a static cache for π at common precisions.
     #[must_use]
     pub fn pi<const B: Word>(&self, cache: Option<&mut ConstCache>) -> Rounded<FBig<R, B>> {
         if let Some(c) = cache {
@@ -99,16 +97,18 @@ pub(crate) fn chudnovsky_bs(a: usize, b: usize) -> (UBig, UBig, IBig) {
         return (UBig::ONE, UBig::ONE, IBig::ZERO);
     }
     if b - a == 1 {
+        const COEFF1: IBig = IBig::from_parts_const(Sign::Positive, 13591409);
+        const COEFF2: IBig = IBig::from_parts_const(Sign::Positive, 545140134);
+
         // Base case: calculate single term
         if a == 0 {
-            return (UBig::ONE, UBig::ONE, IBig::from_parts_const(Sign::Positive, 13_591_409));
+            return (UBig::ONE, UBig::ONE, COEFF1);
         }
 
         let k = a as u64;
         let p = UBig::from(6 * k - 5) * (2 * k - 1) * (6 * k - 1);
-        let q = UBig::from(k).pow(3) * UBig::from_u64(10_939_058_860_032_000);
-        let t_val = IBig::from_parts_const(Sign::Positive, 13_591_409)
-            + IBig::from_parts_const(Sign::Positive, 545_140_134) * k;
+        let q = UBig::from(k).pow(3) * 10_939_058_860_032_000u64;
+        let t_val = COEFF1 + COEFF2 * k;
         let t_abs = &p * t_val.unsigned_abs();
         let t = IBig::from(t_abs) * Sign::from(a % 2 == 1);
         return (p, q, t);
@@ -154,9 +154,9 @@ pub(crate) fn iacoth_bs(n: u32, a: usize, b: usize) -> (UBig, UBig, IBig) {
     }
     if b - a == 1 {
         // leaf at k = a (a >= 1): (p_a, q_a, p_a), p_a = 2a-1, q_a = (2a+1)·n²
-        let pa = UBig::from(2 * a as u64 - 1);
+        let pa = UBig::from(2 * a - 1);
         let n2 = UBig::from(n).pow(2);
-        let qa = UBig::from(2 * a as u64 + 1) * n2;
+        let qa = UBig::from(2 * a + 1) * n2;
         let ta = IBig::from(pa.clone());
         return (pa, qa, ta);
     }
@@ -192,21 +192,21 @@ fn iacoth_initial_block(n: u32) -> Option<(usize, UBig, UBig, IBig)> {
 /// `(K, P, Q, T)` for `L(6)` over `[1, 5)` (4 leaves).
 const IACOTH_6_INITIAL: (usize, UBig, UBig, IBig) = (
     4,
-    UBig::from_dword(105),
+    UBig::from_word(105),
     UBig::from_dword(1587237120),
     IBig::from_parts_const(Sign::Positive, 14946549),
 );
 /// `(K, P, Q, T)` for `L(9)` over `[1, 4)` (3 leaves).
 const IACOTH_9_INITIAL: (usize, UBig, UBig, IBig) = (
     3,
-    UBig::from_dword(15),
+    UBig::from_word(15),
     UBig::from_dword(55801305),
     IBig::from_parts_const(Sign::Positive, 231351),
 );
 /// `(K, P, Q, T)` for `L(99)` over `[1, 3)` (2 leaves).
 const IACOTH_99_INITIAL: (usize, UBig, UBig, IBig) = (
     2,
-    UBig::from_dword(3),
+    UBig::from_word(3),
     UBig::from_dword(1440894015),
     IBig::from_parts_const(Sign::Positive, 49008),
 );

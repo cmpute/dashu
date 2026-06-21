@@ -141,7 +141,7 @@ impl ConstCache {
         let work = precision + combine_guard::<B>(precision);
         let l6 = self.iacoth::<B, R>(6, work);
         let l99 = self.iacoth::<B, R>(99, work);
-        (FBig::from(4) * l6 + FBig::from(2) * l99)
+        (4u8 * l6 + 2u8 * l99)
             .with_precision(precision)
             .value()
     }
@@ -159,7 +159,7 @@ impl ConstCache {
         let work = precision + combine_guard::<B>(precision);
         let l2 = self.ln2::<B, R>(work);
         let l9 = self.iacoth::<B, R>(9, work);
-        (FBig::from(3) * l2 + FBig::from(2) * l9)
+        (3u8 * l2 + 2u8 * l9)
             .with_precision(precision)
             .value()
     }
@@ -179,7 +179,7 @@ impl ConstCache {
                 // k·ln2 product survives the final round.
                 let work = precision + combine_guard::<B>(precision);
                 let bits = b.trailing_zeros() as usize;
-                (FBig::from(bits) * self.ln2::<B, R>(work))
+                (bits * self.ln2::<B, R>(work))
                     .with_precision(precision)
                     .value()
             }
@@ -432,7 +432,7 @@ mod tests {
 
         // power-of-two base: ln(8) = 3·ln(2)
         let ln8 = cache.ln_base::<8, mode::HalfAway>(50);
-        let expected = FBig::from(3) * cache.ln2::<8, mode::HalfAway>(50);
+        let expected = 3u8 * cache.ln2::<8, mode::HalfAway>(50);
         assert_eq!(ln8.with_precision(50).value(), expected.with_precision(50).value());
     }
 
