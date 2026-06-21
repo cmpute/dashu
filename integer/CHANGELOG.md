@@ -3,55 +3,29 @@
 ## Unreleased
 
 ### Add
-- NTT-based multiplication using Proth primes (`K·2^N + 1`), combined via Garner CRT.  Supports 64-bit and 32-bit Word targets.  Threshold at 4 000 words (~256 kbits).
-- Asymmetric NTT chunking: when one operand is much larger than the other, the shorter operand is forward-transformed once and reused across chunks.
-- `UBig::from_u64` and `IBig::from_i64`, const on 32-bit and 64-bit targets.
-- `monty` module: Montgomery modular arithmetic for odd moduli. New [`MontgomeryRepr`](integer::monty::MontgomeryRepr) (precomputed Montgomery constants) and [`Montgomery`](integer::monty::Montgomery) (values in Montgomery form) with multiplication, squaring, addition, subtraction, negation, doubling, exponentiation, and inversion. Single/double-word moduli delegate to `num-modular`; multi-word moduli use word-by-word REDC with a double-word "addmul_2" kernel (the operand product reuses the crate's fast multiply), beating the Barrett division path of `modular::Reduced` for multiplication/squaring/exponentiation at roughly 256–4096 bits. For inverse-heavy computation, `modular::Reduced` remains faster (a Montgomery inverse must convert out of and back into Montgomery form).
-- Specialized Karatsuba squaring: uses 3 recursive squarings instead of 3 multiplications, with simplified diff handling.
-- Specialized Toom-Cook-3 squaring: evaluates a single polynomial instead of two, 5 recursive squarings instead of multiplications.
-- Specialized NTT squaring: single forward transform instead of two, pointwise square instead of multiply.
-- Squaring thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE_SQR`, `DASHU_THRESHOLD_KARATSUBA_SQR`, and `DASHU_THRESHOLD_NTT_SQR` environment variables (requires `tuning` feature).
-- Optional `rand_v09` (rand 0.9, MSRV 1.63) and `rand_v010` (rand 0.10, MSRV 1.85) features mirroring `rand_v08`, exposing the random-integer distributions (`UniformBits`, `UniformBelow`, `UniformUBig`, `UniformIBig`) under those rand versions. The default `rand` feature remains `rand_v08`.
-- The `rand` distributions and their sampling algorithms now live once in the version-agnostic `dashu_int::rand` module, which exposes a `BitRng` trait (for driving them from any RNG) and `bridge_v08` / `bridge_v09` / `bridge_v010` constructors (to adapt each rand version's RNG). The `rand_v08` / `rand_v09` / `rand_v010` modules are now private per-version trait bindings; access the distributions through `dashu_int::rand`.
-- Montgomery multiplication: `&Montgomery * &Montgomery` for Large operands now builds the result directly from scratch memory instead of cloning one operand then overwriting every word via `mul_in_place_large`, saving an `s`-word copy per multiply. (Add, sub, and neg on references still clone since their in-place operations seed the output buffer from the operand value.)
-
+- NTT-based multiplication using Proth primes (`K·2^N + 1`) combined via Garner CRT, with 64-bit transform coefficients. Enabled on both 64-bit and 32-bit `Word` targets; activates above ~4 000 words (~256 kbits). Auto-selects `K_eff = 2` primes when headroom allows.
+- Asymmetric NTT: when one operand is much larger than the other, the shorter operand is forward-transformed once and reused across chunks.
+- `monty` module: Montgomery modular arithmetic for odd moduli. `MontgomeryRepr` (precomputed constants) and `Montgomery` (values in Montgomery form) support multiplication, squaring, addition, subtraction, negation, doubling, exponentiation, and inversion.
+- Specialized squaring paths for Karatsuba, Toom-Cook-3, and NTT (recursive squarings instead of multiplications / a single forward transform), with separately tunable thresholds.
+- `UBig::from_u64` and `IBig::from_i64` const constructors (on 32-bit and 64-bit targets).
+- Optional `rand_v09` (rand 0.9, MSRV 1.63) and `rand_v010` (rand 0.10, MSRV 1.85) features mirroring `rand_v08`. The default `rand` feature still maps to `rand_v08`.
+- The random-integer distributions (`UniformBits`, `UniformBelow`, `UniformUBig`, `UniformIBig`) and their sampling now live once in the version-agnostic `dashu_int::rand` module, which exposes a `BitRng` trait and `bridge_v08` / `bridge_v09` / `bridge_v010` constructors. The per-version modules are now private trait bindings.
 
 ### Improve
-- Basecase (schoolbook) multiplication now uses an dword mult inner kernel (two multiplier words per sweep over the accumulator, via the `add_mul_dword_same_len_in_place` and `sub_mul_dword_same_len_in_place` kernels), roughly halving accumulator memory traffic.
-- Basecase (schoolbook) squaring's off-diagonal phase now uses the same two-word kernel as multiplication, pairing consecutive limbs `(a[i], a[i+1])` against their shared suffix `a[i+2..]`. This halves the accumulator traffic of the basecase, speeding up squaring ~25% in the schoolbook range (≤30 words) and ~12-17% through the Karatsuba/Toom-3 bands that recurse into it; `ubig_pow` improves likewise since exponentiation is squaring-dominated.
-- Addition and subtraction carry/borrow propagation now uses `Word` (u64/u32) instead of `bool` throughout the architecture-specific `add_with_carry` and `sub_with_borrow` functions, eliminating `bool`↔Word conversions in the inner loops.
-- Lowered the Karatsuba→Toom-3 multiplication threshold from 192 to 96 words, giving Toom-Cook-3 at ~6000 bits instead of ~12000 bits — closes the gap with malachite at ~10000-bit sizes.
-- NTT coefficient width increased from 16 to 64 bits (K_eff=3 for 64-bit, K_eff=2 otherwise), roughly halving the transform length at each step.
-- NTT multiplication auto-selects `K_eff = 2` primes when headroom allows, skipping the third prime.
-- Multiplication thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE`, `DASHU_THRESHOLD_KARATSUBA`, and `DASHU_THRESHOLD_NTT` environment variables (requires `tuning` feature).
-- Division threshold (schoolbook ↔ divide-and-conquer crossover) can be overridden at runtime via the `DASHU_THRESHOLD_SIMPLE_DIV` environment variable (requires `tuning` feature). Values below 3 are clamped to 3 to uphold the divide-and-conquer algorithm's `n_lo >= 2` invariant.
-- Montgomery multiplication: the `sqr()` method and `pow_nontrivial` entry point now avoid a redundant clone+overwrite of the multi-word value, saving one `Box<[Word]>` allocation and an `s`-word copy per squaring.
-- Montgomery multiplication: `mul_in_place_large` uses pointer-identity instead of full element comparison to detect self-multiplication (`a *= a`), avoiding an `O(s)` scan on the common distinct-operands path.
-- Montgomery multiplication: `mul_normalized_large` and `sqr_normalized_large` share a common `finish_monty_product` helper for the REDC+canonicalize pipeline tail.
-- Multiplication thresholds can be overridden at runtime via `DASHU_THRESHOLD_SIMPLE_MUL`, `DASHU_THRESHOLD_KARATSUBA_MUL`, and `DASHU_THRESHOLD_NTT_MUL` environment variables (requires `tuning` feature).
-- Non-power-of-2 radix formatting now preallocates the `radix_powers`/`big_chunks` vectors (capacity estimated from the number's length) instead of growing them push-by-push.
-- The basecase addmul/submul-2 kernels (`add_mul_dword_same_len_in_place`, `sub_mul_dword_same_len_in_place`) now dispatch at runtime to a BMI2 build of identical arithmetic on x86-64 (when the `std` feature is enabled and the CPU supports `bmi2`); LLVM lowers the widening multiplies to the flag-free `mulx` instruction and unrolls the loop. This speeds the kernel ~4-5% in isolation. Other targets and `no_std` builds keep the portable path.
-- `UBig::nth_root` for large composite `n` decomposes into a chain of smaller roots via small-prime factor reduction (2, 3, 5, 7), avoiding the prohibitively expensive `x^{n-1}` term in Newton's method.  E.g. n=10000 → four `sqrt` + four 5th-root calls.
-
-### Change
-- Multiplication threshold env vars renamed with `_MUL` suffix: `DASHU_THRESHOLD_SIMPLE_MUL`, `DASHU_THRESHOLD_KARATSUBA_MUL`, `DASHU_THRESHOLD_NTT_MUL` (was without suffix).
-- NTT multiplication now uses Proth primes (`K·2^N + 1`) instead of Solinas primes, improving modular reduction speed.
-- NTT threshold lowered from 40 000 to 4 000 words.
-- NTT enabled for 32-bit Word targets.
-- Arch-specific NTT prime definitions under `arch/generic_{32,64}_bit/ntt.rs`.
+- Basecase (schoolbook) multiplication and squaring now use a double-word addmul inner kernel, roughly halving accumulator memory traffic; on x86-64 with `std` it dispatches to a BMI2 build lowered to `mulx`.
+- Addition and subtraction carry/borrow propagation now uses `Word` instead of `bool`, eliminating conversions in the inner loops.
+- Lowered the Karatsuba→Toom-3 multiplication threshold from 192 to 96 words (~6 000 bits instead of ~12 000 bits).
+- `UBig::nth_root` for large composite `n` decomposes into a chain of smaller roots via small-prime factor reduction, avoiding the prohibitively expensive Newton term.
+- Integer logarithm for very large values uses power-sequence decomposition instead of iterative single-step multiplication.
+- Non-power-of-2 radix formatting preallocates its conversion buffers instead of growing them incrementally, and optimizes single-digit writes.
+- Multiplication, squaring, and division thresholds can be overridden at runtime via `DASHU_THRESHOLD_*` environment variables (requires `tuning` feature): `DASHU_THRESHOLD_{SIMPLE,KARATSUBA,NTT}_MUL`, `DASHU_THRESHOLD_{SIMPLE,KARATSUBA,NTT}_SQR`, and `DASHU_THRESHOLD_SIMPLE_DIV`.
 
 ### Fix
-- Modular exponentiation and `Reduced::sqr` under-allocated scratch memory for squaring (they sized it using the multiplication budget), which could exhaust the scratch allocator mid-recursion for moduli in the Karatsuba band (e.g. the Mersenne-prime `test_pow` case). The pow path now reserves `max(mul, sqr)` scratch and `Reduced::sqr` uses the dedicated squaring budget.
-- Unused imports (`Sign`, `debug_assert_zero`) in `sqr/mod.rs` on 16-bit Word targets, where the NTT arm is compiled out.
-- `pack.rs` test used 64-bit literals that overflowed `Word` (`u32`) on 32-bit targets, breaking the test build.
-- `pack.rs` now uses native `Word`/`Lane` types throughout instead of `u64`/`u32`, fixing clippy `unnecessary_cast` warnings on 64-bit.
-- `test_unpack_carry_propagation` had a hardcoded 64-bit shift assumption; now derived from `Word::BITS` so it works on 32-bit.
-- Various clippy warnings (`let_and_return`, `too_many_arguments`, `needless_range_loop`, `type_complexity`) resolved across the NTT module.
-
-### Refactor
-- Extracted `simple::MIN_LEN = 3` in the division module (analogous to `mul::karatsuba::MIN_LEN`); the tuning override now clamps against this named constant instead of a magic literal.
-- Moved the word-level multiplication kernels (`add_mul_word_same_len_in_place`, `add_mul_word_in_place`, `sub_mul_word_same_len_in_place`) from `mul/mod.rs` into `mul/simple.rs` alongside the other schoolbook kernels, and widened `add_mul_dword_same_len_in_place` from `pub(crate)` to `pub`. The old `mul::*` paths still work via re-exports.
-- Added `forward_modular_binop_to_assign!`, `impl_modular_commutative_op_for_ref!`, `impl_modular_binop_ref_ref_by_clone!`, and `forward_modular_binop_to_ref_ref!` macros in `helper_macros.rs` to generate the boilerplate `Op<T>`/`Op<&T>`/`OpAssign<T>` impls for any modular type parameterized by a lifetime (taking the target type as a parameter). Both `Montgomery` and `Reduced` Add, Sub, Mul and Div now share these macros instead of repeating the four-by-value/by-ref/assign variants per operator.
+- Fix modular exponentiation and `Reduced::sqr` under-allocating scratch for squaring, which could exhaust the scratch allocator mid-recursion for moduli in the Karatsuba band.
+- Fix a panic in the extended GCD when one operand divides the other.
+- Fix `IBig::{to_le_bytes, to_be_bytes}` for negative powers of two.
+- Fix `IBig >> n` (shift by `n >= bit length`) on `DoubleWord`-magnitude values.
+- Fix the 32-bit `Word` build: the NTT pack code, test literals, and unused-import warnings on targets where the NTT arm is compiled out.
 
 ## 0.4.2
 

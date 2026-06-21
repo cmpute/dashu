@@ -129,7 +129,6 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ///
     /// Panics if the number is infinte
     #[inline]
-    #[must_use]
     pub fn fract(&self) -> Self {
         assert_finite(&self.repr);
         if self.repr.exponent >= 0 {
