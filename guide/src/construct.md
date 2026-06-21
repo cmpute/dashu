@@ -43,3 +43,82 @@ You can directly put numeric literals as the argument without quotes (e.g. `dbig
 When the number doesn't have a high precision, these macros can be used in a `const` environment, however this ability dependends on the precision and the machine word size. To create large constants, you can use the `static_*` macros (such as `static_ubig!`) in the crate. They have the same syntax as the normal macros, but the different is that the outputs of the macros are references to a static instance, rather than directly generating an instance. There are also other limitations about these macros for static creation.
 
 Please refer to [the docs of `dashu-macros`](https://docs.rs/dashu-macros/latest/dashu_macros/) for detailed usage of these macros.
+
+# Cached Arithmetic for FBig
+
+The [`CachedFBig`] type is an [`FBig`] that carries a shared handle to a
+`Rc<RefCell<ConstCache>>`. The cache stores exact binary-splitting state for
+mathematical constants (π, ln2, ln10), so that transcendental operations
+(`ln`, `exp`, `sin`, `cos`, …, `pi`) reuse and progressively extend prior
+work instead of recomputing from scratch.
+
+## Creation
+
+A `CachedFBig` is created by attaching a cache handle to an `FBig`:
+
+```rust
+use std::rc::Rc;
+use core::cell::RefCell;
+use dashu_float::{CachedFBig, ConstCache, Repr, Context};
+
+let cache = Rc::new(RefCell::new(ConstCache::new()));
+
+// From an FBig
+let a = FBig::ONE.into_cached(cache.clone());
+
+// From raw parts with a fresh cache
+let b = CachedFBig::<_, 10>::with_cache(
+    Repr::new(1234.into(), -3),
+    Context::new(50),
+);
+```
+
+Use `From<FBig> for CachedFBig` for one-off conversions (it creates a fresh
+empty cache):
+
+```rust
+let c: CachedFBig = FBig::from(3u8).into();
+```
+
+To drop the cache and get back a plain `FBig`, use `into_fbig()` or the
+`From<CachedFBig> for FBig` trait:
+
+```rust
+let plain: FBig = cached.into();  // or cached.into_fbig()
+```
+
+## Cache sharing
+
+Binary operations between `CachedFBig` values preserve the cache handle in
+the result: `(a + b).ln().exp()` keeps extending the same cache throughout.
+When two operands carry different cache handles, the **left-hand side** cache
+is preserved. For `FBig op CachedFBig`, the `CachedFBig` operand's cache is
+preserved regardless of which side it is on.
+
+Operations with plain `FBig` and primitives (`u8`, `i32`, `UBig`, etc.) also
+work and preserve the `CachedFBig` operand's cache:
+
+```rust
+let cached = CachedFBig::<_, 10>::with_cache(
+    Repr::new(2.into(), 0), Context::new(20),
+);
+let result = cached + 3u8;    // CachedFBig, cache preserved
+let result = 10i32 * cached;  // CachedFBig, cache preserved
+```
+
+## Inspecting and clearing the cache
+
+Use `cache()` to borrow the cache read-only and inspect its size:
+
+```rust
+let terms = cached.cache().total_terms();
+let words = cached.cache().total_words();
+```
+
+Call `clear_cache()` to free all cached big-integer memory. The next
+transcendental operation will recompute constants from scratch:
+
+```rust
+cached.clear_cache();
+assert_eq!(cached.cache().total_terms(), 0);
+```

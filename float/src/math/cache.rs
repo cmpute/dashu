@@ -108,10 +108,7 @@ impl ConstCache {
 
     /// `L(n) = acoth(n)` at `precision` base-`B` digits, extending its cached
     /// series state. Only `n ∈ {6, 9, 99}` are cached (the sub-series of ln2 / ln10).
-    fn iacoth<const N: u32, const B: Word, R: Round>(
-        &mut self,
-        precision: usize,
-    ) -> FBig<R, B> {
+    fn iacoth<const N: u32, const B: Word, R: Round>(&mut self, precision: usize) -> FBig<R, B> {
         // terms until r_k < B^{-p}: (2k+1)·log_B(n) > p. The count is generously
         // over-provisioned (extra terms only add precision), so a plain (truncating)
         // cast suffices in place of a ceiling.
@@ -198,6 +195,41 @@ impl ConstCache {
                     .value()
             }
         }
+    }
+
+    /// Sum of `num_terms` across all populated cache slots.
+    #[inline]
+    pub fn total_terms(&self) -> usize {
+        let sum = |s: &Option<CachedState>| s.as_ref().map_or(0, |s| s.num_terms);
+        sum(&self.pi) + sum(&self.iacoth_6) + sum(&self.iacoth_9) + sum(&self.iacoth_99)
+    }
+
+    /// Sum of word counts across all cached big integers (P, Q, T).
+    ///
+    /// This reflects the underlying storage words used by the cached state.
+    #[inline]
+    pub fn total_words(&self) -> usize {
+        let slot_words = |s: &Option<CachedState>| {
+            s.as_ref().map_or(0, |s| {
+                s.p.as_words().len() + s.q.as_words().len() + s.t.as_sign_words().1.len()
+            })
+        };
+        slot_words(&self.pi)
+            + slot_words(&self.iacoth_6)
+            + slot_words(&self.iacoth_9)
+            + slot_words(&self.iacoth_99)
+    }
+
+    /// Clear all cached constant state, freeing the underlying memory.
+    ///
+    /// After calling `clear()`, the next constant computation will start from scratch
+    /// rather than extending the prior cached state.
+    #[inline]
+    pub fn clear(&mut self) {
+        self.pi = None;
+        self.iacoth_6 = None;
+        self.iacoth_9 = None;
+        self.iacoth_99 = None;
     }
 }
 

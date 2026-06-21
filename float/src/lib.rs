@@ -73,6 +73,7 @@ mod error;
 mod exp;
 mod fbig;
 mod fbig_cached;
+mod fbig_cached_ops;
 mod fmt;
 mod helper_macros;
 mod iter;
