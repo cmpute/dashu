@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.3
 
 ### Add
 - `Sign::as_sign_str` helper for rendering a sign as `+`/`-`/`` (empty), used by the formatting traits.

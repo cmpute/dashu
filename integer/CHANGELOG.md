@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.3
 
 ### Add
 - NTT-based multiplication using Proth primes (`K·2^N + 1`) combined via Garner CRT, with 64-bit transform coefficients. Enabled on both 64-bit and 32-bit `Word` targets; activates above ~4 000 words (~256 kbits). Auto-selects `K_eff = 2` primes when headroom allows.
