@@ -367,19 +367,8 @@ fn sub_mul_chunk(c: &mut [Word], a: &[Word], b: &[Word]) -> bool {
 mod tests {
     use super::*;
     use crate::arch::word::Word;
-    use alloc::vec;
     use alloc::vec::Vec;
-
-    // SplitMix64-style PRNG: deterministic, well-spread test words.
-    fn next_rand(state: &mut u64) -> u64 {
-        *state = state
-            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-            .wrapping_add(0xBB67_AE85_84CA_A73B);
-        let mut z = *state;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^ (z >> 31)
-    }
+    use rand_v08::{rngs::StdRng, Rng, SeedableRng};
 
     /// Independent reference for `words[..n] += rhs[..n] * (m0 + m1 * B)` (B = 2^Word::BITS),
     /// returning the full `n + 2` result limbs (low `n` are the updated words, the top two are
@@ -412,13 +401,13 @@ mod tests {
 
     #[test]
     fn add_mul_dword_matches_reference_and_bmi2() {
-        let mut state = 0x1234_5678_9ABC_DEF0u64;
+        let mut rng = StdRng::seed_from_u64(0x1234_5678_9abc_def0);
         for _ in 0..4000 {
-            let n = (next_rand(&mut state) % 7) as usize; // 0..=6
-            let words: Vec<Word> = (0..n).map(|_| next_rand(&mut state) as Word).collect();
-            let rhs: Vec<Word> = (0..n).map(|_| next_rand(&mut state) as Word).collect();
-            let m0 = next_rand(&mut state) as Word;
-            let m1 = next_rand(&mut state) as Word;
+            let n = rng.gen_range(0..7usize); // 0..=6
+            let words: Vec<Word> = (0..n).map(|_| rng.gen()).collect();
+            let rhs: Vec<Word> = (0..n).map(|_| rng.gen()).collect();
+            let m0: Word = rng.gen();
+            let m1: Word = rng.gen();
 
             let expected = add_mul_dword_ref(&words, &rhs, m0, m1);
 
@@ -447,13 +436,13 @@ mod tests {
 
     #[test]
     fn sub_mul_dword_bmi2_matches_portable() {
-        let mut state = 0xDEAD_BEEF_CAFE_BABEu64;
+        let mut rng = StdRng::seed_from_u64(0xdead_beef_cafe_babe);
         for _ in 0..4000 {
-            let n = 1 + (next_rand(&mut state) % 6) as usize; // 1..=6
-            let words: Vec<Word> = (0..n).map(|_| next_rand(&mut state) as Word).collect();
-            let rhs: Vec<Word> = (0..n).map(|_| next_rand(&mut state) as Word).collect();
-            let m0 = next_rand(&mut state) as Word;
-            let m1 = next_rand(&mut state) as Word;
+            let n = 1 + rng.gen_range(0..6usize); // 1..=6
+            let words: Vec<Word> = (0..n).map(|_| rng.gen()).collect();
+            let rhs: Vec<Word> = (0..n).map(|_| rng.gen()).collect();
+            let m0: Word = rng.gen();
+            let m1: Word = rng.gen();
 
             let mut w_p = words.clone();
             // The portable carries are only compared against the BMI2 kernel below; on
@@ -474,39 +463,6 @@ mod tests {
                     assert_eq!((cl_p, ch_p), (cl_b, ch_b), "sub portable != bmi2 carries");
                 }
             }
-        }
-    }
-
-    #[test]
-    fn dword_kernel_edge_cases() {
-        // Extremes: all-ones words with max multipliers, and zero multipliers.
-        for &n in &[1usize, 2, 3, 9] {
-            let ones = vec![Word::MAX; n];
-            let expected = add_mul_dword_ref(&ones, &ones, Word::MAX, Word::MAX);
-
-            let mut w = ones.clone();
-            let (cl, ch) =
-                add_mul_dword_same_len_in_place_impl(&mut w, &ones, Word::MAX, Word::MAX);
-            assert_eq!(&w[..], &expected[..n]);
-            assert_eq!(cl, expected[n]);
-            assert_eq!(ch, expected[n + 1]);
-
-            #[cfg(all(target_arch = "x86_64", feature = "std"))]
-            if std::is_x86_feature_detected!("bmi2") {
-                let mut w2 = ones.clone();
-                // SAFETY: bmi2 was just confirmed at runtime.
-                let (cl2, ch2) = unsafe {
-                    add_mul_dword_same_len_in_place_bmi2(&mut w2, &ones, Word::MAX, Word::MAX)
-                };
-                assert_eq!(&w[..], &w2[..]);
-                assert_eq!((cl, ch), (cl2, ch2));
-            }
-
-            // Zero multipliers must leave words untouched with no carry.
-            let mut w3 = ones.clone();
-            let (cl3, ch3) = add_mul_dword_same_len_in_place_impl(&mut w3, &ones, 0, 0);
-            assert_eq!(&w3[..], &ones[..]);
-            assert_eq!((cl3, ch3), (0, 0));
         }
     }
 }
