@@ -116,27 +116,27 @@ fn test_atan2_infinities() {
     let ctx = x.context();
     let inf = Repr::infinity();
     let neg_inf = Repr::neg_infinity();
-    let pi = ctx.pi::<10>().value();
+    let pi = ctx.pi::<10>(None).value();
     let pi_4 = &pi / 4;
     let pi_3_4 = &pi * 3 / 4;
 
     // atan2(+inf, +inf) = pi/4
-    let res: DBig = ctx.atan2(&inf, &inf).value(&ctx);
+    let res: DBig = ctx.atan2(&inf, &inf, None).value(&ctx);
     let diff: DBig = res - &pi_4;
     assert!(diff.abs() < DBig::from_parts(1.into(), -29));
 
     // atan2(+inf, -inf) = 3pi/4
-    let res: DBig = ctx.atan2(&inf, &neg_inf).value(&ctx);
+    let res: DBig = ctx.atan2(&inf, &neg_inf, None).value(&ctx);
     let diff: DBig = res - &pi_3_4;
     assert!(diff.abs() < DBig::from_parts(1.into(), -29));
 
     // atan2(-inf, +inf) = -pi/4
-    let res: DBig = ctx.atan2(&neg_inf, &inf).value(&ctx);
+    let res: DBig = ctx.atan2(&neg_inf, &inf, None).value(&ctx);
     let diff: DBig = res + &pi_4;
     assert!(diff.abs() < DBig::from_parts(1.into(), -29));
 
     // atan2(-inf, -inf) = -3pi/4
-    let res: DBig = ctx.atan2(&neg_inf, &neg_inf).value(&ctx);
+    let res: DBig = ctx.atan2(&neg_inf, &neg_inf, None).value(&ctx);
     let diff: DBig = res + &pi_3_4;
     assert!(diff.abs() < DBig::from_parts(1.into(), -29));
 }

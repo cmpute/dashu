@@ -3,17 +3,20 @@
 ## Unreleased
 
 ### Add
-- Add the opt-in `MathCache<B>` type, which caches exact binary-splitting tree state for mathematical constants (π, ln2, ln10, ln(B)) so that repeated calls at increasing precision *extend* prior work instead of recomputing from scratch. `Context` and `FBig` are unaffected and remain `Copy + Send + Sync`.
+- Add the `ConstCache` type and the `CachedFBig` wrapper. `ConstCache` caches exact binary-splitting tree state for mathematical constants (π, ln2, ln10, ln(B)) so that repeated calls at increasing precision *extend* prior work instead of recomputing from scratch. `CachedFBig` is an `FBig` carrying a shared `Rc<RefCell<ConstCache>>` handle: its transcendental operations (`ln`, `exp`, `sin`/`cos`/…, `pi`, base conversion) thread that handle through the `Context` methods, reusing/extending the cached state. `Context` and `FBig` stay `Copy` + `Send` + `Sync` + `no_std` (so `static_fbig!`/`static_dbig!` keep working); only `CachedFBig` is `!Send + !Sync` (sharing state via `Rc<RefCell<..>>`). Because `Context` accepts `Option<&mut ConstCache>`, users can build `Arc<Mutex<ConstCache>>`-based variants too.
 - Implement trigonometric functions (`sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sin_cos`) for `FBig` and `Context<R>` ([#60](https://github.com/cmpute/dashu/pull/60)).
 - Add π constant computation (`FBig::pi()` and `Context::pi()`) using the Chudnovsky algorithm with binary splitting ([#60](https://github.com/cmpute/dashu/pull/60)).
 - Add `FpResult` enum to handle non-finite math operation results (NaN, Infinite, Overflow, Underflow) without panicking ([#60](https://github.com/cmpute/dashu/pull/60)).
 - Add `panic_nan`, `panic_overflow`, `panic_underflow`, and `panic_infinite` helpers to the `error` module.
 
 ### Change
+- **Breaking (low-level `Context` API):** the `Context` constant-source methods (`ln`, `ln_1p`, `exp`, `exp_m1`, `powf`, `pi`, `sin`, `cos`, `sin_cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, and the internal `ln2`/`ln10`/`ln_base`/`convert_base`) now take an additional `cache: Option<&mut ConstCache>` parameter, threading an optional shared cache. The high-level `FBig` API is unchanged (it passes `None`).
+- Removed the `MathCache` type (subsumed by `ConstCache`, which is now public with `&mut self` methods).
 - `Context::iacoth` (used internally by `ln`) now evaluates the series with binary splitting instead of an iterative loop, reusing the shared `iacoth_bs` helper. This keeps `Q` at O(p) digits and improves high-precision performance; behavior is unchanged (pinned by existing fixtures).
 - `iacoth_bs` now skips its first several leaves via a compile-time constant basecase (the `L(6)`/`L(9)`/`L(99)` initial blocks). The precomputed `(P, Q, T)` values are kept within `u32` so the constants are portable across `Word = u16`/`u32`/`u64` (the `DoubleWord` constructor is `const` on every configuration).
 
 ### Fix
+- Replace `f64::ceil()` in `ConstCache`'s precision/bit helpers with a `no_std`-safe integer ceiling (`ceil_usize`). `f64::ceil` is `std`-only on the crate's MSRV and broke the workspace `--all-features --tests` build, where `dashu-float` is compiled without `std` as a dependency of `dashu-ratio`.
 - Fix rounding issues in `to_32()` and `to_f64()` (fixes [#53](https://github.com/cmpute/dashu/issues/53) and [#56](https://github.com/cmpute/dashu/issues/56)).
 - Fix `FBig::fract()` inflating context precision for values smaller than one.
 - Fix `split_at_point_internal` using incorrect fractional scale for numbers smaller than one, causing incorrect rounding results.

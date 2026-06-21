@@ -3,6 +3,7 @@ use core::convert::TryInto;
 use crate::{
     error::{assert_finite, assert_limited_precision, panic_power_negative_base},
     fbig::FBig,
+    math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
 };
@@ -41,7 +42,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     pub fn powf(&self, exp: &Self) -> Self {
         let context = Context::max(self.context, exp.context);
-        context.powf(&self.repr, &exp.repr).value()
+        context.powf(&self.repr, &exp.repr, None).value()
     }
 
     /// Calculate the exponential function (`eˣ`) on the floating point number.
@@ -57,7 +58,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn exp(&self) -> FBig<R, B> {
-        self.context.exp(&self.repr).value()
+        self.context.exp(&self.repr, None).value()
     }
 
     /// Calculate the exponential minus one function (`eˣ-1`) on the floating point number.
@@ -73,7 +74,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn exp_m1(&self) -> FBig<R, B> {
-        self.context.exp_m1(&self.repr).value()
+        self.context.exp_m1(&self.repr, None).value()
     }
 }
 
@@ -163,14 +164,19 @@ impl<R: Round> Context<R> {
     /// let context = Context::<HalfAway>::new(2);
     /// let x = DBig::from_str_native("1.23")?;
     /// let y = DBig::from_str_native("-4.56")?;
-    /// assert_eq!(context.powf(&x.repr(), &y.repr()), Inexact(DBig::from_str_native("0.39")?, AddOne));
+    /// assert_eq!(context.powf(&x.repr(), &y.repr(), None), Inexact(DBig::from_str_native("0.39")?, AddOne));
     /// # Ok::<(), ParseError>(())
     /// ```
     ///
     /// # Panics
     ///
     /// Panics if the precision is unlimited.
-    pub fn powf<const B: Word>(&self, base: &Repr<B>, exp: &Repr<B>) -> Rounded<FBig<R, B>> {
+    pub fn powf<const B: Word>(
+        &self,
+        base: &Repr<B>,
+        exp: &Repr<B>,
+        mut cache: Option<&mut ConstCache>,
+    ) -> Rounded<FBig<R, B>> {
         assert_finite(base);
         assert_limited_precision(self.precision); // TODO: we can allow it if exp is integer
 
@@ -192,10 +198,11 @@ impl<R: Round> Context<R> {
         let guard_digits = 10 + self.precision.log2_est() as usize;
         let work_context = Context::<R>::new(self.precision + guard_digits);
 
-        let res = work_context
-            .ln(base)
+        // ln and exp each consult/extend the shared cache; reborrows are sequential.
+        let ln_val = work_context.ln(base, reborrow_cache(&mut cache));
+        let res = ln_val
             .and_then(|v| work_context.mul(&v.repr, exp))
-            .and_then(|v| work_context.exp(&v.repr));
+            .and_then(|v| work_context.exp(&v.repr, reborrow_cache(&mut cache)));
         res.and_then(|v| v.with_precision(self.precision))
     }
 
@@ -211,12 +218,16 @@ impl<R: Round> Context<R> {
     ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str_native("-1.234")?;
-    /// assert_eq!(context.exp(&a.repr()), Inexact(DBig::from_str_native("0.29")?, NoOp));
+    /// assert_eq!(context.exp(&a.repr(), None), Inexact(DBig::from_str_native("0.29")?, NoOp));
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
-    pub fn exp<const B: Word>(&self, x: &Repr<B>) -> Rounded<FBig<R, B>> {
-        self.exp_internal(x, false)
+    pub fn exp<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        cache: Option<&mut ConstCache>,
+    ) -> Rounded<FBig<R, B>> {
+        self.exp_internal(x, false, cache)
     }
 
     /// Calculate the exponential minus one function (`eˣ-1`) on the floating point number under this context.
@@ -231,19 +242,28 @@ impl<R: Round> Context<R> {
     ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str_native("-0.1234")?;
-    /// assert_eq!(context.exp_m1(&a.repr()), Inexact(DBig::from_str_native("-0.12")?, SubOne));
+    /// assert_eq!(context.exp_m1(&a.repr(), None), Inexact(DBig::from_str_native("-0.12")?, SubOne));
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
-    pub fn exp_m1<const B: Word>(&self, x: &Repr<B>) -> Rounded<FBig<R, B>> {
-        self.exp_internal(x, true)
+    pub fn exp_m1<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        cache: Option<&mut ConstCache>,
+    ) -> Rounded<FBig<R, B>> {
+        self.exp_internal(x, true, cache)
     }
 
     // TODO: change reduction to (x - s log2) / 2ⁿ, so that the final powering is always base 2, and doesn't depends on powi.
     //       the powering exp(r)^(2ⁿ) could be optimized by noticing (1+x)^2 - 1 = x^2 + 2x
     //       consider this change after having a benchmark
 
-    fn exp_internal<const B: Word>(&self, x: &Repr<B>, minus_one: bool) -> Rounded<FBig<R, B>> {
+    fn exp_internal<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        minus_one: bool,
+        mut cache: Option<&mut ConstCache>,
+    ) -> Rounded<FBig<R, B>> {
         assert_finite(x);
         assert_limited_precision(self.precision);
 
@@ -284,7 +304,7 @@ impl<R: Round> Context<R> {
             work_precision = self.precision + series_guard_digits + pow_guard_digits;
             let context = Context::<R>::new(work_precision);
             let x = FBig::new(context.repr_round_ref(x).value(), context);
-            let logb = context.ln_base::<B>();
+            let logb = context.ln_base::<B>(reborrow_cache(&mut cache));
             let (s, r) = x.div_rem_euclid(logb);
 
             // here m is roughly equal to sqrt(self.precision)

@@ -1,6 +1,7 @@
 use crate::{
     error::assert_limited_precision,
     fbig::FBig,
+    math::cache::ConstCache,
     repr::{Context, Word},
     round::{Round, Rounded},
 };
@@ -22,7 +23,11 @@ impl<R: Round> Context<R> {
     ///
     /// // TODO: consider adding a static cache for π at common precisions.
     #[must_use]
-    pub fn pi<const B: Word>(&self) -> Rounded<FBig<R, B>> {
+    pub fn pi<const B: Word>(&self, cache: Option<&mut ConstCache>) -> Rounded<FBig<R, B>> {
+        if let Some(c) = cache {
+            return c.pi::<B, R>(self.precision);
+        }
+
         assert_limited_precision(self.precision);
 
         // Calculate required bits based on target precision in base B.
@@ -211,7 +216,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     #[must_use]
     pub fn pi(precision: usize) -> Self {
-        Context::<R>::new(precision).pi().value()
+        Context::<R>::new(precision).pi(None).value()
     }
 }
 

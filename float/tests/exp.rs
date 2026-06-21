@@ -157,7 +157,7 @@ fn test_exp_binary() {
     ];
     for (exp, pow) in &inexact_cases {
         assert_eq!(exp.exp(), *pow);
-        if let Inexact(v, e) = exp.context().exp(exp.repr()) {
+        if let Inexact(v, e) = exp.context().exp(exp.repr(), None) {
             assert_eq!(v, *pow);
             assert_eq!(e, NoOp);
         } else {
@@ -206,7 +206,7 @@ fn test_exp_decimal() {
     ];
     for (exp, pow, rnd) in &inexact_cases {
         assert_eq!(exp.exp(), *pow);
-        if let Inexact(v, e) = exp.context().exp(exp.repr()) {
+        if let Inexact(v, e) = exp.context().exp(exp.repr(), None) {
             assert_eq!(v, *pow);
             assert_eq!(e, *rnd);
         } else {
@@ -265,7 +265,7 @@ fn test_exp_m1_binary() {
 
     for (exp, pow) in &inexact_cases {
         assert_eq!(exp.exp_m1(), *pow);
-        if let Inexact(v, e) = exp.context().exp_m1(exp.repr()) {
+        if let Inexact(v, e) = exp.context().exp_m1(exp.repr(), None) {
             assert_eq!(v, *pow);
             assert_eq!(e, NoOp);
         } else {
@@ -315,7 +315,7 @@ fn test_exp_m1_decimal() {
 
     for (exp, pow, rnd) in &inexact_cases {
         assert_eq!(exp.exp_m1(), *pow);
-        if let Inexact(v, e) = exp.context().exp_m1(exp.repr()) {
+        if let Inexact(v, e) = exp.context().exp_m1(exp.repr(), None) {
             assert_eq!(v, *pow);
             assert_eq!(e, *rnd);
         } else {
@@ -370,13 +370,13 @@ fn test_powf_binary() {
     for (x, pow, npow) in &xx_inexact_cases {
         assert_eq!(x.powf(x), *pow);
         assert_eq!(x.powf(&-x), *npow);
-        if let Inexact(v, e) = x.context().powf(x.repr(), x.repr()) {
+        if let Inexact(v, e) = x.context().powf(x.repr(), x.repr(), None) {
             assert_eq!(v, *pow);
             assert_eq!(e, NoOp);
         } else {
             panic!("the result should be inexact!")
         }
-        if let Inexact(v, e) = x.context().powf(x.repr(), (-x).repr()) {
+        if let Inexact(v, e) = x.context().powf(x.repr(), (-x).repr(), None) {
             assert_eq!(v, *npow);
             assert_eq!(e, NoOp);
         } else {
@@ -412,13 +412,13 @@ fn test_powf_decimal() {
     for (x, pow, rnd, npow, nrnd) in &xx_inexact_cases {
         assert_eq!(x.powf(x), *pow);
         assert_eq!(x.powf(&-x), *npow);
-        if let Inexact(v, e) = x.context().powf(x.repr(), x.repr()) {
+        if let Inexact(v, e) = x.context().powf(x.repr(), x.repr(), None) {
             assert_eq!(v, *pow);
             assert_eq!(e, *rnd);
         } else {
             panic!("the result should be inexact!")
         }
-        if let Inexact(v, e) = x.context().powf(x.repr(), (-x).repr()) {
+        if let Inexact(v, e) = x.context().powf(x.repr(), (-x).repr(), None) {
             assert_eq!(v, *npow);
             assert_eq!(e, *nrnd);
         } else {

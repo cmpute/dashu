@@ -12,6 +12,7 @@ use dashu_int::{IBig, UBig, Word};
 use crate::{
     error::{assert_finite, panic_unlimited_precision},
     fbig::FBig,
+    math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr},
     round::{
         mode::{HalfAway, HalfEven, Zero},
@@ -354,7 +355,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ) -> Rounded<FBig<R, NewB>> {
         let context = Context::<R>::new(precision);
         context
-            .convert_base(self.repr)
+            .convert_base(self.repr, None)
             .map(|repr| FBig::new(repr, context))
     }
 
@@ -431,7 +432,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
         let context = Context::<R>::new(24);
         context
-            .convert_base::<B, 2>(self.repr.clone())
+            .convert_base::<B, 2>(self.repr.clone(), None)
             .and_then(|v| context.repr_round_ref(&v))
             .and_then(|v| v.into_f32_internal())
     }
@@ -458,7 +459,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
         let context = Context::<R>::new(53);
         context
-            .convert_base::<B, 2>(self.repr.clone())
+            .convert_base::<B, 2>(self.repr.clone(), None)
             .and_then(|v| context.repr_round_ref(&v))
             .and_then(|v| v.into_f64_internal())
     }
@@ -467,7 +468,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
 impl<R: Round> Context<R> {
     // Convert the [Repr] from base B to base NewB, with the precision under the target base from this context.
     #[allow(non_upper_case_globals)]
-    fn convert_base<const B: Word, const NewB: Word>(&self, repr: Repr<B>) -> Rounded<Repr<NewB>> {
+    fn convert_base<const B: Word, const NewB: Word>(
+        &self,
+        repr: Repr<B>,
+        mut cache: Option<&mut ConstCache>,
+    ) -> Rounded<Repr<NewB>> {
         // shortcut if NewB is the same as B
         if NewB == B {
             return Exact(Repr {
@@ -559,9 +564,10 @@ impl<R: Round> Context<R> {
             let work_context = Context::<R>::new(2 * self.precision); // double the precision to get the precise logarithm
             let new_exp = repr.exponent
                 * work_context
-                    .ln(&Repr::new(Repr::<B>::BASE.into(), 0))
+                    .ln(&Repr::new(Repr::<B>::BASE.into(), 0), reborrow_cache(&mut cache))
                     .value();
-            let (exponent, rem) = new_exp.div_rem_euclid(work_context.ln_base::<NewB>());
+            let (exponent, rem) =
+                new_exp.div_rem_euclid(work_context.ln_base::<NewB>(reborrow_cache(&mut cache)));
             let exponent: isize = exponent.try_into().unwrap();
             let exp_rem = rem.exp();
             let significand = repr.significand * exp_rem.repr.significand;
@@ -619,7 +625,7 @@ impl<const B: Word> Repr<B> {
 
         let context = Context::<HalfEven>::new(24);
         context
-            .convert_base::<B, 2>(self.clone())
+            .convert_base::<B, 2>(self.clone(), None)
             .and_then(|v| context.repr_round_ref(&v))
             .and_then(|v| v.into_f32_internal())
     }
@@ -671,7 +677,7 @@ impl<const B: Word> Repr<B> {
 
         let context = Context::<HalfEven>::new(53);
         context
-            .convert_base::<B, 2>(self.clone())
+            .convert_base::<B, 2>(self.clone(), None)
             .and_then(|v| context.repr_round_ref(&v))
             .and_then(|v| v.into_f64_internal())
     }

@@ -72,6 +72,7 @@ mod div;
 mod error;
 mod exp;
 mod fbig;
+mod fbig_cached;
 mod fmt;
 mod helper_macros;
 mod iter;
@@ -94,7 +95,8 @@ mod utils;
 pub use third_party::*;
 
 pub use fbig::FBig;
-pub use math::cache::MathCache;
+pub use fbig_cached::CachedFBig;
+pub use math::cache::ConstCache;
 pub use repr::{Context, Repr};
 
 /// Multi-precision float number with decimal exponent and [HalfAway][round::mode::HalfAway] rounding mode

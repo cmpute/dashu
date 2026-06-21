@@ -9,6 +9,7 @@ use dashu_int::IBig;
 use crate::{
     error::{assert_finite, assert_limited_precision},
     fbig::FBig,
+    math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
 };
@@ -75,7 +76,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn ln(&self) -> Self {
-        self.context.ln(&self.repr).value()
+        self.context.ln(&self.repr, None).value()
     }
 
     /// Calculate the natural logarithm function (`log(x+1)`) on the float number
@@ -92,7 +93,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn ln_1p(&self) -> Self {
-        self.context.ln_1p(&self.repr).value()
+        self.context.ln_1p(&self.repr, None).value()
     }
 }
 
@@ -101,32 +102,41 @@ impl<R: Round> Context<R> {
     ///
     /// The precision of the output will be larger than self.precision
     #[inline]
-    fn ln2<const B: Word>(&self) -> FBig<R, B> {
+    fn ln2<const B: Word>(&self, cache: Option<&mut ConstCache>) -> FBig<R, B> {
+        if let Some(c) = cache {
+            return c.ln2::<B, R>(self.precision);
+        }
         // log(2) = 4L(6) + 2L(99)
         // see formula (24) from Gourdon, Xavier, and Pascal Sebah.
         // "The Logarithmic Constant: Log 2." (2004)
         4 * self.iacoth(6.into()) + 2 * self.iacoth(99.into())
     }
 
-    /// Calculate log(2)
+    /// Calculate log(10)
     ///
     /// The precision of the output will be larger than self.precision
     #[inline]
-    fn ln10<const B: Word>(&self) -> FBig<R, B> {
+    fn ln10<const B: Word>(&self, cache: Option<&mut ConstCache>) -> FBig<R, B> {
+        if let Some(c) = cache {
+            return c.ln10::<B, R>(self.precision);
+        }
         // log(10) = log(2) + log(5) = 3log(2) + 2L(9)
-        3 * self.ln2() + 2 * self.iacoth(9.into())
+        3 * self.ln2(None) + 2 * self.iacoth(9.into())
     }
 
     /// Calculate log(B), for internal use only
     ///
     /// The precision of the output will be larger than self.precision
     #[inline]
-    pub(crate) fn ln_base<const B: Word>(&self) -> FBig<R, B> {
+    pub(crate) fn ln_base<const B: Word>(&self, cache: Option<&mut ConstCache>) -> FBig<R, B> {
+        if let Some(c) = cache {
+            return c.ln_base::<B, R>(self.precision);
+        }
         match B {
-            2 => self.ln2(),
-            10 => self.ln10(),
-            i if i.is_power_of_two() => self.ln2() * i.trailing_zeros(),
-            _ => self.ln(&Repr::new(Repr::<B>::BASE.into(), 0)).value(),
+            2 => self.ln2(None),
+            10 => self.ln10(None),
+            i if i.is_power_of_two() => self.ln2(None) * i.trailing_zeros(),
+            _ => self.ln(&Repr::new(Repr::<B>::BASE.into(), 0), None).value(),
         }
     }
 
@@ -177,8 +187,12 @@ impl<R: Round> Context<R> {
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
-    pub fn ln<const B: Word>(&self, x: &Repr<B>) -> Rounded<FBig<R, B>> {
-        self.ln_internal(x, false)
+    pub fn ln<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        cache: Option<&mut ConstCache>,
+    ) -> Rounded<FBig<R, B>> {
+        self.ln_internal(x, false, cache)
     }
 
     /// Calculate the natural logarithm function (`log(x+1)`) on the float number under this context.
@@ -198,11 +212,20 @@ impl<R: Round> Context<R> {
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
-    pub fn ln_1p<const B: Word>(&self, x: &Repr<B>) -> Rounded<FBig<R, B>> {
-        self.ln_internal(x, true)
+    pub fn ln_1p<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        cache: Option<&mut ConstCache>,
+    ) -> Rounded<FBig<R, B>> {
+        self.ln_internal(x, true, cache)
     }
 
-    fn ln_internal<const B: Word>(&self, x: &Repr<B>, one_plus: bool) -> Rounded<FBig<R, B>> {
+    fn ln_internal<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        one_plus: bool,
+        mut cache: Option<&mut ConstCache>,
+    ) -> Rounded<FBig<R, B>> {
         assert_finite(x);
         assert_limited_precision(self.precision);
 
@@ -278,7 +301,7 @@ impl<R: Round> Context<R> {
         let result: FBig<R, B> = if no_scaling {
             2 * sum
         } else {
-            2 * sum + s * work_context.ln2()
+            2 * sum + s * work_context.ln2::<B>(reborrow_cache(&mut cache))
         };
         result.with_precision(self.precision)
     }
@@ -319,25 +342,25 @@ mod tests {
     #[test]
     fn test_ln2_ln10() {
         let context = Context::<mode::Zero>::new(45);
-        let decimal_ln2 = context.ln2::<10>().with_precision(45).value();
+        let decimal_ln2 = context.ln2::<10>(None).with_precision(45).value();
         assert_eq!(
             decimal_ln2.repr.significand,
             IBig::from_str_radix("693147180559945309417232121458176568075500134", 10).unwrap()
         );
-        let decimal_ln10 = context.ln10::<10>().with_precision(45).value();
+        let decimal_ln10 = context.ln10::<10>(None).with_precision(45).value();
         assert_eq!(
             decimal_ln10.repr.significand,
             IBig::from_str_radix("230258509299404568401799145468436420760110148", 10).unwrap()
         );
 
         let context = Context::<mode::Zero>::new(180);
-        let binary_ln2 = context.ln2::<2>().with_precision(180).value();
+        let binary_ln2 = context.ln2::<2>(None).with_precision(180).value();
         assert_eq!(
             binary_ln2.repr.significand,
             IBig::from_str_radix("1062244963371879310175186301324412638028404515790072203", 10)
                 .unwrap()
         );
-        let binary_ln10 = context.ln10::<2>().with_precision(180).value();
+        let binary_ln10 = context.ln10::<2>(None).with_precision(180).value();
         assert_eq!(
             binary_ln10.repr.significand,
             IBig::from_str_radix("882175346869410758689845931257775553286341791676474847", 10)
