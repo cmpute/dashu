@@ -124,7 +124,7 @@ fn add_val_val<R: Round, const B: Word>(
         lhs.repr
     } else {
         match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
-            Ordering::Equal => context.repr_round(Repr::new(
+            Ordering::Equal => context.repr_round(cancel_zero::<R, B>(
                 lhs.repr.significand + rhs.repr.significand,
                 lhs.repr.exponent,
             )),
@@ -157,7 +157,7 @@ fn add_val_ref<R: Round, const B: Word>(
                     Positive => lhs.repr.significand + &rhs.repr.significand,
                     Negative => lhs.repr.significand - &rhs.repr.significand,
                 };
-                context.repr_round(Repr::new(sum_signif, lhs.repr.exponent))
+                context.repr_round(cancel_zero::<R, B>(sum_signif, lhs.repr.exponent))
             }
             Ordering::Greater => context.repr_add_large_small(lhs.repr, &rhs.repr, rhs_sign),
             Ordering::Less => context.repr_add_small_large(lhs.repr, &rhs.repr, rhs_sign),
@@ -182,7 +182,7 @@ fn add_ref_val<R: Round, const B: Word>(
         lhs.repr.clone()
     } else {
         match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
-            Ordering::Equal => context.repr_round(Repr::new(
+            Ordering::Equal => context.repr_round(cancel_zero::<R, B>(
                 &lhs.repr.significand + rhs.repr.significand,
                 lhs.repr.exponent,
             )),
@@ -210,7 +210,7 @@ fn add_ref_ref<R: Round, const B: Word>(
         lhs.repr.clone()
     } else {
         match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
-            Ordering::Equal => context.repr_round(Repr::new(
+            Ordering::Equal => context.repr_round(cancel_zero::<R, B>(
                 &lhs.repr.significand + rhs_sign * rhs.repr.significand.clone(),
                 lhs.repr.exponent,
             )),

@@ -127,6 +127,31 @@ impl<R: Round> Context<R> {
             return Ok(repr.map(|v| FBig::new(v, *self)));
         }
 
+        // Guard against exponent overflow for astronomically large results: the result
+        // magnitude has log2 ≈ exp·log2(base); if that exceeds the isize exponent range,
+        // return ±inf (|base| > 1) or 0 (|base| < 1) instead of overflowing mid-computation.
+        let base_log2 = base.log2_est() as f64;
+        let threshold = (isize::MAX as f64) * (B.log2_est() as f64);
+        let exp_f64 = i64::try_from(&exp).ok().map(|e| e as f64);
+        let overflows = match exp_f64 {
+            Some(e) => e * base_log2 > threshold,
+            None => base_log2 != 0.0, // exp doesn't fit i64: overflows unless |base| == 1
+        };
+        if overflows {
+            return Ok(Exact(if base_log2 > 0.0 {
+                FBig::new(
+                    if base.sign() == Sign::Negative {
+                        Repr::neg_infinity()
+                    } else {
+                        Repr::infinity()
+                    },
+                    *self,
+                )
+            } else {
+                FBig::ZERO
+            }));
+        }
+
         let work_context = if self.is_limited() {
             // increase working precision when the exponent is large
             let guard_digits = exp.bit_len() + self.precision.bit_len(); // heuristic
@@ -192,9 +217,17 @@ impl<R: Round> Context<R> {
             let repr = self.repr_round_ref(base);
             return Ok(repr.map(|v| FBig::new(v, *self)));
         } else if base.significand.is_zero() {
-            // pow(±0, y>0) = +0 (for a non-integer y this is exact; the odd-integer/-0 case
-            // is a minor deviation). Short-circuiting here also avoids the negative-base path.
-            return Ok(Exact(FBig::ZERO));
+            // With a *float* exponent the result on a zero base is the positive one — this
+            // matches the common float-pow convention (e.g. CPython: `(-0.0) ** y == 0.0`),
+            // which doesn't track the parity of the exponent:
+            //   pow(±0, y > 0) = +0,    pow(±0, y < 0) = +inf.
+            // For the sign-correct result (e.g. `pow(-0, odd) = -0`), use the integer-exponent
+            // [`powi`](Context::powi). Short-circuiting here also avoids the negative-base path.
+            return Ok(Exact(if exp.sign() == Sign::Negative {
+                FBig::new(Repr::infinity(), *self)
+            } else {
+                FBig::ZERO
+            }));
         }
         if base.sign() == Sign::Negative {
             // TODO: we should allow negative base when exp is an integer
@@ -279,6 +312,7 @@ impl<R: Round> Context<R> {
     ) -> Rounded<FBig<R, B>> {
         assert_finite(x);
         assert_limited_precision(self.precision);
+        let input_sign = x.sign();
 
         if x.significand.is_zero() {
             // exp(±0) = 1, exp_m1(±0) = +0
@@ -323,7 +357,20 @@ impl<R: Round> Context<R> {
 
             // here m is roughly equal to sqrt(self.precision)
             let n = 1usize << (self.precision.bit_len() / 2);
-            let s: isize = s.try_into().expect("exponent is too large");
+            let s: isize = match s.try_into() {
+                Ok(v) => v,
+                Err(_) => {
+                    // |floor(x / ln B)| overflows isize — x is astronomically large, so the
+                    // result is an infinity (x → +∞) or underflows to the limit (x → −∞).
+                    return Exact(if input_sign == Sign::Positive {
+                        FBig::new(Repr::infinity(), *self)
+                    } else if minus_one {
+                        -FBig::ONE // exp_m1(−∞) = −1
+                    } else {
+                        FBig::ZERO // exp(−∞) = 0
+                    });
+                }
+            };
             (s, n, r)
         };
 

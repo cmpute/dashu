@@ -8,6 +8,7 @@ use dashu_float::{
     round::mode,
     Context, FBig, Repr,
 };
+use dashu_int::IBig;
 
 fn r2(sig: i32, exp: isize) -> Repr<2> {
     Repr::new(sig.into(), exp)
@@ -124,4 +125,63 @@ fn test_fpresult_type_alias() {
     // FpResult is Result<Rounded<T>, FpError>.
     let r: FpResult<FBig> = Ok(Exact(FBig::ZERO));
     assert!(r.is_ok());
+}
+
+#[test]
+fn test_exp_overflow_is_infinity() {
+    let ctx = Context::<mode::HalfEven>::new(53);
+    // exp(huge) overflows the isize exponent range -> +inf (not a panic, not an error).
+    // Need x large enough that floor(x/ln2) > isize::MAX, i.e. x > ~2^62.5.
+    let huge = Repr::new(IBig::from(1) << 63, 0);
+    let pos = ctx.exp::<2>(&huge, None).unwrap().value();
+    assert!(pos.repr().is_infinite());
+    assert_eq!(pos.repr().sign(), Sign::Positive);
+
+    // exp(huge negative) underflows to 0
+    let neg = Repr::new(-(IBig::from(1) << 63), 0);
+    let zero = ctx.exp::<2>(&neg, None).unwrap().value();
+    assert!(zero.repr().is_zero());
+
+    // exp_m1(huge negative) -> -1
+    let m1 = ctx.exp_m1::<2>(&neg, None).unwrap().value();
+    assert_eq!(m1, -FBig::<mode::HalfEven>::ONE);
+}
+
+#[test]
+fn test_powf_zero_base() {
+    use dashu_float::DBig;
+    // powf with a float exponent returns the *positive* result on a zero base
+    // (matching the common float-pow convention); use powi for the signed result.
+    let ctx = Context::<mode::HalfEven>::new(53);
+    // powf(-0, 2.0) = +0 (NOT -0)
+    let r = ctx
+        .powf::<2>(&Repr::<2>::neg_zero(), &Repr::new(2.into(), 0), None)
+        .unwrap()
+        .value();
+    assert!(r.repr().is_zero(), "expected +0");
+    assert!(!r.repr().is_neg_zero(), "powf(-0, x) should be +0, not -0");
+    // powf(0, -1) = +inf
+    let r = ctx
+        .powf::<2>(&Repr::<2>::zero(), &Repr::new((-1i32).into(), 0), None)
+        .unwrap()
+        .value();
+    assert!(r.repr().is_infinite());
+    assert_eq!(r.repr().sign(), Sign::Positive);
+
+    // powi(-0, 3) = -0 (the sign-correct, integer-exponent variant)
+    let r = ctx
+        .powi::<2>(&Repr::<2>::neg_zero(), 3.into())
+        .unwrap()
+        .value();
+    assert!(r.repr().is_neg_zero());
+    let _ = DBig::ZERO;
+}
+
+#[test]
+fn test_shr_assign_shifts_once() {
+    // Regression: shr_assign previously subtracted rhs twice.
+    let mut x = FBig::<mode::HalfEven>::try_from(8.0f64).unwrap(); // 2^3
+    x >>= 1; // 2^2 = 4
+    let y = FBig::<mode::HalfEven>::try_from(4.0f64).unwrap();
+    assert_eq!(x, y);
 }

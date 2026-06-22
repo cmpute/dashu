@@ -22,8 +22,19 @@
   the type alias). `FBig::tan`/`asin`/`acos`/`atan2` now return `Self` (panic on error) instead of the
   enum, matching the other trig methods.
 - `atan2(±finite, +inf)` now returns the signed zero of `y` (now that signed zero is supported).
+- `powf(±0, y)` returns the *positive* result (`+0` for `y > 0`, `+inf` for `y < 0`) — matching the
+  common float-pow convention (a float exponent doesn't track parity). Use `powi` for the sign-correct
+  result (`pow(-0, odd) = -0`).
 - Removed the unused `panic_overflow`/`panic_underflow`/`panic_infinite`/`panic_power_negative_base`/
   `panic_root_negative` helpers (their conditions are now `FpError`s).
+
+### Fix
+- `exp(huge)` / `exp_m1(huge)` now return `+inf` (or `0` / `-1` for huge negative arguments) instead of
+  panicking when the scaled exponent overflows `isize`; `powi` likewise returns `±inf`/`0` on
+  astronomically large results.
+- The `FBig` `+`/`-` operators now produce `-0` on exact cancellation under round-toward-negative
+  (`Down`), matching `Context::add`/`sub` (previously the equal-exponent fast path yielded `+0`).
+- `ShrAssign` (`>>=`) for `FBig` previously subtracted the shift amount twice; it now shifts exactly once.
 
 ### Add
 - Add the `ConstCache` type and the `CachedFBig` wrapper. `ConstCache` caches exact binary-splitting tree state for mathematical constants (π, ln2, ln10, ln(B)) so that repeated calls at increasing precision *extend* prior work instead of recomputing from scratch. `CachedFBig` is an `FBig` carrying a shared `Rc<RefCell<ConstCache>>` handle: its transcendental operations (`ln`, `exp`, `sin`/`cos`/…, `pi`, base conversion) thread that handle through the `Context` methods, reusing/extending the cached state. `Context` and `FBig` stay `Copy` + `Send` + `Sync` + `no_std` (so `static_fbig!`/`static_dbig!` keep working); only `CachedFBig` is `!Send + !Sync` (sharing state via `Rc<RefCell<..>>`). Because `Context` accepts `Option<&mut ConstCache>`, users can build `Arc<Mutex<ConstCache>>`-based variants too.

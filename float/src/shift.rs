@@ -42,6 +42,5 @@ impl<R: Round, const B: Word> ShrAssign<isize> for FBig<R, B> {
         if !self.repr.significand.is_zero() {
             self.repr.exponent -= rhs;
         }
-        self.repr.exponent -= rhs;
     }
 }

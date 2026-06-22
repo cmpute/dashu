@@ -160,6 +160,12 @@ fn test_cancellation_under_down() -> Result<(), ParseError> {
     // subtraction a - a likewise
     let sub_down = down.sub::<10>(three.repr(), three.repr()).unwrap().value();
     assert!(sub_down.repr().is_neg_zero(), "3-3 under Down = -0");
+
+    // The FBig operator path (Add/Sub traits) must agree: a - a under Down = -0.
+    let a = FBig::<mode::Down, 10>::from_str("3")?;
+    let a2 = FBig::<mode::Down, 10>::from_str("3")?;
+    let diff = a - a2;
+    assert!(diff.repr().is_neg_zero(), "FBig 3-3 under Down = -0");
     Ok(())
 }
 
