@@ -428,9 +428,10 @@ impl Repr {
                 buffer.push(ones_word(hi_bits as _));
             }
 
-            // SAFETY: the bit length has been checked and capacity >= length,
-            //         so capacity is nonzero and larger than 2
-            unsafe { mem::transmute::<Buffer, Repr>(buffer) }
+            // Route through `from_buffer` to canonicalise: a 128-bit ones value
+            // has length 2 here and must become the inline form, otherwise the
+            // (now scale-sensitive) PartialEq wouldn't see it as equal.
+            Self::from_buffer(buffer)
         }
     }
 
@@ -554,7 +555,44 @@ impl Drop for Repr {
 impl PartialEq for Repr {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.as_sign_slice() == other.as_sign_slice()
+        // The encoding is canonical, so a sign or scale (inline vs heap)
+        // mismatch is immediately unequal; otherwise compare the words directly
+        // instead of materialising slices via `as_sign_slice`.
+        let cap_a = self.capacity.get();
+        let cap_b = other.capacity.get();
+        // Sign mismatch: zero is canonically positive (no negative zero), so
+        // a sign disagreement always means unequal values.
+        if (cap_a > 0) != (cap_b > 0) {
+            return false;
+        }
+        let abs_a = cap_a.unsigned_abs();
+        let abs_b = cap_b.unsigned_abs();
+        let inline_a = abs_a <= 2;
+        let inline_b = abs_b <= 2;
+        // Mixed scales can never be equal: heap representation requires
+        // length ≥ 3, which is a strictly larger magnitude than anything
+        // inline.
+        if inline_a != inline_b {
+            return false;
+        }
+        // SAFETY: capacity tells us which union variant is live.
+        unsafe {
+            if inline_a {
+                // Compare as one DoubleWord (tighter codegen than [Word; 2]).
+                let dw_a = double_word(self.data.inline[0], self.data.inline[1]);
+                let dw_b = double_word(other.data.inline[0], other.data.inline[1]);
+                dw_a == dw_b
+            } else {
+                let len_a = self.data.heap.1;
+                let len_b = other.data.heap.1;
+                if len_a != len_b {
+                    return false;
+                }
+                let slice_a = slice::from_raw_parts(self.data.heap.0, len_a);
+                let slice_b = slice::from_raw_parts(other.data.heap.0, len_b);
+                slice_a == slice_b
+            }
+        }
     }
 }
 impl Eq for Repr {}
