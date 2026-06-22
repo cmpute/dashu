@@ -65,6 +65,12 @@ pub struct ConstCache {
     iacoth_6: Option<CachedState>,
     iacoth_9: Option<CachedState>,
     iacoth_99: Option<CachedState>,
+    /// Base-free integer `floor(sqrt(10005) · 2^sqrt_10005_bits)`, reused by π.
+    /// Unlike the series slots this holds a plain value (not a `(P,Q,T)` triple) and
+    /// is extended by a fresh Karatsuba `UBig::sqrt` — Newton refinement would be no
+    /// faster, since `UBig::sqrt` is already O(M(n)).
+    sqrt_10005: Option<UBig>,
+    sqrt_10005_bits: usize,
 }
 
 impl ConstCache {
@@ -75,7 +81,22 @@ impl ConstCache {
             iacoth_6: None,
             iacoth_9: None,
             iacoth_99: None,
+            sqrt_10005: None,
+            sqrt_10005_bits: 0,
         }
+    }
+
+    /// `floor(sqrt(10005) · 2^bits)` as a base-free integer, cached and extended on
+    /// demand. Used by [`pi`](Self::pi). Computed via Karatsuba `UBig::sqrt` (O(M(n))).
+    /// Returns the value together with the number of bits it actually corresponds to
+    /// (which may be larger than requested, when a higher-precision value is reused).
+    fn sqrt_10005(&mut self, bits: usize) -> (UBig, usize) {
+        if bits > self.sqrt_10005_bits {
+            let n = UBig::from(10005u32) << (2 * bits);
+            self.sqrt_10005 = Some(dashu_base::SquareRoot::sqrt(&n));
+            self.sqrt_10005_bits = bits;
+        }
+        (self.sqrt_10005.as_ref().unwrap().clone(), self.sqrt_10005_bits)
     }
 
     /// π at `precision` base-`B` digits, rounded per `R`. Extends any prior π
@@ -94,15 +115,21 @@ impl ConstCache {
 
         // Finalize: π = 426880·√10005·Q / T  (identical to Context::pi)
         let guard_bits = num_terms.bit_len() + 32;
-        let work_precision = precision_for_bits::<B>(bits + guard_bits);
+        let work_bits = bits + guard_bits;
+        let work_precision = precision_for_bits::<B>(work_bits);
         let work = Context::<R>::new(work_precision);
 
-        let q_f = work.convert_int::<B>(q.into()).value();
-        let t_f = work.convert_int::<B>(t).value();
-        let sqrt_10005 =
-            unwrap_fp(work.sqrt(&work.convert_int::<B>(10005.into()).value().repr)).value();
-        let c = work.convert_int::<B>(426_880.into()).value();
-        let pi = (c * sqrt_10005 * q_f) / t_f;
+        // Finalize: π = 426880·√10005·Q / T. With √10005 ≈ isqrt_val·2^(-isqrt_bits)
+        // from the base-free cached isqrt, this folds into a single integer ratio
+        //   π = (426880 · isqrt_val · Q) / (T · 2^isqrt_bits),
+        // avoiding any cross-base conversion of √10005 (convert_int is the fast path,
+        // the same one used for Q and T).
+        let (isqrt_val, isqrt_bits) = self.sqrt_10005(work_bits);
+        let num = IBig::from(426_880) * IBig::from(isqrt_val) * IBig::from(q);
+        let den = t << isqrt_bits;
+        let num_f = work.convert_int::<B>(num).value();
+        let den_f = work.convert_int::<B>(den).value();
+        let pi = num_f / den_f;
         pi.with_precision(precision)
     }
 
@@ -203,7 +230,8 @@ impl ConstCache {
         sum(&self.pi) + sum(&self.iacoth_6) + sum(&self.iacoth_9) + sum(&self.iacoth_99)
     }
 
-    /// Sum of word counts across all cached big integers (P, Q, T).
+    /// Sum of word counts across all cached big integers (P, Q, T, and the cached
+    /// `√10005` isqrt).
     ///
     /// This reflects the underlying storage words used by the cached state.
     #[inline]
@@ -217,6 +245,7 @@ impl ConstCache {
             + slot_words(&self.iacoth_6)
             + slot_words(&self.iacoth_9)
             + slot_words(&self.iacoth_99)
+            + self.sqrt_10005.as_ref().map_or(0, |s| s.as_words().len())
     }
 
     /// Clear all cached constant state, freeing the underlying memory.
@@ -229,6 +258,8 @@ impl ConstCache {
         self.iacoth_6 = None;
         self.iacoth_9 = None;
         self.iacoth_99 = None;
+        self.sqrt_10005 = None;
+        self.sqrt_10005_bits = 0;
     }
 }
 
@@ -469,5 +500,43 @@ mod tests {
         // UBig/IBig Debug prints head..tail, so the output stays compact
         assert!(s.contains(".."), "Debug output should use head..tail truncation");
         assert!(s.len() < 512);
+    }
+
+    #[test]
+    fn test_sqrt_10005_cached_and_counted() {
+        // Computing π caches the base-free √10005 isqrt; total_words counts it, and
+        // clear() frees it.
+        let mut cache = ConstCache::new();
+        assert_eq!(cache.total_terms(), 0);
+        assert_eq!(cache.total_words(), 0);
+
+        let _ = cache.pi::<10, mode::HalfAway>(200);
+        // the isqrt is now cached (total_terms stays series-only; words include isqrt)
+        assert!(cache.total_words() > 0);
+
+        cache.clear();
+        assert_eq!(cache.total_terms(), 0);
+        assert_eq!(cache.total_words(), 0);
+
+        // after clear, π recomputes from scratch and still matches the direct value
+        let direct = Context::<mode::HalfAway>::new(50).pi::<10>(None).value();
+        let after_clear = cache.pi::<10, mode::HalfAway>(50).value();
+        assert_eq!(after_clear, direct);
+    }
+
+    #[test]
+    fn test_sqrt_10005_reuse_higher_precision() {
+        // A high-precision π call caches a high-bit isqrt; a later lower-precision
+        // call must reuse it (no recompute) and still be correct.
+        let mut cache = ConstCache::new();
+        let _high = cache.pi::<2, mode::HalfEven>(1000);
+        let words_after_high = cache.total_words();
+
+        let low = cache.pi::<2, mode::HalfEven>(100).value();
+        // word count unchanged ⇒ isqrt (and series) were reused, not recomputed
+        assert_eq!(cache.total_words(), words_after_high);
+
+        let direct = Context::<mode::HalfEven>::new(100).pi::<2>(None).value();
+        assert_eq!(low, direct);
     }
 }

@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Add
+- `ConstCache` now also caches the base-free `√10005` isqrt used by π (`ConstCache::pi`), so a
+  repeat π call at the same or lower precision reuses it instead of recomputing. The isqrt is held
+  as a base-free integer (`floor(√10005 · 2^bits)`, computed via Karatsuba `UBig::sqrt`) and folded
+  into the π integer ratio, so no cross-base conversion is needed. `ConstCache::total_words()`
+  counts it; `total_terms()` is unchanged (the isqrt isn't a series). Measured warm-π speedup:
+  ~20× at 500 digits, ~1.3× at 5000.
 - IEEE-754 signed zero (`-0`): operations now produce the sign of zero mandated by the standard
   (e.g. `1 / -inf = -0`, `sqrt(-0) = -0`, `ceil(-0) = -0`, cancellation under round-toward-negative).
   `+0` and `-0` compare equal; `-0.0` round-trips through `f32`/`f64`.

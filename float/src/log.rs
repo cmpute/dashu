@@ -495,6 +495,31 @@ mod bench_pi_sqrt {
 
     #[test]
     #[ignore]
+    fn bench_pi_repeat_call() {
+        // First call computes the series + sqrt; second call reuses both.
+        use crate::math::cache::ConstCache;
+        let precisions: &[usize] = &[500, 5_000];
+        eprintln!("\nπ repeat-call (ConstCache): cold vs warm (sqrt + series reused)");
+        eprintln!("{:>8} {:>12} {:>12} {:>10}", "digits", "cold", "warm", "warm/cold");
+        for &p in precisions {
+            let mut c = ConstCache::new();
+            let t0 = std::time::Instant::now();
+            black_box(c.pi::<10, mode::Zero>(p));
+            let cold = t0.elapsed();
+            let t0 = std::time::Instant::now();
+            black_box(c.pi::<10, mode::Zero>(p));
+            let warm = t0.elapsed();
+            eprintln!(
+                "{:>8} {:>12.2?} {:>12.2?} {:>9.2}x",
+                p,
+                cold,
+                warm,
+                cold.as_secs_f64() / warm.as_secs_f64()
+            );
+        }
+    }
+    #[test]
+    #[ignore]
     fn bench_pi_vs_sqrt10005() {
         let precisions: &[usize] = &[50, 500, 5_000];
         eprintln!("\nπ (Chudnovsky) vs its sqrt(10005) sub-computation");
