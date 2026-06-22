@@ -400,3 +400,88 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod bench_iacoth {
+    use super::*;
+    use crate::round::mode;
+    use std::hint::black_box;
+    use std::time::Instant;
+
+    /// Master's iterative iacoth: full-precision FBig Maclaurin series.
+    fn iacoth_iter<R: Round, const B: Word>(precision: usize, n: u32) -> FBig<R, B> {
+        let guard = (precision.log2_est() / B.log2_est()) as usize;
+        let work = Context::<R>::new(precision + guard + 2);
+        let nf = work.convert_int::<B>(n.into()).value();
+        let inv = FBig::<R, B>::ONE / nf;
+        let inv2 = inv.sqr();
+        let mut sum = inv.clone();
+        let mut pow = inv;
+        let mut k: usize = 3;
+        loop {
+            pow *= &inv2;
+            let increase = &pow / work.convert_int::<B>(k.into()).value();
+            if increase < sum.sub_ulp() {
+                return sum;
+            }
+            sum += increase;
+            k += 2;
+        }
+    }
+
+    /// ln(2) via the iterative series: 4·L(6) + 2·L(99).
+    fn ln2_iter<R: Round, const B: Word>(precision: usize) -> FBig<R, B> {
+        let l6 = iacoth_iter::<R, B>(precision, 6);
+        let l99 = iacoth_iter::<R, B>(precision, 99);
+        (4u8 * l6 + 2u8 * l99).with_precision(precision).value()
+    }
+
+    /// ln(2) via the current binary-splitting path.
+    fn ln2_bs<R: Round, const B: Word>(precision: usize) -> FBig<R, B> {
+        Context::<R>::new(precision)
+            .ln2::<B>(None)
+            .with_precision(precision)
+            .value()
+    }
+
+    #[test]
+    #[ignore]
+    fn bench_ln2_iter_vs_binary_splitting() {
+        let precisions: &[usize] = &[50, 200, 1_000, 5_000, 10_000];
+        eprintln!("\nln(2) computation: iterative (master) vs binary splitting (this branch)");
+        eprintln!("{:>8} {:>14} {:>14} {:>10}", "digits", "iterative", "bin-split", "speedup");
+        for &p in precisions {
+            // correctness: agree to p-5 digits
+            let bs = ln2_bs::<mode::Zero, 10>(p);
+            let it = ln2_iter::<mode::Zero, 10>(p);
+            let check_digits = p.saturating_sub(5).max(1);
+            assert_eq!(
+                bs.clone().with_precision(check_digits),
+                it.clone().with_precision(check_digits),
+                "mismatch at p={p}"
+            );
+
+            let reps = if p <= 200 {
+                50
+            } else if p <= 1_000 {
+                10
+            } else {
+                1
+            };
+            let t0 = Instant::now();
+            for _ in 0..reps {
+                black_box(ln2_iter::<mode::Zero, 10>(p));
+            }
+            let t_iter = t0.elapsed() / reps as u32;
+
+            let t0 = Instant::now();
+            for _ in 0..reps {
+                black_box(ln2_bs::<mode::Zero, 10>(p));
+            }
+            let t_bs = t0.elapsed() / reps as u32;
+
+            let speedup = t_iter.as_secs_f64() / t_bs.as_secs_f64();
+            eprintln!("{:>8} {:>11.2?} {:>14.2?} {:>9.2}x", p, t_iter, t_bs, speedup);
+        }
+    }
+}
