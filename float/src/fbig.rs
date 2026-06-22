@@ -85,19 +85,21 @@ use dashu_int::{DoubleWord, IBig};
 ///
 /// # IEEE 754 behavior compliance
 ///
-/// The representation of the floating point number doesn't follows the IEEE 754 standard, as it's not
+/// The representation of the floating point number doesn't follow the IEEE 754 standard, as it's not
 /// designed for arbitrary precision numbers. The key differences include:
-/// * [FBig] doesn't support NaN values. In places where IEEE 754 operations generate NaNs, `FBig` will panic.
+/// * [FBig] doesn't support NaN values. In places where IEEE 754 operations would generate NaNs
+///   (e.g. `0/0`, `sqrt(-1)`), the [`Context`] layer returns an [`FpError`](crate::FpError) and the
+///   [FBig] convenience methods panic.
 /// * [FBig] doesn't have subnormal values.
 /// * [FBig] supports IEEE-754 signed zero (`-0`): operations that produce a zero result carry
 ///   the sign mandated by IEEE 754 (e.g. `1 / -inf = -0`, `sqrt(-0) = -0`, `ceil(-0) = -0`).
 ///   `+0` and `-0` compare equal.
-/// * Division by zero and logarithm on zero panic instead of returning infinities.
-/// * [FBig] operations will panic if the result overflows or underflows¹.
-/// * [FBig] does support infinities, but currently infinities are not allowed to be operated with, except for
-///   equality test and comparison¹.
-///
-/// ¹ These behaviors are subject to changes in the future.
+/// * Infinities are **terminal values**: they can be produced (e.g. `1 / 0 → +inf`, `ln(0) → -inf`,
+///   `exp(huge) → +inf`, `tan(π/2) → +inf`), compared, and printed, but feeding an infinity into a
+///   further operation is an error at the [`Context`] layer ([`FpError::InfiniteInput`]) and panics
+///   at the [FBig] layer. This structurally avoids the IEEE indeterminate forms (`inf − inf`, `inf/inf`,
+///   `0·inf`). The only exceptions are `atan(±inf) = ±π/2` and the `atan2` signed-∞ quadrants, which
+///   have well-defined finite results.
 ///
 /// # Convert from/to `f32`/`f64`
 ///

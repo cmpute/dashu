@@ -1,7 +1,32 @@
 # Changelog
 
 ## Unreleased
+
 ### Add
+- IEEE-754 signed zero (`-0`): operations now produce the sign of zero mandated by the standard
+  (e.g. `1 / -inf = -0`, `sqrt(-0) = -0`, `ceil(-0) = -0`, cancellation under round-toward-negative).
+  `+0` and `-0` compare equal; `-0.0` round-trips through `f32`/`f64`.
+- `FpError` (`InfiniteInput`, `OutOfDomain`, `Indeterminate`) and `FpResult<T> = Result<Rounded<T>, FpError>`.
+  Infinite *outputs* are returned as values inside `Ok` (`1/0 → +inf`, `ln(0) → -inf`, `exp(huge) → +inf`,
+  `tan(π/2) → ±inf`); infinite *inputs* are `Err(InfiniteInput)` (making infinities terminal, which
+  structurally avoids the NaN-producing indeterminate forms); domain errors (`0/0`, `sqrt(-x)`, `ln(-x)`,
+  `asin(|x|>1)`, `pow(neg, non-int)`) are `Err`. The `FBig`/`CachedFBig` convenience layers panic on error.
+
+### Change
+- **Breaking (encoding):** infinities are re-encoded with sentinel exponents `isize::MAX`/`isize::MIN`
+  (was `1`/`-1`), and `-0` is encoded at exponent `-1`. `normalize()` preserves these special values
+  instead of clobbering them; `Repr`'s `PartialEq`/`Eq` are now manual so `+0 == -0`.
+- **Breaking (result model):** `Context` arithmetic/transcendental/trig methods now return
+  `FpResult<FBig<R, B>>` (= `Result<Rounded<FBig<R, B>>, FpError>`) instead of `Rounded<FBig<R, B>>`
+  (arithmetic) / `FpResult<B>` (the old trig enum). The old `FpResult` enum is **removed** (replaced by
+  the type alias). `FBig::tan`/`asin`/`acos`/`atan2` now return `Self` (panic on error) instead of the
+  enum, matching the other trig methods.
+- `atan2(±finite, +inf)` now returns the signed zero of `y` (now that signed zero is supported).
+- Removed the unused `panic_overflow`/`panic_underflow`/`panic_infinite`/`panic_power_negative_base`/
+  `panic_root_negative` helpers (their conditions are now `FpError`s).
+
+### Add
+- Add the `ConstCache` type and the `CachedFBig` wrapper. `ConstCache` caches exact binary-splitting tree state for mathematical constants (π, ln2, ln10, ln(B)) so that repeated calls at increasing precision *extend* prior work instead of recomputing from scratch. `CachedFBig` is an `FBig` carrying a shared `Rc<RefCell<ConstCache>>` handle: its transcendental operations (`ln`, `exp`, `sin`/`cos`/…, `pi`, base conversion) thread that handle through the `Context` methods, reusing/extending the cached state. `Context` and `FBig` stay `Copy` + `Send` + `Sync` + `no_std` (so `static_fbig!`/`static_dbig!` keep working); only `CachedFBig` is `!Send + !Sync` (sharing state via `Rc<RefCell<..>>`). Because `Context` accepts `Option<&mut ConstCache>`, users can build `Arc<Mutex<ConstCache>>`-based variants too.
 - Add the `ConstCache` type and the `CachedFBig` wrapper. `ConstCache` caches exact binary-splitting tree state for mathematical constants (π, ln2, ln10, ln(B)) so that repeated calls at increasing precision *extend* prior work instead of recomputing from scratch. `CachedFBig` is an `FBig` carrying a shared `Rc<RefCell<ConstCache>>` handle: its transcendental operations (`ln`, `exp`, `sin`/`cos`/…, `pi`, base conversion) thread that handle through the `Context` methods, reusing/extending the cached state. `Context` and `FBig` stay `Copy` + `Send` + `Sync` + `no_std` (so `static_fbig!`/`static_dbig!` keep working); only `CachedFBig` is `!Send + !Sync` (sharing state via `Rc<RefCell<..>>`). Because `Context` accepts `Option<&mut ConstCache>`, users can build `Arc<Mutex<ConstCache>>`-based variants too.
 - Mixed operators for `CachedFBig`: it now supports binary operations with `FBig` and with all primitive integer types (`u8`–`usize`, `i8`–`isize`, `UBig`, `IBig`), in both directions. The cache handle from the `CachedFBig` operand is preserved. `From<FBig> for CachedFBig` and `From<CachedFBig> for FBig` are implemented for ergonomic conversion.
 - `CachedFBig::cache()` provides read-only access to the shared `ConstCache`, with `ConstCache::total_terms()` and `total_words()` for cache size inspection, and `CachedFBig::clear_cache()` / `ConstCache::clear()` to free cached memory.

@@ -107,6 +107,7 @@ pub type DBig = FBig<round::mode::HalfAway, 10>;
 #[doc(hidden)]
 pub use dashu_int::Word; // for macros
 
-// TODO: allow operations with inf, but only panic when the result is nan (inf - inf and inf / inf)
-//       for division with zero (and other functions that has different limits at zero),
-//       we might forbidden it because we don't want to support negative zero in this library.
+// Infinities are now first-class *terminal* values: operations produce them as results
+// (1/0 → +inf, ln(0) → -inf, …) but reject infinite *inputs* (FpError::InfiniteInput / panic),
+// which structurally avoids the NaN-producing indeterminate forms (inf−inf, inf/inf, 0·inf).
+// IEEE signed zero is supported (`-0`), so 1/-0 = -inf is well-defined.
