@@ -1,5 +1,5 @@
 use crate::{
-    error::assert_finite_operands,
+    error::{assert_finite_operands, FpError, FpResult},
     fbig::FBig,
     helper_macros,
     repr::{Context, Repr, Word},
@@ -506,11 +506,13 @@ impl<R: Round> Context<R> {
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str("1.234")?;
     /// let b = DBig::from_str("6.789")?;
-    /// assert_eq!(context.add(&a.repr(), &b.repr()), Inexact(DBig::from_str("8.0")?, NoOp));
+    /// assert_eq!(context.add(&a.repr(), &b.repr()), Ok(Inexact(DBig::from_str("8.0")?, NoOp)));
     /// # Ok::<(), ParseError>(())
     /// ```
-    pub fn add<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Rounded<FBig<R, B>> {
-        assert_finite_operands(lhs, rhs);
+    pub fn add<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> FpResult<FBig<R, B>> {
+        if lhs.is_infinite() || rhs.is_infinite() {
+            return Err(FpError::InfiniteInput);
+        }
 
         let sum = if lhs.is_zero() {
             self.repr_round_ref(rhs)
@@ -526,7 +528,7 @@ impl<R: Round> Context<R> {
                 Ordering::Less => self.repr_add_small_large(lhs.clone(), rhs, Positive),
             }
         };
-        sum.map(|v| FBig::new(v, *self))
+        Ok(sum.map(|v| FBig::new(v, *self)))
     }
 
     /// Subtract two floating point numbers under this context.
@@ -545,12 +547,14 @@ impl<R: Round> Context<R> {
     /// let b = DBig::from_str("6.789")?;
     /// assert_eq!(
     ///     context.sub(&a.repr(), &b.repr()),
-    ///     Inexact(DBig::from_str("-5.6")?, SubOne)
+    ///     Ok(Inexact(DBig::from_str("-5.6")?, SubOne))
     /// );
     /// # Ok::<(), ParseError>(())
     /// ```
-    pub fn sub<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Rounded<FBig<R, B>> {
-        assert_finite_operands(lhs, rhs);
+    pub fn sub<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> FpResult<FBig<R, B>> {
+        if lhs.is_infinite() || rhs.is_infinite() {
+            return Err(FpError::InfiniteInput);
+        }
 
         let sum = if lhs.is_zero() {
             // Round `-rhs` directly rather than negating *after* rounding. For the asymmetric
@@ -570,7 +574,7 @@ impl<R: Round> Context<R> {
                 Ordering::Less => self.repr_add_small_large(lhs.clone(), rhs, Negative),
             }
         };
-        sum.map(|v| FBig::new(v, *self))
+        Ok(sum.map(|v| FBig::new(v, *self)))
     }
 }
 
@@ -594,6 +598,7 @@ mod tests {
         // 1.00 - 0.99999999 = 1e-8 (exactly representable at precision 3)
         assert_eq!(
             ctx.sub(&r::<10>(100, -2), &r::<10>(99999999, -8))
+                .unwrap()
                 .value()
                 .repr(),
             &r::<10>(1, -8)
@@ -601,6 +606,7 @@ mod tests {
         // 1.00 - 0.99950001 = 4.9999e-4, rounds to 5.00e-4 (HalfAway)
         assert_eq!(
             ctx.sub(&r::<10>(100, -2), &r::<10>(99950001, -8))
+                .unwrap()
                 .value()
                 .repr(),
             &r::<10>(500, -6)
@@ -613,6 +619,7 @@ mod tests {
         // 2^20 - (2^20 - 1) = 1, with the operands 20 exponent positions apart
         assert_eq!(
             ctx.sub(&r::<2>(1, 20), &r::<2>((1i128 << 20) - 1, 0))
+                .unwrap()
                 .value()
                 .repr(),
             &r::<2>(1, 0)
@@ -620,6 +627,7 @@ mod tests {
         // same magnitude gap but the smaller-exponent operand is on the left
         assert_eq!(
             ctx.sub(&r::<2>((1i128 << 20) - 1, 0), &r::<2>(1, 20))
+                .unwrap()
                 .value()
                 .repr(),
             &r::<2>(-1, 0)
@@ -627,6 +635,7 @@ mod tests {
         // 2^30 - (2^30 - 1) = 1
         assert_eq!(
             ctx.sub(&r::<2>(1, 30), &r::<2>((1i128 << 30) - 1, 0))
+                .unwrap()
                 .value()
                 .repr(),
             &r::<2>(1, 0)
@@ -641,6 +650,7 @@ mod tests {
         // 2^20 + (-(2^20 - 1)) = 1
         assert_eq!(
             ctx.add(&r::<2>(1, 20), &r::<2>(-((1i128 << 20) - 1), 0))
+                .unwrap()
                 .value()
                 .repr(),
             &r::<2>(1, 0)
@@ -662,7 +672,13 @@ mod tests {
     fn sub_mild_unchanged() {
         let ctx = Context::<HalfAway>::new(3);
         // 101 - 0.2 = 100.8, kept as 1008 * 10^-1 (one guard digit, as before)
-        assert_eq!(ctx.sub(&r::<10>(101, 0), &r::<10>(2, -1)).value().repr(), &r::<10>(1008, -1));
+        assert_eq!(
+            ctx.sub(&r::<10>(101, 0), &r::<10>(2, -1))
+                .unwrap()
+                .value()
+                .repr(),
+            &r::<10>(1008, -1)
+        );
     }
 
     // Regression for the branch-1 signum-proxy bug (SUM-BUG.md §2c): when the larger
@@ -676,18 +692,37 @@ mod tests {
     fn add_negligible_short_operand_no_spurious_ulp() {
         // base 2 + HalfAway: the exact tie case
         let ctx = Context::<HalfAway>::new(10);
-        assert_eq!(ctx.add(&r::<2>(1, 0), &r::<2>(1, -100)).value().repr(), &r::<2>(1, 0));
-        assert_eq!(ctx.sub(&r::<2>(1, 0), &r::<2>(1, -100)).value().repr(), &r::<2>(1, 0));
+        assert_eq!(
+            ctx.add(&r::<2>(1, 0), &r::<2>(1, -100))
+                .unwrap()
+                .value()
+                .repr(),
+            &r::<2>(1, 0)
+        );
+        assert_eq!(
+            ctx.sub(&r::<2>(1, 0), &r::<2>(1, -100))
+                .unwrap()
+                .value()
+                .repr(),
+            &r::<2>(1, 0)
+        );
         // larger short operand (digits < precision), negligible addend
         let ctx = Context::<HalfAway>::new(50);
         assert_eq!(
             ctx.add(&r::<2>(0x12345, 0), &r::<2>(1, -200))
+                .unwrap()
                 .value()
                 .repr(),
             &r::<2>(0x12345, 0)
         );
         // base 10 was never affected (1 < ½·10), but check it stays correct
         let ctx = Context::<HalfAway>::new(10);
-        assert_eq!(ctx.add(&r::<10>(1, 0), &r::<10>(1, -100)).value().repr(), &r::<10>(1, 0));
+        assert_eq!(
+            ctx.add(&r::<10>(1, 0), &r::<10>(1, -100))
+                .unwrap()
+                .value()
+                .repr(),
+            &r::<10>(1, 0)
+        );
     }
 }

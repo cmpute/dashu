@@ -10,7 +10,7 @@ use dashu_base::{
 use dashu_int::{IBig, UBig, Word};
 
 use crate::{
-    error::{assert_finite, panic_unlimited_precision},
+    error::{assert_finite, panic_unlimited_precision, unwrap_fp},
     fbig::FBig,
     math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr},
@@ -570,9 +570,11 @@ impl<R: Round> Context<R> {
             // then the fractional part is multiplied with the original significand
             let work_context = Context::<R>::new(2 * self.precision); // double the precision to get the precise logarithm
             let new_exp = repr.exponent
-                * work_context
-                    .ln(&Repr::new(Repr::<B>::BASE.into(), 0), reborrow_cache(&mut cache))
-                    .value();
+                * unwrap_fp(
+                    work_context
+                        .ln(&Repr::new(Repr::<B>::BASE.into(), 0), reborrow_cache(&mut cache)),
+                )
+                .value();
             let (exponent, rem) =
                 new_exp.div_rem_euclid(work_context.ln_base::<NewB>(reborrow_cache(&mut cache)));
             let exponent: isize = exponent.try_into().unwrap();

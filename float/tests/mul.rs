@@ -50,7 +50,7 @@ fn test_mul_binary() {
         test_mul(a, b, c);
         test_mul(b, a, c);
 
-        if let Exact(v) = Context::max(a.context(), b.context()).mul(a.repr(), b.repr()) {
+        if let Ok(Exact(v)) = Context::max(a.context(), b.context()).mul(a.repr(), b.repr()) {
             assert_eq!(v, *c);
         } else {
             panic!("the result should be exact!")
@@ -68,7 +68,7 @@ fn test_mul_binary() {
         test_mul(a, b, c);
         test_mul(b, a, c);
 
-        if let Inexact(v, e) = Context::max(a.context(), b.context()).mul(a.repr(), b.repr()) {
+        if let Ok(Inexact(v, e)) = Context::max(a.context(), b.context()).mul(a.repr(), b.repr()) {
             assert_eq!(v, *c);
             assert_eq!(e, NoOp);
         } else {
@@ -96,7 +96,7 @@ fn test_mul_decimal() {
         test_mul(a, b, c);
         test_mul(b, a, c);
 
-        if let Exact(v) = Context::max(a.context(), b.context()).mul(a.repr(), b.repr()) {
+        if let Ok(Exact(v)) = Context::max(a.context(), b.context()).mul(a.repr(), b.repr()) {
             assert_eq!(v, *c);
         } else {
             panic!("the result should be exact!")
@@ -115,7 +115,7 @@ fn test_mul_decimal() {
         test_mul(a, b, c);
         test_mul(b, a, c);
 
-        if let Inexact(v, e) = Context::max(a.context(), b.context()).mul(a.repr(), b.repr()) {
+        if let Ok(Inexact(v, e)) = Context::max(a.context(), b.context()).mul(a.repr(), b.repr()) {
             assert_eq!(v, *c);
             assert_eq!(e, *rnd);
         } else {

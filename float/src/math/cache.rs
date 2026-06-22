@@ -5,6 +5,7 @@ use core::fmt;
 use dashu_base::{BitTest, EstimatedLog2};
 use dashu_int::{IBig, UBig};
 
+use crate::error::unwrap_fp;
 use crate::fbig::FBig;
 use crate::math::consts::{chudnovsky_bs, merge};
 use crate::repr::{Context, Repr, Word};
@@ -98,9 +99,8 @@ impl ConstCache {
 
         let q_f = work.convert_int::<B>(q.into()).value();
         let t_f = work.convert_int::<B>(t).value();
-        let sqrt_10005 = work
-            .sqrt(&work.convert_int::<B>(10005.into()).value().repr)
-            .value();
+        let sqrt_10005 =
+            unwrap_fp(work.sqrt(&work.convert_int::<B>(10005.into()).value().repr)).value();
         let c = work.convert_int::<B>(426_880.into()).value();
         let pi = (c * sqrt_10005 * q_f) / t_f;
         pi.with_precision(precision)
@@ -186,13 +186,12 @@ impl ConstCache {
             _ => {
                 // generic base: no cached L(n) sub-series applies, so compute
                 // ln(B) directly through Context::ln on the base literal.
-                Context::<R>::new(precision)
-                    .ln::<B>(
-                        &Repr::new(Repr::<B>::BASE.into(), 0),
-                        // no cache for the generic base (its L(n) isn't cached)
-                        None,
-                    )
-                    .value()
+                unwrap_fp(Context::<R>::new(precision).ln::<B>(
+                    &Repr::new(Repr::<B>::BASE.into(), 0),
+                    // no cache for the generic base (its L(n) isn't cached)
+                    None,
+                ))
+                .value()
             }
         }
     }
@@ -416,18 +415,20 @@ mod tests {
                 .ln2::<10, mode::Zero>(precision)
                 .with_precision(precision)
                 .value();
-            let direct_ln2 = Context::<mode::Zero>::new(precision)
-                .ln::<10>(&Repr::new(2.into(), 0), None)
-                .value();
+            let direct_ln2 = unwrap_fp(
+                Context::<mode::Zero>::new(precision).ln::<10>(&Repr::new(2.into(), 0), None),
+            )
+            .value();
             assert_eq!(cached_ln2, direct_ln2, "ln2 mismatch at precision {precision}");
 
             let cached_ln10 = cache
                 .ln10::<10, mode::Zero>(precision)
                 .with_precision(precision)
                 .value();
-            let direct_ln10 = Context::<mode::Zero>::new(precision)
-                .ln::<10>(&Repr::new(10.into(), 0), None)
-                .value();
+            let direct_ln10 = unwrap_fp(
+                Context::<mode::Zero>::new(precision).ln::<10>(&Repr::new(10.into(), 0), None),
+            )
+            .value();
             assert_eq!(cached_ln10, direct_ln10, "ln10 mismatch at precision {precision}");
         }
     }

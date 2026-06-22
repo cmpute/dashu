@@ -91,7 +91,7 @@ fn test_add_binary() {
             context.sub(c.repr(), a.repr()),
             context.sub(c.repr(), b.repr()),
         ) {
-            (Exact(vc), Exact(vb), Exact(va)) => {
+            (Ok(Exact(vc)), Ok(Exact(vb)), Ok(Exact(va))) => {
                 assert_eq!(va, *a);
                 assert_eq!(vb, *b);
                 assert_eq!(vc, *c);
@@ -113,7 +113,7 @@ fn test_add_binary() {
         test_add(a, b, c);
         test_add(b, a, c);
 
-        if let Inexact(v, e) = Context::max(a.context(), b.context()).add(a.repr(), b.repr()) {
+        if let Ok(Inexact(v, e)) = Context::max(a.context(), b.context()).add(a.repr(), b.repr()) {
             assert_eq!(v, *c);
             assert_eq!(e, *rnd);
         } else {
@@ -154,7 +154,7 @@ fn test_add_decimal() {
             context.sub(c.repr(), a.repr()),
             context.sub(c.repr(), b.repr()),
         ) {
-            (Exact(vc), Exact(vb), Exact(va)) => {
+            (Ok(Exact(vc)), Ok(Exact(vb)), Ok(Exact(va))) => {
                 assert_eq!(va, *a);
                 assert_eq!(vb, *b);
                 assert_eq!(vc, *c);
@@ -190,7 +190,7 @@ fn test_add_decimal() {
         test_add(a, b, c);
         test_add(b, a, c);
 
-        if let Inexact(v, e) = Context::max(a.context(), b.context()).add(a.repr(), b.repr()) {
+        if let Ok(Inexact(v, e)) = Context::max(a.context(), b.context()).add(a.repr(), b.repr()) {
             assert_eq!(v, *c);
             assert_eq!(e, *rnd);
         } else {
@@ -213,7 +213,7 @@ fn test_sub_binary() {
     for (a, b, c, rnd) in &inexact_cases {
         test_sub(a, b, c);
 
-        if let Inexact(v, e) = Context::max(a.context(), b.context()).sub(a.repr(), b.repr()) {
+        if let Ok(Inexact(v, e)) = Context::max(a.context(), b.context()).sub(a.repr(), b.repr()) {
             assert_eq!(v, *c);
             assert_eq!(e, *rnd);
         } else {
@@ -240,7 +240,7 @@ fn test_sub_decimal() {
     for (a, b, c) in &exact_cases {
         test_sub(a, b, c);
 
-        if let Exact(v) = Context::max(a.context(), b.context()).sub(a.repr(), b.repr()) {
+        if let Ok(Exact(v)) = Context::max(a.context(), b.context()).sub(a.repr(), b.repr()) {
             assert_eq!(v, *c);
         } else {
             panic!("the result should be exact!")
@@ -263,7 +263,7 @@ fn test_sub_decimal() {
     for (a, b, c, rnd) in &inexact_cases {
         test_sub(a, b, c);
 
-        if let Inexact(v, e) = Context::max(a.context(), b.context()).sub(a.repr(), b.repr()) {
+        if let Ok(Inexact(v, e)) = Context::max(a.context(), b.context()).sub(a.repr(), b.repr()) {
             assert_eq!(v, *c);
             assert_eq!(e, *rnd);
         } else {
@@ -385,18 +385,46 @@ fn test_sub_zero_operand_directed_rounding() {
     // b = -1234 → 0 - b = +1234, rounded to precision 2:
     //   Up   (toward +∞): 1300     Down (toward −∞): 1200
     let b = repr(-1234, 0);
-    assert_eq!(Context::<Up>::new(2).sub(&zero, &b).value().repr(), &repr(13, 2));
-    assert_eq!(Context::<Down>::new(2).sub(&zero, &b).value().repr(), &repr(12, 2));
+    assert_eq!(Context::<Up>::new(2).sub(&zero, &b).unwrap().value().repr(), &repr(13, 2));
+    assert_eq!(
+        Context::<Down>::new(2)
+            .sub(&zero, &b)
+            .unwrap()
+            .value()
+            .repr(),
+        &repr(12, 2)
+    );
 
     // b = +1234 → 0 - b = -1234, rounded to precision 2:
     //   Up   (toward +∞): -1200    Down (toward −∞): -1300
     let b = repr(1234, 0);
-    assert_eq!(Context::<Up>::new(2).sub(&zero, &b).value().repr(), &repr(-12, 2));
-    assert_eq!(Context::<Down>::new(2).sub(&zero, &b).value().repr(), &repr(-13, 2));
+    assert_eq!(Context::<Up>::new(2).sub(&zero, &b).unwrap().value().repr(), &repr(-12, 2));
+    assert_eq!(
+        Context::<Down>::new(2)
+            .sub(&zero, &b)
+            .unwrap()
+            .value()
+            .repr(),
+        &repr(-13, 2)
+    );
 
     // The symmetric `Away` mode is unaffected by the negation order: ±1234 → ±1300.
     let b = repr(-1234, 0);
-    assert_eq!(Context::<Away>::new(2).sub(&zero, &b).value().repr(), &repr(13, 2));
+    assert_eq!(
+        Context::<Away>::new(2)
+            .sub(&zero, &b)
+            .unwrap()
+            .value()
+            .repr(),
+        &repr(13, 2)
+    );
     let b = repr(1234, 0);
-    assert_eq!(Context::<Away>::new(2).sub(&zero, &b).value().repr(), &repr(-13, 2));
+    assert_eq!(
+        Context::<Away>::new(2)
+            .sub(&zero, &b)
+            .unwrap()
+            .value()
+            .repr(),
+        &repr(-13, 2)
+    );
 }

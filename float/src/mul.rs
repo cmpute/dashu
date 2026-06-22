@@ -1,11 +1,11 @@
 use dashu_int::{IBig, UBig};
 
 use crate::{
-    error::{assert_finite, assert_finite_operands},
+    error::{assert_finite_operands, unwrap_fp, FpError, FpResult},
     fbig::FBig,
     helper_macros,
     repr::{Context, Repr, Word},
-    round::{Round, Rounded},
+    round::Round,
 };
 use core::ops::{Mul, MulAssign};
 
@@ -101,7 +101,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn sqr(&self) -> Self {
-        self.context.sqr(&self.repr).value()
+        unwrap_fp(self.context.sqr(&self.repr)).value()
     }
 
     /// Compute the cubic of this number (`self * self * self`)
@@ -118,7 +118,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn cubic(&self) -> Self {
-        self.context.cubic(&self.repr).value()
+        unwrap_fp(self.context.cubic(&self.repr)).value()
     }
 }
 
@@ -139,12 +139,14 @@ impl<R: Round> Context<R> {
     /// let b = DBig::from_str("6.789")?;
     /// assert_eq!(
     ///     context.mul(&a.repr(), &b.repr()),
-    ///     Inexact(DBig::from_str("-8.4")?, SubOne)
+    ///     Ok(Inexact(DBig::from_str("-8.4")?, SubOne))
     /// );
     /// # Ok::<(), ParseError>(())
     /// ```
-    pub fn mul<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Rounded<FBig<R, B>> {
-        assert_finite_operands(lhs, rhs);
+    pub fn mul<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> FpResult<FBig<R, B>> {
+        if lhs.is_infinite() || rhs.is_infinite() {
+            return Err(FpError::InfiniteInput);
+        }
 
         // at most double the precision is required to get a correct result
         // shrink the input operands if necessary
@@ -171,7 +173,7 @@ impl<R: Round> Context<R> {
         };
 
         let repr = mul_finite_reprs(lhs_repr, rhs_repr);
-        self.repr_round(repr).map(|v| FBig::new(v, *self))
+        Ok(self.repr_round(repr).map(|v| FBig::new(v, *self)))
     }
 
     /// Calculate the square of the floating point number under this context.
@@ -187,11 +189,13 @@ impl<R: Round> Context<R> {
     ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str("-1.234")?;
-    /// assert_eq!(context.sqr(&a.repr()), Inexact(DBig::from_str("1.5")?, NoOp));
+    /// assert_eq!(context.sqr(&a.repr()), Ok(Inexact(DBig::from_str("1.5")?, NoOp)));
     /// # Ok::<(), ParseError>(())
     /// ```
-    pub fn sqr<const B: Word>(&self, f: &Repr<B>) -> Rounded<FBig<R, B>> {
-        assert_finite(f);
+    pub fn sqr<const B: Word>(&self, f: &Repr<B>) -> FpResult<FBig<R, B>> {
+        if f.is_infinite() {
+            return Err(FpError::InfiniteInput);
+        }
 
         // shrink the input operands if necessary
         let max_precision = if self.is_limited() {
@@ -209,7 +213,7 @@ impl<R: Round> Context<R> {
         };
 
         let repr = Repr::new(f_repr.significand.sqr().into(), 2 * f_repr.exponent);
-        self.repr_round(repr).map(|v| FBig::new(v, *self))
+        Ok(self.repr_round(repr).map(|v| FBig::new(v, *self)))
     }
 
     /// Calculate the cubic of the floating point number under this context.
@@ -225,11 +229,13 @@ impl<R: Round> Context<R> {
     ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str("-1.234")?;
-    /// assert_eq!(context.cubic(&a.repr()), Inexact(DBig::from_str("-1.9")?, SubOne));
+    /// assert_eq!(context.cubic(&a.repr()), Ok(Inexact(DBig::from_str("-1.9")?, SubOne)));
     /// # Ok::<(), ParseError>(())
     /// ```
-    pub fn cubic<const B: Word>(&self, f: &Repr<B>) -> Rounded<FBig<R, B>> {
-        assert_finite(f);
+    pub fn cubic<const B: Word>(&self, f: &Repr<B>) -> FpResult<FBig<R, B>> {
+        if f.is_infinite() {
+            return Err(FpError::InfiniteInput);
+        }
 
         // shrink the input operands if necessary
         let max_precision = if self.is_limited() {
@@ -256,6 +262,6 @@ impl<R: Round> Context<R> {
         } else {
             Repr::new(f_repr.significand.cubic(), 3 * f_repr.exponent)
         };
-        self.repr_round(repr).map(|v| FBig::new(v, *self))
+        Ok(self.repr_round(repr).map(|v| FBig::new(v, *self)))
     }
 }

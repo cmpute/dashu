@@ -1,7 +1,7 @@
 use core::convert::TryInto;
 
 use crate::{
-    error::{assert_finite, assert_limited_precision, panic_power_negative_base},
+    error::{assert_finite, assert_limited_precision, unwrap_fp, FpError, FpResult},
     fbig::FBig,
     math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr, Word},
@@ -25,7 +25,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn powi(&self, exp: IBig) -> FBig<R, B> {
-        self.context.powi(&self.repr, exp).value()
+        unwrap_fp(self.context.powi(&self.repr, exp)).value()
     }
 
     /// Raise the floating point number to an floating point power.
@@ -43,7 +43,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     pub fn powf(&self, exp: &Self) -> Self {
         let context = Context::max(self.context, exp.context);
-        context.powf(&self.repr, &exp.repr, None).value()
+        unwrap_fp(context.powf(&self.repr, &exp.repr, None)).value()
     }
 
     /// Calculate the exponential function (`eˣ`) on the floating point number.
@@ -59,7 +59,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn exp(&self) -> FBig<R, B> {
-        self.context.exp(&self.repr, None).value()
+        unwrap_fp(self.context.exp(&self.repr, None)).value()
     }
 
     /// Calculate the exponential minus one function (`eˣ-1`) on the floating point number.
@@ -75,7 +75,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn exp_m1(&self) -> FBig<R, B> {
-        self.context.exp_m1(&self.repr, None).value()
+        unwrap_fp(self.context.exp_m1(&self.repr, None)).value()
     }
 }
 
@@ -94,7 +94,7 @@ impl<R: Round> Context<R> {
     ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str_native("-1.234")?;
-    /// assert_eq!(context.powi(&a.repr(), 10.into()), Inexact(DBig::from_str_native("8.2")?, AddOne));
+    /// assert_eq!(context.powi(&a.repr(), 10.into()), Ok(Inexact(DBig::from_str_native("8.2")?, AddOne)));
     /// # Ok::<(), ParseError>(())
     /// ```
     ///
@@ -102,8 +102,10 @@ impl<R: Round> Context<R> {
     ///
     /// Panics if the precision is unlimited and the exponent is negative. In this case, the exact
     /// result is likely to have infinite digits.
-    pub fn powi<const B: Word>(&self, base: &Repr<B>, exp: IBig) -> Rounded<FBig<R, B>> {
-        assert_finite(base);
+    pub fn powi<const B: Word>(&self, base: &Repr<B>, exp: IBig) -> FpResult<FBig<R, B>> {
+        if base.is_infinite() {
+            return Err(FpError::InfiniteInput);
+        }
 
         let (exp_sign, exp) = exp.into_parts();
         if exp_sign == Sign::Negative {
@@ -113,16 +115,16 @@ impl<R: Round> Context<R> {
 
             let guard_bits = self.precision.bit_len() * 2; // heuristic
             let rev_context = Context::<R::Reverse>::new(self.precision + guard_bits);
-            let pow = rev_context.powi(base, exp.into()).value();
+            let pow = unwrap_fp(rev_context.powi(base, exp.into())).value();
             let inv = rev_context.repr_div(Repr::one(), pow.repr);
             let repr = inv.and_then(|v| self.repr_round(v));
-            return repr.map(|v| FBig::new(v, *self));
+            return Ok(repr.map(|v| FBig::new(v, *self)));
         }
         if exp.is_zero() {
-            return Exact(FBig::ONE);
+            return Ok(Exact(FBig::ONE));
         } else if exp.is_one() {
             let repr = self.repr_round_ref(base);
-            return repr.map(|v| FBig::new(v, *self));
+            return Ok(repr.map(|v| FBig::new(v, *self)));
         }
 
         let work_context = if self.is_limited() {
@@ -135,19 +137,19 @@ impl<R: Round> Context<R> {
 
         // binary exponentiation from left to right
         let mut p = exp.bit_len() - 2;
-        let mut res = work_context.sqr(base);
+        let mut res = unwrap_fp(work_context.sqr(base));
         loop {
             if exp.bit(p) {
-                res = res.and_then(|v| work_context.mul(v.repr(), base));
+                res = res.and_then(|v| unwrap_fp(work_context.mul(v.repr(), base)));
             }
             if p == 0 {
                 break;
             }
             p -= 1;
-            res = res.and_then(|v| work_context.sqr(v.repr()));
+            res = res.and_then(|v| unwrap_fp(work_context.sqr(v.repr())));
         }
 
-        res.and_then(|v| v.with_precision(self.precision))
+        Ok(res.and_then(|v| v.with_precision(self.precision)))
     }
 
     /// Raise the floating point number to an floating point power under this context.
@@ -165,7 +167,7 @@ impl<R: Round> Context<R> {
     /// let context = Context::<HalfAway>::new(2);
     /// let x = DBig::from_str_native("1.23")?;
     /// let y = DBig::from_str_native("-4.56")?;
-    /// assert_eq!(context.powf(&x.repr(), &y.repr(), None), Inexact(DBig::from_str_native("0.39")?, AddOne));
+    /// assert_eq!(context.powf(&x.repr(), &y.repr(), None), Ok(Inexact(DBig::from_str_native("0.39")?, AddOne)));
     /// # Ok::<(), ParseError>(())
     /// ```
     ///
@@ -177,24 +179,26 @@ impl<R: Round> Context<R> {
         base: &Repr<B>,
         exp: &Repr<B>,
         mut cache: Option<&mut ConstCache>,
-    ) -> Rounded<FBig<R, B>> {
-        assert_finite(base);
+    ) -> FpResult<FBig<R, B>> {
+        if base.is_infinite() || exp.is_infinite() {
+            return Err(FpError::InfiniteInput);
+        }
         assert_limited_precision(self.precision); // TODO: we can allow it if exp is integer
 
         // shortcuts
         if exp.is_zero() {
-            return Exact(FBig::ONE);
+            return Ok(Exact(FBig::ONE));
         } else if exp.is_one() {
             let repr = self.repr_round_ref(base);
-            return repr.map(|v| FBig::new(v, *self));
+            return Ok(repr.map(|v| FBig::new(v, *self)));
         } else if base.significand.is_zero() {
             // pow(±0, y>0) = +0 (for a non-integer y this is exact; the odd-integer/-0 case
             // is a minor deviation). Short-circuiting here also avoids the negative-base path.
-            return Exact(FBig::ZERO);
+            return Ok(Exact(FBig::ZERO));
         }
         if base.sign() == Sign::Negative {
             // TODO: we should allow negative base when exp is an integer
-            panic_power_negative_base()
+            return Err(FpError::OutOfDomain);
         }
 
         // x^y = exp(y*ln(x)), use a simple rule for guard bits
@@ -202,11 +206,11 @@ impl<R: Round> Context<R> {
         let work_context = Context::<R>::new(self.precision + guard_digits);
 
         // ln and exp each consult/extend the shared cache; reborrows are sequential.
-        let ln_val = work_context.ln(base, reborrow_cache(&mut cache));
+        let ln_val = unwrap_fp(work_context.ln(base, reborrow_cache(&mut cache)));
         let res = ln_val
-            .and_then(|v| work_context.mul(&v.repr, exp))
-            .and_then(|v| work_context.exp(&v.repr, reborrow_cache(&mut cache)));
-        res.and_then(|v| v.with_precision(self.precision))
+            .and_then(|v| unwrap_fp(work_context.mul(&v.repr, exp)))
+            .and_then(|v| unwrap_fp(work_context.exp(&v.repr, reborrow_cache(&mut cache))));
+        Ok(res.and_then(|v| v.with_precision(self.precision)))
     }
 
     /// Calculate the exponential function (`eˣ`) on the floating point number under this context.
@@ -221,7 +225,7 @@ impl<R: Round> Context<R> {
     ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str_native("-1.234")?;
-    /// assert_eq!(context.exp(&a.repr(), None), Inexact(DBig::from_str_native("0.29")?, NoOp));
+    /// assert_eq!(context.exp(&a.repr(), None), Ok(Inexact(DBig::from_str_native("0.29")?, NoOp)));
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
@@ -229,8 +233,11 @@ impl<R: Round> Context<R> {
         &self,
         x: &Repr<B>,
         cache: Option<&mut ConstCache>,
-    ) -> Rounded<FBig<R, B>> {
-        self.exp_internal(x, false, cache)
+    ) -> FpResult<FBig<R, B>> {
+        if x.is_infinite() {
+            return Err(FpError::InfiniteInput);
+        }
+        Ok(self.exp_internal(x, false, cache))
     }
 
     /// Calculate the exponential minus one function (`eˣ-1`) on the floating point number under this context.
@@ -245,7 +252,7 @@ impl<R: Round> Context<R> {
     ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str_native("-0.1234")?;
-    /// assert_eq!(context.exp_m1(&a.repr(), None), Inexact(DBig::from_str_native("-0.12")?, SubOne));
+    /// assert_eq!(context.exp_m1(&a.repr(), None), Ok(Inexact(DBig::from_str_native("-0.12")?, SubOne)));
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
@@ -253,8 +260,11 @@ impl<R: Round> Context<R> {
         &self,
         x: &Repr<B>,
         cache: Option<&mut ConstCache>,
-    ) -> Rounded<FBig<R, B>> {
-        self.exp_internal(x, true, cache)
+    ) -> FpResult<FBig<R, B>> {
+        if x.is_infinite() {
+            return Err(FpError::InfiniteInput);
+        }
+        Ok(self.exp_internal(x, true, cache))
     }
 
     // TODO: change reduction to (x - s log2) / 2ⁿ, so that the final powering is always base 2, and doesn't depends on powi.
@@ -343,13 +353,14 @@ impl<R: Round> Context<R> {
             sum.with_precision(self.precision)
         } else if minus_one {
             // add extra digits to compensate for the subtraction
-            Context::<R>::new(self.precision + self.precision / 8 + 1) // heuristic
-                .powi(sum.repr(), Repr::<B>::BASE.pow(n).into())
-                .map(|v| (v << s) - FBig::ONE)
-                .and_then(|v| v.with_precision(self.precision))
+            unwrap_fp(
+                Context::<R>::new(self.precision + self.precision / 8 + 1) // heuristic
+                    .powi(sum.repr(), Repr::<B>::BASE.pow(n).into()),
+            )
+            .map(|v| (v << s) - FBig::ONE)
+            .and_then(|v| v.with_precision(self.precision))
         } else {
-            self.powi(sum.repr(), Repr::<B>::BASE.pow(n).into())
-                .map(|v| v << s)
+            unwrap_fp(self.powi(sum.repr(), Repr::<B>::BASE.pow(n).into())).map(|v| v << s)
         }
     }
 }

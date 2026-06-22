@@ -19,7 +19,7 @@ fn test_sqrt_binary() {
     ];
     for (x, sqrt) in &exact_cases {
         assert_eq!(x.sqrt(), *sqrt);
-        if let Exact(v) = x.context().sqrt(x.repr()) {
+        if let Ok(Exact(v)) = x.context().sqrt(x.repr()) {
             assert_eq!(v, *sqrt);
         } else {
             panic!("the result should be exact!")
@@ -42,7 +42,7 @@ fn test_sqrt_binary() {
 
     for (x, root) in &inexact_cases {
         assert_eq!(x.sqrt(), *root);
-        if let Inexact(v, e) = x.context().sqrt(x.repr()) {
+        if let Ok(Inexact(v, e)) = x.context().sqrt(x.repr()) {
             assert_eq!(v, *root);
             assert_eq!(e, NoOp);
         } else {
@@ -61,7 +61,7 @@ fn test_sqrt_decimal() {
     ];
     for (x, sqrt) in &exact_cases {
         assert_eq!(x.sqrt(), *sqrt);
-        if let Exact(v) = x.context().sqrt(x.repr()) {
+        if let Ok(Exact(v)) = x.context().sqrt(x.repr()) {
             assert_eq!(v, *sqrt);
         } else {
             panic!("the result should be exact!")
@@ -84,7 +84,7 @@ fn test_sqrt_decimal() {
     ];
     for (x, sqrt, rnd) in &inexact_cases {
         assert_eq!(x.sqrt(), *sqrt);
-        if let Inexact(v, e) = x.context().sqrt(x.repr()) {
+        if let Ok(Inexact(v, e)) = x.context().sqrt(x.repr()) {
             assert_eq!(v, *sqrt);
             assert_eq!(e, *rnd);
         } else {
@@ -105,7 +105,7 @@ fn test_cbrt_binary() {
     ];
     for (x, cbrt) in &exact_cases {
         assert_eq!(x.cbrt(), *cbrt);
-        if let Exact(v) = x.context().cbrt(x.repr()) {
+        if let Ok(Exact(v)) = x.context().cbrt(x.repr()) {
             assert_eq!(v, *cbrt);
         } else {
             panic!("the result should be exact!")
@@ -125,7 +125,7 @@ fn test_cbrt_binary() {
     ];
     for (x, root) in &inexact_cases {
         assert_eq!(x.cbrt(), *root);
-        if let Inexact(v, e) = x.context().cbrt(x.repr()) {
+        if let Ok(Inexact(v, e)) = x.context().cbrt(x.repr()) {
             assert_eq!(v, *root);
             assert_eq!(e, NoOp);
         } else {
@@ -146,7 +146,7 @@ fn test_cbrt_decimal() {
     ];
     for (x, cbrt) in &exact_cases {
         assert_eq!(x.cbrt(), *cbrt);
-        if let Exact(v) = x.context().cbrt(x.repr()) {
+        if let Ok(Exact(v)) = x.context().cbrt(x.repr()) {
             assert_eq!(v, *cbrt);
         } else {
             panic!("the result should be exact!")
@@ -169,7 +169,7 @@ fn test_cbrt_decimal() {
     ];
     for (x, cbrt, rnd) in &inexact_cases {
         assert_eq!(x.cbrt(), *cbrt);
-        if let Inexact(v, e) = x.context().cbrt(x.repr()) {
+        if let Ok(Inexact(v, e)) = x.context().cbrt(x.repr()) {
             assert_eq!(v, *cbrt);
             assert_eq!(e, *rnd);
         } else {
@@ -193,7 +193,7 @@ fn test_nth_root_exact_decimal() {
     for (x, n, expected) in cases {
         assert_eq!(x.nth_root(*n), *expected, "nth_root({n}) of {x:?}");
         match x.context().nth_root(*n, x.repr()) {
-            Exact(v) => assert_eq!(v, *expected),
+            Ok(Exact(v)) => assert_eq!(v, *expected),
             _ => panic!("the result should be exact!"),
         }
         // the identity case returns the value unchanged
@@ -214,7 +214,7 @@ fn test_nth_root_exact_decimal() {
     ];
     for (x, n, root, rnd) in &inexact_cases {
         assert_eq!(x.nth_root(*n), *root);
-        if let Inexact(v, e) = x.context().nth_root(*n, x.repr()) {
+        if let Ok(Inexact(v, e)) = x.context().nth_root(*n, x.repr()) {
             assert_eq!(v, *root);
             assert_eq!(e, *rnd);
         } else {

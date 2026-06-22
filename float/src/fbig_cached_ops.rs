@@ -6,9 +6,9 @@ use core::ops::{
 
 use dashu_base::Abs;
 
+use crate::error::unwrap_fp;
 use crate::fbig::FBig;
 use crate::fbig_cached::CachedFBig;
-use crate::math::FpResult;
 use crate::repr::{Context, Word};
 use crate::round::{Round, Rounded};
 
@@ -322,18 +322,31 @@ impl<R: Round, const B: Word> Abs for CachedFBig<R, B> {
 // Math functions (forward to Context / FBig, preserve cache handle)
 // ---------------------------------------------------------------------------
 
-/// Forward a unary function that passes the cache to a [`Context`] method
-/// returning `Rounded<FBig>`, and re-attaches the handle.
+/// Forward a unary function to a [`Context`] method returning `FpResult<FBig>`, unwrapping
+/// errors (panic) and re-attaching the cache handle. Returns `Rounded<CachedFBig>`.
 macro_rules! forward_to_context {
     ($name:ident) => {
         #[doc = concat!("See [`FBig::", stringify!($name), "`].")]
         #[inline]
         pub fn $name(&self) -> Rounded<CachedFBig<R, B>> {
             let mut c = self.cache.borrow_mut();
-            self.fbig
-                .context
-                .$name::<B>(&self.fbig.repr, Some(&mut *c))
+            unwrap_fp(self.fbig.context.$name::<B>(&self.fbig.repr, Some(&mut *c)))
                 .map(|f| CachedFBig::from_fbig(f, &self.cache))
+        }
+    };
+}
+
+/// Forward a unary function to a [`Context`] method returning `FpResult<FBig>`, panicking on
+/// error and discarding the rounding info. Returns a bare `CachedFBig`.
+macro_rules! forward_to_context_unwrap {
+    ($name:ident) => {
+        #[doc = concat!("See [`FBig::", stringify!($name), "`].")]
+        #[inline]
+        pub fn $name(&self) -> CachedFBig<R, B> {
+            let mut c = self.cache.borrow_mut();
+            let fbig =
+                unwrap_fp(self.fbig.context.$name::<B>(&self.fbig.repr, Some(&mut *c))).value();
+            CachedFBig::from_fbig(fbig, &self.cache)
         }
     };
 }
@@ -365,83 +378,23 @@ impl<R: Round, const B: Word> CachedFBig<R, B> {
     /// Square root (see [`Context::sqrt`]).
     #[inline]
     pub fn sqrt(&self) -> Rounded<Self> {
-        self.fbig
-            .context
-            .sqrt::<B>(&self.fbig.repr)
+        unwrap_fp(self.fbig.context.sqrt::<B>(&self.fbig.repr))
             .map(|f| Self::from_fbig(f, &self.cache))
     }
 
     /// Multiplicative inverse (see [`Context::inv`]).
     #[inline]
     pub fn inv(&self) -> Rounded<Self> {
-        self.fbig
-            .context
-            .inv::<B>(&self.fbig.repr)
+        unwrap_fp(self.fbig.context.inv::<B>(&self.fbig.repr))
             .map(|f| Self::from_fbig(f, &self.cache))
     }
 
-    /// Sine (see [`FBig::sin`]).
-    #[inline]
-    pub fn sin(&self) -> Self {
-        let mut c = self.cache.borrow_mut();
-        let fbig = self
-            .fbig
-            .context
-            .sin::<B>(&self.fbig.repr, Some(&mut *c))
-            .value(&self.fbig.context);
-        Self::from_fbig(fbig, &self.cache)
-    }
-
-    /// Cosine (see [`FBig::cos`]).
-    #[inline]
-    pub fn cos(&self) -> Self {
-        let mut c = self.cache.borrow_mut();
-        let fbig = self
-            .fbig
-            .context
-            .cos::<B>(&self.fbig.repr, Some(&mut *c))
-            .value(&self.fbig.context);
-        Self::from_fbig(fbig, &self.cache)
-    }
-
-    /// Tangent (see [`FBig::tan`]).
-    #[inline]
-    pub fn tan(&self) -> FpResult<B> {
-        let mut c = self.cache.borrow_mut();
-        self.fbig
-            .context
-            .tan::<B>(&self.fbig.repr, Some(&mut *c))
-    }
-
-    /// Arcsine (see [`FBig::asin`]).
-    #[inline]
-    pub fn asin(&self) -> FpResult<B> {
-        let mut c = self.cache.borrow_mut();
-        self.fbig
-            .context
-            .asin::<B>(&self.fbig.repr, Some(&mut *c))
-    }
-
-    /// Arccosine (see [`FBig::acos`]).
-    #[inline]
-    pub fn acos(&self) -> FpResult<B> {
-        let mut c = self.cache.borrow_mut();
-        self.fbig
-            .context
-            .acos::<B>(&self.fbig.repr, Some(&mut *c))
-    }
-
-    /// Arctangent (see [`FBig::atan`]).
-    #[inline]
-    pub fn atan(&self) -> Self {
-        let mut c = self.cache.borrow_mut();
-        let fbig = self
-            .fbig
-            .context
-            .atan::<B>(&self.fbig.repr, Some(&mut *c))
-            .value(&self.fbig.context);
-        Self::from_fbig(fbig, &self.cache)
-    }
+    forward_to_context_unwrap!(sin);
+    forward_to_context_unwrap!(cos);
+    forward_to_context_unwrap!(tan);
+    forward_to_context_unwrap!(asin);
+    forward_to_context_unwrap!(acos);
+    forward_to_context_unwrap!(atan);
 
     forward_to_fbig!(powi(exp: dashu_int::IBig));
     forward_to_fbig!(sqr);
@@ -451,8 +404,7 @@ impl<R: Round, const B: Word> CachedFBig<R, B> {
     pub fn powf(&self, exp: &Self) -> Rounded<Self> {
         let context = Context::max(self.fbig.context, exp.fbig.context);
         let mut c = self.cache.borrow_mut();
-        context
-            .powf::<B>(&self.fbig.repr, &exp.fbig.repr, Some(&mut *c))
+        unwrap_fp(context.powf::<B>(&self.fbig.repr, &exp.fbig.repr, Some(&mut *c)))
             .map(|f| Self::from_fbig(f, &self.cache))
     }
 
@@ -462,17 +414,21 @@ impl<R: Round, const B: Word> CachedFBig<R, B> {
         let cache = Some(&mut *guard);
         let (s, c) = self.fbig.context.sin_cos::<B>(&self.fbig.repr, cache);
         (
-            Self::from_fbig(s.value(&self.fbig.context), &self.cache),
-            Self::from_fbig(c.value(&self.fbig.context), &self.cache),
+            Self::from_fbig(unwrap_fp(s).value(), &self.cache),
+            Self::from_fbig(unwrap_fp(c).value(), &self.cache),
         )
     }
 
     /// `atan2(y, x)` (see [`FBig::atan2`]).
-    pub fn atan2(&self, x: &Self) -> FpResult<B> {
+    pub fn atan2(&self, x: &Self) -> Self {
         let mut c = self.cache.borrow_mut();
-        self.fbig
-            .context
-            .atan2::<B>(&self.fbig.repr, &x.fbig.repr, Some(&mut *c))
+        let fbig = unwrap_fp(self.fbig.context.atan2::<B>(
+            &self.fbig.repr,
+            &x.fbig.repr,
+            Some(&mut *c),
+        ))
+        .value();
+        Self::from_fbig(fbig, &self.cache)
     }
 
     /// Reciprocal `1/x` — alias for [`Self::inv`].

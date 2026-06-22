@@ -7,13 +7,14 @@ use dashu_base::{
 use dashu_int::IBig;
 
 use crate::{
-    error::{assert_finite, assert_limited_precision},
+    error::{assert_finite, assert_limited_precision, unwrap_fp, FpError, FpResult},
     fbig::FBig,
     math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr, Word},
     round::{Round, Rounded},
     utils::ceil_usize,
 };
+use core::cmp::Ordering;
 
 impl<const B: Word> EstimatedLog2 for Repr<B> {
     // currently a Word has at most 64 bits, so log2() < f32::MAX
@@ -77,7 +78,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn ln(&self) -> Self {
-        self.context.ln(&self.repr, None).value()
+        unwrap_fp(self.context.ln(&self.repr, None)).value()
     }
 
     /// Calculate the natural logarithm function (`log(x+1)`) on the float number
@@ -94,7 +95,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn ln_1p(&self) -> Self {
-        self.context.ln_1p(&self.repr, None).value()
+        unwrap_fp(self.context.ln_1p(&self.repr, None)).value()
     }
 }
 
@@ -137,7 +138,7 @@ impl<R: Round> Context<R> {
             2 => self.ln2(None),
             10 => self.ln10(None),
             i if i.is_power_of_two() => self.ln2(None) * i.trailing_zeros(),
-            _ => self.ln(&Repr::new(Repr::<B>::BASE.into(), 0), None).value(),
+            _ => unwrap_fp(self.ln(&Repr::new(Repr::<B>::BASE.into(), 0), None)).value(),
         }
     }
 
@@ -184,7 +185,7 @@ impl<R: Round> Context<R> {
     ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str("1.234")?;
-    /// assert_eq!(context.ln(&a.repr(), None), Inexact(DBig::from_str("0.21")?, NoOp));
+    /// assert_eq!(context.ln(&a.repr(), None), Ok(Inexact(DBig::from_str("0.21")?, NoOp)));
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
@@ -192,8 +193,18 @@ impl<R: Round> Context<R> {
         &self,
         x: &Repr<B>,
         cache: Option<&mut ConstCache>,
-    ) -> Rounded<FBig<R, B>> {
-        self.ln_internal(x, false, cache)
+    ) -> FpResult<FBig<R, B>> {
+        if x.is_infinite() {
+            return Err(FpError::InfiniteInput);
+        }
+        if x.significand.is_zero() {
+            // ln(±0) = -inf (a value, not an error)
+            return Ok(Exact(FBig::new(Repr::neg_infinity(), *self)));
+        }
+        if x.sign() == Sign::Negative {
+            return Err(FpError::OutOfDomain);
+        }
+        Ok(self.ln_internal(x, false, cache))
     }
 
     /// Calculate the natural logarithm function (`log(x+1)`) on the float number under this context.
@@ -209,7 +220,7 @@ impl<R: Round> Context<R> {
     ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str("0.1234")?;
-    /// assert_eq!(context.ln_1p(&a.repr(), None), Inexact(DBig::from_str("0.12")?, AddOne));
+    /// assert_eq!(context.ln_1p(&a.repr(), None), Ok(Inexact(DBig::from_str("0.12")?, AddOne)));
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
@@ -217,8 +228,19 @@ impl<R: Round> Context<R> {
         &self,
         x: &Repr<B>,
         cache: Option<&mut ConstCache>,
-    ) -> Rounded<FBig<R, B>> {
-        self.ln_internal(x, true, cache)
+    ) -> FpResult<FBig<R, B>> {
+        if x.is_infinite() {
+            return Err(FpError::InfiniteInput);
+        }
+        // Domain of ln_1p is x > -1. x == -1 gives -inf; x < -1 is out of domain.
+        if x.sign() == Sign::Negative && !x.significand.is_zero() {
+            match FBig::<R, B>::new(x.clone(), *self).abs_cmp(&FBig::ONE) {
+                Ordering::Greater => return Err(FpError::OutOfDomain), // x < -1
+                Ordering::Equal => return Ok(Exact(FBig::new(Repr::neg_infinity(), *self))),
+                _ => {}
+            }
+        }
+        Ok(self.ln_internal(x, true, cache))
     }
 
     fn ln_internal<const B: Word>(

@@ -85,31 +85,34 @@ fn test_mul_signed_zero() {
 #[test]
 fn test_div_signed_zero() {
     let ctx = Context::<mode::HalfEven>::new(53);
-    let negz = ctx.div::<2>(&Repr::<2>::neg_zero(), &r2(5, 0)).value();
+    let negz = ctx
+        .div::<2>(&Repr::<2>::neg_zero(), &r2(5, 0))
+        .unwrap()
+        .value();
     assert!(negz.repr().is_neg_zero()); // -0 / 5 = -0
-    let posz = ctx.div::<2>(&Repr::<2>::zero(), &r2(5, 0)).value();
+    let posz = ctx.div::<2>(&Repr::<2>::zero(), &r2(5, 0)).unwrap().value();
     assert!(posz.repr().is_zero()); // +0 / 5 = +0
 }
 
 #[test]
 fn test_sqrt_signed_zero() {
     let ctx = Context::<mode::HalfEven>::new(53);
-    let negz = ctx.sqrt::<2>(&Repr::<2>::neg_zero()).value();
+    let negz = ctx.sqrt::<2>(&Repr::<2>::neg_zero()).unwrap().value();
     assert!(negz.repr().is_neg_zero()); // sqrt(-0) = -0
-    let posz = ctx.sqrt::<2>(&Repr::<2>::zero()).value();
+    let posz = ctx.sqrt::<2>(&Repr::<2>::zero()).unwrap().value();
     assert!(posz.repr().is_zero()); // sqrt(+0) = +0
 }
 
 #[test]
 fn test_trig_signed_zero() {
     let ctx = Context::<mode::HalfEven>::new(53);
-    let sin_neg0 = ctx.sin::<2>(&Repr::<2>::neg_zero(), None).value(&ctx);
+    let sin_neg0 = ctx.sin::<2>(&Repr::<2>::neg_zero(), None).unwrap().value();
     assert!(sin_neg0.repr().is_neg_zero()); // sin(-0) = -0
-    let sin_pos0 = ctx.sin::<2>(&Repr::<2>::zero(), None).value(&ctx);
+    let sin_pos0 = ctx.sin::<2>(&Repr::<2>::zero(), None).unwrap().value();
     assert!(sin_pos0.repr().is_zero()); // sin(+0) = +0
-    let tan_neg0 = ctx.tan::<2>(&Repr::<2>::neg_zero(), None).value(&ctx);
+    let tan_neg0 = ctx.tan::<2>(&Repr::<2>::neg_zero(), None).unwrap().value();
     assert!(tan_neg0.repr().is_neg_zero()); // tan(-0) = -0
-    let cos_neg0 = ctx.cos::<2>(&Repr::<2>::neg_zero(), None).value(&ctx);
+    let cos_neg0 = ctx.cos::<2>(&Repr::<2>::neg_zero(), None).unwrap().value();
     assert_eq!(cos_neg0, FBig::<mode::HalfEven>::ONE); // cos(±0) = 1
 }
 
@@ -141,15 +144,21 @@ fn test_cancellation_under_down() -> Result<(), ParseError> {
     let neg_three = DBig::from_str("-3")?;
 
     let down = Context::<mode::Down>::new(10);
-    let sum_down = down.add::<10>(three.repr(), neg_three.repr()).value();
+    let sum_down = down
+        .add::<10>(three.repr(), neg_three.repr())
+        .unwrap()
+        .value();
     assert!(sum_down.repr().is_neg_zero(), "(-3)+3 under Down = -0");
 
     let up = Context::<mode::Up>::new(10);
-    let sum_up = up.add::<10>(three.repr(), neg_three.repr()).value();
+    let sum_up = up
+        .add::<10>(three.repr(), neg_three.repr())
+        .unwrap()
+        .value();
     assert!(sum_up.repr().is_zero(), "(-3)+3 under Up = +0");
 
     // subtraction a - a likewise
-    let sub_down = down.sub::<10>(three.repr(), three.repr()).value();
+    let sub_down = down.sub::<10>(three.repr(), three.repr()).unwrap().value();
     assert!(sub_down.repr().is_neg_zero(), "3-3 under Down = -0");
     Ok(())
 }
@@ -157,9 +166,15 @@ fn test_cancellation_under_down() -> Result<(), ParseError> {
 #[test]
 fn test_powi_signed_zero() {
     let ctx = Context::<mode::HalfEven>::new(53);
-    let negz = ctx.powi::<2>(&Repr::<2>::neg_zero(), 3.into()).value();
+    let negz = ctx
+        .powi::<2>(&Repr::<2>::neg_zero(), 3.into())
+        .unwrap()
+        .value();
     assert!(negz.repr().is_neg_zero()); // (-0)^3 = -0
-    let posz = ctx.powi::<2>(&Repr::<2>::neg_zero(), 2.into()).value();
+    let posz = ctx
+        .powi::<2>(&Repr::<2>::neg_zero(), 2.into())
+        .unwrap()
+        .value();
     assert!(posz.repr().is_zero()); // (-0)^2 = +0
 }
 
@@ -179,6 +194,9 @@ fn test_num_traits_sign() {
 #[test]
 fn test_ln_1p_signed_zero() {
     let ctx = Context::<mode::HalfEven>::new(53);
-    let r = ctx.ln_1p::<2>(&Repr::<2>::neg_zero(), None).value();
+    let r = ctx
+        .ln_1p::<2>(&Repr::<2>::neg_zero(), None)
+        .unwrap()
+        .value();
     assert!(r.repr().is_neg_zero()); // ln_1p(-0) = -0
 }

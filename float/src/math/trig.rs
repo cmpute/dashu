@@ -1,12 +1,12 @@
 use crate::{
-    error::assert_limited_precision,
+    error::{assert_limited_precision, unwrap_fp, FpError},
     fbig::FBig,
     math::{
         cache::{reborrow_cache, ConstCache},
         FpResult,
     },
     repr::{Context, Repr, Word},
-    round::Round,
+    round::{Round, Rounded},
 };
 use core::cmp::Ordering;
 use core::convert::TryFrom;
@@ -23,17 +23,16 @@ enum Quadrant {
 
 /// Build a `Normal` result equal to `±0`, preserving the sign of `x` (used by `sin`/`tan`/`sin_cos`
 /// at zero input, where `sin(-0) = -0` and `tan(-0) = -0`).
-fn signed_zero_normal<R: Round, const B: Word>(ctx: &Context<R>, x: &Repr<B>) -> FpResult<B> {
+fn signed_zero_normal<R: Round, const B: Word>(
+    ctx: &Context<R>,
+    x: &Repr<B>,
+) -> FpResult<FBig<R, B>> {
     let zero = if x.is_neg_zero() {
         Repr::neg_zero()
     } else {
         Repr::zero()
     };
-    FpResult::Normal(
-        FBig::<R, B>::new(zero, *ctx)
-            .with_precision(ctx.precision)
-            .map(|v| v.repr),
-    )
+    Ok(FBig::<R, B>::new(zero, *ctx).with_precision(ctx.precision))
 }
 
 impl<R: Round> Context<R> {
@@ -93,14 +92,13 @@ impl<R: Round> Context<R> {
     }
 
     /// Calculate the sine of the floating point representation.
-    #[must_use]
     pub fn sin<const B: Word>(
         &self,
         x: &Repr<B>,
         mut cache: Option<&mut ConstCache>,
-    ) -> FpResult<B> {
+    ) -> FpResult<FBig<R, B>> {
         if x.is_infinite() {
-            return FpResult::NaN;
+            return Err(FpError::InfiniteInput);
         }
         assert_limited_precision(self.precision);
 
@@ -118,7 +116,7 @@ impl<R: Round> Context<R> {
             Quadrant::Third => -work_context.sin_internal(&r),
             Quadrant::Fourth => -work_context.cos_internal(&r),
         };
-        FpResult::Normal(res.with_precision(self.precision).map(|v| v.repr))
+        Ok(res.with_precision(self.precision))
     }
 
     /// Internal Taylor series for sine: S(x) = x - x^3/3! + x^5/5! - ...
@@ -148,21 +146,19 @@ impl<R: Round> Context<R> {
     }
 
     /// Calculate the cosine of the floating point representation.
-    #[must_use]
     pub fn cos<const B: Word>(
         &self,
         x: &Repr<B>,
         mut cache: Option<&mut ConstCache>,
-    ) -> FpResult<B> {
+    ) -> FpResult<FBig<R, B>> {
         if x.is_infinite() {
-            return FpResult::NaN;
+            return Err(FpError::InfiniteInput);
         }
         assert_limited_precision(self.precision);
 
         if x.significand.is_zero() {
             // cos(±0) = 1
-            let res = FBig::<R, B>::ONE.with_precision(self.precision);
-            return FpResult::Normal(res.map(|v| v.repr));
+            return Ok(FBig::<R, B>::ONE.with_precision(self.precision));
         }
 
         let (work_context, r, quadrant) = self.reduce_to_quadrant(x, reborrow_cache(&mut cache));
@@ -174,7 +170,7 @@ impl<R: Round> Context<R> {
             Quadrant::Third => -work_context.cos_internal(&r),
             Quadrant::Fourth => work_context.sin_internal(&r),
         };
-        FpResult::Normal(res.with_precision(self.precision).map(|v| v.repr))
+        Ok(res.with_precision(self.precision))
     }
 
     /// Internal Taylor series for cosine: C(x) = 1 - x^2/2! + x^4/4! - ...
@@ -206,24 +202,20 @@ impl<R: Round> Context<R> {
     /// Calculate both the sine and cosine of the floating point representation.
     ///
     /// This is more efficient than calling `sin` and `cos` separately.
-    #[must_use]
     pub fn sin_cos<const B: Word>(
         &self,
         x: &Repr<B>,
         mut cache: Option<&mut ConstCache>,
-    ) -> (FpResult<B>, FpResult<B>) {
+    ) -> (FpResult<FBig<R, B>>, FpResult<FBig<R, B>>) {
         if x.is_infinite() {
-            return (FpResult::NaN, FpResult::NaN);
+            return (Err(FpError::InfiniteInput), Err(FpError::InfiniteInput));
         }
         assert_limited_precision(self.precision);
 
         if x.significand.is_zero() {
             // sin(±0) = ±0, cos(±0) = 1
             let s = signed_zero_normal(self, x);
-            let c = {
-                let res = FBig::<R, B>::ONE.with_precision(self.precision);
-                FpResult::Normal(res.map(|v| v.repr))
-            };
+            let c = Ok(FBig::<R, B>::ONE.with_precision(self.precision));
             return (s, c);
         }
 
@@ -238,10 +230,7 @@ impl<R: Round> Context<R> {
             Quadrant::Fourth => (-cos_r, sin_r),
         };
 
-        (
-            FpResult::Normal(s.with_precision(self.precision).map(|v| v.repr)),
-            FpResult::Normal(c.with_precision(self.precision).map(|v| v.repr)),
-        )
+        (Ok(s.with_precision(self.precision)), Ok(c.with_precision(self.precision)))
     }
 
     /// Simultaneously evaluate Taylor series for sine and cosine.
@@ -286,20 +275,19 @@ impl<R: Round> Context<R> {
     /// Calculate the tangent of the floating point representation.
     ///
     /// # Note
-    /// Near odd multiples of π/2, the result returns `Infinite`.
-    #[must_use]
+    /// Near odd multiples of π/2, the result is an infinity (returned as a value, not an error).
     pub fn tan<const B: Word>(
         &self,
         x: &Repr<B>,
         mut cache: Option<&mut ConstCache>,
-    ) -> FpResult<B> {
+    ) -> FpResult<FBig<R, B>> {
         if x.is_infinite() {
-            return FpResult::NaN;
+            return Err(FpError::InfiniteInput);
         }
         assert_limited_precision(self.precision);
 
         if x.significand.is_zero() {
-            // tan(±0) = ±0 / atan(±0) = ±0
+            // tan(±0) = ±0
             return signed_zero_normal(self, x);
         }
 
@@ -314,31 +302,37 @@ impl<R: Round> Context<R> {
         };
 
         if c_f.repr.is_zero() {
-            return FpResult::Infinite;
+            // tan hits a pole: the result is an infinity with the sign of the numerator.
+            let inf = if s_f.sign() == Sign::Negative {
+                Repr::neg_infinity()
+            } else {
+                Repr::infinity()
+            };
+            return Ok(Rounded::Exact(FBig::new(inf, *self)));
         }
-        FpResult::Normal(self.div(&s_f.repr, &c_f.repr).map(|v| v.repr))
+        self.div(&s_f.repr, &c_f.repr)
+            .map(|r| r.and_then(|f| f.with_precision(self.precision)))
     }
 
     /// Calculate the arcsine of the floating point representation.
     ///
     /// # Methodology
     /// Uses the identity: `asin(x) = atan(x / sqrt(1 - x^2))`
-    /// Returns `NaN` if `|x| > 1`.
-    #[must_use]
+    /// Returns `Err(OutOfDomain)` if `|x| > 1`.
     pub fn asin<const B: Word>(
         &self,
         x: &Repr<B>,
         mut cache: Option<&mut ConstCache>,
-    ) -> FpResult<B> {
+    ) -> FpResult<FBig<R, B>> {
         if x.is_infinite() {
-            return FpResult::NaN;
+            return Err(FpError::InfiniteInput);
         }
         assert_limited_precision(self.precision);
 
         let x_orig = FBig::<R, B>::new(x.clone(), *self);
         // Domain check: |x| must be <= 1
         if x_orig.abs_cmp(&FBig::ONE).is_gt() {
-            return FpResult::NaN;
+            return Err(FpError::OutOfDomain);
         }
 
         let guard_digits = 50;
@@ -348,7 +342,7 @@ impl<R: Round> Context<R> {
         let x_f = FBig::<R, B>::new(work_context.repr_round(x.clone()).value(), work_context);
 
         let res = work_context.asin_internal(&x_f, reborrow_cache(&mut cache));
-        FpResult::Normal(res.with_precision(self.precision).map(|v| v.repr))
+        Ok(res.with_precision(self.precision))
     }
 
     fn asin_internal<const B: Word>(
@@ -358,7 +352,7 @@ impl<R: Round> Context<R> {
     ) -> FBig<R, B> {
         let one = FBig::<R, B>::ONE.with_precision(self.precision).value();
         let x2 = x_f.sqr();
-        let d = self.sqrt(&(one - x2).repr).value();
+        let d = unwrap_fp(self.sqrt(&(one - x2).repr)).value();
 
         if d.repr.is_zero() {
             let pi = self.pi::<B>(reborrow_cache(&mut cache)).value();
@@ -377,21 +371,20 @@ impl<R: Round> Context<R> {
     /// # Methodology
     /// Uses the identity: `acos(x) = pi/2 - asin(x)`.
     /// Higher precision is used internally to avoid catastrophic cancellation near x ≈ 1.
-    #[must_use]
     pub fn acos<const B: Word>(
         &self,
         x: &Repr<B>,
         mut cache: Option<&mut ConstCache>,
-    ) -> FpResult<B> {
+    ) -> FpResult<FBig<R, B>> {
         if x.is_infinite() {
-            return FpResult::NaN;
+            return Err(FpError::InfiniteInput);
         }
         assert_limited_precision(self.precision);
 
         let x_orig = FBig::<R, B>::new(x.clone(), *self);
         // Domain check: |x| must be <= 1
         if x_orig.abs_cmp(&FBig::ONE).is_gt() {
-            return FpResult::NaN;
+            return Err(FpError::OutOfDomain);
         }
 
         let guard_digits = 50;
@@ -404,17 +397,17 @@ impl<R: Round> Context<R> {
         let pi = work_context.pi::<B>(reborrow_cache(&mut cache)).value();
         let half_pi: FBig<R, B> = pi / 2;
         let res: FBig<R, B> = half_pi - asin_x;
-        FpResult::Normal(res.with_precision(self.precision).map(|v| v.repr))
+        Ok(res.with_precision(self.precision))
     }
 
     /// Calculate the arctangent of the floating point representation.
-    #[must_use]
     pub fn atan<const B: Word>(
         &self,
         x: &Repr<B>,
         mut cache: Option<&mut ConstCache>,
-    ) -> FpResult<B> {
+    ) -> FpResult<FBig<R, B>> {
         if x.is_infinite() {
+            // atan(±inf) = ±π/2 — preserved (a well-defined finite result for an infinite input)
             let pi = self.pi::<B>(reborrow_cache(&mut cache)).value();
             let half_pi: FBig<R, B> = pi / 2;
             let res: FBig<R, B> = if x.sign() == Sign::Positive {
@@ -422,13 +415,13 @@ impl<R: Round> Context<R> {
             } else {
                 -half_pi
             };
-            return FpResult::Normal(res.with_precision(self.precision).map(|v| v.repr));
+            return Ok(res.with_precision(self.precision));
         }
 
         assert_limited_precision(self.precision);
 
         if x.significand.is_zero() {
-            // tan(±0) = ±0 / atan(±0) = ±0
+            // atan(±0) = ±0
             return signed_zero_normal(self, x);
         }
 
@@ -438,7 +431,7 @@ impl<R: Round> Context<R> {
 
         let x_f = FBig::<R, B>::new(work_context.repr_round(x.clone()).value(), work_context);
         let res = work_context.atan_with_reduction(&x_f, reborrow_cache(&mut cache));
-        FpResult::Normal(res.with_precision(self.precision).map(|v| v.repr))
+        Ok(res.with_precision(self.precision))
     }
 
     /// Internal arctangent that includes range reduction but no guard digit allocation.
@@ -492,16 +485,15 @@ impl<R: Round> Context<R> {
     /// Calculate the arctangent of y / x.
     ///
     /// Handles signed infinities according to IEEE 754 standards.
-    /// Returns `NaN` if both arguments are zero.
-    #[must_use]
+    /// Returns `Err(OutOfDomain)` if both arguments are zero.
     pub fn atan2<const B: Word>(
         &self,
         y: &Repr<B>,
         x: &Repr<B>,
         mut cache: Option<&mut ConstCache>,
-    ) -> FpResult<B> {
-        if y.is_zero() && x.is_zero() {
-            return FpResult::NaN;
+    ) -> FpResult<FBig<R, B>> {
+        if y.is_finite() && x.is_finite() && y.significand.is_zero() && x.significand.is_zero() {
+            return Err(FpError::OutOfDomain);
         }
 
         assert_limited_precision(self.precision);
@@ -538,7 +530,16 @@ impl<R: Round> Context<R> {
                         work_context.pi::<B>(reborrow_cache(&mut cache)).value() / 2;
                     -half_pi
                 }
-                (false, true, _, true) => FBig::<R, B>::ZERO.with_precision(work_precision).value(),
+                (false, true, _, true) => {
+                    // atan2(±finite, +inf) = ±0 (signed zero of y)
+                    if sy {
+                        FBig::<R, B>::ZERO.with_precision(work_precision).value()
+                    } else {
+                        FBig::<R, B>::new(Repr::neg_zero(), work_context)
+                            .with_precision(work_precision)
+                            .value()
+                    }
+                }
                 (false, true, true, false) => {
                     work_context.pi::<B>(reborrow_cache(&mut cache)).value()
                 }
@@ -547,9 +548,7 @@ impl<R: Round> Context<R> {
                 }
                 _ => unreachable!(),
             };
-            // Note: atan2(finite, +inf) returns unsigned ZERO. IEEE 754 requires signed zero,
-            // but `Repr` does not distinguish signed zero.
-            return FpResult::Normal(res.with_precision(self.precision).map(|v| v.repr));
+            return Ok(res.with_precision(self.precision));
         }
 
         let y_f = FBig::<R, B>::new(work_context.repr_round(y.clone()).value(), work_context);
@@ -559,7 +558,7 @@ impl<R: Round> Context<R> {
             Ordering::Greater => {
                 let res =
                     work_context.atan_with_reduction(&(y_f / x_f), reborrow_cache(&mut cache));
-                FpResult::Normal(res.with_precision(self.precision).map(|v| v.repr))
+                Ok(res.with_precision(self.precision))
             }
             Ordering::Less => {
                 let pi = work_context.pi::<B>(reborrow_cache(&mut cache)).value();
@@ -571,17 +570,17 @@ impl<R: Round> Context<R> {
                 } else {
                     atan_yx - pi
                 };
-                FpResult::Normal(res.with_precision(self.precision).map(|v| v.repr))
+                Ok(res.with_precision(self.precision))
             }
             Ordering::Equal => {
                 // x == 0 case
                 let pi = work_context.pi::<B>(reborrow_cache(&mut cache)).value();
                 let half_pi: FBig<R, B> = pi / 2;
                 if y_f > FBig::<R, B>::ZERO {
-                    FpResult::Normal(half_pi.with_precision(self.precision).map(|v| v.repr))
+                    Ok(half_pi.with_precision(self.precision))
                 } else {
                     let res = -half_pi;
-                    FpResult::Normal(res.with_precision(self.precision).map(|v| v.repr))
+                    Ok(res.with_precision(self.precision))
                 }
             }
         }
@@ -592,21 +591,19 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Calculate the sine of the floating point number.
     ///
     /// # Panics
-    /// Panics if the input is infinite or the result is not representable as a normal value.
+    /// Panics if the input is infinite.
     #[inline]
-    #[must_use]
     pub fn sin(&self) -> Self {
-        self.context.sin(&self.repr, None).value(&self.context)
+        unwrap_fp(self.context.sin(&self.repr, None)).value()
     }
 
     /// Calculate the cosine of the floating point number.
     ///
     /// # Panics
-    /// Panics if the input is infinite or the result is not representable as a normal value.
+    /// Panics if the input is infinite.
     #[inline]
-    #[must_use]
     pub fn cos(&self) -> Self {
-        self.context.cos(&self.repr, None).value(&self.context)
+        unwrap_fp(self.context.cos(&self.repr, None)).value()
     }
 
     /// Calculate both the sine and cosine of the floating point number.
@@ -614,57 +611,54 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// This is more efficient than calling `sin` and `cos` separately.
     ///
     /// # Panics
-    /// Panics if the input is infinite or the results are not representable as normal values.
+    /// Panics if the input is infinite.
     #[inline]
-    #[must_use]
     pub fn sin_cos(&self) -> (Self, Self) {
         let (s, c) = self.context.sin_cos(&self.repr, None);
-        (s.value(&self.context), c.value(&self.context))
+        (unwrap_fp(s).value(), unwrap_fp(c).value())
     }
 
     /// Calculate the tangent of the floating point number.
     ///
-    /// Returns `FpResult` to safely handle non-finite results (e.g., at singularities).
+    /// At odd multiples of π/2 the result is an infinity (returned as a value).
+    ///
+    /// # Panics
+    /// Panics if the input is infinite.
     #[inline]
-    #[must_use]
-    pub fn tan(&self) -> FpResult<B> {
-        self.context.tan(&self.repr, None)
+    pub fn tan(&self) -> Self {
+        unwrap_fp(self.context.tan(&self.repr, None)).value()
     }
 
     /// Calculate the arcsine of the floating point number.
     ///
-    /// Returns `FpResult` to safely handle domain errors (e.g., |x| > 1).
+    /// # Panics
+    /// Panics if the input is infinite or `|self| > 1` (out of domain).
     #[inline]
-    #[must_use]
-    pub fn asin(&self) -> FpResult<B> {
-        self.context.asin(&self.repr, None)
+    pub fn asin(&self) -> Self {
+        unwrap_fp(self.context.asin(&self.repr, None)).value()
     }
 
     /// Calculate the arccosine of the floating point number.
     ///
-    /// Returns `FpResult` to safely handle domain errors (e.g., |x| > 1).
+    /// # Panics
+    /// Panics if the input is infinite or `|self| > 1` (out of domain).
     #[inline]
-    #[must_use]
-    pub fn acos(&self) -> FpResult<B> {
-        self.context.acos(&self.repr, None)
+    pub fn acos(&self) -> Self {
+        unwrap_fp(self.context.acos(&self.repr, None)).value()
     }
 
-    /// Calculate the arctangent of the floating point number.
+    /// Calculate the arctangent of the floating point number. `atan(±inf) = ±π/2`.
+    #[inline]
+    pub fn atan(&self) -> Self {
+        unwrap_fp(self.context.atan(&self.repr, None)).value()
+    }
+
+    /// Calculate the arctangent of `self / x`.
     ///
     /// # Panics
-    /// Panics if the result is not representable as a normal value.
+    /// Panics if both arguments are zero.
     #[inline]
-    #[must_use]
-    pub fn atan(&self) -> Self {
-        self.context.atan(&self.repr, None).value(&self.context)
-    }
-
-    /// Calculate the arctangent of y / x.
-    ///
-    /// Returns `FpResult` to safely handle special cases like (0,0) or infinities.
-    #[inline]
-    #[must_use]
-    pub fn atan2(&self, x: &Self) -> FpResult<B> {
-        self.context.atan2(&self.repr, &x.repr, None)
+    pub fn atan2(&self, x: &Self) -> Self {
+        unwrap_fp(self.context.atan2(&self.repr, &x.repr, None)).value()
     }
 }

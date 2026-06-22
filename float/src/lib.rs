@@ -53,7 +53,7 @@
 //! use dashu_base::Approximation::*;
 //! use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
 //! let ctxt = Context::<HalfAway>::new(6);
-//! assert_eq!(ctxt.exp(DBig::ONE.repr(), None), Inexact(c, NoOp));
+//! assert_eq!(ctxt.exp(DBig::ONE.repr(), None), Ok(Inexact(c, NoOp)));
 //! # Ok::<(), ParseError>(())
 //! ```
 //!
@@ -99,6 +99,7 @@ pub use fbig::FBig;
 pub use fbig_cached::CachedFBig;
 pub use math::cache::ConstCache;
 pub use repr::{Context, Repr};
+pub use {crate::error::FpError, crate::math::FpResult};
 
 /// Multi-precision float number with decimal exponent and [HalfAway][round::mode::HalfAway] rounding mode
 pub type DBig = FBig<round::mode::HalfAway, 10>;
