@@ -485,3 +485,41 @@ mod bench_iacoth {
         }
     }
 }
+
+#[cfg(test)]
+mod bench_pi_sqrt {
+    use super::*;
+    use crate::round::mode;
+    use std::hint::black_box;
+    use std::time::Instant;
+
+    #[test]
+    #[ignore]
+    fn bench_pi_vs_sqrt10005() {
+        let precisions: &[usize] = &[50, 500, 5_000];
+        eprintln!("\nπ (Chudnovsky) vs its sqrt(10005) sub-computation");
+        eprintln!("{:>8} {:>12} {:>12} {:>10}", "digits", "pi_total", "sqrt10005", "sqrt %");
+        for &p in precisions {
+            // time the full pi computation
+            let reps = if p <= 500 { 10 } else { 1 };
+            let t0 = Instant::now();
+            for _ in 0..reps {
+                black_box(Context::<mode::Zero>::new(p).pi::<10>(None).value());
+            }
+            let t_pi = t0.elapsed() / reps as u32;
+
+            // time just sqrt(10005) at the same working precision pi uses
+            // (work precision ≈ p + guard; use p*2 bits of significand to mirror it)
+            let ctx = Context::<mode::Zero>::new(p);
+            let arg = ctx.convert_int::<10>(10005i32.into()).value();
+            let t0 = Instant::now();
+            for _ in 0..reps {
+                black_box(unwrap_fp(ctx.sqrt(&arg.repr)).value());
+            }
+            let t_sqrt = t0.elapsed() / reps as u32;
+
+            let pct = 100.0 * t_sqrt.as_secs_f64() / t_pi.as_secs_f64();
+            eprintln!("{:>8} {:>12.2?} {:>12.2?} {:>8.1}%", p, t_pi, t_sqrt, pct);
+        }
+    }
+}
