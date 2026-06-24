@@ -1,11 +1,11 @@
 use core::convert::TryInto;
 
 use crate::{
-    error::{assert_finite, assert_limited_precision, unwrap_fp, FpError, FpResult},
+    error::{assert_finite, assert_limited_precision, FpError, FpResult},
     fbig::FBig,
     math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr, Word},
-    round::{Round, Rounded},
+    round::Round,
     utils::ceil_usize,
 };
 use dashu_base::{AbsOrd, Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign};
@@ -25,7 +25,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn powi(&self, exp: IBig) -> FBig<R, B> {
-        unwrap_fp(self.context.powi(&self.repr, exp)).value()
+        self.context.unwrap_fp(self.context.powi(&self.repr, exp))
     }
 
     /// Raise the floating point number to an floating point power.
@@ -43,7 +43,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     pub fn powf(&self, exp: &Self) -> Self {
         let context = Context::max(self.context, exp.context);
-        unwrap_fp(context.powf(&self.repr, &exp.repr, None)).value()
+        context.unwrap_fp(context.powf(&self.repr, &exp.repr, None))
     }
 
     /// Calculate the exponential function (`eˣ`) on the floating point number.
@@ -59,7 +59,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn exp(&self) -> FBig<R, B> {
-        unwrap_fp(self.context.exp(&self.repr, None)).value()
+        self.context.unwrap_fp(self.context.exp(&self.repr, None))
     }
 
     /// Calculate the exponential minus one function (`eˣ-1`) on the floating point number.
@@ -75,7 +75,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn exp_m1(&self) -> FBig<R, B> {
-        unwrap_fp(self.context.exp_m1(&self.repr, None)).value()
+        self.context.unwrap_fp(self.context.exp_m1(&self.repr, None))
     }
 }
 
@@ -115,9 +115,9 @@ impl<R: Round> Context<R> {
 
             let guard_bits = self.precision.bit_len() * 2; // heuristic
             let rev_context = Context::<R::Reverse>::new(self.precision + guard_bits);
-            let pow = unwrap_fp(rev_context.powi(base, exp.into())).value();
-            let inv = rev_context.repr_div(Repr::one(), pow.repr);
-            let repr = inv.and_then(|v| self.repr_round(v));
+            let pow = rev_context.unwrap_fp(rev_context.powi(base, exp.into()));
+            let inv = rev_context.unwrap_fp_repr(rev_context.repr_div(Repr::one(), pow.repr));
+            let repr = self.repr_round(inv);
             return Ok(repr.map(|v| FBig::new(v, *self)));
         }
         if exp.is_zero() {
@@ -138,18 +138,25 @@ impl<R: Round> Context<R> {
             None => base_log2 != 0.0, // exp doesn't fit i64: overflows unless |base| == 1
         };
         if overflows {
-            return Ok(Exact(if base_log2 > 0.0 {
-                FBig::new(
+            return if base_log2 > 0.0 {
+                Err(FpError::Overflow(
                     if base.sign() == Sign::Negative {
-                        Repr::neg_infinity()
+                        Sign::Negative
                     } else {
-                        Repr::infinity()
+                        Sign::Positive
                     },
-                    *self,
-                )
+                ))
             } else {
-                FBig::ZERO
-            }));
+                // |base| < 1 and exponent huge → underflow to signed zero
+                let underflow_sign = if base.sign() == Sign::Negative
+                    && exp.bit(0)
+                {
+                    Sign::Negative
+                } else {
+                    Sign::Positive
+                };
+                Err(FpError::Underflow(underflow_sign))
+            };
         }
 
         let work_context = if self.is_limited() {
@@ -162,19 +169,19 @@ impl<R: Round> Context<R> {
 
         // binary exponentiation from left to right
         let mut p = exp.bit_len() - 2;
-        let mut res = unwrap_fp(work_context.sqr(base));
+        let mut res = work_context.unwrap_fp(work_context.sqr(base));
         loop {
             if exp.bit(p) {
-                res = res.and_then(|v| unwrap_fp(work_context.mul(v.repr(), base)));
+                res = work_context.unwrap_fp(work_context.mul(res.repr(), base));
             }
             if p == 0 {
                 break;
             }
             p -= 1;
-            res = res.and_then(|v| unwrap_fp(work_context.sqr(v.repr())));
+            res = work_context.unwrap_fp(work_context.sqr(res.repr()));
         }
 
-        Ok(res.and_then(|v| v.with_precision(self.precision)))
+        Ok(res.with_precision(self.precision))
     }
 
     /// Raise the floating point number to an floating point power under this context.
@@ -239,11 +246,11 @@ impl<R: Round> Context<R> {
         let work_context = Context::<R>::new(self.precision + guard_digits);
 
         // ln and exp each consult/extend the shared cache; reborrows are sequential.
-        let ln_val = unwrap_fp(work_context.ln(base, reborrow_cache(&mut cache)));
-        let res = ln_val
-            .and_then(|v| unwrap_fp(work_context.mul(&v.repr, exp)))
-            .and_then(|v| unwrap_fp(work_context.exp(&v.repr, reborrow_cache(&mut cache))));
-        Ok(res.and_then(|v| v.with_precision(self.precision)))
+        let ln_val = work_context.unwrap_fp(work_context.ln(base, reborrow_cache(&mut cache)));
+        let mul_val = work_context.unwrap_fp(work_context.mul(ln_val.repr(), exp));
+        let exp_val =
+            work_context.unwrap_fp(work_context.exp(mul_val.repr(), reborrow_cache(&mut cache)));
+        Ok(exp_val.with_precision(self.precision))
     }
 
     /// Calculate the exponential function (`eˣ`) on the floating point number under this context.
@@ -268,9 +275,15 @@ impl<R: Round> Context<R> {
         cache: Option<&mut ConstCache>,
     ) -> FpResult<FBig<R, B>> {
         if x.is_infinite() {
-            return Err(FpError::InfiniteInput);
+            return Ok(Exact(FBig::new(
+                match x.sign() {
+                    Sign::Positive => Repr::infinity(),
+                    Sign::Negative => Repr::zero(),
+                },
+                *self,
+            )));
         }
-        Ok(self.exp_internal(x, false, cache))
+        self.exp_internal(x, false, cache)
     }
 
     /// Calculate the exponential minus one function (`eˣ-1`) on the floating point number under this context.
@@ -295,9 +308,12 @@ impl<R: Round> Context<R> {
         cache: Option<&mut ConstCache>,
     ) -> FpResult<FBig<R, B>> {
         if x.is_infinite() {
-            return Err(FpError::InfiniteInput);
+            return match x.sign() {
+                Sign::Positive => Ok(Exact(FBig::new(Repr::infinity(), *self))),
+                Sign::Negative => Ok(Exact(-FBig::ONE)), // exp_m1(−∞) = −1
+            };
         }
-        Ok(self.exp_internal(x, true, cache))
+        self.exp_internal(x, true, cache)
     }
 
     // TODO: change reduction to (x - s log2) / 2ⁿ, so that the final powering is always base 2, and doesn't depends on powi.
@@ -309,7 +325,7 @@ impl<R: Round> Context<R> {
         x: &Repr<B>,
         minus_one: bool,
         mut cache: Option<&mut ConstCache>,
-    ) -> Rounded<FBig<R, B>> {
+    ) -> FpResult<FBig<R, B>> {
         assert_finite(x);
         assert_limited_precision(self.precision);
         let input_sign = x.sign();
@@ -317,8 +333,8 @@ impl<R: Round> Context<R> {
         if x.significand.is_zero() {
             // exp(±0) = 1, exp_m1(±0) = +0
             return match minus_one {
-                false => Exact(FBig::ONE),
-                true => Exact(FBig::ZERO),
+                false => Ok(Exact(FBig::ONE)),
+                true => Ok(Exact(FBig::ZERO)),
             };
         }
 
@@ -362,13 +378,13 @@ impl<R: Round> Context<R> {
                 Err(_) => {
                     // |floor(x / ln B)| overflows isize — x is astronomically large, so the
                     // result is an infinity (x → +∞) or underflows to the limit (x → −∞).
-                    return Exact(if input_sign == Sign::Positive {
-                        FBig::new(Repr::infinity(), *self)
+                    return if input_sign == Sign::Positive {
+                        Err(FpError::Overflow(Sign::Positive))
                     } else if minus_one {
-                        -FBig::ONE // exp_m1(−∞) = −1
+                        Ok(Exact(-FBig::ONE)) // exp_m1(−∞) = −1 (finite)
                     } else {
-                        FBig::ZERO // exp(−∞) = 0
-                    });
+                        Err(FpError::Underflow(Sign::Positive)) // exp(−∞) = +0
+                    };
                 }
             };
             (s, n, r)
@@ -397,17 +413,25 @@ impl<R: Round> Context<R> {
         }
 
         if no_scaling {
-            sum.with_precision(self.precision)
+            Ok(sum.with_precision(self.precision))
         } else if minus_one {
-            // add extra digits to compensate for the subtraction
-            unwrap_fp(
-                Context::<R>::new(self.precision + self.precision / 8 + 1) // heuristic
-                    .powi(sum.repr(), Repr::<B>::BASE.pow(n).into()),
-            )
-            .map(|v| (v << s) - FBig::ONE)
-            .and_then(|v| v.with_precision(self.precision))
+            // add extra digits to compensate for the subtraction.
+            // The "−1" can cancel up to ~log₁₀(exp(|sum|)) decimal digits,
+            // so be generous: double the target precision.
+            let pow_ctx = Context::<R>::new(self.precision.saturating_mul(2));
+            let v = pow_ctx.unwrap_fp(pow_ctx.powi(
+                sum.repr(),
+                Repr::<B>::BASE.pow(n).into(),
+            ));
+            Ok(((v << s) - FBig::ONE).with_precision(self.precision))
         } else {
-            unwrap_fp(self.powi(sum.repr(), Repr::<B>::BASE.pow(n).into())).map(|v| v << s)
+            // ensure enough extra precision that with_precision always rounds
+            let pow_ctx = Context::<R>::new(self.precision.saturating_mul(2));
+            let v = pow_ctx.unwrap_fp(pow_ctx.powi(
+                sum.repr(),
+                Repr::<B>::BASE.pow(n).into(),
+            ));
+            Ok((v << s).with_precision(self.precision))
         }
     }
 }

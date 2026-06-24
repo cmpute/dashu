@@ -222,9 +222,10 @@ fn test_exp_unlimited_precision() {
 }
 
 #[test]
-#[should_panic]
 fn test_exp_inf() {
-    let _ = DBig::INFINITY.exp();
+    // exp(+inf) = +inf, exp(-inf) = +0
+    assert_eq!(DBig::INFINITY.exp(), DBig::INFINITY);
+    assert_eq!(DBig::NEG_INFINITY.exp(), DBig::ZERO);
 }
 
 #[test]
@@ -331,9 +332,10 @@ fn test_exp_m1_unlimited_precision() {
 }
 
 #[test]
-#[should_panic]
 fn test_exp_m1_inf() {
-    let _ = DBig::INFINITY.exp_m1();
+    // exp_m1(+inf) = +inf, exp_m1(-inf) = -1
+    assert_eq!(DBig::INFINITY.exp_m1(), DBig::INFINITY);
+    assert_eq!(DBig::NEG_INFINITY.exp_m1(), -DBig::ONE);
 }
 
 #[test]

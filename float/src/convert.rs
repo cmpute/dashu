@@ -10,7 +10,7 @@ use dashu_base::{
 use dashu_int::{IBig, UBig, Word};
 
 use crate::{
-    error::{assert_finite, panic_unlimited_precision, unwrap_fp},
+    error::{assert_finite, panic_unlimited_precision, FpError},
     fbig::FBig,
     math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr},
@@ -561,20 +561,32 @@ impl<R: Round> Context<R> {
                 let signif = repr.significand * Repr::<B>::BASE.pow(repr.exponent as usize);
                 Exact(Repr::new(signif, 0))
             } else {
-                let num = Repr::new(repr.significand, 0);
-                let den = Repr::new(Repr::<B>::BASE.pow(-repr.exponent as usize).into(), 0);
-                self.repr_div(num, den)
+                let num: Repr<NewB> = Repr::new(repr.significand, 0);
+                let den: Repr<NewB> =
+                    Repr::new(Repr::<B>::BASE.pow(-repr.exponent as usize).into(), 0);
+                match self.repr_div(num, den) {
+                    Ok(v) => v.map(|r: Repr<NewB>| Repr {
+                        significand: r.significand,
+                        exponent: r.exponent,
+                    }),
+                    Err(FpError::Overflow(sign)) => {
+                        Inexact(Repr::<NewB>::infinity_with_sign(sign), Rounding::NoOp)
+                    }
+                    Err(FpError::Underflow(sign)) => {
+                        Inexact(Repr::<NewB>::zero_with_sign(sign), Rounding::NoOp)
+                    }
+                    Err(_) => unreachable!(),
+                }
             }
         } else {
             // if the exponent is large, then we first estimate the result exponent as floor(exponent * log(B) / log(NewB)),
             // then the fractional part is multiplied with the original significand
             let work_context = Context::<R>::new(2 * self.precision); // double the precision to get the precise logarithm
             let new_exp = repr.exponent
-                * unwrap_fp(
-                    work_context
-                        .ln(&Repr::new(Repr::<B>::BASE.into(), 0), reborrow_cache(&mut cache)),
-                )
-                .value();
+                * work_context.unwrap_fp(work_context.ln(
+                    &Repr::new(Repr::<B>::BASE.into(), 0),
+                    reborrow_cache(&mut cache),
+                ));
             let (exponent, rem) =
                 new_exp.div_rem_euclid(work_context.ln_base::<NewB>(reborrow_cache(&mut cache)));
             let exponent: isize = exponent.try_into().unwrap();

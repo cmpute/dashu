@@ -3,6 +3,13 @@
 ## Unreleased
 
 ### Add
+- `FpError` now carries `Overflow(Sign)` and `Underflow(Sign)` variants. Repr-level arithmetic
+  functions (`mul_finite_reprs`, `repr_div`, `sqr`, `cubic`, `exp_internal`, `powi`) detect
+  exponent overflow/underflow and return these errors. At the `FBig`/`CachedFBig` convenience
+  layer they are converted to signed infinity or signed zero, matching IEEE 754 overflow/underflow
+  semantics. The `Context` layer returns the raw error, giving callers the choice.
+- `exp` and `exp_m1` now accept infinite input, returning the IEEE-correct result (`exp(+inf) = +inf`,
+  `exp(-inf) = +0`, `exp_m1(+inf) = +inf`, `exp_m1(-inf) = -1`).
 - `ConstCache` now also caches the base-free `√10005` isqrt used by π (`ConstCache::pi`), so a
   repeat π call at the same or lower precision reuses it instead of recomputing. The isqrt is held
   as a base-free integer (`floor(√10005 · 2^bits)`, computed via Karatsuba `UBig::sqrt`) and folded

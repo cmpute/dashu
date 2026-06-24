@@ -1,13 +1,13 @@
 use crate::{
-    error::{assert_finite_operands, assert_limited_precision, unwrap_fp, FpError, FpResult},
+    error::{assert_finite_operands, assert_limited_precision, FpError, FpResult},
     fbig::FBig,
     helper_macros::{self, impl_binop_assign_by_taking},
     repr::{Context, Repr, Word},
-    round::{Round, Rounded},
+    round::{Round, Rounded, Rounding},
     utils::{digit_len, shl_digits_in_place, split_digits},
 };
 use core::ops::{Div, DivAssign, Rem, RemAssign};
-use dashu_base::{Approximation, DivEuclid, DivRem, DivRemEuclid, Inverse, RemEuclid};
+use dashu_base::{Approximation, DivEuclid, DivRem, DivRemEuclid, Inverse, RemEuclid, Sign};
 use dashu_int::{fast_div::ConstDivisor, modular::IntoRing, IBig, UBig};
 
 /// Attach the dividend/divisor XOR sign to a zero quotient: the raw quotient significand is
@@ -25,7 +25,51 @@ fn div_repr<const B: Word>(sign_negative: bool, significand: IBig, exponent: isi
     }
 }
 
-macro_rules! impl_div_or_rem_for_fbig {
+macro_rules! impl_div_for_fbig {
+    (impl $op:ident, $method:ident, $repr_method:ident) => {
+        impl<R: Round, const B: Word> $op<FBig<R, B>> for FBig<R, B> {
+            type Output = FBig<R, B>;
+            fn $method(self, rhs: FBig<R, B>) -> Self::Output {
+                let context = Context::max(self.context, rhs.context);
+                let rounded = context.unwrap_fp_repr(context.$repr_method(self.repr, rhs.repr));
+                FBig::new(rounded, context)
+            }
+        }
+
+        impl<'l, R: Round, const B: Word> $op<FBig<R, B>> for &'l FBig<R, B> {
+            type Output = FBig<R, B>;
+            fn $method(self, rhs: FBig<R, B>) -> Self::Output {
+                let context = Context::max(self.context, rhs.context);
+                let rounded =
+                    context.unwrap_fp_repr(context.$repr_method(self.repr.clone(), rhs.repr));
+                FBig::new(rounded, context)
+            }
+        }
+
+        impl<'r, R: Round, const B: Word> $op<&'r FBig<R, B>> for FBig<R, B> {
+            type Output = FBig<R, B>;
+            fn $method(self, rhs: &FBig<R, B>) -> Self::Output {
+                let context = Context::max(self.context, rhs.context);
+                let rounded =
+                    context.unwrap_fp_repr(context.$repr_method(self.repr, rhs.repr.clone()));
+                FBig::new(rounded, context)
+            }
+        }
+
+        impl<'l, 'r, R: Round, const B: Word> $op<&'r FBig<R, B>> for &'l FBig<R, B> {
+            type Output = FBig<R, B>;
+            fn $method(self, rhs: &FBig<R, B>) -> Self::Output {
+                let context = Context::max(self.context, rhs.context);
+                let rounded = context.unwrap_fp_repr(
+                    context.$repr_method(self.repr.clone(), rhs.repr.clone()),
+                );
+                FBig::new(rounded, context)
+            }
+        }
+    };
+}
+
+macro_rules! impl_rem_for_fbig {
     (impl $op:ident, $method:ident, $repr_method:ident) => {
         impl<R: Round, const B: Word> $op<FBig<R, B>> for FBig<R, B> {
             type Output = FBig<R, B>;
@@ -65,8 +109,8 @@ macro_rules! impl_div_or_rem_for_fbig {
         }
     };
 }
-impl_div_or_rem_for_fbig!(impl Div, div, repr_div);
-impl_div_or_rem_for_fbig!(impl Rem, rem, repr_rem);
+impl_div_for_fbig!(impl Div, div, repr_div);
+impl_rem_for_fbig!(impl Rem, rem, repr_rem);
 impl_binop_assign_by_taking!(impl DivAssign<Self>, div_assign, div);
 impl_binop_assign_by_taking!(impl RemAssign<Self>, rem_assign, rem);
 
@@ -203,7 +247,7 @@ impl<R: Round, const B: Word> Inverse for FBig<R, B> {
 
     #[inline]
     fn inv(self) -> Self::Output {
-        unwrap_fp(self.context.inv(&self.repr)).value()
+        self.context.unwrap_fp(self.context.inv(&self.repr))
     }
 }
 
@@ -212,7 +256,7 @@ impl<R: Round, const B: Word> Inverse for &FBig<R, B> {
 
     #[inline]
     fn inv(self) -> Self::Output {
-        unwrap_fp(self.context.inv(&self.repr)).value()
+        self.context.unwrap_fp(self.context.inv(&self.repr))
     }
 }
 
@@ -229,11 +273,20 @@ fn align_as_int<R: Round, const B: Word>(lhs: FBig<R, B>, rhs: FBig<R, B>) -> (I
 }
 
 impl<R: Round> Context<R> {
-    pub(crate) fn repr_div<const B: Word>(&self, lhs: Repr<B>, rhs: Repr<B>) -> Rounded<Repr<B>> {
+    pub(crate) fn repr_div<const B: Word>(
+        &self,
+        lhs: Repr<B>,
+        rhs: Repr<B>,
+    ) -> FpResult<Repr<B>> {
         assert_finite_operands(&lhs, &rhs);
         assert_limited_precision(self.precision);
 
         let sign_negative = lhs.sign() != rhs.sign();
+        let sign = if sign_negative {
+            Sign::Negative
+        } else {
+            Sign::Positive
+        };
 
         if rhs.significand.is_zero() {
             if lhs.significand.is_zero() {
@@ -241,11 +294,7 @@ impl<R: Round> Context<R> {
                 // otherwise fall through to div_rem which panics on division by zero.
             } else {
                 // finite / 0 = ±inf (sign = XOR), returned as a value
-                return Approximation::Exact(if sign_negative {
-                    Repr::neg_infinity()
-                } else {
-                    Repr::infinity()
-                });
+                return Ok(Approximation::Exact(Repr::infinity_with_sign(sign)));
             }
         }
 
@@ -253,9 +302,17 @@ impl<R: Round> Context<R> {
         debug_assert!(lhs.digits() <= self.precision + rhs.digits());
 
         let (mut q, mut r) = lhs.significand.div_rem(&rhs.significand);
-        let mut e = lhs.exponent - rhs.exponent;
+        let mut e = lhs.exponent.checked_sub(rhs.exponent).ok_or({
+            if lhs.exponent >= 0 {
+                FpError::Overflow(sign)
+            } else {
+                FpError::Underflow(sign)
+            }
+        })?;
         if r.is_zero() {
-            return Approximation::Exact(div_repr(sign_negative, q, e));
+            return Ok(Approximation::Exact(
+                div_repr(sign_negative, q, e).check_finite_exponent()?,
+            ));
         }
 
         let ddigits = digit_len::<B>(&rhs.significand);
@@ -264,7 +321,7 @@ impl<R: Round> Context<R> {
             let rdigits = digit_len::<B>(&r); // rdigits <= ddigits
             let shift = ddigits + self.precision - rdigits;
             shl_digits_in_place::<B>(&mut r, shift);
-            e -= shift as isize;
+            e = e.checked_sub(shift as isize).ok_or(FpError::Underflow(sign))?;
             let (q0, r0) = r.div_rem(&rhs.significand);
             q = q0;
             r = r0;
@@ -275,7 +332,7 @@ impl<R: Round> Context<R> {
                 let shift = ddigits + self.precision - ndigits;
                 shl_digits_in_place::<B>(&mut q, shift);
                 shl_digits_in_place::<B>(&mut r, shift);
-                e -= shift as isize;
+                e = e.checked_sub(shift as isize).ok_or(FpError::Underflow(sign))?;
 
                 let (q0, r0) = r.div_rem(&rhs.significand);
                 q += q0;
@@ -283,12 +340,13 @@ impl<R: Round> Context<R> {
             }
         }
 
-        if r.is_zero() {
+        let repr = if r.is_zero() {
             Approximation::Exact(div_repr(sign_negative, q, e))
         } else {
             let adjust = R::round_ratio(&q, r, &rhs.significand);
             Approximation::Inexact(div_repr(sign_negative, q + adjust, e), adjust)
-        }
+        };
+        Ok(repr)
     }
 
     pub(crate) fn repr_rem<const B: Word>(&self, lhs: Repr<B>, rhs: Repr<B>) -> Rounded<Repr<B>> {
@@ -359,7 +417,18 @@ impl<R: Round> Context<R> {
                 Repr::zero()
             })
         } else {
-            self.repr_round(Repr::new(significand, exponent))
+            match Repr::new(significand, exponent).check_finite_exponent() {
+                Ok(repr) => self.repr_round(repr),
+                Err(e) => match e {
+                    FpError::Overflow(sign) => {
+                        Approximation::Inexact(Repr::infinity_with_sign(sign), Rounding::NoOp)
+                    }
+                    FpError::Underflow(sign) => {
+                        Approximation::Inexact(Repr::zero_with_sign(sign), Rounding::NoOp)
+                    }
+                    _ => unreachable!(),
+                },
+            }
         }
     }
 
@@ -403,7 +472,7 @@ impl<R: Round> Context<R> {
             lhs.clone()
         };
         Ok(self
-            .repr_div(lhs_repr, rhs.clone())
+            .repr_div(lhs_repr, rhs.clone())?
             .map(|v| FBig::new(v, *self)))
     }
 
@@ -457,7 +526,7 @@ impl<R: Round> Context<R> {
         }
         // inv(±0) = ±inf (produced as a value by repr_div)
         Ok(self
-            .repr_div(Repr::one(), f.clone())
+            .repr_div(Repr::one(), f.clone())?
             .map(|v| FBig::new(v, *self)))
     }
 }

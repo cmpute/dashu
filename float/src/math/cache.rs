@@ -5,7 +5,6 @@ use core::fmt;
 use dashu_base::{BitTest, EstimatedLog2};
 use dashu_int::{IBig, UBig};
 
-use crate::error::unwrap_fp;
 use crate::fbig::FBig;
 use crate::math::consts::{chudnovsky_bs, merge};
 use crate::repr::{Context, Repr, Word};
@@ -213,12 +212,12 @@ impl ConstCache {
             _ => {
                 // generic base: no cached L(n) sub-series applies, so compute
                 // ln(B) directly through Context::ln on the base literal.
-                unwrap_fp(Context::<R>::new(precision).ln::<B>(
+                let ctx = Context::<R>::new(precision);
+                ctx.unwrap_fp(ctx.ln::<B>(
                     &Repr::new(Repr::<B>::BASE.into(), 0),
                     // no cache for the generic base (its L(n) isn't cached)
                     None,
                 ))
-                .value()
             }
         }
     }
@@ -446,20 +445,18 @@ mod tests {
                 .ln2::<10, mode::Zero>(precision)
                 .with_precision(precision)
                 .value();
-            let direct_ln2 = unwrap_fp(
-                Context::<mode::Zero>::new(precision).ln::<10>(&Repr::new(2.into(), 0), None),
-            )
-            .value();
+            let ln2_ctx = Context::<mode::Zero>::new(precision);
+            let direct_ln2 =
+                ln2_ctx.unwrap_fp(ln2_ctx.ln::<10>(&Repr::new(2.into(), 0), None));
             assert_eq!(cached_ln2, direct_ln2, "ln2 mismatch at precision {precision}");
 
             let cached_ln10 = cache
                 .ln10::<10, mode::Zero>(precision)
                 .with_precision(precision)
                 .value();
-            let direct_ln10 = unwrap_fp(
-                Context::<mode::Zero>::new(precision).ln::<10>(&Repr::new(10.into(), 0), None),
-            )
-            .value();
+            let ln10_ctx = Context::<mode::Zero>::new(precision);
+            let direct_ln10 =
+                ln10_ctx.unwrap_fp(ln10_ctx.ln::<10>(&Repr::new(10.into(), 0), None));
             assert_eq!(cached_ln10, direct_ln10, "ln10 mismatch at precision {precision}");
         }
     }

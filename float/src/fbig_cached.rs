@@ -51,7 +51,7 @@ use crate::utils::digit_len;
 /// );
 ///
 /// // ln / exp reuse the same shared cache handle
-/// let _ = x.clone().ln().value().exp();
+/// let _ = x.clone().ln().exp();
 /// ```
 pub struct CachedFBig<R: Round = mode::Zero, const B: Word = 2> {
     pub(crate) fbig: FBig<R, B>,
@@ -317,13 +317,13 @@ mod tests {
         );
         let y = FBig::<mode::HalfAway, 10>::from_repr(Repr::new(1234.into(), -3), Context::new(50));
 
-        assert_eq!(x.clone().ln().value().into_fbig(), y.clone().ln());
-        assert_eq!(x.clone().exp().value().into_fbig(), y.clone().exp());
+        assert_eq!(x.clone().ln().into_fbig(), y.clone().ln());
+        assert_eq!(x.clone().exp().into_fbig(), y.clone().exp());
         assert_eq!(x.clone().sin().into_fbig(), y.clone().sin());
         assert_eq!(x.clone().cos().into_fbig(), y.clone().cos());
-        assert_eq!(x.clone().exp_m1().value().into_fbig(), y.clone().exp_m1());
-        assert_eq!(x.clone().ln_1p().value().into_fbig(), y.clone().ln_1p());
-        assert_eq!(x.powf(&x.clone()).value().into_fbig(), y.clone().powf(&y));
+        assert_eq!(x.clone().exp_m1().into_fbig(), y.clone().exp_m1());
+        assert_eq!(x.clone().ln_1p().into_fbig(), y.clone().ln_1p());
+        assert_eq!(x.powf(&x.clone()).into_fbig(), y.clone().powf(&y));
     }
 
     #[test]
@@ -351,7 +351,7 @@ mod tests {
             Context::new(30),
             h.clone(),
         );
-        let sum_ln = (a.clone() + b.clone()).ln().value().into_fbig();
+        let sum_ln = (a.clone() + b.clone()).ln().into_fbig();
         let expected = (fbig(2, 30) + fbig(3, 30)).ln();
         assert_eq!(sum_ln, expected);
     }
@@ -432,7 +432,7 @@ mod tests {
             Repr::new(1234.into(), -3),
             Context::new(50),
         );
-        let before_clear = x.ln().value().into_fbig();
+        let before_clear = x.ln().into_fbig();
         assert!(x.cache().total_terms() > 0);
 
         x.clear_cache();
@@ -440,7 +440,7 @@ mod tests {
         assert_eq!(x.cache().total_words(), 0);
 
         // After clearing, recomputation still produces the same result
-        let after_clear = x.ln().value().into_fbig();
+        let after_clear = x.ln().into_fbig();
         assert_eq!(after_clear, before_clear);
     }
 }

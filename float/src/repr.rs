@@ -1,5 +1,5 @@
 use crate::{
-    error::assert_finite,
+    error::{assert_finite, FpError},
     round::{Round, Rounded},
     utils::{digit_len, split_digits, split_digits_ref},
 };
@@ -329,6 +329,45 @@ impl<const B: Word> Repr<B> {
         }
     }
 
+    /// Check that a `Repr` with a non-zero significand has a valid finite exponent.
+    ///
+    /// Returns [`FpError::Overflow`] or [`FpError::Underflow`] when the exponent collides with
+    /// the `+inf`/`-inf` sentinels (`isize::MAX` / `isize::MIN`). Zero-significand reprs
+    /// (canonical special values) always pass.
+    pub(crate) fn check_finite_exponent(self) -> Result<Self, FpError> {
+        if !self.significand.is_zero() {
+            if self.exponent == isize::MAX {
+                Err(FpError::Overflow(self.sign()))
+            } else if self.exponent == isize::MIN {
+                Err(FpError::Underflow(self.sign()))
+            } else {
+                Ok(self)
+            }
+        } else {
+            Ok(self)
+        }
+    }
+
+    /// Create the `Repr` for a signed infinity from the mathematical sign of a result that
+    /// overflowed.
+    #[inline]
+    pub(crate) const fn infinity_with_sign(sign: Sign) -> Self {
+        match sign {
+            Sign::Positive => Self::infinity(),
+            Sign::Negative => Self::neg_infinity(),
+        }
+    }
+
+    /// Create the `Repr` for a signed zero from the mathematical sign of a result that
+    /// underflowed.
+    #[inline]
+    pub(crate) const fn zero_with_sign(sign: Sign) -> Self {
+        match sign {
+            Sign::Positive => Self::zero(),
+            Sign::Negative => Self::neg_zero(),
+        }
+    }
+
     /// Normalize the float representation so that the significand is not divisible by the base.
     ///
     /// A zero significand denotes a canonical special value (`+0`, `-0`, `+inf`, `-inf`) and is
@@ -353,16 +392,16 @@ impl<const B: Word> Repr<B> {
         if B == 2 {
             let shift = significand.trailing_zeros().unwrap();
             significand >>= shift;
-            exponent += shift as isize;
+            exponent = exponent.saturating_add(shift as isize);
         } else if B.is_power_of_two() {
             let bits = B.trailing_zeros() as usize;
             let shift = significand.trailing_zeros().unwrap() / bits;
             significand >>= shift * bits;
-            exponent += shift as isize;
+            exponent = exponent.saturating_add(shift as isize);
         } else {
             let (sign, mut mag) = significand.into_parts();
             let shift = mag.remove(&UBig::from_word(B)).unwrap();
-            exponent += shift as isize;
+            exponent = exponent.saturating_add(shift as isize);
             significand = IBig::from_parts(sign, mag);
         }
         Self {

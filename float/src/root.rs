@@ -2,7 +2,7 @@ use dashu_base::{Approximation, CubicRoot, Sign, SquareRoot, SquareRootRem, Unsi
 use dashu_int::{IBig, UBig};
 
 use crate::{
-    error::{assert_limited_precision, panic_root_zeroth, unwrap_fp, FpError, FpResult},
+    error::{assert_limited_precision, panic_root_zeroth, FpError, FpResult},
     fbig::FBig,
     repr::{Context, Repr, Word},
     round::Round,
@@ -13,7 +13,7 @@ impl<R: Round, const B: Word> SquareRoot for FBig<R, B> {
     type Output = Self;
     #[inline]
     fn sqrt(&self) -> Self {
-        unwrap_fp(self.context.sqrt(self.repr())).value()
+        self.context.unwrap_fp(self.context.sqrt(self.repr()))
     }
 }
 
@@ -21,7 +21,7 @@ impl<R: Round, const B: Word> CubicRoot for FBig<R, B> {
     type Output = Self;
     #[inline]
     fn cbrt(&self) -> Self {
-        unwrap_fp(self.context.cbrt(self.repr())).value()
+        self.context.unwrap_fp(self.context.cbrt(self.repr()))
     }
 }
 
@@ -50,7 +50,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Panics if `n` is zero, or if `n` is even and the number is negative.
     #[inline]
     pub fn nth_root(&self, n: usize) -> Self {
-        unwrap_fp(self.context.nth_root(n, self.repr())).value()
+        self.context.unwrap_fp(self.context.nth_root(n, self.repr()))
     }
 }
 

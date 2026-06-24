@@ -1,5 +1,5 @@
 use crate::{
-    error::{assert_limited_precision, unwrap_fp, FpError},
+    error::{assert_limited_precision, FpError},
     fbig::FBig,
     math::{
         cache::{reborrow_cache, ConstCache},
@@ -352,7 +352,7 @@ impl<R: Round> Context<R> {
     ) -> FBig<R, B> {
         let one = FBig::<R, B>::ONE.with_precision(self.precision).value();
         let x2 = x_f.sqr();
-        let d = unwrap_fp(self.sqrt(&(one - x2).repr)).value();
+        let d = self.unwrap_fp(self.sqrt(&(one - x2).repr));
 
         if d.repr.is_zero() {
             let pi = self.pi::<B>(reborrow_cache(&mut cache)).value();
@@ -594,7 +594,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Panics if the input is infinite.
     #[inline]
     pub fn sin(&self) -> Self {
-        unwrap_fp(self.context.sin(&self.repr, None)).value()
+        self.context.unwrap_fp(self.context.sin(&self.repr, None))
     }
 
     /// Calculate the cosine of the floating point number.
@@ -603,7 +603,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Panics if the input is infinite.
     #[inline]
     pub fn cos(&self) -> Self {
-        unwrap_fp(self.context.cos(&self.repr, None)).value()
+        self.context.unwrap_fp(self.context.cos(&self.repr, None))
     }
 
     /// Calculate both the sine and cosine of the floating point number.
@@ -615,7 +615,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     pub fn sin_cos(&self) -> (Self, Self) {
         let (s, c) = self.context.sin_cos(&self.repr, None);
-        (unwrap_fp(s).value(), unwrap_fp(c).value())
+        (self.context.unwrap_fp(s), self.context.unwrap_fp(c))
     }
 
     /// Calculate the tangent of the floating point number.
@@ -626,7 +626,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Panics if the input is infinite.
     #[inline]
     pub fn tan(&self) -> Self {
-        unwrap_fp(self.context.tan(&self.repr, None)).value()
+        self.context.unwrap_fp(self.context.tan(&self.repr, None))
     }
 
     /// Calculate the arcsine of the floating point number.
@@ -635,7 +635,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Panics if the input is infinite or `|self| > 1` (out of domain).
     #[inline]
     pub fn asin(&self) -> Self {
-        unwrap_fp(self.context.asin(&self.repr, None)).value()
+        self.context.unwrap_fp(self.context.asin(&self.repr, None))
     }
 
     /// Calculate the arccosine of the floating point number.
@@ -644,13 +644,13 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Panics if the input is infinite or `|self| > 1` (out of domain).
     #[inline]
     pub fn acos(&self) -> Self {
-        unwrap_fp(self.context.acos(&self.repr, None)).value()
+        self.context.unwrap_fp(self.context.acos(&self.repr, None))
     }
 
     /// Calculate the arctangent of the floating point number. `atan(±inf) = ±π/2`.
     #[inline]
     pub fn atan(&self) -> Self {
-        unwrap_fp(self.context.atan(&self.repr, None)).value()
+        self.context.unwrap_fp(self.context.atan(&self.repr, None))
     }
 
     /// Calculate the arctangent of `self / x`.
@@ -659,6 +659,6 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Panics if both arguments are zero.
     #[inline]
     pub fn atan2(&self, x: &Self) -> Self {
-        unwrap_fp(self.context.atan2(&self.repr, &x.repr, None)).value()
+        self.context.unwrap_fp(self.context.atan2(&self.repr, &x.repr, None))
     }
 }

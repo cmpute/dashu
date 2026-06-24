@@ -80,7 +80,10 @@ fn test_infinite_input_is_error() {
     assert_eq!(ctx.add::<2>(&inf, &r2(1, 0)), Err(FpError::InfiniteInput));
     assert_eq!(ctx.mul::<2>(&inf, &r2(1, 0)), Err(FpError::InfiniteInput));
     assert_eq!(ctx.sqrt::<2>(&inf), Err(FpError::InfiniteInput));
-    assert_eq!(ctx.exp::<2>(&inf, None), Err(FpError::InfiniteInput));
+    // exp(+inf) = +inf, exp(-inf) = +0
+    assert!(ctx.exp::<2>(&inf, None).unwrap().value().repr().is_infinite());
+    assert_eq!(ctx.exp::<2>(&inf, None).unwrap().value().repr().sign(), Sign::Positive);
+    assert!(ctx.exp::<2>(&Repr::<2>::neg_infinity(), None).unwrap().value().repr().is_zero());
     assert_eq!(ctx.sin::<2>(&inf, None), Err(FpError::InfiniteInput));
 }
 
@@ -130,19 +133,23 @@ fn test_fpresult_type_alias() {
 #[test]
 fn test_exp_overflow_is_infinity() {
     let ctx = Context::<mode::HalfEven>::new(53);
-    // exp(huge) overflows the isize exponent range -> +inf (not a panic, not an error).
+    // exp(huge) overflows the isize exponent range -> Overflow error at Context level,
+    // converted to +inf by the FBig convenience layer.
     // Need x large enough that floor(x/ln2) > isize::MAX, i.e. x > ~2^62.5.
     let huge = Repr::new(IBig::from(1) << 63, 0);
-    let pos = ctx.exp::<2>(&huge, None).unwrap().value();
-    assert!(pos.repr().is_infinite());
-    assert_eq!(pos.repr().sign(), Sign::Positive);
+    assert_eq!(
+        ctx.exp::<2>(&huge, None),
+        Err(FpError::Overflow(Sign::Positive))
+    );
 
-    // exp(huge negative) underflows to 0
+    // exp(huge negative) underflows to +0
     let neg = Repr::new(-(IBig::from(1) << 63), 0);
-    let zero = ctx.exp::<2>(&neg, None).unwrap().value();
-    assert!(zero.repr().is_zero());
+    assert_eq!(
+        ctx.exp::<2>(&neg, None),
+        Err(FpError::Underflow(Sign::Positive))
+    );
 
-    // exp_m1(huge negative) -> -1
+    // exp_m1(huge negative) -> -1 (a finite value, not an error)
     let m1 = ctx.exp_m1::<2>(&neg, None).unwrap().value();
     assert_eq!(m1, -FBig::<mode::HalfEven>::ONE);
 }

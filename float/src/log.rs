@@ -7,7 +7,7 @@ use dashu_base::{
 use dashu_int::IBig;
 
 use crate::{
-    error::{assert_finite, assert_limited_precision, unwrap_fp, FpError, FpResult},
+    error::{assert_finite, assert_limited_precision, FpError, FpResult},
     fbig::FBig,
     math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr, Word},
@@ -78,7 +78,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn ln(&self) -> Self {
-        unwrap_fp(self.context.ln(&self.repr, None)).value()
+        self.context.unwrap_fp(self.context.ln(&self.repr, None))
     }
 
     /// Calculate the natural logarithm function (`log(x+1)`) on the float number
@@ -95,7 +95,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn ln_1p(&self) -> Self {
-        unwrap_fp(self.context.ln_1p(&self.repr, None)).value()
+        self.context.unwrap_fp(self.context.ln_1p(&self.repr, None))
     }
 }
 
@@ -138,7 +138,7 @@ impl<R: Round> Context<R> {
             2 => self.ln2(None),
             10 => self.ln10(None),
             i if i.is_power_of_two() => self.ln2(None) * i.trailing_zeros(),
-            _ => unwrap_fp(self.ln(&Repr::new(Repr::<B>::BASE.into(), 0), None)).value(),
+            _ => self.unwrap_fp(self.ln(&Repr::new(Repr::<B>::BASE.into(), 0), None)),
         }
     }
 
@@ -539,7 +539,7 @@ mod bench_pi_sqrt {
             let arg = ctx.convert_int::<10>(10005i32.into()).value();
             let t0 = Instant::now();
             for _ in 0..reps {
-                black_box(unwrap_fp(ctx.sqrt(&arg.repr)).value());
+                black_box(ctx.unwrap_fp(ctx.sqrt(&arg.repr)));
             }
             let t_sqrt = t0.elapsed() / reps as u32;
 

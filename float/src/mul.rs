@@ -1,7 +1,8 @@
+use dashu_base::Sign;
 use dashu_int::{IBig, UBig};
 
 use crate::{
-    error::{assert_finite_operands, unwrap_fp, FpError, FpResult},
+    error::{assert_finite_operands, FpError, FpResult},
     fbig::FBig,
     helper_macros,
     repr::{Context, Repr, Word},
@@ -11,17 +12,49 @@ use core::ops::{Mul, MulAssign};
 
 /// Raw product of two finite reprs, attaching the XOR sign of the operands to a zero product
 /// (the significand product alone is `+0`, losing the sign).
-fn mul_finite_reprs<const B: Word>(lhs: &Repr<B>, rhs: &Repr<B>) -> Repr<B> {
+///
+/// Returns an error when the result exponent overflows or underflows `isize`.
+fn mul_finite_reprs<const B: Word>(lhs: &Repr<B>, rhs: &Repr<B>) -> Result<Repr<B>, FpError> {
     let significand = &lhs.significand * &rhs.significand;
     if significand.is_zero() {
-        if lhs.sign() != rhs.sign() {
+        return Ok(if lhs.sign() != rhs.sign() {
             Repr::neg_zero()
         } else {
             Repr::zero()
-        }
-    } else {
-        Repr::new(significand, lhs.exponent + rhs.exponent)
+        });
     }
+    let sign = if lhs.sign() != rhs.sign() {
+        Sign::Negative
+    } else {
+        Sign::Positive
+    };
+    let exponent = lhs.exponent.checked_add(rhs.exponent).ok_or_else(|| {
+        debug_assert!(
+            lhs.exponent.is_positive() == rhs.exponent.is_positive(),
+            "checked_add overflow with mixed-sign exponents is impossible"
+        );
+        if lhs.exponent > 0 {
+            FpError::Overflow(sign)
+        } else {
+            FpError::Underflow(sign)
+        }
+    })?;
+    Repr::new(significand, exponent).check_finite_exponent()
+}
+
+macro_rules! unwrap_mul_repr {
+    ($result:expr, $context:expr) => {
+        match $result {
+            Ok(r) => r,
+            Err(FpError::Overflow(sign)) => {
+                return FBig::new(Repr::infinity_with_sign(sign), $context);
+            }
+            Err(FpError::Underflow(sign)) => {
+                return FBig::new(Repr::zero_with_sign(sign), $context);
+            }
+            Err(_) => unreachable!(),
+        }
+    };
 }
 
 impl<R: Round, const B: Word> Mul<&FBig<R, B>> for &FBig<R, B> {
@@ -32,7 +65,7 @@ impl<R: Round, const B: Word> Mul<&FBig<R, B>> for &FBig<R, B> {
         assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
-        let repr = mul_finite_reprs(&self.repr, &rhs.repr);
+        let repr = unwrap_mul_repr!(mul_finite_reprs(&self.repr, &rhs.repr), context);
         FBig::new(context.repr_round(repr).value(), context)
     }
 }
@@ -45,7 +78,7 @@ impl<R: Round, const B: Word> Mul<&FBig<R, B>> for FBig<R, B> {
         assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
-        let repr = mul_finite_reprs(&self.repr, &rhs.repr);
+        let repr = unwrap_mul_repr!(mul_finite_reprs(&self.repr, &rhs.repr), context);
         FBig::new(context.repr_round(repr).value(), context)
     }
 }
@@ -58,7 +91,7 @@ impl<R: Round, const B: Word> Mul<FBig<R, B>> for &FBig<R, B> {
         assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
-        let repr = mul_finite_reprs(&self.repr, &rhs.repr);
+        let repr = unwrap_mul_repr!(mul_finite_reprs(&self.repr, &rhs.repr), context);
         FBig::new(context.repr_round(repr).value(), context)
     }
 }
@@ -71,7 +104,7 @@ impl<R: Round, const B: Word> Mul<FBig<R, B>> for FBig<R, B> {
         assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
-        let repr = mul_finite_reprs(&self.repr, &rhs.repr);
+        let repr = unwrap_mul_repr!(mul_finite_reprs(&self.repr, &rhs.repr), context);
         FBig::new(context.repr_round(repr).value(), context)
     }
 }
@@ -101,7 +134,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn sqr(&self) -> Self {
-        unwrap_fp(self.context.sqr(&self.repr)).value()
+        self.context.unwrap_fp(self.context.sqr(&self.repr))
     }
 
     /// Compute the cubic of this number (`self * self * self`)
@@ -118,7 +151,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn cubic(&self) -> Self {
-        unwrap_fp(self.context.cubic(&self.repr)).value()
+        self.context.unwrap_fp(self.context.cubic(&self.repr))
     }
 }
 
@@ -172,7 +205,7 @@ impl<R: Round> Context<R> {
             rhs
         };
 
-        let repr = mul_finite_reprs(lhs_repr, rhs_repr);
+        let repr = mul_finite_reprs(lhs_repr, rhs_repr)?;
         Ok(self.repr_round(repr).map(|v| FBig::new(v, *self)))
     }
 
@@ -212,7 +245,16 @@ impl<R: Round> Context<R> {
             f
         };
 
-        let repr = Repr::new(f_repr.significand.sqr().into(), 2 * f_repr.exponent);
+        let exponent = f_repr.exponent.checked_mul(2).ok_or({
+            // sqr always produces a non-negative result
+            if f_repr.exponent > 0 {
+                FpError::Overflow(Sign::Positive)
+            } else {
+                FpError::Underflow(Sign::Positive)
+            }
+        })?;
+        let repr = Repr::new(f_repr.significand.sqr().into(), exponent);
+        let repr = repr.check_finite_exponent()?;
         Ok(self.repr_round(repr).map(|v| FBig::new(v, *self)))
     }
 
@@ -260,7 +302,16 @@ impl<R: Round> Context<R> {
                 Repr::zero()
             }
         } else {
-            Repr::new(f_repr.significand.cubic(), 3 * f_repr.exponent)
+            let sign = f_repr.sign();
+            let exponent = f_repr.exponent.checked_mul(3).ok_or({
+                if f_repr.exponent > 0 {
+                    FpError::Overflow(sign)
+                } else {
+                    FpError::Underflow(sign)
+                }
+            })?;
+            let repr = Repr::new(f_repr.significand.cubic(), exponent);
+            repr.check_finite_exponent()?
         };
         Ok(self.repr_round(repr).map(|v| FBig::new(v, *self)))
     }
