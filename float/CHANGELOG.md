@@ -45,6 +45,13 @@
 - `exp(huge)` / `exp_m1(huge)` now return `+inf` (or `0` / `-1` for huge negative arguments) instead of
   panicking when the scaled exponent overflows `isize`; `powi` likewise returns `±inf`/`0` on
   astronomically large results.
+- `exp` / `exp_m1` at high precision (≳ a few thousand digits) returned values wrong in the low bits.
+  The series working precision was sized `p + O(log p)`, but the final `Bⁿ` powering amplifies the
+  series' relative error by `Bⁿ`, so it must carry `≈ n ≈ √p` extra digits (cf. MPFR's
+  `q = precy + 2·K + …`, `K ≈ √precy`). The working precision is now `p + 2n` (`n = 2^⌊log₂ p / 2⌋`)
+  and the final powering runs at that same precision instead of `2p`. Verified correct against an
+  independent pure-Taylor reference up to 8192 bits / 4000 digits; also faster (roughly half the
+  multiply cost at large `p`).
 - The `FBig` `+`/`-` operators now produce `-0` on exact cancellation under round-toward-negative
   (`Down`), matching `Context::add`/`sub` (previously the equal-exponent fast path yielded `+0`).
 - `ShrAssign` (`>>=`) for `FBig` previously subtracted the shift amount twice; it now shifts exactly once.

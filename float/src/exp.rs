@@ -346,9 +346,17 @@ impl<R: Round> Context<R> {
 
         // Maclaurin series: exp(r) = 1 + Σ(rⁱ/i!)
         // There will be about p/log_B(r) summations when calculating the series, to prevent
-        // loss of significant, we needs about log_B(p) guard digits.
+        // loss of significance, we need about log_B(p) guard digits.
         let series_guard_digits = ceil_usize(self.precision.log2_est() / B.log2_est()) + 2;
-        let pow_guard_digits = (self.precision.bit_len() as f32 * B.log2_est() * 2.) as usize; // heuristic
+
+        // Reduction power: the series value is later raised to Bⁿ, which amplifies its
+        // relative error by a factor of Bⁿ. So the series (and the squarings) must carry
+        // about n extra base-B digits for the result to come out correct to p digits. We
+        // use 2n for safety — this mirrors MPFR's working precision q = precy + 2·K + …
+        // (K ≈ √precy is MPFR's squaring count, the analogue of our n). The log_B(p)
+        // summation/squaring rounding terms are already covered by series_guard_digits.
+        let n = 1usize << (self.precision.bit_len() / 2);
+        let pow_guard_digits = 2 * n;
         let work_precision;
 
         // When minus_one is true and |x| < 1/B, the input is fed into the Maclaurin series without scaling
@@ -371,8 +379,6 @@ impl<R: Round> Context<R> {
             let logb = context.ln_base::<B>(reborrow_cache(&mut cache));
             let (s, r) = x.div_rem_euclid(logb);
 
-            // here m is roughly equal to sqrt(self.precision)
-            let n = 1usize << (self.precision.bit_len() / 2);
             let s: isize = match s.try_into() {
                 Ok(v) => v,
                 Err(_) => {
@@ -415,22 +421,16 @@ impl<R: Round> Context<R> {
         if no_scaling {
             Ok(sum.with_precision(self.precision))
         } else if minus_one {
-            // add extra digits to compensate for the subtraction.
-            // The "−1" can cancel up to ~log₁₀(exp(|sum|)) decimal digits,
-            // so be generous: double the target precision.
-            let pow_ctx = Context::<R>::new(self.precision.saturating_mul(2));
-            let v = pow_ctx.unwrap_fp(pow_ctx.powi(
-                sum.repr(),
-                Repr::<B>::BASE.pow(n).into(),
-            ));
+            // Power at the series' working precision (it already carries the 2n guard
+            // digits that the Bⁿ powering amplifies away). The final "−1" can cancel at
+            // most ~1 leading digit here (the |x| < 1/B case is handled by no_scaling),
+            // which the same guard digits comfortably absorb.
+            let pow_ctx = Context::<R>::new(work_precision);
+            let v = pow_ctx.unwrap_fp(pow_ctx.powi(sum.repr(), Repr::<B>::BASE.pow(n).into()));
             Ok(((v << s) - FBig::ONE).with_precision(self.precision))
         } else {
-            // ensure enough extra precision that with_precision always rounds
-            let pow_ctx = Context::<R>::new(self.precision.saturating_mul(2));
-            let v = pow_ctx.unwrap_fp(pow_ctx.powi(
-                sum.repr(),
-                Repr::<B>::BASE.pow(n).into(),
-            ));
+            let pow_ctx = Context::<R>::new(work_precision);
+            let v = pow_ctx.unwrap_fp(pow_ctx.powi(sum.repr(), Repr::<B>::BASE.pow(n).into()));
             Ok((v << s).with_precision(self.precision))
         }
     }
