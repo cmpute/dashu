@@ -75,7 +75,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn exp_m1(&self) -> FBig<R, B> {
-        self.context.unwrap_fp(self.context.exp_m1(&self.repr, None))
+        self.context
+            .unwrap_fp(self.context.exp_m1(&self.repr, None))
     }
 }
 
@@ -139,18 +140,14 @@ impl<R: Round> Context<R> {
         };
         if overflows {
             return if base_log2 > 0.0 {
-                Err(FpError::Overflow(
-                    if base.sign() == Sign::Negative {
-                        Sign::Negative
-                    } else {
-                        Sign::Positive
-                    },
-                ))
+                Err(FpError::Overflow(if base.sign() == Sign::Negative {
+                    Sign::Negative
+                } else {
+                    Sign::Positive
+                }))
             } else {
                 // |base| < 1 and exponent huge → underflow to signed zero
-                let underflow_sign = if base.sign() == Sign::Negative
-                    && exp.bit(0)
-                {
+                let underflow_sign = if base.sign() == Sign::Negative && exp.bit(0) {
                     Sign::Negative
                 } else {
                     Sign::Positive

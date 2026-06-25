@@ -327,8 +327,8 @@ impl<R: Round, const B: Word> NumHash for FBig<R, B> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::cmp::Ordering;
     use crate::DBig;
+    use core::cmp::Ordering;
     use num_order::{NumHash, NumOrd};
 
     /// Default binary FBig (Zero rounding, base 2).
@@ -348,14 +348,8 @@ mod tests {
     #[test]
     fn test_num_ord_repr_zero_vs_neg_zero() {
         // +0 == -0 (IEEE 754)
-        assert_eq!(
-            Repr::<2>::zero().num_cmp(&Repr::<2>::neg_zero()),
-            Ordering::Equal
-        );
-        assert_eq!(
-            Repr::<2>::neg_zero().num_cmp(&Repr::<2>::zero()),
-            Ordering::Equal
-        );
+        assert_eq!(Repr::<2>::zero().num_cmp(&Repr::<2>::neg_zero()), Ordering::Equal);
+        assert_eq!(Repr::<2>::neg_zero().num_cmp(&Repr::<2>::zero()), Ordering::Equal);
     }
 
     #[test]
@@ -371,49 +365,25 @@ mod tests {
     #[test]
     fn test_num_ord_repr_infinities() {
         // +inf > -inf
-        assert_eq!(
-            Repr::<2>::infinity().num_cmp(&Repr::<2>::neg_infinity()),
-            Ordering::Greater
-        );
+        assert_eq!(Repr::<2>::infinity().num_cmp(&Repr::<2>::neg_infinity()), Ordering::Greater);
         // -inf < +inf
-        assert_eq!(
-            Repr::<2>::neg_infinity().num_cmp(&Repr::<2>::infinity()),
-            Ordering::Less
-        );
+        assert_eq!(Repr::<2>::neg_infinity().num_cmp(&Repr::<2>::infinity()), Ordering::Less);
         // +inf == +inf
-        assert_eq!(
-            Repr::<2>::infinity().num_cmp(&Repr::<2>::infinity()),
-            Ordering::Equal
-        );
+        assert_eq!(Repr::<2>::infinity().num_cmp(&Repr::<2>::infinity()), Ordering::Equal);
         // -inf == -inf
-        assert_eq!(
-            Repr::<2>::neg_infinity().num_cmp(&Repr::<2>::neg_infinity()),
-            Ordering::Equal
-        );
+        assert_eq!(Repr::<2>::neg_infinity().num_cmp(&Repr::<2>::neg_infinity()), Ordering::Equal);
     }
 
     #[test]
     fn test_num_ord_repr_zero_vs_infinity() {
         // +0 < +inf
-        assert_eq!(
-            Repr::<2>::zero().num_cmp(&Repr::<2>::infinity()),
-            Ordering::Less
-        );
+        assert_eq!(Repr::<2>::zero().num_cmp(&Repr::<2>::infinity()), Ordering::Less);
         // -0 < +inf
-        assert_eq!(
-            Repr::<2>::neg_zero().num_cmp(&Repr::<2>::infinity()),
-            Ordering::Less
-        );
+        assert_eq!(Repr::<2>::neg_zero().num_cmp(&Repr::<2>::infinity()), Ordering::Less);
         // +0 > -inf
-        assert_eq!(
-            Repr::<2>::zero().num_cmp(&Repr::<2>::neg_infinity()),
-            Ordering::Greater
-        );
+        assert_eq!(Repr::<2>::zero().num_cmp(&Repr::<2>::neg_infinity()), Ordering::Greater);
         // -0 > -inf
-        assert_eq!(
-            Repr::<2>::neg_zero().num_cmp(&Repr::<2>::neg_infinity()),
-            Ordering::Greater
-        );
+        assert_eq!(Repr::<2>::neg_zero().num_cmp(&Repr::<2>::neg_infinity()), Ordering::Greater);
     }
 
     // -- NumOrd for Repr (cross-base) --
@@ -421,34 +391,19 @@ mod tests {
     #[test]
     fn test_num_ord_repr_cross_base_zero() {
         // Base-2 neg_zero == Base-10 zero
-        assert_eq!(
-            Repr::<2>::neg_zero().num_cmp(&Repr::<10>::zero()),
-            Ordering::Equal
-        );
+        assert_eq!(Repr::<2>::neg_zero().num_cmp(&Repr::<10>::zero()), Ordering::Equal);
         // Base-2 neg_zero == Base-10 neg_zero
-        assert_eq!(
-            Repr::<2>::neg_zero().num_cmp(&Repr::<10>::neg_zero()),
-            Ordering::Equal
-        );
+        assert_eq!(Repr::<2>::neg_zero().num_cmp(&Repr::<10>::neg_zero()), Ordering::Equal);
     }
 
     #[test]
     fn test_num_ord_repr_cross_base_infinity() {
         // Base-2 +inf == Base-10 +inf
-        assert_eq!(
-            Repr::<2>::infinity().num_cmp(&Repr::<10>::infinity()),
-            Ordering::Equal
-        );
+        assert_eq!(Repr::<2>::infinity().num_cmp(&Repr::<10>::infinity()), Ordering::Equal);
         // Base-2 +inf > Base-10 -inf
-        assert_eq!(
-            Repr::<2>::infinity().num_cmp(&Repr::<10>::neg_infinity()),
-            Ordering::Greater
-        );
+        assert_eq!(Repr::<2>::infinity().num_cmp(&Repr::<10>::neg_infinity()), Ordering::Greater);
         // Base-2 -inf == Base-10 -inf
-        assert_eq!(
-            Repr::<2>::neg_infinity().num_cmp(&Repr::<10>::neg_infinity()),
-            Ordering::Equal
-        );
+        assert_eq!(Repr::<2>::neg_infinity().num_cmp(&Repr::<10>::neg_infinity()), Ordering::Equal);
     }
 
     // -- NumOrd for FBig --
@@ -477,27 +432,15 @@ mod tests {
     #[test]
     fn test_num_hash_repr_zero_neg_zero_equal() {
         // +0 and -0 compare equal, so they must hash the same
-        assert_eq!(
-            num_hash(&Repr::<2>::zero()),
-            num_hash(&Repr::<2>::neg_zero())
-        );
-        assert_eq!(
-            num_hash(&Repr::<10>::zero()),
-            num_hash(&Repr::<10>::neg_zero())
-        );
+        assert_eq!(num_hash(&Repr::<2>::zero()), num_hash(&Repr::<2>::neg_zero()));
+        assert_eq!(num_hash(&Repr::<10>::zero()), num_hash(&Repr::<10>::neg_zero()));
     }
 
     #[test]
     fn test_num_hash_repr_infinities_same_sign() {
         // Same-sign infinities hash the same
-        assert_eq!(
-            num_hash(&Repr::<2>::infinity()),
-            num_hash(&Repr::<10>::infinity())
-        );
-        assert_eq!(
-            num_hash(&Repr::<2>::neg_infinity()),
-            num_hash(&Repr::<10>::neg_infinity())
-        );
+        assert_eq!(num_hash(&Repr::<2>::infinity()), num_hash(&Repr::<10>::infinity()));
+        assert_eq!(num_hash(&Repr::<2>::neg_infinity()), num_hash(&Repr::<10>::neg_infinity()));
     }
 
     #[test]

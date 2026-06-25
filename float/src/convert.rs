@@ -583,10 +583,10 @@ impl<R: Round> Context<R> {
             // then the fractional part is multiplied with the original significand
             let work_context = Context::<R>::new(2 * self.precision); // double the precision to get the precise logarithm
             let new_exp = repr.exponent
-                * work_context.unwrap_fp(work_context.ln(
-                    &Repr::new(Repr::<B>::BASE.into(), 0),
-                    reborrow_cache(&mut cache),
-                ));
+                * work_context.unwrap_fp(
+                    work_context
+                        .ln(&Repr::new(Repr::<B>::BASE.into(), 0), reborrow_cache(&mut cache)),
+                );
             let (exponent, rem) =
                 new_exp.div_rem_euclid(work_context.ln_base::<NewB>(reborrow_cache(&mut cache)));
             let exponent: isize = exponent.try_into().unwrap();

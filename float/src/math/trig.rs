@@ -659,6 +659,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Panics if both arguments are zero.
     #[inline]
     pub fn atan2(&self, x: &Self) -> Self {
-        self.context.unwrap_fp(self.context.atan2(&self.repr, &x.repr, None))
+        self.context
+            .unwrap_fp(self.context.atan2(&self.repr, &x.repr, None))
     }
 }

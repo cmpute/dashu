@@ -57,9 +57,9 @@ impl<R: Round> Context<R> {
         let q_f = work_context.convert_int::<B>(q.into()).value();
         let t_f = work_context.convert_int::<B>(t).value();
 
-        let sqrt_10005 = work_context.unwrap_fp(work_context.sqrt(
-            &work_context.convert_int::<B>(10005.into()).value().repr,
-        ));
+        let sqrt_10005 = work_context.unwrap_fp(
+            work_context.sqrt(&work_context.convert_int::<B>(10005.into()).value().repr),
+        );
         let constant = work_context.convert_int::<B>(426_880.into()).value();
 
         let pi = (constant * sqrt_10005 * q_f) / t_f;

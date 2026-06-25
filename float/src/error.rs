@@ -73,7 +73,6 @@ impl std::error::Error for FpError {}
 /// infinity produced as a value), or an [`FpError`] when the operation cannot proceed.
 pub type FpResult<T> = Result<Rounded<T>, FpError>;
 
-
 #[inline]
 pub const fn assert_finite<const B: Word>(repr: &Repr<B>) {
     if repr.is_infinite() {
@@ -127,18 +126,11 @@ impl<R: Round> Context<R> {
     /// [`Underflow`](FpError::Underflow) to a signed zero. All other error
     /// variants panic (infinite input, out-of-domain, indeterminate).
     #[inline]
-    pub(crate) fn unwrap_fp<const B: Word>(
-        &self,
-        result: FpResult<FBig<R, B>>,
-    ) -> FBig<R, B> {
+    pub fn unwrap_fp<const B: Word>(&self, result: FpResult<FBig<R, B>>) -> FBig<R, B> {
         match result {
             Ok(value) => value.value(),
-            Err(FpError::Overflow(sign)) => {
-                FBig::new(Repr::infinity_with_sign(sign), *self)
-            }
-            Err(FpError::Underflow(sign)) => {
-                FBig::new(Repr::zero_with_sign(sign), *self)
-            }
+            Err(FpError::Overflow(sign)) => FBig::new(Repr::infinity_with_sign(sign), *self),
+            Err(FpError::Underflow(sign)) => FBig::new(Repr::zero_with_sign(sign), *self),
             Err(FpError::InfiniteInput) => panic_operate_with_inf(),
             Err(FpError::OutOfDomain) => panic_out_of_domain(),
             Err(FpError::Indeterminate) => panic_nan(),
@@ -150,10 +142,7 @@ impl<R: Round> Context<R> {
     /// Converts [`Overflow`](FpError::Overflow) / [`Underflow`](FpError::Underflow) to
     /// signed infinity / signed zero; panics on all other error variants.
     #[inline]
-    pub(crate) fn unwrap_fp_repr<const B: Word>(
-        &self,
-        result: FpResult<Repr<B>>,
-    ) -> Repr<B> {
+    pub(crate) fn unwrap_fp_repr<const B: Word>(&self, result: FpResult<Repr<B>>) -> Repr<B> {
         match result {
             Ok(value) => value.value(),
             Err(FpError::Overflow(sign)) => Repr::infinity_with_sign(sign),
@@ -163,5 +152,4 @@ impl<R: Round> Context<R> {
             Err(FpError::Indeterminate) => panic_nan(),
         }
     }
-
 }

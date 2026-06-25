@@ -50,7 +50,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Panics if `n` is zero, or if `n` is even and the number is negative.
     #[inline]
     pub fn nth_root(&self, n: usize) -> Self {
-        self.context.unwrap_fp(self.context.nth_root(n, self.repr()))
+        self.context
+            .unwrap_fp(self.context.nth_root(n, self.repr()))
     }
 }
 

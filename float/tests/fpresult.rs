@@ -81,9 +81,11 @@ fn test_infinite_input_is_error() {
     assert_eq!(ctx.mul::<2>(&inf, &r2(1, 0)), Err(FpError::InfiniteInput));
     assert_eq!(ctx.sqrt::<2>(&inf), Err(FpError::InfiniteInput));
     // exp(+inf) = +inf, exp(-inf) = +0
-    assert!(ctx.exp::<2>(&inf, None).unwrap().value().repr().is_infinite());
+    assert!(ctx.unwrap_fp(ctx.exp::<2>(&inf, None)).repr().is_infinite());
     assert_eq!(ctx.exp::<2>(&inf, None).unwrap().value().repr().sign(), Sign::Positive);
-    assert!(ctx.exp::<2>(&Repr::<2>::neg_infinity(), None).unwrap().value().repr().is_zero());
+    assert!(ctx
+        .unwrap_fp(ctx.exp::<2>(&Repr::<2>::neg_infinity(), None)).repr()
+        .is_zero());
     assert_eq!(ctx.sin::<2>(&inf, None), Err(FpError::InfiniteInput));
 }
 
@@ -137,17 +139,11 @@ fn test_exp_overflow_is_infinity() {
     // converted to +inf by the FBig convenience layer.
     // Need x large enough that floor(x/ln2) > isize::MAX, i.e. x > ~2^62.5.
     let huge = Repr::new(IBig::from(1) << 63, 0);
-    assert_eq!(
-        ctx.exp::<2>(&huge, None),
-        Err(FpError::Overflow(Sign::Positive))
-    );
+    assert_eq!(ctx.exp::<2>(&huge, None), Err(FpError::Overflow(Sign::Positive)));
 
     // exp(huge negative) underflows to +0
     let neg = Repr::new(-(IBig::from(1) << 63), 0);
-    assert_eq!(
-        ctx.exp::<2>(&neg, None),
-        Err(FpError::Underflow(Sign::Positive))
-    );
+    assert_eq!(ctx.exp::<2>(&neg, None), Err(FpError::Underflow(Sign::Positive)));
 
     // exp_m1(huge negative) -> -1 (a finite value, not an error)
     let m1 = ctx.exp_m1::<2>(&neg, None).unwrap().value();

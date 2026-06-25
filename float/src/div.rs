@@ -60,9 +60,8 @@ macro_rules! impl_div_for_fbig {
             type Output = FBig<R, B>;
             fn $method(self, rhs: &FBig<R, B>) -> Self::Output {
                 let context = Context::max(self.context, rhs.context);
-                let rounded = context.unwrap_fp_repr(
-                    context.$repr_method(self.repr.clone(), rhs.repr.clone()),
-                );
+                let rounded = context
+                    .unwrap_fp_repr(context.$repr_method(self.repr.clone(), rhs.repr.clone()));
                 FBig::new(rounded, context)
             }
         }
@@ -273,11 +272,7 @@ fn align_as_int<R: Round, const B: Word>(lhs: FBig<R, B>, rhs: FBig<R, B>) -> (I
 }
 
 impl<R: Round> Context<R> {
-    pub(crate) fn repr_div<const B: Word>(
-        &self,
-        lhs: Repr<B>,
-        rhs: Repr<B>,
-    ) -> FpResult<Repr<B>> {
+    pub(crate) fn repr_div<const B: Word>(&self, lhs: Repr<B>, rhs: Repr<B>) -> FpResult<Repr<B>> {
         assert_finite_operands(&lhs, &rhs);
         assert_limited_precision(self.precision);
 
@@ -321,7 +316,9 @@ impl<R: Round> Context<R> {
             let rdigits = digit_len::<B>(&r); // rdigits <= ddigits
             let shift = ddigits + self.precision - rdigits;
             shl_digits_in_place::<B>(&mut r, shift);
-            e = e.checked_sub(shift as isize).ok_or(FpError::Underflow(sign))?;
+            e = e
+                .checked_sub(shift as isize)
+                .ok_or(FpError::Underflow(sign))?;
             let (q0, r0) = r.div_rem(&rhs.significand);
             q = q0;
             r = r0;
@@ -332,7 +329,9 @@ impl<R: Round> Context<R> {
                 let shift = ddigits + self.precision - ndigits;
                 shl_digits_in_place::<B>(&mut q, shift);
                 shl_digits_in_place::<B>(&mut r, shift);
-                e = e.checked_sub(shift as isize).ok_or(FpError::Underflow(sign))?;
+                e = e
+                    .checked_sub(shift as isize)
+                    .ok_or(FpError::Underflow(sign))?;
 
                 let (q0, r0) = r.div_rem(&rhs.significand);
                 q += q0;

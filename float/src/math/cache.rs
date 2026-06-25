@@ -446,8 +446,7 @@ mod tests {
                 .with_precision(precision)
                 .value();
             let ln2_ctx = Context::<mode::Zero>::new(precision);
-            let direct_ln2 =
-                ln2_ctx.unwrap_fp(ln2_ctx.ln::<10>(&Repr::new(2.into(), 0), None));
+            let direct_ln2 = ln2_ctx.unwrap_fp(ln2_ctx.ln::<10>(&Repr::new(2.into(), 0), None));
             assert_eq!(cached_ln2, direct_ln2, "ln2 mismatch at precision {precision}");
 
             let cached_ln10 = cache
@@ -455,8 +454,7 @@ mod tests {
                 .with_precision(precision)
                 .value();
             let ln10_ctx = Context::<mode::Zero>::new(precision);
-            let direct_ln10 =
-                ln10_ctx.unwrap_fp(ln10_ctx.ln::<10>(&Repr::new(10.into(), 0), None));
+            let direct_ln10 = ln10_ctx.unwrap_fp(ln10_ctx.ln::<10>(&Repr::new(10.into(), 0), None));
             assert_eq!(cached_ln10, direct_ln10, "ln10 mismatch at precision {precision}");
         }
     }
