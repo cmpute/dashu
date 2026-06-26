@@ -66,11 +66,16 @@ proptest! {
         prop_assert!((y - x).abs() < tol(2));
     }
 
-    /// acosh(cosh(x)) == x  (x ≥ 0)
+    /// acosh(cosh(x)) == x. cosh(x) → 1 as x → 0, so the round-trip is ill-conditioned for small
+    /// |x|: acosh's `sqrt` amplifies cosh's rounding error by 1/|x|, making the absolute error grow
+    /// as ≈ ulp(1)/|x|. The tolerance tracks this with a 1/|x| term on top of the tol(2) floor, so
+    /// the full range (down to x = 1e-4) is exercised rather than skipped.
     #[test]
-    fn round_trip_acosh(x in x_in(0, 200_000)) {
+    fn round_trip_acosh(x in x_in(1, 200_000)) {
         let y = x.cosh().acosh();
-        prop_assert!((y - x).abs() < tol(2));
+        let resid = (y - x.clone()).abs();
+        let bound = tol(2) + tol(2) / x.abs();
+        prop_assert!(resid < bound);
     }
 
     /// atanh(tanh(x)) == x  (small |x|: tanh saturates toward ±1 for large |x|, so the
