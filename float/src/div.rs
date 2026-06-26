@@ -13,7 +13,11 @@ use dashu_int::{fast_div::ConstDivisor, modular::IntoRing, IBig, UBig};
 /// Attach the dividend/divisor XOR sign to a zero quotient: the raw quotient significand is
 /// `+0`, so the sign of a zero result (`0/finite`, or a finite/finite that rounds to zero) is
 /// `sign(lhs) XOR sign(rhs)`.
-fn div_repr<const B: Word>(sign_negative: bool, significand: IBig, exponent: isize) -> Repr<B> {
+fn make_div_repr<const B: Word>(
+    sign_negative: bool,
+    significand: IBig,
+    exponent: isize,
+) -> Repr<B> {
     if significand.is_zero() {
         if sign_negative {
             Repr::neg_zero()
@@ -259,6 +263,18 @@ impl<R: Round, const B: Word> Inverse for &FBig<R, B> {
     }
 }
 
+impl<R: Round, const B: Word> FBig<R, B> {
+    /// Calculate the multiplicative inverse (`1 / self`) of the floating point number.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is unlimited.
+    #[inline]
+    pub fn inv(&self) -> Self {
+        self.context.unwrap_fp(self.context.inv(&self.repr))
+    }
+}
+
 // Align two float by exponent such that they are both turned into integers
 fn align_as_int<R: Round, const B: Word>(lhs: FBig<R, B>, rhs: FBig<R, B>) -> (IBig, IBig) {
     let ediff = lhs.repr.exponent - rhs.repr.exponent;
@@ -306,7 +322,7 @@ impl<R: Round> Context<R> {
         })?;
         if r.is_zero() {
             return Ok(Approximation::Exact(
-                div_repr(sign_negative, q, e).check_finite_exponent()?,
+                make_div_repr(sign_negative, q, e).check_finite_exponent()?,
             ));
         }
 
@@ -340,10 +356,10 @@ impl<R: Round> Context<R> {
         }
 
         let repr = if r.is_zero() {
-            Approximation::Exact(div_repr(sign_negative, q, e))
+            Approximation::Exact(make_div_repr(sign_negative, q, e))
         } else {
             let adjust = R::round_ratio(&q, r, &rhs.significand);
-            Approximation::Inexact(div_repr(sign_negative, q + adjust, e), adjust)
+            Approximation::Inexact(make_div_repr(sign_negative, q + adjust, e), adjust)
         };
         Ok(repr)
     }
@@ -527,5 +543,71 @@ impl<R: Round> Context<R> {
         Ok(self
             .repr_div(Repr::one(), f.clone())?
             .map(|v| FBig::new(v, *self)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::round::mode;
+
+    fn r2(sig: i32, exp: isize) -> Repr<2> {
+        Repr::new(sig.into(), exp)
+    }
+
+    #[test]
+    fn test_div_by_zero_is_infinity() {
+        let ctx = Context::<mode::HalfEven>::new(53);
+        // finite / 0 = ±inf (a value, not an error); sign = XOR
+        let pos = ctx.div::<2>(&r2(1, 0), &Repr::<2>::zero()).unwrap().value();
+        assert!(pos.repr().is_infinite());
+        assert_eq!(pos.repr().sign(), Sign::Positive);
+
+        let neg = ctx
+            .div::<2>(&r2(-1, 0), &Repr::<2>::zero())
+            .unwrap()
+            .value();
+        assert_eq!(neg.repr().sign(), Sign::Negative);
+
+        // 1 / -0 = -inf
+        let neg2 = ctx
+            .div::<2>(&r2(1, 0), &Repr::<2>::neg_zero())
+            .unwrap()
+            .value();
+        assert_eq!(neg2.repr().sign(), Sign::Negative);
+    }
+
+    #[test]
+    fn test_zero_over_zero_is_indeterminate() {
+        let ctx = Context::<mode::HalfEven>::new(53);
+        assert_eq!(
+            ctx.div::<2>(&Repr::<2>::zero(), &Repr::<2>::zero()),
+            Err(FpError::Indeterminate)
+        );
+    }
+
+    #[test]
+    fn test_inv_zero_is_infinity() {
+        let ctx = Context::<mode::HalfEven>::new(53);
+        let r = ctx.inv::<2>(&Repr::<2>::zero()).unwrap().value();
+        assert!(r.repr().is_infinite());
+        assert_eq!(r.repr().sign(), Sign::Positive);
+    }
+
+    #[test]
+    fn test_fbig_div_zero_produces_infinity() {
+        // FBig convenience layer: 1 / 0 yields an infinity-valued FBig (no panic).
+        let one = FBig::<mode::HalfEven>::try_from(1.0f64).unwrap();
+        let zero = FBig::<mode::HalfEven>::try_from(0.0f64).unwrap();
+        let inf = one / zero;
+        assert!(inf.repr().is_infinite());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fbig_zero_over_zero_panics() {
+        // 0 / 0 is indeterminate; the FBig layer panics.
+        let zero = FBig::<mode::HalfEven>::try_from(0.0f64).unwrap();
+        let _ = zero.clone() / zero;
     }
 }

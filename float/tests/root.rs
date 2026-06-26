@@ -1,9 +1,5 @@
 use dashu_base::Approximation::*;
-use dashu_float::{
-    ops::{CubicRoot, SquareRoot},
-    round::Rounding::*,
-    DBig, FBig,
-};
+use dashu_float::{ops::CubicRoot, round::Rounding::*, DBig, FBig};
 use dashu_int::IBig;
 
 mod helper_macros;

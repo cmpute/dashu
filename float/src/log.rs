@@ -142,12 +142,19 @@ impl<R: Round> Context<R> {
         }
     }
 
-    /// Calculate L(n) = acoth(n) = atanh(1/n) = 1/2 log((n+1)/(n-1))
+    /// Calculate L(n) = acoth(n) = atanh(1/n) = 1/2 log((n+1)/(n-1)), given by the
+    /// series
+    ///
+    /// ```text
+    ///                1     n + 1              1
+    ///   atanh(1/n) = — log(—————) = Σ   ——————————————————
+    ///                2     n - 1   i≥0 n^(2i+1) · (2i+1)
+    /// ```
     ///
     /// This method is intended to be used in logarithm calculation,
     /// so the precision of the output will be larger than desired precision.
     ///
-    /// Evaluated by binary splitting (see [`iacoth_bs`][crate::math::consts::iacoth_bs]):
+    /// Evaluated by binary splitting (see [`iacoth_bs`][crate::math::cache::iacoth_bs]):
     /// the exact integer tree state `(P, Q, T)` over `[1, N)` satisfies
     /// `L(n) = (Q + T)/(n·Q)`, with `Q` kept at O(p) digits by the ratio-form
     /// term recurrence.
@@ -160,7 +167,7 @@ impl<R: Round> Context<R> {
         let log_b_n = n.log2_est() / B.log2_est();
         let num_terms = (self.precision as f32 / (2.0 * log_b_n)) as usize + 10;
 
-        let (_p, q, t) = crate::math::consts::iacoth_bs(n, 1, num_terms + 1);
+        let (_p, q, t) = crate::math::cache::iacoth_bs(n, 1, num_terms + 1);
 
         // L(n) = (Q + T) / (n·Q). Extra guard digits absorb the division's rounding
         // (the binary-splitting state is exact, so only this single round loses anything).
@@ -343,6 +350,14 @@ impl<R: Round> Context<R> {
 mod tests {
     use super::*;
     use crate::round::mode;
+
+    #[test]
+    fn test_ln_zero_is_neg_infinity() {
+        let ctx = Context::<mode::HalfEven>::new(53);
+        let r = ctx.ln::<2>(&Repr::<2>::zero(), None).unwrap().value();
+        assert!(r.repr().is_infinite());
+        assert_eq!(r.repr().sign(), Sign::Negative);
+    }
 
     #[test]
     fn test_iacoth() {

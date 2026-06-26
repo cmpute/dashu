@@ -14,7 +14,7 @@ use core::ops::{Mul, MulAssign};
 /// (the significand product alone is `+0`, losing the sign).
 ///
 /// Returns an error when the result exponent overflows or underflows `isize`.
-fn mul_finite_reprs<const B: Word>(lhs: &Repr<B>, rhs: &Repr<B>) -> Result<Repr<B>, FpError> {
+fn make_mul_repr<const B: Word>(lhs: &Repr<B>, rhs: &Repr<B>) -> Result<Repr<B>, FpError> {
     let significand = &lhs.significand * &rhs.significand;
     if significand.is_zero() {
         return Ok(if lhs.sign() != rhs.sign() {
@@ -65,7 +65,7 @@ impl<R: Round, const B: Word> Mul<&FBig<R, B>> for &FBig<R, B> {
         assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
-        let repr = unwrap_mul_repr!(mul_finite_reprs(&self.repr, &rhs.repr), context);
+        let repr = unwrap_mul_repr!(make_mul_repr(&self.repr, &rhs.repr), context);
         FBig::new(context.repr_round(repr).value(), context)
     }
 }
@@ -78,7 +78,7 @@ impl<R: Round, const B: Word> Mul<&FBig<R, B>> for FBig<R, B> {
         assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
-        let repr = unwrap_mul_repr!(mul_finite_reprs(&self.repr, &rhs.repr), context);
+        let repr = unwrap_mul_repr!(make_mul_repr(&self.repr, &rhs.repr), context);
         FBig::new(context.repr_round(repr).value(), context)
     }
 }
@@ -91,7 +91,7 @@ impl<R: Round, const B: Word> Mul<FBig<R, B>> for &FBig<R, B> {
         assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
-        let repr = unwrap_mul_repr!(mul_finite_reprs(&self.repr, &rhs.repr), context);
+        let repr = unwrap_mul_repr!(make_mul_repr(&self.repr, &rhs.repr), context);
         FBig::new(context.repr_round(repr).value(), context)
     }
 }
@@ -104,7 +104,7 @@ impl<R: Round, const B: Word> Mul<FBig<R, B>> for FBig<R, B> {
         assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
-        let repr = unwrap_mul_repr!(mul_finite_reprs(&self.repr, &rhs.repr), context);
+        let repr = unwrap_mul_repr!(make_mul_repr(&self.repr, &rhs.repr), context);
         FBig::new(context.repr_round(repr).value(), context)
     }
 }
@@ -205,7 +205,7 @@ impl<R: Round> Context<R> {
             rhs
         };
 
-        let repr = mul_finite_reprs(lhs_repr, rhs_repr)?;
+        let repr = make_mul_repr(lhs_repr, rhs_repr)?;
         Ok(self.repr_round(repr).map(|v| FBig::new(v, *self)))
     }
 

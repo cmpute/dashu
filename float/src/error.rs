@@ -32,7 +32,9 @@ pub enum FpError {
     /// `ln(-x)`, `asin(|x| > 1)`, `pow(negative, non-integer)`, an even root of a negative value.
     OutOfDomain,
 
-    /// An indeterminate form, e.g. `0 / 0`.
+    /// An indeterminate form, e.g. `0 / 0`. Only a *zero* divided by zero is
+    /// indeterminate — a non-zero value divided by zero yields ±infinity, which is a
+    /// legitimate [`Exact`] value rather than an error.
     Indeterminate,
 
     /// The result magnitude is too large to represent as a finite number.

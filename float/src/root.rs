@@ -26,6 +26,16 @@ impl<R: Round, const B: Word> CubicRoot for FBig<R, B> {
 }
 
 impl<R: Round, const B: Word> FBig<R, B> {
+    /// Calculate the square root of the floating point number.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is unlimited.
+    #[inline]
+    pub fn sqrt(&self) -> Self {
+        self.context.unwrap_fp(self.context.sqrt(&self.repr))
+    }
+
     /// Calculate the nth root of the floating point number.
     ///
     /// When `n` is large the computation can be expensive — the significand is
@@ -241,5 +251,19 @@ impl<R: Round> Context<R> {
             .map(|signif| Repr::new(signif, exp))
             .and_then(|v| self.repr_round(v))
             .map(|v| FBig::new(v, *self)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::round::mode;
+
+    #[test]
+    #[should_panic]
+    fn test_fbig_sqrt_negative_panics() {
+        // sqrt(-1) is out of domain; the FBig layer panics.
+        let neg_one = FBig::<mode::HalfEven>::try_from(-1.0f64).unwrap();
+        let _ = neg_one.sqrt();
     }
 }

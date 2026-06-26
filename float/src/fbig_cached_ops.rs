@@ -379,25 +379,8 @@ impl<R: Round, const B: Word> CachedFBig<R, B> {
     forward_to_context!(exp);
     forward_to_context!(exp_m1);
 
-    /// Square root (see [`Context::sqrt`]).
-    #[inline]
-    pub fn sqrt(&self) -> Self {
-        let fbig = self
-            .fbig
-            .context
-            .unwrap_fp(self.fbig.context.sqrt::<B>(&self.fbig.repr));
-        Self::from_fbig(fbig, &self.cache)
-    }
-
-    /// Multiplicative inverse (see [`Context::inv`]).
-    #[inline]
-    pub fn inv(&self) -> Self {
-        let fbig = self
-            .fbig
-            .context
-            .unwrap_fp(self.fbig.context.inv::<B>(&self.fbig.repr));
-        Self::from_fbig(fbig, &self.cache)
-    }
+    forward_to_fbig!(sqrt);
+    forward_to_fbig!(inv);
 
     forward_to_context_unwrap!(sin);
     forward_to_context_unwrap!(cos);
@@ -439,11 +422,5 @@ impl<R: Round, const B: Word> CachedFBig<R, B> {
             Some(&mut *c),
         ));
         Self::from_fbig(fbig, &self.cache)
-    }
-
-    /// Reciprocal `1/x` — alias for [`Self::inv`].
-    #[inline]
-    pub fn reciprocal(&self) -> Self {
-        self.inv()
     }
 }

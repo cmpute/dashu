@@ -472,6 +472,22 @@ impl<R: Round, const B: Word> FBig<R, B> {
     }
 }
 
+/// `isize` exponent arithmetic overflowed during base conversion: the value's magnitude
+/// falls outside the representable exponent range, so the result is ±infinity (`large`) or
+/// ±0 (`!large`). Mirrors the convention `convert_base` already uses in its division path,
+/// keeping the conversion overflow-safe (no panic) at the value level.
+#[allow(non_upper_case_globals)]
+fn converted_overflow_repr<const NewB: Word>(large: bool, sign: Sign) -> Rounded<Repr<NewB>> {
+    Inexact(
+        if large {
+            Repr::<NewB>::infinity_with_sign(sign)
+        } else {
+            Repr::<NewB>::zero_with_sign(sign)
+        },
+        Rounding::NoOp,
+    )
+}
+
 impl<R: Round> Context<R> {
     // Convert the [Repr] from base B to base NewB, with the precision under the target base from this context.
     #[allow(non_upper_case_globals)]
@@ -512,7 +528,10 @@ impl<R: Round> Context<R> {
             // shortcut if B is a power of NewB
             let n = ilog_exact(B, NewB);
             if n > 1 {
-                let exp = repr.exponent * n as isize;
+                let exp = match repr.exponent.checked_mul(n as isize) {
+                    Some(e) => e,
+                    None => return converted_overflow_repr::<NewB>(repr.exponent > 0, repr.sign()),
+                };
                 return Exact(Repr::new(repr.significand, exp));
             }
         }
@@ -524,15 +543,23 @@ impl<R: Round> Context<R> {
         let (a, r) = factor_base(B, NewB);
         if a > 0 && r > 1 {
             if repr.exponent >= 0 {
+                let sign = repr.sign();
                 let r_exp = UBig::from_word(r).pow(repr.exponent as usize);
                 let significand = repr.significand * r_exp;
-                let new_repr = Repr::<NewB>::new(significand, a as isize * repr.exponent);
+                let exp = match (a as isize).checked_mul(repr.exponent) {
+                    Some(e) => e,
+                    None => return converted_overflow_repr::<NewB>(true, sign),
+                };
+                let new_repr = Repr::<NewB>::new(significand, exp);
                 return self.repr_round(new_repr);
             } else {
                 let r_exp: IBig = UBig::from_word(r).pow((-repr.exponent) as usize).into();
                 if repr.significand.is_multiple_of(&r_exp) {
-                    let new_repr =
-                        Repr::<NewB>::new(repr.significand / r_exp, a as isize * repr.exponent);
+                    let exp = match (a as isize).checked_mul(repr.exponent) {
+                        Some(e) => e,
+                        None => return converted_overflow_repr::<NewB>(false, repr.sign()),
+                    };
+                    let new_repr = Repr::<NewB>::new(repr.significand / r_exp, exp);
                     return self.repr_round(new_repr);
                 }
             }
@@ -589,7 +616,16 @@ impl<R: Round> Context<R> {
                 );
             let (exponent, rem) =
                 new_exp.div_rem_euclid(work_context.ln_base::<NewB>(reborrow_cache(&mut cache)));
-            let exponent: isize = exponent.try_into().unwrap();
+            let exponent_sign = exponent.sign();
+            let exponent: isize = match exponent.try_into() {
+                Ok(v) => v,
+                Err(_) => {
+                    return converted_overflow_repr::<NewB>(
+                        exponent_sign == Sign::Positive,
+                        repr.sign(),
+                    );
+                }
+            };
             let exp_rem = rem.exp();
             let significand = repr.significand * exp_rem.repr.significand;
             let repr = Repr::new(significand, exponent + exp_rem.repr.exponent);

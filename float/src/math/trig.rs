@@ -10,7 +10,7 @@ use crate::{
 };
 use core::cmp::Ordering;
 use core::convert::TryFrom;
-use dashu_base::{AbsOrd, RemEuclid, Sign};
+use dashu_base::{AbsOrd, Approximation::Exact, RemEuclid, Sign};
 use dashu_int::IBig;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,7 +32,7 @@ fn signed_zero_normal<R: Round, const B: Word>(
     } else {
         Repr::zero()
     };
-    Ok(FBig::<R, B>::new(zero, *ctx).with_precision(ctx.precision))
+    Ok(Exact(FBig::<R, B>::new(zero, *ctx)))
 }
 
 impl<R: Round> Context<R> {
@@ -661,5 +661,56 @@ impl<R: Round, const B: Word> FBig<R, B> {
     pub fn atan2(&self, x: &Self) -> Self {
         self.context
             .unwrap_fp(self.context.atan2(&self.repr, &x.repr, None))
+    }
+}
+
+impl<R: Round> Context<R> {
+    /// Calculate π using the Chudnovsky algorithm with binary splitting.
+    ///
+    /// The Chudnovsky algorithm is one of the most efficient methods for
+    /// high-precision π calculation, providing ~14.18 decimal digits per term.
+    ///
+    /// # Methodology
+    /// We use Binary Splitting to evaluate the series. This technique transforms
+    /// the linear-time summation into a recursive tree evaluation. By combining
+    /// terms into large products, it allows the library to leverage fast
+    /// multiplication algorithms (like Toom-3 or FFT) as the numbers grow,
+    /// leading to significant performance gains over simple iterative summation.
+    #[must_use]
+    pub fn pi<const B: Word>(&self, cache: Option<&mut ConstCache>) -> Rounded<FBig<R, B>> {
+        if let Some(c) = cache {
+            return c.pi::<B, R>(self.precision);
+        }
+
+        // No shared cache: compute via a one-shot ConstCache so the Chudnovsky series
+        // and the 426880·√10005·Q/T finalization live in exactly one place (see
+        // ConstCache::pi), instead of being duplicated here.
+        let mut fresh = ConstCache::new();
+        fresh.pi::<B, R>(self.precision)
+    }
+}
+
+impl<R: Round, const B: Word> FBig<R, B> {
+    /// Calculate π with the given precision and the default rounding mode.
+    #[inline]
+    #[must_use]
+    pub fn pi(precision: usize) -> Self {
+        Context::<R>::new(precision).pi(None).value()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::round::mode;
+
+    #[test]
+    fn test_atan_infinity_is_preserved() {
+        let ctx = Context::<mode::HalfEven>::new(53);
+        // atan(±inf) = ±π/2 — a finite result, preserved (not an error)
+        let r = ctx.atan::<2>(&Repr::<2>::infinity(), None).unwrap().value();
+        assert!(r.repr().sign() == Sign::Positive);
+        // it should be approximately π/2
+        assert!(r > FBig::<mode::HalfEven>::ONE);
     }
 }

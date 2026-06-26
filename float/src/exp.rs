@@ -432,3 +432,55 @@ impl<R: Round> Context<R> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::round::mode;
+
+    #[test]
+    fn test_exp_overflow_is_infinity() {
+        let ctx = Context::<mode::HalfEven>::new(53);
+        // exp(huge) overflows the isize exponent range -> Overflow at Context level.
+        // Need x large enough that floor(x/ln2) > isize::MAX, i.e. x > ~2^62.5.
+        let huge = Repr::new(IBig::from(1) << 63, 0);
+        assert_eq!(ctx.exp::<2>(&huge, None), Err(FpError::Overflow(Sign::Positive)));
+
+        // exp(huge negative) underflows to +0
+        let neg = Repr::new(-(IBig::from(1) << 63), 0);
+        assert_eq!(ctx.exp::<2>(&neg, None), Err(FpError::Underflow(Sign::Positive)));
+
+        // exp_m1(huge negative) -> -1 (a finite value, not an error)
+        let m1 = ctx.exp_m1::<2>(&neg, None).unwrap().value();
+        assert_eq!(m1, -FBig::<mode::HalfEven>::ONE);
+    }
+
+    #[test]
+    fn test_powf_zero_base() {
+        use crate::DBig;
+        // powf with a float exponent returns the *positive* result on a zero base
+        // (matching the common float-pow convention); use powi for the signed result.
+        let ctx = Context::<mode::HalfEven>::new(53);
+        // powf(-0, 2.0) = +0 (NOT -0)
+        let r = ctx
+            .powf::<2>(&Repr::<2>::neg_zero(), &Repr::new(2.into(), 0), None)
+            .unwrap()
+            .value();
+        assert!(r.repr().is_zero(), "expected +0");
+        assert!(!r.repr().is_neg_zero(), "powf(-0, x) should be +0, not -0");
+        // powf(0, -1) = +inf
+        let r = ctx
+            .powf::<2>(&Repr::<2>::zero(), &Repr::new((-1i32).into(), 0), None)
+            .unwrap()
+            .value();
+        assert!(r.repr().is_infinite());
+        assert_eq!(r.repr().sign(), Sign::Positive);
+        // powi(-0, 3) = -0 (the sign-correct, integer-exponent variant)
+        let r = ctx
+            .powi::<2>(&Repr::<2>::neg_zero(), 3.into())
+            .unwrap()
+            .value();
+        assert!(r.repr().is_neg_zero());
+        let _ = DBig::ZERO;
+    }
+}
