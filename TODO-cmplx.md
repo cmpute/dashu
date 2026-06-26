@@ -16,8 +16,9 @@ headline new crate for the 0.5 release and the Rust-native alternative to **GNU 
 ## 0. Purpose & scope
 
 `dashu-cmplx` provides arbitrary-precision **complex** numbers, `CBig`, built on top of
-`dashu-float`'s `FBig`. Each `CBig` is a pair of `FBig` parts (`re`, `im`) sharing one precision and
-one rounding mode. The crate targets **MPC parity for the "common functionalities"** (field
+`dashu-float`'s `FBig`. Each `CBig` is a pair of real parts (`re`, `im`) sharing one precision and
+one rounding mode — stored as two `Repr`s over a single shared `Context` (§2), mirroring `FBig`'s own
+`Repr`+`Context` layout. The crate targets **MPC parity for the "common functionalities"** (field
 arithmetic + elementary transcendentals + abs/arg/conj/proj + I/O), with **near-correct rounding**
 (guard-digit heuristic, same guarantee class as `dashu-float`'s transcendentals; a guaranteed-correct
 Ziv loop is deferred to 0.5.x — see Principle 2), following the **C99 Annex G / Kahan** branch-cut and
@@ -90,33 +91,47 @@ first-class citizen.
    `FBig`'s cancellation-free `sinh`/`cosh` (built on `exp_m1`); the `exp(±iz)` identity is kept only as
    a cross-check in tests. (Section 6.2.)
 
-7. **Encapsulated fields, accessor API.** `re`/`im` are **private** with `re()`/`imag()`/`into_parts()`/
-   `from_parts()` accessors, consistent with `FBig`'s private `repr`. This preserves the shared-precision
-   invariant. (num-complex uses public fields; we diverge for the same reason `FBig` does — Open
-   Decision 3, with recommendation.)
+7. **Encapsulated fields, accessor API.** `re`/`im` are **private** `Repr<B>` fields over one shared
+   `Context`, with `re()`/`imag()`/`into_parts()`/`from_parts()` accessors — consistent with `FBig`'s
+   private `repr`. Storing a single shared `Context` (rather than one per `FBig`) makes the
+   uniform-precision invariant *structural*: there is one precision slot, so `re` and `im` cannot
+   disagree by construction. (num-complex uses public fields; we diverge for the same reason `FBig`
+   does — Decision 3.)
 
 ---
 
 ## 2. Type & context model
 
 ```rust
-/// Arbitrary-precision complex number: two `FBig` parts sharing one precision and one rounding mode.
+/// Arbitrary-precision complex number: two `Repr` parts sharing one precision and one rounding mode.
+///
+/// Mirrors `FBig`'s own layout (`Repr` + `Context`) generalized to two parts over a **single shared**
+/// `Context`. Storing one context — rather than wrapping two `FBig`s (each carrying its own) — makes
+/// the uniform-precision invariant *physical*: there is exactly one precision slot, so `re` and `im`
+/// structurally cannot disagree. Each part keeps its own significand length (including the intentional
+/// guard digit); the precision cap lives once, in the shared context.
 pub struct CBig<R: Round = mode::Zero, const B: Word = 2> {
-    pub(crate) re: FBig<R, B>,
-    pub(crate) im: FBig<R, B>,
+    pub(crate) re: Repr<B>,
+    pub(crate) im: Repr<B>,
+    pub(crate) context: Context<R>,   // dashu_cmplx::Context<R> — the shared precision/mode config
 }
 
-/// CBig operation context — a thin **newtype wrapper** around `dashu_float::Context<R>`. It is a
-/// **separate type** (you cannot add inherent methods to `FBig`'s `Context` from this crate —
-/// coherence), and it exists to host the context-layer CBig operations (`Context::mul`,
-/// `Context::exp`, …). The wrapped value *is* the shared precision/rounding config, so the config
-/// API (`new`/`max`/`precision`) just delegates to the inner `FBig` context; each CBig op then
-/// builds a `dashu_float::Context::<R>::new(p + g)` to do the real-part math. Wrapping (rather than
-/// re-declaring the fields) keeps the two contexts structurally identical and tracks any future
-/// change to `FBig`'s `Context` for free.
+/// CBig operation context — a thin **newtype wrapper** around `dashu_float::Context<R>`, and also the
+/// type stored on each `CBig` as its shared config (so `CBig::context()` returns it directly, with no
+/// wrapping). It is a **separate type** (you cannot add inherent methods to `FBig`'s `Context` from
+/// this crate — coherence), and it exists to host the context-layer CBig operations (`Context::mul`,
+/// `Context::exp`, …). The wrapped value *is* the shared precision/rounding config, so the config API
+/// (`new`/`max`/`precision`) just delegates to the inner float context; each CBig op then builds a
+/// `FloatCtxt::<R>::new(p + g)` (a transient `dashu_float::Context`) to do the real-part math (§6.1).
+/// Wrapping (rather than re-declaring the fields) keeps the two contexts structurally identical and
+/// tracks any future change to `FBig`'s `Context` for free.
 #[derive(Clone, Copy)]
 pub struct Context<R: Round>(pub(crate) dashu_float::Context<R>);
 ```
+
+**Internal alias:** `dashu_cmplx::Context` and `dashu_float::Context` coexist in this crate's source
+(the latter is the guard-digit working context in §6.1). To keep them distinct, internal code
+references the float context via a private alias `type FloatCtxt<R> = dashu_float::Context<R>;`.
 
 - **`R: Round`** (default `mode::Zero`, same default as `FBig`) — the rounding mode applied to both
   components. The available modes are `dashu_float::round::mode::{Zero, Away, Up, Down, HalfEven,
@@ -124,9 +139,10 @@ pub struct Context<R: Round>(pub(crate) dashu_float::Context<R>);
 - **`const B: Word`** (default `2`) — the radix, identical to `FBig`'s `B`. Both parts share `B`.
   No decimal alias is defined (there is almost no need for a base-10 `CBig`); callers wanting a decimal
   complex value use `CBig::<mode::HalfAway, 10>` explicitly. (Decision 6.)
-- **Precision is uniform.** Both parts always share one precision; the invariant is enforced by every
-  constructor and operation. (MPC allows different re/im precisions; we start uniform — simpler,
-  matches `FBig`'s single-context model. `TODO-v05.md` §3.1.)
+- **Precision is uniform.** Both parts always share one precision; with the single stored `Context`,
+  the invariant is *structural* — one precision slot, so `re` and `im` cannot disagree. (MPC allows
+  different re/im precisions; we start uniform — simpler, matches `FBig`'s single-context model.
+  `TODO-v05.md` §3.1.)
 
 - **`CBig` is `Clone`, not `Copy`** — same as `FBig` (the `IBig` significand is heap-allocated).
   Operations take `&self`/`&CBig` and return owned `CBig`, mirroring `FBig`'s convenience methods.
@@ -134,9 +150,13 @@ pub struct Context<R: Round>(pub(crate) dashu_float::Context<R>);
 **Context access:**
 ```rust
 impl<R: Round, const B: Word> CBig<R, B> {
-    // wraps the parts' shared FBig context (re == im precision):
-    pub fn context(&self) -> Context<R> { Context(self.re.context()) }
-    pub fn precision(&self) -> usize { self.re.precision() }   // base-B digit count; 0 = unlimited
+    // raw constructor, internal use only:
+    pub(crate) const fn new(re: Repr<B>, im: Repr<B>, context: Context<R>) -> Self {
+        Self { re, im, context }
+    }
+    // the stored field *is* the cmplx Context — return it directly, no wrapping:
+    pub const fn context(&self) -> Context<R> { self.context }
+    pub const fn precision(&self) -> usize { self.context.precision() } // base-B digit count; 0 = unlimited
 }
 
 impl<R: Round> Context<R> {
@@ -145,15 +165,24 @@ impl<R: Round> Context<R> {
     pub const fn max(lhs: Self, rhs: Self) -> Self { Self(dashu_float::Context::max(lhs.0, rhs.0)) }
     pub const fn precision(&self) -> usize { self.0.precision() }
     // context-layer operations returning CfpResult (the reason this type exists — can't go on FBig's Context):
-    //   add/sub/mul/div/sqr/inv/neg, sqrt/exp/log/powf/powi, sin/cos/tan/asin/acos/atan,
-    //   abs/norm/arg/conj/proj/mul_i, …
+    //   add/sub/mul/div/sqr/inv/neg, conj/proj/mul_i, sqrt/abs/norm, exp/log/powf/powi,
+    //   sin/cos/tan/sin_cos, asin/acos/atan, arg, …
+    //
+    // Transcendental & constant-dependent ops carry `cache: Option<&mut ConstCache>` — threaded into
+    // the inner FBig Context calls at p+g (§6.1), on exactly the set that takes it on
+    // `dashu_float::Context`. CBig convenience passes `None`; the deferred `CachedCBig` (§13) passes
+    // `Some(&mut cache)`. Field arithmetic (add/sub/mul/div/sqr/inv/neg/conj/proj/mul_i), `sqrt`,
+    // `abs`, `norm`, `powi` take no cache. (`ConstCache` is re-exported from `dashu-float`, unchanged.)
+    pub fn exp(&self, z: &CBig<R, B>, cache: Option<&mut ConstCache>) -> CfpResult<R, B> { /* … */ }
 }
 ```
 
-`CBig::context()` wraps the parts' shared `dashu_float::Context<R>` into this crate's `Context<R>`.
-The config (`new`/`max`/`precision`) delegates inward; the CBig operation methods live only here. In
-the meta-crate the two types disambiguate as `dashu::complex::Context` vs `dashu::float::Context`.
-Operations create result `CBig`s at `Context::max(lhs.context(), rhs.context())`, mirroring `FBig`.
+`CBig::context()` returns the stored `dashu_cmplx::Context<R>` as-is (the field is already that type).
+The config (`new`/`max`/`precision`) delegates inward to the wrapped float context; the CBig operation
+methods live only on `Context`. In the meta-crate the two types disambiguate as
+`dashu::complex::Context` vs `dashu::float::Context`. Operations create result `CBig`s at
+`Context::max(lhs.context(), rhs.context())`, mirroring `FBig`. Internally, to do `FBig` math on a
+stored part, construct `FBig::from_repr(part, self.context.0)` — `.0` is the inner `dashu_float::Context<R>` (copied, since it is `Copy`); clone/move the `Repr` depending on whether `self` is borrowed or consumed.
 
 ---
 
@@ -188,19 +217,23 @@ pub type CRounded<R, const B: Word> = Approximation<CBig<R, B>, (Rounding, Round
 pub type CfpResult<R, const B: Word> = Result<CRounded<R, B>, FpError>;
 ```
 Named `CfpResult` to mirror `dashu_float::FpResult` (the `C` prefix is the complex analog). Reuses
-`dashu_float::FpError` unchanged (Section 4). The **convenience layer** (`CBig::mul`, etc.) unwraps
+`dashu_float::FpError` unchanged (Section 4). Both `CRounded` and `CfpResult` live in the `context`
+module (§7.2). The **convenience layer** (`CBig::mul`, etc.) unwraps
 via the same policy as `FBig` (`unwrap_fp`: `Overflow(s)→±∞`, `Underflow(s)→±0`, panic on
 `Indeterminate`/`OutOfDomain`/`InfiniteInput`) and returns `CBig` directly.
 
 ### 3.4 Two-layer API (mirror `FBig`)
 | Layer | Where rounding lives | Return type | On error |
 |---|---|---|---|
-| **Context** (`dashu_cmplx::Context::mul(&ctx, &z, &w)`, `Context::exp(&ctx, &z)`, …) | mode `R`, precision from the context | `CfpResult` (`Result<CRounded, FpError>`) | `Err(FpError)` |
+| **Context** (`dashu_cmplx::Context::mul(&ctx, &z, &w)`, `Context::exp(&ctx, &z, cache)`, …) | mode `R`, precision from the context | `CfpResult` (`Result<CRounded, FpError>`) | `Err(FpError)` |
 | **Convenience** (`z.mul(&w)`, operators `z * w`) — uses `z.context()` | same | `CBig` | panics (`unwrap_fp` policy) |
 
 This is the exact split `FBig` uses (`dashu_float::Context::mul → FpResult<FBig>` vs
 `FBig::mul → FBig`); CBig just needs its own `Context` type to host the context-layer methods
-(§2), since `FBig`'s `Context` can't be extended from this crate.
+(§2), since `FBig`'s `Context` can't be extended from this crate. Transcendental context ops carry
+`cache: Option<&mut ConstCache>` (convenience passes `None`; the deferred `CachedCBig`, §13, passes
+`Some`) — matching `dashu_float::Context`'s cache parameter from day one, so the cached variant needs
+no later signature change.
 
 ---
 
@@ -232,7 +265,7 @@ Riemann point at infinity), preserving the sign of the imaginary zero per Annex 
 
 ### 5.1 Construction & conversion
 ```rust
-CBig::from_parts(re: FBig<R,B>, im: FBig<R,B>) -> Self;   // precision = max; asserts share R/B
+CBig::from_parts(re: FBig<R,B>, im: FBig<R,B>) -> Self;   // shared ctx = max(re,im) ctx; smaller part widened (exact), unlimited(0) wins
 CBig::from_real(re: FBig<R,B>) -> Self;                    // im = +0
 CBig::from_int(n: IBig) -> Self;                           // re = convert_int(n), im = +0
 CBig::I, CBig::ZERO, CBig::ONE;                            // constants (Section 5.7)
@@ -241,6 +274,10 @@ FromStr  // "a+bi" algebraic form (Section 5.6)
 TryFrom<f32>/<f64>          // (base 2) exact-or-LossOfPrecision
 TryFrom<num_complex::Complex<FBig>>   // feature num_complex_v04 (deferred)
 ```
+`from_parts` reconciles the two parts' precisions into the shared context: the result context is
+`dashu_float::Context::max(re.context(), im.context())` (unlimited precision, `0`, dominates), and
+the smaller-precision part is widened to it — widening is exact (no rounding), so only the precision
+cap changes. `R` and `B` matching is enforced at compile time by the type parameters.
 
 ### 5.2 Field arithmetic
 ```rust
@@ -253,8 +290,10 @@ mul_i(&self, negative: bool)               // ×(±i): exact rotation (re,im)→
 powi(&self, n: IBig) -> Self               // integer power: repeated squaring (cheaper, branch-cut-free)
 powf(&self, w: &Self) -> Self              // complex^complex: exp(w·log z)
 ```
-Operator overloads: `Add/Sub/Mul/Div/Neg` for `CBig op CBig` (all four ref/val combinations, via the
-existing `forward_all_binop!`-style macro if present, else explicit impls); scalar mul/div by a real
+Operator overloads: `Add/Sub/Mul/Div/Neg` for `CBig op CBig` (all four ref/val combinations), defined
+via local `helper_macros` mirroring the rational crate's `impl_binop_with_macro!` /
+`impl_binop_with_int!` (no such macro is shared across crates today — each crate owns its own); scalar
+mul/div by a real
 `FBig` is done through **mixed-type operators**, not named methods — `Mul<FBig>`/`Div<FBig>` for `CBig`
 (`z * r`, `z / r`) and `Mul<CBig>`/`Div<CBig>` for `FBig` (`r * z`, `r / z`). No standalone
 `scale`/`unscale` methods. `AddAssign`-style for the owning variants.
@@ -264,7 +303,7 @@ existing `forward_all_binop!`-style macro if present, else explicit impls); scal
 PartialEq/Eq                       // componentwise exact equality (+0 == −0 per component, like FBig)
 PartialOrd/Ord                     // total order, lexicographic by (re, then im) — see below
 AbsOrd                             // magnitude comparison via abs_cmp(|z|, |w|) (dashu_base)
-NumOrd / NumHash                   // numeric comparison/hashing, like FBig/RBig/IBig (dashu_base)
+NumOrd / NumHash                   // numeric comparison/hashing (num-order crate, third_party)
 is_zero(&self) / is_infinite(&self) / is_finite(&self)
 ```
 The comparison surface **mirrors `FBig`** (which implements `Ord`, `AbsOrd`, `NumOrd`, `NumHash`),
@@ -275,28 +314,34 @@ rather than MPC's "complex has no order" stance:
   for `BTreeMap`/sorting — the same practical role `FBig::Ord` plays for reals, and the same
   lexicographic convention MPC's `mpc_cmp` uses. Special values are placed consistently with `FBig`
   (`-∞ < finite < +∞` per component).
-- **`AbsOrd`** (from `dashu_base`) — magnitude comparison `abs_cmp` by `|z|`. This **replaces a
-  standalone `cmp_abs` method**: it is exactly the trait MPC's `mpc_cmp_abs` corresponds to, and it
-  is what `FBig` already implements. (`AbsEq` is deprecated in v0.5 — being folded into `AbsOrd` — so
-  implementing `AbsOrd` covers it; no separate work.)
+- **`AbsOrd`** (from `dashu_base`) — magnitude comparison by `|z|`, done **only** through the
+  trait's `abs_cmp` method (no standalone inherent method). This is what `FBig` already implements.
+  (`AbsEq` is deprecated in v0.5 — being folded into `AbsOrd` — so implementing `AbsOrd` covers it;
+  no separate work.)
 - **`NumOrd`/`NumHash`** — matching the other numeric types; `NumOrd` agrees with the lexicographic
   `Ord`, `NumHash` is consistent with `PartialEq`.
 
-No `cmp_abs` method is exposed; use the `AbsOrd::abs_cmp` trait method. *(Note: `dashu-base`
-currently defines `NumOrd`/`NumHash` but no `NumEq`; if a numeric (tolerant) equality trait is wanted
-for `CBig`, `NumEq` would need to be added to `dashu-base` first — tracked as a follow-up, not
-blocking 0.5.)*
+*(Note: `NumOrd`/`NumHash` come from the external **`num-order`** crate, not `dashu-base` — each
+sub-crate implements them in `third_party/num_order.rs` behind the `num-order` feature, and
+`dashu-cmplx` does the same (§7.1). If a numeric (tolerant) equality trait is wanted for `CBig`,
+that trait would need adding first — tracked as a follow-up, not blocking 0.5.)*
 
 ### 5.4 Decomposition & misc
 ```rust
-re(&self) -> &FBig      /  imag(&self) -> &FBig
-into_parts(self) -> (FBig, FBig)
+re(&self) -> &Repr<B>   /  imag(&self) -> &Repr<B>   // cheap borrow of the raw part (Repr is public, like FBig::repr)
+into_parts(self) -> (FBig<R,B>, FBig<R,B>)            // wraps each Repr with the (copied) shared context — zero-clone
+from_parts(re: FBig<R,B>, im: FBig<R,B>) -> Self      // inverse: into_repr() each, store shared ctx = max(re,im) (§5.1)
 conj(&self) -> Self                         // re − i·im : exact (flip sign of im, incl. −0/∞)
 proj(&self) -> Self                         // Riemann projection (Section 4)
 abs(&self) -> FBig                          // |z| = hypot(re,im) : HARD, near-correctly rounded (Section 6.2)
 norm(&self) -> FBig                         // re² + im² : cheap, near-exact (no sqrt)
 arg(&self) -> FBig                          // atan2(im, re) ∈ ]−π, π] : branch cut (−∞,0]
 ```
+`re()`/`imag()` borrow the stored `Repr` directly (no allocation); `Repr` already exposes the
+inspection surface (`is_zero`/`is_infinite`/`sign`/`digits`/`significand`/`exponent`), matching how
+`FBig` exposes `repr() -> &Repr<B>`. For the rounding-aware `FBig` API on a part without consuming,
+reconstruct via `FBig::from_repr(z.re().clone(), z.context().0)` — the common path is `into_parts()`
+(zero-clone, since the shared context is `Copy`) or the `CBig` op methods, which wrap internally.
 Naming follows `TODO-v05.md` §3.2: `abs` = modulus (`|z|`), `norm` = **squared** modulus (the cheap
 `re²+im²`, matching num-complex's `norm_sqr`). This split matters: `norm` avoids the expensive,
 hard-to-round `sqrt`.
@@ -341,9 +386,11 @@ CBig::ZERO  // 0 + 0i
 CBig::ONE   // 1 + 0i
 CBig::I     // 0 + 1i  (imaginary unit)
 ```
-All built from `FBig::ZERO`/`FBig::ONE`. No `INFINITY` constant in the C99 "two infinities" sense;
-complex infinity is the single Riemann point produced by `proj` (`+∞ + i·0`). `π`/`e` are obtained
-via `FBig::pi(precision)` / `FBig::ONE.exp()` as needed, not stored on `CBig`.
+All `const`, built from `Repr::zero()`/`Repr::one()` + the shared `Context::new(0)` — mirroring how
+`FBig::ZERO`/`FBig::ONE` are `Repr` + `Context::new(0)` (the `Context` is `Copy`, so it is shared by
+both parts at no cost). No `INFINITY` constant in the C99 "two infinities" sense; complex infinity is
+the single Riemann point produced by `proj` (`+∞ + i·0`). `π`/`e` are obtained via
+`FBig::pi(precision)` / `FBig::ONE.exp()` as needed, not stored on `CBig`.
 
 ### 5.8 Operator overloads & traits
 `Clone, Debug, Display, Default` (= ZERO), `PartialEq, Eq, PartialOrd, Ord`, `FromStr`.
@@ -449,7 +496,10 @@ then inverse trig (needs `sqrt`+`log`); then `pow`.
 Principle 2) mean a fixed guard of a few base-B digits already brings the total error well under ½ ulp
 for non-cancelling inputs. There is **no retry** in 0.5 — the worst-case "hard-to-round" inputs
 (catastrophic cancellation in `mul`/`div`, hypot) may land 1 ulp off, exactly as `FBig`'s own
-transcendentals can; a guaranteed-correct Ziv retry loop is deferred to 0.5.x (§13).
+transcendentals can; a guaranteed-correct Ziv retry loop is deferred to 0.5.x (§13). The concrete `g`
+per op family is fixed during M2 — starting from `FBig`'s style (a small fixed guard such as
+`p + ⌈log2 p⌉ + c` for the arithmetic ops, larger for the cancellation-prone trig/`abs` paths) — and
+validated by the `rounding_prop.rs` self-oracle (§8); this doc records the chosen values then.
 
 ### 6.3 Special-value short-circuits (C99 Annex G / Kahan)
 
@@ -486,10 +536,11 @@ rust-version = "1.68"
 # … (description/keywords/categories/license/repository mirror rational/Cargo.toml)
 
 [features]
-default = ["std"]
+default = ["std", "num-order"]          # num-order in default, matching int/float/rational
 std = ["dashu-float/std"]
 rand = ["rand_v09"]                     # for UniformCBig (tests/benches) + public random gen
 rand_v09 = ["dep:rand_v09", "dashu-float/rand_v09"]
+num-order = ["dep:num-order", "dashu-float/num-order"]   # NumOrd/NumHash (third_party/num_order.rs)
 # Deferred to 0.5.x (scaffold only):
 serde       = ["dep:serde", "dashu-float/serde"]
 num-traits  = ["num-traits_v02"]
@@ -501,7 +552,10 @@ num-complex_v04 = ["dep:num-complex_v04"]
 dashu-base  = { version = "0.5.0", default-features = false, path = "../base" }
 dashu-float = { version = "0.5.0", default-features = false, path = "../float" }   # mandatory
 dashu-int   = { version = "0.5.0", default-features = false, path = "../integer" }
-# optional: serde, num-traits_v02 (package="num-traits"), num-complex_v04 (package="num-complex"), rand_v09 (package="rand")
+rustversion = "1.0.0"                                    # #[rustversion::since(1.64)] on static_cbig! (§7.5)
+# optional: serde, num-traits_v02 (package="num-traits"), num-complex_v04 (package="num-complex"),
+#            rand_v09 (package="rand"), num-order (package="num-order")
+num-order   = { optional = true, version = "1.2.0", default-features = false }
 
 [dev-dependencies]
 proptest  = "~1.7"                      # matches Phase 0 pinning; MSRV-safe
@@ -529,6 +583,7 @@ extern crate alloc;
 // (crate-level //! doc with # Examples, mirroring rational/src/lib.rs)
 
 mod cbig;          // the CBig type, constants, predicates, accessors
+mod helper_macros; // binop forwarding macros (impl_binop_with_macro! / impl_binop_with_int!-style)
 mod context;       // CBig Context (precision + mode), CRounded, CfpResult, guard-digit helper
 mod add; mod sub; mod mul; mod div; mod root;   // field arithmetic + sqrt
 mod exp; mod log; mod power; mod trig;          // transcendentals (trig uses FBig sinh/cosh)
@@ -537,6 +592,11 @@ mod cmp; mod convert; mod parse; mod fmt;
 mod third_party;
 pub use third_party::*;
 pub use cbig::CBig;
+pub use context::{Context, CRounded, CfpResult};
+// reused from dashu-float unchanged (they appear in dashu-cmplx's public signatures):
+// Repr (parts), FpError/Rounding (CfpResult/CRounded), and ConstCache (threaded through the
+// transcendental Context ops, §2 — the handle CachedCBig will carry, §13):
+pub use dashu_float::{ConstCache, FpError, Repr, Rounding};
 #[doc(hidden)] pub use dashu_int::Word;   // re-exported for the cbig! literal macro
 ```
 Kernel routines (the guard-digit helper, `abs`'s scaled sum-of-squares, Smith's division) carry
@@ -563,7 +623,9 @@ Included in 0.5 (Decision 8). Follow the `dashu-macros` pattern: add `cbig`/`sta
 `cbig_embedded`/`static_cbig_embedded` in `macros/src/lib.rs`, a parser in `macros/src/parse/cbig.rs`
 accepting `cbig!(re + im i)` / `cbig!(re, im)`, `macros/Cargo.toml` dep on `dashu-cmplx`, and
 `src/macro-docs/cbig.md` + a `macro_rules!` wrapper in the meta-crate. The parser reuses the existing
-`FBig` literal parser for each coefficient.
+`FBig` literal parser for each coefficient. The `static_cbig`/`static_cbig_embedded` variants are gated
+behind `#[rustversion::since(1.64)]` exactly like `static_fbig!`/`static_ubig!` (they rely on `static`
+items with const generics), matching the existing macro MSRV pattern.
 
 ---
 
@@ -658,8 +720,12 @@ bug fixed during Phase 0 is exactly the class of regression this gate prevents.
 2. **Inexactness reporting — dual-flag `CRounded`** ✅ confirmed. `CRounded<R,B> =
    Approximation<CBig<R,B>, (Rounding, Rounding)>`; the context-layer result is `CfpResult<R,B> =
    Result<CRounded<R,B>, FpError>` (the `C`-prefixed mirror of `FpResult`). Cheap and faithful to MPC.
-3. **Field privacy — private `re`/`im` + accessor methods** ✅ confirmed. Preserves the
-   shared-precision invariant, consistent with `FBig`.
+3. **Field privacy & layout — private `re`/`im`; two `Repr`s + one shared `Context`** ✅ confirmed
+   (layout updated in review). `CBig` stores two `Repr<B>` parts and a single `dashu_cmplx::Context<R>`
+   (the newtype, §2), **not** two `FBig`s — so the shared-precision invariant is *physical* (exactly one
+   precision slot; `re` and `im` cannot disagree), matching `FBig`'s own `Repr`+`Context` layout.
+   `re()`/`imag()` borrow `&Repr<B>`; `into_parts()`/`from_parts()` bridge to `FBig` (zero-clone, since
+   the context is `Copy`). (Principle 7, §2, §5.4.)
 4. **No-NaN policy — map C99 NaN-producing cases to `FpError`** ✅ confirmed. No complex-only NaN.
    (Documented Section 4.)
 5. **Crate version — `0.5.0`** ✅ confirmed. Aligns with the release.
@@ -728,8 +794,22 @@ bug fixed during Phase 0 is exactly the class of regression this gate prevents.
 - Independent re/im rounding (`CRound` trait; MPC `mpc_rnd_t` parity).
 - `num_complex::Complex<FBig>` interop (feature `num-complex_v04`).
 - A `ComplexFloat`-style trait unifying `FBig` and `CBig` (sealed, for generic real/complex code).
-- A `CachedCBig` variant threading `ConstCache` through transcendental calls (CBig v0.5 passes
-  `cache = None`, matching `FBig` convenience behavior).
+- A `CachedCBig` variant. Its structure is settled (so 0.5 is forward-compatible): it wraps a `CBig`
+  plus a shared `Rc<RefCell<dashu_float::ConstCache>>` handle, mirroring `CachedFBig` over `FBig`:
+  ```rust
+  pub struct CachedCBig<R: Round = mode::Zero, const B: Word = 2> {
+      pub(crate) cbig: CBig<R, B>,
+      pub(crate) cache: Rc<RefCell<dashu_float::ConstCache>>,
+  }
+  ```
+  `ConstCache` is **reused unchanged from `dashu-float`** (re-exported, not redefined) — it caches
+  real constants (`π`, `ln2`/`ln10`, `sqrt_10005`), and `CBig`'s transcendentals are built entirely
+  from real `FBig` ops, so there are no complex-specific constants to cache. `CachedCBig` is
+  `!Send + !Sync` (the `Rc<RefCell>`), while `CBig` stays `Send + Sync` (so `static_cbig!` produces
+  `CBig`, never `CachedCBig`) — exactly the `FBig`/`CachedFBig` split. **This is why 0.5 already
+  threads `cache: Option<&mut ConstCache>` through the transcendental `Context` ops (§2, §3.4):** the
+  convenience layer passes `None`, `CachedCBig` will pass `Some(&mut cache)`, so adding the cached
+  variant needs no signature change. Binary-op cache policy mirrors `CachedFBig` (LHS handle wins).
 
 ---
 
