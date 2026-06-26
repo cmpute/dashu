@@ -389,6 +389,13 @@ impl<R: Round, const B: Word> CachedFBig<R, B> {
     forward_to_context_unwrap!(acos);
     forward_to_context_unwrap!(atan);
 
+    forward_to_context!(sinh);
+    forward_to_context!(cosh);
+    forward_to_context!(tanh);
+    forward_to_context!(asinh);
+    forward_to_context!(acosh);
+    forward_to_context!(atanh);
+
     forward_to_fbig!(powi(exp: dashu_int::IBig));
     forward_to_fbig!(sqr);
     forward_to_fbig!(cubic);
