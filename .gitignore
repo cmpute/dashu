@@ -6,3 +6,6 @@ benchmark/Cargo.lock
 benchmark/target
 fuzz/target
 fuzz/Cargo.lock
+
+# proptest failure-seed caches (written next to a test on any proptest failure)
+*.proptest-regressions

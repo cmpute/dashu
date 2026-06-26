@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Add
+- Hyperbolic functions `sinh`, `cosh`, `tanh` and their inverses `asinh`, `acosh`, `atanh` on
+  `Context`/`FBig`/`CachedFBig`. Built from cancellation-free `exp_m1`/`ln_1p` formulas with
+  IEEE-754 special-value handling: signed zeros (`sinh(±0)=±0`), infinities as values
+  (`sinh(±∞)=±∞`, `cosh(±∞)=+∞`, `tanh(±∞)=±1`, `asinh(±∞)=±∞`, `acosh(+∞)=+∞`), and domain
+  errors for `acosh(x<1)` and `atanh(|x|>1)` (`atanh(±1)=±∞`).
 - `FpError` now carries `Overflow(Sign)` and `Underflow(Sign)` variants. Repr-level arithmetic
   functions (`mul_finite_reprs`, `repr_div`, `sqr`, `cubic`, `exp_internal`, `powi`) detect
   exponent overflow/underflow and return these errors. At the `FBig`/`CachedFBig` convenience
