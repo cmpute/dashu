@@ -70,11 +70,12 @@ impl<R: Round> Context<R> {
         let x_scaled: FBig<R, B> = &x_f / &half_pi;
         let k_f = x_scaled.round();
         let r = x_f - &k_f * half_pi;
-        let Ok(k) = IBig::try_from(k_f) else {
-            unreachable!(
-                "round() always returns an integer and trig functions ensure input is finite"
-            );
-        };
+        // `k_f` is the integer nearest `x_scaled`, but `round()` of a value in
+        // (-1, 0) yields signed zero, whose exponent sentinel is negative. Extract
+        // the integer via `to_int` (truncation) instead of `IBig::try_from`, which
+        // rejects any negative exponent and would panic here for tiny negative
+        // inputs.
+        let k = k_f.to_int().value();
 
         let k_mod_4_big = k.rem_euclid(IBig::from(4));
         let Ok(k_mod_4_int) = i8::try_from(k_mod_4_big) else {
@@ -712,5 +713,28 @@ mod tests {
         assert!(r.repr().sign() == Sign::Positive);
         // it should be approximately π/2
         assert!(r > FBig::<mode::HalfEven>::ONE);
+    }
+
+    /// Regression: a tiny *negative* argument used to panic in `reduce_to_quadrant`.
+    /// `round()` of a value in (-1, 0) yields signed zero (exponent sentinel -1),
+    /// which `IBig::try_from` rejected, hitting the `unreachable!`. The quadrant
+    /// integer is now extracted via `to_int`.
+    #[test]
+    fn test_trig_tiny_negative_no_panic() {
+        let ctx = Context::<mode::HalfAway>::new(30);
+        for &e in &[-1isize, -2, -10, -30] {
+            // x = -1 * BASE^e, a tiny negative value
+            let x = Repr::<10>::new(IBig::from(-1), e);
+            let s = ctx.sin::<10>(&x, None).unwrap().value();
+            let c = ctx.cos::<10>(&x, None).unwrap().value();
+            let (ss, cc) = ctx.sin_cos::<10>(&x, None);
+            let ss = ss.unwrap().value();
+            let cc = cc.unwrap().value();
+            // sin is odd, cos is even: sin(x) ≈ x (negative), cos(x) ≈ 1
+            assert_eq!(s.sign(), Sign::Negative);
+            assert_eq!(c.sign(), Sign::Positive);
+            assert_eq!(ss.sign(), Sign::Negative);
+            assert_eq!(cc.sign(), Sign::Positive);
+        }
     }
 }

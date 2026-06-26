@@ -68,6 +68,8 @@ jobs:
     env:
       RUST_BACKTRACE: 1
       RUSTFLAGS: -D warnings --cfg force_bits="${{ matrix.bits }}"
+      # Cap proptest case counts so property tests stay fast in per-PR CI.
+      PROPTEST_CASES: 256
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master

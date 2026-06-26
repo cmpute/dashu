@@ -9,6 +9,9 @@ pub(crate) use arch_impl::word;
 #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
 pub(crate) use arch_impl::ntt;
 
+#[cfg(test)]
+mod tests;
+
 // Architecture choice. The logic works like this:
 // 1. If the configuration option force_bits is set to 16, 32 or 64, use generic_<n>_bit.
 // 2. Otherwise if target_arch is known, select that architecture.

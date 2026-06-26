@@ -59,7 +59,7 @@ where they conflict with the arbitrary-precision model, the deviation is noted.
 |---------------------|-----------|-------|
 | `abs(x)` always non-negative | ✅ | `FBig::abs()` converts `-0` to `+0`. |
 | `neg(x)` toggles sign of `±0` and `±∞` | ✅ | Correctly flips exponent sentinels via `negate_special_exponent`. |
-| `signum(±0)` = `±0` | ✅ | Returns `+0` for both `+0` and `-0`. |
+| `signum(±0)` = `+0` | ✅ | Returns `+0` for both `+0` and `-0` (signum collapses the sign of zero). |
 | `sign()` distinguishes `+0` from `-0` | ✅ | `Repr::sign()` returns `Negative` for `-0`. |
 
 ## Conversions

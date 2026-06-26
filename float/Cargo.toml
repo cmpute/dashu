@@ -66,6 +66,7 @@ postcard = { version = "1.0.2", features = ["alloc"] }
 serde_test = { version = "1.0.130" }
 serde_json = { version = "1.0" }
 postgres = { version = "0.19.4" }
+proptest = "~1.7"
 
 criterion = { version = "0.5.1", features = ["html_reports"] }
 
@@ -97,6 +98,11 @@ harness = false
 
 [[bench]]
 name = "io"
+required-features = ["rand"]
+harness = false
+
+[[bench]]
+name = "trig"
 required-features = ["rand"]
 harness = false
 

@@ -55,6 +55,11 @@
 - The `FBig` `+`/`-` operators now produce `-0` on exact cancellation under round-toward-negative
   (`Down`), matching `Context::add`/`sub` (previously the equal-exponent fast path yielded `+0`).
 - `ShrAssign` (`>>=`) for `FBig` previously subtracted the shift amount twice; it now shifts exactly once.
+- Trig functions (`sin`/`cos`/`tan`/`sin_cos`/`asin`/`acos`/`atan`/`atan2`) panicked on tiny negative
+  inputs (e.g. `sin(-1e-30)`): `round()` of a value in `(-1, 0)` yields signed zero, whose exponent
+  sentinel `IBig::try_from` rejected, hitting an `unreachable!` during argument reduction. The quadrant
+  integer is now extracted via `to_int`, which tolerates the signed-zero encoding. Found by the new
+  `trig_prop` property tests.
 
 ### Add
 - Add the `ConstCache` type and the `CachedFBig` wrapper. `ConstCache` caches exact binary-splitting tree state for mathematical constants (π, ln2, ln10, ln(B)) so that repeated calls at increasing precision *extend* prior work instead of recomputing from scratch. `CachedFBig` is an `FBig` carrying a shared `Rc<RefCell<ConstCache>>` handle: its transcendental operations (`ln`, `exp`, `sin`/`cos`/…, `pi`, base conversion) thread that handle through the `Context` methods, reusing/extending the cached state. `Context` and `FBig` stay `Copy` + `Send` + `Sync` + `no_std` (so `static_fbig!`/`static_dbig!` keep working); only `CachedFBig` is `!Send + !Sync` (sharing state via `Rc<RefCell<..>>`). Because `Context` accepts `Option<&mut ConstCache>`, users can build `Arc<Mutex<ConstCache>>`-based variants too.

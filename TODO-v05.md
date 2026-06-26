@@ -1,6 +1,6 @@
 # dashu v0.5 Release Plan
 
-Last updated: 2026-06-20
+Last updated: 2026-06-26
 
 This document is the consolidated plan for the **v0.5** release — a **major (breaking)** bump.
 Because it is a major release, its two organizing goals are:
@@ -39,7 +39,7 @@ The phases below are ordered by dependency, not by "importance". The logic is:
 |-------|-------|-----------|------------|
 | 0 | Test / benchmark / fuzz hardening | **GATE for all feature work** | — |
 | 1 | Breaking changes & deprecation cleanup | must land in 0.5 | 0 (ideally) |
-| 2 | `dashu-float` shared constant cache | must land in 0.5 | 0, 1 |
+| 2 | `dashu-float` shared constant cache | ✅ done (#83, as `CachedFBig`/`ConstCache`) | 0, 1 |
 | 3 | `dashu-complex` (`CBig`) — new crate | headline feature | 0, 2 |
 | 4 | The mdBook guide | required deliverable | 1, 2, 3 (content); infra can start now |
 | 5 | Release prep & version sync | — | 1–4 |
@@ -51,52 +51,31 @@ The phases below are ordered by dependency, not by "importance". The logic is:
 
 ## Phase 0 — Test, Benchmark & Fuzz Hardening  *(GATE)*
 
-**Goal:** establish correctness and performance baselines on the existing code *before* the new
-features are layered on. Today the project has **no** property-testing framework (no proptest /
-quickcheck / bolero / cargo-fuzz), the only real trig-correctness tests are all `#[ignore]`, and
-the `_dword` code paths (a "first-class citizen" per `AGENTS.md`) are almost untested directly.
+> **Implemented.** A pure-Rust `proptest` net now runs in the existing per-PR `test` job across the
+> full `force_bits` 16/32/64 matrix (no GMP, no new CI jobs). It covers float trig / exp / ln / pow /
+> nth-root identities + a `ln` correct-rounding self-oracle, the `_dword` fast paths (differential vs
+> the generic path), the `arch` `add_with_carry`/`sub_with_borrow`/digit-SWAR kernels, and rational
+> arithmetic identities. `proptest` is pinned to `~1.7` (MSRV 1.66, matches the existing `rand_v09`
+> copy; the MSRV CI job drops dev-deps, so it is unaffected). The strong rug/MPFR differential stays
+> in the excluded `fuzz/` crate, run manually before a release. `PROPTEST_CASES=256` is set in the
+> `test` job env to keep per-PR cost bounded.
+>
+> Benchmark gaps filled (compile-guarded by the existing clippy `--all-targets` job; not run in CI):
+> `float/benches/trig.rs`, FBig groups in `float/benches/io.rs`, `integer/benches/shift.rs` (+IBig),
+> IBig groups in `integer/benches/primitive.rs`, and rational reduction + RBig→FBig conversion benches.
+>
+> **Bonus:** the trig property tests surfaced and fixed a real signed-zero regression — `sin`/`cos`/
+> `tan`/`sin_cos`/`asin`/`acos`/`atan`/`atan2` panicked on tiny *negative* inputs, because `round()`
+> produced `-0` (sentinel exponent) which `IBig::try_from` rejected during argument reduction. Fixed
+> by extracting the quadrant integer via `to_int`; see `float/CHANGELOG.md` and the
+> `test_trig_tiny_negative_no_panic` regression test.
 
-### 0.1 Adopt a property-testing framework
-- [ ] Pick **one** of `proptest`, `bolero`, or `quickcheck` and add it as a dev-dependency across
-      crates (recommend `proptest` — mature, deterministic seeds, `no_std`-friendly adapters).
-      `bolero` additionally gives a libFuzzer backend if we want coverage-guided fuzzing later.
-- [ ] Standardize an **oracle pattern**: compare `dashu-float` results against `rug`/`gmp` (already
-      used in `fuzz/tests/trig_random.rs`) at random precisions and inputs.
+One item remains open:
 
-### 0.2 Critical correctness gaps (must close before Phase 3)
-These are the functions `CBig` will build on, so they must be provably correct first.
+- [ ] **Record baseline benchmark numbers** so Phase 2/3 perf regressions are detectable (criterion
+      `--save-baseline`, a committed comparison, or manual capture). The benches exist and compile in
+      CI; only the baseline-capture workflow is undecided.
 
-- [ ] **Float trig** (`float/src/math/trig.rs`): the only meaningful correctness tests live in
-      `fuzz/tests/trig_random.rs` and are **all `#[ignore]`** — they never run. Either (a) extract a
-      reduced-iteration, non-ignored CI subset, or (b) replace with property tests that run
-      unconditionally: Pythagorean identity `sin²+cos²≈1`, double-angle, `atan(x) + atan(1/x) ≈ π/2`.
-      The in-tree `float/tests/trig.rs` tests only at precision 30 with coarse `1e-29` bounds.
-- [ ] **Float exp/ln/pow/nth_root** (`float/tests/exp.rs`, `log.rs`, `root.rs`): add randomized
-      oracle (rug) tests across random precisions and exponents. Currently only hand-crafted cases.
-- [ ] **`_dword` code paths** (45 functions; only ~5 directly tested): add boundary tests for
-      `mul_dword`, `div_rem_dword`, `add_dword_in_place`, `sub_dword_in_place`, `gcd_ext_dword`,
-      `pow_dword_base`, `log_dword`, and the bitwise dword ops — using `DoubleWord::MAX` and values
-      straddling the word/double-word boundary.
-- [ ] **Arch-level kernels** (`integer/src/arch/{generic,x86,x86_64}/`): add direct unit tests for
-      `add_with_carry` / `sub_with_borrow` and any SIMD paths (currently zero tests in arch files).
-- [ ] **Rational arithmetic identities** (`rational/tests/`): add randomized `a/b ± c/d`, mul/div,
-      and `x - x == 0` checks (no such tests exist today).
-
-### 0.3 Benchmark gaps (must close before performance-sensitive Phases 2–3)
-Harness today: per-crate `criterion 0.5.1` benches + the cross-library `benchmark/` scratchpad.
-
-- [ ] **Float trig benchmarks** — no `float/benches/trig.rs` exists; trig is expensive and newly
-      added. Add a bench covering `sin/cos/tan/asin/acos/atan/atan2` at several precisions.
-- [ ] **Float `FBig` I/O benchmarks** — `float/benches/io.rs` only benches `DBig`; add `FBig` paths.
-- [ ] **Integer shift benchmarks** — no shift bench; multiple fast paths (word- vs bit-shift).
-- [ ] **Integer `IBig` benchmarks** — all int benches target `UBig` only; sign handling is unbench'd.
-- [ ] **Rational reduction / cross-crate conversion** benches.
-
-### 0.4 CI
-- [ ] `.github/workflows/tests.yml`: add a job that runs the property-test subset (currently nothing
-      runs `#[ignore]`d tests or any `cargo bench`). Consider a nightly long-running fuzz job.
-- [ ] Record baseline benchmark numbers so Phase 2/3 regressions are detectable (criterion's
-      `--save-baseline` / a committed `criterion` comparison, or just manual capture).
 
 ---
 
@@ -129,10 +108,10 @@ Every item here changes public API and **must** land in 0.5. File:line refs are 
       `third_party/num_traits.rs:139`.
 - [ ] **Float serde precision padding** (`third_party/serde.rs:39`): pad with leading zeros to
       preserve precision on round-trip. *(Decision needed — format change; see Open Decisions.)*
-- [ ] **Infinity / NaN panic policy** (`float/src/lib.rs:105`): decide whether to allow operations
-      with infinities (panicking only on NaN) instead of panicking on any non-finite input. This
-      interacts with `FpResult` (already added in Unreleased) and with CBig (complex results can be
-      infinite). *(Decision needed — behavior change; see Open Decisions.)*
+
+> *Implemented in #83 and removed from this list:* the infinity/NaN panic policy (infinities are now
+> terminal values; `FpResult<T> = Result<Rounded<T>, FpError>`; full IEEE-754 signed zero) — see
+> `guide/src/ieee754.md` and `float/CHANGELOG.md`.
 
 ### 1.4 `dashu-ratio`
 - [ ] **`From<Repr> for FBig` → `TryFrom`** (`rational/src/third_party/dashu_float.rs:12`): make the
@@ -150,42 +129,19 @@ Internal algorithm TODOs (right-to-left exponentiation `pow.rs:67`, double-power
 
 ## Phase 2 — `dashu-float` Shared Constant Cache
 
-**Goal:** every `FBig`/`Context` method that touches an expensive constant (`pi`, `ln2`, `ln_base`)
-transparently reuses a shared cache, with **zero new methods on `FBig`**. Design lives in
-`SHARED_CACHE.md` on `origin/float-cache`; ~half is already implemented there.
+> **Implemented in #83** as the public **`ConstCache`** type + the **`CachedFBig`** wrapper (carries
+> `Rc<RefCell<ConstCache>>`; its transcendental ops thread the handle through `Context`). `Context`
+> and `FBig` stay `Copy + Send + Sync + no_std`; the constant-source `Context` methods take a breaking
+> `cache: Option<&mut ConstCache>` parameter (high-level `FBig` passes `None`). `ConstCache` is
+> `Send + Sync`, so `Arc<Mutex<ConstCache>>` variants are also possible. π's base-free `√10005` isqrt
+> is cached too. See `float/src/math/cache.rs`, `float/src/fbig_cached.rs`, and `guide/src/construct.md`.
 
-### 2.1 Already done on `origin/float-cache` (port / rebase onto v0.5)
-- [ ] `float/src/math/cache.rs` — the `MathCache` type: stores exact binary-splitting `(P, Q, T)`
-      state (base-independent integers) per series; incremental extension via the universal merge
-      `(P_l·P_r, Q_l·Q_r, T_l·Q_r + P_l·T_r)`. Public `MathCache::new()`, `.pi()`, `.ln2()`,
-      `.ln10()`, `.ln_base()`.
-- [ ] `float/src/math/consts.rs` — extracted `merge()`, `iacoth_bs()`, precomputed initial blocks
-      (`IACOTH_{6,9,99}_INITIAL`); `chudnovsky_bs` made `pub(crate)`.
-- [ ] `float/src/log.rs` — `Context::iacoth` rewritten to binary splitting.
+Only two items from the original plan remain open:
 
-### 2.2 The integration (SHARED_CACHE.md "phase 2", ~70 LOC + ripple) — **the breaking part**
-- [ ] Drop `Copy` from `Context` (keep `Clone`); add field `cache: Option<Rc<RefCell<ConstCache>>>`.
-- [ ] Add builders `Context::with_cache(&Rc<RefCell<ConstCache>>)` and
-      `Context::with_precision(usize)`.
-- [ ] `Context::max` → take `&self, &Self` (~16 call sites in `add/div/mul/exp.rs`).
-- [ ] `FBig::context()` returns `&Context<R>` instead of by value.
-- [ ] Insert cache checks in `Context::ln2`/`ln_base`/`pi`; propagate the cache through internal
-      work contexts via `with_precision`.
-- [ ] `FpResult::value/ok` use `context.clone()`.
-
-### 2.3 Decisions & risks to resolve *(see Open Decisions)*
-- [ ] **Thread-safety:** `Rc<RefCell<ConstCache>>` makes `Context` `!Send + !Sync` (today it is
-      `Copy + Send + Sync`). This is a breaking change for downstream `Send`-relying code. Choose:
-      (a) `Rc` single-threaded default + an opt-in `Arc<Mutex<…>>` `SyncCache`, or
-      (b) `Arc<Mutex<…>>` always (sync but heavier), or
-      (c) `cfg`-gated (`Rc` under no-std/single-thread, `Arc` under std multi-thread).
-- [ ] **`no_std` / `alloc`:** `Rc`/`RefCell` are in `alloc`, consistent with the crate's current
-      tier. Confirm the `Option<Rc<…>>` field (zero-cost when `None`) doesn't force an unwanted
-      `alloc` dep on `core`-only users.
-- [ ] **Memory growth:** no eviction policy — a 1M-digit pi lives in the cache until dropped. Decide
-      whether v0.5 ships a cap / shrink, or documents it.
-- [ ] **Thread-local opt-in (std):** the doc sketches a `thread_local!` `MATH_CACHE` so existing
-      `FBig` code is cached with no API change. Decide whether to ship this convenience in 0.5.
+- [ ] **Memory growth:** no eviction/cap/shrink policy — a 1M-digit π lives in the cache until
+      `clear_cache()`/drop. Decide whether 0.5 ships a cap or just documents it.
+- [ ] **Thread-local opt-in (std):** decide whether a `thread_local!` convenience layer is still
+      wanted now that the explicit `CachedFBig` API exists.
 
 ---
 
@@ -262,7 +218,8 @@ and nothing in CI builds or deploys it.
       `ops/{index,basic,cmp,bit,exp_log,num_theory}.md`, `faq.md`, `cheatsheet.md`, and the
       `convert.md` FBig TODO sections.
 - [ ] Expand `SUMMARY.md` as needed and **add new chapters** for v0.5 surfaces:
-      - the **constant cache** (`MathCache`, `Context::with_cache`, the thread-local opt-in),
+      - the **constant cache** (`ConstCache` / `CachedFBig`; a section already exists in
+        `construct.md` — promote/expand it into full coverage),
       - **`CBig` complex numbers** (construction, arithmetic, transcendentals, branch cuts).
 - [ ] Migrate verbose API prose out of doc-comments into the guide (per `integer/src/ubig.rs:10`),
       leaving concise rustdoc behind — pairs with the `#![deny(missing_docs)]` work in 1.2.
@@ -301,19 +258,15 @@ These shape the plan but don't block starting Phase 0/1. Recommended defaults ar
 1. **`CBig` scope for v0.5.** Ship core arithmetic + elementary transcendentals (`sqrt/exp/log/pow/
    sin/cos/tan/asin/acos/atan`) + abs/arg/conj/proj + I/O; defer hyperbolics/fma/agm/vector-ops/
    ball-arith. **(rec)** — matches "common functionalities" and is a defensible 0.5 cut.
-2. **Cache thread-safety model.** `Rc` single-thread default + opt-in `SyncCache` (`Arc<Mutex>`).
-   **(rec)** — keeps the common (single-thread) path light and restores an opt-in `Send+Sync`
-   story without making every `Context` pay for locking.
-3. **`Context` losing `Copy`.** Acceptable as a breaking change in 0.5. **(rec: accept)** — it's the
-   price of the cache; well-documented in the changelog.
-4. **Float infinity/NaN panic policy** (`float/src/lib.rs:105`). Allow ops with infinities (panic
-   only on NaN), leveraging the new `FpResult`. **(rec)** — aligns with C99 Annex G, which CBig
-   needs anyway.
-5. **Float serde precision padding** (`serde.rs:39`). Apply (pad leading zeros) in 0.5 since
+2. **Float serde precision padding** (`serde.rs:39`). Apply (pad leading zeros) in 0.5 since
    formats are changing anyway. **(rec)**.
-6. **Property-testing framework.** Adopt `proptest`. **(rec)**; add `bolero` later if we want
+3. **Property-testing framework.** Adopt `proptest`. **(rec)**; add `bolero` later if we want
    coverage-guided fuzzing (Phase 0.4 P3).
-7. **MSRV.** Keep 1.68 unless a concrete 0.5 feature requires newer. **(rec: keep)**.
+4. **MSRV.** Keep 1.68 unless a concrete 0.5 feature requires newer. **(rec: keep)**.
+
+> *Resolved in #83:* the cache thread-safety model (`Rc<RefCell>` in `CachedFBig` + `Send + Sync`
+> `ConstCache`), `Context` losing `Copy` (kept `Copy` — cache moved into `CachedFBig`), and the float
+> infinity/NaN panic policy (infinities are terminal values; no NaN).
 
 ---
 
@@ -321,10 +274,9 @@ These shape the plan but don't block starting Phase 0/1. Recommended defaults ar
 
 | Risk | Mitigation |
 |------|------------|
-| `Context: !Copy` + `!Send` breaks downstream | Land in 0.5 (major); provide opt-in `SyncCache`; document prominently |
 | Correctly-rounded complex mul/div is hard | Use Smith's method / extended precision; fuzz vs MPC/rug oracle (Phase 0.2/3.3) |
 | Trig/exp correctness is currently unverified in CI | Phase 0.2 *before* CBig consumes those functions |
-| Cache memory unbounded growth | Decide cap/shrink policy (Phase 2.3); at minimum document |
+| Cache memory unbounded growth | Decide cap/shrink policy (Phase 2); at minimum document |
 | Guide content churn if written before API freeze | Content trails Phases 1–3; only infra starts early |
 | Version skew complicates publishing | Phase 5 sync; pin internal deps to `0.5.0` |
 | `_dword` paths under-tested yet "first-class" | Phase 0.2 direct tests; required before trusting complex on float |

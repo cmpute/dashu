@@ -59,7 +59,7 @@ A `CachedFBig` is created by attaching a cache handle to an `FBig`:
 ```rust
 use std::rc::Rc;
 use core::cell::RefCell;
-use dashu_float::{CachedFBig, ConstCache, Repr, Context};
+use dashu_float::{CachedFBig, ConstCache, FBig, Repr, Context};
 
 let cache = Rc::new(RefCell::new(ConstCache::new()));
 
