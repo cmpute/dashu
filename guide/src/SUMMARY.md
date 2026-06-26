@@ -19,3 +19,4 @@
 - [FAQ](./faq.md)
 - [Performance](./performance.md)
 - [Cheatsheet](./cheatsheet.md)
+- [IEEE 754 Compliance](./ieee754.md)

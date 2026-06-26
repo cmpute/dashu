@@ -1,5 +1,5 @@
 use crate::{
-    error::assert_finite_operands,
+    error::{assert_finite_operands, FpError, FpResult},
     fbig::FBig,
     helper_macros,
     repr::{Context, Repr, Word},
@@ -13,6 +13,16 @@ use core::{
 
 use dashu_base::Sign::{self, *};
 use dashu_int::{IBig, UBig};
+
+/// Build a `Repr` from a cancellation result, producing `-0` (instead of `+0`) when the
+/// significand is zero and the rounding mode is roundTowardNegative (IEEE 754 §6.3).
+fn cancel_zero<R: Round, const B: Word>(sig: IBig, exp: isize) -> Repr<B> {
+    if sig.is_zero() && R::IS_ROUND_TOWARD_NEGATIVE {
+        Repr::neg_zero()
+    } else {
+        Repr::new(sig, exp)
+    }
+}
 
 impl<R: Round, const B: Word> Add for FBig<R, B> {
     type Output = Self;
@@ -114,7 +124,7 @@ fn add_val_val<R: Round, const B: Word>(
         lhs.repr
     } else {
         match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
-            Ordering::Equal => context.repr_round(Repr::new(
+            Ordering::Equal => context.repr_round(cancel_zero::<R, B>(
                 lhs.repr.significand + rhs.repr.significand,
                 lhs.repr.exponent,
             )),
@@ -147,7 +157,7 @@ fn add_val_ref<R: Round, const B: Word>(
                     Positive => lhs.repr.significand + &rhs.repr.significand,
                     Negative => lhs.repr.significand - &rhs.repr.significand,
                 };
-                context.repr_round(Repr::new(sum_signif, lhs.repr.exponent))
+                context.repr_round(cancel_zero::<R, B>(sum_signif, lhs.repr.exponent))
             }
             Ordering::Greater => context.repr_add_large_small(lhs.repr, &rhs.repr, rhs_sign),
             Ordering::Less => context.repr_add_small_large(lhs.repr, &rhs.repr, rhs_sign),
@@ -172,7 +182,7 @@ fn add_ref_val<R: Round, const B: Word>(
         lhs.repr.clone()
     } else {
         match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
-            Ordering::Equal => context.repr_round(Repr::new(
+            Ordering::Equal => context.repr_round(cancel_zero::<R, B>(
                 &lhs.repr.significand + rhs.repr.significand,
                 lhs.repr.exponent,
             )),
@@ -200,7 +210,7 @@ fn add_ref_ref<R: Round, const B: Word>(
         lhs.repr.clone()
     } else {
         match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
-            Ordering::Equal => context.repr_round(Repr::new(
+            Ordering::Equal => context.repr_round(cancel_zero::<R, B>(
                 &lhs.repr.significand + rhs_sign * rhs.repr.significand.clone(),
                 lhs.repr.exponent,
             )),
@@ -224,9 +234,20 @@ impl<R: Round> Context<R> {
         mut low: (IBig, usize),
         is_sub: bool,
     ) -> Rounded<Repr<B>> {
+        // A zero produced by exact cancellation is -0 only under roundTowardNegative (Down),
+        // +0 otherwise (IEEE 754 §6.3).
+        let neg_cancel = is_sub && R::IS_ROUND_TOWARD_NEGATIVE;
+        let make_repr = |sig: IBig, exp: isize| -> Repr<B> {
+            if sig.is_zero() && neg_cancel {
+                Repr::neg_zero()
+            } else {
+                Repr::new(sig, exp)
+            }
+        };
+
         if !self.is_limited() {
             // short cut for unlimited precision
-            return Rounded::Exact(Repr::new(significand, exponent));
+            return Rounded::Exact(make_repr(significand, exponent));
         }
 
         // use one extra digit to prevent cancellation in rounding
@@ -278,12 +299,12 @@ impl<R: Round> Context<R> {
 
         // perform rounding
         if low.0.is_zero() {
-            Rounded::Exact(Repr::new(significand, exponent))
+            Rounded::Exact(make_repr(significand, exponent))
         } else {
             // By now significand should have at least full precision. After adjustment, the digits length
             // could be one more than the precision. We don't shrink the extra digit.
             let adjust = R::round_fract::<B>(&significand, low.0, low.1);
-            Rounded::Inexact(Repr::new(significand + adjust, exponent), adjust)
+            Rounded::Inexact(make_repr(significand + adjust, exponent), adjust)
         }
     }
 
@@ -485,11 +506,13 @@ impl<R: Round> Context<R> {
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str("1.234")?;
     /// let b = DBig::from_str("6.789")?;
-    /// assert_eq!(context.add(&a.repr(), &b.repr()), Inexact(DBig::from_str("8.0")?, NoOp));
+    /// assert_eq!(context.add(&a.repr(), &b.repr()), Ok(Inexact(DBig::from_str("8.0")?, NoOp)));
     /// # Ok::<(), ParseError>(())
     /// ```
-    pub fn add<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Rounded<FBig<R, B>> {
-        assert_finite_operands(lhs, rhs);
+    pub fn add<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> FpResult<FBig<R, B>> {
+        if lhs.is_infinite() || rhs.is_infinite() {
+            return Err(FpError::InfiniteInput);
+        }
 
         let sum = if lhs.is_zero() {
             self.repr_round_ref(rhs)
@@ -498,13 +521,14 @@ impl<R: Round> Context<R> {
         } else {
             match lhs.exponent.cmp(&rhs.exponent) {
                 Ordering::Equal => {
-                    self.repr_round(Repr::new(&lhs.significand + &rhs.significand, lhs.exponent))
+                    let sig = &lhs.significand + &rhs.significand;
+                    self.repr_round(cancel_zero::<R, B>(sig, lhs.exponent))
                 }
                 Ordering::Greater => self.repr_add_large_small(lhs.clone(), rhs, Positive),
                 Ordering::Less => self.repr_add_small_large(lhs.clone(), rhs, Positive),
             }
         };
-        sum.map(|v| FBig::new(v, *self))
+        Ok(sum.map(|v| FBig::new(v, *self)))
     }
 
     /// Subtract two floating point numbers under this context.
@@ -523,12 +547,14 @@ impl<R: Round> Context<R> {
     /// let b = DBig::from_str("6.789")?;
     /// assert_eq!(
     ///     context.sub(&a.repr(), &b.repr()),
-    ///     Inexact(DBig::from_str("-5.6")?, SubOne)
+    ///     Ok(Inexact(DBig::from_str("-5.6")?, SubOne))
     /// );
     /// # Ok::<(), ParseError>(())
     /// ```
-    pub fn sub<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Rounded<FBig<R, B>> {
-        assert_finite_operands(lhs, rhs);
+    pub fn sub<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> FpResult<FBig<R, B>> {
+        if lhs.is_infinite() || rhs.is_infinite() {
+            return Err(FpError::InfiniteInput);
+        }
 
         let sum = if lhs.is_zero() {
             // Round `-rhs` directly rather than negating *after* rounding. For the asymmetric
@@ -541,13 +567,14 @@ impl<R: Round> Context<R> {
         } else {
             match lhs.exponent.cmp(&rhs.exponent) {
                 Ordering::Equal => {
-                    self.repr_round(Repr::new(&lhs.significand - &rhs.significand, lhs.exponent))
+                    let sig = &lhs.significand - &rhs.significand;
+                    self.repr_round(cancel_zero::<R, B>(sig, lhs.exponent))
                 }
                 Ordering::Greater => self.repr_add_large_small(lhs.clone(), rhs, Negative),
                 Ordering::Less => self.repr_add_small_large(lhs.clone(), rhs, Negative),
             }
         };
-        sum.map(|v| FBig::new(v, *self))
+        Ok(sum.map(|v| FBig::new(v, *self)))
     }
 }
 
@@ -571,6 +598,7 @@ mod tests {
         // 1.00 - 0.99999999 = 1e-8 (exactly representable at precision 3)
         assert_eq!(
             ctx.sub(&r::<10>(100, -2), &r::<10>(99999999, -8))
+                .unwrap()
                 .value()
                 .repr(),
             &r::<10>(1, -8)
@@ -578,6 +606,7 @@ mod tests {
         // 1.00 - 0.99950001 = 4.9999e-4, rounds to 5.00e-4 (HalfAway)
         assert_eq!(
             ctx.sub(&r::<10>(100, -2), &r::<10>(99950001, -8))
+                .unwrap()
                 .value()
                 .repr(),
             &r::<10>(500, -6)
@@ -590,6 +619,7 @@ mod tests {
         // 2^20 - (2^20 - 1) = 1, with the operands 20 exponent positions apart
         assert_eq!(
             ctx.sub(&r::<2>(1, 20), &r::<2>((1i128 << 20) - 1, 0))
+                .unwrap()
                 .value()
                 .repr(),
             &r::<2>(1, 0)
@@ -597,6 +627,7 @@ mod tests {
         // same magnitude gap but the smaller-exponent operand is on the left
         assert_eq!(
             ctx.sub(&r::<2>((1i128 << 20) - 1, 0), &r::<2>(1, 20))
+                .unwrap()
                 .value()
                 .repr(),
             &r::<2>(-1, 0)
@@ -604,6 +635,7 @@ mod tests {
         // 2^30 - (2^30 - 1) = 1
         assert_eq!(
             ctx.sub(&r::<2>(1, 30), &r::<2>((1i128 << 30) - 1, 0))
+                .unwrap()
                 .value()
                 .repr(),
             &r::<2>(1, 0)
@@ -618,6 +650,7 @@ mod tests {
         // 2^20 + (-(2^20 - 1)) = 1
         assert_eq!(
             ctx.add(&r::<2>(1, 20), &r::<2>(-((1i128 << 20) - 1), 0))
+                .unwrap()
                 .value()
                 .repr(),
             &r::<2>(1, 0)
@@ -639,7 +672,13 @@ mod tests {
     fn sub_mild_unchanged() {
         let ctx = Context::<HalfAway>::new(3);
         // 101 - 0.2 = 100.8, kept as 1008 * 10^-1 (one guard digit, as before)
-        assert_eq!(ctx.sub(&r::<10>(101, 0), &r::<10>(2, -1)).value().repr(), &r::<10>(1008, -1));
+        assert_eq!(
+            ctx.sub(&r::<10>(101, 0), &r::<10>(2, -1))
+                .unwrap()
+                .value()
+                .repr(),
+            &r::<10>(1008, -1)
+        );
     }
 
     // Regression for the branch-1 signum-proxy bug (SUM-BUG.md §2c): when the larger
@@ -653,18 +692,37 @@ mod tests {
     fn add_negligible_short_operand_no_spurious_ulp() {
         // base 2 + HalfAway: the exact tie case
         let ctx = Context::<HalfAway>::new(10);
-        assert_eq!(ctx.add(&r::<2>(1, 0), &r::<2>(1, -100)).value().repr(), &r::<2>(1, 0));
-        assert_eq!(ctx.sub(&r::<2>(1, 0), &r::<2>(1, -100)).value().repr(), &r::<2>(1, 0));
+        assert_eq!(
+            ctx.add(&r::<2>(1, 0), &r::<2>(1, -100))
+                .unwrap()
+                .value()
+                .repr(),
+            &r::<2>(1, 0)
+        );
+        assert_eq!(
+            ctx.sub(&r::<2>(1, 0), &r::<2>(1, -100))
+                .unwrap()
+                .value()
+                .repr(),
+            &r::<2>(1, 0)
+        );
         // larger short operand (digits < precision), negligible addend
         let ctx = Context::<HalfAway>::new(50);
         assert_eq!(
             ctx.add(&r::<2>(0x12345, 0), &r::<2>(1, -200))
+                .unwrap()
                 .value()
                 .repr(),
             &r::<2>(0x12345, 0)
         );
         // base 10 was never affected (1 < ½·10), but check it stays correct
         let ctx = Context::<HalfAway>::new(10);
-        assert_eq!(ctx.add(&r::<10>(1, 0), &r::<10>(1, -100)).value().repr(), &r::<10>(1, 0));
+        assert_eq!(
+            ctx.add(&r::<10>(1, 0), &r::<10>(1, -100))
+                .unwrap()
+                .value()
+                .repr(),
+            &r::<10>(1, 0)
+        );
     }
 }

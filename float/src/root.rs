@@ -2,10 +2,10 @@ use dashu_base::{Approximation, CubicRoot, Sign, SquareRoot, SquareRootRem, Unsi
 use dashu_int::{IBig, UBig};
 
 use crate::{
-    error::{assert_finite, assert_limited_precision, panic_root_negative, panic_root_zeroth},
+    error::{assert_limited_precision, panic_root_zeroth, FpError, FpResult},
     fbig::FBig,
     repr::{Context, Repr, Word},
-    round::{Round, Rounded},
+    round::Round,
     utils::{shl_digits, split_digits_ref},
 };
 
@@ -13,7 +13,7 @@ impl<R: Round, const B: Word> SquareRoot for FBig<R, B> {
     type Output = Self;
     #[inline]
     fn sqrt(&self) -> Self {
-        self.context.sqrt(self.repr()).value()
+        self.context.unwrap_fp(self.context.sqrt(self.repr()))
     }
 }
 
@@ -21,11 +21,21 @@ impl<R: Round, const B: Word> CubicRoot for FBig<R, B> {
     type Output = Self;
     #[inline]
     fn cbrt(&self) -> Self {
-        self.context.cbrt(self.repr()).value()
+        self.context.unwrap_fp(self.context.cbrt(self.repr()))
     }
 }
 
 impl<R: Round, const B: Word> FBig<R, B> {
+    /// Calculate the square root of the floating point number.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is unlimited.
+    #[inline]
+    pub fn sqrt(&self) -> Self {
+        self.context.unwrap_fp(self.context.sqrt(&self.repr))
+    }
+
     /// Calculate the nth root of the floating point number.
     ///
     /// When `n` is large the computation can be expensive — the significand is
@@ -50,7 +60,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Panics if `n` is zero, or if `n` is even and the number is negative.
     #[inline]
     pub fn nth_root(&self, n: usize) -> Self {
-        self.context.nth_root(n, self.repr()).value()
+        self.context
+            .unwrap_fp(self.context.nth_root(n, self.repr()))
     }
 }
 
@@ -68,18 +79,24 @@ impl<R: Round> Context<R> {
     ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str("1.23")?;
-    /// assert_eq!(context.sqrt(&a.repr()), Inexact(DBig::from_str("1.1")?, NoOp));
+    /// assert_eq!(context.sqrt(&a.repr()), Ok(Inexact(DBig::from_str("1.1")?, NoOp)));
     /// # Ok::<(), ParseError>(())
     /// ```
     ///
     /// # Panics
     ///
     /// Panics if the precision is unlimited.
-    pub fn sqrt<const B: Word>(&self, x: &Repr<B>) -> Rounded<FBig<R, B>> {
-        assert_finite(x);
+    pub fn sqrt<const B: Word>(&self, x: &Repr<B>) -> FpResult<FBig<R, B>> {
+        if x.is_infinite() {
+            return Err(FpError::InfiniteInput);
+        }
         assert_limited_precision(self.precision);
+        if x.significand.is_zero() {
+            // sqrt(+0) = +0, sqrt(-0) = -0 (preserve the sign of zero)
+            return Ok(Approximation::Exact(FBig::new(x.clone(), *self)));
+        }
         if x.sign() == Sign::Negative {
-            panic_root_negative()
+            return Err(FpError::OutOfDomain);
         }
 
         // adjust the signifcand so that the exponent is even
@@ -107,9 +124,10 @@ impl<R: Round> Context<R> {
             });
             Approximation::Inexact(root + adjust, adjust)
         };
-        res.map(|signif| Repr::new(signif, exp))
+        Ok(res
+            .map(|signif| Repr::new(signif, exp))
             .and_then(|v| self.repr_round(v))
-            .map(|v| FBig::new(v, *self))
+            .map(|v| FBig::new(v, *self)))
     }
 
     /// Calculate the cubic root of the floating point number.
@@ -125,7 +143,7 @@ impl<R: Round> Context<R> {
     ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str("8")?;
-    /// assert_eq!(context.cbrt(&a.repr()), Exact(DBig::from_str("2")?));
+    /// assert_eq!(context.cbrt(&a.repr()), Ok(Exact(DBig::from_str("2")?)));
     /// # Ok::<(), ParseError>(())
     /// ```
     ///
@@ -133,7 +151,7 @@ impl<R: Round> Context<R> {
     ///
     /// Panics if the precision is unlimited.
     #[inline]
-    pub fn cbrt<const B: Word>(&self, x: &Repr<B>) -> Rounded<FBig<R, B>> {
+    pub fn cbrt<const B: Word>(&self, x: &Repr<B>) -> FpResult<FBig<R, B>> {
         self.nth_root(3, x)
     }
 
@@ -150,15 +168,17 @@ impl<R: Round> Context<R> {
     ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str("27")?;
-    /// assert_eq!(context.nth_root(3, &a.repr()), Exact(DBig::from_str("3")?));
+    /// assert_eq!(context.nth_root(3, &a.repr()), Ok(Exact(DBig::from_str("3")?)));
     /// # Ok::<(), ParseError>(())
     /// ```
     ///
     /// # Panics
     ///
     /// Panics if `n` is zero, if the precision is unlimited, or if `n` is even and `x` is negative.
-    pub fn nth_root<const B: Word>(&self, n: usize, x: &Repr<B>) -> Rounded<FBig<R, B>> {
-        assert_finite(x);
+    pub fn nth_root<const B: Word>(&self, n: usize, x: &Repr<B>) -> FpResult<FBig<R, B>> {
+        if x.is_infinite() {
+            return Err(FpError::InfiniteInput);
+        }
         assert_limited_precision(self.precision);
         if n == 0 {
             panic_root_zeroth()
@@ -166,14 +186,16 @@ impl<R: Round> Context<R> {
         debug_assert!(n < isize::MAX as usize);
         let sign = x.sign();
         if sign == Sign::Negative && n % 2 == 0 {
-            panic_root_negative()
+            return Err(FpError::OutOfDomain);
         }
         if n == 1 {
-            return self.repr_round_ref(x).map(|v| FBig::new(v, *self));
+            return Ok(self.repr_round_ref(x).map(|v| FBig::new(v, *self)));
         }
         if x.significand.is_zero() {
-            // UBig::ZERO.nth_root(n) erroneously returns ONE, so short-circuit here
-            return Approximation::Exact(FBig::new(Repr::zero(), *self));
+            // UBig::ZERO.nth_root(n) erroneously returns ONE, so short-circuit here.
+            // An even root of -0 already errored above, so reaching here the sign is
+            // preserved: odd root of ±0 is ±0.
+            return Ok(Approximation::Exact(FBig::new(x.clone(), *self)));
         }
 
         // operate on the magnitude so that shifting/splitting keep a clean sign;
@@ -225,8 +247,23 @@ impl<R: Round> Context<R> {
             });
             Approximation::Inexact(signed_root.clone() + adjust, adjust)
         };
-        res.map(|signif| Repr::new(signif, exp))
+        Ok(res
+            .map(|signif| Repr::new(signif, exp))
             .and_then(|v| self.repr_round(v))
-            .map(|v| FBig::new(v, *self))
+            .map(|v| FBig::new(v, *self)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::round::mode;
+
+    #[test]
+    #[should_panic]
+    fn test_fbig_sqrt_negative_panics() {
+        // sqrt(-1) is out of domain; the FBig layer panics.
+        let neg_one = FBig::<mode::HalfEven>::try_from(-1.0f64).unwrap();
+        let _ = neg_one.sqrt();
     }
 }

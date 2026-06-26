@@ -1,16 +1,78 @@
 use crate::{
-    error::{assert_finite_operands, assert_limited_precision},
+    error::{assert_finite_operands, assert_limited_precision, FpError, FpResult},
     fbig::FBig,
     helper_macros::{self, impl_binop_assign_by_taking},
     repr::{Context, Repr, Word},
-    round::{Round, Rounded},
+    round::{Round, Rounded, Rounding},
     utils::{digit_len, shl_digits_in_place, split_digits},
 };
 use core::ops::{Div, DivAssign, Rem, RemAssign};
-use dashu_base::{Approximation, DivEuclid, DivRem, DivRemEuclid, Inverse, RemEuclid};
+use dashu_base::{Approximation, DivEuclid, DivRem, DivRemEuclid, Inverse, RemEuclid, Sign};
 use dashu_int::{fast_div::ConstDivisor, modular::IntoRing, IBig, UBig};
 
-macro_rules! impl_div_or_rem_for_fbig {
+/// Attach the dividend/divisor XOR sign to a zero quotient: the raw quotient significand is
+/// `+0`, so the sign of a zero result (`0/finite`, or a finite/finite that rounds to zero) is
+/// `sign(lhs) XOR sign(rhs)`.
+fn make_div_repr<const B: Word>(
+    sign_negative: bool,
+    significand: IBig,
+    exponent: isize,
+) -> Repr<B> {
+    if significand.is_zero() {
+        if sign_negative {
+            Repr::neg_zero()
+        } else {
+            Repr::zero()
+        }
+    } else {
+        Repr::new(significand, exponent)
+    }
+}
+
+macro_rules! impl_div_for_fbig {
+    (impl $op:ident, $method:ident, $repr_method:ident) => {
+        impl<R: Round, const B: Word> $op<FBig<R, B>> for FBig<R, B> {
+            type Output = FBig<R, B>;
+            fn $method(self, rhs: FBig<R, B>) -> Self::Output {
+                let context = Context::max(self.context, rhs.context);
+                let rounded = context.unwrap_fp_repr(context.$repr_method(self.repr, rhs.repr));
+                FBig::new(rounded, context)
+            }
+        }
+
+        impl<'l, R: Round, const B: Word> $op<FBig<R, B>> for &'l FBig<R, B> {
+            type Output = FBig<R, B>;
+            fn $method(self, rhs: FBig<R, B>) -> Self::Output {
+                let context = Context::max(self.context, rhs.context);
+                let rounded =
+                    context.unwrap_fp_repr(context.$repr_method(self.repr.clone(), rhs.repr));
+                FBig::new(rounded, context)
+            }
+        }
+
+        impl<'r, R: Round, const B: Word> $op<&'r FBig<R, B>> for FBig<R, B> {
+            type Output = FBig<R, B>;
+            fn $method(self, rhs: &FBig<R, B>) -> Self::Output {
+                let context = Context::max(self.context, rhs.context);
+                let rounded =
+                    context.unwrap_fp_repr(context.$repr_method(self.repr, rhs.repr.clone()));
+                FBig::new(rounded, context)
+            }
+        }
+
+        impl<'l, 'r, R: Round, const B: Word> $op<&'r FBig<R, B>> for &'l FBig<R, B> {
+            type Output = FBig<R, B>;
+            fn $method(self, rhs: &FBig<R, B>) -> Self::Output {
+                let context = Context::max(self.context, rhs.context);
+                let rounded = context
+                    .unwrap_fp_repr(context.$repr_method(self.repr.clone(), rhs.repr.clone()));
+                FBig::new(rounded, context)
+            }
+        }
+    };
+}
+
+macro_rules! impl_rem_for_fbig {
     (impl $op:ident, $method:ident, $repr_method:ident) => {
         impl<R: Round, const B: Word> $op<FBig<R, B>> for FBig<R, B> {
             type Output = FBig<R, B>;
@@ -50,8 +112,8 @@ macro_rules! impl_div_or_rem_for_fbig {
         }
     };
 }
-impl_div_or_rem_for_fbig!(impl Div, div, repr_div);
-impl_div_or_rem_for_fbig!(impl Rem, rem, repr_rem);
+impl_div_for_fbig!(impl Div, div, repr_div);
+impl_rem_for_fbig!(impl Rem, rem, repr_rem);
 impl_binop_assign_by_taking!(impl DivAssign<Self>, div_assign, div);
 impl_binop_assign_by_taking!(impl RemAssign<Self>, rem_assign, rem);
 
@@ -188,7 +250,7 @@ impl<R: Round, const B: Word> Inverse for FBig<R, B> {
 
     #[inline]
     fn inv(self) -> Self::Output {
-        self.context.inv(&self.repr).value()
+        self.context.unwrap_fp(self.context.inv(&self.repr))
     }
 }
 
@@ -197,7 +259,19 @@ impl<R: Round, const B: Word> Inverse for &FBig<R, B> {
 
     #[inline]
     fn inv(self) -> Self::Output {
-        self.context.inv(&self.repr).value()
+        self.context.unwrap_fp(self.context.inv(&self.repr))
+    }
+}
+
+impl<R: Round, const B: Word> FBig<R, B> {
+    /// Calculate the multiplicative inverse (`1 / self`) of the floating point number.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is unlimited.
+    #[inline]
+    pub fn inv(&self) -> Self {
+        self.context.unwrap_fp(self.context.inv(&self.repr))
     }
 }
 
@@ -214,17 +288,42 @@ fn align_as_int<R: Round, const B: Word>(lhs: FBig<R, B>, rhs: FBig<R, B>) -> (I
 }
 
 impl<R: Round> Context<R> {
-    pub(crate) fn repr_div<const B: Word>(&self, lhs: Repr<B>, rhs: Repr<B>) -> Rounded<Repr<B>> {
+    pub(crate) fn repr_div<const B: Word>(&self, lhs: Repr<B>, rhs: Repr<B>) -> FpResult<Repr<B>> {
         assert_finite_operands(&lhs, &rhs);
         assert_limited_precision(self.precision);
+
+        let sign_negative = lhs.sign() != rhs.sign();
+        let sign = if sign_negative {
+            Sign::Negative
+        } else {
+            Sign::Positive
+        };
+
+        if rhs.significand.is_zero() {
+            if lhs.significand.is_zero() {
+                // 0/0 is indeterminate; callers that can signal it (Context::div) check first,
+                // otherwise fall through to div_rem which panics on division by zero.
+            } else {
+                // finite / 0 = ±inf (sign = XOR), returned as a value
+                return Ok(Approximation::Exact(Repr::infinity_with_sign(sign)));
+            }
+        }
 
         // this method don't deal with the case where lhs significand is too large
         debug_assert!(lhs.digits() <= self.precision + rhs.digits());
 
         let (mut q, mut r) = lhs.significand.div_rem(&rhs.significand);
-        let mut e = lhs.exponent - rhs.exponent;
+        let mut e = lhs.exponent.checked_sub(rhs.exponent).ok_or({
+            if lhs.exponent >= 0 {
+                FpError::Overflow(sign)
+            } else {
+                FpError::Underflow(sign)
+            }
+        })?;
         if r.is_zero() {
-            return Approximation::Exact(Repr::new(q, e));
+            return Ok(Approximation::Exact(
+                make_div_repr(sign_negative, q, e).check_finite_exponent()?,
+            ));
         }
 
         let ddigits = digit_len::<B>(&rhs.significand);
@@ -233,7 +332,9 @@ impl<R: Round> Context<R> {
             let rdigits = digit_len::<B>(&r); // rdigits <= ddigits
             let shift = ddigits + self.precision - rdigits;
             shl_digits_in_place::<B>(&mut r, shift);
-            e -= shift as isize;
+            e = e
+                .checked_sub(shift as isize)
+                .ok_or(FpError::Underflow(sign))?;
             let (q0, r0) = r.div_rem(&rhs.significand);
             q = q0;
             r = r0;
@@ -244,7 +345,9 @@ impl<R: Round> Context<R> {
                 let shift = ddigits + self.precision - ndigits;
                 shl_digits_in_place::<B>(&mut q, shift);
                 shl_digits_in_place::<B>(&mut r, shift);
-                e -= shift as isize;
+                e = e
+                    .checked_sub(shift as isize)
+                    .ok_or(FpError::Underflow(sign))?;
 
                 let (q0, r0) = r.div_rem(&rhs.significand);
                 q += q0;
@@ -252,17 +355,19 @@ impl<R: Round> Context<R> {
             }
         }
 
-        if r.is_zero() {
-            Approximation::Exact(Repr::new(q, e))
+        let repr = if r.is_zero() {
+            Approximation::Exact(make_div_repr(sign_negative, q, e))
         } else {
             let adjust = R::round_ratio(&q, r, &rhs.significand);
-            Approximation::Inexact(Repr::new(q + adjust, e), adjust)
-        }
+            Approximation::Inexact(make_div_repr(sign_negative, q + adjust, e), adjust)
+        };
+        Ok(repr)
     }
 
     pub(crate) fn repr_rem<const B: Word>(&self, lhs: Repr<B>, rhs: Repr<B>) -> Rounded<Repr<B>> {
         assert_finite_operands(&lhs, &rhs);
 
+        let lhs_is_neg_zero = lhs.is_neg_zero();
         let (lhs_sign, lhs_signif) = lhs.significand.into_parts();
         let (_, rhs_signif) = rhs.significand.into_parts();
 
@@ -320,9 +425,25 @@ impl<R: Round> Context<R> {
 
         let exponent = lhs.exponent.min(rhs.exponent);
         if significand.is_zero() {
-            Approximation::Exact(Repr::zero())
+            // the sign of a zero remainder follows the dividend (±0)
+            Approximation::Exact(if lhs_is_neg_zero {
+                Repr::neg_zero()
+            } else {
+                Repr::zero()
+            })
         } else {
-            self.repr_round(Repr::new(significand, exponent))
+            match Repr::new(significand, exponent).check_finite_exponent() {
+                Ok(repr) => self.repr_round(repr),
+                Err(e) => match e {
+                    FpError::Overflow(sign) => {
+                        Approximation::Inexact(Repr::infinity_with_sign(sign), Rounding::NoOp)
+                    }
+                    FpError::Underflow(sign) => {
+                        Approximation::Inexact(Repr::zero_with_sign(sign), Rounding::NoOp)
+                    }
+                    _ => unreachable!(),
+                },
+            }
         }
     }
 
@@ -340,7 +461,7 @@ impl<R: Round> Context<R> {
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str("-1.234")?;
     /// let b = DBig::from_str("6.789")?;
-    /// assert_eq!(context.div(&a.repr(), &b.repr()), Inexact(DBig::from_str("-0.18")?, NoOp));
+    /// assert_eq!(context.div(&a.repr(), &b.repr()), Ok(Inexact(DBig::from_str("-0.18")?, NoOp)));
     /// # Ok::<(), ParseError>(())
     /// ```
     ///
@@ -349,8 +470,13 @@ impl<R: Round> Context<R> {
     /// To do euclidean division on the float numbers (get an integer quotient and remainder, equivalent to C99's
     /// `fmod` and `remquo`), please use the methods provided by traits [DivEuclid], [RemEuclid] and [DivRemEuclid].
     ///
-    pub fn div<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Rounded<FBig<R, B>> {
-        assert_finite_operands(lhs, rhs);
+    pub fn div<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> FpResult<FBig<R, B>> {
+        if lhs.is_infinite() || rhs.is_infinite() {
+            return Err(FpError::InfiniteInput);
+        }
+        if lhs.significand.is_zero() && rhs.significand.is_zero() {
+            return Err(FpError::Indeterminate); // 0/0
+        }
 
         let lhs_repr = if !lhs.is_zero() && lhs.digits_ub() > rhs.digits_lb() + self.precision {
             // shrink lhs if it's larger than necessary
@@ -360,8 +486,9 @@ impl<R: Round> Context<R> {
         } else {
             lhs.clone()
         };
-        self.repr_div(lhs_repr, rhs.clone())
-            .map(|v| FBig::new(v, *self))
+        Ok(self
+            .repr_div(lhs_repr, rhs.clone())?
+            .map(|v| FBig::new(v, *self)))
     }
 
     /// Calculate the remainder of `⌈lhs / rhs⌋`.
@@ -381,13 +508,16 @@ impl<R: Round> Context<R> {
     /// let context = Context::<HalfAway>::new(3);
     /// let a = DBig::from_str("6.789")?;
     /// let b = DBig::from_str("-1.234")?;
-    /// assert_eq!(context.rem(&a.repr(), &b.repr()), Exact(DBig::from_str("-0.615")?));
+    /// assert_eq!(context.rem(&a.repr(), &b.repr()), Ok(Exact(DBig::from_str("-0.615")?)));
     /// # Ok::<(), ParseError>(())
     /// ```
-    pub fn rem<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Rounded<FBig<R, B>> {
-        assert_finite_operands(lhs, rhs);
-        self.repr_rem(lhs.clone(), rhs.clone())
-            .map(|v| FBig::new(v, *self))
+    pub fn rem<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> FpResult<FBig<R, B>> {
+        if lhs.is_infinite() || rhs.is_infinite() {
+            return Err(FpError::InfiniteInput);
+        }
+        Ok(self
+            .repr_rem(lhs.clone(), rhs.clone())
+            .map(|v| FBig::new(v, *self)))
     }
 
     /// Compute the multiplicative inverse of an `FBig`
@@ -401,12 +531,83 @@ impl<R: Round> Context<R> {
     ///
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str("-1.234")?;
-    /// assert_eq!(context.inv(&a.repr()), Inexact(DBig::from_str("-0.81")?, NoOp));
+    /// assert_eq!(context.inv(&a.repr()), Ok(Inexact(DBig::from_str("-0.81")?, NoOp)));
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
-    pub fn inv<const B: Word>(&self, f: &Repr<B>) -> Rounded<FBig<R, B>> {
-        self.repr_div(Repr::one(), f.clone())
-            .map(|v| FBig::new(v, *self))
+    pub fn inv<const B: Word>(&self, f: &Repr<B>) -> FpResult<FBig<R, B>> {
+        if f.is_infinite() {
+            return Err(FpError::InfiniteInput);
+        }
+        // inv(±0) = ±inf (produced as a value by repr_div)
+        Ok(self
+            .repr_div(Repr::one(), f.clone())?
+            .map(|v| FBig::new(v, *self)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::round::mode;
+
+    fn r2(sig: i32, exp: isize) -> Repr<2> {
+        Repr::new(sig.into(), exp)
+    }
+
+    #[test]
+    fn test_div_by_zero_is_infinity() {
+        let ctx = Context::<mode::HalfEven>::new(53);
+        // finite / 0 = ±inf (a value, not an error); sign = XOR
+        let pos = ctx.div::<2>(&r2(1, 0), &Repr::<2>::zero()).unwrap().value();
+        assert!(pos.repr().is_infinite());
+        assert_eq!(pos.repr().sign(), Sign::Positive);
+
+        let neg = ctx
+            .div::<2>(&r2(-1, 0), &Repr::<2>::zero())
+            .unwrap()
+            .value();
+        assert_eq!(neg.repr().sign(), Sign::Negative);
+
+        // 1 / -0 = -inf
+        let neg2 = ctx
+            .div::<2>(&r2(1, 0), &Repr::<2>::neg_zero())
+            .unwrap()
+            .value();
+        assert_eq!(neg2.repr().sign(), Sign::Negative);
+    }
+
+    #[test]
+    fn test_zero_over_zero_is_indeterminate() {
+        let ctx = Context::<mode::HalfEven>::new(53);
+        assert_eq!(
+            ctx.div::<2>(&Repr::<2>::zero(), &Repr::<2>::zero()),
+            Err(FpError::Indeterminate)
+        );
+    }
+
+    #[test]
+    fn test_inv_zero_is_infinity() {
+        let ctx = Context::<mode::HalfEven>::new(53);
+        let r = ctx.inv::<2>(&Repr::<2>::zero()).unwrap().value();
+        assert!(r.repr().is_infinite());
+        assert_eq!(r.repr().sign(), Sign::Positive);
+    }
+
+    #[test]
+    fn test_fbig_div_zero_produces_infinity() {
+        // FBig convenience layer: 1 / 0 yields an infinity-valued FBig (no panic).
+        let one = FBig::<mode::HalfEven>::try_from(1.0f64).unwrap();
+        let zero = FBig::<mode::HalfEven>::try_from(0.0f64).unwrap();
+        let inf = one / zero;
+        assert!(inf.repr().is_infinite());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fbig_zero_over_zero_panics() {
+        // 0 / 0 is indeterminate; the FBig layer panics.
+        let zero = FBig::<mode::HalfEven>::try_from(0.0f64).unwrap();
+        let _ = zero.clone() / zero;
     }
 }

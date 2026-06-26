@@ -36,11 +36,11 @@ fn test_sin_cos() {
 #[test]
 fn test_tan() {
     let x = DBig::ZERO.with_precision(30).value();
-    assert_eq!(x.tan().value(&x.context()), DBig::ZERO);
+    assert_eq!(x.tan(), DBig::ZERO);
 
     let pi = DBig::pi(30);
     let pi4: DBig = pi / 4;
-    let tan_pi4 = pi4.tan().value(&pi4.context());
+    let tan_pi4 = pi4.tan();
     assert!((tan_pi4 - DBig::ONE).abs() < DBig::from_parts(1.into(), -29));
 }
 
@@ -59,21 +59,25 @@ fn test_atan() {
 #[test]
 fn test_asin_acos() {
     let x = DBig::ZERO.with_precision(30).value();
-    assert_eq!(x.asin().value(&x.context()), DBig::ZERO);
+    assert_eq!(x.asin(), DBig::ZERO);
 
     let pi = DBig::pi(30);
     let half_pi: DBig = &pi / 2;
-    assert!((x.acos().value(&x.context()) - half_pi).abs() < DBig::from_parts(1.into(), -29));
+    assert!((x.acos() - half_pi).abs() < DBig::from_parts(1.into(), -29));
 
     let half = DBig::from_parts(5.into(), -1).with_precision(30).value();
-    let asin_half = half.asin().value(&half.context());
+    let asin_half = half.asin();
     // asin(0.5) = pi/6
     let pi6: DBig = &pi / 6;
     assert!((asin_half - pi6).abs() < DBig::from_parts(1.into(), -29));
+}
 
-    // Domain error test
+#[test]
+#[should_panic]
+fn test_asin_out_of_domain_panics() {
+    // asin(|x| > 1) is out of domain; the FBig convenience layer panics.
     let two = DBig::from_parts(2.into(), 0).with_precision(10).value();
-    assert!(two.asin().is_nan());
+    let _ = two.asin();
 }
 
 #[test]
@@ -84,30 +88,26 @@ fn test_atan2() {
     let pi = DBig::pi(30);
 
     // atan2(0, 1) = 0
-    assert_eq!(zero.atan2(&one).value(&zero.context()), zero);
+    assert_eq!(zero.atan2(&one), zero);
 
     // atan2(1, 0) = pi/2
     let half_pi: DBig = &pi / 2;
-    assert!(
-        (one.atan2(&zero).value(&one.context()) - half_pi.clone()).abs()
-            < DBig::from_parts(1.into(), -29)
-    );
+    assert!((one.atan2(&zero) - half_pi.clone()).abs() < DBig::from_parts(1.into(), -29));
 
     // atan2(0, -1) = pi
-    assert!(
-        (zero.atan2(&neg_one).value(&zero.context()) - &pi).abs() < DBig::from_parts(1.into(), -29)
-    );
+    assert!((zero.atan2(&neg_one) - &pi).abs() < DBig::from_parts(1.into(), -29));
 
     // atan2(-1, 0) = -pi/2
     let m_half_pi: DBig = -half_pi;
-    assert!(
-        (neg_one.atan2(&zero).value(&neg_one.context()) - m_half_pi).abs()
-            < DBig::from_parts(1.into(), -29)
-    );
+    assert!((neg_one.atan2(&zero) - m_half_pi).abs() < DBig::from_parts(1.into(), -29));
+}
 
-    // Undefined case
+#[test]
+#[should_panic]
+fn test_atan2_zero_zero_panics() {
+    // atan2(0, 0) is indeterminate; the FBig convenience layer panics.
     let z0 = DBig::ZERO.with_precision(10).value();
-    assert!(z0.atan2(&z0).is_nan());
+    let _ = z0.atan2(&z0);
 }
 
 #[test]
@@ -116,27 +116,27 @@ fn test_atan2_infinities() {
     let ctx = x.context();
     let inf = Repr::infinity();
     let neg_inf = Repr::neg_infinity();
-    let pi = ctx.pi::<10>().value();
+    let pi = ctx.pi::<10>(None).value();
     let pi_4 = &pi / 4;
     let pi_3_4 = &pi * 3 / 4;
 
     // atan2(+inf, +inf) = pi/4
-    let res: DBig = ctx.atan2(&inf, &inf).value(&ctx);
+    let res: DBig = ctx.atan2(&inf, &inf, None).unwrap().value();
     let diff: DBig = res - &pi_4;
     assert!(diff.abs() < DBig::from_parts(1.into(), -29));
 
     // atan2(+inf, -inf) = 3pi/4
-    let res: DBig = ctx.atan2(&inf, &neg_inf).value(&ctx);
+    let res: DBig = ctx.atan2(&inf, &neg_inf, None).unwrap().value();
     let diff: DBig = res - &pi_3_4;
     assert!(diff.abs() < DBig::from_parts(1.into(), -29));
 
     // atan2(-inf, +inf) = -pi/4
-    let res: DBig = ctx.atan2(&neg_inf, &inf).value(&ctx);
+    let res: DBig = ctx.atan2(&neg_inf, &inf, None).unwrap().value();
     let diff: DBig = res + &pi_4;
     assert!(diff.abs() < DBig::from_parts(1.into(), -29));
 
     // atan2(-inf, -inf) = -3pi/4
-    let res: DBig = ctx.atan2(&neg_inf, &neg_inf).value(&ctx);
+    let res: DBig = ctx.atan2(&neg_inf, &neg_inf, None).unwrap().value();
     let diff: DBig = res + &pi_3_4;
     assert!(diff.abs() < DBig::from_parts(1.into(), -29));
 }

@@ -87,6 +87,11 @@ pub trait Round: Copy {
     /// The rounding operation that rounds to an opposite direction
     type Reverse: Round;
 
+    /// Whether this mode rounds toward negative infinity (IEEE roundTowardNegative).
+    /// Used to determine the sign of a zero produced by exact cancellation: per IEEE 754,
+    /// `x + (-x)` yields `-0` only under roundTowardNegative, `+0` otherwise.
+    const IS_ROUND_TOWARD_NEGATIVE: bool;
+
     /// Calculate the rounding of the number (integer + rem), assuming rem != 0 and |rem| < 1.
     /// `low_half_test` should tell |rem|.cmp(0.5)
     fn round_low_part<F: FnOnce() -> Ordering>(
@@ -157,6 +162,7 @@ pub trait ErrorBounds: Round {
 
 impl Round for mode::Zero {
     type Reverse = mode::Away;
+    const IS_ROUND_TOWARD_NEGATIVE: bool = false;
 
     #[inline]
     fn round_low_part<F: FnOnce() -> Ordering>(
@@ -195,6 +201,7 @@ impl ErrorBounds for mode::Zero {
 
 impl Round for mode::Away {
     type Reverse = mode::Zero;
+    const IS_ROUND_TOWARD_NEGATIVE: bool = false;
 
     #[inline]
     fn round_low_part<F: FnOnce() -> Ordering>(
@@ -237,6 +244,7 @@ impl ErrorBounds for mode::Away {
 
 impl Round for mode::Down {
     type Reverse = mode::Up;
+    const IS_ROUND_TOWARD_NEGATIVE: bool = true;
 
     #[inline]
     fn round_low_part<F: FnOnce() -> Ordering>(
@@ -264,6 +272,7 @@ impl ErrorBounds for mode::Down {
 
 impl Round for mode::Up {
     type Reverse = mode::Down;
+    const IS_ROUND_TOWARD_NEGATIVE: bool = false;
 
     #[inline]
     fn round_low_part<F: FnOnce() -> Ordering>(
@@ -291,6 +300,7 @@ impl ErrorBounds for mode::Up {
 
 impl Round for mode::HalfAway {
     type Reverse = Self;
+    const IS_ROUND_TOWARD_NEGATIVE: bool = false;
 
     #[inline]
     fn round_low_part<F: FnOnce() -> Ordering>(
@@ -350,6 +360,7 @@ impl ErrorBounds for mode::HalfAway {
 
 impl Round for mode::HalfEven {
     type Reverse = Self;
+    const IS_ROUND_TOWARD_NEGATIVE: bool = false;
 
     #[inline]
     fn round_low_part<F: FnOnce() -> Ordering>(

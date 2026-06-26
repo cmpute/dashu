@@ -1,5 +1,77 @@
 # Changelog
 
+## Unreleased
+
+### Add
+- `FpError` now carries `Overflow(Sign)` and `Underflow(Sign)` variants. Repr-level arithmetic
+  functions (`mul_finite_reprs`, `repr_div`, `sqr`, `cubic`, `exp_internal`, `powi`) detect
+  exponent overflow/underflow and return these errors. At the `FBig`/`CachedFBig` convenience
+  layer they are converted to signed infinity or signed zero, matching IEEE 754 overflow/underflow
+  semantics. The `Context` layer returns the raw error, giving callers the choice.
+- `exp` and `exp_m1` now accept infinite input, returning the IEEE-correct result (`exp(+inf) = +inf`,
+  `exp(-inf) = +0`, `exp_m1(+inf) = +inf`, `exp_m1(-inf) = -1`).
+- `ConstCache` now also caches the base-free `√10005` isqrt used by π (`ConstCache::pi`), so a
+  repeat π call at the same or lower precision reuses it instead of recomputing. The isqrt is held
+  as a base-free integer (`floor(√10005 · 2^bits)`, computed via Karatsuba `UBig::sqrt`) and folded
+  into the π integer ratio, so no cross-base conversion is needed. `ConstCache::total_words()`
+  counts it; `total_terms()` is unchanged (the isqrt isn't a series). Measured warm-π speedup:
+  ~20× at 500 digits, ~1.3× at 5000.
+- IEEE-754 signed zero (`-0`): operations now produce the sign of zero mandated by the standard
+  (e.g. `1 / -inf = -0`, `sqrt(-0) = -0`, `ceil(-0) = -0`, cancellation under round-toward-negative).
+  `+0` and `-0` compare equal; `-0.0` round-trips through `f32`/`f64`.
+- `FpError` (`InfiniteInput`, `OutOfDomain`, `Indeterminate`) and `FpResult<T> = Result<Rounded<T>, FpError>`.
+  Infinite *outputs* are returned as values inside `Ok` (`1/0 → +inf`, `ln(0) → -inf`, `exp(huge) → +inf`,
+  `tan(π/2) → ±inf`); infinite *inputs* are `Err(InfiniteInput)` (making infinities terminal, which
+  structurally avoids the NaN-producing indeterminate forms); domain errors (`0/0`, `sqrt(-x)`, `ln(-x)`,
+  `asin(|x|>1)`, `pow(neg, non-int)`) are `Err`. The `FBig`/`CachedFBig` convenience layers panic on error.
+
+### Change
+- **Breaking (encoding):** infinities are re-encoded with sentinel exponents `isize::MAX`/`isize::MIN`
+  (was `1`/`-1`), and `-0` is encoded at exponent `-1`. `normalize()` preserves these special values
+  instead of clobbering them; `Repr`'s `PartialEq`/`Eq` are now manual so `+0 == -0`.
+- **Breaking (result model):** `Context` arithmetic/transcendental/trig methods now return
+  `FpResult<FBig<R, B>>` (= `Result<Rounded<FBig<R, B>>, FpError>`) instead of `Rounded<FBig<R, B>>`
+  (arithmetic) / `FpResult<B>` (the old trig enum). The old `FpResult` enum is **removed** (replaced by
+  the type alias). `FBig::tan`/`asin`/`acos`/`atan2` now return `Self` (panic on error) instead of the
+  enum, matching the other trig methods.
+- `atan2(±finite, +inf)` now returns the signed zero of `y` (now that signed zero is supported).
+- `powf(±0, y)` returns the *positive* result (`+0` for `y > 0`, `+inf` for `y < 0`) — matching the
+  common float-pow convention (a float exponent doesn't track parity). Use `powi` for the sign-correct
+  result (`pow(-0, odd) = -0`).
+- Removed the unused `panic_overflow`/`panic_underflow`/`panic_infinite`/`panic_power_negative_base`/
+  `panic_root_negative` helpers (their conditions are now `FpError`s).
+
+### Fix
+- `exp(huge)` / `exp_m1(huge)` now return `+inf` (or `0` / `-1` for huge negative arguments) instead of
+  panicking when the scaled exponent overflows `isize`; `powi` likewise returns `±inf`/`0` on
+  astronomically large results.
+- `exp` / `exp_m1` at high precision (≳ a few thousand digits) returned values wrong in the low bits.
+  The series working precision was sized `p + O(log p)`, but the final `Bⁿ` powering amplifies the
+  series' relative error by `Bⁿ`, so it must carry `≈ n ≈ √p` extra digits (cf. MPFR's
+  `q = precy + 2·K + …`, `K ≈ √precy`). The working precision is now `p + 2n` (`n = 2^⌊log₂ p / 2⌋`)
+  and the final powering runs at that same precision instead of `2p`. Verified correct against an
+  independent pure-Taylor reference up to 8192 bits / 4000 digits; also faster (roughly half the
+  multiply cost at large `p`).
+- The `FBig` `+`/`-` operators now produce `-0` on exact cancellation under round-toward-negative
+  (`Down`), matching `Context::add`/`sub` (previously the equal-exponent fast path yielded `+0`).
+- `ShrAssign` (`>>=`) for `FBig` previously subtracted the shift amount twice; it now shifts exactly once.
+
+### Add
+- Add the `ConstCache` type and the `CachedFBig` wrapper. `ConstCache` caches exact binary-splitting tree state for mathematical constants (π, ln2, ln10, ln(B)) so that repeated calls at increasing precision *extend* prior work instead of recomputing from scratch. `CachedFBig` is an `FBig` carrying a shared `Rc<RefCell<ConstCache>>` handle: its transcendental operations (`ln`, `exp`, `sin`/`cos`/…, `pi`, base conversion) thread that handle through the `Context` methods, reusing/extending the cached state. `Context` and `FBig` stay `Copy` + `Send` + `Sync` + `no_std` (so `static_fbig!`/`static_dbig!` keep working); only `CachedFBig` is `!Send + !Sync` (sharing state via `Rc<RefCell<..>>`). Because `Context` accepts `Option<&mut ConstCache>`, users can build `Arc<Mutex<ConstCache>>`-based variants too.
+- Add the `ConstCache` type and the `CachedFBig` wrapper. `ConstCache` caches exact binary-splitting tree state for mathematical constants (π, ln2, ln10, ln(B)) so that repeated calls at increasing precision *extend* prior work instead of recomputing from scratch. `CachedFBig` is an `FBig` carrying a shared `Rc<RefCell<ConstCache>>` handle: its transcendental operations (`ln`, `exp`, `sin`/`cos`/…, `pi`, base conversion) thread that handle through the `Context` methods, reusing/extending the cached state. `Context` and `FBig` stay `Copy` + `Send` + `Sync` + `no_std` (so `static_fbig!`/`static_dbig!` keep working); only `CachedFBig` is `!Send + !Sync` (sharing state via `Rc<RefCell<..>>`). Because `Context` accepts `Option<&mut ConstCache>`, users can build `Arc<Mutex<ConstCache>>`-based variants too.
+- Mixed operators for `CachedFBig`: it now supports binary operations with `FBig` and with all primitive integer types (`u8`–`usize`, `i8`–`isize`, `UBig`, `IBig`), in both directions. The cache handle from the `CachedFBig` operand is preserved. `From<FBig> for CachedFBig` and `From<CachedFBig> for FBig` are implemented for ergonomic conversion.
+- `CachedFBig::cache()` provides read-only access to the shared `ConstCache`, with `ConstCache::total_terms()` and `total_words()` for cache size inspection, and `CachedFBig::clear_cache()` / `ConstCache::clear()` to free cached memory.
+
+### Change
+- **Breaking (low-level `Context` API):** the `Context` constant-source methods (`ln`, `ln_1p`, `exp`, `exp_m1`, `powf`, `pi`, `sin`, `cos`, `sin_cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, and the internal `ln2`/`ln10`/`ln_base`/`convert_base`) now take an additional `cache: Option<&mut ConstCache>` parameter, threading an optional shared cache. The high-level `FBig` API is unchanged (it passes `None`).
+- Removed the `MathCache` type (subsumed by `ConstCache`, which is now public with `&mut self` methods).
+- `Context::iacoth` (used internally by `ln`) now evaluates the series with binary splitting instead of an iterative loop, reusing the shared `iacoth_bs` helper. This keeps `Q` at O(p) digits and improves high-precision performance; behavior is unchanged (pinned by existing fixtures).
+- `iacoth_bs` now skips its first several leaves via a compile-time constant basecase (the `L(6)`/`L(9)`/`L(99)` initial blocks). The precomputed `(P, Q, T)` values are kept within `u32` so the constants are portable across `Word = u16`/`u32`/`u64` (the `DoubleWord` constructor is `const` on every configuration).
+
+### Fix
+
+- Replace `f64::ceil()` in `ConstCache`'s precision/bit helpers with a `no_std`-safe integer ceiling (`ceil_usize`). `f64::ceil` is `std`-only on the crate's MSRV and broke the workspace `--all-features --tests` build, where `dashu-float` is compiled without `std` as a dependency of `dashu-ratio`.
+
 ## 0.4.5
 
 ### Add

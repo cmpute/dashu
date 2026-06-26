@@ -8,7 +8,8 @@ use dashu_base::{Abs, Sign, Signed};
 use dashu_int::IBig;
 
 impl<R: Round, const B: Word> FBig<R, B> {
-    /// Get the sign of the number. Zero value has a positive sign.
+    /// Get the sign of the number. Positive zero has a positive sign, negative zero has a
+    /// negative sign.
     ///
     /// # Examples
     ///
@@ -41,11 +42,12 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Ok::<(), ParseError>(())
     /// ```
     pub const fn signum(&self) -> Self {
-        let significand = if self.repr.significand.is_zero() && self.repr.exponent != 0 {
-            if self.repr.exponent > 0 {
-                IBig::ONE
-            } else {
-                IBig::NEG_ONE
+        let significand = if self.repr.significand.is_zero() {
+            // distinguish infinities from signed zero; signum(±0) = +0
+            match self.repr.exponent {
+                isize::MAX => IBig::ONE,
+                isize::MIN => IBig::NEG_ONE,
+                _ => IBig::ZERO,
             }
         } else {
             self.repr.significand.signum()
@@ -61,9 +63,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
 impl<const B: Word> Neg for Repr<B> {
     type Output = Self;
     #[inline]
-    fn neg(mut self) -> Self::Output {
-        self.significand = -self.significand;
-        self
+    fn neg(self) -> Self::Output {
+        Repr::neg(self)
     }
 }
 
@@ -71,7 +72,7 @@ impl<R: Round, const B: Word> Neg for FBig<R, B> {
     type Output = Self;
     #[inline]
     fn neg(mut self) -> Self::Output {
-        self.repr.significand = -self.repr.significand;
+        self.repr = self.repr.neg();
         self
     }
 }
@@ -87,7 +88,17 @@ impl<R: Round, const B: Word> Neg for &FBig<R, B> {
 impl<R: Round, const B: Word> Abs for FBig<R, B> {
     type Output = Self;
     fn abs(mut self) -> Self::Output {
-        self.repr.significand = self.repr.significand.abs();
+        // flip -0 -> +0 and -inf -> +inf by toggling the special-value exponent;
+        // finite values take the absolute value of their significand.
+        if self.repr.significand.is_zero() {
+            if self.repr.exponent == -1 {
+                self.repr.exponent = 0;
+            } else if self.repr.exponent == isize::MIN {
+                self.repr.exponent = isize::MAX;
+            }
+        } else {
+            self.repr.significand = self.repr.significand.abs();
+        }
         self
     }
 }
@@ -95,25 +106,31 @@ impl<R: Round, const B: Word> Abs for FBig<R, B> {
 impl<R: Round, const B: Word> Mul<FBig<R, B>> for Sign {
     type Output = FBig<R, B>;
     #[inline]
-    fn mul(self, mut rhs: FBig<R, B>) -> Self::Output {
-        rhs.repr.significand *= self;
-        rhs
+    fn mul(self, rhs: FBig<R, B>) -> Self::Output {
+        match self {
+            Sign::Positive => rhs,
+            Sign::Negative => -rhs,
+        }
     }
 }
 
 impl<R: Round, const B: Word> Mul<Sign> for FBig<R, B> {
     type Output = FBig<R, B>;
     #[inline]
-    fn mul(mut self, rhs: Sign) -> Self::Output {
-        self.repr.significand *= rhs;
-        self
+    fn mul(self, rhs: Sign) -> Self::Output {
+        match rhs {
+            Sign::Positive => self,
+            Sign::Negative => -self,
+        }
     }
 }
 
 impl<R: Round, const B: Word> MulAssign<Sign> for FBig<R, B> {
     #[inline]
     fn mul_assign(&mut self, rhs: Sign) {
-        self.repr.significand *= rhs;
+        if rhs == Sign::Negative {
+            self.repr = self.repr.clone().neg();
+        }
     }
 }
 

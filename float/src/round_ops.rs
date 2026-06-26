@@ -9,6 +9,19 @@ use dashu_base::{Approximation::*, Sign};
 use dashu_int::{IBig, Word};
 
 impl<R: Round, const B: Word> FBig<R, B> {
+    /// Build an integer-valued `FBig` (exponent 0) from `value` under `context`, attaching
+    /// `self`'s sign when `value` is zero. This is how truncation/rounding preserve IEEE 754
+    /// signed zero: a negative value whose integer part is zero yields `-0`. Pass
+    /// `Context::new(0)` for a precision-0 result matching `FBig::ZERO`.
+    fn sign_kept_int(&self, value: IBig, context: Context<R>) -> Self {
+        let repr = if value.is_zero() && self.repr.sign() == Sign::Negative {
+            Repr::neg_zero()
+        } else {
+            Repr::new(value, 0)
+        };
+        FBig::new(repr, context)
+    }
+
     /// Get the integral part of the float
     ///
     /// See [FBig::round] for how the output precision is determined.
@@ -36,13 +49,13 @@ impl<R: Round, const B: Word> FBig<R, B> {
         if self.repr.exponent >= 0 {
             return self.clone();
         } else if self.repr.smaller_than_one() {
-            return Self::ZERO;
+            return self.sign_kept_int(IBig::ZERO, Context::new(0));
         }
 
         let shift = (-self.repr.exponent) as usize;
         let signif = shr_digits::<B>(&self.repr.significand, shift);
         let context = Context::new(self.context.precision.saturating_sub(shift));
-        FBig::new(Repr::new(signif, 0), context)
+        self.sign_kept_int(signif, context)
     }
 
     // Split the float number at the radix point, assuming it exists (the number is not a integer).
@@ -132,7 +145,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     pub fn fract(&self) -> Self {
         assert_finite(&self.repr);
         if self.repr.exponent >= 0 {
-            return Self::ZERO;
+            return self.sign_kept_int(IBig::ZERO, Context::new(0));
         } else if self.repr.smaller_than_one() {
             return self.clone();
         }
@@ -167,7 +180,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     pub fn ceil(&self) -> Self {
         assert_finite(&self.repr);
-        if self.repr.is_zero() || self.repr.exponent >= 0 {
+        if self.repr.significand.is_zero() || self.repr.exponent >= 0 {
             return self.clone();
         } else if self.repr.smaller_than_one() {
             return match self.repr.sign() {
@@ -207,7 +220,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     pub fn floor(&self) -> Self {
         assert_finite(&self.repr);
-        if self.repr.exponent >= 0 {
+        if self.repr.significand.is_zero() || self.repr.exponent >= 0 {
             return self.clone();
         } else if self.repr.smaller_than_one() {
             return match self.repr.sign() {
@@ -255,18 +268,18 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Panics if the number is infinte
     pub fn round(&self) -> Self {
         assert_finite(&self.repr);
-        if self.repr.exponent >= 0 {
+        if self.repr.significand.is_zero() || self.repr.exponent >= 0 {
             return self.clone();
         } else if self.repr.exponent + (self.repr.digits_ub() as isize) < -2 {
             // to determine if the number rounds to zero, we need to make sure |self| < 0.5
             // which is stricter than `self.repr.smaller_than_one()`
-            return Self::ZERO;
+            return self.sign_kept_int(IBig::ZERO, Context::new(0));
         }
 
         let (hi, lo, precision) = self.split_at_point_internal();
         let rounding = mode::HalfAway::round_fract::<B>(&hi, lo, precision);
         let context = Context::new(self.context.precision.saturating_sub(precision));
-        FBig::new(Repr::new(hi + rounding, 0), context)
+        self.sign_kept_int(hi + rounding, context)
     }
 
     /// Round the number to the nearest multiple of `BASE^exp`.
@@ -335,5 +348,19 @@ impl<R: Round, const B: Word> FBig<R, B> {
             (repr.exponent + repr.digits() as isize - exp) as usize
         };
         Inexact(FBig::new(repr, Context::new(precision)), adjust)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shr_assign_shifts_once() {
+        // Regression: shr_assign previously subtracted rhs twice.
+        let mut x = FBig::<mode::HalfEven>::try_from(8.0f64).unwrap(); // 2^3
+        x >>= 1; // 2^2 = 4
+        let y = FBig::<mode::HalfEven>::try_from(4.0f64).unwrap();
+        assert_eq!(x, y);
     }
 }

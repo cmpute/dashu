@@ -10,8 +10,9 @@ use dashu_base::{
 use dashu_int::{IBig, UBig, Word};
 
 use crate::{
-    error::{assert_finite, panic_unlimited_precision},
+    error::{assert_finite, panic_unlimited_precision, FpError},
     fbig::FBig,
+    math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr},
     round::{
         mode::{HalfAway, HalfEven, Zero},
@@ -54,7 +55,11 @@ macro_rules! impl_from_float_for_fbig {
 
             fn try_from(f: $t) -> Result<Self, Self::Error> {
                 match f.decode() {
-                    Ok((man, exp)) => Ok(Repr::new(man.into(), exp as _)),
+                    Ok((man, exp)) => Ok(if man == 0 && f.is_sign_negative() {
+                        Self::neg_zero()
+                    } else {
+                        Repr::new(man.into(), exp as _)
+                    }),
                     Err(FpCategory::Infinite) => match f.sign() {
                         Sign::Positive => Ok(Self::infinity()),
                         Sign::Negative => Ok(Self::neg_infinity()),
@@ -70,7 +75,12 @@ macro_rules! impl_from_float_for_fbig {
             fn try_from(f: $t) -> Result<Self, Self::Error> {
                 match f.decode() {
                     Ok((man, exp)) => {
-                        let repr = Repr::new(man.into(), exp as _);
+                        // preserve the sign of a signed zero (-0.0 -> Repr::neg_zero())
+                        let repr = if man == 0 && f.is_sign_negative() {
+                            Repr::neg_zero()
+                        } else {
+                            Repr::new(man.into(), exp as _)
+                        };
 
                         // The precision is inferenced from the mantissa, because the mantissa of
                         // normal float is always normalized. This will produce correct precision
@@ -354,7 +364,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ) -> Rounded<FBig<R, NewB>> {
         let context = Context::<R>::new(precision);
         context
-            .convert_base(self.repr)
+            .convert_base(self.repr, None)
             .map(|repr| FBig::new(repr, context))
     }
 
@@ -429,12 +439,12 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
         let context = Context::<R>::new(24);
         context
-            .convert_base::<B, 2>(self.repr.clone())
+            .convert_base::<B, 2>(self.repr.clone(), None)
             .and_then(|v| context.repr_round_ref(&v))
             .and_then(|v| v.into_f32_internal())
     }
 
-    /// Convert the float number to [f64] with [HalfEven] rounding mode regardless of the mode associated with this number.
+    /// Convert the float number to [f64] with the rounding mode associated with the type.
     ///
     /// Note that the conversion is inexact even if the number is infinite.
     ///
@@ -456,16 +466,36 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
         let context = Context::<R>::new(53);
         context
-            .convert_base::<B, 2>(self.repr.clone())
+            .convert_base::<B, 2>(self.repr.clone(), None)
             .and_then(|v| context.repr_round_ref(&v))
             .and_then(|v| v.into_f64_internal())
     }
 }
 
+/// `isize` exponent arithmetic overflowed during base conversion: the value's magnitude
+/// falls outside the representable exponent range, so the result is ±infinity (`large`) or
+/// ±0 (`!large`). Mirrors the convention `convert_base` already uses in its division path,
+/// keeping the conversion overflow-safe (no panic) at the value level.
+#[allow(non_upper_case_globals)]
+fn converted_overflow_repr<const NewB: Word>(large: bool, sign: Sign) -> Rounded<Repr<NewB>> {
+    Inexact(
+        if large {
+            Repr::<NewB>::infinity_with_sign(sign)
+        } else {
+            Repr::<NewB>::zero_with_sign(sign)
+        },
+        Rounding::NoOp,
+    )
+}
+
 impl<R: Round> Context<R> {
     // Convert the [Repr] from base B to base NewB, with the precision under the target base from this context.
     #[allow(non_upper_case_globals)]
-    fn convert_base<const B: Word, const NewB: Word>(&self, repr: Repr<B>) -> Rounded<Repr<NewB>> {
+    fn convert_base<const B: Word, const NewB: Word>(
+        &self,
+        repr: Repr<B>,
+        mut cache: Option<&mut ConstCache>,
+    ) -> Rounded<Repr<NewB>> {
         // shortcut if NewB is the same as B
         if NewB == B {
             return Exact(Repr {
@@ -498,7 +528,10 @@ impl<R: Round> Context<R> {
             // shortcut if B is a power of NewB
             let n = ilog_exact(B, NewB);
             if n > 1 {
-                let exp = repr.exponent * n as isize;
+                let exp = match repr.exponent.checked_mul(n as isize) {
+                    Some(e) => e,
+                    None => return converted_overflow_repr::<NewB>(repr.exponent > 0, repr.sign()),
+                };
                 return Exact(Repr::new(repr.significand, exp));
             }
         }
@@ -510,15 +543,23 @@ impl<R: Round> Context<R> {
         let (a, r) = factor_base(B, NewB);
         if a > 0 && r > 1 {
             if repr.exponent >= 0 {
+                let sign = repr.sign();
                 let r_exp = UBig::from_word(r).pow(repr.exponent as usize);
                 let significand = repr.significand * r_exp;
-                let new_repr = Repr::<NewB>::new(significand, a as isize * repr.exponent);
+                let exp = match (a as isize).checked_mul(repr.exponent) {
+                    Some(e) => e,
+                    None => return converted_overflow_repr::<NewB>(true, sign),
+                };
+                let new_repr = Repr::<NewB>::new(significand, exp);
                 return self.repr_round(new_repr);
             } else {
                 let r_exp: IBig = UBig::from_word(r).pow((-repr.exponent) as usize).into();
                 if repr.significand.is_multiple_of(&r_exp) {
-                    let new_repr =
-                        Repr::<NewB>::new(repr.significand / r_exp, a as isize * repr.exponent);
+                    let exp = match (a as isize).checked_mul(repr.exponent) {
+                        Some(e) => e,
+                        None => return converted_overflow_repr::<NewB>(false, repr.sign()),
+                    };
+                    let new_repr = Repr::<NewB>::new(repr.significand / r_exp, exp);
                     return self.repr_round(new_repr);
                 }
             }
@@ -547,20 +588,44 @@ impl<R: Round> Context<R> {
                 let signif = repr.significand * Repr::<B>::BASE.pow(repr.exponent as usize);
                 Exact(Repr::new(signif, 0))
             } else {
-                let num = Repr::new(repr.significand, 0);
-                let den = Repr::new(Repr::<B>::BASE.pow(-repr.exponent as usize).into(), 0);
-                self.repr_div(num, den)
+                let num: Repr<NewB> = Repr::new(repr.significand, 0);
+                let den: Repr<NewB> =
+                    Repr::new(Repr::<B>::BASE.pow(-repr.exponent as usize).into(), 0);
+                match self.repr_div(num, den) {
+                    Ok(v) => v.map(|r: Repr<NewB>| Repr {
+                        significand: r.significand,
+                        exponent: r.exponent,
+                    }),
+                    Err(FpError::Overflow(sign)) => {
+                        Inexact(Repr::<NewB>::infinity_with_sign(sign), Rounding::NoOp)
+                    }
+                    Err(FpError::Underflow(sign)) => {
+                        Inexact(Repr::<NewB>::zero_with_sign(sign), Rounding::NoOp)
+                    }
+                    Err(_) => unreachable!(),
+                }
             }
         } else {
             // if the exponent is large, then we first estimate the result exponent as floor(exponent * log(B) / log(NewB)),
             // then the fractional part is multiplied with the original significand
             let work_context = Context::<R>::new(2 * self.precision); // double the precision to get the precise logarithm
             let new_exp = repr.exponent
-                * work_context
-                    .ln(&Repr::new(Repr::<B>::BASE.into(), 0))
-                    .value();
-            let (exponent, rem) = new_exp.div_rem_euclid(work_context.ln_base::<NewB>());
-            let exponent: isize = exponent.try_into().unwrap();
+                * work_context.unwrap_fp(
+                    work_context
+                        .ln(&Repr::new(Repr::<B>::BASE.into(), 0), reborrow_cache(&mut cache)),
+                );
+            let (exponent, rem) =
+                new_exp.div_rem_euclid(work_context.ln_base::<NewB>(reborrow_cache(&mut cache)));
+            let exponent_sign = exponent.sign();
+            let exponent: isize = match exponent.try_into() {
+                Ok(v) => v,
+                Err(_) => {
+                    return converted_overflow_repr::<NewB>(
+                        exponent_sign == Sign::Positive,
+                        repr.sign(),
+                    );
+                }
+            };
             let exp_rem = rem.exp();
             let significand = repr.significand * exp_rem.repr.significand;
             let repr = Repr::new(significand, exponent + exp_rem.repr.exponent);
@@ -577,6 +642,10 @@ impl<const B: Word> Repr<B> {
         debug_assert!(self.significand.bit_len() <= 24);
 
         let sign = self.sign();
+        if self.is_neg_zero() {
+            // encode() would drop the sign of -0; preserve it exactly
+            return Exact(sign * 0f32);
+        }
         let man24: i32 = self.significand.try_into().unwrap();
         if self.exponent >= 128 {
             // max f32 = 2^128 * (1 - 2^-24)
@@ -617,7 +686,7 @@ impl<const B: Word> Repr<B> {
 
         let context = Context::<HalfEven>::new(24);
         context
-            .convert_base::<B, 2>(self.clone())
+            .convert_base::<B, 2>(self.clone(), None)
             .and_then(|v| context.repr_round_ref(&v))
             .and_then(|v| v.into_f32_internal())
     }
@@ -629,6 +698,10 @@ impl<const B: Word> Repr<B> {
         debug_assert!(self.significand.bit_len() <= 53);
 
         let sign = self.sign();
+        if self.is_neg_zero() {
+            // encode() would drop the sign of -0; preserve it exactly
+            return Exact(sign * 0f64);
+        }
         let man53: i64 = self.significand.try_into().unwrap();
         if self.exponent >= 1024 {
             // max f64 = 2^1024 × (1 − 2^−53)
@@ -669,7 +742,7 @@ impl<const B: Word> Repr<B> {
 
         let context = Context::<HalfEven>::new(53);
         context
-            .convert_base::<B, 2>(self.clone())
+            .convert_base::<B, 2>(self.clone(), None)
             .and_then(|v| context.repr_round_ref(&v))
             .and_then(|v| v.into_f64_internal())
     }
