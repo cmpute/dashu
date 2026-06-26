@@ -24,11 +24,11 @@ every operation, following the **C99 Annex G / Kahan** branch-cut and signed-zer
 **In scope for 0.5:** construction/conversion, `add/sub/mul/div/neg/sqr`, scalar mul/div by real,
 `abs`/`norm`/`arg`/`conj`/`proj`/`mul_i`, `sqrt`/`exp`/`log`/`pow` (complex & integer exponent),
 `sin`/`cos`/`tan`/`sin_cos`, `asin`/`acos`/`atan`, `cmp`/`cmp_abs`, `Display`/`Debug`/`FromStr` in
-MPC's `(re im)` form, workspace + meta-crate wiring.
+algebraic `a+bi` form, workspace + meta-crate wiring.
 
 **Deferred to 0.5.x** (Section 13): hyperbolics & inverse hyperbolics, `fma`, `rootofunity`, `agm`,
 `exp2/exp10/log2/log10`, vector ops, `CBig` serde/rkyv, ball arithmetic, independent re/im rounding,
-`num_complex` interop, the `cplx!` literal macro, a `CachedCBig`/`ComplexFloat` layer.
+`num_complex` interop, the `cbig!` literal macro, a `CachedCBig`/`ComplexFloat` layer.
 
 **Hard constraints (from `AGENTS.md`):** MSRV 1.68 (do not bump), Rust edition 2021, `no_std` +
 `alloc` on the default path, `--exclude dashu-python` for workspace commands, every change in
@@ -134,20 +134,18 @@ is to *feed each component enough guard precision* that the final `p`-digit roun
 are reused as-is.
 
 ### 3.2 Inexactness (the `CRounded` dual flag)
-MPC returns **two** inexact flags (one per axis). dashu's analog is a small struct carrying one
-`Rounded` per part:
+MPC returns **two** inexact flags (one per axis). dashu's analog is **not a new type** — it reuses
+`dashu_base::Approximation` (the complex twin of `Rounded<T> = Approximation<T, Rounding>`), with a
+**tuple of two** `Rounding` flags (one per part) as the error:
 
 ```rust
 /// Correctly-rounded complex result with per-axis inexactness.
-pub struct CRounded<R: Round, const B: Word> {
-    pub(crate) value: CBig<R, B>,
-    pub(crate) re: Rounding,   // NoOp | AddOne | SubOne  (== Exact if NoOp)
-    pub(crate) im: Rounding,
-}
+/// `Exact(v)` ⟺ both parts exact; `Inexact(v, (re, im))` carries each part's rounding direction.
+pub type CRounded<R, const B: Word> = Approximation<CBig<R, B>, (Rounding, Rounding)>;
 ```
 
-(Reuses `dashu_float::Rounding { NoOp, AddOne, SubOne }`; `NoOp` ≡ exact. `CRounded` is the complex
-twin of `Rounded<T> = Approximation<T, Rounding>`.)
+(Reuses `dashu_float::Rounding { NoOp, AddOne, SubOne }`; `NoOp` ≡ exact. Inherits `.value()` /
+`.error()` / `.map()` / `?` (`Try`) for free from `Approximation`, exactly like `Rounded<T>`.)
 
 ### 3.3 Result/error type
 ```rust
@@ -202,7 +200,7 @@ CBig::I, CBig::ZERO, CBig::ONE;                            // constants (Section
 CBig::from_polar(r: &FBig, theta: &FBig) -> Self;          // r·(cos θ + i sin θ)
 CBig::cis(phase: &FBig) -> Self;                           // exp(i·phase) == from_polar(1, phase)
 
-FromStr  // "(re im)" — MPC format (Section 5.6)
+FromStr  // "a+bi" algebraic form (Section 5.6)
 TryFrom<f32>/<f64>          // (base 2) exact-or-LossOfPrecision
 TryFrom<num_complex::Complex<FBig>>   // feature num_complex_v04 (deferred)
 ```
@@ -266,14 +264,20 @@ Identities implemented in terms of `FBig` (no real hyperbolics needed in 0.5):
   `atan z = (i/2)·(log(1−iz) − log(1+iz))`
 
 ### 5.6 I/O (`Display` / `Debug` / `FromStr`)
-- **`Display`**: MPC's parenthesized form `"(re im)"` — e.g. `"(1.5 -2.0)"`, `"(inf 0)"`,
-  `"(0 -0)"`. Output is always parenthesized with a single space separator. Each part uses `FBig`'s
-  native `Display`, so special values render as dashu's `inf`/`-inf` (not MPC's `@Inf@`).
-- **`Debug`**: `"<re> + <im>i (prec: <p>)"` or a structured form with `#?` (mirrors `FBig`'s Debug).
-- **`FromStr`**: mirrors MPC's string grammar — a bare real (`"3"`, imaginary defaults to `+0`)
-  or a parenthesized pair `"(re im)"` separated by whitespace (not a comma); parentheses are required
-  for a pair and optional for a bare real. Each part parses via `FBig`'s `FromStr` (so `inf`/`-inf`,
-  not MPC's `@Inf@`); `ParseError` on anything malformed.
+> **Divergence from MPC.** MPC uses the parenthesized pair `"(re im)"`; `dashu-cplx` instead uses the
+> algebraic `"a+bi"` notation (the `num-complex` idiom) for `Display`/`FromStr`, which is far more
+> readable for humans. The parenthesized form is **not** accepted on input.
+
+- **`Display`**: algebraic `"a+bi"` — e.g. `"1+2i"`, `"-3-4i"`, `"5"` (pure real), `"-7i"` (pure
+  imaginary), `"i"` (= `0+1i`), `"-i"` (= `0-1i`). Each coefficient uses `FBig`'s native `Display`
+  (specials render as `inf`/`-inf`); the imaginary term always carries an explicit sign, a unit
+  coefficient is elided (`1i` → `i`), and a zero imaginary is omitted (pure real).
+- **`Debug`**: structured `"re:<re> im:<im> (prec: <p>)"` — e.g. `"re:1.5 im:-2.0 (prec: 53)"`, for
+  quick inspection (mirrors `FBig`'s `Debug` style).
+- **`FromStr`**: parses exactly the `"a+bi"` grammar `Display` emits — an optional real term and an
+  optional `"<sign><coeff>i"` imaginary term (at least one required; bare `"i"`/`"-i"` = `±1·i`;
+  `"5"` = `5+0i`). Each coefficient parses via `FBig`'s `FromStr` (so `inf`/`-inf`, not MPC's
+  `@Inf@`). `ParseError` on anything malformed — **including** the `"(re im)"` parenthesized form.
 
 ### 5.7 Constants
 ```rust
@@ -316,7 +320,8 @@ fn complex_op<R,B>(z, w, ctx) -> CpResult {
         // 3. Error bound: |re_hi - re_lo| ≤ err_bound(formula, g, z, w).
         if re_round_is_decisive(&re_hi, &re_lo, err_re, R) &&
            re_round_is_decisive(&im_hi, &im_lo, err_im, R) {
-            return Ok(CRounded { value: CBig::from_parts(re_lo.value(), im_lo.value()), re: re_lo_rounding, im: im_lo_rounding });
+            return Ok(Inexact(CBig::from_parts(re_lo.value(), im_lo.value()),
+                               (re_lo_rounding, im_lo_rounding)));   // Exact(v) if both flags are NoOp
         }
         g *= 2;                          // ambiguous: raise guard and retry
     }
@@ -471,7 +476,7 @@ mod cmp; mod convert; mod parse; mod fmt;
 mod third_party;
 pub use third_party::*;
 pub use cbig::CBig;
-#[doc(hidden)] pub use dashu_int::Word;   // for macros, if a cplx! macro is added
+#[doc(hidden)] pub use dashu_int::Word;   // for macros, if a cbig! macro is added
 ```
 Kernel routines (the Ziv helper, `abs`'s scaled sum-of-squares, Smith's division) carry **inline**
 `#[cfg(test)] mod tests` (per `AGENTS.md`); cross-cutting/public-API tests live in `cplx/tests/`.
@@ -491,11 +496,11 @@ with minimal/`#[cfg(...)]` stub impls or fully omitted until implemented (decide
    `pub type Complex = dashu_cplx::CBig;` alongside `Real`/`Decimal`/`Rational`.
 3. `README.md`: add `dashu-cplx` to the crate table and feature lists.
 
-### 7.5 Literal macro `cplx!` (optional / deferred)
-If shipped in 0.5, follow the `dashu-macros` pattern: add `cplx`/`static_cplx`/`cplx_embedded`/
-`static_cplx_embedded` in `macros/src/lib.rs`, a parser in `macros/src/parse/cplx.rs` accepting
-`cplx!(re + im i)` / `cplx!(re, im)`, `macros/Cargo.toml` dep on `dashu-cplx`, and
-`src/macro-docs/cplx.md` + a `macro_rules!` wrapper in the meta-crate. **Recommendation: defer to
+### 7.5 Literal macro `cbig!` (optional / deferred)
+If shipped in 0.5, follow the `dashu-macros` pattern: add `cbig`/`static_cbig`/`cbig_embedded`/
+`static_cbig_embedded` in `macros/src/lib.rs`, a parser in `macros/src/parse/cbig.rs` accepting
+`cbig!(re + im i)` / `cbig!(re, im)`, `macros/Cargo.toml` dep on `dashu-cplx`, and
+`src/macro-docs/cbig.md` + a `macro_rules!` wrapper in the meta-crate. **Recommendation: defer to
 0.5.x** to keep 0.5 scope tight (Open Decision 8).
 
 ---
@@ -548,7 +553,7 @@ matching the Phase 0 bench idioms. A `random_cbig(precision, rng)` helper mirror
 - `benches/transcendental.rs` — `exp`/`log`/`sin`/`cos`/`sqrt`/`abs`/`arg`/`pow` at the same
   precisions; include `sin_cos` (shared reduction). Compare `complex exp` cost vs `2 × real exp` to
   confirm the `exp/sin_cos` reuse is cheap.
-- `benches/io.rs` — `FromStr`/`Display` of `"(re im)"` at several precisions.
+- `benches/io.rs` — `FromStr`/`Display` of `"a+bi"` at several precisions.
 
 Record a baseline (the only open Phase 0 item) so 0.5.x perf changes are measurable.
 
@@ -574,7 +579,7 @@ Each milestone ends with `cargo check --all-features --tests`, `cargo clippy …
 - **M5 — Hardening.** Full `special_values.rs` Annex G coverage; `rug::Complex` oracle in `fuzz/`
   (manual); benches M1–M4 (`benches/*`); baseline capture.
 - **M6 — Polish.** Meta-crate `dashu::cplx`/`dashu::Complex`; README + guide chapter (`guide/src/`
-  CBig section per `TODO-v05.md` Phase 4); version sync (Phase 5); `cplx!` macro if kept in scope.
+  CBig section per `TODO-v05.md` Phase 4); version sync (Phase 5); `cbig!` macro if kept in scope.
 
 Gating: M1–M6 sit on the **completed** Phase 0 (real transcendentals verified) — the signed-zero trig
 bug fixed during Phase 0 is exactly the class of regression this gate prevents.
@@ -585,8 +590,8 @@ bug fixed during Phase 0 is exactly the class of regression this gate prevents.
 
 1. **Rounding model.** Uniform single `R` on both parts **(rec)** vs MPC-style `(R,R)` pair via a
    `CRound` trait. Uniform is simpler, sufficient for correctness, and matches `FBig`; defer the pair.
-2. **Inexactness reporting.** Dual-flag `CRounded { re, im }` **(rec)** vs simple `Result<CBig,
-   FpError>`. The dual flag is cheap and faithful to MPC.
+2. **Inexactness reporting.** Dual-flag `CRounded = Approximation<T, (Rounding, Rounding)>` **(rec)**
+   vs simple `Result<CBig, FpError>`. The dual flag is cheap and faithful to MPC.
 3. **Field privacy.** Private `re`/`im` + accessor methods **(rec)** vs `pub` fields (num-complex
    style). Private preserves the shared-precision invariant, consistent with `FBig`.
 4. **No-NaN policy.** Map C99 NaN-producing cases to `FpError` (`Indeterminate`/`OutOfDomain`) **(rec)**;
@@ -596,7 +601,7 @@ bug fixed during Phase 0 is exactly the class of regression this gate prevents.
    preference)**. `CDBig` decimal alias name TBD.
 7. **Complex trig via `exp(±iz)`** (avoids needing real `sinh`/`cosh`) **(rec)** vs adding real
    hyperbolics to `dashu-float` first. Defer the hyperbolic-form switch to 0.5.x.
-8. **`cplx!` literal macro.** Defer to 0.5.x **(rec)** vs include in 0.5.
+8. **`cbig!` literal macro.** Defer to 0.5.x **(rec)** vs include in 0.5.
 9. **Scalar operator surface.** Provide `Mul<FBig>`/`Div<FBig>` + `scale`/`unscale` methods **(rec)**
    vs CBig-only operators (num-complex deliberately omits mixed-type operators).
 10. **Third-party features in 0.5.** Scaffold `serde`/`num-traits`/`num-complex` feature flags but
@@ -636,7 +641,7 @@ bug fixed during Phase 0 is exactly the class of regression this gate prevents.
 - Ball arithmetic (the `mpcb_t` analogue — interval/uncertainty complex).
 - Independent re/im rounding (`CRound` trait; MPC `mpc_rnd_t` parity).
 - `num_complex::Complex<FBig>` interop (feature `num-complex_v04`).
-- `cplx!`/`static_cplx!` literal macros.
+- `cbig!`/`static_cbig!` literal macros.
 - A `ComplexFloat`-style trait unifying `FBig` and `CBig` (sealed, for generic real/complex code).
 - A `CachedCBig` variant threading `ConstCache` through transcendental calls (CBig v0.5 passes
   `cache = None`, matching `FBig` convenience behavior).
