@@ -3,7 +3,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::{self, Display, Formatter, LowerExp, UpperExp, Write};
 use dashu_base::{DivRem, Sign, UnsignedAbs};
-use dashu_int::{UBig, Word};
+use dashu_int::{fast_div::ConstDivisor, UBig, Word};
 
 use crate::rbig::{RBig, Relaxed};
 
@@ -35,12 +35,12 @@ struct Expanded {
 
 /// Perform long division and record digits.
 ///
-/// If `track_repetend` is true, uses a `BTreeMap` to detect cycles. Stops when
-/// `max_digits` fractional digits have been produced or when a terminating
-/// condition is reached.
-///
-/// TODO(v0.5): use `RadixInfo` fast dividers from `dashu_int` for batched
-/// digit extraction instead of one-digit-at-a-time `rem * radix / den`.
+/// If `track_repetend` is true, the expansion is produced one digit at a time so a
+/// cycle can be detected and displayed exactly (e.g. `1/6 -> 0.1(6)`). Otherwise a
+/// batched fast path is used: each iteration emits [`digits_per_word`] digits via a
+/// single division by a precomputed [`ConstDivisor`], trading `k` big-int divisions
+/// for one. Stops once `max_digits` fractional digits have been produced or the
+/// expansion terminates (or a cycle is found, in the repetend path).
 fn expand(num: &UBig, den: &UBig, radix: u8, max_digits: usize, track_repetend: bool) -> Expanded {
     let (int_part, mut rem) = num.div_rem(den);
     let int_digits: Vec<u8> = int_part
@@ -48,47 +48,114 @@ fn expand(num: &UBig, den: &UBig, radix: u8, max_digits: usize, track_repetend: 
         .into_iter()
         .map(|d| d as u8)
         .collect();
-    let mut frac_digits: Vec<u8> = Vec::with_capacity(max_digits);
-    let mut seen: Option<BTreeMap<UBig, usize>> = if track_repetend {
-        Some(BTreeMap::new())
-    } else {
-        None
-    };
-    let mut repetend_start: Option<usize> = None;
 
-    while frac_digits.len() < max_digits {
-        if rem.is_zero() {
-            break;
-        }
-        if let Some(ref mut map) = seen {
-            if let Some(&pos) = map.get(&rem) {
+    if track_repetend {
+        // Per-digit long division so the cycle can be detected at single-digit granularity.
+        let mut frac_digits: Vec<u8> = Vec::with_capacity(max_digits);
+        let mut seen: BTreeMap<UBig, usize> = BTreeMap::new();
+        let mut repetend_start: Option<usize> = None;
+
+        while frac_digits.len() < max_digits {
+            if rem.is_zero() {
+                break;
+            }
+            if let Some(&pos) = seen.get(&rem) {
                 repetend_start = Some(pos);
                 break;
             }
-            map.insert(rem.clone(), frac_digits.len());
+            seen.insert(rem.clone(), frac_digits.len());
+
+            let scaled = &rem * radix;
+            let (digit, new_rem) = scaled.div_rem(den);
+            rem = new_rem;
+            // digit is guaranteed 0..radix-1 (radix <= 36), so fits in u8
+            frac_digits.push(u8::try_from(&digit).unwrap());
         }
 
-        // rem = rem * radix
-        let scaled = &rem * radix;
-        let (digit, new_rem) = scaled.div_rem(den);
+        let (frac_prefix, repetend) = if let Some(start) = repetend_start {
+            let repetend = frac_digits.split_off(start);
+            (frac_digits, repetend)
+        } else {
+            (frac_digits, Vec::new())
+        };
+        Expanded {
+            int_digits,
+            frac_prefix,
+            repetend,
+        }
+    } else {
+        // Batched fast path: emit k digits per big-int division.
+        let radix_word = radix as Word;
+        let (k, radix_k) = if radix_word == 10 {
+            DECIMAL_DIGITS_PER_WORD
+        } else {
+            digits_per_word(radix_word)
+        };
+        let den_div = ConstDivisor::new(den.clone());
+        let frac_digits = expand_frac_fast(rem, &den_div, radix_word, radix_k, k, max_digits);
+        Expanded {
+            int_digits,
+            frac_prefix: frac_digits,
+            repetend: Vec::new(),
+        }
+    }
+}
+
+/// Largest `k` such that `radix^k <= Word::MAX`, together with the value `radix^k`, used to batch
+/// fractional digit extraction.
+const fn digits_per_word(radix: Word) -> (usize, Word) {
+    let mut k = 0usize;
+    let mut power: Word = 1;
+    while power <= Word::MAX / radix {
+        power *= radix;
+        k += 1;
+    }
+    (k, power)
+}
+
+/// Precomputed value for the common decimal (radix 10) case.
+///
+/// This is a separate constant rather than a `radix == 10` branch inside `digits_per_word`:
+/// the const initializer calls `digits_per_word(10)`, so a self-referential branch there would
+/// form a const-evaluation cycle. Callers read this constant directly on the radix-10 path.
+const DECIMAL_DIGITS_PER_WORD: (usize, Word) = digits_per_word(10);
+
+/// Extract up to `limit` fractional base-`radix` digits of the value `rem / den`
+/// (with `rem < den`, i.e. the value is in `[0, 1)`), stopping early if the expansion
+/// terminates. Each iteration produces `k` digits: multiply the remainder by `radix^k`,
+/// divide once by the precomputed `den_div`, then split the word-sized quotient chunk
+/// into `k` digits (most-significant first).
+fn expand_frac_fast(
+    mut rem: UBig,
+    den_div: &ConstDivisor,
+    radix: Word,
+    radix_k: Word,
+    k: usize,
+    limit: usize,
+) -> Vec<u8> {
+    let mut digits: Vec<u8> = Vec::with_capacity(limit);
+    let mut chunk: Vec<u8> = Vec::with_capacity(k); // reused; one chunk, LSB-first
+    while digits.len() < limit && !rem.is_zero() {
+        let scaled = &rem * radix_k;
+        let (quot, new_rem) = scaled.div_rem(den_div);
         rem = new_rem;
 
-        // digit is guaranteed 0..radix-1 (radix <= 36), so fits in u8
-        frac_digits.push(u8::try_from(&digit).unwrap());
-    }
+        // quot < radix^k <= Word::MAX, so it always fits in a single Word.
+        let mut word: Word = quot.try_into().unwrap();
 
-    let (frac_prefix, repetend) = if let Some(start) = repetend_start {
-        let repetend = frac_digits.split_off(start);
-        (frac_digits, repetend)
-    } else {
-        (frac_digits, Vec::new())
-    };
-
-    Expanded {
-        int_digits,
-        frac_prefix,
-        repetend,
+        // split `word` into k base-radix digits, LSB-first
+        chunk.clear();
+        for _ in 0..k {
+            chunk.push((word % radix) as u8);
+            word /= radix;
+        }
+        // append up to `limit - len` digits, most-significant first
+        let take = (limit - digits.len()).min(k);
+        for i in 0..take {
+            digits.push(chunk[k - 1 - i]);
+        }
     }
+    digits
 }
 
 /// Default number of fractional digits for a given radix.
@@ -319,18 +386,17 @@ impl InExpanded<'_> {
 
 /// Compute `n` fractional digits via long division starting from `rem`.
 /// Does not track repetends.
-fn expand_fraction(mut rem: UBig, den: &UBig, radix: u8, n: usize) -> Vec<u8> {
-    let mut digits = Vec::with_capacity(n);
-    for _ in 0..n {
-        if rem.is_zero() {
-            digits.push(0);
-        } else {
-            let scaled = &rem * radix;
-            let (digit, new_rem) = scaled.div_rem(den);
-            rem = new_rem;
-            digits.push(u8::try_from(&digit).unwrap());
-        }
-    }
+fn expand_fraction(rem: UBig, den: &UBig, radix: u8, n: usize) -> Vec<u8> {
+    let radix_word = radix as Word;
+    let (k, radix_k) = if radix_word == 10 {
+        DECIMAL_DIGITS_PER_WORD
+    } else {
+        digits_per_word(radix_word)
+    };
+    let den_div = ConstDivisor::new(den.clone());
+    let mut digits = expand_frac_fast(rem, &den_div, radix_word, radix_k, k, n);
+    // the expansion may terminate before `n` digits; pad with zeros
+    digits.resize(n, 0);
     digits
 }
 
@@ -399,5 +465,46 @@ impl Relaxed {
             denominator: self.denominator(),
             radix,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::RBig;
+    use core::str::FromStr;
+
+    #[test]
+    fn test_expanded_terminating() {
+        // terminating fractions: the batched path must not change the digits
+        let r = RBig::from_str("1/8").unwrap(); // 0.125
+        assert_eq!(format!("{:.4}", r.in_expanded(10)), "0.1250");
+        assert_eq!(format!("{:.10}", r.in_expanded(10)), "0.1250000000");
+        let r = RBig::from_str("1/4").unwrap(); // 0.25
+        assert_eq!(format!("{:.3}", r.in_expanded(10)), "0.250");
+    }
+
+    #[test]
+    fn test_expanded_repeating() {
+        let third = RBig::from_str("1/3").unwrap();
+        assert_eq!(format!("{:.6}", third.in_expanded(10)), "0.333333");
+        assert_eq!(format!("{:#}", third.in_expanded(10)), "0.(3)");
+        assert_eq!(format!("{:#}", RBig::from_str("1/7").unwrap().in_expanded(10)), "0.(142857)");
+        assert_eq!(format!("{:#}", RBig::from_str("1/6").unwrap().in_expanded(10)), "0.1(6)");
+    }
+
+    #[test]
+    fn test_expanded_scientific() {
+        let third = RBig::from_str("1/3").unwrap();
+        assert_eq!(format!("{:.4e}", third.in_expanded(10)), "3.3333e-1");
+        let eighth = RBig::from_str("1/8").unwrap();
+        assert_eq!(format!("{:.2e}", eighth.in_expanded(10)), "1.25e-1");
+    }
+
+    #[test]
+    fn test_expanded_binary() {
+        // a non-decimal radix exercises batching with a different digits_per_word
+        let eighth = RBig::from_str("1/8").unwrap(); // 0.001 binary
+        assert_eq!(format!("{:.5}", eighth.in_expanded(2)), "0.00100");
+        assert_eq!(format!("{:#}", RBig::from_str("1/3").unwrap().in_expanded(2)), "0.(01)");
     }
 }

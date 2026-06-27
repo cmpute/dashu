@@ -121,9 +121,10 @@ Every item here changes public API and **must** land in 0.5. File:line refs are 
 - [x] **`From<Repr> for FBig` → `TryFrom`** (`rational/src/third_party/dashu_float.rs:12`): make the
       conversion fallible (succeed only when exact). A ready stub `fbig_try_from_rbig` exists at
       `:26`. Remove the dead-code stub TODO at `:24` and the `#[allow(dead_code)]`.
-- [x] Wire the new `UBig::to_digits` into `fmt/expanded.rs` (call sites use it directly; the thin
-      `ubig_to_digits` wrapper was removed) — done; the remaining fast-divider TODOs at
-      `fmt/expanded.rs:42`/`:350` are deferred to 0.5.x. Non-breaking internal perf, gated on 1.2.
+- [x] Wire `UBig::to_digits` into `fmt/expanded.rs` (integer part, direct) and batch the fractional
+      long division through a precomputed `dashu_int::fast_div::ConstDivisor` (one division per word
+      of digits) on the non-repetend path — done. The remaining `write_digits`→`DigitWriter` SIMD
+      TODO is the only fast-fmt item left for 0.5.x. Non-breaking internal perf, gated on 1.2.
 
 ### 1.5 Doc / internal (non-breaking, fold in opportunistically)
 Move verbose type explanations from API docs into the guide (`integer/src/ubig.rs:10` TODO).
