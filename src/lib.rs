@@ -119,8 +119,16 @@ pub type Integer = dashu_int::IBig;
 /// A verbose alias for [FBig][dashu_float::FBig] (base 2, rounding towards zero)
 pub type Real = dashu_float::FBig;
 
+/// A verbose alias for [CachedFBig][dashu_float::CachedFBig] (base 2, rounding towards zero) — the
+/// cached, faster variant of [`Real`] for transcendental-heavy code. `!Send + !Sync`.
+pub type FastReal = dashu_float::CachedFBig;
+
 /// A verbose alias for [DBig][dashu_float::DBig] (base 10, rounding to the nearest)
 pub type Decimal = dashu_float::DBig;
+
+/// A verbose alias for the base-10 [CachedFBig][dashu_float::CachedFBig] (rounding to nearest) — the
+/// cached, faster variant of [`Decimal`]. `!Send + !Sync`.
+pub type FastDecimal = dashu_float::CachedFBig<dashu_float::round::mode::HalfAway, 10>;
 
 /// A verbose alias for [RBig][dashu_ratio::RBig]
 pub type Rational = dashu_ratio::RBig;

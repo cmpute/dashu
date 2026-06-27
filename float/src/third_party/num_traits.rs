@@ -136,8 +136,7 @@ impl<R: Round, const B: Word> num_traits::Num for FBig<R, B> {
         #[allow(clippy::unnecessary_fallible_conversions, clippy::useless_conversion)]
         let r: Word = radix.try_into().map_err(|_| ParseError::UnsupportedRadix)?;
         if r == B {
-            #[allow(deprecated)] // TODO(v0.5): remove after from_str_native is made private.
-            Self::from_str_native(s)
+            s.parse()
         } else {
             Err(ParseError::UnsupportedRadix)
         }

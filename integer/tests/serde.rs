@@ -34,14 +34,18 @@ fn test_ibig_serde() {
     assert_tokens(&ibig!(0).compact(), &[Token::Bytes(&[])]);
     assert_tokens(&ibig!(0).readable(), &[Token::BorrowedStr("0")]);
     assert_de_tokens(&ibig!(0).readable(), &[Token::BorrowedStr("0")]);
-    assert_tokens(&ibig!(17).compact(), &[Token::Bytes(&[17, 0])]);
+    assert_tokens(&ibig!(17).compact(), &[Token::Bytes(&[17])]);
     assert_tokens(&ibig!(17).readable(), &[Token::BorrowedStr("17")]);
     assert_de_tokens(&ibig!(17).readable(), &[Token::BorrowedStr("0x11")]);
-    assert_tokens(&ibig!(-17).compact(), &[Token::Bytes(&[17])]);
+    assert_tokens(&ibig!(-17).compact(), &[Token::Bytes(&[0xef])]);
     assert_tokens(&ibig!(-17).readable(), &[Token::BorrowedStr("-17")]);
     assert_de_tokens(&ibig!(-17).readable(), &[Token::BorrowedStr("-0x11")]);
 
-    // test padding
+    // when the magnitude's top byte has the high bit set, a sign-extension byte is required
+    assert_tokens(&ibig!(0x80).compact(), &[Token::Bytes(&[0x80, 0x00])]);
+    assert_tokens(&ibig!(-1).compact(), &[Token::Bytes(&[0xff])]);
+
+    // larger magnitudes (two's complement, little-endian)
     assert_tokens(
         &ibig!(0x123451234567890).compact(),
         &[Token::Bytes(&[
@@ -51,19 +55,19 @@ fn test_ibig_serde() {
     assert_tokens(
         &ibig!(-0x123451234567890).compact(),
         &[Token::Bytes(&[
-            0x90, 0x78, 0x56, 0x34, 0x12, 0x45, 0x23, 0x1, 0x0,
+            0x70, 0x87, 0xa9, 0xcb, 0xed, 0xba, 0xdc, 0xfe,
         ])],
     );
     assert_tokens(
         &ibig!(0x123451234567890abcdef).compact(),
         &[Token::Bytes(&[
-            0xef, 0xcd, 0xab, 0x90, 0x78, 0x56, 0x34, 0x12, 0x45, 0x23, 0x1, 0x0,
+            0xef, 0xcd, 0xab, 0x90, 0x78, 0x56, 0x34, 0x12, 0x45, 0x23, 0x1,
         ])],
     );
     assert_tokens(
         &ibig!(-0x123451234567890abcdef).compact(),
         &[Token::Bytes(&[
-            0xef, 0xcd, 0xab, 0x90, 0x78, 0x56, 0x34, 0x12, 0x45, 0x23, 0x1,
+            0x11, 0x32, 0x54, 0x6f, 0x87, 0xa9, 0xcb, 0xed, 0xba, 0xdc, 0xfe,
         ])],
     );
 }

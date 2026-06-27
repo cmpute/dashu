@@ -4,9 +4,10 @@ use crate::{
     add,
     arch::word::{DoubleWord, Word},
     buffer::Buffer,
+    div,
     helper_macros::debug_assert_zero,
     ibig::IBig,
-    math,
+    math, mul,
     primitive::{
         self, PrimitiveSigned, PrimitiveUnsigned, DWORD_BITS_USIZE, DWORD_BYTES, WORD_BITS,
         WORD_BITS_USIZE, WORD_BYTES,
@@ -23,7 +24,7 @@ use alloc::{boxed::Box, vec, vec::Vec};
 use core::convert::{TryFrom, TryInto};
 use dashu_base::{
     Approximation::{self, *},
-    BitTest, ConversionError, FloatEncoding, PowerOfTwo, Sign,
+    BitTest, ConversionError, FloatEncoding, ParseError, PowerOfTwo, Sign,
 };
 use static_assertions::const_assert;
 
@@ -1139,10 +1140,172 @@ mod repr {
     }
 }
 
-// TODO(v0.5): implement `to_digits` and `from_digits`, that supports base up to Word::MAX.
-//             This method won't be optimized as much as the InRadix formatter,
-//             because InRadix has a limit on the radix.
-//
-//             For small bases, we should use the same algorithm with `InRadix` formatter,
-//             therefore we need break change here (limit the 'Digit' type to u8), and only
-//             share algorithm for base < 256
+impl UBig {
+    /// Convert this integer to a sequence of digits in the given `base`, most
+    /// significant digit first.
+    ///
+    /// The `base` must be at least 2 (and at most [`Word::MAX`]). Each returned
+    /// digit lies in `0..base`. The number `0` is represented as the single-digit
+    /// slice `[0]`.
+    ///
+    /// Unlike [`UBig::in_radix`], this method supports any base up to [`Word::MAX`]
+    /// (not just 2..=36), at the cost of a simpler, per-digit division algorithm.
+    /// It is the inverse of [`UBig::from_digits`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `base < 2`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::{UBig, Word};
+    /// let n = UBig::from(83u8);
+    /// // 83 = 1*81 + 0*27 + 0*9 + 0*3 + 2*1 in base 3
+    /// assert_eq!(n.to_digits(3), vec![1 as Word, 0, 0, 0, 2]);
+    /// assert_eq!(UBig::ZERO.to_digits(16), vec![0 as Word]);
+    /// ```
+    #[must_use]
+    pub fn to_digits(&self, base: Word) -> Vec<Word> {
+        assert!(base >= 2, "base must be at least 2");
+
+        if self.is_zero() {
+            return vec![0];
+        }
+
+        // Repeatedly divide the magnitude by `base`, collecting remainders
+        // (least significant digit first), then reverse to most-significant-first.
+        let mut words = Buffer::from(self.as_words());
+        let mut digits = Vec::new();
+        while !words.is_empty() {
+            let rem = div::div_by_word_in_place(&mut words, base);
+            digits.push(rem);
+            words.pop_zeros();
+        }
+        digits.reverse();
+        digits
+    }
+
+    /// Construct an integer from a sequence of digits in the given `base`, most
+    /// significant digit first.
+    ///
+    /// The `base` must be at least 2 (and at most [`Word::MAX`]). Each digit must
+    /// lie in `0..base`, and the digit slice must be non-empty; otherwise an error
+    /// is returned.
+    ///
+    /// It is the inverse of [`UBig::to_digits`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParseError::NoDigits`] if `digits` is empty, and
+    /// [`ParseError::InvalidDigit`] if `base < 2` or any digit is `>= base`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::{UBig, Word};
+    /// let n = UBig::from(83u8);
+    /// assert_eq!(UBig::from_digits(3, &[1 as Word, 0, 0, 0, 2]).unwrap(), n);
+    /// // out-of-range digits are rejected
+    /// assert!(UBig::from_digits(3, &[3 as Word]).is_err());
+    /// ```
+    pub fn from_digits(base: Word, digits: &[Word]) -> Result<UBig, ParseError> {
+        if base < 2 {
+            return Err(ParseError::InvalidDigit);
+        }
+        if digits.is_empty() {
+            return Err(ParseError::NoDigits);
+        }
+        if digits.iter().any(|&d| d >= base) {
+            return Err(ParseError::InvalidDigit);
+        }
+
+        // Horner evaluation: acc = acc * base + digit, using in-place word ops.
+        let mut acc = Buffer::from(&digits[0..1]); // start from the most significant digit
+        for &digit in &digits[1..] {
+            let carry = mul::mul_word_in_place(&mut acc, base);
+            if carry != 0 {
+                acc.push_resizing(carry);
+            }
+            let overflow = add::add_word_in_place(&mut acc, digit);
+            if overflow {
+                acc.push_resizing(1);
+            }
+        }
+
+        Ok(UBig(Repr::from_buffer(acc)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_to_digits_zero() {
+        assert_eq!(UBig::ZERO.to_digits(2), vec![0]);
+        assert_eq!(UBig::ZERO.to_digits(10), vec![0]);
+        assert_eq!(UBig::ZERO.to_digits(256), vec![0]);
+    }
+
+    #[test]
+    fn test_to_digits_small() {
+        // 83 = 1*81 + 0*27 + 0*9 + 0*3 + 2*1 in base 3
+        assert_eq!(UBig::from(83u8).to_digits(3), vec![1, 0, 0, 0, 2]);
+        // 255 = ff in base 16
+        assert_eq!(UBig::from(255u8).to_digits(16), vec![15, 15]);
+        // 256 = 1,0 in base 256
+        assert_eq!(UBig::from(256u16).to_digits(256), vec![1, 0]);
+        // a single digit stays a single digit
+        assert_eq!(UBig::from(5u8).to_digits(10), vec![5]);
+    }
+
+    #[test]
+    fn test_to_digits_large_base() {
+        // a multi-word value, encoded/decoded at a large base (beyond in_radix's 36)
+        let n = UBig::from(u128::MAX);
+        let digits = n.to_digits(10_000);
+        assert!(digits.iter().all(|&d| d < 10_000));
+        assert_eq!(UBig::from_digits(10_000, &digits).unwrap(), n);
+
+        // base at Word::MAX exercises the full supported base range
+        let digits = n.to_digits(Word::MAX);
+        assert!(digits.iter().all(|&d| d < Word::MAX));
+        assert_eq!(UBig::from_digits(Word::MAX, &digits).unwrap(), n);
+    }
+
+    #[test]
+    fn test_from_digits_errors() {
+        // empty digit slice
+        assert!(UBig::from_digits(10, &[]).is_err());
+        // base < 2
+        assert!(UBig::from_digits(0, &[0]).is_err());
+        assert!(UBig::from_digits(1, &[0]).is_err());
+        // digit out of range
+        assert!(UBig::from_digits(10, &[9, 10]).is_err());
+        assert!(UBig::from_digits(2, &[2]).is_err());
+    }
+
+    #[test]
+    fn test_to_from_digits_round_trip() {
+        let values = [
+            UBig::ZERO,
+            UBig::ONE,
+            UBig::from(123u32),
+            UBig::from(u64::MAX),
+            UBig::from(u128::MAX),
+            UBig::from_str_radix("1234567890abcdef1234567890abcdef", 16).unwrap(),
+        ];
+        // bases valid on every word width (2..=Word::MAX)
+        let bases: &[Word] = &[2, 3, 7, 10, 16, 36, 255, 256, 10_000, Word::MAX];
+
+        for v in &values {
+            for &base in bases {
+                let digits = v.to_digits(base);
+                assert!(digits.iter().all(|&d| d < base), "digit >= base");
+                let reconstructed = UBig::from_digits(base, &digits).unwrap();
+                assert_eq!(&reconstructed, v, "round trip failed for base {base:?}");
+            }
+        }
+    }
+}

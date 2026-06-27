@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Remove
+- Public `Repr::from_str_native` / `FBig::from_str_native` methods (now crate-private). Use the `core::str::FromStr` impl (`s.parse()` / `FBig::from_str`) instead; its docs now carry the full parsing format specification.
+
+### Change
+- **(breaking)** `FBig` human-readable serde now pads the serialized string with trailing zeros so its significant-digit count equals the context precision, letting precision round-trip (previously it was lost). The binary format already preserved precision.
+- (internal) The PostgreSQL `NUMERIC` conversion now extracts base-10000 digits via `UBig::to_digits` instead of a per-digit `div_rem` loop.
+
 ### Add
 - Hyperbolic functions `sinh`, `cosh`, `tanh` and their inverses `asinh`, `acosh`, `atanh` on
   `Context`/`FBig`/`CachedFBig`. Built from cancellation-free `exp_m1`/`ln_1p` formulas with

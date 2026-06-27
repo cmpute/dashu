@@ -9,7 +9,7 @@ mod diesel_v2;
 #[cfg(feature = "postgres-types")]
 mod postgres_types;
 
-use dashu_base::{ConversionError, DivRemAssign, EstimatedLog2, Sign};
+use dashu_base::{ConversionError, EstimatedLog2, Sign};
 use dashu_int::UBig;
 
 use crate::{
@@ -181,13 +181,8 @@ fn repr_to_numeric(repr: &Repr<10>, precision: Option<usize>) -> Result<Numeric,
     };
     let weight = exp / 4; // exponent in base NBASE
 
-    // calculate the actual digits
-    while !signif.is_zero() {
-        // TODO(next): to achieve the best performance, it might worth adding a `to_digits`
-        // method to `UBig`, and supporting arbitrary base (but limited to Word size).
-        digits.push(signif.div_rem_assign(10000u16) as i16);
-    }
-    digits.reverse();
+    // calculate the actual digits (base-NBASE = 10000, most significant first)
+    digits.extend(signif.to_digits(10000).into_iter().map(|d| d as i16));
 
     // count the actual digits in base 10 and calculate number of digits after decimal point
     if let Some(prec) = precision {

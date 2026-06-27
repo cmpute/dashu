@@ -72,7 +72,8 @@ use dashu_int::{DoubleWord, IBig};
 /// # Ok::<(), ParseError>(())
 /// ```
 ///
-/// For detailed information of parsing, refer to the [from_str_native()][FBig::from_str_native] method.
+/// For detailed information on the accepted parsing formats, see the docs on the
+/// [`core::str::FromStr`] implementation for [`FBig`].
 ///
 /// # Restriction on binary operators
 ///

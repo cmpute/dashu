@@ -31,20 +31,6 @@ pub trait UnsignedAbs {
     fn unsigned_abs(self) -> Self::Output;
 }
 
-/// Check whether the magnitude of this number is equal the magnitude of the other number
-///
-/// # Examples
-///
-/// ```
-/// # use dashu_base::AbsEq;
-/// assert!(5.abs_eq(&-5));
-/// assert!(12.3.abs_eq(&-12.3));
-/// ```
-#[deprecated(since = "0.5.0", note = "AbsEq will be moved in AbsOrd in v0.5")] // TODO(v0.5): deprecate
-pub trait AbsEq<Rhs = Self> {
-    fn abs_eq(&self, rhs: &Rhs) -> bool;
-}
-
 /// Compare the magnitude of this number to the magnitude of the other number
 ///
 /// Note that this function will panic if either of the numbers is NaN.
@@ -293,14 +279,6 @@ macro_rules! impl_signed_for_int {
             }
         }
 
-        #[allow(deprecated)]
-        impl AbsEq for $t {
-            #[inline]
-            fn abs_eq(&self, rhs: &Self) -> bool {
-                self.abs() == rhs.abs()
-            }
-        }
-
         impl AbsOrd for $t {
             #[inline]
             fn abs_cmp(&self, rhs: &Self) -> Ordering {
@@ -322,14 +300,6 @@ macro_rules! impl_signed_for_float {
                     return Sign::Positive;
                 }
                 Sign::from(self.to_bits() >> $shift > 0)
-            }
-        }
-
-        #[allow(deprecated)]
-        impl AbsEq for $t {
-            #[inline]
-            fn abs_eq(&self, rhs: &Self) -> bool {
-                self.abs() == rhs.abs()
             }
         }
 

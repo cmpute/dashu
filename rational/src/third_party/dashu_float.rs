@@ -7,42 +7,57 @@ use dashu_float::{
     round::{ErrorBounds, Round, Rounded},
     Context, FBig, Repr as FBigRepr,
 };
-use dashu_int::{UBig, Word};
+use dashu_int::{IBig, UBig, Word};
 
-// TODO(v0.5): make this fallible, only succeed when the conversion is exact.
-impl<R: Round, const B: Word> From<Repr> for FBig<R, B> {
-    #[inline]
-    fn from(v: Repr) -> Self {
+impl<R: Round, const B: Word> TryFrom<Repr> for FBig<R, B> {
+    type Error = ConversionError;
+
+    /// Convert the rational number to a [`FBig`], succeeding only when the value is
+    /// exactly representable in base `B` — that is, when every prime factor of the
+    /// reduced denominator also divides `B`. For a correctly-rounded (possibly
+    /// inexact) conversion, use [`RBig::to_float`] instead.
+    fn try_from(v: Repr) -> Result<Self, Self::Error> {
         let Repr {
             numerator,
             denominator,
         } = v;
-        FBig::from(numerator) / FBig::from(denominator)
+
+        // reduce to lowest terms, working on the magnitude
+        let (sign, mut num_mag) = numerator.into_parts();
+        let g = (&num_mag).gcd(&denominator);
+        num_mag /= &g;
+        let den = denominator / &g;
+
+        // The value is exactly representable in base B iff every prime factor of the
+        // reduced denominator also divides B. Repeatedly divide out gcd(den, B); the
+        // iteration count `k` is the number of base-B digits to clear, and equals the
+        // exponent (each step lowers every prime power p^a by v_p(B)).
+        let base = UBig::from_word(B);
+        let mut k = 0usize;
+        let mut d = den.clone();
+        loop {
+            let g = (&d).gcd(&base);
+            if g.is_one() {
+                break;
+            }
+            d /= &g;
+            k += 1;
+        }
+        if !d.is_one() {
+            return Err(ConversionError::LossOfPrecision);
+        }
+
+        // Exact: value = num/den = (num * B^k / den) * B^(-k).
+        let signif_mag = if k == 0 {
+            num_mag
+        } else {
+            (num_mag * base.pow(k)) / &den
+        };
+        let signif = IBig::from_parts(sign, signif_mag);
+        let repr = FBigRepr::new(signif, -(k as isize));
+        let precision = repr.digits().max(1);
+        Ok(FBig::from_repr(repr, Context::new(precision)))
     }
-}
-
-// TODO(v0.5): substitute this function
-#[allow(dead_code)]
-fn fbig_try_from_rbig<R: Round, const B: Word>(v: Repr) -> Result<FBig<R, B>, ConversionError> {
-    let Repr {
-        numerator,
-        denominator,
-    } = v;
-
-    let float_den = FBig::from(denominator);
-    let float_num = FBig::from(numerator);
-
-    // TODO: specialize for RBig (gcd is unnecessary)
-    if !float_num
-        .repr()
-        .significand()
-        .gcd(float_den.repr().significand())
-        .is_one()
-    {
-        return Err(ConversionError::LossOfPrecision);
-    }
-
-    Ok(float_den / float_num)
 }
 
 impl<const B: Word> TryFrom<FBigRepr<B>> for Repr {
@@ -75,10 +90,11 @@ impl<R: Round, const B: Word> TryFrom<FBig<R, B>> for Repr {
 
 macro_rules! forward_conversion_to_repr {
     ($t:ident, $reduce:ident) => {
-        impl<R: Round, const B: Word> From<$t> for FBig<R, B> {
+        impl<R: Round, const B: Word> TryFrom<$t> for FBig<R, B> {
+            type Error = ConversionError;
             #[inline]
-            fn from(v: $t) -> Self {
-                v.0.into()
+            fn try_from(v: $t) -> Result<Self, Self::Error> {
+                v.0.try_into()
             }
         }
 
@@ -212,5 +228,51 @@ impl Relaxed {
     #[inline]
     pub fn to_float<R: Round, const B: Word>(&self, precision: usize) -> Rounded<FBig<R, B>> {
         self.0.to_float(precision)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::RBig;
+    use core::str::FromStr;
+    use dashu_float::{DBig, FBig};
+
+    #[test]
+    fn test_rational_to_float_exact() {
+        // values with a finite base-10 expansion convert exactly
+        let cases: &[(RBig, &str)] = &[
+            (RBig::from_parts(1.into(), 2u8.into()), "0.5"),
+            (RBig::from_parts(1.into(), 4u8.into()), "0.25"),
+            (RBig::from_parts(3.into(), 4u8.into()), "0.75"),
+            (RBig::from_parts(1.into(), 8u8.into()), "0.125"),
+            (RBig::from(100), "100"),
+        ];
+        for (r, expected) in cases {
+            let f: DBig = r.clone().try_into().unwrap();
+            assert_eq!(f, DBig::from_str(expected).unwrap(), "exact convert {r:?}");
+        }
+
+        // 1/8 also has a finite base-2 expansion (0.001b)
+        let f: FBig = RBig::from_parts(1.into(), 8u8.into()).try_into().unwrap();
+        assert_eq!(f, "0.001".parse::<FBig>().unwrap());
+    }
+
+    #[test]
+    fn test_rational_to_float_inexact() {
+        // 1/3 has no finite base-10 expansion
+        let r = RBig::from_parts(1.into(), 3u8.into());
+        let res: Result<DBig, _> = r.try_into();
+        assert!(matches!(res, Err(ConversionError::LossOfPrecision)));
+
+        // 7/12 = 7/(4*3): the factor 3 is absent from base 10
+        let r = RBig::from_parts(7.into(), 12u8.into());
+        let res: Result<DBig, _> = r.try_into();
+        assert!(matches!(res, Err(ConversionError::LossOfPrecision)));
+
+        // 1/10 has no finite base-2 expansion
+        let r = RBig::from_parts(1.into(), 10u8.into());
+        let res: Result<FBig, _> = r.try_into();
+        assert!(matches!(res, Err(ConversionError::LossOfPrecision)));
     }
 }
