@@ -104,3 +104,49 @@ fn mul_context_inexactness_flags() {
         dashu_base::Approximation::Exact(_) => (Rounding::NoOp, Rounding::NoOp),
     };
 }
+
+// --- sqrt / exp / log special values (M3) ---
+
+#[test]
+fn sqrt_pos_infinity() {
+    let s = ctx().sqrt(&inf()).unwrap().value();
+    assert!(is_riemann(&s));
+}
+
+#[test]
+fn sqrt_zero_is_zero() {
+    let s = ctx().sqrt(&real(0)).unwrap().value();
+    assert!(s.is_zero());
+}
+
+#[test]
+fn exp_pos_infinity_is_riemann() {
+    let r = ctx().exp(&inf(), None).unwrap().value();
+    assert!(is_riemann(&r));
+}
+
+#[test]
+fn exp_neg_infinity_is_zero() {
+    let neg_inf = CBig::from(F::NEG_INFINITY);
+    let r = ctx().exp(&neg_inf, None).unwrap().value();
+    assert!(r.is_zero());
+}
+
+#[test]
+fn exp_imag_infinity_is_indeterminate() {
+    let im_inf = CBig::from_parts(F::ZERO, F::INFINITY);
+    assert_eq!(ctx().exp(&im_inf, None), Err(FpError::Indeterminate));
+}
+
+#[test]
+fn log_zero_is_neg_infinity() {
+    let r = ctx().log(&real(0), None).unwrap().value();
+    assert!(r.re().is_infinite());
+    assert_eq!(r.re().sign(), Sign::Negative);
+}
+
+#[test]
+fn log_infinity_is_riemann() {
+    let r = ctx().log(&inf(), None).unwrap().value();
+    assert!(is_riemann(&r));
+}

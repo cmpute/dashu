@@ -66,11 +66,15 @@ mod cmp;
 mod context;
 mod convert;
 mod div;
+mod exp;
 mod fmt;
 mod helper_macros;
+mod log;
 mod misc;
 mod mul;
 mod parse;
+mod power;
+mod root;
 mod sub;
 mod third_party;
 

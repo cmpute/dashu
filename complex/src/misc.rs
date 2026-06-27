@@ -60,7 +60,7 @@ impl<R: Round, const B: Word> CBig<R, B> {
     /// and infinities are handled per the C99 Annex G `atan2` table (reused from `dashu-float`).
     #[inline]
     pub fn arg(&self) -> FBig<R, B> {
-        self.context.float().unwrap_fp(self.context.arg(self))
+        self.context.float().unwrap_fp(self.context.arg(self, None))
     }
 }
 
@@ -146,9 +146,14 @@ impl<R: Round> Context<R> {
         Ok(n.with_precision(self.precision()))
     }
 
-    /// The argument `atan2(im, re)` (context layer). Delegates to `dashu-float`'s Annex-G `atan2`.
-    pub fn arg<const B: Word>(&self, z: &CBig<R, B>) -> FpResult<FBig<R, B>> {
-        self.float().atan2(z.imag(), z.re(), None)
+    /// The argument `atan2(im, re)` (context layer). Delegates to `dashu-float`'s Annex-G `atan2`;
+    /// the cache threads into it (the convenience layer passes `None`).
+    pub fn arg<const B: Word>(
+        &self,
+        z: &CBig<R, B>,
+        cache: Option<&mut dashu_float::ConstCache>,
+    ) -> FpResult<FBig<R, B>> {
+        self.float().atan2(z.imag(), z.re(), cache)
     }
 
     /// The modulus `|z| = hypot(re, im)` (context layer). Near-correctly rounded; returns `+∞` for

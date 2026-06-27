@@ -1,7 +1,7 @@
 //! Complex division and reciprocal (near-correctly rounded via Smith's method + guard re-round).
 
 use crate::cbig::CBig;
-use crate::context::{combine_parts, exact, CRounded, CfpResult, Context};
+use crate::context::{combine_parts, exact, riemann, CfpResult, Context};
 use core::ops::{Div, DivAssign};
 use dashu_float::round::Round;
 use dashu_float::{FBig, FpError, Repr};
@@ -10,14 +10,6 @@ use dashu_int::Word;
 /// Guard digits (base-B) for `div`/`inv`. The naive complex-division error is `~(3+√5)·u`; a fixed
 /// guard comfortably absorbs it for well-conditioned denominators.
 const DIV_GUARD: usize = 14;
-
-/// The Riemann point at infinity `+∞ + i·0` as an exact [`CRounded`] result.
-fn riemann<R: Round, const B: Word>(context: Context<R>) -> CRounded<R, B> {
-    exact(
-        FBig::from_repr(Repr::infinity(), context.float()),
-        FBig::from_repr(Repr::zero(), context.float()),
-    )
-}
 
 /// Magnitude comparison of two real parts: `|a| >= |b|`?
 fn abs_ge<const B: Word>(a: &Repr<B>, b: &Repr<B>) -> bool {

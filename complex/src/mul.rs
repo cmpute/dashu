@@ -1,24 +1,16 @@
 //! Complex squaring and multiplication (near-correctly rounded via the guard-digit recipe).
 
 use crate::cbig::{is_numeric_zero, CBig};
-use crate::context::{combine_parts, exact, CRounded, CfpResult, Context};
+use crate::context::{combine_parts, exact, riemann, CfpResult, Context};
 use core::ops::{Mul, MulAssign};
 use dashu_float::round::Round;
-use dashu_float::{FBig, FpError, Repr};
+use dashu_float::{FBig, FpError};
 use dashu_int::Word;
 
 /// Guard digits (base-B) for `sqr`/`mul`. The published normwise error bound for complex
 /// multiplication is `< √5·u` (Brent–Percival–Zimmermann), so a small fixed guard comfortably
 /// settles the accumulated rounding of the 2–4 component products for non-cancelling inputs.
 const MUL_GUARD: usize = 10;
-
-/// The Riemann point at infinity `+∞ + i·0` as an exact [`CRounded`] result.
-fn riemann<R: Round, const B: Word>(context: Context<R>) -> CRounded<R, B> {
-    exact(
-        FBig::from_repr(Repr::infinity(), context.float()),
-        FBig::from_repr(Repr::zero(), context.float()),
-    )
-}
 
 impl<R: Round> Context<R> {
     /// Square a complex number under this context: `(x+iy)² = (x²-y²) + i(2xy)`.

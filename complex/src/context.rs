@@ -13,7 +13,7 @@
 use dashu_base::Approximation;
 use dashu_base::Approximation::*;
 use dashu_float::round::{Round, Rounding};
-use dashu_float::{Context as FloatCtxt, FBig, FpError};
+use dashu_float::{ConstCache, Context as FloatCtxt, FBig, FpError, Repr};
 use dashu_int::Word;
 
 use crate::cbig::CBig;
@@ -121,6 +121,25 @@ pub(crate) fn combine_parts<R: Round, const B: Word>(
 /// are known directly (used by the exact/short-circuit special-value paths).
 pub(crate) fn exact<R: Round, const B: Word>(re: FBig<R, B>, im: FBig<R, B>) -> CRounded<R, B> {
     Exact(CBig::from_parts(re, im))
+}
+
+/// The Riemann point at infinity `+∞ + i·0` as an exact [`CRounded`] result (dashu's complex
+/// infinity — the single point `proj` collapses any infinity to).
+pub(crate) fn riemann<R: Round, const B: Word>(context: Context<R>) -> CRounded<R, B> {
+    exact(
+        FBig::from_repr(Repr::infinity(), context.float()),
+        FBig::from_repr(Repr::zero(), context.float()),
+    )
+}
+
+/// Reborrow an `Option<&mut ConstCache>` for a sequential sub-call (mirrors `dashu-float`'s
+/// `reborrow_cache`; `as_deref_mut` is the natural reborrow, allowed here centrally).
+#[inline]
+#[allow(clippy::needless_option_as_deref)]
+pub(crate) fn reborrow_cache<'a>(
+    cache: &'a mut Option<&mut ConstCache>,
+) -> Option<&'a mut ConstCache> {
+    cache.as_deref_mut()
 }
 
 #[cfg(test)]
