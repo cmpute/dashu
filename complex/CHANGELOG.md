@@ -2,6 +2,10 @@
 
 ## 0.5.0
 
+### Fix
+- The inline `Display`/`FromStr` unit tests failed to compile under `no_std`
+  (`cargo test --no-default-features`): the test modules now import `alloc::format`.
+
 ### Add
 - New crate `dashu-cmplx` providing the arbitrary-precision complex number type [`CBig`], built on top of
   [`dashu-float`]'s `FBig`. Each `CBig` stores a real and an imaginary part (`Repr`) over a single shared

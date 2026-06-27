@@ -72,6 +72,7 @@ impl<R: Round, const B: Word> FromStr for CBig<R, B> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::format;
     use dashu_float::round::mode;
 
     type C = CBig<mode::HalfAway, 10>;
