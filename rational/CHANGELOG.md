@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Fix
+- (internal) The `in_expanded` formatting unit tests failed to compile under `no_std` (`cargo test --no-default-features`) because the `format!` macro was not imported; the test module now imports `alloc::format`.
+
 ### Change
 - **(breaking)** `From<Repr> for FBig`, `From<RBig> for FBig`, and `From<Relaxed> for FBig` are now `TryFrom`. The conversion succeeds only when the value is exactly representable in the target base (every prime factor of the reduced denominator divides the base), otherwise it returns `ConversionError::LossOfPrecision`. For a correctly-rounded conversion use `RBig::to_float` / `Relaxed::to_float`.
 - `in_radix`/`from_str_with_radix_prefix` now use `u8` for the radix (was `u32`), matching `dashu-int`.

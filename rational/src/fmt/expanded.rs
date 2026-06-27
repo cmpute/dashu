@@ -471,6 +471,7 @@ impl Relaxed {
 #[cfg(test)]
 mod tests {
     use crate::RBig;
+    use alloc::format;
     use core::str::FromStr;
 
     #[test]
