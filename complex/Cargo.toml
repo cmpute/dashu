@@ -57,3 +57,18 @@ criterion = { version = "0.5.1", features = ["html_reports"] }
 
 [lib]
 bench = false
+
+[[bench]]
+name = "arith"
+harness = false
+required-features = ["rand"]
+
+[[bench]]
+name = "transcendental"
+harness = false
+required-features = ["rand"]
+
+[[bench]]
+name = "io"
+harness = false
+required-features = ["rand"]

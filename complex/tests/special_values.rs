@@ -150,3 +150,66 @@ fn log_infinity_is_riemann() {
     let r = ctx().log(&inf(), None).unwrap().value();
     assert!(is_riemann(&r));
 }
+
+// --- proj / conj / arg / signed-zero branch-cut specials (M5 hardening) ---
+
+#[test]
+fn proj_infinity_is_riemann() {
+    // proj collapses any infinity to +∞ + i·0
+    assert!(is_riemann(&ctx().proj(&inf()).unwrap().value()));
+    let im_inf = CBig::from_parts(F::ZERO, F::INFINITY);
+    assert!(is_riemann(&ctx().proj(&im_inf).unwrap().value()));
+}
+
+#[test]
+fn proj_finite_unchanged() {
+    let z = real(3);
+    let p = ctx().proj(&z).unwrap().value();
+    assert!(p == z);
+}
+
+#[test]
+fn conj_infinity_flips_imag_sign() {
+    // conj(+inf + i·inf) = +inf - i·inf (the real part keeps its sign)
+    let z = CBig::from_parts(F::INFINITY, F::INFINITY);
+    let c = ctx().conj(&z).unwrap().value();
+    assert!(c.re().is_infinite());
+    assert!(c.imag().is_infinite());
+    assert_eq!(c.imag().sign(), Sign::Negative);
+}
+
+#[test]
+fn arg_of_imaginary_infinity_is_half_pi() {
+    // arg(0 + i·inf) = π/2 > 0; arg(0 - i·inf) = -π/2 < 0
+    let pos = CBig::from_parts(F::ZERO, F::INFINITY);
+    let neg = CBig::from_parts(F::ZERO, F::NEG_INFINITY);
+    assert!(ctx().arg(&pos, None).unwrap().value() > F::ZERO);
+    assert!(ctx().arg(&neg, None).unwrap().value() < F::ZERO);
+}
+
+#[test]
+fn log_negative_real_branch_cut() {
+    // log(-r ± i·0) = ln r ± i·π: the sign of the imaginary zero selects the side of the cut.
+    use dashu_float::{Context as FloatCtx, Repr};
+    let f = FloatCtx::<HalfEven>::new(53);
+    let neg_r = F::from(-4);
+    let pos_zero = CBig::from_parts(neg_r.clone(), F::from_repr(Repr::zero(), f));
+    let neg_zero = CBig::from_parts(neg_r, F::from_repr(Repr::neg_zero(), f));
+
+    let (re_p, im_p) = ctx().log(&pos_zero, None).unwrap().value().into_parts();
+    let (re_n, im_n) = ctx().log(&neg_zero, None).unwrap().value().into_parts();
+    // both real parts = ln 4; imaginary parts are ±π
+    assert!(re_p == re_n);
+    assert!(im_p > F::ZERO); // +i·π
+    assert!(im_n < F::ZERO); // -i·π
+}
+
+#[test]
+fn sqrt_neg_infinity_is_imaginary_infinity() {
+    // sqrt(-inf + i·0) = +0 + i·inf
+    let neg_inf = CBig::from(F::NEG_INFINITY);
+    let s = ctx().sqrt(&neg_inf).unwrap().value();
+    assert!(s.re().is_zero());
+    assert!(s.imag().is_infinite());
+    assert_eq!(s.imag().sign(), Sign::Positive);
+}
