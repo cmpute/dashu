@@ -254,6 +254,95 @@ impl<R: Round> Context<R> {
     }
 }
 
+/// The magnitude (absolute value) of a [`Repr`] as an owned [`Repr`].
+fn abs_repr<const B: Word>(r: &Repr<B>) -> Repr<B> {
+    if r.sign() == Sign::Negative {
+        -r.clone()
+    } else {
+        r.clone()
+    }
+}
+
+impl<R: Round> Context<R> {
+    /// Compute `sqrt(a² + b²)` without spurious overflow/underflow.
+    ///
+    /// This is the overflow-safe scaled sum-of-squares: the larger-magnitude operand is never
+    /// squared. Writing `m = max(|a|, |b|)` and `r = min(|a|,|b|) / m` (so `|r| ≤ 1`), the result is
+    /// `m · sqrt(1 + r²)`, where `1 + r² ∈ [1, 2]` cannot overflow. The final `m · sqrt(1 + r²)`
+    /// overflows only when the true result genuinely exceeds the exponent range (reported as
+    /// [`FpError::Overflow`]). `hypot(±inf, ·) = +inf`, `hypot(0, 0) = +0`.
+    ///
+    /// This is a field-arithmetic-class op (no constant cache), like `sqrt`/`atan2`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is unlimited.
+    pub fn hypot<const B: Word>(&self, a: &Repr<B>, b: &Repr<B>) -> FpResult<FBig<R, B>> {
+        if a.is_infinite() || b.is_infinite() {
+            return Ok(Approximation::Exact(FBig::new(Repr::infinity(), *self)));
+        }
+        assert_limited_precision(self.precision);
+        if a.significand.is_zero() && b.significand.is_zero() {
+            return Ok(Approximation::Exact(FBig::new(Repr::zero(), *self)));
+        }
+
+        let guard = crate::utils::ceil_usize(<usize as dashu_base::EstimatedLog2>::log2_est(
+            &self.precision,
+        )) + 10;
+        let gctx = Context::<R>::new(self.precision + guard);
+
+        // magnitudes, ordered large >= small (both finite, not both zero here)
+        let a_mag = abs_repr(a);
+        let b_mag = abs_repr(b);
+        let (large, small) = if a_mag.cmp(&b_mag).is_ge() {
+            (a_mag, b_mag)
+        } else {
+            (b_mag, a_mag)
+        };
+
+        if small.significand.is_zero() {
+            // hypot(x, 0) = |x|; `large` is already a magnitude
+            return Ok(gctx.repr_round_ref(&large).map(|v| FBig::new(v, *self)));
+        }
+
+        // r = small / large ∈ [0, 1]; 1 + r² ∈ [1, 2] (no overflow); result = large · sqrt(1+r²)
+        let r = gctx.div(&small, &large)?.value();
+        let r2 = gctx.sqr(r.repr())?.value();
+        let sum = gctx.add(&Repr::one(), r2.repr())?.value();
+        let root = gctx.sqrt(sum.repr())?.value();
+        let result = gctx.mul(&large, root.repr())?.value();
+        Ok(result.with_precision(self.precision))
+    }
+}
+
+impl<R: Round, const B: Word> FBig<R, B> {
+    /// Compute `sqrt(self² + other²)` without spurious overflow/underflow.
+    ///
+    /// The result precision is `max(self.precision(), other.precision())`. See
+    /// [`Context::hypot`] for the overflow-safety strategy.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use core::str::FromStr;
+    /// # use dashu_base::ParseError;
+    /// # use dashu_float::DBig;
+    /// let a = DBig::from_str("3")?;
+    /// let b = DBig::from_str("4")?;
+    /// assert_eq!(a.hypot(&b), DBig::from_str("5")?);
+    /// # Ok::<(), ParseError>(())
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is unlimited.
+    #[inline]
+    pub fn hypot(&self, other: &Self) -> Self {
+        let context = Context::max(self.context, other.context);
+        context.unwrap_fp(context.hypot(&self.repr, &other.repr))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,5 +354,35 @@ mod tests {
         // sqrt(-1) is out of domain; the FBig layer panics.
         let neg_one = FBig::<mode::HalfEven>::try_from(-1.0f64).unwrap();
         let _ = neg_one.sqrt();
+    }
+
+    #[test]
+    fn test_hypot_pythagorean() {
+        let ctx = Context::<mode::HalfEven>::new(53);
+        let mk = |v: i32| Repr::<2>::new(v.into(), 0);
+        // hypot(3, 4) = 5
+        let r = ctx.hypot(&mk(3), &mk(4)).unwrap().value();
+        assert_eq!(r.repr().significand(), &5.into());
+        // hypot(5, 0) = 5
+        let r = ctx.hypot(&mk(5), &mk(0)).unwrap().value();
+        assert_eq!(r.repr().significand(), &5.into());
+        // hypot(0, 0) = 0
+        let r = ctx.hypot(&mk(0), &mk(0)).unwrap().value();
+        assert!(r.repr().is_zero());
+        // hypot(inf, x) = +inf
+        let r = ctx.hypot(&Repr::infinity(), &mk(3)).unwrap().value();
+        assert!(r.repr().is_infinite());
+        assert_eq!(r.repr().sign(), Sign::Positive);
+    }
+
+    #[test]
+    fn test_hypot_no_spurious_overflow() {
+        // a value whose square would collide with the +inf sentinel exponent, but whose
+        // hypot is itself representable: hypot(a, 0) = |a| must not overflow via a².
+        let ctx = Context::<mode::HalfEven>::new(53);
+        // exponent near isize::MAX/2 so that a² would overflow, but |a| is fine
+        let a = Repr::<2>::new(IBig::from(3), isize::MAX / 2);
+        let r = ctx.hypot(&a, &Repr::<2>::zero()).unwrap().value();
+        assert_eq!(r.repr().exponent(), isize::MAX / 2);
     }
 }

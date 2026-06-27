@@ -12,6 +12,10 @@ use dashu_int::Word;
 /// small fixed guard comfortably settles the accumulated rounding of two squarings and an add.
 const NORM_GUARD: usize = 8;
 
+/// Guard digits (base-B) for `abs`. The inner `hypot` already carries its own guard; this extra
+/// margin absorbs the final re-round to the CBig precision.
+const ABS_GUARD: usize = 8;
+
 impl<R: Round, const B: Word> CBig<R, B> {
     /// The complex conjugate `x - iy`. Exact (sign flip of the imaginary part, including `-0`/`-inf`).
     #[inline]
@@ -38,6 +42,18 @@ impl<R: Round, const B: Word> CBig<R, B> {
     #[inline]
     pub fn norm(&self) -> FBig<R, B> {
         self.context.float().unwrap_fp(self.context.norm(self))
+    }
+
+    /// The modulus `|z| = sqrt(re² + im²)` (a real [`FBig`]). A thin composition over
+    /// [`dashu_float::Context::hypot`] (the overflow-safe scaled sum-of-squares), evaluated at guard
+    /// precision and re-rounded. Near-correctly rounded.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is unlimited.
+    #[inline]
+    pub fn abs(&self) -> FBig<R, B> {
+        self.context.float().unwrap_fp(self.context.abs(self))
     }
 
     /// The argument (phase) `atan2(im, re) ∈ ]-π, π]`. The branch cut lies on `]−∞, 0]`; signed zero
@@ -133,6 +149,18 @@ impl<R: Round> Context<R> {
     /// The argument `atan2(im, re)` (context layer). Delegates to `dashu-float`'s Annex-G `atan2`.
     pub fn arg<const B: Word>(&self, z: &CBig<R, B>) -> FpResult<FBig<R, B>> {
         self.float().atan2(z.imag(), z.re(), None)
+    }
+
+    /// The modulus `|z| = hypot(re, im)` (context layer). Near-correctly rounded; returns `+∞` for
+    /// an infinite input. Thin composition over [`dashu_float::Context::hypot`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is unlimited.
+    pub fn abs<const B: Word>(&self, z: &CBig<R, B>) -> FpResult<FBig<R, B>> {
+        let gctx = self.guard(ABS_GUARD);
+        let h = gctx.hypot(z.re(), z.imag())?;
+        Ok(h.value().with_precision(self.precision()))
     }
 }
 
