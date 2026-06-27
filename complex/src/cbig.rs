@@ -56,6 +56,14 @@ impl<R: Round, const B: Word> CBig<R, B> {
         Self { re, im, context }
     }
 
+    /// Create a [`CBig`] directly from its two [`Repr`] parts and a shared [`Context`] (a `const`-
+    /// capable constructor, the complex analog of [`dashu_float::FBig::from_repr_const`]). Used by
+    /// the `static_cbig!` literal macro; in most cases prefer [`CBig::from_parts`].
+    #[inline]
+    pub const fn from_repr_parts(re: Repr<B>, im: Repr<B>, context: Context<R>) -> Self {
+        Self { re, im, context }
+    }
+
     /// Create a [`CBig`] from its real and imaginary parts.
     ///
     /// The result context is `max(re.context(), im.context())` (the larger precision wins; an

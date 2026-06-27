@@ -115,6 +115,23 @@ macro_rules! static_rbig {
     }
 }
 
+#[macro_export]
+#[doc = include_str!("macro-docs/cbig.md")]
+macro_rules! cbig {
+    ($($t:tt)+) => {
+        $crate::__dashu_macros::cbig_embedded!($($t)+)
+    }
+}
+
+#[macro_export]
+#[rustversion::since(1.64)]
+#[doc = include_str!("macro-docs/static_cbig.md")]
+macro_rules! static_cbig {
+    ($($t:tt)+) => {
+        $crate::__dashu_macros::static_cbig_embedded!($($t)+)
+    }
+}
+
 /// A verbose alias for [UBig][dashu_int::UBig]
 pub type Natural = dashu_int::UBig;
 

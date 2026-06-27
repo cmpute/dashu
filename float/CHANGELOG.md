@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
 ### Add
 - `FBig::hypot` / `Context::hypot`: `sqrt(a² + b²)` computed overflow/underflow-safe via the scaled

@@ -135,3 +135,65 @@ pub fn parse_decimal_float(static_: bool, embedded: bool, input: TokenStream) ->
         }}
     }
 }
+
+/// Generate a `const`-context base-2 [`Repr`](dashu_float::Repr) reconstruction (always via
+/// `from_static_words`, which is `const` and handles any significand size). Used by `static_cbig!`
+/// to build each coefficient's `Repr` inside a `static` item.
+pub fn gen_binary_repr_const(embedded: bool, f: &FBig) -> (TokenStream, usize) {
+    let prec = f.precision();
+    let (signif, exp) = f.clone().into_repr().into_parts();
+    let (sign, mag) = signif.into_parts();
+
+    let ns = if embedded {
+        quote!(::dashu::float)
+    } else {
+        quote!(::dashu_float)
+    };
+    let repr_tt = quote!( #ns::Repr::<2> );
+
+    // a zero coefficient: `from_static_words` rejects a zero significand, so emit the const zero.
+    if mag.is_zero() {
+        let zero = if sign == Sign::Negative {
+            quote!( #repr_tt::neg_zero() )
+        } else {
+            quote!( #repr_tt::zero() )
+        };
+        return (zero, prec);
+    }
+
+    let data_defs = quote_words(&mag.to_le_bytes(), embedded);
+    let sign = quote_sign(embedded, sign);
+    let repr = quote! {
+        unsafe { #repr_tt::from_static_words(#sign, #data_defs, #exp) }
+    };
+    (repr, prec)
+}
+
+/// Generate a non-`static` reconstruction of a base-2 `FBig` (default rounding) from its parsed
+/// parts — shared by `fbig!` (via `parse_binary_float`) and `cbig!` (for each coefficient).
+pub fn gen_binary_fbig_value(embedded: bool, f: &FBig) -> TokenStream {
+    let prec = f.precision();
+    let (signif, exp) = f.clone().into_repr().into_parts();
+    let (sign, mag) = signif.into_parts();
+
+    let ns = if embedded {
+        quote!(::dashu::float)
+    } else {
+        quote!(::dashu_float)
+    };
+    let repr_tt = quote!( #ns::Repr::<2> );
+    let type_tt = quote!( #ns::FBig::<#ns::round::mode::Zero, 2> );
+
+    if mag.bit_len() <= 32 {
+        let sign = quote_sign(embedded, sign);
+        let u: u32 = mag.try_into().unwrap();
+        quote!( #type_tt::from_parts_const(#sign, #u as _, #exp, Some(#prec)) )
+    } else {
+        let signif_tt = quote_ibig(embedded, IBig::from_parts(sign, mag));
+        quote! {{
+            let repr = #repr_tt::new(#signif_tt, #exp);
+            let context = #ns::Context::<#ns::round::mode::Zero>::new(#prec);
+            #type_tt::from_repr(repr, context)
+        }}
+    }
+}

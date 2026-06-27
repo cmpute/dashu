@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0
+
+### Add
+- `cbig!` / `static_cbig!` (and the `cbig_embedded` / `static_cbig_embedded` building blocks) for
+  creating [`dashu-cmplx`]'s `CBig` from a complex literal in algebraic `a+bi` form or a `re, im`
+  pair. Each coefficient reuses the `fbig!` base-2 literal parser; `static_cbig!` builds the value
+  via the new `CBig::from_repr_parts` const constructor (gated on Rust 1.64+, like the other static
+  variants).
+
 ## 0.4.2
 
 - Replace `paste` dependency with `pastey` ([#58](https://github.com/cmpute/dashu/pull/58)).

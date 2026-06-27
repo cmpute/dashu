@@ -1,7 +1,5 @@
 # Changelog
 
-## Unreleased
-
 ## 0.5.0
 
 ### Add
@@ -23,6 +21,8 @@
 - Comparison surface mirroring `FBig`: lexicographic `Ord`/`PartialOrd` (by `re`, then `im`), `AbsOrd`,
   and `NumOrd`/`NumHash` (behind the `num-order` feature).
 - Algebraic `"a+bi"` `Display`/`FromStr`, structured `Debug`, and the `I`/`ZERO`/`ONE` constants.
+- The `cbig!` / `static_cbig!` literal macros (in `dashu-macros`) for creating `CBig` from a complex
+  literal (`a+bi` or `re, im`); exposed as `dashu::cbig!` in the meta-crate.
 - No-NaN policy: C99 NaN-producing cases are mapped to `FpError` at the context layer (and panics at the
   convenience layer), consistent with `FBig`. Signed zero and the C99 Annex G / Kahan branch-cut model
   are first-class (reusing `FBig`'s signed-zero predicates).

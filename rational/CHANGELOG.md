@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
 ### Fix
 - (internal) The `in_expanded` formatting unit tests failed to compile under `no_std` (`cargo test --no-default-features`) because the `format!` macro was not imported; the test module now imports `alloc::format`.
