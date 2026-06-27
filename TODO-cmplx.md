@@ -316,8 +316,8 @@ rather than MPC's "complex has no order" stance:
   (`-∞ < finite < +∞` per component).
 - **`AbsOrd`** (from `dashu_base`) — magnitude comparison by `|z|`, done **only** through the
   trait's `abs_cmp` method (no standalone inherent method). This is what `FBig` already implements.
-  (`AbsEq` is deprecated in v0.5 — being folded into `AbsOrd` — so implementing `AbsOrd` covers it;
-  no separate work.)
+  (`AbsEq` was folded into `AbsOrd` and removed in Phase 1 — use `.abs_cmp(..).is_eq()` — so
+  implementing `AbsOrd` covers it; no separate work.)
 - **`NumOrd`/`NumHash`** — matching the other numeric types; `NumOrd` agrees with the lexicographic
   `Ord`, `NumHash` is consistent with `PartialEq`.
 
