@@ -77,6 +77,7 @@ mod power;
 mod root;
 mod sub;
 mod third_party;
+mod trig;
 
 // All the public items from third_party will be exposed
 #[allow(unused_imports)]

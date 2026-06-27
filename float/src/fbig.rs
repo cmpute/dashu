@@ -149,12 +149,12 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ///
     /// # Panics
     ///
-    /// Panics if the [Repr] has more digits than the precision limit specified in the context.
-    /// Note that this condition is not checked in release builds.
+    /// Panics if the [Repr] has more digits than `precision + 1` (the one allowed guard digit from
+    /// an inexact add/sub — see [`Repr`]). Note that this condition is not checked in release builds.
     #[inline]
     pub fn from_repr(repr: Repr<B>, context: Context<R>) -> Self {
         debug_assert!(
-            repr.is_infinite() || !context.is_limited() || repr.digits() <= context.precision
+            repr.is_infinite() || !context.is_limited() || repr.digits() <= context.precision + 1
         );
         Self { repr, context }
     }

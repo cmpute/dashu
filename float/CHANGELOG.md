@@ -6,6 +6,10 @@
 - `FBig::hypot` / `Context::hypot`: `sqrt(a² + b²)` computed overflow/underflow-safe via the scaled
   sum-of-squares (the larger operand is never squared). `hypot(±inf, ·) = +inf`, `hypot(0,0) = +0`.
 
+### Fix
+- `FBig::from_repr`'s debug assertion now accepts the documented single guard digit (`precision + 1`
+  digits, as an inexact add/sub can produce); previously it rejected exactly-`precision+1` Reprs.
+
 ### Remove
 - Public `Repr::from_str_native` / `FBig::from_str_native` methods (now crate-private). Use the `core::str::FromStr` impl (`s.parse()` / `FBig::from_str`) instead; its docs now carry the full parsing format specification.
 
