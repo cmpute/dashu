@@ -320,4 +320,12 @@ These shape the plan but don't block starting Phase 0/1. Recommended defaults ar
 - `dashu-python` remains excluded and out of the release critical path (per `AGENTS.md`).
 - Complex hyperbolics, `fma`, `rootofunity`, `agm`, vector ops, ball arithmetic — deferred to 0.5.x.
 - Guaranteed-correct Ziv rounding loop, `CBig` serde/rkyv, and `num_complex` interop — deferred (additive).
+- The full **C `<tgmath.h>` type-generic math surface** — the complete C standard math library for
+  *both* real and complex (trig & inverse; hyperbolic & inverse; exp/log family including
+  `exp2`/`exp10`/`expm1`/`log2`/`log10`/`log1p`; power/root `cbrt`/`hypot`/`pow`/`sqrt`; error & gamma
+  `erf`/`erfc`/`tgamma`/`lgamma`; `fma`; rounding/remainder; fp-classification), unified by a
+  type-generic `ComplexFloat`-style trait dispatching over `FBig`/`CBig`
+  ([ref](https://en.cppreference.com/c/header/tgmath)). Desirable as a long-term goal, but explicitly
+  out of scope for **0.5 and 0.5.x**; the individual pieces already deferred to 0.5.x (complex
+  hyperbolics, `fma`, `exp2`/`log2`, …, see §3.4) are the first incremental steps toward it.
 - Any MSRV bump — deferred unless forced.

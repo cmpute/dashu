@@ -218,15 +218,23 @@ pub type CfpResult<R, const B: Word> = Result<CRounded<R, B>, FpError>;
 ```
 Named `CfpResult` to mirror `dashu_float::FpResult` (the `C` prefix is the complex analog). Reuses
 `dashu_float::FpError` unchanged (Section 4). Both `CRounded` and `CfpResult` live in the `context`
-module (§7.2). The **convenience layer** (`CBig::mul`, etc.) unwraps
-via the same policy as `FBig` (`unwrap_fp`: `Overflow(s)→±∞`, `Underflow(s)→±0`, panic on
-`Indeterminate`/`OutOfDomain`/`InfiniteInput`) and returns `CBig` directly.
+module (§7.2). The **convenience layer** (`CBig::mul`, etc.) unwraps the `CfpResult` via a
+**`Context::unwrap_cfp`** defined in this crate — the complex analog of
+`dashu_float::Context::unwrap_fp`. It **cannot reuse the float `unwrap_fp`**: that method (although
+`pub`) is typed `FpResult<FBig<R,B>> → FBig<R,B>` — a single real part — so it neither accepts a
+`CfpResult`/`CRounded` nor returns a `CBig`. `unwrap_cfp(&self, CfpResult<R,B>) -> CBig<R,B>` does two
+jobs the float one doesn't: it extracts the `CBig` from the `CRounded` (`.value()`, dropping the
+per-axis `(Rounding, Rounding)` flags — the complex analog of dropping `FBig`'s single flag), **and**
+applies the same error policy as `unwrap_fp`: `Overflow(Sign)→±∞`, `Underflow(Sign)→±0`, panic on
+`Indeterminate`/`OutOfDomain`/`InfiniteInput`. (The single `Sign` in `Overflow`/`Underflow` leaves the
+overflow/underflow→component mapping as an M2 implementation detail — e.g. saturate the offending
+component, keep the other.) It lives in the `context` module alongside `CRounded`/`CfpResult` (§7.2).
 
 ### 3.4 Two-layer API (mirror `FBig`)
 | Layer | Where rounding lives | Return type | On error |
 |---|---|---|---|
 | **Context** (`dashu_cmplx::Context::mul(&ctx, &z, &w)`, `Context::exp(&ctx, &z, cache)`, …) | mode `R`, precision from the context | `CfpResult` (`Result<CRounded, FpError>`) | `Err(FpError)` |
-| **Convenience** (`z.mul(&w)`, operators `z * w`) — uses `z.context()` | same | `CBig` | panics (`unwrap_fp` policy) |
+| **Convenience** (`z.mul(&w)`, operators `z * w`) — uses `z.context()` | same | `CBig` | panics (`unwrap_cfp` policy) |
 
 This is the exact split `FBig` uses (`dashu_float::Context::mul → FpResult<FBig>` vs
 `FBig::mul → FBig`); CBig just needs its own `Context` type to host the context-layer methods
@@ -265,19 +273,41 @@ Riemann point at infinity), preserving the sign of the imaginary zero per Annex 
 
 ### 5.1 Construction & conversion
 ```rust
-CBig::from_parts(re: FBig<R,B>, im: FBig<R,B>) -> Self;   // shared ctx = max(re,im) ctx; smaller part widened (exact), unlimited(0) wins
-CBig::from_real(re: FBig<R,B>) -> Self;                    // im = +0
-CBig::from_int(n: IBig) -> Self;                           // re = convert_int(n), im = +0
-CBig::I, CBig::ZERO, CBig::ONE;                            // constants (Section 5.7)
+CBig::from_parts(re: FBig<R,B>, im: FBig<R,B>) -> Self;   // explicit raw-parts ctor (analog of FBig::new); shared ctx = max(re,im), smaller part widened (exact), unlimited(0) wins
 
-FromStr  // "a+bi" algebraic form (Section 5.6)
-TryFrom<f32>/<f64>          // (base 2) exact-or-LossOfPrecision
+// Convert from `FBig`/`UBig`/`IBig` — trivial & lossless via `From` (mirrors FBig's
+// "Convert from/to UBig/IBig" doc; FBig itself offers From<UBig>/From<IBig> the same way):
+From<FBig<R,B>> for CBig<R,B>   // real → complex (im = +0); the trait-based replacement for a from_real method
+From<UBig>      for CBig<R,B>   // integer → complex: re = UBig (exact, unlimited precision), im = +0
+From<IBig>      for CBig<R,B>   // (signed integer, same)
+
+// Convert out of `CBig` — can be lossy, via `TryFrom` (mirrors FBig's own lossy direction,
+// FBig → IBig: OutOfBounds if infinite, LossOfPrecision otherwise):
+TryFrom<CBig> for FBig<R,B>     // Ok iff im == 0 (purely real; ±0 both count as zero); else LossOfPrecision.
+                                // This is the guarded "is this complex actually real?" check — distinct from
+                                // re()/into_parts() (§5.4), which return the real part unconditionally.
+TryFrom<CBig> for IBig          // Ok iff im == 0, finite, and the real part is integer-valued; composes the
+                                // two TryFroms above (CBig → FBig → IBig). Rounding-aware path: re().to_int().
+
+CBig::I, CBig::ZERO, CBig::ONE; // constants (Section 5.7)
+
+FromStr                        // "a+bi" algebraic form (Section 5.6)
+TryFrom<f32>/<f64>             // (base 2) exact-or-LossOfPrecision
 TryFrom<num_complex::Complex<FBig>>   // feature num_complex_v04 (deferred)
 ```
 `from_parts` reconciles the two parts' precisions into the shared context: the result context is
 `dashu_float::Context::max(re.context(), im.context())` (unlimited precision, `0`, dominates), and
 the smaller-precision part is widened to it — widening is exact (no rounding), so only the precision
-cap changes. `R` and `B` matching is enforced at compile time by the type parameters.
+cap changes. `R` and `B` matching is enforced at compile time by the type parameters. The
+conversions deliberately follow `FBig`'s documented "Convert from/to `UBig`/`IBig`" pattern: the
+into-`CBig` direction is trivial and lossless through `From` (a real `FBig`, or a `UBig`/`IBig` →
+`re`, with `im = +0`), and the out-of-`CBig` direction is lossy through `TryFrom` — first
+`TryFrom<CBig> for FBig` (`Ok` only when `im == 0`, i.e. purely real), then `TryFrom<CBig> for IBig`
+(`Ok` only when, in addition, finite and integer-valued), composing the chain `CBig → FBig → IBig`,
+with a rounding-aware path via `re().to_int()` — exactly the `From`/`TryFrom`+`to_int` split `FBig`
+uses. Note `TryFrom<CBig> for FBig` is the *guarded* "is this complex actually real?" check; the
+unguarded real-part access stays at `re()`/`into_parts()` (§5.4). There are **no** named
+`from_real`/`from_int` constructors; everything goes through the traits, as on `FBig`.
 
 ### 5.2 Field arithmetic
 ```rust
@@ -333,7 +363,7 @@ into_parts(self) -> (FBig<R,B>, FBig<R,B>)            // wraps each Repr with th
 from_parts(re: FBig<R,B>, im: FBig<R,B>) -> Self      // inverse: into_repr() each, store shared ctx = max(re,im) (§5.1)
 conj(&self) -> Self                         // re − i·im : exact (flip sign of im, incl. −0/∞)
 proj(&self) -> Self                         // Riemann projection (Section 4)
-abs(&self) -> FBig                          // |z| = hypot(re,im) : HARD, near-correctly rounded (Section 6.2)
+abs(&self) -> FBig                          // |z| = hypot(re,im); thin composition over FBig::hypot (the MEDIUM prerequisite, §6.2); near-correctly rounded
 norm(&self) -> FBig                         // re² + im² : cheap, near-exact (no sqrt)
 arg(&self) -> FBig                          // atan2(im, re) ∈ ]−π, π] : branch cut (−∞,0]
 ```
@@ -458,7 +488,7 @@ bespoke fixed-width correct-rounding code or a retry loop.
 | scalar mul/div (`Mul<FBig>`, `Div<FBig>`, etc.) | `x·s`, `y·s` | `ctx.mul`/`ctx.div` | **EASY** | mixed-type operators; no named methods |
 | `norm` | `x² + y²` | `ctx.sqr`, `ctx.add` | **EASY** | no sqrt; near-exact |
 | `arg` | `atan2(y, x)` | `ctx.atan2` | **EASY** | reuse real atan2 + Annex G table |
-| `abs` | `hypot(x,y) = sqrt(x²+y²)` | `ctx.sqrt` | **MEDIUM** | scaled sum-of-squares + guard re-round; the shared kernel |
+| `abs` | `hypot(re,im) = sqrt(re²+im²)` | `FBig::hypot` (`ctx.hypot`) | **EASY** | thin composition; the scaled-sum-of-squares kernel is the `FBig::hypot` prerequisite (MEDIUM, lands first) |
 | `sqrt` | `sqrt((|z|+x)/2) ± i·sgn(y)·sqrt((|z|−x)/2)` | `ctx.sqrt`, `abs` | **MEDIUM** | needs `abs`; cut ]−∞,0] |
 | `exp` | `e^x·(cos y + i sin y)` | `ctx.exp`, `ctx.sin_cos` | **EASY** | direct; overflow→∞ |
 | `log` | `ln|z| + i·arg z` | `ctx.ln`, `abs`, `arg` | **MEDIUM** | needs `abs`; cut ]−∞,0] |
@@ -469,21 +499,30 @@ bespoke fixed-width correct-rounding code or a retry loop.
 | `asin`/`acos`/`atan` | Kahan log forms | `log`, `sqrt`, `mul` | **MEDIUM-HARD** | branch cuts per Kahan |
 
 (Difficulty ratings assume the §6.1 guard-digit recipe — no Ziv retry — so `mul`/`div`/`abs`/trig are
-all MEDIUM-or-easier in 0.5; the only true hard kernel left is `abs`'s overflow-safe scaling.)
+all MEDIUM-or-easier in 0.5; the only true hard kernel left is the overflow-safe scaling inside
+`FBig::hypot` — an intermediate `dashu-float` step landed first, see the `abs` note below.)
 
-**Implementation order respects dependencies:** `abs` (the shared hypot kernel, reused by `sqrt` and
-`log`) lands first; then `sqrt`, `log`; then `exp` (free); then trig (needs `sin`/`cos`/`sinh`/`cosh`);
-then inverse trig (needs `sqrt`+`log`); then `pow`.
+**Implementation order respects dependencies:** first the **`FBig::hypot`** prerequisite — the
+overflow-safe scaled-sum-of-squares kernel, an intermediate `dashu-float` step (see the `abs` note
+below); then `CBig::abs` (= `ctx.hypot(re, im)`, a thin composition), reused by `sqrt` and `log`; then
+`sqrt`, `log`; then `exp` (free); then trig (needs `sin`/`cos`/`sinh`/`cosh`); then inverse trig (needs
+`sqrt`+`log`); then `pow`.
 
 **Per-op implementation notes:**
 - **`div`**: Smith's method with the `|u|≥|v|` branch avoids the `|denominator|²` overflow; add the
   **Baudin–Smith robust** refinements (power-of-2 pre/post-scaling; rearrange the product when
   `r = d/c` or `b·r` would underflow to 0). The `0/0`, `∞/∞`, `z/0`, `0/z` cases short-circuit per
   Annex G before the numeric path.
-- **`abs`**: scaled sum-of-squares (scale the larger component to O(1), square, add, `sqrt`), rescale
-  — no spurious overflow/underflow — then guard re-round. (`FBig` has no `hypot`, so this is a small
-  bespoke kernel, reused by `sqrt` and `log`.) Returns a real `FBig` with a single inexact flag
-  (mirrors MPC's `mpc_abs`, which returns an `mpfr_t` ternary — not a complex inexact pair).
+- **`FBig::hypot` (prerequisite — intermediate `dashu-float` step):** `hypot(a, b) = sqrt(a² + b²)`
+  computed overflow/underflow-safe via scaled sum-of-squares (scale the larger of `a`, `b` to O(1),
+  square both, add, `sqrt`, unscale) — the Borges algorithm (Appendix). Exposed as a context-layer op
+  `Context::hypot(&self, a: &Repr<B>, b: &Repr<B>) -> FpResult<FBig<R, B>>` (no `cache` —
+  field-arithmetic class, like `ctx.sqrt`/`ctx.atan2`) plus a convenience method. Landing it on `FBig`
+  first — instead of a CBig-only bespoke kernel — keeps `CBig` free of bespoke real math and gives
+  `dashu-float` a first-class `hypot` for its own users.
+- **`abs`**: thin composition — `CBig::abs(z) = ctx.hypot(z.re, z.im)` at `p + g`, then the §6.1 guard
+  re-round. Returns a real `FBig` with a single inexact flag (mirrors MPC's `mpc_abs`, which returns an
+  `mpfr_t` ternary — not a complex inexact pair).
 - **`asin`/`acos`**: `asin z = −i·log(sqrt(1−z²) + i·z)`. Since `sqrt(1−z²) + i·z` always has
   **positive real part**, the inner `log` never crosses the negative-real-axis cut — the branch cut
   comes entirely from the `sqrt`, which simplifies the signed-zero handling.
@@ -599,9 +638,9 @@ pub use context::{Context, CRounded, CfpResult};
 pub use dashu_float::{ConstCache, FpError, Repr, Rounding};
 #[doc(hidden)] pub use dashu_int::Word;   // re-exported for the cbig! literal macro
 ```
-Kernel routines (the guard-digit helper, `abs`'s scaled sum-of-squares, Smith's division) carry
-**inline** `#[cfg(test)] mod tests` (per `AGENTS.md`); cross-cutting/public-API tests live in
-`complex/tests/`.
+Kernel routines (the guard-digit helper, Smith's division) carry **inline**
+`#[cfg(test)] mod tests` (per `AGENTS.md`); `FBig::hypot`'s scaled-sum-of-squares kernel (and its
+inline tests) lives in `dashu-float`, not here. Cross-cutting/public-API tests live in `complex/tests/`.
 
 ### 7.3 Feature flags
 Follow the `xxx_vYY` + unversioned-alias convention (`AGENTS.md`). `rand` aliases `rand_v09` (matches
@@ -634,8 +673,9 @@ items with const generics), matching the existing macro MSRV pattern.
 Three layers, mirroring Phase 0's structure (`AGENTS.md`: inline kernel tests + `tests/` integration).
 
 **(a) Inline kernel tests** (`#[cfg(test)] mod tests` in the source files): the guard-digit rounding
-helper (the `p+g` → `p` re-round), `abs` scaled sum-of-squares (overflow/underflow scaling
-invariants), Smith's division branch selection, Annex G predicate dispatch.
+helper (the `p+g` → `p` re-round), Smith's division branch selection, Annex G predicate dispatch. (The
+`FBig::hypot` scaled-sum-of-squares kernel — with its overflow/underflow scaling-invariant tests —
+lives in `dashu-float`, landed as the §6.2 prerequisite.)
 
 **(b) Integration property tests** (`complex/tests/*.rs`, run by the existing CI `test` job across the
 `force_bits` matrix; pure-Rust, no GMP):
@@ -690,13 +730,16 @@ Each milestone ends with `cargo check --all-features --tests`, `cargo clippy …
 `cargo fmt --check`, and a `CHANGELOG.md` `## Unreleased` entry.
 
 - **M1 — Skeleton & easy ops.** Crate dir + `Cargo.toml`; `CBig` type, constants, predicates,
-  `from_parts`/`from_real`/`re`/`imag`/`into_parts`; `add`/`sub`/`neg`/`conj`/`proj`/`mul_i`/
+  `from_parts`/`re`/`imag`/`into_parts` + `From<FBig>`/`From<UBig>`/`From<IBig>`/`TryFrom<CBig> for FBig`/`TryFrom<CBig> for IBig`; `add`/`sub`/`neg`/`conj`/`proj`/`mul_i`/
   `norm`/`arg` + `Ord`/`AbsOrd`/`NumOrd`/`NumHash`; `Display`/`Debug`/`FromStr`; workspace +
   meta-crate wiring. (All **FREE/EASY** ops; single-pass rounding only.) ✅ builds, fmt, clippy clean.
-- **M2 — Rounding infra + `mul`/`div`/`sqr`/`inv`.** The `context` module: `CRounded`, `CfpResult`,
-  the guard-digit helper, error-bound bookkeeping. Implement `abs` (the shared hypot kernel) here
-  since `mul`/`div`'s tests and later ops depend on it. Near-correctly-rounded `mul`/`div`/`sqr`/`inv`.
-  Includes `arith_prop.rs` + `rounding_prop.rs` (mul/div) + `special_values.rs` (arith).
+- **M2 — Rounding infra + `mul`/`div`/`sqr`/`inv` + `FBig::hypot`/`abs`.** The `context` module:
+  `CRounded`, `CfpResult`, the guard-digit helper, error-bound bookkeeping. **Prerequisite intermediate
+  step:** implement `FBig::hypot` in `dashu-float` (the overflow-safe scaled-sum-of-squares kernel —
+  §6.2), then `CBig::abs` as the thin composition `ctx.hypot(re, im)`; both land here because
+  `mul`/`div`'s tests and later ops (`sqrt`, `log`) depend on `abs`. Near-correctly-rounded
+  `mul`/`div`/`sqr`/`inv`. Includes `arith_prop.rs` + `rounding_prop.rs` (mul/div) +
+  `special_values.rs` (arith).
 - **M3 — `sqrt`/`exp`/`log`/`pow`.** `sqrt` (needs `abs`), `exp` (free via `sin_cos`), `log`,
   `powf`/`powi` (`powf(0,0)` returns `ONE`, matching `FBig::powf`). Extend
   `transcendental_prop.rs` + `special_values.rs`.
@@ -824,7 +867,7 @@ bug fixed during Phase 0 is exactly the class of regression this gate prevents.
   (the fixed-width difficulty that the guard-digit recipe handles in 0.5 and a full Ziv loop resolves
   in 0.5.x).
 - **C. F. Borges, "An Improved Algorithm for hypot(a,b)" (2019)** — overflow-safe, correctly-rounded
-  `abs`/hypot (the `abs` kernel in §6.2).
+  `hypot` (the `FBig::hypot` prerequisite kernel in §6.2, which `CBig::abs` composes).
 - **Smith's method** (complex division, overflow-safe) and the **Gauss/Karatsuba 3-mul** form —
   standard named algorithms used as implementation baselines.
 - **`num-complex`** — Rust API idioms surveyed: `norm_sqr` vs `norm` (→ our `norm` vs `abs`),
