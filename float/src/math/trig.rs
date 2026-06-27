@@ -70,12 +70,9 @@ impl<R: Round> Context<R> {
         let x_scaled: FBig<R, B> = &x_f / &half_pi;
         let k_f = x_scaled.round();
         let r = x_f - &k_f * half_pi;
-        // `k_f` is the integer nearest `x_scaled`, but `round()` of a value in
-        // (-1, 0) yields signed zero, whose exponent sentinel is negative. Extract
-        // the integer via `to_int` (truncation) instead of `IBig::try_from`, which
-        // rejects any negative exponent and would panic here for tiny negative
-        // inputs.
-        let k = k_f.to_int().value();
+        // `k_f` is the integer nearest `x_scaled`, so it's exact (or a signed zero
+        // for a tiny argument in (-1, 0), which `IBig::try_from` treats as plain 0).
+        let k = IBig::try_from(k_f).expect("k_f is an exact integer or signed zero");
 
         let k_mod_4_big = k.rem_euclid(IBig::from(4));
         let Ok(k_mod_4_int) = i8::try_from(k_mod_4_big) else {
@@ -717,8 +714,7 @@ mod tests {
 
     /// Regression: a tiny *negative* argument used to panic in `reduce_to_quadrant`.
     /// `round()` of a value in (-1, 0) yields signed zero (exponent sentinel -1),
-    /// which `IBig::try_from` rejected, hitting the `unreachable!`. The quadrant
-    /// integer is now extracted via `to_int`.
+    /// which `IBig::try_from` now accepts as plain 0.
     #[test]
     fn test_trig_tiny_negative_no_panic() {
         let ctx = Context::<mode::HalfAway>::new(30);

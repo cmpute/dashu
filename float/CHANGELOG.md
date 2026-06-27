@@ -8,6 +8,10 @@
 ### Change
 - **(breaking)** `FBig` human-readable serde now pads the serialized string with trailing zeros so its significant-digit count equals the context precision, letting precision round-trip (previously it was lost). The binary format already preserved precision.
 - (internal) The PostgreSQL `NUMERIC` conversion now extracts base-10000 digits via `UBig::to_digits` instead of a per-digit `div_rem` loop.
+- (internal) Trig argument reduction (`reduce_to_quadrant`) now recovers the quadrant integer via `IBig::try_from` instead of `to_int()`, since the rounded value is already an exact integer.
+
+### Fix
+- `IBig::try_from(FBig)` and `UBig::try_from(FBig)` now accept IEEE-754 signed zero (`-0`), returning `Ok(0)` instead of `Err(LossOfPrecision)`. Signed zero carries its sign in a `-1` exponent sentinel rather than the significand, so its integer value is plain `0`.
 
 ### Add
 - Hyperbolic functions `sinh`, `cosh`, `tanh` and their inverses `asinh`, `acosh`, `atanh` on
