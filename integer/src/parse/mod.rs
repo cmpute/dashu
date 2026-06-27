@@ -42,6 +42,7 @@ impl UBig {
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn from_str_radix(src: &str, radix: u32) -> Result<UBig, ParseError> {
+        let radix = u8::try_from(radix).map_err(|_| ParseError::UnsupportedRadix)?;
         if !is_radix_valid(radix) {
             return Err(ParseError::UnsupportedRadix);
         }
@@ -133,6 +134,7 @@ impl IBig {
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn from_str_radix(mut src: &str, radix: u32) -> Result<IBig, ParseError> {
+        let radix = u8::try_from(radix).map_err(|_| ParseError::UnsupportedRadix)?;
         if !is_radix_valid(radix) {
             return Err(ParseError::UnsupportedRadix);
         }

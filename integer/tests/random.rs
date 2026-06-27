@@ -99,7 +99,10 @@ fn test_random_arithmetic() {
             let c = rng.sample(Uniform::new(ubig!(0), &a));
 
             let radix = rng.gen_range(2..=36);
-            assert_eq!(UBig::from_str_radix(&a.in_radix(radix).to_string(), radix).unwrap(), a);
+            assert_eq!(
+                UBig::from_str_radix(&a.in_radix(radix).to_string(), radix as u32).unwrap(),
+                a
+            );
 
             assert_eq!((&a + &b) % &p, ((&a % &p) + (&b % &p)) % &p);
             assert_eq!(&a + &b - &a, b);

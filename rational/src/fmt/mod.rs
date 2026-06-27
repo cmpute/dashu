@@ -125,7 +125,7 @@ pub struct InRadix<'a> {
 
 impl fmt::Display for InRadix<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let r = self.radix as u32;
+        let r = self.radix;
         let num = self.numerator.in_radix(r);
         if self.denominator.is_one() {
             if f.alternate() {
@@ -147,8 +147,7 @@ impl fmt::Display for InRadix<'_> {
 impl RBig {
     /// Representation in a given radix.
     ///
-    /// The `radix` parameter is `u8` (unlike [`UBig::in_radix`] which currently
-    /// takes `u32`). Valid radices are 2 through 36.
+    /// The `radix` parameter is `u8`. Valid radices are 2 through 36.
     ///
     /// # Panics
     /// Panics if `radix` is not between 2 and 36 inclusive.
@@ -172,8 +171,7 @@ impl RBig {
 impl Relaxed {
     /// Representation in a given radix.
     ///
-    /// The `radix` parameter is `u8` (unlike [`UBig::in_radix`] which currently
-    /// takes `u32`). Valid radices are 2 through 36.
+    /// The `radix` parameter is `u8`. Valid radices are 2 through 36.
     ///
     /// # Panics
     /// Panics if `radix` is not between 2 and 36 inclusive.

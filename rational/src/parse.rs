@@ -25,7 +25,7 @@ impl Repr {
         }
     }
 
-    pub fn from_str_with_radix_prefix(src: &str) -> Result<(Self, u32), ParseError> {
+    pub fn from_str_with_radix_prefix(src: &str) -> Result<(Self, u8), ParseError> {
         if let Some(slash) = src.find('/') {
             // first parse the numerator part
             let (num, num_radix) = IBig::from_str_with_radix_prefix(&src[..slash])?;
@@ -101,7 +101,7 @@ impl RBig {
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
-    pub fn from_str_with_radix_prefix(src: &str) -> Result<(Self, u32), ParseError> {
+    pub fn from_str_with_radix_prefix(src: &str) -> Result<(Self, u8), ParseError> {
         Repr::from_str_with_radix_prefix(src).map(|(repr, radix)| (Self(repr.reduce()), radix))
     }
 }
@@ -129,7 +129,7 @@ impl Relaxed {
     ///
     /// See [RBig::from_str_with_radix_prefix] for details.
     #[inline]
-    pub fn from_str_with_radix_prefix(src: &str) -> Result<(Self, u32), ParseError> {
+    pub fn from_str_with_radix_prefix(src: &str) -> Result<(Self, u8), ParseError> {
         Repr::from_str_with_radix_prefix(src).map(|(repr, radix)| (Self(repr.reduce2()), radix))
     }
 }

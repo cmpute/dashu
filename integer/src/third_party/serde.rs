@@ -1,6 +1,6 @@
 //! Implement serde traits.
 
-use crate::{convert::words_to_le_bytes, ibig::IBig, ubig::UBig, Sign};
+use crate::{convert::words_to_le_bytes, ibig::IBig, ubig::UBig};
 use core::fmt::{self, Formatter};
 use serde::{
     de::{self, Deserialize, Deserializer, Visitor},
@@ -60,17 +60,9 @@ impl Serialize for IBig {
         } else if self.is_zero() {
             serializer.serialize_bytes(&[])
         } else {
-            // TODO(v0.5): Change to IBig::to_le_bytes(), which provides better interop robustness
-            let (sign, words) = self.as_sign_words();
-            let mut bytes = words_to_le_bytes::<false>(words);
-
-            // use the length to encode the sign, postive <=> even, negative <=> odd.
-            // pad zeros when necessary
-            if (sign == Sign::Positive && bytes.len() & 1 == 1)
-                || (sign == Sign::Negative && bytes.len() & 1 == 0)
-            {
-                bytes.push(0);
-            }
+            // Two's complement little-endian bytes (sign encoded in the high bits),
+            // matching `IBig::to_le_bytes()` for interop robustness.
+            let bytes = self.to_le_bytes();
             serializer.serialize_bytes(&bytes)
         }
     }
@@ -86,14 +78,14 @@ impl<'de> Deserialize<'de> for IBig {
     }
 }
 
-/// IBig is serialized as little-endian bytes, where the sign is encoded in the byte length
+/// IBig is serialized as two's complement little-endian bytes (matching `IBig::to_le_bytes`).
 struct IBigVisitor;
 
 impl<'de> Visitor<'de> for IBigVisitor {
     type Value = IBig;
 
     fn expecting(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "a string or a sequence of 64-bit words")
+        write!(f, "a string or a sequence of bytes")
     }
 
     fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
@@ -104,7 +96,6 @@ impl<'de> Visitor<'de> for IBigVisitor {
     }
 
     fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
-        let sign = Sign::from(v.len() & 1 == 1);
-        Ok(IBig::from_parts(sign, UBig::from_le_bytes(v)))
+        Ok(IBig::from_le_bytes(v))
     }
 }

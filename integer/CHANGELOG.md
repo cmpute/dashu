@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Add
+- `UBig::to_digits` / `UBig::from_digits`: convert to and from a sequence of base-`B` digits (base `2..=Word::MAX`, digits stored as `Word`, most-significant first). Complements [`UBig::in_radix`] which is limited to base 2..=36.
+
+### Change
+- **(breaking)** `IBig`'s serde non-human-readable format switched from the custom byte-length-parity encoding to standard two's complement little-endian bytes (matching [`IBig::to_le_bytes`]), for interop robustness. Previously serialized data is not compatible.
+- **(breaking)** `UBig::in_radix` and `IBig::in_radix` now take `radix: u8` (was `u32`); the internal `Digit` type alias is now `u8`. `from_str_with_radix_prefix` / `from_str_with_radix_default` now expose the detected/default radix as `u8` (was `u32`). `from_str_radix` keeps its `u32` argument for `std` parity.
+
 ## 0.4.3
 
 ### Add

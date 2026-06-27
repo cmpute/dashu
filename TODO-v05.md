@@ -1,6 +1,6 @@
 # dashu v0.5 Release Plan
 
-Last updated: 2026-06-26
+Last updated: 2026-06-27
 
 This document is the consolidated plan for the **v0.5** release — a **major (breaking)** bump.
 Because it is a major release, its two organizing goals are:
@@ -85,40 +85,45 @@ Every item here changes public API and **must** land in 0.5. File:line refs are 
 `v05`/`master` tree. Grouped by crate.
 
 ### 1.1 `dashu-base`
-- [ ] **Remove `AbsEq` trait** (deprecated `since = "0.5.0"` at `base/src/sign.rs:43`). Fold its
+- [x] **Remove `AbsEq` trait** (deprecated `since = "0.5.0"` at `base/src/sign.rs:43`). Fold its
       semantics into `AbsOrd`, then delete the trait. Cleanup sites:
       `integer/src/cmp.rs:2`, `rational/src/cmp.rs:1` (remove the module-level
       `#![allow(deprecated)]` + their TODOs), and `base/src/sign.rs:296`/`:328` test `#[allow]`s.
 
 ### 1.2 `dashu-int`
-- [ ] **`IBig` serde wire format** (`integer/src/third_party/serde.rs:63`): switch to
+- [x] **`IBig` serde wire format** (`integer/src/third_party/serde.rs:63`): switch to
       `IBig::to_le_bytes()` for interop robustness. (Breaking serialization format.)
 - [ ] **`#![deny(missing_docs)]`** across all crates (`integer/src/lib.rs:72-74` also proposes
       `#![deny(clippy::allow_attributes_without_reason)]`). Requires documenting every public item
       first — pair with Phase 4 guide work (move prose to the guide, keep doc-comments concise).
-- [ ] **`UBig::to_digits` / `from_digits`** (`integer/src/convert.rs:1142`): new public API
-      supporting base up to `Word::MAX`. Enables `rational` fmt cleanup (see 1.4).
-- [ ] Consolidate already-applied breaking changes from `## Unreleased`: NTT threshold-var renames
+      **→ deferred to Phase 4** (paired with the guide doc-pass).
+- [x] **`UBig::to_digits` / `from_digits`** (`integer/src/convert.rs:1142`): new public API
+      supporting base up to `Word::MAX` — **shipped as full base-up-to-`Word::MAX` with `Vec<Word>`
+      digits**; the `u8` note in the TODO referred to the separate `UBig::in_radix`/`IBig::in_radix`
+      and internal `Digit` type `u32→u8` change (also done). Enables `rational` fmt cleanup (see 1.4).
+- [x] Consolidate already-applied breaking changes from `## Unreleased`: NTT threshold-var renames
       (`_MUL` suffix), Proth-prime NTT, etc. — these just need to land under the 0.5 changelog.
 
 ### 1.3 `dashu-float`
-- [ ] **Remove `from_str_native`** (deprecated `since = "0.5.0"` at `parse.rs:23` on `Repr`,
+- [x] **Remove `from_str_native`** (deprecated `since = "0.5.0"` at `parse.rs:23` on `Repr`,
       `parse.rs:228` on `FBig`). Make private; users go through `core::str::FromStr`. Cleanup:
       `parse.rs:1` module `#![allow(deprecated)]`, `third_party/serde.rs:64` & `:140`,
       `third_party/num_traits.rs:139`.
-- [ ] **Float serde precision padding** (`third_party/serde.rs:39`): pad with leading zeros to
-      preserve precision on round-trip. *(Decision needed — format change; see Open Decisions.)*
+- [x] **Float serde precision padding** (`third_party/serde.rs:39`): pads the human-readable string
+      with trailing zeros to `precision` significant digits so precision round-trips. *(Decision
+      resolved: apply.)*
 
 > *Implemented in #83 and removed from this list:* the infinity/NaN panic policy (infinities are now
 > terminal values; `FpResult<T> = Result<Rounded<T>, FpError>`; full IEEE-754 signed zero) — see
 > `guide/src/ieee754.md` and `float/CHANGELOG.md`.
 
 ### 1.4 `dashu-ratio`
-- [ ] **`From<Repr> for FBig` → `TryFrom`** (`rational/src/third_party/dashu_float.rs:12`): make the
+- [x] **`From<Repr> for FBig` → `TryFrom`** (`rational/src/third_party/dashu_float.rs:12`): make the
       conversion fallible (succeed only when exact). A ready stub `fbig_try_from_rbig` exists at
       `:26`. Remove the dead-code stub TODO at `:24` and the `#[allow(dead_code)]`.
-- [ ] Wire the new `UBig::to_digits` into `fmt/expanded.rs:92`/`:350` and
-      `fmt/expanded.rs:42` (fast dividers) — these are non-breaking internal perf, gated on 1.2.
+- [x] Wire the new `UBig::to_digits` into `fmt/expanded.rs` (call sites use it directly; the thin
+      `ubig_to_digits` wrapper was removed) — done; the remaining fast-divider TODOs at
+      `fmt/expanded.rs:42`/`:350` are deferred to 0.5.x. Non-breaking internal perf, gated on 1.2.
 
 ### 1.5 Doc / internal (non-breaking, fold in opportunistically)
 Move verbose type explanations from API docs into the guide (`integer/src/ubig.rs:10` TODO).
@@ -284,7 +289,8 @@ These shape the plan but don't block starting Phase 0/1. Recommended defaults ar
    sin/cos/tan/asin/acos/atan`) + abs/arg/conj/proj + I/O; defer hyperbolics/fma/agm/vector-ops/
    ball-arith. **(rec)** — matches "common functionalities" and is a defensible 0.5 cut.
 2. **Float serde precision padding** (`serde.rs:39`). Apply (pad leading zeros) in 0.5 since
-   formats are changing anyway. **(rec)**.
+   formats are changing anyway. **(rec)**. *Resolved (Phase 1): applied — human-readable FBig serde
+   now pads to `precision` significant digits.*
 3. **Property-testing framework.** Adopt `proptest`. **(rec)**; add `bolero` later if we want
    coverage-guided fuzzing (Phase 0.4 P3).
 4. **MSRV.** Keep 1.68 unless a concrete 0.5 feature requires newer. **(rec: keep)**.

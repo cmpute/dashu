@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Remove
+- `AbsEq` trait (folded into `AbsOrd`; use `.abs_cmp(..).is_eq()`).
+
 ## 0.4.3
 
 ### Add

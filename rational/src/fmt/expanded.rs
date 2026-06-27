@@ -43,7 +43,11 @@ struct Expanded {
 /// digit extraction instead of one-digit-at-a-time `rem * radix / den`.
 fn expand(num: &UBig, den: &UBig, radix: u8, max_digits: usize, track_repetend: bool) -> Expanded {
     let (int_part, mut rem) = num.div_rem(den);
-    let int_digits = ubig_to_digits(&int_part, radix);
+    let int_digits: Vec<u8> = int_part
+        .to_digits(radix as Word)
+        .into_iter()
+        .map(|d| d as u8)
+        .collect();
     let mut frac_digits: Vec<u8> = Vec::with_capacity(max_digits);
     let mut seen: Option<BTreeMap<UBig, usize>> = if track_repetend {
         Some(BTreeMap::new())
@@ -85,25 +89,6 @@ fn expand(num: &UBig, den: &UBig, radix: u8, max_digits: usize, track_repetend: 
         frac_prefix,
         repetend,
     }
-}
-
-/// Convert a UBig to a list of radix digits (most significant first).
-///
-/// TODO(v0.5): use `UBig::to_digits` instead of this function.
-fn ubig_to_digits(n: &UBig, radix: u8) -> Vec<u8> {
-    let mut digits = Vec::new();
-    let mut cur = n.clone();
-    let radix_ubig = UBig::from(radix);
-    while !cur.is_zero() {
-        let (q, d) = cur.div_rem(&radix_ubig);
-        digits.push(u8::try_from(&d).unwrap());
-        cur = q;
-    }
-    if digits.is_empty() {
-        digits.push(0);
-    }
-    digits.reverse();
-    digits
 }
 
 /// Default number of fractional digits for a given radix.
@@ -260,7 +245,11 @@ impl InExpanded<'_> {
 
         if !int_part.is_zero() {
             // Integer part >= 1: exponent = number of int digits - 1
-            let int_digits = ubig_to_digits(&int_part, self.radix);
+            let int_digits: Vec<u8> = int_part
+                .to_digits(self.radix as Word)
+                .into_iter()
+                .map(|d| d as u8)
+                .collect();
             exp = int_digits.len() as isize - 1;
             significand_digits = int_digits;
             // Compute fractional digits to reach prec + 2 total (1 before point, prec+1 after)

@@ -35,9 +35,26 @@ impl<R: Round, const B: Word> Serialize for FBig<R, B> {
     #[inline]
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
-            // serialize to formatted string if the serializer is human readable
-            // TODO(next): pad the output with leading zeros to make the result contains the correct precision
-            serializer.collect_str(self)
+            // Serialize to a formatted string, padding it with trailing zeros so the
+            // number of digit characters equals the context precision. The deserializer
+            // re-infers precision from that digit count, so this lets precision round-trip
+            // through the human-readable format.
+            if self.repr.is_infinite() {
+                serializer.collect_str(self)
+            } else {
+                let mut s = alloc::format!("{}", self);
+                let digits = s.bytes().filter(|b| b.is_ascii_digit()).count();
+                if digits < self.context.precision {
+                    let need = self.context.precision - digits;
+                    if s.contains('.') {
+                        s.extend(core::iter::repeat('0').take(need));
+                    } else {
+                        s.push('.');
+                        s.extend(core::iter::repeat('0').take(need));
+                    }
+                }
+                serializer.serialize_str(&s)
+            }
         } else {
             // otherwise serialize as a (significand, exponent, precision) struct
             let mut se = serializer.serialize_struct("FBig", 3)?;
@@ -61,7 +78,6 @@ impl<'de, const B: Word> Visitor<'de> for ReprVisitor<B> {
 
     #[inline]
     fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
-        #[allow(deprecated)] // TODO(v0.5): remove after from_str_native is made private.
         match Repr::<B>::from_str_native(v) {
             Ok((repr, _)) => Ok(repr),
             Err(e) => Err(de::Error::custom(e)),
@@ -137,8 +153,11 @@ impl<'de, R: Round, const B: Word> Visitor<'de> for FBigVisitor<R, B> {
 
     #[inline]
     fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
-        #[allow(deprecated)] // TODO(v0.5): remove after from_str_native is made private.
-        FBig::from_str_native(v).map_err(de::Error::custom)
+        let (repr, ndigits) = Repr::<B>::from_str_native(v).map_err(de::Error::custom)?;
+        Ok(FBig {
+            repr,
+            context: Context::new(ndigits),
+        })
     }
 
     fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
