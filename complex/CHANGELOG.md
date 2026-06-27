@@ -27,6 +27,10 @@
 - Algebraic `"a+bi"` `Display`/`FromStr`, structured `Debug`, and the `I`/`ZERO`/`ONE` constants.
 - The `cbig!` / `static_cbig!` literal macros (in `dashu-macros`) for creating `CBig` from a complex
   literal (`a+bi` or `re, im`); exposed as `dashu::cbig!` in the meta-crate.
+- Random generation via `rand`: the `rand` feature (aliasing `rand_v08`, with `rand_v09`/`rand_v010`
+  opt-in, matching the other crates). `UniformCBig` samples the box `[low, high)`; the builtin
+  `Standard`/`StandardUniform`/`Open01`/`OpenClosed01` sample the unit square `[0,1)²` (each part an
+  independent uniform `FBig`). Reuses `dashu-float`'s `UniformFBig` — no bespoke sampling algorithm.
 - No-NaN policy: C99 NaN-producing cases are mapped to `FpError` at the context layer (and panics at the
   convenience layer), consistent with `FBig`. Signed zero and the C99 Annex G / Kahan branch-cut model
   are first-class (reusing `FBig`'s signed-zero predicates).

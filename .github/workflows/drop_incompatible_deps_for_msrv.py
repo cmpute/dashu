@@ -58,21 +58,6 @@ for manifest in ['Cargo.toml', 'integer/Cargo.toml', 'float/Cargo.toml', 'ration
     text = re.sub(r'^rand_v010 = .*\n', '', text, flags=re.MULTILINE)
     open(manifest, 'w').write(text)
 
-# dashu-cmplx only exposes rand_v09 (no v08), so after the strip above it has no
-# MSRV-compatible `rand` feature. Drop its `rand` alias, the benches that require
-# it, and the meta-crate's `dashu-cmplx/rand` forwarding (covered by stable --all-features).
-text = open('complex/Cargo.toml').read()
-text = re.sub(r'^rand = \["rand_v09"\]\n', '', text, flags=re.MULTILINE)
-text = re.sub(
-    r'\n*\[\[bench\]\]\nname = "[^"]*"\nharness = false\nrequired-features = \["rand"\]\n',
-    '\n', text)
-open('complex/Cargo.toml', 'w').write(text)
-
-text = open('Cargo.toml').read()
-text = re.sub(r', "dashu-cmplx/rand"', '', text)
-open('Cargo.toml', 'w').write(text)
-
-
 # Drop the postgres submodule (its cfg-gated children reference
 # the features we just removed).
 text = open('float/src/third_party/mod.rs').read()
