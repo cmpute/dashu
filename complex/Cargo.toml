@@ -1,0 +1,59 @@
+[package]
+name = "dashu-cmplx"
+version = "0.5.0"
+authors = ["Jacob Zhong <cmpute@gmail.com>"]
+edition = "2021"
+description = "A big arbitrary precision complex number library"
+keywords = ["mathematics", "numerics", "complex", "arbitrary-precision", "bignum"]
+categories = ["mathematics", "no-std"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/cmpute/dashu"
+homepage = "https://github.com/cmpute/dashu"
+documentation = "https://docs.rs/dashu-cmplx"
+readme = "README.md"
+rust-version = "1.68"
+
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+default = ["std", "num-order"]
+std = ["dashu-float/std"]
+
+# stable dependencies
+serde = ["dep:serde", "dashu-float/serde"]
+zeroize = ["dep:zeroize", "dashu-float/zeroize"]
+num-order = ["dep:num-order", "dashu-float/num-order"]
+
+# unstable dependencies
+rand = ["rand_v09"]
+rand_v09 = ["dep:rand_v09", "dashu-float/rand_v09"]
+num-traits = ["num-traits_v02"]
+num-traits_v02 = ["dep:num-traits_v02", "dashu-float/num-traits_v02"]
+num-complex = ["num-complex_v04"]
+num-complex_v04 = ["dep:num-complex_v04"]
+
+[dependencies]
+dashu-base = { version = "0.4.3", default-features = false, path = "../base" }
+dashu-int = { version = "0.4.3", default-features = false, path = "../integer" }
+dashu-float = { version = "0.4.5", default-features = false, path = "../float" }
+
+# stable dependencies
+rustversion = "1.0.0"
+num-order = { optional = true, version = "1.2.0", default-features = false }
+serde = { optional = true, version = "1.0.130", default-features = false }
+zeroize = { optional = true, version = "1.5.7", default-features = false }
+
+# unstable dependencies
+rand_v09 = { optional = true, version = "0.9", package = "rand", default-features = false }
+num-traits_v02 = { optional = true, version = "0.2.15", package = "num-traits", default-features = false }
+num-complex_v04 = { optional = true, version = "0.4", package = "num-complex", default-features = false }
+
+[dev-dependencies]
+rand_v09 = { version = "0.9", package = "rand" }
+proptest = "~1.7"
+
+criterion = { version = "0.5.1", features = ["html_reports"] }
+
+[lib]
+bench = false

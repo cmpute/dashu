@@ -22,6 +22,11 @@ pub mod rational {
     pub use dashu_ratio::*;
 }
 
+/// Arbitrary precision complex number
+pub mod complex {
+    pub use dashu_cmplx::*;
+}
+
 #[doc(hidden)]
 pub use dashu_macros as __dashu_macros;
 
@@ -132,3 +137,6 @@ pub type FastDecimal = dashu_float::CachedFBig<dashu_float::round::mode::HalfAwa
 
 /// A verbose alias for [RBig][dashu_ratio::RBig]
 pub type Rational = dashu_ratio::RBig;
+
+/// A verbose alias for [CBig][dashu_cmplx::CBig] (base 2, rounding towards zero)
+pub type Complex = dashu_cmplx::CBig;
