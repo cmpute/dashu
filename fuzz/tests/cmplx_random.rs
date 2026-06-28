@@ -4,28 +4,26 @@
 //! For random finite inputs, `mul`/`div`/`sqr` are computed in both libraries and the `(re, im)`
 //! `f64` parts must agree to within a few ulps — both are (near-)correctly rounded at 53 bits, and
 //! field arithmetic is MPC's hardest-to-round class (the spec's top risk). Non-finite results are
-//! skipped.
+//! skipped. Proptest-driven so a mismatch shrinks to a minimal counterexample.
 //!
 //! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test cmplx_random -- --ignored --nocapture`
 
 use core::convert::TryFrom;
 use dashu_cmplx::CBig;
-use dashu_float::round::mode::HalfEven;
 use dashu_float::FBig;
-use rand::prelude::*;
+use dashu_float::round::mode::HalfEven;
+use proptest::prelude::*;
 
 type C = CBig<HalfEven, 2>;
 type F = FBig<HalfEven, 2>;
 
-/// A modest-magnitude random `f64`.
-fn rand_f64(rng: &mut impl Rng) -> f64 {
-    let sig = rng.random_range(-8i32..=8) as f64;
-    if sig == 0.0 {
-        return 0.5;
-    }
-    let mant = rng.random_range(1.0..2.0);
-    let exp = rng.random_range(-2i32..=2);
-    sig.signum() * mant * 2f64.powi(exp)
+/// A modest-magnitude finite `f64` (`±(1..=8) · [1,2) · 2^(-2..=2)`), shrinking toward small values.
+fn f64_part() -> impl Strategy<Value = f64> {
+    (1u8..=8, any::<bool>(), 0u32..1000, -2i32..=2).prop_map(|(sig, neg, frac, exp)| {
+        let mant = 1.0 + (frac as f64) / 1000.0;
+        let mag = (sig as f64) * mant * 2f64.powi(exp);
+        if neg { -mag } else { mag }
+    })
 }
 
 fn fbig_from(v: f64) -> F {
@@ -55,26 +53,35 @@ fn close(a: (f64, f64), b: (f64, f64)) -> bool {
     if !ar.is_finite() || !ai.is_finite() || !br.is_finite() || !bi.is_finite() {
         return false; // skip non-finite (overflow / branch-point) results
     }
-    let scale = ar.abs().max(ai.abs()).max(br.abs()).max(bi.abs()).max(1e-300);
+    let scale = ar
+        .abs()
+        .max(ai.abs())
+        .max(br.abs())
+        .max(bi.abs())
+        .max(1e-300);
     let tol = scale * 1e-12;
     (ar - br).abs() <= tol && (ai - bi).abs() <= tol
 }
 
-#[test]
-#[ignore]
-fn mpc_mul_div_sqr_oracle() {
-    let mut rng = StdRng::seed_from_u64(7);
-    for _ in 0..8192 {
-        let (z, rz) = pair(rand_f64(&mut rng), rand_f64(&mut rng));
-        let (w, rw) = pair(rand_f64(&mut rng), rand_f64(&mut rng));
+proptest! {
+    #![proptest_config(fuzz::fuzz_config())]
+
+    #[test]
+    #[ignore]
+    fn mpc_mul_div_sqr_oracle(
+        zre in f64_part(), zim in f64_part(),
+        wre in f64_part(), wim in f64_part(),
+    ) {
+        let (z, rz) = pair(zre, zim);
+        let (w, rw) = pair(wre, wim);
 
         // mul
-        assert!(close(cbig_to_f64(&(&z * &w)), rug_to_f64(&(rz.clone() * rw.clone()))));
+        prop_assert!(close(cbig_to_f64(&(&z * &w)), rug_to_f64(&(rz.clone() * rw.clone()))));
         // sqr
-        assert!(close(cbig_to_f64(&z.sqr()), rug_to_f64(&(rz.clone() * rz.clone()))));
-        // div (skip zero denominator)
-        if !w.is_zero() && !rw.real().to_f64().abs().eq(&0.0) {
-            assert!(close(cbig_to_f64(&(&z / &w)), rug_to_f64(&(rz / rw))));
+        prop_assert!(close(cbig_to_f64(&z.sqr()), rug_to_f64(&(rz.clone() * rz.clone()))));
+        // div (skip a zero denominator)
+        if !w.is_zero() {
+            prop_assert!(close(cbig_to_f64(&(&z / &w)), rug_to_f64(&(rz / rw))));
         }
     }
 }

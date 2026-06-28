@@ -1,0 +1,101 @@
+on:
+  push:
+    branches:
+      - master
+      - develop
+  pull_request:
+    branches:
+      - master
+      - develop
+
+name: Build
+
+# Build-only checks — none of these run `cargo test`; they only verify the code compiles:
+#   * `check`          — the main workspace `cargo check` across stable / 1.85 / 1.68 (MSRV),
+#                        pinning transitive deps + dropping incompatible ones for 1.68.
+#   * `fuzz-check`     — the workspace-excluded `fuzz/` crate (its `rug`-linked differentials run
+#                        manually before a release); a compile-guard so it can't silently rot.
+#   * `build-benchmark`— the `benchmark/` scratchpad (builds with `--features gmp`).
+#   * `build-aarch64`  — an aarch64 cross-build.
+# The sibling `Tests` workflow runs the actual `cargo test` matrix.
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable, "1.85", "1.68"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+      - name: Drop postgres/diesel/dev-deps for Rust 1.68
+        if: matrix.rust == '1.68'
+        run: python3 .github/workflows/drop_incompatible_deps_for_msrv.py
+      - name: Pin transitive deps for MSRV
+        if: matrix.rust != 'stable'
+        run: |
+          if [ "${{ matrix.rust }}" = "1.68" ]; then
+            echo "Pinning packages for Rust 1.68:"
+            echo "  parking_lot   -> 0.12.3"
+            echo "  lock_api      -> 0.4.12"
+            echo "  quote         -> 1.0.40"
+            echo "  unicode-ident -> 1.0.13"
+            echo "  zeroize       -> 1.8.1"
+            cargo update -p parking_lot --precise 0.12.3
+            cargo update -p lock_api --precise 0.4.12
+            cargo update -p quote --precise 1.0.40
+            cargo update -p unicode-ident --precise 1.0.13
+            cargo update -p zeroize --precise 1.8.1
+          elif [ "${{ matrix.rust }}" = "1.85" ]; then
+            echo "Pinning packages for Rust 1.85:"
+            echo "  diesel        -> 2.2.12"
+            cargo update -p diesel@2 --precise 2.2.12
+          fi
+      - run: cargo check --all-features --tests
+        if: matrix.rust != '1.68'
+      - run: cargo check --workspace --exclude dashu-python --features "std,num-order,serde,zeroize,rand,num-traits_v02"
+        if: matrix.rust == '1.68'
+
+  fuzz-check:
+    name: cargo check fuzz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - name: Install GMP/MPFR/MPC build prerequisites
+        # `rug` pulls in `gmp-mpfr-sys`, which builds GMP/MPFR/MPC (needs `m4`); the -dev packages
+        # are installed as well in case the build picks up system libraries.
+        run: sudo apt-get update && sudo apt-get install -y libgmp-dev libmpfr-dev libmpc-dev m4
+      - name: cargo check (fuzz crate, all targets)
+        run: cargo check --manifest-path fuzz/Cargo.toml --all-targets
+
+  build-benchmark:
+    name: Build benchmark
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - run: cargo build --features gmp
+        working-directory: benchmark
+
+  build-aarch64:
+    name: Build aarch64
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: aarch64-unknown-linux-gnu
+      - run: cargo build --target aarch64-unknown-linux-gnu --all-features --workspace --exclude dashu-python

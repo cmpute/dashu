@@ -5,25 +5,14 @@
 //! oracle: the exact sum/difference (computed at unlimited precision) re-rounded with
 //! `FBig::with_precision`, which uses the simple `repr_round` path rather than
 //! `repr_round_sum`. The two must agree for every rounding mode, base, precision and operand
-//! shape.
+//! shape. Proptest-driven so a mismatch shrinks to a minimal `(a, b, precision)` counterexample.
 //!
 //! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test add_random -- --ignored --nocapture`
 
 use dashu_float::round::Round;
 use dashu_float::round::mode::*;
 use dashu_float::{Context, FBig, Repr, Word};
-use dashu_int::{rand::UniformBits, IBig};
-use rand::prelude::*;
-
-/// Random signed significand drawn directly as a random `IBig` of bounded bit length.
-///
-/// The magnitude is at most ~266 bits (≈ 80 decimal digits), matching the coverage of the
-/// previous decimal-string generator but without per-iteration allocation + parsing. A
-/// base-agnostic integer lets the same significand feed `Repr::<B>` for any base `B`.
-fn random_significand<R: Rng + ?Sized>(rng: &mut R) -> IBig {
-    let bits = rng.random_range(1..=266usize);
-    rng.sample(UniformBits::new(bits))
-}
+use proptest::prelude::*;
 
 /// Round the exact result to `precision` and `precision + 1` digits, returning both.
 ///
@@ -59,72 +48,63 @@ fn check_pair<R: Round, const B: Word>(
     let ctx = Context::<R>::new(precision);
     let unlimited = Context::<R>::new(0);
 
-    let actual_add = ctx.add(a, b).value().repr().clone();
+    let actual_add = ctx.add(a, b).unwrap().value().repr().clone();
     let (add_p, add_p1) =
-        rounded_oracle::<R, B>(unlimited.add(a, b).value().repr().clone(), precision);
+        rounded_oracle::<R, B>(unlimited.add(a, b).unwrap().value().repr().clone(), precision);
     assert!(
         actual_add == add_p || actual_add == add_p1,
         "add mismatch (mode={mode_name}, p={precision})\n a={a:?}\n b={b:?}\n actual={actual_add:?}\n oracle(p)={add_p:?}\n oracle(p+1)={add_p1:?}",
     );
 
-    let actual_sub = ctx.sub(a, b).value().repr().clone();
+    let actual_sub = ctx.sub(a, b).unwrap().value().repr().clone();
     let (sub_p, sub_p1) =
-        rounded_oracle::<R, B>(unlimited.sub(a, b).value().repr().clone(), precision);
+        rounded_oracle::<R, B>(unlimited.sub(a, b).unwrap().value().repr().clone(), precision);
     assert!(
         actual_sub == sub_p || actual_sub == sub_p1,
         "sub mismatch (mode={mode_name}, p={precision})\n a={a:?}\n b={b:?}\n actual={actual_sub:?}\n oracle(p)={sub_p:?}\n oracle(p+1)={sub_p1:?}",
     );
 }
 
-fn run_mode<R: Round, const B: Word>(rng: &mut StdRng, iters: usize, mode_name: &str) {
-    // Deterministic small-precision sweep: precisions 1, 2, 3 are where rounding bugs live,
-    // but the random `1..200` below hits them only by chance. Always exercise these boundary
-    // precisions (ported from the removed `add_sub_oracle` example).
-    for &precision in &[1usize, 2, 3, 5, 10] {
-        for _ in 0..50 {
-            let a_exp = rng.random_range(-1500..1500) as isize;
-            let a = Repr::<B>::new(random_significand(rng), a_exp);
-            let b_exp = rng.random_range(-1500..1500) as isize;
-            let b = Repr::<B>::new(random_significand(rng), b_exp);
-            check_pair::<R, B>(&a, &b, precision, mode_name);
-        }
+/// Run `check_pair` under all six rounding modes for one operand pair + precision.
+fn check_all_modes<const B: Word>(a: &Repr<B>, b: &Repr<B>, precision: usize) {
+    check_pair::<Zero, B>(a, b, precision, "Zero");
+    check_pair::<Away, B>(a, b, precision, "Away");
+    check_pair::<Up, B>(a, b, precision, "Up");
+    check_pair::<Down, B>(a, b, precision, "Down");
+    check_pair::<HalfEven, B>(a, b, precision, "HalfEven");
+    check_pair::<HalfAway, B>(a, b, precision, "HalfAway");
+}
+
+/// Precision strategy biased toward the boundary precisions 1/2/3 (where rounding bugs live),
+/// mixed with a uniform draw over `1..200`.
+fn precision_strategy() -> impl Strategy<Value = usize> {
+    prop_oneof![Just(1usize), Just(2), Just(3), 1usize..200,]
+}
+
+proptest! {
+    #![proptest_config(fuzz::fuzz_config())]
+
+    #[test]
+    #[ignore]
+    fn add_sub_differential_binary(
+        a_sig in fuzz::ibig_strategy(5), a_exp in -1500isize..1500,
+        b_sig in fuzz::ibig_strategy(5), b_exp in -1500isize..1500,
+        precision in precision_strategy(),
+    ) {
+        let a = Repr::<2>::new(a_sig, a_exp);
+        let b = Repr::<2>::new(b_sig, b_exp);
+        check_all_modes::<2>(&a, &b, precision);
     }
 
-    for _ in 0..iters {
-        // Wide exponent range so that the negligible-small, tight-align, cancellation and borrow
-        // (result just below a round number) branches are all exercised.
-        let a_exp = rng.random_range(-1500..1500) as isize;
-        let a_sig = random_significand(rng);
-        let a = Repr::<B>::new(a_sig, a_exp);
-
-        let b_exp = rng.random_range(-1500..1500) as isize;
-        let b_sig = random_significand(rng);
-        let b = Repr::<B>::new(b_sig, b_exp);
-
-        let precision = rng.random_range(1..200);
-        check_pair::<R, B>(&a, &b, precision, mode_name);
+    #[test]
+    #[ignore]
+    fn add_sub_differential_decimal(
+        a_sig in fuzz::ibig_strategy(5), a_exp in -1500isize..1500,
+        b_sig in fuzz::ibig_strategy(5), b_exp in -1500isize..1500,
+        precision in precision_strategy(),
+    ) {
+        let a = Repr::<10>::new(a_sig, a_exp);
+        let b = Repr::<10>::new(b_sig, b_exp);
+        check_all_modes::<10>(&a, &b, precision);
     }
-}
-
-fn run_all_modes<const B: Word>(rng: &mut StdRng, iters: usize) {
-    run_mode::<Zero, B>(rng, iters, "Zero");
-    run_mode::<Away, B>(rng, iters, "Away");
-    run_mode::<Up, B>(rng, iters, "Up");
-    run_mode::<Down, B>(rng, iters, "Down");
-    run_mode::<HalfEven, B>(rng, iters, "HalfEven");
-    run_mode::<HalfAway, B>(rng, iters, "HalfAway");
-}
-
-#[test]
-#[ignore]
-fn test_add_sub_differential_binary() {
-    let mut rng = StdRng::seed_from_u64(0x1234_5678_9abc_def0);
-    run_all_modes::<2>(&mut rng, 10000);
-}
-
-#[test]
-#[ignore]
-fn test_add_sub_differential_decimal() {
-    let mut rng = StdRng::seed_from_u64(0x0fed_cba9_8765_4321);
-    run_all_modes::<10>(&mut rng, 10000);
 }
