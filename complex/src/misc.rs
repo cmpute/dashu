@@ -1,7 +1,7 @@
 //! Decomposition and miscellaneous operations: `neg`, `conj`, `proj`, `mul_i`, `norm`, `arg`.
 
 use crate::cbig::CBig;
-use crate::context::{exact, CfpResult, Context};
+use crate::repr::{exact, CfpResult, Context};
 use core::ops::Neg;
 use dashu_base::Sign;
 use dashu_float::round::Round;

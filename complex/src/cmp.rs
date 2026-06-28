@@ -5,7 +5,7 @@
 //! magnitude comparison via `|z|²`, and (behind `num-order`) `NumOrd`/`NumHash`.
 
 use crate::cbig::CBig;
-use crate::context::Context;
+use crate::repr::Context;
 use core::cmp::Ordering;
 use dashu_base::AbsOrd;
 use dashu_float::round::Round;

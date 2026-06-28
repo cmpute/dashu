@@ -1,7 +1,7 @@
 //! Complex squaring and multiplication (near-correctly rounded via the guard-digit recipe).
 
 use crate::cbig::{is_numeric_zero, CBig};
-use crate::context::{combine_parts, exact, riemann, CfpResult, Context};
+use crate::repr::{combine_parts, exact, riemann, CfpResult, Context};
 use core::ops::{Mul, MulAssign};
 use dashu_float::round::Round;
 use dashu_float::{FBig, FpError};
@@ -82,8 +82,45 @@ impl<R: Round, const B: Word> CBig<R, B> {
     }
 }
 
-// CBig · CBig operators
-crate::helper_macros::impl_cbig_binop!(Mul, mul, MulAssign, mul_assign);
+// CBig · CBig operators — the four ref/val impls written out explicitly, each delegating to
+// `Context::mul` (mirroring `dashu-float`'s `mul.rs`), with `MulAssign` forwarded through `mem::take`.
+impl<R: Round, const B: Word> Mul<&CBig<R, B>> for &CBig<R, B> {
+    type Output = CBig<R, B>;
+    #[inline]
+    fn mul(self, rhs: &CBig<R, B>) -> CBig<R, B> {
+        let ctx = Context::max(self.context(), rhs.context());
+        ctx.unwrap_cfp(ctx.mul(self, rhs))
+    }
+}
+
+impl<R: Round, const B: Word> Mul<&CBig<R, B>> for CBig<R, B> {
+    type Output = CBig<R, B>;
+    #[inline]
+    fn mul(self, rhs: &CBig<R, B>) -> CBig<R, B> {
+        let ctx = Context::max(self.context(), rhs.context());
+        ctx.unwrap_cfp(ctx.mul(&self, rhs))
+    }
+}
+
+impl<R: Round, const B: Word> Mul<CBig<R, B>> for &CBig<R, B> {
+    type Output = CBig<R, B>;
+    #[inline]
+    fn mul(self, rhs: CBig<R, B>) -> CBig<R, B> {
+        let ctx = Context::max(self.context(), rhs.context());
+        ctx.unwrap_cfp(ctx.mul(self, &rhs))
+    }
+}
+
+impl<R: Round, const B: Word> Mul<CBig<R, B>> for CBig<R, B> {
+    type Output = CBig<R, B>;
+    #[inline]
+    fn mul(self, rhs: CBig<R, B>) -> CBig<R, B> {
+        let ctx = Context::max(self.context(), rhs.context());
+        ctx.unwrap_cfp(ctx.mul(&self, &rhs))
+    }
+}
+
+crate::helper_macros::impl_binop_assign_by_taking!(impl MulAssign<Self>, mul_assign, mul);
 
 // --- scalar multiplication by a real FBig (mixed-type operators, no named methods) ---
 
@@ -181,6 +218,19 @@ mod tests {
         let w = c(3, 4);
         let p = &z * &w;
         assert!(p == c(-5, 10));
+    }
+
+    #[test]
+    fn mul_assign_val_and_ref() {
+        let z = c(1, 2);
+        let w = c(3, 4);
+        // (1+2i)(3+4i) = -5+10i
+        let mut acc = z.clone();
+        acc *= w.clone();
+        assert!(acc == c(-5, 10));
+        let mut acc = z.clone();
+        acc *= &w;
+        assert!(acc == c(-5, 10));
     }
 
     #[test]

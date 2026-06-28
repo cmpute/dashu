@@ -1,7 +1,7 @@
 //! Complex natural logarithm `log(z) = ln|z| + i·arg(z)` (principal branch; cut on `]−∞, 0]`).
 
 use crate::cbig::CBig;
-use crate::context::{combine_parts, exact, reborrow_cache, riemann, CfpResult, Context};
+use crate::repr::{combine_parts, exact, reborrow_cache, riemann, CfpResult, Context};
 use dashu_float::round::Round;
 use dashu_float::{ConstCache, FBig, Repr};
 use dashu_int::Word;

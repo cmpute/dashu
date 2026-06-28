@@ -6,7 +6,7 @@
 //! `FBig`s (each carrying its own) — makes the uniform-precision invariant *physical*: there is
 //! exactly one precision slot, so `re` and `im` structurally cannot disagree.
 
-use crate::context::Context;
+use crate::repr::Context;
 use dashu_base::Sign;
 use dashu_float::round::{mode, Round};
 use dashu_float::{FBig, Repr};

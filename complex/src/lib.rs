@@ -63,28 +63,26 @@ extern crate alloc;
 mod add;
 mod cbig;
 mod cmp;
-mod context;
 mod convert;
 mod div;
 mod exp;
 mod fmt;
 mod helper_macros;
 mod log;
+pub mod math;
 mod misc;
 mod mul;
 mod parse;
-mod power;
+mod repr;
 mod root;
-mod sub;
 mod third_party;
-mod trig;
 
 // All the public items from third_party will be exposed
 #[allow(unused_imports)]
 pub use third_party::*;
 
 pub use cbig::CBig;
-pub use context::{CRounded, CfpResult, Context};
+pub use repr::{CRounded, CfpResult, Context};
 
 // Rounding machinery and the float primitives CBig is built on are reused from dashu-float
 // unchanged (they appear in this crate's public signatures).

@@ -1,7 +1,7 @@
 //! Complex division and reciprocal (near-correctly rounded via Smith's method + guard re-round).
 
 use crate::cbig::CBig;
-use crate::context::{combine_parts, exact, riemann, CfpResult, Context};
+use crate::repr::{combine_parts, exact, riemann, CfpResult, Context};
 use core::ops::{Div, DivAssign};
 use dashu_float::round::Round;
 use dashu_float::{FBig, FpError, Repr};

@@ -1,4 +1,9 @@
-//! The CBig operation context and the complex result/inexactness types.
+//! The complex [`Context`] and the result/inexactness types.
+//!
+//! Mirroring `dashu-float`'s `repr.rs` (which hosts both `Repr` and `Context`), the complex
+//! [`Context`] lives here. `dashu-cmplx` reuses `dashu-float`'s [`Repr`] unchanged, so unlike float's
+//! module this one holds only the complex-side pieces: the [`Context`] newtype and the
+//! [`CfpResult`]/[`CRounded`] result types.
 //!
 //! [`Context`] is a thin newtype around [`dashu_float::Context`] that hosts the context-layer
 //! CBig operations (it can't be added to `FBig`'s own `Context` from this crate — coherence). The

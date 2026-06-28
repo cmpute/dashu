@@ -5,7 +5,7 @@
 //! form avoids the `exp(±iz)` identity's exponential blow-up for large `|Im z|`.
 
 use crate::cbig::CBig;
-use crate::context::{combine_parts, reborrow_cache, CfpResult, Context};
+use crate::repr::{combine_parts, reborrow_cache, CfpResult, Context};
 use dashu_float::round::Round;
 use dashu_float::{ConstCache, FBig, FpError, Repr};
 use dashu_int::Word;
@@ -196,14 +196,14 @@ fn reround<R: Round, const B: Word>(z: CBig<R, B>, p: usize) -> CfpResult<R, B> 
 }
 
 fn ok_exact_zero<R: Round, const B: Word>(ctx: Context<R>) -> CfpResult<R, B> {
-    Ok(crate::context::exact(
+    Ok(crate::repr::exact(
         FBig::from_repr(Repr::zero(), ctx.float()),
         FBig::from_repr(Repr::zero(), ctx.float()),
     ))
 }
 
 fn ok_exact_one<R: Round, const B: Word>(ctx: Context<R>) -> CfpResult<R, B> {
-    Ok(crate::context::exact(
+    Ok(crate::repr::exact(
         FBig::from_repr(Repr::one(), ctx.float()),
         FBig::from_repr(Repr::zero(), ctx.float()),
     ))

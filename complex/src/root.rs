@@ -1,7 +1,7 @@
 //! Complex square root (principal branch; cut on `]−∞, 0]`).
 
 use crate::cbig::CBig;
-use crate::context::{combine_parts, exact, CfpResult, Context};
+use crate::repr::{combine_parts, exact, CfpResult, Context};
 use dashu_base::Sign;
 use dashu_float::round::Round;
 use dashu_float::{FBig, Repr};

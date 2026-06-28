@@ -18,7 +18,7 @@ impl<R: Round, const B: Word> From<FBig<R, B>> for CBig<R, B> {
         Self {
             re: re.into_repr(),
             im: Repr::zero(),
-            context: crate::context::Context(fctx),
+            context: crate::repr::Context(fctx),
         }
     }
 }

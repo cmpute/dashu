@@ -7,7 +7,7 @@
 //! site, so call sites must keep them in scope.
 //!
 //! [`CBig`]: crate::cbig::CBig
-//! [`Context::unwrap_cfp`]: crate::context::Context::unwrap_cfp
+//! [`Context::unwrap_cfp`]: crate::repr::Context::unwrap_cfp
 
 /// Implement a binary operator (`Add`/`Sub`/`Mul`/`Div`) and its `Assign` form for all four
 /// ref/val combinations. Each forwards to `Context::$method` at `max(lhs, rhs)` precision.
@@ -67,4 +67,25 @@ macro_rules! impl_cbig_binop {
     };
 }
 
+/// Implement `impl OpAssign<A> for CBig` by forwarding to `*self = mem::take(self).op(A)`, including
+/// the `&A` form — the direct port of `dashu-float`'s `impl_binop_assign_by_taking`. As with
+/// [`impl_cbig_binop`], the identifiers (`CBig`, `Round`, `Word`) resolve at the call site.
+macro_rules! impl_binop_assign_by_taking {
+    (impl $trait:ident<$t2:ty>, $methodassign:ident, $method:ident) => {
+        impl<R: Round, const B: Word> $trait<$t2> for CBig<R, B> {
+            #[inline]
+            fn $methodassign(&mut self, rhs: $t2) {
+                *self = core::mem::take(self).$method(rhs);
+            }
+        }
+        impl<R: Round, const B: Word> $trait<&$t2> for CBig<R, B> {
+            #[inline]
+            fn $methodassign(&mut self, rhs: &$t2) {
+                *self = core::mem::take(self).$method(rhs);
+            }
+        }
+    };
+}
+
+pub(crate) use impl_binop_assign_by_taking;
 pub(crate) use impl_cbig_binop;
