@@ -29,12 +29,6 @@ fn tol(prec: usize) -> DBig {
     DBig::from_parts(100.into(), -(prec as isize))
 }
 
-/// A `DBig` in `[-1, 1]` (as `n/1000`), for the real `asin`/`acos` domain. Shrinks toward 0.
-fn unit_dbig() -> impl Strategy<Value = DBig> {
-    (-1000i32..=1000)
-        .prop_map(|n| DBig::from_repr(Repr::<10>::new(n.into(), -3), Context::<HalfAway>::new(0)))
-}
-
 proptest! {
     #![proptest_config(fuzz::fuzz_config())]
 
@@ -137,7 +131,7 @@ proptest! {
     /// asin(x)/acos(x) ≈ MPFR for x in [-1, 1] across precisions {20, 50}.
     #[test]
     #[ignore]
-    fn inv_trig_fuzz(x in unit_dbig()) {
+    fn inv_trig_fuzz(x in fuzz::unit_dbig()) {
         let x_str = format!("{x:e}");
         for prec in [20usize, 50] {
             let ctx = Context::<HalfAway>::new(prec);

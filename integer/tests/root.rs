@@ -92,6 +92,11 @@ fn test_sqrt_negative_panic() {
 
 #[test]
 fn test_nth_root() {
+    // the nth root of 0 is 0 (regression: it used to return 1 via the `bits <= n` shortcut)
+    assert_eq!(ubig!(0).nth_root(1), ubig!(0));
+    assert_eq!(ubig!(0).nth_root(3), ubig!(0));
+    assert_eq!(ubig!(0).nth_root(5), ubig!(0));
+    assert_eq!(ibig!(0).nth_root(3), ibig!(0));
     assert_eq!(ubig!(2).nth_root(1), ubig!(2));
     assert_eq!(ubig!(2).nth_root(2), ubig!(1));
     assert_eq!(ubig!(2).nth_root(3), ubig!(1));

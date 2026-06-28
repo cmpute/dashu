@@ -7,6 +7,7 @@ publish = false
 [dependencies]
 dashu-float = { path = "../float" }
 dashu-cmplx = { path = "../complex" }
+dashu-ratio = { path = "../rational" }
 dashu-int = { path = "../integer", features = ["rand_v010"] }
 dashu-base = { path = "../base" }
 rand = "0.10.1"
