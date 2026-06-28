@@ -1,6 +1,6 @@
 # dashu v0.5 Release Plan
 
-Last updated: 2026-06-27
+Last updated: 2026-06-28
 
 This document is the consolidated plan for the **v0.5** release — a **major (breaking)** bump.
 Because it is a major release, its two organizing goals are:
@@ -40,7 +40,7 @@ The phases below are ordered by dependency, not by "importance". The logic is:
 | 0 | Test / benchmark / fuzz hardening | **GATE for all feature work** | — |
 | 1 | Breaking changes & deprecation cleanup | must land in 0.5 | 0 (ideally) |
 | 2 | `dashu-float` shared constant cache | ✅ done (#83, as `CachedFBig`/`ConstCache`) | 0, 1 |
-| 3 | `dashu-cmplx` (`CBig`) — new crate | headline feature | 0, 2 |
+| 3 | `dashu-cmplx` (`CBig`) — new crate | ✅ done (M1–M6) | 0, 2 |
 | 4 | The mdBook guide | required deliverable | 1, 2, 3 (content); infra can start now |
 | 5 | Release prep & version sync | — | 1–4 |
 
@@ -70,11 +70,8 @@ The phases below are ordered by dependency, not by "importance". The logic is:
 > by extracting the quadrant integer via `to_int`; see `float/CHANGELOG.md` and the
 > `test_trig_tiny_negative_no_panic` regression test.
 
-One item remains open:
-
-- [ ] **Record baseline benchmark numbers** so Phase 2/3 perf regressions are detectable (criterion
-      `--save-baseline`, a committed comparison, or manual capture). The benches exist and compile in
-      CI; only the baseline-capture workflow is undecided.
+> *No committed baseline.* Benchmark numbers are hardware-dependent, so none are checked in — run the
+> benches locally before/after a perf-sensitive change to spot regressions.
 
 
 ---
@@ -127,9 +124,12 @@ Every item here changes public API and **must** land in 0.5. File:line refs are 
       TODO is the only fast-fmt item left for 0.5.x. Non-breaking internal perf, gated on 1.2.
 
 ### 1.5 Doc / internal (non-breaking, fold in opportunistically)
-Move verbose type explanations from API docs into the guide (`integer/src/ubig.rs:10` TODO).
-Internal algorithm TODOs (right-to-left exponentiation `pow.rs:67`, double-power avoidance
-`float/src/div.rs:243`, guard-bit formulation `exp.rs:80`) can land anytime — batch them here.
+- [ ] **Move verbose type prose to the guide** — `integer/src/ubig.rs:10` `TODO(v0.5)` (leave a brief
+      summary + link in the doc-comment). Pairs with Phase 4.
+- [ ] **`integer/src/pow.rs:67`** — switch to right-to-left exponentiation (cheaper squaring schedule).
+- [ ] **`float/src/div.rs:344`** — avoid the double power in the division kernel; let `q += q0` become
+      `|=` when `B` is a power of 2.
+- [ ] **`float/src/exp.rs:87`** — write down the exact formulation of the required guard bits.
 
 ---
 
@@ -174,58 +174,97 @@ the primary `Real`/`Decimal`.
 
 ## Phase 3 — `dashu-cmplx` (`CBig`) — Arbitrary-Precision Complex Numbers
 
+> **✅ Implemented** (M1–M6 complete). The `dashu-cmplx` crate (dir `complex/`) provides `CBig` — two
+> `Repr` parts over a single shared `Context` — targeting GNU MPC parity for the "common
+> functionalities," built on a cached `dashu-float` (Phase 2). Two-layer API mirroring `FBig`
+> (`Context::mul → CfpResult<CRounded<CBig>>` at the context layer; operators → `CBig` at the
+> convenience layer), near-correct rounding via the guard-digit recipe, and the C99 Annex G / Kahan
+> no-NaN model (C99 NaN-producing cases → `FpError`). The module layout mirrors `dashu-float`
+> (`add`/`mul`/`div`; `exp` hosts the power family; `math/` for transcendentals; `repr.rs` for
+> `Context`). Verified with proptest identities + self-oracles, deterministic Annex-G vectors, and a
+> manual `rug::Complex`/MPC oracle in `fuzz/`. `NumHash` mirrors `num-complex`'s `Complex<f64>`
+> algebraic hash (verified against the `num-order` reference). See `complex/CHANGELOG.md` (0.5.0).
+
 **Goal:** a new crate `dashu-cmplx` (dir `complex/`) providing an arbitrary-precision complex type
 `CBig`, targeting GNU MPC parity for "common functionalities." It composes two parts (`re`, `im`)
 over a shared precision, with a single rounding mode applied to both components.
 
-### 3.1 Type & context model
-- [ ] `CBig<R: Round = Zero, const B: Word = 2> { re: Repr<B>, im: Repr<B>, context: Context<R> }` —
+### 3.1 Type & context model — ✅
+- [x] `CBig<R: Round = Zero, const B: Word = 2> { re: Repr<B>, im: Repr<B>, context: Context<R> }` —
       two parts over a single shared `Context<R>` (re/im kept at the same precision; MPC allows
       different precisions but we start uniform — simpler, matches `FBig`'s single-context model).
-- [ ] A single `R: Round` applies to both the real and imaginary parts (simpler than MPC's `(R, R)`
-      pair; per-axis independent rounding is deferred to 0.5.x). Reuse dashu-float's `Round` trait; no
-      new rounding machinery.
-- [ ] Constants: `CBig::ZERO`, `ONE`, `I` (the imaginary unit). No `INFINITY` constant — complex
+- [x] A single `R: Round` applies to both the real and imaginary parts (simpler than MPC's `(R, R)`
+      pair; per-axis independent rounding is deferred to 0.5.x). Reuses `dashu-float`'s `Round` trait;
+      no new rounding machinery.
+- [x] Constants: `CBig::ZERO`, `ONE`, `I` (the imaginary unit). No `INFINITY` constant — complex
       infinity is the single Riemann point produced by `proj` (`+∞ + i·0`), per the C99 Annex G model
       `dashu-float` already follows (`Repr` already encodes ±∞).
 
-### 3.2 Core surface for v0.5 ("common functionalities")
-- [ ] **Construction & conversion:** `from_parts`, `from_real`, `from_int`, parse/`FromStr`,
-      conversions to/from primitives (`num_complex::Complex` interop is deferred to 0.5.x).
-- [ ] **Field arithmetic:** `add`, `sub`, `mul`, `div`, `neg`, `sqr`, `inv`, `powi` (integer power),
-      scalar `mul`/`div` by real `FBig` (via mixed-type operators, not named methods), and operator
-      overloads. **Near-correctly-rounded** `mul`/`div` via Smith's method + guard-digit re-round
-      (mirroring `FBig`'s own transcendentals; a guaranteed-correct Ziv loop is deferred to 0.5.x).
-- [ ] **Comparison:** `PartialEq`/`Eq`, a lexicographic `Ord` (by `re`, then `im`), and
+### 3.2 Core surface for v0.5 ("common functionalities") — ✅
+- [x] **Construction & conversion:** `from_parts`, `From<FBig>`/`From<UBig>`/`From<IBig>`,
+      `TryFrom<CBig> for FBig`/`for IBig`, `FromStr`, `TryFrom<f32>`/`<f64>` (`num_complex::Complex`
+      interop is deferred to 0.5.x — see 3.4).
+- [x] **Field arithmetic:** `add`/`sub`/`mul`/`div`/`neg`/`sqr`/`inv`, `powi`, scalar `mul`/`div` by
+      real `FBig` (mixed-type operators, not named methods), and operator overloads.
+      **Near-correctly-rounded** `mul`/`div` via Smith's method + guard-digit re-round (mirroring
+      `FBig`'s own transcendentals; a guaranteed-correct Ziv loop is deferred to 0.5.x).
+- [x] **Comparison:** `PartialEq`/`Eq`, a lexicographic `Ord` (by `re`, then `im`), and
       `AbsOrd`/`NumOrd`/`NumHash` — mirroring `FBig`'s surface, not MPC's "complex has no order" stance.
-- [ ] **Decomposition / misc:** `re()`, `imag()`, `conj()`, `abs()` (modulus), `norm()` (squared
-      modulus), `arg()` (principal argument), `proj()` (Riemann projection), `mul_i`/`-i`.
-- [ ] **Powers & elementary transcendentals:** `sqrt` (non-negative real part; ties to non-negative
-      imaginary), `exp`, `log` (principal, branch cut on negative real axis, `Im ∈ ]-π, π]`),
+- [x] **Decomposition / misc:** `re()`/`imag()`/`into_parts()`/`from_parts()`, `conj()`, `abs()`
+      (modulus via `hypot`), `norm()` (squared modulus), `arg()` (principal argument), `proj()`
+      (Riemann projection), `mul_i()`.
+- [x] **Powers & elementary transcendentals:** `sqrt` (non-negative real part; ties to non-negative
+      imaginary), `exp`, `log` (principal, branch cut on the negative real axis, `Im ∈ ]-π, π]`),
       `powf` (complex^complex) and `powi` (complex^integer), `sin`, `cos`, `tan`, `sin_cos`,
       `asin`, `acos`, `atan`.
-      *Reuse `FBig`'s real implementations; the complex identities are*
+      *Reuses `FBig`'s real implementations; the complex identities are*
       `exp(x+iy)=eˣ(cos y + i sin y)`, `log z = ln|z| + i·arg z`, and
       `sin/cos` via the real–imaginary form using `FBig`'s `sin`/`cos` + `sinh`/`cosh` (`exp(±iz)` only as a test cross-check).
-- [ ] **I/O:** `Display`/`Debug`/`FromStr` in algebraic `a+bi` form (the `num-complex` idiom, not
+- [x] **I/O:** `Display`/`Debug`/`FromStr` in algebraic `a+bi` form (the `num-complex` idiom, not
       MPC's `(re im)` parenthesized pair).
-- [ ] **Integration:** add `complex/` to the workspace `members`/`default-members`; re-export as
-      `dashu::complex` and alias `dashu::Complex = CBig` (alongside `Real`/`Decimal`/…).
+- [x] **Integration:** `complex/` in the workspace `members`/`default-members`; re-exported as
+      `dashu::complex` with alias `dashu::Complex = CBig`. The `cbig!`/`static_cbig!` literal macros
+      shipped (M6). `rand` generation: `UniformCBig` (box sampler) + builtin `Standard`/`Open01`/
+      `OpenClosed01` (unit square), default `rand_v08` with `rand_v09`/`rand_v010` opt-in.
 
-### 3.3 Correctness bar
-- [ ] Follow **C99 Annex G / Kahan** branch cuts and principal values exactly (table in the MPC
-      research notes; key: `sqrt`/`log` cut on `]-∞, 0]`, `atan`/`tanh` on two cuts, etc.).
-- [ ] Signed-zero and infinite-operand edge cases (the `powf(0,0) = 1` rule, `proj` on infinities,
-      C99 NaN-producing cases mapped to `FpError`) — wire into the `FpResult` machinery in
-      dashu-float (#83).
-- [ ] **Fuzz vs MPC/rug oracle**: add property tests (identities: `exp(log z) ≈ z`,
-      `log z · conj` realness, `sin²+cos²≈1`, de Moivre) and rug/MPC oracle comparisons at random
-      precisions — same pattern established in Phase 0.2.
+### 3.3 Correctness bar — ✅
+- [x] Follows **C99 Annex G / Kahan** branch cuts and principal values exactly (`sqrt`/`log` cut on
+      `]-∞, 0]`, etc.).
+- [x] Signed-zero and infinite-operand edge cases (`powf(0,0) = 1`, `proj` on infinities, C99
+      NaN-producing cases mapped to `FpError`), wired into the `FpResult`/`CfpResult` machinery.
+- [x] **Fuzz vs MPC/rug oracle**: property tests (identities: `exp(log z) ≈ z`, `log z · conj`
+      realness, `sin²+cos²≈1`, de Moivre) in `complex/tests/{arith,rounding,transcendental}_prop.rs`,
+      deterministic Annex-G vectors in `special_values.rs`, and `rug::Complex`/MPC oracle comparisons
+      in the manual `fuzz/` crate.
 
-### 3.4 Deferred to post-0.5 *(explicitly out of scope for this release)*
-Hyperbolic family (`sinh/cosh/tanh/asinh/acosh/atanh`), `fma`, `rootofunity`, `agm`,
-`exp2/exp10/log2/log10`, vector ops (`sum`/`dot`), `serde`/`rkyv` for `CBig`, and the experimental
-ball-arithmetic (`mpcb_t`) analogue. (These can be additive point releases under 0.5.x.)
+### 3.4 Deferred to v0.5.x *(explicitly out of scope for this release)*
+
+Consolidated from the original `CBig` design doc (`TODO-cmplx.md`, now folded into this section and
+removed). All additive — safe as point releases under 0.5.x.
+
+- **Guaranteed-correct rounding (Ziv retry loop)** — 0.5 ships near-correct guard-digit rounding
+  (matching `FBig`); a Ziv loop is expected to land in `FBig` first, then inherited by `CBig`.
+- **Complex hyperbolic & inverse-hyperbolic family** (`sinh`/`cosh`/`tanh`/`asinh`/`acosh`/`atanh`).
+  (Real hyperbolics already exist on `Context<R>` and are *used* by `CBig` trig in 0.5; the
+  complex-valued functions themselves are deferred.)
+- **`fma`** (complex fused multiply-add — hard to round correctly), **`rootofunity`**, complex
+  **`agm`**, **`exp2`/`exp10`/`log2`/`log10`**.
+- **Vector ops** (`sum`/`dot`/mean) — note `Sum`/`Product` for `CBig` (the `iter` analog of `FBig`)
+  are also not yet implemented.
+- **Third-party integration:** `CBig` `serde`/`rkyv`/`zeroize`; `num_complex::Complex<FBig>` interop
+  (the `serde`/`num-traits`/`num-complex` feature flags are scaffolded; impls deferred).
+- **Independent re/im rounding** (`CRound` trait; MPC `mpc_rnd_t` parity — 0.5 uses one `R` for both
+  parts).
+- **A `ComplexFloat`-style trait** unifying `FBig` and `CBig` (sealed, for generic real/complex code).
+- **Ball arithmetic** (the `mpcb_t` analogue — interval/uncertainty complex).
+- **`CachedCBig`** — a cache-backed variant mirroring `CachedFBig`. Its structure is settled (so 0.5
+  is forward-compatible): it wraps a `CBig` plus a shared `Rc<RefCell<dashu_float::ConstCache>>`
+  handle, reusing `ConstCache` unchanged from `dashu-float` (there are no complex-specific constants
+  to cache — `CBig`'s transcendentals are built entirely from real `FBig` ops). `CachedCBig` is
+  `!Send + !Sync` while `CBig` stays `Send + Sync` (so `static_cbig!` produces `CBig`). **This is why
+  0.5 already threads `cache: Option<&mut ConstCache>` through the transcendental `Context` ops:** the
+  convenience layer passes `None`, `CachedCBig` will pass `Some(&mut cache)`, so adding the cached
+  variant needs no signature change.
 
 ---
 
@@ -282,26 +321,6 @@ and nothing in CI builds or deploys it.
 
 ---
 
-## Open Decisions (need maintainer input)
-
-These shape the plan but don't block starting Phase 0/1. Recommended defaults are marked **(rec)**.
-
-1. **`CBig` scope for v0.5.** Ship core arithmetic + elementary transcendentals (`sqrt/exp/log/pow/
-   sin/cos/tan/asin/acos/atan`) + abs/arg/conj/proj + I/O; defer hyperbolics/fma/agm/vector-ops/
-   ball-arith. **(rec)** — matches "common functionalities" and is a defensible 0.5 cut.
-2. **Float serde precision padding** (`serde.rs:39`). Apply (pad leading zeros) in 0.5 since
-   formats are changing anyway. **(rec)**. *Resolved (Phase 1): applied — human-readable FBig serde
-   now pads to `precision` significant digits.*
-3. **Property-testing framework.** Adopt `proptest`. **(rec)**; add `bolero` later if we want
-   coverage-guided fuzzing (Phase 0.4 P3).
-4. **MSRV.** Keep 1.68 unless a concrete 0.5 feature requires newer. **(rec: keep)**.
-
-> *Resolved in #83:* the cache thread-safety model (`Rc<RefCell>` in `CachedFBig` + `Send + Sync`
-> `ConstCache`), `Context` losing `Copy` (kept `Copy` — cache moved into `CachedFBig`), and the float
-> infinity/NaN panic policy (infinities are terminal values; no NaN).
-
----
-
 ## Risk Register
 
 | Risk | Mitigation |
@@ -318,8 +337,9 @@ These shape the plan but don't block starting Phase 0/1. Recommended defaults ar
 ## Out of Scope for v0.5
 
 - `dashu-python` remains excluded and out of the release critical path (per `AGENTS.md`).
-- Complex hyperbolics, `fma`, `rootofunity`, `agm`, vector ops, ball arithmetic — deferred to 0.5.x.
-- Guaranteed-correct Ziv rounding loop, `CBig` serde/rkyv, and `num_complex` interop — deferred (additive).
+- All `dashu-cmplx` follow-ups (complex hyperbolics, `fma`, `rootofunity`, `agm`, Ziv correct
+  rounding, `CBig` serde/rkyv/zeroize, `num_complex` interop, `CachedCBig`, ball arithmetic,
+  `CRound` independent re/im rounding, vector ops) — see §3.4 for the full consolidated list.
 - The full **C `<tgmath.h>` type-generic math surface** — the complete C standard math library for
   *both* real and complex (trig & inverse; hyperbolic & inverse; exp/log family including
   `exp2`/`exp10`/`expm1`/`log2`/`log10`/`log1p`; power/root `cbrt`/`hypot`/`pow`/`sqrt`; error & gamma
