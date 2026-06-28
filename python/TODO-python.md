@@ -72,6 +72,134 @@ Approximation::value() extracts T from both Exact(T) and Inexact(T, E) variants.
 
 ---
 
+## Step 0: Upgrade PyO3 from 0.20 to 0.24
+
+**Files: `python/Cargo.toml`**
+
+### Rationale
+
+PyO3 0.20 uses the old `gil-refs` API (`&PyAny`, `&PyList`, `.into_py(py)`). Version 0.23 introduced the modern `Bound` API and `IntoPyObject`, and 0.24 stabilized it. The gap between 0.20 and 0.24 is the minimum jump that gets us onto the modern API.
+
+**We choose 0.24 (not 0.29) because:**
+- 0.24 MSRV is 1.63 — dashu's MSRV of 1.68 is preserved
+- 0.26+ bumps MSRV to 1.74; 0.28+ to 1.83 — both break the project's hard MSRV constraint
+- 0.26+ drops Python 3.7 support — potential compatibility concern
+- 0.24 has the full `Bound` API, `IntoPyObject`, and stable `#[pymodule]` single-param form
+
+### 0a: Update Cargo.toml
+
+```toml
+# Change:
+pyo3 = { version = "0.20", features = ["extension-module"] }
+# To:
+pyo3 = { version = "0.24", features = ["extension-module"] }
+```
+
+MSRV stays at `1.68`.
+
+### 0b: `#[pymodule]` signature — `lib.rs`
+
+```rust
+// Before (0.20):
+fn dashu(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+
+// After (0.24):
+fn dashu(m: &Bound<'_, PyModule>) -> PyResult<()> {
+```
+
+Remove the now-unused `_py: Python<'_>` parameter.
+
+### 0c: `#[pyclass]` enum — `types.rs`
+
+PyO3 0.22+ requires explicit `eq` for cross-type enum comparison:
+
+```rust
+// Before:
+#[pyclass]
+pub enum PySign { Positive, Negative }
+
+// After:
+#[pyclass(eq, eq_int)]
+#[derive(PartialEq, Clone, Copy)]
+pub enum PySign { Positive, Negative }
+```
+
+### 0d: `FromPyObject` for `UniInput` — `convert.rs`
+
+The `FromPyObject<'source>` trait changes to operate on `Bound<'py, PyAny>`:
+
+```rust
+// Before (0.20):
+impl<'source> FromPyObject<'source> for UniInput<'source> {
+    fn extract(ob: &'source PyAny) -> PyResult<Self> {
+
+// After (0.24):
+impl<'py> FromPyObject<'py> for UniInput<'py> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+```
+
+All `ob.is_instance_of::<PyLong>()` calls stay the same — `Bound<'py, PyAny>` supports them. The `PyRef` extraction pattern also stays: `<PyRef<'py, UPy> as FromPyObject>::extract_bound(ob)`.
+
+For the slow path (decimal.Decimal, fractions.Fraction), `ob.py()` still works on `&Bound<'py, PyAny>`.
+
+### 0e: `.into_py(py)` → `.into_pyobject(py)` — all files
+
+PyO3 0.23 replaced `IntoPy` with `IntoPyObject`. The new trait returns `PyResult`:
+
+```rust
+// Before (0.20):
+UPy(value).into_py(py)
+
+// After (0.24):
+UPy(value).into_pyobject(py)
+// Returns Bound<'py, PyAny> — can use .unbind() to get Py<PyAny> (= PyObject)
+// Or use .into_py_any(py)? to get PyResult<Py<PyAny>>
+```
+
+For functions that currently return `PyObject`, convert to `PyResult<PyObject>` and use:
+
+```rust
+// Before:
+fn upy_add(lhs: &UPy, rhs: UniInput<'_>, py: Python) -> PyObject {
+    // ...
+    UPy(result).into_py(py)
+}
+
+// After:
+fn upy_add(lhs: &UPy, rhs: UniInput<'_>, py: Python) -> PyResult<PyObject> {
+    // ...
+    Ok(UPy(result).into_py_any(py)?)
+}
+```
+
+`into_py_any(py)` is the shortest path from value to `PyResult<Py<PyAny>>` (= `PyResult<PyObject>`).
+
+For `__repr__`, `__str__` returning `String` — no change needed. For `__hash__` returning `u64` — no change needed. PyO3 handles those primitive types natively.
+
+### 0f: `#[pymethods]` return type for `__new__`
+
+`__new__` already returns `PyResult<Self>` — no change needed in 0.24.
+
+### 0g: `intern!` macro
+
+The macro now returns `&Bound<'py, PyString>` instead of `&'py PyString`. Usage like `py.import(intern!(py, "decimal"))?` still works transparently since `Bound` derefs. No code changes needed.
+
+### 0h: `wrap_pyfunction!` 
+
+No change needed — stable across 0.20→0.24.
+
+### Summary of API changes (0.20 → 0.24)
+
+| Pattern | 0.20 | 0.24 |
+|---------|------|------|
+| `#[pymodule]` | `fn(py, m: &PyModule)` | `fn(m: &Bound<PyModule>)` |
+| `FromPyObject` | `extract(ob: &'source PyAny)` | `extract_bound(ob: &Bound<'py, PyAny>)` |
+| Value→Python | `.into_py(py)` | `.into_py_any(py)?` or `.into_pyobject(py)` |
+| `#[pyclass]` enum | `#[pyclass]` | `#[pyclass(eq, eq_int)]` |
+| `extension-module` | required | still supported in 0.24 |
+
+---
+
 ## Step 1: Fix `todo!()` panics in existing code
 
 **File: `python/src/int.rs`**
@@ -214,7 +342,8 @@ fn __bool__(&self) -> bool {
 
 ### 3c: Arithmetic macro
 
-Create a helper macro that uses `into_fpy()` for forward/reverse dispatch:
+Create a helper macro that uses `into_fpy()` for forward/reverse dispatch.
+**Note:** PyO3 0.24 uses `.into_py_any(py)?` instead of `.into_py(py)`:
 
 ```rust
 macro_rules! impl_fpy_binops {
@@ -222,7 +351,7 @@ macro_rules! impl_fpy_binops {
     ($method:ident, $rs_method:ident) => {
         fn $method(lhs: &FPy, rhs: UniInput<'_>, py: Python) -> PyResult<PyObject> {
             let rhs = rhs.into_fpy()?;
-            Ok(FPy((&lhs.0).$rs_method(&rhs.0)).into_py(py))
+            Ok(FPy((&lhs.0).$rs_method(&rhs.0)).into_py_any(py)?)
         }
     };
     // Non-commutative (sub, div, rem) — also generate reverse function
@@ -230,7 +359,7 @@ macro_rules! impl_fpy_binops {
         impl_fpy_binops!($method, $rs_method);
         fn $rev_method(lhs: UniInput<'_>, rhs: &FPy, py: Python) -> PyResult<PyObject> {
             let lhs = lhs.into_fpy()?;
-            Ok(FPy(lhs.0.$rs_method(&rhs.0)).into_py(py))
+            Ok(FPy(lhs.0.$rs_method(&rhs.0)).into_py_any(py)?)
         }
     };
 }
@@ -283,14 +412,14 @@ macro_rules! impl_rpy_binops {
     ($method:ident, $rs_method:ident) => {
         fn $method(lhs: &RPy, rhs: UniInput<'_>, py: Python) -> PyResult<PyObject> {
             let rhs = rhs.into_rpy()?;
-            Ok(RPy((&lhs.0).$rs_method(&rhs.0)).into_py(py))
+            Ok(RPy((&lhs.0).$rs_method(&rhs.0)).into_py_any(py)?)
         }
     };
     ($method:ident, $rev_method:ident, $rs_method:ident) => {
         impl_rpy_binops!($method, $rs_method);
         fn $rev_method(lhs: UniInput<'_>, rhs: &RPy, py: Python) -> PyResult<PyObject> {
             let lhs = lhs.into_rpy()?;
-            Ok(RPy(lhs.0.$rs_method(&rhs.0)).into_py(py))
+            Ok(RPy(lhs.0.$rs_method(&rhs.0)).into_py_any(py)?)
         }
     };
 }
