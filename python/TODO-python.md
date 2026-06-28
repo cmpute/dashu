@@ -72,44 +72,60 @@ Approximation::value() extracts T from both Exact(T) and Inexact(T, E) variants.
 
 ---
 
-## Step 0: Upgrade PyO3 from 0.20 to 0.24
+## Step 0: Upgrade PyO3 from 0.20 to 0.29
 
-**Files: `python/Cargo.toml`**
+**Files: `python/Cargo.toml`, `python/pyproject.toml`**
 
 ### Rationale
 
-PyO3 0.20 uses the old `gil-refs` API (`&PyAny`, `&PyList`, `.into_py(py)`). Version 0.23 introduced the modern `Bound` API and `IntoPyObject`, and 0.24 stabilized it. The gap between 0.20 and 0.24 is the minimum jump that gets us onto the modern API.
-
-**We choose 0.24 (not 0.29) because:**
-- 0.24 MSRV is 1.63 — dashu's MSRV of 1.68 is preserved
-- 0.26+ bumps MSRV to 1.74; 0.28+ to 1.83 — both break the project's hard MSRV constraint
-- 0.26+ drops Python 3.7 support — potential compatibility concern
-- 0.24 has the full `Bound` API, `IntoPyObject`, and stable `#[pymodule]` single-param form
+PyO3 0.20 uses the old `gil-refs` API (`&PyAny`, `&PyList`, `.into_py(py)`). Version 0.23 introduced the modern `Bound` API and `IntoPyObject`, and 0.29 is the current latest. The MSRV constraint does **not** apply to `dashu-python` (per AGENTS.md — only core crates are bounded by MSRV).
 
 ### 0a: Update Cargo.toml
 
 ```toml
+[dependencies.pyo3]
 # Change:
-pyo3 = { version = "0.20", features = ["extension-module"] }
+version = "0.20"
+features = ["extension-module"]
 # To:
-pyo3 = { version = "0.24", features = ["extension-module"] }
+version = "0.29"
+# "extension-module" feature is deprecated in 0.28+ and removed in 0.29.
+# maturin handles linking automatically.
 ```
 
-MSRV stays at `1.68`.
+Also bump `rust-version` since PyO3 0.29 requires Rust ≥ 1.83:
+```toml
+# Change:
+rust-version = "1.68"
+# To:
+rust-version = "1.83"
+```
 
-### 0b: `#[pymodule]` signature — `lib.rs`
+Remove `categories = ["mathematics", "no-std"]` — `no-std` is misleading for a Python binding. Replace with `categories = ["mathematics", "science"]`.
+
+### 0b: Update pyproject.toml
+
+PyO3 0.26+ dropped Python 3.7 support:
+```toml
+# Change:
+requires-python = ">=3.7"
+# To:
+requires-python = ">=3.8"
+```
+
+### 0c: `#[pymodule]` signature — `lib.rs`
 
 ```rust
 // Before (0.20):
 fn dashu(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
 
-// After (0.24):
+// After (0.29):
 fn dashu(m: &Bound<'_, PyModule>) -> PyResult<()> {
 ```
 
 Remove the now-unused `_py: Python<'_>` parameter.
 
-### 0c: `#[pyclass]` enum — `types.rs`
+### 0d: `#[pyclass]` enum — `types.rs`
 
 PyO3 0.22+ requires explicit `eq` for cross-type enum comparison:
 
@@ -124,36 +140,58 @@ pub enum PySign { Positive, Negative }
 pub enum PySign { Positive, Negative }
 ```
 
-### 0d: `FromPyObject` for `UniInput` — `convert.rs`
+### 0e: `FromPyObject` for `UniInput` — `convert.rs`
 
-The `FromPyObject<'source>` trait changes to operate on `Bound<'py, PyAny>`:
+PyO3 0.27 restructured `FromPyObject` with dual lifetimes and `Borrowed`:
 
 ```rust
 // Before (0.20):
 impl<'source> FromPyObject<'source> for UniInput<'source> {
     fn extract(ob: &'source PyAny) -> PyResult<Self> {
 
-// After (0.24):
-impl<'py> FromPyObject<'py> for UniInput<'py> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+// After (0.29):
+impl<'a, 'py> FromPyObject<'a, 'py> for UniInput<'a> {
+    type Error = PyErr;
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
 ```
 
-All `ob.is_instance_of::<PyLong>()` calls stay the same — `Bound<'py, PyAny>` supports them. The `PyRef` extraction pattern also stays: `<PyRef<'py, UPy> as FromPyObject>::extract_bound(ob)`.
+`Borrowed<'a, 'py, PyAny>` derefs to `&Bound<'py, PyAny>`, so `ob.is_instance_of::<PyLong>()`, `ob.py()`, etc. all work as before.
 
-For the slow path (decimal.Decimal, fractions.Fraction), `ob.py()` still works on `&Bound<'py, PyAny>`.
+**Extracting `PyRef` from `Borrowed`:** The pattern changes from:
+```rust
+// 0.20:
+<PyRef<'source, UPy> as FromPyObject>::extract(ob)
+```
+To (0.29):
+```rust
+ob.extract::<PyRef<'a, UPy>>()
+```
 
-### 0e: `.into_py(py)` → `.into_pyobject(py)` — all files
+### 0f: `.cast()` replaces `.downcast()` — `int.rs`, `words.rs`
+
+PyO3 0.27 renamed downcast methods:
+
+```rust
+// Before (0.20):
+index.downcast::<PySlice>()?
+// After (0.29):
+index.cast::<PySlice>()?
+```
+
+Also: `PySlice::indices()` now expects `isize` instead of `i32` for the length parameter in some contexts. The current code passes `.try_into().map_err(...)` — this should be reviewed.
+
+### 0g: `.into_py(py)` → `.into_pyobject(py)` — all files
 
 PyO3 0.23 replaced `IntoPy` with `IntoPyObject`. The new trait returns `PyResult`:
 
 ```rust
 // Before (0.20):
 UPy(value).into_py(py)
-
-// After (0.24):
+// After (0.29):
 UPy(value).into_pyobject(py)
-// Returns Bound<'py, PyAny> — can use .unbind() to get Py<PyAny> (= PyObject)
-// Or use .into_py_any(py)? to get PyResult<Py<PyAny>>
+// Returns PyResult<Bound<'py, PyAny>>
+// Use .unbind() to get Py<PyAny> (= PyObject):
+UPy(value).into_pyobject(py).map(|b| b.unbind())
 ```
 
 For functions that currently return `PyObject`, convert to `PyResult<PyObject>` and use:
@@ -164,7 +202,6 @@ fn upy_add(lhs: &UPy, rhs: UniInput<'_>, py: Python) -> PyObject {
     // ...
     UPy(result).into_py(py)
 }
-
 // After:
 fn upy_add(lhs: &UPy, rhs: UniInput<'_>, py: Python) -> PyResult<PyObject> {
     // ...
@@ -172,31 +209,30 @@ fn upy_add(lhs: &UPy, rhs: UniInput<'_>, py: Python) -> PyResult<PyObject> {
 }
 ```
 
-`into_py_any(py)` is the shortest path from value to `PyResult<Py<PyAny>>` (= `PyResult<PyObject>`).
+`into_py_any(py)` is shorthand for `.into_pyobject(py).map(|b| b.unbind())` — it returns `PyResult<Py<PyAny>>` (= `PyResult<PyObject>`).
 
 For `__repr__`, `__str__` returning `String` — no change needed. For `__hash__` returning `u64` — no change needed. PyO3 handles those primitive types natively.
 
-### 0f: `#[pymethods]` return type for `__new__`
+### 0h: `intern!` macro
 
-`__new__` already returns `PyResult<Self>` — no change needed in 0.24.
+The macro returns `&Bound<'py, PyString>`. Usage like `py.import(intern!(py, "decimal"))?` works transparently (Bound derefs). No code changes needed.
 
-### 0g: `intern!` macro
+### 0i: `wrap_pyfunction!` 
 
-The macro now returns `&Bound<'py, PyString>` instead of `&'py PyString`. Usage like `py.import(intern!(py, "decimal"))?` still works transparently since `Bound` derefs. No code changes needed.
+No change needed — stable across 0.20→0.29.
 
-### 0h: `wrap_pyfunction!` 
+### Summary of API changes (0.20 → 0.29)
 
-No change needed — stable across 0.20→0.24.
-
-### Summary of API changes (0.20 → 0.24)
-
-| Pattern | 0.20 | 0.24 |
+| Pattern | 0.20 | 0.29 |
 |---------|------|------|
 | `#[pymodule]` | `fn(py, m: &PyModule)` | `fn(m: &Bound<PyModule>)` |
-| `FromPyObject` | `extract(ob: &'source PyAny)` | `extract_bound(ob: &Bound<'py, PyAny>)` |
+| `FromPyObject` | `extract(ob: &'source PyAny)` | `extract(ob: Borrowed<'a, 'py, PyAny>)` with `type Error` |
+| `.downcast::<T>()` | present | `.cast::<T>()` |
 | Value→Python | `.into_py(py)` | `.into_py_any(py)?` or `.into_pyobject(py)` |
 | `#[pyclass]` enum | `#[pyclass]` | `#[pyclass(eq, eq_int)]` |
-| `extension-module` | required | still supported in 0.24 |
+| `extension-module` | required in features | removed (maturin handles it) |
+| rust-version | 1.68 | 1.83 (PyO3 0.29 MSRV) |
+| requires-python | ≥3.7 | ≥3.8 (Python 3.7 dropped in 0.26+) |
 
 ---
 
