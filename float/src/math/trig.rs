@@ -701,6 +701,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
 mod tests {
     use super::*;
     use crate::round::mode;
+    use crate::DBig;
+    use core::str::FromStr;
 
     #[test]
     fn test_atan_infinity_is_preserved() {
@@ -732,5 +734,18 @@ mod tests {
             assert_eq!(ss.sign(), Sign::Negative);
             assert_eq!(cc.sign(), Sign::Positive);
         }
+    }
+
+    /// Regression: a 49-digit significand at precision 100 used to assertion-fail in `Context::sin`'s
+    /// rounding logic (found during fuzzing). Promoted here from the excluded `fuzz/` crate so it runs
+    /// in CI; rewritten to the current `Context::sin` API.
+    #[test]
+    fn test_sin_many_digit_rounding_no_panic() {
+        let x = DBig::from_str("-5.525474318981006776603409487767135633516667011547942409467e-3")
+            .unwrap();
+        let ctx = Context::<mode::HalfEven>::new(100);
+        let s = ctx.sin::<10>(x.repr(), None).unwrap().value();
+        // sin(x) ≈ x for a small negative x — completing without panicking is the regression guard.
+        assert_eq!(s.sign(), Sign::Negative);
     }
 }

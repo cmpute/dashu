@@ -35,12 +35,18 @@ fn one() -> DBig {
 proptest! {
     #![proptest_config(ProptestConfig { cases: 64, ..Default::default() })]
 
-    /// sin^2(x) + cos^2(x) == 1
+    /// sin^2(x) + cos^2(x) == 1 across precisions {20, 50, 100}
+    /// (consolidated from the former fuzz `test_pythagorean_identity_fuzz`).
     #[test]
     fn pythagorean(x in x_in(-200_000, 200_000)) {
-        let (s, c) = x.sin_cos();
-        let resid = (&s * &s + &c * &c - one()).abs();
-        prop_assert!(resid < tol(2));
+        for p in [20usize, 50, 100] {
+            let xp = x.clone().with_precision(p).value();
+            let (s, c) = xp.sin_cos();
+            let one = DBig::ONE.with_precision(p).value();
+            let resid = (&s * &s + &c * &c - &one).abs();
+            let tol = DBig::from_parts(IBig::from(1), -(p as isize) + 2);
+            prop_assert!(resid < tol, "sin^2+cos^2 != 1 at prec {p}, x = {xp}");
+        }
     }
 
     /// sin(2x) == 2 sin(x) cos(x);  cos(2x) == cos^2(x) - sin^2(x)
