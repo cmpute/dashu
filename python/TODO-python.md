@@ -93,12 +93,14 @@ version = "0.29"
 # maturin handles linking automatically.
 ```
 
-Also bump `rust-version` since PyO3 0.29 requires Rust ≥ 1.83:
+Also bump `rust-version` and `edition`:
 ```toml
 # Change:
 rust-version = "1.68"
+edition = "2021"
 # To:
-rust-version = "1.83"
+rust-version = "1.85"
+edition = "2024"
 ```
 
 Remove `categories = ["mathematics", "no-std"]` — `no-std` is misleading for a Python binding. Replace with `categories = ["mathematics", "science"]`.

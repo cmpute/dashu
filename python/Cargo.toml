@@ -2,7 +2,7 @@
 name = "dashu-python"
 version = "0.0.1"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
-edition = "2021"
+edition = "2024"
 description = "Python binding for the dashu numeric types"
 keywords = ["mathematics", "numerics"]
 categories = ["mathematics", "no-std"]
@@ -11,7 +11,7 @@ repository = "https://github.com/cmpute/dashu"
 homepage = "https://github.com/cmpute/dashu"
 documentation = "https://docs.rs/dashu-python"
 readme = "README.md"
-rust-version = "1.68"
+rust-version = "1.85"
 
 [package.metadata.docs.rs]
 all-features = true
