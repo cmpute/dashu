@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Improve
+- The complex `sin_cos` kernel now calls `dashu-float`'s combined `sinh_cosh` (new in `dashu-float`)
+  instead of separate `sinh` + `cosh` calls, sharing the `exp_m1(±y)` sub-computations.
+
 ### Change
 - `complex/src/sub.rs` is merged into `complex/src/add.rs`, mirroring `dashu-float`'s layout where
   addition and subtraction share one file and one operator kernel (subtraction is addition of a

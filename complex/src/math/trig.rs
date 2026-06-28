@@ -10,7 +10,7 @@ use dashu_float::round::Round;
 use dashu_float::{ConstCache, FBig, FpError, Repr};
 use dashu_int::Word;
 
-/// Guard digits (base-B) for the forward trig. Composes real `sin_cos` + `sinh`/`cosh` + two
+/// Guard digits (base-B) for the forward trig. Composes real `sin_cos` + `sinh_cosh` + two
 /// products; the cancellation near the trig zeros is absorbed by the re-round.
 const TRIG_GUARD: usize = 16;
 
@@ -42,11 +42,12 @@ impl<R: Round> Context<R> {
             Ok(v) => v.value(),
             Err(e) => return (Err(FpError::Indeterminate), Err(e)),
         };
-        let sinhy = match gctx.sinh(z.imag(), reborrow_cache(&mut cache)) {
+        let (sinhy_res, coshy_res) = gctx.sinh_cosh(z.imag(), reborrow_cache(&mut cache));
+        let sinhy = match sinhy_res {
             Ok(v) => v.value(),
             Err(e) => return (Err(e), Err(FpError::Indeterminate)),
         };
-        let coshy = match gctx.cosh(z.imag(), reborrow_cache(&mut cache)) {
+        let coshy = match coshy_res {
             Ok(v) => v.value(),
             Err(e) => return (Err(FpError::Indeterminate), Err(e)),
         };

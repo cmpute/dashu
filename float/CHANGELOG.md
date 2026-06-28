@@ -8,6 +8,8 @@
   algebraically, matching the `num-order` crate's scheme.
 - `FBig::hypot` / `Context::hypot`: `sqrt(a² + b²)` computed overflow/underflow-safe via the scaled
   sum-of-squares (the larger operand is never squared). `hypot(±inf, ·) = +inf`, `hypot(0,0) = +0`.
+- `FBig::sinh_cosh` / `Context::sinh_cosh`: simultaneously compute `sinh(x)` and `cosh(x)` sharing
+  the `exp_m1(±x)` sub-computations, roughly halving the cost of calling `sinh` + `cosh` separately.
 - (test) The `Context::sin` many-digit-significand rounding regression (49 digits at precision 100)
   is now CI-guarded as `test_sin_many_digit_rounding_no_panic`, promoted from the excluded `fuzz/`
   crate; the `trig_prop` `pythagorean` identity now sweeps precisions {20, 50, 100}.

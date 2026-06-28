@@ -1,7 +1,7 @@
 //! Differential / fuzz tests for dashu-float's non-trig transcendentals against `rug::Float` (MPFR).
 //!
 //! Companion to `trig_random.rs` (which covers sin/cos/tan/atan2/asin/acos/π). Here: exp, exp_m1,
-//! ln, ln_1p, sqrt, cbrt, nth_root, hypot, atan, powf, powi, sinh, cosh, tanh, asinh, acosh, atanh.
+//! ln, ln_1p, sqrt, cbrt, nth_root, hypot, atan, powf, powi, sinh, cosh, sinh_cosh, tanh, asinh, acosh, atanh.
 //! Proptest-driven so a mismatch shrinks to a minimal counterexample; all `#[ignore]`d (manual,
 //! release-time — they link `rug` and run long). Tolerance is `within_k_ulps(2)`: dashu is
 //! near-correctly-rounded (guard digits), MPFR is Ziv-correct, so a ≤1-ulp divergence is legitimate
@@ -290,6 +290,28 @@ proptest! {
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
             let r: DBig = DBig::from_str(&xr.tanh().to_string_radix(10, Some(prec))).unwrap();
             prop_assert!(within_k_ulps(&d, &r, 2), "tanh x={xs} prec={prec}: dashu={d} rug={r}");
+        }
+    }
+
+
+    /// sinh_cosh(x) ≈ (MPFR sinh(x), MPFR cosh(x)).
+    #[test]
+    #[ignore]
+    fn sinh_cosh_fuzz(x in small_x()) {
+        let xs = format!("{x:e}");
+        for prec in [20usize, 50, 100] {
+            let ctx = Context::<HalfAway>::new(prec);
+            let (ds, dc) = ctx.sinh_cosh::<10>(x.repr(), None);
+            let d_sinh = dashu_ok!(ds);
+            let d_cosh = dashu_ok!(dc);
+            if d_sinh.repr().is_infinite() || d_cosh.repr().is_infinite() { continue; }
+            let bits = rug_bits(x.repr(), prec);
+            let r_sinh: DBig =
+                DBig::from_str(&rug_at(&xs, bits).unwrap().sinh().to_string_radix(10, Some(prec))).unwrap();
+            let r_cosh: DBig =
+                DBig::from_str(&rug_at(&xs, bits).unwrap().cosh().to_string_radix(10, Some(prec))).unwrap();
+            prop_assert!(within_k_ulps(&d_sinh, &r_sinh, 2), "sinh_cosh sinh x={xs} prec={prec}: dashu={d_sinh} rug={r_sinh}");
+            prop_assert!(within_k_ulps(&d_cosh, &r_cosh, 2), "sinh_cosh cosh x={xs} prec={prec}: dashu={d_cosh} rug={r_cosh}");
         }
     }
 
