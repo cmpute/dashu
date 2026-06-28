@@ -3,6 +3,9 @@
 ## 0.5.0
 
 ### Add
+- `Repr::num_hash_residue` (behind `num-order`): the numeric-hash field element (mod 2¹²⁷−1)
+  used by `NumHash`, exposed so composite types (e.g. `CBig`) can combine their parts' residues
+  algebraically, matching the `num-order` crate's scheme.
 - `FBig::hypot` / `Context::hypot`: `sqrt(a² + b²)` computed overflow/underflow-safe via the scaled
   sum-of-squares (the larger operand is never squared). `hypot(±inf, ·) = +inf`, `hypot(0,0) = +0`.
 

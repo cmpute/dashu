@@ -3,6 +3,10 @@
 ## 0.5.0
 
 ### Fix
+- `CBig`'s `NumHash` now mirrors the `num-order` crate's `Complex<f64>` hashing (algebraic
+  combination of the per-part residues `a + ∓PROOT²·b²`, not a sequential tuple hash), so a `CBig`
+  and a `num-complex` `Complex` of the same value produce the same hash. Verified against
+  `num-order`'s `f64`/`Complex<f64>` reference.
 - The inline `Display`/`FromStr` unit tests failed to compile under `no_std`
   (`cargo test --no-default-features`): the test modules now import `alloc::format`.
 

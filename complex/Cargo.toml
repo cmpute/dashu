@@ -23,7 +23,7 @@ std = ["dashu-float/std"]
 # stable dependencies
 serde = ["dep:serde", "dashu-float/serde"]
 zeroize = ["dep:zeroize", "dashu-float/zeroize"]
-num-order = ["dep:num-order", "dashu-float/num-order"]
+num-order = ["dep:num-order", "dep:_num-modular", "dashu-float/num-order"]
 
 # unstable dependencies
 rand = ["rand_v08"]
@@ -43,6 +43,7 @@ dashu-float = { version = "0.5.0", default-features = false, path = "../float" }
 # stable dependencies
 rustversion = "1.0.0"
 num-order = { optional = true, version = "1.2.0", default-features = false }
+_num-modular = { optional = true, version = "0.6.1", package = "num-modular", default-features = false }
 serde = { optional = true, version = "1.0.130", default-features = false }
 zeroize = { optional = true, version = "1.5.7", default-features = false }
 

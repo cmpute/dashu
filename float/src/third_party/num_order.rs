@@ -279,18 +279,28 @@ impl_num_ord_with_float!(f32 f64);
 forward_num_ord_to_repr!(f32);
 forward_num_ord_to_repr!(f64);
 
-impl<const B: Word> NumHash for Repr<B> {
-    fn num_hash<H: core::hash::Hasher>(&self, state: &mut H) {
+impl<const B: Word> Repr<B> {
+    /// The numeric-hash residue (mod 2¹²⁷−1) used by [`NumHash`]:
+    /// `sgn(significand) · (|significand| mod M127) · (B^exponent mod M127)`.
+    ///
+    /// Special values: `+0` → `0`, `-0` → `0`, `+∞` → `HASH_INF` (= `M127`), `-∞` → `HASH_NEGINF`
+    /// (= `-M127`), matching num-order's `f64::fhash`. The subsequent `i128::num_hash` maps both
+    /// `HASH_INF` and `HASH_NEGINF` back to `0`, so the *final* hash of ±∞ is `0` — but the
+    /// *residue* distinguishes them so that composite types (e.g. `CBig`) combine them algebraically
+    /// the same way num-order's `Complex<f64>` does.
+    pub fn num_hash_residue(&self) -> i128 {
         // 2^127 - 1 is used in the num-order crate
         type MInt = FixedMersenneInt<127, 1>;
         const M127: i128 = i128::MAX;
         const M127U: u128 = M127 as u128;
 
-        // Zero and infinities have a zero significand, so their residue hash is 0.
-        // Short-circuit to also avoid overflow when negating the isize::MIN sentinel
-        // exponent that encodes -inf.
         if self.significand.is_zero() {
-            return 0i128.num_hash(state);
+            // Distinguish infinities (sentinel exponents) from signed zero.
+            return match self.exponent {
+                isize::MAX => M127,          // +∞  → HASH_INF
+                isize::MIN => i128::MIN + 1, // -∞  → HASH_NEGINF (= -M127)
+                _ => 0,                      // ±0
+            };
         }
 
         let signif_residue = &self.significand % M127;
@@ -298,7 +308,6 @@ impl<const B: Word> NumHash for Repr<B> {
         let exp_hash = if B == 2 {
             signif_hash.convert(1 << self.exponent.absm(&127))
         } else if self.exponent < 0 {
-            // since a Word is at most 64 bits right now, B is always less than M127
             signif_hash
                 .convert(B as u128)
                 .pow(&(-self.exponent as u128))
@@ -312,8 +321,14 @@ impl<const B: Word> NumHash for Repr<B> {
         if signif_residue < 0 {
             hash = -hash;
         }
+        hash
+    }
+}
 
-        hash.num_hash(state)
+impl<const B: Word> NumHash for Repr<B> {
+    #[inline]
+    fn num_hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.num_hash_residue().num_hash(state)
     }
 }
 
@@ -341,6 +356,50 @@ mod tests {
         let mut hasher = DefaultHasher::new();
         value.num_hash(&mut hasher);
         hasher.finish()
+    }
+
+    /// Capture the i128 residue a `NumHash` impl writes (the `i128` NumHash writes its value via
+    /// `Hasher::write_i128`), so the *field element* can be compared directly.
+    fn residue<T: NumHash>(value: &T) -> i128 {
+        struct Collector(i128);
+        impl core::hash::Hasher for Collector {
+            fn write_i128(&mut self, v: i128) {
+                self.0 = v;
+            }
+            fn write(&mut self, _: &[u8]) {}
+            fn finish(&self) -> u64 {
+                0
+            }
+        }
+        let mut c = Collector(0);
+        value.num_hash(&mut c);
+        c.0
+    }
+
+    // The base-2 Repr residue must equal num-order's f64 `fhash` for the same finite value — this
+    // is what lets dashu-cmplx's CBig reuse Repr residues and stay in sync with num-order's
+    // Complex<f64> hashing.
+    #[test]
+    fn test_fbig_num_hash_matches_f64() {
+        for v in [
+            1.0_f64,
+            2.0,
+            3.0,
+            0.5,
+            0.25,
+            -0.75,
+            100.0,
+            1e-10,
+            1e20,
+            123.456,
+            1.0 / 3.0,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            -0.0,
+        ] {
+            let f: FBin = core::convert::TryFrom::try_from(v).unwrap();
+            assert_eq!(residue(&f), residue(&v), "FBig/f64 num_hash disagree for {v}");
+        }
     }
 
     // -- NumOrd for Repr (same base) --
