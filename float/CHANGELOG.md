@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.0
+## Unreleased
 
 ### Add
 - `Repr::num_hash_residue` (behind `num-order`): the numeric-hash field element (mod 2¹²⁷−1)

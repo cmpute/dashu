@@ -5,11 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
-dashu-float = { path = "../float" }
-dashu-cmplx = { path = "../complex" }
-dashu-ratio = { path = "../rational" }
-dashu-int = { path = "../integer", features = ["rand_v010"] }
-dashu-base = { path = "../base" }
+dashu = { path = ".." }
 rand = "0.10.1"
 rug = "1.24"
 proptest = "~1.7"

@@ -7,9 +7,9 @@
 //!
 //! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test integer -- --ignored --nocapture`
 
-use dashu_base::SquareRoot;
-use dashu_base::ring::{DivRem, Gcd};
-use dashu_int::{IBig, UBig};
+use dashu::base::SquareRoot;
+use dashu::base::ring::{DivRem, Gcd};
+use dashu::integer::{IBig, UBig};
 use proptest::prelude::*;
 use rug::ops::Pow;
 

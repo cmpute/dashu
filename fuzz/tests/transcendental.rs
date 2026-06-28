@@ -10,10 +10,10 @@
 //! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test transcendental -- --ignored --nocapture`
 
 use core::str::FromStr;
-use dashu_float::ops::Abs;
-use dashu_float::round::mode::HalfAway;
-use dashu_float::{Context, DBig, Repr};
-use dashu_int::IBig;
+use dashu::float::ops::Abs;
+use dashu::float::round::mode::HalfAway;
+use dashu::float::{Context, DBig, Repr};
+use dashu::integer::IBig;
 use proptest::prelude::*;
 use rug::Float;
 use rug::ops::Pow;

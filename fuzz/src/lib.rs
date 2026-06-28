@@ -6,9 +6,9 @@
 //! **not** part of CI's per-PR test job (CI only `cargo check`s this crate — see the `fuzz-check`
 //! workflow). Proptest gives shrinking: a failing differential reduces to a minimal counterexample.
 
-use dashu_float::round::mode::HalfAway;
-use dashu_float::{Context, FBig, Repr};
-use dashu_int::{IBig, UBig, Word};
+use dashu::float::round::mode::HalfAway;
+use dashu::float::{Context, FBig, Repr};
+use dashu::integer::{IBig, UBig, Word};
 use proptest::prelude::*;
 
 /// Default fuzz strength — more cases than CI's per-crate `PROPTEST_CASES=256`, since these run
@@ -93,9 +93,9 @@ pub fn unit_dbig() -> impl Strategy<Value = FBig<HalfAway, 10>> {
 /// Shared helpers for the `CBig` vs `rug::Complex` (MPC) differentials at 53-bit precision.
 pub mod cmplx {
     use core::convert::TryFrom;
-    use dashu_cmplx::CBig;
-    use dashu_float::FBig;
-    use dashu_float::round::mode::HalfEven;
+    use dashu::complex::CBig;
+    use dashu::float::FBig;
+    use dashu::float::round::mode::HalfEven;
     use proptest::prelude::*;
 
     pub type C = CBig<HalfEven, 2>;

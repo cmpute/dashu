@@ -9,9 +9,9 @@
 //!
 //! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test add_random -- --ignored --nocapture`
 
-use dashu_float::round::Round;
-use dashu_float::round::mode::*;
-use dashu_float::{Context, FBig, Repr, Word};
+use dashu::float::round::Round;
+use dashu::float::round::mode::*;
+use dashu::float::{Context, FBig, Repr, Word};
 use proptest::prelude::*;
 
 /// Round the exact result to `precision` and `precision + 1` digits, returning both.

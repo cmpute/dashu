@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.0
+## Unreleased
 
 ### Change
 - `complex/src/sub.rs` is merged into `complex/src/add.rs`, mirroring `dashu-float`'s layout where

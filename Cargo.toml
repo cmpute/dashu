@@ -1,6 +1,6 @@
 [package]
 name = "dashu"
-version = "0.5.0"
+version = "0.4.4"
 edition = "2021"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 description = "A library set of big numbers"
@@ -56,9 +56,9 @@ rustversion = "1.0"
 
 # all crates under dashu will have the same major version,
 # but the minor and patch versions can be different.
-dashu-base = { version = "0.5.0", default-features = false, path = "./base" }
-dashu-int = { version = "0.5.0", default-features = false, path = "./integer" }
-dashu-float = { version = "0.5.0", default-features = false, path = "./float" }
-dashu-ratio = { version = "0.5.0", default-features = false, path = "./rational", features = ['dashu-float'] }
-dashu-cmplx = { version = "0.5.0", default-features = false, path = "./complex" }
-dashu-macros = { version = "0.5.0", default-features = false, path = "./macros" }
+dashu-base = { version = "0.4.3", default-features = false, path = "./base" }
+dashu-int = { version = "0.4.3", default-features = false, path = "./integer" }
+dashu-float = { version = "0.4.5", default-features = false, path = "./float" }
+dashu-ratio = { version = "0.4.3", default-features = false, path = "./rational", features = ['dashu-float'] }
+dashu-cmplx = { version = "0.4.5", default-features = false, path = "./complex" }
+dashu-macros = { version = "0.4.2", default-features = false, path = "./macros" }

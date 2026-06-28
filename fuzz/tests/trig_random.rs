@@ -8,9 +8,9 @@
 //! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test trig_random -- --ignored --nocapture`
 
 use core::str::FromStr;
-use dashu_float::ops::Abs;
-use dashu_float::round::mode::HalfAway;
-use dashu_float::{Context, DBig, Repr};
+use dashu::float::ops::Abs;
+use dashu::float::round::mode::HalfAway;
+use dashu::float::{Context, DBig, Repr};
 use proptest::prelude::*;
 use rug::Float;
 

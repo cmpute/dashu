@@ -7,8 +7,8 @@
 //!
 //! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test ratio -- --ignored --nocapture`
 
-use dashu_base::Inverse;
-use dashu_ratio::RBig;
+use dashu::base::Inverse;
+use dashu::rational::RBig;
 use proptest::prelude::*;
 use rug::ops::Pow;
 

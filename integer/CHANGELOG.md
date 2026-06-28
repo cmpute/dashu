@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.0
+## Unreleased
 
 ### Add
 - `UBig::to_digits` / `UBig::from_digits`: convert to and from a sequence of base-`B` digits (base `2..=Word::MAX`, digits stored as `Word`, most-significant first). Complements [`UBig::in_radix`] which is limited to base 2..=36.
