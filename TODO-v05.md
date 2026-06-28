@@ -349,3 +349,4 @@ and nothing in CI builds or deploys it.
   out of scope for **0.5 and 0.5.x**; the individual pieces already deferred to 0.5.x (complex
   hyperbolics, `fma`, `exp2`/`log2`, …, see §3.4) are the first incremental steps toward it.
 - Any MSRV bump — deferred unless forced.
+- SIMD optimized FFT multiplications - it seems that we can leverage the `wide` crate for this, but this won't be considered until v1.0
