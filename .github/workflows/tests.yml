@@ -33,13 +33,9 @@ jobs:
         run: |
           if [ "${{ matrix.rust }}" = "1.68" ]; then
             echo "Pinning packages for Rust 1.68:"
-            echo "  parking_lot   -> 0.12.3"
-            echo "  lock_api      -> 0.4.12"
             echo "  quote         -> 1.0.40"
             echo "  unicode-ident -> 1.0.13"
             echo "  zeroize       -> 1.8.1"
-            cargo update -p parking_lot --precise 0.12.3
-            cargo update -p lock_api --precise 0.4.12
             cargo update -p quote --precise 1.0.40
             cargo update -p unicode-ident --precise 1.0.13
             cargo update -p zeroize --precise 1.8.1

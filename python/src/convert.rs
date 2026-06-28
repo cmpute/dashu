@@ -4,11 +4,11 @@
 //! but it should happen when both PyO3 and this crate have a relatively stable API.
 
 use pyo3::{
+    FromPyObject, PyAny, PyErr, PyObject,
     exceptions::{PySyntaxError, PyTypeError, PyValueError},
     ffi, intern,
     prelude::*,
     types::{PyBytes, PyDict, PyFloat, PyLong},
-    FromPyObject, PyAny, PyErr, PyObject,
 };
 use std::os::raw::{c_double, c_longlong};
 use std::str::FromStr;
@@ -33,11 +33,7 @@ pub fn parse_signed_index(index: isize, length: usize, unlimited: bool) -> Optio
         }
     } else {
         let i = index.unsigned_abs();
-        if i <= length {
-            Some(length - i)
-        } else {
-            None
-        }
+        if i <= length { Some(length - i) } else { None }
     }
 }
 
