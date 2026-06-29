@@ -3,26 +3,14 @@
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, exact, riemann, CfpResult, Context};
 use core::ops::{Div, DivAssign};
-use dashu_base::Inverse;
+use dashu_base::{AbsOrd, Inverse};
 use dashu_float::round::Round;
-use dashu_float::{FBig, FpError, Repr};
+use dashu_float::{FBig, FpError};
 use dashu_int::Word;
 
 /// Guard digits (base-B) for `div`/`inv`. The naive complex-division error is `~(3+√5)·u`; a fixed
 /// guard comfortably absorbs it for well-conditioned denominators.
 const DIV_GUARD: usize = 14;
-
-/// Magnitude comparison of two real parts: `|a| >= |b|`?
-fn abs_ge<const B: Word>(a: &Repr<B>, b: &Repr<B>) -> bool {
-    let a_exp = a.exponent();
-    let b_exp = b.exponent();
-    if a_exp != b_exp {
-        return a_exp > b_exp;
-    }
-    // Same exponent — compare significand magnitudes without cloning.
-    use dashu_base::AbsOrd;
-    a.significand().abs_cmp(b.significand()).is_ge()
-}
 
 impl<R: Round> Context<R> {
     /// Reciprocal `1/z = conj(z)/|z|²` under this context (context layer).
@@ -57,9 +45,15 @@ impl<R: Round> Context<R> {
         let p = self.precision();
         let (x, y) = (z.re(), z.im());
         let (u, v) = (w.re(), w.im());
+        // Determine |u| >= |v| via abs_cmp on temporary FBig views (Smith's method).
+        let u_ge_v = {
+            let fu = FBig::from_repr(u.clone(), gctx);
+            let fv = FBig::from_repr(v.clone(), gctx);
+            fu.abs_cmp(&fv).is_ge()
+        };
 
-        // r, d depend on which of |u|, |v| is larger (Smith's method)
-        let (r, d) = if abs_ge(u, v) {
+        // r, d depend on which of |u|, |v| is larger
+        let (r, d) = if u_ge_v {
             // r = v/u, d = u + r·v
             let r = gctx.div(v, u)?.value();
             let rv = gctx.mul(r.repr(), v)?.value();
@@ -73,7 +67,7 @@ impl<R: Round> Context<R> {
             (r, d)
         };
 
-        let (re, im) = if abs_ge(u, v) {
+        let (re, im) = if u_ge_v {
             // re = (x + r·y)/d, im = (y - r·x)/d
             let ry = gctx.mul(r.repr(), y)?.value();
             let rx = gctx.mul(r.repr(), x)?.value();
@@ -164,39 +158,9 @@ crate::helper_macros::impl_cbig_binop!(Div, div, DivAssign, div_assign);
 
 // --- scalar division by a real FBig (mixed-type operators) ---
 
-// CBig / FBig (componentwise).
-impl<R: Round, const B: Word> Div<&FBig<R, B>> for &CBig<R, B> {
-    type Output = CBig<R, B>;
-    #[inline]
-    fn div(self, rhs: &FBig<R, B>) -> CBig<R, B> {
-        let ctx = Context::max(self.context(), Context(rhs.context()));
-        ctx.unwrap_cfp(ctx.div_real(self, rhs))
-    }
-}
-impl<R: Round, const B: Word> Div<FBig<R, B>> for &CBig<R, B> {
-    type Output = CBig<R, B>;
-    #[inline]
-    fn div(self, rhs: FBig<R, B>) -> CBig<R, B> {
-        let ctx = Context::max(self.context(), Context(rhs.context()));
-        ctx.unwrap_cfp(ctx.div_real(self, &rhs))
-    }
-}
-impl<R: Round, const B: Word> Div<&FBig<R, B>> for CBig<R, B> {
-    type Output = CBig<R, B>;
-    #[inline]
-    fn div(self, rhs: &FBig<R, B>) -> CBig<R, B> {
-        let ctx = Context::max(self.context(), Context(rhs.context()));
-        ctx.unwrap_cfp(ctx.div_real(&self, rhs))
-    }
-}
-impl<R: Round, const B: Word> Div<FBig<R, B>> for CBig<R, B> {
-    type Output = CBig<R, B>;
-    #[inline]
-    fn div(self, rhs: FBig<R, B>) -> CBig<R, B> {
-        let ctx = Context::max(self.context(), Context(rhs.context()));
-        ctx.unwrap_cfp(ctx.div_real(&self, &rhs))
-    }
-}
+// CBig / FBig (componentwise, via the shared scalar macro).
+crate::helper_macros::impl_cbig_scalar_binop!(Div, div, div_real);
+
 // FBig / CBig = (s + 0i) / z, reusing complex division.
 impl<R: Round, const B: Word> Div<&CBig<R, B>> for &FBig<R, B> {
     type Output = CBig<R, B>;

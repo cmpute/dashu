@@ -102,9 +102,11 @@ mod tests {
     #[test]
     fn cbig_num_hash_matches_num_complex() {
         // The base-2 CBig residue must equal num-order's `Complex<f64>` formula: hash(a + bterm)
-        // with bterm = ∓PROOT²·b² (sign of b). Uses the shared `bterm` helper (same as production
-        // code), not a duplicated transcription. Relies on dashu-float's Repr residue equalling
-        // f64's `fhash` — see float's `test_fbig_num_hash_matches_f64`.
+        // with bterm = ∓PROOT²·b² (sign of b). Uses the shared `bterm` helper (same function as
+        // production code), not a duplicated transcription. The cross-type consistency against
+        // `num_complex::Complex<f64>` itself is verified in the integration test
+        // `tests/num_hash.rs`. Relies on dashu-float's Repr residue equalling f64's `fhash` —
+        // see float's `test_fbig_num_hash_matches_f64`.
         use dashu_float::FBig;
         type CF = CBig<mode::Zero, 2>;
 

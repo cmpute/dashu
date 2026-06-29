@@ -1,10 +1,7 @@
 //! Complex addition and subtraction.
 //!
-//! Mirroring `dashu-float`'s `add.rs`, the four ref/val combinations are written out explicitly
-//! (grouped into `add_val_val` / `add_val_ref` / `add_ref_val` / `add_ref_ref` — and the same for
-//! `sub`). Subtraction is componentwise negation of the right operand, so its kernel functions are
-//! separate from addition's (no shared `signed_add`). The `Assign` forms forward through
-//! [`core::mem::take`] to the by-value operator.
+//! Addition and subtraction are componentwise perfectly-rounded real additions/subtractions on each
+//! part, forwarded through the shared [`impl_cbig_binop!`] macro (same pattern as `Mul` / `Div`).
 
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, CfpResult, Context};
@@ -34,125 +31,11 @@ impl<R: Round> Context<R> {
     }
 }
 
-// --- Convenience-layer kernel functions, mirroring FBig's add_val_val / add_val_ref / etc. ---
+// --- Add: all four ref/val combinations, plus Assign, via the shared macro ---
+crate::helper_macros::impl_cbig_binop!(Add, add, AddAssign, add_assign);
 
-#[inline]
-fn add_val_val<R: Round, const B: Word>(lhs: CBig<R, B>, rhs: CBig<R, B>) -> CBig<R, B> {
-    let ctx = Context::max(lhs.context(), rhs.context());
-    ctx.unwrap_cfp(ctx.add(&lhs, &rhs))
-}
-
-#[inline]
-fn add_val_ref<R: Round, const B: Word>(lhs: CBig<R, B>, rhs: &CBig<R, B>) -> CBig<R, B> {
-    let ctx = Context::max(lhs.context(), rhs.context());
-    ctx.unwrap_cfp(ctx.add(&lhs, rhs))
-}
-
-#[inline]
-fn add_ref_val<R: Round, const B: Word>(lhs: &CBig<R, B>, rhs: CBig<R, B>) -> CBig<R, B> {
-    let ctx = Context::max(lhs.context(), rhs.context());
-    ctx.unwrap_cfp(ctx.add(lhs, &rhs))
-}
-
-#[inline]
-fn add_ref_ref<R: Round, const B: Word>(lhs: &CBig<R, B>, rhs: &CBig<R, B>) -> CBig<R, B> {
-    let ctx = Context::max(lhs.context(), rhs.context());
-    ctx.unwrap_cfp(ctx.add(lhs, rhs))
-}
-
-#[inline]
-fn sub_val_val<R: Round, const B: Word>(lhs: CBig<R, B>, rhs: CBig<R, B>) -> CBig<R, B> {
-    let ctx = Context::max(lhs.context(), rhs.context());
-    ctx.unwrap_cfp(ctx.sub(&lhs, &rhs))
-}
-
-#[inline]
-fn sub_val_ref<R: Round, const B: Word>(lhs: CBig<R, B>, rhs: &CBig<R, B>) -> CBig<R, B> {
-    let ctx = Context::max(lhs.context(), rhs.context());
-    ctx.unwrap_cfp(ctx.sub(&lhs, rhs))
-}
-
-#[inline]
-fn sub_ref_val<R: Round, const B: Word>(lhs: &CBig<R, B>, rhs: CBig<R, B>) -> CBig<R, B> {
-    let ctx = Context::max(lhs.context(), rhs.context());
-    ctx.unwrap_cfp(ctx.sub(lhs, &rhs))
-}
-
-#[inline]
-fn sub_ref_ref<R: Round, const B: Word>(lhs: &CBig<R, B>, rhs: &CBig<R, B>) -> CBig<R, B> {
-    let ctx = Context::max(lhs.context(), rhs.context());
-    ctx.unwrap_cfp(ctx.sub(lhs, rhs))
-}
-
-// --- Add: all four ref/val combinations ---
-impl<R: Round, const B: Word> Add for CBig<R, B> {
-    type Output = CBig<R, B>;
-    #[inline]
-    fn add(self, rhs: CBig<R, B>) -> CBig<R, B> {
-        add_val_val(self, rhs)
-    }
-}
-
-impl<R: Round, const B: Word> Add<&CBig<R, B>> for CBig<R, B> {
-    type Output = CBig<R, B>;
-    #[inline]
-    fn add(self, rhs: &CBig<R, B>) -> CBig<R, B> {
-        add_val_ref(self, rhs)
-    }
-}
-
-impl<R: Round, const B: Word> Add<CBig<R, B>> for &CBig<R, B> {
-    type Output = CBig<R, B>;
-    #[inline]
-    fn add(self, rhs: CBig<R, B>) -> CBig<R, B> {
-        add_ref_val(self, rhs)
-    }
-}
-
-impl<R: Round, const B: Word> Add<&CBig<R, B>> for &CBig<R, B> {
-    type Output = CBig<R, B>;
-    #[inline]
-    fn add(self, rhs: &CBig<R, B>) -> CBig<R, B> {
-        add_ref_ref(self, rhs)
-    }
-}
-
-// --- Sub: all four ref/val combinations ---
-impl<R: Round, const B: Word> Sub for CBig<R, B> {
-    type Output = CBig<R, B>;
-    #[inline]
-    fn sub(self, rhs: CBig<R, B>) -> CBig<R, B> {
-        sub_val_val(self, rhs)
-    }
-}
-
-impl<R: Round, const B: Word> Sub<&CBig<R, B>> for CBig<R, B> {
-    type Output = CBig<R, B>;
-    #[inline]
-    fn sub(self, rhs: &CBig<R, B>) -> CBig<R, B> {
-        sub_val_ref(self, rhs)
-    }
-}
-
-impl<R: Round, const B: Word> Sub<CBig<R, B>> for &CBig<R, B> {
-    type Output = CBig<R, B>;
-    #[inline]
-    fn sub(self, rhs: CBig<R, B>) -> CBig<R, B> {
-        sub_ref_val(self, rhs)
-    }
-}
-
-impl<R: Round, const B: Word> Sub<&CBig<R, B>> for &CBig<R, B> {
-    type Output = CBig<R, B>;
-    #[inline]
-    fn sub(self, rhs: &CBig<R, B>) -> CBig<R, B> {
-        sub_ref_ref(self, rhs)
-    }
-}
-
-// --- AddAssign / SubAssign: forward through `mem::take` to the by-value operator ---
-crate::helper_macros::impl_binop_assign_by_taking!(impl AddAssign<Self>, add_assign, add);
-crate::helper_macros::impl_binop_assign_by_taking!(impl SubAssign<Self>, sub_assign, sub);
+// --- Sub: all four ref/val combinations, plus Assign, via the shared macro ---
+crate::helper_macros::impl_cbig_binop!(Sub, sub, SubAssign, sub_assign);
 
 #[cfg(test)]
 mod tests {

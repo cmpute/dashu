@@ -254,7 +254,6 @@ impl<R: Round> Context<R> {
     }
 }
 
-
 impl<R: Round> Context<R> {
     /// Compute `sqrt(a² + b²)` without spurious overflow/underflow.
     ///
@@ -284,8 +283,16 @@ impl<R: Round> Context<R> {
         let gctx = Context::<R>::new(self.precision + guard);
 
         // magnitudes, ordered large >= small (both finite, not both zero here)
-        let a_mag = if a.sign() == Sign::Negative { -a.clone() } else { a.clone() };
-        let b_mag = if b.sign() == Sign::Negative { -b.clone() } else { b.clone() };
+        let a_mag = if a.sign() == Sign::Negative {
+            -a.clone()
+        } else {
+            a.clone()
+        };
+        let b_mag = if b.sign() == Sign::Negative {
+            -b.clone()
+        } else {
+            b.clone()
+        };
         let (large, small) = if a_mag.cmp(&b_mag).is_ge() {
             (a_mag, b_mag)
         } else {

@@ -128,7 +128,7 @@ impl<R: Round> Context<R> {
         }
         let gctx = Context::new(self.precision() + ITRIG_GUARD);
         let p = self.precision();
-        let one = CBig::from(FBig::from_repr(Repr::one(), gctx.float()));
+        let one = CBig::ONE;
         let z2 = gctx.sqr(z)?.value();
         let one_m_z2 = gctx.sub(&one, &z2)?.value();
         let sqrt_term = gctx.sqrt(&one_m_z2)?.value();
@@ -151,7 +151,7 @@ impl<R: Round> Context<R> {
         }
         let gctx = Context::new(self.precision() + ITRIG_GUARD);
         let p = self.precision();
-        let one = CBig::from(FBig::from_repr(Repr::one(), gctx.float()));
+        let one = CBig::ONE;
         let z2 = gctx.sqr(z)?.value();
         let one_m_z2 = gctx.sub(&one, &z2)?.value();
         let sqrt_term = gctx.sqrt(&one_m_z2)?.value();
@@ -176,7 +176,7 @@ impl<R: Round> Context<R> {
         }
         let gctx = Context::new(self.precision() + ITRIG_GUARD);
         let p = self.precision();
-        let one = CBig::from(FBig::from_repr(Repr::one(), gctx.float()));
+        let one = CBig::ONE;
         let iz = z.mul_i(false);
         let a = gctx.sub(&one, &iz)?.value(); // 1 - iz
         let b = gctx.add(&one, &iz)?.value(); // 1 + iz
@@ -184,7 +184,7 @@ impl<R: Round> Context<R> {
         let log_b = gctx.log(&b, reborrow_cache(&mut cache))?.value();
         let diff = gctx.sub(&log_a, &log_b)?.value();
         let i_half_diff = diff.mul_i(false); // i·diff, then /2 below
-        let two = CBig::from(FBig::from_repr(Repr::new(IBig::from(2), 0), gctx.float()));
+        let two: CBig<R, B> = IBig::from(2).into();
         let atan_z = gctx.div(&i_half_diff, &two)?.value();
         let (re, im) = atan_z.into_parts();
         Ok(combine_parts(re.with_precision(p), im.with_precision(p)))

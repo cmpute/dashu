@@ -155,10 +155,14 @@ impl<R: Round, const B: Word> CBig<R, B> {
         Self::new(Repr::infinity(), Repr::infinity(), *context)
     }
 
-    /// The complex zero produced on underflow: both parts are `+0`.
+    /// The complex zero produced on underflow: a signed zero on the real part and `+0` imaginary.
     #[inline]
-    pub(crate) fn underflow(context: &Context<R>, _sign: Sign) -> Self {
-        Self::new(Repr::zero(), Repr::zero(), *context)
+    pub(crate) fn underflow(context: &Context<R>, sign: Sign) -> Self {
+        let re = match sign {
+            Sign::Positive => Repr::zero(),
+            Sign::Negative => Repr::neg_zero(),
+        };
+        Self::new(re, Repr::zero(), *context)
     }
 }
 

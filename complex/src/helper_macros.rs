@@ -67,25 +67,47 @@ macro_rules! impl_cbig_binop {
     };
 }
 
-/// Implement `impl OpAssign<A> for CBig` by forwarding to `*self = mem::take(self).op(A)`, including
-/// the `&A` form — the direct port of `dashu-float`'s `impl_binop_assign_by_taking`. As with
-/// [`impl_cbig_binop`], the identifiers (`CBig`, `Round`, `Word`) resolve at the call site.
-macro_rules! impl_binop_assign_by_taking {
-    (impl $trait:ident<$t2:ty>, $methodassign:ident, $method:ident) => {
-        impl<R: Round, const B: Word> $trait<$t2> for CBig<R, B> {
+/// Implement the four ref/val mixed-type operators `CBig op FBig` — each forwarding directly to
+/// `Context::$ctx_method(self, rhs)`. The trait method name is `$trait_method`. Used for
+/// `CBig * FBig` (componentwise, trait=multiply/mul, ctx=mul_real) and `CBig / FBig`
+/// (componentwise, trait=divide/div, ctx=div_real). The identifiers (`CBig`, `FBig`, `Context`,
+/// `Round`, `Word`) must be in scope at the call site.
+macro_rules! impl_cbig_scalar_binop {
+    ($op:ident, $trait_method:ident, $ctx_method:ident) => {
+        impl<R: Round, const B: Word> $op<&FBig<R, B>> for &CBig<R, B> {
+            type Output = CBig<R, B>;
             #[inline]
-            fn $methodassign(&mut self, rhs: $t2) {
-                *self = core::mem::take(self).$method(rhs);
+            fn $trait_method(self, rhs: &FBig<R, B>) -> CBig<R, B> {
+                let ctx = Context::max(self.context(), Context(rhs.context()));
+                ctx.unwrap_cfp(ctx.$ctx_method(self, rhs))
             }
         }
-        impl<R: Round, const B: Word> $trait<&$t2> for CBig<R, B> {
+        impl<R: Round, const B: Word> $op<FBig<R, B>> for &CBig<R, B> {
+            type Output = CBig<R, B>;
             #[inline]
-            fn $methodassign(&mut self, rhs: &$t2) {
-                *self = core::mem::take(self).$method(rhs);
+            fn $trait_method(self, rhs: FBig<R, B>) -> CBig<R, B> {
+                let ctx = Context::max(self.context(), Context(rhs.context()));
+                ctx.unwrap_cfp(ctx.$ctx_method(self, &rhs))
+            }
+        }
+        impl<R: Round, const B: Word> $op<&FBig<R, B>> for CBig<R, B> {
+            type Output = CBig<R, B>;
+            #[inline]
+            fn $trait_method(self, rhs: &FBig<R, B>) -> CBig<R, B> {
+                let ctx = Context::max(self.context(), Context(rhs.context()));
+                ctx.unwrap_cfp(ctx.$ctx_method(&self, rhs))
+            }
+        }
+        impl<R: Round, const B: Word> $op<FBig<R, B>> for CBig<R, B> {
+            type Output = CBig<R, B>;
+            #[inline]
+            fn $trait_method(self, rhs: FBig<R, B>) -> CBig<R, B> {
+                let ctx = Context::max(self.context(), Context(rhs.context()));
+                ctx.unwrap_cfp(ctx.$ctx_method(&self, &rhs))
             }
         }
     };
 }
 
-pub(crate) use impl_binop_assign_by_taking;
 pub(crate) use impl_cbig_binop;
+pub(crate) use impl_cbig_scalar_binop;

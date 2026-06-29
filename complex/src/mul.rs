@@ -87,39 +87,10 @@ crate::helper_macros::impl_cbig_binop!(Mul, mul, MulAssign, mul_assign);
 
 // --- scalar multiplication by a real FBig (mixed-type operators) ---
 
-// CBig · FBig (componentwise) and FBig · CBig (commutative: FBig·CBig = CBig·FBig).
-impl<R: Round, const B: Word> Mul<&FBig<R, B>> for &CBig<R, B> {
-    type Output = CBig<R, B>;
-    #[inline]
-    fn mul(self, rhs: &FBig<R, B>) -> CBig<R, B> {
-        let ctx = Context::max(self.context(), Context(rhs.context()));
-        ctx.unwrap_cfp(ctx.mul_real(self, rhs))
-    }
-}
-impl<R: Round, const B: Word> Mul<FBig<R, B>> for &CBig<R, B> {
-    type Output = CBig<R, B>;
-    #[inline]
-    fn mul(self, rhs: FBig<R, B>) -> CBig<R, B> {
-        let ctx = Context::max(self.context(), Context(rhs.context()));
-        ctx.unwrap_cfp(ctx.mul_real(self, &rhs))
-    }
-}
-impl<R: Round, const B: Word> Mul<&FBig<R, B>> for CBig<R, B> {
-    type Output = CBig<R, B>;
-    #[inline]
-    fn mul(self, rhs: &FBig<R, B>) -> CBig<R, B> {
-        let ctx = Context::max(self.context(), Context(rhs.context()));
-        ctx.unwrap_cfp(ctx.mul_real(&self, rhs))
-    }
-}
-impl<R: Round, const B: Word> Mul<FBig<R, B>> for CBig<R, B> {
-    type Output = CBig<R, B>;
-    #[inline]
-    fn mul(self, rhs: FBig<R, B>) -> CBig<R, B> {
-        let ctx = Context::max(self.context(), Context(rhs.context()));
-        ctx.unwrap_cfp(ctx.mul_real(&self, &rhs))
-    }
-}
+// CBig · FBig (componentwise, via the shared scalar macro).
+crate::helper_macros::impl_cbig_scalar_binop!(Mul, mul, mul_real);
+
+// FBig · CBig (commutative: FBig·CBig = CBig·FBig).
 impl<R: Round, const B: Word> Mul<&CBig<R, B>> for &FBig<R, B> {
     type Output = CBig<R, B>;
     #[inline]
