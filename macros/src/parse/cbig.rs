@@ -37,12 +37,12 @@ pub fn parse_complex(static_: bool, embedded: bool, input: TokenStream) -> Token
 
     if static_ {
         // const construction: each Repr via from_static_words (or Repr::zero() for a zero coeff),
-        // then from_repr_parts.
+        // then new.
         let (re_repr, prec_re) = gen_binary_repr_const(embedded, &re);
         let (im_repr, prec_im) = gen_binary_repr_const(embedded, &im);
         let prec = prec_re.max(prec_im);
         quote! {{
-            static VALUE: #ns::CBig = #ns::CBig::from_repr_parts(
+            static VALUE: #ns::CBig = #ns::CBig::new(
                 #re_repr,
                 #im_repr,
                 #ns::Context::new(#prec),

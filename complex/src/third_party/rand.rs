@@ -13,7 +13,7 @@
 //! `dashu_int::rand::bridge_v08` / `bridge_v09` / `bridge_v010`.
 
 use crate::cbig::CBig;
-use dashu_float::rand::UniformFBig;
+use dashu_float::rand::{Uniform01 as FloatUniform01, UniformFBig};
 use dashu_float::round::Round;
 use dashu_float::FBig;
 use dashu_int::rand::BitRng;
@@ -55,6 +55,52 @@ impl<R: Round, const B: Word> UniformCBig<R, B> {
 /// context). Used only to feed [`UniformFBig::new`], which reads the value and precision.
 fn part_view<R: Round, const B: Word>(z: &CBig<R, B>, re: bool) -> FBig<R, B> {
     let ctx = z.context().float();
-    let repr = if re { z.re().clone() } else { z.imag().clone() };
+    let repr = if re { z.re().clone() } else { z.im().clone() };
     FBig::from_repr(repr, ctx)
+}
+
+/// Uniform distribution over the unit square `(0, 1)²` — each part independent and uniform in
+/// `(0, 1)`, at the chosen precision (mirroring [`dashu_float::rand::Uniform01`]).
+///
+/// Used by the builtin `rand` distribution impls (`Standard`, `Open01`, `OpenClosed01`) for
+/// [`CBig`]; can also be constructed directly for custom-precision sampling.
+pub struct Uniform01<const BASE: Word> {
+    pub(crate) re: FloatUniform01<BASE>,
+    pub(crate) im: FloatUniform01<BASE>,
+}
+
+impl<const B: Word> Uniform01<B> {
+    /// Create a uniform distribution in `[0, 1)²` at the given precision.
+    #[inline]
+    pub fn new(precision: usize) -> Self {
+        Self {
+            re: FloatUniform01::new(precision),
+            im: FloatUniform01::new(precision),
+        }
+    }
+
+    /// Create a uniform distribution in `[0, 1]²` at the given precision.
+    #[inline]
+    pub fn new_closed(precision: usize) -> Self {
+        Self {
+            re: FloatUniform01::new_closed(precision),
+            im: FloatUniform01::new_closed(precision),
+        }
+    }
+
+    /// Create a uniform distribution in `(0, 1)²` at the given precision.
+    #[inline]
+    pub fn new_open(precision: usize) -> Self {
+        Self {
+            re: FloatUniform01::new_open(precision),
+            im: FloatUniform01::new_open(precision),
+        }
+    }
+
+    /// Draw a random [`CBig`] with both parts in this sampler's interval.
+    pub fn sample_cbig<R: Round, BR: BitRng + ?Sized>(&self, rng: &mut BR) -> CBig<R, B> {
+        let re = self.re.sample01(rng);
+        let im = self.im.sample01(rng);
+        CBig::from_parts(re, im)
+    }
 }

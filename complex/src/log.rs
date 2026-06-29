@@ -34,11 +34,11 @@ impl<R: Round> Context<R> {
         let gctx = self.guard(LOG_GUARD);
         let p = self.precision();
         // ln|z|
-        let r = gctx.hypot(z.re(), z.imag())?.value();
+        let r = gctx.hypot(z.re(), z.im())?.value();
         let ln_r = gctx.ln(r.repr(), reborrow_cache(&mut cache))?.value();
         // arg(z) = atan2(im, re)
         let arg = gctx
-            .atan2(z.imag(), z.re(), reborrow_cache(&mut cache))?
+            .atan2(z.im(), z.re(), reborrow_cache(&mut cache))?
             .value();
         let re = ln_r.with_precision(p);
         let im = arg.with_precision(p);
@@ -53,14 +53,8 @@ impl<R: Round, const B: Word> CBig<R, B> {
     ///
     /// Panics if the precision is unlimited.
     #[inline]
-    pub fn log(&self) -> Self {
-        self.context().unwrap_cfp(self.context().log(self, None))
-    }
-
-    /// Alias for [`CBig::log`] matching `dashu-float`'s naming.
-    #[inline]
     pub fn ln(&self) -> Self {
-        self.log()
+        self.context().unwrap_cfp(self.context().log(self, None))
     }
 }
 
@@ -87,15 +81,15 @@ mod tests {
     }
 
     #[test]
-    fn log_one_is_zero() {
-        assert!(C::ONE.log() == C::ZERO);
+    fn ln_one_is_zero() {
+        assert!(C::ONE.ln() == C::ZERO);
     }
 
     #[test]
-    fn log_exp_roundtrip() {
-        // log(exp z) ≈ z (the imaginary 1 sits inside ]-π, π], so no 2πi wrap)
+    fn ln_exp_roundtrip() {
+        // ln(exp z) ≈ z (the imaginary 1 sits inside ]-π, π], so no 2πi wrap)
         let z = c(1, 1);
-        let l = z.exp().log();
+        let l = z.exp().ln();
         let (zr, zi) = z.into_parts();
         let (lr, li) = l.into_parts();
         assert!(within(&zr, &lr, 16));
@@ -103,8 +97,8 @@ mod tests {
     }
 
     #[test]
-    fn log_zero_is_neg_infinity() {
-        let l = C::ZERO.log();
+    fn ln_zero_is_neg_infinity() {
+        let l = C::ZERO.ln();
         assert!(l.re().is_infinite());
         assert_eq!(l.re().sign(), Sign::Negative);
     }

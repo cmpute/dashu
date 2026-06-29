@@ -8,7 +8,7 @@ use crate::cbig::CBig;
 use crate::repr::{combine_parts, reborrow_cache, CfpResult, Context};
 use dashu_float::round::Round;
 use dashu_float::{ConstCache, FBig, FpError, Repr};
-use dashu_int::Word;
+use dashu_int::{IBig, Word};
 
 /// Guard digits (base-B) for the forward trig. Composes real `sin_cos` + `sinh_cosh` + two
 /// products; the cancellation near the trig zeros is absorbed by the re-round.
@@ -26,8 +26,14 @@ impl<R: Round> Context<R> {
             return (Err(FpError::Indeterminate), Err(FpError::Indeterminate));
         }
         if z.is_zero() {
-            let zero = ok_exact_zero(*self);
-            let one = ok_exact_one(*self);
+            let zero = Ok(crate::repr::exact(
+                FBig::from_repr(Repr::zero(), self.float()),
+                FBig::from_repr(Repr::zero(), self.float()),
+            ));
+            let one = Ok(crate::repr::exact(
+                FBig::from_repr(Repr::one(), self.float()),
+                FBig::from_repr(Repr::zero(), self.float()),
+            ));
             return (zero, one);
         }
 
@@ -42,7 +48,7 @@ impl<R: Round> Context<R> {
             Ok(v) => v.value(),
             Err(e) => return (Err(FpError::Indeterminate), Err(e)),
         };
-        let (sinhy_res, coshy_res) = gctx.sinh_cosh(z.imag(), reborrow_cache(&mut cache));
+        let (sinhy_res, coshy_res) = gctx.sinh_cosh(z.im(), reborrow_cache(&mut cache));
         let sinhy = match sinhy_res {
             Ok(v) => v.value(),
             Err(e) => return (Err(e), Err(FpError::Indeterminate)),
@@ -78,6 +84,7 @@ impl<R: Round> Context<R> {
     }
 
     /// Complex sine (context layer).
+    #[inline]
     pub fn sin<const B: Word>(
         &self,
         z: &CBig<R, B>,
@@ -87,6 +94,7 @@ impl<R: Round> Context<R> {
     }
 
     /// Complex cosine (context layer).
+    #[inline]
     pub fn cos<const B: Word>(
         &self,
         z: &CBig<R, B>,
@@ -120,7 +128,7 @@ impl<R: Round> Context<R> {
         }
         let gctx = Context::new(self.precision() + ITRIG_GUARD);
         let p = self.precision();
-        let one = cbig_one(gctx);
+        let one = CBig::from(FBig::from_repr(Repr::one(), gctx.float()));
         let z2 = gctx.sqr(z)?.value();
         let one_m_z2 = gctx.sub(&one, &z2)?.value();
         let sqrt_term = gctx.sqrt(&one_m_z2)?.value();
@@ -128,7 +136,8 @@ impl<R: Round> Context<R> {
         let w = gctx.add(&iz, &sqrt_term)?.value();
         let log_w = gctx.log(&w, reborrow_cache(&mut cache))?.value();
         let asin_z = log_w.mul_i(true); // -i·log(w)
-        reround(asin_z, p)
+        let (re, im) = asin_z.into_parts();
+        Ok(combine_parts(re.with_precision(p), im.with_precision(p)))
     }
 
     /// Inverse cosine `acos z = -i·log(z + i·sqrt(1-z²))` (context layer, Kahan form).
@@ -142,7 +151,7 @@ impl<R: Round> Context<R> {
         }
         let gctx = Context::new(self.precision() + ITRIG_GUARD);
         let p = self.precision();
-        let one = cbig_one(gctx);
+        let one = CBig::from(FBig::from_repr(Repr::one(), gctx.float()));
         let z2 = gctx.sqr(z)?.value();
         let one_m_z2 = gctx.sub(&one, &z2)?.value();
         let sqrt_term = gctx.sqrt(&one_m_z2)?.value();
@@ -150,7 +159,8 @@ impl<R: Round> Context<R> {
         let w = gctx.add(z, &i_sqrt)?.value();
         let log_w = gctx.log(&w, reborrow_cache(&mut cache))?.value();
         let acos_z = log_w.mul_i(true); // -i·log(w)
-        reround(acos_z, p)
+        let (re, im) = acos_z.into_parts();
+        Ok(combine_parts(re.with_precision(p), im.with_precision(p)))
     }
 
     /// Inverse tangent `atan z = (i/2)·(log(1-iz) - log(1+iz))` (context layer).
@@ -166,7 +176,7 @@ impl<R: Round> Context<R> {
         }
         let gctx = Context::new(self.precision() + ITRIG_GUARD);
         let p = self.precision();
-        let one = cbig_one(gctx);
+        let one = CBig::from(FBig::from_repr(Repr::one(), gctx.float()));
         let iz = z.mul_i(false);
         let a = gctx.sub(&one, &iz)?.value(); // 1 - iz
         let b = gctx.add(&one, &iz)?.value(); // 1 + iz
@@ -174,41 +184,15 @@ impl<R: Round> Context<R> {
         let log_b = gctx.log(&b, reborrow_cache(&mut cache))?.value();
         let diff = gctx.sub(&log_a, &log_b)?.value();
         let i_half_diff = diff.mul_i(false); // i·diff, then /2 below
-        let two = cbig_real(gctx, 2);
+        let two = CBig::from(FBig::from_repr(Repr::new(IBig::from(2), 0), gctx.float()));
         let atan_z = gctx.div(&i_half_diff, &two)?.value();
-        reround(atan_z, p)
+        let (re, im) = atan_z.into_parts();
+        Ok(combine_parts(re.with_precision(p), im.with_precision(p)))
     }
 }
 
 /// Guard digits (base-B) for the inverse trig (squares, a sqrt, logs, and a divide).
 const ITRIG_GUARD: usize = 18;
-
-fn cbig_one<R: Round, const B: Word>(ctx: Context<R>) -> CBig<R, B> {
-    CBig::from(FBig::from_repr(Repr::one(), ctx.float()))
-}
-
-fn cbig_real<R: Round, const B: Word>(ctx: Context<R>, v: i32) -> CBig<R, B> {
-    CBig::from(FBig::from_repr(Repr::new(v.into(), 0), ctx.float()))
-}
-
-fn reround<R: Round, const B: Word>(z: CBig<R, B>, p: usize) -> CfpResult<R, B> {
-    let (re, im) = z.into_parts();
-    Ok(combine_parts(re.with_precision(p), im.with_precision(p)))
-}
-
-fn ok_exact_zero<R: Round, const B: Word>(ctx: Context<R>) -> CfpResult<R, B> {
-    Ok(crate::repr::exact(
-        FBig::from_repr(Repr::zero(), ctx.float()),
-        FBig::from_repr(Repr::zero(), ctx.float()),
-    ))
-}
-
-fn ok_exact_one<R: Round, const B: Word>(ctx: Context<R>) -> CfpResult<R, B> {
-    Ok(crate::repr::exact(
-        FBig::from_repr(Repr::one(), ctx.float()),
-        FBig::from_repr(Repr::zero(), ctx.float()),
-    ))
-}
 
 impl<R: Round, const B: Word> CBig<R, B> {
     /// Complex sine (convenience layer). Panics on an indeterminate special value.
@@ -300,7 +284,7 @@ mod tests {
         // sin(i) = i·sinh(1) = i·1.1752… ; purely imaginary
         let s = C::I.sin();
         assert!(s.re().significand().is_zero());
-        assert!(!s.imag().significand().is_zero());
+        assert!(!s.im().significand().is_zero());
     }
 
     #[test]

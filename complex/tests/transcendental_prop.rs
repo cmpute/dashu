@@ -88,7 +88,7 @@ proptest! {
     #[test]
     fn log_imag_is_arg(z in cbig_strategy()) {
         // the imaginary part of log z equals arg z ∈ ]-π, π]; the real part equals ln|z|
-        let (lr, li) = z.log().into_parts();
+        let (lr, li) = z.ln().into_parts();
         let arg = z.arg();
         prop_assert!(within_ulps(&li, &arg, 16));
         let abs = z.abs();

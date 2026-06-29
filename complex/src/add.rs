@@ -1,16 +1,14 @@
 //! Complex addition and subtraction.
 //!
-//! Mirroring `dashu-float`'s `add.rs`, addition and subtraction share one operator kernel:
-//! subtraction is addition of a negated right operand, so both the [`Add`] and [`Sub`] impls call
-//! [`signed_add`] with [`Sign::Positive`] / [`Sign::Negative`] respectively. The four ref/val
-//! combinations are written out explicitly (no macro), and the `Assign` forms forward through
-//! [`core::mem::take`] to the by-value operator — the same shape as `dashu-float`'s
-//! `impl_binop_assign_by_taking`.
+//! Mirroring `dashu-float`'s `add.rs`, the four ref/val combinations are written out explicitly
+//! (grouped into `add_val_val` / `add_val_ref` / `add_ref_val` / `add_ref_ref` — and the same for
+//! `sub`). Subtraction is componentwise negation of the right operand, so its kernel functions are
+//! separate from addition's (no shared `signed_add`). The `Assign` forms forward through
+//! [`core::mem::take`] to the by-value operator.
 
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, CfpResult, Context};
 use core::ops::{Add, AddAssign, Sub, SubAssign};
-use dashu_base::Sign::{self, *};
 use dashu_float::round::Round;
 use dashu_int::Word;
 
@@ -21,7 +19,7 @@ impl<R: Round> Context<R> {
     /// part is a single correctly-rounded real addition.
     pub fn add<const B: Word>(&self, z: &CBig<R, B>, w: &CBig<R, B>) -> CfpResult<R, B> {
         let re = self.float().add(z.re(), w.re())?;
-        let im = self.float().add(z.imag(), w.imag())?;
+        let im = self.float().add(z.im(), w.im())?;
         Ok(combine_parts(re, im))
     }
 
@@ -31,26 +29,59 @@ impl<R: Round> Context<R> {
     /// part is a single correctly-rounded real subtraction.
     pub fn sub<const B: Word>(&self, z: &CBig<R, B>, w: &CBig<R, B>) -> CfpResult<R, B> {
         let re = self.float().sub(z.re(), w.re())?;
-        let im = self.float().sub(z.imag(), w.imag())?;
+        let im = self.float().sub(z.im(), w.im())?;
         Ok(combine_parts(re, im))
     }
 }
 
-/// Convenience-layer kernel shared by `+` and `-`: compute the `max(lhs, rhs)` context, run the
-/// context-layer op (`add` for a positive right-hand sign, `sub` for a negative one), and unwrap.
-/// `Sub` is `Add` with a negated rhs, so the two operators share this one entry point — the complex
-/// analog of `dashu-float`'s `add_val_val`/`add_ref_ref` taking a `rhs_sign`.
-fn signed_add<R: Round, const B: Word>(
-    lhs: &CBig<R, B>,
-    rhs: &CBig<R, B>,
-    rhs_sign: Sign,
-) -> CBig<R, B> {
+// --- Convenience-layer kernel functions, mirroring FBig's add_val_val / add_val_ref / etc. ---
+
+#[inline]
+fn add_val_val<R: Round, const B: Word>(lhs: CBig<R, B>, rhs: CBig<R, B>) -> CBig<R, B> {
     let ctx = Context::max(lhs.context(), rhs.context());
-    let result = match rhs_sign {
-        Positive => ctx.add(lhs, rhs),
-        Negative => ctx.sub(lhs, rhs),
-    };
-    ctx.unwrap_cfp(result)
+    ctx.unwrap_cfp(ctx.add(&lhs, &rhs))
+}
+
+#[inline]
+fn add_val_ref<R: Round, const B: Word>(lhs: CBig<R, B>, rhs: &CBig<R, B>) -> CBig<R, B> {
+    let ctx = Context::max(lhs.context(), rhs.context());
+    ctx.unwrap_cfp(ctx.add(&lhs, rhs))
+}
+
+#[inline]
+fn add_ref_val<R: Round, const B: Word>(lhs: &CBig<R, B>, rhs: CBig<R, B>) -> CBig<R, B> {
+    let ctx = Context::max(lhs.context(), rhs.context());
+    ctx.unwrap_cfp(ctx.add(lhs, &rhs))
+}
+
+#[inline]
+fn add_ref_ref<R: Round, const B: Word>(lhs: &CBig<R, B>, rhs: &CBig<R, B>) -> CBig<R, B> {
+    let ctx = Context::max(lhs.context(), rhs.context());
+    ctx.unwrap_cfp(ctx.add(lhs, rhs))
+}
+
+#[inline]
+fn sub_val_val<R: Round, const B: Word>(lhs: CBig<R, B>, rhs: CBig<R, B>) -> CBig<R, B> {
+    let ctx = Context::max(lhs.context(), rhs.context());
+    ctx.unwrap_cfp(ctx.sub(&lhs, &rhs))
+}
+
+#[inline]
+fn sub_val_ref<R: Round, const B: Word>(lhs: CBig<R, B>, rhs: &CBig<R, B>) -> CBig<R, B> {
+    let ctx = Context::max(lhs.context(), rhs.context());
+    ctx.unwrap_cfp(ctx.sub(&lhs, rhs))
+}
+
+#[inline]
+fn sub_ref_val<R: Round, const B: Word>(lhs: &CBig<R, B>, rhs: CBig<R, B>) -> CBig<R, B> {
+    let ctx = Context::max(lhs.context(), rhs.context());
+    ctx.unwrap_cfp(ctx.sub(lhs, &rhs))
+}
+
+#[inline]
+fn sub_ref_ref<R: Round, const B: Word>(lhs: &CBig<R, B>, rhs: &CBig<R, B>) -> CBig<R, B> {
+    let ctx = Context::max(lhs.context(), rhs.context());
+    ctx.unwrap_cfp(ctx.sub(lhs, rhs))
 }
 
 // --- Add: all four ref/val combinations ---
@@ -58,7 +89,7 @@ impl<R: Round, const B: Word> Add for CBig<R, B> {
     type Output = CBig<R, B>;
     #[inline]
     fn add(self, rhs: CBig<R, B>) -> CBig<R, B> {
-        signed_add(&self, &rhs, Positive)
+        add_val_val(self, rhs)
     }
 }
 
@@ -66,7 +97,7 @@ impl<R: Round, const B: Word> Add<&CBig<R, B>> for CBig<R, B> {
     type Output = CBig<R, B>;
     #[inline]
     fn add(self, rhs: &CBig<R, B>) -> CBig<R, B> {
-        signed_add(&self, rhs, Positive)
+        add_val_ref(self, rhs)
     }
 }
 
@@ -74,7 +105,7 @@ impl<R: Round, const B: Word> Add<CBig<R, B>> for &CBig<R, B> {
     type Output = CBig<R, B>;
     #[inline]
     fn add(self, rhs: CBig<R, B>) -> CBig<R, B> {
-        signed_add(self, &rhs, Positive)
+        add_ref_val(self, rhs)
     }
 }
 
@@ -82,16 +113,16 @@ impl<R: Round, const B: Word> Add<&CBig<R, B>> for &CBig<R, B> {
     type Output = CBig<R, B>;
     #[inline]
     fn add(self, rhs: &CBig<R, B>) -> CBig<R, B> {
-        signed_add(self, rhs, Positive)
+        add_ref_ref(self, rhs)
     }
 }
 
-// --- Sub: the same kernel with a negated rhs ---
+// --- Sub: all four ref/val combinations ---
 impl<R: Round, const B: Word> Sub for CBig<R, B> {
     type Output = CBig<R, B>;
     #[inline]
     fn sub(self, rhs: CBig<R, B>) -> CBig<R, B> {
-        signed_add(&self, &rhs, Negative)
+        sub_val_val(self, rhs)
     }
 }
 
@@ -99,7 +130,7 @@ impl<R: Round, const B: Word> Sub<&CBig<R, B>> for CBig<R, B> {
     type Output = CBig<R, B>;
     #[inline]
     fn sub(self, rhs: &CBig<R, B>) -> CBig<R, B> {
-        signed_add(&self, rhs, Negative)
+        sub_val_ref(self, rhs)
     }
 }
 
@@ -107,7 +138,7 @@ impl<R: Round, const B: Word> Sub<CBig<R, B>> for &CBig<R, B> {
     type Output = CBig<R, B>;
     #[inline]
     fn sub(self, rhs: CBig<R, B>) -> CBig<R, B> {
-        signed_add(self, &rhs, Negative)
+        sub_ref_val(self, rhs)
     }
 }
 
@@ -115,7 +146,7 @@ impl<R: Round, const B: Word> Sub<&CBig<R, B>> for &CBig<R, B> {
     type Output = CBig<R, B>;
     #[inline]
     fn sub(self, rhs: &CBig<R, B>) -> CBig<R, B> {
-        signed_add(self, rhs, Negative)
+        sub_ref_ref(self, rhs)
     }
 }
 
@@ -136,7 +167,7 @@ mod tests {
         let w = C::from_parts(1.into(), 2.into());
         let r = &z + &w;
         assert_eq!(r.re().significand(), &4.into());
-        assert_eq!(r.imag().significand(), &6.into());
+        assert_eq!(r.im().significand(), &6.into());
     }
 
     #[test]
@@ -144,10 +175,10 @@ mod tests {
         let z = C::from_parts(1.into(), 2.into());
         let w = C::from_parts(3.into(), 4.into());
         // val + val, val + ref, ref + val, ref + ref
-        assert_eq!((z.clone() + w.clone()).imag().significand(), &6.into());
-        assert_eq!((z.clone() + &w).imag().significand(), &6.into());
-        assert_eq!((&z + w.clone()).imag().significand(), &6.into());
-        assert_eq!((&z + &w).imag().significand(), &6.into());
+        assert_eq!((z.clone() + w.clone()).im().significand(), &6.into());
+        assert_eq!((z.clone() + &w).im().significand(), &6.into());
+        assert_eq!((&z + w.clone()).im().significand(), &6.into());
+        assert_eq!((&z + &w).im().significand(), &6.into());
     }
 
     #[test]
@@ -158,7 +189,7 @@ mod tests {
         let mut acc = z.clone();
         acc += w.clone();
         assert_eq!(acc.re().significand(), &4.into());
-        assert_eq!(acc.imag().significand(), &6.into());
+        assert_eq!(acc.im().significand(), &6.into());
 
         let mut acc = z.clone();
         acc += &w;
@@ -171,7 +202,7 @@ mod tests {
         let w = C::from_parts(1.into(), 2.into());
         let r = &z - &w;
         assert_eq!(r.re().significand(), &2.into());
-        assert_eq!(r.imag().significand(), &2.into());
+        assert_eq!(r.im().significand(), &2.into());
     }
 
     #[test]
@@ -199,7 +230,7 @@ mod tests {
         let mut acc = z.clone();
         acc -= w.clone();
         assert_eq!(acc.re().significand(), &3.into());
-        assert_eq!(acc.imag().significand(), &5.into());
+        assert_eq!(acc.im().significand(), &5.into());
 
         let mut acc = z.clone();
         acc -= &w;

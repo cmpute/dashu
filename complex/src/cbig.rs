@@ -41,7 +41,7 @@ use dashu_int::Word;
 /// // base-10 so each integer keeps its own significand
 /// let z = CBig::<HalfAway, 10>::from_parts(FBig::from(3), FBig::from(4));
 /// assert_eq!(z.re().significand(), &3.into());
-/// assert_eq!(z.imag().significand(), &4.into());
+/// assert_eq!(z.im().significand(), &4.into());
 /// ```
 pub struct CBig<R: Round = mode::Zero, const B: Word = 2> {
     pub(crate) re: Repr<B>,
@@ -50,17 +50,11 @@ pub struct CBig<R: Round = mode::Zero, const B: Word = 2> {
 }
 
 impl<R: Round, const B: Word> CBig<R, B> {
-    /// Create a [`CBig`] from raw parts — internal use only.
+    /// Create a [`CBig`] from raw parts (a `const`-capable constructor, the complex analog of
+    /// [`dashu_float::FBig::from_repr_const`]). Used by the `static_cbig!` literal macro and
+    /// internal code; in most cases prefer [`CBig::from_parts`].
     #[inline]
-    pub(crate) const fn new(re: Repr<B>, im: Repr<B>, context: Context<R>) -> Self {
-        Self { re, im, context }
-    }
-
-    /// Create a [`CBig`] directly from its two [`Repr`] parts and a shared [`Context`] (a `const`-
-    /// capable constructor, the complex analog of [`dashu_float::FBig::from_repr_const`]). Used by
-    /// the `static_cbig!` literal macro; in most cases prefer [`CBig::from_parts`].
-    #[inline]
-    pub const fn from_repr_parts(re: Repr<B>, im: Repr<B>, context: Context<R>) -> Self {
+    pub const fn new(re: Repr<B>, im: Repr<B>, context: Context<R>) -> Self {
         Self { re, im, context }
     }
 
@@ -124,7 +118,7 @@ impl<R: Round, const B: Word> CBig<R, B> {
 
     /// Get a reference to the imaginary part's raw representation.
     #[inline]
-    pub const fn imag(&self) -> &Repr<B> {
+    pub const fn im(&self) -> &Repr<B> {
         &self.im
     }
 
@@ -139,7 +133,7 @@ impl<R: Round, const B: Word> CBig<R, B> {
     /// Determine if the complex number is numerically zero (both parts `±0`).
     #[inline]
     pub fn is_zero(&self) -> bool {
-        is_numeric_zero(&self.re) && is_numeric_zero(&self.im)
+        (self.re.is_zero() || self.re.is_neg_zero()) && (self.im.is_zero() || self.im.is_neg_zero())
     }
 
     /// Determine if either part of the complex number is infinite.
@@ -154,33 +148,18 @@ impl<R: Round, const B: Word> CBig<R, B> {
         !self.is_infinite()
     }
 
-    /// The complex infinity produced on overflow: a signed infinity on the real part and `+0` on the
-    /// imaginary part (a provisional component mapping; `proj` collapses any infinity to `+∞ + i·0`).
+    /// The complex infinity produced on overflow: both parts are `+∞` (the Riemann point; `proj`
+    /// collapses any infinity to `+∞ + i·0`).
     #[inline]
-    pub(crate) fn overflow(context: &Context<R>, sign: Sign) -> Self {
-        let re = match sign {
-            Sign::Positive => Repr::infinity(),
-            Sign::Negative => Repr::neg_infinity(),
-        };
-        Self::new(re, Repr::zero(), *context)
+    pub(crate) fn overflow(context: &Context<R>, _sign: Sign) -> Self {
+        Self::new(Repr::infinity(), Repr::infinity(), *context)
     }
 
-    /// The complex zero produced on underflow: a signed zero on the real part and `+0` imaginary.
+    /// The complex zero produced on underflow: both parts are `+0`.
     #[inline]
-    pub(crate) fn underflow(context: &Context<R>, sign: Sign) -> Self {
-        let re = match sign {
-            Sign::Positive => Repr::zero(),
-            Sign::Negative => Repr::neg_zero(),
-        };
-        Self::new(re, Repr::zero(), *context)
+    pub(crate) fn underflow(context: &Context<R>, _sign: Sign) -> Self {
+        Self::new(Repr::zero(), Repr::zero(), *context)
     }
-}
-
-/// A [`Repr`] is numerically zero iff it is `+0` or `-0` (a zero significand that is *not* an
-/// infinity sentinel).
-#[inline]
-pub(crate) fn is_numeric_zero<const B: Word>(repr: &Repr<B>) -> bool {
-    repr.is_zero() || repr.is_neg_zero()
 }
 
 // Custom Clone (the significands are heap-allocated), mirroring FBig.
@@ -227,7 +206,7 @@ mod tests {
         let z = CBig::from_parts(re, im);
         assert_eq!(z.precision(), 1);
         assert_eq!(z.re().significand(), &3.into());
-        assert_eq!(z.imag().significand(), &4.into());
+        assert_eq!(z.im().significand(), &4.into());
     }
 
     #[test]

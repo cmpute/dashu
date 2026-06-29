@@ -1,4 +1,4 @@
-// Copyright (c) 2022 Jacob Zhong
+// Copyright (c) 2026 Jacob Zhong
 //
 // Licensed under either of
 //
@@ -45,7 +45,7 @@
 //! let w = C::I;
 //! let sum = &z + &w; // (3+4i) + i = 3+5i
 //! assert_eq!(sum.re().significand(), &3.into());
-//! assert_eq!(sum.imag().significand(), &5.into());
+//! assert_eq!(sum.im().significand(), &5.into());
 //!
 //! // algebraic display
 //! assert_eq!(format!("{}", sum), "3+5i");

@@ -3,6 +3,7 @@
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, exact, riemann, CfpResult, Context};
 use core::ops::{Div, DivAssign};
+use dashu_base::Inverse;
 use dashu_float::round::Round;
 use dashu_float::{FBig, FpError, Repr};
 use dashu_int::Word;
@@ -13,12 +14,14 @@ const DIV_GUARD: usize = 14;
 
 /// Magnitude comparison of two real parts: `|a| >= |b|`?
 fn abs_ge<const B: Word>(a: &Repr<B>, b: &Repr<B>) -> bool {
-    use dashu_base::Sign;
-    let a_neg = a.sign() == Sign::Negative;
-    let b_neg = b.sign() == Sign::Negative;
-    let a_mag = if a_neg { -a.clone() } else { a.clone() };
-    let b_mag = if b_neg { -b.clone() } else { b.clone() };
-    a_mag.cmp(&b_mag).is_ge()
+    let a_exp = a.exponent();
+    let b_exp = b.exponent();
+    if a_exp != b_exp {
+        return a_exp > b_exp;
+    }
+    // Same exponent — compare significand magnitudes without cloning.
+    use dashu_base::AbsOrd;
+    a.significand().abs_cmp(b.significand()).is_ge()
 }
 
 impl<R: Round> Context<R> {
@@ -32,7 +35,7 @@ impl<R: Round> Context<R> {
         }
         let gctx = self.guard(DIV_GUARD);
         let p = self.precision();
-        let (x, y) = (z.re(), z.imag());
+        let (x, y) = (z.re(), z.im());
         // n = x² + y²
         let x2 = gctx.sqr(x)?.value();
         let y2 = gctx.sqr(y)?.value();
@@ -52,8 +55,8 @@ impl<R: Round> Context<R> {
         }
         let gctx = self.guard(DIV_GUARD);
         let p = self.precision();
-        let (x, y) = (z.re(), z.imag());
-        let (u, v) = (w.re(), w.imag());
+        let (x, y) = (z.re(), z.im());
+        let (u, v) = (w.re(), w.im());
 
         // r, d depend on which of |u|, |v| is larger (Smith's method)
         let (r, d) = if abs_ge(u, v) {
@@ -115,7 +118,7 @@ impl<R: Round> Context<R> {
         let gctx = self.guard(DIV_GUARD);
         let p = self.precision();
         let re = gctx.div(z.re(), s.repr())?.value().with_precision(p);
-        let im = gctx.div(z.imag(), s.repr())?.value().with_precision(p);
+        let im = gctx.div(z.im(), s.repr())?.value().with_precision(p);
         Ok(combine_parts(re, im))
     }
 }
@@ -138,10 +141,20 @@ fn div_special<R: Round, const B: Word>(z: &CBig<R, B>, w: &CBig<R, B>) -> Optio
     }
 }
 
-impl<R: Round, const B: Word> CBig<R, B> {
-    /// Reciprocal `1/z` (convenience layer).
+impl<R: Round, const B: Word> Inverse for CBig<R, B> {
+    type Output = CBig<R, B>;
+
     #[inline]
-    pub fn inv(&self) -> Self {
+    fn inv(self) -> Self::Output {
+        self.context().unwrap_cfp(self.context().inv(&self))
+    }
+}
+
+impl<R: Round, const B: Word> Inverse for &CBig<R, B> {
+    type Output = CBig<R, B>;
+
+    #[inline]
+    fn inv(self) -> Self::Output {
         self.context().unwrap_cfp(self.context().inv(self))
     }
 }
@@ -151,72 +164,77 @@ crate::helper_macros::impl_cbig_binop!(Div, div, DivAssign, div_assign);
 
 // --- scalar division by a real FBig (mixed-type operators) ---
 
-/// CBig / FBig (componentwise) and FBig / CBig (= (s+0i)/z, reusing complex division).
-macro_rules! impl_scalar_div {
-    () => {
-        impl<R: Round, const B: Word> Div<&FBig<R, B>> for &CBig<R, B> {
-            type Output = CBig<R, B>;
-            #[inline]
-            fn div(self, rhs: &FBig<R, B>) -> CBig<R, B> {
-                let ctx = Context::max(self.context(), Context(rhs.context()));
-                ctx.unwrap_cfp(ctx.div_real(self, rhs))
-            }
-        }
-        impl<R: Round, const B: Word> Div<FBig<R, B>> for &CBig<R, B> {
-            type Output = CBig<R, B>;
-            #[inline]
-            fn div(self, rhs: FBig<R, B>) -> CBig<R, B> {
-                self / &rhs
-            }
-        }
-        impl<R: Round, const B: Word> Div<&FBig<R, B>> for CBig<R, B> {
-            type Output = CBig<R, B>;
-            #[inline]
-            fn div(self, rhs: &FBig<R, B>) -> CBig<R, B> {
-                &self / rhs
-            }
-        }
-        impl<R: Round, const B: Word> Div<FBig<R, B>> for CBig<R, B> {
-            type Output = CBig<R, B>;
-            #[inline]
-            fn div(self, rhs: FBig<R, B>) -> CBig<R, B> {
-                &self / &rhs
-            }
-        }
-        // FBig / CBig = (s + 0i) / z, reusing complex division
-        impl<R: Round, const B: Word> Div<&CBig<R, B>> for &FBig<R, B> {
-            type Output = CBig<R, B>;
-            #[inline]
-            fn div(self, rhs: &CBig<R, B>) -> CBig<R, B> {
-                let s = CBig::from(self.clone());
-                let ctx = Context::max(s.context(), rhs.context());
-                ctx.unwrap_cfp(ctx.div(&s, rhs))
-            }
-        }
-        impl<R: Round, const B: Word> Div<CBig<R, B>> for &FBig<R, B> {
-            type Output = CBig<R, B>;
-            #[inline]
-            fn div(self, rhs: CBig<R, B>) -> CBig<R, B> {
-                self / &rhs
-            }
-        }
-        impl<R: Round, const B: Word> Div<&CBig<R, B>> for FBig<R, B> {
-            type Output = CBig<R, B>;
-            #[inline]
-            fn div(self, rhs: &CBig<R, B>) -> CBig<R, B> {
-                &self / rhs
-            }
-        }
-        impl<R: Round, const B: Word> Div<CBig<R, B>> for FBig<R, B> {
-            type Output = CBig<R, B>;
-            #[inline]
-            fn div(self, rhs: CBig<R, B>) -> CBig<R, B> {
-                &self / &rhs
-            }
-        }
-    };
+// CBig / FBig (componentwise).
+impl<R: Round, const B: Word> Div<&FBig<R, B>> for &CBig<R, B> {
+    type Output = CBig<R, B>;
+    #[inline]
+    fn div(self, rhs: &FBig<R, B>) -> CBig<R, B> {
+        let ctx = Context::max(self.context(), Context(rhs.context()));
+        ctx.unwrap_cfp(ctx.div_real(self, rhs))
+    }
 }
-impl_scalar_div!();
+impl<R: Round, const B: Word> Div<FBig<R, B>> for &CBig<R, B> {
+    type Output = CBig<R, B>;
+    #[inline]
+    fn div(self, rhs: FBig<R, B>) -> CBig<R, B> {
+        let ctx = Context::max(self.context(), Context(rhs.context()));
+        ctx.unwrap_cfp(ctx.div_real(self, &rhs))
+    }
+}
+impl<R: Round, const B: Word> Div<&FBig<R, B>> for CBig<R, B> {
+    type Output = CBig<R, B>;
+    #[inline]
+    fn div(self, rhs: &FBig<R, B>) -> CBig<R, B> {
+        let ctx = Context::max(self.context(), Context(rhs.context()));
+        ctx.unwrap_cfp(ctx.div_real(&self, rhs))
+    }
+}
+impl<R: Round, const B: Word> Div<FBig<R, B>> for CBig<R, B> {
+    type Output = CBig<R, B>;
+    #[inline]
+    fn div(self, rhs: FBig<R, B>) -> CBig<R, B> {
+        let ctx = Context::max(self.context(), Context(rhs.context()));
+        ctx.unwrap_cfp(ctx.div_real(&self, &rhs))
+    }
+}
+// FBig / CBig = (s + 0i) / z, reusing complex division.
+impl<R: Round, const B: Word> Div<&CBig<R, B>> for &FBig<R, B> {
+    type Output = CBig<R, B>;
+    #[inline]
+    fn div(self, rhs: &CBig<R, B>) -> CBig<R, B> {
+        let s = CBig::from(self.clone());
+        let ctx = Context::max(s.context(), rhs.context());
+        ctx.unwrap_cfp(ctx.div(&s, rhs))
+    }
+}
+impl<R: Round, const B: Word> Div<CBig<R, B>> for &FBig<R, B> {
+    type Output = CBig<R, B>;
+    #[inline]
+    fn div(self, rhs: CBig<R, B>) -> CBig<R, B> {
+        let this = self.clone();
+        let s = CBig::from(this);
+        let ctx = Context::max(s.context(), rhs.context());
+        ctx.unwrap_cfp(ctx.div(&s, &rhs))
+    }
+}
+impl<R: Round, const B: Word> Div<&CBig<R, B>> for FBig<R, B> {
+    type Output = CBig<R, B>;
+    #[inline]
+    fn div(self, rhs: &CBig<R, B>) -> CBig<R, B> {
+        let s = CBig::from(self);
+        let ctx = Context::max(s.context(), rhs.context());
+        ctx.unwrap_cfp(ctx.div(&s, rhs))
+    }
+}
+impl<R: Round, const B: Word> Div<CBig<R, B>> for FBig<R, B> {
+    type Output = CBig<R, B>;
+    #[inline]
+    fn div(self, rhs: CBig<R, B>) -> CBig<R, B> {
+        let s = CBig::from(self);
+        let ctx = Context::max(s.context(), rhs.context());
+        ctx.unwrap_cfp(ctx.div(&s, &rhs))
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -237,7 +255,7 @@ mod tests {
         let z = c(3, 4);
         let q = &z / &z;
         assert_eq!(q.re().significand(), &1.into());
-        assert!(q.imag().significand().is_zero());
+        assert!(q.im().significand().is_zero());
     }
 
     #[test]
@@ -247,7 +265,7 @@ mod tests {
         let w = c(3, 4);
         let q = &z / &w;
         assert_eq!(q.re().significand(), &2.into());
-        assert!(q.imag().significand().is_zero());
+        assert!(q.im().significand().is_zero());
     }
 
     #[test]
@@ -256,13 +274,13 @@ mod tests {
         type F = FBig<mode::HalfAway, 10>;
         let mk = |v: i32| -> F { F::from(v).with_precision(53).value() };
         let z = C::from_parts(mk(3), mk(4));
-        let r = z.inv();
+        let r = (&z).inv();
         // (3-4i)/25: re = 3/25, im = -4/25
         assert_eq!(r.context().precision(), 53);
         // re ≈ 0.12, im ≈ -0.16; check via multiplying back: z·inv(z) = 1
         let one = &z * &r;
         assert_eq!(one.re().significand(), &1.into());
-        assert!(one.imag().significand().is_zero());
+        assert!(one.im().significand().is_zero());
     }
 
     #[test]
@@ -271,6 +289,6 @@ mod tests {
         let s = FBig::<mode::HalfAway, 10>::from(2);
         let q = &z / &s;
         assert_eq!(q.re().significand(), &3.into());
-        assert_eq!(q.imag().significand(), &4.into());
+        assert_eq!(q.im().significand(), &4.into());
     }
 }

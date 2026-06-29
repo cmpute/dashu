@@ -101,7 +101,7 @@ impl<R: Round> Context<R> {
     pub fn proj<const B: Word>(&self, z: &CBig<R, B>) -> CfpResult<R, B> {
         if z.is_infinite() {
             // +∞ on the real part; the imaginary zero carries the sign of the original imag part.
-            let im = if z.imag().sign() == Sign::Negative {
+            let im = if z.im().sign() == Sign::Negative {
                 Repr::neg_zero()
             } else {
                 Repr::zero()
@@ -141,7 +141,7 @@ impl<R: Round> Context<R> {
         }
         let gctx = self.guard(NORM_GUARD);
         let re2 = gctx.unwrap_fp(gctx.sqr(z.re()));
-        let im2 = gctx.unwrap_fp(gctx.sqr(z.imag()));
+        let im2 = gctx.unwrap_fp(gctx.sqr(z.im()));
         let n = gctx.unwrap_fp(gctx.add(re2.repr(), im2.repr()));
         Ok(n.with_precision(self.precision()))
     }
@@ -153,7 +153,7 @@ impl<R: Round> Context<R> {
         z: &CBig<R, B>,
         cache: Option<&mut dashu_float::ConstCache>,
     ) -> FpResult<FBig<R, B>> {
-        self.float().atan2(z.imag(), z.re(), cache)
+        self.float().atan2(z.im(), z.re(), cache)
     }
 
     /// The modulus `|z| = hypot(re, im)` (context layer). Near-correctly rounded; returns `+∞` for
@@ -164,7 +164,7 @@ impl<R: Round> Context<R> {
     /// Panics if the precision is unlimited.
     pub fn abs<const B: Word>(&self, z: &CBig<R, B>) -> FpResult<FBig<R, B>> {
         let gctx = self.guard(ABS_GUARD);
-        let h = gctx.hypot(z.re(), z.imag())?;
+        let h = gctx.hypot(z.re(), z.im())?;
         Ok(h.value().with_precision(self.precision()))
     }
 }
@@ -181,10 +181,10 @@ mod tests {
         let z = C::from_parts(3.into(), 4.into());
         let n = -&z; // Neg by reference (no inherent neg method)
         assert_eq!(n.re().significand(), &(-3i32).into());
-        assert_eq!(n.imag().significand(), &(-4i32).into());
+        assert_eq!(n.im().significand(), &(-4i32).into());
         let c = z.conj();
         assert_eq!(c.re().significand(), &3.into());
-        assert_eq!(c.imag().significand(), &(-4i32).into());
+        assert_eq!(c.im().significand(), &(-4i32).into());
     }
 
     #[test]
@@ -193,11 +193,11 @@ mod tests {
         // ×i: (3,4) -> (-4, 3)
         let zi = z.mul_i(false);
         assert_eq!(zi.re().significand(), &(-4i32).into());
-        assert_eq!(zi.imag().significand(), &3.into());
+        assert_eq!(zi.im().significand(), &3.into());
         // ×(-i): (3,4) -> (4, -3)
         let zni = z.mul_i(true);
         assert_eq!(zni.re().significand(), &4.into());
-        assert_eq!(zni.imag().significand(), &(-3i32).into());
+        assert_eq!(zni.im().significand(), &(-3i32).into());
         // mul_i^4 == identity
         let id = z.mul_i(false).mul_i(false).mul_i(false).mul_i(false);
         assert!(id == z);
@@ -215,7 +215,7 @@ mod tests {
         let p = inf.proj();
         assert!(p.re().is_infinite());
         assert_eq!(p.re().sign(), Sign::Positive);
-        assert!(p.imag().is_zero());
+        assert!(p.im().is_zero());
     }
 
     #[test]

@@ -34,7 +34,7 @@ impl<R: Round> Context<R> {
         let p = self.precision();
         let two = FBig::from_repr(Repr::new(2.into(), 0), gctx);
         let x = z.re();
-        let y = z.imag();
+        let y = z.im();
 
         // r = |z| (overflow-safe). Use the cancellation-free form: for x ≥ 0 compute `a` from
         // `(r+x)/2` (large) and `b = y/(2a)`; for x < 0 compute `b` from `(r-x)/2` (large) and
@@ -90,7 +90,7 @@ fn sqrt_special<R: Round, const B: Word>(
     if z.is_zero() {
         return Some(Ok(exact(
             FBig::from_repr(z.re().clone(), f),
-            FBig::from_repr(z.imag().clone(), f),
+            FBig::from_repr(z.im().clone(), f),
         )));
     }
     if !z.is_infinite() {
@@ -99,7 +99,7 @@ fn sqrt_special<R: Round, const B: Word>(
 
     let x_pos_inf = z.re().is_infinite() && z.re().sign() == Sign::Positive;
     let x_neg_inf = z.re().is_infinite() && z.re().sign() == Sign::Negative;
-    let y_sign = z.imag().sign();
+    let y_sign = z.im().sign();
 
     let (re, im) = if x_pos_inf {
         // sqrt(+inf + iy) = +inf + i·0 (the zero carries the sign of y)
@@ -157,7 +157,7 @@ mod tests {
         let z = c(-4, 0);
         let s = z.sqrt();
         assert!(s.re().significand().is_zero());
-        assert_eq!(s.imag().significand(), &2.into());
+        assert_eq!(s.im().significand(), &2.into());
     }
 
     #[test]
@@ -180,6 +180,6 @@ mod tests {
         let inf = CBig::from(F::INFINITY);
         let s = inf.sqrt();
         assert!(s.re().is_infinite());
-        assert!(s.imag().is_zero());
+        assert!(s.im().is_zero());
     }
 }

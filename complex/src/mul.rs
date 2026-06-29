@@ -1,6 +1,6 @@
 //! Complex squaring and multiplication (near-correctly rounded via the guard-digit recipe).
 
-use crate::cbig::{is_numeric_zero, CBig};
+use crate::cbig::CBig;
 use crate::repr::{combine_parts, exact, riemann, CfpResult, Context};
 use core::ops::{Mul, MulAssign};
 use dashu_float::round::Round;
@@ -23,7 +23,7 @@ impl<R: Round> Context<R> {
         }
         let gctx = self.guard(MUL_GUARD);
         let p = self.precision();
-        let (x, y) = (z.re(), z.imag());
+        let (x, y) = (z.re(), z.im());
         // real part: x² - y²
         let x2 = gctx.sqr(x)?.value();
         let y2 = gctx.sqr(y)?.value();
@@ -45,8 +45,8 @@ impl<R: Round> Context<R> {
         }
         let gctx = self.guard(MUL_GUARD);
         let p = self.precision();
-        let (x, y) = (z.re(), z.imag());
-        let (u, v) = (w.re(), w.imag());
+        let (x, y) = (z.re(), z.im());
+        let (u, v) = (w.re(), w.im());
         // real part: xu - yv
         let xu = gctx.mul(x, u)?.value();
         let yv = gctx.mul(y, v)?.value();
@@ -61,7 +61,7 @@ impl<R: Round> Context<R> {
     /// Multiply a complex number by a real scalar (context layer): `(x+iy)·s = (xs) + i(ys)`.
     pub fn mul_real<const B: Word>(&self, z: &CBig<R, B>, s: &FBig<R, B>) -> CfpResult<R, B> {
         if z.is_infinite() || s.repr().is_infinite() {
-            if z.is_zero() || is_numeric_zero(s.repr()) {
+            if z.is_zero() || s.repr().is_zero() || s.repr().is_neg_zero() {
                 return Err(FpError::Indeterminate); // 0·∞
             }
             return Ok(riemann(*self));
@@ -69,7 +69,7 @@ impl<R: Round> Context<R> {
         let gctx = self.guard(MUL_GUARD);
         let p = self.precision();
         let re = gctx.mul(z.re(), s.repr())?.value().with_precision(p);
-        let im = gctx.mul(z.imag(), s.repr())?.value().with_precision(p);
+        let im = gctx.mul(z.im(), s.repr())?.value().with_precision(p);
         Ok(combine_parts(re, im))
     }
 }
@@ -82,112 +82,72 @@ impl<R: Round, const B: Word> CBig<R, B> {
     }
 }
 
-// CBig · CBig operators — the four ref/val impls written out explicitly, each delegating to
-// `Context::mul` (mirroring `dashu-float`'s `mul.rs`), with `MulAssign` forwarded through `mem::take`.
-impl<R: Round, const B: Word> Mul<&CBig<R, B>> for &CBig<R, B> {
+// CBig · CBig operators — forwarded through the standard macro (mirroring `dashu-float`'s `mul.rs`).
+crate::helper_macros::impl_cbig_binop!(Mul, mul, MulAssign, mul_assign);
+
+// --- scalar multiplication by a real FBig (mixed-type operators) ---
+
+// CBig · FBig (componentwise) and FBig · CBig (commutative: FBig·CBig = CBig·FBig).
+impl<R: Round, const B: Word> Mul<&FBig<R, B>> for &CBig<R, B> {
+    type Output = CBig<R, B>;
+    #[inline]
+    fn mul(self, rhs: &FBig<R, B>) -> CBig<R, B> {
+        let ctx = Context::max(self.context(), Context(rhs.context()));
+        ctx.unwrap_cfp(ctx.mul_real(self, rhs))
+    }
+}
+impl<R: Round, const B: Word> Mul<FBig<R, B>> for &CBig<R, B> {
+    type Output = CBig<R, B>;
+    #[inline]
+    fn mul(self, rhs: FBig<R, B>) -> CBig<R, B> {
+        let ctx = Context::max(self.context(), Context(rhs.context()));
+        ctx.unwrap_cfp(ctx.mul_real(self, &rhs))
+    }
+}
+impl<R: Round, const B: Word> Mul<&FBig<R, B>> for CBig<R, B> {
+    type Output = CBig<R, B>;
+    #[inline]
+    fn mul(self, rhs: &FBig<R, B>) -> CBig<R, B> {
+        let ctx = Context::max(self.context(), Context(rhs.context()));
+        ctx.unwrap_cfp(ctx.mul_real(&self, rhs))
+    }
+}
+impl<R: Round, const B: Word> Mul<FBig<R, B>> for CBig<R, B> {
+    type Output = CBig<R, B>;
+    #[inline]
+    fn mul(self, rhs: FBig<R, B>) -> CBig<R, B> {
+        let ctx = Context::max(self.context(), Context(rhs.context()));
+        ctx.unwrap_cfp(ctx.mul_real(&self, &rhs))
+    }
+}
+impl<R: Round, const B: Word> Mul<&CBig<R, B>> for &FBig<R, B> {
     type Output = CBig<R, B>;
     #[inline]
     fn mul(self, rhs: &CBig<R, B>) -> CBig<R, B> {
-        let ctx = Context::max(self.context(), rhs.context());
-        ctx.unwrap_cfp(ctx.mul(self, rhs))
+        rhs * self
     }
 }
-
-impl<R: Round, const B: Word> Mul<&CBig<R, B>> for CBig<R, B> {
+impl<R: Round, const B: Word> Mul<CBig<R, B>> for &FBig<R, B> {
+    type Output = CBig<R, B>;
+    #[inline]
+    fn mul(self, rhs: CBig<R, B>) -> CBig<R, B> {
+        &rhs * self
+    }
+}
+impl<R: Round, const B: Word> Mul<&CBig<R, B>> for FBig<R, B> {
     type Output = CBig<R, B>;
     #[inline]
     fn mul(self, rhs: &CBig<R, B>) -> CBig<R, B> {
-        let ctx = Context::max(self.context(), rhs.context());
-        ctx.unwrap_cfp(ctx.mul(&self, rhs))
+        rhs * &self
     }
 }
-
-impl<R: Round, const B: Word> Mul<CBig<R, B>> for &CBig<R, B> {
+impl<R: Round, const B: Word> Mul<CBig<R, B>> for FBig<R, B> {
     type Output = CBig<R, B>;
     #[inline]
     fn mul(self, rhs: CBig<R, B>) -> CBig<R, B> {
-        let ctx = Context::max(self.context(), rhs.context());
-        ctx.unwrap_cfp(ctx.mul(self, &rhs))
+        &rhs * &self
     }
 }
-
-impl<R: Round, const B: Word> Mul<CBig<R, B>> for CBig<R, B> {
-    type Output = CBig<R, B>;
-    #[inline]
-    fn mul(self, rhs: CBig<R, B>) -> CBig<R, B> {
-        let ctx = Context::max(self.context(), rhs.context());
-        ctx.unwrap_cfp(ctx.mul(&self, &rhs))
-    }
-}
-
-crate::helper_macros::impl_binop_assign_by_taking!(impl MulAssign<Self>, mul_assign, mul);
-
-// --- scalar multiplication by a real FBig (mixed-type operators, no named methods) ---
-
-/// Forward all scalar-`Mul` ref/val combinations onto the `&CBig · &FBig` core (which is commutative
-/// for the `FBig · CBig` direction).
-macro_rules! impl_scalar_mul {
-    () => {
-        impl<R: Round, const B: Word> Mul<&FBig<R, B>> for &CBig<R, B> {
-            type Output = CBig<R, B>;
-            #[inline]
-            fn mul(self, rhs: &FBig<R, B>) -> CBig<R, B> {
-                let ctx = Context::max(self.context(), Context(rhs.context()));
-                ctx.unwrap_cfp(ctx.mul_real(self, rhs))
-            }
-        }
-        impl<R: Round, const B: Word> Mul<FBig<R, B>> for &CBig<R, B> {
-            type Output = CBig<R, B>;
-            #[inline]
-            fn mul(self, rhs: FBig<R, B>) -> CBig<R, B> {
-                self * &rhs
-            }
-        }
-        impl<R: Round, const B: Word> Mul<&FBig<R, B>> for CBig<R, B> {
-            type Output = CBig<R, B>;
-            #[inline]
-            fn mul(self, rhs: &FBig<R, B>) -> CBig<R, B> {
-                &self * rhs
-            }
-        }
-        impl<R: Round, const B: Word> Mul<FBig<R, B>> for CBig<R, B> {
-            type Output = CBig<R, B>;
-            #[inline]
-            fn mul(self, rhs: FBig<R, B>) -> CBig<R, B> {
-                &self * &rhs
-            }
-        }
-        impl<R: Round, const B: Word> Mul<&CBig<R, B>> for &FBig<R, B> {
-            type Output = CBig<R, B>;
-            #[inline]
-            fn mul(self, rhs: &CBig<R, B>) -> CBig<R, B> {
-                rhs * self
-            }
-        }
-        impl<R: Round, const B: Word> Mul<CBig<R, B>> for &FBig<R, B> {
-            type Output = CBig<R, B>;
-            #[inline]
-            fn mul(self, rhs: CBig<R, B>) -> CBig<R, B> {
-                &rhs * self
-            }
-        }
-        impl<R: Round, const B: Word> Mul<&CBig<R, B>> for FBig<R, B> {
-            type Output = CBig<R, B>;
-            #[inline]
-            fn mul(self, rhs: &CBig<R, B>) -> CBig<R, B> {
-                rhs * &self
-            }
-        }
-        impl<R: Round, const B: Word> Mul<CBig<R, B>> for FBig<R, B> {
-            type Output = CBig<R, B>;
-            #[inline]
-            fn mul(self, rhs: CBig<R, B>) -> CBig<R, B> {
-                &rhs * &self
-            }
-        }
-    };
-}
-impl_scalar_mul!();
 
 #[cfg(test)]
 mod tests {
@@ -208,7 +168,7 @@ mod tests {
         let z = c(3, 4);
         let s = z.sqr();
         assert_eq!(s.re().significand(), &(-7i32).into());
-        assert_eq!(s.imag().significand(), &24.into());
+        assert_eq!(s.im().significand(), &24.into());
     }
 
     #[test]
@@ -245,7 +205,7 @@ mod tests {
         // z·conj(z) = norm(z), purely real
         let z = c(3, 4);
         let p = &z * &z.conj();
-        assert!(is_numeric_zero(p.imag()));
+        assert!(p.im().is_zero() || p.im().is_neg_zero());
         assert_eq!(p.re().significand(), &25.into());
     }
 
@@ -255,7 +215,7 @@ mod tests {
         let s = FBig::<mode::HalfAway, 10>::from(2);
         let p = &z * &s;
         assert_eq!(p.re().significand(), &6.into());
-        assert_eq!(p.imag().significand(), &8.into());
+        assert_eq!(p.im().significand(), &8.into());
         // commutes: s * z
         let p2 = &s * &z;
         assert_eq!(p2.re().significand(), &6.into());

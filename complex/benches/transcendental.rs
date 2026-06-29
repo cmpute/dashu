@@ -46,7 +46,7 @@ macro_rules! unary_bench {
 }
 
 unary_bench!(exp, exp);
-unary_bench!(log, log);
+unary_bench!(ln, ln);
 unary_bench!(sin, sin);
 unary_bench!(cos, cos);
 unary_bench!(sqrt, sqrt);
@@ -67,5 +67,5 @@ fn abs_arg(criterion: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, exp, log, sin, cos, sqrt, abs_arg);
+criterion_group!(benches, exp, ln, sin, cos, sqrt, abs_arg);
 criterion_main!(benches);

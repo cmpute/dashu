@@ -17,6 +17,22 @@ use dashu_float::round::Round;
 use dashu_int::Word;
 use num_order::{NumHash, NumOrd};
 
+/// The *bterm* in num-order's `Complex<f64>` NumHash: `∓PROOT²·b²` (sign of `b`).
+#[inline]
+fn bterm(b: i128) -> i128 {
+    type MInt = FixedMersenneInt<127, 1>;
+    const M127U: u128 = i128::MAX as u128;
+    const PROOT: u128 = i32::MAX as u128;
+
+    if b >= 0 {
+        let pb = MInt::new(b as u128, &M127U) * PROOT;
+        -((pb * pb).residue() as i128)
+    } else {
+        let pb = MInt::new((-b) as u128, &M127U) * PROOT;
+        (pb * pb).residue() as i128
+    }
+}
+
 impl<R1: Round, R2: Round, const B: Word> NumOrd<CBig<R2, B>> for CBig<R1, B> {
     #[inline]
     fn num_cmp(&self, other: &CBig<R2, B>) -> Ordering {
@@ -32,21 +48,9 @@ impl<R1: Round, R2: Round, const B: Word> NumOrd<CBig<R2, B>> for CBig<R1, B> {
 impl<R: Round, const B: Word> NumHash for CBig<R, B> {
     fn num_hash<H: Hasher>(&self, state: &mut H) {
         // Mirror num-order's `Complex<f64>` NumHash: z = a + b·i, hash(a + bterm).
-        type MInt = FixedMersenneInt<127, 1>;
-        const M127U: u128 = i128::MAX as u128;
-        const PROOT: u128 = i32::MAX as u128;
-
         let a = self.re().num_hash_residue();
-        let b = self.imag().num_hash_residue();
-
-        let bterm = if b >= 0 {
-            let pb = MInt::new(b as u128, &M127U) * PROOT;
-            -((pb * pb).residue() as i128)
-        } else {
-            let pb = MInt::new((-b) as u128, &M127U) * PROOT;
-            (pb * pb).residue() as i128
-        };
-        a.wrapping_add(bterm).num_hash(state)
+        let b = self.im().num_hash_residue();
+        a.wrapping_add(bterm(b)).num_hash(state)
     }
 }
 
@@ -97,27 +101,15 @@ mod tests {
 
     #[test]
     fn cbig_num_hash_matches_num_complex() {
-        // The base-2 CBig residue must equal num-order's `Complex<f64>` formula, transcribed from
-        // num-order/src/hash.rs (Case 4): hash(a + bterm), bterm = ∓PROOT²·b² (sign of b), with a, b
-        // the f64 residues. (Relies on dashu-float's Repr residue equalling f64's `fhash` — see
-        // float's `test_fbig_num_hash_matches_f64`.)
+        // The base-2 CBig residue must equal num-order's `Complex<f64>` formula: hash(a + bterm)
+        // with bterm = ∓PROOT²·b² (sign of b). Uses the shared `bterm` helper (same as production
+        // code), not a duplicated transcription. Relies on dashu-float's Repr residue equalling
+        // f64's `fhash` — see float's `test_fbig_num_hash_matches_f64`.
         use dashu_float::FBig;
         type CF = CBig<mode::Zero, 2>;
-        type MInt = FixedMersenneInt<127, 1>;
-        const M127U: u128 = i128::MAX as u128;
-        const PROOT: u128 = i32::MAX as u128;
 
-        fn num_complex_expected(re: f64, im: f64) -> i128 {
-            let a = residue(&re);
-            let b = residue(&im);
-            let bterm = if b >= 0 {
-                let pb = MInt::new(b as u128, &M127U) * PROOT;
-                -((pb * pb).residue() as i128)
-            } else {
-                let pb = MInt::new((-b) as u128, &M127U) * PROOT;
-                (pb * pb).residue() as i128
-            };
-            residue(&(a.wrapping_add(bterm)))
+        fn expected(re: f64, im: f64) -> i128 {
+            residue(&(residue(&re).wrapping_add(super::bterm(residue(&im)))))
         }
 
         for (re, im) in [
@@ -132,7 +124,7 @@ mod tests {
             let z = CF::from_parts(FBig::try_from(re).unwrap(), FBig::try_from(im).unwrap());
             assert_eq!(
                 residue(&z),
-                num_complex_expected(re, im),
+                expected(re, im),
                 "CBig num_hash disagrees with num-complex formula for {re}+{im}i"
             );
         }

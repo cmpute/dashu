@@ -24,7 +24,7 @@ fn inf() -> C {
 }
 
 fn is_riemann(r: &C) -> bool {
-    r.re().is_infinite() && r.re().sign() == Sign::Positive && r.imag().is_zero()
+    r.re().is_infinite() && r.re().sign() == Sign::Positive && r.im().is_zero()
 }
 
 #[test]
@@ -174,8 +174,8 @@ fn conj_infinity_flips_imag_sign() {
     let z = CBig::from_parts(F::INFINITY, F::INFINITY);
     let c = ctx().conj(&z).unwrap().value();
     assert!(c.re().is_infinite());
-    assert!(c.imag().is_infinite());
-    assert_eq!(c.imag().sign(), Sign::Negative);
+    assert!(c.im().is_infinite());
+    assert_eq!(c.im().sign(), Sign::Negative);
 }
 
 #[test]
@@ -210,6 +210,6 @@ fn sqrt_neg_infinity_is_imaginary_infinity() {
     let neg_inf = CBig::from(F::NEG_INFINITY);
     let s = ctx().sqrt(&neg_inf).unwrap().value();
     assert!(s.re().is_zero());
-    assert!(s.imag().is_infinite());
-    assert_eq!(s.imag().sign(), Sign::Positive);
+    assert!(s.im().is_infinite());
+    assert_eq!(s.im().sign(), Sign::Positive);
 }

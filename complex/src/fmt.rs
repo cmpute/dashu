@@ -3,7 +3,7 @@
 //! This diverges from MPC's parenthesized `"(re im)"` form: `dashu-cmplx` uses the human-readable
 //! algebraic notation (the `num-complex` idiom). The parenthesized form is **not** accepted on input.
 
-use crate::cbig::{is_numeric_zero, CBig};
+use crate::cbig::CBig;
 use core::fmt::{self, Debug, Display, Formatter, Write};
 use dashu_float::round::Round;
 use dashu_float::{FBig, Repr};
@@ -13,7 +13,7 @@ use dashu_int::{IBig, Word};
 fn is_unit<const B: Word>(repr: &Repr<B>) -> bool {
     repr.exponent() == 0 && {
         let s = repr.significand();
-        *s == IBig::from(1) || *s == IBig::from(-1)
+        *s == IBig::ONE || *s == IBig::NEG_ONE
     }
 }
 
@@ -24,8 +24,8 @@ impl<R: Round, const B: Word> Display for CBig<R, B> {
     /// [`FBig`]'s native `Display` (specials render as `inf` / `-inf`).
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let fctx = self.context.float();
-        let re_zero = is_numeric_zero(&self.re);
-        let im_zero = is_numeric_zero(&self.im);
+        let re_zero = self.re.is_zero() || self.re.is_neg_zero();
+        let im_zero = self.im.is_zero() || self.im.is_neg_zero();
         let im_neg = self.im.sign() == dashu_base::Sign::Negative;
         let im_unit = is_unit(&self.im);
 

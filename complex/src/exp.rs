@@ -38,7 +38,7 @@ impl<R: Round> Context<R> {
             return Ok(exact(FBig::ONE, FBig::ZERO));
         }
         if z.is_infinite() {
-            if z.imag().is_infinite() {
+            if z.im().is_infinite() {
                 return Err(FpError::Indeterminate); // cos/sin(±inf) undefined
             }
             return if z.re().sign() == Sign::Positive {
@@ -51,7 +51,7 @@ impl<R: Round> Context<R> {
         let gctx = self.guard(EXP_GUARD);
         let p = self.precision();
         let ex = gctx.exp(z.re(), reborrow_cache(&mut cache))?.value();
-        let (sin_y, cos_y) = gctx.sin_cos(z.imag(), reborrow_cache(&mut cache));
+        let (sin_y, cos_y) = gctx.sin_cos(z.im(), reborrow_cache(&mut cache));
         let cos_y = cos_y?.value();
         let sin_y = sin_y?.value();
         let re = gctx.mul(ex.repr(), cos_y.repr())?.value().with_precision(p);
@@ -192,7 +192,7 @@ mod tests {
         let inf = CBig::from(F::INFINITY);
         let r = inf.exp();
         assert!(r.re().is_infinite());
-        assert!(r.imag().is_zero());
+        assert!(r.im().is_zero());
     }
 
     #[test]

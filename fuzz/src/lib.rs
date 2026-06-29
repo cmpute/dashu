@@ -127,7 +127,7 @@ pub mod cmplx {
     }
 
     pub fn rug_to_f64(z: &rug::Complex) -> (f64, f64) {
-        (z.real().to_f64(), z.imag().to_f64())
+        (z.real().to_f64(), z.im().to_f64())
     }
 
     /// True when both `(re, im)` pairs are finite and agree to within a few ulps (scale-relative).

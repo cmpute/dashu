@@ -5,6 +5,15 @@
 ### Improve
 - The complex `sin_cos` kernel now calls `dashu-float`'s combined `sinh_cosh` (new in `dashu-float`)
   instead of separate `sinh` + `cosh` calls, sharing the `exp_m1(±y)` sub-computations.
+- `CBig::overflow` now returns `+∞ + i·∞` (both parts infinite) instead of `±∞ + i·0`, fixing the
+  questionably asymmetric infinity representation on overflow.
+- `abs_ge` in `div.rs` now compares by exponent then significand magnitudes without cloning the
+  heap-allocated `Repr` parts.
+- Defined `Uniform01<BASE>` in `rand.rs` (mirroring `dashu-float`'s `Uniform01`), wrapping two
+  per-part `Uniform01` samplers for custom-precision unit-square sampling.
+- The `add.rs` operator kernel now follows `FBig`'s `add_val_val`/`add_ref_ref` pattern: four
+  separate per-ownership kernel functions (`add_val_val`, `add_val_ref`, …) instead of a single
+  `signed_add` that immediately borrows owned values.
 
 ### Change
 - `complex/src/sub.rs` is merged into `complex/src/add.rs`, mirroring `dashu-float`'s layout where
@@ -26,14 +35,33 @@
 - `complex/src/context.rs` is renamed to `complex/src/repr.rs`, mirroring `dashu-float`, where
   `Context` lives in `repr.rs`. All `crate::context::` paths are now `crate::repr::`. No behavioral
   change.
+- `CBig::imag()` is renamed to `CBig::im()` (shorter, matches `num-complex`'s convention).
+- `CBig::log()` is renamed to `CBig::ln()` (the primary name; the context-layer method is still
+  `log`). The `log` convenience alias is removed — consistent with `FBig`'s naming.
+- `CBig::from_repr_parts` (a `pub` const constructor) is removed; the existing `CBig::new` is made
+  `pub` instead (from_repr_parts and new were identical).
+- `CBig::inv()` as a standalone method is removed in favor of `impl Inverse for CBig` / `impl
+  Inverse for &CBig` (the `dashu_base::Inverse` trait, matching `FBig`).
+- The `Mul`/`MulAssign` impls now use the shared `impl_cbig_binop!` macro (like `Div`), replacing
+  the manually-written four ref/val combinations.
+- The parameterless `impl_scalar_mul!()` and `impl_scalar_div!()` macros (each invoked exactly
+  once) are unrolled into inline impl blocks, each calling the context-layer method directly instead
+  of forwarding through `&self / &rhs`.
+- The `cbig_one`/`cbig_real`/`reround`/`ok_exact_zero`/`ok_exact_one` helper functions in
+  `math/trig.rs` are inlined at their call sites.
+- `is_numeric_zero` (a one-line `||` helper) is inlined at its four call sites and removed.
 
 ### Fix
 - `CBig`'s `NumHash` now mirrors the `num-order` crate's `Complex<f64>` hashing (algebraic
   combination of the per-part residues `a + ∓PROOT²·b²`, not a sequential tuple hash), so a `CBig`
   and a `num-complex` `Complex` of the same value produce the same hash. Verified against
-  `num-order`'s `f64`/`Complex<f64>` reference.
+  `num-order`'s `f64`/`Complex<f64>` reference. The *bterm* computation is extracted into a
+  shared helper, so the test no longer duplicates the hash formula.
 - The inline `Display`/`FromStr` unit tests failed to compile under `no_std`
   (`cargo test --no-default-features`): the test modules now import `alloc::format`.
+- `is_unit` in `fmt.rs` now uses `IBig::ONE` and `IBig::NEG_ONE` constants rather than
+  `IBig::from(±1)`.
+- Copyright year updated from 2022 to 2026 in `lib.rs`.
 
 ### Add
 - New crate `dashu-cmplx` providing the arbitrary-precision complex number type [`CBig`], built on top of
