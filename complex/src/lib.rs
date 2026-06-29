@@ -55,6 +55,8 @@
 //!
 //! * `std` (*default*): enable `std` for dependencies.
 //! * `num-order` (*default*): `NumOrd`/`NumHash` for `CBig`.
+//! * `num-complex`: `TryFrom` conversions between `CBig` and `num-complex`'s `Complex<f32>`/
+//!   `Complex<f64>` (base-2, mirroring `FBig`'s primitive-float conversions).
 
 #![cfg_attr(not(feature = "std"), no_std)]
 

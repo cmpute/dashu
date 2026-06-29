@@ -50,6 +50,12 @@
 - The `cbig_one`/`cbig_real`/`reround`/`ok_exact_zero`/`ok_exact_one` helper functions in
   `math/trig.rs` are inlined at their call sites.
 - `is_numeric_zero` (a one-line `||` helper) is inlined at its four call sites and removed.
+- The `num-order` feature no longer pulls in `num-complex` (it stopped enabling
+  `num-order/num-complex`), and `num-complex` is no longer an unconditional dependency: it is now an
+  opt-in normal dependency behind the `num-complex` feature (for the conversions below), plus a
+  dev-dependency (the `num-order` `NumHash` test compares against `num-complex`'s live `Complex<f64>`
+  reference). Enabling only `num-order` (the default) therefore no longer drags `num-complex` into
+  the dependency tree.
 
 ### Fix
 - `CBig`'s `NumHash` now mirrors the `num-order` crate's `Complex<f64>` hashing (algebraic
@@ -64,6 +70,10 @@
 - Copyright year updated from 2022 to 2026 in `lib.rs`.
 
 ### Add
+- New `num-complex` feature providing `TryFrom` conversions between `CBig` and `num-complex`'s
+  `Complex<f32>`/`Complex<f64>` (base-2, composing through `FBig`): lifting is exact with NaN →
+  `OutOfBounds`, infinities and signed zeros preserved; rounding back errors on overflow or
+  inexactness — mirroring `FBig`'s primitive-float `TryFrom` pair.
 - New crate `dashu-cmplx` providing the arbitrary-precision complex number type [`CBig`], built on top of
   [`dashu-float`]'s `FBig`. Each `CBig` stores a real and an imaginary part (`Repr`) over a single shared
   precision and rounding mode, mirroring `FBig`'s `Repr`+`Context` layout.

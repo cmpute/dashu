@@ -1,5 +1,8 @@
 //! Third-party trait implementations (feature-gated).
 
+#[cfg(feature = "num-complex")]
+mod num_complex;
+
 #[cfg(feature = "num-order")]
 mod num_order;
 
