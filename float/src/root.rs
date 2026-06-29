@@ -254,14 +254,6 @@ impl<R: Round> Context<R> {
     }
 }
 
-/// The magnitude (absolute value) of a [`Repr`] as an owned [`Repr`].
-fn abs_repr<const B: Word>(r: &Repr<B>) -> Repr<B> {
-    if r.sign() == Sign::Negative {
-        -r.clone()
-    } else {
-        r.clone()
-    }
-}
 
 impl<R: Round> Context<R> {
     /// Compute `sqrt(a² + b²)` without spurious overflow/underflow.
@@ -292,8 +284,8 @@ impl<R: Round> Context<R> {
         let gctx = Context::<R>::new(self.precision + guard);
 
         // magnitudes, ordered large >= small (both finite, not both zero here)
-        let a_mag = abs_repr(a);
-        let b_mag = abs_repr(b);
+        let a_mag = if a.sign() == Sign::Negative { -a.clone() } else { a.clone() };
+        let b_mag = if b.sign() == Sign::Negative { -b.clone() } else { b.clone() };
         let (large, small) = if a_mag.cmp(&b_mag).is_ge() {
             (a_mag, b_mag)
         } else {
