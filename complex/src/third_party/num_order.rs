@@ -101,18 +101,15 @@ mod tests {
 
     #[test]
     fn cbig_num_hash_matches_num_complex() {
-        // The base-2 CBig residue must equal num-order's `Complex<f64>` formula: hash(a + bterm)
-        // with bterm = ∓PROOT²·b² (sign of b). Uses the shared `bterm` helper (same function as
-        // production code), not a duplicated transcription. The cross-type consistency against
-        // `num_complex::Complex<f64>` itself is verified in the integration test
-        // `tests/num_hash.rs`. Relies on dashu-float's Repr residue equalling f64's `fhash` —
-        // see float's `test_fbig_num_hash_matches_f64`.
+        // The base-2 CBig residue must equal num-order's `Complex<f64>` hash. Uses
+        // `num_complex::Complex64` as the live reference — it delegates to num-order's actual
+        // `NumHash` implementation (not a manually-transcribed formula), so if num-order ever
+        // changes the hash algorithm the test automatically tracks it.
+        // Relies on dashu-float's Repr residue equalling f64's `fhash` — see float's
+        // `test_fbig_num_hash_matches_f64`.
         use dashu_float::FBig;
+        use num_complex_v04::Complex64;
         type CF = CBig<mode::Zero, 2>;
-
-        fn expected(re: f64, im: f64) -> i128 {
-            residue(&(residue(&re).wrapping_add(super::bterm(residue(&im)))))
-        }
 
         for (re, im) in [
             (3.0_f64, 4.0),
@@ -124,10 +121,11 @@ mod tests {
             (100.0, -0.0625),
         ] {
             let z = CF::from_parts(FBig::try_from(re).unwrap(), FBig::try_from(im).unwrap());
+            let expected = residue(&Complex64::new(re, im));
             assert_eq!(
                 residue(&z),
-                expected(re, im),
-                "CBig num_hash disagrees with num-complex formula for {re}+{im}i"
+                expected,
+                "CBig num_hash disagrees with num-complex hash for {re}+{im}i"
             );
         }
     }
