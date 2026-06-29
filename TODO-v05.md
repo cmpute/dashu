@@ -265,6 +265,17 @@ removed). All additive — safe as point releases under 0.5.x.
   0.5 already threads `cache: Option<&mut ConstCache>` through the transcendental `Context` ops:** the
   convenience layer passes `None`, `CachedCBig` will pass `Some(&mut cache)`, so adding the cached
   variant needs no signature change.
+- **Expose ownership-aware kernel functions from `dashu-float`** — `dashu-float`'s `add.rs` already
+  has `add_val_val` / `add_val_ref` / `add_ref_val` / `add_ref_ref` kernel functions that consume
+  owned `FBig`/`Repr` when available (avoiding unnecessary clones at the convenience layer). These are
+  currently `pub(crate)`; they should be made `pub` (or mirrored as `pub` methods on `Context<R>` like
+  `add_val_val(&self, lhs: Repr<B>, rhs: Repr<B>)`) so that `dashu-cmplx` can call them directly in
+  its own per-ownership kernel functions instead of immediately borrowing every `CBig` operand through
+  `Context::add(&CBig, &CBig)` (which takes `&Repr` internally and clones as needed). The same applies
+  to `sub`/`mul`/`div` and potentially to the transcendental ops. Without this, `CBig`'s by-value
+  operator impls (e.g. `impl Add for CBig`) take ownership but cannot exploit it — they immediately
+  borrow their parts through the complex `Context`, which in turn borrows the real `Context`, and the
+  ownership advantage is lost.
 
 ---
 
