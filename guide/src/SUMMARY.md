@@ -14,6 +14,7 @@
   - [Equality and Comparison](./ops/cmp.md)
   - [Basic Arithmetics](./ops/basic.md)
   - [Exponential and Logarithm](./ops/exp_log.md)
+  - [Trigonometric and Hyperbolic Functions](./ops/trig_n_hyper.md)
   - [Bit Manipulation](./ops/bit.md)
   - [Number Theoretic](./ops/num_theory.md)
 - [FAQ](./faq.md)
