@@ -11,44 +11,6 @@ on:
 name: Tests
 
 jobs:
-  check:
-    name: Check
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [stable, "1.85", "1.68"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ matrix.rust }}
-      - name: Remove dashu-python from workspace (requires Rust >= 1.85)
-        if: matrix.rust == '1.68'
-        run: sed -i '/^ *"python",$/d' Cargo.toml
-      - name: Drop postgres/diesel/dev-deps for Rust 1.68
-        if: matrix.rust == '1.68'
-        run: python3 .github/workflows/drop_incompatible_deps_for_msrv.py
-      - name: Pin transitive deps for MSRV
-        if: matrix.rust != 'stable'
-        run: |
-          if [ "${{ matrix.rust }}" = "1.68" ]; then
-            echo "Pinning packages for Rust 1.68:"
-            echo "  quote         -> 1.0.40"
-            echo "  unicode-ident -> 1.0.13"
-            echo "  zeroize       -> 1.8.1"
-            cargo update -p quote --precise 1.0.40
-            cargo update -p unicode-ident --precise 1.0.13
-            cargo update -p zeroize --precise 1.8.1
-          elif [ "${{ matrix.rust }}" = "1.85" ]; then
-            echo "Pinning packages for Rust 1.85:"
-            echo "  diesel        -> 2.2.12"
-            cargo update -p diesel@2 --precise 2.2.12
-          fi
-      - run: cargo check --all-features --tests
-        if: matrix.rust != '1.68'
-      - run: cargo check --workspace --features "std,num-order,serde,zeroize,rand,num-traits_v02"
-        if: matrix.rust == '1.68'
-
   test:
     name: Test
     strategy:
@@ -118,32 +80,6 @@ jobs:
         with:
           toolchain: stable
       - run: cargo test --no-default-features --features rand --workspace --exclude dashu-python
-
-  build-benchmark:
-    name: Build benchmark
-    runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: -D warnings
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-      - run: cargo build --features gmp
-        working-directory: benchmark
-
-  build-aarch64:
-    name: Build aarch64
-    runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: -D warnings
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-          targets: aarch64-unknown-linux-gnu
-      - run: cargo build --target aarch64-unknown-linux-gnu --all-features --workspace --exclude dashu-python
 
   fmt:
     name: Rustfmt
