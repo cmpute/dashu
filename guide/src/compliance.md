@@ -23,7 +23,7 @@ The reference here is IEEE Std 754™-2008 (ISO/IEC/IEEE 60559:2011).
 | IEEE 754 requirement | Compliance | Notes |
 |---------------------|-----------|-------|
 | Binary and decimal formats | ✅ Supported | `FBig<Rounding, 2>` (binary) and `DBig` = `FBig<HalfAway, 10>` (decimal). Other bases are supported via the `const BASE: Word` parameter. |
-| Finite non-zero numbers | ✅ | Represented as `significand × BASE^exponent` with unbounded significand. |
+| Finite non-zero numbers | ✅ | Represented as $\text{significand} \times \text{BASE}^{\text{exponent}}$ with unbounded significand. |
 | Signed zero (`±0`) | ✅ | Encoded via exponent sentinels: `+0` ↔ exponent `0`, `-0` ↔ exponent `-1`. Produced by arithmetic, rounding, and cancellations per IEEE 754. |
 | Signed infinity (`±∞`) | ✅ | Encoded via exponent sentinels: `+∞` ↔ `isize::MAX`, `-∞` ↔ `isize::MIN`. |
 | NaN | ❌ Deviates | No NaN. Invalid operations panic (at the `FBig` convenience layer) or return `Err(FpError)` (at the `Context` layer). |
@@ -58,7 +58,7 @@ The reference here is IEEE Std 754™-2008 (ISO/IEC/IEEE 60559:2011).
 | IEEE 754 requirement | Compliance | Notes |
 |---------------------|-----------|-------|
 | Rounding modes: roundTiesToEven, roundTiesToAway, roundTowardPositive, roundTowardNegative, roundTowardZero | ✅ | All five modes implemented as `HalfEven`, `HalfAway`, `Up`, `Down`, `Zero`. |
-| Correct rounding to within 1 ulp | ✅ | All operations guarantee `|error| < 1 ulp`. The `Rounded` type distinguishes exact from inexact results. |
+| Correct rounding to within 1 ulp | ✅ | All operations guarantee $|error| < 1\text{ ulp}$. The `Rounded` type distinguishes exact from inexact results. |
 | Round-to-nearest preserves sign of zero | ✅ | `rounded_to_repr` preserves input sign when rounding collapses a non-zero to zero. |
 
 #### Section 5.6 — Sign bit operations
@@ -139,13 +139,13 @@ the `Context` layer (and panics at the convenience layer).
 
 | C99 Annex G requirement | Compliance | Notes |
 |---------------------|-----------|-------|
-| Branch cuts follow the Kahan signed-zero model | ✅ | e.g. `log(-r ± i·0) = ln r ± i·π`: the sign of the imaginary zero selects the side of the cut. |
+| Branch cuts follow the Kahan signed-zero model | ✅ | e.g. $\log(-r \pm i\cdot0) = \ln r \pm i\pi$: the sign of the imaginary zero selects the side of the cut. |
 | `sqrt(+∞) = +∞` | ✅ | |
 | `sqrt(-∞) = +0 + i·∞` | ✅ | |
 | `exp(+∞) = +∞`, `exp(-∞) = +0` | ✅ | |
 | `exp(0 + i·∞)` → NaN (C) | ⚠️ Partial | Returns `Err(FpError::Indeterminate)`. |
 | `log(0) = -∞`, `log(+∞) = +∞` | ✅ | |
-| `arg(0 + i·∞) = +π/2`, `arg(0 - i·∞) = -π/2` | ✅ | `arg = atan2(im, re)`, reusing `dashu-float`'s Annex-G `atan2` table. |
+| $\arg(0 + i\cdot\infty) = +\pi/2$, $\arg(0 - i\cdot\infty) = -\pi/2$ | ✅ | `arg = atan2(im, re)`, reusing `dashu-float`'s Annex-G `atan2` table. |
 | `abs`/`hypot` overflow-safe modulus | ✅ | Thin composition over `dashu-float`'s `hypot`. |
 
 ### Exceptional Conditions

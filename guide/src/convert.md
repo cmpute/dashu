@@ -66,16 +66,72 @@ The conversions from and to primitive numbers are also implemented for the `dash
 
 ## Conversion for FBig/DBig
 
+Conversions involving `FBig`/`DBig` are richer than for the integer types, because a floating-point number carries three independent knobs: a **base**, a **precision** (a cap on the number of significant digits), and a **rounding mode**. Most conversions therefore come in two flavors — an infallible `From`/`Into` when no information is lost, and a fallible `TryFrom`/`TryInto` when exactness is required.
 
 ## Conversion to different base / precision / rounding mode
 
-TODO: `with_rounding`, `with_precision`, `with_base`, `to_binary`, `to_decimal`, etc.
-(how precision is determined)
+The base, precision, and rounding mode are changed independently:
+
+- `with_rounding::<NewR>()` reinterprets the same value under a different rounding mode — the underlying representation is unchanged, only the context's rounding field moves, so no rounding occurs.
+- `with_precision(p)` widens or shrinks the significand to `p` digits. Widening is always exact (`Approximation::Exact`); shrinking rounds per `R` and returns `Approximation::Inexact` carrying the rounding direction.
+
+```rust
+use dashu_base::Approximation::*;
+use dashu_float::DBig;
+use dashu_float::round::Rounding::*;
+
+let a = DBig::from_str("2.345")?;
+assert_eq!(a.precision(), 4);
+assert_eq!(a.clone().with_precision(3), Inexact(DBig::from_str("2.35")?, AddOne));
+assert_eq!(a.clone().with_precision(5), Exact(DBig::from_str("2.345")?));
+```
+
+- `with_base::<NewB>()` converts to a different base. The result precision is chosen so the significand cap is no larger than before — the largest integer $p'$ with $\mathrm{NewB}^{\,p'} \le B^{\,p}$. Conversion is exact when one base is a power of the other; otherwise it rounds per `R`. `with_base_and_precision::<NewB>(p)` lets you set the target precision explicitly.
+
+For the common binary ↔ decimal hops, two shortcuts pick the rounding mode for you: `to_decimal()` is `with_rounding::<HalfAway>().with_base::<10>()` (yielding a `DBig`), and `to_binary()` is `with_rounding::<Zero>().with_base::<2>()`.
+
+> These methods panic if the associated context has **unlimited precision** and the conversion cannot be done losslessly — set a precision first.
 
 ## Conversion to integers or primitive floats
 
-TODO: convert from UBig/IBig to FBig, the precision will be inferred. convert from FBig to UBig/IBig
+Converting *into* `FBig` from `UBig`/`IBig` (or any primitive integer) infers the precision from the magnitude: the result precision equals the number of significant base-`B` digits of the integer.
+
+Going the other way, `TryFrom<FBig> for IBig`/`UBig` succeeds only when the float is finite and exactly integer-valued — `ConversionError::OutOfBounds` for infinities, `LossOfPrecision` for a fractional part. For a rounding-aware path use `to_int()`, which always succeeds and reports the rounding direction:
+
+```rust
+use dashu_base::Approximation::*;
+use dashu_float::DBig;
+use dashu_float::round::Rounding::*;
+
+assert_eq!(DBig::from_str("1234")?.to_int(), Exact(1234.into()));
+assert_eq!(DBig::from_str("1.234")?.to_int(), Inexact(1.into(), NoOp));
+```
+
+To a primitive float, `to_f32()` / `to_f64()` return `Rounded<f32>` / `Rounded<f64>` carrying the rounding direction; they never fail (overflow yields `±∞`, infinities map to infinities). The reverse — `TryFrom<f32>`/`TryFrom<f64> for FBig` — is **base-2 only** (it is almost always lossy in any other base); to reach a non-binary `FBig`, convert to base 2 first and then call `with_base()`. NaN is rejected with `ConversionError::OutOfBounds`.
 
 ## Conversion to RBig
 
-TODO: `simplest_in()`, `simplest_from_*()`, `.nearest_in()`, `next_up()`, `next_down()`, etc.
+With the optional `dashu-float` feature enabled on `dashu-ratio`, `TryFrom<FBig> for RBig` succeeds only when the float is exactly rational-representable, and `RBig::to_float()` is the rounding-aware path in the other direction.
+
+For approximating a float by a *simple* rational (the smallest numerator/denominator within a tolerance), use `simplest_from_f32` / `simplest_from_f64`, or the interval queries `simplest_in`, `nearest_in`, `next_up`, and `next_down` on `FBig`/`DBig` — these treat the float's own rounding interval as the search bound.
+
+## Conversion for CBig
+
+A `CBig` is reached losslessly from any real value: `From<FBig>`, `From<UBig>`, and `From<IBig>` embed the value as the real part with imaginary `+0` (exact, unlimited precision). The inverse is fallible — `TryFrom<CBig> for FBig` extracts the real part only when the imaginary part is zero (both `±0` count), and `TryFrom<CBig> for IBig` further requires the real part to be integer-valued. Both compose the `CBig → FBig → IBig` chain, mirroring `FBig`'s own `From`/`TryFrom` split.
+
+```rust
+use dashu_cmplx::CBig;
+use dashu_float::{FBig, round::mode::HalfAway};
+
+type C = CBig<HalfAway, 10>;
+type F = FBig<HalfAway, 10>;
+
+// a real value embeds as a purely-real complex number
+let z = C::from(F::from(7));
+assert_eq!(z.re().significand(), &7.into());
+assert!(z.im().is_zero());
+
+// extracting the real part fails when the imaginary part is nonzero
+let w = C::from_parts(F::from(3), F::from(4));
+assert!(F::try_from(w).is_err());
+```

@@ -3,5 +3,10 @@ title = "Dashu user guide"
 description = "User guide of the dashu arbitrary precision library"
 authors = ["Jacob Zhong"]
 language = "en"
-multilingual = false
 src = "src"
+
+[output.html]
+git-repository-url = "https://github.com/cmpute/dashu"
+edit-url-template = "https://github.com/cmpute/dashu/edit/master/guide/src/{path}"
+
+[preprocessor.katex]
