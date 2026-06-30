@@ -7,6 +7,7 @@ In `dashu` crates, there are standalone types for each kind of numbers with arbi
 - `dashu_float::FBig` (alias `dashu::Real`) represents real numbers with floating point representation (`signficand * base ^ exponent`)
 - `dashu_float::DBig` (alias `dashu::Decimal`) is a specialization of `FBig` with `base = 10`.
 - `dashu_ratio::RBig` (alias `dashu::Rational`) represents rational numbers. It has a variant `dashu_ratio::Relaxed`, which also represents a rational number, but it doesn't enforce that the number is in the canonicalized form.
+- `dashu_cmplx::CBig` (alias `dashu::Complex`) represents complex numbers, built as a pair of `FBig` parts sharing one precision and rounding mode.
 
 Common operations are implemented for all these numeric types, please refer to the other sections or the API docs for the usages.
 
@@ -31,6 +32,16 @@ The most fundamental type of the `dashu` libraries is the natural number `UBig`.
 ## Layout of `FBig`
 
 The layout of `FBig` (and `DBig`) is a little different from other types. An `FBig` instance contains a number representation `dashu_float::Repr` and a context `dashu_float::Context`. The context will be copied every time a new `FBig` is created based on it. The context currently contains the rounding information and the precision associated with this number. The context is kept deliberately lightweight (`Copy` + `Send` + `Sync`): the shared cache for math constants (such as π, ln2, ln10) lives *outside* the context, in the separate [`CachedFBig`](./construct.md#cached-arithmetic-for-fbig) wrapper, so that a plain `FBig` stays cheap to copy and usable in `const`/`static` contexts. Therefore, if you don't want to store the additional context information, you can just store the `Repr` part of the `FBig`. The later operations on the `Repr` can be called with the associated methods of the `Context`, which all takes the reference to a `Repr` instance. However, this could lead to a little overhead in some cases.
+
+## Complex Numbers
+
+The `CBig` type (in the `dashu-cmplx` crate) is an arbitrary-precision complex number, and it is generic over a rounding mode `R` and a base `B`, just like `FBig`. A `CBig<R, B>` instance holds two `Repr<B>` parts — the real part `re` and the imaginary part `im` — over a **single shared** `Context<R>`.
+
+Storing one context — rather than wrapping two independent `FBig`s (each carrying its own) — makes the uniform-precision invariant *physical*: there is exactly one precision slot, so `re` and `im` structurally cannot disagree. Each part keeps its own significand length; the shared context holds only the precision cap and the single rounding mode, which is applied independently to each component. The result context of `CBig::from_parts(re, im)` is the larger of the two (an unlimited `0` precision is treated as the minimum, so a limited operand always wins), and widening the smaller part to it is exact.
+
+Because both parts are `Repr`, `CBig` inherits `dashu-float`'s signed-zero / signed-infinity / branch-cut machinery directly. Rounding follows the C99 Annex G / Kahan model that `dashu-float` already implements for reals — see [Standards Compliance](./compliance.md) for the full special-value and branch-cut tables. As with `FBig`, there is **no NaN**: C99 cases that would produce a complex NaN are reported as `FpError` at the context layer (and panic at the convenience layer).
+
+`CBig` exposes the constants `CBig::ZERO` ($0+0i$), `CBig::ONE` ($1+0i$), and `CBig::I` ($0+1i$, the imaginary unit), all at unlimited precision. There is no `CBig::INFINITY` constant: the complex infinity is the single Riemann point $+\infty+i\cdot0$, produced by `proj` and by overflow. Construction, arithmetic, and the rest of the surface are covered in [Construction and Destruction](./construct.md), [Conversion](./convert.md), and the [Operations](./ops/index.md) pages.
 
 # Auxiliary Types
 
