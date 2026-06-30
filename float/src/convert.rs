@@ -820,6 +820,13 @@ impl<R: Round, const B: Word> TryFrom<FBig<R, B>> for IBig {
     fn try_from(value: FBig<R, B>) -> Result<Self, Self::Error> {
         if value.repr.is_infinite() {
             Err(ConversionError::OutOfBounds)
+        } else if value.repr.significand.is_zero() {
+            // A zero significand is integer zero regardless of exponent. This also
+            // accepts IEEE-754 signed zero, whose sign is carried by a -1 exponent
+            // sentinel (not the significand); it is treated as plain 0. The zero
+            // must be handled here rather than in the `else` branch below, which
+            // shifts by `exponent as usize` and would underflow on the -1 sentinel.
+            Ok(value.repr.significand)
         } else if value.repr.exponent < 0 {
             Err(ConversionError::LossOfPrecision)
         } else {
@@ -967,3 +974,32 @@ macro_rules! impl_from_fbig_for_float {
 }
 impl_from_fbig_for_float!(f32, to_f32);
 impl_from_fbig_for_float!(f64, to_f64);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::repr::Repr;
+
+    #[test]
+    fn ibig_try_from_accepts_signed_zero() {
+        // IEEE-754 signed zero (sign encoded in a -1 exponent sentinel) is plain 0.
+        let neg_zero = FBig::<HalfAway, 10>::new(Repr::neg_zero(), Context::new(8));
+        assert_eq!(IBig::try_from(neg_zero), Ok(IBig::from(0)));
+
+        // positive zero already worked, and still does
+        let pos_zero = FBig::<HalfAway, 10>::new(Repr::zero(), Context::new(8));
+        assert_eq!(IBig::try_from(pos_zero), Ok(IBig::from(0)));
+
+        // UBig delegates to the IBig impl, so it accepts signed zero too
+        let neg_zero = FBig::<HalfAway, 2>::new(Repr::neg_zero(), Context::new(8));
+        assert_eq!(UBig::try_from(neg_zero), Ok(UBig::from(0u8)));
+
+        // a genuine fractional value must still be rejected
+        let frac = FBig::<HalfAway, 10>::new(Repr::new(IBig::from(1), -1), Context::new(8));
+        assert_eq!(IBig::try_from(frac), Err(ConversionError::LossOfPrecision));
+
+        // a normal integer round-trips exactly
+        let int_val = FBig::<HalfAway, 10>::new(Repr::new(IBig::from(42), 0), Context::new(8));
+        assert_eq!(IBig::try_from(int_val), Ok(IBig::from(42)));
+    }
+}

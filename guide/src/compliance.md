@@ -1,16 +1,24 @@
-# IEEE 754-2008 Compliance of dashu-float
+# Standards Compliance
 
-This document describes where `dashu-float`'s `FBig` type is compliant and where it deviates
-from IEEE 754-2008. The reference is IEEE Std 754™-2008 (ISO/IEC/IEEE 60559:2011).
+This page documents where `dashu`'s numeric types conform to the relevant standards — and where
+they intentionally deviate. There are two aspects:
 
-dashu-float is an **arbitrary-precision** floating-point library. Many IEEE 754 concepts
-(e.g. fixed-width encoding, subnormals, NaN payloads) have no direct equivalent here.
-Where infinite precision makes the standard's rules natural to satisfy, they are satisfied;
-where they conflict with the arbitrary-precision model, the deviation is noted.
+* **`dashu-float`'s `FBig` vs IEEE 754-2008** — the real floating-point model.
+* **`dashu-cmplx`'s `CBig` vs C99 Annex G (IEC 60559 complex)** — the complex model, built on top of
+  `FBig` and inheriting its signed-zero / signed-infinity behavior.
 
-## Data Model
+The common thread: dashu types are **arbitrary-precision**, so fixed-width-encoding concerns
+(subnormals, NaN payloads, bit layouts) have no direct equivalent. Where infinite precision makes a
+standard's rules natural to satisfy, they are satisfied; where they conflict with the
+arbitrary-precision / no-NaN model, the deviation is noted.
 
-### Section 3 — Floating-point formats
+## `dashu-float` and IEEE 754-2008
+
+The reference here is IEEE Std 754™-2008 (ISO/IEC/IEEE 60559:2011).
+
+### Data Model
+
+#### Section 3 — Floating-point formats
 
 | IEEE 754 requirement | Compliance | Notes |
 |---------------------|-----------|-------|
@@ -22,9 +30,9 @@ where they conflict with the arbitrary-precision model, the deviation is noted.
 | Subnormals | N/A | Arbitrary-precision significands eliminate the need for subnormals. Any non-zero number is normalized. |
 | Fixed-width encoding | N/A | No fixed bit widths; significands are unbounded `IBig` integers. |
 
-## Arithmetic Operations
+### Arithmetic Operations
 
-### Section 5 — Operations
+#### Section 5 — Operations
 
 | IEEE 754 requirement | Compliance | Notes |
 |---------------------|-----------|-------|
@@ -45,7 +53,7 @@ where they conflict with the arbitrary-precision model, the deviation is noted.
 | Cancellation under roundTowardNegative → `-0` | ✅ | `cancel_zero` in add.rs produces `-0` when `R::IS_ROUND_TOWARD_NEGATIVE`. |
 | Exact subtraction cancels to `-0` only under directed rounding | ✅ | IEEE 754 §6.3: `(-3) + 3` = `+0` under roundTiesToEven/Up, `-0` under Down. |
 
-### Section 5.3 — Rounding
+#### Section 5.3 — Rounding
 
 | IEEE 754 requirement | Compliance | Notes |
 |---------------------|-----------|-------|
@@ -53,7 +61,7 @@ where they conflict with the arbitrary-precision model, the deviation is noted.
 | Correct rounding to within 1 ulp | ✅ | All operations guarantee `|error| < 1 ulp`. The `Rounded` type distinguishes exact from inexact results. |
 | Round-to-nearest preserves sign of zero | ✅ | `rounded_to_repr` preserves input sign when rounding collapses a non-zero to zero. |
 
-### Section 5.6 — Sign bit operations
+#### Section 5.6 — Sign bit operations
 
 | IEEE 754 requirement | Compliance | Notes |
 |---------------------|-----------|-------|
@@ -62,7 +70,7 @@ where they conflict with the arbitrary-precision model, the deviation is noted.
 | `signum(±0)` = `+0` | ✅ | Returns `+0` for both `+0` and `-0` (signum collapses the sign of zero). |
 | `sign()` distinguishes `+0` from `-0` | ✅ | `Repr::sign()` returns `Negative` for `-0`. |
 
-## Conversions
+### Conversions
 
 | IEEE 754 requirement | Compliance | Notes |
 |---------------------|-----------|-------|
@@ -73,7 +81,7 @@ where they conflict with the arbitrary-precision model, the deviation is noted.
 | Int-to-float conversion exact for representable integers | ✅ | |
 | Float-to-int overflows saturate (per Rust convention) | N/A | Rust's `TryFrom` returns an error on overflow; `ToPrimitive` returns `None`. |
 
-## Exceptional Conditions
+### Exceptional Conditions
 
 | IEEE 754 requirement | Compliance | Notes |
 |---------------------|-----------|-------|
@@ -83,7 +91,7 @@ where they conflict with the arbitrary-precision model, the deviation is noted.
 | Underflow → `±0` (no trap) | ✅ | Same. |
 | Inexact flag | ⚠️ Partial | The `Rounded<T>` type carries `Exact`/`Inexact(T, Rounding)` to signal whether rounding occurred, but there is no sticky flag mechanism. |
 
-## Summary
+### Summary (dashu-float)
 
 | Category | Status |
 |----------|--------|
@@ -95,3 +103,65 @@ where they conflict with the arbitrary-precision model, the deviation is noted.
 | Infinite operands in arithmetic | ❌ Error (by design — infinities are terminal) |
 | Subnormals | N/A (unbounded precision) |
 | Exception flags | ⚠️ Rounded type signals exact/inexact, no sticky flags |
+
+## `dashu-cmplx` and C99 Annex G
+
+`CBig` is a pair of `Repr` parts (real, imaginary) over a single shared precision and rounding mode.
+It targets C99 Annex G (IEC 60559-compatible complex arithmetic) for the common functionality,
+reusing `dashu-float`'s signed-zero / signed-infinity / branch-cut machinery for each part. As with
+`FBig`, there is **no NaN**: C99 cases that would produce a complex NaN are mapped to `FpError` at
+the `Context` layer (and panics at the convenience layer).
+
+### Data Model (§G.2)
+
+| C99 Annex G requirement | Compliance | Notes |
+|---------------------|-----------|-------|
+| Complex as an ordered real/imaginary pair | ✅ | `CBig<R, B>` stores `re` and `im` (`Repr`) over one shared `Context`. |
+| Per-part signed zeros (`±0`) | ✅ | Inherited from `dashu-float`; the sign of the imaginary zero selects the side of a branch cut. |
+| Per-part signed infinities (`±∞`) | ✅ | Each part may independently be `±∞`. |
+| A single complex infinity (Riemann point) | ✅ | `proj` collapses any part-infinite value to `+∞ + i·0`; overflow yields both parts `+∞`. |
+| Complex NaN | ❌ Deviates | No NaN. NaN-producing cases map to `FpError` (`Context`) / panic (convenience layer). |
+
+### Arithmetic (§G.5)
+
+| C99 Annex G requirement | Compliance | Notes |
+|---------------------|-----------|-------|
+| `conj(z)` flips the sign of the imaginary part (incl. `-0`, `±∞`) | ✅ | Exact sign flip of the imaginary part. |
+| `proj(z)`: any infinity → `+∞ + i·0` | ✅ | The projected imaginary zero carries the sign of the original imaginary part. |
+| `∞·∞`, `finite·∞` → `∞` | ✅ | Yields the Riemann point at infinity. |
+| `0·∞` → NaN (C) | ⚠️ Partial | Returns `Err(FpError::Indeterminate)` (no NaN). |
+| `finite/0`, `∞/finite` → `∞` | ✅ | Riemann point at infinity. |
+| `0/0`, `∞/∞` → NaN (C) | ⚠️ Partial | Returns `Err(FpError::Indeterminate)`. |
+| `finite/∞`, `0/finite` → `0` | ✅ | |
+| `1/0 → ∞`, `1/∞ → 0` (inverse) | ✅ | |
+
+### Transcendentals and branch cuts (§G.6)
+
+| C99 Annex G requirement | Compliance | Notes |
+|---------------------|-----------|-------|
+| Branch cuts follow the Kahan signed-zero model | ✅ | e.g. `log(-r ± i·0) = ln r ± i·π`: the sign of the imaginary zero selects the side of the cut. |
+| `sqrt(+∞) = +∞` | ✅ | |
+| `sqrt(-∞) = +0 + i·∞` | ✅ | |
+| `exp(+∞) = +∞`, `exp(-∞) = +0` | ✅ | |
+| `exp(0 + i·∞)` → NaN (C) | ⚠️ Partial | Returns `Err(FpError::Indeterminate)`. |
+| `log(0) = -∞`, `log(+∞) = +∞` | ✅ | |
+| `arg(0 + i·∞) = +π/2`, `arg(0 - i·∞) = -π/2` | ✅ | `arg = atan2(im, re)`, reusing `dashu-float`'s Annex-G `atan2` table. |
+| `abs`/`hypot` overflow-safe modulus | ✅ | Thin composition over `dashu-float`'s `hypot`. |
+
+### Exceptional Conditions
+
+| C99 Annex G requirement | Compliance | Notes |
+|---------------------|-----------|-------|
+| Invalid / indeterminate form → NaN | ❌ Deviates | `Err(FpError::{Indeterminate, InfiniteInput})` at `Context`; panics at the convenience layer. No NaN by design. |
+| Domain error (e.g. even root of a negative value, out-of-range inverse trig) | ❌ Deviates | `Err(FpError::OutOfDomain)` / panic, rather than a NaN result. |
+| Each component rounded independently to the shared mode | ✅ | Near-correctly rounded per axis (a guaranteed-correct Ziv loop is deferred to 0.5.x). |
+
+### Summary (dashu-cmplx)
+
+| Category | Status |
+|----------|--------|
+| Per-part signed zeros & infinities | ✅ Fully compliant |
+| Riemann-point single infinity / `proj` | ✅ Fully compliant |
+| Branch cuts (Kahan signed-zero model) | ✅ Fully compliant |
+| Arithmetic & transcendental special values | ⚠️ Values that C99 makes NaN are reported as `FpError` / panic |
+| Complex NaN | ❌ Absent by design |

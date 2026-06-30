@@ -97,7 +97,7 @@ use dashu_int::{DoubleWord, IBig};
 ///   `+0` and `-0` compare equal.
 /// * Infinities are **terminal values**: they can be produced (e.g. `1 / 0 → +inf`, `ln(0) → -inf`,
 ///   `exp(huge) → +inf`, `tan(π/2) → +inf`), compared, and printed, but feeding an infinity into a
-///   further operation is an error at the [`Context`] layer ([`FpError::InfiniteInput`]) and panics
+///   further operation is an error at the [`Context`] layer ([`FpError::InfiniteInput`](crate::FpError::InfiniteInput)) and panics
 ///   at the [FBig] layer. This structurally avoids the IEEE indeterminate forms (`inf − inf`, `inf/inf`,
 ///   `0·inf`). The only exceptions are `atan(±inf) = ±π/2` and the `atan2` signed-∞ quadrants, which
 ///   have well-defined finite results.
@@ -149,12 +149,12 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ///
     /// # Panics
     ///
-    /// Panics if the [Repr] has more digits than the precision limit specified in the context.
-    /// Note that this condition is not checked in release builds.
+    /// Panics if the [Repr] has more digits than `precision + 1` (the one allowed guard digit from
+    /// an inexact add/sub — see [`Repr`]). Note that this condition is not checked in release builds.
     #[inline]
     pub fn from_repr(repr: Repr<B>, context: Context<R>) -> Self {
         debug_assert!(
-            repr.is_infinite() || !context.is_limited() || repr.digits() <= context.precision
+            repr.is_infinite() || !context.is_limited() || repr.digits() <= context.precision + 1
         );
         Self { repr, context }
     }

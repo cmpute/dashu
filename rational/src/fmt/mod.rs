@@ -115,7 +115,7 @@ impl fmt::Display for Relaxed {
 /// Representation of a rational number in a given radix, returned by
 /// [`RBig::in_radix`] and [`Relaxed::in_radix`].
 ///
-/// Implements [`Display`]. The alternate flag (`{:#}`) toggles uppercase
+/// Implements [`Display`](core::fmt::Display). The alternate flag (`{:#}`) toggles uppercase
 /// letters for radices above 10.
 pub struct InRadix<'a> {
     numerator: &'a dashu_int::IBig,

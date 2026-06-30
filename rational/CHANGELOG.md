@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Fix
+- Fixed a broken intra-doc link to `Display` in `InRadix`'s docs (`core::fmt::Display`), surfaced by
+  `cargo doc -D warnings`.
 - (internal) The `in_expanded` formatting unit tests failed to compile under `no_std` (`cargo test --no-default-features`) because the `format!` macro was not imported; the test module now imports `alloc::format`.
 
 ### Change

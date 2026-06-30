@@ -19,6 +19,7 @@ A library set of arbitrary precision numbers (aka. big numbers) implemented in R
 - [`dashu-int`](./integer): Arbitrary precision integers
 - [`dashu-float`](./float): Arbitrary precision floating point numbers
 - [`dashu-ratio`](./rational): Arbitrary precision rational numbers
+- [`dashu-cmplx`](./complex): Arbitrary precision complex numbers
 - [`dashu-macros`](./macros): Macros for creating big numbers
 
 `dashu` is a meta crate that re-exports all the types from these sub-crates. Please see the README.md in each subdirectory for crate-specific introduction.

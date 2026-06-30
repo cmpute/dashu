@@ -85,6 +85,51 @@ impl<R: Round> Context<R> {
         }
     }
 
+    /// Simultaneously compute `sinh(x)` and `cosh(x)` (context layer). Returns
+    /// `(sinh_result, cosh_result)` where each is a [`FpResult`].
+    ///
+    /// This is more efficient than calling [`sinh`](Context::sinh) and [`cosh`](Context::cosh)
+    /// separately, since the two share the `exp_m1(±x)` sub-computations.
+    pub fn sinh_cosh<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        mut cache: Option<&mut ConstCache>,
+    ) -> (FpResult<FBig<R, B>>, FpResult<FBig<R, B>>) {
+        if x.is_infinite() {
+            return (
+                Ok(Exact(FBig::new(Repr::infinity_with_sign(x.sign()), *self))),
+                Ok(Exact(FBig::new(Repr::infinity(), *self))),
+            );
+        }
+        assert_limited_precision(self.precision);
+        if x.significand.is_zero() {
+            return (
+                Ok(Exact(FBig::new(signed_zero_repr(x), *self))),
+                Ok(Exact(FBig::new(Repr::one(), *self))),
+            );
+        }
+
+        // sinh = (exp_m1(x) - exp_m1(-x)) / 2;  cosh = (exp_m1(x) + exp_m1(-x)) / 2 + 1
+        let work = Context::<R>::new(self.precision + 50);
+        let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
+        let neg_x = -x_f.clone();
+        let ep = work.exp_m1(&x_f.repr, reborrow_cache(&mut cache));
+        let em = work.exp_m1(&neg_x.repr, reborrow_cache(&mut cache));
+        match (ep, em) {
+            (Ok(ep), Ok(em)) => {
+                let ep = ep.value();
+                let em = em.value();
+                let sinh_val = ((ep.clone() - em.clone()) / 2i32).with_precision(self.precision);
+                let cosh_val =
+                    ((ep + em) / 2i32 + FBig::<R, B>::ONE).with_precision(self.precision);
+                (Ok(sinh_val), Ok(cosh_val))
+            }
+            // |x| large enough that exp_m1 overflowed:
+            //   sinh(x) → ±inf (sign of x), cosh(x) → +inf
+            _ => (Err(FpError::Overflow(x.sign())), Err(FpError::Overflow(Sign::Positive))),
+        }
+    }
+
     /// Hyperbolic tangent.
     pub fn tanh<const B: Word>(
         &self,
@@ -275,6 +320,29 @@ impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     pub fn cosh(&self) -> Self {
         self.context.unwrap_fp(self.context.cosh(&self.repr, None))
+    }
+
+    /// Simultaneously calculate the hyperbolic sine and cosine of the number.
+    ///
+    /// This is more efficient than calling [`sinh`](FBig::sinh) and [`cosh`](FBig::cosh)
+    /// separately, since the two share the `exp_m1(±x)` sub-computations.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use core::str::FromStr;
+    /// # use dashu_base::ParseError;
+    /// # use dashu_float::DBig;
+    /// let a = DBig::from_str("0.5000000")?;
+    /// let (s, c) = a.sinh_cosh();
+    /// assert_eq!(s, DBig::from_str("0.52109531")?);
+    /// assert_eq!(c, DBig::from_str("1.127626")?);
+    /// # Ok::<(), ParseError>(())
+    /// ```
+    #[inline]
+    pub fn sinh_cosh(&self) -> (Self, Self) {
+        let (s, c) = self.context.sinh_cosh(&self.repr, None);
+        (self.context.unwrap_fp(s), self.context.unwrap_fp(c))
     }
 
     /// Calculate the hyperbolic tangent of the floating point number.

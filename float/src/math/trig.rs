@@ -70,12 +70,9 @@ impl<R: Round> Context<R> {
         let x_scaled: FBig<R, B> = &x_f / &half_pi;
         let k_f = x_scaled.round();
         let r = x_f - &k_f * half_pi;
-        // `k_f` is the integer nearest `x_scaled`, but `round()` of a value in
-        // (-1, 0) yields signed zero, whose exponent sentinel is negative. Extract
-        // the integer via `to_int` (truncation) instead of `IBig::try_from`, which
-        // rejects any negative exponent and would panic here for tiny negative
-        // inputs.
-        let k = k_f.to_int().value();
+        // `k_f` is the integer nearest `x_scaled`, so it's exact (or a signed zero
+        // for a tiny argument in (-1, 0), which `IBig::try_from` treats as plain 0).
+        let k = IBig::try_from(k_f).expect("k_f is an exact integer or signed zero");
 
         let k_mod_4_big = k.rem_euclid(IBig::from(4));
         let Ok(k_mod_4_int) = i8::try_from(k_mod_4_big) else {
@@ -704,6 +701,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
 mod tests {
     use super::*;
     use crate::round::mode;
+    use crate::DBig;
+    use core::str::FromStr;
 
     #[test]
     fn test_atan_infinity_is_preserved() {
@@ -717,8 +716,7 @@ mod tests {
 
     /// Regression: a tiny *negative* argument used to panic in `reduce_to_quadrant`.
     /// `round()` of a value in (-1, 0) yields signed zero (exponent sentinel -1),
-    /// which `IBig::try_from` rejected, hitting the `unreachable!`. The quadrant
-    /// integer is now extracted via `to_int`.
+    /// which `IBig::try_from` now accepts as plain 0.
     #[test]
     fn test_trig_tiny_negative_no_panic() {
         let ctx = Context::<mode::HalfAway>::new(30);
@@ -736,5 +734,18 @@ mod tests {
             assert_eq!(ss.sign(), Sign::Negative);
             assert_eq!(cc.sign(), Sign::Positive);
         }
+    }
+
+    /// Regression: a 49-digit significand at precision 100 used to assertion-fail in `Context::sin`'s
+    /// rounding logic (found during fuzzing). Promoted here from the excluded `fuzz/` crate so it runs
+    /// in CI; rewritten to the current `Context::sin` API.
+    #[test]
+    fn test_sin_many_digit_rounding_no_panic() {
+        let x = DBig::from_str("-5.525474318981006776603409487767135633516667011547942409467e-3")
+            .unwrap();
+        let ctx = Context::<mode::HalfEven>::new(100);
+        let s = ctx.sin::<10>(x.repr(), None).unwrap().value();
+        // sin(x) ≈ x for a small negative x — completing without panicking is the regression guard.
+        assert_eq!(s.sign(), Sign::Negative);
     }
 }

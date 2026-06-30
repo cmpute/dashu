@@ -22,6 +22,11 @@ pub mod rational {
     pub use dashu_ratio::*;
 }
 
+/// Arbitrary precision complex number
+pub mod complex {
+    pub use dashu_cmplx::*;
+}
+
 #[doc(hidden)]
 pub use dashu_macros as __dashu_macros;
 
@@ -110,6 +115,23 @@ macro_rules! static_rbig {
     }
 }
 
+#[macro_export]
+#[doc = include_str!("macro-docs/cbig.md")]
+macro_rules! cbig {
+    ($($t:tt)+) => {
+        $crate::__dashu_macros::cbig_embedded!($($t)+)
+    }
+}
+
+#[macro_export]
+#[rustversion::since(1.64)]
+#[doc = include_str!("macro-docs/static_cbig.md")]
+macro_rules! static_cbig {
+    ($($t:tt)+) => {
+        $crate::__dashu_macros::static_cbig_embedded!($($t)+)
+    }
+}
+
 /// A verbose alias for [UBig][dashu_int::UBig]
 pub type Natural = dashu_int::UBig;
 
@@ -132,3 +154,6 @@ pub type FastDecimal = dashu_float::CachedFBig<dashu_float::round::mode::HalfAwa
 
 /// A verbose alias for [RBig][dashu_ratio::RBig]
 pub type Rational = dashu_ratio::RBig;
+
+/// A verbose alias for [CBig][dashu_cmplx::CBig] (base 2, rounding towards zero)
+pub type Complex = dashu_cmplx::CBig;
