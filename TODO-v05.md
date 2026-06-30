@@ -112,7 +112,7 @@ Every item here changes public API and **must** land in 0.5. File:line refs are 
 
 > *Implemented in #83 and removed from this list:* the infinity/NaN panic policy (infinities are now
 > terminal values; `FpResult<T> = Result<Rounded<T>, FpError>`; full IEEE-754 signed zero) — see
-> `guide/src/ieee754.md` and `float/CHANGELOG.md`.
+> `guide/src/compliance.md` and `float/CHANGELOG.md`.
 
 ### 1.4 `dashu-ratio`
 - [x] **`From<Repr> for FBig` → `TryFrom`** (`rational/src/third_party/dashu_float.rs:12`): make the
