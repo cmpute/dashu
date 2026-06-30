@@ -34,6 +34,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
+      - name: Remove dashu-python from workspace (requires Rust >= 1.85)
+        if: matrix.rust == '1.68'
+        run: sed -i '/^ *"python",$/d' Cargo.toml
       - name: Drop postgres/diesel/dev-deps for Rust 1.68
         if: matrix.rust == '1.68'
         run: python3 .github/workflows/drop_incompatible_deps_for_msrv.py
@@ -42,13 +45,9 @@ jobs:
         run: |
           if [ "${{ matrix.rust }}" = "1.68" ]; then
             echo "Pinning packages for Rust 1.68:"
-            echo "  parking_lot   -> 0.12.3"
-            echo "  lock_api      -> 0.4.12"
             echo "  quote         -> 1.0.40"
             echo "  unicode-ident -> 1.0.13"
             echo "  zeroize       -> 1.8.1"
-            cargo update -p parking_lot --precise 0.12.3
-            cargo update -p lock_api --precise 0.4.12
             cargo update -p quote --precise 1.0.40
             cargo update -p unicode-ident --precise 1.0.13
             cargo update -p zeroize --precise 1.8.1
@@ -59,7 +58,7 @@ jobs:
           fi
       - run: cargo check --all-features --tests
         if: matrix.rust != '1.68'
-      - run: cargo check --workspace --exclude dashu-python --features "std,num-order,serde,zeroize,rand,num-traits_v02"
+      - run: cargo check --workspace --features "std,num-order,serde,zeroize,rand,num-traits_v02"
         if: matrix.rust == '1.68'
 
   rustdoc:

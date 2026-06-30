@@ -2,7 +2,9 @@
 
 dashu is a library set of arbitrary precision numbers implemented in pure Rust, aiming to be a Rust-native alternative to GNU GMP + MPFR.
 
-**MSRV is a hard constraint** — do not bump it unless absolutely necessary. The current MSRV is maintained in `README.md`; when modifying code, ensure it remains compatible.
+**MSRV is a hard constraint for core crates only.** Core crates are the `dashu` meta-crate and its direct dependencies: `dashu-base`, `dashu-int`, `dashu-float`, `dashu-ratio`, `dashu-macros`, `dashu-cmplx`. The current MSRV is maintained in each crate's `Cargo.toml` and the top-level `README.md`. When modifying code in core crates, ensure it remains MSRV-compatible.
+
+Secondary crates (`dashu-python`, `benchmark/`, fuzz tests) are **not** bounded by the workspace MSRV policy. They may use newer Rust versions and dependency versions as needed.
 
 ## Workspace structure
 
@@ -13,6 +15,7 @@ dashu is a library set of arbitrary precision numbers implemented in pure Rust, 
 | `dashu-float` | `float/` | Arbitrary precision floats (`FBig`, `DBig`, `CachedFBig`) |
 | `dashu-ratio` | `rational/` | Arbitrary precision rationals (`RBig`, `Relaxed`) |
 | `dashu-macros` | `macros/` | Procedural macros for literal big numbers |
+| `dashu-cmplx` | `complex/` | Arbitrary precision complex numbers (`CBig`) |
 | `dashu-python` | `python/` | PyO3 Python bindings (not in default members) |
 | *(benchmark)* | `benchmark/` | Profiling scratchpad, not a comprehensive benchmark suite |
 
@@ -90,5 +93,5 @@ When implementing algorithms that manipulate word arrays (`&[Word]`), prefer the
 
 - **dashu-python is excluded** from workspace tests and clippy — always add `--exclude dashu-python`
 - **diesel has two major versions** in the dependency tree — use `diesel@2` (not `diesel` or `diesel@2.x.y`) when pinning in CI
-- **MSRV compatibility** — if you add a new dependency, check whether it supports the current MSRV; if not, it may need to be stripped for MSRV builds
+- **MSRV compatibility** — for core crates only: if you add a new dependency to a core crate, check whether it supports the current MSRV; if not, it may need to be stripped for MSRV builds. Secondary crates (dashu-python, benchmarks, fuzz tests) are exempt from this check.
 - **Sub-crate versions can differ** in minor/patch (e.g. `dashu-int` 0.4.2, `dashu-float` 0.4.4) — keep them in sync when making cross-crate changes

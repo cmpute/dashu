@@ -19,7 +19,7 @@ use crate::{
 };
 
 use dashu_base::{Abs, BitTest, Sign, Signed, UnsignedAbs};
-use dashu_int::{fast_div, IBig, UBig, Word};
+use dashu_int::{IBig, UBig, Word, fast_div};
 use num_order::{NumHash, NumOrd};
 type FBig = dashu_float::FBig;
 
