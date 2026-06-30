@@ -22,7 +22,7 @@ use crate::utils::digit_len;
 /// recomputing constants from scratch on every call.
 ///
 /// `Context`/`FBig` themselves stay `Copy` + `Send` + `Sync` + `no_std` (so
-/// [`static_fbig!`](dashu_macros::static_fbig!) keeps working); only this cached
+/// `static_fbig!` keeps working); only this cached
 /// wrapper is `!Send + !Sync`, because it shares state through an `Rc<RefCell<..>>`.
 /// To share one cache across threads, build an analogous type over
 /// `Arc<Mutex<ConstCache>>` instead (the [`Context`] methods accept

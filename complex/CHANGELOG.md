@@ -58,6 +58,9 @@
   the dependency tree.
 
 ### Fix
+- Fixed broken intra-doc links surfaced by `cargo doc -D warnings`: the public `powf` docs no longer
+  link to the `pub(crate)` `Context::guard`, and `dashu_float::Rounded` is corrected to
+  `dashu_float::round::Rounded`.
 - `CBig`'s `NumHash` now mirrors the `num-order` crate's `Complex<f64>` hashing (algebraic
   combination of the per-part residues `a + ∓PROOT²·b²`, not a sequential tuple hash), so a `CBig`
   and a `num-complex` `Complex` of the same value produce the same hash. Verified against

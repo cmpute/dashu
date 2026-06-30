@@ -10,9 +10,12 @@ on:
 
 name: Build
 
-# Build-only checks — none of these run `cargo test`; they only verify the code compiles:
+# Build-only checks — none of these run `cargo test`; they verify the code compiles and documents:
 #   * `check`          — the main workspace `cargo check` across stable / 1.85 / 1.68 (MSRV),
 #                        pinning transitive deps + dropping incompatible ones for 1.68.
+#   * `rustdoc`        — `cargo doc --workspace` with `-D warnings`, guarding against broken
+#                        intra-doc links. The meta-crate `dashu` and `dashu-python` both name their
+#                        lib `dashu`, so they collide on output and are documented separately.
 #   * `fuzz-check`     — the workspace-excluded `fuzz/` crate (its `rug`-linked differentials run
 #                        manually before a release); a compile-guard so it can't silently rot.
 #   * `build-benchmark`— the `benchmark/` scratchpad (builds with `--features gmp`).
@@ -58,6 +61,23 @@ jobs:
         if: matrix.rust != '1.68'
       - run: cargo check --workspace --exclude dashu-python --features "std,num-order,serde,zeroize,rand,num-traits_v02"
         if: matrix.rust == '1.68'
+
+  rustdoc:
+    name: cargo doc
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - name: cargo doc (workspace, all features)
+        # `dashu-python`'s lib is also named `dashu`, so it collides with the meta-crate's lib on
+        # the output path and must be documented in its own invocation. Both are checked.
+        run: |
+          cargo doc --workspace --exclude dashu-python --all-features --no-deps
+          cargo doc -p dashu-python --all-features --no-deps
 
   fuzz-check:
     name: cargo check fuzz

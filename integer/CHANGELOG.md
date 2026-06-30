@@ -6,6 +6,8 @@
 - `UBig::to_digits` / `UBig::from_digits`: convert to and from a sequence of base-`B` digits (base `2..=Word::MAX`, digits stored as `Word`, most-significant first). Complements [`UBig::in_radix`] which is limited to base 2..=36.
 
 ### Fix
+- Fixed a broken intra-doc link in `MontgomeryRepr`'s docs (a `[...](self)` link that resolved to a
+  private item is removed), surfaced by `cargo doc -D warnings`.
 - `UBig::nth_root` / `IBig::nth_root` (and `cbrt`) of `0` returned `1` instead of `0`: the `bits <= n`
   shortcut fired for the zero input (bit length 0). Found by the new `fuzz/` `rug::Integer` oracle.
 

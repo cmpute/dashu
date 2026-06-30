@@ -15,6 +15,9 @@
   crate; the `trig_prop` `pythagorean` identity now sweeps precisions {20, 50, 100}.
 
 ### Fix
+- Fixed broken intra-doc links surfaced by `cargo doc -D warnings`: `Exact`/`Inexact` now resolve to
+  `dashu_base::Approximation::{Exact,Inexact}`, `FpError::InfiniteInput` uses the crate path, and the
+  external `static_fbig!` macro reference (in a crate that isn't a dependency) is plain code.
 - `FBig::from_repr`'s debug assertion now accepts the documented single guard digit (`precision + 1`
   digits, as an inexact add/sub can produce); previously it rejected exactly-`precision+1` Reprs.
 

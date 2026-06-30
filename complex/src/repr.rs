@@ -36,7 +36,7 @@ pub struct Context<R: Round>(pub(crate) FloatCtxt<R>);
 /// Correctly-rounded complex result with per-axis inexactness.
 ///
 /// `Exact(v)` ⟺ both parts are exact; `Inexact(v, (re, im))` carries each part's rounding
-/// direction. This is the complex twin of [`dashu_float::Rounded`] (`Approximation<T, Rounding>`),
+/// direction. This is the complex twin of [`dashu_float::round::Rounded`] (`Approximation<T, Rounding>`),
 /// reusing the same [`Rounding`] flag type for each axis.
 pub type CRounded<R, const B: Word> = Approximation<CBig<R, B>, (Rounding, Rounding)>;
 

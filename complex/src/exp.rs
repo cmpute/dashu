@@ -93,7 +93,7 @@ impl<R: Round> Context<R> {
     ///
     /// Unlike `exp`, this drives whole-[`CBig`] operations (`log`/`mul`/`exp`), so it builds a
     /// complex working [`Context`] at guard precision directly rather than the float
-    /// [`Context::guard`] (which yields a `FloatCtxt` for per-part math).
+    /// `Context::guard` (which yields a `FloatCtxt` for per-part math).
     pub fn powf<const B: Word>(
         &self,
         base: &CBig<R, B>,
