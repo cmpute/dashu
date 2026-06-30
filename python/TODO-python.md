@@ -80,7 +80,13 @@ Approximation::value() extracts T from both Exact(T) and Inexact(T, E) variants.
 
 PyO3 0.20 uses the old `gil-refs` API (`&PyAny`, `&PyList`, `.into_py(py)`). Version 0.23 introduced the modern `Bound` API and `IntoPyObject`, and 0.29 is the current latest. The MSRV constraint does **not** apply to `dashu-python` (per AGENTS.md — only core crates are bounded by MSRV).
 
-### 0a: Update Cargo.toml
+### 0a: Update Cargo.toml — dependencies and metadata
+
+```toml
+[dependencies]
+# Add complex numbers support:
+dashu-cmplx = { version = "0.4.5", path = "../complex", features = ["std", "num-order"] }
+```
 
 ```toml
 [dependencies.pyo3]
@@ -1117,9 +1123,106 @@ class Sign:
 8. Step 8  (format fix)          — independent
 9. Step 9  (stubs)               — after all code changes
 10. Step 10 (tests)              — after all code changes
+11. Step 11 (complex bindings)    — after Step 3 (follows same pattern)
 ```
 
 Steps 3 and 5 can be done in parallel. Steps 3 and 4 share the same pattern so do them together.
+
+---
+
+## Step 11: Complex number bindings (CBig → CPy)
+
+**New dependency:** `dashu-cmplx` (added to `Cargo.toml` in Step 0a).
+
+The `dashu-cmplx` crate (merged from develop, commit `6e21a65`) provides `CBig<R, B>` — an arbitrary-precision complex number. For Python bindings we use `CBig<mode::Zero, 2>` (base-2, round-toward-zero) matching `FPy`.
+
+### 11a: Add `CPy` wrapper type — `types.rs`
+
+```rust
+#[derive(Clone)]
+#[pyclass(name = "CBig")]
+pub struct CPy(pub dashu_cmplx::CBig<dashu_float::mode::Zero, 2>);
+```
+
+Also add `BComplex(PyRef<'a, CPy>)` variant to `UniInput`.
+
+### 11b: Register in `lib.rs`
+
+```rust
+m.add_class::<types::CPy>()?;
+```
+
+### 11c: CBig constructor — new file `python/src/complex.rs`
+
+```rust
+#[pymethods]
+impl CPy {
+    #[new]
+    fn __new__(ob: &PyAny) -> PyResult<Self> {
+        // Python complex → CBig (exact, try_from)
+        // string "a+bi" → CBig (FromStr)
+        // (real, imag) tuple → CBig::from_parts
+        // FPy/DPy copy → CBig::from
+    }
+}
+```
+
+CBig provides:
+- `FromStr` for algebraic `"a+bi"` format
+- `From<FBig>`, `From<UBig>`, `From<IBig>` for embedding reals
+- `CBig::from_parts(re: FBig, im: FBig)`
+
+### 11d: Arithmetic operators
+
+Same macro pattern as FPy/DPy/RPy. CBig has full operator implementations for `+`, `-`, `*`, `/` (all 4 ref/val combos plus Assign forms), and `Neg`. Add an `into_cpy()` method to `UniInput`.
+
+### 11e: Accessors, predicates, math
+
+```rust
+// Accessors
+fn real(&self) -> FPy { FPy(FBig::from(self.0.re().clone())) }
+fn imag(&self) -> FPy { FPy(FBig::from(self.0.im().clone())) }
+
+// Predicates
+fn is_zero(&self) -> bool { self.0.is_zero() }
+fn is_finite(&self) -> bool { self.0.is_finite() }
+fn is_infinite(&self) -> bool { self.0.is_infinite() }
+
+// Complex-specific
+fn conj(&self) -> Self { CPy(self.0.conj()) }
+fn proj(&self) -> Self { CPy(self.0.proj()) }
+fn abs(&self) -> FPy { FPy(self.0.abs()) }       // modulus
+fn arg(&self) -> FPy { FPy(self.0.arg()) }       // phase
+fn norm(&self) -> FPy { FPy(self.0.norm()) }     // squared modulus
+
+// Math (same set as FPy, but complex-aware)
+fn sin(&self) -> Self { CPy(self.0.sin()) }
+fn cos(&self) -> Self { CPy(self.0.cos()) }
+fn tan(&self) -> Self { CPy(self.0.tan()) }
+fn asin(&self) -> Self { CPy(self.0.asin()) }
+fn acos(&self) -> Self { CPy(self.0.acos()) }
+fn atan(&self) -> Self { CPy(self.0.atan()) }
+fn exp(&self) -> Self { CPy(self.0.exp()) }
+fn ln(&self) -> Self { CPy(self.0.ln()) }
+fn sqrt(&self) -> Self { CPy(self.0.sqrt()) }
+fn sqr(&self) -> Self { CPy(self.0.sqr()) }
+fn powi(&self, exp: &IPy) -> Self { CPy(self.0.powi(exp.0.clone())) }
+fn powf(&self, w: &Self) -> Self { CPy(self.0.powf(&w.0)) }
+```
+
+### 11f: Conversion to Python `complex`
+
+```rust
+fn __complex__(&self) -> PyResult<complex> {
+    let re: f64 = self.0.re().clone().try_into().map_err(conversion_error_to_py)?;
+    let im: f64 = self.0.im().clone().try_into().map_err(conversion_error_to_py)?;
+    Ok(complex { re, im })
+}
+```
+
+### 11g: Add to math module
+
+Module-level functions in `math.rs` that delegate to `CPy` methods, matching the pattern for `FPy`.
 
 ## Verification
 
@@ -1150,6 +1253,7 @@ python -m pytest python/tests/ -v
 
 ## Notes
 
-- **MSRV**: Preserve Rust 1.68. PyO3 0.20 is compatible.
+- **MSRV**: dashu-python is exempt from the workspace MSRV policy (per AGENTS.md). Uses Rust 1.85 and edition 2024.
 - **Feature flags**: `num-modular` is used by `__pow__` but listed as optional — fix to hard dependency or wire as default feature.
+- **Complex crate**: `dashu-cmplx` (merged from develop, `6e21a65`) is a new core crate with `CBig` type. Python bindings added as Step 11.
 - **Changelog**: Document all changes in `python/CHANGELOG.md` under `## Unreleased` → `### Add`.

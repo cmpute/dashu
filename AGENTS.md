@@ -2,7 +2,7 @@
 
 dashu is a library set of arbitrary precision numbers implemented in pure Rust, aiming to be a Rust-native alternative to GNU GMP + MPFR.
 
-**MSRV is a hard constraint for core crates only.** Core crates are the `dashu` meta-crate and its direct dependencies: `dashu-base`, `dashu-int`, `dashu-float`, `dashu-ratio`, `dashu-macros`. The current MSRV is maintained in each crate's `Cargo.toml` and the top-level `README.md`. When modifying code in core crates, ensure it remains MSRV-compatible.
+**MSRV is a hard constraint for core crates only.** Core crates are the `dashu` meta-crate and its direct dependencies: `dashu-base`, `dashu-int`, `dashu-float`, `dashu-ratio`, `dashu-macros`, `dashu-cmplx`. The current MSRV is maintained in each crate's `Cargo.toml` and the top-level `README.md`. When modifying code in core crates, ensure it remains MSRV-compatible.
 
 Secondary crates (`dashu-python`, `benchmark/`, fuzz tests) are **not** bounded by the workspace MSRV policy. They may use newer Rust versions and dependency versions as needed.
 
@@ -15,6 +15,7 @@ Secondary crates (`dashu-python`, `benchmark/`, fuzz tests) are **not** bounded 
 | `dashu-float` | `float/` | Arbitrary precision floats (`FBig`, `DBig`, `CachedFBig`) |
 | `dashu-ratio` | `rational/` | Arbitrary precision rationals (`RBig`, `Relaxed`) |
 | `dashu-macros` | `macros/` | Procedural macros for literal big numbers |
+| `dashu-cmplx` | `complex/` | Arbitrary precision complex numbers (`CBig`) |
 | `dashu-python` | `python/` | PyO3 Python bindings (not in default members) |
 | *(benchmark)* | `benchmark/` | Profiling scratchpad, not a comprehensive benchmark suite |
 
