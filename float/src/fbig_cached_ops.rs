@@ -420,6 +420,17 @@ impl<R: Round, const B: Word> CachedFBig<R, B> {
         )
     }
 
+    /// Hyperbolic sine and cosine together (see [`FBig::sinh_cosh`]).
+    pub fn sinh_cosh(&self) -> (Self, Self) {
+        let mut guard = self.cache.borrow_mut();
+        let cache = Some(&mut *guard);
+        let (s, c) = self.fbig.context.sinh_cosh::<B>(&self.fbig.repr, cache);
+        (
+            Self::from_fbig(self.fbig.context.unwrap_fp(s), &self.cache),
+            Self::from_fbig(self.fbig.context.unwrap_fp(c), &self.cache),
+        )
+    }
+
     /// `atan2(y, x)` (see [`FBig::atan2`]).
     pub fn atan2(&self, x: &Self) -> Self {
         let mut c = self.cache.borrow_mut();

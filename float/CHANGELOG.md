@@ -2,12 +2,35 @@
 
 ## Unreleased
 
+### Add
+- `Repr::num_hash_residue` (behind `num-order`): the numeric-hash field element (mod 2¹²⁷−1)
+  used by `NumHash`, exposed so composite types (e.g. `CBig`) can combine their parts' residues
+  algebraically, matching the `num-order` crate's scheme.
+- `FBig::hypot` / `Context::hypot`: `sqrt(a² + b²)` computed overflow/underflow-safe via the scaled
+  sum-of-squares (the larger operand is never squared). `hypot(±inf, ·) = +inf`, `hypot(0,0) = +0`.
+- `FBig::sinh_cosh` / `Context::sinh_cosh`: simultaneously compute `sinh(x)` and `cosh(x)` sharing
+  the `exp_m1(±x)` sub-computations, roughly halving the cost of calling `sinh` + `cosh` separately.
+- (test) The `Context::sin` many-digit-significand rounding regression (49 digits at precision 100)
+  is now CI-guarded as `test_sin_many_digit_rounding_no_panic`, promoted from the excluded `fuzz/`
+  crate; the `trig_prop` `pythagorean` identity now sweeps precisions {20, 50, 100}.
+
+### Fix
+- Fixed broken intra-doc links surfaced by `cargo doc -D warnings`: `Exact`/`Inexact` now resolve to
+  `dashu_base::Approximation::{Exact,Inexact}`, `FpError::InfiniteInput` uses the crate path, and the
+  external `static_fbig!` macro reference (in a crate that isn't a dependency) is plain code.
+- `FBig::from_repr`'s debug assertion now accepts the documented single guard digit (`precision + 1`
+  digits, as an inexact add/sub can produce); previously it rejected exactly-`precision+1` Reprs.
+
 ### Remove
 - Public `Repr::from_str_native` / `FBig::from_str_native` methods (now crate-private). Use the `core::str::FromStr` impl (`s.parse()` / `FBig::from_str`) instead; its docs now carry the full parsing format specification.
 
 ### Change
 - **(breaking)** `FBig` human-readable serde now pads the serialized string with trailing zeros so its significant-digit count equals the context precision, letting precision round-trip (previously it was lost). The binary format already preserved precision.
 - (internal) The PostgreSQL `NUMERIC` conversion now extracts base-10000 digits via `UBig::to_digits` instead of a per-digit `div_rem` loop.
+- (internal) Trig argument reduction (`reduce_to_quadrant`) now recovers the quadrant integer via `IBig::try_from` instead of `to_int()`, since the rounded value is already an exact integer.
+
+### Fix
+- `IBig::try_from(FBig)` and `UBig::try_from(FBig)` now accept IEEE-754 signed zero (`-0`), returning `Ok(0)` instead of `Err(LossOfPrecision)`. Signed zero carries its sign in a `-1` exponent sentinel rather than the significand, so its integer value is plain `0`.
 
 ### Add
 - Hyperbolic functions `sinh`, `cosh`, `tanh` and their inverses `asinh`, `acosh`, `atanh` on

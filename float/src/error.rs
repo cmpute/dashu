@@ -11,13 +11,13 @@ use core::fmt::{self, Display, Formatter};
 /// # Errors vs. special values
 ///
 /// Infinite *outputs* (e.g. `1/0 → +inf`, `ln(0) → -inf`) are **not** errors — they are
-/// legitimate [`Exact`] values produced by operations whose mathematical result is genuinely
+/// legitimate [`Exact`](dashu_base::Approximation::Exact) values produced by operations whose mathematical result is genuinely
 /// infinite. Overflow and underflow are distinct: the mathematical result is finite, but its
 /// magnitude exceeds the representable exponent range. These are reported as
 /// [`Overflow`](FpError::Overflow) / [`Underflow`](FpError::Underflow), and converted to
 /// signed infinity / signed zero at the convenience layer via `Context::unwrap_fp` (or the
 /// `Repr`-level counterpart `Context::unwrap_fp_repr`). Because the true result was finite,
-/// the converted value is always [`Inexact`] with `Rounding::NoOp`.
+/// the converted value is always [`Inexact`](dashu_base::Approximation::Inexact) with `Rounding::NoOp`.
 ///
 /// The remaining variants ([`InfiniteInput`](FpError::InfiniteInput),
 /// [`OutOfDomain`](FpError::OutOfDomain), [`Indeterminate`](FpError::Indeterminate)) signal
@@ -34,14 +34,14 @@ pub enum FpError {
 
     /// An indeterminate form, e.g. `0 / 0`. Only a *zero* divided by zero is
     /// indeterminate — a non-zero value divided by zero yields ±infinity, which is a
-    /// legitimate [`Exact`] value rather than an error.
+    /// legitimate [`Exact`](dashu_base::Approximation::Exact) value rather than an error.
     Indeterminate,
 
     /// The result magnitude is too large to represent as a finite number.
     ///
     /// At the `FBig` convenience layer this is converted to a signed infinity via
     /// `Context::unwrap_fp` (or to a signed [`Repr`] via `Context::unwrap_fp_repr`).
-    /// The converted result is always [`Inexact`]: the true result was a very large
+    /// The converted result is always [`Inexact`](dashu_base::Approximation::Inexact): the true result was a very large
     /// finite number, and infinity is an approximation.
     Overflow(Sign),
 
@@ -49,7 +49,7 @@ pub enum FpError {
     ///
     /// At the `FBig` convenience layer this is converted to a signed zero via
     /// `Context::unwrap_fp` (or to a signed [`Repr`] via `Context::unwrap_fp_repr`).
-    /// The converted result is always [`Inexact`]: the true result was a very small
+    /// The converted result is always [`Inexact`](dashu_base::Approximation::Inexact): the true result was a very small
     /// non-zero number, and zero is an approximation.
     Underflow(Sign),
 }

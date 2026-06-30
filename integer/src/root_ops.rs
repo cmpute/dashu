@@ -228,6 +228,9 @@ mod repr {
             }
 
             let bits = self.bit_len();
+            if bits == 0 {
+                return Repr::zero(); // the nth root of 0 is 0, not 1
+            }
             if bits <= n {
                 return Repr::one();
             }
