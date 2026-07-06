@@ -1,5 +1,3 @@
-## Performance
-
 `dashu` aims to be efficient while staying portable. By default it compiles for
 the generic baseline of each target architecture, so a binary that depends on
 `dashu` runs on any CPU that the target baseline supports.
@@ -7,7 +5,7 @@ the generic baseline of each target architecture, so a binary that depends on
 When big-number arithmetic is on the hot path, you can get a meaningful speedup
 by telling the compiler which CPU you are actually running on.
 
-### Build with `target-cpu=native`
+## Build with `target-cpu=native`
 
 The single most impactful setting is to compile with the host CPU's feature set:
 
@@ -43,7 +41,7 @@ Note that `target-cpu=native` targets the CPU of the **machine doing the
 build**. If you build on one host and deploy to another, prefer an explicit
 `target-cpu`/`target-feature` that matches the deployment hardware instead.
 
-### Runtime feature detection (default builds)
+## Runtime feature detection (default builds)
 
 Even in a default baseline build, `dashu-int`'s hottest basecase multiplication
 kernels dispatch at runtime to a BMI2 (`mulx`) implementation on x86-64 when

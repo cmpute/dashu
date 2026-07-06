@@ -1,8 +1,6 @@
-## Printing
-
 `UBig` and `IBig` support the full set of Rust standard formatter traits: `Display`, `Debug`, `Binary`, `Octal`, `LowerHex`, `UpperHex`. The float, rational, and complex types support `Display` and `Debug`, with extra radix/positional helpers described below. All of them honor the sign, width, fill, padding, and alignment options of `Formatter`.
 
-### Integer Formatting
+## Integer Formatting
 
 `Display` renders a `UBig`/`IBig` in decimal. The `Binary`, `Octal`, `LowerHex`, and `UpperHex` traits render in base 2/8/16, with the `#` flag adding the conventional `0b`/`0o`/`0x`/`0X` prefix. For any other radix, use `in_radix(r)` (base 2–36); its `#` flag uppercases digits above 9.
 
@@ -18,13 +16,13 @@ assert_eq!(format!("{}", n.in_radix(16)), "ff");
 assert_eq!(format!("{:#}", n.in_radix(16)), "FF");
 ```
 
-### Debug Print
+## Debug Print
 
 The `Debug` implementation uses a compact **head‥tail** format for large integers: it prints the most significant digits, a `..` separator, and the least significant digits, omitting the middle. For small integers that fit in a single `Word` or `DoubleWord` the full number is shown without truncation.
 
 There are two forms, controlled by the formatter flags:
 
-#### Simple form (`{:?}`)
+### Simple form (`{:?}`)
 
 Shows the truncated head‥tail representation.
 
@@ -48,7 +46,7 @@ assert_eq!(
 
 The number of digits shown on each end depends on the `Word` size — on 64-bit targets it is 19 decimal digits at each end (one word's worth), on 32-bit targets it is 9 digits.
 
-#### Verbose form (`{:#?}`)
+### Verbose form (`{:#?}`)
 
 Adds `(digits: N, bits: M)` after the head‥tail representation, showing the total digit count and bit length.
 
@@ -64,7 +62,7 @@ if Word::BITS == 64 {
 }
 ```
 
-### Float Formatting
+## Float Formatting
 
 `FBig`/`DBig` `Display` renders the significand with the radix point positioned by the exponent — the natural positional form, not scientific. The formatter precision option rounds to that many fractional digits.
 
@@ -86,7 +84,7 @@ assert_eq!(format!("{:e}", DBig::from_str("1234.5")?), "1.2345e3");
 assert_eq!(format!("{:E}", DBig::from_str("1234.5")?), "1.2345E3");
 ```
 
-### Rational Formatting
+## Rational Formatting
 
 `RBig`/`Relaxed` `Display` renders as `numerator/denominator`, or just the numerator when the denominator is `1`. The `Binary`/`Octal`/`LowerHex`/`UpperHex` traits and `in_radix(r)` format both parts in the given base.
 
@@ -108,7 +106,7 @@ assert_eq!(format!("{:.4}", x.in_expanded()), "0.3333");
 assert_eq!(format!("{:#}", x.in_expanded()), "0.(3)");
 ```
 
-### Complex Formatting
+## Complex Formatting
 
 `CBig` `Display` uses the algebraic $a+bi$ notation: the imaginary term always carries an explicit sign, a unit coefficient is elided (`i`, not `1i`), and a zero imaginary part is omitted. `Debug` prints `re:<re> im:<im> (prec: <p>)`.
 

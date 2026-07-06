@@ -1,5 +1,3 @@
-## Operations
-
 dashu implements a full set of arithmetic, comparison, bitwise, and number-theoretic operations for its numeric types, following standard Rust operator conventions. This section covers each category:
 
 - [Equality and Comparison](./cmp.md) — `PartialEq`/`Eq`, ordering, magnitude comparison, and hashing.

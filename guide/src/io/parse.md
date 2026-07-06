@@ -1,8 +1,6 @@
-## Parsing
-
 Every numeric type implements `FromStr`, so values can be built with `"...".parse()?` or `T::from_str(...)`. Underscore separators are allowed in all numeric literals.
 
-### Parsing Integers
+## Parsing Integers
 
 `UBig::from_str` / `IBig::from_str` accept an optional sign followed by decimal digits. For other bases use `from_str_radix(s, radix)` (radix 2–36); it recognizes a `0x`/`0o`/`0b` prefix independently of the `radix` argument.
 
@@ -14,7 +12,7 @@ assert_eq!(UBig::from_str("12345")?, UBig::from(12345u16));
 assert_eq!(IBig::from_str_radix("-1aff", 16)?, IBig::from(-0x1aff));
 ```
 
-### Parsing Floats
+## Parsing Floats
 
 `FBig`/`DBig` `FromStr` reads the significand in the value's native base, with the exponent in one of these forms:
 
@@ -35,7 +33,7 @@ assert_eq!(format!("{:e}", DBig::from_str("6.022e23")?), "6.022e23");
 assert_eq!(DBig::from_str("-0.0123456789")?.to_string(), "-0.0123456789");
 ```
 
-### Parsing Rationals
+## Parsing Rationals
 
 `RBig::from_str` accepts `numerator/denominator`, or just a numerator (denominator defaults to 1). `from_str_radix` parses both parts in the given base; a `0x`/`0o`/`0b` prefix must be consistent between them.
 
@@ -46,7 +44,7 @@ use core::str::FromStr;
 assert_eq!(RBig::from_str("22/7")?.to_string(), "22/7");
 ```
 
-### Parsing Complex
+## Parsing Complex
 
 `CBig` `FromStr` accepts the same algebraic $a+bi$ grammar that `Display` emits: an optional real term plus an optional signed imaginary term (at least one required); a unit coefficient may be omitted (`i`, `-i`). The MPC-style parenthesized form `(re im)` is **not** accepted.
 

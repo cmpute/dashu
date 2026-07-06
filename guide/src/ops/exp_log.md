@@ -1,15 +1,13 @@
-## Exponential and Logarithm
-
 `FBig`/`DBig` provide the exponential, logarithmic, power, and root families, plus the mathematical constants. `CBig` provides the complex analogs of each.
 
-### Two-layer API
+## Two-layer API
 
 Like all inexact operations, transcendentals come in two layers (see [types](../types.md)):
 
 - **Context layer** — `Context` methods take a `&Repr` and return `FpResult<Rounded<FBig>>` (a correctly-rounded result or an `FpError`), carrying the rounding direction. They accept an optional `&mut ConstCache` for constant reuse.
 - **Convenience layer** — methods on `FBig` (`.exp()`, `.ln()`, …) unwrap to a plain `FBig`, panicking on `Indeterminate`/`OutOfDomain`/`InfiniteInput` and saturating overflow/underflow to `±∞`/`±0`.
 
-### Real functions
+## Real functions
 
 - Exponential: `exp`, `exp_m1` ($e^x - 1$, accurate near zero).
 - Logarithm: `ln`, `ln_1p` ($\ln(1+x)$, accurate near zero).
@@ -18,7 +16,7 @@ Like all inexact operations, transcendentals come in two layers (see [types](../
 
 (`exp2`/`exp10`/`log2`/`log10` are deferred to a later 0.5.x release.)
 
-### Complex functions
+## Complex functions
 
 `CBig` mirrors the real set with `exp`, `ln`, `sqrt`, `powi`, and `powf`, built on the real implementations. The identities are
 

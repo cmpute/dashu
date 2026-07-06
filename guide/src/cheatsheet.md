@@ -1,8 +1,6 @@
-## Cheatsheet
-
 A dense reference for the dashu numeric types. See the linked pages for detail.
 
-### Types
+## Types
 
 | Type | Crate | Description | Literal |
 |------|-------|-------------|---------|
@@ -13,7 +11,7 @@ A dense reference for the dashu numeric types. See the linked pages for detail.
 | `RBig` | dashu-ratio | rational | `rbig!(22/7)` |
 | `CBig` | dashu-cmplx | complex, base 2 by default | `cbig!(1+2i)` |
 
-### Construction
+## Construction
 
 | Way | Example |
 |-----|---------|
@@ -23,7 +21,7 @@ A dense reference for the dashu numeric types. See the linked pages for detail.
 | literal macro | `dbig!(1.5)`, `cbig!(1+2i)` |
 | raw words | `UBig::from_words(&[3, 2, 1])` |
 
-### Conversion
+## Conversion
 
 Lossless conversions use `From`; potentially-lossy ones use `TryFrom` (which fails on any precision loss). See [Conversion](./convert.md) for the full matrix.
 
@@ -38,7 +36,7 @@ Lossless conversions use `From`; potentially-lossy ones use `TryFrom` (which fai
 | real → `CBig` | `From` | imaginary part `+0` |
 | `CBig` → `FBig` | `TryFrom` | fails unless imaginary is zero |
 
-### Operators
+## Operators
 
 | Type | `+ - * /` | `%` | `<< >>` | `& \| ^ !` |
 |------|:---:|:---:|:---:|:---:|
@@ -47,7 +45,7 @@ Lossless conversions use `From`; potentially-lossy ones use `TryFrom` (which fai
 | `RBig` | ✓ | — | — | — |
 | `CBig` | ✓ | — | — | — |
 
-### Formatting
+## Formatting
 
 | Type | `Display` | `Debug` | Other |
 |------|-----------|---------|-------|
@@ -56,7 +54,7 @@ Lossless conversions use `From`; potentially-lossy ones use `TryFrom` (which fai
 | `RBig` | `num/den` | — | `in_radix`, `in_expanded` |
 | `CBig` | `a+bi` | `re:.. im:.. (prec: ..)` | — |
 
-### Key methods
+## Key methods
 
 | Method | On | Returns |
 |--------|-----|---------|
