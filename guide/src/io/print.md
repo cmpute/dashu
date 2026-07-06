@@ -119,16 +119,68 @@ assert_eq!(
 );
 ```
 
-The head‥tail digit count depends on the `Word` size — 19 decimal digits per end on 64-bit targets, 9 on 32-bit. The verbose form `{:#?}` adds detail; for integers it appends the digit count and bit length:
+The head‥tail digit count depends on the `Word` size — 19 decimal digits per end on 64-bit targets, 9 on 32-bit. The verbose form `{:#?}` pretty-prints a structured view of the value; for the compound types it shows the full decomposition:
 
 ```rust
-use dashu::integer::{UBig, Word};
+use core::str::FromStr;
+use dashu::complex::CBig;
+use dashu::float::{CachedFBig, Context, DBig, FBig, Repr, round::mode::HalfAway};
+use dashu::integer::UBig;
+use dashu::rational::RBig;
 
-let x = UBig::ONE << 1000;
-if Word::BITS == 64 {
-    assert_eq!(
-        format!("{:#?}", x),
-        "1071508607186267320..4386837205668069376 (digits: 302, bits: 1001)"
-    );
+let f: FBig = FBig::from(3u8);
+let c = CachedFBig::<HalfAway, 10>::with_cache(Repr::new(1234.into(), -3), Context::new(50));
+type F = FBig<HalfAway, 10>;
+let z = CBig::<HalfAway, 10>::from_parts(F::from(3), F::from(4));
+
+println!("{:#?}", UBig::from(12345u16));
+println!("{:#?}", f);
+println!("{:#?}", DBig::from_str("12.34")?);
+println!("{:#?}", c);
+println!("{:#?}", RBig::from_parts(1.into(), 3u8.into()));
+println!("{:#?}", z);
+```
+
+This prints, for `UBig`, `FBig`, `DBig`, `CachedFBig`, `RBig`, `CBig` in order:
+
+```text
+12345 (digits: 5, bits: 14)
+FBig {
+    significand: 3 (2 bits),
+    exponent: 2 ^ 0,
+    precision: 2,
+    rounding: Zero,
+}
+FBig {
+    significand: 1234 (digits: 4, bits: 11),
+    exponent: 10 ^ -2,
+    precision: 4,
+    rounding: HalfAway,
+}
+CachedFBig {
+    repr: Repr {
+        significand: 1234 (digits: 4, bits: 11),
+        exponent: 10 ^ -3,
+    },
+    precision: 50,
+}
+RBig {
+    numerator: 1 (digits: 1, bits: 1),
+    denominator: 3 (digits: 1, bits: 2),
+}
+CBig {
+    re: FBig {
+        significand: 3 (digits: 1, bits: 2),
+        exponent: 10 ^ 0,
+        precision: 1,
+        rounding: HalfAway,
+    },
+    im: FBig {
+        significand: 4 (digits: 1, bits: 3),
+        exponent: 10 ^ 0,
+        precision: 1,
+        rounding: HalfAway,
+    },
+    precision: 1,
 }
 ```
