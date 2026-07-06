@@ -4,6 +4,7 @@
 
 - [Types](./types.md)
 - [Construction and Destruction](./construct.md)
+- [Cached Arithmetic for FBig](./cached.md)
 - [Conversion](./convert.md)
 - [Input and Output](./io/index.md)
   - [Parsing](./io/parse.md)

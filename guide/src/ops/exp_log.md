@@ -14,7 +14,7 @@ Like all inexact operations, transcendentals come in two layers (see [types](../
 - Exponential: `exp`, `exp_m1` ($e^x - 1$, accurate near zero).
 - Logarithm: `ln`, `ln_1p` ($\ln(1+x)$, accurate near zero).
 - Powers and roots: `powi(IBig)`, `powf(&FBig)`, `sqrt`, `cbrt`, `nth_root(&n)`, and `hypot(&other)` ($\sqrt{x^2+y^2}$, overflow-safe).
-- Constants: `FBig::pi(precision)` computes π; use [`CachedFBig`](../construct.md#cached-arithmetic-for-fbig) to reuse it across calls.
+- Constants: `FBig::pi(precision)` computes π; use [`CachedFBig`](../cached.md) to reuse it across calls.
 
 (`exp2`/`exp10`/`log2`/`log10` are deferred to a later 0.5.x release.)
 
