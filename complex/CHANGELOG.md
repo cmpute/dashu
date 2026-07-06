@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Add
+- `CBig::NEG_ONE` (`-1 + 0i`), mirroring `FBig::NEG_ONE`.
+
 ### Improve
 - The complex `sin_cos` kernel now calls `dashu-float`'s combined `sinh_cosh` (new in `dashu-float`)
   instead of separate `sinh` + `cosh` calls, sharing the `exp_m1(±y)` sub-computations.

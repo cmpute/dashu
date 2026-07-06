@@ -8,7 +8,7 @@ For all the numeric types, there are several constants associated with the type.
 - `IBig`: `::ZERO`, `::ONE`, `::NEG_ONE`
 - `FBig`/`DBig`: `::ZERO`, `::ONE`, `::NEG_ONE`, `::INFINITY`, `::NEG_INFINITY`
 - `RBig`: `::ZERO`, `::ONE`, `::NEG_ONE`
-- `CBig`: `::ZERO` ($0+0i$), `::ONE` ($1+0i$), `::I` ($0+1i$)
+- `CBig`: `::ZERO` ($0+0i$), `::ONE` ($1+0i$), `::NEG_ONE` ($-1+0i$), `::I` ($0+1i$)
 
 ## Raw Constructor for `UBig`
 

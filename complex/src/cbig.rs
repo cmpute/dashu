@@ -95,6 +95,9 @@ impl<R: Round, const B: Word> CBig<R, B> {
     /// The complex number one `1 + 0i` (unlimited precision).
     pub const ONE: Self = Self::new(Repr::one(), Repr::zero(), Context::new(0));
 
+    /// The complex number negative one `-1 + 0i` (unlimited precision).
+    pub const NEG_ONE: Self = Self::new(Repr::neg_one(), Repr::zero(), Context::new(0));
+
     /// The imaginary unit `0 + 1i` (unlimited precision).
     pub const I: Self = Self::new(Repr::zero(), Repr::one(), Context::new(0));
 
@@ -196,6 +199,8 @@ mod tests {
     fn constants() {
         assert!(C::ZERO.is_zero());
         assert!(!C::ONE.is_zero());
+        assert!(!C::NEG_ONE.is_zero());
+        assert!(C::NEG_ONE != C::ONE);
         assert!(!C::I.is_zero());
         let (re, im) = C::I.into_parts();
         assert!(re.repr().is_zero());
