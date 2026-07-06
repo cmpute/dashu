@@ -1,11 +1,4 @@
-`FBig`/`DBig` provide the exponential, logarithmic, power, and root families, plus the mathematical constants. `CBig` provides the complex analogs of each.
-
-## Two-layer API
-
-Like all inexact operations, transcendentals come in two layers (see [types](../types.md)):
-
-- **Context layer** — `Context` methods take a `&Repr` and return `FpResult<Rounded<FBig>>` (a correctly-rounded result or an `FpError`), carrying the rounding direction. They accept an optional `&mut ConstCache` for constant reuse.
-- **Convenience layer** — methods on `FBig` (`.exp()`, `.ln()`, …) unwrap to a plain `FBig`, panicking on `Indeterminate`/`OutOfDomain`/`InfiniteInput` and saturating overflow/underflow to `±∞`/`±0`.
+`FBig`/`DBig` provide the exponential, logarithmic, power, and root families, plus the mathematical constants. `CBig` provides the complex analogs of each. Like all inexact operations, these come in [two layers](../types.md#two-layer-api) — a `Context` layer that returns the rounding result and a convenience layer that unwraps it.
 
 ## Real functions
 

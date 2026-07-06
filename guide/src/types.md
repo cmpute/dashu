@@ -63,4 +63,13 @@ When you have an `Approximation` instance, call `.value()`, `.value_ref()` or `u
 
 ### FpResult and CfpResult
 
-Inexact operations at the context layer return a result type rather than a bare value: `dashu::float::FpResult<T> = Result<Rounded<T>, FpError>`, where `Rounded<T>` is the [`Approximation`](#approximation) carrying a `Rounding` flag. The complex analog is `dashu::complex::CfpResult` (`Result<CRounded<CBig>, FpError>`), whose `CRounded` carries one `Rounding` flag per axis. `FpError` reports why an operation could not produce a finite correctly-rounded value: `Overflow`/`Underflow` (saturated to `±∞`/`±0` by the convenience layer), `Indeterminate` (e.g. `0/0`), `OutOfDomain`, and `InfiniteInput`. The convenience-layer methods unwrap these — saturating overflow/underflow and panicking on the rest.
+Inexact operations at the context layer return a result type rather than a bare value: `dashu::float::FpResult<T> = Result<Rounded<T>, FpError>`, where `Rounded<T>` is the [`Approximation`](#approximation) carrying a `Rounding` flag. The complex analog is `dashu::complex::CfpResult` (`Result<CRounded<CBig>, FpError>`), whose `CRounded` carries one `Rounding` flag per axis. `FpError` reports why an operation could not produce a finite correctly-rounded value: `Overflow`/`Underflow`, `Indeterminate` (e.g. `0/0`), `OutOfDomain`, and `InfiniteInput`.
+
+## Two-layer API
+
+Inexact operations — division, the transcendentals, and anything else that can overflow, underflow, or be out of domain — are exposed in two layers:
+
+- **Context layer** — `Context` methods take a `&Repr` and return [`FpResult`](#fpresult-and-cfpresult)`<Rounded<FBig>>` (or `CfpResult<CRounded<CBig>>` for complex): a correctly-rounded result or an `FpError`, carrying the rounding direction. They accept an optional `&mut ConstCache` so constants can be reused.
+- **Convenience layer** — the inherent methods and operators on `FBig`/`CBig` (`.exp()`, `.ln()`, `+`, `*`, …) unwrap to a plain value, panicking on `Indeterminate`/`OutOfDomain`/`InfiniteInput` and saturating overflow/underflow to `±∞`/`±0`.
+
+Use the convenience layer for everyday code; drop down to the `Context` layer when you need the rounding direction or explicit error handling.
