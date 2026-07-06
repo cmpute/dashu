@@ -216,53 +216,53 @@ macro_rules! impl_conversion_to_float {
 impl_conversion_to_float!(f32 [-149, 128]); // see f32::encode for explanation of the bounds
 impl_conversion_to_float!(f64 [-1074, 1024]); // see f32::encode for explanation of the bounds
 
+/// Compute `floor(log2(|numerator/denominator|))`, given the unsigned
+/// numerator magnitude and `exp = numerator.bit_len() - denominator.bit_len()`.
+///
+/// Since `|numerator/denominator| ∈ [2^(exp-1), 2^(exp+1))`, the result is
+/// either `exp` or `exp - 1`; this disambiguates with a single comparison.
+fn log2_floor_abs(numerator: &UBig, denominator: &UBig, exp: isize) -> isize {
+    let ge_power = if exp >= 0 {
+        numerator >= &(denominator << exp as usize)
+    } else {
+        &(numerator << (-exp) as usize) >= denominator
+    };
+    if ge_power {
+        exp
+    } else {
+        exp - 1
+    }
+}
+
+/// Round `|numerator/denominator| * 2^(-shift)` to the nearest integer
+/// (ties to even), where `numerator` is the unsigned magnitude and `sign`
+/// is the sign of the original rational.
+fn rounded_abs_mantissa(
+    numerator: UBig,
+    denominator: &UBig,
+    sign: Sign,
+    shift: isize,
+) -> Approximation<UBig, Sign> {
+    let (num, den) = if shift >= 0 {
+        (numerator, denominator << shift as usize)
+    } else {
+        (numerator << (-shift) as usize, denominator.clone())
+    };
+    let (man, r) = num.div_rem(&den);
+
+    if r.is_zero() {
+        Exact(man)
+    } else {
+        let half = (r << 1).cmp(&den);
+        if half == Ordering::Greater || (half == Ordering::Equal && man.bit(0)) {
+            Inexact(man + UBig::ONE, sign)
+        } else {
+            Inexact(man, -sign)
+        }
+    }
+}
+
 impl Repr {
-    /// Compute `floor(log2(|numerator/denominator|))`, given the unsigned
-    /// numerator magnitude and `exp = numerator.bit_len() - denominator.bit_len()`.
-    ///
-    /// Since `|numerator/denominator| ∈ [2^(exp-1), 2^(exp+1))`, the result is
-    /// either `exp` or `exp - 1`; this disambiguates with a single comparison.
-    fn log2_floor_abs(&self, numerator: &UBig, exp: isize) -> isize {
-        let ge_power = if exp >= 0 {
-            numerator >= &(&self.denominator << exp as usize)
-        } else {
-            (numerator << (-exp) as usize) >= self.denominator
-        };
-        if ge_power {
-            exp
-        } else {
-            exp - 1
-        }
-    }
-
-    /// Round `|numerator/denominator| * 2^(-shift)` to the nearest integer
-    /// (ties to even), where `numerator` is the unsigned magnitude and `sign`
-    /// is the sign of the original rational.
-    fn rounded_abs_mantissa(
-        &self,
-        numerator: UBig,
-        sign: Sign,
-        shift: isize,
-    ) -> Approximation<UBig, Sign> {
-        let (num, den) = if shift >= 0 {
-            (numerator, (&self.denominator) << shift as usize)
-        } else {
-            (numerator << (-shift) as usize, self.denominator.clone())
-        };
-        let (man, r) = num.div_rem(&den);
-
-        if r.is_zero() {
-            Exact(man)
-        } else {
-            let half = (r << 1).cmp(&den);
-            if half == Ordering::Greater || (half == Ordering::Equal && man.bit(0)) {
-                Inexact(man + UBig::ONE, sign)
-            } else {
-                Inexact(man, -sign)
-            }
-        }
-    }
-
     /// Convert the rational number to [f32] without guaranteed correct rounding.
     fn to_f32_fast(&self) -> f32 {
         // shortcut
@@ -384,7 +384,7 @@ impl Repr {
             return Inexact(sign * 0f32, -sign);
         }
 
-        let top_exp = self.log2_floor_abs(&numerator, exp);
+        let top_exp = log2_floor_abs(&numerator, &self.denominator, exp);
         if top_exp >= 128 {
             // max f32 = 2^128 * (1 - 2^-24)
             Inexact(sign * f32::INFINITY, sign)
@@ -396,16 +396,15 @@ impl Repr {
             // fits f32's 24-bit significand exactly (no second rounding in encode).
             // Clamp to the subnormal quantization 2^-149 for tiny magnitudes.
             let shift = (top_exp - 23).max(-149);
-            self.rounded_abs_mantissa(numerator, sign, shift)
-                .and_then(|man| {
-                    let man: u32 = man.try_into().unwrap();
-                    if man == 0 {
-                        // encode(0, _) yields +0; preserve the sign of an underflowed zero
-                        Exact(sign * 0f32)
-                    } else {
-                        f32::encode(sign * man as i32, shift as i16)
-                    }
-                })
+            rounded_abs_mantissa(numerator, &self.denominator, sign, shift).and_then(|man| {
+                let man: u32 = man.try_into().unwrap();
+                if man == 0 {
+                    // encode(0, _) yields +0; preserve the sign of an underflowed zero
+                    Exact(sign * 0f32)
+                } else {
+                    f32::encode(sign * man as i32, shift as i16)
+                }
+            })
         }
     }
 
@@ -427,7 +426,7 @@ impl Repr {
             return Inexact(sign * 0f64, -sign);
         }
 
-        let top_exp = self.log2_floor_abs(&numerator, exp);
+        let top_exp = log2_floor_abs(&numerator, &self.denominator, exp);
         if top_exp >= 1024 {
             // max f64 = 2^1024 × (1 − 2^−53)
             Inexact(sign * f64::INFINITY, sign)
@@ -437,15 +436,14 @@ impl Repr {
         } else {
             // scale |value| into [2^52, 2^53) for an exact 53-bit mantissa (no second rounding)
             let shift = (top_exp - 52).max(-1074);
-            self.rounded_abs_mantissa(numerator, sign, shift)
-                .and_then(|man| {
-                    let man: u64 = man.try_into().unwrap();
-                    if man == 0 {
-                        Exact(sign * 0f64)
-                    } else {
-                        f64::encode(sign * man as i64, shift as i16)
-                    }
-                })
+            rounded_abs_mantissa(numerator, &self.denominator, sign, shift).and_then(|man| {
+                let man: u64 = man.try_into().unwrap();
+                if man == 0 {
+                    Exact(sign * 0f64)
+                } else {
+                    f64::encode(sign * man as i64, shift as i16)
+                }
+            })
         }
     }
 }
