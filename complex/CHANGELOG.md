@@ -6,6 +6,9 @@
 - `CBig::NEG_ONE` (`-1 + 0i`), mirroring `FBig::NEG_ONE`.
 - `TryFrom<CBig> for UBig` — extracts the unsigned integer when the value is purely real, finite,
   integer-valued, and non-negative (composes `CBig → FBig → UBig`).
+- Primitive conversions to/from `CBig`: `From` for the integer primitives (`u8`–`u128`, `i8`–`i128`),
+  `TryFrom<f32>`/`TryFrom<f64>` (base 2), and `TryFrom<CBig>` for every integer and float primitive
+  (float out is base-2). All compose through `FBig`, mirroring `dashu-float`'s primitive surface.
 
 ### Improve
 - The complex `sin_cos` kernel now calls `dashu-float`'s combined `sinh_cosh` (new in `dashu-float`)

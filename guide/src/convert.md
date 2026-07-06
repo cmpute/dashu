@@ -48,8 +48,9 @@ To convert from primitive to big numbers:
 | IBig      | From         | From         | TryFrom       |
 | FBig/DBig | From         | From         | TryFrom*      |
 | RBig      | From         | From         | TryFrom       |
+| CBig      | From         | From         | TryFrom*      |
 
-> *: The conversion from `f32`/`f64` to `FBig` is **only defined in base 2**, because the conversion is almost always lossy when the base is not a power of two. To convert from `f32`/`f64` to big floats with other bases (such as `DBig` with base 10), the conversion can be achieved by converting to base 2 first, and then use the `.with_base()` method to convert to other bases. By this way, the rounding during the conversion can be explicitly selected.
+> *: The conversion from `f32`/`f64` to `FBig`/`CBig` is **only defined in base 2**, because the conversion is almost always lossy when the base is not a power of two. To convert from `f32`/`f64` to big floats with other bases (such as `DBig` with base 10), the conversion can be achieved by converting to base 2 first, and then use the `.with_base()` method to convert to other bases. By this way, the rounding during the conversion can be explicitly selected.
 
 To convert from big numbers to primitive numbers:
 
@@ -59,6 +60,7 @@ To convert from big numbers to primitive numbers:
 | IBig      | TryInto      | TryInto      | TryInto/`.to_f*()`                 |
 | FBig/DBig | TryInto      | TryInto      | TryInto/`.to_f*()`                 |
 | RBig      | TryInto      | TryInto      | TryInto/`.to_f*()`/`.to_f*_fast()` |
+| CBig      | TryInto      | TryInto      | TryInto                            |
 
 In the table above, `.to_f*()` denotes `.to_f32()` and `.to_f64()`, similarly `.to_f*_fast()` denotes `.to_f32_fast()` and `.to_f64_fast()`. The *fast* methods don't guarantee corrent rounding so that they can be faster. It's recommended to use the `.to_f*()` methods over the `TryFrom`/`TryInto` trait, because `.to_f*()` will not fail and it also returns the rounding direction during the conversion (i.e. the sign of the rounding error).
 
