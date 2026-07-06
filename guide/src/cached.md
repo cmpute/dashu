@@ -1,12 +1,10 @@
-## Cached Arithmetic for FBig
-
 The [`CachedFBig`] type is an [`FBig`] that carries a shared handle to a
 `Rc<RefCell<ConstCache>>`. The cache stores exact binary-splitting state for
 mathematical constants (π, ln2, ln10), so that transcendental operations
 (`ln`, `exp`, `sin`, `cos`, …, `pi`) reuse and progressively extend prior
 work instead of recomputing from scratch.
 
-### Creation
+## Creation
 
 A `CachedFBig` is created by attaching a cache handle to an `FBig`:
 
@@ -41,7 +39,7 @@ To drop the cache and get back a plain `FBig`, use `into_fbig()` or the
 let plain: FBig = cached.into();  // or cached.into_fbig()
 ```
 
-### Cache sharing
+## Cache sharing
 
 Binary operations between `CachedFBig` values preserve the cache handle in
 the result: `(a + b).ln().exp()` keeps extending the same cache throughout.
@@ -60,7 +58,7 @@ let result = cached + 3u8;    // CachedFBig, cache preserved
 let result = 10i32 * cached;  // CachedFBig, cache preserved
 ```
 
-### Inspecting and clearing the cache
+## Inspecting and clearing the cache
 
 Use `cache()` to borrow the cache read-only and inspect its size:
 
@@ -77,7 +75,7 @@ cached.clear_cache();
 assert_eq!(cached.cache().total_terms(), 0);
 ```
 
-### More constructors and accessors
+## More constructors and accessors
 
 Beyond `into_cached` / `with_cache` / `From<FBig>`, `CachedFBig` mirrors the rest of `FBig`'s construction surface while preserving the cache handle:
 
@@ -86,7 +84,7 @@ Beyond `into_cached` / `with_cache` / `From<FBig>`, `CachedFBig` mirrors the res
 - `as_fbig()` — borrow the inner `FBig` immutably (cheap; no cache detach).
 - `from_repr(repr, context, cache)` / `into_repr()` — the raw-repr constructor/destructor that share a specific cache handle.
 
-### Computing constants directly
+## Computing constants directly
 
 The cache stores exact binary-splitting state for the constants π, ln2, and ln10, so the methods that produce them reuse and progressively extend prior work rather than recomputing from scratch. On `CachedFBig`, π is a single call:
 
@@ -117,11 +115,11 @@ let ln10 = cache.ln10::<10, HalfAway>(100);
 
 `ln_base::<B, R>(precision)` dispatches to the cached ln2 / ln10 when `B` is 2 or 10 (or a power of two), and falls back to a direct `ln(B)` otherwise.
 
-### Thread safety
+## Thread safety
 
 `CachedFBig` carries its cache as `Rc<RefCell<ConstCache>>`, so it is **`!Send + !Sync`** — a cached value cannot move across threads. `FBig` itself stays `Copy + Send + Sync` (which is why `static_fbig!` keeps working); only the cached wrapper is non-thread-safe. `ConstCache` is a plain struct of big integers and is itself `Send + Sync`, so to share one cache across threads, wrap a `ConstCache` (or a `CachedFBig`) in `Arc<Mutex<ConstCache>>`. The underlying `Context` methods accept `Option<&mut ConstCache>` regardless of the container, so this needs no API change.
 
-### Worked example: reusing constants across a chain
+## Worked example: reusing constants across a chain
 
 Because every value-producing operation preserves the cache handle, a chain of transcendentals reuses the same constants throughout. Building several results from one shared handle pays for each constant once:
 
