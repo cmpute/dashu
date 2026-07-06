@@ -4,6 +4,8 @@
 
 ### Add
 - `CBig::NEG_ONE` (`-1 + 0i`), mirroring `FBig::NEG_ONE`.
+- `TryFrom<CBig> for UBig` — extracts the unsigned integer when the value is purely real, finite,
+  integer-valued, and non-negative (composes `CBig → FBig → UBig`).
 
 ### Improve
 - The complex `sin_cos` kernel now calls `dashu-float`'s combined `sinh_cosh` (new in `dashu-float`)

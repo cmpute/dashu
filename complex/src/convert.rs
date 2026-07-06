@@ -68,6 +68,18 @@ impl<R: Round, const B: Word> TryFrom<CBig<R, B>> for IBig {
     }
 }
 
+impl<R: Round, const B: Word> TryFrom<CBig<R, B>> for UBig {
+    type Error = ConversionError;
+
+    /// Extract an unsigned integer, succeeding only when the number is purely real, finite,
+    /// integer-valued, and non-negative. Composes [`CBig`] → [`FBig`] → [`UBig`].
+    #[inline]
+    fn try_from(z: CBig<R, B>) -> Result<Self, Self::Error> {
+        let re: FBig<R, B> = FBig::try_from(z)?;
+        UBig::try_from(re)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,5 +126,24 @@ mod tests {
         // nonzero imaginary → LossOfPrecision
         let z = C::from_parts(9.into(), 1.into());
         assert_eq!(IBig::try_from(z), Err(ConversionError::LossOfPrecision));
+    }
+
+    #[test]
+    fn try_from_ubig_composes() {
+        let z: C = IBig::from(9).into();
+        let u: UBig = UBig::try_from(z).unwrap();
+        assert_eq!(u, UBig::from(9u8));
+
+        // negative real part → OutOfBounds
+        let z: C = IBig::from(-9).into();
+        assert_eq!(UBig::try_from(z), Err(ConversionError::OutOfBounds));
+
+        // fractional real part → LossOfPrecision
+        let z = C::from(F::from_parts(123.into(), -2)); // 1.23
+        assert_eq!(UBig::try_from(z), Err(ConversionError::LossOfPrecision));
+
+        // nonzero imaginary → LossOfPrecision
+        let z = C::from_parts(9.into(), 1.into());
+        assert_eq!(UBig::try_from(z), Err(ConversionError::LossOfPrecision));
     }
 }

@@ -8,7 +8,7 @@ Most of the time, you can use `From`/`Into`/`TryFrom`/`TryInto` to convert betwe
 
 | Dest\Src  | UBig | IBig    | FBig/DBig    | RBig        | CBig    |
 |-----------|------|---------|--------------|-------------|---------|
-| UBig      | \    | TryFrom | TryFrom      | TryFrom     | —       |
+| UBig      | \    | TryFrom | TryFrom      | TryFrom     | TryFrom |
 | IBig      | From | \       | TryFrom      | TryFrom     | TryFrom |
 | FBig/DBig | From | From    | \            | TryFrom[^a] | TryFrom |
 | RBig      | From | From    | TryFrom[^a]  | \           | —       |
