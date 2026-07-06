@@ -33,19 +33,15 @@ The most fundamental type of the `dashu` libraries is the natural number `UBig`.
 
 The layout of `FBig` (and `DBig`) is a little different from other types. An `FBig` instance contains a number representation `dashu_float::Repr` and a context `dashu_float::Context`. The context will be copied every time a new `FBig` is created based on it. The context currently contains the rounding information and the precision associated with this number. The context is kept deliberately lightweight (`Copy` + `Send` + `Sync`): the shared cache for math constants (such as π, ln2, ln10) lives *outside* the context, in the separate [`CachedFBig`](./construct.md#cached-arithmetic-for-fbig) wrapper, so that a plain `FBig` stays cheap to copy and usable in `const`/`static` contexts. Therefore, if you don't want to store the additional context information, you can just store the `Repr` part of the `FBig`. The later operations on the `Repr` can be called with the associated methods of the `Context`, which all takes the reference to a `Repr` instance. However, this could lead to a little overhead in some cases.
 
-## Complex Numbers
+## Layout of `CBig`
 
-The `CBig` type (in the `dashu-cmplx` crate) is an arbitrary-precision complex number, and it is generic over a rounding mode `R` and a base `B`, just like `FBig`. A `CBig<R, B>` instance holds two `Repr<B>` parts — the real part `re` and the imaginary part `im` — over a **single shared** `Context<R>`.
+`CBig` (in the `dashu-cmplx` crate) mirrors `FBig`'s `Repr`+`Context` layout, generalized to two parts: a `CBig<R, B>` instance holds two `Repr<B>` parts — the real part `re` and the imaginary part `im` — over a **single shared** `Context<R>`. Storing one context (rather than wrapping two `FBig`s, each carrying its own) makes the uniform-precision invariant *physical*: there is exactly one precision slot, so `re` and `im` structurally cannot disagree. Each part keeps its own significand length; the shared context holds only the precision cap and the single rounding mode, applied independently to each component. As with `FBig`, the context is `Copy` while the significands are heap-allocated, so `CBig` is `Clone` but not `Copy`.
 
-Storing one context — rather than wrapping two independent `FBig`s (each carrying its own) — makes the uniform-precision invariant *physical*: there is exactly one precision slot, so `re` and `im` structurally cannot disagree. Each part keeps its own significand length; the shared context holds only the precision cap and the single rounding mode, which is applied independently to each component. The result context of `CBig::from_parts(re, im)` is the larger of the two (an unlimited `0` precision is treated as the minimum, so a limited operand always wins), and widening the smaller part to it is exact.
-
-Because both parts are `Repr`, `CBig` inherits `dashu-float`'s signed-zero / signed-infinity / branch-cut machinery directly. Rounding follows the C99 Annex G / Kahan model that `dashu-float` already implements for reals — see [Standards Compliance](./compliance.md) for the full special-value and branch-cut tables. As with `FBig`, there is **no NaN**: C99 cases that would produce a complex NaN are reported as `FpError` at the context layer (and panic at the convenience layer).
-
-`CBig` exposes the constants `CBig::ZERO` ($0+0i$), `CBig::ONE` ($1+0i$), and `CBig::I` ($0+1i$, the imaginary unit), all at unlimited precision. There is no `CBig::INFINITY` constant: the complex infinity is the single Riemann point $+\infty+i\cdot0$, produced by `proj` and by overflow. Construction, arithmetic, and the rest of the surface are covered in [Construction and Destruction](./construct.md), [Conversion](./convert.md), and the [Operations](./ops/index.md) pages.
+Because both parts are `Repr`, `CBig` reuses `dashu-float`'s signed-zero / signed-infinity / branch-cut machinery unchanged. It follows the C99 Annex G / Kahan model (see [Standards Compliance](./compliance.md)) and, like `FBig`, has **no NaN** — C99 cases that would produce a complex NaN are reported as `FpError` at the context layer. `CBig::from_parts(re, im)` takes the larger of the two operand contexts. Construction, arithmetic, transcendentals, and I/O are covered in [Construction and Destruction](./construct.md), [Conversion](./convert.md), and [Operations](./ops/index.md).
 
 # Auxiliary Types
 
-Besides the numeric types defined in separate crates, there are some auxiliary types defined in the crate **dashu-base**.
+Besides the numeric types, there are several auxiliary types used across the crates: `Sign` and `Approximation` in **dashu-base**, `ConstCache` and `FpResult` in **dashu-float**, and `CfpResult` in **dashu-cmplx**.
 
 ## Sign
 
@@ -60,3 +56,11 @@ The type `Sign` also supports some operations, namely `Neg` and `Mul`. The sign 
 The enum `Approximation` is another commonly used type in `dashu`. It's used when an operation can return inexact values (such as rounding and number conversion). The enum has two variants: `Exact` and `Inexact`, the latter one contains a error term for representing the sign or magnitude of the error caused by inexact operations.
 
 When you have an `Approximation` instance, call `.value()`, `.value_ref()` or `unwrap()` to get the operation result, and call `.error()` to get the error term. This struct also support method to work in functional programming style, such as `.map()` and `.and_then()`.
+
+## ConstCache
+
+`dashu_float::ConstCache` holds the exact binary-splitting state for the mathematical constants π, ln2, and ln10, so repeated transcendental calls at increasing precision *extend* prior work instead of recomputing from scratch. It is a plain struct of big integers — base-free, `Send` + `Sync` — and a single cache serves any base. `FBig` and `Context` themselves stay `Copy` and carry no cache; the state lives in the separate [`CachedFBig`](./construct.md#cached-arithmetic-for-fbig) wrapper (as `Rc<RefCell<ConstCache>>`), or you can drive a bare `ConstCache` directly.
+
+## FpResult and CfpResult
+
+Inexact operations at the context layer return a result type rather than a bare value: `dashu_float::FpResult<T> = Result<Rounded<T>, FpError>`, where `Rounded<T>` is the [`Approximation`](#approximation) carrying a `Rounding` flag. The complex analog is `dashu_cmplx::CfpResult` (`Result<CRounded<CBig>, FpError>`), whose `CRounded` carries one `Rounding` flag per axis. `FpError` reports why an operation could not produce a finite correctly-rounded value: `Overflow`/`Underflow` (saturated to `±∞`/`±0` by the convenience layer), `Indeterminate` (e.g. `0/0`), `OutOfDomain`, and `InfiniteInput`. The convenience-layer methods unwrap these — saturating overflow/underflow and panicking on the rest.
