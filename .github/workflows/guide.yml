@@ -1,0 +1,37 @@
+on:
+  push:
+    branches:
+      - master
+      - develop
+  pull_request:
+    branches:
+      - master
+      - develop
+
+name: Guide
+
+# Build-check for the mdBook user guide under `guide/`. Renders the book with mdBook and the
+# mdbook-katex preprocessor (KaTeX math typesetting). The build fails on errors and — because
+# mdBook errors on any `SUMMARY.md` entry whose target file is missing — also guards against
+# broken internal links. This phase is build-check only: nothing is deployed.
+#
+# Version note: mdBook's 0.5.x line changed the preprocessor wire protocol, so the *released*
+# mdbook-katex crate (0.9.x, built against mdbook 0.4) cannot talk to mdBook 0.5. We therefore
+# install mdBook's 0.5 release and mdbook-katex's mdbook-0.5 build from upstream git, both pinned
+# for reproducibility. Bump both together when upgrading.
+
+jobs:
+  guide:
+    name: Build guide (mdBook + KaTeX)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - name: Install mdBook
+        run: cargo install mdbook --locked --version 0.5.3
+      - name: Install mdbook-katex (mdbook 0.5 build)
+        run: cargo install --locked --git https://github.com/lzanini/mdbook-katex --rev 1f63ab8605cea8e975be4b001dd7e39dd5367834
+      - name: Build guide
+        run: mdbook build guide

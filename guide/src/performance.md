@@ -1,5 +1,3 @@
-# Performance
-
 `dashu` aims to be efficient while staying portable. By default it compiles for
 the generic baseline of each target architecture, so a binary that depends on
 `dashu` runs on any CPU that the target baseline supports.
