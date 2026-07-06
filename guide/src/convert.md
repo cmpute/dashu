@@ -62,7 +62,7 @@ To convert from big numbers to primitive numbers:
 | RBig      | TryInto      | TryInto      | TryInto/`.to_f*()`/`.to_f*_fast()` |
 | CBig      | TryInto      | TryInto      | TryInto                            |
 
-In the table above, `.to_f*()` denotes `.to_f32()` and `.to_f64()`, similarly `.to_f*_fast()` denotes `.to_f32_fast()` and `.to_f64_fast()`. The *fast* methods don't guarantee corrent rounding so that they can be faster. It's recommended to use the `.to_f*()` methods over the `TryFrom`/`TryInto` trait, because `.to_f*()` will not fail and it also returns the rounding direction during the conversion (i.e. the sign of the rounding error).
+In the table above, `.to_f*()` denotes `.to_f32()` and `.to_f64()`, similarly `.to_f*_fast()` denotes `.to_f32_fast()` and `.to_f64_fast()`. The *fast* methods don't guarantee corrent rounding so that they can be faster. It's recommended to use the `.to_f*()` methods over the `TryFrom`/`TryInto` trait, because `.to_f*()` will not fail and it also returns the rounding direction during the conversion (i.e. the sign of the rounding error). (`CBig` has no `.to_f*()` methods — its only float-conversion path is `TryInto`, which is base-2.)
 
 The conversions from and to primitive numbers are also implemented for the `dashu_float::Repr` type. Especially `.to_f32()` and `.to_f64()` are implemented which follows the default IEEE rounding mode.
 
