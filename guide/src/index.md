@@ -1,4 +1,4 @@
-# The user guide for `dashu`
+## The user guide for `dashu`
 
 Welcome to the `dashu` user guide! `dashu` is a library set of arbitrary precision numbers (aka. big numbers) implemented in Rust.
 
@@ -6,7 +6,7 @@ The book is a companion to [`dashu`'s API docs](https://docs.rs/dashu/latest/das
 
 Please choose from the chapters on the left to jump to individual topics.
 
-## Philosophy and Features
+### Philosophy and Features
 
 `dashu` is intended to be your go-to library for crafting some algorithms that involves arbitrary precision numbers, or build a rusty tool that relies on arbitrary precision numbers. It's built from scratch with rust, and provides user-friendly and rust-idiomatic APIs. It might not be the fastest library for your high-precision calculation loads, but it's designed to be fast enough so that you seldomly feel dragged back by it.
 
@@ -15,7 +15,7 @@ To make it useful for every Rust user, it features:
 - Focus on ergonomics & readability, and then efficiency.
 - Current MSRV is 1.68
 
-## The meta crate
+### The meta crate
 
 The crate `dashu` is a meta crate that exposes all the functionalities of the subcrates (`dashu-base`, `dashu-int`, `dashu-float`, `dashu-ratio` and `dashu-macros`). Each subcrate becomes a module in `dashu`, for example, `dashu-int` is re-exported as `dashu::int`. Besides, it creates more readable aliases for the numeric types:
 - `dashu::Natural` = `dashu::int::UBig` = `dashu_int::UBig`
@@ -26,7 +26,7 @@ The crate `dashu` is a meta crate that exposes all the functionalities of the su
 
 In this guide, we will use the original names of the numeric types (i.e. `XBig`), but the explanations are also applicable to these re-exported types.
 
-## Cargo Features
+### Cargo Features
 
 Dashu has several optional features defined for cargo that supports various third-party crates. Most of them are not enabled by default. Specially, we use a special naming rule for the features.
 - For feature dependencies with stable versions (reached v1.0), we will use `xxx_vyy` to represent its major versions, and `xxx` pointing to one of the major versions. Changing the version which `xxx` is pointing to is regarded as a break change in `dashu` (requiring major version bump). Therefore, when you dependends on `dashu` with these stable features, additional implementations for newer versions in `dashu` will not cause any issues in your code.
@@ -36,6 +36,6 @@ Dashu has several optional features defined for cargo that supports various thir
 
 In your Cargo.toml, if you enable `dashu/diesel`, `dashu/diesel2` or `dashu/rand_v07`, there won't be any risk of break changes when `dashu` updates the support for `diesel` v3 or `rand` v0.9 in future. However the risk exists if you enable `rand` instead of `rand_v08`, because `rand` might point to `rand_v09` in future.
 
-## License
+### License
 
 Licensed under either [Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0) or [MIT license](https://opensource.org/licenses/MIT) at your option.

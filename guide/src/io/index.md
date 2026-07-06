@@ -1,4 +1,4 @@
-# Input and Output
+## Input and Output
 
 dashu's numeric types participate in Rust's standard formatting and parsing traits, plus a few dashu-specific APIs for radix conversion, positional expansion, and byte-level serialization. This section covers:
 

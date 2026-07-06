@@ -2,7 +2,7 @@ Dashu supports a complete set of conversions, including conversions among arbitr
 
 Note that a general principle of implementations of `TryFrom` in `dashu` is that, `TryFrom` should succeed only when the conversion is lossless. Any precision loss during the conversion should cause the `TryFrom` to return an `Err`.
 
-# Conversion among Types
+## Conversion among Types
 
 Most of the time, you can use `From`/`Into`/`TryFrom`/`TryInto` to convert between these types. When the conversion is fallible, only `TryFrom` and `TryInto` will be implemented. Below is a table of conversions between arbitrary precision types using these traits, where the columns are source types, and rows are destination types.
 
@@ -35,7 +35,7 @@ Another useful conversion is `UBig::as_ibig()`. Due to the fact that `UBig` and 
 
 Besides these methods designed for conversions, the constructors and destructors can also be used for the purpose of type conversion, especially from compound types to its parts. Please refer to the [Construction and Destruction](./construct.md#Construct_from_Parts) page for this approach.
 
-# Conversion between Big Numbers and Primitives
+## Conversion between Big Numbers and Primitives
 
 All the numeric types in the `dashu` crates support conversion from and to primitive types.
 
@@ -64,11 +64,11 @@ In the table above, `.to_f*()` denotes `.to_f32()` and `.to_f64()`, similarly `.
 The conversions from and to primitive numbers are also implemented for the `dashu_float::Repr` type. Especially `.to_f32()` and `.to_f64()` are implemented which follows the default IEEE rounding mode.
 
 
-## Conversion for FBig/DBig
+### Conversion for FBig/DBig
 
 Conversions involving `FBig`/`DBig` are richer than for the integer types, because a floating-point number carries three independent knobs: a **base**, a **precision** (a cap on the number of significant digits), and a **rounding mode**. Most conversions therefore come in two flavors — an infallible `From`/`Into` when no information is lost, and a fallible `TryFrom`/`TryInto` when exactness is required.
 
-## Conversion to different base / precision / rounding mode
+### Conversion to different base / precision / rounding mode
 
 The base, precision, and rounding mode are changed independently:
 
@@ -92,7 +92,7 @@ For the common binary ↔ decimal hops, two shortcuts pick the rounding mode for
 
 > These methods panic if the associated context has **unlimited precision** and the conversion cannot be done losslessly — set a precision first.
 
-## Conversion to integers or primitive floats
+### Conversion to integers or primitive floats
 
 Converting *into* `FBig` from `UBig`/`IBig` (or any primitive integer) infers the precision from the magnitude: the result precision equals the number of significant base-`B` digits of the integer.
 
@@ -109,13 +109,13 @@ assert_eq!(DBig::from_str("1.234")?.to_int(), Inexact(1.into(), NoOp));
 
 To a primitive float, `to_f32()` / `to_f64()` return `Rounded<f32>` / `Rounded<f64>` carrying the rounding direction; they never fail (overflow yields `±∞`, infinities map to infinities). The reverse — `TryFrom<f32>`/`TryFrom<f64> for FBig` — is **base-2 only** (it is almost always lossy in any other base); to reach a non-binary `FBig`, convert to base 2 first and then call `with_base()`. NaN is rejected with `ConversionError::OutOfBounds`.
 
-## Conversion to RBig
+### Conversion to RBig
 
 With the optional `dashu-float` feature enabled on `dashu-ratio`, `TryFrom<FBig> for RBig` succeeds only when the float is exactly rational-representable, and `RBig::to_float()` is the rounding-aware path in the other direction.
 
 For approximating a float by a *simple* rational (the smallest numerator/denominator within a tolerance), use `simplest_from_f32` / `simplest_from_f64`, or the interval queries `simplest_in`, `nearest_in`, `next_up`, and `next_down` on `FBig`/`DBig` — these treat the float's own rounding interval as the search bound.
 
-## Conversion for CBig
+### Conversion for CBig
 
 A `CBig` is reached losslessly from any real value: `From<FBig>`, `From<UBig>`, and `From<IBig>` embed the value as the real part with imaginary `+0` (exact, unlimited precision). The inverse is fallible — `TryFrom<CBig> for FBig` extracts the real part only when the imaginary part is zero (both `±0` count), and `TryFrom<CBig> for IBig` further requires the real part to be integer-valued. Both compose the `CBig → FBig → IBig` chain, mirroring `FBig`'s own `From`/`TryFrom` split.
 

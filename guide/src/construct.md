@@ -1,6 +1,6 @@
 There are multiple ways to construct and deconstruct the numeric types, which are listed below. These constructors are used for directly compose the numbers from its components. To construct from alternative representations, please refer to the [Input and Output](./io/index.md) and [Conversion](convert.md) sections.
 
-# Constants
+## Constants
 
 For all the numeric types, there are several constants associated with the type. You can use them to construct an instance, or directly use them with binary operators. These constants includes:
 
@@ -10,13 +10,13 @@ For all the numeric types, there are several constants associated with the type.
 - `RBig`: `::ZERO`, `::ONE`, `::NEG_ONE`
 - `CBig`: `::ZERO` ($0+0i$), `::ONE` ($1+0i$), `::I` ($0+1i$)
 
-# Raw Constructor for `UBig`
+## Raw Constructor for `UBig`
 
 For `UBig`, it can be constructed from a slice of [`Word`](./types.md#word)s, using the `::from_words()` method. The words must be arranged in little-endian order, i.e. the first word should represent the least significant part of the number. If then integer you want to construct is small, then you can also use the `::from_word()` and `::from_dword()` methods, which can be called from a `const` context.
 
 To deconstruct a `UBig`, currently we don't support taking the ownership of the words stored in a `UBig`. You can only access them using the `.as_words()` method, which returns a reference to the words. In future, when the memory layout of the `UBig` is stablized, it's possible to add a deconstructor that giving the ownership of the word to prevent unnecessary copying.
 
-# Construct from Parts
+## Construct from Parts
 
 For other numeric types, they are usually composed by several parts. And you can construct them using the `::from_parts()` and `::from_parts_const()` method. The latter one can be called from a `const` context, but the size of the components is limited when using `::from_parts_const()`.
 
@@ -36,7 +36,7 @@ It's worth noting that, the constructors for `FBig` and `DBig` also determines t
 
 To deconstruct these numeric types, use the `::into_parts()` functions to get the components without copying. However for `FBig`/`DBig`, you should use the `.into_repr()` to get the underlying representation `Repr`, and then use the `.into_parts()` method of `Repr` to get the magnitude and mantissa.
 
-# `dashu-macros`
+## `dashu-macros`
 
 We also provide a convenient and efficient way to create large numbers from literals through the macros `ubig!`/`ibig!`/`fbig!`/`dbig!`/`rbig!`/`cbig!`. These macros can be obtained directly from the `dashu-macros` crate or from the `dashu` meta crate. The `cbig!` macro accepts the same algebraic form as `CBig`'s `FromStr` (e.g. `cbig!(3+4i)`, `cbig!(-i)`) or a `re, im` pair (e.g. `cbig!(3, 4)`).
 
@@ -46,7 +46,7 @@ When the number doesn't have a high precision, these macros can be used in a `co
 
 Please refer to [the docs of `dashu-macros`](https://docs.rs/dashu-macros/latest/dashu_macros/) for detailed usage of these macros.
 
-# Cached Arithmetic for FBig
+## Cached Arithmetic for FBig
 
 The [`CachedFBig`] type is an [`FBig`] that carries a shared handle to a
 `Rc<RefCell<ConstCache>>`. The cache stores exact binary-splitting state for
@@ -54,7 +54,7 @@ mathematical constants (π, ln2, ln10), so that transcendental operations
 (`ln`, `exp`, `sin`, `cos`, …, `pi`) reuse and progressively extend prior
 work instead of recomputing from scratch.
 
-## Creation
+### Creation
 
 A `CachedFBig` is created by attaching a cache handle to an `FBig`:
 
@@ -89,7 +89,7 @@ To drop the cache and get back a plain `FBig`, use `into_fbig()` or the
 let plain: FBig = cached.into();  // or cached.into_fbig()
 ```
 
-## Cache sharing
+### Cache sharing
 
 Binary operations between `CachedFBig` values preserve the cache handle in
 the result: `(a + b).ln().exp()` keeps extending the same cache throughout.
@@ -108,7 +108,7 @@ let result = cached + 3u8;    // CachedFBig, cache preserved
 let result = 10i32 * cached;  // CachedFBig, cache preserved
 ```
 
-## Inspecting and clearing the cache
+### Inspecting and clearing the cache
 
 Use `cache()` to borrow the cache read-only and inspect its size:
 
@@ -125,7 +125,7 @@ cached.clear_cache();
 assert_eq!(cached.cache().total_terms(), 0);
 ```
 
-## More constructors and accessors
+### More constructors and accessors
 
 Beyond `into_cached` / `with_cache` / `From<FBig>`, `CachedFBig` mirrors the rest of `FBig`'s construction surface while preserving the cache handle:
 
@@ -134,7 +134,7 @@ Beyond `into_cached` / `with_cache` / `From<FBig>`, `CachedFBig` mirrors the res
 - `as_fbig()` — borrow the inner `FBig` immutably (cheap; no cache detach).
 - `from_repr(repr, context, cache)` / `into_repr()` — the raw-repr constructor/destructor that share a specific cache handle.
 
-## Computing constants directly
+### Computing constants directly
 
 The cache stores exact binary-splitting state for the constants π, ln2, and ln10, so the methods that produce them reuse and progressively extend prior work rather than recomputing from scratch. On `CachedFBig`, π is a single call:
 
@@ -165,11 +165,11 @@ let ln10 = cache.ln10::<10, HalfAway>(100);
 
 `ln_base::<B, R>(precision)` dispatches to the cached ln2 / ln10 when `B` is 2 or 10 (or a power of two), and falls back to a direct `ln(B)` otherwise.
 
-## Thread safety
+### Thread safety
 
 `CachedFBig` carries its cache as `Rc<RefCell<ConstCache>>`, so it is **`!Send + !Sync`** — a cached value cannot move across threads. `FBig` itself stays `Copy + Send + Sync` (which is why `static_fbig!` keeps working); only the cached wrapper is non-thread-safe. `ConstCache` is a plain struct of big integers and is itself `Send + Sync`, so to share one cache across threads, wrap a `ConstCache` (or a `CachedFBig`) in `Arc<Mutex<ConstCache>>`. The underlying `Context` methods accept `Option<&mut ConstCache>` regardless of the container, so this needs no API change.
 
-## Worked example: reusing constants across a chain
+### Worked example: reusing constants across a chain
 
 Because every value-producing operation preserves the cache handle, a chain of transcendentals reuses the same constants throughout. Building several results from one shared handle pays for each constant once:
 
