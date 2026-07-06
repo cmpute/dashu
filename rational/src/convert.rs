@@ -217,14 +217,17 @@ impl_conversion_to_float!(f32 [-149, 128]); // see f32::encode for explanation o
 impl_conversion_to_float!(f64 [-1074, 1024]); // see f32::encode for explanation of the bounds
 
 impl Repr {
-    fn log2_floor_abs(&self, numerator: &UBig) -> isize {
-        let exp = self.numerator.bit_len() as isize - self.denominator.bit_len() as isize;
+    /// Compute `floor(log2(|numerator/denominator|))`, given the unsigned
+    /// numerator magnitude and `exp = numerator.bit_len() - denominator.bit_len()`.
+    ///
+    /// Since `|numerator/denominator| ∈ [2^(exp-1), 2^(exp+1))`, the result is
+    /// either `exp` or `exp - 1`; this disambiguates with a single comparison.
+    fn log2_floor_abs(&self, numerator: &UBig, exp: isize) -> isize {
         let ge_power = if exp >= 0 {
             numerator >= &(&self.denominator << exp as usize)
         } else {
             (numerator << (-exp) as usize) >= self.denominator
         };
-
         if ge_power {
             exp
         } else {
@@ -232,9 +235,15 @@ impl Repr {
         }
     }
 
-    fn rounded_abs_mantissa(&self, shift: isize) -> Approximation<UBig, Sign> {
-        let sign = self.numerator.sign();
-        let numerator = (&self.numerator).unsigned_abs();
+    /// Round `|numerator/denominator| * 2^(-shift)` to the nearest integer
+    /// (ties to even), where `numerator` is the unsigned magnitude and `sign`
+    /// is the sign of the original rational.
+    fn rounded_abs_mantissa(
+        &self,
+        numerator: UBig,
+        sign: Sign,
+        shift: isize,
+    ) -> Approximation<UBig, Sign> {
         let (num, den) = if shift >= 0 {
             (numerator, (&self.denominator) << shift as usize)
         } else {
@@ -362,23 +371,41 @@ impl Repr {
 
         let sign = self.numerator.sign();
         let numerator = (&self.numerator).unsigned_abs();
-        let top_exp = self.log2_floor_abs(&numerator);
+        // The bit-length difference bounds the binary exponent:
+        // `top_exp = floor(log2(|value|))` is either `exp` or `exp - 1`.
+        // Fast-path the definite overflow/underflow range from this O(1) bound
+        // so the comparison (and its shift) inside `log2_floor_abs` stays bounded.
+        let exp = numerator.bit_len() as isize - self.denominator.bit_len() as isize;
+        if exp >= 129 {
+            // top_exp >= 128, so |value| >= 2^128 > f32::MAX
+            return Inexact(sign * f32::INFINITY, sign);
+        } else if exp <= -151 {
+            // top_exp <= -151 < -150, so |value| < 2^-150, which rounds to zero
+            return Inexact(sign * 0f32, -sign);
+        }
+
+        let top_exp = self.log2_floor_abs(&numerator, exp);
         if top_exp >= 128 {
             // max f32 = 2^128 * (1 - 2^-24)
             Inexact(sign * f32::INFINITY, sign)
         } else if top_exp < -150 {
-            // min f32 = 2^-149, quotient has at most 25 bits
+            // values < 2^-150 round to zero; 2^-150 is the half-way tie, rounded to even (zero)
             Inexact(sign * 0f32, -sign)
         } else {
+            // scale |value| by 2^(-shift) into [2^23, 2^24) so the rounded mantissa
+            // fits f32's 24-bit significand exactly (no second rounding in encode).
+            // Clamp to the subnormal quantization 2^-149 for tiny magnitudes.
             let shift = (top_exp - 23).max(-149);
-            self.rounded_abs_mantissa(shift).and_then(|man| {
-                let man: u32 = man.try_into().unwrap();
-                if man == 0 {
-                    Exact(sign * 0f32)
-                } else {
-                    f32::encode(sign * man as i32, shift as i16)
-                }
-            })
+            self.rounded_abs_mantissa(numerator, sign, shift)
+                .and_then(|man| {
+                    let man: u32 = man.try_into().unwrap();
+                    if man == 0 {
+                        // encode(0, _) yields +0; preserve the sign of an underflowed zero
+                        Exact(sign * 0f32)
+                    } else {
+                        f32::encode(sign * man as i32, shift as i16)
+                    }
+                })
         }
     }
 
@@ -390,23 +417,35 @@ impl Repr {
 
         let sign = self.numerator.sign();
         let numerator = (&self.numerator).unsigned_abs();
-        let top_exp = self.log2_floor_abs(&numerator);
+        // See `to_f32` for the rationale on fast-pathing via the bit-length bound.
+        let exp = numerator.bit_len() as isize - self.denominator.bit_len() as isize;
+        if exp >= 1025 {
+            // top_exp >= 1024, so |value| >= 2^1024 > f64::MAX
+            return Inexact(sign * f64::INFINITY, sign);
+        } else if exp <= -1076 {
+            // top_exp <= -1076 < -1075, so |value| < 2^-1075, which rounds to zero
+            return Inexact(sign * 0f64, -sign);
+        }
+
+        let top_exp = self.log2_floor_abs(&numerator, exp);
         if top_exp >= 1024 {
             // max f64 = 2^1024 × (1 − 2^−53)
             Inexact(sign * f64::INFINITY, sign)
         } else if top_exp < -1075 {
-            // min f64 = 2^-1074, quotient has at most 53 bits
+            // values < 2^-1075 round to zero; 2^-1075 is the half-way tie, rounded to even (zero)
             Inexact(sign * 0f64, -sign)
         } else {
+            // scale |value| into [2^52, 2^53) for an exact 53-bit mantissa (no second rounding)
             let shift = (top_exp - 52).max(-1074);
-            self.rounded_abs_mantissa(shift).and_then(|man| {
-                let man: u64 = man.try_into().unwrap();
-                if man == 0 {
-                    Exact(sign * 0f64)
-                } else {
-                    f64::encode(sign * man as i64, shift as i16)
-                }
-            })
+            self.rounded_abs_mantissa(numerator, sign, shift)
+                .and_then(|man| {
+                    let man: u64 = man.try_into().unwrap();
+                    if man == 0 {
+                        Exact(sign * 0f64)
+                    } else {
+                        f64::encode(sign * man as i64, shift as i16)
+                    }
+                })
         }
     }
 }
