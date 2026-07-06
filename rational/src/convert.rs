@@ -593,19 +593,79 @@ mod tests {
             RBig::from_parts((-10534148920556696739i128).into(), 73786976294838206464u128.into());
 
         assert_eq!(input.to_f64(), Inexact(f64::from_bits(0xbfc2_461a_1430_9b17), Negative));
+        assert_eq!((-input).to_f64(), Inexact(f64::from_bits(0x3fc2_461a_1430_9b17), Positive));
     }
 
     #[test]
-    fn test_rbig_to_float_half_min_subnormal_ties_to_even() {
+    fn test_rbig_to_float_midpoints_tie_to_even() {
+        assert_eq!(
+            RBig::from_parts(((1u64 << 24) + 1).into(), (1u64 << 24).into()).to_f32(),
+            Inexact(1.0, Negative)
+        );
+        assert_eq!(
+            RBig::from_parts(((1u64 << 24) + 3).into(), (1u64 << 24).into()).to_f32(),
+            Inexact(f32::from_bits(0x3f80_0002), Positive)
+        );
+
+        assert_eq!(
+            RBig::from_parts(((1u64 << 53) + 1).into(), (1u64 << 53).into()).to_f64(),
+            Inexact(1.0, Negative)
+        );
+        assert_eq!(
+            RBig::from_parts(((1u64 << 53) + 3).into(), (1u64 << 53).into()).to_f64(),
+            Inexact(f64::from_bits(0x3ff0_0000_0000_0002), Positive)
+        );
+    }
+
+    #[test]
+    fn test_rbig_to_float_around_midpoints() {
+        assert_eq!(
+            RBig::from_parts(((1u64 << 25) + 1).into(), (1u64 << 25).into()).to_f32(),
+            Inexact(1.0, Negative)
+        );
+        assert_eq!(
+            RBig::from_parts(((1u64 << 25) + 3).into(), (1u64 << 25).into()).to_f32(),
+            Inexact(f32::from_bits(0x3f80_0001), Positive)
+        );
+
+        assert_eq!(
+            RBig::from_parts(((1u128 << 54) + 1).into(), (1u128 << 54).into()).to_f64(),
+            Inexact(1.0, Negative)
+        );
+        assert_eq!(
+            RBig::from_parts(((1u128 << 54) + 3).into(), (1u128 << 54).into()).to_f64(),
+            Inexact(f64::from_bits(0x3ff0_0000_0000_0001), Positive)
+        );
+    }
+
+    #[test]
+    fn test_rbig_to_float_subnormal_rounding_boundaries() {
         assert_eq!(RBig::from_parts(1.into(), UBig::ONE << 150).to_f32(), Inexact(0.0, Negative));
         assert_eq!(
             RBig::from_parts((-1).into(), UBig::ONE << 150).to_f32(),
             Inexact(-0.0, Positive)
         );
+        assert_eq!(
+            RBig::from_parts(3.into(), UBig::ONE << 151).to_f32(),
+            Inexact(f32::from_bits(1), Positive)
+        );
+        assert_eq!(
+            RBig::from_parts(3.into(), UBig::ONE << 150).to_f32(),
+            Inexact(f32::from_bits(2), Positive)
+        );
+
         assert_eq!(RBig::from_parts(1.into(), UBig::ONE << 1075).to_f64(), Inexact(0.0, Negative));
         assert_eq!(
             RBig::from_parts((-1).into(), UBig::ONE << 1075).to_f64(),
             Inexact(-0.0, Positive)
+        );
+        assert_eq!(
+            RBig::from_parts(3.into(), UBig::ONE << 1076).to_f64(),
+            Inexact(f64::from_bits(1), Positive)
+        );
+        assert_eq!(
+            RBig::from_parts(3.into(), UBig::ONE << 1075).to_f64(),
+            Inexact(f64::from_bits(2), Positive)
         );
     }
 }
