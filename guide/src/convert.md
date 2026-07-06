@@ -6,12 +6,13 @@ Note that a general principle of implementations of `TryFrom` in `dashu` is that
 
 Most of the time, you can use `From`/`Into`/`TryFrom`/`TryInto` to convert between these types. When the conversion is fallible, only `TryFrom` and `TryInto` will be implemented. Below is a table of conversions between arbitrary precision types using these traits, where the columns are source types, and rows are destination types.
 
-| Dest\Src  | UBig | IBig    | FBig/DBig    | RBig        |
-|-----------|------|---------|--------------|-------------|
-| UBig      | \    | TryFrom | TryFrom      | TryFrom     |
-| IBig      | From | \       | TryFrom      | TryFrom     |
-| FBig/DBig | From | From    | \            | TryFrom[^a] |
-| RBig      | From | From    | TryFrom[^a]  | \           |
+| Dest\Src  | UBig | IBig    | FBig/DBig    | RBig        | CBig    |
+|-----------|------|---------|--------------|-------------|---------|
+| UBig      | \    | TryFrom | TryFrom      | TryFrom     | —       |
+| IBig      | From | \       | TryFrom      | TryFrom     | TryFrom |
+| FBig/DBig | From | From    | \            | TryFrom[^a] | TryFrom |
+| RBig      | From | From    | TryFrom[^a]  | \           | —       |
+| CBig      | From | From    | From         | —           | \       |
 
 > [^a]: To use the conversion between `RBig` and `FBig`, the optional feature `dashu-float` must be enabled for the `dashu-ratio` crate.
 
@@ -114,24 +115,3 @@ To a primitive float, `to_f32()` / `to_f64()` return `Rounded<f32>` / `Rounded<f
 With the optional `dashu-float` feature enabled on `dashu-ratio`, `TryFrom<FBig> for RBig` succeeds only when the float is exactly rational-representable, and `RBig::to_float()` is the rounding-aware path in the other direction.
 
 For approximating a float by a *simple* rational (the smallest numerator/denominator within a tolerance), use `simplest_from_f32` / `simplest_from_f64`, or the interval queries `simplest_in`, `nearest_in`, `next_up`, and `next_down` on `FBig`/`DBig` — these treat the float's own rounding interval as the search bound.
-
-### Conversion for CBig
-
-A `CBig` is reached losslessly from any real value: `From<FBig>`, `From<UBig>`, and `From<IBig>` embed the value as the real part with imaginary `+0` (exact, unlimited precision). The inverse is fallible — `TryFrom<CBig> for FBig` extracts the real part only when the imaginary part is zero (both `±0` count), and `TryFrom<CBig> for IBig` further requires the real part to be integer-valued. Both compose the `CBig → FBig → IBig` chain, mirroring `FBig`'s own `From`/`TryFrom` split.
-
-```rust
-use dashu_cmplx::CBig;
-use dashu_float::{FBig, round::mode::HalfAway};
-
-type C = CBig<HalfAway, 10>;
-type F = FBig<HalfAway, 10>;
-
-// a real value embeds as a purely-real complex number
-let z = C::from(F::from(7));
-assert_eq!(z.re().significand(), &7.into());
-assert!(z.im().is_zero());
-
-// extracting the real part fails when the imaginary part is nonzero
-let w = C::from_parts(F::from(3), F::from(4));
-assert!(F::try_from(w).is_err());
-```
