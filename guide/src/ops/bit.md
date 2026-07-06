@@ -1,7 +1,7 @@
 `UBig` and `IBig` support the bitwise operators `&` (and), `|` (or), `^` (xor), and `!` (not). On `UBig`, `!` is an *infinite-width* complement — every bit above the highest set bit is treated as `1`, so `!n` is generally a very large number. On `IBig`, `!` follows the two's-complement rule.
 
 ```rust
-use dashu_int::UBig;
+use dashu::integer::UBig;
 
 let a = UBig::from(0b1100u8);
 let b = UBig::from(0b1010u8);
@@ -22,8 +22,8 @@ The `BitTest` trait (from `dashu-base`) tests and measures individual bits: `.bi
 Because a `UBig` has unbounded width, it works naturally as an arbitrarily large bit set: set bit `i` with `set_bit(i)`, test it with `bit(i)`, and read the extent with `bit_len()`.
 
 ```rust
-use dashu_base::BitTest;
-use dashu_int::UBig;
+use dashu::base::BitTest;
+use dashu::integer::UBig;
 
 let mut bits = UBig::ZERO;
 bits.set_bit(0);

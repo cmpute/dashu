@@ -32,7 +32,7 @@ Nevertheless, there are other useful methods for **lossy** conversions:
 > - [^d] See the section *Conversion from Floats to RBig* below for more approaches.
 > - [^e] This method requires the `dashu-float` feature to be enabled for the crate `dashu-ratio`.
 
-Another useful conversion is `UBig::as_ibig()`. Due to the fact that `UBig` and `IBig` has the same memory layout, A `UBig` can be directed used as an `IBig` through this method. Similarly, `RBig::as_relaxed()` can be helpful when you want to use an `RBig` instance as an `dashu_ratio::Relaxed`. 
+Another useful conversion is `UBig::as_ibig()`. Due to the fact that `UBig` and `IBig` has the same memory layout, A `UBig` can be directed used as an `IBig` through this method. Similarly, `RBig::as_relaxed()` can be helpful when you want to use an `RBig` instance as an `dashu::rational::Relaxed`. 
 
 Besides these methods designed for conversions, the constructors and destructors can also be used for the purpose of type conversion, especially from compound types to its parts. Please refer to the [Construction and Destruction](./construct.md#Construct_from_Parts) page for this approach.
 
@@ -64,7 +64,7 @@ To convert from big numbers to primitive numbers:
 
 In the table above, `.to_f*()` denotes `.to_f32()` and `.to_f64()`, similarly `.to_f*_fast()` denotes `.to_f32_fast()` and `.to_f64_fast()`. The *fast* methods don't guarantee corrent rounding so that they can be faster. It's recommended to use the `.to_f*()` methods over the `TryFrom`/`TryInto` trait, because `.to_f*()` will not fail and it also returns the rounding direction during the conversion (i.e. the sign of the rounding error). (`CBig` has no `.to_f*()` methods — its only float-conversion path is `TryInto`, which is base-2.)
 
-The conversions from and to primitive numbers are also implemented for the `dashu_float::Repr` type. Especially `.to_f32()` and `.to_f64()` are implemented which follows the default IEEE rounding mode.
+The conversions from and to primitive numbers are also implemented for the `dashu::float::Repr` type. Especially `.to_f32()` and `.to_f64()` are implemented which follows the default IEEE rounding mode.
 
 
 ### Conversion for FBig/DBig
@@ -79,9 +79,9 @@ The base, precision, and rounding mode are changed independently:
 - `with_precision(p)` widens or shrinks the significand to `p` digits. Widening is always exact (`Approximation::Exact`); shrinking rounds per `R` and returns `Approximation::Inexact` carrying the rounding direction.
 
 ```rust
-use dashu_base::Approximation::*;
-use dashu_float::DBig;
-use dashu_float::round::Rounding::*;
+use dashu::base::Approximation::*;
+use dashu::float::DBig;
+use dashu::float::round::Rounding::*;
 
 let a = DBig::from_str("2.345")?;
 assert_eq!(a.precision(), 4);
@@ -102,9 +102,9 @@ Converting *into* `FBig` from `UBig`/`IBig` (or any primitive integer) infers th
 Going the other way, `TryFrom<FBig> for IBig`/`UBig` succeeds only when the float is finite and exactly integer-valued — `ConversionError::OutOfBounds` for infinities, `LossOfPrecision` for a fractional part. For a rounding-aware path use `to_int()`, which always succeeds and reports the rounding direction:
 
 ```rust
-use dashu_base::Approximation::*;
-use dashu_float::DBig;
-use dashu_float::round::Rounding::*;
+use dashu::base::Approximation::*;
+use dashu::float::DBig;
+use dashu::float::round::Rounding::*;
 
 assert_eq!(DBig::from_str("1234")?.to_int(), Exact(1234.into()));
 assert_eq!(DBig::from_str("1.234")?.to_int(), Inexact(1.into(), NoOp));

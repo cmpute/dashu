@@ -9,7 +9,7 @@ dashu offers three layers of (de)serialization for its integer and float types, 
 `UBig` and `IBig` convert to and from explicit-endianness byte sequences via `to_le_bytes` / `to_be_bytes` and `from_le_bytes` / `from_be_bytes`. These are portable, layout-stable formats suitable for binary interchange.
 
 ```rust
-use dashu_int::UBig;
+use dashu::integer::UBig;
 
 let n = UBig::from(0x12345678u32);
 let bytes = n.to_le_bytes();

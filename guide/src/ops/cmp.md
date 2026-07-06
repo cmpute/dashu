@@ -10,7 +10,7 @@ Comparison is natively enabled **only between big numbers of the same kind**, no
 
 ## Sign
 
-The signed types (`IBig`, `FBig`/`DBig`, `RBig`, `CBig`) expose `.sign()` (returning `dashu_base::Sign`, where zero is `Positive`) and `.signum()` (returning `-1`, `0`, or `+1` as the same type).
+The signed types (`IBig`, `FBig`/`DBig`, `RBig`, `CBig`) expose `.sign()` (returning `dashu::base::Sign`, where zero is `Positive`) and `.signum()` (returning `-1`, `0`, or `+1` as the same type).
 
 ## Magnitude comparison and cross-type ordering
 

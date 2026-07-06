@@ -11,7 +11,7 @@ A `CachedFBig` is created by attaching a cache handle to an `FBig`:
 ```rust
 use std::rc::Rc;
 use core::cell::RefCell;
-use dashu_float::{CachedFBig, ConstCache, FBig, Repr, Context};
+use dashu::float::{CachedFBig, ConstCache, FBig, Repr, Context};
 
 let cache = Rc::new(RefCell::new(ConstCache::new()));
 
@@ -91,8 +91,8 @@ The cache stores exact binary-splitting state for the constants π, ln2, and ln1
 ```rust
 use std::rc::Rc;
 use core::cell::RefCell;
-use dashu_float::{CachedFBig, ConstCache};
-use dashu_float::round::mode::HalfAway;
+use dashu::float::{CachedFBig, ConstCache};
+use dashu::float::round::mode::HalfAway;
 
 let cache = Rc::new(RefCell::new(ConstCache::new()));
 let _pi = CachedFBig::<HalfAway, 10>::pi(100, &cache);
@@ -103,8 +103,8 @@ let _pi_more = CachedFBig::<HalfAway, 10>::pi(1000, &cache);
 You can also drive a bare `ConstCache` directly, without a `CachedFBig` — useful when you want the constants but not the per-value wrapper. The methods are generic over base and rounding mode, and a single cache serves any base:
 
 ```rust
-use dashu_float::ConstCache;
-use dashu_float::round::mode::HalfAway;
+use dashu::float::ConstCache;
+use dashu::float::round::mode::HalfAway;
 
 let mut cache = ConstCache::new();
 let pi = cache.pi::<10, HalfAway>(100).value();       // computes from scratch
@@ -126,8 +126,8 @@ Because every value-producing operation preserves the cache handle, a chain of t
 ```rust
 use std::rc::Rc;
 use core::cell::RefCell;
-use dashu_float::{CachedFBig, ConstCache, Context, Repr};
-use dashu_float::round::mode::HalfAway;
+use dashu::float::{CachedFBig, ConstCache, Context, Repr};
+use dashu::float::round::mode::HalfAway;
 
 type F = CachedFBig<HalfAway, 10>;
 let cache = Rc::new(RefCell::new(ConstCache::new()));
