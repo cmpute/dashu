@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fix
+
+- Fix `RBig::to_f32` and `RBig::to_f64` to avoid double rounding when converting rationals to native floats.
+
 ## 0.4.3
 
 ### Add

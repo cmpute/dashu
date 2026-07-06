@@ -217,6 +217,43 @@ impl_conversion_to_float!(f32 [-149, 128]); // see f32::encode for explanation o
 impl_conversion_to_float!(f64 [-1074, 1024]); // see f32::encode for explanation of the bounds
 
 impl Repr {
+    fn log2_floor_abs(&self, numerator: &UBig) -> isize {
+        let exp = self.numerator.bit_len() as isize - self.denominator.bit_len() as isize;
+        let ge_power = if exp >= 0 {
+            numerator >= &(&self.denominator << exp as usize)
+        } else {
+            (numerator << (-exp) as usize) >= self.denominator
+        };
+
+        if ge_power {
+            exp
+        } else {
+            exp - 1
+        }
+    }
+
+    fn rounded_abs_mantissa(&self, shift: isize) -> Approximation<UBig, Sign> {
+        let sign = self.numerator.sign();
+        let numerator = (&self.numerator).unsigned_abs();
+        let (num, den) = if shift >= 0 {
+            (numerator, (&self.denominator) << shift as usize)
+        } else {
+            (numerator << (-shift) as usize, self.denominator.clone())
+        };
+        let (man, r) = num.div_rem(&den);
+
+        if r.is_zero() {
+            Exact(man)
+        } else {
+            let half = (r << 1).cmp(&den);
+            if half == Ordering::Greater || (half == Ordering::Equal && man.bit(0)) {
+                Inexact(man + UBig::ONE, sign)
+            } else {
+                Inexact(man, -sign)
+            }
+        }
+    }
+
     /// Convert the rational number to [f32] without guaranteed correct rounding.
     fn to_f32_fast(&self) -> f32 {
         // shortcut
@@ -323,42 +360,25 @@ impl Repr {
             return Exact(0.);
         }
 
-        // to get enough precision, shift such that numerator has
-        // 24 bits more than the denominator
         let sign = self.numerator.sign();
-        let num_bits = self.numerator.bit_len();
-        let den_bits = self.denominator.bit_len();
-
-        let shift = num_bits as isize - den_bits as isize - 24; // i.e. exponent
-        let (num, den) = if shift >= 0 {
-            (self.numerator.clone(), (&self.denominator) << shift as usize)
-        } else {
-            ((&self.numerator) << (-shift) as usize, self.denominator.clone())
-        };
-
-        // then construct the
-        if shift >= 128 {
+        let numerator = (&self.numerator).unsigned_abs();
+        let top_exp = self.log2_floor_abs(&numerator);
+        if top_exp >= 128 {
             // max f32 = 2^128 * (1 - 2^-24)
             Inexact(sign * f32::INFINITY, sign)
-        } else if shift < -149 - 25 {
+        } else if top_exp < -150 {
             // min f32 = 2^-149, quotient has at most 25 bits
             Inexact(sign * 0f32, -sign)
         } else {
-            let (man, r) = num.unsigned_abs().div_rem(&den);
-            let man: u32 = man.try_into().unwrap();
-
-            // round to nearest, ties to even
-            if r.is_zero() {
-                Exact(man)
-            } else {
-                let half = (r << 1).cmp(&den);
-                if half == Ordering::Greater || (half == Ordering::Equal && man & 1 > 0) {
-                    Inexact(man + 1, sign)
+            let shift = (top_exp - 23).max(-149);
+            self.rounded_abs_mantissa(shift).and_then(|man| {
+                let man: u32 = man.try_into().unwrap();
+                if man == 0 {
+                    Exact(sign * 0f32)
                 } else {
-                    Inexact(man, -sign)
+                    f32::encode(sign * man as i32, shift as i16)
                 }
-            }
-            .and_then(|man| f32::encode(sign * man as i32, shift as i16))
+            })
         }
     }
 
@@ -368,42 +388,25 @@ impl Repr {
             return Exact(0.);
         }
 
-        // to get enough precision, shift such that numerator has
-        // 53 bits more than the denominator
         let sign = self.numerator.sign();
-        let num_bits = self.numerator.bit_len();
-        let den_bits = self.denominator.bit_len();
-
-        let shift = num_bits as isize - den_bits as isize - 53; // i.e. exponent
-        let (num, den) = if shift >= 0 {
-            (self.numerator.clone(), (&self.denominator) << shift as usize)
-        } else {
-            ((&self.numerator) << (-shift) as usize, self.denominator.clone())
-        };
-
-        // then construct the
-        if shift >= 1024 {
+        let numerator = (&self.numerator).unsigned_abs();
+        let top_exp = self.log2_floor_abs(&numerator);
+        if top_exp >= 1024 {
             // max f64 = 2^1024 × (1 − 2^−53)
             Inexact(sign * f64::INFINITY, sign)
-        } else if shift < -1074 - 53 {
+        } else if top_exp < -1075 {
             // min f64 = 2^-1074, quotient has at most 53 bits
             Inexact(sign * 0f64, -sign)
         } else {
-            let (man, r) = num.unsigned_abs().div_rem(&den);
-            let man: u64 = man.try_into().unwrap();
-
-            // round to nearest, ties to even
-            if r.is_zero() {
-                Exact(man)
-            } else {
-                let half = (r << 1).cmp(&den);
-                if half == Ordering::Greater || (half == Ordering::Equal && man & 1 > 0) {
-                    Inexact(man + 1, sign)
+            let shift = (top_exp - 52).max(-1074);
+            self.rounded_abs_mantissa(shift).and_then(|man| {
+                let man: u64 = man.try_into().unwrap();
+                if man == 0 {
+                    Exact(sign * 0f64)
                 } else {
-                    Inexact(man, -sign)
+                    f64::encode(sign * man as i64, shift as i16)
                 }
-            }
-            .and_then(|man| f64::encode(sign * man as i64, shift as i16))
+            })
         }
     }
 }
@@ -576,5 +579,33 @@ impl Relaxed {
         } else {
             Approximation::Inexact(trunc, fract)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dashu_base::Sign::{Negative, Positive};
+
+    #[test]
+    fn test_rbig_to_f64_without_double_rounding() {
+        let input =
+            RBig::from_parts((-10534148920556696739i128).into(), 73786976294838206464u128.into());
+
+        assert_eq!(input.to_f64(), Inexact(f64::from_bits(0xbfc2_461a_1430_9b17), Negative));
+    }
+
+    #[test]
+    fn test_rbig_to_float_half_min_subnormal_ties_to_even() {
+        assert_eq!(RBig::from_parts(1.into(), UBig::ONE << 150).to_f32(), Inexact(0.0, Negative));
+        assert_eq!(
+            RBig::from_parts((-1).into(), UBig::ONE << 150).to_f32(),
+            Inexact(-0.0, Positive)
+        );
+        assert_eq!(RBig::from_parts(1.into(), UBig::ONE << 1075).to_f64(), Inexact(0.0, Negative));
+        assert_eq!(
+            RBig::from_parts((-1).into(), UBig::ONE << 1075).to_f64(),
+            Inexact(-0.0, Positive)
+        );
     }
 }
