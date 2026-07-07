@@ -2,8 +2,11 @@
 
 use alloc::rc::Rc;
 use core::cell::RefCell;
+use core::cmp::Ordering;
+use core::str::FromStr;
 
-use dashu_base::Sign;
+use dashu_base::{AbsOrd, ConversionError, EstimatedLog2, ParseError, Sign, Signed};
+use dashu_int::{IBig, UBig};
 
 use crate::error::panic_unlimited_precision;
 use crate::fbig::FBig;
@@ -243,6 +246,101 @@ impl<R: Round, const B: Word> FBig<R, B> {
 }
 
 // ---------------------------------------------------------------------------
+// FromStr / From / TryFrom
+//
+// Construction from an external value (string, integer, primitive float) attaches
+// a *fresh* cache, exactly like `From<FBig>` above — there is no existing handle
+// to share, and `FromStr`/`TryFrom` have no parameter for one.
+// ---------------------------------------------------------------------------
+
+impl<R: Round, const B: Word> FromStr for CachedFBig<R, B> {
+    type Err = ParseError;
+
+    #[inline]
+    fn from_str(s: &str) -> Result<Self, ParseError> {
+        Ok(FBig::from_str(s)?.into())
+    }
+}
+
+impl<R: Round, const B: Word> From<UBig> for CachedFBig<R, B> {
+    #[inline]
+    fn from(n: UBig) -> Self {
+        FBig::from(n).into()
+    }
+}
+
+impl<R: Round, const B: Word> From<IBig> for CachedFBig<R, B> {
+    #[inline]
+    fn from(n: IBig) -> Self {
+        FBig::from(n).into()
+    }
+}
+
+macro_rules! impl_from_int_for_cached_fbig {
+    ($($t:ty)*) => {$(
+        impl<R: Round, const B: Word> From<$t> for CachedFBig<R, B> {
+            #[inline]
+            fn from(value: $t) -> Self {
+                FBig::from(value).into()
+            }
+        }
+    )*};
+}
+impl_from_int_for_cached_fbig!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);
+
+impl<R: Round> TryFrom<f32> for CachedFBig<R, 2> {
+    type Error = ConversionError;
+
+    #[inline]
+    fn try_from(value: f32) -> Result<Self, Self::Error> {
+        FBig::try_from(value).map(Self::from)
+    }
+}
+
+impl<R: Round> TryFrom<f64> for CachedFBig<R, 2> {
+    type Error = ConversionError;
+
+    #[inline]
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        FBig::try_from(value).map(Self::from)
+    }
+}
+
+macro_rules! impl_try_from_cached_fbig_for_int {
+    ($($t:ty)*) => {$(
+        impl<R: Round, const B: Word> TryFrom<CachedFBig<R, B>> for $t {
+            type Error = ConversionError;
+
+            #[inline]
+            fn try_from(value: CachedFBig<R, B>) -> Result<Self, Self::Error> {
+                value.fbig.try_into()
+            }
+        }
+    )*};
+}
+impl_try_from_cached_fbig_for_int!(
+    u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize UBig IBig
+);
+
+impl<R: Round> TryFrom<CachedFBig<R, 2>> for f32 {
+    type Error = ConversionError;
+
+    #[inline]
+    fn try_from(value: CachedFBig<R, 2>) -> Result<Self, Self::Error> {
+        value.fbig.try_into()
+    }
+}
+
+impl<R: Round> TryFrom<CachedFBig<R, 2>> for f64 {
+    type Error = ConversionError;
+
+    #[inline]
+    fn try_from(value: CachedFBig<R, 2>) -> Result<Self, Self::Error> {
+        value.fbig.try_into()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Clone / Default / Debug / comparisons
 // ---------------------------------------------------------------------------
 
@@ -273,6 +371,54 @@ impl<R: Round, const B: Word> core::fmt::Debug for CachedFBig<R, B> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Display / LowerExp / UpperExp / base-specific formatting
+//
+// Each delegates to the inner FBig so the rendered string is identical to FBig.
+// (`Debug` above intentionally keeps the cached-specific struct form.)
+// ---------------------------------------------------------------------------
+
+impl<R: Round, const B: Word> core::fmt::Display for CachedFBig<R, B> {
+    #[inline]
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Display::fmt(&self.fbig, f)
+    }
+}
+
+impl<R: Round, const B: Word> core::fmt::LowerExp for CachedFBig<R, B> {
+    #[inline]
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::LowerExp::fmt(&self.fbig, f)
+    }
+}
+
+impl<R: Round, const B: Word> core::fmt::UpperExp for CachedFBig<R, B> {
+    #[inline]
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::UpperExp::fmt(&self.fbig, f)
+    }
+}
+
+/// Mirror the base-specific format traits ([`core::fmt::Binary`], [`Octal`](core::fmt::Octal),
+/// [`LowerHex`]/[`UpperHex`](core::fmt::UpperHex)) onto [`CachedFBig`] for the bases where they
+/// apply, delegating each to the inner [`FBig`]'s impl so the output matches.
+macro_rules! impl_cached_fmt_with_base {
+    ($base:literal, $trait:ident) => {
+        impl<R: Round> core::fmt::$trait for CachedFBig<R, $base> {
+            #[inline]
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                core::fmt::$trait::fmt(&self.fbig, f)
+            }
+        }
+    };
+}
+impl_cached_fmt_with_base!(2, Binary);
+impl_cached_fmt_with_base!(2, LowerHex);
+impl_cached_fmt_with_base!(2, UpperHex);
+impl_cached_fmt_with_base!(8, Octal);
+impl_cached_fmt_with_base!(16, LowerHex);
+impl_cached_fmt_with_base!(16, UpperHex);
+
 impl<R1: Round, R2: Round, const B: Word> PartialEq<CachedFBig<R2, B>> for CachedFBig<R1, B> {
     #[inline]
     fn eq(&self, other: &CachedFBig<R2, B>) -> bool {
@@ -282,6 +428,76 @@ impl<R1: Round, R2: Round, const B: Word> PartialEq<CachedFBig<R2, B>> for Cache
 }
 
 impl<R: Round, const B: Word> Eq for CachedFBig<R, B> {}
+
+// ---------------------------------------------------------------------------
+// Ordering and the dashu-base ordering/log/sign traits
+// (delegate to the inner FBig — value ordering, context ignored)
+// ---------------------------------------------------------------------------
+
+impl<R1: Round, R2: Round, const B: Word> PartialOrd<CachedFBig<R2, B>> for CachedFBig<R1, B> {
+    #[inline]
+    fn partial_cmp(&self, other: &CachedFBig<R2, B>) -> Option<Ordering> {
+        self.fbig.partial_cmp(&other.fbig)
+    }
+}
+
+impl<R: Round, const B: Word> Ord for CachedFBig<R, B> {
+    #[inline]
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.fbig.cmp(&other.fbig)
+    }
+}
+
+impl<R: Round, const B: Word> AbsOrd for CachedFBig<R, B> {
+    #[inline]
+    fn abs_cmp(&self, other: &Self) -> Ordering {
+        AbsOrd::abs_cmp(&self.fbig, &other.fbig)
+    }
+}
+
+impl<R: Round, const B: Word> AbsOrd<UBig> for CachedFBig<R, B> {
+    #[inline]
+    fn abs_cmp(&self, other: &UBig) -> Ordering {
+        AbsOrd::abs_cmp(&self.fbig, other)
+    }
+}
+impl<R: Round, const B: Word> AbsOrd<CachedFBig<R, B>> for UBig {
+    #[inline]
+    fn abs_cmp(&self, other: &CachedFBig<R, B>) -> Ordering {
+        AbsOrd::abs_cmp(self, &other.fbig)
+    }
+}
+impl<R: Round, const B: Word> AbsOrd<IBig> for CachedFBig<R, B> {
+    #[inline]
+    fn abs_cmp(&self, other: &IBig) -> Ordering {
+        AbsOrd::abs_cmp(&self.fbig, other)
+    }
+}
+impl<R: Round, const B: Word> AbsOrd<CachedFBig<R, B>> for IBig {
+    #[inline]
+    fn abs_cmp(&self, other: &CachedFBig<R, B>) -> Ordering {
+        AbsOrd::abs_cmp(self, &other.fbig)
+    }
+}
+
+impl<R: Round, const B: Word> Signed for CachedFBig<R, B> {
+    #[inline]
+    fn sign(&self) -> Sign {
+        self.fbig.sign()
+    }
+}
+
+impl<R: Round, const B: Word> EstimatedLog2 for CachedFBig<R, B> {
+    #[inline]
+    fn log2_bounds(&self) -> (f32, f32) {
+        EstimatedLog2::log2_bounds(&self.fbig)
+    }
+
+    #[inline]
+    fn log2_est(&self) -> f32 {
+        EstimatedLog2::log2_est(&self.fbig)
+    }
+}
 
 #[cfg(test)]
 mod tests {

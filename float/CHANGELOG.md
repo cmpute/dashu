@@ -13,6 +13,17 @@
 - (test) The `Context::sin` many-digit-significand rounding regression (49 digits at precision 100)
   is now CI-guarded as `test_sin_many_digit_rounding_no_panic`, promoted from the excluded `fuzz/`
   crate; the `trig_prop` `pythagorean` identity now sweeps precisions {20, 50, 100}.
+- `CachedFBig` now mirrors `FBig`'s always-on trait surface (every impl delegates to the inner
+  `FBig`): `Display`/`LowerExp`/`UpperExp` and the base-specific format traits
+  (`Binary`/`Octal`/`LowerHex`/`UpperHex`), `PartialOrd`/`Ord`/`AbsOrd`/`Signed`/`EstimatedLog2`,
+  `FromStr`, `From`/`TryFrom` for integers and `f32`/`f64`, the shift ops (`Shl`/`Shr` + assign),
+  `Mul<Sign>`, the root/euclid traits (`SquareRoot`/`CubicRoot`/`DivEuclid`/`RemEuclid`/`DivRemEuclid`/
+  `Inverse`), and `Sum`/`Product` (the value delegates to `FBig`'s impls — so `Sum` stays
+  correctly-rounded — and the result keeps the first element's cache). Construction from an external
+  value (`FromStr`/`From`/`TryFrom`) attaches a fresh cache, like `From<FBig>`. Third-party crate
+  traits (serde/num-traits/num-order/rand/zeroize/postgres) are intentionally not mirrored — reach
+  them through `.as_fbig()`. (`Debug` keeps its cached-specific form; `Display`/`LowerExp`/`UpperExp`
+  match `FBig`.)
 
 ### Fix
 - Fixed broken intra-doc links surfaced by `cargo doc -D warnings`: `Exact`/`Inexact` now resolve to
