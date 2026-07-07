@@ -41,7 +41,7 @@ The phases below are ordered by dependency, not by "importance". The logic is:
 | 1 | Breaking changes & deprecation cleanup | must land in 0.5 — ✅ mostly done (only non-breaking internals open; `missing_docs` done) | 0 (ideally) |
 | 2 | `dashu-float` shared constant cache | ✅ done (#83, as `CachedFBig`/`ConstCache`); `FastReal`/`FastDecimal` aliases added | 0, 1 |
 | 3 | `dashu-cmplx` (`CBig`) — new crate | ✅ done (M1–M6) | 0, 2 |
-| 4 | The mdBook guide | ✅ content done (#88); only GitHub-Pages deploy + README badge pending | 1, 2, 3 (content); infra can start now |
+| 4 | The mdBook guide | ✅ done (#88); live at `zyxin.xyz/dashu` with the README Book badge re-enabled (CI auto-deploy not planned for v0.5) | 1, 2, 3 (content); infra can start now |
 | 5 | Release prep & version sync | ⬜ not started — **the only remaining phase** | 1–4 |
 
 > Parallelism: Phase 0 hardening, Phase 1 cleanups, and Phase 4 mdBook **infrastructure** can all
@@ -326,11 +326,11 @@ removed). All additive — safe as point releases under 0.5.x.
       orphan branch). The guide was built with mdBook 0.5.3 + mdbook-katex and pushed to an orphan
       `gh-pages` branch (no shared history with `master`/`develop`). This was a **one-shot manual**
       deploy; future guide updates require rebuilding and re-pushing `gh-pages`.
-- [ ] **CI auto-deploy** (optional follow-up): `guide.yml` is still build-check only — it does *not*
-      rebuild/push `gh-pages` on merge. Adding a deploy step (e.g. `peaceiris/actions-gh-pages` or
-      `actions/deploy-pages`) would keep the published site in sync automatically.
-- [ ] **Re-enable the Book badge** in `README.md:8` (currently commented out) — point it at
-      `https://zyxin.xyz/dashu/`.
+- [x] **CI auto-deploy:** *decided — not planned for v0.5.* The guide is published by a one-shot
+      manual push to the `gh-pages` orphan branch (see "Deploy the guide" above); `guide.yml` stays
+      build-check only, and auto-deploying on merge isn't worth the workflow complexity for this release.
+- [x] **Re-enable the Book badge** in `README.md` — done; the badge now links to the live guide at
+      `https://zyxin.xyz/dashu/` (label updated from the stale `book-master` to `book-user_guide`).
 
 ### 4.2 Content
 - [x] Fill the previously-stub pages: `io/{index,parse,print,serialize,interop}.md`,
