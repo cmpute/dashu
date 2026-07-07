@@ -168,11 +168,16 @@ the primary `Real`/`Decimal`.
       `pub type FastReal = dashu_float::CachedFBig;` and
       `pub type FastDecimal = dashu_float::CachedFBig<dashu_float::round::mode::HalfAway, 10>;`.
       *(Done in `src/lib.rs`; both carry doc-comments noting `!Send + !Sync`.)*
-- [ ] **Bring `CachedFBig` to `FBig`'s trait surface** so the aliases are ergonomic (delegate to the
-      inner `FBig`). **Partially done:** arithmetic operators (`Add`/`Sub`/`Mul`/`Div`/`Rem` + `Assign`,
-      vs `CachedFBig`/`FBig`/primitives) and `Debug`/`PartialEq`/`Eq`/`Clone`/`Default`/`From` are in
-      (`fbig_cached.rs`, `fbig_cached_ops.rs`). **Still missing:** `Display`/`FromStr`, `PartialOrd`/
-      `Ord`, `Sum`/`Product`, and the `third_party` impls (serde/num-traits/rand).
+- [x] **Bring `CachedFBig` to `FBig`'s trait surface** so the aliases are ergonomic (delegate to the
+      inner `FBig`). **Done (always-on surface):** the trait surface now mirrors `FBig` — formatting
+      (`Display`/`LowerExp`/`UpperExp` + the base-specific `Binary`/`Octal`/`LowerHex`/`UpperHex`),
+      ordering (`PartialOrd`/`Ord`/`AbsOrd`/`Signed`/`EstimatedLog2`), `FromStr`, `From`/`TryFrom` for
+      integers and `f32`/`f64`, the shift ops, `Mul<Sign>`, the root/euclid traits (`SquareRoot`/
+      `CubicRoot`/`DivEuclid`/`RemEuclid`/`DivRemEuclid`/`Inverse`), and `Sum`/`Product` (the value
+      delegates to `FBig`'s impls — so `Sum` stays correctly-rounded — and the result keeps the first
+      element's cache). `float/tests/parity.rs` guards the value/format parity. **Third-party crate
+      traits (serde/num-traits/num-order/rand/zeroize/postgres) are intentionally not mirrored** —
+      reach them via `.as_fbig()` (recorded as a divergence in `AGENTS.md`).
 - [x] **Guide:** `guide/src/cached.md` is a full page covering `CachedFBig`/`ConstCache` (creation,
       cache sharing, inspection/clearing, constants, thread-safety, worked example). **Gap:** it does
       not name the `FastReal`/`FastDecimal` aliases — add a short pointer so guide readers find them.
