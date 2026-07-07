@@ -25,6 +25,13 @@
 - Public `Repr::from_str_native` / `FBig::from_str_native` methods (now crate-private). Use the `core::str::FromStr` impl (`s.parse()` / `FBig::from_str`) instead; its docs now carry the full parsing format specification.
 
 ### Change
+- **(breaking)** `Sum` for `FBig` is now correctly-rounded: every addend is accumulated exactly at the
+  `Repr` level and the exact total is rounded once (MPFR `mpfr_sum` semantics), instead of folding
+  with `+` and rounding at every step. The generic `Sum<T> where Self: Add<T>` and `Product<T>` impls
+  are replaced by concrete `Sum`/`Sum<&FBig>` (precise) and `Product`/`Product<&FBig>` (fold);
+  `Sum<u8>`, `Sum<&UBig>`, `Product<i32>`, etc. are therefore no longer available for `FBig` — convert
+  the elements first. The result context is the max-precision context over all addends; summing an
+  infinite value panics, consistent with `+`.
 - **(breaking)** `FBig` human-readable serde now pads the serialized string with trailing zeros so its significant-digit count equals the context precision, letting precision round-trip (previously it was lost). The binary format already preserved precision.
 - (internal) The PostgreSQL `NUMERIC` conversion now extracts base-10000 digits via `UBig::to_digits` instead of a per-digit `div_rem` loop.
 - (internal) Trig argument reduction (`reduce_to_quadrant`) now recovers the quadrant integer via `IBig::try_from` instead of `to_int()`, since the rounded value is already an exact integer.

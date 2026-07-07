@@ -34,6 +34,18 @@ let sum = &z + &C::I; // (3+4i) + i = 3+5i
 assert_eq!(sum.im().significand(), &5.into());
 ```
 
+## Aggregation: `Sum` and `Product`
+
+All numeric types implement `core::iter::Sum` and `Product` over iterators of `T` or `&T`. For `FBig`/`DBig`, `Sum` is correctly-rounded — addends are accumulated exactly and rounded once (MPFR `mpfr_sum`), not folded with `+`, which rounds at every step and can drop small addends; the result precision is `max` over the addends'. `Product` is a plain fold on every type. For `FBig`/`DBig`/`CBig` the iterator must yield the big type itself (convert primitives first), whereas `UBig`/`IBig`/`RBig` accept primitive elements directly.
+
+```rust
+use dashu::float::DBig;
+
+let vals = [dbig!(1), dbig!(1e-20), dbig!(-1)];
+let folded = vals.iter().cloned().fold(DBig::ZERO, |a, b| a + b); // 0 — 1e-20 rounded away
+let summed: DBig = vals.iter().sum();                             // 1e-20 — Sum is exact
+```
+
 ## Mixed-type arithmetic
 
 There are **no implicit mixed-type operators** between different big-number kinds (e.g. `UBig + FBig` does not compile) — convert explicitly first (see [Conversion](../convert.md)).

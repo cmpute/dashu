@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Add
+- `core::iter::Sum`/`Product` for `CBig` (and `Sum<&CBig>`/`Product<&CBig>`), folding with the
+  binary `+`/`*` operators. The impls are concrete (`Sum`/`Sum<&CBig>`, `Product`/`Product<&CBig>`),
+  matching the narrowed iter surface used for `FBig`; a correctly-rounded (exact-accumulating) `Sum`
+  is a possible future refinement.
 - `CBig::NEG_ONE` (`-1 + 0i`), mirroring `FBig::NEG_ONE`.
 - `TryFrom<CBig> for UBig` — extracts the unsigned integer when the value is purely real, finite,
   integer-valued, and non-negative (composes `CBig → FBig → UBig`).

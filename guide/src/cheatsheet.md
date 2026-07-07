@@ -45,6 +45,8 @@ Lossless conversions use `From`; potentially-lossy ones use `TryFrom` (which fai
 | `RBig` | ✓ | — | — | — |
 | `CBig` | ✓ | — | — | — |
 
+`Sum`/`Product` are implemented for every type. For `FBig`/`DBig`, `Sum` is correctly-rounded (exact accumulate, round once — *not* a `+` fold); for `FBig`/`DBig`/`CBig` the iterator must yield the big type (or `&T`), not primitives. See [Basic Arithmetics](./ops/basic.md#aggregation-sum-and-product).
+
 ## Formatting
 
 | Type | `Display` | `Debug` | Other |

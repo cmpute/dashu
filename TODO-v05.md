@@ -265,8 +265,9 @@ removed). All additive — safe as point releases under 0.5.x.
   complex-valued functions themselves are deferred.)
 - **`fma`** (complex fused multiply-add — hard to round correctly), **`rootofunity`**, complex
   **`agm`**, **`exp2`/`exp10`/`log2`/`log10`**.
-- **Vector ops** (`sum`/`dot`/mean) — note `Sum`/`Product` for `CBig` (the `iter` analog of `FBig`)
-  are also not yet implemented.
+- **Vector ops** (`dot`/mean) — `Sum`/`Product` for `CBig` (the `iter` analog of `FBig`) now exist
+  (fold-based, narrowed impls); still missing: `dot`/mean helpers and a correctly-rounded
+  (exact-accumulating) `Sum` for `CBig`.
 - **Third-party integration:** `CBig` `serde`/`rkyv`/`zeroize`; `num_complex::Complex<FBig>` interop
   (the `serde`/`num-traits`/`num-complex` feature flags are scaffolded; impls deferred).
 - **Independent re/im rounding** (`CRound` trait; MPC `mpc_rnd_t` parity — 0.5 uses one `R` for both

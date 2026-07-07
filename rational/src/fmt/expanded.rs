@@ -407,9 +407,6 @@ fn expand_fraction(rem: UBig, den: &UBig, radix: u8, n: usize) -> Vec<u8> {
 }
 
 /// Write a slice of digit values in the given radix to the formatter.
-///
-/// TODO(v0.5): replace with `DigitWriter` from `dashu_int::fmt` for buffered,
-/// SIMD-accelerated digit-to-ASCII conversion.
 fn write_digits(f: &mut Formatter<'_>, digits: &[u8], radix: u8, upper: bool) -> fmt::Result {
     for &d in digits {
         write_digit_char(f, d, radix, upper)?;

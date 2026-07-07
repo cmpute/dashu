@@ -2,6 +2,8 @@
 
 [Introduction](./index.md)
 
+---
+
 - [Types](./types.md)
 - [Construction and Destruction](./construct.md)
 - [Cached Arithmetic for FBig](./cached.md)
@@ -18,7 +20,10 @@
   - [Trigonometric and Hyperbolic Functions](./ops/trig_n_hyper.md)
   - [Bit Manipulation](./ops/bit.md)
   - [Number Theoretic](./ops/num_theory.md)
-- [FAQ](./faq.md)
-- [Performance](./performance.md)
-- [Cheatsheet](./cheatsheet.md)
-- [Standards Compliance](./compliance.md)
+
+---
+
+[FAQ](./faq.md)
+[Performance](./performance.md)
+[Cheatsheet](./cheatsheet.md)
+[Standards Compliance](./compliance.md)

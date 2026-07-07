@@ -74,6 +74,7 @@ mod div;
 mod exp;
 mod fmt;
 mod helper_macros;
+mod iter;
 mod log;
 pub mod math;
 mod misc;
