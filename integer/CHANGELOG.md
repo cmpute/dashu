@@ -15,6 +15,12 @@
 - **(breaking)** `IBig`'s serde non-human-readable format switched from the custom byte-length-parity encoding to standard two's complement little-endian bytes (matching [`IBig::to_le_bytes`]), for interop robustness. Previously serialized data is not compatible.
 - **(breaking)** `UBig::in_radix` and `IBig::in_radix` now take `radix: u8` (was `u32`); the internal `Digit` type alias is now `u8`. `from_str_with_radix_prefix` / `from_str_with_radix_default` now expose the detected/default radix as `u8` (was `u32`). `from_str_radix` keeps its `u32` argument for `std` parity.
 
+### Improve
+- Documented the previously-undocumented public items on `ConstDivisor` and the `IntoRing`/
+  `IntoMontgomeryRing` traits, and enabled `#![deny(missing_docs)]` together with
+  `clippy::dbg_macro`, `clippy::undocumented_unsafe_blocks`, and `clippy::let_underscore_must_use`
+  as crate-level denies (resolving the `v0.5` lint TODOs in `lib.rs`).
+
 ## 0.4.3
 
 ### Add

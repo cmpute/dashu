@@ -216,6 +216,11 @@ pub(crate) enum ConstDivisorRepr {
 pub struct ConstDivisor(pub(crate) ConstDivisorRepr);
 
 impl ConstDivisor {
+    /// Create a [`ConstDivisor`] precomputing the division helper fields for `n`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `n` is zero.
     pub fn new(n: UBig) -> ConstDivisor {
         Self(match n.into_repr() {
             TypedRepr::Small(0) => panic_divide_by_0(),
@@ -230,6 +235,11 @@ impl ConstDivisor {
         })
     }
 
+    /// Create a [`ConstDivisor`] from a single word.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `word` is zero.
     #[inline]
     pub const fn from_word(word: Word) -> Self {
         if word == 0 {
@@ -238,6 +248,11 @@ impl ConstDivisor {
         Self(ConstDivisorRepr::Single(ConstSingleDivisor::new(word)))
     }
 
+    /// Create a [`ConstDivisor`] from a double word.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `dword` is zero.
     #[inline]
     pub const fn from_dword(dword: DoubleWord) -> Self {
         if dword == 0 {
@@ -251,6 +266,7 @@ impl ConstDivisor {
         })
     }
 
+    /// Return the divisor value as a [`UBig`].
     #[inline]
     pub fn value(&self) -> UBig {
         UBig(match &self.0 {

@@ -62,6 +62,10 @@
 //! * `std` (*default*): enable `std` for dependencies.
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![deny(missing_docs)]
+#![deny(clippy::dbg_macro)]
+#![deny(clippy::undocumented_unsafe_blocks)]
+#![deny(clippy::let_underscore_must_use)]
 
 extern crate alloc;
 

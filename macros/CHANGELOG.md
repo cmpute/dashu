@@ -9,6 +9,10 @@
   via the new `CBig::from_repr_parts` const constructor (gated on Rust 1.64+, like the other static
   variants).
 
+### Improve
+- Enabled `#![deny(missing_docs)]` together with `clippy::dbg_macro`,
+  `clippy::undocumented_unsafe_blocks`, and `clippy::let_underscore_must_use` as crate-level denies.
+
 ## 0.4.2
 
 - Replace `paste` dependency with `pastey` ([#58](https://github.com/cmpute/dashu/pull/58)).

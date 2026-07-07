@@ -54,7 +54,9 @@ pub trait EstimatedLog2 {
 /// assert_eq!(f32::INFINITY.inv(), 0f32);
 /// ```
 pub trait Inverse {
+    /// The type of the reciprocal.
     type Output;
+    /// Compute the multiplicative inverse (reciprocal) of the number.
     fn inv(self) -> Self::Output;
 }
 
@@ -70,8 +72,10 @@ pub trait Inverse {
 /// assert_eq!(257u32.sqrt(), 16);
 /// ```
 pub trait SquareRoot {
+    /// The type of the square root.
     type Output;
 
+    /// Compute the square root, rounded towards zero by default.
     fn sqrt(&self) -> Self::Output;
 }
 
@@ -87,8 +91,10 @@ pub trait SquareRoot {
 /// assert_eq!(217u32.cbrt(), 6);
 /// ```
 pub trait CubicRoot {
+    /// The type of the cubic root.
     type Output;
 
+    /// Compute the cubic root, rounded towards zero by default.
     fn cbrt(&self) -> Self::Output;
 }
 

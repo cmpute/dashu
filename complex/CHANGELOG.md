@@ -11,6 +11,8 @@
   (float out is base-2). All compose through `FBig`, mirroring `dashu-float`'s primitive surface.
 
 ### Improve
+- Enabled `#![deny(missing_docs)]` together with `clippy::dbg_macro`,
+  `clippy::undocumented_unsafe_blocks`, and `clippy::let_underscore_must_use` as crate-level denies.
 - The complex `sin_cos` kernel now calls `dashu-float`'s combined `sinh_cosh` (new in `dashu-float`)
   instead of separate `sinh` + `cosh` calls, sharing the `exp_m1(±y)` sub-computations.
 - `CBig::overflow` now returns `+∞ + i·∞` (both parts infinite) instead of `±∞ + i·0`, fixing the

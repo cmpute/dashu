@@ -663,7 +663,7 @@ mod tests {
     #[test]
     fn test_debug_shows_bigint_head_tail() {
         let mut cache = ConstCache::new();
-        let _ = cache.pi::<10, mode::HalfAway>(100);
+        let _pi = cache.pi::<10, mode::HalfAway>(100); // populate the cache (value unused)
         let s = format!("{:?}", cache);
         assert!(s.contains("pi"));
         assert!(s.contains("num_terms"));
@@ -680,8 +680,8 @@ mod tests {
         assert_eq!(cache.total_terms(), 0);
         assert_eq!(cache.total_words(), 0);
 
-        let _ = cache.pi::<10, mode::HalfAway>(200);
-        // the isqrt is now cached (total_terms stays series-only; words include isqrt)
+        let _pi = cache.pi::<10, mode::HalfAway>(200); // fills the cache (value unused)
+                                                       // the isqrt is now cached (total_terms stays series-only; words include isqrt)
         assert!(cache.total_words() > 0);
 
         cache.clear();

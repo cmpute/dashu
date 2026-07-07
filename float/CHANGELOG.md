@@ -112,6 +112,11 @@
 
 - Replace `f64::ceil()` in `ConstCache`'s precision/bit helpers with a `no_std`-safe integer ceiling (`ceil_usize`). `f64::ceil` is `std`-only on the crate's MSRV and broke the workspace `--all-features --tests` build, where `dashu-float` is compiled without `std` as a dependency of `dashu-ratio`.
 
+### Improve
+- Documented the `math::trig` module and enabled `#![deny(missing_docs)]` together with
+  `clippy::dbg_macro`, `clippy::undocumented_unsafe_blocks`, and `clippy::let_underscore_must_use`
+  as crate-level denies.
+
 ## 0.4.5
 
 ### Add

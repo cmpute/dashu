@@ -1,3 +1,8 @@
+//! Formatting support for [`RBig`] and [`Relaxed`]: the standard `Display`/`Debug` traits
+//! plus the radix/positional helpers ([`InRadix`] and [`InExpanded`]).
+//!
+//! [`InExpanded`]: expanded::InExpanded
+
 pub mod expanded;
 
 use crate::{

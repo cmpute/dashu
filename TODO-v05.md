@@ -1,6 +1,6 @@
 # dashu v0.5 Release Plan
 
-Last updated: 2026-06-28
+Last updated: 2026-07-07
 
 This document is the consolidated plan for the **v0.5** release — a **major (breaking)** bump.
 Because it is a major release, its two organizing goals are:
@@ -37,12 +37,12 @@ The phases below are ordered by dependency, not by "importance". The logic is:
 
 | Phase | Theme | Blocking? | Depends on |
 |-------|-------|-----------|------------|
-| 0 | Test / benchmark / fuzz hardening | **GATE for all feature work** | — |
-| 1 | Breaking changes & deprecation cleanup | must land in 0.5 | 0 (ideally) |
-| 2 | `dashu-float` shared constant cache | ✅ done (#83, as `CachedFBig`/`ConstCache`) | 0, 1 |
+| 0 | Test / benchmark / fuzz hardening | **GATE for all feature work** — ✅ done | — |
+| 1 | Breaking changes & deprecation cleanup | must land in 0.5 — ✅ mostly done (only non-breaking internals open; `missing_docs` done) | 0 (ideally) |
+| 2 | `dashu-float` shared constant cache | ✅ done (#83, as `CachedFBig`/`ConstCache`); `FastReal`/`FastDecimal` aliases added | 0, 1 |
 | 3 | `dashu-cmplx` (`CBig`) — new crate | ✅ done (M1–M6) | 0, 2 |
-| 4 | The mdBook guide | required deliverable | 1, 2, 3 (content); infra can start now |
-| 5 | Release prep & version sync | — | 1–4 |
+| 4 | The mdBook guide | ✅ content done (#88); only GitHub-Pages deploy + README badge pending | 1, 2, 3 (content); infra can start now |
+| 5 | Release prep & version sync | ⬜ not started — **the only remaining phase** | 1–4 |
 
 > Parallelism: Phase 0 hardening, Phase 1 cleanups, and Phase 4 mdBook **infrastructure** can all
 > proceed concurrently. Phase 4 **content** must trail Phases 1–3.
@@ -90,10 +90,19 @@ Every item here changes public API and **must** land in 0.5. File:line refs are 
 ### 1.2 `dashu-int`
 - [x] **`IBig` serde wire format** (`integer/src/third_party/serde.rs:63`): switch to
       `IBig::to_le_bytes()` for interop robustness. (Breaking serialization format.)
-- [ ] **`#![deny(missing_docs)]`** across all crates (`integer/src/lib.rs:72-74` also proposes
-      `#![deny(clippy::allow_attributes_without_reason)]`). Requires documenting every public item
-      first — pair with Phase 4 guide work (move prose to the guide, keep doc-comments concise).
-      **→ deferred to Phase 4** (paired with the guide doc-pass).
+- [x] **`#![deny(missing_docs)]`** across all crates — **done.** Documented the 53 previously-
+      undocumented public items (42 in `dashu-base`, 8 in `dashu-int`, 2 in `dashu-ratio`, 1 in
+      `dashu-float`; `dashu-cmplx`/`dashu-macros` were already clean) and enabled
+      `#![deny(missing_docs)]` plus the existing `clippy::dbg_macro`/`undocumented_unsafe_blocks`/
+      `let_underscore_must_use` denies on **all** crates (resolving the `v0.5` lint TODOs in
+      `integer/src/lib.rs`). Two `let _ =`-on-`#[must_use]` test sites were converted to named
+      bindings to satisfy `let_underscore_must_use`.
+      **Caveat:** `#![deny(clippy::allow_attributes_without_reason)]` is **not** enabled — satisfying
+      it needs the `reason = "..."` field on every `#[allow]` (or `#[expect]`), both stabilized in
+      Rust **1.81**, which conflicts with the 1.68 MSRV. Revisit once the MSRV reaches ≥ 1.81 (see
+      the note in `integer/src/lib.rs`). The remaining "move verbose prose to the guide" cleanup
+      (per `integer/src/ubig.rs:10` `TODO(v0.5)`) is tracked in Phase 1.5 / 4.2 and is independent
+      of the lint gate.
 - [x] **`UBig::to_digits` / `from_digits`** (`integer/src/convert.rs:1142`): new public API
       supporting base up to `Word::MAX` — **shipped as full base-up-to-`Word::MAX` with `Vec<Word>`
       digits**; the `u8` note in the TODO referred to the separate `UBig::in_radix`/`IBig::in_radix`
@@ -151,15 +160,18 @@ for the faster type by name. Rationale for *not* redirecting the bare aliases: `
 and its per-value cache only helps *within one computation chain* — so it is not a safe drop-in for
 the primary `Real`/`Decimal`.
 
-- [ ] **Add aliases** in the meta-crate alongside `Real`/`Decimal`:
+- [x] **Add aliases** in the meta-crate alongside `Real`/`Decimal`:
       `pub type FastReal = dashu_float::CachedFBig;` and
       `pub type FastDecimal = dashu_float::CachedFBig<dashu_float::round::mode::HalfAway, 10>;`.
+      *(Done in `src/lib.rs`; both carry doc-comments noting `!Send + !Sync`.)*
 - [ ] **Bring `CachedFBig` to `FBig`'s trait surface** so the aliases are ergonomic (delegate to the
-      inner `FBig`): `Display`/`FromStr`, `PartialOrd`/`Ord`, `Sum`/`Product`, and the `third_party`
-      impls (serde/num-traits/rand).
-- [ ] **Guide:** document `FastReal`/`FastDecimal` as the recommended type when calling many
-      transcendentals (π/ln2 reuse, progressive cache extension), with the `!Send + !Sync` +
-      per-value-cache caveats (add to `guide/src/construct.md`).
+      inner `FBig`). **Partially done:** arithmetic operators (`Add`/`Sub`/`Mul`/`Div`/`Rem` + `Assign`,
+      vs `CachedFBig`/`FBig`/primitives) and `Debug`/`PartialEq`/`Eq`/`Clone`/`Default`/`From` are in
+      (`fbig_cached.rs`, `fbig_cached_ops.rs`). **Still missing:** `Display`/`FromStr`, `PartialOrd`/
+      `Ord`, `Sum`/`Product`, and the `third_party` impls (serde/num-traits/rand).
+- [x] **Guide:** `guide/src/cached.md` is a full page covering `CachedFBig`/`ConstCache` (creation,
+      cache sharing, inspection/clearing, constants, thread-safety, worked example). **Gap:** it does
+      not name the `FastReal`/`FastDecimal` aliases — add a short pointer so guide readers find them.
 
 ### Still open
 
@@ -281,48 +293,60 @@ removed). All additive — safe as point releases under 0.5.x.
 
 ## Phase 4 — The mdBook Guide
 
-**Goal:** a complete user guide under `guide/`, built with mdBook, deployed from CI. Today the guide
-is ~15–20% complete: `index.md`, `SUMMARY.md`, `types.md`, `construct.md`, and most of `convert.md`
-are real; the other 13 files are stubs or empty; `book.toml` is minimal (no plugins, no renderer);
-and nothing in CI builds or deploys it.
+**Goal:** a complete user guide under `guide/`, built with mdBook, deployed from CI.
 
-### 4.1 Infrastructure (can start in Phase 0, parallel)
-- [ ] Extend `guide/book.toml`: add `[output.html]`, `mdbook-katex` (math typesetting — essential
-      for float/complex), `mdbook-toc`, and `mdbook-admonish` if desired. Pin versions.
-- [ ] Stop committing the rendered `guide/book/` output (`.gitignore` already lists `book`); build
-      in CI instead. (The committed `book/` + `.nojekyll` suggests a stale GitHub-Pages deploy.)
-- [ ] Add a CI workflow: `cargo install mdbook` + plugins → `mdbook build guide` → deploy to GitHub
-      Pages. Re-enable the commented-out **Book** badge in `README.md`.
+> **Content is done** (PR #88 — "Phase 4: complete the mdBook user guide"). All pages that were
+> stubs in the previous revision are now real, and four new pages were added (`cached.md`,
+> `performance.md`, `compliance.md`, `ops/trig_n_hyper.md`). `CBig` is documented *across* the
+> existing pages (construct/convert/io/ops/faq) rather than in a dedicated chapter — intentional, no
+> separate chapter is planned. Only the **deploy** step + the **README badge** remain.
 
-### 4.2 Content (after Phases 1–3 so it documents the final API)
-- [ ] Fill the 13 stub/empty pages: `io/{index,parse,print,serialize,interop}.md`,
-      `ops/{index,basic,cmp,bit,exp_log,num_theory}.md`, `faq.md`, `cheatsheet.md`, and the
-      `convert.md` FBig TODO sections.
-- [ ] Expand `SUMMARY.md` as needed and **add new chapters** for v0.5 surfaces:
-      - the **constant cache** (`ConstCache` / `CachedFBig`; a section already exists in
-        `construct.md` — promote/expand it into full coverage),
-      - **`CBig` complex numbers** (construction, arithmetic, transcendentals, branch cuts).
-- [ ] Migrate verbose API prose out of doc-comments into the guide (per `integer/src/ubig.rs:10`),
-      leaving concise rustdoc behind — pairs with the `#![deny(missing_docs)]` work in 1.2.
-- [ ] Use the existing crate-level doctests (`dashu-int`, `dashu-float`, `dashu-ratio` `lib.rs`)
-      and `integer/examples/factorial.rs` as seed material.
-- [ ] Cross-check MSRV statement in `guide/src/index.md` (currently "1.68") against the 0.5 decision.
+### 4.1 Infrastructure
+- [x] Extend `guide/book.toml`: `[output.html]` + `[preprocessor.katex]` are configured. (`mdbook-toc`
+      / `mdbook-admonish` were "if desired" — skipped, not needed.)
+- [x] Stop committing the rendered `guide/book/` output — `.gitignore` ignores `book`, and
+      `git ls-files guide/book` is now empty.
+- [x] **Build-check CI** added: `.github/workflows/guide.yml` installs `mdbook` (0.5.3) + the
+      mdbook-0.5 build of `mdbook-katex` (pinned by git rev) and runs `mdbook build guide`. Fails on
+      errors and on any `SUMMARY.md` entry whose target file is missing (broken-link guard).
+- [ ] **Deploy to GitHub Pages** — *not yet done.* `guide.yml` is build-check only (it explicitly says
+      "nothing is deployed"). Add a deploy step (e.g. `peaceiris/actions-gh-pages` or the
+      `actions/deploy-pages` flow) and re-enable the commented-out **Book** badge in `README.md:8`.
+
+### 4.2 Content
+- [x] Fill the previously-stub pages: `io/{index,parse,print,serialize,interop}.md`,
+      `ops/{index,basic,cmp,bit,exp_log,num_theory,trig_n_hyper}.md`, `faq.md`, `cheatsheet.md`.
+- [x] New v0.5 pages: `cached.md` (the constant cache / `CachedFBig`), `performance.md`,
+      `compliance.md` (the IEEE-754 / C99 Annex-G compliance notes).
+- [x] `CBig` covered across pages (construction, arithmetic, transcendentals, branch cuts, I/O).
+- [ ] **Migrate verbose API prose out of doc-comments** (per `integer/src/ubig.rs:10` `TODO(v0.5)`)
+      leaving concise rustdoc behind — pairs with the `#![deny(missing_docs)]` work in 1.2. *Still
+      open; the `TODO(v0.5)` marker is still in the source.*
+- [x] Cross-check MSRV statement in `guide/src/index.md` — still "1.68", matching `README.md` and
+      `rust-version = "1.68"`; no 0.5 bump is expected (cache is `alloc`-only, mdBook is build-time).
 
 ---
 
 ## Phase 5 — Release Preparation
 
-- [ ] **Version sync:** bump *all* crates to `0.5.0` and align (currently skewed: float 0.4.4,
-      meta 0.4.3, base/int/ratio/macros 0.4.2). Refresh all internal `version = "0.4.x"` path pins.
-- [ ] **Workspace:** add `complex` to `members`/`default-members`; wire meta-crate feature
-      forwarding for any new `dashu-cmplx` features (serde, num-traits, etc.).
-- [ ] **Feature flags:** if `dashu-cmplx` adds third-party integration, follow the `xxx_vYY` +
-      unversioned-alias convention; update the top-level `Cargo.toml` forwarding table.
+- [ ] **Version sync:** bump *all* crates to `0.5.0` and align. Current skew (as of 2026-07-07):
+      base/int/rational `0.4.3`, float `0.4.5`, complex `0.4.5`, macros `0.4.2`, meta `0.4.4`.
+      Refresh all internal `version = "0.4.x"` path deps to `0.5.0` (including the meta-crate's
+      `dashu-cmplx = { version = "0.4.5", path = "./complex" }`).
+- [x] **Workspace:** `complex` is already in `members` and `default-members`; meta-crate feature
+      forwarding to `dashu-cmplx` is wired (`std`/`serde`/`num-order`/`zeroize`/`rand`/`rand_v08`/
+      `rand_v09`/`rand_v010`/`num-traits`/`num-traits_v02`/`num-complex`).
 - [ ] **Changelogs:** fold every crate's `## Unreleased` into a `## 0.5.0` section (breaking
-      changes under `### Change`/`### Remove`, features under `### Add`).
-- [ ] **MSRV:** review whether 0.5 still targets 1.68 (mdBook is a build-time tool and does not
-      affect runtime MSRV; cache uses only `alloc`; no forced bump expected — confirm and keep
-      unless a desired feature needs newer). Update `README.md` badge + all `rust-version` fields.
+      changes under `### Change`/`### Remove`, features under `### Add`). **Gap to fix first:**
+      PR #89 (`fix: avoid double rounding in RBig::to_f32/to_f64`) touched `rational/src/convert.rs`
+      but has **no entry** in `rational/CHANGELOG.md`'s `## Unreleased` — add it before folding.
+      Same audit for any other recently-landed change missing a changelog line.
+- [x] **MSRV: 0.5 targets 1.68** *(decided)* — no bump. mdBook is build-time only (no runtime MSRV
+      impact), and the constant cache uses only `alloc`. Consequence: `#![deny(clippy::
+      allow_attributes_without_reason)]` stays **deferred** — it needs the `reason = "…"` field on
+      every `#[allow]` (or `#[expect]`), both stabilized in Rust **1.81**; revisit when MSRV ≥ 1.81.
+- [ ] **MSRV bookkeeping:** update `README.md` badge + all `rust-version = "1.68"` fields once
+      versions sync to `0.5.0` (no value change — just confirm they survived the bump).
 - [ ] **CI:** run the pre-publish checks (`pre-publish-check` skill):
       `cargo check --all-features --tests`, `cargo test --workspace --exclude dashu-python`,
       `cargo clippy --all-features --all-targets --workspace --exclude dashu-python -- -D warnings`,

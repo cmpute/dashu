@@ -1,6 +1,10 @@
 //! The meta crate that re-exports all `dashu` numeric types.
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![deny(missing_docs)]
+#![deny(clippy::dbg_macro)]
+#![deny(clippy::undocumented_unsafe_blocks)]
+#![deny(clippy::let_underscore_must_use)]
 
 /// Defintions of common traits
 pub mod base {

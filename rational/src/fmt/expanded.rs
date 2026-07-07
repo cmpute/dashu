@@ -1,3 +1,9 @@
+//! Positional-expansion formatting for rationals: render the infinite decimal (or other-base)
+//! expansion of an [`RBig`]/[`Relaxed`], exposing the non-repeating and repeating parts.
+//!
+//! The [`InExpanded`] helper drives this output and supports precision control, scientific
+//! notation, and repetend display.
+
 use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;

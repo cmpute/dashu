@@ -59,7 +59,9 @@ impl Montgomery<'_> {
 
 /// Trait for types that can be converted into a [`Montgomery`] value by a [`MontgomeryRepr`].
 pub trait IntoMontgomeryRing<'a, Ring> {
+    /// The Montgomery-form element produced by transforming `self` into the ring.
     type RingElement: 'a;
+    /// Transform `self` into Montgomery form within `ring`.
     fn into_monty(self, ring: &'a Ring) -> Self::RingElement;
 }
 

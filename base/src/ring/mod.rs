@@ -8,9 +8,12 @@
 /// assert_eq!(23.div_rem(10), (2, 3));
 /// ```
 pub trait DivRem<Rhs = Self> {
+    /// The type of the quotient.
     type OutputDiv;
+    /// The type of the remainder.
     type OutputRem;
 
+    /// Compute the quotient and remainder at the same time.
     fn div_rem(self, rhs: Rhs) -> (Self::OutputDiv, Self::OutputRem);
 }
 
@@ -24,8 +27,10 @@ pub trait DivRem<Rhs = Self> {
 /// assert!(n == 2 && r == 3);
 /// ```
 pub trait DivRemAssign<Rhs = Self> {
+    /// The type of the remainder.
     type OutputRem;
 
+    /// Divide `self` by `rhs` in place, storing the quotient in `self` and returning the remainder.
     fn div_rem_assign(&mut self, rhs: Rhs) -> Self::OutputRem;
 }
 
@@ -37,8 +42,10 @@ pub trait DivRemAssign<Rhs = Self> {
 /// assert_eq!((-23).div_euclid(10), -3);
 /// ```
 pub trait DivEuclid<Rhs = Self> {
+    /// The type of the quotient.
     type Output;
 
+    /// Compute the Euclidean quotient of `self / rhs`.
     fn div_euclid(self, rhs: Rhs) -> Self::Output;
 }
 
@@ -50,8 +57,10 @@ pub trait DivEuclid<Rhs = Self> {
 /// assert_eq!((-23).rem_euclid(10), 7);
 /// ```
 pub trait RemEuclid<Rhs = Self> {
+    /// The type of the remainder.
     type Output;
 
+    /// Compute the non-negative Euclidean remainder of `self % rhs`.
     fn rem_euclid(self, rhs: Rhs) -> Self::Output;
 }
 
@@ -63,9 +72,12 @@ pub trait RemEuclid<Rhs = Self> {
 /// assert_eq!((-23).div_rem_euclid(10), (-3, 7));
 /// ```
 pub trait DivRemEuclid<Rhs = Self> {
+    /// The type of the quotient.
     type OutputDiv;
+    /// The type of the remainder.
     type OutputRem;
 
+    /// Compute the Euclidean quotient and remainder at the same time.
     fn div_rem_euclid(self, rhs: Rhs) -> (Self::OutputDiv, Self::OutputRem);
 }
 
@@ -83,6 +95,7 @@ pub trait DivRemEuclid<Rhs = Self> {
 ///
 /// Panics if both operands are zeros
 pub trait Gcd<Rhs = Self> {
+    /// The type of the greatest common divisor.
     type Output;
 
     /// Compute the greatest common divisor between the two operands.
@@ -108,7 +121,9 @@ pub trait Gcd<Rhs = Self> {
 ///
 /// Panics if both operands are zeros
 pub trait ExtendedGcd<Rhs = Self> {
+    /// The type of the greatest common divisor.
     type OutputGcd;
+    /// The type of the Bézout coefficients.
     type OutputCoeff;
 
     /// Calculate the greatest common divisor between the two operands, returns
@@ -120,15 +135,21 @@ pub trait ExtendedGcd<Rhs = Self> {
 
 /// Computer the floored square root of the number and return the remainder at the same time.
 pub trait SquareRootRem {
+    /// The type of the (floored) root and the remainder.
     type Output;
 
+    /// Compute the floored square root together with the remainder, so that
+    /// `root*root + rem == *self` and `0 <= rem <= 2*root`.
     fn sqrt_rem(&self) -> (Self::Output, Self);
 }
 
 /// Computer the floored cubic root of the number and return the remainder at the same time.
 pub trait CubicRootRem {
+    /// The type of the (floored) root and the remainder.
     type Output;
 
+    /// Compute the floored cubic root together with the remainder, so that
+    /// `root*root*root + rem == *self` and `0 <= rem < 3*root*root + 3*root`.
     fn cbrt_rem(&self) -> (Self::Output, Self);
 }
 

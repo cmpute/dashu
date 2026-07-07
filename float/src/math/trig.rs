@@ -1,3 +1,11 @@
+//! Trigonometric functions, built on top of the cached constants π/2 and the real
+//! [`exp`](crate::FBig::exp)/[`ln`](crate::FBig::ln) primitives:
+//!
+//! - Circular: `sin`, `cos`, `tan`, `sin_cos`, and their inverses `asin`, `acos`, `atan`.
+//!
+//! Argument reduction to the first quadrant reuses the cached π so that repeated
+//! calls at increasing precision extend the shared constant state.
+
 use crate::{
     error::{assert_limited_precision, FpError},
     fbig::FBig,

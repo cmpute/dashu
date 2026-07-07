@@ -59,6 +59,10 @@
 //!   `Complex<f64>` (base-2, mirroring `FBig`'s primitive-float conversions).
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![deny(missing_docs)]
+#![deny(clippy::dbg_macro)]
+#![deny(clippy::undocumented_unsafe_blocks)]
+#![deny(clippy::let_underscore_must_use)]
 
 extern crate alloc;
 
