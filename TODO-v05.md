@@ -136,9 +136,9 @@ Every item here changes public API and **must** land in 0.5. File:line refs are 
 - [x] **Move verbose type prose to the guide** — `integer/src/ubig.rs:10` `TODO(v0.5)` **done.** The
       verbose construction/parsing-printing/layout prose on `UBig`, `IBig`, and `FBig` (and a light
       trim on `RBig`/`CBig`) was condensed to a brief summary + guide link; the `TODO(v0.5)` marker is
-      removed. Runnable `# Examples` kept verbatim (no doctest churn). Guide links target the GitHub
-      source on `master` since the mdBook isn't deployed yet (Phase 4 deploy pending) — switch to the
-      rendered `cmpute.github.io` URLs when the Pages deploy lands. Pairs with Phase 4.2.
+      removed. Runnable `# Examples` kept verbatim (no doctest churn). Guide links point to the
+      rendered site at `https://zyxin.xyz/dashu/` (the guide is live — see Phase 4.1). Pairs with
+      Phase 4.2.
 - [ ] **`integer/src/pow.rs:67`** — switch to right-to-left exponentiation (cheaper squaring schedule).
 - [ ] **`float/src/div.rs:344`** — avoid the double power in the division kernel; let `q += q0` become
       `|=` when `B` is a power of 2.
@@ -303,7 +303,8 @@ removed). All additive — safe as point releases under 0.5.x.
 > stubs in the previous revision are now real, and four new pages were added (`cached.md`,
 > `performance.md`, `compliance.md`, `ops/trig_n_hyper.md`). `CBig` is documented *across* the
 > existing pages (construct/convert/io/ops/faq) rather than in a dedicated chapter — intentional, no
-> separate chapter is planned. Only the **deploy** step + the **README badge** remain.
+> separate chapter is planned. The guide is **deployed** at `https://zyxin.xyz/dashu/`; only the
+> README **Book** badge (+ optional CI auto-deploy) remain.
 
 ### 4.1 Infrastructure
 - [x] Extend `guide/book.toml`: `[output.html]` + `[preprocessor.katex]` are configured. (`mdbook-toc`
@@ -313,9 +314,15 @@ removed). All additive — safe as point releases under 0.5.x.
 - [x] **Build-check CI** added: `.github/workflows/guide.yml` installs `mdbook` (0.5.3) + the
       mdbook-0.5 build of `mdbook-katex` (pinned by git rev) and runs `mdbook build guide`. Fails on
       errors and on any `SUMMARY.md` entry whose target file is missing (broken-link guard).
-- [ ] **Deploy to GitHub Pages** — *not yet done.* `guide.yml` is build-check only (it explicitly says
-      "nothing is deployed"). Add a deploy step (e.g. `peaceiris/actions-gh-pages` or the
-      `actions/deploy-pages` flow) and re-enable the commented-out **Book** badge in `README.md:8`.
+- [x] **Deploy the guide** — *live at `https://zyxin.xyz/dashu/`* (custom domain on the `gh-pages`
+      orphan branch). The guide was built with mdBook 0.5.3 + mdbook-katex and pushed to an orphan
+      `gh-pages` branch (no shared history with `master`/`develop`). This was a **one-shot manual**
+      deploy; future guide updates require rebuilding and re-pushing `gh-pages`.
+- [ ] **CI auto-deploy** (optional follow-up): `guide.yml` is still build-check only — it does *not*
+      rebuild/push `gh-pages` on merge. Adding a deploy step (e.g. `peaceiris/actions-gh-pages` or
+      `actions/deploy-pages`) would keep the published site in sync automatically.
+- [ ] **Re-enable the Book badge** in `README.md:8` (currently commented out) — point it at
+      `https://zyxin.xyz/dashu/`.
 
 ### 4.2 Content
 - [x] Fill the previously-stub pages: `io/{index,parse,print,serialize,interop}.md`,

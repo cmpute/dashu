@@ -7,7 +7,7 @@ use crate::{error::panic_divide_by_0, repr::Repr};
 ///
 /// This struct represents a rational number with arbitrarily large numerator and denominator
 /// based on [UBig] and [IBig]. See the
-/// [user guide](https://github.com/cmpute/dashu/blob/master/guide/src/types.md) for construction,
+/// [user guide](https://zyxin.xyz/dashu/types.html) for construction,
 /// parsing, and the [`Relaxed`] variant.
 #[derive(PartialOrd, Ord)]
 #[repr(transparent)]

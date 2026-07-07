@@ -21,12 +21,12 @@ use dashu_int::{DoubleWord, IBig};
 /// Binary operators require both operands to share the same base and rounding mode (no hidden
 /// conversion is performed); comparison allows differing rounding modes but not differing bases.
 ///
-/// See the [user guide](https://github.com/cmpute/dashu/blob/master/guide/src/types.md) for the
+/// See the [user guide](https://zyxin.xyz/dashu/types.html) for the
 /// memory layout, and the
-/// [construction](https://github.com/cmpute/dashu/blob/master/guide/src/construct.md),
-/// [parsing & printing](https://github.com/cmpute/dashu/blob/master/guide/src/io/parse.md),
-/// [IEEE 754 compliance](https://github.com/cmpute/dashu/blob/master/guide/src/compliance.md), and
-/// [conversion](https://github.com/cmpute/dashu/blob/master/guide/src/convert.md) pages for those
+/// [construction](https://zyxin.xyz/dashu/construct.html),
+/// [parsing & printing](https://zyxin.xyz/dashu/io/parse.html),
+/// [IEEE 754 compliance](https://zyxin.xyz/dashu/compliance.html), and
+/// [conversion](https://zyxin.xyz/dashu/convert.html) pages for those
 /// topics. (Notably: `FBig` has no NaN, supports IEEE-754 signed zero, and treats infinities as
 /// terminal values.) The accepted string format is documented on the [`core::str::FromStr`] impl.
 ///

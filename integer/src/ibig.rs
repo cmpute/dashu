@@ -13,7 +13,7 @@ use crate::{
 /// [`Option<IBig>`] the same size as [`IBig`].
 ///
 /// For the full discussion — construction, parsing, printing, and the memory layout — see the
-/// [user guide](https://github.com/cmpute/dashu/blob/master/guide/src/types.md).
+/// [user guide](https://zyxin.xyz/dashu/types.html).
 ///
 /// # Examples
 ///

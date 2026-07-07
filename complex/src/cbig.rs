@@ -2,8 +2,8 @@
 //!
 //! [`CBig`] is a pair of real-valued parts (`re`, `im`) over a single shared
 //! [`Context`](crate::Context) — two [`dashu_float::Repr`]s carrying one precision and one rounding
-//! mode. See the [user guide](https://github.com/cmpute/dashu/blob/master/guide/src/types.md) for the
-//! layout, and the [compliance notes](https://github.com/cmpute/dashu/blob/master/guide/src/compliance.md)
+//! mode. See the [user guide](https://zyxin.xyz/dashu/types.html) for the
+//! layout, and the [compliance notes](https://zyxin.xyz/dashu/compliance.html)
 //! for the C99 Annex G / no-NaN model.
 
 use crate::repr::Context;
@@ -30,7 +30,7 @@ use dashu_int::Word;
 ///
 /// Each component of a result is rounded independently with the single mode `R`, after the operation
 /// feeds each part enough guard precision. `CBig` follows the C99 Annex G / Kahan model and has no
-/// NaN; see the [compliance guide](https://github.com/cmpute/dashu/blob/master/guide/src/compliance.md)
+/// NaN; see the [compliance guide](https://zyxin.xyz/dashu/compliance.html)
 /// for the full error policy.
 ///
 /// # Examples
