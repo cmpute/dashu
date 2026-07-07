@@ -16,6 +16,8 @@
 - Documented the `fmt` and `fmt::expanded` modules and enabled `#![deny(missing_docs)]` together
   with `clippy::dbg_macro`, `clippy::undocumented_unsafe_blocks`, and `clippy::let_underscore_must_use`
   as crate-level denies.
+- Trimmed the `RBig` rustdoc to a concise summary with a pointer to the user guide (and fixed an
+  "an rational" → "a rational" typo).
 
 ## 0.4.3
 

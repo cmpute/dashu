@@ -133,8 +133,12 @@ Every item here changes public API and **must** land in 0.5. File:line refs are 
       TODO is the only fast-fmt item left for 0.5.x. Non-breaking internal perf, gated on 1.2.
 
 ### 1.5 Doc / internal (non-breaking, fold in opportunistically)
-- [ ] **Move verbose type prose to the guide** — `integer/src/ubig.rs:10` `TODO(v0.5)` (leave a brief
-      summary + link in the doc-comment). Pairs with Phase 4.
+- [x] **Move verbose type prose to the guide** — `integer/src/ubig.rs:10` `TODO(v0.5)` **done.** The
+      verbose construction/parsing-printing/layout prose on `UBig`, `IBig`, and `FBig` (and a light
+      trim on `RBig`/`CBig`) was condensed to a brief summary + guide link; the `TODO(v0.5)` marker is
+      removed. Runnable `# Examples` kept verbatim (no doctest churn). Guide links target the GitHub
+      source on `master` since the mdBook isn't deployed yet (Phase 4 deploy pending) — switch to the
+      rendered `cmpute.github.io` URLs when the Pages deploy lands. Pairs with Phase 4.2.
 - [ ] **`integer/src/pow.rs:67`** — switch to right-to-left exponentiation (cheaper squaring schedule).
 - [ ] **`float/src/div.rs:344`** — avoid the double power in the division kernel; let `q += q0` become
       `|=` when `B` is a power of 2.
@@ -319,9 +323,8 @@ removed). All additive — safe as point releases under 0.5.x.
 - [x] New v0.5 pages: `cached.md` (the constant cache / `CachedFBig`), `performance.md`,
       `compliance.md` (the IEEE-754 / C99 Annex-G compliance notes).
 - [x] `CBig` covered across pages (construction, arithmetic, transcendentals, branch cuts, I/O).
-- [ ] **Migrate verbose API prose out of doc-comments** (per `integer/src/ubig.rs:10` `TODO(v0.5)`)
-      leaving concise rustdoc behind — pairs with the `#![deny(missing_docs)]` work in 1.2. *Still
-      open; the `TODO(v0.5)` marker is still in the source.*
+- [x] **Migrate verbose API prose out of doc-comments** (per `integer/src/ubig.rs:10` `TODO(v0.5)`)
+      — **done** (see Phase 1.5). Concise rustdoc + guide links now; the `TODO(v0.5)` marker is gone.
 - [x] Cross-check MSRV statement in `guide/src/index.md` — still "1.68", matching `README.md` and
       `rust-version = "1.68"`; no 0.5 bump is expected (cache is `alloc`-only, mdBook is build-time).
 

@@ -20,6 +20,9 @@
   `IntoMontgomeryRing` traits, and enabled `#![deny(missing_docs)]` together with
   `clippy::dbg_macro`, `clippy::undocumented_unsafe_blocks`, and `clippy::let_underscore_must_use`
   as crate-level denies (resolving the `v0.5` lint TODOs in `lib.rs`).
+- Migrated the verbose `UBig`/`IBig` type prose (construction, parsing/printing, memory layout) out
+  of the rustdoc and into the user guide, leaving a concise summary plus a guide link (resolving the
+  `TODO(v0.5)` in `ubig.rs`). The runnable `# Examples` are kept verbatim.
 
 ## 0.4.3
 

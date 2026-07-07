@@ -1,10 +1,10 @@
 //! The [`CBig`] type: an arbitrary-precision complex number.
 //!
-//! A [`CBig`] is a pair of real parts (`re`, `im`) sharing one precision and one rounding mode,
-//! mirroring [`dashu_float::FBig`]'s own `Repr`+`Context` layout generalized to two parts over a
-//! **single shared** [`Context`](crate::Context). Storing one context — rather than wrapping two
-//! `FBig`s (each carrying its own) — makes the uniform-precision invariant *physical*: there is
-//! exactly one precision slot, so `re` and `im` structurally cannot disagree.
+//! [`CBig`] is a pair of real-valued parts (`re`, `im`) over a single shared
+//! [`Context`](crate::Context) — two [`dashu_float::Repr`]s carrying one precision and one rounding
+//! mode. See the [user guide](https://github.com/cmpute/dashu/blob/master/guide/src/types.md) for the
+//! layout, and the [compliance notes](https://github.com/cmpute/dashu/blob/master/guide/src/compliance.md)
+//! for the C99 Annex G / no-NaN model.
 
 use crate::repr::Context;
 use dashu_base::Sign;
@@ -28,9 +28,10 @@ use dashu_int::Word;
 ///
 /// # Rounding
 ///
-/// Each component of a result is rounded independently with the single mode `R`, after the
-/// operation feeds each part enough guard precision (the same near-correctly-rounded guarantee class
-/// `dashu-float`'s transcendentals carry). See the crate-level docs for the no-NaN error policy.
+/// Each component of a result is rounded independently with the single mode `R`, after the operation
+/// feeds each part enough guard precision. `CBig` follows the C99 Annex G / Kahan model and has no
+/// NaN; see the [compliance guide](https://github.com/cmpute/dashu/blob/master/guide/src/compliance.md)
+/// for the full error policy.
 ///
 /// # Examples
 ///

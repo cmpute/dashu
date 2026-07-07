@@ -116,6 +116,9 @@
 - Documented the `math::trig` module and enabled `#![deny(missing_docs)]` together with
   `clippy::dbg_macro`, `clippy::undocumented_unsafe_blocks`, and `clippy::let_underscore_must_use`
   as crate-level denies.
+- Migrated the verbose `FBig` type prose (the generic-parameter, parsing/printing, binary-operator,
+  IEEE 754, and conversion sections) out of the rustdoc and into the user guide, leaving a concise
+  summary with guide links. The runnable `# Examples` are kept verbatim.
 
 ## 0.4.5
 
