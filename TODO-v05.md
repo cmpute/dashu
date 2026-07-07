@@ -179,8 +179,10 @@ the primary `Real`/`Decimal`.
 
 ### Still open
 
-- [ ] **Memory growth:** no eviction/cap/shrink policy — a 1M-digit π lives in the cache until
-      `clear_cache()`/drop. Decide whether 0.5 ships a cap or just documents it.
+- [x] **Memory growth:** *decided — not planned for v0.5.* No eviction/cap/shrink policy; a 1M-digit
+      π lives in the cache until `clear_cache()`/drop. This is documented as expected behavior —
+      callers own the cache lifetime explicitly via the `CachedFBig`/`ConstCache` handle. Revisit
+      only if real workloads report memory pressure.
 
 > *Resolved:* **no `thread_local!` / global-cache convenience layer.** The explicit `CachedFBig` API
 > (plus the `FastReal`/`FastDecimal` aliases above) is the supported fast path; thread-local
@@ -373,7 +375,7 @@ removed). All additive — safe as point releases under 0.5.x.
 |------|------------|
 | Near-correctly-rounded complex mul/div is hard | Guard-digit re-round mirroring `FBig`; fuzz vs MPC/rug oracle (Phase 0.2/3.3). Guaranteed-correct Ziv is a 0.5.x follow-up |
 | Trig/exp correctness is currently unverified in CI | Phase 0.2 *before* CBig consumes those functions |
-| Cache memory unbounded growth | Decide cap/shrink policy (Phase 2); at minimum document |
+| Cache memory unbounded growth | **Not planned for v0.5** — no cap; cache grows until `clear_cache()`/drop (documented; callers own the lifetime via the `CachedFBig`/`ConstCache` handle) |
 | Guide content churn if written before API freeze | Content trails Phases 1–3; only infra starts early |
 | Version skew complicates publishing | Phase 5 sync; pin internal deps to `0.5.0` |
 | `_dword` paths under-tested yet "first-class" | Phase 0.2 direct tests; required before trusting complex on float |
