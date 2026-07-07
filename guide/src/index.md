@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/dashu-banner.png" alt="dashu">
+</p>
+
 # The user guide for `dashu`
 
 Welcome to the `dashu` user guide! `dashu` is a library set of arbitrary precision numbers (aka. big numbers) implemented in Rust.

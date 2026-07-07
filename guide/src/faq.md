@@ -2,6 +2,15 @@
 
 `dashu` is the pinyin romanization of 大数 ("dà shù"), Chinese for *big number*.
 
+<p align="center">
+  <img src="./assets/dashu-logo.png" alt="The dashu logo: a stylized banyan tree" width="200">
+</p>
+
+The logo is a stylized **banyan tree** — an archetypal *big tree* (大树, also "dà shù"). It's a
+bilingual pun: 大树 (*big tree*) and 大数 (*big number*, the library's namesake) are homophones in
+Mandarin, so a grand tree stands in visually for the "big number" behind the name. The downward
+strokes are the banyan's signature [aerial roots](https://en.wikipedia.org/wiki/Aerial_root).
+
 ## Why to use `dashu`?
 
 `dashu` aims to be a Rust-native, ergonomic alternative to GNU GMP + MPFR + MPC: arbitrary-precision integers, floats, rationals, and complex numbers, all in pure Rust with full `no_std` support and arbitrary-base floats.

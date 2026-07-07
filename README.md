@@ -1,5 +1,9 @@
 # dashu
 
+<p align="center">
+  <img src="guide/src/assets/dashu-banner.png" alt="dashu">
+</p>
+
 [![Crate](https://img.shields.io/crates/v/dashu.svg)](https://crates.io/crates/dashu)
 [![Docs](https://docs.rs/dashu/badge.svg)](https://docs.rs/dashu)
 [![Tests](https://github.com/cmpute/dashu/actions/workflows/tests.yml/badge.svg)](https://github.com/cmpute/dashu/actions)
