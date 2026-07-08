@@ -20,6 +20,7 @@
   - [Trigonometric and Hyperbolic Functions](./ops/trig_n_hyper.md)
   - [Bit Manipulation](./ops/bit.md)
   - [Number Theoretic](./ops/num_theory.md)
+- [Python Binding](./python.md)
 
 ---
 
