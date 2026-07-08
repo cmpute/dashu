@@ -341,7 +341,8 @@ impl FPy {
         let ctx = self.0.context();
         Ok(Self(unwrap_float(ctx.nth_root(n, self.0.repr()), ctx)?))
     }
-    fn powf(&self, w: &Self) -> PyResult<Self> {
+    fn powf(&self, w: UniInput<'_>) -> PyResult<Self> {
+        let w = w.into_fpy()?;
         let ctx = self.0.context();
         let res = with_cache(|c| ctx.powf(self.0.repr(), w.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))
@@ -351,7 +352,8 @@ impl FPy {
         let ctx = self.0.context();
         Ok(Self(unwrap_float(ctx.powi(self.0.repr(), n), ctx)?))
     }
-    fn atan2(&self, x: &Self) -> PyResult<Self> {
+    fn atan2(&self, x: UniInput<'_>) -> PyResult<Self> {
+        let x = x.into_fpy()?;
         let ctx = self.0.context();
         let res = with_cache(|c| ctx.atan2(self.0.repr(), x.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))
@@ -623,7 +625,8 @@ impl DPy {
         let ctx = self.0.context();
         Ok(Self(unwrap_float(ctx.nth_root(n, self.0.repr()), ctx)?))
     }
-    fn powf(&self, w: &Self) -> PyResult<Self> {
+    fn powf(&self, w: UniInput<'_>) -> PyResult<Self> {
+        let w = w.into_dpy()?;
         let ctx = self.0.context();
         let res = with_cache(|c| ctx.powf(self.0.repr(), w.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))
@@ -633,7 +636,8 @@ impl DPy {
         let ctx = self.0.context();
         Ok(Self(unwrap_float(ctx.powi(self.0.repr(), n), ctx)?))
     }
-    fn atan2(&self, x: &Self) -> PyResult<Self> {
+    fn atan2(&self, x: UniInput<'_>) -> PyResult<Self> {
+        let x = x.into_dpy()?;
         let ctx = self.0.context();
         let res = with_cache(|c| ctx.atan2(self.0.repr(), x.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))

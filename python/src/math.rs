@@ -1,178 +1,131 @@
-//! Module-level math functions. Each routes through the global `ConstCache` + the
-//! panic-free `Context` layer (via [`crate::cache::unwrap_float`]), so domain errors raise
-//! Python exceptions instead of aborting the session.
+//! Module-level math functions. Each accepts any Python number (via [`UniInput`]) and
+//! routes through the global `ConstCache` + the panic-free `Context` layer (via
+//! [`crate::cache::unwrap_float`]), so domain errors raise Python exceptions instead of
+//! aborting the session.
 
 use crate::cache::{unwrap_float, with_cache};
-use crate::types::{FPy, IPy, UPy};
+use crate::types::{FPy, UPy, UniInput};
 use dashu_base::ring::{ExtendedGcd, Gcd};
 use pyo3::prelude::*;
 
+/// Transcendental taking one float operand and a cache (`(repr, Option<&mut ConstCache>)`).
+macro_rules! math_trans {
+    ($name:ident, $ctx_method:ident) => {
+        #[pyfunction]
+        pub fn $name(x: UniInput<'_>) -> PyResult<FPy> {
+            let x = x.into_fpy()?;
+            let ctx = x.0.context();
+            let res = with_cache(|c| ctx.$ctx_method(x.0.repr(), Some(c)));
+            Ok(FPy(unwrap_float(res, ctx)?))
+        }
+    };
+}
+
+/// Algebraic root taking one float operand, no cache.
+macro_rules! math_root {
+    ($name:ident, $ctx_method:ident) => {
+        #[pyfunction]
+        pub fn $name(x: UniInput<'_>) -> PyResult<FPy> {
+            let x = x.into_fpy()?;
+            let ctx = x.0.context();
+            Ok(FPy(unwrap_float(ctx.$ctx_method(x.0.repr()), ctx)?))
+        }
+    };
+}
+
 // Trigonometric
+math_trans!(sin, sin);
+math_trans!(cos, cos);
+math_trans!(tan, tan);
+math_trans!(asin, asin);
+math_trans!(acos, acos);
+math_trans!(atan, atan);
+
+// Hyperbolic
+math_trans!(sinh, sinh);
+math_trans!(cosh, cosh);
+math_trans!(tanh, tanh);
+math_trans!(asinh, asinh);
+math_trans!(acosh, acosh);
+math_trans!(atanh, atanh);
+
+// Exponential and logarithm
+math_trans!(exp, exp);
+math_trans!(expm1, exp_m1);
+math_trans!(ln, ln);
+math_trans!(ln_1p, ln_1p);
+// `log`/`log1p` are aliases for `ln`/`ln_1p`.
+math_trans!(log, ln);
+math_trans!(log1p, ln_1p);
+
+// Roots (algebraic — no cache)
+math_root!(sqrt, sqrt);
+math_root!(cbrt, cbrt);
+
 #[pyfunction]
-pub fn sin(x: &FPy) -> PyResult<FPy> {
+pub fn nth_root(x: UniInput<'_>, n: usize) -> PyResult<FPy> {
+    let x = x.into_fpy()?;
     let ctx = x.0.context();
-    let res = with_cache(|c| ctx.sin(x.0.repr(), Some(c)));
-    Ok(FPy(unwrap_float(res, ctx)?))
+    Ok(FPy(unwrap_float(ctx.nth_root(n, x.0.repr()), ctx)?))
 }
+
 #[pyfunction]
-pub fn cos(x: &FPy) -> PyResult<FPy> {
-    let ctx = x.0.context();
-    let res = with_cache(|c| ctx.cos(x.0.repr(), Some(c)));
-    Ok(FPy(unwrap_float(res, ctx)?))
-}
-#[pyfunction]
-pub fn tan(x: &FPy) -> PyResult<FPy> {
-    let ctx = x.0.context();
-    let res = with_cache(|c| ctx.tan(x.0.repr(), Some(c)));
-    Ok(FPy(unwrap_float(res, ctx)?))
-}
-#[pyfunction]
-pub fn asin(x: &FPy) -> PyResult<FPy> {
-    let ctx = x.0.context();
-    let res = with_cache(|c| ctx.asin(x.0.repr(), Some(c)));
-    Ok(FPy(unwrap_float(res, ctx)?))
-}
-#[pyfunction]
-pub fn acos(x: &FPy) -> PyResult<FPy> {
-    let ctx = x.0.context();
-    let res = with_cache(|c| ctx.acos(x.0.repr(), Some(c)));
-    Ok(FPy(unwrap_float(res, ctx)?))
-}
-#[pyfunction]
-pub fn atan(x: &FPy) -> PyResult<FPy> {
-    let ctx = x.0.context();
-    let res = with_cache(|c| ctx.atan(x.0.repr(), Some(c)));
-    Ok(FPy(unwrap_float(res, ctx)?))
-}
-#[pyfunction]
-pub fn atan2(y: &FPy, x: &FPy) -> PyResult<FPy> {
+pub fn atan2(y: UniInput<'_>, x: UniInput<'_>) -> PyResult<FPy> {
+    let y = y.into_fpy()?;
+    let x = x.into_fpy()?;
     let ctx = y.0.context();
     let res = with_cache(|c| ctx.atan2(y.0.repr(), x.0.repr(), Some(c)));
     Ok(FPy(unwrap_float(res, ctx)?))
 }
 
-// Hyperbolic
 #[pyfunction]
-pub fn sinh(x: &FPy) -> PyResult<FPy> {
-    let ctx = x.0.context();
-    let res = with_cache(|c| ctx.sinh(x.0.repr(), Some(c)));
-    Ok(FPy(unwrap_float(res, ctx)?))
-}
-#[pyfunction]
-pub fn cosh(x: &FPy) -> PyResult<FPy> {
-    let ctx = x.0.context();
-    let res = with_cache(|c| ctx.cosh(x.0.repr(), Some(c)));
-    Ok(FPy(unwrap_float(res, ctx)?))
-}
-#[pyfunction]
-pub fn tanh(x: &FPy) -> PyResult<FPy> {
-    let ctx = x.0.context();
-    let res = with_cache(|c| ctx.tanh(x.0.repr(), Some(c)));
-    Ok(FPy(unwrap_float(res, ctx)?))
-}
-#[pyfunction]
-pub fn asinh(x: &FPy) -> PyResult<FPy> {
-    let ctx = x.0.context();
-    let res = with_cache(|c| ctx.asinh(x.0.repr(), Some(c)));
-    Ok(FPy(unwrap_float(res, ctx)?))
-}
-#[pyfunction]
-pub fn acosh(x: &FPy) -> PyResult<FPy> {
-    let ctx = x.0.context();
-    let res = with_cache(|c| ctx.acosh(x.0.repr(), Some(c)));
-    Ok(FPy(unwrap_float(res, ctx)?))
-}
-#[pyfunction]
-pub fn atanh(x: &FPy) -> PyResult<FPy> {
-    let ctx = x.0.context();
-    let res = with_cache(|c| ctx.atanh(x.0.repr(), Some(c)));
-    Ok(FPy(unwrap_float(res, ctx)?))
-}
-
-// Exponential and logarithm
-#[pyfunction]
-pub fn exp(x: &FPy) -> PyResult<FPy> {
-    let ctx = x.0.context();
-    let res = with_cache(|c| ctx.exp(x.0.repr(), Some(c)));
-    Ok(FPy(unwrap_float(res, ctx)?))
-}
-#[pyfunction]
-pub fn expm1(x: &FPy) -> PyResult<FPy> {
-    let ctx = x.0.context();
-    let res = with_cache(|c| ctx.exp_m1(x.0.repr(), Some(c)));
-    Ok(FPy(unwrap_float(res, ctx)?))
-}
-#[pyfunction]
-pub fn log(x: &FPy) -> PyResult<FPy> {
-    let ctx = x.0.context();
-    let res = with_cache(|c| ctx.ln(x.0.repr(), Some(c)));
-    Ok(FPy(unwrap_float(res, ctx)?))
-}
-#[pyfunction]
-pub fn log1p(x: &FPy) -> PyResult<FPy> {
-    let ctx = x.0.context();
-    let res = with_cache(|c| ctx.ln_1p(x.0.repr(), Some(c)));
-    Ok(FPy(unwrap_float(res, ctx)?))
-}
-#[pyfunction]
-pub fn ln(x: &FPy) -> PyResult<FPy> {
-    let ctx = x.0.context();
-    let res = with_cache(|c| ctx.ln(x.0.repr(), Some(c)));
-    Ok(FPy(unwrap_float(res, ctx)?))
-}
-#[pyfunction]
-pub fn ln_1p(x: &FPy) -> PyResult<FPy> {
-    let ctx = x.0.context();
-    let res = with_cache(|c| ctx.ln_1p(x.0.repr(), Some(c)));
-    Ok(FPy(unwrap_float(res, ctx)?))
-}
-
-// Roots and power (sqrt/cbrt/nth_root/hypot are algebraic — no cache, but still via Context)
-#[pyfunction]
-pub fn sqrt(x: &FPy) -> PyResult<FPy> {
-    let ctx = x.0.context();
-    Ok(FPy(unwrap_float(ctx.sqrt(x.0.repr()), ctx)?))
-}
-#[pyfunction]
-pub fn cbrt(x: &FPy) -> PyResult<FPy> {
-    let ctx = x.0.context();
-    Ok(FPy(unwrap_float(ctx.cbrt(x.0.repr()), ctx)?))
-}
-#[pyfunction]
-pub fn nth_root(x: &FPy, n: usize) -> PyResult<FPy> {
-    let ctx = x.0.context();
-    Ok(FPy(unwrap_float(ctx.nth_root(n, x.0.repr()), ctx)?))
-}
-#[pyfunction]
-pub fn powf(x: &FPy, y: &FPy) -> PyResult<FPy> {
+pub fn powf(x: UniInput<'_>, y: UniInput<'_>) -> PyResult<FPy> {
+    let x = x.into_fpy()?;
+    let y = y.into_fpy()?;
     let ctx = x.0.context();
     let res = with_cache(|c| ctx.powf(x.0.repr(), y.0.repr(), Some(c)));
     Ok(FPy(unwrap_float(res, ctx)?))
 }
+
 #[pyfunction]
-pub fn powi(x: &FPy, n: crate::types::UniInput<'_>) -> PyResult<FPy> {
+pub fn powi(x: UniInput<'_>, n: UniInput<'_>) -> PyResult<FPy> {
+    let x = x.into_fpy()?;
     let n = n.into_ibig()?;
     let ctx = x.0.context();
     Ok(FPy(unwrap_float(ctx.powi(x.0.repr(), n), ctx)?))
 }
+
 #[pyfunction]
-pub fn hypot(x: &FPy, y: &FPy) -> PyResult<FPy> {
+pub fn hypot(x: UniInput<'_>, y: UniInput<'_>) -> PyResult<FPy> {
+    let x = x.into_fpy()?;
+    let y = y.into_fpy()?;
     let ctx = x.0.context();
     Ok(FPy(unwrap_float(ctx.hypot(x.0.repr(), y.0.repr()), ctx)?))
 }
 
 // Integer number theory
 #[pyfunction]
-pub fn gcd(a: &UPy, b: &UPy) -> UPy {
-    UPy(Gcd::gcd(&a.0, &b.0))
+pub fn gcd(a: UniInput<'_>, b: UniInput<'_>) -> PyResult<UPy> {
+    let a = a.into_ubig()?;
+    let b = b.into_ubig()?;
+    Ok(UPy(Gcd::gcd(&a, &b)))
 }
+
 #[pyfunction]
-pub fn gcd_ext(a: &UPy, b: &UPy) -> (UPy, IPy, IPy) {
-    let (g, s, t) = ExtendedGcd::gcd_ext(&a.0, &b.0);
-    (UPy(g), IPy(s), IPy(t))
+pub fn gcd_ext(
+    a: UniInput<'_>,
+    b: UniInput<'_>,
+) -> PyResult<(UPy, crate::types::IPy, crate::types::IPy)> {
+    let a = a.into_ubig()?;
+    let b = b.into_ubig()?;
+    let (g, s, t) = ExtendedGcd::gcd_ext(&a, &b);
+    Ok((UPy(g), crate::types::IPy(s), crate::types::IPy(t)))
 }
+
 #[pyfunction]
-pub fn lcm(a: &UPy, b: &UPy) -> UPy {
-    let g = Gcd::gcd(&a.0, &b.0);
-    UPy((a.0.clone() / g) * b.0.clone())
+pub fn lcm(a: UniInput<'_>, b: UniInput<'_>) -> PyResult<UPy> {
+    let a = a.into_ubig()?;
+    let b = b.into_ubig()?;
+    let g = Gcd::gcd(&a, &b);
+    Ok(UPy((a / g) * b))
 }

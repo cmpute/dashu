@@ -566,20 +566,20 @@ impl UPy {
         }
         Ok(self.0.ilog(&base))
     }
-    fn is_multiple_of(&self, divisor: &Self) -> bool {
-        self.0.is_multiple_of(&divisor.0)
+    fn is_multiple_of(&self, divisor: UniInput<'_>) -> PyResult<bool> {
+        Ok(self.0.is_multiple_of(&divisor.into_ubig()?))
     }
-    fn remove(&mut self, factor: &Self) -> PyResult<usize> {
+    fn remove(&mut self, factor: UniInput<'_>) -> PyResult<usize> {
         self.0
-            .remove(&factor.0)
+            .remove(&factor.into_ubig()?)
             .ok_or_else(|| PyValueError::new_err("the factor does not divide this number"))
     }
-    fn gcd(&self, other: &Self) -> Self {
-        UPy(Gcd::gcd(&self.0, &other.0))
+    fn gcd(&self, other: UniInput<'_>) -> PyResult<Self> {
+        Ok(UPy(Gcd::gcd(&self.0, &other.into_ubig()?)))
     }
-    fn gcd_ext(&self, other: &Self) -> (Self, IPy, IPy) {
-        let (g, s, t) = ExtendedGcd::gcd_ext(&self.0, &other.0);
-        (UPy(g), IPy(s), IPy(t))
+    fn gcd_ext(&self, other: UniInput<'_>) -> PyResult<(Self, IPy, IPy)> {
+        let (g, s, t) = ExtendedGcd::gcd_ext(&self.0, &other.into_ubig()?);
+        Ok((UPy(g), IPy(s), IPy(t)))
     }
 
     /********** bit operations **********/
@@ -759,28 +759,34 @@ impl UPy {
     }
 
     #[inline]
-    fn __iadd__(&mut self, other: &Self) {
-        self.0 += &other.0;
+    fn __iadd__(&mut self, other: UniInput<'_>) -> PyResult<()> {
+        self.0 += &other.into_ubig()?;
+        Ok(())
     }
     #[inline]
-    fn __isub__(&mut self, other: &Self) {
-        self.0 -= &other.0;
+    fn __isub__(&mut self, other: UniInput<'_>) -> PyResult<()> {
+        self.0 -= &other.into_ubig()?;
+        Ok(())
     }
     #[inline]
-    fn __imul__(&mut self, other: &Self) {
-        self.0 *= &other.0;
+    fn __imul__(&mut self, other: UniInput<'_>) -> PyResult<()> {
+        self.0 *= &other.into_ubig()?;
+        Ok(())
     }
     #[inline]
-    fn __iand__(&mut self, other: &Self) {
-        self.0 &= &other.0;
+    fn __iand__(&mut self, other: UniInput<'_>) -> PyResult<()> {
+        self.0 &= &other.into_ubig()?;
+        Ok(())
     }
     #[inline]
-    fn __ior__(&mut self, other: &Self) {
-        self.0 |= &other.0;
+    fn __ior__(&mut self, other: UniInput<'_>) -> PyResult<()> {
+        self.0 |= &other.into_ubig()?;
+        Ok(())
     }
     #[inline]
-    fn __ixor__(&mut self, other: &Self) {
-        self.0 ^= &other.0;
+    fn __ixor__(&mut self, other: UniInput<'_>) -> PyResult<()> {
+        self.0 ^= &other.into_ubig()?;
+        Ok(())
     }
     #[inline]
     fn __ilshift__(&mut self, other: usize) {
@@ -1151,28 +1157,34 @@ impl IPy {
     }
 
     #[inline]
-    fn __iadd__(&mut self, other: &Self) {
-        self.0 += &other.0;
+    fn __iadd__(&mut self, other: UniInput<'_>) -> PyResult<()> {
+        self.0 += &other.into_ibig()?;
+        Ok(())
     }
     #[inline]
-    fn __isub__(&mut self, other: &Self) {
-        self.0 -= &other.0;
+    fn __isub__(&mut self, other: UniInput<'_>) -> PyResult<()> {
+        self.0 -= &other.into_ibig()?;
+        Ok(())
     }
     #[inline]
-    fn __imul__(&mut self, other: &Self) {
-        self.0 *= &other.0;
+    fn __imul__(&mut self, other: UniInput<'_>) -> PyResult<()> {
+        self.0 *= &other.into_ibig()?;
+        Ok(())
     }
     #[inline]
-    fn __iand__(&mut self, other: &Self) {
-        self.0 &= &other.0;
+    fn __iand__(&mut self, other: UniInput<'_>) -> PyResult<()> {
+        self.0 &= &other.into_ibig()?;
+        Ok(())
     }
     #[inline]
-    fn __ior__(&mut self, other: &Self) {
-        self.0 |= &other.0;
+    fn __ior__(&mut self, other: UniInput<'_>) -> PyResult<()> {
+        self.0 |= &other.into_ibig()?;
+        Ok(())
     }
     #[inline]
-    fn __ixor__(&mut self, other: &Self) {
-        self.0 ^= &other.0;
+    fn __ixor__(&mut self, other: UniInput<'_>) -> PyResult<()> {
+        self.0 ^= &other.into_ibig()?;
+        Ok(())
     }
     #[inline]
     fn __ilshift__(&mut self, other: usize) {

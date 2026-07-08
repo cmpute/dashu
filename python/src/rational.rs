@@ -235,7 +235,8 @@ impl RPy {
     }
     /// Find the simplest rational within the error bounds of the given float.
     #[staticmethod]
-    fn simplest_from_float(f: &FPy) -> Option<Self> {
-        RBig::simplest_from_float(&f.0).map(RPy)
+    fn simplest_from_float(f: UniInput<'_>) -> PyResult<Option<Self>> {
+        let f = f.into_fpy()?;
+        Ok(RBig::simplest_from_float(&f.0).map(RPy))
     }
 }

@@ -249,7 +249,10 @@ impl<'a> UniInput<'a> {
             Self::BUint(x) => Ok(FPy(FBig::from(x.0.clone()))),
             Self::BInt(x) => Ok(FPy(FBig::from(x.0.clone()))),
             Self::OBInt(x) => Ok(FPy(FBig::from(x))),
-            Self::Float(x) => FBig::try_from(x).map(FPy).map_err(conversion_error_to_py),
+            Self::Float(x) => FBig::try_from(x)
+                .map(|f| f.with_precision(f64::MANTISSA_DIGITS as usize).value())
+                .map(FPy)
+                .map_err(conversion_error_to_py),
             Self::BFloat(x) => Ok(FPy(x.0.clone())),
             Self::BRational(x) => FBig::try_from(x.0.clone())
                 .map(FPy)

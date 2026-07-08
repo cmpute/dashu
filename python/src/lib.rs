@@ -10,7 +10,7 @@ mod convert;
 mod float;
 mod int;
 mod math;
-mod ratio;
+mod rational;
 mod types;
 mod utils;
 mod words;
