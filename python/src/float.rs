@@ -108,8 +108,9 @@ impl FPy {
     fn __repr__(&self) -> String {
         format!("<FBig {:?}>", self.0)
     }
-    fn __str__(&self) -> String {
-        format!("{}", self.0)
+    fn __str__(&self) -> PyResult<String> {
+        // print in decimal (an FBig is base 2; dashu's Display would print binary)
+        crate::format::format_dbig(&self.0.to_decimal().value(), "")
     }
     fn __format__(&self, format_spec: &str) -> PyResult<String> {
         crate::format::format_dbig(&self.0.to_decimal().value(), format_spec)
@@ -392,8 +393,8 @@ impl DPy {
     fn __repr__(&self) -> String {
         format!("<DBig {:?}>", self.0)
     }
-    fn __str__(&self) -> String {
-        format!("{}", self.0)
+    fn __str__(&self) -> PyResult<String> {
+        crate::format::format_dbig(&self.0, "")
     }
     fn __format__(&self, format_spec: &str) -> PyResult<String> {
         crate::format::format_dbig(&self.0, format_spec)
