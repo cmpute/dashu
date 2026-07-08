@@ -150,9 +150,10 @@ pub fn powf(x: &FPy, y: &FPy) -> PyResult<FPy> {
     Ok(FPy(unwrap_float(res, ctx)?))
 }
 #[pyfunction]
-pub fn powi(x: &FPy, n: &IPy) -> PyResult<FPy> {
+pub fn powi(x: &FPy, n: crate::types::UniInput<'_>) -> PyResult<FPy> {
+    let n = n.into_ibig()?;
     let ctx = x.0.context();
-    Ok(FPy(unwrap_float(ctx.powi(x.0.repr(), n.0.clone()), ctx)?))
+    Ok(FPy(unwrap_float(ctx.powi(x.0.repr(), n), ctx)?))
 }
 #[pyfunction]
 pub fn hypot(x: &FPy, y: &FPy) -> PyResult<FPy> {

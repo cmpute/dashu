@@ -16,6 +16,8 @@
   `to_int`, `numerator`/`denominator`, `split_at_point`, `sqr`/`cubic`/`pow`.
 - Cross-type conversions: `FBig.to_decimal`/`to_binary`/`to_rational`,
   `RBig.to_float`/`to_decimal`.
+- `powi`, `from_parts`, and `ilog` now accept a plain Python `int` (or a dashu
+  integer) via the `UniInput` dispatch, so e.g. `FBig(12).powi(300)` works.
 - Broadened constructors: `FBig`/`DBig`/`RBig`/`CBig` now accept any Python number
   (int/float/`Decimal`/`Fraction`) in addition to strings.
 - A module-level `math` API (`sin`/`cos`/…/`exp`/`ln`/`sqrt`/`gcd`/`lcm`/…) and a

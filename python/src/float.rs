@@ -228,8 +228,8 @@ impl FPy {
         FPy(self.0.clone().with_precision(precision).value())
     }
     #[staticmethod]
-    fn from_parts(significand: &IPy, exponent: isize) -> Self {
-        FPy(FBig::from_parts(significand.0.clone(), exponent))
+    fn from_parts(significand: UniInput<'_>, exponent: isize) -> PyResult<Self> {
+        Ok(FPy(FBig::from_parts(significand.into_ibig()?, exponent)))
     }
 
     /********** conversions **********/
@@ -346,9 +346,10 @@ impl FPy {
         let res = with_cache(|c| ctx.powf(self.0.repr(), w.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))
     }
-    fn powi(&self, n: &IPy) -> PyResult<Self> {
+    fn powi(&self, n: UniInput<'_>) -> PyResult<Self> {
+        let n = n.into_ibig()?;
         let ctx = self.0.context();
-        Ok(Self(unwrap_float(ctx.powi(self.0.repr(), n.0.clone()), ctx)?))
+        Ok(Self(unwrap_float(ctx.powi(self.0.repr(), n), ctx)?))
     }
     fn atan2(&self, x: &Self) -> PyResult<Self> {
         let ctx = self.0.context();
@@ -509,8 +510,8 @@ impl DPy {
         DPy(self.0.clone().with_precision(precision).value())
     }
     #[staticmethod]
-    fn from_parts(significand: &IPy, exponent: isize) -> Self {
-        DPy(DBig::from_parts(significand.0.clone(), exponent))
+    fn from_parts(significand: UniInput<'_>, exponent: isize) -> PyResult<Self> {
+        Ok(DPy(DBig::from_parts(significand.into_ibig()?, exponent)))
     }
 
     /********** conversions **********/
@@ -627,9 +628,10 @@ impl DPy {
         let res = with_cache(|c| ctx.powf(self.0.repr(), w.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))
     }
-    fn powi(&self, n: &IPy) -> PyResult<Self> {
+    fn powi(&self, n: UniInput<'_>) -> PyResult<Self> {
+        let n = n.into_ibig()?;
         let ctx = self.0.context();
-        Ok(Self(unwrap_float(ctx.powi(self.0.repr(), n.0.clone()), ctx)?))
+        Ok(Self(unwrap_float(ctx.powi(self.0.repr(), n), ctx)?))
     }
     fn atan2(&self, x: &Self) -> PyResult<Self> {
         let ctx = self.0.context();

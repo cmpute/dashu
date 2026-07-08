@@ -23,7 +23,7 @@ use pyo3::{
 use crate::{
     cache::{unwrap_complex, unwrap_float, with_cache},
     convert::{conversion_error_to_py, parse_error_to_py, parse_to_ibig, parse_to_long},
-    types::{CPy, DPy, FPy},
+    types::{CPy, DPy, FPy, UniInput},
 };
 
 /// Promote any real Python number (or a `(re, im)` pair / Python `complex`) to a bare `CBig`.
@@ -272,9 +272,10 @@ impl CPy {
         let ctx = self.0.context();
         Ok(Self(unwrap_complex(ctx.sqrt(&self.0), ctx)?))
     }
-    fn powi(&self, n: &crate::types::IPy) -> PyResult<Self> {
+    fn powi(&self, n: UniInput<'_>) -> PyResult<Self> {
+        let n = n.into_ibig()?;
         let ctx = self.0.context();
-        Ok(Self(unwrap_complex(ctx.powi(&self.0, n.0.clone()), ctx)?))
+        Ok(Self(unwrap_complex(ctx.powi(&self.0, n), ctx)?))
     }
     fn powf(&self, w: &Self) -> PyResult<Self> {
         let ctx = self.0.context();

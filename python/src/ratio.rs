@@ -228,8 +228,10 @@ impl RPy {
         DPy(self.0.to_float::<mode::HalfAway, 10>(precision).value())
     }
     #[staticmethod]
-    fn from_parts(numerator: &IPy, denominator: &UPy) -> Self {
-        RPy(RBig::from_parts(numerator.0.clone(), denominator.0.clone()))
+    fn from_parts(numerator: UniInput<'_>, denominator: UniInput<'_>) -> PyResult<Self> {
+        let num = numerator.into_ibig()?;
+        let den = denominator.into_ubig()?;
+        Ok(RPy(RBig::from_parts(num, den)))
     }
     /// Find the simplest rational within the error bounds of the given float.
     #[staticmethod]

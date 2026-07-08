@@ -7,6 +7,9 @@ def test_roots():
     assert UBig(1024).nth_root(5) == UBig(4)
     assert UBig(12).sqr() == UBig(144)
     assert UBig(3).cubic() == UBig(27)
+    # ilog accepts a plain int as well as a UBig
+    assert UBig(256).ilog(2) == 8
+    assert IBig(1000).ilog(UBig(10)) == 3
     # IBig: cbrt / odd nth_root are sign-preserving
     assert IBig(-27).cbrt() == IBig(-3)
     assert IBig(-1024).nth_root(5) == IBig(-4)

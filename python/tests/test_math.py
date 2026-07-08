@@ -16,7 +16,9 @@ def test_roots_power():
     assert dashu.sqrt(FBig(9.0)) == FBig(3.0)
     assert dashu.cbrt(FBig(27.0)) == FBig(3.0)
     assert dashu.nth_root(FBig(16.0), 4) == FBig(2.0)
-    # powi (integer power) is exact; powf routes through exp/log and rounds
+    # powi (integer power) is exact; powf routes through exp/log and rounds.
+    # powi accepts a plain Python int as well as an IBig.
+    assert dashu.powi(FBig(2.0), 10) == FBig(1024.0)
     assert dashu.powi(FBig(2.0), IBig(10)) == FBig(1024.0)
     assert abs(float(dashu.powf(FBig(2.0), FBig(10.0))) - 1024.0) < 1e-6
     assert float(dashu.hypot(FBig(3.0), FBig(4.0))) == 5.0

@@ -559,11 +559,12 @@ impl UPy {
     fn cubic(&self) -> Self {
         UPy(self.0.cubic())
     }
-    fn ilog(&self, base: &Self) -> PyResult<usize> {
-        if base.0 <= UBig::ONE {
+    fn ilog(&self, base: UniInput<'_>) -> PyResult<usize> {
+        let base = base.into_ubig()?;
+        if base <= UBig::ONE {
             return Err(PyValueError::new_err("base must be greater than 1"));
         }
-        Ok(self.0.ilog(&base.0))
+        Ok(self.0.ilog(&base))
     }
     fn is_multiple_of(&self, divisor: &Self) -> bool {
         self.0.is_multiple_of(&divisor.0)
@@ -938,11 +939,12 @@ impl IPy {
     fn cubic(&self) -> Self {
         IPy(self.0.cubic())
     }
-    fn ilog(&self, base: &UPy) -> PyResult<usize> {
-        if base.0 <= UBig::ONE {
+    fn ilog(&self, base: UniInput<'_>) -> PyResult<usize> {
+        let base = base.into_ubig()?;
+        if base <= UBig::ONE {
             return Err(PyValueError::new_err("base must be greater than 1"));
         }
-        Ok(self.0.ilog(&base.0))
+        Ok(self.0.ilog(&base))
     }
     fn trailing_zeros(&self) -> Option<usize> {
         self.0.trailing_zeros()
@@ -972,8 +974,8 @@ impl IPy {
         (sign.into(), UPy(mag))
     }
     #[staticmethod]
-    fn from_parts(sign: PySign, magnitude: &UPy) -> Self {
-        IPy(IBig::from_parts(sign.into(), magnitude.0.clone()))
+    fn from_parts(sign: PySign, magnitude: UniInput<'_>) -> PyResult<Self> {
+        Ok(IPy(IBig::from_parts(sign.into(), magnitude.into_ubig()?)))
     }
     fn as_ubig(&self) -> Option<UPy> {
         self.0.as_ubig().cloned().map(UPy)

@@ -227,6 +227,19 @@ impl<'a> UniInput<'a> {
         }
     }
 
+    /// Strict conversion of any integer input (Python `int` or `UBig`/`IBig`) to an `IBig`.
+    /// Non-integer inputs (float/Decimal/Fraction) are rejected.
+    pub fn into_ibig(self) -> PyResult<IBig> {
+        match self {
+            Self::Uint(x) => Ok(x.into()),
+            Self::Int(x) => Ok(IBig::from(x)),
+            Self::BUint(x) => Ok(x.0.clone().into()),
+            Self::BInt(x) => Ok(x.0.clone()),
+            Self::OBInt(x) => Ok(x),
+            _ => Err(PyTypeError::new_err("the input is not an integer")),
+        }
+    }
+
     /// Strict conversion of any numeric input to a binary float (`FPy`).
     /// Decimals are rejected (convert explicitly).
     pub fn into_fpy(self) -> PyResult<FPy> {
