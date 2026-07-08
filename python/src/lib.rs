@@ -8,6 +8,7 @@ mod cache;
 mod complex;
 mod convert;
 mod float;
+mod format;
 mod int;
 mod math;
 mod rational;

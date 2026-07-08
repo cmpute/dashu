@@ -111,8 +111,8 @@ impl FPy {
     fn __str__(&self) -> String {
         format!("{}", self.0)
     }
-    fn __format__(&self, _format_spec: &str) -> String {
-        format!("{}", self.0)
+    fn __format__(&self, format_spec: &str) -> PyResult<String> {
+        crate::format::format_dbig(&self.0.to_decimal().value(), format_spec)
     }
     fn __hash__(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
@@ -395,8 +395,8 @@ impl DPy {
     fn __str__(&self) -> String {
         format!("{}", self.0)
     }
-    fn __format__(&self, _format_spec: &str) -> String {
-        format!("{}", self.0)
+    fn __format__(&self, format_spec: &str) -> PyResult<String> {
+        crate::format::format_dbig(&self.0, format_spec)
     }
     fn __hash__(&self) -> u64 {
         let mut hasher = DefaultHasher::new();

@@ -118,8 +118,17 @@ impl CPy {
     fn __str__(&self) -> String {
         format!("{}", self.0)
     }
-    fn __format__(&self, _format_spec: &str) -> String {
-        format!("{}", self.0)
+    fn __format__(&self, format_spec: &str) -> PyResult<String> {
+        if format_spec.is_empty() {
+            return Ok(format!("{}", self.0));
+        }
+        let (re, im) = self.0.clone().into_parts();
+        let re_s = crate::format::format_dbig(&re.to_decimal().value(), format_spec)?;
+        let mut im_s = crate::format::format_dbig(&im.to_decimal().value(), format_spec)?;
+        if !(im_s.starts_with('-') || im_s.starts_with('+')) {
+            im_s = format!("+{im_s}");
+        }
+        Ok(format!("({re_s}{im_s}j)"))
     }
     fn __hash__(&self) -> u64 {
         // mirror Python's complex hash convention loosely: combine real/imag float hashes

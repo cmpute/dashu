@@ -408,9 +408,11 @@ impl UPy {
     fn __str__(&self) -> String {
         format!("{}", self.0)
     }
-    fn __format__(&self, _format_spec: &str) -> String {
-        // MVP: ignore the format mini-language and delegate to Display.
-        format!("{}", self.0)
+    fn __format__(&self, format_spec: &str, py: Python<'_>) -> PyResult<String> {
+        // delegate to Python int (arbitrary precision — no loss)
+        convert_from_ubig(&self.0, py)?
+            .call_method1("__format__", (format_spec,))?
+            .extract::<String>()
     }
     fn __hash__(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
@@ -880,9 +882,11 @@ impl IPy {
     fn __str__(&self) -> String {
         format!("{}", self.0)
     }
-    fn __format__(&self, _format_spec: &str) -> String {
-        // MVP: ignore the format mini-language and delegate to Display.
-        format!("{}", self.0)
+    fn __format__(&self, format_spec: &str, py: Python<'_>) -> PyResult<String> {
+        // delegate to Python int (arbitrary precision — no loss)
+        convert_from_ibig(&self.0, py)?
+            .call_method1("__format__", (format_spec,))?
+            .extract::<String>()
     }
     fn __hash__(&self) -> u64 {
         let mut hasher = DefaultHasher::new();

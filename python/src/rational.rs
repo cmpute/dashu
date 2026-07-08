@@ -86,8 +86,18 @@ impl RPy {
     fn __str__(&self) -> String {
         format!("{}", self.0)
     }
-    fn __format__(&self, _format_spec: &str) -> String {
-        format!("{}", self.0)
+    fn __format__(&self, format_spec: &str) -> PyResult<String> {
+        if format_spec.is_empty() {
+            return Ok(format!("{}", self.0));
+        }
+        // non-empty spec: convert to a decimal float (lossy) and render with it
+        let parsed = crate::format::parse(format_spec)?;
+        let prec = parsed.prec.unwrap_or(53).max(1);
+        let dbig = self
+            .0
+            .to_float::<dashu_float::round::mode::HalfAway, 10>(prec)
+            .value();
+        crate::format::format_dbig(&dbig, format_spec)
     }
     fn __hash__(&self) -> u64 {
         let mut hasher = DefaultHasher::new();

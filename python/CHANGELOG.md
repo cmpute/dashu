@@ -21,6 +21,10 @@
   `UBig(n) += 5`, `RBig.from_parts(1, 3)`. The module-level `math` functions, `powf`,
   `atan2`, `gcd`/`gcd_ext`/`lcm`, `is_multiple_of`/`remove`, in-place ops, `powi`,
   `from_parts`, `ilog`, and `simplest_from_float` all take native int/float.
+- `__format__` now honors the Python format mini-language for all types: scientific
+  (`e`/`E`), fixed (`f`), general (`g`), integer (`b`/`o`/`d`/`x`/`X`/`c`), with
+  sign/width/align/fill/zero-pad/grouping and precision. Float formatting preserves
+  the value's arbitrary precision (e.g. `f"{FBig(2).with_precision(200).exp():.20e}"`).
 - Broadened constructors: `FBig`/`DBig`/`RBig`/`CBig` now accept any Python number
   (int/float/`Decimal`/`Fraction`) in addition to strings.
 - A module-level `math` API (`sin`/`cos`/…/`exp`/`ln`/`sqrt`/`gcd`/`lcm`/…) and a
