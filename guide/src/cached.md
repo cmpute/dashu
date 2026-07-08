@@ -144,3 +144,46 @@ let _ = (a + b).ln().exp();
 
 assert!(cache.borrow().total_terms() > 0);
 ```
+
+## Complex numbers: `CachedCBig`
+
+The complex type [`CachedCBig`](https://docs.rs/dashu-cmplx/latest/dashu_cmplx/struct.CachedCBig.html)
+is the exact twin of `CachedFBig`: it wraps a
+[`CBig`](https://docs.rs/dashu-cmplx/latest/dashu_cmplx/struct.CBig.html) plus the same shared
+`Rc<RefCell<ConstCache>>` handle, and threads it through the complex transcendentals (`ln`, `exp`,
+`sin`/`cos`/`tan`/`sin_cos`, `asin`/`acos`/`atan`, `powf`, `arg`). The complex transcendentals are
+built entirely from real `FBig` operations, so **the same `ConstCache` (π, ln2, ln10) is reused
+unchanged** — there are no complex-specific constants to store.
+
+```rust
+use dashu::complex::{CBig, CachedCBig};
+use dashu::float::FBig;
+
+// build a cached 1+1i from a plain CBig (fresh cache)
+let z = CachedCBig::from(CBig::from_parts(FBig::from(1), FBig::from(1)));
+
+// ln / exp reuse the shared real-constant cache end to end
+let _ = z.clone().ln().exp();
+```
+
+`CachedCBig` mirrors `CBig`'s full always-on surface (formatting, ordering, conversions, the binary
+operators including cross-type ops against both `CBig` and `FBig`, `Neg`/`Inverse`, `Sum`/`Product`),
+and is `!Send + !Sync` just like `CachedFBig` (so `CBig` stays `Send + Sync` and `static_cbig!` is
+unaffected). One intentional divergence: `CachedCBig::into_parts` returns `(CachedFBig, CachedFBig)`
+**sharing the handle**, so transcendentals on either part stay cached — distinct from
+`CBig::into_parts`, which returns `(FBig, FBig)`. Third-party traits (serde/num-traits/num-order/
+num-complex/rand) are not mirrored; reach them via `.as_cbig()`.
+
+## The `Fast*` aliases
+
+For transcendental-heavy code, the meta-crate exposes the cached variants under short aliases so the
+faster type is easy to reach by name:
+
+| Alias | Type | Notes |
+|-------|------|-------|
+| [`FastReal`](../index.html#fastreal) | `dashu_float::CachedFBig` | base 2, Zero — fast `Real` |
+| [`FastDecimal`](../index.html#fastdecimal) | `dashu_float::CachedFBig<HalfAway, 10>` | fast `Decimal` |
+| [`FastComplex`](../index.html#fastcomplex) | `dashu_cmplx::CachedCBig` | base 2, Zero — fast `Complex` |
+
+All three are `!Send + !Sync`; the non-cached `Real`/`Decimal`/`Complex` remain the `Send + Sync`
+baseline.

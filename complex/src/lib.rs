@@ -68,6 +68,8 @@ extern crate alloc;
 
 mod add;
 mod cbig;
+mod cbig_cached;
+mod cbig_cached_ops;
 mod cmp;
 mod convert;
 mod div;
@@ -89,6 +91,7 @@ mod third_party;
 pub use third_party::*;
 
 pub use cbig::CBig;
+pub use cbig_cached::CachedCBig;
 pub use repr::{CRounded, CfpResult, Context};
 
 // Rounding machinery and the float primitives CBig is built on are reused from dashu-float

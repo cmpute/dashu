@@ -207,6 +207,16 @@ the primary `Real`/`Decimal`.
 > `Context`). Verified with proptest identities + self-oracles, deterministic Annex-G vectors, and a
 > manual `rug::Complex`/MPC oracle in `fuzz/`. `NumHash` mirrors `num-complex`'s `Complex<f64>`
 > algebraic hash (verified against the `num-order` reference). See `complex/CHANGELOG.md` (0.5.0).
+>
+> **`CachedCBig`** — the cache-backed variant mirroring `CachedFBig` (originally listed in §3.4) has
+> been implemented and pulled into 0.5. It wraps a `CBig` plus a shared `Rc<RefCell<ConstCache>>`
+> handle, threads it through the complex transcendentals (`ln`/`exp`/`powf`/`sin`/`cos`/`tan`/`sin_cos`/
+> `asin`/`acos`/`atan`/`arg`) — reusing `ConstCache` unchanged, since `CBig`'s transcendentals are built
+> entirely from real `FBig` ops — mirrors `CBig`'s always-on trait surface (it is `!Send + !Sync`, so
+> `CBig` stays `Send + Sync` and `static_cbig!` is unaffected), and ships under the `dashu::FastComplex`
+> alias. The forward-compatible `cache: Option<&mut ConstCache>` hook (convenience layer passes `None`,
+> cached layer passes `Some`) meant no `Context` signature change was needed. See `complex/CHANGELOG.md`,
+> `complex/src/cbig_cached.rs`, and `guide/src/cached.md`.
 
 **Goal:** a new crate `dashu-cmplx` (dir `complex/`) providing an arbitrary-precision complex type
 `CBig`, targeting GNU MPC parity for "common functionalities." It composes two parts (`re`, `im`)
@@ -281,14 +291,6 @@ removed). All additive — safe as point releases under 0.5.x.
   parts).
 - **A `ComplexFloat`-style trait** unifying `FBig` and `CBig` (sealed, for generic real/complex code).
 - **Ball arithmetic** (the `mpcb_t` analogue — interval/uncertainty complex).
-- **`CachedCBig`** — a cache-backed variant mirroring `CachedFBig`. Its structure is settled (so 0.5
-  is forward-compatible): it wraps a `CBig` plus a shared `Rc<RefCell<dashu_float::ConstCache>>`
-  handle, reusing `ConstCache` unchanged from `dashu-float` (there are no complex-specific constants
-  to cache — `CBig`'s transcendentals are built entirely from real `FBig` ops). `CachedCBig` is
-  `!Send + !Sync` while `CBig` stays `Send + Sync` (so `static_cbig!` produces `CBig`). **This is why
-  0.5 already threads `cache: Option<&mut ConstCache>` through the transcendental `Context` ops:** the
-  convenience layer passes `None`, `CachedCBig` will pass `Some(&mut cache)`, so adding the cached
-  variant needs no signature change.
 - **Expose ownership-aware kernel functions from `dashu-float`** — `dashu-float`'s `add.rs` already
   has `add_val_val` / `add_val_ref` / `add_ref_val` / `add_ref_ref` kernel functions that consume
   owned `FBig`/`Repr` when available (avoiding unnecessary clones at the convenience layer). These are
@@ -391,8 +393,9 @@ removed). All additive — safe as point releases under 0.5.x.
 
 - `dashu-python` remains excluded and out of the release critical path (per `AGENTS.md`).
 - All `dashu-cmplx` follow-ups (complex hyperbolics, `fma`, `rootofunity`, `agm`, Ziv correct
-  rounding, `CBig` serde/rkyv/zeroize, `num_complex` interop, `CachedCBig`, ball arithmetic,
+  rounding, `CBig` serde/rkyv/zeroize, `num_complex` interop, ball arithmetic,
   `CRound` independent re/im rounding, vector ops) — see §3.4 for the full consolidated list.
+  (`CachedCBig`, originally in this list, has been implemented — see the Phase 3 status note above.)
 - The full **C `<tgmath.h>` type-generic math surface** — the complete C standard math library for
   *both* real and complex (trig & inverse; hyperbolic & inverse; exp/log family including
   `exp2`/`exp10`/`expm1`/`log2`/`log10`/`log1p`; power/root `cbrt`/`hypot`/`pow`/`sqrt`; error & gamma

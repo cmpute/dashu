@@ -3,6 +3,19 @@
 ## Unreleased
 
 ### Add
+- `CachedCBig` — a cache-backed variant of `CBig` mirroring [`dashu-float`'s `CachedFBig`]. It wraps a
+  `CBig` plus a shared `Rc<RefCell<ConstCache>>` handle, and threads that handle through the complex
+  transcendentals (`ln`, `exp`, `sin`/`cos`/`tan`/`sin_cos`, `asin`/`acos`/`atan`, `powf`, `arg`) so the
+  underlying real constants (π, ln2, ln10, …) are reused and progressively extended across a computation
+  chain instead of recomputed from scratch. It reuses `ConstCache` unchanged (there are no
+  complex-specific constants to cache), mirrors `CBig`'s full always-on trait surface
+  (`Display`/`Debug`/`FromStr`, `Ord`/`PartialOrd`/`AbsOrd`, `From`/`TryFrom` conversions, the binary
+  operators incl. cross-type ops against both `CBig` and `FBig`, `Neg`/`Inverse`, `Sum`/`Product`),
+  and is `!Send + !Sync` (so `CBig` itself stays `Send + Sync` and `static_cbig!` is unaffected).
+  Third-party traits (serde/num-traits/num-order/num-complex/rand) are intentionally not mirrored —
+  reach them via `.as_cbig()`. `CachedCBig::into_parts` returns `(CachedFBig, CachedFBig)` sharing the
+  handle (an intentional divergence from `CBig::into_parts`'s `(FBig, FBig)`). The meta-crate gains a
+  `dashu::FastComplex` alias (the complex twin of `FastReal`/`FastDecimal`).
 - `core::iter::Sum`/`Product` for `CBig` (and `Sum<&CBig>`/`Product<&CBig>`), folding with the
   binary `+`/`*` operators. The impls are concrete (`Sum`/`Sum<&CBig>`, `Product`/`Product<&CBig>`),
   matching the narrowed iter surface used for `FBig`; a correctly-rounded (exact-accumulating) `Sum`

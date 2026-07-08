@@ -161,3 +161,7 @@ pub type Rational = dashu_ratio::RBig;
 
 /// A verbose alias for [CBig][dashu_cmplx::CBig] (base 2, rounding towards zero)
 pub type Complex = dashu_cmplx::CBig;
+
+/// A verbose alias for [CachedCBig][dashu_cmplx::CachedCBig] (base 2, rounding towards zero) — the
+/// cached, faster variant of [`Complex`] for transcendental-heavy code. `!Send + !Sync`.
+pub type FastComplex = dashu_cmplx::CachedCBig;
