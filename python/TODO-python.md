@@ -6,70 +6,72 @@ This document is the concrete implementation plan for the dashu Python bindings.
 
 ## Architecture
 
-### Use cached types for floats and complex numbers
+### Global constant cache + bare FBig/CBig
 
-**Decision: `FPy`, `DPy`, and `CPy` wrap the *cached* variants — `CachedFBig`, `CachedFBig<HalfAway,10>`, and `CachedCBig` — not the bare `FBig`/`CBig`.**
+**Decision: `FPy`/`DPy`/`CPy` wrap the *bare* `FBig`/`CBig`, and the module owns a single global `ConstCache`. Transcendentals borrow that cache and call the panic-free `Context` layer directly, mapping `FpError` to Python exceptions.**
 
-Rationals (`RPy`→`RBig`) and integers (`UPy`/`IPy`→`UBig`/`IBig`) stay uncached — they have no transcendental operations, so the `ConstCache` (which memoizes π, ln2, ln10 via binary-splitting) gives them nothing.
+We deliberately do **not** wrap `CachedFBig`/`CachedCBig`. Those types bundle `Rc<RefCell<ConstCache>>` inside the value, which (a) makes the wrapper `!Send + !Sync`, forcing `#[pyclass(unsendable)]` and breaking free-threaded Python, and (b) hides the cache behind a `pub(crate)` field, so external code can't reach the panic-free `Context::sin(repr, cache)` path and is stuck with the panicking convenience methods. Putting the cache in the module (not the value) sidesteps both problems.
 
-| Python type | Rust inner type | Cached? |
-|---|---|---|
-| `UPy` | `UBig` | no |
-| `IPy` | `IBig` | no |
-| `RPy` | `RBig` | no |
-| `FPy` | `CachedFBig<mode::Zero, 2>` | **yes** |
-| `DPy` | `CachedFBig<mode::HalfAway, 10>` (= `FastDecimal`) | **yes** |
-| `CPy` | `CachedCBig<mode::Zero, 2>` (= `FastComplex`) | **yes** |
+| Python type | Rust inner type | Cache | Send? |
+|---|---|---|---|
+| `UPy` | `UBig` | — | yes |
+| `IPy` | `IBig` | — | yes |
+| `RPy` | `RBig` | — | yes |
+| `FPy` | `FBig<mode::Zero, 2>` | global | **yes** |
+| `DPy` | `FBig<mode::HalfAway, 10>` | global | **yes** |
+| `CPy` | `CBig<mode::Zero, 2>` | global | **yes** |
 
-**Why cache:** every `sin`/`cos`/`exp`/`ln` call on a bare `FBig` recomputes π from scratch (O(N²)). The cache stores the binary-splitting tree state, so repeated high-precision transcendental calls become incremental. This is the dominant cost for a numerical-computing library, so it's worth the thread-safety trade-off below.
+All six wrappers are `Send + Sync`, so **none need `#[pyclass(unsendable)]`** and the binding is free-threaded-Python compatible.
 
-**Thread-safety consequence (important):** `CachedFBig` and `CachedCBig` hold `Rc<RefCell<ConstCache>>`, making them **`!Send + !Sync`**. Therefore `FPy`/`DPy`/`CPy` **must** use `#[pyclass(unsendable)]`:
-- Objects can only be accessed from the thread that created them.
-- This is fine for standard GIL-based Python (all access is serialized by the GIL anyway), but **incompatible with free-threaded Python (no-GIL, PEP 703)** and with passing these objects across thread boundaries (e.g. into a Rust worker thread).
-- `UPy`/`IPy`/`RPy` keep default (Send) `#[pyclass]` — they're unaffected.
+**Why a global cache:** every `sin`/`cos`/`exp`/`ln` recomputes π/ln2/ln10 from scratch (O(N²)) unless a `ConstCache` is threaded in. The cache is base-free and rounding-mode-free (just big-integer constants), so **one cache serves FPy (base 2), DPy (base 10), and CPy (complex) at once**, and accumulates precision across calls. Keeping it in the module means the *value* stays a plain, `Send`, operator-bearing `FBig`/`CBig`.
 
-**Cache-sharing rule (from the Rust API):** binary ops preserve the LHS's cache handle (`Rc::clone`); when a bare value (e.g. an `FBig` from an int conversion) meets a cached value, the cached side's handle wins. So `a + b` where both are cached keeps a single shared cache — good. Operations that return a *new* constant-free value (truncation, base conversion) go through `as_fbig()` and attach a fresh cache (acceptable — they don't need π).
+**Backing store:** `thread_local! { static CONST_CACHE: RefCell<ConstCache> }`, initialized with `ConstCache::new()` (a `pub const fn` on a `Send + Sync` struct). Thread-local = zero locking, zero contention; under free-threaded Python each thread gets its own cache and recomputes constants once. A `with_cache(|c| ...)` helper borrows it mutably for one call.
 
-**Missing-method delegation:** `CachedFBig`/`CachedCBig` do **not** yet mirror every `FBig`/`CBig` method (notably `trunc`/`floor`/`ceil`/`fract`/`round`/`split_at_point`/`with_base`/`to_decimal`/`nth_root`/`hypot`). For those, delegate through the inner value: `self.0.as_fbig().trunc()` then wrap the result back via `CachedFBig::from(...)`. Per AGENTS.md, the cached wrappers are *intended* to mirror the full surface eventually — prefer pushing the missing method upstream into the cached type rather than working around it permanently.
+**Error mapping (replaces the panicking `Context::unwrap_fp`):** the `Context` layer returns `FpResult<Rounded<T>>` (= `Result`). We map it ourselves:
+- `Err(Overflow(sign))` → `Repr::infinity_with_sign(sign)` (graceful, matches Python float)
+- `Err(Underflow(sign))` → `Repr::zero_with_sign(sign)` (graceful)
+- `Err(InfiniteInput)` → `ValueError("arithmetic with infinity")`
+- `Err(OutOfDomain)` → `ValueError("math domain error")` (matches `math.sqrt(-1)`)
+- `Err(Indeterminate)` → `ZeroDivisionError` (this is `0/0`)
+
+This is *strictly better* than the convenience layer, which `panic!`s on the last three and surfaces in Python as `pyo3_runtime.PanicException` (a `BaseException` subclass that escapes `except Exception:` and crashes the session).
+
+**Scope of the fix:** this fully fixes **transcendentals** (`sin`, `exp`, `ln`, `sqrt`, `powf`, trig/hyperbolic — all take `cache: Option<&mut ConstCache>` at the `Context` layer). **Arithmetic** operators on bare `FBig`/`CBig` still `panic!` on infinite input (e.g. `exp(1000) + 1`, since `exp(1000)→+∞` then `+` asserts finite) and on `0/0`. Those are rarer than transcendental domain errors, so arithmetic keeps the operator impls for the MVP; routing it through the `Context` layer (or guarding) is a follow-up.
 
 ### Key patterns to follow
 
 **UniInput dispatch** — `python/src/convert.rs`: The `UniInput` enum has 11 variants covering all Python numeric types (Uint, Int, BUint, BInt, OBInt, Float, BFloat, BDecimal, OBDecimal, BRational, OBRational). Its `FromPyObject` impl already extracts any Python number into the right variant. We add conversion methods (`into_fpy`, `into_dpy`, `into_rpy`, `into_cpy`) that collapse any variant into the target dashu type, making arithmetic functions simple one-liners.
 
-**Comparison** — `num_order::NumOrd` trait provides cross-type comparison for all dashu types: FBig↔UBig, FBig↔IBig, FBig↔RBig, FBig↔f64, RBig↔UBig, RBig↔IBig, etc. The `__richcmp__` pattern is already established in UPy/IPy: `op.matches(self.0.num_cmp(&rhs))`. Note: `CachedFBig`/`CachedCBig` impl `NumOrd` too, but to compare a cached value against another cached value, compare via `as_fbig()`/`as_cbig()` or rely on the cached `PartialOrd` (same-base only).
+**Comparison** — `num_order::NumOrd` trait provides cross-type comparison for all dashu types: FBig↔UBig, FBig↔IBig, FBig↔RBig, FBig↔f64, RBig↔UBig, RBig↔IBig, etc. The `__richcmp__` pattern is already established in UPy/IPy: `op.matches(self.0.num_cmp(&rhs))`.
 
-**Arithmetic macros** — The existing `impl_binops!` macro in `int.rs` generates forward/reverse dispatch functions by matching each `UniInput` variant. For FPy/DPy/RPy/CPy we create simpler versions that first convert the operand to the target type via `into_fpy()`/etc, then call the Rust operator. For cached types the operator preserves the cache handle automatically.
+**Arithmetic macros** — The existing `impl_binops!` macro in `int.rs` generates forward/reverse dispatch functions by matching each `UniInput` variant. For FPy/DPy/RPy/CPy we create simpler versions that first convert the operand to the target type via `into_fpy()`/etc, then call the Rust operator (bare FBig/CBig keep all operator trait impls).
+
+**Transcendental dispatch** — transcendentals do NOT use the convenience methods; they call `self.0.context().sin(self.0.repr(), cache)` through `with_cache`, then map the `FpResult`. This is the single most important pattern in the binding — it's what gives clean Python exceptions instead of panics.
 
 ### Rust API facts (verified)
 
 ```
-CachedFBig<R, B>  (= FBig<R,B> + Rc<RefCell<ConstCache>>;  !Send + !Sync)
-  Construction: From<FBig>, From<UBig/IBig/primitives>, FromStr, TryFrom<f32/f64> -- all attach a FRESH cache.
-                CachedFBig::from_parts(significand: IBig, exponent: isize) -- fresh cache.
-                FBig::into_cached(self, cache) -- attach a SPECIFIC shared cache handle.
-  Extract inner: .as_fbig() -> &FBig<R,B>,  .into_fbig(self) -> FBig<R,B>
-  Arithmetic: Add/Sub/Mul/Div/Rem (assign), Neg, Abs, Shl/Shr (assign), Sum, Product -- all mirror FBig, all cache-preserving.
-  Cache-threaded transcendents (the whole point): ln, ln_1p, exp, exp_m1, sin, cos, tan, asin, acos, atan,
-                                                  sinh, cosh, tanh, asinh, acosh, atanh, sin_cos, sinh_cosh,
-                                                  atan2, powf, pi(precision, &cache).
-  Delegated (no cache needed): sqrt, inv, sqr, cubic, powi(IBig).
-  Accessors: .precision(), .digits(), .context(), .repr(), .into_repr(), .sign(), .ulp(),
-             .with_precision(n) -> Rounded<Self>, .with_rounding().
-  Conversions out: .to_int() -> Rounded<IBig>, .to_f32(), .to_f64(), TryFrom for IBig/UBig/f32/f64.
-  NOT YET mirrored (delegate via .as_fbig()): trunc, floor, ceil, fract, round, split_at_point, quantize,
-                                               to_decimal, to_binary, with_base, with_base_and_precision,
-                                               nth_root, hypot, cbrt(CubicRoot trait IS present though).
+ConstCache  (dashu_float::ConstCache; Send + Sync; pub const fn new())
+  Owns memoized pi/ln2/ln10 binary-splitting state. Base-free, rounding-free.
+  One instance serves FPy (base 2), DPy (base 10), CPy (complex) simultaneously.
+  pub fn clear(&mut self), pub fn total_terms(&self), pub fn total_words(&self).
 
-CachedCBig<R, B>  (= CBig<R,B> + Rc<RefCell<ConstCache>>;  !Send + !Sync)
-  Construction: From<CBig>, From<FBig>, From<UBig/IBig/primitives>, FromStr, TryFrom<f32/f64> -- fresh cache.
-                CachedCBig::from_parts(re: FBig, im: FBig) -- fresh cache (note: takes bare FBig parts).
-                .into_parts(self) -> (CachedFBig, CachedFBig) -- INTENTIONAL divergence from CBig's (FBig,FBig).
-  Extract inner: .as_cbig() -> &CBig<R,B>,  .into_cbig(self) -> CBig<R,B>.
-  Cache-threaded: ln, exp, sin, cos, tan, asin, acos, atan, arg, powf, sin_cos.
-  Delegated: sqr, sqrt, conj, proj, mul_i(negative), powi(IBig), norm()->FBig, abs()->FBig.
-  Accessors: .re() -> &Repr<B>, .im() -> &Repr<B>, .precision(), .context(),
-             .is_zero(), .is_infinite(), .is_finite().
-  Note: CBig.abs()/arg() return FBig (the modulus/phase is real), so wrap in CachedFBig via From.
+FBig<R, B>  (the value FPy/DPy wrap; Send + Sync)
+  Public accessors: .repr() -> &Repr<B>,  .context() -> Context<R> (Copy),  .into_repr() -> Repr<B>.
+  Context layer (panic-free, returns FpResult<Rounded<FBig>>):
+    .add/.sub/.mul/.div/.inv/.sqrt/.cbrt/.nth_root/.powi/.hypot  -- no cache param
+    .exp/.exp_m1/.ln/.ln_1p/.sin/.cos/.tan/.asin/.acos/.atan/.atan2/.powf/.sinh/.cosh/.tanh/.asinh/.acosh/.atanh
+        -- all take cache: Option<&mut ConstCache>
+    .pi(precision, cache) -> Rounded<FBig>
+  Convenience layer (FBig::sin etc.) -- PANICS on InfiniteInput/OutOfDomain/Indeterminate; DO NOT USE in bindings.
+
+CBig<R, B>  (the value CPy wraps; Send + Sync)
+  Public accessors: .re() -> &Repr<B>, .im() -> &Repr<B>, .context() -> dashu_cmplx::Context<R> (Copy).
+  Complex Context layer (panic-free, returns CfpResult<R,B>):
+    .sqrt/.powi  -- no cache param
+    .ln/.exp/.sin/.cos/.tan/.asin/.acos/.atan/.powf  -- all take cache: Option<&mut ConstCache>
+    .abs/.arg/.norm  -- return real FBig (abs via hypot; arg threads cache).
+  Convenience layer (CBig::sin etc.) -- PANICS; DO NOT USE in bindings.
 
 RBig methods (uncached):
   .numerator() -> &IBig, .denominator() -> &UBig
@@ -104,13 +106,13 @@ Traits (need `use` imports):
 
 IBig::is_negative()/is_positive() -- NOT inherent! Use self.sign() == Sign::Negative instead.
 
-Conversions (int/float/rational):
-  CachedFBig::try_from(f64) -- base 2 ONLY (FPy works; DPy does not)
-  CachedFBig::from(UBig), CachedFBig::from(IBig) -- infallible, any base
-  FBig::try_from(RBig) / CachedFBig::try_from(RBig) -- exact only, returns Err on precision loss
-  RBig::try_from(FBig/CachedFBig) -- exact only (use .into_fbig() first if cached)
+Conversions (int/float/rational — bare FBig, since FPy/DPy wrap bare FBig):
+  FBig::try_from(f64) -- base 2 ONLY (FPy works; DPy does not)
+  FBig::from(UBig), FBig::from(IBig) -- infallible, any base
+  FBig::try_from(RBig) -- exact only, returns Err(ConversionError) on precision loss
+  RBig::try_from(FBig) -- exact only
   RBig::try_from(f64) -- exact only (f64 has limited precision anyway)
-  DPy from f64 -- go through string: format!("{:e}", x) then CachedFBig::from_str
+  DPy from f64 -- go through string: format!("{:e}", x) then FBig::from_str
 
 Approximation::value() extracts T from both Exact(T) and Inexact(T, E) variants.
 ```
@@ -193,32 +195,26 @@ pub enum PySign { Positive, Negative }
 pub enum PySign { Positive, Negative }
 ```
 
-### 0d2: Wrapper types use cached float/complex types — `types.rs`
+### 0d2: Wrapper types store bare FBig/CBig (all Send) — `types.rs`
 
-Change the float/complex wrappers to the cached variants and mark them `unsendable` (see Architecture: `CachedFBig`/`CachedCBig` are `!Send + !Sync`).
+Per the Architecture decision, `FPy`/`DPy`/`CPy` wrap the **bare** `FBig`/`CBig` (not the cached variants). The constant cache lives in the module (Step 2c), not in the value. All wrappers are `Send + Sync`, so **none use `unsendable`**.
 
 ```rust
-// Before:
-#[pyclass(name = "FBig")]   pub struct FPy(pub dashu_float::FBig);
-#[pyclass(name = "DBig")]   pub struct DPy(pub dashu_float::DBig);
-// (CPy added in Step 11)
+// types.rs — final shape (after Steps 0d2 + 11):
+type FBig2   = dashu_float::FBig<dashu_float::round::mode::Zero, 2>;
+type DBig10  = dashu_float::FBig<dashu_float::round::mode::HalfAway, 10>;
+type CBig2   = dashu_cmplx::CBig<dashu_float::round::mode::Zero, 2>;
 
-// After:
-type CachedFBig = dashu_float::CachedFBig<dashu_float::round::mode::Zero, 2>;
-type CachedDBig = dashu_float::CachedFBig<dashu_float::round::mode::HalfAway, 10>;
-type CachedCBig = dashu_cmplx::CachedCBig<dashu_float::round::mode::Zero, 2>;
+#[pyclass(name = "FBig")] pub struct FPy(pub FBig2);
+#[pyclass(name = "DBig")] pub struct DPy(pub DBig10);
+#[pyclass(name = "CBig")] pub struct CPy(pub CBig2);   // Step 11
 
-#[pyclass(name = "FBig", unsendable)] pub struct FPy(pub CachedFBig);
-#[pyclass(name = "DBig", unsendable)] pub struct DPy(pub CachedDBig);
-#[pyclass(name = "CBig", unsendable)] pub struct CPy(pub CachedCBig);   // Step 11
-
-// Integers and rationals stay Send (no cache, no transcendental ops):
 #[pyclass(name = "UBig")]  pub struct UPy(pub dashu_int::UBig);   // unchanged
 #[pyclass(name = "IBig")]  pub struct IPy(pub dashu_int::IBig);   // unchanged
 #[pyclass(name = "RBig")]  pub struct RPy(pub dashu_ratio::RBig); // unchanged
 ```
 
-`UPy`/`IPy`/`RPy` keep the default (Send) `#[pyclass]` — they are plain data and benefit from being freely shareable. Only the cached float/complex types need `unsendable`.
+The `UniInput` enum's `BFloat`/`BDecimal` variants keep field names `BFloat(PyRef<'a, FPy>)` etc. — only the inner type behind `FPy` changes (from cached to bare). Add `BComplex(PyRef<'a, CPy>)` for Step 11.
 
 The `UniInput` enum's `BFloat`/`BDecimal` variants change their `PyRef` target types to the new cached wrappers (the field names `BFloat(PyRef<'a, FPy>)` etc. stay the same; only the inner type behind `FPy` changes). Add `BComplex(PyRef<'a, CPy>)` for Step 11.
 
@@ -368,32 +364,32 @@ _ => return Err(PyTypeError::new_err("integer power requires a non-negative inte
 
 **File: `python/src/convert.rs`**
 
-Add four methods to `impl<'a> UniInput<'a>` that convert any numeric variant to the target dashu type. The float/complex helpers produce the **cached** wrappers (a fresh `ConstCache` is attached by every `From`/`TryFrom`/`FromStr` on `CachedFBig`/`CachedCBig`).
+Add four methods to `impl<'a> UniInput<'a>` that convert any numeric variant to the target dashu type. Since `FPy`/`DPy`/`CPy` wrap **bare** `FBig`/`CBig`, these are the plain `FBig`/`CBig` conversions (no cache is attached — the cache lives in the module, see Step 2c).
 
 ### `into_fpy(self) -> PyResult<FPy>`
 
-`FPy` wraps `CachedFBig<Zero,2>`. Conversions use the cached `From`/`TryFrom` impls (each attaches a fresh cache):
+`FPy` wraps `FBig<Zero,2>`.
 
 | Input variant | Conversion |
 |---|---|
-| `Uint(x)` | `CachedFBig::from(x)` |
-| `Int(x)` | `CachedFBig::from(IBig::from(x))` |
-| `BUint(x)` | `CachedFBig::from(x.0.clone())` |
-| `BInt(x)` | `CachedFBig::from(x.0.clone())` |
-| `OBInt(x)` | `CachedFBig::from(x)` |
-| `Float(x)` | `CachedFBig::try_from(x)` — map error to PyValueError |
-| `BFloat(x)` | `x.0.clone()` (already a `FPy` = cached) |
+| `Uint(x)` | `FBig::from(x)` |
+| `Int(x)` | `FBig::from(IBig::from(x))` |
+| `BUint(x)` | `FBig::from(x.0.clone())` |
+| `BInt(x)` | `FBig::from(x.0.clone())` |
+| `OBInt(x)` | `FBig::from(x)` |
+| `Float(x)` | `FBig::try_from(x)` — map error to PyValueError |
+| `BFloat(x)` | `x.0.clone()` (already a `FPy` = bare FBig) |
 | `BDecimal/OBDecimal` | `Err(PyTypeError("decimal cannot be mixed with binary float; convert explicitly"))` |
-| `BRational(x)` | `CachedFBig::try_from(x.0.clone())` — map ConversionError to PyTypeError |
-| `OBRational(x)` | `CachedFBig::try_from(x)` — same |
+| `BRational(x)` | `FBig::try_from(x.0.clone())` — map ConversionError to PyTypeError |
+| `OBRational(x)` | `FBig::try_from(x)` — same |
 
 ### `into_dpy(self) -> PyResult<DPy>`
 
-`DPy` wraps `CachedFBig<HalfAway,10>`. For `Float(x)` use `format!("{:e}", x)` → `CachedFBig::from_str` (no direct `TryFrom<f64>` for base 10). For `BFloat` return type error. For `BRational`/`OBRational` use `CachedFBig::try_from` (DBig is `FBig<HalfAway,10>`).
+`DPy` wraps `FBig<HalfAway,10>`. For `Float(x)` use `format!("{:e}", x)` → `FBig::from_str` (no direct `TryFrom<f64>` for base 10). For `BFloat` return type error. For `BRational`/`OBRational` use `FBig::try_from` (DBig is `FBig<HalfAway,10>`).
 
 ### `into_rpy(self) -> PyResult<RPy>`
 
-`RPy` wraps `RBig` (uncached — rationals have no transcendental ops).
+`RPy` wraps `RBig` (no transcendental ops).
 
 | Input variant | Conversion |
 |---|---|
@@ -403,25 +399,111 @@ Add four methods to `impl<'a> UniInput<'a>` that convert any numeric variant to 
 | `BInt(x)` | `RBig::from(x.0.clone())` |
 | `OBInt(x)` | `RBig::from(x)` |
 | `Float(x)` | `RBig::try_from(x)` — map error to PyValueError |
-| `BFloat(x)` | `RBig::try_from(x.0.as_fbig().clone())` — go through inner FBig |
-| `BDecimal(x)` | `RBig::try_from(x.0.as_fbig().clone())` — same |
-| `OBDecimal(x)` | `RBig::try_from(x)` — same |
+| `BFloat(x)` | `RBig::try_from(x.0.clone())` |
+| `BDecimal(x)` | `RBig::try_from(x.0.clone())` |
+| `OBDecimal(x)` | `RBig::try_from(x)` |
 | `BRational(x)` | `x.0.clone()` |
 | `OBRational(x)` | `x` |
 
 ### `into_cpy(self) -> PyResult<CPy>` (Step 11)
 
-`CPy` wraps `CachedCBig<Zero,2>`. `CachedCBig::From<FBig>` and `From<UBig/IBig>` exist; ints/floats embed as `z + 0i`. `BFloat`/`BDecimal` convert via their inner `as_fbig()`. Cross-base (FPy↔DPy) and rational→complex raise type errors for the MVP.
+`CPy` wraps bare `CBig<Zero,2>`. `CBig::From<FBig>` and `From<UBig/IBig>` exist; ints/floats embed as `z + 0i`. `BFloat`/`BDecimal` convert via their inner FBig (`x.0.clone()` then `CBig::from`). Cross-base (FPy↔DPy) and rational→complex raise type errors for the MVP.
 
 Add imports at top of `convert.rs`:
 ```rust
 use crate::types::{FPy, CPy};
-use dashu_float::CachedFBig;   // generic; instantiate with <Zero,2> / <HalfAway,10>
-use dashu_cmplx::CachedCBig;
+use dashu_float::FBig;
+use dashu_cmplx::CBig;
 use dashu_float::round::mode;
 use dashu_base::ConversionError;
 use std::str::FromStr;
 ```
+
+---
+
+## Step 2c: Global constant cache — new file `python/src/cache.rs`
+
+This module owns the single `ConstCache` shared by all float/decimal/complex transcendentals, and provides the `FpError → PyErr` mapping that replaces the panicking `Context::unwrap_fp`.
+
+```rust
+// python/src/cache.rs
+use std::cell::RefCell;
+use dashu_float::{ConstCache, Repr, Sign};
+use dashu_float::error::{FpError, Rounding};
+use pyo3::exceptions::{PyValueError, PyZeroDivisionError};
+use pyo3::PyErr;
+
+thread_local! {
+    /// One cache per thread — zero locking, zero contention. Base-free, so it serves
+    /// FPy (base 2), DPy (base 10), and CPy (complex) simultaneously. Accumulates
+    /// precision across calls; never needs explicit invalidation.
+    static CONST_CACHE: RefCell<ConstCache> = RefCell::new(ConstCache::new());
+}
+
+/// Borrow the thread-local cache mutably for one transcendental call.
+pub fn with_cache<R>(f: impl FnOnce(&mut ConstCache) -> R) -> R {
+    CONST_CACHE.with(|c| f(&mut c.borrow_mut()))
+}
+
+/// Optional Python-facing handle for cache inspection/clearing (see Step 2c-bottom).
+#[pyclass(name = "Cache")]
+pub struct PyCache;
+#[pymethods]
+impl PyCache {
+    /// Drop all memoized constants (rarely needed — the cache only grows usefully).
+    #[staticmethod]
+    fn clear() { with_cache(|c| c.clear()); }
+    #[staticmethod]
+    fn total_terms() -> usize { with_cache(|c| c.total_terms()) }
+    #[staticmethod]
+    fn total_words() -> usize { with_cache(|c| c.total_words()) }
+}
+
+/// Map a float `FpResult<Rounded<FBig>>` to a `PyResult<FBig>`:
+/// Overflow/Underflow → signed ∞/0 (graceful, like Python float);
+/// InfiniteInput/OutOfDomain → ValueError; Indeterminate → ZeroDivisionError.
+/// `val` extracts the FBig from the Rounded wrapper (Exact|Inexact).
+pub fn unwrap_float<B>(
+    res: dashu_float::FpResult<dashu_float::FBig<dashu_float::round::mode::Zero, B>>,
+) -> PyResult<dashu_float::FBig<dashu_float::round::mode::Zero, B>>
+where
+    usize: dashu_float::Base<B>,
+{
+    use dashu_base::Approximation;
+    match res {
+        Ok(rounded) => Ok(rounded.value()),
+        Err(FpError::Overflow(sign)) => Ok(dashu_float::FBig::from_repr(
+            Repr::infinity_with_sign(sign), /* context */ unreachable!())),
+        // NOTE: the overflow/underflow branches need the value's context to rebuild
+        // an FBig; in practice build them via Repr + the caller's context — see the
+        // per-call helpers in float.rs/complex.rs which receive `self.0.context()`.
+        Err(FpError::Underflow(sign)) => /* signed zero */ todo!(),
+        Err(FpError::InfiniteInput) => Err(PyValueError::new_err("arithmetic with infinity")),
+        Err(FpError::OutOfDomain)   => Err(PyValueError::new_err("math domain error")),
+        Err(FpError::Indeterminate) => Err(PyZeroDivisionError::new_err("indeterminate form (0/0)")),
+    }
+}
+```
+
+**Rebuilding ∞/0 with the right context:** `FBig::from_repr` needs a `Context`. Since each call site has `self.0.context()`, the cleanest shape is a *context-aware* mapper `unwrap_float(res, ctx) -> PyResult<FBig>` rather than the simplified one above. Concretely, the transcendental methods in `float.rs` look like:
+
+```rust
+fn sin(&self) -> PyResult<FPy> {
+    let ctx = self.0.context();
+    let res = with_cache(|c| ctx.sin(self.0.repr(), Some(c))); // FpResult<Rounded<FBig>>
+    Ok(FPy(unwrap_float(res, ctx)?))
+}
+```
+
+For **complex**, the parallel `unwrap_complex(res, ctx) -> PyResult<CBig>` maps the same `FpError` variants but rebuilds `CBig::overflow(ctx, sign)` / `CBig::underflow(ctx, sign)` on Overflow/Underflow (these constructors exist on CBig — see `complex/src/repr.rs`).
+
+**Register in `lib.rs`:** `m.add_class::<cache::PyCache>()?;` so Python users can call `dashu.Cache.clear()`.
+
+### Why this design
+
+- **Panic-free transcendentals:** every `sin`/`cos`/`exp`/`ln`/`sqrt`/`powf`/trig/hyperbolic goes through `Context::<op>(repr, cache) -> FpResult`, never the panicking convenience method.
+- **Caching preserved:** `with_cache` threads the *same* growing cache into every call, exactly like `CachedFBig` would — but without `Rc<RefCell<..>>` baked into the value.
+- **`Send` preserved:** `FPy`/`DPy`/`CPy` hold bare `FBig`/`CBig`, so no `#[pyclass(unsendable)]`, and the binding works under free-threaded Python (each thread gets its own thread-local cache).
 
 ---
 
@@ -817,7 +899,7 @@ Note: these are same-type-only for the MVP. Python's data model falls back to `_
 **File: `python/src/float.rs`** — add to `#[pymethods] impl FPy` (and replicate for DPy):
 
 ```rust
-// Predicates (repr-based; work the same on CachedFBig)
+// Predicates (repr-based)
 fn is_zero(&self) -> bool { self.0.repr().is_zero() }
 fn is_finite(&self) -> bool { self.0.repr().is_finite() }
 fn is_infinite(&self) -> bool { self.0.repr().is_infinite() }
@@ -830,19 +912,16 @@ fn sign(&self) -> PySign {
         Sign::Negative => PySign::Negative,
     }
 }
-// CachedFBig::signum() is mirrored -> returns CachedFBig
 fn signum(&self) -> Self { FPy(self.0.signum()) }
 
-// Rounding: trunc/floor/ceil/fract/round are NOT yet mirrored on CachedFBig,
-// so delegate through the inner FBig and wrap back (fresh cache — these are
-// pure significand/exponent ops, no constant cache needed).
-fn trunc(&self) -> Self { FPy(self.0.as_fbig().trunc().into()) }
-fn floor(&self) -> Self { FPy(self.0.as_fbig().floor().into()) }
-fn ceil(&self) -> Self { FPy(self.0.as_fbig().ceil().into()) }
-fn round(&self) -> Self { FPy(self.0.as_fbig().round().into()) }
-fn fract(&self) -> Self { FPy(self.0.as_fbig().fract().into()) }
+// Rounding — direct on bare FBig (pure significand/exponent ops, no cache needed).
+fn trunc(&self) -> Self { FPy(self.0.trunc()) }
+fn floor(&self) -> Self { FPy(self.0.floor()) }
+fn ceil(&self) -> Self { FPy(self.0.ceil()) }
+fn round(&self) -> Self { FPy(self.0.round()) }
+fn fract(&self) -> Self { FPy(self.0.fract()) }
 
-// Conversion (CachedFBig::to_int exists, returns Rounded<IBig>)
+// Conversion (FBig::to_int returns Rounded<IBig>)
 fn to_int(&self) -> PyResult<IPy> {
     let int: IBig = self.0.clone().to_int().value().try_into()
         .map_err(|e: ConversionError| PyValueError::new_err(format!("cannot convert to integer: {}", e)))?;
@@ -853,21 +932,59 @@ fn __int__(&self, py: Python) -> PyResult<PyObject> {
     convert_from_ibig(&ipy.0, py)
 }
 
-// Precision (CachedFBig mirrors with_precision -> Rounded<Self>)
+// Precision (FBig::with_precision -> Rounded<Self>)
 fn with_precision(&self, precision: usize) -> Self {
     FPy(self.0.clone().with_precision(precision).value())
 }
 fn precision(&self) -> usize { self.0.context().precision() }
 fn digits(&self) -> usize { self.0.digits() }
 
-// Float-specific constructor (CachedFBig::from_parts attaches fresh cache)
+// Float-specific constructor
 #[staticmethod]
 fn from_parts(significand: &IPy, exponent: isize) -> Self {
-    FPy(CachedFBig::from_parts(significand.0.clone(), exponent))
+    FPy(FBig::from_parts(significand.0.clone(), exponent))
 }
 ```
 
-**For DPy** the same methods apply — `CachedFBig<HalfAway,10>` mirrors them identically.
+**For DPy** the same methods apply — bare `FBig<HalfAway,10>` supports them identically.
+
+### 6b: Transcendentals — route through the global cache + Context layer
+
+This is the critical part: transcendentals do **NOT** call `self.0.sin()` (the convenience method panics on domain errors). Instead they call the panic-free `Context` layer with the module cache and map the result:
+
+```rust
+use crate::cache::{with_cache, unwrap_float};
+
+#[pymethods]
+impl FPy {
+    fn sin(&self) -> PyResult<FPy> {
+        let ctx = self.0.context();
+        let res = with_cache(|c| ctx.sin(self.0.repr(), Some(c)));     // FpResult<Rounded<FBig>>
+        Ok(FPy(unwrap_float(res, ctx)?))
+    }
+    fn cos(&self) -> PyResult<FPy> { /* ctx.cos(...) */ }
+    fn tan(&self) -> PyResult<FPy> { /* ctx.tan(...) */ }
+    fn asin(&self) -> PyResult<FPy> { /* ctx.asin(...) */ }
+    fn acos(&self) -> PyResult<FPy> { /* ctx.acos(...) */ }
+    fn atan(&self) -> PyResult<FPy> { /* ctx.atan(...) */ }
+    fn sinh(&self) -> PyResult<FPy> { /* ctx.sinh(...) */ }
+    fn cosh(&self) -> PyResult<FPy> { /* ctx.cosh(...) */ }
+    fn tanh(&self) -> PyResult<FPy> { /* ctx.tanh(...) */ }
+    fn asinh(&self) -> PyResult<FPy> { /* ctx.asinh(...) */ }
+    fn acosh(&self) -> PyResult<FPy> { /* ctx.acosh(...) */ }
+    fn atanh(&self) -> PyResult<FPy> { /* ctx.atanh(...) */ }
+    fn exp(&self) -> PyResult<FPy> { /* ctx.exp(...) */ }
+    fn exp_m1(&self) -> PyResult<FPy> { /* ctx.exp_m1(...) */ }
+    fn ln(&self) -> PyResult<FPy> { /* ctx.ln(...) */ }
+    fn ln_1p(&self) -> PyResult<FPy> { /* ctx.ln_1p(...) */ }
+    // sqrt/cbrt take NO cache (they're algebraic) but still go through Context for clean errors:
+    fn sqrt(&self) -> PyResult<FPy> { let ctx = self.0.context(); Ok(FPy(unwrap_float(ctx.sqrt(self.0.repr()), ctx)?)) }
+    fn cbrt(&self) -> PyResult<FPy> { /* ctx.cbrt / ctx.nth_root(3, ...) */ }
+    fn powf(&self, w: &Self) -> PyResult<FPy> { let ctx = self.0.context(); Ok(FPy(unwrap_float(ctx.powf(self.0.repr(), w.0.repr(), with_cache_arg), ctx)?)) }
+}
+```
+
+Note `powf` needs the cache threaded into `with_cache`; the helper can be extended to `with_cache(|c| ctx.powf(a, b, Some(c)))`. Every domain error (`sqrt(-1)`, `asin(2)`, `ln(-1)`, `acosh(0.5)`, `atanh(2)`) now raises a Python `ValueError` instead of crashing the session.
 
 **File: `python/src/ratio.rs`** — add to `#[pymethods] impl RPy`:
 
@@ -1200,36 +1317,38 @@ class Sign:
 ## Implementation Order
 
 ```
-1. Step 1  (fix panics)          — independent, do first
-2. Step 2  (conversion helpers)  — independent
-3. Step 3  (FPy/DPy arithmetic)  — depends on Step 2
-4. Step 4  (RPy arithmetic)      — depends on Step 2
-5. Step 5  (int methods)         — independent (can parallel with 3-4)
-6. Step 6  (float/rational pred) — depends on Step 3-4 (adds to same impl blocks)
-7. Step 7  (math module)         — depends on Step 3 (FPy type must exist)
-8. Step 8  (format fix)          — independent
-9. Step 9  (stubs)               — after all code changes
-10. Step 10 (tests)              — after all code changes
-11. Step 11 (complex bindings)    — after Step 3 (follows same pattern)
+1. Step 0  (PyO3 0.29 upgrade + Cargo.toml deps) — do first
+2. Step 1  (fix panics)          — independent
+3. Step 2  (conversion helpers)  — independent
+4. Step 2c (global cache module) — independent (cache.rs + FpError mapper)
+5. Step 3  (FPy/DPy arithmetic)  — depends on Step 2
+6. Step 4  (RPy arithmetic)      — depends on Step 2
+7. Step 5  (int methods)         — independent (can parallel with 3-4)
+8. Step 6  (float/rational pred + transcendentals via Step 2c) — depends on Step 3-4 + 2c
+9. Step 7  (math module)         — depends on Step 6
+10. Step 8 (format fix)          — independent
+11. Step 9 (stubs)               — after all code changes
+12. Step 10 (tests)              — after all code changes
+13. Step 11 (complex bindings)   — after Step 6 + 2c (follows the float pattern)
 ```
 
 Steps 3 and 5 can be done in parallel. Steps 3 and 4 share the same pattern so do them together.
 
 ---
 
-## Step 11: Complex number bindings (CachedCBig → CPy)
+## Step 11: Complex number bindings (bare CBig → CPy)
 
 **New dependency:** `dashu-cmplx` (added to `Cargo.toml` in Step 0a).
 
-Per the Architecture decision, `CPy` wraps the **cached** `CachedCBig<mode::Zero, 2>` (not bare `CBig`). This shares the same `ConstCache` benefit as `FPy` for complex transcendentals.
+Per the Architecture decision, `CPy` wraps the **bare** `CBig<mode::Zero, 2>` (not `CachedCBig`). The constant cache is the module-global one from Step 2c, threaded into complex `Context` methods. `CPy` is `Send + Sync` (no `unsendable`).
 
 ### 11a: Add `CPy` wrapper type — `types.rs`
 
 Already defined in Step 0d2:
 ```rust
-type CachedCBig = dashu_cmplx::CachedCBig<dashu_float::round::mode::Zero, 2>;
-#[pyclass(name = "CBig", unsendable)]
-pub struct CPy(pub CachedCBig);
+type CBig2 = dashu_cmplx::CBig<dashu_float::round::mode::Zero, 2>;
+#[pyclass(name = "CBig")]
+pub struct CPy(pub CBig2);
 ```
 Also add `BComplex(PyRef<'a, CPy>)` variant to `UniInput`.
 
@@ -1239,78 +1358,97 @@ Also add `BComplex(PyRef<'a, CPy>)` variant to `UniInput`.
 m.add_class::<types::CPy>()?;
 ```
 
-### 11c: CachedCBig constructor — new file `python/src/complex.rs`
+### 11c: CBig constructor — new file `python/src/complex.rs`
 
 ```rust
 #[pymethods]
 impl CPy {
     #[new]
     fn __new__(ob: &PyAny) -> PyResult<Self> {
-        // Python complex → CachedCBig (TryFrom<f64> exact, base 2; build re+im)
-        // string "a+bi" → CachedCBig (FromStr; algebraic format, fresh cache)
-        // (real, imag) tuple of FPy → CachedCBig::from_parts(re.into_fbig(), im.into_fbig())
-        //                                  (note: from_parts takes bare FBig parts, fresh cache)
-        // int/float/FPy → CachedCBig::from (embed as z + 0i)
+        // Python complex → CBig (build from re/im FBig via CBig::from_parts, or FromStr)
+        // string "a+bi" → CBig (FromStr; algebraic format)
+        // (real, imag) tuple of FPy → CBig::from_parts(re.0.clone(), im.0.clone())
+        // int/float/FPy → CBig::from (embed as z + 0i)
     }
 }
 ```
 
-`CachedCBig` provides:
-- `FromStr` for algebraic `"a+bi"` format (fresh cache)
-- `From<CBig>`, `From<FBig>`, `From<UBig>`, `From<IBig>`, `From<primitives>` (fresh cache)
-- `TryFrom<f32>`, `TryFrom<f64>` (fresh cache)
-- `CachedCBig::from_parts(re: FBig, im: FBig)` — takes **bare** FBig parts, attaches fresh cache
+`CBig` provides:
+- `FromStr` for algebraic `"a+bi"` format
+- `From<FBig>`, `From<UBig>`, `From<IBig>`, `From<primitives>` — embed as `z + 0i`
+- `CBig::from_parts(re: FBig, im: FBig)` — note `into_parts()` returns `(FBig, FBig)` on bare CBig
 
 ### 11d: Arithmetic operators
 
-Same macro pattern as FPy/DPy/RPy using `into_cpy()`. `CachedCBig` has full `Add`/`Sub`/`Mul`/`Div` (assign + 4 ref/val combos vs itself, bare `CBig`, and `FBig`), `Neg`, `Inverse`, `Sum`, `Product` — all cache-preserving.
+Same macro pattern as FPy/DPy/RPy using `into_cpy()`. Bare `CBig` has full `Add`/`Sub`/`Mul`/`Div` (assign + ref/val combos vs itself and `FBig`), `Neg`, `Inverse`, `Sum`, `Product`. (Same infinite-input/`0/0` panic caveat as float arithmetic — address as a follow-up.)
 
-### 11e: Accessors, predicates, math
+### 11e: Accessors, predicates, complex-specific
 
 ```rust
-// Accessors (re()/im() return &Repr<B>; wrap the FBig projection in a fresh CachedFBig)
-fn real(&self) -> FPy { FPy(FBig::from(self.0.re().clone()).into()) }
-fn imag(&self) -> FPy { FPy(FBig::from(self.0.im().clone()).into()) }
+// Accessors (re()/im() return &Repr<B>; project to a bare FBig)
+fn real(&self) -> FPy { FPy(FBig::from(self.0.re().clone())) }
+fn imag(&self) -> FPy { FPy(FBig::from(self.0.im().clone())) }
 
-// Predicates (CachedCBig mirrors these)
+// Predicates
 fn is_zero(&self) -> bool { self.0.is_zero() }
 fn is_finite(&self) -> bool { self.0.is_finite() }
 fn is_infinite(&self) -> bool { self.0.is_infinite() }
 
-// Complex-specific (delegated ops; abs/arg/norm return bare FBig, wrap in cached)
+// Complex-specific (conj/proj are algebraic, no cache; abs/arg/norm return real FBig)
 fn conj(&self) -> Self { CPy(self.0.conj()) }
 fn proj(&self) -> Self { CPy(self.0.proj()) }
-fn abs(&self) -> FPy { FPy(self.0.abs().into()) }     // modulus (real), fresh cache
-fn arg(&self) -> FPy { FPy(self.0.arg().into()) }     // phase (real), cache-threaded internally
-fn norm(&self) -> FPy { FPy(self.0.norm().into()) }   // squared modulus (real)
-
-// Math (cache-threaded transcendentals — the whole point of CachedCBig)
-fn sin(&self) -> Self { CPy(self.0.sin()) }
-fn cos(&self) -> Self { CPy(self.0.cos()) }
-fn tan(&self) -> Self { CPy(self.0.tan()) }
-fn asin(&self) -> Self { CPy(self.0.asin()) }
-fn acos(&self) -> Self { CPy(self.0.acos()) }
-fn atan(&self) -> Self { CPy(self.0.atan()) }
-fn exp(&self) -> Self { CPy(self.0.exp()) }
-fn ln(&self) -> Self { CPy(self.0.ln()) }
-fn sqrt(&self) -> Self { CPy(self.0.sqrt()) }   // delegated to inner CBig
-fn sqr(&self) -> Self { CPy(self.0.sqr()) }
-fn powi(&self, exp: &IPy) -> Self { CPy(self.0.powi(exp.0.clone())) }
-fn powf(&self, w: &Self) -> Self { CPy(self.0.powf(&w.0)) }
-fn sin_cos(&self) -> (Self, Self) { let (s, c) = self.0.sin_cos(); (CPy(s), CPy(c)) }
+// abs/arg route through the float Context layer for clean errors; norm is algebraic.
+fn abs(&self) -> PyResult<FPy> {
+    let ctx = self.0.context();
+    let res = with_cache(|c| ctx.abs(&self.0, Some(c)));   // returns FpResult<Rounded<FBig>>
+    Ok(FPy(unwrap_float(res, ctx)?))
+}
+fn arg(&self) -> PyResult<FPy> { /* ctx.arg(...) */ }
+fn norm(&self) -> FPy { FPy(self.0.norm()) }   // squared modulus, algebraic
 ```
 
-### 11f: Conversion to Python `complex`
+### 11f: Complex transcendentals — route through the global cache + Context layer
+
+Exactly the float pattern, but using `dashu_cmplx::Context` (obtained via `self.0.context()`) and `unwrap_complex`:
+
+```rust
+use crate::cache::{with_cache, unwrap_complex};
+
+#[pymethods]
+impl CPy {
+    fn sin(&self) -> PyResult<CPy> {
+        let ctx = self.0.context();
+        let res = with_cache(|c| ctx.sin(&self.0, Some(c)));   // CfpResult<R,B> = Result<CRounded, FpError>
+        Ok(CPy(unwrap_complex(res, ctx)?))
+    }
+    fn cos(&self) -> PyResult<CPy> { /* ctx.cos(...) */ }
+    fn tan(&self) -> PyResult<CPy> { /* ctx.tan(...) */ }
+    fn asin(&self) -> PyResult<CPy> { /* ctx.asin(...) */ }
+    fn acos(&self) -> PyResult<CPy> { /* ctx.acos(...) */ }
+    fn atan(&self) -> PyResult<CPy> { /* ctx.atan(...) */ }
+    fn exp(&self) -> PyResult<CPy> { /* ctx.exp(...) */ }
+    fn ln(&self) -> PyResult<CPy> { /* ctx.ln(...) */ }
+    fn powf(&self, w: &Self) -> PyResult<CPy> { /* ctx.powf(...) */ }
+    // sqrt/powi take NO cache but still go through Context for clean errors:
+    fn sqrt(&self) -> PyResult<CPy> { let ctx = self.0.context(); Ok(CPy(unwrap_complex(ctx.sqrt(&self.0), ctx)?)) }
+    fn powi(&self, exp: &IPy) -> PyResult<CPy> { /* ctx.powi(...) */ }
+    fn sin_cos(&self) -> PyResult<(CPy, CPy)> { /* ctx.sin_cos(...) */ }
+}
+```
+
+Domain errors (`ln(0)`, etc.) raise Python `ValueError`; `0/0`-style indeterminate forms raise `ZeroDivisionError` — never a session-crashing panic.
+
+### 11g: Conversion to Python `complex`
 
 ```rust
 fn __complex__(&self) -> PyResult<PyComplex> {
-    let re: f64 = self.0.as_cbig().re().clone().try_into().map_err(conversion_error_to_py)?;
-    let im: f64 = self.0.as_cbig().im().clone().try_into().map_err(conversion_error_to_py)?;
+    let re: f64 = self.0.re().clone().try_into().map_err(conversion_error_to_py)?;
+    let im: f64 = self.0.im().clone().try_into().map_err(conversion_error_to_py)?;
     Ok(PyComplex::from_doubles(re, im))
 }
 ```
 
-### 11g: Add to math module
+### 11h: Add to math module
 
 Module-level functions in `math.rs` that delegate to `CPy` methods, matching the pattern for `FPy`.
 
@@ -1332,7 +1470,7 @@ assert UBig(144).sqrt() == UBig(12)
 assert UBig(12).gcd(UBig(8)) == UBig(4)
 r = RBig.from_parts(IBig(1), UBig(3))
 assert r * 3 == RBig.from_parts(IBig(1), UBig(1))
-# cached transcendental (the whole point of wrapping CachedFBig)
+# transcendental uses the module-global ConstCache (Step 2c)
 import math
 assert abs(float(FBig('2').ln()) - math.log(2)) < 1e-50  # high precision
 print('All smoke tests passed')
@@ -1348,7 +1486,8 @@ python -m pytest python/tests/ -v
 
 - **MSRV**: dashu-python is exempt from the workspace MSRV policy (per AGENTS.md). Uses Rust 1.85 and edition 2024.
 - **Feature flags**: `num-modular` is used by `__pow__` but listed as optional — fix to hard dependency or wire as default feature.
-- **Complex crate**: `dashu-cmplx` (merged from develop, `6e21a65`) is a new core crate. Python bindings (Step 11) use the cached `CachedCBig` variant.
-- **Cached types**: `FPy`/`DPy`/`CPy` wrap `CachedFBig`/`CachedCBig` (π/ln2/ln10 memoization for transcendentals). They are `!Send + !Sync` → `#[pyclass(unsendable)]`. Integers/rationals stay uncached and Send. See Architecture.
-- **Free-threaded Python**: Because float/complex objects are `unsendable`, this binding is **not** compatible with no-GIL (PEP 703) free-threaded CPython for those types. If that becomes a requirement, the fix is an `Arc<Mutex<ConstCache>>`-backed cached variant upstream (dashu does not yet provide one).
+- **Complex crate**: `dashu-cmplx` (merged from develop, `6e21a65`) is a new core crate. Python bindings (Step 11) use bare `CBig` + the global cache.
+- **Error model**: transcendentals route through the panic-free `Context` layer (`FpResult`) with a module-global `ConstCache` (Step 2c), mapping `Overflow/Underflow → ±∞/0` and `InfiniteInput/OutOfDomain → ValueError`, `Indeterminate → ZeroDivisionError`. See Architecture.
+- **Send / free-threaded Python**: all wrappers (`FPy`/`DPy`/`CPy`/`UPy`/`IPy`/`RPy`) are `Send + Sync` — **none use `#[pyclass(unsendable)]`** — because the cache is thread-local, not owned by the value. The binding is free-threaded-Python (no-GIL) compatible; each thread gets its own cache.
+- **Outstanding caveat — arithmetic panics**: bare `FBig`/`CBig` arithmetic operators still `panic!` on infinite input (e.g. `exp(1000) + 1`) and on `0/0`. Transcendentals are fully fixed; routing arithmetic through `Context` (or guarding finiteness / the `0/0` case) is a documented follow-up before release.
 - **Changelog**: Document all changes in `python/CHANGELOG.md` under `## Unreleased` → `### Add`.
