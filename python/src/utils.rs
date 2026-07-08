@@ -8,41 +8,39 @@ use dashu_base::{Signed, UnsignedAbs};
 use dashu_float::{DBig, FBig};
 use dashu_int::{IBig, UBig};
 use dashu_ratio::RBig;
-use pyo3::prelude::*;
+use pyo3::{IntoPyObjectExt, Py, PyAny, PyResult, prelude::*};
 
 /// Convert input automatically to corresponding dashu type:
 /// (int -> UBig/IBig, float -> FBig, decimal -> DBig, fraction -> RBig)
 #[pyfunction]
-pub fn auto(ob: UniInput, py: Python<'_>) -> PyResult<PyObject> {
+pub fn auto(ob: UniInput, py: Python<'_>) -> PyResult<Py<PyAny>> {
     use UniInput::*;
 
     // shrink IBig to UBig if necessary
-    let fit_ibig = |i: IBig| {
+    let fit_ibig = |i: IBig| -> PyResult<Py<PyAny>> {
         if i.is_negative() {
-            IPy(i).into_py(py)
+            IPy(i).into_py_any(py)
         } else {
-            UPy(i.unsigned_abs()).into_py(py)
+            UPy(i.unsigned_abs()).into_py_any(py)
         }
     };
 
     // TODO: shrink each type to the minimal representation (FBig/RBig -> IBig -> UBig)
     let obj = match ob {
-        Uint(v) => UPy(v.into()).into_py(py),
-        Int(v) => fit_ibig(v.into()),
-        BUint(v) => v.clone().into_py(py),
-        BInt(v) => fit_ibig(v.0.clone()),
-        OBInt(v) => fit_ibig(v),
+        Uint(v) => UPy(v.into()).into_py_any(py)?,
+        Int(v) => fit_ibig(v.into())?,
+        BUint(v) => v.clone().into_py_any(py)?,
+        BInt(v) => fit_ibig(v.0.clone())?,
+        OBInt(v) => fit_ibig(v)?,
         Float(v) => match v.try_into() {
-            Ok(big) => FPy(big).into_py(py),
-            Err(e) => {
-                return Err(conversion_error_to_py(e));
-            }
+            Ok(big) => FPy(big).into_py_any(py)?,
+            Err(e) => return Err(conversion_error_to_py(e)),
         },
-        BFloat(v) => v.clone().into_py(py),
-        BDecimal(v) => v.clone().into_py(py),
-        OBDecimal(v) => DPy(v).into_py(py),
-        BRational(v) => v.clone().into_py(py),
-        OBRational(v) => RPy(v).into_py(py),
+        BFloat(v) => v.clone().into_py_any(py)?,
+        BDecimal(v) => v.clone().into_py_any(py)?,
+        OBDecimal(v) => DPy(v).into_py_any(py)?,
+        BRational(v) => v.clone().into_py_any(py)?,
+        OBRational(v) => RPy(v).into_py_any(py)?,
     };
     Ok(obj)
 }
@@ -50,26 +48,26 @@ pub fn auto(ob: UniInput, py: Python<'_>) -> PyResult<PyObject> {
 /// Convert input string to corresponding dashu type.
 /// The type is heuristically determined
 #[pyfunction]
-pub fn autos(s: &str, py: Python<'_>) -> PyResult<PyObject> {
+pub fn autos(s: &str, py: Python<'_>) -> PyResult<Py<PyAny>> {
     let obj = if s.contains('/') {
         RPy(RBig::from_str_with_radix_prefix(s)
             .map_err(parse_error_to_py)?
             .0)
-        .into_py(py)
+        .into_py_any(py)?
     } else if s.contains(['p', 'P']) {
-        FPy(FBig::from_str(s).map_err(parse_error_to_py)?).into_py(py)
+        FPy(FBig::from_str(s).map_err(parse_error_to_py)?).into_py_any(py)?
     } else if s.contains('.') || (!s.contains("0x") && s.contains(['e', 'E'])) {
-        DPy(DBig::from_str(s).map_err(parse_error_to_py)?).into_py(py)
+        DPy(DBig::from_str(s).map_err(parse_error_to_py)?).into_py_any(py)?
     } else if s.contains('-') {
         IPy(IBig::from_str_with_radix_prefix(s)
             .map_err(parse_error_to_py)?
             .0)
-        .into_py(py)
+        .into_py_any(py)?
     } else {
         UPy(UBig::from_str_with_radix_prefix(s)
             .map_err(parse_error_to_py)?
             .0)
-        .into_py(py)
+        .into_py_any(py)?
     };
     Ok(obj)
 }

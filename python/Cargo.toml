@@ -5,7 +5,7 @@ authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2024"
 description = "Python binding for the dashu numeric types"
 keywords = ["mathematics", "numerics"]
-categories = ["mathematics", "no-std"]
+categories = ["mathematics", "science"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/cmpute/dashu"
 homepage = "https://github.com/cmpute/dashu"
@@ -17,16 +17,15 @@ rust-version = "1.85"
 all-features = true
 
 [dependencies]
-dashu-base = { version = "0.4.0", path = "../base", features = ["std"]}
+dashu-base = { version = "0.4.0", path = "../base", features = ["std"] }
 dashu-int = { version = "0.4.1", path = "../integer", features = ["std", "num-order"] }
 dashu-float = { version = "0.4.2", path = "../float", features = ["std", "num-order"] }
 dashu-ratio = { version = "0.4.1", path = "../rational", features = ["std", "num-order", "dashu-float"] }
+dashu-cmplx = { version = "0.4.5", path = "../complex", features = ["std", "num-order"] }
 num-order = "1.2.0"
 
-_num-modular = { optional = true, version = "0.6.1", package = "num-modular", default-features = false }
-
 [dependencies.pyo3]
-version = "0.20"
+version = "0.29"
 features = ["extension-module"]
 
 [lib]
