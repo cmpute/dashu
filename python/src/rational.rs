@@ -90,12 +90,21 @@ impl RPy {
         if format_spec.is_empty() {
             return Ok(format!("{}", self.0));
         }
-        // non-empty spec: convert to a decimal float (lossy) and render with it
+        // non-empty spec: convert to a decimal float (lossy) and render with it.
+        // Convert at a precision a few digits higher than requested, so that the digits
+        // we actually print are correctly rounded (a rational has no native decimal
+        // precision, so there's no "full precision" to fall back on).
         let parsed = crate::format::parse(format_spec)?;
-        let prec = parsed.prec.unwrap_or(53).max(1);
+        // Convert at the requested precision + a guard (so printed digits are correctly
+        // rounded); with no requested precision, use a default (a rational has no native
+        // decimal precision to fall back on).
+        let conv_prec = match parsed.prec {
+            Some(p) => p.saturating_add(16),
+            None => 53,
+        };
         let dbig = self
             .0
-            .to_float::<dashu_float::round::mode::HalfAway, 10>(prec)
+            .to_float::<dashu_float::round::mode::HalfAway, 10>(conv_prec)
             .value();
         crate::format::format_dbig(&dbig, format_spec)
     }
