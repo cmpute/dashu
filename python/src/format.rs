@@ -148,10 +148,14 @@ pub fn format_dbig(d: &DBig, spec_str: &str) -> PyResult<String> {
 
 /// Render the magnitude as a decimal string (without sign), per the spec's type.
 fn render_body(d: &DBig, s: &Spec) -> PyResult<(bool, String)> {
-    // infinite values: let dashu render, then strip the sign
+    // When no precision is given, show the value's full native precision (its significant
+    // digit count) rather than CPython's fixed default of 6 — this is an arbitrary-precision
+    // library, so truncating to 6 digits by default would silently hide information.
+    let native = d.digits();
     let (neg, raw) = match s.ty {
         'e' | 'E' => {
-            let p = s.prec.unwrap_or(6);
+            // scientific: `native` significant digits => `native - 1` fraction digits
+            let p = s.prec.unwrap_or(native.saturating_sub(1));
             let mut raw = format!("{:.*e}", p, d);
             raw = normalize_sci(raw, s.ty == 'E');
             strip_sign(&raw)
@@ -181,6 +185,30 @@ fn render_body(d: &DBig, s: &Spec) -> PyResult<(bool, String)> {
         _ => unreachable!(),
     };
     Ok((neg, raw))
+}
+
+/// Render a base-2 `FBig` in hexadecimal (lossless: hex significand, binary exponent),
+/// used for the default/`'a'`/`'A'` presentation types so no base conversion rounding occurs.
+pub fn format_fbig_hex(f: &dashu_float::FBig, spec_str: &str) -> PyResult<String> {
+    let s = parse(spec_str)?;
+    let upper = s.ty == 'A';
+    let body = match s.prec {
+        Some(p) => {
+            if upper {
+                format!("{:.*X}", p, f)
+            } else {
+                format!("{:.*x}", p, f)
+            }
+        }
+        None => {
+            if upper {
+                format!("{:X}", f)
+            } else {
+                format!("{:x}", f)
+            }
+        }
+    };
+    Ok(apply_layout(body, &s))
 }
 
 /// Split a leading '-' from a dashu-rendered string; return (is_negative, magnitude_str).

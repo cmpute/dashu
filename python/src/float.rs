@@ -109,11 +109,15 @@ impl FPy {
         format!("<FBig {:?}>", self.0)
     }
     fn __str__(&self) -> PyResult<String> {
-        // print in decimal (an FBig is base 2; dashu's Display would print binary)
-        crate::format::format_dbig(&self.0.to_decimal().value(), "")
+        // an FBig is base 2: print in hexadecimal (lossless — no base conversion rounding)
+        crate::format::format_fbig_hex(&self.0, "")
     }
     fn __format__(&self, format_spec: &str) -> PyResult<String> {
-        crate::format::format_dbig(&self.0.to_decimal().value(), format_spec)
+        // default / 'a' / 'A' -> hexadecimal (lossless); decimal presentations convert to base 10
+        match crate::format::parse(format_spec)?.ty {
+            '\0' | 'a' | 'A' => crate::format::format_fbig_hex(&self.0, format_spec),
+            _ => crate::format::format_dbig(&self.0.to_decimal().value(), format_spec),
+        }
     }
     fn __hash__(&self) -> u64 {
         let mut hasher = DefaultHasher::new();

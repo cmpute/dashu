@@ -29,6 +29,12 @@
   (int/float/`Decimal`/`Fraction`) in addition to strings.
 - A module-level `math` API (`sin`/`cos`/…/`exp`/`ln`/`sqrt`/`gcd`/`lcm`/…) and a
   `dashu.Cache` handle for the global constant cache.
+- `FBig` (base 2) now prints in **hexadecimal** by default (`str`/`format`/`'a'`/`'A'`),
+  e.g. `str(FBig(1.5)) == '0x3p-1'` — lossless, no base-2→base-10 rounding. Decimal
+  presentations (`'e'`/`'f'`/`'g'`) still convert to base 10. (`DBig` stays decimal.)
+- Float format default precision is now the value's native precision (its significant
+  digits) rather than CPython's fixed 6 — `format(f, 'e')` shows all digits; use `'.6e'`
+  for the old 6-digit behavior.
 - Transcendentals are now panic-free: domain errors raise `ValueError`,
   `0/0`-style indeterminate forms raise `ZeroDivisionError`, and overflow/underflow
   produce signed infinities/zeros — routed through the panic-free `Context` layer with a
