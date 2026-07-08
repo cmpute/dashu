@@ -421,6 +421,82 @@ use std::str::FromStr;
 
 ---
 
+## Step 2b: Broaden `__new__` to accept any Python number
+
+**Problem:** today `FBig(...)`, `DBig(...)`, `RBig(...)` only accept their "native" Python type or a string. `FBig(7)`, `FBig(Decimal("1.5"))`, `FBig(Fraction(1,3))`, `DBig(1.5)`, `RBig(1.5)` all fail at construction. The `into_*` helpers (Step 2) fixed the *arithmetic* case but not construction. Workaround today is `auto(x)`, but the type constructors should be permissive too.
+
+**Design:** keep arithmetic dispatch strict (matches Python — `1.5 + Decimal("0.5")` raises `TypeError`), but make `__new__` permissive by giving it its own conversion path. Add permissive `construct_*` helpers to `UniInput` (or as free functions in `convert.rs`) that differ from `into_*` only in the cross-type rules:
+
+```rust
+impl<'a> UniInput<'a> {
+    /// Permissive construction of FBig from any Python number (for __new__).
+    /// Unlike into_fpy, this ACCEPTS Decimal/Fraction by routing through string / RBig.
+    pub fn construct_fbig(self) -> PyResult<FBig> {
+        match self {
+            Self::Uint(x)    => Ok(FBig::from(x)),
+            Self::Int(x)     => Ok(FBig::from(IBig::from(x))),
+            Self::BUint(x)   => Ok(FBig::from(x.0.clone())),
+            Self::BInt(x)    => Ok(FBig::from(x.0.clone())),
+            Self::OBInt(x)   => Ok(FBig::from(x)),
+            Self::Float(x)   => FBig::try_from(x).map_err(conversion_error_to_py),
+            Self::BFloat(x)  => Ok(x.0.clone()),
+            // Decimal/Fraction -> round-trip through string (Decimal.__format__ gives
+            // scientific notation; Fraction via RBig::try_from is exact-or-error).
+            Self::BDecimal(x) | Self::OBDecimal(_) => {
+                let s = decimal_to_str(&self)?;   // helper: format Decimal as decimal string
+                FBig::from_str(&s).map_err(parse_error_to_py)
+            }
+            Self::BRational(x) => FBig::try_from(x.0.clone()).map_err(conversion_error_to_py),
+            Self::OBRational(x) => FBig::try_from(x).map_err(conversion_error_to_py),
+        }
+    }
+    // construct_dbig, construct_rbig, construct_cbig: same permissive pattern
+}
+```
+
+Then each `__new__` becomes (FPy example):
+
+```rust
+#[new]
+fn __new__(ob: &PyAny, radix: Option<u32>) -> PyResult<Self> {
+    if let Ok(s) = ob.extract::<String>() {
+        // string with optional radix (existing path)
+        let f = match radix {
+            Some(r) => FBig::from_str_radix(s, r),
+            None    => FBig::from_str(s),
+        };
+        return Ok(FPy(f.map_err(parse_error_to_py)?));
+    }
+    if radix.is_some() {
+        return Err(PyTypeError::new_err("radix only valid with string input"));
+    }
+    if let Ok(other) = <PyRef<Self> as FromPyObject>::extract(ob) {
+        return Ok(FPy(other.0.clone()));   // copy
+    }
+    // any other Python number -> permissive construction
+    Ok(FPy(UniInput::extract(ob)?.construct_fbig()?))
+}
+```
+
+**Per-type construction matrix** (what each `__new__` accepts after this step):
+
+| `__new__` accepts | `FBig` | `DBig` | `RBig` | `CBig` |
+|---|---|---|---|---|
+| `str` (± radix) | ✅ | ✅ | ✅ | ✅ (`"a+bi"`) |
+| same-type copy | ✅ | ✅ | ✅ | ✅ |
+| `int` | ✅ `FBig::from` | ✅ `DBig::from` | ✅ `RBig::from` | ✅ `CBig::from` (z+0i) |
+| `float` | ✅ `try_from` | ✅ via `{:e}` str | ✅ `try_from` (exact) | ✅ re+im |
+| `Decimal` | ✅ via str | ✅ `parse_to_dbig` | ✅ via RBig | via FBig |
+| `Fraction` | ✅ `try_from` (exact) | ✅ `try_from` (exact) | ✅ `parse_to_rbig` | via FBig |
+| `(re, im)` tuple | — | — | `(num, den)` → from_parts | ✅ `from_parts` |
+| `complex` | — | — | — | ✅ |
+
+**Note on exact-vs-lossy:** `Decimal`/`Fraction` → `FBig`/`DBig` via `try_from` is **exact-only** (errors on precision loss, e.g. `1/3` → base 2). For lossy correctly-rounded conversion, users should call the explicit `to_float()` method (Step 6c). The constructor stays strict to avoid silent precision loss — consistent with how `int(1.5)` is explicit in Python.
+
+**`decimal_to_str` helper:** format a `decimal.Decimal` as a plain decimal string. Reuse the existing `parse_to_dbig` round-trip logic in reverse (Decimal → `__format__` → string). This is the same path `DPy::unwrap` already uses.
+
+---
+
 ## Step 2c: Global constant cache — new file `python/src/cache.rs`
 
 This module owns the single `ConstCache` shared by all float/decimal/complex transcendentals, and provides the `FpError → PyErr` mapping that replaces the panicking `Context::unwrap_fp`.
@@ -1047,6 +1123,56 @@ Add imports to `ratio.rs`: `use dashu_base::Sign;`
 
 ---
 
+## Step 6c: Cross-type conversions (base change, float↔rational)
+
+Expose the base-change and float↔rational conversions that already exist on bare `FBig`/`RBig`. These let users move between `FPy` (base 2), `DPy` (base 10), `RPy`, and the corresponding Python native types without round-tripping through strings.
+
+**File: `python/src/float.rs`** — add to `FPy` and `DPy`:
+
+```rust
+// Base conversion (FBig::to_decimal / to_binary return Rounded<FBig<...>>)
+fn to_decimal(&self) -> DPy { DPy(self.0.to_decimal().value()) }   // FPy(base 2) -> DPy(base 10)
+fn to_binary(&self) -> FPy { FPy(self.0.to_binary().value()) }     // DPy(base 10) -> FPy(base 2); identity on FPy
+
+// Float -> Rational (exact only; errors if the float isn't exactly representable as a fraction)
+fn to_rational(&self) -> PyResult<RPy> {
+    RBig::try_from(self.0.clone()).map(RPy).map_err(conversion_error_to_py)
+}
+
+// Precision/base introspection + arbitrary-radix formatting (no new Python type for base != 2,10,
+// so with_base is exposed only as a string formatter via in_radix — see Step 8/__format__)
+```
+
+**File: `python/src/ratio.rs`** — add to `RPy`:
+
+```rust
+// Rational -> Float, correctly rounded (lossy). RBig::to_float::<R,B>(precision) is the
+// dashu-float lossy conversion; pick base 2 (FPy) and base 10 (DPy) variants.
+fn to_float(&self, precision: usize) -> FPy {
+    FPy(self.0.to_float::<mode::Zero, 2>(precision).value())
+}
+fn to_decimal(&self, precision: usize) -> DPy {
+    DPy(self.0.to_float::<mode::HalfAway, 10>(precision).value())
+}
+```
+
+**Conversion summary** (after Steps 2b + 6c):
+
+| from → to | `FPy` | `DPy` | `RPy` | Python native |
+|---|---|---|---|---|
+| `FPy` | — | `.to_decimal()` | `.to_rational()` (exact) | `float()`, `int()`, `.to_decimal().unwrap()`→Decimal |
+| `DPy` | `.to_binary()` | — | `.to_rational()` (exact) | `float()`, `int()`, `.unwrap()`→Decimal |
+| `RPy` | `.to_float(p)` (lossy) | `.to_decimal(p)` (lossy) | — | `float()`, `int()`, `.unwrap()`→Fraction |
+| `UPy`/`IPy` | `FBig::from` | `DBig::from` | `RBig::from` | `int()`, `.unwrap()` |
+
+**Notes:**
+- `to_decimal`/`to_binary` return `Rounded<...>` in Rust — use `.value()` to drop the rounding flag (we don't expose per-call rounding flags to Python yet).
+- `RBig::to_float` requires an explicit precision argument (rationals are generally non-terminating in base 2/10). This is the lossy counterpart to the exact `FBig → RBig` path.
+- `with_base(radix)` for radix ∉ {2,10} has no Python wrapper type, so it's exposed only as a string formatter (`in_radix` / `__format__`, Step 8), not as a new numeric type.
+- For `FPy → Decimal` directly: compose `f.to_decimal().unwrap()` (DPy → Decimal already exists). No separate method needed.
+
+---
+
 ## Step 7: Create math module
 
 **New file: `python/src/math.rs`**
@@ -1319,17 +1445,19 @@ class Sign:
 ```
 1. Step 0  (PyO3 0.29 upgrade + Cargo.toml deps) — do first
 2. Step 1  (fix panics)          — independent
-3. Step 2  (conversion helpers)  — independent
-4. Step 2c (global cache module) — independent (cache.rs + FpError mapper)
-5. Step 3  (FPy/DPy arithmetic)  — depends on Step 2
-6. Step 4  (RPy arithmetic)      — depends on Step 2
-7. Step 5  (int methods)         — independent (can parallel with 3-4)
-8. Step 6  (float/rational pred + transcendentals via Step 2c) — depends on Step 3-4 + 2c
-9. Step 7  (math module)         — depends on Step 6
-10. Step 8 (format fix)          — independent
-11. Step 9 (stubs)               — after all code changes
-12. Step 10 (tests)              — after all code changes
-13. Step 11 (complex bindings)   — after Step 6 + 2c (follows the float pattern)
+3. Step 2  (conversion helpers: into_*)  — independent
+4. Step 2b (broaden __new__ via construct_*) — depends on Step 2
+5. Step 2c (global cache module) — independent (cache.rs + FpError mapper)
+6. Step 3  (FPy/DPy arithmetic)  — depends on Step 2
+7. Step 4  (RPy arithmetic)      — depends on Step 2
+8. Step 5  (int methods)         — independent (can parallel with 3-4)
+9. Step 6  (float/rational pred + transcendentals via Step 2c) — depends on Step 3-4 + 2c
+10. Step 6c (cross-type conversions: to_decimal/to_binary/to_rational/to_float) — depends on Step 6
+11. Step 7  (math module)         — depends on Step 6
+12. Step 8 (format fix)          — independent
+13. Step 9 (stubs)               — after all code changes
+14. Step 10 (tests)              — after all code changes
+15. Step 11 (complex bindings)   — after Step 6 + 2c (follows the float pattern)
 ```
 
 Steps 3 and 5 can be done in parallel. Steps 3 and 4 share the same pattern so do them together.
