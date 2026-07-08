@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/dashu-banner.png" alt="dashu">
+</p>
+
 # The user guide for `dashu`
 
 Welcome to the `dashu` user guide! `dashu` is a library set of arbitrary precision numbers (aka. big numbers) implemented in Rust.
@@ -17,12 +21,13 @@ To make it useful for every Rust user, it features:
 
 ## The meta crate
 
-The crate `dashu` is a meta crate that exposes all the functionalities of the subcrates (`dashu-base`, `dashu-int`, `dashu-float`, `dashu-ratio` and `dashu-macros`). Each subcrate becomes a module in `dashu`, for example, `dashu-int` is re-exported as `dashu::int`. Besides, it creates more readable aliases for the numeric types:
-- `dashu::Natural` = `dashu::int::UBig` = `dashu_int::UBig`
-- `dashu::Integer` = `dashu::int::IBig` = `dashu_int::IBig`
-- `dashu::Ratio` = `dashu::ratio::RBig` = `dashu_ratio::RBig`
-- `dashu::Real` = `dashu::float::FBig` = `dashu_float::FBig`
-- `dashu::Decimal` = `dashu::float::DBig` = `dashu_float::DBig`
+The crate `dashu` is a meta crate that exposes all the functionalities of the subcrates (`dashu-base`, `dashu-int`, `dashu-float`, `dashu-ratio`, `dashu-cmplx` and `dashu-macros`). Each subcrate becomes a module in `dashu`: `dashu-base` → `dashu::base`, `dashu-int` → `dashu::integer`, `dashu-float` → `dashu::float`, `dashu-ratio` → `dashu::rational`, `dashu-cmplx` → `dashu::complex`. It also creates more readable aliases for the numeric types:
+- `dashu::Natural` = `dashu::integer::UBig`
+- `dashu::Integer` = `dashu::integer::IBig`
+- `dashu::Rational` = `dashu::rational::RBig`
+- `dashu::Real` = `dashu::float::FBig`
+- `dashu::Decimal` = `dashu::float::DBig`
+- `dashu::Complex` = `dashu::complex::CBig`
 
 In this guide, we will use the original names of the numeric types (i.e. `XBig`), but the explanations are also applicable to these re-exported types.
 

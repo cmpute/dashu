@@ -2,7 +2,37 @@
 
 ## Unreleased
 
+### Add
+- `CachedCBig` — a cache-backed variant of `CBig` mirroring [`dashu-float`'s `CachedFBig`]. It wraps a
+  `CBig` plus a shared `Rc<RefCell<ConstCache>>` handle, and threads that handle through the complex
+  transcendentals (`ln`, `exp`, `sin`/`cos`/`tan`/`sin_cos`, `asin`/`acos`/`atan`, `powf`, `arg`) so the
+  underlying real constants (π, ln2, ln10, …) are reused and progressively extended across a computation
+  chain instead of recomputed from scratch. It reuses `ConstCache` unchanged (there are no
+  complex-specific constants to cache), mirrors `CBig`'s full always-on trait surface
+  (`Display`/`Debug`/`FromStr`, `Ord`/`PartialOrd`/`AbsOrd`, `From`/`TryFrom` conversions, the binary
+  operators incl. cross-type ops against both `CBig` and `FBig`, `Neg`/`Inverse`, `Sum`/`Product`),
+  and is `!Send + !Sync` (so `CBig` itself stays `Send + Sync` and `static_cbig!` is unaffected).
+  Third-party traits (serde/num-traits/num-order/num-complex/rand) are intentionally not mirrored —
+  reach them via `.as_cbig()`. `CachedCBig::into_parts` returns `(CachedFBig, CachedFBig)` sharing the
+  handle (an intentional divergence from `CBig::into_parts`'s `(FBig, FBig)`). The meta-crate gains a
+  `dashu::FastComplex` alias (the complex twin of `FastReal`/`FastDecimal`).
+- `core::iter::Sum`/`Product` for `CBig` (and `Sum<&CBig>`/`Product<&CBig>`), folding with the
+  binary `+`/`*` operators. The impls are concrete (`Sum`/`Sum<&CBig>`, `Product`/`Product<&CBig>`),
+  matching the narrowed iter surface used for `FBig`; a correctly-rounded (exact-accumulating) `Sum`
+  is a possible future refinement.
+- `CBig::NEG_ONE` (`-1 + 0i`), mirroring `FBig::NEG_ONE`.
+- `TryFrom<CBig> for UBig` — extracts the unsigned integer when the value is purely real, finite,
+  integer-valued, and non-negative (composes `CBig → FBig → UBig`).
+- Primitive conversions to/from `CBig`: `From` for the integer primitives (`u8`–`u128`, `i8`–`i128`),
+  `TryFrom<f32>`/`TryFrom<f64>` (base 2), and `TryFrom<CBig>` for every integer and float primitive
+  (float out is base-2). All compose through `FBig`, mirroring `dashu-float`'s primitive surface.
+
 ### Improve
+- Enabled `#![deny(missing_docs)]` together with `clippy::dbg_macro`,
+  `clippy::undocumented_unsafe_blocks`, and `clippy::let_underscore_must_use` as crate-level denies.
+- Trimmed the `CBig` rustdoc: the module header no longer duplicates the type-level prose, the
+  `# Rounding` section is condensed to a one-liner, and both point to the user guide / compliance
+  notes for detail.
 - The complex `sin_cos` kernel now calls `dashu-float`'s combined `sinh_cosh` (new in `dashu-float`)
   instead of separate `sinh` + `cosh` calls, sharing the `exp_m1(±y)` sub-computations.
 - `CBig::overflow` now returns `+∞ + i·∞` (both parts infinite) instead of `±∞ + i·0`, fixing the

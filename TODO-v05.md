@@ -1,6 +1,6 @@
 # dashu v0.5 Release Plan
 
-Last updated: 2026-06-28
+Last updated: 2026-07-07
 
 This document is the consolidated plan for the **v0.5** release — a **major (breaking)** bump.
 Because it is a major release, its two organizing goals are:
@@ -37,12 +37,12 @@ The phases below are ordered by dependency, not by "importance". The logic is:
 
 | Phase | Theme | Blocking? | Depends on |
 |-------|-------|-----------|------------|
-| 0 | Test / benchmark / fuzz hardening | **GATE for all feature work** | — |
-| 1 | Breaking changes & deprecation cleanup | must land in 0.5 | 0 (ideally) |
-| 2 | `dashu-float` shared constant cache | ✅ done (#83, as `CachedFBig`/`ConstCache`) | 0, 1 |
+| 0 | Test / benchmark / fuzz hardening | **GATE for all feature work** — ✅ done | — |
+| 1 | Breaking changes & deprecation cleanup | must land in 0.5 — ✅ mostly done (only non-breaking internals open; `missing_docs` done) | 0 (ideally) |
+| 2 | `dashu-float` shared constant cache | ✅ done (#83, as `CachedFBig`/`ConstCache`); `FastReal`/`FastDecimal` aliases added | 0, 1 |
 | 3 | `dashu-cmplx` (`CBig`) — new crate | ✅ done (M1–M6) | 0, 2 |
-| 4 | The mdBook guide | required deliverable | 1, 2, 3 (content); infra can start now |
-| 5 | Release prep & version sync | — | 1–4 |
+| 4 | The mdBook guide | ✅ done (#88); live at `zyxin.xyz/dashu` with the README Book badge re-enabled (CI auto-deploy not planned for v0.5) | 1, 2, 3 (content); infra can start now |
+| 5 | Release prep & version sync | ⬜ not started — **the only remaining phase** | 1–4 |
 
 > Parallelism: Phase 0 hardening, Phase 1 cleanups, and Phase 4 mdBook **infrastructure** can all
 > proceed concurrently. Phase 4 **content** must trail Phases 1–3.
@@ -90,10 +90,19 @@ Every item here changes public API and **must** land in 0.5. File:line refs are 
 ### 1.2 `dashu-int`
 - [x] **`IBig` serde wire format** (`integer/src/third_party/serde.rs:63`): switch to
       `IBig::to_le_bytes()` for interop robustness. (Breaking serialization format.)
-- [ ] **`#![deny(missing_docs)]`** across all crates (`integer/src/lib.rs:72-74` also proposes
-      `#![deny(clippy::allow_attributes_without_reason)]`). Requires documenting every public item
-      first — pair with Phase 4 guide work (move prose to the guide, keep doc-comments concise).
-      **→ deferred to Phase 4** (paired with the guide doc-pass).
+- [x] **`#![deny(missing_docs)]`** across all crates — **done.** Documented the 53 previously-
+      undocumented public items (42 in `dashu-base`, 8 in `dashu-int`, 2 in `dashu-ratio`, 1 in
+      `dashu-float`; `dashu-cmplx`/`dashu-macros` were already clean) and enabled
+      `#![deny(missing_docs)]` plus the existing `clippy::dbg_macro`/`undocumented_unsafe_blocks`/
+      `let_underscore_must_use` denies on **all** crates (resolving the `v0.5` lint TODOs in
+      `integer/src/lib.rs`). Two `let _ =`-on-`#[must_use]` test sites were converted to named
+      bindings to satisfy `let_underscore_must_use`.
+      **Caveat:** `#![deny(clippy::allow_attributes_without_reason)]` is **not** enabled — satisfying
+      it needs the `reason = "..."` field on every `#[allow]` (or `#[expect]`), both stabilized in
+      Rust **1.81**, which conflicts with the 1.68 MSRV. Revisit once the MSRV reaches ≥ 1.81 (see
+      the note in `integer/src/lib.rs`). The remaining "move verbose prose to the guide" cleanup
+      (per `integer/src/ubig.rs:10` `TODO(v0.5)`) is tracked in Phase 1.5 / 4.2 and is independent
+      of the lint gate.
 - [x] **`UBig::to_digits` / `from_digits`** (`integer/src/convert.rs:1142`): new public API
       supporting base up to `Word::MAX` — **shipped as full base-up-to-`Word::MAX` with `Vec<Word>`
       digits**; the `u8` note in the TODO referred to the separate `UBig::in_radix`/`IBig::in_radix`
@@ -124,8 +133,12 @@ Every item here changes public API and **must** land in 0.5. File:line refs are 
       TODO is the only fast-fmt item left for 0.5.x. Non-breaking internal perf, gated on 1.2.
 
 ### 1.5 Doc / internal (non-breaking, fold in opportunistically)
-- [ ] **Move verbose type prose to the guide** — `integer/src/ubig.rs:10` `TODO(v0.5)` (leave a brief
-      summary + link in the doc-comment). Pairs with Phase 4.
+- [x] **Move verbose type prose to the guide** — `integer/src/ubig.rs:10` `TODO(v0.5)` **done.** The
+      verbose construction/parsing-printing/layout prose on `UBig`, `IBig`, and `FBig` (and a light
+      trim on `RBig`/`CBig`) was condensed to a brief summary + guide link; the `TODO(v0.5)` marker is
+      removed. Runnable `# Examples` kept verbatim (no doctest churn). Guide links point to the
+      rendered site at `https://zyxin.xyz/dashu/` (the guide is live — see Phase 4.1). Pairs with
+      Phase 4.2.
 - [ ] **`integer/src/pow.rs:67`** — switch to right-to-left exponentiation (cheaper squaring schedule).
 - [ ] **`float/src/div.rs:344`** — avoid the double power in the division kernel; let `q += q0` become
       `|=` when `B` is a power of 2.
@@ -151,20 +164,30 @@ for the faster type by name. Rationale for *not* redirecting the bare aliases: `
 and its per-value cache only helps *within one computation chain* — so it is not a safe drop-in for
 the primary `Real`/`Decimal`.
 
-- [ ] **Add aliases** in the meta-crate alongside `Real`/`Decimal`:
+- [x] **Add aliases** in the meta-crate alongside `Real`/`Decimal`:
       `pub type FastReal = dashu_float::CachedFBig;` and
       `pub type FastDecimal = dashu_float::CachedFBig<dashu_float::round::mode::HalfAway, 10>;`.
-- [ ] **Bring `CachedFBig` to `FBig`'s trait surface** so the aliases are ergonomic (delegate to the
-      inner `FBig`): `Display`/`FromStr`, `PartialOrd`/`Ord`, `Sum`/`Product`, and the `third_party`
-      impls (serde/num-traits/rand).
-- [ ] **Guide:** document `FastReal`/`FastDecimal` as the recommended type when calling many
-      transcendentals (π/ln2 reuse, progressive cache extension), with the `!Send + !Sync` +
-      per-value-cache caveats (add to `guide/src/construct.md`).
+      *(Done in `src/lib.rs`; both carry doc-comments noting `!Send + !Sync`.)*
+- [x] **Bring `CachedFBig` to `FBig`'s trait surface** so the aliases are ergonomic (delegate to the
+      inner `FBig`). **Done (always-on surface):** the trait surface now mirrors `FBig` — formatting
+      (`Display`/`LowerExp`/`UpperExp` + the base-specific `Binary`/`Octal`/`LowerHex`/`UpperHex`),
+      ordering (`PartialOrd`/`Ord`/`AbsOrd`/`Signed`/`EstimatedLog2`), `FromStr`, `From`/`TryFrom` for
+      integers and `f32`/`f64`, the shift ops, `Mul<Sign>`, the root/euclid traits (`SquareRoot`/
+      `CubicRoot`/`DivEuclid`/`RemEuclid`/`DivRemEuclid`/`Inverse`), and `Sum`/`Product` (the value
+      delegates to `FBig`'s impls — so `Sum` stays correctly-rounded — and the result keeps the first
+      element's cache). `float/tests/parity.rs` guards the value/format parity. **Third-party crate
+      traits (serde/num-traits/num-order/rand/zeroize/postgres) are intentionally not mirrored** —
+      reach them via `.as_fbig()` (recorded as a divergence in `AGENTS.md`).
+- [x] **Guide:** `guide/src/cached.md` is a full page covering `CachedFBig`/`ConstCache` (creation,
+      cache sharing, inspection/clearing, constants, thread-safety, worked example). **Gap:** it does
+      not name the `FastReal`/`FastDecimal` aliases — add a short pointer so guide readers find them.
 
 ### Still open
 
-- [ ] **Memory growth:** no eviction/cap/shrink policy — a 1M-digit π lives in the cache until
-      `clear_cache()`/drop. Decide whether 0.5 ships a cap or just documents it.
+- [x] **Memory growth:** *decided — not planned for v0.5.* No eviction/cap/shrink policy; a 1M-digit
+      π lives in the cache until `clear_cache()`/drop. This is documented as expected behavior —
+      callers own the cache lifetime explicitly via the `CachedFBig`/`ConstCache` handle. Revisit
+      only if real workloads report memory pressure.
 
 > *Resolved:* **no `thread_local!` / global-cache convenience layer.** The explicit `CachedFBig` API
 > (plus the `FastReal`/`FastDecimal` aliases above) is the supported fast path; thread-local
@@ -184,6 +207,16 @@ the primary `Real`/`Decimal`.
 > `Context`). Verified with proptest identities + self-oracles, deterministic Annex-G vectors, and a
 > manual `rug::Complex`/MPC oracle in `fuzz/`. `NumHash` mirrors `num-complex`'s `Complex<f64>`
 > algebraic hash (verified against the `num-order` reference). See `complex/CHANGELOG.md` (0.5.0).
+>
+> **`CachedCBig`** — the cache-backed variant mirroring `CachedFBig` (originally listed in §3.4) has
+> been implemented and pulled into 0.5. It wraps a `CBig` plus a shared `Rc<RefCell<ConstCache>>`
+> handle, threads it through the complex transcendentals (`ln`/`exp`/`powf`/`sin`/`cos`/`tan`/`sin_cos`/
+> `asin`/`acos`/`atan`/`arg`) — reusing `ConstCache` unchanged, since `CBig`'s transcendentals are built
+> entirely from real `FBig` ops — mirrors `CBig`'s always-on trait surface (it is `!Send + !Sync`, so
+> `CBig` stays `Send + Sync` and `static_cbig!` is unaffected), and ships under the `dashu::FastComplex`
+> alias. The forward-compatible `cache: Option<&mut ConstCache>` hook (convenience layer passes `None`,
+> cached layer passes `Some`) meant no `Context` signature change was needed. See `complex/CHANGELOG.md`,
+> `complex/src/cbig_cached.rs`, and `guide/src/cached.md`.
 
 **Goal:** a new crate `dashu-cmplx` (dir `complex/`) providing an arbitrary-precision complex type
 `CBig`, targeting GNU MPC parity for "common functionalities." It composes two parts (`re`, `im`)
@@ -249,22 +282,15 @@ removed). All additive — safe as point releases under 0.5.x.
   complex-valued functions themselves are deferred.)
 - **`fma`** (complex fused multiply-add — hard to round correctly), **`rootofunity`**, complex
   **`agm`**, **`exp2`/`exp10`/`log2`/`log10`**.
-- **Vector ops** (`sum`/`dot`/mean) — note `Sum`/`Product` for `CBig` (the `iter` analog of `FBig`)
-  are also not yet implemented.
+- **Vector ops** (`dot`/mean) — `Sum`/`Product` for `CBig` (the `iter` analog of `FBig`) now exist
+  (fold-based, narrowed impls); still missing: `dot`/mean helpers and a correctly-rounded
+  (exact-accumulating) `Sum` for `CBig`.
 - **Third-party integration:** `CBig` `serde`/`rkyv`/`zeroize`; `num_complex::Complex<FBig>` interop
   (the `serde`/`num-traits`/`num-complex` feature flags are scaffolded; impls deferred).
 - **Independent re/im rounding** (`CRound` trait; MPC `mpc_rnd_t` parity — 0.5 uses one `R` for both
   parts).
 - **A `ComplexFloat`-style trait** unifying `FBig` and `CBig` (sealed, for generic real/complex code).
 - **Ball arithmetic** (the `mpcb_t` analogue — interval/uncertainty complex).
-- **`CachedCBig`** — a cache-backed variant mirroring `CachedFBig`. Its structure is settled (so 0.5
-  is forward-compatible): it wraps a `CBig` plus a shared `Rc<RefCell<dashu_float::ConstCache>>`
-  handle, reusing `ConstCache` unchanged from `dashu-float` (there are no complex-specific constants
-  to cache — `CBig`'s transcendentals are built entirely from real `FBig` ops). `CachedCBig` is
-  `!Send + !Sync` while `CBig` stays `Send + Sync` (so `static_cbig!` produces `CBig`). **This is why
-  0.5 already threads `cache: Option<&mut ConstCache>` through the transcendental `Context` ops:** the
-  convenience layer passes `None`, `CachedCBig` will pass `Some(&mut cache)`, so adding the cached
-  variant needs no signature change.
 - **Expose ownership-aware kernel functions from `dashu-float`** — `dashu-float`'s `add.rs` already
   has `add_val_val` / `add_val_ref` / `add_ref_val` / `add_ref_ref` kernel functions that consume
   owned `FBig`/`Repr` when available (avoiding unnecessary clones at the convenience layer). These are
@@ -281,48 +307,66 @@ removed). All additive — safe as point releases under 0.5.x.
 
 ## Phase 4 — The mdBook Guide
 
-**Goal:** a complete user guide under `guide/`, built with mdBook, deployed from CI. Today the guide
-is ~15–20% complete: `index.md`, `SUMMARY.md`, `types.md`, `construct.md`, and most of `convert.md`
-are real; the other 13 files are stubs or empty; `book.toml` is minimal (no plugins, no renderer);
-and nothing in CI builds or deploys it.
+**Goal:** a complete user guide under `guide/`, built with mdBook, deployed from CI.
 
-### 4.1 Infrastructure (can start in Phase 0, parallel)
-- [ ] Extend `guide/book.toml`: add `[output.html]`, `mdbook-katex` (math typesetting — essential
-      for float/complex), `mdbook-toc`, and `mdbook-admonish` if desired. Pin versions.
-- [ ] Stop committing the rendered `guide/book/` output (`.gitignore` already lists `book`); build
-      in CI instead. (The committed `book/` + `.nojekyll` suggests a stale GitHub-Pages deploy.)
-- [ ] Add a CI workflow: `cargo install mdbook` + plugins → `mdbook build guide` → deploy to GitHub
-      Pages. Re-enable the commented-out **Book** badge in `README.md`.
+> **Content is done** (PR #88 — "Phase 4: complete the mdBook user guide"). All pages that were
+> stubs in the previous revision are now real, and four new pages were added (`cached.md`,
+> `performance.md`, `compliance.md`, `ops/trig_n_hyper.md`). `CBig` is documented *across* the
+> existing pages (construct/convert/io/ops/faq) rather than in a dedicated chapter — intentional, no
+> separate chapter is planned. The guide is **deployed** at `https://zyxin.xyz/dashu/`; only the
+> README **Book** badge (+ optional CI auto-deploy) remain.
 
-### 4.2 Content (after Phases 1–3 so it documents the final API)
-- [ ] Fill the 13 stub/empty pages: `io/{index,parse,print,serialize,interop}.md`,
-      `ops/{index,basic,cmp,bit,exp_log,num_theory}.md`, `faq.md`, `cheatsheet.md`, and the
-      `convert.md` FBig TODO sections.
-- [ ] Expand `SUMMARY.md` as needed and **add new chapters** for v0.5 surfaces:
-      - the **constant cache** (`ConstCache` / `CachedFBig`; a section already exists in
-        `construct.md` — promote/expand it into full coverage),
-      - **`CBig` complex numbers** (construction, arithmetic, transcendentals, branch cuts).
-- [ ] Migrate verbose API prose out of doc-comments into the guide (per `integer/src/ubig.rs:10`),
-      leaving concise rustdoc behind — pairs with the `#![deny(missing_docs)]` work in 1.2.
-- [ ] Use the existing crate-level doctests (`dashu-int`, `dashu-float`, `dashu-ratio` `lib.rs`)
-      and `integer/examples/factorial.rs` as seed material.
-- [ ] Cross-check MSRV statement in `guide/src/index.md` (currently "1.68") against the 0.5 decision.
+### 4.1 Infrastructure
+- [x] Extend `guide/book.toml`: `[output.html]` + `[preprocessor.katex]` are configured. (`mdbook-toc`
+      / `mdbook-admonish` were "if desired" — skipped, not needed.)
+- [x] Stop committing the rendered `guide/book/` output — `.gitignore` ignores `book`, and
+      `git ls-files guide/book` is now empty.
+- [x] **Build-check CI** added: `.github/workflows/guide.yml` installs `mdbook` (0.5.3) + the
+      mdbook-0.5 build of `mdbook-katex` (pinned by git rev) and runs `mdbook build guide`. Fails on
+      errors and on any `SUMMARY.md` entry whose target file is missing (broken-link guard).
+- [x] **Deploy the guide** — *live at `https://zyxin.xyz/dashu/`* (custom domain on the `gh-pages`
+      orphan branch). The guide was built with mdBook 0.5.3 + mdbook-katex and pushed to an orphan
+      `gh-pages` branch (no shared history with `master`/`develop`). This was a **one-shot manual**
+      deploy; future guide updates require rebuilding and re-pushing `gh-pages`.
+- [x] **CI auto-deploy:** *decided — not planned for v0.5.* The guide is published by a one-shot
+      manual push to the `gh-pages` orphan branch (see "Deploy the guide" above); `guide.yml` stays
+      build-check only, and auto-deploying on merge isn't worth the workflow complexity for this release.
+- [x] **Re-enable the Book badge** in `README.md` — done; the badge now links to the live guide at
+      `https://zyxin.xyz/dashu/` (label updated from the stale `book-master` to `book-user_guide`).
+
+### 4.2 Content
+- [x] Fill the previously-stub pages: `io/{index,parse,print,serialize,interop}.md`,
+      `ops/{index,basic,cmp,bit,exp_log,num_theory,trig_n_hyper}.md`, `faq.md`, `cheatsheet.md`.
+- [x] New v0.5 pages: `cached.md` (the constant cache / `CachedFBig`), `performance.md`,
+      `compliance.md` (the IEEE-754 / C99 Annex-G compliance notes).
+- [x] `CBig` covered across pages (construction, arithmetic, transcendentals, branch cuts, I/O).
+- [x] **Migrate verbose API prose out of doc-comments** (per `integer/src/ubig.rs:10` `TODO(v0.5)`)
+      — **done** (see Phase 1.5). Concise rustdoc + guide links now; the `TODO(v0.5)` marker is gone.
+- [x] Cross-check MSRV statement in `guide/src/index.md` — still "1.68", matching `README.md` and
+      `rust-version = "1.68"`; no 0.5 bump is expected (cache is `alloc`-only, mdBook is build-time).
 
 ---
 
 ## Phase 5 — Release Preparation
 
-- [ ] **Version sync:** bump *all* crates to `0.5.0` and align (currently skewed: float 0.4.4,
-      meta 0.4.3, base/int/ratio/macros 0.4.2). Refresh all internal `version = "0.4.x"` path pins.
-- [ ] **Workspace:** add `complex` to `members`/`default-members`; wire meta-crate feature
-      forwarding for any new `dashu-cmplx` features (serde, num-traits, etc.).
-- [ ] **Feature flags:** if `dashu-cmplx` adds third-party integration, follow the `xxx_vYY` +
-      unversioned-alias convention; update the top-level `Cargo.toml` forwarding table.
+- [ ] **Version sync:** bump *all* crates to `0.5.0` and align. Current skew (as of 2026-07-07):
+      base/int/rational `0.4.3`, float `0.4.5`, complex `0.4.5`, macros `0.4.2`, meta `0.4.4`.
+      Refresh all internal `version = "0.4.x"` path deps to `0.5.0` (including the meta-crate's
+      `dashu-cmplx = { version = "0.4.5", path = "./complex" }`).
+- [x] **Workspace:** `complex` is already in `members` and `default-members`; meta-crate feature
+      forwarding to `dashu-cmplx` is wired (`std`/`serde`/`num-order`/`zeroize`/`rand`/`rand_v08`/
+      `rand_v09`/`rand_v010`/`num-traits`/`num-traits_v02`/`num-complex`).
 - [ ] **Changelogs:** fold every crate's `## Unreleased` into a `## 0.5.0` section (breaking
-      changes under `### Change`/`### Remove`, features under `### Add`).
-- [ ] **MSRV:** review whether 0.5 still targets 1.68 (mdBook is a build-time tool and does not
-      affect runtime MSRV; cache uses only `alloc`; no forced bump expected — confirm and keep
-      unless a desired feature needs newer). Update `README.md` badge + all `rust-version` fields.
+      changes under `### Change`/`### Remove`, features under `### Add`). **Gap to fix first:**
+      PR #89 (`fix: avoid double rounding in RBig::to_f32/to_f64`) touched `rational/src/convert.rs`
+      but has **no entry** in `rational/CHANGELOG.md`'s `## Unreleased` — add it before folding.
+      Same audit for any other recently-landed change missing a changelog line.
+- [x] **MSRV: 0.5 targets 1.68** *(decided)* — no bump. mdBook is build-time only (no runtime MSRV
+      impact), and the constant cache uses only `alloc`. Consequence: `#![deny(clippy::
+      allow_attributes_without_reason)]` stays **deferred** — it needs the `reason = "…"` field on
+      every `#[allow]` (or `#[expect]`), both stabilized in Rust **1.81**; revisit when MSRV ≥ 1.81.
+- [ ] **MSRV bookkeeping:** update `README.md` badge + all `rust-version = "1.68"` fields once
+      versions sync to `0.5.0` (no value change — just confirm they survived the bump).
 - [ ] **CI:** run the pre-publish checks (`pre-publish-check` skill):
       `cargo check --all-features --tests`, `cargo test --workspace --exclude dashu-python`,
       `cargo clippy --all-features --all-targets --workspace --exclude dashu-python -- -D warnings`,
@@ -338,7 +382,7 @@ and nothing in CI builds or deploys it.
 |------|------------|
 | Near-correctly-rounded complex mul/div is hard | Guard-digit re-round mirroring `FBig`; fuzz vs MPC/rug oracle (Phase 0.2/3.3). Guaranteed-correct Ziv is a 0.5.x follow-up |
 | Trig/exp correctness is currently unverified in CI | Phase 0.2 *before* CBig consumes those functions |
-| Cache memory unbounded growth | Decide cap/shrink policy (Phase 2); at minimum document |
+| Cache memory unbounded growth | **Not planned for v0.5** — no cap; cache grows until `clear_cache()`/drop (documented; callers own the lifetime via the `CachedFBig`/`ConstCache` handle) |
 | Guide content churn if written before API freeze | Content trails Phases 1–3; only infra starts early |
 | Version skew complicates publishing | Phase 5 sync; pin internal deps to `0.5.0` |
 | `_dword` paths under-tested yet "first-class" | Phase 0.2 direct tests; required before trusting complex on float |
@@ -349,8 +393,9 @@ and nothing in CI builds or deploys it.
 
 - `dashu-python` remains excluded and out of the release critical path (per `AGENTS.md`).
 - All `dashu-cmplx` follow-ups (complex hyperbolics, `fma`, `rootofunity`, `agm`, Ziv correct
-  rounding, `CBig` serde/rkyv/zeroize, `num_complex` interop, `CachedCBig`, ball arithmetic,
+  rounding, `CBig` serde/rkyv/zeroize, `num_complex` interop, ball arithmetic,
   `CRound` independent re/im rounding, vector ops) — see §3.4 for the full consolidated list.
+  (`CachedCBig`, originally in this list, has been implemented — see the Phase 3 status note above.)
 - The full **C `<tgmath.h>` type-generic math surface** — the complete C standard math library for
   *both* real and complex (trig & inverse; hyperbolic & inverse; exp/log family including
   `exp2`/`exp10`/`expm1`/`log2`/`log10`/`log1p`; power/root `cbrt`/`hypot`/`pow`/`sqrt`; error & gamma

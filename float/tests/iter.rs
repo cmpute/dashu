@@ -24,8 +24,10 @@ fn test_sum() {
     assert_eq!(nums[..1].iter().sum::<FBig>(), fbig!(-0x1p2));
     assert_eq!(nums[..2].iter().sum::<FBig>(), fbig!(-0x3p1));
     assert_eq!(nums[..4].iter().sum::<FBig>(), fbig!(-0xfp-1));
-    assert_eq!(nums.iter().sum::<FBig>(), fbig!(0x1p-2));
-    assert_eq!(nums.into_iter().sum::<FBig>(), fbig!(0x1p-2));
+    // The full set is symmetric around zero, so the correctly-rounded sum is exactly 0. (The previous
+    // per-step fold accumulated rounding and reported 0x1p-2 here.)
+    assert_eq!(nums.iter().sum::<FBig>(), fbig!(0));
+    assert_eq!(nums.into_iter().sum::<FBig>(), fbig!(0));
 
     let nums = [
         dbig!(-0001e2),
@@ -45,8 +47,9 @@ fn test_sum() {
     assert_eq!(nums[..1].iter().sum::<DBig>(), dbig!(-1e2));
     assert_eq!(nums[..2].iter().sum::<DBig>(), dbig!(-11e1));
     assert_eq!(nums[..4].iter().sum::<DBig>(), dbig!(-1111e-1));
-    assert_eq!(nums.iter().sum::<DBig>(), dbig!(1e-2));
-    assert_eq!(nums.into_iter().sum::<DBig>(), dbig!(1e-2));
+    // Symmetric around zero → the correctly-rounded sum is exactly 0 (the previous fold gave 1e-2).
+    assert_eq!(nums.iter().sum::<DBig>(), dbig!(0));
+    assert_eq!(nums.into_iter().sum::<DBig>(), dbig!(0));
 }
 
 #[test]

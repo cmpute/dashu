@@ -13,6 +13,17 @@
 - (test) The `Context::sin` many-digit-significand rounding regression (49 digits at precision 100)
   is now CI-guarded as `test_sin_many_digit_rounding_no_panic`, promoted from the excluded `fuzz/`
   crate; the `trig_prop` `pythagorean` identity now sweeps precisions {20, 50, 100}.
+- `CachedFBig` now mirrors `FBig`'s always-on trait surface (every impl delegates to the inner
+  `FBig`): `Display`/`LowerExp`/`UpperExp` and the base-specific format traits
+  (`Binary`/`Octal`/`LowerHex`/`UpperHex`), `PartialOrd`/`Ord`/`AbsOrd`/`Signed`/`EstimatedLog2`,
+  `FromStr`, `From`/`TryFrom` for integers and `f32`/`f64`, the shift ops (`Shl`/`Shr` + assign),
+  `Mul<Sign>`, the root/euclid traits (`SquareRoot`/`CubicRoot`/`DivEuclid`/`RemEuclid`/`DivRemEuclid`/
+  `Inverse`), and `Sum`/`Product` (the value delegates to `FBig`'s impls — so `Sum` stays
+  correctly-rounded — and the result keeps the first element's cache). Construction from an external
+  value (`FromStr`/`From`/`TryFrom`) attaches a fresh cache, like `From<FBig>`. Third-party crate
+  traits (serde/num-traits/num-order/rand/zeroize/postgres) are intentionally not mirrored — reach
+  them through `.as_fbig()`. (`Debug` keeps its cached-specific form; `Display`/`LowerExp`/`UpperExp`
+  match `FBig`.)
 
 ### Fix
 - Fixed broken intra-doc links surfaced by `cargo doc -D warnings`: `Exact`/`Inexact` now resolve to
@@ -25,6 +36,13 @@
 - Public `Repr::from_str_native` / `FBig::from_str_native` methods (now crate-private). Use the `core::str::FromStr` impl (`s.parse()` / `FBig::from_str`) instead; its docs now carry the full parsing format specification.
 
 ### Change
+- **(breaking)** `Sum` for `FBig` is now correctly-rounded: every addend is accumulated exactly at the
+  `Repr` level and the exact total is rounded once (MPFR `mpfr_sum` semantics), instead of folding
+  with `+` and rounding at every step. The generic `Sum<T> where Self: Add<T>` and `Product<T>` impls
+  are replaced by concrete `Sum`/`Sum<&FBig>` (precise) and `Product`/`Product<&FBig>` (fold);
+  `Sum<u8>`, `Sum<&UBig>`, `Product<i32>`, etc. are therefore no longer available for `FBig` — convert
+  the elements first. The result context is the max-precision context over all addends; summing an
+  infinite value panics, consistent with `+`.
 - **(breaking)** `FBig` human-readable serde now pads the serialized string with trailing zeros so its significant-digit count equals the context precision, letting precision round-trip (previously it was lost). The binary format already preserved precision.
 - (internal) The PostgreSQL `NUMERIC` conversion now extracts base-10000 digits via `UBig::to_digits` instead of a per-digit `div_rem` loop.
 - (internal) Trig argument reduction (`reduce_to_quadrant`) now recovers the quadrant integer via `IBig::try_from` instead of `to_int()`, since the rounded value is already an exact integer.
@@ -111,6 +129,14 @@
 ### Fix
 
 - Replace `f64::ceil()` in `ConstCache`'s precision/bit helpers with a `no_std`-safe integer ceiling (`ceil_usize`). `f64::ceil` is `std`-only on the crate's MSRV and broke the workspace `--all-features --tests` build, where `dashu-float` is compiled without `std` as a dependency of `dashu-ratio`.
+
+### Improve
+- Documented the `math::trig` module and enabled `#![deny(missing_docs)]` together with
+  `clippy::dbg_macro`, `clippy::undocumented_unsafe_blocks`, and `clippy::let_underscore_must_use`
+  as crate-level denies.
+- Migrated the verbose `FBig` type prose (the generic-parameter, parsing/printing, binary-operator,
+  IEEE 754, and conversion sections) out of the rustdoc and into the user guide, leaving a concise
+  summary with guide links. The runnable `# Examples` are kept verbatim.
 
 ## 0.4.5
 

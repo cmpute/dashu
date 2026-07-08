@@ -1,0 +1,53 @@
+<svg width="1200" height="400" viewBox="0 0 1200 400" xmlns="http://www.w3.org/2000/svg">
+  <!-- banner background (cream, same as banyan3.svg) -->
+  <rect width="1200" height="400" fill="#F5F1E6"/>
+
+  <!-- banyan mark: copied from banyan3.svg, scaled 0.92 and translated to the left third -->
+  <g transform="translate(15, -56) scale(0.92)">
+    <!-- sun / halo -->
+    <circle cx="250" cy="170" r="130" fill="#F2E5C8" opacity="0.7"/>
+    <circle cx="250" cy="180" r="100" fill="#EEDFA9" opacity="0.5"/>
+
+    <!-- canopy -->
+    <path d="M250 115
+             C310 115 355 150 365 195
+             C405 205 440 245 440 295
+             C440 345 395 370 335 370
+             L165 370
+             C105 370 60 345 60 295
+             C60 245 95 205 135 195
+             C145 150 190 115 250 115 Z"
+          fill="#3D5A45"/>
+
+    <!-- hanging aerial roots -->
+    <g stroke="#3D5A45" stroke-width="6" stroke-linecap="round" fill="none">
+      <line x1="120" y1="360" x2="120" y2="420"/>
+      <line x1="150" y1="370" x2="150" y2="450"/>
+      <line x1="175" y1="370" x2="175" y2="425"/>
+      <line x1="200" y1="370" x2="200" y2="435"/>
+      <line x1="300" y1="370" x2="300" y2="435"/>
+      <line x1="325" y1="370" x2="325" y2="425"/>
+      <line x1="350" y1="370" x2="350" y2="450"/>
+      <line x1="380" y1="360" x2="380" y2="420"/>
+    </g>
+
+    <!-- Y-shaped trunk -->
+    <g stroke="#C85A3E" stroke-width="8" stroke-linecap="round" fill="none">
+      <path d="M232 435 L232 340 Q230 310 210 295 L198 287"/>
+      <path d="M268 435 L268 340 Q270 310 290 295 L302 287"/>
+      <line x1="218" y1="435" x2="282" y2="435"/>
+    </g>
+  </g>
+
+  <!-- "dashu" wordmark (canopy green ties to the tree) -->
+  <text x="510" y="218"
+        font-family="'Liberation Serif', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+        font-size="112" font-weight="700" fill="#3D5A45" letter-spacing="-1"
+        text-rendering="geometricPrecision">dashu</text>
+
+  <!-- tagline (trunk terracotta for accent) -->
+  <text x="514" y="265"
+        font-family="'Liberation Serif', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+        font-size="30" font-weight="600" fill="#C85A3E" letter-spacing="0.3"
+        text-rendering="geometricPrecision">Big numbers, oxidized &amp; ergonomic.</text>
+</svg>

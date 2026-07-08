@@ -68,6 +68,70 @@ impl<R: Round, const B: Word> TryFrom<CBig<R, B>> for IBig {
     }
 }
 
+impl<R: Round, const B: Word> TryFrom<CBig<R, B>> for UBig {
+    type Error = ConversionError;
+
+    /// Extract an unsigned integer, succeeding only when the number is purely real, finite,
+    /// integer-valued, and non-negative. Composes [`CBig`] → [`FBig`] → [`UBig`].
+    #[inline]
+    fn try_from(z: CBig<R, B>) -> Result<Self, Self::Error> {
+        let re: FBig<R, B> = FBig::try_from(z)?;
+        UBig::try_from(re)
+    }
+}
+
+// Conversions between `CBig` and the integer primitives (both directions), composing through
+// `FBig`. Integers embed as purely-real complex numbers; extraction succeeds only when the value
+// is purely real, finite, in range, and integer-valued.
+macro_rules! impl_cbig_int_conv {
+    ($($t:ty)*) => {$(
+        impl<R: Round, const B: Word> From<$t> for CBig<R, B> {
+            #[inline]
+            fn from(v: $t) -> Self {
+                FBig::from(v).into()
+            }
+        }
+
+        impl<R: Round, const B: Word> TryFrom<CBig<R, B>> for $t {
+            type Error = ConversionError;
+
+            #[inline]
+            fn try_from(z: CBig<R, B>) -> Result<Self, Self::Error> {
+                let re: FBig<R, B> = FBig::try_from(z)?;
+                re.try_into()
+            }
+        }
+    )*};
+}
+impl_cbig_int_conv!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);
+
+// Conversions between `CBig` and `f32`/`f64` (both directions, base 2 only). NaN is rejected on
+// input; infinities are preserved. Extraction succeeds only when purely real and exactly
+// representable.
+macro_rules! impl_cbig_float_conv {
+    ($($t:ty)*) => {$(
+        impl<R: Round> TryFrom<$t> for CBig<R, 2> {
+            type Error = ConversionError;
+
+            #[inline]
+            fn try_from(f: $t) -> Result<Self, Self::Error> {
+                Ok(CBig::from(FBig::try_from(f)?))
+            }
+        }
+
+        impl<R: Round> TryFrom<CBig<R, 2>> for $t {
+            type Error = ConversionError;
+
+            #[inline]
+            fn try_from(z: CBig<R, 2>) -> Result<Self, Self::Error> {
+                let re: FBig<R, 2> = FBig::try_from(z)?;
+                re.try_into()
+            }
+        }
+    )*};
+}
+impl_cbig_float_conv!(f32 f64);
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,5 +178,52 @@ mod tests {
         // nonzero imaginary → LossOfPrecision
         let z = C::from_parts(9.into(), 1.into());
         assert_eq!(IBig::try_from(z), Err(ConversionError::LossOfPrecision));
+    }
+
+    #[test]
+    fn try_from_ubig_composes() {
+        let z: C = IBig::from(9).into();
+        let u: UBig = UBig::try_from(z).unwrap();
+        assert_eq!(u, UBig::from(9u8));
+
+        // negative real part → OutOfBounds
+        let z: C = IBig::from(-9).into();
+        assert_eq!(UBig::try_from(z), Err(ConversionError::OutOfBounds));
+
+        // fractional real part → LossOfPrecision
+        let z = C::from(F::from_parts(123.into(), -2)); // 1.23
+        assert_eq!(UBig::try_from(z), Err(ConversionError::LossOfPrecision));
+
+        // nonzero imaginary → LossOfPrecision
+        let z = C::from_parts(9.into(), 1.into());
+        assert_eq!(UBig::try_from(z), Err(ConversionError::LossOfPrecision));
+    }
+
+    #[test]
+    fn primitive_conversions() {
+        // integers embed as purely-real complex numbers (any base)
+        let z: C = 7u8.into();
+        assert_eq!(z.re().significand(), &7.into());
+        let z: C = (-3i8).into();
+        assert_eq!(z.re().significand(), &(-3i32).into());
+
+        // floats embed into a base-2 CBig; NaN is rejected
+        let z = CBig::<mode::HalfAway, 2>::try_from(2.5f64).unwrap();
+        assert_eq!(z.re().significand(), &5.into()); // 2.5 = 5 * 2^-1
+        assert!(CBig::<mode::HalfAway, 2>::try_from(f32::NAN).is_err());
+
+        // CBig -> integer primitive (fails on negative / out-of-range / fractional / nonzero-imag)
+        assert_eq!(u8::try_from(C::from(9u8)), Ok(9u8));
+        assert_eq!(u8::try_from(C::from(-9i8)), Err(ConversionError::OutOfBounds));
+        assert_eq!(u8::try_from(C::from(300u16)), Err(ConversionError::OutOfBounds));
+        assert_eq!(i8::try_from(C::from(-9i8)), Ok(-9i8));
+        assert_eq!(
+            i8::try_from(C::from(F::from_parts(123.into(), -2))), // 1.23
+            Err(ConversionError::LossOfPrecision)
+        );
+
+        // CBig -> float primitive (base-2 only)
+        let z = CBig::<mode::HalfAway, 2>::try_from(2.5f64).unwrap();
+        assert_eq!(f64::try_from(z), Ok(2.5));
     }
 }

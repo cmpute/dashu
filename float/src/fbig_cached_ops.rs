@@ -1,10 +1,13 @@
 //! Operators for [`CachedFBig`] — all binary/unary operators with cache preservation.
 
+use alloc::rc::Rc;
+use core::iter::{Product, Sum};
 use core::ops::{
-    Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, RemAssign, Sub, SubAssign,
+    Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, RemAssign, Shl, ShlAssign, Shr,
+    ShrAssign, Sub, SubAssign,
 };
 
-use dashu_base::Abs;
+use dashu_base::{Abs, CubicRoot, DivEuclid, DivRemEuclid, Inverse, RemEuclid, Sign, SquareRoot};
 
 use crate::fbig::FBig;
 use crate::fbig_cached::CachedFBig;
@@ -314,6 +317,189 @@ impl<R: Round, const B: Word> Abs for CachedFBig<R, B> {
     #[inline]
     fn abs(self) -> Self::Output {
         CachedFBig::from_fbig(Abs::abs(self.fbig), &self.cache)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Shifts (preserve the cache handle)
+// ---------------------------------------------------------------------------
+
+impl<R: Round, const B: Word> Shl<isize> for CachedFBig<R, B> {
+    type Output = Self;
+    #[inline]
+    fn shl(self, rhs: isize) -> Self::Output {
+        CachedFBig::from_fbig(self.fbig << rhs, &self.cache)
+    }
+}
+
+impl<R: Round, const B: Word> ShlAssign<isize> for CachedFBig<R, B> {
+    #[inline]
+    fn shl_assign(&mut self, rhs: isize) {
+        self.fbig <<= rhs;
+    }
+}
+
+impl<R: Round, const B: Word> Shr<isize> for CachedFBig<R, B> {
+    type Output = Self;
+    #[inline]
+    fn shr(self, rhs: isize) -> Self::Output {
+        CachedFBig::from_fbig(self.fbig >> rhs, &self.cache)
+    }
+}
+
+impl<R: Round, const B: Word> ShrAssign<isize> for CachedFBig<R, B> {
+    #[inline]
+    fn shr_assign(&mut self, rhs: isize) {
+        self.fbig >>= rhs;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sign multiplication (preserve the cache handle; mirrors FBig's Mul<Sign>)
+// ---------------------------------------------------------------------------
+
+impl<R: Round, const B: Word> Mul<Sign> for CachedFBig<R, B> {
+    type Output = Self;
+    #[inline]
+    fn mul(self, rhs: Sign) -> Self::Output {
+        CachedFBig::from_fbig(self.fbig * rhs, &self.cache)
+    }
+}
+
+impl<R: Round, const B: Word> Mul<CachedFBig<R, B>> for Sign {
+    type Output = CachedFBig<R, B>;
+    #[inline]
+    fn mul(self, rhs: CachedFBig<R, B>) -> Self::Output {
+        CachedFBig::from_fbig(self * rhs.fbig, &rhs.cache)
+    }
+}
+
+impl<R: Round, const B: Word> MulAssign<Sign> for CachedFBig<R, B> {
+    #[inline]
+    fn mul_assign(&mut self, rhs: Sign) {
+        self.fbig *= rhs;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Root / Euclid / Inverse traits (delegate to the inner FBig, preserve cache)
+// ---------------------------------------------------------------------------
+
+impl<R: Round, const B: Word> SquareRoot for CachedFBig<R, B> {
+    type Output = Self;
+    #[inline]
+    fn sqrt(&self) -> Self::Output {
+        CachedFBig::from_fbig(SquareRoot::sqrt(&self.fbig), &self.cache)
+    }
+}
+
+impl<R: Round, const B: Word> CubicRoot for CachedFBig<R, B> {
+    type Output = Self;
+    #[inline]
+    fn cbrt(&self) -> Self::Output {
+        CachedFBig::from_fbig(CubicRoot::cbrt(&self.fbig), &self.cache)
+    }
+}
+
+impl<R: Round, const B: Word> DivEuclid<CachedFBig<R, B>> for CachedFBig<R, B> {
+    type Output = dashu_int::IBig;
+    #[inline]
+    fn div_euclid(self, rhs: CachedFBig<R, B>) -> Self::Output {
+        DivEuclid::div_euclid(self.fbig, rhs.fbig)
+    }
+}
+
+impl<R: Round, const B: Word> RemEuclid<CachedFBig<R, B>> for CachedFBig<R, B> {
+    type Output = CachedFBig<R, B>;
+    #[inline]
+    fn rem_euclid(self, rhs: CachedFBig<R, B>) -> Self::Output {
+        CachedFBig::from_fbig(RemEuclid::rem_euclid(self.fbig, rhs.fbig), &self.cache)
+    }
+}
+
+impl<R: Round, const B: Word> DivRemEuclid<CachedFBig<R, B>> for CachedFBig<R, B> {
+    type OutputDiv = dashu_int::IBig;
+    type OutputRem = CachedFBig<R, B>;
+    #[inline]
+    fn div_rem_euclid(self, rhs: CachedFBig<R, B>) -> (Self::OutputDiv, Self::OutputRem) {
+        let (q, r) = DivRemEuclid::div_rem_euclid(self.fbig, rhs.fbig);
+        (q, CachedFBig::from_fbig(r, &self.cache))
+    }
+}
+
+impl<R: Round, const B: Word> Inverse for CachedFBig<R, B> {
+    type Output = Self;
+    #[inline]
+    fn inv(self) -> Self::Output {
+        CachedFBig::from_fbig(Inverse::inv(self.fbig), &self.cache)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sum / Product
+//
+// The value computation is delegated to FBig's impls — so `Sum` inherits the
+// correctly-rounded `precise_sum` (exact accumulate, round once). The result
+// keeps the first element's cache handle (empty iterator → `Default`).
+// ---------------------------------------------------------------------------
+
+impl<R: Round, const B: Word> Sum for CachedFBig<R, B> {
+    fn sum<I: Iterator<Item = Self>>(mut iter: I) -> Self {
+        match iter.next() {
+            Some(first) => {
+                let cache = Rc::clone(&first.cache);
+                let fbig: FBig<R, B> = core::iter::once(first.fbig)
+                    .chain(iter.map(|c| c.fbig))
+                    .sum();
+                CachedFBig::from_fbig(fbig, &cache)
+            }
+            None => Self::default(),
+        }
+    }
+}
+
+impl<'a, R: Round, const B: Word> Sum<&'a CachedFBig<R, B>> for CachedFBig<R, B> {
+    fn sum<I: Iterator<Item = &'a CachedFBig<R, B>>>(mut iter: I) -> Self {
+        match iter.next() {
+            Some(first) => {
+                let cache = Rc::clone(&first.cache);
+                let fbig: FBig<R, B> = core::iter::once(first.fbig.clone())
+                    .chain(iter.map(|c| c.fbig.clone()))
+                    .sum();
+                CachedFBig::from_fbig(fbig, &cache)
+            }
+            None => Self::default(),
+        }
+    }
+}
+
+impl<R: Round, const B: Word> Product for CachedFBig<R, B> {
+    fn product<I: Iterator<Item = Self>>(mut iter: I) -> Self {
+        match iter.next() {
+            Some(first) => {
+                let cache = Rc::clone(&first.cache);
+                let fbig: FBig<R, B> = core::iter::once(first.fbig)
+                    .chain(iter.map(|c| c.fbig))
+                    .product();
+                CachedFBig::from_fbig(fbig, &cache)
+            }
+            None => Self::default(),
+        }
+    }
+}
+
+impl<'a, R: Round, const B: Word> Product<&'a CachedFBig<R, B>> for CachedFBig<R, B> {
+    fn product<I: Iterator<Item = &'a CachedFBig<R, B>>>(mut iter: I) -> Self {
+        match iter.next() {
+            Some(first) => {
+                let cache = Rc::clone(&first.cache);
+                let fbig: FBig<R, B> = core::iter::once(first.fbig.clone())
+                    .chain(iter.map(|c| c.fbig.clone()))
+                    .product();
+                CachedFBig::from_fbig(fbig, &cache)
+            }
+            None => Self::default(),
+        }
     }
 }
 

@@ -9,41 +9,28 @@ use dashu_int::{DoubleWord, IBig};
 
 /// An arbitrary precision floating point number with arbitrary base and rounding mode.
 ///
-/// The float number consists of a [Repr] and a [Context]. The [Repr] instance determines
-/// the value of the number, and the [Context] contains runtime information (such as precision
-/// limit, rounding mode, etc.)
+/// An `FBig` is a [`Repr`] (the value: significand × base<sup>exponent</sup>) paired with a
+/// [`Context`] (the precision cap and rounding mode). Arithmetic follows the associated context;
+/// use the [`Context`] methods directly when you need a different precision/rounding, or to receive
+/// the rounding direction and errors instead of a panic.
 ///
-/// For how the number is represented, see [Repr], for how the precision limit and rounding
-/// mode is applied, see [Context].
+/// The generic parameters are `BASE` (`B`, in `[2, isize::MAX]`) and `RoundingMode` (`R`, chosen from
+/// the [`mode`] module). With the defaults the number is base 2 rounded towards zero (the most
+/// efficient format); [`DBig`](crate::DBig) aliases base 10 rounded to nearest.
 ///
-/// The arithmetic operations on [FBig] follows the behavior of its associated context.
-/// If a different precision limit and/or rounding mode is required, or the rounding
-/// information has to be preserved, use the methods of the [Context] type.
+/// Binary operators require both operands to share the same base and rounding mode (no hidden
+/// conversion is performed); comparison allows differing rounding modes but not differing bases.
 ///
-/// # Generic Parameters
+/// See the [user guide](https://zyxin.xyz/dashu/types.html) for the
+/// memory layout, and the
+/// [construction](https://zyxin.xyz/dashu/construct.html),
+/// [parsing & printing](https://zyxin.xyz/dashu/io/parse.html),
+/// [IEEE 754 compliance](https://zyxin.xyz/dashu/compliance.html), and
+/// [conversion](https://zyxin.xyz/dashu/convert.html) pages for those
+/// topics. (Notably: `FBig` has no NaN, supports IEEE-754 signed zero, and treats infinities as
+/// terminal values.) The accepted string format is documented on the [`core::str::FromStr`] impl.
 ///
-/// The const generic parameters will be abbreviated as `BASE` -> `B`, `RoundingMode` -> `R`.
-/// THe `BASE` must be in range \[2, isize::MAX\], and the `RoundingMode` can be chosen from
-/// the [mode] module.
-///
-/// With the default generic parameters, the floating number is of base 2 rounded towards zero.
-/// This is the most efficient format for operations. To represent a decimal number, the alias
-/// [DBig][crate::DBig] is provided, which is base 10 rounded to the nearest.
-///
-/// # Parsing and printing
-///
-/// To create a [FBig] instance, there are four ways:
-/// 1. Use predifined constants (e.g. [FBig::ZERO], [FBig::ONE], [FBig::NEG_INFINITY]).
-/// 1. Use the literal macro `fbig!` or `dbig!` defined in the [`dashu-macro`](https://docs.rs/dashu-macros/latest/dashu_macros/) crate.
-/// 1. Construct from the significand and exponent using [from_parts()][FBig::from_parts] or [from_parts_const()][FBig::from_parts_const].
-/// 1. Parse from a string.
-///
-/// Conversion from and to [str] is limited to native radix (i.e. base). To print or parse
-/// with different radix, please use [to_binary()][FBig::to_binary], [to_decimal()][FBig::to_decimal]
-/// or [with_base()][FBig::with_base], [with_base_and_precision()][FBig::with_base_and_precision] to convert.
-///
-/// For printing, currently only the [Display][core::fmt::Display] and [Debug][core::fmt::Debug] are supported.
-/// Other formatting traits will be supported in future.
+/// # Examples
 ///
 /// ```
 /// # use dashu_base::ParseError;
@@ -71,55 +58,6 @@ use dashu_int::{DoubleWord, IBig};
 /// }
 /// # Ok::<(), ParseError>(())
 /// ```
-///
-/// For detailed information on the accepted parsing formats, see the docs on the
-/// [`core::str::FromStr`] implementation for [`FBig`].
-///
-/// # Restriction on binary operators
-///
-/// Binary operators on [FBig] instances are restricted to the same base and same rounding mode. This is
-/// designed to make sure that no hidden conversion is performed during the operators. However, for equality
-/// test and comparsion, two [FBig] instances can have different rounding modes (but not different bases),
-/// because rounding will never happends during comparison.
-///
-/// The infinities are converted as it is, and the subnormals are converted using its actual values.
-///
-/// # IEEE 754 behavior compliance
-///
-/// The representation of the floating point number doesn't follow the IEEE 754 standard, as it's not
-/// designed for arbitrary precision numbers. The key differences include:
-/// * [FBig] doesn't support NaN values. In places where IEEE 754 operations would generate NaNs
-///   (e.g. `0/0`, `sqrt(-1)`), the [`Context`] layer returns an [`FpError`](crate::FpError) and the
-///   [FBig] convenience methods panic.
-/// * [FBig] doesn't have subnormal values.
-/// * [FBig] supports IEEE-754 signed zero (`-0`): operations that produce a zero result carry
-///   the sign mandated by IEEE 754 (e.g. `1 / -inf = -0`, `sqrt(-0) = -0`, `ceil(-0) = -0`).
-///   `+0` and `-0` compare equal.
-/// * Infinities are **terminal values**: they can be produced (e.g. `1 / 0 → +inf`, `ln(0) → -inf`,
-///   `exp(huge) → +inf`, `tan(π/2) → +inf`), compared, and printed, but feeding an infinity into a
-///   further operation is an error at the [`Context`] layer ([`FpError::InfiniteInput`](crate::FpError::InfiniteInput)) and panics
-///   at the [FBig] layer. This structurally avoids the IEEE indeterminate forms (`inf − inf`, `inf/inf`,
-///   `0·inf`). The only exceptions are `atan(±inf) = ±π/2` and the `atan2` signed-∞ quadrants, which
-///   have well-defined finite results.
-///
-/// # Convert from/to `f32`/`f64`
-///
-/// Converting from [f32]/[f64] to [FBig] is only defined for base 2 [FBig] (using [TryFrom][core::convert::TryFrom])
-/// to ensure the conversion is lossless. Since [FBig] doesn't support `NAN`s, converting `f32::NAN` or `f64::NAN` will
-/// return [Err].
-///
-/// Converting to [f32]/[f64] (using [to_f32()][FBig::to_f32] and [to_f64()][FBig::to_f64]) can be lossy, and the rounding
-/// direction is contained in the result of these two methods. To use the default IEEE 754 rounding mode (rounding to
-/// nearest), the [Repr::to_f32] and [Repr::to_f64] methods can be used for convenience.
-///
-/// # Convert from/to `UBig`/`IBig`
-///
-/// Converting from `UBig` and `IBig` is trivial and lossless through [From]. However, the reverse direction can be lossy.
-///
-/// The [TryFrom] trait and [to_int()][FBig::to_int] method are the two supported ways to convert from [FBig] to [IBig].
-/// To convert to [UBig][dashu_int::UBig], please first convert to [IBig]. When converting to [IBig], [TryFrom] returns
-/// [Ok] only when the floating point number is not infinite and doesn't have fractional part. To convert with rounding,
-/// use [to_int()][FBig::to_int] instead.
 pub struct FBig<RoundingMode: Round = mode::Zero, const BASE: Word = 2> {
     pub(crate) repr: Repr<BASE>,
     pub(crate) context: Context<RoundingMode>,

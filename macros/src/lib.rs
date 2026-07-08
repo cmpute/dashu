@@ -31,6 +31,11 @@
 //! explicitly adding these dependencies, because the related types are re-exported
 //! by the `dashu` crate.
 
+#![deny(missing_docs)]
+#![deny(clippy::dbg_macro)]
+#![deny(clippy::undocumented_unsafe_blocks)]
+#![deny(clippy::let_underscore_must_use)]
+
 use proc_macro::TokenStream;
 
 mod parse;

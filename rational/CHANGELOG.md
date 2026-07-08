@@ -12,6 +12,13 @@
 - `in_radix`/`from_str_with_radix_prefix` now use `u8` for the radix (was `u32`), matching `dashu-int`.
 - (internal) Expanded-position formatting is faster: the integer part uses `dashu_int::UBig::to_digits`, and the non-repetend fractional path now extracts digits in batches through a precomputed `dashu_int::fast_div::ConstDivisor` (one big-int division per word of digits, instead of one division per digit).
 
+### Improve
+- Documented the `fmt` and `fmt::expanded` modules and enabled `#![deny(missing_docs)]` together
+  with `clippy::dbg_macro`, `clippy::undocumented_unsafe_blocks`, and `clippy::let_underscore_must_use`
+  as crate-level denies.
+- Trimmed the `RBig` rustdoc to a concise summary with a pointer to the user guide (and fixed an
+  "an rational" → "a rational" typo).
+
 ## 0.4.3
 
 ### Add

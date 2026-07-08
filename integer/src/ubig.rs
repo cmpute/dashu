@@ -7,26 +7,19 @@
 
 use crate::repr::{Repr, TypedRepr, TypedReprRef};
 
-// TODO(v0.5): move all the detailed explanations of the num types from the docs to the guide, and leave some links or brief explanations.
-
 /// An unsigned arbitrary precision integer.
 ///
-/// This struct represents an arbitrarily large unsigned integer. Technically the size of the integer
-/// is bounded by the memory size, but it's enough for practical use on modern devices.
+/// `UBig` represents an arbitrarily large non-negative integer. Values that fit in a
+/// [`DoubleWord`](crate::DoubleWord) are inlined (no heap allocation); larger values are stored as a
+/// heap-allocated array of [`Word`](crate::Word)s. The type carries a niche bit, so
+/// [`Option<UBig>`] occupies the same space as [`UBig`].
 ///
-/// # Parsing and printing
+/// For the full discussion — construction, parsing, printing, and the memory layout — see the
+/// [user guide](https://zyxin.xyz/dashu/types.html).
 ///
-/// To create a [UBig] instance, there are three ways:
-/// 1. Use predifined constants (e.g. [UBig::ZERO], [UBig::ONE]).
-/// 1. Use the literal macro `ubig!` defined in the [`dashu-macro`](https://docs.rs/dashu-macros/latest/dashu_macros/) crate.
-/// 1. Parse from a string.
+/// # Examples
 ///
-/// Parsing from either literal or string supports representation with base 2~36.
-///
-/// For printing, the [UBig] type supports common formatting traits ([Display][core::fmt::Display],
-/// [Debug][core::fmt::Debug], [LowerHex][core::fmt::LowerHex], etc.). Specially, printing huge number
-/// using [Debug][core::fmt::Debug] will conveniently omit the middle digits of the number, only print
-/// the least and most significant (decimal) digits.
+/// Parsing and printing (base 2–36 is supported for string/literal parsing):
 ///
 /// ```
 /// # use dashu_base::ParseError;
@@ -52,14 +45,7 @@ use crate::repr::{Repr, TypedRepr, TypedReprRef};
 /// # Ok::<(), ParseError>(())
 /// ```
 ///
-/// # Memory
-///
-/// Integers that fit in a [DoubleWord][crate::DoubleWord] will be inlined on stack and
-/// no heap allocation will be invoked. For large integers, they will be represented as
-/// an array of [Word][crate::Word]s, and stored on heap.
-///
-/// Note that the [UBig] struct has a niche bit, therefore it can be used within simple
-/// enums with no memory overhead.
+/// The niche bit makes `Option<UBig>` free:
 ///
 /// ```
 /// # use dashu_int::UBig;

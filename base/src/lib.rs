@@ -1,6 +1,10 @@
 //! This crate contains general trait definitions and some commonly used structs and enums.
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![deny(missing_docs)]
+#![deny(clippy::dbg_macro)]
+#![deny(clippy::undocumented_unsafe_blocks)]
+#![deny(clippy::let_underscore_must_use)]
 
 pub mod approx;
 pub mod bit;

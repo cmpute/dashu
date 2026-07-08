@@ -59,17 +59,24 @@
 //!   `Complex<f64>` (base-2, mirroring `FBig`'s primitive-float conversions).
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![deny(missing_docs)]
+#![deny(clippy::dbg_macro)]
+#![deny(clippy::undocumented_unsafe_blocks)]
+#![deny(clippy::let_underscore_must_use)]
 
 extern crate alloc;
 
 mod add;
 mod cbig;
+mod cbig_cached;
+mod cbig_cached_ops;
 mod cmp;
 mod convert;
 mod div;
 mod exp;
 mod fmt;
 mod helper_macros;
+mod iter;
 mod log;
 pub mod math;
 mod misc;
@@ -84,6 +91,7 @@ mod third_party;
 pub use third_party::*;
 
 pub use cbig::CBig;
+pub use cbig_cached::CachedCBig;
 pub use repr::{CRounded, CfpResult, Context};
 
 // Rounding machinery and the float primitives CBig is built on are reused from dashu-float

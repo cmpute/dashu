@@ -105,7 +105,9 @@ impl ReducedLarge {
 
 /// Trait for types that can be converted into an [IntoRing::RingElement] by a `RingReducer`.
 pub trait IntoRing<'a, RingReducer> {
+    /// The ring-element representation produced by reducing `self` modulo the ring's modulus.
     type RingElement: 'a;
+    /// Reduce `self` into the residue ring defined by `reducer`.
     fn into_ring(self, reducer: &'a RingReducer) -> Self::RingElement;
 }
 

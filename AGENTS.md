@@ -83,6 +83,10 @@ Keep the `## Unreleased` section updated as you go.
 - Estimating the number of digits can be costly — prefer using `log2_bounds` and `repr.digits_ub`/`digits_lb` instead of computing exact digit counts.
 - The number of digits in an `FBig` significand is at most the context precision, with one intentional exception: the result of an inexact addition or subtraction may carry a single **guard digit** (up to `precision + 1` digits). During internal calculations the bound can be violated more freely; use the methods on `Context` instead of the public API in that case.
 
+## Cached wrappers (`CachedFBig`, `CachedCBig`)
+
+**`CachedFBig` is a drop-in replacement for `FBig`, and `CachedCBig` for `CBig`.** Each cached wrapper must mirror the full public API and trait surface of its non-cached counterpart, delegating every impl to the inner value. **Whenever you add or change a trait impl on `FBig` or `CBig`, mirror it on `CachedFBig` / `CachedCBig` in the same change** — otherwise the `FastReal` / `FastDecimal` / `FastComplex` aliases regress: code that compiles with `FBig`/`CBig` must compile unchanged with `CachedFBig`/`CachedCBig`. The only intentional divergences are that the cached type's transcendental ops thread the shared `ConstCache`, it is `!Send + !Sync`, construction takes a cache handle, `CachedCBig::into_parts` returns `(CachedFBig, CachedFBig)` sharing the handle (not `CBig`'s `(FBig, FBig)`), and **third-party crate traits (serde, num-traits, num-order, rand, zeroize, postgres/diesel) are intentionally not mirrored** — reach them through `.as_fbig()` / `.as_cbig()`.
+
 ## dashu-int internals
 
 When implementing algorithms that manipulate word arrays (`&[Word]`), prefer the existing `Buffer` type over `Vec<Word>`. `Buffer` provides in-place operations like `erase_front`, `push_zeros_front`, `truncate`, and works with `MemoryAllocation` for scratch space — all without `std` or extra allocations. If you find yourself reaching for `Vec<Word>`, consider whether `Buffer` or `MemoryAllocation` would be a better fit.

@@ -216,6 +216,52 @@ macro_rules! impl_conversion_to_float {
 impl_conversion_to_float!(f32 [-149, 128]); // see f32::encode for explanation of the bounds
 impl_conversion_to_float!(f64 [-1074, 1024]); // see f32::encode for explanation of the bounds
 
+/// Compute `floor(log2(|numerator/denominator|))`, given the unsigned
+/// numerator magnitude and `exp = numerator.bit_len() - denominator.bit_len()`.
+///
+/// Since `|numerator/denominator| ∈ [2^(exp-1), 2^(exp+1))`, the result is
+/// either `exp` or `exp - 1`; this disambiguates with a single comparison.
+fn log2_floor_abs(numerator: &UBig, denominator: &UBig, exp: isize) -> isize {
+    let ge_power = if exp >= 0 {
+        numerator >= &(denominator << exp as usize)
+    } else {
+        &(numerator << (-exp) as usize) >= denominator
+    };
+    if ge_power {
+        exp
+    } else {
+        exp - 1
+    }
+}
+
+/// Round `|numerator/denominator| * 2^(-shift)` to the nearest integer
+/// (ties to even), where `numerator` is the unsigned magnitude and `sign`
+/// is the sign of the original rational.
+fn rounded_abs_mantissa(
+    numerator: UBig,
+    denominator: &UBig,
+    sign: Sign,
+    shift: isize,
+) -> Approximation<UBig, Sign> {
+    let (num, den) = if shift >= 0 {
+        (numerator, denominator << shift as usize)
+    } else {
+        (numerator << (-shift) as usize, denominator.clone())
+    };
+    let (man, r) = num.div_rem(&den);
+
+    if r.is_zero() {
+        Exact(man)
+    } else {
+        let half = (r << 1).cmp(&den);
+        if half == Ordering::Greater || (half == Ordering::Equal && man.bit(0)) {
+            Inexact(man + UBig::ONE, sign)
+        } else {
+            Inexact(man, -sign)
+        }
+    }
+}
+
 impl Repr {
     /// Convert the rational number to [f32] without guaranteed correct rounding.
     fn to_f32_fast(&self) -> f32 {
@@ -323,42 +369,42 @@ impl Repr {
             return Exact(0.);
         }
 
-        // to get enough precision, shift such that numerator has
-        // 24 bits more than the denominator
         let sign = self.numerator.sign();
-        let num_bits = self.numerator.bit_len();
-        let den_bits = self.denominator.bit_len();
+        let numerator = (&self.numerator).unsigned_abs();
+        // The bit-length difference bounds the binary exponent:
+        // `top_exp = floor(log2(|value|))` is either `exp` or `exp - 1`.
+        // Fast-path the definite overflow/underflow range from this O(1) bound
+        // so the comparison (and its shift) inside `log2_floor_abs` stays bounded.
+        let exp = numerator.bit_len() as isize - self.denominator.bit_len() as isize;
+        if exp >= 129 {
+            // top_exp >= 128, so |value| >= 2^128 > f32::MAX
+            return Inexact(sign * f32::INFINITY, sign);
+        } else if exp <= -151 {
+            // top_exp <= -151 < -150, so |value| < 2^-150, which rounds to zero
+            return Inexact(sign * 0f32, -sign);
+        }
 
-        let shift = num_bits as isize - den_bits as isize - 24; // i.e. exponent
-        let (num, den) = if shift >= 0 {
-            (self.numerator.clone(), (&self.denominator) << shift as usize)
-        } else {
-            ((&self.numerator) << (-shift) as usize, self.denominator.clone())
-        };
-
-        // then construct the
-        if shift >= 128 {
+        let top_exp = log2_floor_abs(&numerator, &self.denominator, exp);
+        if top_exp >= 128 {
             // max f32 = 2^128 * (1 - 2^-24)
             Inexact(sign * f32::INFINITY, sign)
-        } else if shift < -149 - 25 {
-            // min f32 = 2^-149, quotient has at most 25 bits
+        } else if top_exp < -150 {
+            // values < 2^-150 round to zero; 2^-150 is the half-way tie, rounded to even (zero)
             Inexact(sign * 0f32, -sign)
         } else {
-            let (man, r) = num.unsigned_abs().div_rem(&den);
-            let man: u32 = man.try_into().unwrap();
-
-            // round to nearest, ties to even
-            if r.is_zero() {
-                Exact(man)
-            } else {
-                let half = (r << 1).cmp(&den);
-                if half == Ordering::Greater || (half == Ordering::Equal && man & 1 > 0) {
-                    Inexact(man + 1, sign)
+            // scale |value| by 2^(-shift) into [2^23, 2^24) so the rounded mantissa
+            // fits f32's 24-bit significand exactly (no second rounding in encode).
+            // Clamp to the subnormal quantization 2^-149 for tiny magnitudes.
+            let shift = (top_exp - 23).max(-149);
+            rounded_abs_mantissa(numerator, &self.denominator, sign, shift).and_then(|man| {
+                let man: u32 = man.try_into().unwrap();
+                if man == 0 {
+                    // encode(0, _) yields +0; preserve the sign of an underflowed zero
+                    Exact(sign * 0f32)
                 } else {
-                    Inexact(man, -sign)
+                    f32::encode(sign * man as i32, shift as i16)
                 }
-            }
-            .and_then(|man| f32::encode(sign * man as i32, shift as i16))
+            })
         }
     }
 
@@ -368,42 +414,36 @@ impl Repr {
             return Exact(0.);
         }
 
-        // to get enough precision, shift such that numerator has
-        // 53 bits more than the denominator
         let sign = self.numerator.sign();
-        let num_bits = self.numerator.bit_len();
-        let den_bits = self.denominator.bit_len();
+        let numerator = (&self.numerator).unsigned_abs();
+        // See `to_f32` for the rationale on fast-pathing via the bit-length bound.
+        let exp = numerator.bit_len() as isize - self.denominator.bit_len() as isize;
+        if exp >= 1025 {
+            // top_exp >= 1024, so |value| >= 2^1024 > f64::MAX
+            return Inexact(sign * f64::INFINITY, sign);
+        } else if exp <= -1076 {
+            // top_exp <= -1076 < -1075, so |value| < 2^-1075, which rounds to zero
+            return Inexact(sign * 0f64, -sign);
+        }
 
-        let shift = num_bits as isize - den_bits as isize - 53; // i.e. exponent
-        let (num, den) = if shift >= 0 {
-            (self.numerator.clone(), (&self.denominator) << shift as usize)
-        } else {
-            ((&self.numerator) << (-shift) as usize, self.denominator.clone())
-        };
-
-        // then construct the
-        if shift >= 1024 {
+        let top_exp = log2_floor_abs(&numerator, &self.denominator, exp);
+        if top_exp >= 1024 {
             // max f64 = 2^1024 × (1 − 2^−53)
             Inexact(sign * f64::INFINITY, sign)
-        } else if shift < -1074 - 53 {
-            // min f64 = 2^-1074, quotient has at most 53 bits
+        } else if top_exp < -1075 {
+            // values < 2^-1075 round to zero; 2^-1075 is the half-way tie, rounded to even (zero)
             Inexact(sign * 0f64, -sign)
         } else {
-            let (man, r) = num.unsigned_abs().div_rem(&den);
-            let man: u64 = man.try_into().unwrap();
-
-            // round to nearest, ties to even
-            if r.is_zero() {
-                Exact(man)
-            } else {
-                let half = (r << 1).cmp(&den);
-                if half == Ordering::Greater || (half == Ordering::Equal && man & 1 > 0) {
-                    Inexact(man + 1, sign)
+            // scale |value| into [2^52, 2^53) for an exact 53-bit mantissa (no second rounding)
+            let shift = (top_exp - 52).max(-1074);
+            rounded_abs_mantissa(numerator, &self.denominator, sign, shift).and_then(|man| {
+                let man: u64 = man.try_into().unwrap();
+                if man == 0 {
+                    Exact(sign * 0f64)
                 } else {
-                    Inexact(man, -sign)
+                    f64::encode(sign * man as i64, shift as i16)
                 }
-            }
-            .and_then(|man| f64::encode(sign * man as i64, shift as i16))
+            })
         }
     }
 }
@@ -576,5 +616,93 @@ impl Relaxed {
         } else {
             Approximation::Inexact(trunc, fract)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dashu_base::Sign::{Negative, Positive};
+
+    #[test]
+    fn test_rbig_to_f64_without_double_rounding() {
+        let input =
+            RBig::from_parts((-10534148920556696739i128).into(), 73786976294838206464u128.into());
+
+        assert_eq!(input.to_f64(), Inexact(f64::from_bits(0xbfc2_461a_1430_9b17), Negative));
+        assert_eq!((-input).to_f64(), Inexact(f64::from_bits(0x3fc2_461a_1430_9b17), Positive));
+    }
+
+    #[test]
+    fn test_rbig_to_float_midpoints_tie_to_even() {
+        assert_eq!(
+            RBig::from_parts(((1u64 << 24) + 1).into(), (1u64 << 24).into()).to_f32(),
+            Inexact(1.0, Negative)
+        );
+        assert_eq!(
+            RBig::from_parts(((1u64 << 24) + 3).into(), (1u64 << 24).into()).to_f32(),
+            Inexact(f32::from_bits(0x3f80_0002), Positive)
+        );
+
+        assert_eq!(
+            RBig::from_parts(((1u64 << 53) + 1).into(), (1u64 << 53).into()).to_f64(),
+            Inexact(1.0, Negative)
+        );
+        assert_eq!(
+            RBig::from_parts(((1u64 << 53) + 3).into(), (1u64 << 53).into()).to_f64(),
+            Inexact(f64::from_bits(0x3ff0_0000_0000_0002), Positive)
+        );
+    }
+
+    #[test]
+    fn test_rbig_to_float_around_midpoints() {
+        assert_eq!(
+            RBig::from_parts(((1u64 << 25) + 1).into(), (1u64 << 25).into()).to_f32(),
+            Inexact(1.0, Negative)
+        );
+        assert_eq!(
+            RBig::from_parts(((1u64 << 25) + 3).into(), (1u64 << 25).into()).to_f32(),
+            Inexact(f32::from_bits(0x3f80_0001), Positive)
+        );
+
+        assert_eq!(
+            RBig::from_parts(((1u128 << 54) + 1).into(), (1u128 << 54).into()).to_f64(),
+            Inexact(1.0, Negative)
+        );
+        assert_eq!(
+            RBig::from_parts(((1u128 << 54) + 3).into(), (1u128 << 54).into()).to_f64(),
+            Inexact(f64::from_bits(0x3ff0_0000_0000_0001), Positive)
+        );
+    }
+
+    #[test]
+    fn test_rbig_to_float_subnormal_rounding_boundaries() {
+        assert_eq!(RBig::from_parts(1.into(), UBig::ONE << 150).to_f32(), Inexact(0.0, Negative));
+        assert_eq!(
+            RBig::from_parts((-1).into(), UBig::ONE << 150).to_f32(),
+            Inexact(-0.0, Positive)
+        );
+        assert_eq!(
+            RBig::from_parts(3.into(), UBig::ONE << 151).to_f32(),
+            Inexact(f32::from_bits(1), Positive)
+        );
+        assert_eq!(
+            RBig::from_parts(3.into(), UBig::ONE << 150).to_f32(),
+            Inexact(f32::from_bits(2), Positive)
+        );
+
+        assert_eq!(RBig::from_parts(1.into(), UBig::ONE << 1075).to_f64(), Inexact(0.0, Negative));
+        assert_eq!(
+            RBig::from_parts((-1).into(), UBig::ONE << 1075).to_f64(),
+            Inexact(-0.0, Positive)
+        );
+        assert_eq!(
+            RBig::from_parts(3.into(), UBig::ONE << 1076).to_f64(),
+            Inexact(f64::from_bits(1), Positive)
+        );
+        assert_eq!(
+            RBig::from_parts(3.into(), UBig::ONE << 1075).to_f64(),
+            Inexact(f64::from_bits(2), Positive)
+        );
     }
 }

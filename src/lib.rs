@@ -1,6 +1,10 @@
 //! The meta crate that re-exports all `dashu` numeric types.
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![deny(missing_docs)]
+#![deny(clippy::dbg_macro)]
+#![deny(clippy::undocumented_unsafe_blocks)]
+#![deny(clippy::let_underscore_must_use)]
 
 /// Defintions of common traits
 pub mod base {
@@ -157,3 +161,7 @@ pub type Rational = dashu_ratio::RBig;
 
 /// A verbose alias for [CBig][dashu_cmplx::CBig] (base 2, rounding towards zero)
 pub type Complex = dashu_cmplx::CBig;
+
+/// A verbose alias for [CachedCBig][dashu_cmplx::CachedCBig] (base 2, rounding towards zero) — the
+/// cached, faster variant of [`Complex`] for transcendental-heavy code. `!Send + !Sync`.
+pub type FastComplex = dashu_cmplx::CachedCBig;

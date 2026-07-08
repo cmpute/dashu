@@ -13,8 +13,10 @@ use core::{
 /// assert_eq!((-5).abs(), 5);
 /// ```
 pub trait Abs {
+    /// The type of the absolute value.
     type Output;
 
+    /// Compute the absolute value.
     fn abs(self) -> Self::Output;
 }
 
@@ -26,8 +28,10 @@ pub trait Abs {
 /// assert_eq!((-5i8).unsigned_abs(), 5u8);
 /// ```
 pub trait UnsignedAbs {
+    /// The type of the unsigned absolute value.
     type Output;
 
+    /// Compute the absolute value as an unsigned type.
     fn unsigned_abs(self) -> Self::Output;
 }
 
@@ -43,6 +47,7 @@ pub trait UnsignedAbs {
 /// assert!(12.3.abs_cmp(&-12.3).is_eq());
 /// ```
 pub trait AbsOrd<Rhs = Self> {
+    /// Compare the magnitude of `self` against the magnitude of `rhs`.
     fn abs_cmp(&self, rhs: &Rhs) -> Ordering;
 }
 
@@ -64,12 +69,15 @@ pub trait AbsOrd<Rhs = Self> {
 /// assert!((0.).is_positive());
 /// ```
 pub trait Signed {
+    /// Return the sign of the number.
     fn sign(&self) -> Sign;
 
+    /// Returns `true` if the number is positive (including positive zero).
     #[inline]
     fn is_positive(&self) -> bool {
         self.sign() == Sign::Positive
     }
+    /// Returns `true` if the number is negative.
     #[inline]
     fn is_negative(&self) -> bool {
         self.sign() == Sign::Negative
@@ -116,7 +124,9 @@ impl_abs_ops_prim!(f32; f64;);
 /// A sign can be converted to or from a boolean value, assuming `true` is [Negative].
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Sign {
+    /// A non-negative value (positive, or positive/negative zero).
     Positive,
+    /// A negative value.
     Negative,
 }
 
