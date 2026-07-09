@@ -10,7 +10,6 @@ use std::ops::{Add, Div, Mul, Sub};
 use std::str::FromStr;
 
 use dashu_cmplx::CBig;
-use dashu_float::FBig;
 use pyo3::{
     Bound, IntoPyObjectExt, Py, PyAny, PyResult,
     basic::CompareOp,
@@ -41,8 +40,8 @@ fn to_cbig(ob: &Bound<'_, PyAny>) -> PyResult<CBig> {
     if ob.is_instance_of::<PyComplex>() {
         let re: f64 = ob.getattr(intern!(ob.py(), "real"))?.extract()?;
         let im: f64 = ob.getattr(intern!(ob.py(), "imag"))?.extract()?;
-        let re = FBig::try_from(re).map_err(conversion_error_to_py)?;
-        let im = FBig::try_from(im).map_err(conversion_error_to_py)?;
+        let re = crate::utils::fbig_from_f64(re).map_err(conversion_error_to_py)?;
+        let im = crate::utils::fbig_from_f64(im).map_err(conversion_error_to_py)?;
         return Ok(CBig::from_parts(re, im));
     }
     if ob.is_instance_of::<PyInt>() {
@@ -56,7 +55,7 @@ fn to_cbig(ob: &Bound<'_, PyAny>) -> PyResult<CBig> {
     }
     if ob.is_instance_of::<PyFloat>() {
         let f: f64 = ob.extract()?;
-        let f = FBig::try_from(f).map_err(conversion_error_to_py)?;
+        let f = crate::utils::fbig_from_f64(f).map_err(conversion_error_to_py)?;
         return Ok(CBig::from(f));
     }
     if let Ok(s) = ob.extract::<String>() {

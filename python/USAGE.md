@@ -26,7 +26,7 @@ native Python numbers as well as strings:
 
 ```python
 UBig(144)              # int
-FBig(1.5)              # float (kept at f64's native precision)
+FBig(1.5)              # float (at the module default precision)
 DBig("1.23")           # decimal string
 RBig(Fraction(1, 3))   # fractions.Fraction
 CBig(3.0, 4.0)         # (re, im)
@@ -61,6 +61,45 @@ increasing precision reuse the precomputed constants.
 
 A module-level `math` API mirrors the common functions — `dashu.sin`, `dashu.sqrt`,
 `dashu.exp`, `dashu.gcd`, `dashu.lcm`, … — and likewise accepts plain Python numbers.
+
+## Precision
+
+`FBig` and `CBig` are **binary** (base 2) — precision is counted in **bits**. `DBig` is
+**decimal** (base 10) — precision is counted in **decimal digits** (1 decimal digit
+≈ 3.32 bits).
+
+A value's precision comes from how it's built:
+
+| input | `FBig` / `CBig` | `DBig` |
+|---|---|---|
+| `int` | exact (the integer's bit length) | the literal's digits |
+| `float` / `complex` | the module default (below) | the float's significant decimal digits |
+| `str` | the string's own digits | the string's own digits |
+
+**`FBig`/`CBig` default.** `float`/`complex` inputs build at the module default, which is
+f64's 53 bits. Read it with `dashu.get_precision()` and set it with
+`dashu.set_precision(bits)` (returns the previous value); it also applies to arithmetic
+that mixes integers with floats. Integer inputs are *not* affected — `FBig(2)` stays exact
+at 2 bits, so write `FBig(2.0)` to apply the default.
+
+```python
+dashu.set_precision(100)
+FBig(1.5).precision()    # 100   (float → default)
+FBig(2).precision()      # 2     (int → exact, unaffected)
+FBig(2.0).precision()    # 100
+```
+
+**`DBig` has no module default**, but a `float` input already lands on a sensible precision
+— the float's significant decimal digits (the shortest decimal that round-trips the f64), so
+`DBig(12.345)` has precision 5 and `DBig(0.1)` has precision 1. To exceed that (e.g. for
+transcendentals, which need more digits than the input carries), pass a longer string or
+call `.with_precision`. For both kinds, `.with_precision(n)` overrides one value (bits for
+`FBig`/`CBig`, decimal digits for `DBig`), and transcendentals run at the value's precision:
+
+```python
+DBig(2).with_precision(50).ln()                   # 50 decimal digits
+FBig(2.0).with_precision(200).exp().precision()    # 200 bits
+```
 
 ## Formatting
 

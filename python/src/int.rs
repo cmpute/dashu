@@ -64,7 +64,7 @@ macro_rules! impl_binops {
                 UniInput::BInt(x) => IPy((&lhs.0).$rs_method(&x.0)).into_py_any(py)?,
                 UniInput::OBInt(x) => IPy((&lhs.0).$rs_method(x)).into_py_any(py)?,
                 UniInput::Float(x) => {
-                    let f = FBig::try_from(x).map_err(conversion_error_to_py)?;
+                    let f = crate::utils::fbig_from_f64(x).map_err(conversion_error_to_py)?;
                     FPy((&lhs.0).$rs_method(f)).into_py_any(py)?
                 }
                 UniInput::BFloat(x) => FPy((&lhs.0).$rs_method(&x.0)).into_py_any(py)?,
@@ -92,7 +92,7 @@ macro_rules! impl_binops {
                 UniInput::BInt(x) => IPy((&x.0).$rs_method(&rhs.0)).into_py_any(py)?,
                 UniInput::OBInt(x) => IPy(x.$rs_method(&rhs.0)).into_py_any(py)?,
                 UniInput::Float(x) => {
-                    let f = FBig::try_from(x).map_err(conversion_error_to_py)?;
+                    let f = crate::utils::fbig_from_f64(x).map_err(conversion_error_to_py)?;
                     FPy(f.$rs_method(&rhs.0)).into_py_any(py)?
                 }
                 UniInput::BFloat(x) => FPy((&x.0).$rs_method(&rhs.0)).into_py_any(py)?,
@@ -170,7 +170,7 @@ fn upy_mod(lhs: &UPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> 
         UniInput::BInt(x) => UPy((&lhs.0).rem(&x.0)).into_py_any(py)?,
         UniInput::OBInt(x) => UPy((&lhs.0).rem(x)).into_py_any(py)?,
         UniInput::Float(x) => {
-            let f = FBig::try_from(x).map_err(conversion_error_to_py)?;
+            let f = crate::utils::fbig_from_f64(x).map_err(conversion_error_to_py)?;
             FPy(FBig::from(lhs.0.clone()).rem(f)).into_py_any(py)?
         }
         UniInput::BFloat(x) => FPy(FBig::from(lhs.0.clone()).rem(&x.0)).into_py_any(py)?,
@@ -198,7 +198,7 @@ fn ipy_mod(lhs: &IPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> 
         UniInput::BInt(x) => IPy((&lhs.0).rem(&x.0)).into_py_any(py)?,
         UniInput::OBInt(x) => IPy((&lhs.0).rem(x)).into_py_any(py)?,
         UniInput::Float(x) => {
-            let f = FBig::try_from(x).map_err(conversion_error_to_py)?;
+            let f = crate::utils::fbig_from_f64(x).map_err(conversion_error_to_py)?;
             FPy(FBig::from(lhs.0.clone()).rem(f)).into_py_any(py)?
         }
         UniInput::BFloat(x) => FPy(FBig::from(lhs.0.clone()).rem(&x.0)).into_py_any(py)?,

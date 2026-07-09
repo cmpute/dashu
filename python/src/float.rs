@@ -89,10 +89,12 @@ impl FPy {
             return Ok(FPy(FBig::from_str(&s).map_err(parse_error_to_py)?));
         }
         if ob.is_instance_of::<PyFloat>() {
-            // Represent the float at f64's native precision, so that subsequent operations
-            // (transcendentals in particular, which require precision > 0) are well-defined.
-            let f = FBig::try_from(ob.extract::<f64>()?).map_err(conversion_error_to_py)?;
-            return Ok(FPy(f.with_precision(f64::MANTISSA_DIGITS as usize).value()));
+            // Represent the float at the current default precision (configurable via
+            // `dashu.set_precision`), so that subsequent operations (transcendentals in
+            // particular, which require precision > 0) are well-defined.
+            let f = crate::utils::fbig_from_f64(ob.extract::<f64>()?)
+                .map_err(conversion_error_to_py)?;
+            return Ok(FPy(f));
         }
         if let Ok(obj) = ob.extract::<PyRef<Self>>() {
             return Ok(FPy(obj.0.clone()));

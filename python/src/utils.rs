@@ -1,14 +1,49 @@
 use std::str::FromStr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::{
     convert::{conversion_error_to_py, parse_error_to_py},
     types::*,
 };
-use dashu_base::{Signed, UnsignedAbs};
+use dashu_base::{ConversionError, Signed, UnsignedAbs};
 use dashu_float::{DBig, FBig};
 use dashu_int::{IBig, UBig};
 use dashu_ratio::RBig;
-use pyo3::{IntoPyObjectExt, Py, PyAny, PyResult, prelude::*};
+use pyo3::{IntoPyObjectExt, Py, PyAny, PyResult, exceptions::PyValueError, prelude::*};
+
+/// Default precision (in bits) for `FBig`/`CBig` constructed from `float`/`complex`.
+/// The initial value matches `f64`'s native precision; configure it with [`set_precision`].
+static DEFAULT_PRECISION: AtomicUsize = AtomicUsize::new(f64::MANTISSA_DIGITS as usize);
+
+/// The current default precision (bits) used when constructing `FBig`/`CBig` from
+/// `float`/`complex` inputs.
+pub fn default_precision() -> usize {
+    DEFAULT_PRECISION.load(Ordering::Relaxed)
+}
+
+/// Build a binary `FBig` from an `f64` at the current default precision.
+pub fn fbig_from_f64(f: f64) -> Result<FBig, ConversionError> {
+    FBig::try_from(f).map(|x| x.with_precision(default_precision()).value())
+}
+
+/// Get the default precision (in bits) used when constructing `FBig`/`CBig` from
+/// `float`/`complex` inputs.
+#[pyfunction]
+pub fn get_precision() -> usize {
+    default_precision()
+}
+
+/// Set the default precision (in bits) used when constructing `FBig`/`CBig` from
+/// `float`/`complex` inputs. Returns the previous value. Affects only construction from
+/// `float`/`complex` (and arithmetic mixing them in); integer/string/`Decimal` inputs keep
+/// their natural precision — call `.with_precision()` to override per value.
+#[pyfunction]
+pub fn set_precision(precision: usize) -> PyResult<usize> {
+    if precision == 0 {
+        return Err(PyValueError::new_err("precision must be a positive integer"));
+    }
+    Ok(DEFAULT_PRECISION.swap(precision, Ordering::Relaxed))
+}
 
 /// Convert input automatically to corresponding dashu type:
 /// (int -> UBig/IBig, float -> FBig, decimal -> DBig, fraction -> RBig)

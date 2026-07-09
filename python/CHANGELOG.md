@@ -44,6 +44,11 @@
   (configurable precision via `--digits`), and `mandelbrot_zoom.py` renders a deep-zoom
   Mandelbrot set with arbitrary-precision `FBig`/`CBig`, with optional `--mpmath` reference
   and `--compare` (native `f64`) panels and a report on where `f64` loses resolution.
+- Configurable default precision for `FBig`/`CBig` constructed from `float`/`complex`:
+  `dashu.get_precision()` / `dashu.set_precision(bits)` (returns the previous value;
+  defaults to 53, f64's native precision). Affects only `float`/`complex` inputs and
+  arithmetic mixing them in; integer/string/`Decimal` inputs keep their natural precision
+  — call `.with_precision()` to override per value.
 
 ### Fix
 - Removed the `todo!()` panics in `UBig.__mod__`, `IBig.__mod__`, and `IBig.__pow__`.

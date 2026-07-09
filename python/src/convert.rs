@@ -249,8 +249,7 @@ impl<'a> UniInput<'a> {
             Self::BUint(x) => Ok(FPy(FBig::from(x.0.clone()))),
             Self::BInt(x) => Ok(FPy(FBig::from(x.0.clone()))),
             Self::OBInt(x) => Ok(FPy(FBig::from(x))),
-            Self::Float(x) => FBig::try_from(x)
-                .map(|f| f.with_precision(f64::MANTISSA_DIGITS as usize).value())
+            Self::Float(x) => crate::utils::fbig_from_f64(x)
                 .map(FPy)
                 .map_err(conversion_error_to_py),
             Self::BFloat(x) => Ok(FPy(x.0.clone())),
@@ -321,9 +320,7 @@ impl<'a> UniInput<'a> {
             Self::BUint(x) => Ok(FBig::from(x.0.clone())),
             Self::BInt(x) => Ok(FBig::from(x.0.clone())),
             Self::OBInt(x) => Ok(FBig::from(x)),
-            Self::Float(x) => FBig::try_from(x)
-                .map(|f| f.with_precision(f64::MANTISSA_DIGITS as usize).value())
-                .map_err(conversion_error_to_py),
+            Self::Float(x) => crate::utils::fbig_from_f64(x).map_err(conversion_error_to_py),
             Self::BFloat(x) => Ok(x.0.clone()),
             // Decimal -> base-2 via the correctly-rounded to_binary conversion
             Self::BDecimal(x) => Ok(x.0.to_binary().value()),
