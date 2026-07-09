@@ -60,8 +60,13 @@ BITS = bits_for(DIGITS)
 
 
 def configure_precision(digits):
-    """Set the stdlib `decimal`, `mpmath`, and `gmpy2` contexts to `digits` decimal digits."""
+    """Set the dashu default plus the `decimal`/`mpmath`/`gmpy2` contexts to `digits`.
+
+    `digits` is in decimal digits; the binary-precision libraries (dashu, gmpy2) use the
+    matching bit count via `dashu.set_precision` / gmpy2's bit precision.
+    """
     getcontext().prec = digits
+    dashu.set_precision(bits_for(digits))
     if HAVE_MPMATH:
         mpmath.mp.dps = digits
     if HAVE_GMPY2:
@@ -140,12 +145,14 @@ dec_div = {
 }
 
 # ---- 5. float transcendentals: exp & ln -------------------------------------
+# Use a float literal so FBig builds at the module default precision set by
+# `configure_precision` (integer inputs keep their exact bit length and bypass it).
 def dashu_exp2():
-    return FBig(2).with_precision(BITS).exp()
+    return FBig(2.0).exp()
 
 
 def dashu_ln2():
-    return FBig(2).with_precision(BITS).ln()
+    return FBig(2.0).ln()
 
 
 flt_exp = {"dashu FBig": dashu_exp2}
@@ -159,9 +166,7 @@ if HAVE_MPMATH:
 
 # ---- 6. complex exp ---------------------------------------------------------
 def dashu_cexp():
-    re = FBig(1.5).with_precision(BITS)
-    im = FBig(0.5).with_precision(BITS)
-    return CBig.from_parts(re, im).exp()
+    return CBig.from_parts(FBig(1.5), FBig(0.5)).exp()
 
 
 cpx_exp = {"dashu CBig": dashu_cexp}
