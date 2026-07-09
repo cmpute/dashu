@@ -46,6 +46,12 @@
 ### Changed
 - `FBig(f64)` now constructs at f64's native precision (53 bits) so that subsequent
   transcendental operations (which require precision > 0) are well-defined.
+- Split `python/README.md` into a self-explanatory package description (a "What is
+  dashu?" / "What is dashu-rs?" breakdown clarifying that `dashu-rs` is a standalone,
+  pip-installable wheel — no Rust toolchain needed) and a separate `python/USAGE.md`
+  holding the full usage guide (installation, types, operations, formatting). The mdBook
+  guide page `guide/src/python.md` now opens with a `## Overview` section relating the
+  `dashu-python` Rust crate to the `dashu-rs` PyPI package, then includes `USAGE.md`.
 
 # TODO (still open)
 - support pickle through `__reduce__`
