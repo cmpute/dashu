@@ -39,6 +39,11 @@
   `0/0`-style indeterminate forms raise `ZeroDivisionError`, and overflow/underflow
   produce signed infinities/zeros — routed through the panic-free `Context` layer with a
   shared thread-local `ConstCache`.
+- Example scripts under `python/examples/`: `benchmark.py` compares `dashu` against
+  `gmpy2`, `mpmath`, and the stdlib `decimal`/`fractions` across all number domains
+  (configurable precision via `--digits`), and `mandelbrot_zoom.py` renders a deep-zoom
+  Mandelbrot set with arbitrary-precision `FBig`/`CBig`, with optional `--mpmath` reference
+  and `--compare` (native `f64`) panels and a report on where `f64` loses resolution.
 
 ### Fix
 - Removed the `todo!()` panics in `UBig.__mod__`, `IBig.__mod__`, and `IBig.__pow__`.
