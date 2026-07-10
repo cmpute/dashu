@@ -1,6 +1,6 @@
 # dashu v0.5 Release Plan
 
-Last updated: 2026-07-07
+Last updated: 2026-07-11
 
 This document is the consolidated plan for the **v0.5** release — a **major (breaking)** bump.
 Because it is a major release, its two organizing goals are:
@@ -391,7 +391,14 @@ removed). All additive — safe as point releases under 0.5.x.
 
 ## Out of Scope for v0.5
 
-- `dashu-python` remains excluded and out of the release critical path (per `AGENTS.md`).
+- `dashu-python` remains excluded from the workspace MSRV policy and the core release
+  critical path (per `AGENTS.md`). Its first release shipped independently as `dashu-rs`
+  **0.4.0** (PR #86 — Python bindings for all six core types, panic-free transcendentals,
+  the full `format()` mini-language, a module-level `math` API, configurable default
+  precision via `dashu.set_precision()`, and `benchmark`/`mandelbrot_zoom` example scripts).
+  It tracks the core version line and will bump to **0.5.0** alongside the core crates
+  (refresh its `version = "0.4.x"` path deps + its own version), but that is an independent
+  release action, not a gate on the v0.5 core release.
 - All `dashu-cmplx` follow-ups (complex hyperbolics, `fma`, `rootofunity`, `agm`, Ziv correct
   rounding, `CBig` serde/rkyv/zeroize, `num_complex` interop, ball arithmetic,
   `CRound` independent re/im rounding, vector ops) — see §3.4 for the full consolidated list.
