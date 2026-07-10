@@ -1,67 +1,42 @@
-# Unreleased
+# Changelog
 
-### Add
-- Upgraded PyO3 from 0.20 to 0.29 (modern `Bound` API, `IntoPyObject`, edition 2024,
-  rust-version 1.85). `requires-python` is now `>=3.8`.
-- Added `dashu-cmplx` support: a new `CBig` Python type wrapping a bare complex number,
-  with arithmetic, `real`/`imag`, `conj`/`proj`/`norm`/`abs`/`arg`, transcendentals
-  (`sin`/`cos`/`tan`/`exp`/`ln`/`sqrt`/`powi`/`powf`), and `__complex__`.
-- Arithmetic, comparison, and `__bool__` for `FBig`, `DBig`, and `RBig` (previously
-  only construction/repr/hash were exposed).
-- Integer number theory and bit operations on `UBig`/`IBig`: `sqrt`/`cbrt`/`nth_root`,
-  `sqr`/`cubic`, `ilog`, `gcd`/`gcd_ext`, `count_ones`/`trailing_zeros`/…,
-  `__floordiv__`/`__divmod__`, and in-place operators.
-- Float/rational methods: predicates (`is_zero`/`is_finite`/`is_infinite`), rounding
-  (`trunc`/`floor`/`ceil`/`round`/`fract`), `with_precision`/`precision`/`digits`,
-  `to_int`, `numerator`/`denominator`, `split_at_point`, `sqr`/`cubic`/`pow`.
-- Cross-type conversions: `FBig.to_decimal`/`to_binary`/`to_rational`,
-  `RBig.to_float`/`to_decimal`.
-- All numeric function/method arguments now accept plain Python numbers via the
-  `UniInput` dispatch — e.g. `dashu.sqrt(9.0)`, `FBig(2).powi(300)`, `UBig(12).gcd(8)`,
-  `UBig(n) += 5`, `RBig.from_parts(1, 3)`. The module-level `math` functions, `powf`,
-  `atan2`, `gcd`/`gcd_ext`/`lcm`, `is_multiple_of`/`remove`, in-place ops, `powi`,
-  `from_parts`, `ilog`, and `simplest_from_float` all take native int/float.
-- `__format__` now honors the Python format mini-language for all types: scientific
-  (`e`/`E`), fixed (`f`), general (`g`), integer (`b`/`o`/`d`/`x`/`X`/`c`), with
-  sign/width/align/fill/zero-pad/grouping and precision. Float formatting preserves
-  the value's arbitrary precision (e.g. `f"{FBig(2).with_precision(200).exp():.20e}"`).
-- Broadened constructors: `FBig`/`DBig`/`RBig`/`CBig` now accept any Python number
-  (int/float/`Decimal`/`Fraction`) in addition to strings.
-- A module-level `math` API (`sin`/`cos`/…/`exp`/`ln`/`sqrt`/`gcd`/`lcm`/…) and a
-  `dashu.Cache` handle for the global constant cache.
-- `FBig` (base 2) now prints in **hexadecimal** by default (`str`/`format`/`'a'`/`'A'`),
-  e.g. `str(FBig(1.5)) == '0x3p-1'` — lossless, no base-2→base-10 rounding. Decimal
-  presentations (`'e'`/`'f'`/`'g'`) still convert to base 10. (`DBig` stays decimal.)
-- Float format default precision is now the value's native precision (its significant
-  digits) rather than CPython's fixed 6 — `format(f, 'e')` shows all digits; use `'.6e'`
-  for the old 6-digit behavior.
-- Transcendentals are now panic-free: domain errors raise `ValueError`,
-  `0/0`-style indeterminate forms raise `ZeroDivisionError`, and overflow/underflow
-  produce signed infinities/zeros — routed through the panic-free `Context` layer with a
-  shared thread-local `ConstCache`.
-- Example scripts under `python/examples/`: `benchmark.py` compares `dashu` against
-  `gmpy2`, `mpmath`, and the stdlib `decimal`/`fractions` across all number domains
-  (configurable precision via `--digits`), and `mandelbrot_zoom.py` renders a deep-zoom
-  Mandelbrot set with arbitrary-precision `FBig`/`CBig`, with optional `--mpmath` reference
-  and `--compare` (native `f64`) panels and a report on where `f64` loses resolution.
-- Configurable default precision for `FBig`/`CBig` constructed from `float`/`complex`:
-  `dashu.get_precision()` / `dashu.set_precision(bits)` (returns the previous value;
-  defaults to 53, f64's native precision). Affects only `float`/`complex` inputs and
-  arithmetic mixing them in; integer/string/`Decimal` inputs keep their natural precision
-  — call `.with_precision()` to override per value.
+## 0.4.0
 
-### Fix
-- Removed the `todo!()` panics in `UBig.__mod__`, `IBig.__mod__`, and `IBig.__pow__`.
+First release of **dashu-rs** — the Python binding for
+[dashu](https://github.com/cmpute/dashu), a pure-Rust arbitrary-precision number library
+(native alternative to GMP + MPFR). A standalone wheel on
+[PyPI](https://pypi.org/project/dashu-rs/): `pip install dashu-rs`, no Rust toolchain
+needed. Requires Python ≥ 3.8.
 
-### Changed
-- `FBig(f64)` now constructs at f64's native precision (53 bits) so that subsequent
-  transcendental operations (which require precision > 0) are well-defined.
-- Split `python/README.md` into a self-explanatory package description (a "What is
-  dashu?" / "What is dashu-rs?" breakdown clarifying that `dashu-rs` is a standalone,
-  pip-installable wheel — no Rust toolchain needed) and a separate `python/USAGE.md`
-  holding the full usage guide (installation, types, operations, formatting). The mdBook
-  guide page `guide/src/python.md` now opens with a `## Overview` section relating the
-  `dashu-python` Rust crate to the `dashu-rs` PyPI package, then includes `USAGE.md`.
+Six types cover every number domain, all `Send` + `Sync` (free-threaded-Python compatible):
+
+| Type | Description |
+|------|-------------|
+| `UBig`, `IBig` | arbitrary-precision integers (unsigned / signed) |
+| `RBig` | exact arbitrary-precision rationals |
+| `FBig` | arbitrary-precision binary floats (base 2) |
+| `DBig` | arbitrary-precision decimal floats (base 10) |
+| `CBig` | arbitrary-precision complex numbers (base 2) |
+
+What's included:
+
+- Full arithmetic, comparisons, and `bool()` that accept any native Python number
+  (`int`/`float`/`Decimal`/`Fraction`), so mixed operands just work.
+- Pythonic construction from numbers or strings, and the complete `format()` mini-language
+  (`e`/`f`/`g`/`x`/`b`/… with sign, width, grouping, precision). `FBig` prints losslessly
+  in hexadecimal by default.
+- Panic-free transcendentals for the float/decimal/complex types
+  (`sin`/`cos`/…/`exp`/`ln`/`sqrt`/`pow`/…) — domain errors raise `ValueError`, indeterminate
+  forms raise `ZeroDivisionError`, overflow/underflow yields signed infinities/zeros — sharing
+  a module-wide constant cache.
+- Integer number theory and bit operations: roots, `gcd`/`gcd_ext`/`lcm`, `ilog`, bit
+  predicates, and in-place / bitwise ops.
+- A module-level `math` API (`dashu.sin`, `dashu.sqrt`, `dashu.gcd`, …) and a configurable
+  default precision for `FBig`/`CBig` via `dashu.get_precision()` / `dashu.set_precision()`.
+- Example scripts under `python/examples/`: a benchmark against `gmpy2`/`mpmath`/stdlib and
+  an arbitrary-precision Mandelbrot deep-zoom.
+
+See `USAGE.md` for the full guide.
 
 # TODO (still open)
 - support pickle through `__reduce__`

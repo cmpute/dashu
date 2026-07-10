@@ -47,38 +47,56 @@ impl_float_binops!(DPy, into_dpy, dpy_mul, mul);
 impl_float_binops!(DPy, into_dpy, dpy_div, dpy_rdiv, div);
 impl_float_binops!(DPy, into_dpy, dpy_mod, dpy_rmod, rem);
 
-fn fpy_richcmp(lhs: &FPy, other: UniInput<'_>, op: CompareOp) -> bool {
-    let order = match other {
-        UniInput::Uint(x) => lhs.0.num_cmp(&x),
-        UniInput::Int(x) => lhs.0.num_cmp(&x),
-        UniInput::BUint(x) => lhs.0.num_cmp(&x.0),
-        UniInput::BInt(x) => lhs.0.num_cmp(&x.0),
-        UniInput::OBInt(x) => lhs.0.num_cmp(&x),
-        UniInput::Float(x) => lhs.0.num_cmp(&x),
-        UniInput::BFloat(x) => lhs.0.num_cmp(&x.0),
-        UniInput::BDecimal(x) => lhs.0.num_cmp(&x.0),
-        UniInput::OBDecimal(x) => lhs.0.num_cmp(&x),
-        UniInput::BRational(x) => lhs.0.num_cmp(&x.0),
-        UniInput::OBRational(x) => lhs.0.num_cmp(&x),
+/// Generate a `__richcmp__` dispatcher over every `UniInput` variant using `num_cmp`.
+/// `FPy` and `DPy` order against all numeric inputs identically, so the bodies match.
+macro_rules! impl_float_richcmp {
+    ($name:ident, $ty:ident) => {
+        fn $name(lhs: &$ty, other: UniInput<'_>, op: CompareOp) -> bool {
+            let order = match other {
+                UniInput::Uint(x) => lhs.0.num_cmp(&x),
+                UniInput::Int(x) => lhs.0.num_cmp(&x),
+                UniInput::BUint(x) => lhs.0.num_cmp(&x.0),
+                UniInput::BInt(x) => lhs.0.num_cmp(&x.0),
+                UniInput::OBInt(x) => lhs.0.num_cmp(&x),
+                UniInput::Float(x) => lhs.0.num_cmp(&x),
+                UniInput::BFloat(x) => lhs.0.num_cmp(&x.0),
+                UniInput::BDecimal(x) => lhs.0.num_cmp(&x.0),
+                UniInput::OBDecimal(x) => lhs.0.num_cmp(&x),
+                UniInput::BRational(x) => lhs.0.num_cmp(&x.0),
+                UniInput::OBRational(x) => lhs.0.num_cmp(&x),
+            };
+            op.matches(order)
+        }
     };
-    op.matches(order)
 }
 
-fn dpy_richcmp(lhs: &DPy, other: UniInput<'_>, op: CompareOp) -> bool {
-    let order = match other {
-        UniInput::Uint(x) => lhs.0.num_cmp(&x),
-        UniInput::Int(x) => lhs.0.num_cmp(&x),
-        UniInput::BUint(x) => lhs.0.num_cmp(&x.0),
-        UniInput::BInt(x) => lhs.0.num_cmp(&x.0),
-        UniInput::OBInt(x) => lhs.0.num_cmp(&x),
-        UniInput::Float(x) => lhs.0.num_cmp(&x),
-        UniInput::BFloat(x) => lhs.0.num_cmp(&x.0),
-        UniInput::BDecimal(x) => lhs.0.num_cmp(&x.0),
-        UniInput::OBDecimal(x) => lhs.0.num_cmp(&x),
-        UniInput::BRational(x) => lhs.0.num_cmp(&x.0),
-        UniInput::OBRational(x) => lhs.0.num_cmp(&x),
+impl_float_richcmp!(fpy_richcmp, FPy);
+impl_float_richcmp!(dpy_richcmp, DPy);
+
+/// Generate the unary cache-routed transcendentals as a dedicated `#[pymethods]` block.
+///
+/// `$($name),+` are the transcendentals whose Python name matches the `Context` method name,
+/// so a single token serves as both the method name and the dispatched call. Shared by `FPy`
+/// (base-2) and `DPy` (base-10): both expose the same `Context` API, and [`unwrap_float`] is
+/// generic over `<R, B>`.
+///
+/// The macro emits the *entire* `#[pymethods] impl` — a `macro_rules!` invocation placed
+/// inside a `#[pymethods]` block is not registered by PyO3, so the attribute must be wrapped
+/// by the macro. Every other math method (roots, `powi`, `powf`, `atan2`) has a distinct
+/// shape and stays as plain code in each type's impl.
+macro_rules! impl_float_math {
+    ($ty:ident, $($name:ident),+ $(,)?) => {
+        #[pymethods]
+        impl $ty {
+            $(
+                fn $name(&self) -> PyResult<Self> {
+                    let ctx = self.0.context();
+                    let res = with_cache(|c| ctx.$name(self.0.repr(), Some(c)));
+                    Ok(Self(unwrap_float(res, ctx)?))
+                }
+            )+
+        }
     };
-    op.matches(order)
 }
 
 #[pymethods]
@@ -255,87 +273,7 @@ impl FPy {
             .map_err(conversion_error_to_py)
     }
 
-    /********** transcendentals (routed through the global cache + Context layer) **********/
-    fn sin(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.sin(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn cos(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.cos(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn tan(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.tan(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn asin(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.asin(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn acos(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.acos(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn atan(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.atan(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn sinh(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.sinh(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn cosh(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.cosh(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn tanh(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.tanh(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn asinh(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.asinh(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn acosh(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.acosh(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn atanh(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.atanh(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn exp(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.exp(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn exp_m1(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.exp_m1(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn ln(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.ln(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn ln_1p(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.ln_1p(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
+    /********** roots, powers & atan2 **********/
     fn sqrt(&self) -> PyResult<Self> {
         let ctx = self.0.context();
         Ok(Self(unwrap_float(ctx.sqrt(self.0.repr()), ctx)?))
@@ -348,16 +286,16 @@ impl FPy {
         let ctx = self.0.context();
         Ok(Self(unwrap_float(ctx.nth_root(n, self.0.repr()), ctx)?))
     }
+    fn powi(&self, n: UniInput<'_>) -> PyResult<Self> {
+        let n = n.into_ibig()?;
+        let ctx = self.0.context();
+        Ok(Self(unwrap_float(ctx.powi(self.0.repr(), n), ctx)?))
+    }
     fn powf(&self, w: UniInput<'_>) -> PyResult<Self> {
         let w = w.into_fpy()?;
         let ctx = self.0.context();
         let res = with_cache(|c| ctx.powf(self.0.repr(), w.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn powi(&self, n: UniInput<'_>) -> PyResult<Self> {
-        let n = n.into_ibig()?;
-        let ctx = self.0.context();
-        Ok(Self(unwrap_float(ctx.powi(self.0.repr(), n), ctx)?))
     }
     fn atan2(&self, x: UniInput<'_>) -> PyResult<Self> {
         let x = x.into_fpy()?;
@@ -366,6 +304,11 @@ impl FPy {
         Ok(Self(unwrap_float(res, ctx)?))
     }
 }
+
+impl_float_math!(
+    FPy, sin, cos, tan, asin, acos, atan, sinh, cosh, tanh, asinh, acosh, atanh, exp, exp_m1, ln,
+    ln_1p,
+);
 
 #[pymethods]
 impl DPy {
@@ -539,87 +482,7 @@ impl DPy {
             .map_err(conversion_error_to_py)
     }
 
-    /********** transcendentals (routed through the global cache + Context layer) **********/
-    fn sin(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.sin(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn cos(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.cos(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn tan(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.tan(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn asin(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.asin(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn acos(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.acos(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn atan(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.atan(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn sinh(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.sinh(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn cosh(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.cosh(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn tanh(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.tanh(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn asinh(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.asinh(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn acosh(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.acosh(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn atanh(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.atanh(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn exp(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.exp(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn exp_m1(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.exp_m1(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn ln(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.ln(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn ln_1p(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
-        let res = with_cache(|c| ctx.ln_1p(self.0.repr(), Some(c)));
-        Ok(Self(unwrap_float(res, ctx)?))
-    }
+    /********** roots, powers & atan2 **********/
     fn sqrt(&self) -> PyResult<Self> {
         let ctx = self.0.context();
         Ok(Self(unwrap_float(ctx.sqrt(self.0.repr()), ctx)?))
@@ -632,16 +495,16 @@ impl DPy {
         let ctx = self.0.context();
         Ok(Self(unwrap_float(ctx.nth_root(n, self.0.repr()), ctx)?))
     }
+    fn powi(&self, n: UniInput<'_>) -> PyResult<Self> {
+        let n = n.into_ibig()?;
+        let ctx = self.0.context();
+        Ok(Self(unwrap_float(ctx.powi(self.0.repr(), n), ctx)?))
+    }
     fn powf(&self, w: UniInput<'_>) -> PyResult<Self> {
         let w = w.into_dpy()?;
         let ctx = self.0.context();
         let res = with_cache(|c| ctx.powf(self.0.repr(), w.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))
-    }
-    fn powi(&self, n: UniInput<'_>) -> PyResult<Self> {
-        let n = n.into_ibig()?;
-        let ctx = self.0.context();
-        Ok(Self(unwrap_float(ctx.powi(self.0.repr(), n), ctx)?))
     }
     fn atan2(&self, x: UniInput<'_>) -> PyResult<Self> {
         let x = x.into_dpy()?;
@@ -650,3 +513,8 @@ impl DPy {
         Ok(Self(unwrap_float(res, ctx)?))
     }
 }
+
+impl_float_math!(
+    DPy, sin, cos, tan, asin, acos, atan, sinh, cosh, tanh, asinh, acosh, atanh, exp, exp_m1, ln,
+    ln_1p,
+);
