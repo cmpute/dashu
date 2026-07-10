@@ -7,7 +7,8 @@ use dashu_int::{IBig, UBig};
 use dashu_ratio::RBig;
 type FBig = dashu_float::FBig;
 
-#[pyclass]
+#[pyclass(eq, eq_int)]
+#[derive(PartialEq, Clone, Copy)]
 pub enum PySign {
     Positive,
     Negative,
@@ -19,6 +20,16 @@ impl From<Sign> for PySign {
         match value {
             Sign::Positive => Self::Positive,
             Sign::Negative => Self::Negative,
+        }
+    }
+}
+
+impl From<PySign> for Sign {
+    #[inline]
+    fn from(value: PySign) -> Self {
+        match value {
+            PySign::Positive => Sign::Positive,
+            PySign::Negative => Sign::Negative,
         }
     }
 }
@@ -75,6 +86,18 @@ pub struct RPy(pub RBig);
 impl From<RBig> for RPy {
     fn from(n: RBig) -> Self {
         RPy(n)
+    }
+}
+
+/// This struct is used for representing [CBig] in Python. It wraps a *bare* complex number
+/// (base 2, rounding `Zero`); the constant cache is shared module-wide (see [`crate::cache`]).
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[pyclass(name = "CBig")]
+pub struct CPy(pub dashu_cmplx::CBig<dashu_float::round::mode::Zero, 2>);
+
+impl From<dashu_cmplx::CBig<dashu_float::round::mode::Zero, 2>> for CPy {
+    fn from(n: dashu_cmplx::CBig<dashu_float::round::mode::Zero, 2>) -> Self {
+        CPy(n)
     }
 }
 

@@ -26,6 +26,15 @@ A library set of arbitrary precision numbers (aka. big numbers) implemented in R
 
 `dashu` is a meta crate that re-exports all the types from these sub-crates. Please see the README.md in each subdirectory for crate-specific introduction.
 
+## Python package
+
+[`dashu-python`](./python) is a user-friendly test field for the core dashu
+functionalities: through the [`dashu-rs`](https://pypi.org/project/dashu-rs/)
+package on PyPI, users can try dashu's arbitrary-precision integers, rationals,
+floats, and complex numbers from Python to get an idea of what dashu is capable
+of — no Rust toolchain needed. Beyond exploring dashu, it also stands on its own
+as a standalone arbitrary-precision number package for the Python ecosystem.
+
 ## License
 
 Licensed under either of
