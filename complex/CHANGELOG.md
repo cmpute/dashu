@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Add
+- `CBig::from_parts_const`: a `const`-evaluable constructor taking `(sign, significand, exponent)`
+  parts for each of the real/imaginary components (built on `Repr::new_const`). The `cbig!` literal
+  macro now works in `const` position for coefficients that fit in a `DoubleWord`; larger
+  coefficients fall back to the runtime heap path.
+
 ## 0.5.0 (Initial release)
 
 `dashu-cmplx` provides [`CBig`], an arbitrary-precision complex number type built on top of

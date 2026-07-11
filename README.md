@@ -9,7 +9,7 @@
 [![License](https://img.shields.io/crates/l/dashu)](#license)
 [![Book](https://img.shields.io/badge/book-user_guide-yellow.svg)](https://zyxin.xyz/dashu/)
 
-A library set of arbitrary precision numbers (aka. big numbers) implemented in Rust. It's intended to be a Rust native alternative to GNU GMP + MPFR (+ MPC in future). It features:
+A library set of arbitrary precision numbers (aka. big numbers) implemented in Rust. It's a Rust native alternative to GNU GMP + MPFR + MPC. It features:
 - Pure rust, full `no_std` support.
 - Focus on ergonomics & readability, and then efficiency.
 - Optimized speed and memory usage.

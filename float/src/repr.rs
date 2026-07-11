@@ -6,7 +6,7 @@ use crate::{
 use core::marker::PhantomData;
 use dashu_base::{Approximation::*, EstimatedLog2, Sign};
 pub use dashu_int::Word;
-use dashu_int::{IBig, UBig};
+use dashu_int::{DoubleWord, IBig, UBig};
 
 /// Underlying representation of an arbitrary precision floating number.
 ///
@@ -128,6 +128,45 @@ fn rounded_to_repr<const B: Word>(
     } else {
         Repr::new(significand, exponent)
     }
+}
+
+/// Normalize a `(significand, exponent)` pair for base `B`: fold trailing base-`B` zero-digits
+/// from the significand into the exponent, and return the number of significant base-`B` digits.
+///
+/// The return triple is all-`Copy`, so it can be destructured in a `const fn` — unlike a pair
+/// carrying a [`Repr`], whose heap drop can't be const-evaluated. It is the shared core of
+/// [`Repr::new_const`] and [`crate::FBig::from_parts_const`].
+pub(crate) const fn normalize_word_const<const B: Word>(
+    mut significand: DoubleWord,
+    mut exponent: isize,
+) -> (DoubleWord, isize, usize) {
+    if significand == 0 {
+        return (0, exponent, 0);
+    }
+
+    let mut digits = 0;
+    if B.is_power_of_two() {
+        let base_bits = B.trailing_zeros();
+        let shift = significand.trailing_zeros() / base_bits;
+        significand >>= shift * base_bits;
+        exponent += shift as isize;
+        digits =
+            ((DoubleWord::BITS - significand.leading_zeros() + base_bits - 1) / base_bits) as usize;
+    } else {
+        let mut pow: DoubleWord = 1;
+        while significand % (B as DoubleWord) == 0 {
+            significand /= B as DoubleWord;
+            exponent += 1;
+        }
+        while let Some(next) = pow.checked_mul(B as DoubleWord) {
+            digits += 1;
+            if next > significand {
+                break;
+            }
+            pow = next;
+        }
+    }
+    (significand, exponent, digits)
 }
 
 impl<const B: Word> Repr<B> {
@@ -515,6 +554,42 @@ impl<const B: Word> Repr<B> {
             exponent,
         }
         .normalize()
+    }
+
+    /// Create a normalized [`Repr`] from a signed [`DoubleWord`] significand and an exponent.
+    ///
+    /// This is the const-evaluable counterpart of [`Repr::new`]: because it operates on a
+    /// [`DoubleWord`] significand it needs no heap `IBig` arithmetic, so it is usable in `const`
+    /// contexts — it is what the complex literal macros build on. As with [`Repr::new`], the
+    /// significand is normalized (trailing zero digits in base `B` are folded into the exponent).
+    /// A zero significand yields [`Repr::zero`] regardless of sign.
+    ///
+    /// Unlike [`Repr::new`], this does not report the digit count (computing it would require
+    /// returning it alongside the `Repr`, which can't be destructured in a `const fn`); callers
+    /// that need a precision should pass it explicitly.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dashu_base::Sign;
+    /// use dashu_float::Repr;
+    /// use dashu_int::IBig;
+    ///
+    /// let r = Repr::<10>::new_const(Sign::Positive, 123400, -2);
+    /// assert_eq!(r.significand(), &IBig::from(1234));
+    /// assert_eq!(r.exponent(), 0);
+    /// ```
+    #[inline]
+    pub const fn new_const(sign: Sign, significand: DoubleWord, exponent: isize) -> Self {
+        let (significand, exponent, _) = normalize_word_const::<B>(significand, exponent);
+        if significand == 0 {
+            Self::zero()
+        } else {
+            Self {
+                significand: IBig::from_parts_const(sign, significand),
+                exponent,
+            }
+        }
     }
 
     /// Get the significand of the representation

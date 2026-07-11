@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Add
+- `cbig!` now works in `const` position when both coefficients fit in a `DoubleWord`: it expands to
+  `CBig::from_parts_const` (built on `Repr::new_const`). Larger coefficients still fall back to the
+  runtime `CBig::from_parts` path — use `static_cbig!` for const values with large coefficients.
+
 ## 0.5.0
 
 ### Add

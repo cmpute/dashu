@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Add
+- `Repr::new_const`: a `const`-evaluable, normalized `Repr` constructor from a `DoubleWord`
+  significand (the `const` counterpart of `Repr::new`). `FBig::from_parts_const` now delegates to
+  it, and the complex literal macro uses it.
+
 ## 0.5.0
 
 ### Add

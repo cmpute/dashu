@@ -5,9 +5,18 @@ build-backend = "maturin"
 [project]
 name = "dashu-rs"
 version = "0.5.0"
+description = "Python bindings for dashu, an arbitrary precision number library implemented in Rust"
+readme = "README.md"
 requires-python = ">=3.8"
+license = { text = "MIT OR Apache-2.0" }
+authors = [{ name = "Jacob Zhong", email = "cmpute@gmail.com" }]
+keywords = ["mathematics", "numerics"]
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
+
+[project.urls]
+Homepage = "https://github.com/cmpute/dashu"
+Repository = "https://github.com/cmpute/dashu"

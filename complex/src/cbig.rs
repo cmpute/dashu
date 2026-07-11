@@ -10,7 +10,7 @@ use crate::repr::Context;
 use dashu_base::Sign;
 use dashu_float::round::{mode, Round};
 use dashu_float::{FBig, Repr};
-use dashu_int::Word;
+use dashu_int::{DoubleWord, Word};
 
 /// An arbitrary-precision complex number with arbitrary base and rounding mode.
 ///
@@ -88,6 +88,36 @@ impl<R: Round, const B: Word> CBig<R, B> {
             im: im.into_repr(),
             context: Context(fctx),
         }
+    }
+
+    /// Create a [`CBig`] from raw real/imaginary parts, const-evaluable for small significands.
+    ///
+    /// Each part is a `(sign, significand, exponent)` triple whose significand fits in a
+    /// [`DoubleWord`]. This is the const-evaluable counterpart of [`CBig::from_parts`], built on
+    /// [`Repr::new_const`] so it needs no heap arithmetic and works in `const` position —
+    /// it is what the `cbig!` literal macro uses for coefficients that fit in a [`DoubleWord`].
+    /// The shared precision is `precision` (0 means unlimited); unlike [`CBig::from_parts`] it is
+    /// not inferred from the parts, because computing the digit count isn't possible in a `const fn`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dashu_base::Sign;
+    /// use dashu_cmplx::CBig;
+    /// use dashu_float::FBig;
+    ///
+    /// const Z: CBig = CBig::from_parts_const((Sign::Positive, 3, 0), (Sign::Positive, 4, 0), 0);
+    /// assert_eq!(Z, CBig::from_parts(FBig::from(3), FBig::from(4)));
+    /// ```
+    #[inline]
+    pub const fn from_parts_const(
+        re: (Sign, DoubleWord, isize),
+        im: (Sign, DoubleWord, isize),
+        precision: usize,
+    ) -> Self {
+        let re_repr = Repr::new_const(re.0, re.1, re.2);
+        let im_repr = Repr::new_const(im.0, im.1, im.2);
+        Self::new(re_repr, im_repr, Context::new(precision))
     }
 
     /// The complex number zero `0 + 0i` (unlimited precision).

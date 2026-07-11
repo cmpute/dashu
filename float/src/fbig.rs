@@ -265,52 +265,21 @@ impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     pub const fn from_parts_const(
         sign: Sign,
-        mut significand: DoubleWord,
-        mut exponent: isize,
+        significand: DoubleWord,
+        exponent: isize,
         min_precision: Option<usize>,
     ) -> Self {
         if significand == 0 {
             return Self::ZERO;
         }
 
-        let mut digits = 0;
-
-        // normalize
-        if B.is_power_of_two() {
-            let base_bits = B.trailing_zeros();
-            let shift = significand.trailing_zeros() / base_bits;
-            significand >>= shift * base_bits;
-            exponent += shift as isize;
-            digits = ((DoubleWord::BITS - significand.leading_zeros() + base_bits - 1) / base_bits)
-                as usize;
-        } else {
-            let mut pow: DoubleWord = 1;
-            while significand % (B as DoubleWord) == 0 {
-                significand /= B as DoubleWord;
-                exponent += 1;
-            }
-            while let Some(next) = pow.checked_mul(B as DoubleWord) {
-                digits += 1;
-                if next > significand {
-                    break;
-                }
-                pow = next;
-            }
-        }
-
-        let repr = Repr {
-            significand: IBig::from_parts_const(sign, significand),
-            exponent,
-        };
+        // The precision default is the significand's base-`B` digit count; the normalized `Repr`
+        // is built by `Repr::new_const` (which shares `normalize_word_const`).
+        let (_, _, digits) = crate::repr::normalize_word_const::<B>(significand, exponent);
+        let repr = Repr::new_const(sign, significand, exponent);
         let precision = match min_precision {
-            Some(prec) => {
-                if prec > digits {
-                    prec
-                } else {
-                    digits
-                }
-            }
-            None => digits,
+            Some(prec) if prec > digits => prec,
+            _ => digits,
         };
         Self::new(repr, Context::new(precision))
     }

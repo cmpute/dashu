@@ -3,7 +3,7 @@
 use dashu::{rational::Relaxed, *};
 
 #[test]
-#[rustfmt::skip::macros(fbig)]
+#[rustfmt::skip::macros(fbig, cbig)]
 fn test_macros() {
     // small numbers
     const A: Natural = ubig!(1234);
@@ -17,6 +17,9 @@ fn test_macros() {
     const E: Rational = rbig!(2 / 5);
     const F: Relaxed = rbig!(~2/7);
     assert!(E.relax() > F);
+
+    const G: Complex = cbig!(0x1234p-4-0x5678p8i);
+    assert!(G < Complex::from(C));
 
     // large numbers
     let a = ubig!(0xfffffffffffffffffffffffffffffffffffffffffffffffe);
@@ -35,11 +38,17 @@ fn test_macros() {
         999999999999999999999999999999999999999999999999999999999998
             / 999999999999999999999999999999999999999999999999999999999999);
     assert!(e < f.canonicalize());
+
+    let g = cbig!(
+        0xfffffffffffffffffffffffffffffffffffffffffffffffep-192 +
+        0xffffffffffffffffffffffffffffffffffffffffffffffffp192 i
+    );
+    assert!(g < Complex::from(c));
 }
 
 #[test]
 #[rustversion::since(1.64)]
-#[rustfmt::skip::macros(static_fbig)]
+#[rustfmt::skip::macros(static_fbig, static_cbig, cbig)]
 fn test_static_macros() {
     static SA: &Natural = static_ubig!(1234);
     static SB: &Integer = static_ibig!(-1234);
@@ -52,6 +61,9 @@ fn test_static_macros() {
     static SE: &Rational = static_rbig!(2 / 5);
     static SF: &Relaxed = static_rbig!(~2/7);
     assert!(SE.as_relaxed() > SF);
+
+    static SG: &Complex = static_cbig!(11+100i); // 3 + 4i
+    assert_eq!(*SG, cbig!(11, 100));
 
     static BA: &Natural = static_ubig!(0xfffffffffffffffffffffffffffffffffffffffffffffffe);
     static BB: &Integer = static_ibig!(-0xffffffffffffffffffffffffffffffffffffffffffffffff);
@@ -70,4 +82,16 @@ fn test_static_macros() {
         999999999999999999999999999999999999999999999999999999999998
             / 999999999999999999999999999999999999999999999999999999999999);
     assert!(*BE < BF.clone().canonicalize());
+
+    static BG: &Complex = static_cbig!(
+        0xffffffffffffffffffffffffffffffffffffffffffffffff,
+        0xffffffffffffffffffffffffffffffffffffffffffffffff
+    );
+    assert_eq!(
+        *BG,
+        cbig!(
+            0xffffffffffffffffffffffffffffffffffffffffffffffff,
+            0xffffffffffffffffffffffffffffffffffffffffffffffff
+        )
+    );
 }
