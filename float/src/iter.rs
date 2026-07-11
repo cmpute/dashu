@@ -102,6 +102,7 @@ impl<'a, R: Round, const B: Word> Product<&'a FBig<R, B>> for FBig<R, B> {
 mod tests {
     use super::*;
     use crate::round::mode::{HalfAway, HalfEven, Zero};
+    use alloc::vec::Vec;
     use core::str::FromStr;
     use dashu_int::IBig;
 

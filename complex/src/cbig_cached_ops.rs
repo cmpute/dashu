@@ -442,6 +442,7 @@ impl<R: Round, const B: Word> CachedCBig<R, B> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec::Vec;
     use core::cell::RefCell;
     use dashu_float::round::mode;
     use dashu_float::ConstCache;
