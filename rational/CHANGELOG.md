@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
 ### Fix
 - `UBig::try_from(RBig)` (and `TryFrom<Repr> for UBig`) now tests the reduced denominator (a value is

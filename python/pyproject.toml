@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "dashu-rs"
-version = "0.4.0"
+version = "0.5.0"
 requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Rust",

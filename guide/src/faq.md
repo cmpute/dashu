@@ -31,6 +31,10 @@ Compared with other Rust crates:
 - **No NaN.** Invalid operations panic at the convenience layer and return `Err(FpError)` at the context layer. Infinities are terminal values, not operands — see [Standards Compliance](./compliance.md).
 - **Near-correct rounding.** Transcendentals are rounded within 1 ulp via a guard-digit recipe; a guaranteed-correct Ziv loop is planned for a later release.
 - **Complex surface.** `CBig` ships field arithmetic and the elementary transcendentals; complex hyperbolics, `fma`, and several others are deferred to 0.5.x (see the v0.5 release notes).
+- **No ball/interval arithmetic.** Unlike MPC's experimental `mpcb_t` (complex balls), `dashu`
+  does not provide interval or ball types. This is a deliberate scope choice: ball arithmetic is
+  still experimental upstream, and if/when it stabilizes it is better provided by a **separate
+  crate** layered on `dashu-float`/`dashu-cmplx` than coupled to the core types.
 - **No SIMD-FFT multiplication** yet (planned for v1.0).
 
 ## MSRV and feature policy

@@ -57,7 +57,7 @@ fn ubig_to_dec(criterion: &mut Criterion) {
             |bencher, ta| {
                 bencher.iter(|| {
                     out.clear();
-                    write!(&mut out, "{}", &ta).unwrap();
+                    write!(&mut out, "{}", ta).unwrap();
                     out.len()
                 })
             },

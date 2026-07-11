@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
 ### Add
 - `cbig!` / `static_cbig!` (and the `cbig_embedded` / `static_cbig_embedded` building blocks) for

@@ -29,7 +29,10 @@ fn test_ubig_format() {
     assert_eq!(format!("{:=^+10b}", ubig!(100)), "=+1100100=");
     assert_eq!(format!("{:+010b}", ubig!(100)), "+001100100");
     assert_eq!(format!("{:+#010b}", ubig!(100)), "+0b1100100");
-    assert_eq!(format!("{:+#01b}", ubig!(100)), "+0b1100100");
+    // width 1 is intentionally below the minimum possible output — the no-op case under test
+    #[allow(clippy::unused_format_specs)]
+    let formatted = format!("{:+#01b}", ubig!(100));
+    assert_eq!(formatted, "+0b1100100");
     assert_eq!(format!("{:o}", ubig!(100)), "144");
     assert_eq!(format!("{:#o}", ubig!(100)), "0o144");
     assert_eq!(format!("{:x}", ubig!(3000)), "bb8");
@@ -141,8 +144,13 @@ fn test_ibig_format() {
     assert_eq!(format!("{:+010b}", ibig!(-100)), "-001100100");
     assert_eq!(format!("{:+#010b}", ibig!(100)), "+0b1100100");
     assert_eq!(format!("{:+#010b}", ibig!(-100)), "-0b1100100");
-    assert_eq!(format!("{:+#01b}", ibig!(100)), "+0b1100100");
-    assert_eq!(format!("{:+#01b}", ibig!(-100)), "-0b1100100");
+    // width 1 is intentionally below the minimum possible output — the no-op case under test
+    #[allow(clippy::unused_format_specs)]
+    let pos = format!("{:+#01b}", ibig!(100));
+    #[allow(clippy::unused_format_specs)]
+    let neg = format!("{:+#01b}", ibig!(-100));
+    assert_eq!(pos, "+0b1100100");
+    assert_eq!(neg, "-0b1100100");
     assert_eq!(format!("{:o}", ibig!(100)), "144");
     assert_eq!(format!("{:o}", ibig!(-100)), "-144");
     assert_eq!(format!("{:#o}", ibig!(100)), "0o144");

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 (Unreleased)
+## 0.5.0 (Unreleased)
 
 First release of **dashu-rs** — the Python binding for
 [dashu](https://github.com/cmpute/dashu), a pure-Rust arbitrary-precision number library
