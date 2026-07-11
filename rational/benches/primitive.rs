@@ -23,6 +23,13 @@ where
     RBig::from_parts(numerator, denominator)
 }
 
+fn random_ubig<R>(bits: usize, rng: &mut R) -> UBig
+where
+    R: Rng + ?Sized,
+{
+    rng.gen_range(UBig::ONE << (bits - 1)..UBig::ONE << bits)
+}
+
 macro_rules! add_binop_benchmark {
     ($name:ident, $method:ident, $max_log_bits:literal) => {
         fn $name(criterion: &mut Criterion) {
@@ -51,6 +58,29 @@ add_binop_benchmark!(rbig_sub, sub, 6);
 add_binop_benchmark!(rbig_mul, mul, 6);
 add_binop_benchmark!(rbig_div, div, 6);
 
-criterion_group!(benches, rbig_add, rbig_sub, rbig_mul, rbig_div,);
+/// Measure the GCD reduction in `RBig::from_parts`: numerator and denominator
+/// share a large common factor, so canonicalization does real (not trivial) work.
+fn rbig_reduction(criterion: &mut Criterion) {
+    let mut rng = StdRng::seed_from_u64(SEED);
+    let mut group = criterion.benchmark_group("rbig_reduction");
+    group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
+
+    for log_bits in 1..=6 {
+        let bits = 10usize.pow(log_bits);
+        let common = random_ubig(bits, &mut rng);
+        let n_mag = random_ubig(bits, &mut rng) * &common;
+        let d = random_ubig(bits, &mut rng) * &common;
+        let n = IBig::from_parts(Sign::from(rng.gen_bool(0.5)), n_mag);
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("1e{}", log_bits)),
+            &(n, d),
+            |bencher, (tn, td)| bencher.iter(|| RBig::from_parts(tn.clone(), td.clone())),
+        );
+    }
+
+    group.finish();
+}
+
+criterion_group!(benches, rbig_add, rbig_sub, rbig_mul, rbig_div, rbig_reduction,);
 
 criterion_main!(benches);

@@ -1,3 +1,8 @@
+//! Formatting support for [`RBig`] and [`Relaxed`]: the standard `Display`/`Debug` traits
+//! plus the radix/positional helpers ([`InRadix`] and [`InExpanded`]).
+//!
+//! [`InExpanded`]: expanded::InExpanded
+
 pub mod expanded;
 
 use crate::{
@@ -48,11 +53,11 @@ impl fmt::Debug for Repr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if f.alternate() {
             f.debug_struct("Repr")
-                .field("numerator", &format_args!("{:#?}", &self.numerator))
-                .field("denominator", &format_args!("{:#?}", &self.denominator))
+                .field("numerator", &format_args!("{:#?}", self.numerator))
+                .field("denominator", &format_args!("{:#?}", self.denominator))
                 .finish()
         } else {
-            f.write_fmt(format_args!("{:?} / {:?}", &self.numerator, &self.denominator))
+            f.write_fmt(format_args!("{:?} / {:?}", self.numerator, self.denominator))
         }
     }
 }
@@ -115,7 +120,7 @@ impl fmt::Display for Relaxed {
 /// Representation of a rational number in a given radix, returned by
 /// [`RBig::in_radix`] and [`Relaxed::in_radix`].
 ///
-/// Implements [`Display`]. The alternate flag (`{:#}`) toggles uppercase
+/// Implements [`Display`](core::fmt::Display). The alternate flag (`{:#}`) toggles uppercase
 /// letters for radices above 10.
 pub struct InRadix<'a> {
     numerator: &'a dashu_int::IBig,
@@ -125,7 +130,7 @@ pub struct InRadix<'a> {
 
 impl fmt::Display for InRadix<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let r = self.radix as u32;
+        let r = self.radix;
         let num = self.numerator.in_radix(r);
         if self.denominator.is_one() {
             if f.alternate() {
@@ -147,8 +152,7 @@ impl fmt::Display for InRadix<'_> {
 impl RBig {
     /// Representation in a given radix.
     ///
-    /// The `radix` parameter is `u8` (unlike [`UBig::in_radix`] which currently
-    /// takes `u32`). Valid radices are 2 through 36.
+    /// The `radix` parameter is `u8`. Valid radices are 2 through 36.
     ///
     /// # Panics
     /// Panics if `radix` is not between 2 and 36 inclusive.
@@ -172,8 +176,7 @@ impl RBig {
 impl Relaxed {
     /// Representation in a given radix.
     ///
-    /// The `radix` parameter is `u8` (unlike [`UBig::in_radix`] which currently
-    /// takes `u32`). Valid radices are 2 through 36.
+    /// The `radix` parameter is `u8`. Valid radices are 2 through 36.
     ///
     /// # Panics
     /// Panics if `radix` is not between 2 and 36 inclusive.

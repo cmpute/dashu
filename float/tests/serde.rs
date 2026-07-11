@@ -71,3 +71,27 @@ fn test_dbig_serde() {
         assert_eq!(&parsed, float.repr());
     }
 }
+
+#[test]
+fn test_dbig_serde_preserves_precision() {
+    use core::str::FromStr;
+    // values whose significant-digit count is below the context precision: the
+    // human-readable format must round-trip the *precision*, not just the value.
+    let cases: &[(DBig, usize)] = &[
+        (DBig::from_str("1.23").unwrap().with_precision(7).unwrap(), 7),
+        (DBig::from_str("100").unwrap().with_precision(5).unwrap(), 5),
+        (DBig::from_str("-0.5").unwrap().with_precision(3).unwrap(), 3),
+    ];
+    for (value, expected_prec) in cases {
+        // human-readable (json string) preserves precision
+        let json = to_string(value).unwrap();
+        let parsed: DBig = from_str(&json).unwrap();
+        assert_eq!(parsed.precision(), *expected_prec, "human-readable precision");
+        assert_eq!(&parsed, value);
+
+        // non-human-readable (postcard bytes) preserves precision
+        let bytes = to_allocvec(value).unwrap();
+        let parsed: DBig = from_bytes(&bytes).unwrap();
+        assert_eq!(parsed.precision(), *expected_prec, "binary precision");
+    }
+}

@@ -29,6 +29,7 @@ impl<T, E> Approximation<T, E> {
         }
     }
 
+    /// Return the value if the result is exact, panic otherwise.
     #[inline]
     pub fn unwrap(self) -> T {
         match self {
@@ -37,6 +38,7 @@ impl<T, E> Approximation<T, E> {
         }
     }
 
+    /// Return the error if the result is inexact, [`None`] if it is exact.
     #[inline]
     pub fn error(self) -> Option<E> {
         match self {
@@ -45,6 +47,7 @@ impl<T, E> Approximation<T, E> {
         }
     }
 
+    /// Borrow the error if the result is inexact, [`None`] if it is exact.
     #[inline]
     pub const fn error_ref(&self) -> Option<&E> {
         match self {
@@ -53,6 +56,7 @@ impl<T, E> Approximation<T, E> {
         }
     }
 
+    /// Map the result value to a new type, preserving the error (if any).
     #[inline]
     pub fn map<U, F>(self, f: F) -> Approximation<U, E>
     where
@@ -64,6 +68,8 @@ impl<T, E> Approximation<T, E> {
         }
     }
 
+    /// Chain a fallible mapping that itself returns an [`Approximation`], combining the
+    /// errors: an inexact input or an inexact result both yield an inexact result.
     #[inline]
     pub fn and_then<U, F>(self, f: F) -> Approximation<U, E>
     where

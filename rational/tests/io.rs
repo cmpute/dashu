@@ -248,13 +248,13 @@ fn test_rbig_in_expanded_repetend_low_precision() {
 #[test]
 #[should_panic(expected = "radix must be between 2 and 36")]
 fn test_rbig_in_expanded_radix_0_panics() {
-    let _ = format!("{}", RBig::ONE.in_expanded(0));
+    let _s = format!("{}", RBig::ONE.in_expanded(0));
 }
 
 #[test]
 #[should_panic(expected = "radix must be between 2 and 36")]
 fn test_rbig_in_expanded_radix_1_panics() {
-    let _ = format!("{}", RBig::ONE.in_expanded(1));
+    let _s = format!("{}", RBig::ONE.in_expanded(1));
 }
 
 #[test]

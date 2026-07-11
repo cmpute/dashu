@@ -136,7 +136,9 @@ impl_bit_ops_for_int!(i8 i16 i32 i64 i128 isize);
 /// assert_eq!(f32::encode(i32::MAX, 100), Inexact(f32::INFINITY, Positive));
 /// ```
 pub trait FloatEncoding {
+    /// The integer type used to represent the decoded mantissa.
     type Mantissa;
+    /// The integer type used to represent the decoded binary exponent.
     type Exponent;
 
     /// Convert a float number `mantissa * 2^exponent` into `(mantissa, exponent)` parts faithfully.

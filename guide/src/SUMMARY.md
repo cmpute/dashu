@@ -2,8 +2,11 @@
 
 [Introduction](./index.md)
 
+---
+
 - [Types](./types.md)
 - [Construction and Destruction](./construct.md)
+- [Cached Arithmetic for FBig/CBig](./cached.md)
 - [Conversion](./convert.md)
 - [Input and Output](./io/index.md)
   - [Parsing](./io/parse.md)
@@ -14,8 +17,14 @@
   - [Equality and Comparison](./ops/cmp.md)
   - [Basic Arithmetics](./ops/basic.md)
   - [Exponential and Logarithm](./ops/exp_log.md)
+  - [Trigonometric and Hyperbolic Functions](./ops/trig_n_hyper.md)
   - [Bit Manipulation](./ops/bit.md)
   - [Number Theoretic](./ops/num_theory.md)
-- [FAQ](./faq.md)
-- [Performance](./performance.md)
-- [Cheatsheet](./cheatsheet.md)
+- [Python Binding](./python.md)
+
+---
+
+[FAQ](./faq.md)
+[Performance](./performance.md)
+[Cheatsheet](./cheatsheet.md)
+[Standards Compliance](./compliance.md)

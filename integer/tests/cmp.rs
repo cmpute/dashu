@@ -47,10 +47,10 @@ fn test_eq_and_cmp() {
 
 #[test]
 fn test_abs_ord() {
-    // assert!(ubig!(12).abs_eq(&ubig!(12)));
-    // assert!(ubig!(12).abs_eq(&ibig!(-12)));
-    // assert!(ibig!(-12).abs_eq(&ubig!(12)));
-    // assert!(ibig!(12).abs_eq(&ibig!(-12)));
+    assert!(ubig!(12).abs_cmp(&ubig!(12)).is_eq());
+    assert!(ubig!(12).abs_cmp(&ibig!(-12)).is_eq());
+    assert!(ibig!(-12).abs_cmp(&ubig!(12)).is_eq());
+    assert!(ibig!(12).abs_cmp(&ibig!(-12)).is_eq());
 
     assert!(ibig!(-12).abs_cmp(&ubig!(10)).is_ge());
     assert!(ibig!(-12).abs_cmp(&ubig!(12)).is_eq());

@@ -1,11 +1,13 @@
 # dashu
 
+<img src="guide/src/assets/dashu-banner.png" alt="dashu">
+
 [![Crate](https://img.shields.io/crates/v/dashu.svg)](https://crates.io/crates/dashu)
 [![Docs](https://docs.rs/dashu/badge.svg)](https://docs.rs/dashu)
 [![Tests](https://github.com/cmpute/dashu/actions/workflows/tests.yml/badge.svg)](https://github.com/cmpute/dashu/actions)
 [![MSRV 1.68](https://img.shields.io/badge/rustc-1.68%2B-informational.svg)](#dashu)
 [![License](https://img.shields.io/crates/l/dashu)](#license)
-<!-- [![Book](https://img.shields.io/badge/book-master-yellow.svg)]() -->
+[![Book](https://img.shields.io/badge/book-user_guide-yellow.svg)](https://zyxin.xyz/dashu/)
 
 A library set of arbitrary precision numbers (aka. big numbers) implemented in Rust. It's intended to be a Rust native alternative to GNU GMP + MPFR (+ MPC in future). It features:
 - Pure rust, full `no_std` support.
@@ -19,9 +21,19 @@ A library set of arbitrary precision numbers (aka. big numbers) implemented in R
 - [`dashu-int`](./integer): Arbitrary precision integers
 - [`dashu-float`](./float): Arbitrary precision floating point numbers
 - [`dashu-ratio`](./rational): Arbitrary precision rational numbers
+- [`dashu-cmplx`](./complex): Arbitrary precision complex numbers
 - [`dashu-macros`](./macros): Macros for creating big numbers
 
 `dashu` is a meta crate that re-exports all the types from these sub-crates. Please see the README.md in each subdirectory for crate-specific introduction.
+
+## Python package
+
+[`dashu-python`](./python) is a user-friendly test field for the core dashu
+functionalities: through the [`dashu-rs`](https://pypi.org/project/dashu-rs/)
+package on PyPI, users can try dashu's arbitrary-precision integers, rationals,
+floats, and complex numbers from Python to get an idea of what dashu is capable
+of — no Rust toolchain needed. Beyond exploring dashu, it also stands on its own
+as a standalone arbitrary-precision number package for the Python ecosystem.
 
 ## License
 

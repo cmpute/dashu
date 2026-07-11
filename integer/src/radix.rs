@@ -9,8 +9,8 @@ use static_assertions::const_assert;
 type FastDivideSmall = num_modular::PreMulInv1by1<Word>;
 type FastDivideNormalized = num_modular::Normalized2by1Divisor<Word>;
 
-/// Digit and radix type, it's always u32.
-pub type Digit = u32;
+/// Digit and radix type, it's always u8.
+pub type Digit = u8;
 
 /// Minimum supported radix.
 pub const MIN_RADIX: Digit = 2;

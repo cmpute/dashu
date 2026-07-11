@@ -2,7 +2,9 @@
 
 dashu is a library set of arbitrary precision numbers implemented in pure Rust, aiming to be a Rust-native alternative to GNU GMP + MPFR.
 
-**MSRV is a hard constraint** — do not bump it unless absolutely necessary. The current MSRV is maintained in `README.md`; when modifying code, ensure it remains compatible.
+**MSRV is a hard constraint for core crates only.** Core crates are the `dashu` meta-crate and its direct dependencies: `dashu-base`, `dashu-int`, `dashu-float`, `dashu-ratio`, `dashu-macros`, `dashu-cmplx`. The current MSRV is maintained in each crate's `Cargo.toml` and the top-level `README.md`. When modifying code in core crates, ensure it remains MSRV-compatible.
+
+Secondary crates (`dashu-python`, `benchmark/`, fuzz tests) are **not** bounded by the workspace MSRV policy. They may use newer Rust versions and dependency versions as needed.
 
 ## Workspace structure
 
@@ -10,9 +12,10 @@ dashu is a library set of arbitrary precision numbers implemented in pure Rust, 
 |---|---|---|
 | `dashu-base` | `base/` | Common trait definitions and utilities |
 | `dashu-int` | `integer/` | Arbitrary precision integers (`UBig`, `IBig`) |
-| `dashu-float` | `float/` | Arbitrary precision floats (`FBig`) |
-| `dashu-ratio` | `rational/` | Arbitrary precision rationals (`RBig`) |
+| `dashu-float` | `float/` | Arbitrary precision floats (`FBig`, `DBig`, `CachedFBig`) |
+| `dashu-ratio` | `rational/` | Arbitrary precision rationals (`RBig`, `Relaxed`) |
 | `dashu-macros` | `macros/` | Procedural macros for literal big numbers |
+| `dashu-cmplx` | `complex/` | Arbitrary precision complex numbers (`CBig`) |
 | `dashu-python` | `python/` | PyO3 Python bindings (not in default members) |
 | *(benchmark)* | `benchmark/` | Profiling scratchpad, not a comprehensive benchmark suite |
 
@@ -46,6 +49,7 @@ Note: always `--exclude dashu-python` when running workspace-wide commands, sinc
 - Third-party trait implementations go in a `third_party/` module per crate, feature-gated
 - When borrowing an algorithm idea from GMP (or any other library), do **not** reference its function names in our docstrings or comments. Describe the algorithm in our own terms and use our own function names (e.g. write `add_mul_dword_same_len_in_place`, never `addmul_2` / `mpn_addmul_2`). External function names must not appear anywhere in the repo.
 - Tests for a specific algorithm/kernel belong in the same source file as the implementation, as a `#[cfg(test)] mod tests` block at the bottom — not in a separate integration test file under `tests/`. Reserve `tests/` for cross-cutting or public-API tests.
+- When debugging or writing test assertions, use `{:?}` (or `{:#?}` for the verbose form with digit/bit counts) to inspect arbitrary precision values. The [`Debug`] format prints a compact head‥tail representation (most significant digits `..` least significant digits) instead of dumping the entire number, making it readable even for thousand-digit integers.
 
 ## Feature flags
 
@@ -79,6 +83,10 @@ Keep the `## Unreleased` section updated as you go.
 - Estimating the number of digits can be costly — prefer using `log2_bounds` and `repr.digits_ub`/`digits_lb` instead of computing exact digit counts.
 - The number of digits in an `FBig` significand is at most the context precision, with one intentional exception: the result of an inexact addition or subtraction may carry a single **guard digit** (up to `precision + 1` digits). During internal calculations the bound can be violated more freely; use the methods on `Context` instead of the public API in that case.
 
+## Cached wrappers (`CachedFBig`, `CachedCBig`)
+
+**`CachedFBig` is a drop-in replacement for `FBig`, and `CachedCBig` for `CBig`.** Each cached wrapper must mirror the full public API and trait surface of its non-cached counterpart, delegating every impl to the inner value. **Whenever you add or change a trait impl on `FBig` or `CBig`, mirror it on `CachedFBig` / `CachedCBig` in the same change** — otherwise the `FastReal` / `FastDecimal` / `FastComplex` aliases regress: code that compiles with `FBig`/`CBig` must compile unchanged with `CachedFBig`/`CachedCBig`. The only intentional divergences are that the cached type's transcendental ops thread the shared `ConstCache`, it is `!Send + !Sync`, construction takes a cache handle, `CachedCBig::into_parts` returns `(CachedFBig, CachedFBig)` sharing the handle (not `CBig`'s `(FBig, FBig)`), and **third-party crate traits (serde, num-traits, num-order, rand, zeroize, postgres/diesel) are intentionally not mirrored** — reach them through `.as_fbig()` / `.as_cbig()`.
+
 ## dashu-int internals
 
 When implementing algorithms that manipulate word arrays (`&[Word]`), prefer the existing `Buffer` type over `Vec<Word>`. `Buffer` provides in-place operations like `erase_front`, `push_zeros_front`, `truncate`, and works with `MemoryAllocation` for scratch space — all without `std` or extra allocations. If you find yourself reaching for `Vec<Word>`, consider whether `Buffer` or `MemoryAllocation` would be a better fit.
@@ -89,5 +97,5 @@ When implementing algorithms that manipulate word arrays (`&[Word]`), prefer the
 
 - **dashu-python is excluded** from workspace tests and clippy — always add `--exclude dashu-python`
 - **diesel has two major versions** in the dependency tree — use `diesel@2` (not `diesel` or `diesel@2.x.y`) when pinning in CI
-- **MSRV compatibility** — if you add a new dependency, check whether it supports the current MSRV; if not, it may need to be stripped for MSRV builds
+- **MSRV compatibility** — for core crates only: if you add a new dependency to a core crate, check whether it supports the current MSRV; if not, it may need to be stripped for MSRV builds. Secondary crates (dashu-python, benchmarks, fuzz tests) are exempt from this check.
 - **Sub-crate versions can differ** in minor/patch (e.g. `dashu-int` 0.4.2, `dashu-float` 0.4.4) — keep them in sync when making cross-crate changes

@@ -1,7 +1,6 @@
 //! Comparisons operators.
-#![allow(deprecated)] // TODO(v0.5): remove after the implementations for AbsEq are removed.
 
-use dashu_base::{AbsEq, AbsOrd};
+use dashu_base::AbsOrd;
 
 use crate::{
     arch::word::Word,
@@ -82,31 +81,6 @@ impl PartialOrd for IBig {
     #[inline]
     fn partial_cmp(&self, other: &IBig) -> Option<Ordering> {
         Some(self.cmp(other))
-    }
-}
-
-impl AbsEq for UBig {
-    #[inline]
-    fn abs_eq(&self, rhs: &Self) -> bool {
-        self.eq(rhs)
-    }
-}
-impl AbsEq for IBig {
-    #[inline]
-    fn abs_eq(&self, rhs: &Self) -> bool {
-        self.0.as_sign_slice().1.eq(rhs.0.as_sign_slice().1)
-    }
-}
-impl AbsEq<UBig> for IBig {
-    #[inline]
-    fn abs_eq(&self, rhs: &UBig) -> bool {
-        self.0.as_sign_slice().1.eq(rhs.0.as_slice())
-    }
-}
-impl AbsEq<IBig> for UBig {
-    #[inline]
-    fn abs_eq(&self, rhs: &IBig) -> bool {
-        self.0.as_slice().eq(rhs.0.as_sign_slice().1)
     }
 }
 

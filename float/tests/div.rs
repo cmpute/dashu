@@ -75,7 +75,7 @@ fn test_div_binary() {
     for (a, b, c) in &exact_cases {
         test_div(a, b, c);
 
-        if let Exact(v) = Context::max(a.context(), b.context()).div(a.repr(), b.repr()) {
+        if let Ok(Exact(v)) = Context::max(a.context(), b.context()).div(a.repr(), b.repr()) {
             assert_eq!(v, *c);
         } else {
             panic!("the result should be exact!")
@@ -95,7 +95,7 @@ fn test_div_binary() {
     for (a, b, c) in &inexact_cases {
         test_div(a, b, c);
 
-        if let Inexact(v, e) = Context::max(a.context(), b.context()).div(a.repr(), b.repr()) {
+        if let Ok(Inexact(v, e)) = Context::max(a.context(), b.context()).div(a.repr(), b.repr()) {
             assert_eq!(v, *c);
             assert_eq!(e, NoOp);
         } else {
@@ -119,7 +119,7 @@ fn test_div_decimal() {
     for (a, b, c) in &exact_cases {
         test_div(a, b, c);
 
-        if let Exact(v) = Context::max(a.context(), b.context()).div(a.repr(), b.repr()) {
+        if let Ok(Exact(v)) = Context::max(a.context(), b.context()).div(a.repr(), b.repr()) {
             assert_eq!(v, *c);
         } else {
             panic!("the result should be exact!")
@@ -141,7 +141,7 @@ fn test_div_decimal() {
     for (a, b, c, rnd) in &inexact_cases {
         test_div(a, b, c);
 
-        if let Inexact(v, e) = Context::max(a.context(), b.context()).div(a.repr(), b.repr()) {
+        if let Ok(Inexact(v, e)) = Context::max(a.context(), b.context()).div(a.repr(), b.repr()) {
             assert_eq!(v, *c);
             assert_eq!(e, *rnd);
         } else {

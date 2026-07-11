@@ -69,12 +69,13 @@
 //! * `zeroize`: support traits from crate `zeroize`
 
 #![cfg_attr(not(feature = "std"), no_std)]
-// TODO (v0.5): apply these attributes to all crates
-// TODO (v0.5): #![deny(missing_docs)]
-// XXX: #![deny(clippy::allow_attributes_without_reason)]
+#![deny(missing_docs)]
 #![deny(clippy::dbg_macro)]
 #![deny(clippy::undocumented_unsafe_blocks)]
 #![deny(clippy::let_underscore_must_use)]
+// NOTE: clippy::allow_attributes_without_reason is intentionally not enabled. Satisfying it
+// requires a `reason = "..."` on every #[allow(..)] (or an #[expect(..)]), both of which were
+// stabilized in Rust 1.81 — but the crate MSRV is 1.68. Revisit once the MSRV reaches >= 1.81.
 
 extern crate alloc;
 

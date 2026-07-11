@@ -26,7 +26,7 @@ pub(crate) const fn panic_different_rings() -> ! {
 }
 
 /// Panics when the radix is not supported
-pub(crate) fn panic_invalid_radix(radix: u32) -> ! {
+pub(crate) fn panic_invalid_radix(radix: u8) -> ! {
     panic!("invalid radix: {}, only radix 2-36 are supported", radix);
 }
 

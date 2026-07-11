@@ -1,5 +1,3 @@
-#![allow(deprecated)] // TODO(v0.5): remove after from_str_native is made private.
-
 use crate::{
     fbig::FBig,
     repr::{Context, Repr, Word},
@@ -18,13 +16,9 @@ impl<const B: Word> Repr<B> {
     /// Upon success, this method returns an [Repr] and the number of digits (in radix `B`)
     /// contained in the string.
     ///
-    /// This method is the underlying implementation of [FBig::from_str_native],
-    /// see the docs for that function for details.
-    #[deprecated(
-        since = "0.5.0",
-        note = "from_str_native will be removed in v0.5. Use core::str::FromStr instead."
-    )] // TODO(v0.5): deprecate
-    pub fn from_str_native(mut src: &str) -> Result<(Self, usize), ParseError> {
+    /// This method is the underlying implementation of the [`FromStr`] impl on
+    /// [`FBig`]; see those docs for the accepted formats.
+    pub(crate) fn from_str_native(mut src: &str) -> Result<(Self, usize), ParseError> {
         assert!(MIN_RADIX as Word <= B && B <= MAX_RADIX as Word);
 
         // B is guaranteed to be in 2..=36 by the assert above; the cast to u32
@@ -154,13 +148,14 @@ impl<const B: Word> Repr<B> {
     }
 }
 
-impl<R: Round, const B: Word> FBig<R, B> {
-    /// Convert a string in the native base (i.e. radix `B`) to [FBig].
+impl<R: Round, const B: Word> FromStr for FBig<R, B> {
+    type Err = ParseError;
+
+    /// Convert a string in the native base (i.e. radix `B`) to [`FBig`].
     ///
-    /// If the parsing succeeded, the result number will be **losslessly** parsed from the
-    /// input string.
-    ///
-    /// This function is the actual implementation of the [FromStr] trait.
+    /// If parsing succeeds, the result is **losslessly** parsed from the input
+    /// string, and its precision equals the number of significant digits in the
+    /// input.
     ///
     /// **Note**: Infinites are **intentionally not supported** by this function.
     ///
@@ -203,45 +198,32 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// in the input string. For example, the numbers parsed from `12.34` or `1.234e-1` will have a
     /// precision of 4, while the ones parsed from `12.34000` or `00012.34` will have a precision of 7.
     ///
+    /// # Panics
+    ///
+    /// Panics if the base `B` is not between [MIN_RADIX] and [MAX_RADIX] inclusive.
+    ///
     /// # Examples
     ///
     /// ```
     /// # use dashu_base::ParseError;
     /// # use dashu_float::DBig;
-    /// use dashu_base::Approximation::*;
-    ///
-    /// let a = DBig::from_str_native("-1.23400e-3")?;
-    /// let b = DBig::from_str_native("-123.4@-05")?;
+    /// # use core::str::FromStr;
+    /// let a = DBig::from_str("-1.23400e-3")?;
+    /// let b = DBig::from_str("-123.4@-05")?;
     /// assert_eq!(a, b);
     /// assert_eq!(a.precision(), 6);
     /// assert_eq!(b.precision(), 4);
     ///
-    /// assert!(DBig::from_str_native("-0x1.234p-3").is_err());
-    /// assert!(DBig::from_str_native("-1.234H-3").is_err());
+    /// assert!(DBig::from_str("-0x1.234p-3").is_err());
+    /// assert!(DBig::from_str("-1.234H-3").is_err());
     /// # Ok::<(), ParseError>(())
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if the base `B` is not between [MIN_RADIX] and [MAX_RADIX] inclusive.
     #[inline]
-    #[deprecated(
-        since = "0.5.0",
-        note = "from_str_native will be removed in v0.5. Use core::str::FromStr instead."
-    )] // TODO(v0.5): deprecate
-    pub fn from_str_native(src: &str) -> Result<Self, ParseError> {
-        let (repr, ndigits) = Repr::from_str_native(src)?;
+    fn from_str(s: &str) -> Result<Self, ParseError> {
+        let (repr, ndigits) = Repr::from_str_native(s)?;
         Ok(Self {
             repr,
             context: Context::new(ndigits),
         })
-    }
-}
-
-impl<R: Round, const B: Word> FromStr for FBig<R, B> {
-    type Err = ParseError;
-    #[inline]
-    fn from_str(s: &str) -> Result<Self, ParseError> {
-        FBig::from_str_native(s)
     }
 }

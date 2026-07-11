@@ -70,8 +70,8 @@ fn repr_cmp_same_base<const B: Word, const ABS: bool>(
         }
     };
 
-    // case 3: compare with 0
-    match (lhs.is_zero(), rhs.is_zero()) {
+    // case 3: compare with 0 (both +0 and -0 are zero)
+    match (lhs.significand.is_zero(), rhs.significand.is_zero()) {
         (true, true) => return Ordering::Equal,
         (true, false) => {
             // rhs must be positive, otherwise case 2 will return

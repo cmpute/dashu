@@ -77,10 +77,9 @@ impl<R: Round, const B: Word> UniformFBig<R, B> {
         // so that we can ensure we don't reach the right bound.
         let unit: FBig<mode::Down, B> = self.sampler.sample01::<mode::Down, _>(rng);
         let context = unit.context();
-        let scaled = context.mul(unit.repr(), &self.scale).value();
+        let scaled = context.unwrap_fp(context.mul(unit.repr(), &self.scale));
         context
-            .add(scaled.repr(), &self.offset)
-            .value()
+            .unwrap_fp(context.add(scaled.repr(), &self.offset))
             .with_rounding()
     }
 }

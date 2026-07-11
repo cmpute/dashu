@@ -35,13 +35,15 @@ impl TryFrom<Repr> for UBig {
     type Error = ConversionError;
     #[inline]
     fn try_from(value: Repr) -> Result<Self, Self::Error> {
+        // Integer iff the (reduced) denominator is 1; then the value is the numerator magnitude.
+        if !value.denominator.is_one() {
+            return Err(ConversionError::LossOfPrecision);
+        }
         let (sign, mag) = value.numerator.into_parts();
         if sign == Sign::Negative {
             Err(ConversionError::OutOfBounds)
-        } else if mag.is_one() {
-            Ok(mag)
         } else {
-            Err(ConversionError::LossOfPrecision)
+            Ok(mag)
         }
     }
 }
@@ -623,6 +625,23 @@ impl Relaxed {
 mod tests {
     use super::*;
     use dashu_base::Sign::{Negative, Positive};
+
+    #[test]
+    fn test_ubig_try_from_repr() {
+        // Integer values (reduced denominator == 1) convert to their magnitude.
+        assert_eq!(UBig::try_from(RBig::from_parts(5.into(), UBig::ONE)), Ok(UBig::from(5u8)));
+        assert_eq!(UBig::try_from(RBig::ZERO), Ok(UBig::ZERO));
+        // A proper fraction is not an integer — must not silently succeed as the numerator.
+        assert_eq!(
+            UBig::try_from(RBig::from_parts(1.into(), 2u8.into())),
+            Err(ConversionError::LossOfPrecision)
+        );
+        // A negative integer is out of the unsigned range.
+        assert_eq!(
+            UBig::try_from(RBig::from_parts((-3).into(), UBig::ONE)),
+            Err(ConversionError::OutOfBounds)
+        );
+    }
 
     #[test]
     fn test_rbig_to_f64_without_double_rounding() {

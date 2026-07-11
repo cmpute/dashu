@@ -1,6 +1,7 @@
 use crate::types::PyWords;
 
 use pyo3::{
+    Bound, IntoPyObjectExt, Py, PyAny, PyResult,
     exceptions::{PyIndexError, PyTypeError, PyValueError},
     prelude::*,
     types::PySlice,
@@ -19,10 +20,10 @@ const ERRMSG_WORDS_INVALID_VALUE: &str = "words can only contain word-length int
 #[pymethods]
 impl PyWords {
     #[new]
-    fn __new__(ob: &PyAny) -> PyResult<Self> {
-        if let Ok(list) = <Vec<Word> as FromPyObject>::extract(ob) {
+    fn __new__(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
+        if let Ok(list) = ob.extract::<Vec<Word>>() {
             Ok(PyWords(list))
-        } else if let Ok(obj) = <PyRef<Self> as FromPyObject>::extract(ob) {
+        } else if let Ok(obj) = ob.extract::<PyRef<Self>>() {
             Ok(PyWords(obj.0.clone()))
         } else {
             Err(PyTypeError::new_err(ERRMSG_WORDS_WRONG_SRC_TYPE))
@@ -37,9 +38,9 @@ impl PyWords {
     fn __len__(&self) -> usize {
         self.0.len()
     }
-    fn __getitem__(&self, index: &PyAny) -> PyResult<PyObject> {
+    fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         let py = index.py();
-        if let Ok(n) = <isize as FromPyObject>::extract(index) {
+        if let Ok(n) = index.extract::<isize>() {
             // parse negative index
             let n = if n < 0 {
                 (self.0.len() as isize + n) as usize
@@ -53,8 +54,8 @@ impl PyWords {
                 .get(n)
                 .copied()
                 .ok_or(PyIndexError::new_err(ERRMSG_WORDS_OOR))?;
-            Ok(word.into_py(py))
-        } else if let Ok(slice) = index.downcast::<PySlice>() {
+            word.into_py_any(py)
+        } else if let Ok(slice) = index.cast::<PySlice>() {
             let indices = slice.indices(self.0.len() as _)?;
 
             let new_vec = if indices.step >= 0 {
@@ -86,13 +87,13 @@ impl PyWords {
                     Vec::new()
                 }
             };
-            Ok(Self(new_vec).into_py(py))
+            Self(new_vec).into_py_any(py)
         } else {
             Err(PyTypeError::new_err(ERRMSG_WORDS_INVALID_INDEX))
         }
     }
-    fn __setitem__(&mut self, index: &PyAny, value: &PyAny) -> PyResult<()> {
-        if let Ok(n) = <isize as FromPyObject>::extract(index) {
+    fn __setitem__(&mut self, index: &Bound<'_, PyAny>, value: &Bound<'_, PyAny>) -> PyResult<()> {
+        if let Ok(n) = index.extract::<isize>() {
             let value: Word = value.extract()?;
 
             // parse negative index
@@ -109,19 +110,19 @@ impl PyWords {
             } else {
                 Err(PyIndexError::new_err(ERRMSG_WORDS_OOR))
             }
-        } else if let Ok(slice) = index.downcast::<PySlice>() {
+        } else if let Ok(slice) = index.cast::<PySlice>() {
             // parse inputs
             let indices = slice.indices(self.0.len() as _)?;
-            let value: Vec<Word> = if let Ok(v) = <Vec<Word> as FromPyObject>::extract(value) {
+            let value: Vec<Word> = if let Ok(v) = value.extract::<Vec<Word>>() {
                 v
-            } else if let Ok(v) = <PyRef<Self> as FromPyObject>::extract(value) {
+            } else if let Ok(v) = value.extract::<PyRef<Self>>() {
                 v.0.clone() // FIXME: how to prevent copy here?
             } else {
                 return Err(PyTypeError::new_err(ERRMSG_WORDS_INVALID_VALUE));
             };
 
             // check that the indices and the values have the same length
-            if indices.slicelength as usize != value.len() {
+            if indices.slicelength != value.len() {
                 return Err(PyValueError::new_err(ERRMSG_WORDS_UNMATCH_INDEX));
             }
 
@@ -156,8 +157,8 @@ impl PyWords {
             Err(PyTypeError::new_err(ERRMSG_WORDS_INVALID_INDEX))
         }
     }
-    fn __delitem__(&mut self, index: &PyAny) -> PyResult<()> {
-        if let Ok(n) = <isize as FromPyObject>::extract(index) {
+    fn __delitem__(&mut self, index: &Bound<'_, PyAny>) -> PyResult<()> {
+        if let Ok(n) = index.extract::<isize>() {
             // parse negative index
             let n = if n < 0 {
                 (self.0.len() as isize + n) as usize
@@ -172,7 +173,7 @@ impl PyWords {
             } else {
                 Err(PyIndexError::new_err(ERRMSG_WORDS_OOR))
             }
-        } else if let Ok(slice) = index.downcast::<PySlice>() {
+        } else if let Ok(slice) = index.cast::<PySlice>() {
             let indices = slice.indices(self.0.len() as _)?;
 
             if indices.step >= 0 {
@@ -184,7 +185,7 @@ impl PyWords {
                         .enumerate()
                         .filter_map(|(i, v)| {
                             let in_slice = i >= skip && i < (skip + span) && (i - skip) % step == 0;
-                            (!in_slice).then(|| v)
+                            (!in_slice).then_some(v)
                         })
                         .collect();
                 }
@@ -199,7 +200,7 @@ impl PyWords {
                         .enumerate()
                         .filter_map(|(i, v)| {
                             let in_slice = i >= skip && i < (skip + span) && (i - skip) % step == 0;
-                            (!in_slice).then(|| v)
+                            (!in_slice).then_some(v)
                         })
                         .rev()
                         .collect();
@@ -211,11 +212,11 @@ impl PyWords {
         }
     }
 
-    fn __add__(&self, other: &PyAny) -> PyResult<Self> {
+    fn __add__(&self, other: &Bound<'_, PyAny>) -> PyResult<Self> {
         let mut out = self.0.clone();
-        if let Ok(list) = <Vec<Word> as FromPyObject>::extract(other) {
+        if let Ok(list) = other.extract::<Vec<Word>>() {
             out.extend(list);
-        } else if let Ok(obj) = <PyRef<Self> as FromPyObject>::extract(other) {
+        } else if let Ok(obj) = other.extract::<PyRef<Self>>() {
             out.extend(obj.0.iter());
         } else {
             return Err(PyTypeError::new_err(ERRMSG_WORDS_WRONG_SRC_TYPE));

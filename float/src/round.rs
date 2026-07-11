@@ -87,6 +87,11 @@ pub trait Round: Copy {
     /// The rounding operation that rounds to an opposite direction
     type Reverse: Round;
 
+    /// Whether this mode rounds toward negative infinity (IEEE roundTowardNegative).
+    /// Used to determine the sign of a zero produced by exact cancellation: per IEEE 754,
+    /// `x + (-x)` yields `-0` only under roundTowardNegative, `+0` otherwise.
+    const IS_ROUND_TOWARD_NEGATIVE: bool;
+
     /// Calculate the rounding of the number (integer + rem), assuming rem != 0 and |rem| < 1.
     /// `low_half_test` should tell |rem|.cmp(0.5)
     fn round_low_part<F: FnOnce() -> Ordering>(
@@ -157,6 +162,7 @@ pub trait ErrorBounds: Round {
 
 impl Round for mode::Zero {
     type Reverse = mode::Away;
+    const IS_ROUND_TOWARD_NEGATIVE: bool = false;
 
     #[inline]
     fn round_low_part<F: FnOnce() -> Ordering>(
@@ -182,7 +188,13 @@ impl ErrorBounds for mode::Zero {
     ) -> (FBig<Self, B>, FBig<Self, B>, bool, bool) {
         if f.precision() == 0 {
             (FBig::ZERO, FBig::ZERO, true, true)
-        } else if f.repr().is_zero() {
+        } else if f.repr().is_pos_zero() {
+            // `+0` is the canonical zero: its error interval is the full symmetric "rounds to
+            // zero" range (−ulp, +ulp). `-0` deliberately does NOT match here — it carries a
+            // sign (a distinct rounding target, produced by roundTowardNegative cancellation,
+            // `sqrt(−0)`, `1/−inf`, …), so it falls through to the sign arm for its one-sided
+            // preimage. (`+0` and `-0` are the same value; this split is about which values
+            // round *to* each signed-zero target under this directed mode.)
             (f.ulp(), f.ulp(), false, false)
         } else {
             match f.repr().sign() {
@@ -195,6 +207,7 @@ impl ErrorBounds for mode::Zero {
 
 impl Round for mode::Away {
     type Reverse = mode::Zero;
+    const IS_ROUND_TOWARD_NEGATIVE: bool = false;
 
     #[inline]
     fn round_low_part<F: FnOnce() -> Ordering>(
@@ -224,7 +237,10 @@ impl ErrorBounds for mode::Away {
     fn error_bounds<const B: Word>(
         f: &FBig<Self, B>,
     ) -> (FBig<Self, B>, FBig<Self, B>, bool, bool) {
-        if f.precision() == 0 && f.repr().is_zero() {
+        if f.precision() == 0 {
+            // Unlimited precision → exact value, so the error range is zero (ErrorBounds contract).
+            // This must be tested before the sign arms, which would otherwise return a nonzero ulp
+            // for `-0` (and any other precision-0 value).
             (FBig::ZERO, FBig::ZERO, true, true)
         } else {
             match f.repr().sign() {
@@ -237,6 +253,7 @@ impl ErrorBounds for mode::Away {
 
 impl Round for mode::Down {
     type Reverse = mode::Up;
+    const IS_ROUND_TOWARD_NEGATIVE: bool = true;
 
     #[inline]
     fn round_low_part<F: FnOnce() -> Ordering>(
@@ -264,6 +281,7 @@ impl ErrorBounds for mode::Down {
 
 impl Round for mode::Up {
     type Reverse = mode::Down;
+    const IS_ROUND_TOWARD_NEGATIVE: bool = false;
 
     #[inline]
     fn round_low_part<F: FnOnce() -> Ordering>(
@@ -291,6 +309,7 @@ impl ErrorBounds for mode::Up {
 
 impl Round for mode::HalfAway {
     type Reverse = Self;
+    const IS_ROUND_TOWARD_NEGATIVE: bool = false;
 
     #[inline]
     fn round_low_part<F: FnOnce() -> Ordering>(
@@ -337,7 +356,11 @@ impl ErrorBounds for mode::HalfAway {
         half_ulp.repr.exponent -= 1;
         half_ulp.repr.significand = UBig::from_word((B + 1) / 2).into(); // ceil division
 
-        let (incl_l, incl_r) = if f.repr.is_zero() {
+        let (incl_l, incl_r) = if f.repr.is_pos_zero() {
+            // `+0` is the canonical zero with the symmetric half-ulp interval on both sides.
+            // `-0` intentionally falls through: it carries a sign (a distinct rounding target),
+            // so it takes the sign-specific one-sided interval from the arms below. See
+            // `mode::Zero::error_bounds` for the same `+0`/`-0` split.
             (false, false)
         } else if f.repr.sign() == Sign::Negative {
             (false, true)
@@ -350,6 +373,7 @@ impl ErrorBounds for mode::HalfAway {
 
 impl Round for mode::HalfEven {
     type Reverse = Self;
+    const IS_ROUND_TOWARD_NEGATIVE: bool = false;
 
     #[inline]
     fn round_low_part<F: FnOnce() -> Ordering>(
@@ -397,8 +421,16 @@ impl ErrorBounds for mode::HalfEven {
         half_ulp.repr.exponent -= 1;
         half_ulp.repr.significand = UBig::from_word((B + 1) / 2).into(); // ceil division
 
-        let incl = f.repr.significand.bit(0);
-        (half_ulp.clone(), half_ulp, incl, incl)
+        // `-0` carries a sign (a distinct rounding target), so it takes the one-sided (Negative)
+        // interval, matching `mode::HalfAway::error_bounds`. `+0` (significand 0, even) and all
+        // nonzero values fall through to the round-to-even parity rule.
+        let (incl_l, incl_r) = if f.repr.is_neg_zero() {
+            (false, true)
+        } else {
+            let incl = f.repr.significand.bit(0);
+            (incl, incl)
+        };
+        (half_ulp.clone(), half_ulp, incl_l, incl_r)
     }
 }
 

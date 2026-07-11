@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Remove
+- `AbsEq` trait (folded into `AbsOrd`; use `.abs_cmp(..).is_eq()`).
+
+### Improve
+- Documented all previously-undocumented public items (associated types/methods on the arithmetic
+  traits `DivRem`/`DivRemEuclid`/`Gcd`/`ExtendedGcd`/`SquareRootRem`/`CubicRootRem`, `Abs`/
+  `UnsignedAbs`/`AbsOrd`/`Signed`/`Inverse`/`SquareRoot`/`CubicRoot`, the `Approximation` methods,
+  the `FloatEncoding` associated types, and the `Sign` variants) and enabled `#![deny(missing_docs)]`
+  together with `clippy::dbg_macro`, `clippy::undocumented_unsafe_blocks`, and
+  `clippy::let_underscore_must_use` as crate-level denies.
+
 ## 0.4.3
 
 ### Add

@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Add
+- `UBig::to_digits` / `UBig::from_digits`: convert to and from a sequence of base-`B` digits (base `2..=Word::MAX`, digits stored as `Word`, most-significant first). Complements [`UBig::in_radix`] which is limited to base 2..=36.
+
+### Fix
+- Fixed a broken intra-doc link in `MontgomeryRepr`'s docs (a `[...](self)` link that resolved to a
+  private item is removed), surfaced by `cargo doc -D warnings`.
+- `UBig::nth_root` / `IBig::nth_root` (and `cbrt`) of `0` returned `1` instead of `0`: the `bits <= n`
+  shortcut fired for the zero input (bit length 0). Found by the new `fuzz/` `rug::Integer` oracle.
+
+### Change
+- **(breaking)** `IBig`'s serde non-human-readable format switched from the custom byte-length-parity encoding to standard two's complement little-endian bytes (matching [`IBig::to_le_bytes`]), for interop robustness. Previously serialized data is not compatible.
+- **(breaking)** `UBig::in_radix` and `IBig::in_radix` now take `radix: u8` (was `u32`); the internal `Digit` type alias is now `u8`. `from_str_with_radix_prefix` / `from_str_with_radix_default` now expose the detected/default radix as `u8` (was `u32`). `from_str_radix` keeps its `u32` argument for `std` parity.
+
+### Improve
+- Documented the previously-undocumented public items on `ConstDivisor` and the `IntoRing`/
+  `IntoMontgomeryRing` traits, and enabled `#![deny(missing_docs)]` together with
+  `clippy::dbg_macro`, `clippy::undocumented_unsafe_blocks`, and `clippy::let_underscore_must_use`
+  as crate-level denies (resolving the `v0.5` lint TODOs in `lib.rs`).
+- Migrated the verbose `UBig`/`IBig` type prose (construction, parsing/printing, memory layout) out
+  of the rustdoc and into the user guide, leaving a concise summary plus a guide link (resolving the
+  `TODO(v0.5)` in `ubig.rs`). The runnable `# Examples` are kept verbatim.
+
 ## 0.4.3
 
 ### Add

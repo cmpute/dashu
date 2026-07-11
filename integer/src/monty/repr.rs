@@ -17,7 +17,7 @@ use num_modular::{Montgomery as NumMontgomery, Reducer};
 ///
 /// This is the Montgomery analogue of [`ConstDivisor`](crate::fast_div::ConstDivisor):
 /// it stores an odd modulus together with the values needed to perform fast modular
-/// arithmetic in [Montgomery form](self). Create it once with [`MontgomeryRepr::new`]
+/// arithmetic in Montgomery form. Create it once with [`MontgomeryRepr::new`]
 /// and use [`MontgomeryRepr::reduce`] to convert values into the ring.
 ///
 /// The modulus **must be odd and greater than 1**; this is enforced at construction

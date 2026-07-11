@@ -6,10 +6,11 @@
 use criterion::{
     criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion, PlotConfiguration,
 };
+use dashu_base::Sign;
 use dashu_int::{
     fast_div::ConstDivisor,
     ops::{ExtendedGcd, Gcd},
-    UBig,
+    IBig, UBig,
 };
 use rand_v08::prelude::*;
 use std::ops::*;
@@ -21,6 +22,14 @@ where
     R: Rng + ?Sized,
 {
     rng.gen_range(UBig::ONE << (bits - 1)..UBig::ONE << bits)
+}
+
+fn random_ibig<R>(bits: usize, rng: &mut R) -> IBig
+where
+    R: Rng + ?Sized,
+{
+    let sign = Sign::from(rng.gen_bool(0.5));
+    IBig::from_parts(sign, random_ubig(bits, rng))
 }
 
 macro_rules! add_binop_benchmark {
@@ -196,6 +205,35 @@ fn ubig_sqr(criterion: &mut Criterion) {
     group.finish();
 }
 
+macro_rules! add_ibig_binop_benchmark {
+    ($name:ident, $method:ident, $max_log_bits:literal) => {
+        fn $name(criterion: &mut Criterion) {
+            let mut rng = StdRng::seed_from_u64(SEED);
+            let mut group = criterion.benchmark_group(stringify!($name));
+            group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
+
+            for log_bits in 1..=$max_log_bits {
+                let bits = 10usize.pow(log_bits);
+                let a = random_ibig(bits, &mut rng);
+                let b = random_ibig(bits, &mut rng);
+                group.bench_with_input(
+                    BenchmarkId::from_parameter(format!("1e{}", log_bits)),
+                    &(a, b),
+                    |bencher, (ta, tb)| bencher.iter(|| tb.$method(ta)),
+                );
+            }
+
+            group.finish();
+        }
+    };
+}
+
+// IBig arithmetic — sign handling is unbench'd by the UBig groups above.
+add_ibig_binop_benchmark!(ibig_add, add, 6);
+add_ibig_binop_benchmark!(ibig_sub, sub, 6);
+add_ibig_binop_benchmark!(ibig_mul, mul, 7);
+add_ibig_binop_benchmark!(ibig_div, div, 6);
+
 criterion_group!(
     benches,
     ubig_add,
@@ -211,6 +249,10 @@ criterion_group!(
     ubig_ilog_large,
     ubig_mul_asymmetric,
     ubig_sqr,
+    ibig_add,
+    ibig_sub,
+    ibig_mul,
+    ibig_div,
 );
 
 criterion_main!(benches);

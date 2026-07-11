@@ -1,12 +1,10 @@
-#![allow(deprecated)] // TODO(v0.5): remove after the implementations for AbsEq are removed.
-
 use crate::{repr::Repr, RBig, Relaxed};
 use core::{
     cmp::Ordering,
     hash::{Hash, Hasher},
 };
 use dashu_base::{
-    AbsEq, AbsOrd, BitTest, EstimatedLog2,
+    AbsOrd, BitTest, EstimatedLog2,
     Sign::{self, *},
 };
 use dashu_int::{IBig, UBig};
@@ -30,7 +28,7 @@ fn repr_eq<const ABS: bool>(a: &Repr, b: &Repr) -> bool {
     // do the final product after filtering out simple cases
     let lhs = &a.numerator * &b.denominator;
     let rhs = &b.numerator * &a.denominator;
-    lhs.abs_eq(&rhs)
+    lhs.abs_cmp(&rhs).is_eq()
 }
 
 impl PartialEq for Repr {
@@ -41,20 +39,6 @@ impl PartialEq for Repr {
 }
 impl Eq for Repr {}
 
-impl AbsEq for Repr {
-    #[inline]
-    fn abs_eq(&self, other: &Self) -> bool {
-        repr_eq::<true>(self, other)
-    }
-}
-
-impl AbsEq for Relaxed {
-    #[inline]
-    fn abs_eq(&self, other: &Self) -> bool {
-        self.0.abs_eq(&other.0)
-    }
-}
-
 impl PartialEq for RBig {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
@@ -63,14 +47,6 @@ impl PartialEq for RBig {
     }
 }
 impl Eq for RBig {}
-
-impl AbsEq for RBig {
-    #[inline]
-    fn abs_eq(&self, other: &Self) -> bool {
-        // representation of RBig is canonicalized, so it suffices to compare the components
-        self.0.numerator.abs_eq(&other.0.numerator) && self.0.denominator == other.0.denominator
-    }
-}
 
 // Hash is only implemented for RBig but not for Relaxed, because the representation
 // is not unique for Relaxed.

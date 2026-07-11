@@ -31,6 +31,11 @@
 //! explicitly adding these dependencies, because the related types are re-exported
 //! by the `dashu` crate.
 
+#![deny(missing_docs)]
+#![deny(clippy::dbg_macro)]
+#![deny(clippy::undocumented_unsafe_blocks)]
+#![deny(clippy::let_underscore_must_use)]
+
 use proc_macro::TokenStream;
 
 mod parse;
@@ -163,4 +168,30 @@ pub fn rbig_embedded(input: TokenStream) -> TokenStream {
 #[rustversion::since(1.64)]
 pub fn static_rbig_embedded(input: TokenStream) -> TokenStream {
     parse::ratio::parse_static_ratio(true, input.into()).into()
+}
+
+#[proc_macro]
+#[doc = include_str!("../docs/cbig.md")]
+pub fn cbig(input: TokenStream) -> TokenStream {
+    parse::cmplx::parse_complex(false, false, input.into()).into()
+}
+
+#[proc_macro]
+#[rustversion::since(1.64)]
+#[doc = include_str!("../docs/static_cbig.md")]
+pub fn static_cbig(input: TokenStream) -> TokenStream {
+    parse::cmplx::parse_complex(true, false, input.into()).into()
+}
+
+#[doc(hidden)]
+#[proc_macro]
+pub fn cbig_embedded(input: TokenStream) -> TokenStream {
+    parse::cmplx::parse_complex(false, true, input.into()).into()
+}
+
+#[doc(hidden)]
+#[rustversion::since(1.64)]
+#[proc_macro]
+pub fn static_cbig_embedded(input: TokenStream) -> TokenStream {
+    parse::cmplx::parse_complex(true, true, input.into()).into()
 }

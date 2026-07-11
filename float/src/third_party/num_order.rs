@@ -205,9 +205,13 @@ macro_rules! impl_num_ord_with_float {
                 if other.is_nan() {
                     return None;
                 } else if *other == 0. {
-                    return match self.is_zero() {
-                        true => Some(Ordering::Equal),
-                        false => Some(self.sign() * Ordering::Greater)
+                    // primitive `0.` matches both `+0.0` and `-0.0`; either signed zero of
+                    // `self` is numerically equal to it (Repr treats `+0` and `-0` as equal),
+                    // and any other finite/infinite `self` compares by sign against that zero.
+                    return if self.is_pos_zero() || self.is_neg_zero() {
+                        Some(Ordering::Equal)
+                    } else {
+                        Some(self.sign() * Ordering::Greater)
                     };
                 }
 
@@ -279,19 +283,35 @@ impl_num_ord_with_float!(f32 f64);
 forward_num_ord_to_repr!(f32);
 forward_num_ord_to_repr!(f64);
 
-impl<const B: Word> NumHash for Repr<B> {
-    fn num_hash<H: core::hash::Hasher>(&self, state: &mut H) {
+impl<const B: Word> Repr<B> {
+    /// The numeric-hash residue (mod 2¹²⁷−1) used by [`NumHash`]:
+    /// `sgn(significand) · (|significand| mod M127) · (B^exponent mod M127)`.
+    ///
+    /// Special values: `+0` → `0`, `-0` → `0`, `+∞` → `HASH_INF` (= `M127`), `-∞` → `HASH_NEGINF`
+    /// (= `-M127`), matching num-order's `f64::fhash`. The subsequent `i128::num_hash` maps both
+    /// `HASH_INF` and `HASH_NEGINF` back to `0`, so the *final* hash of ±∞ is `0` — but the
+    /// *residue* distinguishes them so that composite types (e.g. `CBig`) combine them algebraically
+    /// the same way num-order's `Complex<f64>` does.
+    pub fn num_hash_residue(&self) -> i128 {
         // 2^127 - 1 is used in the num-order crate
         type MInt = FixedMersenneInt<127, 1>;
         const M127: i128 = i128::MAX;
         const M127U: u128 = M127 as u128;
+
+        if self.significand.is_zero() {
+            // Distinguish infinities (sentinel exponents) from signed zero.
+            return match self.exponent {
+                isize::MAX => M127,          // +∞  → HASH_INF
+                isize::MIN => i128::MIN + 1, // -∞  → HASH_NEGINF (= -M127)
+                _ => 0,                      // ±0
+            };
+        }
 
         let signif_residue = &self.significand % M127;
         let signif_hash = MInt::new(signif_residue.unsigned_abs(), &M127U);
         let exp_hash = if B == 2 {
             signif_hash.convert(1 << self.exponent.absm(&127))
         } else if self.exponent < 0 {
-            // since a Word is at most 64 bits right now, B is always less than M127
             signif_hash
                 .convert(B as u128)
                 .pow(&(-self.exponent as u128))
@@ -305,8 +325,14 @@ impl<const B: Word> NumHash for Repr<B> {
         if signif_residue < 0 {
             hash = -hash;
         }
+        hash
+    }
+}
 
-        hash.num_hash(state)
+impl<const B: Word> NumHash for Repr<B> {
+    #[inline]
+    fn num_hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.num_hash_residue().num_hash(state)
     }
 }
 
@@ -314,5 +340,190 @@ impl<R: Round, const B: Word> NumHash for FBig<R, B> {
     #[inline]
     fn num_hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.repr.num_hash(state)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::DBig;
+    use core::cmp::Ordering;
+    use num_order::{NumHash, NumOrd};
+
+    /// Default binary FBig (Zero rounding, base 2).
+    type FBin = FBig;
+
+    /// Hash a `NumHash` value to u64 for comparison.
+    fn num_hash<T: NumHash>(value: &T) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::Hasher;
+        let mut hasher = DefaultHasher::new();
+        value.num_hash(&mut hasher);
+        hasher.finish()
+    }
+
+    /// Capture the i128 residue a `NumHash` impl writes (the `i128` NumHash writes its value via
+    /// `Hasher::write_i128`), so the *field element* can be compared directly.
+    fn residue<T: NumHash>(value: &T) -> i128 {
+        struct Collector(i128);
+        impl core::hash::Hasher for Collector {
+            fn write_i128(&mut self, v: i128) {
+                self.0 = v;
+            }
+            fn write(&mut self, _: &[u8]) {}
+            fn finish(&self) -> u64 {
+                0
+            }
+        }
+        let mut c = Collector(0);
+        value.num_hash(&mut c);
+        c.0
+    }
+
+    // The base-2 Repr residue must equal num-order's f64 `fhash` for the same finite value — this
+    // is what lets dashu-cmplx's CBig reuse Repr residues and stay in sync with num-order's
+    // Complex<f64> hashing.
+    #[test]
+    fn test_fbig_num_hash_matches_f64() {
+        for v in [
+            1.0_f64,
+            2.0,
+            3.0,
+            0.5,
+            0.25,
+            -0.75,
+            100.0,
+            1e-10,
+            1e20,
+            123.456,
+            1.0 / 3.0,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            -0.0,
+        ] {
+            let f: FBin = core::convert::TryFrom::try_from(v).unwrap();
+            assert_eq!(residue(&f), residue(&v), "FBig/f64 num_hash disagree for {v}");
+        }
+    }
+
+    // -- NumOrd for Repr (same base) --
+
+    #[test]
+    fn test_num_ord_repr_zero_vs_neg_zero() {
+        // +0 == -0 (IEEE 754)
+        assert_eq!(Repr::<2>::zero().num_cmp(&Repr::<2>::neg_zero()), Ordering::Equal);
+        assert_eq!(Repr::<2>::neg_zero().num_cmp(&Repr::<2>::zero()), Ordering::Equal);
+    }
+
+    #[test]
+    fn test_num_ord_repr_neg_zero_vs_finite() {
+        let one = Repr::<2>::one();
+        let neg_one = Repr::<2>::neg_one();
+        // -0 < positive
+        assert_eq!(Repr::<2>::neg_zero().num_cmp(&one), Ordering::Less);
+        // -0 > negative
+        assert_eq!(Repr::<2>::neg_zero().num_cmp(&neg_one), Ordering::Greater);
+    }
+
+    #[test]
+    fn test_num_ord_repr_infinities() {
+        // +inf > -inf
+        assert_eq!(Repr::<2>::infinity().num_cmp(&Repr::<2>::neg_infinity()), Ordering::Greater);
+        // -inf < +inf
+        assert_eq!(Repr::<2>::neg_infinity().num_cmp(&Repr::<2>::infinity()), Ordering::Less);
+        // +inf == +inf
+        assert_eq!(Repr::<2>::infinity().num_cmp(&Repr::<2>::infinity()), Ordering::Equal);
+        // -inf == -inf
+        assert_eq!(Repr::<2>::neg_infinity().num_cmp(&Repr::<2>::neg_infinity()), Ordering::Equal);
+    }
+
+    #[test]
+    fn test_num_ord_repr_zero_vs_infinity() {
+        // +0 < +inf
+        assert_eq!(Repr::<2>::zero().num_cmp(&Repr::<2>::infinity()), Ordering::Less);
+        // -0 < +inf
+        assert_eq!(Repr::<2>::neg_zero().num_cmp(&Repr::<2>::infinity()), Ordering::Less);
+        // +0 > -inf
+        assert_eq!(Repr::<2>::zero().num_cmp(&Repr::<2>::neg_infinity()), Ordering::Greater);
+        // -0 > -inf
+        assert_eq!(Repr::<2>::neg_zero().num_cmp(&Repr::<2>::neg_infinity()), Ordering::Greater);
+    }
+
+    // -- NumOrd for Repr (cross-base) --
+
+    #[test]
+    fn test_num_ord_repr_cross_base_zero() {
+        // Base-2 neg_zero == Base-10 zero
+        assert_eq!(Repr::<2>::neg_zero().num_cmp(&Repr::<10>::zero()), Ordering::Equal);
+        // Base-2 neg_zero == Base-10 neg_zero
+        assert_eq!(Repr::<2>::neg_zero().num_cmp(&Repr::<10>::neg_zero()), Ordering::Equal);
+    }
+
+    #[test]
+    fn test_num_ord_repr_cross_base_infinity() {
+        // Base-2 +inf == Base-10 +inf
+        assert_eq!(Repr::<2>::infinity().num_cmp(&Repr::<10>::infinity()), Ordering::Equal);
+        // Base-2 +inf > Base-10 -inf
+        assert_eq!(Repr::<2>::infinity().num_cmp(&Repr::<10>::neg_infinity()), Ordering::Greater);
+        // Base-2 -inf == Base-10 -inf
+        assert_eq!(Repr::<2>::neg_infinity().num_cmp(&Repr::<10>::neg_infinity()), Ordering::Equal);
+    }
+
+    // -- NumOrd for FBig --
+
+    #[test]
+    fn test_num_ord_fbig_neg_zero() {
+        let negz: FBin = FBig::from_repr_const(Repr::<2>::neg_zero());
+        let posz = FBin::ZERO;
+        assert_eq!(negz.num_cmp(&posz), Ordering::Equal);
+        assert_eq!(posz.num_cmp(&negz), Ordering::Equal);
+
+        // -0 < +1, -0 > -1
+        assert_eq!(negz.num_cmp(&FBin::ONE), Ordering::Less);
+        assert_eq!(negz.num_cmp(&FBin::NEG_ONE), Ordering::Greater);
+    }
+
+    #[test]
+    fn test_num_ord_fbig_cross_base_zero() {
+        let negz: FBin = FBig::from_repr_const(Repr::<2>::neg_zero());
+        assert_eq!(negz.num_cmp(&DBig::ZERO), Ordering::Equal);
+        assert_eq!(DBig::ZERO.num_cmp(&negz), Ordering::Equal);
+    }
+
+    // -- NumHash for Repr --
+
+    #[test]
+    fn test_num_hash_repr_zero_neg_zero_equal() {
+        // +0 and -0 compare equal, so they must hash the same
+        assert_eq!(num_hash(&Repr::<2>::zero()), num_hash(&Repr::<2>::neg_zero()));
+        assert_eq!(num_hash(&Repr::<10>::zero()), num_hash(&Repr::<10>::neg_zero()));
+    }
+
+    #[test]
+    fn test_num_hash_repr_infinities_same_sign() {
+        // Same-sign infinities hash the same
+        assert_eq!(num_hash(&Repr::<2>::infinity()), num_hash(&Repr::<10>::infinity()));
+        assert_eq!(num_hash(&Repr::<2>::neg_infinity()), num_hash(&Repr::<10>::neg_infinity()));
+    }
+
+    #[test]
+    fn test_num_hash_repr_zero_matches_integer_zero() {
+        // +0 and -0 should hash the same as integer zero
+        assert_eq!(num_hash(&Repr::<2>::zero()), num_hash(&0i128));
+        assert_eq!(num_hash(&Repr::<2>::neg_zero()), num_hash(&0i128));
+    }
+
+    // -- NumHash for FBig --
+
+    #[test]
+    fn test_num_hash_fbig_neg_zero() {
+        let negz: FBin = FBig::from_repr_const(Repr::<2>::neg_zero());
+        assert_eq!(num_hash(&negz), num_hash(&FBin::ZERO));
+    }
+
+    #[test]
+    fn test_num_hash_fbig_cross_base_zero() {
+        let negz: FBin = FBig::from_repr_const(Repr::<2>::neg_zero());
+        assert_eq!(num_hash(&negz), num_hash(&DBig::ZERO));
     }
 }
