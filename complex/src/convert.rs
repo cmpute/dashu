@@ -47,7 +47,7 @@ impl<R: Round, const B: Word> TryFrom<CBig<R, B>> for FBig<R, B> {
     /// from [`CBig::re`] / [`CBig::into_parts`], which return the real part unconditionally.
     #[inline]
     fn try_from(z: CBig<R, B>) -> Result<Self, Self::Error> {
-        if z.im.is_zero() || z.im.is_neg_zero() {
+        if z.im.is_pos_zero() || z.im.is_neg_zero() {
             Ok(FBig::from_repr(z.re, z.context.float()))
         } else {
             Err(ConversionError::LossOfPrecision)
@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn from_fbig_is_purely_real() {
         let z = C::from(F::from(7));
-        assert!(z.im().is_zero() || z.im().is_neg_zero());
+        assert!(z.im().is_pos_zero() || z.im().is_neg_zero());
         assert_eq!(z.re().significand(), &7.into());
     }
 

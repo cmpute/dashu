@@ -20,7 +20,7 @@ fn assert_neg_zero(v: &FBig) {
 }
 /// Helper: assert the value is a positive zero.
 fn assert_pos_zero(v: &FBig) {
-    assert!(v.repr().is_zero(), "expected +0, got {:?}", v.repr());
+    assert!(v.repr().is_pos_zero(), "expected +0, got {:?}", v.repr());
 }
 
 #[test]
@@ -91,7 +91,7 @@ fn test_div_signed_zero() {
         .value();
     assert!(negz.repr().is_neg_zero()); // -0 / 5 = -0
     let posz = ctx.div::<2>(&Repr::<2>::zero(), &r2(5, 0)).unwrap().value();
-    assert!(posz.repr().is_zero()); // +0 / 5 = +0
+    assert!(posz.repr().is_pos_zero()); // +0 / 5 = +0
 }
 
 #[test]
@@ -100,7 +100,7 @@ fn test_sqrt_signed_zero() {
     let negz = ctx.sqrt::<2>(&Repr::<2>::neg_zero()).unwrap().value();
     assert!(negz.repr().is_neg_zero()); // sqrt(-0) = -0
     let posz = ctx.sqrt::<2>(&Repr::<2>::zero()).unwrap().value();
-    assert!(posz.repr().is_zero()); // sqrt(+0) = +0
+    assert!(posz.repr().is_pos_zero()); // sqrt(+0) = +0
 }
 
 #[test]
@@ -109,7 +109,7 @@ fn test_trig_signed_zero() {
     let sin_neg0 = ctx.sin::<2>(&Repr::<2>::neg_zero(), None).unwrap().value();
     assert!(sin_neg0.repr().is_neg_zero()); // sin(-0) = -0
     let sin_pos0 = ctx.sin::<2>(&Repr::<2>::zero(), None).unwrap().value();
-    assert!(sin_pos0.repr().is_zero()); // sin(+0) = +0
+    assert!(sin_pos0.repr().is_pos_zero()); // sin(+0) = +0
     let tan_neg0 = ctx.tan::<2>(&Repr::<2>::neg_zero(), None).unwrap().value();
     assert!(tan_neg0.repr().is_neg_zero()); // tan(-0) = -0
     let cos_neg0 = ctx.cos::<2>(&Repr::<2>::neg_zero(), None).unwrap().value();
@@ -155,7 +155,7 @@ fn test_cancellation_under_down() -> Result<(), ParseError> {
         .add::<10>(three.repr(), neg_three.repr())
         .unwrap()
         .value();
-    assert!(sum_up.repr().is_zero(), "(-3)+3 under Up = +0");
+    assert!(sum_up.repr().is_pos_zero(), "(-3)+3 under Up = +0");
 
     // subtraction a - a likewise
     let sub_down = down.sub::<10>(three.repr(), three.repr()).unwrap().value();
@@ -181,7 +181,7 @@ fn test_powi_signed_zero() {
         .powi::<2>(&Repr::<2>::neg_zero(), 2.into())
         .unwrap()
         .value();
-    assert!(posz.repr().is_zero()); // (-0)^2 = +0
+    assert!(posz.repr().is_pos_zero()); // (-0)^2 = +0
 }
 
 #[test]
@@ -205,4 +205,131 @@ fn test_ln_1p_signed_zero() {
         .unwrap()
         .value();
     assert!(r.repr().is_neg_zero()); // ln_1p(-0) = -0
+}
+
+#[test]
+fn test_exp_m1_signed_zero() {
+    let ctx = Context::<mode::HalfEven>::new(53);
+    // IEEE 754 §9.2.1: exp_m1(-0) = -0, exp_m1(+0) = +0.
+    let neg = ctx
+        .exp_m1::<2>(&Repr::<2>::neg_zero(), None)
+        .unwrap()
+        .value();
+    assert!(neg.repr().is_neg_zero());
+    let pos = ctx.exp_m1::<2>(&Repr::<2>::zero(), None).unwrap().value();
+    assert!(pos.repr().is_pos_zero() && !pos.repr().is_neg_zero());
+}
+
+#[test]
+fn test_powf_neg_zero_exponent() {
+    // pow(x, ±0) = 1 for any base, including a negative one (IEEE 754 §9.2.1). The float-exponent
+    // path must treat `-0` like `+0`; otherwise a negative base falls through to OutOfDomain.
+    let ctx = Context::<mode::HalfEven>::new(53);
+    let one = FBig::<mode::HalfEven>::ONE.with_precision(53).unwrap();
+    for base in [r2(5, 0), r2(-5, 0), Repr::<2>::neg_zero()] {
+        let r_neg = ctx
+            .powf::<2>(&base, &Repr::<2>::neg_zero(), None)
+            .unwrap()
+            .value();
+        let r_pos = ctx
+            .powf::<2>(&base, &Repr::<2>::zero(), None)
+            .unwrap()
+            .value();
+        assert_eq!(r_neg, one, "powf({:?}, -0) should be 1", base);
+        assert_eq!(r_pos, one, "powf({:?}, +0) should be 1", base);
+    }
+}
+
+#[test]
+fn test_quantize_preserves_neg_zero() {
+    // quantize is sign-preserving: quantize(-0, q) stays -0 for any quantum.
+    let negz = FBig::<mode::HalfEven, 2>::from_repr(Repr::<2>::neg_zero(), Context::new(53));
+    for q in [0isize, 3, -1] {
+        let r = negz.clone().quantize(q).value();
+        assert!(r.repr().is_neg_zero(), "quantize(-0, {}) should keep -0, got {:?}", q, r.repr());
+    }
+}
+
+#[test]
+fn test_error_bounds_unlimited_precision_is_exact() {
+    // ErrorBounds contract: unlimited precision (precision 0) ⇒ (ZERO, ZERO, true, true) for
+    // every value, including `-0` and nonzero values. Verifies the Away/Zero asymmetry fix.
+    use dashu_float::round::ErrorBounds;
+    let mk = |repr: Repr<2>| FBig::<mode::Away, 2>::from_repr(repr, Context::new(0));
+    for v in [
+        mk(Repr::neg_zero()),
+        mk(Repr::zero()),
+        mk(r2(7, 0)),
+        mk(r2(-7, 0)),
+    ] {
+        let (l, r, il, ir) = mode::Away::error_bounds(&v);
+        assert_eq!(l, FBig::<mode::Away, 2>::ZERO, "lower bound nonzero for {:?}", v.repr());
+        assert_eq!(r, FBig::<mode::Away, 2>::ZERO, "upper bound nonzero for {:?}", v.repr());
+        assert!(il && ir, "bounds not inclusive for {:?}", v.repr());
+    }
+}
+
+#[test]
+fn test_error_bounds_signed_zero_is_one_sided() {
+    // Interpretation (A): `+0` is the canonical zero (symmetric interval), while `-0` carries a
+    // sign and gets the one-sided (Negative) interval. All three sign-aware modes now agree:
+    // Zero, HalfAway and HalfEven return (false, false) for `+0` and (false, true) for `-0`.
+    use dashu_float::round::ErrorBounds;
+    let mk_z = |repr: Repr<2>| FBig::<mode::Zero, 2>::from_repr(repr, Context::new(8));
+    let half = |repr: Repr<2>| FBig::<mode::HalfEven, 2>::from_repr(repr, Context::new(8));
+
+    let (_, _, il, ir) = mode::Zero::error_bounds(&mk_z(Repr::zero()));
+    assert_eq!((il, ir), (false, false), "Zero +0 symmetric");
+    let (_, _, il, ir) = mode::Zero::error_bounds(&mk_z(Repr::neg_zero()));
+    assert_eq!((il, ir), (false, true), "Zero -0 one-sided");
+
+    let mk_a = |repr: Repr<2>| FBig::<mode::HalfAway, 2>::from_repr(repr, Context::new(8));
+    let (_, _, il, ir) = mode::HalfAway::error_bounds(&mk_a(Repr::zero()));
+    assert_eq!((il, ir), (false, false), "HalfAway +0 symmetric");
+    let (_, _, il, ir) = mode::HalfAway::error_bounds(&mk_a(Repr::neg_zero()));
+    assert_eq!((il, ir), (false, true), "HalfAway -0 one-sided");
+
+    let (_, _, il, ir) = mode::HalfEven::error_bounds(&half(Repr::zero()));
+    assert_eq!((il, ir), (false, false), "HalfEven +0 symmetric");
+    let (_, _, il, ir) = mode::HalfEven::error_bounds(&half(Repr::neg_zero()));
+    assert_eq!((il, ir), (false, true), "HalfEven -0 one-sided (aligned with HalfAway)");
+}
+
+#[cfg(feature = "num-order")]
+#[test]
+fn test_numord_neg_zero_equals_primitive_zero() {
+    // `-0` is numerically equal to primitive `0.0`, so NumOrd must report Equal — not Less.
+    use num_order::NumOrd;
+    let negz = FBig::<mode::HalfEven, 2>::from_repr(Repr::<2>::neg_zero(), Context::new(53));
+    assert_eq!(negz.num_partial_cmp(&0.0f64), Some(core::cmp::Ordering::Equal));
+    assert_eq!(negz.num_partial_cmp(&-0.0f64), Some(core::cmp::Ordering::Equal));
+    // sanity: a negative nonzero value still orders below zero
+    let neg = FBig::<mode::HalfEven, 2>::from_repr(r2(-5, 0), Context::new(53));
+    assert_eq!(neg.num_partial_cmp(&0.0f64), Some(core::cmp::Ordering::Less));
+}
+
+#[test]
+fn test_asin_acos_unit_under_down() {
+    // Under roundTowardNegative (Down), `1 - 1` cancels to `-0`, so `d = sqrt(1 - x²) = -0` at
+    // |x| = 1. The `d`-is-zero branch must catch `-0` too, or the general path divides by `-0`
+    // → `-∞` and panics (regression: asin/acos(±1) used to panic under Down). The exact value
+    // (±π/2, 0/π) is mode-independent; only its last digit may round differently, so we check the
+    // sign and that it is within 1 ULP of the round-to-nearest result rather than bit-equality.
+    let down = Context::<mode::Down>::new(53);
+
+    let asin1 = down.asin::<2>(&Repr::<2>::one(), None).unwrap().value();
+    let asinm1 = down.asin::<2>(&Repr::<2>::neg_one(), None).unwrap().value();
+    assert_eq!(asin1.sign(), Sign::Positive);
+    assert_eq!(asinm1.sign(), Sign::Negative);
+    assert!((asin1.to_f64().value() - core::f64::consts::FRAC_PI_2).abs() < 1e-15);
+    assert!((asinm1.to_f64().value() + core::f64::consts::FRAC_PI_2).abs() < 1e-15);
+
+    let acos1 = down.acos::<2>(&Repr::<2>::one(), None).unwrap().value();
+    let acosm1 = down.acos::<2>(&Repr::<2>::neg_one(), None).unwrap().value();
+    assert!(
+        acos1.repr().is_pos_zero() || acos1.repr().is_neg_zero(),
+        "acos(+1) = 0, got {:?}",
+        acos1.repr()
+    );
+    assert!((acosm1.to_f64().value() - core::f64::consts::PI).abs() < 1e-14, "acos(-1) ≈ π");
 }

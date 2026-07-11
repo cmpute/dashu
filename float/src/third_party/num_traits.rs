@@ -12,7 +12,8 @@ impl<R: Round, const B: Word> num_traits::Zero for FBig<R, B> {
     }
     #[inline]
     fn is_zero(&self) -> bool {
-        self.repr.is_zero()
+        // Numerically zero: both +0 and -0 are the additive identity.
+        self.repr.is_pos_zero() || self.repr.is_neg_zero()
     }
 }
 

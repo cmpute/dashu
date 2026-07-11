@@ -119,7 +119,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
     /// [FBig] with value 0 and unlimited precision
     ///
-    /// To test if the float number is zero, use `self.repr().is_zero()`.
+    /// To test if the float number is `+0`, use `self.repr().is_pos_zero()` (or
+    /// `self.repr().significand().is_zero()` to detect either signed zero).
     pub const ZERO: Self = Self::new(Repr::zero(), Context::new(0));
 
     /// [FBig] with value 1 and unlimited precision

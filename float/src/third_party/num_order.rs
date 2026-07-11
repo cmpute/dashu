@@ -205,9 +205,13 @@ macro_rules! impl_num_ord_with_float {
                 if other.is_nan() {
                     return None;
                 } else if *other == 0. {
-                    return match self.is_zero() {
-                        true => Some(Ordering::Equal),
-                        false => Some(self.sign() * Ordering::Greater)
+                    // primitive `0.` matches both `+0.0` and `-0.0`; either signed zero of
+                    // `self` is numerically equal to it (Repr treats `+0` and `-0` as equal),
+                    // and any other finite/infinite `self` compares by sign against that zero.
+                    return if self.is_pos_zero() || self.is_neg_zero() {
+                        Some(Ordering::Equal)
+                    } else {
+                        Some(self.sign() * Ordering::Greater)
                     };
                 }
 

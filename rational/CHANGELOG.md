@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Fix
+- `UBig::try_from(RBig)` (and `TryFrom<Repr> for UBig`) now tests the reduced denominator (a value is
+  an integer iff its denominator is 1) instead of the numerator magnitude. Previously it returned
+  `Ok(1)` for any value with numerator ±1 (e.g. `1/2` → `Ok(1)`) and `Err(LossOfPrecision)` for every
+  integer whose magnitude wasn't 1 (e.g. `5` → `Err`); it now converts integers correctly and rejects
+  non-integers.
 - Fixed a broken intra-doc link to `Display` in `InRadix`'s docs (`core::fmt::Display`), surfaced by
   `cargo doc -D warnings`.
 - (internal) The `in_expanded` formatting unit tests failed to compile under `no_std` (`cargo test --no-default-features`) because the `format!` macro was not imported; the test module now imports `alloc::format`.

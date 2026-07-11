@@ -187,21 +187,21 @@ impl<const B: Word> Repr<B> {
         }
     }
 
-    /// Determine if the [Repr] represents zero
+    /// Determine if the [Repr] represents positive zero (`+0`)
     ///
-    /// Note that this returns `true` only for `+0`; use [`Self::is_neg_zero`] to detect `-0`,
-    /// or check `self.significand.is_zero()` to detect either signed zero.
+    /// This returns `true` only for `+0`; use [`Self::is_neg_zero`] to detect `-0`, or check
+    /// `self.significand().is_zero()` to detect either signed zero.
     ///
     /// # Examples
     ///
     /// ```
     /// # use dashu_float::Repr;
-    /// assert!(Repr::<2>::zero().is_zero());
-    /// assert!(!Repr::<10>::neg_zero().is_zero());
-    /// assert!(!Repr::<10>::one().is_zero());
+    /// assert!(Repr::<2>::zero().is_pos_zero());
+    /// assert!(!Repr::<10>::neg_zero().is_pos_zero());
+    /// assert!(!Repr::<10>::one().is_pos_zero());
     /// ```
     #[inline]
-    pub const fn is_zero(&self) -> bool {
+    pub const fn is_pos_zero(&self) -> bool {
         self.significand.is_zero() && self.exponent == 0
     }
 
@@ -226,8 +226,8 @@ impl<const B: Word> Repr<B> {
     ///
     /// ```
     /// # use dashu_float::Repr;
-    /// assert!(Repr::<2>::zero().is_zero());
-    /// assert!(!Repr::<10>::one().is_zero());
+    /// assert!(Repr::<2>::zero().is_pos_zero());
+    /// assert!(!Repr::<10>::one().is_pos_zero());
     /// ```
     #[inline]
     pub const fn is_one(&self) -> bool {
@@ -695,7 +695,7 @@ mod tests {
     fn neg_zero_encoding() {
         assert_eq!(Repr::<2>::neg_zero().exponent, -1);
         assert!(Repr::<2>::neg_zero().is_neg_zero());
-        assert!(!Repr::<2>::neg_zero().is_zero());
+        assert!(!Repr::<2>::neg_zero().is_pos_zero());
         assert!(!Repr::<2>::neg_zero().is_infinite());
         assert_eq!(Repr::<2>::neg_zero().sign(), Sign::Negative);
         assert_eq!(Repr::<2>::zero().sign(), Sign::Positive);

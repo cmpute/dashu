@@ -27,6 +27,17 @@
   `TryFrom<f32>`/`TryFrom<f64>` (base 2), and `TryFrom<CBig>` for every integer and float primitive
   (float out is base-2). All compose through `FBig`, mirroring `dashu-float`'s primitive surface.
 
+### Fix
+- Division by a real `-0` scalar (`z / FBig(-0)`) now returns the Riemann infinity, like `z / +0`,
+  instead of falling through to a componentwise divide-by-`-0`. `Context::div_real` was testing
+  `is_pos_zero()` only, not `is_neg_zero()` (unlike `mul_real`).
+- `sqrt(x ± i·∞)` now returns `+∞ ± i·∞` for **any** `x` (including `±∞`), per C99 Annex G G.6.4.2 —
+  the infinite-imaginary case is now handled before the `x = ±∞` cases. Previously `sqrt(+∞ + i·∞)`
+  gave `+∞ + i·0` and `sqrt(-∞ + i·∞)` gave `+0 + i·∞`.
+- The overflow-produced complex infinity is now the single Riemann point `+∞ + i·0` (matching the
+  special-value paths and `proj`) instead of `+∞ + i·∞`; the two forms compared unequal under
+  `PartialEq`.
+
 ### Improve
 - Enabled `#![deny(missing_docs)]` together with `clippy::dbg_macro`,
   `clippy::undocumented_unsafe_blocks`, and `clippy::let_underscore_must_use` as crate-level denies.

@@ -61,6 +61,16 @@ fn precise_sum<R: Round, const B: Word>(
         acc = exact_add(acc, &repr);
         context = Context::max(context, ctx);
     }
+    // Exact cancellation can leave `acc` with a zero significand whose exponent coincides with the
+    // `-0` sentinel (-1) — `Repr::new` then mislabels it `-0`. Canonicalize the sign per IEEE 754
+    // §6.3 (x + (-x) = +0 except under roundTowardNegative), mirroring `Add`'s `cancel_zero`.
+    if acc.significand.is_zero() {
+        acc = if R::IS_ROUND_TOWARD_NEGATIVE {
+            Repr::neg_zero()
+        } else {
+            Repr::zero()
+        };
+    }
     FBig::new(context.repr_round(acc).value(), context)
 }
 
@@ -105,7 +115,7 @@ mod tests {
     fn sum_empty() {
         let s: F = core::iter::empty::<F>().sum();
         assert_eq!(s, F::ZERO);
-        assert!(s.repr().is_zero());
+        assert!(s.repr().is_pos_zero());
     }
 
     #[test]
@@ -113,6 +123,16 @@ mod tests {
         let a = F::from_str("1.234").unwrap();
         let s: F = core::iter::once(a.clone()).sum();
         assert_eq!(s, a);
+    }
+
+    #[test]
+    fn sum_cancellation_is_positive_zero() {
+        // 0.5 + (-0.5) must yield +0 under round-to-nearest (IEEE 754 §6.3), matching chained `+` —
+        // the exact-cancellation exponent (-1) must not be mistaken for the `-0` sentinel.
+        let half = F::from_str("0.5").unwrap();
+        let s: F = [half.clone(), -half].into_iter().sum();
+        assert!(s.repr().is_pos_zero());
+        assert!(!s.repr().is_neg_zero());
     }
 
     #[test]
@@ -129,7 +149,7 @@ mod tests {
         let a = F::from_str("1.00").unwrap();
         let b = F::from_str("-1.00").unwrap();
         let s: F = [a, b].into_iter().sum();
-        assert!(s.repr().is_zero()); // exact zero → +0
+        assert!(s.repr().is_pos_zero()); // exact zero → +0
     }
 
     #[test]

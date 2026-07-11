@@ -31,7 +31,7 @@ fn test_signed_zeros() {
         .unwrap()
         .value()
         .repr()
-        .is_zero());
+        .is_pos_zero());
     assert!(ctx
         .sinh::<10>(&Repr::<10>::neg_zero(), None)
         .unwrap()
@@ -146,7 +146,7 @@ fn test_round_trips() {
 fn test_acosh_one_is_zero() {
     let ctx = Context::<mode::HalfEven>::new(30);
     let r = ctx.acosh::<10>(&Repr::<10>::one(), None).unwrap().value();
-    assert!(r.repr().is_zero());
+    assert!(r.repr().is_pos_zero());
 }
 
 #[test]

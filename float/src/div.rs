@@ -478,7 +478,7 @@ impl<R: Round> Context<R> {
             return Err(FpError::Indeterminate); // 0/0
         }
 
-        let lhs_repr = if !lhs.is_zero() && lhs.digits_ub() > rhs.digits_lb() + self.precision {
+        let lhs_repr = if !lhs.is_pos_zero() && lhs.digits_ub() > rhs.digits_lb() + self.precision {
             // shrink lhs if it's larger than necessary
             Self::new(rhs.digits() + self.precision)
                 .repr_round_ref(lhs)

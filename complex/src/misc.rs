@@ -215,7 +215,7 @@ mod tests {
         let p = inf.proj();
         assert!(p.re().is_infinite());
         assert_eq!(p.re().sign(), Sign::Positive);
-        assert!(p.im().is_zero());
+        assert!(p.im().is_pos_zero());
     }
 
     #[test]

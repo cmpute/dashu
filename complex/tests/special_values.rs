@@ -24,7 +24,7 @@ fn inf() -> C {
 }
 
 fn is_riemann(r: &C) -> bool {
-    r.re().is_infinite() && r.re().sign() == Sign::Positive && r.im().is_zero()
+    r.re().is_infinite() && r.re().sign() == Sign::Positive && r.im().is_pos_zero()
 }
 
 #[test]
@@ -209,7 +209,7 @@ fn sqrt_neg_infinity_is_imaginary_infinity() {
     // sqrt(-inf + i·0) = +0 + i·inf
     let neg_inf = CBig::from(F::NEG_INFINITY);
     let s = ctx().sqrt(&neg_inf).unwrap().value();
-    assert!(s.re().is_zero());
+    assert!(s.re().is_pos_zero());
     assert!(s.im().is_infinite());
     assert_eq!(s.im().sign(), Sign::Positive);
 }

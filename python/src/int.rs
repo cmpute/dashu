@@ -23,7 +23,7 @@ use crate::{
 
 use dashu_base::{
     Abs, BitTest, CubicRoot, PowerOfTwo, Sign, Signed, SquareRoot, UnsignedAbs,
-    ring::{DivEuclid, DivRemEuclid, ExtendedGcd, Gcd},
+    ring::{DivRemEuclid, ExtendedGcd, Gcd},
 };
 use dashu_float::FBig;
 use dashu_int::{IBig, UBig, Word, fast_div};
@@ -161,14 +161,29 @@ impl_ubig_bit_binops!(UPy, upy_bitxor, bitxor);
 impl_ubig_bit_binops!(IPy, ipy_bitor, bitor);
 impl_ubig_bit_binops!(IPy, ipy_bitxor, bitxor);
 
+/// Python floored integer division/remainder derived from Euclidean division: `q = floor(a/b)`
+/// and `r = a - b*q`, so `r` carries the sign of `b`. This differs from truncating division
+/// (`.rem()`, whose remainder has the sign of `a`) and from Euclidean division (`r >= 0`) whenever
+/// `b < 0`, and matches CPython's `//`, `%`, and `divmod` for integers.
+fn ibig_div_mod_floor(a: &IBig, b: &IBig) -> (IBig, IBig) {
+    let (q, r) = a.div_rem_euclid(b);
+    let r: IBig = r.into();
+    if b.sign() == Sign::Negative && !r.is_zero() {
+        (q - IBig::ONE, r + b)
+    } else {
+        (q, r)
+    }
+}
+
 fn upy_mod(lhs: &UPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
     use pyo3::IntoPyObjectExt;
+    let a = lhs.0.as_ibig();
     let obj = match rhs {
-        UniInput::Uint(x) => UPy((&lhs.0).rem(x).into()).into_py_any(py)?,
-        UniInput::Int(x) => UPy((&lhs.0).rem(IBig::from(x))).into_py_any(py)?,
-        UniInput::BUint(x) => UPy((&lhs.0).rem(&x.0)).into_py_any(py)?,
-        UniInput::BInt(x) => UPy((&lhs.0).rem(&x.0)).into_py_any(py)?,
-        UniInput::OBInt(x) => UPy((&lhs.0).rem(x)).into_py_any(py)?,
+        UniInput::Uint(x) => IPy(ibig_div_mod_floor(a, &IBig::from(x)).1).into_py_any(py)?,
+        UniInput::Int(x) => IPy(ibig_div_mod_floor(a, &IBig::from(x)).1).into_py_any(py)?,
+        UniInput::BUint(x) => IPy(ibig_div_mod_floor(a, x.0.as_ibig()).1).into_py_any(py)?,
+        UniInput::BInt(x) => IPy(ibig_div_mod_floor(a, &x.0).1).into_py_any(py)?,
+        UniInput::OBInt(x) => IPy(ibig_div_mod_floor(a, &x).1).into_py_any(py)?,
         UniInput::Float(x) => {
             let f = crate::utils::fbig_from_f64(x).map_err(conversion_error_to_py)?;
             FPy(FBig::from(lhs.0.clone()).rem(f)).into_py_any(py)?
@@ -191,12 +206,13 @@ fn upy_mod(lhs: &UPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> 
 }
 fn ipy_mod(lhs: &IPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
     use pyo3::IntoPyObjectExt;
+    let a = &lhs.0;
     let obj = match rhs {
-        UniInput::Uint(x) => IPy((&lhs.0).rem(x).into()).into_py_any(py)?,
-        UniInput::Int(x) => IPy((&lhs.0).rem(x).into()).into_py_any(py)?,
-        UniInput::BUint(x) => IPy((&lhs.0).rem(&x.0)).into_py_any(py)?,
-        UniInput::BInt(x) => IPy((&lhs.0).rem(&x.0)).into_py_any(py)?,
-        UniInput::OBInt(x) => IPy((&lhs.0).rem(x)).into_py_any(py)?,
+        UniInput::Uint(x) => IPy(ibig_div_mod_floor(a, &IBig::from(x)).1).into_py_any(py)?,
+        UniInput::Int(x) => IPy(ibig_div_mod_floor(a, &IBig::from(x)).1).into_py_any(py)?,
+        UniInput::BUint(x) => IPy(ibig_div_mod_floor(a, x.0.as_ibig()).1).into_py_any(py)?,
+        UniInput::BInt(x) => IPy(ibig_div_mod_floor(a, &x.0).1).into_py_any(py)?,
+        UniInput::OBInt(x) => IPy(ibig_div_mod_floor(a, &x).1).into_py_any(py)?,
         UniInput::Float(x) => {
             let f = crate::utils::fbig_from_f64(x).map_err(conversion_error_to_py)?;
             FPy(FBig::from(lhs.0.clone()).rem(f)).into_py_any(py)?
@@ -222,27 +238,33 @@ fn ipy_pow(base: &IBig, exp: UniInput, modulus: Option<UniInput>) -> PyResult<IB
     use fast_div::ConstDivisor;
 
     if let Some(m) = modulus {
-        // first parse the modulus
-        let (_sign, ring) = match m {
-            UniInput::Uint(x) => (Sign::Positive, ConstDivisor::new(x.into())),
-            UniInput::BUint(x) => (Sign::Positive, ConstDivisor::new(x.0.clone())),
-            UniInput::Int(x) => (x.sign(), ConstDivisor::new(x.unsigned_abs().into())),
-            UniInput::BInt(x) => (x.0.sign(), ConstDivisor::new((&x.0).unsigned_abs())),
-            UniInput::OBInt(x) => {
-                let (sign, m) = x.into_parts();
-                (sign, ConstDivisor::new(m))
-            }
+        // parse the modulus, keeping both its sign and magnitude
+        let (sign, m_mag) = match m {
+            UniInput::Uint(x) => (Sign::Positive, UBig::from(x)),
+            UniInput::BUint(x) => (Sign::Positive, x.0.clone()),
+            UniInput::Int(x) => (x.sign(), UBig::from(x.unsigned_abs())),
+            UniInput::BInt(x) => (x.0.sign(), (&x.0).unsigned_abs()),
+            UniInput::OBInt(x) => x.into_parts(),
             _ => return Err(PyTypeError::new_err(ERRMSG_MODULUS_INT_ONLY)),
         };
+        let ring = ConstDivisor::new(m_mag.clone());
 
         match exp {
             UniInput::Uint(x) => {
-                let (sign, u) = base.clone().into_parts();
+                let (bsign, u) = base.clone().into_parts();
                 let mut r = ring.reduce(u);
-                if sign == Sign::Negative {
+                if bsign == Sign::Negative {
                     r = r.neg();
                 }
-                Ok(r.pow(&x.into()).residue().into())
+                let residue: IBig = r.pow(&x.into()).residue().into();
+                // CPython: the result carries the sign of the modulus (like `%`), so a negative
+                // modulus shifts the non-negative residue into `(modulus, 0]`.
+                let result = if sign == Sign::Negative && !residue.is_zero() {
+                    residue - IBig::from(m_mag)
+                } else {
+                    residue
+                };
+                Ok(result)
             }
             _ => Err(PyTypeError::new_err(ERRMSG_POW_MOD_INT_EXP)),
         }
@@ -257,52 +279,53 @@ fn ipy_pow(base: &IBig, exp: UniInput, modulus: Option<UniInput>) -> PyResult<IB
 /// Floor division `self // other` for integer operands.
 fn upy_floordiv(lhs: &UPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
     use pyo3::IntoPyObjectExt;
+    let a = lhs.0.as_ibig();
     let obj = match rhs {
-        UniInput::Uint(x) => UPy((&lhs.0).div_euclid(&UBig::from(x))).into_py_any(py)?,
-        UniInput::BUint(x) => UPy((&lhs.0).div_euclid(&x.0)).into_py_any(py)?,
-        UniInput::Int(x) => {
-            IPy(lhs.0.as_ibig().clone().div_euclid(IBig::from(x))).into_py_any(py)?
-        }
-        UniInput::BInt(x) => IPy(lhs.0.as_ibig().clone().div_euclid(&x.0)).into_py_any(py)?,
-        UniInput::OBInt(x) => IPy(lhs.0.as_ibig().clone().div_euclid(x)).into_py_any(py)?,
+        UniInput::Uint(x) => IPy(ibig_div_mod_floor(a, &IBig::from(x)).0).into_py_any(py)?,
+        UniInput::BUint(x) => IPy(ibig_div_mod_floor(a, x.0.as_ibig()).0).into_py_any(py)?,
+        UniInput::Int(x) => IPy(ibig_div_mod_floor(a, &IBig::from(x)).0).into_py_any(py)?,
+        UniInput::BInt(x) => IPy(ibig_div_mod_floor(a, &x.0).0).into_py_any(py)?,
+        UniInput::OBInt(x) => IPy(ibig_div_mod_floor(a, &x).0).into_py_any(py)?,
         _ => return Err(PyTypeError::new_err(ERRMSG_FLOORDIV_INT_ONLY)),
     };
     Ok(obj)
 }
 fn upy_rfloordiv(lhs: UniInput<'_>, rhs: &UPy, py: Python<'_>) -> PyResult<Py<PyAny>> {
     use pyo3::IntoPyObjectExt;
+    let b = rhs.0.as_ibig();
     let obj = match lhs {
-        UniInput::Uint(x) => UPy(UBig::from(x).div_euclid(&rhs.0)).into_py_any(py)?,
-        UniInput::BUint(x) => UPy((&x.0).div_euclid(&rhs.0)).into_py_any(py)?,
-        UniInput::Int(x) => IPy(IBig::from(x).div_euclid(rhs.0.as_ibig())).into_py_any(py)?,
-        UniInput::BInt(x) => IPy((&x.0).div_euclid(rhs.0.as_ibig())).into_py_any(py)?,
-        UniInput::OBInt(x) => IPy(x.div_euclid(rhs.0.as_ibig())).into_py_any(py)?,
+        UniInput::Uint(x) => IPy(ibig_div_mod_floor(&IBig::from(x), b).0).into_py_any(py)?,
+        UniInput::BUint(x) => IPy(ibig_div_mod_floor(x.0.as_ibig(), b).0).into_py_any(py)?,
+        UniInput::Int(x) => IPy(ibig_div_mod_floor(&IBig::from(x), b).0).into_py_any(py)?,
+        UniInput::BInt(x) => IPy(ibig_div_mod_floor(&x.0, b).0).into_py_any(py)?,
+        UniInput::OBInt(x) => IPy(ibig_div_mod_floor(&x, b).0).into_py_any(py)?,
         _ => return Err(PyTypeError::new_err(ERRMSG_FLOORDIV_INT_ONLY)),
     };
     Ok(obj)
 }
 fn upy_divmod(lhs: &UPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
     use pyo3::IntoPyObjectExt;
+    let a = lhs.0.as_ibig();
     let obj = match rhs {
         UniInput::Uint(x) => {
-            let (q, r) = (&lhs.0).div_rem_euclid(&UBig::from(x));
-            (UPy(q), UPy(r)).into_py_any(py)?
+            let (q, r) = ibig_div_mod_floor(a, &IBig::from(x));
+            (IPy(q), IPy(r)).into_py_any(py)?
         }
         UniInput::BUint(x) => {
-            let (q, r) = (&lhs.0).div_rem_euclid(&x.0);
-            (UPy(q), UPy(r)).into_py_any(py)?
+            let (q, r) = ibig_div_mod_floor(a, x.0.as_ibig());
+            (IPy(q), IPy(r)).into_py_any(py)?
         }
         UniInput::Int(x) => {
-            let (q, r) = lhs.0.as_ibig().clone().div_rem_euclid(IBig::from(x));
-            (IPy(q), UPy(r)).into_py_any(py)?
+            let (q, r) = ibig_div_mod_floor(a, &IBig::from(x));
+            (IPy(q), IPy(r)).into_py_any(py)?
         }
         UniInput::BInt(x) => {
-            let (q, r) = lhs.0.as_ibig().clone().div_rem_euclid(&x.0);
-            (IPy(q), UPy(r)).into_py_any(py)?
+            let (q, r) = ibig_div_mod_floor(a, &x.0);
+            (IPy(q), IPy(r)).into_py_any(py)?
         }
         UniInput::OBInt(x) => {
-            let (q, r) = lhs.0.as_ibig().clone().div_rem_euclid(x);
-            (IPy(q), UPy(r)).into_py_any(py)?
+            let (q, r) = ibig_div_mod_floor(a, &x);
+            (IPy(q), IPy(r)).into_py_any(py)?
         }
         _ => return Err(PyTypeError::new_err(ERRMSG_FLOORDIV_INT_ONLY)),
     };
@@ -311,52 +334,53 @@ fn upy_divmod(lhs: &UPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny
 
 fn ipy_floordiv(lhs: &IPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
     use pyo3::IntoPyObjectExt;
+    let a = &lhs.0;
     let obj = match rhs {
-        UniInput::Uint(x) => IPy((&lhs.0).div_euclid(&IBig::from(x))).into_py_any(py)?,
-        UniInput::BUint(x) => IPy((&lhs.0).div_euclid(x.0.as_ibig())).into_py_any(py)?,
-        UniInput::Int(x) => IPy((&lhs.0).div_euclid(IBig::from(x))).into_py_any(py)?,
-        UniInput::BInt(x) => IPy((&lhs.0).div_euclid(&x.0)).into_py_any(py)?,
-        UniInput::OBInt(x) => IPy((&lhs.0).div_euclid(&x)).into_py_any(py)?,
+        UniInput::Uint(x) => IPy(ibig_div_mod_floor(a, &IBig::from(x)).0).into_py_any(py)?,
+        UniInput::BUint(x) => IPy(ibig_div_mod_floor(a, x.0.as_ibig()).0).into_py_any(py)?,
+        UniInput::Int(x) => IPy(ibig_div_mod_floor(a, &IBig::from(x)).0).into_py_any(py)?,
+        UniInput::BInt(x) => IPy(ibig_div_mod_floor(a, &x.0).0).into_py_any(py)?,
+        UniInput::OBInt(x) => IPy(ibig_div_mod_floor(a, &x).0).into_py_any(py)?,
         _ => return Err(PyTypeError::new_err(ERRMSG_FLOORDIV_INT_ONLY)),
     };
     Ok(obj)
 }
 fn ipy_rfloordiv(lhs: UniInput<'_>, rhs: &IPy, py: Python<'_>) -> PyResult<Py<PyAny>> {
     use pyo3::IntoPyObjectExt;
+    let b = &rhs.0;
     let obj = match lhs {
-        UniInput::Uint(x) => {
-            IPy(UBig::from(x).as_ibig().clone().div_euclid(&rhs.0)).into_py_any(py)?
-        }
-        UniInput::BUint(x) => IPy(x.0.as_ibig().clone().div_euclid(&rhs.0)).into_py_any(py)?,
-        UniInput::Int(x) => IPy(IBig::from(x).div_euclid(&rhs.0)).into_py_any(py)?,
-        UniInput::BInt(x) => IPy((&x.0).div_euclid(&rhs.0)).into_py_any(py)?,
-        UniInput::OBInt(x) => IPy(x.div_euclid(&rhs.0)).into_py_any(py)?,
+        UniInput::Uint(x) => IPy(ibig_div_mod_floor(&IBig::from(x), b).0).into_py_any(py)?,
+        UniInput::BUint(x) => IPy(ibig_div_mod_floor(x.0.as_ibig(), b).0).into_py_any(py)?,
+        UniInput::Int(x) => IPy(ibig_div_mod_floor(&IBig::from(x), b).0).into_py_any(py)?,
+        UniInput::BInt(x) => IPy(ibig_div_mod_floor(&x.0, b).0).into_py_any(py)?,
+        UniInput::OBInt(x) => IPy(ibig_div_mod_floor(&x, b).0).into_py_any(py)?,
         _ => return Err(PyTypeError::new_err(ERRMSG_FLOORDIV_INT_ONLY)),
     };
     Ok(obj)
 }
 fn ipy_divmod(lhs: &IPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
     use pyo3::IntoPyObjectExt;
+    let a = &lhs.0;
     let obj = match rhs {
         UniInput::Uint(x) => {
-            let (q, r) = (&lhs.0).div_rem_euclid(&IBig::from(x));
-            (IPy(q), UPy(r)).into_py_any(py)?
+            let (q, r) = ibig_div_mod_floor(a, &IBig::from(x));
+            (IPy(q), IPy(r)).into_py_any(py)?
         }
         UniInput::BUint(x) => {
-            let (q, r) = (&lhs.0).div_rem_euclid(x.0.as_ibig());
-            (IPy(q), UPy(r)).into_py_any(py)?
+            let (q, r) = ibig_div_mod_floor(a, x.0.as_ibig());
+            (IPy(q), IPy(r)).into_py_any(py)?
         }
         UniInput::Int(x) => {
-            let (q, r) = (&lhs.0).div_rem_euclid(IBig::from(x));
-            (IPy(q), UPy(r)).into_py_any(py)?
+            let (q, r) = ibig_div_mod_floor(a, &IBig::from(x));
+            (IPy(q), IPy(r)).into_py_any(py)?
         }
         UniInput::BInt(x) => {
-            let (q, r) = (&lhs.0).div_rem_euclid(&x.0);
-            (IPy(q), UPy(r)).into_py_any(py)?
+            let (q, r) = ibig_div_mod_floor(a, &x.0);
+            (IPy(q), IPy(r)).into_py_any(py)?
         }
         UniInput::OBInt(x) => {
-            let (q, r) = (&lhs.0).div_rem_euclid(x);
-            (IPy(q), UPy(r)).into_py_any(py)?
+            let (q, r) = ibig_div_mod_floor(a, &x);
+            (IPy(q), IPy(r)).into_py_any(py)?
         }
         _ => return Err(PyTypeError::new_err(ERRMSG_FLOORDIV_INT_ONLY)),
     };

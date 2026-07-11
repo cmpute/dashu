@@ -24,18 +24,46 @@
   traits (serde/num-traits/num-order/rand/zeroize/postgres) are intentionally not mirrored — reach
   them through `.as_fbig()`. (`Debug` keeps its cached-specific form; `Display`/`LowerExp`/`UpperExp`
   match `FBig`.)
+- `CachedFBig` now implements the reference-operand variants of its binary operators (`&a + &b`,
+  `a + &b`, `&a + b` for `Add`/`Sub`/`Mul`/`Div`/`Rem`), `Neg for &CachedFBig`, and all four ownership
+  combinations of `DivEuclid`/`RemEuclid`/`DivRemEuclid` — previously only the fully-owned (`a op b`)
+  forms existed, so reference-operand code that compiled against `FBig` failed for the
+  `FastReal`/`FastDecimal` aliases.
 
 ### Fix
+- `Context::exp_m1(-0)` now returns `-0` (was `+0`), matching IEEE 754 §9.2.1 and the existing
+  `ln_1p(-0) = -0`.
+- `Sum` of finite floats that cancel exactly to zero now returns `+0` (or `-0` only under
+  roundTowardNegative), matching chained `+`; previously a cancellation whose exponent happened to be
+  the `-1` sentinel was misread as `-0` and produced a spurious `-0`.
 - Fixed broken intra-doc links surfaced by `cargo doc -D warnings`: `Exact`/`Inexact` now resolve to
   `dashu_base::Approximation::{Exact,Inexact}`, `FpError::InfiniteInput` uses the crate path, and the
   external `static_fbig!` macro reference (in a crate that isn't a dependency) is plain code.
 - `FBig::from_repr`'s debug assertion now accepts the documented single guard digit (`precision + 1`
   digits, as an inexact add/sub can produce); previously it rejected exactly-`precision+1` Reprs.
+- `NumOrd` against a primitive `0.0`/`-0.0` now reports a `Repr` zero of either sign as `Equal`
+  (was `Less` for `-0`), consistent with `Repr::eq` treating `+0` and `-0` as the same value.
+- `Context::powf(base, -0)` now returns `1`, matching `powf(base, +0)` and IEEE 754 §9.2.1; a
+  negative base no longer falls through to `OutOfDomain` for a `-0` exponent.
+- `FBig::quantize` on `-0` now preserves the `-0` sign (was collapsed to `+0` for a coarser quantum).
+- `mode::Away::error_bounds` now returns `(0, 0, true, true)` for every unlimited-precision value,
+  honouring the `ErrorBounds` contract (was nonzero for any such value other than `+0`, e.g. `-0`).
+- `mode::HalfEven::error_bounds` on `-0` now returns the one-sided `(false, true)` interval,
+  matching `mode::Zero` / `mode::HalfAway`: `+0` is the canonical zero (symmetric interval) while
+  `-0` carries a sign and gets the sign-specific one-sided preimage. (No observable effect on the
+  sole consumer, `RBig::simplest_from_float`, which yields `ZERO` for either interval shape.)
+- `Context::asin` / `Context::acos` no longer panic on `±1` under roundTowardNegative (`Down`).
+  There `1 - x²` cancels to `-0`, `sqrt(-0) = -0`, and the `d`-is-zero branch now catches `-0` too;
+  previously it fell through, divided by `-0` → `-∞`, and hit the infinity-operand panic.
 
 ### Remove
 - Public `Repr::from_str_native` / `FBig::from_str_native` methods (now crate-private). Use the `core::str::FromStr` impl (`s.parse()` / `FBig::from_str`) instead; its docs now carry the full parsing format specification.
 
 ### Change
+- **(breaking)** `Repr::is_zero` is renamed to `Repr::is_pos_zero`, since it tests only for `+0`
+  (`-0` returns `false`). Use `is_pos_zero()` for the exact old behavior, `is_neg_zero()` for `-0`, or
+  `significand().is_zero()` to detect either signed zero. `num_traits::Zero::is_zero` for `FBig` now
+  returns `true` for either signed zero (it was `+0`-only, matching the old `is_zero`).
 - **(breaking)** `Sum` for `FBig` is now correctly-rounded: every addend is accumulated exactly at the
   `Repr` level and the exact total is rounded once (MPFR `mpfr_sum` semantics), instead of folding
   with `+` and rounding at every step. The generic `Sum<T> where Self: Add<T>` and `Product<T>` impls

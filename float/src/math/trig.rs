@@ -307,7 +307,7 @@ impl<R: Round> Context<R> {
             Quadrant::Fourth => (-cos_r, sin_r),
         };
 
-        if c_f.repr.is_zero() {
+        if c_f.repr.is_pos_zero() {
             // tan hits a pole: the result is an infinity with the sign of the numerator.
             let inf = if s_f.sign() == Sign::Negative {
                 Repr::neg_infinity()
@@ -360,7 +360,11 @@ impl<R: Round> Context<R> {
         let x2 = x_f.sqr();
         let d = self.unwrap_fp(self.sqrt(&(one - x2).repr));
 
-        if d.repr.is_zero() {
+        if d.repr.is_pos_zero() || d.repr.is_neg_zero() {
+            // |x| = 1 exactly (d = sqrt(1 - x²) = ±0); asin(±1) = ±π/2 regardless of rounding
+            // mode. Catch `-0` too: under roundTowardNegative `1 - 1` cancels to `-0`, sqrt(-0) =
+            // `-0`, and the general path would divide by `-0` → `-∞` and panic. (For |x| < 1,
+            // `d` is strictly positive, so only the exact-boundary x reaches this branch.)
             let pi = self.pi::<B>(reborrow_cache(&mut cache)).value();
             let half_pi: FBig<R, B> = pi / 2;
             if x_f.sign() == Sign::Positive {

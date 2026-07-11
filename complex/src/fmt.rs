@@ -24,8 +24,8 @@ impl<R: Round, const B: Word> Display for CBig<R, B> {
     /// [`FBig`]'s native `Display` (specials render as `inf` / `-inf`).
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let fctx = self.context.float();
-        let re_zero = self.re.is_zero() || self.re.is_neg_zero();
-        let im_zero = self.im.is_zero() || self.im.is_neg_zero();
+        let re_zero = self.re.is_pos_zero() || self.re.is_neg_zero();
+        let im_zero = self.im.is_pos_zero() || self.im.is_neg_zero();
         let im_neg = self.im.sign() == dashu_base::Sign::Negative;
         let im_unit = is_unit(&self.im);
 

@@ -40,7 +40,7 @@ fn test_infinite_input_is_error() {
     assert!(ctx
         .unwrap_fp(ctx.exp::<2>(&Repr::<2>::neg_infinity(), None))
         .repr()
-        .is_zero());
+        .is_pos_zero());
     assert_eq!(ctx.sin::<2>(&inf, None), Err(FpError::InfiniteInput));
 }
 

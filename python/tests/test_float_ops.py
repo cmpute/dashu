@@ -42,6 +42,29 @@ def test_predicates_rounding():
     assert f.trunc().to_int() == 1
 
 
+def test_rounding_dunders():
+    # math.floor/ceil/trunc and round() go through the __dunder__ protocol (returning integers)
+    # rather than raising TypeError.
+    assert math.floor(FBig(2.7)) == 2
+    assert math.ceil(FBig(2.1)) == 3
+    assert math.trunc(FBig(-2.7)) == -2
+    assert round(FBig(2.4)) == 2
+    assert round(FBig(2.6)) == 3
+    # round(x, n) is decimal-place rounding: supported on the decimal type (via quantize),
+    # rejected on the base-2 FBig with a message pointing at the decimal type.
+    r2 = round(DBig(Decimal("3.14159")), 2)
+    assert abs(float(r2) - 3.14) < 1e-9
+    import pytest
+    with pytest.raises(ValueError):
+        round(FBig(3.14159), 2)
+
+
+def test_negative_zero_is_zero():
+    # -0 is numerically zero: is_zero() is True and bool(-0) is False (matching Python floats).
+    assert FBig(-0.0).is_zero()
+    assert not bool(FBig(-0.0))
+
+
 def test_transcendentals_panicfree():
     assert FBig(4.0).sqrt() == 2.0
     assert abs(float(FBig(1.0).sin()) - math.sin(1)) < 1e-9

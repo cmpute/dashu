@@ -148,7 +148,7 @@ impl FPy {
         fpy_richcmp(self, other, op)
     }
     fn __bool__(&self) -> bool {
-        !self.0.repr().is_zero()
+        !(self.0.repr().is_pos_zero() || self.0.repr().is_neg_zero())
     }
     fn __float__(&self) -> f64 {
         self.0.to_f64().value()
@@ -213,7 +213,7 @@ impl FPy {
 
     /********** predicates & sign **********/
     fn is_zero(&self) -> bool {
-        self.0.repr().is_zero()
+        self.0.repr().is_pos_zero() || self.0.repr().is_neg_zero()
     }
     fn is_finite(&self) -> bool {
         self.0.repr().is_finite()
@@ -240,6 +240,31 @@ impl FPy {
     }
     fn fract(&self) -> Self {
         FPy(self.0.fract())
+    }
+
+    /********** Python numeric protocol (dunders; math.floor/ceil/trunc and round() return int) **********/
+    fn __trunc__(&self) -> IPy {
+        IPy(self.0.trunc().to_int().value())
+    }
+    fn __floor__(&self) -> IPy {
+        IPy(self.0.floor().to_int().value())
+    }
+    fn __ceil__(&self) -> IPy {
+        IPy(self.0.ceil().to_int().value())
+    }
+    #[pyo3(signature = (ndigits=None))]
+    fn __round__(&self, ndigits: Option<i32>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        use pyo3::IntoPyObjectExt;
+        match ndigits {
+            // round(x) with no digits returns a Python int (CPython contract).
+            None => IPy(self.0.round().to_int().value()).into_py_any(py),
+            // round(x, n) rounds to n *decimal* places, which is ill-defined for a base-2 float;
+            // direct the user to the decimal type instead.
+            Some(_) => Err(pyo3::exceptions::PyValueError::new_err(
+                "round(x, ndigits) rounds to decimal places, which is not supported for the \
+                 base-2 FBig; convert to a decimal first (e.g. round(x.to_decimal(), ndigits))",
+            )),
+        }
     }
 
     /********** precision & parts **********/
@@ -357,7 +382,7 @@ impl DPy {
         dpy_richcmp(self, other, op)
     }
     fn __bool__(&self) -> bool {
-        !self.0.repr().is_zero()
+        !(self.0.repr().is_pos_zero() || self.0.repr().is_neg_zero())
     }
     fn __float__(&self) -> f64 {
         self.0.to_f64().value()
@@ -422,7 +447,7 @@ impl DPy {
 
     /********** predicates & sign **********/
     fn is_zero(&self) -> bool {
-        self.0.repr().is_zero()
+        self.0.repr().is_pos_zero() || self.0.repr().is_neg_zero()
     }
     fn is_finite(&self) -> bool {
         self.0.repr().is_finite()
@@ -449,6 +474,27 @@ impl DPy {
     }
     fn fract(&self) -> Self {
         DPy(self.0.fract())
+    }
+
+    /********** Python numeric protocol (dunders; math.floor/ceil/trunc and round() return int) **********/
+    fn __trunc__(&self) -> IPy {
+        IPy(self.0.trunc().to_int().value())
+    }
+    fn __floor__(&self) -> IPy {
+        IPy(self.0.floor().to_int().value())
+    }
+    fn __ceil__(&self) -> IPy {
+        IPy(self.0.ceil().to_int().value())
+    }
+    #[pyo3(signature = (ndigits=None))]
+    fn __round__(&self, ndigits: Option<i32>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        use pyo3::IntoPyObjectExt;
+        match ndigits {
+            // round(x) with no digits returns a Python int (CPython contract).
+            None => IPy(self.0.round().to_int().value()).into_py_any(py),
+            // round(x, n): quantize to the 10^(-n) digit place (Python's Decimal.quantize).
+            Some(n) => DPy(self.0.quantize(-(n as isize)).value()).into_py_any(py),
+        }
     }
 
     /********** precision & parts **********/

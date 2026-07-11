@@ -103,11 +103,11 @@ impl<R: Round> Context<R> {
             // z infinite, s finite nonzero → ∞
             return Ok(riemann(*self));
         }
-        if s.repr().is_zero() {
+        if s.repr().is_pos_zero() || s.repr().is_neg_zero() {
             if z.is_zero() {
-                return Err(FpError::Indeterminate); // 0/0
+                return Err(FpError::Indeterminate); // 0/0 (incl. ±0)
             }
-            return Ok(riemann(*self)); // z/0 (z≠0) = ∞
+            return Ok(riemann(*self)); // z/±0 (z≠0) = ∞
         }
         let gctx = self.guard(DIV_GUARD);
         let p = self.precision();
@@ -254,5 +254,18 @@ mod tests {
         let q = &z / &s;
         assert_eq!(q.re().significand(), &3.into());
         assert_eq!(q.im().significand(), &4.into());
+    }
+
+    #[test]
+    fn div_real_by_negative_zero_matches_positive_zero() {
+        use dashu_float::Repr;
+        // Dividing a nonzero complex by the scalar -0 must give the same Riemann infinity as +0,
+        // not fall through to the general path (which would divide by -0 componentwise).
+        let z = c(3, 4);
+        let neg_zero = F::from_repr(Repr::neg_zero(), z.context().float());
+        let q_neg = &z / &neg_zero;
+        let q_pos = &z / &F::ZERO;
+        assert!(q_neg.is_infinite());
+        assert!(q_neg == q_pos); // both are +∞ + i·0
     }
 }

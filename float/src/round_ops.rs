@@ -321,7 +321,9 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Panics if the number is infinte
     pub fn quantize(&self, exp: isize) -> Rounded<Self> {
         assert_finite(&self.repr);
-        if self.repr.is_zero() {
+        if self.repr.is_pos_zero() || self.repr.is_neg_zero() {
+            // Zero is an exact multiple of any quantum; preserve the sign of `-0`
+            // (IEEE 754 `quantize` is sign-preserving).
             return Exact(self.clone());
         }
 
@@ -342,7 +344,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
         let repr = Repr::new(hi + adjust, exp);
         // precision is set so that ulp == BASE^exp; a result that rounds to zero
         // has no meaningful ulp, so it gets unlimited precision (like `round()`).
-        let precision = if repr.is_zero() {
+        let precision = if repr.is_pos_zero() {
             0
         } else {
             (repr.exponent + repr.digits() as isize - exp) as usize

@@ -198,7 +198,7 @@ impl RBig {
     pub fn simplest_from_float<R: ErrorBounds, const B: Word>(f: &FBig<R, B>) -> Option<Self> {
         if f.repr().is_infinite() {
             return None;
-        } else if f.repr().is_zero() {
+        } else if f.repr().is_pos_zero() {
             return Some(Self::ZERO);
         }
 

@@ -277,6 +277,13 @@ removed). All additive — safe as point releases under 0.5.x.
 
 - **Guaranteed-correct rounding (Ziv retry loop)** — 0.5 ships near-correct guard-digit rounding
   (matching `FBig`); a Ziv loop is expected to land in `FBig` first, then inherited by `CBig`.
+- **Signed-zero preservation in the complex zero short-circuits** — `sin_cos` and `sqr` take a fast
+  path when the input is exactly zero that returns `+0` components, so Annex-G/IEEE signed-zero cases
+  are not preserved: `csin(-0 + 0i)` returns `+0 + 0i` (should be `-0 + 0i`), `ccos(-0 + 0i)` returns
+  `1 + 0i` (should be `1 - 0i`), and `sqr(-0 + 0i)` returns `+0 + i·0` (should be `+0 + i·(-0)`). These
+  are numerically equal to `+0`, so deferred; the real-side `exp_m1(-0) = -0` fix (which sinh/cosh
+  build on) *did* land in 0.5. `clog(-0 ± 0i)`'s `±π` imaginary part is likewise not produced (the
+  zero short-circuit returns `-∞ + i·0`).
 - **Complex hyperbolic & inverse-hyperbolic family** (`sinh`/`cosh`/`tanh`/`asinh`/`acosh`/`atanh`).
   (Real hyperbolics already exist on `Context<R>` and are *used* by `CBig` trig in 0.5; the
   complex-valued functions themselves are deferred.)

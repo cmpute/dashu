@@ -27,6 +27,32 @@ fn eq(cval: C, expected: &F) {
 }
 
 #[test]
+fn ref_operator_parity() {
+    // The reference-operand operator variants must compile and match FBig (drop-in guarantee).
+    use dashu_base::{DivEuclid, DivRemEuclid, RemEuclid};
+    let (fa, fb) = (f("6.25"), f("2.5"));
+    let (ca, cb) = (c("6.25"), c("2.5"));
+
+    // Arithmetic on references (all four ownership combinations exercised across the operators).
+    eq(&ca + &cb, &(&fa + &fb));
+    eq(&ca - cb.clone(), &(&fa - fb.clone()));
+    eq(ca.clone() * &cb, &(fa.clone() * &fb));
+    eq(&ca / &cb, &(&fa / &fb));
+    eq(&ca % &cb, &(&fa % &fb));
+
+    // Neg on a reference.
+    eq(-&ca, &(-&fa));
+
+    // Euclid family on references.
+    assert_eq!(DivEuclid::div_euclid(&ca, &cb), DivEuclid::div_euclid(&fa, &fb));
+    eq(RemEuclid::rem_euclid(&ca, &cb), &RemEuclid::rem_euclid(&fa, &fb));
+    let (cq, cr) = DivRemEuclid::div_rem_euclid(&ca, &cb);
+    let (fq, fr) = DivRemEuclid::div_rem_euclid(&fa, &fb);
+    assert_eq!(cq, fq);
+    eq(cr, &fr);
+}
+
+#[test]
 fn fmt_parity() {
     // Display / LowerExp / UpperExp (base 10)
     for s in &["0", "1.5", "-1.234", "100", "0.001", "999.999"] {

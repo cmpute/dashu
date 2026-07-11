@@ -102,7 +102,7 @@ mod tests {
     fn signed_zero_preserved() {
         let z = C2::try_from(Complex64::new(-0.0, 0.0)).unwrap();
         assert!(z.re().is_neg_zero());
-        assert!(z.im().is_zero());
+        assert!(z.im().is_pos_zero());
     }
 
     #[test]

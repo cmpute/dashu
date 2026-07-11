@@ -192,7 +192,7 @@ mod tests {
         let inf = CBig::from(F::INFINITY);
         let r = inf.exp();
         assert!(r.re().is_infinite());
-        assert!(r.im().is_zero());
+        assert!(r.im().is_pos_zero());
     }
 
     #[test]

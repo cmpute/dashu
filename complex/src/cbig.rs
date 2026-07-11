@@ -137,7 +137,8 @@ impl<R: Round, const B: Word> CBig<R, B> {
     /// Determine if the complex number is numerically zero (both parts `±0`).
     #[inline]
     pub fn is_zero(&self) -> bool {
-        (self.re.is_zero() || self.re.is_neg_zero()) && (self.im.is_zero() || self.im.is_neg_zero())
+        (self.re.is_pos_zero() || self.re.is_neg_zero())
+            && (self.im.is_pos_zero() || self.im.is_neg_zero())
     }
 
     /// Determine if either part of the complex number is infinite.
@@ -152,11 +153,12 @@ impl<R: Round, const B: Word> CBig<R, B> {
         !self.is_infinite()
     }
 
-    /// The complex infinity produced on overflow: both parts are `+∞` (the Riemann point; `proj`
-    /// collapses any infinity to `+∞ + i·0`).
+    /// The complex infinity produced on overflow: the single Riemann point `+∞ + i·0`, matching
+    /// [`riemann`](crate::repr) and `proj` so overflow-produced infinities compare equal to the
+    /// special-value paths' infinities.
     #[inline]
     pub(crate) fn overflow(context: &Context<R>, _sign: Sign) -> Self {
-        Self::new(Repr::infinity(), Repr::infinity(), *context)
+        Self::new(Repr::infinity(), Repr::zero(), *context)
     }
 
     /// The complex zero produced on underflow: a signed zero on the real part and `+0` imaginary.
@@ -204,7 +206,7 @@ mod tests {
         assert!(C::NEG_ONE != C::ONE);
         assert!(!C::I.is_zero());
         let (re, im) = C::I.into_parts();
-        assert!(re.repr().is_zero());
+        assert!(re.repr().is_pos_zero());
         assert!(im.repr().is_one());
     }
 

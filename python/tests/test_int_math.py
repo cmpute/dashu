@@ -43,6 +43,30 @@ def test_divmod_floordiv():
     assert IBig(-17) // 5 == -4
 
 
+def test_floordiv_mod_floored_semantics():
+    # CPython floor division: the quotient rounds toward -inf and the remainder carries the
+    # sign of the divisor (differs from both truncating and Euclidean division for negatives).
+    assert IBig(-7) % 3 == 2
+    assert IBig(7) % -3 == -2
+    assert IBig(-7) % -3 == -1
+    assert IBig(7) // -3 == -3
+    assert IBig(-7) // 3 == -3
+    assert IBig(7) // 3 == 2
+    # divmod is consistent with // and %, and satisfies a == b*(a//b) + (a%b)
+    for a in (IBig(-7), IBig(7), IBig(-8), IBig(9), UBig(7)):
+        for b in (3, -3, 5, -5):
+            q, r = divmod(a, b)
+            assert q == a // b
+            assert r == a % b
+            assert q * b + r == a
+
+
+def test_pow_with_modulus():
+    assert pow(IBig(2), 3, 5) == 3     # 8 mod 5
+    assert pow(IBig(2), 3, -5) == -2   # CPython: result carries the modulus sign
+    assert pow(IBig(5), 2, -5) == 0    # exact multiple -> 0 regardless of sign
+
+
 def test_inplace_ops():
     n = UBig(10)
     n += 5

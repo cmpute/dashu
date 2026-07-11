@@ -27,6 +27,27 @@ macro_rules! impl_cached_binop {
                 CachedFBig::from_fbig($Op::$op(self.fbig, rhs.fbig), &self.cache)
             }
         }
+        impl<'l, R: Round, const B: Word> $Op<CachedFBig<R, B>> for &'l CachedFBig<R, B> {
+            type Output = CachedFBig<R, B>;
+            #[inline]
+            fn $op(self, rhs: CachedFBig<R, B>) -> Self::Output {
+                CachedFBig::from_fbig($Op::$op(self.fbig.clone(), rhs.fbig), &self.cache)
+            }
+        }
+        impl<'r, R: Round, const B: Word> $Op<&'r CachedFBig<R, B>> for CachedFBig<R, B> {
+            type Output = CachedFBig<R, B>;
+            #[inline]
+            fn $op(self, rhs: &'r CachedFBig<R, B>) -> Self::Output {
+                CachedFBig::from_fbig($Op::$op(self.fbig, rhs.fbig.clone()), &self.cache)
+            }
+        }
+        impl<'l, 'r, R: Round, const B: Word> $Op<&'r CachedFBig<R, B>> for &'l CachedFBig<R, B> {
+            type Output = CachedFBig<R, B>;
+            #[inline]
+            fn $op(self, rhs: &'r CachedFBig<R, B>) -> Self::Output {
+                CachedFBig::from_fbig($Op::$op(self.fbig.clone(), rhs.fbig.clone()), &self.cache)
+            }
+        }
     };
 }
 impl_cached_binop!(Add, add);
@@ -312,6 +333,14 @@ impl<R: Round, const B: Word> Neg for CachedFBig<R, B> {
     }
 }
 
+impl<R: Round, const B: Word> Neg for &CachedFBig<R, B> {
+    type Output = CachedFBig<R, B>;
+    #[inline]
+    fn neg(self) -> Self::Output {
+        CachedFBig::from_fbig(-&self.fbig, &self.cache)
+    }
+}
+
 impl<R: Round, const B: Word> Abs for CachedFBig<R, B> {
     type Output = CachedFBig<R, B>;
     #[inline]
@@ -401,6 +430,7 @@ impl<R: Round, const B: Word> CubicRoot for CachedFBig<R, B> {
     }
 }
 
+// DivEuclid — all four ownership combinations (clone refs to owned FBig, then delegate).
 impl<R: Round, const B: Word> DivEuclid<CachedFBig<R, B>> for CachedFBig<R, B> {
     type Output = dashu_int::IBig;
     #[inline]
@@ -408,7 +438,29 @@ impl<R: Round, const B: Word> DivEuclid<CachedFBig<R, B>> for CachedFBig<R, B> {
         DivEuclid::div_euclid(self.fbig, rhs.fbig)
     }
 }
+impl<'r, R: Round, const B: Word> DivEuclid<&'r CachedFBig<R, B>> for CachedFBig<R, B> {
+    type Output = dashu_int::IBig;
+    #[inline]
+    fn div_euclid(self, rhs: &'r CachedFBig<R, B>) -> Self::Output {
+        DivEuclid::div_euclid(self.fbig, rhs.fbig.clone())
+    }
+}
+impl<R: Round, const B: Word> DivEuclid<CachedFBig<R, B>> for &CachedFBig<R, B> {
+    type Output = dashu_int::IBig;
+    #[inline]
+    fn div_euclid(self, rhs: CachedFBig<R, B>) -> Self::Output {
+        DivEuclid::div_euclid(self.fbig.clone(), rhs.fbig)
+    }
+}
+impl<'r, R: Round, const B: Word> DivEuclid<&'r CachedFBig<R, B>> for &CachedFBig<R, B> {
+    type Output = dashu_int::IBig;
+    #[inline]
+    fn div_euclid(self, rhs: &'r CachedFBig<R, B>) -> Self::Output {
+        DivEuclid::div_euclid(self.fbig.clone(), rhs.fbig.clone())
+    }
+}
 
+// RemEuclid — all four ownership combinations (result keeps the LHS cache).
 impl<R: Round, const B: Word> RemEuclid<CachedFBig<R, B>> for CachedFBig<R, B> {
     type Output = CachedFBig<R, B>;
     #[inline]
@@ -416,13 +468,65 @@ impl<R: Round, const B: Word> RemEuclid<CachedFBig<R, B>> for CachedFBig<R, B> {
         CachedFBig::from_fbig(RemEuclid::rem_euclid(self.fbig, rhs.fbig), &self.cache)
     }
 }
+impl<'r, R: Round, const B: Word> RemEuclid<&'r CachedFBig<R, B>> for CachedFBig<R, B> {
+    type Output = CachedFBig<R, B>;
+    #[inline]
+    fn rem_euclid(self, rhs: &'r CachedFBig<R, B>) -> Self::Output {
+        CachedFBig::from_fbig(RemEuclid::rem_euclid(self.fbig, rhs.fbig.clone()), &self.cache)
+    }
+}
+impl<R: Round, const B: Word> RemEuclid<CachedFBig<R, B>> for &CachedFBig<R, B> {
+    type Output = CachedFBig<R, B>;
+    #[inline]
+    fn rem_euclid(self, rhs: CachedFBig<R, B>) -> Self::Output {
+        CachedFBig::from_fbig(RemEuclid::rem_euclid(self.fbig.clone(), rhs.fbig), &self.cache)
+    }
+}
+impl<'r, R: Round, const B: Word> RemEuclid<&'r CachedFBig<R, B>> for &CachedFBig<R, B> {
+    type Output = CachedFBig<R, B>;
+    #[inline]
+    fn rem_euclid(self, rhs: &'r CachedFBig<R, B>) -> Self::Output {
+        CachedFBig::from_fbig(
+            RemEuclid::rem_euclid(self.fbig.clone(), rhs.fbig.clone()),
+            &self.cache,
+        )
+    }
+}
 
+// DivRemEuclid — all four ownership combinations (rem keeps the LHS cache).
 impl<R: Round, const B: Word> DivRemEuclid<CachedFBig<R, B>> for CachedFBig<R, B> {
     type OutputDiv = dashu_int::IBig;
     type OutputRem = CachedFBig<R, B>;
     #[inline]
     fn div_rem_euclid(self, rhs: CachedFBig<R, B>) -> (Self::OutputDiv, Self::OutputRem) {
         let (q, r) = DivRemEuclid::div_rem_euclid(self.fbig, rhs.fbig);
+        (q, CachedFBig::from_fbig(r, &self.cache))
+    }
+}
+impl<'r, R: Round, const B: Word> DivRemEuclid<&'r CachedFBig<R, B>> for CachedFBig<R, B> {
+    type OutputDiv = dashu_int::IBig;
+    type OutputRem = CachedFBig<R, B>;
+    #[inline]
+    fn div_rem_euclid(self, rhs: &'r CachedFBig<R, B>) -> (Self::OutputDiv, Self::OutputRem) {
+        let (q, r) = DivRemEuclid::div_rem_euclid(self.fbig, rhs.fbig.clone());
+        (q, CachedFBig::from_fbig(r, &self.cache))
+    }
+}
+impl<R: Round, const B: Word> DivRemEuclid<CachedFBig<R, B>> for &CachedFBig<R, B> {
+    type OutputDiv = dashu_int::IBig;
+    type OutputRem = CachedFBig<R, B>;
+    #[inline]
+    fn div_rem_euclid(self, rhs: CachedFBig<R, B>) -> (Self::OutputDiv, Self::OutputRem) {
+        let (q, r) = DivRemEuclid::div_rem_euclid(self.fbig.clone(), rhs.fbig);
+        (q, CachedFBig::from_fbig(r, &self.cache))
+    }
+}
+impl<'r, R: Round, const B: Word> DivRemEuclid<&'r CachedFBig<R, B>> for &CachedFBig<R, B> {
+    type OutputDiv = dashu_int::IBig;
+    type OutputRem = CachedFBig<R, B>;
+    #[inline]
+    fn div_rem_euclid(self, rhs: &'r CachedFBig<R, B>) -> (Self::OutputDiv, Self::OutputRem) {
+        let (q, r) = DivRemEuclid::div_rem_euclid(self.fbig.clone(), rhs.fbig.clone());
         (q, CachedFBig::from_fbig(r, &self.cache))
     }
 }

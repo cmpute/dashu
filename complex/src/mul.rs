@@ -61,7 +61,7 @@ impl<R: Round> Context<R> {
     /// Multiply a complex number by a real scalar (context layer): `(x+iy)·s = (xs) + i(ys)`.
     pub fn mul_real<const B: Word>(&self, z: &CBig<R, B>, s: &FBig<R, B>) -> CfpResult<R, B> {
         if z.is_infinite() || s.repr().is_infinite() {
-            if z.is_zero() || s.repr().is_zero() || s.repr().is_neg_zero() {
+            if z.is_zero() || s.repr().is_pos_zero() || s.repr().is_neg_zero() {
                 return Err(FpError::Indeterminate); // 0·∞
             }
             return Ok(riemann(*self));
@@ -176,7 +176,7 @@ mod tests {
         // z·conj(z) = norm(z), purely real
         let z = c(3, 4);
         let p = &z * &z.conj();
-        assert!(p.im().is_zero() || p.im().is_neg_zero());
+        assert!(p.im().is_pos_zero() || p.im().is_neg_zero());
         assert_eq!(p.re().significand(), &25.into());
     }
 

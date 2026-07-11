@@ -98,11 +98,15 @@ fn sqrt_special<R: Round, const B: Word>(
     }
 
     let x_pos_inf = z.re().is_infinite() && z.re().sign() == Sign::Positive;
-    let x_neg_inf = z.re().is_infinite() && z.re().sign() == Sign::Negative;
     let y_sign = z.im().sign();
 
-    let (re, im) = if x_pos_inf {
-        // sqrt(+inf + iy) = +inf + i·0 (the zero carries the sign of y)
+    let (re, im) = if z.im().is_infinite() {
+        // sqrt(x ± i·inf) = +inf ± i·inf for ANY x — Annex G: the infinite imaginary part
+        // dominates whether the real part is finite or infinite. This must be checked before the
+        // x-infinite cases below, which only apply when the imaginary part is finite.
+        (Repr::infinity(), signed_inf::<B>(y_sign))
+    } else if x_pos_inf {
+        // sqrt(+inf + iy) = +inf + i·0, finite y (the zero carries the sign of y)
         (
             Repr::infinity(),
             if y_sign == Sign::Negative {
@@ -111,12 +115,9 @@ fn sqrt_special<R: Round, const B: Word>(
                 Repr::zero()
             },
         )
-    } else if x_neg_inf {
-        // sqrt(-inf + iy) = +0 + i·sign(y)·inf
-        (Repr::zero(), signed_inf::<B>(y_sign))
     } else {
-        // y infinite, x finite: sqrt(x ± i·inf) = +inf ± i·inf
-        (Repr::infinity(), signed_inf::<B>(y_sign))
+        // sqrt(-inf + iy) = +0 + i·sign(y)·inf, finite y (x is -inf, since z is infinite)
+        (Repr::zero(), signed_inf::<B>(y_sign))
     };
     Some(Ok(exact(FBig::from_repr(re, f), FBig::from_repr(im, f))))
 }
@@ -141,6 +142,22 @@ mod tests {
         let s = z.sqrt();
         let chk = &s * &s;
         assert!(chk == z);
+    }
+
+    #[test]
+    fn sqrt_infinite_imaginary_dominates() {
+        // Annex G: sqrt(x ± i·inf) = +inf ± i·inf for ANY x, including x = ±inf — the infinite
+        // imaginary part must be handled before the x-infinite cases.
+        let ctx = Context::<mode::HalfAway>::new(53);
+        let cases = [
+            C::new(Repr::infinity(), Repr::infinity(), ctx),
+            C::new(Repr::neg_infinity(), Repr::infinity(), ctx),
+        ];
+        for z in cases {
+            let s = z.sqrt();
+            assert!(s.re().is_infinite() && s.re().sign() == Sign::Positive);
+            assert!(s.im().is_infinite() && s.im().sign() == Sign::Positive);
+        }
     }
 
     #[test]
@@ -180,6 +197,6 @@ mod tests {
         let inf = CBig::from(F::INFINITY);
         let s = inf.sqrt();
         assert!(s.re().is_infinite());
-        assert!(s.im().is_zero());
+        assert!(s.im().is_pos_zero());
     }
 }

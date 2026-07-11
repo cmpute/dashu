@@ -367,7 +367,7 @@ mod tests {
         assert_eq!(r.repr().significand(), &5.into());
         // hypot(0, 0) = 0
         let r = ctx.hypot(&mk(0), &mk(0)).unwrap().value();
-        assert!(r.repr().is_zero());
+        assert!(r.repr().is_pos_zero());
         // hypot(inf, x) = +inf
         let r = ctx.hypot(&Repr::infinity(), &mk(3)).unwrap().value();
         assert!(r.repr().is_infinite());

@@ -96,14 +96,14 @@ mod tests {
     #[test]
     fn pure_real() {
         let z: C = "5".parse().unwrap();
-        assert!(z.im().is_zero());
+        assert!(z.im().is_pos_zero());
         assert_eq!(z.re().significand(), &5.into());
     }
 
     #[test]
     fn pure_imaginary_unit() {
         let z: C = "i".parse().unwrap();
-        assert!(z.re().is_zero());
+        assert!(z.re().is_pos_zero());
         assert_eq!(z.im().significand(), &1.into());
 
         let z: C = "-i".parse().unwrap();

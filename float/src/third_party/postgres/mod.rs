@@ -152,7 +152,7 @@ fn repr_to_numeric(repr: &Repr<10>, precision: Option<usize>) -> Result<Numeric,
             Sign::Positive => Numeric::infinity(),
             Sign::Negative => Numeric::neg_infinity(),
         });
-    } else if repr.is_zero() {
+    } else if repr.is_pos_zero() {
         return Ok(Numeric::zero());
     }
 

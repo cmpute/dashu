@@ -221,7 +221,10 @@ impl<R: Round> Context<R> {
         assert_limited_precision(self.precision); // TODO: we can allow it if exp is integer
 
         // shortcuts
-        if exp.is_zero() {
+        if exp.is_pos_zero() || exp.is_neg_zero() {
+            // pow(x, ±0) = 1 for any base (IEEE 754 §9.2.1); `-0` is numerically zero, so it
+            // must take the same shortcut as `+0` (otherwise a negative base falls through to
+            // the OutOfDomain path below).
             return Ok(Exact(FBig::ONE));
         } else if exp.is_one() {
             let repr = self.repr_round_ref(base);
@@ -336,10 +339,17 @@ impl<R: Round> Context<R> {
         let input_sign = x.sign();
 
         if x.significand.is_zero() {
-            // exp(±0) = 1, exp_m1(±0) = +0
+            // exp(±0) = 1; exp_m1(±0) = ±0 (IEEE 754 §9.2.1 preserves the sign of zero)
             return match minus_one {
                 false => Ok(Exact(FBig::ONE)),
-                true => Ok(Exact(FBig::ZERO)),
+                true => {
+                    let zero = if input_sign == Sign::Negative {
+                        FBig::new(Repr::neg_zero(), Context::new(0))
+                    } else {
+                        FBig::ZERO
+                    };
+                    Ok(Exact(zero))
+                }
             };
         }
 
@@ -474,7 +484,7 @@ mod tests {
             .powf::<2>(&Repr::<2>::neg_zero(), &Repr::new(2.into(), 0), None)
             .unwrap()
             .value();
-        assert!(r.repr().is_zero(), "expected +0");
+        assert!(r.repr().is_pos_zero(), "expected +0");
         assert!(!r.repr().is_neg_zero(), "powf(-0, x) should be +0, not -0");
         // powf(0, -1) = +inf
         let r = ctx

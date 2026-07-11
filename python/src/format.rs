@@ -106,6 +106,14 @@ pub fn parse(spec: &str) -> PyResult<Spec> {
         '\0'
     };
 
+    if alt {
+        // The '#' alternate-form flag is parsed but not yet implemented for float formatting;
+        // reject it explicitly rather than silently ignoring it (see dashu-python CHANGELOG).
+        return Err(PyValueError::new_err(
+            "the '#' (alternate form) flag is not supported for float formatting",
+        ));
+    }
+
     Ok(Spec {
         fill,
         align,

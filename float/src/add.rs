@@ -118,9 +118,9 @@ fn add_val_val<R: Round, const B: Word>(
 
     let context = Context::max(lhs.context, rhs.context);
     rhs.repr.significand *= rhs_sign;
-    let sum = if lhs.repr.is_zero() {
+    let sum = if lhs.repr.is_pos_zero() {
         rhs.repr
-    } else if rhs.repr.is_zero() {
+    } else if rhs.repr.is_pos_zero() {
         lhs.repr
     } else {
         match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
@@ -144,11 +144,11 @@ fn add_val_ref<R: Round, const B: Word>(
     assert_finite_operands(&lhs.repr, &rhs.repr);
 
     let context = Context::max(lhs.context, rhs.context);
-    let sum = if lhs.repr.is_zero() {
+    let sum = if lhs.repr.is_pos_zero() {
         let mut repr = rhs.repr.clone();
         repr.significand *= rhs_sign;
         repr
-    } else if rhs.repr.is_zero() {
+    } else if rhs.repr.is_pos_zero() {
         lhs.repr
     } else {
         match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
@@ -176,9 +176,9 @@ fn add_ref_val<R: Round, const B: Word>(
 
     let context = Context::max(lhs.context, rhs.context);
     rhs.repr.significand *= rhs_sign;
-    let sum = if lhs.repr.is_zero() {
+    let sum = if lhs.repr.is_pos_zero() {
         rhs.repr
-    } else if rhs.repr.is_zero() {
+    } else if rhs.repr.is_pos_zero() {
         lhs.repr.clone()
     } else {
         match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
@@ -202,11 +202,11 @@ fn add_ref_ref<R: Round, const B: Word>(
     assert_finite_operands(&lhs.repr, &rhs.repr);
 
     let context = Context::max(lhs.context, rhs.context);
-    let sum = if lhs.repr.is_zero() {
+    let sum = if lhs.repr.is_pos_zero() {
         let mut repr = rhs.repr.clone();
         repr.significand *= rhs_sign;
         repr
-    } else if rhs.repr.is_zero() {
+    } else if rhs.repr.is_pos_zero() {
         lhs.repr.clone()
     } else {
         match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
@@ -514,9 +514,9 @@ impl<R: Round> Context<R> {
             return Err(FpError::InfiniteInput);
         }
 
-        let sum = if lhs.is_zero() {
+        let sum = if lhs.is_pos_zero() {
             self.repr_round_ref(rhs)
-        } else if rhs.is_zero() {
+        } else if rhs.is_pos_zero() {
             self.repr_round_ref(lhs)
         } else {
             match lhs.exponent.cmp(&rhs.exponent) {
@@ -556,13 +556,13 @@ impl<R: Round> Context<R> {
             return Err(FpError::InfiniteInput);
         }
 
-        let sum = if lhs.is_zero() {
+        let sum = if lhs.is_pos_zero() {
             // Round `-rhs` directly rather than negating *after* rounding. For the asymmetric
             // modes (Up = toward +∞, Down = toward −∞), `round(-x) != -round(x)`: rounding
             // `rhs` toward +∞ then negating rounds in the wrong direction, so `0 - rhs`
             // would land one ULP off (e.g. truncated instead of rounded away from the result).
             self.repr_round_ref(&Repr::new(-&rhs.significand, rhs.exponent))
-        } else if rhs.is_zero() {
+        } else if rhs.is_pos_zero() {
             self.repr_round_ref(lhs)
         } else {
             match lhs.exponent.cmp(&rhs.exponent) {
