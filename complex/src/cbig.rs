@@ -107,7 +107,8 @@ impl<R: Round, const B: Word> CBig<R, B> {
     /// use dashu_float::FBig;
     ///
     /// const Z: CBig = CBig::from_parts_const((Sign::Positive, 3, 0), (Sign::Positive, 4, 0), 0);
-    /// assert_eq!(Z, CBig::from_parts(FBig::from(3), FBig::from(4)));
+    /// let expected: CBig = CBig::from_parts(FBig::from(3), FBig::from(4));
+    /// assert_eq!(Z, expected);
     /// ```
     #[inline]
     pub const fn from_parts_const(
