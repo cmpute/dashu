@@ -172,6 +172,11 @@ impl IBig {
         Self(Repr::from_dword(mag).with_sign(sign))
     }
 
+    /// Create an IBig from an i64.
+    ///
+    /// On 16-bit targets `i64` is wider than [`DoubleWord`][crate::DoubleWord], so this delegates
+    /// to `From<i64>` and is not `const`; on 32-bit and 64-bit targets the `const` constructor
+    /// above is used instead.
     #[cfg(any(target_pointer_width = "16", force_bits = "16"))]
     #[inline]
     pub fn from_i64(n: i64) -> Self {

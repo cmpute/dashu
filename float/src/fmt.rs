@@ -41,10 +41,10 @@ impl<const B: Word> fmt::Debug for Repr<B> {
         if f.alternate() {
             f.debug_struct("Repr")
                 .field_significand::<B>(&self.significand)
-                .field("exponent", &format_args!("{} ^ {}", &B, &self.exponent))
+                .field("exponent", &format_args!("{} ^ {}", B, self.exponent))
                 .finish()
         } else {
-            f.write_fmt(format_args!("{:?} * {} ^ {}", &self.significand, &B, &self.exponent))
+            f.write_fmt(format_args!("{:?} * {} ^ {}", self.significand, B, self.exponent))
         }
     }
 }
@@ -440,12 +440,12 @@ impl<R: Round, const B: Word> fmt::Debug for FBig<R, B> {
         if f.alternate() {
             f.debug_struct("FBig")
                 .field_significand::<B>(&self.repr.significand)
-                .field("exponent", &format_args!("{} ^ {}", &B, &self.repr.exponent))
+                .field("exponent", &format_args!("{} ^ {}", B, self.repr.exponent))
                 .field("precision", &self.context.precision)
                 .field("rounding", &format_args!("{}", rnd_name))
                 .finish()
         } else {
-            f.write_fmt(format_args!("{:?} (prec: {})", &self.repr, &self.context.precision))
+            f.write_fmt(format_args!("{:?} (prec: {})", self.repr, self.context.precision))
         }
     }
 }

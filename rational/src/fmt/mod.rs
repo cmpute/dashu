@@ -53,11 +53,11 @@ impl fmt::Debug for Repr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if f.alternate() {
             f.debug_struct("Repr")
-                .field("numerator", &format_args!("{:#?}", &self.numerator))
-                .field("denominator", &format_args!("{:#?}", &self.denominator))
+                .field("numerator", &format_args!("{:#?}", self.numerator))
+                .field("denominator", &format_args!("{:#?}", self.denominator))
                 .finish()
         } else {
-            f.write_fmt(format_args!("{:?} / {:?}", &self.numerator, &self.denominator))
+            f.write_fmt(format_args!("{:?} / {:?}", self.numerator, self.denominator))
         }
     }
 }

@@ -142,6 +142,11 @@ impl UBig {
         Self(Repr::from_dword(n as crate::DoubleWord))
     }
 
+    /// Create a UBig from a u64.
+    ///
+    /// On 16-bit targets `u64` is wider than [`DoubleWord`][crate::DoubleWord], so this delegates
+    /// to `From<u64>` and is not `const`; on 32-bit and 64-bit targets the `const` constructor
+    /// above is used instead.
     #[cfg(any(target_pointer_width = "16", force_bits = "16"))]
     #[inline]
     pub fn from_u64(n: u64) -> Self {
