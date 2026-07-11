@@ -1,33 +1,6 @@
 # Changelog
 
-## Unreleased
-
-### Fix
-- Integer `//`, `%`, and `divmod` now follow Python floor-division semantics for every sign
-  combination: the quotient rounds toward −∞ and the remainder carries the sign of the divisor.
-  Previously `%` used truncating remainder (`IBig(-7) % 3` gave `-1` instead of `2`) and
-  `//`/`divmod` used Euclidean division (`IBig(7) // -3` gave `-2` instead of `-3`); the two also
-  disagreed with each other.
-- `pow(base, exp, mod)` with a negative modulus now returns a result carrying the sign of the
-  modulus (CPython semantics): `pow(2, 3, -5) == -2` (previously `3`, the magnitude-only residue).
-- `-0` is now treated as zero by `FBig`/`DBig` `is_zero()` (now `True`) and `bool()` (now `False`);
-  previously the sign of zero leaked through and reported the opposite.
-
-### Add
-- `math.floor`, `math.ceil`, `math.trunc`, and `round()` now work on `FBig`/`DBig` through the
-  `__floor__`/`__ceil__`/`__trunc__`/`__round__` protocol methods (previously they raised
-  `TypeError`). Matching CPython, `math.floor/ceil/trunc` and `round(x)` return a Python-style
-  integer. `round(x, n)` rounds to `n` decimal places for the decimal `DBig` (via `FBig::quantize`);
-  on the base-2 `FBig` it raises `ValueError` (decimal-place rounding is ill-defined in base 2 —
-  convert to a decimal first).
-
-### Change
-- Integer `//`, `%`, and `divmod` now return signed integers (`IBig`) uniformly (values unchanged);
-  the result type was previously a mix of `UBig`/`IBig` depending on the operands.
-- The `#` (alternate form) format flag now raises a clear `ValueError` for float formatting instead
-  of being silently ignored (it was parsed but never applied).
-
-## 0.4.0
+## 0.4.0 (Unreleased)
 
 First release of **dashu-rs** — the Python binding for
 [dashu](https://github.com/cmpute/dashu), a pure-Rust arbitrary-precision number library
