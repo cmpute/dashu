@@ -1,5 +1,7 @@
 # dashu
 
+[English](README.md) | [简体中文](README-zh.md)
+
 <img src="guide/src/assets/dashu-banner.png" alt="dashu">
 
 [![Crate](https://img.shields.io/crates/v/dashu.svg)](https://crates.io/crates/dashu)

@@ -93,6 +93,20 @@ When implementing algorithms that manipulate word arrays (`&[Word]`), prefer the
 
 **Double-word is a first-class citizen** in this crate. The `DoubleWord` type (from `dashu-base`) and `_dword` operation suffix (e.g. `add_dword_in_place`, `split_dword`, `div_rem_dword`) are treated as peer primitives to single-word ones, not special cases. Whenever planning a new feature or algorithm, actively consider a double-word variant from the start — many operations have a meaningfully faster path when the operand fits in two words, and the crate is structured to expose those paths as first-class APIs.
 
+## Bilingual documentation
+
+The README and the user guide each have a Simplified-Chinese mirror — **update both languages in the same change** so they never drift:
+
+| English | Chinese mirror |
+|---|---|
+| `README.md` | `README-zh.md` |
+| `guide/` (mdBook) | `guide-zh/` (mdBook, `language = "zh"`) |
+| `python/USAGE.md` | `python/USAGE-zh.md` (included by both guides' `python.md`) |
+
+- `guide-zh/src/assets` is a **symlink** to `guide/src/assets` — images are shared, don't duplicate them.
+- The two READMEs cross-link each other; the two guides cross-link `https://zyxin.xyz/dashu/` ↔ `https://zyxin.xyz/dashu-zh/`.
+- **mdBook anchor gotcha:** mdBook 0.5 (comrak) keeps CJK characters in auto-generated heading IDs, so translating or renaming a heading in `guide-zh/` changes its `#fragment`. Update every `[text](page.md#anchor)` cross-reference to the new slug — mdBook does **not** error on a dangling fragment, so a stale anchor breaks silently. Verify with `mdbook build guide` + `mdbook build guide-zh` (see `.github/workflows/guide.yml` for the pinned mdBook + mdbook-katex toolchain).
+
 ## Common pitfalls
 
 - **dashu-python is excluded** from workspace tests and clippy — always add `--exclude dashu-python`

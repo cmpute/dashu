@@ -1,0 +1,12 @@
+[book]
+title = "Dashu 用户指南"
+description = "dashu 任意精度数值库的用户指南"
+authors = ["Jacob Zhong"]
+language = "zh"
+src = "src"
+
+[output.html]
+git-repository-url = "https://github.com/cmpute/dashu"
+edit-url-template = "https://github.com/cmpute/dashu/edit/master/guide-zh/src/{path}"
+
+[preprocessor.katex]

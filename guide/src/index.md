@@ -4,6 +4,8 @@
 
 # The user guide for `dashu`
 
+[English](https://zyxin.xyz/dashu/) | [简体中文](https://zyxin.xyz/dashu-zh/)
+
 Welcome to the `dashu` user guide! `dashu` is a library set of arbitrary precision numbers (aka. big numbers) implemented in Rust.
 
 The book is a companion to [`dashu`'s API docs](https://docs.rs/dashu/latest/dashu/). It contains a more concise overview of all the functionalities equipped with `dashu` and some examples.
