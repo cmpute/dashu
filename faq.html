@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-59e2c4f8.js";
+            window.path_to_searchindex_js = "searchindex-30e4046d.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-9bffdc81.js"></script>
+        <script src="toc-ebe46d39.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -183,6 +183,14 @@
                         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
 <h2 id="why-is-the-library-called-dashu"><a class="header" href="#why-is-the-library-called-dashu">Why is the library called <code>dashu</code>?</a></h2>
 <p><code>dashu</code> is the pinyin romanization of 大数 (“dà shù”), Chinese for <em>big number</em>.</p>
+<p align="center">
+  <img src="./assets/dashu-logo.png" alt="The dashu logo: a stylized banyan tree" width="200">
+</p>
+
+<p>The logo is a stylized <strong>banyan tree</strong> — an archetypal <em>big tree</em> (大树, also “dà shù”). It’s a
+bilingual pun: 大树 (<em>big tree</em>) and 大数 (<em>big number</em>, the library’s namesake) are homophones in
+Mandarin, so a grand tree stands in visually for the “big number” behind the name. The downward
+strokes are the banyan’s signature <a href="https://en.wikipedia.org/wiki/Aerial_root">aerial roots</a>.</p>
 <h2 id="why-to-use-dashu"><a class="header" href="#why-to-use-dashu">Why to use <code>dashu</code>?</a></h2>
 <p><code>dashu</code> aims to be a Rust-native, ergonomic alternative to GNU GMP + MPFR + MPC: arbitrary-precision integers, floats, rationals, and complex numbers, all in pure Rust with full <code>no_std</code> support and arbitrary-base floats.</p>
 <p>Compared with other Rust crates:</p>
@@ -205,6 +213,10 @@
 <li><strong>No NaN.</strong> Invalid operations panic at the convenience layer and return <code>Err(FpError)</code> at the context layer. Infinities are terminal values, not operands — see <a href="./compliance.html">Standards Compliance</a>.</li>
 <li><strong>Near-correct rounding.</strong> Transcendentals are rounded within 1 ulp via a guard-digit recipe; a guaranteed-correct Ziv loop is planned for a later release.</li>
 <li><strong>Complex surface.</strong> <code>CBig</code> ships field arithmetic and the elementary transcendentals; complex hyperbolics, <code>fma</code>, and several others are deferred to 0.5.x (see the v0.5 release notes).</li>
+<li><strong>No ball/interval arithmetic.</strong> Unlike MPC’s experimental <code>mpcb_t</code> (complex balls), <code>dashu</code>
+does not provide interval or ball types. This is a deliberate scope choice: ball arithmetic is
+still experimental upstream, and if/when it stabilizes it is better provided by a <strong>separate
+crate</strong> layered on <code>dashu-float</code>/<code>dashu-cmplx</code> than coupled to the core types.</li>
 <li><strong>No SIMD-FFT multiplication</strong> yet (planned for v1.0).</li>
 </ul>
 <h2 id="msrv-and-feature-policy"><a class="header" href="#msrv-and-feature-policy">MSRV and feature policy</a></h2>
@@ -214,7 +226,7 @@
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="ops/num_theory.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="python.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
@@ -228,7 +240,7 @@
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="ops/num_theory.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="python.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 

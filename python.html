@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Cached Arithmetic for FBig/CBig - Dashu user guide</title>
+        <title>Python Binding - Dashu user guide</title>
 
 
         <!-- Custom HTML head -->
@@ -146,7 +146,7 @@
                         <a href="https://github.com/cmpute/dashu" title="Git repository" aria-label="Git repository">
                             <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
                         </a>
-                        <a href="https://github.com/cmpute/dashu/edit/master/guide/src/src/cached.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                        <a href="https://github.com/cmpute/dashu/edit/master/guide/src/src/python.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
                             <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
                         </a>
 
@@ -181,186 +181,136 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
-<p>The [<code>CachedFBig</code>] type is an [<code>FBig</code>] that carries a shared handle to a
-<code>Rc&lt;RefCell&lt;ConstCache&gt;&gt;</code>. The cache stores exact binary-splitting state for
-mathematical constants (π, ln2, ln10), so that transcendental operations
-(<code>ln</code>, <code>exp</code>, <code>sin</code>, <code>cos</code>, …, <code>pi</code>) reuse and progressively extend prior
-work instead of recomputing from scratch.</p>
-<h2 id="creation"><a class="header" href="#creation">Creation</a></h2>
-<p>A <code>CachedFBig</code> is created by attaching a cache handle to an <code>FBig</code>:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use std::rc::Rc;
-use core::cell::RefCell;
-use dashu::float::{CachedFBig, ConstCache, FBig, Repr, Context};
-
-let cache = Rc::new(RefCell::new(ConstCache::new()));
-
-// From an FBig
-let a = FBig::ONE.into_cached(cache.clone());
-
-// From raw parts with a fresh cache
-let b = CachedFBig::&lt;_, 10&gt;::with_cache(
-    Repr::new(1234.into(), -3),
-    Context::new(50),
-);
-<span class="boring">}</span></code></pre>
-<p>Use <code>From&lt;FBig&gt; for CachedFBig</code> for one-off conversions (it creates a fresh
-empty cache):</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let c: CachedFBig = FBig::from(3u8).into();
-<span class="boring">}</span></code></pre>
-<p>To drop the cache and get back a plain <code>FBig</code>, use <code>into_fbig()</code> or the
-<code>From&lt;CachedFBig&gt; for FBig</code> trait:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let plain: FBig = cached.into();  // or cached.into_fbig()
-<span class="boring">}</span></code></pre>
-<h2 id="cache-sharing"><a class="header" href="#cache-sharing">Cache sharing</a></h2>
-<p>Binary operations between <code>CachedFBig</code> values preserve the cache handle in
-the result: <code>(a + b).ln().exp()</code> keeps extending the same cache throughout.
-When two operands carry different cache handles, the <strong>left-hand side</strong> cache
-is preserved. For <code>FBig op CachedFBig</code>, the <code>CachedFBig</code> operand’s cache is
-preserved regardless of which side it is on.</p>
-<p>Operations with plain <code>FBig</code> and primitives (<code>u8</code>, <code>i32</code>, <code>UBig</code>, etc.) also
-work and preserve the <code>CachedFBig</code> operand’s cache:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let cached = CachedFBig::&lt;_, 10&gt;::with_cache(
-    Repr::new(2.into(), 0), Context::new(20),
-);
-let result = cached + 3u8;    // CachedFBig, cache preserved
-let result = 10i32 * cached;  // CachedFBig, cache preserved
-<span class="boring">}</span></code></pre>
-<h2 id="inspecting-and-clearing-the-cache"><a class="header" href="#inspecting-and-clearing-the-cache">Inspecting and clearing the cache</a></h2>
-<p>Use <code>cache()</code> to borrow the cache read-only and inspect its size:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let terms = cached.cache().total_terms();
-let words = cached.cache().total_words();
-<span class="boring">}</span></code></pre>
-<p>Call <code>clear_cache()</code> to free all cached big-integer memory. The next
-transcendental operation will recompute constants from scratch:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>cached.clear_cache();
-assert_eq!(cached.cache().total_terms(), 0);
-<span class="boring">}</span></code></pre>
-<h2 id="more-constructors-and-accessors"><a class="header" href="#more-constructors-and-accessors">More constructors and accessors</a></h2>
-<p>Beyond <code>into_cached</code> / <code>with_cache</code> / <code>From&lt;FBig&gt;</code>, <code>CachedFBig</code> mirrors the rest of <code>FBig</code>’s construction surface while preserving the cache handle:</p>
-<ul>
-<li><code>from_parts(significand, exponent)</code> — build from a significand and exponent, with a fresh cache.</li>
-<li><code>with_rounding::&lt;NewR&gt;()</code> — change the rounding mode, keeping the cache handle.</li>
-<li><code>as_fbig()</code> — borrow the inner <code>FBig</code> immutably (cheap; no cache detach).</li>
-<li><code>from_repr(repr, context, cache)</code> / <code>into_repr()</code> — the raw-repr constructor/destructor that share a specific cache handle.</li>
-</ul>
-<h2 id="computing-constants-directly"><a class="header" href="#computing-constants-directly">Computing constants directly</a></h2>
-<p>The cache stores exact binary-splitting state for the constants π, ln2, and ln10, so the methods that produce them reuse and progressively extend prior work rather than recomputing from scratch. On <code>CachedFBig</code>, π is a single call:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use std::rc::Rc;
-use core::cell::RefCell;
-use dashu::float::{CachedFBig, ConstCache};
-use dashu::float::round::mode::HalfAway;
-
-let cache = Rc::new(RefCell::new(ConstCache::new()));
-let _pi = CachedFBig::&lt;HalfAway, 10&gt;::pi(100, &amp;cache);
-// a later, higher-precision call extends the same cached state instead of restarting
-let _pi_more = CachedFBig::&lt;HalfAway, 10&gt;::pi(1000, &amp;cache);
-<span class="boring">}</span></code></pre>
-<p>You can also drive a bare <code>ConstCache</code> directly, without a <code>CachedFBig</code> — useful when you want the constants but not the per-value wrapper. The methods are generic over base and rounding mode, and a single cache serves any base:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use dashu::float::ConstCache;
-use dashu::float::round::mode::HalfAway;
-
-let mut cache = ConstCache::new();
-let pi = cache.pi::&lt;10, HalfAway&gt;(100).value();       // computes from scratch
-let pi_1000 = cache.pi::&lt;10, HalfAway&gt;(1000).value(); // extends the cached state
-let ln2 = cache.ln2::&lt;10, HalfAway&gt;(100);
-let ln10 = cache.ln10::&lt;10, HalfAway&gt;(100);
-<span class="boring">}</span></code></pre>
-<p><code>ln_base::&lt;B, R&gt;(precision)</code> dispatches to the cached ln2 / ln10 when <code>B</code> is 2 or 10 (or a power of two), and falls back to a direct <code>ln(B)</code> otherwise.</p>
-<h2 id="thread-safety"><a class="header" href="#thread-safety">Thread safety</a></h2>
-<p><code>CachedFBig</code> carries its cache as <code>Rc&lt;RefCell&lt;ConstCache&gt;&gt;</code>, so it is <strong><code>!Send + !Sync</code></strong> — a cached value cannot move across threads. <code>FBig</code> itself stays <code>Copy + Send + Sync</code> (which is why <code>static_fbig!</code> keeps working); only the cached wrapper is non-thread-safe. <code>ConstCache</code> is a plain struct of big integers and is itself <code>Send + Sync</code>, so to share one cache across threads, wrap a <code>ConstCache</code> (or a <code>CachedFBig</code>) in <code>Arc&lt;Mutex&lt;ConstCache&gt;&gt;</code>. The underlying <code>Context</code> methods accept <code>Option&lt;&amp;mut ConstCache&gt;</code> regardless of the container, so this needs no API change.</p>
-<h2 id="worked-example-reusing-constants-across-a-chain"><a class="header" href="#worked-example-reusing-constants-across-a-chain">Worked example: reusing constants across a chain</a></h2>
-<p>Because every value-producing operation preserves the cache handle, a chain of transcendentals reuses the same constants throughout. Building several results from one shared handle pays for each constant once:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use std::rc::Rc;
-use core::cell::RefCell;
-use dashu::float::{CachedFBig, ConstCache, Context, Repr};
-use dashu::float::round::mode::HalfAway;
-
-type F = CachedFBig&lt;HalfAway, 10&gt;;
-let cache = Rc::new(RefCell::new(ConstCache::new()));
-
-// π is computed into the shared cache...
-let _pi_50 = F::pi(50, &amp;cache);
-// ...and a later, higher-precision call extends it instead of restarting
-let _pi_1000 = F::pi(1000, &amp;cache);
-
-// an arithmetic chain built on the same handle keeps it end to end
-let a = F::from_repr(Repr::new(2.into(), 0), Context::new(50), cache.clone());
-let b = F::from_repr(Repr::new(3.into(), 0), Context::new(50), cache.clone());
-let _ = (a + b).ln().exp();
-
-assert!(cache.borrow().total_terms() &gt; 0);
-<span class="boring">}</span></code></pre>
-<h2 id="complex-numbers-cachedcbig"><a class="header" href="#complex-numbers-cachedcbig">Complex numbers: <code>CachedCBig</code></a></h2>
-<p>The complex type <a href="https://docs.rs/dashu-cmplx/latest/dashu_cmplx/struct.CachedCBig.html"><code>CachedCBig</code></a>
-is the exact twin of <code>CachedFBig</code>: it wraps a
-<a href="https://docs.rs/dashu-cmplx/latest/dashu_cmplx/struct.CBig.html"><code>CBig</code></a> plus the same shared
-<code>Rc&lt;RefCell&lt;ConstCache&gt;&gt;</code> handle, and threads it through the complex transcendentals (<code>ln</code>, <code>exp</code>,
-<code>sin</code>/<code>cos</code>/<code>tan</code>/<code>sin_cos</code>, <code>asin</code>/<code>acos</code>/<code>atan</code>, <code>powf</code>, <code>arg</code>). The complex transcendentals are
-built entirely from real <code>FBig</code> operations, so <strong>the same <code>ConstCache</code> (π, ln2, ln10) is reused
-unchanged</strong> — there are no complex-specific constants to store.</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use dashu::complex::{CBig, CachedCBig};
-use dashu::float::FBig;
-
-// build a cached 1+1i from a plain CBig (fresh cache)
-let z = CachedCBig::from(CBig::from_parts(FBig::from(1), FBig::from(1)));
-
-// ln / exp reuse the shared real-constant cache end to end
-let _ = z.clone().ln().exp();
-<span class="boring">}</span></code></pre>
-<p><code>CachedCBig</code> mirrors <code>CBig</code>’s full always-on surface (formatting, ordering, conversions, the binary
-operators including cross-type ops against both <code>CBig</code> and <code>FBig</code>, <code>Neg</code>/<code>Inverse</code>, <code>Sum</code>/<code>Product</code>),
-and is <code>!Send + !Sync</code> just like <code>CachedFBig</code> (so <code>CBig</code> stays <code>Send + Sync</code> and <code>static_cbig!</code> is
-unaffected). One intentional divergence: <code>CachedCBig::into_parts</code> returns <code>(CachedFBig, CachedFBig)</code>
-<strong>sharing the handle</strong>, so transcendentals on either part stay cached — distinct from
-<code>CBig::into_parts</code>, which returns <code>(FBig, FBig)</code>. Third-party traits (serde/num-traits/num-order/
-num-complex/rand) are not mirrored; reach them via <code>.as_cbig()</code>.</p>
-<h2 id="the-fast-aliases"><a class="header" href="#the-fast-aliases">The <code>Fast*</code> aliases</a></h2>
-<p>For transcendental-heavy code, the meta-crate exposes the cached variants under short aliases so the
-faster type is easy to reach by name:</p>
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<p>The <strong><code>dashu-python</code></strong> Rust crate (in the <code>python/</code> directory of the
+<a href="https://github.com/cmpute/dashu">dashu</a> workspace) is the source of the Python
+bindings — <a href="https://pyo3.rs">PyO3</a> glue that exposes dashu’s number types as a
+native extension. The <strong><code>dashu-rs</code></strong> package on
+<a href="https://pypi.org/project/dashu-rs/">PyPI</a> is the prebuilt, pip-installable
+distribution of that crate: <code>pip install dashu-rs</code> fetches a compiled wheel, so
+end users never need Rust or the dashu source tree. The imported Python module is
+named <code>dashu</code> (e.g. <code>from dashu import UBig</code>).</p>
+<h2 id="installation"><a class="header" href="#installation">Installation</a></h2>
+<pre><code class="language-sh">pip install dashu-rs
+</code></pre>
+<p><code>dashu-rs</code> is a standalone wheel on <a href="https://pypi.org/project/dashu-rs/">PyPI</a> —
+no Rust toolchain or compiler is needed. It provides a native <code>dashu</code> module:</p>
+<pre><code class="language-python">from dashu import UBig, IBig, RBig, FBig, DBig, CBig
+</code></pre>
+<h2 id="types"><a class="header" href="#types">Types</a></h2>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Alias</th><th>Type</th><th>Notes</th></tr>
+<tr><th>Type</th><th>Backing</th><th>Base / rounding</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="../index.html#fastreal"><code>FastReal</code></a></td><td><code>dashu_float::CachedFBig</code></td><td>base 2, Zero — fast <code>Real</code></td></tr>
-<tr><td><a href="../index.html#fastdecimal"><code>FastDecimal</code></a></td><td><code>dashu_float::CachedFBig&lt;HalfAway, 10&gt;</code></td><td>fast <code>Decimal</code></td></tr>
-<tr><td><a href="../index.html#fastcomplex"><code>FastComplex</code></a></td><td><code>dashu_cmplx::CachedCBig</code></td><td>base 2, Zero — fast <code>Complex</code></td></tr>
+<tr><td><code>UBig</code>, <code>IBig</code></td><td>arbitrary-precision integer</td><td>unsigned / signed</td></tr>
+<tr><td><code>RBig</code></td><td>arbitrary-precision rational</td><td>exact <code>numerator / denominator</code></td></tr>
+<tr><td><code>FBig</code></td><td>arbitrary-precision float</td><td>base 2, round <code>Zero</code></td></tr>
+<tr><td><code>DBig</code></td><td>arbitrary-precision float</td><td>base 10, round <code>HalfAway</code> (decimal)</td></tr>
+<tr><td><code>CBig</code></td><td>arbitrary-precision complex</td><td>base 2</td></tr>
 </tbody>
 </table>
 </div>
-<p>All three are <code>!Send + !Sync</code>; the non-cached <code>Real</code>/<code>Decimal</code>/<code>Complex</code> remain the <code>Send + Sync</code>
-baseline.</p>
+<p>All types are <code>Send</code> + <code>Sync</code> (free-threaded-Python compatible). Constructors accept
+native Python numbers as well as strings:</p>
+<pre><code class="language-python">UBig(144)              # int
+FBig(1.5)              # float (at the module default precision)
+DBig("1.23")           # decimal string
+RBig(Fraction(1, 3))   # fractions.Fraction
+CBig(3.0, 4.0)         # (re, im)
+</code></pre>
+<h2 id="operations"><a class="header" href="#operations">Operations</a></h2>
+<p>Arithmetic, comparisons, and <code>bool()</code> accept any Python number (cross-type dispatch),
+so mixed operands just work:</p>
+<pre><code class="language-python">UBig(2) + 3 == 5
+FBig(1.5) * 2 == FBig(3.0)
+UBig(17) // 5 == 3
+divmod(UBig(17), 5) == (UBig(3), UBig(2))
+</code></pre>
+<ul>
+<li><strong>Integers</strong>: <code>+ - * / // % **</code>, comparisons, in-place ops, bit operations
+(<code>&amp; | ^ &lt;&lt; &gt;&gt;</code>), roots (<code>sqrt</code>/<code>cbrt</code>/<code>nth_root</code>), <code>gcd</code>/<code>gcd_ext</code>, <code>ilog</code>, bit
+predicates, and <code>to_words</code>/<code>to_chunks</code>/<code>to_bytes</code>.</li>
+<li><strong>Floats / Decimal</strong>: arithmetic, comparisons, rounding (<code>trunc</code>/<code>floor</code>/<code>ceil</code>/
+<code>round</code>/<code>fract</code>), precision (<code>precision</code>/<code>with_precision</code>), transcendentals, and
+conversions <code>to_decimal</code>/<code>to_binary</code>/<code>to_rational</code>/<code>to_int</code>.</li>
+<li><strong>Rational</strong>: arithmetic, <code>numerator</code>/<code>denominator</code>, rounding, <code>sqr</code>/<code>pow</code>, <code>to_float</code>.</li>
+<li><strong>Complex</strong>: arithmetic, <code>real</code>/<code>imag</code>, <code>conj</code>/<code>proj</code>/<code>norm</code>/<code>abs</code>/<code>arg</code>, and
+transcendentals (<code>sin</code>/<code>cos</code>/<code>exp</code>/<code>ln</code>/<code>sqrt</code>/…).</li>
+</ul>
+<p>Transcendentals are <strong>panic-free</strong>: domain errors raise <code>ValueError</code>, indeterminate forms
+like <code>0/0</code> raise <code>ZeroDivisionError</code>, and overflow/underflow yield signed infinities or
+zeros. They share a module-wide constant cache (<code>dashu.Cache</code>) so repeated calls at
+increasing precision reuse the precomputed constants.</p>
+<p>A module-level <code>math</code> API mirrors the common functions — <code>dashu.sin</code>, <code>dashu.sqrt</code>,
+<code>dashu.exp</code>, <code>dashu.gcd</code>, <code>dashu.lcm</code>, … — and likewise accepts plain Python numbers.</p>
+<h2 id="precision"><a class="header" href="#precision">Precision</a></h2>
+<p><code>FBig</code> and <code>CBig</code> are <strong>binary</strong> (base 2) — precision is counted in <strong>bits</strong>. <code>DBig</code> is
+<strong>decimal</strong> (base 10) — precision is counted in <strong>decimal digits</strong> (1 decimal digit
+≈ 3.32 bits).</p>
+<p>A value’s precision comes from how it’s built:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>input</th><th><code>FBig</code> / <code>CBig</code></th><th><code>DBig</code></th></tr>
+</thead>
+<tbody>
+<tr><td><code>int</code></td><td>exact (the integer’s bit length)</td><td>the literal’s digits</td></tr>
+<tr><td><code>float</code> / <code>complex</code></td><td>the module default (below)</td><td>the float’s significant decimal digits</td></tr>
+<tr><td><code>str</code></td><td>the string’s own digits</td><td>the string’s own digits</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong><code>FBig</code>/<code>CBig</code> default.</strong> <code>float</code>/<code>complex</code> inputs build at the module default, which is
+f64’s 53 bits. Read it with <code>dashu.get_precision()</code> and set it with
+<code>dashu.set_precision(bits)</code> (returns the previous value); it also applies to arithmetic
+that mixes integers with floats. Integer inputs are <em>not</em> affected — <code>FBig(2)</code> stays exact
+at 2 bits, so write <code>FBig(2.0)</code> to apply the default.</p>
+<pre><code class="language-python">dashu.set_precision(100)
+FBig(1.5).precision()    # 100   (float → default)
+FBig(2).precision()      # 2     (int → exact, unaffected)
+FBig(2.0).precision()    # 100
+</code></pre>
+<p><strong><code>DBig</code> has no module default</strong>, but a <code>float</code> input already lands on a sensible precision
+— the float’s significant decimal digits (the shortest decimal that round-trips the f64), so
+<code>DBig(12.345)</code> has precision 5 and <code>DBig(0.1)</code> has precision 1. To exceed that (e.g. for
+transcendentals, which need more digits than the input carries), pass a longer string or
+call <code>.with_precision</code>. For both kinds, <code>.with_precision(n)</code> overrides one value (bits for
+<code>FBig</code>/<code>CBig</code>, decimal digits for <code>DBig</code>), and transcendentals run at the value’s precision:</p>
+<pre><code class="language-python">DBig(2).with_precision(50).ln()                   # 50 decimal digits
+FBig(2.0).with_precision(200).exp().precision()    # 200 bits
+</code></pre>
+<h2 id="formatting"><a class="header" href="#formatting">Formatting</a></h2>
+<p><code>format()</code> / f-strings honor the full Python format mini-language:</p>
+<pre><code class="language-python">format(UBig(255), "#x")                           # '0xff'
+format(UBig(10**9), ",")                           # '1,000,000,000'
+format(FBig(2).with_precision(200).exp(), ".20e")  # '7.38905609893065022723e+00'
+format(DBig("1.5"), ".3e")                         # '1.500e+00'
+format(RBig.from_parts(1, 3), ".4f")               # '0.3333'
+format(CBig(3.0, 4.0), ".2f")                      # '(3.00+4.00j)'
+</code></pre>
+<ul>
+<li><strong>Integers</strong> delegate to Python <code>int</code>, so every presentation type works (<code>b</code>/<code>o</code>/<code>d</code>/
+<code>x</code>/<code>X</code>/<code>c</code>/<code>n</code>) with sign, width, fill, zero-pad, and grouping — with no loss.</li>
+<li><strong>Floats</strong> (<code>FBig</code>/<code>DBig</code>) support <code>e</code>/<code>E</code>/<code>f</code>/<code>g</code> with precision, sign, width, align,
+fill, zero-pad, and grouping. With no explicit precision, all significant digits are
+shown (use <code>.6e</code> for the fixed 6-digit default).</li>
+<li><strong><code>FBig</code> is base 2</strong>, so its default <code>str</code>/<code>format</code> and the <code>'a'</code>/<code>'A'</code> types print in
+<strong>hexadecimal</strong> — lossless, with no base conversion, e.g. <code>str(FBig(1.5)) == '0x3p-1'</code>.
+Decimal presentations (<code>'e'</code>/<code>'f'</code>/<code>'g'</code>) convert to base 10. <code>DBig</code> prints in decimal.</li>
+<li><strong><code>RBig</code></strong> defaults to the exact fraction, e.g. <code>str(RBig(1) / 3) == '1/3'</code>.</li>
+</ul>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="construct.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="ops/num_theory.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="convert.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="faq.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -370,11 +320,11 @@ baseline.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="construct.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="ops/num_theory.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="convert.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="faq.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

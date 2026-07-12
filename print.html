@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-59e2c4f8.js";
+            window.path_to_searchindex_js = "searchindex-30e4046d.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-9bffdc81.js"></script>
+        <script src="toc-ebe46d39.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -178,13 +178,17 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="introduction"><a href="#introduction" class="header">Introduction</a></h1>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
-<h2 id="the-user-guide-for-dashu"><a class="header" href="#the-user-guide-for-dashu">The user guide for <code>dashu</code></a></h2>
+                        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
+<p align="center">
+  <img src="assets/dashu-banner.png" alt="dashu">
+</p>
+
+<h1 id="the-user-guide-for-dashu"><a class="header" href="#the-user-guide-for-dashu">The user guide for <code>dashu</code></a></h1>
+<p><a href="https://zyxin.xyz/dashu/">English</a> | <a href="https://zyxin.xyz/dashu-zh/">简体中文</a></p>
 <p>Welcome to the <code>dashu</code> user guide! <code>dashu</code> is a library set of arbitrary precision numbers (aka. big numbers) implemented in Rust.</p>
 <p>The book is a companion to <a href="https://docs.rs/dashu/latest/dashu/"><code>dashu</code>’s API docs</a>. It contains a more concise overview of all the functionalities equipped with <code>dashu</code> and some examples.</p>
 <p>Please choose from the chapters on the left to jump to individual topics.</p>
-<h3 id="philosophy-and-features"><a class="header" href="#philosophy-and-features">Philosophy and Features</a></h3>
+<h2 id="philosophy-and-features"><a class="header" href="#philosophy-and-features">Philosophy and Features</a></h2>
 <p><code>dashu</code> is intended to be your go-to library for crafting some algorithms that involves arbitrary precision numbers, or build a rusty tool that relies on arbitrary precision numbers. It’s built from scratch with rust, and provides user-friendly and rust-idiomatic APIs. It might not be the fastest library for your high-precision calculation loads, but it’s designed to be fast enough so that you seldomly feel dragged back by it.</p>
 <p>To make it useful for every Rust user, it features:</p>
 <ul>
@@ -192,7 +196,7 @@
 <li>Focus on ergonomics &amp; readability, and then efficiency.</li>
 <li>Current MSRV is 1.68</li>
 </ul>
-<h3 id="the-meta-crate"><a class="header" href="#the-meta-crate">The meta crate</a></h3>
+<h2 id="the-meta-crate"><a class="header" href="#the-meta-crate">The meta crate</a></h2>
 <p>The crate <code>dashu</code> is a meta crate that exposes all the functionalities of the subcrates (<code>dashu-base</code>, <code>dashu-int</code>, <code>dashu-float</code>, <code>dashu-ratio</code>, <code>dashu-cmplx</code> and <code>dashu-macros</code>). Each subcrate becomes a module in <code>dashu</code>: <code>dashu-base</code> → <code>dashu::base</code>, <code>dashu-int</code> → <code>dashu::integer</code>, <code>dashu-float</code> → <code>dashu::float</code>, <code>dashu-ratio</code> → <code>dashu::rational</code>, <code>dashu-cmplx</code> → <code>dashu::complex</code>. It also creates more readable aliases for the numeric types:</p>
 <ul>
 <li><code>dashu::Natural</code> = <code>dashu::integer::UBig</code></li>
@@ -203,7 +207,7 @@
 <li><code>dashu::Complex</code> = <code>dashu::complex::CBig</code></li>
 </ul>
 <p>In this guide, we will use the original names of the numeric types (i.e. <code>XBig</code>), but the explanations are also applicable to these re-exported types.</p>
-<h3 id="cargo-features"><a class="header" href="#cargo-features">Cargo Features</a></h3>
+<h2 id="cargo-features"><a class="header" href="#cargo-features">Cargo Features</a></h2>
 <p>Dashu has several optional features defined for cargo that supports various third-party crates. Most of them are not enabled by default. Specially, we use a special naming rule for the features.</p>
 <ul>
 <li>For feature dependencies with stable versions (reached v1.0), we will use <code>xxx_vyy</code> to represent its major versions, and <code>xxx</code> pointing to one of the major versions. Changing the version which <code>xxx</code> is pointing to is regarded as a break change in <code>dashu</code> (requiring major version bump). Therefore, when you dependends on <code>dashu</code> with these stable features, additional implementations for newer versions in <code>dashu</code> will not cause any issues in your code.</li>
@@ -211,10 +215,10 @@
 </ul>
 <p><strong>Example</strong>: In <code>dashu-float</code>, the support for the diesel library v1 is under the feature name <code>diesel</code>, and the support for v2 is under the feature name <code>diesel2</code>. On the other hand, the <code>rand</code> crate is not stable yet, even if it’s already widely used. Therefore, the support for <code>rand</code> v0.7 and v0.8 is under the feature name <code>rand_v07</code> and <code>rand_v08</code> respectively. The feature name <code>rand</code> is currently pointing to <code>rand_v08</code>.</p>
 <p>In your Cargo.toml, if you enable <code>dashu/diesel</code>, <code>dashu/diesel2</code> or <code>dashu/rand_v07</code>, there won’t be any risk of break changes when <code>dashu</code> updates the support for <code>diesel</code> v3 or <code>rand</code> v0.9 in future. However the risk exists if you enable <code>rand</code> instead of <code>rand_v08</code>, because <code>rand</code> might point to <code>rand_v09</code> in future.</p>
-<h3 id="license"><a class="header" href="#license">License</a></h3>
+<h2 id="license"><a class="header" href="#license">License</a></h2>
 <p>Licensed under either <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License, Version 2.0</a> or <a href="https://opensource.org/licenses/MIT">MIT license</a> at your option.</p>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="types-1"><a href="#types-1" class="header">Types</a></h1>
+<h1 id="types-2"><a href="#types-2" class="header">Types</a></h1>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
 <h2 id="numeric-types"><a class="header" href="#numeric-types">Numeric Types</a></h2>
 <p>In <code>dashu</code> crates, there are standalone types for each kind of numbers with arbitrary precision, as listed below:</p>
@@ -239,10 +243,10 @@
 <p>Currently the memory layout of an <code>UBig</code> instance is not finalized, so don’t rely on this by now. Besides, there will be no compatiblity guarantee for the memory layout between different versions. The memory layout will probably be stablized in a <code>v1.0.0</code> release.</p>
 </blockquote>
 <h3 id="layout-of-fbig"><a class="header" href="#layout-of-fbig">Layout of <code>FBig</code></a></h3>
-<p>The layout of <code>FBig</code> (and <code>DBig</code>) is a little different from other types. An <code>FBig</code> instance contains a number representation <code>dashu::float::Repr</code> and a context <code>dashu::float::Context</code>. The context will be copied every time a new <code>FBig</code> is created based on it. The context currently contains the rounding information and the precision associated with this number. The context is kept deliberately lightweight (<code>Copy</code> + <code>Send</code> + <code>Sync</code>): the shared cache for math constants (such as π, ln2, ln10) lives <em>outside</em> the context, in the separate <a href="#cached-arithmetic-for-fbig"><code>CachedFBig</code></a> wrapper, so that a plain <code>FBig</code> stays cheap to copy and usable in <code>const</code>/<code>static</code> contexts. Therefore, if you don’t want to store the additional context information, you can just store the <code>Repr</code> part of the <code>FBig</code>. The later operations on the <code>Repr</code> can be called with the associated methods of the <code>Context</code>, which all takes the reference to a <code>Repr</code> instance. However, this could lead to a little overhead in some cases.</p>
+<p>The layout of <code>FBig</code> (and <code>DBig</code>) is a little different from other types. An <code>FBig</code> instance contains a number representation <code>dashu::float::Repr</code> and a context <code>dashu::float::Context</code>. The context will be copied every time a new <code>FBig</code> is created based on it. The context currently contains the rounding information and the precision associated with this number. The context is kept deliberately lightweight (<code>Copy</code> + <code>Send</code> + <code>Sync</code>): the shared cache for math constants (such as π, ln2, ln10) lives <em>outside</em> the context, in the separate <a href="#cached-arithmetic-for-fbigcbig"><code>CachedFBig</code></a> wrapper, so that a plain <code>FBig</code> stays cheap to copy and usable in <code>const</code>/<code>static</code> contexts. Therefore, if you don’t want to store the additional context information, you can just store the <code>Repr</code> part of the <code>FBig</code>. The later operations on the <code>Repr</code> can be called with the associated methods of the <code>Context</code>, which all takes the reference to a <code>Repr</code> instance. However, this could lead to a little overhead in some cases.</p>
 <h3 id="layout-of-cbig"><a class="header" href="#layout-of-cbig">Layout of <code>CBig</code></a></h3>
 <p><code>CBig</code> (in the <code>dashu-cmplx</code> crate) mirrors <code>FBig</code>’s <code>Repr</code>+<code>Context</code> layout, generalized to two parts: a <code>CBig&lt;R, B&gt;</code> instance holds two <code>Repr&lt;B&gt;</code> parts — the real part <code>re</code> and the imaginary part <code>im</code> — over a <strong>single shared</strong> <code>Context&lt;R&gt;</code>. Storing one context (rather than wrapping two <code>FBig</code>s, each carrying its own) makes the uniform-precision invariant <em>physical</em>: there is exactly one precision slot, so <code>re</code> and <code>im</code> structurally cannot disagree. Each part keeps its own significand length; the shared context holds only the precision cap and the single rounding mode, applied independently to each component. As with <code>FBig</code>, the context is <code>Copy</code> while the significands are heap-allocated, so <code>CBig</code> is <code>Clone</code> but not <code>Copy</code>.</p>
-<p>Because both parts are <code>Repr</code>, <code>CBig</code> reuses <code>dashu-float</code>’s signed-zero / signed-infinity / branch-cut machinery unchanged. It follows the C99 Annex G / Kahan model (see <a href="#standards-compliance">Standards Compliance</a>) and, like <code>FBig</code>, has <strong>no NaN</strong> — C99 cases that would produce a complex NaN are reported as <code>FpError</code> at the context layer. <code>CBig::from_parts(re, im)</code> takes the larger of the two operand contexts. Construction, arithmetic, transcendentals, and I/O are covered in <a href="#construction-and-destruction">Construction and Destruction</a>, <a href="#conversion-1">Conversion</a>, and <a href="#operations">Operations</a>.</p>
+<p>Because both parts are <code>Repr</code>, <code>CBig</code> reuses <code>dashu-float</code>’s signed-zero / signed-infinity / branch-cut machinery unchanged. It follows the C99 Annex G / Kahan model (see <a href="#standards-compliance">Standards Compliance</a>) and, like <code>FBig</code>, has <strong>no NaN</strong> — C99 cases that would produce a complex NaN are reported as <code>FpError</code> at the context layer. <code>CBig::from_parts(re, im)</code> takes the larger of the two operand contexts. Construction, arithmetic, transcendentals, and I/O are covered in <a href="#construction-and-destruction">Construction and Destruction</a>, <a href="#conversion-1">Conversion</a>, and <a href="#operations-1">Operations</a>.</p>
 <h2 id="auxiliary-types"><a class="header" href="#auxiliary-types">Auxiliary Types</a></h2>
 <p>Besides the numeric types, there are several auxiliary types used across the crates: <code>Sign</code> and <code>Approximation</code> in <strong>dashu-base</strong>, <code>ConstCache</code> and <code>FpResult</code> in <strong>dashu-float</strong>, and <code>CfpResult</code> in <strong>dashu-cmplx</strong>.</p>
 <h3 id="sign-1"><a class="header" href="#sign-1">Sign</a></h3>
@@ -253,7 +257,7 @@
 <p>The enum <code>Approximation</code> is another commonly used type in <code>dashu</code>. It’s used when an operation can return inexact values (such as rounding and number conversion). The enum has two variants: <code>Exact</code> and <code>Inexact</code>, the latter one contains a error term for representing the sign or magnitude of the error caused by inexact operations.</p>
 <p>When you have an <code>Approximation</code> instance, call <code>.value()</code>, <code>.value_ref()</code> or <code>unwrap()</code> to get the operation result, and call <code>.error()</code> to get the error term. This struct also support method to work in functional programming style, such as <code>.map()</code> and <code>.and_then()</code>.</p>
 <h3 id="constcache"><a class="header" href="#constcache">ConstCache</a></h3>
-<p><code>dashu::float::ConstCache</code> holds the exact binary-splitting state for the mathematical constants π, ln2, and ln10, so repeated transcendental calls at increasing precision <em>extend</em> prior work instead of recomputing from scratch. It is a plain struct of big integers — base-free, <code>Send</code> + <code>Sync</code> — and a single cache serves any base. <code>FBig</code> and <code>Context</code> themselves stay <code>Copy</code> and carry no cache; the state lives in the separate <a href="#cached-arithmetic-for-fbig"><code>CachedFBig</code></a> wrapper (as <code>Rc&lt;RefCell&lt;ConstCache&gt;&gt;</code>), or you can drive a bare <code>ConstCache</code> directly.</p>
+<p><code>dashu::float::ConstCache</code> holds the exact binary-splitting state for the mathematical constants π, ln2, and ln10, so repeated transcendental calls at increasing precision <em>extend</em> prior work instead of recomputing from scratch. It is a plain struct of big integers — base-free, <code>Send</code> + <code>Sync</code> — and a single cache serves any base. <code>FBig</code> and <code>Context</code> themselves stay <code>Copy</code> and carry no cache; the state lives in the separate <a href="#cached-arithmetic-for-fbigcbig"><code>CachedFBig</code></a> wrapper (as <code>Rc&lt;RefCell&lt;ConstCache&gt;&gt;</code>), or you can drive a bare <code>ConstCache</code> directly.</p>
 <h3 id="fpresult-and-cfpresult"><a class="header" href="#fpresult-and-cfpresult">FpResult and CfpResult</a></h3>
 <p>Inexact operations at the context layer return a result type rather than a bare value: <code>dashu::float::FpResult&lt;T&gt; = Result&lt;Rounded&lt;T&gt;, FpError&gt;</code>, where <code>Rounded&lt;T&gt;</code> is the <a href="#approximation"><code>Approximation</code></a> carrying a <code>Rounding</code> flag. The complex analog is <code>dashu::complex::CfpResult</code> (<code>Result&lt;CRounded&lt;CBig&gt;, FpError&gt;</code>), whose <code>CRounded</code> carries one <code>Rounding</code> flag per axis. <code>FpError</code> reports why an operation could not produce a finite correctly-rounded value: <code>Overflow</code>/<code>Underflow</code>, <code>Indeterminate</code> (e.g. <code>0/0</code>), <code>OutOfDomain</code>, and <code>InfiniteInput</code>.</p>
 <h2 id="two-layer-api"><a class="header" href="#two-layer-api">Two-layer API</a></h2>
@@ -307,7 +311,7 @@
 <p>When the number doesn’t have a high precision, these macros can be used in a <code>const</code> environment, however this ability dependends on the precision and the machine word size. To create large constants, you can use the <code>static_*</code> macros (such as <code>static_ubig!</code>) in the crate. They have the same syntax as the normal macros, but the different is that the outputs of the macros are references to a static instance, rather than directly generating an instance. There are also other limitations about these macros for static creation.</p>
 <p>Please refer to <a href="https://docs.rs/dashu-macros/latest/dashu_macros/">the docs of <code>dashu-macros</code></a> for detailed usage of these macros.</p>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="cached-arithmetic-for-fbig"><a href="#cached-arithmetic-for-fbig" class="header">Cached Arithmetic for FBig</a></h1>
+<h1 id="cached-arithmetic-for-fbigcbig"><a href="#cached-arithmetic-for-fbigcbig" class="header">Cached Arithmetic for FBig/CBig</a></h1>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
 <p>The [<code>CachedFBig</code>] type is an [<code>FBig</code>] that carries a shared handle to a
 <code>Rc&lt;RefCell&lt;ConstCache&gt;&gt;</code>. The cache stores exact binary-splitting state for
@@ -436,6 +440,49 @@ let _ = (a + b).ln().exp();
 
 assert!(cache.borrow().total_terms() &gt; 0);
 <span class="boring">}</span></code></pre>
+<h2 id="complex-numbers-cachedcbig"><a class="header" href="#complex-numbers-cachedcbig">Complex numbers: <code>CachedCBig</code></a></h2>
+<p>The complex type <a href="https://docs.rs/dashu-cmplx/latest/dashu_cmplx/struct.CachedCBig.html"><code>CachedCBig</code></a>
+is the exact twin of <code>CachedFBig</code>: it wraps a
+<a href="https://docs.rs/dashu-cmplx/latest/dashu_cmplx/struct.CBig.html"><code>CBig</code></a> plus the same shared
+<code>Rc&lt;RefCell&lt;ConstCache&gt;&gt;</code> handle, and threads it through the complex transcendentals (<code>ln</code>, <code>exp</code>,
+<code>sin</code>/<code>cos</code>/<code>tan</code>/<code>sin_cos</code>, <code>asin</code>/<code>acos</code>/<code>atan</code>, <code>powf</code>, <code>arg</code>). The complex transcendentals are
+built entirely from real <code>FBig</code> operations, so <strong>the same <code>ConstCache</code> (π, ln2, ln10) is reused
+unchanged</strong> — there are no complex-specific constants to store.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use dashu::complex::{CBig, CachedCBig};
+use dashu::float::FBig;
+
+// build a cached 1+1i from a plain CBig (fresh cache)
+let z = CachedCBig::from(CBig::from_parts(FBig::from(1), FBig::from(1)));
+
+// ln / exp reuse the shared real-constant cache end to end
+let _ = z.clone().ln().exp();
+<span class="boring">}</span></code></pre>
+<p><code>CachedCBig</code> mirrors <code>CBig</code>’s full always-on surface (formatting, ordering, conversions, the binary
+operators including cross-type ops against both <code>CBig</code> and <code>FBig</code>, <code>Neg</code>/<code>Inverse</code>, <code>Sum</code>/<code>Product</code>),
+and is <code>!Send + !Sync</code> just like <code>CachedFBig</code> (so <code>CBig</code> stays <code>Send + Sync</code> and <code>static_cbig!</code> is
+unaffected). One intentional divergence: <code>CachedCBig::into_parts</code> returns <code>(CachedFBig, CachedFBig)</code>
+<strong>sharing the handle</strong>, so transcendentals on either part stay cached — distinct from
+<code>CBig::into_parts</code>, which returns <code>(FBig, FBig)</code>. Third-party traits (serde/num-traits/num-order/
+num-complex/rand) are not mirrored; reach them via <code>.as_cbig()</code>.</p>
+<h2 id="the-fast-aliases"><a class="header" href="#the-fast-aliases">The <code>Fast*</code> aliases</a></h2>
+<p>For transcendental-heavy code, the meta-crate exposes the cached variants under short aliases so the
+faster type is easy to reach by name:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Alias</th><th>Type</th><th>Notes</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="../index.html#fastreal"><code>FastReal</code></a></td><td><code>dashu_float::CachedFBig</code></td><td>base 2, Zero — fast <code>Real</code></td></tr>
+<tr><td><a href="../index.html#fastdecimal"><code>FastDecimal</code></a></td><td><code>dashu_float::CachedFBig&lt;HalfAway, 10&gt;</code></td><td>fast <code>Decimal</code></td></tr>
+<tr><td><a href="../index.html#fastcomplex"><code>FastComplex</code></a></td><td><code>dashu_cmplx::CachedCBig</code></td><td>base 2, Zero — fast <code>Complex</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>All three are <code>!Send + !Sync</code>; the non-cached <code>Real</code>/<code>Decimal</code>/<code>Complex</code> remain the <code>Send + Sync</code>
+baseline.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="conversion-1"><a href="#conversion-1" class="header">Conversion</a></h1>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
@@ -858,7 +905,7 @@ let words: &amp;[Word] = n.as_words();
 <p>The exact in-memory layout of a <code>UBig</code> is not yet stabilized — don’t rely on the word layout across versions.</p>
 </blockquote>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="operations"><a href="#operations" class="header">Operations</a></h1>
+<h1 id="operations-1"><a href="#operations-1" class="header">Operations</a></h1>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
 <p>dashu implements a full set of arithmetic, comparison, bitwise, and number-theoretic operations for its numeric types, following standard Rust operator conventions. This section covers each category:</p>
 <ul>
@@ -911,6 +958,16 @@ let z = C::from_parts(FBig::from(3), FBig::from(4));
 let sum = &amp;z + &amp;C::I; // (3+4i) + i = 3+5i
 assert_eq!(sum.im().significand(), &amp;5.into());
 <span class="boring">}</span></code></pre>
+<h2 id="aggregation-sum-and-product"><a class="header" href="#aggregation-sum-and-product">Aggregation: <code>Sum</code> and <code>Product</code></a></h2>
+<p>All numeric types implement <code>core::iter::Sum</code> and <code>Product</code> over iterators of <code>T</code> or <code>&amp;T</code>. For <code>FBig</code>/<code>DBig</code>, <code>Sum</code> is correctly-rounded — addends are accumulated exactly and rounded once (MPFR <code>mpfr_sum</code>), not folded with <code>+</code>, which rounds at every step and can drop small addends; the result precision is <code>max</code> over the addends’. <code>Product</code> is a plain fold on every type. For <code>FBig</code>/<code>DBig</code>/<code>CBig</code> the iterator must yield the big type itself (convert primitives first), whereas <code>UBig</code>/<code>IBig</code>/<code>RBig</code> accept primitive elements directly.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use dashu::float::DBig;
+
+let vals = [dbig!(1), dbig!(1e-20), dbig!(-1)];
+let folded = vals.iter().cloned().fold(DBig::ZERO, |a, b| a + b); // 0 — 1e-20 rounded away
+let summed: DBig = vals.iter().sum();                             // 1e-20 — Sum is exact
+<span class="boring">}</span></code></pre>
 <h2 id="mixed-type-arithmetic"><a class="header" href="#mixed-type-arithmetic">Mixed-type arithmetic</a></h2>
 <p>There are <strong>no implicit mixed-type operators</strong> between different big-number kinds (e.g. <code>UBig + FBig</code> does not compile) — convert explicitly first (see <a href="#conversion-1">Conversion</a>).</p>
 <div style="break-before: page; page-break-before: always;"></div>
@@ -922,7 +979,7 @@ assert_eq!(sum.im().significand(), &amp;5.into());
 <li>Exponential: <code>exp</code>, <code>exp_m1</code> (<span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7477em;vertical-align:-0.0833em;"></span><span class="mord"><span class="mord mathnormal">e</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6644em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">x</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span>, accurate near zero).</li>
 <li>Logarithm: <code>ln</code>, <code>ln_1p</code> (<span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop">ln</span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span></span></span></span>, accurate near zero).</li>
 <li>Powers and roots: <code>powi(IBig)</code>, <code>powf(&amp;FBig)</code>, <code>sqrt</code>, <code>cbrt</code>, <code>nth_root(&amp;n)</code>, and <code>hypot(&amp;other)</code> (<span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.24em;vertical-align:-0.2822em;"></span><span class="mord sqrt"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.9578em;"><span class="svg-align" style="top:-3.2em;"><span class="pstrut" style="height:3.2em;"></span><span class="mord" style="padding-left:1em;"><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7401em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7401em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span></span></span><span style="top:-2.9178em;"><span class="pstrut" style="height:3.2em;"></span><span class="hide-tail" style="min-width:1.02em;height:1.28em;"><svg xmlns="http://www.w3.org/2000/svg" width="400em" height="1.28em" viewbox="0 0 400000 1296" preserveaspectratio="xMinYMin slice"><path d="M263,681c0.7,0,18,39.7,52,119 c34,79.3,68.167,158.7,102.5,238c34.3,79.3,51.8,119.3,52.5,120 c340,-704.7,510.7,-1060.3,512,-1067 l0 -0 c4.7,-7.3,11,-11,19,-11 H40000v40H1012.3 s-271.3,567,-271.3,567c-38.7,80.7,-84,175,-136,283c-52,108,-89.167,185.3,-111.5,232 c-22.3,46.7,-33.8,70.3,-34.5,71c-4.7,4.7,-12.3,7,-23,7s-12,-1,-12,-1 s-109,-253,-109,-253c-72.7,-168,-109.3,-252,-110,-252c-10.7,8,-22,16.7,-34,26 c-22,17.3,-33.3,26,-34,26s-26,-26,-26,-26s76,-59,76,-59s76,-60,76,-60z M1001 80h400000v40h-400000z" /></svg></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2822em;"><span></span></span></span></span></span></span></span></span>, overflow-safe).</li>
-<li>Constants: <code>FBig::pi(precision)</code> computes π; use <a href="#cached-arithmetic-for-fbig"><code>CachedFBig</code></a> to reuse it across calls.</li>
+<li>Constants: <code>FBig::pi(precision)</code> computes π; use <a href="#cached-arithmetic-for-fbigcbig"><code>CachedFBig</code></a> to reuse it across calls.</li>
 </ul>
 <p>(<code>exp2</code>/<code>exp10</code>/<code>log2</code>/<code>log10</code> are deferred to a later 0.5.x release.)</p>
 <h2 id="complex-functions"><a class="header" href="#complex-functions">Complex functions</a></h2>
@@ -1019,10 +1076,141 @@ assert_eq!(a.pow(&amp;(p - UBig::ONE)), ring.reduce(1)); // Fermat: a^(p-1) = 1 
 <h2 id="diophantine-approximation"><a class="header" href="#diophantine-approximation">Diophantine approximation</a></h2>
 <p>Rational approximation of reals — the simplest rational within a tolerance, continued fractions — lives on <code>RBig</code>; see <a href="#conversion-to-rbig">Conversion</a> for <code>simplest_in</code> / <code>nearest_in</code>.</p>
 <div style="break-before: page; page-break-before: always;"></div>
+<h1 id="python-binding"><a href="#python-binding" class="header">Python Binding</a></h1>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<p>The <strong><code>dashu-python</code></strong> Rust crate (in the <code>python/</code> directory of the
+<a href="https://github.com/cmpute/dashu">dashu</a> workspace) is the source of the Python
+bindings — <a href="https://pyo3.rs">PyO3</a> glue that exposes dashu’s number types as a
+native extension. The <strong><code>dashu-rs</code></strong> package on
+<a href="https://pypi.org/project/dashu-rs/">PyPI</a> is the prebuilt, pip-installable
+distribution of that crate: <code>pip install dashu-rs</code> fetches a compiled wheel, so
+end users never need Rust or the dashu source tree. The imported Python module is
+named <code>dashu</code> (e.g. <code>from dashu import UBig</code>).</p>
+<h2 id="installation"><a class="header" href="#installation">Installation</a></h2>
+<pre><code class="language-sh">pip install dashu-rs
+</code></pre>
+<p><code>dashu-rs</code> is a standalone wheel on <a href="https://pypi.org/project/dashu-rs/">PyPI</a> —
+no Rust toolchain or compiler is needed. It provides a native <code>dashu</code> module:</p>
+<pre><code class="language-python">from dashu import UBig, IBig, RBig, FBig, DBig, CBig
+</code></pre>
+<h2 id="types"><a class="header" href="#types">Types</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Type</th><th>Backing</th><th>Base / rounding</th></tr>
+</thead>
+<tbody>
+<tr><td><code>UBig</code>, <code>IBig</code></td><td>arbitrary-precision integer</td><td>unsigned / signed</td></tr>
+<tr><td><code>RBig</code></td><td>arbitrary-precision rational</td><td>exact <code>numerator / denominator</code></td></tr>
+<tr><td><code>FBig</code></td><td>arbitrary-precision float</td><td>base 2, round <code>Zero</code></td></tr>
+<tr><td><code>DBig</code></td><td>arbitrary-precision float</td><td>base 10, round <code>HalfAway</code> (decimal)</td></tr>
+<tr><td><code>CBig</code></td><td>arbitrary-precision complex</td><td>base 2</td></tr>
+</tbody>
+</table>
+</div>
+<p>All types are <code>Send</code> + <code>Sync</code> (free-threaded-Python compatible). Constructors accept
+native Python numbers as well as strings:</p>
+<pre><code class="language-python">UBig(144)              # int
+FBig(1.5)              # float (at the module default precision)
+DBig("1.23")           # decimal string
+RBig(Fraction(1, 3))   # fractions.Fraction
+CBig(3.0, 4.0)         # (re, im)
+</code></pre>
+<h2 id="operations"><a class="header" href="#operations">Operations</a></h2>
+<p>Arithmetic, comparisons, and <code>bool()</code> accept any Python number (cross-type dispatch),
+so mixed operands just work:</p>
+<pre><code class="language-python">UBig(2) + 3 == 5
+FBig(1.5) * 2 == FBig(3.0)
+UBig(17) // 5 == 3
+divmod(UBig(17), 5) == (UBig(3), UBig(2))
+</code></pre>
+<ul>
+<li><strong>Integers</strong>: <code>+ - * / // % **</code>, comparisons, in-place ops, bit operations
+(<code>&amp; | ^ &lt;&lt; &gt;&gt;</code>), roots (<code>sqrt</code>/<code>cbrt</code>/<code>nth_root</code>), <code>gcd</code>/<code>gcd_ext</code>, <code>ilog</code>, bit
+predicates, and <code>to_words</code>/<code>to_chunks</code>/<code>to_bytes</code>.</li>
+<li><strong>Floats / Decimal</strong>: arithmetic, comparisons, rounding (<code>trunc</code>/<code>floor</code>/<code>ceil</code>/
+<code>round</code>/<code>fract</code>), precision (<code>precision</code>/<code>with_precision</code>), transcendentals, and
+conversions <code>to_decimal</code>/<code>to_binary</code>/<code>to_rational</code>/<code>to_int</code>.</li>
+<li><strong>Rational</strong>: arithmetic, <code>numerator</code>/<code>denominator</code>, rounding, <code>sqr</code>/<code>pow</code>, <code>to_float</code>.</li>
+<li><strong>Complex</strong>: arithmetic, <code>real</code>/<code>imag</code>, <code>conj</code>/<code>proj</code>/<code>norm</code>/<code>abs</code>/<code>arg</code>, and
+transcendentals (<code>sin</code>/<code>cos</code>/<code>exp</code>/<code>ln</code>/<code>sqrt</code>/…).</li>
+</ul>
+<p>Transcendentals are <strong>panic-free</strong>: domain errors raise <code>ValueError</code>, indeterminate forms
+like <code>0/0</code> raise <code>ZeroDivisionError</code>, and overflow/underflow yield signed infinities or
+zeros. They share a module-wide constant cache (<code>dashu.Cache</code>) so repeated calls at
+increasing precision reuse the precomputed constants.</p>
+<p>A module-level <code>math</code> API mirrors the common functions — <code>dashu.sin</code>, <code>dashu.sqrt</code>,
+<code>dashu.exp</code>, <code>dashu.gcd</code>, <code>dashu.lcm</code>, … — and likewise accepts plain Python numbers.</p>
+<h2 id="precision"><a class="header" href="#precision">Precision</a></h2>
+<p><code>FBig</code> and <code>CBig</code> are <strong>binary</strong> (base 2) — precision is counted in <strong>bits</strong>. <code>DBig</code> is
+<strong>decimal</strong> (base 10) — precision is counted in <strong>decimal digits</strong> (1 decimal digit
+≈ 3.32 bits).</p>
+<p>A value’s precision comes from how it’s built:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>input</th><th><code>FBig</code> / <code>CBig</code></th><th><code>DBig</code></th></tr>
+</thead>
+<tbody>
+<tr><td><code>int</code></td><td>exact (the integer’s bit length)</td><td>the literal’s digits</td></tr>
+<tr><td><code>float</code> / <code>complex</code></td><td>the module default (below)</td><td>the float’s significant decimal digits</td></tr>
+<tr><td><code>str</code></td><td>the string’s own digits</td><td>the string’s own digits</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong><code>FBig</code>/<code>CBig</code> default.</strong> <code>float</code>/<code>complex</code> inputs build at the module default, which is
+f64’s 53 bits. Read it with <code>dashu.get_precision()</code> and set it with
+<code>dashu.set_precision(bits)</code> (returns the previous value); it also applies to arithmetic
+that mixes integers with floats. Integer inputs are <em>not</em> affected — <code>FBig(2)</code> stays exact
+at 2 bits, so write <code>FBig(2.0)</code> to apply the default.</p>
+<pre><code class="language-python">dashu.set_precision(100)
+FBig(1.5).precision()    # 100   (float → default)
+FBig(2).precision()      # 2     (int → exact, unaffected)
+FBig(2.0).precision()    # 100
+</code></pre>
+<p><strong><code>DBig</code> has no module default</strong>, but a <code>float</code> input already lands on a sensible precision
+— the float’s significant decimal digits (the shortest decimal that round-trips the f64), so
+<code>DBig(12.345)</code> has precision 5 and <code>DBig(0.1)</code> has precision 1. To exceed that (e.g. for
+transcendentals, which need more digits than the input carries), pass a longer string or
+call <code>.with_precision</code>. For both kinds, <code>.with_precision(n)</code> overrides one value (bits for
+<code>FBig</code>/<code>CBig</code>, decimal digits for <code>DBig</code>), and transcendentals run at the value’s precision:</p>
+<pre><code class="language-python">DBig(2).with_precision(50).ln()                   # 50 decimal digits
+FBig(2.0).with_precision(200).exp().precision()    # 200 bits
+</code></pre>
+<h2 id="formatting"><a class="header" href="#formatting">Formatting</a></h2>
+<p><code>format()</code> / f-strings honor the full Python format mini-language:</p>
+<pre><code class="language-python">format(UBig(255), "#x")                           # '0xff'
+format(UBig(10**9), ",")                           # '1,000,000,000'
+format(FBig(2).with_precision(200).exp(), ".20e")  # '7.38905609893065022723e+00'
+format(DBig("1.5"), ".3e")                         # '1.500e+00'
+format(RBig.from_parts(1, 3), ".4f")               # '0.3333'
+format(CBig(3.0, 4.0), ".2f")                      # '(3.00+4.00j)'
+</code></pre>
+<ul>
+<li><strong>Integers</strong> delegate to Python <code>int</code>, so every presentation type works (<code>b</code>/<code>o</code>/<code>d</code>/
+<code>x</code>/<code>X</code>/<code>c</code>/<code>n</code>) with sign, width, fill, zero-pad, and grouping — with no loss.</li>
+<li><strong>Floats</strong> (<code>FBig</code>/<code>DBig</code>) support <code>e</code>/<code>E</code>/<code>f</code>/<code>g</code> with precision, sign, width, align,
+fill, zero-pad, and grouping. With no explicit precision, all significant digits are
+shown (use <code>.6e</code> for the fixed 6-digit default).</li>
+<li><strong><code>FBig</code> is base 2</strong>, so its default <code>str</code>/<code>format</code> and the <code>'a'</code>/<code>'A'</code> types print in
+<strong>hexadecimal</strong> — lossless, with no base conversion, e.g. <code>str(FBig(1.5)) == '0x3p-1'</code>.
+Decimal presentations (<code>'e'</code>/<code>'f'</code>/<code>'g'</code>) convert to base 10. <code>DBig</code> prints in decimal.</li>
+<li><strong><code>RBig</code></strong> defaults to the exact fraction, e.g. <code>str(RBig(1) / 3) == '1/3'</code>.</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
 <h1 id="faq"><a href="#faq" class="header">FAQ</a></h1>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
 <h2 id="why-is-the-library-called-dashu"><a class="header" href="#why-is-the-library-called-dashu">Why is the library called <code>dashu</code>?</a></h2>
 <p><code>dashu</code> is the pinyin romanization of 大数 (“dà shù”), Chinese for <em>big number</em>.</p>
+<p align="center">
+  <img src="assets/dashu-logo.png" alt="The dashu logo: a stylized banyan tree" width="200">
+</p>
+
+<p>The logo is a stylized <strong>banyan tree</strong> — an archetypal <em>big tree</em> (大树, also “dà shù”). It’s a
+bilingual pun: 大树 (<em>big tree</em>) and 大数 (<em>big number</em>, the library’s namesake) are homophones in
+Mandarin, so a grand tree stands in visually for the “big number” behind the name. The downward
+strokes are the banyan’s signature <a href="https://en.wikipedia.org/wiki/Aerial_root">aerial roots</a>.</p>
 <h2 id="why-to-use-dashu"><a class="header" href="#why-to-use-dashu">Why to use <code>dashu</code>?</a></h2>
 <p><code>dashu</code> aims to be a Rust-native, ergonomic alternative to GNU GMP + MPFR + MPC: arbitrary-precision integers, floats, rationals, and complex numbers, all in pure Rust with full <code>no_std</code> support and arbitrary-base floats.</p>
 <p>Compared with other Rust crates:</p>
@@ -1045,6 +1233,10 @@ assert_eq!(a.pow(&amp;(p - UBig::ONE)), ring.reduce(1)); // Fermat: a^(p-1) = 1 
 <li><strong>No NaN.</strong> Invalid operations panic at the convenience layer and return <code>Err(FpError)</code> at the context layer. Infinities are terminal values, not operands — see <a href="#standards-compliance">Standards Compliance</a>.</li>
 <li><strong>Near-correct rounding.</strong> Transcendentals are rounded within 1 ulp via a guard-digit recipe; a guaranteed-correct Ziv loop is planned for a later release.</li>
 <li><strong>Complex surface.</strong> <code>CBig</code> ships field arithmetic and the elementary transcendentals; complex hyperbolics, <code>fma</code>, and several others are deferred to 0.5.x (see the v0.5 release notes).</li>
+<li><strong>No ball/interval arithmetic.</strong> Unlike MPC’s experimental <code>mpcb_t</code> (complex balls), <code>dashu</code>
+does not provide interval or ball types. This is a deliberate scope choice: ball arithmetic is
+still experimental upstream, and if/when it stabilizes it is better provided by a <strong>separate
+crate</strong> layered on <code>dashu-float</code>/<code>dashu-cmplx</code> than coupled to the core types.</li>
 <li><strong>No SIMD-FFT multiplication</strong> yet (planned for v1.0).</li>
 </ul>
 <h2 id="msrv-and-feature-policy"><a class="header" href="#msrv-and-feature-policy">MSRV and feature policy</a></h2>
@@ -1098,7 +1290,7 @@ when you control the build.</p>
 <h1 id="cheatsheet"><a href="#cheatsheet" class="header">Cheatsheet</a></h1>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
 <p>A dense reference for the dashu numeric types. See the linked pages for detail.</p>
-<h2 id="types"><a class="header" href="#types">Types</a></h2>
+<h2 id="types-1"><a class="header" href="#types-1">Types</a></h2>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -1162,7 +1354,8 @@ when you control the build.</p>
 </tbody>
 </table>
 </div>
-<h2 id="formatting"><a class="header" href="#formatting">Formatting</a></h2>
+<p><code>Sum</code>/<code>Product</code> are implemented for every type. For <code>FBig</code>/<code>DBig</code>, <code>Sum</code> is correctly-rounded (exact accumulate, round once — <em>not</em> a <code>+</code> fold); for <code>FBig</code>/<code>DBig</code>/<code>CBig</code> the iterator must yield the big type (or <code>&amp;T</code>), not primitives. See <a href="#aggregation-sum-and-product">Basic Arithmetics</a>.</p>
+<h2 id="formatting-1"><a class="header" href="#formatting-1">Formatting</a></h2>
 <div class="table-wrapper">
 <table>
 <thead>

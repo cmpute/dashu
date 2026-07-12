@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-59e2c4f8.js";
+            window.path_to_searchindex_js = "../searchindex-30e4046d.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-9bffdc81.js"></script>
+        <script src="../toc-ebe46d39.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -207,6 +207,16 @@ type C = CBig&lt;HalfAway, 10&gt;;
 let z = C::from_parts(FBig::from(3), FBig::from(4));
 let sum = &amp;z + &amp;C::I; // (3+4i) + i = 3+5i
 assert_eq!(sum.im().significand(), &amp;5.into());
+<span class="boring">}</span></code></pre>
+<h2 id="aggregation-sum-and-product"><a class="header" href="#aggregation-sum-and-product">Aggregation: <code>Sum</code> and <code>Product</code></a></h2>
+<p>All numeric types implement <code>core::iter::Sum</code> and <code>Product</code> over iterators of <code>T</code> or <code>&amp;T</code>. For <code>FBig</code>/<code>DBig</code>, <code>Sum</code> is correctly-rounded — addends are accumulated exactly and rounded once (MPFR <code>mpfr_sum</code>), not folded with <code>+</code>, which rounds at every step and can drop small addends; the result precision is <code>max</code> over the addends’. <code>Product</code> is a plain fold on every type. For <code>FBig</code>/<code>DBig</code>/<code>CBig</code> the iterator must yield the big type itself (convert primitives first), whereas <code>UBig</code>/<code>IBig</code>/<code>RBig</code> accept primitive elements directly.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use dashu::float::DBig;
+
+let vals = [dbig!(1), dbig!(1e-20), dbig!(-1)];
+let folded = vals.iter().cloned().fold(DBig::ZERO, |a, b| a + b); // 0 — 1e-20 rounded away
+let summed: DBig = vals.iter().sum();                             // 1e-20 — Sum is exact
 <span class="boring">}</span></code></pre>
 <h2 id="mixed-type-arithmetic"><a class="header" href="#mixed-type-arithmetic">Mixed-type arithmetic</a></h2>
 <p>There are <strong>no implicit mixed-type operators</strong> between different big-number kinds (e.g. <code>UBig + FBig</code> does not compile) — convert explicitly first (see <a href="../convert.html">Conversion</a>).</p>
