@@ -9,7 +9,7 @@
 [![Tests](https://github.com/cmpute/dashu/actions/workflows/tests.yml/badge.svg)](https://github.com/cmpute/dashu/actions)
 [![MSRV 1.68](https://img.shields.io/badge/rustc-1.68%2B-informational.svg)](#dashu)
 [![License](https://img.shields.io/crates/l/dashu)](#license)
-[![Book](https://img.shields.io/badge/book-user_guide-yellow.svg)](https://zyxin.xyz/dashu/)
+[![Book](https://img.shields.io/badge/book-user_guide-yellow.svg)](https://zyxin.xyz/dashu-zh/)
 
 一套用 Rust 实现的任意精度数值（即大数）库。它是 GNU GMP + MPFR + MPC 的 Rust 原生替代方案。其主要特性包括：
 - 纯 Rust 实现，完整支持 `no_std`。

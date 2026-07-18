@@ -16,8 +16,6 @@ are longer-term goals. File:line references are anchors from the v0.5.0 tree and
 
 ### Performance & internal cleanups (non-breaking)
 
-- **`dashu-int` power kernel — right-to-left exponentiation** (`integer/src/pow.rs:67`).
-  Switch to a right-to-left scan for a cheaper squaring schedule.
 - **`dashu-float` division kernel micro-opt** (`float/src/div.rs:344`). Avoid the double
   power in the division kernel; let `q += q0` become `|=` when the base `B` is a power of 2.
 - **`dashu-float` `exp` guard-bit formulation** (`float/src/exp.rs:87`). Write down the exact
@@ -35,9 +33,11 @@ are longer-term goals. File:line references are anchors from the v0.5.0 tree and
 
 ### Correctness
 
-- **Guaranteed-correct rounding (Ziv retry loop).** 0.5 ships near-correct guard-digit
-  rounding (matching `FBig`'s own transcendentals). A Ziv loop is expected to land in
-  `dashu-float` first, then be inherited by `dashu-cmplx`.
+- **Guaranteed-correct rounding (Ziv retry loop).** ✅ *Partially delivered.* `exp`, `exp_m1`,
+  `ln`, `ln_1p` are now guaranteed-correctly rounded via a Ziv retry loop in `dashu-float`
+  (`Context::ziv`, driven by the `ErrorBounds` preimage). Remaining: trig, hyperbolic, `powf`,
+  `hypot`, and inheriting the loop across `dashu-cmplx`'s complex transcendentals (which currently
+  route through the now-Ziv-backed real primitives but aren't themselves Ziv-wrapped).
 - **Signed-zero preservation in `CBig` zero short-circuits.** `sin_cos` and `sqr` take a fast
   path on exactly-zero input that returns `+0` components, so several Annex-G / IEEE signed-zero
   cases are not preserved (all numerically equal to `+0`, hence deferred):
