@@ -3,11 +3,12 @@ use core::str::FromStr;
 use dashu_base::{Approximation::*, ConversionError::*};
 use dashu_float::{
     round::{
-        mode::{HalfAway, Zero},
+        mode::{HalfAway, HalfEven, Zero},
         Rounding::*,
     },
     DBig, FBig,
 };
+use dashu_int::{IBig, UBig};
 
 mod helper_macros;
 
@@ -656,4 +657,78 @@ fn test_dbig_to_f32() {
     // Infinity
     assert_eq!(DBig::INFINITY.to_f32(), Inexact(f32::INFINITY, NoOp));
     assert_eq!(DBig::NEG_INFINITY.to_f32(), Inexact(f32::NEG_INFINITY, NoOp));
+}
+
+// A subnormal that sits just past a subnormal halfway must round straight to the
+// target's exponent-dependent precision. Rounding through a fixed 53-bit intermediate
+// drops the excess that lifts the value above the halfway, lands on the halfway, and
+// the final encoding rounds to even -- one ULP below the correct result. The exact
+// value (2m+1)/2^1075 +/- 1/2^(1075+j) is such a halfway nudged by a bit far below the
+// 53rd; correctly rounded it is m+1 (nudged up) or m (nudged down), and the subnormal
+// k*2^-1074 has bit pattern exactly k. Built in both base 2 and base 10 so the
+// base-changing conversion path is exercised too.
+#[test]
+fn test_to_f64_subnormal_halfway() {
+    fn check(m: u64, j: u32) {
+        let scale = (1075 + j) as usize;
+        let core = IBig::from(2 * m + 1) << j as usize;
+        let five: IBig = UBig::from(5u8).pow(scale).into();
+        for (delta, want) in [(IBig::ONE, m + 1), (-IBig::ONE, m)] {
+            let sig = &core + &delta;
+            let base2 = FBig::<HalfEven, 2>::from_parts(sig.clone(), -(scale as isize));
+            assert_eq!(base2.to_f64().value().to_bits(), want, "base 2, m={m}");
+            let base10 = DBig::from_parts(&sig * &five, -(scale as isize));
+            assert_eq!(base10.to_f64().value().to_bits(), want, "base 10, m={m}");
+        }
+    }
+    // m spans the subnormal significand width; j puts the nudge well below the 53rd bit
+    // (but within the conversion's working precision), where a second rounding would
+    // otherwise collapse the value onto the halfway.
+    for m in [
+        3,
+        21,
+        (1 << 8) + 5,
+        (1 << 20) + 3,
+        (1 << 33) + 7,
+        (1 << 40) + 9,
+    ] {
+        check(m, 60);
+    }
+}
+
+// [test_to_f64_subnormal_halfway] for f32 (subnormal spacing 2^-149, 24-bit mantissa).
+#[test]
+fn test_to_f32_subnormal_halfway() {
+    fn check(m: u32, j: u32) {
+        let scale = (150 + j) as usize;
+        let core = IBig::from(2 * m + 1) << j as usize;
+        let five: IBig = UBig::from(5u8).pow(scale).into();
+        for (delta, want) in [(IBig::ONE, m + 1), (-IBig::ONE, m)] {
+            let sig = &core + &delta;
+            let base2 = FBig::<HalfEven, 2>::from_parts(sig.clone(), -(scale as isize));
+            assert_eq!(base2.to_f32().value().to_bits(), want, "base 2, m={m}");
+            let base10 = DBig::from_parts(&sig * &five, -(scale as isize));
+            assert_eq!(base10.to_f32().value().to_bits(), want, "base 10, m={m}");
+        }
+    }
+    for m in [3, 21, (1 << 10) + 5, (1 << 18) + 7] {
+        check(m, 30);
+    }
+}
+
+// High-precision decimals feed an oversized significand into the base-changing
+// division; this tripped a debug assertion (and double-rounded in release). Each must
+// now convert without panicking to the correctly rounded f64 (oracle: Python float()).
+#[test]
+fn test_to_f64_high_precision() {
+    let cases = [
+        ("123456789012345678.9012345678901", 0x437b69b4ba630f35u64),
+        ("3915263378237002511617337316730e-19", 0x4256ca327347ecd1),
+        ("1234567890123456789012345678901e-5", 0x45246c993044fd55),
+        ("9999999999999999999999999999999e-3", 0x45c027e72f1f1281),
+        ("27182818284590452353602874713526e-13", 0x43c2dca375e059b1),
+    ];
+    for (s, want) in cases {
+        assert_eq!(DBig::from_str(s).unwrap().to_f64().value().to_bits(), want, "{s}");
+    }
 }

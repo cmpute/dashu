@@ -433,15 +433,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn to_f32(&self) -> Rounded<f32> {
-        if self.repr.is_infinite() {
-            return Inexact(self.sign() * f32::INFINITY, Rounding::NoOp);
-        }
-
-        let context = Context::<R>::new(24);
-        context
-            .convert_base::<B, 2>(self.repr.clone(), None)
-            .and_then(|v| context.repr_round_ref(&v))
-            .and_then(|v| v.into_f32_internal())
+        Context::<R>::convert_to_f32(self.repr.clone())
     }
 
     /// Convert the float number to [f64] with the rounding mode associated with the type.
@@ -460,15 +452,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn to_f64(&self) -> Rounded<f64> {
-        if self.repr.is_infinite() {
-            return Inexact(self.sign() * f64::INFINITY, Rounding::NoOp);
-        }
-
-        let context = Context::<R>::new(53);
-        context
-            .convert_base::<B, 2>(self.repr.clone(), None)
-            .and_then(|v| context.repr_round_ref(&v))
-            .and_then(|v| v.into_f64_internal())
+        Context::<R>::convert_to_f64(self.repr.clone())
     }
 }
 
@@ -488,7 +472,75 @@ fn converted_overflow_repr<const NewB: Word>(large: bool, sign: Sign) -> Rounded
     )
 }
 
+/// Number of significant bits an `f64` keeps for a value whose most-significant bit sits at
+/// position `msb`: 53 across the normal range, but fewer for subnormals, whose spacing is fixed
+/// at `2^-1074`. Rounding the source straight to this width lets the bit-encoding step avoid a
+/// second rounding, which would otherwise double-round subnormals.
+fn f64_significand_bits(v: &Repr<2>) -> usize {
+    if v.significand.is_zero() {
+        return 53;
+    }
+    let msb = v.exponent + v.digits() as isize - 1;
+    (msb + 1075).clamp(1, 53) as usize
+}
+
+/// [f64_significand_bits] for `f32` (subnormal spacing `2^-149`).
+fn f32_significand_bits(v: &Repr<2>) -> usize {
+    if v.significand.is_zero() {
+        return 24;
+    }
+    let msb = v.exponent + v.digits() as isize - 1;
+    (msb + 150).clamp(1, 24) as usize
+}
+
+/// Convert `repr` to base 2 and truncate to `width` significant bits, forcing the lowest kept bit
+/// to 1 whenever the tail is nonzero (round-to-odd). Rounding this to nearest at any precision up
+/// to `width - 2` then reproduces the correctly-rounded value regardless of mode, so the two-step
+/// "convert, then round to the final width" cannot double-round. `width` is fixed and generous, so
+/// the base-conversion logarithm stays accurate even when the final width is tiny (deep subnormals).
+#[allow(non_upper_case_globals)]
+fn convert_base_odd<const B: Word>(repr: Repr<B>, width: usize) -> Repr<2> {
+    match Context::<Zero>::new(width).convert_base::<B, 2>(repr, None) {
+        Exact(v) => v,
+        Inexact(v, _) if v.significand.is_zero() => v,
+        Inexact(v, _) => {
+            let shift = width - v.digits();
+            let (sign, mut mag) = v.significand.into_parts();
+            mag <<= shift;
+            mag.set_bit(0);
+            Repr::new(IBig::from_parts(sign, mag), v.exponent - shift as isize)
+        }
+    }
+}
+
 impl<R: Round> Context<R> {
+    // Convert `repr` (base B) to the nearest f64 under this context's rounding mode. A generous
+    // round-to-odd base conversion is rounded once to the target's precision at its own magnitude
+    // (fewer than 53 bits for subnormals), so `into_f64_internal` re-rounds nothing — which would
+    // otherwise double-round subnormals. Handles a source significand of any size.
+    fn convert_to_f64<const B: Word>(repr: Repr<B>) -> Rounded<f64> {
+        if repr.is_infinite() {
+            return Inexact(repr.sign() * f64::INFINITY, Rounding::NoOp);
+        }
+        let odd = convert_base_odd::<B>(repr, 60);
+        let bits = f64_significand_bits(&odd);
+        Context::<R>::new(bits)
+            .repr_round(odd)
+            .and_then(|v| v.into_f64_internal())
+    }
+
+    // [convert_to_f64] for f32.
+    fn convert_to_f32<const B: Word>(repr: Repr<B>) -> Rounded<f32> {
+        if repr.is_infinite() {
+            return Inexact(repr.sign() * f32::INFINITY, Rounding::NoOp);
+        }
+        let odd = convert_base_odd::<B>(repr, 32);
+        let bits = f32_significand_bits(&odd);
+        Context::<R>::new(bits)
+            .repr_round(odd)
+            .and_then(|v| v.into_f32_internal())
+    }
+
     // Convert the [Repr] from base B to base NewB, with the precision under the target base from this context.
     #[allow(non_upper_case_globals)]
     fn convert_base<const B: Word, const NewB: Word>(
@@ -680,15 +732,7 @@ impl<const B: Word> Repr<B> {
     /// ```
     #[inline]
     pub fn to_f32(&self) -> Rounded<f32> {
-        if self.is_infinite() {
-            return Inexact(self.sign() * f32::INFINITY, Rounding::NoOp);
-        }
-
-        let context = Context::<HalfEven>::new(24);
-        context
-            .convert_base::<B, 2>(self.clone(), None)
-            .and_then(|v| context.repr_round_ref(&v))
-            .and_then(|v| v.into_f32_internal())
+        Context::<HalfEven>::convert_to_f32(self.clone())
     }
 
     // this method requires that the representation is already rounded to 53 binary bits
@@ -736,15 +780,7 @@ impl<const B: Word> Repr<B> {
     /// ```
     #[inline]
     pub fn to_f64(&self) -> Rounded<f64> {
-        if self.is_infinite() {
-            return Inexact(self.sign() * f64::INFINITY, Rounding::NoOp);
-        }
-
-        let context = Context::<HalfEven>::new(53);
-        context
-            .convert_base::<B, 2>(self.clone(), None)
-            .and_then(|v| context.repr_round_ref(&v))
-            .and_then(|v| v.into_f64_internal())
+        Context::<HalfEven>::convert_to_f64(self.clone())
     }
 
     /// Convert the float number representation to a [IBig].
