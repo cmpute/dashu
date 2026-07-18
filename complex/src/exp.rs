@@ -11,7 +11,7 @@ use crate::cbig::CBig;
 use crate::repr::{combine_parts, exact, reborrow_cache, riemann, CfpResult, Context};
 use dashu_base::Approximation::*;
 use dashu_base::{BitTest, Sign};
-use dashu_float::round::Round;
+use dashu_float::round::{ErrorBounds, Round};
 use dashu_float::{ConstCache, FBig, FpError};
 use dashu_int::{IBig, Word};
 
@@ -23,6 +23,36 @@ const EXP_GUARD: usize = 14;
 const POWF_GUARD: usize = 22;
 
 impl<R: Round> Context<R> {
+    /// Raise a complex number to an integer power under this context (context layer), via repeated
+    /// squaring (branch-cut-free, cheaper than `exp(n·log z)`). No cache.
+    ///
+    /// `powi(z, 0) = 1`; a negative exponent computes `powi(z, |n|)` then inverts.
+    pub fn powi<const B: Word>(&self, z: &CBig<R, B>, exp: IBig) -> CfpResult<R, B> {
+        let (sign, n) = exp.into_parts();
+        if n.is_zero() {
+            return Ok(Exact(CBig::ONE));
+        }
+        let negative = sign == Sign::Negative;
+        let bitlen = n.bit_len();
+        // left-to-right binary exponentiation, starting from the leading set bit
+        let mut acc = z.clone();
+        for i in (0..bitlen - 1).rev() {
+            acc = self.sqr(&acc)?.value();
+            if n.bit(i) {
+                acc = self.mul(&acc, z)?.value();
+            }
+        }
+        // The intermediate rounding flags are folded away (the value is near-correctly rounded);
+        // for a negative exponent the final `inv` carries its own flags.
+        if negative {
+            self.inv(&acc)
+        } else {
+            Ok(Exact(acc))
+        }
+    }
+}
+
+impl<R: ErrorBounds> Context<R> {
     /// Complex exponential under this context (context layer). Reuses `dashu-float`'s `exp` and
     /// `sin_cos`; the cache is threaded into both (the convenience layer passes `None`).
     ///
@@ -59,34 +89,6 @@ impl<R: Round> Context<R> {
         Ok(combine_parts(re, im))
     }
 
-    /// Raise a complex number to an integer power under this context (context layer), via repeated
-    /// squaring (branch-cut-free, cheaper than `exp(n·log z)`). No cache.
-    ///
-    /// `powi(z, 0) = 1`; a negative exponent computes `powi(z, |n|)` then inverts.
-    pub fn powi<const B: Word>(&self, z: &CBig<R, B>, exp: IBig) -> CfpResult<R, B> {
-        let (sign, n) = exp.into_parts();
-        if n.is_zero() {
-            return Ok(Exact(CBig::ONE));
-        }
-        let negative = sign == Sign::Negative;
-        let bitlen = n.bit_len();
-        // left-to-right binary exponentiation, starting from the leading set bit
-        let mut acc = z.clone();
-        for i in (0..bitlen - 1).rev() {
-            acc = self.sqr(&acc)?.value();
-            if n.bit(i) {
-                acc = self.mul(&acc, z)?.value();
-            }
-        }
-        // The intermediate rounding flags are folded away (the value is near-correctly rounded);
-        // for a negative exponent the final `inv` carries its own flags.
-        if negative {
-            self.inv(&acc)
-        } else {
-            Ok(Exact(acc))
-        }
-    }
-
     /// Raise `base` to a complex power under this context (context layer): `exp(w·log base)` on the
     /// principal branch, evaluated at `p + POWF_GUARD` and re-rounded. `powf(0, 0) = 1` (matching
     /// `FBig::powf`).
@@ -114,16 +116,6 @@ impl<R: Round> Context<R> {
 }
 
 impl<R: Round, const B: Word> CBig<R, B> {
-    /// Complex exponential `e^z` (convenience layer).
-    ///
-    /// # Panics
-    ///
-    /// Panics if the precision is unlimited or on an indeterminate special value.
-    #[inline]
-    pub fn exp(&self) -> Self {
-        self.context().unwrap_cfp(self.context().exp(self, None))
-    }
-
     /// Integer power (convenience layer).
     ///
     /// # Panics
@@ -132,6 +124,18 @@ impl<R: Round, const B: Word> CBig<R, B> {
     #[inline]
     pub fn powi(&self, exp: IBig) -> Self {
         self.context().unwrap_cfp(self.context().powi(self, exp))
+    }
+}
+
+impl<R: ErrorBounds, const B: Word> CBig<R, B> {
+    /// Complex exponential `e^z` (convenience layer).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is unlimited or on an indeterminate special value.
+    #[inline]
+    pub fn exp(&self) -> Self {
+        self.context().unwrap_cfp(self.context().exp(self, None))
     }
 
     /// Complex power `self^w` (convenience layer).

@@ -609,11 +609,19 @@ impl<R: Round> Context<R> {
             // if the exponent is large, then we first estimate the result exponent as floor(exponent * log(B) / log(NewB)),
             // then the fractional part is multiplied with the original significand
             let work_context = Context::<R>::new(2 * self.precision); // double the precision to get the precise logarithm
+                                                                      // ln(old base) and ln(new base) — near-correct is sufficient for the exponent estimate,
+                                                                      // and using the near-correct `ln_compute`/`ln_base` (R: Round) keeps base conversion
+                                                                      // off the `ErrorBounds` bound. Both are computed in base NewB so the euclidean division
+                                                                      // has matching bases.
             let new_exp = repr.exponent
-                * work_context.unwrap_fp(
-                    work_context
-                        .ln(&Repr::new(Repr::<B>::BASE.into(), 0), reborrow_cache(&mut cache)),
-                );
+                * work_context
+                    .ln_compute::<NewB>(
+                        &Repr::new(Repr::<B>::BASE.into(), 0),
+                        work_context.precision,
+                        false,
+                        reborrow_cache(&mut cache),
+                    )
+                    .0;
             let (exponent, rem) =
                 new_exp.div_rem_euclid(work_context.ln_base::<NewB>(reborrow_cache(&mut cache)));
             let exponent_sign = exponent.sign();
@@ -626,7 +634,18 @@ impl<R: Round> Context<R> {
                     );
                 }
             };
-            let exp_rem = rem.exp();
+            // exp(fractional exponent) — near-correct is sufficient (it scales the significand),
+            // so use `exp_compute` (R: Round) and stay off the `ErrorBounds` bound.
+            let n = 1usize << (work_context.precision.bit_len() / 2);
+            let exp_rem = work_context
+                .exp_compute::<NewB>(
+                    &rem.repr,
+                    work_context.precision,
+                    false,
+                    n,
+                    reborrow_cache(&mut cache),
+                )
+                .0;
             let significand = repr.significand * exp_rem.repr.significand;
             let repr = Repr::new(significand, exponent + exp_rem.repr.exponent);
             self.repr_round(repr)

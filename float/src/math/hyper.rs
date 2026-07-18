@@ -20,11 +20,11 @@ use crate::{
         FpResult,
     },
     repr::{Context, Repr, Word},
-    round::Round,
+    round::{ErrorBounds, Round},
 };
 use dashu_base::{Abs, AbsOrd, Approximation::Exact, Sign};
 
-impl<R: Round> Context<R> {
+impl<R: ErrorBounds> Context<R> {
     /// Hyperbolic sine.
     pub fn sinh<const B: Word>(
         &self,
@@ -287,7 +287,7 @@ impl<R: Round> Context<R> {
     }
 }
 
-impl<R: Round, const B: Word> FBig<R, B> {
+impl<R: ErrorBounds, const B: Word> FBig<R, B> {
     /// Calculate the hyperbolic sine of the floating point number.
     ///
     /// # Examples

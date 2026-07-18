@@ -8,6 +8,12 @@
   macro now works in `const` position for coefficients that fit in a `DoubleWord`; larger
   coefficients fall back to the runtime heap path.
 
+### Change
+- **(breaking, bound)** The complex transcendentals (`exp`, `ln`, `powf`, `sin`/`cos`/`tan`/
+  `sin_cos`, `asin`/`acos`/`atan`) and their `CachedCBig` forwarders now require `R: ErrorBounds`,
+  inherited from `dashu-float`'s Ziv-backed real `exp`/`ln`/`sinh_cosh` primitives. `powi` and the
+  field arithmetic (`add`/`sub`/`mul`/`div`/`sqr`/`inv`) remain `R: Round`.
+
 ## 0.5.0 (Initial release)
 
 `dashu-cmplx` provides [`CBig`], an arbitrary-precision complex number type built on top of

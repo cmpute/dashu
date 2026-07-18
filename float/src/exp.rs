@@ -5,7 +5,7 @@ use crate::{
     fbig::FBig,
     math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr, Word},
-    round::Round,
+    round::{ErrorBounds, Round},
     utils::ceil_usize,
 };
 use dashu_base::{AbsOrd, Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign};
@@ -28,7 +28,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
     pub fn powi(&self, exp: IBig) -> FBig<R, B> {
         self.context.unwrap_fp(self.context.powi(&self.repr, exp))
     }
+}
 
+// `powf`/`exp`/`exp_m1` route through the Ziv-backed Context methods, which require `R: ErrorBounds`
+// for their correctness guarantee.
+impl<R: ErrorBounds, const B: Word> FBig<R, B> {
     /// Raise the floating point number to an floating point power.
     ///
     /// # Examples
@@ -186,6 +190,98 @@ impl<R: Round> Context<R> {
         Ok(res.with_precision(self.precision))
     }
 
+    /// Near-correct exp core: evaluate `exp(x)` (or `exp_m1(x)` when `minus_one`) at
+    /// `work_precision`, returning `(value, error_radius)`.
+    ///
+    /// Shared by the Ziv-backed `exp`/`exp_m1` (which retry it) and usable directly where only a
+    /// near-correct value is needed. The caller must have pre-checked that the reduction quotient
+    /// `s = floor(x/ln B)` fits `isize` (astronomical `|x|` overflows and is handled before the
+    /// Ziv loop, since this closure can't return `Err`). `n` (the reduction power, `≈ √p`) is
+    /// derived from the *target* precision and is constant across retries.
+    pub(crate) fn exp_compute<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        work_precision: usize,
+        minus_one: bool,
+        n: usize,
+        mut cache: Option<&mut ConstCache>,
+    ) -> (FBig<R, B>, FBig<R, B>) {
+        // exp(x) = B^s · exp(r)^(Bⁿ), with r = x − s·ln(B) reduced so |r| < B⁻ⁿ.
+        let context = Context::<R>::new(work_precision);
+        let x = FBig::new(context.repr_round_ref(x).value(), context);
+
+        // When minus_one is true and |x| < 1/B, evaluate the Maclaurin series without scaling
+        // (no Bⁿ reduction, no powering — n_eff = 0).
+        let no_scaling = minus_one && x.log2_est() < -B.log2_est();
+
+        let (s, r, n_eff) = if no_scaling {
+            (0isize, x, 0usize)
+        } else {
+            let logb = context.ln_base::<B>(reborrow_cache(&mut cache));
+            let (s_big, r) = x.div_rem_euclid(logb);
+            let s: isize = s_big
+                .try_into()
+                .expect("exp reduction quotient fits isize (overflow pre-checked)");
+            (s, r, n)
+        };
+        let r = r >> n_eff as isize;
+
+        // Maclaurin series: exp(r) = 1 + Σ rⁱ/i!
+        let mut factorial = IBig::ONE;
+        let mut pow = r.clone();
+        let mut sum = if no_scaling {
+            r.clone()
+        } else {
+            FBig::ONE + &r
+        };
+        let mut k = 2u32;
+        let mut terms: usize = 1;
+        loop {
+            factorial *= k;
+            pow *= &r;
+
+            let increase = &pow / &factorial;
+            if increase.abs_cmp(&sum.sub_ulp()).is_le() {
+                break;
+            }
+            sum += increase;
+            k += 1;
+            terms += 1;
+        }
+
+        // The radius is computed at *unlimited* precision so the bound arithmetic is exact — a
+        // work-precision product would drop digits and could under-estimate (a soundness hole).
+        let ulp_w = || sum.ulp().with_precision(0).value();
+
+        if no_scaling {
+            // exp_m1(x) = sum directly; error is the series truncation + rounding.
+            let radius = ulp_w() * (4 * terms + 8) + ulp_w();
+            (sum, radius)
+        } else {
+            // Powering amplifies the series' relative error by Bⁿ. With |v|/|sum| < e < 3 (both
+            // near 1, since |r| < B⁻ⁿ), |v − true| ≤ 3·Bⁿ·(4K+8)·ulp(sum) + ulp(v). The B^s shift
+            // is exact, so the bound shifts with the value.
+            let pow_ctx = Context::<R>::new(work_precision);
+            let v = pow_ctx.unwrap_fp(pow_ctx.powi(sum.repr(), Repr::<B>::BASE.pow(n).into()));
+            let v_shifted = v.clone() << s;
+            let e_v = (ulp_w() << n as isize) * (4 * terms + 8) * 3u32
+                + v.ulp().with_precision(0).value();
+            let radius = if minus_one {
+                // result = v_shifted − 1; the subtraction adds one result-ULP of rounding.
+                let result = &v_shifted - FBig::ONE;
+                let radius = (e_v << s) + result.ulp().with_precision(0).value();
+                return (result, radius);
+            } else {
+                e_v << s
+            };
+            (v_shifted, radius)
+        }
+    }
+}
+
+// `powf`/`exp`/`exp_m1` are correctly rounded (via the Ziv loop for exp/exp_m1, and via the
+// Ziv-backed ln/exp primitives for powf), so they require `R: ErrorBounds`.
+impl<R: ErrorBounds> Context<R> {
     /// Raise the floating point number to an floating point power under this context.
     ///
     /// Note that this method will not rely on [FBig::powi] even if the `exp` is actually an integer.
@@ -353,101 +449,40 @@ impl<R: Round> Context<R> {
             };
         }
 
-        // A simple algorithm:
-        // - let r = (x - s logB) / Bⁿ, where s = floor(x / logB), such that r < B⁻ⁿ.
-        // - if the target precision is p digits, then there're only about p/m terms in Tyler series
-        // - finally, exp(x) = Bˢ * exp(r)^(Bⁿ)
-        // - the optimal n is √p as given by MPFR
+        // Hoisted overflow check: the reduction quotient s = floor(x/ln B) overflows isize only
+        // for astronomically large |x| (|x| ≳ 2^61). The Ziv closure below can't return Err, so
+        // detect that case here and short-circuit to overflow/underflow (matching IEEE limits).
+        if x.log2_est().abs() > 61.0 {
+            let probe = Context::<R>::new(self.precision + 64);
+            let logb = probe.ln_base::<B>(reborrow_cache(&mut cache));
+            let x_probe = FBig::new(probe.repr_round_ref(x).value(), probe);
+            let s_probe = x_probe.div_rem_euclid(logb).0;
+            if <isize as core::convert::TryFrom<IBig>>::try_from(s_probe).is_err() {
+                return if input_sign == Sign::Positive {
+                    Err(FpError::Overflow(Sign::Positive))
+                } else if minus_one {
+                    Ok(Exact(-FBig::ONE)) // exp_m1(−∞) = −1 (finite)
+                } else {
+                    Err(FpError::Underflow(Sign::Positive)) // exp(−∞) = +0
+                };
+            }
+        }
 
-        // Maclaurin series: exp(r) = 1 + Σ(rⁱ/i!)
-        // There will be about p/log_B(r) summations when calculating the series, to prevent
-        // loss of significance, we need about log_B(p) guard digits.
-        let series_guard_digits = ceil_usize(self.precision.log2_est() / B.log2_est()) + 2;
-
-        // Reduction power: the series value is later raised to Bⁿ, which amplifies its
-        // relative error by a factor of Bⁿ. So the series (and the squarings) must carry
-        // about n extra base-B digits for the result to come out correct to p digits. We
-        // use 2n for safety — this mirrors MPFR's working precision q = precy + 2·K + …
-        // (K ≈ √precy is MPFR's squaring count, the analogue of our n). The log_B(p)
-        // summation/squaring rounding terms are already covered by series_guard_digits.
+        // Correct rounding via the Ziv loop. Guards: log_B(p) for the series summation/squaring
+        // rounding, plus `n` for the Bⁿ powering amplification — halved from the pre-Ziv `2n`,
+        // since Ziv (not the guard count) now certifies correctness. `n ≈ √p` is derived from the
+        // target precision and is constant across retries.
+        let series_guard = ceil_usize(self.precision.log2_est() / B.log2_est());
         let n = 1usize << (self.precision.bit_len() / 2);
-        let pow_guard_digits = 2 * n;
-        let work_precision;
-
-        // When minus_one is true and |x| < 1/B, the input is fed into the Maclaurin series without scaling
-        let no_scaling = minus_one && x.log2_est() < -B.log2_est();
-        let (s, n, r) = if no_scaling {
-            // if minus_one is true and x is already small (x < 1/B),
-            // then directly evaluate the Maclaurin series without scaling
-            if x.sign() == Sign::Negative {
-                // extra digits are required to prevent cancellation during the summation
-                work_precision = self.precision + 2 * series_guard_digits;
-            } else {
-                work_precision = self.precision + series_guard_digits;
-            }
-            let context = Context::<R>::new(work_precision);
-            (0, 0, FBig::new(context.repr_round_ref(x).value(), context))
-        } else {
-            work_precision = self.precision + series_guard_digits + pow_guard_digits;
-            let context = Context::<R>::new(work_precision);
-            let x = FBig::new(context.repr_round_ref(x).value(), context);
-            let logb = context.ln_base::<B>(reborrow_cache(&mut cache));
-            let (s, r) = x.div_rem_euclid(logb);
-
-            let s: isize = match s.try_into() {
-                Ok(v) => v,
-                Err(_) => {
-                    // |floor(x / ln B)| overflows isize — x is astronomically large, so the
-                    // result is an infinity (x → +∞) or underflows to the limit (x → −∞).
-                    return if input_sign == Sign::Positive {
-                        Err(FpError::Overflow(Sign::Positive))
-                    } else if minus_one {
-                        Ok(Exact(-FBig::ONE)) // exp_m1(−∞) = −1 (finite)
-                    } else {
-                        Err(FpError::Underflow(Sign::Positive)) // exp(−∞) = +0
-                    };
-                }
-            };
-            (s, n, r)
-        };
-
-        let r = r >> n as isize;
-        let mut factorial = IBig::ONE;
-        let mut pow = r.clone();
-        let mut sum = if no_scaling {
-            r.clone()
-        } else {
-            FBig::ONE + &r
-        };
-
-        let mut k = 2;
-        loop {
-            factorial *= k;
-            pow *= &r;
-
-            let increase = &pow / &factorial;
-            if increase.abs_cmp(&sum.sub_ulp()).is_le() {
-                break;
-            }
-            sum += increase;
-            k += 1;
-        }
-
-        if no_scaling {
-            Ok(sum.with_precision(self.precision))
-        } else if minus_one {
-            // Power at the series' working precision (it already carries the 2n guard
-            // digits that the Bⁿ powering amplifies away). The final "−1" can cancel at
-            // most ~1 leading digit here (the |x| < 1/B case is handled by no_scaling),
-            // which the same guard digits comfortably absorb.
-            let pow_ctx = Context::<R>::new(work_precision);
-            let v = pow_ctx.unwrap_fp(pow_ctx.powi(sum.repr(), Repr::<B>::BASE.pow(n).into()));
-            Ok(((v << s) - FBig::ONE).with_precision(self.precision))
-        } else {
-            let pow_ctx = Context::<R>::new(work_precision);
-            let v = pow_ctx.unwrap_fp(pow_ctx.powi(sum.repr(), Repr::<B>::BASE.pow(n).into()));
-            Ok((v << s).with_precision(self.precision))
-        }
+        Ok(self.ziv(series_guard + n, |guard| {
+            self.exp_compute::<B>(
+                x,
+                self.precision + guard,
+                minus_one,
+                n,
+                reborrow_cache(&mut cache),
+            )
+        }))
     }
 }
 

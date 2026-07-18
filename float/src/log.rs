@@ -11,7 +11,7 @@ use crate::{
     fbig::FBig,
     math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr, Word},
-    round::{Round, Rounded},
+    round::{ErrorBounds, Round, Rounded},
     utils::ceil_usize,
 };
 use core::cmp::Ordering;
@@ -63,7 +63,7 @@ impl<R: Round, const B: Word> EstimatedLog2 for FBig<R, B> {
     }
 }
 
-impl<R: Round, const B: Word> FBig<R, B> {
+impl<R: ErrorBounds, const B: Word> FBig<R, B> {
     /// Calculate the natural logarithm function (`log(x)`) on the float number.
     ///
     /// # Examples
@@ -99,6 +99,12 @@ impl<R: Round, const B: Word> FBig<R, B> {
     }
 }
 
+// `ln2`/`ln10`/`iacoth`/`ln_base`/`ln_compute` are the near-correct logarithm primitives: they
+// evaluate the series at a working precision and round once, without a Ziv certification step.
+// They live on `R: Round` so that base conversion (`with_base_and_precision`, which only needs a
+// near-correct constant `ln(B)`) can use them without inheriting the `ErrorBounds` bound. The
+// correctly-rounded public `ln`/`ln_1p` (in the `ErrorBounds` impl below) wrap `ln_compute` in a
+// Ziv loop.
 impl<R: Round> Context<R> {
     /// Calculate log(2)
     ///
@@ -138,7 +144,19 @@ impl<R: Round> Context<R> {
             2 => self.ln2(None),
             10 => self.ln10(None),
             i if i.is_power_of_two() => self.ln2(None) * i.trailing_zeros(),
-            _ => self.unwrap_fp(self.ln(&Repr::new(Repr::<B>::BASE.into(), 0), None)),
+            _ => {
+                // Near-correct ln(B) via the atanh series (no Ziv certification — base conversion
+                // only needs a near-correct constant). `ln_compute` is on `R: Round`, so this keeps
+                // `ln_base` callable from `R: Round` contexts (base conversion).
+                let guard = ceil_usize(self.precision.log2_est() / B.log2_est()) + 2;
+                self.ln_compute::<B>(
+                    &Repr::new(Repr::<B>::BASE.into(), 0),
+                    self.precision + guard,
+                    false,
+                    None,
+                )
+                .0
+            }
         }
     }
 
@@ -179,6 +197,102 @@ impl<R: Round> Context<R> {
         num / denom
     }
 
+    /// Evaluate `ln(x)` (or `ln(x+1)` when `one_plus`) at `work_precision` via the atanh series,
+    /// returning `(value, error_radius)`.
+    ///
+    /// This is the near-correct computation core shared by the public Ziv-backed `ln`/`ln_1p`
+    /// (which wrap it in a retry loop) and by `ln_base` (which only needs a near-correct constant
+    /// `ln(B)`). It lives on `R: Round` so those near-correct callers don't inherit the
+    /// `ErrorBounds` bound. The radius is a provable upper bound on `|value − true|`, derived from
+    /// the term count (every series step is correctly rounded; the truncated tail is `< 1 ulp` by
+    /// the break test).
+    pub(crate) fn ln_compute<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        mut work_precision: usize,
+        one_plus: bool,
+        mut cache: Option<&mut ConstCache>,
+    ) -> (FBig<R, B>, FBig<R, B>) {
+        // log(x) = log(x·B⁻ˢ) + s·log(B), with s = floor(log_B(x)) so x·B⁻ˢ ∈ [1, B).
+        let context = Context::<R>::new(work_precision);
+        let x = FBig::new(context.repr_round_ref(x).value(), context);
+
+        // When one_plus is true and |x| < 1/B, the input is fed into the Maclaurin without scaling
+        let no_scaling = one_plus && x.log2_est() < -B.log2_est();
+
+        let (s, mut x_scaled) = if no_scaling {
+            (0, x)
+        } else {
+            let x = if one_plus { x + FBig::ONE } else { x };
+
+            let log2 = x.log2_bounds().0;
+            let s = log2 as isize - (log2 < 0.) as isize; // floor(log2(x))
+
+            let x_scaled = if B == 2 {
+                x >> s
+            } else if s > 0 {
+                x / (IBig::ONE << s as usize)
+            } else {
+                x * (IBig::ONE << (-s) as usize)
+            };
+            debug_assert!(x_scaled >= FBig::<R, B>::ONE);
+            (s, x_scaled)
+        };
+
+        if s < 0 || x_scaled.repr.sign() == Sign::Negative {
+            // when s or x_scaled is negative, the final addition is actually a subtraction,
+            // therefore we need to double the precision to get the correct result
+            work_precision += self.precision;
+            x_scaled.context.precision = work_precision;
+        }
+        let work_context = Context::new(work_precision);
+
+        // after the number is scaled to nearly one, use Maclaurin series on log(x) = 2atanh(z):
+        // let z = (x-1)/(x+1) < 1, log(x) = 2atanh(z) = 2Σ(z²ⁱ⁺¹/(2i+1)) for i = 1,3,5,...
+        let z = if no_scaling {
+            let d = &x_scaled + (FBig::ONE + FBig::ONE);
+            x_scaled / d
+        } else {
+            (&x_scaled - FBig::ONE) / (x_scaled + FBig::ONE)
+        };
+        let z2 = z.sqr();
+        let mut pow = z.clone();
+        let mut sum = z;
+        let mut terms: usize = 1; // the leading z term
+
+        let mut k: usize = 3;
+        loop {
+            pow *= &z2;
+
+            let increase = &pow / work_context.convert_int::<B>(k.into()).value();
+            if increase.abs_cmp(&sum.sub_ulp()).is_le() {
+                break;
+            }
+
+            sum += increase;
+            k += 2;
+            terms += 1;
+        }
+
+        // compose the logarithm of the original number
+        let result: FBig<R, B> = if no_scaling {
+            2 * sum.clone()
+        } else {
+            2 * sum.clone() + (s * work_context.ln2::<B>(reborrow_cache(&mut cache)))
+        };
+
+        // Provable error radius: each series step is correctly rounded (< 1 working-ULP) and the
+        // truncated tail is < 1 working-ULP by the break test; `pow *= z²` compounds but |z|<1
+        // keeps each term's error bounded, so |sum − true| < (4·terms + 8)·ulp(sum). The factor-2
+        // reconstruction and the s·ln2 term add a few result-ULPs on top.
+        let radius = sum.ulp() * (8 * terms + 16) + result.ulp() + result.ulp();
+        (result, radius)
+    }
+}
+
+// `ln`/`ln_1p` are correctly rounded via the Ziv loop, whose containment test needs the rounding
+// preimage (`R: ErrorBounds`). They delegate the series to `ln_compute`.
+impl<R: ErrorBounds> Context<R> {
     /// Calculate the natural logarithm function (`log(x)`) on the float number under this context.
     ///
     /// # Examples
@@ -272,77 +386,16 @@ impl<R: Round> Context<R> {
             return Exact(zero);
         }
 
-        // A simple algorithm:
-        // - let log(x) = log(x/2^s) + slog2 where s = floor(log2(x))
-        // - such that x*2^s is close to but larger than 1 (and x*2^s < 2)
-        let guard_digits = ceil_usize(self.precision.log2_est() / B.log2_est()) + 2;
-        let mut work_precision = self.precision + guard_digits + one_plus as usize;
-        let context = Context::<R>::new(work_precision);
-        let x = FBig::new(context.repr_round_ref(x).value(), context);
-
-        // When one_plus is true and |x| < 1/B, the input is fed into the Maclaurin without scaling
-        let no_scaling = one_plus && x.log2_est() < -B.log2_est();
-
-        let (s, mut x_scaled) = if no_scaling {
-            (0, x)
-        } else {
-            let x = if one_plus { x + FBig::ONE } else { x };
-
-            let log2 = x.log2_bounds().0;
-            let s = log2 as isize - (log2 < 0.) as isize; // floor(log2(x))
-
-            let x_scaled = if B == 2 {
-                x >> s
-            } else if s > 0 {
-                x / (IBig::ONE << s as usize)
-            } else {
-                x * (IBig::ONE << (-s) as usize)
-            };
-            debug_assert!(x_scaled >= FBig::<R, B>::ONE);
-            (s, x_scaled)
-        };
-
-        if s < 0 || x_scaled.repr.sign() == Sign::Negative {
-            // when s or x_scaled is negative, the final addition is actually a subtraction,
-            // therefore we need to double the precision to get the correct result
-            work_precision += self.precision;
-            x_scaled.context.precision = work_precision;
-        };
-        let work_context = Context::new(work_precision);
-
-        // after the number is scaled to nearly one, use Maclaurin series on log(x) = 2atanh(z):
-        // let z = (x-1)/(x+1) < 1, log(x) = 2atanh(z) = 2Σ(z²ⁱ⁺¹/(2i+1)) for i = 1,3,5,...
-        // similar to iacoth, the required iterations stop at i = -p/2log_B(z), and we need log_B(i) guard bits
-        let z = if no_scaling {
-            let d = &x_scaled + (FBig::ONE + FBig::ONE);
-            x_scaled / d
-        } else {
-            (&x_scaled - FBig::ONE) / (x_scaled + FBig::ONE)
-        };
-        let z2 = z.sqr();
-        let mut pow = z.clone();
-        let mut sum = z;
-
-        let mut k: usize = 3;
-        loop {
-            pow *= &z2;
-
-            let increase = &pow / work_context.convert_int::<B>(k.into()).value();
-            if increase.abs_cmp(&sum.sub_ulp()).is_le() {
-                break;
-            }
-
-            sum += increase;
-            k += 2;
-        }
-
-        // compose the logarithm of the original number
-        let result: FBig<R, B> = if no_scaling {
-            2 * sum
-        } else {
-            2 * sum + s * work_context.ln2::<B>(reborrow_cache(&mut cache))
-        };
-        result.with_precision(self.precision)
+        // Correct rounding via the Ziv loop: `ln_compute` evaluates the atanh series at `p + guard`
+        // and reports a provable error radius; the driver retries with more guard digits until the
+        // approximation's error interval lies entirely inside one rounding bin. The guard is a
+        // *performance* knob (first-attempt hit rate), not a correctness backstop — Ziv certifies
+        // the result. (The pre-Ziv `+ 2` is retained: with the conservative radius below it is still
+        // needed for the first attempt to clear the half-ulp preimage at typical precisions.)
+        let base_guard = ceil_usize(self.precision.log2_est() / B.log2_est()) + 2;
+        self.ziv(base_guard + one_plus as usize, |guard| {
+            self.ln_compute::<B>(x, self.precision + guard, one_plus, reborrow_cache(&mut cache))
+        })
     }
 }
 

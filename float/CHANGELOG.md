@@ -6,6 +6,23 @@
 - `Repr::new_const`: a `const`-evaluable, normalized `Repr` constructor from a `DoubleWord`
   significand (the `const` counterpart of `Repr::new`). `FBig::from_parts_const` now delegates to
   it, and the complex literal macro uses it.
+- **Guaranteed-correct rounding for `exp`, `exp_m1`, `ln`, `ln_1p`** via a Ziv retry loop. A generic
+  `Context::ziv` driver rounds the working-precision approximation to the target precision and
+  verifies, against the `ErrorBounds` rounding preimage, that the approximation's provable error
+  interval lies entirely inside one rounding bin; if not, it retries with more guard digits. The
+  loop provably terminates and preserves the `Exact`/`Inexact` flag. Series evaluation is factored
+  into near-correct `ln_compute`/`exp_compute` cores (`R: Round`) that the Ziv wrapper certifies.
+- **Tightened `exp` guard digits** (now a performance knob, since Ziv — not the guard count —
+  guarantees correctness): the `Bⁿ`-powering guard is halved from `2n` to `n` and the series guard
+  drops its conservative `+ 2`.
+
+### Change
+- **(breaking, bound)** `Context::exp`/`exp_m1`/`ln`/`ln_1p` (and `powf`, the hyperbolic family,
+  and the base-conversion path that derives from them) now require `R: ErrorBounds` rather than
+  `R: Round` — the Ziv containment test needs the rounding preimage that `ErrorBounds` provides.
+  All six built-in modes satisfy `ErrorBounds`; only custom non-`ErrorBounds` `Round` modes are
+  affected (custom modes are already discouraged). `CachedFBig`/`CachedCBig` forwarders for these
+  methods carry the same bound. Arithmetic, roots, trigonometric, and `powi` remain `R: Round`.
 
 ## 0.5.0
 

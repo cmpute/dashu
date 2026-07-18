@@ -85,14 +85,42 @@ proptest! {
         prop_assert!(lower < x && x < upper);
     }
 
-    /// Correct-rounding self-oracle for ln: the p-precision result agrees with the
-    /// (rounded-down) 2p-precision result to within one ulp.
+    /// Correct-rounding self-oracle for ln: the p-precision result must agree *exactly* with the
+    /// 2p-precision result re-rounded to p (the Ziv loop guarantees both are the unique
+    /// correctly-rounded value). Pre-Ziv this only held to within one ulp.
     #[test]
-    fn ln_rounding_self_oracle(x in pos_x(100_000)) {
+    fn ln_rounding_exact_oracle(x in pos_x(100_000)) {
         let r_p = x.ln();
         let x_2p = x.clone().with_precision(2 * P).value();
         let r_2p = x_2p.ln().with_precision(P).value();
-        let ulp = r_p.ulp();
-        prop_assert!((r_p - r_2p).abs() <= ulp);
+        prop_assert_eq!(r_p, r_2p);
+    }
+
+    /// Correct-rounding self-oracle for exp: same construction as `ln_rounding_exact_oracle`.
+    #[test]
+    fn exp_rounding_exact_oracle(x in signed_x(2_000)) {
+        let r_p = x.exp();
+        let x_2p = x.clone().with_precision(2 * P).value();
+        let r_2p = x_2p.exp().with_precision(P).value();
+        prop_assert_eq!(r_p, r_2p);
+    }
+
+    /// Correct-rounding self-oracle for exp_m1.
+    #[test]
+    fn exp_m1_rounding_exact_oracle(x in signed_x(2_000)) {
+        let r_p = x.exp_m1();
+        let x_2p = x.clone().with_precision(2 * P).value();
+        let r_2p = x_2p.exp_m1().with_precision(P).value();
+        prop_assert_eq!(r_p, r_2p);
+    }
+
+    /// Correct-rounding self-oracle for ln_1p (domain x > -1; m·10⁻⁴ with m > -10000 keeps x > -1).
+    #[test]
+    fn ln_1p_rounding_exact_oracle(m in -9999i64..100_000i64) {
+        let x = x_from(m);
+        let r_p = x.ln_1p();
+        let x_2p = x.clone().with_precision(2 * P).value();
+        let r_2p = x_2p.ln_1p().with_precision(P).value();
+        prop_assert_eq!(r_p, r_2p);
     }
 }

@@ -94,6 +94,7 @@ mod shift;
 mod sign;
 mod third_party;
 mod utils;
+mod ziv;
 
 // All the public items from third_party will be exposed
 #[allow(unused_imports)]

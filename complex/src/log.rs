@@ -2,14 +2,14 @@
 
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, exact, reborrow_cache, riemann, CfpResult, Context};
-use dashu_float::round::Round;
+use dashu_float::round::ErrorBounds;
 use dashu_float::{ConstCache, FBig, Repr};
 use dashu_int::Word;
 
 /// Guard digits (base-B) for `log`. Composes `hypot` (for `|z|`), `ln`, and `atan2`.
 const LOG_GUARD: usize = 14;
 
-impl<R: Round> Context<R> {
+impl<R: ErrorBounds> Context<R> {
     /// Complex natural logarithm under this context (context layer). `log z = ln|z| + i·arg(z)`,
     /// with the imaginary part in `]−π, π]`. The cache threads into `ln` and `atan2`.
     ///
@@ -46,7 +46,7 @@ impl<R: Round> Context<R> {
     }
 }
 
-impl<R: Round, const B: Word> CBig<R, B> {
+impl<R: ErrorBounds, const B: Word> CBig<R, B> {
     /// Complex natural logarithm (principal branch; convenience layer).
     ///
     /// # Panics

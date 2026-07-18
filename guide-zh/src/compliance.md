@@ -51,7 +51,7 @@
 | IEEE 754 要求 | 合规性 | 说明 |
 |---------------------|-----------|-------|
 | 舍入模式：roundTiesToEven、roundTiesToAway、roundTowardPositive、roundTowardNegative、roundTowardZero | ✅ | 全部五种模式实现为 `HalfEven`、`HalfAway`、`Up`、`Down`、`Zero`。 |
-| 正确舍入到 1 ulp 以内 | ✅ | 所有运算保证 $|error| < 1\text{ ulp}$。`Rounded` 类型区分精确与非精确结果。 |
+| 正确舍入到 1 ulp 以内 | ✅ | 所有运算保证 $|error| < 1\text{ ulp}$。算术、根号以及基本超越函数（`exp`、`exp_m1`、`ln`、`ln_1p`）通过 Ziv 循环保证正确舍入；其余超越函数通过保护位策略在 1 ulp 以内。`Rounded` 类型区分精确与非精确结果。 |
 | 就近舍入保持零的符号 | ✅ | `rounded_to_repr` 在舍入将非零值折叠为零时保持输入符号。 |
 
 #### 第 5.6 节——符号位运算
@@ -143,7 +143,7 @@
 |---------------------|-----------|-------|
 | 无效/不定形式 → NaN | ❌ 偏离 | 在 `Context` 层返回 `Err(FpError::{Indeterminate, InfiniteInput})`；在便捷层 panic。设计上无 NaN。 |
 | 定义域错误（如负数的偶数根、超出范围的逆三角函数） | ❌ 偏离 | 返回 `Err(FpError::OutOfDomain)` / panic，而非 NaN 结果。 |
-| 每个分量独立按共享模式舍入 | ✅ | 每个轴近似正确舍入（保证正确的 Ziv 循环推迟到 0.5.x）。 |
+| 每个分量独立按共享模式舍入 | ✅ | 每个轴近似正确舍入（基本实超越函数的保证正确 Ziv 循环已落入 `dashu-float`；复数超越函数仍使用保护位策略，在 1 ulp 以内）。 |
 
 ### 小结（dashu-cmplx）
 

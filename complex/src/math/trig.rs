@@ -6,7 +6,7 @@
 
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, reborrow_cache, CfpResult, Context};
-use dashu_float::round::Round;
+use dashu_float::round::ErrorBounds;
 use dashu_float::{ConstCache, FBig, FpError, Repr};
 use dashu_int::{IBig, Word};
 
@@ -14,7 +14,7 @@ use dashu_int::{IBig, Word};
 /// products; the cancellation near the trig zeros is absorbed by the re-round.
 const TRIG_GUARD: usize = 16;
 
-impl<R: Round> Context<R> {
+impl<R: ErrorBounds> Context<R> {
     /// Simultaneously compute `sin z` and `cos z` (context layer). Returns `(sin, cos)` each as a
     /// [`CfpResult`]. An infinite input maps to [`FpError::Indeterminate`] (the C99 NaN cases).
     pub fn sin_cos<const B: Word>(
@@ -194,7 +194,7 @@ impl<R: Round> Context<R> {
 /// Guard digits (base-B) for the inverse trig (squares, a sqrt, logs, and a divide).
 const ITRIG_GUARD: usize = 18;
 
-impl<R: Round, const B: Word> CBig<R, B> {
+impl<R: ErrorBounds, const B: Word> CBig<R, B> {
     /// Complex sine (convenience layer). Panics on an indeterminate special value.
     #[inline]
     pub fn sin(&self) -> Self {

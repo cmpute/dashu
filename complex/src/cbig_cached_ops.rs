@@ -11,7 +11,7 @@ use core::iter::{Product, Sum};
 use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 use dashu_base::Inverse;
-use dashu_float::round::Round;
+use dashu_float::round::{ErrorBounds, Round};
 use dashu_float::FBig;
 use dashu_int::{IBig, Word};
 
@@ -372,16 +372,6 @@ macro_rules! delegate_to_cbig {
 }
 
 impl<R: Round, const B: Word> CachedCBig<R, B> {
-    // cache-threading transcendentals
-    forward_cached!(ln => log);
-    forward_cached!(exp => exp);
-    forward_cached!(sin => sin);
-    forward_cached!(cos => cos);
-    forward_cached!(tan => tan);
-    forward_cached!(asin => asin);
-    forward_cached!(acos => acos);
-    forward_cached!(atan => atan);
-
     // non-cache delegations
     delegate_to_cbig!(sqr);
     delegate_to_cbig!(sqrt);
@@ -411,6 +401,20 @@ impl<R: Round, const B: Word> CachedCBig<R, B> {
         ctx.float()
             .unwrap_fp(ctx.arg::<B>(&self.cbig, Some(&mut *c)))
     }
+}
+
+// Transcendentals route through the Ziv-backed (or Ziv-dependent) real/complex methods, which
+// require `R: ErrorBounds`.
+impl<R: ErrorBounds, const B: Word> CachedCBig<R, B> {
+    // cache-threading transcendentals
+    forward_cached!(ln => log);
+    forward_cached!(exp => exp);
+    forward_cached!(sin => sin);
+    forward_cached!(cos => cos);
+    forward_cached!(tan => tan);
+    forward_cached!(asin => asin);
+    forward_cached!(acos => acos);
+    forward_cached!(atan => atan);
 
     /// Complex power `self^w` (see [`CBig::powf`]). Threads the cache into the inner `log`/`exp`.
     #[inline]

@@ -12,7 +12,7 @@ use dashu_base::{Abs, CubicRoot, DivEuclid, DivRemEuclid, Inverse, RemEuclid, Si
 use crate::fbig::FBig;
 use crate::fbig_cached::CachedFBig;
 use crate::repr::{Context, Word};
-use crate::round::Round;
+use crate::round::{ErrorBounds, Round};
 
 // ---------------------------------------------------------------------------
 // CachedFBig op CachedFBig (preserves LHS cache)
@@ -664,11 +664,6 @@ macro_rules! forward_to_fbig {
 }
 
 impl<R: Round, const B: Word> CachedFBig<R, B> {
-    forward_to_context!(ln);
-    forward_to_context!(ln_1p);
-    forward_to_context!(exp);
-    forward_to_context!(exp_m1);
-
     forward_to_fbig!(sqrt);
     forward_to_fbig!(inv);
 
@@ -679,42 +674,15 @@ impl<R: Round, const B: Word> CachedFBig<R, B> {
     forward_to_context_unwrap!(acos);
     forward_to_context_unwrap!(atan);
 
-    forward_to_context!(sinh);
-    forward_to_context!(cosh);
-    forward_to_context!(tanh);
-    forward_to_context!(asinh);
-    forward_to_context!(acosh);
-    forward_to_context!(atanh);
-
     forward_to_fbig!(powi(exp: dashu_int::IBig));
     forward_to_fbig!(sqr);
     forward_to_fbig!(cubic);
-
-    /// `self^exp` (see [`FBig::powf`]).
-    pub fn powf(&self, exp: &Self) -> Self {
-        let context = Context::max(self.fbig.context, exp.fbig.context);
-        let mut c = self.cache.borrow_mut();
-        let fbig =
-            context.unwrap_fp(context.powf::<B>(&self.fbig.repr, &exp.fbig.repr, Some(&mut *c)));
-        Self::from_fbig(fbig, &self.cache)
-    }
 
     /// Sine and cosine together (see [`FBig::sin_cos`]).
     pub fn sin_cos(&self) -> (Self, Self) {
         let mut guard = self.cache.borrow_mut();
         let cache = Some(&mut *guard);
         let (s, c) = self.fbig.context.sin_cos::<B>(&self.fbig.repr, cache);
-        (
-            Self::from_fbig(self.fbig.context.unwrap_fp(s), &self.cache),
-            Self::from_fbig(self.fbig.context.unwrap_fp(c), &self.cache),
-        )
-    }
-
-    /// Hyperbolic sine and cosine together (see [`FBig::sinh_cosh`]).
-    pub fn sinh_cosh(&self) -> (Self, Self) {
-        let mut guard = self.cache.borrow_mut();
-        let cache = Some(&mut *guard);
-        let (s, c) = self.fbig.context.sinh_cosh::<B>(&self.fbig.repr, cache);
         (
             Self::from_fbig(self.fbig.context.unwrap_fp(s), &self.cache),
             Self::from_fbig(self.fbig.context.unwrap_fp(c), &self.cache),
@@ -730,5 +698,41 @@ impl<R: Round, const B: Word> CachedFBig<R, B> {
             Some(&mut *c),
         ));
         Self::from_fbig(fbig, &self.cache)
+    }
+}
+
+// Transcendentals that route through the Ziv-backed (or Ziv-dependent) Context methods require
+// `R: ErrorBounds` for their correctness guarantee.
+impl<R: ErrorBounds, const B: Word> CachedFBig<R, B> {
+    forward_to_context!(ln);
+    forward_to_context!(ln_1p);
+    forward_to_context!(exp);
+    forward_to_context!(exp_m1);
+
+    forward_to_context!(sinh);
+    forward_to_context!(cosh);
+    forward_to_context!(tanh);
+    forward_to_context!(asinh);
+    forward_to_context!(acosh);
+    forward_to_context!(atanh);
+
+    /// `self^exp` (see [`FBig::powf`]).
+    pub fn powf(&self, exp: &Self) -> Self {
+        let context = Context::max(self.fbig.context, exp.fbig.context);
+        let mut c = self.cache.borrow_mut();
+        let fbig =
+            context.unwrap_fp(context.powf::<B>(&self.fbig.repr, &exp.fbig.repr, Some(&mut *c)));
+        Self::from_fbig(fbig, &self.cache)
+    }
+
+    /// Hyperbolic sine and cosine together (see [`FBig::sinh_cosh`]).
+    pub fn sinh_cosh(&self) -> (Self, Self) {
+        let mut guard = self.cache.borrow_mut();
+        let cache = Some(&mut *guard);
+        let (s, c) = self.fbig.context.sinh_cosh::<B>(&self.fbig.repr, cache);
+        (
+            Self::from_fbig(self.fbig.context.unwrap_fp(s), &self.cache),
+            Self::from_fbig(self.fbig.context.unwrap_fp(c), &self.cache),
+        )
     }
 }
