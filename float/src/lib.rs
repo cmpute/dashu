@@ -87,6 +87,7 @@ mod mul;
 pub mod ops;
 mod parse;
 mod repr;
+mod repr_ops;
 mod root;
 pub mod round;
 mod round_ops;

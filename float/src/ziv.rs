@@ -14,9 +14,16 @@
 //! digits. The loop provably terminates (a true tie is resolved deterministically by the mode),
 //! with a large sanity cap as an unreachable backstop.
 
+use core::cmp::Ordering;
+
 use dashu_base::Approximation::*;
 
-use crate::{fbig::FBig, repr::Context, round::ErrorBounds, round::Rounded};
+use crate::{
+    fbig::FBig,
+    repr::{Context, Repr},
+    round::ErrorBounds,
+    round::Rounded,
+};
 use dashu_int::Word;
 
 /// Maximum number of Ziv retries before falling back to the best-effort rounded value.
@@ -68,7 +75,7 @@ impl<R: ErrorBounds> Context<R> {
             // `with_precision` consumes `a`, but the containment test still needs it, so round a
             // clone and keep the original for the interval check.
             let candidate = a.clone().with_precision(self.precision);
-            if Self::contained::<B>(&a, &e, candidate.value_ref()) {
+            if Self::contained::<B>(&a.repr, &e.repr, candidate.value_ref()) {
                 return candidate;
             }
             last = Some(candidate);
@@ -87,28 +94,39 @@ impl<R: ErrorBounds> Context<R> {
     }
 
     /// Containment test: is the approximation's error interval `[a − e, a + e]` entirely inside
-    /// the rounding preimage of `y` (every real in `[y − L, y + R]` rounds to `y` under `R`)?
+    /// the rounding preimage of `y` (every real in `[y − lb, y + rb]` rounds to `y` under `R`)?
     ///
-    /// The arithmetic is done at unlimited precision (an exact no-op promotion via
-    /// [`FBig::with_precision`](crate::FBig)`(0)`), so the comparison cannot lose a guard digit
-    /// and mis-decide — a soundness requirement, since a wrong decision here yields a wrong ULP.
-    fn contained<const B: Word>(a: &FBig<R, B>, e: &FBig<R, B>, y: &FBig<R, B>) -> bool {
+    /// `a` and `e` are the working-precision approximation and its provable error radius; `y` is
+    /// the candidate rounded to the target precision (kept as an [`FBig`] only because
+    /// [`ErrorBounds::error_bounds`] is defined on [`FBig`]). The interval arithmetic runs on the
+    /// raw [`Repr`]s, which carry no precision limit, so the additions are lossless — there is no
+    /// rounding that could drop a guard digit and mis-decide (a wrong call here yields a wrong
+    /// ULP). The old path promoted every value to unlimited precision via `with_precision(0)`;
+    /// the [`Repr`]s are already exact, so that was a chain of no-op clones, now removed.
+    ///
+    /// The test compares sums rather than differences — algebraically identical for exact
+    /// arithmetic, and it reads as a single shared inequality per endpoint:
+    ///   `a − e ≥ y − lb  ⟺  a + lb ≥ y + e`
+    ///   `a + e ≤ y + rb  ⟺  y + rb ≥ a + e`
+    fn contained<const B: Word>(a: &Repr<B>, e: &Repr<B>, y: &FBig<R, B>) -> bool {
         let (lb, rb, incl_l, incl_r) = R::error_bounds::<B>(y);
 
-        // Promote to unlimited precision so the interval arithmetic is exact.
-        let a = a.clone().with_precision(0).value();
-        let e = e.clone().with_precision(0).value();
-        let y = y.clone().with_precision(0).value();
-        let lb = lb.with_precision(0).value();
-        let rb = rb.with_precision(0).value();
+        let y = &y.repr;
+        let lb = lb.into_repr();
+        let rb = rb.into_repr();
 
-        // [a − e, a + e] ⊆ [y − lb, y + rb], respecting each endpoint's inclusivity.
-        let lo = &a - &e; // a − e
-        let hi = &a + &e; // a + e
-        let pre_lo = &y - &lb; // y − L
-        let pre_hi = &y + &rb; // y + R
-        let left_ok = if incl_l { lo >= pre_lo } else { lo > pre_lo };
-        let right_ok = if incl_r { hi <= pre_hi } else { hi < pre_hi };
+        let left = (a + &lb).cmp(&(y + e));
+        let right = (y + &rb).cmp(&(a + e));
+        let left_ok = if incl_l {
+            left != Ordering::Less
+        } else {
+            left == Ordering::Greater
+        };
+        let right_ok = if incl_r {
+            right != Ordering::Less
+        } else {
+            right == Ordering::Greater
+        };
         left_ok && right_ok
     }
 }

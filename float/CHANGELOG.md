@@ -6,6 +6,12 @@
 - `Repr::new_const`: a `const`-evaluable, normalized `Repr` constructor from a `DoubleWord`
   significand (the `const` counterpart of `Repr::new`). `FBig::from_parts_const` now delegates to
   it, and the complex literal macro uses it.
+- **Exact `Add`/`Sub`/`Mul` operators for `Repr`** (in a new `repr_ops` module). A `Repr` carries no
+  precision limit, so add/sub/mul on it are lossless — these are the shared primitives the crate uses
+  for exact intermediates (the Ziv containment test, the correctly-rounded `Sum`, and the `FBig`
+  multiply path). `Mul` saturates exponent overflow/underflow to the signed infinity/zero sentinels,
+  so the operator is infallible; the internal `make_mul_repr`/`unwrap_mul_repr!` helpers are removed
+  in favor of the operator. No behavior change to `FBig` arithmetic.
 - **Guaranteed-correct rounding for `exp`, `exp_m1`, `ln`, `ln_1p`** via a Ziv retry loop. A generic
   `Context::ziv` driver rounds the working-precision approximation to the target precision and
   verifies, against the `ErrorBounds` rounding preimage, that the approximation's provable error

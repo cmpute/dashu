@@ -45,26 +45,6 @@ pub struct Repr<const BASE: Word> {
     pub(crate) exponent: isize,
 }
 
-impl<const B: Word> PartialEq for Repr<B> {
-    /// Two representations are equal when they denote the same value. In particular `+0`
-    /// and `-0` compare equal, as do two infinities of the same sign.
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        if self.significand.is_zero() && other.significand.is_zero() {
-            let (self_inf, other_inf) = (self.is_infinite(), other.is_infinite());
-            match (self_inf, other_inf) {
-                (true, true) => self.sign() == other.sign(),
-                (false, false) => true, // both are ±0
-                _ => false,             // one is zero, the other is infinite
-            }
-        } else {
-            self.significand == other.significand && self.exponent == other.exponent
-        }
-    }
-}
-
-impl<const B: Word> Eq for Repr<B> {}
-
 /// The context containing runtime information for the floating point number and its operations.
 ///
 /// The context currently consists of a *precision limit* and a *rounding mode*. All the operation

@@ -10,53 +10,6 @@ use crate::{
 };
 use core::ops::{Mul, MulAssign};
 
-/// Raw product of two finite reprs, attaching the XOR sign of the operands to a zero product
-/// (the significand product alone is `+0`, losing the sign).
-///
-/// Returns an error when the result exponent overflows or underflows `isize`.
-fn make_mul_repr<const B: Word>(lhs: &Repr<B>, rhs: &Repr<B>) -> Result<Repr<B>, FpError> {
-    let significand = &lhs.significand * &rhs.significand;
-    if significand.is_zero() {
-        return Ok(if lhs.sign() != rhs.sign() {
-            Repr::neg_zero()
-        } else {
-            Repr::zero()
-        });
-    }
-    let sign = if lhs.sign() != rhs.sign() {
-        Sign::Negative
-    } else {
-        Sign::Positive
-    };
-    let exponent = lhs.exponent.checked_add(rhs.exponent).ok_or_else(|| {
-        debug_assert!(
-            lhs.exponent.is_positive() == rhs.exponent.is_positive(),
-            "checked_add overflow with mixed-sign exponents is impossible"
-        );
-        if lhs.exponent > 0 {
-            FpError::Overflow(sign)
-        } else {
-            FpError::Underflow(sign)
-        }
-    })?;
-    Repr::new(significand, exponent).check_finite_exponent()
-}
-
-macro_rules! unwrap_mul_repr {
-    ($result:expr, $context:expr) => {
-        match $result {
-            Ok(r) => r,
-            Err(FpError::Overflow(sign)) => {
-                return FBig::new(Repr::infinity_with_sign(sign), $context);
-            }
-            Err(FpError::Underflow(sign)) => {
-                return FBig::new(Repr::zero_with_sign(sign), $context);
-            }
-            Err(_) => unreachable!(),
-        }
-    };
-}
-
 impl<R: Round, const B: Word> Mul<&FBig<R, B>> for &FBig<R, B> {
     type Output = FBig<R, B>;
 
@@ -65,7 +18,10 @@ impl<R: Round, const B: Word> Mul<&FBig<R, B>> for &FBig<R, B> {
         assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
-        let repr = unwrap_mul_repr!(make_mul_repr(&self.repr, &rhs.repr), context);
+        let repr = &self.repr * &rhs.repr;
+        if repr.is_infinite() {
+            return FBig::new(repr, context);
+        }
         FBig::new(context.repr_round(repr).value(), context)
     }
 }
@@ -78,7 +34,10 @@ impl<R: Round, const B: Word> Mul<&FBig<R, B>> for FBig<R, B> {
         assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
-        let repr = unwrap_mul_repr!(make_mul_repr(&self.repr, &rhs.repr), context);
+        let repr = &self.repr * &rhs.repr;
+        if repr.is_infinite() {
+            return FBig::new(repr, context);
+        }
         FBig::new(context.repr_round(repr).value(), context)
     }
 }
@@ -91,7 +50,10 @@ impl<R: Round, const B: Word> Mul<FBig<R, B>> for &FBig<R, B> {
         assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
-        let repr = unwrap_mul_repr!(make_mul_repr(&self.repr, &rhs.repr), context);
+        let repr = &self.repr * &rhs.repr;
+        if repr.is_infinite() {
+            return FBig::new(repr, context);
+        }
         FBig::new(context.repr_round(repr).value(), context)
     }
 }
@@ -104,7 +66,10 @@ impl<R: Round, const B: Word> Mul<FBig<R, B>> for FBig<R, B> {
         assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
-        let repr = unwrap_mul_repr!(make_mul_repr(&self.repr, &rhs.repr), context);
+        let repr = &self.repr * &rhs.repr;
+        if repr.is_infinite() {
+            return FBig::new(repr, context);
+        }
         FBig::new(context.repr_round(repr).value(), context)
     }
 }
@@ -205,7 +170,17 @@ impl<R: Round> Context<R> {
             rhs
         };
 
-        let repr = make_mul_repr(lhs_repr, rhs_repr)?;
+        let repr = lhs_repr * rhs_repr;
+        let repr = if repr.is_infinite() {
+            return Err(FpError::Overflow(repr.sign()));
+        } else if repr.significand.is_zero()
+            && !lhs_repr.significand.is_zero()
+            && !rhs_repr.significand.is_zero()
+        {
+            return Err(FpError::Underflow(repr.sign()));
+        } else {
+            repr
+        };
         Ok(self.repr_round(repr).map(|v| FBig::new(v, *self)))
     }
 
