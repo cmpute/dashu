@@ -281,11 +281,16 @@ impl<R: Round> Context<R> {
             2 * sum.clone() + (s * work_context.ln2::<B>(reborrow_cache(&mut cache)))
         };
 
-        // Provable error radius: each series step is correctly rounded (< 1 working-ULP) and the
-        // truncated tail is < 1 working-ULP by the break test; `pow *= z²` compounds but |z|<1
-        // keeps each term's error bounded, so |sum − true| < (4·terms + 8)·ulp(sum). The factor-2
-        // reconstruction and the s·ln2 term add a few result-ULPs on top.
-        let radius = sum.ulp() * (8 * terms + 16) + result.ulp() + result.ulp();
+        // Provable error radius, expressed in `result`-ULPs (not `sum`-ULPs). Each series step
+        // rounds once (< 1 ULP of the running sum) and the truncated tail is < 1 ULP by the break
+        // test, so |sum − true| < (terms + 2)·ulp(sum); result = 2·sum + s·ln2 amplifies by ~2 and
+        // adds a few reconstruction ULPs. Since result ≈ 2·sum, ulp(result) ≈ 2·ulp(sum), giving
+        // |result − true| < (terms + 2)·ulp(result) + overhead — we carry a generous margin.
+        //
+        // Basing the radius on `result.ulp()` (not `sum.ulp()`) keeps its exponent aligned with
+        // `a` (= result) in the Ziv containment test, so `a − e` avoids a slow exponent-misaligned
+        // unlimited-precision subtract — a ~3× speedup on `ln` at high precision.
+        let radius = result.ulp() * (4 * terms + 12);
         (result, radius)
     }
 }
