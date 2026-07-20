@@ -93,6 +93,49 @@ impl<R: ErrorBounds> Context<R> {
         last.expect("MAX_ZIV_RETRIES is non-zero")
     }
 
+    /// Pair variant of [`ziv`](Self::ziv) for functions that return two values (e.g. `sin_cos`,
+    /// `sinh_cosh`). `approx(guard)` returns `((v1, e1), (v2, e2))` — both values and their
+    /// provable radii at the working context, sharing whatever computation is common. The driver
+    /// certifies **both** values: it retries while *either* containment test fails, and returns
+    /// both only when both fit their rounding preimages. Shares the guard-growth loop and retry
+    /// counter with [`ziv`](Self::ziv).
+    pub(crate) fn ziv_pair<const B: Word>(
+        &self,
+        initial_guard: usize,
+        mut approx: impl FnMut(usize) -> ((FBig<R, B>, FBig<R, B>), (FBig<R, B>, FBig<R, B>)),
+    ) -> (Rounded<FBig<R, B>>, Rounded<FBig<R, B>>) {
+        // Unlimited precision: both approximations are exact, report them as-is.
+        if !self.is_limited() {
+            let ((v1, _), (v2, _)) = approx(0);
+            return (Exact(v1), Exact(v2));
+        }
+
+        let mut guard = initial_guard;
+        let mut last = None;
+        #[cfg(test)]
+        LAST_ZIV_RETRIES.with(|c| c.set(0));
+        for _ in 0..MAX_ZIV_RETRIES {
+            let ((a1, e1), (a2, e2)) = approx(guard);
+            let c1 = a1.clone().with_precision(self.precision);
+            let c2 = a2.clone().with_precision(self.precision);
+            if Self::contained::<B>(&a1.repr, &e1.repr, c1.value_ref())
+                && Self::contained::<B>(&a2.repr, &e2.repr, c2.value_ref())
+            {
+                return (c1, c2);
+            }
+            last = Some((c1, c2));
+
+            // Grow the guard aggressively so a near-tie resolves in a couple of retries.
+            let step = core::cmp::max(guard, self.precision / 2).max(1);
+            guard += step;
+            #[cfg(test)]
+            LAST_ZIV_RETRIES.with(|c| c.set(c.get() + 1));
+        }
+
+        // Unreachable in practice: return the best-effort pair from the last attempt.
+        last.expect("MAX_ZIV_RETRIES is non-zero")
+    }
+
     /// Containment test: is the approximation's error interval `[a − e, a + e]` entirely inside
     /// the rounding preimage of `y` (every real in `[y − lb, y + rb]` rounds to `y` under `R`)?
     ///
@@ -169,6 +212,30 @@ mod tests {
         let r = ctx.ziv(4, |_| (F::from(7u8), F::ZERO));
         assert!(matches!(r, Exact(_)));
         assert_eq!(LAST_ZIV_RETRIES.with(|c| c.get()), usize::MAX);
+    }
+
+    // ziv_pair accepts an exact pair (both radii 0) on the first attempt.
+    #[test]
+    fn ziv_pair_accepts_exact_first_attempt() {
+        let ctx: Context<mode::HalfEven> = Context::new(10);
+        LAST_ZIV_RETRIES.with(|c| c.set(usize::MAX));
+        let (r1, r2) = ctx.ziv_pair(4, |_| ((F::ONE, F::ZERO), (F::from(2u8), F::ZERO)));
+        assert!(matches!(r1, Exact(_)));
+        assert!(matches!(r2, Exact(_)));
+        assert_eq!(LAST_ZIV_RETRIES.with(|c| c.get()), 0);
+    }
+
+    // ziv_pair retries while *either* value's interval straddles a boundary; here the second value
+    // carries the shrinking radius, so the pair must retry together.
+    #[test]
+    fn ziv_pair_retries_until_both_contained() {
+        let ctx: Context<mode::HalfEven> = Context::new(4);
+        let (r1, r2) = ctx.ziv_pair(2, |guard| {
+            let radius = F::ONE >> guard as isize;
+            ((F::ONE, F::ZERO), (F::ONE, radius))
+        });
+        let _ = (r1.value(), r2.value());
+        assert!(LAST_ZIV_RETRIES.with(|c| c.get()) >= 1);
     }
 
     // The guard-digit heuristic should let exp/ln converge in at most one retry for typical

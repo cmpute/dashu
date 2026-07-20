@@ -666,6 +666,25 @@ macro_rules! forward_to_fbig {
 impl<R: Round, const B: Word> CachedFBig<R, B> {
     forward_to_fbig!(sqrt);
     forward_to_fbig!(inv);
+    forward_to_fbig!(powi(exp: dashu_int::IBig));
+    forward_to_fbig!(sqr);
+    forward_to_fbig!(cubic);
+}
+
+// Transcendentals that route through the Ziv-backed (or Ziv-dependent) Context methods require
+// `R: ErrorBounds` for their correctness guarantee.
+impl<R: ErrorBounds, const B: Word> CachedFBig<R, B> {
+    forward_to_context!(ln);
+    forward_to_context!(ln_1p);
+    forward_to_context!(exp);
+    forward_to_context!(exp_m1);
+
+    forward_to_context!(sinh);
+    forward_to_context!(cosh);
+    forward_to_context!(tanh);
+    forward_to_context!(asinh);
+    forward_to_context!(acosh);
+    forward_to_context!(atanh);
 
     forward_to_context_unwrap!(sin);
     forward_to_context_unwrap!(cos);
@@ -673,10 +692,6 @@ impl<R: Round, const B: Word> CachedFBig<R, B> {
     forward_to_context_unwrap!(asin);
     forward_to_context_unwrap!(acos);
     forward_to_context_unwrap!(atan);
-
-    forward_to_fbig!(powi(exp: dashu_int::IBig));
-    forward_to_fbig!(sqr);
-    forward_to_fbig!(cubic);
 
     /// Sine and cosine together (see [`FBig::sin_cos`]).
     pub fn sin_cos(&self) -> (Self, Self) {
@@ -699,22 +714,6 @@ impl<R: Round, const B: Word> CachedFBig<R, B> {
         ));
         Self::from_fbig(fbig, &self.cache)
     }
-}
-
-// Transcendentals that route through the Ziv-backed (or Ziv-dependent) Context methods require
-// `R: ErrorBounds` for their correctness guarantee.
-impl<R: ErrorBounds, const B: Word> CachedFBig<R, B> {
-    forward_to_context!(ln);
-    forward_to_context!(ln_1p);
-    forward_to_context!(exp);
-    forward_to_context!(exp_m1);
-
-    forward_to_context!(sinh);
-    forward_to_context!(cosh);
-    forward_to_context!(tanh);
-    forward_to_context!(asinh);
-    forward_to_context!(acosh);
-    forward_to_context!(atanh);
 
     /// `self^exp` (see [`FBig::powf`]).
     pub fn powf(&self, exp: &Self) -> Self {

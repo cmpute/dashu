@@ -1,11 +1,13 @@
-use dashu_base::{Approximation, CubicRoot, Sign, SquareRoot, SquareRootRem, UnsignedAbs};
+use dashu_base::{
+    Approximation, CubicRoot, EstimatedLog2, Sign, SquareRoot, SquareRootRem, UnsignedAbs,
+};
 use dashu_int::{IBig, UBig};
 
 use crate::{
     error::{assert_limited_precision, panic_root_zeroth, FpError, FpResult},
     fbig::FBig,
     repr::{Context, Repr, Word},
-    round::Round,
+    round::{ErrorBounds, Round},
     utils::{shl_digits, split_digits_ref},
 };
 
@@ -254,14 +256,13 @@ impl<R: Round> Context<R> {
     }
 }
 
-impl<R: Round> Context<R> {
+impl<R: ErrorBounds> Context<R> {
     /// Compute `sqrt(a² + b²)` without spurious overflow/underflow.
     ///
     /// This is the overflow-safe scaled sum-of-squares: the larger-magnitude operand is never
     /// squared. Writing `m = max(|a|, |b|)` and `r = min(|a|,|b|) / m` (so `|r| ≤ 1`), the result is
-    /// `m · sqrt(1 + r²)`, where `1 + r² ∈ [1, 2]` cannot overflow. The final `m · sqrt(1 + r²)`
-    /// overflows only when the true result genuinely exceeds the exponent range (reported as
-    /// [`FpError::Overflow`]). `hypot(±inf, ·) = +inf`, `hypot(0, 0) = +0`.
+    /// `m · sqrt(1 + r²)`, where `1 + r² ∈ [1, 2]` cannot overflow. The result is correctly rounded
+    /// via a Ziv retry loop (`hypot(±inf, ·) = +inf`, `hypot(0, 0) = +0`).
     ///
     /// This is a field-arithmetic-class op (no constant cache), like `sqrt`/`atan2`.
     ///
@@ -276,11 +277,6 @@ impl<R: Round> Context<R> {
         if a.significand.is_zero() && b.significand.is_zero() {
             return Ok(Approximation::Exact(FBig::new(Repr::zero(), *self)));
         }
-
-        let guard = crate::utils::ceil_usize(<usize as dashu_base::EstimatedLog2>::log2_est(
-            &self.precision,
-        )) + 10;
-        let gctx = Context::<R>::new(self.precision + guard);
 
         // magnitudes, ordered large >= small (both finite, not both zero here)
         let a_mag = if a.sign() == Sign::Negative {
@@ -300,21 +296,36 @@ impl<R: Round> Context<R> {
         };
 
         if small.significand.is_zero() {
-            // hypot(x, 0) = |x|; `large` is already a magnitude
-            return Ok(gctx.repr_round_ref(&large).map(|v| FBig::new(v, *self)));
+            // hypot(x, 0) = |x|; `large` is already a magnitude.
+            return Ok(self.repr_round_ref(&large).map(|v| FBig::new(v, *self)));
         }
 
-        // r = small / large ∈ [0, 1]; 1 + r² ∈ [1, 2] (no overflow); result = large · sqrt(1+r²)
-        let r = gctx.div(&small, &large)?.value();
-        let r2 = gctx.sqr(r.repr())?.value();
-        let sum = gctx.add(&Repr::one(), r2.repr())?.value();
-        let root = gctx.sqrt(sum.repr())?.value();
-        let result = gctx.mul(&large, root.repr())?.value();
-        Ok(result.with_precision(self.precision))
+        // The result is `large · sqrt(1 + (small/large)²)`, i.e. ∈ [large, large·√2]. It overflows
+        // only when `large` is so large that this product reaches the infinity sentinel exponent —
+        // unreachable for real inputs, but pre-checked here so the Ziv closure can use infallible
+        // `FBig` arithmetic.
+        if large.exponent >= isize::MAX - 1 {
+            return Err(FpError::Overflow(Sign::Positive));
+        }
+
+        let initial_guard = crate::utils::ceil_usize(self.precision.log2_est()) + 10;
+        Ok(self.ziv(initial_guard, |guard| {
+            let gctx = Context::<R>::new(self.precision + guard);
+            let large_f = FBig::new(gctx.repr_round_ref(&large).value(), gctx);
+            let small_f = FBig::new(gctx.repr_round_ref(&small).value(), gctx);
+            // r = small/large ∈ [0,1]; 1 + r² ∈ [1,2]; result = large · sqrt(1 + r²). Every op is
+            // correctly rounded at the working precision; the radius is a small multiple of the
+            // result's working ULP (the sqrt attenuates, no condition amplification).
+            let r = &small_f / &large_f;
+            let root = (FBig::<R, B>::ONE + r.sqr()).sqrt();
+            let result = &large_f * &root;
+            let radius = result.ulp() * 8;
+            (result, radius)
+        }))
     }
 }
 
-impl<R: Round, const B: Word> FBig<R, B> {
+impl<R: ErrorBounds, const B: Word> FBig<R, B> {
     /// Compute `sqrt(self² + other²)` without spurious overflow/underflow.
     ///
     /// The result precision is `max(self.precision(), other.precision())`. See

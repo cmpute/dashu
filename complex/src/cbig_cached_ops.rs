@@ -374,7 +374,6 @@ macro_rules! delegate_to_cbig {
 impl<R: Round, const B: Word> CachedCBig<R, B> {
     // non-cache delegations
     delegate_to_cbig!(sqr);
-    delegate_to_cbig!(sqrt);
     delegate_to_cbig!(conj);
     delegate_to_cbig!(proj);
     delegate_to_cbig!(mul_i(negative: bool));
@@ -385,6 +384,23 @@ impl<R: Round, const B: Word> CachedCBig<R, B> {
     pub fn norm(&self) -> FBig<R, B> {
         self.cbig.norm()
     }
+}
+
+// Transcendentals route through the Ziv-backed (or Ziv-dependent) real/complex methods, which
+// require `R: ErrorBounds`.
+impl<R: ErrorBounds, const B: Word> CachedCBig<R, B> {
+    // cache-threading transcendentals
+    forward_cached!(ln => log);
+    forward_cached!(exp => exp);
+    forward_cached!(sin => sin);
+    forward_cached!(cos => cos);
+    forward_cached!(tan => tan);
+    forward_cached!(asin => asin);
+    forward_cached!(acos => acos);
+    forward_cached!(atan => atan);
+
+    // `sqrt` and `abs` route through `Context::hypot`, which is now Ziv-backed (`R: ErrorBounds`).
+    delegate_to_cbig!(sqrt);
 
     /// The modulus `|z|` (a real [`FBig`]) (see [`CBig::abs`]).
     #[inline]
@@ -401,20 +417,6 @@ impl<R: Round, const B: Word> CachedCBig<R, B> {
         ctx.float()
             .unwrap_fp(ctx.arg::<B>(&self.cbig, Some(&mut *c)))
     }
-}
-
-// Transcendentals route through the Ziv-backed (or Ziv-dependent) real/complex methods, which
-// require `R: ErrorBounds`.
-impl<R: ErrorBounds, const B: Word> CachedCBig<R, B> {
-    // cache-threading transcendentals
-    forward_cached!(ln => log);
-    forward_cached!(exp => exp);
-    forward_cached!(sin => sin);
-    forward_cached!(cos => cos);
-    forward_cached!(tan => tan);
-    forward_cached!(asin => asin);
-    forward_cached!(acos => acos);
-    forward_cached!(atan => atan);
 
     /// Complex power `self^w` (see [`CBig::powf`]). Threads the cache into the inner `log`/`exp`.
     #[inline]

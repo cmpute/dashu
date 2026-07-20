@@ -33,11 +33,15 @@ are longer-term goals. File:line references are anchors from the v0.5.0 tree and
 
 ### Correctness
 
-- **Guaranteed-correct rounding (Ziv retry loop).** ✅ *Partially delivered.* `exp`, `exp_m1`,
-  `ln`, `ln_1p` are now guaranteed-correctly rounded via a Ziv retry loop in `dashu-float`
-  (`Context::ziv`, driven by the `ErrorBounds` preimage). Remaining: trig, hyperbolic, `powf`,
-  `hypot`, and inheriting the loop across `dashu-cmplx`'s complex transcendentals (which currently
-  route through the now-Ziv-backed real primitives but aren't themselves Ziv-wrapped).
+- **Guaranteed-correct rounding (Ziv retry loop).** ✅ *Delivered for all real transcendentals
+  except `powf`.* `exp`, `exp_m1`, `ln`, `ln_1p`, the trigonometric family (`sin`, `cos`, `sin_cos`,
+  `tan`, `asin`, `acos`, `atan`, `atan2`), the hyperbolic family (`sinh`, `cosh`, `sinh_cosh`,
+  `tanh`, `asinh`, `acosh`, `atanh`), and `hypot` are guaranteed-correctly rounded via a Ziv retry
+  loop (`Context::ziv`/`ziv_pair`, driven by the `ErrorBounds` preimage). Series transcendentals
+  (trig, atan) use near-correct `_compute` cores the wrapper certifies; composition transcendentals
+  treat the Ziv-correct primitives as black boxes. Remaining: `powf` (its `exp(y·ln x)` amplification
+  needs a dedicated radius treatment), and `dashu-cmplx`'s complex transcendental *wrappers* (which
+  route through these now-correct real primitives but aren't themselves Ziv-wrapped).
 - **Signed-zero preservation in `CBig` zero short-circuits.** `sin_cos` and `sqr` take a fast
   path on exactly-zero input that returns `+0` components, so several Annex-G / IEEE signed-zero
   cases are not preserved (all numerically equal to `+0`, hence deferred):

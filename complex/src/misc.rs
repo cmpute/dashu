@@ -4,7 +4,7 @@ use crate::cbig::CBig;
 use crate::repr::{exact, CfpResult, Context};
 use core::ops::Neg;
 use dashu_base::Sign;
-use dashu_float::round::Round;
+use dashu_float::round::{ErrorBounds, Round};
 use dashu_float::{FBig, FpResult, Repr};
 use dashu_int::Word;
 
@@ -42,25 +42,6 @@ impl<R: Round, const B: Word> CBig<R, B> {
     #[inline]
     pub fn norm(&self) -> FBig<R, B> {
         self.context.float().unwrap_fp(self.context.norm(self))
-    }
-
-    /// The modulus `|z| = sqrt(re² + im²)` (a real [`FBig`]). A thin composition over
-    /// [`dashu_float::Context::hypot`] (the overflow-safe scaled sum-of-squares), evaluated at guard
-    /// precision and re-rounded. Near-correctly rounded.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the precision is unlimited.
-    #[inline]
-    pub fn abs(&self) -> FBig<R, B> {
-        self.context.float().unwrap_fp(self.context.abs(self))
-    }
-
-    /// The argument (phase) `atan2(im, re) ∈ ]-π, π]`. The branch cut lies on `]−∞, 0]`; signed zero
-    /// and infinities are handled per the C99 Annex G `atan2` table (reused from `dashu-float`).
-    #[inline]
-    pub fn arg(&self) -> FBig<R, B> {
-        self.context.float().unwrap_fp(self.context.arg(self, None))
     }
 }
 
@@ -145,6 +126,21 @@ impl<R: Round> Context<R> {
         let n = gctx.unwrap_fp(gctx.add(re2.repr(), im2.repr()));
         Ok(n.with_precision(self.precision()))
     }
+}
+
+impl<R: ErrorBounds> Context<R> {
+    /// The modulus `|z| = hypot(re, im)` (context layer). Near-correctly rounded; returns `+∞` for
+    /// an infinite input. Thin composition over [`dashu_float::Context::hypot`] (now Ziv-correctly
+    /// rounded).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is unlimited.
+    pub fn abs<const B: Word>(&self, z: &CBig<R, B>) -> FpResult<FBig<R, B>> {
+        let gctx = self.guard(ABS_GUARD);
+        let h = gctx.hypot(z.re(), z.im())?;
+        Ok(h.value().with_precision(self.precision()))
+    }
 
     /// The argument `atan2(im, re)` (context layer). Delegates to `dashu-float`'s Annex-G `atan2`;
     /// the cache threads into it (the convenience layer passes `None`).
@@ -155,17 +151,26 @@ impl<R: Round> Context<R> {
     ) -> FpResult<FBig<R, B>> {
         self.float().atan2(z.im(), z.re(), cache)
     }
+}
 
-    /// The modulus `|z| = hypot(re, im)` (context layer). Near-correctly rounded; returns `+∞` for
-    /// an infinite input. Thin composition over [`dashu_float::Context::hypot`].
+impl<R: ErrorBounds, const B: Word> CBig<R, B> {
+    /// The modulus `|z| = sqrt(re² + im²)` (a real [`FBig`]). A thin composition over
+    /// [`dashu_float::Context::hypot`] (the overflow-safe scaled sum-of-squares, Ziv-correctly
+    /// rounded), evaluated at guard precision and re-rounded.
     ///
     /// # Panics
     ///
     /// Panics if the precision is unlimited.
-    pub fn abs<const B: Word>(&self, z: &CBig<R, B>) -> FpResult<FBig<R, B>> {
-        let gctx = self.guard(ABS_GUARD);
-        let h = gctx.hypot(z.re(), z.im())?;
-        Ok(h.value().with_precision(self.precision()))
+    #[inline]
+    pub fn abs(&self) -> FBig<R, B> {
+        self.context.float().unwrap_fp(self.context.abs(self))
+    }
+
+    /// The argument (phase) `atan2(im, re) ∈ ]-π, π]`. The branch cut lies on `]−∞, 0]`; signed zero
+    /// and infinities are handled per the C99 Annex G `atan2` table (reused from `dashu-float`).
+    #[inline]
+    pub fn arg(&self) -> FBig<R, B> {
+        self.context.float().unwrap_fp(self.context.arg(self, None))
     }
 }
 

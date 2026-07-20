@@ -21,6 +21,17 @@
 - **Tightened `exp` guard digits** (now a performance knob, since Ziv — not the guard count —
   guarantees correctness): the `Bⁿ`-powering guard is halved from `2n` to `n` and the series guard
   drops its conservative `+ 2`.
+- **Guaranteed-correct rounding for most remaining transcendentals** via the Ziv loop: the
+  trigonometric family (`sin`, `cos`, `sin_cos`, `tan`, `asin`, `acos`, `atan`, `atan2`), the
+  hyperbolic family (`sinh`, `cosh`, `sinh_cosh`, `tanh`, `asinh`, `acosh`, `atanh`), and `hypot`.
+  (`powf` remains near-correct: its `exp(y·ln x)` composition amplifies the rounding by the result
+  magnitude, and the resulting data-dependent radius makes the Ziv containment test converge poorly
+  for large results — a dedicated radius treatment is deferred.) The trig series (`sin`/`cos`/`atan`)
+  are factored into near-correct `_compute` cores like `exp_compute`; the composition-based functions
+  treat the now-Ziv-correct `exp`/`ln`/`atan` as black boxes and count only their arithmetic. The
+  trig argument reduction folds a `|k|·ulp(π/2)` reduction-error term into the radius so the
+  containment test stays sound for huge `|x|`. `ziv_pair` certifies both halves of `sin_cos`/
+  `sinh_cosh`.
 
 ### Change
 - **(breaking, bound)** `Context::exp`/`exp_m1`/`ln`/`ln_1p` (and `powf`, the hyperbolic family,

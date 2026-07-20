@@ -14,6 +14,7 @@
 
 use crate::{
     error::{assert_limited_precision, FpError},
+    exp::exp_overflows,
     fbig::FBig,
     math::{
         cache::{reborrow_cache, ConstCache},
@@ -21,8 +22,9 @@ use crate::{
     },
     repr::{Context, Repr, Word},
     round::{ErrorBounds, Round},
+    utils::ceil_usize,
 };
-use dashu_base::{Abs, AbsOrd, Approximation::Exact, Sign};
+use dashu_base::{Abs, AbsOrd, Approximation::Exact, EstimatedLog2, Sign};
 
 impl<R: ErrorBounds> Context<R> {
     /// Hyperbolic sine.
@@ -39,20 +41,30 @@ impl<R: ErrorBounds> Context<R> {
             // sinh(±0) = ±0
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
         }
-
-        // sinh(x) = (exp_m1(x) - exp_m1(-x)) / 2  (cancellation-free)
-        let work = Context::<R>::new(self.precision + 50);
-        let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
-        let neg_x = -x_f.clone();
-        let ep = work.exp_m1(&x_f.repr, reborrow_cache(&mut cache));
-        let em = work.exp_m1(&neg_x.repr, reborrow_cache(&mut cache));
-        match (ep, em) {
-            (Ok(ep), Ok(em)) => {
-                Ok(((ep.value() - em.value()) / 2i32).with_precision(self.precision))
-            }
-            // |x| large enough that exp_m1 overflowed: sinh(x) → ±inf (sign of x).
-            _ => Err(FpError::Overflow(x.sign())),
+        // Hoist the exp overflow out of the Ziv closure (it can't return Err): sinh(±huge) = ±inf.
+        if exp_overflows::<R, B>(self, x, &mut cache) {
+            return Err(FpError::Overflow(x.sign()));
         }
+
+        // sinh(x) = (exp_m1(x) - exp_m1(-x)) / 2  (cancellation-free). `exp_m1` is itself Ziv-correct
+        // at the working precision, so only the subtraction/divide rounding contributes to the
+        // radius (a few working-ULPs, scaled by the `exp_m1(x) ≈ 2·sinh(x)` magnitude ratio).
+        let initial_guard = ceil_usize(self.precision.log2_est() / B.log2_est()) + 10;
+        Ok(self.ziv(initial_guard, |guard| {
+            let work = Context::<R>::new(self.precision + guard);
+            let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
+            let ep = work
+                .exp_m1(&x_f.repr, reborrow_cache(&mut cache))
+                .unwrap()
+                .value();
+            let em = work
+                .exp_m1(&(-x_f.clone()).repr, reborrow_cache(&mut cache))
+                .unwrap()
+                .value();
+            let result = (ep - em) / 2i32;
+            let radius = result.ulp() * 12;
+            (result, radius)
+        }))
     }
 
     /// Hyperbolic cosine.
@@ -71,18 +83,29 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(Exact(FBig::new(Repr::one(), *self)));
         }
 
-        // cosh(x) = (exp_m1(x) + exp_m1(-x)) / 2 + 1  (no cancellation: same-sign sum)
-        let work = Context::<R>::new(self.precision + 50);
-        let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
-        let neg_x = -x_f.clone();
-        let ep = work.exp_m1(&x_f.repr, reborrow_cache(&mut cache));
-        let em = work.exp_m1(&neg_x.repr, reborrow_cache(&mut cache));
-        match (ep, em) {
-            (Ok(ep), Ok(em)) => Ok(((ep.value() + em.value()) / 2i32 + FBig::<R, B>::ONE)
-                .with_precision(self.precision)),
-            // cosh(x) ≥ 0 always, so overflow → +inf regardless of x's sign.
-            _ => Err(FpError::Overflow(Sign::Positive)),
+        // Hoist the exp overflow out of the Ziv closure: cosh(±huge) = +inf (always positive).
+        if exp_overflows::<R, B>(self, x, &mut cache) {
+            return Err(FpError::Overflow(Sign::Positive));
         }
+        // cosh(x) = (exp_m1(x) + exp_m1(-x)) / 2 + 1 (no cancellation: same-sign sum). `exp_m1` is
+        // Ziv-correct at the working precision; the radius is a few working-ULPs (the `exp_m1(x) ≈
+        // 2·cosh(x)` magnitude ratio, plus the trailing +1).
+        let initial_guard = ceil_usize(self.precision.log2_est() / B.log2_est()) + 10;
+        Ok(self.ziv(initial_guard, |guard| {
+            let work = Context::<R>::new(self.precision + guard);
+            let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
+            let ep = work
+                .exp_m1(&x_f.repr, reborrow_cache(&mut cache))
+                .unwrap()
+                .value();
+            let em = work
+                .exp_m1(&(-x_f.clone()).repr, reborrow_cache(&mut cache))
+                .unwrap()
+                .value();
+            let result = (ep + em) / 2i32 + FBig::<R, B>::ONE;
+            let radius = result.ulp() * 14;
+            (result, radius)
+        }))
     }
 
     /// Simultaneously compute `sinh(x)` and `cosh(x)` (context layer). Returns
@@ -109,25 +132,31 @@ impl<R: ErrorBounds> Context<R> {
             );
         }
 
-        // sinh = (exp_m1(x) - exp_m1(-x)) / 2;  cosh = (exp_m1(x) + exp_m1(-x)) / 2 + 1
-        let work = Context::<R>::new(self.precision + 50);
-        let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
-        let neg_x = -x_f.clone();
-        let ep = work.exp_m1(&x_f.repr, reborrow_cache(&mut cache));
-        let em = work.exp_m1(&neg_x.repr, reborrow_cache(&mut cache));
-        match (ep, em) {
-            (Ok(ep), Ok(em)) => {
-                let ep = ep.value();
-                let em = em.value();
-                let sinh_val = ((ep.clone() - em.clone()) / 2i32).with_precision(self.precision);
-                let cosh_val =
-                    ((ep + em) / 2i32 + FBig::<R, B>::ONE).with_precision(self.precision);
-                (Ok(sinh_val), Ok(cosh_val))
-            }
-            // |x| large enough that exp_m1 overflowed:
-            //   sinh(x) → ±inf (sign of x), cosh(x) → +inf
-            _ => (Err(FpError::Overflow(x.sign())), Err(FpError::Overflow(Sign::Positive))),
+        // Hoist the exp overflow out of the Ziv closure: sinh(±huge) = ±inf, cosh(±huge) = +inf.
+        if exp_overflows::<R, B>(self, x, &mut cache) {
+            return (Err(FpError::Overflow(x.sign())), Err(FpError::Overflow(Sign::Positive)));
         }
+        // sinh = (ep - em)/2; cosh = (ep + em)/2 + 1, sharing the two `exp_m1` calls. Certified as a
+        // pair via `ziv_pair` (retry while either endpoint straddles a boundary).
+        let initial_guard = ceil_usize(self.precision.log2_est() / B.log2_est()) + 10;
+        let (sinh_r, cosh_r) = self.ziv_pair(initial_guard, |guard| {
+            let work = Context::<R>::new(self.precision + guard);
+            let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
+            let ep = work
+                .exp_m1(&x_f.repr, reborrow_cache(&mut cache))
+                .unwrap()
+                .value();
+            let em = work
+                .exp_m1(&(-x_f.clone()).repr, reborrow_cache(&mut cache))
+                .unwrap()
+                .value();
+            let sinh_val = (ep.clone() - em.clone()) / 2i32;
+            let cosh_val = (ep + em) / 2i32 + FBig::<R, B>::ONE;
+            let sinh_radius = sinh_val.ulp() * 12;
+            let cosh_radius = cosh_val.ulp() * 14;
+            ((sinh_val, sinh_radius), (cosh_val, cosh_radius))
+        });
+        (Ok(sinh_r), Ok(cosh_r))
     }
 
     /// Hyperbolic tangent.
@@ -151,20 +180,25 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
         }
 
-        // tanh(x) = exp_m1(2x) / (exp_m1(2x) + 2). For large negative x, exp_m1(2x) → -1,
-        // giving -1/(-1+2) = -1; for large positive x, exp_m1(2x) overflows, but
-        // tanh(+huge) = 1, so short-circuit before the division would yield +inf/+inf = NaN.
-        let work = Context::<R>::new(self.precision + 50);
-        let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
-        let two_x = x_f.clone() * 2i32;
-        match work.exp_m1(&two_x.repr, reborrow_cache(&mut cache)) {
-            Err(FpError::Overflow(_)) => Ok(FBig::ONE.with_precision(self.precision)),
-            Ok(e) => {
-                let e = e.value();
-                Ok((e.clone() / (e.clone() + 2i32)).with_precision(self.precision))
+        // tanh(x) = exp_m1(2x) / (exp_m1(2x) + 2). `exp_m1(2x)` is Ziv-correct at the working
+        // precision. For large positive x it overflows → tanh = +1 (returned inline as an exact
+        // value); for large negative x, exp_m1(2x) → -1 (finite), so tanh → -1 naturally.
+        let initial_guard = ceil_usize(self.precision.log2_est() / B.log2_est()) + 10;
+        Ok(self.ziv(initial_guard, |guard| {
+            let work = Context::<R>::new(self.precision + guard);
+            let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
+            let two_x = x_f * 2i32;
+            match work.exp_m1(&two_x.repr, reborrow_cache(&mut cache)) {
+                Err(FpError::Overflow(_)) => (FBig::<R, B>::ONE, FBig::<R, B>::ZERO), // exact +1
+                Ok(e) => {
+                    let e = e.value();
+                    let result = e.clone() / (e + 2i32);
+                    let radius = result.ulp() * 12;
+                    (result, radius)
+                }
+                Err(other) => unreachable!("exp_m1 on finite input: {other:?}"),
             }
-            Err(other) => Err(other),
-        }
+        }))
     }
 
     /// Inverse hyperbolic sine.
@@ -182,31 +216,40 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
         }
 
-        // asinh(x) = sign(x) · ln_1p(|x| + x²/(sqrt(x²+1)+1)).
-        // The x²/(sqrt+1) form avoids the `sqrt(x²+1) - 1` cancellation near 0.
-        let work = Context::<R>::new(self.precision + 50);
-        let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
-        let sign = x_f.sign();
-        let abs_x = x_f.abs();
-        let arg = match work.sqr(&abs_x.repr) {
-            Ok(x_sq) => {
-                let x_sq = x_sq.value();
-                let sqrt_plus_one = work.sqrt(&(x_sq.clone() + FBig::<R, B>::ONE).repr)?.value()
-                    + FBig::<R, B>::ONE;
-                abs_x.clone() + x_sq / sqrt_plus_one
-            }
-            // |x| so large that x² overflows: asinh(x) ≈ sign·ln(2|x|) (the √(1+1/x²)
-            // correction is far below representable precision here).
-            Err(FpError::Overflow(_)) => {
-                let ln_val = work
-                    .ln(&(abs_x.clone() * 2i32).repr, reborrow_cache(&mut cache))?
-                    .value();
-                return Ok(apply_sign(ln_val, sign).with_precision(self.precision));
-            }
-            Err(other) => return Err(other),
-        };
-        let res = work.ln_1p(&arg.repr, reborrow_cache(&mut cache))?.value();
-        Ok(apply_sign(res, sign).with_precision(self.precision))
+        // asinh(x) = sign(x) · ln_1p(|x| + x²/(sqrt(x²+1)+1)) — the x²/(sqrt+1) form avoids the
+        // `sqrt(x²+1) − 1` cancellation near 0. `ln_1p`/`ln`/`sqrt` are Ziv-correct at the working
+        // precision, so the radius is a few working-ULPs of accumulated arithmetic. The `|x|` so
+        // large that `x²` overflows arm falls back to the asymptotic `sign·ln(2|x|)`.
+        let initial_guard = ceil_usize(self.precision.log2_est() / B.log2_est()) + 10;
+        Ok(self.ziv(initial_guard, |guard| {
+            let work = Context::<R>::new(self.precision + guard);
+            let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
+            let sign = x_f.sign();
+            let abs_x = x_f.abs();
+            let res = match work.sqr(&abs_x.repr) {
+                Ok(x_sq) => {
+                    let x_sq = x_sq.value();
+                    let sqrt_plus_one = work
+                        .sqrt(&(x_sq.clone() + FBig::<R, B>::ONE).repr)
+                        .unwrap()
+                        .value()
+                        + FBig::<R, B>::ONE;
+                    let arg = abs_x.clone() + x_sq / sqrt_plus_one;
+                    work.ln_1p(&arg.repr, reborrow_cache(&mut cache))
+                        .unwrap()
+                        .value()
+                }
+                // |x| so large that x² overflows: asinh(x) ≈ sign·ln(2|x|).
+                Err(FpError::Overflow(_)) => work
+                    .ln(&(abs_x.clone() * 2i32).repr, reborrow_cache(&mut cache))
+                    .unwrap()
+                    .value(),
+                Err(other) => unreachable!("sqr: {other:?}"),
+            };
+            let result = apply_sign(res, sign);
+            let radius = result.ulp() * 14;
+            (result, radius)
+        }))
     }
 
     /// Inverse hyperbolic cosine. Domain: `x ≥ 1`.
@@ -234,25 +277,33 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(Exact(FBig::new(Repr::zero(), *self)));
         }
 
-        // acosh(x) = ln_1p((x-1) + sqrt((x-1)(x+1))). The (x-1)(x+1) form avoids the
-        // `x²-1` cancellation near x = 1.
-        let work = Context::<R>::new(self.precision + 50);
-        let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
-        let xm1 = &x_f - FBig::<R, B>::ONE;
-        let xp1 = &x_f + FBig::<R, B>::ONE;
-        let arg = match work.mul(&xm1.repr, &xp1.repr) {
-            Ok(prod) => xm1.clone() + work.sqrt(&prod.value().repr)?.value(),
-            // (x-1)(x+1) overflowed: acosh(x) ≈ ln(2x).
-            Err(FpError::Overflow(_)) => {
-                let ln_val = work
-                    .ln(&(x_f.clone() * 2i32).repr, reborrow_cache(&mut cache))?
-                    .value();
-                return Ok(ln_val.with_precision(self.precision));
-            }
-            Err(other) => return Err(other),
-        };
-        let res = work.ln_1p(&arg.repr, reborrow_cache(&mut cache))?.value();
-        Ok(res.with_precision(self.precision))
+        // acosh(x) = ln_1p((x-1) + sqrt((x-1)(x+1))) — the (x-1)(x+1) form avoids the `x²−1`
+        // cancellation near x = 1. `ln_1p`/`ln`/`sqrt` are Ziv-correct at the working precision;
+        // the radius is a few working-ULPs (generous for the near-x=1 cancellation). The `(x-1)(x+1)`
+        // overflow arm falls back to the asymptotic `ln(2x)`.
+        let initial_guard = ceil_usize(self.precision.log2_est() / B.log2_est()) + 10;
+        Ok(self.ziv(initial_guard, |guard| {
+            let work = Context::<R>::new(self.precision + guard);
+            let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
+            let xm1 = &x_f - FBig::<R, B>::ONE;
+            let xp1 = &x_f + FBig::<R, B>::ONE;
+            let res = match work.mul(&xm1.repr, &xp1.repr) {
+                Ok(prod) => {
+                    let arg = xm1.clone() + work.sqrt(&prod.value().repr).unwrap().value();
+                    work.ln_1p(&arg.repr, reborrow_cache(&mut cache))
+                        .unwrap()
+                        .value()
+                }
+                // (x-1)(x+1) overflowed: acosh(x) ≈ ln(2x).
+                Err(FpError::Overflow(_)) => work
+                    .ln(&(x_f.clone() * 2i32).repr, reborrow_cache(&mut cache))
+                    .unwrap()
+                    .value(),
+                Err(other) => unreachable!("mul: {other:?}"),
+            };
+            let radius = res.ulp() * 16;
+            (res, radius)
+        }))
     }
 
     /// Inverse hyperbolic tangent. Domain: `-1 < x < 1` (`x = ±1` → ±∞, `|x| > 1` is an error).
@@ -278,12 +329,22 @@ impl<R: ErrorBounds> Context<R> {
             _ => {}
         }
 
-        // atanh(x) = ln_1p(2x/(1-x)) / 2.
-        let work = Context::<R>::new(self.precision + 50);
-        let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
-        let ratio = (x_f.clone() * 2i32) / (FBig::<R, B>::ONE - &x_f);
-        let res = work.ln_1p(&ratio.repr, reborrow_cache(&mut cache))?.value();
-        Ok((res / 2i32).with_precision(self.precision))
+        // atanh(x) = ln_1p(2x/(1-x)) / 2. `ln_1p` is Ziv-correct at the working precision; the
+        // radius is a few working-ULPs (generous: the `2x/(1-x)` division amplifies as |x| → 1, but
+        // the result grows there too, so its ULP keeps the bound sound — Ziv retries near |x|=1).
+        let initial_guard = ceil_usize(self.precision.log2_est() / B.log2_est()) + 10;
+        Ok(self.ziv(initial_guard, |guard| {
+            let work = Context::<R>::new(self.precision + guard);
+            let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
+            let ratio = (x_f.clone() * 2i32) / (FBig::<R, B>::ONE - &x_f);
+            let res = work
+                .ln_1p(&ratio.repr, reborrow_cache(&mut cache))
+                .unwrap()
+                .value();
+            let result = res / 2i32;
+            let radius = result.ulp() * 16;
+            (result, radius)
+        }))
     }
 }
 

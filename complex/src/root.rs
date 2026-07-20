@@ -3,7 +3,7 @@
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, exact, CfpResult, Context};
 use dashu_base::Sign;
-use dashu_float::round::Round;
+use dashu_float::round::{ErrorBounds, Round};
 use dashu_float::{FBig, Repr};
 use dashu_int::Word;
 
@@ -19,7 +19,7 @@ fn signed_inf<const B: Word>(sign: Sign) -> Repr<B> {
     }
 }
 
-impl<R: Round> Context<R> {
+impl<R: ErrorBounds> Context<R> {
     /// Principal square root of a complex number (context layer).
     ///
     /// The result has non-negative real part; when the real part is zero the imaginary part is
@@ -68,7 +68,7 @@ impl<R: Round> Context<R> {
     }
 }
 
-impl<R: Round, const B: Word> CBig<R, B> {
+impl<R: ErrorBounds, const B: Word> CBig<R, B> {
     /// Principal square root (convenience layer).
     ///
     /// # Panics

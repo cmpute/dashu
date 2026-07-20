@@ -279,6 +279,25 @@ impl<R: Round> Context<R> {
     }
 }
 
+/// Hoisted `exp` overflow probe for the Ziv closures (which can't return `Err`). Returns `true`
+/// when `exp(x)` is outside the finite exponent range — astronomically large `|x|` (the reduction
+/// quotient `s = x/ln B` overflows `isize`). True for both signs of huge `x` (the quotient
+/// *magnitude* overflows `isize`). Shared by `exp_internal`, `powf`, and the hyperbolic functions.
+pub(crate) fn exp_overflows<R: Round, const B: Word>(
+    ctx: &Context<R>,
+    x: &Repr<B>,
+    cache: &mut Option<&mut ConstCache>,
+) -> bool {
+    if x.log2_est().abs() <= 61.0 {
+        return false;
+    }
+    let probe = Context::<R>::new(ctx.precision + 64);
+    let logb = probe.ln_base::<B>(reborrow_cache(cache));
+    let x_probe = FBig::new(probe.repr_round_ref(x).value(), probe);
+    let s_probe = x_probe.div_rem_euclid(logb).0;
+    <isize as core::convert::TryFrom<IBig>>::try_from(s_probe).is_err()
+}
+
 // `powf`/`exp`/`exp_m1` are correctly rounded (via the Ziv loop for exp/exp_m1, and via the
 // Ziv-backed ln/exp primitives for powf), so they require `R: ErrorBounds`.
 impl<R: ErrorBounds> Context<R> {
@@ -338,16 +357,22 @@ impl<R: ErrorBounds> Context<R> {
                 FBig::ZERO
             }));
         }
+        if base.is_one() {
+            // pow(1, y) = 1 for any finite y (exp is finite here — infinities were rejected above).
+            return Ok(Exact(FBig::ONE));
+        }
         if base.sign() == Sign::Negative {
             // TODO: we should allow negative base when exp is an integer
             return Err(FpError::OutOfDomain);
         }
 
-        // x^y = exp(y*ln(x)), use a simple rule for guard bits
+        // x^y = exp(y·ln x). Near-correctly rounded (guard-digit recipe): `ln` and `exp` are
+        // themselves Ziv-correct at the working precision, so this is within 1 ulp. A Ziv wrapper
+        // for `powf` is deferred — the data-dependent `exp` amplification (`result · ulp(y·ln x)`)
+        // makes the containment test converge poorly for large-magnitude results, so it needs a
+        // dedicated radius treatment before it's worth the cost.
         let guard_digits = 10 + ceil_usize(self.precision.log2_est());
         let work_context = Context::<R>::new(self.precision + guard_digits);
-
-        // ln and exp each consult/extend the shared cache; reborrows are sequential.
         let ln_val = work_context.unwrap_fp(work_context.ln(base, reborrow_cache(&mut cache)));
         let mul_val = work_context.unwrap_fp(work_context.mul(ln_val.repr(), exp));
         let exp_val =

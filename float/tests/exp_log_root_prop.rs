@@ -123,4 +123,157 @@ proptest! {
         let r_2p = x_2p.ln_1p().with_precision(P).value();
         prop_assert_eq!(r_p, r_2p);
     }
+
+    /// Correct-rounding self-oracle for hypot.
+    #[test]
+    fn hypot_rounding_exact_oracle(a in signed_x(100_000), b in signed_x(100_000)) {
+        let r_p = a.clone().hypot(&b);
+        let a_2p = a.clone().with_precision(2 * P).value();
+        let b_2p = b.clone().with_precision(2 * P).value();
+        let r_2p = a_2p.hypot(&b_2p).with_precision(P).value();
+        prop_assert_eq!(r_p, r_2p);
+    }
+
+    /// Correct-rounding self-oracle for sinh.
+    #[test]
+    fn sinh_rounding_exact_oracle(x in signed_x(2_000)) {
+        let r_p = x.sinh();
+        let x_2p = x.clone().with_precision(2 * P).value();
+        let r_2p = x_2p.sinh().with_precision(P).value();
+        prop_assert_eq!(r_p, r_2p);
+    }
+
+    /// Correct-rounding self-oracle for cosh.
+    #[test]
+    fn cosh_rounding_exact_oracle(x in signed_x(2_000)) {
+        let r_p = x.cosh();
+        let x_2p = x.clone().with_precision(2 * P).value();
+        let r_2p = x_2p.cosh().with_precision(P).value();
+        prop_assert_eq!(r_p, r_2p);
+    }
+
+    /// Correct-rounding self-oracle for tanh (saturates toward ±1, so a wide range is safe).
+    #[test]
+    fn tanh_rounding_exact_oracle(x in signed_x(200_000)) {
+        let r_p = x.tanh();
+        let x_2p = x.clone().with_precision(2 * P).value();
+        let r_2p = x_2p.tanh().with_precision(P).value();
+        prop_assert_eq!(r_p, r_2p);
+    }
+
+    /// Correct-rounding self-oracle for sinh_cosh (both components).
+    #[test]
+    fn sinh_cosh_rounding_exact_oracle(x in signed_x(2_000)) {
+        let (s_p, c_p) = x.sinh_cosh();
+        let x_2p = x.clone().with_precision(2 * P).value();
+        let (s_2p, c_2p) = x_2p.sinh_cosh();
+        prop_assert_eq!(s_p, s_2p.with_precision(P).value());
+        prop_assert_eq!(c_p, c_2p.with_precision(P).value());
+    }
+
+    /// Correct-rounding self-oracle for asinh.
+    #[test]
+    fn asinh_rounding_exact_oracle(x in signed_x(200_000)) {
+        let r_p = x.asinh();
+        let x_2p = x.clone().with_precision(2 * P).value();
+        let r_2p = x_2p.asinh().with_precision(P).value();
+        prop_assert_eq!(r_p, r_2p);
+    }
+
+    /// Correct-rounding self-oracle for acosh (domain x ≥ 1; m·10⁻⁴ with m ≥ 10001 keeps x > 1).
+    #[test]
+    fn acosh_rounding_exact_oracle(m in 10001i64..200_000i64) {
+        let x = x_from(m);
+        let r_p = x.acosh();
+        let x_2p = x.clone().with_precision(2 * P).value();
+        let r_2p = x_2p.acosh().with_precision(P).value();
+        prop_assert_eq!(r_p, r_2p);
+    }
+
+    /// Correct-rounding self-oracle for atanh (domain |x| < 1; m·10⁻⁴ with |m| ≤ 9999).
+    #[test]
+    fn atanh_rounding_exact_oracle(m in -9999i64..9999i64) {
+        let x = x_from(m);
+        let r_p = x.atanh();
+        let x_2p = x.clone().with_precision(2 * P).value();
+        let r_2p = x_2p.atanh().with_precision(P).value();
+        prop_assert_eq!(r_p, r_2p);
+    }
+
+    /// Correct-rounding self-oracle for sin (exercises the π/2 argument reduction for |x| > ~1.5).
+    #[test]
+    fn sin_rounding_exact_oracle(x in signed_x(200_000)) {
+        let r_p = x.sin();
+        let x_2p = x.clone().with_precision(2 * P).value();
+        let r_2p = x_2p.sin().with_precision(P).value();
+        prop_assert_eq!(r_p, r_2p);
+    }
+
+    /// Correct-rounding self-oracle for cos.
+    #[test]
+    fn cos_rounding_exact_oracle(x in signed_x(200_000)) {
+        let r_p = x.cos();
+        let x_2p = x.clone().with_precision(2 * P).value();
+        let r_2p = x_2p.cos().with_precision(P).value();
+        prop_assert_eq!(r_p, r_2p);
+    }
+
+    /// Correct-rounding self-oracle for sin_cos (both components).
+    #[test]
+    fn sin_cos_rounding_exact_oracle(x in signed_x(200_000)) {
+        let (s_p, c_p) = x.sin_cos();
+        let x_2p = x.clone().with_precision(2 * P).value();
+        let (s_2p, c_2p) = x_2p.sin_cos();
+        prop_assert_eq!(s_p, s_2p.with_precision(P).value());
+        prop_assert_eq!(c_p, c_2p.with_precision(P).value());
+    }
+
+    /// Correct-rounding self-oracle for tan (skips exact poles — unreachable for rational x, but
+    /// near-poles yield huge finite values that round identically).
+    #[test]
+    fn tan_rounding_exact_oracle(x in signed_x(200_000)) {
+        let r_p = x.tan();
+        let x_2p = x.clone().with_precision(2 * P).value();
+        let r_2p = x_2p.tan().with_precision(P).value();
+        prop_assert_eq!(r_p, r_2p);
+    }
+
+    /// Correct-rounding self-oracle for atan.
+    #[test]
+    fn atan_rounding_exact_oracle(x in signed_x(200_000)) {
+        let r_p = x.atan();
+        let x_2p = x.clone().with_precision(2 * P).value();
+        let r_2p = x_2p.atan().with_precision(P).value();
+        prop_assert_eq!(r_p, r_2p);
+    }
+
+    /// Correct-rounding self-oracle for asin (domain |x| ≤ 1; m·10⁻⁴ with |m| ≤ 10000).
+    #[test]
+    fn asin_rounding_exact_oracle(m in -10000i64..10000i64) {
+        let x = x_from(m);
+        let r_p = x.asin();
+        let x_2p = x.clone().with_precision(2 * P).value();
+        let r_2p = x_2p.asin().with_precision(P).value();
+        prop_assert_eq!(r_p, r_2p);
+    }
+
+    /// Correct-rounding self-oracle for acos (domain |x| ≤ 1).
+    #[test]
+    fn acos_rounding_exact_oracle(m in -10000i64..10000i64) {
+        let x = x_from(m);
+        let r_p = x.acos();
+        let x_2p = x.clone().with_precision(2 * P).value();
+        let r_2p = x_2p.acos().with_precision(P).value();
+        prop_assert_eq!(r_p, r_2p);
+    }
+
+    /// Correct-rounding self-oracle for atan2.
+    #[test]
+    fn atan2_rounding_exact_oracle(y in signed_x(200_000), x in signed_x(200_000)) {
+        let r_p = y.clone().atan2(&x);
+        let y_2p = y.clone().with_precision(2 * P).value();
+        let x_2p = x.clone().with_precision(2 * P).value();
+        let r_2p = y_2p.atan2(&x_2p).with_precision(P).value();
+        prop_assert_eq!(r_p, r_2p);
+    }
 }
