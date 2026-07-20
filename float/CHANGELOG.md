@@ -55,9 +55,9 @@
   containment test infinite-retried (and the retry eventually tripped a `dashu-int` NTT assertion).
   `acos` now short-circuits `|x| = 1` to the exact `0` / `π`, and `asin` short-circuits `x = 0` to
   `±0` — matching the existing zero/`|x|=1` special cases in the rest of the inverse trig/hyperbolic
-  family. (`hypot` of an exact Pythagorean triple, e.g. `hypot(3,4) = 5`, still hits this under
-  directed rounding — it has no clean single special case; the underlying `dashu-int` NTT crash is
-  tracked separately.)
+  family. (`hypot` of an exact Pythagorean triple, e.g. `hypot(3,4) = 5`, still infinite-retries
+  under directed rounding — it has no clean single special case. The `dashu-int` NTT crash that the
+  retry used to trip is now fixed, but the containment issue itself remains.)
 
 ## 0.5.0
 
