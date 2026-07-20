@@ -390,6 +390,12 @@ impl<R: ErrorBounds> Context<R> {
             return Err(FpError::InfiniteInput);
         }
         assert_limited_precision(self.precision);
+        if x.significand.is_zero() {
+            // asin(±0) = ±0 (asin is odd), exact. Like the other inverse trig/hyperbolic functions,
+            // short-circuit before the Ziv loop: a zero result carries a positive radius that can't
+            // be certified against 0's one-sided preimage under directed rounding.
+            return signed_zero_normal(self, x);
+        }
 
         let x_orig = FBig::<R, B>::new(x.clone(), *self);
         // Domain check: |x| must be <= 1
@@ -446,16 +452,20 @@ impl<R: ErrorBounds> Context<R> {
         assert_limited_precision(self.precision);
 
         let x_orig = FBig::<R, B>::new(x.clone(), *self);
-        // Domain check: |x| must be <= 1
-        if x_orig.abs_cmp(&FBig::ONE).is_gt() {
+        let cmp_one = x_orig.abs_cmp(&FBig::ONE);
+        if cmp_one.is_gt() {
             return Err(FpError::OutOfDomain);
         }
-        // acos(1) = 0 exactly. The composition π/2 − asin(1) cancels to exactly 0 but carries a
-        // positive radius, and under directed rounding 0's preimage is one-sided ([0, ulp)), so
-        // the Ziv containment test can never certify it (any positive radius dips the interval
-        // below 0) and would infinite-retry. Short-circuit to the exact value.
-        if x.is_one() {
-            return Ok(Exact(FBig::<R, B>::new(Repr::zero(), *self)));
+        if cmp_one.is_eq() {
+            // |x| = 1: the composition π/2 − asin(±1) cancels onto an exact value. acos(1) = 0 is
+            // the acute case — under directed rounding 0's preimage is one-sided ([0, ulp)), so the
+            // Ziv containment test can never certify it (any positive radius dips the interval below
+            // 0) and would infinite-retry. acos(-1) = π is handled here too, for symmetry.
+            return Ok(if x.sign() == Sign::Positive {
+                Exact(FBig::<R, B>::new(Repr::zero(), *self))
+            } else {
+                self.pi::<B>(reborrow_cache(&mut cache))
+            });
         }
 
         Ok(self.ziv(50, |guard| {

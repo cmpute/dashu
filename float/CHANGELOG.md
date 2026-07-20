@@ -49,11 +49,15 @@
   methods carry the same bound. Arithmetic, roots, trigonometric, and `powi` remain `R: Round`.
 
 ### Fix
-- **`acos(1)` under directed rounding** (Down/Zero/Up) no longer hangs. `acos(1) = π/2 −
-  asin(1)` cancels to exactly `0`, but the composition carries a positive radius; under a directed
-  mode `0`'s rounding preimage is one-sided (`[0, ulp)`), so the Ziv containment test could never
-  certify it (any positive radius dips the interval below `0`) and infinite-retried. `acos` now
-  short-circuits `x = 1` to the exact `0`, matching `asin`'s `|x| = 1` special case.
+- **Directed-rounding hang on exact results** (`acos(1)`, `acos(-1)`, `asin(0)`): under a directed
+  mode (Down/Up/Zero) a transcendental whose true value is exactly representable carries a positive
+  radius that can't be certified against the value's one-sided rounding preimage, so the Ziv
+  containment test infinite-retried (and the retry eventually tripped a `dashu-int` NTT assertion).
+  `acos` now short-circuits `|x| = 1` to the exact `0` / `π`, and `asin` short-circuits `x = 0` to
+  `±0` — matching the existing zero/`|x|=1` special cases in the rest of the inverse trig/hyperbolic
+  family. (`hypot` of an exact Pythagorean triple, e.g. `hypot(3,4) = 5`, still hits this under
+  directed rounding — it has no clean single special case; the underlying `dashu-int` NTT crash is
+  tracked separately.)
 
 ## 0.5.0
 
