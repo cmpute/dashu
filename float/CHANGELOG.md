@@ -48,16 +48,24 @@
   affected (custom modes are already discouraged). `CachedFBig`/`CachedCBig` forwarders for these
   methods carry the same bound. Arithmetic, roots, trigonometric, and `powi` remain `R: Round`.
 
+### Add
+- **`hypot` is now correctly rounded via the Ziv loop** with MPFR-style exactness tracking. The
+  closure computes `sqrt(large² + small²)` (operands scaled to avoid `large²` overflowing the
+  exponent — no division) and OR's each step's `Exact`/`Inexact` flag, mirroring MPFR's `exact`
+  flag (`hypot.c`): an all-exact chain yields the exact true value, reported to `ziv` with radius 0,
+  which it accepts without the containment test. This is what lets an exact Pythagorean-triple
+  result (e.g. `hypot(3,4)=5`, `hypot(5,12)=13`) terminate under a directed rounding mode, where
+  the one-sided preimage would otherwise make the containment test infinite-retry.
+
 ### Fix
-- **Directed-rounding hang on exact results** (`acos(1)`, `acos(-1)`, `asin(0)`): under a directed
-  mode (Down/Up/Zero) a transcendental whose true value is exactly representable carries a positive
-  radius that can't be certified against the value's one-sided rounding preimage, so the Ziv
-  containment test infinite-retried (and the retry eventually tripped a `dashu-int` NTT assertion).
-  `acos` now short-circuits `|x| = 1` to the exact `0` / `π`, and `asin` short-circuits `x = 0` to
-  `±0` — matching the existing zero/`|x|=1` special cases in the rest of the inverse trig/hyperbolic
-  family. (`hypot` of an exact Pythagorean triple, e.g. `hypot(3,4) = 5`, still infinite-retries
-  under directed rounding — it has no clean single special case. The `dashu-int` NTT crash that the
-  retry used to trip is now fixed, but the containment issue itself remains.)
+- **Directed-rounding hang on exact results** (`acos(1)`, `acos(-1)`, `asin(0)`, `hypot` of a
+  Pythagorean triple): under a directed mode (Down/Up/Zero) a function whose true value is exactly
+  representable carries a positive radius that can't be certified against the value's one-sided
+  rounding preimage, so the Ziv containment test infinite-retried (and the retry eventually tripped
+  a `dashu-int` NTT assertion, now fixed). `acos` short-circuits `|x| = 1` to the exact `0` / `π`,
+  `asin` short-circuits `x = 0` to `±0` (matching the existing special cases in the rest of the
+  inverse trig/hyperbolic family), and `hypot` reports radius 0 when its computation chain is exact
+  (see the new `hypot` entry above).
 
 ## 0.5.0
 
