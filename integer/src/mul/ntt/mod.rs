@@ -319,10 +319,14 @@ fn add_signed_mul_conv(
     let lb = b.len();
 
     debug_assert!(la > 0 && lb > 0);
-    let (b_pack, nn, k_eff) = select_params(la, lb);
     let la_bits = bit_len(a);
     let lb_bits = bit_len(b);
-    debug_assert!(la_bits > 0 && lb_bits > 0);
+    if la_bits == 0 || lb_bits == 0 {
+        // Either operand is all-zero, so `a·b = 0` and `c += sign·a·b` is a no-op (carry 0, `c`
+        // unchanged). Reachable from `div_rem` multiplying a zero partial quotient/operand.
+        return 0;
+    }
+    let (b_pack, nn, k_eff) = select_params(la, lb);
 
     let coeffs_a = coeff_count(la_bits, b_pack);
     let coeffs_b = coeff_count(lb_bits, b_pack);
