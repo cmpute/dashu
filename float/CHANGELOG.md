@@ -48,6 +48,13 @@
   affected (custom modes are already discouraged). `CachedFBig`/`CachedCBig` forwarders for these
   methods carry the same bound. Arithmetic, roots, trigonometric, and `powi` remain `R: Round`.
 
+### Fix
+- **`acos(1)` under directed rounding** (Down/Zero/Up) no longer hangs. `acos(1) = π/2 −
+  asin(1)` cancels to exactly `0`, but the composition carries a positive radius; under a directed
+  mode `0`'s rounding preimage is one-sided (`[0, ulp)`), so the Ziv containment test could never
+  certify it (any positive radius dips the interval below `0`) and infinite-retried. `acos` now
+  short-circuits `x = 1` to the exact `0`, matching `asin`'s `|x| = 1` special case.
+
 ## 0.5.0
 
 ### Add

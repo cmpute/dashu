@@ -450,6 +450,13 @@ impl<R: ErrorBounds> Context<R> {
         if x_orig.abs_cmp(&FBig::ONE).is_gt() {
             return Err(FpError::OutOfDomain);
         }
+        // acos(1) = 0 exactly. The composition π/2 − asin(1) cancels to exactly 0 but carries a
+        // positive radius, and under directed rounding 0's preimage is one-sided ([0, ulp)), so
+        // the Ziv containment test can never certify it (any positive radius dips the interval
+        // below 0) and would infinite-retry. Short-circuit to the exact value.
+        if x.is_one() {
+            return Ok(Exact(FBig::<R, B>::new(Repr::zero(), *self)));
+        }
 
         Ok(self.ziv(50, |guard| {
             let work = Context::<R>::new(self.precision + guard);
