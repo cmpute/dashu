@@ -1,6 +1,6 @@
 # dashu Roadmap — v0.5.x and beyond
 
-Last updated: 2026-07-11
+Last updated: 2026-07-20
 
 Feature work deferred out of the **v0.5.0** release. The v0.5.x items are all **additive**
 (no breaking changes) and safe to ship as point releases on top of 0.5.0; the post-v1 items
@@ -33,15 +33,19 @@ are longer-term goals. File:line references are anchors from the v0.5.0 tree and
 
 ### Correctness
 
-- **Guaranteed-correct rounding (Ziv retry loop).** ✅ *Delivered for all real transcendentals
-  except `powf`.* `exp`, `exp_m1`, `ln`, `ln_1p`, the trigonometric family (`sin`, `cos`, `sin_cos`,
+- **Guaranteed-correct rounding (Ziv retry loop).** ✅ *Delivered for all real transcendentals.*
+  `exp`, `exp_m1`, `ln`, `ln_1p`, the trigonometric family (`sin`, `cos`, `sin_cos`,
   `tan`, `asin`, `acos`, `atan`, `atan2`), the hyperbolic family (`sinh`, `cosh`, `sinh_cosh`,
-  `tanh`, `asinh`, `acosh`, `atanh`), and `hypot` are guaranteed-correctly rounded via a Ziv retry
-  loop (`Context::ziv`/`ziv_pair`, driven by the `ErrorBounds` preimage). Series transcendentals
-  (trig, atan) use near-correct `_compute` cores the wrapper certifies; composition transcendentals
-  treat the Ziv-correct primitives as black boxes. Remaining: `powf` (its `exp(y·ln x)` amplification
-  needs a dedicated radius treatment), and `dashu-cmplx`'s complex transcendental *wrappers* (which
-  route through these now-correct real primitives but aren't themselves Ziv-wrapped).
+  `tanh`, `asinh`, `acosh`, `atanh`), `hypot`, and `powf` (non-integer exponent) are
+  guaranteed-correctly rounded via a Ziv retry loop (`Context::ziv`/`ziv_pair`, driven by the
+  `ErrorBounds` preimage). Series transcendentals (trig, atan) use near-correct `_compute` cores the
+  wrapper certifies; composition transcendentals treat the Ziv-correct primitives as black boxes.
+  `powf`'s `exp(y·ln x)` amplification is handled by a work-precision radius
+  (`result.ulp()·(|y·ln x|+1)·(B+8)`) that shrinks as `B^{-guard}`, so the containment test
+  converges; an integer-valued `powf` exponent delegates to `powi` (≤ 1 ulp). Remaining: making
+  `powi` itself Ziv-correctly-rounded (currently near-correct, which the `powf` integer-exponent
+  path inherits), and `dashu-cmplx`'s complex transcendental *wrappers* (which route through these
+  now-correct real primitives but aren't themselves Ziv-wrapped).
 - **Signed-zero preservation in `CBig` zero short-circuits.** `sin_cos` and `sqr` take a fast
   path on exactly-zero input that returns `+0` components, so several Annex-G / IEEE signed-zero
   cases are not preserved (all numerically equal to `+0`, hence deferred):

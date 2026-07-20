@@ -296,7 +296,7 @@ impl<const B: Word> Repr<B> {
     /// assert!(Repr::<10>::one().is_int());
     /// assert!(!Repr::<16>::new(123.into(), -1).is_int());
     /// ```
-    pub fn is_int(&self) -> bool {
+    pub const fn is_int(&self) -> bool {
         if self.is_infinite() {
             false
         } else {

@@ -6,6 +6,7 @@
 - `Repr::new_const`: a `const`-evaluable, normalized `Repr` constructor from a `DoubleWord`
   significand (the `const` counterpart of `Repr::new`). `FBig::from_parts_const` now delegates to
   it, and the complex literal macro uses it.
+- `Repr::is_int` is now `const` (it only inspects the exponent and the infinity sentinel).
 - **Exact `Add`/`Sub`/`Mul` operators for `Repr`** (in a new `repr_ops` module). A `Repr` carries no
   precision limit, so add/sub/mul on it are lossless — these are the shared primitives the crate uses
   for exact intermediates (the Ziv containment test, the correctly-rounded `Sum`, and the `FBig`
@@ -24,14 +25,20 @@
 - **Guaranteed-correct rounding for most remaining transcendentals** via the Ziv loop: the
   trigonometric family (`sin`, `cos`, `sin_cos`, `tan`, `asin`, `acos`, `atan`, `atan2`), the
   hyperbolic family (`sinh`, `cosh`, `sinh_cosh`, `tanh`, `asinh`, `acosh`, `atanh`), and `hypot`.
-  (`powf` remains near-correct: its `exp(y·ln x)` composition amplifies the rounding by the result
-  magnitude, and the resulting data-dependent radius makes the Ziv containment test converge poorly
-  for large results — a dedicated radius treatment is deferred.) The trig series (`sin`/`cos`/`atan`)
+  The trig series (`sin`/`cos`/`atan`)
   are factored into near-correct `_compute` cores like `exp_compute`; the composition-based functions
   treat the now-Ziv-correct `exp`/`ln`/`atan` as black boxes and count only their arithmetic. The
   trig argument reduction folds a `|k|·ulp(π/2)` reduction-error term into the radius so the
   containment test stays sound for huge `|x|`. `ziv_pair` certifies both halves of `sin_cos`/
   `sinh_cosh`.
+- **Guaranteed-correct rounding for `powf` (non-integer exponent)** via the Ziv loop. `x^y =
+  exp(y·ln x)`, and `exp` amplifies the rounding of `y·ln x` by the result magnitude — so the
+  radius is `result.ulp()·(|y·ln x|+1)·(B+8)` taken at the *working* precision: it shrinks as
+  `B^{-guard}`, so the containment test converges (a radius computed at unlimited precision would
+  be constant across retries and never settle for a value near a rounding boundary). An
+  integer-valued exponent now delegates to `powi` (binary exponentiation), which also admits a
+  negative base — its sign fixed by the exponent's parity — so `powf(-x, n)` is in domain for
+  integer `n`. That integer-exponent path stays within 1 ulp (near-correct), matching `powi`.
 
 ### Change
 - **(breaking, bound)** `Context::exp`/`exp_m1`/`ln`/`ln_1p` (and `powf`, the hyperbolic family,

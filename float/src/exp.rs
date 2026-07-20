@@ -8,7 +8,7 @@ use crate::{
     round::{ErrorBounds, Round},
     utils::ceil_usize,
 };
-use dashu_base::{AbsOrd, Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign};
+use dashu_base::{Abs, AbsOrd, Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign};
 use dashu_int::IBig;
 
 impl<R: Round, const B: Word> FBig<R, B> {
@@ -298,12 +298,16 @@ pub(crate) fn exp_overflows<R: Round, const B: Word>(
     <isize as core::convert::TryFrom<IBig>>::try_from(s_probe).is_err()
 }
 
-// `powf`/`exp`/`exp_m1` are correctly rounded (via the Ziv loop for exp/exp_m1, and via the
-// Ziv-backed ln/exp primitives for powf), so they require `R: ErrorBounds`.
+// `powf` (non-integer exponent), `exp`, and `exp_m1` are correctly rounded via the Ziv loop, so
+// they require `R: ErrorBounds`. `powf` with an integer-valued exponent delegates to `powi`
+// (`R: Round`, near-correct within 1 ulp).
 impl<R: ErrorBounds> Context<R> {
     /// Raise the floating point number to an floating point power under this context.
     ///
-    /// Note that this method will not rely on [FBig::powi] even if the `exp` is actually an integer.
+    /// A non-integer exponent is correctly rounded via a Ziv loop. An integer-valued exponent
+    /// delegates to [`powi`](Context::powi) (binary exponentiation), which also accepts a negative
+    /// base — its sign is fixed by the exponent's parity — so `pow(-x, n)` is in domain here for
+    /// integer `n`. The integer-exponent path is within 1 ulp (near-correct), matching `powi`.
     ///
     /// # Examples
     ///
@@ -333,7 +337,7 @@ impl<R: ErrorBounds> Context<R> {
         if base.is_infinite() || exp.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision); // TODO: we can allow it if exp is integer
+        assert_limited_precision(self.precision);
 
         // shortcuts
         if exp.is_pos_zero() || exp.is_neg_zero() {
@@ -361,23 +365,61 @@ impl<R: ErrorBounds> Context<R> {
             // pow(1, y) = 1 for any finite y (exp is finite here — infinities were rejected above).
             return Ok(Exact(FBig::ONE));
         }
+
+        // Integer-valued exponent: delegate to the integer-power kernel (binary exponentiation).
+        // This sidesteps the `exp(y·ln x)` amplification entirely, and lets a negative base through
+        // — `powi` fixes the sign from the exponent's parity. `powi` is near-correct (≤ 1 ulp).
+        // Gated on `is_int` (a cheap exponent check) so the non-integer common case skips `to_int`.
+        if exp.is_int() {
+            return self.powi(base, exp.to_int().value());
+        }
+
         if base.sign() == Sign::Negative {
-            // TODO: we should allow negative base when exp is an integer
+            // A non-integer exponent on a negative base has no real value.
             return Err(FpError::OutOfDomain);
         }
 
-        // x^y = exp(y·ln x). Near-correctly rounded (guard-digit recipe): `ln` and `exp` are
-        // themselves Ziv-correct at the working precision, so this is within 1 ulp. A Ziv wrapper
-        // for `powf` is deferred — the data-dependent `exp` amplification (`result · ulp(y·ln x)`)
-        // makes the containment test converge poorly for large-magnitude results, so it needs a
-        // dedicated radius treatment before it's worth the cost.
-        let guard_digits = 10 + ceil_usize(self.precision.log2_est());
-        let work_context = Context::<R>::new(self.precision + guard_digits);
-        let ln_val = work_context.unwrap_fp(work_context.ln(base, reborrow_cache(&mut cache)));
-        let mul_val = work_context.unwrap_fp(work_context.mul(ln_val.repr(), exp));
-        let exp_val =
-            work_context.unwrap_fp(work_context.exp(mul_val.repr(), reborrow_cache(&mut cache)));
-        Ok(exp_val.with_precision(self.precision))
+        // x^y = exp(y·ln x), correctly rounded via the Ziv loop. `ln` and `exp` are themselves
+        // Ziv-correct at the working precision, so the radius comes only from the rounding of the
+        // `ln`/`mul`/`exp` chain — but `exp` AMPLIFIES the absolute error of its argument `y·ln x`
+        // by the result magnitude, i.e. by a relative factor of `|y·ln x|`. The radius is
+        // `result.ulp() · (|y·ln x| + 1) · (B + 8)` where `result.ulp()` is taken at the *working*
+        // precision, so it shrinks as `B^{-guard}` and the containment test converges. (A radius
+        // computed at unlimited precision would be constant across retries and never converge for
+        // a value near a rounding boundary.) The `B + 8` scale covers the `ulp`-vs-`value·B^{1-P}`
+        // gap plus a safety margin for the chained roundings.
+        //
+        // The overflow case is hoisted out of the Ziv closure (which can't return `Err`): if
+        // `exp(y·ln x)` falls outside the finite exponent range, short-circuit before the loop.
+        let probe = Context::<R>::new(self.precision + 32);
+        let ln_x_probe = probe.ln(base, reborrow_cache(&mut cache))?.value();
+        let arg_probe = probe.mul(ln_x_probe.repr(), exp)?.value();
+        if exp_overflows::<R, B>(&probe, arg_probe.repr(), &mut cache) {
+            return Err(if arg_probe.sign() == Sign::Positive {
+                FpError::Overflow(Sign::Positive)
+            } else {
+                FpError::Underflow(Sign::Positive)
+            });
+        }
+
+        let initial_guard = ceil_usize(self.precision.log2_est() / B.log2_est()) + 10;
+        Ok(self.ziv(initial_guard, |guard| {
+            let work = Context::<R>::new(self.precision + guard);
+            let ln_x = work.ln(base, reborrow_cache(&mut cache)).unwrap().value();
+            let arg = work.mul(ln_x.repr(), exp).unwrap().value();
+            let result = work
+                .exp(arg.repr(), reborrow_cache(&mut cache))
+                .unwrap()
+                .value();
+
+            // Radius at unlimited precision (exact arithmetic), but built from the *work-precision*
+            // `result.ulp()` so it carries the `B^{-(p+guard)}` scale and shrinks across retries.
+            let ulp_w = result.ulp().with_precision(0).value();
+            let arg_abs = arg.abs().with_precision(0).value();
+            let scale = (B as i32) + 8;
+            let radius = (ulp_w * (arg_abs + FBig::<R, B>::ONE)) * scale;
+            (result, radius)
+        }))
     }
 
     /// Calculate the exponential function (`eˣ`) on the floating point number under this context.
@@ -559,6 +601,31 @@ mod tests {
             .unwrap()
             .value();
         assert!(r.repr().is_neg_zero());
+        let _ = DBig::ZERO;
+    }
+
+    #[test]
+    fn test_powf_integer_exponent() {
+        use crate::DBig;
+        let ctx = Context::<mode::HalfEven>::new(53);
+        // integer-valued float exponent delegates to powi and supports a negative base (its sign
+        // is fixed by the exponent's parity): (-5)^3 = -125.
+        let neg_base = &Repr::<2>::new((-5).into(), 0);
+        let exp3 = &Repr::<2>::new(3.into(), 0);
+        let via_powf = ctx.powf::<2>(neg_base, exp3, None).unwrap().value();
+        let via_powi = ctx.powi::<2>(neg_base, 3.into()).unwrap().value();
+        assert_eq!(via_powf.repr(), via_powi.repr());
+        assert_eq!(via_powf.repr().sign(), Sign::Negative);
+
+        // a non-integer exponent on a negative base is out of domain (no real value)
+        let exp_half = &Repr::<2>::new(5.into(), -1); // 2.5
+        assert_eq!(ctx.powf::<2>(neg_base, exp_half, None), Err(FpError::OutOfDomain));
+
+        // positive base, integer exponent: also routes through powi
+        let pos_base = &Repr::<2>::new(3.into(), 0);
+        let exp4 = &Repr::<2>::new(4.into(), 0);
+        let r = ctx.powf::<2>(pos_base, exp4, None).unwrap().value();
+        assert_eq!(r.repr(), ctx.powi::<2>(pos_base, 4.into()).unwrap().value().repr());
         let _ = DBig::ZERO;
     }
 }

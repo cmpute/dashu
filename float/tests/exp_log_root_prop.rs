@@ -276,4 +276,20 @@ proptest! {
         let r_2p = y_2p.atan2(&x_2p).with_precision(P).value();
         prop_assert_eq!(r_p, r_2p);
     }
+
+    /// Correct-rounding self-oracle for powf. `base > 0` keeps it in domain; the exponent is kept
+    /// non-integer (m·10⁻⁴ with m % 10000 ≠ 0) so the Ziv path is exercised — integer-valued
+    /// exponents delegate to `powi` and are covered by `test_powf_integer_exponent`. The wide
+    /// exponent range (up to ±200) stresses the `exp(y·ln x)` amplification, which is exactly the
+    /// case the work-precision radius (vs the old unlimited-precision one) must converge on.
+    #[test]
+    fn powf_rounding_exact_oracle(b in pos_x(100_000), m in -2_000_000i64..=2_000_000i64) {
+        prop_assume!(m != 0 && m % 10000 != 0);
+        let e = x_from(m);
+        let r_p = b.clone().powf(&e);
+        let b_2p = b.clone().with_precision(2 * P).value();
+        let e_2p = e.clone().with_precision(2 * P).value();
+        let r_2p = b_2p.powf(&e_2p).with_precision(P).value();
+        prop_assert_eq!(r_p, r_2p);
+    }
 }
