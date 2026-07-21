@@ -611,26 +611,10 @@ impl<'a, R: Round, const B: Word> Product<&'a CachedFBig<R, B>> for CachedFBig<R
 // Math functions (forward to Context / FBig, preserve cache handle)
 // ---------------------------------------------------------------------------
 
-/// Forward a unary function to a [`Context`] method returning `FpResult<FBig>`, panicking on
-/// error and re-attaching the cache handle. Returns a bare `CachedFBig`.
+/// Forward a unary transcendental to its [`Context`] method, panicking on error and re-attaching
+/// the cache handle. The context method returns an [`FpResult`] whose rounding flag is dropped by
+/// [`unwrap_fp`](crate::Context::unwrap_fp); the cached wrapper never surfaces it.
 macro_rules! forward_to_context {
-    ($name:ident) => {
-        #[doc = concat!("See [`FBig::", stringify!($name), "`].")]
-        #[inline]
-        pub fn $name(&self) -> CachedFBig<R, B> {
-            let mut c = self.cache.borrow_mut();
-            let fbig = self
-                .fbig
-                .context
-                .unwrap_fp(self.fbig.context.$name::<B>(&self.fbig.repr, Some(&mut *c)));
-            CachedFBig::from_fbig(fbig, &self.cache)
-        }
-    };
-}
-
-/// Forward a unary function to a [`Context`] method returning `FpResult<FBig>`, panicking on
-/// error and discarding the rounding info. Returns a bare `CachedFBig`.
-macro_rules! forward_to_context_unwrap {
     ($name:ident) => {
         #[doc = concat!("See [`FBig::", stringify!($name), "`].")]
         #[inline]
@@ -686,12 +670,12 @@ impl<R: ErrorBounds, const B: Word> CachedFBig<R, B> {
     forward_to_context!(acosh);
     forward_to_context!(atanh);
 
-    forward_to_context_unwrap!(sin);
-    forward_to_context_unwrap!(cos);
-    forward_to_context_unwrap!(tan);
-    forward_to_context_unwrap!(asin);
-    forward_to_context_unwrap!(acos);
-    forward_to_context_unwrap!(atan);
+    forward_to_context!(sin);
+    forward_to_context!(cos);
+    forward_to_context!(tan);
+    forward_to_context!(asin);
+    forward_to_context!(acos);
+    forward_to_context!(atan);
 
     /// Sine and cosine together (see [`FBig::sin_cos`]).
     pub fn sin_cos(&self) -> (Self, Self) {

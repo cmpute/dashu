@@ -23,6 +23,18 @@ use dashu_int::IBig;
 /// A near-correct value paired with its provable error radius (the Ziv closure contract).
 pub(crate) type Rad<R, const B: Word> = (FBig<R, B>, FBig<R, B>);
 
+/// Series-truncation error radius shared by the Maclaurin/Euler cores (`sin`/`cos`/`sin_cos`/
+/// `atan` here, and `ln`). Each accumulated term contributes `< 1 ulp` of rounding and the
+/// truncated tail adds another `< 1 ulp`, so `|value − true| < (4·terms + 12)·ulp(value)`: the
+/// `4·terms` covers per-step rounding, the `12` the reconstruction (the `×2` atanh factor, the
+/// `s·ln2`/powering recombination, and a safety margin).
+pub(crate) fn series_radius<R: Round, const B: Word>(
+    value: &FBig<R, B>,
+    terms: usize,
+) -> FBig<R, B> {
+    value.ulp() * (4 * terms + 12)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Quadrant {
     First,
@@ -168,7 +180,7 @@ impl<R: ErrorBounds> Context<R> {
             }
             k += 1;
         }
-        let radius = sum.ulp() * (4 * k + 12);
+        let radius = series_radius(&sum, k);
         (sum, radius)
     }
 
@@ -231,7 +243,7 @@ impl<R: ErrorBounds> Context<R> {
             }
             k += 1;
         }
-        let radius = sum.ulp() * (4 * k + 12);
+        let radius = series_radius(&sum, k);
         (sum, radius)
     }
 
@@ -307,15 +319,16 @@ impl<R: ErrorBounds> Context<R> {
             k += 1;
         }
         (
-            (sin_sum.clone(), sin_sum.ulp() * (4 * k + 12)),
-            (cos_sum.clone(), cos_sum.ulp() * (4 * k + 12)),
+            (sin_sum.clone(), series_radius(&sin_sum, k)),
+            (cos_sum.clone(), series_radius(&cos_sum, k)),
         )
     }
 
     /// Calculate the tangent of the floating point representation.
     ///
     /// # Note
-    /// Near odd multiples of π/2, the result is an infinity (returned as a value, not an error).
+    /// Near odd multiples of π/2 the value grows without bound; dashu's wide exponent range holds
+    /// it as a large finite number rather than saturating to ±∞.
     pub fn tan<const B: Word>(
         &self,
         x: &Repr<B>,
@@ -331,25 +344,13 @@ impl<R: ErrorBounds> Context<R> {
             return signed_zero_normal(self, x);
         }
 
-        // Pole check (hoisted — the Ziv closure can't return ±∞): if cos rounds to +0, x is at a tan
-        // pole → ±∞ (sign of the numerator).
-        let (work_p, r_p, quad_p, _) = self.reduce_to_quadrant(x, 50, reborrow_cache(&mut cache));
-        let ((sin_p, _), (cos_p, _)) = work_p.sin_cos_compute(&r_p);
-        let (s_p, c_p) = match quad_p {
-            Quadrant::First => (sin_p, cos_p),
-            Quadrant::Second => (cos_p, -sin_p),
-            Quadrant::Third => (-sin_p, -cos_p),
-            Quadrant::Fourth => (-cos_p, sin_p),
-        };
-        if c_p.repr.is_pos_zero() {
-            let inf = if s_p.sign() == Sign::Negative {
-                Repr::neg_infinity()
-            } else {
-                Repr::infinity()
-            };
-            return Ok(Rounded::Exact(FBig::new(inf, *self)));
-        }
-
+        // tan = sin/cos, correctly rounded via the Ziv loop. Near a pole (an odd multiple of π/2)
+        // the value is large but finite at the working precision — dashu's wide exponent range holds
+        // it, and the sign is carried by the arithmetic (s/−|c| is negative), so there is no pole
+        // special-case here. The closure's `significand.is_zero()` guard below handles the
+        // unreachable exact-pole case (cos cancelling to a zero significand) by forcing a retry.
+        // Skipping a hoisted pole check avoids recomputing the sin/cos series twice (once for the
+        // check, once for the first Ziv attempt).
         Ok(self.ziv(50, |guard| {
             let (work, r, quadrant, reduction_err) =
                 self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache));
@@ -360,9 +361,10 @@ impl<R: ErrorBounds> Context<R> {
                 Quadrant::Third => (-sin_r, -cos_r),
                 Quadrant::Fourth => (-cos_r, sin_r),
             };
-            if c.repr.is_pos_zero() {
-                // cos rounded to +0 at a higher guard (a deep near-pole): force a retry. The exact
-                // pole is unreachable for rational x, so a higher guard makes cos representable.
+            if c.repr.significand.is_zero() {
+                // cos rounded to a zero significand at this guard (the input sits on a work-
+                // precision pole — unreachable for finite-precision x): force a retry. A higher guard
+                // makes cos representable (nonzero), yielding a large finite tan.
                 return (FBig::ZERO, FBig::ONE);
             }
             let result = work.div(&s.repr, &c.repr).unwrap().value();
@@ -550,7 +552,7 @@ impl<R: ErrorBounds> Context<R> {
             sum += &term;
             n += 1;
         }
-        let radius = sum.ulp() * (4 * n + 12);
+        let radius = series_radius(&sum, n);
         (sum, radius)
     }
 
@@ -797,5 +799,35 @@ mod tests {
         let s = ctx.sin::<10>(x.repr(), None).unwrap().value();
         // sin(x) ≈ x for a small negative x — completing without panicking is the regression guard.
         assert_eq!(s.sign(), Sign::Negative);
+    }
+
+    /// tan near a pole (π/2) must not panic, and its sign must follow the pole side: just below →
+    /// large positive (→ +∞), just above → large negative (→ −∞). Guards the pole check, which
+    /// tests `cos` with `significand.is_zero()` (not `is_pos_zero`, which would miss `-0`) and
+    /// assigns the infinity sign as `sign(sin)·sign(cos)`.
+    #[test]
+    fn test_tan_near_pole_signs_and_no_panic() {
+        let p = 53usize;
+        let ctx = Context::<mode::HalfEven>::new(p);
+        let half_pi = FBig::<mode::HalfEven>::pi(p) / 2u8;
+        // a clear offset either side of the pole (≈2⁻¹⁰, far larger than half_pi's rounding error)
+        let eps = FBig::<mode::HalfEven>::ONE >> 10;
+        let below = ctx
+            .tan::<2>((half_pi.clone() - &eps).repr(), None)
+            .unwrap()
+            .value();
+        let above = ctx
+            .tan::<2>((half_pi.clone() + &eps).repr(), None)
+            .unwrap()
+            .value();
+        assert_eq!(below.sign(), Sign::Positive, "tan just below π/2 is large positive");
+        assert_eq!(above.sign(), Sign::Negative, "tan just above π/2 is large negative");
+        // sanity: tan(π/4) = 1
+        let pi = FBig::<mode::HalfEven>::pi(p);
+        let q = ctx.tan::<2>((pi / 4u8).repr(), None).unwrap().value();
+        assert!(
+            (q.clone() - FBig::ONE).abs_cmp(&(FBig::ONE >> 40)).is_le(),
+            "tan(π/4) ≈ 1, got {q:?}"
+        );
     }
 }

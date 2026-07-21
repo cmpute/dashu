@@ -1,7 +1,7 @@
 use crate::{
     error::{assert_finite, FpError},
     round::{Round, Rounded},
-    utils::{digit_len, split_digits, split_digits_ref},
+    utils::{ceil_usize, digit_len, split_digits, split_digits_ref},
 };
 use core::marker::PhantomData;
 use dashu_base::{Approximation::*, EstimatedLog2, Sign};
@@ -685,6 +685,16 @@ impl<R: Round> Context<R> {
     #[inline]
     pub const fn precision(&self) -> usize {
         self.precision
+    }
+
+    /// `⌈log_B(precision)⌉` — the number of base-`B` digits needed to index the precision word.
+    ///
+    /// This is the base guard every transcendental Ziv loop adds on top of `precision`: it absorbs
+    /// the rounding that accumulates over the `O(log p)` series / squaring steps. Each caller adds
+    /// its own operation-specific constant (`+ 2`, `+ 10`, …); this helper is the shared core that
+    /// maps the binary precision estimate onto the output base.
+    pub(crate) fn base_guard_digits<const B: Word>(&self) -> usize {
+        ceil_usize(self.precision.log2_est() / B.log2_est())
     }
 
     /// Round the repr to the desired precision

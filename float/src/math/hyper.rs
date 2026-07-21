@@ -22,9 +22,8 @@ use crate::{
     },
     repr::{Context, Repr, Word},
     round::{ErrorBounds, Round},
-    utils::ceil_usize,
 };
-use dashu_base::{Abs, AbsOrd, Approximation::Exact, EstimatedLog2, Sign};
+use dashu_base::{Abs, AbsOrd, Approximation::Exact, Sign};
 
 impl<R: ErrorBounds> Context<R> {
     /// Hyperbolic sine.
@@ -49,7 +48,7 @@ impl<R: ErrorBounds> Context<R> {
         // sinh(x) = (exp_m1(x) - exp_m1(-x)) / 2  (cancellation-free). `exp_m1` is itself Ziv-correct
         // at the working precision, so only the subtraction/divide rounding contributes to the
         // radius (a few working-ULPs, scaled by the `exp_m1(x) ≈ 2·sinh(x)` magnitude ratio).
-        let initial_guard = ceil_usize(self.precision.log2_est() / B.log2_est()) + 10;
+        let initial_guard = self.base_guard_digits::<B>() + 10;
         Ok(self.ziv(initial_guard, |guard| {
             let work = Context::<R>::new(self.precision + guard);
             let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
@@ -90,7 +89,7 @@ impl<R: ErrorBounds> Context<R> {
         // cosh(x) = (exp_m1(x) + exp_m1(-x)) / 2 + 1 (no cancellation: same-sign sum). `exp_m1` is
         // Ziv-correct at the working precision; the radius is a few working-ULPs (the `exp_m1(x) ≈
         // 2·cosh(x)` magnitude ratio, plus the trailing +1).
-        let initial_guard = ceil_usize(self.precision.log2_est() / B.log2_est()) + 10;
+        let initial_guard = self.base_guard_digits::<B>() + 10;
         Ok(self.ziv(initial_guard, |guard| {
             let work = Context::<R>::new(self.precision + guard);
             let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
@@ -138,7 +137,7 @@ impl<R: ErrorBounds> Context<R> {
         }
         // sinh = (ep - em)/2; cosh = (ep + em)/2 + 1, sharing the two `exp_m1` calls. Certified as a
         // pair via `ziv_pair` (retry while either endpoint straddles a boundary).
-        let initial_guard = ceil_usize(self.precision.log2_est() / B.log2_est()) + 10;
+        let initial_guard = self.base_guard_digits::<B>() + 10;
         let (sinh_r, cosh_r) = self.ziv_pair(initial_guard, |guard| {
             let work = Context::<R>::new(self.precision + guard);
             let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
@@ -183,7 +182,7 @@ impl<R: ErrorBounds> Context<R> {
         // tanh(x) = exp_m1(2x) / (exp_m1(2x) + 2). `exp_m1(2x)` is Ziv-correct at the working
         // precision. For large positive x it overflows → tanh = +1 (returned inline as an exact
         // value); for large negative x, exp_m1(2x) → -1 (finite), so tanh → -1 naturally.
-        let initial_guard = ceil_usize(self.precision.log2_est() / B.log2_est()) + 10;
+        let initial_guard = self.base_guard_digits::<B>() + 10;
         Ok(self.ziv(initial_guard, |guard| {
             let work = Context::<R>::new(self.precision + guard);
             let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
@@ -220,7 +219,7 @@ impl<R: ErrorBounds> Context<R> {
         // `sqrt(x²+1) − 1` cancellation near 0. `ln_1p`/`ln`/`sqrt` are Ziv-correct at the working
         // precision, so the radius is a few working-ULPs of accumulated arithmetic. The `|x|` so
         // large that `x²` overflows arm falls back to the asymptotic `sign·ln(2|x|)`.
-        let initial_guard = ceil_usize(self.precision.log2_est() / B.log2_est()) + 10;
+        let initial_guard = self.base_guard_digits::<B>() + 10;
         Ok(self.ziv(initial_guard, |guard| {
             let work = Context::<R>::new(self.precision + guard);
             let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
@@ -281,7 +280,7 @@ impl<R: ErrorBounds> Context<R> {
         // cancellation near x = 1. `ln_1p`/`ln`/`sqrt` are Ziv-correct at the working precision;
         // the radius is a few working-ULPs (generous for the near-x=1 cancellation). The `(x-1)(x+1)`
         // overflow arm falls back to the asymptotic `ln(2x)`.
-        let initial_guard = ceil_usize(self.precision.log2_est() / B.log2_est()) + 10;
+        let initial_guard = self.base_guard_digits::<B>() + 10;
         Ok(self.ziv(initial_guard, |guard| {
             let work = Context::<R>::new(self.precision + guard);
             let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
@@ -332,7 +331,7 @@ impl<R: ErrorBounds> Context<R> {
         // atanh(x) = ln_1p(2x/(1-x)) / 2. `ln_1p` is Ziv-correct at the working precision; the
         // radius is a few working-ULPs (generous: the `2x/(1-x)` division amplifies as |x| → 1, but
         // the result grows there too, so its ULP keeps the bound sound — Ziv retries near |x|=1).
-        let initial_guard = ceil_usize(self.precision.log2_est() / B.log2_est()) + 10;
+        let initial_guard = self.base_guard_digits::<B>() + 10;
         Ok(self.ziv(initial_guard, |guard| {
             let work = Context::<R>::new(self.precision + guard);
             let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);

@@ -47,6 +47,11 @@
   All six built-in modes satisfy `ErrorBounds`; only custom non-`ErrorBounds` `Round` modes are
   affected (custom modes are already discouraged). `CachedFBig`/`CachedCBig` forwarders for these
   methods carry the same bound. Arithmetic, roots, trigonometric, and `powi` remain `R: Round`.
+- **Internal dedup** (no behavior change): the `⌈log_B(precision)⌉` base-guard formula shared by every
+  transcendental Ziv loop is now `Context::base_guard_digits::<B>()` (12 call sites in `hyper`/`exp`/
+  `log`), and the `ulp·(4·terms + 12)` series-truncation radius is now `series_radius(value, terms)`
+  (shared by the `sin`/`cos`/`sin_cos`/`atan`/`ln` series cores). The two textually-identical
+  `CachedFBig` forwarding macros (`forward_to_context!` / `forward_to_context_unwrap!`) are merged.
 
 ### Add
 - **`hypot` is now correctly rounded via the Ziv loop** with MPFR-style exactness tracking. The
@@ -66,6 +71,15 @@
   `asin` short-circuits `x = 0` to `±0` (matching the existing special cases in the rest of the
   inverse trig/hyperbolic family), and `hypot` reports radius 0 when its computation chain is exact
   (see the new `hypot` entry above).
+- **`tan` no longer has a hoisted pole check.** The check (which tested `cos` with `is_pos_zero`,
+  missing `-0`, and computed a `±∞` pole sign) re-evaluated the sin/cos series a second time on top of
+  the first Ziv attempt — a ~2× cost on every `tan` call. It's removed: near a pole (an odd multiple
+  of π/2) the value is large but finite, and dashu's wide exponent range holds it as a finite number
+  whose sign is carried by the arithmetic (`s/−|c|` is negative), so no `±∞` special-case is needed.
+  The unreachable exact-pole case (cos cancelling to a zero significand — impossible for finite-
+  precision input, since a `p`-digit rational can't sit closer than ~`B⁻ᵖ` to the irrational pole) is
+  handled by the Ziv-closure's `significand.is_zero()` retry guard, which forces a higher guard where
+  cos is representable.
 
 ## 0.5.0
 

@@ -6,7 +6,6 @@ use crate::{
     math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr, Word},
     round::{ErrorBounds, Round},
-    utils::ceil_usize,
 };
 use dashu_base::{Abs, AbsOrd, Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign};
 use dashu_int::IBig;
@@ -402,7 +401,7 @@ impl<R: ErrorBounds> Context<R> {
             });
         }
 
-        let initial_guard = ceil_usize(self.precision.log2_est() / B.log2_est()) + 10;
+        let initial_guard = self.base_guard_digits::<B>() + 10;
         Ok(self.ziv(initial_guard, |guard| {
             let work = Context::<R>::new(self.precision + guard);
             let ln_x = work.ln(base, reborrow_cache(&mut cache)).unwrap().value();
@@ -539,7 +538,7 @@ impl<R: ErrorBounds> Context<R> {
         // rounding, plus `n` for the Bⁿ powering amplification — halved from the pre-Ziv `2n`,
         // since Ziv (not the guard count) now certifies correctness. `n ≈ √p` is derived from the
         // target precision and is constant across retries.
-        let series_guard = ceil_usize(self.precision.log2_est() / B.log2_est());
+        let series_guard = self.base_guard_digits::<B>();
         let n = 1usize << (self.precision.bit_len() / 2);
         Ok(self.ziv(series_guard + n, |guard| {
             self.exp_compute::<B>(

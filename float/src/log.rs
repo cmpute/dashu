@@ -10,9 +10,9 @@ use crate::{
     error::{assert_finite, assert_limited_precision, FpError, FpResult},
     fbig::FBig,
     math::cache::{reborrow_cache, ConstCache},
+    math::trig::series_radius,
     repr::{Context, Repr, Word},
     round::{ErrorBounds, Round, Rounded},
-    utils::ceil_usize,
 };
 use core::cmp::Ordering;
 
@@ -148,7 +148,7 @@ impl<R: Round> Context<R> {
                 // Near-correct ln(B) via the atanh series (no Ziv certification — base conversion
                 // only needs a near-correct constant). `ln_compute` is on `R: Round`, so this keeps
                 // `ln_base` callable from `R: Round` contexts (base conversion).
-                let guard = ceil_usize(self.precision.log2_est() / B.log2_est()) + 2;
+                let guard = self.base_guard_digits::<B>() + 2;
                 self.ln_compute::<B>(
                     &Repr::new(Repr::<B>::BASE.into(), 0),
                     self.precision + guard,
@@ -189,7 +189,7 @@ impl<R: Round> Context<R> {
 
         // L(n) = (Q + T) / (n·Q). Extra guard digits absorb the division's rounding
         // (the binary-splitting state is exact, so only this single round loses anything).
-        let guard_digits = ceil_usize(self.precision.log2_est() / B.log2_est());
+        let guard_digits = self.base_guard_digits::<B>();
         let work_context = Self::new(self.precision + guard_digits + 2);
 
         let num = work_context.convert_int::<B>(q.as_ibig() + &t).value();
@@ -290,7 +290,7 @@ impl<R: Round> Context<R> {
         // Basing the radius on `result.ulp()` (not `sum.ulp()`) keeps its exponent aligned with
         // `a` (= result) in the Ziv containment test, so `a − e` avoids a slow exponent-misaligned
         // unlimited-precision subtract — a ~3× speedup on `ln` at high precision.
-        let radius = result.ulp() * (4 * terms + 12);
+        let radius = series_radius(&result, terms);
         (result, radius)
     }
 }
@@ -397,7 +397,7 @@ impl<R: ErrorBounds> Context<R> {
         // *performance* knob (first-attempt hit rate), not a correctness backstop — Ziv certifies
         // the result. (The pre-Ziv `+ 2` is retained: with the conservative radius below it is still
         // needed for the first attempt to clear the half-ulp preimage at typical precisions.)
-        let base_guard = ceil_usize(self.precision.log2_est() / B.log2_est()) + 2;
+        let base_guard = self.base_guard_digits::<B>() + 2;
         self.ziv(base_guard + one_plus as usize, |guard| {
             self.ln_compute::<B>(x, self.precision + guard, one_plus, reborrow_cache(&mut cache))
         })
