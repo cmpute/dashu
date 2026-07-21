@@ -199,4 +199,12 @@ mod tests {
         assert!(s.re().is_infinite());
         assert!(s.im().is_pos_zero());
     }
+
+    // `sqrt` at unlimited precision panics via `guard` (the special-value shortcut above only
+    // catches zero/infinity, so a finite nonzero input reaches the guard context).
+    #[test]
+    #[should_panic(expected = "precision cannot be 0")]
+    fn complex_sqrt_unlimited_panics() {
+        let _ = C::I.sqrt();
+    }
 }

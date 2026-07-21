@@ -126,6 +126,9 @@ impl<R: ErrorBounds> Context<R> {
         if z.is_infinite() {
             return Err(FpError::Indeterminate);
         }
+        // Builds the work context directly (a complex `Context`, not `guard`'s `FloatCtxt`), so
+        // assert explicitly — same reason as `powf`.
+        self.assert_limited();
         let gctx = Context::new(self.precision() + ITRIG_GUARD);
         let p = self.precision();
         let one = CBig::ONE;
@@ -149,6 +152,7 @@ impl<R: ErrorBounds> Context<R> {
         if z.is_infinite() {
             return Err(FpError::Indeterminate);
         }
+        self.assert_limited(); // builds the work context directly, like `powf` — see `asin`
         let gctx = Context::new(self.precision() + ITRIG_GUARD);
         let p = self.precision();
         let one = CBig::ONE;
@@ -174,6 +178,7 @@ impl<R: ErrorBounds> Context<R> {
             // 1±iz terms become infinite and the log diverges — report Indeterminate for now.
             return Err(FpError::Indeterminate);
         }
+        self.assert_limited(); // builds the work context directly, like `powf` — see `asin`
         let gctx = Context::new(self.precision() + ITRIG_GUARD);
         let p = self.precision();
         let one = CBig::ONE;
@@ -281,22 +286,24 @@ mod tests {
 
     #[test]
     fn sin_i_is_i_sinh_one() {
-        // sin(i) = i·sinh(1) = i·1.1752… ; purely imaginary
-        let s = C::I.sin();
+        // sin(i) = i·sinh(1) = i·1.1752… ; purely imaginary. Use a *limited*-precision input —
+        // `sin` rejects unlimited precision (it would otherwise silently compute at `TRIG_GUARD`).
+        let s = c(0, 1).sin();
         assert!(s.re().significand().is_zero());
         assert!(!s.im().significand().is_zero());
     }
 
     #[test]
     fn asin_zero_is_zero() {
-        assert!(C::ZERO.asin() == C::ZERO);
+        // limited-precision input (asin rejects unlimited precision)
+        assert!(c(0, 0).asin() == C::ZERO);
     }
 
     #[test]
     fn asin_one_is_half_pi() {
         use dashu_base::{Abs, AbsOrd};
-        // asin(1) = π/2
-        let (re, im) = C::ONE.asin().into_parts();
+        // asin(1) = π/2 (limited-precision input — asin rejects unlimited precision)
+        let (re, im) = c(1, 0).asin().into_parts();
         let half_pi = F::from_parts(15707963267948966i64.into(), -16)
             .with_precision(60)
             .value();
@@ -310,7 +317,8 @@ mod tests {
     #[test]
     fn acos_zero_is_half_pi() {
         use dashu_base::{Abs, AbsOrd};
-        let (re, _im) = C::ZERO.acos().into_parts();
+        // limited-precision input (acos rejects unlimited precision)
+        let (re, _im) = c(0, 0).acos().into_parts();
         let half_pi = F::from_parts(15707963267948966i64.into(), -16)
             .with_precision(60)
             .value();
@@ -323,8 +331,8 @@ mod tests {
     #[test]
     fn atan_one_is_quarter_pi() {
         use dashu_base::{Abs, AbsOrd};
-        // atan(1) = π/4
-        let (re, _im) = C::ONE.atan().into_parts();
+        // atan(1) = π/4 (limited-precision input — atan rejects unlimited precision)
+        let (re, _im) = c(1, 0).atan().into_parts();
         let quarter_pi = F::from_parts(7853981633974483i64.into(), -16)
             .with_precision(60)
             .value();
@@ -340,5 +348,20 @@ mod tests {
         let z = c(1, 1);
         let r = z.sin().asin();
         assert!(r == z);
+    }
+
+    // The trig functions reject unlimited precision. `sin`/`cos`/`tan` do so via `guard`; the
+    // inverse trig (`asin`/`acos`/`atan`) build their work context directly and assert explicitly
+    // (like `powf`). The zero shortcuts (`C::ZERO.sin()` etc.) bypass the check, as they're exact.
+    #[test]
+    #[should_panic(expected = "precision cannot be 0")]
+    fn complex_sin_unlimited_panics() {
+        let _ = C::I.sin();
+    }
+
+    #[test]
+    #[should_panic(expected = "precision cannot be 0")]
+    fn complex_asin_unlimited_panics() {
+        let _ = C::ONE.asin();
     }
 }

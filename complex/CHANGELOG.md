@@ -14,6 +14,23 @@
   inherited from `dashu-float`'s Ziv-backed real `exp`/`ln`/`sinh_cosh` primitives. `powi` and the
   field arithmetic (`add`/`sub`/`mul`/`div`/`sqr`/`inv`) remain `R: Round`.
 
+### Fix
+- **Unlimited-precision handling**, centralized: the check now lives in `Context::guard` (the
+  guard-digit recipe is an inherently limited-precision technique, so `guard` rejects precision 0
+  rather than silently making a finite `0 + GUARD` context). All transcendentals that build a guard
+  context via `guard` — `exp`, `log`, `abs`, `sqrt`, and the complex `sin`/`cos`/`tan`/`sin_cos` —
+  now panic on an unlimited context as their docs claim (previously they silently computed at the
+  fixed guard precision and marked the truncated value `Exact`). The inverse trig (`asin`/`acos`/
+  `atan`) and `powf` build their work context directly (`Context::new(p + GUARD)`, bypassing
+  `guard`) and so assert explicitly. The exact special-value shortcuts (`exp(0)=1`, `exp(±inf)`,
+  `powf(z,0)=1`, `log(0)=-∞`, `log(∞)=+∞`, `sqrt(±0)`, `sin/cos(0)`) still bypass the check — they
+  need no precision.
+- **Arithmetic at unlimited precision is now correct.** `mul`/`sqr`/`norm` switch from `guard` to a
+  new `Context::work_context` that uses the exact `self.float()` (precision 0) at unlimited, so they
+  are now exact there (previously they rounded to the guard precision). `div`/`inv` use the same path
+  and now panic at unlimited via `dashu-float`'s `div` (a quotient isn't exactly representable in
+  general) — previously they silently returned a guard-rounded value.
+
 ## 0.5.0 (Initial release)
 
 `dashu-cmplx` provides [`CBig`], an arbitrary-precision complex number type built on top of

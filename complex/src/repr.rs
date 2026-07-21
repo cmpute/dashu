@@ -64,6 +64,17 @@ impl<R: Round> Context<R> {
         self.0.precision()
     }
 
+    /// Reject unlimited precision (0): [`Self::guard`] calls this (the guard-digit recipe is a
+    /// limited-precision technique), and `powf` calls it directly (it builds its work context
+    /// bypassing `guard`). Without it, `self.guard(G)` would silently make a finite `0 + G` context
+    /// and the transcendental would compute at ~`G` digits — the `dashu-float` layer only sees `G`
+    /// and can't catch it. Private counterpart of `dashu_float`'s internal check.
+    pub(crate) fn assert_limited(&self) {
+        if self.precision() == 0 {
+            panic!("precision cannot be 0 (unlimited) for this operation!")
+        }
+    }
+
     /// The inner float context used to drive the real-part math (copied, since it is `Copy`).
     #[inline]
     pub(crate) const fn float(&self) -> FloatCtxt<R> {
@@ -72,9 +83,28 @@ impl<R: Round> Context<R> {
 
     /// Build a transient float working context at `p + g` guard digits — the guard-digit recipe
     /// (§6.1 of the design doc) evaluates each component at extra precision and re-rounds to `p`.
+    ///
+    /// The recipe is an inherently limited-precision technique, so this rejects an unlimited context
+    /// up front (the transcendental callers — `exp`/`log`/`abs`/`sqrt`/trig — can't be computed
+    /// exactly at unlimited precision). Arithmetic that *can* be exact at unlimited uses
+    /// [`Self::work_context`] instead, which bypasses this check.
     #[inline]
     pub(crate) fn guard(&self, g: usize) -> FloatCtxt<R> {
+        self.assert_limited();
         FloatCtxt::new(self.precision() + g)
+    }
+
+    /// The work context for an arithmetic op: the guard-digit recipe ([`Self::guard`]) at limited
+    /// precision, or the exact `self.float()` (precision 0) when the context is unlimited. So
+    /// `mul`/`sqr`/`norm` are exact at unlimited; `div`/`inv` still panic there via the float
+    /// layer's own check (a quotient isn't exactly representable in general).
+    #[inline]
+    pub(crate) fn work_context(&self, g: usize) -> FloatCtxt<R> {
+        if self.precision() != 0 {
+            FloatCtxt::new(self.precision() + g)
+        } else {
+            self.float()
+        }
     }
 
     /// Unwrap a [`CfpResult`], returning the [`CBig`] value directly.

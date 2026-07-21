@@ -120,7 +120,9 @@ impl<R: Round> Context<R> {
                 self.float(),
             )));
         }
-        let gctx = self.guard(NORM_GUARD);
+        // `work_context` (not `guard`): at unlimited precision `sqr`/`add` are exact, so `norm`
+        // is too — it shouldn't panic or round there.
+        let gctx = self.work_context(NORM_GUARD);
         let re2 = gctx.unwrap_fp(gctx.sqr(z.re()));
         let im2 = gctx.unwrap_fp(gctx.sqr(z.im()));
         let n = gctx.unwrap_fp(gctx.add(re2.repr(), im2.repr()));
@@ -137,6 +139,8 @@ impl<R: ErrorBounds> Context<R> {
     ///
     /// Panics if the precision is unlimited.
     pub fn abs<const B: Word>(&self, z: &CBig<R, B>) -> FpResult<FBig<R, B>> {
+        // `guard` rejects an unlimited context (otherwise `hypot` would silently compute |z| at
+        // ~`ABS_GUARD` digits — its own assert only sees the guard precision).
         let gctx = self.guard(ABS_GUARD);
         let h = gctx.hypot(z.re(), z.im())?;
         Ok(h.value().with_precision(self.precision()))
@@ -242,5 +246,12 @@ mod tests {
         // atan(1) = π/4 ≈ 0.7854, strictly between 0 and 1
         assert!(a > F::ZERO);
         assert!(a < F::ONE);
+    }
+
+    // abs on an unlimited-precision CBig must panic, not silently compute |z| at ABS_GUARD digits.
+    #[test]
+    #[should_panic(expected = "precision cannot be 0")]
+    fn complex_abs_unlimited_precision_panics() {
+        let _ = C::ONE.abs();
     }
 }

@@ -78,6 +78,8 @@ impl<R: ErrorBounds> Context<R> {
             };
         }
 
+        // `guard` rejects an unlimited context (the special-value shortcuts above are exact and
+        // need no precision).
         let gctx = self.guard(EXP_GUARD);
         let p = self.precision();
         let ex = gctx.exp(z.re(), reborrow_cache(&mut cache))?.value();
@@ -105,6 +107,9 @@ impl<R: ErrorBounds> Context<R> {
         if w.is_zero() {
             return Ok(Exact(CBig::ONE)); // powf(z, 0) = 1, incl. powf(0, 0)
         }
+        // As with `exp`, the guard context would silently pin finite precision onto an unlimited
+        // context — reject it up front (the `w == 0` shortcut above is exact).
+        self.assert_limited();
         let gctx = Context::new(self.precision() + POWF_GUARD);
         let log_z = gctx.log(base, reborrow_cache(&mut cache))?.value();
         let wlogz = gctx.mul(w, &log_z)?.value();
@@ -169,8 +174,10 @@ mod tests {
 
     #[test]
     fn exp_one_is_e() {
-        // exp(1+0i) = e ≈ 2.71828…; check 2 < e < 3 via the real part
-        let e = C::ONE.exp();
+        // exp(1+0i) = e ≈ 2.71828…; check 2 < e < 3 via the real part. Use a *limited*-precision
+        // input — `exp` rejects unlimited precision (it would otherwise silently compute at the
+        // fixed `EXP_GUARD`).
+        let e = c(1, 0).exp();
         let (re, _im) = e.into_parts();
         assert!(re > F::from(2));
         assert!(re < F::from(3));
@@ -236,5 +243,19 @@ mod tests {
     fn powf_one_exponent_is_self() {
         let z = c(2, 1);
         assert!(z.powf(&C::ONE) == z);
+    }
+
+    // exp/powf on an unlimited-precision CBig must panic, not silently compute at the fixed guard
+    // precision (`C::ONE` / `C::ZERO` are unlimited-precision constants).
+    #[test]
+    #[should_panic(expected = "precision cannot be 0")]
+    fn complex_exp_unlimited_precision_panics() {
+        let _ = C::ONE.exp();
+    }
+
+    #[test]
+    #[should_panic(expected = "precision cannot be 0")]
+    fn complex_powf_unlimited_precision_panics() {
+        let _ = C::ONE.powf(&C::ONE);
     }
 }

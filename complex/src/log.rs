@@ -31,6 +31,8 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(riemann(*self)); // log(∞) = +∞ (Riemann point)
         }
 
+        // `guard` rejects an unlimited context (the `log(0)` and `log(∞)` shortcuts above are
+        // exact and need no precision).
         let gctx = self.guard(LOG_GUARD);
         let p = self.precision();
         // ln|z|
@@ -82,7 +84,9 @@ mod tests {
 
     #[test]
     fn ln_one_is_zero() {
-        assert!(C::ONE.ln() == C::ZERO);
+        // Use a *limited*-precision input — `log` rejects unlimited precision (it would otherwise
+        // silently compute at the fixed `LOG_GUARD`).
+        assert!(c(1, 0).ln() == C::ZERO);
     }
 
     #[test]
@@ -101,5 +105,13 @@ mod tests {
         let l = C::ZERO.ln();
         assert!(l.re().is_infinite());
         assert_eq!(l.re().sign(), Sign::Negative);
+    }
+
+    // log on an unlimited-precision CBig must panic, not silently compute at LOG_GUARD digits
+    // (the `log(0)` / `log(∞)` shortcuts above are exact, so they don't hit this).
+    #[test]
+    #[should_panic(expected = "precision cannot be 0")]
+    fn complex_log_unlimited_precision_panics() {
+        let _ = C::ONE.ln();
     }
 }
