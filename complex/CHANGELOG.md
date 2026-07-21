@@ -33,6 +33,11 @@
   (`add`/`sub`/`mul`/`div`/`sqr`/`inv`) remains `R: Round`.
 
 ### Fix
+- **`Sum` for `CBig` is now correctly rounded.** It exact-accumulates the real and imaginary
+  parts independently via `FBig`'s exact-accumulating `Sum` (lossless `Repr` accumulation, a single
+  final rounding per axis at the `Context::max` target), instead of the previous componentwise fold
+  whose per-step rounding could lose low-order terms (e.g. `1e20 + 1 - 1e20` folded to `0` at low
+  precision; it now correctly yields `1`). `Product` stays a fold, matching `FBig: Product`.
 - **Unlimited-precision handling**, centralized in the Ziv driver: it asserts a limited context up
   front, so every transcendental panics on precision 0 as documented (the exact special-value
   shortcuts — `exp(0)=1`, `log(0)=-∞`, `powf(z,0)=1`, `sqrt(±0)`, `sin/cos(0)`, etc. — still bypass
