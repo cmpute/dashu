@@ -135,9 +135,12 @@ impl<R: ErrorBounds> Context<R> {
     /// Inverse sine `asin z = -i·log(iz + sqrt(1-z²))` (context layer, Kahan form), correctly
     /// rounded via a Ziv loop. The argument of the inner `log` always has positive real part, so the
     /// branch cut comes entirely from the `sqrt`; an infinite input maps to
-    /// [`FpError::Indeterminate`]. The composition (square/subtract/sqrt/add/log) is wrapped in a
-    /// Ziv loop with a generous constant radius — the retries absorb the cancellation near `z = ±1`
-    /// (where `1-z² → 0` and the `sqrt` amplifies) in the well-conditioned regime.
+    /// [`FpError::Indeterminate`]. The `1-z²` under the `sqrt` is computed in the factored form
+    /// `(1-z)(1+z)`, which is Sterbenz-exact near `z = ±1` (where the direct `1-z²` would
+    /// catastrophically cancel against the `sqr` rounding error), so the well-conditioned regime
+    /// extends right up to the singularities. A generous constant radius covers the
+    /// square/subtract/sqrt/add/log composition; the Ziv retries absorb the `sqrt` amplification as
+    /// `1-z² → 0`.
     pub fn asin<const B: Word>(
         &self,
         z: &CBig<R, B>,
@@ -151,8 +154,13 @@ impl<R: ErrorBounds> Context<R> {
             let pw = p + guard;
             let gctx = Context::new(pw);
             let one = CBig::ONE;
-            let z2 = gctx.sqr(z)?.value();
-            let one_m_z2 = gctx.sub(&one, &z2)?.value();
+            // Factor `1-z² = (1-z)(1+z)`. Near `z = ±1` the direct `1 - z²` subtracts a value
+            // dominated by the `sqr` rounding error from 1 (catastrophic cancellation); the factored
+            // form is Sterbenz-exact there (`1-z` is computed exactly, since the subtraction's
+            // significand difference is exact), so the radius stays sound right up to the singularity.
+            let one_m_z = gctx.sub(&one, z)?.value();
+            let one_p_z = gctx.add(&one, z)?.value();
+            let one_m_z2 = gctx.mul(&one_m_z, &one_p_z)?.value();
             let sqrt_term = gctx.sqrt(&one_m_z2)?.value();
             let iz = z.mul_i(false); // exact rotation
             let w = gctx.add(&iz, &sqrt_term)?.value();
@@ -168,7 +176,8 @@ impl<R: ErrorBounds> Context<R> {
     }
 
     /// Inverse cosine `acos z = -i·log(z + i·sqrt(1-z²))` (context layer, Kahan form), correctly
-    /// rounded via a Ziv loop. Same composition and singularity structure as `asin`.
+    /// rounded via a Ziv loop. Same composition and singularity structure as `asin` (including the
+    /// factored `1-z² = (1-z)(1+z)` near `z = ±1`).
     pub fn acos<const B: Word>(
         &self,
         z: &CBig<R, B>,
@@ -182,8 +191,10 @@ impl<R: ErrorBounds> Context<R> {
             let pw = p + guard;
             let gctx = Context::new(pw);
             let one = CBig::ONE;
-            let z2 = gctx.sqr(z)?.value();
-            let one_m_z2 = gctx.sub(&one, &z2)?.value();
+            // Factored `1-z² = (1-z)(1+z)` — Sterbenz-exact near `z = ±1` (see `asin`).
+            let one_m_z = gctx.sub(&one, z)?.value();
+            let one_p_z = gctx.add(&one, z)?.value();
+            let one_m_z2 = gctx.mul(&one_m_z, &one_p_z)?.value();
             let sqrt_term = gctx.sqrt(&one_m_z2)?.value();
             let i_sqrt = sqrt_term.mul_i(false); // i·sqrt(1-z²)
             let w = gctx.add(z, &i_sqrt)?.value();

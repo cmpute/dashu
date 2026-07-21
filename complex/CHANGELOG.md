@@ -17,8 +17,11 @@
   form `(sin 2x + i·sinh 2y)/(cos 2x + cosh 2y)` (the naive `sin z/cos z` cancels in the real part for
   large `|Im z|`), so it is accurate for all finite `|Im z|`. `abs` delegates directly to
   `dashu-float`'s already-correctly-rounded `hypot`, dropping a double-rounding re-round. The
-  well-conditioned regime is guaranteed-correctly rounded; `asin`/`acos`/`atan` lose accuracy only
-  very near their singularities (`z = ±1`/`±i`), a known limitation of the underlying formulas.
+  well-conditioned regime is guaranteed-correctly rounded; `asin`/`acos` compute the inner `1-z²` in
+  the factored form `(1-z)(1+z)` (Sterbenz-exact near the singularities `z = ±1`, where the direct
+  `1 - z²` would cancel against the `sqr` rounding error), so they stay accurate right up to `z = ±1`.
+  (`atan` was already sound near its singularities `z = ±i`: its `1 ± iz` is built from an exact
+  rotation and an exact-significand add/sub, so there is no cancellation to factor out.)
 
 ### Change
 - **(breaking, bound)** The complex transcendentals (`exp`, `ln`, `powf`, `powi`, `sin`/`cos`/`tan`/

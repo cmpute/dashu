@@ -45,6 +45,17 @@ fn tan_strategy() -> impl Strategy<Value = C> {
     })
 }
 
+/// Real part in roughly `(0.9, 1.1)` (straddling the `asin`/`acos` singularity `z = 1`) with a tiny
+/// imaginary part — exercises the factored `1-z² = (1-z)(1+z)` form right at `z = ±1`, where the
+/// direct `1 - z²` would catastrophically cancel against the `sqr` rounding error.
+fn near_one_strategy() -> impl Strategy<Value = C> {
+    (90i64..110, -2i64..2).prop_map(|(re_num, im_num)| {
+        let re = F::from_parts(re_num.into(), -2).with_precision(P).value();
+        let im = F::from_parts(im_num.into(), -8).with_precision(P).value();
+        CBig::from_parts(re, im)
+    })
+}
+
 fn within_ulps(a: &F, b: &F, k: u32) -> bool {
     if a == b {
         return true;
@@ -203,6 +214,20 @@ proptest! {
         let rp = lo.powi(&z, n.into()).unwrap().value();
         let r2 = reround_hi(hi.powi(&z, n.into()).unwrap().value());
         // powi is correctly rounded via Ziv (positive and negative integer exponents), 1 ULP.
+        prop_assert!(within_ulps_cbig(&rp, &r2, 1));
+    }
+
+    #[test]
+    fn asin_acos_near_one_self_oracle(z in near_one_strategy()) {
+        // z straddles the singularity at 1 (and the symmetric point -1 by conjugation), where the
+        // factored `1-z²=(1-z)(1+z)` keeps `asin`/`acos` accurate; the self-oracle checks 1 ULP.
+        let lo = Context::new(P);
+        let hi = Context::new(2 * P);
+        let rp = lo.asin(&z, None).unwrap().value();
+        let r2 = reround_hi(hi.asin(&z, None).unwrap().value());
+        prop_assert!(within_ulps_cbig(&rp, &r2, 1));
+        let rp = lo.acos(&z, None).unwrap().value();
+        let r2 = reround_hi(hi.acos(&z, None).unwrap().value());
         prop_assert!(within_ulps_cbig(&rp, &r2, 1));
     }
 }
