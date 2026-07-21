@@ -194,4 +194,15 @@ proptest! {
         let r2 = reround_hi(hi.powf(&base, &w, None).unwrap().value());
         prop_assert!(within_ulps_cbig(&rp, &r2, 1));
     }
+
+    #[test]
+    fn powi_self_oracle(z in small_strategy(), n in -8i32..=8) {
+        prop_assume!(n != 0);
+        let lo = Context::new(P);
+        let hi = Context::new(2 * P);
+        let rp = lo.powi(&z, n.into()).unwrap().value();
+        let r2 = reround_hi(hi.powi(&z, n.into()).unwrap().value());
+        // powi is correctly rounded via Ziv (positive and negative integer exponents), 1 ULP.
+        prop_assert!(within_ulps_cbig(&rp, &r2, 1));
+    }
 }

@@ -377,7 +377,6 @@ impl<R: Round, const B: Word> CachedCBig<R, B> {
     delegate_to_cbig!(conj);
     delegate_to_cbig!(proj);
     delegate_to_cbig!(mul_i(negative: bool));
-    delegate_to_cbig!(powi(exp: IBig));
 
     /// The squared modulus `re² + im²` (a real [`FBig`]) (see [`CBig::norm`]).
     #[inline]
@@ -390,6 +389,7 @@ impl<R: Round, const B: Word> CachedCBig<R, B> {
 // require `R: ErrorBounds`.
 impl<R: ErrorBounds, const B: Word> CachedCBig<R, B> {
     // cache-threading transcendentals
+    delegate_to_cbig!(powi(exp: IBig));
     forward_cached!(ln => log);
     forward_cached!(exp => exp);
     forward_cached!(sin => sin);

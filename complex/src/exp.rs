@@ -11,7 +11,7 @@ use crate::cbig::CBig;
 use crate::repr::{combine_parts, exact, reborrow_cache, riemann, CfpResult, Context};
 use dashu_base::Approximation::*;
 use dashu_base::{Abs, BitTest, Sign};
-use dashu_float::round::{ErrorBounds, Round};
+use dashu_float::round::ErrorBounds;
 use dashu_float::{ConstCache, Context as FloatCtxt, FBig, FpError};
 use dashu_int::{IBig, Word};
 
@@ -22,37 +22,75 @@ const EXP_GUARD: usize = 14;
 /// cancellation-prone path, so a larger guard than the bare arithmetic ops.
 const POWF_GUARD: usize = 22;
 
-impl<R: Round> Context<R> {
-    /// Raise a complex number to an integer power under this context (context layer), via repeated
-    /// squaring (branch-cut-free, cheaper than `exp(n·log z)`). No cache.
+impl<R: ErrorBounds> Context<R> {
+    /// Raise a complex number to an integer power under this context (context layer), correctly
+    /// rounded via a Ziv loop over the binary-exponentiation (repeated-squaring) chain. No cache.
     ///
-    /// `powi(z, 0) = 1`; a negative exponent computes `powi(z, |n|)` then inverts.
+    /// `powi(z, 0) = 1`; a negative exponent computes `(1/z)^|n|` directly, so the
+    /// sign-dependent overflow/underflow propagates from the closure with `?`. Repeated squaring
+    /// compounds the relative error (it roughly doubles per step), so after `bit_len(n)` squarings
+    /// the per-part error is bounded by about `2^nlen · ulp`, which the radius reflects; complex
+    /// `sqr`/`mul` are near-correct (a few ulp, not 0.5), so the bound carries an extra margin.
     pub fn powi<const B: Word>(&self, z: &CBig<R, B>, exp: IBig) -> CfpResult<R, B> {
         let (sign, n) = exp.into_parts();
         if n.is_zero() {
             return Ok(Exact(CBig::ONE));
         }
         let negative = sign == Sign::Negative;
-        let bitlen = n.bit_len();
-        // left-to-right binary exponentiation, starting from the leading set bit
-        let mut acc = z.clone();
-        for i in (0..bitlen - 1).rev() {
-            acc = self.sqr(&acc)?.value();
-            if n.bit(i) {
-                acc = self.mul(&acc, z)?.value();
-            }
+        if n.is_one() {
+            // |n| == 1: z (positive) or 1/z (negative), a single op.
+            return if negative {
+                self.inv(z)
+            } else {
+                Ok(Exact(z.clone()))
+            };
         }
-        // The intermediate rounding flags are folded away (the value is near-correctly rounded);
-        // for a negative exponent the final `inv` carries its own flags.
-        if negative {
-            self.inv(&acc)
-        } else {
-            Ok(Exact(acc))
-        }
-    }
-}
 
-impl<R: ErrorBounds> Context<R> {
+        let p = self.precision();
+        let nlen = n.bit_len();
+        // Initial guard scales with `nlen` (the squaring-compounding loss) plus a margin for the
+        // near-correct complex `sqr`/`mul`; sized so the first attempt certifies a non-tie result.
+        let initial_guard = nlen + 6;
+        let [re, im] = self.ziv(initial_guard, |guard| {
+            let pw = p + guard;
+            let gctx = Context::new(pw);
+            // start from z (positive exponent, always exact) or its working-precision reciprocal
+            // (negative exponent, exact only when 1/z is exactly representable).
+            let (start, mut exact) = if negative {
+                let inv = gctx.inv(z)?;
+                let ex = matches!(inv, Exact(_));
+                (inv.value(), ex)
+            } else {
+                (z.clone(), true)
+            };
+            // left-to-right binary exponentiation, tracking whether every step rounded Exact.
+            let mut acc = start.clone();
+            for i in (0..nlen - 1).rev() {
+                let s = gctx.sqr(&acc)?;
+                exact = exact && matches!(s, Exact(_));
+                acc = s.value();
+                if n.bit(i) {
+                    let m = gctx.mul(&acc, &start)?;
+                    exact = exact && matches!(m, Exact(_));
+                    acc = m.value();
+                }
+            }
+            let (re, im) = acc.into_parts();
+            // re-root to the working precision (parts may be exact constants).
+            let re = re.with_precision(pw).value();
+            let im = im.with_precision(pw).value();
+            let shift = (nlen + 3) as isize;
+            // When the whole chain is exact the result is the mathematically exact zⁿ: report a zero
+            // radius. This is required under the directed rounding modes (the `CBig` default), where
+            // an exactly-representable result lies on a one-sided rounding boundary that no nonzero
+            // radius can fit inside. (See `dashu-float`'s `powi` for the same reasoning.)
+            let re_r = if exact { FBig::ZERO } else { re.ulp() << shift };
+            let im_r = if exact { FBig::ZERO } else { im.ulp() << shift };
+            Ok([(re.clone(), re_r), (im.clone(), im_r)])
+        })?;
+        Ok(combine_parts(re, im))
+    }
+
     /// Complex exponential under this context (context layer). Computes `e^x·(cos y + i·sin y)`
     /// from `dashu-float`'s (correctly-rounded) `exp` and `sin_cos`, wrapped in a Ziv loop that
     /// certifies both parts; the cache is threaded into both (the convenience layer passes `None`).
@@ -138,7 +176,7 @@ impl<R: ErrorBounds> Context<R> {
     }
 }
 
-impl<R: Round, const B: Word> CBig<R, B> {
+impl<R: ErrorBounds, const B: Word> CBig<R, B> {
     /// Integer power (convenience layer).
     ///
     /// # Panics
@@ -148,9 +186,7 @@ impl<R: Round, const B: Word> CBig<R, B> {
     pub fn powi(&self, exp: IBig) -> Self {
         self.context().unwrap_cfp(self.context().powi(self, exp))
     }
-}
 
-impl<R: ErrorBounds, const B: Word> CBig<R, B> {
     /// Complex exponential `e^z` (convenience layer).
     ///
     /// # Panics

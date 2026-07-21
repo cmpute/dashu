@@ -21,10 +21,13 @@
   very near their singularities (`z = ±1`/`±i`), a known limitation of the underlying formulas.
 
 ### Change
-- **(breaking, bound)** The complex transcendentals (`exp`, `ln`, `powf`, `sin`/`cos`/`tan`/
+- **(breaking, bound)** The complex transcendentals (`exp`, `ln`, `powf`, `powi`, `sin`/`cos`/`tan`/
   `sin_cos`, `asin`/`acos`/`atan`) and their `CachedCBig` forwarders now require `R: ErrorBounds`,
-  inherited from `dashu-float`'s Ziv-backed real `exp`/`ln`/`sinh_cosh` primitives. `powi` and the
-  field arithmetic (`add`/`sub`/`mul`/`div`/`sqr`/`inv`) remain `R: Round`.
+  inherited from `dashu-float`'s Ziv-backed real `exp`/`ln`/`sinh_cosh` primitives. `powi` is now
+  correctly rounded via its own Ziv loop (repeated squaring, with a per-part radius that scales with
+  the squaring-compounding error and drops to zero when the chain is exact — required under the
+  directed rounding modes, `CBig`'s default). The field arithmetic
+  (`add`/`sub`/`mul`/`div`/`sqr`/`inv`) remains `R: Round`.
 
 ### Fix
 - **Unlimited-precision handling**, centralized in the Ziv driver: it asserts a limited context up
