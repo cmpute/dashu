@@ -51,7 +51,7 @@
 | IEEE 754 要求 | 合规性 | 说明 |
 |---------------------|-----------|-------|
 | 舍入模式：roundTiesToEven、roundTiesToAway、roundTowardPositive、roundTowardNegative、roundTowardZero | ✅ | 全部五种模式实现为 `HalfEven`、`HalfAway`、`Up`、`Down`、`Zero`。 |
-| 正确舍入到 1 ulp 以内 | ✅ | 所有运算保证 $|error| < 1\text{ ulp}$。算术、根号以及实超越函数（`exp`、`exp_m1`、`ln`、`ln_1p`、三角与双曲函数族、`hypot`，以及非整数指数的 `powf`）通过 Ziv 循环保证正确舍入；整数指数的 `powf` 委托给 `powi`（在 1 ulp 以内）；`dashu-cmplx` 的复数超越函数（`exp`、`log`、`powf`、`sin`/`cos`/`tan`/`sin_cos`、`asin`/`acos`/`atan`、`sqrt`）经由其自身的 Ziv 循环正确舍入，同时认证实部与虚部（`asin`/`acos`/`atan` 仅在奇点（`z = ±1`/`±i`）极近处精度下降）。`Rounded` 类型区分精确与非精确结果。 |
+| 正确舍入到 1 ulp 以内 | ✅ | 所有运算保证 $|error| < 1\text{ ulp}$。算术、根号以及实超越函数（`exp`、`exp_m1`、`ln`、`ln_1p`、三角与双曲函数族、`hypot`、`powi`、`powf`）通过 Ziv 循环保证正确舍入；`dashu-cmplx` 的复数超越函数（`exp`、`log`、`powf`、`powi`、`sin`/`cos`/`tan`/`sin_cos`、`asin`/`acos`/`atan`、`sqrt`）经由其自身的 Ziv 循环正确舍入，同时认证实部与虚部（`asin`/`acos` 采用因式分解的 $1-z^2=(1-z)(1+z)$，在奇点 $z = \pm 1$ 处亦保持精度）。`Rounded` 类型区分精确与非精确结果。 |
 | 就近舍入保持零的符号 | ✅ | `rounded_to_repr` 在舍入将非零值折叠为零时保持输入符号。 |
 
 #### 第 5.6 节——符号位运算
@@ -143,7 +143,7 @@
 |---------------------|-----------|-------|
 | 无效/不定形式 → NaN | ❌ 偏离 | 在 `Context` 层返回 `Err(FpError::{Indeterminate, InfiniteInput})`；在便捷层 panic。设计上无 NaN。 |
 | 定义域错误（如负数的偶数根、超出范围的逆三角函数） | ❌ 偏离 | 返回 `Err(FpError::OutOfDomain)` / panic，而非 NaN 结果。 |
-| 每个分量独立按共享模式舍入 | ✅ | 每个轴经由同时认证两部分的 Ziv 循环正确舍入，与 `dashu-float` 的实超越函数一致（`asin`/`acos`/`atan` 仅在奇点（`z = ±1`/`±i`）极近处精度下降）。 |
+| 每个分量独立按共享模式舍入 | ✅ | 每个轴经由同时认证两部分的 Ziv 循环正确舍入，与 `dashu-float` 的实超越函数一致（`asin`/`acos` 采用因式分解的 $1-z^2=(1-z)(1+z)$，在奇点 $z = \pm 1$ 处亦保持精度）。 |
 
 ### 小结（dashu-cmplx）
 
