@@ -13,11 +13,12 @@
   guard digits while either part's error interval straddles a rounding boundary — matching
   `dashu-float`'s real transcendentals. Each transcendental reports a provable per-part error radius
   (`result.ulp() × C`, plus an amplification term where the composition magnifies error: `log`'s
-  `ln|z|` near `|z| = 1`, `tan`'s real part for large `|Im z|`, `powf`'s result magnitude). `abs`
-  delegates directly to `dashu-float`'s already-correctly-rounded `hypot`, dropping a double-rounding
-  re-round. The well-conditioned regime is guaranteed-correctly rounded; `tan`/`asin`/`acos`/`atan`
-  lose accuracy only very near their poles/singularities (a known limitation of the underlying
-  formulas, shared with the prior near-correct implementation).
+  `ln|z|` near `|z| = 1`, `powf`'s result magnitude). `tan` uses the cancellation-free double-angle
+  form `(sin 2x + i·sinh 2y)/(cos 2x + cosh 2y)` (the naive `sin z/cos z` cancels in the real part for
+  large `|Im z|`), so it is accurate for all finite `|Im z|`. `abs` delegates directly to
+  `dashu-float`'s already-correctly-rounded `hypot`, dropping a double-rounding re-round. The
+  well-conditioned regime is guaranteed-correctly rounded; `asin`/`acos`/`atan` lose accuracy only
+  very near their singularities (`z = ±1`/`±i`), a known limitation of the underlying formulas.
 
 ### Change
 - **(breaking, bound)** The complex transcendentals (`exp`, `ln`, `powf`, `sin`/`cos`/`tan`/

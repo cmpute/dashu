@@ -91,17 +91,16 @@ impl<R: ErrorBounds> Context<R> {
         self.sin_cos(z, cache).1
     }
 
-    /// Complex tangent `sin z / cos z` (context layer), correctly rounded via a Ziv loop. Both
-    /// halves come from the (Ziv-backed) complex `sin_cos` at the working precision, then a complex
-    /// `div`. Even near the real-axis poles (`cos z ≈ 0`) the relative error stays bounded — `tan`
-    /// and its sensitivity to `cos` both scale as `1/cos` — so a small constant radius certifies
-    /// both parts (the large-but-finite near-pole value is held by dashu's wide exponent range).
+    /// Complex tangent (context layer), correctly rounded via a Ziv loop, using the cancellation-free
+    /// double-angle identity
     ///
-    /// For large `|Im z|`, `sin z` and `cos z` are both `~cosh(y)`-scale, and the division
-    /// `sin·conj(cos)/|cos|²` cancels in the real part down to `O(1)`; that cancellation error is
-    /// `~ulp(1)` at the working precision (independent of `|y|`), so the real-part radius carries an
-    /// extra absolute `B^{1-pw}` term to stay sound there (the loop then simply retries with more
-    /// guard until the cancellation is resolved).
+    /// `tan(x+iy) = (sin 2x + i·sinh 2y) / (cos 2x + cosh 2y)`.
+    ///
+    /// The denominator `cos 2x + cosh 2y` is a sum of a bounded term (`cos 2x ∈ [−1, 1]`) and a
+    /// term `≥ 1` (`cosh 2y`), so it never catastrophically cancels — unlike `sin z / cos z`, whose
+    /// `sin·conj(cos)` real part cancels from `~cosh²y` down to `O(1)` for large `|Im z|`. The result
+    /// is accurate for all finite `|Im z|`; the only small-denominator points are the real-axis poles
+    /// (`y = 0, x = π/2 + kπ`), where the large value is genuine, not an artifact.
     pub fn tan<const B: Word>(
         &self,
         z: &CBig<R, B>,
@@ -110,17 +109,25 @@ impl<R: ErrorBounds> Context<R> {
         let p = self.precision();
         let [re, im] = self.ziv(TRIG_GUARD, |guard| {
             let pw = p + guard;
-            let gctx = Context::new(pw);
-            let (sin_z, cos_z) = gctx.sin_cos(z, reborrow_cache(&mut cache));
-            let sin_z = sin_z?.value();
-            let cos_z = cos_z?.value();
-            let tan_z = gctx.div(&sin_z, &cos_z)?.value();
-            let (re, im) = tan_z.into_parts();
-            // `B^{1-pw}` covers the real part's division-cancellation error for large `|Im z|`.
-            let cancel_scale = FBig::<R, B>::from_parts(IBig::from(1), 1 - pw as isize);
-            let re_rad = re.ulp() * 10 + cancel_scale * 10;
-            let im_rad = im.ulp() * 10;
-            Ok([(re, re_rad), (im, im_rad)])
+            let gctx = FloatCtxt::<R>::new(pw);
+            // 2x, 2y (exact doublings — same significand, exponent +1).
+            let x2 = gctx.add(z.re(), z.re())?.value();
+            let y2 = gctx.add(z.im(), z.im())?.value();
+            let (sin2x, cos2x) = gctx.sin_cos(x2.repr(), reborrow_cache(&mut cache));
+            let sin2x = sin2x?.value();
+            let cos2x = cos2x?.value();
+            let (sinh2y, cosh2y) = gctx.sinh_cosh(y2.repr(), reborrow_cache(&mut cache));
+            let sinh2y = sinh2y?.value();
+            let cosh2y = cosh2y?.value();
+            // D = cos 2x + cosh 2y  (a benign sum: a bounded term plus one ≥ 1).
+            let denom = gctx.add(cos2x.repr(), cosh2y.repr())?.value();
+            let re = gctx.div(sin2x.repr(), denom.repr())?.value();
+            let im = gctx.div(sinh2y.repr(), denom.repr())?.value();
+            // re-root to the working precision (`sin_cos`/`sinh_cosh`/`div` may return exact
+            // constants for exact cases such as `tan(0) = 0`).
+            let re = re.with_precision(pw).value();
+            let im = im.with_precision(pw).value();
+            Ok([(re.clone(), re.ulp() * 8), (im.clone(), im.ulp() * 8)])
         })?;
         Ok(combine_parts(re, im))
     }
@@ -313,6 +320,18 @@ mod tests {
             .abs_cmp(&F::from_parts(1.into(), -12))
             .is_le());
         assert!(im.abs_cmp(&F::from_parts(1.into(), -12)).is_le());
+    }
+
+    #[test]
+    fn tan_large_imaginary_is_near_i() {
+        use dashu_base::{Abs, AbsOrd};
+        // tan(x + i·100) ≈ i: real part → 0, imaginary → tanh(100) ≈ 1. The cancellation-free
+        // double-angle form computes this accurately; the naive `sin/cos` division would cancel the
+        // real part to noise for such a large `|Im z|` (the motivating case for the new formula).
+        let (re, im) = c(1, 100).tan().into_parts();
+        let tol = F::from_parts(1.into(), -40);
+        assert!(re.abs().abs_cmp(&tol).is_le());
+        assert!((im - F::from(1)).abs().abs_cmp(&tol).is_le());
     }
 
     #[test]

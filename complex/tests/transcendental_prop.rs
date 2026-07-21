@@ -32,6 +32,19 @@ fn small_strategy() -> impl Strategy<Value = C> {
     })
 }
 
+/// Modest real part (away from the poles `π/2 + kπ`) with a moderate imaginary part up to ~40 —
+/// large enough that the naive `sin z / cos z` division would catastrophically cancel in the real
+/// part, small enough that `cosh(2·im)` stays cheap. For the cancellation-free `tan` oracle.
+fn tan_strategy() -> impl Strategy<Value = C> {
+    ((1i64..(1i64 << 20), -4isize..4isize), 1i64..40i64).prop_map(|((re_sig, re_exp), im_num)| {
+        let re = F::from_parts(re_sig.into(), re_exp)
+            .with_precision(P)
+            .value();
+        let im = F::from_parts(im_num.into(), 0).with_precision(P).value();
+        CBig::from_parts(re, im)
+    })
+}
+
 fn within_ulps(a: &F, b: &F, k: u32) -> bool {
     if a == b {
         return true;
@@ -69,10 +82,9 @@ proptest! {
     }
 
     #[test]
-    fn tan_self_oracle(z in small_strategy()) {
-        // bounded |Im z|: for large |Im z| the division `sin/cos` cancels in the real part (a known
-        // limitation of the formula), so this oracle covers the well-conditioned regime where tan is
-        // correctly rounded via Ziv. 1 ULP.
+    fn tan_self_oracle(z in tan_strategy()) {
+        // tan uses the cancellation-free double-angle form, so it stays correct for moderate-large
+        // |Im z| (where the naive sin/cos division would cancel). 1 ULP.
         let lo = Context::new(P);
         let hi = Context::new(2 * P);
         let rp = lo.tan(&z, None).unwrap().value();
