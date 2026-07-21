@@ -7,7 +7,7 @@
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, reborrow_cache, CfpResult, Context};
 use dashu_float::round::ErrorBounds;
-use dashu_float::{ConstCache, FBig, FpError, Repr};
+use dashu_float::{ConstCache, Context as FloatCtxt, FBig, FpError, Repr};
 use dashu_int::{IBig, Word};
 
 /// Guard digits (base-B) for the forward trig. Composes real `sin_cos` + `sinh_cosh` + two
@@ -15,8 +15,9 @@ use dashu_int::{IBig, Word};
 const TRIG_GUARD: usize = 16;
 
 impl<R: ErrorBounds> Context<R> {
-    /// Simultaneously compute `sin z` and `cos z` (context layer). Returns `(sin, cos)` each as a
-    /// [`CfpResult`]. An infinite input maps to [`FpError::Indeterminate`] (the C99 NaN cases).
+    /// Simultaneously compute `sin z` and `cos z` (context layer), correctly rounded via a shared
+    /// Ziv loop. Returns `(sin, cos)` each as a [`CfpResult`]. An infinite input maps to
+    /// [`FpError::Indeterminate`] (the C99 NaN cases).
     pub fn sin_cos<const B: Word>(
         &self,
         z: &CBig<R, B>,
@@ -37,48 +38,35 @@ impl<R: ErrorBounds> Context<R> {
             return (zero, one);
         }
 
-        let gctx = self.guard(TRIG_GUARD);
+        // `sin z = sinx·coshy + i·cosx·sinhy`, `cos z = cosx·coshy − i·sinx·sinhy`. The four products
+        // share one evaluation of the real `sin_cos`/`sinh_cosh` (each correctly-rounded at the
+        // working precision, contributing ~0); only the products round, a few working-ULPs each. A
+        // single 4-part Ziv loop certifies all of `sin` and `cos` together.
         let p = self.precision();
-        let (sinx, cosx) = gctx.sin_cos(z.re(), reborrow_cache(&mut cache));
-        let sinx = match sinx {
-            Ok(v) => v.value(),
-            Err(e) => return (Err(e), Err(FpError::Indeterminate)),
-        };
-        let cosx = match cosx {
-            Ok(v) => v.value(),
-            Err(e) => return (Err(FpError::Indeterminate), Err(e)),
-        };
-        let (sinhy_res, coshy_res) = gctx.sinh_cosh(z.im(), reborrow_cache(&mut cache));
-        let sinhy = match sinhy_res {
-            Ok(v) => v.value(),
-            Err(e) => return (Err(e), Err(FpError::Indeterminate)),
-        };
-        let coshy = match coshy_res {
-            Ok(v) => v.value(),
-            Err(e) => return (Err(FpError::Indeterminate), Err(e)),
-        };
-
-        // sin z = (sinx·coshy) + i·(cosx·sinhy); cos z = (cosx·coshy) − i·(sinx·sinhy).
-        // `sin_cos` returns a tuple, so the products are matched explicitly (no `?`).
-        let prod = |a: &FBig<R, B>, b: &FBig<R, B>| -> Result<_, FpError> {
-            Ok(gctx.mul(a.repr(), b.repr())?.value().with_precision(p))
-        };
-        let sin_re = match prod(&sinx, &coshy) {
-            Ok(v) => v,
-            Err(e) => return (Err(e), Err(FpError::Indeterminate)),
-        };
-        let sin_im = match prod(&cosx, &sinhy) {
-            Ok(v) => v,
-            Err(e) => return (Err(e), Err(FpError::Indeterminate)),
-        };
-        let cos_re = match prod(&cosx, &coshy) {
-            Ok(v) => v,
-            Err(e) => return (Err(FpError::Indeterminate), Err(e)),
-        };
-        let neg_sinx = -sinx;
-        let cos_im = match prod(&neg_sinx, &sinhy) {
-            Ok(v) => v,
-            Err(e) => return (Err(FpError::Indeterminate), Err(e)),
+        let parts = self.ziv(TRIG_GUARD, |guard| {
+            let gctx = FloatCtxt::<R>::new(p + guard);
+            let (sinx, cosx) = gctx.sin_cos(z.re(), reborrow_cache(&mut cache));
+            let sinx = sinx?.value();
+            let cosx = cosx?.value();
+            let (sinhy, coshy) = gctx.sinh_cosh(z.im(), reborrow_cache(&mut cache));
+            let sinhy = sinhy?.value();
+            let coshy = coshy?.value();
+            let sin_re = gctx.mul(sinx.repr(), coshy.repr())?.value();
+            let sin_im = gctx.mul(cosx.repr(), sinhy.repr())?.value();
+            let cos_re = gctx.mul(cosx.repr(), coshy.repr())?.value();
+            let neg_sinx = -sinx; // cos z's imaginary part is −sinx·sinhy
+            let cos_im = gctx.mul(neg_sinx.repr(), sinhy.repr())?.value();
+            Ok([
+                (sin_re.clone(), sin_re.ulp() * 8),
+                (sin_im.clone(), sin_im.ulp() * 8),
+                (cos_re.clone(), cos_re.ulp() * 8),
+                (cos_im.clone(), cos_im.ulp() * 8),
+            ])
+        });
+        let [sin_re, sin_im, cos_re, cos_im] = match parts {
+            Ok(arr) => arr,
+            // an overflow (e.g. `cosh` of a huge imaginary part) fails both sin and cos together.
+            Err(e) => return (Err(e), Err(e)),
         };
         (Ok(combine_parts(sin_re, sin_im)), Ok(combine_parts(cos_re, cos_im)))
     }
@@ -103,21 +91,46 @@ impl<R: ErrorBounds> Context<R> {
         self.sin_cos(z, cache).1
     }
 
-    /// Complex tangent `sin z / cos z` (context layer).
+    /// Complex tangent `sin z / cos z` (context layer), correctly rounded via a Ziv loop. Both
+    /// halves come from the (Ziv-backed) complex `sin_cos` at the working precision, then a complex
+    /// `div`. Even near the real-axis poles (`cos z ≈ 0`) the relative error stays bounded — `tan`
+    /// and its sensitivity to `cos` both scale as `1/cos` — so a small constant radius certifies
+    /// both parts (the large-but-finite near-pole value is held by dashu's wide exponent range).
+    ///
+    /// For large `|Im z|`, `sin z` and `cos z` are both `~cosh(y)`-scale, and the division
+    /// `sin·conj(cos)/|cos|²` cancels in the real part down to `O(1)`; that cancellation error is
+    /// `~ulp(1)` at the working precision (independent of `|y|`), so the real-part radius carries an
+    /// extra absolute `B^{1-pw}` term to stay sound there (the loop then simply retries with more
+    /// guard until the cancellation is resolved).
     pub fn tan<const B: Word>(
         &self,
         z: &CBig<R, B>,
-        cache: Option<&mut ConstCache>,
+        mut cache: Option<&mut ConstCache>,
     ) -> CfpResult<R, B> {
-        let (sin_z, cos_z) = self.sin_cos(z, cache);
-        let sin_z = sin_z?;
-        let cos_z = cos_z?;
-        self.div(&sin_z.value(), &cos_z.value())
+        let p = self.precision();
+        let [re, im] = self.ziv(TRIG_GUARD, |guard| {
+            let pw = p + guard;
+            let gctx = Context::new(pw);
+            let (sin_z, cos_z) = gctx.sin_cos(z, reborrow_cache(&mut cache));
+            let sin_z = sin_z?.value();
+            let cos_z = cos_z?.value();
+            let tan_z = gctx.div(&sin_z, &cos_z)?.value();
+            let (re, im) = tan_z.into_parts();
+            // `B^{1-pw}` covers the real part's division-cancellation error for large `|Im z|`.
+            let cancel_scale = FBig::<R, B>::from_parts(IBig::from(1), 1 - pw as isize);
+            let re_rad = re.ulp() * 10 + cancel_scale * 10;
+            let im_rad = im.ulp() * 10;
+            Ok([(re, re_rad), (im, im_rad)])
+        })?;
+        Ok(combine_parts(re, im))
     }
 
-    /// Inverse sine `asin z = -i·log(iz + sqrt(1-z²))` (context layer, Kahan form). The argument of
-    /// the inner `log` always has positive real part, so the branch cut comes entirely from the
-    /// `sqrt`; an infinite input maps to [`FpError::Indeterminate`].
+    /// Inverse sine `asin z = -i·log(iz + sqrt(1-z²))` (context layer, Kahan form), correctly
+    /// rounded via a Ziv loop. The argument of the inner `log` always has positive real part, so the
+    /// branch cut comes entirely from the `sqrt`; an infinite input maps to
+    /// [`FpError::Indeterminate`]. The composition (square/subtract/sqrt/add/log) is wrapped in a
+    /// Ziv loop with a generous constant radius — the retries absorb the cancellation near `z = ±1`
+    /// (where `1-z² → 0` and the `sqrt` amplifies) in the well-conditioned regime.
     pub fn asin<const B: Word>(
         &self,
         z: &CBig<R, B>,
@@ -126,24 +139,29 @@ impl<R: ErrorBounds> Context<R> {
         if z.is_infinite() {
             return Err(FpError::Indeterminate);
         }
-        // Builds the work context directly (a complex `Context`, not `guard`'s `FloatCtxt`), so
-        // assert explicitly — same reason as `powf`.
-        self.assert_limited();
-        let gctx = Context::new(self.precision() + ITRIG_GUARD);
         let p = self.precision();
-        let one = CBig::ONE;
-        let z2 = gctx.sqr(z)?.value();
-        let one_m_z2 = gctx.sub(&one, &z2)?.value();
-        let sqrt_term = gctx.sqrt(&one_m_z2)?.value();
-        let iz = z.mul_i(false); // exact rotation
-        let w = gctx.add(&iz, &sqrt_term)?.value();
-        let log_w = gctx.log(&w, reborrow_cache(&mut cache))?.value();
-        let asin_z = log_w.mul_i(true); // -i·log(w)
-        let (re, im) = asin_z.into_parts();
-        Ok(combine_parts(re.with_precision(p), im.with_precision(p)))
+        let [re, im] = self.ziv(ITRIG_GUARD, |guard| {
+            let pw = p + guard;
+            let gctx = Context::new(pw);
+            let one = CBig::ONE;
+            let z2 = gctx.sqr(z)?.value();
+            let one_m_z2 = gctx.sub(&one, &z2)?.value();
+            let sqrt_term = gctx.sqrt(&one_m_z2)?.value();
+            let iz = z.mul_i(false); // exact rotation
+            let w = gctx.add(&iz, &sqrt_term)?.value();
+            let log_w = gctx.log(&w, reborrow_cache(&mut cache))?.value();
+            let asin_z = log_w.mul_i(true); // -i·log(w)
+            let (re, im) = asin_z.into_parts();
+            // re-root to the working precision (`log` may return an exact constant for exact cases).
+            let re = re.with_precision(pw).value();
+            let im = im.with_precision(pw).value();
+            Ok([(re.clone(), re.ulp() * 20), (im.clone(), im.ulp() * 20)])
+        })?;
+        Ok(combine_parts(re, im))
     }
 
-    /// Inverse cosine `acos z = -i·log(z + i·sqrt(1-z²))` (context layer, Kahan form).
+    /// Inverse cosine `acos z = -i·log(z + i·sqrt(1-z²))` (context layer, Kahan form), correctly
+    /// rounded via a Ziv loop. Same composition and singularity structure as `asin`.
     pub fn acos<const B: Word>(
         &self,
         z: &CBig<R, B>,
@@ -152,22 +170,30 @@ impl<R: ErrorBounds> Context<R> {
         if z.is_infinite() {
             return Err(FpError::Indeterminate);
         }
-        self.assert_limited(); // builds the work context directly, like `powf` — see `asin`
-        let gctx = Context::new(self.precision() + ITRIG_GUARD);
         let p = self.precision();
-        let one = CBig::ONE;
-        let z2 = gctx.sqr(z)?.value();
-        let one_m_z2 = gctx.sub(&one, &z2)?.value();
-        let sqrt_term = gctx.sqrt(&one_m_z2)?.value();
-        let i_sqrt = sqrt_term.mul_i(false); // i·sqrt(1-z²)
-        let w = gctx.add(z, &i_sqrt)?.value();
-        let log_w = gctx.log(&w, reborrow_cache(&mut cache))?.value();
-        let acos_z = log_w.mul_i(true); // -i·log(w)
-        let (re, im) = acos_z.into_parts();
-        Ok(combine_parts(re.with_precision(p), im.with_precision(p)))
+        let [re, im] = self.ziv(ITRIG_GUARD, |guard| {
+            let pw = p + guard;
+            let gctx = Context::new(pw);
+            let one = CBig::ONE;
+            let z2 = gctx.sqr(z)?.value();
+            let one_m_z2 = gctx.sub(&one, &z2)?.value();
+            let sqrt_term = gctx.sqrt(&one_m_z2)?.value();
+            let i_sqrt = sqrt_term.mul_i(false); // i·sqrt(1-z²)
+            let w = gctx.add(z, &i_sqrt)?.value();
+            let log_w = gctx.log(&w, reborrow_cache(&mut cache))?.value();
+            let acos_z = log_w.mul_i(true); // -i·log(w)
+            let (re, im) = acos_z.into_parts();
+            let re = re.with_precision(pw).value();
+            let im = im.with_precision(pw).value();
+            Ok([(re.clone(), re.ulp() * 20), (im.clone(), im.ulp() * 20)])
+        })?;
+        Ok(combine_parts(re, im))
     }
 
-    /// Inverse tangent `atan z = (i/2)·(log(1-iz) - log(1+iz))` (context layer).
+    /// Inverse tangent `atan z = (i/2)·(log(1-iz) - log(1+iz))` (context layer), correctly rounded
+    /// via a Ziv loop. The two logs nearly cancel for small `z`; near `z = ±i` one of `1∓iz`
+    /// vanishes and its log diverges. The Ziv retries absorb the cancellation in the
+    /// well-conditioned regime.
     pub fn atan<const B: Word>(
         &self,
         z: &CBig<R, B>,
@@ -178,21 +204,26 @@ impl<R: ErrorBounds> Context<R> {
             // 1±iz terms become infinite and the log diverges — report Indeterminate for now.
             return Err(FpError::Indeterminate);
         }
-        self.assert_limited(); // builds the work context directly, like `powf` — see `asin`
-        let gctx = Context::new(self.precision() + ITRIG_GUARD);
         let p = self.precision();
-        let one = CBig::ONE;
-        let iz = z.mul_i(false);
-        let a = gctx.sub(&one, &iz)?.value(); // 1 - iz
-        let b = gctx.add(&one, &iz)?.value(); // 1 + iz
-        let log_a = gctx.log(&a, reborrow_cache(&mut cache))?.value();
-        let log_b = gctx.log(&b, reborrow_cache(&mut cache))?.value();
-        let diff = gctx.sub(&log_a, &log_b)?.value();
-        let i_half_diff = diff.mul_i(false); // i·diff, then /2 below
-        let two: CBig<R, B> = IBig::from(2).into();
-        let atan_z = gctx.div(&i_half_diff, &two)?.value();
-        let (re, im) = atan_z.into_parts();
-        Ok(combine_parts(re.with_precision(p), im.with_precision(p)))
+        let [re, im] = self.ziv(ITRIG_GUARD, |guard| {
+            let pw = p + guard;
+            let gctx = Context::new(pw);
+            let one = CBig::ONE;
+            let iz = z.mul_i(false);
+            let a = gctx.sub(&one, &iz)?.value(); // 1 - iz
+            let b = gctx.add(&one, &iz)?.value(); // 1 + iz
+            let log_a = gctx.log(&a, reborrow_cache(&mut cache))?.value();
+            let log_b = gctx.log(&b, reborrow_cache(&mut cache))?.value();
+            let diff = gctx.sub(&log_a, &log_b)?.value();
+            let i_half_diff = diff.mul_i(false); // i·diff, then /2 below
+            let two: CBig<R, B> = IBig::from(2).into();
+            let atan_z = gctx.div(&i_half_diff, &two)?.value();
+            let (re, im) = atan_z.into_parts();
+            let re = re.with_precision(pw).value();
+            let im = im.with_precision(pw).value();
+            Ok([(re.clone(), re.ulp() * 20), (im.clone(), im.ulp() * 20)])
+        })?;
+        Ok(combine_parts(re, im))
     }
 }
 

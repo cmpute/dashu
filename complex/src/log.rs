@@ -3,8 +3,8 @@
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, exact, reborrow_cache, riemann, CfpResult, Context};
 use dashu_float::round::ErrorBounds;
-use dashu_float::{ConstCache, FBig, Repr};
-use dashu_int::Word;
+use dashu_float::{ConstCache, Context as FloatCtxt, FBig, Repr};
+use dashu_int::{IBig, Word};
 
 /// Guard digits (base-B) for `log`. Composes `hypot` (for `|z|`), `ln`, and `atan2`.
 const LOG_GUARD: usize = 14;
@@ -31,19 +31,35 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(riemann(*self)); // log(∞) = +∞ (Riemann point)
         }
 
-        // `guard` rejects an unlimited context (the `log(0)` and `log(∞)` shortcuts above are
-        // exact and need no precision).
-        let gctx = self.guard(LOG_GUARD);
+        // `ln|z| + i·arg(z)`. The float `hypot`/`ln`/`atan2` are correctly-rounded at the working
+        // precision. The imaginary part (`atan2` of the exact parts) carries only `atan2`'s own
+        // rounding; the real part `ln|z|` additionally propagates `hypot`'s relative error through
+        // `ln`, which dominates near `|z| = 1` (where `ln|z| → 0`) — so its radius carries an extra
+        // absolute `B^{1-pw}` term. The Ziv driver asserts a limited context (the `log(0)`/`log(∞)`
+        // shortcuts above are exact and need no precision).
         let p = self.precision();
-        // ln|z|
-        let r = gctx.hypot(z.re(), z.im())?.value();
-        let ln_r = gctx.ln(r.repr(), reborrow_cache(&mut cache))?.value();
-        // arg(z) = atan2(im, re)
-        let arg = gctx
-            .atan2(z.im(), z.re(), reborrow_cache(&mut cache))?
-            .value();
-        let re = ln_r.with_precision(p);
-        let im = arg.with_precision(p);
+        let [re, im] = self.ziv(LOG_GUARD, |guard| {
+            let pw = p + guard;
+            let gctx = FloatCtxt::<R>::new(pw);
+            // ln|z|
+            let r = gctx.hypot(z.re(), z.im())?.value();
+            let ln_r = gctx.ln(r.repr(), reborrow_cache(&mut cache))?.value();
+            // arg(z) = atan2(im, re)
+            let arg = gctx
+                .atan2(z.im(), z.re(), reborrow_cache(&mut cache))?
+                .value();
+            // The float transcendentals return unlimited-precision exact constants for exact cases
+            // (e.g. `ln 1 = 0`, `atan2(0,1) = 0`); re-root to the working precision so `.ulp()`
+            // (which rejects unlimited) is well-defined.
+            let ln_r = ln_r.with_precision(pw).value();
+            let arg = arg.with_precision(pw).value();
+            // `B^{1-pw}` upper-bounds `hypot`'s propagated error `ulp(r)/|r| ≤ B^{1-pw}`, which
+            // dominates `ulp(ln_r)` when `|ln_r| < 1` (`|z| ≈ 1`).
+            let propagated = FBig::<R, B>::from_parts(IBig::from(1), 1 - pw as isize);
+            let re_rad = ln_r.ulp() * 4 + propagated * 4;
+            let im_rad = arg.ulp() * 4;
+            Ok([(ln_r, re_rad), (arg, im_rad)])
+        })?;
         Ok(combine_parts(re, im))
     }
 }

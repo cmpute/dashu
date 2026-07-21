@@ -12,10 +12,6 @@ use dashu_int::Word;
 /// small fixed guard comfortably settles the accumulated rounding of two squarings and an add.
 const NORM_GUARD: usize = 8;
 
-/// Guard digits (base-B) for `abs`. The inner `hypot` already carries its own guard; this extra
-/// margin absorbs the final re-round to the CBig precision.
-const ABS_GUARD: usize = 8;
-
 impl<R: Round, const B: Word> CBig<R, B> {
     /// The complex conjugate `x - iy`. Exact (sign flip of the imaginary part, including `-0`/`-inf`).
     #[inline]
@@ -131,19 +127,20 @@ impl<R: Round> Context<R> {
 }
 
 impl<R: ErrorBounds> Context<R> {
-    /// The modulus `|z| = hypot(re, im)` (context layer). Near-correctly rounded; returns `+∞` for
-    /// an infinite input. Thin composition over [`dashu_float::Context::hypot`] (now Ziv-correctly
-    /// rounded).
+    /// The modulus `|z| = hypot(re, im)` (context layer), correctly rounded. Returns `+∞` for an
+    /// infinite input. `abs` is a single real operation, so it delegates directly to
+    /// [`dashu_float::Context::hypot`] (itself Ziv-correctly-rounded at the target precision) —
+    /// computing at `p + guard` and re-rounding would be a *double* rounding that can break correct
+    /// rounding.
     ///
     /// # Panics
     ///
     /// Panics if the precision is unlimited.
     pub fn abs<const B: Word>(&self, z: &CBig<R, B>) -> FpResult<FBig<R, B>> {
-        // `guard` rejects an unlimited context (otherwise `hypot` would silently compute |z| at
-        // ~`ABS_GUARD` digits — its own assert only sees the guard precision).
-        let gctx = self.guard(ABS_GUARD);
-        let h = gctx.hypot(z.re(), z.im())?;
-        Ok(h.value().with_precision(self.precision()))
+        // Assert limited up front to keep the "transcendentals reject unlimited" contract — the
+        // float `hypot` would otherwise short-circuit unlimited to an exact value.
+        self.assert_limited();
+        self.float().hypot(z.re(), z.im())
     }
 
     /// The argument `atan2(im, re)` (context layer). Delegates to `dashu-float`'s Annex-G `atan2`;

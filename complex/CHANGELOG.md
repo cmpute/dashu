@@ -7,6 +7,17 @@
   parts for each of the real/imaginary components (built on `Repr::new_const`). The `cbig!` literal
   macro now works in `const` position for coefficients that fit in a `DoubleWord`; larger
   coefficients fall back to the runtime heap path.
+- **Correct rounding for the complex transcendentals** via a Ziv retry loop (`complex/src/ziv.rs`).
+  `exp`, `log`, `powf`, `sin`/`cos`/`tan`/`sin_cos`, `asin`/`acos`/`atan`, and `sqrt` now certify
+  *both* the real and imaginary parts — rounding each to the target precision and retrying with more
+  guard digits while either part's error interval straddles a rounding boundary — matching
+  `dashu-float`'s real transcendentals. Each transcendental reports a provable per-part error radius
+  (`result.ulp() × C`, plus an amplification term where the composition magnifies error: `log`'s
+  `ln|z|` near `|z| = 1`, `tan`'s real part for large `|Im z|`, `powf`'s result magnitude). `abs`
+  delegates directly to `dashu-float`'s already-correctly-rounded `hypot`, dropping a double-rounding
+  re-round. The well-conditioned regime is guaranteed-correctly rounded; `tan`/`asin`/`acos`/`atan`
+  lose accuracy only very near their poles/singularities (a known limitation of the underlying
+  formulas, shared with the prior near-correct implementation).
 
 ### Change
 - **(breaking, bound)** The complex transcendentals (`exp`, `ln`, `powf`, `sin`/`cos`/`tan`/
@@ -15,21 +26,15 @@
   field arithmetic (`add`/`sub`/`mul`/`div`/`sqr`/`inv`) remain `R: Round`.
 
 ### Fix
-- **Unlimited-precision handling**, centralized: the check now lives in `Context::guard` (the
-  guard-digit recipe is an inherently limited-precision technique, so `guard` rejects precision 0
-  rather than silently making a finite `0 + GUARD` context). All transcendentals that build a guard
-  context via `guard` — `exp`, `log`, `abs`, `sqrt`, and the complex `sin`/`cos`/`tan`/`sin_cos` —
-  now panic on an unlimited context as their docs claim (previously they silently computed at the
-  fixed guard precision and marked the truncated value `Exact`). The inverse trig (`asin`/`acos`/
-  `atan`) and `powf` build their work context directly (`Context::new(p + GUARD)`, bypassing
-  `guard`) and so assert explicitly. The exact special-value shortcuts (`exp(0)=1`, `exp(±inf)`,
-  `powf(z,0)=1`, `log(0)=-∞`, `log(∞)=+∞`, `sqrt(±0)`, `sin/cos(0)`) still bypass the check — they
-  need no precision.
-- **Arithmetic at unlimited precision is now correct.** `mul`/`sqr`/`norm` switch from `guard` to a
-  new `Context::work_context` that uses the exact `self.float()` (precision 0) at unlimited, so they
-  are now exact there (previously they rounded to the guard precision). `div`/`inv` use the same path
-  and now panic at unlimited via `dashu-float`'s `div` (a quotient isn't exactly representable in
-  general) — previously they silently returned a guard-rounded value.
+- **Unlimited-precision handling**, centralized in the Ziv driver: it asserts a limited context up
+  front, so every transcendental panics on precision 0 as documented (the exact special-value
+  shortcuts — `exp(0)=1`, `log(0)=-∞`, `powf(z,0)=1`, `sqrt(±0)`, `sin/cos(0)`, etc. — still bypass
+  it). The prior per-function `guard()`/`assert_limited()` scaffolding is removed (`guard()` itself
+  is gone, now unused).
+- **Arithmetic at unlimited precision is correct.** `mul`/`sqr`/`norm` use `Context::work_context`,
+  which is the exact `self.float()` (precision 0) at unlimited, so they are exact there. `div`/`inv`
+  use the same path and panic at unlimited via `dashu-float`'s `div` (a quotient isn't exactly
+  representable in general). `abs` asserts limited before delegating to the float `hypot`.
 
 ## 0.5.0 (Initial release)
 

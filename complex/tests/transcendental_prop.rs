@@ -64,7 +64,20 @@ proptest! {
         let hi = Context::new(2 * P);
         let rp = lo.sqrt(&z).unwrap().value();
         let r2 = reround_hi(hi.sqrt(&z).unwrap().value());
-        prop_assert!(within_ulps_cbig(&rp, &r2, 2));
+        // sqrt is correctly rounded via Ziv, so 1 ULP.
+        prop_assert!(within_ulps_cbig(&rp, &r2, 1));
+    }
+
+    #[test]
+    fn tan_self_oracle(z in small_strategy()) {
+        // bounded |Im z|: for large |Im z| the division `sin/cos` cancels in the real part (a known
+        // limitation of the formula), so this oracle covers the well-conditioned regime where tan is
+        // correctly rounded via Ziv. 1 ULP.
+        let lo = Context::new(P);
+        let hi = Context::new(2 * P);
+        let rp = lo.tan(&z, None).unwrap().value();
+        let r2 = reround_hi(hi.tan(&z, None).unwrap().value());
+        prop_assert!(within_ulps_cbig(&rp, &r2, 1));
     }
 
     #[test]
@@ -73,7 +86,9 @@ proptest! {
         let hi = Context::new(2 * P);
         let rp = lo.exp(&z, None).unwrap().value();
         let r2 = reround_hi(hi.exp(&z, None).unwrap().value());
-        prop_assert!(within_ulps_cbig(&rp, &r2, 2));
+        // exp is correctly rounded via Ziv, so the low- and (re-rounded) high-precision results
+        // agree to within 1 ULP (they match exactly except at rare near-tie double-rounding cases).
+        prop_assert!(within_ulps_cbig(&rp, &r2, 1));
     }
 
     #[test]
@@ -82,7 +97,9 @@ proptest! {
         let hi = Context::new(2 * P);
         let rp = lo.log(&z, None).unwrap().value();
         let r2 = reround_hi(hi.log(&z, None).unwrap().value());
-        prop_assert!(within_ulps_cbig(&rp, &r2, 2));
+        // log is correctly rounded via Ziv (its real part even carries an amplification term near
+        // |z|=1), so the results agree to within 1 ULP.
+        prop_assert!(within_ulps_cbig(&rp, &r2, 1));
     }
 
     #[test]
@@ -104,8 +121,20 @@ proptest! {
         let cp = lo.cos(&z, None).unwrap().value();
         let s2 = reround_hi(hi.sin(&z, None).unwrap().value());
         let c2 = reround_hi(hi.cos(&z, None).unwrap().value());
-        prop_assert!(within_ulps_cbig(&sp, &s2, 2));
-        prop_assert!(within_ulps_cbig(&cp, &c2, 2));
+        // sin/cos are correctly rounded via a shared Ziv loop, so 1 ULP.
+        prop_assert!(within_ulps_cbig(&sp, &s2, 1));
+        prop_assert!(within_ulps_cbig(&cp, &c2, 1));
+    }
+
+    #[test]
+    fn abs_self_oracle(z in cbig_strategy()) {
+        // abs delegates directly to the (Ziv-correctly-rounded) real hypot, so abs@p agrees with
+        // abs@2p re-rounded to p exactly (0 ULP) save for rare near-tie double-rounding (≤1 ULP).
+        let lo = Context::new(P);
+        let hi = Context::new(2 * P);
+        let lp = lo.abs(&z).unwrap().value();
+        let hp = hi.abs(&z).unwrap().value().with_precision(P).value();
+        prop_assert!(within_ulps(&lp, &hp, 1));
     }
 
     #[test]
@@ -129,7 +158,8 @@ proptest! {
         let hi = Context::new(2 * P);
         let rp = lo.asin(&z, None).unwrap().value();
         let r2 = reround_hi(hi.asin(&z, None).unwrap().value());
-        prop_assert!(within_ulps_cbig(&rp, &r2, 4));
+        // asin is correctly rounded via Ziv (well-conditioned regime), 1 ULP.
+        prop_assert!(within_ulps_cbig(&rp, &r2, 1));
     }
 
     #[test]
@@ -138,6 +168,18 @@ proptest! {
         let hi = Context::new(2 * P);
         let rp = lo.atan(&z, None).unwrap().value();
         let r2 = reround_hi(hi.atan(&z, None).unwrap().value());
-        prop_assert!(within_ulps_cbig(&rp, &r2, 4));
+        // atan is correctly rounded via Ziv (well-conditioned regime), 1 ULP.
+        prop_assert!(within_ulps_cbig(&rp, &r2, 1));
+    }
+
+    #[test]
+    fn powf_self_oracle((base, w) in (small_strategy(), small_strategy())) {
+        // modest base/exponent keep `w·log base` bounded (no overflow); base has positive real part
+        // so `log` stays off its branch cut. powf is correctly rounded via Ziv, 1 ULP.
+        let lo = Context::new(P);
+        let hi = Context::new(2 * P);
+        let rp = lo.powf(&base, &w, None).unwrap().value();
+        let r2 = reround_hi(hi.powf(&base, &w, None).unwrap().value());
+        prop_assert!(within_ulps_cbig(&rp, &r2, 1));
     }
 }
