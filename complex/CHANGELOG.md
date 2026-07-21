@@ -36,6 +36,9 @@
   which is the exact `self.float()` (precision 0) at unlimited, so they are exact there. `div`/`inv`
   use the same path and panic at unlimited via `dashu-float`'s `div` (a quotient isn't exactly
   representable in general). `abs` asserts limited before delegating to the float `hypot`.
+- **`no_std` build of the test-only Ziv retry counter.** The `LAST_ZIV_RETRIES` `thread_local!`
+  requires `std`, so the crate failed to compile under `--no-default-features`. It's now gated behind
+  `feature = "std"` (with its uses and the counter-reading tests), so the Ziv driver is `no_std`-clean.
 
 ## 0.5.0 (Initial release)
 

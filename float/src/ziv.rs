@@ -38,7 +38,7 @@ const MAX_ZIV_RETRIES: usize = 32;
 // A test-only retry counter, so tests can assert the loop converges on the first attempt for
 // typical inputs (validating that the guard-digit heuristic wasn't over-tightened). Reads as
 // the number of *extra* attempts beyond the first, i.e. `0` means first-attempt success.
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 thread_local! {
     pub(crate) static LAST_ZIV_RETRIES: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
 }
@@ -68,7 +68,7 @@ impl<R: ErrorBounds> Context<R> {
 
         let mut guard = initial_guard;
         let mut last = None;
-        #[cfg(test)]
+        #[cfg(all(test, feature = "std"))]
         LAST_ZIV_RETRIES.with(|c| c.set(0));
         for _ in 0..MAX_ZIV_RETRIES {
             let (a, e) = approx(guard);
@@ -84,7 +84,7 @@ impl<R: ErrorBounds> Context<R> {
             // the first attempt (with the heuristic guard) handles the common case.
             let step = core::cmp::max(guard, self.precision / 2).max(1);
             guard += step;
-            #[cfg(test)]
+            #[cfg(all(test, feature = "std"))]
             LAST_ZIV_RETRIES.with(|c| c.set(c.get() + 1));
         }
 
@@ -112,7 +112,7 @@ impl<R: ErrorBounds> Context<R> {
 
         let mut guard = initial_guard;
         let mut last = None;
-        #[cfg(test)]
+        #[cfg(all(test, feature = "std"))]
         LAST_ZIV_RETRIES.with(|c| c.set(0));
         for _ in 0..MAX_ZIV_RETRIES {
             let ((a1, e1), (a2, e2)) = approx(guard);
@@ -128,7 +128,7 @@ impl<R: ErrorBounds> Context<R> {
             // Grow the guard aggressively so a near-tie resolves in a couple of retries.
             let step = core::cmp::max(guard, self.precision / 2).max(1);
             guard += step;
-            #[cfg(test)]
+            #[cfg(all(test, feature = "std"))]
             LAST_ZIV_RETRIES.with(|c| c.set(c.get() + 1));
         }
 
@@ -174,7 +174,7 @@ impl<R: ErrorBounds> Context<R> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
     use crate::round::mode;

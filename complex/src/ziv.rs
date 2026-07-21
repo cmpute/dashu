@@ -48,7 +48,7 @@ const MAX_ZIV_RETRIES: usize = 32;
 // A test-only retry counter (extra attempts beyond the first), mirroring `dashu-float`'s counter
 // so tests can assert the loop converges on the first attempt for typical inputs — i.e. `0` means
 // first-attempt success.
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 thread_local! {
     pub(crate) static LAST_ZIV_RETRIES: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
 }
@@ -76,7 +76,7 @@ impl<R: ErrorBounds> Context<R> {
         let p = self.precision();
         let mut guard = initial_guard;
         let mut last = None;
-        #[cfg(test)]
+        #[cfg(all(test, feature = "std"))]
         LAST_ZIV_RETRIES.with(|c| c.set(0));
         for _ in 0..MAX_ZIV_RETRIES {
             let parts = approx(guard)?;
@@ -96,7 +96,7 @@ impl<R: ErrorBounds> Context<R> {
             // first attempt (with the heuristic guard) handles the common case (matches float).
             let step = core::cmp::max(guard, p / 2).max(1);
             guard += step;
-            #[cfg(test)]
+            #[cfg(all(test, feature = "std"))]
             LAST_ZIV_RETRIES.with(|c| c.set(c.get() + 1));
         }
 
@@ -146,7 +146,7 @@ impl<R: ErrorBounds> Context<R> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
     use crate::cbig::CBig;

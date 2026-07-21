@@ -80,6 +80,11 @@
   precision input, since a `p`-digit rational can't sit closer than ~`B⁻ᵖ` to the irrational pole) is
   handled by the Ziv-closure's `significand.is_zero()` retry guard, which forces a higher guard where
   cos is representable.
+- **`no_std` build of the test-only Ziv retry counter.** The `LAST_ZIV_RETRIES` `thread_local!`
+  (used by the retry-count tests) requires `std`, so the crate failed to compile under
+  `--no-default-features` (the `thread_local!` macro isn't in scope). It's now gated behind
+  `feature = "std"` along with its uses and the counter-reading tests, so the Ziv driver itself is
+  `no_std`-clean; the retry-count tests run under `std` as before.
 
 ## 0.5.0
 
