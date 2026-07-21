@@ -292,4 +292,15 @@ proptest! {
         let r_2p = b_2p.powf(&e_2p).with_precision(P).value();
         prop_assert_eq!(r_p, r_2p);
     }
+
+    /// Correct-rounding self-oracle for powi (positive and negative integer exponents, including
+    /// exact integer powers where the squaring chain introduces no rounding).
+    #[test]
+    fn powi_rounding_exact_oracle(b in signed_x(50_000), n in -12i32..=12) {
+        prop_assume!(n != 0);
+        let r_p = b.powi(IBig::from(n));
+        let b_2p = b.clone().with_precision(2 * P).value();
+        let r_2p = b_2p.powi(IBig::from(n)).with_precision(P).value();
+        prop_assert_eq!(r_p, r_2p);
+    }
 }

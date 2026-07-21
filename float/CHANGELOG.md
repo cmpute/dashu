@@ -36,9 +36,18 @@
   radius is `result.ulp()·(|y·ln x|+1)·(B+8)` taken at the *working* precision: it shrinks as
   `B^{-guard}`, so the containment test converges (a radius computed at unlimited precision would
   be constant across retries and never settle for a value near a rounding boundary). An
-  integer-valued exponent now delegates to `powi` (binary exponentiation), which also admits a
+  integer-valued exponent delegates to `powi` (binary exponentiation), which also admits a
   negative base — its sign fixed by the exponent's parity — so `powf(-x, n)` is in domain for
-  integer `n`. That integer-exponent path stays within 1 ulp (near-correct), matching `powi`.
+  integer `n`.
+- **Guaranteed-correct rounding for `powi` (integer exponent)** via the Ziv loop. Binary
+  exponentiation (repeated squaring) compounds the relative error — it roughly doubles per
+  squaring — so after `bit_len(n)` squarings the error is bounded by about `2^nlen · ulp`, which
+  the Ziv radius reflects (`ulp_w << (nlen + 1)`). A negative exponent computes `(1/base)^|n|`
+  directly, so the sign-dependent overflow/underflow falls out naturally. When the squaring chain
+  rounds `Exact` (the result is exactly representable, e.g. an integer power that fits), the true
+  error is zero and the radius is reported as zero — this is required under the *directed* rounding
+  modes (`Zero`/`Down`/`Up`/`Away`, the `FBig` default), where an exactly-representable result lies
+  on a one-sided rounding boundary that no nonzero radius can fit inside.
 
 ### Change
 - **(breaking, bound)** `Context::exp`/`exp_m1`/`ln`/`ln_1p` (and `powf`, the hyperbolic family,
@@ -46,7 +55,8 @@
   `R: Round` — the Ziv containment test needs the rounding preimage that `ErrorBounds` provides.
   All six built-in modes satisfy `ErrorBounds`; only custom non-`ErrorBounds` `Round` modes are
   affected (custom modes are already discouraged). `CachedFBig`/`CachedCBig` forwarders for these
-  methods carry the same bound. Arithmetic, roots, trigonometric, and `powi` remain `R: Round`.
+  methods carry the same bound. Arithmetic, roots, and trigonometric remain `R: Round`; `powi`
+  now also requires `R: ErrorBounds` (it is correctly rounded via the Ziv loop).
 - **Internal dedup** (no behavior change): the `⌈log_B(precision)⌉` base-guard formula shared by every
   transcendental Ziv loop is now `Context::base_guard_digits::<B>()` (12 call sites in `hyper`/`exp`/
   `log`), and the `ulp·(4·terms + 12)` series-truncation radius is now `series_radius(value, terms)`

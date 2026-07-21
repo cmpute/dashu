@@ -103,14 +103,14 @@ impl<R: Round, const B: Word> num_traits::ToPrimitive for FBig<R, B> {
     }
 }
 
-impl<R: Round, const B: Word> num_traits::Pow<IBig> for FBig<R, B> {
+impl<R: ErrorBounds, const B: Word> num_traits::Pow<IBig> for FBig<R, B> {
     type Output = FBig<R, B>;
 
     fn pow(self, rhs: IBig) -> Self {
         self.powi(rhs)
     }
 }
-impl<R: Round, const B: Word> num_traits::Pow<IBig> for &FBig<R, B> {
+impl<R: ErrorBounds, const B: Word> num_traits::Pow<IBig> for &FBig<R, B> {
     type Output = FBig<R, B>;
 
     fn pow(self, rhs: IBig) -> FBig<R, B> {
