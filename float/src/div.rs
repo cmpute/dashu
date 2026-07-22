@@ -309,6 +309,9 @@ impl<R: Round> Context<R> {
             }
         }
 
+        // this method don't deal with the case where lhs significand is too large
+        debug_assert!(lhs.digits() <= self.precision + rhs.digits());
+
         let (mut q, mut r) = lhs.significand.div_rem(&rhs.significand);
         let mut e = lhs.exponent.checked_sub(rhs.exponent).ok_or({
             if lhs.exponent >= 0 {
@@ -349,24 +352,6 @@ impl<R: Round> Context<R> {
                 let (q0, r0) = r.div_rem(&rhs.significand);
                 q += q0;
                 r = r0;
-            } else if ndigits > ddigits + self.precision {
-                // The quotient already carries more digits than the target precision
-                // (the dividend outweighs the divisor by more than `precision`). Round it
-                // down to `precision`, folding the division remainder into the discarded
-                // low part so a tie is only reached when the remainder is exactly zero.
-                let shift = ndigits - ddigits - self.precision;
-                let (q_hi, q_lo) = split_digits::<B>(q, shift);
-                e = e
-                    .checked_add(shift as isize)
-                    .ok_or(FpError::Overflow(sign))?;
-                let scale: IBig = UBig::from_word(B).pow(shift).into();
-                let num = q_lo * &rhs.significand + r;
-                let den = scale * &rhs.significand;
-                let adjust = R::round_ratio(&q_hi, num, &den);
-                return Ok(Approximation::Inexact(
-                    make_div_repr(sign_negative, q_hi + adjust, e),
-                    adjust,
-                ));
             }
         }
 

@@ -632,9 +632,22 @@ impl<R: Round> Context<R> {
                 let signif = repr.significand * Repr::<B>::BASE.pow(repr.exponent as usize);
                 Exact(Repr::new(signif, 0))
             } else {
-                let num: Repr<NewB> = Repr::new(repr.significand, 0);
                 let den: Repr<NewB> =
                     Repr::new(Repr::<B>::BASE.pow(-repr.exponent as usize).into(), 0);
+                // repr_div requires the dividend to be no wider than `precision + divisor`, so
+                // pre-shrink the significand the same way Context::div does — the caller, not
+                // the kernel, is responsible for bounding the dividend. Rounding it to
+                // `den.digits() + precision` preserves enough information for the division to
+                // be correctly rounded at `precision`.
+                let num: Repr<NewB> = Repr::new(repr.significand, 0);
+                let num =
+                    if !num.is_pos_zero() && num.digits_ub() > den.digits_lb() + self.precision {
+                        Self::new(den.digits() + self.precision)
+                            .repr_round_ref(&num)
+                            .value()
+                    } else {
+                        num
+                    };
                 match self.repr_div(num, den) {
                     Ok(v) => v.map(|r: Repr<NewB>| Repr {
                         significand: r.significand,

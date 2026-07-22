@@ -13,8 +13,9 @@
   intermediate that re-rounds into the subnormal grid. This removes a 1-ULP double-rounding error
   on subnormal values that sit just past a subnormal halfway.
 - `to_f64`/`to_f32` no longer panic in debug builds (nor silently double-round in release) on
-  high-precision inputs: the base-changing division now rounds an over-wide quotient down to the
-  requested precision instead of assuming the caller pre-bounded the dividend.
+  high-precision inputs: the base-changing conversion now pre-shrinks the source significand before
+  dividing, upholding `repr_div`'s dividend-width contract (as `Context::div` already does) instead
+  of feeding an oversized dividend into the division.
 
 ## 0.5.0
 
