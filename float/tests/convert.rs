@@ -674,11 +674,20 @@ fn test_to_f64_subnormal_halfway() {
         let core = IBig::from(2 * m + 1) << j as usize;
         let five: IBig = UBig::from(5u8).pow(scale).into();
         for (delta, want) in [(IBig::ONE, m + 1), (-IBig::ONE, m)] {
-            let sig = &core + &delta;
-            let base2 = FBig::<HalfEven, 2>::from_parts(sig.clone(), -(scale as isize));
-            assert_eq!(base2.to_f64().value().to_bits(), want, "base 2, m={m}");
-            let base10 = DBig::from_parts(&sig * &five, -(scale as isize));
-            assert_eq!(base10.to_f64().value().to_bits(), want, "base 10, m={m}");
+            // magnitude, always positive; cover both signs (negation flips only the sign bit)
+            let mag = &core + &delta;
+            for negative in [false, true] {
+                let sig = if negative { -mag.clone() } else { mag.clone() };
+                let want = if negative { want | (1u64 << 63) } else { want };
+                let base2 = FBig::<HalfEven, 2>::from_parts(sig.clone(), -(scale as isize));
+                assert_eq!(base2.to_f64().value().to_bits(), want, "base 2, m={m}, neg={negative}");
+                let base10 = DBig::from_parts(&sig * &five, -(scale as isize));
+                assert_eq!(
+                    base10.to_f64().value().to_bits(),
+                    want,
+                    "base 10, m={m}, neg={negative}"
+                );
+            }
         }
     }
     // m spans the subnormal significand width; j puts the nudge well below the 53rd bit
@@ -704,11 +713,20 @@ fn test_to_f32_subnormal_halfway() {
         let core = IBig::from(2 * m + 1) << j as usize;
         let five: IBig = UBig::from(5u8).pow(scale).into();
         for (delta, want) in [(IBig::ONE, m + 1), (-IBig::ONE, m)] {
-            let sig = &core + &delta;
-            let base2 = FBig::<HalfEven, 2>::from_parts(sig.clone(), -(scale as isize));
-            assert_eq!(base2.to_f32().value().to_bits(), want, "base 2, m={m}");
-            let base10 = DBig::from_parts(&sig * &five, -(scale as isize));
-            assert_eq!(base10.to_f32().value().to_bits(), want, "base 10, m={m}");
+            // magnitude, always positive; cover both signs (negation flips only the sign bit)
+            let mag = &core + &delta;
+            for negative in [false, true] {
+                let sig = if negative { -mag.clone() } else { mag.clone() };
+                let want = if negative { want | (1u32 << 31) } else { want };
+                let base2 = FBig::<HalfEven, 2>::from_parts(sig.clone(), -(scale as isize));
+                assert_eq!(base2.to_f32().value().to_bits(), want, "base 2, m={m}, neg={negative}");
+                let base10 = DBig::from_parts(&sig * &five, -(scale as isize));
+                assert_eq!(
+                    base10.to_f32().value().to_bits(),
+                    want,
+                    "base 10, m={m}, neg={negative}"
+                );
+            }
         }
     }
     for m in [3, 21, (1 << 10) + 5, (1 << 18) + 7] {
@@ -730,5 +748,12 @@ fn test_to_f64_high_precision() {
     ];
     for (s, want) in cases {
         assert_eq!(DBig::from_str(s).unwrap().to_f64().value().to_bits(), want, "{s}");
+        // the negation flips only the sign bit; cover the sign through the over-wide-quotient path
+        let neg = format!("-{s}");
+        assert_eq!(
+            DBig::from_str(&neg).unwrap().to_f64().value().to_bits(),
+            want | (1u64 << 63),
+            "{neg}"
+        );
     }
 }

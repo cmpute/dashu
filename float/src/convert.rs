@@ -472,30 +472,22 @@ fn converted_overflow_repr<const NewB: Word>(large: bool, sign: Sign) -> Rounded
     )
 }
 
-/// Number of significant bits an `f64` keeps for a value whose most-significant bit sits at
-/// position `msb`: 53 across the normal range, but fewer for subnormals, whose spacing is fixed
-/// at `2^-1074`. Rounding the source straight to this width lets the bit-encoding step avoid a
-/// second rounding, which would otherwise double-round subnormals.
-fn f64_significand_bits(v: &Repr<2>) -> usize {
+/// Number of significant bits a binary float format keeps for a value whose most-significant bit
+/// sits at position `msb`: `max_bits` across the normal range, but fewer for subnormals, whose
+/// spacing is fixed at `2^subnormal_exp` (e.g. `2^-1074` for f64, `2^-149` for f32). Rounding the
+/// source straight to this width lets the bit-encoding step avoid a second rounding, which would
+/// otherwise double-round subnormals.
+fn significand_bits(v: &Repr<2>, max_bits: usize, subnormal_exp: isize) -> usize {
     if v.significand.is_zero() {
-        return 53;
+        return max_bits;
     }
     let msb = v.exponent + v.digits() as isize - 1;
-    (msb + 1075).clamp(1, 53) as usize
-}
-
-/// [f64_significand_bits] for `f32` (subnormal spacing `2^-149`).
-fn f32_significand_bits(v: &Repr<2>) -> usize {
-    if v.significand.is_zero() {
-        return 24;
-    }
-    let msb = v.exponent + v.digits() as isize - 1;
-    (msb + 150).clamp(1, 24) as usize
+    (msb - subnormal_exp + 1).clamp(1, max_bits as isize) as usize
 }
 
 /// Convert `repr` to base 2 and truncate to `width` significant bits, forcing the lowest kept bit
-/// to 1 whenever the tail is nonzero (round-to-odd). Rounding this to nearest at any precision up
-/// to `width - 2` then reproduces the correctly-rounded value regardless of mode, so the two-step
+/// to 1 whenever the tail is nonzero (round-to-odd). Rounding this down to any width up to
+/// `width - 2` reproduces the correctly-rounded value for every rounding mode, so the two-step
 /// "convert, then round to the final width" cannot double-round. `width` is fixed and generous, so
 /// the base-conversion logarithm stays accurate even when the final width is tiny (deep subnormals).
 #[allow(non_upper_case_globals)]
@@ -523,7 +515,7 @@ impl<R: Round> Context<R> {
             return Inexact(repr.sign() * f64::INFINITY, Rounding::NoOp);
         }
         let odd = convert_base_odd::<B>(repr, 60);
-        let bits = f64_significand_bits(&odd);
+        let bits = significand_bits(&odd, 53, -1074);
         Context::<R>::new(bits)
             .repr_round(odd)
             .and_then(|v| v.into_f64_internal())
@@ -535,7 +527,7 @@ impl<R: Round> Context<R> {
             return Inexact(repr.sign() * f32::INFINITY, Rounding::NoOp);
         }
         let odd = convert_base_odd::<B>(repr, 32);
-        let bits = f32_significand_bits(&odd);
+        let bits = significand_bits(&odd, 24, -149);
         Context::<R>::new(bits)
             .repr_round(odd)
             .and_then(|v| v.into_f32_internal())
