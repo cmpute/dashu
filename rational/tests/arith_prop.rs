@@ -59,3 +59,35 @@ proptest! {
         prop_assert_eq!(reduced.as_relaxed(), scaled.as_relaxed());
     }
 }
+
+/// Regression for DASHU-008: constructing an `RBig` reduces numerator/denominator by
+/// their gcd, which must not abort with "not enough memory allocated" when that gcd
+/// reduction hits a lopsided Burnikel-Ziegler division. The gcd scratchpad is sized
+/// from the *initial* operand lengths, but each step dispatches on the *current*
+/// lengths, so two large, similarly-sized operands (zero initial scratch) that later
+/// reduce through a wide quotient under-reserved and panicked.
+#[test]
+fn rbig_reduce_large_lopsided() {
+    fn big_from_seed(mut seed: u64, words: usize) -> UBig {
+        let mut v = UBig::from(0u64);
+        for _ in 0..words {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            v = (v << 64) | UBig::from(seed | 1); // |1 keeps the top word nonzero
+        }
+        v
+    }
+
+    // L = Q*R + 1, then gcd(L+R, L) reduces through L/R (huge quotient Q, large divisor R).
+    let r = big_from_seed(0x9e3779b97f4a7c15, 100);
+    let q = big_from_seed(0xd1b54a32d192ed03, 50);
+    let l = &q * &r + UBig::from(1u64);
+    let num = IBig::from(&l + &r);
+    let den = l;
+
+    let v = RBig::from_parts(num.clone(), den.clone());
+    // gcd(L+R, L) = gcd(L, R) = gcd(Q*R+1, R) = gcd(1, R) = 1, so it is already reduced.
+    assert_eq!(v.numerator(), &num);
+    assert_eq!(v.denominator(), &den);
+}

@@ -2,7 +2,7 @@
 
 use core::cmp::Ordering;
 use core::ops::{Add, AddAssign};
-use dashu_base::{AbsOrd, Approximation, BitTest, EstimatedLog2, Sign, Signed, UnsignedAbs};
+use dashu_base::{AbsOrd, Approximation, BitTest, EstimatedLog2, Sign, Signed};
 use dashu_int::{IBig, UBig, Word};
 
 use crate::FBig;
@@ -104,8 +104,18 @@ pub trait Round: Copy {
     /// assuming |fract| / X^precision < 1. Return the adjustment.
     #[inline]
     fn round_fract<const B: Word>(integer: &IBig, fract: IBig, precision: usize) -> Rounding {
-        // this assertion is costly, so only check in debug mode
-        debug_assert!(fract.clone().unsigned_abs() < UBig::from_word(B).pow(precision));
+        // this assertion is costly, so only check in debug mode.
+        // Verify the precondition |fract| < B^precision *without* materializing B^precision:
+        // for a sparse sticky tail produced by aligned subtraction, `precision` is the
+        // exponent gap and can be astronomically large, so building B^precision (the old
+        // check) exhausts memory in debug builds. Use log2 bounds instead, and only flag a
+        // *proven* violation so a valid input never trips the assertion.
+        debug_assert!({
+            let (lb, _ub) = fract.log2_bounds(); // bounds on log2|fract| (−inf when fract == 0)
+            let (_b_lb, b_ub) = B.log2_bounds();
+            // certain violation (|fract| >= B^precision) only when lb >= precision * b_ub
+            lb < b_ub * precision as f32
+        });
 
         if fract.is_zero() {
             return Rounding::NoOp;

@@ -6,6 +6,9 @@
 - `Repr::new_const`: a `const`-evaluable, normalized `Repr` constructor from a `DoubleWord`
   significand (the `const` counterpart of `Repr::new`). `FBig::from_parts_const` now delegates to
   it, and the complex literal macro uses it.
+- `FBig::log2` / `Context::log2` / `CachedFBig::log2`: base-2 logarithm, correctly rounded via
+  `ln(x)/ln(2)` evaluated at an elevated working precision. Previously only the f32-precision
+  `log2_bounds` magnitude estimate was available, so directed `log2` was wrong by many ULPs.
 
 ### Fix
 - `to_f64`/`to_f32` now round the source once, directly to the target's precision at its own
@@ -16,6 +19,12 @@
   high-precision inputs: the base-changing conversion now pre-shrinks the source significand before
   dividing, upholding `repr_div`'s dividend-width contract (as `Context::div` already does) instead
   of feeding an oversized dividend into the division.
+- `exp`, `exp_m1`, `sqrt`, `ln`, and `ln_1p` no longer panic on exact zero/one inputs that carry
+  unlimited precision (precision 0), such as `FBig::try_from(0.0)` and the `FBig::ONE`/`ZERO`
+  constants. The exact-result shortcuts now run before the limited-precision assertion.
+- The `round_fract` debug assertion no longer materializes `B^precision`, which for a sparse sticky
+  tail (where `precision` is the exponent gap — e.g. `exp_m1` of a large-magnitude input) could
+  exhaust memory in debug builds. It now checks the precondition with `log2` bounds.
 
 ## 0.5.0
 

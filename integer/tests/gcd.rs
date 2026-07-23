@@ -166,3 +166,40 @@ fn test_gcd_0() {
 fn test_gcd_ext_0() {
     let _ = ubig!(0).gcd_ext(ubig!(0));
 }
+
+#[test]
+fn test_gcd_large_lopsided_reduction() {
+    // Regression for DASHU-008: the gcd scratchpad is reserved once from the *initial*
+    // operand lengths, but each euclidean step's division dispatches on the *current*
+    // lengths. The pre-fix code under-reserved when the initial operands were similar
+    // in size, so a later lopsided euclidean step (divisor > 48 words and quotient
+    // > 32 words, taking the Burninkel-Ziegler + Karatsuba path) aborted with
+    // "internal error: not enough memory allocated" in both debug and release.
+    use dashu_int::UBig;
+
+    fn big_from_seed(mut seed: u64, words: usize) -> UBig {
+        let mut v = UBig::from(0u64);
+        for _ in 0..words {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            v = (v << 64) | UBig::from(seed | 1); // |1 keeps the top word nonzero
+        }
+        v
+    }
+
+    // Build a reduction that starts from similar-sized operands (so the initial division
+    // is "simple" and reserves zero scratch) but reaches a lopsided Burnikel-Ziegler
+    // step. Let R ~100 words, Q ~50 words, L = Q*R + 1 ~150 words; then
+    //   gcd(L+R, L): step 1 (L+R)/L has quotient 1  -> next pair (L, R)
+    //                step 2  L/R has quotient Q (>32 words) with divisor R (>48 words)
+    //                -> Burnikel-Ziegler + Karatsuba, the under-reserved step.
+    let r = big_from_seed(0x9e3779b97f4a7c15, 100);
+    let q = big_from_seed(0xd1b54a32d192ed03, 50);
+    let l = &q * &r + ubig!(1);
+    let a = &l + &r; // L + R
+    let b = l; // L
+
+    // gcd(L+R, L) = gcd(L, R) = gcd(Q*R+1, R) = gcd(1, R) = 1.
+    assert_eq!((&a).gcd(&b), ubig!(1));
+}

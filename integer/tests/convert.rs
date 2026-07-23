@@ -434,6 +434,28 @@ fn test_to_f64() {
     );
 }
 
+/// Regression test for DASHU-015: a magnitude at `DoubleWord::MAX` rounds up to the
+/// next power of two as f64, and the saturating `f as DoubleWord` round-trip used to
+/// clamp back to `DoubleWord::MAX` and report that inexact conversion as `Exact`.
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn test_to_f64_dword_max_boundary() {
+    // 2^128 - 1 == DoubleWord::MAX on 64-bit Word targets; it fits a single DoubleWord,
+    // so this exercises the `to_f64_small` fast path.
+    let two_pow_128: f64 = 2f64.powi(128);
+    let max = ubig!(340282366920938463463374607431768211455);
+    assert_eq!(max.to_f64(), Inexact(two_pow_128, Positive));
+    let neg_max = -ibig!(340282366920938463463374607431768211455);
+    assert_eq!(neg_max.to_f64(), Inexact(-two_pow_128, Negative));
+
+    // One below the boundary still rounds up to 2^128; the guard must report it Inexact.
+    assert_eq!((max - ubig!(1)).to_f64(), Inexact(two_pow_128, Positive));
+
+    // A clearly representable value below the saturation zone is still Exact — the
+    // guard must not be over-eager.
+    assert_eq!((ubig!(1) << 127).to_f64(), Exact(2f64.powi(127)));
+}
+
 #[cfg(not(any(target_pointer_width = "16", force_bits = "16")))]
 #[test]
 fn test_from_u64_i64_const() {
