@@ -109,6 +109,11 @@ impl<R: Round> Context<R> {
     /// Panics if the precision is unlimited and the exponent is negative. In this case, the exact
     /// result is likely to have infinite digits.
     pub fn powi<const B: Word>(&self, base: &Repr<B>, exp: IBig) -> FpResult<FBig<R, B>> {
+        // TODO: range handling has three known limitations at the exponent extremes:
+        // (1) the overflow guard below estimates the result magnitude with an f64 and misclassifies
+        // representable boundaries near 2^63; (2) genuine Overflow/Underflow is unwrapped mode-blindly
+        // to ±inf / signed zero; (3) the negative-exponent reciprocal path can panic. None affects
+        // ordinary inputs; fixing requires mode-aware range saturation.
         if base.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
@@ -335,11 +340,13 @@ impl<R: Round> Context<R> {
         mut cache: Option<&mut ConstCache>,
     ) -> FpResult<FBig<R, B>> {
         assert_finite(x);
-        assert_limited_precision(self.precision);
         let input_sign = x.sign();
 
         if x.significand.is_zero() {
-            // exp(±0) = 1; exp_m1(±0) = ±0 (IEEE 754 §9.2.1 preserves the sign of zero)
+            // exp(±0) = 1; exp_m1(±0) = ±0 (IEEE 754 §9.2.1 preserves the sign of zero).
+            // These exact results need no rounding, so handle them before the
+            // limited-precision assertion: a precision-0 (unlimited) FBig such as the
+            // one produced by `try_from(0.0)` must still compute exp/exp_m1 exactly.
             return match minus_one {
                 false => Ok(Exact(FBig::ONE)),
                 true => {
@@ -352,6 +359,8 @@ impl<R: Round> Context<R> {
                 }
             };
         }
+
+        assert_limited_precision(self.precision);
 
         // A simple algorithm:
         // - let r = (x - s logB) / Bⁿ, where s = floor(x / logB), such that r < B⁻ⁿ.
@@ -399,6 +408,11 @@ impl<R: Round> Context<R> {
                 Err(_) => {
                     // |floor(x / ln B)| overflows isize — x is astronomically large, so the
                     // result is an infinity (x → +∞) or underflows to the limit (x → −∞).
+                    //
+                    // TODO: this branch discards the rounding mode. For a huge
+                    // *negative* x the true exp(x) is positive but below the exponent range, so
+                    // directed Up/Away should return the minimum positive value (and exp_m1 the
+                    // value just above -1) rather than +0 / Exact(-1).
                     return if input_sign == Sign::Positive {
                         Err(FpError::Overflow(Sign::Positive))
                     } else if minus_one {
@@ -471,6 +485,56 @@ mod tests {
         // exp_m1(huge negative) -> -1 (a finite value, not an error)
         let m1 = ctx.exp_m1::<2>(&neg, None).unwrap().value();
         assert_eq!(m1, -FBig::<mode::HalfEven>::ONE);
+    }
+
+    // A sharp OOM regression needs an exponent gap large enough that 2^gap exceeds any
+    // memory (gap ≳ 1e11), yet with floor(x/ln2) still fitting isize so the overflow
+    // branch is not taken. That window only exists where isize is 64-bit: on 32-bit,
+    // isize tops out at ~2.1e9 — below any OOM-inducing gap — so the overflow branch
+    // always intervenes first. The fix itself (log2_bounds in round_fract) is
+    // arch-independent; only this dedicated sharp test is 64-bit-only.
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn test_exp_m1_large_negative_no_oom() {
+        // Regression test: exp_m1 of a large-magnitude negative input subtracts
+        // 1 from an astronomically small exp(x), so the aligned subtraction hands
+        // round_fract a sparse sticky tail whose `precision` equals the exponent gap
+        // (~6.6e18 here). The debug assert in round_fract used to materialize B^precision
+        // (2^6.6e18 bits → certain OOM); it now uses log2 bounds and must not allocate.
+        //
+        // x = -2^62: the gap (~6.6e18) dwarfs memory, yet floor(x/ln2) ≈ -6.6e18 still
+        // fits 64-bit isize (≈9.2e18), so this does NOT enter the overflow branch.
+        let ctx = Context::<mode::Up>::new(2);
+        let x = Repr::new(-(IBig::from(1) << 62), 0);
+        let r = ctx.exp_m1::<2>(&x, None).unwrap().value();
+        // exp_m1(-2^62) = -1 + ε (ε > 0 vanishingly small); under Up it rounds above -1.
+        assert!(
+            r > -FBig::<mode::Up, 2>::ONE,
+            "exp_m1(-2^62) under Up should round above -1, got {r:?}"
+        );
+    }
+
+    #[test]
+    fn test_exact_results_on_unlimited_precision() {
+        // Regression test: values carrying precision 0 (unlimited) — produced by
+        // `try_from(0.0)` and the `FBig::ONE`/`ZERO` constants — must still compute
+        // their exact-result special cases instead of panicking in
+        // assert_limited_precision before reaching the shortcut.
+        type F = FBig<mode::HalfEven, 2>;
+
+        let zero = F::try_from(0.0_f64).unwrap();
+        assert_eq!(zero.exp(), F::ONE);
+        assert_eq!(zero.exp_m1(), F::ZERO);
+        assert_eq!(zero.sqrt(), F::ZERO);
+        assert_eq!(zero.ln_1p(), F::ZERO);
+
+        // -0.0 preserves its sign through exp_m1 and sqrt.
+        let neg_zero = F::try_from(-0.0_f64).unwrap();
+        assert!(neg_zero.exp_m1().repr().is_neg_zero());
+        assert!(neg_zero.sqrt().repr().is_neg_zero());
+
+        // FBig::ONE carries unlimited precision; ln(1) = 0 is exact.
+        assert_eq!(F::ONE.ln(), F::ZERO);
     }
 
     #[test]

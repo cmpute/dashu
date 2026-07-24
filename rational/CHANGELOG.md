@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fix
+- Constructing or reducing an `RBig` with two large, similarly-sized operands no longer aborts with
+  "internal error: not enough memory allocated". The underlying integer GCD scratchpad is now sized
+  for the worst-case division reachable during reduction (see the `dashu-int` changelog).
+
 ## 0.5.0
 
 ### Fix

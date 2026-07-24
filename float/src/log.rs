@@ -97,6 +97,28 @@ impl<R: Round, const B: Word> FBig<R, B> {
     pub fn ln_1p(&self) -> Self {
         self.context.unwrap_fp(self.context.ln_1p(&self.repr, None))
     }
+
+    /// Calculate the base-2 logarithm function (`log2(x)`) on the float number.
+    ///
+    /// This is evaluated as `ln(x) / ln(2)` at an elevated working precision and rounded
+    /// once, so it is correctly rounded to this number's precision (unlike
+    /// [`log2_bounds`][dashu_base::EstimatedLog2::log2_bounds], which only gives an
+    /// f32-precision magnitude estimate).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use core::str::FromStr;
+    /// # use dashu_base::ParseError;
+    /// # use dashu_float::DBig;
+    /// let a = DBig::from_str("8.0")?;
+    /// assert_eq!(a.log2(), DBig::from_str("3")?);
+    /// # Ok::<(), ParseError>(())
+    /// ```
+    #[inline]
+    pub fn log2(&self) -> Self {
+        self.context.unwrap_fp(self.context.log2(&self.repr, None))
+    }
 }
 
 impl<R: Round> Context<R> {
@@ -214,6 +236,48 @@ impl<R: Round> Context<R> {
         Ok(self.ln_internal(x, false, cache))
     }
 
+    /// Calculate the base-2 logarithm function (`log2(x)`) on the float number under this
+    /// context.
+    ///
+    /// This is evaluated as `ln(x) / ln(2)` at an elevated working precision and rounded
+    /// once, so it is correctly rounded to this context's precision (unlike
+    /// [`log2_bounds`][dashu_base::EstimatedLog2::log2_bounds], which only gives an
+    /// f32-precision magnitude estimate).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use core::str::FromStr;
+    /// # use dashu_base::ParseError;
+    /// # use dashu_float::DBig;
+    /// use dashu_base::Approximation::*;
+    /// use dashu_float::{Context, round::mode::HalfEven};
+    ///
+    /// let context = Context::<HalfEven>::new(8);
+    /// let a = DBig::from_str("10")?;
+    /// // log2(10) ≈ 3.3219281
+    /// assert_eq!(context.log2(&a.repr(), None).unwrap().value(), DBig::from_str("3.3219281")?);
+    /// # Ok::<(), ParseError>(())
+    /// ```
+    #[inline]
+    pub fn log2<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        cache: Option<&mut ConstCache>,
+    ) -> FpResult<FBig<R, B>> {
+        if x.is_infinite() {
+            return Err(FpError::InfiniteInput);
+        }
+        if x.significand.is_zero() {
+            // log2(±0) = -inf (a value, not an error)
+            return Ok(Exact(FBig::new(Repr::neg_infinity(), *self)));
+        }
+        if x.sign() == Sign::Negative {
+            return Err(FpError::OutOfDomain);
+        }
+        Ok(self.log2_internal(x, cache))
+    }
+
     /// Calculate the natural logarithm function (`log(x+1)`) on the float number under this context.
     ///
     /// # Examples
@@ -257,8 +321,10 @@ impl<R: Round> Context<R> {
         mut cache: Option<&mut ConstCache>,
     ) -> Rounded<FBig<R, B>> {
         assert_finite(x);
-        assert_limited_precision(self.precision);
 
+        // Exact special cases first: they need no rounding, so a precision-0 (unlimited)
+        // value such as `FBig::ONE` or the one from `try_from(0.0)` must still resolve
+        // ln/ln_1p exactly rather than tripping the limited-precision assertion below.
         if !one_plus && x.is_one() {
             return Exact(FBig::ZERO); // ln(1) = +0
         }
@@ -271,6 +337,8 @@ impl<R: Round> Context<R> {
             };
             return Exact(zero);
         }
+
+        assert_limited_precision(self.precision);
 
         // A simple algorithm:
         // - let log(x) = log(x/2^s) + slog2 where s = floor(log2(x))
@@ -344,6 +412,32 @@ impl<R: Round> Context<R> {
         };
         result.with_precision(self.precision)
     }
+
+    /// `log2(x) = ln(x) / ln(2)`, correctly rounded to this context's precision.
+    ///
+    /// Both `ln(x)` and `ln(2)` are evaluated at a working precision above the target and
+    /// the quotient is rounded once. The result magnitude `|log2(x)| ≈ |floor(log2 x)|`
+    /// grows with the operand, which tracks the division's error amplification, so the
+    /// per-ulp error is ~`B^(target - work)`: a few guard digits certify the final round
+    /// across the whole magnitude range (no manual scaling needed).
+    fn log2_internal<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        mut cache: Option<&mut ConstCache>,
+    ) -> Rounded<FBig<R, B>> {
+        assert_finite(x);
+        if x.is_one() {
+            return Exact(FBig::ZERO); // log2(1) = +0 (exact; also covers unlimited precision)
+        }
+
+        let guard = ceil_usize(self.precision.log2_est() / B.log2_est()) + 3;
+        let work = Context::<R>::new(self.precision + guard);
+        let ln_x = work
+            .ln_internal(x, false, reborrow_cache(&mut cache))
+            .value();
+        let ln2 = work.ln2::<B>(reborrow_cache(&mut cache));
+        (ln_x / ln2).with_precision(self.precision)
+    }
 }
 
 #[cfg(test)]
@@ -357,6 +451,85 @@ mod tests {
         let r = ctx.ln::<2>(&Repr::<2>::zero(), None).unwrap().value();
         assert!(r.repr().is_infinite());
         assert_eq!(r.repr().sign(), Sign::Negative);
+    }
+
+    #[test]
+    fn test_log2_domain() {
+        let ctx = Context::<mode::HalfEven>::new(53);
+        // log2(±0) = -inf (a value, not an error)
+        let r = ctx.log2::<2>(&Repr::<2>::zero(), None).unwrap().value();
+        assert!(r.repr().is_infinite());
+        assert_eq!(r.repr().sign(), Sign::Negative);
+        // log2(negative) is out of domain
+        assert_eq!(ctx.log2::<2>(&Repr::new(IBig::from(-1), 0), None), Err(FpError::OutOfDomain));
+    }
+
+    #[test]
+    fn test_log2_powers_of_two() {
+        // log2(2^k) = k, including log2(1) = 0. The only magnitude estimate available
+        // (log2_bounds) is f32-precision, so deriving directed log2 from it gives a small
+        // *negative* value for log2(1) and is loose by many ULPs elsewhere; the
+        // correctly-rounded log2 returns the exact integer value for every power of two
+        // (log2(1) is tagged Exact via the shortcut; other powers are value-exact).
+        let ctx = Context::<mode::HalfEven>::new(53);
+        for k in [0usize, 1, 2, 3, 10, 50, 100, 200, 1000] {
+            let x = Repr::new(IBig::from(1) << k, 0); // 2^k
+            let r = ctx.log2::<2>(&x, None).unwrap();
+            let expected = ctx.convert_int::<2>(IBig::from(k)).value();
+            assert_eq!(r.value(), expected, "log2(2^{k}) = {k}");
+        }
+        // log2(1) = 0 is certified Exact via the special-case shortcut.
+        assert!(matches!(ctx.log2::<2>(&Repr::new(IBig::from(1), 0), None).unwrap(), Exact(_)));
+    }
+
+    #[test]
+    fn test_log2_correctly_rounded() {
+        // log2(x) must equal the correctly-rounded ln(x)/ln(2) oracle (computed at much
+        // higher precision then rounded down) across magnitude ranges — tiny, normal, and
+        // huge inputs, in both base 2 and base 10.
+        let p = 30;
+        let ctx = Context::<mode::HalfEven>::new(p);
+        let hi = Context::<mode::HalfEven>::new(200);
+
+        let cases_base2 = [
+            Repr::new(IBig::from(3), 0),
+            Repr::new(IBig::from(10), 0),
+            Repr::new(IBig::from(1), -24), // near the fuzzer's 2^-24 region
+            Repr::new(IBig::from(1) << 50, 0), // huge
+            Repr::new(IBig::from(1), -50), // tiny
+        ];
+        for x in cases_base2 {
+            let got = ctx.log2::<2>(&x, None).unwrap().value();
+            let want = (hi.ln::<2>(&x, None).unwrap().value() / hi.ln2::<2>(None))
+                .with_precision(p)
+                .value();
+            assert_eq!(got, want, "base-2 log2 mismatch for x={x:?}");
+        }
+
+        // base 10: log2(x) = ln(x)/ln(2) with a decimal significand
+        let x = Repr::new(IBig::from(123456), 0);
+        let got = ctx.log2::<10>(&x, None).unwrap().value();
+        let want = (hi.ln::<10>(&x, None).unwrap().value() / hi.ln2::<10>(None))
+            .with_precision(p)
+            .value();
+        assert_eq!(got, want, "base-10 log2 mismatch");
+    }
+
+    #[test]
+    fn test_log2_directed_bounds() {
+        // Down rounds toward -inf, Up toward +inf, so the correctly-rounded (HalfEven)
+        // value must lie within [Down, Up].
+        use crate::round::mode::{Down, Up};
+        let p = 20;
+        let mid = Context::<mode::HalfEven>::new(p);
+        for x in [Repr::new(IBig::from(10), 0), Repr::new(IBig::from(3), 13)] {
+            let down = Context::<Down>::new(p).log2::<2>(&x, None).unwrap().value();
+            let up = Context::<Up>::new(p).log2::<2>(&x, None).unwrap().value();
+            let half = mid.log2::<2>(&x, None).unwrap().value();
+            assert!(down <= half, "down <= half failed for x={x:?}: {down:?} vs {half:?}");
+            assert!(half <= up, "half <= up failed for x={x:?}: {half:?} vs {up:?}");
+            assert!(down <= up, "down <= up failed for x={x:?}");
+        }
     }
 
     #[test]
