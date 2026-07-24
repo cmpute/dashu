@@ -487,6 +487,13 @@ mod tests {
         assert_eq!(m1, -FBig::<mode::HalfEven>::ONE);
     }
 
+    // A sharp OOM regression needs an exponent gap large enough that 2^gap exceeds any
+    // memory (gap ≳ 1e11), yet with floor(x/ln2) still fitting isize so the overflow
+    // branch is not taken. That window only exists where isize is 64-bit: on 32-bit,
+    // isize tops out at ~2.1e9 — below any OOM-inducing gap — so the overflow branch
+    // always intervenes first. The fix itself (log2_bounds in round_fract) is
+    // arch-independent; only this dedicated sharp test is 64-bit-only.
+    #[cfg(target_pointer_width = "64")]
     #[test]
     fn test_exp_m1_large_negative_no_oom() {
         // Regression test: exp_m1 of a large-magnitude negative input subtracts
@@ -495,9 +502,8 @@ mod tests {
         // (~6.6e18 here). The debug assert in round_fract used to materialize B^precision
         // (2^6.6e18 bits → certain OOM); it now uses log2 bounds and must not allocate.
         //
-        // x = -2^62 is large enough that the exponent gap dwarfs available memory, yet
-        // small enough that floor(x/ln2) still fits isize (≈6.6e18 < 9.2e18), so it does
-        // NOT enter the overflow branch tested above.
+        // x = -2^62: the gap (~6.6e18) dwarfs memory, yet floor(x/ln2) ≈ -6.6e18 still
+        // fits 64-bit isize (≈9.2e18), so this does NOT enter the overflow branch.
         let ctx = Context::<mode::Up>::new(2);
         let x = Repr::new(-(IBig::from(1) << 62), 0);
         let r = ctx.exp_m1::<2>(&x, None).unwrap().value();
