@@ -96,6 +96,16 @@
   `feature = "std"` along with its uses and the counter-reading tests, so the Ziv driver itself is
   `no_std`-clean; the retry-count tests run under `std` as before.
 
+### Fix
+- `to_f64`/`to_f32` now round the source once, directly to the target's precision at its own
+  magnitude (fewer than 53/24 bits for subnormals), instead of through a fixed 53/24-bit
+  intermediate that re-rounds into the subnormal grid. This removes a 1-ULP double-rounding error
+  on subnormal values that sit just past a subnormal halfway.
+- `to_f64`/`to_f32` no longer panic in debug builds (nor silently double-round in release) on
+  high-precision inputs: the base-changing conversion now pre-shrinks the source significand before
+  dividing, upholding `repr_div`'s dividend-width contract (as `Context::div` already does) instead
+  of feeding an oversized dividend into the division.
+
 ## 0.5.0
 
 ### Add

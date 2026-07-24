@@ -45,9 +45,11 @@ jobs:
         run: |
           if [ "${{ matrix.rust }}" = "1.68" ]; then
             echo "Pinning packages for Rust 1.68:"
+            echo "  proc-macro2   -> 1.0.106"
             echo "  quote         -> 1.0.40"
             echo "  unicode-ident -> 1.0.13"
             echo "  zeroize       -> 1.8.1"
+            cargo update -p proc-macro2 --precise 1.0.106
             cargo update -p quote --precise 1.0.40
             cargo update -p unicode-ident --precise 1.0.13
             cargo update -p zeroize --precise 1.8.1
