@@ -109,7 +109,7 @@ impl<R: Round> Context<R> {
     /// Panics if the precision is unlimited and the exponent is negative. In this case, the exact
     /// result is likely to have infinite digits.
     pub fn powi<const B: Word>(&self, base: &Repr<B>, exp: IBig) -> FpResult<FBig<R, B>> {
-        // Known limitations in range handling at the exponent extremes:
+        // TODO: range handling has three known limitations at the exponent extremes:
         // (1) the overflow guard below estimates the result magnitude with an f64 and misclassifies
         // representable boundaries near 2^63; (2) genuine Overflow/Underflow is unwrapped mode-blindly
         // to ±inf / signed zero; (3) the negative-exponent reciprocal path can panic. None affects
@@ -409,7 +409,7 @@ impl<R: Round> Context<R> {
                     // |floor(x / ln B)| overflows isize — x is astronomically large, so the
                     // result is an infinity (x → +∞) or underflows to the limit (x → −∞).
                     //
-                    // Known limitation: this branch discards the rounding mode. For a huge
+                    // TODO: this branch discards the rounding mode. For a huge
                     // *negative* x the true exp(x) is positive but below the exponent range, so
                     // directed Up/Away should return the minimum positive value (and exp_m1 the
                     // value just above -1) rather than +0 / Exact(-1).
