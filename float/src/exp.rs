@@ -133,32 +133,50 @@ impl<R: Round> Context<R> {
             return Ok(repr.map(|v| FBig::new(v, *self)));
         }
 
-        // Guard against exponent overflow for astronomically large results: the result
-        // magnitude has log2 ≈ exp·log2(base); if that exceeds the isize exponent range,
-        // return ±inf (|base| > 1) or 0 (|base| < 1) instead of overflowing mid-computation.
-        let base_log2 = base.log2_est() as f64;
+        // Guard against exponent overflow/underflow for astronomically large results.
+        // The result magnitude has log2 ≈ exp·log2(base); if that leaves the isize
+        // exponent range, return ±inf (|base|>1) or signed 0 (|base|<1) instead of
+        // overflowing the exponent mid-computation.
+        //
+        // Use the *bounds* of log2(base), never the point estimate `log2_est`: when
+        // base is very close to 1 (a large significand with a large negative exponent),
+        // log2(base) is the difference of two ~1e3-magnitude terms and suffers
+        // catastrophic cancellation — `log2_est` returns ~1e-4 of f32 noise rather than
+        // ~0. Scaled by a large exponent that noise crosses the overflow threshold,
+        // which on 32-bit is only isize::MAX·log2(B) ≈ 7e9 (vs ≈3e19 on 64-bit), so the
+        // guard fires spuriously and returns ±inf — see issue #95. The bounds are
+        // derived from the exact significand bit length, so they don't cancel. Declare
+        // overflow only on the lower bound (no false positives) and underflow only on
+        // the upper bound (no false underflows); anything in between is computed.
+        let (base_log2_lb, base_log2_ub) = base.log2_bounds();
+        let base_log2_lb = base_log2_lb as f64;
+        let base_log2_ub = base_log2_ub as f64;
         let threshold = (isize::MAX as f64) * (B.log2_est() as f64);
         let exp_f64 = i64::try_from(&exp).ok().map(|e| e as f64);
         let overflows = match exp_f64 {
-            Some(e) => e * base_log2 > threshold,
-            None => base_log2 != 0.0, // exp doesn't fit i64: overflows unless |base| == 1
+            Some(e) => e * base_log2_lb > threshold,
+            None => base_log2_lb > 0.0, // exp doesn't fit i64: overflows iff base > 1
         };
         if overflows {
-            return if base_log2 > 0.0 {
-                Err(FpError::Overflow(if base.sign() == Sign::Negative {
-                    Sign::Negative
-                } else {
-                    Sign::Positive
-                }))
+            return Err(FpError::Overflow(if base.sign() == Sign::Negative {
+                Sign::Negative
             } else {
-                // |base| < 1 and exponent huge → underflow to signed zero
-                let underflow_sign = if base.sign() == Sign::Negative && exp.bit(0) {
-                    Sign::Negative
-                } else {
-                    Sign::Positive
-                };
-                Err(FpError::Underflow(underflow_sign))
+                Sign::Positive
+            }));
+        }
+        let underflows = !base.significand.is_zero()
+            && match exp_f64 {
+                Some(e) => e * base_log2_ub < -threshold,
+                None => base_log2_ub < 0.0, // exp doesn't fit i64: underflows iff base < 1
             };
+        if underflows {
+            // |base| < 1 and exponent huge → underflow to signed zero
+            let underflow_sign = if base.sign() == Sign::Negative && exp.bit(0) {
+                Sign::Negative
+            } else {
+                Sign::Positive
+            };
+            return Err(FpError::Underflow(underflow_sign));
         }
 
         let work_context = if self.is_limited() {
