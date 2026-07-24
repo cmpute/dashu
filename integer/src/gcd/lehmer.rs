@@ -225,9 +225,21 @@ pub(crate) fn lehmer_step(x: &mut [Word], y: &mut [Word], a: Word, b: Word, c: W
 /// Temporary memory required for gcd.
 #[inline]
 pub fn memory_requirement_up_to(lhs_len: usize, rhs_len: usize) -> Layout {
-    // Required memory:
-    // - temporary space for the division in the euclidean step
-    div::memory_requirement_exact(lhs_len, rhs_len)
+    // The scratchpad is reserved ONCE from the initial operand lengths, but each
+    // euclidean step's division dispatches on the *current* lengths. As Lehmer shrinks
+    // y while x stays large, a later step can divide a still-large x by a much smaller y
+    // and take the Burnikel-Ziegler path — even when the first (similarly-sized)
+    // division was "simple" and needed no scratch. `div::memory_requirement_exact` only
+    // bounds a *single* division with the given lengths, so it under-reserves here.
+    //
+    // Reserve the worst case reachable in the loop instead: every in-loop division has a
+    // divisor R ≤ rhs_len and a quotient split min(R/2, L-R) ≤ rhs_len/2, and
+    // mul::memory_requirement_up_to is non-decreasing in both arguments, so
+    // mul::memory_requirement_up_to(rhs_len, rhs_len/2) bounds them all (independent of
+    // lhs_len). It returns zero_layout for small operands automatically, since mul's own
+    // schoolbook threshold gates it.
+    let _ = lhs_len;
+    mul::memory_requirement_up_to(rhs_len, rhs_len / 2)
 }
 
 pub(crate) fn gcd_in_place(
@@ -332,12 +344,14 @@ fn lehmer_ext_step(
 pub fn memory_requirement_ext_up_to(lhs_len: usize, rhs_len: usize) -> Layout {
     // Required memory:
     // - two numbers (t0 & t1) with at most the same size as lhs, add 1 buffer word
-    // - temporary space for a division (for euclidean step), and later a mulitplication (for coeff update)
+    // - temporary space for a division (for euclidean step, see memory_requirement_up_to
+    //   for why the loop-wide bound rather than the initial lengths), and later a
+    //   multiplication (for coeff update)
     let t_words = 2 * lhs_len + 2;
     memory::add_layout(
         memory::array_layout::<Word>(t_words),
         memory::max_layout(
-            div::memory_requirement_exact(lhs_len, rhs_len), //
+            mul::memory_requirement_up_to(rhs_len, rhs_len / 2), // worst-case in-loop division
             mul::memory_requirement_up_to(lhs_len, lhs_len / 2), // for coeff update
         ),
     )

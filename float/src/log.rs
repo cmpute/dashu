@@ -396,8 +396,10 @@ impl<R: ErrorBounds> Context<R> {
         mut cache: Option<&mut ConstCache>,
     ) -> Rounded<FBig<R, B>> {
         assert_finite(x);
-        assert_limited_precision(self.precision);
 
+        // Exact special cases first: they need no rounding, so a precision-0 (unlimited)
+        // value such as `FBig::ONE` or the one from `try_from(0.0)` must still resolve
+        // ln/ln_1p exactly rather than tripping the limited-precision assertion below.
         if !one_plus && x.is_one() {
             return Exact(FBig::ZERO); // ln(1) = +0
         }
@@ -410,6 +412,8 @@ impl<R: ErrorBounds> Context<R> {
             };
             return Exact(zero);
         }
+
+        assert_limited_precision(self.precision);
 
         // Correct rounding via the Ziv loop: `ln_compute` evaluates the atanh series at `p + guard`
         // and reports a provable error radius; the driver retries with more guard digits until the

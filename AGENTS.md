@@ -50,6 +50,7 @@ Note: always `--exclude dashu-python` when running workspace-wide commands, sinc
 - When borrowing an algorithm idea from GMP (or any other library), do **not** reference its function names in our docstrings or comments. Describe the algorithm in our own terms and use our own function names (e.g. write `add_mul_dword_same_len_in_place`, never `addmul_2` / `mpn_addmul_2`). External function names must not appear anywhere in the repo.
 - Tests for a specific algorithm/kernel belong in the same source file as the implementation, as a `#[cfg(test)] mod tests` block at the bottom — not in a separate integration test file under `tests/`. Reserve `tests/` for cross-cutting or public-API tests.
 - When debugging or writing test assertions, use `{:?}` (or `{:#?}` for the verbose form with digit/bit counts) to inspect arbitrary precision values. The [`Debug`] format prints a compact head‥tail representation (most significant digits `..` least significant digits) instead of dumping the entire number, making it readable even for thousand-digit integers.
+- In-crate tests (`#[cfg(test)] mod tests` and `tests/`) must use **fixed, deterministic inputs** — never pseudo-random generators, fuzzing harnesses, or property-test styles that draw random data. Tests must fail or pass identically on every run. The only exception is code that tests the `rand` integration itself. For randomized / exploratory input, use the fuzz targets under `fuzz/` (the proper home for that work), not unit tests.
 
 ## Feature flags
 

@@ -105,11 +105,13 @@ impl<R: Round> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
         if x.significand.is_zero() {
-            // sqrt(+0) = +0, sqrt(-0) = -0 (preserve the sign of zero)
+            // sqrt(+0) = +0, sqrt(-0) = -0 (preserve the sign of zero). Exact, so handle
+            // it before the limited-precision assertion: a precision-0 (unlimited) value
+            // such as the one from `try_from(0.0)` must still compute sqrt(0) exactly.
             return Ok(Approximation::Exact(FBig::new(x.clone(), *self)));
         }
+        assert_limited_precision(self.precision);
         if x.sign() == Sign::Negative {
             return Err(FpError::OutOfDomain);
         }

@@ -10,6 +10,15 @@
   the remainder — which was the crash behind `dashu-float`'s `hypot(3,4)` under directed rounding.
   An all-zero operand now returns early (the product is zero, so the signed accumulate is a no-op),
   matching the existing zero-guard in the chunked-multiply closure.
+- `to_f64` of a magnitude at `DoubleWord::MAX` (e.g. `IBig::from(-(2^128 - 1)).to_f64()` on 64-bit
+  targets) reported the inexact conversion as `Approximation::Exact`. The exactness test used a
+  saturating `f as DoubleWord` round-trip, which clamps back to `DoubleWord::MAX` when the value
+  rounds up to `2^BITS`; that saturation case is now detected before the comparison. The same guard
+  is applied to the 16/32-bit `RefLarge` → f64 fast path.
+- GCD of two large, similarly-sized integers no longer aborts with "internal error: not enough memory
+  allocated" when a later euclidean step takes the Burnikel-Ziegler path. The scratchpad was reserved
+  once from the *initial* operand lengths, but each step's division dispatches on the *current*
+  lengths; it is now sized for the worst case reachable during reduction (`mul::memory_requirement_up_to(rhs_len, rhs_len/2)`).
 
 ## 0.5.0
 

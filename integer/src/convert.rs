@@ -1085,8 +1085,16 @@ mod repr {
                     if self.bit_len() <= 64 {
                         let v: u64 = self.try_to_unsigned().unwrap();
                         let f = v as f64;
-                        let back = f as u64;
-                        match back.cmp(&v) {
+                        // Same saturation guard as `to_f64_small`: `f as u64` clamps to
+                        // `u64::MAX` when `v` rounds up to 2^64, which would otherwise
+                        // report `Equal` (Exact) for `v == u64::MAX`.
+                        const TWO_POW_64: f64 = (1u64 << 63) as f64 * 2.0;
+                        let cmp = if f >= TWO_POW_64 {
+                            Ordering::Greater
+                        } else {
+                            (f as u64).cmp(&v)
+                        };
+                        match cmp {
                             Ordering::Greater => Inexact(f, Sign::Positive),
                             Ordering::Equal => Exact(f),
                             Ordering::Less => Inexact(f, Sign::Negative),
@@ -1130,9 +1138,19 @@ mod repr {
     fn to_f64_small(dword: DoubleWord) -> Approximation<f64, Sign> {
         const_assert!((DoubleWord::MAX as f64) < f64::MAX);
         let f = dword as f64;
-        let back = f as DoubleWord;
 
-        match back.partial_cmp(&dword).unwrap() {
+        // `f as DoubleWord` is a saturating float→int cast: when `dword` rounds up to
+        // 2^BITS (the f64 just above `DoubleWord::MAX`), the cast clamps back to
+        // `DoubleWord::MAX == dword` and the round-trip comparison reports `Equal`,
+        // wrongly tagging the conversion `Exact`. `dword as f64` is at most 2^BITS, so
+        // reaching 2^BITS marks exactly that saturation case — the value rounded up.
+        const TWO_POW_BITS: f64 = (1u128 << (DoubleWord::BITS - 1)) as f64 * 2.0;
+        let cmp = if f >= TWO_POW_BITS {
+            Ordering::Greater
+        } else {
+            (f as DoubleWord).partial_cmp(&dword).unwrap()
+        };
+        match cmp {
             Ordering::Greater => Inexact(f, Sign::Positive),
             Ordering::Equal => Exact(f),
             Ordering::Less => Inexact(f, Sign::Negative),
