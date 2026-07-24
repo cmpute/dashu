@@ -48,6 +48,15 @@
   error is zero and the radius is reported as zero — this is required under the *directed* rounding
   modes (`Zero`/`Down`/`Up`/`Away`, the `FBig` default), where an exactly-representable result lies
   on a one-sided rounding boundary that no nonzero radius can fit inside.
+- **`FBig::log2` / `Context::log2` / `CachedFBig::log2`**: base-2 logarithm, correctly rounded via
+  the Ziv loop. `log2(x) = ln(x)/ln(2)`, and rounding the two operands separately before the single
+  division is only near-correct — under a directed mode, enlarging the positive denominator shrinks
+  the quotient, so the directed result is unbounded — so each `ln_compute` reports its provable
+  radius and the two radii are carried through the division as an outward-rounded interval `[lo, hi]`
+  the Ziv driver certifies. An exact power of two short-circuits to the integer `log2(x)`; this is
+  required under directed modes, where the exactly-representable integer sits on a one-sided rounding
+  boundary no positive radius can fit inside (so `log2(2^-159)` under `Up` is the exact `-159`, not
+  `-159 + 1 ulp`).
 
 ### Change
 - **(breaking, bound)** `Context::exp`/`exp_m1`/`ln`/`ln_1p` (and `powf`, the hyperbolic family,
