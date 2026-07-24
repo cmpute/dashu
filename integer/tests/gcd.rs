@@ -169,11 +169,11 @@ fn test_gcd_ext_0() {
 
 #[test]
 fn test_gcd_large_lopsided_reduction() {
-    // Regression for DASHU-008: the gcd scratchpad is reserved once from the *initial*
-    // operand lengths, but each euclidean step's division dispatches on the *current*
-    // lengths. The pre-fix code under-reserved when the initial operands were similar
-    // in size, so a later lopsided euclidean step (divisor > 48 words and quotient
-    // > 32 words, taking the Burninkel-Ziegler + Karatsuba path) aborted with
+    // Regression test: the gcd scratchpad is reserved once from the *initial* operand
+    // lengths, but each euclidean step's division dispatches on the *current* lengths.
+    // Before the fix, two large, similarly-sized operands (zero initial scratch) that
+    // later reduced through a lopsided euclidean step (divisor > 48 words and quotient
+    // > 32 words, taking the Burnikel-Ziegler + Karatsuba path) aborted with
     // "internal error: not enough memory allocated" in both debug and release.
     use dashu_int::UBig;
 

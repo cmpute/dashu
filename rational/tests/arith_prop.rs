@@ -60,8 +60,8 @@ proptest! {
     }
 }
 
-/// Regression for DASHU-008: constructing an `RBig` reduces numerator/denominator by
-/// their gcd, which must not abort with "not enough memory allocated" when that gcd
+/// Regression test: constructing an `RBig` reduces numerator/denominator by their
+/// gcd, which must not abort with "not enough memory allocated" when that gcd
 /// reduction hits a lopsided Burnikel-Ziegler division. The gcd scratchpad is sized
 /// from the *initial* operand lengths, but each step dispatches on the *current*
 /// lengths, so two large, similarly-sized operands (zero initial scratch) that later

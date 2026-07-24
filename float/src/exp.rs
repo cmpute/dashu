@@ -109,7 +109,7 @@ impl<R: Round> Context<R> {
     /// Panics if the precision is unlimited and the exponent is negative. In this case, the exact
     /// result is likely to have infinite digits.
     pub fn powi<const B: Word>(&self, base: &Repr<B>, exp: IBig) -> FpResult<FBig<R, B>> {
-        // TODO(DASHU-024): range handling has three known limitations at the exponent extremes:
+        // Known limitations in range handling at the exponent extremes:
         // (1) the overflow guard below estimates the result magnitude with an f64 and misclassifies
         // representable boundaries near 2^63; (2) genuine Overflow/Underflow is unwrapped mode-blindly
         // to ±inf / signed zero; (3) the negative-exponent reciprocal path can panic. None affects
@@ -409,11 +409,10 @@ impl<R: Round> Context<R> {
                     // |floor(x / ln B)| overflows isize — x is astronomically large, so the
                     // result is an infinity (x → +∞) or underflows to the limit (x → −∞).
                     //
-                    // TODO(DASHU-023): this branch discards the rounding mode. For a huge
+                    // Known limitation: this branch discards the rounding mode. For a huge
                     // *negative* x the true exp(x) is positive but below the exponent range, so
                     // directed Up/Away should return the minimum positive value (and exp_m1 the
-                    // value just above -1) rather than +0 / Exact(-1). The mode-blind saturation
-                    // here is a known limitation.
+                    // value just above -1) rather than +0 / Exact(-1).
                     return if input_sign == Sign::Positive {
                         Err(FpError::Overflow(Sign::Positive))
                     } else if minus_one {
@@ -490,11 +489,11 @@ mod tests {
 
     #[test]
     fn test_exp_m1_large_negative_no_oom() {
-        // Regression for DASHU-026: exp_m1 of a large-magnitude negative input subtracts
+        // Regression test: exp_m1 of a large-magnitude negative input subtracts
         // 1 from an astronomically small exp(x), so the aligned subtraction hands
         // round_fract a sparse sticky tail whose `precision` equals the exponent gap
-        // (~6.6e18 here). The old debug assert materialized B^precision (2^6.6e18 bits →
-        // certain OOM); the new check uses log2 bounds and must not allocate.
+        // (~6.6e18 here). The debug assert in round_fract used to materialize B^precision
+        // (2^6.6e18 bits → certain OOM); it now uses log2 bounds and must not allocate.
         //
         // x = -2^62 is large enough that the exponent gap dwarfs available memory, yet
         // small enough that floor(x/ln2) still fits isize (≈6.6e18 < 9.2e18), so it does
@@ -511,8 +510,8 @@ mod tests {
 
     #[test]
     fn test_exact_results_on_unlimited_precision() {
-        // Regression for DASHU-022: values carrying precision 0 (unlimited) — produced
-        // by `try_from(0.0)` and the `FBig::ONE`/`ZERO` constants — must still compute
+        // Regression test: values carrying precision 0 (unlimited) — produced by
+        // `try_from(0.0)` and the `FBig::ONE`/`ZERO` constants — must still compute
         // their exact-result special cases instead of panicking in
         // assert_limited_precision before reaching the shortcut.
         type F = FBig<mode::HalfEven, 2>;

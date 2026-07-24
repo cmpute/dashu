@@ -434,9 +434,9 @@ fn test_to_f64() {
     );
 }
 
-/// Regression test for DASHU-015: a magnitude at `DoubleWord::MAX` rounds up to the
-/// next power of two as f64, and the saturating `f as DoubleWord` round-trip used to
-/// clamp back to `DoubleWord::MAX` and report that inexact conversion as `Exact`.
+/// Regression test: a magnitude at `DoubleWord::MAX` rounds up to the next power
+/// of two as f64, and the saturating `f as DoubleWord` round-trip used to clamp
+/// back to `DoubleWord::MAX` and report that inexact conversion as `Exact`.
 #[cfg(target_pointer_width = "64")]
 #[test]
 fn test_to_f64_dword_max_boundary() {

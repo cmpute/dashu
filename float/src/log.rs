@@ -466,11 +466,11 @@ mod tests {
 
     #[test]
     fn test_log2_powers_of_two() {
-        // log2(2^k) = k, including log2(1) = 0. This is the headline DASHU-007 case: the
-        // adapter previously derived directed log2 from f32-precision log2_bounds, which
-        // gave a small *negative* value for log2(1) and was loose by many ULPs elsewhere.
-        // The correctly-rounded log2 returns the exact integer value for every power of
-        // two (log2(1) is tagged Exact via the shortcut; other powers are value-exact).
+        // log2(2^k) = k, including log2(1) = 0. The only magnitude estimate available
+        // (log2_bounds) is f32-precision, so deriving directed log2 from it gives a small
+        // *negative* value for log2(1) and is loose by many ULPs elsewhere; the
+        // correctly-rounded log2 returns the exact integer value for every power of two
+        // (log2(1) is tagged Exact via the shortcut; other powers are value-exact).
         let ctx = Context::<mode::HalfEven>::new(53);
         for k in [0usize, 1, 2, 3, 10, 50, 100, 200, 1000] {
             let x = Repr::new(IBig::from(1) << k, 0); // 2^k
