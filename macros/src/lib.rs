@@ -24,8 +24,9 @@
 //! when using the macros. Specifically, you need to add the following crates as dependencies
 //! to your `Cargo.toml`:
 //! * For [ubig!]/[static_ubig!] and [ibig!]/[static_ibig!]: `dashu-int`
-//! * For [fbig!] and [dbig!]: `dashu-int`, `dashu-float`
-//! * For [rbig!]: `dashu-int`, `dashu-ratio`
+//! * For [fbig!]/[static_fbig!] and [dbig!]/[static_dbig!]: `dashu-int`, `dashu-float`
+//! * For [rbig!]/[static_rbig!]: `dashu-int`, `dashu-ratio`
+//! * For [cbig!]/[static_cbig!]: `dashu-int`, `dashu-float`, `dashu-cmplx`
 //!
 //! If you are using these macros from the `dashu` crate, then it's not necessary to
 //! explicitly adding these dependencies, because the related types are re-exported

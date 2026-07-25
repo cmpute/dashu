@@ -7,6 +7,10 @@
   `CBig::from_parts_const` (built on `Repr::new_const`). Larger coefficients still fall back to the
   runtime `CBig::from_parts` path — use `static_cbig!` for const values with large coefficients.
 
+### Doc
+- Mention the `cbig!` / `static_cbig!` macros in the crate-level docs and the crate README, and
+  note the `dashu-int` / `dashu-float` / `dashu-cmplx` dependency requirement.
+
 ## 0.5.0
 
 ### Add
