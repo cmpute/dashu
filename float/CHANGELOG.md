@@ -11,6 +11,14 @@
   `log2_bounds` magnitude estimate was available, so directed `log2` was wrong by many ULPs.
 
 ### Fix
+- `powi`'s overflow guard no longer reports a spurious overflow when the base is very close to 1
+  (a large significand with a large negative exponent). It estimated `log2(base)` with `log2_est`,
+  which for such a base is the difference of two ~1e3-magnitude terms and catastrophically cancels
+  to ~1e-4 of `f32` noise; scaled by a large exponent that noise crossed the overflow threshold
+  — which on 32-bit targets is only `isize::MAX·log2(B) ≈ 7e9` — and returned a spurious ±inf. This
+  made high-precision base conversion (`FBig::with_base`) panic ("arithmetic operations with the
+  infinity are not allowed!") on 32-bit targets (wasm32, i686). The guard now uses the
+  bit-length-based `log2_bounds`, which does not cancel (#95).
 - `to_f64`/`to_f32` now round the source once, directly to the target's precision at its own
   magnitude (fewer than 53/24 bits for subnormals), instead of through a fixed 53/24-bit
   intermediate that re-rounds into the subnormal grid. This removes a 1-ULP double-rounding error
