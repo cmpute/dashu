@@ -41,7 +41,7 @@ where
     (number + T::from_u32(1)).to_string()
 }
 
-pub(crate) fn calculate_decimal<T: Float + FromStr>(mut n: u32) -> String
+pub(crate) fn calculate_decimal<T: Float + FromStr + From<u32>>(mut n: u32) -> String
 where
     <T as FromStr>::Err: Debug,
 {
