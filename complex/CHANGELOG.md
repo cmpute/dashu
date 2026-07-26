@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.1
+
 ### Add
 - `CBig::from_parts_const`: a `const`-evaluable constructor taking `(sign, significand, exponent)`
   parts for each of the real/imaginary components (built on `Repr::new_const`). The `cbig!` literal

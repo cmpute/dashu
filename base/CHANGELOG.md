@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.1
+
 ### Fix
 - `BitTest::bit` on signed integers now reports the sign-bit position correctly. The masked
   value `self & (1 << position)` was compared with `> 0`, which is always false at the sign-bit

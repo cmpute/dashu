@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.1
+
 ### Add
 - `cbig!` now works in `const` position when both coefficients fit in a `DoubleWord`: it expands to
   `CBig::from_parts_const` (built on `Repr::new_const`). Larger coefficients still fall back to the

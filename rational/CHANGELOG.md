@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.1
+
 ### Add
 - `RBig::from_str_expanded` / `Relaxed::from_str_expanded`: parse a positional-expansion
   string in any base 2–36 into a rational — the full inverse of `in_expanded(radix)`. Accepts

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.1
+
 ### Fix
 - `to_f64` of a magnitude at `DoubleWord::MAX` (e.g. `IBig::from(-(2^128 - 1)).to_f64()` on 64-bit
   targets) reported the inexact conversion as `Approximation::Exact`. The exactness test used a
