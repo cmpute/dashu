@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.1
+
 ### Fix
 - NTT squaring/multiplication of an all-zero operand no longer panics. `add_signed_sqr_conv` and
   `add_signed_mul_conv` assumed a non-zero input (`debug_assert!(la_bits > 0)`), so an all-zero slice

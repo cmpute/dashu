@@ -330,48 +330,59 @@ impl<R: ErrorBounds> Context<R> {
         // Magnitude pre-check: the result's log2 is `signed_exp · log2|base|`; outside the finite
         // exponent range it short-circuits to overflow/underflow instead of letting the squaring
         // chain overflow mid-computation (the Ziv closure below can't return `Err`).
-        let base_log2 = base.log2_est() as f64;
+        //
+        // Use the *bounds* of log2(base), never the point estimate `log2_est`: when base is very
+        // close to 1 (a large significand with a large negative exponent), log2(base) is the
+        // difference of two large terms and suffers catastrophic cancellation — `log2_est` returns
+        // ~1e-4 of f32 noise rather than ~0. Scaled by a large exponent that noise crosses the
+        // overflow threshold, which on 32-bit is only isize::MAX·log2(B) ≈ 7e9 (vs ≈3e19 on 64-bit),
+        // so the guard fires spuriously and returns ±inf — see issue #95 (it crashed high-precision
+        // `FBig::with_base` on wasm32/i686). The bounds are derived from the exact significand bit
+        // length, so they don't cancel. Declare an extreme result only when a bound certifies it
+        // (no false positives); anything ambiguous is computed.
+        let (base_log2_lb, base_log2_ub) = base.log2_bounds();
+        let base_log2_lb = base_log2_lb as f64;
+        let base_log2_ub = base_log2_ub as f64;
         let threshold = (isize::MAX as f64) * (B.log2_est() as f64);
-        let result_log2 = match i64::try_from(&n).ok() {
-            Some(e) => {
-                let signed = if negative { -(e as f64) } else { e as f64 };
-                signed * base_log2
-            }
-            None => {
-                // |n| doesn't fit i64: the magnitude is unbounded. |base| ≈ 1 (estimate 0) gives
-                // exactly ±1 regardless of the huge exponent; otherwise it over- or underflows.
-                if base_log2 == 0.0 {
-                    let repr = if base.sign() == Sign::Negative && odd {
-                        Repr::<B>::neg_one()
-                    } else {
-                        Repr::<B>::one()
-                    };
-                    return Ok(Exact(FBig::new(repr, *self)));
-                }
-                let over = (!negative && base_log2 > 0.0) || (negative && base_log2 < 0.0);
-                let sign = if base.sign() == Sign::Negative && odd {
-                    Sign::Negative
-                } else {
-                    Sign::Positive
-                };
-                return Err(if over {
-                    FpError::Overflow(sign)
-                } else {
-                    FpError::Underflow(sign)
-                });
-            }
+        let exp_f64 = i64::try_from(&n).ok().map(|e| e as f64);
+        // `lb_side` certifies |base| > 1 by a wide margin; `ub_side` certifies |base| < 1. (For the
+        // None case |exp| is unbounded, so the bound's sign alone decides.) A negative exponent
+        // swaps which side over- vs underflows.
+        let lb_side = match exp_f64 {
+            Some(e) => e * base_log2_lb > threshold,
+            None => base_log2_lb > 0.0,
         };
-        if result_log2 > threshold || result_log2 < -threshold {
+        let ub_side = match exp_f64 {
+            Some(e) => e * base_log2_ub < -threshold,
+            None => base_log2_ub < 0.0,
+        };
+        if lb_side || ub_side {
+            // |base|>1 (lb_side): positive exp → overflow, negative exp → underflow.
+            // |base|<1 (ub_side): positive exp → underflow, negative exp → overflow.
+            let overflow = (lb_side && !negative) || (ub_side && negative);
             let sign = if base.sign() == Sign::Negative && odd {
                 Sign::Negative
             } else {
                 Sign::Positive
             };
-            return Err(if result_log2 > threshold {
+            return Err(if overflow {
                 FpError::Overflow(sign)
             } else {
                 FpError::Underflow(sign)
             });
+        }
+
+        // |exp| doesn't fit i64 and the bounds straddle 0, so |base| is within the bounds of 1.
+        // If it is *exactly* ±1 the result is ±1 for any exponent (short-circuit so the squaring
+        // chain doesn't iterate over exp's enormous bit length); otherwise |base| ≈ 1 but ≠ 1, the
+        // huge power is still finite, and we fall through to compute it.
+        if exp_f64.is_none() && base.significand.is_one() && base.exponent == 0 {
+            let repr = if base.sign() == Sign::Negative && odd {
+                Repr::<B>::neg_one()
+            } else {
+                Repr::<B>::one()
+            };
+            return Ok(Exact(FBig::new(repr, *self)));
         }
 
         let nlen = n.bit_len();

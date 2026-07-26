@@ -44,6 +44,20 @@ use core::str::FromStr;
 assert_eq!(RBig::from_str("22/7")?.to_string(), "22/7");
 ```
 
+For positional-expansion literals, `RBig::from_str_expanded` / `Relaxed::from_str_expanded` parse any base 2–36. They accept fixed-point (`1.5`, `-.25`), scientific, and **repeating** notation with the repetend parenthesized (`0.1(6)` = 1/6, `0.(3)` = 1/3). The scientific marker is `e`/`E` for base 10 and `@` for every other base — `e`/`E` are themselves digits once the base reaches 15. It is the exact inverse of `in_expanded(radix)` (see [Printing](./print.md)): every rational round-trips through `{:#}`, and terminating expansions round-trip through `{:.N}`. `from_str_decimal` is a base-10 alias.
+
+```rust
+use dashu::rational::RBig;
+use core::str::FromStr;
+
+let x = RBig::from_str_expanded("0.1(6)", 10)?; // 1/6
+assert_eq!(x, RBig::from_str("1/6")?);
+// any base: binary 0.(01) = 1/3
+assert_eq!(RBig::from_str_expanded("0.(01)", 2)?, RBig::from_str("1/3")?);
+// every rational round-trips through the repetend printer
+assert_eq!(RBig::from_str_expanded(&format!("{:#}", x.in_expanded(10)), 10)?, x);
+```
+
 ## Parsing Complex
 
 `CBig::FromStr` accepts the same algebraic $a+bi$ grammar that `Display` emits: an optional real term plus an optional signed imaginary term (at least one required); a unit coefficient may be omitted (`i`, `-i`). The MPC-style parenthesized form `(re im)` is **not** accepted.

@@ -1062,4 +1062,46 @@ mod tests {
         let int_val = FBig::<HalfAway, 10>::new(Repr::new(IBig::from(42), 0), Context::new(8));
         assert_eq!(IBig::try_from(int_val), Ok(IBig::from(42)));
     }
+
+    #[test]
+    fn with_base_high_precision_no_overflow() {
+        // Regression for issue #95: converting a high-precision base-2 float to base
+        // 10 panicked on 32-bit targets ("arithmetic operations with the infinity are
+        // not allowed!"). The base conversion evaluates exp(r) as `sum^(B^n)` through
+        // `powi` with a huge exponent (B^n) on a base (sum) very close to 1; `powi`'s
+        // overflow guard estimated log2(base) with the catastrophically-canceling
+        // `log2_est`, and the ~1e-4 of f32 noise scaled by the exponent crossed the
+        // (much smaller on 32-bit) isize threshold, yielding a spurious ±inf that then
+        // panicked when shifted. See `powi` in exp.rs for the fix.
+        use crate::round::mode::Zero;
+        use core::str::FromStr;
+
+        // The reporter's input: -1.1111…0011 in binary (578 significant bits), written
+        // in the hex form dashu accepts for base-2 floats (`0x1.<hex>…`). The value is
+        // identical to the raw binary literal.
+        let num = FBig::<Zero, 2>::from_str(
+            "-0x1.fffdc8d645194a5a95df4be063472d4406dd096339dd7dc2a8527d208b3da7b9e5c36b4f49a7982cb2ad20a4e7e4c016f858fe8cddea011a6d01fe3823189c4ed4f57a7babc331498",
+        )
+        .unwrap();
+
+        // at the original 578-bit precision the conversion succeeds …
+        let a = num
+            .clone()
+            .with_precision(578)
+            .value()
+            .with_base::<10>()
+            .value();
+        assert!(a.repr().is_finite());
+        // … and so does a slightly higher precision (586), which panicked on 32-bit
+        // (wasm32 / i686). The result matches the value computed on 64-bit. Compared
+        // by value (FBig equality ignores context) rather than via string formatting,
+        // so this works under no_std too.
+        let b = num.with_precision(586).value().with_base::<10>().value();
+        assert!(b.repr().is_finite());
+        let expected = FBig::<Zero, 10>::from_str(
+            "-1.9999661944503703041843468850635057967553124154072485151176192294480158424234268438137612977886891381228704640656094986435381057574477216648567249609280392009533217665484389886",
+        )
+        .unwrap();
+        assert_eq!(b, expected);
+    }
 }

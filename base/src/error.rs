@@ -34,6 +34,9 @@ pub enum ParseError {
     UnsupportedRadix,
     /// The radices of different components of the number are different
     InconsistentRadix,
+    /// The input is structurally malformed, e.g. an unclosed repeating group in a
+    /// decimal literal or multiple `/` separators in a rational.
+    InvalidSyntax,
 }
 
 impl Display for ParseError {
@@ -43,6 +46,7 @@ impl Display for ParseError {
             ParseError::InvalidDigit => f.write_str("invalid digit"),
             ParseError::UnsupportedRadix => f.write_str("unsupported radix"),
             ParseError::InconsistentRadix => f.write_str("inconsistent radix"),
+            ParseError::InvalidSyntax => f.write_str("invalid syntax"),
         }
     }
 }

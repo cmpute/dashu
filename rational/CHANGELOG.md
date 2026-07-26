@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+### Change
+- `RBig::from_str_radix` / `from_str_with_radix_prefix` (and therefore `from_str`) now reject
+  multiple `/` separators with `ParseError::InvalidSyntax` instead of `ParseError::InvalidDigit`.
+  `from_str_expanded` / `from_str_decimal` likewise return `InvalidSyntax` for a malformed
+  repetend.
+
+## 0.5.1
+
+### Add
+- `RBig::from_str_expanded` / `Relaxed::from_str_expanded`: parse a positional-expansion
+  string in any base 2–36 into a rational — the full inverse of `in_expanded(radix)`. Accepts
+  fixed-point (`1.5`, `-.25`, `3.`), scientific, and repeating notation with the repetend
+  parenthesized after the radix point (`0.1(6)` = 1/6, `0.(3)` = 1/3). The scientific marker is
+  `e`/`E` for base 10 and `@` for every other base (`e`/`E` are themselves digits once the base
+  reaches 15). Underscore separators are allowed in any digit run, and digits above 9 are
+  case-insensitive `a`–`z`/`A`–`Z`. Terminating expansions round-trip through
+  `format!("{:.N}", x.in_expanded(radix))`, and every rational (including repeating expansions)
+  round-trips exactly through `format!("{:#}", x.in_expanded(radix))`. Structurally malformed
+  input (an unclosed or empty repetend, or a repetend with no preceding radix point) returns
+  `ParseError::InvalidDigit`; `radix` outside 2–36 panics, matching `in_expanded`.
+- `RBig::from_str_decimal` / `Relaxed::from_str_decimal` are retained as convenience aliases
+  for `from_str_expanded(src, 10)`.
+- `num_traits::Pow<isize>` is now implemented for `RBig` and `Relaxed` (and their
+  references). Negative exponents reciprocate first, so e.g. `(2/3).pow(-1isize) == 3/2`;
+  a zero base raised to a negative power panics with divide-by-zero. The native
+  `RBig::pow` / `Relaxed::pow` keep an unsigned (`usize`) exponent for now — widening them
+  to `isize` is a planned v1.0 breaking change (see V1-ROADMAP).
+
 ### Fix
 - Constructing or reducing an `RBig` with two large, similarly-sized operands no longer aborts with
   "internal error: not enough memory allocated". The underlying integer GCD scratchpad is now sized

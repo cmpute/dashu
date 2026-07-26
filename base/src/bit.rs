@@ -21,6 +21,7 @@ use crate::{
 /// assert_eq!(0b10010.bit(100), false);
 /// assert_eq!((-0b10010).bit(1), true);
 /// assert_eq!((-0b10010).bit(3), true);
+/// assert_eq!((-0b10010).bit(31), true); // sign bit of a negative i32 is set
 /// assert_eq!((-0b10010).bit(100), true);
 ///
 /// // query the bit length of the number
@@ -109,7 +110,7 @@ macro_rules! impl_bit_ops_for_int {
                 if position >= <$T>::BITS as usize {
                     return self < &0;
                 } else {
-                    self & (1 << position) > 0
+                    self & (1 << position) != 0
                 }
             }
         }
@@ -215,7 +216,7 @@ impl FloatEncoding for f32 {
         let mut mantissa = mantissa.unsigned_abs();
 
         let zeros = mantissa.leading_zeros();
-        let top_bit = (u32::BITS - zeros) as i16 + exponent;
+        let top_bit = (u32::BITS - zeros) as i32 + exponent as i32;
 
         if top_bit > 128 {
             // overflow
@@ -336,7 +337,7 @@ impl FloatEncoding for f64 {
         let mut mantissa = mantissa.unsigned_abs();
 
         let zeros = mantissa.leading_zeros();
-        let top_bit = (u64::BITS - zeros) as i16 + exponent;
+        let top_bit = (u64::BITS - zeros) as i32 + exponent as i32;
 
         if top_bit > 1024 {
             // overflow
@@ -475,6 +476,13 @@ mod tests {
         assert_eq!(f64::encode(-1, 1024), Inexact(f64::NEG_INFINITY, Sign::Negative));
         assert_eq!(f64::encode(1, -1075), Inexact(0f64, Sign::Negative));
         assert_eq!(f64::encode(-1, -1075), Inexact(-0f64, Sign::Positive));
+
+        // regression: a very large positive exponent must overflow to infinity rather than
+        // produce NaN. The `top_bit = (BITS - zeros) + exponent` bound is computed in i32
+        // precisely so that huge exponents route to the overflow branch (an earlier i16
+        // computation wrapped and misrouted them, e.g. encode(256, 32759) -> NaN).
+        assert_eq!(f32::encode(256, 32759), Inexact(f32::INFINITY, Sign::Positive));
+        assert_eq!(f64::encode(256, 32759), Inexact(f64::INFINITY, Sign::Positive));
 
         // test rounding
         assert_eq!(f32::encode(3, -150), Inexact(f32::from_bits(0x00000002), Sign::Positive));

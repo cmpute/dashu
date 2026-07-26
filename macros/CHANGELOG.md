@@ -2,10 +2,20 @@
 
 ## Unreleased
 
+### Change
+- The literal macros now surface the new `ParseError::InvalidSyntax` (from `dashu-base`) with a
+  dedicated panic message; the `InvalidDigit` panic message no longer says "or syntax".
+
+## 0.5.1
+
 ### Add
 - `cbig!` now works in `const` position when both coefficients fit in a `DoubleWord`: it expands to
   `CBig::from_parts_const` (built on `Repr::new_const`). Larger coefficients still fall back to the
   runtime `CBig::from_parts` path — use `static_cbig!` for const values with large coefficients.
+
+### Doc
+- Mention the `cbig!` / `static_cbig!` macros in the crate-level docs and the crate README, and
+  note the `dashu-int` / `dashu-float` / `dashu-cmplx` dependency requirement.
 
 ## 0.5.0
 

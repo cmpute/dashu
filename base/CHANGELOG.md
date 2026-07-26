@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Add
+- `ParseError::InvalidSyntax` variant for structurally malformed input (e.g. an unclosed
+  repeating group in a decimal literal, or multiple `/` separators in a rational). This is a
+  breaking change for code that exhaustively matches `ParseError` without a wildcard arm.
+  (Re-introduced after being held back from 0.5.1 to keep that release break-free.)
+
+## 0.5.1
+
+### Fix
+- `BitTest::bit` on signed integers now reports the sign-bit position correctly. The masked
+  value `self & (1 << position)` was compared with `> 0`, which is always false at the sign-bit
+  position (`BITS-1`) because `1 << (BITS-1)` is `iN::MIN` (negative); it now compares with
+  `!= 0`, so e.g. `(-18i32).bit(31)` correctly returns `true`. (Found by the `fuzz/tests/base`
+  differential.)
+- `FloatEncoding::encode` no longer produces `NaN` for very large positive exponents. The
+  overflow-routing bound `top_bit = (BITS - leading_zeros) + exponent` was computed in `i16`,
+  which wrapped for huge exponents and misrouted them away from the overflow branch (e.g.
+  `f64::encode(256, 32759)` returned `NaN`); it is now computed in `i32` and correctly returns
+  `Inexact(±INFINITY, …)`. (Found by the `fuzz/tests/base` differential.)
+
 ## 0.5.0
 
 ### Remove
