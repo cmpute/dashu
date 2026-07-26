@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Add
+- `num_traits::Pow<isize>` is now implemented for `RBig` and `Relaxed` (and their
+  references). Negative exponents reciprocate first, so e.g. `(2/3).pow(-1isize) == 3/2`;
+  a zero base raised to a negative power panics with divide-by-zero. The native
+  `RBig::pow` / `Relaxed::pow` keep an unsigned (`usize`) exponent for now — widening them
+  to `isize` is a planned v1.0 breaking change (see V1-ROADMAP).
+
 ### Fix
 - Constructing or reducing an `RBig` with two large, similarly-sized operands no longer aborts with
   "internal error: not enough memory allocated". The underlying integer GCD scratchpad is now sized

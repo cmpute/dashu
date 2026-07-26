@@ -33,6 +33,43 @@ impl Repr {
             denominator: self.denominator.pow(n),
         }
     }
+
+    /// Raise this rational to a signed integer power.
+    ///
+    /// For a negative exponent the value is reciprocated first: this computes
+    /// `self^n` for any `n` in `isize`, with `self.pow_signed(-n) == self.pow(n)`
+    /// whenever `self` is nonzero. A zero base raised to a negative power is a
+    /// division by zero and panics, matching the rest of the rationals API.
+    ///
+    /// This is the backing kernel for the `num_traits::Pow<isize>` impl; the
+    /// public [`RBig::pow`] / [`Relaxed::pow`] keep an *unsigned* exponent for
+    /// now, and widening them to `isize` is deferred to v1 (see V1-ROADMAP).
+    #[cfg(any(test, feature = "num-traits_v02"))]
+    pub(crate) fn pow_signed(&self, n: isize) -> Self {
+        if n >= 0 {
+            self.pow(n as usize)
+        } else {
+            // self^n = (denominator / numerator)^|n|. Strip the numerator's
+            // sign onto the new numerator so the denominator stays a positive
+            // UBig. `into_parts` yields (Positive, ZERO) for a zero numerator,
+            // which we reject before inverting it.
+            let exp = n.unsigned_abs();
+            let (sign, numerator_mag) = self.numerator.clone().into_parts();
+            if numerator_mag.is_zero() {
+                crate::error::panic_divide_by_0();
+            }
+            // sign^exp collapses to Positive for an even exponent.
+            let result_sign = if exp % 2 == 0 {
+                dashu_base::Sign::Positive
+            } else {
+                sign
+            };
+            Self {
+                numerator: result_sign * self.denominator.pow(exp),
+                denominator: numerator_mag.pow(exp),
+            }
+        }
+    }
 }
 
 impl RBig {
@@ -80,6 +117,15 @@ impl RBig {
     pub fn pow(&self, n: usize) -> Self {
         Self(self.0.pow(n))
     }
+
+    /// Raise this number to a signed integer power (private until v1, see
+    /// V1-ROADMAP). Negative exponents reciprocate first; a zero base raised to
+    /// a negative power panics with divide-by-zero.
+    #[cfg(any(test, feature = "num-traits_v02"))]
+    #[inline]
+    pub(crate) fn pow_signed(&self, n: isize) -> Self {
+        Self(self.0.pow_signed(n))
+    }
 }
 
 macro_rules! impl_mul_with_rbig {
@@ -123,6 +169,16 @@ impl Relaxed {
     #[inline]
     pub fn pow(&self, n: usize) -> Self {
         Self(self.0.pow(n))
+    }
+
+    /// Raise this number to a signed integer power (private until v1, see
+    /// V1-ROADMAP).
+    ///
+    /// See [RBig::pow_signed] for details.
+    #[cfg(any(test, feature = "num-traits_v02"))]
+    #[inline]
+    pub(crate) fn pow_signed(&self, n: isize) -> Self {
+        Self(self.0.pow_signed(n))
     }
 }
 
@@ -169,3 +225,73 @@ impl_binop_with_int!(impl Mul<UBig>, mul, Relaxed, impl_mul_int_with_relaxed);
 impl_binop_with_int!(impl Mul<IBig>, mul, Relaxed, impl_mul_int_with_relaxed);
 impl_binop_with_int!(impl Mul for UBig, mul, Relaxed, impl_mul_int_with_relaxed);
 impl_binop_with_int!(impl Mul for IBig, mul, Relaxed, impl_mul_int_with_relaxed);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn r(n: i64, d: u64) -> RBig {
+        RBig::from_parts(IBig::from(n), UBig::from(d))
+    }
+
+    #[test]
+    fn pow_signed_positive_matches_unsigned_pow() {
+        let a = r(2, 3);
+        assert_eq!(a.pow_signed(0), RBig::ONE);
+        assert_eq!(a.pow_signed(1), a);
+        assert_eq!(a.pow_signed(5), a.pow(5));
+        // zero base with a non-negative exponent is well defined.
+        assert_eq!(RBig::ZERO.pow_signed(0), RBig::ONE);
+        assert_eq!(RBig::ZERO.pow_signed(5), RBig::ZERO);
+    }
+
+    #[test]
+    fn pow_signed_negative_positive_base() {
+        // (2/3)^-1 = 3/2,  (2/3)^-3 = 27/8
+        let a = r(2, 3);
+        assert_eq!(a.pow_signed(-1), r(3, 2));
+        assert_eq!(a.pow_signed(-3), r(27, 8));
+        // integer-valued base: 5^-1 = 1/5, 5^-2 = 1/25
+        let five = r(5, 1);
+        assert_eq!(five.pow_signed(-1), r(1, 5));
+        assert_eq!(five.pow_signed(-2), r(1, 25));
+    }
+
+    #[test]
+    fn pow_signed_negative_base() {
+        let a = r(-2, 3);
+        // odd exponents keep the sign: (-2/3)^-1 = -3/2,  (-2/3)^-3 = -27/8
+        assert_eq!(a.pow_signed(-1), r(-3, 2));
+        assert_eq!(a.pow_signed(-3), r(-27, 8));
+        // even exponents collapse to positive: (-2/3)^-2 = 9/4
+        assert_eq!(a.pow_signed(-2), r(9, 4));
+        // reciprocal of an even unsigned power: (-6/35)^-2 = 1225/36, ^-4 = 1500625/1296
+        let b = r(-6, 35);
+        assert_eq!(b.pow_signed(-2), r(1225, 36));
+        assert_eq!(b.pow_signed(-4), r(1_500_625, 1296));
+    }
+
+    #[test]
+    fn pow_signed_relaxed_matches_rbig() {
+        let a = r(-2, 3);
+        for n in [-3isize, -2, -1, 0, 1, 2, 3] {
+            assert_eq!(a.clone().relax().pow_signed(n).canonicalize(), a.pow_signed(n));
+        }
+        // a non-canonical Relaxed (common factor 3) still yields the same value
+        // after canonicalization.
+        let relaxed = Relaxed::from_parts(IBig::from(6), UBig::from(9u8));
+        assert_eq!(relaxed.pow_signed(-1).canonicalize(), r(3, 2));
+    }
+
+    #[test]
+    #[should_panic(expected = "Divisor or denominator must not be zero")]
+    fn pow_signed_zero_base_negative_panics() {
+        let _ = RBig::ZERO.pow_signed(-1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Divisor or denominator must not be zero")]
+    fn pow_signed_zero_base_negative_even_panics() {
+        let _ = RBig::ZERO.pow_signed(-2);
+    }
+}

@@ -1,6 +1,6 @@
 # dashu Roadmap — v0.5.x and beyond
 
-Last updated: 2026-07-11
+Last updated: 2026-07-26
 
 Feature work deferred out of the **v0.5.0** release. The v0.5.x items are all **additive**
 (no breaking changes) and safe to ship as point releases on top of 0.5.0; the post-v1 items
@@ -71,6 +71,19 @@ Consolidated from the original `CBig` design. All additive.
 - **`#![deny(clippy::allow_attributes_without_reason)]`** once the MSRV reaches **≥ 1.81**. It
   needs the `reason = "..."` field on every `#[allow]` (or `#[expect]`), both stabilized in
   Rust 1.81, which conflicts with the current 1.68 MSRV.
+
+---
+
+## v1.0 — planned breaking changes
+
+- **Signed exponent on `RBig::pow` / `Relaxed::pow`.** Both the native `pow(&self, n)`
+  method and the `num_traits::Pow` impl currently take an unsigned `usize` exponent, so
+  raising to a negative power needs an explicit reciprocal. v1.0 widens them to `isize`
+  (negative exponents reciprocate first, matching `powf` on the floats). The signed
+  kernel already ships in 0.5.x — a private `Repr::pow_signed` plus a
+  `num_traits::Pow<isize>` impl — so the behavior is exercisable today; the v1.0 break
+  is purely the signature change on the native `pow` (and folding the `Pow` impl over to
+  `isize`).
 
 ---
 

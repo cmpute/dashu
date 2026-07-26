@@ -88,6 +88,24 @@ macro_rules! impl_num_traits {
                 <$t>::pow(self, rhs)
             }
         }
+
+        // Signed-exponent power. The native RBig::pow / Relaxed::pow keep an
+        // unsigned exponent (a v1 widening is tracked in V1-ROADMAP); Pow<isize>
+        // exposes the reciprocal-then-power path through num_traits today.
+        impl num_traits::Pow<isize> for $t {
+            type Output = $t;
+            #[inline]
+            fn pow(self, rhs: isize) -> $t {
+                <$t>::pow_signed(&self, rhs)
+            }
+        }
+        impl num_traits::Pow<isize> for &$t {
+            type Output = $t;
+            #[inline]
+            fn pow(self, rhs: isize) -> $t {
+                <$t>::pow_signed(self, rhs)
+            }
+        }
     };
 }
 impl_num_traits!(RBig);

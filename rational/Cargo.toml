@@ -85,6 +85,10 @@ required-features = ["dashu-float"]
 name = "num_order"
 required-features = ["num-order", "dashu-float", "dashu-int/num-order"]
 
+[[test]]
+name = "num_traits"
+required-features = ["num-traits"]
+
 [[bench]]
 name = "primitive"
 required-features = ["rand"]
