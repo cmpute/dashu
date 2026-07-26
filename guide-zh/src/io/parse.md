@@ -44,16 +44,18 @@ use core::str::FromStr;
 assert_eq!(RBig::from_str("22/7")?.to_string(), "22/7");
 ```
 
-对于十进制字面量，`RBig::from_str_decimal` / `Relaxed::from_str_decimal` 接受定点数（`1.5`、`-.25`）、科学记数法（`1.234e2`、`1.5@2`），以及将循环节用括号括起的**循环小数**记法（`0.1(6)` = 1/6，`0.(3)` = 1/3）。它是 `in_expanded(10)` 的精确逆运算（参见[打印](./print.md)）：每个有理数都能通过 `{:#}` 往返还原，而有限小数能通过 `{:.N}` 往返还原。
+对于定点展开字面量，`RBig::from_str_expanded` / `Relaxed::from_str_expanded` 可解析任意 2–36 进制。它们接受定点数（`1.5`、`-.25`）、科学记数法，以及将循环节用括号括起的**循环**记法（`0.1(6)` = 1/6，`0.(3)` = 1/3）。科学记数法的标记符在十进制下为 `e`/`E`，在其他进制下为 `@`（因为当进制达到 15 时，`e`/`E` 本身就是数位）。它是 `in_expanded(radix)` 的精确逆运算（参见[打印](./print.md)）：每个有理数都能通过 `{:#}` 往返还原，而有限展开能通过 `{:.N}` 往返还原。`from_str_decimal` 是十进制的别名。
 
 ```rust
 use dashu::rational::RBig;
 use core::str::FromStr;
 
-let x = RBig::from_str_decimal("0.1(6)")?; // 1/6
+let x = RBig::from_str_expanded("0.1(6)", 10)?; // 1/6
 assert_eq!(x, RBig::from_str("1/6")?);
+// 任意进制：二进制 0.(01) = 1/3
+assert_eq!(RBig::from_str_expanded("0.(01)", 2)?, RBig::from_str("1/3")?);
 // 每个有理数都能通过循环节打印格式往返还原
-assert_eq!(RBig::from_str_decimal(&format!("{:#}", x.in_expanded(10)))?, x);
+assert_eq!(RBig::from_str_expanded(&format!("{:#}", x.in_expanded(10)), 10)?, x);
 ```
 
 ## 解析复数

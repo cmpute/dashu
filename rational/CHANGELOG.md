@@ -3,14 +3,19 @@
 ## Unreleased
 
 ### Add
-- `RBig::from_str_decimal` / `Relaxed::from_str_decimal`: parse a base-10 decimal string
-  into a rational. Accepts fixed-point (`1.5`, `-.25`, `3.`), scientific (`1.234e2`,
-  `1.5E-3`, `1.5@2`), and repeating-decimal notation where the repeating block is
-  parenthesized after the decimal point (`0.1(6)` = 1/6, `0.(3)` = 1/3). It is the inverse
-  of `in_expanded(10)`: terminating decimals round-trip through `{:.N}`, and every rational
-  (including repeating decimals) round-trips exactly through `{:#}`. Structurally malformed
-  input (an unclosed or empty repeating group, or a repeating group with no preceding `.`)
-  returns the new `ParseError::InvalidSyntax`.
+- `RBig::from_str_expanded` / `Relaxed::from_str_expanded`: parse a positional-expansion
+  string in any base 2–36 into a rational — the full inverse of `in_expanded(radix)`. Accepts
+  fixed-point (`1.5`, `-.25`, `3.`), scientific, and repeating notation with the repetend
+  parenthesized after the radix point (`0.1(6)` = 1/6, `0.(3)` = 1/3). The scientific marker is
+  `e`/`E` for base 10 and `@` for every other base (`e`/`E` are themselves digits once the base
+  reaches 15). Underscore separators are allowed in any digit run, and digits above 9 are
+  case-insensitive `a`–`z`/`A`–`Z`. Terminating expansions round-trip through
+  `format!("{:.N}", x.in_expanded(radix))`, and every rational (including repeating expansions)
+  round-trips exactly through `format!("{:#}", x.in_expanded(radix))`. Structurally malformed
+  input (an unclosed or empty repetend, or a repetend with no preceding radix point) returns
+  `ParseError::InvalidSyntax`; `radix` outside 2–36 panics, matching `in_expanded`.
+- `RBig::from_str_decimal` / `Relaxed::from_str_decimal` are retained as convenience aliases
+  for `from_str_expanded(src, 10)`.
 - `num_traits::Pow<isize>` is now implemented for `RBig` and `Relaxed` (and their
   references). Negative exponents reciprocate first, so e.g. `(2/3).pow(-1isize) == 3/2`;
   a zero base raised to a negative power panics with divide-by-zero. The native
