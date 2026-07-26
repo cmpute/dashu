@@ -50,14 +50,14 @@ assert_eq!(format!("{}", RBig::from_str("22/7")?), "22/7");
 assert_eq!(format!("{}", RBig::from_str("5/1")?), "5");
 ```
 
-对于位置（十进制）展开，请使用 `in_expanded()`。`{:.N}` 打印恰好 `N` 位小数；`#` 标志会检测循环节并用括号括起：
+对于位置（十进制）展开，请使用 `in_expanded(10)`。`{:.N}` 打印恰好 `N` 位小数；`#` 标志会检测循环节并用括号括起：
 
 ```rust
 use dashu::rational::RBig;
 
 let x = RBig::from_parts(1.into(), 3u8.into());
-assert_eq!(format!("{:.4}", x.in_expanded()), "0.3333");
-assert_eq!(format!("{:#}", x.in_expanded()), "0.(3)");
+assert_eq!(format!("{:.4}", x.in_expanded(10)), "0.3333");
+assert_eq!(format!("{:#}", x.in_expanded(10)), "0.(3)");
 ```
 
 ## 复数格式化

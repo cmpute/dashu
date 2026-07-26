@@ -102,3 +102,9 @@ Consolidated from the original `CBig` design. All additive.
 - **Constant-cache eviction/cap policy** — revisit only if real workloads report memory
   pressure. (0.5 has no cap; a `ConstCache` grows until `clear_cache()`/drop, and callers own
   the lifetime explicitly via the `CachedFBig`/`ConstCache` handle.)
+- **Arbitrary-base expanded-string parser for `RBig` (`from_str_expanded(radix)`).**
+  Base-10 decimal parsing — `from_str_decimal`, the round-trip partner of `in_expanded(10)`
+  — ships in 0.5.x and covers the practical case (fixed-point, scientific, and repeating-decimal
+  notation). A general base-N positional/scientific/repetend parser, i.e. the full inverse of
+  `in_expanded(radix)` for any base 2–36, is **deferred** until a concrete use case demonstrates
+  real demand beyond base 10.

@@ -50,14 +50,14 @@ assert_eq!(format!("{}", RBig::from_str("22/7")?), "22/7");
 assert_eq!(format!("{}", RBig::from_str("5/1")?), "5");
 ```
 
-For the positional (decimal) expansion use `in_expanded()`. `{:.N}` prints exactly `N` fractional digits; the `#` flag detects the repeating part and parenthesizes it:
+For the positional (decimal) expansion use `in_expanded(10)`. `{:.N}` prints exactly `N` fractional digits; the `#` flag detects the repetend and parenthesizes it:
 
 ```rust
 use dashu::rational::RBig;
 
 let x = RBig::from_parts(1.into(), 3u8.into());
-assert_eq!(format!("{:.4}", x.in_expanded()), "0.3333");
-assert_eq!(format!("{:#}", x.in_expanded()), "0.(3)");
+assert_eq!(format!("{:.4}", x.in_expanded(10)), "0.3333");
+assert_eq!(format!("{:#}", x.in_expanded(10)), "0.(3)");
 ```
 
 ## Complex Formatting

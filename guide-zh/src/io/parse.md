@@ -44,6 +44,18 @@ use core::str::FromStr;
 assert_eq!(RBig::from_str("22/7")?.to_string(), "22/7");
 ```
 
+对于十进制字面量，`RBig::from_str_decimal` / `Relaxed::from_str_decimal` 接受定点数（`1.5`、`-.25`）、科学记数法（`1.234e2`、`1.5@2`），以及将循环节用括号括起的**循环小数**记法（`0.1(6)` = 1/6，`0.(3)` = 1/3）。它是 `in_expanded(10)` 的精确逆运算（参见[打印](./print.md)）：每个有理数都能通过 `{:#}` 往返还原，而有限小数能通过 `{:.N}` 往返还原。
+
+```rust
+use dashu::rational::RBig;
+use core::str::FromStr;
+
+let x = RBig::from_str_decimal("0.1(6)")?; // 1/6
+assert_eq!(x, RBig::from_str("1/6")?);
+// 每个有理数都能通过循环节打印格式往返还原
+assert_eq!(RBig::from_str_decimal(&format!("{:#}", x.in_expanded(10)))?, x);
+```
+
 ## 解析复数
 
 `CBig::FromStr` 接受与 `Display` 输出相同的代数 $a+bi$ 文法：一个可选的实部项加上一个可选的带符号虚部项（至少需要一项）；系数为 1 时可以省略（`i`、`-i`）。MPC 风格的括号形式 `(re im)` **不被**接受。

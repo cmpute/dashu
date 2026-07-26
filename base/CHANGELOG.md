@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Add
+- `ParseError::InvalidSyntax` variant for structurally malformed input (e.g. an unclosed
+  repeating group in a decimal literal, or multiple `/` separators in a rational). This is a
+  breaking change for code that exhaustively matches `ParseError` without a wildcard arm.
+
 ## 0.5.0
 
 ### Remove

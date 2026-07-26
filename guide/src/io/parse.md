@@ -44,6 +44,18 @@ use core::str::FromStr;
 assert_eq!(RBig::from_str("22/7")?.to_string(), "22/7");
 ```
 
+For decimal literals, `RBig::from_str_decimal` / `Relaxed::from_str_decimal` accept fixed-point (`1.5`, `-.25`), scientific (`1.234e2`, `1.5@2`), and **repeating-decimal** notation with the repetend parenthesized (`0.1(6)` = 1/6, `0.(3)` = 1/3). It is the exact inverse of `in_expanded(10)` (see [Printing](./print.md)): every rational round-trips through `{:#}`, and terminating decimals round-trip through `{:.N}`.
+
+```rust
+use dashu::rational::RBig;
+use core::str::FromStr;
+
+let x = RBig::from_str_decimal("0.1(6)")?; // 1/6
+assert_eq!(x, RBig::from_str("1/6")?);
+// every rational round-trips through the repetend printer
+assert_eq!(RBig::from_str_decimal(&format!("{:#}", x.in_expanded(10)))?, x);
+```
+
 ## Parsing Complex
 
 `CBig::FromStr` accepts the same algebraic $a+bi$ grammar that `Display` emits: an optional real term plus an optional signed imaginary term (at least one required); a unit coefficient may be omitted (`i`, `-i`). The MPC-style parenthesized form `(re im)` is **not** accepted.

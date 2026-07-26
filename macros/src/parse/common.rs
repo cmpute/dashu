@@ -132,9 +132,14 @@ pub fn quote_sign(embedded: bool, sign: Sign) -> TokenStream {
 pub fn print_error_msg(error_type: ParseError) -> ! {
     match error_type {
         ParseError::NoDigits => panic!("Missing digits in the number components!"),
-        ParseError::InvalidDigit => panic!("Invalid digits or syntax in the literal! Please refer to the documentation of this macro."),
+        ParseError::InvalidDigit => {
+            panic!("Invalid digit in the literal! Please refer to the documentation of this macro.")
+        }
         ParseError::UnsupportedRadix => panic!("The given radix is invalid or unsupported!"),
         ParseError::InconsistentRadix => panic!("Radix of different components are different!"),
+        ParseError::InvalidSyntax => panic!(
+            "Invalid syntax in the literal! Please refer to the documentation of this macro."
+        ),
     }
 }
 

@@ -8,6 +8,11 @@
   macro now works in `const` position for coefficients that fit in a `DoubleWord`; larger
   coefficients fall back to the runtime heap path.
 
+### Change
+- `CBig`'s `FromStr` now returns `ParseError::InvalidSyntax` (new in `dashu-base`) for structurally
+  malformed input — the MPC `(re im)` parenthesized form, more than one `i`, or a non-trailing `i`
+  — instead of `ParseError::InvalidDigit`.
+
 ## 0.5.0 (Initial release)
 
 `dashu-cmplx` provides [`CBig`], an arbitrary-precision complex number type built on top of
