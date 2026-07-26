@@ -9,6 +9,9 @@ use dashu_int::{IBig, UBig};
 impl Repr {
     fn from_str_radix(src: &str, radix: u32) -> Result<Self, ParseError> {
         if let Some(slash) = src.find('/') {
+            if src[slash + 1..].contains('/') {
+                return Err(ParseError::InvalidSyntax);
+            }
             let num = IBig::from_str_radix(&src[..slash], radix)?;
             let den = IBig::from_str_radix(&src[slash + 1..], radix)?;
             let (sign, den) = den.into_parts();
@@ -27,6 +30,9 @@ impl Repr {
 
     pub fn from_str_with_radix_prefix(src: &str) -> Result<(Self, u8), ParseError> {
         if let Some(slash) = src.find('/') {
+            if src[slash + 1..].contains('/') {
+                return Err(ParseError::InvalidSyntax);
+            }
             // first parse the numerator part
             let (num, num_radix) = IBig::from_str_with_radix_prefix(&src[..slash])?;
             let (den, den_radix) = IBig::from_str_with_radix_default(&src[slash + 1..], num_radix)?;
@@ -95,16 +101,16 @@ impl Repr {
             Some(open) => {
                 let close = match body.rfind(')') {
                     Some(c) if c + 1 == body.len() => c,
-                    _ => return Err(ParseError::InvalidDigit),
+                    _ => return Err(ParseError::InvalidSyntax),
                 };
                 let rep_str = &body[open + 1..close];
                 if rep_str.is_empty() {
-                    return Err(ParseError::InvalidDigit);
+                    return Err(ParseError::InvalidSyntax);
                 }
                 // the repeating block must follow a decimal point
                 let main = &body[..open];
                 if !main.contains('.') {
-                    return Err(ParseError::InvalidDigit);
+                    return Err(ParseError::InvalidSyntax);
                 }
                 (main, Some(rep_str))
             }
@@ -255,8 +261,9 @@ impl RBig {
     /// # Errors
     ///
     /// Returns [`ParseError::NoDigits`] if the input contains no digits, and
-    /// [`ParseError::InvalidDigit`] for any malformed input — an invalid digit, an invalid
-    /// exponent, an unclosed or empty repetend, or a repetend with no preceding radix point.
+    /// [`ParseError::InvalidDigit`] for an invalid digit or exponent. An unclosed or empty
+    /// repetend, or a repetend with no preceding radix point, returns
+    /// [`ParseError::InvalidSyntax`].
     ///
     /// # Examples
     ///
@@ -494,21 +501,29 @@ mod tests {
     #[test]
     fn test_from_str_decimal_errors() {
         let no_digits = ["", ".", ".e", "-", "-.", "e", "+", "1e"];
+        let invalid_syntax = [
+            "(6)",  // no decimal point before the repeating group
+            "1(6)", // no decimal point before the repeating group
+            "1.(6", // unclosed repeating group
+            "1.()", // empty repeating group
+        ];
         let invalid_digit = [
             "abc",    // non-decimal character
             "0x1",    // radix prefix is not valid in base 10
             "1.2.3",  // second decimal point
             "1e2(6)", // malformed exponent
             "1ee2",   // bad exponent
-            "(6)",    // no decimal point before the repeating group
-            "1(6)",   // no decimal point before the repeating group
-            "1.(6",   // unclosed repeating group
-            "1.()",   // empty repeating group
         ];
         for s in no_digits {
             assert!(
                 matches!(RBig::from_str_decimal(s), Err(ParseError::NoDigits)),
                 "expected NoDigits for {s:?}"
+            );
+        }
+        for s in invalid_syntax {
+            assert!(
+                matches!(RBig::from_str_decimal(s), Err(ParseError::InvalidSyntax)),
+                "expected InvalidSyntax for {s:?}"
             );
         }
         for s in invalid_digit {
@@ -517,6 +532,17 @@ mod tests {
                 "expected InvalidDigit for {s:?}"
             );
         }
+    }
+
+    #[test]
+    fn test_from_str_radix_multiple_separators() {
+        // multiple `/` separators are structurally malformed
+        assert!(matches!(RBig::from_str_radix("1/2/3", 10), Err(ParseError::InvalidSyntax)));
+        assert!(matches!(RBig::from_str("1/2/3"), Err(ParseError::InvalidSyntax)));
+        assert!(matches!(
+            RBig::from_str_with_radix_prefix("0x1/2/3"),
+            Err(ParseError::InvalidSyntax)
+        ));
     }
 
     #[test]
@@ -654,21 +680,21 @@ mod tests {
                 "expected NoDigits for {s:?} base 16"
             );
         }
-        // InvalidDigit (base 2): out-of-range digit
+        // InvalidSyntax: unclosed / empty repetend, or repetend with no radix point
+        for s in ["1.(6", "1.()", "(6)", "1(6)"] {
+            assert!(
+                matches!(RBig::from_str_expanded(s, 16), Err(ParseError::InvalidSyntax)),
+                "expected InvalidSyntax for {s:?} base 16"
+            );
+        }
+        // InvalidDigit: out-of-range digit for the radix, or a bad exponent
         for s in ["2", "0.2"] {
             assert!(
                 matches!(RBig::from_str_expanded(s, 2), Err(ParseError::InvalidDigit)),
                 "expected InvalidDigit for {s:?} base 2"
             );
         }
-        // InvalidDigit (base 16): out-of-range digit, or a malformed repetend (unclosed /
-        // empty, or with no preceding radix point)
-        for s in ["0.g", "1.(6", "1.()", "(6)", "1(6)"] {
-            assert!(
-                matches!(RBig::from_str_expanded(s, 16), Err(ParseError::InvalidDigit)),
-                "expected InvalidDigit for {s:?} base 16"
-            );
-        }
+        assert!(matches!(RBig::from_str_expanded("0.g", 16), Err(ParseError::InvalidDigit)));
         assert!(matches!(
             RBig::from_str_expanded("1.0@", 16),
             Err(ParseError::NoDigits) // empty exponent after marker

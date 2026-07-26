@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Change
+- `CBig`'s `FromStr` now returns `ParseError::InvalidSyntax` (new in `dashu-base`) for structurally
+  malformed input — the MPC `(re im)` parenthesized form, more than one `i`, or a non-trailing `i`
+  — instead of `ParseError::InvalidDigit`.
+
 ## 0.5.1
 
 ### Add
