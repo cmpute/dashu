@@ -37,7 +37,7 @@ fn test_rbig_from_str_radix() {
     assert_eq!(RBig::from_str_radix("/", 2).unwrap_err(), ParseError::NoDigits);
     assert_eq!(RBig::from_str_radix("2/", 10).unwrap_err(), ParseError::NoDigits);
     assert_eq!(RBig::from_str_radix("/2", 10).unwrap_err(), ParseError::NoDigits);
-    assert_eq!(RBig::from_str_radix("1//2", 10).unwrap_err(), ParseError::InvalidSyntax);
+    assert_eq!(RBig::from_str_radix("1//2", 10).unwrap_err(), ParseError::InvalidDigit);
     assert_eq!(RBig::from_str_radix("0", 2).unwrap(), rbig!(0));
     assert_eq!(RBig::from_str_radix("1", 2).unwrap(), rbig!(1));
     assert_eq!(RBig::from_str_radix("-1", 2).unwrap(), rbig!(-1));
@@ -273,7 +273,7 @@ fn test_relaxed_from_str_radix() {
     assert_eq!(Relaxed::from_str_radix("/", 2).unwrap_err(), ParseError::NoDigits);
     assert_eq!(Relaxed::from_str_radix("2/", 10).unwrap_err(), ParseError::NoDigits);
     assert_eq!(Relaxed::from_str_radix("/2", 10).unwrap_err(), ParseError::NoDigits);
-    assert_eq!(Relaxed::from_str_radix("1//2", 10).unwrap_err(), ParseError::InvalidSyntax);
+    assert_eq!(Relaxed::from_str_radix("1//2", 10).unwrap_err(), ParseError::InvalidDigit);
     assert_eq!(Relaxed::from_str_radix("0", 2).unwrap(), rbig!(~0));
     assert_eq!(Relaxed::from_str_radix("1", 2).unwrap(), rbig!(~1));
     assert_eq!(Relaxed::from_str_radix("-1", 2).unwrap(), rbig!(~-1));

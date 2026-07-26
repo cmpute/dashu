@@ -11,10 +11,6 @@
 - Mention the `cbig!` / `static_cbig!` macros in the crate-level docs and the crate README, and
   note the `dashu-int` / `dashu-float` / `dashu-cmplx` dependency requirement.
 
-### Change
-- The literal macros now surface the new `ParseError::InvalidSyntax` (from `dashu-base`) with a
-  dedicated panic message; the `InvalidDigit` panic message no longer says "or syntax".
-
 ## 0.5.0
 
 ### Add

@@ -57,7 +57,6 @@ pub fn parse_error_to_py(error: ParseError) -> PyErr {
         ParseError::InconsistentRadix => {
             "the radices of different components of the number are different"
         }
-        ParseError::InvalidSyntax => "the input is structurally malformed",
     };
 
     PySyntaxError::new_err(expl)

@@ -2,11 +2,6 @@
 
 ## Unreleased
 
-### Add
-- `ParseError::InvalidSyntax` variant for structurally malformed input (e.g. an unclosed
-  repeating group in a decimal literal, or multiple `/` separators in a rational). This is a
-  breaking change for code that exhaustively matches `ParseError` without a wildcard arm.
-
 ### Fix
 - `BitTest::bit` on signed integers now reports the sign-bit position correctly. The masked
   value `self & (1 << position)` was compared with `> 0`, which is always false at the sign-bit

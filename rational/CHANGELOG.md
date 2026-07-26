@@ -13,7 +13,7 @@
   `format!("{:.N}", x.in_expanded(radix))`, and every rational (including repeating expansions)
   round-trips exactly through `format!("{:#}", x.in_expanded(radix))`. Structurally malformed
   input (an unclosed or empty repetend, or a repetend with no preceding radix point) returns
-  `ParseError::InvalidSyntax`; `radix` outside 2–36 panics, matching `in_expanded`.
+  `ParseError::InvalidDigit`; `radix` outside 2–36 panics, matching `in_expanded`.
 - `RBig::from_str_decimal` / `Relaxed::from_str_decimal` are retained as convenience aliases
   for `from_str_expanded(src, 10)`.
 - `num_traits::Pow<isize>` is now implemented for `RBig` and `Relaxed` (and their
@@ -21,11 +21,6 @@
   a zero base raised to a negative power panics with divide-by-zero. The native
   `RBig::pow` / `Relaxed::pow` keep an unsigned (`usize`) exponent for now — widening them
   to `isize` is a planned v1.0 breaking change (see V1-ROADMAP).
-
-### Change
-- `RBig::from_str_radix` / `from_str_with_radix_prefix` (and therefore `from_str`) now
-  reject multiple `/` separators with `ParseError::InvalidSyntax` instead of
-  `ParseError::InvalidDigit`.
 
 ### Fix
 - Constructing or reducing an `RBig` with two large, similarly-sized operands no longer aborts with
