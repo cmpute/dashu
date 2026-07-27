@@ -130,6 +130,17 @@ impl<R: Round, const B: Word> CachedFBig<R, B> {
         Self::from_fbig(fbig, cache)
     }
 
+    /// *e* (Euler's number) at `precision` base-`B` digits.
+    ///
+    /// Unlike [`pi`](Self::pi), *e* is not cached: it depends on no other constant
+    /// and is reused by no operation, so there is no shared state to thread. The
+    /// `cache` handle is attached only so the result is a [`CachedFBig`] whose
+    /// later transcendental ops still share a cache.
+    pub fn e(precision: usize, cache: &Rc<RefCell<ConstCache>>) -> Self {
+        let fbig = Context::<R>::new(precision).e::<B>().value();
+        Self::from_fbig(fbig, cache)
+    }
+
     // ----- accessors -----
 
     /// Maximum precision set for the number (see [`FBig::precision`]).

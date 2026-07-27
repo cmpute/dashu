@@ -2,10 +2,19 @@
 
 ## Unreleased
 
+### Add
+- `CBig::fma` / `Context::fma`: fused complex multiply–add `z1·z2 + sign·z3`,
+  computed as chained real FMA per component (sign scales `z3`).
+
 ### Change
 - `CBig`'s `FromStr` now returns `ParseError::InvalidSyntax` (new in `dashu-base`) for structurally
   malformed input — the MPC `(re im)` parenthesized form, more than one `i`, or a non-trailing `i`
   — instead of `ParseError::InvalidDigit`.
+- Complex `mul` and `div` (Smith's method) now use real FMA to fuse each cross
+  product with its add/subtract (one rounding instead of mul-then-add/sub's two),
+  preserving the cancellation structure of `xu − yv` and the division numerators.
+  `sqr` and `norm` (`x² ± y²`) keep the dedicated `sqr()` kernel, which is faster
+  than the general product path inside `fma`.
 
 ## 0.5.1
 

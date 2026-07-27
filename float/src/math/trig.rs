@@ -10,7 +10,7 @@ use crate::{
     error::{assert_limited_precision, FpError},
     fbig::FBig,
     math::{
-        cache::{reborrow_cache, ConstCache},
+        cache::{compute_e, reborrow_cache, ConstCache},
         FpResult,
     },
     repr::{Context, Repr, Word},
@@ -89,7 +89,13 @@ impl<R: ErrorBounds> Context<R> {
         let half_pi = &pi / 2u8;
         let x_scaled: FBig<R, B> = &x_f / &half_pi;
         let k_f = x_scaled.round();
-        let r = x_f - &k_f * &half_pi;
+        // Reduce `r = x − k·(π/2)` with a single rounding via FMA: the product
+        // `k·(π/2)` nearly cancels `x` for large arguments, so fusing the multiply
+        // with the subtract (instead of mul-then-sub's two roundings) tightens the
+        // reduction error that `reduction_err` below bounds and Ziv then certifies.
+        // The conservative `r_ulp·4` term stays sound — FMA only reduces actual
+        // error, never the bound.
+        let r = k_f.fma(&half_pi, &x_f, Sign::Negative);
         // `k_f` is the integer nearest `x_scaled`, so it's exact (or a signed zero
         // for a tiny argument in (-1, 0), which `IBig::try_from` treats as plain 0).
         let k = IBig::try_from(k_f).expect("k_f is an exact integer or signed zero");
@@ -738,6 +744,22 @@ impl<R: Round> Context<R> {
         let mut fresh = ConstCache::new();
         fresh.pi::<B, R>(self.precision)
     }
+
+    /// Calculate *e* (Euler's number) by binary splitting on `e = Σ 1/k!`.
+    ///
+    /// Unlike [`pi`](Self::pi), this takes no constant cache: *e* depends on no
+    /// other cached constant and is itself reused by no operation, so there is no
+    /// state worth sharing across calls. The factorial series is the optimal
+    /// algorithm for *e* (`O(M(n) log n)`, faster than π) and avoids the
+    /// argument-reduction and `√p`-fold powering that `exp(1)` would pay for.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the context precision is 0.
+    #[must_use]
+    pub fn e<const B: Word>(&self) -> Rounded<FBig<R, B>> {
+        compute_e::<B, R>(self.precision)
+    }
 }
 
 impl<R: Round, const B: Word> FBig<R, B> {
@@ -746,6 +768,14 @@ impl<R: Round, const B: Word> FBig<R, B> {
     #[must_use]
     pub fn pi(precision: usize) -> Self {
         Context::<R>::new(precision).pi(None).value()
+    }
+
+    /// Calculate *e* (Euler's number) with the given precision and the default
+    /// rounding mode.
+    #[inline]
+    #[must_use]
+    pub fn e(precision: usize) -> Self {
+        Context::<R>::new(precision).e::<B>().value()
     }
 }
 

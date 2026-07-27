@@ -16,7 +16,7 @@ use dashu_int::{IBig, UBig};
 
 /// Build a `Repr` from a cancellation result, producing `-0` (instead of `+0`) when the
 /// significand is zero and the rounding mode is roundTowardNegative (IEEE 754 §6.3).
-fn cancel_zero<R: Round, const B: Word>(sig: IBig, exp: isize) -> Repr<B> {
+pub(crate) fn cancel_zero<R: Round, const B: Word>(sig: IBig, exp: isize) -> Repr<B> {
     if sig.is_zero() && R::IS_ROUND_TOWARD_NEGATIVE {
         Repr::neg_zero()
     } else {
@@ -227,7 +227,7 @@ fn add_ref_ref<R: Round, const B: Word>(
 impl<R: Round> Context<R> {
     /// Round sum = `significand * B ^ exponent` with the low part (value, precision).
     /// If the sum is actually from a subtraction and the low part is not zero, `is_sub` should be true.
-    fn repr_round_sum<const B: Word>(
+    pub(crate) fn repr_round_sum<const B: Word>(
         &self,
         mut significand: IBig,
         mut exponent: isize,
@@ -309,7 +309,7 @@ impl<R: Round> Context<R> {
     }
 
     // lhs + rhs_sign * rhs, assuming lhs.exponent >= rhs.exponent
-    fn repr_add_large_small<const B: Word>(
+    pub(crate) fn repr_add_large_small<const B: Word>(
         &self,
         mut lhs: Repr<B>,
         rhs: &Repr<B>,
@@ -426,7 +426,7 @@ impl<R: Round> Context<R> {
     }
 
     // lhs + rhs_sign * rhs, assuming lhs.exponent <= rhs.exponent
-    fn repr_add_small_large<const B: Word>(
+    pub(crate) fn repr_add_small_large<const B: Word>(
         &self,
         lhs: Repr<B>,
         rhs: &Repr<B>,

@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Add
+- `FBig::e` / `Context::e` / `CachedFBig::e`: Euler's number *e*, computed by
+  exact-integer binary splitting on `e = Σ 1/k!` (leaf `(1, k, 1)`, reusing the
+  universal `(P, Q, T)` merge). Unlike π, *e* is self-contained — it depends on no
+  other cached constant and is itself reused by no operation — so it is **not**
+  stored in `ConstCache` and `Context::e` takes no cache parameter. The factorial
+  series is the optimal algorithm for *e* (asymptotically `O(M(n) log n)` under
+  FFT multiplication, i.e. faster than π), and it avoids both the `ln`-based
+  argument reduction and the `√p`-fold powering that `exp(1)` would pay for.
+- `FBig::fma` / `Context::fma` / `CachedFBig::fma`: fused multiply–add
+  `c + sign·(a·b)` with a single rounding. `sign` (`Sign::Positive`/`Sign::Negative`)
+  selects add vs subtract, mirroring integer's `add_signed_mul`. It assembles the
+  existing exact-product (`make_mul_repr`) and add/round kernels, inheriting their
+  severe-cancellation and sticky-tail handling (and the guard digit an effective
+  subtraction may leave). The trig quadrant reduction `x − k·(π/2)` now uses it,
+  removing one rounding from range reduction. (`sqr` keeps its dedicated, faster
+  kernel — don't write `x²` as `fma(x, x, …)`.)
+
 ## 0.5.1
 
 ### Add

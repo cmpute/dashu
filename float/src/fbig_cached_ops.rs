@@ -678,6 +678,13 @@ impl<R: ErrorBounds, const B: Word> CachedFBig<R, B> {
     forward_to_context!(acos);
     forward_to_context!(atan);
 
+    /// Fused multiply–add (see [`FBig::fma`](crate::FBig::fma)). Preserves the
+    /// LHS (`self`) cache handle; the `b`/`c` caches are dropped, matching the
+    /// binary-op convention. FMA uses no cached constant.
+    pub fn fma(&self, b: &Self, c: &Self, sign: Sign) -> Self {
+        Self::from_fbig(self.fbig.fma(&b.fbig, &c.fbig, sign), &self.cache)
+    }
+
     /// Sine and cosine together (see [`FBig::sin_cos`]).
     pub fn sin_cos(&self) -> (Self, Self) {
         let mut guard = self.cache.borrow_mut();
