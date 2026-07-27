@@ -85,6 +85,7 @@ mod parse;
 mod repr;
 mod root;
 mod third_party;
+mod ziv;
 
 // All the public items from third_party will be exposed
 #[allow(unused_imports)]

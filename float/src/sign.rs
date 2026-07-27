@@ -60,14 +60,6 @@ impl<R: Round, const B: Word> FBig<R, B> {
     }
 }
 
-impl<const B: Word> Neg for Repr<B> {
-    type Output = Self;
-    #[inline]
-    fn neg(self) -> Self::Output {
-        Repr::neg(self)
-    }
-}
-
 impl<R: Round, const B: Word> Neg for FBig<R, B> {
     type Output = Self;
     #[inline]

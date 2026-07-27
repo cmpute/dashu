@@ -11,7 +11,7 @@ use core::iter::{Product, Sum};
 use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 use dashu_base::Inverse;
-use dashu_float::round::Round;
+use dashu_float::round::{ErrorBounds, Round};
 use dashu_float::FBig;
 use dashu_int::{IBig, Word};
 
@@ -372,7 +372,24 @@ macro_rules! delegate_to_cbig {
 }
 
 impl<R: Round, const B: Word> CachedCBig<R, B> {
+    // non-cache delegations
+    delegate_to_cbig!(sqr);
+    delegate_to_cbig!(conj);
+    delegate_to_cbig!(proj);
+    delegate_to_cbig!(mul_i(negative: bool));
+
+    /// The squared modulus `re² + im²` (a real [`FBig`]) (see [`CBig::norm`]).
+    #[inline]
+    pub fn norm(&self) -> FBig<R, B> {
+        self.cbig.norm()
+    }
+}
+
+// Transcendentals route through the Ziv-backed (or Ziv-dependent) real/complex methods, which
+// require `R: ErrorBounds`.
+impl<R: ErrorBounds, const B: Word> CachedCBig<R, B> {
     // cache-threading transcendentals
+    delegate_to_cbig!(powi(exp: IBig));
     forward_cached!(ln => log);
     forward_cached!(exp => exp);
     forward_cached!(sin => sin);
@@ -382,19 +399,8 @@ impl<R: Round, const B: Word> CachedCBig<R, B> {
     forward_cached!(acos => acos);
     forward_cached!(atan => atan);
 
-    // non-cache delegations
-    delegate_to_cbig!(sqr);
+    // `sqrt` and `abs` route through `Context::hypot`, which is now Ziv-backed (`R: ErrorBounds`).
     delegate_to_cbig!(sqrt);
-    delegate_to_cbig!(conj);
-    delegate_to_cbig!(proj);
-    delegate_to_cbig!(mul_i(negative: bool));
-    delegate_to_cbig!(powi(exp: IBig));
-
-    /// The squared modulus `re² + im²` (a real [`FBig`]) (see [`CBig::norm`]).
-    #[inline]
-    pub fn norm(&self) -> FBig<R, B> {
-        self.cbig.norm()
-    }
 
     /// The modulus `|z|` (a real [`FBig`]) (see [`CBig::abs`]).
     #[inline]

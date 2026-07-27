@@ -3,8 +3,8 @@
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, exact, CfpResult, Context};
 use dashu_base::Sign;
-use dashu_float::round::Round;
-use dashu_float::{FBig, Repr};
+use dashu_float::round::{ErrorBounds, Round};
+use dashu_float::{Context as FloatCtxt, FBig, Repr};
 use dashu_int::Word;
 
 /// Guard digits (base-B) for `sqrt`. Composes `hypot` + two real `sqrt`s + adds; a modest fixed
@@ -19,7 +19,7 @@ fn signed_inf<const B: Word>(sign: Sign) -> Repr<B> {
     }
 }
 
-impl<R: Round> Context<R> {
+impl<R: ErrorBounds> Context<R> {
     /// Principal square root of a complex number (context layer).
     ///
     /// The result has non-negative real part; when the real part is zero the imaginary part is
@@ -30,45 +30,50 @@ impl<R: Round> Context<R> {
             return special;
         }
 
-        let gctx = self.guard(SQRT_GUARD);
+        // Principal sqrt via the cancellation-free form: for x ≥ 0, `a = sqrt((r+x)/2)`,
+        // `b = y/(2a)`; for x < 0, `b = sign(y)·sqrt((r-x)/2)`, `a = y/(2b)` — this avoids the
+        // near-cancellation in `r−x` when `|y| ≪ |x|`. The float `hypot`/`sqrt` are correctly-rounded
+        // at the working precision, and the adds/divs/mul each round at a few working-ULPs, so a
+        // small constant radius certifies both parts. The Ziv driver asserts a limited context (the
+        // special-value shortcut above is exact).
         let p = self.precision();
-        let two = FBig::from_repr(Repr::new(2.into(), 0), gctx);
-        let x = z.re();
-        let y = z.im();
-
-        // r = |z| (overflow-safe). Use the cancellation-free form: for x ≥ 0 compute `a` from
-        // `(r+x)/2` (large) and `b = y/(2a)`; for x < 0 compute `b` from `(r-x)/2` (large) and
-        // `a = y/(2b)`. This avoids subtracting nearly-equal magnitudes when |y| ≪ |x|.
-        let r = gctx.hypot(x, y)?.value();
-        let (a, b) = if x.sign() != Sign::Negative {
-            // x ≥ 0
-            let rpx = gctx.add(r.repr(), x)?.value();
-            let half_rpx = gctx.div(rpx.repr(), two.repr())?.value();
-            let a = gctx.sqrt(half_rpx.repr())?.value();
-            let two_a = gctx.mul(two.repr(), a.repr())?.value();
-            let b = gctx.div(y, two_a.repr())?.value();
-            (a, b)
-        } else {
-            // x < 0: b carries the sign of y
-            let rmx = gctx.sub(r.repr(), x)?.value(); // r − x = r + |x|
-            let half_rmx = gctx.div(rmx.repr(), two.repr())?.value();
-            let b_mag = gctx.sqrt(half_rmx.repr())?.value();
-            let b = if y.sign() == Sign::Negative {
-                -b_mag
+        let [re, im] = self.ziv(SQRT_GUARD, |guard| {
+            let gctx = FloatCtxt::<R>::new(p + guard);
+            let two = FBig::from_repr(Repr::new(2.into(), 0), gctx);
+            let x = z.re();
+            let y = z.im();
+            let r = gctx.hypot(x, y)?.value();
+            let (a, b) = if x.sign() != Sign::Negative {
+                // x ≥ 0
+                let rpx = gctx.add(r.repr(), x)?.value();
+                let half_rpx = gctx.div(rpx.repr(), two.repr())?.value();
+                let a = gctx.sqrt(half_rpx.repr())?.value();
+                let two_a = gctx.mul(two.repr(), a.repr())?.value();
+                let b = gctx.div(y, two_a.repr())?.value();
+                (a, b)
             } else {
-                b_mag
+                // x < 0: b carries the sign of y
+                let rmx = gctx.sub(r.repr(), x)?.value(); // r − x = r + |x|
+                let half_rmx = gctx.div(rmx.repr(), two.repr())?.value();
+                let b_mag = gctx.sqrt(half_rmx.repr())?.value();
+                let b = if y.sign() == Sign::Negative {
+                    -b_mag
+                } else {
+                    b_mag
+                };
+                let two_b = gctx.mul(two.repr(), b.repr())?.value();
+                let a = gctx.div(y, two_b.repr())?.value();
+                (a, b)
             };
-            let two_b = gctx.mul(two.repr(), b.repr())?.value();
-            let a = gctx.div(y, two_b.repr())?.value();
-            (a, b)
-        };
-        let re = a.with_precision(p);
-        let im = b.with_precision(p);
+            let a_rad = a.ulp() * 10;
+            let b_rad = b.ulp() * 10;
+            Ok([(a, a_rad), (b, b_rad)])
+        })?;
         Ok(combine_parts(re, im))
     }
 }
 
-impl<R: Round, const B: Word> CBig<R, B> {
+impl<R: ErrorBounds, const B: Word> CBig<R, B> {
     /// Principal square root (convenience layer).
     ///
     /// # Panics
@@ -198,5 +203,13 @@ mod tests {
         let s = inf.sqrt();
         assert!(s.re().is_infinite());
         assert!(s.im().is_pos_zero());
+    }
+
+    // `sqrt` at unlimited precision panics via `guard` (the special-value shortcut above only
+    // catches zero/infinity, so a finite nonzero input reaches the guard context).
+    #[test]
+    #[should_panic(expected = "precision cannot be 0")]
+    fn complex_sqrt_unlimited_panics() {
+        let _ = C::I.sqrt();
     }
 }

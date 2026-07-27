@@ -91,6 +91,19 @@ fn test_sqrt_negative_panic() {
 }
 
 #[test]
+fn test_sqrt_rem_perfect_square_trailing_zeros() {
+    // Regression: a perfect square whose estimate has many trailing zero bits. `sqrt_rem` squares
+    // the estimate's all-zero low half to verify the remainder, routing through the NTT sqr path
+    // which previously panicked on the zero input (`la_bits == 0`). The shift is large enough that
+    // the low half exceeds THRESHOLD_NTT (4000 words), forcing the NTT path. This is the
+    // `dashu-float` `hypot(3,4)` crash, reached directly through the integer sqrt.
+    let shift = 560_000usize;
+    let s = ubig!(1) << shift;
+    let n = &s * &s;
+    assert_eq!(n.sqrt_rem(), (s, ubig!(0)));
+}
+
+#[test]
 fn test_nth_root() {
     // the nth root of 0 is 0 (regression: it used to return 1 via the `bits <= n` shortcut)
     assert_eq!(ubig!(0).nth_root(1), ubig!(0));

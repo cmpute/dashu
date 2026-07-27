@@ -5,6 +5,13 @@
 ## 0.5.1
 
 ### Fix
+- NTT squaring/multiplication of an all-zero operand no longer panics. `add_signed_sqr_conv` and
+  `add_signed_mul_conv` assumed a non-zero input (`debug_assert!(la_bits > 0)`), so an all-zero slice
+  panicked in debug and indexed out of bounds in release. Reachable from `sqrt_rem` of a perfect
+  square with many trailing zero words — it squares the all-zero low half of the estimate to verify
+  the remainder — which was the crash behind `dashu-float`'s `hypot(3,4)` under directed rounding.
+  An all-zero operand now returns early (the product is zero, so the signed accumulate is a no-op),
+  matching the existing zero-guard in the chunked-multiply closure.
 - `to_f64` of a magnitude at `DoubleWord::MAX` (e.g. `IBig::from(-(2^128 - 1)).to_f64()` on 64-bit
   targets) reported the inexact conversion as `Approximation::Exact`. The exactness test used a
   saturating `f as DoubleWord` round-trip, which clamps back to `DoubleWord::MAX` when the value

@@ -10,9 +10,9 @@
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, exact, reborrow_cache, riemann, CfpResult, Context};
 use dashu_base::Approximation::*;
-use dashu_base::{BitTest, Sign};
-use dashu_float::round::Round;
-use dashu_float::{ConstCache, FBig, FpError};
+use dashu_base::{Abs, BitTest, Sign};
+use dashu_float::round::ErrorBounds;
+use dashu_float::{ConstCache, Context as FloatCtxt, FBig, FpError};
 use dashu_int::{IBig, Word};
 
 /// Guard digits (base-B) for `exp`. Composes a real `exp`, a `sin_cos`, and two products.
@@ -22,9 +22,78 @@ const EXP_GUARD: usize = 14;
 /// cancellation-prone path, so a larger guard than the bare arithmetic ops.
 const POWF_GUARD: usize = 22;
 
-impl<R: Round> Context<R> {
-    /// Complex exponential under this context (context layer). Reuses `dashu-float`'s `exp` and
-    /// `sin_cos`; the cache is threaded into both (the convenience layer passes `None`).
+impl<R: ErrorBounds> Context<R> {
+    /// Raise a complex number to an integer power under this context (context layer), correctly
+    /// rounded via a Ziv loop over the binary-exponentiation (repeated-squaring) chain. No cache.
+    ///
+    /// `powi(z, 0) = 1`; a negative exponent computes `(1/z)^|n|` directly, so the
+    /// sign-dependent overflow/underflow propagates from the closure with `?`. Repeated squaring
+    /// compounds the relative error (it roughly doubles per step), so after `bit_len(n)` squarings
+    /// the per-part error is bounded by about `2^nlen · ulp`, which the radius reflects; complex
+    /// `sqr`/`mul` are near-correct (a few ulp, not 0.5), so the bound carries an extra margin.
+    pub fn powi<const B: Word>(&self, z: &CBig<R, B>, exp: IBig) -> CfpResult<R, B> {
+        let (sign, n) = exp.into_parts();
+        if n.is_zero() {
+            return Ok(Exact(CBig::ONE));
+        }
+        let negative = sign == Sign::Negative;
+        if n.is_one() {
+            // |n| == 1: z (positive) or 1/z (negative), a single op.
+            return if negative {
+                self.inv(z)
+            } else {
+                Ok(Exact(z.clone()))
+            };
+        }
+
+        let p = self.precision();
+        let nlen = n.bit_len();
+        // Initial guard scales with `nlen` (the squaring-compounding loss) plus a margin for the
+        // near-correct complex `sqr`/`mul`; sized so the first attempt certifies a non-tie result.
+        let initial_guard = nlen + 6;
+        let [re, im] = self.ziv(initial_guard, |guard| {
+            let pw = p + guard;
+            let gctx = Context::new(pw);
+            // start from z (positive exponent, always exact) or its working-precision reciprocal
+            // (negative exponent, exact only when 1/z is exactly representable).
+            let (start, mut exact) = if negative {
+                let inv = gctx.inv(z)?;
+                let ex = matches!(inv, Exact(_));
+                (inv.value(), ex)
+            } else {
+                (z.clone(), true)
+            };
+            // left-to-right binary exponentiation, tracking whether every step rounded Exact.
+            let mut acc = start.clone();
+            for i in (0..nlen - 1).rev() {
+                let s = gctx.sqr(&acc)?;
+                exact = exact && matches!(s, Exact(_));
+                acc = s.value();
+                if n.bit(i) {
+                    let m = gctx.mul(&acc, &start)?;
+                    exact = exact && matches!(m, Exact(_));
+                    acc = m.value();
+                }
+            }
+            let (re, im) = acc.into_parts();
+            // re-root to the working precision (parts may be exact constants).
+            let re = re.with_precision(pw).value();
+            let im = im.with_precision(pw).value();
+            let shift = (nlen + 3) as isize;
+            // When the whole chain is exact the result is the mathematically exact zⁿ: report a zero
+            // radius. This is required under the directed rounding modes (the `CBig` default), where
+            // an exactly-representable result lies on a one-sided rounding boundary that no nonzero
+            // radius can fit inside. (See `dashu-float`'s `powi` for the same reasoning.)
+            let re_r = if exact { FBig::ZERO } else { re.ulp() << shift };
+            let im_r = if exact { FBig::ZERO } else { im.ulp() << shift };
+            Ok([(re.clone(), re_r), (im.clone(), im_r)])
+        })?;
+        Ok(combine_parts(re, im))
+    }
+
+    /// Complex exponential under this context (context layer). Computes `e^x·(cos y + i·sin y)`
+    /// from `dashu-float`'s (correctly-rounded) `exp` and `sin_cos`, wrapped in a Ziv loop that
+    /// certifies both parts; the cache is threaded into both (the convenience layer passes `None`).
     ///
     /// Special values: `exp(0) = 1`; `exp(+inf + i·finite) = +∞` (Riemann point);
     /// `exp(-inf + i·finite) = 0`; an infinite imaginary part makes the trig undefined
@@ -48,52 +117,32 @@ impl<R: Round> Context<R> {
             };
         }
 
-        let gctx = self.guard(EXP_GUARD);
+        // `e^x·(cos y + i·sin y)`. The float `exp`/`sin_cos` are correctly-rounded at the working
+        // precision, so each contributes ~0 to the composition radius; only the two products round,
+        // at a few working-ULPs. The Ziv driver asserts a limited context (the special-value
+        // shortcuts above are exact and need no precision); overflow from a large real part
+        // propagates from the closure with `?`.
         let p = self.precision();
-        let ex = gctx.exp(z.re(), reborrow_cache(&mut cache))?.value();
-        let (sin_y, cos_y) = gctx.sin_cos(z.im(), reborrow_cache(&mut cache));
-        let cos_y = cos_y?.value();
-        let sin_y = sin_y?.value();
-        let re = gctx.mul(ex.repr(), cos_y.repr())?.value().with_precision(p);
-        let im = gctx.mul(ex.repr(), sin_y.repr())?.value().with_precision(p);
+        let [re, im] = self.ziv(EXP_GUARD, |guard| {
+            let gctx = FloatCtxt::<R>::new(p + guard);
+            let ex = gctx.exp(z.re(), reborrow_cache(&mut cache))?.value();
+            let (sin_y, cos_y) = gctx.sin_cos(z.im(), reborrow_cache(&mut cache));
+            let cos_y = cos_y?.value();
+            let sin_y = sin_y?.value();
+            let re = gctx.mul(ex.repr(), cos_y.repr())?.value();
+            let im = gctx.mul(ex.repr(), sin_y.repr())?.value();
+            Ok([(re.clone(), re.ulp() * 6), (im.clone(), im.ulp() * 6)])
+        })?;
         Ok(combine_parts(re, im))
     }
 
-    /// Raise a complex number to an integer power under this context (context layer), via repeated
-    /// squaring (branch-cut-free, cheaper than `exp(n·log z)`). No cache.
-    ///
-    /// `powi(z, 0) = 1`; a negative exponent computes `powi(z, |n|)` then inverts.
-    pub fn powi<const B: Word>(&self, z: &CBig<R, B>, exp: IBig) -> CfpResult<R, B> {
-        let (sign, n) = exp.into_parts();
-        if n.is_zero() {
-            return Ok(Exact(CBig::ONE));
-        }
-        let negative = sign == Sign::Negative;
-        let bitlen = n.bit_len();
-        // left-to-right binary exponentiation, starting from the leading set bit
-        let mut acc = z.clone();
-        for i in (0..bitlen - 1).rev() {
-            acc = self.sqr(&acc)?.value();
-            if n.bit(i) {
-                acc = self.mul(&acc, z)?.value();
-            }
-        }
-        // The intermediate rounding flags are folded away (the value is near-correctly rounded);
-        // for a negative exponent the final `inv` carries its own flags.
-        if negative {
-            self.inv(&acc)
-        } else {
-            Ok(Exact(acc))
-        }
-    }
-
     /// Raise `base` to a complex power under this context (context layer): `exp(w·log base)` on the
-    /// principal branch, evaluated at `p + POWF_GUARD` and re-rounded. `powf(0, 0) = 1` (matching
-    /// `FBig::powf`).
+    /// principal branch, correctly rounded via a Ziv loop. `powf(0, 0) = 1` (matching `FBig::powf`).
     ///
-    /// Unlike `exp`, this drives whole-[`CBig`] operations (`log`/`mul`/`exp`), so it builds a
-    /// complex working [`Context`] at guard precision directly rather than the float
-    /// `Context::guard` (which yields a `FloatCtxt` for per-part math).
+    /// The result's error is amplified by the exponent magnitude `‖w·log base‖`: the outer `exp`
+    /// multiplies the error in `w·log base` by the result magnitude, so the per-part radius carries
+    /// a data-dependent `‖w·log base‖` factor (mirroring `FBig::powf`). Overflow (a large exponent)
+    /// propagates from the closure with `?`.
     pub fn powf<const B: Word>(
         &self,
         base: &CBig<R, B>,
@@ -103,27 +152,31 @@ impl<R: Round> Context<R> {
         if w.is_zero() {
             return Ok(Exact(CBig::ONE)); // powf(z, 0) = 1, incl. powf(0, 0)
         }
-        let gctx = Context::new(self.precision() + POWF_GUARD);
-        let log_z = gctx.log(base, reborrow_cache(&mut cache))?.value();
-        let wlogz = gctx.mul(w, &log_z)?.value();
-        let hi = gctx.exp(&wlogz, reborrow_cache(&mut cache))?.value();
         let p = self.precision();
-        let (re, im) = hi.into_parts();
-        Ok(combine_parts(re.with_precision(p), im.with_precision(p)))
+        let [re, im] = self.ziv(POWF_GUARD, |guard| {
+            let pw = p + guard;
+            let gctx = Context::new(pw);
+            let log_z = gctx.log(base, reborrow_cache(&mut cache))?.value();
+            let wlogz = gctx.mul(w, &log_z)?.value();
+            let hi = gctx.exp(&wlogz, reborrow_cache(&mut cache))?.value();
+            // The outer `exp` amplifies the error in `w·log base` by the result magnitude, so the
+            // radius scales with `‖w·log base‖`. `re()`/`im()` are raw `Repr`s — wrap to take the
+            // absolute value; the L1 norm `|re|+|im|` upper-bounds the magnitude.
+            let fctx = gctx.float();
+            let l1 = FBig::<R, B>::from_repr(wlogz.re().clone(), fctx).abs()
+                + FBig::<R, B>::from_repr(wlogz.im().clone(), fctx).abs();
+            let amp = (l1 + FBig::<R, B>::ONE) * 16i32;
+            let (re, im) = hi.into_parts();
+            // re-root to the working precision (`exp`/`log` may return exact constants).
+            let re = re.with_precision(pw).value();
+            let im = im.with_precision(pw).value();
+            Ok([(re.clone(), re.ulp() * &amp), (im.clone(), im.ulp() * &amp)])
+        })?;
+        Ok(combine_parts(re, im))
     }
 }
 
-impl<R: Round, const B: Word> CBig<R, B> {
-    /// Complex exponential `e^z` (convenience layer).
-    ///
-    /// # Panics
-    ///
-    /// Panics if the precision is unlimited or on an indeterminate special value.
-    #[inline]
-    pub fn exp(&self) -> Self {
-        self.context().unwrap_cfp(self.context().exp(self, None))
-    }
-
+impl<R: ErrorBounds, const B: Word> CBig<R, B> {
     /// Integer power (convenience layer).
     ///
     /// # Panics
@@ -132,6 +185,16 @@ impl<R: Round, const B: Word> CBig<R, B> {
     #[inline]
     pub fn powi(&self, exp: IBig) -> Self {
         self.context().unwrap_cfp(self.context().powi(self, exp))
+    }
+
+    /// Complex exponential `e^z` (convenience layer).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is unlimited or on an indeterminate special value.
+    #[inline]
+    pub fn exp(&self) -> Self {
+        self.context().unwrap_cfp(self.context().exp(self, None))
     }
 
     /// Complex power `self^w` (convenience layer).
@@ -165,8 +228,10 @@ mod tests {
 
     #[test]
     fn exp_one_is_e() {
-        // exp(1+0i) = e ≈ 2.71828…; check 2 < e < 3 via the real part
-        let e = C::ONE.exp();
+        // exp(1+0i) = e ≈ 2.71828…; check 2 < e < 3 via the real part. Use a *limited*-precision
+        // input — `exp` rejects unlimited precision (it would otherwise silently compute at the
+        // fixed `EXP_GUARD`).
+        let e = c(1, 0).exp();
         let (re, _im) = e.into_parts();
         assert!(re > F::from(2));
         assert!(re < F::from(3));
@@ -193,6 +258,19 @@ mod tests {
         let r = inf.exp();
         assert!(r.re().is_infinite());
         assert!(r.im().is_pos_zero());
+    }
+
+    #[test]
+    fn exp_huge_real_overflows() {
+        // exp of a huge real part overflows the isize exponent range. The error propagates from the
+        // Ziv closure via `?` (no hoisted probe), and the convenience layer saturates it to +∞.
+        let huge = F::from_parts(IBig::from(1) << 100, 0)
+            .with_precision(53)
+            .value();
+        let z = CBig::from_parts(huge, F::from(0).with_precision(53).value());
+        let e = z.exp();
+        assert!(e.re().is_infinite());
+        assert_eq!(e.re().sign(), Sign::Positive);
     }
 
     #[test]
@@ -232,5 +310,19 @@ mod tests {
     fn powf_one_exponent_is_self() {
         let z = c(2, 1);
         assert!(z.powf(&C::ONE) == z);
+    }
+
+    // exp/powf on an unlimited-precision CBig must panic, not silently compute at the fixed guard
+    // precision (`C::ONE` / `C::ZERO` are unlimited-precision constants).
+    #[test]
+    #[should_panic(expected = "precision cannot be 0")]
+    fn complex_exp_unlimited_precision_panics() {
+        let _ = C::ONE.exp();
+    }
+
+    #[test]
+    #[should_panic(expected = "precision cannot be 0")]
+    fn complex_powf_unlimited_precision_panics() {
+        let _ = C::ONE.powf(&C::ONE);
     }
 }

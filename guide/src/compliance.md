@@ -56,7 +56,7 @@ The reference here is IEEE Std 754™-2008 (ISO/IEC/IEEE 60559:2011).
 | IEEE 754 requirement | Compliance | Notes |
 |---------------------|-----------|-------|
 | Rounding modes: roundTiesToEven, roundTiesToAway, roundTowardPositive, roundTowardNegative, roundTowardZero | ✅ | All five modes implemented as `HalfEven`, `HalfAway`, `Up`, `Down`, `Zero`. |
-| Correct rounding to within 1 ulp | ✅ | All operations guarantee $|error| < 1\text{ ulp}$. The `Rounded` type distinguishes exact from inexact results. |
+| Correct rounding to within 1 ulp | ✅ | All operations guarantee $|error| < 1\text{ ulp}$. Arithmetic, roots, and the real transcendentals (`exp`, `exp_m1`, `ln`, `ln_1p`, the trigonometric and hyperbolic families, `hypot`, `powi`, and `powf`) are guaranteed-correctly rounded via a Ziv loop; and `dashu-cmplx`'s complex transcendentals (`exp`, `log`, `powf`, `powi`, `sin`/`cos`/`tan`/`sin_cos`, `asin`/`acos`/`atan`, `sqrt`) are correctly rounded via their own Ziv loop that certifies both parts (`asin`/`acos` use the factored $1-z^2=(1-z)(1+z)$ so they stay accurate right up to the singularities $z = \pm 1$). The `Rounded` type distinguishes exact from inexact results. |
 | Round-to-nearest preserves sign of zero | ✅ | `rounded_to_repr` preserves input sign when rounding collapses a non-zero to zero. |
 
 #### Section 5.6 — Sign bit operations
@@ -152,7 +152,7 @@ the `Context` layer (and panics at the convenience layer).
 |---------------------|-----------|-------|
 | Invalid / indeterminate form → NaN | ❌ Deviates | `Err(FpError::{Indeterminate, InfiniteInput})` at `Context`; panics at the convenience layer. No NaN by design. |
 | Domain error (e.g. even root of a negative value, out-of-range inverse trig) | ❌ Deviates | `Err(FpError::OutOfDomain)` / panic, rather than a NaN result. |
-| Each component rounded independently to the shared mode | ✅ | Near-correctly rounded per axis (a guaranteed-correct Ziv loop is deferred to 0.5.x). |
+| Each component rounded independently to the shared mode | ✅ | Correctly rounded per axis via a Ziv loop that certifies both parts, mirroring `dashu-float`'s real transcendentals (`asin`/`acos` use the factored $1-z^2=(1-z)(1+z)$ so they stay accurate right up to the singularities $z = \pm 1$). |
 
 ### Summary (dashu-cmplx)
 

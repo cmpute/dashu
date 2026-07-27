@@ -447,9 +447,9 @@ fn test_pow_inf() {
 #[test]
 fn test_pow_with_rounding() {
     use dashu_base::Abs;
-    use dashu_float::round::{mode::*, Round};
+    use dashu_float::round::{mode::*, ErrorBounds, Round};
 
-    fn test_powf_with_error<R: Round, OpR: Round, const B: Word>(
+    fn test_powf_with_error<R: Round, OpR: ErrorBounds, const B: Word>(
         base: &FBig<R, B>,
         exp: &FBig<R, B>,
         target: &FBig<R, B>,

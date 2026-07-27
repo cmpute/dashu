@@ -87,6 +87,7 @@ mod mul;
 pub mod ops;
 mod parse;
 mod repr;
+mod repr_ops;
 mod root;
 pub mod round;
 mod round_ops;
@@ -94,6 +95,7 @@ mod shift;
 mod sign;
 mod third_party;
 mod utils;
+mod ziv;
 
 // All the public items from third_party will be exposed
 #[allow(unused_imports)]

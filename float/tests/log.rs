@@ -202,9 +202,9 @@ fn test_ln_1p_inf() {
 #[test]
 fn test_ln_with_rounding() {
     use dashu_base::Abs;
-    use dashu_float::round::{mode::*, Round};
+    use dashu_float::round::{mode::*, ErrorBounds, Round};
 
-    fn test_ln_with_error<R: Round, OpR: Round, const B: Word>(
+    fn test_ln_with_error<R: Round, OpR: ErrorBounds, const B: Word>(
         base: &FBig<R, B>,
         target: &FBig<R, B>,
         atol: &FBig<R, B>,

@@ -4,17 +4,13 @@ use crate::cbig::CBig;
 use crate::repr::{exact, CfpResult, Context};
 use core::ops::Neg;
 use dashu_base::Sign;
-use dashu_float::round::Round;
+use dashu_float::round::{ErrorBounds, Round};
 use dashu_float::{FBig, FpResult, Repr};
 use dashu_int::Word;
 
 /// Guard digits (base-B) used by `norm` — well-conditioned (sum of squares, no cancellation), so a
 /// small fixed guard comfortably settles the accumulated rounding of two squarings and an add.
 const NORM_GUARD: usize = 8;
-
-/// Guard digits (base-B) for `abs`. The inner `hypot` already carries its own guard; this extra
-/// margin absorbs the final re-round to the CBig precision.
-const ABS_GUARD: usize = 8;
 
 impl<R: Round, const B: Word> CBig<R, B> {
     /// The complex conjugate `x - iy`. Exact (sign flip of the imaginary part, including `-0`/`-inf`).
@@ -42,25 +38,6 @@ impl<R: Round, const B: Word> CBig<R, B> {
     #[inline]
     pub fn norm(&self) -> FBig<R, B> {
         self.context.float().unwrap_fp(self.context.norm(self))
-    }
-
-    /// The modulus `|z| = sqrt(re² + im²)` (a real [`FBig`]). A thin composition over
-    /// [`dashu_float::Context::hypot`] (the overflow-safe scaled sum-of-squares), evaluated at guard
-    /// precision and re-rounded. Near-correctly rounded.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the precision is unlimited.
-    #[inline]
-    pub fn abs(&self) -> FBig<R, B> {
-        self.context.float().unwrap_fp(self.context.abs(self))
-    }
-
-    /// The argument (phase) `atan2(im, re) ∈ ]-π, π]`. The branch cut lies on `]−∞, 0]`; signed zero
-    /// and infinities are handled per the C99 Annex G `atan2` table (reused from `dashu-float`).
-    #[inline]
-    pub fn arg(&self) -> FBig<R, B> {
-        self.context.float().unwrap_fp(self.context.arg(self, None))
     }
 }
 
@@ -139,11 +116,31 @@ impl<R: Round> Context<R> {
                 self.float(),
             )));
         }
-        let gctx = self.guard(NORM_GUARD);
+        // `work_context` (not `guard`): at unlimited precision `sqr`/`add` are exact, so `norm`
+        // is too — it shouldn't panic or round there.
+        let gctx = self.work_context(NORM_GUARD);
         let re2 = gctx.unwrap_fp(gctx.sqr(z.re()));
         let im2 = gctx.unwrap_fp(gctx.sqr(z.im()));
         let n = gctx.unwrap_fp(gctx.add(re2.repr(), im2.repr()));
         Ok(n.with_precision(self.precision()))
+    }
+}
+
+impl<R: ErrorBounds> Context<R> {
+    /// The modulus `|z| = hypot(re, im)` (context layer), correctly rounded. Returns `+∞` for an
+    /// infinite input. `abs` is a single real operation, so it delegates directly to
+    /// [`dashu_float::Context::hypot`] (itself Ziv-correctly-rounded at the target precision) —
+    /// computing at `p + guard` and re-rounding would be a *double* rounding that can break correct
+    /// rounding.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is unlimited.
+    pub fn abs<const B: Word>(&self, z: &CBig<R, B>) -> FpResult<FBig<R, B>> {
+        // Assert limited up front to keep the "transcendentals reject unlimited" contract — the
+        // float `hypot` would otherwise short-circuit unlimited to an exact value.
+        self.assert_limited();
+        self.float().hypot(z.re(), z.im())
     }
 
     /// The argument `atan2(im, re)` (context layer). Delegates to `dashu-float`'s Annex-G `atan2`;
@@ -155,17 +152,26 @@ impl<R: Round> Context<R> {
     ) -> FpResult<FBig<R, B>> {
         self.float().atan2(z.im(), z.re(), cache)
     }
+}
 
-    /// The modulus `|z| = hypot(re, im)` (context layer). Near-correctly rounded; returns `+∞` for
-    /// an infinite input. Thin composition over [`dashu_float::Context::hypot`].
+impl<R: ErrorBounds, const B: Word> CBig<R, B> {
+    /// The modulus `|z| = sqrt(re² + im²)` (a real [`FBig`]). A thin composition over
+    /// [`dashu_float::Context::hypot`] (the overflow-safe scaled sum-of-squares, Ziv-correctly
+    /// rounded), evaluated at guard precision and re-rounded.
     ///
     /// # Panics
     ///
     /// Panics if the precision is unlimited.
-    pub fn abs<const B: Word>(&self, z: &CBig<R, B>) -> FpResult<FBig<R, B>> {
-        let gctx = self.guard(ABS_GUARD);
-        let h = gctx.hypot(z.re(), z.im())?;
-        Ok(h.value().with_precision(self.precision()))
+    #[inline]
+    pub fn abs(&self) -> FBig<R, B> {
+        self.context.float().unwrap_fp(self.context.abs(self))
+    }
+
+    /// The argument (phase) `atan2(im, re) ∈ ]-π, π]`. The branch cut lies on `]−∞, 0]`; signed zero
+    /// and infinities are handled per the C99 Annex G `atan2` table (reused from `dashu-float`).
+    #[inline]
+    pub fn arg(&self) -> FBig<R, B> {
+        self.context.float().unwrap_fp(self.context.arg(self, None))
     }
 }
 
@@ -237,5 +243,12 @@ mod tests {
         // atan(1) = π/4 ≈ 0.7854, strictly between 0 and 1
         assert!(a > F::ZERO);
         assert!(a < F::ONE);
+    }
+
+    // abs on an unlimited-precision CBig must panic, not silently compute |z| at ABS_GUARD digits.
+    #[test]
+    #[should_panic(expected = "precision cannot be 0")]
+    fn complex_abs_unlimited_precision_panics() {
+        let _ = C::ONE.abs();
     }
 }

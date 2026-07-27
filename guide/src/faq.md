@@ -29,7 +29,7 @@ Compared with other Rust crates:
 ## Known limitations
 
 - **No NaN.** Invalid operations panic at the convenience layer and return `Err(FpError)` at the context layer. Infinities are terminal values, not operands — see [Standards Compliance](./compliance.md).
-- **Near-correct rounding.** Transcendentals are rounded within 1 ulp via a guard-digit recipe; a guaranteed-correct Ziv loop is planned for a later release.
+- **Correctly-rounded transcendentals.** The real transcendentals — `exp`, `exp_m1`, `ln`, `ln_1p`, the trigonometric and hyperbolic families, `hypot`, `powi`, and `powf` — are guaranteed-correctly rounded via a Ziv retry loop. `dashu-cmplx`'s complex transcendentals (`exp`, `log`, `powf`, `powi`, `sin`/`cos`/`tan`/`sin_cos`, `asin`/`acos`/`atan`, `sqrt`) are correctly rounded via their own Ziv loop that certifies both parts; `tan` uses the cancellation-free double-angle form (accurate for all finite `|Im z|`), and `asin`/`acos` use the factored $1-z^2=(1-z)(1+z)$ (accurate right up to $z = \pm 1$).
 - **Complex surface.** `CBig` ships field arithmetic and the elementary transcendentals; complex hyperbolics, `fma`, and several others are deferred to 0.5.x (see the v0.5 release notes).
 - **No ball/interval arithmetic.** Unlike MPC's experimental `mpcb_t` (complex balls), `dashu`
   does not provide interval or ball types. This is a deliberate scope choice: ball arithmetic is
