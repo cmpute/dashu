@@ -16,14 +16,18 @@ are longer-term goals. File:line references are anchors from the v0.5.0 tree and
 
 ### Performance & internal cleanups (non-breaking)
 
-- **`dashu-float` division kernel micro-opt** (`float/src/div.rs:344`). Avoid the double
-  power in the division kernel; let `q += q0` become `|=` when the base `B` is a power of 2.
+- **`dashu-float` division kernel** (`float/src/div.rs:344`). *Investigated 2026-07; the two
+  micro-opts in the inline TODO are not viable.* (1) `q |= q0` is unsafe: `Repr::significand` is a
+  *signed* `IBig`, so the quotient can be negative and `|=` ≠ `+=` (it broke `to_f64` rounding).
+  (2) Sharing the radix power across the two `shl_digits_in_place` calls — and precomputing a
+  `ConstDivisor` for the shared `rhs.significand` divisor — both measured **neutral** on
+  `float/benches/primitive.rs` (dbig_div/1e3: p=0.11 and p=0.49). The big-int `div_rem` dominates,
+  and the affected refinement branch is only hit in a fraction of the random-input benchmark. A
+  real win needs an algorithmic change to the division itself, not these micro-opts.
 - **`dashu-float` `exp` guard-bit formulation** (`float/src/exp.rs:87`). Write down the exact
   formulation of the required guard bits (currently an inline TODO).
-- **`dashu-ratio` fast-format SIMD.** Finish the `write_digits` → `DigitWriter` SIMD path —
-  the last remaining fast-formatting TODO from the `UBig::to_digits`-driven fmt cleanup.
 - **Expose ownership-aware kernels from `dashu-float`.** The `add_val_val` / `add_val_ref` /
-  `add_ref_val` / `add_ref_ref` kernels in `float/src/add.rs` are currently `pub(crate)`; make
+  `add_ref_val` / `add_ref_ref` kernels in `float/src/add.rs` are currently private; make
   them `pub` (or mirror them as `pub` methods on `Context<R>`, e.g.
   `add_val_val(&self, lhs: Repr<B>, rhs: Repr<B>)`), and likewise for `sub`/`mul`/`div` and
   potentially the transcendentals. This lets `dashu-cmplx`'s by-value operator impls exploit
