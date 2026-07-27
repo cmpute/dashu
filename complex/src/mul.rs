@@ -3,6 +3,7 @@
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, exact, riemann, CfpResult, Context};
 use core::ops::{Mul, MulAssign};
+use dashu_base::Sign;
 use dashu_float::round::Round;
 use dashu_float::{FBig, FpError};
 use dashu_int::Word;
@@ -47,14 +48,20 @@ impl<R: Round> Context<R> {
         let p = self.precision();
         let (x, y) = (z.re(), z.im());
         let (u, v) = (w.re(), w.im());
-        // real part: xu - yv
+        // real part: xu − yv. Fuse y·v with the subtract via FMA (one rounding
+        // instead of mul-then-sub's two), which also preserves the cancellation
+        // structure when xu ≈ yv.
         let xu = gctx.mul(x, u)?.value();
-        let yv = gctx.mul(y, v)?.value();
-        let re = gctx.sub(xu.repr(), yv.repr())?.value().with_precision(p);
+        let re = gctx
+            .fma(y, v, xu.repr(), Sign::Negative)?
+            .value()
+            .with_precision(p);
         // imaginary part: xv + yu
         let xv = gctx.mul(x, v)?.value();
-        let yu = gctx.mul(y, u)?.value();
-        let im = gctx.add(xv.repr(), yu.repr())?.value().with_precision(p);
+        let im = gctx
+            .fma(y, u, xv.repr(), Sign::Positive)?
+            .value()
+            .with_precision(p);
         Ok(combine_parts(re, im))
     }
 
@@ -72,6 +79,61 @@ impl<R: Round> Context<R> {
         let im = gctx.mul(z.im(), s.repr())?.value().with_precision(p);
         Ok(combine_parts(re, im))
     }
+
+    /// Fused complex multiply–add under this context: `z1·z2 + sign·z3`, computed
+    /// as chained real FMA per component (each product fused with the running sum,
+    /// so two real roundings per component rather than the four roundings of the
+    /// naive mul-then-add form). `sign` scales `z3` ([`Sign::Positive`] adds it,
+    /// [`Sign::Negative`] subtracts).
+    ///
+    /// Infinity handling mirrors [`mul`](Self::mul): `∞` in `z1·z2` (or in `z3`)
+    /// yields the Riemann infinity; `0·∞` within the product is
+    /// [`Indeterminate`](FpError::Indeterminate).
+    pub fn fma<const B: Word>(
+        &self,
+        z1: &CBig<R, B>,
+        z2: &CBig<R, B>,
+        z3: &CBig<R, B>,
+        sign: Sign,
+    ) -> CfpResult<R, B> {
+        if z1.is_infinite() || z2.is_infinite() {
+            if z1.is_zero() || z2.is_zero() {
+                return Err(FpError::Indeterminate); // 0·∞ in z1·z2
+            }
+            return Ok(riemann(*self)); // z1·z2 = ∞; ± z3 stays ∞
+        }
+        if z3.is_infinite() {
+            return Ok(riemann(*self)); // finite z1·z2 ± ∞ = ∞
+        }
+        let gctx = self.guard(MUL_GUARD);
+        let p = self.precision();
+        let (a, b) = (z1.re(), z1.im());
+        let (c, d) = (z2.re(), z2.im());
+        let (e, f) = (z3.re(), z3.im());
+        // Form z1·z2 with each cross product fused into the sum via FMA — the
+        // subtraction `a·c − b·d` (and addition `a·d + b·c`) is the
+        // cancellation-prone part, so fusing it is the accuracy win. Then add or
+        // subtract z3 wholesale. (FMA's sign scales the product, so it cannot put
+        // the sign on the z3 addend directly; fusing the z1·z2 cross terms instead
+        // is the clean placement.)
+        let ac = gctx.mul(a, c)?.value();
+        let z12_re = gctx.fma(b, d, ac.repr(), Sign::Negative)?.value(); // a·c − b·d
+        let re = match sign {
+            Sign::Positive => gctx.add(z12_re.repr(), e),
+            Sign::Negative => gctx.sub(z12_re.repr(), e),
+        }?
+        .value()
+        .with_precision(p);
+        let ad = gctx.mul(a, d)?.value();
+        let z12_im = gctx.fma(b, c, ad.repr(), Sign::Positive)?.value(); // a·d + b·c
+        let im = match sign {
+            Sign::Positive => gctx.add(z12_im.repr(), f),
+            Sign::Negative => gctx.sub(z12_im.repr(), f),
+        }?
+        .value()
+        .with_precision(p);
+        Ok(combine_parts(re, im))
+    }
 }
 
 impl<R: Round, const B: Word> CBig<R, B> {
@@ -79,6 +141,13 @@ impl<R: Round, const B: Word> CBig<R, B> {
     #[inline]
     pub fn sqr(&self) -> Self {
         self.context().unwrap_cfp(self.context().sqr(self))
+    }
+
+    /// Fused complex multiply–add (convenience layer, see [`Context::fma`]).
+    #[inline]
+    pub fn fma(&self, b: &Self, c: &Self, sign: Sign) -> Self {
+        self.context()
+            .unwrap_cfp(self.context().fma(self, b, c, sign))
     }
 }
 
@@ -190,5 +259,19 @@ mod tests {
         // commutes: s * z
         let p2 = &s * &z;
         assert_eq!(p2.re().significand(), &6.into());
+    }
+
+    #[test]
+    fn fma_basic() {
+        // (1+2i)(3+4i) = -5+10i
+        let z1 = c(1, 2);
+        let z2 = c(3, 4);
+        let z3 = c(5, 6);
+        // + z3: (-5+10i) + (5+6i) = 0 + 16i
+        let r = z1.fma(&z2, &z3, Sign::Positive);
+        assert!(r == c(0, 16));
+        // − z3: (-5+10i) − (5+6i) = -10 + 4i
+        let r = z1.fma(&z2, &z3, Sign::Negative);
+        assert!(r == c(-10, 4));
     }
 }

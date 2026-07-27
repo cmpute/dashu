@@ -78,7 +78,11 @@ impl<R: Round> Context<R> {
         let half_pi = &pi / 2;
         let x_scaled: FBig<R, B> = &x_f / &half_pi;
         let k_f = x_scaled.round();
-        let r = x_f - &k_f * half_pi;
+        // Reduce `r = x − k·(π/2)` with a single rounding via FMA. The product
+        // `k·(π/2)` nearly cancels `x` for large arguments, so fusing the multiply
+        // with the subtract (instead of mul-then-sub's two roundings) preserves the
+        // cancellation structure — the leading source of error in range reduction.
+        let r = k_f.fma(&half_pi, &x_f, Sign::Negative);
         // `k_f` is the integer nearest `x_scaled`, so it's exact (or a signed zero
         // for a tiny argument in (-1, 0), which `IBig::try_from` treats as plain 0).
         let k = IBig::try_from(k_f).expect("k_f is an exact integer or signed zero");
