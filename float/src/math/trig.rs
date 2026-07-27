@@ -19,7 +19,7 @@ use crate::{
 };
 use core::cmp::Ordering;
 use core::convert::TryFrom;
-use dashu_base::{AbsOrd, Approximation::Exact, RemEuclid, Sign};
+use dashu_base::{AbsOrd, Approximation::Exact, RemEuclid, Sign::*};
 use dashu_int::IBig;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,7 +82,7 @@ impl<R: Round> Context<R> {
         // `k·(π/2)` nearly cancels `x` for large arguments, so fusing the multiply
         // with the subtract (instead of mul-then-sub's two roundings) preserves the
         // cancellation structure — the leading source of error in range reduction.
-        let r = k_f.fma(&half_pi, &x_f, Sign::Negative);
+        let r = k_f.fma(&half_pi, &x_f, Negative);
         // `k_f` is the integer nearest `x_scaled`, so it's exact (or a signed zero
         // for a tiny argument in (-1, 0), which `IBig::try_from` treats as plain 0).
         let k = IBig::try_from(k_f).expect("k_f is an exact integer or signed zero");
@@ -314,7 +314,7 @@ impl<R: Round> Context<R> {
 
         if c_f.repr.is_pos_zero() {
             // tan hits a pole: the result is an infinity with the sign of the numerator.
-            let inf = if s_f.sign() == Sign::Negative {
+            let inf = if s_f.sign() == Negative {
                 Repr::neg_infinity()
             } else {
                 Repr::infinity()
@@ -372,7 +372,7 @@ impl<R: Round> Context<R> {
             // `d` is strictly positive, so only the exact-boundary x reaches this branch.)
             let pi = self.pi::<B>(reborrow_cache(&mut cache)).value();
             let half_pi: FBig<R, B> = pi / 2;
-            if x_f.sign() == Sign::Positive {
+            if x_f.sign() == Positive {
                 return half_pi;
             }
             return -half_pi;
@@ -425,7 +425,7 @@ impl<R: Round> Context<R> {
             // atan(±inf) = ±π/2 — preserved (a well-defined finite result for an infinite input)
             let pi = self.pi::<B>(reborrow_cache(&mut cache)).value();
             let half_pi: FBig<R, B> = pi / 2;
-            let res: FBig<R, B> = if x.sign() == Sign::Positive {
+            let res: FBig<R, B> = if x.sign() == Positive {
                 half_pi
             } else {
                 -half_pi
@@ -457,7 +457,7 @@ impl<R: Round> Context<R> {
     ) -> FBig<R, B> {
         let sign = x_f.sign();
         let mut x_abs = x_f.clone();
-        if sign == Sign::Negative {
+        if sign == Negative {
             x_abs = -x_abs;
         }
         let mut res = if x_abs >= FBig::<R, B>::ONE.with_precision(self.precision).value() {
@@ -467,7 +467,7 @@ impl<R: Round> Context<R> {
         } else {
             self.atan_internal(&x_abs)
         };
-        if sign == Sign::Negative {
+        if sign == Negative {
             res = -res;
         }
         res
@@ -519,7 +519,7 @@ impl<R: Round> Context<R> {
 
         // Handle Infinities according to IEEE 754
         if y.is_infinite() || x.is_infinite() {
-            let (sy, sx) = (y.sign() == Sign::Positive, x.sign() == Sign::Positive);
+            let (sy, sx) = (y.sign() == Positive, x.sign() == Positive);
             let res: FBig<R, B> = match (y.is_infinite(), x.is_infinite(), sy, sx) {
                 (true, true, true, true) => {
                     work_context.pi::<B>(reborrow_cache(&mut cache)).value() / 4
@@ -580,7 +580,7 @@ impl<R: Round> Context<R> {
                 let y_sign = y_f.sign();
                 let atan_yx =
                     work_context.atan_with_reduction(&(y_f / x_f), reborrow_cache(&mut cache));
-                let res = if y_sign == Sign::Positive {
+                let res = if y_sign == Positive {
                     atan_yx + pi
                 } else {
                     atan_yx - pi
@@ -762,7 +762,7 @@ mod tests {
         let ctx = Context::<mode::HalfEven>::new(53);
         // atan(±inf) = ±π/2 — a finite result, preserved (not an error)
         let r = ctx.atan::<2>(&Repr::<2>::infinity(), None).unwrap().value();
-        assert!(r.repr().sign() == Sign::Positive);
+        assert!(r.repr().sign() == Positive);
         // it should be approximately π/2
         assert!(r > FBig::<mode::HalfEven>::ONE);
     }
@@ -782,10 +782,10 @@ mod tests {
             let ss = ss.unwrap().value();
             let cc = cc.unwrap().value();
             // sin is odd, cos is even: sin(x) ≈ x (negative), cos(x) ≈ 1
-            assert_eq!(s.sign(), Sign::Negative);
-            assert_eq!(c.sign(), Sign::Positive);
-            assert_eq!(ss.sign(), Sign::Negative);
-            assert_eq!(cc.sign(), Sign::Positive);
+            assert_eq!(s.sign(), Negative);
+            assert_eq!(c.sign(), Positive);
+            assert_eq!(ss.sign(), Negative);
+            assert_eq!(cc.sign(), Positive);
         }
     }
 
@@ -799,6 +799,6 @@ mod tests {
         let ctx = Context::<mode::HalfEven>::new(100);
         let s = ctx.sin::<10>(x.repr(), None).unwrap().value();
         // sin(x) ≈ x for a small negative x — completing without panicking is the regression guard.
-        assert_eq!(s.sign(), Sign::Negative);
+        assert_eq!(s.sign(), Negative);
     }
 }

@@ -3,7 +3,7 @@
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, exact, riemann, CfpResult, Context};
 use core::ops::{Mul, MulAssign};
-use dashu_base::Sign;
+use dashu_base::Sign::{self, *};
 use dashu_float::round::Round;
 use dashu_float::{FBig, FpError};
 use dashu_int::Word;
@@ -53,13 +53,13 @@ impl<R: Round> Context<R> {
         // structure when xu ≈ yv.
         let xu = gctx.mul(x, u)?.value();
         let re = gctx
-            .fma(y, v, xu.repr(), Sign::Negative)?
+            .fma(y, v, xu.repr(), Negative)?
             .value()
             .with_precision(p);
         // imaginary part: xv + yu
         let xv = gctx.mul(x, v)?.value();
         let im = gctx
-            .fma(y, u, xv.repr(), Sign::Positive)?
+            .fma(y, u, xv.repr(), Positive)?
             .value()
             .with_precision(p);
         Ok(combine_parts(re, im))
@@ -117,18 +117,18 @@ impl<R: Round> Context<R> {
         // the sign on the z3 addend directly; fusing the z1·z2 cross terms instead
         // is the clean placement.)
         let ac = gctx.mul(a, c)?.value();
-        let z12_re = gctx.fma(b, d, ac.repr(), Sign::Negative)?.value(); // a·c − b·d
+        let z12_re = gctx.fma(b, d, ac.repr(), Negative)?.value(); // a·c − b·d
         let re = match sign {
-            Sign::Positive => gctx.add(z12_re.repr(), e),
-            Sign::Negative => gctx.sub(z12_re.repr(), e),
+            Positive => gctx.add(z12_re.repr(), e),
+            Negative => gctx.sub(z12_re.repr(), e),
         }?
         .value()
         .with_precision(p);
         let ad = gctx.mul(a, d)?.value();
-        let z12_im = gctx.fma(b, c, ad.repr(), Sign::Positive)?.value(); // a·d + b·c
+        let z12_im = gctx.fma(b, c, ad.repr(), Positive)?.value(); // a·d + b·c
         let im = match sign {
-            Sign::Positive => gctx.add(z12_im.repr(), f),
-            Sign::Negative => gctx.sub(z12_im.repr(), f),
+            Positive => gctx.add(z12_im.repr(), f),
+            Negative => gctx.sub(z12_im.repr(), f),
         }?
         .value()
         .with_precision(p);
@@ -268,10 +268,10 @@ mod tests {
         let z2 = c(3, 4);
         let z3 = c(5, 6);
         // + z3: (-5+10i) + (5+6i) = 0 + 16i
-        let r = z1.fma(&z2, &z3, Sign::Positive);
+        let r = z1.fma(&z2, &z3, Positive);
         assert!(r == c(0, 16));
         // − z3: (-5+10i) − (5+6i) = -10 + 4i
-        let r = z1.fma(&z2, &z3, Sign::Negative);
+        let r = z1.fma(&z2, &z3, Negative);
         assert!(r == c(-10, 4));
     }
 }

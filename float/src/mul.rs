@@ -1,4 +1,4 @@
-use dashu_base::Sign;
+use dashu_base::Sign::{self, *};
 use dashu_int::{IBig, UBig};
 
 use crate::{
@@ -29,9 +29,9 @@ pub(crate) fn make_mul_repr<const B: Word>(
         });
     }
     let sign = if lhs.sign() != rhs.sign() {
-        Sign::Negative
+        Negative
     } else {
-        Sign::Positive
+        Positive
     };
     let exponent = lhs.exponent.checked_add(rhs.exponent).ok_or_else(|| {
         debug_assert!(
@@ -280,9 +280,9 @@ impl<R: Round> Context<R> {
         let exponent = f_repr.exponent.checked_mul(2).ok_or({
             // sqr always produces a non-negative result
             if f_repr.exponent > 0 {
-                FpError::Overflow(Sign::Positive)
+                FpError::Overflow(Positive)
             } else {
-                FpError::Underflow(Sign::Positive)
+                FpError::Underflow(Positive)
             }
         })?;
         let repr = Repr::new(f_repr.significand.sqr().into(), exponent);
@@ -402,11 +402,7 @@ impl<R: Round> Context<R> {
             // a·b == ±0: the signed zero product adds nothing to c.
             self.repr_round_ref(c)
         } else {
-            let signed_prod = if sign == Sign::Negative {
-                prod.neg()
-            } else {
-                prod
-            };
+            let signed_prod = if sign == Negative { prod.neg() } else { prod };
             if c.significand.is_zero() {
                 // c == ±0: the result is sign·(a·b), rounded once.
                 self.repr_round(signed_prod)
@@ -417,11 +413,9 @@ impl<R: Round> Context<R> {
                         c.exponent,
                     )),
                     Ordering::Greater => {
-                        self.repr_add_large_small(c.clone(), &signed_prod, Sign::Positive)
+                        self.repr_add_large_small(c.clone(), &signed_prod, Positive)
                     }
-                    Ordering::Less => {
-                        self.repr_add_small_large(c.clone(), &signed_prod, Sign::Positive)
-                    }
+                    Ordering::Less => self.repr_add_small_large(c.clone(), &signed_prod, Positive),
                 }
             }
         };
@@ -446,7 +440,7 @@ mod tests {
     ) -> FBig<R, B> {
         let hi = Context::<R>::new(p * 4 + 32);
         let prod = hi.mul(a, b).unwrap().value();
-        let signed = if sign == Sign::Negative { -prod } else { prod };
+        let signed = if sign == Negative { -prod } else { prod };
         let sum = hi.add(c, signed.repr()).unwrap().value();
         sum.with_precision(p).value()
     }
@@ -481,7 +475,7 @@ mod tests {
             for &p in &[2usize, 5, 20] {
                 let (a, b, c) = (r::<10>(asg, ae), r::<10>(bsg, be), r::<10>(csg, ce));
                 let ctx = Context::<mode::HalfAway>::new(p);
-                for sign in [Sign::Positive, Sign::Negative] {
+                for sign in [Positive, Negative] {
                     let got = ctx.fma(&a, &b, &c, sign).unwrap().value();
                     let want = oracle::<10, mode::HalfAway>(&a, &b, &c, sign, p);
                     assert_eq!(
@@ -500,7 +494,7 @@ mod tests {
         let (a, b, c) = (r::<2>(5, -2), r::<2>(3, -1), r::<2>(7, -3)); // 1.25, 1.5, 0.875
         for &p in &[4usize, 10, 30] {
             let ctx = Context::<mode::HalfEven>::new(p);
-            for sign in [Sign::Positive, Sign::Negative] {
+            for sign in [Positive, Negative] {
                 let got = ctx.fma(&a, &b, &c, sign).unwrap().value();
                 let want = oracle::<2, mode::HalfEven>(&a, &b, &c, sign, p);
                 assert_eq!(round_sig(&got, p), want, "base-2 fma mismatch p={p} sign={sign:?}");
@@ -514,9 +508,9 @@ mod tests {
         let ctx = Context::<mode::HalfAway>::new(5);
         let (z, a, c) = (r::<10>(0, 0), r::<10>(3, 0), r::<10>(7, 0));
         // a·b == 0 (z·a): result is c.
-        assert_eq!(ctx.fma(&z, &a, &c, Sign::Positive).unwrap().value().repr(), &c);
+        assert_eq!(ctx.fma(&z, &a, &c, Positive).unwrap().value().repr(), &c);
         // c == 0: result is a·b (3·3 = 9).
-        assert_eq!(ctx.fma(&a, &a, &z, Sign::Positive).unwrap().value().repr(), &r::<10>(9, 0));
+        assert_eq!(ctx.fma(&a, &a, &z, Positive).unwrap().value().repr(), &r::<10>(9, 0));
     }
 
     /// Any infinite operand ⇒ `InfiniteInput`.
@@ -524,8 +518,8 @@ mod tests {
     fn test_fma_infinity_is_error() {
         let ctx = Context::<mode::HalfAway>::new(5);
         let (inf, a) = (Repr::<10>::infinity(), r::<10>(3, 0));
-        assert_eq!(ctx.fma(&inf, &a, &a, Sign::Positive), Err(FpError::InfiniteInput));
-        assert_eq!(ctx.fma(&a, &a, &inf, Sign::Positive), Err(FpError::InfiniteInput));
+        assert_eq!(ctx.fma(&inf, &a, &a, Positive), Err(FpError::InfiniteInput));
+        assert_eq!(ctx.fma(&a, &a, &inf, Positive), Err(FpError::InfiniteInput));
     }
 
     /// An exact-zero result is `-0` under roundTowardNegative (Down), exercising
@@ -535,7 +529,7 @@ mod tests {
         let ctx = Context::<mode::Down>::new(5);
         // 2·3 + (-6) = 0 exactly.
         let (a, b, c) = (r::<10>(2, 0), r::<10>(3, 0), r::<10>(-6, 0));
-        let got = ctx.fma(&a, &b, &c, Sign::Positive).unwrap().value();
+        let got = ctx.fma(&a, &b, &c, Positive).unwrap().value();
         assert!(got.repr().is_neg_zero(), "expected -0, got {:?}", got.repr());
     }
 }

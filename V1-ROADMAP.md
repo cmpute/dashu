@@ -1,6 +1,6 @@
 # dashu Roadmap — v0.5.x and beyond
 
-Last updated: 2026-07-26
+Last updated: 2026-07-28
 
 Feature work deferred out of the **v0.5.0** release. The v0.5.x items are all **additive**
 (no breaking changes) and safe to ship as point releases on top of 0.5.0; the post-v1 items
@@ -34,6 +34,18 @@ are longer-term goals. File:line references are anchors from the v0.5.0 tree and
   ownership instead of borrowing every `CBig` operand through `Context::add(&CBig, &CBig)`
   (which takes `&Repr` internally and clones as needed) — today the ownership advantage of
   `impl Add for CBig` is lost.
+- **Test organization — clear `src` in-file vs `tests/` boundary.** Tests are scattered: many
+  operations have *both* an in-file `#[cfg(test)] mod tests` (in `src/<op>.rs`) *and* a
+  parallel `tests/<op>.rs` integration file, and the two frequently overlap. `dashu-float`
+  is the worst case — `add`, `mul`, `div`, `exp`, `log`, `trig`, `hyper`, `root`, `shift`,
+  `round`, `convert`, `cmp`, `io`, and `iter` each appear in both places. `AGENTS.md` already
+  states the intended convention (in-file `mod tests` for algorithm/kernel correctness;
+  `tests/` for cross-cutting and public-API/property tests), but it is not consistently
+  followed. Consolidate: assign each test to the side the convention dictates, deduplicate the
+  overlaps, and tighten the `AGENTS.md` wording so the boundary is explicit and enforceable.
+  As part of this, clarify the status of the `tests/*_prop.rs` property tests against the
+  `AGENTS.md` "in-crate tests must use fixed, deterministic inputs" rule — fixed-seed /
+  enum-driven, or moved to `fuzz/`.
 
 ### Correctness
 
@@ -60,8 +72,10 @@ Consolidated from the original `CBig` design. All additive.
 - **Complex hyperbolic & inverse-hyperbolic family** — `sinh`/`cosh`/`tanh`/`asinh`/`acosh`/`atanh`.
   (Real hyperbolics already exist on `Context<R>` and are *used* by `CBig` trig in 0.5; the
   complex-valued functions themselves are deferred.)
-- **More transcendentals** — complex `fma` (fused multiply-add — hard to round correctly),
-  `rootofunity`, complex `agm`, and `exp2`/`exp10`/`log2`/`log10`.
+- **More transcendentals** — `rootofunity`, complex `agm`, and `exp2`/`exp10`/`log2`/`log10`.
+  (Complex `fma` shipped in 0.5.x — `CBig::fma` / `Context::fma` in `complex/src/mul.rs`,
+  commit 76502a2, via chained real FMA; a truly-correctly-rounded single-rounding complex
+  FMA remains open.)
 - **Vector ops** — `dot`/mean helpers and a correctly-rounded (exact-accumulating) `Sum` for
   `CBig`. (Fold-based `Sum`/`Product` for `CBig` already exist; `Sum` is not yet correctly-rounded.)
 - **Independent re/im rounding** — a `CRound` trait giving MPC `mpc_rnd_t` parity (0.5 uses a
@@ -69,6 +83,50 @@ Consolidated from the original `CBig` design. All additive.
 - **Third-party integration** — `CBig` `serde`/`rkyv`/`zeroize`, and
   `num_complex::Complex<FBig>` interop. (The `serde`/`num-traits`/`num-complex` feature flags
   are scaffolded in 0.5; the impls are deferred.)
+
+### `dashu-cmplx` infinity model — documentation (non-breaking)
+
+`dashu-cmplx` represents complex infinity as a **single unsigned value** — the point at ∞
+of the Riemann sphere ℂ ∪ {∞} (the `riemann()` marker in `complex/src/repr.rs`). This is a
+deliberate design decision, recorded here so it is not relitigated or quietly changed.
+
+**Why it's the right model.** The one-point (Riemann sphere) compactification is the
+canonical model in complex analysis, and the arithmetic rules `dashu-cmplx` implements fall
+straight out of it:
+
+- `1/0 = ∞` and `1/∞ = 0` — the swap `z ↦ 1/z` is a bijection of the sphere.
+- `finite ± ∞ = ∞`, `finite·∞ = ∞`, `∞·∞ = ∞` — arithmetic extends continuously at ∞.
+- `0·∞` has no continuous extension on the sphere, so it is `FpError::Indeterminate`.
+
+This is deliberately **not** the C99 / Python `complex` model. C99 derives infinity from
+*signed real and imaginary parts*, admitting a zoo of "complex infinities" (`inf + 3i`,
+`inf + inf·i`, …) and a flood of NaN-producing edge cases — widely considered an accident of
+IEEE-754 component-wise semantics. The single Riemann point sidesteps that whole class of
+bugs and matches MPC / analysis conventions rather than C's. So relative to the status quo
+most users have seen, this is a genuine improvement, not just a defensible choice.
+
+**Doc-only follow-ups** so the model isn't surprising to users arriving from C99 or from the
+real-valued `±∞`:
+
+- State up front in the `CBig` docs/guide that complex ∞ is the single Riemann point (not
+  per-component), and list the identities above.
+- **No direction at ∞** — `arg(∞)` and component accessors like `re(∞)`/`im(∞)` are
+  undefined. The unsigned model has no direction, unlike C99's directed infinities; users
+  arriving from `complex.h` may expect directed behavior (e.g. `re(∞) → +inf`).
+- **Direction-dependent limits are lost** — functions whose limit at ∞ depends on the
+  approach direction (`exp`, an essential singularity: `+Re → ∞`, `−Re → 0`, `iRe`
+  oscillates; likewise `sin`/`cos`; `arg`) cannot be summarized by a single `exp(∞)`.
+  These need explicit error/∞ handling regardless of the infinity model, but the unsigned
+  model makes the loss of direction explicit.
+- **`∞ − ∞` resolves to `∞`, not `Indeterminate`.** With one unsigned ∞, negation is the
+  identity there, so `∞ − ∞` collapses to `∞ + ∞ = ∞`. The direction-independent limit of
+  `z − w` as both → ∞ is indeed ∞, so this is defensible — but it is the one genuinely
+  debatable spot, and deserves a one-line note for symmetry with the `0·∞ → Indeterminate`
+  rule.
+- **Asymmetry with `dashu-float`** — the real crate has directed `±∞` (correct for the
+  extended real line, which has two ends); the complex crate has one unsigned ∞ (correct
+  for the one-point compactification). The asymmetry is mathematically right, just
+  non-obvious — worth stating alongside the real crate's directed `±∞`.
 
 ### Lint gates (MSRV-gated)
 

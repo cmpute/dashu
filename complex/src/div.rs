@@ -3,7 +3,7 @@
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, exact, riemann, CfpResult, Context};
 use core::ops::{Div, DivAssign};
-use dashu_base::{AbsOrd, Inverse, Sign};
+use dashu_base::{AbsOrd, Inverse, Sign::*};
 use dashu_float::round::Round;
 use dashu_float::{FBig, FpError};
 use dashu_int::Word;
@@ -56,19 +56,19 @@ impl<R: Round> Context<R> {
         let (r, d) = if u_ge_v {
             // r = v/u, d = u + r·v  (fuse r·v with the add via FMA)
             let r = gctx.div(v, u)?.value();
-            let d = gctx.fma(r.repr(), v, u, Sign::Positive)?.value();
+            let d = gctx.fma(r.repr(), v, u, Positive)?.value();
             (r, d)
         } else {
             // r = u/v, d = v + r·u
             let r = gctx.div(u, v)?.value();
-            let d = gctx.fma(r.repr(), u, v, Sign::Positive)?.value();
+            let d = gctx.fma(r.repr(), u, v, Positive)?.value();
             (r, d)
         };
 
         let (re, im) = if u_ge_v {
             // re = (x + r·y)/d, im = (y − r·x)/d  (both fuse via FMA)
-            let num_re = gctx.fma(r.repr(), y, x, Sign::Positive)?.value();
-            let num_im = gctx.fma(r.repr(), x, y, Sign::Negative)?.value();
+            let num_re = gctx.fma(r.repr(), y, x, Positive)?.value();
+            let num_im = gctx.fma(r.repr(), x, y, Negative)?.value();
             (
                 gctx.div(num_re.repr(), d.repr())?.value().with_precision(p),
                 gctx.div(num_im.repr(), d.repr())?.value().with_precision(p),
@@ -76,8 +76,8 @@ impl<R: Round> Context<R> {
         } else {
             // re = (r·x + y)/d, im = (r·y − x)/d. The numerator products fuse via
             // FMA; `r·y − x` is `−(x − r·y)`, so one FMA plus an exact negation.
-            let num_re = gctx.fma(r.repr(), x, y, Sign::Positive)?.value();
-            let num_im = -gctx.fma(r.repr(), y, x, Sign::Negative)?.value();
+            let num_re = gctx.fma(r.repr(), x, y, Positive)?.value();
+            let num_im = -gctx.fma(r.repr(), y, x, Negative)?.value();
             (
                 gctx.div(num_re.repr(), d.repr())?.value().with_precision(p),
                 gctx.div(num_im.repr(), d.repr())?.value().with_precision(p),
