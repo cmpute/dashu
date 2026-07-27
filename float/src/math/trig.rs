@@ -1,5 +1,6 @@
 //! Trigonometric functions, built on top of the cached constants π/2 and the real
-//! [`exp`](crate::FBig::exp)/[`ln`](crate::FBig::ln) primitives:
+//! [`exp`](crate::FBig::exp)/[`ln`](crate::FBig::ln) primitives, plus the named
+//! constant constructors [`π`](crate::FBig::pi) and [`e`](crate::FBig::e):
 //!
 //! - Circular: `sin`, `cos`, `tan`, `sin_cos`, and their inverses `asin`, `acos`, `atan`.
 //!
@@ -10,7 +11,7 @@ use crate::{
     error::{assert_limited_precision, FpError},
     fbig::FBig,
     math::{
-        cache::{reborrow_cache, ConstCache},
+        cache::{compute_e, reborrow_cache, ConstCache},
         FpResult,
     },
     repr::{Context, Repr, Word},
@@ -698,6 +699,25 @@ impl<R: Round> Context<R> {
         let mut fresh = ConstCache::new();
         fresh.pi::<B, R>(self.precision)
     }
+
+    /// Calculate *e* (Euler's number) using binary splitting on the series
+    /// `e = Σ 1/k!`.
+    ///
+    /// Unlike [`pi`](Self::pi), this takes no constant cache: *e* depends on no
+    /// other cached constant and is itself reused by no operation, so there is no
+    /// state worth sharing across calls. The factorial series with binary splitting
+    /// is the optimal algorithm here — asymptotically `O(M(n) log n)` under FFT
+    /// multiplication (faster than π's `O(M(n) log²n)`), and it avoids both the
+    /// `ln`-based argument reduction and the `√p`-fold powering that `exp(1)`
+    /// would pay for.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the context precision is 0.
+    #[must_use]
+    pub fn e<const B: Word>(&self) -> Rounded<FBig<R, B>> {
+        compute_e::<B, R>(self.precision)
+    }
 }
 
 impl<R: Round, const B: Word> FBig<R, B> {
@@ -706,6 +726,23 @@ impl<R: Round, const B: Word> FBig<R, B> {
     #[must_use]
     pub fn pi(precision: usize) -> Self {
         Context::<R>::new(precision).pi(None).value()
+    }
+
+    /// Calculate *e* (Euler's number) with the given precision and the default
+    /// rounding mode.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_float::DBig;
+    /// let e = DBig::e(20);
+    /// // 2.7182818284590452354…
+    /// assert!(e.to_string().starts_with("2.718281828459045"));
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn e(precision: usize) -> Self {
+        Context::<R>::new(precision).e::<B>().value()
     }
 }
 

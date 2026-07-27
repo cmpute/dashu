@@ -510,6 +510,87 @@ const IACOTH_99_INITIAL: (usize, UBig, UBig, IBig) = (
     IBig::from_parts_const(Sign::Positive, 49008),
 );
 
+/// Binary splitting for `e = Σ_{k≥0} 1/k!` over the index range `[a, b)` with `a ≥ 1`.
+///
+/// The `k = 0` term `1/0! = 1` is added by the caller. For `k ≥ 1` the term ratio
+/// is `tₖ/tₖ₋₁ = 1/k`, so each leaf is `(pₖ, qₖ, pₖ) = (1, k, 1)` and the universal
+/// [`merge`] applies verbatim (with `P ≡ 1`, it reduces to `T' = Tₗ·Qᵣ + Tᵣ`).
+/// Over `[1, N+1)` the triple satisfies `T/Q = Σ_{k=1}^{N} 1/k!`, hence the
+/// finalization `e = (Q + T)/Q` in [`compute_e`].
+///
+/// This is the optimal algorithm for *e*: there is no Chudnovsky-analog, and the
+/// factorial series with binary splitting is `O(M(n) log n)` — faster than π —
+/// beating both the AGM approach and `exp(1)` (which pays for argument reduction
+/// and `√p` powering that this series needs neither of).
+///
+/// An empty range yields the identity `(1, 1, 0)`.
+pub(crate) fn e_bs(a: usize, b: usize) -> (UBig, UBig, IBig) {
+    if a >= b {
+        return (UBig::ONE, UBig::ONE, IBig::ZERO);
+    }
+    if b - a == 1 {
+        // leaf at k = a (a ≥ 1): (pₖ, qₖ, pₖ) = (1, a, 1)
+        return (UBig::ONE, UBig::from(a), IBig::ONE);
+    }
+    let mid = (a + b) / 2;
+    let (pl, ql, tl) = e_bs(a, mid);
+    let (pr, qr, tr) = e_bs(mid, b);
+    merge(&pl, &ql, &tl, &pr, &qr, &tr) // universal merge
+}
+
+/// Number of series terms `N` for `e = Σ 1/k!` so that the truncation tail is
+/// safely below the target precision.
+///
+/// The tail after `k = N` is `Σ_{k>N} 1/k! < 2/(N+1)!`, so we need
+/// `log₂((N+1)!) > bits`. Stirling's lower bound `m! ≥ (m/e)ᵐ` gives
+/// `log₂(m!) ≥ m·(log₂ m − log₂ e)`; we seed `m` from the closed-form inverse of
+/// that bound and grow until it holds, so the result is always sufficient.
+/// Over-provisioning is harmless: extra terms only add precision, which the final
+/// `with_precision` discards.
+fn e_term_count(bits: usize) -> usize {
+    // `log2_bounds` (not `f64::log2`, which is std-only) keeps this `no_std`-clean;
+    // using its lower bound makes `lb` a valid lower bound on the Stirling LB, so the
+    // loop never terminates too early.
+    let target = (bits + 64) as f64; // margin for the tail's factor of 2 and final rounding
+    let log2_e = core::f64::consts::LOG2_E;
+    let lb = |m: usize| -> f64 { m as f64 * (m.log2_bounds().0 as f64 - log2_e) };
+    let denom = (bits.log2_bounds().1 as f64 - log2_e).max(1.0);
+    let mut m = (target / denom) as usize + 1;
+    while lb(m) < target {
+        m += 1;
+    }
+    // `m` corresponds to `N+1`; return `N`.
+    m.saturating_sub(1)
+}
+
+/// One-shot computation of *e* (Euler's number) at `precision` base-`B` digits,
+/// rounded per `R`.
+///
+/// Evaluates `e = Σ_{k=0}^∞ 1/k!` by exact-integer binary splitting (the
+/// [`e_bs`] kernel) and finalizes `e = (Q + T)/Q`. Unlike π, this is fully
+/// self-contained — it depends on no cached sub-constant and is reused by no
+/// other operation — so it deliberately does **not** live in [`ConstCache`] and is
+/// not progressively refined across calls. (See `Context::e` for the rationale.)
+pub(crate) fn compute_e<const B: Word, R: Round>(precision: usize) -> Rounded<FBig<R, B>> {
+    assert_limited_precision(precision);
+
+    let bits = bits_for_precision::<B>(precision);
+    let n = e_term_count(bits);
+    // Σ_{k=1}^{n} 1/k! = T/Q; the k=0 term 1/0! = 1 is folded in as (Q + T)/Q.
+    let (_p, q, t) = e_bs(1, n + 1);
+
+    // Evaluate (Q + T)/Q at an elevated working precision so the integer→float
+    // conversion and the division round correctly down to `precision`. The guard
+    // mirrors `ConstCache::pi`: a few bits for the term count, plus a fixed margin.
+    let guard_bits = n.bit_len() + 32;
+    let work_precision = precision_for_bits::<B>(bits + guard_bits);
+    let work = Context::<R>::new(work_precision);
+    let num = work.convert_int::<B>(q.as_ibig() + &t).value();
+    let den = work.convert_int::<B>(IBig::from(q)).value();
+    let e = num / den;
+    e.with_precision(precision)
+}
+
 impl fmt::Debug for ConstCache {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ConstCache")
@@ -544,6 +625,7 @@ impl fmt::Debug for DebugSlot<'_> {
 mod tests {
     use super::*;
     use crate::round::mode;
+    use crate::DBig;
     use alloc::format;
 
     /// Independently (left-fold) merge the first `k` leaves of `L(n)` and check
@@ -708,5 +790,78 @@ mod tests {
 
         let direct = Context::<mode::HalfEven>::new(100).pi::<2>(None).value();
         assert_eq!(low, direct);
+    }
+
+    /// `e_bs(1, N+1)` produces `(P, Q, T)` with `T/Q = Σ_{k=1}^{N} 1/k!` and `P ≡ 1`.
+    #[test]
+    fn test_e_bs_partial_sums() {
+        // N=1: 1/1! = 1  →  (1, 1, 1)
+        let (p, q, t) = e_bs(1, 2);
+        assert_eq!(p, UBig::ONE);
+        assert_eq!(q, UBig::from(1u32));
+        assert_eq!(t, IBig::from(1));
+
+        // N=3: 1 + 1/2 + 1/6 = 10/6  →  (1, 6, 10)
+        let (p, q, t) = e_bs(1, 4);
+        assert_eq!(p, UBig::ONE);
+        assert_eq!(q, UBig::from(6u32));
+        assert_eq!(t, IBig::from(10));
+
+        // N=4: +1/24 → 41/24  →  (1, 24, 41)
+        let (p, q, t) = e_bs(1, 5);
+        assert_eq!(p, UBig::ONE);
+        assert_eq!(q, UBig::from(24u32));
+        assert_eq!(t, IBig::from(41));
+
+        // empty range is the identity triple
+        let (p, q, t) = e_bs(7, 7);
+        assert_eq!(p, UBig::ONE);
+        assert_eq!(q, UBig::ONE);
+        assert_eq!(t, IBig::ZERO);
+    }
+
+    /// `compute_e` (factorial binary splitting) and `exp(1)` (argument reduction,
+    /// Taylor series, and powering) are two independent algorithms for the same
+    /// value, so both must yield the identical correctly-rounded result.
+    #[test]
+    fn test_e_matches_exp_one() {
+        fn check<const B: Word>(p: usize) {
+            let ctx = Context::<mode::HalfAway>::new(p);
+            let e_const = ctx.e::<B>().value();
+            let exp_one = ctx
+                .exp::<B>(&Repr::<B>::new(IBig::from(1), 0), None)
+                .unwrap()
+                .value();
+            assert_eq!(e_const, exp_one, "e != exp(1) at precision {p}, base {B}");
+        }
+        for &p in &[1usize, 2, 5, 13, 50, 137, 500] {
+            check::<10>(p);
+            check::<2>(p);
+        }
+    }
+
+    /// Ground-truth prefix of e (OEIS A001113), independent of the `exp` path.
+    /// The 45-decimal prefix is far from the precision-100 rounding boundary.
+    #[test]
+    fn test_e_known_decimal_prefix() {
+        // e = 2.71828182845904523536028747135266249775724709369995957…
+        let s = DBig::e(100).to_string();
+        assert!(s.starts_with("2.718281828459045235360287471352662497757247093699"), "got {s}");
+        // sanity: e is in (2, 3)
+        let e = DBig::e(10);
+        assert!(e > DBig::from(2u32));
+        assert!(e < DBig::from(3u32));
+    }
+
+    /// `e_term_count` must return enough terms that Stirling's lower bound on
+    /// `(N+1)!` actually exceeds the target bit count.
+    #[test]
+    fn test_e_term_count_sufficient() {
+        for &bits in &[1usize, 10, 100, 1000, 10_000, 100_000] {
+            let n = e_term_count(bits);
+            let m = (n + 1) as f64;
+            let stirling_lb = m * (m.log2() - core::f64::consts::LOG2_E);
+            assert!(stirling_lb > bits as f64, "N={n} insufficient for bits={bits}");
+        }
     }
 }
