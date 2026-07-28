@@ -396,7 +396,7 @@ impl<R: Round> Context<R> {
             pow *= &z2;
 
             let increase = &pow / work_context.convert_int::<B>(k.into()).value();
-            if increase.abs_cmp(&sum.sub_ulp()).is_le() {
+            if increase.abs_cmp(&sum.ulp_lb()).is_le() {
                 break;
             }
 

@@ -458,7 +458,7 @@ impl<R: Round> Context<R> {
             pow *= &r;
 
             let increase = &pow / &factorial;
-            if increase.abs_cmp(&sum.sub_ulp()).is_le() {
+            if increase.abs_cmp(&sum.ulp_lb()).is_le() {
                 break;
             }
             sum += increase;

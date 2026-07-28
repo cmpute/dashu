@@ -20,6 +20,11 @@
   removing one rounding from range reduction. (`sqr` keeps its dedicated, faster
   kernel — don't write `x²` as `fma(x, x, …)`.)
 
+- `FBig::ulp_lb`: a cheap lower bound on `ulp`, guaranteed strictly smaller than it
+  (computed from the approximated `digits_lb` rather than the exact digit count). Public
+  successor to the internal `sub_ulp`; useful as a conservative negligibility threshold
+  (e.g. iterative-method termination). For a rigorous error/radius bound, use `ulp`.
+
 ### Fix
 - `test_e_known_decimal_prefix` failed to compile under `no_std` (`ToString` is not in
   the prelude without `std`): import `alloc::string::ToString` in the cache tests.
