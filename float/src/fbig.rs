@@ -318,11 +318,26 @@ impl<R: Round, const B: Word> FBig<R, B> {
         Self::new(repr, self.context)
     }
 
-    /// Similar to [FBig::ulp], but use approximated digits. It's guaranteed to be smaller than ulp(), for internal use only.
+    /// A cheap lower bound on [`ulp`](Self::ulp), guaranteed strictly smaller than it.
+    ///
+    /// Unlike [`ulp`](Self::ulp), this uses the approximated lower bound
+    /// [`digits_lb`](crate::Repr::digits_lb) rather than the exact digit count, so
+    /// it is faster but only contracted as `< ulp()` (not a tight value). Its niche is as
+    /// a conservative *negligibility threshold* — e.g. terminating an iterative method
+    /// once a correction falls below it, which is the same purpose dashu's own series
+    /// loops use it for. For a rigorous error or radius bound, prefer [`ulp`](Self::ulp).
+    ///
+    /// # Panics
+    /// Panics if the precision is 0 (unlimited). Returns a clone for an infinite value
+    /// (matching [`ulp`](Self::ulp)).
     #[inline]
-    pub(crate) fn sub_ulp(&self) -> Self {
-        debug_assert!(self.context.precision != 0);
-        debug_assert!(self.repr.is_finite());
+    pub fn ulp_lb(&self) -> Self {
+        if self.context.precision == 0 {
+            panic_unlimited_precision();
+        }
+        if self.repr.is_infinite() {
+            return self.clone();
+        }
 
         let repr = Repr {
             significand: IBig::ONE,

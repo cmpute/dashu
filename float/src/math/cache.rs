@@ -631,6 +631,7 @@ mod tests {
     use crate::round::mode;
     use crate::DBig;
     use alloc::format;
+    use alloc::string::ToString; // not in the prelude under no_std
 
     /// Independently (left-fold) merge the first `k` leaves of `L(n)` and check
     /// that the result matches the precomputed constant triple. Guards against

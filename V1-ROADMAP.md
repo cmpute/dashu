@@ -26,14 +26,23 @@ are longer-term goals. File:line references are anchors from the v0.5.0 tree and
   real win needs an algorithmic change to the division itself, not these micro-opts.
 - **`dashu-float` `exp` guard-bit formulation** (`float/src/exp.rs:87`). Write down the exact
   formulation of the required guard bits (currently an inline TODO).
-- **Expose ownership-aware kernels from `dashu-float`.** The `add_val_val` / `add_val_ref` /
-  `add_ref_val` / `add_ref_ref` kernels in `float/src/add.rs` are currently private; make
-  them `pub` (or mirror them as `pub` methods on `Context<R>`, e.g.
-  `add_val_val(&self, lhs: Repr<B>, rhs: Repr<B>)`), and likewise for `sub`/`mul`/`div` and
-  potentially the transcendentals. This lets `dashu-cmplx`'s by-value operator impls exploit
-  ownership instead of borrowing every `CBig` operand through `Context::add(&CBig, &CBig)`
-  (which takes `&Repr` internally and clones as needed) — today the ownership advantage of
-  `impl Add for CBig` is lost.
+- **Expose ownership-aware kernels from `dashu-float` — API ergonomics, not perf.** Make the
+  private `add_val_val` / `add_val_ref` / `add_ref_val` / `add_ref_ref` kernels in
+  `float/src/add.rs` (and the `sub`/`mul`/`div` analogues) available as by-value `pub` methods
+  on `Context<R>` (a `ReprArg` trait over `Repr<B>`/`&Repr<B>` is the clean shape — one generic
+  method covers all four ownership combinations). **Revisit only when `dashu-ball` is concrete
+  enough to consume it**; do *not* pursue it as a performance item.
+  - *Investigated 2026-07; the perf case does not hold.* A `ReprArg` prototype was implemented
+    and bench-compared (master vs branch) on a precision-sensitive `complex/benches/arith`
+    (full-precision significands crossing the inline `DoubleWord` boundary at 256/1024 bits):
+    routing `sqr`'s `x²−y²` and `inv`'s norm `x²+y²` through by-value `repr_sub`/`repr_add`
+    moved **no benchmark above the noise floor** (~±4% on WSL2; an unchanged-code `mul` control
+    showed +4.3%). Clone-avoidance saves one O(n) copy per op, which is a non-allocating
+    `DoubleWord` copy at inline precision and is dwarfed by the O(n²) bignum op at heap
+    precision. The motivation is therefore *ergonomics* — `dashu-ball` wants by-value `Repr`
+    ops on a fixed context without the `FBig`/`Context::max` wrapping the operator path forces
+    — not throughput. (`dashu-cmplx`'s consuming operators do lose ownership to the borrowing
+    context methods today, but the clone they pay is in the same "too cheap to matter" band.)
 - **Test organization — clear `src` in-file vs `tests/` boundary.** Tests are scattered: many
   operations have *both* an in-file `#[cfg(test)] mod tests` (in `src/<op>.rs`) *and* a
   parallel `tests/<op>.rs` integration file, and the two frequently overlap. `dashu-float`

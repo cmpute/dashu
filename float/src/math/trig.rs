@@ -172,7 +172,7 @@ impl<R: ErrorBounds> Context<R> {
         let mut sum = x.clone();
         let mut term = x.clone();
         let mut k = 1usize;
-        let threshold = sum.sub_ulp();
+        let threshold = sum.ulp_lb();
         loop {
             term *= &x2;
             term /= (2 * k) * (2 * k + 1);
@@ -235,7 +235,7 @@ impl<R: ErrorBounds> Context<R> {
         let mut sum = FBig::<R, B>::ONE.with_precision(self.precision).value();
         let mut term = sum.clone();
         let mut k = 1usize;
-        let threshold = sum.sub_ulp();
+        let threshold = sum.ulp_lb();
         loop {
             term *= &x2;
             term /= (2 * k) * (2 * k - 1);
@@ -302,8 +302,8 @@ impl<R: ErrorBounds> Context<R> {
         let mut sin_term = x.clone();
         let mut cos_term = cos_sum.clone();
         let mut k = 1usize;
-        let sin_threshold = sin_sum.sub_ulp();
-        let cos_threshold = cos_sum.sub_ulp();
+        let sin_threshold = sin_sum.ulp_lb();
+        let cos_threshold = cos_sum.ulp_lb();
         loop {
             cos_term *= &x2;
             cos_term /= (2 * k) * (2 * k - 1);
@@ -547,7 +547,7 @@ impl<R: ErrorBounds> Context<R> {
         let mut sum = term.clone();
         let factor = (2 * &x2) / one_plus_x2;
         let mut n = 1usize;
-        let threshold = sum.sub_ulp();
+        let threshold = sum.ulp_lb();
         loop {
             term *= &factor;
             term *= n;
