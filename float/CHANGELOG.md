@@ -24,6 +24,18 @@
   (computed from the approximated `digits_lb` rather than the exact digit count). Public
   successor to the internal `sub_ulp`; useful as a conservative negligibility threshold
   (e.g. iterative-method termination). For a rigorous error/radius bound, use `ulp`.
+- `Context::addsub_vv` / `addsub_vr` / `addsub_rv` / `addsub_rr`: low-level
+  ownership-aware add/subtract kernels computing `lhs + rhs_sign· rhs` directly on
+  `Repr` (no `FBig` wrapping, no `Result`) — `Sign::Positive` adds, `Negative`
+  subtracts. The four variants cover every ownership combination of the two operands
+  (`v` = by-value, `r` = by-ref); each reuses the owned operand's significand buffer
+  where it can, avoiding a clone versus the `Context::add`/`sub` path. Intended for
+  downstream crates (e.g. `dashu-ball`) that want by-value `Repr` arithmetic on a
+  fixed context. The `+`/`-` operators and `Context::add`/`sub` now route through
+  `addsub_*`, making it the single source of truth for add/subtract routing. As a
+  side effect, `x ± 0` now rounds `x` to the context precision (the old zero
+  short-circuit returned the other operand verbatim, which could leave a guard
+  digit); all other results are unchanged.
 
 ### Fix
 - `test_e_known_decimal_prefix` failed to compile under `no_std` (`ToString` is not in

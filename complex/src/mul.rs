@@ -118,20 +118,12 @@ impl<R: Round> Context<R> {
         // is the clean placement.)
         let ac = gctx.mul(a, c)?.value();
         let z12_re = gctx.fma(b, d, ac.repr(), Negative)?.value(); // a·c − b·d
-        let re = match sign {
-            Positive => gctx.add(z12_re.repr(), e),
-            Negative => gctx.sub(z12_re.repr(), e),
-        }?
-        .value()
-        .with_precision(p);
+        let re = FBig::from_repr(gctx.addsub_vr(z12_re.into_repr(), e, sign).value(), gctx)
+            .with_precision(p);
         let ad = gctx.mul(a, d)?.value();
         let z12_im = gctx.fma(b, c, ad.repr(), Positive)?.value(); // a·d + b·c
-        let im = match sign {
-            Positive => gctx.add(z12_im.repr(), f),
-            Negative => gctx.sub(z12_im.repr(), f),
-        }?
-        .value()
-        .with_precision(p);
+        let im = FBig::from_repr(gctx.addsub_vr(z12_im.into_repr(), f, sign).value(), gctx)
+            .with_precision(p);
         Ok(combine_parts(re, im))
     }
 }

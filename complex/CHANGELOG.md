@@ -12,6 +12,9 @@
   preserving the cancellation structure of `xu − yv` and the division numerators.
   `sqr` and `norm` (`x² ± y²`) keep the dedicated `sqr()` kernel, which is faster
   than the general product path inside `fma`.
+- `Context::fma`'s final `± z3` now routes through `dashu-float`'s new
+  `Context::addsub_vr` kernel, collapsing the former `match sign { add, sub }`
+  into a single signed call and consuming the `z1·z2` component (no clone).
 
 ## 0.5.1
 

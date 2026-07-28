@@ -29,7 +29,9 @@ impl<R: Round, const B: Word> Add for FBig<R, B> {
 
     #[inline]
     fn add(self, rhs: Self) -> Self::Output {
-        add_val_val(self, rhs, Positive)
+        let context = Context::max(self.context, rhs.context);
+        let sum = context.addsub_vv(self.repr, rhs.repr, Positive);
+        FBig::new(sum.value(), context)
     }
 }
 
@@ -38,7 +40,9 @@ impl<R: Round, const B: Word> Add<&FBig<R, B>> for FBig<R, B> {
 
     #[inline]
     fn add(self, rhs: &FBig<R, B>) -> Self::Output {
-        add_val_ref(self, rhs, Positive)
+        let context = Context::max(self.context, rhs.context);
+        let sum = context.addsub_vr(self.repr, &rhs.repr, Positive);
+        FBig::new(sum.value(), context)
     }
 }
 
@@ -47,7 +51,9 @@ impl<R: Round, const B: Word> Add<FBig<R, B>> for &FBig<R, B> {
 
     #[inline]
     fn add(self, rhs: FBig<R, B>) -> Self::Output {
-        add_ref_val(self, rhs, Positive)
+        let context = Context::max(self.context, rhs.context);
+        let sum = context.addsub_rv(&self.repr, rhs.repr, Positive);
+        FBig::new(sum.value(), context)
     }
 }
 
@@ -56,7 +62,9 @@ impl<R: Round, const B: Word> Add<&FBig<R, B>> for &FBig<R, B> {
 
     #[inline]
     fn add(self, rhs: &FBig<R, B>) -> Self::Output {
-        add_ref_ref(self, rhs, Positive)
+        let context = Context::max(self.context, rhs.context);
+        let sum = context.addsub_rr(&self.repr, &rhs.repr, Positive);
+        FBig::new(sum.value(), context)
     }
 }
 
@@ -65,7 +73,9 @@ impl<R: Round, const B: Word> Sub for FBig<R, B> {
 
     #[inline]
     fn sub(self, rhs: Self) -> Self::Output {
-        add_val_val(self, rhs, Negative)
+        let context = Context::max(self.context, rhs.context);
+        let sum = context.addsub_vv(self.repr, rhs.repr, Negative);
+        FBig::new(sum.value(), context)
     }
 }
 
@@ -74,7 +84,9 @@ impl<R: Round, const B: Word> Sub<&FBig<R, B>> for FBig<R, B> {
 
     #[inline]
     fn sub(self, rhs: &FBig<R, B>) -> Self::Output {
-        add_val_ref(self, rhs, Negative)
+        let context = Context::max(self.context, rhs.context);
+        let sum = context.addsub_vr(self.repr, &rhs.repr, Negative);
+        FBig::new(sum.value(), context)
     }
 }
 
@@ -83,7 +95,9 @@ impl<R: Round, const B: Word> Sub<FBig<R, B>> for &FBig<R, B> {
 
     #[inline]
     fn sub(self, rhs: FBig<R, B>) -> Self::Output {
-        add_ref_val(self, rhs, Negative)
+        let context = Context::max(self.context, rhs.context);
+        let sum = context.addsub_rv(&self.repr, rhs.repr, Negative);
+        FBig::new(sum.value(), context)
     }
 }
 
@@ -92,7 +106,9 @@ impl<R: Round, const B: Word> Sub<&FBig<R, B>> for &FBig<R, B> {
 
     #[inline]
     fn sub(self, rhs: &FBig<R, B>) -> Self::Output {
-        add_ref_ref(self, rhs, Negative)
+        let context = Context::max(self.context, rhs.context);
+        let sum = context.addsub_rr(&self.repr, &rhs.repr, Negative);
+        FBig::new(sum.value(), context)
     }
 }
 
@@ -108,121 +124,6 @@ macro_rules! impl_add_sub_primitive_with_fbig {
     )*};
 }
 impl_add_sub_primitive_with_fbig!(u8 u16 u32 u64 u128 usize UBig i8 i16 i32 i64 i128 isize IBig);
-
-fn add_val_val<R: Round, const B: Word>(
-    lhs: FBig<R, B>,
-    mut rhs: FBig<R, B>,
-    rhs_sign: Sign,
-) -> FBig<R, B> {
-    assert_finite_operands(&lhs.repr, &rhs.repr);
-
-    let context = Context::max(lhs.context, rhs.context);
-    rhs.repr.significand *= rhs_sign;
-    let sum = if lhs.repr.is_pos_zero() {
-        rhs.repr
-    } else if rhs.repr.is_pos_zero() {
-        lhs.repr
-    } else {
-        match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
-            Ordering::Equal => context.repr_round(cancel_zero::<R, B>(
-                lhs.repr.significand + rhs.repr.significand,
-                lhs.repr.exponent,
-            )),
-            Ordering::Greater => context.repr_add_large_small(lhs.repr, &rhs.repr, Positive),
-            Ordering::Less => context.repr_add_small_large(lhs.repr, &rhs.repr, Positive),
-        }
-        .value()
-    };
-    FBig::new(sum, context)
-}
-
-fn add_val_ref<R: Round, const B: Word>(
-    lhs: FBig<R, B>,
-    rhs: &FBig<R, B>,
-    rhs_sign: Sign,
-) -> FBig<R, B> {
-    assert_finite_operands(&lhs.repr, &rhs.repr);
-
-    let context = Context::max(lhs.context, rhs.context);
-    let sum = if lhs.repr.is_pos_zero() {
-        let mut repr = rhs.repr.clone();
-        repr.significand *= rhs_sign;
-        repr
-    } else if rhs.repr.is_pos_zero() {
-        lhs.repr
-    } else {
-        match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
-            Ordering::Equal => {
-                let sum_signif = match rhs_sign {
-                    Positive => lhs.repr.significand + &rhs.repr.significand,
-                    Negative => lhs.repr.significand - &rhs.repr.significand,
-                };
-                context.repr_round(cancel_zero::<R, B>(sum_signif, lhs.repr.exponent))
-            }
-            Ordering::Greater => context.repr_add_large_small(lhs.repr, &rhs.repr, rhs_sign),
-            Ordering::Less => context.repr_add_small_large(lhs.repr, &rhs.repr, rhs_sign),
-        }
-        .value()
-    };
-    FBig::new(sum, context)
-}
-
-fn add_ref_val<R: Round, const B: Word>(
-    lhs: &FBig<R, B>,
-    mut rhs: FBig<R, B>,
-    rhs_sign: Sign,
-) -> FBig<R, B> {
-    assert_finite_operands(&lhs.repr, &rhs.repr);
-
-    let context = Context::max(lhs.context, rhs.context);
-    rhs.repr.significand *= rhs_sign;
-    let sum = if lhs.repr.is_pos_zero() {
-        rhs.repr
-    } else if rhs.repr.is_pos_zero() {
-        lhs.repr.clone()
-    } else {
-        match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
-            Ordering::Equal => context.repr_round(cancel_zero::<R, B>(
-                &lhs.repr.significand + rhs.repr.significand,
-                lhs.repr.exponent,
-            )),
-            Ordering::Greater => context.repr_add_small_large(rhs.repr, &lhs.repr, Positive),
-            Ordering::Less => context.repr_add_large_small(rhs.repr, &lhs.repr, Positive),
-        }
-        .value()
-    };
-    FBig::new(sum, context)
-}
-
-fn add_ref_ref<R: Round, const B: Word>(
-    lhs: &FBig<R, B>,
-    rhs: &FBig<R, B>,
-    rhs_sign: Sign,
-) -> FBig<R, B> {
-    assert_finite_operands(&lhs.repr, &rhs.repr);
-
-    let context = Context::max(lhs.context, rhs.context);
-    let sum = if lhs.repr.is_pos_zero() {
-        let mut repr = rhs.repr.clone();
-        repr.significand *= rhs_sign;
-        repr
-    } else if rhs.repr.is_pos_zero() {
-        lhs.repr.clone()
-    } else {
-        match lhs.repr.exponent.cmp(&rhs.repr.exponent) {
-            Ordering::Equal => context.repr_round(cancel_zero::<R, B>(
-                &lhs.repr.significand + rhs_sign * rhs.repr.significand.clone(),
-                lhs.repr.exponent,
-            )),
-            Ordering::Greater => {
-                context.repr_add_large_small(lhs.repr.clone(), &rhs.repr, rhs_sign)
-            }
-            Ordering::Less => context.repr_add_small_large(lhs.repr.clone(), &rhs.repr, rhs_sign),
-        }
-        .value()
-    };
-    FBig::new(sum, context)
-}
 
 impl<R: Round> Context<R> {
     /// Round sum = `significand * B ^ exponent` with the low part (value, precision).
@@ -492,6 +393,163 @@ impl<R: Round> Context<R> {
         self.repr_round_sum(significand, exponent, low, is_sub)
     }
 
+    /// Add or subtract two finite floats, consuming both operands.
+    ///
+    /// Computes `lhs + rhs_sign · rhs`: [`Sign::Positive`] adds, [`Sign::Negative`]
+    /// subtracts. This is the low-level ownership-aware kernel shared by the
+    /// `+`/`-` operators and [`add`](Self::add)/[`sub`](Self::sub); unlike those it
+    /// returns the raw rounded [`Repr`] (no [`FBig`] wrapping, no [`Result`]) and
+    /// reuses the owned significand buffer of `lhs`. The `_vr`/`_rv`/`_rr`
+    /// siblings cover the other ownership combinations and share this contract.
+    ///
+    /// # Panics
+    ///
+    /// Panics if either operand is infinite (matching the other `repr_*` kernels).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dashu_base::Sign::*;
+    /// use dashu_float::{Context, Repr, round::mode::HalfEven};
+    /// use dashu_int::IBig;
+    ///
+    /// let ctx = Context::<HalfEven>::new(4);
+    /// let a = Repr::<10>::new(IBig::from(1234), -3); // 1.234
+    /// let b = Repr::<10>::new(IBig::from(5678), -4); // 0.5678
+    /// // 1.234 + 0.5678 = 1.8018, rounds (HalfEven, prec 4) to 1.802
+    /// assert_eq!(ctx.addsub_vv(a.clone(), b.clone(), Positive).value(),
+    ///            Repr::<10>::new(IBig::from(1802), -3));
+    /// // 1.234 - 0.5678 = 0.6662 (exact at prec 4)
+    /// assert_eq!(ctx.addsub_vv(a, b, Negative).value(),
+    ///            Repr::<10>::new(IBig::from(6662), -4));
+    /// ```
+    pub fn addsub_vv<const B: Word>(
+        &self,
+        lhs: Repr<B>,
+        rhs: Repr<B>,
+        rhs_sign: Sign,
+    ) -> Rounded<Repr<B>> {
+        assert_finite_operands(&lhs, &rhs);
+        if lhs.is_pos_zero() {
+            // With rhs_sign = Negative, round `-rhs` directly rather than negating
+            // *after* rounding. For the asymmetric modes (Up = toward +∞, Down =
+            // toward −∞), `round(-x) != -round(x)`: rounding `rhs` toward +∞ then
+            // negating rounds in the wrong direction, so `0 - rhs` would land one
+            // ULP off (truncated instead of rounded away from the result). This
+            // applies to every `addsub_*` variant's lhs-zero path.
+            self.repr_round(match rhs_sign {
+                Positive => rhs,
+                Negative => Repr::new(-rhs.significand, rhs.exponent),
+            })
+        } else if rhs.is_pos_zero() {
+            self.repr_round(lhs)
+        } else {
+            match lhs.exponent.cmp(&rhs.exponent) {
+                Ordering::Equal => {
+                    let sig = match rhs_sign {
+                        Positive => lhs.significand + &rhs.significand,
+                        Negative => lhs.significand - &rhs.significand,
+                    };
+                    self.repr_round(cancel_zero::<R, B>(sig, lhs.exponent))
+                }
+                Ordering::Greater => self.repr_add_large_small(lhs, &rhs, rhs_sign),
+                Ordering::Less => self.repr_add_small_large(lhs, &rhs, rhs_sign),
+            }
+        }
+    }
+
+    /// Like [`addsub_vv`](Self::addsub_vv) but with the right operand borrowed
+    /// (the left operand is consumed). See `addsub_vv` for the full contract.
+    pub fn addsub_vr<const B: Word>(
+        &self,
+        lhs: Repr<B>,
+        rhs: &Repr<B>,
+        rhs_sign: Sign,
+    ) -> Rounded<Repr<B>> {
+        assert_finite_operands(&lhs, rhs);
+        if lhs.is_pos_zero() {
+            self.repr_round(match rhs_sign {
+                Positive => rhs.clone(),
+                Negative => Repr::new(-&rhs.significand, rhs.exponent),
+            })
+        } else if rhs.is_pos_zero() {
+            self.repr_round(lhs)
+        } else {
+            match lhs.exponent.cmp(&rhs.exponent) {
+                Ordering::Equal => {
+                    let sig = match rhs_sign {
+                        Positive => lhs.significand + &rhs.significand,
+                        Negative => lhs.significand - &rhs.significand,
+                    };
+                    self.repr_round(cancel_zero::<R, B>(sig, lhs.exponent))
+                }
+                Ordering::Greater => self.repr_add_large_small(lhs, rhs, rhs_sign),
+                Ordering::Less => self.repr_add_small_large(lhs, rhs, rhs_sign),
+            }
+        }
+    }
+
+    /// Like [`addsub_vv`](Self::addsub_vv) but with the left operand borrowed and
+    /// the right operand consumed. See `addsub_vv` for the full contract.
+    pub fn addsub_rv<const B: Word>(
+        &self,
+        lhs: &Repr<B>,
+        mut rhs: Repr<B>,
+        rhs_sign: Sign,
+    ) -> Rounded<Repr<B>> {
+        assert_finite_operands(lhs, &rhs);
+        // Bake the sign into the owned rhs so the kernel — which takes its first
+        // operand by value — can move `rhs` into that slot with `Positive`. This
+        // is the mirror of `addsub_vv`'s owned-lhs path; the value is identical.
+        rhs.significand *= rhs_sign;
+        if lhs.is_pos_zero() {
+            self.repr_round(rhs)
+        } else if rhs.is_pos_zero() {
+            self.repr_round_ref(lhs)
+        } else {
+            match lhs.exponent.cmp(&rhs.exponent) {
+                Ordering::Equal => self.repr_round(cancel_zero::<R, B>(
+                    &lhs.significand + rhs.significand,
+                    lhs.exponent,
+                )),
+                Ordering::Greater => self.repr_add_small_large(rhs, lhs, Positive),
+                Ordering::Less => self.repr_add_large_small(rhs, lhs, Positive),
+            }
+        }
+    }
+
+    /// Like [`addsub_vv`](Self::addsub_vv) but with both operands borrowed (the
+    /// larger-exponent operand is cloned once for in-place alignment). See
+    /// `addsub_vv` for the full contract.
+    pub fn addsub_rr<const B: Word>(
+        &self,
+        lhs: &Repr<B>,
+        rhs: &Repr<B>,
+        rhs_sign: Sign,
+    ) -> Rounded<Repr<B>> {
+        assert_finite_operands(lhs, rhs);
+        if lhs.is_pos_zero() {
+            match rhs_sign {
+                Positive => self.repr_round_ref(rhs),
+                Negative => self.repr_round_ref(&Repr::new(-&rhs.significand, rhs.exponent)),
+            }
+        } else if rhs.is_pos_zero() {
+            self.repr_round_ref(lhs)
+        } else {
+            match lhs.exponent.cmp(&rhs.exponent) {
+                Ordering::Equal => {
+                    let sig = match rhs_sign {
+                        Positive => &lhs.significand + &rhs.significand,
+                        Negative => &lhs.significand - &rhs.significand,
+                    };
+                    self.repr_round(cancel_zero::<R, B>(sig, lhs.exponent))
+                }
+                Ordering::Greater => self.repr_add_large_small(lhs.clone(), rhs, rhs_sign),
+                Ordering::Less => self.repr_add_small_large(lhs.clone(), rhs, rhs_sign),
+            }
+        }
+    }
+
     /// Add two floating point numbers under this context.
     ///
     /// # Examples
@@ -509,26 +567,14 @@ impl<R: Round> Context<R> {
     /// assert_eq!(context.add(&a.repr(), &b.repr()), Ok(Inexact(DBig::from_str("8.0")?, NoOp)));
     /// # Ok::<(), ParseError>(())
     /// ```
+    #[inline]
     pub fn add<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> FpResult<FBig<R, B>> {
         if lhs.is_infinite() || rhs.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-
-        let sum = if lhs.is_pos_zero() {
-            self.repr_round_ref(rhs)
-        } else if rhs.is_pos_zero() {
-            self.repr_round_ref(lhs)
-        } else {
-            match lhs.exponent.cmp(&rhs.exponent) {
-                Ordering::Equal => {
-                    let sig = &lhs.significand + &rhs.significand;
-                    self.repr_round(cancel_zero::<R, B>(sig, lhs.exponent))
-                }
-                Ordering::Greater => self.repr_add_large_small(lhs.clone(), rhs, Positive),
-                Ordering::Less => self.repr_add_small_large(lhs.clone(), rhs, Positive),
-            }
-        };
-        Ok(sum.map(|v| FBig::new(v, *self)))
+        Ok(self
+            .addsub_rr(lhs, rhs, Positive)
+            .map(|v| FBig::new(v, *self)))
     }
 
     /// Subtract two floating point numbers under this context.
@@ -551,30 +597,14 @@ impl<R: Round> Context<R> {
     /// );
     /// # Ok::<(), ParseError>(())
     /// ```
+    #[inline]
     pub fn sub<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> FpResult<FBig<R, B>> {
         if lhs.is_infinite() || rhs.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-
-        let sum = if lhs.is_pos_zero() {
-            // Round `-rhs` directly rather than negating *after* rounding. For the asymmetric
-            // modes (Up = toward +∞, Down = toward −∞), `round(-x) != -round(x)`: rounding
-            // `rhs` toward +∞ then negating rounds in the wrong direction, so `0 - rhs`
-            // would land one ULP off (e.g. truncated instead of rounded away from the result).
-            self.repr_round_ref(&Repr::new(-&rhs.significand, rhs.exponent))
-        } else if rhs.is_pos_zero() {
-            self.repr_round_ref(lhs)
-        } else {
-            match lhs.exponent.cmp(&rhs.exponent) {
-                Ordering::Equal => {
-                    let sig = &lhs.significand - &rhs.significand;
-                    self.repr_round(cancel_zero::<R, B>(sig, lhs.exponent))
-                }
-                Ordering::Greater => self.repr_add_large_small(lhs.clone(), rhs, Negative),
-                Ordering::Less => self.repr_add_small_large(lhs.clone(), rhs, Negative),
-            }
-        };
-        Ok(sum.map(|v| FBig::new(v, *self)))
+        Ok(self
+            .addsub_rr(lhs, rhs, Negative)
+            .map(|v| FBig::new(v, *self)))
     }
 }
 
@@ -724,5 +754,60 @@ mod tests {
                 .repr(),
             &r::<10>(1, 0)
         );
+    }
+
+    // The four ownership-aware `addsub_*` variants must produce the same value as
+    // each other (and therefore as `Context::add`/`sub`, which delegate to
+    // `addsub_rr`) across every input shape. The absolute correctness of
+    // `addsub_rr` is covered by the `ctx.add`/`ctx.sub` tests above; this guards
+    // that consuming vs borrowing an operand never changes the result.
+    fn assert_addsub_variants_agree<R: Round, const B: Word>(
+        ctx: &Context<R>,
+        a: &Repr<B>,
+        b: &Repr<B>,
+    ) {
+        let add = ctx.addsub_rr(a, b, Positive).value();
+        let sub = ctx.addsub_rr(a, b, Negative).value();
+        assert_eq!(&ctx.addsub_vv(a.clone(), b.clone(), Positive).value(), &add);
+        assert_eq!(&ctx.addsub_vr(a.clone(), b, Positive).value(), &add);
+        assert_eq!(&ctx.addsub_rv(a, b.clone(), Positive).value(), &add);
+        assert_eq!(&ctx.addsub_vv(a.clone(), b.clone(), Negative).value(), &sub);
+        assert_eq!(&ctx.addsub_vr(a.clone(), b, Negative).value(), &sub);
+        assert_eq!(&ctx.addsub_rv(a, b.clone(), Negative).value(), &sub);
+    }
+
+    #[test]
+    fn addsub_variants_agree() {
+        let ctx = Context::<HalfAway>::new(3);
+        // lhs has the larger exponent
+        assert_addsub_variants_agree(&ctx, &r::<10>(1234, -2), &r::<10>(567, -5));
+        // rhs has the larger exponent
+        assert_addsub_variants_agree(&ctx, &r::<10>(567, -5), &r::<10>(1234, -2));
+        // equal exponents
+        assert_addsub_variants_agree(&ctx, &r::<10>(123, -2), &r::<10>(456, -2));
+        // lhs is +0 (exercises the lhs-zero short-circuit in every variant)
+        assert_addsub_variants_agree(&ctx, &r::<10>(0, 0), &r::<10>(123, -2));
+        // rhs is +0
+        assert_addsub_variants_agree(&ctx, &r::<10>(123, -2), &r::<10>(0, 0));
+        // a negative operand (effective subtraction reached through `add`)
+        assert_addsub_variants_agree(&ctx, &r::<10>(-123, -2), &r::<10>(456, -2));
+    }
+
+    // Severe cancellation must recover through every ownership path — especially
+    // `addsub_rv`, which bakes the sign into the owned rhs and routes it as the
+    // kernel's by-value (first) operand, a structurally different path from
+    // vv/vr/rr.
+    #[test]
+    fn addsub_severe_cancellation_all_variants() {
+        let ctx = Context::<HalfEven>::new(10);
+        let big = r::<2>(1, 20); // 2^20
+        let near = r::<2>((1i128 << 20) - 1, 0); // 2^20 - 1
+                                                 // 2^20 - (2^20 - 1) = 1
+        assert_eq!(&ctx.addsub_vv(big.clone(), near.clone(), Negative).value(), &r::<2>(1, 0));
+        assert_eq!(&ctx.addsub_vr(big.clone(), &near, Negative).value(), &r::<2>(1, 0));
+        assert_eq!(&ctx.addsub_rr(&big, &near, Negative).value(), &r::<2>(1, 0));
+        // reversed: (2^20 - 1) - 2^20 = -1, through both rhs-owned and lhs-owned paths
+        assert_eq!(&ctx.addsub_rv(&near, big.clone(), Negative).value(), &r::<2>(-1, 0));
+        assert_eq!(&ctx.addsub_vv(near, big, Negative).value(), &r::<2>(-1, 0));
     }
 }
