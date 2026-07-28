@@ -20,6 +20,10 @@
   removing one rounding from range reduction. (`sqr` keeps its dedicated, faster
   kernel — don't write `x²` as `fma(x, x, …)`.)
 
+### Fix
+- `test_e_known_decimal_prefix` failed to compile under `no_std` (`ToString` is not in
+  the prelude without `std`): import `alloc::string::ToString` in the cache tests.
+
 ## 0.5.1
 
 ### Add
