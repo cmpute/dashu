@@ -33,15 +33,57 @@ where
     r
 }
 
-/// `log2_bounds` returns a strictly-enclosing `(lb, ub)` bracket around the true log2;
-/// verify it in log space with a tolerance that absorbs f32 rounding (the bracket itself
-/// is within a few f32 ulps, far below this).
+/// `log2_bounds` returns a strictly-enclosing `(lb, ub)` bracket around the true log2 —
+/// its documented contract is `lb ≤ log2(self) ≤ ub`. Verify it **exactly** in log space,
+/// with no tolerance: the `f64` oracle is ~2³²× more precise than the `f32` bracket, so a
+/// genuine bracket error (e.g. an off-by-one-ulp slip in `next_down`/`next_up`) surfaces
+/// here instead of being absorbed by slop. (`lb == ub` is legitimate only where the true
+/// log2 is an exact f32 — zero and powers of two — and the `f64` oracle agrees with the
+/// impl on those, so the strict comparison still holds.)
 #[allow(clippy::float_cmp)]
 fn assert_log2_bracket(lb: f32, ub: f32, true_log2: f64) {
-    assert!(lb <= ub);
-    assert!(lb.is_finite() && ub.is_finite());
-    let tol = 1e-5;
-    assert!((lb as f64) - tol <= true_log2 && true_log2 <= (ub as f64) + tol);
+    assert!(lb <= ub, "bracket not ordered: lb={lb:?} > ub={ub:?}");
+    assert!(lb.is_finite() && ub.is_finite(), "non-finite bracket ({lb:?}, {ub:?})");
+    let lb = lb as f64;
+    let ub = ub as f64;
+    assert!(lb <= true_log2, "lower bound {lb:?} > true log2 {true_log2:?}");
+    assert!(true_log2 <= ub, "true log2 {true_log2:?} > upper bound {ub:?}");
+}
+
+/// Boundary magnitudes (as `u128`) that stress `log2_bounds`'s branch transitions: the
+/// trivial `0..=3`, every power of two with its ±1 neighbours (where the bracket is
+/// tightest), the 24-bit cutoff of the `std` integer path, "non-power-of-two with all-zero
+/// low bits" (`3·2^k` — the one spot where the >24-bit lower bound can coincide with the
+/// true value), and the top three magnitudes. The integer tests clamp these to each type's
+/// range, so a single list serves `u8..=u128` and `i8..i128`.
+fn log2_corner_magnitudes(bits: u32) -> Vec<u128> {
+    let mut mags: Vec<u128> = vec![0, 1, 2, 3];
+    for k in 0..bits {
+        mags.push(1u128 << k);
+    }
+    for k in 1..bits {
+        let p = 1u128 << k;
+        mags.push(p - 1);
+        mags.push(p + 1); // p ≤ 2^(bits-1), so p+1 ≤ 2^(bits-1)+1 < 2^bits
+    }
+    if bits > 24 {
+        for &v in &[23u32, 24] {
+            let p = 1u128 << v;
+            mags.extend_from_slice(&[p - 1, p, p + 1]);
+        }
+        let shift = bits - 24;
+        mags.push(3u128 << shift);
+        mags.push(3u128 << (shift - 1));
+    }
+    let top = if bits >= 128 {
+        u128::MAX
+    } else {
+        (1u128 << bits) - 1
+    };
+    mags.extend_from_slice(&[top, top - 1, top - 2]);
+    mags.sort_unstable();
+    mags.dedup();
+    mags
 }
 
 // ===================== unsigned integer impls =====================
@@ -146,6 +188,27 @@ macro_rules! gen_uint {
                     }
                 }
             }
+
+            #[test]
+            #[ignore]
+            fn log2_bounds_corners() {
+                // Fixed boundary inputs — guaranteed to run every time, independent of the
+                // proptest RNG. They stress the branch transitions (powers of two, the 24-bit
+                // cutoff, type MAX) where the bracket is tightest and random sampling over
+                // 1024 cases could miss a specific value entirely.
+                for mag in log2_corner_magnitudes(<$T>::BITS) {
+                    if mag > <$T>::MAX as u128 {
+                        continue;
+                    }
+                    let x = mag as $T;
+                    let (lb, ub) = x.log2_bounds();
+                    if x == 0 {
+                        assert!(lb.is_infinite() && lb.is_sign_negative() && lb == ub, "x={x}");
+                    } else {
+                        assert_log2_bracket(lb, ub, (x as f64).log2());
+                    }
+                }
+            }
         }
     };
 }
@@ -211,6 +274,39 @@ macro_rules! gen_int {
                         prop_assert!(lb.is_infinite() && lb.is_sign_negative() && lb == ub);
                     } else {
                         assert_log2_bracket(lb, ub, (x.unsigned_abs() as f64).log2());
+                    }
+                }
+            }
+
+            #[test]
+            #[ignore]
+            fn log2_bounds_corners() {
+                // The signed range is [-2^(b-1), 2^(b-1)-1]; |MIN| = 2^(b-1) is the one
+                // magnitude above the positive max and is itself a power of two, so it gets
+                // explicit handling below (it can't round-trip through `as i128` for i128).
+                let max_mag = (<$T>::MAX as u128) + 1; // = 2^(BITS-1) = |MIN|
+                let check = |x: $T| {
+                    let (lb, ub) = x.log2_bounds();
+                    if x == 0 {
+                        assert!(lb.is_infinite() && lb.is_sign_negative() && lb == ub, "x={x}");
+                    } else {
+                        assert_log2_bracket(lb, ub, (x.unsigned_abs() as f64).log2());
+                    }
+                };
+                for mag in log2_corner_magnitudes(<$T>::BITS) {
+                    // positive side: representable iff mag ≤ MAX
+                    if mag <= <$T>::MAX as u128 {
+                        check(mag as $T);
+                    }
+                    // negative side: -(mag) representable iff 0 < mag ≤ |MIN|
+                    if mag > 0 && mag <= max_mag {
+                        let x = if mag == max_mag {
+                            <$T>::MIN
+                        } else {
+                            let neg = -(mag as i128);
+                            neg as $T
+                        };
+                        check(x);
                     }
                 }
             }
@@ -291,5 +387,66 @@ proptest! {
         // next_up is +inf) and all non-finite bit patterns.
         prop_assert_eq!(dashu::base::utils::next_down(dashu::base::utils::next_up(f)), f);
         prop_assert!(dashu::base::utils::next_up(f) != f); // always moves
+    }
+}
+
+#[test]
+#[ignore]
+fn f32_log2_bounds_corners() {
+    let mut xs: Vec<f32> = vec![
+        0.0, -0.0, 1.0, -1.0, 2.0, -2.0, 0.5, -0.5, 3.0, -3.0, 1.5, -1.5, 5.0,
+    ];
+    for k in -5..=5i32 {
+        xs.push(2f32.powi(k));
+        xs.push(-2f32.powi(k));
+    }
+    xs.extend_from_slice(&[
+        f32::MIN_POSITIVE,
+        -f32::MIN_POSITIVE,
+        f32::from_bits(1), // smallest positive subnormal
+        -f32::from_bits(1),
+        f32::MAX,
+        -f32::MAX,
+        // ±1 f32 ulp around a power of two — tightest bracket for the general float path
+        f32::from_bits(2.0f32.to_bits() - 1),
+        f32::from_bits(2.0f32.to_bits() + 1),
+    ]);
+    for f in xs {
+        let (lb, ub) = f.log2_bounds();
+        if f == 0.0 {
+            assert!(lb.is_infinite() && lb.is_sign_negative() && lb == ub, "f={f}");
+        } else {
+            assert_log2_bracket(lb, ub, (f.abs() as f64).log2());
+        }
+    }
+}
+
+#[test]
+#[ignore]
+fn f64_log2_bounds_corners() {
+    let mut xs: Vec<f64> = vec![
+        0.0, -0.0, 1.0, -1.0, 2.0, -2.0, 0.5, -0.5, 3.0, -3.0, 1.5, -1.5, 5.0,
+    ];
+    for k in -5..=5i32 {
+        xs.push(2f64.powi(k));
+        xs.push(-2f64.powi(k));
+    }
+    xs.extend_from_slice(&[
+        f64::MIN_POSITIVE,
+        -f64::MIN_POSITIVE,
+        f64::from_bits(1),
+        -f64::from_bits(1),
+        f64::MAX,
+        -f64::MAX,
+        f64::from_bits(2.0f64.to_bits() - 1),
+        f64::from_bits(2.0f64.to_bits() + 1),
+    ]);
+    for f in xs {
+        let (lb, ub) = f.log2_bounds();
+        if f == 0.0 {
+            assert!(lb.is_infinite() && lb.is_sign_negative() && lb == ub, "f={f}");
+        } else {
+            assert_log2_bracket(lb, ub, f.abs().log2());
+        }
     }
 }
