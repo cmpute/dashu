@@ -74,9 +74,9 @@ proptest! {
     /// exp(x) ≈ MPFR exp(x).
     #[test]
     #[ignore]
-    fn exp_fuzz(x in small_x()) {
+    fn fbig_exp_fuzz(x in small_x()) {
         let xs = format!("{x:e}");
-        for prec in [20usize, 50, 100] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.exp::<10>(x.repr(), None));
             if d.repr().is_infinite() { continue; }
@@ -90,9 +90,9 @@ proptest! {
     /// exp(x) − 1 ≈ MPFR exp_m1 (cancellation-free near zero).
     #[test]
     #[ignore]
-    fn exp_m1_fuzz(x in small_x()) {
+    fn fbig_exp_m1_fuzz(x in small_x()) {
         let xs = format!("{x:e}");
-        for prec in [20usize, 50, 100] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.exp_m1::<10>(x.repr(), None));
             if d.repr().is_infinite() { continue; }
@@ -106,9 +106,9 @@ proptest! {
     /// ln(x) ≈ MPFR ln(x), x > 0.
     #[test]
     #[ignore]
-    fn ln_fuzz(x in fuzz::pos_dbig_strategy(-50..=50)) {
+    fn fbig_ln_fuzz(x in fuzz::pos_dbig_strategy(-50..=50)) {
         let xs = format!("{x:e}");
-        for prec in [20usize, 50, 100] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.ln::<10>(x.repr(), None));
             if d.repr().is_infinite() { continue; }
@@ -122,9 +122,9 @@ proptest! {
     /// ln(1 + x) ≈ MPFR ln_1p, x > −1.
     #[test]
     #[ignore]
-    fn ln_1p_fuzz(x in small_x_above(-1)) {
+    fn fbig_ln_1p_fuzz(x in small_x_above(-1)) {
         let xs = format!("{x:e}");
-        for prec in [20usize, 50, 100] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.ln_1p::<10>(x.repr(), None));
             if d.repr().is_infinite() { continue; }
@@ -138,9 +138,9 @@ proptest! {
     /// sqrt(x) ≈ MPFR sqrt(x), x ≥ 0.
     #[test]
     #[ignore]
-    fn sqrt_fuzz(x in fuzz::pos_dbig_strategy(-50..=50)) {
+    fn fbig_sqrt_fuzz(x in fuzz::pos_dbig_strategy(-50..=50)) {
         let xs = format!("{x:e}");
-        for prec in [20usize, 50, 100] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.sqrt::<10>(x.repr()));
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
@@ -153,9 +153,9 @@ proptest! {
     /// cbrt(x) ≈ MPFR cbrt(x), all real.
     #[test]
     #[ignore]
-    fn cbrt_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
+    fn fbig_cbrt_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
         let xs = format!("{x:e}");
-        for prec in [20usize, 50, 100] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.cbrt::<10>(x.repr()));
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
@@ -168,9 +168,9 @@ proptest! {
     /// nth_root(n, x) ≈ MPFR root(n), x > 0, n ∈ 2..=6.
     #[test]
     #[ignore]
-    fn nth_root_fuzz(x in fuzz::pos_dbig_strategy(-50..=50), n in 2u32..=6) {
+    fn fbig_nth_root_fuzz(x in fuzz::pos_dbig_strategy(-50..=50), n in 2u32..=6) {
         let xs = format!("{x:e}");
-        for prec in [20usize, 50, 100] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.nth_root::<10>(n as usize, x.repr()));
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
@@ -183,9 +183,9 @@ proptest! {
     /// hypot(a, b) = sqrt(a² + b²) ≈ MPFR (computed as such; inputs bounded so no overflow).
     #[test]
     #[ignore]
-    fn hypot_fuzz(a in small_x(), b in small_x()) {
+    fn fbig_hypot_fuzz(a in small_x(), b in small_x()) {
         let (as_, bs) = (format!("{a:e}"), format!("{b:e}"));
-        for prec in [20usize, 50, 100] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.hypot::<10>(a.repr(), b.repr()));
             let bits = rug_bits(a.repr(), prec).max(rug_bits(b.repr(), prec));
@@ -201,9 +201,9 @@ proptest! {
     /// atan(x) ≈ MPFR atan(x), all real.
     #[test]
     #[ignore]
-    fn atan_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
+    fn fbig_atan_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
         let xs = format!("{x:e}");
-        for prec in [20usize, 50, 100] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.atan::<10>(x.repr(), None));
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
@@ -216,9 +216,9 @@ proptest! {
     /// base^exp ≈ MPFR pow, base > 0.
     #[test]
     #[ignore]
-    fn powf_fuzz(base in fuzz::pos_dbig_strategy(-5..=5), exp in small_x()) {
+    fn fbig_powf_fuzz(base in fuzz::pos_dbig_strategy(-5..=5), exp in small_x()) {
         let (bs, es) = (format!("{base:e}"), format!("{exp:e}"));
-        for prec in [20usize, 50, 100] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.powf::<10>(base.repr(), exp.repr(), None));
             if d.repr().is_infinite() { continue; }
@@ -234,9 +234,9 @@ proptest! {
     /// base^n ≈ MPFR pow(n), n ∈ 0..=16 (rug takes u32).
     #[test]
     #[ignore]
-    fn powi_fuzz(base in fuzz::dbig_strategy(-20..=20), n in 0u32..=16) {
+    fn fbig_powi_fuzz(base in fuzz::dbig_strategy(-20..=20), n in 0u32..=16) {
         let bs = format!("{base:e}");
-        for prec in [20usize, 50, 100] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.powi::<10>(base.repr(), IBig::from(n)));
             if d.repr().is_infinite() { continue; }
@@ -250,9 +250,9 @@ proptest! {
     /// sinh(x) ≈ MPFR sinh(x).
     #[test]
     #[ignore]
-    fn sinh_fuzz(x in small_x()) {
+    fn fbig_sinh_fuzz(x in small_x()) {
         let xs = format!("{x:e}");
-        for prec in [20usize, 50, 100] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.sinh::<10>(x.repr(), None));
             if d.repr().is_infinite() { continue; }
@@ -266,9 +266,9 @@ proptest! {
     /// cosh(x) ≈ MPFR cosh(x).
     #[test]
     #[ignore]
-    fn cosh_fuzz(x in small_x()) {
+    fn fbig_cosh_fuzz(x in small_x()) {
         let xs = format!("{x:e}");
-        for prec in [20usize, 50, 100] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.cosh::<10>(x.repr(), None));
             if d.repr().is_infinite() { continue; }
@@ -282,9 +282,9 @@ proptest! {
     /// tanh(x) ≈ MPFR tanh(x).
     #[test]
     #[ignore]
-    fn tanh_fuzz(x in small_x()) {
+    fn fbig_tanh_fuzz(x in small_x()) {
         let xs = format!("{x:e}");
-        for prec in [20usize, 50, 100] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.tanh::<10>(x.repr(), None));
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
@@ -297,9 +297,9 @@ proptest! {
     /// sinh_cosh(x) ≈ (MPFR sinh(x), MPFR cosh(x)).
     #[test]
     #[ignore]
-    fn sinh_cosh_fuzz(x in small_x()) {
+    fn fbig_sinh_cosh_fuzz(x in small_x()) {
         let xs = format!("{x:e}");
-        for prec in [20usize, 50, 100] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let (ds, dc) = ctx.sinh_cosh::<10>(x.repr(), None);
             let d_sinh = dashu_ok!(ds);
@@ -319,9 +319,9 @@ proptest! {
     /// asinh(x) ≈ MPFR asinh(x), all real.
     #[test]
     #[ignore]
-    fn asinh_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
+    fn fbig_asinh_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
         let xs = format!("{x:e}");
-        for prec in [20usize, 50, 100] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.asinh::<10>(x.repr(), None));
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
@@ -334,9 +334,9 @@ proptest! {
     /// acosh(x) ≈ MPFR acosh(x), x ≥ 1 (pos_dbig_strategy(0..=50) keeps x ≥ 1).
     #[test]
     #[ignore]
-    fn acosh_fuzz(x in fuzz::pos_dbig_strategy(0..=50)) {
+    fn fbig_acosh_fuzz(x in fuzz::pos_dbig_strategy(0..=50)) {
         let xs = format!("{x:e}");
-        for prec in [20usize, 50, 100] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.acosh::<10>(x.repr(), None));
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
@@ -350,9 +350,9 @@ proptest! {
     /// skipped by the `is_infinite` check inside the loop).
     #[test]
     #[ignore]
-    fn atanh_fuzz(x in fuzz::unit_dbig()) {
+    fn fbig_atanh_fuzz(x in fuzz::unit_dbig()) {
         let xs = format!("{x:e}");
-        for prec in [20usize, 50, 100] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.atanh::<10>(x.repr(), None));
             if d.repr().is_infinite() { continue; }
