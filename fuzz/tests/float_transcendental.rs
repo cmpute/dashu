@@ -1,13 +1,13 @@
 //! Differential / fuzz tests for dashu-float's non-trig transcendentals against `rug::Float` (MPFR).
 //!
-//! Companion to `trig_random.rs` (which covers sin/cos/tan/atan2/asin/acos/π). Here: exp, exp_m1,
+//! Companion to `float_trig_random.rs` (which covers sin/cos/tan/atan2/asin/acos/π). Here: exp, exp_m1,
 //! ln, ln_1p, sqrt, cbrt, nth_root, hypot, atan, powf, powi, sinh, cosh, sinh_cosh, tanh, asinh, acosh, atanh.
 //! Proptest-driven so a mismatch shrinks to a minimal counterexample; all `#[ignore]`d (manual,
 //! release-time — they link `rug` and run long). Tolerance is `within_k_ulps(2)`: dashu is
 //! near-correctly-rounded (guard digits), MPFR is Ziv-correct, so a ≤1-ulp divergence is legitimate
 //! and `k=2` leaves margin; a >2-ulp divergence is a real bug to investigate.
 //!
-//! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test transcendental -- --ignored --nocapture`
+//! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test float_transcendental -- --ignored --nocapture`
 
 use core::str::FromStr;
 use dashu::float::ops::Abs;
