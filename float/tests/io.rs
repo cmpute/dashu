@@ -280,27 +280,29 @@ fn test_format_binary() {
     assert_eq!(format!("{:.0}", fbig!(0x1p4)), "10000");
     assert_eq!(format!("{:.0}", fbig!(-0x1p4)), "-10000");
     assert_eq!(format!("{:.0}", fbig!(0x1p-1)), "0");
-    assert_eq!(format!("{:.0}", fbig!(-0x1p-1)), "-0");
+    // a negative that rounds to -0 renders as "0" by default; the `+` flag reveals the sign
+    assert_eq!(format!("{:.0}", fbig!(-0x1p-1)), "0");
+    assert_eq!(format!("{:+.0}", fbig!(-0x1p-1)), "-0");
     assert_eq!(format!("{:.0}", fbig!(0x1p-4)), "0");
-    assert_eq!(format!("{:.0}", fbig!(-0x1p-4)), "-0");
+    assert_eq!(format!("{:.0}", fbig!(-0x1p-4)), "0");
     assert_eq!(format!("{:8.0}", fbig!(0x0)), "       0");
     assert_eq!(format!("{:8.0}", fbig!(0x1)), "       1");
     assert_eq!(format!("{:8.0}", fbig!(-0x1)), "      -1");
     assert_eq!(format!("{:8.0}", fbig!(0x1p4)), "   10000");
     assert_eq!(format!("{:8.0}", fbig!(-0x1p4)), "  -10000");
     assert_eq!(format!("{:8.0}", fbig!(0x1p-1)), "       0");
-    assert_eq!(format!("{:8.0}", fbig!(-0x1p-1)), "      -0");
+    assert_eq!(format!("{:8.0}", fbig!(-0x1p-1)), "       0");
     assert_eq!(format!("{:8.0}", fbig!(0x1p-4)), "       0");
-    assert_eq!(format!("{:8.0}", fbig!(-0x1p-4)), "      -0");
+    assert_eq!(format!("{:8.0}", fbig!(-0x1p-4)), "       0");
     assert_eq!(format!("{:08.0}", fbig!(0x0)), "00000000");
     assert_eq!(format!("{:08.0}", fbig!(0x1)), "00000001");
     assert_eq!(format!("{:08.0}", fbig!(-0x1)), "-0000001");
     assert_eq!(format!("{:08.0}", fbig!(0x1p4)), "00010000");
     assert_eq!(format!("{:08.0}", fbig!(-0x1p4)), "-0010000");
     assert_eq!(format!("{:08.0}", fbig!(0x1p-1)), "00000000");
-    assert_eq!(format!("{:08.0}", fbig!(-0x1p-1)), "-0000000");
+    assert_eq!(format!("{:08.0}", fbig!(-0x1p-1)), "00000000");
     assert_eq!(format!("{:08.0}", fbig!(0x1p-4)), "00000000");
-    assert_eq!(format!("{:08.0}", fbig!(-0x1p-4)), "-0000000");
+    assert_eq!(format!("{:08.0}", fbig!(-0x1p-4)), "00000000");
 
     assert_eq!(format!("{:.8}", fbig!(0x0)), "0.00000000");
     assert_eq!(format!("{:.8}", fbig!(0x1)), "1.00000000");
@@ -321,7 +323,7 @@ fn test_format_binary() {
     assert_eq!(format!("{:8.4}", fbig!(0x1p-4)), "  0.0001");
     assert_eq!(format!("{:8.4}", fbig!(-0x1p-4)), " -0.0001");
     assert_eq!(format!("{:8.4}", fbig!(0x1p-5)), "  0.0000");
-    assert_eq!(format!("{:8.4}", fbig!(-0x1p-5)), " -0.0000");
+    assert_eq!(format!("{:8.4}", fbig!(-0x1p-5)), "  0.0000");
     assert_eq!(format!("{:08.4}", fbig!(0x0)), "000.0000");
     assert_eq!(format!("{:08.4}", fbig!(0x1)), "001.0000");
     assert_eq!(format!("{:08.4}", fbig!(-0x1)), "-01.0000");
@@ -332,7 +334,7 @@ fn test_format_binary() {
     assert_eq!(format!("{:08.4}", fbig!(0x1p-4)), "000.0001");
     assert_eq!(format!("{:08.4}", fbig!(-0x1p-4)), "-00.0001");
     assert_eq!(format!("{:08.4}", fbig!(0x1p-5)), "000.0000");
-    assert_eq!(format!("{:08.4}", fbig!(-0x1p-5)), "-00.0000");
+    assert_eq!(format!("{:08.4}", fbig!(-0x1p-5)), "000.0000");
 
     assert_eq!(format!("{:16}", fbig!(0x123p-4)), "      10010.0011");
     assert_eq!(format!("{:16}", fbig!(-0x123p-4)), "     -10010.0011");
@@ -536,9 +538,11 @@ fn test_format_decimal() {
     assert_eq!(format!("{:.0}", dbig!(1e4)), "10000");
     assert_eq!(format!("{:.0}", dbig!(-1e4)), "-10000");
     assert_eq!(format!("{:.0}", dbig!(1e-1)), "0");
-    assert_eq!(format!("{:.0}", dbig!(-1e-1)), "-0");
+    // a negative that rounds to -0 renders as "0" by default; the `+` flag reveals the sign
+    assert_eq!(format!("{:.0}", dbig!(-1e-1)), "0");
+    assert_eq!(format!("{:+.0}", dbig!(-1e-1)), "-0");
     assert_eq!(format!("{:.0}", dbig!(1e-4)), "0");
-    assert_eq!(format!("{:.0}", dbig!(-1e-4)), "-0");
+    assert_eq!(format!("{:.0}", dbig!(-1e-4)), "0");
     assert_eq!(format!("{:.0}", dbig!(9e-1)), "1"); // round up
     assert_eq!(format!("{:.0}", dbig!(-9e-1)), "-1");
     assert_eq!(format!("{:.0}", dbig!(99e-1)), "10");
@@ -549,9 +553,9 @@ fn test_format_decimal() {
     assert_eq!(format!("{:8.0}", dbig!(1e4)), "   10000");
     assert_eq!(format!("{:8.0}", dbig!(-1e4)), "  -10000");
     assert_eq!(format!("{:8.0}", dbig!(1e-1)), "       0");
-    assert_eq!(format!("{:8.0}", dbig!(-1e-1)), "      -0");
+    assert_eq!(format!("{:8.0}", dbig!(-1e-1)), "       0");
     assert_eq!(format!("{:8.0}", dbig!(1e-4)), "       0");
-    assert_eq!(format!("{:8.0}", dbig!(-1e-4)), "      -0");
+    assert_eq!(format!("{:8.0}", dbig!(-1e-4)), "       0");
     assert_eq!(format!("{:8.0}", dbig!(9e-1)), "       1");
     assert_eq!(format!("{:8.0}", dbig!(-9e-1)), "      -1");
     assert_eq!(format!("{:8.0}", dbig!(99e-1)), "      10");
@@ -562,9 +566,9 @@ fn test_format_decimal() {
     assert_eq!(format!("{:08.0}", dbig!(1e4)), "00010000");
     assert_eq!(format!("{:08.0}", dbig!(-1e4)), "-0010000");
     assert_eq!(format!("{:08.0}", dbig!(1e-1)), "00000000");
-    assert_eq!(format!("{:08.0}", dbig!(-1e-1)), "-0000000");
+    assert_eq!(format!("{:08.0}", dbig!(-1e-1)), "00000000");
     assert_eq!(format!("{:08.0}", dbig!(1e-4)), "00000000");
-    assert_eq!(format!("{:08.0}", dbig!(-1e-4)), "-0000000");
+    assert_eq!(format!("{:08.0}", dbig!(-1e-4)), "00000000");
     assert_eq!(format!("{:08.0}", dbig!(9e-1)), "00000001");
     assert_eq!(format!("{:08.0}", dbig!(-9e-1)), "-0000001");
     assert_eq!(format!("{:08.0}", dbig!(99e-1)), "00000010");
@@ -589,7 +593,7 @@ fn test_format_decimal() {
     assert_eq!(format!("{:8.4}", dbig!(1e-4)), "  0.0001");
     assert_eq!(format!("{:8.4}", dbig!(-1e-4)), " -0.0001");
     assert_eq!(format!("{:8.4}", dbig!(1e-5)), "  0.0000");
-    assert_eq!(format!("{:8.4}", dbig!(-1e-5)), " -0.0000");
+    assert_eq!(format!("{:8.4}", dbig!(-1e-5)), "  0.0000");
     assert_eq!(format!("{:8.4}", dbig!(9e-5)), "  0.0001");
     assert_eq!(format!("{:8.4}", dbig!(-9e-5)), " -0.0001");
     assert_eq!(format!("{:8.4}", dbig!(99e-5)), "  0.0010");
@@ -604,7 +608,7 @@ fn test_format_decimal() {
     assert_eq!(format!("{:08.4}", dbig!(1e-4)), "000.0001");
     assert_eq!(format!("{:08.4}", dbig!(-1e-4)), "-00.0001");
     assert_eq!(format!("{:08.4}", dbig!(1e-5)), "000.0000");
-    assert_eq!(format!("{:08.4}", dbig!(-1e-5)), "-00.0000");
+    assert_eq!(format!("{:08.4}", dbig!(-1e-5)), "000.0000");
     assert_eq!(format!("{:08.4}", dbig!(9e-5)), "000.0001");
     assert_eq!(format!("{:08.4}", dbig!(-9e-5)), "-00.0001");
     assert_eq!(format!("{:08.4}", dbig!(99e-5)), "000.0010");

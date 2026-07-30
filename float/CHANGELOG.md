@@ -40,6 +40,12 @@
 ### Fix
 - `test_e_known_decimal_prefix` failed to compile under `no_std` (`ToString` is not in
   the prelude without `std`): import `alloc::string::ToString` in the cache tests.
+- `Display`/`LowerExp`/`UpperExp` (and the per-base `{:b}`/`{:o}`/`{:h}`/`{:x}` formatters) now read
+  `Repr::sign` (not the bare significand, which is always `+` for zero) and clamp a zero
+  significand's display exponent to `0`, so the `-0` sentinel exponent no longer leaks into the
+  output. By default `-0` and `+0` both render as `"0"` (signed zero is treated as an internal
+  detail); the formatter's `+` flag reveals the sign (`-0` → `"-0"`, `+0` → `"+0"`) — use it for
+  string round-trips (e.g. into MPFR) that must preserve the signed-zero sign.
 
 ## 0.5.1
 
