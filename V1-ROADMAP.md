@@ -1,6 +1,6 @@
 # dashu Roadmap — v0.5.x and beyond
 
-Last updated: 2026-07-28
+Last updated: 2026-07-30
 
 Feature work deferred out of the **v0.5.0** release. The v0.5.x items are all **additive**
 (no breaking changes) and safe to ship as point releases on top of 0.5.0; the post-v1 items
@@ -169,6 +169,15 @@ real-valued `±∞`:
   steps toward this.
 - **SIMD-optimized FFT multiplication.** Leverage the [`wide`](https://crates.io/crates/wide)
   crate for SIMD FFT-based multiplication. Not considered until v1.0.
+- **High-bits (short-product) multiplication for `dashu-float` `mul`/`sqr`/`cubic`.** These
+  currently round the *exact* full product/square/cube — always correctly rounded, but O(M(n))
+  in the operand size regardless of the target precision, which is wasteful when operands far
+  exceed `precision` (e.g. unlimited-precision significands multiplied to a low target
+  precision). The efficient form keeps only the high limbs needed for rounding plus a sticky
+  bit for the discarded tail — MPFR's `mpfr_mulhigh_n` (Mulders' short product) with a
+  `mpfr_round_p`-style certify-and-fall-back-to-exact gate, so it never materializes the full
+  product. Deferred post-v1.0: it needs a new short-product primitive in `dashu-int` (none
+  exists today), and the case it optimizes is uncommon. (`float/src/mul.rs:173`.)
 - **MSRV bumps** — deferred unless forced by a dependency.
 - **Constant-cache eviction/cap policy** — revisit only if real workloads report memory
   pressure. (0.5 has no cap; a `ConstCache` grows until `clear_cache()`/drop, and callers own
