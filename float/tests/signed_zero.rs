@@ -333,3 +333,37 @@ fn test_asin_acos_unit_under_down() {
     );
     assert!((acosm1.to_f64().value() - core::f64::consts::PI).abs() < 1e-14, "acos(-1) ≈ π");
 }
+
+#[test]
+fn signed_zero_formatting() {
+    // Signed zero is an internal detail: by default `-0` and `+0` both render as "0" (no sign).
+    // The sign is shown only under the formatter's `+` flag — `-0` → "-0", `+0` → "+0" — which is
+    // what string round-trips (e.g. into MPFR/rug) use to preserve it. The sign lives in the
+    // exponent sentinel, not the significand (see `Repr::sign`), so the formatter reads
+    // `self.sign()` and must not leak the sentinel exponent into the rendered digits/exponent.
+    let nz = -DBig::ZERO;
+    assert!(nz.repr().is_neg_zero());
+
+    // default: sign suppressed for both +0 and -0
+    assert_eq!(format!("{}", nz), "0");
+    assert_eq!(format!("{:e}", nz), "0e0");
+    assert_eq!(format!("{}", DBig::ZERO), "0");
+    assert_eq!(format!("{:e}", DBig::ZERO), "0e0");
+
+    // `+` flag: sign shown — `-0` → "-0", `+0` → "+0"
+    assert_eq!(format!("{:+}", nz), "-0");
+    assert_eq!(format!("{:+e}", nz), "-0e0");
+    assert_eq!(format!("{:+}", DBig::ZERO), "+0");
+    assert_eq!(format!("{:+e}", DBig::ZERO), "+0e0");
+
+    // base-2 uses the '@' exponent marker; same sign rule
+    let nz2: FBig = FBig::from_repr(Repr::<2>::neg_zero(), Context::new(0));
+    assert_eq!(format!("{}", nz2), "0");
+    assert_eq!(format!("{:e}", nz2), "0@0");
+    assert_eq!(format!("{:+e}", nz2), "-0@0");
+
+    // a negative value that rounds to zero follows the same rule (default "0", `+` → "-0")
+    let tiny = DBig::from_str("-0.001").unwrap();
+    assert_eq!(format!("{:.0}", tiny), "0");
+    assert_eq!(format!("{:+.0}", tiny), "-0");
+}

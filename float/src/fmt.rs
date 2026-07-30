@@ -84,7 +84,7 @@ impl<const B: Word> Repr<B> {
         }
 
         // first perform rounding before actual printing if necessary
-        let negative = self.significand.sign() == Sign::Negative;
+        let negative = self.sign() == Sign::Negative;
         let rounded_signif;
         let (signif, exp) = if let Some(prec) = f.precision() {
             let diff = prec as isize + self.exponent;
@@ -100,15 +100,18 @@ impl<const B: Word> Repr<B> {
         } else {
             (&self.significand, self.exponent)
         };
+        // zero's stored exponent encodes the ±0 sign (sentinel -1 / 0), not magnitude, so it must
+        // not leak into the rendered digits/exponent — render `0`/`0e0` canonically.
+        let is_zero = signif.is_zero();
+        let exp = if is_zero { 0 } else { exp };
 
         // then print the digits to a buffer, without the sign
         let mut signif_str = String::new();
         write!(&mut signif_str, "{}", signif.in_radix(B as _))?;
-        let signif_str = if negative {
-            &signif_str[1..]
-        } else {
-            signif_str.as_str()
-        };
+        // strip the leading '-' from a negative significand (e.g. "-123"); for `-0` the
+        // significand renders as "0" with no sign, so leave it — the '-' is emitted below
+        // from `negative` (which reflects the signed zero, not the bare significand).
+        let signif_str = signif_str.strip_prefix('-').unwrap_or(&signif_str);
 
         // calculate padding if necessary
         let (left_pad, right_pad) = if let Some(min_width) = f.width() {
@@ -130,7 +133,7 @@ impl<const B: Word> Repr<B> {
                 signif_digits = signif_digits.max(1);
             }
 
-            let has_sign = (negative || f.sign_plus()) as usize;
+            let has_sign = ((negative && !is_zero) || f.sign_plus()) as usize;
             let has_radix_point = if exp > 0 {
                 // if there's no fractional part, the result has the floating point
                 // only if the precision is set to be non-zero
@@ -168,7 +171,10 @@ impl<const B: Word> Repr<B> {
                 f.write_char(f.fill())?;
             }
         }
-        if negative {
+        // Emit the sign: a nonzero negative always carries '-'; `-0` carries '-' only when the
+        // formatter's `+` flag is set (otherwise `-0` and `+0` both render as "0"). Under `+`,
+        // `+0` renders as "+0" via the else-if branch.
+        if negative && (!is_zero || f.sign_plus()) {
             f.write_char('-')?;
         } else if f.sign_plus() {
             f.write_char('+')?;
@@ -284,7 +290,7 @@ impl<const B: Word> Repr<B> {
         }
 
         // first perform rounding before actual printing if necessary
-        let negative = self.significand.sign() == Sign::Negative;
+        let negative = self.sign() == Sign::Negative;
         let rounded_signif;
         let (signif, exp) = if let Some(prec) = f.precision() {
             // add one because always have one extra digit before the radix point
@@ -306,6 +312,10 @@ impl<const B: Word> Repr<B> {
         } else {
             (&self.significand, self.exponent)
         };
+        // zero's stored exponent encodes the ±0 sign (sentinel -1 / 0), not magnitude, so it must
+        // not leak into the rendered digits/exponent — render `0`/`0e0` canonically.
+        let is_zero = signif.is_zero();
+        let exp = if is_zero { 0 } else { exp };
 
         // then print the digits to a buffer, without the prefix or sign
         let (mut signif_str, mut exp_str) = (String::new(), String::new());
@@ -315,11 +325,10 @@ impl<const B: Word> Repr<B> {
             (false, true) => write!(&mut signif_str, "{:}", signif.in_radix(16)),
             (true, true) => write!(&mut signif_str, "{:#}", signif.in_radix(16)),
         }?;
-        let signif_str = if negative {
-            &signif_str[1..]
-        } else {
-            signif_str.as_str()
-        };
+        // strip the leading '-' from a negative significand (e.g. "-123"); for `-0` the
+        // significand renders as "0" with no sign, so leave it — the '-' is emitted below
+        // from `negative` (which reflects the signed zero, not the bare significand).
+        let signif_str = signif_str.strip_prefix('-').unwrap_or(&signif_str);
         // adjust exp because the radix point is put after the first digit
         let exp_adjust = if use_hexadecimal {
             exp + (signif_str.len() as isize - 1) * 4
@@ -333,7 +342,7 @@ impl<const B: Word> Repr<B> {
         let (left_pad, right_pad) = if let Some(min_width) = f.width() {
             let prec = f.precision().unwrap_or(0);
             let has_point = signif_str.len() > 1 || prec > 0; // whether print the radix point
-            let has_sign = negative || f.sign_plus();
+            let has_sign = (negative && !is_zero) || f.sign_plus();
 
             // if the precision option is set, there might be extra trailing zeros
             let trailing_zeros = if prec > signif_str.len() - 1 {
@@ -371,7 +380,10 @@ impl<const B: Word> Repr<B> {
                 f.write_char(f.fill())?;
             }
         }
-        if negative {
+        // Emit the sign: a nonzero negative always carries '-'; `-0` carries '-' only when the
+        // formatter's `+` flag is set (otherwise `-0` and `+0` both render as "0"). Under `+`,
+        // `+0` renders as "+0" via the else-if branch.
+        if negative && (!is_zero || f.sign_plus()) {
             f.write_char('-')?;
         } else if f.sign_plus() {
             f.write_char('+')?;
