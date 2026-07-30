@@ -37,7 +37,7 @@ proptest! {
     #[ignore]
     fn sin_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
         let x_str = format!("{x:e}");
-        for prec in [10usize, 20, 50, 100] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let sin_d = ctx.sin::<10>(x.repr(), None).unwrap().value();
             let bits = rug_bits(x.repr(), prec);
@@ -59,7 +59,7 @@ proptest! {
     #[ignore]
     fn cos_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
         let x_str = format!("{x:e}");
-        for prec in [10usize, 20, 50, 100] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let cos_d = ctx.cos::<10>(x.repr(), None).unwrap().value();
             let bits = rug_bits(x.repr(), prec);
@@ -81,7 +81,7 @@ proptest! {
     #[ignore]
     fn tan_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
         let x_str = format!("{x:e}");
-        for prec in [10usize, 20, 50, 100] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let cos_d = ctx.cos::<10>(x.repr(), None).unwrap().value();
             if cos_d.abs() <= DBig::from_parts(1.into(), -5) {
@@ -106,9 +106,12 @@ proptest! {
     #[test]
     #[ignore]
     fn atan2_fuzz(y in fuzz::dbig_strategy(-50..=50), x in fuzz::dbig_strategy(-50..=50)) {
-        let y_str = format!("{y:e}");
-        let x_str = format!("{x:e}");
-        for prec in [20usize, 50] {
+        // `+` flag so the sign of `±0` round-trips into rug — `atan2(±0, x<0) = ±π` is the one
+        // trig result whose magnitude flips on the sign of a zero input (sin/cos/tan of `±0`
+        // differ only by a zero magnitude, so they need no special handling).
+        let y_str = format!("{y:+e}");
+        let x_str = format!("{x:+e}");
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             // atan2(0,0) (and other indeterminate forms) report FpError — skip those; nothing to
             // compare. Finite in-domain inputs never error here.
@@ -133,7 +136,7 @@ proptest! {
     #[ignore]
     fn inv_trig_fuzz(x in fuzz::unit_dbig()) {
         let x_str = format!("{x:e}");
-        for prec in [20usize, 50] {
+        for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
             let bits = (prec as u32) * 4 + 128;
             let x_rug = Float::with_val(bits, Float::parse(&x_str).unwrap());
