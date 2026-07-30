@@ -40,6 +40,14 @@
 ### Fix
 - `test_e_known_decimal_prefix` failed to compile under `no_std` (`ToString` is not in
   the prelude without `std`): import `alloc::string::ToString` in the cache tests.
+- `Context::mul`, `Context::sqr`, and `Context::cubic` are now strictly correctly rounded. They
+  previously shrank the operand(s) to `2*precision` (mul/sqr) or `3*precision` (cubic) before
+  multiplying — a speed optimization. That operand pre-rounding — though each operand is rounded
+  correctly — perturbs the result by the accumulated rounding error, so the final value could land
+  1 ulp off the exact-product-rounded value when it sat near a rounding boundary. The exact product
+  / square / cube of the full operand(s) is now computed and rounded (still via the dedicated
+  `sqr`/`cubic` kernels), which is always correctly rounded, at the cost of operating on operands
+  far larger than the target precision (uncommon).
 - `Display`/`LowerExp`/`UpperExp` (and the per-base `{:b}`/`{:o}`/`{:h}`/`{:x}` formatters) now read
   `Repr::sign` (not the bare significand, which is always `+` for zero) and clamp a zero
   significand's display exponent to `0`, so the `-0` sentinel exponent no longer leaks into the
