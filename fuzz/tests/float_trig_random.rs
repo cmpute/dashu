@@ -5,7 +5,7 @@
 //! the pinned large-exponent tan regression) stay as deterministic loops. All are `#[ignore]`d and
 //! run manually before a release.
 //!
-//! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test trig_random -- --ignored --nocapture`
+//! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test float_trig_random -- --ignored --nocapture`
 
 use core::str::FromStr;
 use dashu::float::ops::Abs;
@@ -35,7 +35,7 @@ proptest! {
     /// sin(x) ≈ MPFR sin(x) across precisions {10, 20, 50, 100}.
     #[test]
     #[ignore]
-    fn sin_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
+    fn fbig_sin_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
         let x_str = format!("{x:e}");
         for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
@@ -57,7 +57,7 @@ proptest! {
     /// cos(x) ≈ MPFR cos(x) across precisions {10, 20, 50, 100}.
     #[test]
     #[ignore]
-    fn cos_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
+    fn fbig_cos_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
         let x_str = format!("{x:e}");
         for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
@@ -79,7 +79,7 @@ proptest! {
     /// tan(x) ≈ MPFR tan(x), skipping arguments where |cos(x)| < 1e-5 (too close to a singularity).
     #[test]
     #[ignore]
-    fn tan_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
+    fn fbig_tan_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
         let x_str = format!("{x:e}");
         for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
@@ -105,7 +105,7 @@ proptest! {
     /// atan2(y, x) ≈ MPFR atan2(y, x) across precisions {20, 50}.
     #[test]
     #[ignore]
-    fn atan2_fuzz(y in fuzz::dbig_strategy(-50..=50), x in fuzz::dbig_strategy(-50..=50)) {
+    fn fbig_atan2_fuzz(y in fuzz::dbig_strategy(-50..=50), x in fuzz::dbig_strategy(-50..=50)) {
         // `+` flag so the sign of `±0` round-trips into rug — `atan2(±0, x<0) = ±π` is the one
         // trig result whose magnitude flips on the sign of a zero input (sin/cos/tan of `±0`
         // differ only by a zero magnitude, so they need no special handling).
@@ -134,7 +134,7 @@ proptest! {
     /// asin(x)/acos(x) ≈ MPFR for x in [-1, 1] across precisions {20, 50}.
     #[test]
     #[ignore]
-    fn inv_trig_fuzz(x in fuzz::unit_dbig()) {
+    fn fbig_inv_trig_fuzz(x in fuzz::unit_dbig()) {
         let x_str = format!("{x:e}");
         for prec in fuzz::fuzz_precisions_decimal() {
             let ctx = Context::<HalfAway>::new(prec);
@@ -163,7 +163,7 @@ proptest! {
 /// π at every precision matches MPFR's π to within 1 ulp. (Deterministic precision sweep.)
 #[test]
 #[ignore]
-fn pi_fuzz() {
+fn fbig_pi_fuzz() {
     for prec in (10..1000).step_by(53) {
         let pi_dashu = DBig::pi(prec);
         let bits = (prec * 3322).div_ceil(1000) + 32;
@@ -179,7 +179,7 @@ fn pi_fuzz() {
 /// asin near 1 (where it → π/2, most sensitive) for x = 1 - 10^-k. (Deterministic k sweep.)
 #[test]
 #[ignore]
-fn asin_near_one_fuzz() {
+fn fbig_asin_near_one_fuzz() {
     for k in 1u32..=15 {
         let eps = DBig::from_str(&format!("1e-{k}")).unwrap();
         let x = DBig::ONE - eps;
@@ -202,7 +202,7 @@ fn asin_near_one_fuzz() {
 /// Regression: tan of a pinned very-large-exponent argument must match MPFR. (Deterministic.)
 #[test]
 #[ignore]
-fn tan_large_exponent_regression() {
+fn fbig_tan_large_exponent_regression() {
     let x_str = "-3.67225387623341113999117300261402819219640608e511";
     for prec in [20usize, 50] {
         let x = DBig::from_str(x_str).unwrap();

@@ -213,31 +213,12 @@ impl<R: Round> Context<R> {
             return Err(FpError::InfiniteInput);
         }
 
-        // at most double the precision is required to get a correct result
-        // shrink the input operands if necessary
-        let max_precision = if self.is_limited() {
-            self.precision * 2
-        } else {
-            usize::MAX
-        };
-
-        let lhs_shrink;
-        let lhs_repr = if lhs.digits() > max_precision {
-            lhs_shrink = Context::<R>::new(max_precision).repr_round_ref(lhs).value();
-            &lhs_shrink
-        } else {
-            lhs
-        };
-
-        let rhs_shrink;
-        let rhs_repr = if rhs.digits() > max_precision {
-            rhs_shrink = Context::<R>::new(max_precision).repr_round_ref(rhs).value();
-            &rhs_shrink
-        } else {
-            rhs
-        };
-
-        let repr = make_mul_repr(lhs_repr, rhs_repr)?;
+        // Exact product of the full operands, then round. (An earlier version shrank each operand
+        // to 2*precision before multiplying for speed, but that operand pre-rounding perturbs the
+        // product by the accumulated rounding error, so the result could land 1 ulp off the
+        // exact-product-rounded value near a rounding boundary. The exact product is always
+        // correctly rounded.)
+        let repr = make_mul_repr(lhs, rhs)?;
         Ok(self.repr_round(repr).map(|v| FBig::new(v, *self)))
     }
 
@@ -262,30 +243,19 @@ impl<R: Round> Context<R> {
             return Err(FpError::InfiniteInput);
         }
 
-        // shrink the input operands if necessary
-        let max_precision = if self.is_limited() {
-            self.precision * 2
-        } else {
-            usize::MAX
-        };
-
-        let f_shrink;
-        let f_repr = if f.digits() > max_precision {
-            f_shrink = Context::<R>::new(max_precision).repr_round_ref(f).value();
-            &f_shrink
-        } else {
-            f
-        };
-
-        let exponent = f_repr.exponent.checked_mul(2).ok_or({
+        // Exact square of the full significand, then round. (An earlier version shrank the operand
+        // to 2*precision before squaring, but that pre-rounding perturbs the square and could leave
+        // the result 1 ulp off the correctly-rounded value near a rounding boundary — same issue
+        // as `mul`. The dedicated `sqr` kernel is still used; it just gets the full significand.)
+        let exponent = f.exponent.checked_mul(2).ok_or({
             // sqr always produces a non-negative result
-            if f_repr.exponent > 0 {
+            if f.exponent > 0 {
                 FpError::Overflow(Positive)
             } else {
                 FpError::Underflow(Positive)
             }
         })?;
-        let repr = Repr::new(f_repr.significand.sqr().into(), exponent);
+        let repr = Repr::new(f.significand.sqr().into(), exponent);
         let repr = repr.check_finite_exponent()?;
         Ok(self.repr_round(repr).map(|v| FBig::new(v, *self)))
     }
@@ -311,38 +281,27 @@ impl<R: Round> Context<R> {
             return Err(FpError::InfiniteInput);
         }
 
-        // shrink the input operands if necessary
-        let max_precision = if self.is_limited() {
-            self.precision * 3
-        } else {
-            usize::MAX
-        };
-
-        let f_shrink;
-        let f_repr = if f.digits() > max_precision {
-            f_shrink = Context::<R>::new(max_precision).repr_round_ref(f).value();
-            &f_shrink
-        } else {
-            f
-        };
-
-        let repr = if f_repr.significand.is_zero() {
+        // Exact cube of the full significand, then round. (An earlier version shrank the operand
+        // to 3*precision before cubing, but that pre-rounding perturbs the cube and could leave the
+        // result 1 ulp off the correctly-rounded value near a rounding boundary — same issue as
+        // `mul`. The dedicated `cubic` kernel is still used; it just gets the full significand.)
+        let repr = if f.significand.is_zero() {
             // cubic(±0) = ±0 (odd power preserves sign)
-            if f_repr.is_neg_zero() {
+            if f.is_neg_zero() {
                 Repr::neg_zero()
             } else {
                 Repr::zero()
             }
         } else {
-            let sign = f_repr.sign();
-            let exponent = f_repr.exponent.checked_mul(3).ok_or({
-                if f_repr.exponent > 0 {
+            let sign = f.sign();
+            let exponent = f.exponent.checked_mul(3).ok_or({
+                if f.exponent > 0 {
                     FpError::Overflow(sign)
                 } else {
                     FpError::Underflow(sign)
                 }
             })?;
-            let repr = Repr::new(f_repr.significand.cubic(), exponent);
+            let repr = Repr::new(f.significand.cubic(), exponent);
             repr.check_finite_exponent()?
         };
         Ok(self.repr_round(repr).map(|v| FBig::new(v, *self)))

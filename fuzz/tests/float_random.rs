@@ -1,14 +1,21 @@
-//! Differential / fuzz test for FBig add/sub.
+//! Differential / fuzz tests for FBig arithmetic (add/sub/mul/div/sqr/cubic) at limited precision.
 //!
-//! The limited-precision `Context::add`/`Context::sub` path (exponent alignment + the
-//! `repr_round_sum` rounding with a discarded "low part") is checked against an independent
-//! oracle: the exact sum/difference (computed at unlimited precision) re-rounded with
-//! `FBig::with_precision`, which uses the simple `repr_round` path rather than
-//! `repr_round_sum`. The two must agree for every rounding mode, base, precision and operand
-//! shape. Proptest-driven so a mismatch shrinks to a minimal `(a, b, precision)` counterexample.
+//! add/sub/mul/sqr/cubic are checked against an EXACT-then-round oracle: the exact result at
+//! unlimited precision (sum, difference, product, square, or cube — all finite) re-rounded with
+//! `FBig::with_precision`,
+//! which uses the simple `repr_round` path rather than the limited-precision `repr_round_sum` /
+//! product-rounding paths. The two must agree for every rounding mode, base, precision, operand.
 //!
-//! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test add_random -- --ignored --nocapture`
+//! div has no finite exact form (quotients are generally non-terminating), so it is checked
+//! against a high-precision quotient (`precision + 50` guard digits/bits) re-rounded to the target
+//! — the guard makes a real divergence a bug, with a 2-ulp tolerance for the rare rounding-boundary
+//! case (mirroring the transcendental differentials). A zero divisor is skipped.
+//!
+//! Proptest-driven so a mismatch shrinks to a minimal `(a, b, precision)` counterexample.
+//!
+//! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test float_random -- --ignored --nocapture`
 
+use dashu::float::ops::Abs;
 use dashu::float::round::Round;
 use dashu::float::round::mode::*;
 use dashu::float::{Context, FBig, Repr, Word};
@@ -38,7 +45,20 @@ fn rounded_oracle<R: Round, const B: Word>(exact: Repr<B>, precision: usize) -> 
     (rp, rp1)
 }
 
-/// Compare limited-precision add/sub against the exact-then-round oracle for one operand pair.
+/// |a - b| ≤ `k` ulps of `a` (for div's high-precision oracle; mirrors the helper in the
+/// transcendental differentials).
+fn within_k_ulps<R: Round, const B: Word>(a: &FBig<R, B>, b: &FBig<R, B>, k: i32) -> bool {
+    let diff = (a.clone() - b).abs();
+    if diff.repr().significand().is_zero() {
+        return true;
+    }
+    diff <= a.ulp() * k
+}
+
+/// Compare limited-precision add/sub/mul/div against their oracles for one operand pair + mode.
+///
+/// add/sub/mul use the exact-then-round oracle (`rounded_oracle`); div uses a high-precision
+/// quotient re-rounded to `precision` (`within_k_ulps`), with a zero divisor skipped.
 fn check_pair<R: Round, const B: Word>(
     a: &Repr<B>,
     b: &Repr<B>,
@@ -63,6 +83,49 @@ fn check_pair<R: Round, const B: Word>(
         actual_sub == sub_p || actual_sub == sub_p1,
         "sub mismatch (mode={mode_name}, p={precision})\n a={a:?}\n b={b:?}\n actual={actual_sub:?}\n oracle(p)={sub_p:?}\n oracle(p+1)={sub_p1:?}",
     );
+
+    // mul: exact product, sharing the exact-then-round oracle with add/sub.
+    let actual_mul = ctx.mul(a, b).unwrap().value().repr().clone();
+    let (mul_p, mul_p1) =
+        rounded_oracle::<R, B>(unlimited.mul(a, b).unwrap().value().repr().clone(), precision);
+    assert!(
+        actual_mul == mul_p || actual_mul == mul_p1,
+        "mul mismatch (mode={mode_name}, p={precision})\n a={a:?}\n b={b:?}\n actual={actual_mul:?}\n oracle(p)={mul_p:?}\n oracle(p+1)={mul_p1:?}",
+    );
+
+    // sqr / cubic: exact square / cube of `a` (single operand), sharing the exact-then-round
+    // oracle with add/sub/mul.
+    let actual_sqr = ctx.sqr(a).unwrap().value().repr().clone();
+    let (sqr_p, sqr_p1) =
+        rounded_oracle::<R, B>(unlimited.sqr(a).unwrap().value().repr().clone(), precision);
+    assert!(
+        actual_sqr == sqr_p || actual_sqr == sqr_p1,
+        "sqr mismatch (mode={mode_name}, p={precision})\n a={a:?}\n actual={actual_sqr:?}\n oracle(p)={sqr_p:?}\n oracle(p+1)={sqr_p1:?}",
+    );
+
+    let actual_cub = ctx.cubic(a).unwrap().value().repr().clone();
+    let (cub_p, cub_p1) =
+        rounded_oracle::<R, B>(unlimited.cubic(a).unwrap().value().repr().clone(), precision);
+    assert!(
+        actual_cub == cub_p || actual_cub == cub_p1,
+        "cubic mismatch (mode={mode_name}, p={precision})\n a={a:?}\n actual={actual_cub:?}\n oracle(p)={cub_p:?}\n oracle(p+1)={cub_p1:?}",
+    );
+
+    // div: no finite exact quotient — compare against a high-precision quotient re-rounded to
+    // `precision`. Skip a zero divisor (div-by-zero errors).
+    if !b.significand().is_zero() {
+        let actual_div = ctx.div(a, b).unwrap().value();
+        let high = Context::<R>::new(precision + 50)
+            .div(a, b)
+            .unwrap()
+            .value()
+            .with_precision(precision)
+            .value();
+        assert!(
+            within_k_ulps(&actual_div, &high, 2),
+            "div mismatch (mode={mode_name}, p={precision})\n a={a:?}\n b={b:?}\n actual={actual_div:?}\n high-prec rounded={high:?}",
+        );
+    }
 }
 
 /// Run `check_pair` under all six rounding modes for one operand pair + precision.
@@ -86,7 +149,7 @@ proptest! {
 
     #[test]
     #[ignore]
-    fn add_sub_differential_binary(
+    fn fbig_arithmetic_binary_fuzz(
         a_sig in fuzz::ibig_strategy(5), a_exp in -1500isize..1500,
         b_sig in fuzz::ibig_strategy(5), b_exp in -1500isize..1500,
         precision in precision_strategy(),
@@ -98,7 +161,7 @@ proptest! {
 
     #[test]
     #[ignore]
-    fn add_sub_differential_decimal(
+    fn fbig_arithmetic_decimal_fuzz(
         a_sig in fuzz::ibig_strategy(5), a_exp in -1500isize..1500,
         b_sig in fuzz::ibig_strategy(5), b_exp in -1500isize..1500,
         precision in precision_strategy(),
