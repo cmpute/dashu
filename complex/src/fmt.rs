@@ -85,6 +85,7 @@ mod tests {
     use super::*;
     use alloc::format;
     use dashu_float::round::mode;
+    use dashu_float::FBig;
 
     type C = CBig<mode::HalfAway, 10>;
 
@@ -118,5 +119,31 @@ mod tests {
         let z = C::from_parts(FBig::from(3), FBig::from(4));
         let s = format!("{:?}", z);
         assert!(s.starts_with("re:3 im:4 (prec:"));
+    }
+
+    #[test]
+    fn display_signed_zero() {
+        // Signed-zero components: a vanishing `±0` term is dropped from the algebraic form, and
+        // the surviving component inherits FBig's `-0` rule (default "0", `+` flag → "-0").
+        type F = FBig<mode::HalfAway, 10>;
+        let n0 = || -F::ZERO; // -0
+        let p0 = || F::ZERO; // +0
+        let mk = |re: F, im: F| C::from_parts(re, im);
+
+        // a vanishing ±0 term is dropped; the surviving -0 renders "0" by default
+        assert_eq!(format!("{}", mk(n0(), p0())), "0"); // (-0, 0)
+        assert_eq!(format!("{}", mk(p0(), n0())), "0"); // ( 0,-0) im dropped
+        assert_eq!(format!("{}", mk(n0(), n0())), "0"); // (-0,-0)
+        assert_eq!(format!("{}", mk(n0(), F::from(5))), "5i"); // (-0, 5) re dropped
+        assert_eq!(format!("{}", mk(F::from(3), n0())), "3"); // ( 3,-0) im dropped
+        assert_eq!(format!("{}", mk(F::from(-3), n0())), "-3");
+
+        // `+` flag reveals the surviving (pure-real) -0 component's sign
+        assert_eq!(format!("{:+}", mk(n0(), p0())), "-0");
+        assert_eq!(format!("{:+}", mk(n0(), n0())), "-0");
+
+        // Debug renders both components via FBig Display, so -0 → "0" by default
+        let s = format!("{:?}", mk(n0(), n0()));
+        assert!(s.starts_with("re:0 im:0 (prec:"), "got {s}");
     }
 }
