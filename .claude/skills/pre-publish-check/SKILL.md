@@ -84,7 +84,7 @@ If a crate's `## Unreleased` is empty or missing entries, halt with a list of un
 
 ### Step 5 — Backward-compatibility verification
 
-Use `cargo-semver-checks` to compare the working tree against the currently-published version on crates.io:
+Use `cargo-semver-checks` to compare the working tree against the currently-published version on crates.io. **Bump the version in `<crate>/Cargo.toml` first** — the tool picks its crates.io baseline from the version declared there, so running it before the bump compares against the wrong version (often the same one):
 
 ```sh
 # Install if missing
