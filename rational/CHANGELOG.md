@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0-rc.1
 
 ### Change
 - `RBig::from_str_radix` / `from_str_with_radix_prefix` (and therefore `from_str`) now reject

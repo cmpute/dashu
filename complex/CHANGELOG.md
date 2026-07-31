@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0-rc.1
 
 ### Add
 - **Correct rounding for the complex transcendentals** via a Ziv retry loop (`complex/src/ziv.rs`).

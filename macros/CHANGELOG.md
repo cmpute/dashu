@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0-rc.1
 
 ### Change
 - The literal macros now surface the new `ParseError::InvalidSyntax` (from `dashu-base`) with a

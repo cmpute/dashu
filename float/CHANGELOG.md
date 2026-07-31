@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0-rc.1
 
 ### Add
 - **Exact `Add`/`Sub`/`Mul` operators for `Repr`** (new `repr_ops` module). A `Repr` carries no

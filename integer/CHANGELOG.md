@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0-rc.1
 
 ### Fix
 - NTT squaring/multiplication of an all-zero operand no longer panics. `add_signed_sqr_conv` and

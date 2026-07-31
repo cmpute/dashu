@@ -1,6 +1,6 @@
 [package]
 name = "dashu-python"
-version = "0.5.1"
+version = "0.6.0-rc.1"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2024"
 description = "Python binding for the dashu numeric types"
@@ -17,11 +17,11 @@ rust-version = "1.85"
 all-features = true
 
 [dependencies]
-dashu-base = { version = "0.5.1", path = "../base", features = ["std"] }
-dashu-int = { version = "0.5.1", path = "../integer", features = ["std", "num-order"] }
-dashu-float = { version = "0.5.1", path = "../float", features = ["std", "num-order"] }
-dashu-ratio = { version = "0.5.1", path = "../rational", features = ["std", "num-order", "dashu-float"] }
-dashu-cmplx = { version = "0.5.1", path = "../complex", features = ["std", "num-order"] }
+dashu-base = { version = "0.6.0-rc.1", path = "../base", features = ["std"] }
+dashu-int = { version = "0.6.0-rc.1", path = "../integer", features = ["std", "num-order"] }
+dashu-float = { version = "0.6.0-rc.1", path = "../float", features = ["std", "num-order"] }
+dashu-ratio = { version = "0.6.0-rc.1", path = "../rational", features = ["std", "num-order", "dashu-float"] }
+dashu-cmplx = { version = "0.6.0-rc.1", path = "../complex", features = ["std", "num-order"] }
 num-order = "1.2.0"
 
 [dependencies.pyo3]
