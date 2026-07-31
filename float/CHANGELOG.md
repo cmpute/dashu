@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.2
 
 ### Add
 - `FBig::e` / `Context::e` / `CachedFBig::e`: Euler's number *e*, computed by
@@ -32,10 +32,13 @@
   where it can, avoiding a clone versus the `Context::add`/`sub` path. Intended for
   downstream crates (e.g. `dashu-ball`) that want by-value `Repr` arithmetic on a
   fixed context. The `+`/`-` operators and `Context::add`/`sub` now route through
-  `addsub_*`, making it the single source of truth for add/subtract routing. As a
-  side effect, `x ± 0` now rounds `x` to the context precision (the old zero
-  short-circuit returned the other operand verbatim, which could leave a guard
-  digit); all other results are unchanged.
+  `addsub_*`, making it the single source of truth for add/subtract routing.
+
+### Change
+- `x ± 0` now rounds `x` to the context precision. The add/subtract path previously
+  short-circuited on a zero operand and returned the other operand verbatim, which
+  could leave a guard digit (up to `precision + 1` digits) in the result. All other
+  add/subtract results are unchanged.
 
 ### Fix
 - `test_e_known_decimal_prefix` failed to compile under `no_std` (`ToString` is not in

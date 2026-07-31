@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.2
 
 ### Add
 - `CBig::fma` / `Context::fma`: fused complex multiply–add `z1·z2 + sign·z3`,

@@ -1,6 +1,6 @@
 [package]
 name = "dashu"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 description = "A library set of big numbers"
@@ -59,7 +59,7 @@ rustversion = "1.0"
 # but the minor and patch versions can be different.
 dashu-base = { version = "0.5.1", default-features = false, path = "./base" }
 dashu-int = { version = "0.5.1", default-features = false, path = "./integer" }
-dashu-float = { version = "0.5.1", default-features = false, path = "./float" }
+dashu-float = { version = "0.5.2", default-features = false, path = "./float" }
 dashu-ratio = { version = "0.5.1", default-features = false, path = "./rational", features = ['dashu-float'] }
-dashu-cmplx = { version = "0.5.1", default-features = false, path = "./complex" }
+dashu-cmplx = { version = "0.5.2", default-features = false, path = "./complex" }
 dashu-macros = { version = "0.5.1", default-features = false, path = "./macros" }
