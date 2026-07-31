@@ -1,7 +1,7 @@
 use crate::{
     error::{assert_finite, FpError},
     round::{Round, Rounded},
-    utils::{digit_len, split_digits, split_digits_ref},
+    utils::{ceil_usize, digit_len, split_digits, split_digits_ref},
 };
 use core::marker::PhantomData;
 use dashu_base::{Approximation::*, EstimatedLog2, Sign};
@@ -44,26 +44,6 @@ pub struct Repr<const BASE: Word> {
     /// The exponent of the floating point number.
     pub(crate) exponent: isize,
 }
-
-impl<const B: Word> PartialEq for Repr<B> {
-    /// Two representations are equal when they denote the same value. In particular `+0`
-    /// and `-0` compare equal, as do two infinities of the same sign.
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        if self.significand.is_zero() && other.significand.is_zero() {
-            let (self_inf, other_inf) = (self.is_infinite(), other.is_infinite());
-            match (self_inf, other_inf) {
-                (true, true) => self.sign() == other.sign(),
-                (false, false) => true, // both are ±0
-                _ => false,             // one is zero, the other is infinite
-            }
-        } else {
-            self.significand == other.significand && self.exponent == other.exponent
-        }
-    }
-}
-
-impl<const B: Word> Eq for Repr<B> {}
 
 /// The context containing runtime information for the floating point number and its operations.
 ///
@@ -316,7 +296,7 @@ impl<const B: Word> Repr<B> {
     /// assert!(Repr::<10>::one().is_int());
     /// assert!(!Repr::<16>::new(123.into(), -1).is_int());
     /// ```
-    pub fn is_int(&self) -> bool {
+    pub const fn is_int(&self) -> bool {
         if self.is_infinite() {
             false
         } else {
@@ -705,6 +685,16 @@ impl<R: Round> Context<R> {
     #[inline]
     pub const fn precision(&self) -> usize {
         self.precision
+    }
+
+    /// `⌈log_B(precision)⌉` — the number of base-`B` digits needed to index the precision word.
+    ///
+    /// This is the base guard every transcendental Ziv loop adds on top of `precision`: it absorbs
+    /// the rounding that accumulates over the `O(log p)` series / squaring steps. Each caller adds
+    /// its own operation-specific constant (`+ 2`, `+ 10`, …); this helper is the shared core that
+    /// maps the binary precision estimate onto the output base.
+    pub(crate) fn base_guard_digits<const B: Word>(&self) -> usize {
+        ceil_usize(self.precision.log2_est() / B.log2_est())
     }
 
     /// Round the repr to the desired precision

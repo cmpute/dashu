@@ -21,7 +21,7 @@ impl<R: Round> Context<R> {
         if z.is_zero() {
             return Ok(riemann(*self)); // 1/0 = ∞
         }
-        let gctx = self.guard(DIV_GUARD);
+        let gctx = self.work_context(DIV_GUARD);
         let p = self.precision();
         let (x, y) = (z.re(), z.im());
         // n = x² + y²
@@ -41,7 +41,7 @@ impl<R: Round> Context<R> {
         if let Some(special) = div_special(z, w) {
             return special;
         }
-        let gctx = self.guard(DIV_GUARD);
+        let gctx = self.work_context(DIV_GUARD);
         let p = self.precision();
         let (x, y) = (z.re(), z.im());
         let (u, v) = (w.re(), w.im());
@@ -104,7 +104,7 @@ impl<R: Round> Context<R> {
             }
             return Ok(riemann(*self)); // z/±0 (z≠0) = ∞
         }
-        let gctx = self.guard(DIV_GUARD);
+        let gctx = self.work_context(DIV_GUARD);
         let p = self.precision();
         let re = gctx.div(z.re(), s.repr())?.value().with_precision(p);
         let im = gctx.div(z.im(), s.repr())?.value().with_precision(p);
@@ -262,5 +262,15 @@ mod tests {
         let q_pos = &z / &F::ZERO;
         assert!(q_neg.is_infinite());
         assert!(q_neg == q_pos); // both are +∞ + i·0
+    }
+
+    // `div` at unlimited precision panics via the float layer (`work_context` → `self.float()` →
+    // float `div`, which rejects unlimited: a quotient isn't exactly representable in general).
+    #[test]
+    #[should_panic(expected = "precision cannot be 0")]
+    fn complex_div_unlimited_panics() {
+        let one = C::ONE;
+        let i = C::I;
+        let _ = &one / &i; // 1/i at unlimited
     }
 }

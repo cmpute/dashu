@@ -12,56 +12,6 @@ use crate::{
 use core::cmp::Ordering;
 use core::ops::{Mul, MulAssign};
 
-/// Raw product of two finite reprs, attaching the XOR sign of the operands to a zero product
-/// (the significand product alone is `+0`, losing the sign).
-///
-/// Returns an error when the result exponent overflows or underflows `isize`.
-pub(crate) fn make_mul_repr<const B: Word>(
-    lhs: &Repr<B>,
-    rhs: &Repr<B>,
-) -> Result<Repr<B>, FpError> {
-    let significand = &lhs.significand * &rhs.significand;
-    if significand.is_zero() {
-        return Ok(if lhs.sign() != rhs.sign() {
-            Repr::neg_zero()
-        } else {
-            Repr::zero()
-        });
-    }
-    let sign = if lhs.sign() != rhs.sign() {
-        Negative
-    } else {
-        Positive
-    };
-    let exponent = lhs.exponent.checked_add(rhs.exponent).ok_or_else(|| {
-        debug_assert!(
-            lhs.exponent.is_positive() == rhs.exponent.is_positive(),
-            "checked_add overflow with mixed-sign exponents is impossible"
-        );
-        if lhs.exponent > 0 {
-            FpError::Overflow(sign)
-        } else {
-            FpError::Underflow(sign)
-        }
-    })?;
-    Repr::new(significand, exponent).check_finite_exponent()
-}
-
-macro_rules! unwrap_mul_repr {
-    ($result:expr, $context:expr) => {
-        match $result {
-            Ok(r) => r,
-            Err(FpError::Overflow(sign)) => {
-                return FBig::new(Repr::infinity_with_sign(sign), $context);
-            }
-            Err(FpError::Underflow(sign)) => {
-                return FBig::new(Repr::zero_with_sign(sign), $context);
-            }
-            Err(_) => unreachable!(),
-        }
-    };
-}
-
 impl<R: Round, const B: Word> Mul<&FBig<R, B>> for &FBig<R, B> {
     type Output = FBig<R, B>;
 
@@ -70,7 +20,10 @@ impl<R: Round, const B: Word> Mul<&FBig<R, B>> for &FBig<R, B> {
         assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
-        let repr = unwrap_mul_repr!(make_mul_repr(&self.repr, &rhs.repr), context);
+        let repr = &self.repr * &rhs.repr;
+        if repr.is_infinite() {
+            return FBig::new(repr, context);
+        }
         FBig::new(context.repr_round(repr).value(), context)
     }
 }
@@ -83,7 +36,10 @@ impl<R: Round, const B: Word> Mul<&FBig<R, B>> for FBig<R, B> {
         assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
-        let repr = unwrap_mul_repr!(make_mul_repr(&self.repr, &rhs.repr), context);
+        let repr = &self.repr * &rhs.repr;
+        if repr.is_infinite() {
+            return FBig::new(repr, context);
+        }
         FBig::new(context.repr_round(repr).value(), context)
     }
 }
@@ -96,7 +52,10 @@ impl<R: Round, const B: Word> Mul<FBig<R, B>> for &FBig<R, B> {
         assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
-        let repr = unwrap_mul_repr!(make_mul_repr(&self.repr, &rhs.repr), context);
+        let repr = &self.repr * &rhs.repr;
+        if repr.is_infinite() {
+            return FBig::new(repr, context);
+        }
         FBig::new(context.repr_round(repr).value(), context)
     }
 }
@@ -109,7 +68,10 @@ impl<R: Round, const B: Word> Mul<FBig<R, B>> for FBig<R, B> {
         assert_finite_operands(&self.repr, &rhs.repr);
 
         let context = Context::max(self.context, rhs.context);
-        let repr = unwrap_mul_repr!(make_mul_repr(&self.repr, &rhs.repr), context);
+        let repr = &self.repr * &rhs.repr;
+        if repr.is_infinite() {
+            return FBig::new(repr, context);
+        }
         FBig::new(context.repr_round(repr).value(), context)
     }
 }
@@ -214,11 +176,23 @@ impl<R: Round> Context<R> {
         }
 
         // Exact product of the full operands, then round. (An earlier version shrank each operand
-        // to 2*precision before multiplying for speed, but that operand pre-rounding perturbs the
-        // product by the accumulated rounding error, so the result could land 1 ulp off the
-        // exact-product-rounded value near a rounding boundary. The exact product is always
-        // correctly rounded.)
-        let repr = make_mul_repr(lhs, rhs)?;
+        // to 2*precision — via `repr_round_ref`, which rounds each operand *correctly* to 2p digits —
+        // before multiplying. But rounding the operands *before* multiplying perturbs the product
+        // by the accumulated operand-rounding error (~2^-2p relative), so rounding that perturbed
+        // product to `precision` could land 1 ulp off the exact-product-rounded value when the true
+        // product sat near a rounding boundary. The exact product is always correctly rounded; the
+        // shrink only mattered for operands far larger than the target precision, which is uncommon.)
+        let repr = lhs * rhs;
+        let repr = if repr.is_infinite() {
+            return Err(FpError::Overflow(repr.sign()));
+        } else if repr.significand.is_zero()
+            && !lhs.significand.is_zero()
+            && !rhs.significand.is_zero()
+        {
+            return Err(FpError::Underflow(repr.sign()));
+        } else {
+            repr
+        };
         Ok(self.repr_round(repr).map(|v| FBig::new(v, *self)))
     }
 
@@ -352,8 +326,17 @@ impl<R: Round> Context<R> {
         // Exact product a·b. No operand shrinking (unlike Context::mul's 2p bound):
         // a cancellation between the product and c can expose arbitrarily low
         // product digits, so the full exact product is required for a correctly-
-        // rounded result.
-        let prod = make_mul_repr(a, b)?;
+        // rounded result. The `Repr` product saturates exponent overflow/underflow
+        // to the infinity/zero sentinels, so detect those as Context::mul does.
+        let prod = a * b;
+        let prod = if prod.is_infinite() {
+            return Err(FpError::Overflow(prod.sign()));
+        } else if prod.significand.is_zero() && !a.significand.is_zero() && !b.significand.is_zero()
+        {
+            return Err(FpError::Underflow(prod.sign()));
+        } else {
+            prod
+        };
 
         // Add c to sign·(a·b) with a single rounding. The product is exact, so the
         // only rounding is in the add step — the same path as Context::add/sub.

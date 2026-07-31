@@ -32,6 +32,30 @@ fn small_strategy() -> impl Strategy<Value = C> {
     })
 }
 
+/// Modest real part (away from the poles `π/2 + kπ`) with a moderate imaginary part up to ~40 —
+/// large enough that the naive `sin z / cos z` division would catastrophically cancel in the real
+/// part, small enough that `cosh(2·im)` stays cheap. For the cancellation-free `tan` oracle.
+fn tan_strategy() -> impl Strategy<Value = C> {
+    ((1i64..(1i64 << 20), -4isize..4isize), 1i64..40i64).prop_map(|((re_sig, re_exp), im_num)| {
+        let re = F::from_parts(re_sig.into(), re_exp)
+            .with_precision(P)
+            .value();
+        let im = F::from_parts(im_num.into(), 0).with_precision(P).value();
+        CBig::from_parts(re, im)
+    })
+}
+
+/// Real part in roughly `(0.9, 1.1)` (straddling the `asin`/`acos` singularity `z = 1`) with a tiny
+/// imaginary part — exercises the factored `1-z² = (1-z)(1+z)` form right at `z = ±1`, where the
+/// direct `1 - z²` would catastrophically cancel against the `sqr` rounding error.
+fn near_one_strategy() -> impl Strategy<Value = C> {
+    (90i64..110, -2i64..2).prop_map(|(re_num, im_num)| {
+        let re = F::from_parts(re_num.into(), -2).with_precision(P).value();
+        let im = F::from_parts(im_num.into(), -8).with_precision(P).value();
+        CBig::from_parts(re, im)
+    })
+}
+
 fn within_ulps(a: &F, b: &F, k: u32) -> bool {
     if a == b {
         return true;
@@ -64,7 +88,19 @@ proptest! {
         let hi = Context::new(2 * P);
         let rp = lo.sqrt(&z).unwrap().value();
         let r2 = reround_hi(hi.sqrt(&z).unwrap().value());
-        prop_assert!(within_ulps_cbig(&rp, &r2, 2));
+        // sqrt is correctly rounded via Ziv, so 1 ULP.
+        prop_assert!(within_ulps_cbig(&rp, &r2, 1));
+    }
+
+    #[test]
+    fn tan_self_oracle(z in tan_strategy()) {
+        // tan uses the cancellation-free double-angle form, so it stays correct for moderate-large
+        // |Im z| (where the naive sin/cos division would cancel). 1 ULP.
+        let lo = Context::new(P);
+        let hi = Context::new(2 * P);
+        let rp = lo.tan(&z, None).unwrap().value();
+        let r2 = reround_hi(hi.tan(&z, None).unwrap().value());
+        prop_assert!(within_ulps_cbig(&rp, &r2, 1));
     }
 
     #[test]
@@ -73,7 +109,9 @@ proptest! {
         let hi = Context::new(2 * P);
         let rp = lo.exp(&z, None).unwrap().value();
         let r2 = reround_hi(hi.exp(&z, None).unwrap().value());
-        prop_assert!(within_ulps_cbig(&rp, &r2, 2));
+        // exp is correctly rounded via Ziv, so the low- and (re-rounded) high-precision results
+        // agree to within 1 ULP (they match exactly except at rare near-tie double-rounding cases).
+        prop_assert!(within_ulps_cbig(&rp, &r2, 1));
     }
 
     #[test]
@@ -82,7 +120,9 @@ proptest! {
         let hi = Context::new(2 * P);
         let rp = lo.log(&z, None).unwrap().value();
         let r2 = reround_hi(hi.log(&z, None).unwrap().value());
-        prop_assert!(within_ulps_cbig(&rp, &r2, 2));
+        // log is correctly rounded via Ziv (its real part even carries an amplification term near
+        // |z|=1), so the results agree to within 1 ULP.
+        prop_assert!(within_ulps_cbig(&rp, &r2, 1));
     }
 
     #[test]
@@ -104,8 +144,20 @@ proptest! {
         let cp = lo.cos(&z, None).unwrap().value();
         let s2 = reround_hi(hi.sin(&z, None).unwrap().value());
         let c2 = reround_hi(hi.cos(&z, None).unwrap().value());
-        prop_assert!(within_ulps_cbig(&sp, &s2, 2));
-        prop_assert!(within_ulps_cbig(&cp, &c2, 2));
+        // sin/cos are correctly rounded via a shared Ziv loop, so 1 ULP.
+        prop_assert!(within_ulps_cbig(&sp, &s2, 1));
+        prop_assert!(within_ulps_cbig(&cp, &c2, 1));
+    }
+
+    #[test]
+    fn abs_self_oracle(z in cbig_strategy()) {
+        // abs delegates directly to the (Ziv-correctly-rounded) real hypot, so abs@p agrees with
+        // abs@2p re-rounded to p exactly (0 ULP) save for rare near-tie double-rounding (≤1 ULP).
+        let lo = Context::new(P);
+        let hi = Context::new(2 * P);
+        let lp = lo.abs(&z).unwrap().value();
+        let hp = hi.abs(&z).unwrap().value().with_precision(P).value();
+        prop_assert!(within_ulps(&lp, &hp, 1));
     }
 
     #[test]
@@ -129,7 +181,8 @@ proptest! {
         let hi = Context::new(2 * P);
         let rp = lo.asin(&z, None).unwrap().value();
         let r2 = reround_hi(hi.asin(&z, None).unwrap().value());
-        prop_assert!(within_ulps_cbig(&rp, &r2, 4));
+        // asin is correctly rounded via Ziv (well-conditioned regime), 1 ULP.
+        prop_assert!(within_ulps_cbig(&rp, &r2, 1));
     }
 
     #[test]
@@ -138,6 +191,43 @@ proptest! {
         let hi = Context::new(2 * P);
         let rp = lo.atan(&z, None).unwrap().value();
         let r2 = reround_hi(hi.atan(&z, None).unwrap().value());
-        prop_assert!(within_ulps_cbig(&rp, &r2, 4));
+        // atan is correctly rounded via Ziv (well-conditioned regime), 1 ULP.
+        prop_assert!(within_ulps_cbig(&rp, &r2, 1));
+    }
+
+    #[test]
+    fn powf_self_oracle((base, w) in (small_strategy(), small_strategy())) {
+        // modest base/exponent keep `w·log base` bounded (no overflow); base has positive real part
+        // so `log` stays off its branch cut. powf is correctly rounded via Ziv, 1 ULP.
+        let lo = Context::new(P);
+        let hi = Context::new(2 * P);
+        let rp = lo.powf(&base, &w, None).unwrap().value();
+        let r2 = reround_hi(hi.powf(&base, &w, None).unwrap().value());
+        prop_assert!(within_ulps_cbig(&rp, &r2, 1));
+    }
+
+    #[test]
+    fn powi_self_oracle(z in small_strategy(), n in -8i32..=8) {
+        prop_assume!(n != 0);
+        let lo = Context::new(P);
+        let hi = Context::new(2 * P);
+        let rp = lo.powi(&z, n.into()).unwrap().value();
+        let r2 = reround_hi(hi.powi(&z, n.into()).unwrap().value());
+        // powi is correctly rounded via Ziv (positive and negative integer exponents), 1 ULP.
+        prop_assert!(within_ulps_cbig(&rp, &r2, 1));
+    }
+
+    #[test]
+    fn asin_acos_near_one_self_oracle(z in near_one_strategy()) {
+        // z straddles the singularity at 1 (and the symmetric point -1 by conjugation), where the
+        // factored `1-z²=(1-z)(1+z)` keeps `asin`/`acos` accurate; the self-oracle checks 1 ULP.
+        let lo = Context::new(P);
+        let hi = Context::new(2 * P);
+        let rp = lo.asin(&z, None).unwrap().value();
+        let r2 = reround_hi(hi.asin(&z, None).unwrap().value());
+        prop_assert!(within_ulps_cbig(&rp, &r2, 1));
+        let rp = lo.acos(&z, None).unwrap().value();
+        let r2 = reround_hi(hi.acos(&z, None).unwrap().value());
+        prop_assert!(within_ulps_cbig(&rp, &r2, 1));
     }
 }

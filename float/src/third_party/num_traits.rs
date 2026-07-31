@@ -1,6 +1,9 @@
 //! Implement num-traits traits.
 
-use crate::{fbig::FBig, round::Round};
+use crate::{
+    fbig::FBig,
+    round::{ErrorBounds, Round},
+};
 use dashu_base::{Abs, DivEuclid, ParseError, RemEuclid, Sign};
 use dashu_int::{IBig, Word};
 use num_traits_v02 as num_traits;
@@ -100,28 +103,28 @@ impl<R: Round, const B: Word> num_traits::ToPrimitive for FBig<R, B> {
     }
 }
 
-impl<R: Round, const B: Word> num_traits::Pow<IBig> for FBig<R, B> {
+impl<R: ErrorBounds, const B: Word> num_traits::Pow<IBig> for FBig<R, B> {
     type Output = FBig<R, B>;
 
     fn pow(self, rhs: IBig) -> Self {
         self.powi(rhs)
     }
 }
-impl<R: Round, const B: Word> num_traits::Pow<IBig> for &FBig<R, B> {
+impl<R: ErrorBounds, const B: Word> num_traits::Pow<IBig> for &FBig<R, B> {
     type Output = FBig<R, B>;
 
     fn pow(self, rhs: IBig) -> FBig<R, B> {
         self.powi(rhs)
     }
 }
-impl<R: Round, const B: Word> num_traits::Pow<&FBig<R, B>> for FBig<R, B> {
+impl<R: ErrorBounds, const B: Word> num_traits::Pow<&FBig<R, B>> for FBig<R, B> {
     type Output = FBig<R, B>;
 
     fn pow(self, rhs: &Self) -> Self {
         self.powf(rhs)
     }
 }
-impl<R: Round, const B: Word> num_traits::Pow<&FBig<R, B>> for &FBig<R, B> {
+impl<R: ErrorBounds, const B: Word> num_traits::Pow<&FBig<R, B>> for &FBig<R, B> {
     type Output = FBig<R, B>;
 
     fn pow(self, rhs: &FBig<R, B>) -> FBig<R, B> {

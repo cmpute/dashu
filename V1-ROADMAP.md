@@ -58,11 +58,22 @@ are longer-term goals. File:line references are anchors from the v0.5.0 tree and
 
 ### Correctness
 
-- **Guaranteed-correct rounding (Ziv retry loop).** ✅ *Partially delivered.* `exp`, `exp_m1`,
-  `ln`, `ln_1p` are now guaranteed-correctly rounded via a Ziv retry loop in `dashu-float`
-  (`Context::ziv`, driven by the `ErrorBounds` preimage). Remaining: trig, hyperbolic, `powf`,
-  `hypot`, and inheriting the loop across `dashu-cmplx`'s complex transcendentals (which currently
-  route through the now-Ziv-backed real primitives but aren't themselves Ziv-wrapped).
+- **Guaranteed-correct rounding (Ziv retry loop).** ✅ *Delivered for all real and complex
+  transcendentals.* `exp`, `exp_m1`, `ln`, `ln_1p`, the trigonometric family (`sin`, `cos`,
+  `sin_cos`, `tan`, `asin`, `acos`, `atan`, `atan2`), the hyperbolic family (`sinh`, `cosh`,
+  `sinh_cosh`, `tanh`, `asinh`, `acosh`, `atanh`), `hypot`, `powi`, and `powf` are
+  guaranteed-correctly rounded via a Ziv retry loop (`Context::ziv`/`ziv_pair`, driven by the
+  `ErrorBounds` preimage). Series transcendentals (trig, atan) use near-correct `_compute` cores the
+  wrapper certifies; composition transcendentals treat the Ziv-correct primitives as black boxes.
+  `powf`'s `exp(y·ln x)` amplification is handled by a work-precision radius
+  (`result.ulp()·(|y·ln x|+1)·(B+8)`) that shrinks as `B^{-guard}`, so the containment test
+  converges. `powi` (repeated squaring) carries a radius that scales with the squaring-compounding
+  error (`2^bit_len(n)·ulp`) and drops to zero when the chain is exact — required under the directed
+  rounding modes (`FBig`/`CBig` default to `mode::Zero`), where an exactly-representable result sits
+  on a one-sided rounding boundary. `dashu-cmplx`'s complex transcendentals
+  (`exp`/`log`/`powf`/`powi`/`sin`/`cos`/`tan`/`sin_cos`/`asin`/`acos`/`atan`/`sqrt`) are
+  correctly rounded via their own complex Ziv driver (certifies both parts); `asin`/`acos` use the
+  factored `1-z²=(1-z)(1+z)` to stay accurate right up to `z = ±1`.
 - **Signed-zero preservation in `CBig` zero short-circuits.** `sin_cos` and `sqr` take a fast
   path on exactly-zero input that returns `+0` components, so several Annex-G / IEEE signed-zero
   cases are not preserved (all numerically equal to `+0`, hence deferred):
@@ -85,8 +96,8 @@ Consolidated from the original `CBig` design. All additive.
   (Complex `fma` shipped in 0.5.x — `CBig::fma` / `Context::fma` in `complex/src/mul.rs`,
   commit 76502a2, via chained real FMA; a truly-correctly-rounded single-rounding complex
   FMA remains open.)
-- **Vector ops** — `dot`/mean helpers and a correctly-rounded (exact-accumulating) `Sum` for
-  `CBig`. (Fold-based `Sum`/`Product` for `CBig` already exist; `Sum` is not yet correctly-rounded.)
+- **Vector ops** — `dot`/mean helpers. (`Sum` for `CBig` is already exact-accumulating, matching
+  `FBig: Sum`; `Product` for `CBig` remains a fold, matching `FBig: Product`.)
 - **Independent re/im rounding** — a `CRound` trait giving MPC `mpc_rnd_t` parity (0.5 uses a
   single `R` for both parts).
 - **Third-party integration** — `CBig` `serde`/`rkyv`/`zeroize`, and

@@ -33,9 +33,14 @@ pub(crate) fn add_signed_sqr_same_len(
 fn add_signed_sqr_conv(c: &mut [Word], sign: Sign, a: &[Word], memory: &mut Memory) -> SignedWord {
     let la = a.len();
     debug_assert!(la > 0);
-    let (b_pack, nn, k_eff) = ntt::select_params(la, la);
     let la_bits = bit_len(a);
-    debug_assert!(la_bits > 0);
+    if la_bits == 0 {
+        // `a` is all-zero, so `a² = 0` and `c += sign·a²` is a no-op (carry 0, `c` unchanged).
+        // Reachable from `sqrt_rem_large` squaring the all-zero low half of a sqrt estimate for
+        // a perfect square with trailing zero words (e.g. `sqrt(25·2^k)`).
+        return 0;
+    }
+    let (b_pack, nn, k_eff) = ntt::select_params(la, la);
 
     let coeffs_a = coeff_count(la_bits, b_pack);
     let output_coeffs = 2 * coeffs_a - 1;

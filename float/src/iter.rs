@@ -5,37 +5,8 @@ use crate::{
     fbig::FBig,
     repr::{Context, Repr, Word},
     round::Round,
-    utils::{shl_digits, shl_digits_in_place},
 };
 use core::iter::{Product, Sum};
-
-/// Exact (unrounded) sum of two finite [`Repr`] values.
-///
-/// The result exponent is `min(lhs.exponent, rhs.exponent)`. The larger-exponent operand's
-/// significand is shifted up by the exponent gap (in base-`B` digits), then the signed significands
-/// are added — `IBig` addition handles opposite signs as an exact subtraction. Zero operands short
-/// circuit so that a `-0` sentinel exponent (`-1`) can't bleed into the result exponent. The result
-/// is rebuilt with [`Repr::new`], which strips trailing zeros.
-fn exact_add<const B: Word>(mut lhs: Repr<B>, rhs: &Repr<B>) -> Repr<B> {
-    if lhs.significand.is_zero() {
-        return rhs.clone();
-    }
-    if rhs.significand.is_zero() {
-        return lhs;
-    }
-
-    if lhs.exponent >= rhs.exponent {
-        let ediff = (lhs.exponent - rhs.exponent) as usize;
-        shl_digits_in_place::<B>(&mut lhs.significand, ediff);
-        lhs.significand += &rhs.significand;
-        lhs.exponent = rhs.exponent;
-    } else {
-        let ediff = (rhs.exponent - lhs.exponent) as usize;
-        let rhs_sig = shl_digits::<B>(&rhs.significand, ediff);
-        lhs.significand += rhs_sig; // lhs.exponent is already the minimum
-    }
-    Repr::new(lhs.significand, lhs.exponent)
-}
 
 /// Correctly-rounded summation of finite floats.
 ///
@@ -58,7 +29,7 @@ fn precise_sum<R: Round, const B: Word>(
     };
     for (repr, ctx) in iter {
         assert_finite(&repr);
-        acc = exact_add(acc, &repr);
+        acc = acc + &repr;
         context = Context::max(context, ctx);
     }
     // Exact cancellation can leave `acc` with a zero significand whose exponent coincides with the
@@ -223,17 +194,17 @@ mod tests {
         let _: F = core::iter::once(F::INFINITY).sum();
     }
 
-    // Exercises the zero short-circuit in `exact_add`: a `-0` sentinel exponent must not corrupt the
-    // accumulator exponent.
+    // Exercises the zero short-circuit in `impl Add for &Repr`: a `-0` sentinel exponent must not
+    // corrupt the accumulator exponent.
     #[test]
-    fn exact_add_neg_zero_is_identity() {
+    fn repr_add_neg_zero_is_identity() {
         let nz = Repr::<10>::neg_zero();
         let x = r::<10>(5, -2); // 0.05
                                 // -0 + x == x, x + -0 == x (exact, pre-rounding)
-        assert_eq!(exact_add(nz.clone(), &x), x);
-        assert_eq!(exact_add(x.clone(), &nz), x);
-        assert_eq!(exact_add(nz.clone(), &nz), Repr::<10>::neg_zero());
+        assert_eq!(&nz + &x, x);
+        assert_eq!(&x + &nz, x);
+        assert_eq!(&nz + &nz, Repr::<10>::neg_zero());
         // 1 + -1 cancels to +0 (not -0)
-        assert_eq!(exact_add(r::<10>(1, 0), &r::<10>(-1, 0)), Repr::<10>::zero());
+        assert_eq!(&r::<10>(1, 0) + &r::<10>(-1, 0), Repr::<10>::zero());
     }
 }

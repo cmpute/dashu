@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Change
+- `RBig::from_str_radix` / `from_str_with_radix_prefix` (and therefore `from_str`) now reject
+  multiple `/` separators with `ParseError::InvalidSyntax` instead of `ParseError::InvalidDigit`.
+  `from_str_expanded` / `from_str_decimal` likewise return `InvalidSyntax` for a malformed
+  repetend.
+
 ## 0.5.1
 
 ### Add

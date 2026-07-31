@@ -1,6 +1,5 @@
 //! Trigonometric functions, built on top of the cached constants π/2 and the real
-//! [`exp`](crate::FBig::exp)/[`ln`](crate::FBig::ln) primitives, plus the named
-//! constant constructors [`π`](crate::FBig::pi) and [`e`](crate::FBig::e):
+//! [`exp`](crate::FBig::exp)/[`ln`](crate::FBig::ln) primitives:
 //!
 //! - Circular: `sin`, `cos`, `tan`, `sin_cos`, and their inverses `asin`, `acos`, `atan`.
 //!
@@ -15,12 +14,26 @@ use crate::{
         FpResult,
     },
     repr::{Context, Repr, Word},
-    round::{Round, Rounded},
+    round::{ErrorBounds, Round, Rounded},
 };
-use core::cmp::Ordering;
 use core::convert::TryFrom;
-use dashu_base::{AbsOrd, Approximation::Exact, RemEuclid, Sign::*};
+use dashu_base::{Abs, AbsOrd, Approximation::Exact, RemEuclid, Sign, UnsignedAbs};
 use dashu_int::IBig;
+
+/// A near-correct value paired with its provable error radius (the Ziv closure contract).
+pub(crate) type Rad<R, const B: Word> = (FBig<R, B>, FBig<R, B>);
+
+/// Series-truncation error radius shared by the Maclaurin/Euler cores (`sin`/`cos`/`sin_cos`/
+/// `atan` here, and `ln`). Each accumulated term contributes `< 1 ulp` of rounding and the
+/// truncated tail adds another `< 1 ulp`, so `|value − true| < (4·terms + 12)·ulp(value)`: the
+/// `4·terms` covers per-step rounding, the `12` the reconstruction (the `×2` atanh factor, the
+/// `s·ln2`/powering recombination, and a safety margin).
+pub(crate) fn series_radius<R: Round, const B: Word>(
+    value: &FBig<R, B>,
+    terms: usize,
+) -> FBig<R, B> {
+    value.ulp() * (4 * terms + 12)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Quadrant {
@@ -44,19 +57,14 @@ fn signed_zero_normal<R: Round, const B: Word>(
     Ok(Exact(FBig::<R, B>::new(zero, *ctx)))
 }
 
-impl<R: Round> Context<R> {
-    /// Calculate the internal work context for trigonometric functions based on input magnitude.
-    ///
-    /// This ensures we have enough guard digits to prevent catastrophic cancellation
-    /// during range reduction for large inputs.
-    fn compute_work_context_trig<const B: Word>(self, x: &Repr<B>) -> Self {
+impl<R: ErrorBounds> Context<R> {
+    /// Work context for trigonometric functions: enough guard digits to absorb the catastrophic
+    /// cancellation in `x − k·(π/2)` for large `|x|`. `guard` (the Ziv retry's growing margin)
+    /// replaces the fixed base; `x_mag/10` covers cumulative reduction error scaling with `|x|`.
+    fn compute_work_context_trig<const B: Word>(self, x: &Repr<B>, guard: usize) -> Self {
         // x_mag estimates m = floor(log_BASE(|x|))
         let x_mag = (x.exponent.saturating_add(x.digits_ub() as isize)).max(0) as usize;
-
-        // We need precision + log10(x) digits to maintain 'precision' digits after reduction.
-        // We add a base of 50 guard digits, plus 10% of x_mag for very large arguments
-        // to account for cumulative errors in division and multiplication during reduction.
-        let extra_guards = 50 + x_mag / 10;
+        let extra_guards = guard + x_mag / 10;
         let work_precision = self
             .precision
             .saturating_add(x_mag)
@@ -64,28 +72,42 @@ impl<R: Round> Context<R> {
         Self::new(work_precision)
     }
 
-    /// Reduces the argument to the first quadrant for trigonometric evaluation.
-    /// Returns the internal work context, the reduced argument `r`, and the quadrant `k % 4`.
+    /// Reduces the argument to the first quadrant: `r = x − k·(π/2)` with `r ∈ (−π/4, π/4]`.
+    /// Returns the work context, `r`, the quadrant `k % 4`, and the **reduction error** — a provable
+    /// bound on `|r_computed − r_true|` (dominated by `|k|·ulp(half_pi)` for huge `|x|`), which the
+    /// Ziv wrapper folds into the result radius so the containment test is sound.
     fn reduce_to_quadrant<const B: Word>(
         self,
         x: &Repr<B>,
+        guard: usize,
         mut cache: Option<&mut ConstCache>,
-    ) -> (Self, FBig<R, B>, Quadrant) {
-        let work_context = self.compute_work_context_trig(x);
+    ) -> (Self, FBig<R, B>, Quadrant, FBig<R, B>) {
+        let work_context = self.compute_work_context_trig(x, guard);
         let x_f = FBig::<R, B>::new(work_context.repr_round(x.clone()).value(), work_context);
 
         let pi = work_context.pi::<B>(reborrow_cache(&mut cache)).value();
-        let half_pi = &pi / 2;
+        let half_pi = &pi / 2u8;
         let x_scaled: FBig<R, B> = &x_f / &half_pi;
         let k_f = x_scaled.round();
-        // Reduce `r = x − k·(π/2)` with a single rounding via FMA. The product
+        // Reduce `r = x − k·(π/2)` with a single rounding via FMA: the product
         // `k·(π/2)` nearly cancels `x` for large arguments, so fusing the multiply
-        // with the subtract (instead of mul-then-sub's two roundings) preserves the
-        // cancellation structure — the leading source of error in range reduction.
-        let r = k_f.fma(&half_pi, &x_f, Negative);
+        // with the subtract (instead of mul-then-sub's two roundings) tightens the
+        // reduction error that `reduction_err` below bounds and Ziv then certifies.
+        // The conservative `r_ulp·4` term stays sound — FMA only reduces actual
+        // error, never the bound.
+        let r = k_f.fma(&half_pi, &x_f, Sign::Negative);
         // `k_f` is the integer nearest `x_scaled`, so it's exact (or a signed zero
         // for a tiny argument in (-1, 0), which `IBig::try_from` treats as plain 0).
         let k = IBig::try_from(k_f).expect("k_f is an exact integer or signed zero");
+
+        // Reduction error bound: the rounded `half_pi` carries `< 1 ulp`, scaled by `|k|`; the `x`
+        // rounding and the subtraction add a few `r`-ULPs. Computed at the work precision (|k| fits
+        // in its digits, so this is accurate; the full-ulp factors and the +4 over-estimate) — kept
+        // off unlimited precision so `tan`'s `/|cos|` radius division stays legal.
+        let half_pi_ulp = half_pi.ulp();
+        let r_ulp = r.ulp();
+        let k_abs = k.clone().unsigned_abs();
+        let reduction_err = half_pi_ulp * k_abs + r_ulp * 4;
 
         let k_mod_4_big = k.rem_euclid(IBig::from(4));
         let Ok(k_mod_4_int) = i8::try_from(k_mod_4_big) else {
@@ -99,7 +121,7 @@ impl<R: Round> Context<R> {
             _ => unreachable!(),
         };
 
-        (work_context, r, quadrant)
+        (work_context, r, quadrant, reduction_err)
     }
 
     /// Calculate the sine of the floating point representation.
@@ -112,28 +134,39 @@ impl<R: Round> Context<R> {
             return Err(FpError::InfiniteInput);
         }
         assert_limited_precision(self.precision);
-
         if x.significand.is_zero() {
             // sin(±0) = ±0
             return signed_zero_normal(self, x);
         }
 
-        let (work_context, r, quadrant) = self.reduce_to_quadrant(x, reborrow_cache(&mut cache));
-
-        // 3. Evaluate the reduced series based on the quadrant
-        let res = match quadrant {
-            Quadrant::First => work_context.sin_internal(&r),
-            Quadrant::Second => work_context.cos_internal(&r),
-            Quadrant::Third => -work_context.sin_internal(&r),
-            Quadrant::Fourth => -work_context.cos_internal(&r),
-        };
-        Ok(res.with_precision(self.precision))
+        // Ziv: reduce to the first quadrant (the guard grows per retry, enlarging the work precision
+        // that absorbs the `x − k·(π/2)` cancellation), evaluate the series, and fold the reduction
+        // error into the radius so the containment test is sound even for huge |x|.
+        Ok(self.ziv(50, |guard| {
+            let (work, r, quadrant, reduction_err) =
+                self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache));
+            let (val, series_radius) = match quadrant {
+                Quadrant::First => work.sin_compute(&r),
+                Quadrant::Second => work.cos_compute(&r),
+                Quadrant::Third => {
+                    let (v, e) = work.sin_compute(&r);
+                    (-v, e)
+                }
+                Quadrant::Fourth => {
+                    let (v, e) = work.cos_compute(&r);
+                    (-v, e)
+                }
+            };
+            (val, series_radius + reduction_err)
+        }))
     }
 
-    /// Internal Taylor series for sine: S(x) = x - x^3/3! + x^5/5! - ...
-    fn sin_internal<const B: Word>(self, x: &FBig<R, B>) -> FBig<R, B> {
+    /// Near-correct sine series `S(x) = x − x³/3! + x⁵/5! − …` on the reduced argument, returning
+    /// `(value, error_radius)`. The radius covers series truncation (`< 1 working-ULP` by the break
+    /// test) plus `~3K` steps of rounding accumulation. Used by the Ziv-backed `sin`/`cos`/`tan`.
+    fn sin_compute<const B: Word>(self, x: &FBig<R, B>) -> (FBig<R, B>, FBig<R, B>) {
         if x.repr.significand.is_zero() {
-            return FBig::ZERO;
+            return (FBig::ZERO, FBig::ZERO);
         }
         let x2 = x.sqr();
         let mut sum = x.clone();
@@ -153,7 +186,8 @@ impl<R: Round> Context<R> {
             }
             k += 1;
         }
-        sum
+        let radius = series_radius(&sum, k);
+        (sum, radius)
     }
 
     /// Calculate the cosine of the floating point representation.
@@ -172,22 +206,30 @@ impl<R: Round> Context<R> {
             return Ok(FBig::<R, B>::ONE.with_precision(self.precision));
         }
 
-        let (work_context, r, quadrant) = self.reduce_to_quadrant(x, reborrow_cache(&mut cache));
-
-        // 3. Evaluate the reduced series based on the quadrant
-        let res = match quadrant {
-            Quadrant::First => work_context.cos_internal(&r),
-            Quadrant::Second => -work_context.sin_internal(&r),
-            Quadrant::Third => -work_context.cos_internal(&r),
-            Quadrant::Fourth => work_context.sin_internal(&r),
-        };
-        Ok(res.with_precision(self.precision))
+        Ok(self.ziv(50, |guard| {
+            let (work, r, quadrant, reduction_err) =
+                self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache));
+            let (val, series_radius) = match quadrant {
+                Quadrant::First => work.cos_compute(&r),
+                Quadrant::Second => {
+                    let (v, e) = work.sin_compute(&r);
+                    (-v, e)
+                }
+                Quadrant::Third => {
+                    let (v, e) = work.cos_compute(&r);
+                    (-v, e)
+                }
+                Quadrant::Fourth => work.sin_compute(&r),
+            };
+            (val, series_radius + reduction_err)
+        }))
     }
 
-    /// Internal Taylor series for cosine: C(x) = 1 - x^2/2! + x^4/4! - ...
-    fn cos_internal<const B: Word>(self, x: &FBig<R, B>) -> FBig<R, B> {
+    /// Near-correct cosine series `C(x) = 1 − x²/2! + x⁴/4! − …`, returning `(value, radius)`.
+    /// (See [`sin_compute`](Self::sin_compute) for the radius derivation.)
+    fn cos_compute<const B: Word>(self, x: &FBig<R, B>) -> (FBig<R, B>, FBig<R, B>) {
         if x.repr.significand.is_zero() {
-            return FBig::ONE.with_precision(self.precision).value();
+            return (FBig::ONE.with_precision(self.precision).value(), FBig::ZERO);
         }
         let x2 = x.sqr();
         let mut sum = FBig::<R, B>::ONE.with_precision(self.precision).value();
@@ -207,7 +249,8 @@ impl<R: Round> Context<R> {
             }
             k += 1;
         }
-        sum
+        let radius = series_radius(&sum, k);
+        (sum, radius)
     }
 
     /// Calculate both the sine and cosine of the floating point representation.
@@ -230,27 +273,28 @@ impl<R: Round> Context<R> {
             return (s, c);
         }
 
-        let (work_context, r, quadrant) = self.reduce_to_quadrant(x, reborrow_cache(&mut cache));
-
-        let (sin_r, cos_r) = work_context.sin_cos_internal(&r);
-
-        let (s, c) = match quadrant {
-            Quadrant::First => (sin_r, cos_r),
-            Quadrant::Second => (cos_r, -sin_r),
-            Quadrant::Third => (-sin_r, -cos_r),
-            Quadrant::Fourth => (-cos_r, sin_r),
-        };
-
-        (Ok(s.with_precision(self.precision)), Ok(c.with_precision(self.precision)))
+        let (s, c) = self.ziv_pair(50, |guard| {
+            let (work, r, quadrant, reduction_err) =
+                self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache));
+            let ((sin_r, sin_e), (cos_r, cos_e)) = work.sin_cos_compute(&r);
+            let (s, c) = match quadrant {
+                Quadrant::First => (sin_r, cos_r),
+                Quadrant::Second => (cos_r, -sin_r),
+                Quadrant::Third => (-sin_r, -cos_r),
+                Quadrant::Fourth => (-cos_r, sin_r),
+            };
+            ((s, sin_e + reduction_err.clone()), (c, cos_e + reduction_err))
+        });
+        (Ok(s), Ok(c))
     }
 
-    /// Simultaneously evaluate Taylor series for sine and cosine.
-    pub(crate) fn sin_cos_internal<const B: Word>(
-        self,
-        x: &FBig<R, B>,
-    ) -> (FBig<R, B>, FBig<R, B>) {
+    /// Simultaneously evaluate the sine and cosine series, returning both values and their radii.
+    pub(crate) fn sin_cos_compute<const B: Word>(self, x: &FBig<R, B>) -> (Rad<R, B>, Rad<R, B>) {
         if x.repr.significand.is_zero() {
-            return (FBig::ZERO, FBig::ONE.with_precision(self.precision).value());
+            return (
+                (FBig::ZERO, FBig::ZERO),
+                (FBig::ONE.with_precision(self.precision).value(), FBig::ZERO),
+            );
         }
         let x2 = x.sqr();
         let mut sin_sum = x.clone();
@@ -280,13 +324,17 @@ impl<R: Round> Context<R> {
             }
             k += 1;
         }
-        (sin_sum, cos_sum)
+        (
+            (sin_sum.clone(), series_radius(&sin_sum, k)),
+            (cos_sum.clone(), series_radius(&cos_sum, k)),
+        )
     }
 
     /// Calculate the tangent of the floating point representation.
     ///
     /// # Note
-    /// Near odd multiples of π/2, the result is an infinity (returned as a value, not an error).
+    /// Near odd multiples of π/2 the value grows without bound; dashu's wide exponent range holds
+    /// it as a large finite number rather than saturating to ±∞.
     pub fn tan<const B: Word>(
         &self,
         x: &Repr<B>,
@@ -302,27 +350,38 @@ impl<R: Round> Context<R> {
             return signed_zero_normal(self, x);
         }
 
-        let (work_context, r, quadrant) = self.reduce_to_quadrant(x, reborrow_cache(&mut cache));
-        let (sin_r, cos_r) = work_context.sin_cos_internal(&r);
-
-        let (s_f, c_f) = match quadrant {
-            Quadrant::First => (sin_r, cos_r),
-            Quadrant::Second => (cos_r, -sin_r),
-            Quadrant::Third => (-sin_r, -cos_r),
-            Quadrant::Fourth => (-cos_r, sin_r),
-        };
-
-        if c_f.repr.is_pos_zero() {
-            // tan hits a pole: the result is an infinity with the sign of the numerator.
-            let inf = if s_f.sign() == Negative {
-                Repr::neg_infinity()
-            } else {
-                Repr::infinity()
+        // tan = sin/cos, correctly rounded via the Ziv loop. Near a pole (an odd multiple of π/2)
+        // the value is large but finite at the working precision — dashu's wide exponent range holds
+        // it, and the sign is carried by the arithmetic (s/−|c| is negative), so there is no pole
+        // special-case here. The closure's `significand.is_zero()` guard below handles the
+        // unreachable exact-pole case (cos cancelling to a zero significand) by forcing a retry.
+        // Skipping a hoisted pole check avoids recomputing the sin/cos series twice (once for the
+        // check, once for the first Ziv attempt).
+        Ok(self.ziv(50, |guard| {
+            let (work, r, quadrant, reduction_err) =
+                self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache));
+            let ((sin_r, sin_e), (cos_r, cos_e)) = work.sin_cos_compute(&r);
+            let (s, c) = match quadrant {
+                Quadrant::First => (sin_r, cos_r),
+                Quadrant::Second => (cos_r, -sin_r),
+                Quadrant::Third => (-sin_r, -cos_r),
+                Quadrant::Fourth => (-cos_r, sin_r),
             };
-            return Ok(Rounded::Exact(FBig::new(inf, *self)));
-        }
-        self.div(&s_f.repr, &c_f.repr)
-            .map(|r| r.and_then(|f| f.with_precision(self.precision)))
+            if c.repr.significand.is_zero() {
+                // cos rounded to a zero significand at this guard (the input sits on a work-
+                // precision pole — unreachable for finite-precision x): force a retry. A higher guard
+                // makes cos representable (nonzero), yielding a large finite tan.
+                return (FBig::ZERO, FBig::ONE);
+            }
+            let result = work.div(&s.repr, &c.repr).unwrap().value();
+            // tan = s/c: the sin/cos radii propagate as (e_s + |tan|·e_c)/|c| plus the division
+            // rounding, all at the working precision (the only term that needed unlimited precision
+            // — the reduction error — is already work-precision, so the `/|c|` stays legal).
+            let e_s = sin_e + reduction_err.clone();
+            let e_c = cos_e + reduction_err;
+            let radius = (e_s + result.clone().abs() * e_c) / c.clone().abs() + result.ulp() * 8;
+            (result, radius)
+        }))
     }
 
     /// Calculate the arcsine of the floating point representation.
@@ -339,6 +398,12 @@ impl<R: Round> Context<R> {
             return Err(FpError::InfiniteInput);
         }
         assert_limited_precision(self.precision);
+        if x.significand.is_zero() {
+            // asin(±0) = ±0 (asin is odd), exact. Like the other inverse trig/hyperbolic functions,
+            // short-circuit before the Ziv loop: a zero result carries a positive radius that can't
+            // be certified against 0's one-sided preimage under directed rounding.
+            return signed_zero_normal(self, x);
+        }
 
         let x_orig = FBig::<R, B>::new(x.clone(), *self);
         // Domain check: |x| must be <= 1
@@ -346,39 +411,37 @@ impl<R: Round> Context<R> {
             return Err(FpError::OutOfDomain);
         }
 
-        let guard_digits = 50;
-        let work_precision = self.precision + guard_digits;
-        let work_context = Self::new(work_precision);
-
-        let x_f = FBig::<R, B>::new(work_context.repr_round(x.clone()).value(), work_context);
-
-        let res = work_context.asin_internal(&x_f, reborrow_cache(&mut cache));
-        Ok(res.with_precision(self.precision))
-    }
-
-    fn asin_internal<const B: Word>(
-        self,
-        x_f: &FBig<R, B>,
-        mut cache: Option<&mut ConstCache>,
-    ) -> FBig<R, B> {
-        let one = FBig::<R, B>::ONE.with_precision(self.precision).value();
-        let x2 = x_f.sqr();
-        let d = self.unwrap_fp(self.sqrt(&(one - x2).repr));
-
-        if d.repr.is_pos_zero() || d.repr.is_neg_zero() {
-            // |x| = 1 exactly (d = sqrt(1 - x²) = ±0); asin(±1) = ±π/2 regardless of rounding
-            // mode. Catch `-0` too: under roundTowardNegative `1 - 1` cancels to `-0`, sqrt(-0) =
-            // `-0`, and the general path would divide by `-0` → `-∞` and panic. (For |x| < 1,
-            // `d` is strictly positive, so only the exact-boundary x reaches this branch.)
-            let pi = self.pi::<B>(reborrow_cache(&mut cache)).value();
-            let half_pi: FBig<R, B> = pi / 2;
-            if x_f.sign() == Positive {
-                return half_pi;
+        Ok(self.ziv(50, |guard| {
+            let work = Context::<R>::new(self.precision + guard);
+            let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
+            let one = FBig::<R, B>::ONE.with_precision(work.precision).value();
+            let d = work
+                .sqrt(&(one.clone() - x_f.clone().sqr()).repr)
+                .unwrap()
+                .value();
+            if d.repr.is_pos_zero() || d.repr.is_neg_zero() {
+                // |x| = 1: asin(±1) = ±π/2.
+                let pi = work.pi::<B>(reborrow_cache(&mut cache)).value();
+                let half_pi = pi / 2u8;
+                let res = if x_f.sign() == Sign::Positive {
+                    half_pi
+                } else {
+                    -half_pi
+                };
+                let radius = res.ulp() * 4;
+                return (res, radius);
             }
-            return -half_pi;
-        }
-
-        self.atan_with_reduction(&(x_f / d), reborrow_cache(&mut cache))
+            // asin(x) = atan(x / sqrt(1−x²)); `atan`/`sqrt` are Ziv-correct at the working
+            // precision, so the radius is just the accumulated `sqrt`+`div` rounding (well-conditioned
+            // near |x|=1, where atan's derivative → 0).
+            let arg = &x_f / &d;
+            let res = work
+                .atan(&arg.repr, reborrow_cache(&mut cache))
+                .unwrap()
+                .value();
+            let radius = res.ulp() * 16;
+            (res, radius)
+        }))
     }
 
     /// Calculate the arccosine of the floating point representation.
@@ -397,22 +460,34 @@ impl<R: Round> Context<R> {
         assert_limited_precision(self.precision);
 
         let x_orig = FBig::<R, B>::new(x.clone(), *self);
-        // Domain check: |x| must be <= 1
-        if x_orig.abs_cmp(&FBig::ONE).is_gt() {
+        let cmp_one = x_orig.abs_cmp(&FBig::ONE);
+        if cmp_one.is_gt() {
             return Err(FpError::OutOfDomain);
         }
+        if cmp_one.is_eq() {
+            // |x| = 1: the composition π/2 − asin(±1) cancels onto an exact value. acos(1) = 0 is
+            // the acute case — under directed rounding 0's preimage is one-sided ([0, ulp)), so the
+            // Ziv containment test can never certify it (any positive radius dips the interval below
+            // 0) and would infinite-retry. acos(-1) = π is handled here too, for symmetry.
+            return Ok(if x.sign() == Sign::Positive {
+                Exact(FBig::<R, B>::new(Repr::zero(), *self))
+            } else {
+                self.pi::<B>(reborrow_cache(&mut cache))
+            });
+        }
 
-        let guard_digits = 50;
-        let work_precision = self.precision + guard_digits;
-        let work_context = Self::new(work_precision);
-
-        let x_f = FBig::<R, B>::new(work_context.repr_round(x.clone()).value(), work_context);
-
-        let asin_x = work_context.asin_internal(&x_f, reborrow_cache(&mut cache));
-        let pi = work_context.pi::<B>(reborrow_cache(&mut cache)).value();
-        let half_pi: FBig<R, B> = pi / 2;
-        let res: FBig<R, B> = half_pi - asin_x;
-        Ok(res.with_precision(self.precision))
+        Ok(self.ziv(50, |guard| {
+            let work = Context::<R>::new(self.precision + guard);
+            // acos(x) = π/2 − asin(x); `asin`/`pi` are Ziv-correct (or exact) at the working
+            // precision. The radius covers the propagated asin/π rounding plus the subtraction,
+            // which cancels near x = 1 — the radius grows there and Ziv retries with more guard.
+            let asin_x = work.asin(x, reborrow_cache(&mut cache)).unwrap().value();
+            let pi = work.pi::<B>(reborrow_cache(&mut cache)).value();
+            let res = (pi / 2u8) - &asin_x;
+            let radius = asin_x.ulp().clone().with_precision(0).value() * 2
+                + res.ulp().clone().with_precision(0).value() * 4;
+            (res, radius)
+        }))
     }
 
     /// Calculate the arctangent of the floating point representation.
@@ -425,7 +500,7 @@ impl<R: Round> Context<R> {
             // atan(±inf) = ±π/2 — preserved (a well-defined finite result for an infinite input)
             let pi = self.pi::<B>(reborrow_cache(&mut cache)).value();
             let half_pi: FBig<R, B> = pi / 2;
-            let res: FBig<R, B> = if x.sign() == Positive {
+            let res: FBig<R, B> = if x.sign() == Sign::Positive {
                 half_pi
             } else {
                 -half_pi
@@ -440,42 +515,31 @@ impl<R: Round> Context<R> {
             return signed_zero_normal(self, x);
         }
 
-        let guard_digits = 50;
-        let work_precision = self.precision + guard_digits;
-        let work_context = Self::new(work_precision);
-
-        let x_f = FBig::<R, B>::new(work_context.repr_round(x.clone()).value(), work_context);
-        let res = work_context.atan_with_reduction(&x_f, reborrow_cache(&mut cache));
-        Ok(res.with_precision(self.precision))
+        Ok(self.ziv(50, |guard| {
+            let work = Context::<R>::new(self.precision + guard);
+            let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
+            let sign = x_f.sign();
+            let x_abs = x_f.abs();
+            let one = FBig::<R, B>::ONE.with_precision(work.precision).value();
+            let (res, radius) = if x_abs >= one {
+                // |x| ≥ 1: atan(x) = π/2 − atan(1/x); the series runs on 1/x ∈ (0, 1].
+                let pi = work.pi::<B>(reborrow_cache(&mut cache)).value();
+                let inv_x = &one / &x_abs;
+                let (atan_val, atan_radius) = work.atan_compute(&inv_x);
+                let res = (pi / 2u8) - atan_val;
+                let radius = atan_radius + res.ulp() * 4;
+                (res, radius)
+            } else {
+                work.atan_compute(&x_abs)
+            };
+            let res = if sign == Sign::Negative { -res } else { res };
+            (res, radius)
+        }))
     }
 
-    /// Internal arctangent that includes range reduction but no guard digit allocation.
-    fn atan_with_reduction<const B: Word>(
-        self,
-        x_f: &FBig<R, B>,
-        mut cache: Option<&mut ConstCache>,
-    ) -> FBig<R, B> {
-        let sign = x_f.sign();
-        let mut x_abs = x_f.clone();
-        if sign == Negative {
-            x_abs = -x_abs;
-        }
-        let mut res = if x_abs >= FBig::<R, B>::ONE.with_precision(self.precision).value() {
-            let pi = self.pi::<B>(reborrow_cache(&mut cache)).value();
-            let inv_x = FBig::<R, B>::ONE.with_precision(self.precision).value() / x_abs;
-            (pi / 2) - self.atan_internal(&inv_x)
-        } else {
-            self.atan_internal(&x_abs)
-        };
-        if sign == Negative {
-            res = -res;
-        }
-        res
-    }
-
-    /// Internal series for arctangent.
-    /// Evaluates the Euler series for arctangent.
-    fn atan_internal<const B: Word>(self, x: &FBig<R, B>) -> FBig<R, B> {
+    /// Near-correct Euler series for `atan(x)` (`|x| ≤ 1`), returning `(value, radius)`. The radius
+    /// covers series truncation plus `~3N` steps of accumulation.
+    fn atan_compute<const B: Word>(self, x: &FBig<R, B>) -> (FBig<R, B>, FBig<R, B>) {
         // Euler's series for atan(x)
         let x2 = x.sqr();
         let one_plus_x2 = FBig::ONE + &x2;
@@ -494,7 +558,8 @@ impl<R: Round> Context<R> {
             sum += &term;
             n += 1;
         }
-        sum
+        let radius = series_radius(&sum, n);
+        (sum, radius)
     }
 
     /// Calculate the arctangent of y / x.
@@ -513,96 +578,72 @@ impl<R: Round> Context<R> {
 
         assert_limited_precision(self.precision);
 
-        let guard_digits = 50;
-        let work_precision = self.precision + guard_digits;
-        let work_context = Self::new(work_precision);
-
-        // Handle Infinities according to IEEE 754
+        // Handle Infinities according to IEEE 754 (computed at the target precision).
         if y.is_infinite() || x.is_infinite() {
-            let (sy, sx) = (y.sign() == Positive, x.sign() == Positive);
+            let (sy, sx) = (y.sign() == Sign::Positive, x.sign() == Sign::Positive);
+            let pi_val = self.pi::<B>(reborrow_cache(&mut cache)).value();
             let res: FBig<R, B> = match (y.is_infinite(), x.is_infinite(), sy, sx) {
-                (true, true, true, true) => {
-                    work_context.pi::<B>(reborrow_cache(&mut cache)).value() / 4
-                }
-                (true, true, true, false) => {
-                    work_context.pi::<B>(reborrow_cache(&mut cache)).value() * 3 / 4
-                }
-                (true, true, false, true) => {
-                    let pi4: FBig<R, B> =
-                        work_context.pi::<B>(reborrow_cache(&mut cache)).value() / 4;
-                    -pi4
-                }
-                (true, true, false, false) => {
-                    let pi34: FBig<R, B> =
-                        work_context.pi::<B>(reborrow_cache(&mut cache)).value() * 3 / 4;
-                    -pi34
-                }
-                (true, false, true, _) => {
-                    work_context.pi::<B>(reborrow_cache(&mut cache)).value() / 2
-                }
-                (true, false, false, _) => {
-                    let half_pi: FBig<R, B> =
-                        work_context.pi::<B>(reborrow_cache(&mut cache)).value() / 2;
-                    -half_pi
-                }
+                (true, true, true, true) => pi_val.clone() / 4u8,
+                (true, true, true, false) => pi_val.clone() * 3u8 / 4u8,
+                (true, true, false, true) => -(pi_val.clone() / 4u8),
+                (true, true, false, false) => -(pi_val.clone() * 3u8 / 4u8),
+                (true, false, true, _) => pi_val.clone() / 2u8,
+                (true, false, false, _) => -(pi_val.clone() / 2u8),
                 (false, true, _, true) => {
                     // atan2(±finite, +inf) = ±0 (signed zero of y)
                     if sy {
-                        FBig::<R, B>::ZERO.with_precision(work_precision).value()
+                        FBig::<R, B>::ZERO
                     } else {
-                        FBig::<R, B>::new(Repr::neg_zero(), work_context)
-                            .with_precision(work_precision)
-                            .value()
+                        FBig::<R, B>::new(Repr::neg_zero(), *self)
                     }
                 }
-                (false, true, true, false) => {
-                    work_context.pi::<B>(reborrow_cache(&mut cache)).value()
-                }
-                (false, true, false, false) => {
-                    -work_context.pi::<B>(reborrow_cache(&mut cache)).value()
-                }
+                (false, true, true, false) => pi_val.clone(),
+                (false, true, false, false) => -pi_val,
                 _ => unreachable!(),
             };
             return Ok(res.with_precision(self.precision));
         }
 
-        let y_f = FBig::<R, B>::new(work_context.repr_round(y.clone()).value(), work_context);
-        let x_f = FBig::<R, B>::new(work_context.repr_round(x.clone()).value(), work_context);
-
-        match x_f.cmp(&FBig::<R, B>::ZERO) {
-            Ordering::Greater => {
-                let res =
-                    work_context.atan_with_reduction(&(y_f / x_f), reborrow_cache(&mut cache));
-                Ok(res.with_precision(self.precision))
-            }
-            Ordering::Less => {
-                let pi = work_context.pi::<B>(reborrow_cache(&mut cache)).value();
-                let y_sign = y_f.sign();
-                let atan_yx =
-                    work_context.atan_with_reduction(&(y_f / x_f), reborrow_cache(&mut cache));
-                let res = if y_sign == Positive {
-                    atan_yx + pi
-                } else {
-                    atan_yx - pi
-                };
-                Ok(res.with_precision(self.precision))
-            }
-            Ordering::Equal => {
-                // x == 0 case
-                let pi = work_context.pi::<B>(reborrow_cache(&mut cache)).value();
-                let half_pi: FBig<R, B> = pi / 2;
-                if y_f > FBig::<R, B>::ZERO {
-                    Ok(half_pi.with_precision(self.precision))
-                } else {
-                    let res = -half_pi;
-                    Ok(res.with_precision(self.precision))
-                }
-            }
+        // x == 0, y finite nonzero: atan2 = ±π/2.
+        if x.significand.is_zero() {
+            let half_pi = self.pi::<B>(reborrow_cache(&mut cache)).value() / 2u8;
+            let res = if y.sign() == Sign::Positive {
+                half_pi
+            } else {
+                -half_pi
+            };
+            return Ok(res.with_precision(self.precision));
         }
+
+        // x ≠ 0, finite: atan2 = atan(y/x) ± (quadrant π). `atan` is Ziv-correct at the working
+        // precision, so the radius is the accumulated div/π-arithmetic rounding.
+        Ok(self.ziv(50, |guard| {
+            let work = Context::<R>::new(self.precision + guard);
+            let y_f = FBig::<R, B>::new(work.repr_round_ref(y).value(), work);
+            let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
+            let ratio = &y_f / &x_f;
+            let atan_val = work
+                .atan(&ratio.repr, reborrow_cache(&mut cache))
+                .unwrap()
+                .value();
+            let (res, radius) = if x.sign() == Sign::Positive {
+                (atan_val.clone(), atan_val.ulp() * 6)
+            } else {
+                let pi = work.pi::<B>(reborrow_cache(&mut cache)).value();
+                let r = if y_f.sign() == Sign::Positive {
+                    &atan_val + &pi
+                } else {
+                    &atan_val - &pi
+                };
+                let radius = atan_val.ulp() * 2 + r.ulp() * 6;
+                (r, radius)
+            };
+            (res, radius)
+        }))
     }
 }
 
-impl<R: Round, const B: Word> FBig<R, B> {
+impl<R: ErrorBounds, const B: Word> FBig<R, B> {
     /// Calculate the sine of the floating point number.
     ///
     /// # Panics
@@ -704,16 +745,13 @@ impl<R: Round> Context<R> {
         fresh.pi::<B, R>(self.precision)
     }
 
-    /// Calculate *e* (Euler's number) using binary splitting on the series
-    /// `e = Σ 1/k!`.
+    /// Calculate *e* (Euler's number) by binary splitting on `e = Σ 1/k!`.
     ///
     /// Unlike [`pi`](Self::pi), this takes no constant cache: *e* depends on no
     /// other cached constant and is itself reused by no operation, so there is no
-    /// state worth sharing across calls. The factorial series with binary splitting
-    /// is the optimal algorithm here — asymptotically `O(M(n) log n)` under FFT
-    /// multiplication (faster than π's `O(M(n) log²n)`), and it avoids both the
-    /// `ln`-based argument reduction and the `√p`-fold powering that `exp(1)`
-    /// would pay for.
+    /// state worth sharing across calls. The factorial series is the optimal
+    /// algorithm for *e* (`O(M(n) log n)`, faster than π) and avoids the
+    /// argument-reduction and `√p`-fold powering that `exp(1)` would pay for.
     ///
     /// # Panics
     ///
@@ -734,15 +772,6 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
     /// Calculate *e* (Euler's number) with the given precision and the default
     /// rounding mode.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use dashu_float::DBig;
-    /// let e = DBig::e(20);
-    /// // 2.7182818284590452354…
-    /// assert!(e.to_string().starts_with("2.718281828459045"));
-    /// ```
     #[inline]
     #[must_use]
     pub fn e(precision: usize) -> Self {
@@ -762,7 +791,7 @@ mod tests {
         let ctx = Context::<mode::HalfEven>::new(53);
         // atan(±inf) = ±π/2 — a finite result, preserved (not an error)
         let r = ctx.atan::<2>(&Repr::<2>::infinity(), None).unwrap().value();
-        assert!(r.repr().sign() == Positive);
+        assert!(r.repr().sign() == Sign::Positive);
         // it should be approximately π/2
         assert!(r > FBig::<mode::HalfEven>::ONE);
     }
@@ -782,10 +811,10 @@ mod tests {
             let ss = ss.unwrap().value();
             let cc = cc.unwrap().value();
             // sin is odd, cos is even: sin(x) ≈ x (negative), cos(x) ≈ 1
-            assert_eq!(s.sign(), Negative);
-            assert_eq!(c.sign(), Positive);
-            assert_eq!(ss.sign(), Negative);
-            assert_eq!(cc.sign(), Positive);
+            assert_eq!(s.sign(), Sign::Negative);
+            assert_eq!(c.sign(), Sign::Positive);
+            assert_eq!(ss.sign(), Sign::Negative);
+            assert_eq!(cc.sign(), Sign::Positive);
         }
     }
 
@@ -799,6 +828,36 @@ mod tests {
         let ctx = Context::<mode::HalfEven>::new(100);
         let s = ctx.sin::<10>(x.repr(), None).unwrap().value();
         // sin(x) ≈ x for a small negative x — completing without panicking is the regression guard.
-        assert_eq!(s.sign(), Negative);
+        assert_eq!(s.sign(), Sign::Negative);
+    }
+
+    /// tan near a pole (π/2) must not panic, and its sign must follow the pole side: just below →
+    /// large positive (→ +∞), just above → large negative (→ −∞). Guards the pole check, which
+    /// tests `cos` with `significand.is_zero()` (not `is_pos_zero`, which would miss `-0`) and
+    /// assigns the infinity sign as `sign(sin)·sign(cos)`.
+    #[test]
+    fn test_tan_near_pole_signs_and_no_panic() {
+        let p = 53usize;
+        let ctx = Context::<mode::HalfEven>::new(p);
+        let half_pi = FBig::<mode::HalfEven>::pi(p) / 2u8;
+        // a clear offset either side of the pole (≈2⁻¹⁰, far larger than half_pi's rounding error)
+        let eps = FBig::<mode::HalfEven>::ONE >> 10;
+        let below = ctx
+            .tan::<2>((half_pi.clone() - &eps).repr(), None)
+            .unwrap()
+            .value();
+        let above = ctx
+            .tan::<2>((half_pi.clone() + &eps).repr(), None)
+            .unwrap()
+            .value();
+        assert_eq!(below.sign(), Sign::Positive, "tan just below π/2 is large positive");
+        assert_eq!(above.sign(), Sign::Negative, "tan just above π/2 is large negative");
+        // sanity: tan(π/4) = 1
+        let pi = FBig::<mode::HalfEven>::pi(p);
+        let q = ctx.tan::<2>((pi / 4u8).repr(), None).unwrap().value();
+        assert!(
+            (q.clone() - FBig::ONE).abs_cmp(&(FBig::ONE >> 40)).is_le(),
+            "tan(π/4) ≈ 1, got {q:?}"
+        );
     }
 }

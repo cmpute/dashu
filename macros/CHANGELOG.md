@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Change
+- The literal macros now surface the new `ParseError::InvalidSyntax` (from `dashu-base`) with a
+  dedicated panic message; the `InvalidDigit` panic message no longer says "or syntax".
+
 ## 0.5.1
 
 ### Add

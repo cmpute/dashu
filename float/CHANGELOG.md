@@ -1,5 +1,103 @@
 # Changelog
 
+## Unreleased
+
+### Add
+- **Exact `Add`/`Sub`/`Mul` operators for `Repr`** (new `repr_ops` module). A `Repr` carries no
+  precision limit, so add/sub/mul on it are lossless — these are the shared primitives the crate uses
+  for exact intermediates (the Ziv containment test, the correctly-rounded `Sum`, and the `FBig`
+  multiply path). `Mul` saturates exponent overflow/underflow to the signed infinity/zero sentinels,
+  so the operator is infallible; the internal `make_mul_repr`/`unwrap_mul_repr!` helpers are removed
+  in favor of the operator, and the `Neg` impl moved here from `sign.rs`. No behavior change to
+  `FBig` arithmetic.
+- **Guaranteed-correct rounding for `exp`, `exp_m1`, `ln`, `ln_1p`** via a Ziv retry loop. A generic
+  `Context::ziv` driver rounds the working-precision approximation to the target precision and
+  verifies, against the `ErrorBounds` rounding preimage, that the approximation's provable error
+  interval lies entirely inside one rounding bin; if not, it retries with more guard digits. The loop
+  provably terminates and preserves the `Exact`/`Inexact` flag. Series evaluation is factored into
+  near-correct `ln_compute`/`exp_compute` cores (`R: Round`) that the Ziv wrapper certifies.
+- **Tightened `exp` guard digits** (now a performance knob, since Ziv — not the guard count —
+  guarantees correctness): the `Bⁿ`-powering guard is halved from `2n` to `n` and the series guard
+  drops its conservative `+ 2`.
+- **Guaranteed-correct rounding for the remaining transcendentals** via the Ziv loop: the
+  trigonometric family (`sin`, `cos`, `sin_cos`, `tan`, `asin`, `acos`, `atan`, `atan2`) and the
+  hyperbolic family (`sinh`, `cosh`, `sinh_cosh`, `tanh`, `asinh`, `acosh`, `atanh`). The trig series
+  (`sin`/`cos`/`atan`) are factored into near-correct `_compute` cores like `exp_compute`; the
+  composition-based functions treat the now-Ziv-correct `exp`/`ln`/`atan` as black boxes and count
+  only their arithmetic. The trig argument reduction folds a `|k|·ulp(π/2)` reduction-error term into
+  the radius so the containment test stays sound for huge `|x|`. `ziv_pair` certifies both halves of
+  `sin_cos`/`sinh_cosh`.
+- **`hypot` is now correctly rounded** with MPFR-style exactness tracking: the closure computes
+  `sqrt(large² + small²)` (operands scaled so `large²` can't overflow the exponent) and OR's each
+  step's `Exact`/`Inexact` flag, mirroring MPFR's `exact` flag — an all-exact chain yields the exact
+  true value, reported to `ziv` with radius 0, which it accepts without the containment test. This is
+  what lets an exact Pythagorean-triple result (`hypot(3,4)=5`, `hypot(5,12)=13`) terminate under a
+  directed rounding mode, where the one-sided preimage would otherwise make the containment test
+  infinite-retry.
+- **Guaranteed-correct rounding for `powf` (non-integer exponent)** via the Ziv loop. `x^y =
+  exp(y·ln x)`, and `exp` amplifies the rounding of `y·ln x` by the result magnitude — so the radius
+  is `result.ulp()·(|y·ln x|+1)·(B+8)` taken at the *working* precision: it shrinks as `B^{-guard}`,
+  so the containment test converges (a radius computed at unlimited precision would be constant
+  across retries and never settle for a value near a rounding boundary). An integer-valued exponent
+  delegates to `powi` (binary exponentiation), which also admits a negative base — its sign fixed by
+  the exponent's parity — so `powf(-x, n)` is in domain for integer `n`.
+- **Guaranteed-correct rounding for `powi` (integer exponent)** via the Ziv loop. Binary
+  exponentiation (repeated squaring) compounds the relative error — it roughly doubles per squaring
+  — so after `bit_len(n)` squarings the Ziv radius reflects it (`ulp_w << (nlen + 1)`). A negative
+  exponent computes `(1/base)^|n|` directly, so sign-dependent overflow/underflow falls out
+  naturally. When the squaring chain rounds `Exact` (the result is exactly representable, e.g. an
+  integer power that fits), the true error is zero and the radius is reported as zero — required
+  under the *directed* rounding modes (`Zero`/`Down`/`Up`/`Away`, the `FBig` default), where an
+  exactly-representable result lies on a one-sided rounding boundary that no nonzero radius can fit
+  inside.
+- `Repr::is_int` is now `const` (it only inspects the exponent and the infinity sentinel).
+
+### Change
+- **(breaking, bound)** The Ziv-backed transcendentals now require `R: ErrorBounds` rather than
+  `R: Round`: `exp`/`exp_m1`/`ln`/`ln_1p`, `powf`, `powi`, `hypot`, the trigonometric family
+  (`sin`/`cos`/`sin_cos`/`tan`/`asin`/`acos`/`atan`/`atan2`), and the hyperbolic family — the Ziv
+  containment test needs the rounding preimage that `ErrorBounds` provides. All six built-in modes
+  satisfy `ErrorBounds`; only custom non-`ErrorBounds` `Round` modes are affected (custom modes are
+  already discouraged), and the `num_traits::Pow<IBig>`/`Pow<&FBig>` impls for `FBig` likewise
+  tighten to `R: ErrorBounds` (they route through `powi`). Base conversion deliberately stays
+  `R: Round` by routing its `ln`/`exp` calls through the near-correct `ln_compute`/`exp_compute`
+  cores; arithmetic (`add`/`sub`/`mul`/`div`/`sqr`/`cubic`), `sqrt`/`cbrt`/`nth_root`, and the `e()`
+  constant are unchanged.
+- `FBig::log2` is now correctly rounded via the Ziv loop (it was near-correct in 0.5.1, evaluated as
+  `ln(x)/ln(2)` at elevated precision). Each `ln_compute` reports its provable radius and the two
+  radii are carried through the division as an outward-rounded interval `[lo, hi]` the Ziv driver
+  certifies; an exact power of two short-circuits to the integer `log2(x)` (required under directed
+  modes, where the exactly-representable integer sits on a one-sided boundary no positive radius can
+  fit inside, so `log2(2^-159)` under `Up` is the exact `-159`, not `-159 + 1 ulp`).
+- **Internal dedup** (no behavior change): the `⌈log_B(precision)⌉` base-guard formula shared by
+  every transcendental Ziv loop is now `Context::base_guard_digits::<B>()` (12 call sites in
+  `hyper`/`exp`/`log`), and the `ulp·(4·terms + 12)` series-truncation radius is now
+  `series_radius(value, terms)` (shared by the `sin`/`cos`/`sin_cos`/`atan`/`ln` series cores). The
+  two textually-identical `CachedFBig` forwarding macros (`forward_to_context!` /
+  `forward_to_context_unwrap!`) are merged.
+
+### Fix
+- **Directed-rounding hang on exact results** (`acos(1)`, `acos(-1)`, `asin(0)`, `hypot` of a
+  Pythagorean triple): under a directed mode (Down/Up/Zero) a function whose true value is exactly
+  representable carries a positive radius that can't be certified against the value's one-sided
+  rounding preimage, so the Ziv containment test infinite-retried (and the retry eventually tripped a
+  `dashu-int` NTT assertion, now fixed). `acos` short-circuits `|x| = 1` to the exact `0` / `π`,
+  `asin` short-circuits `x = 0` to `±0` (matching the existing special cases in the rest of the
+  inverse trig/hyperbolic family), and `hypot` reports radius 0 when its computation chain is exact.
+- **`tan` no longer has a hoisted pole check.** The check (which tested `cos` with `is_pos_zero`,
+  missing `-0`, and computed a `±∞` pole sign) re-evaluated the sin/cos series a second time on top of
+  the first Ziv attempt — a ~2× cost on every `tan` call. It's removed: near a pole (an odd multiple
+  of π/2) the value is large but finite, and dashu's wide exponent range holds it as a finite number
+  whose sign is carried by the arithmetic (`s/−|c|` is negative), so no `±∞` special-case is needed.
+  The unreachable exact-pole case (cos cancelling to a zero significand — impossible for finite-
+  precision input, since a `p`-digit rational can't sit closer than ~`B⁻ᵖ` to the irrational pole) is
+  handled by the Ziv closure's `significand.is_zero()` retry guard.
+- **`no_std` build of the test-only Ziv retry counter.** The `LAST_ZIV_RETRIES` `thread_local!`
+  (used by the retry-count tests) requires `std`, so the crate failed to compile under
+  `--no-default-features` (the `thread_local!` macro isn't in scope). It's now gated behind
+  `feature = "std"` along with its uses and the counter-reading tests, so the Ziv driver itself is
+  `no_std`-clean; the retry-count tests run under `std` as before.
+
 ## 0.5.2
 
 ### Add

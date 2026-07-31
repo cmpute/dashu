@@ -22,7 +22,7 @@ impl<R: Round> Context<R> {
         if z.is_zero() {
             return Ok(exact(FBig::ZERO, FBig::ZERO));
         }
-        let gctx = self.guard(MUL_GUARD);
+        let gctx = self.work_context(MUL_GUARD);
         let p = self.precision();
         let (x, y) = (z.re(), z.im());
         // real part: x² - y²
@@ -44,7 +44,7 @@ impl<R: Round> Context<R> {
             }
             return Ok(riemann(Context::max(z.context(), w.context()))); // ∞·finite = Riemann infinity
         }
-        let gctx = self.guard(MUL_GUARD);
+        let gctx = self.work_context(MUL_GUARD);
         let p = self.precision();
         let (x, y) = (z.re(), z.im());
         let (u, v) = (w.re(), w.im());
@@ -73,7 +73,7 @@ impl<R: Round> Context<R> {
             }
             return Ok(riemann(*self));
         }
-        let gctx = self.guard(MUL_GUARD);
+        let gctx = self.work_context(MUL_GUARD);
         let p = self.precision();
         let re = gctx.mul(z.re(), s.repr())?.value().with_precision(p);
         let im = gctx.mul(z.im(), s.repr())?.value().with_precision(p);
@@ -105,7 +105,7 @@ impl<R: Round> Context<R> {
         if z3.is_infinite() {
             return Ok(riemann(*self)); // finite z1·z2 ± ∞ = ∞
         }
-        let gctx = self.guard(MUL_GUARD);
+        let gctx = self.work_context(MUL_GUARD);
         let p = self.precision();
         let (a, b) = (z1.re(), z1.im());
         let (c, d) = (z2.re(), z2.im());
@@ -251,6 +251,14 @@ mod tests {
         // commutes: s * z
         let p2 = &s * &z;
         assert_eq!(p2.re().significand(), &6.into());
+    }
+
+    // At unlimited precision `mul`/`sqr` are exact (`work_context` uses `self.float()`), so this
+    // must NOT panic (unlike the transcendentals). i·i = −1 exactly.
+    #[test]
+    fn mul_at_unlimited_is_exact() {
+        let i = C::I;
+        assert_eq!(&i * &i, C::NEG_ONE);
     }
 
     #[test]

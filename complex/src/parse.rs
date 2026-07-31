@@ -22,13 +22,13 @@ impl<R: Round, const B: Word> FromStr for CBig<R, B> {
         }
         // Reject the MPC parenthesized form "(re im)" outright.
         if s.contains('(') || s.contains(')') {
-            return Err(ParseError::InvalidDigit);
+            return Err(ParseError::InvalidSyntax);
         }
 
         // The only valid 'i' is the trailing imaginary-unit marker.
         let i_count = s.bytes().filter(|&c| c == b'i').count();
         if i_count > 1 {
-            return Err(ParseError::InvalidDigit);
+            return Err(ParseError::InvalidSyntax);
         }
 
         if i_count == 0 {
@@ -39,7 +39,7 @@ impl<R: Round, const B: Word> FromStr for CBig<R, B> {
 
         // exactly one 'i', and it must be the final character
         if !s.ends_with('i') {
-            return Err(ParseError::InvalidDigit);
+            return Err(ParseError::InvalidSyntax);
         }
         let prefix = &s[..s.len() - 1];
 
@@ -113,12 +113,12 @@ mod tests {
     #[test]
     fn malformed_rejected() {
         use dashu_base::ParseError;
-        // structurally malformed inputs return InvalidDigit
-        assert_eq!("(1 2)".parse::<C>().unwrap_err(), ParseError::InvalidDigit); // MPC form
-        assert_eq!("ii".parse::<C>().unwrap_err(), ParseError::InvalidDigit); // multiple 'i'
-        assert_eq!("1+2ii".parse::<C>().unwrap_err(), ParseError::InvalidDigit); // multiple 'i'
-        assert_eq!("i5".parse::<C>().unwrap_err(), ParseError::InvalidDigit); // 'i' not trailing
-                                                                              // other malformations still yield a ParseError
+        // structurally malformed inputs return InvalidSyntax
+        assert_eq!("(1 2)".parse::<C>().unwrap_err(), ParseError::InvalidSyntax); // MPC form
+        assert_eq!("ii".parse::<C>().unwrap_err(), ParseError::InvalidSyntax); // multiple 'i'
+        assert_eq!("1+2ii".parse::<C>().unwrap_err(), ParseError::InvalidSyntax); // multiple 'i'
+        assert_eq!("i5".parse::<C>().unwrap_err(), ParseError::InvalidSyntax); // 'i' not trailing
+                                                                               // other malformations still yield a ParseError
         assert_eq!("".parse::<C>().unwrap_err(), ParseError::NoDigits);
         assert!("1+2".parse::<C>().is_err()); // 'i' required for an imaginary term
     }

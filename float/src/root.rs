@@ -1,13 +1,28 @@
-use dashu_base::{Approximation, CubicRoot, Sign, SquareRoot, SquareRootRem, UnsignedAbs};
+use dashu_base::{
+    Approximation, CubicRoot, EstimatedLog2, Sign, SquareRoot, SquareRootRem, UnsignedAbs,
+};
 use dashu_int::{IBig, UBig};
 
 use crate::{
     error::{assert_limited_precision, panic_root_zeroth, FpError, FpResult},
     fbig::FBig,
     repr::{Context, Repr, Word},
-    round::Round,
+    round::{ErrorBounds, Round, Rounded},
     utils::{shl_digits, split_digits_ref},
 };
+
+/// Take the value of a [`Rounded`] result, recording in `exact` whether it was computed exactly.
+///
+/// Mirrors MPFR's `exact` flag: an all-exact operation chain yields the exact true value, which a
+/// Ziv closure can report with radius 0 — `ziv` then accepts it without the containment test,
+/// which otherwise can't certify an exactly-representable result (it sits on a one-sided preimage
+/// boundary under directed rounding).
+fn value_tracking_exact<T>(r: Rounded<T>, exact: &mut bool) -> T {
+    if !matches!(r, Approximation::Exact(_)) {
+        *exact = false;
+    }
+    r.value()
+}
 
 impl<R: Round, const B: Word> SquareRoot for FBig<R, B> {
     type Output = Self;
@@ -256,14 +271,13 @@ impl<R: Round> Context<R> {
     }
 }
 
-impl<R: Round> Context<R> {
+impl<R: ErrorBounds> Context<R> {
     /// Compute `sqrt(a² + b²)` without spurious overflow/underflow.
     ///
     /// This is the overflow-safe scaled sum-of-squares: the larger-magnitude operand is never
     /// squared. Writing `m = max(|a|, |b|)` and `r = min(|a|,|b|) / m` (so `|r| ≤ 1`), the result is
-    /// `m · sqrt(1 + r²)`, where `1 + r² ∈ [1, 2]` cannot overflow. The final `m · sqrt(1 + r²)`
-    /// overflows only when the true result genuinely exceeds the exponent range (reported as
-    /// [`FpError::Overflow`]). `hypot(±inf, ·) = +inf`, `hypot(0, 0) = +0`.
+    /// `m · sqrt(1 + r²)`, where `1 + r² ∈ [1, 2]` cannot overflow. The result is correctly rounded
+    /// via a Ziv retry loop (`hypot(±inf, ·) = +inf`, `hypot(0, 0) = +0`).
     ///
     /// This is a field-arithmetic-class op (no constant cache), like `sqrt`/`atan2`.
     ///
@@ -278,11 +292,6 @@ impl<R: Round> Context<R> {
         if a.significand.is_zero() && b.significand.is_zero() {
             return Ok(Approximation::Exact(FBig::new(Repr::zero(), *self)));
         }
-
-        let guard = crate::utils::ceil_usize(<usize as dashu_base::EstimatedLog2>::log2_est(
-            &self.precision,
-        )) + 10;
-        let gctx = Context::<R>::new(self.precision + guard);
 
         // magnitudes, ordered large >= small (both finite, not both zero here)
         let a_mag = if a.sign() == Sign::Negative {
@@ -302,21 +311,51 @@ impl<R: Round> Context<R> {
         };
 
         if small.significand.is_zero() {
-            // hypot(x, 0) = |x|; `large` is already a magnitude
-            return Ok(gctx.repr_round_ref(&large).map(|v| FBig::new(v, *self)));
+            // hypot(x, 0) = |x|; `large` is already a magnitude.
+            return Ok(self.repr_round_ref(&large).map(|v| FBig::new(v, *self)));
         }
 
-        // r = small / large ∈ [0, 1]; 1 + r² ∈ [1, 2] (no overflow); result = large · sqrt(1+r²)
-        let r = gctx.div(&small, &large)?.value();
-        let r2 = gctx.sqr(r.repr())?.value();
-        let sum = gctx.add(&Repr::one(), r2.repr())?.value();
-        let root = gctx.sqrt(sum.repr())?.value();
-        let result = gctx.mul(&large, root.repr())?.value();
-        Ok(result.with_precision(self.precision))
+        // The result is `sqrt(large² + small²)`, i.e. ∈ [large, large·√2]. It overflows only when
+        // `large` is so large that the result reaches the infinity sentinel exponent — unreachable
+        // for real inputs, but pre-checked here so the Ziv closure can use infallible `FBig`
+        // arithmetic.
+        if large.exponent >= isize::MAX - 1 {
+            return Err(FpError::Overflow(Sign::Positive));
+        }
+
+        let initial_guard = crate::utils::ceil_usize(self.precision.log2_est()) + 10;
+        Ok(self.ziv(initial_guard, |guard| {
+            let gctx = Context::<R>::new(self.precision + guard);
+            // result = sqrt(large² + small²), with both operands scaled down by `k` base-B digits
+            // before squaring (so `large²` can't overflow the exponent) and the root scaled back:
+            // sqrt(L² + S²) · B^k = sqrt(large² + small²) for L = large·B⁻ᵏ, S = small·B⁻ᵏ. No
+            // division — so for integer inputs every step is exact (MPFR's `exact` flag), and an
+            // all-exact chain yields the exact true value. Report radius 0 then, which `ziv`
+            // accepts without the containment test (it can't certify an exactly-representable result
+            // under directed rounding — e.g. hypot(3,4)=5, hypot(5,12)=13 — which sits on a
+            // one-sided preimage boundary).
+            let k = (large.exponent as i128 - (isize::MAX as i128 - 2) / 2).max(0) as isize;
+            let mut exact = true;
+            let large_f =
+                FBig::new(value_tracking_exact(gctx.repr_round_ref(&large), &mut exact), gctx);
+            let small_f =
+                FBig::new(value_tracking_exact(gctx.repr_round_ref(&small), &mut exact), gctx);
+            let l_sq = value_tracking_exact(gctx.sqr((large_f >> k).repr()).unwrap(), &mut exact);
+            let s_sq = value_tracking_exact(gctx.sqr((small_f >> k).repr()).unwrap(), &mut exact);
+            let sum = value_tracking_exact(gctx.add(l_sq.repr(), s_sq.repr()).unwrap(), &mut exact);
+            let root = value_tracking_exact(gctx.sqrt(sum.repr()).unwrap(), &mut exact);
+            let result = root << k; // exact exponent shift — scales back, doesn't affect `exact`
+            let radius = if exact {
+                FBig::<R, B>::ZERO
+            } else {
+                result.ulp() * 8
+            };
+            (result, radius)
+        }))
     }
 }
 
-impl<R: Round, const B: Word> FBig<R, B> {
+impl<R: ErrorBounds, const B: Word> FBig<R, B> {
     /// Compute `sqrt(self² + other²)` without spurious overflow/underflow.
     ///
     /// The result precision is `max(self.precision(), other.precision())`. See
@@ -374,6 +413,24 @@ mod tests {
         let r = ctx.hypot(&Repr::infinity(), &mk(3)).unwrap().value();
         assert!(r.repr().is_infinite());
         assert_eq!(r.repr().sign(), Sign::Positive);
+    }
+
+    fn check_hypot_exact_triples<R: ErrorBounds>(ctx: Context<R>) {
+        let mk = |v: i32| Repr::<2>::new(v.into(), 0);
+        // Pythagorean triples: the result is exactly representable, so under a directed mode it
+        // sits on a one-sided preimage boundary. The closure must terminate (radius 0 from the
+        // all-exact `sqrt(large²+small²)` chain) rather than infinite-retry.
+        for (a, b, h) in [(3, 4, 5), (5, 12, 13), (8, 15, 17)] {
+            let r = ctx.hypot(&mk(a), &mk(b)).unwrap().value();
+            assert_eq!(r.repr().significand(), &h.into(), "hypot({a}, {b})");
+        }
+    }
+
+    #[test]
+    fn test_hypot_exact_under_directed_rounding() {
+        check_hypot_exact_triples(Context::<mode::Down>::new(53));
+        check_hypot_exact_triples(Context::<mode::Up>::new(53));
+        check_hypot_exact_triples(Context::<mode::Zero>::new(53));
     }
 
     #[test]

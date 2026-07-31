@@ -213,14 +213,18 @@ impl ConstCache {
                     .value()
             }
             _ => {
-                // generic base: no cached L(n) sub-series applies, so compute
-                // ln(B) directly through Context::ln on the base literal.
+                // generic base: no cached L(n) sub-series applies, so compute ln(B) directly via
+                // the near-correct `ln_compute` (the cache only stores a near-correct constant — a
+                // cached value is re-rounded on read, and Ziv isn't needed here).
                 let ctx = Context::<R>::new(precision);
-                ctx.unwrap_fp(ctx.ln::<B>(
+                ctx.ln_compute::<B>(
                     &Repr::new(Repr::<B>::BASE.into(), 0),
                     // no cache for the generic base (its L(n) isn't cached)
+                    precision,
+                    false,
                     None,
-                ))
+                )
+                .0
             }
         }
     }
