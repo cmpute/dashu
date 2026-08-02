@@ -6,7 +6,7 @@ use crate::{
     fbig::FBig,
     math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr, Word},
-    round::{ErrorBounds, Round, Rounded},
+    round::{ErrorBounds, Round, Rounded, Rounding::*},
 };
 use dashu_base::{Abs, AbsOrd, Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign};
 use dashu_int::{IBig, UBig};
@@ -252,7 +252,17 @@ pub(crate) fn exp_overflows<R: Round, const B: Word>(
     if x.log2_est().abs() <= 61.0 {
         return false;
     }
-    let probe = Context::<R>::new(ctx.precision + 64);
+    // Inflate the probe's `ln B` exactly as `exp_compute` does: the reduction quotient
+    // `s = floor(x/ln B)` is only pinned once `ln B` carries `⌈log_B|x|⌉ + 2` extra digits, so the
+    // probe must too. Without it the probe can judge `s` to fit `isize` while `exp_compute` (running
+    // at a higher work precision) finds it overflows, tripping the `s.try_into()` expect there.
+    let x_log2_ub = x.log2_bounds().1;
+    let extra = if x_log2_ub > 0.0 {
+        (x_log2_ub / B.log2_est()) as usize + 2
+    } else {
+        2
+    };
+    let probe = Context::<R>::new(ctx.precision + 64 + extra);
     let logb = probe.ln_base::<B>(reborrow_cache(cache));
     let x_probe = FBig::new(probe.repr_round_ref(x).value(), probe);
     let s_probe = x_probe.div_rem_euclid(logb).0;
@@ -669,8 +679,16 @@ impl<R: ErrorBounds> Context<R> {
         // Hoisted overflow check: the reduction quotient s = floor(x/ln B) overflows isize only
         // for astronomically large |x| (|x| ≳ 2^61). The Ziv closure below can't return Err, so
         // detect that case here and short-circuit to overflow/underflow (matching IEEE limits).
+        // The probe inflates `ln B` with the same `⌈log_B|x|⌉ + 2` extra digits `exp_compute` uses,
+        // so its `s` verdict matches the computation's (see `exp_overflows`).
         if x.log2_est().abs() > 61.0 {
-            let probe = Context::<R>::new(self.precision + 64);
+            let x_log2_ub = x.log2_bounds().1;
+            let extra = if x_log2_ub > 0.0 {
+                (x_log2_ub / B.log2_est()) as usize + 2
+            } else {
+                2
+            };
+            let probe = Context::<R>::new(self.precision + 64 + extra);
             let logb = probe.ln_base::<B>(reborrow_cache(&mut cache));
             let x_probe = FBig::new(probe.repr_round_ref(x).value(), probe);
             let s_probe = x_probe.div_rem_euclid(logb).0;
@@ -727,12 +745,13 @@ impl<R: ErrorBounds> Context<R> {
     /// "round up to the next representable / stay" decision. (The literal significand arithmetic
     /// `round_low_part` would do is irrelevant here — only its directional verdict is used.)
     fn exp_extreme_negative<const B: Word>(&self, minus_one: bool) -> Rounded<FBig<R, B>> {
-        use crate::round::Rounding::*;
         if !minus_one {
-            // exp(huge −): tiny positive residual above 0.
+            // exp(huge −): tiny positive residual above 0. The endpoint carries the input
+            // context, so a downstream op on the result keeps a limited precision (the
+            // precision-0 `FBig::ZERO` would trip `assert_limited_precision`).
             match R::round_low_part(&IBig::ZERO, Sign::Positive, || Ordering::Less) {
                 AddOne => Inexact(FBig::new(Repr::new(IBig::ONE, isize::MIN), *self), AddOne),
-                _ => Inexact(FBig::ZERO, NoOp),
+                _ => Inexact(FBig::new(Repr::<B>::zero(), *self), NoOp),
             }
         } else {
             // exp_m1(huge −): −1 + (sub-representable positive) ⇒ just above −1.
@@ -745,7 +764,9 @@ impl<R: ErrorBounds> Context<R> {
                     let next = Repr::new(IBig::from_parts(Sign::Negative, next_mag), -(p as isize));
                     Inexact(FBig::new(next, *self), AddOne)
                 }
-                _ => Inexact(-FBig::ONE, NoOp),
+                // Carry the input context: `−FBig::ONE` is precision 0, which would make a
+                // downstream op on the result panic via `assert_limited_precision(0)`.
+                _ => Inexact(FBig::new(Repr::<B>::neg_one(), *self), NoOp),
             }
         }
     }
@@ -832,8 +853,38 @@ mod tests {
             let next_up_mag = (IBig::from(1) << p) - IBig::from(1);
             let expected_up = FBig::<mode::Up, 2>::from_parts(-next_up_mag, -(p as isize));
             assert_eq!(up.repr(), expected_up.repr(), "Up exp_m1(-2^{e}) p={p}");
-            assert_eq!(down.repr(), FBig::<mode::Down, 2>::NEG_ONE.repr(), "Down exp_m1(-2^{e}) p={p}");
+            assert_eq!(
+                down.repr(),
+                FBig::<mode::Down, 2>::NEG_ONE.repr(),
+                "Down exp_m1(-2^{e}) p={p}"
+            );
+            // The endpoint must carry the input precision: a precision-0 result would make a
+            // downstream op panic via `assert_limited_precision(0)`.
+            assert_eq!(up.precision(), p, "Up exp_m1(-2^{e}) p={p} lost precision");
+            assert_eq!(down.precision(), p, "Down exp_m1(-2^{e}) p={p} lost precision");
             assert!(up > down, "Up > Down for exp_m1(-2^{e}) p={p}");
+        }
+    }
+
+    // exp(huge −) saturates to +0 (or the smallest positive under Up/Away). The endpoint must
+    // carry the input precision too — the precision-0 `FBig::ZERO` previously returned here
+    // tripped `assert_limited_precision(0)` on a downstream op.
+    #[test]
+    fn test_exp_extreme_negative_endpoint_precision() {
+        for &(e, p) in &[(50i32, 53usize), (100, 53), (1000, 53), (100, 128)] {
+            let up = FBig::<mode::Up, 2>::from_parts(-IBig::ONE, e as isize)
+                .with_precision(p)
+                .value()
+                .exp();
+            let down = FBig::<mode::Down, 2>::from_parts(-IBig::ONE, e as isize)
+                .with_precision(p)
+                .value()
+                .exp();
+            assert_eq!(up.precision(), p, "Up exp(-2^{e}) p={p} lost precision");
+            assert_eq!(down.precision(), p, "Down exp(-2^{e}) p={p} lost precision");
+            // A downstream op must not panic on the saturated endpoint.
+            let _ = down.sqrt();
+            assert!(up > down, "Up > Down for exp(-2^{e}) p={p}");
         }
     }
 

@@ -398,7 +398,7 @@ mod tests {
         let v = FBig::new(Repr::<2>::new(IBig::ONE, isize::MIN + 8), ctx);
         let _ = v.ulp(); // must not panic
         let _ = v.ulp_lb(); // must not panic
-        // Same check near the top end of the exponent range.
+                            // Same check near the top end of the exponent range.
         let v = FBig::new(Repr::<2>::new(IBig::ONE, isize::MAX - 8), ctx);
         let _ = v.ulp();
         let _ = v.ulp_lb();

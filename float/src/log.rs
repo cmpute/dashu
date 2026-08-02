@@ -306,15 +306,26 @@ impl<R: Round> Context<R> {
         // reconstruction ULPs — `(4·terms + 12)·ulp` carries a generous margin.
         //
         // The ulp MUST be taken at the work precision, not `result.ulp()`: the `s·ln(B)` term calls
-        // `ln_base`, which over-delivers (~`work_precision + guard` digits), so `result` can carry
-        // extra digits the series never certified. Basing the radius on that finer ulp under-
-        // estimates the error (which lives at the work-precision scale) by ~`B^guard`, leaving the
-        // radius unsound — Ziv then certifies the wrong neighbor for a log result within ~1 work-ulp
-        // of a power of two (e.g. log2(f64::MAX) ≈ 1024 under Down at p=53 returned 1024). Widening
-        // the ulp to the work-precision scale is a no-op when `result` is already at work precision.
-        let extra = result.repr().digits().saturating_sub(work_precision);
-        let work_ulp = result.ulp().with_precision(0).value() << extra as isize;
-        let radius = work_ulp * (4 * terms + 12);
+        // `ln_base`, which over-delivers (~`work_precision + guard` digits), and that inflated
+        // *context* becomes `result`'s context — even when the `s·ln(B)` operand is zero (x ∈ [1, B),
+        // so s = 0), `result` still carries `work + guard` precision while its value has only ~`work`
+        // digits. `result.ulp()` is then ~`B^guard` finer than the work-precision ulp, and widening
+        // by the *value's* extra digits (often ~0 here) does not compensate — only the *context*
+        // inflation does. An unsound radius lets Ziv certify the wrong neighbor for a log result
+        // within ~1 work-ulp of a rounding boundary (e.g. directed `ln`/`log2` in [1, B)). Widening
+        // by `result.precision() − work_precision` is a no-op when `result` is already at work
+        // precision.
+        //
+        // A second soundness hole: when `s < 0` the reconstruction `2·sum + s·ln(B)` *cancels* (for
+        // x just above 1, `log2_bounds` can classify s as −1, so `2·sum ≈ |s|·ln(B)` and `result` is
+        // their tiny difference). Subtraction preserves absolute error, so the series error stays at
+        // `sum`'s magnitude (O(1)) while `result`'s magnitude collapses — `result.ulp()` then vastly
+        // under-estimates the error. The radius must therefore cover the pre-cancellation (`sum`)
+        // scale as well; taking the max is a no-op when the two magnitudes agree (s ≥ 0, no cancel).
+        let inflation = result.precision().saturating_sub(work_precision);
+        let work_ulp = result.ulp().with_precision(0).value() << inflation as isize;
+        let sum_ulp = sum.ulp().with_precision(0).value();
+        let radius = work_ulp.max(sum_ulp) * (4 * terms + 12);
         (result, radius)
     }
 }
@@ -796,6 +807,48 @@ mod tests {
             assert_eq!(got_up.repr(), &want_up, "p={p} Up");
             // Directed invariant: Up ≥ Down.
             assert!(got_up.repr() >= got_down.repr(), "p={p} Up < Down");
+        }
+    }
+
+    /// Directed `ln` of `x ∈ [1, 2)` must match a high-precision oracle re-rounded under the same
+    /// mode. This binade (s = 0) is where the radius under-estimated the error: `result` inherits
+    /// `ln_base`'s over-delivered context, and for `x` just above 1 the scaling even classifies
+    /// `s = −1`, so `2·sum + s·ln2` cancels and the error stays at `sum`'s magnitude while
+    /// `result`'s collapses — both make `result.ulp()` the wrong scale for the radius.
+    fn check_ln_directed_in_unit_binade(k: usize, p: usize) {
+        // x = (2^k + 1) * 2^-k = 1 + 2^-k, exactly representable at precision p when k < p.
+        let x = Repr::<2>::new(IBig::from(1i64 << k) + IBig::ONE, -(k as isize));
+        let oracle = Context::<mode::HalfEven>::new(p + 60)
+            .ln::<2>(&x, None)
+            .unwrap()
+            .value();
+        let want_down = Context::<mode::Down>::new(p)
+            .repr_round_ref(&oracle.repr)
+            .value();
+        let want_up = Context::<mode::Up>::new(p)
+            .repr_round_ref(&oracle.repr)
+            .value();
+        let got_down = Context::<mode::Down>::new(p)
+            .ln::<2>(&x, None)
+            .unwrap()
+            .value();
+        let got_up = Context::<mode::Up>::new(p)
+            .ln::<2>(&x, None)
+            .unwrap()
+            .value();
+        assert_eq!(got_down.repr(), &want_down, "ln(1+2^-{k}) p={p} Down");
+        assert_eq!(got_up.repr(), &want_up, "ln(1+2^-{k}) p={p} Up");
+        assert!(got_up.repr() >= got_down.repr(), "ln(1+2^-{k}) p={p} Up < Down");
+    }
+
+    #[test]
+    fn test_ln_directed_near_one() {
+        // Sweep the near-1 binade at low precision, including the k close to p cases that
+        // classify as s = −1 and cancel.
+        for p in [24usize, 40, 53] {
+            for k in 1..p.saturating_sub(1) {
+                check_ln_directed_in_unit_binade(k, p);
+            }
         }
     }
 }

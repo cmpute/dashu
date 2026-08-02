@@ -2,24 +2,53 @@
 
 ## Unreleased
 
+### Change
+- **(internal) Unified `f32`/`f64` range detection.** `into_f32_internal`/`into_f64_internal` now
+  return `FpResult` (`Ok` in range, `Err(Overflow)`/`Err(Underflow)` at the extremes), so the
+  range decision lives in one place — `convert_to_f32`/`convert_to_f64` — shared by the infallible
+  `to_f32`/`to_f64` (which saturate the `FpError` to the directed endpoint) and the fallible
+  `TryFrom` (which maps it to `OutOfBounds`/`LossOfPrecision`). The four directed-endpoint blocks
+  collapse into one helper per float type. No observable behavior change.
+
 ### Fix
-- **Directed underflow of `FBig → f32`/`f64`.** A positive value below the smallest subnormal
-  saturated to a mode-blind signed zero; under `Up`/`Away` (positive) or `Down`/`Away` (negative) it
-  must instead reach the smallest subnormal of that sign. `into_f32_internal`/`into_f64_internal`
-  now pick `±0` vs `±smallest-subnormal` per the mode. (`+0` was not an upper bound for a positive
-  value under `Up`.)
+- **Directed overflow/underflow of `FBig → f32`/`f64` (range detection).** The directed-endpoint
+  branches were gated on the *least*-significant-bit exponent, which is not the overflow/underflow
+  threshold: a value whose significand straddles `f32::MAX` (e.g. `3·2¹²⁷`, lsb exponent 127 < 128)
+  still overflows but fell through to `encode`, which saturates to `±∞` mode-blindly — so under
+  toward-zero it returned `+∞` instead of `f32::MAX`. Symmetrically, `2⁻¹⁶⁰` (lsb exponent −160,
+  above the `−173` underflow gate) reached `encode` and returned `±0` mode-blindly — under `Up` a
+  positive value below the smallest subnormal must reach `2⁻¹⁴⁹`. Range detection is now delegated
+  to `encode` (which tests the *most*-significant bit), and only the saturation endpoint
+  (`±MAX` vs `±∞`, `±0` vs `±smallest-subnormal`) is chosen per rounding mode.
+- **`TryFrom<FBig> for f32`/`f64` error variant is now mode-independent.** A finite value beyond
+  `±MAX` previously returned `Err(OutOfBounds)` under nearest modes (which round to `±∞`) but
+  `Err(LossOfPrecision)` under directed modes (which saturate to `±MAX`), because the variant was
+  derived from the *result's* infiniteness. It is now classified by the *input* magnitude, so
+  `Err(OutOfBounds)` reliably means "beyond the finite range" under every rounding mode. (`to_f32`/
+  `to_f64`, which return the mode-aware `Rounded<f32>`/`Rounded<f64>`, are unchanged.)
+- **Directed `ln`/`log2` of `x ∈ [1, B)` and of `x` just above 1.** `ln_compute`'s error radius was
+  unsound in two ways for the unit binade: (1) it used `result.ulp()`, but `result` inherits
+  `ln_base`'s over-delivered context (~`work + guard` digits) even when the `s·ln(B)` term is zero
+  (`s = 0`), so the radius under-estimated the work-precision-scale error by ~`B^guard`; the radius
+  is now widened by the context inflation. (2) For `x` just above 1, `log2_bounds` can classify
+  `s = −1`, so `result = 2·sum + s·ln(B)` cancels — the absolute error then stays at `sum`'s
+  magnitude while `result`'s collapses, and `result.ulp()` vastly under-estimates it; the radius now
+  also covers the pre-cancellation (`sum`) scale. Both let Ziv certify the wrong 1-ULP neighbor for
+  ~1–5% of directed `ln`/`log2` inputs in `[1, B)` at low precision.
+- **`exp`/`exp_m1` extreme-negative endpoint carried precision 0.** The mode-aware saturation
+  returned the precision-0 constants `FBig::ZERO` / `−FBig::ONE`, so a downstream op on the result
+  (`e.sqrt()`, …) panicked via `assert_limited_precision(0)`. The endpoint is now built with the
+  input context.
+- **`exp` overflow probe could disagree with the computation.** The hoisted probe computed the
+  reduction quotient `s = floor(x/ln B)` at a fixed `p + 64` bits, while `exp_compute` inflates
+  `ln B` by `⌈log_B|x|⌉ + 2` extra digits — so for huge `|x|` the two could disagree on whether `s`
+  fits `isize`, and `exp_compute`'s `s.try_into()` could then panic. The probe now applies the same
+  inflation, so its verdict matches the computation's.
 - **`ulp()`/`ulp_lb()` panic on an extreme exponent.** The ulp exponent `e + digits − precision`
   was computed with wrapping `isize` arithmetic, so a value near the representable exponent floor
   (e.g. a `powi` result just above the smallest representable) underflowed and panicked inside the
   Ziv containment test. The arithmetic is now saturating; an extreme exponent yields a saturated
   (smallest-representable) ulp.
-- **Directed rounding of `exp`/`exp_m1` at extreme negative input.** When `exp(x)` underflows
-  below the smallest representable FBig (the reduction quotient `s = floor(x/ln B)` overflows
-  `isize`), the short-circuit saturated mode-blindly: `exp(huge −)` returned `+0` even under `Up`
-  (should be the smallest positive `B^{isize::MIN}`), `exp_m1(huge −)` returned `Exact(−1)` even
-  under `Up` (should be the next representable above `−1`), and the `Up(exp) ≥ Down(exp)` invariant
-  was violated. The saturation now consults the rounding mode via `Round::round_low_part` and picks
-  the correct endpoint.
 - **`exp_m1` of large negative input.** For `x` negative enough that `exp(x)` is below the result's
   precision, `exp_m1(x)` is `−1` plus a sub-ulp residual whose rounding is fully determined, but
   the Ziv loop could not certify it: the working-precision value collapses to exactly `−1` and a
@@ -31,22 +60,19 @@
   hence the result exponent) off by ~`|x|`, and `Up(exp)` could fall below `Down(exp)`.
   `exp_compute` now computes `ln B` with `⌈log_B|x|⌉ + 2` extra digits, so the reduction contributes
   well under one work-ulp.
-- **Directed overflow of `FBig → f32`/`f64`.** A value beyond `f32::MAX`/`f64::MAX` saturated to
-  `±∞` regardless of rounding mode; under toward-zero (and toward the opposite infinity, and
-  nearest) it must saturate to the largest *finite* value instead. `into_f32_internal`/
-  `into_f64_internal` now pick `±MAX` vs `±∞` per the mode.
 - **`FBig → f32`/`f64` subnormal mis-round for wide decimal significands.** The round-to-odd base
   conversion was computed straight at the target width, so the near-correct `ln`/`exp` series (a
   few-ulp error at the work precision) could land a value whose true result sits within ~`2^{-2w}`
   of a `w`-bit midpoint on the wrong side, rounding to the neighbor 1 ULP off. `convert_base_odd`
   now converts at `width + 24` bits and round-to-odd's down to `width`, pushing the residual well
   inside one `w`-bit ulp.
-- **Directed `log2` near a power of two.** `ln_compute`'s error radius used `result.ulp()`, but the
-  `s·ln(B)` reconstruction term inherits `ln_base`'s over-delivered precision, so `result` can carry
-  digits the series never certified — the radius then under-estimated the (work-precision-scale)
-  error by ~`B^{guard}`, and Ziv certified the wrong neighbor for a `log2` result within ~1 work-ulp
-  of a power of two. The radius is now based on the work-precision ulp, and the `log2` Ziv interval
-  bounds are computed at `work + 16` bits so the per-step rounding stays inside one work-ulp.
+
+### Known Limitations
+- **`powi`/`powf` range saturation is mode-blind.** An astronomically large/small result saturates
+  to `±∞`/signed zero regardless of rounding mode (the `powi` magnitude pre-check returns
+  `Err(Overflow/Underflow)` and the convenience layer unwraps it blindly), so `Up(pow(x, y))` can
+  fall below `Down(exp(y·ln x))` for the same value. Directed saturation for `pow` is not yet
+  implemented; use `exp`/`ln` directly when the directed endpoint matters.
 
 ## 0.6.0-rc.1
 

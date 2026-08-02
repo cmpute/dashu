@@ -110,7 +110,42 @@ assert_eq!(DBig::from_str("1234")?.to_int(), Exact(1234.into()));
 assert_eq!(DBig::from_str("1.234")?.to_int(), Inexact(1.into(), NoOp));
 ```
 
-转换为基本浮点数时，`to_f32()` / `to_f64()` 返回携带舍入方向的 `Rounded<f32>` / `Rounded<f64>`；它们不会失败（上溢产生 `±∞`，无穷映射到无穷）。反向——`TryFrom<f32>`/`TryFrom<f64> for FBig`——**仅限基数 2**（在其他任何基数中几乎总是有损的）；要到达非二进制的 `FBig`，请先转换为基数 2，再调用 `with_base()`。NaN 会被以 `ConversionError::OutOfBounds` 拒绝。
+转换为基本浮点数时，`to_f32()` / `to_f64()` 返回携带舍入方向的 `Rounded<f32>` / `Rounded<f64>`；它们不会失败（在格式的边界处，结果取决于舍入模式——见下文[范围边界](#范围边界上溢下溢与舍入模式)；无穷映射到无穷）。反向——`TryFrom<f32>`/`TryFrom<f64> for FBig`——**仅限基数 2**（在其他任何基数中几乎总是有损的）；要到达非二进制的 `FBig`，请先转换为基数 2，再调用 `with_base()`。NaN 会被以 `ConversionError::OutOfBounds` 拒绝。
+
+### 范围边界：上溢、下溢与舍入模式
+
+`to_f32()` / `to_f64()` 按上下文的舍入模式一路舍入到格式的边界，因此当真实值落在有限范围之外时，舍入模式决定*终点*：
+
+- **上溢**（值超出 `f32::MAX` / `f64::MAX`）：向外的模式（朝向 `±∞`、远离零）达到 `±∞`；朝向零、朝向相反方向的无穷以及就近舍入则饱和到最大的*有限*值（`±MAX`）。
+- **下溢**（值小于最小次正规数——f32 为 `2⁻¹⁴⁹`，f64 为 `2⁻¹⁰⁷⁴`）：向外的模式达到对应符号的最小次正规数；其余模式舍入到带符号的 `±0`。
+
+```rust
+use dashu::integer::IBig;
+use dashu::float::{FBig, round::mode::{Zero, Up}};
+
+// 3·2^127 超出 f32::MAX：朝向零饱和到 f32::MAX，朝向 +∞ 达到 +∞。
+let big = FBig::<Zero, 2>::from_parts(IBig::from(3), 127);
+assert_eq!(big.to_f32().value(), f32::MAX);
+assert!(big.with_rounding::<Up>().to_f32().value().is_infinite());
+
+// 2^-160 小于 f32 的最小次正规数：朝向 +∞ 达到它，朝向零得到 +0。
+let tiny = FBig::<Zero, 2>::from_parts(IBig::from(1), -160);
+assert_eq!(tiny.with_rounding::<Up>().to_f32().value(), f32::from_bits(1));
+assert_eq!(tiny.to_f32().value(), 0.0);
+```
+
+相比之下，`TryFrom<FBig> for f32` / `f64` 是*可失败*的路径：对于**任何**不精确的转换（包括范围内的舍入）它都返回 `Err`——因此想拿到值时请优先使用 `to_f32()` / `to_f64()`。它的错误变体按*输入的绝对值*分类，而非按模式感知的结果分类：超出 `±MAX` 的值在**任何**舍入模式下都是 `Err(ConversionError::OutOfBounds)`（无论该模式会饱和到 `±MAX` 还是上溢到 `±∞`），而仅仅损失精度的范围内值则是 `Err(LossOfPrecision)`。因此 `Err(OutOfBounds)` 可靠地表示“超出有限范围”，与舍入模式无关：
+
+```rust
+use dashu::base::ConversionError;
+use dashu::integer::IBig;
+use dashu::float::{FBig, round::mode::{Zero, Up}};
+
+let big = FBig::<Zero, 2>::from_parts(IBig::from(3), 127);
+// 超出 f32::MAX 在任何模式下都越界——模式只决定 to_f32() 返回的终点（±MAX 还是 ±∞）。
+assert_eq!(f32::try_from(big.clone().with_rounding::<Up>()), Err(ConversionError::OutOfBounds));
+assert_eq!(f32::try_from(big), Err(ConversionError::OutOfBounds));
+```
 
 ### 转换到 RBig
 

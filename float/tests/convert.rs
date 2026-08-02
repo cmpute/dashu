@@ -506,20 +506,23 @@ fn test_to_f32() {
     // f32 under toward-zero (fbig! is Zero mode), and to ±∞ only under outward modes (Up/Away).
     assert_eq!(fbig!(0x1p200).to_f32(), Inexact(f32::MAX, NoOp)); // overflow
     assert_eq!(fbig!(-0x1p200).to_f32(), Inexact(f32::MIN, NoOp));
-    assert_eq!(FBig::<Up, 2>::from_parts(IBig::ONE, 200).to_f32(), Inexact(f32::INFINITY, AddOne));
-    assert_eq!(f32::try_from(fbig!(0x1p200)), Err(LossOfPrecision)); // finite saturation, not OutOfBounds
-    assert_eq!(f32::try_from(fbig!(-0x1p200)), Err(LossOfPrecision));
+    assert_eq!(
+        FBig::<Up, 2>::from_parts(IBig::ONE, 200).to_f32(),
+        Inexact(f32::INFINITY, AddOne)
+    );
+    assert_eq!(f32::try_from(fbig!(0x1p200)), Err(OutOfBounds)); // beyond MAX is out of range (any mode)
+    assert_eq!(f32::try_from(fbig!(-0x1p200)), Err(OutOfBounds));
     assert_eq!(fbig!(0x1p128).to_f32(), Inexact(f32::MAX, NoOp)); // boundary for overflow
     assert_eq!(fbig!(-0x1p128).to_f32(), Inexact(f32::MIN, NoOp));
-    assert_eq!(f32::try_from(fbig!(0x1p128)), Err(LossOfPrecision));
-    assert_eq!(f32::try_from(fbig!(-0x1p128)), Err(LossOfPrecision));
+    assert_eq!(f32::try_from(fbig!(0x1p128)), Err(OutOfBounds));
+    assert_eq!(f32::try_from(fbig!(-0x1p128)), Err(OutOfBounds));
     assert_eq!(fbig!(0xffffffffp96).to_f32(), Inexact(f32::MAX, NoOp));
     assert_eq!(fbig!(0xffffffffp96).repr().to_f32(), Inexact(f32::INFINITY, AddOne));
-    assert_eq!(f32::try_from(fbig!(0xffffffffp96)), Err(LossOfPrecision));
+    assert_eq!(f32::try_from(fbig!(0xffffffffp96)), Err(OutOfBounds));
     assert_eq!(f32::try_from(fbig!(0xffffffffp96).into_repr()), Err(OutOfBounds));
     assert_eq!(fbig!(-0xffffffffp96).to_f32(), Inexact(f32::MIN, NoOp));
     assert_eq!(fbig!(-0xffffffffp96).repr().to_f32(), Inexact(f32::NEG_INFINITY, SubOne));
-    assert_eq!(f32::try_from(fbig!(0xffffffffp96)), Err(LossOfPrecision));
+    assert_eq!(f32::try_from(fbig!(0xffffffffp96)), Err(OutOfBounds));
     assert_eq!(f32::try_from(fbig!(0xffffffffp96).into_repr()), Err(OutOfBounds));
     assert_eq!(fbig!(0x1p-140).to_f32(), Exact(f32::from_bits(0x200))); // subnormal
     assert_eq!(fbig!(-0x1p-140).to_f32(), Exact(-f32::from_bits(0x200)));
@@ -578,13 +581,16 @@ fn test_to_f64() {
     // toward-zero (fbig! is Zero), to ±∞ only under outward modes.
     assert_eq!(fbig!(0x1p2000).to_f64(), Inexact(f64::MAX, NoOp)); // overflow
     assert_eq!(fbig!(-0x1p2000).to_f64(), Inexact(f64::MIN, NoOp));
-    assert_eq!(FBig::<Up, 2>::from_parts(IBig::ONE, 2000).to_f64(), Inexact(f64::INFINITY, AddOne));
-    assert_eq!(f64::try_from(fbig!(0x1p2000)), Err(LossOfPrecision));
-    assert_eq!(f64::try_from(fbig!(-0x1p2000)), Err(LossOfPrecision));
+    assert_eq!(
+        FBig::<Up, 2>::from_parts(IBig::ONE, 2000).to_f64(),
+        Inexact(f64::INFINITY, AddOne)
+    );
+    assert_eq!(f64::try_from(fbig!(0x1p2000)), Err(OutOfBounds));
+    assert_eq!(f64::try_from(fbig!(-0x1p2000)), Err(OutOfBounds));
     assert_eq!(fbig!(0x1p1024).to_f64(), Inexact(f64::MAX, NoOp)); // boundary for overflow
     assert_eq!(fbig!(-0x1p1024).to_f64(), Inexact(f64::MIN, NoOp));
-    assert_eq!(f64::try_from(fbig!(0x1p1024)), Err(LossOfPrecision));
-    assert_eq!(f64::try_from(fbig!(-0x1p1024)), Err(LossOfPrecision));
+    assert_eq!(f64::try_from(fbig!(0x1p1024)), Err(OutOfBounds));
+    assert_eq!(f64::try_from(fbig!(-0x1p1024)), Err(OutOfBounds));
     assert_eq!(fbig!(0xffffffffffffffffp960).to_f64(), Inexact(f64::MAX, NoOp));
     assert_eq!(fbig!(-0xffffffffffffffffp960).to_f64(), Inexact(-f64::MAX, NoOp));
     assert_eq!(fbig!(0x1p-1060).to_f64(), Exact(f64::from_bits(0x4000))); // subnormal

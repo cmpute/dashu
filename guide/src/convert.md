@@ -110,7 +110,43 @@ assert_eq!(DBig::from_str("1234")?.to_int(), Exact(1234.into()));
 assert_eq!(DBig::from_str("1.234")?.to_int(), Inexact(1.into(), NoOp));
 ```
 
-To a primitive float, `to_f32()` / `to_f64()` return `Rounded<f32>` / `Rounded<f64>` carrying the rounding direction; they never fail (overflow yields `±∞`, infinities map to infinities). The reverse — `TryFrom<f32>`/`TryFrom<f64> for FBig` — is **base-2 only** (it is almost always lossy in any other base); to reach a non-binary `FBig`, convert to base 2 first and then call `with_base()`. NaN is rejected with `ConversionError::OutOfBounds`.
+To a primitive float, `to_f32()` / `to_f64()` return `Rounded<f32>` / `Rounded<f64>` carrying the rounding direction; they never fail (at the edges of the format the result depends on the rounding mode — see [range boundaries](#range-boundaries-overflow-underflow-and-the-rounding-mode) below; infinities map to infinities). The reverse — `TryFrom<f32>`/`TryFrom<f64> for FBig` — is **base-2 only** (it is almost always lossy in any other base); to reach a non-binary `FBig`, convert to base 2 first and then call `with_base()`. NaN is rejected with `ConversionError::OutOfBounds`.
+
+### Range boundaries: overflow, underflow, and the rounding mode
+
+`to_f32()` / `to_f64()` round under the context's mode all the way to the edge of the format, so when the true value falls outside the finite range the rounding mode decides the *endpoint*:
+
+- **Overflow** (value beyond `f32::MAX` / `f64::MAX`): the outward modes (toward `±∞`, away from zero) reach `±∞`; toward-zero, toward the opposite infinity, and nearest saturate to the largest *finite* value (`±MAX`).
+- **Underflow** (value below the smallest subnormal — `2⁻¹⁴⁹` for f32, `2⁻¹⁰⁷⁴` for f64): the outward modes reach the smallest subnormal of that sign; the rest round to signed `±0`.
+
+```rust
+use dashu::integer::IBig;
+use dashu::float::{FBig, round::mode::{Zero, Up}};
+
+// 3·2^127 overflows f32::MAX: toward-zero saturates to f32::MAX, toward +∞ reaches +∞.
+let big = FBig::<Zero, 2>::from_parts(IBig::from(3), 127);
+assert_eq!(big.to_f32().value(), f32::MAX);
+assert!(big.with_rounding::<Up>().to_f32().value().is_infinite());
+
+// 2^-160 is below the smallest f32 subnormal: toward +∞ reaches it, toward-zero gives +0.
+let tiny = FBig::<Zero, 2>::from_parts(IBig::from(1), -160);
+assert_eq!(tiny.with_rounding::<Up>().to_f32().value(), f32::from_bits(1));
+assert_eq!(tiny.to_f32().value(), 0.0);
+```
+
+`TryFrom<FBig> for f32` / `f64`, by contrast, is the *fallible* path: it returns `Err` for **any** inexact conversion (in-range rounding included) — so prefer `to_f32()` / `to_f64()` when you want the value. Its error variant is classified by the *input magnitude*, not the mode-aware result: a value beyond `±MAX` is `Err(ConversionError::OutOfBounds)` under **every** rounding mode (whether that mode would saturate to `±MAX` or overflow to `±∞`), while an in-range value that merely loses precision is `Err(LossOfPrecision)`. Thus `Err(OutOfBounds)` reliably means "beyond the finite range", independent of the rounding mode:
+
+```rust
+use dashu::base::ConversionError;
+use dashu::integer::IBig;
+use dashu::float::{FBig, round::mode::{Zero, Up}};
+
+let big = FBig::<Zero, 2>::from_parts(IBig::from(3), 127);
+// Beyond f32::MAX is out of range under every mode — the mode only picks
+// the endpoint that to_f32() would return (±MAX vs ±∞).
+assert_eq!(f32::try_from(big.clone().with_rounding::<Up>()), Err(ConversionError::OutOfBounds));
+assert_eq!(f32::try_from(big), Err(ConversionError::OutOfBounds));
+```
 
 ### Conversion to RBig
 

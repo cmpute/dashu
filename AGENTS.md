@@ -84,6 +84,17 @@ Keep the `## Unreleased` section updated as you go.
 - Estimating the number of digits can be costly — prefer using `log2_bounds` and `repr.digits_ub`/`digits_lb` instead of computing exact digit counts.
 - The number of digits in an `FBig` significand is at most the context precision, with one intentional exception: the result of an inexact addition or subtraction may carry a single **guard digit** (up to `precision + 1` digits). During internal calculations the bound can be violated more freely; use the methods on `Context` instead of the public API in that case.
 
+## Testing precision for `FBig` and `CBig`
+
+When modifying an `FBig` or `CBig` implementation (arithmetic, conversion, transcendentals, rounding, …), test it under **at least** these base-2 precision settings — each exercises a distinct code path / significand width, and bugs often surface at only one of them:
+
+- **20 bits** — within the `f32` significand range (exercises the narrow-precision and f32-conversion paths).
+- **50 bits** — within the `f64` significand range (exercises the f64-conversion paths).
+- **100 bits** — significand fits in a `u128` (exercises the double-word / multi-word-but-small fast paths).
+- **500 bits** — well into the arbitrary-precision `bigint` range (exercises the general multi-word kernels and large-significand edge cases).
+
+Prefer a high-precision oracle (e.g. the same op computed at `p + 60` under `HalfEven`, then re-rounded to `p` under the mode under test) for directed-rounding checks — remember that in-crate tests must use fixed, deterministic inputs (see [Code style](#code-style)); sweep these four precisions with a hand-chosen input set rather than a random generator.
+
 ## Cached wrappers (`CachedFBig`, `CachedCBig`)
 
 **`CachedFBig` is a drop-in replacement for `FBig`, and `CachedCBig` for `CBig`.** Each cached wrapper must mirror the full public API and trait surface of its non-cached counterpart, delegating every impl to the inner value. **Whenever you add or change a trait impl on `FBig` or `CBig`, mirror it on `CachedFBig` / `CachedCBig` in the same change** — otherwise the `FastReal` / `FastDecimal` / `FastComplex` aliases regress: code that compiles with `FBig`/`CBig` must compile unchanged with `CachedFBig`/`CachedCBig`. The only intentional divergences are that the cached type's transcendental ops thread the shared `ConstCache`, it is `!Send + !Sync`, construction takes a cache handle, `CachedCBig::into_parts` returns `(CachedFBig, CachedFBig)` sharing the handle (not `CBig`'s `(FBig, FBig)`), and **third-party crate traits (serde, num-traits, num-order, rand, zeroize, postgres/diesel) are intentionally not mirrored** — reach them through `.as_fbig()` / `.as_cbig()`.
