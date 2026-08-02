@@ -767,8 +767,24 @@ impl<const B: Word> Repr<B> {
                 adj,
             )
         } else if self.exponent < -149 - 24 {
-            // min f32 = 2^-149
-            Inexact(sign * 0f32, Rounding::NoOp)
+            // Below the smallest subnormal (2^-149). See `into_f64_internal`: |value| is far under
+            // half of it here, so nearest modes round to ±0 and only the outward modes reach the
+            // smallest subnormal.
+            use crate::round::Rounding::*;
+            let adj = if sign == Sign::Positive {
+                R::round_low_part(&IBig::ZERO, Sign::Positive, || core::cmp::Ordering::Less)
+            } else {
+                R::round_low_part(&IBig::ZERO, Sign::Negative, || core::cmp::Ordering::Less)
+            };
+            Inexact(
+                match (sign, adj) {
+                    (Sign::Positive, AddOne) => f32::from_bits(1), // smallest positive subnormal
+                    (Sign::Positive, _) => 0.0,
+                    (Sign::Negative, SubOne) => f32::from_bits(0x8000_0001),
+                    (Sign::Negative, _) => -0.0,
+                },
+                adj,
+            )
         } else {
             match f32::encode(man24, self.exponent as i16) {
                 Exact(v) => Exact(v),
@@ -828,8 +844,24 @@ impl<const B: Word> Repr<B> {
                 adj,
             )
         } else if self.exponent < -1074 - 53 {
-            // min f64 = 2^-1074
-            Inexact(sign * 0f64, Rounding::NoOp)
+            // Below the smallest subnormal (2^-1074). The branch fires only for exponents far enough
+            // below -1074 that |value| < half of it, so nearest modes round to ±0; only the outward
+            // modes (Up/Away for positive, Down/Away for negative) reach the smallest subnormal.
+            use crate::round::Rounding::*;
+            let adj = if sign == Sign::Positive {
+                R::round_low_part(&IBig::ZERO, Sign::Positive, || core::cmp::Ordering::Less)
+            } else {
+                R::round_low_part(&IBig::ZERO, Sign::Negative, || core::cmp::Ordering::Less)
+            };
+            Inexact(
+                match (sign, adj) {
+                    (Sign::Positive, AddOne) => f64::from_bits(1), // smallest positive subnormal
+                    (Sign::Positive, _) => 0.0,
+                    (Sign::Negative, SubOne) => f64::from_bits(0x8000_0000_0000_0001),
+                    (Sign::Negative, _) => -0.0,
+                },
+                adj,
+            )
         } else {
             match f64::encode(man53, self.exponent as i16) {
                 Exact(v) => Exact(v),
@@ -1116,6 +1148,29 @@ mod tests {
             -198,
         );
         assert_eq!(v.to_f32().value().to_bits(), 0x00040007);
+    }
+
+    // A positive value below the smallest subnormal must round *up* to that smallest subnormal
+    // under Up/Away (and to ±0 under toward-zero/opposite/nearest) — the underflow path used to
+    // return a mode-blind signed zero, which is not an upper bound for a positive value under Up.
+    #[test]
+    fn f64_directed_underflow_below_smallest_subnormal() {
+        use crate::round::mode::Down;
+        // tiny positive binary value, far below 2^-1074
+        let up = FBig::<crate::round::mode::Up, 2>::from_parts(IBig::ONE, -20000);
+        let away = FBig::<crate::round::mode::Away, 2>::from_parts(IBig::ONE, -20000);
+        let zero = FBig::<Zero, 2>::from_parts(IBig::ONE, -20000);
+        let down = FBig::<Down, 2>::from_parts(IBig::ONE, -20000);
+        assert_eq!(up.to_f64().value().to_bits(), 0x0000_0000_0000_0001); // smallest +subnormal
+        assert_eq!(away.to_f64().value().to_bits(), 0x0000_0000_0000_0001);
+        assert_eq!(zero.to_f64().value().to_bits(), 0x0); // +0
+        assert_eq!(down.to_f64().value().to_bits(), 0x0);
+
+        // tiny negative: Down/Away -> smallest -subnormal, Zero/Up -> -0
+        let ndown = FBig::<Down, 2>::from_parts(-IBig::ONE, -20000);
+        let nup = FBig::<crate::round::mode::Up, 2>::from_parts(-IBig::ONE, -20000);
+        assert_eq!(ndown.to_f64().value().to_bits(), 0x8000_0000_0000_0001); // smallest -subnormal
+        assert_eq!(nup.to_f64().value().to_bits(), 0x8000_0000_0000_0000); // -0
     }
 
     #[test]

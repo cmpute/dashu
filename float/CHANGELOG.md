@@ -3,6 +3,16 @@
 ## Unreleased
 
 ### Fix
+- **Directed underflow of `FBig → f32`/`f64`.** A positive value below the smallest subnormal
+  saturated to a mode-blind signed zero; under `Up`/`Away` (positive) or `Down`/`Away` (negative) it
+  must instead reach the smallest subnormal of that sign. `into_f32_internal`/`into_f64_internal`
+  now pick `±0` vs `±smallest-subnormal` per the mode. (`+0` was not an upper bound for a positive
+  value under `Up`.)
+- **`ulp()`/`ulp_lb()` panic on an extreme exponent.** The ulp exponent `e + digits − precision`
+  was computed with wrapping `isize` arithmetic, so a value near the representable exponent floor
+  (e.g. a `powi` result just above the smallest representable) underflowed and panicked inside the
+  Ziv containment test. The arithmetic is now saturating; an extreme exponent yields a saturated
+  (smallest-representable) ulp.
 - **Directed rounding of `exp`/`exp_m1` at extreme negative input.** When `exp(x)` underflows
   below the smallest representable FBig (the reduction quotient `s = floor(x/ln B)` overflows
   `isize`), the short-circuit saturated mode-blindly: `exp(huge −)` returned `+0` even under `Up`

@@ -312,8 +312,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
         let repr = Repr {
             significand: IBig::ONE,
-            exponent: self.repr.exponent + self.repr.digits() as isize
-                - self.context.precision as isize,
+            exponent: self
+                .repr
+                .exponent
+                .saturating_add(self.repr.digits() as isize)
+                .saturating_sub(self.context.precision as isize),
         };
         Self::new(repr, self.context)
     }
@@ -341,9 +344,12 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
         let repr = Repr {
             significand: IBig::ONE,
-            exponent: self.repr.exponent + self.repr.digits_lb() as isize
-                - self.context.precision as isize
-                - 1,
+            exponent: self
+                .repr
+                .exponent
+                .saturating_add(self.repr.digits_lb() as isize)
+                .saturating_sub(self.context.precision as isize)
+                .saturating_sub(1),
         };
         Self::new(repr, self.context)
     }
@@ -371,5 +377,30 @@ impl<R: Round, const B: Word> Default for FBig<R, B> {
     #[inline]
     fn default() -> Self {
         Self::ZERO
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::round::mode::HalfEven;
+
+    // `ulp()`/`ulp_lb()` compute the exponent as `e + digits - precision`. For a value whose
+    // exponent is near `isize::MIN` (e.g. a `powi` result at the edge of the representable range)
+    // that subtraction used to underflow `isize` and panic inside the Ziv containment test. The
+    // arithmetic is now saturating, so an extreme exponent yields a saturated (smallest-representable)
+    // ulp instead of panicking.
+    #[test]
+    fn ulp_extreme_exponent_does_not_overflow() {
+        // 1 × 2^(isize::MIN + 8) at precision 53: ulp exponent = (isize::MIN+8) + 1 - 53, which
+        // underflows isize::MIN without the saturating arithmetic.
+        let ctx = Context::<HalfEven>::new(53);
+        let v = FBig::new(Repr::<2>::new(IBig::ONE, isize::MIN + 8), ctx);
+        let _ = v.ulp(); // must not panic
+        let _ = v.ulp_lb(); // must not panic
+        // Same check near the top end of the exponent range.
+        let v = FBig::new(Repr::<2>::new(IBig::ONE, isize::MAX - 8), ctx);
+        let _ = v.ulp();
+        let _ = v.ulp_lb();
     }
 }
