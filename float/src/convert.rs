@@ -485,22 +485,43 @@ fn significand_bits(v: &Repr<2>, max_bits: usize, subnormal_exp: isize) -> usize
     (msb - subnormal_exp + 1).clamp(1, max_bits as isize) as usize
 }
 
-/// Convert `repr` to base 2 and truncate to `width` significant bits, forcing the lowest kept bit
-/// to 1 whenever the tail is nonzero (round-to-odd). Rounding this down to any width up to
-/// `width - 2` reproduces the correctly-rounded value for every rounding mode, so the two-step
-/// "convert, then round to the final width" cannot double-round. `width` is fixed and generous, so
-/// the base-conversion logarithm stays accurate even when the final width is tiny (deep subnormals).
+/// Convert `repr` to base 2 and reduce to a `width`-bit round-to-odd value: the top `width` bits
+/// with the lowest kept bit forced to 1 whenever the conversion was inexact. Rounding this to any
+/// width up to `width - 2` reproduces the correctly-rounded value for every rounding mode, so the
+/// two-step "convert, then round to the final width" cannot double-round.
+///
+/// The conversion is first evaluated at `width + GUARD` bits (work precision `2·(width + GUARD)`)
+/// and only then round-to-odd'd down to `width`. The extra guard is required for wide source
+/// significands (e.g. a decimal `FBig` with hundreds of bits): the base-conversion logarithm is
+/// *near-correct* — its ln/exp series carry a few-ulp error at the work precision — so converting
+/// straight at `width` can land a value whose true result sits within ~`2^{-2·width}` of a
+/// `width`-bit midpoint on the wrong side of that midpoint, and the subsequent round picks the
+/// wrong neighbor (a decimal→f32 subnormal off by 1 ULP). The guard pushes that residual error
+/// well below one `width`-bit ulp.
 #[allow(non_upper_case_globals)]
 fn convert_base_odd<const B: Word>(repr: Repr<B>, width: usize) -> Repr<2> {
-    match Context::<Zero>::new(width).convert_base::<B, 2>(repr, None) {
+    const GUARD: usize = 24;
+    match Context::<Zero>::new(width + GUARD).convert_base::<B, 2>(repr, None) {
         Exact(v) => v,
         Inexact(v, _) if v.significand.is_zero() => v,
         Inexact(v, _) => {
-            let shift = width - v.digits();
+            let digits = v.digits();
             let (sign, mut mag) = v.significand.into_parts();
-            mag <<= shift;
+            // collapse onto exactly `width` significant bits (drop or pad), then force the lowest
+            // kept bit to 1 to mark the inexact conversion (round-to-odd).
+            let exp = if digits >= width {
+                let shift = digits - width;
+                if shift > 0 {
+                    mag >>= shift;
+                }
+                v.exponent + shift as isize
+            } else {
+                let shift = width - digits;
+                mag <<= shift;
+                v.exponent - shift as isize
+            };
             mag.set_bit(0);
-            Repr::new(IBig::from_parts(sign, mag), v.exponent - shift as isize)
+            Repr::new(IBig::from_parts(sign, mag), exp)
         }
     }
 }
@@ -518,7 +539,7 @@ impl<R: Round> Context<R> {
         let bits = significand_bits(&odd, 53, -1074);
         Context::<R>::new(bits)
             .repr_round(odd)
-            .and_then(|v| v.into_f64_internal())
+            .and_then(|v| v.into_f64_internal::<R>())
     }
 
     // [convert_to_f64] for f32.
@@ -530,7 +551,7 @@ impl<R: Round> Context<R> {
         let bits = significand_bits(&odd, 24, -149);
         Context::<R>::new(bits)
             .repr_round(odd)
-            .and_then(|v| v.into_f32_internal())
+            .and_then(|v| v.into_f32_internal::<R>())
     }
 
     // Convert the [Repr] from base B to base NewB, with the precision under the target base from this context.
@@ -712,7 +733,7 @@ impl<R: Round> Context<R> {
 
 impl<const B: Word> Repr<B> {
     // this method requires that the representation is already rounded to 24 binary bits
-    fn into_f32_internal(self) -> Rounded<f32> {
+    fn into_f32_internal<R: Round>(self) -> Rounded<f32> {
         assert!(B == 2);
         debug_assert!(self.is_finite());
         debug_assert!(self.significand.bit_len() <= 24);
@@ -724,11 +745,27 @@ impl<const B: Word> Repr<B> {
         }
         let man24: i32 = self.significand.try_into().unwrap();
         if self.exponent >= 128 {
-            // max f32 = 2^128 * (1 - 2^-24)
-            match sign {
-                Sign::Positive => Inexact(f32::INFINITY, Rounding::AddOne),
-                Sign::Negative => Inexact(f32::NEG_INFINITY, Rounding::SubOne),
-            }
+            // Overflow: the true value exceeds the largest finite f32. Directed rounding picks the
+            // endpoint — only modes that round outward (toward ±∞ / away from zero) reach ±∞;
+            // toward-zero, toward the opposite infinity, and nearest saturate to the largest finite
+            // f32. `round_low_part` decides: fed a positive (negative) "integer" with a same-sign
+            // residual above the max, AddOne/SubOne means ±∞, NoOp means ±max. Without this a huge
+            // positive value under toward-zero returned +∞ instead of f32::MAX.
+            use crate::round::Rounding::*;
+            let adj = if sign == Sign::Positive {
+                R::round_low_part(&IBig::ONE, Sign::Positive, || core::cmp::Ordering::Greater)
+            } else {
+                R::round_low_part(&IBig::NEG_ONE, Sign::Negative, || core::cmp::Ordering::Greater)
+            };
+            Inexact(
+                match (sign, adj) {
+                    (Sign::Positive, AddOne) => f32::INFINITY,
+                    (Sign::Positive, _) => f32::MAX,
+                    (Sign::Negative, SubOne) => f32::NEG_INFINITY,
+                    (Sign::Negative, _) => f32::MIN,
+                },
+                adj,
+            )
         } else if self.exponent < -149 - 24 {
             // min f32 = 2^-149
             Inexact(sign * 0f32, Rounding::NoOp)
@@ -760,7 +797,7 @@ impl<const B: Word> Repr<B> {
     }
 
     // this method requires that the representation is already rounded to 53 binary bits
-    fn into_f64_internal(self) -> Rounded<f64> {
+    fn into_f64_internal<R: Round>(self) -> Rounded<f64> {
         assert!(B == 2);
         debug_assert!(self.is_finite());
         debug_assert!(self.significand.bit_len() <= 53);
@@ -772,11 +809,24 @@ impl<const B: Word> Repr<B> {
         }
         let man53: i64 = self.significand.try_into().unwrap();
         if self.exponent >= 1024 {
-            // max f64 = 2^1024 × (1 − 2^−53)
-            match sign {
-                Sign::Positive => Inexact(f64::INFINITY, Rounding::AddOne),
-                Sign::Negative => Inexact(f64::NEG_INFINITY, Rounding::SubOne),
-            }
+            // max f64 = 2^1024 × (1 − 2^−53). See `into_f32_internal` for the directed-overflow
+            // rationale: outward-rounding modes (Up/Away for positive, Down/Away for negative)
+            // reach ±∞; the rest saturate to ±f64::MAX.
+            use crate::round::Rounding::*;
+            let adj = if sign == Sign::Positive {
+                R::round_low_part(&IBig::ONE, Sign::Positive, || core::cmp::Ordering::Greater)
+            } else {
+                R::round_low_part(&IBig::NEG_ONE, Sign::Negative, || core::cmp::Ordering::Greater)
+            };
+            Inexact(
+                match (sign, adj) {
+                    (Sign::Positive, AddOne) => f64::INFINITY,
+                    (Sign::Positive, _) => f64::MAX,
+                    (Sign::Negative, SubOne) => f64::NEG_INFINITY,
+                    (Sign::Negative, _) => f64::MIN,
+                },
+                adj,
+            )
         } else if self.exponent < -1074 - 53 {
             // min f64 = 2^-1074
             Inexact(sign * 0f64, Rounding::NoOp)
@@ -1039,6 +1089,34 @@ impl_from_fbig_for_float!(f64, to_f64);
 mod tests {
     use super::*;
     use crate::repr::Repr;
+
+    // A decimal FBig whose value exceeds f32::MAX must saturate to the largest *finite* f32 under
+    // toward-zero (Zero), not +∞ — directed overflow picks the endpoint per mode.
+    #[test]
+    fn f32_overflow_saturates_to_max_under_toward_zero() {
+        use crate::round::mode::Up;
+        // value ≈ 1.8e67 ≫ f32::MAX
+        let sig: IBig = "18113714167384154970503568309331051197800435559900844351020490293248000000000000000000000000000000000000000000000000000000000000000000000040081793412673420422647135518538018600544982168035325793404432580816367361955984101780462905766719198411690240".parse().unwrap();
+        let down = FBig::<Zero, 10>::from_parts(sig.clone(), -180);
+        assert_eq!(down.to_f32().value().to_bits(), 0x7f7fffff); // f32::MAX, not +∞
+                                                                 // The same value toward +∞ does reach +∞.
+        let up = FBig::<Up, 10>::from_parts(sig, -180);
+        assert!(up.to_f32().value().is_infinite());
+    }
+
+    // A wide decimal significand near an f32 subnormal midpoint must round to the correct
+    // neighbor. The near-correct base-conversion logarithm previously landed on the wrong side of a
+    // 32-bit midpoint, producing a result 1 ULP off (0x00040008 instead of 0x00040007).
+    #[test]
+    fn f32_decimal_subnormal_rounds_correctly() {
+        let v = FBig::<HalfEven, 10>::from_parts(
+            "367352494370447282365772889742681992006459962834329374643515088008836389924495676300982092025765783512749250624297822169761305238359955010699895018824154119671"
+                .parse()
+                .unwrap(),
+            -198,
+        );
+        assert_eq!(v.to_f32().value().to_bits(), 0x00040007);
+    }
 
     #[test]
     fn ibig_try_from_accepts_signed_zero() {

@@ -10,7 +10,6 @@ use crate::{
     error::{assert_finite, assert_limited_precision, FpError, FpResult},
     fbig::FBig,
     math::cache::{reborrow_cache, ConstCache},
-    math::trig::series_radius,
     repr::{Context, Repr, Word},
     round::{mode, ErrorBounds, Round, Rounded},
 };
@@ -301,16 +300,21 @@ impl<R: Round> Context<R> {
             2 * sum.clone() + (s * work_context.ln2::<B>(reborrow_cache(&mut cache)))
         };
 
-        // Provable error radius, expressed in `result`-ULPs (not `sum`-ULPs). Each series step
-        // rounds once (< 1 ULP of the running sum) and the truncated tail is < 1 ULP by the break
-        // test, so |sum − true| < (terms + 2)·ulp(sum); result = 2·sum + s·ln2 amplifies by ~2 and
-        // adds a few reconstruction ULPs. Since result ≈ 2·sum, ulp(result) ≈ 2·ulp(sum), giving
-        // |result − true| < (terms + 2)·ulp(result) + overhead — we carry a generous margin.
+        // Provable error radius, expressed at the *work-precision* scale. Each series step rounds
+        // once (< 1 ULP of the running sum) and the truncated tail is < 1 ULP by the break test, so
+        // |sum − true| < (terms + 2)·ulp(sum); result = 2·sum + s·ln2 amplifies by ~2 and adds a few
+        // reconstruction ULPs — `(4·terms + 12)·ulp` carries a generous margin.
         //
-        // Basing the radius on `result.ulp()` (not `sum.ulp()`) keeps its exponent aligned with
-        // `a` (= result) in the Ziv containment test, so `a − e` avoids a slow exponent-misaligned
-        // unlimited-precision subtract — a ~3× speedup on `ln` at high precision.
-        let radius = series_radius(&result, terms);
+        // The ulp MUST be taken at the work precision, not `result.ulp()`: the `s·ln(B)` term calls
+        // `ln_base`, which over-delivers (~`work_precision + guard` digits), so `result` can carry
+        // extra digits the series never certified. Basing the radius on that finer ulp under-
+        // estimates the error (which lives at the work-precision scale) by ~`B^guard`, leaving the
+        // radius unsound — Ziv then certifies the wrong neighbor for a log result within ~1 work-ulp
+        // of a power of two (e.g. log2(f64::MAX) ≈ 1024 under Down at p=53 returned 1024). Widening
+        // the ulp to the work-precision scale is a no-op when `result` is already at work precision.
+        let extra = result.repr().digits().saturating_sub(work_precision);
+        let work_ulp = result.ulp().with_precision(0).value() << extra as isize;
+        let radius = work_ulp * (4 * terms + 12);
         (result, radius)
     }
 }
@@ -523,8 +527,19 @@ impl<R: ErrorBounds> Context<R> {
             // positive denominator the quotient ln(x)/ln(2) is minimized by the low numerator
             // over the high denominator and maximized by the converse. Directing each endpoint's
             // rounding outward (lo down, hi up) keeps [lo, hi] a true containing interval.
-            let down = Context::<mode::Down>::new(work_precision);
-            let up = Context::<mode::Up>::new(work_precision);
+            //
+            // The interval bounds are computed at `work_precision + INTERVAL_GUARD` so the per-step
+            // rounding (sub/add/div, each ≤ 1 ulp at the bound's magnitude) is well below one
+            // *work* ulp. At work precision alone those roundings can shrink [lo, hi] enough that
+            // it no longer contains the true quotient, leaving the radius unsound — which lets Ziv
+            // certify the wrong neighbor for a result within ~1 work-ulp of a power of two (e.g.
+            // log2(f64::MAX) ≈ 1024 under Down at p=53 returned 1024 instead of 1024 − 2^-42).
+            // The extra digits make lo ≤ true ≤ hi rigorous, so `span = hi − lo` soundly bounds the
+            // ln_compute spread and the `+ ulp_w` term covers only `value`'s own rounding.
+            const INTERVAL_GUARD: usize = 16;
+            let ip = work_precision + INTERVAL_GUARD;
+            let down = Context::<mode::Down>::new(ip);
+            let up = Context::<mode::Up>::new(ip);
             let nx_lo = down.sub(&lx.repr, &ex.repr).unwrap().value();
             let nx_hi = up.add(&lx.repr, &ex.repr).unwrap().value();
             let d_lo = down.sub(&l2.repr, &e2.repr).unwrap().value();
@@ -747,6 +762,40 @@ mod tests {
         // Exercise a non-power-of-two base through the Ziv interval path too.
         for sig in [3u32, 7, 10, 12345] {
             check_log2_directed_matches_oracle::<10>(sig, p);
+        }
+    }
+
+    // log2 of a value whose result sits within ~1 work-ulp of a power of two must still round to
+    // the correct neighbor under directed modes. log2(f64::MAX) ≈ 1024 − 2^-53/ln2 sits just below
+    // 1024; under Down at p=53 the answer is 1024 − 2^-42 (the largest p=53 value ≤ it), but an
+    // unsound radius previously let Ziv certify 1024 on the first attempt.
+    #[test]
+    fn test_log2_just_below_power_of_two_directed() {
+        let x = FBig::<mode::HalfEven, 2>::try_from(f64::MAX).unwrap();
+        // High-precision oracle, then re-rounded to the target precision under each mode.
+        let oracle = Context::<mode::HalfEven>::new(200)
+            .log2::<2>(x.repr(), None)
+            .unwrap()
+            .value();
+        for p in [24usize, 40, 53, 64] {
+            let want_down = Context::<mode::Down>::new(p)
+                .repr_round_ref(&oracle.repr)
+                .value();
+            let want_up = Context::<mode::Up>::new(p)
+                .repr_round_ref(&oracle.repr)
+                .value();
+            let got_down = Context::<mode::Down>::new(p)
+                .log2::<2>(x.repr(), None)
+                .unwrap()
+                .value();
+            let got_up = Context::<mode::Up>::new(p)
+                .log2::<2>(x.repr(), None)
+                .unwrap()
+                .value();
+            assert_eq!(got_down.repr(), &want_down, "p={p} Down");
+            assert_eq!(got_up.repr(), &want_up, "p={p} Up");
+            // Directed invariant: Up ≥ Down.
+            assert!(got_up.repr() >= got_down.repr(), "p={p} Up < Down");
         }
     }
 }

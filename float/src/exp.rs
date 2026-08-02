@@ -1,3 +1,4 @@
+use core::cmp::Ordering;
 use core::convert::TryInto;
 
 use crate::{
@@ -5,7 +6,7 @@ use crate::{
     fbig::FBig,
     math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr, Word},
-    round::{ErrorBounds, Round},
+    round::{ErrorBounds, Round, Rounded},
 };
 use dashu_base::{Abs, AbsOrd, Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign};
 use dashu_int::{IBig, UBig};
@@ -156,7 +157,21 @@ impl<R: Round> Context<R> {
         let (s, r, n_eff) = if no_scaling {
             (0isize, x, 0usize)
         } else {
-            let logb = context.ln_base::<B>(reborrow_cache(&mut cache));
+            // The reduction quotient `s = floor(x / ln B)` amplifies ln(B)'s rounding error by
+            // |x|: a 1-ulp error in ln(B) shifts `s` (and thus the result exponent) by ~|x|/ln B.
+            // For large |x| the work precision is far too low to pin `s` — exp(5.7e14) at p=24 was
+            // certified with the exponent off by ~1000 — so compute ln(B) with `⌈log_B|x|⌉ + 2`
+            // extra digits, enough that the reduction contributes well under one work-ulp and the
+            // existing series/powering radius bounds the total error. (The bounds, not the point
+            // estimate, guard the inflation magnitude.)
+            let x_log2_ub = x.log2_bounds().1;
+            let extra = if x_log2_ub > 0.0 {
+                (x_log2_ub / B.log2_est()) as usize + 2
+            } else {
+                2
+            };
+            let logb =
+                Context::<R>::new(work_precision + extra).ln_base::<B>(reborrow_cache(&mut cache));
             let (s_big, r) = x.div_rem_euclid(logb);
             let s: isize = s_big
                 .try_into()
@@ -633,6 +648,24 @@ impl<R: ErrorBounds> Context<R> {
 
         assert_limited_precision(self.precision);
 
+        // For sufficiently negative x, exp(x) is below half an ulp of -1, so exp_m1(x) is -1 plus a
+        // sub-ulp residual and its rounding is fully determined (Up/Zero -> the next representable
+        // above -1; the other modes -> -1). The Ziv loop cannot certify that result: the
+        // working-precision value collapses to exactly -1, and a directed rounding preimage is
+        // one-sided, so the containment test never resolves and the loop runs to its retry cap.
+        // Short-circuit to the same mode-aware endpoint used for the underflowed case. The cutoff is
+        // exp(x) < half-ulp(-1): -1 sits on a power-of-B boundary, so the spacing just below it is
+        // B^-p and the cutoff is |x| > p·ln(B) + ln 2. Compare the lower bound of log2|x| against an
+        // upper bound of log2(threshold) so a borderline input still falls through to Ziv (which
+        // converges there) rather than being mis-rounded.
+        if minus_one && input_sign == Sign::Negative {
+            let thresh = self.precision as f32 * B.log2_est() * core::f32::consts::LN_2
+                + core::f32::consts::LN_2;
+            if x.log2_bounds().0 > thresh.log2_bounds().1 {
+                return Ok(self.exp_extreme_negative::<B>(true));
+            }
+        }
+
         // Hoisted overflow check: the reduction quotient s = floor(x/ln B) overflows isize only
         // for astronomically large |x| (|x| ≳ 2^61). The Ziv closure below can't return Err, so
         // detect that case here and short-circuit to overflow/underflow (matching IEEE limits).
@@ -642,12 +675,18 @@ impl<R: ErrorBounds> Context<R> {
             let x_probe = FBig::new(probe.repr_round_ref(x).value(), probe);
             let s_probe = x_probe.div_rem_euclid(logb).0;
             if <isize as core::convert::TryFrom<IBig>>::try_from(s_probe).is_err() {
+                // |x| is astronomically large, so exp(x) lies outside the finite exponent range.
+                // exp(huge +) overflows upward to +∞ under every mode (FBig has no finite cap short
+                // of the infinity sentinel). The directed-rounding correctness matters on the
+                // *negative* side: exp(huge −) is a positive value below the smallest representable,
+                // and exp_m1(huge −) = exp(x) − 1 lies just above −1. The blanket `+0` / `Exact(−1)`
+                // saturation below is mode-blind — it returned `+0` under `Up` (should be the
+                // smallest positive) and `Exact(−1)` under `Up` for `exp_m1` (should be the next
+                // representable above −1), violating `Up(exp(x)) ≥ Down(exp(x))`.
                 return if input_sign == Sign::Positive {
                     Err(FpError::Overflow(Sign::Positive))
-                } else if minus_one {
-                    Ok(Exact(-FBig::ONE)) // exp_m1(−∞) = −1 (finite)
                 } else {
-                    Err(FpError::Underflow(Sign::Positive)) // exp(−∞) = +0
+                    Ok(self.exp_extreme_negative::<B>(minus_one))
                 };
             }
         }
@@ -668,6 +707,48 @@ impl<R: ErrorBounds> Context<R> {
             )
         }))
     }
+
+    /// Directed-rounded result of `exp(x)` / `exp_m1(x)` when `x` is so large and negative that
+    /// `exp(x)` has underflowed below the smallest representable FBig (the reduction quotient
+    /// `s = floor(x/ln B)` overflows `isize`).
+    ///
+    /// `exp(x)` is then a positive value in `(0, B^{isize::MIN})`, and `exp_m1(x) = exp(x) − 1`
+    /// lies in `(−1, −1 + B^{isize::MIN})`. Each is pinned only up to a sub-representable residual,
+    /// so the directed rounding mode picks the endpoint of the bin it falls in:
+    ///
+    /// - `exp`: a positive value below the smallest representable rounds to `+0` under modes that
+    ///   round it toward zero/−∞/nearest (`Zero`, `Down`, `HalfEven`, `HalfAway`), and to the
+    ///   smallest positive `B^{isize::MIN}` under `Up`/`Away`.
+    /// - `exp_m1`: a value just above `−1` rounds to `−1` under `Down`/`Away`/nearest, and to the
+    ///   next representable above `−1` under `Up`/`Zero` (both round the magnitude down toward 0).
+    ///
+    /// `Round::round_low_part` decides the endpoint: fed the base (`0` for `exp`, `−1` for
+    /// `exp_m1`) with a positive sub-ulp residual, its `AddOne`/`NoOp` verdict is exactly the
+    /// "round up to the next representable / stay" decision. (The literal significand arithmetic
+    /// `round_low_part` would do is irrelevant here — only its directional verdict is used.)
+    fn exp_extreme_negative<const B: Word>(&self, minus_one: bool) -> Rounded<FBig<R, B>> {
+        use crate::round::Rounding::*;
+        if !minus_one {
+            // exp(huge −): tiny positive residual above 0.
+            match R::round_low_part(&IBig::ZERO, Sign::Positive, || Ordering::Less) {
+                AddOne => Inexact(FBig::new(Repr::new(IBig::ONE, isize::MIN), *self), AddOne),
+                _ => Inexact(FBig::ZERO, NoOp),
+            }
+        } else {
+            // exp_m1(huge −): −1 + (sub-representable positive) ⇒ just above −1.
+            match R::round_low_part(&IBig::NEG_ONE, Sign::Positive, || Ordering::Less) {
+                AddOne => {
+                    // Next representable above −1 at this precision: −(B^p − 1) × B^(−p)
+                    // (the largest p-digit significand at exponent −p, e.g. p=1,B=2 → −0.5).
+                    let p = self.precision;
+                    let next_mag = Repr::<B>::BASE.pow(p) - UBig::ONE;
+                    let next = Repr::new(IBig::from_parts(Sign::Negative, next_mag), -(p as isize));
+                    Inexact(FBig::new(next, *self), AddOne)
+                }
+                _ => Inexact(-FBig::ONE, NoOp),
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -683,13 +764,77 @@ mod tests {
         let huge = Repr::new(IBig::from(1) << 63, 0);
         assert_eq!(ctx.exp::<2>(&huge, None), Err(FpError::Overflow(Sign::Positive)));
 
-        // exp(huge negative) underflows to +0
+        // exp(huge negative) underflows: the true value is a positive number below the smallest
+        // representable FBig, so under HalfEven it rounds to +0 (a value, not an Underflow error —
+        // the convenience layer saturates, and so does the Context layer for this finite result).
         let neg = Repr::new(-(IBig::from(1) << 63), 0);
-        assert_eq!(ctx.exp::<2>(&neg, None), Err(FpError::Underflow(Sign::Positive)));
+        let e = ctx.exp::<2>(&neg, None).unwrap().value();
+        assert!(e.repr().is_pos_zero(), "exp(huge −) under HalfEven is +0, got {:?}", e);
 
         // exp_m1(huge negative) -> -1 (a finite value, not an error)
         let m1 = ctx.exp_m1::<2>(&neg, None).unwrap().value();
         assert_eq!(m1, -FBig::<mode::HalfEven>::ONE);
+    }
+
+    // Directed rounding at the extreme-negative underflow: exp(x) for huge negative x is
+    // a positive value below the smallest representable FBig; exp_m1(x) = exp(x) − 1 is just above
+    // −1. The blanket +0 / Exact(−1) saturation was mode-blind — it returned +0 under Up and
+    // Exact(−1) under Up for exp_m1, violating Up ≥ Down.
+    #[test]
+    fn test_exp_extreme_negative_directed() {
+        // x = -2^63, precision 1 (exactly representable).
+        let up = FBig::<mode::Up>::from_parts(-IBig::ONE, 63);
+        let down = FBig::<mode::Down>::from_parts(-IBig::ONE, 63);
+        assert_eq!(up.precision(), 1);
+
+        // exp(-2^63): Up → smallest positive (1 × 2^{isize::MIN}); Down → +0.
+        let up_exp = up.exp();
+        let down_exp = down.exp();
+        assert_eq!(up_exp.repr().significand(), &IBig::from(1));
+        assert_eq!(up_exp.repr().exponent(), isize::MIN);
+        assert!(down_exp.repr().is_pos_zero(), "Down exp(huge −) is +0");
+        assert!(up_exp > down_exp, "Up(exp) > Down(exp)");
+
+        // exp_m1(-2^63) ∈ (-1, -1/2): at precision 1, Up → -1/2 (next above -1); Down → -1.
+        let up_m1 = up
+            .context()
+            .exp_m1(up.repr(), None)
+            .expect("finite exp_m1 input");
+        let down_m1 = down
+            .context()
+            .exp_m1(down.repr(), None)
+            .expect("finite exp_m1 input");
+        let expected_up = FBig::<mode::Up>::from_parts(-IBig::ONE, -1); // -1/2
+        assert!(!matches!(up_m1, Exact(_)), "exp_m1(huge −) is inexact under Up");
+        assert!(!matches!(down_m1, Exact(_)), "exp_m1(huge −) is inexact under Down too");
+        assert_eq!(up_m1.value().repr(), expected_up.repr());
+        assert_eq!(down_m1.value(), -FBig::<mode::Down>::ONE);
+    }
+
+    // exp_m1 of a large negative x where the reduction quotient still fits isize (so the overflow
+    // short-circuit doesn't fire) but exp(x) is below the result precision. The true value is
+    // -1 + (sub-ulp residual), so directed/nearest rounding is fully determined; the directed
+    // preimage being one-sided means Ziv cannot certify it, so it is short-circuited to the
+    // mode-aware endpoint. Verifies the result matches the directed saturation at several
+    // magnitudes/precisions (and that it does not regress to a many-retry Ziv loop).
+    #[test]
+    fn test_exp_m1_large_negative_directed_saturation() {
+        for &(e, p) in &[(50i32, 2usize), (50, 53), (100, 53), (1000, 53), (100, 128)] {
+            let up = FBig::<mode::Up, 2>::from_parts(IBig::from(-1), e as isize)
+                .with_precision(p)
+                .value()
+                .exp_m1();
+            let down = FBig::<mode::Down, 2>::from_parts(IBig::from(-1), e as isize)
+                .with_precision(p)
+                .value()
+                .exp_m1();
+            // Up -> next representable above -1 = -(2^p - 1) * 2^-p; Down -> -1.
+            let next_up_mag = (IBig::from(1) << p) - IBig::from(1);
+            let expected_up = FBig::<mode::Up, 2>::from_parts(-next_up_mag, -(p as isize));
+            assert_eq!(up.repr(), expected_up.repr(), "Up exp_m1(-2^{e}) p={p}");
+            assert_eq!(down.repr(), FBig::<mode::Down, 2>::NEG_ONE.repr(), "Down exp_m1(-2^{e}) p={p}");
+            assert!(up > down, "Up > Down for exp_m1(-2^{e}) p={p}");
+        }
     }
 
     // A sharp OOM regression needs an exponent gap large enough that 2^gap exceeds any
