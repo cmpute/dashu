@@ -11,6 +11,14 @@ use crate::{
 use dashu_base::{Abs, AbsOrd, Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign};
 use dashu_int::{IBig, UBig};
 
+// `|x|` (in log2) above which exp's reduction quotient `s = floor(x/ln B)` might overflow `isize`,
+// so the hoisted overflow probe must run instead of the fast skip. `s` overflows when
+// `|x| > isize::MAX · ln B`, i.e. `log2|x| > log2(isize::MAX) + log2(ln B)`; the minimum (over
+// `B ≥ 2`) is `~isize::BITS − 1.5`, and the `−3` margin stays below it. The literal was `61` (the
+// 64-bit value); on 32-bit `isize` it must be ~29 or `exp_compute`'s `s.try_into().expect()` panics
+// for inputs like `exp(-2⁵⁰)` (whose `s ≈ -1.8e15` overflows 32-bit `isize`).
+const EXP_OVERFLOW_PROBE_LOG2: f32 = (isize::BITS - 3) as f32;
+
 // `powi` (integer power), `powf`/`exp`/`exp_m1` route through Ziv-backed Context methods, which
 // require `R: ErrorBounds` for their correctness guarantee.
 impl<R: ErrorBounds, const B: Word> FBig<R, B> {
@@ -305,7 +313,7 @@ pub(crate) fn exp_overflows<R: Round, const B: Word>(
     x: &Repr<B>,
     cache: &mut Option<&mut ConstCache>,
 ) -> bool {
-    if x.log2_est().abs() <= 61.0 {
+    if x.log2_est().abs() <= EXP_OVERFLOW_PROBE_LOG2 {
         return false;
     }
     // Inflate the probe's `ln B` exactly as `exp_compute` does: the reduction quotient
@@ -740,7 +748,7 @@ impl<R: ErrorBounds> Context<R> {
         // detect that case here and short-circuit to overflow/underflow (matching IEEE limits).
         // The probe inflates `ln B` with the same `⌈log_B|x|⌉ + 2` extra digits `exp_compute` uses,
         // so its `s` verdict matches the computation's (see `exp_overflows`).
-        if x.log2_est().abs() > 61.0 {
+        if x.log2_est().abs() > EXP_OVERFLOW_PROBE_LOG2 {
             let x_log2_ub = x.log2_bounds().1;
             let extra = if x_log2_ub > 0.0 {
                 (x_log2_ub / B.log2_est()) as usize + 2

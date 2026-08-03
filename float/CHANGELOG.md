@@ -56,7 +56,10 @@
   reduction quotient `s = floor(x/ln B)` at a fixed `p + 64` bits, while `exp_compute` inflates
   `ln B` by `⌈log_B|x|⌉ + 2` extra digits — so for huge `|x|` the two could disagree on whether `s`
   fits `isize`, and `exp_compute`'s `s.try_into()` could then panic. The probe now applies the same
-  inflation, so its verdict matches the computation's.
+  inflation, so its verdict matches the computation's. Separately, the probe's fast-skip threshold
+  was the 64-bit literal `61`, so on 32-bit `isize` (`log2(isize::MAX) ≈ 31`) inputs like
+  `exp(-2⁵⁰)` — whose `s ≈ -1.8e15` overflows 32-bit `isize` — skipped the probe and panicked in
+  `exp_compute`. The threshold is now `isize::BITS − 3` (61 on 64-bit, 29 on 32-bit).
 - **`ulp()`/`ulp_lb()` panic on an extreme exponent.** The ulp exponent `e + digits − precision`
   was computed with wrapping `isize` arithmetic, so a value near the representable exponent floor
   (e.g. a `powi` result just above the smallest representable) underflowed and panicked inside the
