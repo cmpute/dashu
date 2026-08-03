@@ -89,10 +89,14 @@ fn repr_cmp_same_base<const B: Word, const ABS: bool>(
     if let Some((lhs_prec, rhs_prec)) = precision {
         // only compare when both number are not having arbitrary precision
         if lhs_prec != 0 && rhs_prec != 0 {
-            if lhs_exp > rhs_exp + rhs_prec as isize {
+            // Saturating: an exponent near `isize::MAX` (e.g. the result of `powi(2, n)` for a
+            // near-max `n`, which is representable so the range guard doesn't short-circuit it)
+            // makes `exp + precision` overflow. These are magnitude shortcuts only — saturating
+            // just forgoes the shortcut (falling through to the exact case 6), it never mis-orders.
+            if lhs_exp > rhs_exp.saturating_add(rhs_prec as isize) {
                 return sign * Ordering::Greater;
             }
-            if rhs_exp > lhs_exp + lhs_prec as isize {
+            if rhs_exp > lhs_exp.saturating_add(lhs_prec as isize) {
                 return sign * Ordering::Less;
             }
         }
@@ -100,10 +104,10 @@ fn repr_cmp_same_base<const B: Word, const ABS: bool>(
 
     // case 5: compare exponent and digits
     let (lhs_digits, rhs_digits) = (lhs.digits_ub(), rhs.digits_ub());
-    if lhs_exp > rhs_exp + rhs_digits as isize {
+    if lhs_exp > rhs_exp.saturating_add(rhs_digits as isize) {
         return sign * Ordering::Greater;
     }
-    if rhs_exp > lhs_exp + lhs_digits as isize {
+    if rhs_exp > lhs_exp.saturating_add(lhs_digits as isize) {
         return sign * Ordering::Less;
     }
 

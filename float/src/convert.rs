@@ -547,6 +547,18 @@ impl<R: Round> Context<R> {
         if repr.is_infinite() {
             return Ok(Inexact(repr.sign() * f64::INFINITY, Rounding::NoOp));
         }
+        // Underflow short-circuit on the *source* value (before base conversion). For a value far
+        // below half the smallest subnormal (`|x| < 2^-1075`), the result is `±0` under nearest and
+        // the smallest subnormal under outward modes — independent of base conversion. Checking the
+        // source matters because converting a catastrophically tiny value (e.g. a wide-significand
+        // decimal at a hugely negative exponent) drives the conversion's internal `exp` to underflow,
+        // yielding an `odd` with a wildly wrong (too large) magnitude that `encode` then fails to
+        // flag. `log2_bounds` on the source is exact (derived from the significand bit length), so
+        // it sees the true magnitude; `ub < -1075` certifies `|x| < 2^-1075 = ½·MIN_SUBNORMAL`.
+        // (Zero is excluded — it is exactly `0`, not an underflow.)
+        if !repr.significand().is_zero() && repr.log2_bounds().1 < -1075.0 {
+            return Err(FpError::Underflow(repr.sign()));
+        }
         let odd = convert_base_odd::<B>(repr, 60);
         // Unified range check (shared by `to_f64` and `TryFrom`): a value beyond f64::MAX is out
         // of range regardless of rounding mode (the mode only picks the saturation endpoint).
@@ -581,6 +593,14 @@ impl<R: Round> Context<R> {
     fn convert_to_f32<const B: Word>(repr: Repr<B>) -> FpResult<f32> {
         if repr.is_infinite() {
             return Ok(Inexact(repr.sign() * f32::INFINITY, Rounding::NoOp));
+        }
+        // See `convert_to_f64`: underflow short-circuit on the source value. f32's smallest
+        // subnormal is `2^-149`, so `|x| < 2^-150 = ½·MIN_SUBNORMAL` rounds to `±0` (nearest) or
+        // the smallest subnormal (outward). The source `log2_bounds` avoids the base-conversion
+        // magnitude corruption that would otherwise hide a catastrophic underflow from `encode`.
+        // (Zero is excluded — it is exactly `0`, not an underflow.)
+        if !repr.significand().is_zero() && repr.log2_bounds().1 < -150.0 {
+            return Err(FpError::Underflow(repr.sign()));
         }
         let odd = convert_base_odd::<B>(repr, 32);
         // See `convert_to_f64`: unified range check on the base-2 `odd`, before the significand
@@ -1267,6 +1287,55 @@ mod tests {
         let nup = FBig::<crate::round::mode::Up, 2>::from_parts(-IBig::ONE, -20000);
         assert_eq!(ndown.to_f64().value().to_bits(), 0x8000_0000_0000_0001); // smallest -subnormal
         assert_eq!(nup.to_f64().value().to_bits(), 0x8000_0000_0000_0000); // -0
+    }
+
+    // A wide-significand *decimal* value far below ½·MIN_SUBNORMAL (exponent −20000). The base
+    // conversion's internal `exp` underflows for such a catastrophically tiny value, so without the
+    // source-`log2_bounds` short-circuit the converted magnitude is wrong and `to_f64` returned a
+    // spurious finite subnormal (≈2^-593) instead of the directed underflow endpoint. The binary
+    // test above doesn't hit this — it skips base conversion entirely.
+    #[test]
+    fn f64_decimal_wide_significand_underflow() {
+        use crate::round::mode::{Down, Up};
+        let wide = "1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234"
+            .parse::<IBig>()
+            .unwrap();
+        for prec in [20usize, 50, 100, 500] {
+            let he = FBig::<HalfEven, 10>::from_parts(wide.clone(), -20000)
+                .with_precision(prec)
+                .value();
+            let up = FBig::<Up, 10>::from_parts(wide.clone(), -20000)
+                .with_precision(prec)
+                .value();
+            let dn = FBig::<Down, 10>::from_parts(wide.clone(), -20000)
+                .with_precision(prec)
+                .value();
+            // positive value: nearest/Down -> +0, Up -> smallest positive subnormal
+            assert_eq!(he.to_f64().value().to_bits(), 0x0, "HalfEven @ prec {prec}");
+            assert_eq!(dn.to_f64().value().to_bits(), 0x0, "Down @ prec {prec}");
+            assert_eq!(up.to_f64().value().to_bits(), 0x0000_0000_0000_0001, "Up @ prec {prec}");
+            // f32 mirror: |x| < 2^-150 = ½·MIN_SUBNORMAL -> +0 / smallest +subnormal
+            assert_eq!(he.to_f32().value().to_bits(), 0x0u32, "f32 HalfEven @ prec {prec}");
+            assert_eq!(up.to_f32().value().to_bits(), 0x0000_0001u32, "f32 Up @ prec {prec}");
+
+            // negative value: nearest/Up -> -0, Down -> smallest negative subnormal
+            let neg = FBig::<HalfEven, 10>::from_parts(-wide.clone(), -20000)
+                .with_precision(prec)
+                .value();
+            let ndn = FBig::<Down, 10>::from_parts(-wide.clone(), -20000)
+                .with_precision(prec)
+                .value();
+            assert_eq!(
+                neg.to_f64().value().to_bits(),
+                0x8000_0000_0000_0000,
+                "neg HalfEven @ prec {prec}"
+            );
+            assert_eq!(
+                ndn.to_f64().value().to_bits(),
+                0x8000_0000_0000_0001,
+                "neg Down @ prec {prec}"
+            );
+        }
     }
 
     #[test]

@@ -82,6 +82,30 @@
   of a `w`-bit midpoint on the wrong side, rounding to the neighbor 1 ULP off. `convert_base_odd`
   now converts at `width + 24` bits and round-to-odd's down to `width`, pushing the residual well
   inside one `w`-bit ulp.
+- **`FBig → f32`/`f64` nearest-even underflow of a catastrophically tiny source.** For a value far
+  below half the smallest subnormal (e.g. a wide-significand decimal at a hugely negative exponent),
+  the base conversion's internal `exp(remainder)` itself underflows, so the converted `odd` carried a
+  wildly wrong (too large) magnitude and `encode` never flagged the underflow — `to_f64` returned a
+  spurious finite subnormal (≈2⁻⁵⁹³) instead of the directed underflow endpoint. There is now a
+  source-`log2_bounds` short-circuit (`|x| < 2⁻¹⁰⁷⁵` for f64, `< 2⁻¹⁵⁰` for f32 — the `½·MIN_SUBNORMAL`
+  cutoff) that returns `Err(Underflow)` before the conversion can corrupt the magnitude; the existing
+  directed endpoint then gives `±0` (nearest) or the smallest subnormal (outward).
+- **`powi` exhausted memory / hung on an extreme integer exponent.** The magnitude guard used exact
+  `log2_bounds(base)` but scaled by an f64 `e` and an `isize::MAX as f64` threshold, so (a) a result
+  near the finite-range boundary could be misclassified as overflow (a representable value spuriously
+  saturated to `±∞`), and (b) an exponent past `i64` with `|base| ≈ 1` slipped through to the squaring
+  chain, whose working precision grows with `n.bit_len()` — a single Ziv attempt then allocated
+  unboundedly. The guard now uses a margin so only a *certified* extreme result short-circuits (the
+  gray zone falls through to the chain, whose `checked_mul` catches a genuine overflow), and
+  exponents past `i64` route to an `exp(y·ln x)` fallback (shared with `powf`) whose working
+  precision does not scale with the exponent's bit length, so it cannot exhaust memory. This retires
+  the `powi` range-handling TODO.
+- **`Repr::cmp` overflow near the exponent ceiling.** `repr_cmp_same_base` computed
+  `exponent + digits` in plain `isize` for its magnitude shortcuts; for a result near `isize::MAX`
+  (e.g. `powi(2, n)` with `n` just below `isize::MAX`, which is representable so the range guard does
+  not short-circuit it) that add overflowed and aborted inside the Ziv containment test. The
+  shortcuts now use saturating arithmetic (an overflow forgoes the shortcut, falling through to the
+  exact comparison), so a near-ceiling power of two compares correctly.
 
 ## 0.6.0-rc.1
 

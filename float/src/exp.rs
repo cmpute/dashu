@@ -19,6 +19,21 @@ use dashu_int::{IBig, UBig};
 // for inputs like `exp(-2⁵⁰)` (whose `s ≈ -1.8e15` overflows 32-bit `isize`).
 const EXP_OVERFLOW_PROBE_LOG2: f32 = (isize::BITS - 3) as f32;
 
+// Maximum bit length of a `powi` exponent for which the binary squaring chain is feasible. The
+// chain runs `n.bit_len() - 1` correctly-rounded squarings at a working precision that grows with
+// `n.bit_len()`, and compounds relative error ~`2^nlen · ulp`; for `nlen` in the millions/billions
+// (an `IBig` exponent far past `i64`) a single attempt exhausts memory. Exponents beyond `i64`
+// (`nlen > 64`) only ever produce a finite result when `|base| ≈ 1` (otherwise the magnitude
+// overflows the finite range), so they go to the `exp(y·ln x)` fallback instead of the chain.
+const MAX_POWI_CHAIN_BITS: usize = 64;
+
+// Margin certifying a `powi` result is outside the finite range: the magnitude guard estimates the
+// result's log2 as `e · log2(base)` in f64, where `e` is up to `i64::MAX` and `isize::MAX as f64`
+// is itself rounded — together ~2^17 of f64 error near the boundary. A result whose log2 is within
+// this margin of the threshold is deferred to the squaring chain (whose `checked_mul` catches a
+// genuine overflow) rather than risk a false-positive overflow returning ±∞.
+const POWI_RANGE_MARGIN: f64 = (1 << 20) as f64;
+
 // `powi` (integer power), `powf`/`exp`/`exp_m1` route through Ziv-backed Context methods, which
 // require `R: ErrorBounds` for their correctness guarantee.
 impl<R: ErrorBounds, const B: Word> FBig<R, B> {
@@ -367,11 +382,6 @@ impl<R: ErrorBounds> Context<R> {
     /// Panics if the precision is unlimited and the exponent is negative (the exact `1/base` is
     /// not finite in general).
     pub fn powi<const B: Word>(&self, base: &Repr<B>, exp: IBig) -> FpResult<FBig<R, B>> {
-        // TODO: range handling has two known limitations at the exponent extremes:
-        // (1) the overflow guard below estimates the result magnitude with an f64 and misclassifies
-        // representable boundaries near 2^63; (2) the negative-exponent reciprocal path can panic.
-        // Neither affects ordinary inputs. (Underflow now saturates to the directed endpoint, and
-        // overflow reaches ±∞, matching `exp`.)
         if base.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
@@ -433,16 +443,17 @@ impl<R: ErrorBounds> Context<R> {
         let base_log2_lb = base_log2_lb as f64;
         let base_log2_ub = base_log2_ub as f64;
         let threshold = (isize::MAX as f64) * (B.log2_est() as f64);
+        let threshold_certain = threshold + POWI_RANGE_MARGIN;
         let exp_f64 = i64::try_from(&n).ok().map(|e| e as f64);
         // `lb_side` certifies |base| > 1 by a wide margin; `ub_side` certifies |base| < 1. (For the
         // None case |exp| is unbounded, so the bound's sign alone decides.) A negative exponent
         // swaps which side over- vs underflows.
         let lb_side = match exp_f64 {
-            Some(e) => e * base_log2_lb > threshold,
+            Some(e) => e * base_log2_lb > threshold_certain,
             None => base_log2_lb > 0.0,
         };
         let ub_side = match exp_f64 {
-            Some(e) => e * base_log2_ub < -threshold,
+            Some(e) => e * base_log2_ub < -threshold_certain,
             None => base_log2_ub < 0.0,
         };
         if lb_side || ub_side {
@@ -475,6 +486,15 @@ impl<R: ErrorBounds> Context<R> {
         }
 
         let nlen = n.bit_len();
+        // Exponents past `i64` make the squaring chain infeasible (`nlen - 1` squarings at a
+        // working precision that grows with `nlen`) and, when the magnitude also overflows the
+        // finite range, can drive it to exhaust memory. The only finite results at that scale have
+        // `|base| ≈ 1`, which the `exp(y·ln x)` fallback computes without scaling the working
+        // precision with `nlen` — so it cannot allocate unboundedly.
+        if nlen > MAX_POWI_CHAIN_BITS {
+            let signed_exp = IBig::from_parts(exp_sign, n.clone());
+            return self.powi_via_exp_log(base, &signed_exp);
+        }
         let initial_guard = nlen + self.base_guard_digits::<B>() + 2;
         Ok(self.ziv(initial_guard, |guard| {
             let pw = self.precision + guard;
@@ -533,7 +553,7 @@ impl<R: ErrorBounds> Context<R> {
         &self,
         base: &Repr<B>,
         exp: &Repr<B>,
-        mut cache: Option<&mut ConstCache>,
+        cache: Option<&mut ConstCache>,
     ) -> FpResult<FBig<R, B>> {
         if base.is_infinite() || exp.is_infinite() {
             return Err(FpError::InfiniteInput);
@@ -581,25 +601,37 @@ impl<R: ErrorBounds> Context<R> {
             return Err(FpError::OutOfDomain);
         }
 
-        // x^y = exp(y·ln x), correctly rounded via the Ziv loop. `ln` and `exp` are themselves
-        // Ziv-correct at the working precision, so the radius comes only from the rounding of the
-        // `ln`/`mul`/`exp` chain — but `exp` AMPLIFIES the absolute error of its argument `y·ln x`
-        // by the result magnitude, i.e. by a relative factor of `|y·ln x|`. The radius is
-        // `result.ulp() · (|y·ln x| + 1) · (B + 8)` where `result.ulp()` is taken at the *working*
-        // precision, so it shrinks as `B^{-guard}` and the containment test converges. (A radius
-        // computed at unlimited precision would be constant across retries and never converge for
-        // a value near a rounding boundary.) The `B + 8` scale covers the `ulp`-vs-`value·B^{1-P}`
-        // gap plus a safety margin for the chained roundings.
-        //
-        // The overflow case is hoisted out of the Ziv closure (which can't return `Err`): if
-        // `exp(y·ln x)` falls outside the finite exponent range, short-circuit before the loop.
+        // `base` is positive here (negative non-integer base returned OutOfDomain above).
+        self.pow_exp_log(base, exp, cache)
+    }
+
+    /// `x^y = exp(y·ln x)` for `pos_base > 0`, correctly rounded via a Ziv loop — the shared core
+    /// of [`powf`](Self::powf) (non-integer exponents) and the [`powi`](Self::powi) fallback for
+    /// exponents past the squaring chain's feasible range. `ln` and `exp` are themselves Ziv-correct
+    /// at the working precision, so the radius comes only from the rounding of the `ln`/`mul`/`exp`
+    /// chain — but `exp` AMPLIFIES the absolute error of its argument `y·ln x` by the result
+    /// magnitude, i.e. by a relative factor of `|y·ln x|`. The radius is
+    /// `result.ulp() · (|y·ln x| + 1) · (B + 8)` where `result.ulp()` is taken at the *working*
+    /// precision, so it shrinks as `B^{-guard}` and the containment test converges. (A radius
+    /// computed at unlimited precision would be constant across retries and never converge for a
+    /// value near a rounding boundary.) The `B + 8` scale covers the `ulp`-vs-`value·B^{1-P}` gap
+    /// plus a safety margin for the chained roundings.
+    ///
+    /// The overflow case is hoisted out of the Ziv closure (which can't return `Err`): if
+    /// `exp(y·ln x)` falls outside the finite exponent range, short-circuit before the loop. The
+    /// result is positive (argument to `exp`), so overflow is `+∞` and underflow carries `+` sign;
+    /// callers that need a negative result (the `powi` fallback for a negative base) flip the sign
+    /// of both the value and the error.
+    fn pow_exp_log<const B: Word>(
+        &self,
+        pos_base: &Repr<B>,
+        exp: &Repr<B>,
+        mut cache: Option<&mut ConstCache>,
+    ) -> FpResult<FBig<R, B>> {
         let probe = Context::<R>::new(self.precision + 32);
-        let ln_x_probe = probe.ln(base, reborrow_cache(&mut cache))?.value();
+        let ln_x_probe = probe.ln(pos_base, reborrow_cache(&mut cache))?.value();
         let arg_probe = probe.mul(ln_x_probe.repr(), exp)?.value();
         if exp_overflows::<R, B>(&probe, arg_probe.repr(), &mut cache) {
-            // `x^y = exp(y·ln x)` with `x > 0`, so the result is positive: a too-large result
-            // overflows (+∞), a too-small one underflows. Both are reported as `FpError` and
-            // saturated mode-aware by `unwrap_fp` — so `Up(pow(x, y))` agrees with `Up(exp(...))`.
             return Err(if arg_probe.sign() == Sign::Positive {
                 FpError::Overflow(Sign::Positive)
             } else {
@@ -610,7 +642,10 @@ impl<R: ErrorBounds> Context<R> {
         let initial_guard = self.base_guard_digits::<B>() + 10;
         Ok(self.ziv(initial_guard, |guard| {
             let work = Context::<R>::new(self.precision + guard);
-            let ln_x = work.ln(base, reborrow_cache(&mut cache)).unwrap().value();
+            let ln_x = work
+                .ln(pos_base, reborrow_cache(&mut cache))
+                .unwrap()
+                .value();
             let arg = work.mul(ln_x.repr(), exp).unwrap().value();
             let result = work
                 .exp(arg.repr(), reborrow_cache(&mut cache))
@@ -625,6 +660,42 @@ impl<R: ErrorBounds> Context<R> {
             let radius = (ulp_w * (arg_abs + FBig::<R, B>::ONE)) * scale;
             (result, radius)
         }))
+    }
+
+    /// `powi` fallback for exponents past the squaring chain's feasible bit length: compute
+    /// `base^signed_exp = exp(signed_exp · ln|base|)`. The integer exponent is an exact float
+    /// (significand `|signed_exp|`, exponent `0`), so this delegates to [`pow_exp_log`](Self::pow_exp_log)
+    /// — reusing its overflow probe and Ziv rounding — and then fixes the result sign from the
+    /// exponent's parity for a negative base. The working precision never scales with
+    /// `signed_exp.bit_length()`, so (unlike the squaring chain) this cannot allocate unboundedly.
+    fn powi_via_exp_log<const B: Word>(
+        &self,
+        base: &Repr<B>,
+        signed_exp: &IBig,
+    ) -> FpResult<FBig<R, B>> {
+        let neg_base = base.sign() == Sign::Negative;
+        // `(-base)^n = (-1)^n · base^n`, so the magnitude is always `|base|^n` and only the sign
+        // depends on parity. `pow_exp_log` returns the positive magnitude; flip it (and the
+        // overflow/underflow sign) when the base is negative and the exponent is odd.
+        let odd = signed_exp.clone().into_parts().1.bit(0);
+        let result_sign = if neg_base && odd {
+            Sign::Negative
+        } else {
+            Sign::Positive
+        };
+        let base_mag = if neg_base {
+            let (_, mag) = base.significand().clone().into_parts();
+            Repr::<B>::new(IBig::from_parts(Sign::Positive, mag), base.exponent())
+        } else {
+            base.clone()
+        };
+        let exp_repr = Repr::new(signed_exp.clone(), 0);
+        match self.pow_exp_log(&base_mag, &exp_repr, None) {
+            Ok(rounded) => Ok(rounded.map(|v| if result_sign == Sign::Negative { -v } else { v })),
+            Err(FpError::Overflow(_)) => Err(FpError::Overflow(result_sign)),
+            Err(FpError::Underflow(_)) => Err(FpError::Underflow(result_sign)),
+            Err(e) => Err(e),
+        }
     }
 
     /// Calculate the exponential function (`eˣ`) on the floating point number under this context.
@@ -1080,6 +1151,161 @@ mod tests {
         let base =
             FBig::<mode::Zero, 2>::from_repr(Repr::<2>::new(IBig::from(2), 0), Context::new(0));
         let _ = base.powi(IBig::from(10_000_000_000_000_000_000_i128));
+    }
+
+    // Exponents past `i64` (bit length > `MAX_POWI_CHAIN_BITS`) can't use the squaring chain: for a
+    // base near 1 the magnitude overflows the finite range mid-computation, and the chain's growing
+    // working precision exhausts memory. The `exp(y·ln x)` fallback computes these without scaling
+    // the working precision with the exponent's bit length, returning the correct directed endpoint.
+    #[test]
+    fn test_powi_huge_exponent_fallback() {
+        let p = 53usize;
+        let max_sig = (IBig::ONE << p) - IBig::ONE;
+        // base = 1 + 2^-52 (just above 1); exponent 2^200 has bit length 201.
+        let near1 = 0x3ff0_0000_0000_0001u64;
+        let huge_pos = IBig::ONE << 200usize;
+        let huge_neg = -(IBig::ONE << 200usize);
+
+        // positive base, positive huge exp -> positive overflow. Up -> +∞, Down -> largest finite.
+        let up = FBig::<mode::Up, 2>::try_from(f64::from_bits(near1))
+            .unwrap()
+            .with_precision(p)
+            .value()
+            .powi(huge_pos.clone());
+        let down = FBig::<mode::Down, 2>::try_from(f64::from_bits(near1))
+            .unwrap()
+            .with_precision(p)
+            .value()
+            .powi(huge_pos.clone());
+        let he = FBig::<mode::HalfEven, 2>::try_from(f64::from_bits(near1))
+            .unwrap()
+            .with_precision(p)
+            .value()
+            .powi(huge_pos.clone());
+        assert!(up.repr().is_infinite() && up.repr().sign() == Sign::Positive, "Up -> +∞");
+        assert_eq!(down.repr().significand(), &max_sig, "Down -> largest finite");
+        assert_eq!(down.repr().exponent(), isize::MAX);
+        assert!(he.repr().is_infinite() && he.repr().sign() == Sign::Positive, "nearest -> +∞");
+        assert!(up > down);
+
+        // positive base, negative huge exp -> underflow. Up -> smallest positive, Down -> +0.
+        let u_up = FBig::<mode::Up, 2>::try_from(f64::from_bits(near1))
+            .unwrap()
+            .with_precision(p)
+            .value()
+            .powi(huge_neg.clone());
+        let u_down = FBig::<mode::Down, 2>::try_from(f64::from_bits(near1))
+            .unwrap()
+            .with_precision(p)
+            .value()
+            .powi(huge_neg.clone());
+        assert_eq!(u_up.repr().significand(), &IBig::from(1));
+        assert_eq!(u_up.repr().exponent(), isize::MIN);
+        assert!(u_down.repr().is_pos_zero());
+        assert!(u_up > u_down);
+
+        // negative base near -1, huge exponent: sign follows the exponent's parity. The magnitude
+        // overflows, so nearest reaches ±∞ with the parity sign.
+        let neg_near1 = 0xbff0_0000_0000_0001u64;
+        let even = huge_pos.clone();
+        let odd = (IBig::ONE << 200usize) + IBig::ONE;
+        let he_even = FBig::<mode::HalfEven, 2>::try_from(f64::from_bits(neg_near1))
+            .unwrap()
+            .with_precision(p)
+            .value()
+            .powi(even);
+        let he_odd = FBig::<mode::HalfEven, 2>::try_from(f64::from_bits(neg_near1))
+            .unwrap()
+            .with_precision(p)
+            .value()
+            .powi(odd.clone());
+        assert!(
+            he_even.repr().is_infinite() && he_even.repr().sign() == Sign::Positive,
+            "even exponent -> +∞"
+        );
+        assert!(
+            he_odd.repr().is_infinite() && he_odd.repr().sign() == Sign::Negative,
+            "odd exponent -> -∞"
+        );
+        // Down of a negative overflow rounds toward -∞.
+        let down_odd = FBig::<mode::Down, 2>::try_from(f64::from_bits(neg_near1))
+            .unwrap()
+            .with_precision(p)
+            .value()
+            .powi(odd);
+        assert!(
+            down_odd.repr().is_infinite() && down_odd.repr().sign() == Sign::Negative,
+            "Down(negative overflow) -> -∞"
+        );
+    }
+
+    // Directed `powi` on a tiny base with a large negative exponent: base ≈ -3.6e-5, exponent
+    // -2^31. The result (≈2^3.17e10) is representable on 64-bit `isize` (MAX ≈ 9.2e18), so this
+    // exercises the squaring chain (bit length 32 ≤ MAX_POWI_CHAIN_BITS) and must return a finite
+    // value promptly — a regression guard for the chain path. On 32-bit `isize` (MAX ≈ 2.1e9) the
+    // same result overflows and is short-circuited by the range guard, so the guard is 64-bit-only.
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn test_powi_reproducer_small_base_representable() {
+        let base_bits = 0xbf02e3ff24ffff1fu64;
+        let exp = IBig::from(-(1i64 << 31));
+        for p in [20usize, 50, 100, 500] {
+            let v = FBig::<mode::HalfEven, 2>::try_from(f64::from_bits(base_bits))
+                .unwrap()
+                .with_precision(p)
+                .value()
+                .powi(exp.clone());
+            assert!(!v.repr().is_infinite(), "finite at p={p}");
+            assert_eq!(v.repr().sign(), Sign::Positive, "even exponent -> positive at p={p}");
+            // magnitude ≈ 2^3.17e10, far from 1 — the chain computed the huge representable value.
+            assert!(v.repr().exponent() > 1_000_000_000, "huge magnitude at p={p}");
+        }
+    }
+
+    // `powi(2, exp)` for `exp` just below `isize::MAX`: the result `2^exp` is representable (its
+    // exponent is `exp ≤ isize::MAX`), so the range guard correctly does not short-circuit it and
+    // the squaring chain computes it. The Ziv containment test then compares Reprs at that extreme
+    // magnitude — `repr_cmp_same_base` used to do `exponent + digits` in plain `isize`, which
+    // overflows near the ceiling and aborted (the raw-backend `backend_float_extremes` crash).
+    #[test]
+    fn test_powi_power_of_two_near_ceiling() {
+        for offset in [1isize, 2, 60, 100, 1000] {
+            let exp = IBig::from(isize::MAX - offset);
+            let up = FBig::<mode::Up, 2>::from_parts(IBig::ONE, 1)
+                .with_precision(53)
+                .value()
+                .powi(exp.clone());
+            let down = FBig::<mode::Down, 2>::from_parts(IBig::ONE, 1)
+                .with_precision(53)
+                .value()
+                .powi(exp.clone());
+            // 2^exp is an exact power of two: significand 1 at exponent exp, identical under Up/Down.
+            assert!(!up.repr().is_infinite(), "finite for offset {offset}");
+            assert_eq!(up.repr().significand(), &IBig::from(1), "sig 1 for offset {offset}");
+            assert_eq!(up.repr().exponent(), isize::MAX - offset, "exponent for offset {offset}");
+            assert_eq!(down.repr().exponent(), isize::MAX - offset);
+            assert!(!up.repr().is_infinite() && !down.repr().is_infinite());
+        }
+
+        // Symmetric floor: `powi(2, -exp)` for `exp` just below `isize::MAX` gives `2^-exp`, whose
+        // exponent sits just above `isize::MIN`. The containment test compares Reprs there too — the
+        // saturating `cmp` shortcuts cover the floor as well as the ceiling (this is the negative-
+        // exponent half of the range-handling TODO).
+        for offset in [1isize, 2, 60, 100, 1000] {
+            let exp = IBig::from(-(isize::MAX - offset));
+            let up = FBig::<mode::Up, 2>::from_parts(IBig::ONE, 1)
+                .with_precision(53)
+                .value()
+                .powi(exp.clone());
+            let down = FBig::<mode::Down, 2>::from_parts(IBig::ONE, 1)
+                .with_precision(53)
+                .value()
+                .powi(exp);
+            assert!(!up.repr().is_infinite(), "finite for floor offset {offset}");
+            assert_eq!(up.repr().significand(), &IBig::from(1), "sig 1 for floor offset {offset}");
+            assert_eq!(up.repr().exponent(), -(isize::MAX - offset));
+            assert!(!down.repr().is_infinite());
+        }
     }
 
     // A sharp OOM regression needs an exponent gap large enough that 2^gap exceeds any
