@@ -500,3 +500,39 @@ fn apply_sign<R: Round, const B: Word>(v: FBig<R, B>, sign: Sign) -> FBig<R, B> 
         v
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::round::mode;
+    use dashu_int::IBig;
+
+    // `sinh`/`cosh` go through `unwrap_fp`, so a huge-|x| overflow saturates to the directed
+    // endpoint: outward (Up) → ±∞ (cosh) / sign·∞ (sinh), inward (Zero) → the largest finite.
+    #[test]
+    fn test_sinh_cosh_directed_overflow() {
+        let p = 53;
+        let max_sig = (IBig::ONE << p) - IBig::ONE;
+        let huge = FBig::<mode::HalfEven, 2>::from_parts(IBig::ONE << 63, 0)
+            .with_precision(p)
+            .value();
+
+        let sinh_up = huge.clone().with_rounding::<mode::Up>().sinh();
+        let sinh_zero = huge.clone().with_rounding::<mode::Zero>().sinh();
+        assert!(
+            sinh_up.repr().is_infinite() && sinh_up.repr().sign() == Sign::Positive,
+            "sinh Up -> +∞"
+        );
+        assert_eq!(sinh_zero.repr().significand(), &max_sig, "sinh Zero -> largest finite");
+        assert_eq!(sinh_zero.repr().exponent(), isize::MAX);
+
+        let cosh_up = huge.clone().with_rounding::<mode::Up>().cosh();
+        let cosh_zero = huge.clone().with_rounding::<mode::Zero>().cosh();
+        assert!(
+            cosh_up.repr().is_infinite() && cosh_up.repr().sign() == Sign::Positive,
+            "cosh Up -> +∞"
+        );
+        assert_eq!(cosh_zero.repr().significand(), &max_sig, "cosh Zero -> largest finite");
+        assert_eq!(cosh_zero.repr().exponent(), isize::MAX);
+    }
+}

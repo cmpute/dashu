@@ -11,6 +11,19 @@
   collapse into one helper per float type. No observable behavior change.
 
 ### Fix
+- **Directed overflow/underflow of FBig results (`Context::unwrap_fp`).** `Err(Overflow)` and
+  `Err(Underflow)` now saturate to the **mode-aware** endpoint instead of a mode-blind `±∞`/signed
+  zero. Overflow: outward modes (and nearest) reach `±∞`; inward modes (toward-zero,
+  opposite-infinity) saturate to the largest finite `(Bᵖ−1) × B^{isize::MAX}` — the all-`(B−1)`
+  significand at the max exponent, mirroring MPFR's `mpfr_setmax` (the significand is `p` digits,
+  the output precision, not the value's magnitude). Underflow: outward modes reach the smallest
+  representable `B^{isize::MIN}`; inward/nearest reach signed zero. So `Up ≥ Down` now holds on
+  both ends and across `exp`/`pow`/`powf`/`mul`/`div`/`sinh`/`cosh` (e.g. `Up(pow(x,y))` agrees
+  with `Up(exp(y·ln x))`). The `mul`/`div` *operators* now route through `Context::mul`/`div` +
+  `unwrap_fp` (the `Mul`/`Div` trait impls previously bypassed it and saturated at the `Repr`
+  kernel, mode-blind). The two endpoints live in shared helpers
+  (`overflow_repr_endpoint`/`underflow_repr_endpoint`). Overflow at unlimited precision **panics**
+  (the largest finite is undefined there).
 - **Directed overflow/underflow of `FBig → f32`/`f64` (range detection).** The directed-endpoint
   branches were gated on the *least*-significant-bit exponent, which is not the overflow/underflow
   threshold: a value whose significand straddles `f32::MAX` (e.g. `3·2¹²⁷`, lsb exponent 127 < 128)
@@ -66,13 +79,6 @@
   of a `w`-bit midpoint on the wrong side, rounding to the neighbor 1 ULP off. `convert_base_odd`
   now converts at `width + 24` bits and round-to-odd's down to `width`, pushing the residual well
   inside one `w`-bit ulp.
-
-### Known Limitations
-- **`powi`/`powf` range saturation is mode-blind.** An astronomically large/small result saturates
-  to `±∞`/signed zero regardless of rounding mode (the `powi` magnitude pre-check returns
-  `Err(Overflow/Underflow)` and the convenience layer unwraps it blindly), so `Up(pow(x, y))` can
-  fall below `Down(exp(y·ln x))` for the same value. Directed saturation for `pow` is not yet
-  implemented; use `exp`/`ln` directly when the directed endpoint matters.
 
 ## 0.6.0-rc.1
 

@@ -124,31 +124,18 @@ pub fn panic_out_of_domain() -> ! {
 impl<R: Round> Context<R> {
     /// Unwrap an [`FpResult`], returning the value directly.
     ///
-    /// Converts [`Overflow`](FpError::Overflow) to a signed infinity and
-    /// [`Underflow`](FpError::Underflow) to a signed zero. All other error
-    /// variants panic (infinite input, out-of-domain, indeterminate).
+    /// Both [`Overflow`](FpError::Overflow) and [`Underflow`](FpError::Underflow) saturate to the
+    /// directed endpoint — outward/nearest modes reach `±∞` (overflow) or the smallest representable
+    /// (underflow); inward modes (toward-zero, opposite-infinity) reach the largest finite or signed
+    /// zero — so the saturation honors the rounding mode (e.g. `Up(pow(x, y))` agrees with
+    /// `Up(exp(y·ln x))`). Overflow panics at unlimited precision (the largest finite is undefined).
+    /// All other error variants panic (infinite input, out-of-domain, indeterminate).
     #[inline]
     pub fn unwrap_fp<const B: Word>(&self, result: FpResult<FBig<R, B>>) -> FBig<R, B> {
         match result {
             Ok(value) => value.value(),
-            Err(FpError::Overflow(sign)) => FBig::new(Repr::infinity_with_sign(sign), *self),
-            Err(FpError::Underflow(sign)) => FBig::new(Repr::zero_with_sign(sign), *self),
-            Err(FpError::InfiniteInput) => panic_operate_with_inf(),
-            Err(FpError::OutOfDomain) => panic_out_of_domain(),
-            Err(FpError::Indeterminate) => panic_nan(),
-        }
-    }
-
-    /// Unwrap an [`FpResult`] at the [`Repr`] level, returning the [`Repr`] directly.
-    ///
-    /// Converts [`Overflow`](FpError::Overflow) / [`Underflow`](FpError::Underflow) to
-    /// signed infinity / signed zero; panics on all other error variants.
-    #[inline]
-    pub(crate) fn unwrap_fp_repr<const B: Word>(&self, result: FpResult<Repr<B>>) -> Repr<B> {
-        match result {
-            Ok(value) => value.value(),
-            Err(FpError::Overflow(sign)) => Repr::infinity_with_sign(sign),
-            Err(FpError::Underflow(sign)) => Repr::zero_with_sign(sign),
+            Err(FpError::Overflow(sign)) => self.overflow_repr_endpoint::<B>(sign).value(),
+            Err(FpError::Underflow(sign)) => self.underflow_repr_endpoint::<B>(sign).value(),
             Err(FpError::InfiniteInput) => panic_operate_with_inf(),
             Err(FpError::OutOfDomain) => panic_out_of_domain(),
             Err(FpError::Indeterminate) => panic_nan(),

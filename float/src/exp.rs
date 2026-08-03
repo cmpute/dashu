@@ -238,6 +238,62 @@ impl<R: Round> Context<R> {
             (v_shifted, radius)
         }
     }
+
+    /// Directed saturation endpoint for an FBig result that has underflowed below the smallest
+    /// representable magnitude (its exponent would fall below `isize::MIN`). Outward modes round
+    /// the magnitude up to the smallest `B^{isize::MIN}` of the result's sign; toward-zero, the
+    /// opposite direction, and nearest round to signed zero. This mirrors the f32/f64 directed
+    /// underflow and is the shared endpoint used by `exp_extreme_negative`, `powi`, and `powf`, so
+    /// a directed `pow` (e.g. `pow(10, y)` ≈ `exp(y·ln 10)`) saturates to the same value `exp` does
+    /// — keeping `Up ≥ Down` consistent across them. The endpoint carries the input context, so a
+    /// downstream op keeps a limited precision.
+    pub(crate) fn underflow_repr_endpoint<const B: Word>(&self, sign: Sign) -> Rounded<FBig<R, B>> {
+        let adj = if sign == Sign::Positive {
+            R::round_low_part(&IBig::ZERO, Sign::Positive, || Ordering::Less)
+        } else {
+            R::round_low_part(&IBig::ZERO, Sign::Negative, || Ordering::Less)
+        };
+        match adj {
+            AddOne => Inexact(FBig::new(Repr::new(IBig::ONE, isize::MIN), *self), AddOne),
+            SubOne => Inexact(
+                FBig::new(
+                    Repr::new(IBig::from_parts(Sign::Negative, UBig::ONE), isize::MIN),
+                    *self,
+                ),
+                SubOne,
+            ),
+            _ => Inexact(FBig::new(Repr::<B>::zero_with_sign(sign), *self), NoOp),
+        }
+    }
+
+    /// Directed saturation endpoint for an FBig result that has overflowed above the largest
+    /// representable magnitude (its exponent would exceed `isize::MAX`). Outward modes (Up/Away for
+    /// positive, Down/Away for negative) and nearest reach `±∞`; inward modes (toward-zero, and the
+    /// opposite-infinity direction) saturate to the largest finite `(Bᵖ−1) × B^{isize::MAX}` — the
+    /// all-`(B−1)` significand at the max exponent, mirroring MPFR's `mpfr_setmax` (which fills the
+    /// significand with all 1-bits *at the output precision* — the significand is `p` digits, not
+    /// the value's magnitude). The largest finite is ill-defined at unlimited precision, so this
+    /// panics when `precision == 0`.
+    pub(crate) fn overflow_repr_endpoint<const B: Word>(&self, sign: Sign) -> Rounded<FBig<R, B>> {
+        assert_limited_precision(self.precision);
+        let adj = if sign == Sign::Positive {
+            R::round_low_part(&IBig::ONE, Sign::Positive, || Ordering::Greater)
+        } else {
+            R::round_low_part(&IBig::NEG_ONE, Sign::Negative, || Ordering::Greater)
+        };
+        match adj {
+            AddOne => Inexact(FBig::new(Repr::infinity_with_sign(Sign::Positive), *self), AddOne),
+            SubOne => Inexact(FBig::new(Repr::infinity_with_sign(Sign::Negative), *self), SubOne),
+            _ => {
+                // Largest finite at this precision: (B^p − 1) × B^{isize::MAX}.
+                let max_mag = Repr::<B>::BASE.pow(self.precision) - UBig::ONE;
+                Inexact(
+                    FBig::new(Repr::new(IBig::from_parts(sign, max_mag), isize::MAX), *self),
+                    NoOp,
+                )
+            }
+        }
+    }
 }
 
 /// Hoisted `exp` overflow probe for the Ziv closures (which can't return `Err`). Returns `true`
@@ -303,11 +359,11 @@ impl<R: ErrorBounds> Context<R> {
     /// Panics if the precision is unlimited and the exponent is negative (the exact `1/base` is
     /// not finite in general).
     pub fn powi<const B: Word>(&self, base: &Repr<B>, exp: IBig) -> FpResult<FBig<R, B>> {
-        // TODO: range handling has three known limitations at the exponent extremes:
+        // TODO: range handling has two known limitations at the exponent extremes:
         // (1) the overflow guard below estimates the result magnitude with an f64 and misclassifies
-        // representable boundaries near 2^63; (2) genuine Overflow/Underflow is unwrapped mode-blindly
-        // to ±inf / signed zero; (3) the negative-exponent reciprocal path can panic. None affects
-        // ordinary inputs; fixing requires mode-aware range saturation.
+        // representable boundaries near 2^63; (2) the negative-exponent reciprocal path can panic.
+        // Neither affects ordinary inputs. (Underflow now saturates to the directed endpoint, and
+        // overflow reaches ±∞, matching `exp`.)
         if base.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
@@ -533,6 +589,9 @@ impl<R: ErrorBounds> Context<R> {
         let ln_x_probe = probe.ln(base, reborrow_cache(&mut cache))?.value();
         let arg_probe = probe.mul(ln_x_probe.repr(), exp)?.value();
         if exp_overflows::<R, B>(&probe, arg_probe.repr(), &mut cache) {
+            // `x^y = exp(y·ln x)` with `x > 0`, so the result is positive: a too-large result
+            // overflows (+∞), a too-small one underflows. Both are reported as `FpError` and
+            // saturated mode-aware by `unwrap_fp` — so `Up(pow(x, y))` agrees with `Up(exp(...))`.
             return Err(if arg_probe.sign() == Sign::Positive {
                 FpError::Overflow(Sign::Positive)
             } else {
@@ -746,13 +805,8 @@ impl<R: ErrorBounds> Context<R> {
     /// `round_low_part` would do is irrelevant here — only its directional verdict is used.)
     fn exp_extreme_negative<const B: Word>(&self, minus_one: bool) -> Rounded<FBig<R, B>> {
         if !minus_one {
-            // exp(huge −): tiny positive residual above 0. The endpoint carries the input
-            // context, so a downstream op on the result keeps a limited precision (the
-            // precision-0 `FBig::ZERO` would trip `assert_limited_precision`).
-            match R::round_low_part(&IBig::ZERO, Sign::Positive, || Ordering::Less) {
-                AddOne => Inexact(FBig::new(Repr::new(IBig::ONE, isize::MIN), *self), AddOne),
-                _ => Inexact(FBig::new(Repr::<B>::zero(), *self), NoOp),
-            }
+            // exp(huge −): tiny positive residual above 0 — the shared underflow endpoint.
+            self.underflow_repr_endpoint::<B>(Sign::Positive)
         } else {
             // exp_m1(huge −): −1 + (sub-representable positive) ⇒ just above −1.
             match R::round_low_part(&IBig::NEG_ONE, Sign::Positive, || Ordering::Less) {
@@ -886,6 +940,138 @@ mod tests {
             let _ = down.sqrt();
             assert!(up > down, "Up > Down for exp(-2^{e}) p={p}");
         }
+    }
+
+    // Directed underflow through `powi`/`powf` must match `exp` (pow(x,y) = exp(y·ln x)) so the
+    // `Up ≥ Down` invariant holds across them. Previously `pow` saturated to signed zero under
+    // every mode, so `Up(pow(10, huge−))` was `+0` while `Up(exp(huge−·ln 10))` was the smallest
+    // positive — the two disagreed on the same mathematical value.
+    #[test]
+    fn test_pow_directed_underflow() {
+        let p = 53;
+        // |exp| · log2(10) > isize::MAX ⇒ the result exponent falls below isize::MIN (underflow).
+        let huge_neg = IBig::from(-9_000_000_000_000_000_000_i64);
+
+        // powi(10, huge−): positive tiny result. Up → smallest positive, Down/Zero → +0.
+        let up = FBig::<mode::Up, 2>::from_parts(IBig::from(10), 0)
+            .with_precision(p)
+            .value()
+            .powi(huge_neg.clone());
+        let down = FBig::<mode::Down, 2>::from_parts(IBig::from(10), 0)
+            .with_precision(p)
+            .value()
+            .powi(huge_neg.clone());
+        let zero = FBig::<mode::Zero, 2>::from_parts(IBig::from(10), 0)
+            .with_precision(p)
+            .value()
+            .powi(huge_neg.clone());
+        assert_eq!(up.repr().significand(), &IBig::from(1));
+        assert_eq!(up.repr().exponent(), isize::MIN);
+        assert!(down.repr().is_pos_zero());
+        assert!(zero.repr().is_pos_zero());
+        assert!(up > down);
+
+        // powi(-10, huge odd −): negative tiny result. Up → -0, Down → smallest negative.
+        let odd = IBig::from(-9_000_000_000_000_000_001_i64);
+        let nup = FBig::<mode::Up, 2>::from_parts(IBig::from(-10), 0)
+            .with_precision(p)
+            .value()
+            .powi(odd.clone());
+        let ndown = FBig::<mode::Down, 2>::from_parts(IBig::from(-10), 0)
+            .with_precision(p)
+            .value()
+            .powi(odd.clone());
+        assert!(nup.repr().is_neg_zero());
+        assert!(ndown.repr().sign() == Sign::Negative && ndown.repr().exponent() == isize::MIN);
+        assert!(nup > ndown);
+
+        // powf(2, y) with |y| > isize::MAX underflows and agrees with exp(y·ln 2).
+        let ymag = IBig::from(-10_000_000_000_000_000_000_i128);
+        let y_up = FBig::<mode::Up, 2>::from_parts(ymag.clone(), 0)
+            .with_precision(p)
+            .value();
+        let y_down = FBig::<mode::Down, 2>::from_parts(ymag.clone(), 0)
+            .with_precision(p)
+            .value();
+        let pf_up = FBig::<mode::Up, 2>::from_parts(IBig::from(2), 0)
+            .with_precision(p)
+            .value()
+            .powf(&y_up);
+        let pf_down = FBig::<mode::Down, 2>::from_parts(IBig::from(2), 0)
+            .with_precision(p)
+            .value()
+            .powf(&y_down);
+        assert_eq!(pf_up.repr().significand(), &IBig::from(1));
+        assert_eq!(pf_up.repr().exponent(), isize::MIN);
+        assert!(pf_down.repr().is_pos_zero());
+        // Same value as exp(y·ln 2) under the same mode.
+        let ln2 = FBig::<mode::Up, 2>::from_parts(IBig::from(2), 0)
+            .with_precision(p)
+            .value()
+            .ln();
+        let exp_up = (&y_up * &ln2)
+            .with_precision(p)
+            .value()
+            .with_rounding::<mode::Up>()
+            .exp();
+        assert_eq!(exp_up.repr(), pf_up.repr(), "powf and exp disagree on directed underflow");
+    }
+
+    // Directed overflow through `exp`/`powi`: outward modes reach ±∞, inward modes (toward-zero,
+    // opposite-infinity) saturate to the largest finite `(Bᵖ−1) × B^{isize::MAX}` — the all-ones
+    // significand at the output precision, mirroring MPFR's `mpfr_setmax`. (Hyperbolic `sinh`/`cosh`
+    // overflow under nearest is unchanged — still ±∞.)
+    #[test]
+    fn test_directed_overflow() {
+        let p = 53usize;
+        let max_sig = (IBig::ONE << p) - IBig::ONE;
+
+        // exp(2^63): overflows. Up -> +∞, Zero/Down -> largest finite.
+        let huge = FBig::<mode::HalfEven, 2>::from_parts(IBig::ONE << 63, 0)
+            .with_precision(p)
+            .value();
+        let up = huge.clone().with_rounding::<mode::Up>().exp();
+        let zero = huge.clone().with_rounding::<mode::Zero>().exp();
+        let down = huge.clone().with_rounding::<mode::Down>().exp();
+        assert!(up.repr().is_infinite() && up.repr().sign() == Sign::Positive, "Up -> +∞");
+        assert_eq!(zero.repr().significand(), &max_sig, "Zero -> largest finite significand");
+        assert_eq!(zero.repr().exponent(), isize::MAX, "Zero -> largest finite exponent");
+        assert_eq!(down.repr().significand(), &max_sig, "Down -> largest finite");
+        assert_eq!(down.repr().exponent(), isize::MAX);
+        assert!(up > zero, "Up(+∞) > largest finite");
+
+        // powi(-2, huge odd): negative overflow. Down -> -∞, Up -> largest finite negative.
+        let odd = IBig::from(10_000_000_000_000_000_001_i128);
+        let n_up = FBig::<mode::Up, 2>::from_parts(IBig::from(-2), 0)
+            .with_precision(p)
+            .value()
+            .powi(odd.clone());
+        let n_down = FBig::<mode::Down, 2>::from_parts(IBig::from(-2), 0)
+            .with_precision(p)
+            .value()
+            .powi(odd.clone());
+        assert!(
+            n_down.repr().is_infinite() && n_down.repr().sign() == Sign::Negative,
+            "Down -> -∞"
+        );
+        assert_eq!(
+            n_up.repr().significand(),
+            &(-max_sig.clone()),
+            "Up -> largest finite negative significand"
+        );
+        assert_eq!(n_up.repr().exponent(), isize::MAX);
+        assert_eq!(n_up.repr().sign(), Sign::Negative);
+    }
+
+    // Overflow at unlimited precision panics: the largest finite is undefined (no precision cap),
+    // so the directed endpoint can't be formed. Reached via `powi` with a positive exponent, which
+    // skips the limited-precision assertion and lets the overflow reach `unwrap_fp`.
+    #[test]
+    #[should_panic(expected = "precision cannot be 0")]
+    fn test_overflow_at_unlimited_precision_panics() {
+        let base =
+            FBig::<mode::Zero, 2>::from_repr(Repr::<2>::new(IBig::from(2), 0), Context::new(0));
+        let _ = base.powi(IBig::from(10_000_000_000_000_000_000_i128));
     }
 
     // A sharp OOM regression needs an exponent gap large enough that 2^gap exceeds any

@@ -35,8 +35,12 @@ macro_rules! impl_div_for_fbig {
             type Output = FBig<R, B>;
             fn $method(self, rhs: FBig<R, B>) -> Self::Output {
                 let context = Context::max(self.context, rhs.context);
-                let rounded = context.unwrap_fp_repr(context.$repr_method(self.repr, rhs.repr));
-                FBig::new(rounded, context)
+                // Route through `unwrap_fp` (not the Repr-level unwrap) so an exponent
+                // overflow/underflow saturates to the directed endpoint, mode-aware.
+                let result = context
+                    .$repr_method(self.repr, rhs.repr)
+                    .map(|r| r.map(|repr| FBig::new(repr, context)));
+                context.unwrap_fp(result)
             }
         }
 
@@ -44,9 +48,10 @@ macro_rules! impl_div_for_fbig {
             type Output = FBig<R, B>;
             fn $method(self, rhs: FBig<R, B>) -> Self::Output {
                 let context = Context::max(self.context, rhs.context);
-                let rounded =
-                    context.unwrap_fp_repr(context.$repr_method(self.repr.clone(), rhs.repr));
-                FBig::new(rounded, context)
+                let result = context
+                    .$repr_method(self.repr.clone(), rhs.repr)
+                    .map(|r| r.map(|repr| FBig::new(repr, context)));
+                context.unwrap_fp(result)
             }
         }
 
@@ -54,9 +59,10 @@ macro_rules! impl_div_for_fbig {
             type Output = FBig<R, B>;
             fn $method(self, rhs: &FBig<R, B>) -> Self::Output {
                 let context = Context::max(self.context, rhs.context);
-                let rounded =
-                    context.unwrap_fp_repr(context.$repr_method(self.repr, rhs.repr.clone()));
-                FBig::new(rounded, context)
+                let result = context
+                    .$repr_method(self.repr, rhs.repr.clone())
+                    .map(|r| r.map(|repr| FBig::new(repr, context)));
+                context.unwrap_fp(result)
             }
         }
 
@@ -64,9 +70,10 @@ macro_rules! impl_div_for_fbig {
             type Output = FBig<R, B>;
             fn $method(self, rhs: &FBig<R, B>) -> Self::Output {
                 let context = Context::max(self.context, rhs.context);
-                let rounded = context
-                    .unwrap_fp_repr(context.$repr_method(self.repr.clone(), rhs.repr.clone()));
-                FBig::new(rounded, context)
+                let result = context
+                    .$repr_method(self.repr.clone(), rhs.repr.clone())
+                    .map(|r| r.map(|repr| FBig::new(repr, context)));
+                context.unwrap_fp(result)
             }
         }
     };
@@ -609,5 +616,32 @@ mod tests {
         // 0 / 0 is indeterminate; the FBig layer panics.
         let zero = FBig::<mode::HalfEven>::try_from(0.0f64).unwrap();
         let _ = zero.clone() / zero;
+    }
+
+    // The `FBig / FBig` operator routes through `unwrap_fp`, so an exponent underflow saturates to
+    // the directed endpoint (not a mode-blind signed zero): 2^isize::MIN / 3 ≈ 2^(isize::MIN − 2)
+    // underflows; Up → smallest positive, Down → +0.
+    #[test]
+    fn test_div_directed_underflow() {
+        use dashu_int::IBig;
+        let p = 53;
+        let floor_up = FBig::<mode::Up, 2>::from_parts(IBig::ONE, isize::MIN)
+            .with_precision(p)
+            .value();
+        let floor_down = FBig::<mode::Down, 2>::from_parts(IBig::ONE, isize::MIN)
+            .with_precision(p)
+            .value();
+        let three_up = FBig::<mode::Up, 2>::from_parts(IBig::from(3), 0)
+            .with_precision(p)
+            .value();
+        let three_down = FBig::<mode::Down, 2>::from_parts(IBig::from(3), 0)
+            .with_precision(p)
+            .value();
+        let up = floor_up / &three_up;
+        let down = floor_down / &three_down;
+        assert_eq!(up.repr().significand(), &IBig::ONE);
+        assert_eq!(up.repr().exponent(), isize::MIN);
+        assert!(down.repr().is_pos_zero());
+        assert!(up > down);
     }
 }

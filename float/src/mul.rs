@@ -3,7 +3,7 @@ use dashu_int::{IBig, UBig};
 
 use crate::{
     add::cancel_zero,
-    error::{assert_finite_operands, FpError, FpResult},
+    error::{FpError, FpResult},
     fbig::FBig,
     helper_macros,
     repr::{Context, Repr, Word},
@@ -12,19 +12,22 @@ use crate::{
 use core::cmp::Ordering;
 use core::ops::{Mul, MulAssign};
 
+/// Shared `FBig * FBig` body: route through `Context::mul` + `unwrap_fp` so that an exponent
+/// overflow/underflow saturates to the directed endpoint (not the mode-blind `±∞`/signed zero the
+/// raw `Repr` kernel produces). `Context::mul` re-derives `FpError::Overflow/Underflow` from the
+/// saturated `Repr`, and `unwrap_fp` picks the mode-aware endpoint.
+#[inline]
+fn mul_fbig<R: Round, const B: Word>(lhs: &FBig<R, B>, rhs: &FBig<R, B>) -> FBig<R, B> {
+    let context = Context::max(lhs.context, rhs.context);
+    context.unwrap_fp(context.mul(&lhs.repr, &rhs.repr))
+}
+
 impl<R: Round, const B: Word> Mul<&FBig<R, B>> for &FBig<R, B> {
     type Output = FBig<R, B>;
 
     #[inline]
     fn mul(self, rhs: &FBig<R, B>) -> Self::Output {
-        assert_finite_operands(&self.repr, &rhs.repr);
-
-        let context = Context::max(self.context, rhs.context);
-        let repr = &self.repr * &rhs.repr;
-        if repr.is_infinite() {
-            return FBig::new(repr, context);
-        }
-        FBig::new(context.repr_round(repr).value(), context)
+        mul_fbig(self, rhs)
     }
 }
 
@@ -33,14 +36,7 @@ impl<R: Round, const B: Word> Mul<&FBig<R, B>> for FBig<R, B> {
 
     #[inline]
     fn mul(self, rhs: &FBig<R, B>) -> Self::Output {
-        assert_finite_operands(&self.repr, &rhs.repr);
-
-        let context = Context::max(self.context, rhs.context);
-        let repr = &self.repr * &rhs.repr;
-        if repr.is_infinite() {
-            return FBig::new(repr, context);
-        }
-        FBig::new(context.repr_round(repr).value(), context)
+        mul_fbig(&self, rhs)
     }
 }
 
@@ -49,14 +45,7 @@ impl<R: Round, const B: Word> Mul<FBig<R, B>> for &FBig<R, B> {
 
     #[inline]
     fn mul(self, rhs: FBig<R, B>) -> Self::Output {
-        assert_finite_operands(&self.repr, &rhs.repr);
-
-        let context = Context::max(self.context, rhs.context);
-        let repr = &self.repr * &rhs.repr;
-        if repr.is_infinite() {
-            return FBig::new(repr, context);
-        }
-        FBig::new(context.repr_round(repr).value(), context)
+        mul_fbig(self, &rhs)
     }
 }
 
@@ -65,14 +54,7 @@ impl<R: Round, const B: Word> Mul<FBig<R, B>> for FBig<R, B> {
 
     #[inline]
     fn mul(self, rhs: FBig<R, B>) -> Self::Output {
-        assert_finite_operands(&self.repr, &rhs.repr);
-
-        let context = Context::max(self.context, rhs.context);
-        let repr = &self.repr * &rhs.repr;
-        if repr.is_infinite() {
-            return FBig::new(repr, context);
-        }
-        FBig::new(context.repr_round(repr).value(), context)
+        mul_fbig(&self, &rhs)
     }
 }
 
@@ -473,5 +455,31 @@ mod tests {
         let (a, b, c) = (r::<10>(2, 0), r::<10>(3, 0), r::<10>(-6, 0));
         let got = ctx.fma(&a, &b, &c, Positive).unwrap().value();
         assert!(got.repr().is_neg_zero(), "expected -0, got {:?}", got.repr());
+    }
+
+    // The `FBig * FBig` operator routes through `Context::mul` + `unwrap_fp`, so an exponent
+    // underflow saturates to the directed endpoint (not a mode-blind signed zero): 2^isize::MIN · 0.5
+    // = 2^(isize::MIN − 1) underflows; Up → smallest positive, Down → +0.
+    #[test]
+    fn test_mul_directed_underflow() {
+        let p = 53;
+        let floor_up = FBig::<mode::Up, 2>::from_parts(IBig::ONE, isize::MIN)
+            .with_precision(p)
+            .value();
+        let floor_down = FBig::<mode::Down, 2>::from_parts(IBig::ONE, isize::MIN)
+            .with_precision(p)
+            .value();
+        let half_up = FBig::<mode::Up, 2>::from_parts(IBig::ONE, -1)
+            .with_precision(p)
+            .value();
+        let half_down = FBig::<mode::Down, 2>::from_parts(IBig::ONE, -1)
+            .with_precision(p)
+            .value();
+        let up = floor_up * &half_up;
+        let down = floor_down * &half_down;
+        assert_eq!(up.repr().significand(), &IBig::ONE);
+        assert_eq!(up.repr().exponent(), isize::MIN);
+        assert!(down.repr().is_pos_zero());
+        assert!(up > down);
     }
 }
