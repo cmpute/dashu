@@ -39,6 +39,16 @@
   (the `exp(y·ln x)` amplification bound is tighter than the composed chain's). Public behavior
   is unchanged and validated against the same oracle/fuzz nets.
 
+### Fix
+- **`powf` of a base `< 1` no longer hangs in the Ziv loop.** `ln_compute`'s s<0 reduction
+  (`x·2^|s|` scaling before the cancelled `ln(x_scaled) + s·ln(B)` reconstruction) inflated the
+  `Ball` error count by a fixed `B^precision` factor even for exactly-representable inputs —
+  `scale_int` folded a spurious `+1` that `rescale_precision` then amplified, leaving the radius
+  constant across Ziv retries (the composed `exp(y·ln x)` chain never converged). The reduction
+  now uses the exact-tracking `scale_int_tracking` (n stays 0 for an exact scaling), so the radius
+  shrinks with the guard and `powf` certifies in 1-2 attempts. This also re-enables the
+  Ball-composed `pow_exp_log` (`ln_compute` + `exp_ball`) that replaces the hand-derived radius.
+
 ## 0.6.0-rc.2
 
 ### Change

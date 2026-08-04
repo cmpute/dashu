@@ -285,6 +285,45 @@ impl<const B: Word> Ball<B> {
         Ok(Self { mid, n })
     }
 
+    /// Like [`scale_int`](Self::scale_int) but reporting whether the multiplication rounded: an
+    /// exact product of an exact operand contributes no error (n = 0). This is the operation the
+    /// `ln_compute` s<0 reduction relies on — scaling by a power of two is exact, and without this
+    /// the spurious `+1` gets amplified by `rescale_precision` into a `B^precision`-sized error
+    /// count that never shrinks across Ziv retries. `exact` is cleared when the multiplication
+    /// rounds or the operand carries error.
+    pub(crate) fn scale_int_tracking(&self, k: &IBig, exact: &mut bool) -> Self {
+        let ctx = Context::<mode::HalfEven>::new(self.mid.precision());
+        let k_fbig = FBig::<mode::HalfEven, B>::from(k.clone());
+        // Finite mid · finite integer at the working precision stays within the exponent range
+        // (unlike the squaring in `mul_tracking`), so the multiplication cannot range-error.
+        let rounded = ctx
+            .mul(self.mid.repr(), k_fbig.repr())
+            .expect("scale_int_tracking: finite mid · finite integer cannot range-error");
+        let (mid, rounded_inexact) = match rounded {
+            dashu_base::Approximation::Exact(v) => (v, false),
+            dashu_base::Approximation::Inexact(v, _) => (v, true),
+        };
+        if rounded_inexact || !self.n.is_zero() {
+            *exact = false;
+        }
+        let n = if *exact {
+            IBig::ZERO
+        } else {
+            let (e_r, p_r) = (Self::lead_exp(&mid), mid.precision());
+            let base = ceil_shift::<B>(
+                self.n.clone() * k.clone().abs(),
+                Self::lead_exp(&self.mid) - e_r + p_r as isize - self.mid.precision() as isize,
+            );
+            // |mid_r − true| ≤ |k|·err_a + (½·ulp_r only if the product itself rounded).
+            if rounded_inexact {
+                base + IBig::ONE
+            } else {
+                base
+            }
+        };
+        Self { mid, n }
+    }
+
     /// Like [`add`](Self::add) but reporting whether the addition rounded (see
     /// [`mul_tracking`](Self::mul_tracking)).
     pub(crate) fn add_tracking(&self, rhs: &Self, exact: &mut bool) -> Result<Self, FpError> {
@@ -539,6 +578,48 @@ mod tests {
     fn scale_int() {
         let (a, ta) = ball(10000, -4, 4, 1, 10001, -4); // mid 1.0000 ± 0.0001, true 1.0001
         let r = a.scale_int(&IBig::from(3));
+        assert_invariant(
+            &r,
+            &(&ta * F::from_parts(IBig::from(3), 0))
+                .with_precision(0)
+                .value(),
+        );
+    }
+
+    #[test]
+    fn scale_int_tracking_exact() {
+        // An exactly-representable operand scaled by an exactly-representable integer keeps n = 0.
+        // This is the `ln_compute` s<0 reduction: without it the spurious `+1` is amplified by
+        // `rescale_precision` into a `B^precision`-sized error count (the powf-of-base-<1 hang).
+        // Precision 10: 0.2668·4 = 1.0672 has 5 digits, well within the working precision, so the
+        // scaling is exact (in ln_compute the input is rounded to the work precision first, far
+        // above the input's own digit count).
+        let a = B10::exact(
+            F::from_parts(IBig::from(2668), -4)
+                .with_precision(10)
+                .value(),
+        ); // 0.2668, n=0
+        let mut exact = true;
+        let r = a.scale_int_tracking(&IBig::from(4), &mut exact);
+        assert!(exact, "exact scaling of an exact operand stays exact");
+        assert_eq!(r.n, IBig::ZERO, "exact scaling keeps n = 0, got n = {}", r.n);
+        assert_eq!(
+            r.mid,
+            F::from_parts(IBig::from(10672), -4)
+                .with_precision(10)
+                .value()
+        );
+    }
+
+    #[test]
+    fn scale_int_tracking_inexact_operand() {
+        // An inexact operand scaled exactly: the operand error propagates (no +1 for the exact
+        // product's rounding), and `exact` is cleared.
+        let (a, ta) = ball(10000, -4, 4, 1, 10001, -4); // mid 1.0000 ± 0.0001
+        let mut exact = true;
+        let r = a.scale_int_tracking(&IBig::from(3), &mut exact);
+        assert!(!exact, "inexact operand clears the exact flag");
+        assert_eq!(r.n, IBig::from(3), "3·(1 ulp) propagates exactly, no +1: got n = {}", r.n);
         assert_invariant(
             &r,
             &(&ta * F::from_parts(IBig::from(3), 0))

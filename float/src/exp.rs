@@ -9,7 +9,7 @@ use crate::{
     repr::{Context, Repr, Word},
     round::{mode, ErrorBounds, Round, Rounded, Rounding::*},
 };
-use dashu_base::{Abs, AbsOrd, Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign};
+use dashu_base::{AbsOrd, Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign};
 use dashu_int::{IBig, UBig};
 
 // `|x|` (in log2) above which exp's reduction quotient `s = floor(x/ln B)` might overflow `isize`,
@@ -246,6 +246,34 @@ impl<R: Round> Context<R> {
         } else {
             Ok(v_shifted)
         }
+    }
+
+    /// `exp` of a *ball* input. [`exp_compute`](Self::exp_compute) evaluates on `x.mid`; the input
+    /// ball's own error `|θ| ≤ x.n·ulp(x)` then contributes `exp(x)·|θ|` to the result (the
+    /// exponential's derivative is itself), folded into the radius.
+    pub(crate) fn exp_ball<const B: Word>(
+        &self,
+        x: &Ball<B>,
+        mut cache: Option<&mut ConstCache>,
+    ) -> Result<Ball<B>, FpError> {
+        let n = 1usize << (self.precision.bit_len() / 2);
+        let mut result = self.exp_compute::<B>(
+            x.mid.repr(),
+            x.mid.precision(),
+            false,
+            n,
+            reborrow_cache(&mut cache),
+        )?;
+        if !x.n.is_zero() {
+            // n_x·ulp_x·|exp|/ulp(exp) = n_x·sig_r·B^(E_x − p_x + e_r − E_r + p_r), the exact
+            // derivative bound (no small-constant factor needed, unlike ln's 1/(1+x)).
+            let shift = Ball::lead_exp(&x.mid) - x.mid.precision() as isize
+                + result.mid.repr().exponent
+                - Ball::lead_exp(&result.mid)
+                + result.mid.precision() as isize;
+            result.inflate(&crate::ball::ceil_shift::<B>(x.n.clone(), shift));
+        }
+        Ok(result)
     }
 
     /// `exp` of a *ball* input. [`exp_compute`](Self::exp_compute) evaluates on `x.mid`; the input
@@ -600,18 +628,17 @@ impl<R: ErrorBounds> Context<R> {
     ) -> FpResult<FBig<R, B>> {
         let initial_guard = self.base_guard_digits::<B>() + 10;
         self.ziv(initial_guard, |guard| {
-            let work = Context::<R>::new(self.precision + guard);
-            let ln_x = work.ln(pos_base, reborrow_cache(&mut cache))?.value();
-            let arg = work.mul(ln_x.repr(), exp)?.value();
-            let result = work.exp(arg.repr(), reborrow_cache(&mut cache))?.value();
-
-            // Radius at unlimited precision (exact arithmetic), but built from the *work-precision*
-            // `result.ulp()` so it carries the `B^{-(p+guard)}` scale and shrinks across retries.
-            let ulp_w = result.ulp().with_precision(0).value();
-            let arg_abs = arg.abs().with_precision(0).value();
-            let scale = (B as i32) + 8;
-            let radius = (ulp_w * (arg_abs + FBig::<R, B>::ONE)) * scale;
-            Ok((result, radius))
+            let wp = self.precision + guard;
+            // exp(y·ln x) as a Ball chain: the ln and the exponent rounding compose mechanically,
+            // and the exp input error is folded in via `exp_ball`. The radius shrinks with guard
+            // now that `ln_compute`'s s<0 reduction no longer inflates its error count.
+            let ln_ball = self.ln_compute::<B>(pos_base, wp, false, reborrow_cache(&mut cache));
+            let work = Context::<mode::HalfEven>::new(wp);
+            let exp_input =
+                Ball::from_rounded(work.repr_round_ref(exp).map(|r| FBig::new(r, work)));
+            let arg_ball = ln_ball.mul(&exp_input);
+            let result_ball = self.exp_ball::<B>(&arg_ball, reborrow_cache(&mut cache))?;
+            Ok(result_ball.to_value_radius::<R>())
         })
     }
 

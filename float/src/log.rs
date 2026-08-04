@@ -254,13 +254,18 @@ impl<R: Round> Context<R> {
             let log2 = x_ball.mid.log2_bounds().0;
             let s = log2 as isize - (log2 < 0.) as isize; // floor(log2(x))
 
+            let mut exact = x_ball.n.is_zero();
             let x_scaled = if B == 2 {
                 x_ball.shift(s) // exact (power-of-base shift)
             } else if s > 0 {
                 // Exact divisor 2^s: the error shrinks by it directly (no general-division rational).
                 x_ball.div_exact(&(IBig::ONE << s as usize))
             } else {
-                x_ball.scale_int(&(IBig::ONE << (-s) as usize))
+                // Scaling by 2^|s| is exact (finite decimal × power of two). Use the tracking
+                // variant so an exact operand keeps n = 0 — otherwise the unconditional `+1`
+                // would be amplified by `rescale_precision` into a `B^precision`-sized error
+                // count that never shrinks across Ziv retries (the powf-of-base-<1 hang).
+                x_ball.scale_int_tracking(&(IBig::ONE << (-s) as usize), &mut exact)
             };
             debug_assert!(x_scaled.mid >= FBig::<mode::HalfEven, B>::ONE);
             (s, x_scaled)
@@ -555,6 +560,7 @@ impl<R: ErrorBounds> Context<R> {
 mod tests {
     use super::*;
     use crate::round::mode;
+    use dashu_base::BitTest;
 
     #[test]
     fn test_ln_zero_is_neg_infinity() {
@@ -858,6 +864,39 @@ mod tests {
         let want = ctx.repr_round_ref(oracle).value();
         let got = ctx.log2_internal::<2>(x, None).unwrap().value();
         assert_eq!(got.repr, want, "p={p} {} x={x:?}", std::any::type_name::<R>(),);
+    }
+
+    /// Regression: `ln_compute`'s s<0 path (base < 1) must NOT inflate its error count with the
+    /// working precision. An exactly-representable input scaled by a power of two is exact, so the
+    /// radius must shrink monotonically as the work precision grows — otherwise the composed
+    /// `pow_exp_log` chain's radius stays constant and the Ziv loop hangs (powf of a base < 1).
+    #[test]
+    fn ln_small_base_radius_shrinks_with_guard() {
+        let ctx = Context::<mode::HalfEven>::new(50);
+        // 0.2668 (base 10): s = floor(log2(0.2668)) = -2, the s < 0 path.
+        let x = Repr::<10>::new(IBig::from(2668), -4);
+        for guard in [4usize, 12, 40, 120] {
+            let ball = ctx.ln_compute::<10>(&x, 50 + guard, false, None);
+            // The regression: n must be O(series terms) (~10^5, bit_len < 30), NOT inflated to
+            // ~B^50 ≈ 10^50 (bit_len ~166) by the s<0 reduction's spurious +1.
+            assert!(
+                ball.n.bit_len() < 30,
+                "n = {} ({} bits) too large at guard={guard}: the s<0 reduction inflated it",
+                ball.n,
+                ball.n.bit_len()
+            );
+            // The radius in target (precision 50) ulps must fit a preimage so Ziv certifies on the
+            // first attempt: n·B^(E−p_ball)·B^(50−E) ≤ 1.
+            let radius_target = crate::ball::ceil_shift::<10>(
+                ball.n.clone(),
+                Ball::lead_exp(&ball.mid) - ball.mid.precision() as isize + 50,
+            );
+            assert!(
+                radius_target <= IBig::ONE,
+                "radius {radius_target} ulps at guard={guard} does not certify (n={})",
+                ball.n
+            );
+        }
     }
 
     #[test]
