@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0-rc.2
+
 ### Change
 - **(internal) Unified `f32`/`f64` range detection.** `into_f32_internal`/`into_f64_internal` now
   return `FpResult` (`Ok` in range, `Err(Overflow)`/`Err(Underflow)` at the extremes), so the
