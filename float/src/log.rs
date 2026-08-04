@@ -1,13 +1,13 @@
 use dashu_base::{
     utils::{next_down, next_up},
-    AbsOrd,
+    Abs, AbsOrd,
     Approximation::*,
     EstimatedLog2, PowerOfTwo, Sign, UnsignedAbs,
 };
 use dashu_int::IBig;
 
 use crate::{
-    ball::Ball,
+    ball::{ceil_shift, Ball},
     error::{assert_finite, assert_limited_precision, FpError, FpResult},
     fbig::FBig,
     math::cache::{reborrow_cache, ConstCache},
@@ -237,13 +237,7 @@ impl<R: Round> Context<R> {
         // Round the input to the working precision; the input's own rounding is the only error
         // introduced here.
         let context = Context::<mode::HalfEven>::new(work_precision);
-        let x_rounded = context.repr_round_ref(x);
-        let x_n = if matches!(x_rounded, Inexact(..)) {
-            IBig::ONE
-        } else {
-            IBig::ZERO
-        };
-        let x_ball = Ball::with_error(FBig::new(x_rounded.value(), context), x_n);
+        let x_ball = Ball::from_rounded(context.repr_round_ref(x).map(|r| FBig::new(r, context)));
 
         // When one_plus is true and |x| < 1/B, the input is fed into the Maclaurin without scaling.
         let no_scaling = one_plus && x_ball.mid.log2_est() < -B.log2_est();
@@ -326,6 +320,29 @@ impl<R: Round> Context<R> {
             let ln2 = Ball::with_error(ln2, IBig::from(8));
             sum2.add(&ln2.scale_int(&IBig::from(s)))
         }
+    }
+
+    /// `ln(1 + arg)` of a *ball* input. [`ln_compute`](Self::ln_compute) evaluates the series on
+    /// `arg.mid`; the input ball's own error `|θ| ≤ arg.n·ulp(arg)` then contributes `|θ|/(1+arg)`
+    /// to the log. Bound via `(1+arg)`'s ball magnitude: for a mostly-correct argument the factor
+    /// `1/(1−|θ|/(1+arg)) ≤ 2` is sound, so the adjustment is `⌈2·n_arg·ulp_arg/((1+arg)·ulp_ln)⌉`.
+    pub(crate) fn ln_1p_ball<const B: Word>(
+        &self,
+        arg: &Ball<B>,
+        mut cache: Option<&mut ConstCache>,
+    ) -> Ball<B> {
+        let mut ln_ball =
+            self.ln_compute::<B>(arg.mid.repr(), self.precision, true, reborrow_cache(&mut cache));
+        let den = arg.add(&Ball::exact_int(self.precision, IBig::ONE));
+        let e_d = den.mid.repr().exponent;
+        let sig_d = den.mid.repr().significand.clone().abs();
+        // n_arg·B^(E_arg−p) / ((1+arg)·B^(E_ln−p)) = n_arg·B^(E_arg−E_ln−e_d)/sig_d; ×2 for the
+        // 1/(1−|θ|/(1+arg)) factor.
+        let shift = Ball::lead_exp(&arg.mid) - Ball::lead_exp(&ln_ball.mid) - e_d;
+        let num = ceil_shift::<B>(2 * &arg.n, shift);
+        let adjust = (num + &sig_d - IBig::ONE) / sig_d;
+        ln_ball.inflate(&adjust);
+        ln_ball
     }
 }
 

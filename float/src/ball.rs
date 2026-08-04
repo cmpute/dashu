@@ -17,13 +17,14 @@
 //! precision far coarser than the work ulp, so the intermediate mode is immaterial to the final
 //! correct rounding.
 
-use dashu_base::{Abs, EstimatedLog2};
-use dashu_int::IBig;
+use dashu_base::{Abs, Approximation, BitTest, EstimatedLog2};
+use dashu_int::{IBig, UBig};
 
 use crate::{
+    error::FpError,
     fbig::FBig,
     repr::{Context, Repr, Word},
-    round::mode,
+    round::{mode, Rounded},
     utils::{shl_digits, shr_digits_ceil},
 };
 
@@ -34,7 +35,7 @@ use crate::{
 /// delegate to the shared radix-shift primitives ([`shl_digits`](crate::utils::shl_digits),
 /// [`shr_digits_ceil`](crate::utils::shr_digits_ceil)).
 #[inline]
-fn ceil_shift<const B: Word>(x: IBig, exp: isize) -> IBig {
+pub(crate) fn ceil_shift<const B: Word>(x: IBig, exp: isize) -> IBig {
     if exp >= 0 {
         // `x·B^exp` is the shared "multiply by a radix power" primitive (fast path for power-of-two
         // bases, `(x·5^k)<<k` for base 10).
@@ -66,14 +67,29 @@ impl<const B: Word> Ball<B> {
     /// Uses the cheap `digits_ub` (over-estimate): `E` appears only as a *positive* contribution
     /// to error exponents, so an inflated `E` only loosens (never tightens) a radius.
     #[inline]
-    fn lead_exp(mid: &FBig<mode::HalfEven, B>) -> isize {
-        mid.repr().exponent + mid.repr().digits_ub() as isize
+    pub(crate) fn lead_exp(mid: &FBig<mode::HalfEven, B>) -> isize {
+        // Saturating: at the exponent-range extremes (`±isize::MAX`) a plain add could wrap; a
+        // saturated E only loosens (never tightens) a radius.
+        mid.repr()
+            .exponent
+            .saturating_add(mid.repr().digits_ub() as isize)
     }
 
     /// Wrap an exactly-represented value (n = 0).
     #[inline]
     pub(crate) fn exact(mid: FBig<mode::HalfEven, B>) -> Self {
         Self { mid, n: IBig::ZERO }
+    }
+
+    /// Wrap a correctly-rounded result (an input rounding or a `Context` op): exact values carry
+    /// no error, inexact ones one work-ulp. Use this instead of hand-picking `with_error(f, ONE)`,
+    /// which loses the exactness information.
+    #[inline]
+    pub(crate) fn from_rounded(rounded: Rounded<FBig<mode::HalfEven, B>>) -> Self {
+        match rounded {
+            Approximation::Exact(v) => Self::exact(v),
+            Approximation::Inexact(v, _) => Self::with_error(v, IBig::ONE),
+        }
     }
 
     /// Wrap a value with a known error count.
@@ -190,13 +206,12 @@ impl<const B: Word> Ball<B> {
         Self { mid, n }
     }
 
-    /// `self / k` with `k` an exact integer.
+    /// `self / k` with `k` an exact (possibly large) integer.
     ///
     /// The exact divisor shrinks the error by exactly `k`: `err_r ≤ err_a/k + ½·ulp_r`, so
     /// `n_r = ⌈n_a·B^(E_a−E_r+p_r−p_a)/k⌉ + 1`. This avoids the general [`div`](Self::div)'s
     /// big-int rational division (O(p²) — which would dominate the FBig division by a small
     /// integer and is the series' hot path).
-    /// `self / k` with `k` an exact (possibly large) integer.
     pub(crate) fn div_exact(&self, k: &IBig) -> Self {
         let mid = &self.mid / &FBig::<mode::HalfEven, B>::from(k.clone());
         let (e_r, p_r) = (Self::lead_exp(&mid), mid.precision());
@@ -213,10 +228,9 @@ impl<const B: Word> Ball<B> {
         self.div_exact(&IBig::from(k))
     }
 
-    /// `self · rhs`, rounding the midpoint to the working precision.
-    pub(crate) fn mul(&self, rhs: &Self) -> Self {
-        let mid = &self.mid * &rhs.mid;
-        let (e_r, p_r) = (Self::lead_exp(&mid), mid.precision());
+    /// The error-count contribution of a multiplication with midpoint `mid` (see [`mul`](Self::mul)).
+    fn mul_error(&self, rhs: &Self, mid: &FBig<mode::HalfEven, B>) -> IBig {
+        let (e_r, p_r) = (Self::lead_exp(mid), mid.precision());
         let e_a = self.mid.repr().exponent;
         let e_b = rhs.mid.repr().exponent;
         let p_a = self.mid.precision();
@@ -239,7 +253,140 @@ impl<const B: Word> Ball<B> {
                 - p_a as isize
                 - p_b as isize,
         );
-        let n = t1 + t2 + t3 + IBig::ONE;
+        t1 + t2 + t3 + IBig::ONE
+    }
+
+    /// `self · rhs`, rounding the midpoint to the working precision.
+    pub(crate) fn mul(&self, rhs: &Self) -> Self {
+        let mid = &self.mid * &rhs.mid;
+        let n = self.mul_error(rhs, &mid);
+        Self { mid, n }
+    }
+
+    /// Like [`mul`](Self::mul) but reporting whether the multiplication rounded: an exact product
+    /// of exact operands contributes no error (n = 0), which the caller needs to certify an
+    /// exactly-representable result under directed rounding. `exact` is cleared when any rounding
+    /// (or a propagated operand error) occurs. Propagates a range error from the multiplication.
+    pub(crate) fn mul_tracking(&self, rhs: &Self, exact: &mut bool) -> Result<Self, FpError> {
+        let ctx = Context::<mode::HalfEven>::new(self.mid.precision().max(rhs.mid.precision()));
+        let rounded = ctx.mul(self.mid.repr(), rhs.mid.repr())?;
+        let (mid, rounded_inexact) = match rounded {
+            dashu_base::Approximation::Exact(v) => (v, false),
+            dashu_base::Approximation::Inexact(v, _) => (v, true),
+        };
+        if rounded_inexact || !self.n.is_zero() || !rhs.n.is_zero() {
+            *exact = false;
+        }
+        let n = if *exact {
+            IBig::ZERO
+        } else {
+            self.mul_error(rhs, &mid)
+        };
+        Ok(Self { mid, n })
+    }
+
+    /// Like [`add`](Self::add) but reporting whether the addition rounded (see
+    /// [`mul_tracking`](Self::mul_tracking)).
+    pub(crate) fn add_tracking(&self, rhs: &Self, exact: &mut bool) -> Result<Self, FpError> {
+        let ctx = Context::<mode::HalfEven>::new(self.mid.precision().max(rhs.mid.precision()));
+        let rounded = ctx.add(self.mid.repr(), rhs.mid.repr())?;
+        let (mid, rounded_inexact) = match rounded {
+            dashu_base::Approximation::Exact(v) => (v, false),
+            dashu_base::Approximation::Inexact(v, _) => (v, true),
+        };
+        if rounded_inexact || !self.n.is_zero() || !rhs.n.is_zero() {
+            *exact = false;
+        }
+        let n = if *exact {
+            IBig::ZERO
+        } else {
+            let (e_r, p_r) = (Self::lead_exp(&mid), mid.precision());
+            self.term_in_ulps(e_r, p_r) + rhs.term_in_ulps(e_r, p_r) + IBig::ONE
+        };
+        Ok(Self { mid, n })
+    }
+
+    /// Like [`sqrt`](Self::sqrt) but reporting whether the root rounded (see
+    /// [`mul_tracking`](Self::mul_tracking)).
+    pub(crate) fn sqrt_tracking(&self, exact: &mut bool) -> Result<Self, FpError> {
+        let ctx = Context::<mode::HalfEven>::new(self.mid.precision());
+        let rounded = ctx.sqrt(self.mid.repr())?;
+        let (mid, rounded_inexact) = match rounded {
+            dashu_base::Approximation::Exact(v) => (v, false),
+            dashu_base::Approximation::Inexact(v, _) => (v, true),
+        };
+        if rounded_inexact || !self.n.is_zero() {
+            *exact = false;
+        }
+        let n = if *exact || mid.repr().significand.is_zero() {
+            IBig::ZERO
+        } else {
+            let (e_r, p_r) = (Self::lead_exp(&mid), mid.precision());
+            let sig_r = mid.repr().significand.clone().abs();
+            // n·ulp_a / (2·|mid|·ulp_r) = n·B^(E_a−p_a) / (2·sig_r·B^(e_r)·B^(E_r−p_r)).
+            let shift = Self::lead_exp(&self.mid)
+                - self.mid.precision() as isize
+                - e_r
+                - Self::lead_exp(&mid)
+                + p_r as isize;
+            let num = ceil_shift::<B>(self.n.clone(), shift);
+            let den = 2 * sig_r;
+            (num + &den - IBig::ONE) / den + IBig::ONE
+        };
+        Ok(Self { mid, n })
+    }
+
+    /// `self^k` for an exact integer exponent `k ≥ 2`, by left-to-right binary exponentiation
+    /// (squaring chain). The compounding rounding of the chain is tracked by the multiplication
+    /// rules, so the result's radius grows by the powering amplification mechanically. Returns
+    /// whether the whole chain was exact (no rounding anywhere), for the exactly-representable
+    /// directed-rounding case. Propagates a range error from the chain.
+    pub(crate) fn pow_exact(&self, k: &UBig) -> Result<(Self, bool), FpError> {
+        let nlen = k.bit_len();
+        debug_assert!(nlen >= 2, "pow_exact requires k >= 2");
+        let mut exact = self.n.is_zero();
+        let mut res = self.mul_tracking(self, &mut exact)?;
+        let mut p = nlen - 2;
+        loop {
+            if k.bit(p) {
+                res = res.mul_tracking(self, &mut exact)?;
+            }
+            if p == 0 {
+                break;
+            }
+            p -= 1;
+            res = res.mul_tracking(&res, &mut exact)?;
+        }
+        Ok((res, exact))
+    }
+
+    /// Negation: the error count is unchanged.
+    pub(crate) fn neg(self) -> Self {
+        Self {
+            mid: -self.mid,
+            n: self.n,
+        }
+    }
+
+    /// Square root, rounding the midpoint at the working precision.
+    ///
+    /// `|√(a+ε) − √a| ≤ |ε|/(2·√a)`, so `n_r = ⌈n_a·ulp_a / (2·|mid_r|·ulp_r)⌉ + 1` (the +1 covers
+    /// the midpoint's own rounding).
+    pub(crate) fn sqrt(&self) -> Self {
+        let mid = self.mid.sqrt();
+        if mid.repr().significand.is_zero() {
+            // √0 = 0 exactly; the relative-error formula would divide by the zero significand.
+            return Self::exact(mid);
+        }
+        let (e_r, p_r) = (Self::lead_exp(&mid), mid.precision());
+        let sig_r = mid.repr().significand.clone().abs();
+        // n_a·ulp_a / (2·|mid_r|·ulp_r) = n_a·B^(E_a−p_a) / (2·sig_r·B^(e_r)·B^(E_r−p_r)).
+        let shift =
+            Self::lead_exp(&self.mid) - self.mid.precision() as isize - e_r - Self::lead_exp(&mid)
+                + p_r as isize;
+        let num = ceil_shift::<B>(self.n.clone(), shift);
+        let den = 2 * sig_r;
+        let n = (num + &den - IBig::ONE) / den + IBig::ONE;
         Self { mid, n }
     }
 
@@ -286,11 +433,19 @@ impl<const B: Word> Ball<B> {
     /// identical to the old `*_compute` returns: `(value, radius)` with `|value − true| ≤ radius`.
     pub(crate) fn to_value_radius<R: crate::round::Round>(&self) -> (FBig<R, B>, FBig<R, B>) {
         let value = FBig::new(self.mid.repr().clone(), Context::<R>::new(self.mid.precision()));
-        // radius = n·B^(E(mid) − p), built directly as a repr (exact at unlimited precision).
-        let radius = FBig::new(
-            Repr::new(self.n.clone(), Self::lead_exp(&self.mid) - self.mid.precision() as isize),
-            Context::<R>::new(0),
-        );
+        // radius = n·B^(E(mid) − p), built directly as a repr (exact at unlimited precision). The
+        // exponent saturates at the range extremes: an over-wide radius is sound. For n = 0 (the
+        // exact case) the radius must be a plain +0 — `Repr::new(0, isize::MIN)` would otherwise
+        // survive normalization as the −∞ sentinel and poison the containment test.
+        let radius_repr = if self.n.is_zero() {
+            Repr::<B>::zero()
+        } else {
+            Repr::new(
+                self.n.clone(),
+                Self::lead_exp(&self.mid).saturating_sub(self.mid.precision() as isize),
+            )
+        };
+        let radius = FBig::new(radius_repr, Context::<R>::new(0));
         (value, radius)
     }
 }

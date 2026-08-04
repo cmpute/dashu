@@ -791,7 +791,7 @@ impl<R: Round> Context<R> {
                     reborrow_cache(&mut cache),
                 )
                 .expect("exp(reduced rem) cannot overflow (|rem| < B^-n)")
-                .0;
+                .mid;
             let significand = repr.significand * exp_rem.repr.significand;
             let repr = Repr::new(significand, exponent + exp_rem.repr.exponent);
             self.repr_round(repr)

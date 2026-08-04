@@ -25,6 +25,19 @@
     Benchmarked `ln`/`exp` (`cargo bench -p dashu-float --bench exp`) are at parity with the
     pre-Ball implementation at large precisions (10⁴ bits) and within ~1.4× at 10³ bits; the
     residual gap is the fixed per-operation overhead at small precisions.
+- **(internal) `exp`/`exp_m1`, all hyperbolic, all trigonometric, `powi`, and `hypot` radius
+  derivations migrated to the same `Ball` engine.** `exp_compute`, the trig Maclaurin/Euler
+  series (`sin`/`cos`/`sin_cos`/`atan`), `powi`'s squaring chain, and `hypot`'s
+  `sqrt(large²+small²)` now propagate error mechanically through the `Ball` ops (new `mul`,
+  `div`, `div_int`, `scale_int`, `shift`, `pow_exact`, `sqrt`, and exact-tracking
+  `mul_tracking`/`add_tracking`/`sqrt_tracking` for the exactly-representable directed-rounding
+  cases). The composed functions (`sinh`/`cosh`/`tanh`/`asinh`/`acosh`/`atanh`,
+  `asin`/`acos`/`atan`/`atan2`) build on the `Ball` primitives directly with a single outer Ziv
+  certification; the trig quadrant-reduction error and π's radius are folded in mechanically.
+  The `result.ulp()·{12,14,16}` constants, `reduce_to_quadrant`'s `reduction_err`, `powi`'s
+  `<<(nlen+1)`, and `hypot`'s `ulp·8` are gone. `pow_exp_log` keeps its hand-derived radius
+  (the `exp(y·ln x)` amplification bound is tighter than the composed chain's). Public behavior
+  is unchanged and validated against the same oracle/fuzz nets.
 
 ## 0.6.0-rc.2
 

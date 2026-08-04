@@ -4,10 +4,11 @@ use dashu_base::{
 use dashu_int::{IBig, UBig};
 
 use crate::{
+    ball::Ball,
     error::{assert_limited_precision, panic_root_zeroth, FpError, FpResult},
     fbig::FBig,
     repr::{Context, Repr, Word},
-    round::{ErrorBounds, Round, Rounded},
+    round::{mode, ErrorBounds, Round, Rounded},
     utils::{shl_digits, split_digits_ref},
 };
 
@@ -325,32 +326,43 @@ impl<R: ErrorBounds> Context<R> {
 
         let initial_guard = crate::utils::ceil_usize(self.precision.log2_est()) + 10;
         self.ziv(initial_guard, |guard| {
-            let gctx = Context::<R>::new(self.precision + guard);
+            let gctx = Context::<mode::HalfEven>::new(self.precision + guard);
             // result = sqrt(large² + small²), with both operands scaled down by `k` base-B digits
             // before squaring (so `large²` can't overflow the exponent) and the root scaled back:
             // sqrt(L² + S²) · B^k = sqrt(large² + small²) for L = large·B⁻ᵏ, S = small·B⁻ᵏ. No
             // division — so for integer inputs every step is exact (MPFR's `exact` flag), and an
-            // all-exact chain yields the exact true value. Report radius 0 then, which `ziv`
-            // accepts without the containment test (it can't certify an exactly-representable result
-            // under directed rounding — e.g. hypot(3,4)=5, hypot(5,12)=13 — which sits on a
-            // one-sided preimage boundary).
+            // all-exact chain yields the exact true value. The tracking variants report radius 0
+            // then, which `ziv` accepts without the containment test (it can't certify an
+            // exactly-representable result under directed rounding — e.g. hypot(3,4)=5,
+            // hypot(5,12)=13 — which sits on a one-sided preimage boundary).
             let k = (large.exponent as i128 - (isize::MAX as i128 - 2) / 2).max(0) as isize;
             let mut exact = true;
-            let large_f =
-                FBig::new(value_tracking_exact(gctx.repr_round_ref(&large), &mut exact), gctx);
-            let small_f =
-                FBig::new(value_tracking_exact(gctx.repr_round_ref(&small), &mut exact), gctx);
-            let l_sq = value_tracking_exact(gctx.sqr((large_f >> k).repr()).unwrap(), &mut exact);
-            let s_sq = value_tracking_exact(gctx.sqr((small_f >> k).repr()).unwrap(), &mut exact);
-            let sum = value_tracking_exact(gctx.add(l_sq.repr(), s_sq.repr()).unwrap(), &mut exact);
-            let root = value_tracking_exact(gctx.sqrt(sum.repr()).unwrap(), &mut exact);
-            let result = root << k; // exact exponent shift — scales back, doesn't affect `exact`
-            let radius = if exact {
-                FBig::<R, B>::ZERO
+            let large_ball = Ball::exact(FBig::new(
+                value_tracking_exact(gctx.repr_round_ref(&large), &mut exact),
+                gctx,
+            ));
+            let small_ball = Ball::exact(FBig::new(
+                value_tracking_exact(gctx.repr_round_ref(&small), &mut exact),
+                gctx,
+            ));
+            let l_sq = large_ball
+                .shift(k)
+                .mul_tracking(&large_ball.shift(k), &mut exact)?;
+            let s_sq = small_ball
+                .shift(k)
+                .mul_tracking(&small_ball.shift(k), &mut exact)?;
+            let sum = l_sq.add_tracking(&s_sq, &mut exact)?;
+            let root = sum.sqrt_tracking(&mut exact)?;
+            let result = root.shift(-k); // exact exponent shift — scales back, doesn't affect `exact`
+            if exact {
+                // All-exact chain: the value is exact, report radius 0.
+                Ok((
+                    FBig::new(result.mid.repr().clone(), Context::<R>::new(gctx.precision)),
+                    FBig::<R, B>::ZERO,
+                ))
             } else {
-                result.ulp() * 8
-            };
-            Ok((result, radius))
+                Ok(result.to_value_radius::<R>())
+            }
         })
     }
 }

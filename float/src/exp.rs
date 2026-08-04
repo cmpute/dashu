@@ -2,11 +2,12 @@ use core::cmp::Ordering;
 use core::convert::TryInto;
 
 use crate::{
+    ball::Ball,
     error::{assert_finite, assert_limited_precision, FpError, FpResult},
     fbig::FBig,
     math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr, Word},
-    round::{ErrorBounds, Round, Rounded, Rounding::*},
+    round::{mode, ErrorBounds, Round, Rounded, Rounding::*},
 };
 use dashu_base::{Abs, AbsOrd, Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign};
 use dashu_int::{IBig, UBig};
@@ -132,46 +133,8 @@ impl<R: Round> Context<R> {
     /// caller (the `powi` Ziv loop, whose closure can't keep a [`Result`]) maps it to the directed
     /// endpoint with the correct result sign; saturating here (as [`Context::unwrap_fp`] would) would
     /// hand the closure an infinity it cannot round.
-    pub(crate) fn powi_chain<const B: Word>(
-        &self,
-        start: &Repr<B>,
-        n: &UBig,
-    ) -> Result<(FBig<R, B>, bool), FpError> {
-        let nlen = n.bit_len();
-        debug_assert!(nlen >= 2, "powi_chain requires n >= 2");
-        let mut p = nlen - 2;
-
-        // Apply one squaring/multiplication: fold its value and `Exact` flag into the running state,
-        // or propagate the range error. Other variants (`InfiniteInput`, …) are unreachable from the
-        // finite operands the chain is fed.
-        let step = |r: FpResult<FBig<R, B>>, exact: &mut bool| -> Result<FBig<R, B>, FpError> {
-            match r {
-                Ok(Exact(v)) => Ok(v),
-                Ok(v) => {
-                    *exact = false;
-                    Ok(v.value())
-                }
-                Err(e) => Err(e),
-            }
-        };
-
-        let mut exact = true;
-        let mut res = step(self.sqr(start), &mut exact)?;
-        loop {
-            if n.bit(p) {
-                res = step(self.mul(res.repr(), start), &mut exact)?;
-            }
-            if p == 0 {
-                break;
-            }
-            p -= 1;
-            res = step(self.sqr(res.repr()), &mut exact)?;
-        }
-        Ok((res, exact))
-    }
-
     /// Near-correct exp core: evaluate `exp(x)` (or `exp_m1(x)` when `minus_one`) at
-    /// `work_precision`, returning `(value, error_radius)`.
+    /// `work_precision`, returning a [`Ball`] whose radius is derived mechanically.
     ///
     /// Shared by the Ziv-backed `exp`/`exp_m1` (which retry it) and usable directly where only a
     /// near-correct value is needed. The caller must have pre-checked that the reduction quotient
@@ -185,35 +148,38 @@ impl<R: Round> Context<R> {
         minus_one: bool,
         n: usize,
         mut cache: Option<&mut ConstCache>,
-    ) -> Result<(FBig<R, B>, FBig<R, B>), FpError> {
+    ) -> Result<Ball<B>, FpError> {
         // exp(x) = B^s · exp(r)^(Bⁿ), with r = x − s·ln(B) reduced so |r| < B⁻ⁿ.
-        let context = Context::<R>::new(work_precision);
-        let x = FBig::new(context.repr_round_ref(x).value(), context);
+        let context = Context::<mode::HalfEven>::new(work_precision);
+        let x_ball = Ball::from_rounded(context.repr_round_ref(x).map(|r| FBig::new(r, context)));
 
         // When minus_one is true and |x| < 1/B, evaluate the Maclaurin series without scaling
         // (no Bⁿ reduction, no powering — n_eff = 0).
-        let no_scaling = minus_one && x.log2_est() < -B.log2_est();
-
-        let (s, r, n_eff) = if no_scaling {
-            (0isize, x, 0usize)
+        let no_scaling = minus_one && x_ball.mid.log2_est() < -B.log2_est();
+        let (s, r_ball, n_eff) = if no_scaling {
+            (0isize, x_ball, 0usize)
         } else {
             // The reduction quotient `s = floor(x / ln B)` amplifies ln(B)'s rounding error by
             // |x|: a 1-ulp error in ln(B) shifts `s` (and thus the result exponent) by ~|x|/ln B.
             // For large |x| the work precision is far too low to pin `s` — exp(5.7e14) at p=24 was
             // certified with the exponent off by ~1000 — so compute ln(B) with `⌈log_B|x|⌉ + 2`
             // extra digits, enough that the reduction contributes well under one work-ulp and the
-            // existing series/powering radius bounds the total error. (The bounds, not the point
-            // estimate, guard the inflation magnitude.)
-            let x_log2_ub = x.log2_bounds().1;
+            // series/powering radius bounds the total error. (The bounds, not the point estimate,
+            // guard the inflation magnitude.)
+            let x_log2_ub = x_ball.mid.log2_bounds().1;
             let extra = if x_log2_ub > 0.0 {
                 (x_log2_ub / B.log2_est()) as usize + 2
             } else {
                 2
             };
-            let logb =
-                Context::<R>::new(work_precision + extra).ln_base::<B>(reborrow_cache(&mut cache));
-            let x_sign = x.sign();
-            let (s_big, r) = x.div_rem_euclid(logb);
+            let logb = Context::<mode::HalfEven>::new(work_precision + extra)
+                .ln_base::<B>(reborrow_cache(&mut cache));
+            // ln(B) as a ball: the constant evaluates the atanh series via binary splitting plus a
+            // single division, so its error is a handful of work-precision ulps (8 is a
+            // conservative sound bound, as in `ln_compute`).
+            let logb_ball = Ball::with_error(logb, IBig::from(8));
+            let x_sign = x_ball.mid.repr().sign();
+            let (s_big, _) = x_ball.mid.clone().div_rem_euclid(logb_ball.mid.clone());
             let s: isize = match s_big.try_into() {
                 Ok(s) => s,
                 Err(_) => {
@@ -227,71 +193,64 @@ impl<R: Round> Context<R> {
                     });
                 }
             };
-            (s, r, n)
+            // r = x − s·ln(B), as a ball: the cancellation and ln(B)'s error are tracked by the
+            // Ball propagation.
+            let r_ball = x_ball.sub(&logb_ball.scale_int(&IBig::from(s)));
+            (s, r_ball, n)
         };
-        let r = r >> n_eff as isize;
+        let r_ball = r_ball.shift(n_eff as isize);
 
-        // Maclaurin series: exp(r) = 1 + Σ rⁱ/i!
+        // Maclaurin series: exp(r) = 1 + Σ rⁱ/i! (exp_m1(x) = Σ xⁱ/i! when no_scaling).
+        let one = Ball::exact_int(r_ball.mid.precision(), IBig::ONE);
         let mut factorial = IBig::ONE;
-        let mut pow = r.clone();
+        let mut pow = r_ball.clone();
         let mut sum = if no_scaling {
-            r.clone()
+            r_ball.clone()
         } else {
-            FBig::ONE + &r
+            one.add(&r_ball)
         };
         let mut k = 2u32;
-        let mut terms: usize = 1;
         loop {
             factorial *= k;
-            pow *= &r;
+            pow = pow.mul(&r_ball);
 
-            let increase = &pow / &factorial;
-            if increase.abs_cmp(&sum.ulp_lb()).is_le() {
+            let increase = pow.div_exact(&factorial);
+            if increase.mid.abs_cmp(&sum.mid.ulp_lb()).is_le() {
                 break;
             }
-            sum += increase;
+            sum = sum.add(&increase);
             k += 1;
-            terms += 1;
         }
 
-        // The radius is computed at *unlimited* precision so the bound arithmetic is exact — a
-        // work-precision product would drop digits and could under-estimate (a soundness hole).
-        let ulp_w = || sum.ulp().with_precision(0).value();
+        // Omitted series tail: the exp terms shrink by r/(i+1) < 1/4 (|r| < B⁻ⁿ), so the tail is
+        // < 2 ulps of sum.
+        sum.inflate(&IBig::from(2));
 
         if no_scaling {
-            // exp_m1(x) = sum directly; error is the series truncation + rounding.
-            let radius = ulp_w() * (4 * terms + 8) + ulp_w();
-            Ok((sum, radius))
+            // exp_m1(x) = sum directly.
+            return Ok(sum);
+        }
+        // Powering: exp(r)^(Bⁿ) = sum^Bⁿ, via binary exponentiation (the compounding rounding is
+        // tracked by the Ball multiplications). The chain is exact only when the series sum is
+        // exact (impossible here — sum ≈ exp(r) with |r| < B⁻ⁿ), so the exact flag is ignored.
+        let bn = Repr::<B>::BASE.pow(n);
+        let (v_ball, _) = sum.pow_exact(&bn)?;
+
+        // B^s is an exact power-of-base shift: `exp(x) = B^s · exp(r)^(Bⁿ)`.
+        let v_shifted = v_ball.shift(-s);
+
+        if minus_one {
+            // exp_m1(x) = exp(x) − 1; the subtraction folds one rounding ulp.
+            let one = Ball::exact_int(v_shifted.mid.precision(), IBig::ONE);
+            Ok(v_shifted.sub(&one))
         } else {
-            // Powering amplifies the series' relative error by Bⁿ. With |v|/|sum| < e < 3 (both
-            // near 1, since |r| < B⁻ⁿ), |v − true| ≤ 3·Bⁿ·(4K+8)·ulp(sum) + ulp(v). The B^s shift
-            // is exact, so the bound shifts with the value.
-            //
-            // The squaring chain compounds the relative error (it doubles per step), so it is run
-            // at an inflated precision and rounded back to `work_precision` — near-correct, which
-            // is what the `+ ulp(v)` term above accounts for.
-            let bn: UBig = Repr::<B>::BASE.pow(n);
-            let chain_ctx =
-                Context::<R>::new(work_precision + bn.bit_len() + work_precision.bit_len());
-            // `sum ≈ exp(r)` with |r| < B⁻ⁿ (bn = Bⁿ), so `sum^bn` stays bounded near exp(1); a range
-            // error here is unreachable, but propagate it (rather than `.expect`) for robustness.
-            let (v_pow, _) = chain_ctx.powi_chain(sum.repr(), &bn)?;
-            let v = v_pow.with_precision(work_precision).value();
-            let v_shifted = v.clone() << s;
-            let e_v = (ulp_w() << n as isize) * (4 * terms + 8) * 3u32
-                + v.ulp().with_precision(0).value();
-            let radius = if minus_one {
-                // result = v_shifted − 1; the subtraction adds one result-ULP of rounding.
-                let result = &v_shifted - FBig::ONE;
-                let radius = (e_v << s) + result.ulp().with_precision(0).value();
-                return Ok((result, radius));
-            } else {
-                e_v << s
-            };
-            Ok((v_shifted, radius))
+            Ok(v_shifted)
         }
     }
 
+    /// `exp` of a *ball* input. [`exp_compute`](Self::exp_compute) evaluates on `x.mid`; the input
+    /// ball's own error `|θ| ≤ x.n·ulp(x)` then contributes `exp(x)·|θ|` to the result (the
+    /// exponential's derivative is itself), folded into the radius.
     /// Directed saturation endpoint for an FBig result that has underflowed below the smallest
     /// representable magnitude (its exponent would fall below `isize::MIN`). Outward modes round
     /// the magnitude up to the smallest `B^{isize::MIN}` of the result's sign; toward-zero, the
@@ -507,38 +466,30 @@ impl<R: ErrorBounds> Context<R> {
         let initial_guard = nlen + self.base_guard_digits::<B>() + 2;
         self.ziv(initial_guard, |guard| {
             let pw = self.precision + guard;
-            let work = Context::<R>::new(pw);
+            let work = Context::<mode::HalfEven>::new(pw);
             // start from base (positive exponent, always exact) or its working-precision reciprocal
             // (negative exponent, exact only when 1/base is exactly representable). A range error
             // here (e.g. 1/base underflows for an extreme base) is remapped to the result sign and
             // propagated — saturating would feed the chain an infinity or zero it can't recover from.
-            let (start, start_exact) = if negative {
+            let start_ball = if negative {
                 match work.div(&Repr::one(), base) {
-                    Ok(Exact(v)) => (v.repr().clone(), true),
-                    Ok(v) => (v.value().repr().clone(), false),
+                    Ok(v) => Ball::from_rounded(v),
                     Err(FpError::Overflow(_)) => return Err(FpError::Overflow(result_sign)),
                     Err(FpError::Underflow(_)) => return Err(FpError::Underflow(result_sign)),
                     Err(e) => return Err(e),
                 }
             } else {
-                (base.clone(), true)
+                Ball::exact(FBig::new(base.clone(), work))
             };
-            let (res, chain_exact) = work.powi_chain(&start, &n).map_err(|e| match e {
+            // The squaring chain compounds the error mechanically; when the whole chain is exact
+            // (exact start, no rounding anywhere) the Ball's n is 0, reporting a zero radius — the
+            // exactly-representable directed-rounding case that no nonzero radius could certify.
+            let (res_ball, _) = start_ball.pow_exact(&n).map_err(|e| match e {
                 FpError::Overflow(_) => FpError::Overflow(result_sign),
                 FpError::Underflow(_) => FpError::Underflow(result_sign),
                 other => other,
             })?;
-            // When the whole computation is exact (start exact + no squaring rounded), `res` is the
-            // exact value and the true error is 0 — report a zero radius. This is required under
-            // directed rounding modes, where an exactly-representable result lies on a one-sided
-            // rounding boundary that no nonzero radius can fit inside (the Ziv loop would retry
-            // forever). Otherwise the squaring compounds the error ~`2^nlen · ulp_w`.
-            let radius = if pw == 0 || (start_exact && chain_exact) {
-                FBig::ZERO
-            } else {
-                res.ulp().with_precision(0).value() << (nlen as isize + 1)
-            };
-            Ok((res, radius))
+            Ok(res_ball.to_value_radius::<R>())
         })
     }
 
@@ -856,13 +807,15 @@ impl<R: ErrorBounds> Context<R> {
         let series_guard = self.base_guard_digits::<B>();
         let n = 1usize << (self.precision.bit_len() / 2);
         self.ziv(series_guard + n, |guard| {
-            self.exp_compute::<B>(
-                x,
-                self.precision + guard,
-                minus_one,
-                n,
-                reborrow_cache(&mut cache),
-            )
+            Ok(self
+                .exp_compute::<B>(
+                    x,
+                    self.precision + guard,
+                    minus_one,
+                    n,
+                    reborrow_cache(&mut cache),
+                )?
+                .to_value_radius::<R>())
         })
     }
 
