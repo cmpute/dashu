@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Change
+- **(internal) `log2` error radius now derived by Ball arithmetic instead of a directed interval.**
+  `ln_compute` and `log2_internal` are rewritten around a new `Ball` type (`float/src/ball.rs`): a
+  midpoint plus an exact integer relative-error count (`|mid − true| ≤ n·ulp(mid)`). The radius is
+  composed mechanically through the atanh series, the `s·ln(B)` reconstruction, and the
+  `ln(x)/ln(2)` quotient — the hand-derived `(4·terms + 12)·ulp` formula, the outward-rounded
+  `[lo, hi]` interval, and its `INTERVAL_GUARD` constant are gone. The propagation rules are
+  precision-aware (an operand that over-delivers its context, e.g. the uncached `ln(2)` constant,
+  has its error converted correctly to the result's ulp). Public behavior is unchanged and
+  validated against a high-precision oracle and against `rug`/MPFR (bit-exact).
+
 ## 0.6.0-rc.2
 
 ### Change

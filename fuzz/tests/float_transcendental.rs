@@ -135,6 +135,28 @@ proptest! {
     }
 
 
+    /// log2(x) == MPFR log2(x), x > 0.
+    ///
+    /// Unlike the other transcendentals here (which use the lenient `within_k_ulps(2)`) this
+    /// asserts bit-exact agreement: dashu's `log2` is Ziv-correct (via the Ball-based pilot) and
+    /// MPFR is Ziv-correct, so correctly rounded means identical. For non-power-of-two `x` the
+    /// result is irrational, so the HalfAway/nearest-even rounding-mode difference at exact ties
+    /// never arises. This is the independent soundness net for the Ball error propagation.
+    #[test]
+    #[ignore]
+    fn fbig_log2_fuzz(x in fuzz::pos_dbig_strategy(-200..=200)) {
+        let xs = format!("{x:e}");
+        for prec in fuzz::fuzz_precisions_decimal() {
+            let ctx = Context::<HalfAway>::new(prec);
+            let d = dashu_ok!(ctx.log2::<10>(x.repr(), None));
+            if d.repr().is_infinite() { continue; }
+            let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
+            let r: DBig = DBig::from_str(&xr.log2().to_string_radix(10, Some(prec))).unwrap();
+            prop_assert!(d == r, "log2 x={xs} prec={prec}: dashu={d} rug={r}");
+        }
+    }
+
+
     /// sqrt(x) ≈ MPFR sqrt(x), x ≥ 0.
     #[test]
     #[ignore]

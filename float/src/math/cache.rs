@@ -224,6 +224,7 @@ impl ConstCache {
                     false,
                     None,
                 )
+                .to_value_radius::<R>()
                 .0
             }
         }

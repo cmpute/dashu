@@ -70,6 +70,7 @@
 extern crate alloc;
 
 mod add;
+mod ball;
 mod cmp;
 mod convert;
 mod div;

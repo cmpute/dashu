@@ -765,6 +765,7 @@ impl<R: Round> Context<R> {
                         false,
                         reborrow_cache(&mut cache),
                     )
+                    .to_value_radius::<R>()
                     .0;
             let (exponent, rem) =
                 new_exp.div_rem_euclid(work_context.ln_base::<NewB>(reborrow_cache(&mut cache)));
