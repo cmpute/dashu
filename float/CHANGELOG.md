@@ -9,6 +9,20 @@
   `to_f32`/`to_f64` (which saturate the `FpError` to the directed endpoint) and the fallible
   `TryFrom` (which maps it to `OutOfBounds`/`LossOfPrecision`). The four directed-endpoint blocks
   collapse into one helper per float type. No observable behavior change.
+- **`Context::exp` of an astronomically large negative value now returns `Err(Underflow)`.** When
+  the reduction quotient `s = floor(x/ln B)` overflows `isize` (astronomical `|x|`, ≳2⁶¹), `exp` of
+  a negative `x` is a positive value below the smallest representable; it now reports `Err(Underflow)`
+  (was `Ok` of the directed endpoint value). `FBig::exp` is unchanged (`unwrap_fp` maps it to the
+  same endpoint: `+0` under nearest/inward, smallest-positive under `Up`/`Away`), and `exp_m1` of the
+  same input is unchanged (≈−1, a value). This makes `exp`'s underflow an error, consistent with its
+  overflow.
+- **(internal) `ziv`/`ziv_pair` now take fallible closures; hoisted overflow probes removed.** The
+  Ziv driver closures can now return `Err(FpError)` (propagated on the first overflowing attempt), so
+  `exp_internal`/`pow_exp_log`/`sinh`/`cosh`/`sinh_cosh` detect overflow *inside* the loop and
+  propagate it (mapping the directed sign at the call site) instead of carrying hoisted
+  `exp_overflows` probes and `.unwrap()`s. The `exp_overflows` helper is deleted; `ziv_fallible` is
+  merged into `ziv`. `ln_internal`/`log2_internal` now return `FpResult`. No observable change beyond
+  the `exp` contract note above.
 
 ### Fix
 - **Directed overflow/underflow of FBig results (`Context::unwrap_fp`).** `Err(Overflow)` and
@@ -106,6 +120,16 @@
   not short-circuit it) that add overflowed and aborted inside the Ziv containment test. The
   shortcuts now use saturating arithmetic (an overflow forgoes the shortcut, falling through to the
   exact comparison), so a near-ceiling power of two compares correctly.
+- **`powi` panicked at the exact exponent ceiling.** When `base^n`'s magnitude reaches the finite-
+  range ceiling/floor — the squaring chain's exponent arithmetic hits the `±isize::MAX` sentinel —
+  `powi_chain` saturated the step to an infinity `FBig`, which the Ziv closure then fed to
+  `res.ulp().with_precision(0)`, panicking (`assert_finite`) because the closure's signature cannot
+  return `Err`. So `powi(2, isize::MAX)` (and any `powi(base, n)` with `n.bit_len() ≤ 64` whose
+  result genuinely overflows) aborted instead of returning the directed endpoint. The chain now
+  propagates the `Overflow`/`Underflow`, a new fallible `ziv_fallible` carries it out of the loop,
+  and `powi` maps it to the mode-aware endpoint with the correct result sign (base sign × exponent
+  parity). The negative-exponent reciprocal path (extreme-base `1/base` underflow) is covered by the
+  same propagation.
 
 ## 0.6.0-rc.1
 

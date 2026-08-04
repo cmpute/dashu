@@ -118,39 +118,56 @@ impl<R: Round> Context<R> {
     /// compounds the relative error (it roughly doubles per step), so after `n.bit_len()` squarings
     /// the error is on the order of `2^nlen · ulp`. The public [`powi`](Context::powi) retries this
     /// kernel inside a Ziv loop to certify the rounding; `exp_compute` also uses it for its internal
-    /// `Bⁿ` powering (where the outer `exp` Ziv loop absorbs the error).
+    /// `Bⁿ` powering (where `|sum| ≈ 1`, so `sum^bn` stays bounded and a range error is unreachable).
     ///
-    /// Returns the value together with an `exact` flag that is `true` only when **every** squaring
-    /// and multiplication rounded `Exact` (so the returned value is the mathematically exact
-    /// `startⁿ`). The Ziv caller uses this to report a zero radius for exact results — under
-    /// directed rounding modes an exactly-representable result sits on a one-sided rounding
-    /// boundary, which a nonzero radius can never certify.
+    /// On success returns the value together with an `exact` flag that is `true` only when **every**
+    /// squaring and multiplication rounded `Exact` (so the returned value is the mathematically exact
+    /// `startⁿ`). The Ziv caller uses this to report a zero radius for exact results — under directed
+    /// rounding modes an exactly-representable result sits on a one-sided rounding boundary, which a
+    /// nonzero radius can never certify.
+    ///
+    /// If the magnitude runs into the finite-range ceiling/floor — the exponent arithmetic hits the
+    /// `±isize::MAX` sentinel — the offending step's [`Overflow`](FpError::Overflow) /
+    /// [`Underflow`](FpError::Underflow) is returned as [`Err`] instead of being saturated. The
+    /// caller (the `powi` Ziv loop, whose closure can't keep a [`Result`]) maps it to the directed
+    /// endpoint with the correct result sign; saturating here (as [`Context::unwrap_fp`] would) would
+    /// hand the closure an infinity it cannot round.
     pub(crate) fn powi_chain<const B: Word>(
         &self,
         start: &Repr<B>,
         n: &UBig,
-    ) -> (FBig<R, B>, bool) {
+    ) -> Result<(FBig<R, B>, bool), FpError> {
         let nlen = n.bit_len();
         debug_assert!(nlen >= 2, "powi_chain requires n >= 2");
         let mut p = nlen - 2;
-        let first = self.sqr(start);
-        let mut exact = matches!(first, Ok(Exact(_)));
-        let mut res = self.unwrap_fp(first);
+
+        // Apply one squaring/multiplication: fold its value and `Exact` flag into the running state,
+        // or propagate the range error. Other variants (`InfiniteInput`, …) are unreachable from the
+        // finite operands the chain is fed.
+        let step = |r: FpResult<FBig<R, B>>, exact: &mut bool| -> Result<FBig<R, B>, FpError> {
+            match r {
+                Ok(Exact(v)) => Ok(v),
+                Ok(v) => {
+                    *exact = false;
+                    Ok(v.value())
+                }
+                Err(e) => Err(e),
+            }
+        };
+
+        let mut exact = true;
+        let mut res = step(self.sqr(start), &mut exact)?;
         loop {
             if n.bit(p) {
-                let m = self.mul(res.repr(), start);
-                exact = exact && matches!(m, Ok(Exact(_)));
-                res = self.unwrap_fp(m);
+                res = step(self.mul(res.repr(), start), &mut exact)?;
             }
             if p == 0 {
                 break;
             }
             p -= 1;
-            let s = self.sqr(res.repr());
-            exact = exact && matches!(s, Ok(Exact(_)));
-            res = self.unwrap_fp(s);
+            res = step(self.sqr(res.repr()), &mut exact)?;
         }
-        (res, exact)
+        Ok((res, exact))
     }
 
     /// Near-correct exp core: evaluate `exp(x)` (or `exp_m1(x)` when `minus_one`) at
@@ -168,7 +185,7 @@ impl<R: Round> Context<R> {
         minus_one: bool,
         n: usize,
         mut cache: Option<&mut ConstCache>,
-    ) -> (FBig<R, B>, FBig<R, B>) {
+    ) -> Result<(FBig<R, B>, FBig<R, B>), FpError> {
         // exp(x) = B^s · exp(r)^(Bⁿ), with r = x − s·ln(B) reduced so |r| < B⁻ⁿ.
         let context = Context::<R>::new(work_precision);
         let x = FBig::new(context.repr_round_ref(x).value(), context);
@@ -195,10 +212,21 @@ impl<R: Round> Context<R> {
             };
             let logb =
                 Context::<R>::new(work_precision + extra).ln_base::<B>(reborrow_cache(&mut cache));
+            let x_sign = x.sign();
             let (s_big, r) = x.div_rem_euclid(logb);
-            let s: isize = s_big
-                .try_into()
-                .expect("exp reduction quotient fits isize (overflow pre-checked)");
+            let s: isize = match s_big.try_into() {
+                Ok(s) => s,
+                Err(_) => {
+                    // |x| is astronomical — the reduction quotient overflows isize. The magnitude
+                    // gate in `exp_internal` is meant to catch this first; reaching here is a
+                    // gray-zone miss, so surface the range error it would have returned.
+                    return Err(if x_sign == Sign::Positive {
+                        FpError::Overflow(Sign::Positive)
+                    } else {
+                        FpError::Underflow(Sign::Positive)
+                    });
+                }
+            };
             (s, r, n)
         };
         let r = r >> n_eff as isize;
@@ -233,7 +261,7 @@ impl<R: Round> Context<R> {
         if no_scaling {
             // exp_m1(x) = sum directly; error is the series truncation + rounding.
             let radius = ulp_w() * (4 * terms + 8) + ulp_w();
-            (sum, radius)
+            Ok((sum, radius))
         } else {
             // Powering amplifies the series' relative error by Bⁿ. With |v|/|sum| < e < 3 (both
             // near 1, since |r| < B⁻ⁿ), |v − true| ≤ 3·Bⁿ·(4K+8)·ulp(sum) + ulp(v). The B^s shift
@@ -245,7 +273,9 @@ impl<R: Round> Context<R> {
             let bn: UBig = Repr::<B>::BASE.pow(n);
             let chain_ctx =
                 Context::<R>::new(work_precision + bn.bit_len() + work_precision.bit_len());
-            let (v_pow, _) = chain_ctx.powi_chain(sum.repr(), &bn);
+            // `sum ≈ exp(r)` with |r| < B⁻ⁿ (bn = Bⁿ), so `sum^bn` stays bounded near exp(1); a range
+            // error here is unreachable, but propagate it (rather than `.expect`) for robustness.
+            let (v_pow, _) = chain_ctx.powi_chain(sum.repr(), &bn)?;
             let v = v_pow.with_precision(work_precision).value();
             let v_shifted = v.clone() << s;
             let e_v = (ulp_w() << n as isize) * (4 * terms + 8) * 3u32
@@ -254,11 +284,11 @@ impl<R: Round> Context<R> {
                 // result = v_shifted − 1; the subtraction adds one result-ULP of rounding.
                 let result = &v_shifted - FBig::ONE;
                 let radius = (e_v << s) + result.ulp().with_precision(0).value();
-                return (result, radius);
+                return Ok((result, radius));
             } else {
                 e_v << s
             };
-            (v_shifted, radius)
+            Ok((v_shifted, radius))
         }
     }
 
@@ -317,35 +347,6 @@ impl<R: Round> Context<R> {
             }
         }
     }
-}
-
-/// Hoisted `exp` overflow probe for the Ziv closures (which can't return `Err`). Returns `true`
-/// when `exp(x)` is outside the finite exponent range — astronomically large `|x|` (the reduction
-/// quotient `s = x/ln B` overflows `isize`). True for both signs of huge `x` (the quotient
-/// *magnitude* overflows `isize`). Shared by `exp_internal`, `powf`, and the hyperbolic functions.
-pub(crate) fn exp_overflows<R: Round, const B: Word>(
-    ctx: &Context<R>,
-    x: &Repr<B>,
-    cache: &mut Option<&mut ConstCache>,
-) -> bool {
-    if x.log2_est().abs() <= EXP_OVERFLOW_PROBE_LOG2 {
-        return false;
-    }
-    // Inflate the probe's `ln B` exactly as `exp_compute` does: the reduction quotient
-    // `s = floor(x/ln B)` is only pinned once `ln B` carries `⌈log_B|x|⌉ + 2` extra digits, so the
-    // probe must too. Without it the probe can judge `s` to fit `isize` while `exp_compute` (running
-    // at a higher work precision) finds it overflows, tripping the `s.try_into()` expect there.
-    let x_log2_ub = x.log2_bounds().1;
-    let extra = if x_log2_ub > 0.0 {
-        (x_log2_ub / B.log2_est()) as usize + 2
-    } else {
-        2
-    };
-    let probe = Context::<R>::new(ctx.precision + 64 + extra);
-    let logb = probe.ln_base::<B>(reborrow_cache(cache));
-    let x_probe = FBig::new(probe.repr_round_ref(x).value(), probe);
-    let s_probe = x_probe.div_rem_euclid(logb).0;
-    <isize as core::convert::TryFrom<IBig>>::try_from(s_probe).is_err()
 }
 
 // `powi` (integer power), `powf` (non-integer exponent), `exp`, and `exp_m1` are correctly rounded
@@ -495,20 +496,38 @@ impl<R: ErrorBounds> Context<R> {
             let signed_exp = IBig::from_parts(exp_sign, n.clone());
             return self.powi_via_exp_log(base, &signed_exp);
         }
+        // The chain runs on the magnitude `start` (base, or its reciprocal for a negative
+        // exponent), whose range-error sign is the *intermediate* sign; remap any overflow/underflow
+        // to the true result sign (base sign × exponent parity) so the directed endpoint is correct.
+        let result_sign = if base.sign() == Sign::Negative && odd {
+            Sign::Negative
+        } else {
+            Sign::Positive
+        };
         let initial_guard = nlen + self.base_guard_digits::<B>() + 2;
-        Ok(self.ziv(initial_guard, |guard| {
+        self.ziv(initial_guard, |guard| {
             let pw = self.precision + guard;
             let work = Context::<R>::new(pw);
-            // start from base (positive exponent, always exact) or its working-precision
-            // reciprocal (negative exponent, exact only when 1/base is exactly representable).
+            // start from base (positive exponent, always exact) or its working-precision reciprocal
+            // (negative exponent, exact only when 1/base is exactly representable). A range error
+            // here (e.g. 1/base underflows for an extreme base) is remapped to the result sign and
+            // propagated — saturating would feed the chain an infinity or zero it can't recover from.
             let (start, start_exact) = if negative {
-                let d = work.div(&Repr::one(), base);
-                let exact = matches!(d, Ok(Exact(_)));
-                (work.unwrap_fp(d).repr().clone(), exact)
+                match work.div(&Repr::one(), base) {
+                    Ok(Exact(v)) => (v.repr().clone(), true),
+                    Ok(v) => (v.value().repr().clone(), false),
+                    Err(FpError::Overflow(_)) => return Err(FpError::Overflow(result_sign)),
+                    Err(FpError::Underflow(_)) => return Err(FpError::Underflow(result_sign)),
+                    Err(e) => return Err(e),
+                }
             } else {
                 (base.clone(), true)
             };
-            let (res, chain_exact) = work.powi_chain(&start, &n);
+            let (res, chain_exact) = work.powi_chain(&start, &n).map_err(|e| match e {
+                FpError::Overflow(_) => FpError::Overflow(result_sign),
+                FpError::Underflow(_) => FpError::Underflow(result_sign),
+                other => other,
+            })?;
             // When the whole computation is exact (start exact + no squaring rounded), `res` is the
             // exact value and the true error is 0 — report a zero radius. This is required under
             // directed rounding modes, where an exactly-representable result lies on a one-sided
@@ -519,8 +538,8 @@ impl<R: ErrorBounds> Context<R> {
             } else {
                 res.ulp().with_precision(0).value() << (nlen as isize + 1)
             };
-            (res, radius)
-        }))
+            Ok((res, radius))
+        })
     }
 
     /// Raise the floating point number to an floating point power under this context.
@@ -617,40 +636,23 @@ impl<R: ErrorBounds> Context<R> {
     /// value near a rounding boundary.) The `B + 8` scale covers the `ulp`-vs-`value·B^{1-P}` gap
     /// plus a safety margin for the chained roundings.
     ///
-    /// The overflow case is hoisted out of the Ziv closure (which can't return `Err`): if
-    /// `exp(y·ln x)` falls outside the finite exponent range, short-circuit before the loop. The
-    /// result is positive (argument to `exp`), so overflow is `+∞` and underflow carries `+` sign;
-    /// callers that need a negative result (the `powi` fallback for a negative base) flip the sign
-    /// of both the value and the error.
+    /// Overflow/underflow of `exp(y·ln x)` is detected inside the Ziv closure by `exp` itself
+    /// (which returns `Err(Overflow)` / `Err(Underflow)`) and propagated — the result is positive
+    /// (argument to `exp`), so overflow is `+∞` and underflow carries `+` sign; callers that need a
+    /// negative result (the `powi` fallback for a negative base) flip the sign of both the value
+    /// and the error.
     fn pow_exp_log<const B: Word>(
         &self,
         pos_base: &Repr<B>,
         exp: &Repr<B>,
         mut cache: Option<&mut ConstCache>,
     ) -> FpResult<FBig<R, B>> {
-        let probe = Context::<R>::new(self.precision + 32);
-        let ln_x_probe = probe.ln(pos_base, reborrow_cache(&mut cache))?.value();
-        let arg_probe = probe.mul(ln_x_probe.repr(), exp)?.value();
-        if exp_overflows::<R, B>(&probe, arg_probe.repr(), &mut cache) {
-            return Err(if arg_probe.sign() == Sign::Positive {
-                FpError::Overflow(Sign::Positive)
-            } else {
-                FpError::Underflow(Sign::Positive)
-            });
-        }
-
         let initial_guard = self.base_guard_digits::<B>() + 10;
-        Ok(self.ziv(initial_guard, |guard| {
+        self.ziv(initial_guard, |guard| {
             let work = Context::<R>::new(self.precision + guard);
-            let ln_x = work
-                .ln(pos_base, reborrow_cache(&mut cache))
-                .unwrap()
-                .value();
-            let arg = work.mul(ln_x.repr(), exp).unwrap().value();
-            let result = work
-                .exp(arg.repr(), reborrow_cache(&mut cache))
-                .unwrap()
-                .value();
+            let ln_x = work.ln(pos_base, reborrow_cache(&mut cache))?.value();
+            let arg = work.mul(ln_x.repr(), exp)?.value();
+            let result = work.exp(arg.repr(), reborrow_cache(&mut cache))?.value();
 
             // Radius at unlimited precision (exact arithmetic), but built from the *work-precision*
             // `result.ulp()` so it carries the `B^{-(p+guard)}` scale and shrinks across retries.
@@ -658,14 +660,14 @@ impl<R: ErrorBounds> Context<R> {
             let arg_abs = arg.abs().with_precision(0).value();
             let scale = (B as i32) + 8;
             let radius = (ulp_w * (arg_abs + FBig::<R, B>::ONE)) * scale;
-            (result, radius)
-        }))
+            Ok((result, radius))
+        })
     }
 
     /// `powi` fallback for exponents past the squaring chain's feasible bit length: compute
     /// `base^signed_exp = exp(signed_exp · ln|base|)`. The integer exponent is an exact float
     /// (significand `|signed_exp|`, exponent `0`), so this delegates to [`pow_exp_log`](Self::pow_exp_log)
-    /// — reusing its overflow probe and Ziv rounding — and then fixes the result sign from the
+    /// — reusing its Ziv rounding — and then fixes the result sign from the
     /// exponent's parity for a negative base. The working precision never scales with
     /// `signed_exp.bit_length()`, so (unlike the squaring chain) this cannot allocate unboundedly.
     fn powi_via_exp_log<const B: Word>(
@@ -810,15 +812,17 @@ impl<R: ErrorBounds> Context<R> {
             let thresh = self.precision as f32 * B.log2_est() * core::f32::consts::LN_2
                 + core::f32::consts::LN_2;
             if x.log2_bounds().0 > thresh.log2_bounds().1 {
-                return Ok(self.exp_extreme_negative::<B>(true));
+                return Ok(self.exp_extreme_negative::<B>());
             }
         }
 
-        // Hoisted overflow check: the reduction quotient s = floor(x/ln B) overflows isize only
-        // for astronomically large |x| (|x| ≳ 2^61). The Ziv closure below can't return Err, so
-        // detect that case here and short-circuit to overflow/underflow (matching IEEE limits).
-        // The probe inflates `ln B` with the same `⌈log_B|x|⌉ + 2` extra digits `exp_compute` uses,
-        // so its `s` verdict matches the computation's (see `exp_overflows`).
+        // No-OOM magnitude gate: for an `x` whose exponent is near `isize::MAX`, the reduction
+        // quotient `s = floor(x/ln B)` in `exp_compute` would allocate a GB-scale `IBig`, so reject
+        // astronomical |x| here (via the cheap `log2_est` fast-skip) before the Ziv loop runs the
+        // division. The probe inflates `ln B` with the same `⌈log_B|x|⌉ + 2` extra digits
+        // `exp_compute` uses, so its `s` verdict matches the computation's. (`exp_compute` also
+        // re-checks `s.try_into()` as a gray-zone backstop, propagating an error if the gate and
+        // computation ever disagree — so a miss degrades to the directed endpoint, not a panic.)
         if x.log2_est().abs() > EXP_OVERFLOW_PROBE_LOG2 {
             let x_log2_ub = x.log2_bounds().1;
             let extra = if x_log2_ub > 0.0 {
@@ -831,18 +835,16 @@ impl<R: ErrorBounds> Context<R> {
             let x_probe = FBig::new(probe.repr_round_ref(x).value(), probe);
             let s_probe = x_probe.div_rem_euclid(logb).0;
             if <isize as core::convert::TryFrom<IBig>>::try_from(s_probe).is_err() {
-                // |x| is astronomically large, so exp(x) lies outside the finite exponent range.
-                // exp(huge +) overflows upward to +∞ under every mode (FBig has no finite cap short
-                // of the infinity sentinel). The directed-rounding correctness matters on the
-                // *negative* side: exp(huge −) is a positive value below the smallest representable,
-                // and exp_m1(huge −) = exp(x) − 1 lies just above −1. The blanket `+0` / `Exact(−1)`
-                // saturation below is mode-blind — it returned `+0` under `Up` (should be the
-                // smallest positive) and `Exact(−1)` under `Up` for `exp_m1` (should be the next
-                // representable above −1), violating `Up(exp(x)) ≥ Down(exp(x))`.
+                // exp(huge +) overflows to +∞ (the directed endpoint handles every mode); exp(huge −)
+                // is a positive value below the smallest representable, so it underflows (the directed
+                // endpoint gives +0 / smallest-positive); exp_m1(huge −) ≈ −1 stays a finite value
+                // just above −1 (the short-circuit above usually catches this first).
                 return if input_sign == Sign::Positive {
                     Err(FpError::Overflow(Sign::Positive))
+                } else if minus_one {
+                    Ok(self.exp_extreme_negative::<B>())
                 } else {
-                    Ok(self.exp_extreme_negative::<B>(minus_one))
+                    Err(FpError::Underflow(Sign::Positive))
                 };
             }
         }
@@ -853,7 +855,7 @@ impl<R: ErrorBounds> Context<R> {
         // target precision and is constant across retries.
         let series_guard = self.base_guard_digits::<B>();
         let n = 1usize << (self.precision.bit_len() / 2);
-        Ok(self.ziv(series_guard + n, |guard| {
+        self.ziv(series_guard + n, |guard| {
             self.exp_compute::<B>(
                 x,
                 self.precision + guard,
@@ -861,46 +863,37 @@ impl<R: ErrorBounds> Context<R> {
                 n,
                 reborrow_cache(&mut cache),
             )
-        }))
+        })
     }
 
-    /// Directed-rounded result of `exp(x)` / `exp_m1(x)` when `x` is so large and negative that
-    /// `exp(x)` has underflowed below the smallest representable FBig (the reduction quotient
-    /// `s = floor(x/ln B)` overflows `isize`).
+    /// Directed-rounded `exp_m1(x)` when `x` is so large and negative that `exp(x)` has underflowed
+    /// below the smallest representable FBig (the reduction quotient `s = floor(x/ln B)` overflows
+    /// `isize`). `exp_m1(x) = exp(x) − 1` then lies in `(−1, −1 + B^{isize::MIN})` — pinned only up
+    /// to a sub-representable residual, so the directed rounding mode picks the endpoint of the bin
+    /// it falls in: a value just above `−1` rounds to `−1` under `Down`/`Away`/nearest, and to the
+    /// next representable above `−1` under `Up`/`Zero` (both round the magnitude down toward 0).
     ///
-    /// `exp(x)` is then a positive value in `(0, B^{isize::MIN})`, and `exp_m1(x) = exp(x) − 1`
-    /// lies in `(−1, −1 + B^{isize::MIN})`. Each is pinned only up to a sub-representable residual,
-    /// so the directed rounding mode picks the endpoint of the bin it falls in:
+    /// (`exp` itself of such an `x` is handled earlier — it returns `Err(Underflow)`, whose directed
+    /// endpoint is the same `+0` / smallest-positive this used to produce inline.)
     ///
-    /// - `exp`: a positive value below the smallest representable rounds to `+0` under modes that
-    ///   round it toward zero/−∞/nearest (`Zero`, `Down`, `HalfEven`, `HalfAway`), and to the
-    ///   smallest positive `B^{isize::MIN}` under `Up`/`Away`.
-    /// - `exp_m1`: a value just above `−1` rounds to `−1` under `Down`/`Away`/nearest, and to the
-    ///   next representable above `−1` under `Up`/`Zero` (both round the magnitude down toward 0).
-    ///
-    /// `Round::round_low_part` decides the endpoint: fed the base (`0` for `exp`, `−1` for
-    /// `exp_m1`) with a positive sub-ulp residual, its `AddOne`/`NoOp` verdict is exactly the
-    /// "round up to the next representable / stay" decision. (The literal significand arithmetic
-    /// `round_low_part` would do is irrelevant here — only its directional verdict is used.)
-    fn exp_extreme_negative<const B: Word>(&self, minus_one: bool) -> Rounded<FBig<R, B>> {
-        if !minus_one {
-            // exp(huge −): tiny positive residual above 0 — the shared underflow endpoint.
-            self.underflow_repr_endpoint::<B>(Sign::Positive)
-        } else {
-            // exp_m1(huge −): −1 + (sub-representable positive) ⇒ just above −1.
-            match R::round_low_part(&IBig::NEG_ONE, Sign::Positive, || Ordering::Less) {
-                AddOne => {
-                    // Next representable above −1 at this precision: −(B^p − 1) × B^(−p)
-                    // (the largest p-digit significand at exponent −p, e.g. p=1,B=2 → −0.5).
-                    let p = self.precision;
-                    let next_mag = Repr::<B>::BASE.pow(p) - UBig::ONE;
-                    let next = Repr::new(IBig::from_parts(Sign::Negative, next_mag), -(p as isize));
-                    Inexact(FBig::new(next, *self), AddOne)
-                }
-                // Carry the input context: `−FBig::ONE` is precision 0, which would make a
-                // downstream op on the result panic via `assert_limited_precision(0)`.
-                _ => Inexact(FBig::new(Repr::<B>::neg_one(), *self), NoOp),
+    /// `Round::round_low_part` decides the endpoint: fed `−1` with a positive sub-ulp residual, its
+    /// `AddOne`/`NoOp` verdict is exactly the "round up to the next representable / stay" decision.
+    /// (The literal significand arithmetic `round_low_part` would do is irrelevant here — only its
+    /// directional verdict is used.)
+    fn exp_extreme_negative<const B: Word>(&self) -> Rounded<FBig<R, B>> {
+        // exp_m1(huge −): −1 + (sub-representable positive) ⇒ just above −1.
+        match R::round_low_part(&IBig::NEG_ONE, Sign::Positive, || Ordering::Less) {
+            AddOne => {
+                // Next representable above −1 at this precision: −(B^p − 1) × B^(−p)
+                // (the largest p-digit significand at exponent −p, e.g. p=1,B=2 → −0.5).
+                let p = self.precision;
+                let next_mag = Repr::<B>::BASE.pow(p) - UBig::ONE;
+                let next = Repr::new(IBig::from_parts(Sign::Negative, next_mag), -(p as isize));
+                Inexact(FBig::new(next, *self), AddOne)
             }
+            // Carry the input context: `−FBig::ONE` is precision 0, which would make a downstream op
+            // on the result panic via `assert_limited_precision(0)`.
+            _ => Inexact(FBig::new(Repr::<B>::neg_one(), *self), NoOp),
         }
     }
 }
@@ -918,12 +911,16 @@ mod tests {
         let huge = Repr::new(IBig::from(1) << 63, 0);
         assert_eq!(ctx.exp::<2>(&huge, None), Err(FpError::Overflow(Sign::Positive)));
 
-        // exp(huge negative) underflows: the true value is a positive number below the smallest
-        // representable FBig, so under HalfEven it rounds to +0 (a value, not an Underflow error —
-        // the convenience layer saturates, and so does the Context layer for this finite result).
+        // exp(huge −) is a positive value below the smallest representable -> Underflow at the
+        // Context layer; the directed endpoint is +0 under HalfEven (nearest), smallest-positive
+        // under Up.
         let neg = Repr::new(-(IBig::from(1) << 63), 0);
-        let e = ctx.exp::<2>(&neg, None).unwrap().value();
-        assert!(e.repr().is_pos_zero(), "exp(huge −) under HalfEven is +0, got {:?}", e);
+        assert_eq!(ctx.exp::<2>(&neg, None), Err(FpError::Underflow(Sign::Positive)));
+        assert!(ctx.unwrap_fp(ctx.exp::<2>(&neg, None)).repr().is_pos_zero(), "HalfEven -> +0");
+        let up = Context::<mode::Up>::new(53);
+        let up_val = up.unwrap_fp(up.exp::<2>(&neg, None));
+        assert_eq!(up_val.repr().significand(), &IBig::from(1), "Up -> smallest positive");
+        assert_eq!(up_val.repr().exponent(), isize::MIN);
 
         // exp_m1(huge negative) -> -1 (a finite value, not an error)
         let m1 = ctx.exp_m1::<2>(&neg, None).unwrap().value();
@@ -1305,6 +1302,135 @@ mod tests {
             assert_eq!(up.repr().significand(), &IBig::from(1), "sig 1 for floor offset {offset}");
             assert_eq!(up.repr().exponent(), -(isize::MAX - offset));
             assert!(!down.repr().is_infinite());
+        }
+    }
+
+    // `powi(2, isize::MAX)`: the result `2^isize::MAX` normalizes to significand 1 at the `+inf`
+    // sentinel exponent, so it is genuine overflow. This used to panic — the squaring chain absorbed
+    // the overflow into an infinity and the Ziv closure then choked on `res.ulp()` of an infinity.
+    // Now the chain propagates the range error and `powi` returns the directed endpoint for every
+    // mode. `isize::MAX` is the sentinel on both pointer widths, so this test is arch-independent.
+    #[test]
+    fn test_powi_exact_ceiling_overflow_directed() {
+        let max_sig = |p: usize| (IBig::ONE << p) - IBig::ONE;
+        let exp = IBig::from(isize::MAX);
+        for p in [20usize, 50, 100, 500] {
+            // Context layer: genuine overflow, positive sign.
+            let ctx = Context::<mode::HalfEven>::new(p);
+            let base = Repr::<2>::new(IBig::from(2), 0);
+            assert_eq!(
+                ctx.powi::<2>(&base, exp.clone()),
+                Err(FpError::Overflow(Sign::Positive)),
+                "Overflow at p={p}"
+            );
+
+            // Convenience layer: directed endpoints (outward → +∞, inward → largest finite).
+            let he = FBig::<mode::HalfEven, 2>::from_parts(IBig::ONE, 1)
+                .with_precision(p)
+                .value()
+                .powi(exp.clone());
+            let up = FBig::<mode::Up, 2>::from_parts(IBig::ONE, 1)
+                .with_precision(p)
+                .value()
+                .powi(exp.clone());
+            let down = FBig::<mode::Down, 2>::from_parts(IBig::ONE, 1)
+                .with_precision(p)
+                .value()
+                .powi(exp.clone());
+            let zero = FBig::<mode::Zero, 2>::from_parts(IBig::ONE, 1)
+                .with_precision(p)
+                .value()
+                .powi(exp.clone());
+            assert!(
+                he.repr().is_infinite() && he.repr().sign() == Sign::Positive,
+                "HalfEven -> +∞ at p={p}"
+            );
+            assert!(
+                up.repr().is_infinite() && up.repr().sign() == Sign::Positive,
+                "Up -> +∞ at p={p}"
+            );
+            assert_eq!(down.repr().significand(), &max_sig(p), "Down -> largest finite at p={p}");
+            assert_eq!(down.repr().exponent(), isize::MAX, "Down exponent at p={p}");
+            assert_eq!(zero.repr().significand(), &max_sig(p), "Zero -> largest finite at p={p}");
+            assert!(up > down, "Up >= Down at p={p}");
+        }
+    }
+
+    // Underflow propagation through the chain: a tiny base `2^(isize::MIN/2)` squared reaches the
+    // `-inf` sentinel exponent (`isize::MIN`) on the first squaring, so the chain underflows and
+    // `powi` routes it to the directed endpoint instead of panicking. (Note `powi(2, -isize::MAX)` is
+    // *not* underflow — `2^-isize::MAX` sits at exponent `isize::MIN+1`, still representable — so this
+    // case uses a base whose square genuinely crosses the floor.) `isize::MIN/2` scales with the
+    // pointer width, keeping the test arch-independent.
+    #[test]
+    fn test_powi_chain_underflow_propagates() {
+        let half_floor = isize::MIN / 2;
+        let ctx = Context::<mode::HalfEven>::new(53);
+        let tiny = Repr::<2>::new(IBig::ONE, half_floor);
+        assert_eq!(
+            ctx.powi::<2>(&tiny, IBig::from(2)),
+            Err(FpError::Underflow(Sign::Positive)),
+            "base^2 underflows to the floor sentinel"
+        );
+
+        // Convenience layer: directed endpoints (outward → smallest positive, inward/nearest → +0).
+        let he = FBig::<mode::HalfEven, 2>::from_parts(IBig::ONE, half_floor)
+            .with_precision(53)
+            .value()
+            .powi(IBig::from(2));
+        let up = FBig::<mode::Up, 2>::from_parts(IBig::ONE, half_floor)
+            .with_precision(53)
+            .value()
+            .powi(IBig::from(2));
+        let down = FBig::<mode::Down, 2>::from_parts(IBig::ONE, half_floor)
+            .with_precision(53)
+            .value()
+            .powi(IBig::from(2));
+        assert!(he.repr().is_pos_zero(), "HalfEven -> +0");
+        assert_eq!(up.repr().significand(), &IBig::from(1), "Up -> smallest positive");
+        assert_eq!(up.repr().exponent(), isize::MIN, "Up exponent");
+        assert!(down.repr().is_pos_zero(), "Down -> +0");
+        assert!(up > down, "Up >= Down");
+    }
+
+    // Significand != 1 and negative-base sign handling at the ceiling: the magnitude overflows just
+    // the same and must propagate (not panic), with the overflow sign following base sign × parity.
+    #[test]
+    fn test_powi_significand_nonunit_ceiling() {
+        let ctx = Context::<mode::HalfEven>::new(53);
+        // base 3: 3^isize::MAX overflows with a positive sign.
+        let base3 = Repr::<2>::new(IBig::from(3), 0);
+        assert_eq!(
+            ctx.powi::<2>(&base3, IBig::from(isize::MAX)),
+            Err(FpError::Overflow(Sign::Positive)),
+            "3^MAX overflows positive"
+        );
+        // base -2, odd exponent isize::MAX: (-2)^odd is negative -> Overflow(Negative).
+        let neg2 = Repr::<2>::new(IBig::from(-2), 0);
+        assert_eq!(
+            ctx.powi::<2>(&neg2, IBig::from(isize::MAX)),
+            Err(FpError::Overflow(Sign::Negative)),
+            "(-2)^MAX overflows negative"
+        );
+    }
+
+    // Regression guard: a negative base with an *even* exponent just below the ceiling is
+    // representable (positive, magnitude 2^(isize::MAX-1)) and must still compute to a finite value
+    // — the overflow propagation must not over-broaden and treat near-ceiling representable results
+    // as overflow. `isize::MAX - 1` is even on both 32- and 64-bit.
+    #[test]
+    fn test_powi_negative_base_even_exp_near_ceiling() {
+        let exp = IBig::from(isize::MAX - 1);
+        for p in [20usize, 50, 100, 500] {
+            let v = FBig::<mode::HalfEven, 2>::try_from(-2.0f64)
+                .unwrap()
+                .with_precision(p)
+                .value()
+                .powi(exp.clone());
+            assert!(!v.repr().is_infinite(), "finite at p={p}");
+            assert_eq!(v.repr().sign(), Sign::Positive, "even exponent -> positive at p={p}");
+            assert_eq!(v.repr().significand(), &IBig::from(1), "sig 1 at p={p}");
+            assert_eq!(v.repr().exponent(), isize::MAX - 1, "exponent at p={p}");
         }
     }
 

@@ -324,7 +324,7 @@ impl<R: ErrorBounds> Context<R> {
         }
 
         let initial_guard = crate::utils::ceil_usize(self.precision.log2_est()) + 10;
-        Ok(self.ziv(initial_guard, |guard| {
+        self.ziv(initial_guard, |guard| {
             let gctx = Context::<R>::new(self.precision + guard);
             // result = sqrt(large² + small²), with both operands scaled down by `k` base-B digits
             // before squaring (so `large²` can't overflow the exponent) and the root scaled back:
@@ -350,8 +350,8 @@ impl<R: ErrorBounds> Context<R> {
             } else {
                 result.ulp() * 8
             };
-            (result, radius)
-        }))
+            Ok((result, radius))
+        })
     }
 }
 

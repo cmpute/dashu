@@ -14,7 +14,6 @@
 
 use crate::{
     error::{assert_limited_precision, FpError},
-    exp::exp_overflows,
     fbig::FBig,
     math::{
         cache::{reborrow_cache, ConstCache},
@@ -40,30 +39,24 @@ impl<R: ErrorBounds> Context<R> {
             // sinh(±0) = ±0
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
         }
-        // Hoist the exp overflow out of the Ziv closure (it can't return Err): sinh(±huge) = ±inf.
-        if exp_overflows::<R, B>(self, x, &mut cache) {
-            return Err(FpError::Overflow(x.sign()));
-        }
-
         // sinh(x) = (exp_m1(x) - exp_m1(-x)) / 2  (cancellation-free). `exp_m1` is itself Ziv-correct
         // at the working precision, so only the subtraction/divide rounding contributes to the
-        // radius (a few working-ULPs, scaled by the `exp_m1(x) ≈ 2·sinh(x)` magnitude ratio).
+        // radius (a few working-ULPs, scaled by the `exp_m1(x) ≈ 2·sinh(x)` magnitude ratio). For
+        // huge |x|, `exp_m1` overflows inside the closure and propagates; sinh(±huge) = ±inf, so the
+        // sign follows `x` (the propagated error carries an intermediate sign, remapped below).
         let initial_guard = self.base_guard_digits::<B>() + 10;
-        Ok(self.ziv(initial_guard, |guard| {
+        self.ziv(initial_guard, |guard| {
             let work = Context::<R>::new(self.precision + guard);
             let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
-            let ep = work
-                .exp_m1(&x_f.repr, reborrow_cache(&mut cache))
-                .unwrap()
-                .value();
+            let ep = work.exp_m1(&x_f.repr, reborrow_cache(&mut cache))?.value();
             let em = work
-                .exp_m1(&(-x_f.clone()).repr, reborrow_cache(&mut cache))
-                .unwrap()
+                .exp_m1(&(-x_f.clone()).repr, reborrow_cache(&mut cache))?
                 .value();
             let result = (ep - em) / 2i32;
             let radius = result.ulp() * 12;
-            (result, radius)
-        }))
+            Ok((result, radius))
+        })
+        .map_err(|_| FpError::Overflow(x.sign()))
     }
 
     /// Hyperbolic cosine.
@@ -82,29 +75,23 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(Exact(FBig::new(Repr::one(), *self)));
         }
 
-        // Hoist the exp overflow out of the Ziv closure: cosh(±huge) = +inf (always positive).
-        if exp_overflows::<R, B>(self, x, &mut cache) {
-            return Err(FpError::Overflow(Sign::Positive));
-        }
         // cosh(x) = (exp_m1(x) + exp_m1(-x)) / 2 + 1 (no cancellation: same-sign sum). `exp_m1` is
         // Ziv-correct at the working precision; the radius is a few working-ULPs (the `exp_m1(x) ≈
-        // 2·cosh(x)` magnitude ratio, plus the trailing +1).
+        // 2·cosh(x)` magnitude ratio, plus the trailing +1). For huge |x|, `exp_m1` overflows inside
+        // the closure and propagates; cosh(±huge) = +inf (always positive).
         let initial_guard = self.base_guard_digits::<B>() + 10;
-        Ok(self.ziv(initial_guard, |guard| {
+        self.ziv(initial_guard, |guard| {
             let work = Context::<R>::new(self.precision + guard);
             let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
-            let ep = work
-                .exp_m1(&x_f.repr, reborrow_cache(&mut cache))
-                .unwrap()
-                .value();
+            let ep = work.exp_m1(&x_f.repr, reborrow_cache(&mut cache))?.value();
             let em = work
-                .exp_m1(&(-x_f.clone()).repr, reborrow_cache(&mut cache))
-                .unwrap()
+                .exp_m1(&(-x_f.clone()).repr, reborrow_cache(&mut cache))?
                 .value();
             let result = (ep + em) / 2i32 + FBig::<R, B>::ONE;
             let radius = result.ulp() * 14;
-            (result, radius)
-        }))
+            Ok((result, radius))
+        })
+        .map_err(|_| FpError::Overflow(Sign::Positive))
     }
 
     /// Simultaneously compute `sinh(x)` and `cosh(x)` (context layer). Returns
@@ -131,31 +118,28 @@ impl<R: ErrorBounds> Context<R> {
             );
         }
 
-        // Hoist the exp overflow out of the Ziv closure: sinh(±huge) = ±inf, cosh(±huge) = +inf.
-        if exp_overflows::<R, B>(self, x, &mut cache) {
-            return (Err(FpError::Overflow(x.sign())), Err(FpError::Overflow(Sign::Positive)));
-        }
         // sinh = (ep - em)/2; cosh = (ep + em)/2 + 1, sharing the two `exp_m1` calls. Certified as a
-        // pair via `ziv_pair` (retry while either endpoint straddles a boundary).
+        // pair via `ziv_pair` (retry while either endpoint straddles a boundary). For huge |x|,
+        // `exp_m1` overflows inside the closure and propagates to both slots; sinh(±huge) = ±inf,
+        // cosh(±huge) = +inf, so each slot's overflow sign is remapped below.
         let initial_guard = self.base_guard_digits::<B>() + 10;
         let (sinh_r, cosh_r) = self.ziv_pair(initial_guard, |guard| {
             let work = Context::<R>::new(self.precision + guard);
             let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
-            let ep = work
-                .exp_m1(&x_f.repr, reborrow_cache(&mut cache))
-                .unwrap()
-                .value();
+            let ep = work.exp_m1(&x_f.repr, reborrow_cache(&mut cache))?.value();
             let em = work
-                .exp_m1(&(-x_f.clone()).repr, reborrow_cache(&mut cache))
-                .unwrap()
+                .exp_m1(&(-x_f.clone()).repr, reborrow_cache(&mut cache))?
                 .value();
             let sinh_val = (ep.clone() - em.clone()) / 2i32;
             let cosh_val = (ep + em) / 2i32 + FBig::<R, B>::ONE;
             let sinh_radius = sinh_val.ulp() * 12;
             let cosh_radius = cosh_val.ulp() * 14;
-            ((sinh_val, sinh_radius), (cosh_val, cosh_radius))
+            Ok(((sinh_val, sinh_radius), (cosh_val, cosh_radius)))
         });
-        (Ok(sinh_r), Ok(cosh_r))
+        (
+            sinh_r.map_err(|_| FpError::Overflow(x.sign())),
+            cosh_r.map_err(|_| FpError::Overflow(Sign::Positive)),
+        )
     }
 
     /// Hyperbolic tangent.
@@ -183,21 +167,21 @@ impl<R: ErrorBounds> Context<R> {
         // precision. For large positive x it overflows → tanh = +1 (returned inline as an exact
         // value); for large negative x, exp_m1(2x) → -1 (finite), so tanh → -1 naturally.
         let initial_guard = self.base_guard_digits::<B>() + 10;
-        Ok(self.ziv(initial_guard, |guard| {
+        self.ziv(initial_guard, |guard| {
             let work = Context::<R>::new(self.precision + guard);
             let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
             let two_x = x_f * 2i32;
             match work.exp_m1(&two_x.repr, reborrow_cache(&mut cache)) {
-                Err(FpError::Overflow(_)) => (FBig::<R, B>::ONE, FBig::<R, B>::ZERO), // exact +1
+                Err(FpError::Overflow(_)) => Ok((FBig::<R, B>::ONE, FBig::<R, B>::ZERO)), // exact +1
                 Ok(e) => {
                     let e = e.value();
                     let result = e.clone() / (e + 2i32);
                     let radius = result.ulp() * 12;
-                    (result, radius)
+                    Ok((result, radius))
                 }
                 Err(other) => unreachable!("exp_m1 on finite input: {other:?}"),
             }
-        }))
+        })
     }
 
     /// Inverse hyperbolic sine.
@@ -220,7 +204,7 @@ impl<R: ErrorBounds> Context<R> {
         // precision, so the radius is a few working-ULPs of accumulated arithmetic. The `|x|` so
         // large that `x²` overflows arm falls back to the asymptotic `sign·ln(2|x|)`.
         let initial_guard = self.base_guard_digits::<B>() + 10;
-        Ok(self.ziv(initial_guard, |guard| {
+        self.ziv(initial_guard, |guard| {
             let work = Context::<R>::new(self.precision + guard);
             let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
             let sign = x_f.sign();
@@ -247,8 +231,8 @@ impl<R: ErrorBounds> Context<R> {
             };
             let result = apply_sign(res, sign);
             let radius = result.ulp() * 14;
-            (result, radius)
-        }))
+            Ok((result, radius))
+        })
     }
 
     /// Inverse hyperbolic cosine. Domain: `x ≥ 1`.
@@ -281,7 +265,7 @@ impl<R: ErrorBounds> Context<R> {
         // the radius is a few working-ULPs (generous for the near-x=1 cancellation). The `(x-1)(x+1)`
         // overflow arm falls back to the asymptotic `ln(2x)`.
         let initial_guard = self.base_guard_digits::<B>() + 10;
-        Ok(self.ziv(initial_guard, |guard| {
+        self.ziv(initial_guard, |guard| {
             let work = Context::<R>::new(self.precision + guard);
             let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
             let xm1 = &x_f - FBig::<R, B>::ONE;
@@ -301,8 +285,8 @@ impl<R: ErrorBounds> Context<R> {
                 Err(other) => unreachable!("mul: {other:?}"),
             };
             let radius = res.ulp() * 16;
-            (res, radius)
-        }))
+            Ok((res, radius))
+        })
     }
 
     /// Inverse hyperbolic tangent. Domain: `-1 < x < 1` (`x = ±1` → ±∞, `|x| > 1` is an error).
@@ -332,7 +316,7 @@ impl<R: ErrorBounds> Context<R> {
         // radius is a few working-ULPs (generous: the `2x/(1-x)` division amplifies as |x| → 1, but
         // the result grows there too, so its ULP keeps the bound sound — Ziv retries near |x|=1).
         let initial_guard = self.base_guard_digits::<B>() + 10;
-        Ok(self.ziv(initial_guard, |guard| {
+        self.ziv(initial_guard, |guard| {
             let work = Context::<R>::new(self.precision + guard);
             let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
             let ratio = (x_f.clone() * 2i32) / (FBig::<R, B>::ONE - &x_f);
@@ -342,8 +326,8 @@ impl<R: ErrorBounds> Context<R> {
                 .value();
             let result = res / 2i32;
             let radius = result.ulp() * 16;
-            (result, radius)
-        }))
+            Ok((result, radius))
+        })
     }
 }
 
@@ -534,5 +518,37 @@ mod tests {
         );
         assert_eq!(cosh_zero.repr().significand(), &max_sig, "cosh Zero -> largest finite");
         assert_eq!(cosh_zero.repr().exponent(), isize::MAX);
+
+        // Negative huge: this is the case the closure's sign remap exists for — `exp_m1(−x)`
+        // overflows carrying a positive sign that sinh must flip to negative (and cosh must leave
+        // positive). Under `Up`, a negative overflow rounds inward (largest finite negative) while a
+        // positive overflow reaches +∞.
+        let neg_max_sig = -max_sig.clone();
+        let sinh_neg_up = (-huge.clone()).with_rounding::<mode::Up>().sinh();
+        assert_eq!(sinh_neg_up.repr().sign(), Sign::Negative, "sinh(−huge) sign");
+        assert_eq!(
+            sinh_neg_up.repr().significand(),
+            &neg_max_sig,
+            "sinh(−huge) Up -> largest finite"
+        );
+        assert_eq!(sinh_neg_up.repr().exponent(), isize::MAX);
+        let cosh_neg_up = (-huge.clone()).with_rounding::<mode::Up>().cosh();
+        assert!(
+            cosh_neg_up.repr().is_infinite() && cosh_neg_up.repr().sign() == Sign::Positive,
+            "cosh(−huge) Up -> +∞"
+        );
+
+        // sinh_cosh(−huge) = (largest finite negative, +∞) under Up — per-slot sign remap.
+        let (sh, ch) = (-huge.clone()).with_rounding::<mode::Up>().sinh_cosh();
+        assert_eq!(sh.repr().sign(), Sign::Negative, "sinh_cosh[0](−huge) sign");
+        assert_eq!(
+            sh.repr().significand(),
+            &neg_max_sig,
+            "sinh_cosh[0](−huge) Up -> largest finite"
+        );
+        assert!(
+            ch.repr().is_infinite() && ch.repr().sign() == Sign::Positive,
+            "sinh_cosh[1](−huge) -> +∞"
+        );
     }
 }

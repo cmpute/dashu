@@ -142,7 +142,7 @@ impl<R: ErrorBounds> Context<R> {
         // Ziv: reduce to the first quadrant (the guard grows per retry, enlarging the work precision
         // that absorbs the `x − k·(π/2)` cancellation), evaluate the series, and fold the reduction
         // error into the radius so the containment test is sound even for huge |x|.
-        Ok(self.ziv(50, |guard| {
+        self.ziv(50, |guard| {
             let (work, r, quadrant, reduction_err) =
                 self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache));
             let (val, series_radius) = match quadrant {
@@ -157,8 +157,8 @@ impl<R: ErrorBounds> Context<R> {
                     (-v, e)
                 }
             };
-            (val, series_radius + reduction_err)
-        }))
+            Ok((val, series_radius + reduction_err))
+        })
     }
 
     /// Near-correct sine series `S(x) = x − x³/3! + x⁵/5! − …` on the reduced argument, returning
@@ -206,7 +206,7 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(FBig::<R, B>::ONE.with_precision(self.precision));
         }
 
-        Ok(self.ziv(50, |guard| {
+        self.ziv(50, |guard| {
             let (work, r, quadrant, reduction_err) =
                 self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache));
             let (val, series_radius) = match quadrant {
@@ -221,8 +221,8 @@ impl<R: ErrorBounds> Context<R> {
                 }
                 Quadrant::Fourth => work.sin_compute(&r),
             };
-            (val, series_radius + reduction_err)
-        }))
+            Ok((val, series_radius + reduction_err))
+        })
     }
 
     /// Near-correct cosine series `C(x) = 1 − x²/2! + x⁴/4! − …`, returning `(value, radius)`.
@@ -283,9 +283,9 @@ impl<R: ErrorBounds> Context<R> {
                 Quadrant::Third => (-sin_r, -cos_r),
                 Quadrant::Fourth => (-cos_r, sin_r),
             };
-            ((s, sin_e + reduction_err.clone()), (c, cos_e + reduction_err))
+            Ok(((s, sin_e + reduction_err.clone()), (c, cos_e + reduction_err)))
         });
-        (Ok(s), Ok(c))
+        (s, c)
     }
 
     /// Simultaneously evaluate the sine and cosine series, returning both values and their radii.
@@ -357,7 +357,7 @@ impl<R: ErrorBounds> Context<R> {
         // unreachable exact-pole case (cos cancelling to a zero significand) by forcing a retry.
         // Skipping a hoisted pole check avoids recomputing the sin/cos series twice (once for the
         // check, once for the first Ziv attempt).
-        Ok(self.ziv(50, |guard| {
+        self.ziv(50, |guard| {
             let (work, r, quadrant, reduction_err) =
                 self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache));
             let ((sin_r, sin_e), (cos_r, cos_e)) = work.sin_cos_compute(&r);
@@ -371,7 +371,7 @@ impl<R: ErrorBounds> Context<R> {
                 // cos rounded to a zero significand at this guard (the input sits on a work-
                 // precision pole — unreachable for finite-precision x): force a retry. A higher guard
                 // makes cos representable (nonzero), yielding a large finite tan.
-                return (FBig::ZERO, FBig::ONE);
+                return Ok((FBig::ZERO, FBig::ONE));
             }
             let result = work.div(&s.repr, &c.repr).unwrap().value();
             // tan = s/c: the sin/cos radii propagate as (e_s + |tan|·e_c)/|c| plus the division
@@ -380,8 +380,8 @@ impl<R: ErrorBounds> Context<R> {
             let e_s = sin_e + reduction_err.clone();
             let e_c = cos_e + reduction_err;
             let radius = (e_s + result.clone().abs() * e_c) / c.clone().abs() + result.ulp() * 8;
-            (result, radius)
-        }))
+            Ok((result, radius))
+        })
     }
 
     /// Calculate the arcsine of the floating point representation.
@@ -411,7 +411,7 @@ impl<R: ErrorBounds> Context<R> {
             return Err(FpError::OutOfDomain);
         }
 
-        Ok(self.ziv(50, |guard| {
+        self.ziv(50, |guard| {
             let work = Context::<R>::new(self.precision + guard);
             let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
             let one = FBig::<R, B>::ONE.with_precision(work.precision).value();
@@ -429,7 +429,7 @@ impl<R: ErrorBounds> Context<R> {
                     -half_pi
                 };
                 let radius = res.ulp() * 4;
-                return (res, radius);
+                return Ok((res, radius));
             }
             // asin(x) = atan(x / sqrt(1−x²)); `atan`/`sqrt` are Ziv-correct at the working
             // precision, so the radius is just the accumulated `sqrt`+`div` rounding (well-conditioned
@@ -440,8 +440,8 @@ impl<R: ErrorBounds> Context<R> {
                 .unwrap()
                 .value();
             let radius = res.ulp() * 16;
-            (res, radius)
-        }))
+            Ok((res, radius))
+        })
     }
 
     /// Calculate the arccosine of the floating point representation.
@@ -476,7 +476,7 @@ impl<R: ErrorBounds> Context<R> {
             });
         }
 
-        Ok(self.ziv(50, |guard| {
+        self.ziv(50, |guard| {
             let work = Context::<R>::new(self.precision + guard);
             // acos(x) = π/2 − asin(x); `asin`/`pi` are Ziv-correct (or exact) at the working
             // precision. The radius covers the propagated asin/π rounding plus the subtraction,
@@ -486,8 +486,8 @@ impl<R: ErrorBounds> Context<R> {
             let res = (pi / 2u8) - &asin_x;
             let radius = asin_x.ulp().clone().with_precision(0).value() * 2
                 + res.ulp().clone().with_precision(0).value() * 4;
-            (res, radius)
-        }))
+            Ok((res, radius))
+        })
     }
 
     /// Calculate the arctangent of the floating point representation.
@@ -515,7 +515,7 @@ impl<R: ErrorBounds> Context<R> {
             return signed_zero_normal(self, x);
         }
 
-        Ok(self.ziv(50, |guard| {
+        self.ziv(50, |guard| {
             let work = Context::<R>::new(self.precision + guard);
             let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
             let sign = x_f.sign();
@@ -533,8 +533,8 @@ impl<R: ErrorBounds> Context<R> {
                 work.atan_compute(&x_abs)
             };
             let res = if sign == Sign::Negative { -res } else { res };
-            (res, radius)
-        }))
+            Ok((res, radius))
+        })
     }
 
     /// Near-correct Euler series for `atan(x)` (`|x| ≤ 1`), returning `(value, radius)`. The radius
@@ -617,7 +617,7 @@ impl<R: ErrorBounds> Context<R> {
 
         // x ≠ 0, finite: atan2 = atan(y/x) ± (quadrant π). `atan` is Ziv-correct at the working
         // precision, so the radius is the accumulated div/π-arithmetic rounding.
-        Ok(self.ziv(50, |guard| {
+        self.ziv(50, |guard| {
             let work = Context::<R>::new(self.precision + guard);
             let y_f = FBig::<R, B>::new(work.repr_round_ref(y).value(), work);
             let x_f = FBig::<R, B>::new(work.repr_round_ref(x).value(), work);
@@ -638,8 +638,8 @@ impl<R: ErrorBounds> Context<R> {
                 let radius = atan_val.ulp() * 2 + r.ulp() * 6;
                 (r, radius)
             };
-            (res, radius)
-        }))
+            Ok((res, radius))
+        })
     }
 }
 

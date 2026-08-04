@@ -19,10 +19,10 @@ use core::cmp::Ordering;
 use dashu_base::Approximation::*;
 
 use crate::{
+    error::{FpError, FpResult},
     fbig::FBig,
     repr::{Context, Repr},
     round::ErrorBounds,
-    round::Rounded,
 };
 use dashu_int::Word;
 
@@ -48,22 +48,27 @@ impl<R: ErrorBounds> Context<R> {
     /// retry loop.
     ///
     /// `approx(guard)` computes the function at working precision `self.precision + guard` and
-    /// returns `(value, error_radius)` — the value and a provable upper bound on its absolute
-    /// error, both as [`FBig`]s at the working context. The closure is expected to capture and
-    /// reborrow any [`ConstCache`](crate::ConstCache) from the enclosing scope; the driver calls
-    /// it once per attempt and grows `guard` when the result cannot be certified.
+    /// returns `Ok((value, error_radius))` — the value and a provable upper bound on its absolute
+    /// error, both as [`FBig`]s at the working context — or an [`FpError`] when the computation
+    /// over/underflows the finite range mid-attempt. The driver propagates that error immediately
+    /// (on the first overflowing attempt), so a closure that can detect overflow *as it computes*
+    /// (e.g. `powi`'s squaring chain, whose `sqr`/`mul` hit the `±isize::MAX` exponent sentinel)
+    /// need not pre-probe; a closure that cannot overflow simply never returns `Err`. The closure is
+    /// expected to capture and reborrow any [`ConstCache`](crate::ConstCache) from the enclosing
+    /// scope; the driver calls it once per attempt and grows `guard` when the result cannot be
+    /// certified.
     ///
     /// The loop preserves the [`Exact`](Rounded)/[`Inexact`](Rounded) flag from rounding the
     /// approximation to the target precision.
     pub(crate) fn ziv<const B: Word>(
         &self,
         initial_guard: usize,
-        mut approx: impl FnMut(usize) -> (FBig<R, B>, FBig<R, B>),
-    ) -> Rounded<FBig<R, B>> {
+        mut approx: impl FnMut(usize) -> Result<(FBig<R, B>, FBig<R, B>), FpError>,
+    ) -> FpResult<FBig<R, B>> {
         // Unlimited precision: the approximation is exact, so report it as-is.
         if !self.is_limited() {
-            let (value, _err) = approx(0);
-            return Exact(value);
+            let (value, _err) = approx(0)?;
+            return Ok(Exact(value));
         }
 
         let mut guard = initial_guard;
@@ -71,12 +76,12 @@ impl<R: ErrorBounds> Context<R> {
         #[cfg(all(test, feature = "std"))]
         LAST_ZIV_RETRIES.with(|c| c.set(0));
         for _ in 0..MAX_ZIV_RETRIES {
-            let (a, e) = approx(guard);
+            let (a, e) = approx(guard)?;
             // `with_precision` consumes `a`, but the containment test still needs it, so round a
             // clone and keep the original for the interval check.
             let candidate = a.clone().with_precision(self.precision);
             if Self::contained::<B>(&a.repr, &e.repr, candidate.value_ref()) {
-                return candidate;
+                return Ok(candidate);
             }
             last = Some(candidate);
 
@@ -90,24 +95,30 @@ impl<R: ErrorBounds> Context<R> {
 
         // Unreachable in practice: return the best-effort candidate from the last attempt,
         // matching the pre-Ziv near-correct behavior rather than looping forever.
-        last.expect("MAX_ZIV_RETRIES is non-zero")
+        Ok(last.expect("MAX_ZIV_RETRIES is non-zero"))
     }
 
     /// Pair variant of [`ziv`](Self::ziv) for functions that return two values (e.g. `sin_cos`,
-    /// `sinh_cosh`). `approx(guard)` returns `((v1, e1), (v2, e2))` — both values and their
-    /// provable radii at the working context, sharing whatever computation is common. The driver
-    /// certifies **both** values: it retries while *either* containment test fails, and returns
-    /// both only when both fit their rounding preimages. Shares the guard-growth loop and retry
-    /// counter with [`ziv`](Self::ziv).
+    /// `sinh_cosh`). `approx(guard)` returns `Ok(((v1, e1), (v2, e2)))` — both values and their
+    /// provable radii at the working context, sharing whatever computation is common — or an
+    /// [`FpError`], propagated to both slots as `(Err(e), Err(e))`. The driver certifies **both**
+    /// values: it retries while *either* containment test fails, and returns both only when both fit
+    /// their rounding preimages. Shares the guard-growth loop and retry counter with [`ziv`](Self::ziv).
     pub(crate) fn ziv_pair<const B: Word>(
         &self,
         initial_guard: usize,
-        mut approx: impl FnMut(usize) -> ((FBig<R, B>, FBig<R, B>), (FBig<R, B>, FBig<R, B>)),
-    ) -> (Rounded<FBig<R, B>>, Rounded<FBig<R, B>>) {
+        mut approx: impl FnMut(
+            usize,
+        )
+            -> Result<((FBig<R, B>, FBig<R, B>), (FBig<R, B>, FBig<R, B>)), FpError>,
+    ) -> (FpResult<FBig<R, B>>, FpResult<FBig<R, B>>) {
         // Unlimited precision: both approximations are exact, report them as-is.
         if !self.is_limited() {
-            let ((v1, _), (v2, _)) = approx(0);
-            return (Exact(v1), Exact(v2));
+            let ((v1, _), (v2, _)) = match approx(0) {
+                Ok(v) => v,
+                Err(e) => return (Err(e), Err(e)),
+            };
+            return (Ok(Exact(v1)), Ok(Exact(v2)));
         }
 
         let mut guard = initial_guard;
@@ -115,13 +126,16 @@ impl<R: ErrorBounds> Context<R> {
         #[cfg(all(test, feature = "std"))]
         LAST_ZIV_RETRIES.with(|c| c.set(0));
         for _ in 0..MAX_ZIV_RETRIES {
-            let ((a1, e1), (a2, e2)) = approx(guard);
+            let ((a1, e1), (a2, e2)) = match approx(guard) {
+                Ok(v) => v,
+                Err(e) => return (Err(e), Err(e)),
+            };
             let c1 = a1.clone().with_precision(self.precision);
             let c2 = a2.clone().with_precision(self.precision);
             if Self::contained::<B>(&a1.repr, &e1.repr, c1.value_ref())
                 && Self::contained::<B>(&a2.repr, &e2.repr, c2.value_ref())
             {
-                return (c1, c2);
+                return (Ok(c1), Ok(c2));
             }
             last = Some((c1, c2));
 
@@ -133,7 +147,8 @@ impl<R: ErrorBounds> Context<R> {
         }
 
         // Unreachable in practice: return the best-effort pair from the last attempt.
-        last.expect("MAX_ZIV_RETRIES is non-zero")
+        let (l1, l2) = last.expect("MAX_ZIV_RETRIES is non-zero");
+        (Ok(l1), Ok(l2))
     }
 
     /// Containment test: is the approximation's error interval `[a − e, a + e]` entirely inside
@@ -186,8 +201,8 @@ mod tests {
     fn ziv_accepts_exact_first_attempt() {
         let ctx: Context<mode::HalfEven> = Context::new(10);
         LAST_ZIV_RETRIES.with(|c| c.set(usize::MAX));
-        let r = ctx.ziv(4, |_| (F::ONE, F::ZERO));
-        assert!(matches!(r, Exact(_)));
+        let r = ctx.ziv(4, |_| Ok((F::ONE, F::ZERO)));
+        assert!(matches!(r, Ok(Exact(_))));
         assert_eq!(LAST_ZIV_RETRIES.with(|c| c.get()), 0);
     }
 
@@ -198,9 +213,9 @@ mod tests {
         let ctx: Context<mode::HalfEven> = Context::new(4);
         let r = ctx.ziv(2, |guard| {
             // value 1.0, radius 2^(-guard): large on the first attempt, tiny later.
-            (F::ONE, F::ONE >> guard as isize)
+            Ok((F::ONE, F::ONE >> guard as isize))
         });
-        let _ = r.value();
+        let _ = r.unwrap().value();
         assert!(LAST_ZIV_RETRIES.with(|c| c.get()) >= 1);
     }
 
@@ -209,9 +224,17 @@ mod tests {
     fn ziv_unlimited_short_circuits() {
         let ctx: Context<mode::HalfEven> = Context::new(0);
         LAST_ZIV_RETRIES.with(|c| c.set(usize::MAX));
-        let r = ctx.ziv(4, |_| (F::from(7u8), F::ZERO));
-        assert!(matches!(r, Exact(_)));
+        let r = ctx.ziv(4, |_| Ok((F::from(7u8), F::ZERO)));
+        assert!(matches!(r, Ok(Exact(_))));
         assert_eq!(LAST_ZIV_RETRIES.with(|c| c.get()), usize::MAX);
+    }
+
+    // A closure that overflows on the first attempt propagates the error immediately (no retries).
+    #[test]
+    fn ziv_propagates_closure_error() {
+        let ctx: Context<mode::HalfEven> = Context::new(10);
+        let r = ctx.ziv::<2>(4, |_| Err(FpError::OutOfDomain));
+        assert_eq!(r, Err(FpError::OutOfDomain));
     }
 
     // ziv_pair accepts an exact pair (both radii 0) on the first attempt.
@@ -219,9 +242,9 @@ mod tests {
     fn ziv_pair_accepts_exact_first_attempt() {
         let ctx: Context<mode::HalfEven> = Context::new(10);
         LAST_ZIV_RETRIES.with(|c| c.set(usize::MAX));
-        let (r1, r2) = ctx.ziv_pair(4, |_| ((F::ONE, F::ZERO), (F::from(2u8), F::ZERO)));
-        assert!(matches!(r1, Exact(_)));
-        assert!(matches!(r2, Exact(_)));
+        let (r1, r2) = ctx.ziv_pair(4, |_| Ok(((F::ONE, F::ZERO), (F::from(2u8), F::ZERO))));
+        assert!(matches!(r1, Ok(Exact(_))));
+        assert!(matches!(r2, Ok(Exact(_))));
         assert_eq!(LAST_ZIV_RETRIES.with(|c| c.get()), 0);
     }
 
@@ -232,10 +255,19 @@ mod tests {
         let ctx: Context<mode::HalfEven> = Context::new(4);
         let (r1, r2) = ctx.ziv_pair(2, |guard| {
             let radius = F::ONE >> guard as isize;
-            ((F::ONE, F::ZERO), (F::ONE, radius))
+            Ok(((F::ONE, F::ZERO), (F::ONE, radius)))
         });
-        let _ = (r1.value(), r2.value());
+        let _ = (r1.unwrap().value(), r2.unwrap().value());
         assert!(LAST_ZIV_RETRIES.with(|c| c.get()) >= 1);
+    }
+
+    // ziv_pair propagates a closure error to *both* slots on the first overflowing attempt.
+    #[test]
+    fn ziv_pair_propagates_closure_error() {
+        let ctx: Context<mode::HalfEven> = Context::new(10);
+        let (r1, r2) = ctx.ziv_pair::<2>(4, |_| Err(FpError::OutOfDomain));
+        assert_eq!(r1, Err(FpError::OutOfDomain));
+        assert_eq!(r2, Err(FpError::OutOfDomain));
     }
 
     // The guard-digit heuristic should let exp/ln converge in at most one retry for typical

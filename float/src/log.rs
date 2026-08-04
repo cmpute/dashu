@@ -11,7 +11,7 @@ use crate::{
     fbig::FBig,
     math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr, Word},
-    round::{mode, ErrorBounds, Round, Rounded},
+    round::{mode, ErrorBounds, Round},
 };
 use core::cmp::Ordering;
 
@@ -365,7 +365,7 @@ impl<R: ErrorBounds> Context<R> {
         if x.sign() == Sign::Negative {
             return Err(FpError::OutOfDomain);
         }
-        Ok(self.ln_internal(x, false, cache))
+        self.ln_internal(x, false, cache)
     }
 
     /// Calculate the natural logarithm function (`log(x+1)`) on the float number under this context.
@@ -401,7 +401,7 @@ impl<R: ErrorBounds> Context<R> {
                 _ => {}
             }
         }
-        Ok(self.ln_internal(x, true, cache))
+        self.ln_internal(x, true, cache)
     }
 
     fn ln_internal<const B: Word>(
@@ -409,14 +409,14 @@ impl<R: ErrorBounds> Context<R> {
         x: &Repr<B>,
         one_plus: bool,
         mut cache: Option<&mut ConstCache>,
-    ) -> Rounded<FBig<R, B>> {
+    ) -> FpResult<FBig<R, B>> {
         assert_finite(x);
 
         // Exact special cases first: they need no rounding, so a precision-0 (unlimited)
         // value such as `FBig::ONE` or the one from `try_from(0.0)` must still resolve
         // ln/ln_1p exactly rather than tripping the limited-precision assertion below.
         if !one_plus && x.is_one() {
-            return Exact(FBig::ZERO); // ln(1) = +0
+            return Ok(Exact(FBig::ZERO)); // ln(1) = +0
         }
         if one_plus && x.significand.is_zero() {
             // ln_1p(±0) = ±0
@@ -425,7 +425,7 @@ impl<R: ErrorBounds> Context<R> {
             } else {
                 FBig::ZERO
             };
-            return Exact(zero);
+            return Ok(Exact(zero));
         }
 
         assert_limited_precision(self.precision);
@@ -438,7 +438,12 @@ impl<R: ErrorBounds> Context<R> {
         // needed for the first attempt to clear the half-ulp preimage at typical precisions.)
         let base_guard = self.base_guard_digits::<B>() + 2;
         self.ziv(base_guard + one_plus as usize, |guard| {
-            self.ln_compute::<B>(x, self.precision + guard, one_plus, reborrow_cache(&mut cache))
+            Ok(self.ln_compute::<B>(
+                x,
+                self.precision + guard,
+                one_plus,
+                reborrow_cache(&mut cache),
+            ))
         })
     }
 
@@ -482,20 +487,20 @@ impl<R: ErrorBounds> Context<R> {
         if x.sign() == Sign::Negative {
             return Err(FpError::OutOfDomain);
         }
-        Ok(self.log2_internal(x, cache))
+        self.log2_internal(x, cache)
     }
 
     fn log2_internal<const B: Word>(
         &self,
         x: &Repr<B>,
         mut cache: Option<&mut ConstCache>,
-    ) -> Rounded<FBig<R, B>> {
+    ) -> FpResult<FBig<R, B>> {
         assert_finite(x);
 
         // Exact shortcuts first — they also cover unlimited precision, which the Ziv loop below
         // rejects via its limited-precision assertion.
         if x.is_one() {
-            return Exact(FBig::ZERO); // log2(1) = +0
+            return Ok(Exact(FBig::ZERO)); // log2(1) = +0
         }
 
         // Exact power-of-two shortcut: if x = 2^k for an integer k, log2(x) = k. This is *required*
@@ -512,7 +517,7 @@ impl<R: ErrorBounds> Context<R> {
             let m = mag.trailing_zeros().unwrap(); // = log2(significand)
             let log2_b = B.trailing_zeros() as isize;
             let k = IBig::from(m) + IBig::from(x.exponent) * IBig::from(log2_b);
-            return self.convert_int::<B>(k);
+            return Ok(self.convert_int::<B>(k));
         }
 
         assert_limited_precision(self.precision);
@@ -580,7 +585,7 @@ impl<R: ErrorBounds> Context<R> {
             let span = FBig::new(hi.repr.clone(), unlim) - FBig::new(lo.repr.clone(), unlim);
             let ulp_w = value.ulp().with_precision(0).value();
             let radius = span + ulp_w;
-            (value, radius)
+            Ok((value, radius))
         })
     }
 }
