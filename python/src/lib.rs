@@ -37,6 +37,8 @@ fn dashu(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(utils::autos, m)?)?;
     m.add_function(wrap_pyfunction!(utils::get_precision, m)?)?;
     m.add_function(wrap_pyfunction!(utils::set_precision, m)?)?;
+    m.add_function(wrap_pyfunction!(utils::ziv_retries, m)?)?;
+    m.add_function(wrap_pyfunction!(utils::ziv_retries_reset, m)?)?;
 
     // module-level math functions
     m.add_function(wrap_pyfunction!(math::sin, m)?)?;

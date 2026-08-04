@@ -19,7 +19,7 @@ all-features = true
 [dependencies]
 dashu-base = { version = "0.6.0-rc.1", path = "../base", features = ["std"] }
 dashu-int = { version = "0.6.0-rc.1", path = "../integer", features = ["std", "num-order"] }
-dashu-float = { version = "0.6.0-rc.1", path = "../float", features = ["std", "num-order"] }
+dashu-float = { version = "0.6.0-rc.1", path = "../float", features = ["std", "num-order", "profiling"] }
 dashu-ratio = { version = "0.6.0-rc.1", path = "../rational", features = ["std", "num-order", "dashu-float"] }
 dashu-cmplx = { version = "0.6.0-rc.1", path = "../complex", features = ["std", "num-order"] }
 num-order = "1.2.0"

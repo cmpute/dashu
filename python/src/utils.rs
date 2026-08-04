@@ -45,6 +45,20 @@ pub fn set_precision(precision: usize) -> PyResult<usize> {
     Ok(DEFAULT_PRECISION.swap(precision, Ordering::Relaxed))
 }
 
+/// Number of *extra* Ziv attempts beyond the first in the most recent transcendental call
+/// (0 = first-attempt success). A profiling aid: measure how tight each function's error-radius
+/// bound is at a given target precision.
+#[pyfunction]
+pub fn ziv_retries() -> usize {
+    dashu_float::ziv_retries()
+}
+
+/// Reset the Ziv retry counter to 0 before a measurement.
+#[pyfunction]
+pub fn ziv_retries_reset() {
+    dashu_float::ziv_retries_reset();
+}
+
 /// Convert input automatically to corresponding dashu type:
 /// (int -> UBig/IBig, float -> FBig, decimal -> DBig, fraction -> RBig)
 #[pyfunction]

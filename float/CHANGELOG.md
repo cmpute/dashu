@@ -39,6 +39,13 @@
   (the `exp(y·ln x)` amplification bound is tighter than the composed chain's). Public behavior
   is unchanged and validated against the same oracle/fuzz nets.
 
+### Add
+- **`profiling` feature + `ziv_retries()`/`ziv_retries_reset()`.** Exposes the per-Ziv-loop retry
+  counter (extra attempts beyond the first) for profiling how tight each transcendental's
+  error-radius bound is at a given target precision. Implies `std` (the counter is a
+  `thread_local`). Used by the dashu-python `ziv_retries`/`ziv_retries_reset` bindings and the
+  `python/scripts/ziv_profile.py` script.
+
 ### Fix
 - **`powf` of a base `< 1` no longer hangs in the Ziv loop.** `ln_compute`'s s<0 reduction
   (`x·2^|s|` scaling before the cancelled `ln(x_scaled) + s·ln(B)` reconstruction) inflated the

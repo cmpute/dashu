@@ -38,9 +38,39 @@ const MAX_ZIV_RETRIES: usize = 32;
 // A test-only retry counter, so tests can assert the loop converges on the first attempt for
 // typical inputs (validating that the guard-digit heuristic wasn't over-tightened). Reads as
 // the number of *extra* attempts beyond the first, i.e. `0` means first-attempt success.
-#[cfg(all(test, feature = "std"))]
+#[cfg(any(all(test, feature = "std"), feature = "profiling"))]
 thread_local! {
     pub(crate) static LAST_ZIV_RETRIES: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
+}
+
+// Reset/bump the retry counter, with no-op fallbacks when the `profiling` feature (or test mode)
+// is absent — the Ziv loop body stays clean.
+#[cfg(any(all(test, feature = "std"), feature = "profiling"))]
+fn ziv_retries_reset_impl() {
+    LAST_ZIV_RETRIES.with(|c| c.set(0));
+}
+#[cfg(not(any(all(test, feature = "std"), feature = "profiling")))]
+fn ziv_retries_reset_impl() {}
+
+#[cfg(any(all(test, feature = "std"), feature = "profiling"))]
+fn ziv_retries_bump() {
+    LAST_ZIV_RETRIES.with(|c| c.set(c.get().saturating_add(1)));
+}
+#[cfg(not(any(all(test, feature = "std"), feature = "profiling")))]
+fn ziv_retries_bump() {}
+
+/// Number of *extra* Ziv attempts beyond the first in the most recent Ziv loop (0 = first-attempt
+/// success). Profiling only — available when the `profiling` feature (or `cfg(test)`) is enabled.
+#[cfg(any(all(test, feature = "std"), feature = "profiling"))]
+pub fn ziv_retries() -> usize {
+    LAST_ZIV_RETRIES.with(|c| c.get())
+}
+
+/// Reset the retry counter to 0 (before a measurement, so exact short-circuits that never enter a
+/// Ziv loop report 0 rather than the previous call's count).
+#[cfg(any(all(test, feature = "std"), feature = "profiling"))]
+pub fn ziv_retries_reset() {
+    ziv_retries_reset_impl();
 }
 
 impl<R: ErrorBounds> Context<R> {
@@ -73,8 +103,7 @@ impl<R: ErrorBounds> Context<R> {
 
         let mut guard = initial_guard;
         let mut last = None;
-        #[cfg(all(test, feature = "std"))]
-        LAST_ZIV_RETRIES.with(|c| c.set(0));
+        ziv_retries_reset_impl();
         for _ in 0..MAX_ZIV_RETRIES {
             let (a, e) = approx(guard)?;
             // `with_precision` consumes `a`, but the containment test still needs it, so round a
@@ -89,8 +118,7 @@ impl<R: ErrorBounds> Context<R> {
             // the first attempt (with the heuristic guard) handles the common case.
             let step = core::cmp::max(guard, self.precision / 2).max(1);
             guard += step;
-            #[cfg(all(test, feature = "std"))]
-            LAST_ZIV_RETRIES.with(|c| c.set(c.get() + 1));
+            ziv_retries_bump();
         }
 
         // Unreachable in practice: return the best-effort candidate from the last attempt,
@@ -123,8 +151,7 @@ impl<R: ErrorBounds> Context<R> {
 
         let mut guard = initial_guard;
         let mut last = None;
-        #[cfg(all(test, feature = "std"))]
-        LAST_ZIV_RETRIES.with(|c| c.set(0));
+        ziv_retries_reset_impl();
         for _ in 0..MAX_ZIV_RETRIES {
             let ((a1, e1), (a2, e2)) = match approx(guard) {
                 Ok(v) => v,
@@ -142,8 +169,7 @@ impl<R: ErrorBounds> Context<R> {
             // Grow the guard aggressively so a near-tie resolves in a couple of retries.
             let step = core::cmp::max(guard, self.precision / 2).max(1);
             guard += step;
-            #[cfg(all(test, feature = "std"))]
-            LAST_ZIV_RETRIES.with(|c| c.set(c.get() + 1));
+            ziv_retries_bump();
         }
 
         // Unreachable in practice: return the best-effort pair from the last attempt.
@@ -189,7 +215,7 @@ impl<R: ErrorBounds> Context<R> {
     }
 }
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::round::mode;
