@@ -74,6 +74,44 @@ pub fn shr_digits<const B: Word>(value: &IBig, exp: usize) -> IBig {
     }
 }
 
+/// Ceiling right shift: `⌈value / B^exp⌉` (round toward +∞), the ceiling analog of
+/// [`shr_digits`].
+///
+/// For a non-negative `value` this is `⌊value/B^exp⌋ + (value mod B^exp ≠ 0)`; a non-positive
+/// `value` delegates to [`shr_digits`] (truncation toward zero is already a ceiling for
+/// negatives). Power-of-two bases need only a shift plus the position of the lowest set bit —
+/// no `B^exp` is materialized. The base-10 path uses `⌈⌈x/2^k⌉/5^k⌉ = ⌈x/10^k⌉` (the identity
+/// `⌈⌈x/a⌉/b⌉ = ⌈x/(ab)⌉`), the same radix-factor trick as [`shr_digits`].
+#[inline]
+pub fn shr_digits_ceil<const B: Word>(value: &IBig, exp: usize) -> IBig {
+    if exp == 0 || value.sign() != Sign::Positive {
+        return shr_digits::<B>(value, exp);
+    }
+
+    match B {
+        2 => {
+            let round_up = value.trailing_zeros().map_or(false, |t| t < exp);
+            shr_ref(value, exp) + round_up as usize
+        }
+        10 => {
+            let q =
+                shr_ref(value, exp) + (value.trailing_zeros().map_or(false, |t| t < exp)) as usize;
+            let p5 = IBig::from(5).pow(exp);
+            (q + &p5 - IBig::ONE) / p5
+        }
+        b if b.is_power_of_two() => {
+            let bits = exp * b.trailing_zeros() as usize;
+            let round_up = value.trailing_zeros().map_or(false, |t| t < bits);
+            shr_ref(value, bits) + round_up as usize
+        }
+        _ => {
+            let base = base_as_ibig::<B>();
+            let d = base.pow(exp);
+            (value.clone() + &d - IBig::ONE) / d
+        }
+    }
+}
+
 /// Equivalent to value.unsigned_abs().split_bits(n), but returns (hi, lo) and preserving the sign
 fn split_bits(value: IBig, n: usize) -> (IBig, IBig) {
     let (sign, mag) = value.into_parts();
@@ -210,6 +248,29 @@ mod tests {
         assert_eq!(-shr_ref(&a, 10), (&a).abs() >> 10);
         assert_eq!(-shr_ref(&a, 100), (&a).abs() >> 100);
         assert_eq!(-shr_ref(&a, 1000), (&a).abs() >> 1000);
+    }
+
+    #[test]
+    fn test_shr_digits_ceil() {
+        // Binary.
+        assert_eq!(shr_digits_ceil::<2>(&IBig::from(7), 1), IBig::from(4)); // ⌈3.5⌉
+        assert_eq!(shr_digits_ceil::<2>(&IBig::from(8), 1), IBig::from(4)); // exact
+        assert_eq!(shr_digits_ceil::<2>(&IBig::from(1), 3), IBig::from(1)); // ⌈1/8⌉
+        assert_eq!(shr_digits_ceil::<2>(&IBig::ZERO, 5), IBig::ZERO);
+        assert_eq!(shr_digits_ceil::<2>(&IBig::from(-7), 1), IBig::from(-3)); // ⌈-3.5⌉
+                                                                              // Decimal: the 5^k radix-factor path.
+        assert_eq!(shr_digits_ceil::<10>(&IBig::from(21), 1), IBig::from(3)); // ⌈2.1⌉
+        assert_eq!(shr_digits_ceil::<10>(&IBig::from(20), 1), IBig::from(2)); // exact
+        assert_eq!(shr_digits_ceil::<10>(&IBig::from(199), 2), IBig::from(2)); // ⌈1.99⌉
+        assert_eq!(shr_digits_ceil::<10>(&IBig::from(100), 2), IBig::from(1));
+        assert_eq!(shr_digits_ceil::<10>(&IBig::from(-21), 1), IBig::from(-2)); // ⌈-2.1⌉
+                                                                                // Power-of-two base other than 2.
+        assert_eq!(shr_digits_ceil::<8>(&IBig::from(65), 1), IBig::from(9)); // ⌈65/8⌉
+        assert_eq!(shr_digits_ceil::<8>(&IBig::from(64), 1), IBig::from(8)); // exact
+                                                                             // Generic base.
+        assert_eq!(shr_digits_ceil::<7>(&IBig::from(50), 1), IBig::from(8)); // ⌈50/7⌉
+        assert_eq!(shr_digits_ceil::<7>(&IBig::from(49), 1), IBig::from(7)); // exact
+        assert_eq!(shr_digits_ceil::<7>(&IBig::from(50), 0), IBig::from(50)); // exp 0
     }
 
     #[test]

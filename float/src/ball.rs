@@ -17,26 +17,36 @@
 //! precision far coarser than the work ulp, so the intermediate mode is immaterial to the final
 //! correct rounding.
 
-use dashu_base::Abs;
+use dashu_base::{Abs, EstimatedLog2};
 use dashu_int::IBig;
 
 use crate::{
     fbig::FBig,
     repr::{Context, Repr, Word},
     round::mode,
+    utils::{shl_digits, shr_digits_ceil},
 };
 
 /// `x · B^exp` when `exp ≥ 0`; `⌈x / B^(−exp)⌉` when `exp < 0`.
 ///
 /// The rounding is always *up* (never down), keeping the result a sound upper bound for the
-/// underlying rational — the propagation rules below rely on this monotonicity.
+/// underlying rational — the propagation rules below rely on this monotonicity. Both directions
+/// delegate to the shared radix-shift primitives ([`shl_digits`](crate::utils::shl_digits),
+/// [`shr_digits_ceil`](crate::utils::shr_digits_ceil)).
 #[inline]
 fn ceil_shift<const B: Word>(x: IBig, exp: isize) -> IBig {
     if exp >= 0 {
-        x * Repr::<B>::BASE.pow(exp as usize)
+        // `x·B^exp` is the shared "multiply by a radix power" primitive (fast path for power-of-two
+        // bases, `(x·5^k)<<k` for base 10).
+        shl_digits::<B>(&x, exp as usize)
     } else {
-        let d = Repr::<B>::BASE.pow((-exp) as usize);
-        (x + &d - IBig::ONE) / d
+        // Small numerator: x < 2^k ≤ B^k ⇒ ⌈x/B^k⌉ = 1 (the common series-tail case), avoiding
+        // the shift/division inside the shared primitive.
+        let k = (-exp) as usize;
+        if !x.is_zero() && x.log2_bounds().1 <= k as f32 {
+            return IBig::ONE;
+        }
+        shr_digits_ceil::<B>(&x, k)
     }
 }
 
@@ -52,9 +62,12 @@ pub(crate) struct Ball<const B: Word> {
 
 impl<const B: Word> Ball<B> {
     /// Leading digit position `E = exponent + digits`, so `ulp(mid) = B^(E − precision)`.
+    ///
+    /// Uses the cheap `digits_ub` (over-estimate): `E` appears only as a *positive* contribution
+    /// to error exponents, so an inflated `E` only loosens (never tightens) a radius.
     #[inline]
     fn lead_exp(mid: &FBig<mode::HalfEven, B>) -> isize {
-        mid.repr().exponent + mid.repr().digits() as isize
+        mid.repr().exponent + mid.repr().digits_ub() as isize
     }
 
     /// Wrap an exactly-represented value (n = 0).
@@ -114,12 +127,13 @@ impl<const B: Word> Ball<B> {
     /// `δ = err / |mid| = n·B^(d − p) / sig` (in base-`B` significand terms).
     fn rel_err(&self) -> (IBig, IBig) {
         let p = self.mid.precision();
-        let d = self.mid.repr().digits();
+        // `digits_ub`: an over-estimated digit count only inflates δ (a positive contribution).
+        let d = self.mid.repr().digits_ub();
         let sig = self.mid.repr().significand.clone().abs();
         if d >= p {
-            (self.n.clone() * Repr::<B>::BASE.pow(d - p), sig)
+            (shl_digits::<B>(&self.n, d - p), sig)
         } else {
-            (self.n.clone(), sig * Repr::<B>::BASE.pow(p - d))
+            (self.n.clone(), shl_digits::<B>(&sig, p - d))
         }
     }
 
@@ -141,17 +155,20 @@ impl<const B: Word> Ball<B> {
             // n_r·ulp_r ≥ 2·n_a·B^(E(a)−p_a) / (sig_b·B^(e_b))  with ulp_r = B^(E(r)−p_r)
             let exp = Self::lead_exp(&self.mid) - e_b - e_r + p_r as isize
                 - self.mid.precision() as isize;
+            let n2 = 2 * &self.n;
             let (num, den) = if exp >= 0 {
-                (2 * &self.n * Repr::<B>::BASE.pow(exp as usize), sig_b)
+                (shl_digits::<B>(&n2, exp as usize), sig_b)
             } else {
-                (2 * &self.n, sig_b * Repr::<B>::BASE.pow((-exp) as usize))
+                (n2, shl_digits::<B>(&sig_b, (-exp) as usize))
             };
             let n = (num + &den - IBig::ONE) / den;
             return Self { mid, n };
         }
 
         let p = mid.precision();
-        let d_r = mid.repr().digits();
+        // `digits_lb`: here `d_r` is *subtracted* (`B^(p−d_r)`), so an under-estimate only
+        // inflates `m` — the safe direction.
+        let d_r = mid.repr().digits_lb();
         let sig_r = mid.repr().significand.clone().abs();
 
         let (da_num, da_den) = self.rel_err();
@@ -160,9 +177,9 @@ impl<const B: Word> Ball<B> {
 
         // |q|/ulp_r ≤ sig_r·B^(p−d_r) + 1 (the +1 covers the midpoint's half-ulp rounding).
         let m = if p >= d_r {
-            sig_r * Repr::<B>::BASE.pow(p - d_r) + IBig::ONE
+            shl_digits::<B>(&sig_r, p - d_r) + IBig::ONE
         } else {
-            let d = Repr::<B>::BASE.pow(d_r - p);
+            let d = shl_digits::<B>(&IBig::ONE, d_r - p);
             (sig_r + &d - IBig::ONE) / d + IBig::ONE
         };
         // S = (δa+δb)/(1−δb) = (da_num·db_den + db_num·da_den) / (da_den·(db_den − db_num)).
@@ -174,9 +191,26 @@ impl<const B: Word> Ball<B> {
     }
 
     /// `self / k` with `k` an exact integer.
+    ///
+    /// The exact divisor shrinks the error by exactly `k`: `err_r ≤ err_a/k + ½·ulp_r`, so
+    /// `n_r = ⌈n_a·B^(E_a−E_r+p_r−p_a)/k⌉ + 1`. This avoids the general [`div`](Self::div)'s
+    /// big-int rational division (O(p²) — which would dominate the FBig division by a small
+    /// integer and is the series' hot path).
+    /// `self / k` with `k` an exact (possibly large) integer.
+    pub(crate) fn div_exact(&self, k: &IBig) -> Self {
+        let mid = &self.mid / &FBig::<mode::HalfEven, B>::from(k.clone());
+        let (e_r, p_r) = (Self::lead_exp(&mid), mid.precision());
+        let shift = Self::lead_exp(&self.mid) - e_r + p_r as isize - self.mid.precision() as isize;
+        // n_r = ⌈n_a·B^shift / k⌉ + 1  (ceil_shift already rounds up, so the /k re-round is sound).
+        let num = ceil_shift::<B>(self.n.clone(), shift);
+        let n = (num + k - IBig::ONE) / k + IBig::ONE;
+        Self { mid, n }
+    }
+
+    /// `self / k` with `k` a small exact integer (the series hot path).
+    #[inline]
     pub(crate) fn div_int(&self, k: usize) -> Self {
-        let k = Self::exact_int(self.mid.precision(), IBig::from(k));
-        self.div(&k)
+        self.div_exact(&IBig::from(k))
     }
 
     /// `self · rhs`, rounding the midpoint to the working precision.
@@ -185,18 +219,18 @@ impl<const B: Word> Ball<B> {
         let (e_r, p_r) = (Self::lead_exp(&mid), mid.precision());
         let e_a = self.mid.repr().exponent;
         let e_b = rhs.mid.repr().exponent;
-        let sig_a = self.mid.repr().significand.clone().abs();
-        let sig_b = rhs.mid.repr().significand.clone().abs();
         let p_a = self.mid.precision();
         let p_b = rhs.mid.precision();
 
         // |mid_r − true| ≤ err_a·|b.mid| + err_b·|a.mid| + err_a·err_b + ½·ulp_r, in ulps of r:
+        // The `|n · sig|` products avoid cloning the operand significands (n ≥ 0, so the product's
+        // sign is the significand's and `.abs()` is a no-op for positive values).
         let t1 = ceil_shift::<B>(
-            &self.n * sig_b,
+            (self.n.clone() * &rhs.mid.repr().significand).abs(),
             Self::lead_exp(&self.mid) + e_b - e_r + p_r as isize - p_a as isize,
         );
         let t2 = ceil_shift::<B>(
-            &rhs.n * sig_a,
+            (rhs.n.clone() * &self.mid.repr().significand).abs(),
             Self::lead_exp(&rhs.mid) + e_a - e_r + p_r as isize - p_b as isize,
         );
         let t3 = ceil_shift::<B>(
@@ -239,7 +273,7 @@ impl<const B: Word> Ball<B> {
     /// so the error count scales by `B^delta`.
     pub(crate) fn rescale_precision(&mut self, delta: usize) {
         if delta > 0 {
-            self.n *= Repr::<B>::BASE.pow(delta);
+            self.n = shl_digits::<B>(&self.n, delta);
             self.mid = FBig::new(
                 self.mid.repr().clone(),
                 Context::<mode::HalfEven>::new(self.mid.precision() + delta),

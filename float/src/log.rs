@@ -263,10 +263,8 @@ impl<R: Round> Context<R> {
             let x_scaled = if B == 2 {
                 x_ball.shift(s) // exact (power-of-base shift)
             } else if s > 0 {
-                x_ball.div(&Ball::with_error(
-                    FBig::from(IBig::ONE << s as usize), // exact 2^s
-                    IBig::ZERO,
-                ))
+                // Exact divisor 2^s: the error shrinks by it directly (no general-division rational).
+                x_ball.div_exact(&(IBig::ONE << s as usize))
             } else {
                 x_ball.scale_int(&(IBig::ONE << (-s) as usize))
             };

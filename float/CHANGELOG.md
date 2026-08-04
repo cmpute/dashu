@@ -12,6 +12,19 @@
   precision-aware (an operand that over-delivers its context, e.g. the uncached `ln(2)` constant,
   has its error converted correctly to the result's ulp). Public behavior is unchanged and
   validated against a high-precision oracle and against `rug`/MPFR (bit-exact).
+  - **Performance parity is preserved.** The Ball overhead is kept near the legacy cost: `lead_exp`
+    uses the cheap `digits_ub`/`digits_lb` bounds (never the exact digit count), every `·B^exp`
+    power computation goes through the shared `shl_digits` primitive and every `⌈x/B^k⌉` through
+    the new `shr_digits_ceil` (bit shifts for power-of-two bases, the `(x·5^k)<<k` radix-factor
+    trick for base 10 — no `B^k` materialization or `O(p²)` division), the multiply
+    avoids cloning significands, and
+    division by any exact integer (`div_exact`, used for the series hot path `div_int` and the
+    `x/2^s` reduction) shrinks the error by `k` directly instead of running the general rational
+    division. The general `div` is retained only where the divisor is itself approximate (the
+    `(x−1)/(x+1)` series reduction and the `ln(x)/ln(2)` quotient), each O(1) per call.
+    Benchmarked `ln`/`exp` (`cargo bench -p dashu-float --bench exp`) are at parity with the
+    pre-Ball implementation at large precisions (10⁴ bits) and within ~1.4× at 10³ bits; the
+    residual gap is the fixed per-operation overhead at small precisions.
 
 ## 0.6.0-rc.2
 
