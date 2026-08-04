@@ -21,6 +21,26 @@ macro_rules! math_trans {
     };
 }
 
+/// Transcendental pair returning `(f, g)` (e.g. `sin_cos`), sharing one Ziv loop.
+macro_rules! math_trans_pair {
+    ($name:ident, $ctx_method:ident) => {
+        #[pyfunction]
+        pub fn $name(x: UniInput<'_>) -> PyResult<(FPy, FPy)> {
+            let x = x.into_fpy()?;
+            let ctx = x.0.context();
+            let res = with_cache(|c| ctx.$ctx_method(x.0.repr(), Some(c)));
+            let (a, b) = res;
+            Ok((
+                FPy(unwrap_float(a, ctx)?),
+                FPy(unwrap_float(b, ctx)?),
+            ))
+        }
+    };
+}
+
+math_trans_pair!(sin_cos, sin_cos);
+math_trans_pair!(sinh_cosh, sinh_cosh);
+
 /// Algebraic root taking one float operand, no cache.
 macro_rules! math_root {
     ($name:ident, $ctx_method:ident) => {
@@ -57,6 +77,7 @@ math_trans!(ln_1p, ln_1p);
 // `log`/`log1p` are aliases for `ln`/`ln_1p`.
 math_trans!(log, ln);
 math_trans!(log1p, ln_1p);
+math_trans!(log2, log2);
 
 // Roots (algebraic — no cache)
 math_root!(sqrt, sqrt);

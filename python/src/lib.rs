@@ -47,6 +47,8 @@ fn dashu(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(math::asin, m)?)?;
     m.add_function(wrap_pyfunction!(math::acos, m)?)?;
     m.add_function(wrap_pyfunction!(math::atan, m)?)?;
+    m.add_function(wrap_pyfunction!(math::sin_cos, m)?)?;
+    m.add_function(wrap_pyfunction!(math::sinh_cosh, m)?)?;
     m.add_function(wrap_pyfunction!(math::atan2, m)?)?;
     m.add_function(wrap_pyfunction!(math::sinh, m)?)?;
     m.add_function(wrap_pyfunction!(math::cosh, m)?)?;
@@ -58,6 +60,7 @@ fn dashu(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(math::expm1, m)?)?;
     m.add_function(wrap_pyfunction!(math::log, m)?)?;
     m.add_function(wrap_pyfunction!(math::log1p, m)?)?;
+    m.add_function(wrap_pyfunction!(math::log2, m)?)?;
     m.add_function(wrap_pyfunction!(math::ln, m)?)?;
     m.add_function(wrap_pyfunction!(math::ln_1p, m)?)?;
     m.add_function(wrap_pyfunction!(math::sqrt, m)?)?;

@@ -328,11 +328,21 @@ impl FPy {
         let res = with_cache(|c| ctx.atan2(self.0.repr(), x.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))
     }
+    fn sin_cos(&self) -> PyResult<(Self, Self)> {
+        let ctx = self.0.context();
+        let (s, c) = with_cache(|cache| ctx.sin_cos(self.0.repr(), Some(cache)));
+        Ok((Self(unwrap_float(s, ctx)?), Self(unwrap_float(c, ctx)?)))
+    }
+    fn sinh_cosh(&self) -> PyResult<(Self, Self)> {
+        let ctx = self.0.context();
+        let (s, c) = with_cache(|cache| ctx.sinh_cosh(self.0.repr(), Some(cache)));
+        Ok((Self(unwrap_float(s, ctx)?), Self(unwrap_float(c, ctx)?)))
+    }
 }
 
 impl_float_math!(
     FPy, sin, cos, tan, asin, acos, atan, sinh, cosh, tanh, asinh, acosh, atanh, exp, exp_m1, ln,
-    ln_1p,
+    ln_1p, log2,
 );
 
 #[pymethods]
@@ -558,9 +568,19 @@ impl DPy {
         let res = with_cache(|c| ctx.atan2(self.0.repr(), x.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))
     }
+    fn sin_cos(&self) -> PyResult<(Self, Self)> {
+        let ctx = self.0.context();
+        let (s, c) = with_cache(|cache| ctx.sin_cos(self.0.repr(), Some(cache)));
+        Ok((Self(unwrap_float(s, ctx)?), Self(unwrap_float(c, ctx)?)))
+    }
+    fn sinh_cosh(&self) -> PyResult<(Self, Self)> {
+        let ctx = self.0.context();
+        let (s, c) = with_cache(|cache| ctx.sinh_cosh(self.0.repr(), Some(cache)));
+        Ok((Self(unwrap_float(s, ctx)?), Self(unwrap_float(c, ctx)?)))
+    }
 }
 
 impl_float_math!(
     DPy, sin, cos, tan, asin, acos, atan, sinh, cosh, tanh, asinh, acosh, atanh, exp, exp_m1, ln,
-    ln_1p,
+    ln_1p, log2,
 );
