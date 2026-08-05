@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Change
+- **(breaking) `RBig::pow` / `Relaxed::pow` now take an `isize` exponent** (was `usize`).
+  Negative exponents reciprocate first — `x.pow(-n) == 1 / x.pow(n)` for a nonzero `x`, matching
+  `powf` on the floats — and a zero base raised to a negative power panics with divide-by-zero.
+  Non-negative exponents behave exactly as before, so only call sites that pass a `usize` variable
+  (rather than a literal) need an `as isize` cast. The previously private `pow_signed` kernel is
+  folded into `pow`; the `num_traits::Pow<usize>` impl (delegating with a cast) and
+  `Pow<isize>` (delegating directly) both remain.
+
 ## 0.6.0-rc.1
 
 ### Change

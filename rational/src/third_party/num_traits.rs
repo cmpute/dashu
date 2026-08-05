@@ -78,32 +78,33 @@ macro_rules! impl_num_traits {
             type Output = $t;
             #[inline]
             fn pow(self, rhs: usize) -> $t {
-                <$t>::pow(&self, rhs)
+                // A `usize` exponent is non-negative, so it maps directly onto
+                // the `isize` signature. (A `usize` beyond `isize::MAX` wraps —
+                // an unrealistic pow exponent.)
+                <$t>::pow(&self, rhs as isize)
             }
         }
         impl num_traits::Pow<usize> for &$t {
             type Output = $t;
             #[inline]
             fn pow(self, rhs: usize) -> $t {
-                <$t>::pow(self, rhs)
+                <$t>::pow(self, rhs as isize)
             }
         }
 
-        // Signed-exponent power. The native RBig::pow / Relaxed::pow keep an
-        // unsigned exponent (a v1 widening is tracked in V1-ROADMAP); Pow<isize>
-        // exposes the reciprocal-then-power path through num_traits today.
+        // Signed-exponent power: the native pow now takes isize directly.
         impl num_traits::Pow<isize> for $t {
             type Output = $t;
             #[inline]
             fn pow(self, rhs: isize) -> $t {
-                <$t>::pow_signed(&self, rhs)
+                <$t>::pow(&self, rhs)
             }
         }
         impl num_traits::Pow<isize> for &$t {
             type Output = $t;
             #[inline]
             fn pow(self, rhs: isize) -> $t {
-                <$t>::pow_signed(self, rhs)
+                <$t>::pow(self, rhs)
             }
         }
     };
