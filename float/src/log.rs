@@ -181,6 +181,40 @@ impl<R: Round> Context<R> {
         }
     }
 
+    /// `ln(B)` as a [`Ball`], carrying the mechanical radius.
+    ///
+    /// The cached bases (2, 10, powers of 2) evaluate correctly-rounded constants (error ≤ ½ ulp at
+    /// the working precision), so the fixed `8` ulps is a sound loose bound. A generic base falls
+    /// back to `ln_compute`'s atanh series, whose radius is ~(series terms + B) ulps — far larger
+    /// than 8 — so its mechanical radius is kept instead (a hard-coded `8` would under-bind the
+    /// `s·ln(B)` reconstruction error in `exp_compute`'s reduction).
+    pub(crate) fn ln_base_ball<const B: Word>(
+        &self,
+        mut cache: Option<&mut ConstCache>,
+    ) -> Ball<B> {
+        let ctx = Context::<mode::HalfEven>::new(self.precision);
+        match B {
+            10 => {
+                let logb = ctx.ln_base::<B>(reborrow_cache(&mut cache));
+                Ball::with_error(logb, IBig::from(8))
+            }
+            i if i.is_power_of_two() => {
+                let logb = ctx.ln_base::<B>(reborrow_cache(&mut cache));
+                Ball::with_error(logb, IBig::from(8))
+            }
+            _ => {
+                // Generic base: no cached sub-series applies, so compute ln(B) directly at the
+                // requested precision and keep `ln_compute`'s ball error.
+                ctx.ln_compute::<B>(
+                    &Repr::new(Repr::<B>::BASE.into(), 0),
+                    self.precision,
+                    false,
+                    reborrow_cache(&mut cache),
+                )
+            }
+        }
+    }
+
     /// Calculate L(n) = acoth(n) = atanh(1/n) = 1/2 log((n+1)/(n-1)), given by the
     /// series
     ///
@@ -339,11 +373,21 @@ impl<R: Round> Context<R> {
         let mut ln_ball =
             self.ln_compute::<B>(arg.mid.repr(), self.precision, true, reborrow_cache(&mut cache));
         let den = arg.add(&Ball::exact_int(self.precision, IBig::ONE));
-        let e_d = den.mid.repr().exponent;
+        let e_d = den.mid.repr().exponent; // (1+arg) = sig_d·B^(e_d)
         let sig_d = den.mid.repr().significand.clone().abs();
-        // n_arg·B^(E_arg−p) / ((1+arg)·B^(E_ln−p)) = n_arg·B^(E_arg−E_ln−e_d)/sig_d; ×2 for the
-        // 1/(1−|θ|/(1+arg)) factor.
-        let shift = Ball::lead_exp(&arg.mid) - Ball::lead_exp(&ln_ball.mid) - e_d;
+        // `lead_*` is the leading position (`lead_exp`), so `ulp_arg = B^(lead_arg − p_arg)` and
+        // `ulp_ln = B^(lead_ln − p_ln)`. The input error propagates as
+        //   n_arg·ulp_arg / ((1+arg)·ulp_ln) = n_arg·B^(lead_arg − p_arg − e_d − lead_ln + p_ln)/sig_d;
+        // ×2 for the 1/(1−|θ|/(1+arg)) factor.
+        // The precision difference is essential: `ln_compute`'s s<0 path runs at double precision,
+        // so `ln_ball` sits at 2·self.precision while `arg` stays at self.precision — dropping the
+        // `−p_arg+p_ln` term under-bounds the adjust by B^(p_ln−p_arg) (atanh(x<0) near the pole
+        // then mis-certifies, e.g. off by 2^13 ulps).
+        let lead_arg = Ball::lead_exp(&arg.mid);
+        let p_arg = arg.mid.precision();
+        let lead_ln = Ball::lead_exp(&ln_ball.mid);
+        let p_ln = ln_ball.mid.precision();
+        let shift = lead_arg - p_arg as isize - e_d - lead_ln + p_ln as isize;
         let num = ceil_shift::<B>(2 * &arg.n, shift);
         let adjust = (num + &sig_d - IBig::ONE) / sig_d;
         ln_ball.inflate(&adjust);
@@ -560,6 +604,7 @@ impl<R: ErrorBounds> Context<R> {
 mod tests {
     use super::*;
     use crate::round::mode;
+    use alloc::vec::Vec;
     use dashu_base::BitTest;
 
     #[test]
@@ -863,7 +908,7 @@ mod tests {
         let ctx = Context::<R>::new(p);
         let want = ctx.repr_round_ref(oracle).value();
         let got = ctx.log2_internal::<2>(x, None).unwrap().value();
-        assert_eq!(got.repr, want, "p={p} {} x={x:?}", std::any::type_name::<R>(),);
+        assert_eq!(got.repr, want, "p={p} {} x={x:?}", core::any::type_name::<R>(),);
     }
 
     /// Regression: `ln_compute`'s s<0 path (base < 1) must NOT inflate its error count with the
@@ -928,5 +973,41 @@ mod tests {
             check_log2_differential::<mode::Down>(500, x, &oracle.repr);
             check_log2_differential::<mode::Up>(500, x, &oracle.repr);
         }
+    }
+
+    #[test]
+    fn ln_1p_ball_bounds_negative_arg() {
+        // Regression: `ln_1p_ball`'s input-error adjust dropped the precision-difference term
+        // (−p_arg+p_ln). For an arg with 1+arg ∈ (0, 1) (e.g. atanh(x<0) near the pole),
+        // `ln_compute` doubles the work precision (the s<0 path), so `ln_ball` sits at 2p while
+        // `arg` stays at p — the missing +p under-bounded the adjust by B^p and the radius no
+        // longer covered the true value.
+        use crate::fbig::FBig;
+        use crate::repr::Context;
+        type F = FBig<mode::HalfEven, 10>;
+        let ctx = Context::<mode::HalfEven>::new(10);
+        // arg mid = −0.9999 at precision 10 (ulp = 1e-10), n = 5 ⇒ true arg = −0.9999000005.
+        let mid = F::from_parts(IBig::from(-9999000000i64), -10)
+            .with_precision(10)
+            .value();
+        let arg = Ball::<10>::with_error(mid, IBig::from(5));
+        let ln_ball = ctx.ln_1p_ball::<10>(&arg, None);
+        // true ln(1+arg) = ln(1 − 0.9999000005) = ln(9.99995e-5), oracle at precision 60.
+        let one_plus_true = F::from_parts(IBig::from(999995i64), -10)
+            .with_precision(0)
+            .value();
+        let true_ln = one_plus_true
+            .with_precision(60)
+            .value()
+            .ln()
+            .with_precision(0)
+            .value();
+        let diff = (ln_ball.mid.clone().with_precision(0).value() - true_ln).abs();
+        let bound = F::from(ln_ball.n.clone()) * ln_ball.mid.ulp().with_precision(0).value();
+        assert!(
+            diff <= bound,
+            "ln_1p_ball: |mid − true| = {diff} > n·ulp = {bound} (n = {}, missing −p_arg+p_ln?)",
+            ln_ball.n
+        );
     }
 }

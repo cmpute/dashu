@@ -38,37 +38,37 @@ const MAX_ZIV_RETRIES: usize = 32;
 // A test-only retry counter, so tests can assert the loop converges on the first attempt for
 // typical inputs (validating that the guard-digit heuristic wasn't over-tightened). Reads as
 // the number of *extra* attempts beyond the first, i.e. `0` means first-attempt success.
-#[cfg(any(all(test, feature = "std"), feature = "profiling"))]
+#[cfg(any(all(test, feature = "std"), feature = "tuning"))]
 thread_local! {
     pub(crate) static LAST_ZIV_RETRIES: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
 }
 
-// Reset/bump the retry counter, with no-op fallbacks when the `profiling` feature (or test mode)
+// Reset/bump the retry counter, with no-op fallbacks when the `tuning` feature (or test mode)
 // is absent — the Ziv loop body stays clean.
-#[cfg(any(all(test, feature = "std"), feature = "profiling"))]
+#[cfg(any(all(test, feature = "std"), feature = "tuning"))]
 fn ziv_retries_reset_impl() {
     LAST_ZIV_RETRIES.with(|c| c.set(0));
 }
-#[cfg(not(any(all(test, feature = "std"), feature = "profiling")))]
+#[cfg(not(any(all(test, feature = "std"), feature = "tuning")))]
 fn ziv_retries_reset_impl() {}
 
-#[cfg(any(all(test, feature = "std"), feature = "profiling"))]
+#[cfg(any(all(test, feature = "std"), feature = "tuning"))]
 fn ziv_retries_bump() {
     LAST_ZIV_RETRIES.with(|c| c.set(c.get().saturating_add(1)));
 }
-#[cfg(not(any(all(test, feature = "std"), feature = "profiling")))]
+#[cfg(not(any(all(test, feature = "std"), feature = "tuning")))]
 fn ziv_retries_bump() {}
 
 /// Number of *extra* Ziv attempts beyond the first in the most recent Ziv loop (0 = first-attempt
-/// success). Profiling only — available when the `profiling` feature (or `cfg(test)`) is enabled.
-#[cfg(any(all(test, feature = "std"), feature = "profiling"))]
+/// success). Profiling only (via the `tuning` feature) — available when the `tuning` feature (or `cfg(test)`) is enabled.
+#[cfg(any(all(test, feature = "std"), feature = "tuning"))]
 pub fn ziv_retries() -> usize {
     LAST_ZIV_RETRIES.with(|c| c.get())
 }
 
 /// Reset the retry counter to 0 (before a measurement, so exact short-circuits that never enter a
 /// Ziv loop report 0 rather than the previous call's count).
-#[cfg(any(all(test, feature = "std"), feature = "profiling"))]
+#[cfg(any(all(test, feature = "std"), feature = "tuning"))]
 pub fn ziv_retries_reset() {
     ziv_retries_reset_impl();
 }
@@ -215,7 +215,9 @@ impl<R: ErrorBounds> Context<R> {
     }
 }
 
-#[cfg(test)]
+// The tests read `LAST_ZIV_RETRIES` (a `thread_local`), which only exists under `std` — gating the
+// module on `all(test, std)` (rather than just `test`) keeps no-std test builds compiling.
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
     use crate::round::mode;

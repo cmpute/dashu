@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Add
+- `Approximation::value_with_exact()` — the value together with an `is_exact` flag (the error `E`
+  is discarded). Used by dashu-float's Ball exact-tracking ops (`mul_tracking`/`add_tracking`/
+  `sqrt_tracking`/`scale_int_tracking`) and `hypot` to report a zero radius for an all-exact chain.
+
 ## 0.6.0-rc.1
 
 ### Add

@@ -29,6 +29,20 @@ impl<T, E> Approximation<T, E> {
         }
     }
 
+    /// The value together with whether the computation was exact.
+    ///
+    /// The boolean is `true` for an exact result and `false` for an inexact one; the error `E` is
+    /// discarded (use [`error`](Self::error) when the error magnitude matters). Handy for the
+    /// "value + exactness flag" pattern (e.g. MPFR's `exact` flag, which a Ziv closure needs to
+    /// report a zero radius for an exactly-representable result).
+    #[inline]
+    pub fn value_with_exact(self) -> (T, bool) {
+        match self {
+            Self::Exact(v) => (v, true),
+            Self::Inexact(v, _) => (v, false),
+        }
+    }
+
     /// Return the value if the result is exact, panic otherwise.
     #[inline]
     pub fn unwrap(self) -> T {
@@ -85,5 +99,20 @@ impl<T, E> Approximation<T, E> {
                 Approximation::Inexact(v2, e2) => Approximation::Inexact(v2, e2),
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Approximation;
+
+    #[test]
+    fn value_with_exact() {
+        assert_eq!(Approximation::<i32, ()>::Exact(3).value_with_exact(), (3, true));
+        assert_eq!(Approximation::<i32, ()>::Inexact(3, ()).value_with_exact(), (3, false));
+        // `value()` and `error()` are consistent with the split
+        let (v, is_exact) = Approximation::<i32, &str>::Inexact(7, "err").value_with_exact();
+        assert_eq!(v, 7);
+        assert!(!is_exact);
     }
 }

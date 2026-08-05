@@ -35,18 +35,36 @@
   `asin`/`acos`/`atan`/`atan2`) build on the `Ball` primitives directly with a single outer Ziv
   certification; the trig quadrant-reduction error and π's radius are folded in mechanically.
   The `result.ulp()·{12,14,16}` constants, `reduce_to_quadrant`'s `reduction_err`, `powi`'s
-  `<<(nlen+1)`, and `hypot`'s `ulp·8` are gone. `pow_exp_log` keeps its hand-derived radius
-  (the `exp(y·ln x)` amplification bound is tighter than the composed chain's). Public behavior
-  is unchanged and validated against the same oracle/fuzz nets.
+  `<<(nlen+1)`, and `hypot`'s `ulp·8` are gone. `pow_exp_log` (the `powf`/`powi` fallback path) is
+  also composed from `ln_compute` + `mul` + `exp_ball`, with the input-ball error folded into the
+  `exp` radius. Public behavior is unchanged and validated against the same oracle/fuzz nets.
 
 ### Add
-- **`profiling` feature + `ziv_retries()`/`ziv_retries_reset()`.** Exposes the per-Ziv-loop retry
+- **`tuning` feature + `ziv_retries()`/`ziv_retries_reset()`.** Exposes the per-Ziv-loop retry
   counter (extra attempts beyond the first) for profiling how tight each transcendental's
   error-radius bound is at a given target precision. Implies `std` (the counter is a
-  `thread_local`). Used by the dashu-python `ziv_retries`/`ziv_retries_reset` bindings and the
-  `python/scripts/ziv_profile.py` script.
+  `thread_local`). Named `tuning` to match dashu-int's existing `tuning` feature (the umbrella
+  `dashu` crate's `tuning` enables both sub-crates). Used by the dashu-python
+  `ziv_retries`/`ziv_retries_reset` bindings and the `python/scripts/ziv_profile.py` script.
 
 ### Fix
+- **`powf`/`powi` no longer return wrongly-rounded results for large `|y·ln x|`.** `exp_ball`'s
+  input-error inflation omitted the result-significand factor `sig_r` (`|exp|/ulp(exp) ≈ sig_r`),
+  so the radius under-bounded the propagated input error by up to `B^(p−1)` and the Ziv containment
+  test could certify an interval that did not contain the true value. The inflate term now
+  multiplies the error count by the result's significand.
+- **`sqrt`-based radius under-bound in `asin`/`asinh`/`acosh`/`hypot`.** `Ball::sqrt` (and
+  `sqrt_tracking`) computed the error shift with the leading position `E_r` where the raw
+  significand exponent `e_r` belongs, dropping the digit count from the denominator — the radius
+  no longer satisfied `|mid − true| ≤ n·ulp(mid)` once the input error grew past a couple of ulps.
+  Both use the raw exponent now.
+- **`atanh(x)` for `x < 0` (near the pole) returned wrongly-rounded values.** `ln_1p_ball`'s
+  input-error adjust dropped the precision-difference term (`−p_arg+p_ln`); `ln_compute`'s s<0 path
+  doubles the work precision, so the adjust under-bounded by `B^precision` and the Ziv loop
+  mis-certified (up to ~2^13 ulps off near `x = −1`). The adjust is now precision-aware.
+- **`cargo test -p dashu-float --no-default-features` compiles again.** The ziv test module's
+  `#[cfg(test)]` gate referenced the `std`-only `LAST_ZIV_RETRIES` counter; the module is gated on
+  `all(test, std)` again.
 - **`powf` of a base `< 1` no longer hangs in the Ziv loop.** `ln_compute`'s s<0 reduction
   (`x·2^|s|` scaling before the cancelled `ln(x_scaled) + s·ln(B)` reconstruction) inflated the
   `Ball` error count by a fixed `B^precision` factor even for exactly-representable inputs —

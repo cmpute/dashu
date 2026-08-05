@@ -30,10 +30,7 @@ macro_rules! math_trans_pair {
             let ctx = x.0.context();
             let res = with_cache(|c| ctx.$ctx_method(x.0.repr(), Some(c)));
             let (a, b) = res;
-            Ok((
-                FPy(unwrap_float(a, ctx)?),
-                FPy(unwrap_float(b, ctx)?),
-            ))
+            Ok((FPy(unwrap_float(a, ctx)?), FPy(unwrap_float(b, ctx)?)))
         }
     };
 }

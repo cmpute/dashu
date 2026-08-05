@@ -9,7 +9,7 @@ use crate::{
     repr::{Context, Repr, Word},
     round::{mode, ErrorBounds, Round, Rounded, Rounding::*},
 };
-use dashu_base::{AbsOrd, Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign};
+use dashu_base::{Abs, AbsOrd, Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign};
 use dashu_int::{IBig, UBig};
 
 // `|x|` (in log2) above which exp's reduction quotient `s = floor(x/ln B)` might overflow `isize`,
@@ -111,28 +111,6 @@ impl<R: ErrorBounds, const B: Word> FBig<R, B> {
 }
 
 impl<R: Round> Context<R> {
-    /// Left-to-right binary exponentiation of `start` to the power `n` (`n ≥ 2`) at this context's
-    /// precision — the shared squaring kernel.
-    ///
-    /// Each `sqr`/`mul` is correctly rounded, but their rounding flags are folded away (`.value()`)
-    /// and no containment test is applied, so the result is only *near*-correct: repeated squaring
-    /// compounds the relative error (it roughly doubles per step), so after `n.bit_len()` squarings
-    /// the error is on the order of `2^nlen · ulp`. The public [`powi`](Context::powi) retries this
-    /// kernel inside a Ziv loop to certify the rounding; `exp_compute` also uses it for its internal
-    /// `Bⁿ` powering (where `|sum| ≈ 1`, so `sum^bn` stays bounded and a range error is unreachable).
-    ///
-    /// On success returns the value together with an `exact` flag that is `true` only when **every**
-    /// squaring and multiplication rounded `Exact` (so the returned value is the mathematically exact
-    /// `startⁿ`). The Ziv caller uses this to report a zero radius for exact results — under directed
-    /// rounding modes an exactly-representable result sits on a one-sided rounding boundary, which a
-    /// nonzero radius can never certify.
-    ///
-    /// If the magnitude runs into the finite-range ceiling/floor — the exponent arithmetic hits the
-    /// `±isize::MAX` sentinel — the offending step's [`Overflow`](FpError::Overflow) /
-    /// [`Underflow`](FpError::Underflow) is returned as [`Err`] instead of being saturated. The
-    /// caller (the `powi` Ziv loop, whose closure can't keep a [`Result`]) maps it to the directed
-    /// endpoint with the correct result sign; saturating here (as [`Context::unwrap_fp`] would) would
-    /// hand the closure an infinity it cannot round.
     /// Near-correct exp core: evaluate `exp(x)` (or `exp_m1(x)` when `minus_one`) at
     /// `work_precision`, returning a [`Ball`] whose radius is derived mechanically.
     ///
@@ -172,12 +150,11 @@ impl<R: Round> Context<R> {
             } else {
                 2
             };
-            let logb = Context::<mode::HalfEven>::new(work_precision + extra)
-                .ln_base::<B>(reborrow_cache(&mut cache));
-            // ln(B) as a ball: the constant evaluates the atanh series via binary splitting plus a
-            // single division, so its error is a handful of work-precision ulps (8 is a
-            // conservative sound bound, as in `ln_compute`).
-            let logb_ball = Ball::with_error(logb, IBig::from(8));
+            // ln(B) as a ball: the cached bases (2, 10, powers of 2) are correctly rounded (the
+            // fixed 8-ulp bound in `ln_base_ball` is sound there), while generic bases carry
+            // `ln_compute`'s mechanical radius (their atanh series error can be far larger than 8).
+            let logb_ball = Context::<mode::HalfEven>::new(work_precision + extra)
+                .ln_base_ball::<B>(reborrow_cache(&mut cache));
             let x_sign = x_ball.mid.repr().sign();
             let (s_big, _) = x_ball.mid.clone().div_rem_euclid(logb_ball.mid.clone());
             let s: isize = match s_big.try_into() {
@@ -265,13 +242,23 @@ impl<R: Round> Context<R> {
             reborrow_cache(&mut cache),
         )?;
         if !x.n.is_zero() {
-            // n_x·ulp_x·|exp|/ulp(exp) = n_x·sig_r·B^(E_x − p_x + e_r − E_r + p_r), the exact
-            // derivative bound (no small-constant factor needed, unlike ln's 1/(1+x)).
-            let shift = Ball::lead_exp(&x.mid) - x.mid.precision() as isize
-                + result.mid.repr().exponent
-                - Ball::lead_exp(&result.mid)
-                + result.mid.precision() as isize;
-            result.inflate(&crate::ball::ceil_shift::<B>(x.n.clone(), shift));
+            // `e_r` is the raw significand exponent (`mid_r = sig_r·B^(e_r)`), `lead_*` is the
+            // leading position (`lead_exp`), so `ulp_x = B^(lead_x − p_x)` and
+            // `ulp_r = B^(lead_r − p_r)`. The exponential's derivative is itself, so the input
+            // error propagates as `n_x·ulp_x·|exp|/ulp_r = n_x·sig_r·B^(lead_x − p_x + e_r − lead_r + p_r)`,
+            // the exact derivative bound (no small-constant factor needed, unlike ln's 1/(1+x)).
+            // The `sig_r = |mid_r|` factor is essential: it scales the input ulp up to the
+            // result's magnitude. Omitting it under-bounds the radius by `sig_r` (≈ B^(p−1)) — the
+            // Ziv containment test then certifies an interval that does not contain the true value
+            // (e.g. `powf` with a large |y·ln x|).
+            let sig_r = result.mid.repr().significand.clone().abs();
+            let e_r = result.mid.repr().exponent;
+            let lead_r = Ball::lead_exp(&result.mid);
+            let p_r = result.mid.precision();
+            let lead_x = Ball::lead_exp(&x.mid);
+            let p_x = x.mid.precision();
+            let shift = lead_x - p_x as isize + e_r - lead_r + p_r as isize;
+            result.inflate(&crate::ball::ceil_shift::<B>(x.n.clone() * sig_r, shift));
         }
         Ok(result)
     }
@@ -1495,5 +1482,56 @@ mod tests {
         let r = ctx.powf::<2>(pos_base, exp4, None).unwrap().value();
         assert_eq!(r.repr(), ctx.powi::<2>(pos_base, 4.into()).unwrap().value().repr());
         let _ = DBig::ZERO;
+    }
+
+    #[test]
+    fn exp_ball_bounds_propagated_input_error() {
+        // The input ball's error must be amplified by |exp| in the result radius: n·ulp(exp)
+        // has to cover n_x·ulp(x)·|exp(x)|. Regression for the missing `sig_r` factor in
+        // `exp_ball`'s inflate term, which under-bound the radius by ~sig_r (≈ B^(p−1)) and let
+        // Ziv certify an interval that did not contain the true value.
+        type F = FBig<mode::HalfEven, 10>;
+        let ctx = Context::<mode::HalfEven>::new(10);
+        // mid = 0.5 at precision 10 (ulp = 1e-10), n = 10 ⇒ true arg = 0.5000000010.
+        let mid = F::from_parts(IBig::from(5000000000i64), -10)
+            .with_precision(10)
+            .value();
+        let x = Ball::<10>::with_error(mid, IBig::from(10));
+        let r = ctx.exp_ball::<10>(&x, None).unwrap();
+        let true_arg = F::from_parts(IBig::from(5000000010i64), -10)
+            .with_precision(0)
+            .value();
+        let exp_true = true_arg
+            .with_precision(60)
+            .value()
+            .exp()
+            .with_precision(0)
+            .value();
+        let diff = (r.mid.clone().with_precision(0).value() - exp_true).abs();
+        let bound = F::from(r.n.clone()) * r.mid.ulp().with_precision(0).value();
+        assert!(
+            diff <= bound,
+            "exp_ball: |mid − true| = {diff} > n·ulp = {bound} (n = {}, missing sig_r?)",
+            r.n
+        );
+    }
+
+    #[test]
+    fn exp_generic_base_matches_oracle() {
+        // exp at a generic (uncached) base exercises `ln_base_ball`'s mechanical-radius path for
+        // ln(B) — the hard-coded `8`-ulp bound would under-bind a generic base's atanh-series
+        // error (which is ~series-terms ulps), silently unsounding the reduction.
+        type F3 = FBig<mode::HalfEven, 3>;
+        for x in [1i64, 2, 3, 5] {
+            let x = F3::from_parts(IBig::from(x), 0);
+            let ctx = Context::<mode::HalfEven>::new(30);
+            let got = ctx.exp::<3>(&x.repr, None).unwrap().value();
+            let oracle = Context::<mode::HalfEven>::new(90)
+                .exp::<3>(&x.repr, None)
+                .unwrap()
+                .value();
+            let want = ctx.repr_round_ref(&oracle.repr).value();
+            assert_eq!(got.repr, want, "exp({x:?}) at base 3 p=30: got {got:?}, want {want:?}");
+        }
     }
 }

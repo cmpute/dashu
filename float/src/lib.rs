@@ -98,8 +98,8 @@ mod third_party;
 mod utils;
 mod ziv;
 
-// Retry-count profiling for the Ziv loops (available with the `profiling` feature).
-#[cfg(any(all(test, feature = "std"), feature = "profiling"))]
+// Retry-count profiling for the Ziv loops (available with the `tuning` feature).
+#[cfg(any(all(test, feature = "std"), feature = "tuning"))]
 pub use ziv::{ziv_retries, ziv_retries_reset};
 
 // All the public items from third_party will be exposed

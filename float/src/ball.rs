@@ -107,17 +107,17 @@ impl<const B: Word> Ball<B> {
         Self::exact(mid)
     }
 
-    /// The error of `self`, expressed in ulps of a target with leading position `e_target` and
-    /// precision `p_target`: `n · B^(E(self) − e_target + p_target − p_self)`, rounded up when the
-    /// exponent is negative.
+    /// The error of `self`, expressed in ulps of a target with leading position `lead_target` and
+    /// precision `p_target`: `n · B^(lead_exp(mid) − lead_target + p_target − p_self)`, rounded up
+    /// when the exponent is negative.
     ///
-    /// The precision difference matters: `ulp(mid) = B^(E(mid) − p_mid)`, so converting an error
-    /// from `self`'s ulp to the target's ulp shifts by both the leading-position *and* the
+    /// The precision difference matters: `ulp(mid) = B^(lead_exp(mid) − p_mid)`, so converting an
+    /// error from `self`'s ulp to the target's ulp shifts by both the leading-position *and* the
     /// precision difference. (Operands normally share the working precision; the exception is a
     /// value that over-delivers its context, e.g. the uncached `ln(2)` constant.)
     #[inline]
-    fn term_in_ulps(&self, e_target: isize, p_target: usize) -> IBig {
-        let diff = Self::lead_exp(&self.mid) - e_target + p_target as isize
+    fn term_in_ulps(&self, lead_target: isize, p_target: usize) -> IBig {
+        let diff = Self::lead_exp(&self.mid) - lead_target + p_target as isize
             - self.mid.precision() as isize;
         ceil_shift::<B>(self.n.clone(), diff)
     }
@@ -125,17 +125,17 @@ impl<const B: Word> Ball<B> {
     /// `self ± rhs`, rounding the midpoint to the working precision.
     pub(crate) fn add(&self, rhs: &Self) -> Self {
         let mid = &self.mid + &rhs.mid;
-        let (e_r, p_r) = (Self::lead_exp(&mid), mid.precision());
+        let (lead_r, p_r) = (Self::lead_exp(&mid), mid.precision());
         // |mid_r − true| ≤ err_a + err_b + ½·ulp_r  ⟹  n_r = term_a + term_b + 1 (the +1 covers
         // the midpoint's own rounding).
-        let n = self.term_in_ulps(e_r, p_r) + rhs.term_in_ulps(e_r, p_r) + IBig::ONE;
+        let n = self.term_in_ulps(lead_r, p_r) + rhs.term_in_ulps(lead_r, p_r) + IBig::ONE;
         Self { mid, n }
     }
 
     pub(crate) fn sub(&self, rhs: &Self) -> Self {
         let mid = &self.mid - &rhs.mid;
-        let (e_r, p_r) = (Self::lead_exp(&mid), mid.precision());
-        let n = self.term_in_ulps(e_r, p_r) + rhs.term_in_ulps(e_r, p_r) + IBig::ONE;
+        let (lead_r, p_r) = (Self::lead_exp(&mid), mid.precision());
+        let n = self.term_in_ulps(lead_r, p_r) + rhs.term_in_ulps(lead_r, p_r) + IBig::ONE;
         Self { mid, n }
     }
 
@@ -165,12 +165,13 @@ impl<const B: Word> Ball<B> {
         // A numerator that rounds to zero cannot use the relative-error form (δa is infinite);
         // bound the absolute quotient directly: |r.true| ≤ err_a/|b.true| ≤ 2·err_a/|b.mid|.
         if self.mid.repr().significand.is_zero() {
-            let (e_r, p_r) = (Self::lead_exp(&mid), mid.precision());
+            let (lead_r, p_r) = (Self::lead_exp(&mid), mid.precision());
             let e_b = rhs.mid.repr().exponent;
             let sig_b = rhs.mid.repr().significand.clone().abs();
-            // n_r·ulp_r ≥ 2·n_a·B^(E(a)−p_a) / (sig_b·B^(e_b))  with ulp_r = B^(E(r)−p_r)
-            let exp = Self::lead_exp(&self.mid) - e_b - e_r + p_r as isize
-                - self.mid.precision() as isize;
+            let lead_a = Self::lead_exp(&self.mid);
+            let p_a = self.mid.precision();
+            // n_r·ulp_r ≥ 2·n_a·B^(lead_a−p_a) / (sig_b·B^(e_b))  with ulp_r = B^(lead_r−p_r)
+            let exp = lead_a - e_b - lead_r + p_r as isize - p_a as isize;
             let n2 = 2 * &self.n;
             let (num, den) = if exp >= 0 {
                 (shl_digits::<B>(&n2, exp as usize), sig_b)
@@ -209,13 +210,15 @@ impl<const B: Word> Ball<B> {
     /// `self / k` with `k` an exact (possibly large) integer.
     ///
     /// The exact divisor shrinks the error by exactly `k`: `err_r ≤ err_a/k + ½·ulp_r`, so
-    /// `n_r = ⌈n_a·B^(E_a−E_r+p_r−p_a)/k⌉ + 1`. This avoids the general [`div`](Self::div)'s
+    /// `n_r = ⌈n_a·B^(lead_a−lead_r+p_r−p_a)/k⌉ + 1`. This avoids the general [`div`](Self::div)'s
     /// big-int rational division (O(p²) — which would dominate the FBig division by a small
     /// integer and is the series' hot path).
     pub(crate) fn div_exact(&self, k: &IBig) -> Self {
         let mid = &self.mid / &FBig::<mode::HalfEven, B>::from(k.clone());
-        let (e_r, p_r) = (Self::lead_exp(&mid), mid.precision());
-        let shift = Self::lead_exp(&self.mid) - e_r + p_r as isize - self.mid.precision() as isize;
+        let (lead_r, p_r) = (Self::lead_exp(&mid), mid.precision());
+        let lead_a = Self::lead_exp(&self.mid);
+        let p_a = self.mid.precision();
+        let shift = lead_a - lead_r + p_r as isize - p_a as isize;
         // n_r = ⌈n_a·B^shift / k⌉ + 1  (ceil_shift already rounds up, so the /k re-round is sound).
         let num = ceil_shift::<B>(self.n.clone(), shift);
         let n = (num + k - IBig::ONE) / k + IBig::ONE;
@@ -230,28 +233,28 @@ impl<const B: Word> Ball<B> {
 
     /// The error-count contribution of a multiplication with midpoint `mid` (see [`mul`](Self::mul)).
     fn mul_error(&self, rhs: &Self, mid: &FBig<mode::HalfEven, B>) -> IBig {
-        let (e_r, p_r) = (Self::lead_exp(mid), mid.precision());
+        let (lead_r, p_r) = (Self::lead_exp(mid), mid.precision());
         let e_a = self.mid.repr().exponent;
         let e_b = rhs.mid.repr().exponent;
         let p_a = self.mid.precision();
         let p_b = rhs.mid.precision();
+        let lead_a = Self::lead_exp(&self.mid);
+        let lead_b = Self::lead_exp(&rhs.mid);
 
         // |mid_r − true| ≤ err_a·|b.mid| + err_b·|a.mid| + err_a·err_b + ½·ulp_r, in ulps of r:
         // The `|n · sig|` products avoid cloning the operand significands (n ≥ 0, so the product's
         // sign is the significand's and `.abs()` is a no-op for positive values).
         let t1 = ceil_shift::<B>(
             (self.n.clone() * &rhs.mid.repr().significand).abs(),
-            Self::lead_exp(&self.mid) + e_b - e_r + p_r as isize - p_a as isize,
+            lead_a + e_b - lead_r + p_r as isize - p_a as isize,
         );
         let t2 = ceil_shift::<B>(
             (rhs.n.clone() * &self.mid.repr().significand).abs(),
-            Self::lead_exp(&rhs.mid) + e_a - e_r + p_r as isize - p_b as isize,
+            lead_b + e_a - lead_r + p_r as isize - p_b as isize,
         );
         let t3 = ceil_shift::<B>(
             &self.n * &rhs.n,
-            Self::lead_exp(&self.mid) + Self::lead_exp(&rhs.mid) - e_r + p_r as isize
-                - p_a as isize
-                - p_b as isize,
+            lead_a + lead_b - lead_r + p_r as isize - p_a as isize - p_b as isize,
         );
         t1 + t2 + t3 + IBig::ONE
     }
@@ -270,11 +273,8 @@ impl<const B: Word> Ball<B> {
     pub(crate) fn mul_tracking(&self, rhs: &Self, exact: &mut bool) -> Result<Self, FpError> {
         let ctx = Context::<mode::HalfEven>::new(self.mid.precision().max(rhs.mid.precision()));
         let rounded = ctx.mul(self.mid.repr(), rhs.mid.repr())?;
-        let (mid, rounded_inexact) = match rounded {
-            dashu_base::Approximation::Exact(v) => (v, false),
-            dashu_base::Approximation::Inexact(v, _) => (v, true),
-        };
-        if rounded_inexact || !self.n.is_zero() || !rhs.n.is_zero() {
+        let (mid, is_exact) = rounded.value_with_exact();
+        if !is_exact || !self.n.is_zero() || !rhs.n.is_zero() {
             *exact = false;
         }
         let n = if *exact {
@@ -299,23 +299,22 @@ impl<const B: Word> Ball<B> {
         let rounded = ctx
             .mul(self.mid.repr(), k_fbig.repr())
             .expect("scale_int_tracking: finite mid · finite integer cannot range-error");
-        let (mid, rounded_inexact) = match rounded {
-            dashu_base::Approximation::Exact(v) => (v, false),
-            dashu_base::Approximation::Inexact(v, _) => (v, true),
-        };
-        if rounded_inexact || !self.n.is_zero() {
+        let (mid, is_exact) = rounded.value_with_exact();
+        if !is_exact || !self.n.is_zero() {
             *exact = false;
         }
         let n = if *exact {
             IBig::ZERO
         } else {
-            let (e_r, p_r) = (Self::lead_exp(&mid), mid.precision());
+            let (lead_r, p_r) = (Self::lead_exp(&mid), mid.precision());
+            let lead_a = Self::lead_exp(&self.mid);
+            let p_a = self.mid.precision();
             let base = ceil_shift::<B>(
                 self.n.clone() * k.clone().abs(),
-                Self::lead_exp(&self.mid) - e_r + p_r as isize - self.mid.precision() as isize,
+                lead_a - lead_r + p_r as isize - p_a as isize,
             );
             // |mid_r − true| ≤ |k|·err_a + (½·ulp_r only if the product itself rounded).
-            if rounded_inexact {
+            if !is_exact {
                 base + IBig::ONE
             } else {
                 base
@@ -329,18 +328,15 @@ impl<const B: Word> Ball<B> {
     pub(crate) fn add_tracking(&self, rhs: &Self, exact: &mut bool) -> Result<Self, FpError> {
         let ctx = Context::<mode::HalfEven>::new(self.mid.precision().max(rhs.mid.precision()));
         let rounded = ctx.add(self.mid.repr(), rhs.mid.repr())?;
-        let (mid, rounded_inexact) = match rounded {
-            dashu_base::Approximation::Exact(v) => (v, false),
-            dashu_base::Approximation::Inexact(v, _) => (v, true),
-        };
-        if rounded_inexact || !self.n.is_zero() || !rhs.n.is_zero() {
+        let (mid, is_exact) = rounded.value_with_exact();
+        if !is_exact || !self.n.is_zero() || !rhs.n.is_zero() {
             *exact = false;
         }
         let n = if *exact {
             IBig::ZERO
         } else {
-            let (e_r, p_r) = (Self::lead_exp(&mid), mid.precision());
-            self.term_in_ulps(e_r, p_r) + rhs.term_in_ulps(e_r, p_r) + IBig::ONE
+            let (lead_r, p_r) = (Self::lead_exp(&mid), mid.precision());
+            self.term_in_ulps(lead_r, p_r) + rhs.term_in_ulps(lead_r, p_r) + IBig::ONE
         };
         Ok(Self { mid, n })
     }
@@ -350,24 +346,27 @@ impl<const B: Word> Ball<B> {
     pub(crate) fn sqrt_tracking(&self, exact: &mut bool) -> Result<Self, FpError> {
         let ctx = Context::<mode::HalfEven>::new(self.mid.precision());
         let rounded = ctx.sqrt(self.mid.repr())?;
-        let (mid, rounded_inexact) = match rounded {
-            dashu_base::Approximation::Exact(v) => (v, false),
-            dashu_base::Approximation::Inexact(v, _) => (v, true),
-        };
-        if rounded_inexact || !self.n.is_zero() {
+        let (mid, is_exact) = rounded.value_with_exact();
+        if !is_exact || !self.n.is_zero() {
             *exact = false;
         }
         let n = if *exact || mid.repr().significand.is_zero() {
             IBig::ZERO
         } else {
-            let (e_r, p_r) = (Self::lead_exp(&mid), mid.precision());
+            // `e_r` is the raw significand exponent (`mid_r = sig_r·B^(e_r)`), `lead_*` is the
+            // leading position (`lead_exp`), so `ulp_r = B^(lead_r − p_r)` and `ulp_a = B^(lead_a − p_a)`.
+            let e_r = mid.repr().exponent;
+            let lead_r = Self::lead_exp(&mid);
+            let p_r = mid.precision();
             let sig_r = mid.repr().significand.clone().abs();
-            // n·ulp_a / (2·|mid|·ulp_r) = n·B^(E_a−p_a) / (2·sig_r·B^(e_r)·B^(E_r−p_r)).
-            let shift = Self::lead_exp(&self.mid)
-                - self.mid.precision() as isize
-                - e_r
-                - Self::lead_exp(&mid)
-                + p_r as isize;
+            let lead_a = Self::lead_exp(&self.mid);
+            let p_a = self.mid.precision();
+            // |√(a+ε) − √a| ≤ |ε|/(2·√a) ⇒
+            //   n_r·ulp_r ≥ n_a·ulp_a / (2·|mid_r|) = n_a·B^(lead_a−p_a) / (2·sig_r·B^(e_r)·B^(lead_r−p_r)),
+            // so n_r = ⌈n_a·B^(lead_a−p_a−e_r−lead_r+p_r) / (2·sig_r)⌉ + 1. `e_r` is the *raw*
+            // exponent, not `lead_r` — substituting `lead_r` would shift out the digits and
+            // under-estimate the radius.
+            let shift = lead_a - p_a as isize - e_r - lead_r + p_r as isize;
             let num = ceil_shift::<B>(self.n.clone(), shift);
             let den = 2 * sig_r;
             (num + &den - IBig::ONE) / den + IBig::ONE
@@ -414,15 +413,29 @@ impl<const B: Word> Ball<B> {
     pub(crate) fn sqrt(&self) -> Self {
         let mid = self.mid.sqrt();
         if mid.repr().significand.is_zero() {
-            // √0 = 0 exactly; the relative-error formula would divide by the zero significand.
+            // √0 = 0 exactly; the relative-error formula would divide by the zero significand. A
+            // zero-mid ball whose true value is *exactly* zero (e.g. `asin(±1)`'s `1 − x²`, where
+            // `n` may still be nonzero from the +1 rounding allowance) is handled soundly here.
+            // A zero-mid ball with a genuinely nonzero true value (a cancellation like `1.049 − 1`)
+            // has a nonzero true root, which this branch cannot express — no caller feeds such a
+            // ball through `sqrt` today (asin/asin-adjacent check the zero significand first and
+            // take the ±π/2 endpoint; the rest feed strictly positive inputs).
             return Self::exact(mid);
         }
-        let (e_r, p_r) = (Self::lead_exp(&mid), mid.precision());
+        // `e_r` is the raw significand exponent (`mid_r = sig_r·B^(e_r)`), `lead_*` is the leading
+        // position (`lead_exp`), so `ulp_r = B^(lead_r − p_r)` and `ulp_a = B^(lead_a − p_a)`.
+        let e_r = mid.repr().exponent;
+        let lead_r = Self::lead_exp(&mid);
+        let p_r = mid.precision();
         let sig_r = mid.repr().significand.clone().abs();
-        // n_a·ulp_a / (2·|mid_r|·ulp_r) = n_a·B^(E_a−p_a) / (2·sig_r·B^(e_r)·B^(E_r−p_r)).
-        let shift =
-            Self::lead_exp(&self.mid) - self.mid.precision() as isize - e_r - Self::lead_exp(&mid)
-                + p_r as isize;
+        let lead_a = Self::lead_exp(&self.mid);
+        let p_a = self.mid.precision();
+        // |√(a+ε) − √a| ≤ |ε|/(2·√a) ⇒
+        //   n_r·ulp_r ≥ n_a·ulp_a / (2·|mid_r|) = n_a·B^(lead_a−p_a) / (2·sig_r·B^(e_r)·B^(lead_r−p_r)),
+        // so n_r = ⌈n_a·B^(lead_a−p_a−e_r−lead_r+p_r) / (2·sig_r)⌉ + 1. `e_r` is the *raw*
+        // exponent, not `lead_r` — substituting `lead_r` would shift out the digits and
+        // under-estimate the radius.
+        let shift = lead_a - p_a as isize - e_r - lead_r + p_r as isize;
         let num = ceil_shift::<B>(self.n.clone(), shift);
         let den = 2 * sig_r;
         let n = (num + &den - IBig::ONE) / den + IBig::ONE;
@@ -432,11 +445,13 @@ impl<const B: Word> Ball<B> {
     /// `k · self` with `k` an exact integer.
     pub(crate) fn scale_int(&self, k: &IBig) -> Self {
         let mid = &self.mid * &FBig::<mode::HalfEven, B>::from(k.clone());
-        let (e_r, p_r) = (Self::lead_exp(&mid), mid.precision());
+        let (lead_r, p_r) = (Self::lead_exp(&mid), mid.precision());
+        let lead_a = Self::lead_exp(&self.mid);
+        let p_a = self.mid.precision();
         // |mid_r − true| ≤ |k|·err_a + ½·ulp_r.
         let n = ceil_shift::<B>(
             self.n.clone() * k.clone().abs(),
-            Self::lead_exp(&self.mid) - e_r + p_r as isize - self.mid.precision() as isize,
+            lead_a - lead_r + p_r as isize - p_a as isize,
         ) + IBig::ONE;
         Self { mid, n }
     }
@@ -472,10 +487,10 @@ impl<const B: Word> Ball<B> {
     /// identical to the old `*_compute` returns: `(value, radius)` with `|value − true| ≤ radius`.
     pub(crate) fn to_value_radius<R: crate::round::Round>(&self) -> (FBig<R, B>, FBig<R, B>) {
         let value = FBig::new(self.mid.repr().clone(), Context::<R>::new(self.mid.precision()));
-        // radius = n·B^(E(mid) − p), built directly as a repr (exact at unlimited precision). The
-        // exponent saturates at the range extremes: an over-wide radius is sound. For n = 0 (the
-        // exact case) the radius must be a plain +0 — `Repr::new(0, isize::MIN)` would otherwise
-        // survive normalization as the −∞ sentinel and poison the containment test.
+        // radius = n·B^(lead_exp(mid) − p), built directly as a repr (exact at unlimited
+        // precision). The exponent saturates at the range extremes: an over-wide radius is sound.
+        // For n = 0 (the exact case) the radius must be a plain +0 — `Repr::new(0, isize::MIN)`
+        // would otherwise survive normalization as the −∞ sentinel and poison the containment test.
         let radius_repr = if self.n.is_zero() {
             Repr::<B>::zero()
         } else {
@@ -572,6 +587,34 @@ mod tests {
         let (b, tb) = ball(20000, -4, 4, 0, 20000, -4); // mid 2.0000 exact
         let r = a.div(&b);
         assert_invariant(&r, &(&ta / &tb).with_precision(0).value());
+    }
+
+    #[test]
+    fn sqrt_bounds_error() {
+        // Regression: the error shift used the leading position `lead_r` (= e_r + digits) where
+        // the raw significand exponent `e_r` belongs, so the radius under-estimated (the Ball
+        // invariant broke even for a small input error count). The true root is computed at
+        // precision 60 and widened.
+        let (a, ta) = ball(14400, -4, 5, 5, 14405, -4); // mid 1.4400 ± 5·ulp, true 1.4405
+        let r = a.sqrt();
+        let sqrt_true = ta
+            .with_precision(60)
+            .value()
+            .sqrt()
+            .with_precision(0)
+            .value();
+        assert_invariant(&r, &sqrt_true);
+
+        // A larger input error must amplify the radius correspondingly.
+        let (a2, ta2) = ball(14400, -4, 5, 90, 14490, -4); // mid 1.4400 ± 90·ulp, true 1.4490
+        let r2 = a2.sqrt();
+        let sqrt_true2 = ta2
+            .with_precision(60)
+            .value()
+            .sqrt()
+            .with_precision(0)
+            .value();
+        assert_invariant(&r2, &sqrt_true2);
     }
 
     #[test]

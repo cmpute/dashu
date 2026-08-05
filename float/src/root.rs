@@ -19,10 +19,11 @@ use crate::{
 /// which otherwise can't certify an exactly-representable result (it sits on a one-sided preimage
 /// boundary under directed rounding).
 fn value_tracking_exact<T>(r: Rounded<T>, exact: &mut bool) -> T {
-    if !matches!(r, Approximation::Exact(_)) {
+    let (v, is_exact) = r.value_with_exact();
+    if !is_exact {
         *exact = false;
     }
-    r.value()
+    v
 }
 
 impl<R: Round, const B: Word> SquareRoot for FBig<R, B> {
@@ -345,24 +346,18 @@ impl<R: ErrorBounds> Context<R> {
                 value_tracking_exact(gctx.repr_round_ref(&small), &mut exact),
                 gctx,
             ));
-            let l_sq = large_ball
-                .shift(k)
-                .mul_tracking(&large_ball.shift(k), &mut exact)?;
-            let s_sq = small_ball
-                .shift(k)
-                .mul_tracking(&small_ball.shift(k), &mut exact)?;
+            // The shifted balls are used twice (the square), so bind them once — a shift is a full
+            // O(p) clone otherwise.
+            let l = large_ball.shift(k);
+            let s = small_ball.shift(k);
+            let l_sq = l.mul_tracking(&l, &mut exact)?;
+            let s_sq = s.mul_tracking(&s, &mut exact)?;
             let sum = l_sq.add_tracking(&s_sq, &mut exact)?;
             let root = sum.sqrt_tracking(&mut exact)?;
             let result = root.shift(-k); // exact exponent shift — scales back, doesn't affect `exact`
-            if exact {
-                // All-exact chain: the value is exact, report radius 0.
-                Ok((
-                    FBig::new(result.mid.repr().clone(), Context::<R>::new(gctx.precision)),
-                    FBig::<R, B>::ZERO,
-                ))
-            } else {
-                Ok(result.to_value_radius::<R>())
-            }
+                                         // An all-exact chain yields n = 0, which `to_value_radius` already reports as a zero
+                                         // radius (the exactly-representable directed-rounding case).
+            Ok(result.to_value_radius::<R>())
         })
     }
 }

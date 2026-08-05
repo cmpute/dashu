@@ -13,9 +13,11 @@ Run from the dashu repo root after building the Python bindings:
 import sys
 import dashu
 
-# Base-2 FPy construction at a target precision.
+# Base-2 FPy construction at a target precision. Build from the decimal *string* (not `float(s)`):
+# the bindings parse it exactly, whereas `float` would round it to a binary f64 first, silently
+# changing the input the profile claims to measure (e.g. "0.2668" -> 0.2668000000000000012...).
 def F(p, s):
-    return dashu.FBig(float(s)).with_precision(p)
+    return dashu.FBig(s).with_precision(p)
 
 PRECISIONS = [20, 50, 100, 500]
 
@@ -56,8 +58,9 @@ def measure(fn, args):
     dashu.ziv_retries_reset()
     try:
         fn(*args)
-    except Exception as e:
-        # domain/overflow errors (e.g. acosh(0.5)) are not ziv retries
+    except ValueError:
+        # domain errors (e.g. acosh(0.5)) are not ziv retries; catch only these so a real
+        # regression (panic, wrong result path) surfaces instead of being silently skipped
         return None
     return dashu.ziv_retries()
 

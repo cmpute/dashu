@@ -74,15 +74,13 @@ impl<R: ErrorBounds> Context<R> {
         mut cache: Option<&mut ConstCache>,
     ) -> (Context<mode::HalfEven>, Ball<B>, Quadrant) {
         let work_context = self.compute_work_context_trig(x, guard);
-        let x_f = FBig::<mode::HalfEven, B>::new(
-            work_context.repr_round(x.clone()).value(),
-            work_context,
-        );
         let x_ball = Ball::from_rounded(
             work_context
                 .repr_round(x.clone())
                 .map(|r| FBig::new(r, work_context)),
         );
+        // `x_f` is exactly the ball's midpoint (the same rounded value), so no second rounding.
+        let x_f = x_ball.mid.clone();
 
         let pi = work_context.pi::<B>(reborrow_cache(&mut cache)).value();
         let half_pi = &pi / 2u8;
