@@ -35,6 +35,10 @@ use dashu_int::{DoubleWord, IBig, UBig};
 /// layer). If an operation result is too large or too small, the operation will return an
 /// infinity (as a value) at the `Context` layer, or panic at the `FBig` layer.
 ///
+#[cfg_attr(
+    feature = "rkyv_v07",
+    derive(rkyv_v07::Archive, rkyv_v07::Serialize, rkyv_v07::Deserialize)
+)]
 pub struct Repr<const BASE: Word> {
     /// The significand of the floating point number. If the significand is zero, then the
     /// number is a special value identified by the exponent (see the struct-level docs):
@@ -75,6 +79,10 @@ pub struct Repr<const BASE: Word> {
 /// For binary operations, the two oprands must have the same rounding mode.
 ///
 #[derive(Clone, Copy)]
+#[cfg_attr(
+    feature = "rkyv_v07",
+    derive(rkyv_v07::Archive, rkyv_v07::Serialize, rkyv_v07::Deserialize)
+)]
 pub struct Context<RoundingMode: Round> {
     /// The precision of the floating point number.
     /// If set to zero, then the precision is unlimited.

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Add
+- **rkyv 0.7 support** (`rkyv` feature, versioned `rkyv_v07`): `UBig`/`IBig` archive as their
+  **native word representation** (`ArchivedVec<Word>`, plus a sign flag for `IBig`), round-tripping
+  through `as_words`/`from_words` — zero-copy access to the words, at the cost of a
+  target-`Word`/endianness-dependent archive layout (use `to_le_bytes`/`to_be_bytes` for a portable
+  encoding).
+
 ## 0.6.0-rc.1
 
 ### Fix

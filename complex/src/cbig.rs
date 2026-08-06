@@ -44,6 +44,10 @@ use dashu_int::{DoubleWord, Word};
 /// assert_eq!(z.re().significand(), &3.into());
 /// assert_eq!(z.im().significand(), &4.into());
 /// ```
+#[cfg_attr(
+    feature = "rkyv_v07",
+    derive(rkyv_v07::Archive, rkyv_v07::Serialize, rkyv_v07::Deserialize)
+)]
 pub struct CBig<R: Round = mode::Zero, const B: Word = 2> {
     pub(crate) re: Repr<B>,
     pub(crate) im: Repr<B>,

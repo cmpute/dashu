@@ -10,6 +10,10 @@ use crate::{error::panic_divide_by_0, repr::Repr};
 /// [user guide](https://zyxin.xyz/dashu/types.html) for construction,
 /// parsing, and the [`Relaxed`] variant.
 #[derive(PartialOrd, Ord)]
+#[cfg_attr(
+    feature = "rkyv_v07",
+    derive(rkyv_v07::Archive, rkyv_v07::Serialize, rkyv_v07::Deserialize)
+)]
 #[repr(transparent)]
 pub struct RBig(pub(crate) Repr);
 
@@ -26,6 +30,10 @@ pub struct RBig(pub(crate) Repr);
 ///
 /// To convert from [RBig], use [RBig::relax()]. To convert to [RBig], use [Relaxed::canonicalize()].
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(
+    feature = "rkyv_v07",
+    derive(rkyv_v07::Archive, rkyv_v07::Serialize, rkyv_v07::Deserialize)
+)]
 #[repr(transparent)]
 pub struct Relaxed(pub(crate) Repr); // the result is not always normalized
 

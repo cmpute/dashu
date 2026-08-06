@@ -46,6 +46,8 @@
   `thread_local`). Named `tuning` to match dashu-int's existing `tuning` feature (the umbrella
   `dashu` crate's `tuning` enables both sub-crates). Used by the dashu-python
   `ziv_retries`/`ziv_retries_reset` bindings and the `python/scripts/ziv_profile.py` script.
+- **rkyv 0.7 support** (`rkyv` feature, versioned `rkyv_v07`): `Repr`/`Context`/`FBig` archive via
+  derive, delegating the big-int fields to `UBig`/`IBig`'s byte-vector archive.
 
 ### Fix
 - **`powf`/`powi` no longer return wrongly-rounded results for large `|y·ln x|`.** `exp_ball`'s

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Add
+- **rkyv 0.7 support** (`rkyv` feature, versioned `rkyv_v07`): `RBig`/`Relaxed` archive via derive,
+  delegating the numerator/denominator to `IBig`/`UBig`'s word-vector archive.
+
 ### Change
 - **(breaking) `RBig::pow` / `Relaxed::pow` now take an `isize` exponent** (was `usize`).
   Negative exponents reciprocate first — `x.pow(-n) == 1 / x.pow(n)` for a nonzero `x`, matching

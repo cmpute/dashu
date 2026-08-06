@@ -1,6 +1,10 @@
 use dashu_base::{EstimatedLog2, Gcd};
 use dashu_int::{IBig, UBig};
 
+#[cfg_attr(
+    feature = "rkyv_v07",
+    derive(rkyv_v07::Archive, rkyv_v07::Serialize, rkyv_v07::Deserialize)
+)]
 pub struct Repr {
     pub(crate) numerator: IBig,
     pub(crate) denominator: UBig,

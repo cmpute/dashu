@@ -58,6 +58,10 @@ use dashu_int::{DoubleWord, IBig};
 /// }
 /// # Ok::<(), ParseError>(())
 /// ```
+#[cfg_attr(
+    feature = "rkyv_v07",
+    derive(rkyv_v07::Archive, rkyv_v07::Serialize, rkyv_v07::Deserialize)
+)]
 pub struct FBig<RoundingMode: Round = mode::Zero, const BASE: Word = 2> {
     pub(crate) repr: Repr<BASE>,
     pub(crate) context: Context<RoundingMode>,

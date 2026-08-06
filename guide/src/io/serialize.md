@@ -22,4 +22,22 @@ With the `serde` feature enabled, every numeric type implements `Serialize` / `D
 
 ## Serialization with `rkyv`
 
-With the `rkyv` feature enabled, zero-copy (de)serialization is available for the integer types — fastest for same-architecture scenarios, at the cost of a less portable layout.
+With the `rkyv` feature enabled, zero-copy (de)serialization is available for the integer, rational, float, and complex types. The big integers archive as their **native word representation** (`ArchivedVec<Word>`, plus a sign flag for `IBig`), so `rkyv::archived_root` yields the words in place with no byte conversion on any path — the fastest possible same-architecture encoding, at the cost of a layout that depends on the target's `Word` width and endianness. In particular:
+
+- An archive is **not portable across 32/64-bit targets** (the `Word` size differs) or across machines with different endianness.
+- rkyv itself does not guarantee archive compatibility across rkyv versions, and the `size_16/32/64` offset-width feature must match on both ends.
+
+For a stable, portable encoding, prefer the byte layers above: either the `to_le_bytes`/`to_be_bytes` conversions (explicit, layout-stable) or `serde`'s binary form. Those are the right choice for data that must outlive a single machine or rkyv version; `rkyv` is the right choice when reading the archived data in place (e.g. memory-mapped files) matters more than portability.
+
+## Serializing the cached wrappers
+
+`CachedFBig` / `CachedCBig` do not implement the serialization traits (serde, rkyv, or any other
+third-party trait) — the cached types intentionally mirror only the value API. Convert to the plain
+value first:
+
+```rust,ignore
+let f = cached.as_fbig();       // or the owning `into_fbig()`
+serialize(&f);                  // serde `to_string` / rkyv `to_bytes`, etc.
+```
+
+(`CachedCBig` has the matching `as_cbig()` / `into_cbig()`.)

@@ -32,6 +32,8 @@ num-order = ["dep:num-order", "dep:_num-modular"]
 # unstable dependencies
 num-traits = ["num-traits_v02"]
 num-traits_v02 = ["dep:num-traits_v02", "dashu-int/num-traits_v02"]
+rkyv = ["rkyv_v07"]
+rkyv_v07 = ["dep:rkyv_v07", "dashu-int/rkyv_v07"]
 rand = ["rand_v08"]
 rand_v08 = ["dep:rand_v08", "dashu-int/rand_v08"]
 rand_v09 = ["dep:rand_v09", "dashu-int/rand_v09"]
@@ -58,6 +60,7 @@ rand_v08 = { optional = true, version = "0.8.3", package = "rand", default-featu
 rand_v09 = { optional = true, version = "0.9", package = "rand", default-features = false }
 rand_v010 = { optional = true, version = "0.10", package = "rand", default-features = false }
 num-traits_v02 = { optional = true, version = "0.2.15", package = "num-traits", default-features = false }
+rkyv_v07 = { optional = true, version = "0.7", package = "rkyv", default-features = false, features = ["alloc", "size_32"] }
 postgres-types_v02 = { optional = true, version = "0.2.4", package = "postgres-types", default-features = false }
 _num-modular = { optional = true, version = "0.6.1", package = "num-modular", default-features = false }
 
@@ -70,6 +73,7 @@ serde_test = { version = "1.0.130" }
 serde_json = { version = "1.0" }
 postgres = { version = "0.19.4" }
 proptest = "~1.7"
+rkyv_v07 = { version = "0.7", package = "rkyv", default-features = false, features = ["alloc", "size_32"] }
 
 criterion = { version = "0.5.1", features = ["html_reports"] }
 
@@ -88,6 +92,10 @@ required-features = ["num-order", "dashu-int/num-order"]
 [[test]]
 name = "postgres"
 required-features = ["postgres-types", "diesel_v1", "diesel_v2", "diesel_v2/postgres"]
+
+[[test]]
+name = "rkyv"
+required-features = ["rkyv"]
 
 [[bench]]
 name = "primitive"

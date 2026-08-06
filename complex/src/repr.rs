@@ -31,6 +31,10 @@ use crate::cbig::CBig;
 /// crate; it exists to host the context-layer CBig operations ([`Context::mul`], [`Context::exp`], …).
 /// The config API just delegates inward to the wrapped float context.
 #[derive(Clone, Copy)]
+#[cfg_attr(
+    feature = "rkyv_v07",
+    derive(rkyv_v07::Archive, rkyv_v07::Serialize, rkyv_v07::Deserialize)
+)]
 pub struct Context<R: Round>(pub(crate) FloatCtxt<R>);
 
 /// Correctly-rounded complex result with per-axis inexactness.

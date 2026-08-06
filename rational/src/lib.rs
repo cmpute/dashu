@@ -60,6 +60,9 @@
 #![deny(clippy::let_underscore_must_use)]
 
 extern crate alloc;
+// The rkyv derive macros emit `rkyv::` paths; alias the renamed optional dep back so they resolve.
+#[cfg(feature = "rkyv_v07")]
+extern crate rkyv_v07 as rkyv;
 
 mod add;
 mod cmp;

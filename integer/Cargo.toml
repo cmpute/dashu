@@ -25,6 +25,7 @@ tuning = ["std"]
 rand = ["rand_v08"]
 num-traits = ["num-traits_v02"]
 num-integer = ["num-integer_v01"]
+rkyv = ["rkyv_v07"]
 
 [dependencies]
 dashu-base = { version = "0.6.0-rc.1", default-features = false, path = "../base" }
@@ -44,6 +45,7 @@ rand_v09 = { optional = true, version = "0.9", package = "rand", default-feature
 rand_v010 = { optional = true, version = "0.10", package = "rand", default-features = false }
 num-traits_v02 = { optional = true, version = "0.2.14", package = "num-traits", default-features = false }
 num-integer_v01 = { optional = true, version = "0.1.45", package = "num-integer", default-features = false }
+rkyv_v07 = { optional = true, version = "0.7", package = "rkyv", default-features = false, features = ["alloc", "size_32"] }
 
 [dev-dependencies]
 rand_v08 = { version = "0.8.3", package = "rand" }
