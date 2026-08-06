@@ -46,6 +46,7 @@ rand_v010 = { optional = true, version = "0.10", package = "rand", default-featu
 num-traits_v02 = { optional = true, version = "0.2.14", package = "num-traits", default-features = false }
 num-integer_v01 = { optional = true, version = "0.1.45", package = "num-integer", default-features = false }
 rkyv_v07 = { optional = true, version = "0.7", package = "rkyv", default-features = false, features = ["alloc", "size_32"] }
+rkyv_v08 = { optional = true, version = "0.8", package = "rkyv", default-features = false, features = ["alloc", "pointer_width_32"] }
 
 [dev-dependencies]
 rand_v08 = { version = "0.8.3", package = "rand" }

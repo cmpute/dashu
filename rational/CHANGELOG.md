@@ -5,6 +5,8 @@
 ### Add
 - **rkyv 0.7 support** (`rkyv` feature, versioned `rkyv_v07`): `RBig`/`Relaxed` archive via derive,
   delegating the numerator/denominator to `IBig`/`UBig`'s word-vector archive.
+- **rkyv 0.8 support** (`rkyv_v08` feature): the same derive-based archive, via rkyv 0.8's
+  `Place`-based derive. Requires Rust ≥ 1.81 (rkyv 0.8's MSRV); excluded from the 1.68 MSRV build.
 
 ### Change
 - **(breaking) `RBig::pow` / `Relaxed::pow` now take an `isize` exponent** (was `usize`).

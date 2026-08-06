@@ -48,6 +48,13 @@ use dashu_int::{DoubleWord, Word};
     feature = "rkyv_v07",
     derive(rkyv_v07::Archive, rkyv_v07::Serialize, rkyv_v07::Deserialize)
 )]
+// `rkyv_v07` and `rkyv_v08` are mutually exclusive; when both are enabled (e.g. `--all-features`)
+// the 0.7 derive wins so the two versions' generated `Archived*`/`*Resolver` type names don't collide.
+#[cfg_attr(
+    all(feature = "rkyv_v08", not(feature = "rkyv_v07")),
+    derive(rkyv_v08::Archive, rkyv_v08::Serialize, rkyv_v08::Deserialize)
+)]
+#[cfg_attr(all(feature = "rkyv_v08", not(feature = "rkyv_v07")), rkyv(crate = rkyv_v08))]
 pub struct CBig<R: Round = mode::Zero, const B: Word = 2> {
     pub(crate) re: Repr<B>,
     pub(crate) im: Repr<B>,

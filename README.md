@@ -15,7 +15,8 @@ A library set of arbitrary precision numbers (aka. big numbers) implemented in R
 - Pure rust, full `no_std` support.
 - Focus on ergonomics & readability, and then efficiency.
 - Optimized speed and memory usage.
-- Current MSRV is 1.68.
+- Current MSRV is 1.68. The MSRV covers the default build (no optional features); optional
+  features may require a newer Rust version (e.g. `rkyv_v08` needs Rust ≥ 1.81).
 
 ## Sub-crates
 

@@ -58,6 +58,15 @@ for manifest in ['Cargo.toml', 'integer/Cargo.toml', 'float/Cargo.toml', 'ration
     text = re.sub(r'^rand_v010 = .*\n', '', text, flags=re.MULTILINE)
     open(manifest, 'w').write(text)
 
+# Strip rkyv 0.8: it declares rust-version 1.81 (> our 1.68 MSRV), so even an
+# un-enabled optional dep (or its dev-dependency twin) fails the 1.68 resolver.
+# rkyv 0.7 stays (no declared rust-version); rkyv_v08 is covered by the stable
+# `--all-features` jobs.
+for manifest in ['Cargo.toml', 'integer/Cargo.toml', 'float/Cargo.toml', 'rational/Cargo.toml', 'complex/Cargo.toml']:
+    text = open(manifest).read()
+    text = re.sub(r'^rkyv_v08 = .*\n', '', text, flags=re.MULTILINE)
+    open(manifest, 'w').write(text)
+
 # Drop the postgres submodule (its cfg-gated children reference
 # the features we just removed).
 text = open('float/src/third_party/mod.rs').read()

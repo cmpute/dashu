@@ -28,3 +28,6 @@ mod serde;
 
 #[cfg(feature = "zeroize")]
 mod zeroize;
+
+#[cfg(all(feature = "rkyv_v08", not(feature = "rkyv_v07")))]
+mod rkyv_v08;

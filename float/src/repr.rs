@@ -39,6 +39,13 @@ use dashu_int::{DoubleWord, IBig, UBig};
     feature = "rkyv_v07",
     derive(rkyv_v07::Archive, rkyv_v07::Serialize, rkyv_v07::Deserialize)
 )]
+// `rkyv_v07` and `rkyv_v08` are mutually exclusive; when both are enabled (e.g. `--all-features`)
+// the 0.7 derive wins so the two versions' generated `Archived*`/`*Resolver` type names don't collide.
+#[cfg_attr(
+    all(feature = "rkyv_v08", not(feature = "rkyv_v07")),
+    derive(rkyv_v08::Archive, rkyv_v08::Serialize, rkyv_v08::Deserialize)
+)]
+#[cfg_attr(all(feature = "rkyv_v08", not(feature = "rkyv_v07")), rkyv(crate = rkyv_v08))]
 pub struct Repr<const BASE: Word> {
     /// The significand of the floating point number. If the significand is zero, then the
     /// number is a special value identified by the exponent (see the struct-level docs):
@@ -83,6 +90,13 @@ pub struct Repr<const BASE: Word> {
     feature = "rkyv_v07",
     derive(rkyv_v07::Archive, rkyv_v07::Serialize, rkyv_v07::Deserialize)
 )]
+// `rkyv_v07` and `rkyv_v08` are mutually exclusive; when both are enabled (e.g. `--all-features`)
+// the 0.7 derive wins so the two versions' generated `Archived*`/`*Resolver` type names don't collide.
+#[cfg_attr(
+    all(feature = "rkyv_v08", not(feature = "rkyv_v07")),
+    derive(rkyv_v08::Archive, rkyv_v08::Serialize, rkyv_v08::Deserialize)
+)]
+#[cfg_attr(all(feature = "rkyv_v08", not(feature = "rkyv_v07")), rkyv(crate = rkyv_v08))]
 pub struct Context<RoundingMode: Round> {
     /// The precision of the floating point number.
     /// If set to zero, then the precision is unlimited.

@@ -35,6 +35,7 @@ num-traits_v02 = ["dep:num-traits_v02", "dashu-float/num-traits_v02"]
 num-complex = ["dep:num-complex_v04"]
 rkyv = ["rkyv_v07"]
 rkyv_v07 = ["dep:rkyv_v07", "dashu-float/rkyv_v07"]
+rkyv_v08 = ["dep:rkyv_v08", "dashu-float/rkyv_v08"]
 
 [dependencies]
 dashu-base = { version = "0.6.0-rc.1", default-features = false, path = "../base" }
@@ -55,6 +56,7 @@ rand_v010 = { optional = true, version = "0.10", package = "rand", default-featu
 num-traits_v02 = { optional = true, version = "0.2.15", package = "num-traits", default-features = false }
 num-complex_v04 = { optional = true, version = "0.4", package = "num-complex", default-features = false }
 rkyv_v07 = { optional = true, version = "0.7", package = "rkyv", default-features = false, features = ["alloc", "size_32"] }
+rkyv_v08 = { optional = true, version = "0.8", package = "rkyv", default-features = false, features = ["alloc", "pointer_width_32"] }
 
 [dev-dependencies]
 rand_v08 = { version = "0.8.3", package = "rand" }

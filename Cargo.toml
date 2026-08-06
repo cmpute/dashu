@@ -50,6 +50,7 @@ num-traits_v02 = ["dashu-int/num-traits_v02", "dashu-float/num-traits_v02", "das
 num-complex = ["dashu-cmplx/num-complex"]
 rkyv = ["dashu-int/rkyv", "dashu-float/rkyv", "dashu-ratio/rkyv", "dashu-cmplx/rkyv"]
 rkyv_v07 = ["dashu-int/rkyv_v07", "dashu-float/rkyv_v07", "dashu-ratio/rkyv_v07", "dashu-cmplx/rkyv_v07"]
+rkyv_v08 = ["dashu-int/rkyv_v08", "dashu-float/rkyv_v08", "dashu-ratio/rkyv_v08", "dashu-cmplx/rkyv_v08"]
 
 # this feature enables all related features related to decimal crates.
 decimal-extras = ["dashu-float/postgres-types", "dashu-float/diesel"]

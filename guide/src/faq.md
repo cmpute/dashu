@@ -35,8 +35,12 @@ Compared with other Rust crates:
   does not provide interval or ball types. This is a deliberate scope choice: ball arithmetic is
   still experimental upstream, and if/when it stabilizes it is better provided by a **separate
   crate** layered on `dashu-float`/`dashu-cmplx` than coupled to the core types.
-- **No SIMD-FFT multiplication** yet (planned for v1.0).
-
 ## MSRV and feature policy
 
-The current MSRV is **1.68**. Third-party integrations follow a versioned-feature convention: stable dependencies use `xxx_vYY` (e.g. `rand_v08`) with an unversioned `xxx` alias pinned to one version, while unstable dependencies alias `xxx` to the newest. See [Cargo Features](./index.md#cargo-features) for the full explanation.
+The current MSRV is **1.68**. This is the MSRV of the **default build** (no optional features
+enabled); an optional feature may require a newer Rust version. For example, `rkyv_v08` needs Rust
+≥ 1.81 (rkyv 0.8's MSRV), so it is excluded from the 1.68 MSRV CI build and only available on newer
+toolchains. Third-party integrations follow a versioned-feature convention: stable dependencies use
+`xxx_vYY` (e.g. `rand_v08`) with an unversioned `xxx` alias pinned to one version, while unstable
+dependencies alias `xxx` to the newest. See [Cargo Features](./index.md#cargo-features) for the full
+explanation.

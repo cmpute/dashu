@@ -10,7 +10,10 @@ mod num_order;
 mod num_traits;
 
 #[cfg(feature = "rkyv_v07")]
-mod rkyv;
+mod rkyv_v07;
+
+#[cfg(feature = "rkyv_v08")]
+mod rkyv_v08;
 
 // Version-agnostic distributions + sampling algorithms (the `dashu_int::rand` path).
 // The per-version rand trait impls live in `rand_v08` / `rand_v09` / `rand_v010`.

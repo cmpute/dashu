@@ -25,3 +25,6 @@ mod rand_v09;
 
 #[cfg(feature = "rand_v010")]
 mod rand_v010;
+
+#[cfg(all(feature = "rkyv_v08", not(feature = "rkyv_v07")))]
+mod rkyv_v08;

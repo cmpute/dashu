@@ -10,6 +10,8 @@
   `Context` (delegating to the wrapped float types).
 - **rkyv 0.7 support for `CBig`** (`rkyv` feature, versioned `rkyv_v07`): archive via derive,
   delegating the parts to the float/int archives.
+- **rkyv 0.8 support for `CBig`** (`rkyv_v08` feature): the same derive-based archive, via rkyv 0.8's
+  `Place`-based derive. Requires Rust ≥ 1.81 (rkyv 0.8's MSRV); excluded from the 1.68 MSRV build.
 
 ## 0.6.0-rc.1
 

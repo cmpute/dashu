@@ -8,6 +8,9 @@
   through `as_words`/`from_words` — zero-copy access to the words, at the cost of a
   target-`Word`/endianness-dependent archive layout (use `to_le_bytes`/`to_be_bytes` for a portable
   encoding).
+- **rkyv 0.8 support** (`rkyv_v08` feature): the same word-based archive, via rkyv 0.8's
+  `Place`-based API (words archived little-endian by rkyv 0.8's default). Requires Rust ≥ 1.81
+  (rkyv 0.8's MSRV); excluded from the 1.68 MSRV build.
 
 ## 0.6.0-rc.1
 
