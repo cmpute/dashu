@@ -84,7 +84,7 @@ proptest! {
     #[ignore]
     fn ratio_pow(a in rbig_strategy(), n in 0u32..=12) {
         let ra = rbig_to_rug(&a);
-        let d = a.pow(n as usize);
+        let d = a.pow(n as isize);
         prop_assert!(rbig_to_rug(&d) == rugc_r(ra.pow(n)));
     }
 
