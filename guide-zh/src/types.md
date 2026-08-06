@@ -39,6 +39,19 @@
 
 由于两个部分都是 `Repr`，`CBig` 原封不动地复用了 `dashu-float` 的有符号零 / 有符号无穷 / 支割线（branch cut）机制。它遵循 C99 Annex G / Kahan 模型（参见[标准合规性](./compliance.md)），并且与 `FBig` 一样**没有 NaN**——C99 中那些会产生复数 NaN 的情形，在上下文层会以 `FpError` 的形式上报。`CBig::from_parts(re, im)` 会取两个操作数上下文中较大的那个。构造、运算、超越函数和 I/O 的相关内容，分别在[构造与析构](./construct.md)、[类型转换](./convert.md)和[运算](./ops/index.md)中介绍。
 
+### 复数运算中的无穷
+
+`CBig` 中的复数无穷是**单一的黎曼点** `+∞ + i·0`，并且——与 `FBig` 的 `±∞` 完全一样——它是**终端值**：可以由有限输入“爆炸”*产生*，但*绝不被接受为操作数*。任何接收无穷操作数的算术或超越运算，都在上下文层以 `FpError::InfiniteInput` 拒绝（在便捷层 panic）。这让 `dashu-cmplx` 与 `dashu-float` 保持一致，并且内部统一：没有任何运算会把无穷折叠进结果后又去消费它。
+
+| 产生 `+∞ + i·0`（有限输入） | 被拒绝（无穷操作数） |
+|---|---|
+| `1/0`、有限非零的 `z/0` | `z·∞`、`∞·z`、`∞·∞`、`0·∞` |
+| `exp(+∞ + i·0)`（以及 `exp(-∞ + i·0) = 0`） | `z/∞`、`∞/z`、`∞/∞` |
+| `log(0) = -∞ + i·0` | `inv(∞)`、`log(∞)`、`sqrt(∞)` |
+| 上溢饱和 | `z ± ∞`、`∞ ± z` |
+
+`proj` 是唯一一个*接收*无穷值并返回结果的函数：它把任何部分为无穷的 `CBig` 投影为 `+∞ + i·0`（虚部零保持原始虚部的符号），按 C99 Annex G §G.5.3。`0/0` 为 `FpError::Indeterminate`。
+
 ## 辅助类型
 
 除了数值类型之外，各 crate 中还用到几种辅助类型：**dashu-base** 中的 `Sign` 和 `Approximation`，**dashu-float** 中的 `ConstCache` 和 `FpResult`，以及 **dashu-cmplx** 中的 `CfpResult`。

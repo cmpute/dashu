@@ -110,39 +110,51 @@ reusing `dashu-float`'s signed-zero / signed-infinity / branch-cut machinery for
 `FBig`, there is **no NaN**: C99 cases that would produce a complex NaN are mapped to `FpError` at
 the `Context` layer (and panics at the convenience layer).
 
+**Infinity is a terminal value**, matching `dashu-float`. Complex infinity is the single Riemann
+point `+∞ + i·0`; it is *produced* by finite inputs that blow up (`z/0`, `exp(+∞)`, overflow) but
+is *never accepted as an operand* — every arithmetic or transcendental operation that takes an
+infinite operand is rejected with `FpError::InfiniteInput` (panicking at the convenience layer).
+This differs deliberately from C99 Annex G, which admits per-part infinities and defines results
+for them (`∞·∞ = ∞`, `∞/∞ = NaN`, …); dashu rejects the whole class instead. See
+[Infinities in complex arithmetic](./types.md#infinities-in-complex-arithmetic) for the
+implemented special-value matrix.
+
 ### Data Model (§G.2)
 
 | C99 Annex G requirement | Compliance | Notes |
 |---------------------|-----------|-------|
 | Complex as an ordered real/imaginary pair | ✅ | `CBig<R, B>` stores `re` and `im` (`Repr`) over one shared `Context`. |
 | Per-part signed zeros (`±0`) | ✅ | Inherited from `dashu-float`; the sign of the imaginary zero selects the side of a branch cut. |
-| Per-part signed infinities (`±∞`) | ✅ | Each part may independently be `±∞`. |
-| A single complex infinity (Riemann point) | ✅ | `proj` collapses any part-infinite value to `+∞ + i·0`; overflow yields both parts `+∞`. |
+| Per-part signed infinities (`±∞`) | ✅ | Each part may independently be `±∞`; such a value is a *terminal* output, not an operand. |
+| A single complex infinity (Riemann point) | ✅ | `proj` collapses any part-infinite value to `+∞ + i·0`; overflow yields `+∞ + i·0`. |
 | Complex NaN | ❌ Deviates | No NaN. NaN-producing cases map to `FpError` (`Context`) / panic (convenience layer). |
 
 ### Arithmetic (§G.5)
 
 | C99 Annex G requirement | Compliance | Notes |
 |---------------------|-----------|-------|
-| `conj(z)` flips the sign of the imaginary part (incl. `-0`, `±∞`) | ✅ | Exact sign flip of the imaginary part. |
+| `conj(z)` flips the sign of the imaginary part (incl. `-0`, `±∞`) | ✅ | Exact sign flip of the imaginary part (a sign flip of a terminal value, as in `dashu-float`'s `Neg`). |
 | `proj(z)`: any infinity → `+∞ + i·0` | ✅ | The projected imaginary zero carries the sign of the original imaginary part. |
-| `∞·∞`, `finite·∞` → `∞` | ✅ | Yields the Riemann point at infinity. |
-| `0·∞` → NaN (C) | ⚠️ Partial | Returns `Err(FpError::Indeterminate)` (no NaN). |
-| `finite/0`, `∞/finite` → `∞` | ✅ | Riemann point at infinity. |
-| `0/0`, `∞/∞` → NaN (C) | ⚠️ Partial | Returns `Err(FpError::Indeterminate)`. |
-| `finite/∞`, `0/finite` → `0` | ✅ | |
-| `1/0 → ∞`, `1/∞ → 0` (inverse) | ✅ | |
+| `∞·∞`, `finite·∞`, `∞·finite` → `∞` (C) | ❌ Deviates | ∞ is terminal: any infinite *operand* is rejected with `FpError::InfiniteInput` (panic at the convenience layer). |
+| `0·∞` → NaN (C) | ❌ Deviates | `FpError::InfiniteInput` (the infinite operand is rejected outright, before the `0·∞` case). |
+| `finite/0`, `z/0` (finite `z ≠ 0`) → `∞` | ✅ | Finite numerator over zero produces the Riemann point `+∞ + i·0`. |
+| `∞/finite`, `∞/∞` → (C) | ❌ Deviates | Rejected with `FpError::InfiniteInput` (∞ is terminal). |
+| `finite/∞` → `0` (C) | ❌ Deviates | Rejected with `FpError::InfiniteInput` (the infinite divisor is terminal). |
+| `0/finite` → `0` | ✅ | |
+| `0/0` → NaN (C) | ⚠️ Partial | `Err(FpError::Indeterminate)` (no NaN). |
+| `1/0 → ∞` | ✅ | |
+| `1/∞ → 0` (C) | ❌ Deviates | Rejected with `FpError::InfiniteInput`. |
 
 ### Transcendentals and branch cuts (§G.6)
 
 | C99 Annex G requirement | Compliance | Notes |
 |---------------------|-----------|-------|
 | Branch cuts follow the Kahan signed-zero model | ✅ | e.g. $\log(-r \pm i\cdot0) = \ln r \pm i\pi$: the sign of the imaginary zero selects the side of the cut. |
-| `sqrt(+∞) = +∞` | ✅ | |
-| `sqrt(-∞) = +0 + i·∞` | ✅ | |
-| `exp(+∞) = +∞`, `exp(-∞) = +0` | ✅ | |
-| `exp(0 + i·∞)` → NaN (C) | ⚠️ Partial | Returns `Err(FpError::Indeterminate)`. |
-| `log(0) = -∞`, `log(+∞) = +∞` | ✅ | |
+| `sqrt(+∞) = +∞`, `sqrt(-∞) = +0 + i·∞` (C) | ❌ Deviates | Rejected with `FpError::InfiniteInput` (matching `dashu-float`'s `sqrt`, which also rejects). |
+| `exp(+∞) = +∞`, `exp(-∞) = +0` | ✅ | `dashu-float`'s `exp` handles infinite real inputs, so `exp(+∞ + i·0) = +∞ + i·0` and `exp(-∞ + i·0) = +0`. |
+| `exp(0 + i·∞)` → NaN (C) | ⚠️ Partial | `Err(FpError::Indeterminate)`. |
+| `log(0) = -∞` | ✅ | |
+| `log(+∞) = +∞` (C) | ❌ Deviates | Rejected with `FpError::InfiniteInput` (matching `dashu-float`'s `ln`, which rejects). |
 | $\arg(0 + i\cdot\infty) = +\pi/2$, $\arg(0 - i\cdot\infty) = -\pi/2$ | ✅ | `arg = atan2(im, re)`, reusing `dashu-float`'s Annex-G `atan2` table. |
 | `abs`/`hypot` overflow-safe modulus | ✅ | Thin composition over `dashu-float`'s `hypot`. |
 
@@ -161,5 +173,5 @@ the `Context` layer (and panics at the convenience layer).
 | Per-part signed zeros & infinities | ✅ Fully compliant |
 | Riemann-point single infinity / `proj` | ✅ Fully compliant |
 | Branch cuts (Kahan signed-zero model) | ✅ Fully compliant |
-| Arithmetic & transcendental special values | ⚠️ Values that C99 makes NaN are reported as `FpError` / panic |
+| Arithmetic & transcendental special values | ⚠️ Deviates — infinite *operands* are rejected (`FpError::InfiniteInput` / panic) rather than evaluated per C99; values C99 makes NaN are reported as `FpError` / panic |
 | Complex NaN | ❌ Absent by design |

@@ -39,6 +39,26 @@ The layout of `FBig` (and `DBig`) is a little different from other types. An `FB
 
 Because both parts are `Repr`, `CBig` reuses `dashu-float`'s signed-zero / signed-infinity / branch-cut machinery unchanged. It follows the C99 Annex G / Kahan model (see [Standards Compliance](./compliance.md)) and, like `FBig`, has **no NaN** — C99 cases that would produce a complex NaN are reported as `FpError` at the context layer. `CBig::from_parts(re, im)` takes the larger of the two operand contexts. Construction, arithmetic, transcendentals, and I/O are covered in [Construction and Destruction](./construct.md), [Conversion](./convert.md), and [Operations](./ops/index.md).
 
+### Infinities in complex arithmetic
+
+Complex infinity in `CBig` is the **single Riemann point** `+∞ + i·0`, and — exactly like
+`FBig`'s `±∞` — it is a **terminal value**: it can be *produced* by finite inputs that blow up,
+but it is *never accepted as an operand*. Any arithmetic or transcendental operation that takes an
+infinite operand is rejected with `FpError::InfiniteInput` at the context layer (and panics at the
+convenience layer). This keeps `dashu-cmplx` consistent with `dashu-float` and internally uniform:
+no operation folds an infinity into a result and then consumes it.
+
+| Produces `+∞ + i·0` (finite input) | Rejected (infinite operand) |
+|---|---|
+| `1/0`, `z/0` for a finite nonzero `z` | `z·∞`, `∞·z`, `∞·∞`, `0·∞` |
+| `exp(+∞ + i·0)` (and `exp(-∞ + i·0) = 0`) | `z/∞`, `∞/z`, `∞/∞` |
+| `log(0) = -∞ + i·0` | `inv(∞)`, `log(∞)`, `sqrt(∞)` |
+| `overflow` saturation | `z ± ∞`, `∞ ± z` |
+
+`proj` is the one function that *takes* an infinite value and returns a result: it projects any
+part-infinite `CBig` to `+∞ + i·0` (with the imaginary zero carrying the sign of the original
+imaginary part), per C99 Annex G §G.5.3. `0/0` is `FpError::Indeterminate`.
+
 ## Auxiliary Types
 
 Besides the numeric types, there are several auxiliary types used across the crates: `Sign` and `Approximation` in **dashu-base**, `ConstCache` and `FpResult` in **dashu-float**, and `CfpResult` in **dashu-cmplx**.
