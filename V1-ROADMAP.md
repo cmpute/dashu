@@ -51,30 +51,42 @@ pull-forward above.
   deterministic inputs" rule — fixed-seed / enum-driven, or moved to `fuzz/`.
 - **`dashu-cmplx` infinity model — documentation.** `CBig` represents complex infinity as
   a **single unsigned value** — the point at ∞ of the Riemann sphere ℂ ∪ {∞} (the
-  `riemann()` marker in `complex/src/repr.rs`). This is a deliberate design decision,
-  recorded here so it is not relitigated or quietly changed.
+  `riemann()` marker in `complex/src/repr.rs` = `+∞ + i·0`). Infinity is a **terminal
+  value**: it is *produced* by finite inputs that blow up, but it never *participates in*
+  arithmetic.
 
-  **Why it's the right model.** The one-point (Riemann sphere) compactification is the
-  canonical model in complex analysis, and the arithmetic rules `dashu-cmplx` implements
-  fall straight out of it:
+  **What's implemented.** Infinity is a one-way output:
 
-  - `1/0 = ∞` and `1/∞ = 0` — the swap `z ↦ 1/z` is a bijection of the sphere.
-  - `finite ± ∞ = ∞`, `finite·∞ = ∞`, `∞·∞ = ∞` — arithmetic extends continuously at ∞.
-  - `0·∞` has no continuous extension on the sphere, so it is `FpError::Indeterminate`.
+  - `1/0 = ∞`, `z/0 = ∞` (finite `z ≠ 0`) — finite inputs producing the Riemann point.
+  - `exp(+∞ + i·0) = ∞`, `exp(-∞ + i·0) = 0` — mirroring `dashu-float`'s `exp`, which
+    handles infinite real inputs.
+  - `log(0) = -∞` (a terminal `-∞ + i·0`; note the real part is *negative* infinity —
+    the complex ∞ for `log`'s pole at 0, matching float `ln(±0)`).
+  - `overflow` saturates to `(+∞, +0)`.
+  - `0/0` → `FpError::Indeterminate`.
+
+  Everything else that *takes* an infinite operand is rejected with
+  `FpError::InfiniteInput` (panicking at the convenience layer), **exactly matching
+  `dashu-float`**: `z ± ∞`, `z·∞`, `z/∞`, `∞·∞`, `∞/∞`, `0·∞`, `inv(∞)`, `log(∞)`,
+  `sqrt(∞)`-style componentwise arithmetic, etc. There is no `∞ − ∞ = ∞` and no
+  `neg(∞) = ∞` — `neg` flips the component signs (`neg(+∞ + i·0) = -∞ - i·0`), and since
+  `∞` cannot be fed back into arithmetic, `∞ − ∞` is simply rejected. This terminal-value
+  model is why `dashu-cmplx` is internally consistent: no operation folds a value to ∞ and
+  then consumes it.
 
   This is deliberately **not** the C99 / Python `complex` model. C99 derives infinity
   from *signed real and imaginary parts*, admitting a zoo of "complex infinities" (`inf +
   3i`, `inf + inf·i`, …) and a flood of NaN-producing edge cases — widely considered an
   accident of IEEE-754 component-wise semantics. The single Riemann point sidesteps that
-  whole class of bugs and matches MPC / analysis conventions rather than C's. So relative
-  to the status quo most users have seen, this is a genuine improvement, not just a
-  defensible choice.
+  whole class of bugs. So relative to the status quo most users have seen, this is a
+  genuine improvement, not just a defensible choice.
 
   **Doc-only follow-ups** so the model isn't surprising to users arriving from C99 or
   from the real-valued `±∞`:
 
   - State up front in the `CBig` docs/guide that complex ∞ is the single Riemann point
-    (not per-component), and list the identities above.
+    (not per-component), that it is terminal (produced but never consumed), and list the
+    identities above.
   - **No direction at ∞** — `arg(∞)` and component accessors like `re(∞)`/`im(∞)` are
     undefined. The unsigned model has no direction, unlike C99's directed infinities;
     users arriving from `complex.h` may expect directed behavior (e.g. `re(∞) → +inf`).
@@ -83,11 +95,6 @@ pull-forward above.
     oscillates; likewise `sin`/`cos`; `arg`) cannot be summarized by a single `exp(∞)`.
     These need explicit error/∞ handling regardless of the infinity model, but the
     unsigned model makes the loss of direction explicit.
-  - **`∞ − ∞` resolves to `∞`, not `Indeterminate`.** With one unsigned ∞, negation is
-    the identity there, so `∞ − ∞` collapses to `∞ + ∞ = ∞`. The direction-independent
-    limit of `z − w` as both → ∞ is indeed ∞, so this is defensible — but it is the one
-    genuinely debatable spot, and deserves a one-line note for symmetry with the
-    `0·∞ → Indeterminate` rule.
   - **Asymmetry with `dashu-float`** — the real crate has directed `±∞` (correct for the
     extended real line, which has two ends); the complex crate has one unsigned ∞ (correct
     for the one-point compactification). The asymmetry is mathematically right, just

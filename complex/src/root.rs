@@ -11,14 +11,6 @@ use dashu_int::Word;
 /// guard absorbs the accumulated rounding.
 const SQRT_GUARD: usize = 12;
 
-/// A signed-infinity [`Repr`] (the public-API stand-in for the private `infinity_with_sign`).
-fn signed_inf<const B: Word>(sign: Sign) -> Repr<B> {
-    match sign {
-        Sign::Positive => Repr::infinity(),
-        Sign::Negative => Repr::neg_infinity(),
-    }
-}
-
 impl<R: ErrorBounds> Context<R> {
     /// Principal square root of a complex number (context layer).
     ///
@@ -85,7 +77,9 @@ impl<R: ErrorBounds, const B: Word> CBig<R, B> {
     }
 }
 
-/// Annex G `csqrt` special-value table (the subset expressible without NaN).
+/// `csqrt` special values for a zero input (preserving signed zeros). An infinite input is a
+/// terminal value and is **not** short-circuited here — it returns `None` so the normal path runs
+/// and the float `sqrt` rejects it (panicking at the convenience layer), matching `dashu-float`.
 fn sqrt_special<R: Round, const B: Word>(
     z: &CBig<R, B>,
     ctx: Context<R>,
@@ -98,33 +92,7 @@ fn sqrt_special<R: Round, const B: Word>(
             FBig::from_repr(z.im().clone(), f),
         )));
     }
-    if !z.is_infinite() {
-        return None;
-    }
-
-    let x_pos_inf = z.re().is_infinite() && z.re().sign() == Sign::Positive;
-    let y_sign = z.im().sign();
-
-    let (re, im) = if z.im().is_infinite() {
-        // sqrt(x ± i·inf) = +inf ± i·inf for ANY x — Annex G: the infinite imaginary part
-        // dominates whether the real part is finite or infinite. This must be checked before the
-        // x-infinite cases below, which only apply when the imaginary part is finite.
-        (Repr::infinity(), signed_inf::<B>(y_sign))
-    } else if x_pos_inf {
-        // sqrt(+inf + iy) = +inf + i·0, finite y (the zero carries the sign of y)
-        (
-            Repr::infinity(),
-            if y_sign == Sign::Negative {
-                Repr::neg_zero()
-            } else {
-                Repr::zero()
-            },
-        )
-    } else {
-        // sqrt(-inf + iy) = +0 + i·sign(y)·inf, finite y (x is -inf, since z is infinite)
-        (Repr::zero(), signed_inf::<B>(y_sign))
-    };
-    Some(Ok(exact(FBig::from_repr(re, f), FBig::from_repr(im, f))))
+    None
 }
 
 #[cfg(test)]
@@ -150,19 +118,12 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "arithmetic operations with the infinity are not allowed")]
     fn sqrt_infinite_imaginary_dominates() {
-        // Annex G: sqrt(x ± i·inf) = +inf ± i·inf for ANY x, including x = ±inf — the infinite
-        // imaginary part must be handled before the x-infinite cases.
+        // ∞ is terminal: sqrt of any infinite input is rejected (matching dashu-float's `sqrt`),
+        // regardless of which component is infinite.
         let ctx = Context::<mode::HalfAway>::new(53);
-        let cases = [
-            C::new(Repr::infinity(), Repr::infinity(), ctx),
-            C::new(Repr::neg_infinity(), Repr::infinity(), ctx),
-        ];
-        for z in cases {
-            let s = z.sqrt();
-            assert!(s.re().is_infinite() && s.re().sign() == Sign::Positive);
-            assert!(s.im().is_infinite() && s.im().sign() == Sign::Positive);
-        }
+        let _ = C::new(Repr::infinity(), Repr::infinity(), ctx).sqrt();
     }
 
     #[test]
@@ -198,15 +159,16 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "arithmetic operations with the infinity are not allowed")]
     fn sqrt_pos_infinity() {
-        let inf = CBig::from(F::INFINITY);
-        let s = inf.sqrt();
-        assert!(s.re().is_infinite());
-        assert!(s.im().is_pos_zero());
+        // ∞ is terminal: sqrt(+∞) is rejected (matching dashu-float's `sqrt`).
+        let ctx = Context::<mode::HalfAway>::new(53);
+        let inf = C::new(Repr::infinity(), Repr::zero(), ctx);
+        let _ = inf.sqrt();
     }
 
     // `sqrt` at unlimited precision panics via `guard` (the special-value shortcut above only
-    // catches zero/infinity, so a finite nonzero input reaches the guard context).
+    // catches zero, so a finite nonzero input reaches the guard context).
     #[test]
     #[should_panic(expected = "precision cannot be 0")]
     fn complex_sqrt_unlimited_panics() {

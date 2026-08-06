@@ -1,8 +1,9 @@
 //! Exact, deterministic Annex G / Kahan special-value vectors for the arithmetic ops (no proptest).
 //!
-//! These exercise the context-layer short-circuits: `0·∞` / `0/0` / `∞/∞` map to
-//! [`FpError::Indeterminate`], `z/0`/`∞·finite` map to the Riemann point at infinity, and
-//! `finite/∞` / `0/finite` map to zero.
+//! These exercise the context-layer short-circuits. Infinity is a **terminal value**: any
+//! arithmetic that takes an infinite operand is rejected ([`FpError::InfiniteInput`], matching
+//! `dashu-float`), while finite operands that blow up produce the Riemann point at infinity —
+//! `z/0 → ∞` — and `0/0` maps to [`FpError::Indeterminate`].
 
 use dashu_base::Sign;
 use dashu_cmplx::{CBig, Context, FBig, FpError};
@@ -28,21 +29,12 @@ fn is_riemann(r: &C) -> bool {
 }
 
 #[test]
-fn mul_zero_infinity_is_indeterminate() {
-    assert_eq!(ctx().mul(&real(0), &inf()), Err(FpError::Indeterminate));
-    assert_eq!(ctx().mul(&inf(), &real(0)), Err(FpError::Indeterminate));
-}
-
-#[test]
-fn mul_infinity_infinity_is_riemann() {
-    let r = ctx().mul(&inf(), &inf()).unwrap().value();
-    assert!(is_riemann(&r));
-}
-
-#[test]
-fn mul_infinity_finite_is_riemann() {
-    let r = ctx().mul(&real(3), &inf()).unwrap().value();
-    assert!(is_riemann(&r));
+fn mul_with_infinity_is_infinite_input() {
+    // ∞ is terminal: any multiplication that takes an infinite operand is rejected.
+    assert_eq!(ctx().mul(&real(0), &inf()), Err(FpError::InfiniteInput));
+    assert_eq!(ctx().mul(&inf(), &real(0)), Err(FpError::InfiniteInput));
+    assert_eq!(ctx().mul(&inf(), &inf()), Err(FpError::InfiniteInput));
+    assert_eq!(ctx().mul(&real(3), &inf()), Err(FpError::InfiniteInput));
 }
 
 #[test]
@@ -51,26 +43,18 @@ fn div_zero_zero_is_indeterminate() {
 }
 
 #[test]
-fn div_inf_inf_is_indeterminate() {
-    assert_eq!(ctx().div(&inf(), &inf()), Err(FpError::Indeterminate));
+fn div_with_infinity_is_infinite_input() {
+    // ∞ is terminal: any division that takes an infinite operand is rejected.
+    assert_eq!(ctx().div(&inf(), &inf()), Err(FpError::InfiniteInput));
+    assert_eq!(ctx().div(&inf(), &real(3)), Err(FpError::InfiniteInput));
+    assert_eq!(ctx().div(&real(3), &inf()), Err(FpError::InfiniteInput));
 }
 
 #[test]
 fn div_by_zero_is_riemann() {
+    // Finite nonzero ÷ ±0 = ∞ (a terminal output).
     let r = ctx().div(&real(3), &real(0)).unwrap().value();
     assert!(is_riemann(&r));
-}
-
-#[test]
-fn div_inf_by_finite_is_riemann() {
-    let r = ctx().div(&inf(), &real(3)).unwrap().value();
-    assert!(is_riemann(&r));
-}
-
-#[test]
-fn div_finite_by_inf_is_zero() {
-    let r = ctx().div(&real(3), &inf()).unwrap().value();
-    assert!(r.is_zero());
 }
 
 #[test]
@@ -86,9 +70,9 @@ fn inv_zero_is_riemann() {
 }
 
 #[test]
-fn inv_inf_is_zero() {
-    let r = ctx().inv(&inf()).unwrap().value();
-    assert!(r.is_zero());
+fn inv_infinity_is_infinite_input() {
+    // ∞ is terminal: `1/∞` is rejected rather than computed.
+    assert_eq!(ctx().inv(&inf()), Err(FpError::InfiniteInput));
 }
 
 #[test]
@@ -108,9 +92,9 @@ fn mul_context_inexactness_flags() {
 // --- sqrt / exp / log special values (M3) ---
 
 #[test]
-fn sqrt_pos_infinity() {
-    let s = ctx().sqrt(&inf()).unwrap().value();
-    assert!(is_riemann(&s));
+fn sqrt_infinity_is_infinite_input() {
+    // ∞ is terminal: `sqrt(∞)` is rejected (matching dashu-float's `sqrt`).
+    assert_eq!(ctx().sqrt(&inf()), Err(FpError::InfiniteInput));
 }
 
 #[test]
@@ -146,9 +130,9 @@ fn log_zero_is_neg_infinity() {
 }
 
 #[test]
-fn log_infinity_is_riemann() {
-    let r = ctx().log(&inf(), None).unwrap().value();
-    assert!(is_riemann(&r));
+fn log_infinity_is_infinite_input() {
+    // ∞ is terminal: `log(∞)` is rejected (matching dashu-float's `ln`, which rejects ∞ inputs).
+    assert_eq!(ctx().log(&inf(), None), Err(FpError::InfiniteInput));
 }
 
 // --- proj / conj / arg / signed-zero branch-cut specials (M5 hardening) ---
@@ -205,11 +189,8 @@ fn log_negative_real_branch_cut() {
 }
 
 #[test]
-fn sqrt_neg_infinity_is_imaginary_infinity() {
-    // sqrt(-inf + i·0) = +0 + i·inf
+fn sqrt_neg_infinity_is_infinite_input() {
+    // ∞ is terminal: `sqrt(-∞ + i·0)` is rejected, like `sqrt(+∞)`.
     let neg_inf = CBig::from(F::NEG_INFINITY);
-    let s = ctx().sqrt(&neg_inf).unwrap().value();
-    assert!(s.re().is_pos_zero());
-    assert!(s.im().is_infinite());
-    assert_eq!(s.im().sign(), Sign::Positive);
+    assert_eq!(ctx().sqrt(&neg_inf), Err(FpError::InfiniteInput));
 }

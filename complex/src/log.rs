@@ -1,7 +1,7 @@
 //! Complex natural logarithm `log(z) = ln|z| + i·arg(z)` (principal branch; cut on `]−∞, 0]`).
 
 use crate::cbig::CBig;
-use crate::repr::{combine_parts, exact, reborrow_cache, riemann, CfpResult, Context};
+use crate::repr::{combine_parts, exact, reborrow_cache, CfpResult, Context};
 use dashu_base::{Approximation, Sign};
 use dashu_float::round::{ErrorBounds, Rounding};
 use dashu_float::{ConstCache, Context as FloatCtxt, FBig, Repr};
@@ -61,16 +61,15 @@ impl<R: ErrorBounds> Context<R> {
                 FBig::from_repr(Repr::zero_with_sign(im.sign()), self.float()),
             ));
         }
-        if z.is_infinite() {
-            return Ok(riemann(*self)); // log(∞) = +∞ (Riemann point)
-        }
+        // An infinite input is a terminal value: it is not short-circuited here (the `log(0)`
+        // shortcut above is exact and needs no precision) — it falls through and the float `hypot`
+        // rejects it, panicking at the convenience layer.
 
         // `ln|z| + i·arg(z)`. The float `hypot`/`ln`/`atan2` are correctly-rounded at the working
         // precision. The imaginary part (`atan2` of the exact parts) carries only `atan2`'s own
         // rounding; the real part `ln|z|` additionally propagates `hypot`'s relative error through
         // `ln`, which dominates near `|z| = 1` (where `ln|z| → 0`) — so its radius carries an extra
-        // absolute `B^{1-pw}` term. The Ziv driver asserts a limited context (the `log(0)`/`log(∞)`
-        // shortcuts above are exact and need no precision).
+        // absolute `B^{1-pw}` term. The Ziv driver asserts a limited context.
         let p = self.precision();
         let [re, im] = self.ziv(LOG_GUARD, |guard| {
             let pw = p + guard;

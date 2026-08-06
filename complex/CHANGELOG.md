@@ -18,6 +18,19 @@
   `clog(-0 ± i·0) = -∞ + i·±π` (the argument of a negative-real zero, correctly rounded at the
   context precision). Only the zero's sign changes — values are numerically unchanged.
 
+### Change
+- **Complex infinity is now a terminal value**, matching `dashu-float`'s `±∞`. Infinity is the
+  single Riemann point `+∞ + i·0` (`riemann()`), produced by finite inputs that blow up (`1/0`,
+  `z/0` for a finite nonzero `z`, `exp(+∞ + i·0)`, `log(0) = -∞ + i·0`, overflow) — but **no
+  arithmetic accepts an infinite operand** anymore. The previous `∞`-input shortcuts in
+  `mul`/`sqr`/`fma`/`mul_real`/`div`/`div_real`/`inv`/`log`/`sqrt`, which folded to `(+∞, +0)`,
+  are removed; they now fall through to the float layer and reject with
+  [`FpError::InfiniteInput`](dashu_float::FpError::InfiniteInput) (panicking at the convenience
+  layer), exactly like `add`/`sub` already did. So `∞·z`, `z/∞`, `∞ - ∞`, `inv(∞)`, `log(∞)`,
+  `sqrt(∞)` all reject instead of producing `(+∞, +0)`. `0/0` remains `Indeterminate`. The only
+  exceptions that still accept a special input are those `dashu-float` itself special-cases:
+  `exp(+∞ + i·0) = +∞ + i·0` and `exp(-∞ + i·0) = 0`, and `proj`'s projection to `(+∞, ±0)`.
+
 ## 0.6.0-rc.1
 
 ### Add

@@ -15,12 +15,10 @@ const DIV_GUARD: usize = 14;
 impl<R: Round> Context<R> {
     /// Reciprocal `1/z = conj(z)/|z|²` under this context (context layer).
     pub fn inv<const B: Word>(&self, z: &CBig<R, B>) -> CfpResult<R, B> {
-        if z.is_infinite() {
-            return Ok(exact(FBig::ZERO, FBig::ZERO)); // 1/∞ = 0
-        }
         if z.is_zero() {
             return Ok(riemann(*self)); // 1/0 = ∞
         }
+        // An infinite input is a terminal value: it falls through and the float layer rejects it.
         let gctx = self.work_context(DIV_GUARD);
         let p = self.precision();
         let (x, y) = (z.re(), z.im());
@@ -88,22 +86,15 @@ impl<R: Round> Context<R> {
 
     /// Divide a complex number by a real scalar (context layer): `(x+iy)/s = (x/s) + i(y/s)`.
     pub fn div_real<const B: Word>(&self, z: &CBig<R, B>, s: &FBig<R, B>) -> CfpResult<R, B> {
-        if z.is_infinite() || s.repr().is_infinite() {
-            if z.is_infinite() && s.repr().is_infinite() {
-                return Err(FpError::Indeterminate); // ∞/∞
-            }
-            if s.repr().is_infinite() {
-                return Ok(exact(FBig::ZERO, FBig::ZERO)); // finite/∞ = 0
-            }
-            // z infinite, s finite nonzero → ∞
-            return Ok(riemann(*self));
-        }
-        if s.repr().is_pos_zero() || s.repr().is_neg_zero() {
+        if !z.is_infinite() && (s.repr().is_pos_zero() || s.repr().is_neg_zero()) {
+            // Division by zero for a finite numerator produces ∞ as a terminal output.
             if z.is_zero() {
                 return Err(FpError::Indeterminate); // 0/0 (incl. ±0)
             }
             return Ok(riemann(*self)); // z/±0 (z≠0) = ∞
         }
+        // An infinite operand (numerator or divisor) is a terminal value: it falls through and the
+        // float layer rejects it (panicking at the convenience layer).
         let gctx = self.work_context(DIV_GUARD);
         let p = self.precision();
         let re = gctx.div(z.re(), s.repr())?.value().with_precision(p);
@@ -112,19 +103,24 @@ impl<R: Round> Context<R> {
     }
 }
 
-/// Annex-G short-circuit for `z / w`.
+/// Short-circuit for `z / w` with a zero operand (finite numerators only).
+///
+/// An infinite numerator or divisor is a terminal value and is **not** accepted here — it returns
+/// `None` so the normal path runs and the float layer rejects it (panicking at the convenience
+/// layer). Only the exact zero cases, whose results are fully determined by finite operands, are
+/// short-circuited: `0/0 → Indeterminate`, `finite/0 → ∞`, `0/finite → 0`.
 fn div_special<R: Round, const B: Word>(z: &CBig<R, B>, w: &CBig<R, B>) -> Option<CfpResult<R, B>> {
-    let (zi, wi) = (z.is_infinite(), w.is_infinite());
+    if z.is_infinite() || w.is_infinite() {
+        return None;
+    }
     let (zz, wz) = (z.is_zero(), w.is_zero());
     let ctx = Context::max(z.context(), w.context());
-    if (zi && wi) || (zz && wz) {
-        Some(Err(FpError::Indeterminate)) // ∞/∞ or 0/0
-    } else if wi {
-        Some(Ok(exact(FBig::ZERO, FBig::ZERO))) // (finite or 0) / ∞ = 0
-    } else if wz || zi {
-        Some(Ok(riemann(ctx))) // (nonzero or ∞) / 0, or ∞ / finite = ∞
+    if zz && wz {
+        Some(Err(FpError::Indeterminate)) // 0/0
+    } else if wz {
+        Some(Ok(riemann(ctx))) // z/0 (z ≠ 0) = ∞
     } else if zz {
-        Some(Ok(exact(FBig::ZERO, FBig::ZERO))) // 0 / finite = 0
+        Some(Ok(exact(FBig::ZERO, FBig::ZERO))) // 0/w (w ≠ 0) = 0
     } else {
         None
     }

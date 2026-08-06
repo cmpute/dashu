@@ -1,11 +1,11 @@
 //! Complex squaring and multiplication (near-correctly rounded via the guard-digit recipe).
 
 use crate::cbig::CBig;
-use crate::repr::{combine_parts, exact, riemann, CfpResult, Context};
+use crate::repr::{combine_parts, exact, CfpResult, Context};
 use core::ops::{Mul, MulAssign};
 use dashu_base::Sign::{self, *};
 use dashu_float::round::Round;
-use dashu_float::{FBig, FpError, Repr};
+use dashu_float::{FBig, Repr};
 use dashu_int::Word;
 
 /// Guard digits (base-B) for `sqr`/`mul`. The published normwise error bound for complex
@@ -16,9 +16,6 @@ const MUL_GUARD: usize = 10;
 impl<R: Round> Context<R> {
     /// Square a complex number under this context: `(x+iy)² = (x²-y²) + i(2xy)`.
     pub fn sqr<const B: Word>(&self, z: &CBig<R, B>) -> CfpResult<R, B> {
-        if z.is_infinite() {
-            return Ok(riemann(*self)); // ∞·∞ = Riemann infinity
-        }
         if z.is_zero() {
             // (x+iy)² = (x²−y²) + i·2xy: the real part is always `+0` (both squares are `+0`); the
             // imaginary part carries the signed product `2·x·y` — `−0` iff the two parts are
@@ -49,12 +46,6 @@ impl<R: Round> Context<R> {
     /// Multiply two complex numbers under this context: `(x+iy)(u+iv) = (xu-yv) + i(xv+yu)`
     /// (naive 4-mul form; near-correctly rounded via the guard re-round).
     pub fn mul<const B: Word>(&self, z: &CBig<R, B>, w: &CBig<R, B>) -> CfpResult<R, B> {
-        if z.is_infinite() || w.is_infinite() {
-            if z.is_zero() || w.is_zero() {
-                return Err(FpError::Indeterminate); // 0·∞
-            }
-            return Ok(riemann(Context::max(z.context(), w.context()))); // ∞·finite = Riemann infinity
-        }
         let gctx = self.work_context(MUL_GUARD);
         let p = self.precision();
         let (x, y) = (z.re(), z.im());
@@ -78,12 +69,6 @@ impl<R: Round> Context<R> {
 
     /// Multiply a complex number by a real scalar (context layer): `(x+iy)·s = (xs) + i(ys)`.
     pub fn mul_real<const B: Word>(&self, z: &CBig<R, B>, s: &FBig<R, B>) -> CfpResult<R, B> {
-        if z.is_infinite() || s.repr().is_infinite() {
-            if z.is_zero() || s.repr().is_pos_zero() || s.repr().is_neg_zero() {
-                return Err(FpError::Indeterminate); // 0·∞
-            }
-            return Ok(riemann(*self));
-        }
         let gctx = self.work_context(MUL_GUARD);
         let p = self.precision();
         let re = gctx.mul(z.re(), s.repr())?.value().with_precision(p);
@@ -97,9 +82,8 @@ impl<R: Round> Context<R> {
     /// naive mul-then-add form). `sign` scales `z3` ([`Sign::Positive`] adds it,
     /// [`Sign::Negative`] subtracts).
     ///
-    /// Infinity handling mirrors [`mul`](Self::mul): `∞` in `z1·z2` (or in `z3`)
-    /// yields the Riemann infinity; `0·∞` within the product is
-    /// [`Indeterminate`](FpError::Indeterminate).
+    /// An infinite operand is a terminal value and is not accepted — the per-component float
+    /// `fma` rejects it ([`FpError::InfiniteInput`], panicking at the convenience layer).
     pub fn fma<const B: Word>(
         &self,
         z1: &CBig<R, B>,
@@ -107,15 +91,6 @@ impl<R: Round> Context<R> {
         z3: &CBig<R, B>,
         sign: Sign,
     ) -> CfpResult<R, B> {
-        if z1.is_infinite() || z2.is_infinite() {
-            if z1.is_zero() || z2.is_zero() {
-                return Err(FpError::Indeterminate); // 0·∞ in z1·z2
-            }
-            return Ok(riemann(*self)); // z1·z2 = ∞; ± z3 stays ∞
-        }
-        if z3.is_infinite() {
-            return Ok(riemann(*self)); // finite z1·z2 ± ∞ = ∞
-        }
         let gctx = self.work_context(MUL_GUARD);
         let p = self.precision();
         let (a, b) = (z1.re(), z1.im());
