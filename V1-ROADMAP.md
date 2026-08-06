@@ -34,9 +34,9 @@ pull-forward above.
   via chained real FMA; a truly-correctly-rounded single-rounding complex FMA remains open.)
 - **Vector ops** — `dot`/mean helpers. (`Sum` for `CBig` is already exact-accumulating,
   matching `FBig: Sum`; `Product` for `CBig` remains a fold, matching `FBig: Product`.)
-- **`num_complex::Complex<FBig>` interop** — conversions both ways. (`CBig` `serde`/`rkyv`/
-  `zeroize` shipped in v0.6; the `num-complex` feature flag is scaffolded, the conversions are
-  deferred.)
+- **`num-complex` interop** — the `num-complex` feature already ships `Complex<f32>` /
+  `Complex<f64>` conversions (`TryFrom`, base 2, in `complex/src/third_party/num_complex.rs`).
+  `Complex<FBig>` interop is deliberately **not** planned — the primitive-float pair is the scope.
 - **Test organization — clear `src` in-file vs `tests/` boundary.** Tests are scattered:
   many operations have *both* an in-file `#[cfg(test)] mod tests` (in `src/<op>.rs`) *and*
   a parallel `tests/<op>.rs` integration file, and the two frequently overlap.
