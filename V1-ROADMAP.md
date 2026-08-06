@@ -49,57 +49,6 @@ pull-forward above.
   the boundary is explicit and enforceable. As part of this, clarify the status of the
   `tests/*_prop.rs` property tests against the `AGENTS.md` "in-crate tests must use fixed,
   deterministic inputs" rule — fixed-seed / enum-driven, or moved to `fuzz/`.
-- **`dashu-cmplx` infinity model — documentation.** `CBig` represents complex infinity as
-  a **single unsigned value** — the point at ∞ of the Riemann sphere ℂ ∪ {∞} (the
-  `riemann()` marker in `complex/src/repr.rs` = `+∞ + i·0`). Infinity is a **terminal
-  value**: it is *produced* by finite inputs that blow up, but it never *participates in*
-  arithmetic.
-
-  **What's implemented.** Infinity is a one-way output:
-
-  - `1/0 = ∞`, `z/0 = ∞` (finite `z ≠ 0`) — finite inputs producing the Riemann point.
-  - `exp(+∞ + i·0) = ∞`, `exp(-∞ + i·0) = 0` — mirroring `dashu-float`'s `exp`, which
-    handles infinite real inputs.
-  - `log(0) = -∞` (a terminal `-∞ + i·0`; note the real part is *negative* infinity —
-    the complex ∞ for `log`'s pole at 0, matching float `ln(±0)`).
-  - `overflow` saturates to `(+∞, +0)`.
-  - `0/0` → `FpError::Indeterminate`.
-
-  Everything else that *takes* an infinite operand is rejected with
-  `FpError::InfiniteInput` (panicking at the convenience layer), **exactly matching
-  `dashu-float`**: `z ± ∞`, `z·∞`, `z/∞`, `∞·∞`, `∞/∞`, `0·∞`, `inv(∞)`, `log(∞)`,
-  `sqrt(∞)`-style componentwise arithmetic, etc. There is no `∞ − ∞ = ∞` and no
-  `neg(∞) = ∞` — `neg` flips the component signs (`neg(+∞ + i·0) = -∞ - i·0`), and since
-  `∞` cannot be fed back into arithmetic, `∞ − ∞` is simply rejected. This terminal-value
-  model is why `dashu-cmplx` is internally consistent: no operation folds a value to ∞ and
-  then consumes it.
-
-  This is deliberately **not** the C99 / Python `complex` model. C99 derives infinity
-  from *signed real and imaginary parts*, admitting a zoo of "complex infinities" (`inf +
-  3i`, `inf + inf·i`, …) and a flood of NaN-producing edge cases — widely considered an
-  accident of IEEE-754 component-wise semantics. The single Riemann point sidesteps that
-  whole class of bugs. So relative to the status quo most users have seen, this is a
-  genuine improvement, not just a defensible choice.
-
-  **Doc-only follow-ups** so the model isn't surprising to users arriving from C99 or
-  from the real-valued `±∞`:
-
-  - State up front in the `CBig` docs/guide that complex ∞ is the single Riemann point
-    (not per-component), that it is terminal (produced but never consumed), and list the
-    identities above.
-  - **No direction at ∞** — `arg(∞)` and component accessors like `re(∞)`/`im(∞)` are
-    undefined. The unsigned model has no direction, unlike C99's directed infinities;
-    users arriving from `complex.h` may expect directed behavior (e.g. `re(∞) → +inf`).
-  - **Direction-dependent limits are lost** — functions whose limit at ∞ depends on the
-    approach direction (`exp`, an essential singularity: `+Re → ∞`, `−Re → 0`, `iRe`
-    oscillates; likewise `sin`/`cos`; `arg`) cannot be summarized by a single `exp(∞)`.
-    These need explicit error/∞ handling regardless of the infinity model, but the
-    unsigned model makes the loss of direction explicit.
-  - **Asymmetry with `dashu-float`** — the real crate has directed `±∞` (correct for the
-    extended real line, which has two ends); the complex crate has one unsigned ∞ (correct
-    for the one-point compactification). The asymmetry is mathematically right, just
-    non-obvious — worth stating alongside the real crate's directed `±∞`.
-
 - **`dashu-float` `exp` guard-bit formulation.** Anchor drifted (`float/src/exp.rs:87` is
   now a doc example); after the v0.6 Ball migration the exp radius is derived mechanically,
   so this item is largely absorbed — the only live residue is the `(x − s·log2)/2ⁿ`
