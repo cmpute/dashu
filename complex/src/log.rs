@@ -2,7 +2,8 @@
 
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, exact, reborrow_cache, riemann, CfpResult, Context};
-use dashu_float::round::ErrorBounds;
+use dashu_base::{Approximation, Sign};
+use dashu_float::round::{ErrorBounds, Rounding};
 use dashu_float::{ConstCache, Context as FloatCtxt, FBig, Repr};
 use dashu_int::{IBig, Word};
 
@@ -21,10 +22,43 @@ impl<R: ErrorBounds> Context<R> {
         mut cache: Option<&mut ConstCache>,
     ) -> CfpResult<R, B> {
         if z.is_zero() {
-            // log(±0) = -∞ + i·arg(±0); arg(0,0) is undefined — report the real -∞ via ln(0)
+            let (re, im) = (z.re(), z.im());
+            let neg_inf = FBig::from_repr(Repr::neg_infinity(), self.float());
+            // log(±0 ± i·0) = -∞ + i·arg(±0 ± i·0), where arg is the signed-zero atan2:
+            // atan2(±0, +0) = ±0 (exact) and atan2(±0, −0) = ±π (inexact), both carrying the
+            // imaginary part's sign — so `clog(-0 ± i·0) = -∞ + i·±π`.
+            if re.is_neg_zero() {
+                if self.precision() == 0 {
+                    // π isn't exactly representable at unlimited precision — keep the historical
+                    // `+0` imaginary part (the zero shortcut bypasses the Ziv precision check).
+                    return Ok(exact(
+                        neg_inf,
+                        FBig::from_repr(Repr::zero_with_sign(Sign::Positive), self.float()),
+                    ));
+                }
+                let mut pi = self.float().pi::<B>(reborrow_cache(&mut cache));
+                if im.is_neg_zero() {
+                    // Negate π, flipping the rounding adjustment (`AddOne` ↔ `SubOne`): negating a
+                    // value negates its significand, so the adjustment applied to the truncated
+                    // significand flips sign (`Approximation::map` would keep the error unchanged).
+                    pi = match pi {
+                        Approximation::Exact(v) => Approximation::Exact(-v),
+                        Approximation::Inexact(v, Rounding::AddOne) => {
+                            Approximation::Inexact(-v, Rounding::SubOne)
+                        }
+                        Approximation::Inexact(v, Rounding::SubOne) => {
+                            Approximation::Inexact(-v, Rounding::AddOne)
+                        }
+                        Approximation::Inexact(v, Rounding::NoOp) => {
+                            Approximation::Inexact(-v, Rounding::NoOp)
+                        }
+                    };
+                }
+                return Ok(combine_parts(Approximation::Exact(neg_inf), pi));
+            }
             return Ok(exact(
-                FBig::from_repr(Repr::neg_infinity(), self.float()),
-                FBig::from_repr(Repr::zero(), self.float()),
+                neg_inf,
+                FBig::from_repr(Repr::zero_with_sign(im.sign()), self.float()),
             ));
         }
         if z.is_infinite() {
@@ -129,5 +163,30 @@ mod tests {
     #[should_panic(expected = "precision cannot be 0")]
     fn complex_log_unlimited_precision_panics() {
         let _ = C::ONE.ln();
+    }
+
+    #[test]
+    fn log_signed_zero() {
+        // Annex-G signed-zero cases: `clog(-0 ± i·0) = -∞ + i·±π`, and the exact `+0` imaginary
+        // part carries the imaginary part's sign for a positive-real zero.
+        let fctx = dashu_float::Context::<mode::HalfAway>::new(53);
+        let (neg0, pos0) = (F::from_repr(Repr::neg_zero(), fctx), F::from_repr(Repr::zero(), fctx));
+        let pi53 = F::pi(53);
+        // clog(-0 + i·0) = -∞ + i·π
+        let l = C::from_parts(neg0.clone(), pos0.clone()).ln();
+        assert!(l.re().is_infinite() && l.re().sign() == Sign::Negative);
+        assert_eq!(l.im(), pi53.repr());
+        // clog(-0 − i·0) = -∞ − i·π
+        let l = C::from_parts(neg0.clone(), neg0.clone()).ln();
+        assert!(l.re().is_infinite() && l.re().sign() == Sign::Negative);
+        assert_eq!(l.im(), (-pi53).repr());
+        // clog(+0 − i·0) = -∞ − i·0
+        let l = C::from_parts(pos0.clone(), neg0.clone()).ln();
+        assert!(l.re().is_infinite() && l.re().sign() == Sign::Negative);
+        assert!(l.im().is_neg_zero());
+        // clog(+0 + i·0) = -∞ + i·0
+        let l = C::from_parts(pos0.clone(), pos0).ln();
+        assert!(l.re().is_infinite() && l.re().sign() == Sign::Negative);
+        assert!(l.im().is_pos_zero());
     }
 }

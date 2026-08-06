@@ -399,10 +399,10 @@ impl<const B: Word> Repr<B> {
         }
     }
 
-    /// Create the `Repr` for a signed zero from the mathematical sign of a result that
-    /// underflowed.
+    /// Create the `Repr` for a signed zero from the mathematical sign of a result — e.g. one
+    /// that underflowed or collapsed to zero (a negative result gives `−0`).
     #[inline]
-    pub(crate) const fn zero_with_sign(sign: Sign) -> Self {
+    pub const fn zero_with_sign(sign: Sign) -> Self {
         match sign {
             Sign::Positive => Self::zero(),
             Sign::Negative => Self::neg_zero(),

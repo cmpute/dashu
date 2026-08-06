@@ -12,6 +12,11 @@
   delegating the parts to the float/int archives.
 - **rkyv 0.8 support for `CBig`** (`rkyv_v08` feature): the same derive-based archive, via rkyv 0.8's
   `Place`-based derive. Requires Rust ≥ 1.81 (rkyv 0.8's MSRV); excluded from the 1.68 MSRV build.
+- **Signed-zero preservation on exact-zero inputs** (`sin_cos`, `sqr`, `log`). The zero fast paths
+  no longer collapse to `+0` components: `csin(-0 + i·0) = -0 + i·0`, `ccos(-0 + i·0) = 1 - i·0`
+  (the imaginary part is the signed product `x·y`), `sqr(-0 + i·0) = +0 - i·0` (from `2·x·y`), and
+  `clog(-0 ± i·0) = -∞ + i·±π` (the argument of a negative-real zero, correctly rounded at the
+  context precision). Only the zero's sign changes — values are numerically unchanged.
 
 ## 0.6.0-rc.1
 

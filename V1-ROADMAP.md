@@ -97,17 +97,6 @@ pull-forward above.
   now a doc example); after the v0.6 Ball migration the exp radius is derived mechanically,
   so this item is largely absorbed — the only live residue is the `(x − s·log2)/2ⁿ`
   reduction-form TODO in `float/src/exp.rs`.
-- **`dashu-cmplx` signed-zero preservation.** `sin_cos` and `sqr` take a fast path on
-  exactly-zero input that returns `+0` components, so several Annex-G / IEEE signed-zero
-  cases are not preserved (all numerically equal to `+0`, hence deferred):
-  - `csin(-0 + 0i)` returns `+0 + 0i` (should be `-0 + 0i`)
-  - `ccos(-0 + 0i)` returns `1 + 0i` (should be `1 - 0i`)
-  - `sqr(-0 + 0i)` returns `+0 + i·0` (should be `+0 + i·(-0)`)
-  - `clog(-0 ± 0i)`'s `±π` imaginary part is not produced (the zero short-circuit returns
-    `-∞ + i·0`)
-
-  (The real-side `exp_m1(-0) = -0` fix that `CBig` sinh/cosh build on *did* land in 0.5.)
-
 ## v1.0 — API freeze
 
 With the one breaking change on the 1.0 path (the signed-`isize` `RBig::pow`) shipped in

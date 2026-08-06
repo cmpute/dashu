@@ -48,6 +48,9 @@
   `ziv_retries`/`ziv_retries_reset` bindings and the `python/scripts/ziv_profile.py` script.
 - **rkyv 0.7 support** (`rkyv` feature, versioned `rkyv_v07`): `Repr`/`Context`/`FBig` archive via
   derive, delegating the big-int fields to `UBig`/`IBig`'s byte-vector archive.
+- **`Repr::zero_with_sign` is now public** — build a `±0` `Repr` from a [`Sign`] (previously
+  crate-private, used by the float underflow/rounding paths). `dashu-cmplx` uses it for its
+  signed-zero-preserving `sin_cos`/`sqr`/`log` fast paths.
 
 ### Fix
 - **`powf`/`powi` no longer return wrongly-rounded results for large `|y·ln x|`.** `exp_ball`'s

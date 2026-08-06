@@ -5,7 +5,7 @@ use crate::repr::{combine_parts, exact, riemann, CfpResult, Context};
 use core::ops::{Mul, MulAssign};
 use dashu_base::Sign::{self, *};
 use dashu_float::round::Round;
-use dashu_float::{FBig, FpError};
+use dashu_float::{FBig, FpError, Repr};
 use dashu_int::Word;
 
 /// Guard digits (base-B) for `sqr`/`mul`. The published normwise error bound for complex
@@ -20,7 +20,18 @@ impl<R: Round> Context<R> {
             return Ok(riemann(*self)); // ∞·∞ = Riemann infinity
         }
         if z.is_zero() {
-            return Ok(exact(FBig::ZERO, FBig::ZERO));
+            // (x+iy)² = (x²−y²) + i·2xy: the real part is always `+0` (both squares are `+0`); the
+            // imaginary part carries the signed product `2·x·y` — `−0` iff the two parts are
+            // opposite-signed zeros (IEEE: `(−0)(+0) = −0`).
+            let im_sign = if z.re().sign() == z.im().sign() {
+                Sign::Positive
+            } else {
+                Sign::Negative
+            };
+            return Ok(exact(
+                FBig::from_repr(Repr::zero(), self.float()),
+                FBig::from_repr(Repr::zero_with_sign(im_sign), self.float()),
+            ));
         }
         let gctx = self.work_context(MUL_GUARD);
         let p = self.precision();
@@ -273,5 +284,23 @@ mod tests {
         // − z3: (-5+10i) − (5+6i) = -10 + 4i
         let r = z1.fma(&z2, &z3, Negative);
         assert!(r == c(-10, 4));
+    }
+
+    #[test]
+    fn sqr_signed_zero() {
+        // (x+iy)² = (x²−y²) + i·2xy: the real part is always `+0`, and the imaginary part is
+        // `2·x·y` — `−0` iff the two zero parts are opposite-signed.
+        let fctx = dashu_float::Context::<mode::HalfAway>::new(53);
+        let neg_zero = F::from_repr(Repr::neg_zero(), fctx);
+        let pos_zero = F::from_repr(Repr::zero(), fctx);
+        let s = C::from_parts(neg_zero.clone(), pos_zero.clone()).sqr(); // -0 + i·0
+        assert!(s.re().is_pos_zero());
+        assert!(s.im().is_neg_zero());
+        let s = C::from_parts(pos_zero.clone(), neg_zero.clone()).sqr(); // +0 - i·0
+        assert!(s.re().is_pos_zero());
+        assert!(s.im().is_neg_zero());
+        let s = C::from_parts(neg_zero.clone(), neg_zero).sqr(); // -0 - i·0
+        assert!(s.re().is_pos_zero());
+        assert!(s.im().is_pos_zero());
     }
 }

@@ -6,6 +6,7 @@
 
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, reborrow_cache, CfpResult, Context};
+use dashu_base::Sign;
 use dashu_float::round::ErrorBounds;
 use dashu_float::{ConstCache, Context as FloatCtxt, FBig, FpError, Repr};
 use dashu_int::{IBig, Word};
@@ -27,15 +28,26 @@ impl<R: ErrorBounds> Context<R> {
             return (Err(FpError::Indeterminate), Err(FpError::Indeterminate));
         }
         if z.is_zero() {
-            let zero = Ok(crate::repr::exact(
-                FBig::from_repr(Repr::zero(), self.float()),
-                FBig::from_repr(Repr::zero(), self.float()),
-            ));
-            let one = Ok(crate::repr::exact(
+            let (re, im) = (z.re(), z.im());
+            // sin(x+iy) = sinx·coshy + i·cosx·sinhy: at ±0 the parts carry the input zeros' signs
+            // (sin(±0) = ±0, sinh(±0) = ±0, cos(±0) = cosh(±0) = 1), so e.g. `csin(-0 + i·0) = -0 + i·0`.
+            let sin = crate::repr::exact(
+                FBig::from_repr(Repr::zero_with_sign(re.sign()), self.float()),
+                FBig::from_repr(Repr::zero_with_sign(im.sign()), self.float()),
+            );
+            // cos(x+iy) = cosx·coshy − i·sinx·sinhy: real = 1; the imaginary part is the signed
+            // product `x·y` (`−0` iff the two parts are opposite-signed zeros) — the Annex-G table
+            // value, which differs from the naive `−sinx·sinhy` propagation (`ccos(-0 + i·0) = 1 - i·0`).
+            let cos_im = if re.sign() != im.sign() {
+                Sign::Negative
+            } else {
+                Sign::Positive
+            };
+            let cos = crate::repr::exact(
                 FBig::from_repr(Repr::one(), self.float()),
-                FBig::from_repr(Repr::zero(), self.float()),
-            ));
-            return (zero, one);
+                FBig::from_repr(Repr::zero_with_sign(cos_im), self.float()),
+            );
+            return (Ok(sin), Ok(cos));
         }
 
         // `sin z = sinx·coshy + i·cosx·sinhy`, `cos z = cosx·coshy − i·sinx·sinhy`. The four products
@@ -424,5 +436,26 @@ mod tests {
     #[should_panic(expected = "precision cannot be 0")]
     fn complex_asin_unlimited_panics() {
         let _ = C::ONE.asin();
+    }
+
+    #[test]
+    fn sin_cos_signed_zero() {
+        // Annex-G signed-zero cases for exactly-zero input: `csin(±0 ± i·0)` carries the input
+        // zeros' signs per part; `ccos`'s imaginary part is the signed product `x·y` (`−0` iff the
+        // two parts are opposite-signed — e.g. `ccos(-0 + i·0) = 1 - i·0`).
+        let fctx = dashu_float::Context::<mode::HalfAway>::new(53);
+        let (neg0, pos0) = (F::from_repr(Repr::neg_zero(), fctx), F::from_repr(Repr::zero(), fctx));
+        for (z, s_re_neg, s_im_neg, c_im_neg) in [
+            (C::from_parts(pos0.clone(), pos0.clone()), false, false, false), // +0 + i·0
+            (C::from_parts(pos0.clone(), neg0.clone()), false, true, true),   // +0 − i·0
+            (C::from_parts(neg0.clone(), pos0.clone()), true, false, true),   // −0 + i·0
+            (C::from_parts(neg0.clone(), neg0.clone()), true, true, false),   // −0 − i·0
+        ] {
+            let (s, c) = z.sin_cos();
+            assert_eq!(s.re().is_neg_zero(), s_re_neg, "sin re sign for {z}");
+            assert_eq!(s.im().is_neg_zero(), s_im_neg, "sin im sign for {z}");
+            assert!(c.re() == &Repr::one(), "cos re is 1 for {z}");
+            assert_eq!(c.im().is_neg_zero(), c_im_neg, "cos im sign for {z}");
+        }
     }
 }
