@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Add
+- **serde support for `CBig`** (`serde` feature): `Serialize`/`Deserialize` round-trips the real and
+  imaginary parts (via the float `Repr` serde) and the shared precision; the rounding mode is a
+  type parameter and is not serialized.
+- **zeroize support for `CBig`** (`zeroize` feature): `Zeroize` on `CBig` and the complex
+  `Context` (delegating to the wrapped float types).
+- **rkyv 0.7 support for `CBig`** (`rkyv` feature, versioned `rkyv_v07`): archive via derive,
+  delegating the parts to the float/int archives.
+
 ## 0.6.0-rc.1
 
 ### Add
