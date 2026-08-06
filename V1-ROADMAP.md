@@ -34,9 +34,9 @@ pull-forward above.
   via chained real FMA; a truly-correctly-rounded single-rounding complex FMA remains open.)
 - **Vector ops** — `dot`/mean helpers. (`Sum` for `CBig` is already exact-accumulating,
   matching `FBig: Sum`; `Product` for `CBig` remains a fold, matching `FBig: Product`.)
-- **Third-party integration** — `CBig` `serde`/`rkyv`/`zeroize`, and
-  `num_complex::Complex<FBig>` interop. (The `serde`/`num-traits`/`num-complex` feature
-  flags are scaffolded; the impls are deferred.)
+- **`num_complex::Complex<FBig>` interop** — conversions both ways. (`CBig` `serde`/`rkyv`/
+  `zeroize` shipped in v0.6; the `num-complex` feature flag is scaffolded, the conversions are
+  deferred.)
 - **Test organization — clear `src` in-file vs `tests/` boundary.** Tests are scattered:
   many operations have *both* an in-file `#[cfg(test)] mod tests` (in `src/<op>.rs`) *and*
   a parallel `tests/<op>.rs` integration file, and the two frequently overlap.
@@ -107,51 +107,6 @@ pull-forward above.
     `-∞ + i·0`)
 
   (The real-side `exp_m1(-0) = -0` fix that `CBig` sinh/cosh build on *did* land in 0.5.)
-
-### v0.5.x items — investigated and closed
-
-- **`dashu-float` division kernel** (`float/src/div.rs`). *Investigated 2026-07; the two
-  micro-opts in the inline TODO are not viable.* (1) `q |= q0` is unsafe: `Repr::significand`
-  is a *signed* `IBig`, so the quotient can be negative and `|=` ≠ `+=` (it broke `to_f64`
-  rounding). (2) Sharing the radix power across the two `shl_digits_in_place` calls — and
-  precomputing a `ConstDivisor` for the shared `rhs.significand` divisor — both measured
-  **neutral** on `float/benches/primitive.rs` (dbig_div/1e3: p=0.11 and p=0.49). The big-int
-  `div_rem` dominates, and the affected refinement branch is only hit in a fraction of the
-  random-input benchmark. A real win needs an algorithmic change to the division itself.
-- **Ownership-aware kernels (`ReprArg`) from `dashu-float` — API ergonomics, not perf.**
-  *Investigated 2026-07; the perf case does not hold.* A `ReprArg` prototype was
-  implemented and bench-compared (master vs branch) on a precision-sensitive
-  `complex/benches/arith` (full-precision significands crossing the inline `DoubleWord`
-  boundary at 256/1024 bits): routing `sqr`'s `x²−y²` and `inv`'s norm `x²+y²` through
-  by-value `repr_sub`/`repr_add` moved **no benchmark above the noise floor** (~±4% on
-  WSL2; an unchanged-code `mul` control showed +4.3%). Clone-avoidance saves one O(n)
-  copy per op, which is a non-allocating `DoubleWord` copy at inline precision and is
-  dwarfed by the O(n²) bignum op at heap precision. The motivation is therefore
-  *ergonomics* — `dashu-ball` wants by-value `Repr` ops on a fixed context without the
-  `FBig`/`Context::max` wrapping the operator path forces — not throughput. **Revisit only
-  when `dashu-ball` is concrete enough to consume it.**
-- **Guaranteed-correct rounding (Ziv retry loop).** ✅ *Delivered for all real and complex
-  transcendentals.* `exp`, `exp_m1`, `ln`, `ln_1p`, the trigonometric family, the
-  hyperbolic family, `hypot`, `powi`, and `powf` are guaranteed-correctly rounded via a Ziv
-  retry loop (`Context::ziv`/`ziv_pair`, driven by the `ErrorBounds` preimage);
-  `dashu-cmplx`'s complex transcendentals certify both parts via their own complex Ziv
-  driver. *Mechanism note:* the hand-derived radius formulas listed in the original v0.5.x
-  entry — `powf`'s `result.ulp()·(|y·ln x|+1)·(B+8)`, `powi`'s `2^bit_len(n)·ulp`, the trig
-  `series_radius`, `ln`'s `(4·terms+12)·ulp` — were **replaced in v0.6 by Ball arithmetic**
-  (`float/src/ball.rs`): a midpoint plus an exact integer relative-error count
-  (`|mid − true| ≤ n·ulp(mid)`), propagated mechanically through the series, powering, and
-  reconstruction. Public behavior is unchanged and validated against high-precision oracles
-  and `rug`/MPFR.
-
-## Dropped (maintainer decision, 2026-08)
-
-- **MSRV bumps.** The 1.68 MSRV is **permanent** and will not be raised. Consequently the
-  `#![deny(clippy::allow_attributes_without_reason)]` lint gate — which needs the
-  `reason = "..."` field on `#[allow]`/`#[expect]` stabilized in Rust 1.81, conflicting
-  with the 1.68 MSRV — is **dropped** along with it.
-- **`CRound` independent re/im rounding for `CBig`** (an `mpc_rnd_t`-parity trait giving
-  separate rounding modes for the real and imaginary parts). **Dropped**; `CBig` keeps a
-  single rounding mode `R` applied to both parts.
 
 ## v1.0 — API freeze
 
