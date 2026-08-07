@@ -1,7 +1,7 @@
-//! Python bindings for arbitrary-precision complex numbers ([`dashu_cmplx::CBig`]).
+//! Python bindings for arbitrary-precision complex numbers ([`dashu::complex::CBig`]).
 //!
 //! `CPy` wraps a *bare* `CBig<Zero, 2>`. Transcendentals route through the module-global
-//! [`ConstCache`](dashu_float::ConstCache) + the panic-free complex `Context` layer (see
+//! [`ConstCache`](dashu::float::ConstCache) + the panic-free complex `Context` layer (see
 //! [`crate::cache::unwrap_complex`]); `abs`/`arg`/`norm` route through the float layer.
 //! Arithmetic accepts any real number (FPy/int/float/Decimal/Python complex) by promoting it
 //! to a complex with zero imaginary part, so `CBig(1, 0) + 2.0` works as expected.
@@ -9,7 +9,7 @@
 use std::ops::{Add, Div, Mul, Sub};
 use std::str::FromStr;
 
-use dashu_cmplx::CBig;
+use dashu::complex::CBig;
 use pyo3::{
     Bound, IntoPyObjectExt, Py, PyAny, PyResult,
     basic::CompareOp,
@@ -294,10 +294,21 @@ impl CPy {
     // `impl_cpy_math!` above in a dedicated `#[pymethods]` block.
 }
 
+#[cfg(feature = "zeroize")]
+#[pymethods]
+impl CPy {
+    /// Zeroize the internal buffers, clearing the memory used by this complex number. The
+    /// value becomes zero.
+    fn zeroize(&mut self) {
+        use zeroize::Zeroize;
+        self.0.zeroize();
+    }
+}
+
 /// The complex `Context<R>` wraps a float `Context<R>`; recover it for the real-valued
 /// `abs`/`arg`/`norm` results that go through [`crate::cache::unwrap_float`].
-fn ctx_to_float<R: dashu_float::round::Round>(
-    ctx: &dashu_cmplx::Context<R>,
-) -> dashu_float::Context<R> {
-    dashu_float::Context::new(ctx.precision())
+fn ctx_to_float<R: dashu::float::round::Round>(
+    ctx: &dashu::complex::Context<R>,
+) -> dashu::float::Context<R> {
+    dashu::float::Context::new(ctx.precision())
 }

@@ -5,10 +5,10 @@ use crate::{
     convert::{conversion_error_to_py, parse_error_to_py},
     types::*,
 };
-use dashu_base::{ConversionError, Signed, UnsignedAbs};
-use dashu_float::{DBig, FBig};
-use dashu_int::{IBig, UBig};
-use dashu_ratio::RBig;
+use dashu::base::{ConversionError, Signed, UnsignedAbs};
+use dashu::float::{DBig, FBig};
+use dashu::integer::{IBig, UBig};
+use dashu::rational::RBig;
 use pyo3::{IntoPyObjectExt, Py, PyAny, PyResult, exceptions::PyValueError, prelude::*};
 
 /// Default precision (in bits) for `FBig`/`CBig` constructed from `float`/`complex`.
@@ -50,13 +50,13 @@ pub fn set_precision(precision: usize) -> PyResult<usize> {
 /// bound is at a given target precision.
 #[pyfunction]
 pub fn ziv_retries() -> usize {
-    dashu_float::ziv_retries()
+    dashu::float::ziv_retries()
 }
 
 /// Reset the Ziv retry counter to 0 before a measurement.
 #[pyfunction]
 pub fn ziv_retries_reset() {
-    dashu_float::ziv_retries_reset();
+    dashu::float::ziv_retries_reset();
 }
 
 /// Convert input automatically to corresponding dashu type:

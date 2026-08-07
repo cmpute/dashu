@@ -14,10 +14,10 @@ use std::os::raw::{c_double, c_longlong};
 use std::str::FromStr;
 
 use crate::types::*;
-use dashu_base::{ConversionError, ParseError};
-use dashu_float::{DBig, FBig};
-use dashu_int::{IBig, UBig};
-use dashu_ratio::RBig;
+use dashu::base::{ConversionError, ParseError};
+use dashu::float::{DBig, FBig};
+use dashu::integer::{IBig, UBig};
+use dashu::rational::RBig;
 
 const ERRMSG_NAN_NOT_SUPPORTED: &str = "nan values are not supported by dashu types";
 const ERRMSG_UNIINPUT_PARSE_FAILED: &str = "the input is an invalid number or unsupported";

@@ -7,7 +7,7 @@ use pyo3::{
     types::PySlice,
 };
 
-use dashu_int::Word;
+use dashu::integer::Word;
 
 const ERRMSG_WORDS_WRONG_SRC_TYPE: &str =
     "only a list of word-length integers can be used to construct a Words instance";

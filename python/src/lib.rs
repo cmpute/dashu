@@ -11,12 +11,22 @@ mod float;
 mod format;
 mod int;
 mod math;
+mod num_order;
 mod rational;
 mod types;
 mod utils;
 mod words;
 
+#[cfg(feature = "rand")]
+mod rand;
+#[cfg(feature = "rkyv")]
+mod rkyv;
+#[cfg(feature = "serde")]
+mod serde;
+
 use pyo3::prelude::*;
+#[cfg(any(feature = "serde", feature = "rand", feature = "rkyv"))]
+use pyo3::wrap_pymodule;
 
 /// A Python module implemented in Rust. The name of this function must match
 /// the `lib.name` setting in the `Cargo.toml`, else Python will not be able to
@@ -72,5 +82,27 @@ fn dashu(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(math::gcd, m)?)?;
     m.add_function(wrap_pyfunction!(math::gcd_ext, m)?)?;
     m.add_function(wrap_pyfunction!(math::lcm, m)?)?;
+
+    // cross-type comparison utilities (always available)
+    m.add_function(wrap_pyfunction!(num_order::compare, m)?)?;
+    m.add_function(wrap_pyfunction!(num_order::min, m)?)?;
+    m.add_function(wrap_pyfunction!(num_order::max, m)?)?;
+
+    // optional third-party integrations
+    #[cfg(feature = "serde")]
+    {
+        let sub = wrap_pymodule!(serde::serde)(m.py());
+        m.add_submodule(sub.bind(m.py()))?;
+    }
+    #[cfg(feature = "rand")]
+    {
+        let sub = wrap_pymodule!(rand::rand)(m.py());
+        m.add_submodule(sub.bind(m.py()))?;
+    }
+    #[cfg(feature = "rkyv")]
+    {
+        let sub = wrap_pymodule!(rkyv::rkyv)(m.py());
+        m.add_submodule(sub.bind(m.py()))?;
+    }
     Ok(())
 }

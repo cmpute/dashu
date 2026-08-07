@@ -120,3 +120,89 @@ format(CBig(3.0, 4.0), ".2f")                      # '(3.00+4.00j)'
   **十六进制**打印——无损、无需基数转换，例如 `str(FBig(1.5)) == '0x3p-1'`。
   十进制展示（`'e'`/`'f'`/`'g'`）会转换为基数 10。`DBig` 以十进制打印。
 - **`RBig`** 默认输出精确的分数形式，例如 `str(RBig(1) / 3) == '1/3'`。
+
+## 跨类型比较
+
+`dashu.compare(a, b)`、`dashu.min(a, b)` 和 `dashu.max(a, b)` 可以**精确**地比较任意两个
+Python 数字（原生 `int`/`float` 或任意 dashu 类型），其底层由 `num-order` crate 提供——比较
+过程绝不会经由有精度损失的原始 `float` 中转。这使得 `compare(UBig(2)**200, 1e60)` 是精确的，
+不像朴素的浮点转换：
+
+```python
+>>> from dashu import compare, min, max, UBig
+>>> compare(UBig(2)**200, 1e60)          # 精确，无精度损失
+1
+>>> max(UBig(2)**100, 2.0)               # 返回较大的那个操作数，类型保持不变
+<UBig 1267650600228229401496703205376 (digits: 1, bits: 101)>
+```
+
+`compare` 返回 `-1`、`0` 或 `1`；`min`/`max` 返回两个原始操作数之一（并保留其类型）。
+复数没有序关系，因此对复数进行比较会抛出 `TypeError`。
+
+## 第三方集成
+
+以下子模块仅在构建 wheel 时启用了对应的 Cargo feature 时才会被编译进去（默认全部关闭）：
+
+| Feature | 子模块 | 功能 |
+|---------|--------|------|
+| `serde` | `dashu.serde` | JSON 与二进制（反）序列化 |
+| `rand` | `dashu.rand` | 均匀随机数生成 |
+| `rkyv` | `dashu.rkyv` | 零拷贝二进制序列化 |
+| `zeroize` | *(方法)* | 每种类型上的 `.zeroize()` |
+
+### `dashu.serde`（feature `serde`）
+
+可将任意 dashu 类型序列化为 JSON（`to_json`）或紧凑二进制 postcard（`serialize`）；对应的
+反序列化函数把目标类型*类*作为第一个参数：
+
+```python
+>>> from dashu import UBig, FBig, serde
+>>> s = serde.to_json(FBig(1.5))
+>>> s
+'"0x3p-1"'
+>>> serde.from_json(FBig, s) == FBig(1.5)
+True
+>>> data = serde.serialize(UBig(2)**100)  # 紧凑二进制
+>>> serde.deserialize(UBig, data) == UBig(2)**100
+True
+```
+
+### `dashu.rand`（feature `rand`）
+
+为每种类型提供均匀生成器。所有函数都接受关键字参数（`ubig(bits=…)`、
+`fbig(precision=…)`、`rbig(max_denom_bits=…)`）；浮点/复数生成器默认使用模块配置的精度，
+并生成单位区间/单位正方形内的值：
+
+```python
+>>> from dashu import rand, UBig, FBig
+>>> rand.ubig(bits=128)        # 在 [0, 2^128) 上均匀
+<UBig 332087112958751295523159223253302643116 (digits: 1, bits: 128)>
+>>> f = rand.fbig()            # 在 [0, 1) 上均匀
+>>> 0 <= f < 1
+True
+>>> rand.ibig(bits=8)          # 带符号，在 (-2^8, 2^8) 上均匀
+<IBig 73 (digits: 1, bits: 7)>
+```
+
+### `dashu.rkyv`（feature `rkyv`）
+
+零拷贝序列化——反序列化不会复制字节负载。格式是**与架构相关**的：由 `to_bytes` 生成的字节
+只在同一台机器上保证可读。`from_bytes` 不校验其输入；字节必须来自对相同类型的 `to_bytes`：
+
+```python
+>>> from dashu import UBig, rkyv
+>>> data = rkyv.to_bytes(UBig(12345))
+>>> rkyv.from_bytes(UBig, data)
+<UBig 12345 (digits: 1, bits: 14)>
+```
+
+### zeroize（feature `zeroize`）
+
+每种类型都会获得一个 `.zeroize()` 方法，在值被释放之前覆写其底层内存（缓冲区清零）：
+
+```python
+>>> v = UBig(12345)
+>>> v.zeroize()   # 清空内部缓冲区
+>>> v
+<UBig 0 (digits: 1, bits: 1)>
+```

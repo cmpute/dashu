@@ -49,22 +49,25 @@ open('Cargo.toml', 'w').write(text)
 
 # Strip rand 0.9 / 0.10: rand 0.10 requires Rust 1.85, and its feature
 # table (getrandom as an optional dep with the `dep:` syntax) breaks the
-# resolver under the 1.68 build. The MSRV build only exercises `rand`
-# (== rand_v08); rand_v09 and rand_v010 are covered by the stable / 1.85
-# `--all-features` jobs.
+# resolver under the 1.68 build. The unversioned `rand` alias points at the
+# newest version (rand_v010), which is exactly the one being dropped — so
+# re-point it at rand_v08, the surviving 1.68-compatible version. rand_v09 /
+# rand_v010 are covered by the stable / 1.85 `--all-features` jobs.
 for manifest in ['Cargo.toml', 'integer/Cargo.toml', 'float/Cargo.toml', 'rational/Cargo.toml', 'complex/Cargo.toml']:
     text = open(manifest).read()
     text = re.sub(r'^rand_v09 = .*\n', '', text, flags=re.MULTILINE)
     text = re.sub(r'^rand_v010 = .*\n', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^rand = \["rand_v010"\]\n', 'rand = ["rand_v08"]\n', text, flags=re.MULTILINE)
     open(manifest, 'w').write(text)
 
 # Strip rkyv 0.8: it declares rust-version 1.81 (> our 1.68 MSRV), so even an
 # un-enabled optional dep (or its dev-dependency twin) fails the 1.68 resolver.
-# rkyv 0.7 stays (no declared rust-version); rkyv_v08 is covered by the stable
-# `--all-features` jobs.
+# As with `rand`, re-point the unversioned `rkyv` alias at rkyv_v07 (the surviving
+# version); rkyv_v08 is covered by the stable `--all-features` jobs.
 for manifest in ['Cargo.toml', 'integer/Cargo.toml', 'float/Cargo.toml', 'rational/Cargo.toml', 'complex/Cargo.toml']:
     text = open(manifest).read()
     text = re.sub(r'^rkyv_v08 = .*\n', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^rkyv = \["rkyv_v08"\]\n', 'rkyv = ["rkyv_v07"]\n', text, flags=re.MULTILINE)
     open(manifest, 'w').write(text)
 
 # Drop the postgres submodule (its cfg-gated children reference

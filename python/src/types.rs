@@ -1,11 +1,11 @@
 use pyo3::prelude::*;
 use std::os::raw::{c_double, c_longlong, c_ulonglong};
 
-use dashu_base::Sign;
-use dashu_float::DBig;
-use dashu_int::{IBig, UBig};
-use dashu_ratio::RBig;
-type FBig = dashu_float::FBig;
+use dashu::base::Sign;
+use dashu::float::DBig;
+use dashu::integer::{IBig, UBig};
+use dashu::rational::RBig;
+type FBig = dashu::float::FBig;
 
 #[pyclass(eq, eq_int)]
 #[derive(PartialEq, Clone, Copy)]
@@ -93,16 +93,16 @@ impl From<RBig> for RPy {
 /// (base 2, rounding `Zero`); the constant cache is shared module-wide (see [`crate::cache`]).
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[pyclass(name = "CBig")]
-pub struct CPy(pub dashu_cmplx::CBig<dashu_float::round::mode::Zero, 2>);
+pub struct CPy(pub dashu::complex::CBig<dashu::float::round::mode::Zero, 2>);
 
-impl From<dashu_cmplx::CBig<dashu_float::round::mode::Zero, 2>> for CPy {
-    fn from(n: dashu_cmplx::CBig<dashu_float::round::mode::Zero, 2>) -> Self {
+impl From<dashu::complex::CBig<dashu::float::round::mode::Zero, 2>> for CPy {
+    fn from(n: dashu::complex::CBig<dashu::float::round::mode::Zero, 2>) -> Self {
         CPy(n)
     }
 }
 
 #[pyclass(name = "Words")]
-pub struct PyWords(pub std::vec::Vec<dashu_int::Word>);
+pub struct PyWords(pub std::vec::Vec<dashu::integer::Word>);
 
 /// An input type that accepts all possible numeric types from Python
 ///

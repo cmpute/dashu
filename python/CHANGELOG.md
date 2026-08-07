@@ -33,6 +33,19 @@ What's included:
   predicates, and in-place / bitwise ops.
 - A module-level `math` API (`dashu.sin`, `dashu.sqrt`, `dashu.gcd`, …) and a configurable
   default precision for `FBig`/`CBig` via `dashu.get_precision()` / `dashu.set_precision()`.
+- Exact cross-type comparison utilities `dashu.compare` / `dashu.min` / `dashu.max` backed
+  by the `num-order` crate (never lossy through a primitive `float`).
+- Optional third-party integrations behind Cargo features (all off by default, named
+  unversioned — the wheel picks the newest underlying version):
+  - `serde` — `dashu.serde` (`to_json`/`from_json` via serde-json, `serialize`/`deserialize`
+    via postcard binary),
+  - `rand` — `dashu.rand` (`ubig`/`ibig`/`fbig`/`dbig`/`rbig`/`cbig` uniform generators),
+  - `rkyv` — `dashu.rkyv` (`to_bytes`/`from_bytes` zero-copy serialization),
+  - `zeroize` — a `.zeroize()` method on every type that clears the backing memory.
+- The binding now depends on the `dashu` meta-crate (rather than the individual sub-crates)
+  and uses the unversioned feature aliases (`rand`, `rkyv`, `serde`, `zeroize`) for the
+  optional integrations, so upstream sub-crate updates flow through without touching this
+  crate's manifest.
 - Example scripts under `python/examples/`: a benchmark against `gmpy2`/`mpmath`/stdlib and
   an arbitrary-precision Mandelbrot deep-zoom.
 

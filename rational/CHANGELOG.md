@@ -16,6 +16,12 @@
   (rather than a literal) need an `as isize` cast. The previously private `pow_signed` kernel is
   folded into `pow`; the `num_traits::Pow<usize>` impl (delegating with a cast) and
   `Pow<isize>` (delegating directly) both remain.
+- **The unversioned `rand` and `rkyv` feature aliases now point to the newest versions**:
+  `rand` selects rand 0.10 (`rand_v010`) and `rkyv` selects rkyv 0.8 (`rkyv_v08`) instead of
+  rand 0.8 / rkyv 0.7. Users of `features = ["rand"]` / `["rkyv"]` silently upgrade; pin the
+  versioned features (`rand_v08` / `rkyv_v07`) to keep the old versions. The
+  `tests/random.rs` integration tests exercise the rand 0.8 API and are now gated on
+  `rand_v08` (run under `--all-features`; the version-selecting `rand` feature skips them).
 
 ## 0.6.0-rc.1
 

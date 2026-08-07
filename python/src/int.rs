@@ -21,12 +21,12 @@ use crate::{
     types::{DPy, FPy, IPy, PySign, PyWords, RPy, UPy, UniInput},
 };
 
-use dashu_base::{
+use dashu::base::{
     Abs, BitTest, CubicRoot, PowerOfTwo, Sign, Signed, SquareRoot, UnsignedAbs,
     ring::{DivRemEuclid, ExtendedGcd, Gcd},
 };
-use dashu_float::FBig;
-use dashu_int::{IBig, UBig, Word, fast_div};
+use dashu::float::FBig;
+use dashu::integer::{IBig, UBig, Word, fast_div};
 use num_order::{NumHash, NumOrd};
 
 // error messages
@@ -190,16 +190,16 @@ fn upy_mod(lhs: &UPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> 
         }
         UniInput::BFloat(x) => FPy(FBig::from(lhs.0.clone()).rem(&x.0)).into_py_any(py)?,
         UniInput::BDecimal(x) => {
-            DPy(dashu_float::DBig::from(lhs.0.clone()).rem(&x.0)).into_py_any(py)?
+            DPy(dashu::float::DBig::from(lhs.0.clone()).rem(&x.0)).into_py_any(py)?
         }
         UniInput::OBDecimal(x) => {
-            DPy(dashu_float::DBig::from(lhs.0.clone()).rem(x)).into_py_any(py)?
+            DPy(dashu::float::DBig::from(lhs.0.clone()).rem(x)).into_py_any(py)?
         }
         UniInput::BRational(x) => {
-            RPy(dashu_ratio::RBig::from(lhs.0.clone()).rem(&x.0)).into_py_any(py)?
+            RPy(dashu::rational::RBig::from(lhs.0.clone()).rem(&x.0)).into_py_any(py)?
         }
         UniInput::OBRational(x) => {
-            RPy(dashu_ratio::RBig::from(lhs.0.clone()).rem(x)).into_py_any(py)?
+            RPy(dashu::rational::RBig::from(lhs.0.clone()).rem(x)).into_py_any(py)?
         }
     };
     Ok(obj)
@@ -219,16 +219,16 @@ fn ipy_mod(lhs: &IPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> 
         }
         UniInput::BFloat(x) => FPy(FBig::from(lhs.0.clone()).rem(&x.0)).into_py_any(py)?,
         UniInput::BDecimal(x) => {
-            DPy(dashu_float::DBig::from(lhs.0.clone()).rem(&x.0)).into_py_any(py)?
+            DPy(dashu::float::DBig::from(lhs.0.clone()).rem(&x.0)).into_py_any(py)?
         }
         UniInput::OBDecimal(x) => {
-            DPy(dashu_float::DBig::from(lhs.0.clone()).rem(x)).into_py_any(py)?
+            DPy(dashu::float::DBig::from(lhs.0.clone()).rem(x)).into_py_any(py)?
         }
         UniInput::BRational(x) => {
-            RPy(dashu_ratio::RBig::from(lhs.0.clone()).rem(&x.0)).into_py_any(py)?
+            RPy(dashu::rational::RBig::from(lhs.0.clone()).rem(&x.0)).into_py_any(py)?
         }
         UniInput::OBRational(x) => {
-            RPy(dashu_ratio::RBig::from(lhs.0.clone()).rem(x)).into_py_any(py)?
+            RPy(dashu::rational::RBig::from(lhs.0.clone()).rem(x)).into_py_any(py)?
         }
     };
     Ok(obj)
@@ -1263,5 +1263,27 @@ impl IPy {
     #[inline]
     fn __xor__(&self, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
         ipy_bitxor(self, other, py)
+    }
+}
+
+#[cfg(feature = "zeroize")]
+#[pymethods]
+impl UPy {
+    /// Zeroize the internal buffer, clearing the memory used by this integer. The value
+    /// becomes zero.
+    fn zeroize(&mut self) {
+        use zeroize::Zeroize;
+        self.0.zeroize();
+    }
+}
+
+#[cfg(feature = "zeroize")]
+#[pymethods]
+impl IPy {
+    /// Zeroize the internal buffer, clearing the memory used by this integer. The value
+    /// becomes zero.
+    fn zeroize(&mut self) {
+        use zeroize::Zeroize;
+        self.0.zeroize();
     }
 }

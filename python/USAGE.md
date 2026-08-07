@@ -123,3 +123,93 @@ format(CBig(3.0, 4.0), ".2f")                      # '(3.00+4.00j)'
   **hexadecimal** — lossless, with no base conversion, e.g. `str(FBig(1.5)) == '0x3p-1'`.
   Decimal presentations (`'e'`/`'f'`/`'g'`) convert to base 10. `DBig` prints in decimal.
 - **`RBig`** defaults to the exact fraction, e.g. `str(RBig(1) / 3) == '1/3'`.
+
+## Cross-type comparison
+
+`dashu.compare(a, b)`, `dashu.min(a, b)` and `dashu.max(a, b)` compare any two Python numbers
+(native `int`/`float` or any dashu type) *exactly*, backed by the `num-order` crate — the
+comparison never round-trips through a lossy primitive `float`. This makes
+`compare(UBig(2)**200, 1e60)` exact, unlike a naive float conversion:
+
+```python
+>>> from dashu import compare, min, max, UBig
+>>> compare(UBig(2)**200, 1e60)          # exact, no precision loss
+1
+>>> max(UBig(2)**100, 2.0)               # returns the larger operand unchanged
+<UBig 1267650600228229401496703205376 (digits: 1, bits: 101)>
+```
+
+`compare` returns `-1`, `0` or `1`; `min`/`max` return one of the two original operands
+(preserving its type). Complex numbers have no ordering, so comparing one raises `TypeError`.
+
+## Third-party integrations
+
+The following submodules are compiled in only when the wheel is built with the matching Cargo
+feature (all off by default):
+
+| Feature | Submodule | Provides |
+|---------|-----------|----------|
+| `serde` | `dashu.serde` | JSON + binary (de)serialization |
+| `rand` | `dashu.rand` | uniform random number generators |
+| `rkyv` | `dashu.rkyv` | zero-copy binary serialization |
+| `zeroize` | *(methods)* | `.zeroize()` on every type |
+
+### `dashu.serde` (feature `serde`)
+
+Serialize any dashu type to JSON (`to_json`) or compact binary postcard (`serialize`); the
+corresponding deserializers take the target type *class* as their first argument:
+
+```python
+>>> from dashu import UBig, FBig, serde
+>>> s = serde.to_json(FBig(1.5))
+>>> s
+'"0x3p-1"'
+>>> serde.from_json(FBig, s) == FBig(1.5)
+True
+>>> data = serde.serialize(UBig(2)**100)  # compact binary
+>>> serde.deserialize(UBig, data) == UBig(2)**100
+True
+```
+
+### `dashu.rand` (feature `rand`)
+
+Uniform generators for every type. All functions accept keyword arguments (`ubig(bits=…)`,
+`fbig(precision=…)`, `rbig(max_denom_bits=…)`); the float/complex generators default to the
+module's configured precision and produce values in the unit interval/square:
+
+```python
+>>> from dashu import rand, UBig, FBig
+>>> rand.ubig(bits=128)        # uniform in [0, 2^128)
+<UBig 332087112958751295523159223253302643116 (digits: 1, bits: 128)>
+>>> f = rand.fbig()            # uniform in [0, 1)
+>>> 0 <= f < 1
+True
+>>> rand.ibig(bits=8)          # signed, uniform in (-2^8, 2^8)
+<IBig 73 (digits: 1, bits: 7)>
+```
+
+### `dashu.rkyv` (feature `rkyv`)
+
+Zero-copy serialization — deserializing does not copy the byte payload. The format is
+**architecture-specific**: bytes produced by `to_bytes` are only guaranteed readable on the
+same machine. `from_bytes` does not validate its input; the bytes must come from `to_bytes`
+on the same type:
+
+```python
+>>> from dashu import UBig, rkyv
+>>> data = rkyv.to_bytes(UBig(12345))
+>>> rkyv.from_bytes(UBig, data)
+<UBig 12345 (digits: 1, bits: 14)>
+```
+
+### zeroize (feature `zeroize`)
+
+Every type gains a `.zeroize()` method that overwrites the backing memory (buffers become
+zero) before the value is dropped:
+
+```python
+>>> v = UBig(12345)
+>>> v.zeroize()   # clears the internal buffers
+>>> v
+<UBig 0 (digits: 1, bits: 1)>
+```

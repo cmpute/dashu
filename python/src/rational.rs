@@ -2,9 +2,9 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
-use dashu_base::Abs;
-use dashu_float::round::mode;
-use dashu_ratio::RBig;
+use dashu::base::Abs;
+use dashu::float::round::mode;
+use dashu::rational::RBig;
 use num_order::{NumHash, NumOrd};
 use pyo3::{Bound, IntoPyObjectExt, Py, PyAny, PyResult, basic::CompareOp, intern, prelude::*};
 
@@ -104,7 +104,7 @@ impl RPy {
         };
         let dbig = self
             .0
-            .to_float::<dashu_float::round::mode::HalfAway, 10>(conv_prec)
+            .to_float::<dashu::float::round::mode::HalfAway, 10>(conv_prec)
             .value();
         crate::format::format_dbig(&dbig, format_spec)
     }
@@ -230,7 +230,7 @@ impl RPy {
     fn cubic(&self) -> Self {
         RPy(self.0.cubic())
     }
-    fn pow(&self, n: usize) -> Self {
+    fn pow(&self, n: isize) -> Self {
         RPy(self.0.pow(n))
     }
 
@@ -257,5 +257,16 @@ impl RPy {
     fn simplest_from_float(f: UniInput<'_>) -> PyResult<Option<Self>> {
         let f = f.into_fpy()?;
         Ok(RBig::simplest_from_float(&f.0).map(RPy))
+    }
+}
+
+#[cfg(feature = "zeroize")]
+#[pymethods]
+impl RPy {
+    /// Zeroize the internal buffers, clearing the memory used by this rational. The value
+    /// becomes zero.
+    fn zeroize(&mut self) {
+        use zeroize::Zeroize;
+        self.0.zeroize();
     }
 }

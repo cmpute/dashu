@@ -38,6 +38,12 @@
   `<<(nlen+1)`, and `hypot`'s `ulp·8` are gone. `pow_exp_log` (the `powf`/`powi` fallback path) is
   also composed from `ln_compute` + `mul` + `exp_ball`, with the input-ball error folded into the
   `exp` radius. Public behavior is unchanged and validated against the same oracle/fuzz nets.
+- **The unversioned `rand` and `rkyv` feature aliases now point to the newest versions**:
+  `rand` selects rand 0.10 (`rand_v010`) and `rkyv` selects rkyv 0.8 (`rkyv_v08`) instead of
+  rand 0.8 / rkyv 0.7. Users of `features = ["rand"]` / `["rkyv"]` silently upgrade; pin the
+  versioned features (`rand_v08` / `rkyv_v07`) to keep the old versions. The
+  `tests/random.rs` integration tests exercise the rand 0.8 API and are now gated on
+  `rand_v08` (run under `--all-features`; the version-selecting `rand` feature skips them).
 
 ### Add
 - **`tuning` feature + `ziv_retries()`/`ziv_retries_reset()`.** Exposes the per-Ziv-loop retry

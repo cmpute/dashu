@@ -6,7 +6,7 @@
 //! the Python spec's layout (sign / width / align / fill / zero-pad / grouping) and the
 //! scientific exponent are normalized to CPython conventions.
 
-use dashu_float::DBig;
+use dashu::float::DBig;
 use pyo3::PyResult;
 use pyo3::exceptions::PyValueError;
 
@@ -197,7 +197,7 @@ fn render_body(d: &DBig, s: &Spec) -> PyResult<(bool, String)> {
 
 /// Render a base-2 `FBig` in hexadecimal (lossless: hex significand, binary exponent),
 /// used for the default/`'a'`/`'A'` presentation types so no base conversion rounding occurs.
-pub fn format_fbig_hex(f: &dashu_float::FBig, spec_str: &str) -> PyResult<String> {
+pub fn format_fbig_hex(f: &dashu::float::FBig, spec_str: &str) -> PyResult<String> {
     let s = parse(spec_str)?;
     let upper = s.ty == 'A';
     let body = match s.prec {

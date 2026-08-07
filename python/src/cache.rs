@@ -13,8 +13,8 @@
 
 use std::cell::RefCell;
 
-use dashu_base::Sign;
-use dashu_float::{ConstCache, Context, FBig, FpError, FpResult, Repr, Word, round::Round};
+use dashu::base::Sign;
+use dashu::float::{ConstCache, Context, FBig, FpError, FpResult, Repr, Word, round::Round};
 use pyo3::exceptions::{PyValueError, PyZeroDivisionError};
 use pyo3::prelude::*;
 
@@ -68,9 +68,9 @@ pub fn unwrap_float<R: Round, const B: Word>(
 /// [`unwrap_float`]. Complex overflow/underflow rebuilds a CBig whose real part carries the
 /// signed ∞ / 0 (a conventional choice, matching the real-valued overflow direction).
 pub fn unwrap_complex<R: Round, const B: Word>(
-    res: dashu_cmplx::CfpResult<R, B>,
-    ctx: dashu_cmplx::Context<R>,
-) -> PyResult<dashu_cmplx::CBig<R, B>> {
+    res: dashu::complex::CfpResult<R, B>,
+    ctx: dashu::complex::Context<R>,
+) -> PyResult<dashu::complex::CBig<R, B>> {
     match res {
         Ok(rounded) => Ok(rounded.value()),
         Err(FpError::Overflow(sign)) => {
@@ -78,10 +78,10 @@ pub fn unwrap_complex<R: Round, const B: Word>(
                 Sign::Positive => Repr::<B>::infinity(),
                 Sign::Negative => Repr::<B>::neg_infinity(),
             };
-            Ok(dashu_cmplx::CBig::new(re, Repr::<B>::zero(), ctx))
+            Ok(dashu::complex::CBig::new(re, Repr::<B>::zero(), ctx))
         }
         Err(FpError::Underflow(_sign)) => {
-            Ok(dashu_cmplx::CBig::new(Repr::<B>::zero(), Repr::<B>::zero(), ctx))
+            Ok(dashu::complex::CBig::new(Repr::<B>::zero(), Repr::<B>::zero(), ctx))
         }
         Err(FpError::InfiniteInput) => Err(PyValueError::new_err("arithmetic with infinity")),
         Err(FpError::OutOfDomain) => Err(PyValueError::new_err("math domain error")),

@@ -5,7 +5,7 @@
 
 use crate::cache::{unwrap_float, with_cache};
 use crate::types::{FPy, UPy, UniInput};
-use dashu_base::ring::{ExtendedGcd, Gcd};
+use dashu::base::ring::{ExtendedGcd, Gcd};
 use pyo3::prelude::*;
 
 /// Transcendental taking one float operand and a cache (`(repr, Option<&mut ConstCache>)`).

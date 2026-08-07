@@ -22,10 +22,10 @@ std = ["dashu-base/std"]
 tuning = ["std"]
 
 # unstable dependencies
-rand = ["rand_v08"]
+rand = ["rand_v010"]
 num-traits = ["num-traits_v02"]
 num-integer = ["num-integer_v01"]
-rkyv = ["rkyv_v07"]
+rkyv = ["rkyv_v08"]
 
 [dependencies]
 dashu-base = { version = "0.6.0-rc.1", default-features = false, path = "../base" }
@@ -64,7 +64,7 @@ bench = false
 
 [[test]]
 name = "random"
-required-features = ["rand"]
+required-features = ["rand_v08"]
 
 [[test]]
 name = "serde"

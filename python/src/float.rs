@@ -3,8 +3,8 @@ use std::hash::Hasher;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::str::FromStr;
 
-use dashu_base::Abs;
-use dashu_float::{DBig, FBig};
+use dashu::base::Abs;
+use dashu::float::{DBig, FBig};
 use num_order::{NumHash, NumOrd};
 use pyo3::{
     Bound, IntoPyObjectExt, Py, PyAny, PyResult, basic::CompareOp, intern, prelude::*,
@@ -293,7 +293,7 @@ impl FPy {
         FPy(self.0.to_binary().value())
     }
     fn to_rational(&self) -> PyResult<RPy> {
-        dashu_ratio::RBig::try_from(self.0.clone())
+        dashu::rational::RBig::try_from(self.0.clone())
             .map(RPy)
             .map_err(conversion_error_to_py)
     }
@@ -533,7 +533,7 @@ impl DPy {
         FPy(self.0.to_binary().value())
     }
     fn to_rational(&self) -> PyResult<RPy> {
-        dashu_ratio::RBig::try_from(self.0.clone())
+        dashu::rational::RBig::try_from(self.0.clone())
             .map(RPy)
             .map_err(conversion_error_to_py)
     }
@@ -584,3 +584,25 @@ impl_float_math!(
     DPy, sin, cos, tan, asin, acos, atan, sinh, cosh, tanh, asinh, acosh, atanh, exp, exp_m1, ln,
     ln_1p, log2,
 );
+
+#[cfg(feature = "zeroize")]
+#[pymethods]
+impl FPy {
+    /// Zeroize the internal buffers, clearing the memory used by this float. The value
+    /// becomes zero.
+    fn zeroize(&mut self) {
+        use zeroize::Zeroize;
+        self.0.zeroize();
+    }
+}
+
+#[cfg(feature = "zeroize")]
+#[pymethods]
+impl DPy {
+    /// Zeroize the internal buffers, clearing the memory used by this float. The value
+    /// becomes zero.
+    fn zeroize(&mut self) {
+        use zeroize::Zeroize;
+        self.0.zeroize();
+    }
+}
