@@ -28,7 +28,7 @@ members = [
     "complex",
 ]
 exclude = ["benchmark", "fuzz"]
-default-members = ["base", "integer", "float", "rational", "complex", "macros"]
+default-members = [".", "base", "integer", "float", "rational", "complex", "macros"]
 
 [features]
 default = ["std", "num-order"]

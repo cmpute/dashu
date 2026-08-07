@@ -1,0 +1,255 @@
+# Build `dashu-rs` (the Python binding) source + binary wheels for every platform and upload
+# them as GitHub Actions artifacts. Triggered on any version tag (`v0.6.0-rc.2`, `v0.5.2`, …);
+# can also be run manually via "Run workflow".
+#
+# The wheels are NOT published to PyPI automatically — download the `wheels-*` and `sdist`
+# artifacts from the run page and upload them yourself (`python -m twine upload wheels/* sdist/*`).
+#
+# Coverage:
+#   * build-linux   — x86_64 / aarch64 / i686, `manylinux` wheels (glibc). maturin-action
+#                     builds these in a manylinux Docker container; each job builds exactly
+#                     the pinned CPython versions (3.10/3.12/3.14) via `-i python3.X`.
+#   * build-macos   — one `universal2` wheel per CPython version (3.9/3.12/3.14; 3.9 matches
+#                     macOS's system Python), covering both Intel and Apple-Silicon macs, built
+#                     on an arm64 runner.
+#   * build-windows — one wheel per CPython version (3.10/3.12/3.14, x86_64).
+#   * build-sdist   — the PEP 517 source distribution (maturin bundles the workspace crates
+#                     into it, so it is self-contained and buildable without the git repo).
+#   * test          — installs a linux-x86_64 wheel and runs the full `python/tests` suite
+#                     against it, so a broken wheel fails the release instead of shipping.
+
+name: Build Python wheels
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dashu-python-wheels-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Release wheels enable every optional integration (the wheel's users get the full surface:
+  # `dashu.serde` / `dashu.rand` / `dashu.rkyv` / `.zeroize()`). `num-order`'s compare/min/max
+  # are always on, independent of these features.
+  MATURIN_ARGS: --release --out wheels --features serde,rand,rkyv,zeroize
+
+jobs:
+  build-linux:
+    name: wheel (linux ${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64, aarch64, i686]
+    steps:
+      - uses: actions/checkout@v4
+
+      # maturin takes the wheel/sdist version from pyproject.toml (not Cargo.toml), and the
+      # committed value is a dev placeholder. Align it with the tag so the artifact carries the
+      # released version (`v0.6.0-rc.2` -> `0.6.0-rc.2`, normalized to `0.6.0rc2` by PEP 440).
+      - name: Sync pyproject version to the git tag
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            sed -i -E "s/^(version = )\".*\"/\1\"$VERSION\"/" pyproject.toml
+            echo "Wheel version synced to $VERSION (from tag $GITHUB_REF_NAME)"
+          else
+            echo "Manual run on $GITHUB_REF_NAME — keeping the committed pyproject version"
+          fi
+          grep -n '^version = ' pyproject.toml
+        # bash parameter expansion (`${GITHUB_REF_NAME#v}`) and `sed -i` need a POSIX shell,
+        # which is not the default on Windows runners.
+        shell: bash
+        working-directory: python
+
+      # The manylinux build runs in a Docker container, so `actions/setup-python`'s version is
+      # ignored — `-i python3.X` selects which container CPython to build for. Pin exactly the
+      # versions released on the other platforms (the pypa/rust-cross manylinux images ship
+      # 3.8-3.14), which also avoids the free-threaded `-nogil` builds that `--find-interpreter`
+      # would pick up.
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: auto
+          args: ${{ env.MATURIN_ARGS }} -i python3.10 -i python3.12 -i python3.14
+          working-directory: python
+          sccache: 'true'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-${{ matrix.target }}
+          path: python/wheels/*.whl
+          if-no-files-found: error
+          retention-days: 30
+
+  build-macos:
+    name: wheel (macos, py${{ matrix.python-version }})
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is included because it's the Python version macOS ships as the system Python
+        # (`/usr/bin/python3` via Command Line Tools), so those users get a wheel too.
+        python-version: ["3.9", "3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Sync pyproject version to the git tag
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            sed -i -E "s/^(version = )\".*\"/\1\"$VERSION\"/" pyproject.toml
+            echo "Wheel version synced to $VERSION (from tag $GITHUB_REF_NAME)"
+          else
+            echo "Manual run on $GITHUB_REF_NAME — keeping the committed pyproject version"
+          fi
+          grep -n '^version = ' pyproject.toml
+        # bash parameter expansion (`${GITHUB_REF_NAME#v}`) and `sed -i` need a POSIX shell,
+        # which is not the default on Windows runners.
+        shell: bash
+        working-directory: python
+
+      # `--universal2` merges the x86_64 and arm64 slices into one wheel, so a single artifact
+      # covers every macOS machine without relying on the (retired) Intel macos-13 runners.
+      - uses: PyO3/maturin-action@v1
+        with:
+          args: ${{ env.MATURIN_ARGS }} --universal2
+          working-directory: python
+          sccache: 'true'
+
+      - name: Smoke-test the wheel
+        shell: bash
+        run: |
+          pip install python/wheels/*.whl
+          python -c "import dashu; from dashu import UBig; assert dashu.compare(UBig(3), UBig(5)) < 0; print('wheel import OK')"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-macos-${{ matrix.python-version }}
+          path: python/wheels/*.whl
+          if-no-files-found: error
+          retention-days: 30
+
+  build-windows:
+    name: wheel (windows, py${{ matrix.python-version }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Sync pyproject version to the git tag
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            sed -i -E "s/^(version = )\".*\"/\1\"$VERSION\"/" pyproject.toml
+            echo "Wheel version synced to $VERSION (from tag $GITHUB_REF_NAME)"
+          else
+            echo "Manual run on $GITHUB_REF_NAME — keeping the committed pyproject version"
+          fi
+          grep -n '^version = ' pyproject.toml
+        # bash parameter expansion (`${GITHUB_REF_NAME#v}`) and `sed -i` need a POSIX shell,
+        # which is not the default on Windows runners.
+        shell: bash
+        working-directory: python
+
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: x86_64
+          args: ${{ env.MATURIN_ARGS }}
+          working-directory: python
+          sccache: 'true'
+
+      - name: Smoke-test the wheel
+        shell: bash
+        run: |
+          pip install python/wheels/*.whl
+          python -c "import dashu; from dashu import UBig; assert dashu.compare(UBig(3), UBig(5)) < 0; print('wheel import OK')"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows-${{ matrix.python-version }}
+          path: python/wheels/*.whl
+          if-no-files-found: error
+          retention-days: 30
+
+  build-sdist:
+    name: sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Sync pyproject version to the git tag
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            sed -i -E "s/^(version = )\".*\"/\1\"$VERSION\"/" pyproject.toml
+            echo "Version synced to $VERSION (from tag $GITHUB_REF_NAME)"
+          else
+            echo "Manual run on $GITHUB_REF_NAME — keeping the committed pyproject version"
+          fi
+          grep -n '^version = ' pyproject.toml
+        # bash parameter expansion (`${GITHUB_REF_NAME#v}`) and `sed -i` need a POSIX shell,
+        # which is not the default on Windows runners.
+        shell: bash
+        working-directory: python
+
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+          working-directory: python
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: python/dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+
+  test:
+    name: Test linux x86_64 wheel
+    needs: build-linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheels-linux-x86_64
+          path: dist
+
+      - name: Install wheel and run the test suite
+        run: |
+          # Prefer the wheel for our Python version; fall back to any cp3 wheel so the job
+          # still runs if the manylinux container's CPython set changes.
+          WHEEL=$(ls dist/*cp312*.whl 2>/dev/null | head -1 || true)
+          [ -n "$WHEEL" ] || WHEEL=$(ls dist/*cp3*.whl | head -1)
+          echo "Testing $WHEEL"
+          pip install "$WHEEL" pytest
+          python -m pytest python/tests -q

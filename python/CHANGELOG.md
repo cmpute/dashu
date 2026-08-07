@@ -1,6 +1,15 @@
 # Changelog
 
-## 0.5.0 (Unreleased)
+## Unreleased
+
+### Add
+- **CI wheel/sdist build workflow** (`.github/workflows/python-wheels.yml`): triggered on
+  version tags (`v*`), builds `manylinux` (x86_64/aarch64/i686), macOS `universal2`, and
+  Windows wheels plus a self-contained sdist — all integrations enabled — and uploads them
+  as run artifacts for manual upload to PyPI. The meta-crate workspace root is now a
+  `default-members` entry so the sdist bundles `src/macro-docs/` and remains buildable.
+
+## 0.5.0
 
 First release of **dashu-rs** — the Python binding for
 [dashu](https://github.com/cmpute/dashu), a pure-Rust arbitrary-precision number library
