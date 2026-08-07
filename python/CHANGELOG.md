@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0-rc.3
+
 ### Add
 - **CI wheel/sdist build workflow** (`.github/workflows/python-wheels.yml`): triggered on
   version tags (`v*`), builds `manylinux` (x86_64/aarch64/i686), macOS `universal2`, and

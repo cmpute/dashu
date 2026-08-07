@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0-rc.3
+
 ### Add
 - `Approximation::value_with_exact()` — the value together with an `is_exact` flag (the error `E`
   is discarded). Used by dashu-float's Ball exact-tracking ops (`mul_tracking`/`add_tracking`/

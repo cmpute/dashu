@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0-rc.3
+
 ### Change
 - **(internal) `log2` error radius now derived by Ball arithmetic instead of a directed interval.**
   `ln_compute` and `log2_internal` are rewritten around a new `Ball` type (`float/src/ball.rs`): a

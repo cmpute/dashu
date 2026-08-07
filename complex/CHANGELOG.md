@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0-rc.3
+
 ### Add
 - **serde support for `CBig`** (`serde` feature): `Serialize`/`Deserialize` round-trips the real and
   imaginary parts (via the float `Repr` serde) and the shared precision; the rounding mode is a

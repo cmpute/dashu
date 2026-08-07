@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0-rc.3
+
+Version aligned with the coordinated dashu 0.6.0-rc.3 release; no functional changes
+(skipped 0.6.0-rc.2).
+
 ## 0.6.0-rc.1
 
 ### Change

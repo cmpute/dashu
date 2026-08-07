@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0-rc.3
+
 ### Add
 - **rkyv 0.7 support** (`rkyv` feature, versioned `rkyv_v07`): `RBig`/`Relaxed` archive via derive,
   delegating the numerator/denominator to `IBig`/`UBig`'s word-vector archive.

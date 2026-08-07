@@ -1,5 +1,5 @@
 # Build `dashu-rs` (the Python binding) source + binary wheels for every platform and upload
-# them as GitHub Actions artifacts. Triggered on any version tag (`v0.6.0-rc.2`, `v0.5.2`, …);
+# them as GitHub Actions artifacts. Triggered on any version tag (`v0.6.0-rc.3`, `v0.5.2`, …);
 # can also be run manually via "Run workflow".
 #
 # The wheels are NOT published to PyPI automatically — download the `wheels-*` and `sdist`

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0-rc.3
+
 ### Add
 - **rkyv 0.7 support** (`rkyv` feature, versioned `rkyv_v07`): `UBig`/`IBig` archive as their
   **native word representation** (`ArchivedVec<Word>`, plus a sign flag for `IBig`), round-tripping

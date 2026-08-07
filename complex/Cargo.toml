@@ -1,6 +1,6 @@
 [package]
 name = "dashu-cmplx"
-version = "0.6.0-rc.1"
+version = "0.6.0-rc.3"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2021"
 description = "A big arbitrary precision complex number library"
@@ -38,9 +38,9 @@ rkyv_v07 = ["dep:rkyv_v07", "dashu-float/rkyv_v07"]
 rkyv_v08 = ["dep:rkyv_v08", "dashu-float/rkyv_v08"]
 
 [dependencies]
-dashu-base = { version = "0.6.0-rc.1", default-features = false, path = "../base" }
-dashu-int = { version = "0.6.0-rc.1", default-features = false, path = "../integer" }
-dashu-float = { version = "0.6.0-rc.1", default-features = false, path = "../float" }
+dashu-base = { version = "0.6.0-rc.3", default-features = false, path = "../base" }
+dashu-int = { version = "0.6.0-rc.3", default-features = false, path = "../integer" }
+dashu-float = { version = "0.6.0-rc.3", default-features = false, path = "../float" }
 
 # stable dependencies
 rustversion = "1.0.0"
