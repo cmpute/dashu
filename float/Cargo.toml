@@ -3,15 +3,18 @@ name = "dashu-float"
 version = "0.6.0-rc.3"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2021"
-description = "A big float library supporting arbitrary precision, arbitrary base and arbitrary rounding mode"
+description = "Arbitrary-precision floats for Rust with arbitrary base and arbitrary rounding mode. Provides FBig, DBig, and CachedFBig with efficient base conversion, the hexadecimal float format used by C++ programs, and parsing and formatting in base 2-36. Transcendentals (exp, ln, trig, hyperbolic, powers, roots, pi) are correctly rounded; optional serde, rand, num-traits, rkyv, and zeroize."
 keywords = ["mathematics", "numerics", "floating-point", "decimal", "arbitrary-precision"]
 categories = ["mathematics", "no-std"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/cmpute/dashu"
-homepage = "https://github.com/cmpute/dashu"
+homepage = "https://github.com/cmpute/dashu/tree/master/float"
 documentation = "https://docs.rs/dashu-float"
 readme = "README.md"
 rust-version = "1.68"
+
+[package.metadata]
+maintenance = "actively-developed"
 
 [package.metadata.docs.rs]
 all-features = true

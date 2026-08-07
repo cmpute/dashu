@@ -3,15 +3,18 @@ name = "dashu-int"
 version = "0.6.0-rc.3"
 authors = ["Jacob Zhong <cmpute@gmail.com>", "Tomek Czajka <tczajka@gmail.com>"]
 edition = "2021"
-description = "A big integer library with good performance"
+description = "Arbitrary-precision integers for Rust, balancing ergonomics and efficiency. Provides UBig and IBig (unsigned and signed), with small values inlined on the stack. Efficient arithmetic, modular arithmetic, and number theory (pow, ilog, gcd, gcd_ext); two's-complement bit operations; parsing and formatting in base 2-36; optional serde, rand, num-traits, rkyv, and zeroize."
 keywords = ["mathematics", "numerics", "integer", "bigint", "arbitrary-precision"]
 categories = ["mathematics", "no-std"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/cmpute/dashu"
-homepage = "https://github.com/cmpute/dashu"
+homepage = "https://github.com/cmpute/dashu/tree/master/integer"
 documentation = "https://docs.rs/dashu-int"
 readme = "README.md"
 rust-version = "1.68"
+
+[package.metadata]
+maintenance = "actively-developed"
 
 [package.metadata.docs.rs]
 all-features = true

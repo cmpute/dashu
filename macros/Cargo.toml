@@ -3,15 +3,18 @@ name = "dashu-macros"
 version = "0.6.0-rc.3"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2021"
-description = "Procedure macros for creating big numbers"
+description = "Procedural macros that create big-number literals at compile time: ubig!, ibig!, fbig!, dbig!, rbig!, and cbig! (plus their static_ variants for const contexts). Each literal follows the same parsing rules as the corresponding dashu type, producing values of UBig, IBig, FBig, RBig, or CBig in any supported base."
 keywords = ["mathematics", "numerics", "arbitrary-precision"]
 categories = ["mathematics", "no-std"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/cmpute/dashu"
-homepage = "https://github.com/cmpute/dashu"
+homepage = "https://github.com/cmpute/dashu/tree/master/macros"
 documentation = "https://docs.rs/dashu-macros"
 readme = "README.md"
 rust-version = "1.68"
+
+[package.metadata]
+maintenance = "actively-developed"
 
 [package.metadata.docs.rs]
 all-features = true

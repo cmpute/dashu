@@ -3,15 +3,18 @@ name = "dashu-cmplx"
 version = "0.6.0-rc.3"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2021"
-description = "A big arbitrary precision complex number library"
+description = "An arbitrary-precision complex number library for Rust — the Rust-native alternative to GNU MPC. Provides CBig and CachedCBig, built on dashu-float's FBig, with field arithmetic, elementary transcendentals, and abs/arg/conj/proj plus I/O, following the C99 Annex G / Kahan branch-cut and signed-zero model. Optional serde, rand, num-traits, rkyv, zeroize, and num-complex interop."
 keywords = ["mathematics", "numerics", "complex", "arbitrary-precision", "bignum"]
 categories = ["mathematics", "no-std"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/cmpute/dashu"
-homepage = "https://github.com/cmpute/dashu"
+homepage = "https://github.com/cmpute/dashu/tree/master/complex"
 documentation = "https://docs.rs/dashu-cmplx"
 readme = "README.md"
 rust-version = "1.68"
+
+[package.metadata]
+maintenance = "actively-developed"
 
 [package.metadata.docs.rs]
 all-features = true
