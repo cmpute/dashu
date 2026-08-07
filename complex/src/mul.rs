@@ -83,7 +83,8 @@ impl<R: Round> Context<R> {
     /// [`Sign::Negative`] subtracts).
     ///
     /// An infinite operand is a terminal value and is not accepted — the per-component float
-    /// `fma` rejects it ([`FpError::InfiniteInput`], panicking at the convenience layer).
+    /// `fma` rejects it ([`FpError::InfiniteInput`](dashu_float::FpError::InfiniteInput),
+    /// panicking at the convenience layer).
     pub fn fma<const B: Word>(
         &self,
         z1: &CBig<R, B>,

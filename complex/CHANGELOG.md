@@ -37,6 +37,11 @@
   `tests/random.rs` integration tests exercise the rand 0.8 API and are now gated on
   `rand_v08` (run under `--all-features`; the version-selecting `rand` feature skips them).
 
+### Fix
+- The `fma` doc comment's link to `FpError::InfiniteInput` was a dangling intra-doc link
+  (the `mul` module doesn't import `FpError`); it now links through the full
+  `dashu_float::FpError::InfiniteInput` path.
+
 ## 0.6.0-rc.1
 
 ### Add
