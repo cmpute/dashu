@@ -12,7 +12,8 @@
 #   * build-macos   — one job building `universal2` wheels for 3.9/3.12/3.14 (3.9 matches
 #                     macOS's system Python), covering both Intel and Apple-Silicon macs on an
 #                     arm64 runner.
-#   * build-windows — one wheel per CPython version (3.10/3.12/3.14, x86_64).
+#   * build-windows — one job building three x86_64 wheels (3.10/3.12/3.14) via three
+#                     setup-python interpreters + `-i`.
 #   * build-sdist   — the PEP 517 source distribution (maturin bundles the workspace crates
 #                     into it, so it is self-contained and buildable without the git repo).
 #   * test          — installs a linux-x86_64 wheel and runs the full `python/tests` suite
@@ -139,9 +140,10 @@ jobs:
       - name: Smoke-test the wheels
         shell: bash
         run: |
-          # All three interpreters are on PATH; test the cp312 wheel with the explicit 3.12 binary.
-          python3.12 -m pip install python/wheels/*cp312*.whl
-          python3.12 -c "import dashu; from dashu import UBig; assert dashu.compare(UBig(3), UBig(5)) < 0; print('wheel import OK')"
+          # Test the wheel matching whichever interpreter is the default `python` on PATH.
+          PYVER=$(python -c "import sys; print('cp' + str(sys.version_info[0]) + str(sys.version_info[1]))")
+          pip install python/wheels/*$PYVER*.whl
+          python -c "import dashu; from dashu import UBig; assert dashu.compare(UBig(3), UBig(5)) < 0; print('wheel import OK')"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -151,20 +153,23 @@ jobs:
           retention-days: 30
 
   build-windows:
-    name: wheel (windows, py${{ matrix.python-version }})
+    name: wheel (windows x86_64)
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.10", "3.12", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
+      # Install all three CPythons so one maturin invocation builds all three wheels.
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.10"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
 
       - name: Sync pyproject version to the git tag
         run: |
@@ -184,19 +189,21 @@ jobs:
       - uses: PyO3/maturin-action@v1
         with:
           target: x86_64
-          args: ${{ env.MATURIN_ARGS }}
+          args: ${{ env.MATURIN_ARGS }} -i python3.10 -i python3.12 -i python3.14
           working-directory: python
           sccache: 'true'
 
-      - name: Smoke-test the wheel
+      - name: Smoke-test the wheels
         shell: bash
         run: |
-          pip install python/wheels/*.whl
+          # Test the wheel matching whichever interpreter is the default `python` on PATH.
+          PYVER=$(python -c "import sys; print('cp' + str(sys.version_info[0]) + str(sys.version_info[1]))")
+          pip install python/wheels/*$PYVER*.whl
           python -c "import dashu; from dashu import UBig; assert dashu.compare(UBig(3), UBig(5)) < 0; print('wheel import OK')"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels-windows-${{ matrix.python-version }}
+          name: wheels-windows
           path: python/wheels/*.whl
           if-no-files-found: error
           retention-days: 30
