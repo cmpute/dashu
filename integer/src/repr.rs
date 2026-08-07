@@ -8,6 +8,7 @@ use crate::{
     Sign,
 };
 use core::{
+    cmp::Ordering,
     fmt::{self, Write},
     hash::{Hash, Hasher},
     hint::unreachable_unchecked,
@@ -558,6 +559,62 @@ impl PartialEq for Repr {
     }
 }
 impl Eq for Repr {}
+
+impl Repr {
+    /// Compare magnitudes (absolute values) of two `Repr`s, ignoring sign.
+    ///
+    /// This bypasses the `as_sign_typed` → `TypedReprRef::cmp` chain for the
+    /// inline case: when both sides are inline we read both words from each
+    /// union and compare a single `DoubleWord`. Same-scale heap comparison
+    /// falls through to the existing length-then-words logic.
+    #[inline]
+    pub fn magnitude_cmp(&self, other: &Repr) -> Ordering {
+        let abs_a = self.capacity.get().unsigned_abs();
+        let abs_b = other.capacity.get().unsigned_abs();
+        // SAFETY: capacity discriminates inline vs heap; for either branch we
+        // touch only the live union field.
+        unsafe {
+            if abs_a <= 2 && abs_b <= 2 {
+                let dw_a = double_word(self.data.inline[0], self.data.inline[1]);
+                let dw_b = double_word(other.data.inline[0], other.data.inline[1]);
+                dw_a.cmp(&dw_b)
+            } else if abs_a <= 2 {
+                Ordering::Less
+            } else if abs_b <= 2 {
+                Ordering::Greater
+            } else {
+                let slice_a = slice::from_raw_parts(self.data.heap.0, self.data.heap.1);
+                let slice_b = slice::from_raw_parts(other.data.heap.0, other.data.heap.1);
+                let len_cmp = slice_a.len().cmp(&slice_b.len());
+                if len_cmp != Ordering::Equal {
+                    return len_cmp;
+                }
+                slice_a.iter().rev().cmp(slice_b.iter().rev())
+            }
+        }
+    }
+
+    /// Compare two signed (`IBig`-shaped) `Repr`s.
+    ///
+    /// Uses the canonical-positive-zero invariant: zero always has positive
+    /// capacity, so a sign disagreement is a strict ordering and never a tie.
+    #[inline]
+    pub fn signed_cmp(&self, other: &Repr) -> Ordering {
+        let pos_a = self.capacity.get() > 0;
+        let pos_b = other.capacity.get() > 0;
+        match (pos_a, pos_b) {
+            (true, false) => return Ordering::Greater,
+            (false, true) => return Ordering::Less,
+            _ => {}
+        }
+        let mag = self.magnitude_cmp(other);
+        if pos_a {
+            mag
+        } else {
+            mag.reverse()
+        }
+    }
+}
 
 impl fmt::Debug for Repr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
