@@ -58,7 +58,9 @@ jobs:
         run: |
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
-            sed -i -E "s/^(version = )\".*\"/\1\"$VERSION\"/" pyproject.toml
+            # `perl -i -pe` (not `sed -i`) because macOS ships BSD sed, which requires an
+            # argument after `-i`; perl behaves identically on GNU/Linux, macOS, and Windows.
+            perl -i -pe "s/^(version = )\".*\"/\$1\"$VERSION\"/" pyproject.toml
             echo "Wheel version synced to $VERSION (from tag $GITHUB_REF_NAME)"
           else
             echo "Manual run on $GITHUB_REF_NAME — keeping the committed pyproject version"
@@ -114,7 +116,9 @@ jobs:
         run: |
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
-            sed -i -E "s/^(version = )\".*\"/\1\"$VERSION\"/" pyproject.toml
+            # `perl -i -pe` (not `sed -i`) because macOS ships BSD sed, which requires an
+            # argument after `-i`; perl behaves identically on GNU/Linux, macOS, and Windows.
+            perl -i -pe "s/^(version = )\".*\"/\$1\"$VERSION\"/" pyproject.toml
             echo "Wheel version synced to $VERSION (from tag $GITHUB_REF_NAME)"
           else
             echo "Manual run on $GITHUB_REF_NAME — keeping the committed pyproject version"
@@ -175,7 +179,9 @@ jobs:
         run: |
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
-            sed -i -E "s/^(version = )\".*\"/\1\"$VERSION\"/" pyproject.toml
+            # `perl -i -pe` (not `sed -i`) because macOS ships BSD sed, which requires an
+            # argument after `-i`; perl behaves identically on GNU/Linux, macOS, and Windows.
+            perl -i -pe "s/^(version = )\".*\"/\$1\"$VERSION\"/" pyproject.toml
             echo "Wheel version synced to $VERSION (from tag $GITHUB_REF_NAME)"
           else
             echo "Manual run on $GITHUB_REF_NAME — keeping the committed pyproject version"
@@ -221,7 +227,9 @@ jobs:
         run: |
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
-            sed -i -E "s/^(version = )\".*\"/\1\"$VERSION\"/" pyproject.toml
+            # `perl -i -pe` (not `sed -i`) because macOS ships BSD sed, which requires an
+            # argument after `-i`; perl behaves identically on GNU/Linux, macOS, and Windows.
+            perl -i -pe "s/^(version = )\".*\"/\$1\"$VERSION\"/" pyproject.toml
             echo "Version synced to $VERSION (from tag $GITHUB_REF_NAME)"
           else
             echo "Manual run on $GITHUB_REF_NAME — keeping the committed pyproject version"
