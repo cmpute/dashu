@@ -9,9 +9,9 @@
 #   * build-linux   — x86_64 / aarch64 / i686, `manylinux` wheels (glibc). maturin-action
 #                     builds these in a manylinux Docker container; each job builds exactly
 #                     the pinned CPython versions (3.10/3.12/3.14) via `-i python3.X`.
-#   * build-macos   — one `universal2` wheel per CPython version (3.9/3.12/3.14; 3.9 matches
-#                     macOS's system Python), covering both Intel and Apple-Silicon macs, built
-#                     on an arm64 runner.
+#   * build-macos   — one job building `universal2` wheels for 3.9/3.12/3.14 (3.9 matches
+#                     macOS's system Python), covering both Intel and Apple-Silicon macs on an
+#                     arm64 runner.
 #   * build-windows — one wheel per CPython version (3.10/3.12/3.14, x86_64).
 #   * build-sdist   — the PEP 517 source distribution (maturin bundles the workspace crates
 #                     into it, so it is self-contained and buildable without the git repo).
@@ -89,22 +89,25 @@ jobs:
           retention-days: 30
 
   build-macos:
-    name: wheel (macos, py${{ matrix.python-version }})
+    name: wheel (macos universal2)
     runs-on: macos-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # 3.9 is included because it's the Python version macOS ships as the system Python
-        # (`/usr/bin/python3` via Command Line Tools), so those users get a wheel too.
-        python-version: ["3.9", "3.12", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
+      # Install all three CPythons so one maturin invocation builds all three universal2 wheels
+      # (mirroring the Linux job, which builds three wheels in one container). 3.9 matches
+      # macOS's system Python (`/usr/bin/python3` via Command Line Tools).
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.9"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
 
       - name: Sync pyproject version to the git tag
         run: |
@@ -121,23 +124,28 @@ jobs:
         shell: bash
         working-directory: python
 
-      # `--universal2` merges the x86_64 and arm64 slices into one wheel, so a single artifact
-      # covers every macOS machine without relying on the (retired) Intel macos-13 runners.
+      # `target: universal2-apple-darwin` merges the x86_64 + arm64 slices into one wheel;
+      # maturin-action detects this triple, installs both rustup targets and configures Xcode.
+      # (`--universal2` is NOT a valid `maturin build` flag — it was removed in favor of this
+      # target triple, so a single artifact covers every macOS machine without the retired
+      # Intel macos-13 runners.)
       - uses: PyO3/maturin-action@v1
         with:
-          args: ${{ env.MATURIN_ARGS }} --universal2
+          target: universal2-apple-darwin
+          args: ${{ env.MATURIN_ARGS }} -i python3.9 -i python3.12 -i python3.14
           working-directory: python
           sccache: 'true'
 
-      - name: Smoke-test the wheel
+      - name: Smoke-test the wheels
         shell: bash
         run: |
-          pip install python/wheels/*.whl
-          python -c "import dashu; from dashu import UBig; assert dashu.compare(UBig(3), UBig(5)) < 0; print('wheel import OK')"
+          # All three interpreters are on PATH; test the cp312 wheel with the explicit 3.12 binary.
+          python3.12 -m pip install python/wheels/*cp312*.whl
+          python3.12 -c "import dashu; from dashu import UBig; assert dashu.compare(UBig(3), UBig(5)) < 0; print('wheel import OK')"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels-macos-${{ matrix.python-version }}
+          name: wheels-macos
           path: python/wheels/*.whl
           if-no-files-found: error
           retention-days: 30
