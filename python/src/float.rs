@@ -342,7 +342,7 @@ impl FPy {
 
 impl_float_math!(
     FPy, sin, cos, tan, asin, acos, atan, sinh, cosh, tanh, asinh, acosh, atanh, exp, exp_m1, ln,
-    ln_1p, log2,
+    ln_1p, log2, log10,
 );
 
 #[pymethods]
@@ -582,7 +582,7 @@ impl DPy {
 
 impl_float_math!(
     DPy, sin, cos, tan, asin, acos, atan, sinh, cosh, tanh, asinh, acosh, atanh, exp, exp_m1, ln,
-    ln_1p, log2,
+    ln_1p, log2, log10,
 );
 
 #[cfg(feature = "zeroize")]

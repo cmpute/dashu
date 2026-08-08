@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Add
+- **Base-10 logarithm** — `Context::log10` and `FBig::log10`, correctly rounded under any rounding
+  mode. Mirrors `log2`: `log10(x) = ln(x)/ln(10)` via Ball arithmetic with the same Ziv
+  certification, an exact power-of-ten shortcut for directed rounding (including powers of ten
+  represented through a `5^k`-significand in binary bases, e.g. `log10(100) = 2` for the base-2
+  float `25·2²`), and the usual `log10(±0) = −∞` / `OutOfDomain` for negative inputs.
+
 ## 0.6.0-rc.3
 
 ### Change

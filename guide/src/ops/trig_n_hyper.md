@@ -9,8 +9,8 @@ Angles are in radians. `atan2` follows the C99 signed-zero model, which matters 
 
 ## Complex functions
 
-`CBig` provides the circular family `sin`, `cos`, `tan`, `sin_cos`, `asin`, `acos`, and `atan`. They are evaluated from the real `sin`/`cos` and `sinh`/`cosh` via the identities
+`CBig` provides the circular family `sin`, `cos`, `tan`, `sin_cos`, `asin`, `acos`, and `atan`, and the hyperbolic family `sinh`, `cosh`, `tanh`, `sinh_cosh`, `asinh`, `acosh`, and `atanh`. The circular functions are evaluated from the real `sin`/`cos` and `sinh`/`cosh` via the identities
 
 $$\sin(x+iy) = \sin x\cosh y + i\cos x\sinh y, \qquad \cos(x+iy) = \cos x\cosh y - i\sin x\sinh y.$$
 
-The inverse functions follow the Kahan signed-zero branch-cut formulation. (Complex-valued hyperbolic functions — `CBig::sinh`, `cosh`, … — are deferred to a later 0.5.x release.) See [Standards Compliance](../compliance.md) for the Annex G special-value and branch-cut tables.
+The hyperbolic functions reuse the circular ones through the rotation identities `sinh z = -i\sin(iz)`, `cosh z = \cos(iz)`, and `tanh z = -i\tan(iz)` — an exact swap of the real and imaginary parts, so the two families share their rounding certification. The inverse functions (circular and hyperbolic) follow the Kahan signed-zero branch-cut formulation. See [Standards Compliance](../compliance.md) for the Annex G special-value and branch-cut tables.

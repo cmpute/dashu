@@ -2,7 +2,8 @@
 //! across the [`fuzz::fuzz_precisions_bits`] sweep (default 50/100/500/1000 bits).
 //!
 //! Companion to `cmplx_random.rs` (which covers field arithmetic mul/div/sqr). Here: exp, log, sqrt,
-//! sin, cos, tan, asin, acos, atan, powf. rug has direct MPC methods for all of these (no gaps).
+//! sin, cos, tan, asin, acos, atan, the hyperbolic sinh/cosh/sinh_cosh/tanh/asinh/acosh/atanh, and
+//! powf. rug has direct MPC methods for all of these (no gaps).
 //! Reuses the shared `fuzz::cmplx` build/compare helpers (`pair`, `complex_finite`, `close_at`).
 //! `close_at` compares per-component to `CLOSE_K × 2^-prec × scale` ulps (not via f64, which would
 //! be meaningless above 53 bits). All `#[ignore]`d (manual, release-time). Inputs are modest-magnitude
@@ -143,6 +144,102 @@ proptest! {
             let r = rz.atan();
             if !complex_finite(&d, &r) { continue; }
             prop_assert!(close_at(&d, &r, prec as usize), "atan zre={zre} zim={zim} prec={prec}");
+        }
+    }
+
+    /// sinh(z) ≈ MPC sinh(z). (dashu evaluates `sinh z = -i·sin(i·z)`, and MPC uses the same
+    /// rotation identity, so the differential shares the trig fuzz's agreement.)
+    #[test]
+    #[ignore]
+    fn cbig_sinh_fuzz(zre in f64_part(), zim in f64_part()) {
+        for prec in fuzz::fuzz_precisions_bits() {
+            let (z, rz) = pair(zre, zim, prec as usize);
+            let d = cmplx_ok!(z.context().sinh(&z, None));
+            let r = rz.sinh();
+            if !complex_finite(&d, &r) { continue; }
+            prop_assert!(close_at(&d, &r, prec as usize), "sinh zre={zre} zim={zim} prec={prec}");
+        }
+    }
+
+    /// cosh(z) ≈ MPC cosh(z).
+    #[test]
+    #[ignore]
+    fn cbig_cosh_fuzz(zre in f64_part(), zim in f64_part()) {
+        for prec in fuzz::fuzz_precisions_bits() {
+            let (z, rz) = pair(zre, zim, prec as usize);
+            let d = cmplx_ok!(z.context().cosh(&z, None));
+            let r = rz.cosh();
+            if !complex_finite(&d, &r) { continue; }
+            prop_assert!(close_at(&d, &r, prec as usize), "cosh zre={zre} zim={zim} prec={prec}");
+        }
+    }
+
+    /// sinh_cosh(z) ≈ (MPC sinh(z), MPC cosh(z)) — the shared-eval pair must agree with the singles.
+    #[test]
+    #[ignore]
+    fn cbig_sinh_cosh_fuzz(zre in f64_part(), zim in f64_part()) {
+        for prec in fuzz::fuzz_precisions_bits() {
+            let (z, rz) = pair(zre, zim, prec as usize);
+            let (ds, dc) = z.context().sinh_cosh(&z, None);
+            let ds = cmplx_ok!(ds);
+            let dc = cmplx_ok!(dc);
+            let rs = rz.clone().sinh();
+            let rc = rz.cosh();
+            if !complex_finite(&ds, &rs) || !complex_finite(&dc, &rc) { continue; }
+            prop_assert!(close_at(&ds, &rs, prec as usize), "sinh_cosh[0] zre={zre} zim={zim} prec={prec}");
+            prop_assert!(close_at(&dc, &rc, prec as usize), "sinh_cosh[1] zre={zre} zim={zim} prec={prec}");
+        }
+    }
+
+    /// tanh(z) ≈ MPC tanh(z).
+    #[test]
+    #[ignore]
+    fn cbig_tanh_fuzz(zre in f64_part(), zim in f64_part()) {
+        for prec in fuzz::fuzz_precisions_bits() {
+            let (z, rz) = pair(zre, zim, prec as usize);
+            let d = cmplx_ok!(z.context().tanh(&z, None));
+            let r = rz.tanh();
+            if !complex_finite(&d, &r) { continue; }
+            prop_assert!(close_at(&d, &r, prec as usize), "tanh zre={zre} zim={zim} prec={prec}");
+        }
+    }
+
+    /// asinh(z) ≈ MPC asinh(z).
+    #[test]
+    #[ignore]
+    fn cbig_asinh_fuzz(zre in f64_part(), zim in f64_part()) {
+        for prec in fuzz::fuzz_precisions_bits() {
+            let (z, rz) = pair(zre, zim, prec as usize);
+            let d = cmplx_ok!(z.context().asinh(&z, None));
+            let r = rz.asinh();
+            if !complex_finite(&d, &r) { continue; }
+            prop_assert!(close_at(&d, &r, prec as usize), "asinh zre={zre} zim={zim} prec={prec}");
+        }
+    }
+
+    /// acosh(z) ≈ MPC acosh(z).
+    #[test]
+    #[ignore]
+    fn cbig_acosh_fuzz(zre in f64_part(), zim in f64_part()) {
+        for prec in fuzz::fuzz_precisions_bits() {
+            let (z, rz) = pair(zre, zim, prec as usize);
+            let d = cmplx_ok!(z.context().acosh(&z, None));
+            let r = rz.acosh();
+            if !complex_finite(&d, &r) { continue; }
+            prop_assert!(close_at(&d, &r, prec as usize), "acosh zre={zre} zim={zim} prec={prec}");
+        }
+    }
+
+    /// atanh(z) ≈ MPC atanh(z).
+    #[test]
+    #[ignore]
+    fn cbig_atanh_fuzz(zre in f64_part(), zim in f64_part()) {
+        for prec in fuzz::fuzz_precisions_bits() {
+            let (z, rz) = pair(zre, zim, prec as usize);
+            let d = cmplx_ok!(z.context().atanh(&z, None));
+            let r = rz.atanh();
+            if !complex_finite(&d, &r) { continue; }
+            prop_assert!(close_at(&d, &r, prec as usize), "atanh zre={zre} zim={zim} prec={prec}");
         }
     }
 

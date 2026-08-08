@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Add
+- **`log10`** — module-level `dashu.log10` plus `FBig`/`DBig` `.log10()` methods.
+- **Complex hyperbolic functions** — `CBig` methods `sinh`, `cosh`, `tanh`, `asinh`, `acosh`,
+  and `atanh`.
+
 ## 0.6.0-rc.3
 
 ### Add

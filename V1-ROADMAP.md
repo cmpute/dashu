@@ -1,6 +1,6 @@
 # dashu Roadmap — v0.6 → v1.0
 
-Last updated: 2026-08-05
+Last updated: 2026-08-08
 
 **Release strategy.** v0.6 is the **breaking-changes testbed**: every planned breaking
 change ships there first, so downstream users can migrate and validate early, and v1.0
@@ -25,18 +25,15 @@ Carried from the v0.5.x deferral list. Not breaking, so they are not v0.6 test c
 per se — they broaden the validation surface and bundle naturally with the breaking
 pull-forward above.
 
-- **`dashu-cmplx` hyperbolic & inverse-hyperbolic family** — `sinh`/`cosh`/`tanh`/
-  `asinh`/`acosh`/`atanh`. (Real hyperbolics already exist on `Context<R>` and are *used*
-  by `CBig` trig; the complex-valued functions themselves are deferred.)
-- **More transcendentals** — `rootofunity`, complex `agm`, and `exp2`/`exp10`/`log10`.
-  (`log2` shipped in v0.6 for the real float and the python bindings; complex `fma`
-  shipped in 0.5.x — `CBig::fma` / `Context::fma` in `complex/src/mul.rs`, commit 76502a2,
-  via chained real FMA; a truly-correctly-rounded single-rounding complex FMA remains open.)
-- **Vector ops** — `dot`/mean helpers. (`Sum` for `CBig` is already exact-accumulating,
-  matching `FBig: Sum`; `Product` for `CBig` remains a fold, matching `FBig: Product`.)
-- **`num-complex` interop** — the `num-complex` feature already ships `Complex<f32>` /
-  `Complex<f64>` conversions (`TryFrom`, base 2, in `complex/src/third_party/num_complex.rs`).
-  `Complex<FBig>` interop is deliberately **not** planned — the primitive-float pair is the scope.
+- **More transcendentals** — `rootofunity`. (`log10` shipped in v0.6 for the real float and
+  the python bindings; the `dashu-cmplx` hyperbolic & inverse-hyperbolic family —
+  `sinh`/`cosh`/`tanh`/`asinh`/`acosh`/`atanh` — also shipped in v0.6, evaluated from the
+  real hyperbolics/trig via the `sin(x+iy) = sinh x·cos y + …` decomposition. `num-complex`
+  interop already shipped (`Complex<f32>`/`Complex<f64>` conversions behind the
+  `num-complex` feature; `Complex<FBig>` interop is deliberately **not** planned). The
+  remaining transcendental backlog — complex `agm`, `exp2`/`exp10`, and a truly-correctly-
+  rounded single-rounding complex FMA (`complex/src/mul.rs` today chains real FMAs) — is
+  deferred post-v1, see below.)
 - **Test organization — clear `src` in-file vs `tests/` boundary.** Tests are scattered:
   many operations have *both* an in-file `#[cfg(test)] mod tests` (in `src/<op>.rs`) *and*
   a parallel `tests/<op>.rs` integration file, and the two frequently overlap.
@@ -72,6 +69,15 @@ folded back into the v0.6 release cycle (or a v0.7) rather than deferred silentl
   ([ref](https://en.cppreference.com/c/header/tgmath)). The individual v0.5.x/v0.6 pieces
   above (complex hyperbolics, `fma`, `exp2`/`log2`, …) are the first incremental steps
   toward this.
+- **`exp2` / `exp10` for `FBig` and `CBig`, and complex `log10`.** The remaining exp/log
+  family gaps after v0.6 (which shipped real `log2` and real `log10`). `exp2`/`exp10` need
+  their own reduction (`x·log2(e)` → power-of-two scale, mirroring `exp`'s Ball engine);
+  complex `log10` follows `CBig::log`'s `ln|z| + i·arg(z)` split divided by `ln 10`.
+- **Complex `agm`** — the arithmetic–geometric mean for `CBig` (and real `FBig` if wanted),
+  via the standard AGM iteration with Ziv certification. The branch-cut behavior on `]−∞, 0]`
+  needs care; no algorithm has been sketched yet.
+- **Vector ops** — `dot`/mean helpers. (`Sum` for `CBig` is already exact-accumulating,
+  matching `FBig: Sum`; `Product` for `CBig` remains a fold, matching `FBig: Product`.)
 - **SIMD-optimized FFT multiplication.** Leverage the [`wide`](https://crates.io/crates/wide)
   crate for SIMD FFT-based multiplication. Not considered until v1.0.
 - **High-bits (short-product) multiplication for `dashu-float` `mul`/`sqr`/`cubic`.** These

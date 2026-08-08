@@ -551,6 +551,7 @@ mod tests {
         assert_eq!(x.clone().exp_m1().into_fbig(), y.clone().exp_m1());
         assert_eq!(x.clone().ln_1p().into_fbig(), y.clone().ln_1p());
         assert_eq!(x.clone().log2().into_fbig(), y.clone().log2());
+        assert_eq!(x.clone().log10().into_fbig(), y.clone().log10());
         assert_eq!(x.powf(&x.clone()).into_fbig(), y.clone().powf(&y));
     }
 

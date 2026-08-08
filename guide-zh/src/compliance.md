@@ -51,7 +51,7 @@
 | IEEE 754 要求 | 合规性 | 说明 |
 |---------------------|-----------|-------|
 | 舍入模式：roundTiesToEven、roundTiesToAway、roundTowardPositive、roundTowardNegative、roundTowardZero | ✅ | 全部五种模式实现为 `HalfEven`、`HalfAway`、`Up`、`Down`、`Zero`。 |
-| 正确舍入到 1 ulp 以内 | ✅ | 所有运算保证 $|error| < 1\text{ ulp}$。算术、根号以及实超越函数（`exp`、`exp_m1`、`ln`、`ln_1p`、三角与双曲函数族、`hypot`、`powi`、`powf`）通过 Ziv 循环保证正确舍入；`dashu-cmplx` 的复数超越函数（`exp`、`log`、`powf`、`powi`、`sin`/`cos`/`tan`/`sin_cos`、`asin`/`acos`/`atan`、`sqrt`）经由其自身的 Ziv 循环正确舍入，同时认证实部与虚部（`asin`/`acos` 采用因式分解的 $1-z^2=(1-z)(1+z)$，在奇点 $z = \pm 1$ 处亦保持精度）。`Rounded` 类型区分精确与非精确结果。 |
+| 正确舍入到 1 ulp 以内 | ✅ | 所有运算保证 $|error| < 1\text{ ulp}$。算术、根号以及实超越函数（`exp`、`exp_m1`、`ln`、`ln_1p`、三角与双曲函数族、`hypot`、`powi`、`powf`）通过 Ziv 循环保证正确舍入；`dashu-cmplx` 的复数超越函数（`exp`、`log`、`powf`、`powi`、`sin`/`cos`/`tan`/`sin_cos`、`asin`/`acos`/`atan`、双曲函数 `sinh`/`cosh`/`tanh`/`sinh_cosh` 与 `asinh`/`acosh`/`atanh`、`sqrt`）经由其自身的 Ziv 循环正确舍入，同时认证实部与虚部（`asin`/`acos` 采用因式分解的 $1-z^2=(1-z)(1+z)$，在奇点 $z = \pm 1$ 处亦保持精度；双曲函数族通过精确的旋转恒等式 `sinh z = -i\sin(iz)` 等复用圆函数，继承其认证）。`Rounded` 类型区分精确与非精确结果。 |
 | 就近舍入保持零的符号 | ✅ | `rounded_to_repr` 在舍入将非零值折叠为零时保持输入符号。 |
 
 #### 第 5.6 节——符号位运算

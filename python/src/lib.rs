@@ -71,6 +71,7 @@ fn dashu(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(math::log, m)?)?;
     m.add_function(wrap_pyfunction!(math::log1p, m)?)?;
     m.add_function(wrap_pyfunction!(math::log2, m)?)?;
+    m.add_function(wrap_pyfunction!(math::log10, m)?)?;
     m.add_function(wrap_pyfunction!(math::ln, m)?)?;
     m.add_function(wrap_pyfunction!(math::ln_1p, m)?)?;
     m.add_function(wrap_pyfunction!(math::sqrt, m)?)?;

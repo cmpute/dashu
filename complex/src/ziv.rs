@@ -205,6 +205,32 @@ mod tests {
             drop(ctx.atan(&c, None));
             assert_few("atan", LAST_ZIV_RETRIES.with(|cell| cell.get()));
 
+            // the hyperbolic family routes through the circular functions, so its retry
+            // behavior is inherited (the rotation plumbing adds no extra Ziv precision).
+            LAST_ZIV_RETRIES.with(|cell| cell.set(usize::MAX));
+            drop(ctx.sinh(&c, None));
+            assert_few("sinh", LAST_ZIV_RETRIES.with(|cell| cell.get()));
+
+            LAST_ZIV_RETRIES.with(|cell| cell.set(usize::MAX));
+            drop(ctx.cosh(&c, None));
+            assert_few("cosh", LAST_ZIV_RETRIES.with(|cell| cell.get()));
+
+            LAST_ZIV_RETRIES.with(|cell| cell.set(usize::MAX));
+            drop(ctx.tanh(&c, None));
+            assert_few("tanh", LAST_ZIV_RETRIES.with(|cell| cell.get()));
+
+            LAST_ZIV_RETRIES.with(|cell| cell.set(usize::MAX));
+            drop(ctx.asinh(&c, None));
+            assert_few("asinh", LAST_ZIV_RETRIES.with(|cell| cell.get()));
+
+            LAST_ZIV_RETRIES.with(|cell| cell.set(usize::MAX));
+            drop(ctx.acosh(&c, None));
+            assert_few("acosh", LAST_ZIV_RETRIES.with(|cell| cell.get()));
+
+            LAST_ZIV_RETRIES.with(|cell| cell.set(usize::MAX));
+            drop(ctx.atanh(&c, None));
+            assert_few("atanh", LAST_ZIV_RETRIES.with(|cell| cell.get()));
+
             LAST_ZIV_RETRIES.with(|cell| cell.set(usize::MAX));
             drop(ctx.powf(&c, &z(0.7, 0.2), None));
             assert_few("powf", LAST_ZIV_RETRIES.with(|cell| cell.get()));

@@ -4,7 +4,7 @@ use dashu_base::{
     Approximation::*,
     EstimatedLog2, PowerOfTwo, Sign, UnsignedAbs,
 };
-use dashu_int::IBig;
+use dashu_int::{IBig, UBig};
 
 use crate::{
     ball::{ceil_shift, Ball},
@@ -116,6 +116,26 @@ impl<R: ErrorBounds, const B: Word> FBig<R, B> {
     #[inline]
     pub fn log2(&self) -> Self {
         self.context.unwrap_fp(self.context.log2(&self.repr, None))
+    }
+
+    /// Calculate the base-10 logarithm (`log10(x)`) on the float number.
+    ///
+    /// Correctly rounded to the context's precision under any rounding mode. For an exact power
+    /// of ten the result is the exact integer `log10(x)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use core::str::FromStr;
+    /// # use dashu_base::ParseError;
+    /// # use dashu_float::DBig;
+    /// let a = DBig::from_str("1000")?;
+    /// assert_eq!(a.log10(), DBig::from_str("3")?);
+    /// # Ok::<(), ParseError>(())
+    /// ```
+    #[inline]
+    pub fn log10(&self) -> Self {
+        self.context.unwrap_fp(self.context.log10(&self.repr, None))
     }
 }
 
@@ -598,6 +618,133 @@ impl<R: ErrorBounds> Context<R> {
             Ok(lx.div(&l2).to_value_radius::<R>())
         })
     }
+
+    /// Calculate the base-10 logarithm (`log10(x)`) on the float number under this context.
+    ///
+    /// Correctly rounded to the context's precision under any rounding mode; for an exact power
+    /// of ten the result is the exact integer `log10(x)`.
+    ///
+    /// # Domain
+    ///
+    /// `log10(±0) = −∞` and a negative (non-zero) input is out of domain; an infinite input is an
+    /// error (a finite context cannot produce the infinite `log10(+∞) = +∞` exactly).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use core::str::FromStr;
+    /// # use dashu_base::ParseError;
+    /// # use dashu_float::DBig;
+    /// use dashu_base::Approximation::*;
+    /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
+    ///
+    /// let context = Context::<HalfAway>::new(4);
+    /// let a = DBig::from_str("100")?;
+    /// assert_eq!(context.log10(&a.repr(), None), Ok(Exact(DBig::from_str("2")?)));
+    /// # Ok::<(), ParseError>(())
+    /// ```
+    #[inline]
+    pub fn log10<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        cache: Option<&mut ConstCache>,
+    ) -> FpResult<FBig<R, B>> {
+        if x.is_infinite() {
+            return Err(FpError::InfiniteInput);
+        }
+        if x.significand.is_zero() {
+            // log10(±0) = -inf (a value, not an error)
+            return Ok(Exact(FBig::new(Repr::neg_infinity(), *self)));
+        }
+        if x.sign() == Sign::Negative {
+            return Err(FpError::OutOfDomain);
+        }
+        self.log10_internal(x, cache)
+    }
+
+    fn log10_internal<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        mut cache: Option<&mut ConstCache>,
+    ) -> FpResult<FBig<R, B>> {
+        assert_finite(x);
+
+        // Exact shortcuts first — they also cover unlimited precision, which the Ziv loop below
+        // rejects via its limited-precision assertion.
+        if x.is_one() {
+            return Ok(Exact(FBig::ZERO)); // log10(1) = +0
+        }
+
+        // Exact power-of-ten shortcut: if x = 10^m for an integer m, log10(x) = m. This is *required*
+        // for directed rounding — the Ziv loop below cannot certify an exactly-representable result
+        // whose true value sits on a rounding boundary (its shrinking error interval always
+        // straddles the one-sided preimage), so without this shortcut log10(10^-159) under `Up`
+        // would exhaust the retry cap and return m + 1 ulp instead of the exact m.
+        if let Some(m) = exact_pow10_log::<B>(&x.significand, x.exponent) {
+            return Ok(self.convert_int::<B>(IBig::from(m)));
+        }
+
+        assert_limited_precision(self.precision);
+
+        // log10(x) = ln(x)/ln(10), correctly rounded via the Ziv loop. Both logarithms come from the
+        // Ball-based `ln_compute`, and dividing them as Balls composes the radius mechanically:
+        // the quotient's error is bounded from the two logarithms' relative errors, with no
+        // directed-interval bookkeeping or guard-digit constant. The driver certifies the result
+        // against the rounding preimage exactly as before.
+        let initial_guard = self.base_guard_digits::<B>() + 4;
+        self.ziv(initial_guard, |guard| {
+            let work_precision = self.precision + guard;
+            let lx = self.ln_compute::<B>(x, work_precision, false, reborrow_cache(&mut cache));
+            let ten = Repr::new(IBig::from(10), 0);
+            let l10 = self.ln_compute::<B>(&ten, work_precision, false, reborrow_cache(&mut cache));
+            Ok(lx.div(&l10).to_value_radius::<R>())
+        })
+    }
+}
+
+/// If `x = sig·B^e` is exactly `10^m` for some integer `m`, return `m`; otherwise `None`.
+///
+/// `10^m = 2^m·5^m`, so `x` is a power of ten iff the 2-valuation and 5-valuation of `sig·B^e`
+/// coincide and `x` has no other prime factor. The base `B = 2^p·5^q·s` (with `s` coprime to 10)
+/// contributes `p·e` to the 2-valuation and `q·e` to the 5-valuation, and `s` must not appear
+/// (unless `e = 0`). The valuations may be negative (`x` a negative power of ten).
+fn exact_pow10_log<const B: Word>(sig: &IBig, e: isize) -> Option<isize> {
+    // factor the base into 2s, 5s, and the leftover (coprime to 10)
+    let mut rest = B;
+    let mut p = 0isize;
+    while rest % 2 == 0 {
+        rest /= 2;
+        p += 1;
+    }
+    let mut q = 0isize;
+    while rest % 5 == 0 {
+        rest /= 5;
+        q += 1;
+    }
+    // the leftover would give `x` a non-{2,5} prime factor when e ≠ 0
+    if rest != 1 && e != 0 {
+        return None;
+    }
+
+    let sig_abs = sig.unsigned_abs();
+    let v2_sig = sig_abs.trailing_zeros()?; // None only for a zero significand (excluded upstream)
+    let mut odd = sig_abs;
+    if v2_sig > 0 {
+        odd >>= v2_sig; // drop the 2-factors
+    }
+    let mut v5 = 0isize;
+    while &odd % 5u8 == 0 {
+        odd /= 5u8;
+        v5 += 1;
+    }
+    // after removing every 2 and 5 the significand must be 1 (no other prime factor)
+    if odd != UBig::ONE {
+        return None;
+    }
+
+    let v2 = v2_sig as isize + p * e;
+    let v5 = v5 + q * e;
+    (v2 == v5).then_some(v2)
 }
 
 #[cfg(test)]
@@ -606,6 +753,147 @@ mod tests {
     use crate::round::mode;
     use alloc::vec::Vec;
     use dashu_base::BitTest;
+
+    #[test]
+    fn test_log10_domain() {
+        let ctx = Context::<mode::HalfEven>::new(53);
+        // log10(±0) = -inf (a value, not an error)
+        let r = ctx.log10::<2>(&Repr::<2>::zero(), None).unwrap().value();
+        assert!(r.repr.is_infinite());
+        assert_eq!(r.repr.sign(), Sign::Negative);
+        // log10(negative) is out of domain
+        assert!(matches!(
+            ctx.log10::<2>(&Repr::new((-1).into(), 0), None),
+            Err(FpError::OutOfDomain)
+        ));
+        // an infinite input is rejected
+        assert!(matches!(ctx.log10::<2>(&Repr::infinity(), None), Err(FpError::InfiniteInput)));
+    }
+
+    #[test]
+    fn test_log10_exact_power_of_ten() {
+        // log10(10^k) = k exactly under every rounding mode. Regression for the directed-rounding
+        // defect the power-of-ten shortcut exists for: rounding ln(x) and ln(10) each toward the
+        // mode and dividing once does not bound the quotient, so previously log10(10^-159) under
+        // `Up` returned -159 + 1 ulp.
+        let p = 53;
+        for k in [0isize, 1, -1, 5, -159, 1000, -1000] {
+            let x = Repr::<10>::new(IBig::from(1), k); // 10^k (base 10: significand 1)
+            let r_down = Context::<mode::Down>::new(p)
+                .log10::<10>(&x, None)
+                .unwrap()
+                .value();
+            let r_up = Context::<mode::Up>::new(p)
+                .log10::<10>(&x, None)
+                .unwrap()
+                .value();
+            let r_zero = Context::<mode::Zero>::new(p)
+                .log10::<10>(&x, None)
+                .unwrap()
+                .value();
+            let r_he = Context::<mode::HalfEven>::new(p)
+                .log10::<10>(&x, None)
+                .unwrap()
+                .value();
+            assert_eq!(r_down.repr, r_he.repr, "Down != HalfEven for log10(10^{k})");
+            assert_eq!(r_up.repr, r_he.repr, "Up != HalfEven for log10(10^{k})");
+            assert_eq!(r_zero.repr, r_he.repr, "Zero != HalfEven for log10(10^{k})");
+            assert_eq!(r_he.to_int().value(), IBig::from(k), "value for log10(10^{k})");
+        }
+    }
+
+    #[test]
+    fn test_log10_exact_power_of_ten_binary_base() {
+        // In base 2, 10^k is a float only via a 5^k-significand (e.g. 100 = 25·2^2); the
+        // valuation-based shortcut must still detect the exact log10.
+        let p = 53;
+        for (sig, e, want) in [(25i32, 2isize, 2i64), (5, 1, 1), (125, 3, 3), (50, 1, 2)] {
+            // 50·2^1 = 100 = 10^2 too (a non-normalized significand)
+            let x = Repr::<2>::new(IBig::from(sig), e);
+            let r_down = Context::<mode::Down>::new(p)
+                .log10::<2>(&x, None)
+                .unwrap()
+                .value();
+            let r_up = Context::<mode::Up>::new(p)
+                .log10::<2>(&x, None)
+                .unwrap()
+                .value();
+            let r_zero = Context::<mode::Zero>::new(p)
+                .log10::<2>(&x, None)
+                .unwrap()
+                .value();
+            let r_he = Context::<mode::HalfEven>::new(p)
+                .log10::<2>(&x, None)
+                .unwrap()
+                .value();
+            assert_eq!(r_down.to_int().value(), IBig::from(want), "log10({sig}·2^{e}) Down");
+            assert_eq!(r_up.to_int().value(), IBig::from(want), "log10({sig}·2^{e}) Up");
+            assert_eq!(r_zero.to_int().value(), IBig::from(want), "log10({sig}·2^{e}) Zero");
+            assert_eq!(r_he.to_int().value(), IBig::from(want), "log10({sig}·2^{e}) HalfEven");
+        }
+    }
+
+    #[test]
+    fn test_log10_fbig_convenience() {
+        // FBig::log10 convenience layer: exact powers of ten in both bases.
+        let x = FBig::<mode::HalfEven, 10>::from_repr(Repr::new(1000.into(), 0), Context::new(50));
+        assert_eq!(x.log10(), FBig::<mode::HalfEven, 10>::from(3u8));
+        // base-2 float 100 = 25·2^2
+        let x = FBig::<mode::HalfEven, 2>::from_repr(Repr::new(25.into(), 2), Context::new(50));
+        assert_eq!(x.log10(), FBig::<mode::HalfEven, 2>::from(2u8));
+    }
+
+    /// Fixed inputs for the `log10` oracle differential.
+    fn log10_diff_inputs() -> Vec<Repr<2>> {
+        let mut v = Vec::new();
+        for x in [0.5f64, 1.5, 2.0, 3.0, 10.0, 1000.0, 1e-6, 123.456, 2.5e-10] {
+            v.push(FBig::<mode::HalfEven, 2>::try_from(x).unwrap().into_repr());
+        }
+        for k in [-100isize, -50, -10, -1, 0, 1, 10, 50, 100] {
+            v.push(Repr::new(IBig::ONE, k)); // 2^k
+        }
+        v.push(
+            FBig::<mode::HalfEven, 2>::try_from(f64::MAX)
+                .unwrap()
+                .into_repr(),
+        );
+        v
+    }
+
+    fn check_log10_differential<R: ErrorBounds>(p: usize, x: &Repr<2>, oracle: &Repr<2>) {
+        let ctx = Context::<R>::new(p);
+        let want = ctx.repr_round_ref(oracle).value();
+        let got = ctx.log10_internal::<2>(x, None).unwrap().value();
+        assert_eq!(got.repr, want, "p={p} {} x={x:?}", core::any::type_name::<R>(),);
+    }
+
+    #[test]
+    fn log10_ball_matches_oracle() {
+        let inputs = log10_diff_inputs();
+        for p in [20usize, 50, 100] {
+            for x in &inputs {
+                let oracle = Context::<mode::HalfEven>::new(p + 60)
+                    .log10::<2>(x, None)
+                    .unwrap()
+                    .value();
+                check_log10_differential::<mode::HalfEven>(p, x, &oracle.repr);
+                check_log10_differential::<mode::Down>(p, x, &oracle.repr);
+                check_log10_differential::<mode::Up>(p, x, &oracle.repr);
+                check_log10_differential::<mode::Zero>(p, x, &oracle.repr);
+                check_log10_differential::<mode::Away>(p, x, &oracle.repr);
+            }
+        }
+        // the arbitrary-precision regime: a reduced sweep (directed modes still exercised).
+        for x in inputs.iter().step_by(9) {
+            let oracle = Context::<mode::HalfEven>::new(560)
+                .log10::<2>(x, None)
+                .unwrap()
+                .value();
+            check_log10_differential::<mode::HalfEven>(500, x, &oracle.repr);
+            check_log10_differential::<mode::Down>(500, x, &oracle.repr);
+            check_log10_differential::<mode::Up>(500, x, &oracle.repr);
+        }
+    }
 
     #[test]
     fn test_ln_zero_is_neg_infinity() {

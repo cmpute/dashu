@@ -108,7 +108,19 @@ macro_rules! impl_cpy_math {
     };
 }
 
-impl_cpy_math!((sin => sin), (cos => cos), (tan => tan), (exp => exp), (ln => log));
+impl_cpy_math!(
+    (sin => sin),
+    (cos => cos),
+    (tan => tan),
+    (exp => exp),
+    (ln => log),
+    (sinh => sinh),
+    (cosh => cosh),
+    (tanh => tanh),
+    (asinh => asinh),
+    (acosh => acosh),
+    (atanh => atanh),
+);
 
 #[pymethods]
 impl CPy {

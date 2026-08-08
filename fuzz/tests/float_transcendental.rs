@@ -157,6 +157,24 @@ proptest! {
     }
 
 
+    /// log10(x) == MPFR log10(x), x > 0. Bit-exact like `log2` (both dashu and MPFR are
+    /// Ziv-correct; for non-power-of-ten `x` the result is irrational so the HalfAway/nearest-even
+    /// difference at exact ties never arises). Exact powers of ten are covered by the shortcut.
+    #[test]
+    #[ignore]
+    fn fbig_log10_fuzz(x in fuzz::pos_dbig_strategy(-200..=200)) {
+        let xs = format!("{x:e}");
+        for prec in fuzz::fuzz_precisions_decimal() {
+            let ctx = Context::<HalfAway>::new(prec);
+            let d = dashu_ok!(ctx.log10::<10>(x.repr(), None));
+            if d.repr().is_infinite() { continue; }
+            let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
+            let r: DBig = DBig::from_str(&xr.log10().to_string_radix(10, Some(prec))).unwrap();
+            prop_assert!(d == r, "log10 x={xs} prec={prec}: dashu={d} rug={r}");
+        }
+    }
+
+
     /// sqrt(x) ≈ MPFR sqrt(x), x ≥ 0.
     #[test]
     #[ignore]

@@ -398,6 +398,12 @@ impl<R: ErrorBounds, const B: Word> CachedCBig<R, B> {
     forward_cached!(asin => asin);
     forward_cached!(acos => acos);
     forward_cached!(atan => atan);
+    forward_cached!(sinh => sinh);
+    forward_cached!(cosh => cosh);
+    forward_cached!(tanh => tanh);
+    forward_cached!(asinh => asinh);
+    forward_cached!(acosh => acosh);
+    forward_cached!(atanh => atanh);
 
     // `sqrt` and `abs` route through `Context::hypot`, which is now Ziv-backed (`R: ErrorBounds`).
     delegate_to_cbig!(sqrt);
@@ -437,6 +443,21 @@ impl<R: ErrorBounds, const B: Word> CachedCBig<R, B> {
         let (s, c) = {
             let mut guard = self.cache.borrow_mut();
             ctx.sin_cos::<B>(&self.cbig, Some(&mut *guard))
+        };
+        (
+            CachedCBig::from_cbig(ctx.unwrap_cfp(s), &self.cache),
+            CachedCBig::from_cbig(ctx.unwrap_cfp(c), &self.cache),
+        )
+    }
+
+    /// Hyperbolic sine and cosine together (see [`CBig::sinh_cosh`]). Threads the cache into the
+    /// inner `sin_cos`.
+    #[inline]
+    pub fn sinh_cosh(&self) -> (Self, Self) {
+        let ctx = self.cbig.context();
+        let (s, c) = {
+            let mut guard = self.cache.borrow_mut();
+            ctx.sinh_cosh::<B>(&self.cbig, Some(&mut *guard))
         };
         (
             CachedCBig::from_cbig(ctx.unwrap_cfp(s), &self.cache),
@@ -525,10 +546,21 @@ mod tests {
         eq(ca.clone().asin(), &a.clone().asin());
         eq(ca.clone().acos(), &a.clone().acos());
         eq(ca.clone().atan(), &a.clone().atan());
+        eq(ca.clone().sinh(), &a.clone().sinh());
+        eq(ca.clone().cosh(), &a.clone().cosh());
+        eq(ca.clone().tanh(), &a.clone().tanh());
+        eq(ca.clone().asinh(), &a.clone().asinh());
+        eq(ca.clone().acosh(), &a.clone().acosh());
+        eq(ca.clone().atanh(), &a.clone().atanh());
         eq(ca.clone().powf(&ca.clone()), &a.clone().powf(&a));
 
         let (s_c, c_c) = ca.clone().sin_cos();
         let (s, c) = a.clone().sin_cos();
+        eq(s_c, &s);
+        eq(c_c, &c);
+
+        let (s_c, c_c) = ca.clone().sinh_cosh();
+        let (s, c) = a.clone().sinh_cosh();
         eq(s_c, &s);
         eq(c_c, &c);
 

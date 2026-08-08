@@ -9,8 +9,8 @@
 
 ## 复数函数
 
-`CBig` 提供圆函数族 `sin`、`cos`、`tan`、`sin_cos`、`asin`、`acos` 和 `atan`。它们通过以下恒等式由实数的 `sin`/`cos` 和 `sinh`/`cosh` 计算得出：
+`CBig` 提供圆函数族 `sin`、`cos`、`tan`、`sin_cos`、`asin`、`acos` 和 `atan`，以及双曲函数族 `sinh`、`cosh`、`tanh`、`sinh_cosh`、`asinh`、`acosh` 和 `atanh`。圆函数通过以下恒等式由实数的 `sin`/`cos` 和 `sinh`/`cosh` 计算得出：
 
 $$\sin(x+iy) = \sin x\cosh y + i\cos x\sinh y, \qquad \cos(x+iy) = \cos x\cosh y - i\sin x\sinh y.$$
 
-反函数遵循 Kahan 有符号零支割线公式。（复数值双曲函数——`CBig::sinh`、`cosh` 等——将推迟到后续的 0.5.x 版本。）完整的 Annex G 特殊值和支割线表请参见[标准合规性](../compliance.md)。
+双曲函数通过旋转恒等式 `sinh z = -i\sin(iz)`、`cosh z = \cos(iz)`、`tanh z = -i\tan(iz)` 复用圆函数——即对实部和虚部做一次精确互换，因此两族共享舍入验证。反函数（圆函数与双曲函数）遵循 Kahan 有符号零支割线公式。完整的 Annex G 特殊值和支割线表请参见[标准合规性](../compliance.md)。

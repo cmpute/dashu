@@ -661,6 +661,7 @@ impl<R: ErrorBounds, const B: Word> CachedFBig<R, B> {
     forward_to_context!(ln);
     forward_to_context!(ln_1p);
     forward_to_context!(log2);
+    forward_to_context!(log10);
     forward_to_context!(exp);
     forward_to_context!(exp_m1);
 

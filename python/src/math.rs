@@ -75,6 +75,7 @@ math_trans!(ln_1p, ln_1p);
 math_trans!(log, ln);
 math_trans!(log1p, ln_1p);
 math_trans!(log2, log2);
+math_trans!(log10, log10);
 
 // Roots (algebraic — no cache)
 math_root!(sqrt, sqrt);

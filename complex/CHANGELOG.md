@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Add
+- **Complex hyperbolic & inverse-hyperbolic family** — `Context::sinh`/`cosh`/`sinh_cosh`/`tanh`/
+  `asinh`/`acosh`/`atanh` and the matching `CBig` convenience methods. Built from the complex
+  circular functions via the rotation identities `sinh z = -i·sin(i·z)`, `cosh z = cos(i·z)`,
+  `tanh z = -i·tan(i·z)`, and the inverse `asinh z = -i·asin(i·z)`, `atanh z = -i·atan(i·z)`,
+  `acosh z = ±i·acos z` (the sign follows `Im z`, preserving the branch cut): rotating the
+  argument by `i` is an exact part swap, so the result inherits the inner function's rounding
+  certification. Exact-zero shortcuts carry the Annex-G signed-zero values (`csinh(±0 ± i·0)`,
+  `ccosh`'s signed-product imaginary zero).
+
 ## 0.6.0-rc.3
 
 ### Add
