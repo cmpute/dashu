@@ -8,6 +8,10 @@ full detail.
 
 ## Unreleased
 
+### Change
+- **dashu-macros**: **(breaking)** `cbig!` / `static_cbig!` coefficients are now decimal by
+  default (was binary); use the `0x` / `0b` / `0o` prefixes for other bases.
+
 ## 0.6.0-rc.3 — coordinated release
 
 ### Add

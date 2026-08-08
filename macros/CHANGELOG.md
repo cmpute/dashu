@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Change
+- **(breaking)** `cbig!` / `static_cbig!` coefficients are now **decimal by default**, matching
+  `ubig!` / `ibig!`: use the `0x` / `0b` / `0o` prefixes for hexadecimal / binary / octal.
+  Previously coefficients were parsed as binary floats, so `cbig!(3+4i)` was rejected and
+  `cbig!(11+100i)` meant `3+4i`; now `cbig!(3+4i)` means `3+4i` and binary literals must be
+  written with an explicit `0b` prefix (e.g. `cbig!(0b11 + 0b100i)`). Decimal and octal
+  coefficients are converted to base 2 (exact for integers).
+
 ## 0.6.0-rc.3
 
 Version aligned with the coordinated dashu 0.6.0-rc.3 release; no functional changes

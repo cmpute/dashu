@@ -62,8 +62,8 @@ fn test_static_macros() {
     static SF: &Relaxed = static_rbig!(~2/7);
     assert!(SE.as_relaxed() > SF);
 
-    static SG: &Complex = static_cbig!(11+100i); // 3 + 4i
-    assert_eq!(*SG, cbig!(11, 100));
+    static SG: &Complex = static_cbig!(3+4i);
+    assert_eq!(*SG, cbig!(3, 4));
 
     static BA: &Natural = static_ubig!(0xfffffffffffffffffffffffffffffffffffffffffffffffe);
     static BB: &Integer = static_ibig!(-0xffffffffffffffffffffffffffffffffffffffffffffffff);

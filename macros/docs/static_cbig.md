@@ -14,7 +14,7 @@ This macro is available only after Rust 1.64 (it relies on `static` items with c
 
 ```rust
 # use dashu_macros::static_cbig;
-let z: &dashu_cmplx::CBig = static_cbig!(11+100i); // 3 + 4i
+let z: &dashu_cmplx::CBig = static_cbig!(3+4i); // 3 + 4i
 
 // works for large coefficients that `cbig!` can't lift into a `const`
 static BIG: &dashu_cmplx::CBig = static_cbig!(
