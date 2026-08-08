@@ -55,6 +55,21 @@ pub const fn round_up_usize(a: usize, b: usize) -> usize {
     ceil_div_usize(a, b) * b
 }
 
+/// The modular inverse of the odd `m` modulo `2^bits`, via Hensel lifting: the Newton step
+/// `i ← i·(2 − m·i)` (all wrapping) doubles the number of correct low bits each iteration
+/// (1 → 2 → 4 → … → `bits`). `m` must be odd, so `m^{-1} ≡ 1 (mod 2)` is a valid 1-bit seed.
+#[inline]
+pub const fn inv_mod_pow2(m: DoubleWord, bits: u32) -> DoubleWord {
+    let two: DoubleWord = 2;
+    let mut inv: DoubleWord = 1;
+    let mut correct_bits: u32 = 1;
+    while correct_bits < bits {
+        inv = inv.wrapping_mul(two.wrapping_sub(m.wrapping_mul(inv)));
+        correct_bits <<= 1;
+    }
+    inv
+}
+
 /// n ones: 2^n - 1
 #[inline]
 pub const fn ones_word(n: u32) -> Word {

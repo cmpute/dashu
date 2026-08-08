@@ -5,6 +5,7 @@ use crate::{
     buffer::Buffer,
     cmp,
     error::panic_different_rings,
+    math::inv_mod_pow2,
     primitive::{double_word, shrink_dword, split_dword, DWORD_BITS, WORD_BITS_USIZE},
     repr::TypedReprRef,
     ubig::UBig,
@@ -127,7 +128,7 @@ impl MontgomeryLargeRepr {
         debug_assert!(s >= 3 && words[0] & 1 == 1);
 
         let modulus = Buffer::from(words).into_boxed_slice();
-        let n0_dword = neginv_dword(double_word(modulus[0], modulus[1]));
+        let n0_dword = inv_mod_pow2(double_word(modulus[0], modulus[1]), DWORD_BITS).wrapping_neg();
         debug_assert_eq!(
             double_word(modulus[0], modulus[1])
                 .wrapping_mul(n0_dword)
@@ -163,23 +164,6 @@ pub(crate) fn to_exact_words(u: &UBig, s: usize) -> Box<[Word]> {
     buffer.push_slice(words);
     buffer.push_zeros(s - words.len());
     buffer.into_boxed_slice()
-}
-
-/// Compute `-m^{-1} mod 2^(2*WORD_BITS)` for an odd `m` (given by its low double word) using
-/// table-free Hensel lifting.
-///
-/// Since `m` is odd, `m^{-1} ≡ 1 (mod 2)`, so `i = 1` is a valid 1-bit seed. The Newton
-/// step `i ← i·(2 − m·i)` (all wrapping) doubles the number of correct low bits each iteration:
-/// 1 → 2 → 4 → … → `2*WORD_BITS`. The result is then negated.
-const fn neginv_dword(m: DoubleWord) -> DoubleWord {
-    let two: DoubleWord = 2;
-    let mut i: DoubleWord = 1; // m^{-1} mod 2 (m is odd)
-    let mut correct_bits: u32 = 1;
-    while correct_bits < DWORD_BITS {
-        i = i.wrapping_mul(two.wrapping_sub(m.wrapping_mul(i)));
-        correct_bits <<= 1;
-    }
-    i.wrapping_neg()
 }
 
 impl<'a> Montgomery<'a> {

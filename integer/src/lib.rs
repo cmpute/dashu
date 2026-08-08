@@ -104,6 +104,7 @@ mod cmp;
 mod convert;
 mod div;
 mod div_const;
+mod div_exact;
 mod div_ops;
 mod error;
 pub mod fmt;

@@ -13,6 +13,24 @@ let b = UBig::from(8u8);
 assert_eq!((&a).gcd(&b), UBig::from(4u8));
 ```
 
+## 精确除法
+
+`DivExact` / `DivExactAssign` trait（来自 `dashu-base`）计算精确商：`div_exact` 消费被除数，在 `rhs` 整除时返回 `Some(self / rhs)`，否则返回 `None`；`div_exact_assign` 原位替换被除数，成功时返回 `true`（否则保持原值不变）。在 `UBig` 上，除以单字因子使用 Hensel（2-adic）除法，原位运行、无需临时分配。
+
+```rust
+use dashu::base::{DivExact, DivExactAssign};
+use dashu::integer::UBig;
+
+let a = UBig::from(10u32).pow(8) * 7u32; // 700000000
+assert_eq!(a.clone().div_exact(UBig::from(10u32).pow(8)), Some(UBig::from(7u32)));
+assert_eq!(a.div_exact(UBig::from(3u32)), None); // 3 不能整除
+
+// 原位形式
+let mut b = UBig::from(10u32).pow(8) * 7u32;
+assert!(b.div_exact_assign(UBig::from(10u32).pow(8)));
+assert_eq!(b, UBig::from(7u32));
+```
+
 ## 模运算
 
 对于针对固定模数的重复运算，可预计算一个 `ConstDivisor` 并将值约化为 `Reduced`。加法、减法、乘法、幂运算和求逆随后基于预计算的模数运行，结果以 `(mod N)` 形式输出。

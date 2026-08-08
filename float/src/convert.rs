@@ -4,8 +4,8 @@ use core::{
 };
 
 use dashu_base::{
-    AbsOrd, Approximation::*, BitTest, ConversionError, DivRemEuclid, EstimatedLog2, FloatEncoding,
-    Sign, Signed,
+    AbsOrd, Approximation::*, BitTest, ConversionError, DivExact, DivRemEuclid, EstimatedLog2,
+    FloatEncoding, Sign, Signed,
 };
 use dashu_int::{IBig, UBig, Word};
 
@@ -685,12 +685,13 @@ impl<R: Round> Context<R> {
                 return self.repr_round(new_repr);
             } else {
                 let r_exp: IBig = UBig::from_word(r).pow((-repr.exponent) as usize).into();
-                if repr.significand.is_multiple_of(&r_exp) {
+                if let Some(quot) = (&repr.significand).div_exact(r_exp) {
+                    // the quotient's sign is the dividend's (r_exp > 0)
                     let exp = match (a as isize).checked_mul(repr.exponent) {
                         Some(e) => e,
-                        None => return converted_overflow_repr::<NewB>(false, repr.sign()),
+                        None => return converted_overflow_repr::<NewB>(false, quot.sign()),
                     };
-                    let new_repr = Repr::<NewB>::new(repr.significand / r_exp, exp);
+                    let new_repr = Repr::<NewB>::new(quot, exp);
                     return self.repr_round(new_repr);
                 }
             }

@@ -705,44 +705,31 @@ impl<R: ErrorBounds> Context<R> {
 /// If `x = sig·B^e` is exactly `10^m` for some integer `m`, return `m`; otherwise `None`.
 ///
 /// `10^m = 2^m·5^m`, so `x` is a power of ten iff the 2-valuation and 5-valuation of `sig·B^e`
-/// coincide and `x` has no other prime factor. The base `B = 2^p·5^q·s` (with `s` coprime to 10)
-/// contributes `p·e` to the 2-valuation and `q·e` to the 5-valuation, and `s` must not appear
-/// (unless `e = 0`). The valuations may be negative (`x` a negative power of ten).
+/// coincide and `x` has no other prime factor. [`UBig::remove_word`] divides out all 2s and 5s from
+/// both the base and the significand, returning each valuation as the removed exponent (and leaving
+/// any non-{2,5} prime factor behind as a cofactor ≠ 1). The base `B = 2^p·5^q·s` (with `s` coprime
+/// to 10) contributes `p·e` to the 2-valuation and `q·e` to the 5-valuation, and `s` must not
+/// appear (unless `e = 0`). The valuations may be negative (`x` a negative power of ten).
 fn exact_pow10_log<const B: Word>(sig: &IBig, e: isize) -> Option<isize> {
-    // factor the base into 2s, 5s, and the leftover (coprime to 10)
-    let mut rest = B;
-    let mut p = 0isize;
-    while rest % 2 == 0 {
-        rest /= 2;
-        p += 1;
-    }
-    let mut q = 0isize;
-    while rest % 5 == 0 {
-        rest /= 5;
-        q += 1;
-    }
+    // base: divide out all 2s and 5s, getting (p, q, leftover)
+    let mut rest = UBig::from_word(B);
+    let p = rest.remove_word(2)? as isize; // B ≥ 2, so never None
+    let q = rest.remove_word(5).unwrap() as isize;
     // the leftover would give `x` a non-{2,5} prime factor when e ≠ 0
-    if rest != 1 && e != 0 {
+    if !rest.is_one() && e != 0 {
         return None;
     }
 
-    let sig_abs = sig.unsigned_abs();
-    let v2_sig = sig_abs.trailing_zeros()?; // None only for a zero significand (excluded upstream)
-    let mut odd = sig_abs;
-    if v2_sig > 0 {
-        odd >>= v2_sig; // drop the 2-factors
-    }
-    let mut v5 = 0isize;
-    while &odd % 5u8 == 0 {
-        odd /= 5u8;
-        v5 += 1;
-    }
+    // significand: divide out all 2s and 5s, getting (v2, v5, cofactor)
+    let mut sig_abs = sig.unsigned_abs();
+    let v2_sig = sig_abs.remove_word(2)? as isize; // non-zero upstream, so never None
+    let v5 = sig_abs.remove_word(5).unwrap() as isize;
     // after removing every 2 and 5 the significand must be 1 (no other prime factor)
-    if odd != UBig::ONE {
+    if sig_abs != UBig::ONE {
         return None;
     }
 
-    let v2 = v2_sig as isize + p * e;
+    let v2 = v2_sig + p * e;
     let v5 = v5 + q * e;
     (v2 == v5).then_some(v2)
 }

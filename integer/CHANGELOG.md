@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Add
+- **`DivExact` / `DivExactAssign` for `UBig` and `IBig`** — exact division (the traits come from
+  `dashu-base`): `div_exact` returns `Some(self / other)` when the divisor divides, `None`
+  otherwise; `div_exact_assign` replaces `self` in place, returning `true` on success and leaving
+  it unchanged on failure. Implemented for `UBig`/`IBig` divisors (single-word dispatches to the
+  Hensel path), for reference receivers (`&IBig`), and for every primitive divisor `u8`–`u128`/
+  `usize`/`i8`–`i128`/`isize` (a value wider than `Word` falls back to the `UBig`/`IBig` path).
+  The single-word path uses Hensel (2-adic) exact division: a Newton-iteration modular inverse
+  precomputes `d^{-1} mod 2^WORD_BITS`, and each quotient limb is one multiply and one subtract
+  (no division, no normalization). The consuming `div_exact_word` runs it in place on `self`'s own
+  buffer — no scratch allocation. The Hensel kernel lives in the `div_exact` module, shared with
+  `remove`. `IBig`'s exact division is sign-aware (the quotient's sign is the product of the
+  operands' signs).
+- **`UBig::remove_word`** — single-word specialization of `remove`. The factor's power-of-two part is
+  stripped by the 2-valuation, and the odd part is divided out by the shared Hensel exact division.
+  `remove(&UBig)` now delegates to it for single-word factors.
+
 ## 0.6.0-rc.3
 
 ### Add

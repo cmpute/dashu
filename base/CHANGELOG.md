@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Add
+- **`DivExact` / `DivExactAssign` traits** — exact division: `div_exact` consumes `self` and returns
+  `Some(self / rhs)` when `rhs` divides `self`, `None` otherwise; `div_exact_assign` replaces `self`
+  in place, returning `true` on success and leaving `self` unchanged on failure. Implemented for all
+  primitive integers (`u8`–`u128`, `usize`, and the signed variants).
+
 ## 0.6.0-rc.3
 
 ### Add

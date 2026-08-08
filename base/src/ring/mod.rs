@@ -81,6 +81,44 @@ pub trait DivRemEuclid<Rhs = Self> {
     fn div_rem_euclid(self, rhs: Rhs) -> (Self::OutputDiv, Self::OutputRem);
 }
 
+/// Exact division: `Some(self / rhs)` when `rhs` divides `self` exactly, `None` otherwise.
+///
+/// The consuming counterpart of [`DivExactAssign`]. For arbitrary-precision types, an exact
+/// division can avoid the general division's normalization and remainder computation when the
+/// divisor is small (e.g. `dashu-int` uses Hensel 2-adic division for single-word divisors).
+///
+/// # Examples
+/// ```
+/// use dashu_base::DivExact;
+/// assert_eq!(10.div_exact(5), Some(2));
+/// assert_eq!(10.div_exact(3), None);
+/// ```
+pub trait DivExact<Rhs = Self> {
+    /// The type of the quotient.
+    type Output;
+
+    /// Compute the exact quotient `self / rhs`, or `None` if the division is not exact.
+    fn div_exact(self, rhs: Rhs) -> Option<Self::Output>;
+}
+
+/// Exact division in place: replaces `self` with the exact quotient `self / rhs`, returning whether
+/// the division was exact. `self` is left unchanged when `rhs` does not divide it.
+///
+/// # Examples
+/// ```
+/// use dashu_base::DivExactAssign;
+/// let mut n = 10;
+/// assert!(n.div_exact_assign(5));
+/// assert_eq!(n, 2);
+/// assert!(!n.div_exact_assign(3)); // 3 doesn't divide 2
+/// assert_eq!(n, 2);                // unchanged
+/// ```
+pub trait DivExactAssign<Rhs = Self> {
+    /// Replace `self` with the exact quotient `self / rhs`, returning `true` when the division
+    /// was exact (and `false`, leaving `self` unchanged, otherwise).
+    fn div_exact_assign(&mut self, rhs: Rhs) -> bool;
+}
+
 /// Compute the greatest common divisor.
 ///
 /// For negative integers, the common divisor is still kept positive.
@@ -153,6 +191,7 @@ pub trait CubicRootRem {
     fn cbrt_rem(&self) -> (Self::Output, Self);
 }
 
+mod div_exact;
 mod div_rem;
 mod gcd;
 mod root;

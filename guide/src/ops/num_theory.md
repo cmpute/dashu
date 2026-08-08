@@ -13,6 +13,24 @@ let b = UBig::from(8u8);
 assert_eq!((&a).gcd(&b), UBig::from(4u8));
 ```
 
+## Exact division
+
+The `DivExact` / `DivExactAssign` traits (from `dashu-base`) compute an exact quotient: `div_exact` consumes the dividend and returns `Some(self / rhs)` when `rhs` divides exactly, `None` otherwise; `div_exact_assign` replaces the dividend in place, returning `true` on success (leaving it unchanged otherwise). On `UBig`, dividing by a single-word factor uses Hensel (2-adic) division and runs in place with no scratch allocation.
+
+```rust
+use dashu::base::{DivExact, DivExactAssign};
+use dashu::integer::UBig;
+
+let a = UBig::from(10u32).pow(8) * 7u32; // 700000000
+assert_eq!(a.clone().div_exact(UBig::from(10u32).pow(8)), Some(UBig::from(7u32)));
+assert_eq!(a.div_exact(UBig::from(3u32)), None); // 3 doesn't divide
+
+// In-place form
+let mut b = UBig::from(10u32).pow(8) * 7u32;
+assert!(b.div_exact_assign(UBig::from(10u32).pow(8)));
+assert_eq!(b, UBig::from(7u32));
+```
+
 ## Modular arithmetic
 
 For repeated operations against a fixed modulus, precompute a `ConstDivisor` and reduce values into `Reduced`. Addition, subtraction, multiplication, exponentiation, and inversion then run against the precomputed modulus, and the result prints in `(mod N)` form.

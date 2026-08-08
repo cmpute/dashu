@@ -441,7 +441,7 @@ impl<const B: Word> Repr<B> {
             exponent = exponent.saturating_add(shift as isize);
         } else {
             let (sign, mut mag) = significand.into_parts();
-            let shift = mag.remove(&UBig::from_word(B)).unwrap();
+            let shift = mag.remove_word(B).unwrap();
             exponent = exponent.saturating_add(shift as isize);
             significand = IBig::from_parts(sign, mag);
         }
