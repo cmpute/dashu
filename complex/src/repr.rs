@@ -75,11 +75,11 @@ impl<R: Round> Context<R> {
         self.0.precision()
     }
 
-    /// Reject unlimited precision (0): [`Self::guard`] calls this (the guard-digit recipe is a
-    /// limited-precision technique), and `powf` calls it directly (it builds its work context
-    /// bypassing `guard`). Without it, `self.guard(G)` would silently make a finite `0 + G` context
-    /// and the transcendental would compute at ~`G` digits — the `dashu-float` layer only sees `G`
-    /// and can't catch it. Private counterpart of `dashu_float`'s internal check.
+    /// Reject unlimited precision (0): the transcendental drivers call this before building their
+    /// guard-digit work contexts (a limited-precision technique), and `powf` calls it directly.
+    /// Without it, an unlimited-precision context would silently stay at precision 0 and the
+    /// transcendental would compute at the work context's digits — the `dashu-float` layer only
+    /// sees those digits and can't catch it. Private counterpart of `dashu_float`'s internal check.
     pub(crate) fn assert_limited(&self) {
         if self.precision() == 0 {
             panic!("precision cannot be 0 (unlimited) for this operation!")

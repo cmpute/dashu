@@ -120,7 +120,7 @@ impl RBig {
     /// Create a rational number in a const context
     ///
     /// The magnitude of the numerator and the denominator is limited to
-    /// a [DoubleWord][dashu_int::DoubleWord].
+    /// a [dashu_int::DoubleWord].
     ///
     /// # Examples
     ///

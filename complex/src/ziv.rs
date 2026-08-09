@@ -18,7 +18,7 @@
 //!   a per-function overflow probe out of the loop. Such errors are terminal (precision-independent)
 //!   and never trigger a retry.
 //! * The per-part containment test runs on [`FBig`]s at unlimited precision
-//!   ([`FloatCtxt::new(0)`], where `+`/`−` are lossless), expressing `dashu-float`'s raw-`Repr`
+//!   (`FloatCtxt::new(0)`, where `+`/`−` are lossless), expressing `dashu-float`'s raw-`Repr`
 //!   interval arithmetic through the public `FBig` API so this crate need not reach into float's
 //!   internal arithmetic. The two are exactly equivalent.
 //!
@@ -109,7 +109,7 @@ impl<R: ErrorBounds> Context<R> {
     /// entirely inside the rounding preimage of `target` (every real in `[target − lb, target + rb]`
     /// rounds to `target` under `R`)?
     ///
-    /// The interval arithmetic runs on [`FBig`]s at unlimited precision ([`FloatCtxt::new(0)`]),
+    /// The interval arithmetic runs on [`FBig`]s at unlimited precision (`FloatCtxt::new(0)`),
     /// where addition is lossless — no rounding can drop a guard digit and mis-decide the call (a
     /// wrong call here yields a wrong ULP). The sums are compared rather than the differences
     /// (algebraically identical for exact arithmetic, reading as one shared inequality per endpoint):

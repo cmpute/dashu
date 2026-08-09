@@ -411,7 +411,8 @@ impl<R: Round, const B: Word> core::fmt::UpperExp for CachedFBig<R, B> {
 }
 
 /// Mirror the base-specific format traits ([`core::fmt::Binary`], [`Octal`](core::fmt::Octal),
-/// [`LowerHex`]/[`UpperHex`](core::fmt::UpperHex)) onto [`CachedFBig`] for the bases where they
+/// [`LowerHex`](core::fmt::LowerHex)/[`UpperHex`](core::fmt::UpperHex)) onto [`CachedFBig`] for
+/// the bases where they
 /// apply, delegating each to the inner [`FBig`]'s impl so the output matches.
 macro_rules! impl_cached_fmt_with_base {
     ($base:literal, $trait:ident) => {

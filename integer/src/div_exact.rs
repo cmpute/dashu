@@ -623,8 +623,7 @@ impl UBig {
     /// Determine whether the integer is perfectly divisible by the divisor.
     ///
     /// A divisor that fits in a single word uses the read-only Hensel divisibility test; wider
-    /// divisors reuse the exactness test of the Hensel division (see the [module
-    /// documentation](self)).
+    /// divisors reuse the exactness test of the Hensel division.
     ///
     /// # Examples
     ///

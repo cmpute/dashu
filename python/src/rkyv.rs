@@ -17,7 +17,7 @@ use pyo3::types::PyBytes;
 use crate::types::{CPy, DPy, FPy, IPy, RPy, UPy};
 
 /// Dispatch a serialization body over every dashu value type (same pattern as
-/// [`crate::serde::with_dashu_value`]).
+/// `crate::serde::with_dashu_value!`).
 macro_rules! with_dashu_value {
     ($obj:expr, |$inner:ident| $body:expr) => {{
         const MSG: &str = "expected a dashu numeric type (UBig, IBig, FBig, DBig, RBig, or CBig)";

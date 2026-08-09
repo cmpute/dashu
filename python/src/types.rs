@@ -89,7 +89,8 @@ impl From<RBig> for RPy {
     }
 }
 
-/// This struct is used for representing [CBig] in Python. It wraps a *bare* complex number
+/// This struct is used for representing [`dashu::complex::CBig`] in Python. It wraps a *bare*
+/// complex number
 /// (base 2, rounding `Zero`); the constant cache is shared module-wide (see [`crate::cache`]).
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[pyclass(name = "CBig")]

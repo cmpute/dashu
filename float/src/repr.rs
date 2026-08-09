@@ -79,8 +79,8 @@ pub struct Repr<const BASE: Word> {
 /// The rounding mode determines the rounding behavior of the float operations.
 ///
 /// See [the rounding mode module][crate::round::mode] for built-in rounding modes.
-/// Users can implement custom rounding mode by implementing the [Round][crate::round::Round]
-/// trait, but this is discouraged since in the future we might restrict the rounding
+/// Users can implement custom rounding mode by implementing the [crate::round::Round] trait, but
+/// this is discouraged since in the future we might restrict the rounding
 /// modes to be chosen from the the built-in modes.
 ///
 /// For binary operations, the two oprands must have the same rounding mode.

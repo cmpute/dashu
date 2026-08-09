@@ -1,7 +1,7 @@
 //! Complex addition and subtraction.
 //!
 //! Addition and subtraction are componentwise perfectly-rounded real additions/subtractions on each
-//! part, forwarded through the shared [`impl_cbig_binop!`] macro (same pattern as `Mul` / `Div`).
+//! part, forwarded through the shared `impl_cbig_binop!` macro (same pattern as `Mul` / `Div`).
 
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, CfpResult, Context};

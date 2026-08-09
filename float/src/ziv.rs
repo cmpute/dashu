@@ -88,8 +88,8 @@ impl<R: ErrorBounds> Context<R> {
     /// scope; the driver calls it once per attempt and grows `guard` when the result cannot be
     /// certified.
     ///
-    /// The loop preserves the [`Exact`](Rounded)/[`Inexact`](Rounded) flag from rounding the
-    /// approximation to the target precision.
+    /// The loop preserves the [`Exact`]/[`Inexact`] flag from rounding the approximation to the
+    /// target precision.
     pub(crate) fn ziv<const B: Word>(
         &self,
         initial_guard: usize,

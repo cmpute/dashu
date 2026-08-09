@@ -314,7 +314,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
     /// Explicitly change the base of the float number with given precision (under the new base).
     ///
-    /// Infinities are mapped to infinities inexactly, the error will be [NoOp][Rounding::NoOp].
+    /// Infinities are mapped to infinities inexactly, the error will be [Rounding::NoOp].
     ///
     /// Conversion for float numbers with unlimited precision is only allowed in following cases:
     /// - The number is infinite

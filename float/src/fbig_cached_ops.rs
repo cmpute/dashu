@@ -612,7 +612,8 @@ impl<'a, R: Round, const B: Word> Product<&'a CachedFBig<R, B>> for CachedFBig<R
 // ---------------------------------------------------------------------------
 
 /// Forward a unary transcendental to its [`Context`] method, panicking on error and re-attaching
-/// the cache handle. The context method returns an [`FpResult`] whose rounding flag is dropped by
+/// the cache handle. The context method returns an [`FpResult`](crate::error::FpResult) whose
+/// rounding flag is dropped by
 /// [`unwrap_fp`](crate::Context::unwrap_fp); the cached wrapper never surfaces it.
 macro_rules! forward_to_context {
     ($name:ident) => {

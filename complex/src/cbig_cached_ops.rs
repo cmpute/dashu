@@ -3,7 +3,8 @@
 //!
 //! Structured to mirror `dashu-float`'s `fbig_cached_ops.rs`: every repeated operator family is a
 //! macro, and the transcendentals split into cache-threading forwards (which bypass [`CBig`]'s
-//! convenience layer — it hardcodes `None` — and call the complex [`Context`] with `Some(cache)`)
+//! convenience layer — it hardcodes `None` — and call the complex [`Context`](crate::Context) with
+//! `Some(cache)`)
 //! and plain delegations (no cache involved, just preserve the handle).
 
 use alloc::rc::Rc;

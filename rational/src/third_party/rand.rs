@@ -5,7 +5,7 @@
 //! generates rationals in a given range and is the backend for rand's `SampleUniform` trait.
 //!
 //! The distributions and their sampling algorithms are defined here once, generic over the
-//! [`BitRng`](dashu_int::rand::BitRng) trait. Each rand version's `Distribution` /
+//! [`BitRng`] trait. Each rand version's `Distribution` /
 //! `UniformSampler` / `SampleUniform` impls live in the `rand_v08` / `rand_v09` / `rand_v010`
 //! modules (enable the matching feature); adapt that version's RNG with
 //! `dashu_int::rand::bridge_v08` / `bridge_v09` / `bridge_v010`. See those modules for usage

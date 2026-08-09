@@ -1,7 +1,7 @@
 //! The [`CBig`] type: an arbitrary-precision complex number.
 //!
 //! [`CBig`] is a pair of real-valued parts (`re`, `im`) over a single shared
-//! [`Context`](crate::Context) — two [`dashu_float::Repr`]s carrying one precision and one rounding
+//! [`Context`] — two [`dashu_float::Repr`]s carrying one precision and one rounding
 //! mode. See the [user guide](https://zyxin.xyz/dashu/types.html) for the
 //! layout, and the [compliance notes](https://zyxin.xyz/dashu/compliance.html)
 //! for the C99 Annex G / no-NaN model.
@@ -15,7 +15,7 @@ use dashu_int::{DoubleWord, Word};
 /// An arbitrary-precision complex number with arbitrary base and rounding mode.
 ///
 /// The complex number consists of two [`Repr`] parts (the real part `re` and the imaginary part
-/// `im`) over a single shared [`Context`](crate::Context). Each part keeps its own significand
+/// `im`) over a single shared [`Context`]. Each part keeps its own significand
 /// length; the shared context holds the precision cap and rounding mode applied independently to
 /// both components.
 ///
@@ -144,7 +144,7 @@ impl<R: Round, const B: Word> CBig<R, B> {
     /// The imaginary unit `0 + 1i` (unlimited precision).
     pub const I: Self = Self::new(Repr::zero(), Repr::one(), Context::new(0));
 
-    /// Get the shared [`Context`](crate::Context) of the complex number.
+    /// Get the shared [`Context`] of the complex number.
     #[inline]
     pub const fn context(&self) -> Context<R> {
         self.context

@@ -32,8 +32,8 @@ use crate::{
 ///
 /// The rounding is always *up* (never down), keeping the result a sound upper bound for the
 /// underlying rational — the propagation rules below rely on this monotonicity. Both directions
-/// delegate to the shared radix-shift primitives ([`shl_digits`](crate::utils::shl_digits),
-/// [`shr_digits_ceil`](crate::utils::shr_digits_ceil)).
+/// delegate to the shared radix-shift primitives ([`shl_digits`],
+/// [`shr_digits_ceil`]).
 #[inline]
 pub(crate) fn ceil_shift<const B: Word>(x: IBig, exp: isize) -> IBig {
     if exp >= 0 {
