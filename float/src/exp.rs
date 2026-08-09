@@ -730,9 +730,13 @@ impl<R: ErrorBounds> Context<R> {
         self.exp_internal(x, true, cache)
     }
 
-    // TODO: change reduction to (x - s log2) / 2ⁿ, so that the final powering is always base 2, and doesn't depends on powi.
-    //       the powering exp(r)^(2ⁿ) could be optimized by noticing (1+x)^2 - 1 = x^2 + 2x
-    //       consider this change after having a benchmark
+    // The reduction stays in the *base-`B`* logarithm: `exp(x) = B^s · exp(r/Bⁿ)^(Bⁿ)` with
+    // `r = x − s·ln B`. A base-2 form (`r = x − s·ln 2`, powering `2ⁿ`) is deliberately **not**
+    // used: for a non-power-of-two base the `2^s` scaling is a multi-digit value (≈ s·log₂B⁻¹·log₁₀2
+    // digits) that would have to be materialized to multiply in, where the base-`B` form is an
+    // exact O(1) exponent shift; and for a power-of-two base the two forms coincide (`B = 2` ⇒
+    // `ln B = ln 2`, `B^s = 2^s`, `Bⁿ = 2ⁿ`), so this formulation is already the optimal one.
+    // `pow_exact(Bⁿ)` is binary exponentiation (~n·log₂B squarings), tracked exactly by the Ball.
 
     fn exp_internal<const B: Word>(
         &self,

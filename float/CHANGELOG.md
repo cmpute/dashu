@@ -15,6 +15,14 @@
   arithmetic for `p·e` / `q·e`**, which could overflow (silently wrap) on 32-bit for an exotic
   base (B a large power of two) at extreme exponents and falsely report an exact log. The products
   now use checked arithmetic and report *not exact* on overflow.
+- **`Context::sqrt` (and `FBig::sqrt`) is now correctly rounded** — previously a `p+1`-digit integer
+  root was rounded by a rem-vs-root decision followed by a re-round (`repr_round`), a *double*
+  rounding that could be off by 1 ulp at a digit boundary (e.g. `sqrt(1.4490)` under HalfEven at 16
+  digits gave `1.207680645700236` instead of `1.207680645700237`). The root is now rounded to `p`
+  digits in a single step from the round digit and the `sqrtrem` remainder (the sticky bit),
+  mirroring MPFR. A power-of-two base uses this fast path directly (its digit alignment is clean);
+  other bases additionally certify the result with a Ziv loop. `FBig::sqrt` now requires
+  `R: ErrorBounds` (every built-in rounding mode implements it).
 
 ### Add
 - **`CachedFBig` now mirrors the rest of `FBig`'s value surface** (all preserving the shared cache

@@ -1,5 +1,6 @@
 use dashu_base::{
-    Approximation, CubicRoot, EstimatedLog2, Sign, SquareRoot, SquareRootRem, UnsignedAbs,
+    ring::DivRem, Approximation, CubicRoot, EstimatedLog2, Sign, SquareRoot, SquareRootRem,
+    UnsignedAbs,
 };
 use dashu_int::{IBig, UBig};
 
@@ -8,7 +9,7 @@ use crate::{
     error::{assert_limited_precision, panic_root_zeroth, FpError, FpResult},
     fbig::FBig,
     repr::{Context, Repr, Word},
-    round::{mode, ErrorBounds, Round, Rounded},
+    round::{mode, ErrorBounds, Round, Rounded, Rounding},
     utils::{shl_digits, split_digits_ref},
 };
 
@@ -26,7 +27,7 @@ fn value_tracking_exact<T>(r: Rounded<T>, exact: &mut bool) -> T {
     v
 }
 
-impl<R: Round, const B: Word> SquareRoot for FBig<R, B> {
+impl<R: ErrorBounds, const B: Word> SquareRoot for FBig<R, B> {
     type Output = Self;
     #[inline]
     fn sqrt(&self) -> Self {
@@ -43,16 +44,6 @@ impl<R: Round, const B: Word> CubicRoot for FBig<R, B> {
 }
 
 impl<R: Round, const B: Word> FBig<R, B> {
-    /// Calculate the square root of the floating point number.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the precision is unlimited.
-    #[inline]
-    pub fn sqrt(&self) -> Self {
-        self.context.unwrap_fp(self.context.sqrt(&self.repr))
-    }
-
     /// Calculate the nth root of the floating point number.
     ///
     /// When `n` is large the computation can be expensive — the significand is
@@ -83,72 +74,6 @@ impl<R: Round, const B: Word> FBig<R, B> {
 }
 
 impl<R: Round> Context<R> {
-    /// Calculate the square root of the floating point number.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use core::str::FromStr;
-    /// # use dashu_base::ParseError;
-    /// # use dashu_float::DBig;
-    /// use dashu_base::Approximation::*;
-    /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
-    ///
-    /// let context = Context::<HalfAway>::new(2);
-    /// let a = DBig::from_str("1.23")?;
-    /// assert_eq!(context.sqrt(&a.repr()), Ok(Inexact(DBig::from_str("1.1")?, NoOp)));
-    /// # Ok::<(), ParseError>(())
-    /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if the precision is unlimited.
-    pub fn sqrt<const B: Word>(&self, x: &Repr<B>) -> FpResult<FBig<R, B>> {
-        if x.is_infinite() {
-            return Err(FpError::InfiniteInput);
-        }
-        if x.significand.is_zero() {
-            // sqrt(+0) = +0, sqrt(-0) = -0 (preserve the sign of zero). Exact, so handle
-            // it before the limited-precision assertion: a precision-0 (unlimited) value
-            // such as the one from `try_from(0.0)` must still compute sqrt(0) exactly.
-            return Ok(Approximation::Exact(FBig::new(x.clone(), *self)));
-        }
-        assert_limited_precision(self.precision);
-        if x.sign() == Sign::Negative {
-            return Err(FpError::OutOfDomain);
-        }
-
-        // adjust the signifcand so that the exponent is even
-        let digits = x.digits() as isize;
-        let shift = self.precision as isize * 2 - (digits & 1) + (x.exponent & 1) - digits;
-        let (signif, low, low_digits) = if shift > 0 {
-            (shl_digits::<B>(&x.significand, shift as usize), IBig::ZERO, 0)
-        } else {
-            let shift = (-shift) as usize;
-            let (hi, lo) = split_digits_ref::<B>(&x.significand, shift);
-            (hi, lo, shift)
-        };
-
-        let (root, rem) = signif.unsigned_abs().sqrt_rem();
-        let root = Sign::Positive * root;
-        let exp = (x.exponent - shift) / 2;
-
-        let res = if rem.is_zero() {
-            Approximation::Exact(root)
-        } else {
-            let adjust = R::round_low_part(&root, Sign::Positive, || {
-                (Sign::Positive * rem)
-                    .cmp(&root)
-                    .then_with(|| (low * 4u8).cmp(&Repr::<B>::BASE.pow(low_digits).into()))
-            });
-            Approximation::Inexact(root + adjust, adjust)
-        };
-        Ok(res
-            .map(|signif| Repr::new(signif, exp))
-            .and_then(|v| self.repr_round(v))
-            .map(|v| FBig::new(v, *self)))
-    }
-
     /// Calculate the cubic root of the floating point number.
     ///
     /// # Examples
@@ -274,6 +199,121 @@ impl<R: Round> Context<R> {
 }
 
 impl<R: ErrorBounds> Context<R> {
+    /// Calculate the square root of the floating point number (correctly rounded).
+    ///
+    /// The integer square root of the exponent-aligned significand (which carries ~2·p digits) is
+    /// computed exactly, and its rounding to `p` digits is decided in a single step from the round
+    /// digit and the `sqrtrem` remainder (the sticky bit) — the same principle as MPFR. When the
+    /// root has `p + 1` digits it is rounded directly to `p` digits, avoiding the double rounding
+    /// that a rem-vs-root + re-round path incurs. For a power-of-two base this fast path is already
+    /// correctly rounded; for other bases the result is additionally certified by a Ziv loop (the
+    /// base-`B` digit alignment of an integer square root is only clean when the base is a power of
+    /// two).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is unlimited.
+    pub fn sqrt<const B: Word>(&self, x: &Repr<B>) -> FpResult<FBig<R, B>> {
+        if x.is_infinite() {
+            return Err(FpError::InfiniteInput);
+        }
+        if x.significand.is_zero() {
+            // sqrt(+0) = +0, sqrt(-0) = -0 (preserve the sign of zero). Exact, so handle
+            // it before the limited-precision assertion: a precision-0 (unlimited) value
+            // such as the one from `try_from(0.0)` must still compute sqrt(0) exactly.
+            return Ok(Approximation::Exact(FBig::new(x.clone(), *self)));
+        }
+        assert_limited_precision(self.precision);
+        if x.sign() == Sign::Negative {
+            return Err(FpError::OutOfDomain);
+        }
+
+        // One-step correctly-rounded sqrt of the (finite, positive, limited) input at a working
+        // precision, used directly by the power-of-two fast path and by the Ziv loop otherwise.
+        let sqrt_rounded = |guard: usize| -> FpResult<FBig<R, B>> {
+            let gctx = Context::<R>::new(self.precision + guard);
+            let p = gctx.precision;
+
+            // Adjust the significand so the exponent is even, with ~2p significant digits.
+            let digits = x.digits() as isize;
+            let shift = p as isize * 2 - (digits & 1) + (x.exponent & 1) - digits;
+            let (signif, low, low_digits) = if shift > 0 {
+                (shl_digits::<B>(&x.significand, shift as usize), IBig::ZERO, 0)
+            } else {
+                let shift = (-shift) as usize;
+                let (hi, lo) = split_digits_ref::<B>(&x.significand, shift);
+                (hi, lo, shift)
+            };
+
+            let (root, rem) = signif.unsigned_abs().sqrt_rem();
+            let exp = (x.exponent - shift) / 2;
+            let exact = rem.is_zero() && low.is_zero();
+            // The root has `p` or `p+1` base-B digits, decided exactly in O(1) from the shifted
+            // significand's digit count: `signif` carries `2p − (digits&1) + (exp&1)` digits, so it
+            // has 2p+1 digits (root has p+1) exactly when the significand's digit count is even and
+            // the input exponent is odd.
+            let root_is_p1 = (digits & 1) == 0 && (x.exponent & 1) == 1;
+
+            // The result's exponent. A p+1-digit root is rounded to p digits by dropping the lowest
+            // base-B digit (`r = root / B`), which shifts the value by one base-B digit: `exp + 1`.
+            // The arithmetic works on the unsigned `root`; it is converted to `IBig` only where
+            // `round_low_part` (signed) and the result's `+ Rounding` need it.
+            let (sig, adjust, result_exp) = if !root_is_p1 {
+                // p-digit root: the remainder (and any truncated input) decide the rounding. An
+                // integer sqrt has no exact half-tie (`sqrt(n) = root + 1/2` would require
+                // `4·rem = 2·root + 1`, impossible), so the rem-vs-root comparison is the exact
+                // single rounding.
+                let adjust = if exact {
+                    Rounding::NoOp
+                } else {
+                    R::round_low_part(root.as_ibig(), Sign::Positive, || {
+                        rem.cmp(&root)
+                            .then_with(|| (low << 2).cmp(&Repr::<B>::BASE.pow(low_digits).into()))
+                    })
+                };
+                (IBig::from(root), adjust, exp)
+            } else {
+                // p+1-digit root: round to p digits in one step. `r` = top p digits, `d` = round
+                // digit (a Word, from the single `div_rem`).
+                let (r, d) = root.div_rem(B);
+                let adjust = if exact {
+                    // The exact p+1-digit root: a clean rounding of `2·d` vs `B`, ties per the mode
+                    // (`2·d = B` is the real half-tie; `d vs ⌊B/2⌋` would mis-round odd bases).
+                    R::round_low_part(r.as_ibig(), Sign::Positive, || (d * 2).cmp(&B))
+                } else {
+                    // The true value is strictly above `root` (sticky remainder / truncated input),
+                    // so a round digit at the real half (2·d = B) still rounds up.
+                    if d * 2 >= B {
+                        Rounding::AddOne
+                    } else {
+                        Rounding::NoOp
+                    }
+                };
+                (IBig::from(r), adjust, exp + 1)
+            };
+
+            let res = if exact && !root_is_p1 {
+                Approximation::Exact(sig)
+            } else {
+                Approximation::Inexact(sig + adjust, adjust)
+            };
+            Ok(res
+                .map(|signif| Repr::new(signif, result_exp))
+                .and_then(|v| gctx.repr_round(v))
+                .map(|v| FBig::new(v, gctx)))
+        };
+
+        if B.is_power_of_two() {
+            sqrt_rounded(0)
+        } else {
+            self.ziv(crate::utils::ceil_usize(self.precision.log2_est()) + 10, |guard| {
+                let value = sqrt_rounded(guard)?.value();
+                let radius = value.clone().ulp();
+                Ok((value, radius))
+            })
+        }
+    }
+
     /// Compute `sqrt(a² + b²)` without spurious overflow/underflow.
     ///
     /// This is the overflow-safe scaled sum-of-squares: the larger-magnitude operand is never
@@ -363,6 +403,16 @@ impl<R: ErrorBounds> Context<R> {
 }
 
 impl<R: ErrorBounds, const B: Word> FBig<R, B> {
+    /// Calculate the square root of the floating point number (correctly rounded).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is unlimited.
+    #[inline]
+    pub fn sqrt(&self) -> Self {
+        self.context.unwrap_fp(self.context.sqrt(&self.repr))
+    }
+
     /// Compute `sqrt(self² + other²)` without spurious overflow/underflow.
     ///
     /// The result precision is `max(self.precision(), other.precision())`. See

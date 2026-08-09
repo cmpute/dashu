@@ -92,14 +92,6 @@ fn directed_eq<R: Round>(d: &FBig<R, 10>, up: &Float, down: &Float, prec: usize)
     d.repr() == r_up.repr() || (r_up.repr() != r_down.repr() && d.repr() == r_down.repr())
 }
 
-/// Compare `sqrt`'s result within 1 ulp of the correct `prec`-digit rounding. Unlike the other
-/// roots, `sqrt` is deliberately **not** Ziv-certified (it uses the integer `sqrt_rem` + a guard
-/// adjustment in `root.rs`, so it is near-correct only), so a 1-ulp deviation is legitimate.
-fn directed_sqrt_ok<R: Round>(d: &FBig<R, 10>, up: &Float, prec: usize) -> bool {
-    let r = round_to_prec::<R>(up, prec);
-    let diff = (d.clone() - r).abs();
-    diff.repr().significand().is_zero() || diff <= d.ulp()
-}
 
 /// Compare one cache-taking transcendental under one directed mode against MPFR's `*_round`
 /// (computing both the `Up` and `Down` approximations). Skips (via `continue`) a result that
@@ -136,8 +128,10 @@ macro_rules! directed_check_sqrt {
             }
             let mut up = $xr.clone();
             up.sqrt_round(rug::float::Round::Up);
+            let mut down = $xr.clone();
+            down.sqrt_round(rug::float::Round::Down);
             prop_assert!(
-                directed_sqrt_ok::<$mode>(&d, &up, $prec),
+                directed_eq::<$mode>(&d, &up, &down, $prec),
                 concat!("sqrt ", stringify!($mode), " x={} prec={}: dashu={}"),
                 $xs,
                 $prec,

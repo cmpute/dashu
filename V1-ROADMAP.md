@@ -1,6 +1,6 @@
 # dashu Roadmap — v0.6 → v1.0
 
-Last updated: 2026-08-08
+Last updated: 2026-08-10
 
 **Release strategy.** v0.6 is the **breaking-changes testbed**: every planned breaking
 change ships there first, so downstream users can migrate and validate early, and v1.0
@@ -25,15 +25,7 @@ Carried from the v0.5.x deferral list. Not breaking, so they are not v0.6 test c
 per se — they broaden the validation surface and bundle naturally with the breaking
 pull-forward above.
 
-- **More transcendentals** — `rootofunity`. (`log10` shipped in v0.6 for the real float and
-  the python bindings; the `dashu-cmplx` hyperbolic & inverse-hyperbolic family —
-  `sinh`/`cosh`/`tanh`/`asinh`/`acosh`/`atanh` — also shipped in v0.6, evaluated from the
-  real hyperbolics/trig via the `sin(x+iy) = sinh x·cos y + …` decomposition. `num-complex`
-  interop already shipped (`Complex<f32>`/`Complex<f64>` conversions behind the
-  `num-complex` feature; `Complex<FBig>` interop is deliberately **not** planned). The
-  remaining transcendental backlog — complex `agm`, `exp2`/`exp10`, and a truly-correctly-
-  rounded single-rounding complex FMA (`complex/src/mul.rs` today chains real FMAs) — is
-  deferred post-v1, see below.)
+- **More transcendentals** — `rootofunity`.
 - **Test organization — clear `src` in-file vs `tests/` boundary.** Tests are scattered:
   many operations have *both* an in-file `#[cfg(test)] mod tests` (in `src/<op>.rs`) *and*
   a parallel `tests/<op>.rs` integration file, and the two frequently overlap.
@@ -46,10 +38,6 @@ pull-forward above.
   the boundary is explicit and enforceable. As part of this, clarify the status of the
   `tests/*_prop.rs` property tests against the `AGENTS.md` "in-crate tests must use fixed,
   deterministic inputs" rule — fixed-seed / enum-driven, or moved to `fuzz/`.
-- **`dashu-float` `exp` guard-bit formulation.** Anchor drifted (`float/src/exp.rs:87` is
-  now a doc example); after the v0.6 Ball migration the exp radius is derived mechanically,
-  so this item is largely absorbed — the only live residue is the `(x − s·log2)/2ⁿ`
-  reduction-form TODO in `float/src/exp.rs`.
 ## v1.0 — API freeze
 
 With the one breaking change on the 1.0 path (the signed-`isize` `RBig::pow`) shipped in
@@ -66,11 +54,9 @@ folded back into the v0.6 release cycle (or a v0.7) rather than deferred silentl
   including `exp2`/`exp10`/`expm1`/`log2`/`log10`/`log1p`; power/root `cbrt`/`hypot`/
   `pow`/`sqrt`; error & gamma `erf`/`erfc`/`tgamma`/`lgamma`; `fma`; rounding/remainder;
   fp-classification — available on both `FBig` and `CBig`
-  ([ref](https://en.cppreference.com/c/header/tgmath)). The individual v0.5.x/v0.6 pieces
-  above (complex hyperbolics, `fma`, `exp2`/`log2`, …) are the first incremental steps
-  toward this.
-- **`exp2` / `exp10` for `FBig` and `CBig`, and complex `log10`.** The remaining exp/log
-  family gaps after v0.6 (which shipped real `log2` and real `log10`). `exp2`/`exp10` need
+  ([ref](https://en.cppreference.com/c/header/tgmath)). The individual pieces shipped across
+  v0.5.x/v0.6 are the first incremental steps toward this.
+- **`exp2` / `exp10` for `FBig` and `CBig`, and complex `log10`.** `exp2`/`exp10` need
   their own reduction (`x·log2(e)` → power-of-two scale, mirroring `exp`'s Ball engine);
   complex `log10` follows `CBig::log`'s `ln|z| + i·arg(z)` split divided by `ln 10`.
 - **Complex `agm`** — the arithmetic–geometric mean for `CBig` (and real `FBig` if wanted),

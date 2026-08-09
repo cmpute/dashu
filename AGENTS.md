@@ -83,6 +83,7 @@ Keep the `## Unreleased` section updated as you go.
 
 - Estimating the number of digits can be costly — prefer using `log2_bounds` and `repr.digits_ub`/`digits_lb` instead of computing exact digit counts.
 - The number of digits in an `FBig` significand is at most the context precision, with one intentional exception: the result of an inexact addition or subtraction may carry a single **guard digit** (up to `precision + 1` digits). During internal calculations the bound can be violated more freely; use the methods on `Context` instead of the public API in that case.
+- **`dashu-float` and `dashu-cmplx` are expected to be correctly rounded**, and the fuzz differentials (under `fuzz/`) enforce this strictly — the float/complex tests assert bit-exact agreement with MPFR/MPC under every rounding mode (not a loose ulp tolerance). When a fuzz run finds a discrepancy, **fix the implementation, not the fuzz test** — relaxing a tolerance to hide a failure is a regression.
 
 ## Testing precision for `FBig` and `CBig`
 

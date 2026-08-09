@@ -414,7 +414,7 @@ impl<R: Round, const B: Word> MulAssign<Sign> for CachedFBig<R, B> {
 // Root / Euclid / Inverse traits (delegate to the inner FBig, preserve cache)
 // ---------------------------------------------------------------------------
 
-impl<R: Round, const B: Word> SquareRoot for CachedFBig<R, B> {
+impl<R: ErrorBounds, const B: Word> SquareRoot for CachedFBig<R, B> {
     type Output = Self;
     #[inline]
     fn sqrt(&self) -> Self::Output {
@@ -663,7 +663,6 @@ macro_rules! forward_to_fbig_rounded {
 }
 
 impl<R: Round, const B: Word> CachedFBig<R, B> {
-    forward_to_fbig!(sqrt);
     forward_to_fbig!(inv);
     forward_to_fbig!(sqr);
     forward_to_fbig!(cubic);
@@ -708,6 +707,7 @@ impl<R: Round, const B: Word> CachedFBig<R, B> {
 // Transcendentals that route through the Ziv-backed (or Ziv-dependent) Context methods require
 // `R: ErrorBounds` for their correctness guarantee.
 impl<R: ErrorBounds, const B: Word> CachedFBig<R, B> {
+    forward_to_fbig!(sqrt);
     forward_to_fbig!(powi(exp: dashu_int::IBig));
     forward_to_context!(ln);
     forward_to_context!(ln_1p);
