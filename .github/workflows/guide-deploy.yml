@@ -1,0 +1,62 @@
+# Publish the compiled mdBook user guides to GitHub Pages on every version tag.
+#
+# This is the *release* counterpart of `guide.yml` (which only build-checks the
+# guides on push/PR). When a version tag (`v0.6.0-rc.3`, `v0.5.2`, …) is pushed
+# (or the workflow is run manually), it:
+#   * builds both guides via `guide/build.sh` — which stamps each book with the
+#     dashu version + git commit (see the script), and
+#   * publishes the compiled HTML to GitHub Pages:
+#       - `guide/book`    → the `gh-pages` branch of THIS repo (cmpute/dashu)
+#       - `guide-zh/book` → the `gh-pages` branch of cmpute/dashu-zh
+#
+# The Chinese book lives in a *separate* repository, so the `GITHUB_TOKEN`
+# (scoped to this repo) cannot push there. A Personal Access Token with
+# `contents: write` on cmpute/dashu-zh must be stored as the repository secret
+# `DASHU_ZH_PUSH_TOKEN` (alternatively, pass `deploy_key` and set an SSH deploy
+# key with write access on dashu-zh). Until that secret exists the dashu-zh
+# step will fail — loudly, so a missing credential is never silently skipped.
+name: Publish guide to GitHub Pages
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dashu-guide-publish-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Build and publish guides
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so `git describe` stamps the tag-based version
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - name: Install mdBook
+        run: cargo install mdbook --locked --version 0.5.3
+      - name: Install mdbook-katex (mdbook 0.5 build)
+        run: cargo install --locked --git https://github.com/lzanini/mdbook-katex --rev 1f63ab8605cea8e975be4b001dd7e39dd5367834
+      - name: Build guides (stamped with version & commit)
+        run: bash guide/build.sh
+      - name: Publish English guide to this repo's gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./guide/book
+      - name: Publish Chinese guide to cmpute/dashu-zh
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          personal_token: ${{ secrets.DASHU_ZH_PUSH_TOKEN }}
+          external_repository: cmpute/dashu-zh
+          publish_branch: gh-pages
+          publish_dir: ./guide-zh/book

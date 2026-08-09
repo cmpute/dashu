@@ -12,6 +12,8 @@ The book is a companion to [`dashu`'s API docs](https://docs.rs/dashu/latest/das
 
 Please choose from the chapters on the left to jump to individual topics.
 
+{{#include version.md}}
+
 ## Philosophy and Features
 
 `dashu` is intended to be your go-to library for crafting some algorithms that involves arbitrary precision numbers, or build a rusty tool that relies on arbitrary precision numbers. It's built from scratch with rust, and provides user-friendly and rust-idiomatic APIs. It might not be the fastest library for your high-precision calculation loads, but it's designed to be fast enough so that you seldomly feel dragged back by it.

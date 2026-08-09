@@ -27,6 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so `git describe` can stamp the tag-based version
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
@@ -34,7 +36,8 @@ jobs:
         run: cargo install mdbook --locked --version 0.5.3
       - name: Install mdbook-katex (mdbook 0.5 build)
         run: cargo install --locked --git https://github.com/lzanini/mdbook-katex --rev 1f63ab8605cea8e975be4b001dd7e39dd5367834
-      - name: Build guide
-        run: mdbook build guide
-      - name: Build Chinese guide
-        run: mdbook build guide-zh
+      # guide/build.sh generates version.md (version + commit stamp) into each
+      # book's src/ and then builds both books. Run it instead of `mdbook build`
+      # directly — the books' index.md includes version.md via {{#include}}.
+      - name: Build guides (stamped with version & commit)
+        run: bash guide/build.sh
