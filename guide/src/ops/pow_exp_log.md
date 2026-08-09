@@ -5,7 +5,7 @@
 The integer types provide the full power/root family (the root methods come from the `SquareRoot` / `SquareRootRem` / `CubicRoot` / `CubicRootRem` traits in `dashu-base`):
 
 - `pow(exp)` — exponentiation (`exp` is a `usize`).
-- `sqr()` / `cubic()` — square / cube, cheaper than `pow(2)` / `pow(3)`.
+- `sqr()` / `cubic()` — square / cube, cheaper than the explicit `x * x` / `x * x * x` forms.
 - `sqrt()` / `sqrt_rem()`, `cbrt()` / `cbrt_rem()` — square / cube root, with the remainder variant
   returning `(root, remainder)` in one pass (for `sqrt_rem`, `root² ≤ self < (root+1)²`).
 - `nth_root(n)` — n-th root, truncated toward zero.
@@ -41,4 +41,4 @@ assert_eq!(UBig::from(27u8).cbrt(), UBig::from(3u8));
 
 $$\exp(x+iy) = e^x(\cos y + i\sin y), \qquad \log z = \ln|z| + i\,\arg z,$$
 
-with `ln`'s principal branch cut on $]-\infty, 0]$ — so the sign of an imaginary zero selects the side of the cut. See [Standards Compliance](../compliance.md) for the full C99 Annex G special-value and branch-cut tables.
+with `ln`'s principal branch cut on $(-\infty, 0]$ — so the sign of an imaginary zero selects the side of the cut. See [Standards Compliance](../compliance.md) for the full C99 Annex G special-value and branch-cut tables.

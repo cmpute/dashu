@@ -5,7 +5,7 @@
 整数类型提供完整的幂与根函数族（根方法来自 `dashu-base` 中的 `SquareRoot` / `SquareRootRem` / `CubicRoot` / `CubicRootRem` trait）：
 
 - `pow(exp)` — 幂运算（`exp` 为 `usize`）。
-- `sqr()` / `cubic()` — 平方 / 立方，比 `pow(2)` / `pow(3)` 更快。
+- `sqr()` / `cubic()` — 平方 / 立方，比显式书写 `x * x` / `x * x * x` 更快。
 - `sqrt()` / `sqrt_rem()`、`cbrt()` / `cbrt_rem()` — 平方 / 立方根，余数变体一次返回 `(根, 余数)`（对 `sqrt_rem`，`root² ≤ self < (root+1)²`）。
 - `nth_root(n)` — n 次方根，向零取整。
 - `ilog(&base)` — 以 `base` 为底的对数（截断）。
@@ -39,4 +39,4 @@ assert_eq!(UBig::from(27u8).cbrt(), UBig::from(3u8));
 
 $$\exp(x+iy) = e^x(\cos y + i\sin y), \qquad \log z = \ln|z| + i\,\arg z,$$
 
-其中 `ln` 的主支割线在 $]-\infty, 0]$ 上——因此虚部零的符号决定了支割线的一侧。完整的 C99 Annex G 特殊值和支割线表请参见[标准合规性](../compliance.md)。
+其中 `ln` 的主支割线在 $(-\infty, 0]$ 上——因此虚部零的符号决定了支割线的一侧。完整的 C99 Annex G 特殊值和支割线表请参见[标准合规性](../compliance.md)。
