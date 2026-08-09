@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-30e4046d.js";
+            window.path_to_searchindex_js = "searchindex-0f79df8c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-ebe46d39.js"></script>
+        <script src="toc-c6c800fd.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -188,6 +188,9 @@
 <p>Welcome to the <code>dashu</code> user guide! <code>dashu</code> is a library set of arbitrary precision numbers (aka. big numbers) implemented in Rust.</p>
 <p>The book is a companion to <a href="https://docs.rs/dashu/latest/dashu/"><code>dashu</code>’s API docs</a>. It contains a more concise overview of all the functionalities equipped with <code>dashu</code> and some examples.</p>
 <p>Please choose from the chapters on the left to jump to individual topics.</p>
+<blockquote>
+<p>Built from commit <code>v0.6.0-rc.4</code> — dashu v0.6.0-rc.4.</p>
+</blockquote>
 <h2 id="philosophy-and-features"><a class="header" href="#philosophy-and-features">Philosophy and Features</a></h2>
 <p><code>dashu</code> is intended to be your go-to library for crafting some algorithms that involves arbitrary precision numbers, or build a rusty tool that relies on arbitrary precision numbers. It’s built from scratch with rust, and provides user-friendly and rust-idiomatic APIs. It might not be the fastest library for your high-precision calculation loads, but it’s designed to be fast enough so that you seldomly feel dragged back by it.</p>
 <p>To make it useful for every Rust user, it features:</p>
@@ -247,6 +250,29 @@
 <h3 id="layout-of-cbig"><a class="header" href="#layout-of-cbig">Layout of <code>CBig</code></a></h3>
 <p><code>CBig</code> (in the <code>dashu-cmplx</code> crate) mirrors <code>FBig</code>’s <code>Repr</code>+<code>Context</code> layout, generalized to two parts: a <code>CBig&lt;R, B&gt;</code> instance holds two <code>Repr&lt;B&gt;</code> parts — the real part <code>re</code> and the imaginary part <code>im</code> — over a <strong>single shared</strong> <code>Context&lt;R&gt;</code>. Storing one context (rather than wrapping two <code>FBig</code>s, each carrying its own) makes the uniform-precision invariant <em>physical</em>: there is exactly one precision slot, so <code>re</code> and <code>im</code> structurally cannot disagree. Each part keeps its own significand length; the shared context holds only the precision cap and the single rounding mode, applied independently to each component. As with <code>FBig</code>, the context is <code>Copy</code> while the significands are heap-allocated, so <code>CBig</code> is <code>Clone</code> but not <code>Copy</code>.</p>
 <p>Because both parts are <code>Repr</code>, <code>CBig</code> reuses <code>dashu-float</code>’s signed-zero / signed-infinity / branch-cut machinery unchanged. It follows the C99 Annex G / Kahan model (see <a href="#standards-compliance">Standards Compliance</a>) and, like <code>FBig</code>, has <strong>no NaN</strong> — C99 cases that would produce a complex NaN are reported as <code>FpError</code> at the context layer. <code>CBig::from_parts(re, im)</code> takes the larger of the two operand contexts. Construction, arithmetic, transcendentals, and I/O are covered in <a href="#construction-and-destruction">Construction and Destruction</a>, <a href="#conversion-1">Conversion</a>, and <a href="#operations-1">Operations</a>.</p>
+<h3 id="infinities-in-complex-arithmetic"><a class="header" href="#infinities-in-complex-arithmetic">Infinities in complex arithmetic</a></h3>
+<p>Complex infinity in <code>CBig</code> is the <strong>single Riemann point</strong> <code>+∞ + i·0</code>, and — exactly like
+<code>FBig</code>’s <code>±∞</code> — it is a <strong>terminal value</strong>: it can be <em>produced</em> by finite inputs that blow up,
+but it is <em>never accepted as an operand</em>. Any arithmetic or transcendental operation that takes an
+infinite operand is rejected with <code>FpError::InfiniteInput</code> at the context layer (and panics at the
+convenience layer). This keeps <code>dashu-cmplx</code> consistent with <code>dashu-float</code> and internally uniform:
+no operation folds an infinity into a result and then consumes it.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Produces <code>+∞ + i·0</code> (finite input)</th><th>Rejected (infinite operand)</th></tr>
+</thead>
+<tbody>
+<tr><td><code>1/0</code>, <code>z/0</code> for a finite nonzero <code>z</code></td><td><code>z·∞</code>, <code>∞·z</code>, <code>∞·∞</code>, <code>0·∞</code></td></tr>
+<tr><td><code>exp(+∞ + i·0)</code> (and <code>exp(-∞ + i·0) = 0</code>)</td><td><code>z/∞</code>, <code>∞/z</code>, <code>∞/∞</code></td></tr>
+<tr><td><code>log(0) = -∞ + i·0</code></td><td><code>inv(∞)</code>, <code>log(∞)</code>, <code>sqrt(∞)</code></td></tr>
+<tr><td><code>overflow</code> saturation</td><td><code>z ± ∞</code>, <code>∞ ± z</code></td></tr>
+</tbody>
+</table>
+</div>
+<p><code>proj</code> is the one function that <em>takes</em> an infinite value and returns a result: it projects any
+part-infinite <code>CBig</code> to <code>+∞ + i·0</code> (with the imaginary zero carrying the sign of the original
+imaginary part), per C99 Annex G §G.5.3. <code>0/0</code> is <code>FpError::Indeterminate</code>.</p>
 <h2 id="auxiliary-types"><a class="header" href="#auxiliary-types">Auxiliary Types</a></h2>
 <p>Besides the numeric types, there are several auxiliary types used across the crates: <code>Sign</code> and <code>Approximation</code> in <strong>dashu-base</strong>, <code>ConstCache</code> and <code>FpResult</code> in <strong>dashu-float</strong>, and <code>CfpResult</code> in <strong>dashu-cmplx</strong>.</p>
 <h3 id="sign-1"><a class="header" href="#sign-1">Sign</a></h3>
@@ -295,6 +321,10 @@
 <li><code>CBig</code> = real part: <code>FBig</code> + imaginary part: <code>FBig</code> (the result precision is the larger of the two)</li>
 </ul>
 </li>
+</ul>
+<p>For <code>RBig</code>, an alternative <code>from_parts_signed(numerator, denominator)</code> takes a <em>signed</em>
+denominator (<code>IBig</code>), so the sign can live on either component.</p>
+<ul>
 <li>For <code>::from_parts_const()</code>
 <ul>
 <li><code>IBig</code> = sign: <code>Sign</code> + magnitude: <code>DoubleWord</code></li>
@@ -605,10 +635,44 @@ use dashu::float::round::Rounding::*;
 assert_eq!(DBig::from_str("1234")?.to_int(), Exact(1234.into()));
 assert_eq!(DBig::from_str("1.234")?.to_int(), Inexact(1.into(), NoOp));
 <span class="boring">}</span></code></pre>
-<p>To a primitive float, <code>to_f32()</code> / <code>to_f64()</code> return <code>Rounded&lt;f32&gt;</code> / <code>Rounded&lt;f64&gt;</code> carrying the rounding direction; they never fail (overflow yields <code>±∞</code>, infinities map to infinities). The reverse — <code>TryFrom&lt;f32&gt;</code>/<code>TryFrom&lt;f64&gt; for FBig</code> — is <strong>base-2 only</strong> (it is almost always lossy in any other base); to reach a non-binary <code>FBig</code>, convert to base 2 first and then call <code>with_base()</code>. NaN is rejected with <code>ConversionError::OutOfBounds</code>.</p>
+<p>To a primitive float, <code>to_f32()</code> / <code>to_f64()</code> return <code>Rounded&lt;f32&gt;</code> / <code>Rounded&lt;f64&gt;</code> carrying the rounding direction; they never fail (at the edges of the format the result depends on the rounding mode — see <a href="#range-boundaries-overflow-underflow-and-the-rounding-mode">range boundaries</a> below; infinities map to infinities). The reverse — <code>TryFrom&lt;f32&gt;</code>/<code>TryFrom&lt;f64&gt; for FBig</code> — is <strong>base-2 only</strong> (it is almost always lossy in any other base); to reach a non-binary <code>FBig</code>, convert to base 2 first and then call <code>with_base()</code>. NaN is rejected with <code>ConversionError::OutOfBounds</code>.</p>
+<h3 id="range-boundaries-overflow-underflow-and-the-rounding-mode"><a class="header" href="#range-boundaries-overflow-underflow-and-the-rounding-mode">Range boundaries: overflow, underflow, and the rounding mode</a></h3>
+<p><code>to_f32()</code> / <code>to_f64()</code> round under the context’s mode all the way to the edge of the format, so when the true value falls outside the finite range the rounding mode decides the <em>endpoint</em>:</p>
+<ul>
+<li><strong>Overflow</strong> (value beyond <code>f32::MAX</code> / <code>f64::MAX</code>): the outward modes (toward <code>±∞</code>, away from zero) reach <code>±∞</code>; toward-zero, toward the opposite infinity, and nearest saturate to the largest <em>finite</em> value (<code>±MAX</code>).</li>
+<li><strong>Underflow</strong> (value below the smallest subnormal — <code>2⁻¹⁴⁹</code> for f32, <code>2⁻¹⁰⁷⁴</code> for f64): the outward modes reach the smallest subnormal of that sign; the rest round to signed <code>±0</code>.</li>
+</ul>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use dashu::integer::IBig;
+use dashu::float::{FBig, round::mode::{Zero, Up}};
+
+// 3·2^127 overflows f32::MAX: toward-zero saturates to f32::MAX, toward +∞ reaches +∞.
+let big = FBig::&lt;Zero, 2&gt;::from_parts(IBig::from(3), 127);
+assert_eq!(big.to_f32().value(), f32::MAX);
+assert!(big.with_rounding::&lt;Up&gt;().to_f32().value().is_infinite());
+
+// 2^-160 is below the smallest f32 subnormal: toward +∞ reaches it, toward-zero gives +0.
+let tiny = FBig::&lt;Zero, 2&gt;::from_parts(IBig::from(1), -160);
+assert_eq!(tiny.with_rounding::&lt;Up&gt;().to_f32().value(), f32::from_bits(1));
+assert_eq!(tiny.to_f32().value(), 0.0);
+<span class="boring">}</span></code></pre>
+<p><code>TryFrom&lt;FBig&gt; for f32</code> / <code>f64</code>, by contrast, is the <em>fallible</em> path: it returns <code>Err</code> for <strong>any</strong> inexact conversion (in-range rounding included) — so prefer <code>to_f32()</code> / <code>to_f64()</code> when you want the value. Its error variant is classified by the <em>input magnitude</em>, not the mode-aware result: a value beyond <code>±MAX</code> is <code>Err(ConversionError::OutOfBounds)</code> under <strong>every</strong> rounding mode (whether that mode would saturate to <code>±MAX</code> or overflow to <code>±∞</code>), while an in-range value that merely loses precision is <code>Err(LossOfPrecision)</code>. Thus <code>Err(OutOfBounds)</code> reliably means “beyond the finite range”, independent of the rounding mode:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use dashu::base::ConversionError;
+use dashu::integer::IBig;
+use dashu::float::{FBig, round::mode::{Zero, Up}};
+
+let big = FBig::&lt;Zero, 2&gt;::from_parts(IBig::from(3), 127);
+// Beyond f32::MAX is out of range under every mode — the mode only picks
+// the endpoint that to_f32() would return (±MAX vs ±∞).
+assert_eq!(f32::try_from(big.clone().with_rounding::&lt;Up&gt;()), Err(ConversionError::OutOfBounds));
+assert_eq!(f32::try_from(big), Err(ConversionError::OutOfBounds));
+<span class="boring">}</span></code></pre>
 <h3 id="conversion-to-rbig"><a class="header" href="#conversion-to-rbig">Conversion to RBig</a></h3>
 <p>With the optional <code>dashu-float</code> feature enabled on <code>dashu-ratio</code>, <code>TryFrom&lt;FBig&gt; for RBig</code> succeeds only when the float is exactly rational-representable, and <code>RBig::to_float()</code> is the rounding-aware path in the other direction.</p>
-<p>For approximating a float by a <em>simple</em> rational (the smallest numerator/denominator within a tolerance), use <code>simplest_from_f32</code> / <code>simplest_from_f64</code>, or the interval queries <code>simplest_in</code>, <code>nearest_in</code>, <code>next_up</code>, and <code>next_down</code> on <code>FBig</code>/<code>DBig</code> — these treat the float’s own rounding interval as the search bound.</p>
+<p>For approximating a float by a <em>simple</em> rational (the smallest numerator/denominator within a tolerance), use <code>simplest_from_f32</code> / <code>simplest_from_f64</code>, or the interval queries <code>simplest_in</code>, <code>nearest_in</code>, <code>next_up</code>, and <code>next_down</code> on <code>FBig</code>/<code>DBig</code> — these treat the float’s own rounding interval as the search bound. <code>is_simpler_than(other)</code> compares two <code>RBig</code>s directly by the simplicity ordering that those queries optimize for.</p>
 <hr>
 <ol class="footnote-definition">
 <li id="footnote-a">
@@ -672,6 +736,19 @@ use core::str::FromStr;
 
 assert_eq!(RBig::from_str("22/7")?.to_string(), "22/7");
 <span class="boring">}</span></code></pre>
+<p>For positional-expansion literals, <code>RBig::from_str_expanded</code> / <code>Relaxed::from_str_expanded</code> parse any base 2–36. They accept fixed-point (<code>1.5</code>, <code>-.25</code>), scientific, and <strong>repeating</strong> notation with the repetend parenthesized (<code>0.1(6)</code> = 1/6, <code>0.(3)</code> = 1/3). The scientific marker is <code>e</code>/<code>E</code> for base 10 and <code>@</code> for every other base — <code>e</code>/<code>E</code> are themselves digits once the base reaches 15. It is the exact inverse of <code>in_expanded(radix)</code> (see <a href="#printing">Printing</a>): every rational round-trips through <code>{:#}</code>, and terminating expansions round-trip through <code>{:.N}</code>. <code>from_str_decimal</code> is a base-10 alias.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use dashu::rational::RBig;
+use core::str::FromStr;
+
+let x = RBig::from_str_expanded("0.1(6)", 10)?; // 1/6
+assert_eq!(x, RBig::from_str("1/6")?);
+// any base: binary 0.(01) = 1/3
+assert_eq!(RBig::from_str_expanded("0.(01)", 2)?, RBig::from_str("1/3")?);
+// every rational round-trips through the repetend printer
+assert_eq!(RBig::from_str_expanded(&amp;format!("{:#}", x.in_expanded(10)), 10)?, x);
+<span class="boring">}</span></code></pre>
 <h2 id="parsing-complex"><a class="header" href="#parsing-complex">Parsing Complex</a></h2>
 <p><code>CBig::FromStr</code> accepts the same algebraic <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">a</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">bi</span></span></span></span> grammar that <code>Display</code> emits: an optional real term plus an optional signed imaginary term (at least one required); a unit coefficient may be omitted (<code>i</code>, <code>-i</code>). The MPC-style parenthesized form <code>(re im)</code> is <strong>not</strong> accepted.</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -731,14 +808,14 @@ use dashu::rational::RBig;
 assert_eq!(format!("{}", RBig::from_str("22/7")?), "22/7");
 assert_eq!(format!("{}", RBig::from_str("5/1")?), "5");
 <span class="boring">}</span></code></pre>
-<p>For the positional (decimal) expansion use <code>in_expanded()</code>. <code>{:.N}</code> prints exactly <code>N</code> fractional digits; the <code>#</code> flag detects the repeating part and parenthesizes it:</p>
+<p>For the positional (decimal) expansion use <code>in_expanded(10)</code>. <code>{:.N}</code> prints exactly <code>N</code> fractional digits; the <code>#</code> flag detects the repetend and parenthesizes it:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use dashu::rational::RBig;
 
 let x = RBig::from_parts(1.into(), 3u8.into());
-assert_eq!(format!("{:.4}", x.in_expanded()), "0.3333");
-assert_eq!(format!("{:#}", x.in_expanded()), "0.(3)");
+assert_eq!(format!("{:.4}", x.in_expanded(10)), "0.3333");
+assert_eq!(format!("{:#}", x.in_expanded(10)), "0.(3)");
 <span class="boring">}</span></code></pre>
 <h2 id="complex-formatting"><a class="header" href="#complex-formatting">Complex Formatting</a></h2>
 <p><code>CBig</code> <code>Display</code> uses the algebraic <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">a</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">bi</span></span></span></span> notation: the imaginary term always carries an explicit sign, a unit coefficient is elided (<code>i</code>, not <code>1i</code>), and a zero imaginary part is omitted.</p>
@@ -875,7 +952,34 @@ assert_eq!(UBig::from_le_bytes(&amp;bytes), n);
 <h2 id="serialization-with-serde"><a class="header" href="#serialization-with-serde">Serialization with <code>serde</code></a></h2>
 <p>With the <code>serde</code> feature enabled, every numeric type implements <code>Serialize</code> / <code>Deserialize</code>. The human-readable form (when <code>is_human_readable()</code> is true) is a string, for easy use with JSON/TOML; the compact binary form is used otherwise. Only the binary form’s layout is semver-protected.</p>
 <h2 id="serialization-with-rkyv"><a class="header" href="#serialization-with-rkyv">Serialization with <code>rkyv</code></a></h2>
-<p>With the <code>rkyv</code> feature enabled, zero-copy (de)serialization is available for the integer types — fastest for same-architecture scenarios, at the cost of a less portable layout.</p>
+<p>With the <code>rkyv</code> feature enabled (rkyv <strong>0.7</strong>; use <code>rkyv_v08</code> for rkyv <strong>0.8</strong>), zero-copy
+(de)serialization is available for the integer, rational, float, and complex types. The big integers
+archive as their <strong>native word representation</strong> (<code>ArchivedVec&lt;Word&gt;</code>, plus a sign flag for <code>IBig</code>),
+so <code>rkyv::archived_root</code> yields the words in place with no byte conversion on any path — the fastest
+possible same-architecture encoding, at the cost of a layout that depends on the target’s <code>Word</code>
+width and endianness. In particular:</p>
+<ul>
+<li>
+<p>The two rkyv versions are <strong>alternatives</strong>: <code>rkyv_v07</code> and <code>rkyv_v08</code> are mutually exclusive (their
+derive-generated type names collide). Enabling both — e.g. <code>--all-features</code> — resolves to 0.7.
+rkyv 0.8 requires Rust ≥ 1.81 (see the <a href="io/faq.html#msrv-and-feature-policy">MSRV policy</a>) and is
+excluded from the 1.68 MSRV build; its archives store multi-byte words little-endian by default.</p>
+</li>
+<li>
+<p>An archive is <strong>not portable across 32/64-bit targets</strong> (the <code>Word</code> size differs) or across machines with different endianness.</p>
+</li>
+<li>
+<p>rkyv itself does not guarantee archive compatibility across rkyv versions, and the <code>size_16/32/64</code> offset-width feature must match on both ends.</p>
+</li>
+</ul>
+<p>For a stable, portable encoding, prefer the byte layers above: either the <code>to_le_bytes</code>/<code>to_be_bytes</code> conversions (explicit, layout-stable) or <code>serde</code>’s binary form. Those are the right choice for data that must outlive a single machine or rkyv version; <code>rkyv</code> is the right choice when reading the archived data in place (e.g. memory-mapped files) matters more than portability.</p>
+<h2 id="serializing-the-cached-wrappers"><a class="header" href="#serializing-the-cached-wrappers">Serializing the cached wrappers</a></h2>
+<p><code>CachedFBig</code> / <code>CachedCBig</code> do not implement the serialization traits (serde, rkyv, or any other
+third-party trait) — the cached types intentionally mirror only the value API. Convert to the plain
+value first:</p>
+<pre><code class="language-rust ignore">let f = cached.as_fbig();       // or the owning `into_fbig()`
+serialize(&amp;f);                  // serde `to_string` / rkyv `to_bytes`, etc.</code></pre>
+<p>(<code>CachedCBig</code> has the matching <code>as_cbig()</code> / <code>into_cbig()</code>.)</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="interoperability"><a href="#interoperability" class="header">Interoperability</a></h1>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
@@ -911,7 +1015,7 @@ let words: &amp;[Word] = n.as_words();
 <ul>
 <li><a href="#equality-and-comparison">Equality and Comparison</a> — <code>PartialEq</code>/<code>Eq</code>, ordering, magnitude comparison, and hashing.</li>
 <li><a href="#basic-arithmetics">Basic Arithmetics</a> — <code>+ - * /</code> and the rest of the field for each type.</li>
-<li><a href="#exponential-and-logarithm">Exponential and Logarithm</a> — <code>exp</code>, <code>ln</code>, powers, roots, and constants, plus the complex analogs.</li>
+<li><a href="#power-exponential-and-logarithm">Power, Exponential and Logarithm</a> — <code>pow</code>, <code>exp</code>, <code>ln</code>, roots, and constants, for integers, floats, and complex.</li>
 <li><a href="#trigonometric-and-hyperbolic-functions">Trigonometric and Hyperbolic Functions</a> — <code>sin</code>/<code>cos</code>/<code>tan</code> and the hyperbolic family, real and complex.</li>
 <li><a href="#bit-manipulation">Bit Manipulation</a> — bitwise operators and <code>UBig</code> as a bit vector.</li>
 <li><a href="#number-theoretic">Number Theoretic</a> — GCD, extended GCD, and modular arithmetic.</li>
@@ -943,11 +1047,31 @@ let e = 2 * &amp;b - 1; // mixes naturally with primitives
 assert_eq!(e, IBig::from(-0x21ff));
 <span class="boring">}</span></code></pre>
 <h2 id="float-arithmetic"><a class="header" href="#float-arithmetic">Float Arithmetic</a></h2>
-<p><code>FBig</code>/<code>DBig</code> support <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code> between values of the <strong>same base and rounding mode</strong> (mixed bases are a compile error by design). The result precision is <code>max(lhs.precision, rhs.precision)</code>, and each operation reports its inexactness through the two-layer API described in <a href="#exponential-and-logarithm">Exponential and Logarithm</a>. Infinities are terminal: <code>1/0</code> and <code>ln(0)</code> produce <code>±∞</code>, but feeding an infinity back into arithmetic is an error (<code>FpError::InfiniteInput</code>).</p>
+<p><code>FBig</code>/<code>DBig</code> support <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code> between values of the <strong>same base and rounding mode</strong> (mixed bases are a compile error by design). The result precision is <code>max(lhs.precision, rhs.precision)</code>, and each operation reports its inexactness through the two-layer API described in <a href="#power-exponential-and-logarithm">Power, Exponential and Logarithm</a>. Infinities are terminal: <code>1/0</code> and <code>ln(0)</code> produce <code>±∞</code>, but feeding an infinity back into arithmetic is an error (<code>FpError::InfiniteInput</code>).</p>
+<p>Beyond the four field operations, floats can be decomposed and rounded with <code>trunc()</code>,
+<code>ceil()</code>, <code>floor()</code>, <code>round()</code> (nearest, ties away from zero), and <code>fract()</code> (the fractional
+part); <code>split_at_point()</code> returns both halves as <code>(integral, fractional)</code> in one call, and
+<code>quantize(exp)</code> rounds to the nearest multiple of <code>BASE^exp</code> (the dashu analog of Python’s
+<code>Decimal.quantize</code>, returning the rounding direction). Each of these adjusts the result
+precision to the digits that remain, so the value is exact for its stored digits. The unit in
+the last place is <code>ulp()</code>, with a cheaper lower bound <code>ulp_lb()</code> that is useful as a
+negligibility threshold in iterative algorithms.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use core::str::FromStr;
+use dashu::float::DBig;
+
+let a = DBig::from_str("1.234")?;
+assert_eq!(a.round().to_string(), "1");
+assert_eq!(a.fract().to_string(), "0.234");
+let (int, frac) = a.clone().split_at_point();
+assert_eq!(int.to_string(), "1");
+assert_eq!(frac.to_string(), "0.234");
+<span class="boring">}</span></code></pre>
 <h2 id="rational-arithmetic"><a class="header" href="#rational-arithmetic">Rational Arithmetic</a></h2>
-<p><code>RBig</code> supports <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>. Division by zero panics. <code>Relaxed</code> performs the same operations without auto-reducing to lowest terms (faster for a chain of operations); call <code>canonicalize()</code> to reduce when needed.</p>
+<p><code>RBig</code> supports <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>. Division by zero panics. <code>Relaxed</code> performs the same operations without auto-reducing to lowest terms (faster for a chain of operations); call <code>canonicalize()</code> to reduce when needed. <code>RBig</code> also has <code>fract()</code> for the fractional part, <code>is_int()</code> to test whether the value is an integer, and <code>relax()</code> — the consuming variant of <code>as_relaxed()</code> (see <a href="#conversion-1">Conversion</a>) that hands the value to a <code>Relaxed</code> without copying.</p>
 <h2 id="complex-arithmetic"><a class="header" href="#complex-arithmetic">Complex Arithmetic</a></h2>
-<p><code>CBig</code> supports the field operations <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, plus <code>sqr</code> and <code>inv</code> (multiplicative inverse). Multiplication and division by a real <code>FBig</code> are also available as mixed-type operators. Multiplication and division use Smith’s method with a guard digit and re-round, giving the same near-correctly-rounded guarantee as <code>dashu-float</code>’s transcendentals.</p>
+<p><code>CBig</code> supports the field operations <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, plus <code>sqr</code> and <code>inv</code> (multiplicative inverse). Multiplication and division by a real <code>FBig</code> are also available as mixed-type operators. Multiplication and division use Smith’s method with a guard digit and re-round, giving the same near-correctly-rounded guarantee as <code>dashu-float</code>’s transcendentals. <code>conj()</code> gives the complex conjugate and <code>mul_i(negative)</code> multiplies by <code>+i</code> or <code>-i</code> — an exact rotation that swaps the real and imaginary parts. The components are exposed as raw representations through <code>re()</code> / <code>im()</code> (borrowing <code>&amp;Repr</code>), or as owned <code>FBig</code>s through <code>into_parts()</code> (see <a href="#construction-and-destruction">Construction and Destruction</a>).</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use dashu::complex::CBig;
@@ -971,17 +1095,41 @@ let summed: DBig = vals.iter().sum();                             // 1e-20 — S
 <h2 id="mixed-type-arithmetic"><a class="header" href="#mixed-type-arithmetic">Mixed-type arithmetic</a></h2>
 <p>There are <strong>no implicit mixed-type operators</strong> between different big-number kinds (e.g. <code>UBig + FBig</code> does not compile) — convert explicitly first (see <a href="#conversion-1">Conversion</a>).</p>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="exponential-and-logarithm"><a href="#exponential-and-logarithm" class="header">Exponential and Logarithm</a></h1>
+<h1 id="power-exponential-and-logarithm"><a href="#power-exponential-and-logarithm" class="header">Power, Exponential and Logarithm</a></h1>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
-<p><code>FBig</code>/<code>DBig</code> provide the exponential, logarithmic, power, and root families, plus the mathematical constants. <code>CBig</code> provides the complex analogs of each. Like all inexact operations, these come in <a href="#two-layer-api">two layers</a> — a <code>Context</code> layer that returns the rounding result and a convenience layer that unwraps it.</p>
+<p><code>dashu</code> provides the power, exponential, logarithmic, and root families for the integer, float, and complex types. For <code>FBig</code>/<code>DBig</code> and <code>CBig</code>, like all inexact operations, these come in <a href="#two-layer-api">two layers</a> — a <code>Context</code> layer that returns the rounding result and a convenience layer that unwraps it.</p>
+<h2 id="integer-powers-and-roots"><a class="header" href="#integer-powers-and-roots">Integer powers and roots</a></h2>
+<p>The integer types provide the full power/root family (the root methods come from the <code>SquareRoot</code> / <code>SquareRootRem</code> / <code>CubicRoot</code> / <code>CubicRootRem</code> traits in <code>dashu-base</code>):</p>
+<ul>
+<li><code>pow(exp)</code> — exponentiation (<code>exp</code> is a <code>usize</code>).</li>
+<li><code>sqr()</code> / <code>cubic()</code> — square / cube, cheaper than <code>pow(2)</code> / <code>pow(3)</code>.</li>
+<li><code>sqrt()</code> / <code>sqrt_rem()</code>, <code>cbrt()</code> / <code>cbrt_rem()</code> — square / cube root, with the remainder variant
+returning <code>(root, remainder)</code> in one pass (for <code>sqrt_rem</code>, <code>root² ≤ self &lt; (root+1)²</code>).</li>
+<li><code>nth_root(n)</code> — n-th root, truncated toward zero.</li>
+<li><code>ilog(&amp;base)</code> — the truncated base-<code>base</code> logarithm.</li>
+</ul>
+<p><code>IBig::sqrt</code> returns a <code>UBig</code> and panics on a negative value; an even <code>nth_root</code> of a negative
+<code>IBig</code> also panics. <code>ilog</code> panics on zero or a base of 0 or 1.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use dashu::base::{CubicRoot, SquareRoot, SquareRootRem};
+use dashu::integer::UBig;
+
+let n = UBig::from(10u32);
+assert_eq!(n.pow(3), UBig::from(1000u32));
+assert_eq!(n.sqr(), UBig::from(100u32));
+assert_eq!(n.cubic(), UBig::from(1000u32));
+assert_eq!(UBig::from(1000u32).sqrt_rem(), (UBig::from(31u8), UBig::from(39u8)));
+assert_eq!(UBig::from(27u8).cbrt(), UBig::from(3u8));
+<span class="boring">}</span></code></pre>
 <h2 id="real-functions"><a class="header" href="#real-functions">Real functions</a></h2>
 <ul>
 <li>Exponential: <code>exp</code>, <code>exp_m1</code> (<span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7477em;vertical-align:-0.0833em;"></span><span class="mord"><span class="mord mathnormal">e</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6644em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">x</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span>, accurate near zero).</li>
-<li>Logarithm: <code>ln</code>, <code>ln_1p</code> (<span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop">ln</span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span></span></span></span>, accurate near zero).</li>
-<li>Powers and roots: <code>powi(IBig)</code>, <code>powf(&amp;FBig)</code>, <code>sqrt</code>, <code>cbrt</code>, <code>nth_root(&amp;n)</code>, and <code>hypot(&amp;other)</code> (<span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.24em;vertical-align:-0.2822em;"></span><span class="mord sqrt"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.9578em;"><span class="svg-align" style="top:-3.2em;"><span class="pstrut" style="height:3.2em;"></span><span class="mord" style="padding-left:1em;"><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7401em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7401em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span></span></span><span style="top:-2.9178em;"><span class="pstrut" style="height:3.2em;"></span><span class="hide-tail" style="min-width:1.02em;height:1.28em;"><svg xmlns="http://www.w3.org/2000/svg" width="400em" height="1.28em" viewbox="0 0 400000 1296" preserveaspectratio="xMinYMin slice"><path d="M263,681c0.7,0,18,39.7,52,119 c34,79.3,68.167,158.7,102.5,238c34.3,79.3,51.8,119.3,52.5,120 c340,-704.7,510.7,-1060.3,512,-1067 l0 -0 c4.7,-7.3,11,-11,19,-11 H40000v40H1012.3 s-271.3,567,-271.3,567c-38.7,80.7,-84,175,-136,283c-52,108,-89.167,185.3,-111.5,232 c-22.3,46.7,-33.8,70.3,-34.5,71c-4.7,4.7,-12.3,7,-23,7s-12,-1,-12,-1 s-109,-253,-109,-253c-72.7,-168,-109.3,-252,-110,-252c-10.7,8,-22,16.7,-34,26 c-22,17.3,-33.3,26,-34,26s-26,-26,-26,-26s76,-59,76,-59s76,-60,76,-60z M1001 80h400000v40h-400000z" /></svg></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2822em;"><span></span></span></span></span></span></span></span></span>, overflow-safe).</li>
-<li>Constants: <code>FBig::pi(precision)</code> computes π; use <a href="#cached-arithmetic-for-fbigcbig"><code>CachedFBig</code></a> to reuse it across calls.</li>
+<li>Logarithm: <code>ln</code>, <code>ln_1p</code> (<span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop">ln</span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span></span></span></span>, accurate near zero), plus the base-2 and base-10 logarithms <code>log2</code> and <code>log10</code> (correctly rounded; exact for exact powers of the base).</li>
+<li>Powers and roots: <code>powi(IBig)</code>, <code>powf(&amp;FBig)</code>, <code>sqr</code>, <code>cubic</code>, <code>sqrt</code>, <code>cbrt</code>, <code>nth_root(&amp;n)</code>, and <code>hypot(&amp;other)</code> (<span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.24em;vertical-align:-0.2822em;"></span><span class="mord sqrt"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.9578em;"><span class="svg-align" style="top:-3.2em;"><span class="pstrut" style="height:3.2em;"></span><span class="mord" style="padding-left:1em;"><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7401em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7401em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span></span></span><span style="top:-2.9178em;"><span class="pstrut" style="height:3.2em;"></span><span class="hide-tail" style="min-width:1.02em;height:1.28em;"><svg xmlns="http://www.w3.org/2000/svg" width="400em" height="1.28em" viewbox="0 0 400000 1296" preserveaspectratio="xMinYMin slice"><path d="M263,681c0.7,0,18,39.7,52,119 c34,79.3,68.167,158.7,102.5,238c34.3,79.3,51.8,119.3,52.5,120 c340,-704.7,510.7,-1060.3,512,-1067 l0 -0 c4.7,-7.3,11,-11,19,-11 H40000v40H1012.3 s-271.3,567,-271.3,567c-38.7,80.7,-84,175,-136,283c-52,108,-89.167,185.3,-111.5,232 c-22.3,46.7,-33.8,70.3,-34.5,71c-4.7,4.7,-12.3,7,-23,7s-12,-1,-12,-1 s-109,-253,-109,-253c-72.7,-168,-109.3,-252,-110,-252c-10.7,8,-22,16.7,-34,26 c-22,17.3,-33.3,26,-34,26s-26,-26,-26,-26s76,-59,76,-59s76,-60,76,-60z M1001 80h400000v40h-400000z" /></svg></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2822em;"><span></span></span></span></span></span></span></span></span>, overflow-safe).</li>
+<li>Constants: <code>FBig::pi(precision)</code> for π and <code>FBig::e(precision)</code> for <em>e</em>. π benefits from reuse across calls via <a href="#cached-arithmetic-for-fbigcbig"><code>CachedFBig</code></a>; <em>e</em> is self-contained (it depends on no other constant) and is computed directly by binary splitting on <code>Σ 1/k!</code>, so it is not cached.</li>
 </ul>
-<p>(<code>exp2</code>/<code>exp10</code>/<code>log2</code>/<code>log10</code> are deferred to a later 0.5.x release.)</p>
+<p>(<code>exp2</code>/<code>exp10</code> are deferred to a later release.)</p>
 <h2 id="complex-functions"><a class="header" href="#complex-functions">Complex functions</a></h2>
 <p><code>CBig</code> mirrors the real set with <code>exp</code>, <code>ln</code>, <code>sqrt</code>, <code>powi</code>, and <code>powf</code>, built on the real implementations. The identities are</p>
 <p><span class="katex-display"><span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop">exp</span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">i</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal">e</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7144em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">x</span></span></span></span></span></span></span></span><span class="mopen">(</span><span class="mop">cos</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">i</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">sin</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mclose">)</span><span class="mpunct">,</span><span class="mspace" style="margin-right:2em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">lo<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop">ln</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="mord">∣</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.854em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">i</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">ar<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="mpunct">,</span></span></span></span></span></p>
@@ -997,9 +1145,9 @@ let summed: DBig = vals.iter().sum();                             // 1e-20 — S
 </ul>
 <p>Angles are in radians. <code>atan2</code> follows the C99 signed-zero model, which matters for correct branch-cut behavior on the axes.</p>
 <h2 id="complex-functions-1"><a class="header" href="#complex-functions-1">Complex functions</a></h2>
-<p><code>CBig</code> provides the circular family <code>sin</code>, <code>cos</code>, <code>tan</code>, <code>sin_cos</code>, <code>asin</code>, <code>acos</code>, and <code>atan</code>. They are evaluated from the real <code>sin</code>/<code>cos</code> and <code>sinh</code>/<code>cosh</code> via the identities</p>
+<p><code>CBig</code> provides the circular family <code>sin</code>, <code>cos</code>, <code>tan</code>, <code>sin_cos</code>, <code>asin</code>, <code>acos</code>, and <code>atan</code>, and the hyperbolic family <code>sinh</code>, <code>cosh</code>, <code>tanh</code>, <code>sinh_cosh</code>, <code>asinh</code>, <code>acosh</code>, and <code>atanh</code>. The circular functions are evaluated from the real <code>sin</code>/<code>cos</code> and <code>sinh</code>/<code>cosh</code> via the identities</p>
 <p><span class="katex-display"><span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop">sin</span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">i</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mop">sin</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">cosh</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">i</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">cos</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">sinh</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mpunct">,</span><span class="mspace" style="margin-right:2em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">cos</span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">i</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mop">cos</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">cosh</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">i</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">sin</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">sinh</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mord">.</span></span></span></span></span></p>
-<p>The inverse functions follow the Kahan signed-zero branch-cut formulation. (Complex-valued hyperbolic functions — <code>CBig::sinh</code>, <code>cosh</code>, … — are deferred to a later 0.5.x release.) See <a href="#standards-compliance">Standards Compliance</a> for the Annex G special-value and branch-cut tables.</p>
+<p>The hyperbolic functions reuse the circular ones through the rotation identities <code>sinh z = -i\sin(iz)</code>, <code>cosh z = \cos(iz)</code>, and <code>tanh z = -i\tan(iz)</code> — an exact swap of the real and imaginary parts, so the two families share their rounding certification. The inverse functions (circular and hyperbolic) follow the Kahan signed-zero branch-cut formulation. See <a href="#standards-compliance">Standards Compliance</a> for the Annex G special-value and branch-cut tables.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="bit-manipulation"><a href="#bit-manipulation" class="header">Bit Manipulation</a></h1>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
@@ -1015,6 +1163,25 @@ assert_eq!(format!("{:b}", &amp;a | &amp;b), "1110");
 <span class="boring">}</span></code></pre>
 <h2 id="bit-testing-and-length"><a class="header" href="#bit-testing-and-length">Bit testing and length</a></h2>
 <p>The <code>BitTest</code> trait (from <code>dashu-base</code>) tests and measures individual bits: <code>.bit(n)</code> returns the <code>n</code>-th bit, and <code>.bit_len()</code> returns the position of the highest set bit plus one. <code>set_bit(n)</code> / <code>clear_bit(n)</code> mutate a <code>UBig</code> in place, and <code>trailing_zeros()</code> counts the low-order zero bits.</p>
+<p>For counting and slicing, <code>UBig</code> also provides <code>count_ones()</code>, <code>count_zeros()</code> (the zeros <em>after</em>
+the leading bit, <code>None</code> for zero), <code>trailing_ones()</code>, <code>clear_high_bits(n)</code> (keep only the lowest
+<code>n</code> bits), and <code>split_bits(n)</code> (splits into <code>(low, high)</code> at bit <code>n</code>). Whether a value is a power
+of two — or the next one up — is given by the <code>PowerOfTwo</code> trait: <code>is_power_of_two()</code> and
+<code>next_power_of_two()</code>.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use dashu::base::PowerOfTwo;
+use dashu::integer::UBig;
+
+let x = UBig::from(0b10100011u8);
+assert_eq!(x.count_ones(), 4);
+assert_eq!(x.count_zeros(), Some(4));
+let mut y = x.clone();
+y.clear_high_bits(4); // keep the lowest 4 bits
+assert_eq!(y, UBig::from(0b0011u8));
+assert!(UBig::from(1024u32).is_power_of_two());
+assert_eq!(UBig::from(1023u32).next_power_of_two(), UBig::from(1024u32));
+<span class="boring">}</span></code></pre>
 <h2 id="shifts"><a class="header" href="#shifts">Shifts</a></h2>
 <p><code>&lt;&lt;</code> and <code>&gt;&gt;</code> shift by a <code>usize</code>. Left shifts grow the number; right shifts shrink it and are equivalent to floor-division by a power of two.</p>
 <h2 id="using-ubig-as-a-bit-vector"><a class="header" href="#using-ubig-as-a-bit-vector">Using <code>UBig</code> as a bit vector</a></h2>
@@ -1045,6 +1212,37 @@ use dashu::integer::UBig;
 let a = UBig::from(12u8);
 let b = UBig::from(8u8);
 assert_eq!((&amp;a).gcd(&amp;b), UBig::from(4u8));
+<span class="boring">}</span></code></pre>
+<h2 id="exact-division"><a class="header" href="#exact-division">Exact division</a></h2>
+<p>The <code>DivExact</code> / <code>DivExactAssign</code> traits (re-exported through <code>dashu-base</code> from <code>num-modular</code>, with the empty precomputation <code>()</code>) compute an exact quotient: <code>div_exact</code> consumes the dividend and returns <code>Some(self / rhs)</code> when <code>rhs</code> divides exactly, <code>None</code> otherwise; <code>div_exact_assign</code> replaces the dividend in place, returning <code>true</code> on success (leaving it unchanged otherwise). Both take the precomputation as an extra <code>&amp;()</code> argument. On <code>UBig</code>, dividing by a single-word factor uses Hensel (2-adic) division and runs in place with no scratch allocation.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use dashu::base::{DivExact, DivExactAssign};
+use dashu::integer::UBig;
+
+let a = UBig::from(10u32).pow(8) * 7u32; // 700000000
+assert_eq!(a.clone().div_exact(UBig::from(10u32).pow(8), &amp;()), Some(UBig::from(7u32)));
+assert_eq!(a.div_exact(UBig::from(3u32), &amp;()), None); // 3 doesn't divide
+
+// In-place form
+let mut b = UBig::from(10u32).pow(8) * 7u32;
+assert!(b.div_exact_assign(UBig::from(10u32).pow(8), &amp;()));
+assert_eq!(b, UBig::from(7u32));
+<span class="boring">}</span></code></pre>
+<h2 id="divisibility-and-factor-removal"><a class="header" href="#divisibility-and-factor-removal">Divisibility and factor removal</a></h2>
+<p><code>is_multiple_of(&amp;rhs)</code> tests whether <code>rhs</code> divides the value exactly — a faster alternative to
+<code>% rhs == 0</code>. To strip all factors of a number, use <code>UBig::remove(&amp;mut self, factor)</code>: it divides
+out every occurrence of <code>factor</code>, returning the exponent (so <code>self = factor^k · rest</code> yields
+<code>Some(k)</code>), or <code>None</code> when <code>factor</code> is 0, 1, or <code>self</code> is 0. <code>remove_word</code> is the single-word
+specialization.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use dashu::integer::UBig;
+
+let mut a = UBig::from(8u32) * 3u32; // 24 = 2³ · 3
+assert_eq!(a.remove(&amp;UBig::from(2u32)), Some(3));
+assert_eq!(a, UBig::from(3u32));
+assert!(UBig::from(10u32).is_multiple_of(&amp;UBig::from(5u32)));
 <span class="boring">}</span></code></pre>
 <h2 id="modular-arithmetic"><a class="header" href="#modular-arithmetic">Modular arithmetic</a></h2>
 <p>For repeated operations against a fixed modulus, precompute a <code>ConstDivisor</code> and reduce values into <code>Reduced</code>. Addition, subtraction, multiplication, exponentiation, and inversion then run against the precomputed modulus, and the result prints in <code>(mod N)</code> form.</p>
@@ -1198,6 +1396,79 @@ shown (use <code>.6e</code> for the fixed 6-digit default).</li>
 Decimal presentations (<code>'e'</code>/<code>'f'</code>/<code>'g'</code>) convert to base 10. <code>DBig</code> prints in decimal.</li>
 <li><strong><code>RBig</code></strong> defaults to the exact fraction, e.g. <code>str(RBig(1) / 3) == '1/3'</code>.</li>
 </ul>
+<h2 id="cross-type-comparison"><a class="header" href="#cross-type-comparison">Cross-type comparison</a></h2>
+<p><code>dashu.compare(a, b)</code>, <code>dashu.min(a, b)</code> and <code>dashu.max(a, b)</code> compare any two Python numbers
+(native <code>int</code>/<code>float</code> or any dashu type) <em>exactly</em>, backed by the <code>num-order</code> crate — the
+comparison never round-trips through a lossy primitive <code>float</code>. This makes
+<code>compare(UBig(2)**200, 1e60)</code> exact, unlike a naive float conversion:</p>
+<pre><code class="language-python">&gt;&gt;&gt; from dashu import compare, min, max, UBig
+&gt;&gt;&gt; compare(UBig(2)**200, 1e60)          # exact, no precision loss
+1
+&gt;&gt;&gt; max(UBig(2)**100, 2.0)               # returns the larger operand unchanged
+&lt;UBig 1267650600228229401496703205376 (digits: 1, bits: 101)&gt;
+</code></pre>
+<p><code>compare</code> returns <code>-1</code>, <code>0</code> or <code>1</code>; <code>min</code>/<code>max</code> return one of the two original operands
+(preserving its type). Complex numbers have no ordering, so comparing one raises <code>TypeError</code>.</p>
+<h2 id="third-party-integrations"><a class="header" href="#third-party-integrations">Third-party integrations</a></h2>
+<p>The following submodules are compiled in only when the wheel is built with the matching Cargo
+feature (all off by default):</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Feature</th><th>Submodule</th><th>Provides</th></tr>
+</thead>
+<tbody>
+<tr><td><code>serde</code></td><td><code>dashu.serde</code></td><td>JSON + binary (de)serialization</td></tr>
+<tr><td><code>rand</code></td><td><code>dashu.rand</code></td><td>uniform random number generators</td></tr>
+<tr><td><code>rkyv</code></td><td><code>dashu.rkyv</code></td><td>zero-copy binary serialization</td></tr>
+<tr><td><code>zeroize</code></td><td><em>(methods)</em></td><td><code>.zeroize()</code> on every type</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="dashuserde-feature-serde"><a class="header" href="#dashuserde-feature-serde"><code>dashu.serde</code> (feature <code>serde</code>)</a></h3>
+<p>Serialize any dashu type to JSON (<code>to_json</code>) or compact binary postcard (<code>serialize</code>); the
+corresponding deserializers take the target type <em>class</em> as their first argument:</p>
+<pre><code class="language-python">&gt;&gt;&gt; from dashu import UBig, FBig, serde
+&gt;&gt;&gt; s = serde.to_json(FBig(1.5))
+&gt;&gt;&gt; s
+'"0x3p-1"'
+&gt;&gt;&gt; serde.from_json(FBig, s) == FBig(1.5)
+True
+&gt;&gt;&gt; data = serde.serialize(UBig(2)**100)  # compact binary
+&gt;&gt;&gt; serde.deserialize(UBig, data) == UBig(2)**100
+True
+</code></pre>
+<h3 id="dashurand-feature-rand"><a class="header" href="#dashurand-feature-rand"><code>dashu.rand</code> (feature <code>rand</code>)</a></h3>
+<p>Uniform generators for every type. All functions accept keyword arguments (<code>ubig(bits=…)</code>,
+<code>fbig(precision=…)</code>, <code>rbig(max_denom_bits=…)</code>); the float/complex generators default to the
+module’s configured precision and produce values in the unit interval/square:</p>
+<pre><code class="language-python">&gt;&gt;&gt; from dashu import rand, UBig, FBig
+&gt;&gt;&gt; rand.ubig(bits=128)        # uniform in [0, 2^128)
+&lt;UBig 332087112958751295523159223253302643116 (digits: 1, bits: 128)&gt;
+&gt;&gt;&gt; f = rand.fbig()            # uniform in [0, 1)
+&gt;&gt;&gt; 0 &lt;= f &lt; 1
+True
+&gt;&gt;&gt; rand.ibig(bits=8)          # signed, uniform in (-2^8, 2^8)
+&lt;IBig 73 (digits: 1, bits: 7)&gt;
+</code></pre>
+<h3 id="dashurkyv-feature-rkyv"><a class="header" href="#dashurkyv-feature-rkyv"><code>dashu.rkyv</code> (feature <code>rkyv</code>)</a></h3>
+<p>Zero-copy serialization — deserializing does not copy the byte payload. The format is
+<strong>architecture-specific</strong>: bytes produced by <code>to_bytes</code> are only guaranteed readable on the
+same machine. <code>from_bytes</code> does not validate its input; the bytes must come from <code>to_bytes</code>
+on the same type:</p>
+<pre><code class="language-python">&gt;&gt;&gt; from dashu import UBig, rkyv
+&gt;&gt;&gt; data = rkyv.to_bytes(UBig(12345))
+&gt;&gt;&gt; rkyv.from_bytes(UBig, data)
+&lt;UBig 12345 (digits: 1, bits: 14)&gt;
+</code></pre>
+<h3 id="zeroize-feature-zeroize"><a class="header" href="#zeroize-feature-zeroize">zeroize (feature <code>zeroize</code>)</a></h3>
+<p>Every type gains a <code>.zeroize()</code> method that overwrites the backing memory (buffers become
+zero) before the value is dropped:</p>
+<pre><code class="language-python">&gt;&gt;&gt; v = UBig(12345)
+&gt;&gt;&gt; v.zeroize()   # clears the internal buffers
+&gt;&gt;&gt; v
+&lt;UBig 0 (digits: 1, bits: 1)&gt;
+</code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="faq"><a href="#faq" class="header">FAQ</a></h1>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
@@ -1231,16 +1502,21 @@ strokes are the banyan’s signature <a href="https://en.wikipedia.org/wiki/Aeri
 <h2 id="known-limitations"><a class="header" href="#known-limitations">Known limitations</a></h2>
 <ul>
 <li><strong>No NaN.</strong> Invalid operations panic at the convenience layer and return <code>Err(FpError)</code> at the context layer. Infinities are terminal values, not operands — see <a href="#standards-compliance">Standards Compliance</a>.</li>
-<li><strong>Near-correct rounding.</strong> Transcendentals are rounded within 1 ulp via a guard-digit recipe; a guaranteed-correct Ziv loop is planned for a later release.</li>
+<li><strong>Correctly-rounded transcendentals.</strong> The real transcendentals — <code>exp</code>, <code>exp_m1</code>, <code>ln</code>, <code>ln_1p</code>, the trigonometric and hyperbolic families, <code>hypot</code>, <code>powi</code>, and <code>powf</code> — are guaranteed-correctly rounded via a Ziv retry loop. <code>dashu-cmplx</code>’s complex transcendentals (<code>exp</code>, <code>log</code>, <code>powf</code>, <code>powi</code>, <code>sin</code>/<code>cos</code>/<code>tan</code>/<code>sin_cos</code>, <code>asin</code>/<code>acos</code>/<code>atan</code>, <code>sqrt</code>) are correctly rounded via their own Ziv loop that certifies both parts; <code>tan</code> uses the cancellation-free double-angle form (accurate for all finite <code>|Im z|</code>), and <code>asin</code>/<code>acos</code> use the factored <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="mclose">)</span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="mclose">)</span></span></span></span> (accurate right up to <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">±</span><span class="mord">1</span></span></span></span>).</li>
 <li><strong>Complex surface.</strong> <code>CBig</code> ships field arithmetic and the elementary transcendentals; complex hyperbolics, <code>fma</code>, and several others are deferred to 0.5.x (see the v0.5 release notes).</li>
 <li><strong>No ball/interval arithmetic.</strong> Unlike MPC’s experimental <code>mpcb_t</code> (complex balls), <code>dashu</code>
 does not provide interval or ball types. This is a deliberate scope choice: ball arithmetic is
 still experimental upstream, and if/when it stabilizes it is better provided by a <strong>separate
 crate</strong> layered on <code>dashu-float</code>/<code>dashu-cmplx</code> than coupled to the core types.</li>
-<li><strong>No SIMD-FFT multiplication</strong> yet (planned for v1.0).</li>
 </ul>
 <h2 id="msrv-and-feature-policy"><a class="header" href="#msrv-and-feature-policy">MSRV and feature policy</a></h2>
-<p>The current MSRV is <strong>1.68</strong>. Third-party integrations follow a versioned-feature convention: stable dependencies use <code>xxx_vYY</code> (e.g. <code>rand_v08</code>) with an unversioned <code>xxx</code> alias pinned to one version, while unstable dependencies alias <code>xxx</code> to the newest. See <a href="#cargo-features">Cargo Features</a> for the full explanation.</p>
+<p>The current MSRV is <strong>1.68</strong>. This is the MSRV of the <strong>default build</strong> (no optional features
+enabled); an optional feature may require a newer Rust version. For example, <code>rkyv_v08</code> needs Rust
+≥ 1.81 (rkyv 0.8’s MSRV), so it is excluded from the 1.68 MSRV CI build and only available on newer
+toolchains. Third-party integrations follow a versioned-feature convention: stable dependencies use
+<code>xxx_vYY</code> (e.g. <code>rand_v08</code>) with an unversioned <code>xxx</code> alias pinned to one version, while unstable
+dependencies alias <code>xxx</code> to the newest. See <a href="#cargo-features">Cargo Features</a> for the full
+explanation.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="performance"><a href="#performance" class="header">Performance</a></h1>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
@@ -1456,7 +1732,7 @@ arbitrary-precision / no-NaN model, the deviation is noted.</p>
 </thead>
 <tbody>
 <tr><td>Rounding modes: roundTiesToEven, roundTiesToAway, roundTowardPositive, roundTowardNegative, roundTowardZero</td><td>✅</td><td>All five modes implemented as <code>HalfEven</code>, <code>HalfAway</code>, <code>Up</code>, <code>Down</code>, <code>Zero</code>.</td></tr>
-<tr><td>Correct rounding to within 1 ulp</td><td>✅</td><td>All operations guarantee <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.02778em;">error</span><span class="mord">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">&lt;</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord">1</span><span class="mord text"><span class="mord"> ulp</span></span></span></span></span>. The <code>Rounded</code> type distinguishes exact from inexact results.</td></tr>
+<tr><td>Correct rounding to within 1 ulp</td><td>✅</td><td>All operations guarantee <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.02778em;">error</span><span class="mord">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">&lt;</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord">1</span><span class="mord text"><span class="mord"> ulp</span></span></span></span></span>. Arithmetic, roots, and the real transcendentals (<code>exp</code>, <code>exp_m1</code>, <code>ln</code>, <code>ln_1p</code>, the trigonometric and hyperbolic families, <code>hypot</code>, <code>powi</code>, and <code>powf</code>) are guaranteed-correctly rounded via a Ziv loop; and <code>dashu-cmplx</code>’s complex transcendentals (<code>exp</code>, <code>log</code>, <code>powf</code>, <code>powi</code>, <code>sin</code>/<code>cos</code>/<code>tan</code>/<code>sin_cos</code>, <code>asin</code>/<code>acos</code>/<code>atan</code>, the hyperbolic <code>sinh</code>/<code>cosh</code>/<code>tanh</code>/<code>sinh_cosh</code> and <code>asinh</code>/<code>acosh</code>/<code>atanh</code>, <code>sqrt</code>) are correctly rounded via their own Ziv loop that certifies both parts (<code>asin</code>/<code>acos</code> use the factored <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="mclose">)</span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="mclose">)</span></span></span></span> so they stay accurate right up to the singularities <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">±</span><span class="mord">1</span></span></span></span>; the hyperbolic family reuses the circular one through the exact rotation identities <code>sinh z = -i\sin(iz)</code> etc., inheriting its certification). The <code>Rounded</code> type distinguishes exact from inexact results.</td></tr>
 <tr><td>Round-to-nearest preserves sign of zero</td><td>✅</td><td><code>rounded_to_repr</code> preserves input sign when rounding collapses a non-zero to zero.</td></tr>
 </tbody>
 </table>
@@ -1530,6 +1806,14 @@ It targets C99 Annex G (IEC 60559-compatible complex arithmetic) for the common 
 reusing <code>dashu-float</code>’s signed-zero / signed-infinity / branch-cut machinery for each part. As with
 <code>FBig</code>, there is <strong>no NaN</strong>: C99 cases that would produce a complex NaN are mapped to <code>FpError</code> at
 the <code>Context</code> layer (and panics at the convenience layer).</p>
+<p><strong>Infinity is a terminal value</strong>, matching <code>dashu-float</code>. Complex infinity is the single Riemann
+point <code>+∞ + i·0</code>; it is <em>produced</em> by finite inputs that blow up (<code>z/0</code>, <code>exp(+∞)</code>, overflow) but
+is <em>never accepted as an operand</em> — every arithmetic or transcendental operation that takes an
+infinite operand is rejected with <code>FpError::InfiniteInput</code> (panicking at the convenience layer).
+This differs deliberately from C99 Annex G, which admits per-part infinities and defines results
+for them (<code>∞·∞ = ∞</code>, <code>∞/∞ = NaN</code>, …); dashu rejects the whole class instead. See
+<a href="#infinities-in-complex-arithmetic">Infinities in complex arithmetic</a> for the
+implemented special-value matrix.</p>
 <h3 id="data-model-g2"><a class="header" href="#data-model-g2">Data Model (§G.2)</a></h3>
 <div class="table-wrapper">
 <table>
@@ -1539,8 +1823,8 @@ the <code>Context</code> layer (and panics at the convenience layer).</p>
 <tbody>
 <tr><td>Complex as an ordered real/imaginary pair</td><td>✅</td><td><code>CBig&lt;R, B&gt;</code> stores <code>re</code> and <code>im</code> (<code>Repr</code>) over one shared <code>Context</code>.</td></tr>
 <tr><td>Per-part signed zeros (<code>±0</code>)</td><td>✅</td><td>Inherited from <code>dashu-float</code>; the sign of the imaginary zero selects the side of a branch cut.</td></tr>
-<tr><td>Per-part signed infinities (<code>±∞</code>)</td><td>✅</td><td>Each part may independently be <code>±∞</code>.</td></tr>
-<tr><td>A single complex infinity (Riemann point)</td><td>✅</td><td><code>proj</code> collapses any part-infinite value to <code>+∞ + i·0</code>; overflow yields both parts <code>+∞</code>.</td></tr>
+<tr><td>Per-part signed infinities (<code>±∞</code>)</td><td>✅</td><td>Each part may independently be <code>±∞</code>; such a value is a <em>terminal</em> output, not an operand.</td></tr>
+<tr><td>A single complex infinity (Riemann point)</td><td>✅</td><td><code>proj</code> collapses any part-infinite value to <code>+∞ + i·0</code>; overflow yields <code>+∞ + i·0</code>.</td></tr>
 <tr><td>Complex NaN</td><td>❌ Deviates</td><td>No NaN. NaN-producing cases map to <code>FpError</code> (<code>Context</code>) / panic (convenience layer).</td></tr>
 </tbody>
 </table>
@@ -1552,14 +1836,17 @@ the <code>Context</code> layer (and panics at the convenience layer).</p>
 <tr><th>C99 Annex G requirement</th><th>Compliance</th><th>Notes</th></tr>
 </thead>
 <tbody>
-<tr><td><code>conj(z)</code> flips the sign of the imaginary part (incl. <code>-0</code>, <code>±∞</code>)</td><td>✅</td><td>Exact sign flip of the imaginary part.</td></tr>
+<tr><td><code>conj(z)</code> flips the sign of the imaginary part (incl. <code>-0</code>, <code>±∞</code>)</td><td>✅</td><td>Exact sign flip of the imaginary part (a sign flip of a terminal value, as in <code>dashu-float</code>’s <code>Neg</code>).</td></tr>
 <tr><td><code>proj(z)</code>: any infinity → <code>+∞ + i·0</code></td><td>✅</td><td>The projected imaginary zero carries the sign of the original imaginary part.</td></tr>
-<tr><td><code>∞·∞</code>, <code>finite·∞</code> → <code>∞</code></td><td>✅</td><td>Yields the Riemann point at infinity.</td></tr>
-<tr><td><code>0·∞</code> → NaN (C)</td><td>⚠️ Partial</td><td>Returns <code>Err(FpError::Indeterminate)</code> (no NaN).</td></tr>
-<tr><td><code>finite/0</code>, <code>∞/finite</code> → <code>∞</code></td><td>✅</td><td>Riemann point at infinity.</td></tr>
-<tr><td><code>0/0</code>, <code>∞/∞</code> → NaN (C)</td><td>⚠️ Partial</td><td>Returns <code>Err(FpError::Indeterminate)</code>.</td></tr>
-<tr><td><code>finite/∞</code>, <code>0/finite</code> → <code>0</code></td><td>✅</td><td></td></tr>
-<tr><td><code>1/0 → ∞</code>, <code>1/∞ → 0</code> (inverse)</td><td>✅</td><td></td></tr>
+<tr><td><code>∞·∞</code>, <code>finite·∞</code>, <code>∞·finite</code> → <code>∞</code> (C)</td><td>❌ Deviates</td><td>∞ is terminal: any infinite <em>operand</em> is rejected with <code>FpError::InfiniteInput</code> (panic at the convenience layer).</td></tr>
+<tr><td><code>0·∞</code> → NaN (C)</td><td>❌ Deviates</td><td><code>FpError::InfiniteInput</code> (the infinite operand is rejected outright, before the <code>0·∞</code> case).</td></tr>
+<tr><td><code>finite/0</code>, <code>z/0</code> (finite <code>z ≠ 0</code>) → <code>∞</code></td><td>✅</td><td>Finite numerator over zero produces the Riemann point <code>+∞ + i·0</code>.</td></tr>
+<tr><td><code>∞/finite</code>, <code>∞/∞</code> → (C)</td><td>❌ Deviates</td><td>Rejected with <code>FpError::InfiniteInput</code> (∞ is terminal).</td></tr>
+<tr><td><code>finite/∞</code> → <code>0</code> (C)</td><td>❌ Deviates</td><td>Rejected with <code>FpError::InfiniteInput</code> (the infinite divisor is terminal).</td></tr>
+<tr><td><code>0/finite</code> → <code>0</code></td><td>✅</td><td></td></tr>
+<tr><td><code>0/0</code> → NaN (C)</td><td>⚠️ Partial</td><td><code>Err(FpError::Indeterminate)</code> (no NaN).</td></tr>
+<tr><td><code>1/0 → ∞</code></td><td>✅</td><td></td></tr>
+<tr><td><code>1/∞ → 0</code> (C)</td><td>❌ Deviates</td><td>Rejected with <code>FpError::InfiniteInput</code>.</td></tr>
 </tbody>
 </table>
 </div>
@@ -1571,11 +1858,11 @@ the <code>Context</code> layer (and panics at the convenience layer).</p>
 </thead>
 <tbody>
 <tr><td>Branch cuts follow the Kahan signed-zero model</td><td>✅</td><td>e.g. <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop">lo<span style="margin-right:0.01389em;">g</span></span><span class="mopen">(</span><span class="mord">−</span><span class="mord mathnormal" style="margin-right:0.02778em;">r</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">±</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6595em;"></span><span class="mord mathnormal">i</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">0</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7778em;vertical-align:-0.0833em;"></span><span class="mop">ln</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">r</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">±</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6595em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">iπ</span></span></span></span>: the sign of the imaginary zero selects the side of the cut.</td></tr>
-<tr><td><code>sqrt(+∞) = +∞</code></td><td>✅</td><td></td></tr>
-<tr><td><code>sqrt(-∞) = +0 + i·∞</code></td><td>✅</td><td></td></tr>
-<tr><td><code>exp(+∞) = +∞</code>, <code>exp(-∞) = +0</code></td><td>✅</td><td></td></tr>
-<tr><td><code>exp(0 + i·∞)</code> → NaN (C)</td><td>⚠️ Partial</td><td>Returns <code>Err(FpError::Indeterminate)</code>.</td></tr>
-<tr><td><code>log(0) = -∞</code>, <code>log(+∞) = +∞</code></td><td>✅</td><td></td></tr>
+<tr><td><code>sqrt(+∞) = +∞</code>, <code>sqrt(-∞) = +0 + i·∞</code> (C)</td><td>❌ Deviates</td><td>Rejected with <code>FpError::InfiniteInput</code> (matching <code>dashu-float</code>’s <code>sqrt</code>, which also rejects).</td></tr>
+<tr><td><code>exp(+∞) = +∞</code>, <code>exp(-∞) = +0</code></td><td>✅</td><td><code>dashu-float</code>’s <code>exp</code> handles infinite real inputs, so <code>exp(+∞ + i·0) = +∞ + i·0</code> and <code>exp(-∞ + i·0) = +0</code>.</td></tr>
+<tr><td><code>exp(0 + i·∞)</code> → NaN (C)</td><td>⚠️ Partial</td><td><code>Err(FpError::Indeterminate)</code>.</td></tr>
+<tr><td><code>log(0) = -∞</code></td><td>✅</td><td></td></tr>
+<tr><td><code>log(+∞) = +∞</code> (C)</td><td>❌ Deviates</td><td>Rejected with <code>FpError::InfiniteInput</code> (matching <code>dashu-float</code>’s <code>ln</code>, which rejects).</td></tr>
 <tr><td><span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop">ar<span style="margin-right:0.01389em;">g</span></span><span class="mopen">(</span><span class="mord">0</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6595em;"></span><span class="mord mathnormal">i</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">∞</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">+</span><span class="mord mathnormal" style="margin-right:0.03588em;">π</span><span class="mord">/2</span></span></span></span>, <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop">ar<span style="margin-right:0.01389em;">g</span></span><span class="mopen">(</span><span class="mord">0</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6595em;"></span><span class="mord mathnormal">i</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">∞</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">−</span><span class="mord mathnormal" style="margin-right:0.03588em;">π</span><span class="mord">/2</span></span></span></span></td><td>✅</td><td><code>arg = atan2(im, re)</code>, reusing <code>dashu-float</code>’s Annex-G <code>atan2</code> table.</td></tr>
 <tr><td><code>abs</code>/<code>hypot</code> overflow-safe modulus</td><td>✅</td><td>Thin composition over <code>dashu-float</code>’s <code>hypot</code>.</td></tr>
 </tbody>
@@ -1590,7 +1877,7 @@ the <code>Context</code> layer (and panics at the convenience layer).</p>
 <tbody>
 <tr><td>Invalid / indeterminate form → NaN</td><td>❌ Deviates</td><td><code>Err(FpError::{Indeterminate, InfiniteInput})</code> at <code>Context</code>; panics at the convenience layer. No NaN by design.</td></tr>
 <tr><td>Domain error (e.g. even root of a negative value, out-of-range inverse trig)</td><td>❌ Deviates</td><td><code>Err(FpError::OutOfDomain)</code> / panic, rather than a NaN result.</td></tr>
-<tr><td>Each component rounded independently to the shared mode</td><td>✅</td><td>Near-correctly rounded per axis (a guaranteed-correct Ziv loop is deferred to 0.5.x).</td></tr>
+<tr><td>Each component rounded independently to the shared mode</td><td>✅</td><td>Correctly rounded per axis via a Ziv loop that certifies both parts, mirroring <code>dashu-float</code>’s real transcendentals (<code>asin</code>/<code>acos</code> use the factored <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="mclose">)</span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="mclose">)</span></span></span></span> so they stay accurate right up to the singularities <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">±</span><span class="mord">1</span></span></span></span>).</td></tr>
 </tbody>
 </table>
 </div>
@@ -1604,7 +1891,7 @@ the <code>Context</code> layer (and panics at the convenience layer).</p>
 <tr><td>Per-part signed zeros &amp; infinities</td><td>✅ Fully compliant</td></tr>
 <tr><td>Riemann-point single infinity / <code>proj</code></td><td>✅ Fully compliant</td></tr>
 <tr><td>Branch cuts (Kahan signed-zero model)</td><td>✅ Fully compliant</td></tr>
-<tr><td>Arithmetic &amp; transcendental special values</td><td>⚠️ Values that C99 makes NaN are reported as <code>FpError</code> / panic</td></tr>
+<tr><td>Arithmetic &amp; transcendental special values</td><td>⚠️ Deviates — infinite <em>operands</em> are rejected (<code>FpError::InfiniteInput</code> / panic) rather than evaluated per C99; values C99 makes NaN are reported as <code>FpError</code> / panic</td></tr>
 <tr><td>Complex NaN</td><td>❌ Absent by design</td></tr>
 </tbody>
 </table>

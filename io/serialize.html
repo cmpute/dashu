@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-30e4046d.js";
+            window.path_to_searchindex_js = "../searchindex-0f79df8c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-ebe46d39.js"></script>
+        <script src="../toc-c6c800fd.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -197,7 +197,34 @@ assert_eq!(UBig::from_le_bytes(&amp;bytes), n);
 <h2 id="serialization-with-serde"><a class="header" href="#serialization-with-serde">Serialization with <code>serde</code></a></h2>
 <p>With the <code>serde</code> feature enabled, every numeric type implements <code>Serialize</code> / <code>Deserialize</code>. The human-readable form (when <code>is_human_readable()</code> is true) is a string, for easy use with JSON/TOML; the compact binary form is used otherwise. Only the binary form’s layout is semver-protected.</p>
 <h2 id="serialization-with-rkyv"><a class="header" href="#serialization-with-rkyv">Serialization with <code>rkyv</code></a></h2>
-<p>With the <code>rkyv</code> feature enabled, zero-copy (de)serialization is available for the integer types — fastest for same-architecture scenarios, at the cost of a less portable layout.</p>
+<p>With the <code>rkyv</code> feature enabled (rkyv <strong>0.7</strong>; use <code>rkyv_v08</code> for rkyv <strong>0.8</strong>), zero-copy
+(de)serialization is available for the integer, rational, float, and complex types. The big integers
+archive as their <strong>native word representation</strong> (<code>ArchivedVec&lt;Word&gt;</code>, plus a sign flag for <code>IBig</code>),
+so <code>rkyv::archived_root</code> yields the words in place with no byte conversion on any path — the fastest
+possible same-architecture encoding, at the cost of a layout that depends on the target’s <code>Word</code>
+width and endianness. In particular:</p>
+<ul>
+<li>
+<p>The two rkyv versions are <strong>alternatives</strong>: <code>rkyv_v07</code> and <code>rkyv_v08</code> are mutually exclusive (their
+derive-generated type names collide). Enabling both — e.g. <code>--all-features</code> — resolves to 0.7.
+rkyv 0.8 requires Rust ≥ 1.81 (see the <a href="./faq.html#msrv-and-feature-policy">MSRV policy</a>) and is
+excluded from the 1.68 MSRV build; its archives store multi-byte words little-endian by default.</p>
+</li>
+<li>
+<p>An archive is <strong>not portable across 32/64-bit targets</strong> (the <code>Word</code> size differs) or across machines with different endianness.</p>
+</li>
+<li>
+<p>rkyv itself does not guarantee archive compatibility across rkyv versions, and the <code>size_16/32/64</code> offset-width feature must match on both ends.</p>
+</li>
+</ul>
+<p>For a stable, portable encoding, prefer the byte layers above: either the <code>to_le_bytes</code>/<code>to_be_bytes</code> conversions (explicit, layout-stable) or <code>serde</code>’s binary form. Those are the right choice for data that must outlive a single machine or rkyv version; <code>rkyv</code> is the right choice when reading the archived data in place (e.g. memory-mapped files) matters more than portability.</p>
+<h2 id="serializing-the-cached-wrappers"><a class="header" href="#serializing-the-cached-wrappers">Serializing the cached wrappers</a></h2>
+<p><code>CachedFBig</code> / <code>CachedCBig</code> do not implement the serialization traits (serde, rkyv, or any other
+third-party trait) — the cached types intentionally mirror only the value API. Convert to the plain
+value first:</p>
+<pre><code class="language-rust ignore">let f = cached.as_fbig();       // or the owning `into_fbig()`
+serialize(&amp;f);                  // serde `to_string` / rkyv `to_bytes`, etc.</code></pre>
+<p>(<code>CachedCBig</code> has the matching <code>as_cbig()</code> / <code>into_cbig()</code>.)</p>
 
                     </main>
 

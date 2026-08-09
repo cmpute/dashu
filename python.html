@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-30e4046d.js";
+            window.path_to_searchindex_js = "searchindex-0f79df8c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-ebe46d39.js"></script>
+        <script src="toc-c6c800fd.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -301,6 +301,79 @@ shown (use <code>.6e</code> for the fixed 6-digit default).</li>
 Decimal presentations (<code>'e'</code>/<code>'f'</code>/<code>'g'</code>) convert to base 10. <code>DBig</code> prints in decimal.</li>
 <li><strong><code>RBig</code></strong> defaults to the exact fraction, e.g. <code>str(RBig(1) / 3) == '1/3'</code>.</li>
 </ul>
+<h2 id="cross-type-comparison"><a class="header" href="#cross-type-comparison">Cross-type comparison</a></h2>
+<p><code>dashu.compare(a, b)</code>, <code>dashu.min(a, b)</code> and <code>dashu.max(a, b)</code> compare any two Python numbers
+(native <code>int</code>/<code>float</code> or any dashu type) <em>exactly</em>, backed by the <code>num-order</code> crate — the
+comparison never round-trips through a lossy primitive <code>float</code>. This makes
+<code>compare(UBig(2)**200, 1e60)</code> exact, unlike a naive float conversion:</p>
+<pre><code class="language-python">&gt;&gt;&gt; from dashu import compare, min, max, UBig
+&gt;&gt;&gt; compare(UBig(2)**200, 1e60)          # exact, no precision loss
+1
+&gt;&gt;&gt; max(UBig(2)**100, 2.0)               # returns the larger operand unchanged
+&lt;UBig 1267650600228229401496703205376 (digits: 1, bits: 101)&gt;
+</code></pre>
+<p><code>compare</code> returns <code>-1</code>, <code>0</code> or <code>1</code>; <code>min</code>/<code>max</code> return one of the two original operands
+(preserving its type). Complex numbers have no ordering, so comparing one raises <code>TypeError</code>.</p>
+<h2 id="third-party-integrations"><a class="header" href="#third-party-integrations">Third-party integrations</a></h2>
+<p>The following submodules are compiled in only when the wheel is built with the matching Cargo
+feature (all off by default):</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Feature</th><th>Submodule</th><th>Provides</th></tr>
+</thead>
+<tbody>
+<tr><td><code>serde</code></td><td><code>dashu.serde</code></td><td>JSON + binary (de)serialization</td></tr>
+<tr><td><code>rand</code></td><td><code>dashu.rand</code></td><td>uniform random number generators</td></tr>
+<tr><td><code>rkyv</code></td><td><code>dashu.rkyv</code></td><td>zero-copy binary serialization</td></tr>
+<tr><td><code>zeroize</code></td><td><em>(methods)</em></td><td><code>.zeroize()</code> on every type</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="dashuserde-feature-serde"><a class="header" href="#dashuserde-feature-serde"><code>dashu.serde</code> (feature <code>serde</code>)</a></h3>
+<p>Serialize any dashu type to JSON (<code>to_json</code>) or compact binary postcard (<code>serialize</code>); the
+corresponding deserializers take the target type <em>class</em> as their first argument:</p>
+<pre><code class="language-python">&gt;&gt;&gt; from dashu import UBig, FBig, serde
+&gt;&gt;&gt; s = serde.to_json(FBig(1.5))
+&gt;&gt;&gt; s
+'"0x3p-1"'
+&gt;&gt;&gt; serde.from_json(FBig, s) == FBig(1.5)
+True
+&gt;&gt;&gt; data = serde.serialize(UBig(2)**100)  # compact binary
+&gt;&gt;&gt; serde.deserialize(UBig, data) == UBig(2)**100
+True
+</code></pre>
+<h3 id="dashurand-feature-rand"><a class="header" href="#dashurand-feature-rand"><code>dashu.rand</code> (feature <code>rand</code>)</a></h3>
+<p>Uniform generators for every type. All functions accept keyword arguments (<code>ubig(bits=…)</code>,
+<code>fbig(precision=…)</code>, <code>rbig(max_denom_bits=…)</code>); the float/complex generators default to the
+module’s configured precision and produce values in the unit interval/square:</p>
+<pre><code class="language-python">&gt;&gt;&gt; from dashu import rand, UBig, FBig
+&gt;&gt;&gt; rand.ubig(bits=128)        # uniform in [0, 2^128)
+&lt;UBig 332087112958751295523159223253302643116 (digits: 1, bits: 128)&gt;
+&gt;&gt;&gt; f = rand.fbig()            # uniform in [0, 1)
+&gt;&gt;&gt; 0 &lt;= f &lt; 1
+True
+&gt;&gt;&gt; rand.ibig(bits=8)          # signed, uniform in (-2^8, 2^8)
+&lt;IBig 73 (digits: 1, bits: 7)&gt;
+</code></pre>
+<h3 id="dashurkyv-feature-rkyv"><a class="header" href="#dashurkyv-feature-rkyv"><code>dashu.rkyv</code> (feature <code>rkyv</code>)</a></h3>
+<p>Zero-copy serialization — deserializing does not copy the byte payload. The format is
+<strong>architecture-specific</strong>: bytes produced by <code>to_bytes</code> are only guaranteed readable on the
+same machine. <code>from_bytes</code> does not validate its input; the bytes must come from <code>to_bytes</code>
+on the same type:</p>
+<pre><code class="language-python">&gt;&gt;&gt; from dashu import UBig, rkyv
+&gt;&gt;&gt; data = rkyv.to_bytes(UBig(12345))
+&gt;&gt;&gt; rkyv.from_bytes(UBig, data)
+&lt;UBig 12345 (digits: 1, bits: 14)&gt;
+</code></pre>
+<h3 id="zeroize-feature-zeroize"><a class="header" href="#zeroize-feature-zeroize">zeroize (feature <code>zeroize</code>)</a></h3>
+<p>Every type gains a <code>.zeroize()</code> method that overwrites the backing memory (buffers become
+zero) before the value is dropped:</p>
+<pre><code class="language-python">&gt;&gt;&gt; v = UBig(12345)
+&gt;&gt;&gt; v.zeroize()   # clears the internal buffers
+&gt;&gt;&gt; v
+&lt;UBig 0 (digits: 1, bits: 1)&gt;
+</code></pre>
 
                     </main>
 

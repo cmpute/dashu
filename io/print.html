@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-30e4046d.js";
+            window.path_to_searchindex_js = "../searchindex-0f79df8c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-ebe46d39.js"></script>
+        <script src="../toc-c6c800fd.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -225,14 +225,14 @@ use dashu::rational::RBig;
 assert_eq!(format!("{}", RBig::from_str("22/7")?), "22/7");
 assert_eq!(format!("{}", RBig::from_str("5/1")?), "5");
 <span class="boring">}</span></code></pre>
-<p>For the positional (decimal) expansion use <code>in_expanded()</code>. <code>{:.N}</code> prints exactly <code>N</code> fractional digits; the <code>#</code> flag detects the repeating part and parenthesizes it:</p>
+<p>For the positional (decimal) expansion use <code>in_expanded(10)</code>. <code>{:.N}</code> prints exactly <code>N</code> fractional digits; the <code>#</code> flag detects the repetend and parenthesizes it:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use dashu::rational::RBig;
 
 let x = RBig::from_parts(1.into(), 3u8.into());
-assert_eq!(format!("{:.4}", x.in_expanded()), "0.3333");
-assert_eq!(format!("{:#}", x.in_expanded()), "0.(3)");
+assert_eq!(format!("{:.4}", x.in_expanded(10)), "0.3333");
+assert_eq!(format!("{:#}", x.in_expanded(10)), "0.(3)");
 <span class="boring">}</span></code></pre>
 <h2 id="complex-formatting"><a class="header" href="#complex-formatting">Complex Formatting</a></h2>
 <p><code>CBig</code> <code>Display</code> uses the algebraic <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">a</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">bi</span></span></span></span> notation: the imaginary term always carries an explicit sign, a unit coefficient is elided (<code>i</code>, not <code>1i</code>), and a zero imaginary part is omitted.</p>

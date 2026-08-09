@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-30e4046d.js";
+            window.path_to_searchindex_js = "searchindex-0f79df8c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-ebe46d39.js"></script>
+        <script src="toc-c6c800fd.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -208,6 +208,29 @@
 <h3 id="layout-of-cbig"><a class="header" href="#layout-of-cbig">Layout of <code>CBig</code></a></h3>
 <p><code>CBig</code> (in the <code>dashu-cmplx</code> crate) mirrors <code>FBig</code>’s <code>Repr</code>+<code>Context</code> layout, generalized to two parts: a <code>CBig&lt;R, B&gt;</code> instance holds two <code>Repr&lt;B&gt;</code> parts — the real part <code>re</code> and the imaginary part <code>im</code> — over a <strong>single shared</strong> <code>Context&lt;R&gt;</code>. Storing one context (rather than wrapping two <code>FBig</code>s, each carrying its own) makes the uniform-precision invariant <em>physical</em>: there is exactly one precision slot, so <code>re</code> and <code>im</code> structurally cannot disagree. Each part keeps its own significand length; the shared context holds only the precision cap and the single rounding mode, applied independently to each component. As with <code>FBig</code>, the context is <code>Copy</code> while the significands are heap-allocated, so <code>CBig</code> is <code>Clone</code> but not <code>Copy</code>.</p>
 <p>Because both parts are <code>Repr</code>, <code>CBig</code> reuses <code>dashu-float</code>’s signed-zero / signed-infinity / branch-cut machinery unchanged. It follows the C99 Annex G / Kahan model (see <a href="./compliance.html">Standards Compliance</a>) and, like <code>FBig</code>, has <strong>no NaN</strong> — C99 cases that would produce a complex NaN are reported as <code>FpError</code> at the context layer. <code>CBig::from_parts(re, im)</code> takes the larger of the two operand contexts. Construction, arithmetic, transcendentals, and I/O are covered in <a href="./construct.html">Construction and Destruction</a>, <a href="./convert.html">Conversion</a>, and <a href="./ops/index.html">Operations</a>.</p>
+<h3 id="infinities-in-complex-arithmetic"><a class="header" href="#infinities-in-complex-arithmetic">Infinities in complex arithmetic</a></h3>
+<p>Complex infinity in <code>CBig</code> is the <strong>single Riemann point</strong> <code>+∞ + i·0</code>, and — exactly like
+<code>FBig</code>’s <code>±∞</code> — it is a <strong>terminal value</strong>: it can be <em>produced</em> by finite inputs that blow up,
+but it is <em>never accepted as an operand</em>. Any arithmetic or transcendental operation that takes an
+infinite operand is rejected with <code>FpError::InfiniteInput</code> at the context layer (and panics at the
+convenience layer). This keeps <code>dashu-cmplx</code> consistent with <code>dashu-float</code> and internally uniform:
+no operation folds an infinity into a result and then consumes it.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Produces <code>+∞ + i·0</code> (finite input)</th><th>Rejected (infinite operand)</th></tr>
+</thead>
+<tbody>
+<tr><td><code>1/0</code>, <code>z/0</code> for a finite nonzero <code>z</code></td><td><code>z·∞</code>, <code>∞·z</code>, <code>∞·∞</code>, <code>0·∞</code></td></tr>
+<tr><td><code>exp(+∞ + i·0)</code> (and <code>exp(-∞ + i·0) = 0</code>)</td><td><code>z/∞</code>, <code>∞/z</code>, <code>∞/∞</code></td></tr>
+<tr><td><code>log(0) = -∞ + i·0</code></td><td><code>inv(∞)</code>, <code>log(∞)</code>, <code>sqrt(∞)</code></td></tr>
+<tr><td><code>overflow</code> saturation</td><td><code>z ± ∞</code>, <code>∞ ± z</code></td></tr>
+</tbody>
+</table>
+</div>
+<p><code>proj</code> is the one function that <em>takes</em> an infinite value and returns a result: it projects any
+part-infinite <code>CBig</code> to <code>+∞ + i·0</code> (with the imaginary zero carrying the sign of the original
+imaginary part), per C99 Annex G §G.5.3. <code>0/0</code> is <code>FpError::Indeterminate</code>.</p>
 <h2 id="auxiliary-types"><a class="header" href="#auxiliary-types">Auxiliary Types</a></h2>
 <p>Besides the numeric types, there are several auxiliary types used across the crates: <code>Sign</code> and <code>Approximation</code> in <strong>dashu-base</strong>, <code>ConstCache</code> and <code>FpResult</code> in <strong>dashu-float</strong>, and <code>CfpResult</code> in <strong>dashu-cmplx</strong>.</p>
 <h3 id="sign-1"><a class="header" href="#sign-1">Sign</a></h3>

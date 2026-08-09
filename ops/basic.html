@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-30e4046d.js";
+            window.path_to_searchindex_js = "../searchindex-0f79df8c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-ebe46d39.js"></script>
+        <script src="../toc-c6c800fd.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -193,11 +193,31 @@ let e = 2 * &amp;b - 1; // mixes naturally with primitives
 assert_eq!(e, IBig::from(-0x21ff));
 <span class="boring">}</span></code></pre>
 <h2 id="float-arithmetic"><a class="header" href="#float-arithmetic">Float Arithmetic</a></h2>
-<p><code>FBig</code>/<code>DBig</code> support <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code> between values of the <strong>same base and rounding mode</strong> (mixed bases are a compile error by design). The result precision is <code>max(lhs.precision, rhs.precision)</code>, and each operation reports its inexactness through the two-layer API described in <a href="./exp_log.html">Exponential and Logarithm</a>. Infinities are terminal: <code>1/0</code> and <code>ln(0)</code> produce <code>±∞</code>, but feeding an infinity back into arithmetic is an error (<code>FpError::InfiniteInput</code>).</p>
+<p><code>FBig</code>/<code>DBig</code> support <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code> between values of the <strong>same base and rounding mode</strong> (mixed bases are a compile error by design). The result precision is <code>max(lhs.precision, rhs.precision)</code>, and each operation reports its inexactness through the two-layer API described in <a href="./pow_exp_log.html">Power, Exponential and Logarithm</a>. Infinities are terminal: <code>1/0</code> and <code>ln(0)</code> produce <code>±∞</code>, but feeding an infinity back into arithmetic is an error (<code>FpError::InfiniteInput</code>).</p>
+<p>Beyond the four field operations, floats can be decomposed and rounded with <code>trunc()</code>,
+<code>ceil()</code>, <code>floor()</code>, <code>round()</code> (nearest, ties away from zero), and <code>fract()</code> (the fractional
+part); <code>split_at_point()</code> returns both halves as <code>(integral, fractional)</code> in one call, and
+<code>quantize(exp)</code> rounds to the nearest multiple of <code>BASE^exp</code> (the dashu analog of Python’s
+<code>Decimal.quantize</code>, returning the rounding direction). Each of these adjusts the result
+precision to the digits that remain, so the value is exact for its stored digits. The unit in
+the last place is <code>ulp()</code>, with a cheaper lower bound <code>ulp_lb()</code> that is useful as a
+negligibility threshold in iterative algorithms.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use core::str::FromStr;
+use dashu::float::DBig;
+
+let a = DBig::from_str("1.234")?;
+assert_eq!(a.round().to_string(), "1");
+assert_eq!(a.fract().to_string(), "0.234");
+let (int, frac) = a.clone().split_at_point();
+assert_eq!(int.to_string(), "1");
+assert_eq!(frac.to_string(), "0.234");
+<span class="boring">}</span></code></pre>
 <h2 id="rational-arithmetic"><a class="header" href="#rational-arithmetic">Rational Arithmetic</a></h2>
-<p><code>RBig</code> supports <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>. Division by zero panics. <code>Relaxed</code> performs the same operations without auto-reducing to lowest terms (faster for a chain of operations); call <code>canonicalize()</code> to reduce when needed.</p>
+<p><code>RBig</code> supports <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>. Division by zero panics. <code>Relaxed</code> performs the same operations without auto-reducing to lowest terms (faster for a chain of operations); call <code>canonicalize()</code> to reduce when needed. <code>RBig</code> also has <code>fract()</code> for the fractional part, <code>is_int()</code> to test whether the value is an integer, and <code>relax()</code> — the consuming variant of <code>as_relaxed()</code> (see <a href="../convert.html">Conversion</a>) that hands the value to a <code>Relaxed</code> without copying.</p>
 <h2 id="complex-arithmetic"><a class="header" href="#complex-arithmetic">Complex Arithmetic</a></h2>
-<p><code>CBig</code> supports the field operations <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, plus <code>sqr</code> and <code>inv</code> (multiplicative inverse). Multiplication and division by a real <code>FBig</code> are also available as mixed-type operators. Multiplication and division use Smith’s method with a guard digit and re-round, giving the same near-correctly-rounded guarantee as <code>dashu-float</code>’s transcendentals.</p>
+<p><code>CBig</code> supports the field operations <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, plus <code>sqr</code> and <code>inv</code> (multiplicative inverse). Multiplication and division by a real <code>FBig</code> are also available as mixed-type operators. Multiplication and division use Smith’s method with a guard digit and re-round, giving the same near-correctly-rounded guarantee as <code>dashu-float</code>’s transcendentals. <code>conj()</code> gives the complex conjugate and <code>mul_i(negative)</code> multiplies by <code>+i</code> or <code>-i</code> — an exact rotation that swaps the real and imaginary parts. The components are exposed as raw representations through <code>re()</code> / <code>im()</code> (borrowing <code>&amp;Repr</code>), or as owned <code>FBig</code>s through <code>into_parts()</code> (see <a href="../construct.html">Construction and Destruction</a>).</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use dashu::complex::CBig;
@@ -229,7 +249,7 @@ let summed: DBig = vals.iter().sum();                             // 1e-20 — S
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../ops/exp_log.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../ops/pow_exp_log.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -243,7 +263,7 @@ let summed: DBig = vals.iter().sum();                             // 1e-20 — S
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../ops/exp_log.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../ops/pow_exp_log.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

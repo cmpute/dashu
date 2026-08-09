@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-30e4046d.js";
+            window.path_to_searchindex_js = "../searchindex-0f79df8c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-ebe46d39.js"></script>
+        <script src="../toc-c6c800fd.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -192,6 +192,37 @@ use dashu::integer::UBig;
 let a = UBig::from(12u8);
 let b = UBig::from(8u8);
 assert_eq!((&amp;a).gcd(&amp;b), UBig::from(4u8));
+<span class="boring">}</span></code></pre>
+<h2 id="exact-division"><a class="header" href="#exact-division">Exact division</a></h2>
+<p>The <code>DivExact</code> / <code>DivExactAssign</code> traits (re-exported through <code>dashu-base</code> from <code>num-modular</code>, with the empty precomputation <code>()</code>) compute an exact quotient: <code>div_exact</code> consumes the dividend and returns <code>Some(self / rhs)</code> when <code>rhs</code> divides exactly, <code>None</code> otherwise; <code>div_exact_assign</code> replaces the dividend in place, returning <code>true</code> on success (leaving it unchanged otherwise). Both take the precomputation as an extra <code>&amp;()</code> argument. On <code>UBig</code>, dividing by a single-word factor uses Hensel (2-adic) division and runs in place with no scratch allocation.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use dashu::base::{DivExact, DivExactAssign};
+use dashu::integer::UBig;
+
+let a = UBig::from(10u32).pow(8) * 7u32; // 700000000
+assert_eq!(a.clone().div_exact(UBig::from(10u32).pow(8), &amp;()), Some(UBig::from(7u32)));
+assert_eq!(a.div_exact(UBig::from(3u32), &amp;()), None); // 3 doesn't divide
+
+// In-place form
+let mut b = UBig::from(10u32).pow(8) * 7u32;
+assert!(b.div_exact_assign(UBig::from(10u32).pow(8), &amp;()));
+assert_eq!(b, UBig::from(7u32));
+<span class="boring">}</span></code></pre>
+<h2 id="divisibility-and-factor-removal"><a class="header" href="#divisibility-and-factor-removal">Divisibility and factor removal</a></h2>
+<p><code>is_multiple_of(&amp;rhs)</code> tests whether <code>rhs</code> divides the value exactly — a faster alternative to
+<code>% rhs == 0</code>. To strip all factors of a number, use <code>UBig::remove(&amp;mut self, factor)</code>: it divides
+out every occurrence of <code>factor</code>, returning the exponent (so <code>self = factor^k · rest</code> yields
+<code>Some(k)</code>), or <code>None</code> when <code>factor</code> is 0, 1, or <code>self</code> is 0. <code>remove_word</code> is the single-word
+specialization.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use dashu::integer::UBig;
+
+let mut a = UBig::from(8u32) * 3u32; // 24 = 2³ · 3
+assert_eq!(a.remove(&amp;UBig::from(2u32)), Some(3));
+assert_eq!(a, UBig::from(3u32));
+assert!(UBig::from(10u32).is_multiple_of(&amp;UBig::from(5u32)));
 <span class="boring">}</span></code></pre>
 <h2 id="modular-arithmetic"><a class="header" href="#modular-arithmetic">Modular arithmetic</a></h2>
 <p>For repeated operations against a fixed modulus, precompute a <code>ConstDivisor</code> and reduce values into <code>Reduced</code>. Addition, subtraction, multiplication, exponentiation, and inversion then run against the precomputed modulus, and the result prints in <code>(mod N)</code> form.</p>

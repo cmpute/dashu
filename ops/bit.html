@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-30e4046d.js";
+            window.path_to_searchindex_js = "../searchindex-0f79df8c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-ebe46d39.js"></script>
+        <script src="../toc-c6c800fd.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -193,6 +193,25 @@ assert_eq!(format!("{:b}", &amp;a | &amp;b), "1110");
 <span class="boring">}</span></code></pre>
 <h2 id="bit-testing-and-length"><a class="header" href="#bit-testing-and-length">Bit testing and length</a></h2>
 <p>The <code>BitTest</code> trait (from <code>dashu-base</code>) tests and measures individual bits: <code>.bit(n)</code> returns the <code>n</code>-th bit, and <code>.bit_len()</code> returns the position of the highest set bit plus one. <code>set_bit(n)</code> / <code>clear_bit(n)</code> mutate a <code>UBig</code> in place, and <code>trailing_zeros()</code> counts the low-order zero bits.</p>
+<p>For counting and slicing, <code>UBig</code> also provides <code>count_ones()</code>, <code>count_zeros()</code> (the zeros <em>after</em>
+the leading bit, <code>None</code> for zero), <code>trailing_ones()</code>, <code>clear_high_bits(n)</code> (keep only the lowest
+<code>n</code> bits), and <code>split_bits(n)</code> (splits into <code>(low, high)</code> at bit <code>n</code>). Whether a value is a power
+of two — or the next one up — is given by the <code>PowerOfTwo</code> trait: <code>is_power_of_two()</code> and
+<code>next_power_of_two()</code>.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use dashu::base::PowerOfTwo;
+use dashu::integer::UBig;
+
+let x = UBig::from(0b10100011u8);
+assert_eq!(x.count_ones(), 4);
+assert_eq!(x.count_zeros(), Some(4));
+let mut y = x.clone();
+y.clear_high_bits(4); // keep the lowest 4 bits
+assert_eq!(y, UBig::from(0b0011u8));
+assert!(UBig::from(1024u32).is_power_of_two());
+assert_eq!(UBig::from(1023u32).next_power_of_two(), UBig::from(1024u32));
+<span class="boring">}</span></code></pre>
 <h2 id="shifts"><a class="header" href="#shifts">Shifts</a></h2>
 <p><code>&lt;&lt;</code> and <code>&gt;&gt;</code> shift by a <code>usize</code>. Left shifts grow the number; right shifts shrink it and are equivalent to floor-division by a power of two.</p>
 <h2 id="using-ubig-as-a-bit-vector"><a class="header" href="#using-ubig-as-a-bit-vector">Using <code>UBig</code> as a bit vector</a></h2>

@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-30e4046d.js";
+            window.path_to_searchindex_js = "searchindex-0f79df8c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-ebe46d39.js"></script>
+        <script src="toc-c6c800fd.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -300,10 +300,44 @@ use dashu::float::round::Rounding::*;
 assert_eq!(DBig::from_str("1234")?.to_int(), Exact(1234.into()));
 assert_eq!(DBig::from_str("1.234")?.to_int(), Inexact(1.into(), NoOp));
 <span class="boring">}</span></code></pre>
-<p>To a primitive float, <code>to_f32()</code> / <code>to_f64()</code> return <code>Rounded&lt;f32&gt;</code> / <code>Rounded&lt;f64&gt;</code> carrying the rounding direction; they never fail (overflow yields <code>±∞</code>, infinities map to infinities). The reverse — <code>TryFrom&lt;f32&gt;</code>/<code>TryFrom&lt;f64&gt; for FBig</code> — is <strong>base-2 only</strong> (it is almost always lossy in any other base); to reach a non-binary <code>FBig</code>, convert to base 2 first and then call <code>with_base()</code>. NaN is rejected with <code>ConversionError::OutOfBounds</code>.</p>
+<p>To a primitive float, <code>to_f32()</code> / <code>to_f64()</code> return <code>Rounded&lt;f32&gt;</code> / <code>Rounded&lt;f64&gt;</code> carrying the rounding direction; they never fail (at the edges of the format the result depends on the rounding mode — see <a href="#range-boundaries-overflow-underflow-and-the-rounding-mode">range boundaries</a> below; infinities map to infinities). The reverse — <code>TryFrom&lt;f32&gt;</code>/<code>TryFrom&lt;f64&gt; for FBig</code> — is <strong>base-2 only</strong> (it is almost always lossy in any other base); to reach a non-binary <code>FBig</code>, convert to base 2 first and then call <code>with_base()</code>. NaN is rejected with <code>ConversionError::OutOfBounds</code>.</p>
+<h3 id="range-boundaries-overflow-underflow-and-the-rounding-mode"><a class="header" href="#range-boundaries-overflow-underflow-and-the-rounding-mode">Range boundaries: overflow, underflow, and the rounding mode</a></h3>
+<p><code>to_f32()</code> / <code>to_f64()</code> round under the context’s mode all the way to the edge of the format, so when the true value falls outside the finite range the rounding mode decides the <em>endpoint</em>:</p>
+<ul>
+<li><strong>Overflow</strong> (value beyond <code>f32::MAX</code> / <code>f64::MAX</code>): the outward modes (toward <code>±∞</code>, away from zero) reach <code>±∞</code>; toward-zero, toward the opposite infinity, and nearest saturate to the largest <em>finite</em> value (<code>±MAX</code>).</li>
+<li><strong>Underflow</strong> (value below the smallest subnormal — <code>2⁻¹⁴⁹</code> for f32, <code>2⁻¹⁰⁷⁴</code> for f64): the outward modes reach the smallest subnormal of that sign; the rest round to signed <code>±0</code>.</li>
+</ul>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use dashu::integer::IBig;
+use dashu::float::{FBig, round::mode::{Zero, Up}};
+
+// 3·2^127 overflows f32::MAX: toward-zero saturates to f32::MAX, toward +∞ reaches +∞.
+let big = FBig::&lt;Zero, 2&gt;::from_parts(IBig::from(3), 127);
+assert_eq!(big.to_f32().value(), f32::MAX);
+assert!(big.with_rounding::&lt;Up&gt;().to_f32().value().is_infinite());
+
+// 2^-160 is below the smallest f32 subnormal: toward +∞ reaches it, toward-zero gives +0.
+let tiny = FBig::&lt;Zero, 2&gt;::from_parts(IBig::from(1), -160);
+assert_eq!(tiny.with_rounding::&lt;Up&gt;().to_f32().value(), f32::from_bits(1));
+assert_eq!(tiny.to_f32().value(), 0.0);
+<span class="boring">}</span></code></pre>
+<p><code>TryFrom&lt;FBig&gt; for f32</code> / <code>f64</code>, by contrast, is the <em>fallible</em> path: it returns <code>Err</code> for <strong>any</strong> inexact conversion (in-range rounding included) — so prefer <code>to_f32()</code> / <code>to_f64()</code> when you want the value. Its error variant is classified by the <em>input magnitude</em>, not the mode-aware result: a value beyond <code>±MAX</code> is <code>Err(ConversionError::OutOfBounds)</code> under <strong>every</strong> rounding mode (whether that mode would saturate to <code>±MAX</code> or overflow to <code>±∞</code>), while an in-range value that merely loses precision is <code>Err(LossOfPrecision)</code>. Thus <code>Err(OutOfBounds)</code> reliably means “beyond the finite range”, independent of the rounding mode:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use dashu::base::ConversionError;
+use dashu::integer::IBig;
+use dashu::float::{FBig, round::mode::{Zero, Up}};
+
+let big = FBig::&lt;Zero, 2&gt;::from_parts(IBig::from(3), 127);
+// Beyond f32::MAX is out of range under every mode — the mode only picks
+// the endpoint that to_f32() would return (±MAX vs ±∞).
+assert_eq!(f32::try_from(big.clone().with_rounding::&lt;Up&gt;()), Err(ConversionError::OutOfBounds));
+assert_eq!(f32::try_from(big), Err(ConversionError::OutOfBounds));
+<span class="boring">}</span></code></pre>
 <h3 id="conversion-to-rbig"><a class="header" href="#conversion-to-rbig">Conversion to RBig</a></h3>
 <p>With the optional <code>dashu-float</code> feature enabled on <code>dashu-ratio</code>, <code>TryFrom&lt;FBig&gt; for RBig</code> succeeds only when the float is exactly rational-representable, and <code>RBig::to_float()</code> is the rounding-aware path in the other direction.</p>
-<p>For approximating a float by a <em>simple</em> rational (the smallest numerator/denominator within a tolerance), use <code>simplest_from_f32</code> / <code>simplest_from_f64</code>, or the interval queries <code>simplest_in</code>, <code>nearest_in</code>, <code>next_up</code>, and <code>next_down</code> on <code>FBig</code>/<code>DBig</code> — these treat the float’s own rounding interval as the search bound.</p>
+<p>For approximating a float by a <em>simple</em> rational (the smallest numerator/denominator within a tolerance), use <code>simplest_from_f32</code> / <code>simplest_from_f64</code>, or the interval queries <code>simplest_in</code>, <code>nearest_in</code>, <code>next_up</code>, and <code>next_down</code> on <code>FBig</code>/<code>DBig</code> — these treat the float’s own rounding interval as the search bound. <code>is_simpler_than(other)</code> compares two <code>RBig</code>s directly by the simplicity ordering that those queries optimize for.</p>
 <hr>
 <ol class="footnote-definition">
 <li id="footnote-a">
