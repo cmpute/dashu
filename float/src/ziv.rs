@@ -113,9 +113,11 @@ impl<R: ErrorBounds> Context<R> {
             }
 
             // Grow the guard aggressively so a near-tie resolves in a couple of retries, while
-            // the first attempt (with the heuristic guard) handles the common case.
+            // the first attempt (with the heuristic guard) handles the common case. Cap it so
+            // `guard` (and the closure's working precision `p + guard`) can't overflow `usize` —
+            // reachable only if a radius-bound bug drives the loop to its retry cap.
             let step = core::cmp::max(guard, self.precision / 2).max(1);
-            guard += step;
+            guard = guard.saturating_add(step).min(usize::MAX - self.precision);
             ziv_retries_bump();
         }
 
@@ -162,9 +164,10 @@ impl<R: ErrorBounds> Context<R> {
                 return (Ok(c1), Ok(c2));
             }
 
-            // Grow the guard aggressively so a near-tie resolves in a couple of retries.
+            // Grow the guard aggressively so a near-tie resolves in a couple of retries. Cap it so
+            // `guard` (and the closure's working precision `p + guard`) can't overflow `usize`.
             let step = core::cmp::max(guard, self.precision / 2).max(1);
-            guard += step;
+            guard = guard.saturating_add(step).min(usize::MAX - self.precision);
             ziv_retries_bump();
         }
 
