@@ -1,6 +1,6 @@
 [package]
 name = "dashu-int"
-version = "0.6.0-rc.4"
+version = "0.6.0"
 authors = ["Jacob Zhong <cmpute@gmail.com>", "Tomek Czajka <tczajka@gmail.com>"]
 edition = "2021"
 description = "Arbitrary-precision integer math library for Rust, balancing ergonomics and efficiency. Provides UBig and IBig (unsigned and signed), with small values inlined on the stack. Efficient arithmetic, modular arithmetic, and number theory (pow, ilog, gcd, gcd_ext); two's-complement bit operations; parsing and formatting in base 2-36; optional serde, rand, num-traits, rkyv, and zeroize."
@@ -31,7 +31,7 @@ num-integer = ["num-integer_v01"]
 rkyv = ["rkyv_v08"]
 
 [dependencies]
-dashu-base = { version = "0.6.0-rc.4", default-features = false, path = "../base" }
+dashu-base = { version = "0.6.0", default-features = false, path = "../base" }
 cfg-if = { version = "1.0.0" }
 static_assertions = { version = "1.1" }
 num-modular = { version = "0.6.5", default-features = false }

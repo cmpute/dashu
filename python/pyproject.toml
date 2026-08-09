@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "dashu-rs"
-version = "0.6.0-rc.4"
+version = "0.6.0"
 description = "Python bindings for dashu, an arbitrary precision number library implemented in Rust"
 readme = "README.md"
 requires-python = ">=3.8"

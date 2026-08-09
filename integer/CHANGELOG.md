@@ -2,111 +2,24 @@
 
 ## Unreleased
 
-### Fix
-- **`UBig::remove` / `remove_word` returned wrong results (and a wrong exponent) for
-  non-power-of-two single-word factors in optimized (`release`) builds.** The first Hensel
-  division inside `remove_odd_powers` was wrapped in `debug_assert!`, so the call was compiled
-  **out** in release builds — the quotient buffer was left undivided while the code proceeded as if
-  it had been. Debug builds were correct, which is why the (debug) test suite was green. This also
-  corrupted `dashu-float`'s base-10 floats (their `Repr::normalize` uses `remove_word`), breaking
-  `DBig` arithmetic and `to_decimal`/`to_binary` in release builds. The division is now always
-  executed and the assertion checks its result.
-- **(test) `test_allocate_too_large` now targets the explicitly-checked `allocate_exact` path.**
-  It previously called `allocate`, whose `num_words <= MAX_CAPACITY` precondition is only a debug
-  assertion (by design — it's on the allocation hot path), so under `--release` the request was
-  silently clamped and the `should_panic` test failed.
-
-## 0.6.0-rc.4
-
-### Change
-- **`DivExact` / `DivExactAssign` now come from `num-modular` (re-exported through `dashu-base`),
-  with the empty precomputation `()`** — every impl now implements `num_modular::DivExact<Rhs, ()>` /
-  `num_modular::DivExactAssign<Rhs, ()>`, and every call site passes `&()`: `n.div_exact(d)` is now
-  `n.div_exact(d, &())`, `n.div_exact_assign(d)` is now `n.div_exact_assign(d, &())`. The `&UBig` /
-  `&IBig` reference-receiver impls and all primitive divisor impls (`u8`–`u128`/`usize`/`i8`–`i128`/
-  `isize`) are unchanged in behavior.
-- **Removed the `rustversion` dependency** — the `#[rustversion::since(1.64)]` gates are now
-  unconditional (the MSRV is 1.68): `UBig::trailing_zeros` / `trailing_ones`,
-  `IBig::trailing_zeros` / `trailing_ones`, and the internal `repr()` / `as_typed()` /
-  `as_sign_typed()` accessors are `const fn` unconditionally.
-
-### Fix
-- **(bench) the `primitive` / `io` / `modular` / `shift` benches build against the `rand_v010` API
-  that the `rand` feature aliases to** — they used the `rand_v08` `gen_range`/`gen_bool` methods,
-  which do not compile with `--features rand` (the `rand` feature enables `rand_v010`, so
-  `Uniform<UBig>` is only implemented for that version).
+## 0.6.0
 
 ### Add
-- **`DivExact` / `DivExactAssign` for `UBig` and `IBig`** — exact division (the traits are
-  re-exported through `dashu-base` from `num-modular`, with the empty precomputation `()`):
-  `div_exact` returns `Some(self / other)` when the divisor divides, `None`
-  otherwise; `div_exact_assign` replaces `self` in place, returning `true` on success and leaving
-  it unchanged on failure. Implemented for `UBig`/`IBig` divisors, for reference receivers
-  (`&UBig`/`&IBig`), and for every primitive divisor `u8`–`u128`/`usize`/`i8`–`i128`/`isize` (a
-  value wider than `DoubleWord` falls back to the `UBig`/`IBig` path). The operation is implemented
-  on `TypedRepr`/`TypedReprRef` (four ownership combinations, mirroring `div_ops.rs`), with
-  dedicated Hensel kernels per divisor width. `IBig`'s exact division is sign-aware (the quotient's
-  sign is the product of the operands' signs).
-- **Hensel (2-adic) exact division for all divisor widths** — exact division no longer falls back
-  to the general division (quotient + remainder check) for divisors wider than a single word.
-  Instead there are three kernels, all multiply-and-subtract loops with a Newton-iteration modular
-  inverse (`math::inv_mod_pow2`) and no normalization or reciprocal: `hensel_div_odd_in_place`
-  (single word), `hensel_div_odd_dword_in_place` (double word, via the double-word multiply
-  kernel), and `hensel_div_exact_large` (multi word). Divisors are stripped of their factors of 2
-  first, so the kernels only ever see an odd divisor. The multi-word kernel is schoolbook
-  (O(n·m)), so for divisors beyond [`THRESHOLD_DIV_EXACT_DEFAULT`] (180) words exact division falls
-  back to the general division (whose sub-quadratic divide-and-conquer algorithm wins at that size)
-  plus a remainder check — the threshold is tunable via the `DASHU_THRESHOLD_DIV_EXACT` environment
-  variable behind the `tuning` feature.
-- **`ubig_div_exact`** (in `integer/benches/primitive.rs`) — benchmark of `div_exact` (Hensel)
-  against the general division, for multi-word and single-word (hit and probe-miss) divisors.
-- **`UBig::is_multiple_of` uses the Hensel kernels for every divisor width** — the read-only
-  top-carry test (`hensel_is_multiple_of`) for single-word divisors, and the exactness test of the
-  division itself (on a scratch copy) for double-word and multi-word divisors, instead of computing
-  a full remainder. `is_multiple_of_const` and the `is_multiple_of` family now live in the
-  `div_exact` module alongside the kernels.
-- **`UBig::remove_word`** — single-word specialization of `remove`. The factor's power-of-two part is
-  stripped by the 2-valuation, and the odd part is divided out by the shared Hensel exact division.
-  `remove(&UBig)` now delegates to it for single-word factors. Both the odd-part division and the
-  mixed-factor 2-stripping run on `self`'s own buffer (taken via `TypedRepr`, probed read-only by
-  `hensel_is_multiple_of` first) — no scratch allocation.
-- **`DivExact` / `DivExactAssign` with a [`ConstDivisor`] precompute** — exact division reusing a
-  precomputed divisor (`DivExact<UBig, ConstDivisor>` for `UBig` / `&UBig`, plus the in-place
-  `DivExactAssign`). The quotient and remainder come from the precomputed general division
-  (`DivRem<&ConstDivisor>`), so repeated exact divisions against a fixed divisor reuse the
-  reciprocal/normalization. Provided for API completeness — the `()` (Hensel) path is unchanged
-  and faster for small divisors, which this precompute does not feed.
-
-## 0.6.0-rc.3
-
-### Add
-- **rkyv 0.7 support** (`rkyv` feature, versioned `rkyv_v07`): `UBig`/`IBig` archive as their
-  **native word representation** (`ArchivedVec<Word>`, plus a sign flag for `IBig`), round-tripping
-  through `as_words`/`from_words` — zero-copy access to the words, at the cost of a
-  target-`Word`/endianness-dependent archive layout (use `to_le_bytes`/`to_be_bytes` for a portable
-  encoding).
-- **rkyv 0.8 support** (`rkyv_v08` feature): the same word-based archive, via rkyv 0.8's
-  `Place`-based API (words archived little-endian by rkyv 0.8's default). Requires Rust ≥ 1.81
-  (rkyv 0.8's MSRV); excluded from the 1.68 MSRV build.
+- **`DivExact` / `DivExactAssign` exact division** (re-exported through `dashu-base` from
+  `num-modular`, empty precomputation `()`) for `UBig`/`IBig` and every primitive divisor, built on new
+  **Hensel (2-adic) kernels** per divisor width (single/double/multi-word, with a threshold fallback to
+  the general division). `is_multiple_of` reuses the Hensel probes; a `ConstDivisor`-precomputed
+  variant is provided.
+- **`UBig::remove_word`** — single-word specialization of `remove`, sharing the Hensel division.
+- **rkyv 0.7 / 0.8 support** (`rkyv_v07`/`rkyv_v08`) — native word-vector archive.
 
 ### Change
-- **The unversioned `rand` and `rkyv` feature aliases now point to the newest versions**:
-  `rand` selects rand 0.10 (`rand_v010`) and `rkyv` selects rkyv 0.8 (`rkyv_v08`) instead of
-  rand 0.8 / rkyv 0.7. Users of `features = ["rand"]` / `["rkyv"]` silently upgrade; pin the
-  versioned features (`rand_v08` / `rkyv_v07`) to keep the old versions. The
-  `tests/random.rs` integration tests exercise the rand 0.8 API and are now gated on
-  `rand_v08` (run under `--all-features`; the version-selecting `rand` feature skips them).
-
-## 0.6.0-rc.1
+- Removed the `rustversion` dependency (MSRV is 1.68); the unversioned `rand` / `rkyv` feature aliases
+  now select the newest versions (`rand_v010` / `rkyv_v08`).
 
 ### Fix
-- NTT squaring/multiplication of an all-zero operand no longer panics. `add_signed_sqr_conv` and
-  `add_signed_mul_conv` assumed a non-zero input (`debug_assert!(la_bits > 0)`), so an all-zero slice
-  panicked in debug and indexed out of bounds in release. Reachable from `sqrt_rem` of a perfect
-  square with many trailing zero words — it squares the all-zero low half of the estimate to verify
-  the remainder — which was the crash behind `dashu-float`'s `hypot(3,4)` under directed rounding.
-  An all-zero operand now returns early (the product is zero, so the signed accumulate is a no-op),
-  matching the existing zero-guard in the chunked-multiply closure.
+- NTT squaring/multiplication of an all-zero operand panicked (debug) / indexed out of bounds
+  (release); it now short-circuits.
 
 ## 0.5.1
 

@@ -2,372 +2,55 @@
 
 ## Unreleased
 
-### Change
-- **(breaking) new [`FpError::ZivRetryLimitExceeded`](crate::error::FpError::ZivRetryLimitExceeded)
-  variant** — the Ziv certification loop (the real transcendentals) previously fell back to a
-  best-effort rounded value after `MAX_ZIV_RETRIES` attempts, silently losing the correctly-rounded
-  guarantee if a radius-bound estimate were ever wrong. It now returns `Err(FpError::ZivRetryLimitExceeded)`
-  (panicking at the convenience layer), making such a failure explicit instead of a silent 1-ULP-wrong
-  result. This only fires if a radius bound is wrong — a correct bound settles within a few retries.
+## 0.6.0
 
-### Fix
-- **(internal) `exact_pow10_log` (the `log10` exact-power-of-ten shortcut) used unchecked `isize`
-  arithmetic for `p·e` / `q·e`**, which could overflow (silently wrap) on 32-bit for an exotic
-  base (B a large power of two) at extreme exponents and falsely report an exact log. The products
-  now use checked arithmetic and report *not exact* on overflow.
-- **`Context::sqrt` (and `FBig::sqrt`) is now correctly rounded** — previously a `p+1`-digit integer
-  root was rounded by a rem-vs-root decision followed by a re-round (`repr_round`), a *double*
-  rounding that could be off by 1 ulp at a digit boundary (e.g. `sqrt(1.4490)` under HalfEven at 16
-  digits gave `1.207680645700236` instead of `1.207680645700237`). The root is now rounded to `p`
-  digits in a single step from the round digit and the `sqrtrem` remainder (the sticky bit),
-  mirroring MPFR. A power-of-two base uses this fast path directly (its digit alignment is clean);
-  other bases additionally certify the result with a Ziv loop. `FBig::sqrt` now requires
-  `R: ErrorBounds` (every built-in rounding mode implements it).
+### Change
+- **(breaking) Ziv-backed transcendentals now require `R: ErrorBounds` (not `R: Round`)**: `exp`/
+  `exp_m1`/`ln`/`ln_1p`/`log2`/`log10`, `powf`/`powi`, `hypot`, the trig and hyperbolic families
+  (incl. inverses), and `FBig::sqrt`. All six built-in modes satisfy `ErrorBounds`; only custom
+  non-`ErrorBounds` modes are affected.
+- **(breaking) new `FpError::ZivRetryLimitExceeded`** — a Ziv loop that exhausts its retry budget
+  (only possible if a radius-bound estimate is wrong) now returns `Err` instead of silently returning
+  a possibly-1-ULP-wrong best-effort value.
+- **(internal) every transcendental's error radius is now derived mechanically by Ball arithmetic**
+  (`float/src/ball.rs`, an exact-integer error count composed through the series/reduction/composition,
+  precision-aware) instead of the hand-derived `·ulp` formulas and outward intervals. Behavior
+  unchanged, validated bit-exact against MPFR.
+- **(internal) `Context::exp` of an astronomically large negative value now returns `Err(Underflow)`**
+  (consistent with overflow; the convenience layer is unchanged).
+- Removed the `rustversion` dependency (MSRV is 1.68); the unversioned `rand` / `rkyv` feature aliases
+  now select the newest versions (`rand_v010` / `rkyv_v08`).
 
 ### Add
-- **`CachedFBig` now mirrors the rest of `FBig`'s value surface** (all preserving the shared cache
-  handle), completing the drop-in-replacement mandate: `round`/`trunc`/`ceil`/`floor`/`fract`/
-  `split_at_point`/`quantize`, `hypot`/`nth_root`, `signum`/`ulp_lb`, and the base conversions
-  `to_decimal`/`to_binary`/`with_base`/`with_base_and_precision`.
-
-## 0.6.0-rc.4
-
-### Change
-- **(internal) `convert.rs` base-conversion call site updated for the `DivExact` trait
-  re-exported from `num-modular`** — `(&repr.significand).div_exact(r_exp)` now passes the empty
-  precomputation: `(&repr.significand).div_exact(r_exp, &())`. No public API change for
-  `dashu-float`.
-- **(internal) removed the `rustversion` dependency** — the `#[rustversion::since(1.64)]` gate was
-  unconditional (the MSRV is 1.68).
-
-### Fix
-- **(bench) the `exp` / `hyper` / `io` / `primitive` / `trig` benches build against the
-  `rand_v010` API that the `rand` feature aliases to** — they used the `rand_v08`
-  `gen_range`/`gen_bool` methods, which do not compile with `--features rand` (the `rand` feature
-  enables `rand_v010`, so `Uniform<UBig>` is only implemented for that version). Random exponents
-  are now sampled as `i64` and cast to `isize` (`rand_v010` provides no `Uniform` impl for
-  `isize`).
-
-### Add
-- **Base-10 logarithm** — `Context::log10` and `FBig::log10`, correctly rounded under any rounding
-  mode. Mirrors `log2`: `log10(x) = ln(x)/ln(10)` via Ball arithmetic with the same Ziv
-  certification, an exact power-of-ten shortcut for directed rounding (including powers of ten
-  represented through a `5^k`-significand in binary bases, e.g. `log10(100) = 2` for the base-2
-  float `25·2²`), and the usual `log10(±0) = −∞` / `OutOfDomain` for negative inputs.
-
-## 0.6.0-rc.3
-
-### Change
-- **(internal) `log2` error radius now derived by Ball arithmetic instead of a directed interval.**
-  `ln_compute` and `log2_internal` are rewritten around a new `Ball` type (`float/src/ball.rs`): a
-  midpoint plus an exact integer relative-error count (`|mid − true| ≤ n·ulp(mid)`). The radius is
-  composed mechanically through the atanh series, the `s·ln(B)` reconstruction, and the
-  `ln(x)/ln(2)` quotient — the hand-derived `(4·terms + 12)·ulp` formula, the outward-rounded
-  `[lo, hi]` interval, and its `INTERVAL_GUARD` constant are gone. The propagation rules are
-  precision-aware (an operand that over-delivers its context, e.g. the uncached `ln(2)` constant,
-  has its error converted correctly to the result's ulp). Public behavior is unchanged and
-  validated against a high-precision oracle and against `rug`/MPFR (bit-exact).
-  - **Performance parity is preserved.** The Ball overhead is kept near the legacy cost: `lead_exp`
-    uses the cheap `digits_ub`/`digits_lb` bounds (never the exact digit count), every `·B^exp`
-    power computation goes through the shared `shl_digits` primitive and every `⌈x/B^k⌉` through
-    the new `shr_digits_ceil` (bit shifts for power-of-two bases, the `(x·5^k)<<k` radix-factor
-    trick for base 10 — no `B^k` materialization or `O(p²)` division), the multiply
-    avoids cloning significands, and
-    division by any exact integer (`div_exact`, used for the series hot path `div_int` and the
-    `x/2^s` reduction) shrinks the error by `k` directly instead of running the general rational
-    division. The general `div` is retained only where the divisor is itself approximate (the
-    `(x−1)/(x+1)` series reduction and the `ln(x)/ln(2)` quotient), each O(1) per call.
-    Benchmarked `ln`/`exp` (`cargo bench -p dashu-float --bench exp`) are at parity with the
-    pre-Ball implementation at large precisions (10⁴ bits) and within ~1.4× at 10³ bits; the
-    residual gap is the fixed per-operation overhead at small precisions.
-- **(internal) `exp`/`exp_m1`, all hyperbolic, all trigonometric, `powi`, and `hypot` radius
-  derivations migrated to the same `Ball` engine.** `exp_compute`, the trig Maclaurin/Euler
-  series (`sin`/`cos`/`sin_cos`/`atan`), `powi`'s squaring chain, and `hypot`'s
-  `sqrt(large²+small²)` now propagate error mechanically through the `Ball` ops (new `mul`,
-  `div`, `div_int`, `scale_int`, `shift`, `pow_exact`, `sqrt`, and exact-tracking
-  `mul_tracking`/`add_tracking`/`sqrt_tracking` for the exactly-representable directed-rounding
-  cases). The composed functions (`sinh`/`cosh`/`tanh`/`asinh`/`acosh`/`atanh`,
-  `asin`/`acos`/`atan`/`atan2`) build on the `Ball` primitives directly with a single outer Ziv
-  certification; the trig quadrant-reduction error and π's radius are folded in mechanically.
-  The `result.ulp()·{12,14,16}` constants, `reduce_to_quadrant`'s `reduction_err`, `powi`'s
-  `<<(nlen+1)`, and `hypot`'s `ulp·8` are gone. `pow_exp_log` (the `powf`/`powi` fallback path) is
-  also composed from `ln_compute` + `mul` + `exp_ball`, with the input-ball error folded into the
-  `exp` radius. Public behavior is unchanged and validated against the same oracle/fuzz nets.
-- **The unversioned `rand` and `rkyv` feature aliases now point to the newest versions**:
-  `rand` selects rand 0.10 (`rand_v010`) and `rkyv` selects rkyv 0.8 (`rkyv_v08`) instead of
-  rand 0.8 / rkyv 0.7. Users of `features = ["rand"]` / `["rkyv"]` silently upgrade; pin the
-  versioned features (`rand_v08` / `rkyv_v07`) to keep the old versions. The
-  `tests/random.rs` integration tests exercise the rand 0.8 API and are now gated on
-  `rand_v08` (run under `--all-features`; the version-selecting `rand` feature skips them).
-
-### Add
-- **`tuning` feature + `ziv_retries()`/`ziv_retries_reset()`.** Exposes the per-Ziv-loop retry
-  counter (extra attempts beyond the first) for profiling how tight each transcendental's
-  error-radius bound is at a given target precision. Implies `std` (the counter is a
-  `thread_local`). Named `tuning` to match dashu-int's existing `tuning` feature (the umbrella
-  `dashu` crate's `tuning` enables both sub-crates). Used by the dashu-python
-  `ziv_retries`/`ziv_retries_reset` bindings and the `python/scripts/ziv_profile.py` script.
-- **rkyv 0.7 support** (`rkyv` feature, versioned `rkyv_v07`): `Repr`/`Context`/`FBig` archive via
-  derive, delegating the big-int fields to `UBig`/`IBig`'s byte-vector archive.
-- **`Repr::zero_with_sign` is now public** — build a `±0` `Repr` from a [`Sign`] (previously
-  crate-private, used by the float underflow/rounding paths). `dashu-cmplx` uses it for its
-  signed-zero-preserving `sin_cos`/`sqr`/`log` fast paths.
+- **Correctly rounded transcendentals via a Ziv retry loop** — `exp`/`exp_m1`/`ln`/`ln_1p`, `log2`,
+  `log10`, `powf`/`powi`, `hypot`, and the trig/hyperbolic families (incl. inverses) certify their
+  rounding against the `ErrorBounds` preimage, retrying with more guard digits; exact results report
+  radius 0 (MPFR-style `exact` tracking) so directed modes terminate.
+- **Base-10 `log10`** (mirrors `log2`, with an exact power-of-ten shortcut).
+- **Exact `Add`/`Sub`/`Mul` operators for `Repr`** (new `repr_ops` module) — lossless exact
+  intermediates for the Ziv containment test, the correctly-rounded `Sum`, and the `FBig` multiply
+  path.
+- **`FBig::sqrt` is now correctly rounded** — a `p+1`-digit integer root was previously double-rounded
+  (off by 1 ulp at digit boundaries); it now rounds in a single step from the round digit + `sqrtrem`
+  remainder (MPFR-style). Power-of-two bases use a fast path; other bases certify via Ziv.
+- **`CachedFBig` mirrors the rest of `FBig`'s value surface** (`round`/`trunc`/…/`quantize`,
+  `hypot`/`nth_root`, `signum`/`ulp_lb`, base conversions), completing the drop-in mandate.
+- `tuning` feature + `ziv_retries()`/`ziv_retries_reset()` for profiling retry counts;
+  `Repr::zero_with_sign` public; rkyv 0.7 support (`rkyv_v07`).
 
 ### Fix
-- **`powf`/`powi` no longer return wrongly-rounded results for large `|y·ln x|`.** `exp_ball`'s
-  input-error inflation omitted the result-significand factor `sig_r` (`|exp|/ulp(exp) ≈ sig_r`),
-  so the radius under-bounded the propagated input error by up to `B^(p−1)` and the Ziv containment
-  test could certify an interval that did not contain the true value. The inflate term now
-  multiplies the error count by the result's significand.
-- **`sqrt`-based radius under-bound in `asin`/`asinh`/`acosh`/`hypot`.** `Ball::sqrt` (and
-  `sqrt_tracking`) computed the error shift with the leading position `E_r` where the raw
-  significand exponent `e_r` belongs, dropping the digit count from the denominator — the radius
-  no longer satisfied `|mid − true| ≤ n·ulp(mid)` once the input error grew past a couple of ulps.
-  Both use the raw exponent now.
-- **`atanh(x)` for `x < 0` (near the pole) returned wrongly-rounded values.** `ln_1p_ball`'s
-  input-error adjust dropped the precision-difference term (`−p_arg+p_ln`); `ln_compute`'s s<0 path
-  doubles the work precision, so the adjust under-bounded by `B^precision` and the Ziv loop
-  mis-certified (up to ~2^13 ulps off near `x = −1`). The adjust is now precision-aware.
-- **`cargo test -p dashu-float --no-default-features` compiles again.** The ziv test module's
-  `#[cfg(test)]` gate referenced the `std`-only `LAST_ZIV_RETRIES` counter; the module is gated on
-  `all(test, std)` again.
-- **`powf` of a base `< 1` no longer hangs in the Ziv loop.** `ln_compute`'s s<0 reduction
-  (`x·2^|s|` scaling before the cancelled `ln(x_scaled) + s·ln(B)` reconstruction) inflated the
-  `Ball` error count by a fixed `B^precision` factor even for exactly-representable inputs —
-  `scale_int` folded a spurious `+1` that `rescale_precision` then amplified, leaving the radius
-  constant across Ziv retries (the composed `exp(y·ln x)` chain never converged). The reduction
-  now uses the exact-tracking `scale_int_tracking` (n stays 0 for an exact scaling), so the radius
-  shrinks with the guard and `powf` certifies in 1-2 attempts. This also re-enables the
-  Ball-composed `pow_exp_log` (`ln_compute` + `exp_ball`) that replaces the hand-derived radius.
-
-## 0.6.0-rc.2
-
-### Change
-- **(internal) Unified `f32`/`f64` range detection.** `into_f32_internal`/`into_f64_internal` now
-  return `FpResult` (`Ok` in range, `Err(Overflow)`/`Err(Underflow)` at the extremes), so the
-  range decision lives in one place — `convert_to_f32`/`convert_to_f64` — shared by the infallible
-  `to_f32`/`to_f64` (which saturate the `FpError` to the directed endpoint) and the fallible
-  `TryFrom` (which maps it to `OutOfBounds`/`LossOfPrecision`). The four directed-endpoint blocks
-  collapse into one helper per float type. No observable behavior change.
-- **`Context::exp` of an astronomically large negative value now returns `Err(Underflow)`.** When
-  the reduction quotient `s = floor(x/ln B)` overflows `isize` (astronomical `|x|`, ≳2⁶¹), `exp` of
-  a negative `x` is a positive value below the smallest representable; it now reports `Err(Underflow)`
-  (was `Ok` of the directed endpoint value). `FBig::exp` is unchanged (`unwrap_fp` maps it to the
-  same endpoint: `+0` under nearest/inward, smallest-positive under `Up`/`Away`), and `exp_m1` of the
-  same input is unchanged (≈−1, a value). This makes `exp`'s underflow an error, consistent with its
-  overflow.
-- **(internal) `ziv`/`ziv_pair` now take fallible closures; hoisted overflow probes removed.** The
-  Ziv driver closures can now return `Err(FpError)` (propagated on the first overflowing attempt), so
-  `exp_internal`/`pow_exp_log`/`sinh`/`cosh`/`sinh_cosh` detect overflow *inside* the loop and
-  propagate it (mapping the directed sign at the call site) instead of carrying hoisted
-  `exp_overflows` probes and `.unwrap()`s. The `exp_overflows` helper is deleted; `ziv_fallible` is
-  merged into `ziv`. `ln_internal`/`log2_internal` now return `FpResult`. No observable change beyond
-  the `exp` contract note above.
-
-### Fix
-- **Directed overflow/underflow of FBig results (`Context::unwrap_fp`).** `Err(Overflow)` and
-  `Err(Underflow)` now saturate to the **mode-aware** endpoint instead of a mode-blind `±∞`/signed
-  zero. Overflow: outward modes (and nearest) reach `±∞`; inward modes (toward-zero,
-  opposite-infinity) saturate to the largest finite `(Bᵖ−1) × B^{isize::MAX}` — the all-`(B−1)`
-  significand at the max exponent, mirroring MPFR's `mpfr_setmax` (the significand is `p` digits,
-  the output precision, not the value's magnitude). Underflow: outward modes reach the smallest
-  representable `B^{isize::MIN}`; inward/nearest reach signed zero. So `Up ≥ Down` now holds on
-  both ends and across `exp`/`pow`/`powf`/`mul`/`div`/`sinh`/`cosh` (e.g. `Up(pow(x,y))` agrees
-  with `Up(exp(y·ln x))`). The `mul`/`div` *operators* now route through `Context::mul`/`div` +
-  `unwrap_fp` (the `Mul`/`Div` trait impls previously bypassed it and saturated at the `Repr`
-  kernel, mode-blind). The two endpoints live in shared helpers
-  (`overflow_repr_endpoint`/`underflow_repr_endpoint`). Overflow at unlimited precision **panics**
-  (the largest finite is undefined there).
-- **Directed overflow/underflow of `FBig → f32`/`f64` (range detection).** The directed-endpoint
-  branches were gated on the *least*-significant-bit exponent, which is not the overflow/underflow
-  threshold: a value whose significand straddles `f32::MAX` (e.g. `3·2¹²⁷`, lsb exponent 127 < 128)
-  still overflows but fell through to `encode`, which saturates to `±∞` mode-blindly — so under
-  toward-zero it returned `+∞` instead of `f32::MAX`. Symmetrically, `2⁻¹⁶⁰` (lsb exponent −160,
-  above the `−173` underflow gate) reached `encode` and returned `±0` mode-blindly — under `Up` a
-  positive value below the smallest subnormal must reach `2⁻¹⁴⁹`. Range detection is now delegated
-  to `encode` (which tests the *most*-significant bit), and only the saturation endpoint
-  (`±MAX` vs `±∞`, `±0` vs `±smallest-subnormal`) is chosen per rounding mode.
-- **`TryFrom<FBig> for f32`/`f64` error variant is now mode-independent.** A finite value beyond
-  `±MAX` previously returned `Err(OutOfBounds)` under nearest modes (which round to `±∞`) but
-  `Err(LossOfPrecision)` under directed modes (which saturate to `±MAX`), because the variant was
-  derived from the *result's* infiniteness. It is now classified by the *input* magnitude, so
-  `Err(OutOfBounds)` reliably means "beyond the finite range" under every rounding mode. (`to_f32`/
-  `to_f64`, which return the mode-aware `Rounded<f32>`/`Rounded<f64>`, are unchanged.)
-- **Directed `ln`/`log2` of `x ∈ [1, B)` and of `x` just above 1.** `ln_compute`'s error radius was
-  unsound in two ways for the unit binade: (1) it used `result.ulp()`, but `result` inherits
-  `ln_base`'s over-delivered context (~`work + guard` digits) even when the `s·ln(B)` term is zero
-  (`s = 0`), so the radius under-estimated the work-precision-scale error by ~`B^guard`; the radius
-  is now widened by the context inflation. (2) For `x` just above 1, `log2_bounds` can classify
-  `s = −1`, so `result = 2·sum + s·ln(B)` cancels — the absolute error then stays at `sum`'s
-  magnitude while `result`'s collapses, and `result.ulp()` vastly under-estimates it; the radius now
-  also covers the pre-cancellation (`sum`) scale. Both let Ziv certify the wrong 1-ULP neighbor for
-  ~1–5% of directed `ln`/`log2` inputs in `[1, B)` at low precision.
-- **`exp`/`exp_m1` extreme-negative endpoint carried precision 0.** The mode-aware saturation
-  returned the precision-0 constants `FBig::ZERO` / `−FBig::ONE`, so a downstream op on the result
-  (`e.sqrt()`, …) panicked via `assert_limited_precision(0)`. The endpoint is now built with the
-  input context.
-- **`exp` overflow probe could disagree with the computation.** The hoisted probe computed the
-  reduction quotient `s = floor(x/ln B)` at a fixed `p + 64` bits, while `exp_compute` inflates
-  `ln B` by `⌈log_B|x|⌉ + 2` extra digits — so for huge `|x|` the two could disagree on whether `s`
-  fits `isize`, and `exp_compute`'s `s.try_into()` could then panic. The probe now applies the same
-  inflation, so its verdict matches the computation's. Separately, the probe's fast-skip threshold
-  was the 64-bit literal `61`, so on 32-bit `isize` (`log2(isize::MAX) ≈ 31`) inputs like
-  `exp(-2⁵⁰)` — whose `s ≈ -1.8e15` overflows 32-bit `isize` — skipped the probe and panicked in
-  `exp_compute`. The threshold is now `isize::BITS − 3` (61 on 64-bit, 29 on 32-bit).
-- **`ulp()`/`ulp_lb()` panic on an extreme exponent.** The ulp exponent `e + digits − precision`
-  was computed with wrapping `isize` arithmetic, so a value near the representable exponent floor
-  (e.g. a `powi` result just above the smallest representable) underflowed and panicked inside the
-  Ziv containment test. The arithmetic is now saturating; an extreme exponent yields a saturated
-  (smallest-representable) ulp.
-- **`exp_m1` of large negative input.** For `x` negative enough that `exp(x)` is below the result's
-  precision, `exp_m1(x)` is `−1` plus a sub-ulp residual whose rounding is fully determined, but
-  the Ziv loop could not certify it: the working-precision value collapses to exactly `−1` and a
-  directed rounding preimage is one-sided, so the containment test never resolved and the loop ran
-  to its retry cap (pathologically slow in debug builds). Such inputs now short-circuit to the same
-  mode-aware endpoint as the underflowed case.
-- **`exp` range reduction for large `|x|`.** The reduction quotient `s = floor(x/ln B)` amplifies a
-  1-ulp error in `ln B` by `|x|/ln B`, so for large `|x|` the work-precision `ln B` left `s` (and
-  hence the result exponent) off by ~`|x|`, and `Up(exp)` could fall below `Down(exp)`.
-  `exp_compute` now computes `ln B` with `⌈log_B|x|⌉ + 2` extra digits, so the reduction contributes
-  well under one work-ulp.
-- **`FBig → f32`/`f64` subnormal mis-round for wide decimal significands.** The round-to-odd base
-  conversion was computed straight at the target width, so the near-correct `ln`/`exp` series (a
-  few-ulp error at the work precision) could land a value whose true result sits within ~`2^{-2w}`
-  of a `w`-bit midpoint on the wrong side, rounding to the neighbor 1 ULP off. `convert_base_odd`
-  now converts at `width + 24` bits and round-to-odd's down to `width`, pushing the residual well
-  inside one `w`-bit ulp.
-- **`FBig → f32`/`f64` nearest-even underflow of a catastrophically tiny source.** For a value far
-  below half the smallest subnormal (e.g. a wide-significand decimal at a hugely negative exponent),
-  the base conversion's internal `exp(remainder)` itself underflows, so the converted `odd` carried a
-  wildly wrong (too large) magnitude and `encode` never flagged the underflow — `to_f64` returned a
-  spurious finite subnormal (≈2⁻⁵⁹³) instead of the directed underflow endpoint. There is now a
-  source-`log2_bounds` short-circuit (`|x| < 2⁻¹⁰⁷⁵` for f64, `< 2⁻¹⁵⁰` for f32 — the `½·MIN_SUBNORMAL`
-  cutoff) that returns `Err(Underflow)` before the conversion can corrupt the magnitude; the existing
-  directed endpoint then gives `±0` (nearest) or the smallest subnormal (outward).
-- **`powi` exhausted memory / hung on an extreme integer exponent.** The magnitude guard used exact
-  `log2_bounds(base)` but scaled by an f64 `e` and an `isize::MAX as f64` threshold, so (a) a result
-  near the finite-range boundary could be misclassified as overflow (a representable value spuriously
-  saturated to `±∞`), and (b) an exponent past `i64` with `|base| ≈ 1` slipped through to the squaring
-  chain, whose working precision grows with `n.bit_len()` — a single Ziv attempt then allocated
-  unboundedly. The guard now uses a margin so only a *certified* extreme result short-circuits (the
-  gray zone falls through to the chain, whose `checked_mul` catches a genuine overflow), and
-  exponents past `i64` route to an `exp(y·ln x)` fallback (shared with `powf`) whose working
-  precision does not scale with the exponent's bit length, so it cannot exhaust memory. This retires
-  the `powi` range-handling TODO.
-- **`Repr::cmp` overflow near the exponent ceiling.** `repr_cmp_same_base` computed
-  `exponent + digits` in plain `isize` for its magnitude shortcuts; for a result near `isize::MAX`
-  (e.g. `powi(2, n)` with `n` just below `isize::MAX`, which is representable so the range guard does
-  not short-circuit it) that add overflowed and aborted inside the Ziv containment test. The
-  shortcuts now use saturating arithmetic (an overflow forgoes the shortcut, falling through to the
-  exact comparison), so a near-ceiling power of two compares correctly.
-- **`powi` panicked at the exact exponent ceiling.** When `base^n`'s magnitude reaches the finite-
-  range ceiling/floor — the squaring chain's exponent arithmetic hits the `±isize::MAX` sentinel —
-  `powi_chain` saturated the step to an infinity `FBig`, which the Ziv closure then fed to
-  `res.ulp().with_precision(0)`, panicking (`assert_finite`) because the closure's signature cannot
-  return `Err`. So `powi(2, isize::MAX)` (and any `powi(base, n)` with `n.bit_len() ≤ 64` whose
-  result genuinely overflows) aborted instead of returning the directed endpoint. The chain now
-  propagates the `Overflow`/`Underflow`, a new fallible `ziv_fallible` carries it out of the loop,
-  and `powi` maps it to the mode-aware endpoint with the correct result sign (base sign × exponent
-  parity). The negative-exponent reciprocal path (extreme-base `1/base` underflow) is covered by the
-  same propagation.
-
-## 0.6.0-rc.1
-
-### Add
-- **Exact `Add`/`Sub`/`Mul` operators for `Repr`** (new `repr_ops` module). A `Repr` carries no
-  precision limit, so add/sub/mul on it are lossless — these are the shared primitives the crate uses
-  for exact intermediates (the Ziv containment test, the correctly-rounded `Sum`, and the `FBig`
-  multiply path). `Mul` saturates exponent overflow/underflow to the signed infinity/zero sentinels,
-  so the operator is infallible; the internal `make_mul_repr`/`unwrap_mul_repr!` helpers are removed
-  in favor of the operator, and the `Neg` impl moved here from `sign.rs`. No behavior change to
-  `FBig` arithmetic.
-- **Guaranteed-correct rounding for `exp`, `exp_m1`, `ln`, `ln_1p`** via a Ziv retry loop. A generic
-  `Context::ziv` driver rounds the working-precision approximation to the target precision and
-  verifies, against the `ErrorBounds` rounding preimage, that the approximation's provable error
-  interval lies entirely inside one rounding bin; if not, it retries with more guard digits. The loop
-  provably terminates and preserves the `Exact`/`Inexact` flag. Series evaluation is factored into
-  near-correct `ln_compute`/`exp_compute` cores (`R: Round`) that the Ziv wrapper certifies.
-- **Tightened `exp` guard digits** (now a performance knob, since Ziv — not the guard count —
-  guarantees correctness): the `Bⁿ`-powering guard is halved from `2n` to `n` and the series guard
-  drops its conservative `+ 2`.
-- **Guaranteed-correct rounding for the remaining transcendentals** via the Ziv loop: the
-  trigonometric family (`sin`, `cos`, `sin_cos`, `tan`, `asin`, `acos`, `atan`, `atan2`) and the
-  hyperbolic family (`sinh`, `cosh`, `sinh_cosh`, `tanh`, `asinh`, `acosh`, `atanh`). The trig series
-  (`sin`/`cos`/`atan`) are factored into near-correct `_compute` cores like `exp_compute`; the
-  composition-based functions treat the now-Ziv-correct `exp`/`ln`/`atan` as black boxes and count
-  only their arithmetic. The trig argument reduction folds a `|k|·ulp(π/2)` reduction-error term into
-  the radius so the containment test stays sound for huge `|x|`. `ziv_pair` certifies both halves of
-  `sin_cos`/`sinh_cosh`.
-- **`hypot` is now correctly rounded** with MPFR-style exactness tracking: the closure computes
-  `sqrt(large² + small²)` (operands scaled so `large²` can't overflow the exponent) and OR's each
-  step's `Exact`/`Inexact` flag, mirroring MPFR's `exact` flag — an all-exact chain yields the exact
-  true value, reported to `ziv` with radius 0, which it accepts without the containment test. This is
-  what lets an exact Pythagorean-triple result (`hypot(3,4)=5`, `hypot(5,12)=13`) terminate under a
-  directed rounding mode, where the one-sided preimage would otherwise make the containment test
-  infinite-retry.
-- **Guaranteed-correct rounding for `powf` (non-integer exponent)** via the Ziv loop. `x^y =
-  exp(y·ln x)`, and `exp` amplifies the rounding of `y·ln x` by the result magnitude — so the radius
-  is `result.ulp()·(|y·ln x|+1)·(B+8)` taken at the *working* precision: it shrinks as `B^{-guard}`,
-  so the containment test converges (a radius computed at unlimited precision would be constant
-  across retries and never settle for a value near a rounding boundary). An integer-valued exponent
-  delegates to `powi` (binary exponentiation), which also admits a negative base — its sign fixed by
-  the exponent's parity — so `powf(-x, n)` is in domain for integer `n`.
-- **Guaranteed-correct rounding for `powi` (integer exponent)** via the Ziv loop. Binary
-  exponentiation (repeated squaring) compounds the relative error — it roughly doubles per squaring
-  — so after `bit_len(n)` squarings the Ziv radius reflects it (`ulp_w << (nlen + 1)`). A negative
-  exponent computes `(1/base)^|n|` directly, so sign-dependent overflow/underflow falls out
-  naturally. When the squaring chain rounds `Exact` (the result is exactly representable, e.g. an
-  integer power that fits), the true error is zero and the radius is reported as zero — required
-  under the *directed* rounding modes (`Zero`/`Down`/`Up`/`Away`, the `FBig` default), where an
-  exactly-representable result lies on a one-sided rounding boundary that no nonzero radius can fit
-  inside.
-- `Repr::is_int` is now `const` (it only inspects the exponent and the infinity sentinel).
-
-### Change
-- **(breaking, bound)** The Ziv-backed transcendentals now require `R: ErrorBounds` rather than
-  `R: Round`: `exp`/`exp_m1`/`ln`/`ln_1p`, `powf`, `powi`, `hypot`, the trigonometric family
-  (`sin`/`cos`/`sin_cos`/`tan`/`asin`/`acos`/`atan`/`atan2`), and the hyperbolic family — the Ziv
-  containment test needs the rounding preimage that `ErrorBounds` provides. All six built-in modes
-  satisfy `ErrorBounds`; only custom non-`ErrorBounds` `Round` modes are affected (custom modes are
-  already discouraged), and the `num_traits::Pow<IBig>`/`Pow<&FBig>` impls for `FBig` likewise
-  tighten to `R: ErrorBounds` (they route through `powi`). Base conversion deliberately stays
-  `R: Round` by routing its `ln`/`exp` calls through the near-correct `ln_compute`/`exp_compute`
-  cores; arithmetic (`add`/`sub`/`mul`/`div`/`sqr`/`cubic`), `sqrt`/`cbrt`/`nth_root`, and the `e()`
-  constant are unchanged.
-- `FBig::log2` is now correctly rounded via the Ziv loop (it was near-correct in 0.5.1, evaluated as
-  `ln(x)/ln(2)` at elevated precision). Each `ln_compute` reports its provable radius and the two
-  radii are carried through the division as an outward-rounded interval `[lo, hi]` the Ziv driver
-  certifies; an exact power of two short-circuits to the integer `log2(x)` (required under directed
-  modes, where the exactly-representable integer sits on a one-sided boundary no positive radius can
-  fit inside, so `log2(2^-159)` under `Up` is the exact `-159`, not `-159 + 1 ulp`).
-- **Internal dedup** (no behavior change): the `⌈log_B(precision)⌉` base-guard formula shared by
-  every transcendental Ziv loop is now `Context::base_guard_digits::<B>()` (12 call sites in
-  `hyper`/`exp`/`log`), and the `ulp·(4·terms + 12)` series-truncation radius is now
-  `series_radius(value, terms)` (shared by the `sin`/`cos`/`sin_cos`/`atan`/`ln` series cores). The
-  two textually-identical `CachedFBig` forwarding macros (`forward_to_context!` /
-  `forward_to_context_unwrap!`) are merged.
-
-### Fix
-- **Directed-rounding hang on exact results** (`acos(1)`, `acos(-1)`, `asin(0)`, `hypot` of a
-  Pythagorean triple): under a directed mode (Down/Up/Zero) a function whose true value is exactly
-  representable carries a positive radius that can't be certified against the value's one-sided
-  rounding preimage, so the Ziv containment test infinite-retried (and the retry eventually tripped a
-  `dashu-int` NTT assertion, now fixed). `acos` short-circuits `|x| = 1` to the exact `0` / `π`,
-  `asin` short-circuits `x = 0` to `±0` (matching the existing special cases in the rest of the
-  inverse trig/hyperbolic family), and `hypot` reports radius 0 when its computation chain is exact.
-- **`tan` no longer has a hoisted pole check.** The check (which tested `cos` with `is_pos_zero`,
-  missing `-0`, and computed a `±∞` pole sign) re-evaluated the sin/cos series a second time on top of
-  the first Ziv attempt — a ~2× cost on every `tan` call. It's removed: near a pole (an odd multiple
-  of π/2) the value is large but finite, and dashu's wide exponent range holds it as a finite number
-  whose sign is carried by the arithmetic (`s/−|c|` is negative), so no `±∞` special-case is needed.
-  The unreachable exact-pole case (cos cancelling to a zero significand — impossible for finite-
-  precision input, since a `p`-digit rational can't sit closer than ~`B⁻ᵖ` to the irrational pole) is
-  handled by the Ziv closure's `significand.is_zero()` retry guard.
-- **`no_std` build of the test-only Ziv retry counter.** The `LAST_ZIV_RETRIES` `thread_local!`
-  (used by the retry-count tests) requires `std`, so the crate failed to compile under
-  `--no-default-features` (the `thread_local!` macro isn't in scope). It's now gated behind
-  `feature = "std"` along with its uses and the counter-reading tests, so the Ziv driver itself is
-  `no_std`-clean; the retry-count tests run under `std` as before.
+- **Mode-aware overflow/underflow saturation** — `Err(Overflow)`/`Err(Underflow)` and the
+  `FBig → f32`/`f64` conversions now saturate to the directed endpoint per rounding mode (`±∞` /
+  largest finite / smallest / `±0`) instead of mode-blind `±∞`/`0`; the `TryFrom` error variant is
+  mode-independent.
+- **`exp` range reduction for large `|x|`** — `ln B` now carries `⌈log_B|x|⌉+2` extra digits so the
+  reduction quotient `s` is pinned (was off by ~`|x|`); the 32-bit `isize` threshold is fixed.
+- **Directed `ln`/`log2` near `x ∈ [1, B)`** — the radius now also covers the pre-cancellation `sum`
+  scale and the over-delivered `ln_base` context.
+- **`FBig → f32`/`f64` subnormal/underflow** — round-to-odd at `width + 24` bits; a
+  source-`log2_bounds` short-circuit for catastrophically tiny values.
+- `ulp()`/`Repr::cmp` near the exponent ceiling (saturating arithmetic); the `no_std` build (the
+  test-only Ziv counter is gated on `std`); `tan` pole check removed (~2× faster).
 
 ## 0.5.2
 

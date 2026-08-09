@@ -2,48 +2,22 @@
 
 ## Unreleased
 
-## 0.6.0-rc.4
+## 0.6.0
 
 ### Change
-- **(internal) removed the `rustversion` dependency** — the `#[rustversion::since(1.64)]` gates
-  (e.g. `RBig::from_static_words`) are unconditional now that the MSRV is 1.68.
-
-### Fix
-- **(bench) the `convert` / `io` / `primitive` benches build against the `rand_v010` API that the
-  `rand` feature aliases to** — they used the `rand_v08` `gen_range`/`gen_bool` methods, which do
-  not compile with `--features rand` (the `rand` feature enables `rand_v010`, so `Uniform<UBig>` is
-  only implemented for that version).
-
-## 0.6.0-rc.3
+- **(breaking) `RBig::pow` / `Relaxed::pow` now take an `isize` exponent** (was `usize`). Negative
+  exponents reciprocate first (`x.pow(-n) == 1/x^n`); a zero base with a negative exponent panics.
+  Non-negative exponents behave as before; call sites passing a `usize` variable need an `as isize`
+  cast.
+- Removed the `rustversion` dependency; the unversioned `rand` / `rkyv` feature aliases now select the
+  newest versions (`rand_v010` / `rkyv_v08`).
 
 ### Add
-- **rkyv 0.7 support** (`rkyv` feature, versioned `rkyv_v07`): `RBig`/`Relaxed` archive via derive,
-  delegating the numerator/denominator to `IBig`/`UBig`'s word-vector archive.
-- **rkyv 0.8 support** (`rkyv_v08` feature): the same derive-based archive, via rkyv 0.8's
-  `Place`-based derive. Requires Rust ≥ 1.81 (rkyv 0.8's MSRV); excluded from the 1.68 MSRV build.
+- rkyv 0.7 / 0.8 support (`rkyv_v07`/`rkyv_v08`) — derive-based archive.
 
-### Change
-- **(breaking) `RBig::pow` / `Relaxed::pow` now take an `isize` exponent** (was `usize`).
-  Negative exponents reciprocate first — `x.pow(-n) == 1 / x.pow(n)` for a nonzero `x`, matching
-  `powf` on the floats — and a zero base raised to a negative power panics with divide-by-zero.
-  Non-negative exponents behave exactly as before, so only call sites that pass a `usize` variable
-  (rather than a literal) need an `as isize` cast. The previously private `pow_signed` kernel is
-  folded into `pow`; the `num_traits::Pow<usize>` impl (delegating with a cast) and
-  `Pow<isize>` (delegating directly) both remain.
-- **The unversioned `rand` and `rkyv` feature aliases now point to the newest versions**:
-  `rand` selects rand 0.10 (`rand_v010`) and `rkyv` selects rkyv 0.8 (`rkyv_v08`) instead of
-  rand 0.8 / rkyv 0.7. Users of `features = ["rand"]` / `["rkyv"]` silently upgrade; pin the
-  versioned features (`rand_v08` / `rkyv_v07`) to keep the old versions. The
-  `tests/random.rs` integration tests exercise the rand 0.8 API and are now gated on
-  `rand_v08` (run under `--all-features`; the version-selecting `rand` feature skips them).
-
-## 0.6.0-rc.1
-
-### Change
-- `RBig::from_str_radix` / `from_str_with_radix_prefix` (and therefore `from_str`) now reject
-  multiple `/` separators with `ParseError::InvalidSyntax` instead of `ParseError::InvalidDigit`.
-  `from_str_expanded` / `from_str_decimal` likewise return `InvalidSyntax` for a malformed
-  repetend.
+### Fix
+- `from_str` / `from_str_expanded` reject malformed input (multiple `/` separators, a bad repetend)
+  with `ParseError::InvalidSyntax` instead of `InvalidDigit`.
 
 ## 0.5.1
 

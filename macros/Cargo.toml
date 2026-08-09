@@ -1,6 +1,6 @@
 [package]
 name = "dashu-macros"
-version = "0.6.0-rc.4"
+version = "0.6.0"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2021"
 description = "Procedural macros for the dashu math types: create big-number literals at compile time with ubig!, ibig!, fbig!, dbig!, rbig!, and cbig! (plus their static_ variants for const contexts). Each literal follows the same parsing rules as the corresponding dashu type, producing values of UBig, IBig, FBig, RBig, or CBig in any supported base."
@@ -23,11 +23,11 @@ all-features = true
 proc-macro = true
 
 [dependencies]
-dashu-base = { version = "0.6.0-rc.4", default-features = false, path = "../base" }
-dashu-int = { version = "0.6.0-rc.4", default-features = false, path = "../integer" }
-dashu-float = { version = "0.6.0-rc.4", default-features = false, path = "../float" }
-dashu-ratio = { version = "0.6.0-rc.4", default-features = false, path = "../rational" }
-dashu-cmplx = { version = "0.6.0-rc.4", default-features = false, path = "../complex" }
+dashu-base = { version = "0.6.0", default-features = false, path = "../base" }
+dashu-int = { version = "0.6.0", default-features = false, path = "../integer" }
+dashu-float = { version = "0.6.0", default-features = false, path = "../float" }
+dashu-ratio = { version = "0.6.0", default-features = false, path = "../rational" }
+dashu-cmplx = { version = "0.6.0", default-features = false, path = "../complex" }
 
 quote = "1"
 proc-macro2 = "1"

@@ -2,32 +2,15 @@
 
 ## Unreleased
 
-## 0.6.0-rc.4
-
-### Change
-- **`DivExact` / `DivExactAssign` are now re-exported from `num-modular` 0.6.5 instead of defined
-  in this crate** — avoiding a duplicate definition of the same traits. The `num-modular` traits
-  carry a `Precompute` type parameter: `dashu`'s implementations (in `dashu-int`) use the empty
-  precomputation `()`, so call sites pass `&()` — `n.div_exact(d)` becomes `n.div_exact(d, &())`
-  and `n.div_exact_assign(d)` becomes `n.div_exact_assign(d, &())`. Primitive impls now come from
-  `num-modular` (for `u8`–`u128`); the previous impls for `usize` and the signed primitives are no
-  longer provided. `dashu-base` gains a `num-modular` dependency (`default-features = false`, so the
-  no_std build is unaffected).
-
-## 0.6.0-rc.3
+## 0.6.0
 
 ### Add
-- `Approximation::value_with_exact()` — the value together with an `is_exact` flag (the error `E`
-  is discarded). Used by dashu-float's Ball exact-tracking ops (`mul_tracking`/`add_tracking`/
-  `sqrt_tracking`/`scale_int_tracking`) and `hypot` to report a zero radius for an all-exact chain.
-
-## 0.6.0-rc.1
-
-### Add
-- `ParseError::InvalidSyntax` variant for structurally malformed input (e.g. an unclosed
-  repeating group in a decimal literal, or multiple `/` separators in a rational). This is a
-  breaking change for code that exhaustively matches `ParseError` without a wildcard arm.
-  (Re-introduced after being held back from 0.5.1 to keep that release break-free.)
+- **`DivExact` / `DivExactAssign` re-exported from `num-modular`** — dashu-base now exposes the exact
+  division traits (new in v0.6). They carry a `Precompute` parameter; dashu's integer impls use the
+  empty precomputation `()`, so call sites pass `&()` (`n.div_exact(d, &())`).
+- `Approximation::value_with_exact()` — the value together with an `is_exact` flag (used by the float
+  Ball exact-tracking ops).
+- `ParseError::InvalidSyntax` — for structurally malformed input (breaking for exhaustive matches).
 
 ## 0.5.1
 

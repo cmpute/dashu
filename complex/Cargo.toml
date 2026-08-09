@@ -1,6 +1,6 @@
 [package]
 name = "dashu-cmplx"
-version = "0.6.0-rc.4"
+version = "0.6.0"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2021"
 description = "An arbitrary-precision complex math library for Rust — the Rust-native alternative to GNU MPC. Provides CBig and CachedCBig, built on dashu-float's FBig, with field arithmetic, elementary transcendentals, and abs/arg/conj/proj plus I/O, following the C99 Annex G / Kahan branch-cut and signed-zero model. Optional serde, rand, num-traits, rkyv, zeroize, and num-complex interop."
@@ -41,9 +41,9 @@ rkyv_v07 = ["dep:rkyv_v07", "dashu-float/rkyv_v07"]
 rkyv_v08 = ["dep:rkyv_v08", "dashu-float/rkyv_v08"]
 
 [dependencies]
-dashu-base = { version = "0.6.0-rc.4", default-features = false, path = "../base" }
-dashu-int = { version = "0.6.0-rc.4", default-features = false, path = "../integer" }
-dashu-float = { version = "0.6.0-rc.4", default-features = false, path = "../float" }
+dashu-base = { version = "0.6.0", default-features = false, path = "../base" }
+dashu-int = { version = "0.6.0", default-features = false, path = "../integer" }
+dashu-float = { version = "0.6.0", default-features = false, path = "../float" }
 
 # stable dependencies
 num-order = { optional = true, version = "1.2.0", default-features = false }

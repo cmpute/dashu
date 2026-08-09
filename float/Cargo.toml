@@ -1,6 +1,6 @@
 [package]
 name = "dashu-float"
-version = "0.6.0-rc.4"
+version = "0.6.0"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2021"
 description = "Arbitrary-precision float math library for Rust with arbitrary base and arbitrary rounding mode. Provides FBig, DBig, and CachedFBig with efficient base conversion, the hexadecimal float format used by C++ programs, and parsing and formatting in base 2-36. Transcendentals (exp, ln, trig, hyperbolic, powers, roots, pi) are correctly rounded; optional serde, rand, num-traits, rkyv, and zeroize."
@@ -46,8 +46,8 @@ postgres-types = ["postgres-types_v02"]
 postgres-types_v02 = ["dep:postgres-types_v02", "dep:_bytes", "std"]
 
 [dependencies]
-dashu-base = { version = "0.6.0-rc.4", default-features = false, path = "../base" }
-dashu-int = { version = "0.6.0-rc.4", default-features = false, path = "../integer" }
+dashu-base = { version = "0.6.0", default-features = false, path = "../base" }
+dashu-int = { version = "0.6.0", default-features = false, path = "../integer" }
 static_assertions = { version = "1.1" }
 
 # stable dependencies
