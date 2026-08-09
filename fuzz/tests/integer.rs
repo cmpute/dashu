@@ -7,8 +7,8 @@
 //!
 //! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test integer -- --ignored --nocapture`
 
+use dashu::base::ring::{DivExact, DivRem, Gcd};
 use dashu::base::SquareRoot;
-use dashu::base::ring::{DivRem, Gcd};
 use dashu::integer::{IBig, UBig};
 use proptest::prelude::*;
 use rug::ops::Pow;
@@ -115,6 +115,24 @@ proptest! {
         let ar = u_to_rug(&a);
         prop_assert_eq!(&a << (n as usize), rug_to_u(&rugc(&ar << n)));
         prop_assert_eq!(&a >> (n as usize), rug_to_u(&rugc(&ar >> n)));
+    }
+
+    /// `div_exact` (the Hensel 2-adic kernels) must agree with the general `div_rem`: `Some(a/b)`
+    /// exactly when `b | a`, with the same quotient. `is_multiple_of` (which reuses the Hensel
+    /// probes) must agree with `div_rem`'s exactness too.
+    #[test]
+    #[ignore]
+    fn ubig_div_exact_fuzz(
+        a in fuzz::ubig_strategy(4),
+        b in fuzz::ubig_strategy(2).prop_filter("nonzero", |b| !b.is_zero()),
+    ) {
+        let is_multiple = a.is_multiple_of(&b);
+        let d = a.clone().div_exact(b.clone(), &());
+        let (q, r) = a.div_rem(&b);
+        let expected = if r.is_zero() { Some(q) } else { None };
+        let is_exact = expected.is_some();
+        prop_assert_eq!(d, expected);
+        prop_assert_eq!(is_multiple, is_exact);
     }
 
     // ---- IBig ----

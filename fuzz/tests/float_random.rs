@@ -15,6 +15,7 @@
 //!
 //! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test float_random -- --ignored --nocapture`
 
+use dashu::base::Sign;
 use dashu::float::ops::Abs;
 use dashu::float::round::Round;
 use dashu::float::round::mode::*;
@@ -138,6 +139,48 @@ fn check_all_modes<const B: Word>(a: &Repr<B>, b: &Repr<B>, precision: usize) {
     check_pair::<HalfAway, B>(a, b, precision, "HalfAway");
 }
 
+/// Compare limited-precision `fma(a, b, c, sign) = round(c + sign·(a·b))` — a single fused rounding —
+/// against the exact `c ± a·b` computed at unlimited precision and re-rounded (sharing
+/// `rounded_oracle` with add/sub/mul).
+fn check_fma<R: Round, const B: Word>(
+    a: &Repr<B>,
+    b: &Repr<B>,
+    c: &Repr<B>,
+    sign: Sign,
+    precision: usize,
+    mode_name: &str,
+) {
+    let ctx = Context::<R>::new(precision);
+    let unlimited = Context::<R>::new(0);
+    let ab = unlimited.mul(a, b).unwrap().value().repr().clone();
+    let exact = match sign {
+        Sign::Positive => unlimited.add(c, &ab).unwrap().value().repr().clone(),
+        Sign::Negative => unlimited.sub(c, &ab).unwrap().value().repr().clone(),
+    };
+    let actual = ctx.fma(a, b, c, sign).unwrap().value().repr().clone();
+    let (fma_p, fma_p1) = rounded_oracle::<R, B>(exact, precision);
+    assert!(
+        actual == fma_p || actual == fma_p1,
+        "fma mismatch (mode={mode_name}, p={precision})\n a={a:?}\n b={b:?}\n c={c:?}\n sign={sign:?}\n actual={actual:?}\n oracle(p)={fma_p:?}\n oracle(p+1)={fma_p1:?}",
+    );
+}
+
+/// `fma` under all six rounding modes, both signs of the `±z3` addend.
+fn check_fma_all_modes<const B: Word>(a: &Repr<B>, b: &Repr<B>, c: &Repr<B>, precision: usize) {
+    check_fma::<Zero, B>(a, b, c, Sign::Positive, precision, "Zero+");
+    check_fma::<Zero, B>(a, b, c, Sign::Negative, precision, "Zero-");
+    check_fma::<Away, B>(a, b, c, Sign::Positive, precision, "Away+");
+    check_fma::<Away, B>(a, b, c, Sign::Negative, precision, "Away-");
+    check_fma::<Up, B>(a, b, c, Sign::Positive, precision, "Up+");
+    check_fma::<Up, B>(a, b, c, Sign::Negative, precision, "Up-");
+    check_fma::<Down, B>(a, b, c, Sign::Positive, precision, "Down+");
+    check_fma::<Down, B>(a, b, c, Sign::Negative, precision, "Down-");
+    check_fma::<HalfEven, B>(a, b, c, Sign::Positive, precision, "HalfEven+");
+    check_fma::<HalfEven, B>(a, b, c, Sign::Negative, precision, "HalfEven-");
+    check_fma::<HalfAway, B>(a, b, c, Sign::Positive, precision, "HalfAway+");
+    check_fma::<HalfAway, B>(a, b, c, Sign::Negative, precision, "HalfAway-");
+}
+
 /// Precision strategy biased toward the boundary precisions 1/2/3 (where rounding bugs live),
 /// mixed with a uniform draw over `1..200`.
 fn precision_strategy() -> impl Strategy<Value = usize> {
@@ -169,5 +212,28 @@ proptest! {
         let a = Repr::<10>::new(a_sig, a_exp);
         let b = Repr::<10>::new(b_sig, b_exp);
         check_all_modes::<10>(&a, &b, precision);
+    }
+
+    /// fma (fused multiply-add, `c + sign·(a·b)`) under all modes and both signs, in bases 2 and 10.
+    #[test]
+    #[ignore]
+    fn fbig_fma_fuzz(
+        a_sig in fuzz::ibig_strategy(5), a_exp in -1500isize..1500,
+        b_sig in fuzz::ibig_strategy(5), b_exp in -1500isize..1500,
+        c_sig in fuzz::ibig_strategy(5), c_exp in -1500isize..1500,
+        precision in precision_strategy(),
+    ) {
+        check_fma_all_modes::<2>(
+            &Repr::<2>::new(a_sig.clone(), a_exp),
+            &Repr::<2>::new(b_sig.clone(), b_exp),
+            &Repr::<2>::new(c_sig.clone(), c_exp),
+            precision,
+        );
+        check_fma_all_modes::<10>(
+            &Repr::<10>::new(a_sig, a_exp),
+            &Repr::<10>::new(b_sig, b_exp),
+            &Repr::<10>::new(c_sig, c_exp),
+            precision,
+        );
     }
 }

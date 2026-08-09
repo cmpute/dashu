@@ -11,8 +11,9 @@
 
 use core::str::FromStr;
 use dashu::float::ops::Abs;
-use dashu::float::round::mode::HalfAway;
-use dashu::float::{Context, DBig, Repr};
+use dashu::float::round::Round;
+use dashu::float::round::mode::{Down, HalfAway, HalfEven, Up, Zero};
+use dashu::float::{Context, DBig, FBig, Repr};
 use dashu::integer::IBig;
 use proptest::prelude::*;
 use rug::Float;
@@ -66,6 +67,84 @@ fn rug_at(x_str: &str, bits: u32) -> Option<Float> {
         Ok(p) => Some(Float::with_val(bits, p)),
         Err(_) => None,
     }
+}
+
+/// Round the high-precision MPFR value to `prec` decimal digits under `R`, via dashu's
+/// `with_precision` (a trusted, separately-validated rounding primitive) on an unlimited-precision
+/// parse of the full decimal expansion. This avoids the double-rounding hazard of formatting a
+/// bit-rounded value to decimal digits — exact → digits directly, so a digit-level tie is resolved
+/// correctly.
+fn round_to_prec<R: Round>(rug_hi: &Float, prec: usize) -> FBig<R, 10> {
+    let hi = FBig::<R, 10>::from_str(&rug_hi.to_string_radix(10, None)).unwrap();
+    hi.with_precision(prec).value()
+}
+
+/// Is dashu's `prec`-digit result under a directed mode the correct rounding of the exact value?
+///
+/// `up` / `down` are MPFR's upward- and downward-rounded approximations at `rug_bits ≫ prec`
+/// digits. Each is rounded to `prec` digits under `R` via [`round_to_prec`]. For a value that is
+/// exactly a `prec`-digit number, or exactly at a digit-level tie, the two approximations both
+/// land on the same digit value (the value is representable at `rug_bits`), so dashu must match it
+/// exactly; in the rare straddle (both give adjacent digits) either is accepted.
+fn directed_eq<R: Round>(d: &FBig<R, 10>, up: &Float, down: &Float, prec: usize) -> bool {
+    let r_up = round_to_prec::<R>(up, prec);
+    let r_down = round_to_prec::<R>(down, prec);
+    d.repr() == r_up.repr() || (r_up.repr() != r_down.repr() && d.repr() == r_down.repr())
+}
+
+/// Compare `sqrt`'s result within 1 ulp of the correct `prec`-digit rounding. Unlike the other
+/// roots, `sqrt` is deliberately **not** Ziv-certified (it uses the integer `sqrt_rem` + a guard
+/// adjustment in `root.rs`, so it is near-correct only), so a 1-ulp deviation is legitimate.
+fn directed_sqrt_ok<R: Round>(d: &FBig<R, 10>, up: &Float, prec: usize) -> bool {
+    let r = round_to_prec::<R>(up, prec);
+    let diff = (d.clone() - r).abs();
+    diff.repr().significand().is_zero() || diff <= d.ulp()
+}
+
+/// Compare one cache-taking transcendental under one directed mode against MPFR's `*_round`
+/// (computing both the `Up` and `Down` approximations). Skips (via `continue`) a result that
+/// overflows to infinity.
+macro_rules! directed_check {
+    ($op:ident, $rug_method:ident, $mode:ident, $x:ident, $xr:ident, $prec:ident, $xs:ident) => {
+        {
+            let d = dashu_ok!(Context::<$mode>::new($prec).$op::<10>($x.repr(), None));
+            if d.repr().is_infinite() {
+                continue;
+            }
+            let mut up = $xr.clone();
+            up.$rug_method(rug::float::Round::Up);
+            let mut down = $xr.clone();
+            down.$rug_method(rug::float::Round::Down);
+            prop_assert!(
+                directed_eq::<$mode>(&d, &up, &down, $prec),
+                concat!(stringify!($op), " ", stringify!($mode), " x={} prec={}: dashu={}"),
+                $xs,
+                $prec,
+                d
+            );
+        }
+    };
+}
+
+/// The same comparison for `sqrt`, whose context method takes no cache argument.
+macro_rules! directed_check_sqrt {
+    ($mode:ident, $x:ident, $xr:ident, $prec:ident, $xs:ident) => {
+        {
+            let d = dashu_ok!(Context::<$mode>::new($prec).sqrt::<10>($x.repr()));
+            if d.repr().is_infinite() {
+                continue;
+            }
+            let mut up = $xr.clone();
+            up.sqrt_round(rug::float::Round::Up);
+            prop_assert!(
+                directed_sqrt_ok::<$mode>(&d, &up, $prec),
+                concat!("sqrt ", stringify!($mode), " x={} prec={}: dashu={}"),
+                $xs,
+                $prec,
+                d
+            );
+        }
+    };
 }
 
 proptest! {
@@ -399,6 +478,77 @@ proptest! {
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
             let r: DBig = DBig::from_str(&xr.atanh().to_string_radix(10, Some(prec))).unwrap();
             prop_assert!(within_k_ulps(&d, &r, 2), "atanh x={xs} prec={prec}: dashu={d} rug={r}");
+        }
+    }
+
+    // ---- directed rounding modes (bit-exact vs MPFR under the same mode) ----
+    //
+    // The HalfAway tests above only exercise the Ziv loop under nearest. These check that the
+    // loop certifies correctly under Up / Down / Zero / HalfEven too, compared bit-exactly against
+    // MPFR rounded in the matching direction.
+
+    #[test]
+    #[ignore]
+    fn fbig_exp_directed_fuzz(x in small_x()) {
+        let xs = format!("{x:e}");
+        for prec in fuzz::fuzz_precisions_decimal() {
+            let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
+            directed_check!(exp, exp_round, Up, x, xr, prec, xs);
+            directed_check!(exp, exp_round, Down, x, xr, prec, xs);
+            directed_check!(exp, exp_round, Zero, x, xr, prec, xs);
+            directed_check!(exp, exp_round, HalfEven, x, xr, prec, xs);
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn fbig_ln_directed_fuzz(x in fuzz::pos_dbig_strategy(-50..=50)) {
+        let xs = format!("{x:e}");
+        for prec in fuzz::fuzz_precisions_decimal() {
+            let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
+            directed_check!(ln, ln_round, Up, x, xr, prec, xs);
+            directed_check!(ln, ln_round, Down, x, xr, prec, xs);
+            directed_check!(ln, ln_round, Zero, x, xr, prec, xs);
+            directed_check!(ln, ln_round, HalfEven, x, xr, prec, xs);
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn fbig_log2_directed_fuzz(x in fuzz::pos_dbig_strategy(-200..=200)) {
+        let xs = format!("{x:e}");
+        for prec in fuzz::fuzz_precisions_decimal() {
+            let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
+            directed_check!(log2, log2_round, Up, x, xr, prec, xs);
+            directed_check!(log2, log2_round, Down, x, xr, prec, xs);
+            directed_check!(log2, log2_round, Zero, x, xr, prec, xs);
+            directed_check!(log2, log2_round, HalfEven, x, xr, prec, xs);
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn fbig_log10_directed_fuzz(x in fuzz::pos_dbig_strategy(-200..=200)) {
+        let xs = format!("{x:e}");
+        for prec in fuzz::fuzz_precisions_decimal() {
+            let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
+            directed_check!(log10, log10_round, Up, x, xr, prec, xs);
+            directed_check!(log10, log10_round, Down, x, xr, prec, xs);
+            directed_check!(log10, log10_round, Zero, x, xr, prec, xs);
+            directed_check!(log10, log10_round, HalfEven, x, xr, prec, xs);
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn fbig_sqrt_directed_fuzz(x in fuzz::pos_dbig_strategy(-50..=50)) {
+        let xs = format!("{x:e}");
+        for prec in fuzz::fuzz_precisions_decimal() {
+            let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
+            directed_check_sqrt!(Up, x, xr, prec, xs);
+            directed_check_sqrt!(Down, x, xr, prec, xs);
+            directed_check_sqrt!(Zero, x, xr, prec, xs);
+            directed_check_sqrt!(HalfEven, x, xr, prec, xs);
         }
     }
 

@@ -80,12 +80,38 @@ proptest! {
         prop_assert!(rbig_to_rug(&d) == rugc_r(&ra * &ra));
     }
 
+    /// pow with a signed exponent — the 0.6.0 isize change: negative exponents reciprocate first
+    /// (`x^(-n) == 1 / x^n`). A zero base raised to a negative power panics, so that case is filtered.
     #[test]
     #[ignore]
-    fn ratio_pow(a in rbig_strategy(), n in 0u32..=12) {
+    fn ratio_pow(
+        (a, n) in (rbig_strategy(), -12i32..=12).prop_filter(
+            "zero base with negative exponent panics",
+            |(a, n)| !(*n < 0 && a.numerator().is_zero()),
+        ),
+    ) {
         let ra = rbig_to_rug(&a);
         let d = a.pow(n as isize);
-        prop_assert!(rbig_to_rug(&d) == rugc_r(ra.pow(n)));
+        let r = if n >= 0 {
+            rugc_r(ra.pow(n as u32))
+        } else {
+            rugc_r(ra.recip().pow((-n) as u32))
+        };
+        prop_assert!(rbig_to_rug(&d) == r, "pow n={n} a={a}: dashu={d} rug={r}");
+    }
+
+    /// rem (`%`): dashu's `RBig % RBig` is the *centered* remainder (closest to zero, `div.rs` picks
+    /// the smaller of the truncated remainder and `|b| − r`), not the truncated one. rug has no `%`
+    /// for `Rational`, so the reference is `a − round(a/b)·b` with `round` = round-half-away-from-zero.
+    #[test]
+    #[ignore]
+    fn ratio_rem(a in rbig_strategy(), b in rbig_strategy().prop_filter("nonzero value", |b| !b.numerator().is_zero())) {
+        let (ra, rb) = (rbig_to_rug(&a), rbig_to_rug(&b));
+        let d = &a % &b;
+        let q = rugc_r(&ra / &rb).round();
+        let prod = rugc_r(&q * &rb);
+        let r = rugc_r(&ra - &prod);
+        prop_assert!(rbig_to_rug(&d) == r, "rem a={a} b={b}: dashu={d} rug={r}");
     }
 
     #[test]

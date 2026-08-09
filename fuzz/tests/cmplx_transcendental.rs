@@ -12,6 +12,8 @@
 //! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test cmplx_transcendental -- --ignored --nocapture`
 //! (override the precision sweep with `FUZZ_PRECISIONS=53`, case count with `PROPTEST_CASES=N`.)
 
+use dashu::base::Sign;
+use dashu::integer::IBig;
 use fuzz::cmplx::*;
 use proptest::prelude::*;
 use rug::ops::Pow;
@@ -25,6 +27,17 @@ macro_rules! cmplx_ok {
             Err(_) => continue,
         }
     };
+}
+
+/// CBig with both parts ±0 (all four sign combinations) — reaches the Annex-G signed-zero
+/// shortcuts that the nonzero `f64_part` strategy never hits.
+fn zero_pair() -> impl Strategy<Value = (f64, f64)> {
+    (prop::bool::ANY, prop::bool::ANY).prop_map(|(neg_re, neg_im)| {
+        (
+            if neg_re { -0.0f64 } else { 0.0f64 },
+            if neg_im { -0.0f64 } else { 0.0f64 },
+        )
+    })
 }
 
 proptest! {
@@ -258,5 +271,66 @@ proptest! {
             if !complex_finite(&d, &r) { continue; }
             prop_assert!(close_at(&d, &r, prec as usize), "powf zre={zre} zim={zim} wre={wre} wim={wim} prec={prec}");
         }
+    }
+
+    /// z^n ≈ MPC z^n for integer exponents (incl. negative, via dashu's reciprocal path and the
+    /// Ziv squaring chain) — `mpc_pow` is single-valued for integer exponents, so it agrees with
+    /// `z^n` even across the branch cut.
+    #[test]
+    #[ignore]
+    fn cbig_powi_fuzz(zre in f64_part(), zim in f64_part(), n in -12i32..=12) {
+        for prec in fuzz::fuzz_precisions_bits() {
+            let (z, rz) = pair(zre, zim, prec as usize);
+            let d = cmplx_ok!(z.context().powi(&z, IBig::from(n)));
+            let r = rz.pow(&rug::Complex::with_val(prec as u32, (n as f64, 0.0)));
+            if !complex_finite(&d, &r) { continue; }
+            prop_assert!(close_at(&d, &r, prec as usize), "powi zre={zre} zim={zim} n={n} prec={prec}");
+        }
+    }
+
+    /// Annex-G signed-zero checks at `±0 + i·±0`. `close_at` is sign-blind, so these assert the
+    /// per-part component signs explicitly.
+    #[test]
+    #[ignore]
+    fn cbig_signed_zero_fuzz((re, im) in zero_pair()) {
+        let (c, _rz) = pair(re, im, 50);
+        let ctx = c.context();
+
+        let re_sign = if re.is_sign_negative() { Sign::Negative } else { Sign::Positive };
+        let im_sign = if im.is_sign_negative() { Sign::Negative } else { Sign::Positive };
+        // cos / sqr imaginary zero is the signed product x·y: -0 iff the parts have opposite signs.
+        let product_sign = if re_sign != im_sign { Sign::Negative } else { Sign::Positive };
+
+        // sin(±0 + i·0) = ±0 + i·0, cos(±0 + i·0) = 1 + i·(signed x·y).
+        let (s, co) = ctx.sin_cos(&c, None);
+        let s = s.unwrap().value();
+        let co = co.unwrap().value();
+        prop_assert_eq!(s.re().sign(), re_sign, "sin re sign z=({}, {})", re, im);
+        prop_assert_eq!(s.im().sign(), im_sign, "sin im sign z=({}, {})", re, im);
+        prop_assert!(co.re().significand().is_one(), "cos re = 1 z=({}, {})", re, im);
+        prop_assert_eq!(co.im().sign(), product_sign, "cos im sign z=({}, {})", re, im);
+
+        // sqr(±0 + i·0) = +0 + i·(signed 2·x·y).
+        let sq = ctx.sqr(&c).unwrap().value();
+        prop_assert_eq!(sq.re().sign(), Sign::Positive, "sqr re sign z=({}, {})", re, im);
+        prop_assert_eq!(sq.im().sign(), product_sign, "sqr im sign z=({}, {})", re, im);
+
+        // log(±0 + i·0) = -∞ + i·(±π if re negative, ±0 if re positive) — the im sign follows the input.
+        let lg = ctx.log(&c, None).unwrap().value();
+        prop_assert!(lg.re().is_infinite(), "log re -inf z=({}, {})", re, im);
+        if re.is_sign_negative() {
+            prop_assert!(!lg.im().significand().is_zero(), "log im = ±π z=({}, {})", re, im);
+        } else {
+            prop_assert!(lg.im().significand().is_zero(), "log im = ±0 z=({}, {})", re, im);
+        }
+        prop_assert_eq!(lg.im().sign(), im_sign, "log im sign z=({}, {})", re, im);
+
+        // tan / tanh(±0 + i·0) = ±0 + i·0 — parts carry the input zeros' signs.
+        let t = ctx.tan(&c, None).unwrap().value();
+        prop_assert_eq!(t.re().sign(), re_sign, "tan re sign z=({}, {})", re, im);
+        prop_assert_eq!(t.im().sign(), im_sign, "tan im sign z=({}, {})", re, im);
+        let th = ctx.tanh(&c, None).unwrap().value();
+        prop_assert_eq!(th.re().sign(), re_sign, "tanh re sign z=({}, {})", re, im);
+        prop_assert_eq!(th.im().sign(), im_sign, "tanh im sign z=({}, {})", re, im);
     }
 }
