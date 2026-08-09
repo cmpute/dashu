@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Fix
+- **`UBig::remove` / `remove_word` returned wrong results (and a wrong exponent) for
+  non-power-of-two single-word factors in optimized (`release`) builds.** The first Hensel
+  division inside `remove_odd_powers` was wrapped in `debug_assert!`, so the call was compiled
+  **out** in release builds — the quotient buffer was left undivided while the code proceeded as if
+  it had been. Debug builds were correct, which is why the (debug) test suite was green. This also
+  corrupted `dashu-float`'s base-10 floats (their `Repr::normalize` uses `remove_word`), breaking
+  `DBig` arithmetic and `to_decimal`/`to_binary` in release builds. The division is now always
+  executed and the assertion checks its result.
+- **(test) `test_allocate_too_large` now targets the explicitly-checked `allocate_exact` path.**
+  It previously called `allocate`, whose `num_words <= MAX_CAPACITY` precondition is only a debug
+  assertion (by design — it's on the allocation hot path), so under `--release` the request was
+  silently clamped and the `should_panic` test failed.
+
 ## 0.6.0-rc.4
 
 ### Change

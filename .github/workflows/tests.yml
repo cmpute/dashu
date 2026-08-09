@@ -81,6 +81,22 @@ jobs:
           toolchain: stable
       - run: cargo test --no-default-features --features rand --workspace --exclude dashu-python
 
+  # Optimized builds can hide / expose different behavior than the debug builds the other jobs run
+  # (e.g. `debug_assert!` compiled out, arithmetic overflow wrapping, LLVM-level UB). Run the suite
+  # in release mode once per commit so release-only regressions are caught in CI, not after publish.
+  test-release:
+    name: Test (release)
+    runs-on: ubuntu-latest
+    env:
+      RUST_BACKTRACE: 1
+      RUSTFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - run: cargo test --release --all-features --workspace --exclude dashu-python --no-fail-fast
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest

@@ -170,10 +170,8 @@ fn remove_odd_powers(n: &mut UBig, d: Word, cap: usize) -> usize {
         return 0;
     }
     let mut q = core::mem::take(n).0.into_buffer();
-    debug_assert!(
-        hensel_div_odd_in_place(&mut q, d, di),
-        "the probe passed, so the division is exact"
-    );
+    let exact = hensel_div_odd_in_place(&mut q, d, di);
+    debug_assert!(exact, "the probe passed, so the division is exact");
     *n = UBig(Repr::from_buffer(q));
     let mut exp = 1;
 

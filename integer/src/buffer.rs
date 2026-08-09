@@ -547,7 +547,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_allocate_too_large() {
-        let _ = Buffer::allocate(Buffer::MAX_CAPACITY + 1);
+        let _ = Buffer::allocate_exact(usize::MAX);
     }
 
     #[test]
