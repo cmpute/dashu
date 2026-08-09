@@ -96,3 +96,8 @@ harness = false
 name = "shift"
 required-features = ["rand"]
 harness = false
+
+[[bench]]
+name = "div_exact"
+required-features = ["rand"]
+harness = false

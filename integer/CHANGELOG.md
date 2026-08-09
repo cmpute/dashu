@@ -6,18 +6,40 @@
 - **`DivExact` / `DivExactAssign` for `UBig` and `IBig`** — exact division (the traits come from
   `dashu-base`): `div_exact` returns `Some(self / other)` when the divisor divides, `None`
   otherwise; `div_exact_assign` replaces `self` in place, returning `true` on success and leaving
-  it unchanged on failure. Implemented for `UBig`/`IBig` divisors (single-word dispatches to the
-  Hensel path), for reference receivers (`&IBig`), and for every primitive divisor `u8`–`u128`/
-  `usize`/`i8`–`i128`/`isize` (a value wider than `Word` falls back to the `UBig`/`IBig` path).
-  The single-word path uses Hensel (2-adic) exact division: a Newton-iteration modular inverse
-  precomputes `d^{-1} mod 2^WORD_BITS`, and each quotient limb is one multiply and one subtract
-  (no division, no normalization). The consuming `div_exact_word` runs it in place on `self`'s own
-  buffer — no scratch allocation. The Hensel kernel lives in the `div_exact` module, shared with
-  `remove`. `IBig`'s exact division is sign-aware (the quotient's sign is the product of the
-  operands' signs).
+  it unchanged on failure. Implemented for `UBig`/`IBig` divisors, for reference receivers
+  (`&UBig`/`&IBig`), and for every primitive divisor `u8`–`u128`/`usize`/`i8`–`i128`/`isize` (a
+  value wider than `DoubleWord` falls back to the `UBig`/`IBig` path). The operation is implemented
+  on `TypedRepr`/`TypedReprRef` (four ownership combinations, mirroring `div_ops.rs`), with
+  dedicated Hensel kernels per divisor width. `IBig`'s exact division is sign-aware (the quotient's
+  sign is the product of the operands' signs).
+- **Hensel (2-adic) exact division for all divisor widths** — exact division no longer falls back
+  to the general division (quotient + remainder check) for divisors wider than a single word.
+  Instead there are three kernels, all multiply-and-subtract loops with a Newton-iteration modular
+  inverse (`math::inv_mod_pow2`) and no normalization or reciprocal: `hensel_div_odd_in_place`
+  (single word), `hensel_div_odd_dword_in_place` (double word, via the double-word multiply
+  kernel), and `hensel_div_exact_large` (multi word). Divisors are stripped of their factors of 2
+  first, so the kernels only ever see an odd divisor. The multi-word kernel is schoolbook
+  (O(n·m)), so for divisors beyond [`THRESHOLD_DIV_EXACT_DEFAULT`] (180) words exact division falls
+  back to the general division (whose sub-quadratic divide-and-conquer algorithm wins at that size)
+  plus a remainder check — the threshold is tunable via the `DASHU_THRESHOLD_DIV_EXACT` environment
+  variable behind the `tuning` feature.
+- **`integer/benches/div_exact.rs`** — benchmark of `div_exact` (Hensel) against the general
+  division, for multi-word and single-word (hit and probe-miss) divisors.
+- **`UBig::div_exact_const`** — in-place exact division by a fixed `DoubleWord` divisor, returning
+  whether the division was exact (the `const`-divisor counterpart of `DivExactAssign`, mirroring
+  `is_multiple_of_const`). A single-word divisor is probed by the read-only Hensel test first (so
+  a failure leaves `self` untouched) and then divided in place — no scratch allocation; a
+  double-word divisor backs up `self` with an `O(len)` clone.
+- **`UBig::is_multiple_of` uses the Hensel kernels for every divisor width** — the read-only
+  top-carry test (`hensel_is_multiple_of`) for single-word divisors, and the exactness test of the
+  division itself (on a scratch copy) for double-word and multi-word divisors, instead of computing
+  a full remainder. `is_multiple_of_const` and the `is_multiple_of` family now live in the
+  `div_exact` module alongside the kernels.
 - **`UBig::remove_word`** — single-word specialization of `remove`. The factor's power-of-two part is
   stripped by the 2-valuation, and the odd part is divided out by the shared Hensel exact division.
-  `remove(&UBig)` now delegates to it for single-word factors.
+  `remove(&UBig)` now delegates to it for single-word factors. Both the odd-part division and the
+  mixed-factor 2-stripping run on `self`'s own buffer (taken via `TypedRepr`, probed read-only by
+  `hensel_is_multiple_of` first) — no scratch allocation.
 
 ## 0.6.0-rc.3
 

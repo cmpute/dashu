@@ -105,6 +105,8 @@ When implementing algorithms that manipulate word arrays (`&[Word]`), prefer the
 
 **Double-word is a first-class citizen** in this crate. The `DoubleWord` type (from `dashu-base`) and `_dword` operation suffix (e.g. `add_dword_in_place`, `split_dword`, `div_rem_dword`) are treated as peer primitives to single-word ones, not special cases. Whenever planning a new feature or algorithm, actively consider a double-word variant from the start — many operations have a meaningfully faster path when the operand fits in two words, and the crate is structured to expose those paths as first-class APIs.
 
+**Algorithm thresholds** are named `THRESHOLD_<NAME>_DEFAULT` (e.g. `mul::THRESHOLD_SIMPLE_DEFAULT`, `div::THRESHOLD_SIMPLE_DEFAULT`, `THRESHOLD_DIV_EXACT_DEFAULT`) and are tunable at runtime via a matching `DASHU_THRESHOLD_<NAME>` environment variable, behind the `tuning` feature. Follow the pattern in `mul::threshold` / `div::threshold`: a `mod threshold` with an accessor that checks the env var (only under `#[cfg(feature = "tuning")]`) and falls back to the `THRESHOLD_<NAME>_DEFAULT` constant.
+
 ## Bilingual documentation
 
 The README and the user guide each have a Simplified-Chinese mirror — **update both languages in the same change** so they never drift:

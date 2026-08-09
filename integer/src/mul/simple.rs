@@ -271,7 +271,7 @@ fn add_mul_chunk(c: &mut [Word], a: &[Word], b: &[Word]) -> bool {
 /// `carry_lo`, so the caller only needs [`add::sub_dword_in_place`] on the returned
 /// `(carry_lo, carry_hi)`.
 #[inline]
-fn sub_mul_dword_same_len_in_place(
+pub fn sub_mul_dword_same_len_in_place(
     words: &mut [Word],
     rhs: &[Word],
     mult0: Word,

@@ -1,8 +1,9 @@
 use crate::{
-    div_exact::hensel_div_odd_in_place,
+    div_exact::{hensel_div_odd_in_place, hensel_is_multiple_of},
     math::inv_mod_pow2,
-    primitive::{extend_word, shrink_dword, WORD_BITS},
-    repr::TypedReprRef,
+    primitive::{extend_word, shrink_dword, WORD_BITS, WORD_BITS_USIZE},
+    repr::{Repr, TypedReprRef},
+    shift,
     ubig::UBig,
     Word,
 };
@@ -131,10 +132,18 @@ impl UBig {
         // A mixed factor (e.g. 10 = 2·5): strip the trailing 2s once, divide out the odd part (each
         // full `factor`-power consumes `s` of them, so the odd-part count is capped by `tz/s`), then
         // reassemble the cofactor `self / factor^exp = (odd part) << (tz − s·exp)` (the shift amount
-        // is non-negative because `exp ≤ cap = tz/s`).
+        // is non-negative because `exp ≤ cap = tz/s`). `self` is taken and its own buffer is shifted
+        // right by `tz` in place (the low `tz` bits are zero by construction) — no allocation for the
+        // working value; `*self` is rebuilt from the result.
         let tz = self.trailing_zeros().unwrap();
         let cap = tz / s;
-        let mut odd = self.clone() >> tz;
+        let mut odd_buf = core::mem::take(self).0.into_buffer();
+        odd_buf.erase_front(tz / WORD_BITS_USIZE);
+        if tz % WORD_BITS_USIZE != 0 {
+            shift::shr_in_place(&mut odd_buf, (tz % WORD_BITS_USIZE) as u32);
+        }
+        odd_buf.pop_zeros();
+        let mut odd = UBig(Repr::from_buffer(odd_buf));
         let exp = remove_odd_powers(&mut odd, d_odd, cap);
         *self = odd << (tz - s * exp);
         Some(exp)
@@ -154,12 +163,18 @@ fn remove_odd_powers(n: &mut UBig, d: Word, cap: usize) -> usize {
     }
     let di = inv_mod_pow2(extend_word(d), WORD_BITS) as Word;
 
-    // First division by d into a scratch quotient; `n` is left untouched on failure.
-    let mut q: alloc::vec::Vec<Word> = n.as_words().to_vec();
-    if !hensel_div_odd_in_place(&mut q, d, di) {
+    // A read-only divisibility probe first leaves `n` untouched when `d` does not divide it, so the
+    // in-place Hensel division that follows is guaranteed to succeed and can consume `n`'s own
+    // buffer — no scratch allocation.
+    if !hensel_is_multiple_of(n.as_words(), d, di) {
         return 0;
     }
-    *n = UBig::from_words(&q);
+    let mut q = core::mem::take(n).0.into_buffer();
+    debug_assert!(
+        hensel_div_odd_in_place(&mut q, d, di),
+        "the probe passed, so the division is exact"
+    );
+    *n = UBig(Repr::from_buffer(q));
     let mut exp = 1;
 
     // Grow the powers d², d⁴, … while each divides the current quotient exactly (and stays within

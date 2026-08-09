@@ -86,7 +86,7 @@ pub(crate) mod toom_3;
 
 pub use simple::{
     add_mul_dword_same_len_in_place, add_mul_word_in_place, add_mul_word_same_len_in_place,
-    sub_mul_word_same_len_in_place,
+    sub_mul_dword_same_len_in_place, sub_mul_word_same_len_in_place,
 };
 
 /// Multiply a word sequence by a `Word` in place.
