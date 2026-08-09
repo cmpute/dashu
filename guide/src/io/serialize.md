@@ -22,17 +22,17 @@ With the `serde` feature enabled, every numeric type implements `Serialize` / `D
 
 ## Serialization with `rkyv`
 
-With the `rkyv` feature enabled (rkyv **0.7**; use `rkyv_v08` for rkyv **0.8**), zero-copy
+With the `rkyv` feature enabled (rkyv **0.8**; use `rkyv_v07` for rkyv **0.7**), zero-copy
 (de)serialization is available for the integer, rational, float, and complex types. The big integers
 archive as their **native word representation** (`ArchivedVec<Word>`, plus a sign flag for `IBig`),
 so `rkyv::archived_root` yields the words in place with no byte conversion on any path — the fastest
 possible same-architecture encoding, at the cost of a layout that depends on the target's `Word`
 width and endianness. In particular:
 
-- The two rkyv versions are **alternatives**: `rkyv_v07` and `rkyv_v08` are mutually exclusive (their
-  derive-generated type names collide). Enabling both — e.g. `--all-features` — resolves to 0.7.
-  rkyv 0.8 requires Rust ≥ 1.81 (see the [MSRV policy](./faq.md#msrv-and-feature-policy)) and is
-  excluded from the 1.68 MSRV build; its archives store multi-byte words little-endian by default.
+- `rkyv_v07` and `rkyv_v08` can be enabled **together** (their derive-generated types are namespaced
+  through crate aliases, so they don't collide); the unversioned `rkyv` feature currently selects
+  0.8. rkyv 0.8 requires Rust ≥ 1.81 (see the [MSRV policy](../faq.md#msrv-and-feature-policy)) and
+  is excluded from the 1.68 MSRV build; its archives store multi-byte words little-endian by default.
 
 - An archive is **not portable across 32/64-bit targets** (the `Word` size differs) or across machines with different endianness.
 - rkyv itself does not guarantee archive compatibility across rkyv versions, and the `size_16/32/64` offset-width feature must match on both ends.

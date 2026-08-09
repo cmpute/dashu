@@ -85,4 +85,4 @@ assert_eq!(a.pow(&(p - UBig::ONE)), ring.reduce(1)); // Fermat: a^(p-1) = 1 (mod
 
 ## Diophantine approximation
 
-Rational approximation of reals — the simplest rational within a tolerance, continued fractions — lives on `RBig`; see [Conversion](../convert.md#conversion-to-rbig) for `simplest_in` / `nearest_in`.
+Rational approximation of reals — the simplest rational within a tolerance, continued fractions — lives on `RBig`; see [Conversion](../convert.md#conversion-to-rbig) for `simplest_in` / `nearest`.

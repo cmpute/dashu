@@ -161,8 +161,8 @@ let _ = z.clone().ln().exp();
 
 | 别名 | 类型 | 说明 |
 |------|------|------|
-| [`FastReal`](../index.html#fastreal) | `dashu_float::CachedFBig` | 基数 2，Zero——快速 `Real` |
-| [`FastDecimal`](../index.html#fastdecimal) | `dashu_float::CachedFBig<HalfAway, 10>` | 快速 `Decimal` |
-| [`FastComplex`](../index.html#fastcomplex) | `dashu_cmplx::CachedCBig` | 基数 2，Zero——快速 `Complex` |
+| [`FastReal`](https://docs.rs/dashu/latest/dashu/index.html#fastreal) | `dashu_float::CachedFBig` | 基数 2，Zero——快速 `Real` |
+| [`FastDecimal`](https://docs.rs/dashu/latest/dashu/index.html#fastdecimal) | `dashu_float::CachedFBig<HalfAway, 10>` | 快速 `Decimal` |
+| [`FastComplex`](https://docs.rs/dashu/latest/dashu/index.html#fastcomplex) | `dashu_cmplx::CachedCBig` | 基数 2，Zero——快速 `Complex` |
 
 三者均为 `!Send + !Sync`；非缓存的 `Real`/`Decimal`/`Complex` 仍为 `Send + Sync` 基线。

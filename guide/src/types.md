@@ -13,13 +13,13 @@ Common operations are implemented for all these numeric types, please refer to t
 
 ### Word
 
-A `dashu::integer::Word` is an unsigned integer representing a native machine word. The size of a `Word` usually depends on the platform, for example, the `Word` is `u32` on 32-bit platforms. However, the behavior can be overriden by setting the `force_bits` config flag (e.g. add `--cfg force_bits="32"` to the environment variable `RUSTFLAGS`). Since this type is not consistant across platforms, be careful to use it when writing portable programs.
+A `dashu::integer::Word` is an unsigned integer representing a native machine word. The size of a `Word` usually depends on the platform, for example, the `Word` is `u32` on 32-bit platforms. However, the behavior can be overridden by setting the `force_bits` config flag (e.g. add `--cfg force_bits="32"` to the environment variable `RUSTFLAGS`). Since this type is not consistent across platforms, be careful to use it when writing portable programs.
 
 Moreover, there is another type `DoubleWord` representing an integer type with double the size of a `Word`. It's the maximum integer type that can fit in a `UBig` instance without heap allocation. It's also involved in some const constructors.
 
 ### Sign
 
-A `dashu::base::Sign` is a **binary** enum to represent the sign of numbers. Due to effciency and clarity, the number zero will be categorized as `Sign::Positive`, even though it's mathematically unsigned. (Imagine if you store the sign in a ternary format, every number instance will have to pay an extra bit to store the sign, and extra branches to do operations.) To get a ternary representation, it's recommended to use the `.signum()` methods on the numeric types.
+A `dashu::base::Sign` is a **binary** enum to represent the sign of numbers. Due to efficiency and clarity, the number zero will be categorized as `Sign::Positive`, even though it's mathematically unsigned. (Imagine if you store the sign in a ternary format, every number instance will have to pay an extra bit to store the sign, and extra branches to do operations.) To get a ternary representation, it's recommended to use the `.signum()` methods on the numeric types.
 
 Convenient utilities related to the sign are provided with this enum. For example, you can get the sign of any primitive numbers or big numbers through the `dashu::base::Signed` trait, you can also multiply the sign by another sign. You can even multiply the sign with `core::cmp::Ordering`, this is very handy when you want to flip a comparison result based on the sign of operands, and this is widely used in the comparison implementations in `dashu`.
 
@@ -27,7 +27,7 @@ Convenient utilities related to the sign are provided with this enum. For exampl
 
 The most fundamental type of the `dashu` libraries is the natural number `UBig`. The underlying representation of an `UBig` number is an array of `Word`s. What's special about `dashu` is that when it contains only one or two words, the words will be inlined and no heap allocation will happen. Furthermore, an `UBig` usually only occupies a stack space of 3 words when it's inlined (see the code for the details if you are interested). Thanks to special memory optimization in `dashu`, an `Option<UBig>` and even a `Option<IBig>` will also take only 3 words.
 
-> Currently the memory layout of an `UBig` instance is not finalized, so don't rely on this by now. Besides, there will be no compatiblity guarantee for the memory layout between different versions. The memory layout will probably be stablized in a `v1.0.0` release.
+> Currently the memory layout of an `UBig` instance is not finalized, so don't rely on this by now. Besides, there will be no compatibility guarantee for the memory layout between different versions. The memory layout will probably be stabilized in a `v1.0.0` release.
 
 ### Layout of `FBig`
 

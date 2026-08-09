@@ -27,14 +27,14 @@ Nevertheless, there are other useful methods for **lossy** conversions:
 | FBig/DBig | \                 | `.to_int()`[^b]                       | ...[^c]           | `.simplest_from_float()`[^d] |
 | RBig      | \                 | `.to_int()/.trunc()/.floor()/.ceil()` | `.to_float()`[^e] | \                            |
 
-> - [^b] The methods `.ceil()`, `.floor()` and `.trunc()` of `FBig` doesn't return `IBig`, because when `FBig` is very large (with a high exponent), the `IBig` result can consume a great amout of memory, which is usually not a desirable behavior.
+> - [^b] The methods `.ceil()`, `.floor()` and `.trunc()` of `FBig` doesn't return `IBig`, because when `FBig` is very large (with a high exponent), the `IBig` result can consume a great amount of memory, which is usually not a desirable behavior.
 > - [^c] See the section *Conversion for FBig/DBig* below for this conversion.
 > - [^d] See the section *Conversion from Floats to RBig* below for more approaches.
 > - [^e] This method requires the `dashu-float` feature to be enabled for the crate `dashu-ratio`.
 
-Another useful conversion is `UBig::as_ibig()`. Due to the fact that `UBig` and `IBig` has the same memory layout, A `UBig` can be directed used as an `IBig` through this method. Similarly, `RBig::as_relaxed()` can be helpful when you want to use an `RBig` instance as an `dashu::rational::Relaxed`. 
+Another useful conversion is `UBig::as_ibig()`. Due to the fact that `UBig` and `IBig` has the same memory layout, A `UBig` can be directly used as an `IBig` through this method. Similarly, `RBig::as_relaxed()` can be helpful when you want to use an `RBig` instance as an `dashu::rational::Relaxed`. 
 
-Besides these methods designed for conversions, the constructors and destructors can also be used for the purpose of type conversion, especially from compound types to its parts. Please refer to the [Construction and Destruction](./construct.md#Construct_from_Parts) page for this approach.
+Besides these methods designed for conversions, the constructors and destructors can also be used for the purpose of type conversion, especially from compound types to its parts. Please refer to the [Construction and Destruction](./construct.md#construct-from-parts) page for this approach.
 
 ## Conversion between Big Numbers and Primitives
 
@@ -62,7 +62,7 @@ To convert from big numbers to primitive numbers:
 | RBig      | TryInto      | TryInto      | TryInto/`.to_f*()`/`.to_f*_fast()` |
 | CBig      | TryInto      | TryInto      | TryInto                            |
 
-In the table above, `.to_f*()` denotes `.to_f32()` and `.to_f64()`, similarly `.to_f*_fast()` denotes `.to_f32_fast()` and `.to_f64_fast()`. The *fast* methods don't guarantee corrent rounding so that they can be faster. It's recommended to use the `.to_f*()` methods over the `TryFrom`/`TryInto` trait, because `.to_f*()` will not fail and it also returns the rounding direction during the conversion (i.e. the sign of the rounding error). (`CBig` has no `.to_f*()` methods — its only float-conversion path is `TryInto`, which is base-2.)
+In the table above, `.to_f*()` denotes `.to_f32()` and `.to_f64()`, similarly `.to_f*_fast()` denotes `.to_f32_fast()` and `.to_f64_fast()`. The *fast* methods don't guarantee correct rounding so that they can be faster. It's recommended to use the `.to_f*()` methods over the `TryFrom`/`TryInto` trait, because `.to_f*()` will not fail and it also returns the rounding direction during the conversion (i.e. the sign of the rounding error). (`CBig` has no `.to_f*()` methods — its only float-conversion path is `TryInto`, which is base-2.)
 
 The conversions from and to primitive numbers are also implemented for the `dashu::float::Repr` type. Especially `.to_f32()` and `.to_f64()` are implemented which follows the default IEEE rounding mode.
 
@@ -152,4 +152,4 @@ assert_eq!(f32::try_from(big), Err(ConversionError::OutOfBounds));
 
 With the optional `dashu-float` feature enabled on `dashu-ratio`, `TryFrom<FBig> for RBig` succeeds only when the float is exactly rational-representable, and `RBig::to_float()` is the rounding-aware path in the other direction.
 
-For approximating a float by a *simple* rational (the smallest numerator/denominator within a tolerance), use `simplest_from_f32` / `simplest_from_f64`, or the interval queries `simplest_in`, `nearest_in`, `next_up`, and `next_down` on `FBig`/`DBig` — these treat the float's own rounding interval as the search bound. `is_simpler_than(other)` compares two `RBig`s directly by the simplicity ordering that those queries optimize for.
+For approximating a float by a *simple* rational (the smallest numerator/denominator within a tolerance), use `simplest_from_f32` / `simplest_from_f64`, which search the float's own rounding interval. On `RBig`, `simplest_in(lower, upper)` finds the simplest rational inside an explicit interval, and `nearest(&limit)` / `next_up(&limit)` / `next_down(&limit)` find the rational(s) closest to a value with a denominator bounded by `limit` (Farey-sequence neighbors). `is_simpler_than(other)` compares two `RBig`s directly by the same simplicity ordering.

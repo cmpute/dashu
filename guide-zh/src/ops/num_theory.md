@@ -81,4 +81,4 @@ assert_eq!(a.pow(&(p - UBig::ONE)), ring.reduce(1)); // Fermat: a^(p-1) = 1 (mod
 
 ## 丢番图逼近
 
-实数的有理逼近——容差范围内的最简有理数、连分数——位于 `RBig` 上；关于 `simplest_in` / `nearest_in`，请参见[类型转换](../convert.md#转换到-rbig)。
+实数的有理逼近——容差范围内的最简有理数、连分数——位于 `RBig` 上；关于 `simplest_in` / `nearest`，请参见[类型转换](../convert.md#转换到-rbig)。

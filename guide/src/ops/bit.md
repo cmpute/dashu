@@ -1,4 +1,4 @@
-`UBig` and `IBig` support the bitwise operators `&` (and), `|` (or), `^` (xor), and `!` (not). On `UBig`, `!` is an *infinite-width* complement — every bit above the highest set bit is treated as `1`, so `!n` is generally a very large number. On `IBig`, `!` follows the two's-complement rule.
+`UBig` and `IBig` support the bitwise operators `&` (and), `|` (or), and `^` (xor). The unary complement `!` is implemented **only on `IBig`**, following the two's-complement rule (`!x == -x - 1`); `UBig` does not implement `!`.
 
 ```rust
 use dashu::integer::UBig;

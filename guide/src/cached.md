@@ -181,9 +181,9 @@ faster type is easy to reach by name:
 
 | Alias | Type | Notes |
 |-------|------|-------|
-| [`FastReal`](../index.html#fastreal) | `dashu_float::CachedFBig` | base 2, Zero — fast `Real` |
-| [`FastDecimal`](../index.html#fastdecimal) | `dashu_float::CachedFBig<HalfAway, 10>` | fast `Decimal` |
-| [`FastComplex`](../index.html#fastcomplex) | `dashu_cmplx::CachedCBig` | base 2, Zero — fast `Complex` |
+| [`FastReal`](https://docs.rs/dashu/latest/dashu/index.html#fastreal) | `dashu_float::CachedFBig` | base 2, Zero — fast `Real` |
+| [`FastDecimal`](https://docs.rs/dashu/latest/dashu/index.html#fastdecimal) | `dashu_float::CachedFBig<HalfAway, 10>` | fast `Decimal` |
+| [`FastComplex`](https://docs.rs/dashu/latest/dashu/index.html#fastcomplex) | `dashu_cmplx::CachedCBig` | base 2, Zero — fast `Complex` |
 
 All three are `!Send + !Sync`; the non-cached `Real`/`Decimal`/`Complex` remain the `Send + Sync`
 baseline.

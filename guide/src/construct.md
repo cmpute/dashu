@@ -12,9 +12,9 @@ For all the numeric types, there are several constants associated with the type.
 
 ## Raw Constructor for `UBig`
 
-For `UBig`, it can be constructed from a slice of [`Word`](./types.md#word)s, using the `::from_words()` method. The words must be arranged in little-endian order, i.e. the first word should represent the least significant part of the number. If then integer you want to construct is small, then you can also use the `::from_word()` and `::from_dword()` methods, which can be called from a `const` context.
+For `UBig`, it can be constructed from a slice of [`Word`](./types.md#word)s, using the `::from_words()` method. The words must be arranged in little-endian order, i.e. the first word should represent the least significant part of the number. If the integer you want to construct is small, then you can also use the `::from_word()` and `::from_dword()` methods, which can be called from a `const` context.
 
-To deconstruct a `UBig`, currently we don't support taking the ownership of the words stored in a `UBig`. You can only access them using the `.as_words()` method, which returns a reference to the words. In future, when the memory layout of the `UBig` is stablized, it's possible to add a deconstructor that giving the ownership of the word to prevent unnecessary copying.
+To deconstruct a `UBig`, currently we don't support taking the ownership of the words stored in a `UBig`. You can only access them using the `.as_words()` method, which returns a reference to the words. In future, when the memory layout of the `UBig` is stabilized, it's possible to add a deconstructor that giving the ownership of the word to prevent unnecessary copying.
 
 ## Construct from Parts
 
@@ -33,7 +33,7 @@ denominator (`IBig`), so the sign can live on either component.
 - For `::from_parts_const()`
   - `IBig` = sign: `Sign` + magnitude: `DoubleWord`
   - `FBig`/`DBig` = sign: `Sign` + significand: `DoubleWord` + exponent: `isize`
-  - `RBig` = sign: `Sign` + numerator: `DoubleWord` + denomiator: `DoubleWord`
+  - `RBig` = sign: `Sign` + numerator: `DoubleWord` + denominator: `DoubleWord`
 
 It's worth noting that, the constructors for `FBig` and `DBig` also determines the precision of the result floating numbers. A float number created from `::from_parts()` will have a precision of the digits in the magnitude (in the given radix). A float number created from `::from_parts_const()` will have a precision either inferred from the magnitude (same as `::from_parts()`) or from the argument `min_precision` of the method.
 
@@ -45,6 +45,6 @@ We also provide a convenient and efficient way to create large numbers from lite
 
 You can directly put numeric literals as the argument without quotes (e.g. `dbig!(3.1415926535897932384626)`), and you don't need to worry about precision loss, because it's guaranteed that the number is faithfully created without approximations. Besides, the macros have minimal runtime overhead, since the numbers are preprocessed by the macros during compile-time.
 
-When the number doesn't have a high precision, these macros can be used in a `const` environment, however this ability dependends on the precision and the machine word size. To create large constants, you can use the `static_*` macros (such as `static_ubig!`) in the crate. They have the same syntax as the normal macros, but the different is that the outputs of the macros are references to a static instance, rather than directly generating an instance. There are also other limitations about these macros for static creation.
+When the number doesn't have a high precision, these macros can be used in a `const` environment, however this ability depends on the precision and the machine word size. To create large constants, you can use the `static_*` macros (such as `static_ubig!`) in the crate. They have the same syntax as the normal macros, but the different is that the outputs of the macros are references to a static instance, rather than directly generating an instance. There are also other limitations about these macros for static creation.
 
 Please refer to [the docs of `dashu-macros`](https://docs.rs/dashu-macros/latest/dashu_macros/) for detailed usage of these macros.

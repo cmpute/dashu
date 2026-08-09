@@ -36,7 +36,7 @@ assert_eq!(frac.to_string(), "0.234");
 
 ## 复数算术
 
-`CBig` 支持域运算 `+`、`-`、`*`、`/`，以及 `sqr`（平方）和 `inv`（乘法逆）。还可以用实数 `FBig` 与 `CBig` 进行混合类型的乘法和除法。乘法和除法使用 Smith 方法并配合保护位和重新舍入，提供与 `dashu-float` 超越函数相同的近似正确舍入保证。`conj()` 求共轭，`mul_i(negative)` 乘以 `+i` 或 `-i`——一种精确旋转，交换实部与虚部。分量可通过 `re()` / `im()` 以原始表示（借用 `&Repr`）访问，或通过 `into_parts()` 获得拥有的 `FBig`（见[构造与析构](../construct.md)）。
+`CBig` 支持域运算 `+`、`-`、`*`、`/`，以及 `sqr`（平方）和 `inv`（乘法逆）。还可以用实数 `FBig` 与 `CBig` 进行混合类型的乘法和除法。复数乘法与除法通过保护位和重新舍入实现近似正确舍入（除法使用 Smith 的防溢出方法）。`conj()` 求共轭，`mul_i(negative)` 乘以 `+i` 或 `-i`——一种精确旋转，交换实部与虚部。分量可通过 `re()` / `im()` 以原始表示（借用 `&Repr`）访问，或通过 `into_parts()` 获得拥有的 `FBig`（见[构造与析构](../construct.md)）。
 
 ```rust
 use dashu::complex::CBig;

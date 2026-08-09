@@ -151,4 +151,4 @@ assert_eq!(f32::try_from(big), Err(ConversionError::OutOfBounds));
 
 当为 `dashu-ratio` 启用可选的 `dashu-float` 特性时，`TryFrom<FBig> for RBig` 仅在浮点数恰好可以表示为有理数时才成功，而 `RBig::to_float()` 是另一方向的舍入感知路径。
 
-要用一个*简单*有理数（容差内分子/分母最小的）近似浮点数，请使用 `simplest_from_f32` / `simplest_from_f64`，或在 `FBig`/`DBig` 上使用区间查询 `simplest_in`、`nearest_in`、`next_up` 和 `next_down`——这些方法将浮点数自身的舍入区间作为搜索范围。`is_simpler_than(other)` 则直接按这些查询所优化的“简单性”排序来比较两个 `RBig`。
+要用一个*简单*有理数（容差内分子/分母最小的）近似浮点数，请使用 `simplest_from_f32` / `simplest_from_f64`——它们在浮点数自身的舍入区间内搜索。在 `RBig` 上，`simplest_in(lower, upper)` 在显式区间内寻找最简有理数，而 `nearest(&limit)` / `next_up(&limit)` / `next_down(&limit)` 寻找与某值最接近、且分母不超过 `limit` 的有理数（Farey 序列邻居）。`is_simpler_than(other)` 则直接按相同的“简单性”排序来比较两个 `RBig`。

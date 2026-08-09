@@ -43,7 +43,7 @@ assert_eq!(frac.to_string(), "0.234");
 
 ## Complex Arithmetic
 
-`CBig` supports the field operations `+`, `-`, `*`, `/`, plus `sqr` and `inv` (multiplicative inverse). Multiplication and division by a real `FBig` are also available as mixed-type operators. Multiplication and division use Smith's method with a guard digit and re-round, giving the same near-correctly-rounded guarantee as `dashu-float`'s transcendentals. `conj()` gives the complex conjugate and `mul_i(negative)` multiplies by `+i` or `-i` — an exact rotation that swaps the real and imaginary parts. The components are exposed as raw representations through `re()` / `im()` (borrowing `&Repr`), or as owned `FBig`s through `into_parts()` (see [Construction and Destruction](../construct.md)).
+`CBig` supports the field operations `+`, `-`, `*`, `/`, plus `sqr` and `inv` (multiplicative inverse). Multiplication and division by a real `FBig` are also available as mixed-type operators. Complex multiplication and division are near-correctly rounded via a guard-digit re-round (division uses Smith's overflow-safe method). `conj()` gives the complex conjugate and `mul_i(negative)` multiplies by `+i` or `-i` — an exact rotation that swaps the real and imaginary parts. The components are exposed as raw representations through `re()` / `im()` (borrowing `&Repr`), or as owned `FBig`s through `into_parts()` (see [Construction and Destruction](../construct.md)).
 
 ```rust
 use dashu::complex::CBig;

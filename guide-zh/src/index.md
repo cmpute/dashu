@@ -41,9 +41,9 @@ Dashu 为 cargo 定义了若干可选特性（feature），用于支持各种第
 - 对于已发布稳定版本（达到 v1.0）的依赖，我们使用 `xxx_vyy` 表示其各个主版本，并用 `xxx` 指向其中某一个主版本。更改 `xxx` 所指向的版本在 `dashu` 中视为破坏性变更（需要提升主版本号）。因此，当你启用这些稳定特性来依赖 `dashu` 时，`dashu` 后续为更新版本新增的实现不会影响你的代码。
 - 对于仅有不稳定版本（v1.0 之前）的依赖，我们始终使用 `xxx_vyy` 表示每个主版本，同时提供 `xxx` 特性作为**最新**版本的别名。因此，当你启用这些不稳定特性来依赖 `dashu` 时，这些依赖的升级可能导致你的代码编译失败。但我们仍不将其视为破坏性变更，因为不稳定的依赖默认不会被启用。如果你想避免由此引发的破坏性变更，请显式指定所使用的版本。
 
-**示例**：在 `dashu-float` 中，对 diesel 库 v1 的支持放在名为 `diesel` 的特性下，对 v2 的支持放在名为 `diesel2` 的特性下。另一方面，`rand` crate 尚未发布稳定版，即便它已被广泛使用。因此，对 `rand` v0.7 和 v0.8 的支持分别放在名为 `rand_v07` 和 `rand_v08` 的特性下，而特性名 `rand` 当前指向 `rand_v08`。
+**示例**：在 `dashu-float` 中，对 diesel 库 v1 的支持放在名为 `diesel_v1` 的特性下，对 v2 的支持放在名为 `diesel_v2` 的特性下（未编号的 `diesel` 特性指向 v2）。另一方面，`rand` crate 尚未发布稳定版，即便它已被广泛使用。因此，对 `rand` v0.8、v0.9 和 v0.10 的支持分别放在名为 `rand_v08`、`rand_v09` 和 `rand_v010` 的特性下，而特性名 `rand` 当前指向 `rand_v010`。
 
-在你的 Cargo.toml 中，如果你启用的是 `dashu/diesel`、`dashu/diesel2` 或 `dashu/rand_v07`，那么将来 `dashu` 新增对 diesel v3 或 rand v0.9 的支持时，也不会带来任何破坏性变更的风险。但如果你启用的是 `rand` 而非 `rand_v08`，则存在风险，因为将来 `rand` 可能会指向 `rand_v09`。
+在你的 Cargo.toml 中，如果你启用的是 `dashu/diesel_v1`、`dashu/diesel_v2` 或 `dashu/rand_v08`，那么将来 `dashu` 新增对 diesel v3 或 rand v0.11 的支持时，也不会带来任何破坏性变更的风险。但如果你启用的是 `dashu/rand` 而非 `dashu/rand_v010`，则存在风险，因为将来 `rand` 可能会指向更新的版本。
 
 ## 许可证
 
