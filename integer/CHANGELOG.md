@@ -2,9 +2,24 @@
 
 ## Unreleased
 
+### Change
+- **`DivExact` / `DivExactAssign` now come from `num-modular` (re-exported through `dashu-base`),
+  with the empty precomputation `()`** — every impl now implements `num_modular::DivExact<Rhs, ()>` /
+  `num_modular::DivExactAssign<Rhs, ()>`, and every call site passes `&()`: `n.div_exact(d)` is now
+  `n.div_exact(d, &())`, `n.div_exact_assign(d)` is now `n.div_exact_assign(d, &())`. The `&UBig` /
+  `&IBig` reference-receiver impls and all primitive divisor impls (`u8`–`u128`/`usize`/`i8`–`i128`/
+  `isize`) are unchanged in behavior.
+
+### Fix
+- **(bench) the `primitive` / `io` / `modular` / `shift` benches build against the `rand_v010` API
+  that the `rand` feature aliases to** — they used the `rand_v08` `gen_range`/`gen_bool` methods,
+  which do not compile with `--features rand` (the `rand` feature enables `rand_v010`, so
+  `Uniform<UBig>` is only implemented for that version).
+
 ### Add
-- **`DivExact` / `DivExactAssign` for `UBig` and `IBig`** — exact division (the traits come from
-  `dashu-base`): `div_exact` returns `Some(self / other)` when the divisor divides, `None`
+- **`DivExact` / `DivExactAssign` for `UBig` and `IBig`** — exact division (the traits are
+  re-exported through `dashu-base` from `num-modular`, with the empty precomputation `()`):
+  `div_exact` returns `Some(self / other)` when the divisor divides, `None`
   otherwise; `div_exact_assign` replaces `self` in place, returning `true` on success and leaving
   it unchanged on failure. Implemented for `UBig`/`IBig` divisors, for reference receivers
   (`&UBig`/`&IBig`), and for every primitive divisor `u8`–`u128`/`usize`/`i8`–`i128`/`isize` (a
@@ -23,13 +38,8 @@
   back to the general division (whose sub-quadratic divide-and-conquer algorithm wins at that size)
   plus a remainder check — the threshold is tunable via the `DASHU_THRESHOLD_DIV_EXACT` environment
   variable behind the `tuning` feature.
-- **`integer/benches/div_exact.rs`** — benchmark of `div_exact` (Hensel) against the general
-  division, for multi-word and single-word (hit and probe-miss) divisors.
-- **`UBig::div_exact_const`** — in-place exact division by a fixed `DoubleWord` divisor, returning
-  whether the division was exact (the `const`-divisor counterpart of `DivExactAssign`, mirroring
-  `is_multiple_of_const`). A single-word divisor is probed by the read-only Hensel test first (so
-  a failure leaves `self` untouched) and then divided in place — no scratch allocation; a
-  double-word divisor backs up `self` with an `O(len)` clone.
+- **`ubig_div_exact`** (in `integer/benches/primitive.rs`) — benchmark of `div_exact` (Hensel)
+  against the general division, for multi-word and single-word (hit and probe-miss) divisors.
 - **`UBig::is_multiple_of` uses the Hensel kernels for every divisor width** — the read-only
   top-carry test (`hensel_is_multiple_of`) for single-word divisors, and the exactness test of the
   division itself (on a scratch copy) for double-word and multi-word divisors, instead of computing

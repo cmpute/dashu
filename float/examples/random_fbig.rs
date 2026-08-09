@@ -3,7 +3,7 @@
 //! This is the single runnable demonstration of the `dashu_float::rand` distributions (it
 //! replaces the per-version examples that used to live on the `rand_vXX` modules).
 //!
-//! Run with: `cargo run --example random_fbig --features rand`
+//! Run with: `cargo run --example random_fbig --features rand_v08`
 
 use dashu_float::rand::Uniform01;
 use dashu_float::FBig;

@@ -11,7 +11,7 @@ use criterion::{
 use dashu_base::Sign;
 use dashu_float::{DBig, FBig};
 use dashu_int::{IBig, UBig};
-use rand_v08::prelude::*;
+use rand_v010::prelude::*;
 
 type FBin = FBig;
 
@@ -19,14 +19,14 @@ const SEED: u64 = 1;
 
 /// Nonzero value with magnitude in (0, 1) and random sign.
 fn gen_fbig(precision: usize, rng: &mut impl Rng) -> FBin {
-    let signif = rng.gen_range(UBig::ONE..UBig::ONE << precision);
-    let sign = Sign::from(rng.gen_bool(0.5));
+    let signif = rng.random_range(UBig::ONE..UBig::ONE << precision);
+    let sign = Sign::from(rng.random_bool(0.5));
     FBin::from_parts(IBig::from_parts(sign, signif), -(precision as isize))
 }
 
 fn gen_dbig(precision: usize, rng: &mut impl Rng) -> DBig {
-    let signif = rng.gen_range(UBig::ONE..UBig::from_word(10).pow(precision));
-    let sign = Sign::from(rng.gen_bool(0.5));
+    let signif = rng.random_range(UBig::ONE..UBig::from_word(10).pow(precision));
+    let sign = Sign::from(rng.random_bool(0.5));
     DBig::from_parts(IBig::from_parts(sign, signif), -(precision as isize))
 }
 

@@ -7,7 +7,7 @@ use criterion::{
 use dashu_base::{Abs, Sign};
 use dashu_float::{DBig, FBig};
 use dashu_int::{IBig, UBig};
-use rand_v08::prelude::*;
+use rand_v010::prelude::*;
 use std::str::FromStr;
 
 type FBin = FBig;
@@ -20,9 +20,9 @@ where
 {
     let precision_ub = UBig::ONE << (precision + 1);
     let precision_lb = UBig::ONE << precision;
-    let significand = rng.gen_range(precision_lb..precision_ub);
-    let sign = Sign::from(rng.gen_bool(0.5));
-    let exponent = rng.gen_range(-(precision as isize)..(precision as isize));
+    let significand = rng.random_range(precision_lb..precision_ub);
+    let sign = Sign::from(rng.random_bool(0.5));
+    let exponent = rng.random_range(-(precision as i64)..(precision as i64)) as isize;
     FBin::from_parts(IBig::from_parts(sign, significand), exponent)
 }
 
@@ -32,9 +32,9 @@ where
 {
     let precision_ub = UBig::from_word(10).pow(precision + 1);
     let precision_lb = UBig::from_word(10).pow(precision);
-    let significand = rng.gen_range(precision_lb..precision_ub);
-    let sign = Sign::from(rng.gen_bool(0.5));
-    let exponent = rng.gen_range(-(precision as isize)..(precision as isize));
+    let significand = rng.random_range(precision_lb..precision_ub);
+    let sign = Sign::from(rng.random_bool(0.5));
+    let exponent = rng.random_range(-(precision as i64)..(precision as i64)) as isize;
     DBig::from_parts(IBig::from_parts(sign, significand), exponent)
 }
 
@@ -81,14 +81,14 @@ macro_rules! add_unary_benchmark {
 
 // — exp — keep inputs in a moderate range so e^x doesn't blow up —
 fn gen_fbig_exp(precision: usize, rng: &mut impl Rng) -> FBin {
-    let signif = rng.gen_range(UBig::ONE << precision..UBig::ONE << (precision + 1));
+    let signif = rng.random_range(UBig::ONE << precision..UBig::ONE << (precision + 1));
     // exponent 0 → value in [0.5, 2.0), keeps exp result reasonable
     let exponent = -(precision as isize);
     FBin::from_parts(IBig::from(signif), exponent)
 }
 fn gen_dbig_exp(precision: usize, rng: &mut impl Rng) -> DBig {
-    let signif =
-        rng.gen_range(UBig::from_word(10).pow(precision)..UBig::from_word(10).pow(precision + 1));
+    let signif = rng
+        .random_range(UBig::from_word(10).pow(precision)..UBig::from_word(10).pow(precision + 1));
     let exponent = -(precision as isize);
     DBig::from_parts(IBig::from(signif), exponent)
 }
@@ -96,12 +96,12 @@ fn gen_dbig_exp(precision: usize, rng: &mut impl Rng) -> DBig {
 // — ln — inputs should be positive and away from 0 —
 fn gen_fbig_ln(precision: usize, rng: &mut impl Rng) -> FBin {
     // value in [1, 2) → ln in [0, 0.69)
-    let signif = rng.gen_range(UBig::ONE << precision..UBig::ONE << (precision + 1));
+    let signif = rng.random_range(UBig::ONE << precision..UBig::ONE << (precision + 1));
     FBin::from_parts(IBig::from(signif), -(precision as isize))
 }
 fn gen_dbig_ln(precision: usize, rng: &mut impl Rng) -> DBig {
-    let signif =
-        rng.gen_range(UBig::from_word(10).pow(precision)..UBig::from_word(10).pow(precision + 1));
+    let signif = rng
+        .random_range(UBig::from_word(10).pow(precision)..UBig::from_word(10).pow(precision + 1));
     DBig::from_parts(IBig::from(signif), -(precision as isize))
 }
 

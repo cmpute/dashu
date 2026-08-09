@@ -6,13 +6,13 @@
 use criterion::{
     criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion, PlotConfiguration,
 };
-use dashu_base::Sign;
+use dashu_base::{DivExact, DivExactAssign, DivRem, Sign};
 use dashu_int::{
     fast_div::ConstDivisor,
     ops::{ExtendedGcd, Gcd},
     IBig, UBig,
 };
-use rand_v08::prelude::*;
+use rand_v010::prelude::*;
 use std::ops::*;
 
 const SEED: u64 = 1;
@@ -21,14 +21,14 @@ fn random_ubig<R>(bits: usize, rng: &mut R) -> UBig
 where
     R: Rng + ?Sized,
 {
-    rng.gen_range(UBig::ONE << (bits - 1)..UBig::ONE << bits)
+    rng.random_range(UBig::ONE << (bits - 1)..UBig::ONE << bits)
 }
 
 fn random_ibig<R>(bits: usize, rng: &mut R) -> IBig
 where
     R: Rng + ?Sized,
 {
-    let sign = Sign::from(rng.gen_bool(0.5));
+    let sign = Sign::from(rng.random_bool(0.5));
     IBig::from_parts(sign, random_ubig(bits, rng))
 }
 
@@ -205,6 +205,86 @@ fn ubig_sqr(criterion: &mut Criterion) {
     group.finish();
 }
 
+/// Exact division (`div_exact`, Hensel) against the general division, for multi-word divisors.
+/// The dividend is an exact multiple of the (odd) divisor. The `_word` groups compare the in-place
+/// `div_exact_assign` (single-word divisor) with the general `div_rem`, for both the divisible
+/// ("hit") and not-divisible ("miss", early probe exit) cases.
+fn ubig_div_exact(criterion: &mut Criterion) {
+    let mut rng = StdRng::seed_from_u64(SEED);
+
+    let mut group = criterion.benchmark_group("ubig_div_exact");
+    group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
+    for log_bits in 1..=6 {
+        let bits = 10usize.pow(log_bits);
+        let d = random_ubig(bits / 2, &mut rng) | UBig::ONE; // odd, multi-word on 64-bit
+        let q = random_ubig(bits, &mut rng);
+        let n = &d * &q;
+
+        group.bench_with_input(
+            BenchmarkId::new("div_exact", format!("1e{log_bits}")),
+            &(n.clone(), d.clone()),
+            |bencher, (n, d)| bencher.iter(|| n.clone().div_exact(d.clone(), &())),
+        );
+        group.bench_with_input(
+            BenchmarkId::new("div", format!("1e{log_bits}")),
+            &(n, d),
+            |bencher, (n, d)| bencher.iter(|| &*n / &*d),
+        );
+    }
+    group.finish();
+
+    let mut group = criterion.benchmark_group("ubig_div_exact_word");
+    group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
+    for log_bits in 1..=7 {
+        let bits = 10usize.pow(log_bits);
+        let n = random_ubig(bits, &mut rng) * 1001u32;
+
+        group.bench_with_input(
+            BenchmarkId::new("div_exact_assign", format!("1e{log_bits}")),
+            &n,
+            |bencher, n| {
+                bencher.iter(|| {
+                    let mut m = n.clone();
+                    m.div_exact_assign(1001u32, &());
+                    m
+                })
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("div_rem", format!("1e{log_bits}")),
+            &n,
+            |bencher, n| bencher.iter(|| n.div_rem(&UBig::from(1001u32))),
+        );
+    }
+    group.finish();
+
+    let mut group = criterion.benchmark_group("ubig_div_exact_word_miss");
+    group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
+    for log_bits in 1..=7 {
+        let bits = 10usize.pow(log_bits);
+        // A value unlikely to be divisible by 1001 (a large prime multiple plus 1).
+        let n = random_ubig(bits, &mut rng) * 1001u32 + 1u8;
+
+        group.bench_with_input(
+            BenchmarkId::new("div_exact_assign", format!("1e{log_bits}")),
+            &n,
+            |bencher, n| {
+                bencher.iter(|| {
+                    let mut m = n.clone();
+                    assert!(!m.div_exact_assign(1001u32, &()));
+                    m
+                })
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("div_rem", format!("1e{log_bits}")),
+            &n,
+            |bencher, n| bencher.iter(|| n.div_rem(&UBig::from(1001u32))),
+        );
+    }
+    group.finish();
+}
+
 macro_rules! add_ibig_binop_benchmark {
     ($name:ident, $method:ident, $max_log_bits:literal) => {
         fn $name(criterion: &mut Criterion) {
@@ -240,6 +320,7 @@ criterion_group!(
     ubig_sub,
     ubig_mul,
     ubig_div,
+    ubig_div_exact,
     ubig_gcd,
     ubig_gcd_ext,
     ubig_pow,

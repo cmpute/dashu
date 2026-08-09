@@ -7,7 +7,7 @@ use criterion::{
 use dashu_base::Sign;
 use dashu_float::{DBig, FBig};
 use dashu_int::{IBig, UBig};
-use rand_v08::prelude::*;
+use rand_v010::prelude::*;
 use std::fmt::Write;
 
 const SEED: u64 = 1;
@@ -18,9 +18,9 @@ where
 {
     let precision_ub = UBig::from_word(10).pow(precision + 1);
     let precision_lb = UBig::from_word(10).pow(precision);
-    let significand = rng.gen_range(precision_lb..precision_ub);
-    let sign = Sign::from(rng.gen_bool(0.5));
-    let exponent = rng.gen_range(-(precision as isize)..(precision as isize));
+    let significand = rng.random_range(precision_lb..precision_ub);
+    let sign = Sign::from(rng.random_bool(0.5));
+    let exponent = rng.random_range(-(precision as i64)..(precision as i64)) as isize;
     DBig::from_parts(IBig::from_parts(sign, significand), exponent)
 }
 
@@ -30,9 +30,9 @@ where
 {
     let precision_ub = UBig::ONE << (precision + 1);
     let precision_lb = UBig::ONE << precision;
-    let significand = rng.gen_range(precision_lb..precision_ub);
-    let sign = Sign::from(rng.gen_bool(0.5));
-    let exponent = rng.gen_range(-(precision as isize)..(precision as isize));
+    let significand = rng.random_range(precision_lb..precision_ub);
+    let sign = Sign::from(rng.random_bool(0.5));
+    let exponent = rng.random_range(-(precision as i64)..(precision as i64)) as isize;
     FBig::from_parts(IBig::from_parts(sign, significand), exponent)
 }
 

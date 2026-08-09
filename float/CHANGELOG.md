@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Change
+- **(internal) `convert.rs` base-conversion call site updated for the `DivExact` trait
+  re-exported from `num-modular`** — `(&repr.significand).div_exact(r_exp)` now passes the empty
+  precomputation: `(&repr.significand).div_exact(r_exp, &())`. No public API change for
+  `dashu-float`.
+
+### Fix
+- **(bench) the `exp` / `hyper` / `io` / `primitive` / `trig` benches build against the
+  `rand_v010` API that the `rand` feature aliases to** — they used the `rand_v08`
+  `gen_range`/`gen_bool` methods, which do not compile with `--features rand` (the `rand` feature
+  enables `rand_v010`, so `Uniform<UBig>` is only implemented for that version). Random exponents
+  are now sampled as `i64` and cast to `isize` (`rand_v010` provides no `Uniform` impl for
+  `isize`).
+
 ### Add
 - **Base-10 logarithm** — `Context::log10` and `FBig::log10`, correctly rounded under any rounding
   mode. Mirrors `log2`: `log10(x) = ln(x)/ln(10)` via Ball arithmetic with the same Ziv

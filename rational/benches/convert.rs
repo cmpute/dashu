@@ -8,7 +8,7 @@ use dashu_base::Sign;
 use dashu_float::round::mode::HalfAway;
 use dashu_int::{IBig, UBig};
 use dashu_ratio::RBig;
-use rand_v08::prelude::*;
+use rand_v010::prelude::*;
 
 const SEED: u64 = 1;
 
@@ -16,10 +16,10 @@ fn random_rbig<R>(bits: usize, rng: &mut R) -> RBig
 where
     R: Rng + ?Sized,
 {
-    let sign = Sign::from(rng.gen_bool(0.5));
+    let sign = Sign::from(rng.random_bool(0.5));
     let numerator =
-        IBig::from_parts(sign, rng.gen_range(UBig::ONE << (bits - 1)..UBig::ONE << bits));
-    let denominator = rng.gen_range(UBig::ONE << (bits - 1)..UBig::ONE << bits);
+        IBig::from_parts(sign, rng.random_range(UBig::ONE << (bits - 1)..UBig::ONE << bits));
+    let denominator = rng.random_range(UBig::ONE << (bits - 1)..UBig::ONE << bits);
     RBig::from_parts(numerator, denominator)
 }
 

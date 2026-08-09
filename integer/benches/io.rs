@@ -5,7 +5,7 @@ use criterion::{
     criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion, PlotConfiguration,
 };
 use dashu_int::UBig;
-use rand_v08::prelude::*;
+use rand_v010::prelude::*;
 use std::fmt::Write;
 
 const SEED: u64 = 1;
@@ -14,7 +14,7 @@ fn random_ubig<R>(bits: usize, rng: &mut R) -> UBig
 where
     R: Rng + ?Sized,
 {
-    rng.gen_range(UBig::ONE << (bits - 1)..UBig::ONE << bits)
+    rng.random_range(UBig::ONE << (bits - 1)..UBig::ONE << bits)
 }
 
 fn ubig_to_hex(criterion: &mut Criterion) {

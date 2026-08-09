@@ -1,8 +1,8 @@
 //! Exact division — the quotient of `self / other`, or `None` when the division is not exact.
 //!
-//! The [`DivExact`] / [`DivExactAssign`] traits (from `dashu-base`) compute `self / other` as
-//! `Some(q)` when `other | self`, `None` otherwise, and the inherent [`UBig::div_exact_const`]
-//! provides the in-place form for a fixed `DoubleWord` divisor.
+//! The [`DivExact`] / [`DivExactAssign`] traits (re-exported through `dashu-base` from
+//! `num-modular`, with the empty precomputation `()`) compute `self / other` as `Some(q)` when
+//! `other | self`, `None` otherwise.
 //!
 //! Exact division uses **Hensel (2-adic) division**: the modular inverse of the (odd part of the)
 //! divisor is precomputed by Newton iteration, and each quotient limb is then `(word − carry) ·
@@ -31,7 +31,8 @@
 //! divide-and-conquer algorithm is faster — exact division falls back to the general division plus
 //! a remainder check.
 
-use dashu_base::{DivExact, DivExactAssign, DivRem, Sign, UnsignedAbs};
+use dashu_base::{DivRem, Sign, UnsignedAbs};
+use num_modular::{DivExact, DivExactAssign};
 
 use crate::{
     add,
@@ -70,26 +71,16 @@ mod threshold {
 }
 
 impl UBig {
-    /// In-place exact division by a fixed `DoubleWord` divisor: `self` becomes `self / divisor` when
-    /// `divisor | self`, and is left unchanged otherwise. Returns whether the division was exact.
+    /// In-place exact division by a fixed `DoubleWord` divisor: `self` becomes `self / divisor`
+    /// when `divisor | self`, and is left unchanged otherwise. Returns whether the division was
+    /// exact.
     ///
-    /// The `const`-divisor counterpart of [`DivExactAssign`] (mirroring
-    /// [`UBig::is_multiple_of_const`]): the divisor is passed as a `DoubleWord`. A divisor that fits
-    /// in a single word is probed by the read-only Hensel test first (so a failure leaves `self`
-    /// untouched) and then divided in place; a double-word divisor backs up `self` with an `O(len)`
-    /// clone (its probe is as expensive as the division itself).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use dashu_int::UBig;
-    ///
-    /// let mut a = UBig::from(10u32).pow(8) * 7u32; // 700000000
-    /// assert!(a.div_exact_const(10));
-    /// assert_eq!(a, UBig::from(70000000u32));
-    /// assert!(!a.div_exact_const(3)); // 3 doesn't divide; a is unchanged
-    /// ```
-    pub fn div_exact_const(&mut self, divisor: DoubleWord) -> bool {
+    /// The in-place backend of [`DivExactAssign`] for a `DoubleWord` divisor (mirroring
+    /// [`UBig::is_multiple_of_const`], the `const` divisor form). A single-word divisor is probed
+    /// by the read-only Hensel test first (so a failure leaves `self` untouched) and then divided
+    /// in place; a double-word divisor backs up `self` with an `O(len)` clone (its probe is as
+    /// expensive as the division itself).
+    fn div_exact_assign_dword(&mut self, divisor: DoubleWord) -> bool {
         if divisor == 0 {
             return false; // 0 is not a divisor
         }
@@ -105,7 +96,7 @@ impl UBig {
             let taken = core::mem::take(self);
             let q = taken
                 .into_repr()
-                .div_exact(TypedRepr::Small(divisor))
+                .div_exact(TypedRepr::Small(divisor), &())
                 .expect("the probe passed, so the division is exact");
             *self = UBig(q);
             return true;
@@ -114,7 +105,7 @@ impl UBig {
         // restore it.
         let backup = self.clone();
         let taken = core::mem::take(self);
-        match taken.into_repr().div_exact(TypedRepr::Small(divisor)) {
+        match taken.into_repr().div_exact(TypedRepr::Small(divisor), &()) {
             Some(q) => {
                 *self = UBig(q);
                 true
@@ -143,11 +134,11 @@ pub(crate) mod repr {
         ubig::UBig,
     };
 
-    impl DivExact<TypedRepr> for TypedRepr {
+    impl DivExact<TypedRepr, ()> for TypedRepr {
         type Output = Repr;
 
         #[inline]
-        fn div_exact(self, rhs: TypedRepr) -> Option<Repr> {
+        fn div_exact(self, rhs: TypedRepr, _: &()) -> Option<Repr> {
             match (self, rhs) {
                 (TypedRepr::Small(dword0), TypedRepr::Small(dword1)) => {
                     div_exact_dword(dword0, dword1)
@@ -167,11 +158,11 @@ pub(crate) mod repr {
         }
     }
 
-    impl<'l> DivExact<TypedRepr> for TypedReprRef<'l> {
+    impl<'l> DivExact<TypedRepr, ()> for TypedReprRef<'l> {
         type Output = Repr;
 
         #[inline]
-        fn div_exact(self, rhs: TypedRepr) -> Option<Repr> {
+        fn div_exact(self, rhs: TypedRepr, _: &()) -> Option<Repr> {
             match (self, rhs) {
                 (TypedReprRef::RefSmall(dword0), TypedRepr::Small(dword1)) => {
                     div_exact_dword(dword0, dword1)
@@ -191,11 +182,11 @@ pub(crate) mod repr {
         }
     }
 
-    impl<'r> DivExact<TypedReprRef<'r>> for TypedRepr {
+    impl<'r> DivExact<TypedReprRef<'r>, ()> for TypedRepr {
         type Output = Repr;
 
         #[inline]
-        fn div_exact(self, rhs: TypedReprRef) -> Option<Repr> {
+        fn div_exact(self, rhs: TypedReprRef, _: &()) -> Option<Repr> {
             match (self, rhs) {
                 (TypedRepr::Small(dword0), TypedReprRef::RefSmall(dword1)) => {
                     div_exact_dword(dword0, dword1)
@@ -215,11 +206,11 @@ pub(crate) mod repr {
         }
     }
 
-    impl<'l, 'r> DivExact<TypedReprRef<'r>> for TypedReprRef<'l> {
+    impl<'l, 'r> DivExact<TypedReprRef<'r>, ()> for TypedReprRef<'l> {
         type Output = Repr;
 
         #[inline]
-        fn div_exact(self, rhs: TypedReprRef) -> Option<Repr> {
+        fn div_exact(self, rhs: TypedReprRef, _: &()) -> Option<Repr> {
             match (self, rhs) {
                 (TypedReprRef::RefSmall(dword0), TypedReprRef::RefSmall(dword1)) => {
                     div_exact_dword(dword0, dword1)
@@ -700,41 +691,42 @@ impl IBig {
     }
 }
 
-/// Trait-based exact division: `DivExact` / `DivExactAssign` from `dashu-base`.
+/// Trait-based exact division: the [`DivExact`] / [`DivExactAssign`] traits, re-exported through
+/// `dashu-base` from `num-modular` with the empty precomputation `()` (call sites pass `&()`).
 ///
 /// The `UBig` divisor delegates to the `TypedRepr`-level `DivExact` impls (single-word Hensel,
-/// double-word Hensel, and multi-word Hensel). The primitive `u8..u128`/`usize` divisors forward to
-/// [`UBig::div_exact_const`] after a width check; a value that overflows `DoubleWord` falls back to
-/// the `UBig` divisor path.
-impl DivExact<UBig> for UBig {
+/// double-word Hensel, and multi-word Hensel). A primitive `u8..u128`/`usize` divisor that fits in
+/// a `DoubleWord` is divided in place by the same kernels; a wider one falls back to the `UBig`
+/// divisor path.
+impl DivExact<UBig, ()> for UBig {
     type Output = UBig;
 
     #[inline]
-    fn div_exact(self, rhs: UBig) -> Option<UBig> {
-        self.into_repr().div_exact(rhs.into_repr()).map(UBig)
+    fn div_exact(self, rhs: UBig, _: &()) -> Option<UBig> {
+        self.into_repr().div_exact(rhs.into_repr(), &()).map(UBig)
     }
 }
 
-impl DivExact<UBig> for &UBig {
+impl DivExact<UBig, ()> for &UBig {
     type Output = UBig;
 
     #[inline]
-    fn div_exact(self, rhs: UBig) -> Option<UBig> {
-        self.clone().div_exact(rhs)
+    fn div_exact(self, rhs: UBig, _: &()) -> Option<UBig> {
+        self.clone().div_exact(rhs, &())
     }
 }
 
-impl DivExactAssign<UBig> for UBig {
+impl DivExactAssign<UBig, ()> for UBig {
     #[inline]
-    fn div_exact_assign(&mut self, rhs: UBig) -> bool {
+    fn div_exact_assign(&mut self, rhs: UBig, _: &()) -> bool {
         if let TypedReprRef::RefSmall(dword) = rhs.repr() {
-            return self.div_exact_const(dword);
+            return self.div_exact_assign_dword(dword);
         }
         // A multi-word divisor: back up `self` (an O(len) clone) so a failed division can restore
         // it, then divide the taken buffer in place.
         let backup = self.clone();
         let taken = core::mem::take(self);
-        match taken.into_repr().div_exact(rhs.into_repr()) {
+        match taken.into_repr().div_exact(rhs.into_repr(), &()) {
             Some(q) => {
                 *self = UBig(q);
                 true
@@ -749,21 +741,21 @@ impl DivExactAssign<UBig> for UBig {
 
 macro_rules! impl_div_exact_ubig_with_prim {
     ($($T:ty)*) => {$(
-        impl DivExact<$T> for UBig {
+        impl DivExact<$T, ()> for UBig {
             type Output = UBig;
             #[inline]
-            fn div_exact(self, rhs: $T) -> Option<UBig> {
+            fn div_exact(self, rhs: $T, _: &()) -> Option<UBig> {
                 match DoubleWord::try_from(rhs) {
-                    Ok(dword) => self.into_repr().div_exact(TypedRepr::Small(dword)).map(UBig),
-                    Err(_) => DivExact::<UBig>::div_exact(self, UBig::from(rhs)),
+                    Ok(dword) => self.into_repr().div_exact(TypedRepr::Small(dword), &()).map(UBig),
+                    Err(_) => DivExact::<UBig, ()>::div_exact(self, UBig::from(rhs), &()),
                 }
             }
         }
-        impl DivExactAssign<$T> for UBig {
+        impl DivExactAssign<$T, ()> for UBig {
             #[inline]
-            fn div_exact_assign(&mut self, rhs: $T) -> bool {
+            fn div_exact_assign(&mut self, rhs: $T, _: &()) -> bool {
                 match DoubleWord::try_from(rhs) {
-                    Ok(dword) => self.div_exact_const(dword),
+                    Ok(dword) => self.div_exact_assign_dword(dword),
                     Err(_) => {
                         let (q, r) = (&*self).div_rem(&UBig::from(rhs));
                         if r.is_zero() {
@@ -784,20 +776,20 @@ impl_div_exact_ubig_with_prim!(u8 u16 u32 u64 u128 usize);
 /// by the `UBig` implementations, and the sign of the quotient is the product of the operands'
 /// signs. The primitive divisor impls (unsigned and signed) divide the magnitudes and attach the
 /// sign.
-impl DivExact<IBig> for IBig {
+impl DivExact<IBig, ()> for IBig {
     type Output = IBig;
 
-    fn div_exact(self, rhs: IBig) -> Option<IBig> {
+    fn div_exact(self, rhs: IBig, _: &()) -> Option<IBig> {
         let (sign_self, mag_self) = self.into_parts();
         let (sign_rhs, mag_rhs) = rhs.into_parts();
-        let q_mag = mag_self.div_exact(mag_rhs)?;
+        let q_mag = mag_self.div_exact(mag_rhs, &())?;
         Some(IBig::from_parts(sign_self * sign_rhs, q_mag))
     }
 }
 
-impl DivExactAssign<IBig> for IBig {
-    fn div_exact_assign(&mut self, rhs: IBig) -> bool {
-        if let Some(q) = self.clone().div_exact(rhs) {
+impl DivExactAssign<IBig, ()> for IBig {
+    fn div_exact_assign(&mut self, rhs: IBig, _: &()) -> bool {
+        if let Some(q) = self.clone().div_exact(rhs, &()) {
             *self = q;
             true
         } else {
@@ -806,30 +798,30 @@ impl DivExactAssign<IBig> for IBig {
     }
 }
 
-impl DivExact<IBig> for &IBig {
+impl DivExact<IBig, ()> for &IBig {
     type Output = IBig;
 
     #[inline]
-    fn div_exact(self, rhs: IBig) -> Option<IBig> {
-        self.clone().div_exact(rhs)
+    fn div_exact(self, rhs: IBig, _: &()) -> Option<IBig> {
+        self.clone().div_exact(rhs, &())
     }
 }
 
 macro_rules! impl_div_exact_ibig_with_prim {
     ($($T:ty)*) => {$(
-        impl DivExact<$T> for IBig {
+        impl DivExact<$T, ()> for IBig {
             type Output = IBig;
             #[inline]
-            fn div_exact(self, rhs: $T) -> Option<IBig> {
+            fn div_exact(self, rhs: $T, _: &()) -> Option<IBig> {
                 let sign = self.sign();
-                let q_mag = self.unsigned_abs().div_exact(rhs)?;
+                let q_mag = self.unsigned_abs().div_exact(rhs, &())?;
                 Some(IBig::from_parts(sign, q_mag))
             }
         }
-        impl DivExactAssign<$T> for IBig {
+        impl DivExactAssign<$T, ()> for IBig {
             #[inline]
-            fn div_exact_assign(&mut self, rhs: $T) -> bool {
-                if let Some(q) = self.clone().div_exact(rhs) {
+            fn div_exact_assign(&mut self, rhs: $T, _: &()) -> bool {
+                if let Some(q) = self.clone().div_exact(rhs, &()) {
                     *self = q;
                     true
                 } else {
@@ -843,23 +835,23 @@ impl_div_exact_ibig_with_prim!(u8 u16 u32 u64 u128 usize);
 
 macro_rules! impl_div_exact_ibig_with_signed_prim {
     ($($T:ty)*) => {$(
-        impl DivExact<$T> for IBig {
+        impl DivExact<$T, ()> for IBig {
             type Output = IBig;
             #[inline]
-            fn div_exact(self, rhs: $T) -> Option<IBig> {
+            fn div_exact(self, rhs: $T, _: &()) -> Option<IBig> {
                 let sign = if (self.sign() == Sign::Negative) != (rhs < 0) {
                     Sign::Negative
                 } else {
                     Sign::Positive
                 };
-                let q_mag = self.unsigned_abs().div_exact(rhs.unsigned_abs())?;
+                let q_mag = self.unsigned_abs().div_exact(rhs.unsigned_abs(), &())?;
                 Some(IBig::from_parts(sign, q_mag))
             }
         }
-        impl DivExactAssign<$T> for IBig {
+        impl DivExactAssign<$T, ()> for IBig {
             #[inline]
-            fn div_exact_assign(&mut self, rhs: $T) -> bool {
-                if let Some(q) = self.clone().div_exact(rhs) {
+            fn div_exact_assign(&mut self, rhs: $T, _: &()) -> bool {
+                if let Some(q) = self.clone().div_exact(rhs, &()) {
                     *self = q;
                     true
                 } else {
@@ -879,10 +871,13 @@ mod tests {
         primitive::{extend_word, WORD_BITS_USIZE},
     };
 
-    /// `div_exact_const` must agree with the general division: exact (with the quotient in `n`)
-    /// when `d | n` (here `n = d^i·rest` with `i ≥ 1`), leaving `n` unchanged otherwise.
+    /// `div_exact_assign` with a single-word divisor must agree with the general division: exact
+    /// (with the quotient in `n`) when `d | n` (here `n = d^i·rest` with `i ≥ 1`), leaving `n`
+    /// unchanged otherwise.
     #[test]
-    fn test_div_exact_const_matches_div() {
+    fn test_div_exact_assign_matches_div() {
+        use dashu_base::DivExactAssign;
+
         for d in [2u16, 3, 5, 7, 10, 12, 16, 25, 255, 1001] {
             let d = d as Word;
             for i in 1..10usize {
@@ -890,14 +885,14 @@ mod tests {
                     let n = UBig::from(d).pow(i) * rest;
                     let want = &n / UBig::from_word(d);
                     let mut got = n;
-                    assert!(got.div_exact_const(extend_word(d)), "d={d} i={i} rest={rest}");
+                    assert!(got.div_exact_assign(extend_word(d), &()), "d={d} i={i} rest={rest}");
                     assert_eq!(got, want, "d={d} i={i} rest={rest}");
                 }
             }
             // a value not divisible by d (and not a multiple of its prime factors) stays unchanged
             let mut n = UBig::from(d).pow(2) + 1u8;
             let before = n.clone();
-            assert!(!n.div_exact_const(extend_word(d)), "d={d}");
+            assert!(!n.div_exact_assign(extend_word(d), &()), "d={d}");
             assert_eq!(n, before, "d={d}");
         }
     }
@@ -916,10 +911,10 @@ mod tests {
                 let n = d.clone().pow(i) * 7u8;
                 let (q, r) = (&n).div_rem(&d);
                 assert!(r.is_zero(), "d={d:?} i={i}");
-                assert_eq!(n.clone().div_exact(d.clone()), Some(q), "d={d:?} i={i}");
+                assert_eq!(n.clone().div_exact(d.clone(), &()), Some(q), "d={d:?} i={i}");
             }
             let n = d.clone().pow(2) + 1u8;
-            assert_eq!(n.div_exact(d), None, "d must not divide d^2+1");
+            assert_eq!(n.div_exact(d, &()), None, "d must not divide d^2+1");
         }
 
         // multi-word divisors
@@ -930,12 +925,12 @@ mod tests {
             (UBig::from(2u8).pow(300) * 3u8, UBig::from(8u8)),
         ] {
             let (q, r) = (&a).div_rem(&b);
-            assert_eq!(a.div_exact(b), if r.is_zero() { Some(q) } else { None });
+            assert_eq!(a.div_exact(b, &()), if r.is_zero() { Some(q) } else { None });
         }
         // not divisible → None (single- and multi-word divisors)
-        assert_eq!(UBig::from(7u8).div_exact(3u8), None);
-        assert_eq!(UBig::from(7u8).div_exact(UBig::from(3u8)), None);
-        assert_eq!(UBig::from(7u8).div_exact(big), None);
+        assert_eq!(UBig::from(7u8).div_exact(3u8, &()), None);
+        assert_eq!(UBig::from(7u8).div_exact(UBig::from(3u8), &()), None);
+        assert_eq!(UBig::from(7u8).div_exact(big, &()), None);
     }
 
     /// The multi-word Hensel kernel must agree with `div_rem` on a sweep of odd divisors (the
@@ -965,17 +960,19 @@ mod tests {
             let n = d.clone().pow(3) * 77u8;
             let (q, r) = (&n).div_rem(&d);
             assert!(r.is_zero());
-            assert_eq!(n.clone().div_exact(d.clone()), Some(q));
+            assert_eq!(n.clone().div_exact(d.clone(), &()), Some(q));
             // a value whose odd part divides but whose 2-valuation is too low
-            assert_eq!((odd * 7u8).div_exact(d), None);
+            assert_eq!((odd * 7u8).div_exact(d, &()), None);
         }
     }
 
-    /// `div_exact_const` with a double-word divisor. The divisors are built relative to the word
+    /// `div_exact_assign` with a double-word divisor. The divisors are built relative to the word
     /// size so they need two words on every platform: `Word::MAX²` is just below
     /// `DoubleWord::MAX`, so it (and its neighbours) always span two words.
     #[test]
-    fn test_div_exact_const_dword() {
+    fn test_div_exact_assign_dword() {
+        use dashu_base::DivExactAssign;
+
         let base = extend_word(Word::MAX) * extend_word(Word::MAX); // Word::MAX² (odd)
         for d in [
             base + 2,                                       // odd double word
@@ -987,12 +984,12 @@ mod tests {
                 let n = d_ubig.clone().pow(i) * 7u8;
                 let want = &n / &d_ubig;
                 let mut got = n;
-                assert!(got.div_exact_const(d), "d={d:?} i={i}");
+                assert!(got.div_exact_assign(d, &()), "d={d:?} i={i}");
                 assert_eq!(got, want, "d={d:?} i={i}");
             }
             let mut n = d_ubig.clone().pow(2) + 1u8;
             let before = n.clone();
-            assert!(!n.div_exact_const(d), "d={d:?}");
+            assert!(!n.div_exact_assign(d, &()), "d={d:?}");
             assert_eq!(n, before, "d={d:?}");
         }
     }
@@ -1005,38 +1002,38 @@ mod tests {
 
         // UBig ÷ UBig
         let a = UBig::from(10u8).pow(8) * 7u8;
-        assert_eq!(a.clone().div_exact(UBig::from(10u8).pow(8)), Some(UBig::from(7u8)));
-        assert_eq!(a.div_exact(UBig::from(3u8)), None);
+        assert_eq!(a.clone().div_exact(UBig::from(10u8).pow(8), &()), Some(UBig::from(7u8)));
+        assert_eq!(a.div_exact(UBig::from(3u8), &()), None);
 
         // UBig ÷ primitives — any width, including one that overflows Word (u128 on 64-bit Word)
-        assert_eq!(UBig::from(10u8).pow(8).div_exact(10u8), Some(UBig::from(10u8).pow(7)));
-        assert_eq!(UBig::from(10u8).pow(8).div_exact(10u32), Some(UBig::from(10u8).pow(7)));
-        assert_eq!(UBig::from(10u8).pow(8).div_exact(10u128), Some(UBig::from(10u8).pow(7)));
+        assert_eq!(UBig::from(10u8).pow(8).div_exact(10u8, &()), Some(UBig::from(10u8).pow(7)));
+        assert_eq!(UBig::from(10u8).pow(8).div_exact(10u32, &()), Some(UBig::from(10u8).pow(7)));
+        assert_eq!(UBig::from(10u8).pow(8).div_exact(10u128, &()), Some(UBig::from(10u8).pow(7)));
         let wide = 1u128 << 100; // > Word::MAX on any current platform
-        assert_eq!(UBig::from(10u8).pow(8).div_exact(wide), None);
-        assert_eq!(UBig::from(wide).div_exact(1u128), Some(UBig::from(wide)));
+        assert_eq!(UBig::from(10u8).pow(8).div_exact(wide, &()), None);
+        assert_eq!(UBig::from(wide).div_exact(1u128, &()), Some(UBig::from(wide)));
 
         // DivExactAssign with a primitive (in place)
         let mut b = UBig::from(10u8).pow(8) * 7u8;
-        assert!(b.div_exact_assign(10u8));
+        assert!(b.div_exact_assign(10u8, &()));
         assert_eq!(b, UBig::from(10u8).pow(7) * 7u8);
-        assert!(!b.div_exact_assign(3u8)); // not divisible → unchanged
+        assert!(!b.div_exact_assign(3u8, &())); // not divisible → unchanged
         assert_eq!(b, UBig::from(10u8).pow(7) * 7u8);
 
         // DivExactAssign with a multi-word divisor, unchanged on failure
         let d = UBig::from(10u8).pow(50);
         let mut c = d.clone().pow(2) * 7u8;
-        assert!(c.div_exact_assign(d.clone()));
+        assert!(c.div_exact_assign(d.clone(), &()));
         assert_eq!(c, &d * 7u8);
         let mut c = d.clone().pow(2) * 7u8;
         let before = c.clone();
-        assert!(!c.div_exact_assign(d.clone() + 1u8));
+        assert!(!c.div_exact_assign(d.clone() + 1u8, &()));
         assert_eq!(c, before);
 
         // reference receiver keeps the dividend borrowable
         let ref_a = UBig::from(10u8).pow(8) * 7u8;
-        assert_eq!((&ref_a).div_exact(UBig::from(10u8).pow(8)), Some(UBig::from(7u8)));
-        assert_eq!((&ref_a).div_exact(UBig::from(3u8)), None);
+        assert_eq!((&ref_a).div_exact(UBig::from(10u8).pow(8), &()), Some(UBig::from(7u8)));
+        assert_eq!((&ref_a).div_exact(UBig::from(3u8), &()), None);
         assert_eq!(ref_a, UBig::from(10u8).pow(8) * 7u8); // unchanged
     }
 
@@ -1048,32 +1045,32 @@ mod tests {
 
         // IBig ÷ IBig
         let a = IBig::from(10u8).pow(8) * 7u8;
-        assert_eq!(a.clone().div_exact(IBig::from(10u8).pow(8)), Some(IBig::from(7u8)));
-        assert_eq!(a.div_exact(IBig::from(3u8)), None);
+        assert_eq!(a.clone().div_exact(IBig::from(10u8).pow(8), &()), Some(IBig::from(7u8)));
+        assert_eq!(a.div_exact(IBig::from(3u8), &()), None);
         // signs: quotient sign is the product of the operands' signs
-        assert_eq!(IBig::from(-14i32).div_exact(IBig::from(7i32)), Some(IBig::from(-2i32)));
-        assert_eq!(IBig::from(14i32).div_exact(IBig::from(-7i32)), Some(IBig::from(-2i32)));
-        assert_eq!(IBig::from(-14i32).div_exact(IBig::from(-7i32)), Some(IBig::from(2i32)));
+        assert_eq!(IBig::from(-14i32).div_exact(IBig::from(7i32), &()), Some(IBig::from(-2i32)));
+        assert_eq!(IBig::from(14i32).div_exact(IBig::from(-7i32), &()), Some(IBig::from(-2i32)));
+        assert_eq!(IBig::from(-14i32).div_exact(IBig::from(-7i32), &()), Some(IBig::from(2i32)));
 
         // reference receiver keeps the dividend borrowable
         let ref_a = IBig::from(10u8).pow(8) * 7u8;
-        assert_eq!((&ref_a).div_exact(IBig::from(10u8).pow(8)), Some(IBig::from(7u8)));
-        assert_eq!((&ref_a).div_exact(IBig::from(3u8)), None);
+        assert_eq!((&ref_a).div_exact(IBig::from(10u8).pow(8), &()), Some(IBig::from(7u8)));
+        assert_eq!((&ref_a).div_exact(IBig::from(3u8), &()), None);
         assert_eq!(ref_a, IBig::from(10u8).pow(8) * 7u8); // unchanged
 
         // primitive divisors
-        assert_eq!(IBig::from(10u8).pow(8).div_exact(10u8), Some(IBig::from(10u8).pow(7)));
-        assert_eq!(IBig::from(-20i32).div_exact(5i32), Some(IBig::from(-4i32)));
-        assert_eq!(IBig::from(20i32).div_exact(-5i32), Some(IBig::from(-4i32)));
-        assert_eq!(IBig::from(20i32).div_exact(7i32), None);
+        assert_eq!(IBig::from(10u8).pow(8).div_exact(10u8, &()), Some(IBig::from(10u8).pow(7)));
+        assert_eq!(IBig::from(-20i32).div_exact(5i32, &()), Some(IBig::from(-4i32)));
+        assert_eq!(IBig::from(20i32).div_exact(-5i32, &()), Some(IBig::from(-4i32)));
+        assert_eq!(IBig::from(20i32).div_exact(7i32, &()), None);
 
         // DivExactAssign
         let mut b = IBig::from(10u8).pow(8) * 7u8;
-        assert!(b.div_exact_assign(IBig::from(10u8).pow(8)));
+        assert!(b.div_exact_assign(IBig::from(10u8).pow(8), &()));
         assert_eq!(b, IBig::from(7u8));
-        assert!(!b.div_exact_assign(3u8)); // unchanged on failure
+        assert!(!b.div_exact_assign(3u8, &())); // unchanged on failure
         assert_eq!(b, IBig::from(7u8));
-        assert!(b.div_exact_assign(-7i32));
+        assert!(b.div_exact_assign(-7i32, &()));
         assert_eq!(b, IBig::from(-1i32));
     }
 

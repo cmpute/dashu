@@ -9,7 +9,7 @@ use criterion::{
     criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion, PlotConfiguration,
 };
 use dashu_int::{fast_div::ConstDivisor, monty::MontgomeryRepr, UBig};
-use rand_v08::prelude::*;
+use rand_v010::prelude::*;
 
 const SEED: u64 = 1;
 
@@ -20,7 +20,7 @@ const BITS: &[usize] = &[256, 512, 1024, 2048, 4096, 8192, 16384];
 const POW_BITS: &[usize] = &[256, 1024, 4096];
 
 fn random_ubig<R: Rng + ?Sized>(bits: usize, rng: &mut R) -> UBig {
-    rng.gen_range(UBig::ONE << (bits - 1)..UBig::ONE << bits)
+    rng.random_range(UBig::ONE << (bits - 1)..UBig::ONE << bits)
 }
 
 /// An odd modulus in the given bit range (Montgomery requires an odd modulus).

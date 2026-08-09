@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fix
+- **(bench) the `convert` / `io` / `primitive` benches build against the `rand_v010` API that the
+  `rand` feature aliases to** — they used the `rand_v08` `gen_range`/`gen_bool` methods, which do
+  not compile with `--features rand` (the `rand` feature enables `rand_v010`, so `Uniform<UBig>` is
+  only implemented for that version).
+
 ## 0.6.0-rc.3
 
 ### Add

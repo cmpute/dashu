@@ -9,16 +9,16 @@ use criterion::{
 };
 use dashu_base::Sign;
 use dashu_int::{IBig, UBig};
-use rand_v08::prelude::*;
+use rand_v010::prelude::*;
 
 const SEED: u64 = 1;
 
 fn random_ubig<R: Rng + ?Sized>(bits: usize, rng: &mut R) -> UBig {
-    rng.gen_range(UBig::ONE << (bits - 1)..UBig::ONE << bits)
+    rng.random_range(UBig::ONE << (bits - 1)..UBig::ONE << bits)
 }
 
 fn random_ibig<R: Rng + ?Sized>(bits: usize, rng: &mut R) -> IBig {
-    let sign = Sign::from(rng.gen_bool(0.5));
+    let sign = Sign::from(rng.random_bool(0.5));
     IBig::from_parts(sign, random_ubig(bits, rng))
 }
 

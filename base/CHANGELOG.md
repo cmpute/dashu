@@ -2,11 +2,15 @@
 
 ## Unreleased
 
-### Add
-- **`DivExact` / `DivExactAssign` traits** — exact division: `div_exact` consumes `self` and returns
-  `Some(self / rhs)` when `rhs` divides `self`, `None` otherwise; `div_exact_assign` replaces `self`
-  in place, returning `true` on success and leaving `self` unchanged on failure. Implemented for all
-  primitive integers (`u8`–`u128`, `usize`, and the signed variants).
+### Change
+- **`DivExact` / `DivExactAssign` are now re-exported from `num-modular` 0.6.5 instead of defined
+  in this crate** — avoiding a duplicate definition of the same traits. The `num-modular` traits
+  carry a `Precompute` type parameter: `dashu`'s implementations (in `dashu-int`) use the empty
+  precomputation `()`, so call sites pass `&()` — `n.div_exact(d)` becomes `n.div_exact(d, &())`
+  and `n.div_exact_assign(d)` becomes `n.div_exact_assign(d, &())`. Primitive impls now come from
+  `num-modular` (for `u8`–`u128`); the previous impls for `usize` and the signed primitives are no
+  longer provided. `dashu-base` gains a `num-modular` dependency (`default-features = false`, so the
+  no_std build is unaffected).
 
 ## 0.6.0-rc.3
 

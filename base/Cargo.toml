@@ -23,6 +23,9 @@ all-features = true
 default = ["std"]
 std = []
 
+[dependencies]
+num-modular = { version = "0.6.5", default-features = false }
+
 [dev-dependencies]
 rand = { version = "0.8.3" }
 criterion = { version = "0.5.1", features = ["html_reports"] }

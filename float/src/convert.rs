@@ -685,7 +685,7 @@ impl<R: Round> Context<R> {
                 return self.repr_round(new_repr);
             } else {
                 let r_exp: IBig = UBig::from_word(r).pow((-repr.exponent) as usize).into();
-                if let Some(quot) = (&repr.significand).div_exact(r_exp) {
+                if let Some(quot) = (&repr.significand).div_exact(r_exp, &()) {
                     // the quotient's sign is the dividend's (r_exp > 0)
                     let exp = match (a as isize).checked_mul(repr.exponent) {
                         Some(e) => e,
