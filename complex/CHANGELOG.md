@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Fix
+- **`tan` on a zero (including a precision-0 zero like `CBig::ZERO`) panicked** — unlike the other
+  complex transcendentals, `tan` had no exact-zero shortcut, so the Ziv loop rejected unlimited
+  precision. It now returns the exact zero (with the input zeros' signs) before the Ziv loop.
+- **`tan` and `powi` (`|n| ≥ 2`) on an infinite base now report
+  [`FpError::Indeterminate`](dashu_float::FpError::Indeterminate)** consistently with the other
+  complex transcendentals, instead of leaking the float layer's `InfiniteInput`. (Both already
+  rejected; this only normalizes the error classification.)
+
 ## 0.6.0-rc.4
 
 ### Change

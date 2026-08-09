@@ -118,6 +118,22 @@ impl<R: ErrorBounds> Context<R> {
         z: &CBig<R, B>,
         mut cache: Option<&mut ConstCache>,
     ) -> CfpResult<R, B> {
+        if z.is_infinite() {
+            // An infinite input maps to Indeterminate (the C99 NaN case), like the other complex
+            // transcendentals — not the float layer's InfiniteInput.
+            return Err(FpError::Indeterminate);
+        }
+        if z.is_zero() {
+            let (re, im) = (z.re(), z.im());
+            // tan(x+iy) = sin(x+iy)/cos(x+iy); at ±0 the parts carry the input zeros' signs, like
+            // sin(±0) = ±0 — so ctan(-0 + i·0) = -0 + i·0. (Also bypasses the Ziv loop, which
+            // rejects unlimited precision, e.g. `CBig::ZERO.tan()`.)
+            return Ok(crate::repr::exact(
+                FBig::from_repr(Repr::zero_with_sign(re.sign()), self.float()),
+                FBig::from_repr(Repr::zero_with_sign(im.sign()), self.float()),
+            ));
+        }
+
         let p = self.precision();
         let [re, im] = self.ziv(TRIG_GUARD, |guard| {
             let pw = p + guard;
@@ -321,6 +337,20 @@ mod tests {
     #[test]
     fn sin_zero_is_zero() {
         assert!(C::ZERO.sin() == C::ZERO);
+    }
+
+    #[test]
+    fn tan_zero_is_zero() {
+        // tan has an exact-zero shortcut, so it works even at unlimited precision
+        // (the constants are precision 0, which the Ziv loop rejects).
+        assert!(C::ZERO.tan() == C::ZERO);
+    }
+
+    #[test]
+    fn tan_infinite_is_indeterminate() {
+        let inf = C::from(F::INFINITY);
+        let ctx = Context::new(53);
+        assert_eq!(ctx.tan(&inf, None), Err(FpError::Indeterminate));
     }
 
     #[test]

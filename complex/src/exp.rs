@@ -45,6 +45,12 @@ impl<R: ErrorBounds> Context<R> {
                 Ok(Exact(z.clone()))
             };
         }
+        if z.is_infinite() {
+            // |n| >= 2: an infinite base can't be raised to a higher power (the terminal-infinity
+            // model rejects infinite operands); report Indeterminate like the other complex
+            // transcendentals rather than leaking the float layer's InfiniteInput.
+            return Err(FpError::Indeterminate);
+        }
 
         let p = self.precision();
         let nlen = n.bit_len();
@@ -258,6 +264,15 @@ mod tests {
         let r = inf.exp();
         assert!(r.re().is_infinite());
         assert!(r.im().is_pos_zero());
+    }
+
+    #[test]
+    fn powi_infinite_base_rejects() {
+        let inf = CBig::from(F::INFINITY);
+        let ctx = Context::new(53);
+        // |n| >= 2 with an infinite base → Indeterminate (not the float layer's InfiniteInput).
+        assert_eq!(ctx.powi(&inf, 2.into()), Err(FpError::Indeterminate));
+        assert_eq!(ctx.powi(&inf, (-2).into()), Err(FpError::Indeterminate));
     }
 
     #[test]

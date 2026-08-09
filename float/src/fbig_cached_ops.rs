@@ -12,7 +12,7 @@ use dashu_base::{Abs, CubicRoot, DivEuclid, DivRemEuclid, Inverse, RemEuclid, Si
 use crate::fbig::FBig;
 use crate::fbig_cached::CachedFBig;
 use crate::repr::{Context, Word};
-use crate::round::{ErrorBounds, Round};
+use crate::round::{mode, ErrorBounds, Round, Rounded};
 
 // ---------------------------------------------------------------------------
 // CachedFBig op CachedFBig (preserves LHS cache)
@@ -648,11 +648,61 @@ macro_rules! forward_to_fbig {
     };
 }
 
+/// Forward a base conversion that maps `Rounded<FBig<OtherR, OtherB>>` to
+/// `Rounded<CachedFBig<...>>`, preserving the cache handle.
+macro_rules! forward_to_fbig_rounded {
+    ($name:ident, $target:ty, $method:ident) => {
+        #[doc = concat!("See [`FBig::", stringify!($name), "`].")]
+        #[inline]
+        pub fn $name(&self) -> Rounded<$target> {
+            self.fbig
+                .$method()
+                .map(|f| <$target>::from_fbig(f, &self.cache))
+        }
+    };
+}
+
 impl<R: Round, const B: Word> CachedFBig<R, B> {
     forward_to_fbig!(sqrt);
     forward_to_fbig!(inv);
     forward_to_fbig!(sqr);
     forward_to_fbig!(cubic);
+    forward_to_fbig!(round);
+    forward_to_fbig!(trunc);
+    forward_to_fbig!(ceil);
+    forward_to_fbig!(floor);
+    forward_to_fbig!(fract);
+    forward_to_fbig!(nth_root(n: usize));
+
+    /// Round to the nearest multiple of `BASE^exp` (see [`FBig::quantize`]).
+    pub fn quantize(&self, exp: isize) -> Rounded<Self> {
+        self.fbig
+            .quantize(exp)
+            .map(|f| Self::from_fbig(f, &self.cache))
+    }
+
+    forward_to_fbig_rounded!(to_decimal, CachedFBig<mode::HalfAway, 10>, to_decimal);
+    forward_to_fbig_rounded!(to_binary, CachedFBig<mode::Zero, 2>, to_binary);
+
+    /// Convert to another base, preserving the handle (see [`FBig::with_base`]).
+    #[allow(non_upper_case_globals)]
+    pub fn with_base<const NewB: Word>(self) -> Rounded<CachedFBig<R, NewB>> {
+        let CachedFBig { fbig, cache } = self;
+        fbig.with_base::<NewB>()
+            .map(|f| CachedFBig::from_fbig(f, &cache))
+    }
+
+    /// Convert to another base at a given precision, preserving the handle
+    /// (see [`FBig::with_base_and_precision`]).
+    #[allow(non_upper_case_globals)]
+    pub fn with_base_and_precision<const NewB: Word>(
+        self,
+        precision: usize,
+    ) -> Rounded<CachedFBig<R, NewB>> {
+        let CachedFBig { fbig, cache } = self;
+        fbig.with_base_and_precision::<NewB>(precision)
+            .map(|f| CachedFBig::from_fbig(f, &cache))
+    }
 }
 
 // Transcendentals that route through the Ziv-backed (or Ziv-dependent) Context methods require
@@ -727,5 +777,10 @@ impl<R: ErrorBounds, const B: Word> CachedFBig<R, B> {
             Self::from_fbig(self.fbig.context.unwrap_fp(s), &self.cache),
             Self::from_fbig(self.fbig.context.unwrap_fp(c), &self.cache),
         )
+    }
+
+    /// The Euclidean norm `sqrt(x²+y²)` (see [`FBig::hypot`]).
+    pub fn hypot(&self, other: &Self) -> Self {
+        Self::from_fbig(self.fbig.hypot(&other.fbig), &self.cache)
     }
 }

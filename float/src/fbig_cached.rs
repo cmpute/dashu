@@ -207,6 +207,23 @@ impl<R: Round, const B: Word> CachedFBig<R, B> {
         Self::from_repr(repr, self.fbig.context, Rc::clone(&self.cache))
     }
 
+    /// A cheap lower bound on [`ulp`](Self::ulp) (see [`FBig::ulp_lb`]).
+    pub fn ulp_lb(&self) -> Self {
+        Self::from_fbig(self.fbig.ulp_lb(), &self.cache)
+    }
+
+    /// The signum (`+1`/`0`/`-1` as the same type) (see [`FBig::signum`]).
+    pub fn signum(&self) -> Self {
+        Self::from_fbig(self.fbig.signum(), &self.cache)
+    }
+
+    /// Split into `(integral, fractional)` parts (see [`FBig::split_at_point`]).
+    pub fn split_at_point(self) -> (Self, Self) {
+        let CachedFBig { fbig, cache } = self;
+        let (a, b) = fbig.split_at_point();
+        (Self::from_fbig(a, &cache), Self::from_fbig(b, &cache))
+    }
+
     /// Convert to an integer (see [`FBig::to_int`]).
     pub fn to_int(&self) -> Rounded<dashu_int::IBig> {
         self.fbig.clone().to_int()
@@ -672,5 +689,52 @@ mod tests {
         // After clearing, recomputation still produces the same result
         let after_clear = x.ln().into_fbig();
         assert_eq!(after_clear, before_clear);
+    }
+
+    #[test]
+    fn test_mirrored_methods_match_fbig() {
+        let cached = CachedFBig::<mode::HalfAway, 10>::with_cache(
+            Repr::new(1234.into(), -3), // 1.234
+            Context::new(50),
+        );
+        let plain = cached.as_fbig().clone();
+
+        // rounding / decomposition
+        assert_eq!(cached.round().into_fbig(), plain.round());
+        assert_eq!(cached.trunc().into_fbig(), plain.trunc());
+        assert_eq!(cached.ceil().into_fbig(), plain.ceil());
+        assert_eq!(cached.floor().into_fbig(), plain.floor());
+        assert_eq!(cached.fract().into_fbig(), plain.fract());
+        assert_eq!(cached.signum().into_fbig(), plain.signum());
+        assert_eq!(cached.ulp_lb().into_fbig(), plain.ulp_lb());
+
+        let (ci, cf) = cached.clone().split_at_point();
+        let (pi, pf) = plain.clone().split_at_point();
+        assert_eq!((ci.into_fbig(), cf.into_fbig()), (pi, pf));
+
+        // roots / norms
+        assert_eq!(cached.nth_root(2).into_fbig(), plain.nth_root(2));
+        let other = CachedFBig::<mode::HalfAway, 10>::with_cache(
+            Repr::new(300.into(), -2), // 3.00
+            Context::new(50),
+        );
+        assert_eq!(cached.hypot(&other).into_fbig(), plain.hypot(other.as_fbig()));
+
+        // base conversion / quantize (types change, values agree)
+        assert_eq!(cached.quantize(-1).value().into_fbig(), plain.quantize(-1).value());
+        assert_eq!(cached.to_decimal().value().into_fbig(), plain.to_decimal().value());
+        assert_eq!(cached.to_binary().value().into_fbig(), plain.to_binary().value());
+        assert_eq!(
+            cached.clone().with_base::<2>().value().into_fbig(),
+            plain.clone().with_base::<2>().value()
+        );
+        assert_eq!(
+            cached
+                .clone()
+                .with_base_and_precision::<2>(40)
+                .value()
+                .into_fbig(),
+            plain.clone().with_base_and_precision::<2>(40).value()
+        );
     }
 }

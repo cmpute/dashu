@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Fix
+- **(internal) `exact_pow10_log` (the `log10` exact-power-of-ten shortcut) used unchecked `isize`
+  arithmetic for `p·e` / `q·e`**, which could overflow (silently wrap) on 32-bit for an exotic
+  base (B a large power of two) at extreme exponents and falsely report an exact log. The products
+  now use checked arithmetic and report *not exact* on overflow.
+
+### Add
+- **`CachedFBig` now mirrors the rest of `FBig`'s value surface** (all preserving the shared cache
+  handle), completing the drop-in-replacement mandate: `round`/`trunc`/`ceil`/`floor`/`fract`/
+  `split_at_point`/`quantize`, `hypot`/`nth_root`, `signum`/`ulp_lb`, and the base conversions
+  `to_decimal`/`to_binary`/`with_base`/`with_base_and_precision`.
+
 ## 0.6.0-rc.4
 
 ### Change

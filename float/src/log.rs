@@ -729,8 +729,11 @@ fn exact_pow10_log<const B: Word>(sig: &IBig, e: isize) -> Option<isize> {
         return None;
     }
 
-    let v2 = v2_sig + p * e;
-    let v5 = v5 + q * e;
+    // `p*e` / `q*e` can overflow `isize` for an exotic base (B a large power of 2) at extreme
+    // exponents on 32-bit; the true log10 would not fit `isize` then, so bail rather than compare
+    // wrapped values that could falsely match.
+    let v2 = v2_sig.checked_add(p.checked_mul(e)?)?;
+    let v5 = v5.checked_add(q.checked_mul(e)?)?;
     (v2 == v5).then_some(v2)
 }
 
@@ -787,6 +790,17 @@ mod tests {
             assert_eq!(r_zero.repr, r_he.repr, "Zero != HalfEven for log10(10^{k})");
             assert_eq!(r_he.to_int().value(), IBig::from(k), "value for log10(10^{k})");
         }
+    }
+
+    #[test]
+    fn test_exact_pow10_log_overflow() {
+        // `p*e` overflows isize for a base that is a large power of two at an extreme exponent
+        // (on 32-bit and 64-bit alike); the exact log wouldn't fit isize, so it must be None, not
+        // a wrapped value that could falsely compare equal and return a wrong `Some`.
+        assert_eq!(exact_pow10_log::<256>(&IBig::ONE, isize::MAX), None);
+        assert_eq!(exact_pow10_log::<256>(&IBig::ONE, isize::MIN), None);
+        // sanity: the normal path is unaffected.
+        assert_eq!(exact_pow10_log::<10>(&IBig::ONE, 5), Some(5));
     }
 
     #[test]
