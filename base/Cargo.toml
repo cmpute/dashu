@@ -1,6 +1,6 @@
 [package]
 name = "dashu-base"
-version = "0.6.0-rc.3"
+version = "0.6.0-rc.4"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 edition = "2021"
 description = "Common trait definitions, error types, and utilities shared by the dashu math crates (integers, floats, rationals, and complex numbers). Defines the core abstractions the library builds on — Approximation, AbsOrd, Signed, SquareRoot, CubicRoot, EstimatedLog2, BitTest, and FloatEncoding — plus the Sign type and conversion errors."

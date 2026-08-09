@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0-rc.4
+
 ### Change
 - **`DivExact` / `DivExactAssign` now come from `num-modular` (re-exported through `dashu-base`),
   with the empty precomputation `()`** — every impl now implements `num_modular::DivExact<Rhs, ()>` /

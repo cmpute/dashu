@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0-rc.4
+
 ### Change
 - **(internal) removed the `rustversion` dependency** — the `#[rustversion::since(1.64)]` gate was
   unconditional (the MSRV is 1.68).

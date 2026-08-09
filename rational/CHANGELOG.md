@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0-rc.4
+
 ### Change
 - **(internal) removed the `rustversion` dependency** — the `#[rustversion::since(1.64)]` gates
   (e.g. `RBig::from_static_words`) are unconditional now that the MSRV is 1.68.

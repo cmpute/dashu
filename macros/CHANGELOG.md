@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0-rc.4
+
 ### Change
 - **Removed the `rustversion` dependency** — the `static_*` macros are no longer gated at Rust
   1.64 (`#[rustversion::since(1.64)]`); the MSRV is 1.68.

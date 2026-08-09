@@ -1,6 +1,6 @@
 [package]
 name = "dashu"
-version = "0.6.0-rc.3"
+version = "0.6.0-rc.4"
 edition = "2021"
 authors = ["Jacob Zhong <cmpute@gmail.com>"]
 description = "A pure-Rust library set of arbitrary-precision numbers (big numbers) for math and numerics, a native alternative to GNU GMP + MPFR + MPC. Ergonomics and readability come first, with speed and memory usage optimized enough for real workloads. Full no_std, MSRV 1.68; integers, floats, rationals, and complex numbers with configurable precision and rounding, literal macros, and optional serde, rand, num-traits, rkyv, zeroize."
@@ -62,9 +62,9 @@ decimal-extras = ["dashu-float/postgres-types", "dashu-float/diesel"]
 
 # all crates under dashu will have the same major version,
 # but the minor and patch versions can be different.
-dashu-base = { version = "0.6.0-rc.3", default-features = false, path = "./base" }
-dashu-int = { version = "0.6.0-rc.3", default-features = false, path = "./integer" }
-dashu-float = { version = "0.6.0-rc.3", default-features = false, path = "./float" }
-dashu-ratio = { version = "0.6.0-rc.3", default-features = false, path = "./rational", features = ['dashu-float'] }
-dashu-cmplx = { version = "0.6.0-rc.3", default-features = false, path = "./complex" }
-dashu-macros = { version = "0.6.0-rc.3", default-features = false, path = "./macros" }
+dashu-base = { version = "0.6.0-rc.4", default-features = false, path = "./base" }
+dashu-int = { version = "0.6.0-rc.4", default-features = false, path = "./integer" }
+dashu-float = { version = "0.6.0-rc.4", default-features = false, path = "./float" }
+dashu-ratio = { version = "0.6.0-rc.4", default-features = false, path = "./rational", features = ['dashu-float'] }
+dashu-cmplx = { version = "0.6.0-rc.4", default-features = false, path = "./complex" }
+dashu-macros = { version = "0.6.0-rc.4", default-features = false, path = "./macros" }

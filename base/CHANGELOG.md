@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0-rc.4
+
 ### Change
 - **`DivExact` / `DivExactAssign` are now re-exported from `num-modular` 0.6.5 instead of defined
   in this crate** — avoiding a duplicate definition of the same traits. The `num-modular` traits

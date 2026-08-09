@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0-rc.4
+
 ### Change
 - **(internal) `convert.rs` base-conversion call site updated for the `DivExact` trait
   re-exported from `num-modular`** — `(&repr.significand).div_exact(r_exp)` now passes the empty
