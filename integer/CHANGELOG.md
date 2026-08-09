@@ -50,6 +50,12 @@
   `remove(&UBig)` now delegates to it for single-word factors. Both the odd-part division and the
   mixed-factor 2-stripping run on `self`'s own buffer (taken via `TypedRepr`, probed read-only by
   `hensel_is_multiple_of` first) — no scratch allocation.
+- **`DivExact` / `DivExactAssign` with a [`ConstDivisor`] precompute** — exact division reusing a
+  precomputed divisor (`DivExact<UBig, ConstDivisor>` for `UBig` / `&UBig`, plus the in-place
+  `DivExactAssign`). The quotient and remainder come from the precomputed general division
+  (`DivRem<&ConstDivisor>`), so repeated exact divisions against a fixed divisor reuse the
+  reciprocal/normalization. Provided for API completeness — the `()` (Hensel) path is unchanged
+  and faster for small divisors, which this precompute does not feed.
 
 ## 0.6.0-rc.3
 

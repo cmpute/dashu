@@ -76,9 +76,11 @@ jobs:
       - name: cargo doc (workspace, all features)
         # `dashu-python`'s lib is also named `dashu`, so it collides with the meta-crate's lib on
         # the output path and must be documented in its own invocation. Both are checked.
+        # `--document-private-items` also documents private functions, so broken doc links in
+        # internal code fail the build.
         run: |
-          cargo doc --workspace --exclude dashu-python --all-features --no-deps
-          cargo doc -p dashu-python --all-features --no-deps
+          cargo doc --workspace --exclude dashu-python --all-features --no-deps --document-private-items
+          cargo doc -p dashu-python --all-features --no-deps --document-private-items
 
   fuzz-check:
     name: cargo check fuzz

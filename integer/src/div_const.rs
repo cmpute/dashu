@@ -6,7 +6,7 @@ use core::{
     ops::{Div, DivAssign, Rem, RemAssign},
 };
 use dashu_base::{DivRem, DivRemAssign};
-use num_modular::{PreMulInv2by1, PreMulInv3by2};
+use num_modular::{DivExact, DivExactAssign, PreMulInv2by1, PreMulInv3by2};
 
 use crate::{
     arch::word::{DoubleWord, Word},
@@ -359,6 +359,57 @@ impl DivRemAssign<&ConstDivisor> for UBig {
     }
 }
 
+/// Exact division using a precomputed [`ConstDivisor`] as the `Precompute`.
+///
+/// `d` must be the divisor that `pre` was built from (checked in debug builds). The quotient and
+/// remainder come from the precomputed general division ([`DivRem`]`<&ConstDivisor>`), so repeated
+/// exact divisions against a fixed divisor reuse the reciprocal/normalization instead of
+/// recomputing them. Provided for API completeness — the `()` (Hensel) path is unchanged and
+/// faster for small divisors, which this precompute does not feed.
+impl DivExact<UBig, ConstDivisor> for UBig {
+    type Output = UBig;
+
+    #[inline]
+    fn div_exact(self, d: UBig, pre: &ConstDivisor) -> Option<UBig> {
+        debug_assert_eq!(pre.value(), d, "the divisor must match the precomputed divisor");
+        let (q, r) = self.div_rem(pre);
+        if r.is_zero() {
+            Some(q)
+        } else {
+            None
+        }
+    }
+}
+
+impl DivExact<UBig, ConstDivisor> for &UBig {
+    type Output = UBig;
+
+    #[inline]
+    fn div_exact(self, d: UBig, pre: &ConstDivisor) -> Option<UBig> {
+        debug_assert_eq!(pre.value(), d, "the divisor must match the precomputed divisor");
+        let (q, r) = self.div_rem(pre);
+        if r.is_zero() {
+            Some(q)
+        } else {
+            None
+        }
+    }
+}
+
+impl DivExactAssign<UBig, ConstDivisor> for UBig {
+    #[inline]
+    fn div_exact_assign(&mut self, d: UBig, pre: &ConstDivisor) -> bool {
+        debug_assert_eq!(pre.value(), d, "the divisor must match the precomputed divisor");
+        let (q, r) = (&*self).div_rem(pre);
+        if r.is_zero() {
+            *self = q;
+            true
+        } else {
+            false
+        }
+    }
+}
+
 impl Div<&ConstDivisor> for IBig {
     type Output = IBig;
 
@@ -652,5 +703,51 @@ mod repr {
             debug_assert_zero!(shift::shr_in_place(&mut lhs, rhs.shift));
         }
         Repr::from_buffer(lhs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use num_modular::{DivExact, DivExactAssign};
+
+    /// `DivExact` / `DivExactAssign` with a `ConstDivisor` precompute: exact quotients agree with
+    /// `div_rem`, non-divisible cases return `None` (leaving the dividend unchanged for the
+    /// in-place form).
+    #[test]
+    fn test_div_exact_with_const_divisor() {
+        for d in [
+            UBig::from(1001u32),      // single word
+            (UBig::ONE << 64) + 3u8,  // double word on 64-bit
+            UBig::from(10u8).pow(50), // multi word
+        ] {
+            let pre = ConstDivisor::new(d.clone());
+            for i in 1..5usize {
+                let n = d.clone().pow(i) * 7u8;
+                let (q, r) = (&n).div_rem(&d);
+                assert!(r.is_zero(), "d={d:?} i={i}");
+                assert_eq!(n.clone().div_exact(d.clone(), &pre), Some(q.clone()), "d={d:?} i={i}");
+
+                // in-place form, exact division
+                let mut m = n;
+                assert!(m.div_exact_assign(d.clone(), &pre), "d={d:?} i={i}");
+                assert_eq!(m, q, "d={d:?} i={i}");
+            }
+
+            // not divisible → None / unchanged
+            let n = d.clone().pow(2) + 1u8;
+            assert_eq!(n.clone().div_exact(d.clone(), &pre), None, "d={d:?}");
+            let mut m = n;
+            let before = m.clone();
+            assert!(!m.div_exact_assign(d.clone(), &pre), "d={d:?}");
+            assert_eq!(m, before, "d={d:?}");
+        }
+
+        // reference receiver keeps the dividend borrowable
+        let d = UBig::from(1001u32);
+        let pre = ConstDivisor::new(d.clone());
+        let a = UBig::from(7u8) * &d;
+        assert_eq!((&a).div_exact(d.clone(), &pre), Some(UBig::from(7u8)));
+        assert_eq!(a, UBig::from(7u8) * d); // unchanged
     }
 }
