@@ -7,6 +7,8 @@
   re-exported from `num-modular`** — `(&repr.significand).div_exact(r_exp)` now passes the empty
   precomputation: `(&repr.significand).div_exact(r_exp, &())`. No public API change for
   `dashu-float`.
+- **(internal) removed the `rustversion` dependency** — the `#[rustversion::since(1.64)]` gate was
+  unconditional (the MSRV is 1.68).
 
 ### Fix
 - **(bench) the `exp` / `hyper` / `io` / `primitive` / `trig` benches build against the

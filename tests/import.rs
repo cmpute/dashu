@@ -47,7 +47,6 @@ fn test_macros() {
 }
 
 #[test]
-#[rustversion::since(1.64)]
 #[rustfmt::skip::macros(static_fbig, static_cbig, cbig)]
 fn test_static_macros() {
     static SA: &Natural = static_ubig!(1234);

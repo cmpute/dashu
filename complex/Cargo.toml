@@ -46,7 +46,6 @@ dashu-int = { version = "0.6.0-rc.3", default-features = false, path = "../integ
 dashu-float = { version = "0.6.0-rc.3", default-features = false, path = "../float" }
 
 # stable dependencies
-rustversion = "1.0.0"
 num-order = { optional = true, version = "1.2.0", default-features = false }
 _num-modular = { optional = true, version = "0.6.1", package = "num-modular", default-features = false }
 serde = { optional = true, version = "1.0.130", default-features = false }

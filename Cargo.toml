@@ -59,7 +59,6 @@ rkyv_v08 = ["dashu-int/rkyv_v08", "dashu-float/rkyv_v08", "dashu-ratio/rkyv_v08"
 decimal-extras = ["dashu-float/postgres-types", "dashu-float/diesel"]
 
 [dependencies]
-rustversion = "1.0"
 
 # all crates under dashu will have the same major version,
 # but the minor and patch versions can be different.

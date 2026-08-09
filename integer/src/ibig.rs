@@ -56,9 +56,8 @@ use crate::{
 pub struct IBig(pub(crate) Repr);
 
 impl IBig {
-    #[rustversion::attr(since(1.64), const)]
     #[inline]
-    pub(crate) fn as_sign_repr(&self) -> (Sign, TypedReprRef<'_>) {
+    pub(crate) const fn as_sign_repr(&self) -> (Sign, TypedReprRef<'_>) {
         self.0.as_sign_typed()
     }
 

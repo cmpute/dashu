@@ -31,8 +31,7 @@ fn test_rbig() {
     const _: RBig = rbig!(0xfffeffff0001 / 0xfffefffe0002); // has a common factor 0xffff
 }
 
-#[rustversion::since(1.64)]
-#[rustversion::attr(since(1.64), test)]
+#[test]
 fn test_static_rbig() {
     use dashu_macros::static_rbig;
 
@@ -85,8 +84,7 @@ fn test_relaxed() {
     const _: Relaxed = rbig!(~0xffffffff00000000/0xfffffffe00000000);
 }
 
-#[rustversion::since(1.64)]
-#[rustversion::attr(since(1.64), test)]
+#[test]
 fn test_static_relaxed() {
     use dashu_macros::static_rbig;
 

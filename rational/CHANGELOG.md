@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Change
+- **(internal) removed the `rustversion` dependency** — the `#[rustversion::since(1.64)]` gates
+  (e.g. `RBig::from_static_words`) are unconditional now that the MSRV is 1.68.
+
 ### Fix
 - **(bench) the `convert` / `io` / `primitive` benches build against the `rand_v010` API that the
   `rand` feature aliases to** — they used the `rand_v08` `gen_range`/`gen_bool` methods, which do

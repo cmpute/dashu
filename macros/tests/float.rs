@@ -49,8 +49,7 @@ fn test_fbig() {
     const _: FBig = fbig!(0xffffffffp-1234);
 }
 
-#[rustversion::since(1.64)]
-#[rustversion::attr(since(1.64), test)]
+#[test]
 fn test_static_fbig() {
     use dashu_macros::static_fbig;
 
@@ -98,8 +97,7 @@ fn test_dbig() {
     const _: DBig = dbig!(4294967295e-1234);
 }
 
-#[rustversion::since(1.64)]
-#[rustversion::attr(since(1.64), test)]
+#[test]
 fn test_static_dbig() {
     use dashu_macros::static_dbig;
 

@@ -32,4 +32,3 @@ dashu-cmplx = { version = "0.6.0-rc.3", default-features = false, path = "../com
 quote = "1"
 proc-macro2 = "1"
 pastey = "0.2"
-rustversion = "1.0"

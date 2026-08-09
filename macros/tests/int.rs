@@ -45,8 +45,7 @@ fn test_ubig() {
     const _: UBig = ubig!(0xffffffff);
 }
 
-#[rustversion::since(1.64)]
-#[rustversion::attr(since(1.64), test)]
+#[test]
 fn test_static_ubig() {
     use dashu_macros::static_ubig;
 
@@ -144,8 +143,7 @@ fn test_ibig() {
     const _: IBig = ibig!(-0xffffffff);
 }
 
-#[rustversion::since(1.64)]
-#[rustversion::attr(since(1.64), test)]
+#[test]
 fn test_static_ibig() {
     use dashu_macros::static_ibig;
 

@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Change
+- **Removed the `rustversion` dependency** — the `static_*` macros are no longer gated at Rust
+  1.64 (`#[rustversion::since(1.64)]`); the MSRV is 1.68.
 - **(breaking)** `cbig!` / `static_cbig!` coefficients are now **decimal by default**, matching
   `ubig!` / `ibig!`: use the `0x` / `0b` / `0o` prefixes for hexadecimal / binary / octal.
   Previously coefficients were parsed as binary floats, so `cbig!(3+4i)` was rejected and

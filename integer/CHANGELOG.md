@@ -9,6 +9,10 @@
   `n.div_exact(d, &())`, `n.div_exact_assign(d)` is now `n.div_exact_assign(d, &())`. The `&UBig` /
   `&IBig` reference-receiver impls and all primitive divisor impls (`u8`–`u128`/`usize`/`i8`–`i128`/
   `isize`) are unchanged in behavior.
+- **Removed the `rustversion` dependency** — the `#[rustversion::since(1.64)]` gates are now
+  unconditional (the MSRV is 1.68): `UBig::trailing_zeros` / `trailing_ones`,
+  `IBig::trailing_zeros` / `trailing_ones`, and the internal `repr()` / `as_typed()` /
+  `as_sign_typed()` accessors are `const fn` unconditionally.
 
 ### Fix
 - **(bench) the `primitive` / `io` / `modular` / `shift` benches build against the `rand_v010` API

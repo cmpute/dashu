@@ -89,7 +89,6 @@ impl Repr {
 
     /// This methods only check if the numerator and denominator have common factor 2.
     /// It should be prevented to use this method to directly generate an RBig instance.
-    #[rustversion::since(1.64)]
     pub const unsafe fn from_static_words(
         sign: dashu_base::Sign,
         numerator_words: &'static [dashu_int::Word],

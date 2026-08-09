@@ -58,9 +58,8 @@ pub struct UBig(pub(crate) Repr);
 
 impl UBig {
     /// Get the representation of UBig.
-    #[rustversion::attr(since(1.64), const)]
     #[inline]
-    pub(crate) fn repr(&self) -> TypedReprRef<'_> {
+    pub(crate) const fn repr(&self) -> TypedReprRef<'_> {
         self.0.as_typed()
     }
 

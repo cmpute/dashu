@@ -483,7 +483,6 @@ pub(crate) mod repr {
     /// [`UBig::is_multiple_of_const`] / [`IBig::is_multiple_of_const`]). This is the remainder-based
     /// test, kept separate from the non-const Hensel-based [`TypedReprRef::is_multiple_of`] because
     /// `const fn`s cannot allocate or call non-const kernels.
-    #[rustversion::since(1.64)]
     impl<'a> TypedReprRef<'a> {
         pub(crate) const fn is_multiple_of_dword(self, divisor: DoubleWord) -> bool {
             if let Some(w) = shrink_dword(divisor) {
@@ -646,10 +645,6 @@ impl UBig {
     /// A const version of [UBig::is_multiple_of], but only accepts [DoubleWord][crate::DoubleWord]
     /// divisors.
     ///
-    /// # Availability
-    ///
-    /// Since Rust 1.64
-    #[rustversion::since(1.64)]
     #[inline]
     pub const fn is_multiple_of_const(&self, divisor: DoubleWord) -> bool {
         self.repr().is_multiple_of_dword(divisor)
@@ -679,10 +674,6 @@ impl IBig {
     /// A const version of [IBig::is_multiple_of], but only accepts [DoubleWord][crate::DoubleWord]
     /// divisors.
     ///
-    /// # Availability
-    ///
-    /// Since Rust 1.64
-    #[rustversion::since(1.64)]
     #[inline]
     pub const fn is_multiple_of_const(&self, divisor: DoubleWord) -> bool {
         let (_, repr) = self.as_sign_repr();
@@ -1119,7 +1110,6 @@ mod tests {
     }
 
     /// The `const` divisibility test agrees with the remainder for both word and dword divisors.
-    #[rustversion::since(1.64)]
     #[test]
     fn test_is_multiple_of_const_matches_rem() {
         for (n, d) in [

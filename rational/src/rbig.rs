@@ -368,7 +368,6 @@ impl Relaxed {
     ///
     /// This method is intended for static creation macros.
     #[doc(hidden)]
-    #[rustversion::since(1.64)]
     #[inline]
     pub const unsafe fn from_static_words(
         sign: dashu_base::Sign,

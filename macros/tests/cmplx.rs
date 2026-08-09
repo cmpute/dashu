@@ -71,8 +71,7 @@ fn test_cbig_const() {
     assert_eq!(P, Z);
 }
 
-#[rustversion::since(1.64)]
-#[rustversion::attr(since(1.64), test)]
+#[test]
 fn test_static_cbig() {
     let z: &'static CBig = static_cbig!(3 + 4i);
     assert_eq!(*z, cbig!(3 + 4i));

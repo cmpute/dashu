@@ -140,9 +140,8 @@ impl Repr {
 
     /// Cast the reference of `Repr` to a strong typed representation, assuming the underlying data is unsigned.
     /// Panics if the `capacity` is negative
-    #[rustversion::attr(since(1.64), const)]
     #[inline]
-    pub fn as_typed(&self) -> TypedReprRef<'_> {
+    pub const fn as_typed(&self) -> TypedReprRef<'_> {
         let (sign, typed) = self.as_sign_typed();
         match sign {
             // sign check
@@ -154,9 +153,8 @@ impl Repr {
     }
 
     /// Cast the reference of `Repr` to a strong typed representation, and return with the sign.
-    #[rustversion::attr(since(1.64), const)]
     #[inline]
-    pub fn as_sign_typed(&self) -> (Sign, TypedReprRef<'_>) {
+    pub const fn as_sign_typed(&self) -> (Sign, TypedReprRef<'_>) {
         let (abs_capacity, sign) = self.sign_capacity();
 
         // SAFETY: the capacity is checked before accessing the fields.
@@ -168,7 +166,6 @@ impl Repr {
                     TypedReprRef::RefSmall(double_word(self.data.inline[0], self.data.inline[1]))
                 }
                 _ => TypedReprRef::RefLarge(slice::from_raw_parts(
-                    // need Rust 1.64 for const
                     self.data.heap.0,
                     self.data.heap.1,
                 )),

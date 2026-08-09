@@ -48,7 +48,6 @@ pub fn ubig(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
-#[rustversion::since(1.64)]
 #[doc = include_str!("../docs/static_ubig.md")]
 pub fn static_ubig(input: TokenStream) -> TokenStream {
     parse::int::parse_integer(false, true, false, input.into()).into()
@@ -62,7 +61,6 @@ pub fn ubig_embedded(input: TokenStream) -> TokenStream {
 
 #[doc(hidden)]
 #[proc_macro]
-#[rustversion::since(1.64)]
 pub fn static_ubig_embedded(input: TokenStream) -> TokenStream {
     parse::int::parse_integer(false, true, true, input.into()).into()
 }
@@ -74,7 +72,6 @@ pub fn ibig(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
-#[rustversion::since(1.64)]
 #[doc = include_str!("../docs/static_ibig.md")]
 pub fn static_ibig(input: TokenStream) -> TokenStream {
     parse::int::parse_integer(true, true, false, input.into()).into()
@@ -88,7 +85,6 @@ pub fn ibig_embedded(input: TokenStream) -> TokenStream {
 
 #[doc(hidden)]
 #[proc_macro]
-#[rustversion::since(1.64)]
 pub fn static_ibig_embedded(input: TokenStream) -> TokenStream {
     parse::int::parse_integer(true, true, true, input.into()).into()
 }
@@ -100,7 +96,6 @@ pub fn fbig(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
-#[rustversion::since(1.64)]
 #[doc = include_str!("../docs/static_fbig.md")]
 pub fn static_fbig(input: TokenStream) -> TokenStream {
     parse::float::parse_binary_float(true, false, input.into()).into()
@@ -114,7 +109,6 @@ pub fn fbig_embedded(input: TokenStream) -> TokenStream {
 
 #[doc(hidden)]
 #[proc_macro]
-#[rustversion::since(1.64)]
 pub fn static_fbig_embedded(input: TokenStream) -> TokenStream {
     parse::float::parse_binary_float(true, true, input.into()).into()
 }
@@ -126,7 +120,6 @@ pub fn dbig(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
-#[rustversion::since(1.64)]
 #[doc = include_str!("../docs/static_dbig.md")]
 pub fn static_dbig(input: TokenStream) -> TokenStream {
     parse::float::parse_decimal_float(true, false, input.into()).into()
@@ -139,7 +132,6 @@ pub fn dbig_embedded(input: TokenStream) -> TokenStream {
 }
 
 #[doc(hidden)]
-#[rustversion::since(1.64)]
 #[proc_macro]
 pub fn static_dbig_embedded(input: TokenStream) -> TokenStream {
     parse::float::parse_decimal_float(true, true, input.into()).into()
@@ -152,7 +144,6 @@ pub fn rbig(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
-#[rustversion::since(1.64)]
 #[doc = include_str!("../docs/static_rbig.md")]
 pub fn static_rbig(input: TokenStream) -> TokenStream {
     parse::ratio::parse_static_ratio(false, input.into()).into()
@@ -166,7 +157,6 @@ pub fn rbig_embedded(input: TokenStream) -> TokenStream {
 
 #[doc(hidden)]
 #[proc_macro]
-#[rustversion::since(1.64)]
 pub fn static_rbig_embedded(input: TokenStream) -> TokenStream {
     parse::ratio::parse_static_ratio(true, input.into()).into()
 }
@@ -178,7 +168,6 @@ pub fn cbig(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
-#[rustversion::since(1.64)]
 #[doc = include_str!("../docs/static_cbig.md")]
 pub fn static_cbig(input: TokenStream) -> TokenStream {
     parse::cmplx::parse_complex(true, false, input.into()).into()
@@ -191,7 +180,6 @@ pub fn cbig_embedded(input: TokenStream) -> TokenStream {
 }
 
 #[doc(hidden)]
-#[rustversion::since(1.64)]
 #[proc_macro]
 pub fn static_cbig_embedded(input: TokenStream) -> TokenStream {
     parse::cmplx::parse_complex(true, true, input.into()).into()

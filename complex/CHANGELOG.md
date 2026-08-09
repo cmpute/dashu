@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Change
+- **(internal) removed the `rustversion` dependency** — the `#[rustversion::since(1.64)]` gate was
+  unconditional (the MSRV is 1.68).
+
 ### Add
 - **Complex hyperbolic & inverse-hyperbolic family** — `Context::sinh`/`cosh`/`sinh_cosh`/`tanh`/
   `asinh`/`acosh`/`atanh` and the matching `CBig` convenience methods. Built from the complex
