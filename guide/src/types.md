@@ -83,7 +83,7 @@ When you have an `Approximation` instance, call `.value()`, `.value_ref()` or `u
 
 ### FpResult and CfpResult
 
-Inexact operations at the context layer return a result type rather than a bare value: `dashu::float::FpResult<T> = Result<Rounded<T>, FpError>`, where `Rounded<T>` is the [`Approximation`](#approximation) carrying a `Rounding` flag. The complex analog is `dashu::complex::CfpResult` (`Result<CRounded<CBig>, FpError>`), whose `CRounded` carries one `Rounding` flag per axis. `FpError` reports why an operation could not produce a finite correctly-rounded value: `Overflow`/`Underflow`, `Indeterminate` (e.g. `0/0`), `OutOfDomain`, and `InfiniteInput`.
+Inexact operations at the context layer return a result type rather than a bare value: `dashu::float::FpResult<T> = Result<Rounded<T>, FpError>`, where `Rounded<T>` is the [`Approximation`](#approximation) carrying a `Rounding` flag. The complex analog is `dashu::complex::CfpResult` (`Result<CRounded<CBig>, FpError>`), whose `CRounded` carries one `Rounding` flag per axis. `FpError` reports why an operation could not produce a finite correctly-rounded value: `Overflow`/`Underflow`, `Indeterminate` (e.g. `0/0`), `OutOfDomain`, `InfiniteInput`, and `ZivRetryLimitExceeded` (a transcendental failed to certify its rounding — only reachable if a radius-bound estimate is wrong).
 
 ## Two-layer API
 
@@ -93,3 +93,9 @@ Inexact operations — division, the transcendentals, and anything else that can
 - **Convenience layer** — the inherent methods and operators on `FBig`/`CBig` (`.exp()`, `.ln()`, `+`, `*`, …) unwrap to a plain value, panicking on `Indeterminate`/`OutOfDomain`/`InfiniteInput` and saturating overflow/underflow to `±∞`/`±0`.
 
 Use the convenience layer for everyday code; drop down to the `Context` layer when you need the rounding direction or explicit error handling.
+
+Every panic a user can hit in the core arithmetic is traceable: the deliberate `panic!` messages
+of `dashu-int` and `dashu-float` are defined in a single `error.rs` per crate — [`dashu-int`'s
+`error.rs`](https://github.com/cmpute/dashu/blob/master/integer/src/error.rs) and
+[`dashu-float`'s `error.rs`](https://github.com/cmpute/dashu/blob/master/float/src/error.rs) — so
+a message you see can be looked up (and reported) in one place.

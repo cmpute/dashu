@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Change
+- **(breaking) new [`FpError::ZivRetryLimitExceeded`](crate::error::FpError::ZivRetryLimitExceeded)
+  variant** — the Ziv certification loop (the real transcendentals) previously fell back to a
+  best-effort rounded value after `MAX_ZIV_RETRIES` attempts, silently losing the correctly-rounded
+  guarantee if a radius-bound estimate were ever wrong. It now returns `Err(FpError::ZivRetryLimitExceeded)`
+  (panicking at the convenience layer), making such a failure explicit instead of a silent 1-ULP-wrong
+  result. This only fires if a radius bound is wrong — a correct bound settles within a few retries.
+
 ### Fix
 - **(internal) `exact_pow10_log` (the `log10` exact-power-of-ten shortcut) used unchecked `isize`
   arithmetic for `p·e` / `q·e`**, which could overflow (silently wrap) on 32-bit for an exotic

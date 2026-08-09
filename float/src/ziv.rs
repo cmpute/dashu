@@ -102,7 +102,6 @@ impl<R: ErrorBounds> Context<R> {
         }
 
         let mut guard = initial_guard;
-        let mut last = None;
         ziv_retries_reset_impl();
         for _ in 0..MAX_ZIV_RETRIES {
             let (a, e) = approx(guard)?;
@@ -112,7 +111,6 @@ impl<R: ErrorBounds> Context<R> {
             if Self::contained::<B>(&a.repr, &e.repr, candidate.value_ref()) {
                 return Ok(candidate);
             }
-            last = Some(candidate);
 
             // Grow the guard aggressively so a near-tie resolves in a couple of retries, while
             // the first attempt (with the heuristic guard) handles the common case.
@@ -121,9 +119,9 @@ impl<R: ErrorBounds> Context<R> {
             ziv_retries_bump();
         }
 
-        // Unreachable in practice: return the best-effort candidate from the last attempt,
-        // matching the pre-Ziv near-correct behavior rather than looping forever.
-        Ok(last.expect("MAX_ZIV_RETRIES is non-zero"))
+        // Unreachable in practice: a radius-bound bug would otherwise loop forever. Report it
+        // instead of silently returning a possibly-1-ULP-wrong best-effort candidate.
+        Err(FpError::ZivRetryLimitExceeded)
     }
 
     /// Pair variant of [`ziv`](Self::ziv) for functions that return two values (e.g. `sin_cos`,
@@ -150,7 +148,6 @@ impl<R: ErrorBounds> Context<R> {
         }
 
         let mut guard = initial_guard;
-        let mut last = None;
         ziv_retries_reset_impl();
         for _ in 0..MAX_ZIV_RETRIES {
             let ((a1, e1), (a2, e2)) = match approx(guard) {
@@ -164,7 +161,6 @@ impl<R: ErrorBounds> Context<R> {
             {
                 return (Ok(c1), Ok(c2));
             }
-            last = Some((c1, c2));
 
             // Grow the guard aggressively so a near-tie resolves in a couple of retries.
             let step = core::cmp::max(guard, self.precision / 2).max(1);
@@ -172,9 +168,9 @@ impl<R: ErrorBounds> Context<R> {
             ziv_retries_bump();
         }
 
-        // Unreachable in practice: return the best-effort pair from the last attempt.
-        let (l1, l2) = last.expect("MAX_ZIV_RETRIES is non-zero");
-        (Ok(l1), Ok(l2))
+        // Unreachable in practice: a radius-bound bug would otherwise loop forever. Report it
+        // instead of silently returning possibly-1-ULP-wrong best-effort candidates.
+        (Err(FpError::ZivRetryLimitExceeded), Err(FpError::ZivRetryLimitExceeded))
     }
 
     /// Containment test: is the approximation's error interval `[a − e, a + e]` entirely inside
@@ -263,6 +259,21 @@ mod tests {
         let ctx: Context<mode::HalfEven> = Context::new(10);
         let r = ctx.ziv::<2>(4, |_| Err(FpError::OutOfDomain));
         assert_eq!(r, Err(FpError::OutOfDomain));
+    }
+
+    // An approximation whose error interval always straddles a rounding boundary (a radius-bound
+    // bug) exhausts the retry budget and reports `ZivRetryLimitExceeded` instead of silently
+    // returning a possibly-1-ULP-wrong best-effort value.
+    #[test]
+    fn ziv_reports_retry_limit_exceeded() {
+        let ctx: Context<mode::HalfEven> = Context::new(4);
+        // radius 10 >> 1 ulp at any working precision, so containment always fails.
+        let r = ctx.ziv(2, |_| Ok((F::ONE, F::from(10u8))));
+        assert_eq!(r, Err(FpError::ZivRetryLimitExceeded));
+        // the pair variant reports it on both slots.
+        let (r1, r2) = ctx.ziv_pair(2, |_| Ok(((F::ONE, F::from(10u8)), (F::ONE, F::ZERO))));
+        assert_eq!(r1, Err(FpError::ZivRetryLimitExceeded));
+        assert_eq!(r2, Err(FpError::ZivRetryLimitExceeded));
     }
 
     // ziv_pair accepts an exact pair (both radii 0) on the first attempt.

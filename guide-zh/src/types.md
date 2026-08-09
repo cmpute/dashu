@@ -76,7 +76,7 @@
 
 ### FpResult 和 CfpResult
 
-上下文层的不精确运算返回的是一个结果类型，而非裸值：`dashu::float::FpResult<T> = Result<Rounded<T>, FpError>`，其中 `Rounded<T>` 是携带 `Rounding` 标志的 [`Approximation`](#approximation)。复数的对应类型是 `dashu::complex::CfpResult`（`Result<CRounded<CBig>, FpError>`），其 `CRounded` 为每个坐标轴各携带一个 `Rounding` 标志。`FpError` 用于报告运算为何无法产生一个有限的、正确舍入的值：`Overflow`/`Underflow`、`Indeterminate`（例如 `0/0`）、`OutOfDomain` 以及 `InfiniteInput`。
+上下文层的不精确运算返回的是一个结果类型，而非裸值：`dashu::float::FpResult<T> = Result<Rounded<T>, FpError>`，其中 `Rounded<T>` 是携带 `Rounding` 标志的 [`Approximation`](#approximation)。复数的对应类型是 `dashu::complex::CfpResult`（`Result<CRounded<CBig>, FpError>`），其 `CRounded` 为每个坐标轴各携带一个 `Rounding` 标志。`FpError` 用于报告运算为何无法产生一个有限的、正确舍入的值：`Overflow`/`Underflow`、`Indeterminate`（例如 `0/0`）、`OutOfDomain`、`InfiniteInput` 以及 `ZivRetryLimitExceeded`（超越函数未能认证其舍入——只有当误差半径估计有误时才可能触发）。
 
 ## 两层 API
 
@@ -86,3 +86,5 @@
 - **便捷层（Convenience layer）**——`FBig`/`CBig` 上的固有方法和运算符（`.exp()`、`.ln()`、`+`、`*`……）会解包为裸值：遇到 `Indeterminate`/`OutOfDomain`/`InfiniteInput` 时 panic，遇到上溢/下溢则饱和为 `±∞`/`±0`。
 
 日常代码请使用便捷层；当你需要舍入方向或显式的错误处理时，再下沉到上下文层。
+
+核心算术中你能遇到的所有 panic 都是可追踪的：`dashu-int` 和 `dashu-float` 中所有主动的 `panic!` 消息都定义在各 crate 唯一的 `error.rs` 中——[`dashu-int` 的 `error.rs`](https://github.com/cmpute/dashu/blob/master/integer/src/error.rs) 与 [`dashu-float` 的 `error.rs`](https://github.com/cmpute/dashu/blob/master/float/src/error.rs)——因此你看到的任何消息都可以在同一个地方查找到（并上报）。

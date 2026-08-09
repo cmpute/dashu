@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Change
+- **(breaking) the complex Ziv driver now reports
+  [`FpError::ZivRetryLimitExceeded`](dashu_float::FpError::ZivRetryLimitExceeded)** (the new
+  `dashu-float` error variant) when the retry budget is exhausted, instead of silently returning a
+  best-effort — possibly-1-ULP-wrong — result. Only reachable if a complex radius-bound estimate is
+  wrong; a correct bound settles within a few retries.
+
 ### Fix
 - **`tan` on a zero (including a precision-0 zero like `CBig::ZERO`) panicked** — unlike the other
   complex transcendentals, `tan` had no exact-zero shortcut, so the Ziv loop rejected unlimited

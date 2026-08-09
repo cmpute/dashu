@@ -124,12 +124,22 @@ impl<R: Round> Context<R> {
             Err(FpError::Indeterminate) => {
                 panic!("the result of the operation is an indeterminate form!")
             }
+            Err(FpError::ZivRetryLimitExceeded) => panic_ziv_retry_limit_exceeded(),
         }
     }
 }
 
 /// Combine two per-part float rounding results into a [`CRounded`] complex result, carrying each
 /// part's inexactness flag. `Exact` iff both parts are exact.
+/// Panics when the Ziv retry limit is exceeded (a complex transcendental failed to certify its
+/// rounding; in practice this only fires if a radius-bound estimate is wrong).
+pub(crate) fn panic_ziv_retry_limit_exceeded() -> ! {
+    panic!(
+        "the Ziv retry limit was exceeded; the result is not correctly rounded! \
+         Please report this case to the maintainer."
+    )
+}
+
 pub(crate) fn combine_parts<R: Round, const B: Word>(
     re: Approximation<FBig<R, B>, Rounding>,
     im: Approximation<FBig<R, B>, Rounding>,

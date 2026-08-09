@@ -75,7 +75,6 @@ impl<R: ErrorBounds> Context<R> {
         self.assert_limited();
         let p = self.precision();
         let mut guard = initial_guard;
-        let mut last = None;
         #[cfg(all(test, feature = "std"))]
         LAST_ZIV_RETRIES.with(|c| c.set(0));
         for _ in 0..MAX_ZIV_RETRIES {
@@ -90,7 +89,6 @@ impl<R: ErrorBounds> Context<R> {
             {
                 return Ok(candidates);
             }
-            last = Some(candidates);
 
             // Grow the guard aggressively so a near-tie resolves in a couple of retries, while the
             // first attempt (with the heuristic guard) handles the common case (matches float).
@@ -100,9 +98,9 @@ impl<R: ErrorBounds> Context<R> {
             LAST_ZIV_RETRIES.with(|c| c.set(c.get() + 1));
         }
 
-        // Unreachable in practice: return the best-effort parts from the last attempt, matching the
-        // pre-Ziv near-correct behavior rather than looping forever.
-        Ok(last.expect("MAX_ZIV_RETRIES is non-zero"))
+        // Unreachable in practice: a radius-bound bug would otherwise loop forever. Report it
+        // instead of silently returning possibly-1-ULP-wrong best-effort parts.
+        Err(FpError::ZivRetryLimitExceeded)
     }
 
     /// Per-part containment test: is the approximation's error interval `[value ± radius]`
@@ -284,5 +282,16 @@ mod tests {
     fn ziv_rejects_unlimited() {
         let ctx: Context<mode::HalfEven> = Context::new(0);
         drop(ctx.ziv(4, |_| Ok([(F::ONE, F::ZERO), (F::ONE, F::ZERO)])));
+    }
+
+    // An approximation whose error interval always straddles a rounding boundary (a radius-bound
+    // bug) exhausts the retry budget and reports `ZivRetryLimitExceeded` instead of silently
+    // returning possibly-wrong best-effort parts.
+    #[test]
+    fn ziv_reports_retry_limit_exceeded() {
+        let ctx: Context<mode::HalfEven> = Context::new(4);
+        // one part carries radius 10 >> 1 ulp at any working precision, so containment always fails.
+        let r = ctx.ziv(2, |_| Ok([(F::ONE, F::ZERO), (F::ONE, F::from(10u8))]));
+        assert_eq!(r, Err(FpError::ZivRetryLimitExceeded));
     }
 }

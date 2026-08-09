@@ -52,6 +52,14 @@ pub enum FpError {
     /// The converted result is always [`Inexact`](dashu_base::Approximation::Inexact): the true result was a very small
     /// non-zero number, and zero is an approximation.
     Underflow(Sign),
+
+    /// The Ziv certification loop exhausted its retry budget without the error interval settling
+    /// into a single rounding preimage. The returned value is **not** guaranteed correctly rounded.
+    ///
+    /// This only fires if a radius-bound estimate is wrong — a correct bound settles within a
+    /// handful of retries — and is reported instead of silently returning a possibly-1-ULP-wrong
+    /// value. At the convenience layer it panics like the other non-saturatable errors.
+    ZivRetryLimitExceeded,
 }
 
 impl Display for FpError {
@@ -64,6 +72,9 @@ impl Display for FpError {
             FpError::Indeterminate => f.write_str("the operation result is an indeterminate form"),
             FpError::Overflow(_) => f.write_str("overflow: the result is too large to represent"),
             FpError::Underflow(_) => f.write_str("underflow: the result is too small to represent"),
+            FpError::ZivRetryLimitExceeded => f.write_str(
+                "the Ziv retry limit was exceeded; result not guaranteed correctly rounded",
+            ),
         }
     }
 }
@@ -121,6 +132,15 @@ pub fn panic_out_of_domain() -> ! {
     panic!("the operation result is out of domain!")
 }
 
+/// Panics when the Ziv retry limit is exceeded (a transcendental failed to certify its rounding;
+/// in practice this only fires if a radius-bound estimate is wrong).
+pub fn panic_ziv_retry_limit_exceeded() -> ! {
+    panic!(
+        "the Ziv retry limit was exceeded; the result is not correctly rounded! \
+         Please report this case to the maintainer."
+    )
+}
+
 impl<R: Round> Context<R> {
     /// Unwrap an [`FpResult`], returning the value directly.
     ///
@@ -139,6 +159,7 @@ impl<R: Round> Context<R> {
             Err(FpError::InfiniteInput) => panic_operate_with_inf(),
             Err(FpError::OutOfDomain) => panic_out_of_domain(),
             Err(FpError::Indeterminate) => panic_nan(),
+            Err(FpError::ZivRetryLimitExceeded) => panic_ziv_retry_limit_exceeded(),
         }
     }
 }
