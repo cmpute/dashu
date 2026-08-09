@@ -27,6 +27,9 @@ The components of different types are listed below:
   - `FBig`/`DBig` = significand: `IBig` + exponent: `isize`
   - `RBig` = numerator: `IBig` + denominator: `UBig`
   - `CBig` = real part: `FBig` + imaginary part: `FBig` (the result precision is the larger of the two)
+
+For `RBig`, an alternative `from_parts_signed(numerator, denominator)` takes a *signed*
+denominator (`IBig`), so the sign can live on either component.
 - For `::from_parts_const()`
   - `IBig` = sign: `Sign` + magnitude: `DoubleWord`
   - `FBig`/`DBig` = sign: `Sign` + significand: `DoubleWord` + exponent: `isize`

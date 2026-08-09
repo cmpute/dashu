@@ -13,6 +13,22 @@ assert_eq!(format!("{:b}", &a | &b), "1110");
 
 `BitTest` trait（来自 `dashu-base`）用于测试和度量单个位：`.bit(n)` 返回第 `n` 位，`.bit_len()` 返回最高置位位置加一。`set_bit(n)` / `clear_bit(n)` 就地修改 `UBig`，`trailing_zeros()` 计算低位零位的个数。
 
+在计数与切片方面，`UBig` 还提供 `count_ones()`、`count_zeros()`（前导位*之后*的零位，对零返回 `None`）、`trailing_ones()`、`clear_high_bits(n)`（只保留最低 `n` 位）以及 `split_bits(n)`（在第 `n` 位处拆分为 `(低位, 高位)`）。某个值是否为 2 的幂——或比它大的下一个 2 的幂——由 `PowerOfTwo` trait 提供：`is_power_of_two()` 和 `next_power_of_two()`。
+
+```rust
+use dashu::base::PowerOfTwo;
+use dashu::integer::UBig;
+
+let x = UBig::from(0b10100011u8);
+assert_eq!(x.count_ones(), 4);
+assert_eq!(x.count_zeros(), Some(4));
+let mut y = x.clone();
+y.clear_high_bits(4); // 只保留最低 4 位
+assert_eq!(y, UBig::from(0b0011u8));
+assert!(UBig::from(1024u32).is_power_of_two());
+assert_eq!(UBig::from(1023u32).next_power_of_two(), UBig::from(1024u32));
+```
+
 ## 移位
 
 `<<` 和 `>>` 按 `usize` 值移位。左移使数值增长；右移使数值缩小，等价于向下取整除以 2 的幂。

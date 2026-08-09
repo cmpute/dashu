@@ -31,6 +31,23 @@ assert!(b.div_exact_assign(UBig::from(10u32).pow(8), &()));
 assert_eq!(b, UBig::from(7u32));
 ```
 
+## Divisibility and factor removal
+
+`is_multiple_of(&rhs)` tests whether `rhs` divides the value exactly — a faster alternative to
+`% rhs == 0`. To strip all factors of a number, use `UBig::remove(&mut self, factor)`: it divides
+out every occurrence of `factor`, returning the exponent (so `self = factor^k · rest` yields
+`Some(k)`), or `None` when `factor` is 0, 1, or `self` is 0. `remove_word` is the single-word
+specialization.
+
+```rust
+use dashu::integer::UBig;
+
+let mut a = UBig::from(8u32) * 3u32; // 24 = 2³ · 3
+assert_eq!(a.remove(&UBig::from(2u32)), Some(3));
+assert_eq!(a, UBig::from(3u32));
+assert!(UBig::from(10u32).is_multiple_of(&UBig::from(5u32)));
+```
+
 ## Modular arithmetic
 
 For repeated operations against a fixed modulus, precompute a `ConstDivisor` and reduce values into `Reduced`. Addition, subtraction, multiplication, exponentiation, and inversion then run against the precomputed modulus, and the result prints in `(mod N)` form.

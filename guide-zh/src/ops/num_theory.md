@@ -31,6 +31,19 @@ assert!(b.div_exact_assign(UBig::from(10u32).pow(8), &()));
 assert_eq!(b, UBig::from(7u32));
 ```
 
+## 整除性与因子移除
+
+`is_multiple_of(&rhs)` 判断 `rhs` 是否恰好整除该值——比 `% rhs == 0` 更快。要剥离一个数的所有因子，可使用 `UBig::remove(&mut self, factor)`：它除掉 `factor` 的每一次出现，并返回其指数（即当 `self = factor^k · rest` 时返回 `Some(k)`），当 `factor` 为 0、1 或 `self` 为 0 时返回 `None`。`remove_word` 是单字因子的特化版本。
+
+```rust
+use dashu::integer::UBig;
+
+let mut a = UBig::from(8u32) * 3u32; // 24 = 2³ · 3
+assert_eq!(a.remove(&UBig::from(2u32)), Some(3));
+assert_eq!(a, UBig::from(3u32));
+assert!(UBig::from(10u32).is_multiple_of(&UBig::from(5u32)));
+```
+
 ## 模运算
 
 对于针对固定模数的重复运算，可预计算一个 `ConstDivisor` 并将值约化为 `Reduced`。加法、减法、乘法、幂运算和求逆随后基于预计算的模数运行，结果以 `(mod N)` 形式输出。

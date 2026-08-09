@@ -16,7 +16,7 @@
 - [运算](./ops/index.md)
   - [相等性与比较](./ops/cmp.md)
   - [基本算术](./ops/basic.md)
-  - [指数与对数](./ops/exp_log.md)
+  - [幂、指数和对数](./ops/pow_exp_log.md)
   - [三角与双曲函数](./ops/trig_n_hyper.md)
   - [位操作](./ops/bit.md)
   - [数论运算](./ops/num_theory.md)

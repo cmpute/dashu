@@ -14,15 +14,36 @@ assert_eq!(e, IBig::from(-0x21ff));
 
 ## Float Arithmetic
 
-`FBig`/`DBig` support `+`, `-`, `*`, `/` between values of the **same base and rounding mode** (mixed bases are a compile error by design). The result precision is `max(lhs.precision, rhs.precision)`, and each operation reports its inexactness through the two-layer API described in [Exponential and Logarithm](./exp_log.md). Infinities are terminal: `1/0` and `ln(0)` produce `±∞`, but feeding an infinity back into arithmetic is an error (`FpError::InfiniteInput`).
+`FBig`/`DBig` support `+`, `-`, `*`, `/` between values of the **same base and rounding mode** (mixed bases are a compile error by design). The result precision is `max(lhs.precision, rhs.precision)`, and each operation reports its inexactness through the two-layer API described in [Power, Exponential and Logarithm](./pow_exp_log.md). Infinities are terminal: `1/0` and `ln(0)` produce `±∞`, but feeding an infinity back into arithmetic is an error (`FpError::InfiniteInput`).
+
+Beyond the four field operations, floats can be decomposed and rounded with `trunc()`,
+`ceil()`, `floor()`, `round()` (nearest, ties away from zero), and `fract()` (the fractional
+part); `split_at_point()` returns both halves as `(integral, fractional)` in one call, and
+`quantize(exp)` rounds to the nearest multiple of `BASE^exp` (the dashu analog of Python's
+`Decimal.quantize`, returning the rounding direction). Each of these adjusts the result
+precision to the digits that remain, so the value is exact for its stored digits. The unit in
+the last place is `ulp()`, with a cheaper lower bound `ulp_lb()` that is useful as a
+negligibility threshold in iterative algorithms.
+
+```rust
+use core::str::FromStr;
+use dashu::float::DBig;
+
+let a = DBig::from_str("1.234")?;
+assert_eq!(a.round().to_string(), "1");
+assert_eq!(a.fract().to_string(), "0.234");
+let (int, frac) = a.clone().split_at_point();
+assert_eq!(int.to_string(), "1");
+assert_eq!(frac.to_string(), "0.234");
+```
 
 ## Rational Arithmetic
 
-`RBig` supports `+`, `-`, `*`, `/`. Division by zero panics. `Relaxed` performs the same operations without auto-reducing to lowest terms (faster for a chain of operations); call `canonicalize()` to reduce when needed.
+`RBig` supports `+`, `-`, `*`, `/`. Division by zero panics. `Relaxed` performs the same operations without auto-reducing to lowest terms (faster for a chain of operations); call `canonicalize()` to reduce when needed. `RBig` also has `fract()` for the fractional part, `is_int()` to test whether the value is an integer, and `relax()` — the consuming variant of `as_relaxed()` (see [Conversion](../convert.md)) that hands the value to a `Relaxed` without copying.
 
 ## Complex Arithmetic
 
-`CBig` supports the field operations `+`, `-`, `*`, `/`, plus `sqr` and `inv` (multiplicative inverse). Multiplication and division by a real `FBig` are also available as mixed-type operators. Multiplication and division use Smith's method with a guard digit and re-round, giving the same near-correctly-rounded guarantee as `dashu-float`'s transcendentals.
+`CBig` supports the field operations `+`, `-`, `*`, `/`, plus `sqr` and `inv` (multiplicative inverse). Multiplication and division by a real `FBig` are also available as mixed-type operators. Multiplication and division use Smith's method with a guard digit and re-round, giving the same near-correctly-rounded guarantee as `dashu-float`'s transcendentals. `conj()` gives the complex conjugate and `mul_i(negative)` multiplies by `+i` or `-i` — an exact rotation that swaps the real and imaginary parts. The components are exposed as raw representations through `re()` / `im()` (borrowing `&Repr`), or as owned `FBig`s through `into_parts()` (see [Construction and Destruction](../construct.md)).
 
 ```rust
 use dashu::complex::CBig;

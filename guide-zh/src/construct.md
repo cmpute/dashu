@@ -27,6 +27,8 @@
   - `FBig`/`DBig` = 尾数：`IBig` + 指数：`isize`
   - `RBig` = 分子：`IBig` + 分母：`UBig`
   - `CBig` = 实部：`FBig` + 虚部：`FBig`（结果精度取两者中的较大值）
+
+对于 `RBig`，还有一个备选的 `from_parts_signed(numerator, denominator)`，它接受**有符号**的分母（`IBig`），因此符号可以放在任一分量上。
 - `::from_parts_const()`
   - `IBig` = 符号：`Sign` + 绝对值：`DoubleWord`
   - `FBig`/`DBig` = 符号：`Sign` + 尾数：`DoubleWord` + 指数：`isize`
