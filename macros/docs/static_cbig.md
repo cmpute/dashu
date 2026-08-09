@@ -10,7 +10,6 @@ The generated `CBig` has **unlimited precision**: remember to set a precision (e
 with [`static_fbig!`], its inline representation also takes extra static memory to support
 cross-platform definitions.
 
-This macro is available only after Rust 1.64 (it relies on `static` items with const generics).
 
 ```rust
 # use dashu_macros::static_cbig;
