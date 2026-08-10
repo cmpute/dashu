@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-0f79df8c.js";
+            window.path_to_searchindex_js = "searchindex-49f906c7.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-c6c800fd.js"></script>
@@ -191,7 +191,7 @@
 <p>The book is a companion to <a href="https://docs.rs/dashu/latest/dashu/"><code>dashu</code>’s API docs</a>. It contains a more concise overview of all the functionalities equipped with <code>dashu</code> and some examples.</p>
 <p>Please choose from the chapters on the left to jump to individual topics.</p>
 <blockquote>
-<p>Built from commit <code>v0.6.0-rc.4</code> — dashu v0.6.0-rc.4.</p>
+<p>Built from commit <code>v0.6.0</code> — dashu v0.6.0.</p>
 </blockquote>
 <h2 id="philosophy-and-features"><a class="header" href="#philosophy-and-features">Philosophy and Features</a></h2>
 <p><code>dashu</code> is intended to be your go-to library for crafting some algorithms that involves arbitrary precision numbers, or build a rusty tool that relies on arbitrary precision numbers. It’s built from scratch with rust, and provides user-friendly and rust-idiomatic APIs. It might not be the fastest library for your high-precision calculation loads, but it’s designed to be fast enough so that you seldomly feel dragged back by it.</p>
@@ -215,11 +215,11 @@
 <h2 id="cargo-features"><a class="header" href="#cargo-features">Cargo Features</a></h2>
 <p>Dashu has several optional features defined for cargo that supports various third-party crates. Most of them are not enabled by default. Specially, we use a special naming rule for the features.</p>
 <ul>
-<li>For feature dependencies with stable versions (reached v1.0), we will use <code>xxx_vyy</code> to represent its major versions, and <code>xxx</code> pointing to one of the major versions. Changing the version which <code>xxx</code> is pointing to is regarded as a break change in <code>dashu</code> (requiring major version bump). Therefore, when you dependends on <code>dashu</code> with these stable features, additional implementations for newer versions in <code>dashu</code> will not cause any issues in your code.</li>
-<li>For feature dependencies with only unstable versions (pre v1.0), we will always use <code>xxx_vyy</code> to represent each major versions. We will also provide the feature <code>xxx</code>, which is an alias of the <strong>newest</strong> version of the crate. Therefore, when you dependends on <code>dashu</code> with these unstable features, the upgrade of these dependencies might cause your code to fail. However, we still do not consider this as break changes, because the unstable dependencies will never be enabled by default. If you want to prevent break changes cause by this, please specify which version to use.</li>
+<li>For feature dependencies with stable versions (reached v1.0), we will use <code>xxx_vyy</code> to represent its major versions, and <code>xxx</code> pointing to one of the major versions. Changing the version which <code>xxx</code> is pointing to is regarded as a break change in <code>dashu</code> (requiring major version bump). Therefore, when you depend on <code>dashu</code> with these stable features, additional implementations for newer versions in <code>dashu</code> will not cause any issues in your code.</li>
+<li>For feature dependencies with only unstable versions (pre v1.0), we will always use <code>xxx_vyy</code> to represent each major versions. We will also provide the feature <code>xxx</code>, which is an alias of the <strong>newest</strong> version of the crate. Therefore, when you depend on <code>dashu</code> with these unstable features, the upgrade of these dependencies might cause your code to fail. However, we still do not consider this as break changes, because the unstable dependencies will never be enabled by default. If you want to prevent break changes cause by this, please specify which version to use.</li>
 </ul>
-<p><strong>Example</strong>: In <code>dashu-float</code>, the support for the diesel library v1 is under the feature name <code>diesel</code>, and the support for v2 is under the feature name <code>diesel2</code>. On the other hand, the <code>rand</code> crate is not stable yet, even if it’s already widely used. Therefore, the support for <code>rand</code> v0.7 and v0.8 is under the feature name <code>rand_v07</code> and <code>rand_v08</code> respectively. The feature name <code>rand</code> is currently pointing to <code>rand_v08</code>.</p>
-<p>In your Cargo.toml, if you enable <code>dashu/diesel</code>, <code>dashu/diesel2</code> or <code>dashu/rand_v07</code>, there won’t be any risk of break changes when <code>dashu</code> updates the support for <code>diesel</code> v3 or <code>rand</code> v0.9 in future. However the risk exists if you enable <code>rand</code> instead of <code>rand_v08</code>, because <code>rand</code> might point to <code>rand_v09</code> in future.</p>
+<p><strong>Example</strong>: In <code>dashu-float</code>, the support for the diesel library v1 is under the feature name <code>diesel_v1</code>, and the support for v2 is under the feature name <code>diesel_v2</code> (the unversioned <code>diesel</code> feature points to v2). On the other hand, the <code>rand</code> crate is not stable yet, even if it’s already widely used. Therefore, the support for <code>rand</code> v0.8, v0.9 and v0.10 is under the feature names <code>rand_v08</code>, <code>rand_v09</code> and <code>rand_v010</code> respectively. The feature name <code>rand</code> is currently pointing to <code>rand_v010</code>.</p>
+<p>In your Cargo.toml, if you enable <code>dashu/diesel_v1</code>, <code>dashu/diesel_v2</code> or <code>dashu/rand_v08</code>, there won’t be any risk of break changes when <code>dashu</code> updates the support for <code>diesel</code> v3 or <code>rand</code> v0.11 in future. However the risk exists if you enable <code>dashu/rand</code> instead of <code>dashu/rand_v010</code>, because <code>rand</code> might point to a newer version in future.</p>
 <h2 id="license"><a class="header" href="#license">License</a></h2>
 <p>Licensed under either <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License, Version 2.0</a> or <a href="https://opensource.org/licenses/MIT">MIT license</a> at your option.</p>
 

@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-0f79df8c.js";
+            window.path_to_searchindex_js = "../searchindex-49f906c7.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-c6c800fd.js"></script>
@@ -217,7 +217,7 @@ assert_eq!(frac.to_string(), "0.234");
 <h2 id="rational-arithmetic"><a class="header" href="#rational-arithmetic">Rational Arithmetic</a></h2>
 <p><code>RBig</code> supports <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>. Division by zero panics. <code>Relaxed</code> performs the same operations without auto-reducing to lowest terms (faster for a chain of operations); call <code>canonicalize()</code> to reduce when needed. <code>RBig</code> also has <code>fract()</code> for the fractional part, <code>is_int()</code> to test whether the value is an integer, and <code>relax()</code> — the consuming variant of <code>as_relaxed()</code> (see <a href="../convert.html">Conversion</a>) that hands the value to a <code>Relaxed</code> without copying.</p>
 <h2 id="complex-arithmetic"><a class="header" href="#complex-arithmetic">Complex Arithmetic</a></h2>
-<p><code>CBig</code> supports the field operations <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, plus <code>sqr</code> and <code>inv</code> (multiplicative inverse). Multiplication and division by a real <code>FBig</code> are also available as mixed-type operators. Multiplication and division use Smith’s method with a guard digit and re-round, giving the same near-correctly-rounded guarantee as <code>dashu-float</code>’s transcendentals. <code>conj()</code> gives the complex conjugate and <code>mul_i(negative)</code> multiplies by <code>+i</code> or <code>-i</code> — an exact rotation that swaps the real and imaginary parts. The components are exposed as raw representations through <code>re()</code> / <code>im()</code> (borrowing <code>&amp;Repr</code>), or as owned <code>FBig</code>s through <code>into_parts()</code> (see <a href="../construct.html">Construction and Destruction</a>).</p>
+<p><code>CBig</code> supports the field operations <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, plus <code>sqr</code> and <code>inv</code> (multiplicative inverse). Multiplication and division by a real <code>FBig</code> are also available as mixed-type operators. Complex multiplication and division are near-correctly rounded via a guard-digit re-round (division uses Smith’s overflow-safe method). <code>conj()</code> gives the complex conjugate and <code>mul_i(negative)</code> multiplies by <code>+i</code> or <code>-i</code> — an exact rotation that swaps the real and imaginary parts. The components are exposed as raw representations through <code>re()</code> / <code>im()</code> (borrowing <code>&amp;Repr</code>), or as owned <code>FBig</code>s through <code>into_parts()</code> (see <a href="../construct.html">Construction and Destruction</a>).</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use dashu::complex::CBig;

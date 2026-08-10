@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-0f79df8c.js";
+            window.path_to_searchindex_js = "../searchindex-49f906c7.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-c6c800fd.js"></script>
@@ -197,7 +197,7 @@ assert_eq!(UBig::from_le_bytes(&amp;bytes), n);
 <h2 id="serialization-with-serde"><a class="header" href="#serialization-with-serde">Serialization with <code>serde</code></a></h2>
 <p>With the <code>serde</code> feature enabled, every numeric type implements <code>Serialize</code> / <code>Deserialize</code>. The human-readable form (when <code>is_human_readable()</code> is true) is a string, for easy use with JSON/TOML; the compact binary form is used otherwise. Only the binary form’s layout is semver-protected.</p>
 <h2 id="serialization-with-rkyv"><a class="header" href="#serialization-with-rkyv">Serialization with <code>rkyv</code></a></h2>
-<p>With the <code>rkyv</code> feature enabled (rkyv <strong>0.7</strong>; use <code>rkyv_v08</code> for rkyv <strong>0.8</strong>), zero-copy
+<p>With the <code>rkyv</code> feature enabled (rkyv <strong>0.8</strong>; use <code>rkyv_v07</code> for rkyv <strong>0.7</strong>), zero-copy
 (de)serialization is available for the integer, rational, float, and complex types. The big integers
 archive as their <strong>native word representation</strong> (<code>ArchivedVec&lt;Word&gt;</code>, plus a sign flag for <code>IBig</code>),
 so <code>rkyv::archived_root</code> yields the words in place with no byte conversion on any path — the fastest
@@ -205,10 +205,10 @@ possible same-architecture encoding, at the cost of a layout that depends on the
 width and endianness. In particular:</p>
 <ul>
 <li>
-<p>The two rkyv versions are <strong>alternatives</strong>: <code>rkyv_v07</code> and <code>rkyv_v08</code> are mutually exclusive (their
-derive-generated type names collide). Enabling both — e.g. <code>--all-features</code> — resolves to 0.7.
-rkyv 0.8 requires Rust ≥ 1.81 (see the <a href="./faq.html#msrv-and-feature-policy">MSRV policy</a>) and is
-excluded from the 1.68 MSRV build; its archives store multi-byte words little-endian by default.</p>
+<p><code>rkyv_v07</code> and <code>rkyv_v08</code> can be enabled <strong>together</strong> (their derive-generated types are namespaced
+through crate aliases, so they don’t collide); the unversioned <code>rkyv</code> feature currently selects
+0.8. rkyv 0.8 requires Rust ≥ 1.81 (see the <a href="../faq.html#msrv-and-feature-policy">MSRV policy</a>) and
+is excluded from the 1.68 MSRV build; its archives store multi-byte words little-endian by default.</p>
 </li>
 <li>
 <p>An archive is <strong>not portable across 32/64-bit targets</strong> (the <code>Word</code> size differs) or across machines with different endianness.</p>

@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-0f79df8c.js";
+            window.path_to_searchindex_js = "../searchindex-49f906c7.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-c6c800fd.js"></script>
@@ -181,7 +181,7 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
-<p><code>UBig</code> and <code>IBig</code> support the bitwise operators <code>&amp;</code> (and), <code>|</code> (or), <code>^</code> (xor), and <code>!</code> (not). On <code>UBig</code>, <code>!</code> is an <em>infinite-width</em> complement — every bit above the highest set bit is treated as <code>1</code>, so <code>!n</code> is generally a very large number. On <code>IBig</code>, <code>!</code> follows the two’s-complement rule.</p>
+<p><code>UBig</code> and <code>IBig</code> support the bitwise operators <code>&amp;</code> (and), <code>|</code> (or), and <code>^</code> (xor). The unary complement <code>!</code> is implemented <strong>only on <code>IBig</code></strong>, following the two’s-complement rule (<code>!x == -x - 1</code>); <code>UBig</code> does not implement <code>!</code>.</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use dashu::integer::UBig;

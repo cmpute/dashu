@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-0f79df8c.js";
+            window.path_to_searchindex_js = "searchindex-49f906c7.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-c6c800fd.js"></script>
@@ -217,14 +217,14 @@
 </div>
 <blockquote>
 <ul>
-<li>[^b] The methods <code>.ceil()</code>, <code>.floor()</code> and <code>.trunc()</code> of <code>FBig</code> doesn’t return <code>IBig</code>, because when <code>FBig</code> is very large (with a high exponent), the <code>IBig</code> result can consume a great amout of memory, which is usually not a desirable behavior.</li>
+<li>[^b] The methods <code>.ceil()</code>, <code>.floor()</code> and <code>.trunc()</code> of <code>FBig</code> doesn’t return <code>IBig</code>, because when <code>FBig</code> is very large (with a high exponent), the <code>IBig</code> result can consume a great amount of memory, which is usually not a desirable behavior.</li>
 <li>[^c] See the section <em>Conversion for FBig/DBig</em> below for this conversion.</li>
 <li>[^d] See the section <em>Conversion from Floats to RBig</em> below for more approaches.</li>
 <li>[^e] This method requires the <code>dashu-float</code> feature to be enabled for the crate <code>dashu-ratio</code>.</li>
 </ul>
 </blockquote>
-<p>Another useful conversion is <code>UBig::as_ibig()</code>. Due to the fact that <code>UBig</code> and <code>IBig</code> has the same memory layout, A <code>UBig</code> can be directed used as an <code>IBig</code> through this method. Similarly, <code>RBig::as_relaxed()</code> can be helpful when you want to use an <code>RBig</code> instance as an <code>dashu::rational::Relaxed</code>.</p>
-<p>Besides these methods designed for conversions, the constructors and destructors can also be used for the purpose of type conversion, especially from compound types to its parts. Please refer to the <a href="./construct.html#Construct_from_Parts">Construction and Destruction</a> page for this approach.</p>
+<p>Another useful conversion is <code>UBig::as_ibig()</code>. Due to the fact that <code>UBig</code> and <code>IBig</code> has the same memory layout, A <code>UBig</code> can be directly used as an <code>IBig</code> through this method. Similarly, <code>RBig::as_relaxed()</code> can be helpful when you want to use an <code>RBig</code> instance as an <code>dashu::rational::Relaxed</code>.</p>
+<p>Besides these methods designed for conversions, the constructors and destructors can also be used for the purpose of type conversion, especially from compound types to its parts. Please refer to the <a href="./construct.html#construct-from-parts">Construction and Destruction</a> page for this approach.</p>
 <h2 id="conversion-between-big-numbers-and-primitives"><a class="header" href="#conversion-between-big-numbers-and-primitives">Conversion between Big Numbers and Primitives</a></h2>
 <p>All the numeric types in the <code>dashu</code> crates support conversion from and to primitive types.</p>
 <p>To convert from primitive to big numbers:</p>
@@ -260,7 +260,7 @@
 </tbody>
 </table>
 </div>
-<p>In the table above, <code>.to_f*()</code> denotes <code>.to_f32()</code> and <code>.to_f64()</code>, similarly <code>.to_f*_fast()</code> denotes <code>.to_f32_fast()</code> and <code>.to_f64_fast()</code>. The <em>fast</em> methods don’t guarantee corrent rounding so that they can be faster. It’s recommended to use the <code>.to_f*()</code> methods over the <code>TryFrom</code>/<code>TryInto</code> trait, because <code>.to_f*()</code> will not fail and it also returns the rounding direction during the conversion (i.e. the sign of the rounding error). (<code>CBig</code> has no <code>.to_f*()</code> methods — its only float-conversion path is <code>TryInto</code>, which is base-2.)</p>
+<p>In the table above, <code>.to_f*()</code> denotes <code>.to_f32()</code> and <code>.to_f64()</code>, similarly <code>.to_f*_fast()</code> denotes <code>.to_f32_fast()</code> and <code>.to_f64_fast()</code>. The <em>fast</em> methods don’t guarantee correct rounding so that they can be faster. It’s recommended to use the <code>.to_f*()</code> methods over the <code>TryFrom</code>/<code>TryInto</code> trait, because <code>.to_f*()</code> will not fail and it also returns the rounding direction during the conversion (i.e. the sign of the rounding error). (<code>CBig</code> has no <code>.to_f*()</code> methods — its only float-conversion path is <code>TryInto</code>, which is base-2.)</p>
 <p>The conversions from and to primitive numbers are also implemented for the <code>dashu::float::Repr</code> type. Especially <code>.to_f32()</code> and <code>.to_f64()</code> are implemented which follows the default IEEE rounding mode.</p>
 <h3 id="conversion-for-fbigdbig"><a class="header" href="#conversion-for-fbigdbig">Conversion for FBig/DBig</a></h3>
 <p>Conversions involving <code>FBig</code>/<code>DBig</code> are richer than for the integer types, because a floating-point number carries three independent knobs: a <strong>base</strong>, a <strong>precision</strong> (a cap on the number of significant digits), and a <strong>rounding mode</strong>. Most conversions therefore come in two flavors — an infallible <code>From</code>/<code>Into</code> when no information is lost, and a fallible <code>TryFrom</code>/<code>TryInto</code> when exactness is required.</p>
@@ -337,7 +337,7 @@ assert_eq!(f32::try_from(big), Err(ConversionError::OutOfBounds));
 <span class="boring">}</span></code></pre>
 <h3 id="conversion-to-rbig"><a class="header" href="#conversion-to-rbig">Conversion to RBig</a></h3>
 <p>With the optional <code>dashu-float</code> feature enabled on <code>dashu-ratio</code>, <code>TryFrom&lt;FBig&gt; for RBig</code> succeeds only when the float is exactly rational-representable, and <code>RBig::to_float()</code> is the rounding-aware path in the other direction.</p>
-<p>For approximating a float by a <em>simple</em> rational (the smallest numerator/denominator within a tolerance), use <code>simplest_from_f32</code> / <code>simplest_from_f64</code>, or the interval queries <code>simplest_in</code>, <code>nearest_in</code>, <code>next_up</code>, and <code>next_down</code> on <code>FBig</code>/<code>DBig</code> — these treat the float’s own rounding interval as the search bound. <code>is_simpler_than(other)</code> compares two <code>RBig</code>s directly by the simplicity ordering that those queries optimize for.</p>
+<p>For approximating a float by a <em>simple</em> rational (the smallest numerator/denominator within a tolerance), use <code>simplest_from_f32</code> / <code>simplest_from_f64</code>, which search the float’s own rounding interval. On <code>RBig</code>, <code>simplest_in(lower, upper)</code> finds the simplest rational inside an explicit interval, and <code>nearest(&amp;limit)</code> / <code>next_up(&amp;limit)</code> / <code>next_down(&amp;limit)</code> find the rational(s) closest to a value with a denominator bounded by <code>limit</code> (Farey-sequence neighbors). <code>is_simpler_than(other)</code> compares two <code>RBig</code>s directly by the same simplicity ordering.</p>
 <hr>
 <ol class="footnote-definition">
 <li id="footnote-a">
