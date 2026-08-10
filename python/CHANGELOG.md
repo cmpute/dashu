@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fix
+- The bindings now handle `dashu-float`'s new `FpError::ZivRetryLimitExceeded` (a Ziv loop that
+  exhausts its retry budget — only possible if a radius bound is wrong) — it raises `RuntimeError`
+  instead of failing to compile on a non-exhaustive match.
+
 ## 0.6.0
 
 ### Add

@@ -15,7 +15,7 @@ use std::cell::RefCell;
 
 use dashu::base::Sign;
 use dashu::float::{ConstCache, Context, FBig, FpError, FpResult, Repr, Word, round::Round};
-use pyo3::exceptions::{PyValueError, PyZeroDivisionError};
+use pyo3::exceptions::{PyRuntimeError, PyValueError, PyZeroDivisionError};
 use pyo3::prelude::*;
 
 thread_local! {
@@ -61,6 +61,12 @@ pub fn unwrap_float<R: Round, const B: Word>(
         Err(FpError::Indeterminate) => {
             Err(PyZeroDivisionError::new_err("indeterminate form (0/0)"))
         }
+        Err(FpError::ZivRetryLimitExceeded) => Err(PyRuntimeError::new_err(
+            "the Ziv retry limit was exceeded; the result is not correctly rounded (please report this case to the maintainer)",
+        )),
+        Err(FpError::ZivRetryLimitExceeded) => Err(PyRuntimeError::new_err(
+            "the Ziv retry limit was exceeded; the result is not correctly rounded (please report this case to the maintainer)",
+        )),
     }
 }
 
@@ -88,6 +94,12 @@ pub fn unwrap_complex<R: Round, const B: Word>(
         Err(FpError::Indeterminate) => {
             Err(PyZeroDivisionError::new_err("indeterminate form (0/0)"))
         }
+        Err(FpError::ZivRetryLimitExceeded) => Err(PyRuntimeError::new_err(
+            "the Ziv retry limit was exceeded; the result is not correctly rounded (please report this case to the maintainer)",
+        )),
+        Err(FpError::ZivRetryLimitExceeded) => Err(PyRuntimeError::new_err(
+            "the Ziv retry limit was exceeded; the result is not correctly rounded (please report this case to the maintainer)",
+        )),
     }
 }
 
