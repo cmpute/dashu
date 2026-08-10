@@ -20,6 +20,8 @@ name: Build
 #                        manually before a release); a compile-guard so it can't silently rot.
 #   * `build-benchmark`— the `benchmark/` scratchpad (builds with `--features gmp`).
 #   * `build-aarch64`  — an aarch64 cross-build.
+#   * `build-thumbv7em`— a 32-bit bare-metal cross-build that catches accidental
+#                        `std` dependencies and 64-bit-only arithmetic.
 # The sibling `Tests` workflow runs the actual `cargo test` matrix.
 
 jobs:
@@ -122,3 +124,19 @@ jobs:
           toolchain: stable
           targets: aarch64-unknown-linux-gnu
       - run: cargo build --target aarch64-unknown-linux-gnu --all-features --workspace --exclude dashu-python
+
+  build-thumbv7em:
+    name: Build bare metal
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: thumbv7em-none-eabi
+      # thumbv7em-none-eabi is a 32-bit bare-metal target: it catches both
+      # accidental `std` dependencies and 64-bit-only arithmetic (e.g. a
+      # `usize` shift that would overflow when `usize` is 32 bits wide).
+      - run: cargo build --target thumbv7em-none-eabi --no-default-features --features rand,num-order,serde,zeroize,num-traits,rkyv --workspace --exclude dashu-python
