@@ -31,7 +31,7 @@ assert_eq!(UBig::from(27u8).cbrt(), UBig::from(3u8));
 - Exponential: `exp`, `exp_m1` ($e^x - 1$, accurate near zero).
 - Logarithm: `ln`, `ln_1p` ($\ln(1+x)$, accurate near zero), plus the base-2 and base-10 logarithms `log2` and `log10` (correctly rounded; exact for exact powers of the base).
 - Powers and roots: `powi(IBig)`, `powf(&FBig)`, `sqr`, `cubic`, `sqrt`, `cbrt`, `nth_root(&n)`, and `hypot(&other)` ($\sqrt{x^2+y^2}$, overflow-safe).
-- Constants: `FBig::pi(precision)` for π and `FBig::e(precision)` for *e*. π benefits from reuse across calls via [`CachedFBig`](../cached.md); *e* is self-contained (it depends on no other constant) and is computed directly by binary splitting on `Σ 1/k!`, so it is not cached.
+- Constants: `FBig::pi(precision)` for π and `FBig::e(precision)` for *e*. π benefits from reuse across calls via [`CachedFBig`](../float/cached.md); *e* is self-contained (it depends on no other constant) and is computed directly by binary splitting on `Σ 1/k!`, so it is not cached.
 
 (`exp2`/`exp10` are deferred to a later release.)
 

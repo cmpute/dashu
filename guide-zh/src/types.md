@@ -31,7 +31,7 @@
 
 ### `FBig` 的内存布局
 
-`FBig`（以及 `DBig`）的布局与其他类型略有不同。一个 `FBig` 实例包含数值表示 `dashu::float::Repr` 和上下文 `dashu::float::Context` 两部分。每当基于某个 `FBig` 创建新的 `FBig` 时，上下文都会被复制。上下文目前保存着与该数值相关的舍入信息和精度。上下文被刻意保持得很轻量（`Copy` + `Send` + `Sync`）：数学常数（如 π、ln2、ln10）的共享缓存位于上下文*之外*，存放在独立的 [`CachedFBig`](./cached.md) 包装类型中，这样普通的 `FBig` 才能保持低成本的拷贝，并可在 `const`/`static` 上下文中使用。因此，如果你不想存储这些额外的上下文信息，可以直接只存储 `FBig` 的 `Repr` 部分。对 `Repr` 的后续运算可以通过 `Context` 的关联方法来调用，这些方法都接受某个 `Repr` 实例的引用。不过，在某些情况下这可能会带来少许开销。
+`FBig`（以及 `DBig`）的布局与其他类型略有不同。一个 `FBig` 实例包含数值表示 `dashu::float::Repr` 和上下文 `dashu::float::Context` 两部分。每当基于某个 `FBig` 创建新的 `FBig` 时，上下文都会被复制。上下文目前保存着与该数值相关的舍入信息和精度。上下文被刻意保持得很轻量（`Copy` + `Send` + `Sync`）：数学常数（如 π、ln2、ln10）的共享缓存位于上下文*之外*，存放在独立的 [`CachedFBig`](./float/cached.md) 包装类型中，这样普通的 `FBig` 才能保持低成本的拷贝，并可在 `const`/`static` 上下文中使用。因此，如果你不想存储这些额外的上下文信息，可以直接只存储 `FBig` 的 `Repr` 部分。对 `Repr` 的后续运算可以通过 `Context` 的关联方法来调用，这些方法都接受某个 `Repr` 实例的引用。不过，在某些情况下这可能会带来少许开销。
 
 ### `CBig` 的内存布局
 
@@ -72,7 +72,7 @@
 
 ### ConstCache
 
-`dashu::float::ConstCache` 保存了数学常数 π、ln2 和 ln10 的精确二分裂（binary-splitting）状态，因此在不断提高精度的情况下重复调用超越函数时，可以*扩展*此前的工作，而不是从头重新计算。它是一个由大整数组成的普通结构体——与基数无关、`Send` + `Sync`——单个缓存即可服务于任意基数。`FBig` 和 `Context` 本身保持 `Copy` 且不携带任何缓存；该状态存放在独立的 [`CachedFBig`](./cached.md) 包装类型中（作为 `Rc<RefCell<ConstCache>>`），你也可以直接驱动一个裸的 `ConstCache`。
+`dashu::float::ConstCache` 保存了数学常数 π、ln2 和 ln10 的精确二分裂（binary-splitting）状态，因此在不断提高精度的情况下重复调用超越函数时，可以*扩展*此前的工作，而不是从头重新计算。它是一个由大整数组成的普通结构体——与基数无关、`Send` + `Sync`——单个缓存即可服务于任意基数。`FBig` 和 `Context` 本身保持 `Copy` 且不携带任何缓存；该状态存放在独立的 [`CachedFBig`](./float/cached.md) 包装类型中（作为 `Rc<RefCell<ConstCache>>`），你也可以直接驱动一个裸的 `ConstCache`。
 
 ### FpResult 和 CfpResult
 

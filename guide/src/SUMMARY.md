@@ -6,7 +6,10 @@
 
 - [Types](./types.md)
 - [Construction and Destruction](./construct.md)
-- [Cached Arithmetic for FBig/CBig](./cached.md)
+- [Floating Point Numbers](./float/index.md)
+  - [Precision](./float/precision.md)
+  - [Rounding](./float/rounding.md)
+  - [Cached Arithmetic](./float/cached.md)
 - [Conversion](./convert.md)
 - [Input and Output](./io/index.md)
   - [Parsing](./io/parse.md)

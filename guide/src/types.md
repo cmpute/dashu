@@ -31,7 +31,7 @@ The most fundamental type of the `dashu` libraries is the natural number `UBig`.
 
 ### Layout of `FBig`
 
-The layout of `FBig` (and `DBig`) is a little different from other types. An `FBig` instance contains a number representation `dashu::float::Repr` and a context `dashu::float::Context`. The context will be copied every time a new `FBig` is created based on it. The context currently contains the rounding information and the precision associated with this number. The context is kept deliberately lightweight (`Copy` + `Send` + `Sync`): the shared cache for math constants (such as π, ln2, ln10) lives *outside* the context, in the separate [`CachedFBig`](./cached.md) wrapper, so that a plain `FBig` stays cheap to copy and usable in `const`/`static` contexts. Therefore, if you don't want to store the additional context information, you can just store the `Repr` part of the `FBig`. The later operations on the `Repr` can be called with the associated methods of the `Context`, which all takes the reference to a `Repr` instance. However, this could lead to a little overhead in some cases.
+The layout of `FBig` (and `DBig`) is a little different from other types. An `FBig` instance contains a number representation `dashu::float::Repr` and a context `dashu::float::Context`. The context will be copied every time a new `FBig` is created based on it. The context currently contains the rounding information and the precision associated with this number. The context is kept deliberately lightweight (`Copy` + `Send` + `Sync`): the shared cache for math constants (such as π, ln2, ln10) lives *outside* the context, in the separate [`CachedFBig`](./float/cached.md) wrapper, so that a plain `FBig` stays cheap to copy and usable in `const`/`static` contexts. Therefore, if you don't want to store the additional context information, you can just store the `Repr` part of the `FBig`. The later operations on the `Repr` can be called with the associated methods of the `Context`, which all takes the reference to a `Repr` instance. However, this could lead to a little overhead in some cases.
 
 ### Layout of `CBig`
 
@@ -79,7 +79,7 @@ When you have an `Approximation` instance, call `.value()`, `.value_ref()` or `u
 
 ### ConstCache
 
-`dashu::float::ConstCache` holds the exact binary-splitting state for the mathematical constants π, ln2, and ln10, so repeated transcendental calls at increasing precision *extend* prior work instead of recomputing from scratch. It is a plain struct of big integers — base-free, `Send` + `Sync` — and a single cache serves any base. `FBig` and `Context` themselves stay `Copy` and carry no cache; the state lives in the separate [`CachedFBig`](./cached.md) wrapper (as `Rc<RefCell<ConstCache>>`), or you can drive a bare `ConstCache` directly.
+`dashu::float::ConstCache` holds the exact binary-splitting state for the mathematical constants π, ln2, and ln10, so repeated transcendental calls at increasing precision *extend* prior work instead of recomputing from scratch. It is a plain struct of big integers — base-free, `Send` + `Sync` — and a single cache serves any base. `FBig` and `Context` themselves stay `Copy` and carry no cache; the state lives in the separate [`CachedFBig`](./float/cached.md) wrapper (as `Rc<RefCell<ConstCache>>`), or you can drive a bare `ConstCache` directly.
 
 ### FpResult and CfpResult
 

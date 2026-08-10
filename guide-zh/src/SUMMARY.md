@@ -6,7 +6,10 @@
 
 - [数值类型](./types.md)
 - [构造与析构](./construct.md)
-- [FBig/CBig 的缓存算术](./cached.md)
+- [浮点数值](./float/index.md)
+  - [精度](./float/precision.md)
+  - [舍入](./float/rounding.md)
+  - [缓存算术](./float/cached.md)
 - [类型转换](./convert.md)
 - [输入与输出](./io/index.md)
   - [解析](./io/parse.md)

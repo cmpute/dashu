@@ -2,11 +2,6 @@
 
 ## Unreleased
 
-### Fix
-- The bindings now handle `dashu-float`'s new `FpError::ZivRetryLimitExceeded` (a Ziv loop that
-  exhausts its retry budget — only possible if a radius bound is wrong) — it raises `RuntimeError`
-  instead of failing to compile on a non-exhaustive match.
-
 ## 0.6.0
 
 ### Add
@@ -14,6 +9,11 @@
 - **Complex hyperbolic functions** — `CBig` methods `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`.
 - **CI wheel/sdist build workflow** (`.github/workflows/python-wheels.yml`) — triggered on version
   tags, builds manylinux / macOS universal2 / Windows wheels plus a self-contained sdist.
+
+### Fix
+- The bindings now handle `dashu-float`'s new `FpError::ZivRetryLimitExceeded` (a Ziv loop that
+  exhausts its retry budget — only possible if a radius bound is wrong) — it raises `RuntimeError`
+  instead of failing to compile on a non-exhaustive match.
 
 ## 0.5.0
 
