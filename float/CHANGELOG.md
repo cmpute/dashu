@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fix
+- `ConstCache::pi` (and `Context::pi`) now compute one extra Chudnovsky series term,
+  fixing an off-by-1-ulp mis-rounding at certain precisions (previously the term count
+  provided only the ceiling — no accuracy headroom — so the series truncation error
+  could push the result to the wrong side of a rounding boundary).
+
 ## 0.6.0
 
 ### Change

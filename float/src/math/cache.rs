@@ -108,7 +108,7 @@ impl ConstCache {
         assert_limited_precision(precision);
 
         let bits = bits_for_precision::<B>(precision);
-        let num_terms = (bits * 100 / 4708) + 1;
+        let num_terms = (bits * 100 / 4708) + 2;
 
         let (_p, q, t) = extend_or_compute(&mut self.pi, 0, num_terms, chudnovsky_bs);
 
@@ -868,6 +868,22 @@ mod tests {
             let m = (n + 1) as f64;
             let stirling_lb = m * (m.log2() - core::f64::consts::LOG2_E);
             assert!(stirling_lb > bits as f64, "N={n} insufficient for bits={bits}");
+        }
+    }
+
+    /// π must round correctly at every precision — the Chudnovsky series accuracy
+    /// headroom must keep the truncation error well below 1 ulp.
+    #[test]
+    fn test_pi_no_off_by_one_ulp() {
+        let pi_ref = FBig::<mode::Zero, 2>::pi(2048);
+        for prec in 10..=1024 {
+            let mid = Context::<mode::Zero>::new(prec).pi::<2>(None).value();
+            let correct = pi_ref.clone().with_precision(prec).value();
+            assert_eq!(
+                mid.into_repr(),
+                correct.into_repr(),
+                "pi off by 1 ulp at prec={prec}"
+            );
         }
     }
 }
