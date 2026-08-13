@@ -7,6 +7,10 @@
   fixing an off-by-1-ulp mis-rounding at certain precisions (previously the term count
   provided only the ceiling — no accuracy headroom — so the series truncation error
   could push the result to the wrong side of a rounding boundary).
+- `FBig::with_precision` (and `CachedFBig::with_precision`) now rounds an *unlimited*-
+  precision source down to a finite target precision. Previously the shrink guard
+  compared context precisions (`0 > N` is always false), so an unlimited value kept its
+  full significand and the result violated the precision invariant.
 
 ## 0.6.0
 

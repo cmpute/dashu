@@ -879,11 +879,7 @@ mod tests {
         for prec in 10..=1024 {
             let mid = Context::<mode::Zero>::new(prec).pi::<2>(None).value();
             let correct = pi_ref.clone().with_precision(prec).value();
-            assert_eq!(
-                mid.into_repr(),
-                correct.into_repr(),
-                "pi off by 1 ulp at prec={prec}"
-            );
+            assert_eq!(mid.into_repr(), correct.into_repr(), "pi off by 1 ulp at prec={prec}");
         }
     }
 }

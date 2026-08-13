@@ -219,9 +219,10 @@ impl<R: Round, const B: Word> FBig<R, B> {
     pub fn with_precision(self, precision: usize) -> Rounded<Self> {
         let new_context = Context::new(precision);
 
-        // shrink if necessary
-        let repr = if self.context.precision > precision {
-            // it also handles unlimited precision
+        // round if the source is unlimited or the precision shrinks; infinities stay as-is
+        let repr = if self.repr.is_infinite() {
+            Exact(self.repr)
+        } else if !self.context.is_limited() || self.context.precision > precision {
             new_context.repr_round(self.repr)
         } else {
             Exact(self.repr)
@@ -1404,5 +1405,18 @@ mod tests {
         )
         .unwrap();
         assert_eq!(b, expected);
+    }
+
+    // Shrinking an *unlimited*-precision value must round its significand down to the
+    // target precision. Previously the `with_precision` shrink guard compared context
+    // precisions (`0 > N` is always false), so an unlimited source was never rounded.
+    #[test]
+    fn with_precision_from_unlimited_rounds() {
+        let a =
+            FBig::<Zero, 2>::from_repr(Repr::<2>::new(IBig::from(0xffffu32), 0), Context::new(0));
+        let b = a.with_precision(8).value();
+        assert_eq!(b.precision(), 8);
+        assert_eq!(b.repr().digits(), 8);
+        assert_eq!(b.repr().significand(), &IBig::from(0xffu32));
     }
 }
