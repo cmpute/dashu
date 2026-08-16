@@ -311,13 +311,9 @@ impl Mag {
             return self.mul_pow2(e);
         }
         let k = if B == 10 {
-            let hi = e.saturating_mul(3322);
-            let lo = e.saturating_mul(33218);
-            if round_up {
-                ceil_div(hi, 1000).max(ceil_div(lo, 10000))
-            } else {
-                hi.div_euclid(1000).min(lo.div_euclid(10000))
-            }
+            // `⌈e·log₂10⌉` / `⌊e·log₂10⌋` — see `ceil_div_scaled` for why the ratio is a
+            // 62-bit fixed-point constant rather than a small fraction.
+            ceil_div_scaled(e, LOG2_10, 62, round_up)
         } else {
             // Generic base: the exact scale from the bit length of BASE^|e| — one pow of
             // bounded size (exponents in the radius rules are work-precision scale). The
@@ -386,9 +382,9 @@ impl Mag {
                 .clamp(isize::MIN + 1, isize::MAX - 1);
             Repr::new(IBig::from(self.man), e)
         } else if B == 10 {
-            let k = ceil_div(self.exp.saturating_mul(28), 93)
-                .max(ceil_div(self.exp.saturating_mul(30102), 100000))
-                .clamp(isize::MIN + 1, isize::MAX - 1);
+            // `2^exp ≤ 10^k`, i.e. `k = ⌈exp·log₁₀2⌉` — see `ceil_div_scaled`.
+            let k =
+                ceil_div_scaled(self.exp, LOG10_2, 64, true).clamp(isize::MIN + 1, isize::MAX - 1);
             Repr::new(IBig::ONE, k)
         } else {
             // Generic base: the smallest integer k (either sign) with BASE^k ≥ 2^exp, by
@@ -579,6 +575,33 @@ fn significand_bound(sig: &IBig, round_up: bool) -> Mag {
 fn usize_bits(n: usize) -> u32 {
     usize::BITS - n.leading_zeros()
 }
+
+/// `⌈a·c⌉` (`up`) or `⌊a·c⌋`, with `c` an `(up, down)` pair of `2^-frac_bits` fixed-point
+/// ratios. The pair *brackets* the true constant, so the result is both a sound bound and a
+/// tight one.
+///
+/// The fraction width is what makes this sound at exponent scale. A small rational (`28/93`,
+/// `30102/100000`, `3322/1000`, `33218/10000`) errs by ~5·10⁻⁵ *relative* — and that error
+/// multiplies the exponent. For the ~10¹⁴-range exponent of a huge argument it overshot the
+/// outward power of ten by `10^1.2e10`: a radius that loose is worse than useless, since the
+/// Ziv containment test then tried to align that gap and died on an out-of-memory allocation
+/// (plain `exp(1.9e14)`, and every transcendental built on it).
+///
+/// `frac_bits` is capped at 64 for log₁₀2 and 62 for log₂10 so that `a · ratio` still fits
+/// `i128`: `|a| ≤ 2^63` and both ratios stay below `2^63`.
+fn ceil_div_scaled(a: isize, c: (i128, i128), frac_bits: u32, up: bool) -> isize {
+    let ratio = if up { c.0 } else { c.1 };
+    let den = 1i128 << frac_bits;
+    let scaled = (a as i128) * ratio;
+    let (q, r) = (scaled.div_euclid(den), scaled.rem_euclid(den));
+    let q = if up && r != 0 { q + 1 } else { q };
+    q.clamp(isize::MIN as i128, isize::MAX as i128) as isize
+}
+
+/// `log₁₀2` as `(⌈·2^64⌉, ⌊·2^64⌋)`.
+const LOG10_2: (i128, i128) = (5_553_023_288_523_357_133, 5_553_023_288_523_357_132);
+/// `log₂10` as `(⌈·2^62⌉, ⌊·2^62⌋)`.
+const LOG2_10: (i128, i128) = (15_319_689_349_413_178_111, 15_319_689_349_413_178_110);
 
 /// `ceil(a / b)` for `b > 0`, truncation-correct for either sign of `a`.
 #[inline]

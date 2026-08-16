@@ -12,6 +12,7 @@ use core::{
 };
 
 use dashu_base::Sign::{self, *};
+use dashu_base::{Abs, EstimatedLog2};
 use dashu_int::{IBig, UBig};
 
 /// Build a `Repr` from a cancellation result, producing `-0` (instead of `+0`) when the
@@ -174,6 +175,23 @@ impl<R: Round> Context<R> {
 
         // use one extra digit to prevent cancellation in rounding
         let rnd_precision = self.precision + is_sub as usize;
+
+        // An astronomically-low low part — one that sits entirely below the rounding window
+        // (its value under-estimates B^(low.1 − window), so no digit of it reaches the window,
+        // only its sticky sign matters) — is collapsed to a unit at a bounded position. The
+        // digit alignment below shifts by `low.1`, which for exponent gaps of ~10⁹+ would
+        // otherwise materialize B^(low.1) digits and die on an out-of-memory allocation
+        // (e.g. the two exponentials of `sinh(1e11)` sit ~5·10¹¹ digits apart). The collapse
+        // is sound: both the original fraction and the unit replacement lie strictly between
+        // 0 and ½ ulp (window ≥ rnd_precision + 2 ≥ 2), so every rounding mode decides
+        // identically on either.
+        let window = rnd_precision + 2;
+        if !low.0.is_zero() && low.1 > window {
+            let (_, b_lb) = B.log2_bounds();
+            if low.0.clone().abs().log2_bounds().1 < (low.1 - window) as f32 * b_lb {
+                low = (low.0.signum(), window);
+            }
+        }
 
         // align to precision again
         let digits = digit_len::<B>(&significand);
@@ -979,5 +997,28 @@ mod tests {
         check::<mode::Zero, 10>("Zero", &cases);
         check::<mode::Down, 10>("Down", &cases); // roundTowardNegative
         check::<HalfEven, 2>("HalfEven base 2", &cases);
+    }
+
+    // An astronomically large exponent gap (here ~10⁹ digits) must not try to materialize the
+    // digit alignment: the smaller operand is a pure sticky below the rounding window, and the
+    // result is just the larger operand (rounded to nearest). Before the sticky collapse in
+    // `repr_round_sum`, base-10 inputs here died on an out-of-memory allocation (e.g. via
+    // `sinh(1e14)`, whose two exponentials sit ~10¹⁵ digits apart).
+    #[test]
+    fn addsub_astronomical_exponent_gap() {
+        let ctx = Context::<HalfEven>::new(20);
+        let big = r::<10>(12345, 1_000_000_000);
+        let tiny = r::<10>(54321, -1_000_000_000);
+        // big + tiny ≈ big (the tiny term is far below the window, but keeps the sum inexact:
+        // both round-to-nearest and the directed modes round back to big itself)
+        let sum = ctx.add(&big, &tiny).unwrap().value();
+        assert_eq!(sum.repr().exponent(), big.exponent);
+        // big - tiny likewise
+        let diff = ctx.sub(&big, &tiny).unwrap().value();
+        assert_eq!(diff.repr().exponent(), big.exponent);
+        // tiny - big ≈ -big
+        let neg = ctx.sub(&tiny, &big).unwrap().value();
+        assert_eq!(neg.repr().sign(), dashu_base::Sign::Negative);
+        assert_eq!(neg.repr().exponent(), big.exponent);
     }
 }

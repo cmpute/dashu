@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Add
+- ×π trigonometric functions `sin_pi`/`cos_pi`/`sin_cos_pi`/`tan_pi` (of `z·π`), on `Context`,
+  `CBig` and `CachedCBig`. Pure-real arguments reduce exactly through the real ×π kernels
+  (quarter-integer exact cases included); the imaginary part composes the real
+  `sinh_cosh_pi`. `tan_pi` uses the same cancellation-free double-angle identity as `tan`, and
+  reports `Err(Indeterminate)` at the real-axis poles (`y = 0`, x an odd multiple of `1/2`).
+
 ## 0.6.0
 
 ### Change

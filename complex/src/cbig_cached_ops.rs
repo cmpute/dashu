@@ -396,6 +396,9 @@ impl<R: ErrorBounds, const B: Word> CachedCBig<R, B> {
     forward_cached!(sin => sin);
     forward_cached!(cos => cos);
     forward_cached!(tan => tan);
+    forward_cached!(sin_pi => sin_pi);
+    forward_cached!(cos_pi => cos_pi);
+    forward_cached!(tan_pi => tan_pi);
     forward_cached!(asin => asin);
     forward_cached!(acos => acos);
     forward_cached!(atan => atan);
@@ -444,6 +447,21 @@ impl<R: ErrorBounds, const B: Word> CachedCBig<R, B> {
         let (s, c) = {
             let mut guard = self.cache.borrow_mut();
             ctx.sin_cos::<B>(&self.cbig, Some(&mut *guard))
+        };
+        (
+            CachedCBig::from_cbig(ctx.unwrap_cfp(s), &self.cache),
+            CachedCBig::from_cbig(ctx.unwrap_cfp(c), &self.cache),
+        )
+    }
+
+    /// Sine and cosine of `z·π` together (see [`CBig::sin_cos_pi`]). Threads the cache into
+    /// the real `sin_cos_pi`/`sinh_cosh_pi`.
+    #[inline]
+    pub fn sin_cos_pi(&self) -> (Self, Self) {
+        let ctx = self.cbig.context();
+        let (s, c) = {
+            let mut guard = self.cache.borrow_mut();
+            ctx.sin_cos_pi::<B>(&self.cbig, Some(&mut *guard))
         };
         (
             CachedCBig::from_cbig(ctx.unwrap_cfp(s), &self.cache),

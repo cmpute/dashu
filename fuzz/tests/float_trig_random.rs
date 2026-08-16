@@ -10,7 +10,8 @@
 use core::str::FromStr;
 use dashu::float::ops::Abs;
 use dashu::float::round::mode::HalfAway;
-use dashu::float::{Context, DBig, Repr};
+use dashu::float::{Context, DBig, FpError, Repr};
+use dashu::integer::IBig;
 use proptest::prelude::*;
 use rug::Float;
 
@@ -156,6 +157,350 @@ proptest! {
                 (acos_d.clone() - a_r).abs() <= tol(prec),
                 "acos mismatch x={x_str} prec={prec}: dashu={acos_d} rug={acos_r}"
             );
+        }
+    }
+
+    /// sin_pi(x) ≈ MPFR sin_pi(x) across the decimal precision sweep.
+    #[test]
+    #[ignore]
+    fn fbig_sin_pi_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
+        let x_str = format!("{x:e}");
+        for prec in fuzz::fuzz_precisions_decimal() {
+            let ctx = Context::<HalfAway>::new(prec);
+            let sin_d = ctx.sin_pi::<10>(x.repr(), None).unwrap().value();
+            let bits = rug_bits(x.repr(), prec);
+            let x_rug = match Float::parse(&x_str) {
+                Ok(p) => Float::with_val(bits, p),
+                Err(_) => return Ok(()),
+            };
+            let sin_r = x_rug.sin_pi();
+            let s_r: DBig = DBig::from_str(&sin_r.to_string_radix(10, Some(prec))).unwrap();
+            prop_assert!(
+                (sin_d.clone() - s_r).abs() <= tol(prec),
+                "sin_pi mismatch x={x_str} prec={prec}: dashu={sin_d} rug={sin_r}"
+            );
+        }
+    }
+
+    /// cos_pi(x) ≈ MPFR cos_pi(x) across the decimal precision sweep.
+    #[test]
+    #[ignore]
+    fn fbig_cos_pi_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
+        let x_str = format!("{x:e}");
+        for prec in fuzz::fuzz_precisions_decimal() {
+            let ctx = Context::<HalfAway>::new(prec);
+            let cos_d = ctx.cos_pi::<10>(x.repr(), None).unwrap().value();
+            let bits = rug_bits(x.repr(), prec);
+            let x_rug = match Float::parse(&x_str) {
+                Ok(p) => Float::with_val(bits, p),
+                Err(_) => return Ok(()),
+            };
+            let cos_r = x_rug.cos_pi();
+            let c_r: DBig = DBig::from_str(&cos_r.to_string_radix(10, Some(prec))).unwrap();
+            prop_assert!(
+                (cos_d.clone() - c_r).abs() <= tol(prec),
+                "cos_pi mismatch x={x_str} prec={prec}: dashu={cos_d} rug={cos_r}"
+            );
+        }
+    }
+
+    /// tan_pi(x) ≈ MPFR tan_pi(x), skipping arguments where |cos_pi(x)| < 1e-5 (too close to a
+    /// pole). The exact poles (odd half-integers) are `Err(Indeterminate)` on our side and ±∞ on
+    /// MPFR's — that cross-convention is pinned in `fbig_pi_lattice_fuzz` below.
+    #[test]
+    #[ignore]
+    fn fbig_tan_pi_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
+        let x_str = format!("{x:e}");
+        for prec in fuzz::fuzz_precisions_decimal() {
+            let ctx = Context::<HalfAway>::new(prec);
+            let cos_d = ctx.cos_pi::<10>(x.repr(), None).unwrap().value();
+            if cos_d.abs() <= DBig::from_parts(1.into(), -5) {
+                continue; // near a pole — tan is ill-conditioned, skip this precision
+            }
+            let tan_d = match ctx.tan_pi::<10>(x.repr(), None) {
+                Ok(v) => v.value(),
+                Err(_) => continue, // exact pole (convention pinned in the lattice test)
+            };
+            let bits = rug_bits(x.repr(), prec);
+            let x_rug = match Float::parse(&x_str) {
+                Ok(p) => Float::with_val(bits, p),
+                Err(_) => return Ok(()),
+            };
+            let tan_r = x_rug.tan_pi();
+            let t_r: DBig = DBig::from_str(&tan_r.to_string_radix(10, Some(prec))).unwrap();
+            prop_assert!(
+                (tan_d.clone() - t_r).abs() <= tol(prec),
+                "tan_pi mismatch x={x_str} prec={prec}: dashu={tan_d} rug={tan_r}"
+            );
+        }
+    }
+
+    /// `sin_cos_pi` agrees exactly with the separate `sin_pi`/`cos_pi` evaluations (the shared
+    /// Ziv certification must produce identical values), across the decimal precision sweep.
+    #[test]
+    #[ignore]
+    fn fbig_sin_cos_pi_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
+        for prec in fuzz::fuzz_precisions_decimal() {
+            let ctx = Context::<HalfAway>::new(prec);
+            let (s, c) = ctx.sin_cos_pi::<10>(x.repr(), None);
+            let s = s.unwrap().value();
+            let c = c.unwrap().value();
+            let s_sep = ctx.sin_pi::<10>(x.repr(), None).unwrap().value();
+            let c_sep = ctx.cos_pi::<10>(x.repr(), None).unwrap().value();
+            prop_assert!(s == s_sep, "sin_cos_pi sin disagrees at prec={prec}, x={x:e}");
+            prop_assert!(c == c_sep, "sin_cos_pi cos disagrees at prec={prec}, x={x:e}");
+        }
+    }
+
+    /// The ×u forward family ≈ MPFR's `sin_u`/`cos_u`/`tan_u`, across a u sweep with shared
+    /// factors (u % 3 == 0 hits the ±1/2 sixth rows), coprime u (7, 11, 13 — no exact rows
+    /// beyond the axes), and the degrees case (360).
+    #[test]
+    #[ignore]
+    fn fbig_sin_unit_fuzz(x in fuzz::dbig_strategy(-50..=50), u in prop::sample::select(vec![1u32, 2, 3, 4, 6, 7, 8, 11, 12, 13, 24, 360])) {
+        let x_str = format!("{x:e}");
+        for prec in fuzz::fuzz_precisions_decimal() {
+            let ctx = Context::<HalfAway>::new(prec);
+            let bits = rug_bits(x.repr(), prec);
+            let x_rug = match Float::parse(&x_str) {
+                Ok(p) => Float::with_val(bits, p),
+                Err(_) => return Ok(()),
+            };
+
+            let d = ctx.sin_unit::<10>(x.repr(), u as usize, None).unwrap().value();
+            let r = x_rug.clone().sin_u(u);
+            let r_d: DBig = DBig::from_str(&r.to_string_radix(10, Some(prec))).unwrap();
+            prop_assert!(
+                (d.clone() - r_d).abs() <= tol(prec),
+                "sin_unit u={u} x={x_str} prec={prec}: dashu={d} rug={r}"
+            );
+
+            let d = ctx.cos_unit::<10>(x.repr(), u as usize, None).unwrap().value();
+            let r = x_rug.cos_u(u);
+            let r_d: DBig = DBig::from_str(&r.to_string_radix(10, Some(prec))).unwrap();
+            prop_assert!(
+                (d.clone() - r_d).abs() <= tol(prec),
+                "cos_unit u={u} x={x_str} prec={prec}: dashu={d} rug={r}"
+            );
+
+            // tan: the poles (odd multiples of u/4) are Err(Indeterminate) here and ±∞ at
+            // MPFR's — skip those; also skip near-poles like the tan fuzz above
+            let c = ctx.cos_unit::<10>(x.repr(), u as usize, None).unwrap().value();
+            if c.abs() > DBig::from_parts(1.into(), -5) {
+                let d = match ctx.tan_unit::<10>(x.repr(), u as usize, None) {
+                    Ok(v) => v.value(),
+                    Err(_) => continue, // exact pole (cross-convention pinned in the lattice test)
+                };
+                let r = Float::parse(&x_str).map(|p| Float::with_val(bits, p)).unwrap().tan_u(u);
+                let r_d: DBig = DBig::from_str(&r.to_string_radix(10, Some(prec))).unwrap();
+                prop_assert!(
+                    (d.clone() - r_d).abs() <= tol(prec),
+                    "tan_unit u={u} x={x_str} prec={prec}: dashu={d} rug={r}"
+                );
+            }
+
+            // sin_cos_unit agrees exactly with the separate evaluations
+            let (s, c) = ctx.sin_cos_unit::<10>(x.repr(), u as usize, None);
+            let s = s.unwrap().value();
+            let c = c.unwrap().value();
+            prop_assert!(s == ctx.sin_unit::<10>(x.repr(), u as usize, None).unwrap().value());
+            prop_assert!(c == ctx.cos_unit::<10>(x.repr(), u as usize, None).unwrap().value());
+        }
+    }
+
+    /// The inverse ×u family ≈ MPFR's `asin_u`/`acos_u`/`atan_u` across the same u sweep.
+    /// Out-of-domain inputs (|x| > 1) are NaN at MPFR's and errors on ours — skipped.
+    #[test]
+    #[ignore]
+    fn fbig_asin_unit_fuzz(x in fuzz::unit_dbig(), u in prop::sample::select(vec![1u32, 2, 3, 4, 6, 7, 8, 11, 12, 13, 24, 360])) {
+        let x_str = format!("{x:e}");
+        for prec in fuzz::fuzz_precisions_decimal() {
+            let ctx = Context::<HalfAway>::new(prec);
+            let bits = rug_bits(x.repr(), prec);
+            let x_rug = match Float::parse(&x_str) {
+                Ok(p) => Float::with_val(bits, p),
+                Err(_) => return Ok(()),
+            };
+
+            let d = ctx.asin_unit::<10>(x.repr(), u as usize, None).unwrap().value();
+            let r = x_rug.clone().asin_u(u);
+            let r_d: DBig = DBig::from_str(&r.to_string_radix(10, Some(prec))).unwrap();
+            prop_assert!(
+                (d.clone() - r_d).abs() <= tol(prec),
+                "asin_unit u={u} x={x_str} prec={prec}: dashu={d} rug={r}"
+            );
+
+            let d = ctx.acos_unit::<10>(x.repr(), u as usize, None).unwrap().value();
+            let r = x_rug.acos_u(u);
+            let r_d: DBig = DBig::from_str(&r.to_string_radix(10, Some(prec))).unwrap();
+            prop_assert!(
+                (d.clone() - r_d).abs() <= tol(prec),
+                "acos_unit u={u} x={x_str} prec={prec}: dashu={d} rug={r}"
+            );
+        }
+    }
+
+    /// `atan_unit`/`atan2_unit` ≈ MPFR's `atan_u`/`atan2_u`.
+    #[test]
+    #[ignore]
+    fn fbig_atan_unit_fuzz(x in fuzz::dbig_strategy(-50..=50), y in fuzz::dbig_strategy(-50..=50), u in prop::sample::select(vec![1u32, 2, 3, 7, 12, 360])) {
+        let x_str = format!("{x:e}");
+        let y_str = format!("{y:e}");
+        for prec in fuzz::fuzz_precisions_decimal() {
+            let ctx = Context::<HalfAway>::new(prec);
+            let bits = (rug_bits(x.repr(), prec)).max(rug_bits(y.repr(), prec));
+            let x_rug = match Float::parse(&x_str) {
+                Ok(p) => Float::with_val(bits, p),
+                Err(_) => return Ok(()),
+            };
+
+            let d = ctx.atan_unit::<10>(x.repr(), u as usize, None).unwrap().value();
+            let r = x_rug.clone().atan_u(u);
+            let r_d: DBig = DBig::from_str(&r.to_string_radix(10, Some(prec))).unwrap();
+            prop_assert!(
+                (d.clone() - r_d).abs() <= tol(prec),
+                "atan_unit u={u} x={x_str} prec={prec}: dashu={d} rug={r}"
+            );
+
+            // atan2: skip the (0, 0) indeterminate and the axis/diagonal exact rows are
+            // covered by the unit tests — here the general path
+            let y_d = ctx.tan_unit::<10>(y.repr(), u as usize, None);
+            let _ = y_d;
+            let y_rug = Float::with_val(bits, Float::parse(&y_str).unwrap());
+            let d = match ctx.atan2_unit::<10>(y.repr(), x.repr(), u as usize, None) {
+                Ok(v) => v.value(),
+                Err(_) => continue, // (0, 0)
+            };
+            let r = y_rug.atan2_u(&x_rug, u);
+            let r_d: DBig = DBig::from_str(&r.to_string_radix(10, Some(prec))).unwrap();
+            prop_assert!(
+                (d.clone() - r_d).abs() <= tol(prec),
+                "atan2_unit u={u} y={y_str} x={x_str} prec={prec}: dashu={d} rug={r}"
+            );
+        }
+    }
+
+    /// sinh_pi(x)/cosh_pi(x) ≈ MPFR sinh/cosh(x·π) — the hyperbolic ×π pair has no direct MPFR
+    /// counterpart, so the reference pre-multiplies a full-precision π. Overflows (|x| ≳ 10¹⁴)
+    /// saturate to ±∞/∞ on both sides and are skipped.
+    #[test]
+    #[ignore]
+    fn fbig_sinh_cosh_pi_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
+        let x_str = format!("{x:e}");
+        for prec in fuzz::fuzz_precisions_decimal() {
+            let ctx = Context::<HalfAway>::new(prec);
+            let sinh_d = match ctx.sinh_pi::<10>(x.repr(), None) {
+                Ok(v) => v.value(),
+                Err(_) => continue, // overflow → ±∞ (saturated at the convenience layer)
+            };
+            let bits = rug_bits(x.repr(), prec);
+            let x_rug = match Float::parse(&x_str) {
+                Ok(p) => Float::with_val(bits, p),
+                Err(_) => return Ok(()),
+            };
+            let arg = x_rug * Float::with_val(bits, rug::float::Constant::Pi);
+            let sinh_r = arg.clone().sinh();
+            let cosh_r = arg.cosh();
+            // `inf`/`nan` don't parse as DBig — the reference overflowed at this precision;
+            // dashu holds the huge value finitely (its exponent range is wider), so there is
+            // nothing bit-comparable left: skip this precision.
+            let s_r = match DBig::from_str(&sinh_r.to_string_radix(10, Some(prec))) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            prop_assert!(
+                (sinh_d.clone() - s_r).abs() <= tol(prec),
+                "sinh_pi mismatch x={x_str} prec={prec}: dashu={sinh_d} rug={sinh_r}"
+            );
+
+            let cosh_d = match ctx.cosh_pi::<10>(x.repr(), None) {
+                Ok(v) => v.value(),
+                Err(_) => continue,
+            };
+            let c_r = match DBig::from_str(&cosh_r.to_string_radix(10, Some(prec))) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            prop_assert!(
+                (cosh_d.clone() - c_r).abs() <= tol(prec),
+                "cosh_pi mismatch x={x_str} prec={prec}: dashu={cosh_d} rug={cosh_r}"
+            );
+        }
+    }
+}
+
+/// The exact-case lattice vs MPFR across u: for x = v/8 (v an integer) every forward result
+/// hits a table row (`8x/u` integral) or stays general; for x = v (integers) the u % 3 == 0
+/// sixth rows appear. MPFR returns the same exact values, and the tan poles are ±∞ on its
+/// side vs `Err(Indeterminate)` on ours. The u = 2 rows pin the ×π family.
+#[test]
+#[ignore]
+fn fbig_pi_lattice_fuzz() {
+    for u in [1u32, 2, 3, 4, 5, 6, 7, 8, 10, 12, 24, 360] {
+        // x = v/8 (exact in decimal as 125v·10^-6) covers the eighth/quarter lattice; the
+        // integer lattice (v·10^0) reaches the u % 3 == 0 sixth rows
+        for lattice in [(-96i64..=96, -3isize), (-24i64..=24, 0isize)] {
+            let (range, exp) = lattice;
+            for v in range {
+                let sig = if exp == -3 {
+                    IBig::from(125 * v)
+                } else {
+                    IBig::from(v)
+                };
+                let x = DBig::from_parts(sig, exp);
+                let x_str = format!("{x:e}");
+                for &prec in &[20usize, 50] {
+                    let ctx = Context::<HalfAway>::new(prec);
+                    let bits = rug_bits(x.repr(), prec);
+                    let mk_rug = || Float::with_val(bits, Float::parse(&x_str).unwrap());
+
+                    for (name, d, r) in [
+                        (
+                            "sin",
+                            ctx.sin_unit::<10>(x.repr(), u as usize, None)
+                                .unwrap()
+                                .value(),
+                            mk_rug().sin_u(u),
+                        ),
+                        (
+                            "cos",
+                            ctx.cos_unit::<10>(x.repr(), u as usize, None)
+                                .unwrap()
+                                .value(),
+                            mk_rug().cos_u(u),
+                        ),
+                    ] {
+                        let r_d: DBig = DBig::from_str(&r.to_string_radix(10, Some(prec))).unwrap();
+                        assert!(
+                            (d.clone() - r_d).abs() <= tol(prec),
+                            "lattice {name}_unit u={u} v={v}e{exp} prec={prec}: dashu={d} rug={r}"
+                        );
+                    }
+
+                    // tan: at the poles (8x/u ≡ 2 or 6 mod 8) MPFR reports ±∞ and we report
+                    // Indeterminate — pin the cross-convention; elsewhere compare numerically.
+                    match ctx.tan_unit::<10>(x.repr(), u as usize, None) {
+                        Err(FpError::Indeterminate) => {
+                            let t_rug = mk_rug().tan_u(u);
+                            assert!(
+                                t_rug.is_infinite(),
+                                "MPFR tan_u at pole u={u} v={v}e{exp} must be ±∞"
+                            );
+                        }
+                        Ok(t) => {
+                            let t_rug = mk_rug().tan_u(u);
+                            let t_r: DBig =
+                                DBig::from_str(&t_rug.to_string_radix(10, Some(prec))).unwrap();
+                            let t = t.value();
+                            assert!(
+                                (t.clone() - t_r).abs() <= tol(prec),
+                                "lattice tan_unit u={u} v={v}e{exp} prec={prec}: dashu={t} rug={t_rug}"
+                            );
+                        }
+                        Err(e) => panic!("unexpected tan_unit error at u={u} v={v}: {e:?}"),
+                    }
+                }
+            }
         }
     }
 }

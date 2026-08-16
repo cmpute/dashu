@@ -121,6 +121,80 @@ proptest! {
         }
     }
 
+    /// sin_pi(z) ≈ MPC sin(z·π) — MPC has no ×π entry points, so the reference pre-multiplies
+    /// a full-precision π (see the precision note inside for why it needs the +512 bits).
+    #[test]
+    #[ignore]
+    fn cbig_sin_pi_fuzz(zre in f64_part(), zim in f64_part()) {
+        for prec in fuzz::fuzz_precisions_bits() {
+            let (z, rz) = pair(zre, zim, prec as usize);
+            let d = cmplx_ok!(z.context().sin_pi(&z, None));
+            // π at 2·prec + 512 bits: the pre-scaling's rounding error is amplified by
+            // cosh(π·|y|) ≲ 2^290 for this suite's |y| ≤ 64, so the extra 512 bits keep the
+            // reference's own error far below the per-component ulp tolerance.
+            let pi_bits = 2 * prec + 512;
+            // both operands at pi_bits: a mixed-precision product would round to the *lower*
+            // precision, and the pre-scaling error is amplified by cosh(π·|y|)
+            let zr = rug::Complex::with_val(pi_bits, &rz);
+            let pi = rug::Complex::with_val(
+                pi_bits,
+                rug::Float::with_val(pi_bits, rug::float::Constant::Pi),
+            );
+            let r = (zr.clone() * pi.clone()).sin();
+            if !complex_finite(&d, &r) { continue; }
+            prop_assert!(close_at(&d, &r, prec as usize), "sin_pi zre={zre} zim={zim} prec={prec}");
+        }
+    }
+
+    /// cos_pi(z) ≈ MPC cos(z·π) (see `cbig_sin_pi_fuzz` for the reference construction).
+    #[test]
+    #[ignore]
+    fn cbig_cos_pi_fuzz(zre in f64_part(), zim in f64_part()) {
+        for prec in fuzz::fuzz_precisions_bits() {
+            let (z, rz) = pair(zre, zim, prec as usize);
+            let d = cmplx_ok!(z.context().cos_pi(&z, None));
+            // π at 2·prec + 512 bits: the pre-scaling's rounding error is amplified by
+            // cosh(π·|y|) ≲ 2^290 for this suite's |y| ≤ 64, so the extra 512 bits keep the
+            // reference's own error far below the per-component ulp tolerance.
+            let pi_bits = 2 * prec + 512;
+            // both operands at pi_bits: a mixed-precision product would round to the *lower*
+            // precision, and the pre-scaling error is amplified by cosh(π·|y|)
+            let zr = rug::Complex::with_val(pi_bits, &rz);
+            let pi = rug::Complex::with_val(
+                pi_bits,
+                rug::Float::with_val(pi_bits, rug::float::Constant::Pi),
+            );
+            let r = (zr.clone() * pi.clone()).cos();
+            if !complex_finite(&d, &r) { continue; }
+            prop_assert!(close_at(&d, &r, prec as usize), "cos_pi zre={zre} zim={zim} prec={prec}");
+        }
+    }
+
+    /// tan_pi(z) ≈ MPC tan(z·π) — skips the real-axis poles (odd half-integer real part with a
+    /// zero imaginary part), which are `Err(Indeterminate)` on our side.
+    #[test]
+    #[ignore]
+    fn cbig_tan_pi_fuzz(zre in f64_part(), zim in f64_part()) {
+        for prec in fuzz::fuzz_precisions_bits() {
+            let (z, rz) = pair(zre, zim, prec as usize);
+            let d = cmplx_ok!(z.context().tan_pi(&z, None));
+            // π at 2·prec + 512 bits: the pre-scaling's rounding error is amplified by
+            // cosh(π·|y|) ≲ 2^290 for this suite's |y| ≤ 64, so the extra 512 bits keep the
+            // reference's own error far below the per-component ulp tolerance.
+            let pi_bits = 2 * prec + 512;
+            // both operands at pi_bits: a mixed-precision product would round to the *lower*
+            // precision, and the pre-scaling error is amplified by cosh(π·|y|)
+            let zr = rug::Complex::with_val(pi_bits, &rz);
+            let pi = rug::Complex::with_val(
+                pi_bits,
+                rug::Float::with_val(pi_bits, rug::float::Constant::Pi),
+            );
+            let r = (zr * pi).tan();
+            if !complex_finite(&d, &r) { continue; }
+            prop_assert!(close_at(&d, &r, prec as usize), "tan_pi zre={zre} zim={zim} prec={prec}");
+        }
+    }
+
     /// asin(z) ≈ MPC asin(z).
     #[test]
     #[ignore]

@@ -546,4 +546,24 @@ proptest! {
         }
     }
 
+    /// `sin_pi`/`cos_pi` under directed modes vs MPFR's `sin_pi_round`/`cos_pi_round`. The
+    /// strategy hits the exact-case lattice (n/100 with n ≡ 25 mod 50 are quarter-integers),
+    /// which resolves exactly outside the Ziv loop on every mode.
+    #[test]
+    #[ignore]
+    fn fbig_sin_pi_directed_fuzz(x in small_x()) {
+        let xs = format!("{x:e}");
+        for prec in fuzz::fuzz_precisions_decimal() {
+            let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
+            directed_check!(sin_pi, sin_pi_round, Up, x, xr, prec, xs);
+            directed_check!(sin_pi, sin_pi_round, Down, x, xr, prec, xs);
+            directed_check!(sin_pi, sin_pi_round, Zero, x, xr, prec, xs);
+            directed_check!(sin_pi, sin_pi_round, HalfEven, x, xr, prec, xs);
+            directed_check!(cos_pi, cos_pi_round, Up, x, xr, prec, xs);
+            directed_check!(cos_pi, cos_pi_round, Down, x, xr, prec, xs);
+            directed_check!(cos_pi, cos_pi_round, Zero, x, xr, prec, xs);
+            directed_check!(cos_pi, cos_pi_round, HalfEven, x, xr, prec, xs);
+        }
+    }
+
 }

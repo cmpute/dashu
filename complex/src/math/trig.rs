@@ -1,5 +1,6 @@
 //! Complex trigonometric functions via the real–imaginary decomposition, reusing `dashu-float`'s
-//! real `sin`/`cos` and cancellation-free `sinh`/`cosh`.
+//! real `sin`/`cos` and cancellation-free `sinh`/`cosh` — plus their ×π variants on the real
+//! `sin_cos_pi`/`sinh_cosh_pi`.
 //!
 //! `sin(x+iy) = sin x·cosh y + i·cos x·sinh y`, `cos(x+iy) = cos x·cosh y − i·sin x·sinh y`. This
 //! form avoids the `exp(±iz)` identity's exponential blow-up for large `|Im z|`.
@@ -160,6 +161,154 @@ impl<R: ErrorBounds> Context<R> {
         Ok(combine_parts(re, im))
     }
 
+    /// Simultaneously compute `sin(z·π)` and `cos(z·π)` (context layer), correctly rounded via
+    /// a shared Ziv loop. An infinite input maps to [`FpError::Indeterminate`] (the C99 NaN
+    /// cases).
+    ///
+    /// The real part reduces through the real [`sin_cos_pi`](dashu_float::Context::sin_cos_pi)
+    /// (exact quarter-integer cases included — e.g. `sin_pi` of a half-integer real part is
+    /// exactly ±1), the imaginary part through the hyperbolic
+    /// [`sinh_cosh_pi`](dashu_float::Context::sinh_cosh_pi) on the pre-scaled argument.
+    pub fn sin_cos_pi<const B: Word>(
+        &self,
+        z: &CBig<R, B>,
+        mut cache: Option<&mut ConstCache>,
+    ) -> (CfpResult<R, B>, CfpResult<R, B>) {
+        if z.is_infinite() {
+            return (Err(FpError::Indeterminate), Err(FpError::Indeterminate));
+        }
+        if z.is_zero() {
+            // sin(x+iy)·π = sinx·coshy + i·cosx·sinhy: at ±0 the parts carry the input zeros'
+            // signs (sin_pi(±0) = ±0, sinh(±0) = ±0, cos_pi(±0) = cosh(±0) = 1), so e.g.
+            // `csin_pi(-0 + i·0) = -0 + i·0` — the same table as the radian `sin_cos`.
+            let (re, im) = (z.re(), z.im());
+            let sin = crate::repr::exact(
+                FBig::from_repr(Repr::zero_with_sign(re.sign()), self.float()),
+                FBig::from_repr(Repr::zero_with_sign(im.sign()), self.float()),
+            );
+            // cos(x+iy)·π = cosx·coshy − i·sinx·sinhy: real = 1; the imaginary part is the
+            // signed product `x·y` — the Annex-G table value (see the radian `sin_cos`).
+            let cos_im = if re.sign() != im.sign() {
+                Sign::Negative
+            } else {
+                Sign::Positive
+            };
+            let cos = crate::repr::exact(
+                FBig::from_repr(Repr::one(), self.float()),
+                FBig::from_repr(Repr::zero_with_sign(cos_im), self.float()),
+            );
+            return (Ok(sin), Ok(cos));
+        }
+
+        // `sin zπ = sin_pi(x)·cosh(πy) + i·cos_pi(x)·sinh(πy)`,
+        // `cos zπ = cos_pi(x)·cosh(πy) − i·sin_pi(x)·sinh(πy)`. Each factor is correctly
+        // rounded at the working precision (contributing ~½ ulp each), so only the products
+        // round — a few working-ULPs, like the radian `sin_cos`. The π-scaling lives inside the
+        // real ×π kernels (their argument balls carry π's radius), NOT in a pre-multiplied
+        // `π·y` (whose ½-ulp error the hyperbolic derivative would amplify to ~2π|y| ulps).
+        let p = self.precision();
+        let parts = self.ziv(TRIG_GUARD, |guard| {
+            let gctx = FloatCtxt::<R>::new(p + guard);
+            let (sinx, cosx) = gctx.sin_cos_pi(z.re(), reborrow_cache(&mut cache));
+            let sinx = sinx?.value();
+            let cosx = cosx?.value();
+            let (sinhy, coshy) = gctx.sinh_cosh_pi(z.im(), reborrow_cache(&mut cache));
+            let sinhy = sinhy?.value();
+            let coshy = coshy?.value();
+            let sin_re = gctx.mul(sinx.repr(), coshy.repr())?.value();
+            let sin_im = gctx.mul(cosx.repr(), sinhy.repr())?.value();
+            let cos_re = gctx.mul(cosx.repr(), coshy.repr())?.value();
+            let neg_sinx = -sinx; // cos zπ's imaginary part is −sin_pi(x)·sinh(πy)
+            let cos_im = gctx.mul(neg_sinx.repr(), sinhy.repr())?.value();
+            Ok([
+                (sin_re.clone(), sin_re.ulp() * 8),
+                (sin_im.clone(), sin_im.ulp() * 8),
+                (cos_re.clone(), cos_re.ulp() * 8),
+                (cos_im.clone(), cos_im.ulp() * 8),
+            ])
+        });
+        let [sin_re, sin_im, cos_re, cos_im] = match parts {
+            Ok(arr) => arr,
+            // an overflow (e.g. `cosh` of a huge imaginary part) fails both sin and cos together.
+            Err(e) => return (Err(e), Err(e)),
+        };
+        (Ok(combine_parts(sin_re, sin_im)), Ok(combine_parts(cos_re, cos_im)))
+    }
+
+    /// Complex sine of `z·π` (context layer).
+    #[inline]
+    pub fn sin_pi<const B: Word>(
+        &self,
+        z: &CBig<R, B>,
+        cache: Option<&mut ConstCache>,
+    ) -> CfpResult<R, B> {
+        self.sin_cos_pi(z, cache).0
+    }
+
+    /// Complex cosine of `z·π` (context layer).
+    #[inline]
+    pub fn cos_pi<const B: Word>(
+        &self,
+        z: &CBig<R, B>,
+        cache: Option<&mut ConstCache>,
+    ) -> CfpResult<R, B> {
+        self.sin_cos_pi(z, cache).1
+    }
+
+    /// Complex tangent of `z·π` (context layer), correctly rounded via a Ziv loop, using the
+    /// cancellation-free double-angle identity
+    ///
+    /// `tan(z·π) = (sin_pi(2x) + i·sinh(2πy)) / (cos_pi(2x) + cosh(2πy))`.
+    ///
+    /// As for the radian [`tan`](Self::tan), the denominator is a sum of a bounded term
+    /// (`cos_pi(2x) ∈ [−1, 1]`) and a term `≥ 1` (`cosh(2πy)`), so it never catastrophically
+    /// cancels. The real-axis poles (`y = 0`, x an odd multiple of `1/2`) make the denominator
+    /// exactly zero against a zero numerator — the `0/0` maps to [`FpError::Indeterminate`],
+    /// the same convention as the real `tan_pi`.
+    pub fn tan_pi<const B: Word>(
+        &self,
+        z: &CBig<R, B>,
+        mut cache: Option<&mut ConstCache>,
+    ) -> CfpResult<R, B> {
+        if z.is_infinite() {
+            return Err(FpError::Indeterminate);
+        }
+        if z.is_zero() {
+            let (re, im) = (z.re(), z.im());
+            // tan is odd in both parts: the parts carry the input zeros' signs (bypasses the
+            // Ziv loop, which rejects unlimited precision).
+            return Ok(crate::repr::exact(
+                FBig::from_repr(Repr::zero_with_sign(re.sign()), self.float()),
+                FBig::from_repr(Repr::zero_with_sign(im.sign()), self.float()),
+            ));
+        }
+
+        let p = self.precision();
+        let [re, im] = self.ziv(TRIG_GUARD, |guard| {
+            let pw = p + guard;
+            let gctx = FloatCtxt::<R>::new(pw);
+            // 2x, 2y (exact doublings — same significand, exponent +1).
+            let x2 = gctx.add(z.re(), z.re())?.value();
+            let y2 = gctx.add(z.im(), z.im())?.value();
+            let (sin2x, cos2x) = gctx.sin_cos_pi(x2.repr(), reborrow_cache(&mut cache));
+            let sin2x = sin2x?.value();
+            let cos2x = cos2x?.value();
+            let (sinh2y, cosh2y) = gctx.sinh_cosh_pi(y2.repr(), reborrow_cache(&mut cache));
+            let sinh2y = sinh2y?.value();
+            let cosh2y = cosh2y?.value();
+            // D = cos_pi(2x) + cosh(2πy)  (a benign sum: a bounded term plus one ≥ 1).
+            let denom = gctx.add(cos2x.repr(), cosh2y.repr())?.value();
+            let re = gctx.div(sin2x.repr(), denom.repr())?.value();
+            let im = gctx.div(sinh2y.repr(), denom.repr())?.value();
+            // re-root to the working precision (`sin_cos_pi`/`sinh_cosh_pi`/`div` may return
+            // exact constants for exact cases such as `tan_pi(1/4) = 1`).
+            let re = re.with_precision(pw).value();
+            let im = im.with_precision(pw).value();
+            Ok([(re.clone(), re.ulp() * 8), (im.clone(), im.ulp() * 8)])
+        })?;
+        Ok(combine_parts(re, im))
+    }
+
     /// Inverse sine `asin z = -i·log(iz + sqrt(1-z²))` (context layer, Kahan form), correctly
     /// rounded via a Ziv loop. The argument of the inner `log` always has positive real part, so the
     /// branch cut comes entirely from the `sqrt`; an infinite input maps to
@@ -302,6 +451,32 @@ impl<R: ErrorBounds, const B: Word> CBig<R, B> {
         self.context().unwrap_cfp(self.context().tan(self, None))
     }
 
+    /// Complex sine of `z·π` (convenience layer). Panics on an indeterminate special value.
+    #[inline]
+    pub fn sin_pi(&self) -> Self {
+        self.context().unwrap_cfp(self.context().sin_pi(self, None))
+    }
+
+    /// Complex cosine of `z·π` (convenience layer). Panics on an indeterminate special value.
+    #[inline]
+    pub fn cos_pi(&self) -> Self {
+        self.context().unwrap_cfp(self.context().cos_pi(self, None))
+    }
+
+    /// Simultaneously compute `(sin(z·π), cos(z·π))` (convenience layer).
+    #[inline]
+    pub fn sin_cos_pi(&self) -> (Self, Self) {
+        let (s, c) = self.context().sin_cos_pi(self, None);
+        (self.context().unwrap_cfp(s), self.context().unwrap_cfp(c))
+    }
+
+    /// Complex tangent of `z·π` (convenience layer). Panics at the real-axis poles
+    /// (`y = 0`, x an odd multiple of `1/2`, where the result is indeterminate).
+    #[inline]
+    pub fn tan_pi(&self) -> Self {
+        self.context().unwrap_cfp(self.context().tan_pi(self, None))
+    }
+
     /// Inverse sine (convenience layer).
     #[inline]
     pub fn asin(&self) -> Self {
@@ -344,6 +519,131 @@ mod tests {
         // tan has an exact-zero shortcut, so it works even at unlimited precision
         // (the constants are precision 0, which the Ziv loop rejects).
         assert!(C::ZERO.tan() == C::ZERO);
+    }
+
+    #[test]
+    fn pi_family_zero_inputs() {
+        // The ×π family shares the exact-zero shortcuts, so it also works at unlimited precision
+        assert!(C::ZERO.sin_pi() == C::ZERO);
+        assert!(C::ZERO.cos_pi() == C::ONE);
+        assert!(C::ZERO.tan_pi() == C::ZERO);
+        let (s, c) = C::ZERO.sin_cos_pi();
+        assert!(s == C::ZERO);
+        assert!(c == C::ONE);
+    }
+
+    #[test]
+    fn pi_family_infinite_is_indeterminate() {
+        let ctx = Context::new(53);
+        let inf = C::from(F::INFINITY);
+        assert_eq!(ctx.sin_pi(&inf, None), Err(FpError::Indeterminate));
+        assert_eq!(ctx.cos_pi(&inf, None), Err(FpError::Indeterminate));
+        assert_eq!(ctx.tan_pi(&inf, None), Err(FpError::Indeterminate));
+        let (s, c) = ctx.sin_cos_pi(&inf, None);
+        assert_eq!(s, Err(FpError::Indeterminate));
+        assert_eq!(c, Err(FpError::Indeterminate));
+    }
+
+    /// The real axis: `*_pi` of a pure-real z must agree with the real ×π kernels exactly,
+    /// including the quarter-integer exact cases (sin_pi(1/2 + 0i) = 1 exactly, etc.).
+    #[test]
+    fn pi_family_real_axis_matches_real_kernels() {
+        use core::str::FromStr;
+        type HC = CBig<mode::HalfEven, 10>;
+        type HF = FBig<mode::HalfEven, 10>;
+        let ctx = Context::<mode::HalfEven>::new(53);
+        let fctx = FloatCtxt::<mode::HalfEven>::new(53);
+        for re in ["0.5", "0.25", "1.5", "2.5", "0.3", "-1.2", "3", "0.125"] {
+            let x = HF::from_str(re).unwrap().with_precision(53).value();
+            let z = HC::from_parts(x.clone(), HF::ZERO);
+
+            let s = ctx.sin_pi(&z, None).unwrap().value();
+            let expect = fctx.sin_pi::<10>(x.repr(), None).unwrap().value();
+            assert!(s == HC::from_parts(expect, HF::ZERO), "sin_pi re={re}");
+            let c = ctx.cos_pi(&z, None).unwrap().value();
+            let expect = fctx.cos_pi::<10>(x.repr(), None).unwrap().value();
+            assert!(c == HC::from_parts(expect, HF::ZERO), "cos_pi re={re}");
+        }
+
+        // exact quarter-integer cases land exactly
+        let f53 = |v: i32| HF::from(v).with_precision(53).value();
+        let half = HC::from_parts(f53(1) / 2u8, HF::ZERO);
+        let s = ctx.sin_pi(&half, None).unwrap().value();
+        assert!(s == HC::ONE);
+        let c = ctx.cos_pi(&half, None).unwrap().value();
+        assert!(c == HC::ZERO);
+        let quarter = HC::from_parts(f53(1) / 4u8, HF::ZERO);
+        let t = ctx.tan_pi(&quarter, None).unwrap().value();
+        assert!(t == HC::ONE);
+
+        // the real-axis pole: tan_pi(1/2 + 0i) is indeterminate (0/0 in the double-angle form)
+        assert_eq!(ctx.tan_pi(&half, None), Err(FpError::Indeterminate));
+    }
+
+    /// The imaginary axis: `sin_pi(iy) = i·sinh(πy)` and `cos_pi(iy) = cosh(πy)`, exercising
+    /// the π-scaled hyperbolic kernel.
+    #[test]
+    fn pi_family_imaginary_axis_matches_hyperbolic() {
+        use core::str::FromStr;
+        type HC = CBig<mode::HalfEven, 10>;
+        type HF = FBig<mode::HalfEven, 10>;
+        let ctx = Context::<mode::HalfEven>::new(53);
+        let fctx = FloatCtxt::<mode::HalfEven>::new(53);
+        for im in ["0.5", "0.25", "-1.5", "0.3", "2", "-0.125"] {
+            let y = HF::from_str(im).unwrap().with_precision(53).value();
+            let z = HC::from_parts(HF::ZERO, y.clone());
+
+            let s = ctx.sin_pi(&z, None).unwrap().value();
+            let (sre, sim) = s.into_parts();
+            assert!(sre == HF::ZERO, "sin_pi re({im})");
+            let expect = fctx.sinh_pi::<10>(y.repr(), None).unwrap().value();
+            assert!(sim == expect, "sin_pi im({im})");
+
+            let c = ctx.cos_pi(&z, None).unwrap().value();
+            let (cre, cim) = c.into_parts();
+            assert!(cim == HF::ZERO, "cos_pi im({im})");
+            let expect = fctx.cosh_pi::<10>(y.repr(), None).unwrap().value();
+            assert!(cre == expect, "cos_pi re({im})");
+        }
+    }
+
+    /// `tan_pi(z) = sin_pi(z)/cos_pi(z)` on generic points, and the sin²+cos² = 1 identity.
+    #[test]
+    fn pi_family_generic_identities() {
+        use dashu_base::AbsOrd;
+        type HC = CBig<mode::HalfEven, 10>;
+        type HF = FBig<mode::HalfEven, 10>;
+        let ctx = Context::<mode::HalfEven>::new(53);
+        // The identity check cancels from |sin|² ≈ cosh²(π·5) ≈ 10¹³ down to 1, so its own
+        // evaluation error is ~1 ulp of 10¹³ at 53 digits ≈ 10⁻³⁹ — the tolerance is set
+        // comfortably above that (the parts themselves stay correctly rounded).
+        let tol = HF::from_parts(IBig::from(1), -30); // 10^-30
+        let tol_ratio = HF::from_parts(IBig::from(1), -40); // 10^-40
+        for (re, im) in [(1, 1), (2, -3), (-1, 2), (3, 5), (-2, -1)] {
+            let z = HC::from_parts(
+                HF::from(re).with_precision(53).value(),
+                HF::from(im).with_precision(53).value(),
+            );
+            let (s, c) = ctx.sin_cos_pi(&z, None);
+            let s = s.unwrap().value();
+            let c = c.unwrap().value();
+            // sin²(zπ) + cos²(zπ) = 1
+            let sum = &s.sqr() + &c.sqr();
+            let (sre, sim) = sum.into_parts();
+            assert!(
+                (sre.clone() - HF::ONE).abs_cmp(&tol).is_le(),
+                "sin²+cos² re at ({re},{im}): {sre:?}"
+            );
+            assert!(sim.abs_cmp(&tol).is_le(), "sin²+cos² im at ({re},{im})");
+            // tan_pi = sin_pi/cos_pi (re-rooted through the ziv loop, so compare loosely)
+            let t = ctx.tan_pi(&z, None).unwrap().value();
+            let ratio = &s / &c;
+            let diff = &t - &ratio;
+            let (dre, dim) = diff.into_parts();
+            let tol_scaled = s.abs() * &tol_ratio;
+            assert!(dre.abs_cmp(&tol_scaled).is_le(), "tan_pi re at ({re},{im})");
+            assert!(dim.abs_cmp(&tol_scaled).is_le(), "tan_pi im at ({re},{im})");
+        }
     }
 
     #[test]

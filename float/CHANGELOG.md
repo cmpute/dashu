@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+### Add
+- ×u trigonometric functions `sin_unit`/`cos_unit`/`sin_cos_unit`/`tan_unit` (of `2π·x/u`, the
+  argument in units of the full turn divided by `u` — e.g. `u = 360` gives degrees) and their
+  inverses `asin_unit`/`acos_unit`/`atan_unit`/`atan2_unit` (of `u·θ/(2π)`), on `Context`,
+  `FBig` and `CachedFBig` (the `u` parameter is `usize`; the forward family takes
+  `Err(OutOfDomain)` at `u = 0`, the inverse family returns the `u → 0` signed-zero limit).
+  Unlike the radian variants, the argument reduces *exactly* mod u in integer arithmetic, so
+  the accuracy is independent of the magnitude of the input; arguments where `12x/u` (resp.
+  `8x/u` for the tangent) is an integer resolve exactly — quarters (`0`/`±1`), the sine/cosine
+  sixths (`±1/2`), the tangent eighths (`±1`) and the tangent poles (`Err(Indeterminate)`,
+  where the one-sided limits `+∞`/`−∞` disagree in sign). The inverse family resolves the
+  axis/diagonal angles to exact `k·u/8` values (including the finite `y = ±x` diagonals, which
+  an exactly-representable one-sided directed-rounding preimage would leave uncertifiable).
+- ×π trigonometric functions `sin_pi`/`cos_pi`/`sin_cos_pi`/`tan_pi` (of `x·π`), on `Context`,
+  `FBig` and `CachedFBig` — now thin wrappers over the ×u family at `u = 2`.
+- ×π hyperbolic functions `sinh_pi`/`cosh_pi`/`sinh_cosh_pi` (of `x·π`), on `Context`, `FBig` and
+  `CachedFBig` — the argument ball is built from the shared cached π; a direct series handles
+  `|πx| ≤ 1`, the exponential composition the rest.
+
+### Fix
+- `exp` — and every transcendental built on it, e.g. `sinh`/`cosh` — of an argument whose
+  exponent is in the 10^14 range no longer dies on an out-of-memory allocation. The base-aware
+  radius export converted a binary exponent to a decimal one (and back) through a small
+  rational bound (`28/93` and `30102/100000` for log₁₀2, `3322/1000` and `33218/10000` for
+  log₂10). Those err by ~5·10⁻⁵ *relative*, and that error multiplies the exponent: at 10^14 it
+  overshot the outward power of ten by `10^1.2e10`, leaving the Ziv error radius astronomically
+  larger than the value it bounded — the containment test then tried to align that gap and ran
+  out of memory. The conversions now use 64- and 62-bit fixed-point bounds, so the outward
+  slack stays under one digit for every `isize` exponent.
+- Additions/subtractions of operands with an astronomically large exponent gap (~10⁹+ digits,
+  e.g. the two exponentials composing `sinh(1e14)`) no longer die on an out-of-memory
+  allocation: the sticky low part of the aligned sum is collapsed to a bounded position when
+  it sits entirely below the rounding window (`repr_round_sum`), and the hyperbolic
+  `sinh`/`cosh`/`sinh_cosh` compositions drop an exponential that sits below the other's ulp
+  window instead of aligning the gap.
+
 ### Change
 - **(internal) the Ziv error radius is now a value-space `Mag` instead of an exact-integer
   ulp count** (`float/src/mag.rs`, `float/src/ball.rs`; both `pub(crate)`). Every `+`/`-`/`*`/`/`
