@@ -231,10 +231,13 @@ The two hand-derived derivative folds (previously ulp-domain shift algebra over 
 `to_value_radius` re-tags `mid` to `R` at the working precision and converts `rad` to a
 `Repr` (`rad == 0` → `Repr::zero()`, avoiding the −∞ sentinel pitfall noted at
 `ball.rs:494`). The containment test needs only a **sound upper bound** on the radius, so
-for B = 10 round it outward to a power of ten: value `= man·2^e < 2^bits` with
-`bits = bit_len(man) + e` (when `bits > 0`), and `10^k ≥ 2^bits` for `k = ceil(bits·28/93)`
-(`28/93 = 0.30107… > log₁₀2 = 0.30103`, valid for either sign of `bits`) →
-`Repr::<10>::new(ONE, k)`; ≤ 10× radius slack, O(1). Do **not** build the exact decimal —
+for B = 10 round it outward to a power of ten: value `= man·2^e < 2^exp`, and `10^k ≥ 2^exp`
+for `k` the **max of two ceilings** — `ceil(exp·28/93)` (`28/93 = 0.30107… > log₁₀2 = 0.30103`)
+and `ceil(exp·30102/100000)` (`< log₁₀ 2`). A single above-log coefficient bounds only for
+`exp ≥ 0`; below `exp < 0` the inequality flips and only a below-log coefficient is valid —
+taking the max of both ceilings keeps the valid side for either sign (same trick, min of
+floors, for the lower direction in `from_repr`). → `Repr::<10>::new(ONE, k)`; ≤ 10× radius
+slack, O(1). Do **not** build the exact decimal —
 `man·5^|exp|` is O(|exp|) IBig work per ziv attempt. For B = 2, `man·2^exp` is directly
 `Repr::<2>::new(man, exp − BITS)` — exact.
 Closure signature and `ziv.rs` are untouched. This is one of the only three places base
@@ -246,11 +249,12 @@ was base-anchored by construction, which is why `ceil_shift::<B>` existed at all
 `Mag` is base-agnostic (absolute value); only the boundary helpers are base-aware, and
 they need bound-level conversion only — one-directional, slack-tolerant, always sound
 (the precision-critical kind of base conversion lives in the public `with_base` layer,
-whose exp/log machinery the Ball merely rides). `Mag::from_repr::<10>`: exact when
-`|exp|` is small (`10^e` fits a `Word`/`u128`), otherwise a power-of-two upper bound
-`10^e ≤ 2^⌈3.322·e⌉` (`3.322 > log₂ 10 = 3.321928`, valid for both exponent signs,
-slack < a factor 2 for any realistic exponent). The `ceil_shift::<B>`/`shl_digits::<B>`/
-`shr_digits_ceil` base-10 machinery in the error terms is deleted.
+whose exp/log machinery the Ball merely rides). `Mag::from_repr::<10>`: the significand's
+top-`Word::BITS` bits are base-free; the `10^exp` scale uses rational log₂ 10 bounds
+(3322/1000 above, 33218/10000 below `log₂ 10 = 3.321928…`) with the both-sides max/min trick
+of §3.9 — a single coefficient cannot serve both exponent signs (§3.9). The
+`ceil_shift::<B>`/`shl_digits::<B>`/`shr_digits_ceil` base-10 machinery in the error terms
+is deleted.
 
 ## 4. Series loop after migration (ln's atanh)
 
