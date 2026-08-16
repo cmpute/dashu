@@ -767,7 +767,8 @@ impl<R: Round> Context<R> {
                         false,
                         reborrow_cache(&mut cache),
                     )
-                    .to_value_radius::<R>()
+                    .expect("ln(BASE) cannot range-error (the base fits the exponent range)")
+                    .to_value_radius::<R>(&work_context)
                     .0;
             let (exponent, rem) =
                 new_exp.div_rem_euclid(work_context.ln_base::<NewB>(reborrow_cache(&mut cache)));
@@ -794,8 +795,8 @@ impl<R: Round> Context<R> {
                 )
                 .expect("exp(reduced rem) cannot overflow (|rem| < B^-n)")
                 .mid;
-            let significand = repr.significand * exp_rem.repr.significand;
-            let repr = Repr::new(significand, exponent + exp_rem.repr.exponent);
+            let significand = repr.significand.clone() * exp_rem.significand();
+            let repr = Repr::new(significand, exponent + exp_rem.exponent());
             self.repr_round(repr)
         }
     }

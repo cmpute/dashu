@@ -13,7 +13,7 @@
 //! and `asinh`; `acosh(x<1)` and `atanh(|x|>1)` are domain errors.
 
 use crate::{
-    ball::Ball,
+    ball::{ulps, Ball},
     error::{assert_limited_precision, FpError},
     fbig::FBig,
     math::{
@@ -65,7 +65,11 @@ impl<R: ErrorBounds> Context<R> {
                 n,
                 reborrow_cache(&mut cache),
             )?;
-            Ok(ep.sub(&em).div_int(2).to_value_radius::<R>())
+            let wp = work.precision;
+            Ok(ep
+                .sub(&em, wp)?
+                .div_int(2, wp)?
+                .to_value_radius::<R>(&Context::<R>::new(wp)))
         })
         .map_err(|_| FpError::Overflow(x.sign()))
     }
@@ -109,8 +113,13 @@ impl<R: ErrorBounds> Context<R> {
                 n,
                 reborrow_cache(&mut cache),
             )?;
-            let one = Ball::exact_int(work.precision, IBig::ONE);
-            Ok(ep.add(&em).div_int(2).add(&one).to_value_radius::<R>())
+            let wp = work.precision;
+            let one = Ball::exact_int(IBig::ONE, wp);
+            Ok(ep
+                .add(&em, wp)?
+                .div_int(2, wp)?
+                .add(&one, wp)?
+                .to_value_radius::<R>(&Context::<R>::new(wp)))
         })
         .map_err(|_| FpError::Overflow(Sign::Positive))
     }
@@ -162,10 +171,12 @@ impl<R: ErrorBounds> Context<R> {
                 n,
                 reborrow_cache(&mut cache),
             )?;
-            let one = Ball::exact_int(work.precision, IBig::ONE);
-            let sinh_ball = ep.sub(&em).div_int(2);
-            let cosh_ball = ep.add(&em).div_int(2).add(&one);
-            Ok((sinh_ball.to_value_radius::<R>(), cosh_ball.to_value_radius::<R>()))
+            let wp = work.precision;
+            let one = Ball::exact_int(IBig::ONE, wp);
+            let sinh_ball = ep.sub(&em, wp)?.div_int(2, wp)?;
+            let cosh_ball = ep.add(&em, wp)?.div_int(2, wp)?.add(&one, wp)?;
+            let ctx = Context::<R>::new(wp);
+            Ok((sinh_ball.to_value_radius::<R>(&ctx), cosh_ball.to_value_radius::<R>(&ctx)))
         });
         (
             sinh_r.map_err(|_| FpError::Overflow(x.sign())),
@@ -213,8 +224,10 @@ impl<R: ErrorBounds> Context<R> {
             ) {
                 Err(FpError::Overflow(_)) => Ok((FBig::<R, B>::ONE, FBig::<R, B>::ZERO)), // exact +1
                 Ok(e) => {
-                    let two = Ball::exact_int(work.precision, IBig::from(2));
-                    Ok(e.div(&e.add(&two)).to_value_radius::<R>())
+                    let wp = work.precision;
+                    let two = Ball::exact_int(IBig::from(2), wp);
+                    Ok(e.div(&e.add(&two, wp)?, wp)?
+                        .to_value_radius::<R>(&Context::<R>::new(wp)))
                 }
                 Err(other) => unreachable!("exp_m1 on finite input: {other:?}"),
             }
@@ -246,13 +259,15 @@ impl<R: ErrorBounds> Context<R> {
             let x_f = FBig::<mode::HalfEven, B>::new(work.repr_round_ref(x).value(), work);
             let sign = x_f.sign();
             let abs_x = x_f.abs();
+            let wp = work.precision;
             let res = match work.sqr(&abs_x.repr) {
                 Ok(x_sq) => {
-                    let x_sq_ball = Ball::from_rounded(x_sq); // correctly-rounded sqr
-                    let one = Ball::exact_int(work.precision, IBig::ONE);
-                    let sqrt_plus_one = x_sq_ball.add(&one).sqrt().add(&one);
-                    let abs_x_ball = Ball::with_error(abs_x, IBig::ONE);
-                    let arg = abs_x_ball.add(&x_sq_ball.div(&sqrt_plus_one));
+                    let x_sq_ball = Ball::from_rounded(x_sq.map(FBig::into_repr), wp); // correctly-rounded sqr
+                    let one = Ball::exact_int(IBig::ONE, wp);
+                    let sqrt_plus_one = x_sq_ball.add(&one, wp)?.sqrt(wp)?.add(&one, wp)?;
+                    let rad = ulps::<B>(&abs_x.repr, wp, 1);
+                    let abs_x_ball = Ball::with_error(abs_x.into_repr(), rad);
+                    let arg = abs_x_ball.add(&x_sq_ball.div(&sqrt_plus_one, wp)?, wp)?;
                     work.ln_1p_ball::<B>(&arg, reborrow_cache(&mut cache))
                 }
                 // |x| so large that x² overflows: asinh(x) ≈ sign·ln(2|x|).
@@ -266,13 +281,13 @@ impl<R: ErrorBounds> Context<R> {
                     )
                 }
                 Err(other) => unreachable!("sqr: {other:?}"),
-            };
+            }?;
             let result = if sign == Sign::Negative {
                 res.neg()
             } else {
                 res
             };
-            Ok(result.to_value_radius::<R>())
+            Ok(result.to_value_radius::<R>(&Context::<R>::new(wp)))
         })
     }
 
@@ -311,11 +326,13 @@ impl<R: ErrorBounds> Context<R> {
             let x_f = FBig::<mode::HalfEven, B>::new(work.repr_round_ref(x).value(), work);
             let xm1 = &x_f - FBig::<mode::HalfEven, B>::ONE;
             let xp1 = &x_f + FBig::<mode::HalfEven, B>::ONE;
+            let wp = work.precision;
             let res = match work.mul(&xm1.repr, &xp1.repr) {
                 Ok(prod) => {
-                    let prod_ball = Ball::from_rounded(prod); // correctly-rounded product
-                    let xm1_ball = Ball::with_error(xm1, IBig::ONE);
-                    let arg = xm1_ball.add(&prod_ball.sqrt());
+                    let prod_ball = Ball::from_rounded(prod.map(FBig::into_repr), wp); // correctly-rounded product
+                    let rad = ulps::<B>(&xm1.repr, wp, 1);
+                    let xm1_ball = Ball::with_error(xm1.into_repr(), rad);
+                    let arg = xm1_ball.add(&prod_ball.sqrt(wp)?, wp)?;
                     work.ln_1p_ball::<B>(&arg, reborrow_cache(&mut cache))
                 }
                 // (x-1)(x+1) overflowed: acosh(x) ≈ ln(2x).
@@ -329,8 +346,8 @@ impl<R: ErrorBounds> Context<R> {
                     )
                 }
                 Err(other) => unreachable!("mul: {other:?}"),
-            };
-            Ok(res.to_value_radius::<R>())
+            }?;
+            Ok(res.to_value_radius::<R>(&Context::<R>::new(wp)))
         })
     }
 
@@ -363,11 +380,16 @@ impl<R: ErrorBounds> Context<R> {
         let initial_guard = self.base_guard_digits::<B>() + 10;
         self.ziv(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
-            let x_ball = Ball::from_rounded(work.repr_round_ref(x).map(|r| FBig::new(r, work)));
-            let one = Ball::exact_int(work.precision, IBig::ONE);
-            let ratio = x_ball.scale_int(&IBig::from(2)).div(&one.sub(&x_ball));
-            let res = work.ln_1p_ball::<B>(&ratio, reborrow_cache(&mut cache));
-            Ok(res.div_int(2).to_value_radius::<R>())
+            let wp = work.precision;
+            let x_ball = Ball::from_rounded(work.repr_round_ref(x), wp);
+            let one = Ball::exact_int(IBig::ONE, wp);
+            let ratio = x_ball
+                .scale_int(&IBig::from(2), wp)?
+                .div(&one.sub(&x_ball, wp)?, wp)?;
+            let res = work.ln_1p_ball::<B>(&ratio, reborrow_cache(&mut cache))?;
+            Ok(res
+                .div_int(2, wp)?
+                .to_value_radius::<R>(&Context::<R>::new(wp)))
         })
     }
 }

@@ -105,6 +105,8 @@ impl<R: ErrorBounds> Context<R> {
         ziv_retries_reset_impl();
         for _ in 0..MAX_ZIV_RETRIES {
             let (a, e) = approx(guard)?;
+            #[cfg(all(test, feature = "std"))]
+            eprintln!("ZIV g={guard} r={e:?}");
             // `with_precision` consumes `a`, but the containment test still needs it, so round a
             // clone and keep the original for the interval check.
             let candidate = a.clone().with_precision(self.precision);
@@ -192,6 +194,14 @@ impl<R: ErrorBounds> Context<R> {
     ///   `a − e ≥ y − lb  ⟺  a + lb ≥ y + e`
     ///   `a + e ≤ y + rb  ⟺  y + rb ≥ a + e`
     fn contained<const B: Word>(a: &Repr<B>, e: &Repr<B>, y: &FBig<R, B>) -> bool {
+        // No nonzero real rounds to exactly zero (significant-digit rounding with unbounded
+        // exponents keeps every nonzero magnitude), so a zero midpoint can only be certified
+        // with a zero radius — the documented `error_bounds` interval for ±0 (±ulp) would
+        // otherwise certify a cancellation that collapsed onto exact 0 while its radius still
+        // covers nonzero neighbors (a wrong result, e.g. `log2` just above 1 at low precision).
+        if y.repr.significand.is_zero() && !e.significand.is_zero() {
+            return false;
+        }
         let (lb, rb, incl_l, incl_r) = R::error_bounds::<B>(y);
 
         let y = &y.repr;

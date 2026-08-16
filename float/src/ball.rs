@@ -1,697 +1,494 @@
-//! Ball arithmetic: a midpoint paired with an integer relative-error count.
+//! The internal [`Ball`] — a midpoint `Repr` plus a value-space radius `Mag` — the error
+//! representation the Ziv driver's transcendental closures compute with.
 //!
-//! A [`Ball`] represents a real number as `mid ± n·ulp(mid)`, where `ulp(mid)` is the
-//! working-precision ulp of the midpoint: `|mid − true| ≤ n · ulp(mid)`.
-//!
-//! The error is tracked as an exact integer `n` (a base-`B` ulp count at the midpoint's own
-//! precision) rather than as a rounded floating-point radius, so every propagation step is an
-//! exact integer operation — no rounding guard is needed, and cancellation is handled
-//! automatically by the exponent scale factors (a `c`-digit cancel multiplies `n` by `B^c`, so
-//! the error stays referenced to the pre-cancellation magnitude). Each operation rounds the new
-//! midpoint via `mid`'s own context and folds one rounding ulp into `n`.
-//!
-//! The midpoint is always [`mode::HalfEven`] (tightest). The target rounding mode `R` does not
-//! parameterize a [`Ball`] — it enters only at the Ziv boundary, via
-//! [`to_value_radius`](Ball::to_value_radius), which re-tags the midpoint to `R` at the working
-//! precision and converts `n` into an absolute radius `n·ulp(mid)`. Ziv re-rounds to the target
-//! precision far coarser than the work ulp, so the intermediate mode is immaterial to the final
-//! correct rounding.
+//! The radius is an *absolute* magnitude (`|mid − true| ≤ rad`), so propagation is plain
+//! interval algebra in value space: no ulp-domain shift formulas, no per-ball precision
+//! state (an operation's `prec` argument is the only precision there is), no IBig error
+//! bookkeeping. Every midpoint op runs through the correctly-rounded [`Context`] kernels
+//! at `prec`; the kernel's `Exact`/`Inexact` flag decides whether a fresh `ε = 1 ulp`
+//! joins the radius — in particular an exact chain keeps `rad == 0`, which is how
+//! exactly-representable results are certified (the old `*_tracking` family folded into
+//! this one rule).
 
-use dashu_base::{Abs, Approximation, BitTest, EstimatedLog2};
-use dashu_int::{IBig, UBig};
+use dashu_base::{Approximation, BitTest};
+use dashu_int::{IBig, UBig, Word};
 
 use crate::{
     error::FpError,
     fbig::FBig,
-    repr::{Context, Repr, Word},
-    round::{mode, Rounded},
-    utils::{shl_digits, shr_digits_ceil},
+    mag::Mag,
+    repr::{Context, Repr},
+    round::{mode, Round, Rounded},
 };
 
-/// `x · B^exp` when `exp ≥ 0`; `⌈x / B^(−exp)⌉` when `exp < 0`.
+/// A ball on the reals: a midpoint plus a radius covering the unknown true value.
 ///
-/// The rounding is always *up* (never down), keeping the result a sound upper bound for the
-/// underlying rational — the propagation rules below rely on this monotonicity. Both directions
-/// delegate to the shared radix-shift primitives ([`shl_digits`],
-/// [`shr_digits_ceil`]).
-#[inline]
-pub(crate) fn ceil_shift<const B: Word>(x: IBig, exp: isize) -> IBig {
-    if exp >= 0 {
-        // `x·B^exp` is the shared "multiply by a radix power" primitive (fast path for power-of-two
-        // bases, `(x·5^k)<<k` for base 10).
-        shl_digits::<B>(&x, exp as usize)
-    } else {
-        // Small numerator: x < 2^k ≤ B^k ⇒ ⌈x/B^k⌉ = 1 (the common series-tail case), avoiding
-        // the shift/division inside the shared primitive.
-        let k = (-exp) as usize;
-        if !x.is_zero() && x.log2_bounds().1 <= k as f32 {
-            return IBig::ONE;
-        }
-        shr_digits_ceil::<B>(&x, k)
-    }
-}
-
-/// An approximate real: midpoint + integer error count.
-#[derive(Clone)]
+/// `mid` is a bare [`Repr`] (precision is a property of operations, not of the ball);
+/// `rad` is a [`Mag`] upper bound. `rad == 0` ⟺ the chain so far is exact.
+#[derive(Clone, Debug)]
 pub(crate) struct Ball<const B: Word> {
-    /// The midpoint, always round-to-nearest. Carries its own context (precision + mode), so `n`
-    /// is unambiguously "base-`B` ulps at `mid`'s precision".
-    pub(crate) mid: FBig<mode::HalfEven, B>,
-    /// Error bound: `|mid − true| ≤ n · ulp(mid)`, an exact integer (no round-up guard).
-    pub(crate) n: IBig,
+    pub(crate) mid: Repr<B>,
+    pub(crate) rad: Mag,
 }
 
 impl<const B: Word> Ball<B> {
-    /// Leading digit position `E = exponent + digits`, so `ulp(mid) = B^(E − precision)`.
-    ///
-    /// Uses the cheap `digits_ub` (over-estimate): `E` appears only as a *positive* contribution
-    /// to error exponents, so an inflated `E` only loosens (never tightens) a radius.
-    #[inline]
-    pub(crate) fn lead_exp(mid: &FBig<mode::HalfEven, B>) -> isize {
-        // Saturating: at the exponent-range extremes (`±isize::MAX`) a plain add could wrap; a
-        // saturated E only loosens (never tightens) a radius.
-        mid.repr()
-            .exponent
-            .saturating_add(mid.repr().digits_ub() as isize)
+    /// Wrap an exact midpoint (no error).
+    pub(crate) fn exact(mid: Repr<B>) -> Self {
+        Self {
+            mid,
+            rad: Mag::ZERO,
+        }
     }
 
-    /// Wrap an exactly-represented value (n = 0).
-    #[inline]
-    pub(crate) fn exact(mid: FBig<mode::HalfEven, B>) -> Self {
-        Self { mid, n: IBig::ZERO }
-    }
-
-    /// Wrap a correctly-rounded result (an input rounding or a `Context` op): exact values carry
-    /// no error, inexact ones one work-ulp. Use this instead of hand-picking `with_error(f, ONE)`,
-    /// which loses the exactness information.
-    #[inline]
-    pub(crate) fn from_rounded(rounded: Rounded<FBig<mode::HalfEven, B>>) -> Self {
+    /// Wrap a correctly-rounded kernel result: exact → `rad = 0`, inexact → fold one work-ulp.
+    pub(crate) fn from_rounded(rounded: Rounded<Repr<B>>, prec: usize) -> Self {
         match rounded {
-            Approximation::Exact(v) => Self::exact(v),
-            Approximation::Inexact(v, _) => Self::with_error(v, IBig::ONE),
+            Approximation::Exact(mid) => Self::exact(mid),
+            Approximation::Inexact(mid, _) => Self {
+                rad: ulp_mag(&mid, prec),
+                mid,
+            },
         }
     }
 
-    /// Wrap a value with a known error count.
-    #[inline]
-    pub(crate) fn with_error(mid: FBig<mode::HalfEven, B>, n: IBig) -> Self {
-        Self { mid, n }
+    /// The exact integer `k` at precision `prec` (rounds if it does not fit).
+    pub(crate) fn exact_int(k: IBig, prec: usize) -> Self {
+        let ctx = Context::<mode::HalfEven>::new(prec);
+        Self::from_rounded(ctx.convert_int::<B>(k).map(FBig::into_repr), prec)
     }
 
-    /// The exact integer `k` at precision `p` (n = 0).
-    #[inline]
-    pub(crate) fn exact_int(p: usize, k: IBig) -> Self {
-        let mid = Context::<mode::HalfEven>::new(p)
-            .convert_int::<B>(k)
-            .value();
-        Self::exact(mid)
+    /// Wrap a value with a known error (cached constants' bounds land here).
+    pub(crate) fn with_error(mid: Repr<B>, rad: Mag) -> Self {
+        Self { mid, rad }
     }
 
-    /// The error of `self`, expressed in ulps of a target with leading position `lead_target` and
-    /// precision `p_target`: `n · B^(lead_exp(mid) − lead_target + p_target − p_self)`, rounded up
-    /// when the exponent is negative.
-    ///
-    /// The precision difference matters: `ulp(mid) = B^(lead_exp(mid) − p_mid)`, so converting an
-    /// error from `self`'s ulp to the target's ulp shifts by both the leading-position *and* the
-    /// precision difference. (Operands normally share the working precision; the exception is a
-    /// value that over-delivers its context, e.g. the uncached `ln(2)` constant.)
-    #[inline]
-    fn term_in_ulps(&self, lead_target: isize, p_target: usize) -> IBig {
-        let diff = Self::lead_exp(&self.mid) - lead_target + p_target as isize
-            - self.mid.precision() as isize;
-        ceil_shift::<B>(self.n.clone(), diff)
+    // ========================================================================
+    // Propagation — ops through Context kernels, `prec` last, errors propagate
+    // ========================================================================
+
+    /// `self + rhs`: `rad_a + rad_b + ε`.
+    pub(crate) fn add(&self, rhs: &Self, prec: usize) -> Result<Self, FpError> {
+        let ctx = Context::<mode::HalfEven>::new(prec);
+        let (mid, eps) = finish_mid(ctx.add(&self.mid, &rhs.mid)?, prec);
+        let rad = self.rad.add(&rhs.rad).add(&eps);
+        Ok(Self { mid, rad })
     }
 
-    /// `self ± rhs`, rounding the midpoint to the working precision.
-    pub(crate) fn add(&self, rhs: &Self) -> Self {
-        let mid = &self.mid + &rhs.mid;
-        let (lead_r, p_r) = (Self::lead_exp(&mid), mid.precision());
-        // |mid_r − true| ≤ err_a + err_b + ½·ulp_r  ⟹  n_r = term_a + term_b + 1 (the +1 covers
-        // the midpoint's own rounding).
-        let n = self.term_in_ulps(lead_r, p_r) + rhs.term_in_ulps(lead_r, p_r) + IBig::ONE;
-        Self { mid, n }
+    /// `self − rhs`: same radius rule as `add`.
+    pub(crate) fn sub(&self, rhs: &Self, prec: usize) -> Result<Self, FpError> {
+        let ctx = Context::<mode::HalfEven>::new(prec);
+        let (mid, eps) = finish_mid(ctx.sub(&self.mid, &rhs.mid)?, prec);
+        let rad = self.rad.add(&rhs.rad).add(&eps);
+        Ok(Self { mid, rad })
     }
 
-    pub(crate) fn sub(&self, rhs: &Self) -> Self {
-        let mid = &self.mid - &rhs.mid;
-        let (lead_r, p_r) = (Self::lead_exp(&mid), mid.precision());
-        let n = self.term_in_ulps(lead_r, p_r) + rhs.term_in_ulps(lead_r, p_r) + IBig::ONE;
-        Self { mid, n }
+    /// `self · rhs`: `‖a.mid‖·rad_b + ‖b.mid‖·rad_a + rad_a·rad_b + ε`.
+    pub(crate) fn mul(&self, rhs: &Self, prec: usize) -> Result<Self, FpError> {
+        let ctx = Context::<mode::HalfEven>::new(prec);
+        let (mid, eps) = finish_mid(ctx.mul(&self.mid, &rhs.mid)?, prec);
+        let rad = Mag::from_repr(&self.mid)
+            .mul(&rhs.rad)
+            .add(&Mag::from_repr(&rhs.mid).mul(&self.rad))
+            .add(&self.rad.mul(&rhs.rad))
+            .add(&eps);
+        Ok(Self { mid, rad })
     }
 
-    /// The relative error of `self` as an exact rational `δ = num/den`, where
-    /// `δ = err / |mid| = n·B^(d − p) / sig` (in base-`B` significand terms).
-    fn rel_err(&self) -> (IBig, IBig) {
-        let p = self.mid.precision();
-        // `digits_ub`: an over-estimated digit count only inflates δ (a positive contribution).
-        let d = self.mid.repr().digits_ub();
-        let sig = self.mid.repr().significand.clone().abs();
-        if d >= p {
-            (shl_digits::<B>(&self.n, d - p), sig)
+    /// `self / rhs`: `(‖a.mid‖·rad_b + ‖b.mid‖·rad_a) / (LB(|b.mid|) · LB(|b|)) + ε` — the
+    /// product of the two denominator lower bounds (≈ `LB(|b|)²`), sound at any accuracy.
+    /// A degenerate denominator (either lower bound `0`) yields the whole-line radius
+    /// `Mag::INFINITY` — sound, and a Ziv retry; the public layer's guards keep it
+    /// unreachable in practice. Subsumes the old zero-numerator special case.
+    pub(crate) fn div(&self, rhs: &Self, prec: usize) -> Result<Self, FpError> {
+        let ctx = Context::<mode::HalfEven>::new(prec);
+        let (mid, eps) = finish_mid(ctx.div(&self.mid, &rhs.mid)?, prec);
+        let b_mid_lo = Mag::from_repr_lower(&rhs.mid);
+        let b_lo = rhs.mag_lower();
+        let rad = if b_mid_lo.is_zero() || b_lo.is_zero() {
+            Mag::INFINITY
         } else {
-            (self.n.clone(), shl_digits::<B>(&sig, p - d))
-        }
-    }
-
-    /// `self / rhs`, with `rhs` mostly correct (`δb < ½`, asserted in debug builds).
-    ///
-    /// The quotient's relative error is `δr ≤ (δa + δb)/(1 − δb)` (exact, not first-order: the
-    /// `(1 − δb)` denominator keeps `rhs`'s sign), plus the midpoint's own rounding. The radius
-    /// is `n_r = ⌈m·(δa+δb)/(1−δb)⌉ + 1` where `m ≈ |mid_r|/ulp_r = sig_r·B^(p−d_r)`.
-    pub(crate) fn div(&self, rhs: &Self) -> Self {
-        debug_assert!(!rhs.mid.repr().significand.is_zero(), "division by a zero ball");
-        let mid = &self.mid / &rhs.mid;
-
-        // A numerator that rounds to zero cannot use the relative-error form (δa is infinite);
-        // bound the absolute quotient directly: |r.true| ≤ err_a/|b.true| ≤ 2·err_a/|b.mid|.
-        if self.mid.repr().significand.is_zero() {
-            let (lead_r, p_r) = (Self::lead_exp(&mid), mid.precision());
-            let e_b = rhs.mid.repr().exponent;
-            let sig_b = rhs.mid.repr().significand.clone().abs();
-            let lead_a = Self::lead_exp(&self.mid);
-            let p_a = self.mid.precision();
-            // n_r·ulp_r ≥ 2·n_a·B^(lead_a−p_a) / (sig_b·B^(e_b))  with ulp_r = B^(lead_r−p_r)
-            let exp = lead_a - e_b - lead_r + p_r as isize - p_a as isize;
-            let n2 = 2 * &self.n;
-            let (num, den) = if exp >= 0 {
-                (shl_digits::<B>(&n2, exp as usize), sig_b)
-            } else {
-                (n2, shl_digits::<B>(&sig_b, (-exp) as usize))
-            };
-            let n = (num + &den - IBig::ONE) / den;
-            return Self { mid, n };
-        }
-
-        let p = mid.precision();
-        // `digits_lb`: here `d_r` is *subtracted* (`B^(p−d_r)`), so an under-estimate only
-        // inflates `m` — the safe direction.
-        let d_r = mid.repr().digits_lb();
-        let sig_r = mid.repr().significand.clone().abs();
-
-        let (da_num, da_den) = self.rel_err();
-        let (db_num, db_den) = rhs.rel_err();
-        debug_assert!(2 * &db_num < db_den, "div denominator ball must be mostly correct");
-
-        // |q|/ulp_r ≤ sig_r·B^(p−d_r) + 1 (the +1 covers the midpoint's half-ulp rounding).
-        let m = if p >= d_r {
-            shl_digits::<B>(&sig_r, p - d_r) + IBig::ONE
-        } else {
-            let d = shl_digits::<B>(&IBig::ONE, d_r - p);
-            (sig_r + &d - IBig::ONE) / d + IBig::ONE
+            Mag::from_repr(&self.mid)
+                .mul(&rhs.rad)
+                .add(&Mag::from_repr(&rhs.mid).mul(&self.rad))
+                .div(&b_mid_lo.mul_down(&b_lo))
+                .add(&eps)
         };
-        // S = (δa+δb)/(1−δb) = (da_num·db_den + db_num·da_den) / (da_den·(db_den − db_num)).
-        let s_num = da_num * &db_den + db_num.clone() * &da_den;
-        let s_den = da_den * (&db_den - &db_num);
-        // n_r = ⌈m·S⌉ + 1.
-        let n = (m * &s_num + &s_den - IBig::ONE) / s_den + IBig::ONE;
-        Self { mid, n }
+        Ok(Self { mid, rad })
     }
 
-    /// `self / k` with `k` an exact (possibly large) integer.
-    ///
-    /// The exact divisor shrinks the error by exactly `k`: `err_r ≤ err_a/k + ½·ulp_r`, so
-    /// `n_r = ⌈n_a·B^(lead_a−lead_r+p_r−p_a)/k⌉ + 1`. This avoids the general [`div`](Self::div)'s
-    /// big-int rational division (O(p²) — which would dominate the FBig division by a small
-    /// integer and is the series' hot path).
-    pub(crate) fn div_exact(&self, k: &IBig) -> Self {
-        let mid = &self.mid / &FBig::<mode::HalfEven, B>::from(k.clone());
-        let (lead_r, p_r) = (Self::lead_exp(&mid), mid.precision());
-        let lead_a = Self::lead_exp(&self.mid);
-        let p_a = self.mid.precision();
-        let shift = lead_a - lead_r + p_r as isize - p_a as isize;
-        // n_r = ⌈n_a·B^shift / k⌉ + 1  (ceil_shift already rounds up, so the /k re-round is sound).
-        let num = ceil_shift::<B>(self.n.clone(), shift);
-        let n = (num + k - IBig::ONE) / k + IBig::ONE;
-        Self { mid, n }
+    /// `self / k` with `k` an exact small integer (the series hot path): `rad_a/k + ε`.
+    pub(crate) fn div_int(&self, k: usize, prec: usize) -> Result<Self, FpError> {
+        debug_assert!(k > 0, "division by zero integer");
+        let ctx = Context::<mode::HalfEven>::new(prec);
+        let k_repr = Repr::<B>::new(IBig::from(k as u64), 0);
+        let (mid, eps) = finish_mid(ctx.div(&self.mid, &k_repr)?, prec);
+        let rad = self.rad.div(&Mag::from_word(k as Word)).add(&eps);
+        Ok(Self { mid, rad })
     }
 
-    /// `self / k` with `k` a small exact integer (the series hot path).
-    #[inline]
-    pub(crate) fn div_int(&self, k: usize) -> Self {
-        self.div_exact(&IBig::from(k))
+    /// `k · self` with `k` an exact (possibly large) integer: `|k|·rad_a + ε`.
+    pub(crate) fn scale_int(&self, k: &IBig, prec: usize) -> Result<Self, FpError> {
+        let ctx = Context::<mode::HalfEven>::new(prec);
+        let k_repr = Repr::<B>::new(k.clone(), 0);
+        let (mid, eps) = finish_mid(ctx.mul(&self.mid, &k_repr)?, prec);
+        let rad = Mag::from_int(k).mul(&self.rad).add(&eps);
+        Ok(Self { mid, rad })
     }
 
-    /// The error-count contribution of a multiplication with midpoint `mid` (see [`mul`](Self::mul)).
-    fn mul_error(&self, rhs: &Self, mid: &FBig<mode::HalfEven, B>) -> IBig {
-        let (lead_r, p_r) = (Self::lead_exp(mid), mid.precision());
-        let e_a = self.mid.repr().exponent;
-        let e_b = rhs.mid.repr().exponent;
-        let p_a = self.mid.precision();
-        let p_b = rhs.mid.precision();
-        let lead_a = Self::lead_exp(&self.mid);
-        let lead_b = Self::lead_exp(&rhs.mid);
-
-        // |mid_r − true| ≤ err_a·|b.mid| + err_b·|a.mid| + err_a·err_b + ½·ulp_r, in ulps of r:
-        // The `|n · sig|` products avoid cloning the operand significands (n ≥ 0, so the product's
-        // sign is the significand's and `.abs()` is a no-op for positive values).
-        let t1 = ceil_shift::<B>(
-            (self.n.clone() * &rhs.mid.repr().significand).abs(),
-            lead_a + e_b - lead_r + p_r as isize - p_a as isize,
-        );
-        let t2 = ceil_shift::<B>(
-            (rhs.n.clone() * &self.mid.repr().significand).abs(),
-            lead_b + e_a - lead_r + p_r as isize - p_b as isize,
-        );
-        let t3 = ceil_shift::<B>(
-            &self.n * &rhs.n,
-            lead_a + lead_b - lead_r + p_r as isize - p_a as isize - p_b as isize,
-        );
-        t1 + t2 + t3 + IBig::ONE
-    }
-
-    /// `self · rhs`, rounding the midpoint to the working precision.
-    pub(crate) fn mul(&self, rhs: &Self) -> Self {
-        let mid = &self.mid * &rhs.mid;
-        let n = self.mul_error(rhs, &mid);
-        Self { mid, n }
-    }
-
-    /// Like [`mul`](Self::mul) but reporting whether the multiplication rounded: an exact product
-    /// of exact operands contributes no error (n = 0), which the caller needs to certify an
-    /// exactly-representable result under directed rounding. `exact` is cleared when any rounding
-    /// (or a propagated operand error) occurs. Propagates a range error from the multiplication.
-    pub(crate) fn mul_tracking(&self, rhs: &Self, exact: &mut bool) -> Result<Self, FpError> {
-        let ctx = Context::<mode::HalfEven>::new(self.mid.precision().max(rhs.mid.precision()));
-        let rounded = ctx.mul(self.mid.repr(), rhs.mid.repr())?;
-        let (mid, is_exact) = rounded.value_with_exact();
-        if !is_exact || !self.n.is_zero() || !rhs.n.is_zero() {
-            *exact = false;
+    /// `√self`: `rad_a/(2·LB(|mid_r|)) + ε` — the ε term covers the `fl(√a)` vs `√a`
+    /// denominator gap exactly as the old `+1` did (valid for `rad_a ≤ |mid_a|`, which
+    /// every caller guarantees). The zero-midpoint special case is kept from the old code:
+    /// a mid that rounds to a zero significand returns an exact zero — no caller feeds a
+    /// straddling ball through `sqrt` (asin checks the zero significand first).
+    pub(crate) fn sqrt(&self, prec: usize) -> Result<Self, FpError> {
+        let ctx = Context::<mode::HalfEven>::new(prec);
+        let (mid, eps) = finish_mid(ctx.sqrt(&self.mid)?, prec);
+        if mid.significand().is_zero() {
+            return Ok(Self::exact(mid));
         }
-        let n = if *exact {
-            IBig::ZERO
-        } else {
-            self.mul_error(rhs, &mid)
-        };
-        Ok(Self { mid, n })
+        let denom = Mag::from_repr_lower(&mid).mul_pow2(1); // 2·LB(|mid_r|)
+        let rad = self.rad.div(&denom).add(&eps);
+        Ok(Self { mid, rad })
     }
 
-    /// Like [`scale_int`](Self::scale_int) but reporting whether the multiplication rounded: an
-    /// exact product of an exact operand contributes no error (n = 0). This is the operation the
-    /// `ln_compute` s<0 reduction relies on — scaling by a power of two is exact, and without this
-    /// the spurious `+1` gets amplified by `rescale_precision` into a `B^precision`-sized error
-    /// count that never shrinks across Ziv retries. `exact` is cleared when the multiplication
-    /// rounds or the operand carries error.
-    pub(crate) fn scale_int_tracking(&self, k: &IBig, exact: &mut bool) -> Self {
-        let ctx = Context::<mode::HalfEven>::new(self.mid.precision());
-        let k_fbig = FBig::<mode::HalfEven, B>::from(k.clone());
-        // Finite mid · finite integer at the working precision stays within the exponent range
-        // (unlike the squaring in `mul_tracking`), so the multiplication cannot range-error.
-        let rounded = ctx
-            .mul(self.mid.repr(), k_fbig.repr())
-            .expect("scale_int_tracking: finite mid · finite integer cannot range-error");
-        let (mid, is_exact) = rounded.value_with_exact();
-        if !is_exact || !self.n.is_zero() {
-            *exact = false;
-        }
-        let n = if *exact {
-            IBig::ZERO
-        } else {
-            let (lead_r, p_r) = (Self::lead_exp(&mid), mid.precision());
-            let lead_a = Self::lead_exp(&self.mid);
-            let p_a = self.mid.precision();
-            let base = ceil_shift::<B>(
-                self.n.clone() * k.clone().abs(),
-                lead_a - lead_r + p_r as isize - p_a as isize,
-            );
-            // |mid_r − true| ≤ |k|·err_a + (½·ulp_r only if the product itself rounded).
-            if !is_exact {
-                base + IBig::ONE
-            } else {
-                base
-            }
-        };
-        Self { mid, n }
-    }
-
-    /// Like [`add`](Self::add) but reporting whether the addition rounded (see
-    /// [`mul_tracking`](Self::mul_tracking)).
-    pub(crate) fn add_tracking(&self, rhs: &Self, exact: &mut bool) -> Result<Self, FpError> {
-        let ctx = Context::<mode::HalfEven>::new(self.mid.precision().max(rhs.mid.precision()));
-        let rounded = ctx.add(self.mid.repr(), rhs.mid.repr())?;
-        let (mid, is_exact) = rounded.value_with_exact();
-        if !is_exact || !self.n.is_zero() || !rhs.n.is_zero() {
-            *exact = false;
-        }
-        let n = if *exact {
-            IBig::ZERO
-        } else {
-            let (lead_r, p_r) = (Self::lead_exp(&mid), mid.precision());
-            self.term_in_ulps(lead_r, p_r) + rhs.term_in_ulps(lead_r, p_r) + IBig::ONE
-        };
-        Ok(Self { mid, n })
-    }
-
-    /// Like [`sqrt`](Self::sqrt) but reporting whether the root rounded (see
-    /// [`mul_tracking`](Self::mul_tracking)).
-    pub(crate) fn sqrt_tracking(&self, exact: &mut bool) -> Result<Self, FpError> {
-        let ctx = Context::<mode::HalfEven>::new(self.mid.precision());
-        let rounded = ctx.sqrt(self.mid.repr())?;
-        let (mid, is_exact) = rounded.value_with_exact();
-        if !is_exact || !self.n.is_zero() {
-            *exact = false;
-        }
-        let n = if *exact || mid.repr().significand.is_zero() {
-            IBig::ZERO
-        } else {
-            // `e_r` is the raw significand exponent (`mid_r = sig_r·B^(e_r)`), `lead_*` is the
-            // leading position (`lead_exp`), so `ulp_r = B^(lead_r − p_r)` and `ulp_a = B^(lead_a − p_a)`.
-            let e_r = mid.repr().exponent;
-            let lead_r = Self::lead_exp(&mid);
-            let p_r = mid.precision();
-            let sig_r = mid.repr().significand.clone().abs();
-            let lead_a = Self::lead_exp(&self.mid);
-            let p_a = self.mid.precision();
-            // |√(a+ε) − √a| ≤ |ε|/(2·√a) ⇒
-            //   n_r·ulp_r ≥ n_a·ulp_a / (2·|mid_r|) = n_a·B^(lead_a−p_a) / (2·sig_r·B^(e_r)·B^(lead_r−p_r)),
-            // so n_r = ⌈n_a·B^(lead_a−p_a−e_r−lead_r+p_r) / (2·sig_r)⌉ + 1. `e_r` is the *raw*
-            // exponent, not `lead_r` — substituting `lead_r` would shift out the digits and
-            // under-estimate the radius.
-            let shift = lead_a - p_a as isize - e_r - lead_r + p_r as isize;
-            let num = ceil_shift::<B>(self.n.clone(), shift);
-            let den = 2 * sig_r;
-            (num + &den - IBig::ONE) / den + IBig::ONE
-        };
-        Ok(Self { mid, n })
-    }
-
-    /// `self^k` for an exact integer exponent `k ≥ 2`, by left-to-right binary exponentiation
-    /// (squaring chain). The compounding rounding of the chain is tracked by the multiplication
-    /// rules, so the result's radius grows by the powering amplification mechanically. Returns
-    /// whether the whole chain was exact (no rounding anywhere), for the exactly-representable
-    /// directed-rounding case. Propagates a range error from the chain.
-    pub(crate) fn pow_exact(&self, k: &UBig) -> Result<(Self, bool), FpError> {
+    /// `self^k` (`k ≥ 2`) by left-to-right binary exponentiation — the compounding rounding
+    /// of the squaring chain is tracked by the multiplication rule, so the powering
+    /// amplification is mechanical. An exact chain keeps `rad == 0` (powi's
+    /// exactly-representable directed case). Propagates a range error from the chain.
+    pub(crate) fn pow(&self, k: &UBig, prec: usize) -> Result<Self, FpError> {
         let nlen = k.bit_len();
-        debug_assert!(nlen >= 2, "pow_exact requires k >= 2");
-        let mut exact = self.n.is_zero();
-        let mut res = self.mul_tracking(self, &mut exact)?;
+        debug_assert!(nlen >= 2, "pow requires k >= 2");
+        let mut res = self.mul(self, prec)?;
         let mut p = nlen - 2;
         loop {
             if k.bit(p) {
-                res = res.mul_tracking(self, &mut exact)?;
+                res = res.mul(self, prec)?;
             }
             if p == 0 {
                 break;
             }
             p -= 1;
-            res = res.mul_tracking(&res, &mut exact)?;
+            res = res.mul(&res, prec)?;
         }
-        Ok((res, exact))
+        Ok(res)
     }
 
-    /// Negation: the error count is unchanged.
+    // ========================================================================
+    // Exact operations — no prec, no error
+    // ========================================================================
+
+    /// Negation; the radius is unchanged.
     pub(crate) fn neg(self) -> Self {
         Self {
             mid: -self.mid,
-            n: self.n,
+            rad: self.rad,
         }
     }
 
-    /// Square root, rounding the midpoint at the working precision.
-    ///
-    /// `|√(a+ε) − √a| ≤ |ε|/(2·√a)`, so `n_r = ⌈n_a·ulp_a / (2·|mid_r|·ulp_r)⌉ + 1` (the +1 covers
-    /// the midpoint's own rounding).
-    pub(crate) fn sqrt(&self) -> Self {
-        let mid = self.mid.sqrt();
-        if mid.repr().significand.is_zero() {
-            // √0 = 0 exactly; the relative-error formula would divide by the zero significand. A
-            // zero-mid ball whose true value is *exactly* zero (e.g. `asin(±1)`'s `1 − x²`, where
-            // `n` may still be nonzero from the +1 rounding allowance) is handled soundly here.
-            // A zero-mid ball with a genuinely nonzero true value (a cancellation like `1.049 − 1`)
-            // has a nonzero true root, which this branch cannot express — no caller feeds such a
-            // ball through `sqrt` today (asin/asin-adjacent check the zero significand first and
-            // take the ±π/2 endpoint; the rest feed strictly positive inputs).
-            return Self::exact(mid);
-        }
-        // `e_r` is the raw significand exponent (`mid_r = sig_r·B^(e_r)`), `lead_*` is the leading
-        // position (`lead_exp`), so `ulp_r = B^(lead_r − p_r)` and `ulp_a = B^(lead_a − p_a)`.
-        let e_r = mid.repr().exponent;
-        let lead_r = Self::lead_exp(&mid);
-        let p_r = mid.precision();
-        let sig_r = mid.repr().significand.clone().abs();
-        let lead_a = Self::lead_exp(&self.mid);
-        let p_a = self.mid.precision();
-        // |√(a+ε) − √a| ≤ |ε|/(2·√a) ⇒
-        //   n_r·ulp_r ≥ n_a·ulp_a / (2·|mid_r|) = n_a·B^(lead_a−p_a) / (2·sig_r·B^(e_r)·B^(lead_r−p_r)),
-        // so n_r = ⌈n_a·B^(lead_a−p_a−e_r−lead_r+p_r) / (2·sig_r)⌉ + 1. `e_r` is the *raw*
-        // exponent, not `lead_r` — substituting `lead_r` would shift out the digits and
-        // under-estimate the radius.
-        let shift = lead_a - p_a as isize - e_r - lead_r + p_r as isize;
-        let num = ceil_shift::<B>(self.n.clone(), shift);
-        let den = 2 * sig_r;
-        let n = (num + &den - IBig::ONE) / den + IBig::ONE;
-        Self { mid, n }
-    }
-
-    /// `k · self` with `k` an exact integer.
-    pub(crate) fn scale_int(&self, k: &IBig) -> Self {
-        let mid = &self.mid * &FBig::<mode::HalfEven, B>::from(k.clone());
-        let (lead_r, p_r) = (Self::lead_exp(&mid), mid.precision());
-        let lead_a = Self::lead_exp(&self.mid);
-        let p_a = self.mid.precision();
-        // |mid_r − true| ≤ |k|·err_a + ½·ulp_r.
-        let n = ceil_shift::<B>(
-            self.n.clone() * k.clone().abs(),
-            lead_a - lead_r + p_r as isize - p_a as isize,
-        ) + IBig::ONE;
-        Self { mid, n }
-    }
-
-    /// Exact shift by a power of the base (`mid >> s`, value unchanged, ulp scaled with it), so
-    /// the error count is unchanged.
+    /// Exact shift by a power of the base (`·B^s`): the midpoint's exponent moves and the
+    /// **absolute** radius scales with it (`rad·B^s` — exact for B = 2; the old ulp-count ball
+    /// kept `n` unchanged because its ulp scaled with the value, which is *not* how a Mag
+    /// behaves). Zero/infinite midpoints keep their exponent sentinels untouched.
     pub(crate) fn shift(&self, s: isize) -> Self {
-        Self {
-            mid: self.mid.clone() >> s,
-            n: self.n.clone(),
-        }
-    }
-
-    /// Inflate the error count by `extra` ulps at the current midpoint's magnitude.
-    pub(crate) fn inflate(&mut self, extra: &IBig) {
-        self.n += extra;
-    }
-
-    /// Re-tag the midpoint to a *finer* precision (`delta > 0`): same value, ulp `B^delta` finer,
-    /// so the error count scales by `B^delta`.
-    pub(crate) fn rescale_precision(&mut self, delta: usize) {
-        if delta > 0 {
-            self.n = shl_digits::<B>(&self.n, delta);
-            self.mid = FBig::new(
-                self.mid.repr().clone(),
-                Context::<mode::HalfEven>::new(self.mid.precision() + delta),
-            );
-        }
-    }
-
-    /// Re-tag the midpoint to the target mode `R` at the working precision, and convert `n` into
-    /// an absolute radius `n·ulp(mid)` (exact, at unlimited precision). The ziv driver contract is
-    /// identical to the old `*_compute` returns: `(value, radius)` with `|value − true| ≤ radius`.
-    pub(crate) fn to_value_radius<R: crate::round::Round>(&self) -> (FBig<R, B>, FBig<R, B>) {
-        let value = FBig::new(self.mid.repr().clone(), Context::<R>::new(self.mid.precision()));
-        // radius = n·B^(lead_exp(mid) − p), built directly as a repr (exact at unlimited
-        // precision). The exponent saturates at the range extremes: an over-wide radius is sound.
-        // For n = 0 (the exact case) the radius must be a plain +0 — `Repr::new(0, isize::MIN)`
-        // would otherwise survive normalization as the −∞ sentinel and poison the containment test.
-        let radius_repr = if self.n.is_zero() {
-            Repr::<B>::zero()
+        let mid = if self.mid.significand().is_zero() {
+            self.mid.clone()
         } else {
-            Repr::new(
-                self.n.clone(),
-                Self::lead_exp(&self.mid).saturating_sub(self.mid.precision() as isize),
-            )
+            Repr::new(self.mid.significand().clone(), self.mid.exponent().saturating_add(s))
         };
-        let radius = FBig::new(radius_repr, Context::<R>::new(0));
+        let rad = if s == 0 || self.rad.is_zero() {
+            self.rad
+        } else if B == 2 {
+            self.rad.mul_pow2(s) // exact
+        } else {
+            Mag::from_base_pow::<B>(s).mul(&self.rad) // rounds up
+        };
+        Self { mid, rad }
+    }
+
+    // ========================================================================
+    // Radius side
+    // ========================================================================
+
+    /// Fold a hand-derived error bound into the radius (series tails land here).
+    pub(crate) fn add_error(&mut self, err: Mag) {
+        self.rad = self.rad.add(&err);
+    }
+
+    /// An upper bound on `|self|` (the ball's magnitude). Currently exercised only by the
+    /// tests and the doc'd surface (the exp fold builds its endpoint bound directly).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn mag(&self) -> Mag {
+        Mag::from_repr(&self.mid).add(&self.rad)
+    }
+
+    /// A lower bound on `|self|`, floored at `0` (`LB(|mid|) − rad`).
+    pub(crate) fn mag_lower(&self) -> Mag {
+        Mag::from_repr_lower(&self.mid).sub_down(&self.rad)
+    }
+
+    /// `true` ⟺ the chain so far is exact (`rad == 0`). Carried by `rad == 0` through
+    /// `to_value_radius` (a zero radius certifies without the containment test).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn is_exact(&self) -> bool {
+        self.rad.is_zero()
+    }
+
+    // ========================================================================
+    // Ziv boundary — the driver contract is unchanged
+    // ========================================================================
+
+    /// Re-tag `mid` to the mode `R` at the work context, and export the radius as an exact
+    /// `Repr` (base 2) / outward power of ten (base 10) — `(value, radius)` with
+    /// `|value − true| ≤ radius`, as `ziv.rs` expects. The radius carries an unlimited
+    /// context, exactly as the old export did; the containment test only reads raw `Repr`s.
+    pub(crate) fn to_value_radius<R: Round>(&self, ctx: &Context<R>) -> (FBig<R, B>, FBig<R, B>) {
+        let value = FBig::new(self.mid.clone(), *ctx);
+        let radius = FBig::new(self.rad.to_repr::<B>(), Context::<R>::new(0));
         (value, radius)
     }
+
+    /// Series-break test: is `|self.mid|` at or below half a work-ulp of `sum`? The break
+    /// feeds the hand tail bound, so the comparison must be exact — `ulp_lb` replicates
+    /// `FBig::ulp_lb`'s `digits_lb − 1` slack (the cheapest guaranteed lower bound).
+    pub(crate) fn mid_le_ulp_lb(&self, sum: &Self, prec: usize) -> bool {
+        let e = sum
+            .mid
+            .exponent()
+            .saturating_add(sum.mid.digits_lb() as isize)
+            .saturating_sub(prec as isize)
+            .saturating_sub(1);
+        let threshold = Repr::<B>::new(IBig::ONE, e);
+        crate::cmp::repr_cmp_same_base::<B, true>(&self.mid, &threshold, None).is_le()
+    }
+}
+
+/// Unpack a kernel result: the rounded midpoint and its fresh error contribution — `0` when
+/// the kernel reports `Exact`, one work-ulp otherwise.
+fn finish_mid<const B: Word>(
+    rounded: Rounded<FBig<mode::HalfEven, B>>,
+    prec: usize,
+) -> (Repr<B>, Mag) {
+    match rounded {
+        Approximation::Exact(f) => (f.into_repr(), Mag::ZERO),
+        Approximation::Inexact(f, _) => {
+            let mid = f.into_repr();
+            let eps = ulp_mag(&mid, prec);
+            (mid, eps)
+        }
+    }
+}
+
+/// One ulp of a midpoint at `prec`, as a `Mag`: `B^(lead_ub(mid) − prec)`
+/// (`lead_ub = exponent + digits_ub` — an over-estimate only loosens).
+pub(crate) fn ulp_mag<const B: Word>(mid: &Repr<B>, prec: usize) -> Mag {
+    let lead_ub = mid.exponent().saturating_add(mid.digits_ub() as isize);
+    Mag::from_base_pow::<B>(lead_ub.saturating_sub(prec as isize))
+}
+
+/// `k` ulps of `mid` at `prec` — the currency of `add_error` tail bounds and the cached
+/// constants' bounds.
+pub(crate) fn ulps<const B: Word>(mid: &Repr<B>, prec: usize, k: usize) -> Mag {
+    Mag::from_word(k as Word).mul(&ulp_mag::<B>(mid, prec))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::round::mode;
-    use dashu_base::Abs;
+    use dashu_base::Sign;
 
-    type F = FBig<mode::HalfEven, 10>;
-    type B10 = Ball<10>;
+    type B2 = Ball<2>;
 
-    /// Build a ball with midpoint `sig·B^exp` (at precision `p`) and error count `n`, whose
-    /// *true* value is `true_sig·B^true_exp` (exact, unlimited precision). The caller must pick
-    /// `true_*` within `n·ulp(mid)` of `mid`.
-    fn ball(sig: i128, exp: isize, p: usize, n: i128, true_sig: i128, true_exp: isize) -> (B10, F) {
-        let mid = F::from_parts(IBig::from(sig), exp)
-            .with_precision(p)
-            .value();
-        let ball = B10::with_error(mid, IBig::from(n));
-        let true_val = F::from_parts(IBig::from(true_sig), true_exp); // unlimited precision
-        assert!(
-            (ball.mid.clone().with_precision(0).value() - true_val.clone()).abs()
-                <= ball.mid.ulp().with_precision(0).value() * IBig::from(n),
-            "test setup: true value must lie within n·ulp of mid"
-        );
-        (ball, true_val)
+    fn exact(sig: i64, exp: isize) -> B2 {
+        Ball::exact(Repr::new(IBig::from(sig), exp))
     }
 
-    /// Check the invariant `|mid − true| ≤ n·ulp(mid)` using exact (unlimited precision) arithmetic.
-    fn assert_invariant(ball: &B10, true_val: &F) {
-        let mid_unlim = ball.mid.clone().with_precision(0).value();
-        let diff = (mid_unlim - true_val).abs();
-        let bound = F::from(ball.n.clone()) * ball.mid.ulp().with_precision(0).value();
+    /// assert `|mid − true| ≤ rad`, exactly: compare `±(true − mid)` against `rad` on raw
+    /// `Repr`s (lossless arithmetic, no rounding can mis-decide).
+    fn assert_covers(ball: &B2, true_repr: &Repr<2>) {
+        if ball.mid.significand().is_zero() {
+            // a zero mid with a zero radius covers only exact zero; covered below by rad ≥ |true|
+        }
+        let rad = ball.rad.to_repr::<2>();
+        let hi = &ball.mid + &rad;
+        let lo = &ball.mid - &rad;
         assert!(
-            diff <= bound,
-            "|mid − true| = {diff} > n·ulp = {bound} (mid = {}, n = {}, true = {})",
-            ball.mid,
-            ball.n,
-            true_val
+            hi.cmp(true_repr) != core::cmp::Ordering::Less
+                && lo.cmp(true_repr) != core::cmp::Ordering::Greater,
+            "interval [{lo:?}, {hi:?}] does not cover {true_repr:?}"
         );
     }
 
     #[test]
-    fn add() {
-        let (a, ta) = ball(123, -2, 3, 2, 125, -2); // mid 1.23 ± 0.02, true 1.25
-        let (b, tb) = ball(456, -2, 3, 1, 4555, -3); // mid 4.56 ± 0.01, true 4.555
-        let r = a.add(&b);
-        assert_invariant(&r, &(&ta + &tb).with_precision(0).value());
+    fn add_covers_exact_and_cancellation() {
+        let p = 10;
+        let a = exact(1049, -3); // 1.049
+        let b = exact(-1000, -3); // −1.000
+        let sum = a.add(&b, p).unwrap();
+        assert_covers(&sum, &Repr::new(IBig::from(49), -3)); // exact 0.049
+                                                             // 0.049 fits precision 10 exactly, and both operands are exact, so the sum is exact —
+                                                             // the conditional-ε rule keeps rad = 0 (the old code always folded one ulp).
+        assert!(sum.is_exact());
+
+        // exact chain: same-exponent integers that fit the precision
+        let a = exact(3, 0);
+        let b = exact(4, 0);
+        let sum = a.add(&b, p).unwrap();
+        assert_eq!(sum.mid, Repr::new(IBig::from(7), 0));
+        assert!(sum.is_exact(), "exact + exact at fitting precision keeps rad 0");
     }
 
     #[test]
-    fn add_cancellation() {
-        // 1.00 − 1.00 = 0: the error must stay referenced to the pre-cancellation magnitude.
-        let (a, ta) = ball(100, -2, 3, 5, 1049, -3); // mid 1.00 ± 0.05, true 1.049
-        let (b, tb) = ball(100, -2, 3, 0, 100, -2); // mid 1.00 exact
-        let r = a.sub(&b);
-        assert_invariant(&r, &(&ta - &tb).with_precision(0).value());
-        // The radius must be ≫ ulp(0): the pre-cancellation error survives the subtraction.
-        let radius = r.mid.ulp().with_precision(0).value() * F::from(r.n.clone());
-        assert!(radius > F::from_parts(IBig::from(1), -4));
+    fn mul_covers_exact_product() {
+        let p = 10;
+        let a = exact(12345, -4);
+        let b = exact(6789, -4);
+        let prod = a.mul(&b, p).unwrap();
+        let true_prod = &a.mid * &b.mid;
+        assert_covers(&prod, &true_prod);
+
+        // exact: 3 · 4 = 12 fits
+        let prod = exact(3, 0).mul(&exact(4, 0), p).unwrap();
+        assert!(prod.is_exact());
+
+        // a rounded operand propagates through the exact product: (x ± ε)·exact
+        let x = Ball::from_rounded(
+            Context::<mode::HalfEven>::new(p).repr_round(exact(1234567, 0).mid),
+            p,
+        );
+        let prod = x.mul(&exact(1, 0), p).unwrap();
+        assert_covers(&prod, &exact(1234567, 0).mid);
     }
 
     #[test]
-    fn mul() {
-        let (a, ta) = ball(15000, -4, 4, 1, 15001, -4); // mid 1.5000 ± 0.0001, true 1.5001
-        let (b, tb) = ball(20000, -4, 4, 1, 19999, -4); // mid 2.0000 ± 0.0001, true 1.9999
-        let r = a.mul(&b);
-        assert_invariant(&r, &(&ta * &tb).with_precision(0).value());
-    }
+    fn div_covers_and_zero_numerator() {
+        let p = 10;
+        let a = exact(1, 0);
+        let b = exact(3, 0);
+        let q = a.div(&b, p).unwrap();
+        // mid/rad vs the exact rational 1/3: mid ≤ 1/3 + rad and mid ≥ 1/3 − rad ⟺
+        // 3·mid ≤ 1 + 3·rad and 3·mid ≥ 1 − 3·rad (exact Repr arithmetic)
+        let three = Repr::new(IBig::from(3), 0);
+        let rad3 = &q.rad.to_repr::<2>() * &three;
+        let mid3 = &q.mid * &three;
+        let one = Repr::new(IBig::ONE, 0);
+        assert!((&mid3 - &rad3).cmp(&one) != core::cmp::Ordering::Greater);
+        assert!((&mid3 + &rad3).cmp(&one) != core::cmp::Ordering::Less);
 
-    #[test]
-    fn div() {
-        let (a, ta) = ball(10000, -4, 4, 1, 10001, -4); // mid 1.0000 ± 0.0001, true 1.0001
-        let (b, tb) = ball(20000, -4, 4, 0, 20000, -4); // mid 2.0000 exact
-        let r = a.div(&b);
-        assert_invariant(&r, &(&ta / &tb).with_precision(0).value());
-    }
-
-    #[test]
-    fn div_zero_numerator() {
-        // A numerator that rounds to zero must still bound the quotient.
-        let (a, ta) = ball(0, -4, 4, 3, 3, -4); // mid 0 ± 3·ulp(0), true 3e-4
-        let (b, tb) = ball(20000, -4, 4, 0, 20000, -4); // mid 2.0000 exact
-        let r = a.div(&b);
-        assert_invariant(&r, &(&ta / &tb).with_precision(0).value());
+        // zero numerator: |r| ≤ rad_a/LB(|b|) — a finite, sound radius (old special case)
+        let z = Ball {
+            mid: Repr::zero(),
+            rad: crate::mag::Mag::from_pow2(-20),
+        };
+        let q = z.div(&b, p).unwrap();
+        assert!(!q.rad.is_infinite());
+        assert_covers(&q, &Repr::zero());
     }
 
     #[test]
     fn sqrt_bounds_error() {
-        // Regression: the error shift used the leading position `lead_r` (= e_r + digits) where
-        // the raw significand exponent `e_r` belongs, so the radius under-estimated (the Ball
-        // invariant broke even for a small input error count). The true root is computed at
-        // precision 60 and widened.
-        let (a, ta) = ball(14400, -4, 5, 5, 14405, -4); // mid 1.4400 ± 5·ulp, true 1.4405
-        let r = a.sqrt();
-        let sqrt_true = ta
-            .with_precision(60)
-            .value()
-            .sqrt()
-            .with_precision(0)
-            .value();
-        assert_invariant(&r, &sqrt_true);
-
-        // A larger input error must amplify the radius correspondingly.
-        let (a2, ta2) = ball(14400, -4, 5, 90, 14490, -4); // mid 1.4400 ± 90·ulp, true 1.4490
-        let r2 = a2.sqrt();
-        let sqrt_true2 = ta2
-            .with_precision(60)
-            .value()
-            .sqrt()
-            .with_precision(0)
-            .value();
-        assert_invariant(&r2, &sqrt_true2);
+        let p = 10;
+        // 2 at precision 10, computed through the ball sqrt
+        let two = exact(2, 0);
+        let r = two.sqrt(p).unwrap();
+        // r² must cover 2 (mid ± rad)² ⊇ contains 2: check 2 ∈ [lo², hi²] exactly
+        let rad = r.rad.to_repr::<2>();
+        let lo = &r.mid - &rad;
+        let hi = &r.mid + &rad;
+        let two = &two.mid;
+        assert!((&lo * &lo).cmp(two) != core::cmp::Ordering::Greater);
+        assert!((&hi * &hi).cmp(two) != core::cmp::Ordering::Less);
+        // exact square: 4 → 2 exactly
+        let r = exact(4, 0).sqrt(p).unwrap();
+        assert!(r.is_exact());
+        assert_eq!(r.mid, Repr::new(IBig::from(2), 0));
     }
 
     #[test]
-    fn scale_int() {
-        let (a, ta) = ball(10000, -4, 4, 1, 10001, -4); // mid 1.0000 ± 0.0001, true 1.0001
-        let r = a.scale_int(&IBig::from(3));
-        assert_invariant(
-            &r,
-            &(&ta * F::from_parts(IBig::from(3), 0))
-                .with_precision(0)
-                .value(),
+    fn scale_int_exact_and_inexact() {
+        let p = 10;
+        // exact: 3 · 5 = 15 fits
+        let s = exact(3, 0).scale_int(&IBig::from(5), p).unwrap();
+        assert!(s.is_exact());
+        assert_eq!(s.mid, Repr::new(IBig::from(15), 0));
+        // rounded operand: the radius scales by |k|
+        let x = Ball::from_rounded(
+            Context::<mode::HalfEven>::new(p).repr_round(Repr::<2>::new(IBig::from(1234567), 0)),
+            p,
         );
+        let s = x.scale_int(&IBig::from(-4), p).unwrap();
+        assert_covers(&s, &Repr::new(IBig::from(-4938268), 0));
     }
 
     #[test]
-    fn scale_int_tracking_exact() {
-        // An exactly-representable operand scaled by an exactly-representable integer keeps n = 0.
-        // This is the `ln_compute` s<0 reduction: without it the spurious `+1` is amplified by
-        // `rescale_precision` into a `B^precision`-sized error count (the powf-of-base-<1 hang).
-        // Precision 10: 0.2668·4 = 1.0672 has 5 digits, well within the working precision, so the
-        // scaling is exact (in ln_compute the input is rounded to the work precision first, far
-        // above the input's own digit count).
-        let a = B10::exact(
-            F::from_parts(IBig::from(2668), -4)
-                .with_precision(10)
-                .value(),
-        ); // 0.2668, n=0
-        let mut exact = true;
-        let r = a.scale_int_tracking(&IBig::from(4), &mut exact);
-        assert!(exact, "exact scaling of an exact operand stays exact");
-        assert_eq!(r.n, IBig::ZERO, "exact scaling keeps n = 0, got n = {}", r.n);
-        assert_eq!(
-            r.mid,
-            F::from_parts(IBig::from(10672), -4)
-                .with_precision(10)
-                .value()
+    fn shift_preserves_radius_and_zero_mid_sentinel() {
+        let p = 10;
+        let x = Ball::from_rounded(
+            Context::<mode::HalfEven>::new(p).repr_round(Repr::<2>::new(IBig::from(1234567), 3)),
+            p,
         );
+        let s = x.shift(-5);
+        assert_eq!(s.rad, x.rad.mul_pow2(-5));
+        assert_eq!(&s.mid, &(&x.mid * &Repr::<2>::new(IBig::ONE, -5)));
+        // a zero mid keeps its (0, 0) sentinel through a shift
+        let z = Ball::exact(Repr::<2>::zero()).shift(7);
+        assert_eq!(z.mid, Repr::zero());
     }
 
     #[test]
-    fn scale_int_tracking_inexact_operand() {
-        // An inexact operand scaled exactly: the operand error propagates (no +1 for the exact
-        // product's rounding), and `exact` is cleared.
-        let (a, ta) = ball(10000, -4, 4, 1, 10001, -4); // mid 1.0000 ± 0.0001
-        let mut exact = true;
-        let r = a.scale_int_tracking(&IBig::from(3), &mut exact);
-        assert!(!exact, "inexact operand clears the exact flag");
-        assert_eq!(r.n, IBig::from(3), "3·(1 ulp) propagates exactly, no +1: got n = {}", r.n);
-        assert_invariant(
-            &r,
-            &(&ta * F::from_parts(IBig::from(3), 0))
-                .with_precision(0)
-                .value(),
+    fn pow_tracks_chain() {
+        let p = 20;
+        // 5^4 = 625, exactly representable → exact chain
+        let r = exact(5, 0).pow(&UBig::from(4u8), p).unwrap();
+        assert!(r.is_exact());
+        assert_eq!(r.mid, Repr::new(IBig::from(625), 0));
+        // (1 + 2^-8)^(2^10): compounding rounding stays sound
+        let base = Ball::from_rounded(
+            Context::<mode::HalfEven>::new(p).repr_round(Repr::<2>::new(IBig::from(257), -8)),
+            p,
         );
-    }
-
-    #[test]
-    fn shift_preserves_error() {
-        // Exact shift by a power of the base: n unchanged, ulp scaled.
-        let (a, ta) = ball(123, -2, 3, 2, 125, -2);
-        let r = a.shift(3);
-        assert_invariant(&r, &(ta >> 3).with_precision(0).value());
-    }
-
-    #[test]
-    fn rescale_precision_scales_error() {
-        let (a, ta) = ball(123, -2, 3, 2, 125, -2);
-        let mut r = a;
-        r.rescale_precision(2);
-        assert_invariant(&r, &ta);
+        let r = base.pow(&UBig::from(1024u32), p + 8).unwrap();
+        // true value ∈ ((1), (1+2^-7)^512)·... — check the ball covers (1 + 2^-8)^1024 via
+        // its own magnitude: (mid − rad) ≤ true ≤ (mid + rad) with true = (257/256)^1024
+        // ≈ 54.98 — compare against a rough dyadic bracket 32 < mid+rad, mid−rad < 128
+        let rad = r.rad.to_repr::<2>();
+        let hi = &r.mid + &rad;
+        assert!(hi.cmp(&Repr::new(IBig::from(128), 0)) == core::cmp::Ordering::Less);
+        assert!(hi.cmp(&Repr::new(IBig::from(32), 0)) == core::cmp::Ordering::Greater);
     }
 
     #[test]
     fn to_value_radius_returns_sound_bounds() {
-        let (a, ta) = ball(123, -2, 3, 2, 125, -2);
-        let (value, radius) = a.to_value_radius::<mode::HalfEven>();
-        let diff = (value - ta).abs();
-        assert!(diff <= radius, "|value − true| = {diff} > radius = {radius}");
+        let p = 10;
+        let ctx = Context::<mode::HalfEven>::new(p);
+        let x = Ball::from_rounded(ctx.repr_round(Repr::<2>::new(IBig::from(1), -3)), p);
+        let sq = x.mul(&x, p).unwrap();
+        let (value, radius) = sq.to_value_radius::<mode::HalfEven>(&ctx);
+        assert_eq!(value.context.precision, p);
+        assert_eq!(radius.context.precision, 0);
+        // (1±2^-10-ish)² covers 1/9 — exact-value containment on reprs
+        let rad = radius.repr.clone();
+        let hi = &value.repr + &rad;
+        let lo = &value.repr - &rad;
+        let true_v = Repr::new(IBig::ONE, -3) * Repr::new(IBig::ONE, -3);
+        assert!(hi.cmp(&true_v) != core::cmp::Ordering::Less);
+        assert!(lo.cmp(&true_v) != core::cmp::Ordering::Greater);
+        // exact chain exports a plain +0 radius (not a −∞ sentinel)
+        let (v, r) = exact(2, 0).to_value_radius::<mode::HalfEven>(&ctx);
+        assert!(r.repr.significand().is_zero() && r.repr.exponent == 0);
+        assert!(v.repr.sign() == Sign::Positive);
+    }
+
+    #[test]
+    fn mid_le_ulp_lb_matches_ulp_scale() {
+        let p = 10;
+        let ctx = Context::<mode::HalfEven>::new(p);
+        let sum = Ball::from_rounded(ctx.repr_round(Repr::new(IBig::from(1023), -1)), p);
+        // a term at 2^-13 of the sum's magnitude is below the ulp_lb threshold
+        let tiny = exact(1, -13);
+        assert!(tiny.mid_le_ulp_lb(&sum, p));
+        // a term at the sum's own scale is not
+        let big = exact(1, -1);
+        assert!(!big.mid_le_ulp_lb(&sum, p));
     }
 }
