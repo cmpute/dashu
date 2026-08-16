@@ -29,7 +29,7 @@ impl<R1: Round, R2: Round, const B: Word> PartialEq<FBig<R2, B>> for FBig<R1, B>
 }
 impl<R: Round, const B: Word> Eq for FBig<R, B> {}
 
-fn repr_cmp_same_base<const B: Word, const ABS: bool>(
+pub(crate) fn repr_cmp_same_base<const B: Word, const ABS: bool>(
     lhs: &Repr<B>,
     rhs: &Repr<B>,
     precision: Option<(usize, usize)>,

@@ -275,6 +275,30 @@ sum.add_error(ulps(&sum.mid, wp, B as usize)); // hand tail bound — one line, 
 The only call-surface delta vs today: one extra `wp` argument per propagation call — the
 same coin as deleting the 38 implicit `mid.precision()` reads.
 
+## 4a. As-built deviations (found during the migration)
+
+- **`Ball::shift(s)` scales the radius by `B^s`** (`rad·B^s`, exact for B = 2). The table's
+  "neg/shift | unchanged" row was an ulp-count habit — a Mag is absolute, so an exponent
+  shift must scale it (log2 of huge arguments degenerated the division denominator without
+  this).
+- **`exp_compute` runs its series at `wp + extra`** (the reduction's extra digits ride
+  along, mirroring the old FBig-op max-precision behavior) — near-correct consumers
+  (`with_base`) were tuned against that headroom.
+- **`Mag::to_repr`/`scale_by_base_pow` for bases ∉ {2, 10}** use the *exact* bit length of
+  `B^|e|` (one bounded pow, or a monotone binary search in `to_repr`). The bit-length
+  bracket alone loses O(|e|) bits for e < 0 (log₂ 3 = 1.585 → 0.585·|e| bits per
+  magnitude), which inflates series radii exponentially and stalls Ziv on generic bases.
+- **Series tails skip the `add_error` when the sum is exactly zero** (z = 0 ⟹ every term
+  and the tail are exactly 0 — a phantom 2-ulp radius would break `atan2(±0, ·)`).
+- **`ziv::contained` rejects a zero candidate with a nonzero radius**: no nonzero real
+  rounds to exactly 0, so the documented ±ulp preimage of ±0 (`ErrorBounds`) can certify a
+  collapsed cancellation wrongly (log2 just above 1 at low precision). Scoped to float's
+  driver — the public `ErrorBounds` semantics are unchanged (dashu-complex depends on
+  them).
+- `to_value_radius` takes the **work** context everywhere (tagging at the target context
+  lost guard digits: `exp`/`ln` returned unrounded work values, and `with_base`'s
+  `div_rem_euclid` ran at the tagged precision).
+
 ## 5. Deleted
 
 `term_in_ulps`, `ceil_shift`, `rel_err`, `mul_error`, `Ball::lead_exp`, `div_exact`

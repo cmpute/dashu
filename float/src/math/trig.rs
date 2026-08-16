@@ -7,7 +7,8 @@
 //! calls at increasing precision extend the shared constant state.
 
 use crate::{
-    ball::Ball,
+    ball::{ulps, Ball},
+    cmp::repr_cmp_same_base,
     error::{assert_limited_precision, FpError},
     fbig::FBig,
     math::{
@@ -72,21 +73,21 @@ impl<R: ErrorBounds> Context<R> {
         x: &Repr<B>,
         guard: usize,
         mut cache: Option<&mut ConstCache>,
-    ) -> (Context<mode::HalfEven>, Ball<B>, Quadrant) {
+    ) -> Result<(Context<mode::HalfEven>, Ball<B>, Quadrant), FpError> {
         let work_context = self.compute_work_context_trig(x, guard);
-        let x_ball = Ball::from_rounded(
-            work_context
-                .repr_round(x.clone())
-                .map(|r| FBig::new(r, work_context)),
-        );
+        let work_precision = work_context.precision;
+        let x_ball = Ball::from_rounded(work_context.repr_round(x.clone()), work_precision);
         // `x_f` is exactly the ball's midpoint (the same rounded value), so no second rounding.
-        let x_f = x_ball.mid.clone();
+        // `div_rem_euclid`-style quotient extraction lives on FBig, so wrap the bare mids
+        // (zero-cost).
+        let x_f = FBig::new(x_ball.mid.clone(), work_context);
 
         let pi = work_context.pi::<B>(reborrow_cache(&mut cache)).value();
         let half_pi = &pi / 2u8;
         // π as a ball: the cached constant is correctly rounded to the work precision; 8 is a
         // conservative sound radius (as for the ln(2) constant).
-        let half_pi_ball = Ball::with_error(half_pi.clone(), IBig::from(8));
+        let rad = ulps::<B>(&half_pi.repr, work_precision, 8);
+        let half_pi_ball = Ball::with_error(half_pi.clone().into_repr(), rad);
 
         let x_scaled = &x_f / &half_pi;
         let k_f = x_scaled.round();
@@ -95,7 +96,8 @@ impl<R: ErrorBounds> Context<R> {
         let k = IBig::try_from(k_f).expect("k_f is an exact integer or signed zero");
 
         // r = x − k·(π/2): the cancellation and π's error (scaled by |k|) are tracked by the Ball.
-        let r_ball = x_ball.sub(&half_pi_ball.scale_int(&k));
+        let scaled = half_pi_ball.scale_int(&k, work_precision)?;
+        let r_ball = x_ball.sub(&scaled, work_precision)?;
 
         let k_mod_4_big = k.rem_euclid(IBig::from(4));
         let Ok(k_mod_4_int) = i8::try_from(k_mod_4_big) else {
@@ -109,7 +111,7 @@ impl<R: ErrorBounds> Context<R> {
             _ => unreachable!(),
         };
 
-        (work_context, r_ball, quadrant)
+        Ok((work_context, r_ball, quadrant))
     }
 
     /// Calculate the sine of the floating point representation.
@@ -131,43 +133,47 @@ impl<R: ErrorBounds> Context<R> {
         // that absorbs the `x − k·(π/2)` cancellation), evaluate the series. The reduction error is
         // already inside the reduced argument's Ball radius.
         self.ziv(50, |guard| {
-            let (work, r, quadrant) = self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache));
+            let (work, r, quadrant) =
+                self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache))?;
             let val = match quadrant {
-                Quadrant::First => work.sin_compute(&r),
-                Quadrant::Second => work.cos_compute(&r),
-                Quadrant::Third => work.sin_compute(&r).neg(),
-                Quadrant::Fourth => work.cos_compute(&r).neg(),
+                Quadrant::First => work.sin_compute(&r)?,
+                Quadrant::Second => work.cos_compute(&r)?,
+                Quadrant::Third => work.sin_compute(&r)?.neg(),
+                Quadrant::Fourth => work.cos_compute(&r)?.neg(),
             };
-            Ok(val.to_value_radius::<R>())
+            Ok(val.to_value_radius::<R>(&Context::<R>::new(work.precision)))
         })
     }
 
     /// Near-correct sine series `S(x) = x − x³/3! + x⁵/5! − …` on the reduced argument, returning a
     /// [`Ball`] whose radius is tracked mechanically (each term's rounding plus the truncated tail).
-    fn sin_compute<const B: Word>(self, x: &Ball<B>) -> Ball<B> {
-        if x.mid.repr().significand.is_zero() {
-            return Ball::exact(x.mid.clone());
+    fn sin_compute<const B: Word>(self, x: &Ball<B>) -> Result<Ball<B>, FpError> {
+        if x.mid.significand.is_zero() {
+            return Ok(Ball::exact(x.mid.clone()));
         }
-        let x2 = x.mul(x);
+        let wp = self.precision;
+        let x2 = x.mul(x, wp)?;
         let mut sum = x.clone();
         let mut term = x.clone();
         let mut k = 1usize;
-        let threshold = sum.mid.ulp_lb();
         loop {
-            term = term.mul(&x2).div_int((2 * k) * (2 * k + 1));
-            if term.mid.abs_cmp(&threshold).is_le() {
+            term = term.mul(&x2, wp)?.div_int((2 * k) * (2 * k + 1), wp)?;
+            if term.mid_le_ulp_lb(&sum, wp) {
                 break;
             }
             if k % 2 == 1 {
-                sum = sum.sub(&term);
+                sum = sum.sub(&term, wp)?;
             } else {
-                sum = sum.add(&term);
+                sum = sum.add(&term, wp)?;
             }
             k += 1;
         }
         // Omitted tail: the alternating series tail is < the first omitted term < 1 ulp.
-        sum.inflate(&IBig::from(2));
-        sum
+        // A zero sum means the argument (and every term) is exactly zero — the tail is 0.
+        if !sum.mid.significand().is_zero() {
+            sum.add_error(ulps::<B>(&sum.mid, wp, 2));
+        }
+        Ok(sum)
     }
 
     /// Calculate the cosine of the floating point representation.
@@ -187,43 +193,44 @@ impl<R: ErrorBounds> Context<R> {
         }
 
         self.ziv(50, |guard| {
-            let (work, r, quadrant) = self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache));
+            let (work, r, quadrant) =
+                self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache))?;
             let val = match quadrant {
-                Quadrant::First => work.cos_compute(&r),
-                Quadrant::Second => work.sin_compute(&r).neg(),
-                Quadrant::Third => work.cos_compute(&r).neg(),
-                Quadrant::Fourth => work.sin_compute(&r),
+                Quadrant::First => work.cos_compute(&r)?,
+                Quadrant::Second => work.sin_compute(&r)?.neg(),
+                Quadrant::Third => work.cos_compute(&r)?.neg(),
+                Quadrant::Fourth => work.sin_compute(&r)?,
             };
-            Ok(val.to_value_radius::<R>())
+            Ok(val.to_value_radius::<R>(&Context::<R>::new(work.precision)))
         })
     }
 
     /// Near-correct cosine series `C(x) = 1 − x²/2! + x⁴/4! − …`, returning a [`Ball`] with a
     /// mechanically tracked radius. (See [`sin_compute`](Self::sin_compute).)
-    fn cos_compute<const B: Word>(self, x: &Ball<B>) -> Ball<B> {
-        if x.mid.repr().significand.is_zero() {
-            return Ball::exact_int(self.precision, IBig::ONE);
+    fn cos_compute<const B: Word>(self, x: &Ball<B>) -> Result<Ball<B>, FpError> {
+        let wp = self.precision;
+        if x.mid.significand.is_zero() {
+            return Ok(Ball::exact_int(IBig::ONE, wp));
         }
-        let x2 = x.mul(x);
-        let one = Ball::exact_int(self.precision, IBig::ONE);
+        let x2 = x.mul(x, wp)?;
+        let one = Ball::exact_int(IBig::ONE, wp);
         let mut sum = one.clone();
         let mut term = one.clone();
         let mut k = 1usize;
-        let threshold = sum.mid.ulp_lb();
         loop {
-            term = term.mul(&x2).div_int((2 * k) * (2 * k - 1));
-            if term.mid.abs_cmp(&threshold).is_le() {
+            term = term.mul(&x2, wp)?.div_int((2 * k) * (2 * k - 1), wp)?;
+            if term.mid_le_ulp_lb(&sum, wp) {
                 break;
             }
             if k % 2 == 1 {
-                sum = sum.sub(&term);
+                sum = sum.sub(&term, wp)?;
             } else {
-                sum = sum.add(&term);
+                sum = sum.add(&term, wp)?;
             }
             k += 1;
         }
-        sum.inflate(&IBig::from(2));
-        sum
+        sum.add_error(ulps::<B>(&sum.mid, wp, 2));
+        Ok(sum)
     }
 
     /// Calculate both the sine and cosine of the floating point representation.
@@ -247,56 +254,60 @@ impl<R: ErrorBounds> Context<R> {
         }
 
         let (s, c) = self.ziv_pair(50, |guard| {
-            let (work, r, quadrant) = self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache));
-            let (sin_ball, cos_ball) = work.sin_cos_compute(&r);
+            let (work, r, quadrant) =
+                self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache))?;
+            let (sin_ball, cos_ball) = work.sin_cos_compute(&r)?;
             let (s, c) = match quadrant {
                 Quadrant::First => (sin_ball, cos_ball),
                 Quadrant::Second => (cos_ball, sin_ball.neg()),
                 Quadrant::Third => (sin_ball.neg(), cos_ball.neg()),
                 Quadrant::Fourth => (cos_ball.neg(), sin_ball),
             };
-            Ok((s.to_value_radius::<R>(), c.to_value_radius::<R>()))
+            let ctx = Context::<R>::new(work.precision);
+            Ok((s.to_value_radius::<R>(&ctx), c.to_value_radius::<R>(&ctx)))
         });
         (s, c)
     }
 
     /// Simultaneously evaluate the sine and cosine series, returning both [`Ball`]s with
     /// mechanically tracked radii.
-    pub(crate) fn sin_cos_compute<const B: Word>(self, x: &Ball<B>) -> (Ball<B>, Ball<B>) {
-        if x.mid.repr().significand.is_zero() {
-            return (Ball::exact(x.mid.clone()), Ball::exact_int(self.precision, IBig::ONE));
+    pub(crate) fn sin_cos_compute<const B: Word>(
+        self,
+        x: &Ball<B>,
+    ) -> Result<(Ball<B>, Ball<B>), FpError> {
+        let wp = self.precision;
+        if x.mid.significand.is_zero() {
+            return Ok((Ball::exact(x.mid.clone()), Ball::exact_int(IBig::ONE, wp)));
         }
-        let x2 = x.mul(x);
-        let one = Ball::exact_int(self.precision, IBig::ONE);
+        let x2 = x.mul(x, wp)?;
+        let one = Ball::exact_int(IBig::ONE, wp);
         let mut sin_sum = x.clone();
         let mut cos_sum = one.clone();
         let mut sin_term = x.clone();
         let mut cos_term = one.clone();
         let mut k = 1usize;
-        let sin_threshold = sin_sum.mid.ulp_lb();
-        let cos_threshold = cos_sum.mid.ulp_lb();
         loop {
-            cos_term = cos_term.mul(&x2).div_int((2 * k) * (2 * k - 1));
-            sin_term = sin_term.mul(&x2).div_int((2 * k) * (2 * k + 1));
+            cos_term = cos_term.mul(&x2, wp)?.div_int((2 * k) * (2 * k - 1), wp)?;
+            sin_term = sin_term.mul(&x2, wp)?.div_int((2 * k) * (2 * k + 1), wp)?;
 
-            if sin_term.mid.abs_cmp(&sin_threshold).is_le()
-                && cos_term.mid.abs_cmp(&cos_threshold).is_le()
-            {
+            if sin_term.mid_le_ulp_lb(&sin_sum, wp) && cos_term.mid_le_ulp_lb(&cos_sum, wp) {
                 break;
             }
 
             if k % 2 == 1 {
-                cos_sum = cos_sum.sub(&cos_term);
-                sin_sum = sin_sum.sub(&sin_term);
+                cos_sum = cos_sum.sub(&cos_term, wp)?;
+                sin_sum = sin_sum.sub(&sin_term, wp)?;
             } else {
-                cos_sum = cos_sum.add(&cos_term);
-                sin_sum = sin_sum.add(&sin_term);
+                cos_sum = cos_sum.add(&cos_term, wp)?;
+                sin_sum = sin_sum.add(&sin_term, wp)?;
             }
             k += 1;
         }
-        sin_sum.inflate(&IBig::from(2));
-        cos_sum.inflate(&IBig::from(2));
-        (sin_sum, cos_sum)
+        if !sin_sum.mid.significand().is_zero() {
+            sin_sum.add_error(ulps::<B>(&sin_sum.mid, wp, 2));
+        }
+        cos_sum.add_error(ulps::<B>(&cos_sum.mid, wp, 2));
+        Ok((sin_sum, cos_sum))
     }
 
     /// Calculate the tangent of the floating point representation.
@@ -324,20 +335,22 @@ impl<R: ErrorBounds> Context<R> {
         // below handles the unreachable exact-pole case (cos cancelling to a zero significand) by
         // forcing a retry.
         self.ziv(50, |guard| {
-            let (work, r, quadrant) = self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache));
-            let (sin_ball, cos_ball) = work.sin_cos_compute(&r);
+            let (work, r, quadrant) =
+                self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache))?;
+            let (sin_ball, cos_ball) = work.sin_cos_compute(&r)?;
             let (s, c) = match quadrant {
                 Quadrant::First => (sin_ball, cos_ball),
                 Quadrant::Second => (cos_ball, sin_ball.neg()),
                 Quadrant::Third => (sin_ball.neg(), cos_ball.neg()),
                 Quadrant::Fourth => (cos_ball.neg(), sin_ball),
             };
-            if c.mid.repr().significand.is_zero() {
+            if c.mid.significand.is_zero() {
                 // cos rounded to a zero significand at this guard (the input sits on a work-
                 // precision pole — unreachable for finite-precision x): force a retry.
                 return Ok((FBig::<R, B>::ZERO, FBig::<R, B>::ONE));
             }
-            Ok(s.div(&c).to_value_radius::<R>())
+            Ok(s.div(&c, work.precision)?
+                .to_value_radius::<R>(&Context::<R>::new(work.precision)))
         })
     }
 
@@ -368,31 +381,38 @@ impl<R: ErrorBounds> Context<R> {
 
         self.ziv(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
-            let x_ball = Ball::from_rounded(work.repr_round_ref(x).map(|r| FBig::new(r, work)));
+            let x_ball = Ball::from_rounded(work.repr_round_ref(x), work.precision);
             Ok(work
-                .asin_ball::<B>(&x_ball, reborrow_cache(&mut cache))
-                .to_value_radius::<R>())
+                .asin_ball::<B>(&x_ball, reborrow_cache(&mut cache))?
+                .to_value_radius::<R>(&Context::<R>::new(work.precision)))
         })
     }
 
     /// `asin` of a ball: `atan(x / √(1−x²))`, with the `|x| = 1` endpoint `±π/2` handled directly
     /// (the composition's `√(1−x²)` denominator would round to zero there).
-    fn asin_ball<const B: Word>(&self, x: &Ball<B>, mut cache: Option<&mut ConstCache>) -> Ball<B> {
-        let one = Ball::exact_int(self.precision, IBig::ONE);
-        let d = one.sub(&x.mul(x)).sqrt();
-        if d.mid.repr().significand.is_zero() {
+    fn asin_ball<const B: Word>(
+        &self,
+        x: &Ball<B>,
+        mut cache: Option<&mut ConstCache>,
+    ) -> Result<Ball<B>, FpError> {
+        let wp = self.precision;
+        let one = Ball::exact_int(IBig::ONE, wp);
+        let d = one.sub(&x.mul(x, wp)?, wp)?.sqrt(wp)?;
+        if d.mid.significand.is_zero() {
             // |x| = 1: asin(±1) = ±π/2 (an exact-ish endpoint; the π radius is folded in).
-            let pi = Context::<mode::HalfEven>::new(self.precision)
+            let pi = Context::<mode::HalfEven>::new(wp)
                 .pi::<B>(reborrow_cache(&mut cache))
                 .value();
-            let half_pi = Ball::with_error(pi / 2u8, IBig::from(8));
-            if x.mid.repr().sign() == Sign::Negative {
+            let half_pi = &pi / 2u8;
+            let rad = ulps::<B>(&half_pi.repr, wp, 8);
+            let half_pi = Ball::with_error(half_pi.into_repr(), rad);
+            Ok(if x.mid.sign() == Sign::Negative {
                 half_pi.neg()
             } else {
                 half_pi
-            }
+            })
         } else {
-            let arg = x.div(&d);
+            let arg = x.div(&d, wp)?;
             self.atan_ball::<B>(&arg, reborrow_cache(&mut cache))
         }
     }
@@ -430,11 +450,15 @@ impl<R: ErrorBounds> Context<R> {
 
         self.ziv(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
-            let x_ball = Ball::from_rounded(work.repr_round_ref(x).map(|r| FBig::new(r, work)));
-            let asin_ball = work.asin_ball::<B>(&x_ball, reborrow_cache(&mut cache));
+            let x_ball = Ball::from_rounded(work.repr_round_ref(x), work.precision);
+            let asin_ball = work.asin_ball::<B>(&x_ball, reborrow_cache(&mut cache))?;
             let pi = work.pi::<B>(reborrow_cache(&mut cache)).value();
-            let half_pi = Ball::with_error(pi / 2u8, IBig::from(8));
-            Ok(half_pi.sub(&asin_ball).to_value_radius::<R>())
+            let half_pi = &pi / 2u8;
+            let rad = ulps::<B>(&half_pi.repr, work.precision, 8);
+            let half_pi = Ball::with_error(half_pi.into_repr(), rad);
+            Ok(half_pi
+                .sub(&asin_ball, work.precision)?
+                .to_value_radius::<R>(&Context::<R>::new(work.precision)))
         })
     }
 
@@ -465,65 +489,76 @@ impl<R: ErrorBounds> Context<R> {
 
         self.ziv(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
-            let x_ball = Ball::from_rounded(work.repr_round_ref(x).map(|r| FBig::new(r, work)));
+            let x_ball = Ball::from_rounded(work.repr_round_ref(x), work.precision);
             Ok(work
-                .atan_ball::<B>(&x_ball, reborrow_cache(&mut cache))
-                .to_value_radius::<R>())
+                .atan_ball::<B>(&x_ball, reborrow_cache(&mut cache))?
+                .to_value_radius::<R>(&Context::<R>::new(work.precision)))
         })
     }
 
     /// `atan` of a ball, with the `|x| ≥ 1` branch (`π/2 − atan(1/x)`). Odd: the sign of `x` is
     /// applied last (the `|x| ≥ 1` branch's `1/x` would otherwise lose it).
-    fn atan_ball<const B: Word>(&self, x: &Ball<B>, mut cache: Option<&mut ConstCache>) -> Ball<B> {
-        let sign = x.mid.repr().sign();
+    fn atan_ball<const B: Word>(
+        &self,
+        x: &Ball<B>,
+        mut cache: Option<&mut ConstCache>,
+    ) -> Result<Ball<B>, FpError> {
+        let wp = self.precision;
+        let sign = x.mid.sign();
         let x_abs = if sign == Sign::Negative {
             x.clone().neg()
         } else {
             x.clone()
         };
-        let one = Ball::exact_int(self.precision, IBig::ONE);
-        let res = if x_abs.mid.abs_cmp(&one.mid).is_ge() {
-            let pi = Context::<mode::HalfEven>::new(self.precision)
+        let one = Ball::exact_int(IBig::ONE, wp);
+        let abs_ge_one = repr_cmp_same_base::<B, true>(&x_abs.mid, &one.mid, None).is_ge();
+        let res = if abs_ge_one {
+            let pi = Context::<mode::HalfEven>::new(wp)
                 .pi::<B>(reborrow_cache(&mut cache))
                 .value();
-            let half_pi = Ball::with_error(pi / 2u8, IBig::from(8));
-            let inv_x = one.div(&x_abs);
-            half_pi.sub(&self.atan_compute(&inv_x))
+            let half_pi = &pi / 2u8;
+            let rad = ulps::<B>(&half_pi.repr, wp, 8);
+            let half_pi = Ball::with_error(half_pi.into_repr(), rad);
+            let inv_x = one.div(&x_abs, wp)?;
+            half_pi.sub(&self.atan_compute(&inv_x)?, wp)
         } else {
             self.atan_compute(&x_abs)
         };
-        if sign == Sign::Negative {
-            res.neg()
+        Ok(if sign == Sign::Negative {
+            res?.neg()
         } else {
-            res
-        }
+            res?
+        })
     }
 
     /// Near-correct Euler series for `atan(x)` (`|x| ≤ 1`), returning a [`Ball`] with a
     /// mechanically tracked radius.
-    fn atan_compute<const B: Word>(self, x: &Ball<B>) -> Ball<B> {
-        let x2 = x.mul(x);
-        let one = Ball::exact_int(self.precision, IBig::ONE);
-        let one_plus_x2 = one.add(&x2);
-        let mut term = x.div(&one_plus_x2);
+    fn atan_compute<const B: Word>(self, x: &Ball<B>) -> Result<Ball<B>, FpError> {
+        let wp = self.precision;
+        let x2 = x.mul(x, wp)?;
+        let one = Ball::exact_int(IBig::ONE, wp);
+        let one_plus_x2 = one.add(&x2, wp)?;
+        let mut term = x.div(&one_plus_x2, wp)?;
         let mut sum = term.clone();
-        let factor = x2.scale_int(&IBig::from(2)).div(&one_plus_x2);
+        let factor = x2.scale_int(&IBig::from(2), wp)?.div(&one_plus_x2, wp)?;
         let mut n = 1usize;
-        let threshold = sum.mid.ulp_lb();
         loop {
             term = term
-                .mul(&factor)
-                .scale_int(&IBig::from(n))
-                .div_int(2 * n + 1);
-            if term.mid.abs_cmp(&threshold).is_le() {
+                .mul(&factor, wp)?
+                .scale_int(&IBig::from(n), wp)?
+                .div_int(2 * n + 1, wp)?;
+            if term.mid_le_ulp_lb(&sum, wp) {
                 break;
             }
-            sum = sum.add(&term);
+            sum = sum.add(&term, wp)?;
             n += 1;
         }
         // Omitted tail: the Euler terms shrink by (2x²/(1+x²))·n/(2n+1) < 1/2, so the tail is < 2 ulps.
-        sum.inflate(&IBig::from(2));
-        sum
+        // A zero sum means x (and every term) is exactly zero — the tail is 0 (atan2(±0, ·)).
+        if !sum.mid.significand().is_zero() {
+            sum.add_error(ulps::<B>(&sum.mid, wp, 2));
+        }
+        Ok(sum)
     }
 
     /// Calculate the arctangent of y / x.
@@ -582,22 +617,23 @@ impl<R: ErrorBounds> Context<R> {
         // x ≠ 0, finite: atan2 = atan(y/x) ± (quadrant π), all as Ball composition.
         self.ziv(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
-            let y_ball = Ball::from_rounded(work.repr_round_ref(y).map(|r| FBig::new(r, work)));
-            let x_ball = Ball::from_rounded(work.repr_round_ref(x).map(|r| FBig::new(r, work)));
-            let ratio = y_ball.div(&x_ball);
-            let atan_val = work.atan_ball::<B>(&ratio, reborrow_cache(&mut cache));
+            let y_ball = Ball::from_rounded(work.repr_round_ref(y), work.precision);
+            let x_ball = Ball::from_rounded(work.repr_round_ref(x), work.precision);
+            let ratio = y_ball.div(&x_ball, work.precision)?;
+            let atan_val = work.atan_ball::<B>(&ratio, reborrow_cache(&mut cache))?;
             let res = if x.sign() == Sign::Positive {
                 atan_val
             } else {
                 let pi = work.pi::<B>(reborrow_cache(&mut cache)).value();
-                let pi_ball = Ball::with_error(pi, IBig::from(8));
+                let rad = ulps::<B>(&pi.repr, work.precision, 8);
+                let pi_ball = Ball::with_error(pi.into_repr(), rad);
                 if y.sign() == Sign::Positive {
-                    atan_val.add(&pi_ball)
+                    atan_val.add(&pi_ball, work.precision)?
                 } else {
-                    atan_val.sub(&pi_ball)
+                    atan_val.sub(&pi_ball, work.precision)?
                 }
             };
-            Ok(res.to_value_radius::<R>())
+            Ok(res.to_value_radius::<R>(&Context::<R>::new(work.precision)))
         })
     }
 }

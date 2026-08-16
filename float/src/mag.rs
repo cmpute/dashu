@@ -13,7 +13,8 @@
 
 use core::cmp::Ordering;
 
-use dashu_int::{DoubleWord, IBig, Word};
+use dashu_base::BitTest;
+use dashu_int::{DoubleWord, IBig, UBig, Word};
 
 use crate::repr::Repr;
 
@@ -37,10 +38,16 @@ impl Mag {
     pub(crate) const ZERO: Mag = Mag { man: 0, exp: 0 };
 
     /// The magnitude `+∞`.
-    pub(crate) const INFINITY: Mag = Mag { man: 0, exp: isize::MAX };
+    pub(crate) const INFINITY: Mag = Mag {
+        man: 0,
+        exp: isize::MAX,
+    };
 
     /// The magnitude `1`.
-    pub(crate) const ONE: Mag = Mag { man: MAG_ONE_HALF, exp: 1 };
+    pub(crate) const ONE: Mag = Mag {
+        man: MAG_ONE_HALF,
+        exp: 1,
+    };
 
     /// Returns `true` if this is the `0` sentinel.
     #[inline]
@@ -72,7 +79,20 @@ impl Mag {
         if e == isize::MAX {
             Mag::INFINITY
         } else {
-            Mag { man: MAG_ONE_HALF, exp: e }
+            Mag {
+                man: MAG_ONE_HALF,
+                exp: e,
+            }
+        }
+    }
+
+    /// The magnitude `BASE^exp`, rounded up — the one-ulp source for the radius folding
+    /// (`ulp_mag` in `ball.rs`). Exact for `BASE = 2`.
+    pub(crate) fn from_base_pow<const B: Word>(exp: isize) -> Mag {
+        if B == 2 {
+            Mag::from_pow2(exp) // exact
+        } else {
+            Mag::ONE.scale_by_base_pow::<B>(exp, true)
         }
     }
 
@@ -97,20 +117,26 @@ impl Mag {
     pub(crate) fn from_repr<const B: Word>(repr: &Repr<B>) -> Mag {
         if repr.significand().is_zero() {
             // ±0 has magnitude 0; ±∞ exceeds every finite bound
-            return if repr.is_infinite() { Mag::INFINITY } else { Mag::ZERO };
+            return if repr.is_infinite() {
+                Mag::INFINITY
+            } else {
+                Mag::ZERO
+            };
         }
-        significand_bound(repr.significand(), true)
-            .scale_by_base_pow::<B>(repr.exponent(), true)
+        significand_bound(repr.significand(), true).scale_by_base_pow::<B>(repr.exponent(), true)
     }
 
     /// The largest `Mag` bounding the magnitude of `repr` from below — the twin used wherever a
     /// midpoint magnitude appears in a denominator. `±0` → `ZERO`; `±∞` → `INFINITY`.
     pub(crate) fn from_repr_lower<const B: Word>(repr: &Repr<B>) -> Mag {
         if repr.significand().is_zero() {
-            return if repr.is_infinite() { Mag::INFINITY } else { Mag::ZERO };
+            return if repr.is_infinite() {
+                Mag::INFINITY
+            } else {
+                Mag::ZERO
+            };
         }
-        significand_bound(repr.significand(), false)
-            .scale_by_base_pow::<B>(repr.exponent(), false)
+        significand_bound(repr.significand(), false).scale_by_base_pow::<B>(repr.exponent(), false)
     }
 
     // ========================================================================
@@ -129,20 +155,6 @@ impl Mag {
             return Mag::INFINITY;
         }
         add_up(self.man, self.exp, other.man, other.exp)
-    }
-
-    /// An upper bound on `max(0, self − other)`, rounded up and floored at `0`.
-    pub(crate) fn sub(&self, other: &Mag) -> Mag {
-        if self.is_infinite() {
-            return Mag::INFINITY;
-        }
-        if other.is_infinite() {
-            return Mag::ZERO;
-        }
-        if self.is_zero() || other.is_zero() {
-            return *self; // 0 − y = 0 ;  x − 0 = x
-        }
-        sub_impl(self.man, self.exp, other.man, other.exp, true)
     }
 
     /// `self · other`, rounded up. `0 · ∞ = 0` — a zero bound times anything is still a zero
@@ -209,6 +221,23 @@ impl Mag {
     // ========================================================================
     // Round-DOWN twins (lower bounds; used by radius-propagation denominators)
     // ========================================================================
+
+    /// An upper bound on `max(0, self − other)`, rounded up and floored at `0`. Currently
+    /// exercised only by the round-up bracket tests (the propagation rules subtract in the
+    /// `sub_down` direction).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn sub(&self, other: &Mag) -> Mag {
+        if self.is_infinite() {
+            return Mag::INFINITY;
+        }
+        if other.is_infinite() {
+            return Mag::ZERO;
+        }
+        if self.is_zero() || other.is_zero() {
+            return *self; // 0 − y = 0 ;  x − 0 = x
+        }
+        sub_impl(self.man, self.exp, other.man, other.exp, true)
+    }
 
     /// A lower bound on `max(0, self − other)`, floored at `0`.
     pub(crate) fn sub_down(&self, other: &Mag) -> Mag {
@@ -290,12 +319,47 @@ impl Mag {
                 hi.div_euclid(1000).min(lo.div_euclid(10000))
             }
         } else {
-            let c = (Word::BITS - B.leading_zeros()) as isize; // BASE ∈ [2^(c−1), 2^c)
-            if e > 0 {
-                // up: BASE^e < 2^(c·e);  down: BASE^e ≥ 2^((c−1)·e)
-                if round_up { e.saturating_mul(c) } else { e.saturating_mul(c - 1) }
+            // Generic base: the exact scale from the bit length of BASE^|e| — one pow of
+            // bounded size (exponents in the radius rules are work-precision scale). The
+            // bit-length bracket alone (BASE ∈ [2^(c−1), 2^c)) loses O(|e|) bits for e < 0
+            // (log₂ 3 = 1.585 → 0.585·|e| bits), which inflates negative-exponent mid
+            // magnitudes by 2^(0.58·|e|) and stalls Ziv on generic bases. Extreme exponents
+            // (|e| > 8192 — unreachable outside underflow-scale midpoints, where looseness
+            // is tolerable) fall back to the sound bracket.
+            if e.unsigned_abs() <= 8192 {
+                // BASE^e = 2^(±(bits−1) .. bits): one bit of slack, either direction.
+                let bits = UBig::from_word(B).pow(e.unsigned_abs()).bit_len() as isize;
+                if round_up {
+                    if e > 0 {
+                        bits
+                    } else {
+                        1 - bits
+                    }
+                } else {
+                    if e > 0 {
+                        bits - 1
+                    } else {
+                        -bits
+                    }
+                }
             } else {
-                if round_up { e.saturating_mul(c - 1) } else { e.saturating_mul(c) }
+                // Sound bracket for extreme exponents (a direct 2-exponent, not a bit
+                // length): e > 0 up/down ∈ {e·c, e·(c−1)}; e < 0 flips — up = e·(c−1)
+                // (loose by up to |e| bits), down = e·c.
+                let c = (Word::BITS - B.leading_zeros()) as isize; // BASE ∈ [2^(c−1), 2^c)
+                if round_up {
+                    if e > 0 {
+                        e.saturating_mul(c)
+                    } else {
+                        e.saturating_mul(c - 1)
+                    }
+                } else {
+                    if e > 0 {
+                        e.saturating_mul(c - 1)
+                    } else {
+                        e.saturating_mul(c)
+                    }
+                }
             }
         };
         self.mul_pow2(k)
@@ -307,7 +371,7 @@ impl Mag {
     /// O(1)) — building the exact decimal `man · 5^|exp|` would be O(|exp|) work per Ziv
     /// attempt. Rational `log₁₀ 2` bounds (`28/93` above, `30102/100000` below
     /// `log₁₀ 2 = 0.301030…`) with the same both-sides max trick as [`Mag::scale_by_base_pow`].
-    pub(crate) fn to_repr<const B: Word>(&self) -> Repr<B> {
+    pub(crate) fn to_repr<const B: Word>(self) -> Repr<B> {
         if self.is_zero() {
             return Repr::zero();
         }
@@ -327,8 +391,43 @@ impl Mag {
                 .clamp(isize::MIN + 1, isize::MAX - 1);
             Repr::new(IBig::ONE, k)
         } else {
-            let c = (Word::BITS - B.leading_zeros()) as isize - 1; // BASE ≥ 2^c
-            let k = if self.exp > 0 { ceil_div(self.exp, c) } else { 0 }; // value < 1 ≤ BASE^0
+            // Generic base: the smallest integer k (either sign) with BASE^k ≥ 2^exp, by
+            // binary search on the monotone predicate over the exact bit length of BASE^|k|
+            // within the log₂ bracket BASE ∈ [2^(c−1), 2^c). Beyond |exp| = 16384 the loose
+            // bracket stands in — such radii are beyond any realistic containment.
+            let c = (Word::BITS - B.leading_zeros()) as isize;
+            // BASE^k ≥ 2^exp, exactly: k ≥ 0 ⟺ bit_len(BASE^k) ≥ exp+1;
+            // k < 0 (m = −k) ⟺ BASE^m ≤ 2^−exp ⟺ bit_len(BASE^m) ≤ −exp.
+            let ge = |k: isize| -> bool {
+                if k >= 0 {
+                    UBig::from_word(B).pow(k as usize).bit_len() as isize > self.exp
+                } else {
+                    UBig::from_word(B).pow((-k) as usize).bit_len() as isize <= -self.exp
+                }
+            };
+            let k = if self.exp.abs() > 16384 {
+                if self.exp > 0 {
+                    ceil_div(self.exp, c - 1)
+                } else {
+                    ceil_div(self.exp, c)
+                }
+            } else {
+                // the true k lies between exp/c and exp/(c−1) (either order once exp < 0)
+                let mut lo = self.exp.saturating_div(c) - 1;
+                let mut hi = ceil_div(self.exp, c - 1) + 1;
+                if lo > hi {
+                    core::mem::swap(&mut lo, &mut hi);
+                }
+                while lo + 1 < hi {
+                    let mid = lo + (hi - lo) / 2;
+                    if ge(mid) {
+                        hi = mid;
+                    } else {
+                        lo = mid;
+                    }
+                }
+                hi
+            };
             Repr::new(IBig::ONE, k)
         }
     }
@@ -404,15 +503,13 @@ fn sub_impl(mx: Word, ex: isize, my: Word, ey: isize, round_up: bool) -> Mag {
         if mx <= my {
             return Mag::ZERO;
         }
-        from_double_rounded((mx - my) as DoubleWord, round_up)
-            .mul_pow2(ex.saturating_sub(bits))
+        from_double_rounded((mx - my) as DoubleWord, round_up).mul_pow2(ex.saturating_sub(bits))
     } else if shift >= bits {
         if round_up {
             // `other` is below one ulp: the tightest round-up is `self` itself
             Mag { man: mx, exp: ex }
         } else {
-            from_double_rounded((mx - 1) as DoubleWord, false)
-                .mul_pow2(ex.saturating_sub(bits))
+            from_double_rounded((mx - 1) as DoubleWord, false).mul_pow2(ex.saturating_sub(bits))
         }
     } else {
         // shift ∈ [1, BITS); the exact difference fits in a DoubleWord
@@ -538,12 +635,7 @@ impl core::fmt::Debug for Mag {
         } else if self.is_infinite() {
             write!(f, "Mag(inf)")
         } else {
-            write!(
-                f,
-                "Mag({} * 2^{})",
-                self.man,
-                self.exp.saturating_sub(Word::BITS as isize)
-            )
+            write!(f, "Mag({} * 2^{})", self.man, self.exp.saturating_sub(Word::BITS as isize))
         }
     }
 }
@@ -570,7 +662,7 @@ mod tests {
             a.0.cmp(&b.0)
         } else {
             let lo = a.1.min(b.1);
-            ((a.0 << (a.1 - lo) as usize)).cmp(&(b.0 << (b.1 - lo) as usize))
+            (a.0 << (a.1 - lo) as usize).cmp(&(b.0 << (b.1 - lo) as usize))
         }
     }
 
@@ -734,7 +826,8 @@ mod tests {
         // b ≤ 1 + 2^-29 + 2^(1-BITS):  aligned at 2^-(BITS+29)
         let bits = Word::BITS as isize;
         let s = (bits + 29) as usize;
-        let rhs = (IBig::ONE << s) + (IBig::ONE << (s - 29)) + (IBig::ONE << (s - bits as usize + 1));
+        let rhs =
+            (IBig::ONE << s) + (IBig::ONE << (s - 29)) + (IBig::ONE << (s - bits as usize + 1));
         assert!(dycmp((bm, be + s as isize), (rhs, 0isize)) != Greater);
         // monotone: a bigger input never yields a smaller bound
         assert!(Mag::from_pow2(3).exp_upper() >= Mag::from_pow2(1).exp_upper());
@@ -755,10 +848,7 @@ mod tests {
         // significand round-trips to the same value
         let m = Mag::from_word(3);
         let r = m.to_repr::<2>();
-        assert_eq!(
-            dycmp((r.significand().clone(), r.exponent()), dy(&m)),
-            Equal
-        );
+        assert_eq!(dycmp((r.significand().clone(), r.exponent()), dy(&m)), Equal);
     }
 
     #[test]
@@ -767,7 +857,8 @@ mod tests {
         // is sig · 10^e — compare in IBig (not the dyadic comparator, which is base-2 only).
         let m = Mag::from_word(7);
         let r = m.to_repr::<10>();
-        let v = r.significand() * &IBig::from(dashu_int::UBig::from(10u8).pow(r.exponent() as usize));
+        let v =
+            r.significand() * &IBig::from(dashu_int::UBig::from(10u8).pow(r.exponent() as usize));
         assert!(dycmp((v, 0), dyi(7.into())) != Less);
         // a tiny radius: 2^-100 rounds out to 10^-30. Check 10^-30 ≥ 2^-100 exactly:
         // ⟺ 1 ≥ 5^30 · 2^-70 (multiply through by 10^30 = 2^30·5^30).

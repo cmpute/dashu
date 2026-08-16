@@ -224,7 +224,8 @@ impl ConstCache {
                     false,
                     None,
                 )
-                .to_value_radius::<R>()
+                .expect("ln(BASE) cannot range-error (the base fits the exponent range)")
+                .to_value_radius::<R>(&ctx)
                 .0
             }
         }

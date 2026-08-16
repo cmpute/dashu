@@ -9,23 +9,9 @@ use crate::{
     error::{assert_limited_precision, panic_root_zeroth, FpError, FpResult},
     fbig::FBig,
     repr::{Context, Repr, Word},
-    round::{mode, ErrorBounds, Round, Rounded, Rounding},
+    round::{mode, ErrorBounds, Round, Rounding},
     utils::{shl_digits, split_digits_ref},
 };
-
-/// Take the value of a [`Rounded`] result, recording in `exact` whether it was computed exactly.
-///
-/// Mirrors MPFR's `exact` flag: an all-exact operation chain yields the exact true value, which a
-/// Ziv closure can report with radius 0 — `ziv` then accepts it without the containment test,
-/// which otherwise can't certify an exactly-representable result (it sits on a one-sided preimage
-/// boundary under directed rounding).
-fn value_tracking_exact<T>(r: Rounded<T>, exact: &mut bool) -> T {
-    let (v, is_exact) = r.value_with_exact();
-    if !is_exact {
-        *exact = false;
-    }
-    v
-}
 
 impl<R: ErrorBounds, const B: Word> SquareRoot for FBig<R, B> {
     type Output = Self;
@@ -377,27 +363,23 @@ impl<R: ErrorBounds> Context<R> {
             // exactly-representable result under directed rounding — e.g. hypot(3,4)=5,
             // hypot(5,12)=13 — which sits on a one-sided preimage boundary).
             let k = (large.exponent as i128 - (isize::MAX as i128 - 2) / 2).max(0) as isize;
-            let mut exact = true;
-            let large_ball = Ball::exact(FBig::new(
-                value_tracking_exact(gctx.repr_round_ref(&large), &mut exact),
-                gctx,
-            ));
-            let small_ball = Ball::exact(FBig::new(
-                value_tracking_exact(gctx.repr_round_ref(&small), &mut exact),
-                gctx,
-            ));
+            let wp = gctx.precision;
+            // The input roundings' exactness folds through `from_rounded`: an exact input keeps
+            // `rad = 0`, so an all-exact chain (integer inputs, no rounding anywhere) carries a
+            // zero radius — the exactly-representable directed-rounding case that no nonzero
+            // radius could certify (e.g. hypot(3,4)=5, hypot(5,12)=13).
+            let large_ball = Ball::from_rounded(gctx.repr_round_ref(&large), wp);
+            let small_ball = Ball::from_rounded(gctx.repr_round_ref(&small), wp);
             // The shifted balls are used twice (the square), so bind them once — a shift is a full
             // O(p) clone otherwise.
-            let l = large_ball.shift(k);
-            let s = small_ball.shift(k);
-            let l_sq = l.mul_tracking(&l, &mut exact)?;
-            let s_sq = s.mul_tracking(&s, &mut exact)?;
-            let sum = l_sq.add_tracking(&s_sq, &mut exact)?;
-            let root = sum.sqrt_tracking(&mut exact)?;
-            let result = root.shift(-k); // exact exponent shift — scales back, doesn't affect `exact`
-                                         // An all-exact chain yields n = 0, which `to_value_radius` already reports as a zero
-                                         // radius (the exactly-representable directed-rounding case).
-            Ok(result.to_value_radius::<R>())
+            let l = large_ball.shift(-k);
+            let s = small_ball.shift(-k);
+            let l_sq = l.mul(&l, wp)?;
+            let s_sq = s.mul(&s, wp)?;
+            let sum = l_sq.add(&s_sq, wp)?;
+            let root = sum.sqrt(wp)?;
+            let result = root.shift(k); // exact exponent shift — scales back, radius unchanged
+            Ok(result.to_value_radius::<R>(&Context::<R>::new(wp)))
         })
     }
 }
