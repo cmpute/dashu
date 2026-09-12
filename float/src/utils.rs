@@ -1,4 +1,4 @@
-use dashu_base::{DivRem, Sign};
+use dashu_base::{BitTest, DivRem, Sign};
 use dashu_int::{DoubleWord, IBig, UBig, Word};
 
 #[inline]
@@ -15,7 +15,37 @@ pub fn digit_len<const B: Word>(value: &IBig) -> usize {
     if value.is_zero() {
         return 0;
     };
-    value.ilog(&UBig::from_word(B)) + 1
+    if B.is_power_of_two() {
+        // `ilog` would also materialize B^log as a heap allocation, only to discard it here
+        let bits_per_digit = B.trailing_zeros() as usize;
+        (value.bit_len() + bits_per_digit - 1) / bits_per_digit
+    } else {
+        value.ilog(&UBig::from_word(B)) + 1
+    }
+}
+
+/// Over- and under-estimates `(ub, lb)` of the base-`B` digit count of a number with the
+/// given bit length, using integer arithmetic only.
+///
+/// This is the cheap alternative to [`digit_len`] (an `ilog`, which for a non-power-of-two
+/// base computes a full power of the base) and to the f32-based `Repr::digits_ub`/`digits_lb`
+/// (which call into libm's `log2`). For a power-of-two base both bounds are exact; for other
+/// bases they are off by at most a couple of digits — sufficient to gate an exact
+/// recomputation.
+#[inline]
+pub fn digits_bounds_from_bits<const B: Word>(bits: usize) -> (usize, usize) {
+    if bits == 0 {
+        return (0, 0);
+    }
+    if B.is_power_of_two() {
+        let d = (bits + B.trailing_zeros() as usize - 1) / B.trailing_zeros() as usize;
+        (d, d)
+    } else {
+        // floor(log2(B)) and ceil(log2(B)) = floor + 1 (B is not a power of two here);
+        // digits ≤ bits/floor + 1 and ≥ (bits−1)/ceil
+        let l = (Word::BITS - 1 - B.leading_zeros()) as usize;
+        (bits / l + 1, (bits - 1) / (l + 1))
+    }
 }
 
 /// "Left shifting" in given radix, i.e. multiply by a power of radix

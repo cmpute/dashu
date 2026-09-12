@@ -113,7 +113,8 @@ fn check_pair<R: Round, const B: Word>(
     );
 
     // div: no finite exact quotient — compare against a high-precision quotient re-rounded to
-    // `precision`. Skip a zero divisor (div-by-zero errors).
+    // `precision`. Skip a zero divisor (div-by-zero errors). div is correctly rounded, so the
+    // only legitimate disagreement is the oracle's own near-tie re-rounding (at most 1 ulp).
     if !b.significand().is_zero() {
         let actual_div = ctx.div(a, b).unwrap().value();
         let high = Context::<R>::new(precision + 50)
@@ -123,7 +124,7 @@ fn check_pair<R: Round, const B: Word>(
             .with_precision(precision)
             .value();
         assert!(
-            within_k_ulps(&actual_div, &high, 2),
+            within_k_ulps(&actual_div, &high, 1),
             "div mismatch (mode={mode_name}, p={precision})\n a={a:?}\n b={b:?}\n actual={actual_div:?}\n high-prec rounded={high:?}",
         );
     }

@@ -664,7 +664,10 @@ impl<R: Round> Context<R> {
                     Some(e) => e,
                     None => return converted_overflow_repr::<NewB>(repr.exponent > 0, repr.sign()),
                 };
-                return Exact(Repr::new(repr.significand, exp));
+                // The value is exactly representable in the new base, but its significand can
+                // still be wider than the target precision (e.g. the single base-4 digit 3 is
+                // the two-digit binary 0b11) — round it like every other path does.
+                return self.repr_round(Repr::new(repr.significand, exp));
             }
         }
 
@@ -719,25 +722,19 @@ impl<R: Round> Context<R> {
             // if the exponent is small enough, directly evaluate the exponent
             if repr.exponent >= 0 {
                 let signif = repr.significand * Repr::<B>::BASE.pow(repr.exponent as usize);
-                Exact(Repr::new(signif, 0))
+                // The exact integer may carry more digits than the target precision allows
+                // (e.g. 2·2³ = 16 is the three-digit base-3 number 121), so it still goes
+                // through the rounding step.
+                self.repr_round(Repr::new(signif, 0))
             } else {
                 let den: Repr<NewB> =
                     Repr::new(Repr::<B>::BASE.pow(-repr.exponent as usize).into(), 0);
-                // repr_div requires the dividend to be no wider than `precision + divisor`, so
-                // pre-shrink the significand the same way Context::div does — the caller, not
-                // the kernel, is responsible for bounding the dividend. Rounding it to
-                // `den.digits() + precision` preserves enough information for the division to
-                // be correctly rounded at `precision`.
+                // `repr_div_any_width` bounds an over-wide dividend itself (exactly — the
+                // dropped low digits are kept as rounding information), so no pre-shrinking
+                // here: rounding the dividend before the division would lie about exactness
+                // and could break tie decisions.
                 let num: Repr<NewB> = Repr::new(repr.significand, 0);
-                let num =
-                    if !num.is_pos_zero() && num.digits_ub() > den.digits_lb() + self.precision {
-                        Self::new(den.digits() + self.precision)
-                            .repr_round_ref(&num)
-                            .value()
-                    } else {
-                        num
-                    };
-                match self.repr_div(num, den) {
+                match self.repr_div_any_width(num, den) {
                     Ok(v) => v.map(|r: Repr<NewB>| Repr {
                         significand: r.significand,
                         exponent: r.exponent,
@@ -1192,6 +1189,53 @@ impl_from_fbig_for_float!(f64, convert_to_f64);
 mod tests {
     use super::*;
     use crate::repr::Repr;
+    use crate::round::mode::{HalfEven, Zero};
+
+    // Regression tests for issue #100: base conversion used to return unreduced significands
+    // from its exact-conversion shortcuts, and pre-rounded the dividend of its division path
+    // (lying about exactness).
+    #[test]
+    fn test_with_base_reduces_and_flags() {
+        // 2.1 -> base 2 @ p1: 21/10 has no finite binary form, so the conversion is inexact;
+        // the old division path pre-rounded 21 to 20, and 20/10 = 2 divided exactly.
+        let r = FBig::<Zero, 10>::from_parts(IBig::from(21), -1).with_base_and_precision::<2>(1);
+        assert!(matches!(r, Inexact(..)), "2.1 -> base 2 @ p1 must be inexact");
+
+        // 3.1 -> base 2 @ p1: the significand 11₂ must be reduced to one digit.
+        let v = FBig::<Zero, 10>::from_parts(IBig::from(31), -1)
+            .with_base_and_precision::<2>(1)
+            .value();
+        assert!(v.repr().digits() <= v.precision());
+
+        // 16 (2·2³) -> base 3 @ p1: the exact conversion produces 121₃ — three digits, which
+        // must be rounded (Zero -> 1·3² = 9, since 16 lies between 9 and 18).
+        let v = FBig::<Zero, 2>::from_parts(IBig::from(2), 3)
+            .with_base_and_precision::<3>(1)
+            .value();
+        assert_eq!(v.repr(), &Repr::<3>::new(IBig::from(1), 2));
+
+        // 3 (base 4) -> base 2 @ p1: the single base-4 digit 3 is the two-digit binary 0b11,
+        // so the "B is a power of NewB" shortcut must still round (Zero -> 1·2¹ = 2).
+        let v = FBig::<Zero, 4>::from_parts(IBig::from(3), 0)
+            .with_base_and_precision::<2>(1)
+            .value();
+        assert_eq!(v.repr(), &Repr::<2>::new(IBig::from(1), 1));
+    }
+
+    // An exact conversion whose result fits the precision stays Exact through the shortcuts.
+    #[test]
+    fn test_with_base_exact_fits() {
+        // 1.5 (base 10) -> base 2 @ p2: 15/100·... = 3/2 divides exactly onto 11·2^-1.
+        let r =
+            FBig::<HalfEven, 10>::from_parts(IBig::from(15), -1).with_base_and_precision::<2>(2);
+        assert!(matches!(r, Exact(..)));
+        assert_eq!(r.value().repr(), &Repr::<2>::new(IBig::from(3), -1));
+
+        // 4 (base 2) -> base 4: conversion to a power of the base is exact (4 = 1·4¹).
+        let r = FBig::<HalfEven, 2>::from_parts(IBig::from(1), 2).with_base::<4>();
+        assert!(matches!(r, Exact(..)));
+        assert_eq!(r.value().repr(), &Repr::<4>::new(IBig::from(1), 1));
+    }
 
     // Directed overflow must reach the endpoint for a value whose *most*-significant bit straddles
     // f32::MAX (not only for values whose lsb exponent is ≥ 128). `3·2¹²⁷` ≈ 1.5·2¹²⁸ overflows
