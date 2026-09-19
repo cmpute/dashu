@@ -47,7 +47,7 @@ proptest! {
     #[test]
     #[ignore]
     fn cbig_exp_fuzz(zre in f64_part(), zim in f64_part()) {
-        for prec in fuzz::fuzz_precisions_bits() {
+        for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
             let (z, rz) = pair(zre, zim, prec as usize);
             let d = cmplx_ok!(z.context().exp(&z, None));
             let r = rz.exp();
@@ -60,7 +60,7 @@ proptest! {
     #[test]
     #[ignore]
     fn cbig_log_fuzz(zre in f64_part(), zim in f64_part()) {
-        for prec in fuzz::fuzz_precisions_bits() {
+        for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
             let (z, rz) = pair(zre, zim, prec as usize);
             let d = cmplx_ok!(z.context().log(&z, None));
             let r = rz.ln();
@@ -73,7 +73,7 @@ proptest! {
     #[test]
     #[ignore]
     fn cbig_sqrt_fuzz(zre in f64_part(), zim in f64_part()) {
-        for prec in fuzz::fuzz_precisions_bits() {
+        for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
             let (z, rz) = pair(zre, zim, prec as usize);
             let d = cmplx_ok!(z.context().sqrt(&z));
             let r = rz.sqrt();
@@ -86,7 +86,7 @@ proptest! {
     #[test]
     #[ignore]
     fn cbig_sin_fuzz(zre in f64_part(), zim in f64_part()) {
-        for prec in fuzz::fuzz_precisions_bits() {
+        for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
             let (z, rz) = pair(zre, zim, prec as usize);
             let d = cmplx_ok!(z.context().sin(&z, None));
             let r = rz.sin();
@@ -99,7 +99,7 @@ proptest! {
     #[test]
     #[ignore]
     fn cbig_cos_fuzz(zre in f64_part(), zim in f64_part()) {
-        for prec in fuzz::fuzz_precisions_bits() {
+        for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
             let (z, rz) = pair(zre, zim, prec as usize);
             let d = cmplx_ok!(z.context().cos(&z, None));
             let r = rz.cos();
@@ -112,7 +112,7 @@ proptest! {
     #[test]
     #[ignore]
     fn cbig_tan_fuzz(zre in f64_part(), zim in f64_part()) {
-        for prec in fuzz::fuzz_precisions_bits() {
+        for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
             let (z, rz) = pair(zre, zim, prec as usize);
             let d = cmplx_ok!(z.context().tan(&z, None));
             let r = rz.tan();
@@ -125,7 +125,7 @@ proptest! {
     #[test]
     #[ignore]
     fn cbig_asin_fuzz(zre in f64_part(), zim in f64_part()) {
-        for prec in fuzz::fuzz_precisions_bits() {
+        for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
             let (z, rz) = pair(zre, zim, prec as usize);
             let d = cmplx_ok!(z.context().asin(&z, None));
             let r = rz.asin();
@@ -138,7 +138,7 @@ proptest! {
     #[test]
     #[ignore]
     fn cbig_acos_fuzz(zre in f64_part(), zim in f64_part()) {
-        for prec in fuzz::fuzz_precisions_bits() {
+        for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
             let (z, rz) = pair(zre, zim, prec as usize);
             let d = cmplx_ok!(z.context().acos(&z, None));
             let r = rz.acos();
@@ -151,7 +151,7 @@ proptest! {
     #[test]
     #[ignore]
     fn cbig_atan_fuzz(zre in f64_part(), zim in f64_part()) {
-        for prec in fuzz::fuzz_precisions_bits() {
+        for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
             let (z, rz) = pair(zre, zim, prec as usize);
             let d = cmplx_ok!(z.context().atan(&z, None));
             let r = rz.atan();
@@ -165,7 +165,7 @@ proptest! {
     #[test]
     #[ignore]
     fn cbig_sinh_fuzz(zre in f64_part(), zim in f64_part()) {
-        for prec in fuzz::fuzz_precisions_bits() {
+        for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
             let (z, rz) = pair(zre, zim, prec as usize);
             let d = cmplx_ok!(z.context().sinh(&z, None));
             let r = rz.sinh();
@@ -178,7 +178,7 @@ proptest! {
     #[test]
     #[ignore]
     fn cbig_cosh_fuzz(zre in f64_part(), zim in f64_part()) {
-        for prec in fuzz::fuzz_precisions_bits() {
+        for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
             let (z, rz) = pair(zre, zim, prec as usize);
             let d = cmplx_ok!(z.context().cosh(&z, None));
             let r = rz.cosh();
@@ -191,7 +191,7 @@ proptest! {
     #[test]
     #[ignore]
     fn cbig_sinh_cosh_fuzz(zre in f64_part(), zim in f64_part()) {
-        for prec in fuzz::fuzz_precisions_bits() {
+        for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
             let (z, rz) = pair(zre, zim, prec as usize);
             let (ds, dc) = z.context().sinh_cosh(&z, None);
             let ds = cmplx_ok!(ds);
@@ -208,7 +208,7 @@ proptest! {
     #[test]
     #[ignore]
     fn cbig_tanh_fuzz(zre in f64_part(), zim in f64_part()) {
-        for prec in fuzz::fuzz_precisions_bits() {
+        for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
             let (z, rz) = pair(zre, zim, prec as usize);
             let d = cmplx_ok!(z.context().tanh(&z, None));
             let r = rz.tanh();
@@ -221,7 +221,7 @@ proptest! {
     #[test]
     #[ignore]
     fn cbig_asinh_fuzz(zre in f64_part(), zim in f64_part()) {
-        for prec in fuzz::fuzz_precisions_bits() {
+        for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
             let (z, rz) = pair(zre, zim, prec as usize);
             let d = cmplx_ok!(z.context().asinh(&z, None));
             let r = rz.asinh();
@@ -234,7 +234,7 @@ proptest! {
     #[test]
     #[ignore]
     fn cbig_acosh_fuzz(zre in f64_part(), zim in f64_part()) {
-        for prec in fuzz::fuzz_precisions_bits() {
+        for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
             let (z, rz) = pair(zre, zim, prec as usize);
             let d = cmplx_ok!(z.context().acosh(&z, None));
             let r = rz.acosh();
@@ -247,7 +247,7 @@ proptest! {
     #[test]
     #[ignore]
     fn cbig_atanh_fuzz(zre in f64_part(), zim in f64_part()) {
-        for prec in fuzz::fuzz_precisions_bits() {
+        for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
             let (z, rz) = pair(zre, zim, prec as usize);
             let d = cmplx_ok!(z.context().atanh(&z, None));
             let r = rz.atanh();
@@ -263,7 +263,7 @@ proptest! {
         zre in f64_part(), zim in f64_part(),
         wre in f64_part(), wim in f64_part(),
     ) {
-        for prec in fuzz::fuzz_precisions_bits() {
+        for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim, &wre, &wim])) {
             let (z, rz) = pair(zre, zim, prec as usize);
             let (w, rw) = pair(wre, wim, prec as usize);
             let d = cmplx_ok!(z.context().powf(&z, &w, None));
@@ -279,7 +279,7 @@ proptest! {
     #[test]
     #[ignore]
     fn cbig_powi_fuzz(zre in f64_part(), zim in f64_part(), n in -12i32..=12) {
-        for prec in fuzz::fuzz_precisions_bits() {
+        for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim, &n])) {
             let (z, rz) = pair(zre, zim, prec as usize);
             let d = cmplx_ok!(z.context().powi(&z, IBig::from(n)));
             let r = rz.pow(&rug::Complex::with_val(prec as u32, (n as f64, 0.0)));

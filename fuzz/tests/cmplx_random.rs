@@ -22,7 +22,7 @@ proptest! {
         zre in f64_part(), zim in f64_part(),
         wre in f64_part(), wim in f64_part(),
     ) {
-        for prec in fuzz::fuzz_precisions_bits() {
+        for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim, &wre, &wim])) {
             let (z, rz) = pair(zre, zim, prec as usize);
             let (w, rw) = pair(wre, wim, prec as usize);
             let p = prec as usize;
