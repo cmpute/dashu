@@ -22,6 +22,12 @@
   `|πx| ≤ 1`, the exponential composition the rest.
 
 ### Change
+- **`-0` renders with its sign**, as `f64`'s does: `format!("{}", -0)` is now `"-0"` (was `"0"`)
+  and `format!("{:e}", -0)` is `"-0e0"` (was `"0e0"`). The parse side moves with it — `"-0"`,
+  `"-0.0"` and `"-0e0"` now produce *negative* zero (all three produced `+0`) — so a signed zero
+  survives its own `Display`/`FromStr` round-trip. Neither direction could express the sign
+  before, which is why the pair is fixed together. Nothing numeric changes (`±0` compare equal)
+  and `{:+}` still prints `"+0"` for the positive zero.
 - **(internal) the Ziv error radius is now a value-space `Mag` instead of an exact-integer
   ulp count** (`float/src/mag.rs`, `float/src/ball.rs`; both `pub(crate)`). Every `+`/`-`/`*`/`/`
   in a transcendental's algorithm is itself correctly rounded, so the radius composes through

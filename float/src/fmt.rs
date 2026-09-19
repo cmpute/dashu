@@ -133,7 +133,7 @@ impl<const B: Word> Repr<B> {
                 signif_digits = signif_digits.max(1);
             }
 
-            let has_sign = ((negative && !is_zero) || f.sign_plus()) as usize;
+            let has_sign = (negative || f.sign_plus()) as usize;
             let has_radix_point = if exp > 0 {
                 // if there's no fractional part, the result has the floating point
                 // only if the precision is set to be non-zero
@@ -171,10 +171,10 @@ impl<const B: Word> Repr<B> {
                 f.write_char(f.fill())?;
             }
         }
-        // Emit the sign: a nonzero negative always carries '-'; `-0` carries '-' only when the
-        // formatter's `+` flag is set (otherwise `-0` and `+0` both render as "0"). Under `+`,
-        // `+0` renders as "+0" via the else-if branch.
-        if negative && (!is_zero || f.sign_plus()) {
+        // Emit the sign. A negative value always carries '-', `-0` included — matching `f64`,
+        // where `-0.0` prints as "-0" — so a signed zero survives its own `Display`
+        // round-trip (and `{:+}` still yields "+0" for `+0` via the else-if branch).
+        if negative {
             f.write_char('-')?;
         } else if f.sign_plus() {
             f.write_char('+')?;
@@ -342,7 +342,7 @@ impl<const B: Word> Repr<B> {
         let (left_pad, right_pad) = if let Some(min_width) = f.width() {
             let prec = f.precision().unwrap_or(0);
             let has_point = signif_str.len() > 1 || prec > 0; // whether print the radix point
-            let has_sign = (negative && !is_zero) || f.sign_plus();
+            let has_sign = negative || f.sign_plus();
 
             // if the precision option is set, there might be extra trailing zeros
             let trailing_zeros = if prec > signif_str.len() - 1 {
@@ -380,10 +380,10 @@ impl<const B: Word> Repr<B> {
                 f.write_char(f.fill())?;
             }
         }
-        // Emit the sign: a nonzero negative always carries '-'; `-0` carries '-' only when the
-        // formatter's `+` flag is set (otherwise `-0` and `+0` both render as "0"). Under `+`,
-        // `+0` renders as "+0" via the else-if branch.
-        if negative && (!is_zero || f.sign_plus()) {
+        // Emit the sign. A negative value always carries '-', `-0` included — matching `f64`,
+        // where `-0.0` prints as "-0" — so a signed zero survives its own `Display`
+        // round-trip (and `{:+}` still yields "+0" for `+0` via the else-if branch).
+        if negative {
             f.write_char('-')?;
         } else if f.sign_plus() {
             f.write_char('+')?;

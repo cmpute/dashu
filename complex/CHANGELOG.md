@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Change
+- **A `-0` component of a complex value renders with its sign**, following `dashu-float`: the
+  components are formatted by `FBig`, whose `Display`/`LowerExp` now print `-0` rather than `0`
+  (and `FromStr` parses it back as negative zero). Nothing numeric changes.
+
 ### Add
 - ×π trigonometric functions `sin_pi`/`cos_pi`/`sin_cos_pi`/`tan_pi` (of `z·π`), on `Context`,
   `CBig` and `CachedCBig`. Pure-real arguments reduce exactly through the real ×π kernels
