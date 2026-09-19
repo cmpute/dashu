@@ -3,54 +3,33 @@
 ## Unreleased
 
 ### Change
-- **(internal) division's digit bookkeeping no longer allocates** (completing the div fixes
-  below without a performance regression): `digit_len` on a power-of-two base is a plain
-  bit-length computation — `ilog` materialized `B^log` as a heap buffer only for it to be
-  discarded —; the dividend-width check runs on integer-only bit-length bounds instead of the
-  libm-backed `Repr::digits_ub`/`digits_lb`; the padding branches derive the scaled quotient's
-  digit count instead of re-measuring it; and a `precision+1`-digit quotient's single-step
-  rounding computes its half comparison with at most one multiplication (none at all in base 2,
-  and never for directed modes). `FBig / FBig` is at parity or faster than 0.6.0 at every
-  benched precision; `DBig / DBig` is ~10% faster at 10³–10⁴ decimal digits and at parity
-  elsewhere, except 10-digit operands (+8%, the cost of the correctly-rounded wide-quotient
-  path that used to mis-round).
+- **(internal) faster digit bookkeeping in division**: `digit_len` on a power-of-two base is
+  now a plain bit length (`ilog` allocated a `B^log` buffer only to discard it). No perf
+  regression from the fixes below: `FBig / FBig` at parity or faster at all benched
+  precisions, `DBig / DBig` ~10% faster at 10³–10⁴ digits (+8% at 10 digits, the cost of the
+  now-correct wide-quotient rounding), `nth_root` 10–45% faster.
 
 ### Fix
-- **`FBig::sqrt` under directed rounding modes** (`Up`/`Away`, and their `CachedFBig`
-  counterparts): when the integer square root of the aligned significand carries
-  `precision + 1` digits, the final rounding hardcoded half-up behavior instead of
-  consulting the rounding mode, so a sticky remainder rounded *down* under `Up`
-  (e.g. `Up(sqrt(6))² < 6` at precision 53). The rounding now delegates to the mode,
-  with the sticky remainder resolving "at the half" to "strictly past the half" (#99).
-- **`Context::div` no longer pre-rounds an over-wide dividend** (fix in `repr_div`, which
-  now bounds the dividend itself by an exact digit split, keeping the dropped low digits
-  as sticky rounding information). Rounding the dividend before dividing corrupted the
-  quotient: it could report `Exact` where the true quotient isn't representable
-  (`5/1` at precision 1), invert the direction under directed modes (`7/-1` under `Up`
-  returned `-8` instead of `-4`), or land on a false midpoint (`31/4` in base 3 under
-  `HalfEven` returned `6` instead of `9`) (#100).
-- **`repr_div` now rounds exact and over-wide quotients to the context precision in a
-  single step.** Previously an exactly-dividing quotient was returned unreduced with an
-  `Exact` flag (`15/3` at precision 2 returned the 3-digit significand `5` instead of
-  rounding to `4`), and a `precision+1`-digit quotient was rounded on the integer grid
-  instead of the precision grid, producing off-by-grid values (`3/5` at precision 2
-  returned `0.625` — not even representable — instead of `0.5`; `14/3` returned `6`
-  instead of `4`) (#100).
-- **`Context::nth_root` no longer double-rounds a `precision+1`-digit integer root.** The
-  exponent alignment now takes the truncating shift (keeping the dropped digits as the sticky
-  `low` part) instead of the padding one whenever the padding would grow the root to
-  `precision + 1` digits, so the root always carries exactly `precision` digits and a single
-  rounding decides. The old padding choice rounded the root to an integer first and then
-  re-rounded, which tied the wrong way at midpoints of the coarse grid (`nth_root(2, 1.75)`
-  at precision 2 under `HalfEven` returned `1.0` instead of `1.5`) (#100). As a side effect
-  the truncating alignment does less padding work, and `nth_root` is 10–45% faster for every
-  `n ≥ 2` at the benched precisions.
-- **`with_base` / `with_base_and_precision` now round the exact-conversion shortcuts**
-  (power-of-base shortcuts and the small-exponent path), which previously returned
-  significands wider than the target precision (e.g. `3` in base 4 → base 2 at
-  precision 1 returned the 2-digit `0b11` unreduced), and no longer pre-round the
-  dividend of the internal division, so the `Exact` flag is truthful (`2.1` → base 2
-  no longer reports `Exact`) (#100).
+- **`sqrt` under directed modes** (#99): a sticky remainder was rounded *down* under
+  `Up`/`Away` when the integer root carries `precision + 1` digits (`Up(sqrt(6))² < 6` at
+  p53) — the final rounding now consults the rounding mode instead of hardcoding half-up.
+- **`div` no longer pre-rounds an over-wide dividend** (#100): the kernel bounds it by an
+  exact digit split instead, keeping the dropped digits as sticky rounding information.
+  The old pre-round could report a false `Exact` (`5/1` @ p1), invert the direction
+  (`7/-1` under `Up` gave `-8` instead of `-4`), or land on a false midpoint (`31/4`
+  base 3 `HalfEven` gave `6` instead of `9`).
+- **`div` now rounds exact and `precision+1`-digit quotients in a single step** (#100):
+  an exactly-dividing quotient was returned unreduced (`15/3` @ p2 gave the 3-digit `5`
+  instead of `4`), and an over-wide quotient was rounded on the integer instead of the
+  precision grid (`3/5` @ p2 gave the unrepresentable `0.625` instead of `0.5`).
+- **`nth_root` no longer double-rounds a `precision+1`-digit root** (#100): the exponent
+  alignment now takes the truncating shift when the padding one would grow the root past
+  the precision, so one rounding decides (`nth_root(2, 1.75)` @ p2 `HalfEven` gave `1.0`
+  instead of `1.5`).
+- **`with_base` rounds its exact-conversion shortcuts** (#100): the power-of-base shortcuts
+  and small-exponent path returned significands wider than the target precision, and the
+  division path pre-rounded its dividend, so the `Exact` flag could be false (`2.1` →
+  base 2 reported `Exact`).
 - `ConstCache::pi` (and `Context::pi`) now compute one extra Chudnovsky series term,
   fixing an off-by-1-ulp mis-rounding at certain precisions (previously the term count
   provided only the ceiling — no accuracy headroom — so the series truncation error

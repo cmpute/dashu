@@ -4,7 +4,7 @@ use crate::{
     helper_macros::{self, impl_binop_assign_by_taking},
     repr::{Context, Repr, Word},
     round::{Round, Rounded, Rounding},
-    utils::{digit_len, digits_bounds_from_bits, shl_digits, shl_digits_in_place, split_digits},
+    utils::{digit_len, shl_digits, shl_digits_in_place, split_digits},
 };
 use core::cmp::Ordering;
 use core::ops::{Div, DivAssign, Rem, RemAssign};
@@ -316,22 +316,15 @@ impl<R: Round> Context<R> {
     /// exactly where the true one doesn't, land on a false midpoint, or round the wrong way
     /// under directed modes.)
     ///
-    /// The exact digit counts are only computed when the dividend is *possibly* wider than the
-    /// bound: `digit_len` is an `ilog`, which for a non-power-of-two base computes a full power
-    /// of the base, so the check first runs on integer-only bit-length bounds (the f32-based
-    /// `Repr::digits_ub`/`digits_lb` call into libm's `log2` and are not free either).
+    /// The exact digit counts are only computed when the cheap `digits_ub`/`digits_lb`
+    /// estimates allow an over-wide dividend (`digit_len` is an `ilog`, which for a
+    /// non-power-of-two base computes a full power of the base).
     pub(crate) fn repr_div_any_width<const B: Word>(
         &self,
         lhs: Repr<B>,
         rhs: Repr<B>,
     ) -> FpResult<Repr<B>> {
-        let maybe_wide = !lhs.is_pos_zero() && {
-            // digit_len::<2> is the plain bit length (no libm)
-            let (num_ub, _) = digits_bounds_from_bits::<B>(digit_len::<2>(&lhs.significand));
-            let (_, den_lb) = digits_bounds_from_bits::<B>(digit_len::<2>(&rhs.significand));
-            num_ub > den_lb + self.precision
-        };
-        if !maybe_wide {
+        if !lhs.is_pos_zero() && lhs.digits_ub() <= rhs.digits_lb() + self.precision {
             return self.repr_div(lhs, rhs);
         }
 
