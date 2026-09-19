@@ -292,10 +292,23 @@ impl<R: ErrorBounds> Context<R> {
         if B.is_power_of_two() {
             sqrt_rounded(0)
         } else {
-            self.ziv(crate::utils::ceil_usize(self.precision.log2_est()) + 10, |guard| {
-                let value = sqrt_rounded(guard)?.value();
-                let radius = value.clone().ulp();
-                Ok((value, radius))
+            // Near-correct kernel, mechanical radius: the base-`B` digit alignment of the integer
+            // square root is only clean when the base is a power of two, so for other bases the
+            // single rounding step is bounded by one ulp at the working precision — the same
+            // assumption every other [`Ball`] operator makes of its kernel.
+            //
+            // Routing it through `Ball::from_rounded` also gives an *exact* root `rad == 0`, and
+            // that is load-bearing: a zero radius is the only one Ziv can certify against a
+            // one-sided directed preimage (`Down`'s `[y, y+ulp)` cannot contain `[y−r, y+r]` for
+            // any `r > 0`). With a blanket `value.ulp()` the loop never converged on a perfect
+            // square — `sqrt(4)` in base 10 under `Down`/`Up`/`Zero` doubled its working precision
+            // to ~10^8 digits instead of returning `2`.
+            let initial_guard = crate::utils::ceil_usize(self.precision.log2_est()) + 10;
+            self.ziv(initial_guard, |guard| {
+                let wp = self.precision + guard;
+                let rounded = sqrt_rounded(guard)?;
+                Ok(Ball::from_rounded(rounded.map(FBig::into_repr), wp)
+                    .to_value_radius::<R>(&Context::<R>::new(wp)))
             })
         }
     }
@@ -481,5 +494,45 @@ mod tests {
         let a = Repr::<2>::new(IBig::from(3), isize::MAX / 2);
         let r = ctx.hypot(&a, &Repr::<2>::zero()).unwrap().value();
         assert_eq!(r.repr().exponent(), isize::MAX / 2);
+    }
+
+    /// A perfect square in a *non-power-of-two* base must certify under every rounding mode,
+    /// the one-sided directed ones included.
+    ///
+    /// Regression: `sqrt`'s Ziv closure reported a blanket `value.ulp()` radius, never zero, and
+    /// no `r > 0` fits inside `Down`'s preimage `[y, y+ulp)` — so an exactly-representable root
+    /// could not be certified at all. `sqrt(4)` in base 10 under `Down`/`Up`/`Zero` doubled its
+    /// working precision until the retry budget ran out (~10^8 digits) instead of returning `2`.
+    /// The root is now wrapped as a [`Ball`], so an exact result carries `rad == 0`.
+    #[test]
+    fn test_sqrt_exact_root_certifies_under_directed_rounding() {
+        // (input, expected exact root) — perfect squares, and a non-square for contrast
+        let cases: [(i64, isize, i64, isize, bool); 4] = [
+            (4, 0, 2, 0, true),
+            (100, 0, 10, 0, true),
+            (9, 0, 3, 0, true),
+            (25, -2, 5, -1, true), // 0.25 → 0.5
+        ];
+        macro_rules! check {
+            ($m:ty, $name:expr) => {
+                for (sig, exp, root_sig, root_exp, exact) in cases {
+                    let x = Repr::<10>::new(IBig::from(sig), exp);
+                    let r = Context::<$m>::new(10).sqrt::<10>(&x).unwrap();
+                    let want = Repr::<10>::new(IBig::from(root_sig), root_exp);
+                    assert_eq!(
+                        matches!(r, Approximation::Exact(_)),
+                        exact,
+                        "{}: sqrt({sig}e{exp}) exactness",
+                        $name
+                    );
+                    assert_eq!(r.value().repr(), &want, "{}: sqrt({sig}e{exp})", $name);
+                }
+            };
+        }
+        check!(mode::Down, "Down");
+        check!(mode::Up, "Up");
+        check!(mode::Zero, "Zero");
+        check!(mode::HalfEven, "HalfEven");
+        check!(mode::HalfAway, "HalfAway");
     }
 }

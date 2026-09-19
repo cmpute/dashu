@@ -3,9 +3,11 @@
 Design record for migrating the internal Ziv error-tracking type from an IBig ulp-count ball
 to a fixed-width value-space radius (`Mag`).
 
-> **Status.** Design stage — nothing implemented. Branch `float-mag-ball` (off `master`
-> `12875d8`). The parallel branch `trig_unit` (×u/×π trig families, exact integer reduction)
-> is ignored during this work and rebased on top afterwards.
+> **Status.** Implemented. Branch `float-mag-ball` (off `master` `12875d8`): `80010ee` adds
+> `Mag`, `72a9d18` migrates `Ball` and its consumers. §4a records what changed against the
+> design below; §8 lists the performance follow-ups that remain, and the next phase's work
+> (dashu-complex, those follow-ups) lives in [`PLAN_PHASE2.md`](PLAN_PHASE2.md). The parallel
+> branch `trig_unit` (×u/×π trig families, exact integer reduction) is rebased on top.
 
 ---
 

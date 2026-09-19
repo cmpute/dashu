@@ -2,7 +2,34 @@
 
 ## Unreleased
 
+### Change
+- **(internal) the Ziv error radius is now a value-space `Mag` instead of an exact-integer
+  ulp count** (`float/src/mag.rs`, `float/src/ball.rs`; both `pub(crate)`). Every `+`/`-`/`*`/`/`
+  in a transcendental's algorithm is itself correctly rounded, so the radius composes through
+  plain interval algebra over the operation's operands — no ulp-domain shift formulas, no
+  per-ball precision state, and no `IBig` error bookkeeping. Results are unchanged for every
+  input (validated bit-exact against MPFR/MPC); this is the mechanism the 0.6.0 note below
+  described as "an exact-integer error count", replaced.
+- **(internal) the operand error of the *input* to a transcendental is now part of the
+  certified radius** rather than a per-function hand estimate, so a result that sits close to
+  a rounding boundary is retried instead of being rounded the wrong way. See the two `Fix`
+  entries below, which are the user-visible symptoms of the old per-function estimates.
+
 ### Fix
+- `sqrt` of a perfect square in a non-power-of-two base never returned under the directed
+  rounding modes (`Down`/`Up`/`Zero`): it kept doubling its working precision until the retry
+  budget was exhausted — `sqrt(4)` in base 10 escalated past 10^8 digits instead of returning
+  `2`. `sqrt` was the one transcendental still deriving its Ziv radius by hand (a blanket
+  `value.ulp()`), and no nonzero radius fits a one-sided directed preimage (`Down`'s
+  `[y, y+ulp)` cannot contain `[y−r, y+r]`), so an exactly-representable root could not be
+  certified at all. It now wraps its kernel result as a `Ball`, so an exact root carries
+  radius 0 and certifies immediately; an inexact root keeps the same one-ulp bound, and the
+  base-2 fast path is untouched.
+- `log2`/`ln` of a value a hair above 1 at low precision could return exactly `0`: the Ziv
+  containment test accepted a zero candidate whose radius was nonzero, but no nonzero real
+  rounds to exactly zero (the documented ±ulp preimage of ±0 is a special case). A zero
+  candidate is now certified only with a zero radius. Scoped to this crate's driver — the
+  public `ErrorBounds` semantics are unchanged.
 - `x + (-0)`, `x - (-0)` and their mirrors returned `0` instead of `x` whenever the exponent
   gap to `-0`'s sentinel exponent (`-1`) reached past the end of `x`'s significand — e.g.
   `1e-16 + (-0)` was `0` at precision 12. The `addsub_*` kernels short-circuited only on

@@ -105,7 +105,10 @@ impl<R: ErrorBounds> Context<R> {
         ziv_retries_reset_impl();
         for _ in 0..MAX_ZIV_RETRIES {
             let (a, e) = approx(guard)?;
-            #[cfg(all(test, feature = "std"))]
+            // Per-attempt approximation radius — the diagnostic that pairs with `ziv_retries()`
+            // when profiling why a function retries. Off by default; enable with
+            // `--features tuning`.
+            #[cfg(feature = "tuning")]
             eprintln!("ZIV g={guard} r={e:?}");
             // `with_precision` consumes `a`, but the containment test still needs it, so round a
             // clone and keep the original for the interval check.

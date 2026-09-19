@@ -593,15 +593,16 @@ impl<R: ErrorBounds> Context<R> {
 
     /// `x^y = exp(y·ln x)` for `pos_base > 0`, correctly rounded via a Ziv loop — the shared core
     /// of [`powf`](Self::powf) (non-integer exponents) and the [`powi`](Self::powi) fallback for
-    /// exponents past the squaring chain's feasible range. `ln` and `exp` are themselves Ziv-correct
-    /// at the working precision, so the radius comes only from the rounding of the `ln`/`mul`/`exp`
-    /// chain — but `exp` AMPLIFIES the absolute error of its argument `y·ln x` by the result
-    /// magnitude, i.e. by a relative factor of `|y·ln x|`. The radius is
-    /// `result.ulp() · (|y·ln x| + 1) · (B + 8)` where `result.ulp()` is taken at the *working*
-    /// precision, so it shrinks as `B^{-guard}` and the containment test converges. (A radius
-    /// computed at unlimited precision would be constant across retries and never converge for a
-    /// value near a rounding boundary.) The `B + 8` scale covers the `ulp`-vs-`value·B^{1-P}` gap
-    /// plus a safety margin for the chained roundings.
+    /// exponents past the squaring chain's feasible range.
+    ///
+    /// The radius is **derived mechanically**: `ln_compute`, the multiplication by the rounded
+    /// exponent and [`exp_ball`](Self::exp_ball) are each [`Ball`] operations, so their errors
+    /// compose through the ordinary rules. `exp` amplifies the absolute error of `y·ln x` by the
+    /// result magnitude — that amplification is `exp_ball`'s input-error fold, which scales by
+    /// `result.mag()` (see its doc: both factors there are load-bearing). Every radius involved
+    /// is taken at the *working* precision, so it shrinks as `B^{-guard}` and the containment
+    /// test converges. (A radius computed at unlimited precision would be constant across
+    /// retries and never converge for a value near a rounding boundary.)
     ///
     /// Overflow/underflow of `exp(y·ln x)` is detected inside the Ziv closure by `exp` itself
     /// (which returns `Err(Overflow)` / `Err(Underflow)`) and propagated — the result is positive
