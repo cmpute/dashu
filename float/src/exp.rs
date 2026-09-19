@@ -5,7 +5,6 @@ use crate::{
     ball::{ulps, Ball},
     error::{assert_finite, assert_limited_precision, FpError, FpResult},
     fbig::FBig,
-    mag::Mag,
     math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr, Word},
     round::{mode, ErrorBounds, Round, Rounded, Rounding::*},
@@ -240,10 +239,18 @@ impl<R: Round> Context<R> {
     /// `exp` of a *ball* input. [`exp_compute`](Self::exp_compute) evaluates on `x.mid`;
     /// the input ball's own error `|θ| ≤ x.rad` then contributes `e^{x+rad_x}·rad_x` to the
     /// result (the exponential's derivative is itself, evaluated at the ball's *upper
-    /// endpoint*): `|e^{x+θ} − e^x| ≤ e^x·(e^θ − 1) ≤ rad_x·e^{x+rad_x}`. The endpoint is
-    /// built by exact `Repr` addition (signed — `|x|+rad` would blow the factor up for
-    /// negative x and stall ziv) and bounded by [`Mag::exp_upper`], unconditionally sound
-    /// with no reachability caveats. `work_precision` is the precision `x` was built at.
+    /// endpoint*): `|e^{x+θ} − e^x| ≤ e^x·(e^θ − 1) ≤ rad_x·e^{x+rad_x}`.
+    ///
+    /// The factor `e^{x+rad_x}` is bounded **without ever evaluating a negative-argument exp**:
+    /// `e^{x+rad_x} = e^{x.mid}·e^{rad_x} ≤ ‖result‖·exp_upper(rad_x)`, where `‖result‖` is the
+    /// ball's own magnitude [`Ball::mag`] — a proven upper bound on `e^{x.mid}` because the ball
+    /// covers it. Both factors are essential: dropping `‖result‖` (e.g. clamping the factor to
+    /// `Mag::ONE`, which is sound since `e^{x+rad_x} ≤ 1` for a nonpositive endpoint) throws away
+    /// the entire `e^x` magnitude and inflates the radius by `e^{−x}` — for a large negative
+    /// exponent (`powf` with a large `|y·ln x|` drives `x` to thousands) that is a relative
+    /// over-estimate of hundreds of digits, and Ziv can only certify by growing the working
+    /// precision past `|x|/log_B e`, turning a microsecond `powf` into seconds. `work_precision`
+    /// is the precision `x` was built at.
     pub(crate) fn exp_ball<const B: Word>(
         &self,
         x: &Ball<B>,
@@ -254,12 +261,7 @@ impl<R: Round> Context<R> {
         let mut result =
             self.exp_compute::<B>(&x.mid, work_precision, false, n, reborrow_cache(&mut cache))?;
         if !x.rad.is_zero() {
-            let upper = &x.mid + &x.rad.to_repr::<B>();
-            let factor = if upper.sign() == Sign::Negative {
-                Mag::ONE // e^{x+rad} ≤ 1 on a nonpositive endpoint
-            } else {
-                Mag::from_repr(&upper).exp_upper()
-            };
+            let factor = result.mag().mul(&x.rad.exp_upper());
             result.add_error(factor.mul(&x.rad));
         }
         Ok(result)
@@ -1484,6 +1486,64 @@ mod tests {
         let r = ctx.powf::<2>(pos_base, exp4, None).unwrap().value();
         assert_eq!(r.repr(), ctx.powi::<2>(pos_base, 4.into()).unwrap().value().repr());
         let _ = DBig::ZERO;
+    }
+
+    /// The `exp_ball` input-error fold must scale by the *result's* magnitude, not just by the
+    /// input radius. For a large negative argument `exp(x)` is tiny, so an absolute fold
+    /// (`rad_x`, i.e. a factor clamped to 1) over-estimates the error by `e^{−x}` — hundreds of
+    /// digits. The radius then dwarfs the value and Ziv can only certify by growing the working
+    /// precision past `|x|/log_B e`, which is what made `powf` with a large `|y·ln x|` take
+    /// seconds per call.
+    #[test]
+    fn exp_ball_radius_scales_with_result_magnitude_for_negative_args() {
+        type F = FBig<mode::HalfEven, 10>;
+        let ctx = Context::<mode::HalfEven>::new(10);
+        // mid = −6000 at precision 10 (ulp = 1e-6), rad = 10 ulps ⇒ true arg = −6000 ± 1e-5.
+        let mid = F::from_parts(IBig::from(-6000000000i64), -6)
+            .with_precision(10)
+            .value();
+        let rad = ulps::<10>(&mid.repr, 10, 10);
+        let x = Ball::<10>::with_error(mid.into_repr(), rad);
+        let r = ctx.exp_ball::<10>(&x, 10, None).unwrap();
+
+        // True contribution: e^{−6000}·(e^{1e-5} − 1) ≈ 1e-2611 against a result e^{−6000} ≈
+        // 1.7e-2606 — a ratio of ~1/10⁴. Asserting the radius stays under 1/100 of the result's
+        // magnitude leaves ~170× margin, while the absolute fold this test pins down puts the
+        // radius *above* the result by ~10^2582. (A ulp-count bound is avoided on purpose: `ulps`
+        // takes its multiplier as a `Word`, which `force_bits="16"` narrows to 16 bits.)
+        assert!(
+            r.rad.mul(&crate::mag::Mag::from_word(100)) <= crate::mag::Mag::from_repr(&r.mid),
+            "radius {:?} is not scaled by the result magnitude (result {:?})",
+            r.rad,
+            r.mid
+        );
+    }
+
+    /// End-to-end pin for the same defect: `powf` whose exponentiation drives the `exp` argument
+    /// far negative must certify on the first Ziv attempt. With an absolute input-error fold the
+    /// radius never reaches the result's ulp scale and the loop burns ~9 retries at a working
+    /// precision of thousands of digits (≈1.5 s at this precision, vs microseconds).
+    #[test]
+    fn powf_large_negative_exp_certifies_first_attempt() {
+        type F = FBig<mode::HalfEven, 10>;
+        let ctx = Context::<mode::HalfEven>::new(16);
+        // base = 7.028…e71 (76 digits), exp = −84.91 ⇒ y·ln(base) ≈ −14035, result ≈ 1e-6096.
+        let base = F::from_parts(
+            IBig::from_str_radix(
+                "7028223021191846562494387621240260047617927946605687951670131559429803281481",
+                10,
+            )
+            .unwrap(),
+            -4,
+        );
+        let exp = F::from_parts(IBig::from(-8491i64), -2); // −84.91
+        crate::ziv_retries_reset();
+        let _ = ctx.powf::<10>(base.repr(), exp.repr(), None).unwrap();
+        assert_eq!(
+            crate::ziv_retries(),
+            0,
+            "powf with a large |y·ln x| should certify on the first attempt"
+        );
     }
 
     #[test]

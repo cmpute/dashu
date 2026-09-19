@@ -510,7 +510,10 @@ mod tests {
     #[test]
     fn cache_clear_zeros_and_recomputes() {
         let h = handle();
-        let z = cached(2, 0, &h);
+        // 23 (not 2): a unit-binade input needs no cached constant at all (the reduction onto
+        // [1, 2) is exact and the reconstruction scale is zero), while a larger integer part
+        // reconstructs through the cached ln(2)/ln(10).
+        let z = cached(23, 0, &h);
         let before = z.ln().into_cbig();
         assert!(z.cache().total_terms() > 0);
 

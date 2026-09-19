@@ -663,8 +663,11 @@ mod tests {
 
     #[test]
     fn test_cache_size() {
+        // 12.345 (not 1.234): a unit-binade input needs no cached constant at all — the
+        // reduction onto [1, 2) is exact and the reconstruction scale is zero — while a
+        // two-digit integer part reconstructs through the cached ln(10).
         let x = CachedFBig::<mode::HalfAway, 10>::with_cache(
-            Repr::new(1234.into(), -3),
+            Repr::new(12345.into(), -3),
             Context::new(50),
         );
         let _ = x.ln();
@@ -675,8 +678,9 @@ mod tests {
 
     #[test]
     fn test_cache_clear() {
+        // 12.345, as in test_cache_size: the ln reconstruction consults the cache.
         let x = CachedFBig::<mode::HalfAway, 10>::with_cache(
-            Repr::new(1234.into(), -3),
+            Repr::new(12345.into(), -3),
             Context::new(50),
         );
         let before_clear = x.ln().into_fbig();

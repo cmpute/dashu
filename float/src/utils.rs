@@ -214,8 +214,6 @@ mod tests {
     }
 
     #[test]
-
-    #[test]
     fn test_split_bits_ref() {
         let a = IBig::from(0x1234567890abcdefu64).pow(12);
         let (hi, lo) = split_bits_ref(&a, 100);

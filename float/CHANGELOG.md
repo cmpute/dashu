@@ -3,6 +3,29 @@
 ## Unreleased
 
 ### Fix
+- `powf` (and the `powi` fallback for exponents past the squaring chain) no longer stalls
+  when the exponentiation drives the `exp` argument far negative — e.g.
+  `powf(7.03e71, -84.91)`, whose `y·ln x ≈ −14035` makes the result ≈ `1e-6096`. The
+  internal `exp` input-error fold omitted the result's magnitude for a negative argument,
+  over-estimating the error radius by `e^{−x}` (hundreds of digits); the Ziv loop could only
+  certify by growing its working precision past `|x|/log_B e`, burning 9 retries and ~6000
+  digits: 1.5 s at 16 digits instead of 60 µs (and 6.5 s at 151). The fold now scales by the
+  result's magnitude, so such calls certify on the first attempt.
+- `ln` (and `log2`/`log10`/`ln_1p`, which share its core) of an argument with a huge
+  exponent (e.g. `ln(1e1000000000)`) previously never returned, holding gigabytes: the
+  argument reduction materialized a power of two spanning the whole exponent *gap*. The
+  reduction now splits the magnitude by an exact base-exponent re-tag plus a bounded
+  power-of-two finish, so no power of the gap is ever materialized, and the reduction
+  arithmetic is exact integer work end to end (the previous single f32 `log2` estimate
+  loses hundreds of bits of accuracy once `|log2 x|` approaches 10^9). (issue #103)
+- The hyperbolic functions (`sinh`, `cosh`, `sinh_cosh`, `tanh`, `asinh`, `acosh`) now
+  fold the *input's own rounding* into the certified error radius. Previously the input
+  was rounded to the working precision and the rounding error dropped, which understated
+  the radius by the ulp of the *original* magnitude — fatal for `acosh` near 1, where the
+  `x−1` cancellation shrinks the value (and its ulp) while the inherited error does not:
+  `acosh` could certify the wrong neighbour of a decimal tie (issue #102). All six now
+  thread the input ball (or pass the raw repr into `exp_compute`/`ln_compute`, which fold
+  it themselves).
 - `ConstCache::pi` (and `Context::pi`) now compute one extra Chudnovsky series term,
   fixing an off-by-1-ulp mis-rounding at certain precisions (previously the term count
   provided only the ceiling — no accuracy headroom — so the series truncation error

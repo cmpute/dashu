@@ -214,9 +214,8 @@ impl<const B: Word> Ball<B> {
         self.rad = self.rad.add(&err);
     }
 
-    /// An upper bound on `|self|` (the ball's magnitude). Currently exercised only by the
-    /// tests and the doc'd surface (the exp fold builds its endpoint bound directly).
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// An upper bound on `|self|` (the ball's magnitude). Used by the exp input-error fold
+    /// ([`Ball`]'s `exp_ball`), which scales the input radius by the result's own magnitude.
     pub(crate) fn mag(&self) -> Mag {
         Mag::from_repr(&self.mid).add(&self.rad)
     }

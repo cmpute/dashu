@@ -209,11 +209,12 @@ python-flint.)
 
 The two hand-derived derivative folds (previously ulp-domain shift algebra over `ceil_shift`):
 
-- **exp** (`exp_ball`): `result.rad += Mag::exp_upper(‖x.mid + rad_repr‖↑) · x.rad`, where `x.mid + rad_repr`
-  is the ball's **upper endpoint** via exact `Repr` addition (signed — using `|x|+rad` instead would blow the
-  radius up for negative x and stall ziv). Soundness: `|e^{x+θ} − e^x| ≤ rad_x·e^{x+rad_x} ≤ rad_x·exp_upper(u)`,
-  unconditional. (`result.mag()·x.rad` — the old code's shape — under-covers by the `e^{rad_x}` factor and is
-  kept sound in the old code only by reachability margins; do not resurrect it.)
+- **exp** (`exp_ball`): `result.rad += result.mag() · exp_upper(x.rad) · x.rad` — as built, see §4a.
+  Soundness: `|e^{x+θ} − e^x| ≤ rad_x·e^{x+rad_x}`, and `e^{x+rad_x} = e^{x.mid}·e^{rad_x}` is bounded
+  by the two independent factors `‖result‖ ≥ e^{x.mid}` (the ball covers it) and
+  `exp_upper(rad_x) ≥ e^{rad_x}` — both are needed, see §4a. (`result.mag()·x.rad` alone — the old
+  code's shape — under-covers by the `e^{rad_x}` factor and is kept sound in the old code only by
+  reachability margins; do not resurrect it.)
 - **ln_1p** (`ln_1p_ball`): `adjust = arg.rad / from_repr_lower((1 + arg.mid) − rad_repr)`, endpoints via exact
   `Repr` ops — the log1p rule validated in dashu-ball, tighter than the old `×2` hand formula.
 
@@ -298,6 +299,26 @@ same coin as deleting the 38 implicit `mid.precision()` reads.
 - `to_value_radius` takes the **work** context everywhere (tagging at the target context
   lost guard digits: `exp`/`ln` returned unrounded work values, and `with_base`'s
   `div_rem_euclid` ran at the tagged precision).
+- **`exp_ball`'s input-error fold scales by the result's magnitude** (§3.7's table entry was
+  written as `exp_upper(endpoint)`; the first implementation clamped the factor to `Mag::ONE`
+  when the upper endpoint was nonpositive — sound, since `e^{x+rad} ≤ 1` there, but it drops the
+  whole `e^x` factor). The pre-migration ulp-count code carried it as `sig_r = |mid_r|` and the
+  old comment already warned that omitting it breaks `powf` — and it does, in the opposite
+  direction: for `x` far negative the radius is over-estimated by `e^{−x}` (hundreds of digits),
+  which Ziv can only beat by growing the working precision past `|x|/log_B e`. `powf(7.03e71,
+  −84.91)` at 16 digits (`y·ln x ≈ −14035`, result ≈ `1e-6096`) burned 9 retries up to ~6000
+  digits: 1.5 s instead of 60 µs. The factor is now `result.mag() · x.rad.exp_upper()`, which
+  bounds `e^{x.mid}` and `e^{rad_x}` separately and avoids evaluating exp at a negative argument
+  (a `Mag` is unsigned; a signed-argument `exp_upper` would need an `exp_lower` twin).
+- **`ln_compute`'s argument reduction is done in two exact stages** (a base-power exponent
+  re-tag via `Ball::shift`, then a bounded power-of-two division). The single-stage form
+  materialized `2^⌊log2 x⌋` — for `ln(1e1000000000)` an integer of ~3.3·10⁹ bits to build and
+  divide, so the call never returned (issue #103). The base split is applied only for `|e| ≥ 2`:
+  within `|e| ≤ 1` the power-of-two stage shifts by at most `log2(sig) + 2·log2(B)` bits
+  (proportional to the input, hence bounded) and needs no `ln(B)` term — which matters because
+  `ln(B)` itself normalizes to `1·B^1`, so splitting it would recurse onto its own reconstruction
+  term (an infinite recursion on generic bases). The reconstruction is now
+  `2·sum + s2·ln(2) + e_base·ln(B)`, folding into a single `ln(2)` term when `B` is a power of two.
 
 ## 5. Deleted
 
