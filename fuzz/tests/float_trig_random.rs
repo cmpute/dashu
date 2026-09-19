@@ -30,6 +30,20 @@ fn tol(prec: usize) -> DBig {
     DBig::from_parts(100.into(), -(prec as isize))
 }
 
+/// `format!("{x:e}")`, keeping the sign of a negative zero.
+///
+/// dashu's `LowerExp` renders `-0` as `0e0` (it does not distinguish signed zeros), but
+/// `atan2`'s value depends on that sign: `atan2(-0, -1) = -pi` against `atan2(+0, -1) = +pi`.
+/// Building the oracle's operand from the bare string would hand MPFR the wrong input.
+fn exp_str(x: &DBig) -> String {
+    let s = format!("{x:e}");
+    if x.repr().is_neg_zero() && !s.starts_with('-') {
+        format!("-{s}")
+    } else {
+        s
+    }
+}
+
 proptest! {
     #![proptest_config(fuzz::fuzz_config())]
 
@@ -366,7 +380,7 @@ proptest! {
             // covered by the unit tests — here the general path
             let y_d = ctx.tan_unit::<10>(y.repr(), u as usize, None);
             let _ = y_d;
-            let y_rug = Float::with_val(bits, Float::parse(&y_str).unwrap());
+            let y_rug = Float::with_val(bits, Float::parse(&exp_str(&y)).unwrap());
             let d = match ctx.atan2_unit::<10>(y.repr(), x.repr(), u as usize, None) {
                 Ok(v) => v.value(),
                 Err(_) => continue, // (0, 0)
