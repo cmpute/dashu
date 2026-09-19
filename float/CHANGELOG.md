@@ -22,6 +22,11 @@
   an exactly-dividing quotient was returned unreduced (`15/3` @ p2 gave the 3-digit `5`
   instead of `4`), and an over-wide quotient was rounded on the integer instead of the
   precision grid (`3/5` @ p2 gave the unrepresentable `0.625` instead of `0.5`).
+- **`div` with a negative divisor and an over-wide dividend** carried the sticky low part
+  with the wrong sign (the divisor-sign normalization negates both operands), and the
+  `precision+1`-digit quotient's half comparison sign-flipped `B − 2·ql` where only `|ql|`
+  enters — the latter mis-rounded negative dividends in non-binary bases under nearest
+  modes (`-21/2` base 10 @ p1 `HalfEven` gave `-20` instead of `-10`).
 - **`nth_root` no longer double-rounds a `precision+1`-digit root** (#100): the exponent
   alignment now takes the truncating shift when the padding one would grow the root past
   the precision, so one rounding decides (`nth_root(2, 1.75)` @ p2 `HalfEven` gave `1.0`

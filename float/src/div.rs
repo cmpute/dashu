@@ -9,8 +9,8 @@ use crate::{
 use core::cmp::Ordering;
 use core::ops::{Div, DivAssign, Rem, RemAssign};
 use dashu_base::{
-    AbsOrd, Approximation, BitTest, DivEuclid, DivRem, DivRemEuclid, Inverse, RemEuclid, Sign,
-    Signed,
+    AbsOrd, Approximation, DivEuclid, DivRem, DivRemEuclid, Inverse, RemEuclid, Sign, Signed,
+    UnsignedAbs,
 };
 use dashu_int::{fast_div::ConstDivisor, modular::IntoRing, IBig, UBig};
 
@@ -316,15 +316,19 @@ impl<R: Round> Context<R> {
     /// exactly where the true one doesn't, land on a false midpoint, or round the wrong way
     /// under directed modes.)
     ///
-    /// The exact digit counts are only computed when the cheap `digits_ub`/`digits_lb`
-    /// estimates allow an over-wide dividend (`digit_len` is an `ilog`, which for a
-    /// non-power-of-two base computes a full power of the base).
+    /// The width check runs on the cheap `digits_ub`/`digits_lb` estimates, but the split
+    /// point itself must be the EXACT digit count: splitting at exactly
+    /// `divisor digits + precision` digits guarantees the high part is not below the divisor,
+    /// which keeps the kernel's padding branches (they rescale the remainder without
+    /// rescaling the sticky low part) off the `k > 0` path entirely. A lower split — e.g.
+    /// derived from the bounds — is unsound for that reason.
     pub(crate) fn repr_div_any_width<const B: Word>(
         &self,
         lhs: Repr<B>,
         rhs: Repr<B>,
     ) -> FpResult<Repr<B>> {
-        if !lhs.is_pos_zero() && lhs.digits_ub() <= rhs.digits_lb() + self.precision {
+        // (digits_ub of a zero dividend is 0, so zero takes the fast path too)
+        if lhs.digits_ub() <= rhs.digits_lb() + self.precision {
             return self.repr_div(lhs, rhs);
         }
 
@@ -335,6 +339,10 @@ impl<R: Round> Context<R> {
             return self.repr_div(lhs, rhs);
         }
         let (hi, lo) = split_digits::<B>(lhs.significand, k);
+        debug_assert_eq!(digit_len::<B>(&hi), ddigits + self.precision);
+        // the kernel normalizes the divisor to be positive by negating BOTH operands, so the
+        // sticky low part must follow the (negated) dividend's sign
+        let lo = rhs.significand.sign() * lo;
         self.repr_div_split(
             Repr {
                 significand: hi,
@@ -402,6 +410,11 @@ impl<R: Round> Context<R> {
                 }
             })?;
 
+        // From here on the digit counts must be EXACT (the `digits_ub`/`digits_lb` estimates
+        // only bound a value): each padding shift below has to land the scaled operand on an
+        // exact digit position, which the rounding invariants below lean on. `q`, `r` and
+        // `den` are plain IBigs here (the bounds API lives on Repr), so `digit_len` is also
+        // the cheapest exact source for them.
         let mut qdigits = digit_len::<B>(&q);
 
         // Exact division with the quotient already within the precision: nothing to scale and
@@ -471,11 +484,14 @@ impl<R: Round> Context<R> {
 
             // The fraction is (ql + num_f/den_f)/B; ql (when nonzero) and num_f both carry
             // the dividend's sign, and |num_f| < den_f, so the fraction's sign is ql's, or
-            // num_f's when ql = 0. Its comparison against the half is
-            //   2·(ql·den_f + num_f)  vs  B·den_f   ⟺   2·num_f  vs  (B − 2·ql)·den_f,
-            // computed below without materializing ql·den_f + num_f or B·den_f. The
-            // comparison lives in the closure so the directed modes (which ignore it) never
-            // pay for it.
+            // num_f's when ql = 0. Its magnitude against the half is
+            //   |ql·den_f + num_f|·2  vs  B·den_f,
+            // and since ql and num_f share their sign, |ql·den_f + num_f| rearranges to a
+            // comparison of |num_f| alone:
+            //   |num_f|·2  vs  (B − 2·|ql|)·den_f
+            // (halving both sides when B − 2·|ql| is even — always, for an even base).
+            // The comparison lives in the closure so the directed modes (which ignore it)
+            // never pay for it.
             let ql_is_zero = ql.is_zero();
             let low_sign = if ql_is_zero { num_f.sign() } else { ql.sign() };
 
@@ -483,43 +499,27 @@ impl<R: Round> Context<R> {
                 Approximation::Exact(make_div_repr(sign_negative, qh, e2))
             } else {
                 let adjust = R::round_low_part(&qh, low_sign, || {
-                    if B == 2 {
-                        // The dropped digit is a single bit and the comparison collapses to
-                        // one direct comparison: with ql = 0, the fraction num_f/(2·den_f) is
-                        // at the half exactly when |num_f| = den_f (unreachable: |num_f| <
-                        // den_f strictly); with ql = ±1, the fraction (ql + f)/2 is at the
-                        // half exactly when f = 0.
-                        if ql_is_zero {
-                            num_f.abs_cmp(&den_f)
-                        } else {
-                            match ql.sign() {
-                                Sign::Positive => num_f.cmp(&IBig::ZERO),
-                                Sign::Negative => num_f.cmp(&IBig::ZERO).reverse(),
-                            }
-                        }
+                    // ql is a single base-B digit (|ql| < B), so its arithmetic runs in Word;
+                    // on the comparison path below 2·|ql| ≤ B, so the subtraction cannot
+                    // underflow.
+                    let ql_mag: Word = ql.unsigned_abs().try_into().unwrap();
+                    if ql_mag > B - ql_mag {
+                        // 2·|ql| > B: the fraction's magnitude is past the half regardless of
+                        // the remainder
+                        Ordering::Greater
                     } else {
-                        // The dividend's sign s multiplies both sides (flipping the
-                        // comparison when negative): compare 2·|num_f| against s·(B − 2·ql)
-                        // ·den_f — positive in this branch — halving both sides when
-                        // B − 2·ql is even, which always holds for an even base.
-                        let kk = IBig::from(B) - (ql << 1); // B − 2·ql, |kk| ≤ B
-                        let pos = qh.sign() == Sign::Positive;
-                        let skk = if pos { kk } else { -kk };
-                        if skk.sign() != Sign::Positive {
-                            // |2·num_f| ≥ 0 > s·(B − 2·ql)·den_f
-                            Ordering::Greater
-                        } else {
-                            let mag = if pos { num_f } else { -num_f };
-                            let ord = if !skk.bit(0) {
-                                mag.cmp(&(&(skk >> 1) * &den_f))
-                            } else {
-                                (mag << 1).cmp(&(skk * &den_f))
-                            };
-                            if pos {
-                                ord
-                            } else {
-                                ord.reverse()
+                        let diff = B - ql_mag * 2; // B − 2·|ql|
+                        if diff % 2 == 0 {
+                            // compare |num_f| against (B − 2·|ql|)/2 · den_f; the factors 0
+                            // and 1 (the base-2 hot path) skip the multiplication
+                            match diff / 2 {
+                                0 => num_f.abs_cmp(&IBig::ZERO),
+                                1 => num_f.abs_cmp(&den_f),
+                                f => num_f.abs_cmp(&(f * &den_f)),
                             }
+                        } else {
+                            // odd base: double the remainder side instead of halving
+                            (&num_f + &num_f).abs_cmp(&(diff * &den_f))
                         }
                     }
                 });
@@ -758,6 +758,59 @@ mod tests {
             .unwrap()
             .value();
         assert_eq!(v.repr(), &r2(1, 4));
+    }
+
+    // The p+1-digit quotient rounding under a nearest mode, on both signs and an odd base.
+    // The negative non-binary cases regress-checked here were mis-rounded by an early
+    // version of the half comparison (a sign flip of B − 2·ql that should never happen:
+    // only |ql| enters the rearranged comparison).
+    #[test]
+    fn test_div_overwide_quotient_nearest_modes() {
+        // -21/2 = -10.5 in base 10 at precision 1: the p1 neighbours are -10 and -20 with
+        // midpoint -15, so -10.5 rounds to -10 under every mode except Away (-11 is NOT on
+        // the p1 grid; away from zero at this magnitude steps to -20).
+        let r10 = |sig: i32, exp: isize| Repr::<10>::new(IBig::from(sig), exp);
+        let v = Context::<mode::HalfEven>::new(1)
+            .div(&r10(-21, 0), &r10(2, 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r10(-1, 1)); // -10
+
+        // positive mirror: 21/2 = 10.5 -> 10
+        let v = Context::<mode::HalfEven>::new(1)
+            .div(&r10(21, 0), &r10(2, 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r10(1, 1));
+
+        // -95/2 = -47.5: neighbours -40/-50, midpoint -45 -> -50 under HalfEven
+        let v = Context::<mode::HalfEven>::new(1)
+            .div(&r10(-95, 0), &r10(2, 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r10(-5, 1)); // -50
+
+        // -41/2 = -20.5: neighbours -20/-30, midpoint -25 -> -20 under HalfEven
+        let v = Context::<mode::HalfEven>::new(1)
+            .div(&r10(-41, 0), &r10(2, 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r10(-2, 1)); // -20
+
+        // odd base (exercises the doubled-remainder comparison arm): -8/2 = -4 in base 3
+        // at precision 1 — neighbours -3/-6 with midpoint -4.5, so -4 rounds to -3;
+        // -11/2 = -5.5 is past the midpoint and rounds to -6
+        let r3 = |sig: i32, exp: isize| Repr::<3>::new(IBig::from(sig), exp);
+        let v = Context::<mode::HalfEven>::new(1)
+            .div(&r3(-8, 0), &r3(2, 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r3(-1, 1)); // -3
+        let v = Context::<mode::HalfEven>::new(1)
+            .div(&r3(-11, 0), &r3(2, 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r3(-2, 1)); // -6
     }
 
     #[test]
