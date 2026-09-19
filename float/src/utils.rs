@@ -1,4 +1,4 @@
-use dashu_base::{DivRem, Sign};
+use dashu_base::{BitTest, DivRem, Sign};
 use dashu_int::{DoubleWord, IBig, UBig, Word};
 
 #[inline]
@@ -15,7 +15,13 @@ pub fn digit_len<const B: Word>(value: &IBig) -> usize {
     if value.is_zero() {
         return 0;
     };
-    value.ilog(&UBig::from_word(B)) + 1
+    if B.is_power_of_two() {
+        // `ilog` would also materialize B^log as a heap allocation, only to discard it here
+        let bits_per_digit = B.trailing_zeros() as usize;
+        (value.bit_len() + bits_per_digit - 1) / bits_per_digit
+    } else {
+        value.ilog(&UBig::from_word(B)) + 1
+    }
 }
 
 /// "Left shifting" in given radix, i.e. multiply by a power of radix

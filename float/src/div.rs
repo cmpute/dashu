@@ -4,10 +4,14 @@ use crate::{
     helper_macros::{self, impl_binop_assign_by_taking},
     repr::{Context, Repr, Word},
     round::{Round, Rounded, Rounding},
-    utils::{digit_len, shl_digits_in_place, split_digits},
+    utils::{digit_len, shl_digits, shl_digits_in_place, split_digits},
 };
+use core::cmp::Ordering;
 use core::ops::{Div, DivAssign, Rem, RemAssign};
-use dashu_base::{Approximation, DivEuclid, DivRem, DivRemEuclid, Inverse, RemEuclid, Sign};
+use dashu_base::{
+    AbsOrd, Approximation, DivEuclid, DivRem, DivRemEuclid, Inverse, RemEuclid, Sign, Signed,
+    UnsignedAbs,
+};
 use dashu_int::{fast_div::ConstDivisor, modular::IntoRing, IBig, UBig};
 
 /// Attach the dividend/divisor XOR sign to a zero quotient: the raw quotient significand is
@@ -295,7 +299,75 @@ fn align_as_int<R: Round, const B: Word>(lhs: FBig<R, B>, rhs: FBig<R, B>) -> (I
 }
 
 impl<R: Round> Context<R> {
+    /// Division kernel for an already-bounded dividend: `lhs` must carry at most
+    /// `rhs.digits() + precision` digits (the `FBig` operators' operands always do — a
+    /// significand is at most `precision + 1` digits and the divisor at least one). For an
+    /// arbitrary [`Repr`] dividend use [`Context::div`], which bounds it exactly (see
+    /// [`Self::repr_div_split`]).
     pub(crate) fn repr_div<const B: Word>(&self, lhs: Repr<B>, rhs: Repr<B>) -> FpResult<Repr<B>> {
+        debug_assert!(
+            digit_len::<B>(&lhs.significand) <= digit_len::<B>(&rhs.significand) + self.precision
+        );
+        self.repr_div_split(lhs, rhs, IBig::ZERO, 0)
+    }
+
+    /// [`Self::repr_div`] for an arbitrary-width dividend: the excess low digits below the
+    /// `divisor digits + precision` bound are split off as `lo` and carried through the
+    /// division as sticky rounding information, so no information is ever lost. (Rounding the
+    /// dividend instead — as an earlier version of `Context::div` did — perturbs ties,
+    /// direction and the exactness flag: the quotient of a *rounded* dividend can divide
+    /// exactly where the true one doesn't, land on a false midpoint, or round the wrong way
+    /// under directed modes.)
+    ///
+    /// The width check runs on the cheap `digits_ub`/`digits_lb` estimates, but the split
+    /// point itself must be the EXACT digit count: splitting at exactly
+    /// `divisor digits + precision` digits guarantees the high part is not below the divisor,
+    /// which keeps the kernel's padding branches (they rescale the remainder without
+    /// rescaling the sticky low part) off the `k > 0` path entirely. A lower split — e.g.
+    /// derived from the bounds — is unsound for that reason.
+    pub(crate) fn repr_div_any_width<const B: Word>(
+        &self,
+        lhs: Repr<B>,
+        rhs: Repr<B>,
+    ) -> FpResult<Repr<B>> {
+        // (digits_ub of a zero dividend is 0, so zero takes the fast path too)
+        if lhs.digits_ub() <= rhs.digits_lb() + self.precision {
+            return self.repr_div(lhs, rhs);
+        }
+
+        // exact split (the sign of the dividend is preserved on both parts)
+        let ddigits = digit_len::<B>(&rhs.significand);
+        let k = digit_len::<B>(&lhs.significand).saturating_sub(ddigits + self.precision);
+        if k == 0 {
+            return self.repr_div(lhs, rhs);
+        }
+        let (hi, lo) = split_digits::<B>(lhs.significand, k);
+        debug_assert_eq!(digit_len::<B>(&hi), ddigits + self.precision);
+        // the kernel normalizes the divisor to be positive by negating BOTH operands, so the
+        // sticky low part must follow the (negated) dividend's sign
+        let lo = rhs.significand.sign() * lo;
+        self.repr_div_split(
+            Repr {
+                significand: hi,
+                exponent: lhs.exponent,
+            },
+            rhs,
+            lo,
+            k,
+        )
+    }
+
+    /// The division kernel proper: computes `lhs / rhs` correctly rounded to this context's
+    /// precision. `(lo, k)` describes the part of the dividend below its least significant
+    /// kept digit: the true dividend is `(lhs.significand · B^k + lo) · B^lhs.exponent`, and
+    /// the pair participates in the final rounding as a sticky fraction.
+    fn repr_div_split<const B: Word>(
+        &self,
+        lhs: Repr<B>,
+        rhs: Repr<B>,
+        lo: IBig,
+        k: usize,
+    ) -> FpResult<Repr<B>> {
         assert_finite_operands(&lhs, &rhs);
         assert_limited_precision(self.precision);
 
@@ -316,57 +388,157 @@ impl<R: Round> Context<R> {
             }
         }
 
-        // this method don't deal with the case where lhs significand is too large
-        debug_assert!(lhs.digits() <= self.precision + rhs.digits());
+        // Work with a positive divisor so that the quotient and remainder from `div_rem`
+        // (truncated division: the remainder carries the dividend's sign) keep the value's
+        // sign in `q`, and `round_ratio` below sees a plain (integer + fraction) split.
+        // Negation is O(1) (a sign flip on the shared buffer).
+        let (num, den) = if rhs.significand.is_positive() {
+            (lhs.significand, rhs.significand)
+        } else {
+            (-lhs.significand, -rhs.significand)
+        };
 
-        let (mut q, mut r) = lhs.significand.div_rem(&rhs.significand);
-        let mut e = lhs.exponent.checked_sub(rhs.exponent).ok_or({
-            if lhs.exponent >= 0 {
-                FpError::Overflow(sign)
-            } else {
-                FpError::Underflow(sign)
-            }
-        })?;
-        if r.is_zero() {
+        let (mut q, mut r) = num.div_rem(&den);
+        let mut e = lhs
+            .exponent
+            .checked_add(k as isize)
+            .and_then(|e| e.checked_sub(rhs.exponent))
+            .ok_or({
+                // lhs.exponent >= 0 whenever the addition overflows, and < 0 whenever the
+                // subtraction underflows (see the digit bound on `k` above)
+                if lhs.exponent >= 0 {
+                    FpError::Overflow(sign)
+                } else {
+                    FpError::Underflow(sign)
+                }
+            })?;
+
+        // From here on the digit counts must be EXACT (the `digits_ub`/`digits_lb` estimates
+        // only bound a value): each padding shift below has to land the scaled operand on an
+        // exact digit position, which the rounding invariants below lean on. `q`, `r` and
+        // `den` are plain IBigs here (the bounds API lives on Repr), so `digit_len` is also
+        // the cheapest exact source for them.
+        let mut qdigits = digit_len::<B>(&q);
+
+        // Exact division with the quotient already within the precision: nothing to scale and
+        // nothing to round (the `lo` sticky part is empty exactly when k == 0).
+        if r.is_zero() && k == 0 && qdigits <= self.precision {
             return Ok(Approximation::Exact(
                 make_div_repr(sign_negative, q, e).check_finite_exponent()?,
             ));
         }
 
-        let ddigits = digit_len::<B>(&rhs.significand);
         if q.is_zero() {
-            // lhs.significand < rhs.significand
+            // num < den: scale the remainder up so the quotient has ~precision digits
+            let ddigits = digit_len::<B>(&den);
             let rdigits = digit_len::<B>(&r); // rdigits <= ddigits
             let shift = ddigits + self.precision - rdigits;
             shl_digits_in_place::<B>(&mut r, shift);
             e = e
                 .checked_sub(shift as isize)
                 .ok_or(FpError::Underflow(sign))?;
-            let (q0, r0) = r.div_rem(&rhs.significand);
+            let (q0, r0) = r.div_rem(&den);
             q = q0;
             r = r0;
-        } else {
-            let ndigits = digit_len::<B>(&q) + ddigits;
-            if ndigits < ddigits + self.precision {
-                // TODO: here the operations can be optimized: 1. prevent double power, 2. q += q0 can be |= if B is power of 2
-                let shift = ddigits + self.precision - ndigits;
-                shl_digits_in_place::<B>(&mut q, shift);
-                shl_digits_in_place::<B>(&mut r, shift);
-                e = e
-                    .checked_sub(shift as isize)
-                    .ok_or(FpError::Underflow(sign))?;
+            // the scaled dividend has exactly ddigits+precision digits, so the quotient has
+            // `precision` or `precision + 1` digits; with rdigits == ddigits the remainder is
+            // still strictly below the divisor, which rules out the carry to B^precision
+            qdigits = if rdigits == ddigits {
+                self.precision
+            } else {
+                digit_len::<B>(&q)
+            };
+        } else if qdigits < self.precision {
+            // TODO: here the operations can be optimized: 1. prevent double power, 2. q += q0 can be |= if B is power of 2
+            let shift = self.precision - qdigits;
+            shl_digits_in_place::<B>(&mut q, shift);
+            shl_digits_in_place::<B>(&mut r, shift);
+            e = e
+                .checked_sub(shift as isize)
+                .ok_or(FpError::Underflow(sign))?;
 
-                let (q0, r0) = r.div_rem(&rhs.significand);
-                q += q0;
-                r = r0;
-            }
+            let (q0, r0) = r.div_rem(&den);
+            q += q0;
+            r = r0;
+            // q·B^shift ≤ B^precision − B^shift and q0 < B^shift, so the sum stays below
+            // B^precision: the scaled quotient has exactly `precision` digits
+            qdigits = self.precision;
         }
 
-        let repr = if r.is_zero() {
+        // At this point the quotient is `(q + num_f/den_f)·B^e` with `den_f = den·B^k` and
+        // `num_f = r·B^k + lo` (the remainder plus the dividend's sticky low part), where
+        // `|num_f| < den_f` and `q` has at most `precision + 1` digits.
+        let den_f = if k > 0 { shl_digits::<B>(&den, k) } else { den };
+        let num_f = if k > 0 {
+            shl_digits::<B>(&r, k) + lo
+        } else {
+            r
+        };
+
+        // An over-wide quotient (an exact division such as 15/3 at precision 2, or the p+1
+        // digit quotient the scaling above can produce) must be rounded to the precision —
+        // but in a *single* step: the dropped digit joins the fraction, so no information is
+        // double-rounded away. The dividend bound guarantees the quotient carries at most one
+        // extra digit, so exactly one digit is dropped here.
+        let repr = if qdigits > self.precision {
+            debug_assert_eq!(qdigits, self.precision + 1);
+            let (qh, ql) = split_digits::<B>(q, 1);
+            let e2 = e.saturating_add(1);
+
+            // The fraction is (ql + num_f/den_f)/B; ql (when nonzero) and num_f both carry
+            // the dividend's sign, and |num_f| < den_f, so the fraction's sign is ql's, or
+            // num_f's when ql = 0. Its magnitude against the half is
+            //   |ql·den_f + num_f|·2  vs  B·den_f,
+            // and since ql and num_f share their sign, |ql·den_f + num_f| rearranges to a
+            // comparison of |num_f| alone:
+            //   |num_f|·2  vs  (B − 2·|ql|)·den_f
+            // (halving both sides when B − 2·|ql| is even — always, for an even base).
+            // The comparison lives in the closure so the directed modes (which ignore it)
+            // never pay for it.
+            let ql_is_zero = ql.is_zero();
+            let low_sign = if ql_is_zero { num_f.sign() } else { ql.sign() };
+
+            if ql_is_zero && num_f.is_zero() {
+                Approximation::Exact(make_div_repr(sign_negative, qh, e2))
+            } else {
+                let adjust = R::round_low_part(&qh, low_sign, || {
+                    // ql is a single base-B digit (|ql| < B), so its arithmetic runs in Word;
+                    // on the comparison path below 2·|ql| ≤ B, so the subtraction cannot
+                    // underflow.
+                    let ql_mag: Word = ql.unsigned_abs().try_into().unwrap();
+                    if ql_mag > B - ql_mag {
+                        // 2·|ql| > B: the fraction's magnitude is past the half regardless of
+                        // the remainder
+                        Ordering::Greater
+                    } else {
+                        let diff = B - ql_mag * 2; // B − 2·|ql|
+                        if diff % 2 == 0 {
+                            // compare |num_f| against (B − 2·|ql|)/2 · den_f; the factors 0
+                            // and 1 (the base-2 hot path) skip the multiplication
+                            match diff / 2 {
+                                0 => num_f.abs_cmp(&IBig::ZERO),
+                                1 => num_f.abs_cmp(&den_f),
+                                f => num_f.abs_cmp(&(f * &den_f)),
+                            }
+                        } else {
+                            // odd base: double the remainder side instead of halving
+                            (&num_f + &num_f).abs_cmp(&(diff * &den_f))
+                        }
+                    }
+                });
+                Approximation::Inexact(make_div_repr(sign_negative, qh + adjust, e2), adjust)
+            }
+        } else if num_f.is_zero() {
             Approximation::Exact(make_div_repr(sign_negative, q, e))
         } else {
-            let adjust = R::round_ratio(&q, r, &rhs.significand);
+            let adjust = R::round_ratio(&q, num_f, &den_f);
             Approximation::Inexact(make_div_repr(sign_negative, q + adjust, e), adjust)
+        };
+        let repr = match repr {
+            Approximation::Exact(v) => Approximation::Exact(v.check_finite_exponent()?),
+            Approximation::Inexact(v, flag) => {
+                Approximation::Inexact(v.check_finite_exponent()?, flag)
+            }
         };
         Ok(repr)
     }
@@ -485,16 +657,14 @@ impl<R: Round> Context<R> {
             return Err(FpError::Indeterminate); // 0/0
         }
 
-        let lhs_repr = if !lhs.is_pos_zero() && lhs.digits_ub() > rhs.digits_lb() + self.precision {
-            // shrink lhs if it's larger than necessary
-            Self::new(rhs.digits() + self.precision)
-                .repr_round_ref(lhs)
-                .value()
-        } else {
-            lhs.clone()
-        };
+        // No operand pre-shrinking here: `repr_div_any_width` bounds an over-wide dividend by
+        // an exact split, keeping the dropped digits as rounding information. Rounding the
+        // dividend *before* dividing — as this used to do — corrupts the result: the rounded
+        // dividend can divide exactly where the true one doesn't (a false `Exact` flag),
+        // land the quotient on a false midpoint, or invert the direction under directed
+        // modes.
         Ok(self
-            .repr_div(lhs_repr, rhs.clone())?
+            .repr_div_any_width(lhs.clone(), rhs.clone())?
             .map(|v| FBig::new(v, *self)))
     }
 
@@ -557,9 +727,181 @@ impl<R: Round> Context<R> {
 mod tests {
     use super::*;
     use crate::round::mode;
+    use dashu_base::Approximation::*;
 
     fn r2(sig: i32, exp: isize) -> Repr<2> {
         Repr::new(sig.into(), exp)
+    }
+
+    // Regression tests for the rounding bugs reported in issue #100 (and two same-class value
+    // bugs found while investigating): `Context::div` used to round an over-wide dividend
+    // *before* dividing (perturbing ties, direction and the exactness flag), and `repr_div`
+    // returned exact quotients unreduced and rounded p+1-digit quotients on the wrong grid.
+    #[test]
+    fn test_div_quotient_reduced_and_flagged() {
+        // 15/3 = 5 needs three digits at precision 2: the exact quotient must be rounded
+        // (Zero -> 4), not returned unreduced with an Exact flag.
+        let r = Context::<mode::Zero>::new(2)
+            .div(&r2(15, 0), &r2(3, 0))
+            .unwrap();
+        assert!(matches!(r, Inexact(..)), "15/3 @ p2 must be inexact");
+        assert_eq!(r.value().repr(), &r2(1, 2));
+
+        // 5/1 at precision 1: same unreduced-quotient bug — 5 is not representable at p1.
+        let r = Context::<mode::Zero>::new(1)
+            .div(&r2(5, 0), &r2(1, 0))
+            .unwrap();
+        assert!(matches!(r, Inexact(..)), "5/1 @ p1 must be inexact");
+        assert_eq!(r.value().repr(), &r2(1, 2));
+
+        // 63/3 = 21 at precision 2 under Zero: the dividend is pre-split (not pre-rounded!),
+        // and 21 truncates onto the 2-digit grid as 1·2^4 = 16.
+        let v = Context::<mode::Zero>::new(2)
+            .div(&r2(63, 0), &r2(3, 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r2(1, 4));
+    }
+
+    // The p+1-digit quotient rounding under a nearest mode, on both signs and an odd base.
+    // The negative non-binary cases regress-checked here were mis-rounded by an early
+    // version of the half comparison (a sign flip of B − 2·ql that should never happen:
+    // only |ql| enters the rearranged comparison).
+    #[test]
+    fn test_div_overwide_quotient_nearest_modes() {
+        // -21/2 = -10.5 in base 10 at precision 1: the p1 neighbours are -10 and -20 with
+        // midpoint -15, so -10.5 rounds to -10 under every mode except Away (-11 is NOT on
+        // the p1 grid; away from zero at this magnitude steps to -20).
+        let r10 = |sig: i32, exp: isize| Repr::<10>::new(IBig::from(sig), exp);
+        let v = Context::<mode::HalfEven>::new(1)
+            .div(&r10(-21, 0), &r10(2, 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r10(-1, 1)); // -10
+
+        // positive mirror: 21/2 = 10.5 -> 10
+        let v = Context::<mode::HalfEven>::new(1)
+            .div(&r10(21, 0), &r10(2, 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r10(1, 1));
+
+        // -95/2 = -47.5: neighbours -40/-50, midpoint -45 -> -50 under HalfEven
+        let v = Context::<mode::HalfEven>::new(1)
+            .div(&r10(-95, 0), &r10(2, 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r10(-5, 1)); // -50
+
+        // -41/2 = -20.5: neighbours -20/-30, midpoint -25 -> -20 under HalfEven
+        let v = Context::<mode::HalfEven>::new(1)
+            .div(&r10(-41, 0), &r10(2, 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r10(-2, 1)); // -20
+
+        // odd base (exercises the doubled-remainder comparison arm): -8/2 = -4 in base 3
+        // at precision 1 — neighbours -3/-6 with midpoint -4.5, so -4 rounds to -3;
+        // -11/2 = -5.5 is past the midpoint and rounds to -6
+        let r3 = |sig: i32, exp: isize| Repr::<3>::new(IBig::from(sig), exp);
+        let v = Context::<mode::HalfEven>::new(1)
+            .div(&r3(-8, 0), &r3(2, 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r3(-1, 1)); // -3
+        let v = Context::<mode::HalfEven>::new(1)
+            .div(&r3(-11, 0), &r3(2, 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r3(-2, 1)); // -6
+    }
+
+    #[test]
+    fn test_div_directed_modes_on_wide_dividend() {
+        // 7/-1 = -7 at precision 1 under Up must round toward +inf (-4). The old pre-shrink
+        // rounded the dividend 7 up to 8 first, and 8/-1 = -8 then rounded *down*.
+        let v = Context::<mode::Up>::new(1)
+            .div(&r2(7, 0), &r2(-1, 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r2(-1, 2));
+
+        // 31/4 = 7.75 in base 3 at precision 1 under HalfEven: the old pre-shrink turned it
+        // into 30/4 = 7.5, a false midpoint that tied down to 6; the true value is above the
+        // 7.5 midpoint of 6 and 9, so it rounds to 9.
+        let v = Context::<mode::HalfEven>::new(1)
+            .div(&Repr::<3>::new(IBig::from(31), 0), &Repr::<3>::new(IBig::from(4), 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &Repr::<3>::new(IBig::from(1), 2));
+    }
+
+    // Two same-class value bugs in the p+1-digit quotient paths (found while investigating
+    // #100): the final rounding used the integer grid instead of the precision-digit grid.
+    #[test]
+    fn test_div_p1_digit_quotient_rounds_on_precision_grid() {
+        // 3/5 = 0.6 at precision 2 under HalfEven: 0.6·2^3 = 4.8 used to be rounded on the
+        // integer grid to 5 (= 0.625, not even representable at p2); the p2 neighbours are
+        // 0.5 and 0.75, so the result is 0.5.
+        let v = Context::<mode::HalfEven>::new(2)
+            .div(&r2(3, 0), &r2(5, 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r2(1, -1));
+
+        // 14/3 = 4.67 at precision 2 under HalfEven: the quotient 100₂ carries p+1 digits;
+        // the p2 grid is 100/110 (4 and 6) with midpoint 5, so 4.67 rounds to 4 (the integer
+        // grid would give 5).
+        let v = Context::<mode::HalfEven>::new(2)
+            .div(&r2(14, 0), &r2(3, 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r2(1, 2));
+
+        // 7/2 = 3.5 at precision 2 under HalfEven: the divisor normalizes to 1·2^1, so the
+        // exact quotient 111·2^-1 used to be returned unreduced. 3.5 is the exact midpoint of
+        // 11 (3) and 100 (4); ties to even gives 4.
+        let v = Context::<mode::HalfEven>::new(2)
+            .div(&r2(7, 0), &r2(2, 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r2(1, 2));
+    }
+
+    // The dividend's sticky low digits (split off by the width bound) must participate in the
+    // rounding: they resolve exact ties and push directed modes the right way.
+    #[test]
+    fn test_div_sticky_low_digits() {
+        // 15·2^-1 / 5 = 1.5 at precision 1 under HalfEven: exact tie between 1 and 2 -> 2.
+        let v = Context::<mode::HalfEven>::new(1)
+            .div(&r2(15, -1), &r2(5, 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r2(1, 1));
+
+        // Same input under Up: the tie pushes up to 2.
+        let v = Context::<mode::Up>::new(1)
+            .div(&r2(15, -1), &r2(5, 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r2(1, 1));
+
+        // 11/1 at precision 2 under HalfEven: the dividend 1011₂ is split at 1 digit; without
+        // the sticky low bit the rounding would see an exact tie (10|1 -> even -> 10), with it
+        // the fraction is 3/4 and the result is 1100₂ = 12.
+        let v = Context::<mode::HalfEven>::new(2)
+            .div(&r2(11, 0), &r2(1, 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r2(3, 2));
+
+        // 25·2^-1 / 5 = 2.5 at precision 1 under Up: the p1 neighbours are 2 and 4, and a
+        // directed mode picks the one in its direction regardless of the (midpoint 3).
+        let v = Context::<mode::Up>::new(1)
+            .div(&r2(25, -1), &r2(5, 0))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r2(1, 2));
     }
 
     #[test]

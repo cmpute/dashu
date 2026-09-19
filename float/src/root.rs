@@ -10,8 +10,9 @@ use crate::{
     fbig::FBig,
     repr::{Context, Repr, Word},
     round::{mode, ErrorBounds, Round, Rounding},
-    utils::{shl_digits, split_digits_ref},
+    utils::{digit_len, shl_digits, split_digits_ref},
 };
+use core::cmp::Ordering;
 
 impl<R: ErrorBounds, const B: Word> SquareRoot for FBig<R, B> {
     type Output = Self;
@@ -33,7 +34,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// Calculate the nth root of the floating point number.
     ///
     /// When `n` is large the computation can be expensive — the significand is
-    /// padded to `n · precision` digits before the integer root is taken, and
+    /// aligned to up to `n · precision` digits before the integer root is taken, and
     /// the integer Newton iteration works with numbers of that size. For large
     /// `n` consider [`powf`][`FBig::powf`] with a rational exponent `1 / n`
     /// as a faster approximate alternative.
@@ -136,11 +137,19 @@ impl<R: Round> Context<R> {
             x.significand.clone()
         };
 
-        // adjust the significand so that the exponent is divisible by n and the
-        // significand carries at least n*precision digits (required for rounding)
+        // Adjust the significand so that the exponent is divisible by n and the root of the
+        // aligned significand carries exactly `precision` digits. The alignment allows two
+        // shifts that differ by n digits: `+r` (padding the significand up) or `r − n`
+        // (truncating it, with the dropped part kept as the sticky `low`). When r > 0 the
+        // padding choice yields n·precision + r aligned digits whose root carries
+        // `precision + 1` digits, which would then have to be rounded to the precision in a
+        // second step — and the two roundings disagree exactly at midpoints of the coarse
+        // grid (round-to-integer-then-re-round is a double rounding). The truncating choice
+        // keeps the root at exactly `precision` digits, so a single rounding decides.
         let digits = x.digits() as isize;
         let r = (x.exponent + digits).rem_euclid(n as isize);
-        let shift = n as isize * self.precision as isize - digits + r;
+        let shift =
+            n as isize * self.precision as isize - digits + r - n as isize * (r > 0) as isize;
         let (signif, low, low_digits) = if shift > 0 {
             (shl_digits::<B>(&xmag, shift as usize), IBig::ZERO, 0)
         } else {
@@ -160,15 +169,18 @@ impl<R: Round> Context<R> {
             Sign::Positive
         };
         let signed_root: IBig = result_sign * root.clone();
+        debug_assert!(digit_len::<B>(root.as_ibig()) <= self.precision);
 
         let res = if rem.is_zero() && low.is_zero() {
             Approximation::Exact(signed_root)
         } else {
+            // The true value is (root + frac)·BASE^exp with frac ∈ (0, 1), where root =
+            // floor(mag^(1/n)) and the fraction continues into the truncated input part
+            // `low`. Comparing frac against 1/2:
+            //   2·(root + frac) vs 2·root + 1
+            //   ⟺ 2^n·full vs (2·root + 1)^n·BASE^low_digits
+            // where full = mag·BASE^low_digits + low is the full aligned significand.
             let adjust = R::round_low_part(&signed_root, result_sign, || {
-                // The true value is (mag + low / BASE^low_digits)^(1/n) and
-                // root = floor(mag^(1/n)); its fractional part is compared to 1/2.
-                // frac < 1/2  <=>  2^n * full < (2*root + 1)^n * BASE^low_digits,
-                // where full = mag * BASE^low_digits + low (the full significand).
                 let base_pow = Repr::<B>::BASE.pow(low_digits);
                 let full = &mag * &base_pow + low.unsigned_abs();
                 let lhs = full << n;
@@ -179,7 +191,6 @@ impl<R: Round> Context<R> {
         };
         Ok(res
             .map(|signif| Repr::new(signif, exp))
-            .and_then(|v| self.repr_round(v))
             .map(|v| FBig::new(v, *self)))
     }
 }
@@ -268,12 +279,14 @@ impl<R: ErrorBounds> Context<R> {
                     R::round_low_part(r.as_ibig(), Sign::Positive, || (d * 2).cmp(&B))
                 } else {
                     // The true value is strictly above `root` (sticky remainder / truncated input),
-                    // so a round digit at the real half (2·d = B) still rounds up.
-                    if d * 2 >= B {
-                        Rounding::AddOne
-                    } else {
-                        Rounding::NoOp
-                    }
+                    // so a round digit at the real half (2·d = B) is strictly past the half — report
+                    // Greater so every mode (including the directed ones) rounds from the correct
+                    // side. Delegating to `round_low_part` is what makes directed modes work: they
+                    // ignore the comparison and truncate/extend per their own direction.
+                    R::round_low_part(r.as_ibig(), Sign::Positive, || match (d * 2).cmp(&B) {
+                        Ordering::Equal => Ordering::Greater,
+                        other => other,
+                    })
                 };
                 (IBig::from(r), adjust, exp + 1)
             };
@@ -439,6 +452,149 @@ impl<R: ErrorBounds, const B: Word> FBig<R, B> {
 mod tests {
     use super::*;
     use crate::round::mode;
+    use dashu_base::Approximation::*;
+
+    fn r2(sig: i32, exp: isize) -> Repr<2> {
+        Repr::new(sig.into(), exp)
+    }
+
+    // sqrt under directed modes must bracket the true value (issue #99): for a positive
+    // non-square x, sqrt_down(x)² < x < sqrt_up(x)² and the two results differ. The inputs
+    // 6 = 3·2¹ and 24 = 3·2³ exercise the p+1-digit integer-root path (even digit count, odd
+    // exponent) whose sticky remainder the old code rounded the wrong way under Up/Away. Every
+    // input here has a non-square odd part, so x is never a perfect square at any exponent.
+    #[test]
+    fn test_sqrt_directed_modes_bracket() {
+        for x in [3i32, 5, 6, 7, 10, 24, 30] {
+            for exp in [-3isize, -1, 0, 1, 3] {
+                let input = Repr::<2>::new(IBig::from(x), exp);
+                for p in [20usize, 50, 100, 500] {
+                    let down = Context::<mode::Down>::new(p)
+                        .sqrt(&input)
+                        .unwrap()
+                        .value()
+                        .with_precision(0)
+                        .value();
+                    let up = Context::<mode::Up>::new(p)
+                        .sqrt(&input)
+                        .unwrap()
+                        .value()
+                        .with_precision(0)
+                        .value();
+                    let x = FBig::<mode::HalfEven>::new(input.clone(), Context::new(0));
+                    // squares at unlimited precision are exact, so these comparisons are exact
+                    assert!(&down * &down < x, "sqrt({input:?}) @ p{p}: Down bound too high");
+                    assert!(&up * &up > x, "sqrt({input:?}) @ p{p}: Up bound too low");
+                    assert!(down < up, "sqrt({input:?}) @ p{p}: Down == Up on a non-square");
+                }
+            }
+        }
+    }
+
+    // Perfect squares are exact under every mode and yield identical Down/Up results.
+    #[test]
+    fn test_sqrt_perfect_square_is_exact() {
+        for (input, root) in [
+            (r2(1, 2), r2(1, 1)),
+            (r2(9, -2), r2(3, -1)),
+            (r2(25, -4), r2(5, -2)),
+        ] {
+            for p in [20usize, 50] {
+                let r = Context::<mode::HalfEven>::new(p).sqrt(&input).unwrap();
+                assert!(matches!(r, Exact(..)), "sqrt({input:?}) @ p{p} should be exact");
+                assert_eq!(r.value().repr(), &root);
+                assert_eq!(
+                    Context::<mode::Down>::new(p)
+                        .sqrt(&input)
+                        .unwrap()
+                        .value()
+                        .repr(),
+                    &root
+                );
+                assert_eq!(
+                    Context::<mode::Up>::new(p)
+                        .sqrt(&input)
+                        .unwrap()
+                        .value()
+                        .repr(),
+                    &root
+                );
+            }
+        }
+    }
+
+    // The same class of bug at tiny precision: sqrt(1.75) = 1.3228… has the p+1-digit integer
+    // root 5 (= 5·2^-2 = 1.25), exactly the midpoint of the p2 neighbours 1 and 1.5 — but the
+    // inexact root's remainder puts the true value strictly above the midpoint, so HalfEven
+    // must round up to 1.5 (the old code tied down to 1.0).
+    #[test]
+    fn test_sqrt_p1_digit_root_midpoint() {
+        let v = Context::<mode::HalfEven>::new(2)
+            .sqrt(&r2(7, -2))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r2(3, -1));
+        // the same input under Up/Down brackets 1.3228… correctly
+        let up = Context::<mode::Up>::new(2)
+            .sqrt(&r2(7, -2))
+            .unwrap()
+            .value();
+        let down = Context::<mode::Down>::new(2)
+            .sqrt(&r2(7, -2))
+            .unwrap()
+            .value();
+        assert_eq!(up.repr(), &r2(3, -1));
+        assert_eq!(down.repr(), &r2(1, 0));
+    }
+
+    // An exact p+1-digit root is rounded to the precision in one step: sqrt(1.5625) = 1.25 is
+    // exactly the midpoint of 1.0 and 1.5; ties to even picks the significand 10₂ -> 1.0. The
+    // result differs from the exact root, so the operation is still Inexact.
+    #[test]
+    fn test_sqrt_exact_p1_digit_root_ties_to_even() {
+        let r = Context::<mode::HalfEven>::new(2).sqrt(&r2(25, -4)).unwrap();
+        assert!(matches!(r, Inexact(..)));
+        assert_eq!(r.value().repr(), &r2(1, 0));
+    }
+
+    // nth_root must round a precision+1-digit integer root in a single step (issue #100):
+    // the old code rounded the root to an integer first and re-rounded, which ties the wrong
+    // way exactly at midpoints of the coarse grid.
+    #[test]
+    fn test_nth_root_single_step_rounding() {
+        // nth_root(2, 1.75) @ p2 HalfEven = 1.5 (see test_sqrt_p1_digit_root_midpoint)
+        let v = Context::<mode::HalfEven>::new(2)
+            .nth_root(2, &r2(7, -2))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r2(3, -1));
+
+        // exact root one digit wider than the precision: nth_root(2, 2.25) = 1.5 @ p2
+        let r = Context::<mode::HalfEven>::new(2)
+            .nth_root(2, &r2(9, -2))
+            .unwrap();
+        assert!(matches!(r, Exact(..)));
+        assert_eq!(r.value().repr(), &r2(3, -1));
+
+        // directed modes bracket on the same input
+        let up = Context::<mode::Up>::new(2)
+            .nth_root(2, &r2(7, -2))
+            .unwrap()
+            .value();
+        let down = Context::<mode::Down>::new(2)
+            .nth_root(2, &r2(7, -2))
+            .unwrap()
+            .value();
+        assert_eq!(up.repr(), &r2(3, -1));
+        assert_eq!(down.repr(), &r2(1, 0));
+
+        // agreement with sqrt on a perfect square: nth_root(2, 16) @ p5 = 4
+        let v = Context::<mode::HalfEven>::new(5)
+            .nth_root(2, &r2(1, 4))
+            .unwrap()
+            .value();
+        assert_eq!(v.repr(), &r2(1, 2));
+    }
 
     #[test]
     #[should_panic]

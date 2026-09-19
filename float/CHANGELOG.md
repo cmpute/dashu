@@ -21,7 +21,52 @@
   `CachedFBig` — the argument ball is built from the shared cached π; a direct series handles
   `|πx| ≤ 1`, the exponential composition the rest.
 
+### Change
+- **(internal) the Ziv error radius is now a value-space `Mag` instead of an exact-integer
+  ulp count** (`float/src/mag.rs`, `float/src/ball.rs`; both `pub(crate)`). Every `+`/`-`/`*`/`/`
+  in a transcendental's algorithm is itself correctly rounded, so the radius composes through
+  plain interval algebra over the operation's operands — no ulp-domain shift formulas, no
+  per-ball precision state, and no `IBig` error bookkeeping. Results are unchanged for every
+  input (validated bit-exact against MPFR/MPC); this is the mechanism the 0.6.0 note below
+  described as "an exact-integer error count", replaced.
+- **(internal) the operand error of the *input* to a transcendental is now part of the
+  certified radius** rather than a per-function hand estimate, so a result that sits close to
+  a rounding boundary is retried instead of being rounded the wrong way. See the two `Fix`
+  entries below, which are the user-visible symptoms of the old per-function estimates.
+
+- **(internal) faster digit bookkeeping in division**: `digit_len` on a power-of-two base is
+  now a plain bit length (`ilog` allocated a `B^log` buffer only to discard it). No perf
+  regression from the fixes below: `FBig / FBig` at parity or faster at all benched
+  precisions, `DBig / DBig` ~10% faster at 10³–10⁴ digits (+8% at 10 digits, the cost of the
+  now-correct wide-quotient rounding), `nth_root` 10–45% faster.
+
 ### Fix
+- **`sqrt` under directed modes** (#99): a sticky remainder was rounded *down* under
+  `Up`/`Away` when the integer root carries `precision + 1` digits (`Up(sqrt(6))² < 6` at
+  p53) — the final rounding now consults the rounding mode instead of hardcoding half-up.
+- **`div` no longer pre-rounds an over-wide dividend** (#100): the kernel bounds it by an
+  exact digit split instead, keeping the dropped digits as sticky rounding information.
+  The old pre-round could report a false `Exact` (`5/1` @ p1), invert the direction
+  (`7/-1` under `Up` gave `-8` instead of `-4`), or land on a false midpoint (`31/4`
+  base 3 `HalfEven` gave `6` instead of `9`).
+- **`div` now rounds exact and `precision+1`-digit quotients in a single step** (#100):
+  an exactly-dividing quotient was returned unreduced (`15/3` @ p2 gave the 3-digit `5`
+  instead of `4`), and an over-wide quotient was rounded on the integer instead of the
+  precision grid (`3/5` @ p2 gave the unrepresentable `0.625` instead of `0.5`).
+- **`div` with a negative divisor and an over-wide dividend** carried the sticky low part
+  with the wrong sign (the divisor-sign normalization negates both operands), and the
+  `precision+1`-digit quotient's half comparison sign-flipped `B − 2·ql` where only `|ql|`
+  enters — the latter mis-rounded negative dividends in non-binary bases under nearest
+  modes (`-21/2` base 10 @ p1 `HalfEven` gave `-20` instead of `-10`).
+- **`nth_root` no longer double-rounds a `precision+1`-digit root** (#100): the exponent
+  alignment now takes the truncating shift when the padding one would grow the root past
+  the precision, so one rounding decides (`nth_root(2, 1.75)` @ p2 `HalfEven` gave `1.0`
+  instead of `1.5`).
+- **`with_base` rounds its exact-conversion shortcuts** (#100): the power-of-base shortcuts
+  and small-exponent path returned significands wider than the target precision, and the
+  division path pre-rounded its dividend, so the `Exact` flag could be false (`2.1` →
+  base 2 reported `Exact`).
+
 - `exp` — and every transcendental built on it, e.g. `sinh`/`cosh` — of an argument whose
   exponent is in the 10^14 range no longer dies on an out-of-memory allocation. The base-aware
   radius export converted a binary exponent to a decimal one (and back) through a small
@@ -38,20 +83,6 @@
   `sinh`/`cosh`/`sinh_cosh` compositions drop an exponential that sits below the other's ulp
   window instead of aligning the gap.
 
-### Change
-- **(internal) the Ziv error radius is now a value-space `Mag` instead of an exact-integer
-  ulp count** (`float/src/mag.rs`, `float/src/ball.rs`; both `pub(crate)`). Every `+`/`-`/`*`/`/`
-  in a transcendental's algorithm is itself correctly rounded, so the radius composes through
-  plain interval algebra over the operation's operands — no ulp-domain shift formulas, no
-  per-ball precision state, and no `IBig` error bookkeeping. Results are unchanged for every
-  input (validated bit-exact against MPFR/MPC); this is the mechanism the 0.6.0 note below
-  described as "an exact-integer error count", replaced.
-- **(internal) the operand error of the *input* to a transcendental is now part of the
-  certified radius** rather than a per-function hand estimate, so a result that sits close to
-  a rounding boundary is retried instead of being rounded the wrong way. See the two `Fix`
-  entries below, which are the user-visible symptoms of the old per-function estimates.
-
-### Fix
 - `sqrt` of a perfect square in a non-power-of-two base never returned under the directed
   rounding modes (`Down`/`Up`/`Zero`): it kept doubling its working precision until the retry
   budget was exhausted — `sqrt(4)` in base 10 escalated past 10^8 digits instead of returning
