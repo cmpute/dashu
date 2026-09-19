@@ -7,9 +7,9 @@
 //! product-rounding paths. The two must agree for every rounding mode, base, precision, operand.
 //!
 //! div has no finite exact form (quotients are generally non-terminating), so it is checked
-//! against a high-precision quotient (`precision + 50` guard digits/bits) re-rounded to the target
-//! — the guard makes a real divergence a bug, with a 2-ulp tolerance for the rare rounding-boundary
-//! case (mirroring the transcendental differentials). A zero divisor is skipped.
+//! against a high-precision quotient (`precision + 50` guard digits/bits) re-rounded to the
+//! target, and must agree EXACTLY: an ulp-based tolerance would also mask a wrong-binade
+//! result, because the ulp scales with the wrong value. A zero divisor is skipped.
 //!
 //! Proptest-driven so a mismatch shrinks to a minimal `(a, b, precision)` counterexample.
 //!
@@ -46,20 +46,10 @@ fn rounded_oracle<R: Round, const B: Word>(exact: Repr<B>, precision: usize) -> 
     (rp, rp1)
 }
 
-/// |a - b| ≤ `k` ulps of `a` (for div's high-precision oracle; mirrors the helper in the
-/// transcendental differentials).
-fn within_k_ulps<R: Round, const B: Word>(a: &FBig<R, B>, b: &FBig<R, B>, k: i32) -> bool {
-    let diff = (a.clone() - b).abs();
-    if diff.repr().significand().is_zero() {
-        return true;
-    }
-    diff <= a.ulp() * k
-}
-
 /// Compare limited-precision add/sub/mul/div against their oracles for one operand pair + mode.
 ///
 /// add/sub/mul use the exact-then-round oracle (`rounded_oracle`); div uses a high-precision
-/// quotient re-rounded to `precision` (`within_k_ulps`), with a zero divisor skipped.
+/// quotient re-rounded to `precision` (exact agreement required), a zero divisor skipped.
 fn check_pair<R: Round, const B: Word>(
     a: &Repr<B>,
     b: &Repr<B>,
@@ -113,7 +103,7 @@ fn check_pair<R: Round, const B: Word>(
     );
 
     // div: no finite exact quotient — compare against a high-precision quotient re-rounded to
-    // `precision`. Skip a zero divisor (div-by-zero errors).
+    // `precision`, requiring exact agreement (see the module doc). Skip a zero divisor.
     if !b.significand().is_zero() {
         let actual_div = ctx.div(a, b).unwrap().value();
         let high = Context::<R>::new(precision + 50)
@@ -123,7 +113,7 @@ fn check_pair<R: Round, const B: Word>(
             .with_precision(precision)
             .value();
         assert!(
-            within_k_ulps(&actual_div, &high, 2),
+            actual_div == high,
             "div mismatch (mode={mode_name}, p={precision})\n a={a:?}\n b={b:?}\n actual={actual_div:?}\n high-prec rounded={high:?}",
         );
     }
