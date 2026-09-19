@@ -3,6 +3,15 @@
 ## Unreleased
 
 ### Fix
+- `x + (-0)`, `x - (-0)` and their mirrors returned `0` instead of `x` whenever the exponent
+  gap to `-0`'s sentinel exponent (`-1`) reached past the end of `x`'s significand — e.g.
+  `1e-16 + (-0)` was `0` at precision 12. The `addsub_*` kernels short-circuited only on
+  `+0`, so `-0` fell through to the alignment path, where its sentinel exponent makes it look
+  like the *larger* operand and `x`'s significand is shifted out entirely.
+- A sum or difference of two *zero* operands now follows IEEE 754 §6.3: `(-0) + (-0)` and
+  `(-0) - (+0)` are `-0` (`x + x` retains `x`'s sign, even when `x` is zero); a zero of mixed
+  signs is `+0`, or `-0` under roundTowardNegative, as the exact zero of a cancellation
+  already was.
 - `powf` (and the `powi` fallback for exponents past the squaring chain) no longer stalls
   when the exponentiation drives the `exp` argument far negative — e.g.
   `powf(7.03e71, -84.91)`, whose `y·ln x ≈ −14035` makes the result ≈ `1e-6096`. The
