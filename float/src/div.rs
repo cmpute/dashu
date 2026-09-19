@@ -305,6 +305,9 @@ impl<R: Round> Context<R> {
     /// arbitrary [`Repr`] dividend use [`Context::div`], which bounds it exactly (see
     /// [`Self::repr_div_split`]).
     pub(crate) fn repr_div<const B: Word>(&self, lhs: Repr<B>, rhs: Repr<B>) -> FpResult<Repr<B>> {
+        debug_assert!(
+            digit_len::<B>(&lhs.significand) <= digit_len::<B>(&rhs.significand) + self.precision
+        );
         self.repr_div_split(lhs, rhs, IBig::ZERO, 0)
     }
 
