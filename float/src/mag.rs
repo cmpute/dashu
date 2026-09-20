@@ -13,8 +13,7 @@
 
 use core::cmp::Ordering;
 
-use dashu_base::BitTest;
-use dashu_int::{DoubleWord, IBig, UBig, Word};
+use dashu_int::{DoubleWord, IBig, Word};
 
 use crate::repr::Repr;
 
@@ -297,12 +296,9 @@ impl Mag {
 
     /// `self · BASE^e`, rounded in the requested direction. Base awareness exists only here —
     /// between `Mag`s a radius is a real magnitude, base-free. `BASE = 2` scales exactly. For
-    /// `BASE = 10` the scaling goes through rational `log₂ 10` bounds (`3322/1000` above,
-    /// `33218/10000` below `log₂ 10 = 3.321928…`): a coefficient above the true log₂ bounds the
-    /// product only for `e ≥ 0`, one below only for `e < 0`, so **both** are computed and the
-    /// max (ceil, up-direction) / min (floor, down-direction) taken — the valid side wins by
-    /// construction. Any other base uses the bit-length bracket `2^(c−1) ≤ BASE < 2^c` (sound;
-    /// unused in practice — the transcendental surface is bases 2 and 10).
+    /// any other base the scaling goes through the fixed-point `log₂ BASE` floor from
+    /// [`log2_base`], shifted one fixed-point ulp when that is the sound side (see the
+    /// selection below).
     fn scale_by_base_pow<const B: Word>(&self, e: isize, round_up: bool) -> Mag {
         if e == 0 || self.is_special() {
             return *self;
@@ -310,63 +306,28 @@ impl Mag {
         if B == 2 {
             return self.mul_pow2(e);
         }
-        let k = if B == 10 {
-            // `⌈e·log₂10⌉` / `⌊e·log₂10⌋` — see `ceil_div_scaled` for why the ratio is a
-            // 62-bit fixed-point constant rather than a small fraction.
-            ceil_div_scaled(e, LOG2_10, 62, round_up)
+        // `⌈e·log₂BASE⌉` / `⌊e·log₂BASE⌋` — the ratio is a fixed-point constant bracketing
+        // the true log₂ from either side, so the scale is tight to a fraction of a bit for
+        // any `e` in the `isize` range, with no `BASE^|e|` power ever built.
+        let (l, fb) = log2_base::<B>();
+        // The sound side flips with the sign of `e`: a coefficient above the true log₂ bounds
+        // the product from above only for `e ≥ 0`, one below only for `e < 0`.
+        let ratio: i128 = if round_up == (e >= 0) {
+            (l + 1) as i128
         } else {
-            // Generic base: the exact scale from the bit length of BASE^|e| — one pow of
-            // bounded size (exponents in the radius rules are work-precision scale). The
-            // bit-length bracket alone (BASE ∈ [2^(c−1), 2^c)) loses O(|e|) bits for e < 0
-            // (log₂ 3 = 1.585 → 0.585·|e| bits), which inflates negative-exponent mid
-            // magnitudes by 2^(0.58·|e|) and stalls Ziv on generic bases. Extreme exponents
-            // (|e| > 8192 — unreachable outside underflow-scale midpoints, where looseness
-            // is tolerable) fall back to the sound bracket.
-            if e.unsigned_abs() <= 8192 {
-                // BASE^e = 2^(±(bits−1) .. bits): one bit of slack, either direction.
-                let bits = UBig::from_word(B).pow(e.unsigned_abs()).bit_len() as isize;
-                if round_up {
-                    if e > 0 {
-                        bits
-                    } else {
-                        1 - bits
-                    }
-                } else {
-                    if e > 0 {
-                        bits - 1
-                    } else {
-                        -bits
-                    }
-                }
-            } else {
-                // Sound bracket for extreme exponents (a direct 2-exponent, not a bit
-                // length): e > 0 up/down ∈ {e·c, e·(c−1)}; e < 0 flips — up = e·(c−1)
-                // (loose by up to |e| bits), down = e·c.
-                let c = (Word::BITS - B.leading_zeros()) as isize; // BASE ∈ [2^(c−1), 2^c)
-                if round_up {
-                    if e > 0 {
-                        e.saturating_mul(c)
-                    } else {
-                        e.saturating_mul(c - 1)
-                    }
-                } else {
-                    if e > 0 {
-                        e.saturating_mul(c - 1)
-                    } else {
-                        e.saturating_mul(c)
-                    }
-                }
-            }
+            l as i128
         };
+        let k = div_scaled(e, ratio, fb, round_up);
         self.mul_pow2(k)
     }
 
     /// The radius as a `Repr`: a **sound upper bound** is all the Ziv containment test needs.
     /// `0` → `+0`; `+∞` → `+∞`. For `BASE = 2` the value `man · 2^(exp − BITS)` is an exact
-    /// `Repr`. For `BASE = 10` the radius is rounded outward to a power of ten (≤ 10× slack,
-    /// O(1)) — building the exact decimal `man · 5^|exp|` would be O(|exp|) work per Ziv
-    /// attempt. Rational `log₁₀ 2` bounds (`28/93` above, `30102/100000` below
-    /// `log₁₀ 2 = 0.301030…`) with the same both-sides max trick as [`Mag::scale_by_base_pow`].
+    /// `Repr`. For any other base the radius is rounded outward to a base power *keeping the
+    /// significand* (`man · BASE^k`): `k = ⌈(exp − BITS)·log_B 2⌉` bounds the `2^(exp−BITS)`
+    /// factor from above, and the ≤ `Word::BITS`-bit `man` rides along instead of being
+    /// dropped — the export stays within one rounding step of the true radius (≤ `BASE`×)
+    /// instead of up to `BASE × 2^BITS / man`×.
     pub(crate) fn to_repr<const B: Word>(self) -> Repr<B> {
         if self.is_zero() {
             return Repr::zero();
@@ -381,50 +342,24 @@ impl Mag {
                 .saturating_sub(Word::BITS as isize)
                 .clamp(isize::MIN + 1, isize::MAX - 1);
             Repr::new(IBig::from(self.man), e)
-        } else if B == 10 {
-            // `2^exp ≤ 10^k`, i.e. `k = ⌈exp·log₁₀2⌉` — see `ceil_div_scaled`.
-            let k =
-                ceil_div_scaled(self.exp, LOG10_2, 64, true).clamp(isize::MIN + 1, isize::MAX - 1);
-            Repr::new(IBig::ONE, k)
         } else {
-            // Generic base: the smallest integer k (either sign) with BASE^k ≥ 2^exp, by
-            // binary search on the monotone predicate over the exact bit length of BASE^|k|
-            // within the log₂ bracket BASE ∈ [2^(c−1), 2^c). Beyond |exp| = 16384 the loose
-            // bracket stands in — such radii are beyond any realistic containment.
-            let c = (Word::BITS - B.leading_zeros()) as isize;
-            // BASE^k ≥ 2^exp, exactly: k ≥ 0 ⟺ bit_len(BASE^k) ≥ exp+1;
-            // k < 0 (m = −k) ⟺ BASE^m ≤ 2^−exp ⟺ bit_len(BASE^m) ≤ −exp.
-            let ge = |k: isize| -> bool {
-                if k >= 0 {
-                    UBig::from_word(B).pow(k as usize).bit_len() as isize > self.exp
-                } else {
-                    UBig::from_word(B).pow((-k) as usize).bit_len() as isize <= -self.exp
-                }
-            };
-            let k = if self.exp.abs() > 16384 {
-                if self.exp > 0 {
-                    ceil_div(self.exp, c - 1)
-                } else {
-                    ceil_div(self.exp, c)
-                }
+            // `2^(exp−BITS) ≤ B^k` ⇔ `k ≥ (exp−BITS)·log_B 2` — the reciprocal direction of
+            // [`log2_base`], so this is a *division* by the bracketing ratio (multiplying by
+            // it would scale by `log₂ B`, not `log_B 2`). The divisor is picked per sign so
+            // the ceil lands on the sound side (`log_B 2 ≤ true` for `a ≥ 0`, `≥ true` for
+            // `a < 0`).
+            let (l, fb) = log2_base::<B>();
+            let a = (self.exp.saturating_sub(Word::BITS as isize)) as i128;
+            let den: i128 = if a >= 0 { l as i128 } else { l as i128 + 1 };
+            let scaled = a * (1i128 << fb);
+            let q = scaled.div_euclid(den);
+            let k = if scaled.rem_euclid(den) != 0 {
+                q + 1
             } else {
-                // the true k lies between exp/c and exp/(c−1) (either order once exp < 0)
-                let mut lo = self.exp.saturating_div(c) - 1;
-                let mut hi = ceil_div(self.exp, c - 1) + 1;
-                if lo > hi {
-                    core::mem::swap(&mut lo, &mut hi);
-                }
-                while lo + 1 < hi {
-                    let mid = lo + (hi - lo) / 2;
-                    if ge(mid) {
-                        hi = mid;
-                    } else {
-                        lo = mid;
-                    }
-                }
-                hi
+                q
             };
-            Repr::new(IBig::ONE, k)
+            let k = k.clamp(isize::MIN as i128 + 1, isize::MAX as i128 - 1) as isize;
+            Repr::new(IBig::from(self.man), k)
         }
     }
 }
@@ -576,9 +511,9 @@ fn usize_bits(n: usize) -> u32 {
     usize::BITS - n.leading_zeros()
 }
 
-/// `⌈a·c⌉` (`up`) or `⌊a·c⌋`, with `c` an `(up, down)` pair of `2^-frac_bits` fixed-point
-/// ratios. The pair *brackets* the true constant, so the result is both a sound bound and a
-/// tight one.
+/// `⌈a·ratio/2^frac_bits⌉` (`up`) or `⌊a·ratio/2^frac_bits⌋`, with `ratio` a `2^-frac_bits`
+/// fixed-point constant. Which side of the [`log2_base`] bracket is the *sound* `ratio`
+/// depends on the rounding direction **and** the sign of `a` — the caller picks it.
 ///
 /// The fraction width is what makes this sound at exponent scale. A small rational (`28/93`,
 /// `30102/100000`, `3322/1000`, `33218/10000`) errs by ~5·10⁻⁵ *relative* — and that error
@@ -587,10 +522,9 @@ fn usize_bits(n: usize) -> u32 {
 /// Ziv containment test then tried to align that gap and died on an out-of-memory allocation
 /// (plain `exp(1.9e14)`, and every transcendental built on it).
 ///
-/// `frac_bits` is capped at 64 for log₁₀2 and 62 for log₂10 so that `a · ratio` still fits
-/// `i128`: `|a| ≤ 2^63` and both ratios stay below `2^63`.
-fn ceil_div_scaled(a: isize, c: (i128, i128), frac_bits: u32, up: bool) -> isize {
-    let ratio = if up { c.0 } else { c.1 };
+/// `frac_bits` is capped so the ratio stays below `2^62`: with `|a| ≤ 2^63` the product
+/// `a · ratio` still fits `i128`.
+fn div_scaled(a: isize, ratio: i128, frac_bits: u32, up: bool) -> isize {
     let den = 1i128 << frac_bits;
     let scaled = (a as i128) * ratio;
     let (q, r) = (scaled.div_euclid(den), scaled.rem_euclid(den));
@@ -598,20 +532,33 @@ fn ceil_div_scaled(a: isize, c: (i128, i128), frac_bits: u32, up: bool) -> isize
     q.clamp(isize::MIN as i128, isize::MAX as i128) as isize
 }
 
-/// `log₁₀2` as `(⌈·2^64⌉, ⌊·2^64⌋)`.
-const LOG10_2: (i128, i128) = (5_553_023_288_523_357_133, 5_553_023_288_523_357_132);
-/// `log₂10` as `(⌈·2^62⌉, ⌊·2^62⌋)`.
-const LOG2_10: (i128, i128) = (15_319_689_349_413_178_111, 15_319_689_349_413_178_110);
-
-/// `ceil(a / b)` for `b > 0`, truncation-correct for either sign of `a`.
-#[inline]
-fn ceil_div(a: isize, b: isize) -> isize {
-    let q = a.div_euclid(b);
-    if a.rem_euclid(b) != 0 {
-        q + 1
-    } else {
-        q
+/// `log₂ BASE` as a `(⌈·, ⌊·⌋, frac_bits)` fixed-point bracket — the same shape as
+/// [`LOG2_10`], computed for any base by the classic squaring walk on the normalized
+/// significand (one `u128` square per fraction bit). `B` is a const generic, so the whole
+/// walk folds into a constant at compile time; the generic-base radius rules cost no more
+/// than the base-10 ones. The fraction width shrinks as the integer part grows so the
+/// ratio itself stays below `2^63` — that bound is what keeps `|a|·ratio` inside `i128`
+/// in [`ceil_div_scaled`] for every `a` in the `isize` range.
+const fn log2_base<const B: Word>() -> (u64, u32) {
+    // normalize to mant = BASE·2^lz ∈ [2^63, 2^64): ⌊log₂ BASE⌋ = 63 − lz, then walk the
+    // fraction bits — square, and each time the value crosses 2 the bit is 1.
+    let mut m: u128 = (B as u128) << B.leading_zeros();
+    let int_bits: u32 = 63 - B.leading_zeros();
+    let frac_bits: u32 = 62 - int_bits;
+    let mut frac: u64 = 0;
+    let mut i = frac_bits;
+    loop {
+        if i == 0 {
+            break;
+        }
+        i -= 1;
+        m = (m * m) >> 63;
+        if m >> 64 != 0 {
+            frac |= 1 << i;
+            m >>= 1;
+        }
     }
+    ((int_bits as u64) << frac_bits | frac, frac_bits)
 }
 
 // ============================================================================
@@ -874,21 +821,126 @@ mod tests {
         assert_eq!(dycmp((r.significand().clone(), r.exponent()), dy(&m)), Equal);
     }
 
+    /// Exact `sig · 10^er ≥ man · 2^et` — the exported decimal `Repr` covers the dyadic Mag
+    /// value. A negative decimal exponent is cleared by cross-multiplying with `5^(−er)`
+    /// (`10^−m = 2^−m·5^−m`), so no negative-power `pow` is ever built.
+    fn covers_base10(sig: IBig, er: isize, man: IBig, et: isize) -> bool {
+        if er >= 0 {
+            let pow10 = IBig::from(dashu_int::UBig::from(10u8).pow(er as usize));
+            dycmp((sig * pow10, 0), (man, et)) != Less
+        } else {
+            let m = (-er) as usize;
+            let five_m = IBig::from(dashu_int::UBig::from(5u8).pow(m));
+            dycmp((sig, 0), (man * five_m, et + er)) != Less
+        }
+    }
+
+    #[test]
+    fn generic_base_powers_are_one_bit_tight() {
+        // `from_base_pow` (the ulp source) must land within one bit of the exact `BASE^|e|`
+        // bit length, on either side, for every base and a spread of exponents — the
+        // fixed-point `log₂ BASE` bracket in action (no `BASE^|e|` power is built on the
+        // implementation side; `pow` here is the test oracle).
+        macro_rules! check_base {
+            ($base:expr) => {{
+                const BASE: Word = $base as Word;
+                for e in [-5000isize, -257, -3, -1, 1, 2, 255, 4096] {
+                    let mag = Mag::from_base_pow::<BASE>(e).mul_pow2(-e);
+                    // mag = round_up(BASE^e)·2^(−e): with bits = bit_len(BASE^|e|), the
+                    // exact BASE^e·2^(−e) lies in [2^sh, 2^(sh+1)] where sh = bits−1−e for
+                    // e > 0 and sh = −e−bits for e < 0; the one-bit round-up can touch the
+                    // upper end
+                    let bits = {
+                        use dashu_base::BitTest as _;
+                        dashu_int::UBig::from_word(BASE)
+                            .pow(e.unsigned_abs())
+                            .bit_len()
+                    } as isize;
+                    let sh = if e > 0 { bits - 1 - e } else { -e - bits };
+                    let v = dy(&mag);
+                    assert!(
+                        dycmp(v.clone(), (IBig::ONE, sh)) != Less
+                            && dycmp(v, (IBig::ONE, sh + 1)) != Greater,
+                        "base {BASE} e {e}: not one-bit tight"
+                    );
+                }
+            }};
+        }
+        check_base!(3);
+        check_base!(5);
+        check_base!(7);
+        check_base!(10);
+        check_base!(12);
+        check_base!(100);
+        check_base!(1u64 << 20);
+        check_base!((1u64 << 40) + 1);
+    }
+
+    #[test]
+    fn generic_base_pow_sound_for_huge_negative_exponents() {
+        // The bound side flips with the sign of the exponent: a coefficient *above* the true
+        // log₂ BASE only bounds the product from above for `e ≥ 0`, one *below* only for
+        // `e < 0`. Below |e| ≈ 2^frac_bits the fixed-point slack hides the difference; from
+        // there up, the wrong side under-shoots the rounding by whole units of the binary
+        // exponent. The oracle is a wider walk of the same shape (10 extra fraction bits),
+        // exact enough to pin ⌈e·log₂BASE⌉ for |e| < 2^(frac_bits + 10).
+        macro_rules! check_base {
+            ($base:expr) => {{
+                const BASE: Word = $base as Word;
+                let (_, fb) = log2_base::<BASE>();
+                let mut m: u128 = (BASE as u128) << BASE.leading_zeros();
+                let int_bits: u32 = 63 - BASE.leading_zeros();
+                let mut frac: u128 = 0;
+                let mut i = fb + 10;
+                loop {
+                    if i == 0 {
+                        break;
+                    }
+                    i -= 1;
+                    m = (m * m) >> 63;
+                    if m >> 64 != 0 {
+                        frac |= 1 << i;
+                        m >>= 1;
+                    }
+                }
+                let wide = (((int_bits as u128) << (fb + 10)) | frac) as i128;
+                let lo_ceil = |e: i128| {
+                    // ⌈e·log₂BASE⌉ from the guaranteed-lower bound `wide/2^(fb+10)`; the
+                    // dropped tail is below one output unit for |e| < 2^(fb+10).
+                    let num = e * wide;
+                    let den = 1i128 << (fb + 10);
+                    num.div_euclid(den) + (num.rem_euclid(den) != 0) as i128
+                };
+                for j in 1..=4096isize {
+                    let e = -(1isize << fb) - j;
+                    let got = Mag::from_base_pow::<BASE>(e).exp - 1;
+                    assert!(
+                        got as i128 >= lo_ceil(e as i128),
+                        "base {BASE} e {e}: binary exponent {got} undershoots ⌈e·log₂BASE⌉ = {}",
+                        lo_ceil(e as i128)
+                    );
+                }
+            }};
+        }
+        check_base!(100);
+        check_base!(1000);
+    }
+
     #[test]
     fn to_repr_base10_is_upper_bound() {
-        // from_word(7) has value < 2^3, so k = ceil-ish → 10^1 = 10 ≥ 7. The `Repr<10>` value
-        // is sig · 10^e — compare in IBig (not the dyadic comparator, which is base-2 only).
+        // The export keeps the significand and bounds the `2^(exp−BITS)` factor by an outward
+        // base power; the bound must cover the exact dyadic value (negative exponents included).
         let m = Mag::from_word(7);
         let r = m.to_repr::<10>();
-        let v =
-            r.significand() * &IBig::from(dashu_int::UBig::from(10u8).pow(r.exponent() as usize));
-        assert!(dycmp((v, 0), dyi(7.into())) != Less);
-        // a tiny radius: 2^-100 rounds out to 10^-30. Check 10^-30 ≥ 2^-100 exactly:
-        // ⟺ 1 ≥ 5^30 · 2^-70 (multiply through by 10^30 = 2^30·5^30).
+        let (man, et) = dy(&m);
+        assert!(covers_base10(r.significand().clone(), r.exponent(), man, et));
+        // a tiny radius: 2^-100 exports as ~10^-49 riding on the normalized significand —
+        // tighter than the old mantissa-dropping 10^-30 export would suggest, and still exact
         let m = Mag::from_pow2(-100);
         let r = m.to_repr::<10>();
-        assert!(r.exponent() >= -31);
-        let five30 = IBig::from(dashu_int::UBig::from(5u8).pow(30));
-        assert!(dycmp(dyi(IBig::ONE), (five30, -70isize)) != Less);
+        assert!(r.exponent() >= -50);
+        assert!(!r.significand().is_zero());
+        let (man, et) = dy(&m);
+        assert!(covers_base10(r.significand().clone(), r.exponent(), man, et));
     }
 }

@@ -5,8 +5,8 @@ to a fixed-width value-space radius (`Mag`).
 
 > **Status.** Implemented. Branch `float-mag-ball` (off `master` `12875d8`): `80010ee` adds
 > `Mag`, `72a9d18` migrates `Ball` and its consumers. §4a records what changed against the
-> design below; §8 lists the performance follow-ups that remain, and the next phase's work
-> (dashu-complex, those follow-ups) lives in [`PLAN_PHASE2.md`](PLAN_PHASE2.md). The parallel
+> design below; §8 records where the performance follow-ups went, and the next phase's work
+> (dashu-complex) lives in [`PLAN_PHASE2.md`](PLAN_PHASE2.md). The parallel
 > branch `trig_unit` (×u/×π trig families, exact integer reduction) is rebased on top.
 
 ---
@@ -372,5 +372,7 @@ s<0 double work precision itself **stays**, moved ahead of ball construction; on
 
 ## 8. Performance follow-ups
 
-Moved to [`PLAN_PHASE2.md`](PLAN_PHASE2.md) §2, together with the `dashu-cmplx` mechanical-
-propagation work — both are next-phase tasks and are kept out of this design record.
+Resolved on `float-mag-ball-perf` (the retried Ziv guards now charge the powering-chain
+length and the ln reconstruction constants carry scale-aware extra digits; the branch
+history has the measured detail). The remaining next-phase work — the `dashu-cmplx`
+mechanical-propagation migration — lives in [`PLAN_PHASE2.md`](PLAN_PHASE2.md).

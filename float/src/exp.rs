@@ -28,6 +28,25 @@ const EXP_OVERFLOW_PROBE_LOG2: f32 = (isize::BITS - 3) as f32;
 // overflows the finite range), so they go to the `exp(y·ln x)` fallback instead of the chain.
 const MAX_POWI_CHAIN_BITS: usize = 64;
 
+// Guard charge for the `Bⁿ` powering chain inside `exp_compute` (the `sum.pow(Bⁿ)` binary
+// exponentiation). The chain compounds the per-op radius slack, and on non-power-of-two bases
+// every measured precision paid one systematic Ziv retry that base 2 never did (DBig
+// `exp`/`sinh`/`powf` and base-3 `exp` across the sweep; worst case ~10 decimal digits short
+// at 600 digits). A guard digit shrinks the series-entry radius
+// one-to-one while the chain's amplification stays put, so the miss converts directly into
+// guard digits: charging `n` (the reduction power whose bits are the chain length) leaves a
+// ~3× margin over the measured miss. Base 2 is not charged: its chain squares an exact power
+// with exact `Mag` base scaling (`Mag::from_base_pow::<2>` is `from_pow2`), and it measured
+// zero retries at every precision. An undersized charge only costs the retry it meant to
+// prevent — the loop's `max(guard, precision/2)` step still certifies on the second attempt.
+pub(crate) const fn pow_chain_guard<const B: Word>(n: usize) -> usize {
+    if B == 2 {
+        0
+    } else {
+        n
+    }
+}
+
 // Margin certifying a `powi` result is outside the finite range: the magnitude guard estimates the
 // result's log2 as `e · log2(base)` in f64, where `e` is up to `i64::MAX` and `isize::MAX as f64`
 // is itself rounded — together ~2^17 of f64 error near the boundary. A result whose log2 is within
@@ -615,7 +634,14 @@ impl<R: ErrorBounds> Context<R> {
         exp: &Repr<B>,
         mut cache: Option<&mut ConstCache>,
     ) -> FpResult<FBig<R, B>> {
-        let initial_guard = self.base_guard_digits::<B>() + 10;
+        // The `exp_ball` powering chain amplifies the input radius by `Bⁿ` — the same compounding
+        // [`pow_chain_guard`] charges for `exp` — but here it acts on `y·ln x`'s radius against a
+        // thin `+10` guard, and *every* base measured the retry (base-2 `powf` included), so
+        // the charge is unconditional. It is also the one site the
+        // base-10 sweep showed `n` undersized (DBig `powf 10^0.5` @150 still retried), so the
+        // chain length is charged twice.
+        let initial_guard =
+            self.base_guard_digits::<B>() + 10 + 2 * (1usize << (self.precision.bit_len() / 2));
         self.ziv(initial_guard, |guard| {
             let wp = self.precision + guard;
             // exp(y·ln x) as a Ball chain: the ln and the exponent rounding compose mechanically,
@@ -821,11 +847,12 @@ impl<R: ErrorBounds> Context<R> {
 
         // Correct rounding via the Ziv loop. Guards: log_B(p) for the series summation/squaring
         // rounding, plus `n` for the Bⁿ powering amplification — halved from the pre-Ziv `2n`,
-        // since Ziv (not the guard count) now certifies correctness. `n ≈ √p` is derived from the
-        // target precision and is constant across retries.
+        // since Ziv (not the guard count) now certifies correctness — plus the powering chain's
+        // radius charge ([`pow_chain_guard`]). `n ≈ √p` is derived from the target precision and
+        // is constant across retries.
         let series_guard = self.base_guard_digits::<B>();
         let n = 1usize << (self.precision.bit_len() / 2);
-        self.ziv(series_guard + n, |guard| {
+        self.ziv(series_guard + n + pow_chain_guard::<B>(n), |guard| {
             Ok(self
                 .exp_compute::<B>(
                     x,
@@ -1544,6 +1571,46 @@ mod tests {
             crate::ziv_retries(),
             0,
             "powf with a large |y·ln x| should certify on the first attempt"
+        );
+    }
+
+    // The `Bⁿ` powering chain's radius slack used to cost one systematic Ziv retry on
+    // non-power-of-two bases at *every* precision (`pow_chain_guard` now charges the chain
+    // length to the initial guard). Pin two measured retrying points (DBig `exp 1` and base-3
+    // `exp 2`/`1/3` across the sweep) to first-attempt certification.
+    #[test]
+    fn exp_certifies_first_attempt_with_powering_chain() {
+        // DBig exp(1) @ 6 digits — the smallest measured retrying precision.
+        let ctx = Context::<mode::HalfEven>::new(6);
+        crate::ziv_retries_reset();
+        let _ = ctx.exp::<10>(&Repr::<10>::one(), None).unwrap();
+        assert_eq!(crate::ziv_retries(), 0, "DBig exp(1) @6 should certify on the first attempt");
+
+        // base-3 exp(2) @ 12 trits.
+        let ctx = Context::<mode::HalfEven>::new(12);
+        crate::ziv_retries_reset();
+        let _ = ctx.exp::<3>(&Repr::<3>::new(2.into(), 0), None).unwrap();
+        assert_eq!(
+            crate::ziv_retries(),
+            0,
+            "base-3 exp(2) @12 should certify on the first attempt"
+        );
+    }
+
+    // The powf path (`pow_exp_log`) folds `y·ln x`'s radius through the same powering chain
+    // against a thin `+10` guard — the one base-2 case the charge covers unconditionally
+    // (1.5^0.75 @500b and @2000b, 16^0.75 @2000b each retried once).
+    #[test]
+    fn powf_certifies_first_attempt_base2() {
+        let ctx = Context::<mode::HalfEven>::new(500);
+        crate::ziv_retries_reset();
+        let _ = ctx
+            .powf::<2>(&Repr::<2>::new(3.into(), -1), &Repr::<2>::new(3.into(), -2), None)
+            .unwrap();
+        assert_eq!(
+            crate::ziv_retries(),
+            0,
+            "powf(1.5, 0.75) @500b should certify on the first attempt"
         );
     }
 

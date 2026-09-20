@@ -105,6 +105,11 @@ mod ziv;
 // Retry-count profiling for the Ziv loops (available with the `tuning` feature).
 #[cfg(any(all(test, feature = "std"), feature = "tuning"))]
 pub use ziv::{ziv_retries, ziv_retries_reset};
+// The per-attempt radius trace hook is deliberately `#[doc(hidden)]`: usable by profiling
+// harnesses, but not a stable API promise.
+#[cfg(any(all(test, feature = "std"), feature = "tuning"))]
+#[doc(hidden)]
+pub use ziv::{ziv_set_trace_hook, ZivTraceFn};
 
 // All the public items from third_party will be exposed
 #[allow(unused_imports)]

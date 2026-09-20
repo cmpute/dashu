@@ -16,6 +16,7 @@ use crate::{
     ball::{ulp_mag, ulps, Ball},
     cmp::repr_cmp_same_base,
     error::{assert_limited_precision, FpError},
+    exp::pow_chain_guard,
     fbig::FBig,
     math::{
         cache::{reborrow_cache, ConstCache},
@@ -49,7 +50,12 @@ impl<R: ErrorBounds> Context<R> {
         // For huge |x|, `exp_m1` overflows inside the closure and propagates; sinh(±huge) = ±inf,
         // so the sign follows `x` (the propagated error carries an intermediate sign, remapped
         // below).
-        let initial_guard = self.base_guard_digits::<B>() + 10;
+        // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
+        // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
+        // the growing work precision, as before). Sized once, outside the loop.
+        let initial_guard = self.base_guard_digits::<B>()
+            + 10
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
         self.ziv(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let n = 1usize << (work.precision.bit_len() / 2);
@@ -87,7 +93,12 @@ impl<R: ErrorBounds> Context<R> {
         // input's own rounding (folded by `exp_compute` from the raw `x`) are tracked
         // mechanically. For huge |x|, `exp_m1` overflows inside the closure and propagates;
         // cosh(±huge) = +inf (always positive).
-        let initial_guard = self.base_guard_digits::<B>() + 10;
+        // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
+        // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
+        // the growing work precision, as before). Sized once, outside the loop.
+        let initial_guard = self.base_guard_digits::<B>()
+            + 10
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
         self.ziv(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let n = 1usize << (work.precision.bit_len() / 2);
@@ -134,7 +145,12 @@ impl<R: ErrorBounds> Context<R> {
         // rounding is folded by `exp_compute` from the raw `x`. For huge |x|, `exp_m1` overflows
         // inside the closure and propagates to both slots; sinh(±huge) = ±inf, cosh(±huge) = +inf,
         // so each slot's overflow sign is remapped below.
-        let initial_guard = self.base_guard_digits::<B>() + 10;
+        // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
+        // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
+        // the growing work precision, as before). Sized once, outside the loop.
+        let initial_guard = self.base_guard_digits::<B>()
+            + 10
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
         let (sinh_r, cosh_r) = self.ziv_pair(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let n = 1usize << (work.precision.bit_len() / 2);
@@ -182,7 +198,12 @@ impl<R: ErrorBounds> Context<R> {
 
         // For huge |x| the exp composition overflows inside the closure and propagates;
         // sinh(±π·huge) = ±∞, so the sign follows x.
-        let initial_guard = self.base_guard_digits::<B>() + 10;
+        // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
+        // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
+        // the growing work precision, as before). Sized once, outside the loop.
+        let initial_guard = self.base_guard_digits::<B>()
+            + 10
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
         self.ziv(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let wp = work.precision;
@@ -222,7 +243,12 @@ impl<R: ErrorBounds> Context<R> {
 
         // For huge |x| the exp composition overflows inside the closure and propagates;
         // cosh(±π·huge) = +∞ (always positive).
-        let initial_guard = self.base_guard_digits::<B>() + 10;
+        // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
+        // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
+        // the growing work precision, as before). Sized once, outside the loop.
+        let initial_guard = self.base_guard_digits::<B>()
+            + 10
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
         self.ziv(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let wp = work.precision;
@@ -268,7 +294,12 @@ impl<R: ErrorBounds> Context<R> {
 
         // Certified as a pair via `ziv_pair` (retry while either endpoint straddles a boundary);
         // the overflow sign is remapped per slot as in `sinh_cosh`.
-        let initial_guard = self.base_guard_digits::<B>() + 10;
+        // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
+        // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
+        // the growing work precision, as before). Sized once, outside the loop.
+        let initial_guard = self.base_guard_digits::<B>()
+            + 10
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
         let (sinh_r, cosh_r) = self.ziv_pair(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let wp = work.precision;
@@ -362,7 +393,12 @@ impl<R: ErrorBounds> Context<R> {
         // rounding into the radius); the division's rounding is tracked mechanically. For large
         // positive x it overflows → tanh = +1 (returned inline as an exact value); for large
         // negative x, exp_m1(2x) → -1 (finite), so tanh → -1 naturally.
-        let initial_guard = self.base_guard_digits::<B>() + 10;
+        // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
+        // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
+        // the growing work precision, as before). Sized once, outside the loop.
+        let initial_guard = self.base_guard_digits::<B>()
+            + 10
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
         self.ziv(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let n = 1usize << (work.precision.bit_len() / 2);
@@ -403,7 +439,12 @@ impl<R: ErrorBounds> Context<R> {
         // operand errors inherited through the chain). The `|x|` so large that `x²` overflows arm
         // falls back to the asymptotic `sign·ln(2|x|)` on the exact `2|x|` (whose input rounding
         // `ln_compute` folds itself).
-        let initial_guard = self.base_guard_digits::<B>() + 10;
+        // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
+        // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
+        // the growing work precision, as before). Sized once, outside the loop.
+        let initial_guard = self.base_guard_digits::<B>()
+            + 10
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
         self.ziv(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let sign = x.sign();
@@ -415,7 +456,7 @@ impl<R: ErrorBounds> Context<R> {
                 x_ball
             };
             let one = Ball::exact_int(IBig::ONE, wp);
-            let res = match abs_x_ball.mul(&abs_x_ball, wp) {
+            let res = match abs_x_ball.sqr(wp) {
                 Ok(x_sq_ball) => {
                     let sqrt_plus_one = x_sq_ball.add(&one, wp)?.sqrt(wp)?.add(&one, wp)?;
                     let arg = abs_x_ball.add(&x_sq_ball.div(&sqrt_plus_one, wp)?, wp)?;
@@ -476,7 +517,12 @@ impl<R: ErrorBounds> Context<R> {
         // ulp(x); an under-estimated radius then lets Ziv certify the wrong neighbour of a tie.)
         // The `(x-1)(x+1)` overflow arm falls back to the asymptotic `ln(2x)` on the exact `2x`
         // (whose input rounding `ln_compute` folds itself).
-        let initial_guard = self.base_guard_digits::<B>() + 10;
+        // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
+        // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
+        // the growing work precision, as before). Sized once, outside the loop.
+        let initial_guard = self.base_guard_digits::<B>()
+            + 10
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
         self.ziv(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let wp = work.precision;
@@ -526,7 +572,12 @@ impl<R: ErrorBounds> Context<R> {
         // atanh(x) = ln_1p(2x/(1-x)) / 2. The ratio and the `ln_1p` input error are tracked as a
         // [`Ball`]; near |x| = 1 the `2x/(1-x)` division amplifies, but the Ball tracks it (Ziv
         // retries there).
-        let initial_guard = self.base_guard_digits::<B>() + 10;
+        // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
+        // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
+        // the growing work precision, as before). Sized once, outside the loop.
+        let initial_guard = self.base_guard_digits::<B>()
+            + 10
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
         self.ziv(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let wp = work.precision;
@@ -1094,6 +1145,24 @@ mod tests {
                 .repr()
                 .sign(),
             Sign::Positive
+        );
+    }
+
+    // The closure's `exp_compute` runs the `Bⁿ` powering chain, whose radius slack used to cost
+    // one systematic Ziv retry on non-power-of-two bases (`pow_chain_guard` now charges the chain
+    // length to the initial guard). Pins a measured retrying point (DBig `sinh 10` @150 and
+    // @600 both retried exactly once) to first-attempt certification.
+    #[test]
+    fn sinh_certifies_first_attempt_base10() {
+        let ctx = Context::<mode::HalfEven>::new(150);
+        crate::ziv_retries_reset();
+        let _ = ctx
+            .sinh::<10>(&Repr::<10>::new(10.into(), 0), None)
+            .unwrap();
+        assert_eq!(
+            crate::ziv_retries(),
+            0,
+            "DBig sinh(10) @150 should certify on the first attempt"
         );
     }
 }

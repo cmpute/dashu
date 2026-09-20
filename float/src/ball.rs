@@ -94,6 +94,16 @@ impl<const B: Word> Ball<B> {
         Ok(Self { mid, rad })
     }
 
+    /// `self²`: `2·‖a.mid‖·rad_a + rad_a² + ε` — the square rule (the midpoint runs through the
+    /// correctly-rounded [`Context::sqr`] kernel, cheaper than a general product).
+    pub(crate) fn sqr(&self, prec: usize) -> Result<Self, FpError> {
+        let ctx = Context::<mode::HalfEven>::new(prec);
+        let (mid, eps) = finish_mid(ctx.sqr(&self.mid)?, prec);
+        let a = Mag::from_repr(&self.mid);
+        let rad = a.mul(&self.rad).add(&self.rad.mul(&self.rad)).add(&eps);
+        Ok(Self { mid, rad })
+    }
+
     /// `self / rhs`: `(‖a.mid‖·rad_b + ‖b.mid‖·rad_a) / (LB(|b.mid|) · LB(|b|)) + ε` — the
     /// product of the two denominator lower bounds (≈ `LB(|b|)²`), sound at any accuracy.
     /// A degenerate denominator (either lower bound `0`) yields the whole-line radius
@@ -103,7 +113,8 @@ impl<const B: Word> Ball<B> {
         let ctx = Context::<mode::HalfEven>::new(prec);
         let (mid, eps) = finish_mid(ctx.div(&self.mid, &rhs.mid)?, prec);
         let b_mid_lo = Mag::from_repr_lower(&rhs.mid);
-        let b_lo = rhs.mag_lower();
+        // `mag_lower()` would re-derive the same lower bound; reuse it.
+        let b_lo = b_mid_lo.sub_down(&rhs.rad);
         let rad = if b_mid_lo.is_zero() || b_lo.is_zero() {
             Mag::INFINITY
         } else {
@@ -218,11 +229,6 @@ impl<const B: Word> Ball<B> {
     /// ([`Ball`]'s `exp_ball`), which scales the input radius by the result's own magnitude.
     pub(crate) fn mag(&self) -> Mag {
         Mag::from_repr(&self.mid).add(&self.rad)
-    }
-
-    /// A lower bound on `|self|`, floored at `0` (`LB(|mid|) − rad`).
-    pub(crate) fn mag_lower(&self) -> Mag {
-        Mag::from_repr_lower(&self.mid).sub_down(&self.rad)
     }
 
     /// `true` ⟺ the chain so far is exact (`rad == 0`). Carried by `rad == 0` through

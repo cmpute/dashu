@@ -22,6 +22,12 @@
   `|πx| ≤ 1`, the exponential composition the rest.
 
 ### Change
+- **(internal, `tuning`) the per-attempt Ziv radius trace is now a settable hook** instead of an
+  unconditional `eprintln!`: `ziv_set_trace_hook(Some(|guard, radius| …))` (deliberately
+  `#[doc(hidden)]` — a profiling hook, not a stable API promise) installs a printer, and the
+  default `None` costs one `Cell` read per attempt. The unconditional print cost ~3–4 µs per
+  attempt, which silently poisoned any *timing* run built with `tuning` (reading as a 4–5×
+  regression on sub-microsecond Ziv cases).
 - **`-0` renders with its sign**, as `f64`'s does: `format!("{}", -0)` is now `"-0"` (was `"0"`)
   and `format!("{:e}", -0)` is `"-0e0"` (was `"0e0"`). The parse side moves with it — `"-0"`,
   `"-0.0"` and `"-0e0"` now produce *negative* zero (all three produced `+0`) — so a signed zero
@@ -47,6 +53,32 @@
   now-correct wide-quotient rounding), `nth_root` 10–45% faster.
 
 ### Fix
+- **Performance regressions of the Mag/Ball migration**: the
+  two-stage `ln` reduction fired its cancellation double-precision on inputs that reduce to
+  *exactly* a power of two (`ln(1e100)` in base 10 was 9× slower than the pre-migration
+  code at 600 digits) — the cancellation condition now reads off the rounded input directly
+  (one exact comparison) instead of the split exponents, and the power-two floor is settled
+  by an exact comparison at the boundary. The generic-base radius rules (`scale_by_base_pow`
+  and `to_repr`'s base-power export) no longer build `BASE^|e|` bigints per call — a
+  compile-time fixed-point `log₂ BASE` bracket replaces them (one-bit tight, sound on either
+  side), which was worth 1.5–3× on base-3 `exp` at high precision. `asinh` squares through
+  the dedicated `sqr` kernel again, and the base-10 radius export keeps its significand
+  instead of collapsing to a bare power of ten (≤ ~1× slack instead of ≤ 10×).
+- **`exp`-family results near a rounding boundary paid one systematic Ziv retry** (~2.25×)
+  on non-power-of-two bases: the `Bⁿ` powering chain compounds the per-op radius slack past
+  the first attempt's preimage. The chain length is now charged to the initial guard
+  (`pow_chain_guard`: `n` for `B ≠ 2` on `exp`/`exp_m1` and the hyperbolic family, `2n`
+  unconditionally on `powf` — the base-2 `powf` margins are thin enough to need it). All 20
+  measured regressions across the sweep are eliminated (18 of the 20 now at or below
+  master's own timings; results bit-identical — correct rounding is unique), at the cost of
+  a few guard digits on the affected functions.
+- **`ln` of a large base power paid one Ziv retry near a rounding boundary**: the
+  reconstruction constants (`s2·ln2`, `e_base·lnB`) evaluated at the bare work precision, so
+  their 8-ulp radii were amplified by the scale factor (`ln(1e100)` @6 digits carried ~1/3
+  of the target half-ulp before the candidate margin). The constants now evaluate with
+  `⌈log_B|scale|⌉ + 1` extra digits — the same construction `exp` already uses for its
+  `ln(B)` — keeping the amplified radius sub-ulp at a cost confined to inputs with large
+  scale factors.
 - **`sqrt` under directed modes** (#99): a sticky remainder was rounded *down* under
   `Up`/`Away` when the integer root carries `precision + 1` digits (`Up(sqrt(6))² < 6` at
   p53) — the final rounding now consults the rounding mode instead of hardcoding half-up.
