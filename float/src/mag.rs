@@ -864,28 +864,35 @@ mod tests {
         // bit length, on either side, for every base and a spread of exponents — the
         // fixed-point `log₂ BASE` bracket in action (no `BASE^|e|` power is built on the
         // implementation side; `pow` here is the test oracle).
+        fn assert_one_bit_tight<const BASE: Word>() {
+            for e in [-5000isize, -257, -3, -1, 1, 2, 255, 4096] {
+                let mag = Mag::from_base_pow::<BASE>(e).mul_pow2(-e);
+                // mag = round_up(BASE^e)·2^(−e): with bits = bit_len(BASE^|e|), the
+                // exact BASE^e·2^(−e) lies in [2^sh, 2^(sh+1)] where sh = bits−1−e for
+                // e > 0 and sh = −e−bits for e < 0; the one-bit round-up can touch the
+                // upper end
+                let bits = {
+                    use dashu_base::BitTest as _;
+                    dashu_int::UBig::from_word(BASE)
+                        .pow(e.unsigned_abs())
+                        .bit_len()
+                } as isize;
+                let sh = if e > 0 { bits - 1 - e } else { -e - bits };
+                let v = dy(&mag);
+                assert!(
+                    dycmp(v.clone(), (IBig::ONE, sh)) != Less
+                        && dycmp(v, (IBig::ONE, sh + 1)) != Greater,
+                    "base {BASE} e {e}: not one-bit tight"
+                );
+            }
+        }
         macro_rules! check_base {
             ($base:expr) => {{
                 const BASE: Word = $base as Word;
-                for e in [-5000isize, -257, -3, -1, 1, 2, 255, 4096] {
-                    let mag = Mag::from_base_pow::<BASE>(e).mul_pow2(-e);
-                    // mag = round_up(BASE^e)·2^(−e): with bits = bit_len(BASE^|e|), the
-                    // exact BASE^e·2^(−e) lies in [2^sh, 2^(sh+1)] where sh = bits−1−e for
-                    // e > 0 and sh = −e−bits for e < 0; the one-bit round-up can touch the
-                    // upper end
-                    let bits = {
-                        use dashu_base::BitTest as _;
-                        dashu_int::UBig::from_word(BASE)
-                            .pow(e.unsigned_abs())
-                            .bit_len()
-                    } as isize;
-                    let sh = if e > 0 { bits - 1 - e } else { -e - bits };
-                    let v = dy(&mag);
-                    assert!(
-                        dycmp(v.clone(), (IBig::ONE, sh)) != Less
-                            && dycmp(v, (IBig::ONE, sh + 1)) != Greater,
-                        "base {BASE} e {e}: not one-bit tight"
-                    );
+                // a base that does not fit this target's `Word` truncates into a different
+                // value (e.g. `1u64 << 40` under 16-bit limbs) — nothing to test there
+                if u64::from(BASE) == $base {
+                    assert_one_bit_tight::<BASE>();
                 }
             }};
         }
@@ -899,53 +906,61 @@ mod tests {
         check_base!((1u64 << 40) + 1);
     }
 
+    // The bound side flips with the sign of the exponent: a coefficient *above* the true
+    // log₂ BASE only bounds the product from above for `e ≥ 0`, one *below* only for
+    // `e < 0`. Below |e| ≈ 2^frac_bits the fixed-point slack hides the difference; from
+    // there up, the wrong side under-shoots the rounding by whole units of the binary
+    // exponent. The oracle is a wider walk of the same shape (10 extra fraction bits),
+    // exact enough to pin ⌈e·log₂BASE⌉ for |e| < 2^(frac_bits + 10).
+    fn assert_sound_huge_negative<const BASE: Word>() {
+        let (_, fb) = log2_base::<BASE>();
+        // match log2_base's width-independent normalization
+        let int_bits: u32 = Word::BITS - 1 - BASE.leading_zeros();
+        let mut m: u128 = (BASE as u128) << (63 - int_bits);
+        let mut frac: u128 = 0;
+        let mut i = fb + 10;
+        loop {
+            if i == 0 {
+                break;
+            }
+            i -= 1;
+            m = (m * m) >> 63;
+            if m >> 64 != 0 {
+                frac |= 1 << i;
+                m >>= 1;
+            }
+        }
+        let wide = (((int_bits as u128) << (fb + 10)) | frac) as i128;
+        let lo_ceil = |e: i128| {
+            // ⌈e·log₂BASE⌉ from the guaranteed-lower bound `wide/2^(fb+10)`; the
+            // dropped tail is below one output unit for |e| < 2^(fb+10).
+            let num = e * wide;
+            let den = 1i128 << (fb + 10);
+            num.div_euclid(den) + (num.rem_euclid(den) != 0) as i128
+        };
+        for j in 1..=4096isize {
+            // Sweep the extreme reachable negative exponent: just below 2^fb when
+            // that fits the platform's `isize`, otherwise just above `isize::MIN`
+            // (32-bit targets cannot express the 2^fb-scale exponent at all).
+            let e = (-(1i128 << fb) - j as i128).max(isize::MIN as i128 + 1) as isize;
+            let got = Mag::from_base_pow::<BASE>(e).exp - 1;
+            assert!(
+                got as i128 >= lo_ceil(e as i128),
+                "base {BASE} e {e}: binary exponent {got} undershoots ⌈e·log₂BASE⌉ = {}",
+                lo_ceil(e as i128)
+            );
+        }
+    }
+
     #[test]
     fn generic_base_pow_sound_for_huge_negative_exponents() {
-        // The bound side flips with the sign of the exponent: a coefficient *above* the true
-        // log₂ BASE only bounds the product from above for `e ≥ 0`, one *below* only for
-        // `e < 0`. Below |e| ≈ 2^frac_bits the fixed-point slack hides the difference; from
-        // there up, the wrong side under-shoots the rounding by whole units of the binary
-        // exponent. The oracle is a wider walk of the same shape (10 extra fraction bits),
-        // exact enough to pin ⌈e·log₂BASE⌉ for |e| < 2^(frac_bits + 10).
         macro_rules! check_base {
             ($base:expr) => {{
                 const BASE: Word = $base as Word;
-                let (_, fb) = log2_base::<BASE>();
-                // match log2_base's width-independent normalization
-                let int_bits: u32 = Word::BITS - 1 - BASE.leading_zeros();
-                let mut m: u128 = (BASE as u128) << (63 - int_bits);
-                let mut frac: u128 = 0;
-                let mut i = fb + 10;
-                loop {
-                    if i == 0 {
-                        break;
-                    }
-                    i -= 1;
-                    m = (m * m) >> 63;
-                    if m >> 64 != 0 {
-                        frac |= 1 << i;
-                        m >>= 1;
-                    }
-                }
-                let wide = (((int_bits as u128) << (fb + 10)) | frac) as i128;
-                let lo_ceil = |e: i128| {
-                    // ⌈e·log₂BASE⌉ from the guaranteed-lower bound `wide/2^(fb+10)`; the
-                    // dropped tail is below one output unit for |e| < 2^(fb+10).
-                    let num = e * wide;
-                    let den = 1i128 << (fb + 10);
-                    num.div_euclid(den) + (num.rem_euclid(den) != 0) as i128
-                };
-                for j in 1..=4096isize {
-                    // Sweep the extreme reachable negative exponent: just below 2^fb when
-                    // that fits the platform's `isize`, otherwise just above `isize::MIN`
-                    // (32-bit targets cannot express the 2^fb-scale exponent at all).
-                    let e = (-(1i128 << fb) - j as i128).max(isize::MIN as i128 + 1) as isize;
-                    let got = Mag::from_base_pow::<BASE>(e).exp - 1;
-                    assert!(
-                        got as i128 >= lo_ceil(e as i128),
-                        "base {BASE} e {e}: binary exponent {got} undershoots ⌈e·log₂BASE⌉ = {}",
-                        lo_ceil(e as i128)
-                    );
+                // a base that does not fit this target's `Word` truncates into a different
+                // value (e.g. `1u64 << 40` under 16-bit limbs) — nothing to test there
+                if u64::from(BASE) == $base {
+                    assert_sound_huge_negative::<BASE>();
                 }
             }};
         }
