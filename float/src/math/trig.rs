@@ -2223,6 +2223,9 @@ mod tests {
     /// An astronomically-scaled tiny argument (`|x| < 1/4` with s ~ 10⁹) must take the
     /// k = 0 fast path — materializing `B^s` here would allocate ~125 MB — and still round
     /// correctly against the oracle.
+    // The 10⁹-scale exponent needs the 64-bit `isize` range; on 32-bit targets the underflow
+    // guard fires first (its range is ~4000× smaller), so the test is 64-bit-only.
+    #[cfg(target_pointer_width = "64")]
     #[test]
     fn test_sin_pi_tiny_no_materialization() {
         let x = Repr::<2>::new(IBig::from(3), -1_000_000_000);

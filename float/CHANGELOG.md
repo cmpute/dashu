@@ -53,6 +53,19 @@
   now-correct wide-quotient rounding), `nth_root` 10–45% faster.
 
 ### Fix
+- **32-bit `Word` targets returned a wrong `log₂ BASE` from the fixed-point walk** (the
+  compile-time bracket behind the generic-base radius rules): the normalization shifted with
+  `Word::leading_zeros`, so on `Word = u32` (e.g. the `i686` CI target) `log2(10)` came out
+  ≈ 35 instead of ≈ 3.32 — radii then inflated by orders of magnitude, saturated to infinity
+  inside the `atan` reduction and panicked the Ziv containment test (`atan2` of any
+  non-unit-scaled pair). The walk is now pinned to explicit widths; a value-pinning test
+  guards it.
+- **The MSRV (1.68) workspace check failed on a std-only `f32::abs`** in `exp`'s
+  overflow probe (that check compiles `dashu-float` without `std`; the inherent method is
+  core-only from 1.85) — it now goes through the `Abs` trait, which is no_std-safe.
+- **`no_std` test builds failed to compile**: the Ziv retry-count regression tests read the
+  `thread_local` counter that only exists under `std`; those tests are now
+  `#[cfg(feature = "std")]`, matching the `ziv.rs` test module's own gate.
 - **Performance regressions of the Mag/Ball migration**: the
   two-stage `ln` reduction fired its cancellation double-precision on inputs that reduce to
   *exactly* a power of two (`ln(1e100)` in base 10 was 9× slower than the pre-migration

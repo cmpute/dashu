@@ -819,7 +819,10 @@ impl<R: ErrorBounds> Context<R> {
         // `exp_compute` uses, so its `s` verdict matches the computation's. (`exp_compute` also
         // re-checks `s.try_into()` as a gray-zone backstop, propagating an error if the gate and
         // computation ever disagree — so a miss degrades to the directed endpoint, not a panic.)
-        if x.log2_est().abs() > EXP_OVERFLOW_PROBE_LOG2 {
+        // `abs` via the [`Abs`] trait (the `f32` inherent method is std-only before 1.85, and
+        // the MSRV workspace check compiles this crate without `std`); the explicit trait path
+        // needs no `use`, whose import would read as unused in std builds (the inherent wins)
+        if dashu_base::Abs::abs(x.log2_est()) > EXP_OVERFLOW_PROBE_LOG2 {
             let x_log2_ub = x.log2_bounds().1;
             let extra = if x_log2_ub > 0.0 {
                 (x_log2_ub / B.log2_est()) as usize + 2
@@ -1551,6 +1554,8 @@ mod tests {
     /// far negative must certify on the first Ziv attempt. With an absolute input-error fold the
     /// radius never reaches the result's ulp scale and the loop burns ~9 retries at a working
     /// precision of thousands of digits (≈1.5 s at this precision, vs microseconds).
+    // Retry-count assertions read the `thread_local` counter, which only exists under `std`.
+    #[cfg(feature = "std")]
     #[test]
     fn powf_large_negative_exp_certifies_first_attempt() {
         type F = FBig<mode::HalfEven, 10>;
@@ -1578,6 +1583,7 @@ mod tests {
     // non-power-of-two bases at *every* precision (`pow_chain_guard` now charges the chain
     // length to the initial guard). Pin two measured retrying points (DBig `exp 1` and base-3
     // `exp 2`/`1/3` across the sweep) to first-attempt certification.
+    #[cfg(feature = "std")]
     #[test]
     fn exp_certifies_first_attempt_with_powering_chain() {
         // DBig exp(1) @ 6 digits — the smallest measured retrying precision.
@@ -1600,6 +1606,7 @@ mod tests {
     // The powf path (`pow_exp_log`) folds `y·ln x`'s radius through the same powering chain
     // against a thin `+10` guard — the one base-2 case the charge covers unconditionally
     // (1.5^0.75 @500b and @2000b, 16^0.75 @2000b each retried once).
+    #[cfg(feature = "std")]
     #[test]
     fn powf_certifies_first_attempt_base2() {
         let ctx = Context::<mode::HalfEven>::new(500);

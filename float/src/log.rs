@@ -1453,6 +1453,7 @@ mod tests {
     // (`100·rad(ln 10)` here), which used to sit at a third of the target half-ulp at 6 digits —
     // one Ziv retry whenever the work value also landed near the rounding boundary. The constants
     // now carry enough extra digits to keep the amplified radius sub-ulp (see `ln_compute`).
+    #[cfg(feature = "std")]
     #[test]
     fn ln_large_base_power_certifies_first_attempt() {
         let ctx = Context::<mode::HalfEven>::new(6);

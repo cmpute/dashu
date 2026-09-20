@@ -532,19 +532,22 @@ fn div_scaled(a: isize, ratio: i128, frac_bits: u32, up: bool) -> isize {
     q.clamp(isize::MIN as i128, isize::MAX as i128) as isize
 }
 
-/// `log₂ BASE` as a `(⌈·, ⌊·⌋, frac_bits)` fixed-point bracket — the same shape as
-/// [`LOG2_10`], computed for any base by the classic squaring walk on the normalized
-/// significand (one `u128` square per fraction bit). `B` is a const generic, so the whole
-/// walk folds into a constant at compile time; the generic-base radius rules cost no more
-/// than the base-10 ones. The fraction width shrinks as the integer part grows so the
-/// ratio itself stays below `2^63` — that bound is what keeps `|a|·ratio` inside `i128`
-/// in [`ceil_div_scaled`] for every `a` in the `isize` range.
+/// `log₂ BASE` as a `(⌈·, ⌊·⌋, frac_bits)` fixed-point bracket — the same shape as the
+/// hand-written base-10 constants it replaces, computed for any base by the classic squaring
+/// walk on the normalized significand (one `u128` square per fraction bit). `B` is a const
+/// generic, so the whole walk folds into a constant at compile time; the generic-base radius
+/// rules cost no more than the base-10 ones. The fraction width shrinks as the integer part
+/// grows so the ratio itself stays below `2^63` — that bound is what keeps `|a|·ratio`
+/// inside `i128` in [`div_scaled`] for every `a` in the `isize` range.
 const fn log2_base<const B: Word>() -> (u64, u32) {
     // normalize to mant = BASE·2^lz ∈ [2^63, 2^64): ⌊log₂ BASE⌋ = 63 − lz, then walk the
-    // fraction bits — square, and each time the value crosses 2 the bit is 1.
-    let mut m: u128 = (B as u128) << B.leading_zeros();
-    let int_bits: u32 = 63 - B.leading_zeros();
+    // fraction bits — square, and each time the value crosses 2 the bit is 1. The walk is
+    // pinned to explicit widths (`Word` is `u32` on some targets, whose raw `leading_zeros`
+    // would shift the normalization out of `[2^63, 2^64)` and return a wrong log for every
+    // non-power-of-two base).
+    let int_bits: u32 = Word::BITS - 1 - B.leading_zeros(); // ⌊log₂ BASE⌋ (width-independent)
     let frac_bits: u32 = 62 - int_bits;
+    let mut m: u128 = (B as u128) << (63 - int_bits); // ∈ [2^63, 2^64)
     let mut frac: u64 = 0;
     let mut i = frac_bits;
     loop {
@@ -836,6 +839,26 @@ mod tests {
     }
 
     #[test]
+    fn log2_base_values_are_pinned() {
+        // The fixed-point bracket must satisfy `l ≤ log₂ BASE · 2^fb < l+1` on every target:
+        // the i686 CI target once shifted the walk's normalization by the `Word` width (a
+        // `u32` `leading_zeros`) and returned `log2(10) ≈ 35`. Each `floor` below is
+        // `⌊log₂ BASE · 10^18⌋`, a width-independent decimal bracket of the true value.
+        const D: i128 = 1_000_000_000_000_000_000; // 10^18
+        let assert_bracket = |floor: i128, (l, fb): (u64, u32)| {
+            let (l, den) = (l as i128, 1i128 << fb);
+            // exact-integer form of `floor/1e18 ≤ l/2^fb < (floor+1)/1e18`
+            assert!(
+                (l + 1) * D > floor * den && l * D < (floor + 1) * den,
+                "log2 fixed point {l}/2^{fb} misses [{floor}, {floor}+1)·10^-18"
+            );
+        };
+        assert_bracket(D, log2_base::<2>()); // exact: log2(2) = 1
+        assert_bracket(1_584_962_500_721_156_181, log2_base::<3>()); // 1.5849625007…
+        assert_bracket(3_321_928_094_887_362_347, log2_base::<10>()); // 3.3219280949…
+    }
+
+    #[test]
     fn generic_base_powers_are_one_bit_tight() {
         // `from_base_pow` (the ulp source) must land within one bit of the exact `BASE^|e|`
         // bit length, on either side, for every base and a spread of exponents — the
@@ -888,8 +911,9 @@ mod tests {
             ($base:expr) => {{
                 const BASE: Word = $base as Word;
                 let (_, fb) = log2_base::<BASE>();
-                let mut m: u128 = (BASE as u128) << BASE.leading_zeros();
-                let int_bits: u32 = 63 - BASE.leading_zeros();
+                // match log2_base's width-independent normalization
+                let int_bits: u32 = Word::BITS - 1 - BASE.leading_zeros();
+                let mut m: u128 = (BASE as u128) << (63 - int_bits);
                 let mut frac: u128 = 0;
                 let mut i = fb + 10;
                 loop {
@@ -912,7 +936,10 @@ mod tests {
                     num.div_euclid(den) + (num.rem_euclid(den) != 0) as i128
                 };
                 for j in 1..=4096isize {
-                    let e = -(1isize << fb) - j;
+                    // Sweep the extreme reachable negative exponent: just below 2^fb when
+                    // that fits the platform's `isize`, otherwise just above `isize::MIN`
+                    // (32-bit targets cannot express the 2^fb-scale exponent at all).
+                    let e = (-(1i128 << fb) - j as i128).max(isize::MIN as i128 + 1) as isize;
                     let got = Mag::from_base_pow::<BASE>(e).exp - 1;
                     assert!(
                         got as i128 >= lo_ceil(e as i128),

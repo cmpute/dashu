@@ -179,7 +179,7 @@ impl<R: ErrorBounds> Context<R> {
     /// The argument ball `t = π·x` (π from the shared constant cache, both roundings tracked by
     /// the ball arithmetic) feeds the all-positive sinh Maclaurin series for `|t| ≤ 1` — where
     /// the exponential form's `exp(t) − exp(−t)` would catastrophically cancel — and the
-    /// [`exp`](Ball) composition beyond (`|exp(t)| / |exp(−t)| ≥ e²` there, a benign difference).
+    /// ball `exp` composition beyond (`|exp(t)| / |exp(−t)| ≥ e²` there, a benign difference).
     /// Unlike the circular ×π functions there are no rational special points (π·x is
     /// transcendental for every nonzero rational x), so the zero case is the only exact one.
     pub fn sinh_pi<const B: Word>(
@@ -1113,6 +1113,9 @@ mod tests {
     /// drop the negligible one instead of trying to align that gap (an out-of-memory panic
     /// before the guarded add existed), and the plain `sinh`/`cosh` must survive the same
     /// argument through the core sticky-collapse in the aligned sum.
+    // The ~10¹⁴-scale argument needs the 64-bit `isize` exponent range; on 32-bit targets the
+    // overflow guard fires first (its range is ~4000× smaller), so the test is 64-bit-only.
+    #[cfg(target_pointer_width = "64")]
     #[test]
     fn test_sinh_huge_argument_no_oom() {
         let x = DBig::from_str("189870321059487.19").unwrap();
@@ -1152,6 +1155,7 @@ mod tests {
     // one systematic Ziv retry on non-power-of-two bases (`pow_chain_guard` now charges the chain
     // length to the initial guard). Pins a measured retrying point (DBig `sinh 10` @150 and
     // @600 both retried exactly once) to first-attempt certification.
+    #[cfg(feature = "std")]
     #[test]
     fn sinh_certifies_first_attempt_base10() {
         let ctx = Context::<mode::HalfEven>::new(150);
