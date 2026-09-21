@@ -22,8 +22,10 @@ all-features = true
 [features]
 default = ["std", "num-order"]
 std = ["dashu-base/std", "dashu-int/std"]
-# Tuning hooks: expose the `ziv_retries()` counter (per-Ziv-loop retry count) for profiling how
-# tight each transcendental's error-radius bound is. Implies std (the counter is a `thread_local`).
+# Tuning hooks: expose the `ziv_retries()` counter (per-Ziv-loop retry count) and the
+# per-attempt radius trace (`ziv_set_trace_hook`) for profiling how tight each transcendental's
+# error-radius bound is. Both are silent unless driven, so a tuning build still times cleanly.
+# Implies std (the counter is a `thread_local`).
 tuning = ["std"]
 
 # stable dependencies

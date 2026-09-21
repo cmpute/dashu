@@ -12,6 +12,7 @@ use core::{
 };
 
 use dashu_base::Sign::{self, *};
+use dashu_base::{Abs, EstimatedLog2};
 use dashu_int::{IBig, UBig};
 
 /// Build a `Repr` from a cancellation result, producing `-0` (instead of `+0`) when the
@@ -21,6 +22,27 @@ pub(crate) fn cancel_zero<R: Round, const B: Word>(sig: IBig, exp: isize) -> Rep
         Repr::neg_zero()
     } else {
         Repr::new(sig, exp)
+    }
+}
+
+/// The signed zero resulting from a sum (or difference) of two *zero* operands, per
+/// IEEE 754 §6.3: `x + x = x − (−x)` retains `x`'s sign, so `(−0) + (−0)` is `−0`; a sum of
+/// zeros of *mixed* sign takes the sign of zero under roundTowardNegative and `+0` otherwise.
+///
+/// `lhs_neg` / `rhs_eff_neg` are the two operand signs, the second already carrying the
+/// operation's sign (`−(−0)` is `+0`). Cancellation of *nonzero* operands goes through
+/// [`cancel_zero`] instead, which needs neither sign — the operands being equal and opposite
+/// already decides it.
+fn zero_sum<R: Round, const B: Word>(lhs_neg: bool, rhs_eff_neg: bool) -> Repr<B> {
+    let neg = match (lhs_neg, rhs_eff_neg) {
+        (true, true) => true, // x + x retains x's sign
+        (false, false) => false,
+        _ => R::IS_ROUND_TOWARD_NEGATIVE, // mixed signs
+    };
+    if neg {
+        Repr::neg_zero()
+    } else {
+        Repr::zero()
     }
 }
 
@@ -153,6 +175,30 @@ impl<R: Round> Context<R> {
 
         // use one extra digit to prevent cancellation in rounding
         let rnd_precision = self.precision + is_sub as usize;
+
+        // An astronomically-low low part — one that sits entirely below the rounding window
+        // (its value under-estimates B^(low.1 − window), so no digit of it reaches the window,
+        // only its sticky sign matters) — is collapsed to a unit at a bounded position. The
+        // digit alignment below shifts by `low.1`, which for exponent gaps of ~10⁹+ would
+        // otherwise materialize B^(low.1) digits and die on an out-of-memory allocation
+        // (e.g. the two exponentials of `sinh(1e11)` sit ~5·10¹¹ digits apart). The collapse
+        // is sound: both the original fraction and the unit replacement lie strictly between
+        // 0 and ½ ulp (window ≥ rnd_precision + 2 ≥ 2), so every rounding mode decides
+        // identically on either.
+        let window = rnd_precision + 2;
+        if !low.0.is_zero() && low.1 > window {
+            // Sound side: proving `|low.0| < B^(low.1 − window)` from bounds needs the
+            // *lower* bound of log₂B on the right — an upper bound would let a low part that
+            // still reaches the window collapse. The margin absorbs the f32 slack of both
+            // bound products (relative 2⁻²³ of a ~`low.1·log₂B`-sized value, i.e. up to
+            // ~`low.1/2²¹` digit positions; the +64 floors it for small gaps).
+            let (b_lb, _) = B.log2_bounds();
+            let margin = (low.1 >> 21) + 64;
+            let gap = (low.1 - window).saturating_sub(margin);
+            if low.0.clone().abs().log2_bounds().1 < gap as f32 * b_lb {
+                low = (low.0.signum(), window);
+            }
+        }
 
         // align to precision again
         let digits = digit_len::<B>(&significand);
@@ -430,18 +476,30 @@ impl<R: Round> Context<R> {
         rhs_sign: Sign,
     ) -> Rounded<Repr<B>> {
         assert_finite_operands(&lhs, &rhs);
-        if lhs.is_pos_zero() {
-            // With rhs_sign = Negative, round `-rhs` directly rather than negating
-            // *after* rounding. For the asymmetric modes (Up = toward +∞, Down =
-            // toward −∞), `round(-x) != -round(x)`: rounding `rhs` toward +∞ then
-            // negating rounds in the wrong direction, so `0 - rhs` would land one
-            // ULP off (truncated instead of rounded away from the result). This
-            // applies to every `addsub_*` variant's lhs-zero path.
-            self.repr_round(match rhs_sign {
-                Positive => rhs,
-                Negative => Repr::new(-rhs.significand, rhs.exponent),
-            })
-        } else if rhs.is_pos_zero() {
+        // The zero tests are on the *significand*: `-0` reaches this kernel too (as a value, an
+        // addend, a difference, a cancellation), and treating only `+0` as zero sent `-0` down
+        // the alignment path below — where the sentinel exponent `-1` makes it look like the
+        // *larger* operand, so the other addend's significand is shifted past its end and
+        // dropped (`1e-16 + (-0)` returned `0`).
+        if lhs.significand.is_zero() {
+            if rhs.significand.is_zero() {
+                self.repr_round(zero_sum::<R, B>(
+                    lhs.is_neg_zero(),
+                    rhs.is_neg_zero() ^ (rhs_sign == Negative),
+                ))
+            } else {
+                // With rhs_sign = Negative, round `-rhs` directly rather than negating
+                // *after* rounding. For the asymmetric modes (Up = toward +∞, Down =
+                // toward −∞), `round(-x) != -round(x)`: rounding `rhs` toward +∞ then
+                // negating rounds in the wrong direction, so `0 - rhs` would land one
+                // ULP off (truncated instead of rounded away from the result). This
+                // applies to every `addsub_*` variant's lhs-zero path.
+                self.repr_round(match rhs_sign {
+                    Positive => rhs,
+                    Negative => Repr::new(-rhs.significand, rhs.exponent),
+                })
+            }
+        } else if rhs.significand.is_zero() {
             self.repr_round(lhs)
         } else {
             match lhs.exponent.cmp(&rhs.exponent) {
@@ -467,12 +525,20 @@ impl<R: Round> Context<R> {
         rhs_sign: Sign,
     ) -> Rounded<Repr<B>> {
         assert_finite_operands(&lhs, rhs);
-        if lhs.is_pos_zero() {
-            self.repr_round(match rhs_sign {
-                Positive => rhs.clone(),
-                Negative => Repr::new(-&rhs.significand, rhs.exponent),
-            })
-        } else if rhs.is_pos_zero() {
+        // Significand-based zero tests — see `addsub_vv`.
+        if lhs.significand.is_zero() {
+            if rhs.significand.is_zero() {
+                self.repr_round(zero_sum::<R, B>(
+                    lhs.is_neg_zero(),
+                    rhs.is_neg_zero() ^ (rhs_sign == Negative),
+                ))
+            } else {
+                self.repr_round(match rhs_sign {
+                    Positive => rhs.clone(),
+                    Negative => Repr::new(-&rhs.significand, rhs.exponent),
+                })
+            }
+        } else if rhs.significand.is_zero() {
             self.repr_round(lhs)
         } else {
             match lhs.exponent.cmp(&rhs.exponent) {
@@ -501,10 +567,18 @@ impl<R: Round> Context<R> {
         // Bake the sign into the owned rhs so the kernel — which takes its first
         // operand by value — can move `rhs` into that slot with `Positive`. This
         // is the mirror of `addsub_vv`'s owned-lhs path; the value is identical.
+        // (The zero-sign test below is taken first: negating a zero significand leaves the
+        // `-0` sentinel exponent untouched, so `rhs.is_neg_zero()` would lie after the bake.)
+        let rhs_eff_neg = rhs.is_neg_zero() ^ (rhs_sign == Negative);
         rhs.significand *= rhs_sign;
-        if lhs.is_pos_zero() {
-            self.repr_round(rhs)
-        } else if rhs.is_pos_zero() {
+        // Significand-based zero tests — see `addsub_vv`.
+        if lhs.significand.is_zero() {
+            if rhs.significand.is_zero() {
+                self.repr_round(zero_sum::<R, B>(lhs.is_neg_zero(), rhs_eff_neg))
+            } else {
+                self.repr_round(rhs)
+            }
+        } else if rhs.significand.is_zero() {
             self.repr_round_ref(lhs)
         } else {
             match lhs.exponent.cmp(&rhs.exponent) {
@@ -528,12 +602,20 @@ impl<R: Round> Context<R> {
         rhs_sign: Sign,
     ) -> Rounded<Repr<B>> {
         assert_finite_operands(lhs, rhs);
-        if lhs.is_pos_zero() {
-            match rhs_sign {
-                Positive => self.repr_round_ref(rhs),
-                Negative => self.repr_round_ref(&Repr::new(-&rhs.significand, rhs.exponent)),
+        // Significand-based zero tests — see `addsub_vv`.
+        if lhs.significand.is_zero() {
+            if rhs.significand.is_zero() {
+                self.repr_round(zero_sum::<R, B>(
+                    lhs.is_neg_zero(),
+                    rhs.is_neg_zero() ^ (rhs_sign == Negative),
+                ))
+            } else {
+                match rhs_sign {
+                    Positive => self.repr_round_ref(rhs),
+                    Negative => self.repr_round_ref(&Repr::new(-&rhs.significand, rhs.exponent)),
+                }
             }
-        } else if rhs.is_pos_zero() {
+        } else if rhs.significand.is_zero() {
             self.repr_round_ref(lhs)
         } else {
             match lhs.exponent.cmp(&rhs.exponent) {
@@ -611,7 +693,7 @@ impl<R: Round> Context<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::round::mode::{HalfAway, HalfEven};
+    use crate::round::mode::{self, HalfAway, HalfEven};
 
     // Build a normalized Repr from a small integer significand and an exponent.
     fn r<const B: Word>(sig: i128, exp: isize) -> Repr<B> {
@@ -809,5 +891,141 @@ mod tests {
         // reversed: (2^20 - 1) - 2^20 = -1, through both rhs-owned and lhs-owned paths
         assert_eq!(&ctx.addsub_rv(&near, big.clone(), Negative).value(), &r::<2>(-1, 0));
         assert_eq!(&ctx.addsub_vv(near, big, Negative).value(), &r::<2>(-1, 0));
+    }
+
+    /// `x + (-0) == x` (and the same through `sub`), for a magnitude small enough that the
+    /// exponent gap to `-0`'s sentinel exponent reaches past the end of `x`'s significand.
+    ///
+    /// Regression: the kernels tested only `is_pos_zero()` for their zero short-circuit, so
+    /// `-0` fell into the alignment path — where its sentinel exponent `-1` makes it look like
+    /// the *larger* operand, shifting `x`'s significand out entirely. `1e-16 + (-0)` returned
+    /// `0`, and the same for every `|x|` whose significand is shorter than the gap.
+    #[test]
+    fn addsub_neg_zero_is_identity_for_tiny_operands() {
+        fn check<R: Round>(name: &str) {
+            let ctx = Context::<R>::new(12);
+            for (sig, exp) in [(1i128, -16), (1, -30), (12345, -40), (7, -3), (5, -2)] {
+                let x = r::<10>(sig, exp);
+                let neg_zero = Repr::<10>::neg_zero();
+                let expected = r::<10>(sig, exp);
+                assert_eq!(
+                    ctx.addsub_rr(&x, &neg_zero, Positive).value(),
+                    expected,
+                    "{name}: {sig}e{exp} + (-0)"
+                );
+                assert_eq!(
+                    ctx.addsub_rr(&neg_zero, &x, Positive).value(),
+                    expected,
+                    "{name}: (-0) + {sig}e{exp}"
+                );
+                // `x - (+0)` and `x - (-0)` are the same identity
+                assert_eq!(
+                    ctx.addsub_rr(&x, &Repr::<10>::zero(), Negative).value(),
+                    expected,
+                    "{name}: {sig}e{exp} - (+0)"
+                );
+                assert_eq!(
+                    ctx.addsub_rr(&x, &neg_zero, Negative).value(),
+                    expected,
+                    "{name}: {sig}e{exp} - (-0)"
+                );
+                assert_addsub_variants_agree(&ctx, &x, &neg_zero);
+            }
+        }
+        check::<HalfAway>("HalfAway");
+        check::<HalfEven>("HalfEven");
+        check::<mode::Down>("Down");
+        check::<mode::Up>("Up");
+        check::<mode::Zero>("Zero");
+    }
+
+    /// IEEE 754 §6.3 conformance for a sum/difference whose *both* operands are zero: the sign
+    /// of the exact zero. `x + x` (and `x − (−x)`) retains `x`'s sign even when `x` is zero;
+    /// an exact zero of mixed signs is `+0`, except under roundTowardNegative where it is `-0`.
+    ///
+    /// Written as the explicit table rather than re-deriving the rule, so the test is an
+    /// independent restatement of the standard.
+    #[test]
+    fn addsub_signed_zero_results_match_ieee754() {
+        // (lhs is -0, rhs is -0, sign of `lhs + rhs`, sign of `lhs - rhs`) under the ordinary
+        // rounding modes, and the same under roundTowardNegative.
+        let cases: [(bool, bool, bool, bool, bool, bool); 4] = [
+            //  lhs-0  rhs-0 | add/normal  sub/normal | add/rtn  sub/rtn
+            (true, true, true, false, true, true),
+            (true, false, false, true, true, true),
+            // `(+0) − (−0)` is `(+0) + (+0)`: the like-sign clause keeps it `+0` under *every*
+            // mode, roundTowardNegative included.
+            (false, true, false, false, true, false),
+            (false, false, false, false, false, true),
+        ];
+
+        fn check<R: Round, const B: Word>(
+            name: &str,
+            cases: &[(bool, bool, bool, bool, bool, bool)],
+        ) {
+            let ctx = Context::<R>::new(5);
+            for &(lhs_neg, rhs_neg, add_neg, sub_neg, add_rtn, sub_rtn) in cases {
+                let z = |neg: bool| {
+                    if neg {
+                        Repr::<B>::neg_zero()
+                    } else {
+                        Repr::<B>::zero()
+                    }
+                };
+                let (lhs, rhs) = (z(lhs_neg), z(rhs_neg));
+
+                let add = ctx.addsub_rr(&lhs, &rhs, Positive).value();
+                let neg = R::IS_ROUND_TOWARD_NEGATIVE;
+                let want_add_neg = if neg { add_rtn } else { add_neg };
+                assert_eq!(
+                    add.is_neg_zero(),
+                    want_add_neg,
+                    "{name}: (-0={lhs_neg}) + (-0={rhs_neg})"
+                );
+                assert!(add.significand.is_zero());
+
+                let sub = ctx.addsub_rr(&lhs, &rhs, Negative).value();
+                let want_sub_neg = if neg { sub_rtn } else { sub_neg };
+                assert_eq!(
+                    sub.is_neg_zero(),
+                    want_sub_neg,
+                    "{name}: (-0={lhs_neg}) - (-0={rhs_neg})"
+                );
+                assert!(sub.significand.is_zero());
+
+                // every ownership path agrees on the signed zero
+                assert_addsub_variants_agree(&ctx, &lhs, &rhs);
+            }
+        }
+
+        check::<HalfAway, 10>("HalfAway", &cases);
+        check::<HalfEven, 10>("HalfEven", &cases);
+        check::<mode::Up, 10>("Up", &cases);
+        check::<mode::Zero, 10>("Zero", &cases);
+        check::<mode::Down, 10>("Down", &cases); // roundTowardNegative
+        check::<HalfEven, 2>("HalfEven base 2", &cases);
+    }
+
+    // An astronomically large exponent gap (here ~10⁹ digits) must not try to materialize the
+    // digit alignment: the smaller operand is a pure sticky below the rounding window, and the
+    // result is just the larger operand (rounded to nearest). Before the sticky collapse in
+    // `repr_round_sum`, base-10 inputs here died on an out-of-memory allocation (e.g. via
+    // `sinh(1e14)`, whose two exponentials sit ~10¹⁵ digits apart).
+    #[test]
+    fn addsub_astronomical_exponent_gap() {
+        let ctx = Context::<HalfEven>::new(20);
+        let big = r::<10>(12345, 1_000_000_000);
+        let tiny = r::<10>(54321, -1_000_000_000);
+        // big + tiny ≈ big (the tiny term is far below the window, but keeps the sum inexact:
+        // both round-to-nearest and the directed modes round back to big itself)
+        let sum = ctx.add(&big, &tiny).unwrap().value();
+        assert_eq!(sum.repr().exponent(), big.exponent);
+        // big - tiny likewise
+        let diff = ctx.sub(&big, &tiny).unwrap().value();
+        assert_eq!(diff.repr().exponent(), big.exponent);
+        // tiny - big ≈ -big
+        let neg = ctx.sub(&tiny, &big).unwrap().value();
+        assert_eq!(neg.repr().sign(), dashu_base::Sign::Negative);
+        assert_eq!(neg.repr().exponent(), big.exponent);
     }
 }

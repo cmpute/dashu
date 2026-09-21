@@ -630,6 +630,24 @@ macro_rules! forward_to_context {
     };
 }
 
+// The ×u family: same shape as [`forward_to_context!`] plus the `u: usize` divisor argument
+// (the plain macro cannot forward extra parameters).
+macro_rules! forward_to_context_u {
+    ($name:ident) => {
+        #[doc = concat!("See [`FBig::", stringify!($name), "`].")]
+        #[inline]
+        pub fn $name(&self, u: usize) -> CachedFBig<R, B> {
+            let mut c = self.cache.borrow_mut();
+            let fbig = self.fbig.context.unwrap_fp(self.fbig.context.$name::<B>(
+                &self.fbig.repr,
+                u,
+                Some(&mut *c),
+            ));
+            CachedFBig::from_fbig(fbig, &self.cache)
+        }
+    };
+}
+
 /// Forward a unary function that delegates to the inner [`FBig`] (no cache needed).
 macro_rules! forward_to_fbig {
     ($name:ident) => {
@@ -722,6 +740,8 @@ impl<R: ErrorBounds, const B: Word> CachedFBig<R, B> {
     forward_to_context!(asinh);
     forward_to_context!(acosh);
     forward_to_context!(atanh);
+    forward_to_context!(sinh_pi);
+    forward_to_context!(cosh_pi);
 
     forward_to_context!(sin);
     forward_to_context!(cos);
@@ -729,6 +749,16 @@ impl<R: ErrorBounds, const B: Word> CachedFBig<R, B> {
     forward_to_context!(asin);
     forward_to_context!(acos);
     forward_to_context!(atan);
+    forward_to_context!(sin_pi);
+    forward_to_context!(cos_pi);
+    forward_to_context!(tan_pi);
+
+    forward_to_context_u!(sin_unit);
+    forward_to_context_u!(cos_unit);
+    forward_to_context_u!(tan_unit);
+    forward_to_context_u!(asin_unit);
+    forward_to_context_u!(acos_unit);
+    forward_to_context_u!(atan_unit);
 
     /// Fused multiply–add (see [`FBig::fma`](crate::FBig::fma)). Preserves the
     /// LHS (`self`) cache handle; the `b`/`c` caches are dropped, matching the
@@ -746,6 +776,45 @@ impl<R: ErrorBounds, const B: Word> CachedFBig<R, B> {
             Self::from_fbig(self.fbig.context.unwrap_fp(s), &self.cache),
             Self::from_fbig(self.fbig.context.unwrap_fp(c), &self.cache),
         )
+    }
+
+    /// Sine and cosine of the value multiplied by π together (see [`FBig::sin_cos_pi`]).
+    pub fn sin_cos_pi(&self) -> (Self, Self) {
+        self.sin_cos_pi_shared(2)
+    }
+
+    /// Sine and cosine of `self·2π/u` together (see [`FBig::sin_cos_unit`]).
+    pub fn sin_cos_unit(&self, u: usize) -> (Self, Self) {
+        self.sin_cos_pi_shared(u)
+    }
+
+    /// Shared body of `sin_cos_pi`/`sin_cos_unit` (the former is the u = 2 case).
+    fn sin_cos_pi_shared(&self, u: usize) -> (Self, Self) {
+        let mut guard = self.cache.borrow_mut();
+        let cache = Some(&mut *guard);
+        let (s, c) = self
+            .fbig
+            .context
+            .sin_cos_unit::<B>(&self.fbig.repr, u, cache);
+        (
+            Self::from_fbig(self.fbig.context.unwrap_fp(s), &self.cache),
+            Self::from_fbig(self.fbig.context.unwrap_fp(c), &self.cache),
+        )
+    }
+
+    /// `atan2_unit(y, x, u)` (see [`FBig::atan2_unit`]).
+    pub fn atan2_unit(&self, x: &Self, u: usize) -> Self {
+        let mut c = self.cache.borrow_mut();
+        let fbig = self
+            .fbig
+            .context
+            .unwrap_fp(self.fbig.context.atan2_unit::<B>(
+                &self.fbig.repr,
+                &x.fbig.repr,
+                u,
+                Some(&mut *c),
+            ));
+        Self::from_fbig(fbig, &self.cache)
     }
 
     /// `atan2(y, x)` (see [`FBig::atan2`]).
@@ -773,6 +842,18 @@ impl<R: ErrorBounds, const B: Word> CachedFBig<R, B> {
         let mut guard = self.cache.borrow_mut();
         let cache = Some(&mut *guard);
         let (s, c) = self.fbig.context.sinh_cosh::<B>(&self.fbig.repr, cache);
+        (
+            Self::from_fbig(self.fbig.context.unwrap_fp(s), &self.cache),
+            Self::from_fbig(self.fbig.context.unwrap_fp(c), &self.cache),
+        )
+    }
+
+    /// Hyperbolic sine and cosine of the value multiplied by π together
+    /// (see [`FBig::sinh_cosh_pi`]).
+    pub fn sinh_cosh_pi(&self) -> (Self, Self) {
+        let mut guard = self.cache.borrow_mut();
+        let cache = Some(&mut *guard);
+        let (s, c) = self.fbig.context.sinh_cosh_pi::<B>(&self.fbig.repr, cache);
         (
             Self::from_fbig(self.fbig.context.unwrap_fp(s), &self.cache),
             Self::from_fbig(self.fbig.context.unwrap_fp(c), &self.cache),

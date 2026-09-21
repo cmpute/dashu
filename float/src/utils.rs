@@ -80,44 +80,6 @@ pub fn shr_digits<const B: Word>(value: &IBig, exp: usize) -> IBig {
     }
 }
 
-/// Ceiling right shift: `⌈value / B^exp⌉` (round toward +∞), the ceiling analog of
-/// [`shr_digits`].
-///
-/// For a non-negative `value` this is `⌊value/B^exp⌋ + (value mod B^exp ≠ 0)`; a non-positive
-/// `value` delegates to [`shr_digits`] (truncation toward zero is already a ceiling for
-/// negatives). Power-of-two bases need only a shift plus the position of the lowest set bit —
-/// no `B^exp` is materialized. The base-10 path uses `⌈⌈x/2^k⌉/5^k⌉ = ⌈x/10^k⌉` (the identity
-/// `⌈⌈x/a⌉/b⌉ = ⌈x/(ab)⌉`), the same radix-factor trick as [`shr_digits`].
-#[inline]
-pub fn shr_digits_ceil<const B: Word>(value: &IBig, exp: usize) -> IBig {
-    if exp == 0 || value.sign() != Sign::Positive {
-        return shr_digits::<B>(value, exp);
-    }
-
-    match B {
-        2 => {
-            let round_up = value.trailing_zeros().map_or(false, |t| t < exp);
-            shr_ref(value, exp) + round_up as usize
-        }
-        10 => {
-            let q =
-                shr_ref(value, exp) + (value.trailing_zeros().map_or(false, |t| t < exp)) as usize;
-            let p5 = IBig::from(5).pow(exp);
-            (q + &p5 - IBig::ONE) / p5
-        }
-        b if b.is_power_of_two() => {
-            let bits = exp * b.trailing_zeros() as usize;
-            let round_up = value.trailing_zeros().map_or(false, |t| t < bits);
-            shr_ref(value, bits) + round_up as usize
-        }
-        _ => {
-            let base = base_as_ibig::<B>();
-            let d = base.pow(exp);
-            (value.clone() + &d - IBig::ONE) / d
-        }
-    }
-}
-
 /// Equivalent to value.unsigned_abs().split_bits(n), but returns (hi, lo) and preserving the sign
 fn split_bits(value: IBig, n: usize) -> (IBig, IBig) {
     let (sign, mag) = value.into_parts();
@@ -238,6 +200,55 @@ pub const fn factor_base(b: Word, newb: Word) -> (usize, Word) {
     (a, r)
 }
 
+// ============================================================================
+// log₂ helpers — the fixed-point brackets and bounds behind the base-aware
+// magnitude guards (mag.rs's radius scaling, the ×u argument reduction)
+// ============================================================================
+
+/// `log₂ BASE` as a `(⌈·, ⌊·⌋, frac_bits)` fixed-point bracket — the same shape as the
+/// hand-written base-10 constants it replaces, computed for any base by the classic squaring
+/// walk on the normalized significand (one `u128` square per fraction bit). `B` is a const
+/// generic, so the whole walk folds into a constant at compile time; the generic-base radius
+/// rules cost no more than the base-10 ones. The fraction width shrinks as the integer part
+/// grows so the ratio itself stays below `2^63` — that bound is what keeps `|a|·ratio`
+/// inside `i128` in `div_scaled` (mag.rs) for every `a` in the `isize` range.
+pub const fn log2_base<const B: Word>() -> (u64, u32) {
+    // normalize to mant = BASE·2^lz ∈ [2^63, 2^64): ⌊log₂ BASE⌋ = 63 − lz, then walk the
+    // fraction bits — square, and each time the value crosses 2 the bit is 1. The walk is
+    // pinned to explicit widths (`Word` is `u32` on some targets, whose raw `leading_zeros`
+    // would shift the normalization out of `[2^63, 2^64)` and return a wrong log for every
+    // non-power-of-two base).
+    let int_bits: u32 = Word::BITS - 1 - B.leading_zeros(); // ⌊log₂ BASE⌋ (width-independent)
+    let frac_bits: u32 = 62 - int_bits;
+    let mut m: u128 = (B as u128) << (63 - int_bits); // ∈ [2^63, 2^64)
+    let mut frac: u64 = 0;
+    let mut i = frac_bits;
+    loop {
+        if i == 0 {
+            break;
+        }
+        i -= 1;
+        m = (m * m) >> 63;
+        if m >> 64 != 0 {
+            frac |= 1 << i;
+            m >>= 1;
+        }
+    }
+    ((int_bits as u64) << frac_bits | frac, frac_bits)
+}
+
+/// A conservative f32 bound of `log₂(u·B^s)` from below: the factors' log2 lower bounds,
+/// shaved by the f32 arithmetic's own rounding slack (the `s as f32` conversion, the product
+/// and the sum each round at ~2⁻²⁴ relative; 3·10⁻⁷ > 2⁻²² covers them with margin) plus a
+/// fixed allowance for the `u` term. Whatever this bound certifies as "below", the true
+/// `log₂(u·B^s)` is below too — erring towards the general (always-exact) path, never towards
+/// a wrong fast-path verdict.
+pub fn log2_u_bs_lb(u_lb: f32, b_lb: f32, s: usize) -> f32 {
+    let s_lb = s as f32 * b_lb;
+    let raw = u_lb + s_lb;
+    raw - (raw * 3e-7 + 1e-4)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,29 +265,6 @@ mod tests {
         assert_eq!(-shr_ref(&a, 10), (&a).abs() >> 10);
         assert_eq!(-shr_ref(&a, 100), (&a).abs() >> 100);
         assert_eq!(-shr_ref(&a, 1000), (&a).abs() >> 1000);
-    }
-
-    #[test]
-    fn test_shr_digits_ceil() {
-        // Binary.
-        assert_eq!(shr_digits_ceil::<2>(&IBig::from(7), 1), IBig::from(4)); // ⌈3.5⌉
-        assert_eq!(shr_digits_ceil::<2>(&IBig::from(8), 1), IBig::from(4)); // exact
-        assert_eq!(shr_digits_ceil::<2>(&IBig::from(1), 3), IBig::from(1)); // ⌈1/8⌉
-        assert_eq!(shr_digits_ceil::<2>(&IBig::ZERO, 5), IBig::ZERO);
-        assert_eq!(shr_digits_ceil::<2>(&IBig::from(-7), 1), IBig::from(-3)); // ⌈-3.5⌉
-                                                                              // Decimal: the 5^k radix-factor path.
-        assert_eq!(shr_digits_ceil::<10>(&IBig::from(21), 1), IBig::from(3)); // ⌈2.1⌉
-        assert_eq!(shr_digits_ceil::<10>(&IBig::from(20), 1), IBig::from(2)); // exact
-        assert_eq!(shr_digits_ceil::<10>(&IBig::from(199), 2), IBig::from(2)); // ⌈1.99⌉
-        assert_eq!(shr_digits_ceil::<10>(&IBig::from(100), 2), IBig::from(1));
-        assert_eq!(shr_digits_ceil::<10>(&IBig::from(-21), 1), IBig::from(-2)); // ⌈-2.1⌉
-                                                                                // Power-of-two base other than 2.
-        assert_eq!(shr_digits_ceil::<8>(&IBig::from(65), 1), IBig::from(9)); // ⌈65/8⌉
-        assert_eq!(shr_digits_ceil::<8>(&IBig::from(64), 1), IBig::from(8)); // exact
-                                                                             // Generic base.
-        assert_eq!(shr_digits_ceil::<7>(&IBig::from(50), 1), IBig::from(8)); // ⌈50/7⌉
-        assert_eq!(shr_digits_ceil::<7>(&IBig::from(49), 1), IBig::from(7)); // exact
-        assert_eq!(shr_digits_ceil::<7>(&IBig::from(50), 0), IBig::from(50)); // exp 0
     }
 
     #[test]

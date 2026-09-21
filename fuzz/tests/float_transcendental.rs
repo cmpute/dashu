@@ -149,7 +149,7 @@ proptest! {
     #[ignore]
     fn fbig_exp_fuzz(x in small_x()) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x])) {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.exp::<10>(x.repr(), None));
             if d.repr().is_infinite() { continue; }
@@ -165,7 +165,7 @@ proptest! {
     #[ignore]
     fn fbig_exp_m1_fuzz(x in small_x()) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x])) {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.exp_m1::<10>(x.repr(), None));
             if d.repr().is_infinite() { continue; }
@@ -181,7 +181,7 @@ proptest! {
     #[ignore]
     fn fbig_ln_fuzz(x in fuzz::pos_dbig_strategy(-50..=50)) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x])) {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.ln::<10>(x.repr(), None));
             if d.repr().is_infinite() { continue; }
@@ -197,7 +197,7 @@ proptest! {
     #[ignore]
     fn fbig_ln_1p_fuzz(x in small_x_above(-1)) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x])) {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.ln_1p::<10>(x.repr(), None));
             if d.repr().is_infinite() { continue; }
@@ -219,7 +219,7 @@ proptest! {
     #[ignore]
     fn fbig_log2_fuzz(x in fuzz::pos_dbig_strategy(-200..=200)) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x])) {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.log2::<10>(x.repr(), None));
             if d.repr().is_infinite() { continue; }
@@ -237,7 +237,7 @@ proptest! {
     #[ignore]
     fn fbig_log10_fuzz(x in fuzz::pos_dbig_strategy(-200..=200)) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x])) {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.log10::<10>(x.repr(), None));
             if d.repr().is_infinite() { continue; }
@@ -253,7 +253,7 @@ proptest! {
     #[ignore]
     fn fbig_sqrt_fuzz(x in fuzz::pos_dbig_strategy(-50..=50)) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x])) {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.sqrt::<10>(x.repr()));
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
@@ -268,7 +268,7 @@ proptest! {
     #[ignore]
     fn fbig_cbrt_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x])) {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.cbrt::<10>(x.repr()));
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
@@ -283,7 +283,7 @@ proptest! {
     #[ignore]
     fn fbig_nth_root_fuzz(x in fuzz::pos_dbig_strategy(-50..=50), n in 2u32..=6) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x, &n])) {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.nth_root::<10>(n as usize, x.repr()));
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
@@ -298,7 +298,7 @@ proptest! {
     #[ignore]
     fn fbig_hypot_fuzz(a in small_x(), b in small_x()) {
         let (as_, bs) = (format!("{a:e}"), format!("{b:e}"));
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&a, &b])) {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.hypot::<10>(a.repr(), b.repr()));
             let bits = rug_bits(a.repr(), prec).max(rug_bits(b.repr(), prec));
@@ -316,7 +316,7 @@ proptest! {
     #[ignore]
     fn fbig_atan_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x])) {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.atan::<10>(x.repr(), None));
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
@@ -331,7 +331,7 @@ proptest! {
     #[ignore]
     fn fbig_powf_fuzz(base in fuzz::pos_dbig_strategy(-5..=5), exp in small_x()) {
         let (bs, es) = (format!("{base:e}"), format!("{exp:e}"));
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&base, &exp])) {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.powf::<10>(base.repr(), exp.repr(), None));
             if d.repr().is_infinite() { continue; }
@@ -349,7 +349,7 @@ proptest! {
     #[ignore]
     fn fbig_powi_fuzz(base in fuzz::dbig_strategy(-20..=20), n in 0u32..=16) {
         let bs = format!("{base:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&base, &n])) {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.powi::<10>(base.repr(), IBig::from(n)));
             if d.repr().is_infinite() { continue; }
@@ -365,7 +365,7 @@ proptest! {
     #[ignore]
     fn fbig_sinh_fuzz(x in small_x()) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x])) {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.sinh::<10>(x.repr(), None));
             if d.repr().is_infinite() { continue; }
@@ -381,7 +381,7 @@ proptest! {
     #[ignore]
     fn fbig_cosh_fuzz(x in small_x()) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x])) {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.cosh::<10>(x.repr(), None));
             if d.repr().is_infinite() { continue; }
@@ -397,7 +397,7 @@ proptest! {
     #[ignore]
     fn fbig_tanh_fuzz(x in small_x()) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x])) {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.tanh::<10>(x.repr(), None));
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
@@ -412,7 +412,7 @@ proptest! {
     #[ignore]
     fn fbig_sinh_cosh_fuzz(x in small_x()) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x])) {
             let ctx = Context::<HalfAway>::new(prec);
             let (ds, dc) = ctx.sinh_cosh::<10>(x.repr(), None);
             let d_sinh = dashu_ok!(ds);
@@ -434,7 +434,7 @@ proptest! {
     #[ignore]
     fn fbig_asinh_fuzz(x in fuzz::dbig_strategy(-50..=50)) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x])) {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.asinh::<10>(x.repr(), None));
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
@@ -449,7 +449,7 @@ proptest! {
     #[ignore]
     fn fbig_acosh_fuzz(x in fuzz::pos_dbig_strategy(0..=50)) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x])) {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.acosh::<10>(x.repr(), None));
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
@@ -465,7 +465,7 @@ proptest! {
     #[ignore]
     fn fbig_atanh_fuzz(x in fuzz::unit_dbig()) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x])) {
             let ctx = Context::<HalfAway>::new(prec);
             let d = dashu_ok!(ctx.atanh::<10>(x.repr(), None));
             if d.repr().is_infinite() { continue; }
@@ -485,7 +485,7 @@ proptest! {
     #[ignore]
     fn fbig_exp_directed_fuzz(x in small_x()) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x])) {
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
             directed_check!(exp, exp_round, Up, x, xr, prec, xs);
             directed_check!(exp, exp_round, Down, x, xr, prec, xs);
@@ -498,7 +498,7 @@ proptest! {
     #[ignore]
     fn fbig_ln_directed_fuzz(x in fuzz::pos_dbig_strategy(-50..=50)) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x])) {
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
             directed_check!(ln, ln_round, Up, x, xr, prec, xs);
             directed_check!(ln, ln_round, Down, x, xr, prec, xs);
@@ -511,7 +511,7 @@ proptest! {
     #[ignore]
     fn fbig_log2_directed_fuzz(x in fuzz::pos_dbig_strategy(-200..=200)) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x])) {
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
             directed_check!(log2, log2_round, Up, x, xr, prec, xs);
             directed_check!(log2, log2_round, Down, x, xr, prec, xs);
@@ -524,7 +524,7 @@ proptest! {
     #[ignore]
     fn fbig_log10_directed_fuzz(x in fuzz::pos_dbig_strategy(-200..=200)) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x])) {
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
             directed_check!(log10, log10_round, Up, x, xr, prec, xs);
             directed_check!(log10, log10_round, Down, x, xr, prec, xs);
@@ -537,12 +537,32 @@ proptest! {
     #[ignore]
     fn fbig_sqrt_directed_fuzz(x in fuzz::pos_dbig_strategy(-50..=50)) {
         let xs = format!("{x:e}");
-        for prec in fuzz::fuzz_precisions_decimal() {
+        for prec in fuzz::sampled_precisions_decimal(fuzz::case_key(&[&x])) {
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
             directed_check_sqrt!(Up, x, xr, prec, xs);
             directed_check_sqrt!(Down, x, xr, prec, xs);
             directed_check_sqrt!(Zero, x, xr, prec, xs);
             directed_check_sqrt!(HalfEven, x, xr, prec, xs);
+        }
+    }
+
+    /// `sin_pi`/`cos_pi` under directed modes vs MPFR's `sin_pi_round`/`cos_pi_round`. The
+    /// strategy hits the exact-case lattice (n/100 with n ≡ 25 mod 50 are quarter-integers),
+    /// which resolves exactly outside the Ziv loop on every mode.
+    #[test]
+    #[ignore]
+    fn fbig_sin_pi_directed_fuzz(x in small_x()) {
+        let xs = format!("{x:e}");
+        for prec in fuzz::fuzz_precisions_decimal() {
+            let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
+            directed_check!(sin_pi, sin_pi_round, Up, x, xr, prec, xs);
+            directed_check!(sin_pi, sin_pi_round, Down, x, xr, prec, xs);
+            directed_check!(sin_pi, sin_pi_round, Zero, x, xr, prec, xs);
+            directed_check!(sin_pi, sin_pi_round, HalfEven, x, xr, prec, xs);
+            directed_check!(cos_pi, cos_pi_round, Up, x, xr, prec, xs);
+            directed_check!(cos_pi, cos_pi_round, Down, x, xr, prec, xs);
+            directed_check!(cos_pi, cos_pi_round, Zero, x, xr, prec, xs);
+            directed_check!(cos_pi, cos_pi_round, HalfEven, x, xr, prec, xs);
         }
     }
 

@@ -663,8 +663,11 @@ mod tests {
 
     #[test]
     fn test_cache_size() {
+        // 12.345 (not 1.234): a unit-binade input needs no cached constant at all — the
+        // reduction onto [1, 2) is exact and the reconstruction scale is zero — while a
+        // two-digit integer part reconstructs through the cached ln(10).
         let x = CachedFBig::<mode::HalfAway, 10>::with_cache(
-            Repr::new(1234.into(), -3),
+            Repr::new(12345.into(), -3),
             Context::new(50),
         );
         let _ = x.ln();
@@ -675,8 +678,9 @@ mod tests {
 
     #[test]
     fn test_cache_clear() {
+        // 12.345, as in test_cache_size: the ln reconstruction consults the cache.
         let x = CachedFBig::<mode::HalfAway, 10>::with_cache(
-            Repr::new(1234.into(), -3),
+            Repr::new(12345.into(), -3),
             Context::new(50),
         );
         let before_clear = x.ln().into_fbig();
@@ -736,5 +740,26 @@ mod tests {
                 .into_fbig(),
             plain.clone().with_base_and_precision::<2>(40).value()
         );
+    }
+
+    /// The ×u trig family must exist on the cached wrapper and agree with the `FBig`
+    /// originals — the mirror-API rule: code that compiles with `FBig` compiles unchanged
+    /// with `CachedFBig`. `u = 2` is deliberately absent: `tan_unit(0.5, 2)` is the `tan_pi`
+    /// pole, which would panic through `unwrap_fp`.
+    #[test]
+    fn test_trig_unit_family_matches_fbig() {
+        let cached = CachedFBig::<mode::HalfAway, 10>::with_cache(
+            Repr::new(5000.into(), -4), // 0.5000
+            Context::new(50),
+        );
+        let plain = cached.as_fbig().clone();
+        for u in [3usize, 360, 4096] {
+            assert_eq!(cached.sin_unit(u).into_fbig(), plain.sin_unit(u), "sin {u}");
+            assert_eq!(cached.cos_unit(u).into_fbig(), plain.cos_unit(u), "cos {u}");
+            assert_eq!(cached.tan_unit(u).into_fbig(), plain.tan_unit(u), "tan {u}");
+            assert_eq!(cached.asin_unit(u).into_fbig(), plain.asin_unit(u), "asin {u}");
+            assert_eq!(cached.acos_unit(u).into_fbig(), plain.acos_unit(u), "acos {u}");
+            assert_eq!(cached.atan_unit(u).into_fbig(), plain.atan_unit(u), "atan {u}");
+        }
     }
 }

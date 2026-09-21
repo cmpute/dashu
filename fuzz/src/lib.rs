@@ -2,20 +2,66 @@
 //!
 //! The test binaries under `fuzz/tests/` are proptest-driven differentials against `rug` (GMP/MPFR/
 //! MPC) or an internal exact-then-round oracle. They live in a workspace-excluded crate and are run
-//! manually before a release (`cargo test --manifest-path fuzz/Cargo.toml -- --ignored`); they are
-//! **not** part of CI's per-PR test job (CI only `cargo check`s this crate — see the `fuzz-check`
-//! workflow). Proptest gives shrinking: a failing differential reduces to a minimal counterexample.
+//! manually before a release; they are **not** part of CI's per-PR test job (CI only `cargo check`s
+//! this crate — see the `fuzz-check` workflow). Proptest gives shrinking: a failing differential
+//! reduces to a minimal counterexample.
+//!
+//! Run them with [`run.sh`](../run.sh) (`fuzz/run.sh`, `-h` for options), which gives every test —
+//! and every requested *shard* of a test — its own process and keeps all cores busy; the plain
+//! `cargo test --manifest-path fuzz/Cargo.toml -- --ignored` still works but serializes a long test
+//! into a single thread. [`fuzz_config`] documents the `FUZZ_CASES` / `FUZZ_SHARDS` / `FUZZ_SEED`
+//! knobs and [`sampled_precisions`] the per-width subsampling.
 
 use dashu::float::round::mode::HalfAway;
 use dashu::float::{Context, FBig, Repr};
 use dashu::integer::{IBig, UBig, Word};
 use proptest::prelude::*;
+use proptest::test_runner::RngSeed;
 
-/// Default fuzz strength — more cases than CI's per-crate `PROPTEST_CASES=256`, since these run
-/// out-of-band and are meant to be thorough. Overridable via the `PROPTEST_CASES` env var.
+/// Read an integer env var, ignoring unset/unparseable values.
+fn env_usize(name: &str) -> Option<usize> {
+    std::env::var(name).ok().and_then(|s| s.trim().parse().ok())
+}
+
+/// The fuzz strength, shaped by three env knobs:
+///
+/// - **`FUZZ_CASES`** (fallback `PROPTEST_CASES`, default 1024) — the case budget of the whole
+///   test, spent at the **lowest** configured [`fuzz_precisions_bits`] width (higher widths
+///   self-subsample via [`sampled_precisions`] — half the cases each step up, quarter for the
+///   widths past [`MAX_SAMPLE_SHIFT`], so the default sweep costs 2× the budget, not 4×).
+///   1024 is a few seconds per differential; raise it for a thorough release pass, lower for a
+///   smoke run. A budget of 0 is ignored (it would run no case and still pass).
+/// - **`FUZZ_SHARDS`** / **`FUZZ_SHARD`** — process-level sharding for a test whose tail is
+///   long: the budget is divided by `FUZZ_SHARDS` and shard *i* takes the *i*-th slice with
+///   its own seed, so `FUZZ_SHARDS=16` across 16 processes keeps the coverage of a single
+///   run while using 16 cores. Shrinking is unaffected (each shard shrinks within its own
+///   slice). `FUZZ_SHARD` defaults to 0 and must be `< FUZZ_SHARDS`.
+/// - **`FUZZ_SEED`** — pins the RNG (shard *i* gets `FUZZ_SEED + i`), making a sharded run
+///   reproducible. Unset → proptest's entropy-based seed, so repeated runs explore new
+///   inputs (the point of a fuzz suite); `run.sh` sets it for you when `FUZZ_SEED` is
+///   exported. Note that proptest's own `PROPTEST_RNG_SEED` is *not* honored (the explicit
+///   `rng_seed` above overrides it) — use `FUZZ_SEED`.
 pub fn fuzz_config() -> ProptestConfig {
+    const DEFAULT_BUDGET: usize = 1024;
+    // A zero budget would run no case at all and still report success, so it falls back to the
+    // default rather than being honored (`run.sh` rejects it outright). The per-shard count is
+    // *clamped*, not truncated: `as u32` alone would turn an absurd budget into zero.
+    let budget = match env_usize("FUZZ_CASES")
+        .or_else(|| env_usize("PROPTEST_CASES"))
+        .unwrap_or(DEFAULT_BUDGET)
+    {
+        0 => DEFAULT_BUDGET,
+        budget => budget,
+    };
+    let shards = env_usize("FUZZ_SHARDS").unwrap_or(1).max(1);
+    let shard = env_usize("FUZZ_SHARD").unwrap_or(0).min(shards - 1);
+    let rng_seed = match env_usize("FUZZ_SEED") {
+        Some(seed) => RngSeed::Fixed((seed as u64).wrapping_add(shard as u64)),
+        None => RngSeed::Random,
+    };
     ProptestConfig {
-        cases: 1024,
+        cases: budget.div_ceil(shards).clamp(1, u32::MAX as usize) as u32,
+        rng_seed,
         ..ProptestConfig::default()
     }
 }
@@ -47,6 +93,57 @@ pub fn fuzz_precisions_decimal() -> Vec<usize> {
         .into_iter()
         .map(|b| ((b as f64) * core::f64::consts::LOG10_2).ceil() as usize)
         .collect()
+}
+
+/// A deterministic per-case key for [`sampled_precisions`], hashed from the case inputs'
+/// `Debug` representations (`FBig`/`CBig` don't implement `Hash`). The `Debug` form is
+/// deterministic (the compact head‥tail view truncates long significands, but always the
+/// same way), which is all the key needs: same input, same key, within a run and across
+/// runs. Two inputs differing only inside a truncated middle can collide — astronomically
+/// unlikely for random draws, and the cost is only a skipped wider width.
+pub fn case_key(inputs: &[&dyn core::fmt::Debug]) -> u64 {
+    use core::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for input in inputs {
+        format!("{input:?}").hash(&mut h);
+    }
+    h.finish()
+}
+
+/// The widest subsampling the sweep applies: width *i* runs on a `2^-min(i, MAX_SAMPLE_SHIFT)`
+/// fraction of the cases. Uncapped, the widest width of a sweep gets `2^-(n-1)` of the budget —
+/// 128 of 1024 cases for the default four widths, an 8× drop in sensitivity exactly where the
+/// general multi-word kernels are exercised (the width most likely to catch a bigint bug is the
+/// one sampled hardest). Capped at `2^-2`, the default sweep costs 2× the budget
+/// (`N + N/2 + N/4 + N/4`) against an unsampled 4×, while its widest width keeps a quarter.
+const MAX_SAMPLE_SHIFT: u32 = 2;
+
+/// Subsample a precision sweep: the lowest configured width runs on **every** case (its
+/// iteration count is the `cases` budget of [`fuzz_config`], env-tunable); width *i* runs only
+/// when the low *min(i, `MAX_SAMPLE_SHIFT`)* bits of the case key are all zero, i.e. on a
+/// `2^-min(i, 2)` fraction of cases — the expensive widths get proportionally fewer iterations,
+/// floored at a quarter (N, N/2, N/4, N/4 for the default four widths). With a single width
+/// configured the gate is fully open and every case runs at that width.
+///
+/// The gate depends only on the case inputs, so a counterexample reproduces bit-for-bit.
+/// Shrinking can in principle change the key (a shorter input has a different `Debug`),
+/// closing the width gate mid-shrink — harmless: the failing width that proptest reports is
+/// the one the unshrunk case actually ran.
+pub fn sampled_precisions<P>(key: u64, precs: Vec<P>) -> impl Iterator<Item = P> {
+    precs.into_iter().enumerate().filter(move |(i, _)| {
+        let shift = (*i as u32).min(MAX_SAMPLE_SHIFT);
+        shift == 0 || key & ((1u64 << shift) - 1) == 0
+    }).map(|(_, p)| p)
+}
+
+/// Convenience over [`sampled_precisions`] for the decimal-digit sweep.
+pub fn sampled_precisions_decimal(key: u64) -> impl Iterator<Item = usize> {
+    sampled_precisions(key, fuzz_precisions_decimal())
+}
+
+/// Convenience over [`sampled_precisions`] for the bit-width sweep.
+pub fn sampled_precisions_bits(key: u64) -> impl Iterator<Item = u32> {
+    sampled_precisions(key, fuzz_precisions_bits())
 }
 
 /// A random `IBig` of bounded magnitude (up to `max_words · 64` bits) with a random sign. Trailing

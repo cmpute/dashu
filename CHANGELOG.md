@@ -8,9 +8,19 @@ full detail.
 
 ## Unreleased
 
+### Add
+- **dashu-float**: the ×u and ×π trig families — `sin_unit`/`cos_unit`/`tan_unit`/
+  `sin_cos_unit` and inverses of `2π·x/u` (`u = 360` gives degrees), the `u = 2` wrappers
+  `sin_pi`/`cos_pi`/`tan_pi`/`sin_cos_pi`, and `sinh_pi`/`cosh_pi`/`sinh_cosh_pi`; on
+  `Context`, `FBig` and `CachedFBig`.
+- **dashu-cmplx**: the complex ×π circular family — `sin_pi`/`cos_pi`/`tan_pi`/`sin_cos_pi`.
+
 ### Change
 - **dashu-macros**: **(breaking)** `cbig!` / `static_cbig!` coefficients are now decimal by
   default (was binary); use the `0x` / `0b` / `0o` prefixes for other bases.
+- **dashu-float**: **(rendering)** `-0` now prints as `-0` (all format paths) and parses back
+  as negative zero, matching `f64`; `(-0) + (-0)` is `-0` and a mixed-sign zero sum is `+0`
+  (or `-0` under roundTowardNegative), per IEEE 754 §6.3 — the same for summation (`Sum`).
 
 ## 0.6.0-rc.3 — coordinated release
 

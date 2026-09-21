@@ -2,14 +2,121 @@
 
 ## Unreleased
 
+### Add
+- ×u trigonometric functions `sin_unit`/`cos_unit`/`sin_cos_unit`/`tan_unit` (of `2π·x/u`, the
+  argument in units of the full turn divided by `u` — e.g. `u = 360` gives degrees) and their
+  inverses `asin_unit`/`acos_unit`/`atan_unit`/`atan2_unit` (of `u·θ/(2π)`), on `Context`,
+  `FBig` and `CachedFBig` (the `u` parameter is `usize`; the forward family takes
+  `Err(OutOfDomain)` at `u = 0`, the inverse family returns the `u → 0` signed-zero limit).
+  Unlike the radian variants, the argument reduces *exactly* mod u in integer arithmetic, so
+  the accuracy is independent of the magnitude of the input; arguments where `12x/u` (resp.
+  `8x/u` for the tangent) is an integer resolve exactly — quarters (`0`/`±1`), the sine/cosine
+  sixths (`±1/2`), the tangent eighths (`±1`) and the tangent poles (`Err(Indeterminate)`,
+  where the one-sided limits `+∞`/`−∞` disagree in sign). The inverse family resolves the
+  axis/diagonal angles to exact `k·u/8` values (including the finite `y = ±x` diagonals, which
+  an exactly-representable one-sided directed-rounding preimage would leave uncertifiable).
+- ×π trigonometric functions `sin_pi`/`cos_pi`/`sin_cos_pi`/`tan_pi` (of `x·π`), on `Context`,
+  `FBig` and `CachedFBig` — now thin wrappers over the ×u family at `u = 2`.
+- ×π hyperbolic functions `sinh_pi`/`cosh_pi`/`sinh_cosh_pi` (of `x·π`), on `Context`, `FBig` and
+  `CachedFBig` — the argument ball is built from the shared cached π; a direct series handles
+  `|πx| ≤ 1`, the exponential composition the rest.
+
 ### Change
+- **(internal, `tuning`) the per-attempt Ziv radius trace is now a settable hook** instead of an
+  unconditional `eprintln!`: `ziv_set_trace_hook(Some(|guard, radius| …))` (deliberately
+  `#[doc(hidden)]` — a profiling hook, not a stable API promise) installs a printer, and the
+  default `None` costs one `Cell` read per attempt. The unconditional print cost ~3–4 µs per
+  attempt, which silently poisoned any *timing* run built with `tuning` (reading as a 4–5×
+  regression on sub-microsecond Ziv cases).
+- **`-0` renders with its sign**, as `f64`'s does: `format!("{}", -0)` is now `"-0"` (was `"0"`)
+  and `format!("{:e}", -0)` is `"-0e0"` (was `"0e0"`). The parse side moves with it — `"-0"`,
+  `"-0.0"` and `"-0e0"` now produce *negative* zero (all three produced `+0`) — so a signed zero
+  survives its own `Display`/`FromStr` round-trip. Neither direction could express the sign
+  before, which is why the pair is fixed together. Nothing numeric changes (`±0` compare equal)
+  and `{:+}` still prints `"+0"` for the positive zero.
+- **(internal) the Ziv error radius is now a value-space `Mag` instead of an exact-integer
+  ulp count** (`float/src/mag.rs`, `float/src/ball.rs`; both `pub(crate)`). Every `+`/`-`/`*`/`/`
+  in a transcendental's algorithm is itself correctly rounded, so the radius composes through
+  plain interval algebra over the operation's operands — no ulp-domain shift formulas, no
+  per-ball precision state, and no `IBig` error bookkeeping. Results are unchanged for every
+  input (validated bit-exact against MPFR/MPC); this is the mechanism the 0.6.0 note below
+  described as "an exact-integer error count", replaced.
+- **(internal) the operand error of the *input* to a transcendental is now part of the
+  certified radius** rather than a per-function hand estimate, so a result that sits close to
+  a rounding boundary is retried instead of being rounded the wrong way. See the two `Fix`
+  entries below, which are the user-visible symptoms of the old per-function estimates.
 - **(internal) faster digit bookkeeping in division**: `digit_len` on a power-of-two base is
   now a plain bit length (`ilog` allocated a `B^log` buffer only to discard it). No perf
   regression from the fixes below: `FBig / FBig` at parity or faster at all benched
   precisions, `DBig / DBig` ~10% faster at 10³–10⁴ digits (+8% at 10 digits, the cost of the
   now-correct wide-quotient rounding), `nth_root` 10–45% faster.
+- **(internal) the ×u reduction's modular exponentiation delegates to `dashu-int`**
+  (`ConstDivisor::reduce` + `Reduced::pow`) instead of a local binary-exponentiation loop
+  over `rem_euclid` — the small `2k·u` modulus rides the single/double-word fast paths. The
+  log₂ helpers (`log2_base`'s fixed-point bracket, the conservative `log2_u_bs_lb` bound)
+  moved to `utils.rs`, next to the digit helpers that share their role.
 
 ### Fix
+- **`asin` of an argument that merely *rounds* onto `±1` returned the endpoint** — `asin(1 − 10⁻¹⁵⁵)`
+  at 100 digits gave exactly `π/2` where the true value is `π/2 − 1.4·10⁻⁷⁸` (~10⁹ ulps off), and
+  the Ziv loop certified it because the endpoint branch reports only a few ulps of radius. The
+  argument is not the endpoint: `√(1−x²)` merely *collapsed* onto zero at the work precision, and
+  `Ball::sqrt` returned that zero with the radius dropped. A rounded-to-zero root now carries the
+  whole-line radius instead (only an *exact* zero stays exact), so the `±1` branch is taken for an
+  exact `±1` argument alone and everything else retries at a higher guard, where the argument is
+  representable and the general `atan(x/√(1−x²))` path computes the true `√(2δ)` offset. The same
+  applies to the ×u inverses (`asin_unit`/`acos_unit`). The domain checks and `±1` rows now compare
+  the raw `Repr` explicitly rather than relying on `FBig::ONE` being unlimited-precision for the
+  same effect (behaviourally identical; `repr_cmp_same_base`'s precision argument and the poles'
+  exactness requirement are documented on it).
+- **`ln_1p` of an argument that rounds onto the pole at `−1` panicked** (debug: `attempt to
+  subtract with overflow`; release: a wrapped nonsense exponent) — the `1 + x` cancellation left
+  `ln_compute` with a zero midpoint, where `log2_bounds` saturates to `−∞`. A zero midpoint (and a
+  `ln_1p` ball reaching the pole, as `atanh`'s `2x/(1−x)` does at the first attempt) now reports the
+  whole-line radius, so the Ziv loop retries at a guard where the argument is representable.
+- **A whole-line (`Mag::INFINITY`) radius panicked the Ziv containment test** instead of forcing a
+  retry: the exported radius is a `Repr` infinity, and the test's `a ± e` arithmetic asserts its
+  operands finite. It now short-circuits to "not contained", which is what the degenerate-denominator
+  (`Ball::div`), pole and rounded-root paths documented as their retry signal.
+- **32-bit `Word` targets returned a wrong `log₂ BASE` from the fixed-point walk** (the returned a wrong `log₂ BASE` from the fixed-point walk** (the
+  compile-time bracket behind the generic-base radius rules): the normalization shifted with
+  `Word::leading_zeros`, so on `Word = u32` (e.g. the `i686` CI target) `log2(10)` came out
+  ≈ 35 instead of ≈ 3.32 — radii then inflated by orders of magnitude, saturated to infinity
+  inside the `atan` reduction and panicked the Ziv containment test (`atan2` of any
+  non-unit-scaled pair). The walk is now pinned to explicit widths; a value-pinning test
+  guards it.
+- **The MSRV (1.68) workspace check failed on a std-only `f32::abs`** in `exp`'s
+  overflow probe (that check compiles `dashu-float` without `std`; the inherent method is
+  core-only from 1.85) — it now goes through the `Abs` trait, which is no_std-safe.
+- **`no_std` test builds failed to compile**: the Ziv retry-count regression tests read the
+  `thread_local` counter that only exists under `std`; those tests are now
+  `#[cfg(feature = "std")]`, matching the `ziv.rs` test module's own gate.
+- **Performance regressions of the Mag/Ball migration**: the
+  two-stage `ln` reduction fired its cancellation double-precision on inputs that reduce to
+  *exactly* a power of two (`ln(1e100)` in base 10 was 9× slower than the pre-migration
+  code at 600 digits) — the cancellation condition now reads off the rounded input directly
+  (one exact comparison) instead of the split exponents, and the power-two floor is settled
+  by an exact comparison at the boundary. The generic-base radius rules (`scale_by_base_pow`
+  and `to_repr`'s base-power export) no longer build `BASE^|e|` bigints per call — a
+  compile-time fixed-point `log₂ BASE` bracket replaces them (one-bit tight, sound on either
+  side), which was worth 1.5–3× on base-3 `exp` at high precision. `asinh` squares through
+  the dedicated `sqr` kernel again, and the base-10 radius export keeps its significand
+  instead of collapsing to a bare power of ten (≤ ~1× slack instead of ≤ 10×).
+- **`exp`-family results near a rounding boundary paid one systematic Ziv retry** (~2.25×)
+  on non-power-of-two bases: the `Bⁿ` powering chain compounds the per-op radius slack past
+  the first attempt's preimage. The chain length is now charged to the initial guard
+  (`pow_chain_guard`: `n` for `B ≠ 2` on `exp`/`exp_m1` and the hyperbolic family, `2n`
+  unconditionally on `powf` — the base-2 `powf` margins are thin enough to need it). All 20
+  measured regressions across the sweep are eliminated (18 of the 20 now at or below
+  master's own timings; results bit-identical — correct rounding is unique), at the cost of
+  a few guard digits on the affected functions.
+- **`ln` of a large base power paid one Ziv retry near a rounding boundary**: the
+  reconstruction constants (`s2·ln2`, `e_base·lnB`) evaluated at the bare work precision, so
+  their 8-ulp radii were amplified by the scale factor (`ln(1e100)` @6 digits carried ~1/3
+  of the target half-ulp before the candidate margin). The constants now evaluate with
+  `⌈log_B|scale|⌉ + 1` extra digits — the same construction `exp` already uses for its
+  `ln(B)` — keeping the amplified radius sub-ulp at a cost confined to inputs with large
+  scale factors.
 - **`sqrt` under directed modes** (#99): a sticky remainder was rounded *down* under
   `Up`/`Away` when the integer root carries `precision + 1` digits (`Up(sqrt(6))² < 6` at
   p53) — the final rounding now consults the rounding mode instead of hardcoding half-up.
@@ -35,6 +142,67 @@
   and small-exponent path returned significands wider than the target precision, and the
   division path pre-rounded its dividend, so the `Exact` flag could be false (`2.1` →
   base 2 reported `Exact`).
+- `exp` — and every transcendental built on it, e.g. `sinh`/`cosh` — of an argument whose
+  exponent is in the 10^14 range no longer dies on an out-of-memory allocation. The base-aware
+  radius export converted a binary exponent to a decimal one (and back) through a small
+  rational bound (`28/93` and `30102/100000` for log₁₀2, `3322/1000` and `33218/10000` for
+  log₂10). Those err by ~5·10⁻⁵ *relative*, and that error multiplies the exponent: at 10^14 it
+  overshot the outward power of ten by `10^1.2e10`, leaving the Ziv error radius astronomically
+  larger than the value it bounded — the containment test then tried to align that gap and ran
+  out of memory. The conversions now use 64- and 62-bit fixed-point bounds, so the outward
+  slack stays under one digit for every `isize` exponent.
+- Additions/subtractions of operands with an astronomically large exponent gap (~10⁹+ digits,
+  e.g. the two exponentials composing `sinh(1e14)`) no longer die on an out-of-memory
+  allocation: the sticky low part of the aligned sum is collapsed to a bounded position when
+  it sits entirely below the rounding window (`repr_round_sum`), and the hyperbolic
+  `sinh`/`cosh`/`sinh_cosh` compositions drop an exponential that sits below the other's ulp
+  window instead of aligning the gap.
+- `sqrt` of a perfect square in a non-power-of-two base never returned under the directed
+  rounding modes (`Down`/`Up`/`Zero`): it kept doubling its working precision until the retry
+  budget was exhausted — `sqrt(4)` in base 10 escalated past 10^8 digits instead of returning
+  `2`. `sqrt` was the one transcendental still deriving its Ziv radius by hand (a blanket
+  `value.ulp()`), and no nonzero radius fits a one-sided directed preimage (`Down`'s
+  `[y, y+ulp)` cannot contain `[y−r, y+r]`), so an exactly-representable root could not be
+  certified at all. It now wraps its kernel result as a `Ball`, so an exact root carries
+  radius 0 and certifies immediately; an inexact root keeps the same one-ulp bound, and the
+  base-2 fast path is untouched.
+- `log2`/`ln` of a value a hair above 1 at low precision could return exactly `0`: the Ziv
+  containment test accepted a zero candidate whose radius was nonzero, but no nonzero real
+  rounds to exactly zero (the documented ±ulp preimage of ±0 is a special case). A zero
+  candidate is now certified only with a zero radius. Scoped to this crate's driver — the
+  public `ErrorBounds` semantics are unchanged.
+- `x + (-0)`, `x - (-0)` and their mirrors returned `0` instead of `x` whenever the exponent
+  gap to `-0`'s sentinel exponent (`-1`) reached past the end of `x`'s significand — e.g.
+  `1e-16 + (-0)` was `0` at precision 12. The `addsub_*` kernels short-circuited only on
+  `+0`, so `-0` fell through to the alignment path, where its sentinel exponent makes it look
+  like the *larger* operand and `x`'s significand is shifted out entirely.
+- A sum or difference of two *zero* operands now follows IEEE 754 §6.3: `(-0) + (-0)` and
+  `(-0) - (+0)` are `-0` (`x + x` retains `x`'s sign, even when `x` is zero); a zero of mixed
+  signs is `+0`, or `-0` under roundTowardNegative, as the exact zero of a cancellation
+  already was.
+- `powf` (and the `powi` fallback for exponents past the squaring chain) no longer stalls
+  when the exponentiation drives the `exp` argument far negative — e.g.
+  `powf(7.03e71, -84.91)`, whose `y·ln x ≈ −14035` makes the result ≈ `1e-6096`. The
+  internal `exp` input-error fold omitted the result's magnitude for a negative argument,
+  over-estimating the error radius by `e^{−x}` (hundreds of digits); the Ziv loop could only
+  certify by growing its working precision past `|x|/log_B e`, burning 9 retries and ~6000
+  digits: 1.5 s at 16 digits instead of 60 µs (and 6.5 s at 151). The fold now scales by the
+  result's magnitude, so such calls certify on the first attempt.
+- `ln` (and `log2`/`log10`/`ln_1p`, which share its core) of an argument with a huge
+  exponent (e.g. `ln(1e1000000000)`) previously never returned, holding gigabytes: the
+  argument reduction materialized a power of two spanning the whole exponent *gap*. The
+  reduction now splits the magnitude by an exact base-exponent re-tag plus a bounded
+  power-of-two finish, so no power of the gap is ever materialized, and the reduction
+  arithmetic is exact integer work end to end (the previous single f32 `log2` estimate
+  loses hundreds of bits of accuracy once `|log2 x|` approaches 10^9). (issue #103)
+- The hyperbolic functions (`sinh`, `cosh`, `sinh_cosh`, `tanh`, `asinh`, `acosh`) now
+  fold the *input's own rounding* into the certified error radius. Previously the input
+  was rounded to the working precision and the rounding error dropped, which understated
+  the radius by the ulp of the *original* magnitude — fatal for `acosh` near 1, where the
+  `x−1` cancellation shrinks the value (and its ulp) while the inherited error does not:
+  `acosh` could certify the wrong neighbour of a decimal tie (issue #102). All six now
+  thread the input ball (or pass the raw repr into `exp_compute`/`ln_compute`, which fold
+  it themselves).
 - `ConstCache::pi` (and `Context::pi`) now compute one extra Chudnovsky series term,
   fixing an off-by-1-ulp mis-rounding at certain precisions (previously the term count
   provided only the ceiling — no accuracy headroom — so the series truncation error
@@ -43,6 +211,43 @@
   precision source down to a finite target precision. Previously the shrink guard
   compared context precisions (`0 > N` is always false), so an unlimited value kept its
   full significand and the result violated the precision invariant.
+- **(internal) `Ball`'s square rule folded only one `|mid|·rad` cross term** where
+  `(m ± r)² = m² ± 2mr + r²` needs two — an under-bound by exactly `‖m‖·r` (the doc
+  comment already stated the `2·`; the code did not). Only `asinh` squares a
+  nonzero-radius ball through the dedicated `sqr` kernel, so the blast radius was its
+  input-error term; the corner-coverage regression pins both `(m ± r)²` extremes.
+- `hypot` of two operands past the extreme-exponent scale-down threshold returned
+  `Err(Overflow)` whenever the result was not exactly representable (e.g.
+  `hypot(7·2^e, 4·2^e) = √65·2^e` at `e ≈ isize::MAX/2`). The rescale factor `k` was
+  derived from the *larger* operand's raw exponent only, but base-B normalization can
+  leave the smaller value with the larger raw exponent (`4·2^e` normalizes to `1·2^(e+2)`)
+  — the smaller operand's square then collided with the infinity sentinel. `k` now scales
+  by the larger of the two raw exponents.
+- `tan_pi` (and `tan_unit` at any `u`) returned `-0` at the *positive* odd multiples of
+  `u/2` unconditionally, breaking oddness (`tan_pi(-1) == tan_pi(1) == -0`) and diverging
+  from MPFR (`+0`). Every integer zero of the tangent now carries the sign of the input,
+  like the even-multiple row already did.
+- `asin_unit(x, 0)`/`acos_unit(x, 0)` returned the `u → 0` limit `±0` for out-of-domain
+  `|x| > 1` instead of `Err(OutOfDomain)`. The domain error now outranks the limit (the
+  limit of a function undefined at that `x` for every `u > 0` is not `+0`).
+- `Sum` of `FBig` lost the sign of an all-`-0` sum: `[-x.zero].sum()` and
+  `[-0, -0].sum()` returned `+0` under the nearest modes, while the chained `(-0) + (-0)`
+  returns `-0`. The exact accumulator's zero sign now follows the same IEEE 754 §6.3
+  left-fold rule as the chained operators (`-0` under roundTowardNegative or when every
+  addend is `-0`).
+- **(internal) the ×u reduction's f32 magnitude guards are now one-sided-conservative**:
+  the bound products `u_lb + s·b_lb` round in f32, and an *upward* rounding of the
+  `k = 0` fast-path test could in principle classify a `k ≥ 1` argument as first-quadrant
+  (a wrong result; reachable only from gigabit-scale inputs, but a wrongness, not a
+  slowdown). The shared bound is shaved by its own f32 slack (`log2_u_bs_lb`), so any
+  error falls towards the always-exact general path. The sticky-collapse guard in
+  `repr_round_sum` likewise used the upper bound of `log₂B` where the derivation needs
+  the lower one, and now carries an explicit margin for the f32 products.
+- **(internal) `CachedFBig` mirrors the full ×u family** (`sin_unit`/`cos_unit`/
+  `tan_unit`/`asin_unit`/`acos_unit`/`atan_unit`), restoring the drop-in rule that code
+  compiling against `FBig` compiles unchanged against `CachedFBig` (only the fused
+  `sin_cos_unit`/`atan2_unit` had been mirrored; the forwarding macro cannot pass the
+  `u` argument, so these are hand-written wrappers).
 
 ## 0.6.0
 

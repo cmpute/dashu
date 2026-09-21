@@ -13,8 +13,10 @@
 //! and `asinh`; `acosh(x<1)` and `atanh(|x|>1)` are domain errors.
 
 use crate::{
-    ball::Ball,
+    ball::{ulp_mag, ulps, Ball},
+    cmp::repr_cmp_same_base,
     error::{assert_limited_precision, FpError},
+    exp::pow_chain_guard,
     fbig::FBig,
     math::{
         cache::{reborrow_cache, ConstCache},
@@ -23,7 +25,7 @@ use crate::{
     repr::{Context, Repr, Word},
     round::{mode, ErrorBounds},
 };
-use dashu_base::{Abs, AbsOrd, Approximation::Exact, BitTest, Sign};
+use dashu_base::{Abs, Approximation::Exact, BitTest, Sign};
 use dashu_int::IBig;
 
 impl<R: ErrorBounds> Context<R> {
@@ -42,30 +44,30 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
         }
         // sinh(x) = (exp_m1(x) - exp_m1(-x)) / 2  (cancellation-free). Both `exp_m1` come from the
-        // Ball-based `exp_compute`; the subtraction/division roundings and the `exp_m1` errors are
-        // tracked mechanically by the Ball propagation. For huge |x|, `exp_m1` overflows inside the
-        // closure and propagates; sinh(±huge) = ±inf, so the sign follows `x` (the propagated error
-        // carries an intermediate sign, remapped below).
-        let initial_guard = self.base_guard_digits::<B>() + 10;
+        // Ball-based `exp_compute`; the subtraction/division roundings, the `exp_m1` errors *and
+        // the input's own rounding* are tracked mechanically by the Ball propagation (the raw `x`
+        // is passed in — `exp_compute` rounds it to the working precision and carries the error).
+        // For huge |x|, `exp_m1` overflows inside the closure and propagates; sinh(±huge) = ±inf,
+        // so the sign follows `x` (the propagated error carries an intermediate sign, remapped
+        // below).
+        // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
+        // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
+        // the growing work precision, as before). Sized once, outside the loop.
+        let initial_guard = self.base_guard_digits::<B>()
+            + 10
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
         self.ziv(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let n = 1usize << (work.precision.bit_len() / 2);
-            let x_f = FBig::<mode::HalfEven, B>::new(work.repr_round_ref(x).value(), work);
-            let ep = work.exp_compute::<B>(
-                &x_f.repr,
-                work.precision,
-                true,
-                n,
-                reborrow_cache(&mut cache),
-            )?;
-            let em = work.exp_compute::<B>(
-                &(-x_f.clone()).repr,
-                work.precision,
-                true,
-                n,
-                reborrow_cache(&mut cache),
-            )?;
-            Ok(ep.sub(&em).div_int(2).to_value_radius::<R>())
+            let neg_x = -x.clone();
+            let ep =
+                work.exp_compute::<B>(x, work.precision, true, n, reborrow_cache(&mut cache))?;
+            let em =
+                work.exp_compute::<B>(&neg_x, work.precision, true, n, reborrow_cache(&mut cache))?;
+            let wp = work.precision;
+            let s2 = addsub_guarded(&ep, &em, true, wp)?;
+            let d2 = s2.div_int(2, wp)?;
+            Ok(d2.to_value_radius::<R>(&Context::<R>::new(wp)))
         })
         .map_err(|_| FpError::Overflow(x.sign()))
     }
@@ -87,30 +89,29 @@ impl<R: ErrorBounds> Context<R> {
         }
 
         // cosh(x) = (exp_m1(x) + exp_m1(-x)) / 2 + 1 (no cancellation: same-sign sum). Both
-        // `exp_m1` come from the Ball-based `exp_compute`; the sum/divide/+1 roundings are tracked
+        // `exp_m1` come from the Ball-based `exp_compute`; the sum/divide/+1 roundings and the
+        // input's own rounding (folded by `exp_compute` from the raw `x`) are tracked
         // mechanically. For huge |x|, `exp_m1` overflows inside the closure and propagates;
         // cosh(±huge) = +inf (always positive).
-        let initial_guard = self.base_guard_digits::<B>() + 10;
+        // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
+        // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
+        // the growing work precision, as before). Sized once, outside the loop.
+        let initial_guard = self.base_guard_digits::<B>()
+            + 10
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
         self.ziv(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let n = 1usize << (work.precision.bit_len() / 2);
-            let x_f = FBig::<mode::HalfEven, B>::new(work.repr_round_ref(x).value(), work);
-            let ep = work.exp_compute::<B>(
-                &x_f.repr,
-                work.precision,
-                true,
-                n,
-                reborrow_cache(&mut cache),
-            )?;
-            let em = work.exp_compute::<B>(
-                &(-x_f.clone()).repr,
-                work.precision,
-                true,
-                n,
-                reborrow_cache(&mut cache),
-            )?;
-            let one = Ball::exact_int(work.precision, IBig::ONE);
-            Ok(ep.add(&em).div_int(2).add(&one).to_value_radius::<R>())
+            let neg_x = -x.clone();
+            let ep =
+                work.exp_compute::<B>(x, work.precision, true, n, reborrow_cache(&mut cache))?;
+            let em =
+                work.exp_compute::<B>(&neg_x, work.precision, true, n, reborrow_cache(&mut cache))?;
+            let wp = work.precision;
+            let one = Ball::exact_int(IBig::ONE, wp);
+            let half_sum = addsub_guarded(&ep, &em, false, wp)?.div_int(2, wp)?;
+            Ok(addsub_guarded(&half_sum, &one, false, wp)?
+                .to_value_radius::<R>(&Context::<R>::new(wp)))
         })
         .map_err(|_| FpError::Overflow(Sign::Positive))
     }
@@ -140,37 +141,230 @@ impl<R: ErrorBounds> Context<R> {
         }
 
         // sinh = (ep - em)/2; cosh = (ep + em)/2 + 1, sharing the two `exp_m1` calls. Certified as a
-        // pair via `ziv_pair` (retry while either endpoint straddles a boundary). For huge |x|,
-        // `exp_m1` overflows inside the closure and propagates to both slots; sinh(±huge) = ±inf,
-        // cosh(±huge) = +inf, so each slot's overflow sign is remapped below.
-        let initial_guard = self.base_guard_digits::<B>() + 10;
+        // pair via `ziv_pair` (retry while either endpoint straddles a boundary); the input's own
+        // rounding is folded by `exp_compute` from the raw `x`. For huge |x|, `exp_m1` overflows
+        // inside the closure and propagates to both slots; sinh(±huge) = ±inf, cosh(±huge) = +inf,
+        // so each slot's overflow sign is remapped below.
+        // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
+        // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
+        // the growing work precision, as before). Sized once, outside the loop.
+        let initial_guard = self.base_guard_digits::<B>()
+            + 10
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
         let (sinh_r, cosh_r) = self.ziv_pair(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let n = 1usize << (work.precision.bit_len() / 2);
-            let x_f = FBig::<mode::HalfEven, B>::new(work.repr_round_ref(x).value(), work);
-            let ep = work.exp_compute::<B>(
-                &x_f.repr,
-                work.precision,
-                true,
-                n,
-                reborrow_cache(&mut cache),
-            )?;
-            let em = work.exp_compute::<B>(
-                &(-x_f.clone()).repr,
-                work.precision,
-                true,
-                n,
-                reborrow_cache(&mut cache),
-            )?;
-            let one = Ball::exact_int(work.precision, IBig::ONE);
-            let sinh_ball = ep.sub(&em).div_int(2);
-            let cosh_ball = ep.add(&em).div_int(2).add(&one);
-            Ok((sinh_ball.to_value_radius::<R>(), cosh_ball.to_value_radius::<R>()))
+            let neg_x = -x.clone();
+            let ep =
+                work.exp_compute::<B>(x, work.precision, true, n, reborrow_cache(&mut cache))?;
+            let em =
+                work.exp_compute::<B>(&neg_x, work.precision, true, n, reborrow_cache(&mut cache))?;
+            let wp = work.precision;
+            let one = Ball::exact_int(IBig::ONE, wp);
+            let sinh_ball = addsub_guarded(&ep, &em, true, wp)?.div_int(2, wp)?;
+            let half_sum = addsub_guarded(&ep, &em, false, wp)?.div_int(2, wp)?;
+            let cosh_ball = addsub_guarded(&half_sum, &one, false, wp)?;
+            let ctx = Context::<R>::new(wp);
+            Ok((sinh_ball.to_value_radius::<R>(&ctx), cosh_ball.to_value_radius::<R>(&ctx)))
         });
         (
             sinh_r.map_err(|_| FpError::Overflow(x.sign())),
             cosh_r.map_err(|_| FpError::Overflow(Sign::Positive)),
         )
+    }
+
+    /// Hyperbolic sine of `x·π`, i.e. `sinh(x·π)`.
+    ///
+    /// # Methodology
+    /// The argument ball `t = π·x` (π from the shared constant cache, both roundings tracked by
+    /// the ball arithmetic) feeds the all-positive sinh Maclaurin series for `|t| ≤ 1` — where
+    /// the exponential form's `exp(t) − exp(−t)` would catastrophically cancel — and the
+    /// ball `exp` composition beyond (`|exp(t)| / |exp(−t)| ≥ e²` there, a benign difference).
+    /// Unlike the circular ×π functions there are no rational special points (π·x is
+    /// transcendental for every nonzero rational x), so the zero case is the only exact one.
+    pub fn sinh_pi<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        mut cache: Option<&mut ConstCache>,
+    ) -> FpResult<FBig<R, B>> {
+        if x.is_infinite() {
+            return Ok(Exact(FBig::new(Repr::infinity_with_sign(x.sign()), *self)));
+        }
+        assert_limited_precision(self.precision);
+        if x.significand.is_zero() {
+            // sinh(±0) = ±0
+            return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
+        }
+
+        // For huge |x| the exp composition overflows inside the closure and propagates;
+        // sinh(±π·huge) = ±∞, so the sign follows x.
+        // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
+        // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
+        // the growing work precision, as before). Sized once, outside the loop.
+        let initial_guard = self.base_guard_digits::<B>()
+            + 10
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
+        self.ziv(initial_guard, |guard| {
+            let work = Context::<mode::HalfEven>::new(self.precision + guard);
+            let wp = work.precision;
+            let t = crate::math::trig::pi_scaled_ball(&work, x, reborrow_cache(&mut cache))?;
+            let one = Ball::exact_int(IBig::ONE, wp);
+            let val = if repr_cmp_same_base::<B, true>(&t.mid, &one.mid, None).is_le() {
+                work.sinh_series(&t)?
+            } else {
+                let ep = work.exp_ball::<B>(&t, wp, reborrow_cache(&mut cache))?;
+                let em = work.exp_ball::<B>(&t.clone().neg(), wp, reborrow_cache(&mut cache))?;
+                addsub_guarded(&ep, &em, true, wp)?.div_int(2, wp)?
+            };
+            Ok(val.to_value_radius::<R>(&Context::<R>::new(wp)))
+        })
+        .map_err(|_| FpError::Overflow(x.sign()))
+    }
+
+    /// Hyperbolic cosine of `x·π`, i.e. `cosh(x·π)`.
+    ///
+    /// # Methodology
+    /// The same `t = π·x` ball as [`sinh_pi`](Self::sinh_pi): the all-positive cosh series for
+    /// `|t| ≤ 1`, the `(exp(t) + exp(−t))/2` sum beyond (same-sign terms, no cancellation).
+    pub fn cosh_pi<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        mut cache: Option<&mut ConstCache>,
+    ) -> FpResult<FBig<R, B>> {
+        if x.is_infinite() {
+            // cosh(±inf) = +inf
+            return Ok(Exact(FBig::new(Repr::infinity(), *self)));
+        }
+        assert_limited_precision(self.precision);
+        if x.significand.is_zero() {
+            // cosh(±0) = 1
+            return Ok(Exact(FBig::new(Repr::one(), *self)));
+        }
+
+        // For huge |x| the exp composition overflows inside the closure and propagates;
+        // cosh(±π·huge) = +∞ (always positive).
+        // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
+        // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
+        // the growing work precision, as before). Sized once, outside the loop.
+        let initial_guard = self.base_guard_digits::<B>()
+            + 10
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
+        self.ziv(initial_guard, |guard| {
+            let work = Context::<mode::HalfEven>::new(self.precision + guard);
+            let wp = work.precision;
+            let t = crate::math::trig::pi_scaled_ball(&work, x, reborrow_cache(&mut cache))?;
+            let one = Ball::exact_int(IBig::ONE, wp);
+            let val = if repr_cmp_same_base::<B, true>(&t.mid, &one.mid, None).is_le() {
+                work.cosh_series(&t)?
+            } else {
+                // cosh(t) = (e^t + e^−t)/2 with the *true* exponentials (no `+1` — that belongs
+                // to the exp_m1 form `cosh` uses below on the radian side).
+                let ep = work.exp_ball::<B>(&t, wp, reborrow_cache(&mut cache))?;
+                let em = work.exp_ball::<B>(&t.clone().neg(), wp, reborrow_cache(&mut cache))?;
+                addsub_guarded(&ep, &em, false, wp)?.div_int(2, wp)?
+            };
+            Ok(val.to_value_radius::<R>(&Context::<R>::new(wp)))
+        })
+        .map_err(|_| FpError::Overflow(Sign::Positive))
+    }
+
+    /// Simultaneously compute `sinh(x·π)` and `cosh(x·π)` (context layer).
+    ///
+    /// This is more efficient than calling [`sinh_pi`](Self::sinh_pi) and
+    /// [`cosh_pi`](Self::cosh_pi) separately, since the two share the argument ball and the
+    /// exponential composition.
+    pub fn sinh_cosh_pi<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        mut cache: Option<&mut ConstCache>,
+    ) -> (FpResult<FBig<R, B>>, FpResult<FBig<R, B>>) {
+        if x.is_infinite() {
+            return (
+                Ok(Exact(FBig::new(Repr::infinity_with_sign(x.sign()), *self))),
+                Ok(Exact(FBig::new(Repr::infinity(), *self))),
+            );
+        }
+        assert_limited_precision(self.precision);
+        if x.significand.is_zero() {
+            return (
+                Ok(Exact(FBig::new(signed_zero_repr(x), *self))),
+                Ok(Exact(FBig::new(Repr::one(), *self))),
+            );
+        }
+
+        // Certified as a pair via `ziv_pair` (retry while either endpoint straddles a boundary);
+        // the overflow sign is remapped per slot as in `sinh_cosh`.
+        // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
+        // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
+        // the growing work precision, as before). Sized once, outside the loop.
+        let initial_guard = self.base_guard_digits::<B>()
+            + 10
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
+        let (sinh_r, cosh_r) = self.ziv_pair(initial_guard, |guard| {
+            let work = Context::<mode::HalfEven>::new(self.precision + guard);
+            let wp = work.precision;
+            let t = crate::math::trig::pi_scaled_ball(&work, x, reborrow_cache(&mut cache))?;
+            let one = Ball::exact_int(IBig::ONE, wp);
+            let (sh, ch) = if repr_cmp_same_base::<B, true>(&t.mid, &one.mid, None).is_le() {
+                (work.sinh_series(&t)?, work.cosh_series(&t)?)
+            } else {
+                // true exponentials — no `+1` (see `cosh_pi`)
+                let ep = work.exp_ball::<B>(&t, wp, reborrow_cache(&mut cache))?;
+                let em = work.exp_ball::<B>(&t.clone().neg(), wp, reborrow_cache(&mut cache))?;
+                (
+                    addsub_guarded(&ep, &em, true, wp)?.div_int(2, wp)?,
+                    addsub_guarded(&ep, &em, false, wp)?.div_int(2, wp)?,
+                )
+            };
+            let ctx = Context::<R>::new(wp);
+            Ok((sh.to_value_radius::<R>(&ctx), ch.to_value_radius::<R>(&ctx)))
+        });
+        (
+            sinh_r.map_err(|_| FpError::Overflow(x.sign())),
+            cosh_r.map_err(|_| FpError::Overflow(Sign::Positive)),
+        )
+    }
+
+    /// Near-correct `sinh` series `S(t) = t + t³/3! + t⁵/5! + …` on `|t| ≤ 1`: all terms share
+    /// the sign of t, and the ratio between consecutive terms is `t²/((2k)(2k+1)) ≤ 1/6`, so
+    /// the omitted tail is bounded by the first omitted term (< 1 ulp, as for the sine series).
+    fn sinh_series<const B: Word>(self, x: &Ball<B>) -> Result<Ball<B>, FpError> {
+        let wp = self.precision;
+        let x2 = x.mul(x, wp)?;
+        let mut sum = x.clone();
+        let mut term = x.clone();
+        let mut k = 1usize;
+        loop {
+            term = term.mul(&x2, wp)?.div_int((2 * k) * (2 * k + 1), wp)?;
+            if term.mid_le_ulp_lb(&sum, wp) {
+                break;
+            }
+            sum = sum.add(&term, wp)?;
+            k += 1;
+        }
+        sum.add_error(ulps::<B>(&sum.mid, wp, 2));
+        Ok(sum)
+    }
+
+    /// Near-correct `cosh` series `C(t) = 1 + t²/2! + t⁴/4! + …` on `|t| ≤ 1`
+    /// (see [`sinh_series`](Self::sinh_series)).
+    fn cosh_series<const B: Word>(self, x: &Ball<B>) -> Result<Ball<B>, FpError> {
+        let wp = self.precision;
+        let x2 = x.mul(x, wp)?;
+        let one = Ball::exact_int(IBig::ONE, wp);
+        let mut sum = one.clone();
+        let mut term = one;
+        let mut k = 1usize;
+        loop {
+            term = term.mul(&x2, wp)?.div_int((2 * k) * (2 * k - 1), wp)?;
+            if term.mid_le_ulp_lb(&sum, wp) {
+                break;
+            }
+            sum = sum.add(&term, wp)?;
+            k += 1;
+        }
+        sum.add_error(ulps::<B>(&sum.mid, wp, 2));
+        Ok(sum)
     }
 
     /// Hyperbolic tangent.
@@ -195,26 +389,28 @@ impl<R: ErrorBounds> Context<R> {
         }
 
         // tanh(x) = exp_m1(2x) / (exp_m1(2x) + 2). `exp_m1(2x)` comes from the Ball-based
-        // `exp_compute`; the division's rounding is tracked mechanically. For large positive x it
-        // overflows → tanh = +1 (returned inline as an exact value); for large negative x,
-        // exp_m1(2x) → -1 (finite), so tanh → -1 naturally.
-        let initial_guard = self.base_guard_digits::<B>() + 10;
+        // `exp_compute` on the *exact* `2x = x + x` (so `exp_compute` folds the input's own
+        // rounding into the radius); the division's rounding is tracked mechanically. For large
+        // positive x it overflows → tanh = +1 (returned inline as an exact value); for large
+        // negative x, exp_m1(2x) → -1 (finite), so tanh → -1 naturally.
+        // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
+        // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
+        // the growing work precision, as before). Sized once, outside the loop.
+        let initial_guard = self.base_guard_digits::<B>()
+            + 10
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
         self.ziv(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let n = 1usize << (work.precision.bit_len() / 2);
-            let x_f = FBig::<mode::HalfEven, B>::new(work.repr_round_ref(x).value(), work);
-            let two_x = x_f * 2i32;
-            match work.exp_compute::<B>(
-                &two_x.repr,
-                work.precision,
-                true,
-                n,
-                reborrow_cache(&mut cache),
-            ) {
+            let two_x = x + x;
+            match work.exp_compute::<B>(&two_x, work.precision, true, n, reborrow_cache(&mut cache))
+            {
                 Err(FpError::Overflow(_)) => Ok((FBig::<R, B>::ONE, FBig::<R, B>::ZERO)), // exact +1
                 Ok(e) => {
-                    let two = Ball::exact_int(work.precision, IBig::from(2));
-                    Ok(e.div(&e.add(&two)).to_value_radius::<R>())
+                    let wp = work.precision;
+                    let two = Ball::exact_int(IBig::from(2), wp);
+                    Ok(e.div(&e.add(&two, wp)?, wp)?
+                        .to_value_radius::<R>(&Context::<R>::new(wp)))
                 }
                 Err(other) => unreachable!("exp_m1 on finite input: {other:?}"),
             }
@@ -237,42 +433,53 @@ impl<R: ErrorBounds> Context<R> {
         }
 
         // asinh(x) = sign(x) · ln_1p(|x| + x²/(sqrt(x²+1)+1)) — the x²/(sqrt+1) form avoids the
-        // `sqrt(x²+1) − 1` cancellation near 0. The composition is tracked as a [`Ball`]: the sqr,
-        // sqrt, division and the `ln_1p` input error all propagate mechanically. The `|x|` so large
-        // that `x²` overflows arm falls back to the asymptotic `sign·ln(2|x|)`.
-        let initial_guard = self.base_guard_digits::<B>() + 10;
+        // `sqrt(x²+1) − 1` cancellation near 0. The composition is tracked as a [`Ball`] from the
+        // rounded input up: the input's own rounding, the sqr, sqrt, division and the `ln_1p`
+        // input error all propagate mechanically (a hand-picked per-op ulp count cannot see the
+        // operand errors inherited through the chain). The `|x|` so large that `x²` overflows arm
+        // falls back to the asymptotic `sign·ln(2|x|)` on the exact `2|x|` (whose input rounding
+        // `ln_compute` folds itself).
+        // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
+        // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
+        // the growing work precision, as before). Sized once, outside the loop.
+        let initial_guard = self.base_guard_digits::<B>()
+            + 10
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
         self.ziv(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
-            let x_f = FBig::<mode::HalfEven, B>::new(work.repr_round_ref(x).value(), work);
-            let sign = x_f.sign();
-            let abs_x = x_f.abs();
-            let res = match work.sqr(&abs_x.repr) {
-                Ok(x_sq) => {
-                    let x_sq_ball = Ball::from_rounded(x_sq); // correctly-rounded sqr
-                    let one = Ball::exact_int(work.precision, IBig::ONE);
-                    let sqrt_plus_one = x_sq_ball.add(&one).sqrt().add(&one);
-                    let abs_x_ball = Ball::with_error(abs_x, IBig::ONE);
-                    let arg = abs_x_ball.add(&x_sq_ball.div(&sqrt_plus_one));
+            let sign = x.sign();
+            let wp = work.precision;
+            let x_ball = Ball::from_rounded(work.repr_round_ref(x), wp);
+            let abs_x_ball = if sign == Sign::Negative {
+                x_ball.neg()
+            } else {
+                x_ball
+            };
+            let one = Ball::exact_int(IBig::ONE, wp);
+            let res = match abs_x_ball.sqr(wp) {
+                Ok(x_sq_ball) => {
+                    let sqrt_plus_one = x_sq_ball.add(&one, wp)?.sqrt(wp)?.add(&one, wp)?;
+                    let arg = abs_x_ball.add(&x_sq_ball.div(&sqrt_plus_one, wp)?, wp)?;
                     work.ln_1p_ball::<B>(&arg, reborrow_cache(&mut cache))
                 }
                 // |x| so large that x² overflows: asinh(x) ≈ sign·ln(2|x|).
                 Err(FpError::Overflow(_)) => {
-                    let two_abs = abs_x * 2i32;
+                    let two_abs = Repr::new((x.significand() * IBig::from(2)).abs(), x.exponent());
                     work.ln_compute::<B>(
-                        &two_abs.repr,
+                        &two_abs,
                         work.precision,
                         false,
                         reborrow_cache(&mut cache),
                     )
                 }
                 Err(other) => unreachable!("sqr: {other:?}"),
-            };
+            }?;
             let result = if sign == Sign::Negative {
                 res.neg()
             } else {
                 res
             };
-            Ok(result.to_value_radius::<R>())
+            Ok(result.to_value_radius::<R>(&Context::<R>::new(wp)))
         })
     }
 
@@ -289,48 +496,53 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(Exact(FBig::new(Repr::infinity(), *self)));
         }
         assert_limited_precision(self.precision);
-        // domain x ≥ 1 (acosh(1) = 0 is handled below; x < 1 is an error)
-        if x.sign() == Sign::Negative
-            || FBig::<R, B>::new(x.clone(), *self)
-                .abs_cmp(&FBig::ONE)
-                .is_lt()
-        {
+        // Domain x ≥ 1, compared *exactly* (no precision argument) because `1` is a vertical
+        // tangent of `acosh`: `1 + 10⁻¹⁵⁵` at 100 digits rounds onto `1`, but its true value is
+        // `√2·10⁻⁷⁸`, not `0`.
+        if x.sign() == Sign::Negative {
             return Err(FpError::OutOfDomain);
         }
-        if x.is_one() {
-            return Ok(Exact(FBig::new(Repr::zero(), *self)));
+        match repr_cmp_same_base::<B, true>(x, &Repr::<B>::one(), None) {
+            core::cmp::Ordering::Less => return Err(FpError::OutOfDomain),
+            core::cmp::Ordering::Equal => return Ok(Exact(FBig::new(Repr::zero(), *self))),
+            core::cmp::Ordering::Greater => {}
         }
 
         // acosh(x) = ln_1p((x-1) + sqrt((x-1)(x+1))) — the (x-1)(x+1) form avoids the `x²−1`
-        // cancellation near x = 1. The composition is tracked as a [`Ball`]: the product, sqrt,
-        // addition and the `ln_1p` input error propagate mechanically. The `(x-1)(x+1)` overflow arm
-        // falls back to the asymptotic `ln(2x)`.
-        let initial_guard = self.base_guard_digits::<B>() + 10;
+        // cancellation near x = 1. The composition is tracked as a [`Ball`] from the rounded input
+        // up: the input's own rounding flows into `x−1`/`x+1` and through the product, sqrt,
+        // addition and the `ln_1p` input error mechanically. (The input rounding is what a
+        // per-op ulp count on the *result* of `x−1` misses: near x = 1 the subtraction cancels
+        // the value — and its ulp — down by |x−1|, while the inherited operand error stays at
+        // ulp(x); an under-estimated radius then lets Ziv certify the wrong neighbour of a tie.)
+        // The `(x-1)(x+1)` overflow arm falls back to the asymptotic `ln(2x)` on the exact `2x`
+        // (whose input rounding `ln_compute` folds itself).
+        // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
+        // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
+        // the growing work precision, as before). Sized once, outside the loop.
+        let initial_guard = self.base_guard_digits::<B>()
+            + 10
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
         self.ziv(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
-            let x_f = FBig::<mode::HalfEven, B>::new(work.repr_round_ref(x).value(), work);
-            let xm1 = &x_f - FBig::<mode::HalfEven, B>::ONE;
-            let xp1 = &x_f + FBig::<mode::HalfEven, B>::ONE;
-            let res = match work.mul(&xm1.repr, &xp1.repr) {
-                Ok(prod) => {
-                    let prod_ball = Ball::from_rounded(prod); // correctly-rounded product
-                    let xm1_ball = Ball::with_error(xm1, IBig::ONE);
-                    let arg = xm1_ball.add(&prod_ball.sqrt());
+            let wp = work.precision;
+            let x_ball = Ball::from_rounded(work.repr_round_ref(x), wp);
+            let one = Ball::exact_int(IBig::ONE, wp);
+            let xm1_ball = x_ball.sub(&one, wp)?;
+            let xp1_ball = x_ball.add(&one, wp)?;
+            let res = match xm1_ball.mul(&xp1_ball, wp) {
+                Ok(prod_ball) => {
+                    let arg = xm1_ball.add(&prod_ball.sqrt(wp)?, wp)?;
                     work.ln_1p_ball::<B>(&arg, reborrow_cache(&mut cache))
                 }
                 // (x-1)(x+1) overflowed: acosh(x) ≈ ln(2x).
                 Err(FpError::Overflow(_)) => {
-                    let two_x = x_f.clone() * 2i32;
-                    work.ln_compute::<B>(
-                        &two_x.repr,
-                        work.precision,
-                        false,
-                        reborrow_cache(&mut cache),
-                    )
+                    let two_x = Repr::new(x.significand() * IBig::from(2), x.exponent());
+                    work.ln_compute::<B>(&two_x, work.precision, false, reborrow_cache(&mut cache))
                 }
                 Err(other) => unreachable!("mul: {other:?}"),
-            };
-            Ok(res.to_value_radius::<R>())
+            }?;
+            Ok(res.to_value_radius::<R>(&Context::<R>::new(wp)))
         })
     }
 
@@ -348,8 +560,10 @@ impl<R: ErrorBounds> Context<R> {
             // atanh(±0) = ±0
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
         }
-        // domain |x| < 1: |x| = 1 → ±∞ (value), |x| > 1 → error
-        match FBig::<R, B>::new(x.clone(), *self).abs_cmp(&FBig::ONE) {
+        // Domain |x| < 1: |x| = 1 → ±∞ (value), |x| > 1 → error. The boundary is compared
+        // *exactly* (no precision argument) because `±1` is a pole of `atanh`: `1 − 10⁻¹⁵⁵`
+        // at 100 digits rounds onto `1` but is the finite `(p+155)·ln(10)/2`, not `∞`.
+        match repr_cmp_same_base::<B, true>(x, &Repr::<B>::one(), None) {
             core::cmp::Ordering::Greater => return Err(FpError::OutOfDomain),
             core::cmp::Ordering::Equal => {
                 return Ok(Exact(FBig::new(Repr::infinity_with_sign(x.sign()), *self)));
@@ -360,14 +574,24 @@ impl<R: ErrorBounds> Context<R> {
         // atanh(x) = ln_1p(2x/(1-x)) / 2. The ratio and the `ln_1p` input error are tracked as a
         // [`Ball`]; near |x| = 1 the `2x/(1-x)` division amplifies, but the Ball tracks it (Ziv
         // retries there).
-        let initial_guard = self.base_guard_digits::<B>() + 10;
+        // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
+        // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
+        // the growing work precision, as before). Sized once, outside the loop.
+        let initial_guard = self.base_guard_digits::<B>()
+            + 10
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
         self.ziv(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
-            let x_ball = Ball::from_rounded(work.repr_round_ref(x).map(|r| FBig::new(r, work)));
-            let one = Ball::exact_int(work.precision, IBig::ONE);
-            let ratio = x_ball.scale_int(&IBig::from(2)).div(&one.sub(&x_ball));
-            let res = work.ln_1p_ball::<B>(&ratio, reborrow_cache(&mut cache));
-            Ok(res.div_int(2).to_value_radius::<R>())
+            let wp = work.precision;
+            let x_ball = Ball::from_rounded(work.repr_round_ref(x), wp);
+            let one = Ball::exact_int(IBig::ONE, wp);
+            let ratio = x_ball
+                .scale_int(&IBig::from(2), wp)?
+                .div(&one.sub(&x_ball, wp)?, wp)?;
+            let res = work.ln_1p_ball::<B>(&ratio, reborrow_cache(&mut cache))?;
+            Ok(res
+                .div_int(2, wp)?
+                .to_value_radius::<R>(&Context::<R>::new(wp)))
         })
     }
 }
@@ -427,6 +651,70 @@ impl<R: ErrorBounds, const B: Word> FBig<R, B> {
     #[inline]
     pub fn sinh_cosh(&self) -> (Self, Self) {
         let (s, c) = self.context.sinh_cosh(&self.repr, None);
+        (self.context.unwrap_fp(s), self.context.unwrap_fp(c))
+    }
+
+    /// Calculate the hyperbolic sine of the floating point number multiplied by π, i.e.
+    /// `sinh(self·π)`.
+    ///
+    /// Unlike [`sinh`](FBig::sinh), the ×π variant's argument ball is built from the shared π
+    /// constant, so repeated calls at increasing precision reuse the cached Chudnovsky state.
+    ///
+    /// # Examples
+    /// ```
+    /// # use core::str::FromStr;
+    /// # use dashu_base::ParseError;
+    /// # use dashu_float::DBig;
+    /// // sinh(π/2) ≈ 2.30129890
+    /// let a = DBig::from_str("0.50000000")?;
+    /// assert_eq!(a.sinh_pi(), DBig::from_str("2.30129890")?);
+    /// # Ok::<(), ParseError>(())
+    /// ```
+    #[inline]
+    pub fn sinh_pi(&self) -> Self {
+        self.context
+            .unwrap_fp(self.context.sinh_pi(&self.repr, None))
+    }
+
+    /// Calculate the hyperbolic cosine of the floating point number multiplied by π, i.e.
+    /// `cosh(self·π)`.
+    ///
+    /// # Examples
+    /// ```
+    /// # use core::str::FromStr;
+    /// # use dashu_base::ParseError;
+    /// # use dashu_float::DBig;
+    /// // cosh(π/2) ≈ 2.50917848
+    /// let a = DBig::from_str("0.50000000")?;
+    /// assert_eq!(a.cosh_pi(), DBig::from_str("2.50917848")?);
+    /// # Ok::<(), ParseError>(())
+    /// ```
+    #[inline]
+    pub fn cosh_pi(&self) -> Self {
+        self.context
+            .unwrap_fp(self.context.cosh_pi(&self.repr, None))
+    }
+
+    /// Simultaneously calculate the hyperbolic sine and cosine of the number multiplied by π.
+    ///
+    /// This is more efficient than calling [`sinh_pi`](FBig::sinh_pi) and
+    /// [`cosh_pi`](FBig::cosh_pi) separately, since the two share the argument ball and the
+    /// exponential composition.
+    ///
+    /// # Examples
+    /// ```
+    /// # use core::str::FromStr;
+    /// # use dashu_base::ParseError;
+    /// # use dashu_float::DBig;
+    /// let a = DBig::from_str("0.50000000")?;
+    /// let (s, c) = a.sinh_cosh_pi();
+    /// assert_eq!(s, DBig::from_str("2.30129890")?);
+    /// assert_eq!(c, DBig::from_str("2.50917848")?);
+    /// # Ok::<(), ParseError>(())
+    /// ```
+    #[inline]
+    pub fn sinh_cosh_pi(&self) -> (Self, Self) {
+        let (s, c) = self.context.sinh_cosh_pi(&self.repr, None);
         (self.context.unwrap_fp(s), self.context.unwrap_fp(c))
     }
 
@@ -517,10 +805,57 @@ fn signed_zero_repr<const B: Word>(x: &Repr<B>) -> Repr<B> {
     }
 }
 
+/// `a ± b` with a magnitude guard: when one operand sits more than `prec + 2` digits below the
+/// other, it is dropped and the radius inflated by one ulp instead — a sound substitute (the
+/// dropped term is < 1 ulp of the dominant one) for the plain ball add/sub, whose midpoint
+/// alignment would try to materialize the astronomically large digit gap between the two
+/// exponentials of `(exp(t) ± exp(−t))/2` (an out-of-memory panic for large |t|, e.g.
+/// `sinh(1e14)`).
+///
+/// The guard is a caller-side shortcut, not the only defence — `repr_round_sum` also collapses
+/// an astronomically low sticky — but it avoids the alignment entirely, which is the expensive
+/// half of the operation.
+fn addsub_guarded<const B: Word>(
+    a: &Ball<B>,
+    b: &Ball<B>,
+    sub: bool,
+    prec: usize,
+) -> Result<Ball<B>, FpError> {
+    let a_dominant = repr_cmp_same_base::<B, true>(&a.mid, &b.mid, None).is_ge();
+    let (big, small) = if a_dominant { (a, b) } else { (b, a) };
+    // `small ≤ big·B^−(prec+2)`, checked against an exponent-only shifted threshold (the log2
+    // comparison inside `abs_cmp` short-circuits the astronomical gaps — no allocation).
+    let threshold = Repr::<B>::new(
+        big.mid.significand().clone(),
+        big.mid
+            .exponent()
+            .saturating_sub(prec.saturating_add(2) as isize),
+    );
+    if repr_cmp_same_base::<B, true>(&small.mid, &threshold, None).is_le() {
+        let mut r = if sub && !a_dominant {
+            big.clone().neg()
+        } else {
+            big.clone()
+        };
+        // Drop the below-ulp term, replacing it with its bound: one ulp of the dominant value.
+        r.add_error(ulp_mag::<B>(&r.mid, prec));
+        Ok(r)
+    } else if sub {
+        a.sub(b, prec)
+    } else {
+        a.add(b, prec)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::round::mode;
+    use crate::round::Round;
+    use crate::DBig;
+    use alloc::format;
+    use core::str::FromStr;
+    use dashu_base::AbsOrd;
     use dashu_int::IBig;
 
     // `sinh`/`cosh` go through `unwrap_fp`, so a huge-|x| overflow saturates to the directed
@@ -582,5 +917,332 @@ mod tests {
             ch.repr().is_infinite() && ch.repr().sign() == Sign::Positive,
             "sinh_cosh[1](−huge) -> +∞"
         );
+    }
+
+    /// A near-tie argument with more digits than the working precision: the input's own
+    /// rounding (½ ulp of `x`, which survives the `x−1` cancellation untouched) must be part
+    /// of the certified radius. Regression for the mis-rounding this input exhibited (issue
+    /// #102): the true acosh sits 1.18e-133 above the 50-digit midpoint, and the dropped
+    /// input error (~1e-62) let Ziv certify the lower neighbour.
+    fn acosh_near_tie_arg() -> FBig<mode::HalfEven, 10> {
+        use core::str::FromStr;
+        FBig::<mode::HalfEven, 10>::from_str(
+            "1.000008608520579272799119633794615751764072075741189452445358800365413956109281413683821004335915587724859246904",
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn acosh_rounds_up_above_decimal_tie() {
+        use core::str::FromStr;
+        let x = acosh_near_tie_arg();
+        let y = Context::<mode::HalfEven>::new(50)
+            .acosh(x.repr(), None)
+            .unwrap()
+            .value();
+        assert_eq!(
+            y,
+            FBig::<mode::HalfEven, 10>::from_str(
+                "0.0041493392794990204344718343065778753953054547309876"
+            )
+            .unwrap()
+        );
+    }
+
+    /// The near-tie argument under directed modes must match a high-precision oracle re-rounded
+    /// under the same mode (the definition of correct rounding).
+    #[test]
+    fn acosh_asinh_directed_match_oracle_near_tie() {
+        use core::str::FromStr;
+        let x = acosh_near_tie_arg();
+        let asinh_arg = FBig::<mode::HalfEven, 10>::from_str(
+            "0.0041493392794990204344718343065778753953054547309875500000000000000000000000000000000000000000000000000000001179",
+        )
+        .unwrap();
+        for p in [16usize, 34, 50] {
+            let oracle_acosh = Context::<mode::HalfEven>::new(p + 60)
+                .acosh::<10>(x.repr(), None)
+                .unwrap()
+                .value();
+            let oracle_asinh = Context::<mode::HalfEven>::new(p + 60)
+                .asinh::<10>(asinh_arg.repr(), None)
+                .unwrap()
+                .value();
+            macro_rules! check {
+                ($mode:ty, $name:expr) => {{
+                    let want_acosh = Context::<$mode>::new(p)
+                        .repr_round_ref(&oracle_acosh.repr)
+                        .value();
+                    let got_acosh = Context::<$mode>::new(p)
+                        .acosh::<10>(x.repr(), None)
+                        .unwrap()
+                        .value();
+                    assert_eq!(got_acosh.repr, want_acosh, "{} acosh p={p}", $name);
+                    let want_asinh = Context::<$mode>::new(p)
+                        .repr_round_ref(&oracle_asinh.repr)
+                        .value();
+                    let got_asinh = Context::<$mode>::new(p)
+                        .asinh::<10>(asinh_arg.repr(), None)
+                        .unwrap()
+                        .value();
+                    assert_eq!(got_asinh.repr, want_asinh, "{} asinh p={p}", $name);
+                }};
+            }
+            check!(mode::Down, "Down");
+            check!(mode::Up, "Up");
+            check!(mode::Zero, "Zero");
+            check!(mode::HalfEven, "HalfEven");
+        }
+    }
+
+    /// Long-digit inputs through every hyperbolic inverse: the result must match a
+    /// high-precision oracle under each rounding mode (the input's rounding is folded into the
+    /// radius on every path — sinh/cosh/tanh through `exp_compute`, asinh/acosh/atanh through
+    /// the ball compositions).
+    #[test]
+    fn hyper_directed_match_oracle_long_input() {
+        use core::str::FromStr;
+        let args = [
+            "1.000008608520579272799119633794615751764072075741189452445358800365413956109281413683821004335915587724859246904",
+            "12.345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456",
+            "-0.8608520579272799119633794615751764072075741189452445358800365413956109281413683821004335915587724859246904",
+        ];
+        for a in args {
+            let x = FBig::<mode::HalfEven, 10>::from_str(a).unwrap();
+            let p = 34;
+            let ctx_h = Context::<mode::HalfEven>::new(p + 60);
+            let oracle_asinh = ctx_h.asinh::<10>(x.repr(), None).unwrap().value().repr;
+            let oracle_tanh = ctx_h.tanh::<10>(x.repr(), None).unwrap().value().repr;
+            let oracle_sinh = ctx_h.sinh::<10>(x.repr(), None).unwrap().value().repr;
+            let oracle_cosh = ctx_h.cosh::<10>(x.repr(), None).unwrap().value().repr;
+            let oracle_atanh = if x.abs_cmp(&FBig::ONE).is_lt() {
+                Some(ctx_h.atanh::<10>(x.repr(), None).unwrap().value().repr)
+            } else {
+                None
+            };
+            let oracle_acosh =
+                if !x.repr().significand().is_zero() && x.repr().sign() == Sign::Positive {
+                    Some(ctx_h.acosh::<10>(x.repr(), None).unwrap().value().repr)
+                } else {
+                    None
+                };
+            macro_rules! check {
+                ($mode:ty, $name:expr, $f:ident, $oracle:expr) => {{
+                    let want = Context::<$mode>::new(p).repr_round_ref(&$oracle).value();
+                    let got = Context::<$mode>::new(p)
+                        .$f::<10>(x.repr(), None)
+                        .unwrap()
+                        .value();
+                    assert_eq!(got.repr, want, "{} {} p={p} x={a}", $name, stringify!($f));
+                }};
+            }
+            check!(mode::Down, "Down", asinh, oracle_asinh);
+            check!(mode::Up, "Up", asinh, oracle_asinh);
+            check!(mode::Down, "Down", tanh, oracle_tanh);
+            check!(mode::Up, "Up", tanh, oracle_tanh);
+            check!(mode::Down, "Down", sinh, oracle_sinh);
+            check!(mode::Up, "Up", sinh, oracle_sinh);
+            check!(mode::Down, "Down", cosh, oracle_cosh);
+            check!(mode::Up, "Up", cosh, oracle_cosh);
+            if let Some(o) = &oracle_atanh {
+                check!(mode::Down, "Down", atanh, *o);
+                check!(mode::Up, "Up", atanh, *o);
+            }
+            if let Some(o) = &oracle_acosh {
+                check!(mode::Down, "Down", acosh, *o);
+                check!(mode::Up, "Up", acosh, *o);
+            }
+        }
+    }
+
+    /// Re-round a high-precision `HalfEven` oracle to precision `p` under the mode under test.
+    fn reround<R: Round, const B: Word>(hi: &FBig<mode::HalfEven, B>, p: usize) -> FBig<R, B> {
+        let ctx = Context::<R>::new(p);
+        FBig::new(ctx.repr_round_ref(hi.repr()).value(), ctx)
+    }
+
+    /// `sinh_pi`/`cosh_pi` vs the high-precision oracle (p + 60 under `HalfEven`, re-rounded
+    /// under the mode under test), across the four canonical significand widths. The inputs
+    /// straddle the `|πx| = 1` series/exp boundary from both sides (0.3 → series, 0.5 → exp —
+    /// where an early version wrongly carried the exp_m1 form's `+1` into the true-exp
+    /// composition, returning cosh_pi(0.5) = 3.509… instead of 2.509…).
+    #[test]
+    fn test_sinh_cosh_pi_oracle() {
+        let inputs = [
+            "0.1", "0.2", "0.3", "0.5", "0.7", "1.5", "2.808", "10.1", "123.456", "-0.3", "-1.2",
+            "-2.808",
+        ];
+        for &p in &[20usize, 50, 100, 500] {
+            for input in inputs {
+                let x = DBig::from_str(input).unwrap();
+                let hi_ctx = Context::<mode::HalfEven>::new(p + 60);
+                let hi_s = hi_ctx.sinh_pi::<10>(x.repr(), None).unwrap().value();
+                let hi_c = hi_ctx.cosh_pi::<10>(x.repr(), None).unwrap().value();
+
+                let got = Context::<mode::HalfEven>::new(p)
+                    .sinh_pi::<10>(x.repr(), None)
+                    .unwrap()
+                    .value();
+                assert_eq!(
+                    got,
+                    reround::<mode::HalfEven, 10>(&hi_s, p),
+                    "sinh_pi({input}) at p={p}"
+                );
+                let got = Context::<mode::Down>::new(p)
+                    .cosh_pi::<10>(x.repr(), None)
+                    .unwrap()
+                    .value();
+                assert_eq!(
+                    got,
+                    reround::<mode::Down, 10>(&hi_c, p),
+                    "cosh_pi({input}) at p={p} under Down"
+                );
+
+                let (s, c) = Context::<mode::HalfEven>::new(p).sinh_cosh_pi::<10>(x.repr(), None);
+                assert_eq!(
+                    s.unwrap().value(),
+                    reround::<mode::HalfEven, 10>(&hi_s, p),
+                    "sinh_cosh_pi sinh({input}) at p={p}"
+                );
+                assert_eq!(
+                    c.unwrap().value(),
+                    reround::<mode::HalfEven, 10>(&hi_c, p),
+                    "sinh_cosh_pi cosh({input}) at p={p}"
+                );
+            }
+        }
+    }
+
+    /// The two exponentials of `sinh(1e14)` sit ~10¹⁵ digits apart: the ball compositions must
+    /// drop the negligible one instead of trying to align that gap (an out-of-memory panic
+    /// before the guarded add existed), and the plain `sinh`/`cosh` must survive the same
+    /// argument through the core sticky-collapse in the aligned sum.
+    // The ~10¹⁴-scale argument needs the 64-bit `isize` exponent range; on 32-bit targets the
+    // overflow guard fires first (its range is ~4000× smaller), so the test is 64-bit-only.
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn test_sinh_huge_argument_no_oom() {
+        let x = DBig::from_str("189870321059487.19").unwrap();
+        let ctx = Context::<mode::HalfEven>::new(20);
+        let v = ctx.sinh::<10>(x.repr(), None).unwrap().value();
+        assert_eq!(v.repr().sign(), Sign::Positive);
+        let v = ctx.sinh_pi::<10>(x.repr(), None).unwrap().value();
+        assert_eq!(v.repr().sign(), Sign::Positive);
+        let v = ctx.cosh::<10>(x.repr(), None).unwrap().value();
+        assert_eq!(v.repr().sign(), Sign::Positive);
+        let v = ctx.cosh_pi::<10>(x.repr(), None).unwrap().value();
+        assert_eq!(v.repr().sign(), Sign::Positive);
+        let (s, c) = ctx.sinh_cosh_pi::<10>(x.repr(), None);
+        assert_eq!(s.unwrap().value().repr().sign(), Sign::Positive);
+        assert_eq!(c.unwrap().value().repr().sign(), Sign::Positive);
+        // odd: the negative side flips sinh's sign only
+        let neg = -x;
+        assert_eq!(
+            ctx.sinh_pi::<10>(neg.repr(), None)
+                .unwrap()
+                .value()
+                .repr()
+                .sign(),
+            Sign::Negative
+        );
+        assert_eq!(
+            ctx.cosh_pi::<10>(neg.repr(), None)
+                .unwrap()
+                .value()
+                .repr()
+                .sign(),
+            Sign::Positive
+        );
+    }
+
+    // The closure's `exp_compute` runs the `Bⁿ` powering chain, whose radius slack used to cost
+    // one systematic Ziv retry on non-power-of-two bases (`pow_chain_guard` now charges the chain
+    // length to the initial guard). Pins a measured retrying point (DBig `sinh 10` @150 and
+    // @600 both retried exactly once) to first-attempt certification.
+    #[cfg(feature = "std")]
+    #[test]
+    fn sinh_certifies_first_attempt_base10() {
+        let ctx = Context::<mode::HalfEven>::new(150);
+        crate::ziv_retries_reset();
+        let _ = ctx
+            .sinh::<10>(&Repr::<10>::new(10.into(), 0), None)
+            .unwrap();
+        assert_eq!(
+            crate::ziv_retries(),
+            0,
+            "DBig sinh(10) @150 should certify on the first attempt"
+        );
+    }
+
+    /// `acosh`/`atanh` compare their `±1` boundaries *exactly*: an argument that merely rounds
+    /// onto the endpoint is not the endpoint, and both have a vertical tangent there — the true
+    /// value is `√(2δ)` (acosh) / `ln(2/δ)/2` (atanh), not the endpoint's `0` / `∞`.
+    ///
+    /// The rows that *used* to be at risk here are covered: `acosh` takes `√((x−1)(x+1))` and
+    /// `atanh` divides `2x/(1−x)` by an argument that rounds onto the pole, so both reach the
+    /// retry path rather than certifying the endpoint — `acosh` via the loop's zero-candidate
+    /// guard, `atanh` via `ln_1p_ball`'s pole guard (which previously panicked on the `±∞`
+    /// ratio).
+    #[test]
+    fn test_hyperbolic_endpoints_compare_exactly() {
+        for &p in &[20usize, 50, 100, 500] {
+            // 10^-n is beyond the initial guard, so the argument rounds onto the endpoint at the
+            // first work precision for p ≥ 100 (the case that used to snap); at p = 20/50 the rows
+            // are plain correctness checks.
+            let n = 3 * p / 2 + 5;
+            let below = DBig::from_str(&format!("0.{}", "9".repeat(n))).unwrap(); // 1 − 10^-n
+            let above = DBig::from_str(&format!("1.{}1", "0".repeat(n - 1))).unwrap(); // 1 + 10^-n
+            let ctx = Context::<mode::HalfEven>::new(p);
+            let hi = Context::<mode::HalfEven>::new(p + 60);
+
+            let a = ctx.atanh::<10>(below.repr(), None).unwrap().value();
+            assert!(a.repr().is_finite(), "atanh(1 - 10^-{n}) at p={p} is finite, not -inf");
+            assert_eq!(
+                a,
+                hi.atanh::<10>(below.repr(), None)
+                    .unwrap()
+                    .value()
+                    .with_precision(p)
+                    .value(),
+                "atanh(1 - 10^-{n}) at p={p}"
+            );
+
+            let c = ctx.acosh::<10>(above.repr(), None).unwrap().value();
+            assert!(
+                !c.repr().significand().is_zero(),
+                "acosh(1 + 10^-{n}) at p={p} is not an exact 0"
+            );
+            assert_eq!(
+                c,
+                hi.acosh::<10>(above.repr(), None)
+                    .unwrap()
+                    .value()
+                    .with_precision(p)
+                    .value(),
+                "acosh(1 + 10^-{n}) at p={p}"
+            );
+
+            // the exact endpoints keep their exact results
+            let one = Repr::<10>::one();
+            assert!(ctx
+                .atanh::<10>(&one, None)
+                .unwrap()
+                .value()
+                .repr()
+                .is_infinite());
+            assert!(ctx
+                .atanh::<10>(&(-Repr::<10>::one()), None)
+                .unwrap()
+                .value()
+                .repr()
+                .is_infinite());
+            assert!(ctx
+                .acosh::<10>(&one, None)
+                .unwrap()
+                .value()
+                .repr()
+                .significand()
+                .is_zero());
+        }
     }
 }

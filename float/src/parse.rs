@@ -143,7 +143,15 @@ impl<const B: Word> Repr<B> {
             }
         };
 
-        let repr = Repr::new(sign * significand, exponent);
+        // A zero significand carries its sign in the exponent sentinel (`-0` is exponent -1), and
+        // `sign * significand` cannot express it — negating an `IBig` zero yields zero. Without
+        // this, `-0`, `-0.0` and `-0e0` all parsed as `+0` and the value did not survive its own
+        // `Display` round-trip.
+        let repr = if sign == Sign::Negative && significand.is_zero() {
+            Repr::neg_zero()
+        } else {
+            Repr::new(sign * significand, exponent)
+        };
         Ok((repr, ndigits))
     }
 }

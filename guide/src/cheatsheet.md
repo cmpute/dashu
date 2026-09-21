@@ -63,6 +63,8 @@ Lossless conversions use `From`; potentially-lossy ones use `TryFrom` (which fai
 |--------|-----|---------|
 | `.exp()` / `.ln()` / `.sqrt()` | `FBig`, `CBig` | same type |
 | `.sin()` / `.cos()` / `.tan()` / `.sin_cos()` | `FBig`, `CBig` | same type |
+| `.sin_pi()` / `.cos_pi()` / `.tan_pi()` / `.sin_cos_pi()` | `FBig`, `CBig` | same type |
+| `.sin_unit(u)` / `.cos_unit(u)` / … / `.atan2_unit(x, u)` | `FBig` | same type |
 | `.powi(IBig)` / `.powf(&Self)` | `FBig`, `CBig` | same type |
 | `.with_precision(p)` | `FBig` | `Rounded<FBig>` |
 | `.to_decimal()` / `.to_binary()` | `FBig` | `Rounded<DBig>` / `Rounded<FBig>` |

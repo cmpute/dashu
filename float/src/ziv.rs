@@ -44,7 +44,7 @@ thread_local! {
 }
 
 // Reset/bump the retry counter, with no-op fallbacks when the `tuning` feature (or test mode)
-// is absent — the Ziv loop body stays clean.
+// is absent — the Ziv loop body stays clean and ungated.
 #[cfg(any(all(test, feature = "std"), feature = "tuning"))]
 fn ziv_retries_reset_impl() {
     LAST_ZIV_RETRIES.with(|c| c.set(0));
@@ -70,7 +70,38 @@ pub fn ziv_retries() -> usize {
 /// Ziv loop report 0 rather than the previous call's count).
 #[cfg(any(all(test, feature = "std"), feature = "tuning"))]
 pub fn ziv_retries_reset() {
-    ziv_retries_reset_impl();
+    LAST_ZIV_RETRIES.with(|c| c.set(0));
+}
+
+/// The signature of the per-attempt Ziv trace hook: `(guard, &radius)`. The radius formats
+/// through [`core::fmt::Debug`] (the compact head‥tail form).
+///
+/// Not part of the stable API surface (`#[doc(hidden)]`) — a profiling hook, not a
+/// typed-in-stone contract.
+#[cfg(any(all(test, feature = "std"), feature = "tuning"))]
+#[doc(hidden)]
+pub type ZivTraceFn = fn(usize, &dyn core::fmt::Debug);
+
+// Per-attempt Ziv trace hook: `Some(f)` makes every attempt of the single-value Ziv loop
+// call `f(guard, &radius)`; `None` (the default) costs a single `Cell` read, so a `tuning`
+// build stays usable for timing runs.
+#[cfg(any(all(test, feature = "std"), feature = "tuning"))]
+thread_local! {
+    static ZIV_TRACE_HOOK: core::cell::Cell<Option<ZivTraceFn>> =
+        const { core::cell::Cell::new(None) };
+}
+
+/// Install the per-attempt Ziv trace hook (`None` restores the silent default). Pairs with
+/// [`ziv_retries`] when correlating traces with retry counts; a harness would typically pass a
+/// capture-less closure, e.g.
+/// `ziv_set_trace_hook(Some(|guard, radius| eprintln!("ZIV g={guard} r={radius:?}")))`.
+///
+/// Not part of the stable API surface (`#[doc(hidden)]`) — a profiling hook, not a
+/// typed-in-stone contract.
+#[cfg(any(all(test, feature = "std"), feature = "tuning"))]
+#[doc(hidden)]
+pub fn ziv_set_trace_hook(hook: Option<ZivTraceFn>) {
+    ZIV_TRACE_HOOK.with(|h| h.set(hook));
 }
 
 impl<R: ErrorBounds> Context<R> {
@@ -105,6 +136,13 @@ impl<R: ErrorBounds> Context<R> {
         ziv_retries_reset_impl();
         for _ in 0..MAX_ZIV_RETRIES {
             let (a, e) = approx(guard)?;
+            // Per-attempt trace hook — the diagnostic that pairs with `ziv_retries()` when
+            // profiling why a function retries. `None` (the default) reads one `Cell`; install
+            // a printer with `ziv_set_trace_hook` (see its docs).
+            #[cfg(any(all(test, feature = "std"), feature = "tuning"))]
+            if let Some(hook) = ZIV_TRACE_HOOK.with(|h| h.get()) {
+                hook(guard, &e);
+            }
             // `with_precision` consumes `a`, but the containment test still needs it, so round a
             // clone and keep the original for the interval check.
             let candidate = a.clone().with_precision(self.precision);
@@ -192,6 +230,21 @@ impl<R: ErrorBounds> Context<R> {
     ///   `a − e ≥ y − lb  ⟺  a + lb ≥ y + e`
     ///   `a + e ≤ y + rb  ⟺  y + rb ≥ a + e`
     fn contained<const B: Word>(a: &Repr<B>, e: &Repr<B>, y: &FBig<R, B>) -> bool {
+        // No nonzero real rounds to exactly zero (significant-digit rounding with unbounded
+        // exponents keeps every nonzero magnitude), so a zero midpoint can only be certified
+        // with a zero radius — the documented `error_bounds` interval for ±0 (±ulp) would
+        // otherwise certify a cancellation that collapsed onto exact 0 while its radius still
+        // covers nonzero neighbors (a wrong result, e.g. `log2` just above 1 at low precision).
+        if y.repr.significand.is_zero() && !e.significand.is_zero() {
+            return false;
+        }
+        // An unbounded radius — the `Mag::INFINITY` "unknown, retry at a higher guard" signal that
+        // a degenerate denominator, a pole the ball straddles, or a root that rounded onto zero
+        // exports — can never fit a finite preimage, so it is answered here rather than by the
+        // arithmetic below (which asserts its operands finite, as `Repr` ops do).
+        if e.is_infinite() {
+            return false;
+        }
         let (lb, rb, incl_l, incl_r) = R::error_bounds::<B>(y);
 
         let y = &y.repr;
@@ -222,6 +275,29 @@ mod tests {
     use crate::round::mode;
 
     type F = crate::FBig<mode::HalfEven>;
+
+    thread_local! {
+        static TRACE_CALLS: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
+    }
+
+    // The trace hook fires once per attempt while installed, and restores silence on `None`.
+    #[test]
+    fn ziv_trace_hook_fires_per_attempt() {
+        TRACE_CALLS.with(|c| c.set(0));
+        ziv_set_trace_hook(Some(|_guard, _radius| {
+            TRACE_CALLS.with(|c| c.set(c.get() + 1));
+        }));
+        let ctx: Context<mode::HalfEven> = Context::new(6);
+        let x = Repr::<10>::new(1.into(), 100);
+        let _ = ctx.ln::<10>(&x, None).unwrap();
+        ziv_set_trace_hook(None);
+        assert!(TRACE_CALLS.with(|c| c.get()) >= 1, "trace hook must fire on each attempt");
+
+        // After uninstalling, the same computation leaves the counter untouched.
+        TRACE_CALLS.with(|c| c.set(0));
+        let _ = ctx.ln::<10>(&x, None).unwrap();
+        assert_eq!(TRACE_CALLS.with(|c| c.get()), 0, "hook must stay uninstalled");
+    }
 
     // An exact approximation (radius 0) is accepted on the first attempt as Exact.
     #[test]

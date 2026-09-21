@@ -1,20 +1,31 @@
 use dashu_base::{
     utils::{next_down, next_up},
-    Abs, AbsOrd,
     Approximation::*,
-    EstimatedLog2, PowerOfTwo, Sign, UnsignedAbs,
+    BitTest, EstimatedLog2, PowerOfTwo, Sign, UnsignedAbs,
 };
 use dashu_int::{IBig, UBig};
 
 use crate::{
-    ball::{ceil_shift, Ball},
+    ball::{ulps, Ball},
+    cmp::repr_cmp_same_base,
     error::{assert_finite, assert_limited_precision, FpError, FpResult},
     fbig::FBig,
+    mag::Mag,
     math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr, Word},
     round::{mode, ErrorBounds, Round},
 };
 use core::cmp::Ordering;
+
+/// Extra digits for the reconstruction constants (see `ln_compute`): a scale factor `|k|`
+/// amplifies a constant's 8-ulp radius by `|k|`; `extra > log_B(|k|)` absorbs the `|k|`
+/// amplification, leaving the scaled radius at ≤ 8 work-ulps (a constant fraction of the
+/// result's ulp, sub-target once the Ziv guard is added; for the smallest bases it is a few
+/// work-ulps, absorbed by the loop's initial guard). Computed from the factor's bit length,
+/// integer-only: `log_B(|k|) < bit_len(|k|) / ilog2(B)`.
+fn const_extra_digits<const B: Word>(mag_bit_len: usize) -> usize {
+    mag_bit_len / (Word::BITS - 1 - B.leading_zeros()) as usize + 1
+}
 
 impl<const B: Word> EstimatedLog2 for Repr<B> {
     // currently a Word has at most 64 bits, so log2() < f32::MAX
@@ -195,7 +206,8 @@ impl<R: Round> Context<R> {
                     false,
                     None,
                 )
-                .to_value_radius::<R>()
+                .expect("ln(BASE) cannot range-error (the base fits the exponent range)")
+                .to_value_radius::<R>(&Context::<R>::new(self.precision + guard))
                 .0
             }
         }
@@ -211,16 +223,18 @@ impl<R: Round> Context<R> {
     pub(crate) fn ln_base_ball<const B: Word>(
         &self,
         mut cache: Option<&mut ConstCache>,
-    ) -> Ball<B> {
+    ) -> Result<Ball<B>, FpError> {
         let ctx = Context::<mode::HalfEven>::new(self.precision);
         match B {
             10 => {
                 let logb = ctx.ln_base::<B>(reborrow_cache(&mut cache));
-                Ball::with_error(logb, IBig::from(8))
+                let rad = ulps::<B>(&logb.repr, self.precision, 8);
+                Ok(Ball::with_error(logb.into_repr(), rad))
             }
             i if i.is_power_of_two() => {
                 let logb = ctx.ln_base::<B>(reborrow_cache(&mut cache));
-                Ball::with_error(logb, IBig::from(8))
+                let rad = ulps::<B>(&logb.repr, self.precision, 8);
+                Ok(Ball::with_error(logb.into_repr(), rad))
             }
             _ => {
                 // Generic base: no cached sub-series applies, so compute ln(B) directly at the
@@ -281,137 +295,232 @@ impl<R: Round> Context<R> {
     /// (which wrap it in a retry loop) and by `ln_base` (which only needs a near-correct constant
     /// `ln(B)`). It lives on `R: Round` so those near-correct callers don't inherit the
     /// `ErrorBounds` bound.
+    ///
+    /// The magnitude is reduced onto the unit binade in two exact stages (a base-power
+    /// exponent re-tag, then a small power-of-two division), so no power of an exponent *gap*
+    /// is ever materialized — the reduction stays O(1) for any input exponent.
+    ///
+    /// The reconstruction `2·sum + s2·ln(2) + e_base·ln(B)` cancels for x < 1, so the series
+    /// runs at double working precision — decided *before* the series, since a value-space
+    /// radius needs no re-tagging when the precision changes (the mechanism the old ulp-count
+    /// `rescale_precision` existed for is gone entirely).
     pub(crate) fn ln_compute<const B: Word>(
         &self,
         x: &Repr<B>,
         mut work_precision: usize,
         one_plus: bool,
         mut cache: Option<&mut ConstCache>,
-    ) -> Ball<B> {
+    ) -> Result<Ball<B>, FpError> {
         // Round the input to the working precision; the input's own rounding is the only error
         // introduced here.
         let context = Context::<mode::HalfEven>::new(work_precision);
-        let x_ball = Ball::from_rounded(context.repr_round_ref(x).map(|r| FBig::new(r, context)));
+        let x_ball = Ball::from_rounded(context.repr_round_ref(x), work_precision);
 
         // When one_plus is true and |x| < 1/B, the input is fed into the Maclaurin without scaling.
         let no_scaling = one_plus && x_ball.mid.log2_est() < -B.log2_est();
 
-        let (s, mut x_scaled) = if no_scaling {
-            (0, x_ball)
+        // The magnitude is reduced onto the unit binade in two exact stages, so that no power
+        // of the exponent *gap* is ever materialized (a gap of ~10^9 digits would otherwise
+        // allocate and divide integers of ~10^9 bits — `ln(1e1000000000)` never returned).
+        //
+        // 1. Split at a base-power boundary — a pure exponent re-tag (O(1), `Ball::shift`):
+        //    with `d = digits_ub(sig) − 1`, the mid becomes `sig·B^(−d) ∈ [B^(−2), B)` and the
+        //    removed factor is `B^(e+d)`. Unlike a single power-of-two reduction over the whole
+        //    magnitude, this stage is exact integer exponent arithmetic; the f32 `log2_bounds`
+        //    estimate loses ~hundreds of *bits* of accuracy once |log2 x| approaches 10^9, so
+        //    deriving the whole reduction from it left the scaled value far outside [1, 2).
+        //    Applied only for |e| ≥ 2: within |e| ≤ 1 the power-of-two reduction below shifts by
+        //    at most `log2(sig) + 2·log2(B)` bits — proportional to the input — and (crucially)
+        //    needs no `ln(B)` term in the reconstruction. That matters because `ln(B)` itself
+        //    normalizes to `1·B^1`, so a base split of it would recurse onto its own
+        //    reconstruction term (an infinite recursion on generic bases).
+        // 2. Finish the reduction onto [1, 2) by a power of two: within this bounded range the
+        //    f32 floor is off by at most one, and `2^|s2|` is a couple of words at most.
+        //
+        let (s2, e_base, x_scaled, below_one) = if no_scaling {
+            (0, 0, x_ball, false)
         } else {
             let x_ball = if one_plus {
-                x_ball.add(&Ball::exact_int(work_precision, IBig::ONE))
+                x_ball.add(&Ball::exact_int(IBig::ONE, work_precision), work_precision)?
             } else {
                 x_ball
             };
+            // A zero midpoint means the `ln_1p` argument rounded onto the pole at `−1` and the sum
+            // cancelled exactly (`1 + x` is within `rad` of zero, so it may as well be negative —
+            // no logarithm exists). `log2_bounds` saturates at `−∞` there, which the reduction
+            // below cannot use. The whole-line radius asks the Ziv loop for a higher guard, at
+            // which the argument is representable and the sum is a nonzero difference again.
+            if x_ball.mid.significand().is_zero() {
+                return Ok(Ball::with_error(Repr::zero(), Mag::INFINITY));
+            }
+            // Does the (rounded) input sit below one? The exact cancellation condition for
+            // the reconstruction below — one cheap comparison, immune to how the two-stage
+            // reduction happens to split the exponent (master's single-stage `s < 0` read
+            // the same predicate off its split).
+            let below_one = x_ball.mid.cmp(&Repr::<B>::one()) == Ordering::Less;
 
-            let log2 = x_ball.mid.log2_bounds().0;
-            let s = log2 as isize - (log2 < 0.) as isize; // floor(log2(x))
-
-            let mut exact = x_ball.n.is_zero();
-            let x_scaled = if B == 2 {
-                x_ball.shift(s) // exact (power-of-base shift)
-            } else if s > 0 {
-                // Exact divisor 2^s: the error shrinks by it directly (no general-division rational).
-                x_ball.div_exact(&(IBig::ONE << s as usize))
+            let e = x_ball.mid.exponent();
+            let (e_base, x1) = if e >= 2 || e <= -2 {
+                let d = x_ball.mid.digits_ub() as isize - 1;
+                let e_base = e.saturating_add(d);
+                (e_base, x_ball.shift(-e_base)) // value sig·B^(−d) ∈ [B^(−2), B)
             } else {
-                // Scaling by 2^|s| is exact (finite decimal × power of two). Use the tracking
-                // variant so an exact operand keeps n = 0 — otherwise the unconditional `+1`
-                // would be amplified by `rescale_precision` into a `B^precision`-sized error
-                // count that never shrinks across Ziv retries (the powf-of-base-<1 hang).
-                x_ball.scale_int_tracking(&(IBig::ONE << (-s) as usize), &mut exact)
+                (0, x_ball)
             };
-            debug_assert!(x_scaled.mid >= FBig::<mode::HalfEven, B>::ONE);
-            (s, x_scaled)
+
+            let log2 = x1.mid.log2_bounds().0;
+            // The f32 bound is `next_down`-ed, so a midpoint that is *exactly* a power of two
+            // (common: the base split above lands `B^e` inputs on `x1 = 1.0`) floors one step
+            // too low — `s2 = −1` would scale the ball up to `2` for nothing. An exact
+            // comparison settles the power-of-two boundary.
+            let mut s2 = log2 as isize - (log2 < 0.) as isize; // floor(log2(x1))
+            if s2 < 0 && x1.mid.cmp(&Repr::<B>::one()) != Ordering::Less {
+                s2 = 0;
+            }
+            let x_scaled = if s2 > 0 {
+                // Divide by the exact power 2^s2 as a ball division: an exact divisor shrinks
+                // the radius by its value (`rad_b = 0` in the division rule) — no special case.
+                let k = Ball::exact(Repr::new(IBig::ONE << s2 as usize, 0));
+                x1.div(&k, work_precision)?
+            } else if s2 < 0 {
+                // Scaling by 2^|s2| is exact (finite decimal × power of two); an exact operand
+                // keeps `rad = 0` through the multiplication's conditional ε.
+                x1.scale_int(&(IBig::ONE << (-s2) as usize), work_precision)?
+            } else {
+                x1
+            };
+            debug_assert!(x_scaled.mid.cmp(&Repr::<B>::one()) != Ordering::Less);
+            (s2, e_base, x_scaled, below_one)
         };
 
-        // The reconstruction 2·sum + s·ln(B) *cancels* for x < 1 (s < 0), so the series runs at
-        // double precision to keep the pre-cancellation sum accurate. The finer ulp rescales `n`.
-        if s < 0 || x_scaled.mid.repr().sign() == Sign::Negative {
+        // The reconstruction `2·sum + s2·ln(2) + e_base·ln(B)` *cancels* when the exact terms
+        // of the scale factors dominate the result — precisely when the input is below one
+        // (the series sum is then small against the constant terms), so the series runs at
+        // double precision to keep the pre-cancellation sum accurate. A split with `s2 < 0`
+        // but `x ≥ 1` (e.g. the power-two stage landing `x1 = 0.999…` below one) does not
+        // cancel and stays at single precision.
+        if below_one || x_scaled.mid.sign() == Sign::Negative {
             work_precision += self.precision;
-            x_scaled.rescale_precision(self.precision);
         }
-        let work_context = Context::<mode::HalfEven>::new(work_precision);
 
         // after the number is scaled to nearly one, use Maclaurin series on log(x) = 2atanh(z):
         // let z = (x-1)/(x+1) < 1, log(x) = 2atanh(z) = 2Σ(z²ⁱ⁺¹/(2i+1)) for i = 1,3,5,...
         let z = if no_scaling {
-            let two = Ball::exact_int(work_precision, IBig::from(2));
-            let den = x_scaled.add(&two);
-            x_scaled.div(&den)
+            let two = Ball::exact_int(IBig::from(2), work_precision);
+            let den = x_scaled.add(&two, work_precision)?;
+            x_scaled.div(&den, work_precision)?
         } else {
-            let one = Ball::exact_int(work_precision, IBig::ONE);
-            let num = x_scaled.sub(&one);
-            let den = x_scaled.add(&one);
-            num.div(&den)
+            let one = Ball::exact_int(IBig::ONE, work_precision);
+            let num = x_scaled.sub(&one, work_precision)?;
+            let den = x_scaled.add(&one, work_precision)?;
+            num.div(&den, work_precision)?
         };
-        let z2 = z.mul(&z);
+        let z2 = z.mul(&z, work_precision)?;
         let mut pow = z.clone();
         let mut sum = z;
         let mut k: usize = 3;
         loop {
-            pow = pow.mul(&z2);
+            pow = pow.mul(&z2, work_precision)?;
 
-            let increase = pow.div_int(k);
-            if increase.mid.abs_cmp(&sum.mid.ulp_lb()).is_le() {
+            let increase = pow.div_int(k, work_precision)?;
+            if increase.mid_le_ulp_lb(&sum, work_precision) {
                 break;
             }
 
-            sum = sum.add(&increase);
+            sum = sum.add(&increase, work_precision)?;
             k += 2;
         }
 
         // Omitted series tail: the first omitted term is ≤ sum.ulp_lb(), and the tail of the
         // atanh series shrinks by z² per step with 1/(1−z²) < B for x_scaled ∈ [1, B), so the
-        // tail is < B·sum.ulp_lb() < B ulps of sum.
-        sum.inflate(&IBig::from(B));
+        // tail is < B·sum.ulp_lb() < B ulps of sum. A zero sum means z (hence every term) is
+        // exactly zero — the tail is 0.
+        if !sum.mid.significand().is_zero() {
+            sum.add_error(ulps::<B>(&sum.mid, work_precision, B as usize));
+        }
 
-        // compose the logarithm of the original number
-        let sum2 = sum.scale_int(&IBig::from(2));
+        // Compose the logarithm of the original number: ln(x) = 2·sum + s2·ln(2) + e_base·ln(B).
+        // The constants carry a handful of ulps of error (8 is a conservative sound bound for
+        // every code path, cached and uncached), and the exact integer scale factors amplify
+        // that error by |s2|/|e_base| while the result's ulp grows only by B^log_B(|scale|) —
+        // so the constants are evaluated with enough extra digits to keep the amplified radius
+        // below one work-ulp divided by the constant's own 8-ulp slack — i.e. `8/B` work-ulps,
+        // sub-ulp for the base-10 origin of the construction and a few work-ulps on the
+        // smallest bases (sound either way; Ziv certifies, and the initial guard absorbs it).
+        // (The same construction as `exp_compute`'s `extra`.) Without them, ln of a large base
+        // power sits at a sizable fraction of the target half-ulp and pays a Ziv retry
+        // whenever the work value also lands near a rounding boundary.
+        let sum2 = sum.scale_int(&IBig::from(2), work_precision)?;
         if no_scaling {
-            sum2
+            Ok(sum2)
+        } else if B.is_power_of_two() {
+            // ln(B) = log2(B)·ln(2) exactly, so both scale factors fold into one ln(2) term.
+            let k = IBig::from(s2) + IBig::from(e_base) * IBig::from(B.trailing_zeros());
+            if k.is_zero() {
+                return Ok(sum2);
+            }
+            let const_prec = work_precision + const_extra_digits::<B>(k.bit_len());
+            let ln2 =
+                Context::<mode::HalfEven>::new(const_prec).ln2::<B>(reborrow_cache(&mut cache));
+            let rad = ulps::<B>(&ln2.repr, const_prec, 8);
+            let ln2_ball = Ball::with_error(ln2.into_repr(), rad);
+            sum2.add(&ln2_ball.scale_int(&k, const_prec)?, const_prec)
         } else {
-            // ln(2) as a ball. The constant evaluates the atanh series via binary splitting at
-            // work + guard digits and rounds once to `work_precision`, so its error is a handful
-            // of work-precision ulps; 8 is a conservative sound bound for every code path
-            // (cached and uncached).
-            let ln2 = work_context.ln2::<B>(reborrow_cache(&mut cache));
-            let ln2 = Ball::with_error(ln2, IBig::from(8));
-            sum2.add(&ln2.scale_int(&IBig::from(s)))
+            let scale = Ord::max(s2.unsigned_abs(), e_base.unsigned_abs());
+            let const_prec = work_precision + const_extra_digits::<B>(scale.bit_len());
+            let mut result = sum2;
+            if s2 != 0 {
+                let ln2 =
+                    Context::<mode::HalfEven>::new(const_prec).ln2::<B>(reborrow_cache(&mut cache));
+                let rad = ulps::<B>(&ln2.repr, const_prec, 8);
+                let ln2_ball = Ball::with_error(ln2.into_repr(), rad);
+                result =
+                    result.add(&ln2_ball.scale_int(&IBig::from(s2), const_prec)?, const_prec)?;
+            }
+            if e_base != 0 {
+                let ln_base_ball = Context::<mode::HalfEven>::new(const_prec)
+                    .ln_base_ball::<B>(reborrow_cache(&mut cache))?;
+                result = result
+                    .add(&ln_base_ball.scale_int(&IBig::from(e_base), const_prec)?, const_prec)?;
+            }
+            Ok(result)
         }
     }
 
     /// `ln(1 + arg)` of a *ball* input. [`ln_compute`](Self::ln_compute) evaluates the series on
-    /// `arg.mid`; the input ball's own error `|θ| ≤ arg.n·ulp(arg)` then contributes `|θ|/(1+arg)`
-    /// to the log. Bound via `(1+arg)`'s ball magnitude: for a mostly-correct argument the factor
-    /// `1/(1−|θ|/(1+arg)) ≤ 2` is sound, so the adjustment is `⌈2·n_arg·ulp_arg/((1+arg)·ulp_ln)⌉`.
+    /// `arg.mid`; the input ball's own error `|θ| ≤ arg.rad` then contributes
+    /// `|θ| / LB(1 + arg_lo)` to the log — the derivative bound at the ball's lower endpoint,
+    /// with the endpoint built by exact `Repr` arithmetic (the log1p rule as validated in
+    /// dashu-ball, tighter than the old `×2` ulp-domain formula). An endpoint crossing zero
+    /// means the ball straddles the pole: the whole-line radius forces a Ziv retry at higher
+    /// precision.
     pub(crate) fn ln_1p_ball<const B: Word>(
         &self,
         arg: &Ball<B>,
         mut cache: Option<&mut ConstCache>,
-    ) -> Ball<B> {
+    ) -> Result<Ball<B>, FpError> {
+        // The ball must stay clear of the pole at `1 + arg = 0`: there is no logarithm to compute
+        // (a zero sum has no `log2_bounds`, and a negative one is out of domain), and the
+        // derivative fold below is unbounded. The whole-line radius asks the Ziv loop for a higher
+        // guard, where the caller's argument stops rounding onto the pole — `atanh`'s `2x/(1−x)`
+        // reaching `±∞` at the first attempt is exactly this case. A whole-line *radius* (another
+        // operator's retry signal, e.g. a root that rounded onto zero) is the same situation.
+        if !arg.mid.is_finite() || arg.rad.is_infinite() {
+            return Ok(Ball::with_error(Repr::zero(), Mag::INFINITY));
+        }
+        let lo = &(Repr::<B>::one() + &arg.mid) - &arg.rad.to_repr::<B>();
+        let denom = if lo.sign() == Sign::Negative {
+            Mag::ZERO
+        } else {
+            Mag::from_repr_lower(&lo)
+        };
+        if denom.is_zero() {
+            return Ok(Ball::with_error(Repr::zero(), Mag::INFINITY));
+        }
         let mut ln_ball =
-            self.ln_compute::<B>(arg.mid.repr(), self.precision, true, reborrow_cache(&mut cache));
-        let den = arg.add(&Ball::exact_int(self.precision, IBig::ONE));
-        let e_d = den.mid.repr().exponent; // (1+arg) = sig_d·B^(e_d)
-        let sig_d = den.mid.repr().significand.clone().abs();
-        // `lead_*` is the leading position (`lead_exp`), so `ulp_arg = B^(lead_arg − p_arg)` and
-        // `ulp_ln = B^(lead_ln − p_ln)`. The input error propagates as
-        //   n_arg·ulp_arg / ((1+arg)·ulp_ln) = n_arg·B^(lead_arg − p_arg − e_d − lead_ln + p_ln)/sig_d;
-        // ×2 for the 1/(1−|θ|/(1+arg)) factor.
-        // The precision difference is essential: `ln_compute`'s s<0 path runs at double precision,
-        // so `ln_ball` sits at 2·self.precision while `arg` stays at self.precision — dropping the
-        // `−p_arg+p_ln` term under-bounds the adjust by B^(p_ln−p_arg) (atanh(x<0) near the pole
-        // then mis-certifies, e.g. off by 2^13 ulps).
-        let lead_arg = Ball::lead_exp(&arg.mid);
-        let p_arg = arg.mid.precision();
-        let lead_ln = Ball::lead_exp(&ln_ball.mid);
-        let p_ln = ln_ball.mid.precision();
-        let shift = lead_arg - p_arg as isize - e_d - lead_ln + p_ln as isize;
-        let num = ceil_shift::<B>(2 * &arg.n, shift);
-        let adjust = (num + &sig_d - IBig::ONE) / sig_d;
-        ln_ball.inflate(&adjust);
-        ln_ball
+            self.ln_compute::<B>(&arg.mid, self.precision, true, reborrow_cache(&mut cache))?;
+        ln_ball.add_error(arg.rad.div(&denom));
+        Ok(ln_ball)
     }
 }
 
@@ -478,9 +587,11 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        // Domain of ln_1p is x > -1. x == -1 gives -inf; x < -1 is out of domain.
+        // Domain of ln_1p is x > -1. x == -1 gives -inf; x < -1 is out of domain. `-1` is a pole,
+        // so the boundary is compared *exactly* (no precision argument): `-1 + 10⁻¹⁵⁵` at 100
+        // digits rounds onto `-1` but has the finite value `ln(10⁻¹⁵⁵)`.
         if x.sign() == Sign::Negative && !x.significand.is_zero() {
-            match FBig::<R, B>::new(x.clone(), *self).abs_cmp(&FBig::ONE) {
+            match repr_cmp_same_base::<B, true>(x, &Repr::<B>::one(), None) {
                 Ordering::Greater => return Err(FpError::OutOfDomain), // x < -1
                 Ordering::Equal => return Ok(Exact(FBig::new(Repr::neg_infinity(), *self))),
                 _ => {}
@@ -524,8 +635,8 @@ impl<R: ErrorBounds> Context<R> {
         let base_guard = self.base_guard_digits::<B>() + 2;
         self.ziv(base_guard + one_plus as usize, |guard| {
             Ok(self
-                .ln_compute::<B>(x, self.precision + guard, one_plus, reborrow_cache(&mut cache))
-                .to_value_radius::<R>())
+                .ln_compute::<B>(x, self.precision + guard, one_plus, reborrow_cache(&mut cache))?
+                .to_value_radius::<R>(&Context::<R>::new(self.precision + guard)))
         })
     }
 
@@ -612,10 +723,13 @@ impl<R: ErrorBounds> Context<R> {
         let initial_guard = self.base_guard_digits::<B>() + 4;
         self.ziv(initial_guard, |guard| {
             let work_precision = self.precision + guard;
-            let lx = self.ln_compute::<B>(x, work_precision, false, reborrow_cache(&mut cache));
+            let lx = self.ln_compute::<B>(x, work_precision, false, reborrow_cache(&mut cache))?;
             let two = Repr::new(IBig::from(2), 0);
-            let l2 = self.ln_compute::<B>(&two, work_precision, false, reborrow_cache(&mut cache));
-            Ok(lx.div(&l2).to_value_radius::<R>())
+            let l2 =
+                self.ln_compute::<B>(&two, work_precision, false, reborrow_cache(&mut cache))?;
+            Ok(lx
+                .div(&l2, work_precision)?
+                .to_value_radius::<R>(&Context::<R>::new(work_precision)))
         })
     }
 
@@ -694,10 +808,13 @@ impl<R: ErrorBounds> Context<R> {
         let initial_guard = self.base_guard_digits::<B>() + 4;
         self.ziv(initial_guard, |guard| {
             let work_precision = self.precision + guard;
-            let lx = self.ln_compute::<B>(x, work_precision, false, reborrow_cache(&mut cache));
+            let lx = self.ln_compute::<B>(x, work_precision, false, reborrow_cache(&mut cache))?;
             let ten = Repr::new(IBig::from(10), 0);
-            let l10 = self.ln_compute::<B>(&ten, work_precision, false, reborrow_cache(&mut cache));
-            Ok(lx.div(&l10).to_value_radius::<R>())
+            let l10 =
+                self.ln_compute::<B>(&ten, work_precision, false, reborrow_cache(&mut cache))?;
+            Ok(lx
+                .div(&l10, work_precision)?
+                .to_value_radius::<R>(&Context::<R>::new(work_precision)))
         })
     }
 }
@@ -740,9 +857,10 @@ fn exact_pow10_log<const B: Word>(sig: &IBig, e: isize) -> Option<isize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ball::ulp_mag;
     use crate::round::mode;
     use alloc::vec::Vec;
-    use dashu_base::BitTest;
+    use dashu_base::{Abs, AbsOrd};
 
     #[test]
     fn test_log10_domain() {
@@ -1200,35 +1318,24 @@ mod tests {
         assert_eq!(got.repr, want, "p={p} {} x={x:?}", core::any::type_name::<R>(),);
     }
 
-    /// Regression: `ln_compute`'s s<0 path (base < 1) must NOT inflate its error count with the
-    /// working precision. An exactly-representable input scaled by a power of two is exact, so the
-    /// radius must shrink monotonically as the work precision grows — otherwise the composed
-    /// `pow_exp_log` chain's radius stays constant and the Ziv loop hangs (powf of a base < 1).
+    /// Regression: `ln_compute`'s s<0 path (base < 1) must not inflate its radius with a
+    /// spurious rounding term. An exactly-representable input scaled by a power of two stays
+    /// exact through the reduction, so the radius must stay small enough that the Ziv loop
+    /// certifies at the target precision (the old ulp-count code inflated `n` by `B^precision`
+    /// here and hung `powf` of a base < 1).
     #[test]
     fn ln_small_base_radius_shrinks_with_guard() {
         let ctx = Context::<mode::HalfEven>::new(50);
         // 0.2668 (base 10): s = floor(log2(0.2668)) = -2, the s < 0 path.
         let x = Repr::<10>::new(IBig::from(2668), -4);
         for guard in [4usize, 12, 40, 120] {
-            let ball = ctx.ln_compute::<10>(&x, 50 + guard, false, None);
-            // The regression: n must be O(series terms) (~10^5, bit_len < 30), NOT inflated to
-            // ~B^50 ≈ 10^50 (bit_len ~166) by the s<0 reduction's spurious +1.
+            let ball = ctx.ln_compute::<10>(&x, 50 + guard, false, None).unwrap();
+            // The radius must certify at the target precision: rad ≤ 1 ulp of the midpoint at
+            // precision 50 (i.e. the error interval fits a rounding preimage on this attempt).
             assert!(
-                ball.n.bit_len() < 30,
-                "n = {} ({} bits) too large at guard={guard}: the s<0 reduction inflated it",
-                ball.n,
-                ball.n.bit_len()
-            );
-            // The radius in target (precision 50) ulps must fit a preimage so Ziv certifies on the
-            // first attempt: n·B^(E−p_ball)·B^(50−E) ≤ 1.
-            let radius_target = crate::ball::ceil_shift::<10>(
-                ball.n.clone(),
-                Ball::lead_exp(&ball.mid) - ball.mid.precision() as isize + 50,
-            );
-            assert!(
-                radius_target <= IBig::ONE,
-                "radius {radius_target} ulps at guard={guard} does not certify (n={})",
-                ball.n
+                ball.rad <= ulp_mag::<10>(&ball.mid, 50),
+                "radius {:?} at guard={guard} does not certify (the s<0 reduction inflated it)",
+                ball.rad
             );
         }
     }
@@ -1268,19 +1375,17 @@ mod tests {
     fn ln_1p_ball_bounds_negative_arg() {
         // Regression: `ln_1p_ball`'s input-error adjust dropped the precision-difference term
         // (−p_arg+p_ln). For an arg with 1+arg ∈ (0, 1) (e.g. atanh(x<0) near the pole),
-        // `ln_compute` doubles the work precision (the s<0 path), so `ln_ball` sits at 2p while
-        // `arg` stays at p — the missing +p under-bounded the adjust by B^p and the radius no
-        // longer covered the true value.
-        use crate::fbig::FBig;
-        use crate::repr::Context;
+        // `ln_compute` doubles the work precision (the s<0 path), so the radius must still
+        // cover the true value after the derivative fold.
         type F = FBig<mode::HalfEven, 10>;
         let ctx = Context::<mode::HalfEven>::new(10);
-        // arg mid = −0.9999 at precision 10 (ulp = 1e-10), n = 5 ⇒ true arg = −0.9999000005.
+        // arg mid = −0.9999 at precision 10 (ulp = 1e-10), rad = 5 ulps ⇒ true arg = −0.9999000005.
         let mid = F::from_parts(IBig::from(-9999000000i64), -10)
             .with_precision(10)
             .value();
-        let arg = Ball::<10>::with_error(mid, IBig::from(5));
-        let ln_ball = ctx.ln_1p_ball::<10>(&arg, None);
+        let rad = ulps::<10>(&mid.repr, 10, 5);
+        let arg = Ball::<10>::with_error(mid.into_repr(), rad);
+        let ln_ball = ctx.ln_1p_ball::<10>(&arg, None).unwrap();
         // true ln(1+arg) = ln(1 − 0.9999000005) = ln(9.99995e-5), oracle at precision 60.
         let one_plus_true = F::from_parts(IBig::from(999995i64), -10)
             .with_precision(0)
@@ -1291,12 +1396,124 @@ mod tests {
             .ln()
             .with_precision(0)
             .value();
-        let diff = (ln_ball.mid.clone().with_precision(0).value() - true_ln).abs();
-        let bound = F::from(ln_ball.n.clone()) * ln_ball.mid.ulp().with_precision(0).value();
+        let mid_f = F::new(ln_ball.mid.clone(), Context::<mode::HalfEven>::new(0));
+        let diff = (mid_f - true_ln).abs();
+        let bound = F::new(ln_ball.rad.to_repr::<10>(), Context::<mode::HalfEven>::new(0));
         assert!(
-            diff <= bound,
-            "ln_1p_ball: |mid − true| = {diff} > n·ulp = {bound} (n = {}, missing −p_arg+p_ln?)",
-            ln_ball.n
+            diff.abs_cmp(&bound).is_le(),
+            "ln_1p_ball: |mid − true| = {diff} > rad = {bound}"
         );
+    }
+
+    /// Regression (issue #103): `ln` of a huge-exponent argument must reduce as
+    /// `ln(m) + k·ln(B)` — the reduction may never materialize a power of the exponent *gap*
+    /// (`ln(1e1000000000)` previously ballooned to gigabytes of integer and never returned).
+    #[test]
+    fn ln_huge_exponent_arguments() {
+        use alloc::string::ToString;
+        let ctx = Context::<mode::HalfEven>::new(34);
+        // ln(10^1000000000) = 10^9·ln(10), correctly rounded to 34 digits
+        let x = Repr::<10>::new(IBig::ONE, 1_000_000_000);
+        let r = ctx.ln::<10>(&x, None).unwrap().value();
+        assert_eq!(r.to_string(), "2302585092.994045684017991454684364");
+        // ln(10^-1000000000) = −ln(10^1000000000) — the s<0 path (double work precision)
+        let x = Repr::<10>::new(IBig::ONE, -1_000_000_000);
+        let r = ctx.ln::<10>(&x, None).unwrap().value();
+        assert_eq!(r.to_string(), "-2302585092.994045684017991454684364");
+        // a mid-size exponent on the same path (the previously-working regime)
+        let x = Repr::<10>::new(IBig::ONE, 1_000_000);
+        let r = ctx.ln::<10>(&x, None).unwrap().value();
+        assert_eq!(r.to_string(), "2302585.092994045684017991454684364");
+    }
+
+    /// Huge-exponent arguments under directed modes must match a high-precision oracle
+    /// re-rounded under the same mode — exercising both reduction stages (the base-exponent
+    /// re-tag and the bounded power-of-two finish) on bases 2 and 10, with exact and inexact
+    /// significands.
+    #[test]
+    fn ln_directed_matches_oracle_huge_exponents() {
+        fn check<const B: Word, R: ErrorBounds>(p: usize, x: &Repr<B>) {
+            let oracle = Context::<mode::HalfEven>::new(p + 60)
+                .ln::<B>(x, None)
+                .unwrap()
+                .value();
+            let want = Context::<R>::new(p).repr_round_ref(&oracle.repr).value();
+            let got = Context::<R>::new(p).ln::<B>(x, None).unwrap().value();
+            assert_eq!(got.repr, want, "p={p} {} x={x:?} base={B}", core::any::type_name::<R>());
+        }
+        let inputs10 = [
+            Repr::<10>::new(IBig::ONE, 1_000_000_000),
+            Repr::<10>::new(IBig::from(3), 999_999_998), // 3e999999998
+            Repr::<10>::new(IBig::ONE, -1_000_000_000),
+            Repr::<10>::new(IBig::from(7), -1_000_000_000), // 7e-1000000000
+            Repr::<10>::new(IBig::from(12345), -9_999_995), // 1.2345e-9999991
+        ];
+        for p in [20usize, 34, 50, 100] {
+            for x in &inputs10 {
+                check::<10, mode::HalfEven>(p, x);
+                check::<10, mode::Down>(p, x);
+                check::<10, mode::Up>(p, x);
+                check::<10, mode::Zero>(p, x);
+            }
+        }
+        let inputs2 = [
+            Repr::<2>::new(IBig::ONE, 1 << 30),
+            Repr::<2>::new(IBig::from(3), -(1 << 30)),
+            Repr::<2>::new(IBig::ONE, -(1 << 20)),
+        ];
+        for p in [20usize, 50, 100, 500] {
+            for x in &inputs2 {
+                check::<2, mode::HalfEven>(p, x);
+                check::<2, mode::Down>(p, x);
+                check::<2, mode::Up>(p, x);
+                check::<2, mode::Zero>(p, x);
+            }
+        }
+    }
+
+    // The reconstruction constants' 8-ulp radii are amplified by the base-power scale factor
+    // (`100·rad(ln 10)` here), which used to sit at a third of the target half-ulp at 6 digits —
+    // one Ziv retry whenever the work value also landed near the rounding boundary. The constants
+    // now carry enough extra digits to keep the amplified radius sub-ulp (see `ln_compute`).
+    #[cfg(feature = "std")]
+    #[test]
+    fn ln_large_base_power_certifies_first_attempt() {
+        let ctx = Context::<mode::HalfEven>::new(6);
+        crate::ziv_retries_reset();
+        let _ = ctx.ln::<10>(&Repr::<10>::new(1.into(), 100), None).unwrap();
+        assert_eq!(
+            crate::ziv_retries(),
+            0,
+            "DBig ln(1e100) @6 should certify on the first attempt"
+        );
+    }
+
+    /// `ln_1p` compares its `−1` boundary *exactly*: `−1 + 10⁻ⁿ` is the finite `ln(10⁻ⁿ)`, not `−∞`.
+    ///
+    /// Regression: `ln_compute` was handed the `1 + x` cancellation with a *zero* midpoint, where
+    /// `log2_bounds` saturates to `−∞` — the reduction panicked on the cast (`attempt to subtract
+    /// with overflow`, wrapping to a nonsense exponent in release). The zero now reports the
+    /// whole-line radius, so the loop retries at a guard where the argument is representable.
+    #[test]
+    fn test_ln_1p_endpoint_compare_exactly() {
+        for &p in &[20usize, 50, 100, 500] {
+            let n = 3 * p / 2 + 5;
+            // −1 + 10^-n = −(10^n − 1)·10^-n
+            let x = Repr::<10>::new(-(IBig::from(10).pow(n) - IBig::from(1)), -(n as isize));
+            let ctx = Context::<mode::HalfEven>::new(p);
+            let v = ctx.ln_1p::<10>(&x, None).unwrap().value();
+            assert!(v.repr().is_finite(), "ln_1p(-1 + 10^-{n}) at p={p} is finite, not -inf");
+            let hi = Context::<mode::HalfEven>::new(p + 60)
+                .ln_1p::<10>(&x, None)
+                .unwrap()
+                .value();
+            assert_eq!(v, hi.with_precision(p).value(), "ln_1p(-1 + 10^-{n}) at p={p}");
+            // exactly −1 is still the pole
+            let at_pole = ctx
+                .ln_1p::<10>(&Repr::<10>::neg_one(), None)
+                .unwrap()
+                .value();
+            assert!(at_pole.repr().is_infinite() && at_pole.repr().sign() == Sign::Negative);
+        }
     }
 }
