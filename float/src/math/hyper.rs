@@ -853,6 +853,7 @@ mod tests {
     use crate::round::mode;
     use crate::round::Round;
     use crate::DBig;
+    use alloc::format;
     use core::str::FromStr;
     use dashu_base::AbsOrd;
     use dashu_int::IBig;

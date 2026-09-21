@@ -1931,6 +1931,7 @@ mod tests {
     use super::*;
     use crate::round::mode;
     use crate::DBig;
+    use alloc::format;
     use core::str::FromStr;
 
     #[test]
