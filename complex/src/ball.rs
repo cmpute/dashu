@@ -219,13 +219,18 @@ impl<const B: Word> CBall<B> {
             Ball::from_rounded(fctx.hypot(&self.re.mid, &self.im.mid)?.map(FBig::into_repr), prec);
         r.add_error(self.re.rad.add(&self.im.rad));
 
-        // the bracket of the true ‖z‖ (drives both folds)
-        let hi = Mag::from_repr(&r.mid).add(&r.rad);
+        // A lower bound of the true ‖z‖ (drives both folds). The *bracket width* must not be
+        // taken from `Mag::from_repr`/`from_repr_lower`: at base ≠ 2 the `B^e` scaling enters
+        // the Mag only through the fixed-point `log₂B` bracket, so the two bounds of an exact
+        // mid can sit a factor ~2 apart — a value-space `hi − lo` there would inflate the ln
+        // fold to O(1) (retrying forever). The `rad` side is a true Mag (1-word tight), so the
+        // fold keeps the bracket on `rad` alone:
+        // |Δln| ≤ ln((m+rad)/(m−rad)) ≤ 2·rad/(m−rad), with `lo` a lower bound of `m−rad`.
         let lo = Mag::from_repr_lower(&r.mid).sub_down(&r.rad);
         let ln_fold = if lo.is_zero() {
             Mag::INFINITY
         } else {
-            hi.sub(&lo).div(&lo)
+            r.rad.mul_pow2(1).div(&lo)
         };
         let arg_fold = if lo.is_zero() {
             Mag::INFINITY
