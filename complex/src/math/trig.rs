@@ -64,11 +64,22 @@ impl<R: ErrorBounds> Context<R> {
             let gctx = FloatCtxt::<R>::new(pw);
             let cb = CBall::from_parts(z.re(), z.im(), pw);
             let (sinx, cosx) = gctx.sin_cos(&cb.re.mid, reborrow_cache(&mut cache));
-            let sx = Ball::from_rounded(sinx?.map(FBig::into_repr), pw);
-            let cx = Ball::from_rounded(cosx?.map(FBig::into_repr), pw);
+            let mut sx = Ball::from_rounded(sinx?.map(FBig::into_repr), pw);
+            let mut cx = Ball::from_rounded(cosx?.map(FBig::into_repr), pw);
+            // the kernels run on the midpoints: the seed rounding of an over-precise input
+            // propagates (|Δsin|, |Δcos| ≤ |δx|; |Δsinh|, |Δcosh| ≤ 2·‖cosh ball‖·e^{δy}·|δy|)
+            sx.add_error(cb.re.rad);
+            cx.add_error(cb.re.rad);
             let (sinhy, coshy) = gctx.sinh_cosh(&cb.im.mid, reborrow_cache(&mut cache));
-            let shy = Ball::from_rounded(sinhy?.map(FBig::into_repr), pw);
-            let chy = Ball::from_rounded(coshy?.map(FBig::into_repr), pw);
+            let mut shy = Ball::from_rounded(sinhy?.map(FBig::into_repr), pw);
+            let mut chy = Ball::from_rounded(coshy?.map(FBig::into_repr), pw);
+            let y_fold = chy
+                .mag()
+                .mul(&cb.im.rad.exp_upper())
+                .mul(&cb.im.rad)
+                .mul_pow2(1);
+            shy.add_error(y_fold);
+            chy.add_error(y_fold);
             let sin_re = sx.mul(&chy, pw)?;
             let sin_im = cx.mul(&shy, pw)?;
             let cos_re = cx.mul(&chy, pw)?;
@@ -139,28 +150,34 @@ impl<R: ErrorBounds> Context<R> {
             ));
         }
 
+        // Through the tracked composition: exact doublings, the real `sin_cos`/`sinh_cosh`
+        // kernels on the doubled midpoints (folded to one work-ulp each), the shared
+        // denominator `cos 2x + cosh 2y` as a real ball, and one componentwise ball division —
+        // the radius (including the genuine amplification near the real-axis poles, where the
+        // denominator touches zero) is mechanical. The Ziv driver asserts a limited context.
         let p = self.precision();
         let [re, im] = self.ziv(TRIG_GUARD, |guard| {
             let pw = p + guard;
             let gctx = FloatCtxt::<R>::new(pw);
-            // 2x, 2y (exact doublings — same significand, exponent +1).
-            let x2 = gctx.add(z.re(), z.re())?.value();
-            let y2 = gctx.add(z.im(), z.im())?.value();
-            let (sin2x, cos2x) = gctx.sin_cos(x2.repr(), reborrow_cache(&mut cache));
-            let sin2x = sin2x?.value();
-            let cos2x = cos2x?.value();
-            let (sinh2y, cosh2y) = gctx.sinh_cosh(y2.repr(), reborrow_cache(&mut cache));
-            let sinh2y = sinh2y?.value();
-            let cosh2y = cosh2y?.value();
-            // D = cos 2x + cosh 2y  (a benign sum: a bounded term plus one ≥ 1).
-            let denom = gctx.add(cos2x.repr(), cosh2y.repr())?.value();
-            let re = gctx.div(sin2x.repr(), denom.repr())?.value();
-            let im = gctx.div(sinh2y.repr(), denom.repr())?.value();
-            // re-root to the working precision (`sin_cos`/`sinh_cosh`/`div` may return exact
-            // constants for exact cases such as `tan(0) = 0`).
-            let re = re.with_precision(pw).value();
-            let im = im.with_precision(pw).value();
-            Ok([(re.clone(), re.ulp() * 8), (im.clone(), im.ulp() * 8)])
+            let cb = CBall::from_parts(z.re(), z.im(), pw);
+            // 2x, 2y (exact doublings — same significand, exponent +1; the entry is exact)
+            let x2 = cb.re.add(&cb.re, pw)?;
+            let y2 = cb.im.add(&cb.im, pw)?;
+            let (sin2x, cos2x) = gctx.sin_cos(&x2.mid, reborrow_cache(&mut cache));
+            let mut sx2 = Ball::from_rounded(sin2x?.map(FBig::into_repr), pw);
+            let mut cx2 = Ball::from_rounded(cos2x?.map(FBig::into_repr), pw);
+            sx2.add_error(x2.rad);
+            cx2.add_error(x2.rad);
+            let (sinh2y, cosh2y) = gctx.sinh_cosh(&y2.mid, reborrow_cache(&mut cache));
+            let mut shy2 = Ball::from_rounded(sinh2y?.map(FBig::into_repr), pw);
+            let mut chy2 = Ball::from_rounded(cosh2y?.map(FBig::into_repr), pw);
+            let y2_fold = chy2.mag().mul(&y2.rad.exp_upper()).mul(&y2.rad).mul_pow2(1);
+            shy2.add_error(y2_fold);
+            chy2.add_error(y2_fold);
+            // D = cos 2x + cosh 2y  (a benign sum: a bounded term plus one ≥ 1)
+            let denom = cx2.add(&chy2, pw)?;
+            let out = CBall { re: sx2, im: shy2 }.div_by_real(&denom, pw)?;
+            Ok(out.to_parts_radius(&gctx))
         })?;
         Ok(combine_parts(re, im))
     }
