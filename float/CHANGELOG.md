@@ -45,7 +45,6 @@
   certified radius** rather than a per-function hand estimate, so a result that sits close to
   a rounding boundary is retried instead of being rounded the wrong way. See the two `Fix`
   entries below, which are the user-visible symptoms of the old per-function estimates.
-
 - **(internal) faster digit bookkeeping in division**: `digit_len` on a power-of-two base is
   now a plain bit length (`ilog` allocated a `B^log` buffer only to discard it). No perf
   regression from the fixes below: `FBig / FBig` at parity or faster at all benched
@@ -117,7 +116,6 @@
   and small-exponent path returned significands wider than the target precision, and the
   division path pre-rounded its dividend, so the `Exact` flag could be false (`2.1` →
   base 2 reported `Exact`).
-
 - `exp` — and every transcendental built on it, e.g. `sinh`/`cosh` — of an argument whose
   exponent is in the 10^14 range no longer dies on an out-of-memory allocation. The base-aware
   radius export converted a binary exponent to a decimal one (and back) through a small
@@ -133,7 +131,6 @@
   it sits entirely below the rounding window (`repr_round_sum`), and the hyperbolic
   `sinh`/`cosh`/`sinh_cosh` compositions drop an exponential that sits below the other's ulp
   window instead of aligning the gap.
-
 - `sqrt` of a perfect square in a non-power-of-two base never returned under the directed
   rounding modes (`Down`/`Up`/`Zero`): it kept doubling its working precision until the retry
   budget was exhausted — `sqrt(4)` in base 10 escalated past 10^8 digits instead of returning
@@ -188,6 +185,43 @@
   precision source down to a finite target precision. Previously the shrink guard
   compared context precisions (`0 > N` is always false), so an unlimited value kept its
   full significand and the result violated the precision invariant.
+- **(internal) `Ball`'s square rule folded only one `|mid|·rad` cross term** where
+  `(m ± r)² = m² ± 2mr + r²` needs two — an under-bound by exactly `‖m‖·r` (the doc
+  comment already stated the `2·`; the code did not). Only `asinh` squares a
+  nonzero-radius ball through the dedicated `sqr` kernel, so the blast radius was its
+  input-error term; the corner-coverage regression pins both `(m ± r)²` extremes.
+- `hypot` of two operands past the extreme-exponent scale-down threshold returned
+  `Err(Overflow)` whenever the result was not exactly representable (e.g.
+  `hypot(7·2^e, 4·2^e) = √65·2^e` at `e ≈ isize::MAX/2`). The rescale factor `k` was
+  derived from the *larger* operand's raw exponent only, but base-B normalization can
+  leave the smaller value with the larger raw exponent (`4·2^e` normalizes to `1·2^(e+2)`)
+  — the smaller operand's square then collided with the infinity sentinel. `k` now scales
+  by the larger of the two raw exponents.
+- `tan_pi` (and `tan_unit` at any `u`) returned `-0` at the *positive* odd multiples of
+  `u/2` unconditionally, breaking oddness (`tan_pi(-1) == tan_pi(1) == -0`) and diverging
+  from MPFR (`+0`). Every integer zero of the tangent now carries the sign of the input,
+  like the even-multiple row already did.
+- `asin_unit(x, 0)`/`acos_unit(x, 0)` returned the `u → 0` limit `±0` for out-of-domain
+  `|x| > 1` instead of `Err(OutOfDomain)`. The domain error now outranks the limit (the
+  limit of a function undefined at that `x` for every `u > 0` is not `+0`).
+- `Sum` of `FBig` lost the sign of an all-`-0` sum: `[-x.zero].sum()` and
+  `[-0, -0].sum()` returned `+0` under the nearest modes, while the chained `(-0) + (-0)`
+  returns `-0`. The exact accumulator's zero sign now follows the same IEEE 754 §6.3
+  left-fold rule as the chained operators (`-0` under roundTowardNegative or when every
+  addend is `-0`).
+- **(internal) the ×u reduction's f32 magnitude guards are now one-sided-conservative**:
+  the bound products `u_lb + s·b_lb` round in f32, and an *upward* rounding of the
+  `k = 0` fast-path test could in principle classify a `k ≥ 1` argument as first-quadrant
+  (a wrong result; reachable only from gigabit-scale inputs, but a wrongness, not a
+  slowdown). The shared bound is shaved by its own f32 slack (`log2_u_bs_lb`), so any
+  error falls towards the always-exact general path. The sticky-collapse guard in
+  `repr_round_sum` likewise used the upper bound of `log₂B` where the derivation needs
+  the lower one, and now carries an explicit margin for the f32 products.
+- **(internal) `CachedFBig` mirrors the full ×u family** (`sin_unit`/`cos_unit`/
+  `tan_unit`/`asin_unit`/`acos_unit`/`atan_unit`), restoring the drop-in rule that code
+  compiling against `FBig` compiles unchanged against `CachedFBig` (only the fused
+  `sin_cos_unit`/`atan2_unit` had been mirrored; the forwarding macro cannot pass the
+  `u` argument, so these are hand-written wrappers).
 
 ## 0.6.0
 

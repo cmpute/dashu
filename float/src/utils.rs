@@ -80,7 +80,6 @@ pub fn shr_digits<const B: Word>(value: &IBig, exp: usize) -> IBig {
     }
 }
 
-/// Ceiling right shift: `⌈value / B^exp⌉` (round toward +∞), the ceiling analog of
 /// Equivalent to value.unsigned_abs().split_bits(n), but returns (hi, lo) and preserving the sign
 fn split_bits(value: IBig, n: usize) -> (IBig, IBig) {
     let (sign, mag) = value.into_parts();

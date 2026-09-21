@@ -18,9 +18,11 @@ use crate::{
 use core::cmp::Ordering;
 
 /// Extra digits for the reconstruction constants (see `ln_compute`): a scale factor `|k|`
-/// amplifies a constant's 8-ulp radius by `|k|`, and `extra > log_B(|k|)` keeps the amplified
-/// radius below one work-ulp. Computed from the factor's bit length, integer-only:
-/// `log_B(|k|) < bit_len(|k|) / ilog2(B)`.
+/// amplifies a constant's 8-ulp radius by `|k|`; `extra > log_B(|k|)` absorbs the `|k|`
+/// amplification, leaving the scaled radius at ≤ 8 work-ulps (a constant fraction of the
+/// result's ulp, sub-target once the Ziv guard is added; for the smallest bases it is a few
+/// work-ulps, absorbed by the loop's initial guard). Computed from the factor's bit length,
+/// integer-only: `log_B(|k|) < bit_len(|k|) / ilog2(B)`.
 fn const_extra_digits<const B: Word>(mag_bit_len: usize) -> usize {
     mag_bit_len / (Word::BITS - 1 - B.leading_zeros()) as usize + 1
 }
@@ -434,9 +436,12 @@ impl<R: Round> Context<R> {
         // every code path, cached and uncached), and the exact integer scale factors amplify
         // that error by |s2|/|e_base| while the result's ulp grows only by B^log_B(|scale|) —
         // so the constants are evaluated with enough extra digits to keep the amplified radius
-        // sub-ulp (the same construction as `exp_compute`'s `extra`). Without them, ln of a
-        // large base power sits at a sizable fraction of the target half-ulp and pays a Ziv
-        // retry whenever the work value also lands near a rounding boundary.
+        // below one work-ulp divided by the constant's own 8-ulp slack — i.e. `8/B` work-ulps,
+        // sub-ulp for the base-10 origin of the construction and a few work-ulps on the
+        // smallest bases (sound either way; Ziv certifies, and the initial guard absorbs it).
+        // (The same construction as `exp_compute`'s `extra`.) Without them, ln of a large base
+        // power sits at a sizable fraction of the target half-ulp and pays a Ziv retry
+        // whenever the work value also lands near a rounding boundary.
         let sum2 = sum.scale_int(&IBig::from(2), work_precision)?;
         if no_scaling {
             Ok(sum2)

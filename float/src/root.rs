@@ -388,7 +388,12 @@ impl<R: ErrorBounds> Context<R> {
             // then, which `ziv` accepts without the containment test (it can't certify an
             // exactly-representable result under directed rounding — e.g. hypot(3,4)=5,
             // hypot(5,12)=13 — which sits on a one-sided preimage boundary).
-            let k = (large.exponent as i128 - (isize::MAX as i128 - 2) / 2).max(0) as isize;
+            // Scale down by the largest raw exponent of the *two* operands: base-B
+            // normalization can leave the smaller value with the larger raw exponent
+            // (e.g. `4·2^e` normalizes to `1·2^(e+2)`), and it is small's square that
+            // would then collide with the infinity sentinel.
+            let k = (large.exponent.max(small.exponent) as i128 - (isize::MAX as i128 - 2) / 2)
+                .max(0) as isize;
             let wp = gctx.precision;
             // The input roundings' exactness folds through `from_rounded`: an exact input keeps
             // `rad = 0`, so an all-exact chain (integer inputs, no rounding anywhere) carries a
@@ -650,6 +655,33 @@ mod tests {
         let a = Repr::<2>::new(IBig::from(3), isize::MAX / 2);
         let r = ctx.hypot(&a, &Repr::<2>::zero()).unwrap().value();
         assert_eq!(r.repr().exponent(), isize::MAX / 2);
+    }
+
+    #[test]
+    fn test_hypot_extreme_exponents_rescale_both_operands() {
+        // Both operands past the scale-down threshold (`k > 0`): the `B⁻ᵏ` rescale → square →
+        // root → `B^k` scale-back chain must keep the value (the zero-operand test above never
+        // exercises the shifted `small` operand). `4·2^e` normalizes to `1·2^(e+2)`, so the
+        // *smaller* value carries the larger raw exponent — the regression: `k` was derived
+        // from `large`'s exponent only, and the non-exact `hypot(7·2^e, 4·2^e)` died on
+        // `Err(Overflow)` through small's square.
+        let ctx = Context::<mode::HalfEven>::new(53);
+        let e = isize::MAX / 2 + 10; // large enough that k > 0
+        let a = Repr::<2>::new(IBig::from(3), e);
+        let b = Repr::<2>::new(IBig::from(4), e);
+        let r = ctx.hypot(&a, &b).unwrap().value();
+        assert_eq!(r.repr().significand(), &5.into(), "hypot(3·B^e, 4·B^e) = 5·B^e");
+        assert_eq!(r.repr().exponent(), e);
+        // the non-exact value (√65 · 2^e): a power-of-two rescale of the moderate-exponent
+        // result — same significand, exponent shifted by e
+        let a7 = Repr::<2>::new(IBig::from(7), e);
+        let r = ctx.hypot(&a7, &b).unwrap().value();
+        let base = ctx
+            .hypot(&Repr::<2>::new(IBig::from(7), 0), &Repr::<2>::new(IBig::from(4), 0))
+            .unwrap()
+            .value();
+        let expect = Repr::<2>::new(base.repr().significand().clone(), base.repr().exponent() + e);
+        assert_eq!(r.repr(), &expect, "hypot(7·2^e, 4·2^e) = √65·2^e");
     }
 
     /// A perfect square in a *non-power-of-two* base must certify under every rounding mode,

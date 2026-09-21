@@ -187,8 +187,15 @@ impl<R: Round> Context<R> {
         // identically on either.
         let window = rnd_precision + 2;
         if !low.0.is_zero() && low.1 > window {
-            let (_, b_lb) = B.log2_bounds();
-            if low.0.clone().abs().log2_bounds().1 < (low.1 - window) as f32 * b_lb {
+            // Sound side: proving `|low.0| < B^(low.1 − window)` from bounds needs the
+            // *lower* bound of log₂B on the right — an upper bound would let a low part that
+            // still reaches the window collapse. The margin absorbs the f32 slack of both
+            // bound products (relative 2⁻²³ of a ~`low.1·log₂B`-sized value, i.e. up to
+            // ~`low.1/2²¹` digit positions; the +64 floors it for small gaps).
+            let (b_lb, _) = B.log2_bounds();
+            let margin = (low.1 >> 21) + 64;
+            let gap = (low.1 - window).saturating_sub(margin);
+            if low.0.clone().abs().log2_bounds().1 < gap as f32 * b_lb {
                 low = (low.0.signum(), window);
             }
         }

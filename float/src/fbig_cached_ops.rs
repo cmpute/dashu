@@ -630,6 +630,24 @@ macro_rules! forward_to_context {
     };
 }
 
+// The ×u family: same shape as [`forward_to_context!`] plus the `u: usize` divisor argument
+// (the plain macro cannot forward extra parameters).
+macro_rules! forward_to_context_u {
+    ($name:ident) => {
+        #[doc = concat!("See [`FBig::", stringify!($name), "`].")]
+        #[inline]
+        pub fn $name(&self, u: usize) -> CachedFBig<R, B> {
+            let mut c = self.cache.borrow_mut();
+            let fbig = self.fbig.context.unwrap_fp(self.fbig.context.$name::<B>(
+                &self.fbig.repr,
+                u,
+                Some(&mut *c),
+            ));
+            CachedFBig::from_fbig(fbig, &self.cache)
+        }
+    };
+}
+
 /// Forward a unary function that delegates to the inner [`FBig`] (no cache needed).
 macro_rules! forward_to_fbig {
     ($name:ident) => {
@@ -734,6 +752,13 @@ impl<R: ErrorBounds, const B: Word> CachedFBig<R, B> {
     forward_to_context!(sin_pi);
     forward_to_context!(cos_pi);
     forward_to_context!(tan_pi);
+
+    forward_to_context_u!(sin_unit);
+    forward_to_context_u!(cos_unit);
+    forward_to_context_u!(tan_unit);
+    forward_to_context_u!(asin_unit);
+    forward_to_context_u!(acos_unit);
+    forward_to_context_u!(atan_unit);
 
     /// Fused multiply–add (see [`FBig::fma`](crate::FBig::fma)). Preserves the
     /// LHS (`self`) cache handle; the `b`/`c` caches are dropped, matching the

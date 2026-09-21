@@ -173,7 +173,8 @@ impl<const B: Word> Ball<B> {
     fn mag_lower(&self) -> Mag;                                  // from_repr_lower(mid).sub_down(rad)
     fn is_exact(&self) -> bool;                                  // rad.is_zero()
 
-    // Ziv boundary (contract unchanged — ziv.rs untouched)
+    // Ziv boundary (driver contract unchanged; ziv.rs did grow a `#[doc(hidden)]`
+    // tuning-gated per-attempt trace hook and the zero-candidate containment fix — §4a)
     fn to_value_radius<R: Round>(&self, ctx: &Context<R>) -> (FBig<R, B>, FBig<R, B>);
 }
 // free helpers in ball.rs: ulp_mag(mid: &Repr<B>, prec) -> Mag (B^(lead_ub − prec), source of
@@ -243,7 +244,8 @@ floors, for the lower direction in `from_repr`). → `Repr::<10>::new(ONE, k)`; 
 slack, O(1). Do **not** build the exact decimal —
 `man·5^|exp|` is O(|exp|) IBig work per ziv attempt. For B = 2, `man·2^exp` is directly
 `Repr::<2>::new(man, exp − BITS)` — exact.
-Closure signature and `ziv.rs` are untouched. This is one of the only three places base
+Closure signature is unchanged (ziv.rs itself gained only the tuning-gated trace hook and
+the zero-candidate containment fix — §4a). This is one of the only three places base
 awareness exists (with `from_repr` and `ulp_mag`) — all arithmetic between `Mag`s is
 base-free, because a radius is a real magnitude, not a base-B quantity (the old ulp count
 was base-anchored by construction, which is why `ceil_shift::<B>` existed at all).
@@ -298,6 +300,10 @@ same coin as deleting the 38 implicit `mid.precision()` reads.
   collapsed cancellation wrongly (log2 just above 1 at low precision). Scoped to float's
   driver — the public `ErrorBounds` semantics are unchanged (dashu-complex depends on
   them).
+- **`Mag::to_repr` keeps the significand** when exporting to a non-power-of-two base
+  (§3.9 prescribed a bare `B^k` power, ≤ B× radius slack). Riding the ≤ `Word::BITS`-bit
+  significand along the outward base power keeps the export within one rounding step of the
+  true radius (≤ ~1× slack) — see `to_repr`'s doc and the changelog's Fix entry.
 - `to_value_radius` takes the **work** context everywhere (tagging at the target context
   lost guard digits: `exp`/`ln` returned unrounded work values, and `with_base`'s
   `div_rem_euclid` ran at the tagged precision).
@@ -372,7 +378,7 @@ s<0 double work precision itself **stays**, moved ahead of ball construction; on
 
 ## 8. Performance follow-ups
 
-Resolved on `float-mag-ball-perf` (the retried Ziv guards now charge the powering-chain
-length and the ln reconstruction constants carry scale-aware extra digits; the branch
-history has the measured detail). The remaining next-phase work — the `dashu-cmplx`
-mechanical-propagation migration — lives in [`PLAN_PHASE2.md`](PLAN_PHASE2.md).
+Resolved in commit `e35a39d` on this branch (the retried Ziv guards now charge the
+powering-chain length and the ln reconstruction constants carry scale-aware extra digits).
+The remaining next-phase work — the `dashu-cmplx` mechanical-propagation migration — lives
+in [`PLAN_PHASE2.md`](PLAN_PHASE2.md).

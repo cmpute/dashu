@@ -95,12 +95,14 @@ impl<const B: Word> Ball<B> {
     }
 
     /// `self²`: `2·‖a.mid‖·rad_a + rad_a² + ε` — the square rule (the midpoint runs through the
-    /// correctly-rounded [`Context::sqr`] kernel, cheaper than a general product).
+    /// correctly-rounded [`Context::sqr`] kernel, cheaper than a general product). The cross
+    /// term's factor 2 is load-bearing: `(m ± r)² = m² ± 2mr + r²`, so folding a single
+    /// `‖m‖·r` under-bounds the upper corner by exactly `‖m‖·r`.
     pub(crate) fn sqr(&self, prec: usize) -> Result<Self, FpError> {
         let ctx = Context::<mode::HalfEven>::new(prec);
         let (mid, eps) = finish_mid(ctx.sqr(&self.mid)?, prec);
-        let a = Mag::from_repr(&self.mid);
-        let rad = a.mul(&self.rad).add(&self.rad.mul(&self.rad)).add(&eps);
+        let two_a = Mag::from_repr(&self.mid).mul_pow2(1); // 2·‖a.mid‖, exact
+        let rad = two_a.mul(&self.rad).add(&self.rad.mul(&self.rad)).add(&eps);
         Ok(Self { mid, rad })
     }
 
@@ -388,6 +390,24 @@ mod tests {
         let q = z.div(&b, p).unwrap();
         assert!(!q.rad.is_infinite());
         assert_covers(&q, &Repr::zero());
+    }
+
+    #[test]
+    fn sqr_covers_both_corners() {
+        let p = 20;
+        // mid = 1 exactly, rad = 2^-10: (m ± r)² = 1 ± 2^-9 + 2^-20 — the ± 2^-9 cross term
+        // is what a single |m|·rad fold (the factor-2 bug) fails to cover.
+        let ball = Ball {
+            mid: Repr::new(IBig::ONE, 0),
+            rad: crate::mag::Mag::from_pow2(-10),
+        };
+        let sq = ball.sqr(p).unwrap();
+        let hi_corner = Repr::new((IBig::ONE << 20) + (IBig::ONE << 11) + IBig::ONE, -20);
+        let lo_corner = Repr::new((IBig::ONE << 20) - (IBig::ONE << 11) + IBig::ONE, -20);
+        assert_covers(&sq, &hi_corner);
+        assert_covers(&sq, &lo_corner);
+        // and the midpoint itself is the exact square of the midpoint
+        assert_eq!(sq.mid, Repr::new(IBig::ONE, 0));
     }
 
     #[test]

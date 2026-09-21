@@ -41,7 +41,7 @@ This is a prerequisite, not a nicety.
 
 `dashu-float`'s directed-rounding differentials assert **bit-exact** agreement with MPFR
 (`directed_eq`, `fuzz/tests/float_transcendental.rs`). `dashu-cmplx`'s assert agreement to
-within **16 ulps per component** (`CLOSE_K` in `fuzz/src/lib.rs`, used by 22 call sites in
+within **16 ulps per component** (`CLOSE_K` in `fuzz/src/lib.rs`, used by 29 call sites in
 `fuzz/tests/cmplx_transcendental.rs` and `fuzz/tests/cmplx_random.rs`).
 
 So a radius that is wrong-but-close in complex is **invisible to the current fuzzers** —
