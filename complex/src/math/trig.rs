@@ -8,7 +8,7 @@
 use crate::ball::CBall;
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, reborrow_cache, CfpResult, Context};
-use dashu_base::Sign;
+use dashu_base::{Approximation, Sign};
 use dashu_float::round::ErrorBounds;
 use dashu_float::{Ball, ConstCache, Context as FloatCtxt, FBig, FpError, Repr};
 use dashu_int::{IBig, Word};
@@ -354,9 +354,10 @@ impl<R: ErrorBounds> Context<R> {
     /// [`FpError::Indeterminate`]. The `1-z²` under the `sqrt` is computed in the factored form
     /// `(1-z)(1+z)`, which is Sterbenz-exact near `z = ±1` (where the direct `1-z²` would
     /// catastrophically cancel against the `sqr` rounding error), so the well-conditioned regime
-    /// extends right up to the singularities. A generous constant radius covers the
-    /// square/subtract/sqrt/add/log composition; the Ziv retries absorb the `sqrt` amplification as
-    /// `1-z² → 0`.
+    /// extends right up to the singularities — and because the composition is ball-tracked, the
+    /// radius grows mechanically as `1-z² → 0` (the `sqrt` fold divides by the shrinking root and
+    /// the `log` fold by the shrinking `‖w‖`), so the Ziv retries price themselves instead of
+    /// relying on a blanket constant.
     pub fn asin<const B: Word>(
         &self,
         z: &CBig<R, B>,
@@ -368,25 +369,19 @@ impl<R: ErrorBounds> Context<R> {
         let p = self.precision();
         let [re, im] = self.ziv(ITRIG_GUARD, |guard| {
             let pw = p + guard;
-            let gctx = Context::new(pw);
-            let one = CBig::ONE;
+            let fctx = FloatCtxt::<R>::new(pw);
+            let cz = CBall::from_parts(z.re(), z.im(), pw);
+            let one = CBall::exact(Repr::one(), Repr::zero());
             // Factor `1-z² = (1-z)(1+z)`. Near `z = ±1` the direct `1 - z²` subtracts a value
             // dominated by the `sqr` rounding error from 1 (catastrophic cancellation); the factored
             // form is Sterbenz-exact there (`1-z` is computed exactly, since the subtraction's
             // significand difference is exact), so the radius stays sound right up to the singularity.
-            let one_m_z = gctx.sub(&one, z)?.value();
-            let one_p_z = gctx.add(&one, z)?.value();
-            let one_m_z2 = gctx.mul(&one_m_z, &one_p_z)?.value();
-            let sqrt_term = gctx.sqrt(&one_m_z2)?.value();
-            let iz = z.mul_i(false); // exact rotation
-            let w = gctx.add(&iz, &sqrt_term)?.value();
-            let log_w = gctx.log(&w, reborrow_cache(&mut cache))?.value();
-            let asin_z = log_w.mul_i(true); // -i·log(w)
-            let (re, im) = asin_z.into_parts();
-            // re-root to the working precision (`log` may return an exact constant for exact cases).
-            let re = re.with_precision(pw).value();
-            let im = im.with_precision(pw).value();
-            Ok([(re.clone(), re.ulp() * 20), (im.clone(), im.ulp() * 20)])
+            let one_m_z = one.sub(&cz, pw)?;
+            let one_p_z = one.add(&cz, pw)?;
+            let sqrt_term = one_m_z.mul(&one_p_z, pw)?.sqrt(&fctx, pw)?;
+            let w = cz.mul_i(false).add(&sqrt_term, pw)?; // i·z + sqrt(1-z²)
+            let log_w = w.log(&fctx, pw, reborrow_cache(&mut cache))?;
+            Ok(log_w.mul_i(true).to_parts_radius(&fctx)) // -i·log(w)
         })?;
         Ok(combine_parts(re, im))
     }
@@ -405,21 +400,16 @@ impl<R: ErrorBounds> Context<R> {
         let p = self.precision();
         let [re, im] = self.ziv(ITRIG_GUARD, |guard| {
             let pw = p + guard;
-            let gctx = Context::new(pw);
-            let one = CBig::ONE;
+            let fctx = FloatCtxt::<R>::new(pw);
+            let cz = CBall::from_parts(z.re(), z.im(), pw);
+            let one = CBall::exact(Repr::one(), Repr::zero());
             // Factored `1-z² = (1-z)(1+z)` — Sterbenz-exact near `z = ±1` (see `asin`).
-            let one_m_z = gctx.sub(&one, z)?.value();
-            let one_p_z = gctx.add(&one, z)?.value();
-            let one_m_z2 = gctx.mul(&one_m_z, &one_p_z)?.value();
-            let sqrt_term = gctx.sqrt(&one_m_z2)?.value();
-            let i_sqrt = sqrt_term.mul_i(false); // i·sqrt(1-z²)
-            let w = gctx.add(z, &i_sqrt)?.value();
-            let log_w = gctx.log(&w, reborrow_cache(&mut cache))?.value();
-            let acos_z = log_w.mul_i(true); // -i·log(w)
-            let (re, im) = acos_z.into_parts();
-            let re = re.with_precision(pw).value();
-            let im = im.with_precision(pw).value();
-            Ok([(re.clone(), re.ulp() * 20), (im.clone(), im.ulp() * 20)])
+            let one_m_z = one.sub(&cz, pw)?;
+            let one_p_z = one.add(&cz, pw)?;
+            let sqrt_term = one_m_z.mul(&one_p_z, pw)?.sqrt(&fctx, pw)?;
+            let w = cz.add(&sqrt_term.mul_i(false), pw)?; // z + i·sqrt(1-z²)
+            let log_w = w.log(&fctx, pw, reborrow_cache(&mut cache))?;
+            Ok(log_w.mul_i(true).to_parts_radius(&fctx)) // -i·log(w)
         })?;
         Ok(combine_parts(re, im))
     }
@@ -438,24 +428,49 @@ impl<R: ErrorBounds> Context<R> {
             // 1±iz terms become infinite and the log diverges — report Indeterminate for now.
             return Err(FpError::Indeterminate);
         }
+        // Axis dispatch (Annex-G): on the real axis the result is real (`atan(x) ± i·0`), and
+        // on the imaginary axis with `|y| < 1` it is `±0 + i·atanh(y)` — in both cases one
+        // component is *exactly* zero, which the two-log difference can never certify (its
+        // seed-rounding radius stays nonzero while the mids cancel to an exact 0, and no
+        // containment can ever fit a nonzero radius around an exact zero). The real kernels
+        // are correctly rounded and the zeros are exact, so these paths certify under every
+        // mode; off-axis inputs, and `|y| ≥ 1` on the imaginary axis (where the real part is
+        // the inexact `±π/2`), take the general path.
+        let (re_in, im_in) = (z.re(), z.im());
+        let f = self.float();
+        if im_in.significand().is_zero() {
+            // atan(x ± i·0) = atan(x) ± i·0
+            let at = f.atan(re_in, reborrow_cache(&mut cache))?;
+            let im_zero =
+                Approximation::Exact(FBig::from_repr(Repr::zero_with_sign(im_in.sign()), f));
+            return Ok(combine_parts(at, im_zero));
+        }
+        if re_in.significand().is_zero() {
+            // atan(±0 + i·y) = ±0 + i·atanh(y) for |y| < 1; `atanh` rejects |y| ≥ 1 (where the
+            // general path's divergence — `atan(±i)` is indeterminate — is the honest answer)
+            if let Ok(ath) = f.atanh(im_in, reborrow_cache(&mut cache)) {
+                let re_zero =
+                    Approximation::Exact(FBig::from_repr(Repr::zero_with_sign(re_in.sign()), f));
+                return Ok(combine_parts(re_zero, ath));
+            }
+        }
         let p = self.precision();
         let [re, im] = self.ziv(ITRIG_GUARD, |guard| {
             let pw = p + guard;
-            let gctx = Context::new(pw);
-            let one = CBig::ONE;
-            let iz = z.mul_i(false);
-            let a = gctx.sub(&one, &iz)?.value(); // 1 - iz
-            let b = gctx.add(&one, &iz)?.value(); // 1 + iz
-            let log_a = gctx.log(&a, reborrow_cache(&mut cache))?.value();
-            let log_b = gctx.log(&b, reborrow_cache(&mut cache))?.value();
-            let diff = gctx.sub(&log_a, &log_b)?.value();
-            let i_half_diff = diff.mul_i(false); // i·diff, then /2 below
-            let two: CBig<R, B> = IBig::from(2).into();
-            let atan_z = gctx.div(&i_half_diff, &two)?.value();
-            let (re, im) = atan_z.into_parts();
-            let re = re.with_precision(pw).value();
-            let im = im.with_precision(pw).value();
-            Ok([(re.clone(), re.ulp() * 20), (im.clone(), im.ulp() * 20)])
+            let fctx = FloatCtxt::<R>::new(pw);
+            let cz = CBall::from_parts(z.re(), z.im(), pw);
+            let one = CBall::exact(Repr::one(), Repr::zero());
+            let iz = cz.mul_i(false); // exact rotation
+            let a = one.sub(&iz, pw)?; // 1 - iz
+            let b = one.add(&iz, pw)?; // 1 + iz
+            let log_a = a.log(&fctx, pw, reborrow_cache(&mut cache))?;
+            let log_b = b.log(&fctx, pw, reborrow_cache(&mut cache))?;
+            // the near-cancellation of the two logs for small `z` is *tracked* (the difference's
+            // radius is the sum), not absorbed by a blanket constant
+            let diff = log_a.sub(&log_b, pw)?;
+            let two = Ball::exact(Repr::new(IBig::from(2u8), 0));
+            let out = diff.mul_i(false).div_by_real(&two, pw)?; // i·diff / 2
+            Ok(out.to_parts_radius(&fctx))
         })?;
         Ok(combine_parts(re, im))
     }
@@ -862,5 +877,78 @@ mod tests {
                 }
             }
         }
+    }
+
+    // The ball-tracked radius must certify at the target precision across the width sweep,
+    // including the near-singularity inputs where the old flat `ulp·20` radius never inflated.
+    #[test]
+    fn inverse_trig_matches_oracle_across_precisions() {
+        type C2 = CBig<mode::HalfEven, 2>;
+        type F2 = FBig<mode::HalfEven, 2>;
+        let inputs = [
+            (1i64, 1i64),
+            (3, 4),
+            (-2, 1),
+            (0, 1), // ±i: branch point (atan reports Indeterminate — skipped below)
+            (5, -12),
+        ];
+        for p in [20usize, 50, 100, 500] {
+            for (re, im) in inputs {
+                let mk = |v: i64| F2::from(v).with_precision(p).value();
+                let mk_hi = |v: i64| F2::from(v).with_precision(p + 60).value();
+                let zh = C2::from_parts(mk_hi(re), mk_hi(im));
+                let z = C2::from_parts(mk(re), mk(im));
+                for (name, got, expect) in
+                    [("asin", zh.asin(), z.asin()), ("acos", zh.acos(), z.acos())]
+                {
+                    // both sides re-rounded to p (got comes out at p + 60)
+                    let (gre, gim) = got.into_parts();
+                    let (ere, eim) = expect.into_parts();
+                    let got_re = gre.with_precision(p).value();
+                    let got_im = gim.with_precision(p).value();
+                    let expect_re = ere.with_precision(p).value();
+                    let expect_im = eim.with_precision(p).value();
+                    assert_eq!(got_re.repr(), expect_re.repr(), "{name} re p={p} z=({re},{im})");
+                    assert_eq!(got_im.repr(), expect_im.repr(), "{name} im p={p} z=({re},{im})");
+                }
+                if im != 1 {
+                    // the general path; `atan(±i)` is indeterminate on both sides
+                    let (gre, gim) = zh.atan().into_parts();
+                    let (ere, eim) = z.atan().into_parts();
+                    let got_re = gre.with_precision(p).value();
+                    let got_im = gim.with_precision(p).value();
+                    let expect_re = ere.with_precision(p).value();
+                    let expect_im = eim.with_precision(p).value();
+                    assert_eq!(got_re.repr(), expect_re.repr(), "atan re p={p} z=({re},{im})");
+                    assert_eq!(got_im.repr(), expect_im.repr(), "atan im p={p} z=({re},{im})");
+                }
+            }
+        }
+    }
+
+    // The axis dispatch certifies under the outward modes: `atan(1 ± i·0) = π/4 ± i·0` — the
+    // real kernel is correctly rounded and the imaginary zero is exact (a zero radius, which
+    // the two-log difference of the general path could never produce).
+    #[test]
+    fn atan_axis_certifies_directed() {
+        macro_rules! check {
+            ($mode:ty) => {{
+                type C = CBig<$mode, 10>;
+                type F = FBig<$mode, 10>;
+                let mk = |v: i32| F::from(v).with_precision(30).value();
+                let got = C::from_parts(mk(1), mk(0)).atan();
+                let expect = Context::<$mode>::new(30)
+                    .float()
+                    .atan(mk(1).repr(), None)
+                    .unwrap()
+                    .value();
+                assert_eq!(got.re(), expect.repr());
+                assert!(got.im().significand().is_zero());
+            }};
+        }
+        check!(mode::Up);
+        check!(mode::Down);
+        check!(mode::Zero);
+        check!(mode::HalfEven);
     }
 }

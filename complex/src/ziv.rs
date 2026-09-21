@@ -120,6 +120,16 @@ impl<R: ErrorBounds> Context<R> {
         radius: &FBig<R, B>,
         target: &FBig<R, B>,
     ) -> bool {
+        // Deliberately *without* `dashu-float`'s zero-candidate guard (which rejects a zero
+        // candidate certified by any nonzero radius — no nonzero real rounds to exact 0 with
+        // unbounded exponents): complex compositions contain structures whose result component
+        // is exactly zero while the mid±radius ball cannot know it — `powi` of a z with
+        // `|re| = |im|` squares to an exactly-zero real part (`a² − b²` with identical rounded
+        // squares), and `atan` of an axis input cancels one log component exactly. The tracked
+        // radius there is the honest independent-error bound (tiny, ≪ 1 ulp of the target) but
+        // never zero, so the strict guard would turn a correct first-attempt answer into an
+        // endless retry. The ±ulp `error_bounds` preimage of ±0 is therefore load-bearing here,
+        // and a certification within it bounds any error to sub-ulp-of-the-target scale.
         let (lb, rb, incl_l, incl_r) = R::error_bounds::<B>(target);
         let x = FloatCtxt::<R>::new(0);
         let left = x

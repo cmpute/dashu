@@ -268,6 +268,18 @@ impl<const B: Word> CBall<B> {
         fctx: &FloatCtxt<R>,
         prec: usize,
     ) -> Result<Self, FpError> {
+        // an exact (0, 0) ball roots to exactly 0 — short-circuit before the cancellation-free
+        // form divides 0/(2·0) (asin/acosh at z = ±1 reach exactly this interior zero). The
+        // infinite check matters: an infinite midpoint's significand is zero too.
+        if !self.re.mid.is_infinite()
+            && !self.im.mid.is_infinite()
+            && self.re.mid.significand().is_zero()
+            && self.im.mid.significand().is_zero()
+            && self.re.rad.is_zero()
+            && self.im.rad.is_zero()
+        {
+            return Ok(Self::exact(Repr::zero(), Repr::zero()));
+        }
         let mut r =
             Ball::from_rounded(fctx.hypot(&self.re.mid, &self.im.mid)?.map(FBig::into_repr), prec);
         r.add_error(self.re.rad.add(&self.im.rad));
