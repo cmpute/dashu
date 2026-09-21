@@ -18,6 +18,14 @@ use dashu::integer::{IBig, UBig, Word};
 use proptest::prelude::*;
 use proptest::test_runner::RngSeed;
 
+/// The shared ulp tolerance of the nearest-mode differentials — float and complex suites alike,
+/// so their strictness stays comparable. Both sides of a differential are (near-)correctly
+/// rounded, so each lands within ~1 ulp of the true value and the two results must agree to
+/// within [`CLOSE_K`] ulps; a larger divergence is a bug in one of the two implementations.
+/// (The directed, bit-exact suites don't use this constant — they assert the straddle contract
+/// with no tolerance at all.)
+pub const CLOSE_K: i32 = 2;
+
 /// Read an integer env var, ignoring unset/unparseable values.
 fn env_usize(name: &str) -> Option<usize> {
     std::env::var(name).ok().and_then(|s| s.trim().parse().ok())
@@ -220,6 +228,7 @@ pub fn unit_dbig() -> impl Strategy<Value = FBig<HalfAway, 10>> {
 /// [`fuzz_precisions_bits`](crate::fuzz_precisions_bits) sweep.
 pub mod cmplx {
     use core::convert::TryFrom;
+    use crate::CLOSE_K;
     use dashu::complex::CBig;
     use dashu::float::FBig;
     use dashu::float::round::mode::HalfEven;
@@ -229,12 +238,6 @@ pub mod cmplx {
 
     pub type C = CBig<HalfEven, 2>;
     pub type F = FBig<HalfEven, 2>;
-
-    /// Per-component ulp tolerance for the differential: results must agree to within `CLOSE_K`
-    /// ulps at the working precision. Near-correctly-rounded results (both dashu and MPC) pass
-    /// comfortably; a gross error fails. (~500× tighter than the previous f64 `1e-12` check at
-    /// 53 bits, and meaningful at any precision since it scales as `2^-prec`.)
-    const CLOSE_K: u32 = 16;
 
     /// A modest-magnitude finite `f64` (`±(1..=8) · [1,2) · 2^(-2..=2)`), shrinking toward small values.
     pub fn f64_part() -> impl Strategy<Value = f64> {
@@ -289,6 +292,10 @@ pub mod cmplx {
     /// Precision-aware agreement: convert `d` to rug at `2·prec + 64` bits and check each component
     /// is within `CLOSE_K × 2^-prec × scale` of the reference, where `scale` is the largest component
     /// magnitude of either side. Returns `false` if either side is non-finite (caller skips).
+    ///
+    /// With [`CLOSE_K`] = 2 the budget is one ulp per side, so the caller must evaluate the
+    /// reference **above** `prec` (see [`ref_bits`]) on the same input — otherwise MPC's own
+    /// prec-bit rounding eats the budget and a mismatch indicts MPC, not us.
     pub fn close_at(d: &C, r: &rug::Complex, prec: usize) -> bool {
         let cmp = (2 * prec + 64) as u32;
         let (dre, dim) = d.clone().into_parts();
@@ -344,7 +351,7 @@ pub mod cmplx {
     /// ([`fbig2_to_rug`]), so the comparison is bit-exact. Value equality reads ±0 as equal —
     /// sign-of-zero is covered by the signed-zero tables instead.
     pub fn directed_eq_part<R: Round>(d: &FBig<R, 2>, hi: &rug::Float, prec: u32) -> bool {
-        let cmp = (2 * prec + 64) as u32;
+        let cmp = 2 * prec + 64;
         let d_r = fbig2_to_rug(d, cmp);
         let (up, _) = rug::Float::with_val_round(prec, hi, rug::float::Round::Up);
         let (down, _) = rug::Float::with_val_round(prec, hi, rug::float::Round::Down);

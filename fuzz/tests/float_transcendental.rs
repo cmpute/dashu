@@ -3,13 +3,15 @@
 //! Companion to `float_trig_random.rs` (which covers sin/cos/tan/atan2/asin/acos/π). Here: exp, exp_m1,
 //! ln, ln_1p, sqrt, cbrt, nth_root, hypot, atan, powf, powi, sinh, cosh, sinh_cosh, tanh, asinh, acosh, atanh.
 //! Proptest-driven so a mismatch shrinks to a minimal counterexample; all `#[ignore]`d (manual,
-//! release-time — they link `rug` and run long). Tolerance is `within_k_ulps(2)`: dashu is
+//! release-time — they link `rug` and run long). Tolerance is [`fuzz::CLOSE_K`] (2 ulps, the
+//! shared nearest-mode budget — the complex differentials use the same constant): dashu is
 //! near-correctly-rounded (guard digits), MPFR is Ziv-correct, so a ≤1-ulp divergence is legitimate
-//! and `k=2` leaves margin; a >2-ulp divergence is a real bug to investigate.
+//! and `k=2` leaves margin; a larger divergence is a real bug to investigate.
 //!
 //! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test float_transcendental -- --ignored --nocapture`
 
 use core::str::FromStr;
+use fuzz::CLOSE_K;
 use dashu::float::ops::Abs;
 use dashu::float::round::Round;
 use dashu::float::round::mode::{Down, HalfAway, HalfEven, Up, Zero};
@@ -155,7 +157,7 @@ proptest! {
             if d.repr().is_infinite() { continue; }
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
             let r: DBig = DBig::from_str(&xr.exp().to_string_radix(10, Some(prec))).unwrap();
-            prop_assert!(within_k_ulps(&d, &r, 2), "exp x={xs} prec={prec}: dashu={d} rug={r}");
+            prop_assert!(within_k_ulps(&d, &r, CLOSE_K), "exp x={xs} prec={prec}: dashu={d} rug={r}");
         }
     }
 
@@ -171,7 +173,7 @@ proptest! {
             if d.repr().is_infinite() { continue; }
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
             let r: DBig = DBig::from_str(&xr.exp_m1().to_string_radix(10, Some(prec))).unwrap();
-            prop_assert!(within_k_ulps(&d, &r, 2), "exp_m1 x={xs} prec={prec}: dashu={d} rug={r}");
+            prop_assert!(within_k_ulps(&d, &r, CLOSE_K), "exp_m1 x={xs} prec={prec}: dashu={d} rug={r}");
         }
     }
 
@@ -187,7 +189,7 @@ proptest! {
             if d.repr().is_infinite() { continue; }
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
             let r: DBig = DBig::from_str(&xr.ln().to_string_radix(10, Some(prec))).unwrap();
-            prop_assert!(within_k_ulps(&d, &r, 2), "ln x={xs} prec={prec}: dashu={d} rug={r}");
+            prop_assert!(within_k_ulps(&d, &r, CLOSE_K), "ln x={xs} prec={prec}: dashu={d} rug={r}");
         }
     }
 
@@ -203,7 +205,7 @@ proptest! {
             if d.repr().is_infinite() { continue; }
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
             let r: DBig = DBig::from_str(&xr.ln_1p().to_string_radix(10, Some(prec))).unwrap();
-            prop_assert!(within_k_ulps(&d, &r, 2), "ln_1p x={xs} prec={prec}: dashu={d} rug={r}");
+            prop_assert!(within_k_ulps(&d, &r, CLOSE_K), "ln_1p x={xs} prec={prec}: dashu={d} rug={r}");
         }
     }
 
@@ -258,7 +260,7 @@ proptest! {
             let d = dashu_ok!(ctx.sqrt::<10>(x.repr()));
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
             let r: DBig = DBig::from_str(&xr.sqrt().to_string_radix(10, Some(prec))).unwrap();
-            prop_assert!(within_k_ulps(&d, &r, 2), "sqrt x={xs} prec={prec}: dashu={d} rug={r}");
+            prop_assert!(within_k_ulps(&d, &r, CLOSE_K), "sqrt x={xs} prec={prec}: dashu={d} rug={r}");
         }
     }
 
@@ -273,7 +275,7 @@ proptest! {
             let d = dashu_ok!(ctx.cbrt::<10>(x.repr()));
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
             let r: DBig = DBig::from_str(&xr.cbrt().to_string_radix(10, Some(prec))).unwrap();
-            prop_assert!(within_k_ulps(&d, &r, 2), "cbrt x={xs} prec={prec}: dashu={d} rug={r}");
+            prop_assert!(within_k_ulps(&d, &r, CLOSE_K), "cbrt x={xs} prec={prec}: dashu={d} rug={r}");
         }
     }
 
@@ -288,7 +290,7 @@ proptest! {
             let d = dashu_ok!(ctx.nth_root::<10>(n as usize, x.repr()));
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
             let r: DBig = DBig::from_str(&xr.root(n).to_string_radix(10, Some(prec))).unwrap();
-            prop_assert!(within_k_ulps(&d, &r, 2), "nth_root n={n} x={xs} prec={prec}: dashu={d} rug={r}");
+            prop_assert!(within_k_ulps(&d, &r, CLOSE_K), "nth_root n={n} x={xs} prec={prec}: dashu={d} rug={r}");
         }
     }
 
@@ -306,7 +308,7 @@ proptest! {
             let br = rug_at(&bs, bits).unwrap();
             let hr = (ar.pow(2u32) + br.pow(2u32)).sqrt();
             let r: DBig = DBig::from_str(&hr.to_string_radix(10, Some(prec))).unwrap();
-            prop_assert!(within_k_ulps(&d, &r, 2), "hypot a={as_} b={bs} prec={prec}: dashu={d} rug={r}");
+            prop_assert!(within_k_ulps(&d, &r, CLOSE_K), "hypot a={as_} b={bs} prec={prec}: dashu={d} rug={r}");
         }
     }
 
@@ -321,7 +323,7 @@ proptest! {
             let d = dashu_ok!(ctx.atan::<10>(x.repr(), None));
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
             let r: DBig = DBig::from_str(&xr.atan().to_string_radix(10, Some(prec))).unwrap();
-            prop_assert!(within_k_ulps(&d, &r, 2), "atan x={xs} prec={prec}: dashu={d} rug={r}");
+            prop_assert!(within_k_ulps(&d, &r, CLOSE_K), "atan x={xs} prec={prec}: dashu={d} rug={r}");
         }
     }
 
@@ -339,7 +341,7 @@ proptest! {
             let br = rug_at(&bs, bits).unwrap();
             let er = rug_at(&es, bits).unwrap();
             let r: DBig = DBig::from_str(&br.pow(&er).to_string_radix(10, Some(prec))).unwrap();
-            prop_assert!(within_k_ulps(&d, &r, 2), "powf base={bs} exp={es} prec={prec}: dashu={d} rug={r}");
+            prop_assert!(within_k_ulps(&d, &r, CLOSE_K), "powf base={bs} exp={es} prec={prec}: dashu={d} rug={r}");
         }
     }
 
@@ -355,7 +357,7 @@ proptest! {
             if d.repr().is_infinite() { continue; }
             let br = rug_at(&bs, rug_bits(base.repr(), prec)).unwrap();
             let r: DBig = DBig::from_str(&br.pow(n).to_string_radix(10, Some(prec))).unwrap();
-            prop_assert!(within_k_ulps(&d, &r, 2), "powi base={bs} n={n} prec={prec}: dashu={d} rug={r}");
+            prop_assert!(within_k_ulps(&d, &r, CLOSE_K), "powi base={bs} n={n} prec={prec}: dashu={d} rug={r}");
         }
     }
 
@@ -371,7 +373,7 @@ proptest! {
             if d.repr().is_infinite() { continue; }
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
             let r: DBig = DBig::from_str(&xr.sinh().to_string_radix(10, Some(prec))).unwrap();
-            prop_assert!(within_k_ulps(&d, &r, 2), "sinh x={xs} prec={prec}: dashu={d} rug={r}");
+            prop_assert!(within_k_ulps(&d, &r, CLOSE_K), "sinh x={xs} prec={prec}: dashu={d} rug={r}");
         }
     }
 
@@ -387,7 +389,7 @@ proptest! {
             if d.repr().is_infinite() { continue; }
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
             let r: DBig = DBig::from_str(&xr.cosh().to_string_radix(10, Some(prec))).unwrap();
-            prop_assert!(within_k_ulps(&d, &r, 2), "cosh x={xs} prec={prec}: dashu={d} rug={r}");
+            prop_assert!(within_k_ulps(&d, &r, CLOSE_K), "cosh x={xs} prec={prec}: dashu={d} rug={r}");
         }
     }
 
@@ -402,7 +404,7 @@ proptest! {
             let d = dashu_ok!(ctx.tanh::<10>(x.repr(), None));
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
             let r: DBig = DBig::from_str(&xr.tanh().to_string_radix(10, Some(prec))).unwrap();
-            prop_assert!(within_k_ulps(&d, &r, 2), "tanh x={xs} prec={prec}: dashu={d} rug={r}");
+            prop_assert!(within_k_ulps(&d, &r, CLOSE_K), "tanh x={xs} prec={prec}: dashu={d} rug={r}");
         }
     }
 
@@ -423,8 +425,8 @@ proptest! {
                 DBig::from_str(&rug_at(&xs, bits).unwrap().sinh().to_string_radix(10, Some(prec))).unwrap();
             let r_cosh: DBig =
                 DBig::from_str(&rug_at(&xs, bits).unwrap().cosh().to_string_radix(10, Some(prec))).unwrap();
-            prop_assert!(within_k_ulps(&d_sinh, &r_sinh, 2), "sinh_cosh sinh x={xs} prec={prec}: dashu={d_sinh} rug={r_sinh}");
-            prop_assert!(within_k_ulps(&d_cosh, &r_cosh, 2), "sinh_cosh cosh x={xs} prec={prec}: dashu={d_cosh} rug={r_cosh}");
+            prop_assert!(within_k_ulps(&d_sinh, &r_sinh, CLOSE_K), "sinh_cosh sinh x={xs} prec={prec}: dashu={d_sinh} rug={r_sinh}");
+            prop_assert!(within_k_ulps(&d_cosh, &r_cosh, CLOSE_K), "sinh_cosh cosh x={xs} prec={prec}: dashu={d_cosh} rug={r_cosh}");
         }
     }
 
@@ -439,7 +441,7 @@ proptest! {
             let d = dashu_ok!(ctx.asinh::<10>(x.repr(), None));
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
             let r: DBig = DBig::from_str(&xr.asinh().to_string_radix(10, Some(prec))).unwrap();
-            prop_assert!(within_k_ulps(&d, &r, 2), "asinh x={xs} prec={prec}: dashu={d} rug={r}");
+            prop_assert!(within_k_ulps(&d, &r, CLOSE_K), "asinh x={xs} prec={prec}: dashu={d} rug={r}");
         }
     }
 
@@ -454,7 +456,7 @@ proptest! {
             let d = dashu_ok!(ctx.acosh::<10>(x.repr(), None));
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
             let r: DBig = DBig::from_str(&xr.acosh().to_string_radix(10, Some(prec))).unwrap();
-            prop_assert!(within_k_ulps(&d, &r, 2), "acosh x={xs} prec={prec}: dashu={d} rug={r}");
+            prop_assert!(within_k_ulps(&d, &r, CLOSE_K), "acosh x={xs} prec={prec}: dashu={d} rug={r}");
         }
     }
 
@@ -471,7 +473,7 @@ proptest! {
             if d.repr().is_infinite() { continue; }
             let xr = rug_at(&xs, rug_bits(x.repr(), prec)).unwrap();
             let r: DBig = DBig::from_str(&xr.atanh().to_string_radix(10, Some(prec))).unwrap();
-            prop_assert!(within_k_ulps(&d, &r, 2), "atanh x={xs} prec={prec}: dashu={d} rug={r}");
+            prop_assert!(within_k_ulps(&d, &r, CLOSE_K), "atanh x={xs} prec={prec}: dashu={d} rug={r}");
         }
     }
 
