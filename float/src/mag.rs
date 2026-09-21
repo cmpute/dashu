@@ -7,9 +7,11 @@
 //! to the subset float's error propagation needs and generalized from a fixed `u64`
 //! significand to [`Word`] width so products stay native-width on every target.
 //!
-//! `pub(crate)` and permanently internal: no public Mag API is planned (it would constrain the
-//! internal layout), and it is deliberately not shared with `dashu-ball`'s independent `u64` Mag.
-//! Everything here is `core`-only — the crate builds without `std`.
+//! The type is shared (via a `#[doc(hidden)]` re-export from the crate root) with
+//! `dashu-cmplx`, whose complex balls compose on top of these real ones — but it stays
+//! permanently internal to this repository: excluded from the semver and stability guarantees,
+//! never part of the documented API, and deliberately not shared with `dashu-ball`'s independent
+//! `u64` Mag. Everything here is `core`-only — the crate builds without `std`.
 
 use core::cmp::Ordering;
 
@@ -27,36 +29,36 @@ const MAG_ONE_HALF: Word = 1 << (Word::BITS - 1);
 ///
 /// `Copy` and allocation-free — radii flow through tight series loops by value.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct Mag {
+pub struct Mag {
     man: Word,
     exp: isize,
 }
 
 impl Mag {
     /// The magnitude `0`.
-    pub(crate) const ZERO: Mag = Mag { man: 0, exp: 0 };
+    pub const ZERO: Mag = Mag { man: 0, exp: 0 };
 
     /// The magnitude `+∞`.
-    pub(crate) const INFINITY: Mag = Mag {
+    pub const INFINITY: Mag = Mag {
         man: 0,
         exp: isize::MAX,
     };
 
     /// The magnitude `1`.
-    pub(crate) const ONE: Mag = Mag {
+    pub const ONE: Mag = Mag {
         man: MAG_ONE_HALF,
         exp: 1,
     };
 
     /// Returns `true` if this is the `0` sentinel.
     #[inline]
-    pub(crate) const fn is_zero(&self) -> bool {
+    pub const fn is_zero(&self) -> bool {
         self.man == 0 && self.exp == 0
     }
 
     /// Returns `true` if this is the `+∞` sentinel.
     #[inline]
-    pub(crate) const fn is_infinite(&self) -> bool {
+    pub const fn is_infinite(&self) -> bool {
         self.man == 0 && self.exp != 0
     }
 
@@ -113,7 +115,7 @@ impl Mag {
 
     /// The smallest `Mag` bounding the magnitude of the float `repr` from above
     /// (`|significand| · BASE^exponent`, sign ignored).
-    pub(crate) fn from_repr<const B: Word>(repr: &Repr<B>) -> Mag {
+    pub fn from_repr<const B: Word>(repr: &Repr<B>) -> Mag {
         if repr.significand().is_zero() {
             // ±0 has magnitude 0; ±∞ exceeds every finite bound
             return if repr.is_infinite() {
@@ -127,7 +129,7 @@ impl Mag {
 
     /// The largest `Mag` bounding the magnitude of `repr` from below — the twin used wherever a
     /// midpoint magnitude appears in a denominator. `±0` → `ZERO`; `±∞` → `INFINITY`.
-    pub(crate) fn from_repr_lower<const B: Word>(repr: &Repr<B>) -> Mag {
+    pub fn from_repr_lower<const B: Word>(repr: &Repr<B>) -> Mag {
         if repr.significand().is_zero() {
             return if repr.is_infinite() {
                 Mag::INFINITY
@@ -143,7 +145,7 @@ impl Mag {
     // ========================================================================
 
     /// `self + other`, rounded up. `+∞` propagates; `0` is the identity.
-    pub(crate) fn add(&self, other: &Mag) -> Mag {
+    pub fn add(&self, other: &Mag) -> Mag {
         if self.is_zero() {
             return *other;
         }
@@ -158,7 +160,7 @@ impl Mag {
 
     /// `self · other`, rounded up. `0 · ∞ = 0` — a zero bound times anything is still a zero
     /// bound; the radius-propagation formulas rely on this.
-    pub(crate) fn mul(&self, other: &Mag) -> Mag {
+    pub fn mul(&self, other: &Mag) -> Mag {
         if self.is_zero() || other.is_zero() {
             Mag::ZERO
         } else if self.is_infinite() || other.is_infinite() {
@@ -172,7 +174,7 @@ impl Mag {
     }
 
     /// `self / other`, rounded up. Division by `0` yields `+∞`.
-    pub(crate) fn div(&self, other: &Mag) -> Mag {
+    pub fn div(&self, other: &Mag) -> Mag {
         if self.is_special() || other.is_special() {
             if other.is_zero() || self.is_infinite() {
                 Mag::INFINITY
@@ -186,7 +188,7 @@ impl Mag {
     }
 
     /// `self · 2^e`. Exact; sentinels pass through unchanged.
-    pub(crate) fn mul_pow2(&self, e: isize) -> Mag {
+    pub fn mul_pow2(&self, e: isize) -> Mag {
         if self.is_special() {
             *self
         } else {
@@ -221,11 +223,10 @@ impl Mag {
     // Round-DOWN twins (lower bounds; used by radius-propagation denominators)
     // ========================================================================
 
-    /// An upper bound on `max(0, self − other)`, rounded up and floored at `0`. Currently
-    /// exercised only by the round-up bracket tests (the propagation rules subtract in the
-    /// `sub_down` direction).
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) fn sub(&self, other: &Mag) -> Mag {
+    /// An upper bound on `max(0, self − other)`, rounded up and floored at `0` — the round-up
+    /// twin of [`Mag::sub_down`], used where an upper bound of a difference feeds a fold
+    /// (e.g. the complex log's `ln(hi/lo)` bracket).
+    pub fn sub(&self, other: &Mag) -> Mag {
         if self.is_infinite() {
             return Mag::INFINITY;
         }
@@ -239,7 +240,7 @@ impl Mag {
     }
 
     /// A lower bound on `max(0, self − other)`, floored at `0`.
-    pub(crate) fn sub_down(&self, other: &Mag) -> Mag {
+    pub fn sub_down(&self, other: &Mag) -> Mag {
         if other.is_zero() {
             return *self;
         }
@@ -253,7 +254,7 @@ impl Mag {
     }
 
     /// A lower bound on `self · other`.
-    pub(crate) fn mul_down(&self, other: &Mag) -> Mag {
+    pub fn mul_down(&self, other: &Mag) -> Mag {
         if self.is_zero() || other.is_zero() {
             Mag::ZERO
         } else if self.is_infinite() || other.is_infinite() {
@@ -274,7 +275,7 @@ impl Mag {
     /// `e^self ≤ (1 + 2v)^(2ʲ)`, evaluated with the round-up [`Mag::pow`]. `j` is the top-bit
     /// position, capped so `2ʲ` fits a `usize`; beyond the cap any finite radius is dwarfed, so
     /// `+∞` (always sound) is returned. Integer-only — no libm, `core`-clean.
-    pub(crate) fn exp_upper(&self) -> Mag {
+    pub fn exp_upper(&self) -> Mag {
         if self.is_zero() {
             return Mag::ONE; // e^0 = 1 exactly
         }

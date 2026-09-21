@@ -213,7 +213,7 @@ impl<R: ErrorBounds> Context<R> {
                 work.sinh_series(&t)?
             } else {
                 let ep = work.exp_ball::<B>(&t, wp, reborrow_cache(&mut cache))?;
-                let em = work.exp_ball::<B>(&t.clone().neg(), wp, reborrow_cache(&mut cache))?;
+                let em = work.exp_ball::<B>(&-t.clone(), wp, reborrow_cache(&mut cache))?;
                 addsub_guarded(&ep, &em, true, wp)?.div_int(2, wp)?
             };
             Ok(val.to_value_radius::<R>(&Context::<R>::new(wp)))
@@ -260,7 +260,7 @@ impl<R: ErrorBounds> Context<R> {
                 // cosh(t) = (e^t + e^−t)/2 with the *true* exponentials (no `+1` — that belongs
                 // to the exp_m1 form `cosh` uses below on the radian side).
                 let ep = work.exp_ball::<B>(&t, wp, reborrow_cache(&mut cache))?;
-                let em = work.exp_ball::<B>(&t.clone().neg(), wp, reborrow_cache(&mut cache))?;
+                let em = work.exp_ball::<B>(&-t.clone(), wp, reborrow_cache(&mut cache))?;
                 addsub_guarded(&ep, &em, false, wp)?.div_int(2, wp)?
             };
             Ok(val.to_value_radius::<R>(&Context::<R>::new(wp)))
@@ -310,7 +310,7 @@ impl<R: ErrorBounds> Context<R> {
             } else {
                 // true exponentials — no `+1` (see `cosh_pi`)
                 let ep = work.exp_ball::<B>(&t, wp, reborrow_cache(&mut cache))?;
-                let em = work.exp_ball::<B>(&t.clone().neg(), wp, reborrow_cache(&mut cache))?;
+                let em = work.exp_ball::<B>(&-t.clone(), wp, reborrow_cache(&mut cache))?;
                 (
                     addsub_guarded(&ep, &em, true, wp)?.div_int(2, wp)?,
                     addsub_guarded(&ep, &em, false, wp)?.div_int(2, wp)?,
@@ -451,7 +451,7 @@ impl<R: ErrorBounds> Context<R> {
             let wp = work.precision;
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), wp);
             let abs_x_ball = if sign == Sign::Negative {
-                x_ball.neg()
+                -x_ball
             } else {
                 x_ball
             };
@@ -474,11 +474,7 @@ impl<R: ErrorBounds> Context<R> {
                 }
                 Err(other) => unreachable!("sqr: {other:?}"),
             }?;
-            let result = if sign == Sign::Negative {
-                res.neg()
-            } else {
-                res
-            };
+            let result = if sign == Sign::Negative { -res } else { res };
             Ok(result.to_value_radius::<R>(&Context::<R>::new(wp)))
         })
     }
@@ -831,7 +827,7 @@ fn addsub_guarded<const B: Word>(
     );
     if repr_cmp_same_base::<B, true>(&small.mid, &threshold, None).is_le() {
         let mut r = if sub && !a_dominant {
-            big.clone().neg()
+            -big.clone()
         } else {
             big.clone()
         };

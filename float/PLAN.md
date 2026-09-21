@@ -353,14 +353,12 @@ s<0 double work precision itself **stays**, moved ahead of ball construction; on
    `cargo bench -p dashu-float --features rand --bench exp`, baseline captured before the
    migration; success criterion: recover the 1.4× at 10³ bits to ~1.0×).
 5. Later: rebase `trig_unit` (its `pi_scaled_ball`/`unit_argument_ball` glue collapses to
-   one-liners on the new substrate). The `mag` module stays `pub(crate)` permanently — a
-   public Mag, and any sharing with `dashu-ball`'s u64-width Mag, is ruled out by design.
-   `dashu-complex` is unaffected by this migration: it depends only on float's public API
-   (its Ziv driver deliberately mirrors float's through the public `FBig` surface), and its
-   per-function hand radii (`ulp()·k` value-space formulas over float's certified
-   primitives) have no use for Mag. If complex ever grows mechanical propagation (a
-   `CBall`), it carries its own private Mag copy — or a `#[doc(hidden)]` lockstep-shared
-   surface, never a public one.
+   one-liners on the new substrate). The `mag` module stays permanently internal — never part
+   of the documented API, and not shared with `dashu-ball`'s u64-width Mag. When complex grew
+   mechanical propagation (`CBall`, see `PLAN_PHASE2.md`), it did so on a `#[doc(hidden)]`
+   lockstep-shared re-export of `Ball`/`Mag` from float's crate root — excluded from the
+   semver and stability guarantees, consumed only by this repository's crates, which are
+   released together.
 
 ## 7. Resolved decisions
 

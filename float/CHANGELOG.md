@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Add
+- `#[doc(hidden)]` lockstep-shared re-exports of the internal error-propagation substrate
+  (`Ball`, `Mag`, `ulp_mag`) at the crate root, consumed by `dashu-cmplx`'s complex ball
+  (`CBall`) for its transcendental radius migration. Deliberately hidden: excluded from the
+  semver and stability guarantees, consumed only by this repository's crates (released
+  together). No documented API changes.
 - ×u trigonometric functions `sin_unit`/`cos_unit`/`sin_cos_unit`/`tan_unit` (of `2π·x/u`, the
   argument in units of the full turn divided by `u` — e.g. `u = 360` gives degrees) and their
   inverses `asin_unit`/`acos_unit`/`atan_unit`/`atan2_unit` (of `u·θ/(2π)`), on `Context`,

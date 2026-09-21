@@ -382,8 +382,8 @@ impl<R: ErrorBounds> Context<R> {
             let val = match quadrant {
                 Quadrant::First => work.sin_compute(&r)?,
                 Quadrant::Second => work.cos_compute(&r)?,
-                Quadrant::Third => work.sin_compute(&r)?.neg(),
-                Quadrant::Fourth => work.cos_compute(&r)?.neg(),
+                Quadrant::Third => -work.sin_compute(&r)?,
+                Quadrant::Fourth => -work.cos_compute(&r)?,
             };
             Ok(val.to_value_radius::<R>(&Context::<R>::new(work.precision)))
         })
@@ -441,8 +441,8 @@ impl<R: ErrorBounds> Context<R> {
                 self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache))?;
             let val = match quadrant {
                 Quadrant::First => work.cos_compute(&r)?,
-                Quadrant::Second => work.sin_compute(&r)?.neg(),
-                Quadrant::Third => work.cos_compute(&r)?.neg(),
+                Quadrant::Second => -work.sin_compute(&r)?,
+                Quadrant::Third => -work.cos_compute(&r)?,
                 Quadrant::Fourth => work.sin_compute(&r)?,
             };
             Ok(val.to_value_radius::<R>(&Context::<R>::new(work.precision)))
@@ -503,9 +503,9 @@ impl<R: ErrorBounds> Context<R> {
             let (sin_ball, cos_ball) = work.sin_cos_compute(&r)?;
             let (s, c) = match quadrant {
                 Quadrant::First => (sin_ball, cos_ball),
-                Quadrant::Second => (cos_ball, sin_ball.neg()),
-                Quadrant::Third => (sin_ball.neg(), cos_ball.neg()),
-                Quadrant::Fourth => (cos_ball.neg(), sin_ball),
+                Quadrant::Second => (cos_ball, -sin_ball),
+                Quadrant::Third => (-sin_ball, -cos_ball),
+                Quadrant::Fourth => (-cos_ball, sin_ball),
             };
             let ctx = Context::<R>::new(work.precision);
             Ok((s.to_value_radius::<R>(&ctx), c.to_value_radius::<R>(&ctx)))
@@ -584,9 +584,9 @@ impl<R: ErrorBounds> Context<R> {
             let (sin_ball, cos_ball) = work.sin_cos_compute(&r)?;
             let (s, c) = match quadrant {
                 Quadrant::First => (sin_ball, cos_ball),
-                Quadrant::Second => (cos_ball, sin_ball.neg()),
-                Quadrant::Third => (sin_ball.neg(), cos_ball.neg()),
-                Quadrant::Fourth => (cos_ball.neg(), sin_ball),
+                Quadrant::Second => (cos_ball, -sin_ball),
+                Quadrant::Third => (-sin_ball, -cos_ball),
+                Quadrant::Fourth => (-cos_ball, sin_ball),
             };
             if c.mid.significand.is_zero() {
                 // cos rounded to a zero significand at this guard (the input sits on a work-
@@ -667,10 +667,10 @@ impl<R: ErrorBounds> Context<R> {
             let val = match quadrant {
                 Quadrant::First => work.sin_compute(&t)?,
                 Quadrant::Second => work.cos_compute(&t)?,
-                Quadrant::Third => work.sin_compute(&t)?.neg(),
-                Quadrant::Fourth => work.cos_compute(&t)?.neg(),
+                Quadrant::Third => -work.sin_compute(&t)?,
+                Quadrant::Fourth => -work.cos_compute(&t)?,
             };
-            let val = if negative { val.neg() } else { val };
+            let val = if negative { -val } else { val };
             Ok(val.to_value_radius::<R>(&Context::<R>::new(work.precision)))
         })
     }
@@ -738,8 +738,8 @@ impl<R: ErrorBounds> Context<R> {
             let (t, quadrant) = unit_argument_ball(&work, &reduced, u, reborrow_cache(&mut cache))?;
             let val = match quadrant {
                 Quadrant::First => work.cos_compute(&t)?,
-                Quadrant::Second => work.sin_compute(&t)?.neg(),
-                Quadrant::Third => work.cos_compute(&t)?.neg(),
+                Quadrant::Second => -work.sin_compute(&t)?,
+                Quadrant::Third => -work.cos_compute(&t)?,
                 Quadrant::Fourth => work.sin_compute(&t)?,
             };
             Ok(val.to_value_radius::<R>(&Context::<R>::new(work.precision)))
@@ -827,11 +827,11 @@ impl<R: ErrorBounds> Context<R> {
             let (sin_ball, cos_ball) = work.sin_cos_compute(&t)?;
             let (s, c) = match quadrant {
                 Quadrant::First => (sin_ball, cos_ball),
-                Quadrant::Second => (cos_ball, sin_ball.neg()),
-                Quadrant::Third => (sin_ball.neg(), cos_ball.neg()),
-                Quadrant::Fourth => (cos_ball.neg(), sin_ball),
+                Quadrant::Second => (cos_ball, -sin_ball),
+                Quadrant::Third => (-sin_ball, -cos_ball),
+                Quadrant::Fourth => (-cos_ball, sin_ball),
             };
-            let s = if negative { s.neg() } else { s };
+            let s = if negative { -s } else { s };
             let ctx = Context::<R>::new(work.precision);
             Ok((s.to_value_radius::<R>(&ctx), c.to_value_radius::<R>(&ctx)))
         });
@@ -902,9 +902,9 @@ impl<R: ErrorBounds> Context<R> {
             let (sin_ball, cos_ball) = work.sin_cos_compute(&t)?;
             let (s, c) = match quadrant {
                 Quadrant::First => (sin_ball, cos_ball),
-                Quadrant::Second => (cos_ball, sin_ball.neg()),
-                Quadrant::Third => (sin_ball.neg(), cos_ball.neg()),
-                Quadrant::Fourth => (cos_ball.neg(), sin_ball),
+                Quadrant::Second => (cos_ball, -sin_ball),
+                Quadrant::Third => (-sin_ball, -cos_ball),
+                Quadrant::Fourth => (-cos_ball, sin_ball),
             };
             if c.mid.significand.is_zero() {
                 // cos rounded to a zero significand at this guard — unreachable here (the
@@ -913,7 +913,7 @@ impl<R: ErrorBounds> Context<R> {
                 return Ok((FBig::<R, B>::ZERO, FBig::<R, B>::ONE));
             }
             let val = s.div(&c, work.precision)?;
-            let val = if negative { val.neg() } else { val };
+            let val = if negative { -val } else { val };
             Ok(val.to_value_radius::<R>(&Context::<R>::new(work.precision)))
         })
     }
@@ -1262,7 +1262,7 @@ impl<R: ErrorBounds> Context<R> {
             let rad = ulps::<B>(&half_pi.repr, wp, 8);
             let half_pi = Ball::with_error(half_pi.into_repr(), rad);
             Ok(if x.mid.sign() == Sign::Negative {
-                half_pi.neg()
+                -half_pi
             } else {
                 half_pi
             })
@@ -1361,7 +1361,7 @@ impl<R: ErrorBounds> Context<R> {
         let wp = self.precision;
         let sign = x.mid.sign();
         let x_abs = if sign == Sign::Negative {
-            x.clone().neg()
+            -x.clone()
         } else {
             x.clone()
         };
@@ -1379,11 +1379,7 @@ impl<R: ErrorBounds> Context<R> {
         } else {
             self.atan_compute(&x_abs)
         };
-        Ok(if sign == Sign::Negative {
-            res?.neg()
-        } else {
-            res?
-        })
+        Ok(if sign == Sign::Negative { -res? } else { res? })
     }
 
     /// Near-correct Euler series for `atan(x)` (`|x| ≤ 1`), returning a [`Ball`] with a
