@@ -953,7 +953,6 @@ impl<R: ErrorBounds> Context<R> {
             return signed_zero_normal(self, x);
         }
         // exact rows (±u/4, ±u/12), correctly rounded for any base by the exact ratio
-        let x_orig = FBig::<R, B>::new(x.clone(), *self);
         if repr_cmp_same_base::<B, true>(x, &Repr::<B>::one(), None).is_eq() {
             let num = if x.sign() == Sign::Negative {
                 -(IBig::from(u))
@@ -965,6 +964,7 @@ impl<R: ErrorBounds> Context<R> {
         // The `±1/2` row keeps the *rounded* comparison: the derivative is bounded there
         // (`2/√3`), so an argument a sub-ulp below `1/2` moves the result by at most an ulp — and
         // `1/2` is not exactly representable in an odd base, so there is no exact form to compare.
+        let x_orig = FBig::<R, B>::new(x.clone(), *self);
         if x_orig.abs_cmp(&(FBig::<R, B>::ONE / 2u8)).is_eq() {
             let num = if x.sign() == Sign::Negative {
                 -(IBig::from(u))

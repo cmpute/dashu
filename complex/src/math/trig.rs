@@ -7,7 +7,6 @@
 
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, reborrow_cache, CfpResult, Context};
-use dashu_base::Sign;
 use dashu_float::round::ErrorBounds;
 use dashu_float::{ConstCache, Context as FloatCtxt, FBig, FpError, Repr};
 use dashu_int::{IBig, Word};
@@ -55,11 +54,7 @@ impl<R: ErrorBounds> Context<R> {
             // cos(x+iy) = cosx·coshy − i·sinx·sinhy: real = 1; the imaginary part is the signed
             // product `x·y` (`−0` iff the two parts are opposite-signed zeros) — the Annex-G table
             // value, which differs from the naive `−sinx·sinhy` propagation (`ccos(-0 + i·0) = 1 - i·0`).
-            let cos_im = if re.sign() != im.sign() {
-                Sign::Negative
-            } else {
-                Sign::Positive
-            };
+            let cos_im = re.sign() * im.sign(); // Annex G: negative iff the signs differ
             let cos = crate::repr::exact(
                 FBig::from_repr(Repr::one(), self.float()),
                 FBig::from_repr(Repr::zero_with_sign(cos_im), self.float()),
@@ -85,11 +80,14 @@ impl<R: ErrorBounds> Context<R> {
             let cos_re = gctx.mul(cosx.repr(), coshy.repr())?.value();
             let neg_sinx = -sinx; // cos z's imaginary part is −sinx·sinhy
             let cos_im = gctx.mul(neg_sinx.repr(), sinhy.repr())?.value();
+            // Radii first: each pair owns its value, so `ulp8(&x)` has to run before `x` moves.
+            let (rad_sin_re, rad_sin_im, rad_cos_re, rad_cos_im) =
+                (ulp8(&sin_re), ulp8(&sin_im), ulp8(&cos_re), ulp8(&cos_im));
             Ok([
-                (sin_re.clone(), ulp8(&sin_re)),
-                (sin_im.clone(), ulp8(&sin_im)),
-                (cos_re.clone(), ulp8(&cos_re)),
-                (cos_im.clone(), ulp8(&cos_im)),
+                (sin_re, rad_sin_re),
+                (sin_im, rad_sin_im),
+                (cos_re, rad_cos_re),
+                (cos_im, rad_cos_im),
             ])
         });
         let [sin_re, sin_im, cos_re, cos_im] = match parts {
@@ -177,9 +175,10 @@ impl<R: ErrorBounds> Context<R> {
                 .exponent()
                 .saturating_add(denom.repr().digits_ub() as isize);
             if denom.repr().significand().is_zero() || d_lead + (guard as isize) < 8 {
-                let zero = FBig::from_repr(Repr::zero(), FloatCtxt::<R>::new(pw));
-                let one = FBig::from_repr(Repr::<B>::one(), FloatCtxt::<R>::new(pw));
-                return Ok([(zero.clone(), one.clone()), (zero, one)]);
+                // Zero value, radius one: no candidate can be certified against that (a *zero*
+                // candidate is rejected outright when the radius is nonzero), so the loop retries
+                // at a higher guard.
+                return Ok([(FBig::ZERO, FBig::ONE), (FBig::ZERO, FBig::ONE)]);
             }
             let re = gctx.div(sin2x.repr(), denom.repr())?.value();
             let im = gctx.div(sinh2y.repr(), denom.repr())?.value();
@@ -187,7 +186,8 @@ impl<R: ErrorBounds> Context<R> {
             // constants for exact cases such as `tan(0) = 0`).
             let re = re.with_precision(pw).value();
             let im = im.with_precision(pw).value();
-            Ok([(re.clone(), ulp8(&re)), (im.clone(), ulp8(&im))])
+            let (rad_re, rad_im) = (ulp8(&re), ulp8(&im));
+            Ok([(re, rad_re), (im, rad_im)])
         })?;
         Ok(combine_parts(re, im))
     }
@@ -219,11 +219,7 @@ impl<R: ErrorBounds> Context<R> {
             );
             // cos(x+iy)·π = cosx·coshy − i·sinx·sinhy: real = 1; the imaginary part is the
             // signed product `x·y` — the Annex-G table value (see the radian `sin_cos`).
-            let cos_im = if re.sign() != im.sign() {
-                Sign::Negative
-            } else {
-                Sign::Positive
-            };
+            let cos_im = re.sign() * im.sign(); // Annex G: negative iff the signs differ
             let cos = crate::repr::exact(
                 FBig::from_repr(Repr::one(), self.float()),
                 FBig::from_repr(Repr::zero_with_sign(cos_im), self.float()),
@@ -251,11 +247,14 @@ impl<R: ErrorBounds> Context<R> {
             let cos_re = gctx.mul(cosx.repr(), coshy.repr())?.value();
             let neg_sinx = -sinx; // cos zπ's imaginary part is −sin_pi(x)·sinh(πy)
             let cos_im = gctx.mul(neg_sinx.repr(), sinhy.repr())?.value();
+            // Radii first: each pair owns its value, so `ulp8(&x)` has to run before `x` moves.
+            let (rad_sin_re, rad_sin_im, rad_cos_re, rad_cos_im) =
+                (ulp8(&sin_re), ulp8(&sin_im), ulp8(&cos_re), ulp8(&cos_im));
             Ok([
-                (sin_re.clone(), ulp8(&sin_re)),
-                (sin_im.clone(), ulp8(&sin_im)),
-                (cos_re.clone(), ulp8(&cos_re)),
-                (cos_im.clone(), ulp8(&cos_im)),
+                (sin_re, rad_sin_re),
+                (sin_im, rad_sin_im),
+                (cos_re, rad_cos_re),
+                (cos_im, rad_cos_im),
             ])
         });
         let [sin_re, sin_im, cos_re, cos_im] = match parts {
@@ -364,9 +363,10 @@ impl<R: ErrorBounds> Context<R> {
                 .exponent()
                 .saturating_add(denom.repr().digits_ub() as isize);
             if denom.repr().significand().is_zero() || d_lead + (guard as isize) < 8 {
-                let zero = FBig::from_repr(Repr::zero(), FloatCtxt::<R>::new(pw));
-                let one = FBig::from_repr(Repr::<B>::one(), FloatCtxt::<R>::new(pw));
-                return Ok([(zero.clone(), one.clone()), (zero, one)]);
+                // Zero value, radius one: no candidate can be certified against that (a *zero*
+                // candidate is rejected outright when the radius is nonzero), so the loop retries
+                // at a higher guard.
+                return Ok([(FBig::ZERO, FBig::ONE), (FBig::ZERO, FBig::ONE)]);
             }
             let re = gctx.div(sin2x.repr(), denom.repr())?.value();
             let im = gctx.div(sinh2y.repr(), denom.repr())?.value();
@@ -374,7 +374,8 @@ impl<R: ErrorBounds> Context<R> {
             // exact constants for exact cases such as `tan_pi(1/4) = 1`).
             let re = re.with_precision(pw).value();
             let im = im.with_precision(pw).value();
-            Ok([(re.clone(), ulp8(&re)), (im.clone(), ulp8(&im))])
+            let (rad_re, rad_im) = (ulp8(&re), ulp8(&im));
+            Ok([(re, rad_re), (im, rad_im)])
         })?;
         Ok(combine_parts(re, im))
     }
@@ -417,7 +418,9 @@ impl<R: ErrorBounds> Context<R> {
             // re-root to the working precision (`log` may return an exact constant for exact cases).
             let re = re.with_precision(pw).value();
             let im = im.with_precision(pw).value();
-            Ok([(re.clone(), re.ulp() * 20), (im.clone(), im.ulp() * 20)])
+            // Radii first (see `sin_cos`): the pair owns its value.
+            let (rad_re, rad_im) = (re.ulp() * 20, im.ulp() * 20);
+            Ok([(re, rad_re), (im, rad_im)])
         })?;
         Ok(combine_parts(re, im))
     }
@@ -450,7 +453,9 @@ impl<R: ErrorBounds> Context<R> {
             let (re, im) = acos_z.into_parts();
             let re = re.with_precision(pw).value();
             let im = im.with_precision(pw).value();
-            Ok([(re.clone(), re.ulp() * 20), (im.clone(), im.ulp() * 20)])
+            // Radii first (see `sin_cos`): the pair owns its value.
+            let (rad_re, rad_im) = (re.ulp() * 20, im.ulp() * 20);
+            Ok([(re, rad_re), (im, rad_im)])
         })?;
         Ok(combine_parts(re, im))
     }
@@ -486,7 +491,9 @@ impl<R: ErrorBounds> Context<R> {
             let (re, im) = atan_z.into_parts();
             let re = re.with_precision(pw).value();
             let im = im.with_precision(pw).value();
-            Ok([(re.clone(), re.ulp() * 20), (im.clone(), im.ulp() * 20)])
+            // Radii first (see `sin_cos`): the pair owns its value.
+            let (rad_re, rad_im) = (re.ulp() * 20, im.ulp() * 20);
+            Ok([(re, rad_re), (im, rad_im)])
         })?;
         Ok(combine_parts(re, im))
     }
