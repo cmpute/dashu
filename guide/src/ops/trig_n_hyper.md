@@ -3,12 +3,12 @@
 ## Real functions
 
 - Circular: `sin`, `cos`, `tan`, and `sin_cos` (both at once); inverses `asin`, `acos`, `atan`, and the four-quadrant `atan2(y, x)`.
-- ×u variants: `sin_unit(u)`, `cos_unit(u)`, `tan_unit(u)`, and `sin_cos_unit(u)` — of `2π·x/u`, the argument in units of the full turn divided by `u`, with the inverses `asin_unit(u)`, `acos_unit(u)`, `atan_unit(u)`, and `atan2_unit(y, u)`. `u = 2` gives the ×π functions (`sin_pi`, …); `u = 360` gives degrees.
-- Hyperbolic: `sinh`, `cosh`, `tanh`, `sinh_cosh`; inverses `asinh`, `acosh`, `atanh`. The ×π variants `sinh_pi`, `cosh_pi`, and `sinh_cosh_pi` round the shared cached π.
+- ×u variants: `sin_unit(u)`, `cos_unit(u)`, `tan_unit(u)`, and `sin_cos_unit(u)` — of `2π·x/u`, the argument in units of the full turn divided by `u`, with the inverses `asin_unit(u)`, `acos_unit(u)`, `atan_unit(u)`, and the four-quadrant `atan2_unit`, called as `y.atan2_unit(x, u)` (the receiver is the y-coordinate, the first argument the x-coordinate). `u = 2` gives the ×π functions (`sin_pi`, …); `u = 360` gives degrees.
+- Hyperbolic: `sinh`, `cosh`, `tanh`, `sinh_cosh`; inverses `asinh`, `acosh`, `atanh`. The ×π variants `sinh_pi`, `cosh_pi`, and `sinh_cosh_pi` use the shared cached π.
 
 Angles are in radians. `atan2` follows the C99 signed-zero model, which matters for correct branch-cut behavior on the axes.
 
-The ×u circular functions reduce the argument *exactly* mod u in integer arithmetic, so — unlike the radian functions — their accuracy does not degrade as the input grows (`sin_unit(10^100, 360)` is exactly `0`). Arguments where `12x/u` (resp. `8x/u` for the tangent) is an integer resolve exactly: quarters and eighths to `0`/`±1` (`sin_unit(90, 360) == 1`), the sixths to `±1/2` (`sin_unit(30, 360) == 0.5`). At the odd multiples of `u/4` the tangent hits its poles, where the one-sided limits are `+∞` and `−∞`: the case is indeterminate and reported as an error. The inverse family returns exact `k·u/8` values on the axes and diagonals (`atan2_unit(1, 1, 360) == 45`), and the `u → 0` limit of every inverse is the signed zero.
+The ×u circular functions reduce the argument *exactly* mod u in integer arithmetic, so — unlike the radian functions — their accuracy does not degrade as the input grows (`sin_unit(10^100, 4)` is exactly `0`: `10^100` is a multiple of `4`). Arguments where `12x/u` (resp. `8x/u` for the tangent) is an integer resolve exactly: quarters and eighths to `0`/`±1` (`sin_unit(90, 360) == 1`), the sixths to `±1/2` (`sin_unit(30, 360) == 0.5`). At the odd multiples of `u/4` the tangent hits its poles, where the one-sided limits are `+∞` and `−∞`: the case is indeterminate and reported as an error. The inverse family returns exact `k·u/8` values on the axes and diagonals (`(1).atan2_unit(&(1), 360) == 45`), and the `u → 0` limit of every inverse (in domain) is the signed zero.
 
 ## Complex functions
 

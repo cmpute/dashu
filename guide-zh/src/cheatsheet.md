@@ -64,7 +64,7 @@ dashu 数值类型的速查参考。详细内容请参阅链接页面。
 | `.exp()` / `.ln()` / `.sqrt()` | `FBig`、`CBig` | 同类型 |
 | `.sin()` / `.cos()` / `.tan()` / `.sin_cos()` | `FBig`、`CBig` | 同类型 |
 | `.sin_pi()` / `.cos_pi()` / `.tan_pi()` / `.sin_cos_pi()` | `FBig`、`CBig` | 同类型 |
-| `.sin_unit(u)` / `.cos_unit(u)` / … / `.atan2_unit(y, u)` | `FBig` | 同类型 |
+| `.sin_unit(u)` / `.cos_unit(u)` / … / `.atan2_unit(x, u)` | `FBig` | 同类型 |
 | `.powi(IBig)` / `.powf(&Self)` | `FBig`、`CBig` | 同类型 |
 | `.with_precision(p)` | `FBig` | `Rounded<FBig>` |
 | `.to_decimal()` / `.to_binary()` | `FBig` | `Rounded<DBig>` / `Rounded<FBig>` |
