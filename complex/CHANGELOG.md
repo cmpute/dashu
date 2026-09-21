@@ -10,9 +10,30 @@
 ### Add
 - ×π trigonometric functions `sin_pi`/`cos_pi`/`sin_cos_pi`/`tan_pi` (of `z·π`), on `Context`,
   `CBig` and `CachedCBig`. Pure-real arguments reduce exactly through the real ×π kernels
-  (quarter-integer exact cases included); the imaginary part composes the real
-  `sinh_cosh_pi`. `tan_pi` uses the same cancellation-free double-angle identity as `tan`, and
-  reports `Err(Indeterminate)` at the real-axis poles (`y = 0`, x an odd multiple of `1/2`).
+  (quarter-integer exact cases included — and `tan_pi` of a pure-real argument is now
+  *delegated* to the real kernel, poles and near-pole huge values alike); the imaginary part
+  composes the real `sinh_cosh_pi`. `tan_pi` uses the same cancellation-free double-angle
+  identity as `tan`, and reports `Err(Indeterminate)` at the real-axis poles (`y = 0`,
+  x an odd multiple of `1/2`).
+
+### Fix
+- **`tan`/`tan_pi` near the real-axis poles no longer error or panic on finite,
+  correctly-roundable inputs.** The double-angle denominator `cos(2x) + cosh(2y)` cancels
+  into its addends' rounding noise near the poles: it could round onto an exact zero and the
+  division then surfaced as a terminal `Err(Indeterminate)` (`0/0`) or as an infinity that
+  panicked the part arithmetic (`x/0`) — e.g. `tan_pi(0.5 + 1e-40·i)` (true value ≈
+  `3.18e39·i`) errored, and `tan_pi((0.5 + 1e-60) + 1e-40·i)` panicked. A collapsed — or
+  deeply cancelled — denominator now retries at higher guard (the true value is strictly
+  positive for `y ≠ 0`, so the surviving-digits threshold `lead(D) + guard ≥ 8` separates the
+  trustworthy quotients), and pure-real arguments bypass the composition entirely through
+  the real kernel.
+- **A part that is exactly zero now carries a zero error radius** in the trig compositions:
+  the blanket `8·ulp` radius around an exactly-zero part never fits the one-sided directed
+  preimage of `+0` (`[0, ulp)` under `Down`), so e.g. `sin_pi(0.5 + 1e-8·i)` under a
+  directed mode retried to the Ziv cap without certifying (its exact-zero imaginary part).
+  A zero-significand part is the exactly-zero result of its product/quotient (a nonzero one
+  never rounds to a zero significand), so radius `0` is sound — the same exemption the
+  float layer's exact chains already carry.
 
 ## 0.6.0
 
