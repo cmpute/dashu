@@ -272,7 +272,7 @@ impl Mag {
 
     /// An upper bound on `e^self` (`self ≥ 0`), by halve-then-pow: for `v = self · 2⁻ʲ ∈ (0, 1)`,
     /// `e^t ≤ 1 + 2t` on `[0, 1]` (the minimum of `1 + 2t − e^t` is `2·ln 2 − 1 > 0`), so
-    /// `e^self ≤ (1 + 2v)^(2ʲ)`, evaluated with the round-up [`Mag::pow`]. `j` is the top-bit
+    /// `e^self ≤ (1 + 2v)^(2ʲ)`, evaluated with the round-up `Mag::pow`. `j` is the top-bit
     /// position, capped so `2ʲ` fits a `usize`; beyond the cap any finite radius is dwarfed, so
     /// `+∞` (always sound) is returned. Integer-only — no libm, `core`-clean.
     pub fn exp_upper(&self) -> Mag {

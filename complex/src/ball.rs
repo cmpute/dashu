@@ -25,16 +25,12 @@ use crate::repr::reborrow_cache;
 use crate::round::{mode, ErrorBounds, Round};
 
 /// A complex ball: midpoints plus radii per component, `|component − true| ≤ rad`.
-// The transcendental closures adopt these ops family by family (sqrt first); the attribute
-// goes away when the last family lands.
-#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub(crate) struct CBall<const B: Word> {
     pub(crate) re: Ball<B>,
     pub(crate) im: Ball<B>,
 }
 
-#[allow(dead_code)]
 impl<const B: Word> CBall<B> {
     // ========================================================================
     // Seeds
@@ -62,14 +58,6 @@ impl<const B: Word> CBall<B> {
     // ========================================================================
     // Exact operations — no prec, no error
     // ========================================================================
-
-    /// Negation; radii unchanged.
-    pub(crate) fn neg(&self) -> Self {
-        Self {
-            re: -self.re.clone(),
-            im: -self.im.clone(),
-        }
-    }
 
     /// Multiply by `±i` — an exact rotation, mirroring `CBig::mul_i`: `(x, y)·i = (−y, x)`,
     /// `(x, y)·(−i) = (y, −x)`. Radii swap unchanged.
