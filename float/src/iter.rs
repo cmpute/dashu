@@ -20,23 +20,27 @@ use core::iter::{Product, Sum};
 fn precise_sum<R: Round, const B: Word>(
     mut iter: impl Iterator<Item = (Repr<B>, Context<R>)>,
 ) -> FBig<R, B> {
-    let (mut acc, mut context) = match iter.next() {
+    let (mut acc, mut context, mut all_neg_zero) = match iter.next() {
         Some((repr, ctx)) => {
             assert_finite(&repr);
-            (repr, ctx)
+            let all_neg_zero = repr.is_neg_zero();
+            (repr, ctx, all_neg_zero)
         }
         None => return FBig::ZERO, // empty iterator → additive identity
     };
     for (repr, ctx) in iter {
         assert_finite(&repr);
+        all_neg_zero &= repr.is_neg_zero();
         acc = acc + &repr;
         context = Context::max(context, ctx);
     }
     // Exact cancellation can leave `acc` with a zero significand whose exponent coincides with the
     // `-0` sentinel (-1) — `Repr::new` then mislabels it `-0`. Canonicalize the sign per IEEE 754
-    // §6.3 (x + (-x) = +0 except under roundTowardNegative), mirroring `Add`'s `cancel_zero`.
+    // §6.3 folded left, as the chained `+` does: the exact zero sum is `-0` under
+    // roundTowardNegative or when *every* addend is `-0` (a sum of like-signed zeros keeps the
+    // sign), and `+0` otherwise (cancellation of nonzero addends, mixed-sign zeros).
     if acc.significand.is_zero() {
-        acc = if R::IS_ROUND_TOWARD_NEGATIVE {
+        acc = if R::IS_ROUND_TOWARD_NEGATIVE || all_neg_zero {
             Repr::neg_zero()
         } else {
             Repr::zero()
@@ -105,6 +109,30 @@ mod tests {
         let s: F = [half.clone(), -half].into_iter().sum();
         assert!(s.repr().is_pos_zero());
         assert!(!s.repr().is_neg_zero());
+    }
+
+    // The sign of a zero sum follows IEEE 754 §6.3 folded left: like-signed zeros keep their
+    // sign, a single addend is itself, and mixed-sign zeros cancel to +0 (nearest).
+    #[test]
+    fn sum_keeps_sign_of_all_neg_zero_addends() {
+        let nz = -F::ZERO; // -0
+        assert!(nz.repr().is_neg_zero());
+        let s: F = core::iter::once(nz.clone()).sum();
+        assert!(s.repr().is_neg_zero(), "sum of one -0 is -0");
+        let s: F = [nz.clone(), nz.clone()].into_iter().sum();
+        assert!(s.repr().is_neg_zero(), "sum of two -0 is -0");
+        let s: F = [nz, F::ZERO].into_iter().sum();
+        assert!(s.repr().is_pos_zero(), "-0 + (+0) is +0 (nearest)");
+    }
+
+    #[test]
+    fn sum_zero_is_neg_zero_under_down() {
+        use crate::round::mode::Down;
+        type FD = FBig<Down, 10>;
+        // exact cancellation of nonzero addends → -0 under roundTowardNegative
+        let one = FD::from_str("1.0").unwrap();
+        let s: FD = [one.clone(), -one].into_iter().sum();
+        assert!(s.repr().is_neg_zero());
     }
 
     #[test]

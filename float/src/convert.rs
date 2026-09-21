@@ -792,7 +792,7 @@ impl<R: Round> Context<R> {
                 )
                 .expect("exp(reduced rem) cannot overflow (|rem| < B^-n)")
                 .mid;
-            let significand = repr.significand.clone() * exp_rem.significand();
+            let significand = &repr.significand * exp_rem.significand();
             let repr = Repr::new(significand, exponent + exp_rem.exponent());
             self.repr_round(repr)
         }

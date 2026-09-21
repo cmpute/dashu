@@ -3,9 +3,10 @@
 //! A `Mag` is a fixed-width normalized binary significand `man · 2^exp` plus the two sentinels
 //! `0` and `+∞`, with the defining property that **every operation rounds away from zero** — a
 //! `Mag` is a rigorous upper bound by construction, the single invariant the Ziv certification
-//! rests on. It is a port of Arb's `mag_t` (as re-validated in the `dashu-ball` crate), reduced
-//! to the subset float's error propagation needs and generalized from a fixed `u64`
-//! significand to [`Word`] width so products stay native-width on every target.
+//! rests on. It is the round-up magnitude-bound design popularized by ball arithmetic for
+//! arbitrary precision real computation (as re-validated in the `dashu-ball` crate), reduced to
+//! the subset float's error propagation needs and generalized from a fixed `u64` significand to
+//! [`Word`] width so products stay native-width on every target.
 //!
 //! The type is shared (via a `#[doc(hidden)]` re-export from the crate root) with
 //! `dashu-cmplx`, whose complex balls compose on top of these real ones — but it stays
@@ -18,6 +19,7 @@ use core::cmp::Ordering;
 use dashu_int::{DoubleWord, IBig, Word};
 
 use crate::repr::Repr;
+use crate::utils::log2_base;
 
 /// The smallest normalized significand: `2^(Word::BITS − 1)`. A `Mag` whose significand equals
 /// this is an exact power of two.
@@ -271,7 +273,8 @@ impl Mag {
     // ========================================================================
 
     /// An upper bound on `e^self` (`self ≥ 0`), by halve-then-pow: for `v = self · 2⁻ʲ ∈ (0, 1)`,
-    /// `e^t ≤ 1 + 2t` on `[0, 1]` (the minimum of `1 + 2t − e^t` is `2·ln 2 − 1 > 0`), so
+    /// `e^t ≤ 1 + 2t` on `[0, 1]` (the difference `1 + 2t − e^t` is nonnegative there — it is `0`
+    /// at `t = 0` and peaks at `2·ln 2 − 1 > 0` in between), so
     /// `e^self ≤ (1 + 2v)^(2ʲ)`, evaluated with the round-up `Mag::pow`. `j` is the top-bit
     /// position, capped so `2ʲ` fits a `usize`; beyond the cap any finite radius is dwarfed, so
     /// `+∞` (always sound) is returned. Integer-only — no libm, `core`-clean.
@@ -381,7 +384,8 @@ const fn build(man: Word, exp: isize) -> Mag {
 }
 
 /// Round a too-large significand down to exactly `Word::BITS` bits, rounding *up* and bumping
-/// the exponent (Arb's `MAG_ADJUST_ONE_TOO_LARGE`, applied until stable — at most twice).
+/// the exponent (half-to-away-from-zero on the dropped bit, applied until stable — at most
+/// twice, since one `+1` carry can push a maximally-rounded significand over the top again).
 #[inline]
 fn norm_large_up(mut raw: DoubleWord, mut exp: isize) -> Mag {
     let top: DoubleWord = (1 as DoubleWord) << Word::BITS;
@@ -531,38 +535,6 @@ fn div_scaled(a: isize, ratio: i128, frac_bits: u32, up: bool) -> isize {
     let (q, r) = (scaled.div_euclid(den), scaled.rem_euclid(den));
     let q = if up && r != 0 { q + 1 } else { q };
     q.clamp(isize::MIN as i128, isize::MAX as i128) as isize
-}
-
-/// `log₂ BASE` as a `(⌈·, ⌊·⌋, frac_bits)` fixed-point bracket — the same shape as the
-/// hand-written base-10 constants it replaces, computed for any base by the classic squaring
-/// walk on the normalized significand (one `u128` square per fraction bit). `B` is a const
-/// generic, so the whole walk folds into a constant at compile time; the generic-base radius
-/// rules cost no more than the base-10 ones. The fraction width shrinks as the integer part
-/// grows so the ratio itself stays below `2^63` — that bound is what keeps `|a|·ratio`
-/// inside `i128` in [`div_scaled`] for every `a` in the `isize` range.
-const fn log2_base<const B: Word>() -> (u64, u32) {
-    // normalize to mant = BASE·2^lz ∈ [2^63, 2^64): ⌊log₂ BASE⌋ = 63 − lz, then walk the
-    // fraction bits — square, and each time the value crosses 2 the bit is 1. The walk is
-    // pinned to explicit widths (`Word` is `u32` on some targets, whose raw `leading_zeros`
-    // would shift the normalization out of `[2^63, 2^64)` and return a wrong log for every
-    // non-power-of-two base).
-    let int_bits: u32 = Word::BITS - 1 - B.leading_zeros(); // ⌊log₂ BASE⌋ (width-independent)
-    let frac_bits: u32 = 62 - int_bits;
-    let mut m: u128 = (B as u128) << (63 - int_bits); // ∈ [2^63, 2^64)
-    let mut frac: u64 = 0;
-    let mut i = frac_bits;
-    loop {
-        if i == 0 {
-            break;
-        }
-        i -= 1;
-        m = (m * m) >> 63;
-        if m >> 64 != 0 {
-            frac |= 1 << i;
-            m >>= 1;
-        }
-    }
-    ((int_bits as u64) << frac_bits | frac, frac_bits)
 }
 
 // ============================================================================

@@ -195,9 +195,16 @@ impl ConstCache {
     /// ln(B) at `precision` base-`B` digits, reusing the cached ln2 / ln10 where
     /// possible.
     ///
+    /// The generic-base arm evaluates `ln(BASE)` through `ln_compute`, whose ball arithmetic can
+    /// report a range error. It cannot actually do so for a base that fits a [`Word`]
+    /// (`ln(BASE) ≤ Word::BITS · ln 2` and every intermediate stays within a few hundred bits of
+    /// it, nowhere near an `isize` exponent limit), so the arm asserts instead of plumbing a
+    /// `Result` through this near-correct constant accessor.
+    ///
     /// # Panics
     ///
-    /// Panics if `precision` is 0.
+    /// Panics if `precision` is 0, or — for a base that is not 2, 10 or a power of two — if
+    /// `ln(BASE)` range-errors (unreachable for any base that fits a [`Word`], see above).
     #[must_use]
     pub fn ln_base<const B: Word, R: Round>(&mut self, precision: usize) -> FBig<R, B> {
         match B {

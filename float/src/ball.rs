@@ -97,12 +97,14 @@ impl<const B: Word> Ball<B> {
     }
 
     /// `self²`: `2·‖a.mid‖·rad_a + rad_a² + ε` — the square rule (the midpoint runs through the
-    /// correctly-rounded [`Context::sqr`] kernel, cheaper than a general product).
+    /// correctly-rounded [`Context::sqr`] kernel, cheaper than a general product). The cross
+    /// term's factor 2 is load-bearing: `(m ± r)² = m² ± 2mr + r²`, so folding a single
+    /// `‖m‖·r` under-bounds the upper corner by exactly `‖m‖·r`.
     pub fn sqr(&self, prec: usize) -> Result<Self, FpError> {
         let ctx = Context::<mode::HalfEven>::new(prec);
         let (mid, eps) = finish_mid(ctx.sqr(&self.mid)?, prec);
-        let a = Mag::from_repr(&self.mid);
-        let rad = a.mul(&self.rad).add(&self.rad.mul(&self.rad)).add(&eps);
+        let two_a = Mag::from_repr(&self.mid).mul_pow2(1); // 2·‖a.mid‖, exact
+        let rad = two_a.mul(&self.rad).add(&self.rad.mul(&self.rad)).add(&eps);
         Ok(Self { mid, rad })
     }
 
@@ -150,15 +152,34 @@ impl<const B: Word> Ball<B> {
 
     /// `√self`: `rad_a/(2·LB(|mid_r|)) + ε` — the ε term covers the `fl(√a)` vs `√a`
     /// denominator gap exactly as the old `+1` did (valid for `rad_a ≤ |mid_a|`, which
-    /// every caller guarantees). The zero-midpoint special case is kept from the old code:
-    /// a mid that rounds to a zero significand returns an exact zero — no caller feeds a
-    /// straddling ball through `sqrt` (asin checks the zero significand first).
+    /// every caller guarantees and the assertion below enforces).
+    ///
+    /// The zero-midpoint special case: an **exact** zero (`rad == 0`) stays exact, which is what
+    /// lets `asin`'s `1−x²` at `|x| = 1` resolve to `±π/2` outside the Ziv loop. A ball whose mid
+    /// merely *rounded* to zero is a different matter: its true value is within `rad` of zero, so
+    /// the root is within `√rad` — and no finite multiple of the *input* radius bounds that (the
+    /// derivative at the origin is infinite). It gets the whole-line radius instead, which forces
+    /// a Ziv retry at a higher guard, where the caller's argument stops rounding onto zero and the
+    /// ordinary rule below applies.
     pub fn sqrt(&self, prec: usize) -> Result<Self, FpError> {
         let ctx = Context::<mode::HalfEven>::new(prec);
         let (mid, eps) = finish_mid(ctx.sqrt(&self.mid)?, prec);
         if mid.significand().is_zero() {
-            return Ok(Self::exact(mid));
+            return Ok(if self.rad.is_zero() {
+                Self::exact(mid)
+            } else {
+                Self::with_error(mid, Mag::INFINITY)
+            });
         }
+        // The denominator below is the derivative at the ball's *lower* endpoint `mid − rad`, so
+        // the bound needs that endpoint to stay clear of the root's pole: every caller keeps
+        // `rad ≤ |mid|` (the radius of a computed ball is a few ulps of its midpoint).
+        debug_assert!(
+            self.rad <= Mag::from_repr_lower(&self.mid),
+            "Ball::sqrt requires rad <= |mid| (rad {:?}, mid {:?})",
+            self.rad,
+            self.mid,
+        );
         let denom = Mag::from_repr_lower(&mid).mul_pow2(1); // 2·LB(|mid_r|)
         let rad = self.rad.div(&denom).add(&eps);
         Ok(Self { mid, rad })
@@ -395,6 +416,24 @@ mod tests {
         let q = z.div(&b, p).unwrap();
         assert!(!q.rad.is_infinite());
         assert_covers(&q, &Repr::zero());
+    }
+
+    #[test]
+    fn sqr_covers_both_corners() {
+        let p = 20;
+        // mid = 1 exactly, rad = 2^-10: (m ± r)² = 1 ± 2^-9 + 2^-20 — the ± 2^-9 cross term
+        // is what a single |m|·rad fold (the factor-2 bug) fails to cover.
+        let ball = Ball {
+            mid: Repr::new(IBig::ONE, 0),
+            rad: crate::mag::Mag::from_pow2(-10),
+        };
+        let sq = ball.sqr(p).unwrap();
+        let hi_corner = Repr::new((IBig::ONE << 20) + (IBig::ONE << 11) + IBig::ONE, -20);
+        let lo_corner = Repr::new((IBig::ONE << 20) - (IBig::ONE << 11) + IBig::ONE, -20);
+        assert_covers(&sq, &hi_corner);
+        assert_covers(&sq, &lo_corner);
+        // and the midpoint itself is the exact square of the midpoint
+        assert_eq!(sq.mid, Repr::new(IBig::ONE, 0));
     }
 
     #[test]

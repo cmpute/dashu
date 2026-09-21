@@ -14,17 +14,20 @@ use crate::{
     cmp::repr_cmp_same_base,
     error::{assert_limited_precision, FpError},
     fbig::FBig,
+    mag::Mag,
     math::{
         cache::{compute_e, reborrow_cache, ConstCache},
         FpResult,
     },
     repr::{Context, Repr, Word},
     round::{mode, ErrorBounds, Round, Rounded},
-    utils::{digit_len, shl_digits},
+    utils::{digit_len, log2_u_bs_lb, shl_digits},
 };
 use core::convert::TryFrom;
-use dashu_base::{Abs, AbsOrd, Approximation::Exact, DivRem, EstimatedLog2, RemEuclid, Sign};
-use dashu_int::IBig;
+use dashu_base::{
+    Abs, AbsOrd, Approximation::Exact, DivRem, EstimatedLog2, RemEuclid, Sign, UnsignedAbs,
+};
+use dashu_int::{fast_div::ConstDivisor, IBig, UBig};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Quadrant {
@@ -48,22 +51,15 @@ fn signed_zero_normal<R: Round, const B: Word>(
     Ok(Exact(FBig::<R, B>::new(zero, *ctx)))
 }
 
-/// `B^e mod M` by binary exponentiation — the residue of a radix power without ever
-/// materializing the power (e can be astronomically large, e.g. an exponent near the `isize`
-/// range). All intermediates stay below `M`, which the callers keep small (`u` or `24u`).
+/// `B^e mod M` through the integer crate's prepared-divisor ring — the residue of a radix
+/// power without ever materializing the power (e can be astronomically large, e.g. an
+/// exponent near the `isize` range). All intermediates stay below `M`, which the callers
+/// keep small (`2k·u ≤ 24u`), so the single/double-word fast paths of [`ConstDivisor`]
+/// apply.
 fn digits_powmod<const B: Word>(e: usize, modulus: &IBig) -> IBig {
-    // `rem_euclid` yields the (non-negative) `UBig` residue; wrap back for the IBig pipeline.
-    let mut result = IBig::ONE;
-    let mut base = IBig::from(crate::utils::base_as_ibig::<B>().rem_euclid(modulus.clone()));
-    let mut exp = e;
-    while exp > 0 {
-        if exp & 1 == 1 {
-            result = IBig::from((result * &base).rem_euclid(modulus.clone()));
-        }
-        base = IBig::from((&base * &base).rem_euclid(modulus.clone()));
-        exp >>= 1;
-    }
-    result
+    let ring = ConstDivisor::new(modulus.unsigned_abs());
+    let base = ring.reduce(crate::utils::base_as_ibig::<B>().unsigned_abs());
+    IBig::from(base.pow(&UBig::from(e)).residue())
 }
 
 /// Classify the ×u exact cases: `Some(j)` with `j = (k·x/u) mod 2k` (an euclidean modulus on
@@ -111,8 +107,8 @@ fn unit_residue<const B: Word>(x: &Repr<B>, u: usize, k: usize) -> Option<i8> {
         let (_, ub_km) = km.log2_bounds();
         let (u_lb, _) = u.log2_bounds();
         let (b_lb, _) = B.log2_bounds();
-        if ub_km < u_lb + s as f32 * b_lb {
-            // u·B^s ≥ 2^(u_lb + s·b_lb) > |k·m|: cannot divide.
+        if ub_km < log2_u_bs_lb(u_lb, b_lb, s) {
+            // u·B^s > |k·m| (bound certified below the true value): cannot divide.
             return None;
         }
         let d = &u_ibig * shl_digits::<B>(&IBig::ONE, s);
@@ -181,7 +177,7 @@ fn reduce_unit_argument<const B: Word>(x: &Repr<B>, u: usize) -> UnitReduced<B> 
         // |x| = m/B^s < u ⟺ m < u·B^s (checked by bounds, no materialization): r0 = |x| itself.
         let s = e.unsigned_abs();
         let (_, ub_m) = m.log2_bounds();
-        if ub_m < u_lb + s as f32 * b_lb {
+        if ub_m < log2_u_bs_lb(u_lb, b_lb, s) {
             (m, e)
         } else {
             // |x| ≥ u, so u·B^s ≤ m: the power is bounded by the input's own size.
@@ -194,9 +190,11 @@ fn reduce_unit_argument<const B: Word>(x: &Repr<B>, u: usize) -> UnitReduced<B> 
 
     // Step 2 — k = 0 fast path: 8·sig0 < u·B^(s0) (guaranteed by the bounds), so 4r0/u < 1/2
     // rounds to k = 0 and no power of B is materialized — crucially so, since here it can be
-    // astronomically large.
+    // astronomically large. The bound is the conservative [`log2_u_bs_lb`]: overshooting here
+    // would classify a `k ≥ 1` argument as `Small` (wrong quadrant — a wrong result), while
+    // undershooting only falls through to the exact general split.
     let (_, ub8m) = (IBig::from(8) * &sig0).log2_bounds();
-    if ub8m < u_lb + s0 as f32 * b_lb {
+    if ub8m < log2_u_bs_lb(u_lb, b_lb, s0) {
         return UnitReduced::Small(Repr::new(sig0, e0));
     }
 
@@ -884,11 +882,10 @@ impl<R: ErrorBounds> Context<R> {
         if let Some(j) = unit_residue(x, u, 8) {
             let m = j % 8; // the eighth-of-turn index (mod its period 8)
             return match m {
-                0 => Ok(Exact(FBig::<R, B>::new(Repr::zero_with_sign(x.sign()), *self))),
+                0 | 4 => Ok(Exact(FBig::<R, B>::new(Repr::zero_with_sign(x.sign()), *self))),
                 1 | 5 => Ok(FBig::<R, B>::ONE.with_precision(self.precision)),
                 2 | 6 => Err(FpError::Indeterminate),
                 3 | 7 => Ok(FBig::<R, B>::NEG_ONE.with_precision(self.precision)),
-                4 => Ok(Exact(FBig::<R, B>::new(Repr::neg_zero(), *self))),
                 _ => unreachable!("m = 8x/u mod 8 covers all rows"),
             };
         }
@@ -928,7 +925,8 @@ impl<R: ErrorBounds> Context<R> {
     /// `u/(2π)`.
     ///
     /// `u = 0` is the limit `u·asin(x)/(2π) → ±0` (the signed zero, matching the function's
-    /// oddness); returns `Err(OutOfDomain)` if `|x| > 1`.
+    /// oddness, in-domain inputs only); returns `Err(OutOfDomain)` if `|x| > 1` — the domain
+    /// error outranks the `u = 0` limit (`asin_unit(2, 0)` is an error, not `+0`).
     pub fn asin_unit<const B: Word>(
         &self,
         x: &Repr<B>,
@@ -939,23 +937,23 @@ impl<R: ErrorBounds> Context<R> {
             return Err(FpError::InfiniteInput);
         }
         assert_limited_precision(self.precision);
-        if u == 0 {
-            // the u → 0 limit: the signed zero (asin is odd)
-            return signed_zero_normal(self, x);
-        }
         if x.significand.is_zero() {
             // asin(±0) = ±0 (asin is odd), exact.
             return signed_zero_normal(self, x);
         }
 
-        let x_orig = FBig::<R, B>::new(x.clone(), *self);
-        // Domain check: |x| must be <= 1
-        if x_orig.abs_cmp(&FBig::ONE).is_gt() {
+        // Domain check |x| ≤ 1 and the `±u/4` row, compared *exactly* (no precision
+        // argument) — `±1` is a vertical tangent of `asin`, and the ×u inverse family's exact
+        // rows are exactly that, not "rounded onto".
+        if repr_cmp_same_base::<B, true>(x, &Repr::<B>::one(), None).is_gt() {
             return Err(FpError::OutOfDomain);
         }
+        if u == 0 {
+            // the u → 0 limit: the signed zero (asin is odd)
+            return signed_zero_normal(self, x);
+        }
         // exact rows (±u/4, ±u/12), correctly rounded for any base by the exact ratio
-        let cmp_one = x_orig.abs_cmp(&FBig::ONE);
-        if cmp_one.is_eq() {
+        if repr_cmp_same_base::<B, true>(x, &Repr::<B>::one(), None).is_eq() {
             let num = if x.sign() == Sign::Negative {
                 -(IBig::from(u))
             } else {
@@ -963,6 +961,10 @@ impl<R: ErrorBounds> Context<R> {
             };
             return exact_ratio(self, num, 4);
         }
+        // The `±1/2` row keeps the *rounded* comparison: the derivative is bounded there
+        // (`2/√3`), so an argument a sub-ulp below `1/2` moves the result by at most an ulp — and
+        // `1/2` is not exactly representable in an odd base, so there is no exact form to compare.
+        let x_orig = FBig::<R, B>::new(x.clone(), *self);
         if x_orig.abs_cmp(&(FBig::<R, B>::ONE / 2u8)).is_eq() {
             let num = if x.sign() == Sign::Negative {
                 -(IBig::from(u))
@@ -989,8 +991,8 @@ impl<R: ErrorBounds> Context<R> {
     /// asin_unit(x)`. Exact rows (outside the Ziv loop): `acos(+1) = 0`, `acos(−1) = u/2`,
     /// `acos(±0) = u/4`, `acos(±1/2) = u/6` / `u/3`.
     ///
-    /// `u = 0` is the limit `u·acos(x)/(2π) → +0` (acos ≥ 0); returns `Err(OutOfDomain)` if
-    /// `|x| > 1`.
+    /// `u = 0` is the limit `u·acos(x)/(2π) → +0` (acos ≥ 0, in-domain inputs only); returns
+    /// `Err(OutOfDomain)` if `|x| > 1` — the domain error outranks the `u = 0` limit.
     pub fn acos_unit<const B: Word>(
         &self,
         x: &Repr<B>,
@@ -1001,15 +1003,16 @@ impl<R: ErrorBounds> Context<R> {
             return Err(FpError::InfiniteInput);
         }
         assert_limited_precision(self.precision);
+
+        // Domain |x| ≤ 1 and the `u/2` row, compared *exactly* (no precision argument) — see
+        // `asin_unit` for why the exact form matters here.
+        let cmp_one = repr_cmp_same_base::<B, true>(x, &Repr::<B>::one(), None);
+        if cmp_one.is_gt() {
+            return Err(FpError::OutOfDomain);
+        }
         if u == 0 {
             // the u → 0 limit: +0 (acos ≥ 0)
             return Ok(Exact(FBig::<R, B>::new(Repr::zero(), *self)));
-        }
-
-        let x_orig = FBig::<R, B>::new(x.clone(), *self);
-        let cmp_one = x_orig.abs_cmp(&FBig::ONE);
-        if cmp_one.is_gt() {
-            return Err(FpError::OutOfDomain);
         }
         // exact rows — see asin_unit for why they stay outside the Ziv loop
         if cmp_one.is_eq() {
@@ -1022,7 +1025,11 @@ impl<R: ErrorBounds> Context<R> {
         if x.significand.is_zero() {
             return exact_ratio(self, IBig::from(u), 4);
         }
-        if x_orig.abs_cmp(&(FBig::<R, B>::ONE / 2u8)).is_eq() {
+        // The `u/6` row keeps the rounded comparison, as in `asin_unit` (bounded derivative).
+        if FBig::<R, B>::new(x.clone(), *self)
+            .abs_cmp(&(FBig::<R, B>::ONE / 2u8))
+            .is_eq()
+        {
             return exact_ratio(
                 self,
                 if x.sign() == Sign::Positive {
@@ -1087,11 +1094,11 @@ impl<R: ErrorBounds> Context<R> {
             // atan(±0) = ±0
             return signed_zero_normal(self, x);
         }
-        // atan(±1) = ±u/8 — outside the Ziv loop
-        if FBig::<R, B>::new(x.clone(), *self)
-            .abs_cmp(&FBig::ONE)
-            .is_eq()
-        {
+        // atan(±1) = ±u/8 — outside the Ziv loop. Compared *exactly*, like the other `±1` rows;
+        // `atan` has no pole there, so a rounded `1 ± ulp` argument would only be a fraction of an
+        // ulp out, but the exact form makes the whole family's `±1` rows mean "the argument *is*
+        // the endpoint".
+        if repr_cmp_same_base::<B, true>(x, &Repr::<B>::one(), None).is_eq() {
             let num = if x.sign() == Sign::Negative {
                 -(IBig::from(u))
             } else {
@@ -1228,9 +1235,10 @@ impl<R: ErrorBounds> Context<R> {
             return signed_zero_normal(self, x);
         }
 
-        let x_orig = FBig::<R, B>::new(x.clone(), *self);
-        // Domain check: |x| must be <= 1
-        if x_orig.abs_cmp(&FBig::ONE).is_gt() {
+        // Domain check: |x| must be <= 1, compared *exactly* (no precision argument) — `±1` is
+        // a vertical tangent of `asin`, so an argument that merely rounds onto it
+        // (`1 − 10⁻¹⁵⁵` at 100 digits) is not the endpoint.
+        if repr_cmp_same_base::<B, true>(x, &Repr::<B>::one(), None).is_gt() {
             return Err(FpError::OutOfDomain);
         }
 
@@ -1259,7 +1267,18 @@ impl<R: ErrorBounds> Context<R> {
                 .pi::<B>(reborrow_cache(&mut cache))
                 .value();
             let half_pi = &pi / 2u8;
-            let rad = ulps::<B>(&half_pi.repr, wp, 8);
+            // `d = √(1 − x²)` collapsed onto zero — which is the endpoint *only* when the
+            // argument is exactly ±1. Otherwise the input merely rounded onto ±1 at this work
+            // precision, and the true `√(2δ)` is many ulps away (the derivative at the endpoint
+            // is infinite): reporting π/2 with a few ulps of radius would certify a value the
+            // true result is nowhere near. An infinite radius instead forces a Ziv retry at a
+            // higher guard, where the argument (and so the true difference) is representable and
+            // the general path below computes it.
+            let rad = if d.rad.is_zero() {
+                ulps::<B>(&half_pi.repr, wp, 8)
+            } else {
+                Mag::INFINITY
+            };
             let half_pi = Ball::with_error(half_pi.into_repr(), rad);
             Ok(if x.mid.sign() == Sign::Negative {
                 -half_pi
@@ -1287,8 +1306,10 @@ impl<R: ErrorBounds> Context<R> {
         }
         assert_limited_precision(self.precision);
 
-        let x_orig = FBig::<R, B>::new(x.clone(), *self);
-        let cmp_one = x_orig.abs_cmp(&FBig::ONE);
+        // Domain |x| ≤ 1 and the `±1` rows, compared *exactly* (no precision argument):
+        // `acos(1 − δ)` is `√(2δ)`, which the endpoint's `0` misses entirely once `δ` is far
+        // above the result's ulp.
+        let cmp_one = repr_cmp_same_base::<B, true>(x, &Repr::<B>::one(), None);
         if cmp_one.is_gt() {
             return Err(FpError::OutOfDomain);
         }
@@ -1604,8 +1625,9 @@ impl<R: ErrorBounds, const B: Word> FBig<R, B> {
 
     /// Calculate the tangent of the floating point number multiplied by π, i.e. `tan(self·π)`.
     ///
-    /// Every quarter-integer argument is exact: integers map to `±0` and quarter-integers to
-    /// `±1`. At odd half-integers — the poles — the one-sided limits are `+∞` and `−∞`, so no
+    /// Every quarter-integer argument is exact: integers map to `±0` (with the sign of the
+    /// input, keeping `tan_pi` odd — matching MPFR) and quarter-integers to `±1`. At odd
+    /// half-integers — the poles — the one-sided limits are `+∞` and `−∞`, so no
     /// signed infinity can be certified: the case is indeterminate (like `0/0`) and reported
     /// as an error at the context layer. The argument reduces exactly in integer arithmetic,
     /// so the accuracy is independent of the magnitude of `self`.
@@ -1681,6 +1703,17 @@ impl<R: ErrorBounds, const B: Word> FBig<R, B> {
     /// [`cos_unit`](Self::cos_unit) separately, except at the sixth-type exact points where
     /// exactly one of the two results is exact.
     ///
+    /// # Examples
+    /// ```
+    /// # use core::str::FromStr;
+    /// # use dashu_float::DBig;
+    /// let deg = DBig::from_str("30")?;
+    /// let (s, c) = deg.sin_cos_unit(360);
+    /// assert_eq!(s, DBig::from_str("0.5")?);
+    /// assert_eq!(c, DBig::from_str("0.86602540378443864676")?.with_precision(deg.precision()).value());
+    /// # Ok::<(), dashu_base::ParseError>(())
+    /// ```
+    ///
     /// # Panics
     /// Panics if the input is infinite or `u` is zero.
     #[inline]
@@ -1737,6 +1770,15 @@ impl<R: ErrorBounds, const B: Word> FBig<R, B> {
     /// Calculate `acos(self)·u/(2π)` — the arc cosine in units of the full turn divided by
     /// `u` (the inverse of [`cos_unit`](Self::cos_unit)).
     ///
+    /// # Examples
+    /// ```
+    /// # use core::str::FromStr;
+    /// # use dashu_float::DBig;
+    /// let half = DBig::from_str("0.5")?;
+    /// assert_eq!(half.acos_unit(360), DBig::from(60)); // acos(1/2) = 60°
+    /// # Ok::<(), dashu_base::ParseError>(())
+    /// ```
+    ///
     /// # Panics
     /// Panics if the input is infinite or `|self| > 1` (out of domain).
     #[inline]
@@ -1764,7 +1806,19 @@ impl<R: ErrorBounds, const B: Word> FBig<R, B> {
 
     /// Calculate `atan2(self, x)·u/(2π)` — the four-quadrant arc tangent in units of the
     /// full turn divided by `u`. Follows the same C99 signed-zero model as
-    /// [`atan2`](Self::atan2).
+    /// [`atan2`](Self::atan2). The receiver is the `y`-coordinate, the first argument the
+    /// `x`-coordinate: `(1).atan2_unit(&x, 360)`.
+    ///
+    /// # Examples
+    /// ```
+    /// # use core::str::FromStr;
+    /// # use dashu_float::DBig;
+    /// // atan2(1, 1) = 45° — the receiver is y, the argument x
+    /// let y = DBig::from_str("1.0")?; // two digits: the result 45 needs precision ≥ 2
+    /// let x = DBig::from_str("1.0")?;
+    /// assert_eq!(y.atan2_unit(&x, 360), DBig::from(45));
+    /// # Ok::<(), dashu_base::ParseError>(())
+    /// ```
     ///
     /// # Panics
     /// Panics if both arguments are zero.
@@ -1873,6 +1927,7 @@ mod tests {
     use super::*;
     use crate::round::mode;
     use crate::DBig;
+    use alloc::format;
     use core::str::FromStr;
 
     #[test]
@@ -2033,12 +2088,15 @@ mod tests {
                 }
             }
 
-            // tan_pi: integers → +0 (even, sign of x) or −0 (odd, unconditional);
+            // tan_pi: every integer zero carries the sign of x (tan is odd, so
+            // `tan_pi(−n) = −tan_pi(n)` must hold on the zeros too, matching MPFR);
             // quarter-integers → ±1; odd half-integers are indeterminate poles
             for (input, neg_zero, expect_one) in [
                 ("0", Some(false), None),
-                ("1", Some(true), None),
+                ("1", Some(false), None),
+                ("-1", Some(true), None),
                 ("2", Some(false), None),
+                ("-3", Some(true), None),
                 ("0.25", None, Some(true)),
                 ("0.75", None, Some(false)),
                 ("1.25", None, Some(true)),
@@ -2187,33 +2245,42 @@ mod tests {
     /// exact-case table through the no-materialization path.
     #[test]
     fn test_sin_pi_huge_exact_reduction() {
-        let p = 100;
-        let ctx = Context::<mode::HalfEven>::new(p);
+        for &p in &[20usize, 50, 100, 500] {
+            let ctx = Context::<mode::HalfEven>::new(p);
 
-        // x = ((2^60 + 1)·2^950 + 1)·2^-10 ≡ 2^-10 (mod 2)
-        let sig = (((IBig::from(1) << 60usize) + 1) << 950usize) + 1;
-        let x = Repr::<2>::new(sig, -10);
-        let residue = Repr::<2>::new(IBig::from(1), -10);
-        assert_eq!(
-            ctx.sin_pi::<2>(&x, None).unwrap().value(),
-            ctx.sin_pi::<2>(&residue, None).unwrap().value()
-        );
-        assert_eq!(
-            ctx.cos_pi::<2>(&x, None).unwrap().value(),
-            ctx.cos_pi::<2>(&residue, None).unwrap().value()
-        );
+            // x = ((2^60 + 1)·2^950 + 1)·2^-10 ≡ 2^-10 (mod 2)
+            let sig = (((IBig::from(1) << 60usize) + 1) << 950usize) + 1;
+            let x = Repr::<2>::new(sig, -10);
+            let residue = Repr::<2>::new(IBig::from(1), -10);
+            assert_eq!(
+                ctx.sin_pi::<2>(&x, None).unwrap().value(),
+                ctx.sin_pi::<2>(&residue, None).unwrap().value(),
+                "sin_pi(huge) == sin_pi(2^-10) at p={p}"
+            );
+            assert_eq!(
+                ctx.cos_pi::<2>(&x, None).unwrap().value(),
+                ctx.cos_pi::<2>(&residue, None).unwrap().value(),
+                "cos_pi(huge) == cos_pi(2^-10) at p={p}"
+            );
 
-        // an even integer at a huge exponent: quarter_class must not materialize 2^940
-        let huge_int = Repr::<2>::new((IBig::from(1) << 60usize) + 1, 940);
-        assert_eq!(ctx.sin_pi::<2>(&huge_int, None).unwrap().value(), FBig::<mode::HalfEven>::ZERO);
-        assert_eq!(ctx.cos_pi::<2>(&huge_int, None).unwrap().value(), FBig::<mode::HalfEven>::ONE);
-        // ...and an odd one at a small exponent: cos_pi(2^60+1) = -1 (odd integer)
-        assert_eq!(
-            ctx.cos_pi::<2>(&Repr::<2>::new((IBig::from(1) << 60usize) + 1, 0), None)
-                .unwrap()
-                .value(),
-            FBig::<mode::HalfEven>::NEG_ONE
-        );
+            // an even integer at a huge exponent: quarter_class must not materialize 2^940
+            let huge_int = Repr::<2>::new((IBig::from(1) << 60usize) + 1, 940);
+            assert_eq!(
+                ctx.sin_pi::<2>(&huge_int, None).unwrap().value(),
+                FBig::<mode::HalfEven>::ZERO
+            );
+            assert_eq!(
+                ctx.cos_pi::<2>(&huge_int, None).unwrap().value(),
+                FBig::<mode::HalfEven>::ONE
+            );
+            // ...and an odd one at a small exponent: cos_pi(2^60+1) = -1 (odd integer)
+            assert_eq!(
+                ctx.cos_pi::<2>(&Repr::<2>::new((IBig::from(1) << 60usize) + 1, 0), None)
+                    .unwrap()
+                    .value(),
+                FBig::<mode::HalfEven>::NEG_ONE
+            );
+        }
     }
 
     /// An astronomically-scaled tiny argument (`|x| < 1/4` with s ~ 10⁹) must take the
@@ -2242,23 +2309,24 @@ mod tests {
     /// themselves are `Indeterminate`).
     #[test]
     fn test_tan_pi_near_pole_signs() {
-        let p = 53;
-        let ctx = Context::<mode::HalfEven>::new(p);
-        let eps = FBig::<mode::HalfEven>::ONE >> 10;
-        // both operands must carry the context precision: at precision 1 the subtraction
-        // 0.5 − 2^-10 rounds back onto the exact pole
-        let half: FBig<mode::HalfEven> = FBig::ONE.with_precision(p).value() / 2u8;
-        let eps: FBig<mode::HalfEven> = eps.with_precision(p).value();
-        let below = ctx
-            .tan_pi::<2>((half.clone() - &eps).repr(), None)
-            .unwrap()
-            .value();
-        let above = ctx
-            .tan_pi::<2>((half.clone() + &eps).repr(), None)
-            .unwrap()
-            .value();
-        assert_eq!(below.sign(), Sign::Positive, "tan_pi just below 1/2");
-        assert_eq!(above.sign(), Sign::Negative, "tan_pi just above 1/2");
+        for &p in &[20usize, 50, 100, 500] {
+            let ctx = Context::<mode::HalfEven>::new(p);
+            let eps = FBig::<mode::HalfEven>::ONE >> 10;
+            // both operands must carry the context precision: at precision 1 the subtraction
+            // 0.5 − 2^-10 rounds back onto the exact pole
+            let half: FBig<mode::HalfEven> = FBig::ONE.with_precision(p).value() / 2u8;
+            let eps: FBig<mode::HalfEven> = eps.with_precision(p).value();
+            let below = ctx
+                .tan_pi::<2>((half.clone() - &eps).repr(), None)
+                .unwrap()
+                .value();
+            let above = ctx
+                .tan_pi::<2>((half.clone() + &eps).repr(), None)
+                .unwrap()
+                .value();
+            assert_eq!(below.sign(), Sign::Positive, "tan_pi just below 1/2 at p={p}");
+            assert_eq!(above.sign(), Sign::Negative, "tan_pi just above 1/2 at p={p}");
+        }
     }
 
     /// The ×u forward family's exact-value tables, in degrees (u = 360 — quarters, sixths and
@@ -2351,7 +2419,12 @@ mod tests {
                 .tan_unit::<10>(x("180").repr(), 360, None)
                 .unwrap()
                 .value();
-            assert!(t180.repr().is_neg_zero(), "tan_unit(180°) is -0");
+            assert!(t180.repr().is_pos_zero(), "tan_unit(180°) is +0 (sign of x)");
+            let t_180 = mode_ctx
+                .tan_unit::<10>(x("-180").repr(), 360, None)
+                .unwrap()
+                .value();
+            assert!(t_180.repr().is_neg_zero(), "tan_unit(−180°) is −0 (sign of x)");
             for pole in ["90", "270"] {
                 assert!(matches!(
                     mode_ctx.tan_unit::<10>(x(pole).repr(), 360, None),
@@ -2444,7 +2517,7 @@ mod tests {
             "0.1", "0.25", "0.3", "0.5", "1.2", "2.5", "-0.75", "10.1", "1e50",
         ] {
             let x = DBig::from_str(input).unwrap();
-            for &p in &[20usize, 100] {
+            for &p in &[20usize, 50, 100, 500] {
                 let ctx = Context::<mode::HalfEven>::new(p);
                 assert_eq!(
                     ctx.sin_pi::<10>(x.repr(), None).unwrap().value(),
@@ -2588,6 +2661,16 @@ mod tests {
             ));
             assert!(matches!(
                 mode_ctx.acos_unit::<10>(x("-1.5").repr(), u, None),
+                Err(FpError::OutOfDomain)
+            ));
+            // ... and the domain error outranks the u = 0 limit (the limit of a function
+            // that is undefined at this x for every u > 0 is not +0)
+            assert!(matches!(
+                mode_ctx.asin_unit::<10>(x("1.5").repr(), 0, None),
+                Err(FpError::OutOfDomain)
+            ));
+            assert!(matches!(
+                mode_ctx.acos_unit::<10>(x("-1.5").repr(), 0, None),
                 Err(FpError::OutOfDomain)
             ));
         }
@@ -2859,6 +2942,63 @@ mod tests {
                 assert_eq!(den, IBig::from(40));
             }
             _ => panic!("-0.3 must take the rational split"),
+        }
+    }
+
+    /// An argument that merely *rounds* onto `±1` is not the endpoint: the inverse functions have
+    /// a vertical tangent there, so the true result sits `√(2δ)` away — many ulps of the result.
+    ///
+    /// Regression: `asin_ball`'s endpoint branch keyed on `√(1−x²)` *collapsing* onto zero, and
+    /// `Ball::sqrt` returned that zero with the radius dropped — so `asin(1 − 10⁻¹⁵⁵)` at 100
+    /// digits returned exactly `π/2`, a result ~10⁹ ulps off, certified by the Ziv loop because
+    /// the endpoint branch reports only a few ulps of radius. (The `acos`/×u rows restated here
+    /// were saved by the loop's zero-candidate guard, which refuses to certify an exact zero
+    /// against a nonzero radius; they are asserted for the same reason.)
+    #[test]
+    fn test_inverse_endpoints_compare_exactly() {
+        // `1 − 10^-n` with `n = 1.5p + 5`: beyond the initial guard (50), so the argument rounds
+        // onto exactly `1` at the first work precision for p ≥ 100 — the case that used to snap —
+        // yet `√(2·10^-n)` is far above a result ulp. At p = 20/50 the general path is taken
+        // anyway; those rows are plain correctness checks.
+        for &p in &[20usize, 50, 100, 500] {
+            let n = 3 * p / 2 + 5;
+            let x = DBig::from_str(&format!("0.{}", "9".repeat(n))).unwrap();
+            let ctx = Context::<mode::HalfEven>::new(p);
+            let hi = Context::<mode::HalfEven>::new(p + 60);
+            let reround = |v: FBig<mode::HalfEven, 10>| v.with_precision(p).value();
+
+            let asin = ctx.asin::<10>(x.repr(), None).unwrap().value();
+            let asin_hi = reround(hi.asin::<10>(x.repr(), None).unwrap().value());
+            assert_eq!(asin, asin_hi, "asin(1 - 10^-{n}) at p={p}");
+            let one = Repr::<10>::one();
+            assert_ne!(
+                asin,
+                ctx.asin::<10>(&one, None).unwrap().value(),
+                "asin(1 - 10^-{n}) is not the endpoint"
+            );
+
+            let acos = ctx.acos::<10>(x.repr(), None).unwrap().value();
+            let acos_hi = reround(hi.acos::<10>(x.repr(), None).unwrap().value());
+            assert_eq!(acos, acos_hi, "acos(1 − 10^-{n}) at p={p}");
+            assert!(!acos.repr().significand().is_zero(), "acos is not an exact 0");
+
+            // the ×u inverses route through the same kernels
+            let (asin_u, asin_u_hi) = (
+                ctx.asin_unit::<10>(x.repr(), 360, None).unwrap().value(),
+                reround(hi.asin_unit::<10>(x.repr(), 360, None).unwrap().value()),
+            );
+            assert_eq!(asin_u, asin_u_hi, "asin_unit(1 − 10^-{n}, 360) at p={p}");
+            assert_ne!(
+                asin_u,
+                ctx.asin_unit::<10>(&one, 360, None).unwrap().value(),
+                "asin_unit(1 − 10^-{n}) is not the u/4 endpoint"
+            );
+            let (acos_u, acos_u_hi) = (
+                ctx.acos_unit::<10>(x.repr(), 360, None).unwrap().value(),
+                reround(hi.acos_unit::<10>(x.repr(), 360, None).unwrap().value()),
+            );
+            assert_eq!(acos_u, acos_u_hi, "acos_unit(1 − 10^-{n}, 360) at p={p}");
+            assert!(!acos_u.repr().significand().is_zero(), "acos_unit is not an exact 0");
         }
     }
 }

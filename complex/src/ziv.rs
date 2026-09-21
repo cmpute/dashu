@@ -130,6 +130,13 @@ impl<R: ErrorBounds> Context<R> {
         // never zero, so the strict guard would turn a correct first-attempt answer into an
         // endless retry. The ±ulp `error_bounds` preimage of ±0 is therefore load-bearing here,
         // and a certification within it bounds any error to sub-ulp-of-the-target scale.
+        // An unbounded radius — the `Mag::INFINITY` "unknown, retry at a higher guard" signal
+        // that a collapsed denominator exports (see `ball::div_real`) — can never fit a finite
+        // preimage, so it is answered here rather than by the arithmetic below (which asserts
+        // its operands finite, as `Repr` ops do).
+        if radius.repr().is_infinite() {
+            return false;
+        }
         let (lb, rb, incl_l, incl_r) = R::error_bounds::<B>(target);
         let x = FloatCtxt::<R>::new(0);
         let left = x

@@ -741,4 +741,25 @@ mod tests {
             plain.clone().with_base_and_precision::<2>(40).value()
         );
     }
+
+    /// The ×u trig family must exist on the cached wrapper and agree with the `FBig`
+    /// originals — the mirror-API rule: code that compiles with `FBig` compiles unchanged
+    /// with `CachedFBig`. `u = 2` is deliberately absent: `tan_unit(0.5, 2)` is the `tan_pi`
+    /// pole, which would panic through `unwrap_fp`.
+    #[test]
+    fn test_trig_unit_family_matches_fbig() {
+        let cached = CachedFBig::<mode::HalfAway, 10>::with_cache(
+            Repr::new(5000.into(), -4), // 0.5000
+            Context::new(50),
+        );
+        let plain = cached.as_fbig().clone();
+        for u in [3usize, 360, 4096] {
+            assert_eq!(cached.sin_unit(u).into_fbig(), plain.sin_unit(u), "sin {u}");
+            assert_eq!(cached.cos_unit(u).into_fbig(), plain.cos_unit(u), "cos {u}");
+            assert_eq!(cached.tan_unit(u).into_fbig(), plain.tan_unit(u), "tan {u}");
+            assert_eq!(cached.asin_unit(u).into_fbig(), plain.asin_unit(u), "asin {u}");
+            assert_eq!(cached.acos_unit(u).into_fbig(), plain.acos_unit(u), "acos {u}");
+            assert_eq!(cached.atan_unit(u).into_fbig(), plain.atan_unit(u), "atan {u}");
+        }
+    }
 }

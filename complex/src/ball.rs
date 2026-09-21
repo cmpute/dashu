@@ -314,16 +314,28 @@ fn seed_ball<const B: Word>(re: &Repr<B>, prec: usize) -> Ball<B> {
     Ball::from_rounded(rooted.map(FBig::into_repr), prec)
 }
 
-/// `num / d` by a real ball, with the exact-zero numerator shortcut: a precisely-zero numerator
-/// divides to a precisely-zero quotient no matter how uncertain the denominator is — the generic
-/// `Ball::div` rule would price the touching-zero denominator as an infinite radius, which no
-/// Ziv loop can ever certify (e.g. the `y/(2a)` of `√(x + 0i)` with an inexact root `a`).
+/// `num / d` by a real ball. A precisely-zero numerator divides to a precisely-zero quotient —
+/// unless the denominator is exactly zero too: that is the genuine 0/0 (e.g. `tan_pi` at a
+/// real-axis pole), and it falls to the kernel division, which reports `Indeterminate`. A
+/// *nonzero* numerator over a zero-or-straddling denominator has an unbounded quotient: the
+/// whole-line ball (`Mag::INFINITY` radius) is exported, which no Ziv attempt can certify — the
+/// loop retries at a higher guard, where the strictly positive true denominator (`D = cos 2x +
+/// cosh 2y > 0` for `y ≠ 0`, `2·root > 0` in `sqrt`) re-emerges above its addends' rounding
+/// noise. The kernel division must not run in that state: a zero-mid denominator surfaces as
+/// the infinity that panics the part arithmetic.
 fn div_real<const B: Word>(num: &Ball<B>, d: &Ball<B>, prec: usize) -> Result<Ball<B>, FpError> {
-    if num.rad.is_zero() && num.mid.significand().is_zero() && !d.mid.significand().is_zero() {
-        return Ok(Ball::exact(num.mid.clone()));
+    let d_exact_zero = d.rad.is_zero() && d.mid.significand().is_zero();
+    if num.rad.is_zero() && num.mid.significand().is_zero() {
+        if d_exact_zero {
+            return num.div(d, prec); // genuine 0/0 → kernel `Indeterminate`
+        }
+        return Ok(Ball::exact(num.mid.clone())); // 0 over anything else is exactly 0
     }
-    // an exact zero numerator over an exact zero denominator is a genuine 0/0: fall through so
-    // the kernel division reports `Indeterminate` (e.g. `tan_pi` at a real-axis pole)
+    if d_exact_zero || Mag::from_repr_lower(&d.mid).sub_down(&d.rad).is_zero() {
+        // exactly-zero denominator (nonzero numerator) or touching/straddling zero:
+        // unbounded quotient → whole-line retry signal
+        return Ok(Ball::with_error(Repr::<B>::zero(), Mag::INFINITY));
+    }
     num.div(d, prec)
 }
 

@@ -30,6 +30,24 @@
   `sinh_cosh_pi`. `tan_pi` uses the same cancellation-free double-angle identity as `tan`, and
   reports `Err(Indeterminate)` at the real-axis poles (`y = 0`, x an odd multiple of `1/2`).
 
+### Fix
+- **`tan`/`tan_pi` near the real-axis poles no longer error or panic on finite,
+  correctly-roundable inputs.** The double-angle denominator `cos(2x) + cosh(2y)` cancels
+  into its addends' rounding noise near the poles: the composed ball division previously
+  surfaced a terminal `Err(Indeterminate)` (`0/0`) or an infinity that panicked the part
+  arithmetic (`x/0`) — e.g. `tan_pi(0.5 + 1e-40·i)` (true value ≈ `3.18e39·i`) errored, and
+  `tan_pi((0.5 + 1e-60) + 1e-40·i)` panicked. A collapsed — or deeply cancelled — denominator
+  now exports the whole-line ball (an unbounded radius that no Ziv attempt can certify), so
+  the loop retries at a higher guard, where the strictly positive true denominator
+  (`D = cos 2x + cosh 2y > 0` for `y ≠ 0`) re-emerges above its addends' rounding noise; the
+  genuine 0/0 at an exact pole still reports `Err(Indeterminate)`.
+- **An exactly-zero result part carries a zero error radius**, so it certifies under the
+  directed modes: the one-sided rounding preimage of `+0` (`[0, ulp)` under `Down`) fits no
+  nonzero symmetric interval. In the ball composition the property is mechanical — an exact
+  factor times anything is an exact product, and the kernel's exact values (e.g.
+  `cos_pi(0.5) = 0`) seed radius-0 balls — verified by the directed ×π sweep on
+  `sin_pi(0.5 + 1e-8·i)`, which previously could not certify under directed modes.
+
 ## 0.6.0
 
 ### Change

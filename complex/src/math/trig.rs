@@ -8,7 +8,7 @@
 use crate::ball::CBall;
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, reborrow_cache, CfpResult, Context};
-use dashu_base::{Approximation, Sign};
+use dashu_base::Approximation;
 use dashu_float::round::ErrorBounds;
 use dashu_float::{Ball, ConstCache, Context as FloatCtxt, FBig, FpError, Repr};
 use dashu_int::{IBig, Word};
@@ -40,11 +40,7 @@ impl<R: ErrorBounds> Context<R> {
             // cos(x+iy) = cosx·coshy − i·sinx·sinhy: real = 1; the imaginary part is the signed
             // product `x·y` (`−0` iff the two parts are opposite-signed zeros) — the Annex-G table
             // value, which differs from the naive `−sinx·sinhy` propagation (`ccos(-0 + i·0) = 1 - i·0`).
-            let cos_im = if re.sign() != im.sign() {
-                Sign::Negative
-            } else {
-                Sign::Positive
-            };
+            let cos_im = re.sign() * im.sign(); // Annex G: negative iff the signs differ
             let cos = crate::repr::exact(
                 FBig::from_repr(Repr::one(), self.float()),
                 FBig::from_repr(Repr::zero_with_sign(cos_im), self.float()),
@@ -125,10 +121,12 @@ impl<R: ErrorBounds> Context<R> {
     /// `tan(x+iy) = (sin 2x + i·sinh 2y) / (cos 2x + cosh 2y)`.
     ///
     /// The denominator `cos 2x + cosh 2y` is a sum of a bounded term (`cos 2x ∈ [−1, 1]`) and a
-    /// term `≥ 1` (`cosh 2y`), so it never catastrophically cancels — unlike `sin z / cos z`, whose
+    /// term `≥ 1` (`cosh 2y`), so it never cancels to a *true* zero — unlike `sin z / cos z`, whose
     /// `sin·conj(cos)` real part cancels from `~cosh²y` down to `O(1)` for large `|Im z|`. The result
     /// is accurate for all finite `|Im z|`; the only small-denominator points are the real-axis poles
-    /// (`y = 0, x = π/2 + kπ`), where the large value is genuine, not an artifact.
+    /// (`y = 0, x = π/2 + kπ`), where the large value is genuine, not an artifact — near them the
+    /// *computed* sum can still round onto an exact zero (a precision artifact), which retries at
+    /// higher guard rather than dividing (see the collapsed-denominator guard below).
     pub fn tan<const B: Word>(
         &self,
         z: &CBig<R, B>,
@@ -209,11 +207,7 @@ impl<R: ErrorBounds> Context<R> {
             );
             // cos(x+iy)·π = cosx·coshy − i·sinx·sinhy: real = 1; the imaginary part is the
             // signed product `x·y` — the Annex-G table value (see the radian `sin_cos`).
-            let cos_im = if re.sign() != im.sign() {
-                Sign::Negative
-            } else {
-                Sign::Positive
-            };
+            let cos_im = re.sign() * im.sign(); // Annex G: negative iff the signs differ
             let cos = crate::repr::exact(
                 FBig::from_repr(Repr::one(), self.float()),
                 FBig::from_repr(Repr::zero_with_sign(cos_im), self.float()),
@@ -295,10 +289,13 @@ impl<R: ErrorBounds> Context<R> {
     /// `tan(z·π) = (sin_pi(2x) + i·sinh(2πy)) / (cos_pi(2x) + cosh(2πy))`.
     ///
     /// As for the radian [`tan`](Self::tan), the denominator is a sum of a bounded term
-    /// (`cos_pi(2x) ∈ [−1, 1]`) and a term `≥ 1` (`cosh(2πy)`), so it never catastrophically
-    /// cancels. The real-axis poles (`y = 0`, x an odd multiple of `1/2`) make the denominator
-    /// exactly zero against a zero numerator — the `0/0` maps to [`FpError::Indeterminate`],
-    /// the same convention as the real `tan_pi`.
+    /// (`cos_pi(2x) ∈ [−1, 1]`) and a term `≥ 1` (`cosh(2πy)`) — for `y ≠ 0` the true value
+    /// is `≥ cosh(2πy) − 1 > 0`, so it never cancels to zero exactly. Near the real-axis
+    /// poles, though, both terms round to `∓1` and the *computed* sum collapses onto zero;
+    /// a purely real argument bypasses that via the real [`tan_pi`](dashu_float::Context::tan_pi)
+    /// kernel (whose pole guard certifies the huge near-pole values, and whose exact poles
+    /// return [`FpError::Indeterminate`] — the same `0/0` convention), and a nonzero tiny `y`
+    /// retries until the (always positive) true difference re-emerges at higher guard.
     pub fn tan_pi<const B: Word>(
         &self,
         z: &CBig<R, B>,
@@ -315,6 +312,21 @@ impl<R: ErrorBounds> Context<R> {
                 FBig::from_repr(Repr::zero_with_sign(re.sign()), self.float()),
                 FBig::from_repr(Repr::zero_with_sign(im.sign()), self.float()),
             ));
+        }
+        if z.im().significand().is_zero() {
+            // A purely real argument reduces exactly to the real ×π kernel — the double-angle
+            // denominator would cancel `cos_pi(2x)` against `cosh(0) = 1` down to (and past)
+            // zero near the poles, while the real kernel's own guard handles them. The
+            // imaginary part is `sinh(±0)/D` with `D = cos_pi(2x) + 1 ≥ 0`: ±0 with the sign
+            // of `y`.
+            return FloatCtxt::<R>::new(self.precision())
+                .tan_pi::<B>(z.re(), reborrow_cache(&mut cache))
+                .map(|t| {
+                    crate::repr::exact(
+                        t.value(),
+                        FBig::from_repr(Repr::zero_with_sign(z.im().sign()), self.float()),
+                    )
+                });
         }
 
         // Like the radian `tan`: exact doublings, the ×π kernels on the doubled midpoints
@@ -506,18 +518,65 @@ impl<R: ErrorBounds, const B: Word> CBig<R, B> {
     }
 
     /// Complex sine of `z·π` (convenience layer). Panics on an indeterminate special value.
+    ///
+    /// On the real axis the ×π kernels' exact lattice resolves exactly: `sin_pi(1/2) = 1`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dashu_cmplx::CBig;
+    /// use dashu_float::{FBig, round::mode::HalfAway};
+    ///
+    /// type C = CBig<HalfAway, 10>;
+    /// type F = FBig<HalfAway, 10>;
+    /// let ctx = |v: i32| F::from(v).with_precision(53).value();
+    /// let half = ctx(1) / ctx(2); // the parts share one significant-digit width
+    /// let s = C::from_parts(half, ctx(0)).sin_pi();
+    /// assert!(s == C::ONE);
+    /// ```
     #[inline]
     pub fn sin_pi(&self) -> Self {
         self.context().unwrap_cfp(self.context().sin_pi(self, None))
     }
 
     /// Complex cosine of `z·π` (convenience layer). Panics on an indeterminate special value.
+    ///
+    /// The exact lattice applies here too: the cosine of an exactly representable half-integer
+    /// real part is exactly zero, and of an integer is `±1`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dashu_cmplx::CBig;
+    /// use dashu_float::{FBig, round::mode::HalfAway};
+    ///
+    /// type C = CBig<HalfAway, 10>;
+    /// type F = FBig<HalfAway, 10>;
+    /// let ctx = |v: i32| F::from(v).with_precision(53).value();
+    /// let c = C::from_parts(ctx(1), ctx(0)).cos_pi();
+    /// assert!(c == C::NEG_ONE); // cos(π) = -1
+    /// ```
     #[inline]
     pub fn cos_pi(&self) -> Self {
         self.context().unwrap_cfp(self.context().cos_pi(self, None))
     }
 
     /// Simultaneously compute `(sin(z·π), cos(z·π))` (convenience layer).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dashu_cmplx::CBig;
+    /// use dashu_float::{FBig, round::mode::HalfAway};
+    ///
+    /// type C = CBig<HalfAway, 10>;
+    /// type F = FBig<HalfAway, 10>;
+    /// let ctx = |v: i32| F::from(v).with_precision(53).value();
+    /// let half = ctx(1) / ctx(2);
+    /// let (s, c) = C::from_parts(half, ctx(0)).sin_cos_pi();
+    /// assert!(s == C::ONE);
+    /// assert!(c == C::ZERO);
+    /// ```
     #[inline]
     pub fn sin_cos_pi(&self) -> (Self, Self) {
         let (s, c) = self.context().sin_cos_pi(self, None);
@@ -526,6 +585,20 @@ impl<R: ErrorBounds, const B: Word> CBig<R, B> {
 
     /// Complex tangent of `z·π` (convenience layer). Panics at the real-axis poles
     /// (`y = 0`, x an odd multiple of `1/2`, where the result is indeterminate).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dashu_cmplx::CBig;
+    /// use dashu_float::{FBig, round::mode::HalfAway};
+    ///
+    /// type C = CBig<HalfAway, 10>;
+    /// type F = FBig<HalfAway, 10>;
+    /// let ctx = |v: i32| F::from(v).with_precision(53).value();
+    /// let quarter = ctx(1) / ctx(4);
+    /// let t = C::from_parts(quarter, ctx(0)).tan_pi();
+    /// assert!(t == C::ONE); // tan(π/4) = 1
+    /// ```
     #[inline]
     pub fn tan_pi(&self) -> Self {
         self.context().unwrap_cfp(self.context().tan_pi(self, None))
@@ -632,6 +705,211 @@ mod tests {
 
         // the real-axis pole: tan_pi(1/2 + 0i) is indeterminate (0/0 in the double-angle form)
         assert_eq!(ctx.tan_pi(&half, None), Err(FpError::Indeterminate));
+    }
+
+    /// The ×π family under directed modes: the p-digit result must match the `p + 60` HalfEven
+    /// evaluation re-rounded to `p` under the same mode (the definition of correct rounding),
+    /// across the precision sweep and including a near-pole tangent. Directed coverage was
+    /// previously absent (only Nearest was tested).
+    #[test]
+    fn pi_family_directed_matches_oracle() {
+        use core::str::FromStr;
+        type HC = CBig<mode::HalfEven, 10>;
+        type HF = FBig<mode::HalfEven, 10>;
+        // (re, im): a generic point, a quarter-integer real part, and a near-pole real part
+        // with a tiny imaginary part (the collapsed-denominator retry path under Down/Up)
+        let points = [("0.3", "0.2"), ("0.25", "-1.5"), ("0.5", "1e-8")];
+        for p in [16usize, 34, 50] {
+            for (re_s, im_s) in points {
+                // the input's p-digit rounding (shared across modes via the raw reprs)
+                let re_r = HF::from_str(re_s)
+                    .unwrap()
+                    .with_precision(p)
+                    .value()
+                    .repr()
+                    .clone();
+                let im_r = HF::from_str(im_s)
+                    .unwrap()
+                    .with_precision(p)
+                    .value()
+                    .repr()
+                    .clone();
+                let part = |r: &Repr<10>, unlim: &FloatCtxt<mode::HalfEven>| {
+                    HF::from_repr(r.clone(), *unlim)
+                };
+                let unlim = FloatCtxt::<mode::HalfEven>::new(0);
+                let z = HC::from_parts(part(&re_r, &unlim), part(&im_r, &unlim));
+                let hi = Context::<mode::HalfEven>::new(p + 60);
+                let sin_hi = hi.sin_pi(&z, None).unwrap().value();
+                let cos_hi = hi.cos_pi(&z, None).unwrap().value();
+                let tan_hi = hi.tan_pi(&z, None).unwrap().value();
+
+                // the directed evaluations need the input in their own rounding mode
+                let mk_down = || {
+                    let u = FloatCtxt::<mode::Down>::new(0);
+                    CBig::<mode::Down, 10>::from_parts(
+                        FBig::<mode::Down, 10>::from_repr(re_r.clone(), u),
+                        FBig::<mode::Down, 10>::from_repr(im_r.clone(), u),
+                    )
+                };
+                let mk_up = || {
+                    let u = FloatCtxt::<mode::Up>::new(0);
+                    CBig::<mode::Up, 10>::from_parts(
+                        FBig::<mode::Up, 10>::from_repr(re_r.clone(), u),
+                        FBig::<mode::Up, 10>::from_repr(im_r.clone(), u),
+                    )
+                };
+                let down = Context::<mode::Down>::new(p);
+                let zd = mk_down();
+                check_directed(
+                    "sin_pi",
+                    p,
+                    re_s,
+                    im_s,
+                    "Down",
+                    down.sin_pi(&zd, None).unwrap().value(),
+                    &sin_hi,
+                );
+                check_directed(
+                    "cos_pi",
+                    p,
+                    re_s,
+                    im_s,
+                    "Down",
+                    down.cos_pi(&zd, None).unwrap().value(),
+                    &cos_hi,
+                );
+                check_directed(
+                    "tan_pi",
+                    p,
+                    re_s,
+                    im_s,
+                    "Down",
+                    down.tan_pi(&zd, None).unwrap().value(),
+                    &tan_hi,
+                );
+                let up = Context::<mode::Up>::new(p);
+                let zu = mk_up();
+                check_directed(
+                    "sin_pi",
+                    p,
+                    re_s,
+                    im_s,
+                    "Up",
+                    up.sin_pi(&zu, None).unwrap().value(),
+                    &sin_hi,
+                );
+                check_directed(
+                    "cos_pi",
+                    p,
+                    re_s,
+                    im_s,
+                    "Up",
+                    up.cos_pi(&zu, None).unwrap().value(),
+                    &cos_hi,
+                );
+                check_directed(
+                    "tan_pi",
+                    p,
+                    re_s,
+                    im_s,
+                    "Up",
+                    up.tan_pi(&zu, None).unwrap().value(),
+                    &tan_hi,
+                );
+            }
+        }
+    }
+
+    /// Directed oracle check: `got` (computed at `p` under mode `M`) must equal the
+    /// `p + 60` HalfEven evaluation with each part re-rounded to `p` under `M`.
+    fn check_directed<M: ErrorBounds, const B: Word>(
+        name: &str,
+        p: usize,
+        re_s: &str,
+        im_s: &str,
+        tag: &str,
+        got: CBig<M, B>,
+        hi: &CBig<mode::HalfEven, B>,
+    ) {
+        let conv = |v: &FBig<mode::HalfEven, B>| {
+            FBig::<M, B>::from_repr(v.repr().clone(), FloatCtxt::<M>::new(0))
+                .with_precision(p)
+                .value()
+        };
+        let (hre, him) = hi.clone().into_parts();
+        let expect = CBig::<M, B>::from_parts(conv(&hre), conv(&him));
+        assert!(got == expect, "{name} p={p} re={re_s} im={im_s} {tag}: {got:?} vs {expect:?}");
+    }
+
+    /// Near-pole `tan`/`tan_pi`: when both double-angle denominator terms round onto `∓1`, the
+    /// sum collapses to an exact zero — a rounding artifact that must retry at higher guard,
+    /// not error (`0/0 → Indeterminate`), not panic (`x/0 →` an infinity in the part
+    /// arithmetic). All three shapes are pinned: tiny imaginary part (huge finite value),
+    /// pure-real near-pole (delegated to the real kernel), and the radian `tan` near `π/2`.
+    #[test]
+    fn tan_near_real_poles_retries_instead_of_erroring() {
+        use core::str::FromStr;
+        use dashu_base::AbsOrd;
+        type HC = CBig<mode::HalfEven, 10>;
+        type HF = FBig<mode::HalfEven, 10>;
+        let ctx = Context::<mode::HalfEven>::new(53);
+        let fctx = FloatCtxt::<mode::HalfEven>::new(53);
+
+        // (1) tan_pi(0.5 + 1e-40·i): cos_pi(1) = −1 exact and cosh rounds onto 1, so the
+        // denominator collapses at the first guard — the retry must recover
+        // i·coth(π·1e-40) ≈ 3.183…e39·i.
+        let half = HF::from_str("0.5").unwrap().with_precision(53).value();
+        let tiny = HF::from_str("1e-40").unwrap().with_precision(53).value();
+        let z = HC::from_parts(half, tiny.clone());
+        let t53 = ctx.tan_pi(&z, None).unwrap().value();
+        let (t53_re, t53_im) = t53.clone().into_parts();
+        assert!(t53_re == HF::ZERO, "re = sin_pi(1)/D = 0/D");
+        let lo = HF::from_str("3.18e39").unwrap();
+        let hi = HF::from_str("3.19e39").unwrap();
+        assert!(t53_im.abs_cmp(&lo).is_gt() && t53_im.abs_cmp(&hi).is_lt());
+        // and it is correctly rounded: the p = 113 evaluation re-rounded to 53 agrees
+        let t113 = Context::<mode::HalfEven>::new(113)
+            .tan_pi(&z, None)
+            .unwrap()
+            .value();
+        let (r113, i113) = t113.into_parts();
+        let t113_rerounded =
+            HC::from_parts(r113.with_precision(53).value(), i113.with_precision(53).value());
+        assert!(t53 == t113_rerounded, "near-pole tan_pi not correctly rounded");
+
+        // (2) pure-real near-pole: delegated to the real kernel — the exact same value
+        // (previously the collapsed denominator surfaced as Err(Indeterminate)).
+        let x = HF::from_str("0.50000000000000000000000000000000000000001")
+            .unwrap()
+            .with_precision(53)
+            .value();
+        let z = HC::from_parts(x.clone(), HF::ZERO);
+        let t = ctx.tan_pi(&z, None).unwrap().value();
+        let expect = fctx.tan_pi::<10>(x.repr(), None).unwrap().value();
+        assert!(t == HC::from_parts(expect, HF::ZERO));
+
+        // (3) both parts nonzero near the pole: tan_pi((0.5 + 1e-60) + 1e-40·i) — the shape
+        // that previously panicked through the infinity quotient.
+        let x = HF::from_str("0.500000000000000000000000000000000000000000000000001")
+            .unwrap()
+            .with_precision(53)
+            .value();
+        let z = HC::from_parts(x, tiny);
+        let (_, t_im) = ctx.tan_pi(&z, None).unwrap().value().into_parts();
+        assert!(t_im.abs_cmp(&lo).is_gt() && t_im.abs_cmp(&hi).is_lt());
+
+        // (4) the radian twin: tan(x + 0i) with x = π/2 rounded to 53 digits — cos(2x)
+        // rounds onto −1 against cosh(0) = 1.
+        let x = HF::from_str("1.5707963267948966192313216916397514420985846996875529")
+            .unwrap()
+            .with_precision(53)
+            .value();
+        let z = HC::from_parts(x, HF::ZERO);
+        let (t_re, t_im) = ctx.tan(&z, None).unwrap().value().into_parts();
+        let huge = HF::from_str("1e50").unwrap();
+        assert!(t_re.abs_cmp(&huge).is_gt(), "tan near π/2 must be huge");
+        assert!(t_im == HF::ZERO);
     }
 
     /// The imaginary axis: `sin_pi(iy) = i·sinh(πy)` and `cos_pi(iy) = cosh(πy)`, exercising
