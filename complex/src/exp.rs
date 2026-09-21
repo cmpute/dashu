@@ -7,6 +7,7 @@
 //!
 //! Mirroring `dashu-float`, the power family lives alongside `exp` in a single module.
 
+use crate::ball::CBall;
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, exact, reborrow_cache, riemann, CfpResult, Context};
 use dashu_base::Approximation::*;
@@ -123,21 +124,19 @@ impl<R: ErrorBounds> Context<R> {
             };
         }
 
-        // `e^x·(cos y + i·sin y)`. The float `exp`/`sin_cos` are correctly-rounded at the working
-        // precision, so each contributes ~0 to the composition radius; only the two products round,
-        // at a few working-ULPs. The Ziv driver asserts a limited context (the special-value
-        // shortcuts above are exact and need no precision); overflow from a large real part
-        // propagates from the closure with `?`.
+        // `e^x·(cos y + i·sin y)` through the ball composition (`CBall::exp`): the float
+        // `exp`/`sin_cos` kernels run on the midpoints and the input radii (zero here — the
+        // entry is exact) propagate mechanically through the two tracked products. The Ziv
+        // driver asserts a limited context (the special-value shortcuts above are exact and
+        // need no precision); overflow from a large real part propagates from the closure
+        // with `?`.
         let p = self.precision();
         let [re, im] = self.ziv(EXP_GUARD, |guard| {
-            let gctx = FloatCtxt::<R>::new(p + guard);
-            let ex = gctx.exp(z.re(), reborrow_cache(&mut cache))?.value();
-            let (sin_y, cos_y) = gctx.sin_cos(z.im(), reborrow_cache(&mut cache));
-            let cos_y = cos_y?.value();
-            let sin_y = sin_y?.value();
-            let re = gctx.mul(ex.repr(), cos_y.repr())?.value();
-            let im = gctx.mul(ex.repr(), sin_y.repr())?.value();
-            Ok([(re.clone(), re.ulp() * 6), (im.clone(), im.ulp() * 6)])
+            let pw = p + guard;
+            let gctx = FloatCtxt::<R>::new(pw);
+            let out =
+                CBall::from_parts(z.re(), z.im(), pw).exp(&gctx, pw, reborrow_cache(&mut cache))?;
+            Ok(out.to_parts_radius(&gctx))
         })?;
         Ok(combine_parts(re, im))
     }
@@ -218,6 +217,7 @@ impl<R: ErrorBounds, const B: Word> CBig<R, B> {
 mod tests {
     use super::*;
     use dashu_float::round::mode;
+    use dashu_float::FBig;
 
     type C = CBig<mode::HalfAway, 10>;
     type F = FBig<mode::HalfAway, 10>;
@@ -325,6 +325,28 @@ mod tests {
     fn powf_one_exponent_is_self() {
         let z = c(2, 1);
         assert!(z.powf(&C::ONE) == z);
+    }
+
+    // The mechanically tracked radius must certify at the target precision across the width
+    // sweep: each result equals the same op computed at `p + 60` and re-rounded to `p` (both
+    // sides are correctly rounded on the same exact integer input, so they agree bit for bit).
+    #[test]
+    fn exp_matches_oracle_across_precisions() {
+        type C2 = CBig<mode::HalfEven, 2>;
+        type F2 = FBig<mode::HalfEven, 2>;
+        let inputs = [(1i64, 0i64), (0, 2), (-2, 1), (3, -4), (0, -5), (-4, 0)];
+        for p in [20usize, 50, 100, 500] {
+            for (re, im) in inputs {
+                let mk = |v: i64| F2::from(v).with_precision(p).value();
+                let mk_hi = |v: i64| F2::from(v).with_precision(p + 60).value();
+                let (hre, him) = C2::from_parts(mk_hi(re), mk_hi(im)).exp().into_parts();
+                let expect_re = hre.with_precision(p).value();
+                let expect_im = him.with_precision(p).value();
+                let got = C2::from_parts(mk(re), mk(im)).exp();
+                assert_eq!(got.re(), expect_re.repr(), "re p={p} z=({re},{im})");
+                assert_eq!(got.im(), expect_im.repr(), "im p={p} z=({re},{im})");
+            }
+        }
     }
 
     // exp/powf on an unlimited-precision CBig must panic, not silently compute at the fixed guard
