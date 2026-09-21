@@ -5,11 +5,12 @@
 //! `sin(x+iy) = sin x·cosh y + i·cos x·sinh y`, `cos(x+iy) = cos x·cosh y − i·sin x·sinh y`. This
 //! form avoids the `exp(±iz)` identity's exponential blow-up for large `|Im z|`.
 
+use crate::ball::CBall;
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, reborrow_cache, CfpResult, Context};
 use dashu_base::Sign;
 use dashu_float::round::ErrorBounds;
-use dashu_float::{ConstCache, Context as FloatCtxt, FBig, FpError, Repr};
+use dashu_float::{Ball, ConstCache, Context as FloatCtxt, FBig, FpError, Repr};
 use dashu_int::{IBig, Word};
 
 /// Guard digits (base-B) for the forward trig. Composes real `sin_cos` + `sinh_cosh` + two
@@ -51,29 +52,32 @@ impl<R: ErrorBounds> Context<R> {
             return (Ok(sin), Ok(cos));
         }
 
-        // `sin z = sinx·coshy + i·cosx·sinhy`, `cos z = cosx·coshy − i·sinx·sinhy`. The four products
-        // share one evaluation of the real `sin_cos`/`sinh_cosh` (each correctly-rounded at the
-        // working precision, contributing ~0); only the products round, a few working-ULPs each. A
-        // single 4-part Ziv loop certifies all of `sin` and `cos` together.
+        // `sin z = sinx·coshy + i·cosx·sinhy`, `cos z = cosx·coshy − i·sinx·sinhy`. The four
+        // products share one evaluation of the real `sin_cos`/`sinh_cosh` (each correctly-rounded
+        // at the working precision, folded to one work-ulp by `from_rounded`) and are tracked by
+        // the ball product rule — the radius is mechanical, so the cancellation near the trig
+        // zeros prices itself. A single 4-part Ziv loop certifies all of `sin` and `cos`
+        // together; the entry is exact, so the input-error folds are all zero.
         let p = self.precision();
         let parts = self.ziv(TRIG_GUARD, |guard| {
-            let gctx = FloatCtxt::<R>::new(p + guard);
-            let (sinx, cosx) = gctx.sin_cos(z.re(), reborrow_cache(&mut cache));
-            let sinx = sinx?.value();
-            let cosx = cosx?.value();
-            let (sinhy, coshy) = gctx.sinh_cosh(z.im(), reborrow_cache(&mut cache));
-            let sinhy = sinhy?.value();
-            let coshy = coshy?.value();
-            let sin_re = gctx.mul(sinx.repr(), coshy.repr())?.value();
-            let sin_im = gctx.mul(cosx.repr(), sinhy.repr())?.value();
-            let cos_re = gctx.mul(cosx.repr(), coshy.repr())?.value();
-            let neg_sinx = -sinx; // cos z's imaginary part is −sinx·sinhy
-            let cos_im = gctx.mul(neg_sinx.repr(), sinhy.repr())?.value();
+            let pw = p + guard;
+            let gctx = FloatCtxt::<R>::new(pw);
+            let cb = CBall::from_parts(z.re(), z.im(), pw);
+            let (sinx, cosx) = gctx.sin_cos(&cb.re.mid, reborrow_cache(&mut cache));
+            let sx = Ball::from_rounded(sinx?.map(FBig::into_repr), pw);
+            let cx = Ball::from_rounded(cosx?.map(FBig::into_repr), pw);
+            let (sinhy, coshy) = gctx.sinh_cosh(&cb.im.mid, reborrow_cache(&mut cache));
+            let shy = Ball::from_rounded(sinhy?.map(FBig::into_repr), pw);
+            let chy = Ball::from_rounded(coshy?.map(FBig::into_repr), pw);
+            let sin_re = sx.mul(&chy, pw)?;
+            let sin_im = cx.mul(&shy, pw)?;
+            let cos_re = cx.mul(&chy, pw)?;
+            let cos_im = -sx.mul(&shy, pw)?; // cos z's imaginary part is −sinx·sinhy
             Ok([
-                (sin_re.clone(), sin_re.ulp() * 8),
-                (sin_im.clone(), sin_im.ulp() * 8),
-                (cos_re.clone(), cos_re.ulp() * 8),
-                (cos_im.clone(), cos_im.ulp() * 8),
+                sin_re.to_value_radius(&gctx),
+                sin_im.to_value_radius(&gctx),
+                cos_re.to_value_radius(&gctx),
+                cos_im.to_value_radius(&gctx),
             ])
         });
         let [sin_re, sin_im, cos_re, cos_im] = match parts {
