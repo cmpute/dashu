@@ -1,6 +1,5 @@
 use dashu_base::{
     utils::{next_down, next_up},
-    AbsOrd,
     Approximation::*,
     BitTest, EstimatedLog2, PowerOfTwo, Sign, UnsignedAbs,
 };
@@ -8,6 +7,7 @@ use dashu_int::{IBig, UBig};
 
 use crate::{
     ball::{ulps, Ball},
+    cmp::repr_cmp_same_base,
     error::{assert_finite, assert_limited_precision, FpError, FpResult},
     fbig::FBig,
     mag::Mag,
@@ -345,6 +345,14 @@ impl<R: Round> Context<R> {
             } else {
                 x_ball
             };
+            // A zero midpoint means the `ln_1p` argument rounded onto the pole at `−1` and the sum
+            // cancelled exactly (`1 + x` is within `rad` of zero, so it may as well be negative —
+            // no logarithm exists). `log2_bounds` saturates at `−∞` there, which the reduction
+            // below cannot use. The whole-line radius asks the Ziv loop for a higher guard, at
+            // which the argument is representable and the sum is a nonzero difference again.
+            if x_ball.mid.significand().is_zero() {
+                return Ok(Ball::with_error(Repr::zero(), Mag::INFINITY));
+            }
             // Does the (rounded) input sit below one? The exact cancellation condition for
             // the reconstruction below — one cheap comparison, immune to how the two-stage
             // reduction happens to split the exponent (master's single-stage `s < 0` read
@@ -491,20 +499,27 @@ impl<R: Round> Context<R> {
         arg: &Ball<B>,
         mut cache: Option<&mut ConstCache>,
     ) -> Result<Ball<B>, FpError> {
-        let mut ln_ball =
-            self.ln_compute::<B>(&arg.mid, self.precision, true, reborrow_cache(&mut cache))?;
+        // The ball must stay clear of the pole at `1 + arg = 0`: there is no logarithm to compute
+        // (a zero sum has no `log2_bounds`, and a negative one is out of domain), and the
+        // derivative fold below is unbounded. The whole-line radius asks the Ziv loop for a higher
+        // guard, where the caller's argument stops rounding onto the pole — `atanh`'s `2x/(1−x)`
+        // reaching `±∞` at the first attempt is exactly this case. A whole-line *radius* (another
+        // operator's retry signal, e.g. a root that rounded onto zero) is the same situation.
+        if !arg.mid.is_finite() || arg.rad.is_infinite() {
+            return Ok(Ball::with_error(Repr::zero(), Mag::INFINITY));
+        }
         let lo = &(Repr::<B>::one() + &arg.mid) - &arg.rad.to_repr::<B>();
         let denom = if lo.sign() == Sign::Negative {
             Mag::ZERO
         } else {
             Mag::from_repr_lower(&lo)
         };
-        let adjust = if denom.is_zero() {
-            Mag::INFINITY
-        } else {
-            arg.rad.div(&denom)
-        };
-        ln_ball.add_error(adjust);
+        if denom.is_zero() {
+            return Ok(Ball::with_error(Repr::zero(), Mag::INFINITY));
+        }
+        let mut ln_ball =
+            self.ln_compute::<B>(&arg.mid, self.precision, true, reborrow_cache(&mut cache))?;
+        ln_ball.add_error(arg.rad.div(&denom));
         Ok(ln_ball)
     }
 }
@@ -572,9 +587,11 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        // Domain of ln_1p is x > -1. x == -1 gives -inf; x < -1 is out of domain.
+        // Domain of ln_1p is x > -1. x == -1 gives -inf; x < -1 is out of domain. `-1` is a pole,
+        // so the boundary is compared *exactly* (no precision argument): `-1 + 10⁻¹⁵⁵` at 100
+        // digits rounds onto `-1` but has the finite value `ln(10⁻¹⁵⁵)`.
         if x.sign() == Sign::Negative && !x.significand.is_zero() {
-            match FBig::<R, B>::new(x.clone(), *self).abs_cmp(&FBig::ONE) {
+            match repr_cmp_same_base::<B, true>(x, &Repr::<B>::one(), None) {
                 Ordering::Greater => return Err(FpError::OutOfDomain), // x < -1
                 Ordering::Equal => return Ok(Exact(FBig::new(Repr::neg_infinity(), *self))),
                 _ => {}
@@ -843,7 +860,7 @@ mod tests {
     use crate::ball::ulp_mag;
     use crate::round::mode;
     use alloc::vec::Vec;
-    use dashu_base::Abs;
+    use dashu_base::{Abs, AbsOrd};
 
     #[test]
     fn test_log10_domain() {
@@ -1469,5 +1486,34 @@ mod tests {
             0,
             "DBig ln(1e100) @6 should certify on the first attempt"
         );
+    }
+
+    /// `ln_1p` compares its `−1` boundary *exactly*: `−1 + 10⁻ⁿ` is the finite `ln(10⁻ⁿ)`, not `−∞`.
+    ///
+    /// Regression: `ln_compute` was handed the `1 + x` cancellation with a *zero* midpoint, where
+    /// `log2_bounds` saturates to `−∞` — the reduction panicked on the cast (`attempt to subtract
+    /// with overflow`, wrapping to a nonsense exponent in release). The zero now reports the
+    /// whole-line radius, so the loop retries at a guard where the argument is representable.
+    #[test]
+    fn test_ln_1p_endpoint_compare_exactly() {
+        for &p in &[20usize, 50, 100, 500] {
+            let n = 3 * p / 2 + 5;
+            // −1 + 10^-n = −(10^n − 1)·10^-n
+            let x = Repr::<10>::new(-(IBig::from(10).pow(n) - IBig::from(1)), -(n as isize));
+            let ctx = Context::<mode::HalfEven>::new(p);
+            let v = ctx.ln_1p::<10>(&x, None).unwrap().value();
+            assert!(v.repr().is_finite(), "ln_1p(-1 + 10^-{n}) at p={p} is finite, not -inf");
+            let hi = Context::<mode::HalfEven>::new(p + 60)
+                .ln_1p::<10>(&x, None)
+                .unwrap()
+                .value();
+            assert_eq!(v, hi.with_precision(p).value(), "ln_1p(-1 + 10^-{n}) at p={p}");
+            // exactly −1 is still the pole
+            let at_pole = ctx
+                .ln_1p::<10>(&Repr::<10>::neg_one(), None)
+                .unwrap()
+                .value();
+            assert!(at_pole.repr().is_infinite() && at_pole.repr().sign() == Sign::Negative);
+        }
     }
 }

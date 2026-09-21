@@ -57,7 +57,28 @@
   moved to `utils.rs`, next to the digit helpers that share their role.
 
 ### Fix
-- **32-bit `Word` targets returned a wrong `log₂ BASE` from the fixed-point walk** (the
+- **`asin` of an argument that merely *rounds* onto `±1` returned the endpoint** — `asin(1 − 10⁻¹⁵⁵)`
+  at 100 digits gave exactly `π/2` where the true value is `π/2 − 1.4·10⁻⁷⁸` (~10⁹ ulps off), and
+  the Ziv loop certified it because the endpoint branch reports only a few ulps of radius. The
+  argument is not the endpoint: `√(1−x²)` merely *collapsed* onto zero at the work precision, and
+  `Ball::sqrt` returned that zero with the radius dropped. A rounded-to-zero root now carries the
+  whole-line radius instead (only an *exact* zero stays exact), so the `±1` branch is taken for an
+  exact `±1` argument alone and everything else retries at a higher guard, where the argument is
+  representable and the general `atan(x/√(1−x²))` path computes the true `√(2δ)` offset. The same
+  applies to the ×u inverses (`asin_unit`/`acos_unit`). The domain checks and `±1` rows now compare
+  the raw `Repr` explicitly rather than relying on `FBig::ONE` being unlimited-precision for the
+  same effect (behaviourally identical; `repr_cmp_same_base`'s precision argument and the poles'
+  exactness requirement are documented on it).
+- **`ln_1p` of an argument that rounds onto the pole at `−1` panicked** (debug: `attempt to
+  subtract with overflow`; release: a wrapped nonsense exponent) — the `1 + x` cancellation left
+  `ln_compute` with a zero midpoint, where `log2_bounds` saturates to `−∞`. A zero midpoint (and a
+  `ln_1p` ball reaching the pole, as `atanh`'s `2x/(1−x)` does at the first attempt) now reports the
+  whole-line radius, so the Ziv loop retries at a guard where the argument is representable.
+- **A whole-line (`Mag::INFINITY`) radius panicked the Ziv containment test** instead of forcing a
+  retry: the exported radius is a `Repr` infinity, and the test's `a ± e` arithmetic asserts its
+  operands finite. It now short-circuits to "not contained", which is what the degenerate-denominator
+  (`Ball::div`), pole and rounded-root paths documented as their retry signal.
+- **32-bit `Word` targets returned a wrong `log₂ BASE` from the fixed-point walk** (the returned a wrong `log₂ BASE` from the fixed-point walk** (the
   compile-time bracket behind the generic-base radius rules): the normalization shifted with
   `Word::leading_zeros`, so on `Word = u32` (e.g. the `i686` CI target) `log2(10)` came out
   ≈ 35 instead of ≈ 3.32 — radii then inflated by orders of magnitude, saturated to infinity

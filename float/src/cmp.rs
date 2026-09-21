@@ -29,6 +29,23 @@ impl<R1: Round, R2: Round, const B: Word> PartialEq<FBig<R2, B>> for FBig<R1, B>
 }
 impl<R: Round, const B: Word> Eq for FBig<R, B> {}
 
+/// Compare two [`Repr`]s, optionally at the precision of the [`FBig`] contexts they came from.
+///
+/// `precision = None` compares the **exact** values: neither side is rounded, whatever the
+/// significands' widths. The `Some((lhs_prec, rhs_prec))` form is the `FBig` comparison's
+/// magnitude shortcut, and it only applies when *both* precisions are nonzero — an
+/// unlimited-precision (0) operand makes the comparison exact again, which is what comparing
+/// against `FBig::ONE`/`ZERO` gets.
+///
+/// The distinction is load-bearing at the inverse transcendentals' domain checks and `±1`
+/// endpoint rows: `±1` is a *pole* there (`asin`/`acos`/`acosh`/`atanh` have a vertical tangent,
+/// `ln_1p` has one at `−1`), so an argument that merely *rounds* onto the endpoint is not the
+/// endpoint value — its true result sits `√(2δ)` away, many ulps at a fixed work precision
+/// (`asin(1 − 10⁻¹⁵⁵)` at 100 digits is `π/2 − 1.4·10⁻⁷⁸`) — and anything that *snaps* to the
+/// endpoint certifies a result the true one is nowhere near. Those sites pass `None`. Away from
+/// the poles (the `±1/2` rows, where the derivative is bounded) a rounded comparison is safe
+/// instead: a sub-ulp argument perturbation moves the result by at most an ulp, and `1/2` is not
+/// even representable in an odd base.
 pub(crate) fn repr_cmp_same_base<const B: Word, const ABS: bool>(
     lhs: &Repr<B>,
     rhs: &Repr<B>,

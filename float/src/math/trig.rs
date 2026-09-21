@@ -14,6 +14,7 @@ use crate::{
     cmp::repr_cmp_same_base,
     error::{assert_limited_precision, FpError},
     fbig::FBig,
+    mag::Mag,
     math::{
         cache::{compute_e, reborrow_cache, ConstCache},
         FpResult,
@@ -941,9 +942,10 @@ impl<R: ErrorBounds> Context<R> {
             return signed_zero_normal(self, x);
         }
 
-        let x_orig = FBig::<R, B>::new(x.clone(), *self);
-        // Domain check: |x| must be <= 1
-        if x_orig.abs_cmp(&FBig::ONE).is_gt() {
+        // Domain check |x| ≤ 1 and the `±u/4` row, compared *exactly* (no precision
+        // argument) — `±1` is a vertical tangent of `asin`, and the ×u inverse family's exact
+        // rows are exactly that, not "rounded onto".
+        if repr_cmp_same_base::<B, true>(x, &Repr::<B>::one(), None).is_gt() {
             return Err(FpError::OutOfDomain);
         }
         if u == 0 {
@@ -951,8 +953,8 @@ impl<R: ErrorBounds> Context<R> {
             return signed_zero_normal(self, x);
         }
         // exact rows (±u/4, ±u/12), correctly rounded for any base by the exact ratio
-        let cmp_one = x_orig.abs_cmp(&FBig::ONE);
-        if cmp_one.is_eq() {
+        let x_orig = FBig::<R, B>::new(x.clone(), *self);
+        if repr_cmp_same_base::<B, true>(x, &Repr::<B>::one(), None).is_eq() {
             let num = if x.sign() == Sign::Negative {
                 -(IBig::from(u))
             } else {
@@ -960,6 +962,9 @@ impl<R: ErrorBounds> Context<R> {
             };
             return exact_ratio(self, num, 4);
         }
+        // The `±1/2` row keeps the *rounded* comparison: the derivative is bounded there
+        // (`2/√3`), so an argument a sub-ulp below `1/2` moves the result by at most an ulp — and
+        // `1/2` is not exactly representable in an odd base, so there is no exact form to compare.
         if x_orig.abs_cmp(&(FBig::<R, B>::ONE / 2u8)).is_eq() {
             let num = if x.sign() == Sign::Negative {
                 -(IBig::from(u))
@@ -999,8 +1004,9 @@ impl<R: ErrorBounds> Context<R> {
         }
         assert_limited_precision(self.precision);
 
-        let x_orig = FBig::<R, B>::new(x.clone(), *self);
-        let cmp_one = x_orig.abs_cmp(&FBig::ONE);
+        // Domain |x| ≤ 1 and the `u/2` row, compared *exactly* (no precision argument) — see
+        // `asin_unit` for why the exact form matters here.
+        let cmp_one = repr_cmp_same_base::<B, true>(x, &Repr::<B>::one(), None);
         if cmp_one.is_gt() {
             return Err(FpError::OutOfDomain);
         }
@@ -1019,7 +1025,11 @@ impl<R: ErrorBounds> Context<R> {
         if x.significand.is_zero() {
             return exact_ratio(self, IBig::from(u), 4);
         }
-        if x_orig.abs_cmp(&(FBig::<R, B>::ONE / 2u8)).is_eq() {
+        // The `u/6` row keeps the rounded comparison, as in `asin_unit` (bounded derivative).
+        if FBig::<R, B>::new(x.clone(), *self)
+            .abs_cmp(&(FBig::<R, B>::ONE / 2u8))
+            .is_eq()
+        {
             return exact_ratio(
                 self,
                 if x.sign() == Sign::Positive {
@@ -1084,11 +1094,11 @@ impl<R: ErrorBounds> Context<R> {
             // atan(±0) = ±0
             return signed_zero_normal(self, x);
         }
-        // atan(±1) = ±u/8 — outside the Ziv loop
-        if FBig::<R, B>::new(x.clone(), *self)
-            .abs_cmp(&FBig::ONE)
-            .is_eq()
-        {
+        // atan(±1) = ±u/8 — outside the Ziv loop. Compared *exactly*, like the other `±1` rows;
+        // `atan` has no pole there, so a rounded `1 ± ulp` argument would only be a fraction of an
+        // ulp out, but the exact form makes the whole family's `±1` rows mean "the argument *is*
+        // the endpoint".
+        if repr_cmp_same_base::<B, true>(x, &Repr::<B>::one(), None).is_eq() {
             let num = if x.sign() == Sign::Negative {
                 -(IBig::from(u))
             } else {
@@ -1225,9 +1235,10 @@ impl<R: ErrorBounds> Context<R> {
             return signed_zero_normal(self, x);
         }
 
-        let x_orig = FBig::<R, B>::new(x.clone(), *self);
-        // Domain check: |x| must be <= 1
-        if x_orig.abs_cmp(&FBig::ONE).is_gt() {
+        // Domain check: |x| must be <= 1, compared *exactly* (no precision argument) — `±1` is
+        // a vertical tangent of `asin`, so an argument that merely rounds onto it
+        // (`1 − 10⁻¹⁵⁵` at 100 digits) is not the endpoint.
+        if repr_cmp_same_base::<B, true>(x, &Repr::<B>::one(), None).is_gt() {
             return Err(FpError::OutOfDomain);
         }
 
@@ -1256,7 +1267,18 @@ impl<R: ErrorBounds> Context<R> {
                 .pi::<B>(reborrow_cache(&mut cache))
                 .value();
             let half_pi = &pi / 2u8;
-            let rad = ulps::<B>(&half_pi.repr, wp, 8);
+            // `d = √(1 − x²)` collapsed onto zero — which is the endpoint *only* when the
+            // argument is exactly ±1. Otherwise the input merely rounded onto ±1 at this work
+            // precision, and the true `√(2δ)` is many ulps away (the derivative at the endpoint
+            // is infinite): reporting π/2 with a few ulps of radius would certify a value the
+            // true result is nowhere near. An infinite radius instead forces a Ziv retry at a
+            // higher guard, where the argument (and so the true difference) is representable and
+            // the general path below computes it.
+            let rad = if d.rad.is_zero() {
+                ulps::<B>(&half_pi.repr, wp, 8)
+            } else {
+                Mag::INFINITY
+            };
             let half_pi = Ball::with_error(half_pi.into_repr(), rad);
             Ok(if x.mid.sign() == Sign::Negative {
                 half_pi.neg()
@@ -1284,8 +1306,10 @@ impl<R: ErrorBounds> Context<R> {
         }
         assert_limited_precision(self.precision);
 
-        let x_orig = FBig::<R, B>::new(x.clone(), *self);
-        let cmp_one = x_orig.abs_cmp(&FBig::ONE);
+        // Domain |x| ≤ 1 and the `±1` rows, compared *exactly* (no precision argument):
+        // `acos(1 − δ)` is `√(2δ)`, which the endpoint's `0` misses entirely once `δ` is far
+        // above the result's ulp.
+        let cmp_one = repr_cmp_same_base::<B, true>(x, &Repr::<B>::one(), None);
         if cmp_one.is_gt() {
             return Err(FpError::OutOfDomain);
         }
@@ -2921,6 +2945,63 @@ mod tests {
                 assert_eq!(den, IBig::from(40));
             }
             _ => panic!("-0.3 must take the rational split"),
+        }
+    }
+
+    /// An argument that merely *rounds* onto `±1` is not the endpoint: the inverse functions have
+    /// a vertical tangent there, so the true result sits `√(2δ)` away — many ulps of the result.
+    ///
+    /// Regression: `asin_ball`'s endpoint branch keyed on `√(1−x²)` *collapsing* onto zero, and
+    /// `Ball::sqrt` returned that zero with the radius dropped — so `asin(1 − 10⁻¹⁵⁵)` at 100
+    /// digits returned exactly `π/2`, a result ~10⁹ ulps off, certified by the Ziv loop because
+    /// the endpoint branch reports only a few ulps of radius. (The `acos`/×u rows restated here
+    /// were saved by the loop's zero-candidate guard, which refuses to certify an exact zero
+    /// against a nonzero radius; they are asserted for the same reason.)
+    #[test]
+    fn test_inverse_endpoints_compare_exactly() {
+        // `1 − 10^-n` with `n = 1.5p + 5`: beyond the initial guard (50), so the argument rounds
+        // onto exactly `1` at the first work precision for p ≥ 100 — the case that used to snap —
+        // yet `√(2·10^-n)` is far above a result ulp. At p = 20/50 the general path is taken
+        // anyway; those rows are plain correctness checks.
+        for &p in &[20usize, 50, 100, 500] {
+            let n = 3 * p / 2 + 5;
+            let x = DBig::from_str(&format!("0.{}", "9".repeat(n))).unwrap();
+            let ctx = Context::<mode::HalfEven>::new(p);
+            let hi = Context::<mode::HalfEven>::new(p + 60);
+            let reround = |v: FBig<mode::HalfEven, 10>| v.with_precision(p).value();
+
+            let asin = ctx.asin::<10>(x.repr(), None).unwrap().value();
+            let asin_hi = reround(hi.asin::<10>(x.repr(), None).unwrap().value());
+            assert_eq!(asin, asin_hi, "asin(1 - 10^-{n}) at p={p}");
+            let one = Repr::<10>::one();
+            assert_ne!(
+                asin,
+                ctx.asin::<10>(&one, None).unwrap().value(),
+                "asin(1 - 10^-{n}) is not the endpoint"
+            );
+
+            let acos = ctx.acos::<10>(x.repr(), None).unwrap().value();
+            let acos_hi = reround(hi.acos::<10>(x.repr(), None).unwrap().value());
+            assert_eq!(acos, acos_hi, "acos(1 − 10^-{n}) at p={p}");
+            assert!(!acos.repr().significand().is_zero(), "acos is not an exact 0");
+
+            // the ×u inverses route through the same kernels
+            let (asin_u, asin_u_hi) = (
+                ctx.asin_unit::<10>(x.repr(), 360, None).unwrap().value(),
+                reround(hi.asin_unit::<10>(x.repr(), 360, None).unwrap().value()),
+            );
+            assert_eq!(asin_u, asin_u_hi, "asin_unit(1 − 10^-{n}, 360) at p={p}");
+            assert_ne!(
+                asin_u,
+                ctx.asin_unit::<10>(&one, 360, None).unwrap().value(),
+                "asin_unit(1 − 10^-{n}) is not the u/4 endpoint"
+            );
+            let (acos_u, acos_u_hi) = (
+                ctx.acos_unit::<10>(x.repr(), 360, None).unwrap().value(),
+                reround(hi.acos_unit::<10>(x.repr(), 360, None).unwrap().value()),
+            );
+            assert_eq!(acos_u, acos_u_hi, "acos_unit(1 − 10^-{n}, 360) at p={p}");
+            assert!(!acos_u.repr().significand().is_zero(), "acos_unit is not an exact 0");
         }
     }
 }

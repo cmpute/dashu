@@ -238,6 +238,13 @@ impl<R: ErrorBounds> Context<R> {
         if y.repr.significand.is_zero() && !e.significand.is_zero() {
             return false;
         }
+        // An unbounded radius — the `Mag::INFINITY` "unknown, retry at a higher guard" signal that
+        // a degenerate denominator, a pole the ball straddles, or a root that rounded onto zero
+        // exports — can never fit a finite preimage, so it is answered here rather than by the
+        // arithmetic below (which asserts its operands finite, as `Repr` ops do).
+        if e.is_infinite() {
+            return false;
+        }
         let (lb, rb, incl_l, incl_r) = R::error_bounds::<B>(y);
 
         let y = &y.repr;

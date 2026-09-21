@@ -25,7 +25,7 @@ use crate::{
     repr::{Context, Repr, Word},
     round::{mode, ErrorBounds},
 };
-use dashu_base::{Abs, AbsOrd, Approximation::Exact, BitTest, Sign};
+use dashu_base::{Abs, Approximation::Exact, BitTest, Sign};
 use dashu_int::IBig;
 
 impl<R: ErrorBounds> Context<R> {
@@ -496,16 +496,16 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(Exact(FBig::new(Repr::infinity(), *self)));
         }
         assert_limited_precision(self.precision);
-        // domain x ≥ 1 (acosh(1) = 0 is handled below; x < 1 is an error)
-        if x.sign() == Sign::Negative
-            || FBig::<R, B>::new(x.clone(), *self)
-                .abs_cmp(&FBig::ONE)
-                .is_lt()
-        {
+        // Domain x ≥ 1, compared *exactly* (no precision argument) because `1` is a vertical
+        // tangent of `acosh`: `1 + 10⁻¹⁵⁵` at 100 digits rounds onto `1`, but its true value is
+        // `√2·10⁻⁷⁸`, not `0`.
+        if x.sign() == Sign::Negative {
             return Err(FpError::OutOfDomain);
         }
-        if x.is_one() {
-            return Ok(Exact(FBig::new(Repr::zero(), *self)));
+        match repr_cmp_same_base::<B, true>(x, &Repr::<B>::one(), None) {
+            core::cmp::Ordering::Less => return Err(FpError::OutOfDomain),
+            core::cmp::Ordering::Equal => return Ok(Exact(FBig::new(Repr::zero(), *self))),
+            core::cmp::Ordering::Greater => {}
         }
 
         // acosh(x) = ln_1p((x-1) + sqrt((x-1)(x+1))) — the (x-1)(x+1) form avoids the `x²−1`
@@ -560,8 +560,10 @@ impl<R: ErrorBounds> Context<R> {
             // atanh(±0) = ±0
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
         }
-        // domain |x| < 1: |x| = 1 → ±∞ (value), |x| > 1 → error
-        match FBig::<R, B>::new(x.clone(), *self).abs_cmp(&FBig::ONE) {
+        // Domain |x| < 1: |x| = 1 → ±∞ (value), |x| > 1 → error. The boundary is compared
+        // *exactly* (no precision argument) because `±1` is a pole of `atanh`: `1 − 10⁻¹⁵⁵`
+        // at 100 digits rounds onto `1` but is the finite `(p+155)·ln(10)/2`, not `∞`.
+        match repr_cmp_same_base::<B, true>(x, &Repr::<B>::one(), None) {
             core::cmp::Ordering::Greater => return Err(FpError::OutOfDomain),
             core::cmp::Ordering::Equal => {
                 return Ok(Exact(FBig::new(Repr::infinity_with_sign(x.sign()), *self)));
@@ -852,6 +854,7 @@ mod tests {
     use crate::round::Round;
     use crate::DBig;
     use core::str::FromStr;
+    use dashu_base::AbsOrd;
     use dashu_int::IBig;
 
     // `sinh`/`cosh` go through `unwrap_fp`, so a huge-|x| overflow saturates to the directed
@@ -1168,5 +1171,77 @@ mod tests {
             0,
             "DBig sinh(10) @150 should certify on the first attempt"
         );
+    }
+
+    /// `acosh`/`atanh` compare their `±1` boundaries *exactly*: an argument that merely rounds
+    /// onto the endpoint is not the endpoint, and both have a vertical tangent there — the true
+    /// value is `√(2δ)` (acosh) / `ln(2/δ)/2` (atanh), not the endpoint's `0` / `∞`.
+    ///
+    /// The rows that *used* to be at risk here are covered: `acosh` takes `√((x−1)(x+1))` and
+    /// `atanh` divides `2x/(1−x)` by an argument that rounds onto the pole, so both reach the
+    /// retry path rather than certifying the endpoint — `acosh` via the loop's zero-candidate
+    /// guard, `atanh` via `ln_1p_ball`'s pole guard (which previously panicked on the `±∞`
+    /// ratio).
+    #[test]
+    fn test_hyperbolic_endpoints_compare_exactly() {
+        for &p in &[20usize, 50, 100, 500] {
+            // 10^-n is beyond the initial guard, so the argument rounds onto the endpoint at the
+            // first work precision for p ≥ 100 (the case that used to snap); at p = 20/50 the rows
+            // are plain correctness checks.
+            let n = 3 * p / 2 + 5;
+            let below = DBig::from_str(&format!("0.{}", "9".repeat(n))).unwrap(); // 1 − 10^-n
+            let above = DBig::from_str(&format!("1.{}1", "0".repeat(n - 1))).unwrap(); // 1 + 10^-n
+            let ctx = Context::<mode::HalfEven>::new(p);
+            let hi = Context::<mode::HalfEven>::new(p + 60);
+
+            let a = ctx.atanh::<10>(below.repr(), None).unwrap().value();
+            assert!(a.repr().is_finite(), "atanh(1 - 10^-{n}) at p={p} is finite, not -inf");
+            assert_eq!(
+                a,
+                hi.atanh::<10>(below.repr(), None)
+                    .unwrap()
+                    .value()
+                    .with_precision(p)
+                    .value(),
+                "atanh(1 - 10^-{n}) at p={p}"
+            );
+
+            let c = ctx.acosh::<10>(above.repr(), None).unwrap().value();
+            assert!(
+                !c.repr().significand().is_zero(),
+                "acosh(1 + 10^-{n}) at p={p} is not an exact 0"
+            );
+            assert_eq!(
+                c,
+                hi.acosh::<10>(above.repr(), None)
+                    .unwrap()
+                    .value()
+                    .with_precision(p)
+                    .value(),
+                "acosh(1 + 10^-{n}) at p={p}"
+            );
+
+            // the exact endpoints keep their exact results
+            let one = Repr::<10>::one();
+            assert!(ctx
+                .atanh::<10>(&one, None)
+                .unwrap()
+                .value()
+                .repr()
+                .is_infinite());
+            assert!(ctx
+                .atanh::<10>(&(-Repr::<10>::one()), None)
+                .unwrap()
+                .value()
+                .repr()
+                .is_infinite());
+            assert!(ctx
+                .acosh::<10>(&one, None)
+                .unwrap()
+                .value()
+                .repr()
+                .significand()
+                .is_zero());
+        }
     }
 }

@@ -152,16 +152,22 @@ impl<const B: Word> Ball<B> {
     /// denominator gap exactly as the old `+1` did (valid for `rad_a ≤ |mid_a|`, which
     /// every caller guarantees and the assertion below enforces).
     ///
-    /// The zero-midpoint special case is kept from the old code: a mid that rounds to a zero
-    /// significand returns an **exact** zero, dropping the radius. That is sound only when the
-    /// dropped radius is itself below the caller's own bound — the case it exists for is the
-    /// exact zero (`asin`'s `1−x²` at `|x| = 1`), and a ball that *rounds* to a zero mid has a
-    /// radius below one ulp of it, which the callers' endpoints (e.g. `π/2` at 8 ulps) cover.
+    /// The zero-midpoint special case: an **exact** zero (`rad == 0`) stays exact, which is what
+    /// lets `asin`'s `1−x²` at `|x| = 1` resolve to `±π/2` outside the Ziv loop. A ball whose mid
+    /// merely *rounded* to zero is a different matter: its true value is within `rad` of zero, so
+    /// the root is within `√rad` — and no finite multiple of the *input* radius bounds that (the
+    /// derivative at the origin is infinite). It gets the whole-line radius instead, which forces
+    /// a Ziv retry at a higher guard, where the caller's argument stops rounding onto zero and the
+    /// ordinary rule below applies.
     pub(crate) fn sqrt(&self, prec: usize) -> Result<Self, FpError> {
         let ctx = Context::<mode::HalfEven>::new(prec);
         let (mid, eps) = finish_mid(ctx.sqrt(&self.mid)?, prec);
         if mid.significand().is_zero() {
-            return Ok(Self::exact(mid));
+            return Ok(if self.rad.is_zero() {
+                Self::exact(mid)
+            } else {
+                Self::with_error(mid, Mag::INFINITY)
+            });
         }
         // The denominator below is the derivative at the ball's *lower* endpoint `mid − rad`, so
         // the bound needs that endpoint to stay clear of the root's pole: every caller keeps
