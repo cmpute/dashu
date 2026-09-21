@@ -319,9 +319,11 @@ fn seed_ball<const B: Word>(re: &Repr<B>, prec: usize) -> Ball<B> {
 /// `Ball::div` rule would price the touching-zero denominator as an infinite radius, which no
 /// Ziv loop can ever certify (e.g. the `y/(2a)` of `√(x + 0i)` with an inexact root `a`).
 fn div_real<const B: Word>(num: &Ball<B>, d: &Ball<B>, prec: usize) -> Result<Ball<B>, FpError> {
-    if num.rad.is_zero() && num.mid.significand().is_zero() {
+    if num.rad.is_zero() && num.mid.significand().is_zero() && !d.mid.significand().is_zero() {
         return Ok(Ball::exact(num.mid.clone()));
     }
+    // an exact zero numerator over an exact zero denominator is a genuine 0/0: fall through so
+    // the kernel division reports `Indeterminate` (e.g. `tan_pi` at a real-axis pole)
     num.div(d, prec)
 }
 

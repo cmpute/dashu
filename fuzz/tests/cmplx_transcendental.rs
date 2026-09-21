@@ -225,21 +225,46 @@ proptest! {
         }
     }
 
-    /// tan(z) ≈ MPC tan(z) (skips zeros of cos / errored precisions, where tan is singular).
+    /// tan(z): **directed, bit-exact vs MPC** (the `directed_eq` straddle contract; see
+    /// `cbig_sqrt_fuzz` for the exact-input / mode-rounds-result setup).
     #[test]
     #[ignore]
     fn cbig_tan_fuzz(zre in f64_part(), zim in f64_part()) {
+        use dashu::complex::CBig;
+        use dashu::float::round::{mode::{Down, HalfEven, Up, Zero}};
         for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
-            let (z, rz) = pair(zre, zim, prec as usize);
-            let d = cmplx_ok!(z.context().tan(&z, None));
-            let r = rz.tan();
-            if !complex_finite(&d, &r) { continue; }
-            prop_assert!(close_at(&d, &r, prec as usize), "tan zre={zre} zim={zim} prec={prec}");
+            let zh = rug::Complex::with_val(ref_bits(prec), (zre, zim));
+            let hi = zh.tan();
+            macro_rules! check {
+                ($mode:ty, $name:literal) => {{
+                    let z = CBig::<$mode, 2>::from_parts(
+                        FBig::<$mode, 2>::try_from(zre).unwrap(),
+                        FBig::<$mode, 2>::try_from(zim).unwrap(),
+                    );
+                    let d = dashu::complex::Context::<$mode>::new(prec as usize)
+                        .tan(&z, None)
+                        .unwrap()
+                        .value()
+                        .clone();
+                    assert!(
+                        directed_eq(&d, &hi, prec),
+                        "tan[{name}] zre={zre} zim={zim} prec={prec} d={d:?}",
+                        name = $name
+                    );
+                }};
+            }
+            check!(Up, "up");
+            check!(Down, "down");
+            check!(Zero, "zero");
+            check!(HalfEven, "half");
         }
     }
 
-    /// sin_pi(z) ≈ MPC sin(z·π) — MPC has no ×π entry points, so the reference pre-multiplies
-    /// a full-precision π (see the precision note inside for why it needs the +512 bits).
+    /// sin_pi(z) stays on the `close_at` tolerance (NOT directed): MPC has no ×π entry points,
+    /// so the reference pre-multiplies a full-precision π — which changes the *function* under
+    /// test (the premultiplication's rounding error is amplified by the hyperbolic derivative),
+    /// so a straddle oracle of that modified function does not license bit-exact assertions on
+    /// `z·π`.
     #[test]
     #[ignore]
     fn cbig_sin_pi_fuzz(zre in f64_part(), zim in f64_part()) {

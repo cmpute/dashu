@@ -227,25 +227,38 @@ impl<R: ErrorBounds> Context<R> {
         // round — a few working-ULPs, like the radian `sin_cos`. The π-scaling lives inside the
         // real ×π kernels (their argument balls carry π's radius), NOT in a pre-multiplied
         // `π·y` (whose ½-ulp error the hyperbolic derivative would amplify to ~2π|y| ulps).
+        // Like the radian `sin_cos`: the four products are ball-tracked, the π-scaling lives
+        // inside the real ×π kernels (their argument balls carry π's radius), and the entry is
+        // exact — so only the kernel work-ulps and the products price the radius.
         let p = self.precision();
         let parts = self.ziv(TRIG_GUARD, |guard| {
-            let gctx = FloatCtxt::<R>::new(p + guard);
-            let (sinx, cosx) = gctx.sin_cos_pi(z.re(), reborrow_cache(&mut cache));
-            let sinx = sinx?.value();
-            let cosx = cosx?.value();
-            let (sinhy, coshy) = gctx.sinh_cosh_pi(z.im(), reborrow_cache(&mut cache));
-            let sinhy = sinhy?.value();
-            let coshy = coshy?.value();
-            let sin_re = gctx.mul(sinx.repr(), coshy.repr())?.value();
-            let sin_im = gctx.mul(cosx.repr(), sinhy.repr())?.value();
-            let cos_re = gctx.mul(cosx.repr(), coshy.repr())?.value();
-            let neg_sinx = -sinx; // cos zπ's imaginary part is −sin_pi(x)·sinh(πy)
-            let cos_im = gctx.mul(neg_sinx.repr(), sinhy.repr())?.value();
+            let pw = p + guard;
+            let gctx = FloatCtxt::<R>::new(pw);
+            let cb = CBall::from_parts(z.re(), z.im(), pw);
+            let (sinx, cosx) = gctx.sin_cos_pi(&cb.re.mid, reborrow_cache(&mut cache));
+            let mut sx = Ball::from_rounded(sinx?.map(FBig::into_repr), pw);
+            let mut cx = Ball::from_rounded(cosx?.map(FBig::into_repr), pw);
+            sx.add_error(cb.re.rad);
+            cx.add_error(cb.re.rad);
+            let (sinhy, coshy) = gctx.sinh_cosh_pi(&cb.im.mid, reborrow_cache(&mut cache));
+            let mut shy = Ball::from_rounded(sinhy?.map(FBig::into_repr), pw);
+            let mut chy = Ball::from_rounded(coshy?.map(FBig::into_repr), pw);
+            let y_fold = chy
+                .mag()
+                .mul(&cb.im.rad.exp_upper())
+                .mul(&cb.im.rad)
+                .mul_pow2(1);
+            shy.add_error(y_fold);
+            chy.add_error(y_fold);
+            let sin_re = sx.mul(&chy, pw)?;
+            let sin_im = cx.mul(&shy, pw)?;
+            let cos_re = cx.mul(&chy, pw)?;
+            let cos_im = -sx.mul(&shy, pw)?; // cos zπ's imaginary part is −sin_pi(x)·sinh(πy)
             Ok([
-                (sin_re.clone(), sin_re.ulp() * 8),
-                (sin_im.clone(), sin_im.ulp() * 8),
-                (cos_re.clone(), cos_re.ulp() * 8),
-                (cos_im.clone(), cos_im.ulp() * 8),
+                sin_re.to_value_radius(&gctx),
+                sin_im.to_value_radius(&gctx),
+                cos_re.to_value_radius(&gctx),
+                cos_im.to_value_radius(&gctx),
             ])
         });
         let [sin_re, sin_im, cos_re, cos_im] = match parts {
@@ -304,28 +317,33 @@ impl<R: ErrorBounds> Context<R> {
             ));
         }
 
+        // Like the radian `tan`: exact doublings, the ×π kernels on the doubled midpoints
+        // (with their input folds), the shared denominator as a real ball, and one tracked
+        // componentwise division. An exact pole (`y = 0`, x an odd multiple of `1/2`, where
+        // `cos_pi(2x)` is exactly −1) fails the midpoint division first — `0/0` maps to
+        // `Err(Indeterminate)` before any radius work.
         let p = self.precision();
         let [re, im] = self.ziv(TRIG_GUARD, |guard| {
             let pw = p + guard;
             let gctx = FloatCtxt::<R>::new(pw);
-            // 2x, 2y (exact doublings — same significand, exponent +1).
-            let x2 = gctx.add(z.re(), z.re())?.value();
-            let y2 = gctx.add(z.im(), z.im())?.value();
-            let (sin2x, cos2x) = gctx.sin_cos_pi(x2.repr(), reborrow_cache(&mut cache));
-            let sin2x = sin2x?.value();
-            let cos2x = cos2x?.value();
-            let (sinh2y, cosh2y) = gctx.sinh_cosh_pi(y2.repr(), reborrow_cache(&mut cache));
-            let sinh2y = sinh2y?.value();
-            let cosh2y = cosh2y?.value();
-            // D = cos_pi(2x) + cosh(2πy)  (a benign sum: a bounded term plus one ≥ 1).
-            let denom = gctx.add(cos2x.repr(), cosh2y.repr())?.value();
-            let re = gctx.div(sin2x.repr(), denom.repr())?.value();
-            let im = gctx.div(sinh2y.repr(), denom.repr())?.value();
-            // re-root to the working precision (`sin_cos_pi`/`sinh_cosh_pi`/`div` may return
-            // exact constants for exact cases such as `tan_pi(1/4) = 1`).
-            let re = re.with_precision(pw).value();
-            let im = im.with_precision(pw).value();
-            Ok([(re.clone(), re.ulp() * 8), (im.clone(), im.ulp() * 8)])
+            let cb = CBall::from_parts(z.re(), z.im(), pw);
+            let x2 = cb.re.add(&cb.re, pw)?;
+            let y2 = cb.im.add(&cb.im, pw)?;
+            let (sin2x, cos2x) = gctx.sin_cos_pi(&x2.mid, reborrow_cache(&mut cache));
+            let mut sx2 = Ball::from_rounded(sin2x?.map(FBig::into_repr), pw);
+            let mut cx2 = Ball::from_rounded(cos2x?.map(FBig::into_repr), pw);
+            sx2.add_error(x2.rad);
+            cx2.add_error(x2.rad);
+            let (sinh2y, cosh2y) = gctx.sinh_cosh_pi(&y2.mid, reborrow_cache(&mut cache));
+            let mut shy2 = Ball::from_rounded(sinh2y?.map(FBig::into_repr), pw);
+            let mut chy2 = Ball::from_rounded(cosh2y?.map(FBig::into_repr), pw);
+            let y2_fold = chy2.mag().mul(&y2.rad.exp_upper()).mul(&y2.rad).mul_pow2(1);
+            shy2.add_error(y2_fold);
+            chy2.add_error(y2_fold);
+            // D = cos_pi(2x) + cosh(2πy)  (a benign sum: a bounded term plus one ≥ 1)
+            let denom = cx2.add(&chy2, pw)?;
+            let out = CBall { re: sx2, im: shy2 }.div_by_real(&denom, pw)?;
+            Ok(out.to_parts_radius(&gctx))
         })?;
         Ok(combine_parts(re, im))
     }
@@ -807,6 +825,42 @@ mod tests {
             assert_eq!(s.im().is_neg_zero(), s_im_neg, "sin im sign for {z}");
             assert!(c.re() == &Repr::one(), "cos re is 1 for {z}");
             assert_eq!(c.im().is_neg_zero(), c_im_neg, "cos im sign for {z}");
+        }
+    }
+
+    // The mechanically tracked radius must certify at the target precision across the width
+    // sweep: each result equals the same op computed at `p + 60` and re-rounded to `p`.
+    #[test]
+    fn pi_family_matches_oracle_across_precisions() {
+        type C2 = CBig<mode::HalfEven, 2>;
+        type F2 = FBig<mode::HalfEven, 2>;
+        let inputs = [
+            (1i64, 1i64),
+            (3, 4),
+            (-2, 1),
+            (1, 0),
+            (0, 3),
+            (-5, 2),
+            (3, 0), // half-integer real part after doubling: sin_pi(3/2·π)... exact cases
+            (7, 0),
+        ];
+        for p in [20usize, 50, 100, 500] {
+            for (re, im) in inputs {
+                let mk = |v: i64| F2::from(v).with_precision(p).value();
+                let mk_hi = |v: i64| F2::from(v).with_precision(p + 60).value();
+                let zh = C2::from_parts(mk_hi(re), mk_hi(im));
+                for (name, got, expect) in [
+                    ("sin_pi", C2::from_parts(mk(re), mk(im)).sin_pi(), zh.sin_pi()),
+                    ("tan_pi", C2::from_parts(mk(re), mk(im)).tan_pi(), zh.tan_pi()),
+                ] {
+                    let (ge, gi) = got.into_parts();
+                    let (ee, ei) = expect.into_parts();
+                    let expect_re = ee.with_precision(p).value();
+                    let expect_im = ei.with_precision(p).value();
+                    assert_eq!(ge.repr(), expect_re.repr(), "{name} re p={p} z=({re},{im})");
+                    assert_eq!(gi.repr(), expect_im.repr(), "{name} im p={p} z=({re},{im})");
+                }
+            }
         }
     }
 }
