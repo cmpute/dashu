@@ -8,7 +8,7 @@
 # own process, and keeps a pool of them busy.
 #
 #   fuzz/run.sh                      # whole suite, one process per test
-#   fuzz/run.sh -c 4096              # 4096 cases per test (default 256)
+#   fuzz/run.sh -c 4096              # 4096 cases per test (default 1024)
 #   fuzz/run.sh -s 8 powf            # split the powf test 8 ways
 #   fuzz/run.sh -j 8 -s 4            # 8 concurrent processes, 4 shards per test
 #   FUZZ_PRECISIONS=503 fuzz/run.sh  # a single precision width
@@ -16,7 +16,7 @@
 # Options:
 #   -j JOBS        concurrent processes           (default: nproc)
 #   -s SHARDS      shards per test                (default: 1)
-#   -c CASES       case budget per test, FUZZ_CASES   (default: 256)
+#   -c CASES       case budget per test, FUZZ_CASES   (default: 1024)
 #   -p PRECISIONS  width sweep in bits, FUZZ_PRECISIONS
 #   -S SEED        pin the RNG for reproducibility (FUZZ_SEED)
 #   -k             keep each job's log even on success (default: failures only)
@@ -39,17 +39,20 @@ SHARDS=1
 KEEP_LOGS=0
 VERBOSE=0
 FILTERS=()
-export FUZZ_CASES="${FUZZ_CASES:-256}"
+export FUZZ_CASES="${FUZZ_CASES:-1024}"
 
 usage() { sed -n '3,26p' "$self" | sed 's/^# \{0,1\}//'; }
 
+# An option that takes a value needs one more argument (`set -u` would die on `$2` with an
+# opaque "unbound variable" otherwise).
+need_val() { (($# >= 2)) || { echo "option $1 needs a value" >&2; exit 2; }; }
 while (($#)); do
     case "$1" in
-        -j) JOBS="$2"; shift 2 ;;
-        -s) SHARDS="$2"; shift 2 ;;
-        -c) FUZZ_CASES="$2"; shift 2 ;;
-        -p) FUZZ_PRECISIONS="$2"; export FUZZ_PRECISIONS; shift 2 ;;
-        -S) FUZZ_SEED="$2"; export FUZZ_SEED; shift 2 ;;
+        -j) need_val "$@"; JOBS="$2"; shift 2 ;;
+        -s) need_val "$@"; SHARDS="$2"; shift 2 ;;
+        -c) need_val "$@"; FUZZ_CASES="$2"; shift 2 ;;
+        -p) need_val "$@"; FUZZ_PRECISIONS="$2"; export FUZZ_PRECISIONS; shift 2 ;;
+        -S) need_val "$@"; FUZZ_SEED="$2"; export FUZZ_SEED; shift 2 ;;
         -k) KEEP_LOGS=1; shift ;;
         -v) VERBOSE=1; shift ;;
         -h|--help) usage; exit 0 ;;
@@ -60,9 +63,11 @@ while (($#)); do
 done
 export FUZZ_CASES
 
-for var in JOBS SHARDS; do
+# validate the numeric knobs (flag name, variable, value)
+for spec in "j:JOBS" "s:SHARDS" "c:FUZZ_CASES"; do
+    flag="${spec%%:*}"; var="${spec##*:}"
     if ! [[ "${!var}" =~ ^[1-9][0-9]*$ ]]; then
-        echo "-${var,,} must be a positive integer (got '${!var}')" >&2
+        echo "-$flag (env ${var}) must be a positive integer (got '${!var}')" >&2
         exit 2
     fi
 done
@@ -157,4 +162,7 @@ if [[ -f "$LOGDIR/failed" ]]; then
     exit 1
 fi
 
+if ((KEEP_LOGS)); then
+    echo "logs kept in $LOGDIR"
+fi
 echo "all ${#JOBS_LIST[@]} job(s) passed in ${elapsed}s"

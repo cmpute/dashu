@@ -362,14 +362,16 @@ proptest! {
                 "atan_unit u={u} x={x_str} prec={prec}: dashu={d} rug={r}"
             );
 
-            // atan2: skip the (0, 0) indeterminate and the axis/diagonal exact rows are
-            // covered by the unit tests — here the general path
-            let y_d = ctx.tan_unit::<10>(y.repr(), u as usize, None);
-            let _ = y_d;
+            // atan2: the axis/diagonal exact rows are covered by the unit tests — here the
+            // general path. The only expected error is the (±0, ±0) domain error (the same
+            // convention as the radian `atan2`); anything else must surface.
             let y_rug = Float::with_val(bits, Float::parse(&y_str).unwrap());
+            let both_zero =
+                y.repr().significand().is_zero() && x.repr().significand().is_zero();
             let d = match ctx.atan2_unit::<10>(y.repr(), x.repr(), u as usize, None) {
                 Ok(v) => v.value(),
-                Err(_) => continue, // (0, 0)
+                Err(FpError::OutOfDomain) if both_zero => continue,
+                Err(e) => panic!("atan2_unit u={u} y={y_str} x={x_str}: unexpected {e:?}"),
             };
             let r = y_rug.atan2_u(&x_rug, u);
             let r_d: DBig = DBig::from_str(&r.to_string_radix(10, Some(prec))).unwrap();

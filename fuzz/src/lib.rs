@@ -25,11 +25,11 @@ fn env_usize(name: &str) -> Option<usize> {
 
 /// The fuzz strength, shaped by three env knobs:
 ///
-/// - **`FUZZ_CASES`** (fallback `PROPTEST_CASES`, default 256) — the case budget of the whole
+/// - **`FUZZ_CASES`** (fallback `PROPTEST_CASES`, default 1024) — the case budget of the whole
 ///   test, spent at the **lowest** configured [`fuzz_precisions_bits`] width (higher widths
-///   self-subsample via [`sampled_precisions`] — half the cases each step up). 256
-///   (proptest's own default) is a few seconds for the whole suite; raise it for a thorough
-///   release pass, lower for a smoke run.
+///   self-subsample via [`sampled_precisions`] — half the cases each step up, so the default
+///   sweep costs ~2× the budget, not 4×). 1024 is a few seconds per differential; raise it
+///   for a thorough release pass, lower for a smoke run.
 /// - **`FUZZ_SHARDS`** / **`FUZZ_SHARD`** — process-level sharding for a test whose tail is
 ///   long: the budget is divided by `FUZZ_SHARDS` and shard *i* takes the *i*-th slice with
 ///   its own seed, so `FUZZ_SHARDS=16` across 16 processes keeps the coverage of a single
@@ -38,11 +38,12 @@ fn env_usize(name: &str) -> Option<usize> {
 /// - **`FUZZ_SEED`** — pins the RNG (shard *i* gets `FUZZ_SEED + i`), making a sharded run
 ///   reproducible. Unset → proptest's entropy-based seed, so repeated runs explore new
 ///   inputs (the point of a fuzz suite); `run.sh` sets it for you when `FUZZ_SEED` is
-///   exported.
+///   exported. Note that proptest's own `PROPTEST_RNG_SEED` is *not* honored (the explicit
+///   `rng_seed` above overrides it) — use `FUZZ_SEED`.
 pub fn fuzz_config() -> ProptestConfig {
     let budget = env_usize("FUZZ_CASES")
         .or_else(|| env_usize("PROPTEST_CASES"))
-        .unwrap_or(256);
+        .unwrap_or(1024);
     let shards = env_usize("FUZZ_SHARDS").unwrap_or(1).max(1);
     let shard = env_usize("FUZZ_SHARD").unwrap_or(0).min(shards - 1);
     let rng_seed = match env_usize("FUZZ_SEED") {
@@ -86,8 +87,11 @@ pub fn fuzz_precisions_decimal() -> Vec<usize> {
 }
 
 /// A deterministic per-case key for [`sampled_precisions`], hashed from the case inputs'
-/// `Debug` representations (`FBig`/`CBig` don't implement `Hash`; their `Debug` is exact and
-/// stable, which is all the key needs — same input, same key, within a run and across runs).
+/// `Debug` representations (`FBig`/`CBig` don't implement `Hash`). The `Debug` form is
+/// deterministic (the compact head‥tail view truncates long significands, but always the
+/// same way), which is all the key needs: same input, same key, within a run and across
+/// runs. Two inputs differing only inside a truncated middle can collide — astronomically
+/// unlikely for random draws, and the cost is only a skipped wider width.
 pub fn case_key(inputs: &[&dyn core::fmt::Debug]) -> u64 {
     use core::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -104,8 +108,10 @@ pub fn case_key(inputs: &[&dyn core::fmt::Debug]) -> u64 {
 /// four widths). With a single width configured the gate is fully open and every case runs at
 /// that width.
 ///
-/// The gate depends only on the case inputs, so shrinking a failure re-runs exactly the same
-/// widths (no flapping) and a counterexample reproduces bit-for-bit.
+/// The gate depends only on the case inputs, so a counterexample reproduces bit-for-bit.
+/// Shrinking can in principle change the key (a shorter input has a different `Debug`),
+/// closing the width gate mid-shrink — harmless: the failing width that proptest reports is
+/// the one the unshrunk case actually ran.
 pub fn sampled_precisions<P>(key: u64, precs: Vec<P>) -> impl Iterator<Item = P> {
     precs.into_iter().enumerate().filter(move |(i, _)| {
         i == &0 || key & ((1u64 << i) - 1) == 0
