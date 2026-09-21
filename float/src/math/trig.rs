@@ -20,11 +20,13 @@ use crate::{
     },
     repr::{Context, Repr, Word},
     round::{mode, ErrorBounds, Round, Rounded},
-    utils::{digit_len, shl_digits},
+    utils::{digit_len, log2_u_bs_lb, shl_digits},
 };
 use core::convert::TryFrom;
-use dashu_base::{Abs, AbsOrd, Approximation::Exact, DivRem, EstimatedLog2, RemEuclid, Sign};
-use dashu_int::IBig;
+use dashu_base::{
+    Abs, AbsOrd, Approximation::Exact, DivRem, EstimatedLog2, RemEuclid, Sign, UnsignedAbs,
+};
+use dashu_int::{fast_div::ConstDivisor, IBig, UBig};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Quadrant {
@@ -48,22 +50,15 @@ fn signed_zero_normal<R: Round, const B: Word>(
     Ok(Exact(FBig::<R, B>::new(zero, *ctx)))
 }
 
-/// `B^e mod M` by binary exponentiation — the residue of a radix power without ever
-/// materializing the power (e can be astronomically large, e.g. an exponent near the `isize`
-/// range). All intermediates stay below `M`, which the callers keep small (`u` or `24u`).
+/// `B^e mod M` through the integer crate's prepared-divisor ring — the residue of a radix
+/// power without ever materializing the power (e can be astronomically large, e.g. an
+/// exponent near the `isize` range). All intermediates stay below `M`, which the callers
+/// keep small (`2k·u ≤ 24u`), so the single/double-word fast paths of [`ConstDivisor`]
+/// apply.
 fn digits_powmod<const B: Word>(e: usize, modulus: &IBig) -> IBig {
-    // `rem_euclid` yields the (non-negative) `UBig` residue; wrap back for the IBig pipeline.
-    let mut result = IBig::ONE;
-    let mut base = IBig::from(crate::utils::base_as_ibig::<B>().rem_euclid(modulus.clone()));
-    let mut exp = e;
-    while exp > 0 {
-        if exp & 1 == 1 {
-            result = IBig::from((result * &base).rem_euclid(modulus.clone()));
-        }
-        base = IBig::from((&base * &base).rem_euclid(modulus.clone()));
-        exp >>= 1;
-    }
-    result
+    let ring = ConstDivisor::new(modulus.unsigned_abs());
+    let base = ring.reduce(crate::utils::base_as_ibig::<B>().unsigned_abs());
+    IBig::from(base.pow(&UBig::from(e)).residue())
 }
 
 /// Classify the ×u exact cases: `Some(j)` with `j = (k·x/u) mod 2k` (an euclidean modulus on
@@ -123,18 +118,6 @@ fn unit_residue<const B: Word>(x: &Repr<B>, u: usize, k: usize) -> Option<i8> {
         let j = v.rem_euclid(IBig::from(2 * k));
         Some(i8::try_from(j).expect("j mod 2k ≤ 23 fits in i8"))
     }
-}
-
-/// A conservative f32 bound of `log₂(u·B^s)` from below: the factors' log2 lower bounds,
-/// shaved by the f32 arithmetic's own rounding slack (the `s as f32` conversion, the product
-/// and the sum each round at ~2⁻²⁴ relative; 3·10⁻⁷ > 2⁻²² covers them with margin) plus a
-/// fixed allowance for the `u` term. Whatever this bound certifies as "below", the true
-/// `log₂(u·B^s)` is below too — erring towards the general (always-exact) path, never towards
-/// a wrong fast-path verdict.
-fn log2_u_bs_lb(u_lb: f32, b_lb: f32, s: usize) -> f32 {
-    let s_lb = s as f32 * b_lb;
-    let raw = u_lb + s_lb;
-    raw - (raw * 3e-7 + 1e-4)
 }
 
 /// The quadrant of a half-integer index k — the `k = round(x/(π/2))` of the radian reduction

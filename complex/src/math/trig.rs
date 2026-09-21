@@ -22,6 +22,7 @@ const TRIG_GUARD: usize = 16;
 /// nonzero magnitude), so its provable error is 0. The exemption is not cosmetic: under a
 /// directed mode the preimage of `+0` is one-sided (`[0, ulp)` under `Down`), which no
 /// nonzero symmetric interval ever fits — the loop would retry to its cap.
+#[inline]
 fn ulp8<R: ErrorBounds, const B: Word>(v: &FBig<R, B>) -> FBig<R, B> {
     v.ulp()
         * if v.repr().significand().is_zero() {

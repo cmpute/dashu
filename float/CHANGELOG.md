@@ -50,6 +50,11 @@
   regression from the fixes below: `FBig / FBig` at parity or faster at all benched
   precisions, `DBig / DBig` ~10% faster at 10³–10⁴ digits (+8% at 10 digits, the cost of the
   now-correct wide-quotient rounding), `nth_root` 10–45% faster.
+- **(internal) the ×u reduction's modular exponentiation delegates to `dashu-int`**
+  (`ConstDivisor::reduce` + `Reduced::pow`) instead of a local binary-exponentiation loop
+  over `rem_euclid` — the small `2k·u` modulus rides the single/double-word fast paths. The
+  log₂ helpers (`log2_base`'s fixed-point bracket, the conservative `log2_u_bs_lb` bound)
+  moved to `utils.rs`, next to the digit helpers that share their role.
 
 ### Fix
 - **32-bit `Word` targets returned a wrong `log₂ BASE` from the fixed-point walk** (the

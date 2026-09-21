@@ -16,6 +16,7 @@ use core::cmp::Ordering;
 use dashu_int::{DoubleWord, IBig, Word};
 
 use crate::repr::Repr;
+use crate::utils::log2_base;
 
 /// The smallest normalized significand: `2^(Word::BITS − 1)`. A `Mag` whose significand equals
 /// this is an exact power of two.
@@ -530,38 +531,6 @@ fn div_scaled(a: isize, ratio: i128, frac_bits: u32, up: bool) -> isize {
     let (q, r) = (scaled.div_euclid(den), scaled.rem_euclid(den));
     let q = if up && r != 0 { q + 1 } else { q };
     q.clamp(isize::MIN as i128, isize::MAX as i128) as isize
-}
-
-/// `log₂ BASE` as a `(⌈·, ⌊·⌋, frac_bits)` fixed-point bracket — the same shape as the
-/// hand-written base-10 constants it replaces, computed for any base by the classic squaring
-/// walk on the normalized significand (one `u128` square per fraction bit). `B` is a const
-/// generic, so the whole walk folds into a constant at compile time; the generic-base radius
-/// rules cost no more than the base-10 ones. The fraction width shrinks as the integer part
-/// grows so the ratio itself stays below `2^63` — that bound is what keeps `|a|·ratio`
-/// inside `i128` in [`div_scaled`] for every `a` in the `isize` range.
-const fn log2_base<const B: Word>() -> (u64, u32) {
-    // normalize to mant = BASE·2^lz ∈ [2^63, 2^64): ⌊log₂ BASE⌋ = 63 − lz, then walk the
-    // fraction bits — square, and each time the value crosses 2 the bit is 1. The walk is
-    // pinned to explicit widths (`Word` is `u32` on some targets, whose raw `leading_zeros`
-    // would shift the normalization out of `[2^63, 2^64)` and return a wrong log for every
-    // non-power-of-two base).
-    let int_bits: u32 = Word::BITS - 1 - B.leading_zeros(); // ⌊log₂ BASE⌋ (width-independent)
-    let frac_bits: u32 = 62 - int_bits;
-    let mut m: u128 = (B as u128) << (63 - int_bits); // ∈ [2^63, 2^64)
-    let mut frac: u64 = 0;
-    let mut i = frac_bits;
-    loop {
-        if i == 0 {
-            break;
-        }
-        i -= 1;
-        m = (m * m) >> 63;
-        if m >> 64 != 0 {
-            frac |= 1 << i;
-            m >>= 1;
-        }
-    }
-    ((int_bits as u64) << frac_bits | frac, frac_bits)
 }
 
 // ============================================================================
