@@ -472,7 +472,9 @@ proptest! {
         }
     }
 
-    /// base^w ≈ MPC pow(base, w).
+    /// base^w stays on the `close_at` tolerance (NOT directed): MPC documents `mpc_pow` as not
+    /// guaranteed correctly rounded, so even a high-precision reference is a tolerance oracle,
+    /// not a straddle oracle — a bit-exact assertion here would test MPC's internals, not us.
     #[test]
     #[ignore]
     fn cbig_powf_fuzz(
@@ -489,18 +491,42 @@ proptest! {
         }
     }
 
-    /// z^n ≈ MPC z^n for integer exponents (incl. negative, via dashu's reciprocal path and the
-    /// Ziv squaring chain) — `mpc_pow` is single-valued for integer exponents, so it agrees with
-    /// `z^n` even across the branch cut.
+    /// z^n: **directed, bit-exact vs MPC** for integer exponents (incl. negative, via dashu's
+    /// reciprocal path and the tracked squaring chain) — `mpc_pow` is single-valued for integer
+    /// exponents, so it agrees with `z^n` even across the branch cut (the `directed_eq`
+    /// straddle contract; see `cbig_sqrt_fuzz` for the exact-input / mode-rounds-result setup).
+    /// The reference exponent is set exactly (`with_val(…, n)` — an integer, no rounding), so
+    /// both sides exponentiate by the same exact n.
     #[test]
     #[ignore]
     fn cbig_powi_fuzz(zre in f64_part(), zim in f64_part(), n in -12i32..=12) {
+        use dashu::complex::CBig;
+        use dashu::float::round::{mode::{Down, HalfEven, Up, Zero}};
         for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim, &n])) {
-            let (z, rz) = pair(zre, zim, prec as usize);
-            let d = cmplx_ok!(z.context().powi(&z, IBig::from(n)));
-            let r = rz.pow(&rug::Complex::with_val(prec as u32, (n as f64, 0.0)));
-            if !complex_finite(&d, &r) { continue; }
-            prop_assert!(close_at(&d, &r, prec as usize), "powi zre={zre} zim={zim} n={n} prec={prec}");
+            let zh = rug::Complex::with_val(ref_bits(prec), (zre, zim));
+            let hi = zh.pow(&rug::Complex::with_val(ref_bits(prec), n));
+            macro_rules! check {
+                ($mode:ty, $name:literal) => {{
+                    let z = CBig::<$mode, 2>::from_parts(
+                        FBig::<$mode, 2>::try_from(zre).unwrap(),
+                        FBig::<$mode, 2>::try_from(zim).unwrap(),
+                    );
+                    let d = dashu::complex::Context::<$mode>::new(prec as usize)
+                        .powi(&z, IBig::from(n))
+                        .unwrap()
+                        .value()
+                        .clone();
+                    assert!(
+                        directed_eq(&d, &hi, prec),
+                        "powi[{name}] zre={zre} zim={zim} n={n} prec={prec} d={d:?}",
+                        name = $name
+                    );
+                }};
+            }
+            check!(Up, "up");
+            check!(Down, "down");
+            check!(Zero, "zero");
+            check!(HalfEven, "half");
         }
     }
 

@@ -3,13 +3,22 @@
 ## Unreleased
 
 ### Change
-- **`sqrt` computes through the mechanical ball propagation** (`CBall` over float's `Ball`/`Mag`,
-  the first transcendental off the hand-written `ulp·k` radii): the radius now grows exactly
-  where the composition amplifies (the `y/(2a)` division, `‖z‖` near the cut), an
-  exactly-representable result certifies through a zero radius (fixing `ZivRetryLimitExceeded`
-  on inputs like `√4`/`√(3+4i)` under the outward rounding modes), and the directed-rounding
-  fuzz differential asserts **bit-exact** per-component agreement with MPC across
-  `Up`/`Down`/`Zero`/`HalfEven`.
+- **The transcendental radius estimates are now mechanically propagated** instead of
+  hand-written `ulp·k` constants: `exp`, `log`, `sqrt`, `sin`/`cos`, `tan`, `sin_pi`/`cos_pi`,
+  `tan_pi`, `powi` and `powf` compose through a complex ball (`CBall` over float's `Ball`/`Mag`,
+  shared `#[doc(hidden)]` in lockstep), whose radius tracks every rounding of the composition
+  and grows exactly where it is amplified (`y/(2a)` in `sqrt`, `‖z‖` near 1 in `log`, the
+  kernel input folds for over-precise inputs, `‖w·log z‖` in `powf`). An exactly-representable
+  result certifies through a zero radius, fixing `ZivRetryLimitExceeded` on inputs like
+  `√4`/`√(3+4i)`/`acos(1)` under the outward rounding modes. The directed-rounding fuzz
+  differentials assert **bit-exact** per-component agreement with MPC across
+  `Up`/`Down`/`Zero`/`HalfEven` for every family except the ×π family (no MPC entry — a
+  premultiplied-π reference tests a different function) and `powf` (MPC's `pow` is not
+  guaranteed correctly rounded).
+- **`powi(z, ±1)` now respects the context precision** — it rounds the (exact) result to the
+  context like every other precision-taking op, instead of returning the input at its own
+  precision; `powi` on an unlimited-precision input with `|n| = 1` therefore panics like the
+  rest of the family.
 - **A `-0` component of a complex value renders with its sign**, following `dashu-float`: the
   components are formatted by `FBig`, whose `Display`/`LowerExp` now print `-0` rather than `0`
   (and `FromStr` parses it back as negative zero). Nothing numeric changes.
