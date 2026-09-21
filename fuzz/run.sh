@@ -39,7 +39,9 @@ SHARDS=1
 KEEP_LOGS=0
 VERBOSE=0
 FILTERS=()
-export FUZZ_CASES="${FUZZ_CASES:-1024}"
+# The documented case-count knob is `FUZZ_CASES`; `PROPTEST_CASES` is the fallback, exactly as
+# `fuzz::fuzz_config` reads them (defaulting it here instead would silently shadow it).
+export FUZZ_CASES="${FUZZ_CASES:-${PROPTEST_CASES:-1024}}"
 
 usage() { sed -n '3,26p' "$self" | sed 's/^# \{0,1\}//'; }
 
@@ -72,6 +74,18 @@ for spec in "j:JOBS" "s:SHARDS" "c:FUZZ_CASES"; do
     fi
 done
 
+# The precision sweep is a comma-separated list of widths; a zero (or unparseable) entry
+# degrades the differentials to no check at all, so validate each one.
+if [[ -n "${FUZZ_PRECISIONS:-}" ]]; then
+    IFS=',' read -r -a widths <<<"$FUZZ_PRECISIONS"
+    for w in "${widths[@]}"; do
+        if ! [[ "${w// /}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "-p (env FUZZ_PRECISIONS) must be comma-separated positive integers (got '$FUZZ_PRECISIONS')" >&2
+            exit 2
+        fi
+    done
+fi
+
 # --- build once, so the pool never contends on cargo's build lock -------------
 echo "building fuzz test binaries..."
 build_out="$(cargo test --release --no-run 2>&1)"
@@ -94,6 +108,15 @@ fi
 # --- enumerate the ignored tests, expanded into (test × shard) jobs -----------
 JOBS_LIST=()
 for bin in "${BINS[@]}"; do
+    # A listing that fails (a binary that cannot start, a missing shared library) must be loud:
+    # swallowing it would drop every test in that binary and still report success.
+    list_out="$("$bin" --ignored --list 2>&1)"
+    list_rc=$?
+    if ((list_rc != 0)); then
+        printf '%s\n' "$list_out" >&2
+        echo "cannot list the tests of $bin (exit $list_rc)" >&2
+        exit 1
+    fi
     while IFS= read -r line; do
         name="${line%: test}"
         [[ "$name" == "$line" || -z "$name" ]] && continue
@@ -108,7 +131,7 @@ for bin in "${BINS[@]}"; do
         for ((s = 0; s < SHARDS; s++)); do
             JOBS_LIST+=("$bin"$'\t'"$name"$'\t'"$s")
         done
-    done < <("$bin" --ignored --list 2>/dev/null)
+    done <<<"$list_out"
 done
 
 if ((${#JOBS_LIST[@]} == 0)); then
@@ -119,7 +142,21 @@ fi
 echo "running ${#JOBS_LIST[@]} job(s): $JOBS concurrent, $SHARDS shard(s) per test, ${FUZZ_CASES} cases"
 
 # --- run them through a pool of $JOBS ----------------------------------------
-LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/fuzz-run.XXXXXX")"
+# `wait -n` is the pool's throttle, but it needs bash ≥ 4.3 — macOS still ships 3.2, where it
+# fails with "invalid option" and, since the status is ignored, the pool would launch every job
+# at once. Probe once; without it, fall back to draining the pool fully on each refill.
+HAVE_WAIT_N=0
+if ( : & wait -n ) 2>/dev/null; then
+    HAVE_WAIT_N=1
+else
+    echo "note: this bash has no 'wait -n' (needs 4.3+) — the pool drains fully before refilling" >&2
+fi
+# Checked: every job's log *and* the failure sentinel live here, so a failure to create it would
+# otherwise make every job fail its redirect and still report "all passed" (there is no `set -e`).
+LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/fuzz-run.XXXXXX")" || {
+    echo "cannot create a log directory under ${TMPDIR:-/tmp}" >&2
+    exit 1
+}
 trap '((KEEP_LOGS)) || rm -rf "$LOGDIR"' EXIT
 run_job() {
     local bin="$1" name="$2" shard="$3"
@@ -142,8 +179,13 @@ for desc in "${JOBS_LIST[@]}"; do
     run_job "$bin" "$name" "$shard" &
     ((busy++))
     if ((busy >= JOBS)); then
-        wait -n
-        ((busy--))
+        if ((HAVE_WAIT_N)); then
+            wait -n
+            ((busy--))
+        else
+            wait
+            busy=0
+        fi
     fi
 done
 wait
@@ -158,6 +200,9 @@ if [[ -f "$LOGDIR/failed" ]]; then
         grep -v '^$' "$log" | tail -40
     done <"$LOGDIR/failed"
     echo
+    if ((KEEP_LOGS)); then
+        echo "logs kept in $LOGDIR"
+    fi
     echo "FAILED in ${elapsed}s — $(wc -l <"$LOGDIR/failed") failing job(s)"
     exit 1
 fi

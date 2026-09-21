@@ -3,9 +3,10 @@
 //! A `Mag` is a fixed-width normalized binary significand `man · 2^exp` plus the two sentinels
 //! `0` and `+∞`, with the defining property that **every operation rounds away from zero** — a
 //! `Mag` is a rigorous upper bound by construction, the single invariant the Ziv certification
-//! rests on. It is a port of Arb's `mag_t` (as re-validated in the `dashu-ball` crate), reduced
-//! to the subset float's error propagation needs and generalized from a fixed `u64`
-//! significand to [`Word`] width so products stay native-width on every target.
+//! rests on. It is the round-up magnitude-bound design popularized by ball arithmetic for
+//! arbitrary precision real computation (as re-validated in the `dashu-ball` crate), reduced to
+//! the subset float's error propagation needs and generalized from a fixed `u64` significand to
+//! [`Word`] width so products stay native-width on every target.
 //!
 //! `pub(crate)` and permanently internal: no public Mag API is planned (it would constrain the
 //! internal layout), and it is deliberately not shared with `dashu-ball`'s independent `u64` Mag.
@@ -271,7 +272,8 @@ impl Mag {
     // ========================================================================
 
     /// An upper bound on `e^self` (`self ≥ 0`), by halve-then-pow: for `v = self · 2⁻ʲ ∈ (0, 1)`,
-    /// `e^t ≤ 1 + 2t` on `[0, 1]` (the minimum of `1 + 2t − e^t` is `2·ln 2 − 1 > 0`), so
+    /// `e^t ≤ 1 + 2t` on `[0, 1]` (the difference `1 + 2t − e^t` is nonnegative there — it is `0`
+    /// at `t = 0` and peaks at `2·ln 2 − 1 > 0` in between), so
     /// `e^self ≤ (1 + 2v)^(2ʲ)`, evaluated with the round-up [`Mag::pow`]. `j` is the top-bit
     /// position, capped so `2ʲ` fits a `usize`; beyond the cap any finite radius is dwarfed, so
     /// `+∞` (always sound) is returned. Integer-only — no libm, `core`-clean.
@@ -381,7 +383,8 @@ const fn build(man: Word, exp: isize) -> Mag {
 }
 
 /// Round a too-large significand down to exactly `Word::BITS` bits, rounding *up* and bumping
-/// the exponent (Arb's `MAG_ADJUST_ONE_TOO_LARGE`, applied until stable — at most twice).
+/// the exponent (half-to-away-from-zero on the dropped bit, applied until stable — at most
+/// twice, since one `+1` carry can push a maximally-rounded significand over the top again).
 #[inline]
 fn norm_large_up(mut raw: DoubleWord, mut exp: isize) -> Mag {
     let top: DoubleWord = (1 as DoubleWord) << Word::BITS;

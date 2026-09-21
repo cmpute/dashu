@@ -356,7 +356,7 @@ proptest! {
         for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim, &n])) {
             let (z, rz) = pair(zre, zim, prec as usize);
             let d = cmplx_ok!(z.context().powi(&z, IBig::from(n)));
-            let r = rz.pow(&rug::Complex::with_val(prec as u32, (n as f64, 0.0)));
+            let r = rz.pow(&rug::Complex::with_val(prec, (n as f64, 0.0)));
             if !complex_finite(&d, &r) { continue; }
             prop_assert!(close_at(&d, &r, prec as usize), "powi zre={zre} zim={zim} n={n} prec={prec}");
         }

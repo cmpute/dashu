@@ -522,18 +522,65 @@ impl<R: ErrorBounds, const B: Word> CBig<R, B> {
     }
 
     /// Complex sine of `z·π` (convenience layer). Panics on an indeterminate special value.
+    ///
+    /// On the real axis the ×π kernels' exact lattice resolves exactly: `sin_pi(1/2) = 1`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dashu_cmplx::CBig;
+    /// use dashu_float::{FBig, round::mode::HalfAway};
+    ///
+    /// type C = CBig<HalfAway, 10>;
+    /// type F = FBig<HalfAway, 10>;
+    /// let ctx = |v: i32| F::from(v).with_precision(53).value();
+    /// let half = ctx(1) / ctx(2); // the parts share one significant-digit width
+    /// let s = C::from_parts(half, ctx(0)).sin_pi();
+    /// assert!(s == C::ONE);
+    /// ```
     #[inline]
     pub fn sin_pi(&self) -> Self {
         self.context().unwrap_cfp(self.context().sin_pi(self, None))
     }
 
     /// Complex cosine of `z·π` (convenience layer). Panics on an indeterminate special value.
+    ///
+    /// The exact lattice applies here too: the cosine of an exactly representable half-integer
+    /// real part is exactly zero, and of an integer is `±1`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dashu_cmplx::CBig;
+    /// use dashu_float::{FBig, round::mode::HalfAway};
+    ///
+    /// type C = CBig<HalfAway, 10>;
+    /// type F = FBig<HalfAway, 10>;
+    /// let ctx = |v: i32| F::from(v).with_precision(53).value();
+    /// let c = C::from_parts(ctx(1), ctx(0)).cos_pi();
+    /// assert!(c == C::NEG_ONE); // cos(π) = -1
+    /// ```
     #[inline]
     pub fn cos_pi(&self) -> Self {
         self.context().unwrap_cfp(self.context().cos_pi(self, None))
     }
 
     /// Simultaneously compute `(sin(z·π), cos(z·π))` (convenience layer).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dashu_cmplx::CBig;
+    /// use dashu_float::{FBig, round::mode::HalfAway};
+    ///
+    /// type C = CBig<HalfAway, 10>;
+    /// type F = FBig<HalfAway, 10>;
+    /// let ctx = |v: i32| F::from(v).with_precision(53).value();
+    /// let half = ctx(1) / ctx(2);
+    /// let (s, c) = C::from_parts(half, ctx(0)).sin_cos_pi();
+    /// assert!(s == C::ONE);
+    /// assert!(c == C::ZERO);
+    /// ```
     #[inline]
     pub fn sin_cos_pi(&self) -> (Self, Self) {
         let (s, c) = self.context().sin_cos_pi(self, None);
@@ -542,6 +589,20 @@ impl<R: ErrorBounds, const B: Word> CBig<R, B> {
 
     /// Complex tangent of `z·π` (convenience layer). Panics at the real-axis poles
     /// (`y = 0`, x an odd multiple of `1/2`, where the result is indeterminate).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dashu_cmplx::CBig;
+    /// use dashu_float::{FBig, round::mode::HalfAway};
+    ///
+    /// type C = CBig<HalfAway, 10>;
+    /// type F = FBig<HalfAway, 10>;
+    /// let ctx = |v: i32| F::from(v).with_precision(53).value();
+    /// let quarter = ctx(1) / ctx(4);
+    /// let t = C::from_parts(quarter, ctx(0)).tan_pi();
+    /// assert!(t == C::ONE); // tan(π/4) = 1
+    /// ```
     #[inline]
     pub fn tan_pi(&self) -> Self {
         self.context().unwrap_cfp(self.context().tan_pi(self, None))

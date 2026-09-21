@@ -150,15 +150,28 @@ impl<const B: Word> Ball<B> {
 
     /// `√self`: `rad_a/(2·LB(|mid_r|)) + ε` — the ε term covers the `fl(√a)` vs `√a`
     /// denominator gap exactly as the old `+1` did (valid for `rad_a ≤ |mid_a|`, which
-    /// every caller guarantees). The zero-midpoint special case is kept from the old code:
-    /// a mid that rounds to a zero significand returns an exact zero — no caller feeds a
-    /// straddling ball through `sqrt` (asin checks the zero significand first).
+    /// every caller guarantees and the assertion below enforces).
+    ///
+    /// The zero-midpoint special case is kept from the old code: a mid that rounds to a zero
+    /// significand returns an **exact** zero, dropping the radius. That is sound only when the
+    /// dropped radius is itself below the caller's own bound — the case it exists for is the
+    /// exact zero (`asin`'s `1−x²` at `|x| = 1`), and a ball that *rounds* to a zero mid has a
+    /// radius below one ulp of it, which the callers' endpoints (e.g. `π/2` at 8 ulps) cover.
     pub(crate) fn sqrt(&self, prec: usize) -> Result<Self, FpError> {
         let ctx = Context::<mode::HalfEven>::new(prec);
         let (mid, eps) = finish_mid(ctx.sqrt(&self.mid)?, prec);
         if mid.significand().is_zero() {
             return Ok(Self::exact(mid));
         }
+        // The denominator below is the derivative at the ball's *lower* endpoint `mid − rad`, so
+        // the bound needs that endpoint to stay clear of the root's pole: every caller keeps
+        // `rad ≤ |mid|` (the radius of a computed ball is a few ulps of its midpoint).
+        debug_assert!(
+            self.rad <= Mag::from_repr_lower(&self.mid),
+            "Ball::sqrt requires rad <= |mid| (rad {:?}, mid {:?})",
+            self.rad,
+            self.mid,
+        );
         let denom = Mag::from_repr_lower(&mid).mul_pow2(1); // 2·LB(|mid_r|)
         let rad = self.rad.div(&denom).add(&eps);
         Ok(Self { mid, rad })

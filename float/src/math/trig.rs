@@ -2224,33 +2224,42 @@ mod tests {
     /// exact-case table through the no-materialization path.
     #[test]
     fn test_sin_pi_huge_exact_reduction() {
-        let p = 100;
-        let ctx = Context::<mode::HalfEven>::new(p);
+        for &p in &[20usize, 50, 100, 500] {
+            let ctx = Context::<mode::HalfEven>::new(p);
 
-        // x = ((2^60 + 1)·2^950 + 1)·2^-10 ≡ 2^-10 (mod 2)
-        let sig = (((IBig::from(1) << 60usize) + 1) << 950usize) + 1;
-        let x = Repr::<2>::new(sig, -10);
-        let residue = Repr::<2>::new(IBig::from(1), -10);
-        assert_eq!(
-            ctx.sin_pi::<2>(&x, None).unwrap().value(),
-            ctx.sin_pi::<2>(&residue, None).unwrap().value()
-        );
-        assert_eq!(
-            ctx.cos_pi::<2>(&x, None).unwrap().value(),
-            ctx.cos_pi::<2>(&residue, None).unwrap().value()
-        );
+            // x = ((2^60 + 1)·2^950 + 1)·2^-10 ≡ 2^-10 (mod 2)
+            let sig = (((IBig::from(1) << 60usize) + 1) << 950usize) + 1;
+            let x = Repr::<2>::new(sig, -10);
+            let residue = Repr::<2>::new(IBig::from(1), -10);
+            assert_eq!(
+                ctx.sin_pi::<2>(&x, None).unwrap().value(),
+                ctx.sin_pi::<2>(&residue, None).unwrap().value(),
+                "sin_pi(huge) == sin_pi(2^-10) at p={p}"
+            );
+            assert_eq!(
+                ctx.cos_pi::<2>(&x, None).unwrap().value(),
+                ctx.cos_pi::<2>(&residue, None).unwrap().value(),
+                "cos_pi(huge) == cos_pi(2^-10) at p={p}"
+            );
 
-        // an even integer at a huge exponent: quarter_class must not materialize 2^940
-        let huge_int = Repr::<2>::new((IBig::from(1) << 60usize) + 1, 940);
-        assert_eq!(ctx.sin_pi::<2>(&huge_int, None).unwrap().value(), FBig::<mode::HalfEven>::ZERO);
-        assert_eq!(ctx.cos_pi::<2>(&huge_int, None).unwrap().value(), FBig::<mode::HalfEven>::ONE);
-        // ...and an odd one at a small exponent: cos_pi(2^60+1) = -1 (odd integer)
-        assert_eq!(
-            ctx.cos_pi::<2>(&Repr::<2>::new((IBig::from(1) << 60usize) + 1, 0), None)
-                .unwrap()
-                .value(),
-            FBig::<mode::HalfEven>::NEG_ONE
-        );
+            // an even integer at a huge exponent: quarter_class must not materialize 2^940
+            let huge_int = Repr::<2>::new((IBig::from(1) << 60usize) + 1, 940);
+            assert_eq!(
+                ctx.sin_pi::<2>(&huge_int, None).unwrap().value(),
+                FBig::<mode::HalfEven>::ZERO
+            );
+            assert_eq!(
+                ctx.cos_pi::<2>(&huge_int, None).unwrap().value(),
+                FBig::<mode::HalfEven>::ONE
+            );
+            // ...and an odd one at a small exponent: cos_pi(2^60+1) = -1 (odd integer)
+            assert_eq!(
+                ctx.cos_pi::<2>(&Repr::<2>::new((IBig::from(1) << 60usize) + 1, 0), None)
+                    .unwrap()
+                    .value(),
+                FBig::<mode::HalfEven>::NEG_ONE
+            );
+        }
     }
 
     /// An astronomically-scaled tiny argument (`|x| < 1/4` with s ~ 10⁹) must take the
@@ -2279,23 +2288,24 @@ mod tests {
     /// themselves are `Indeterminate`).
     #[test]
     fn test_tan_pi_near_pole_signs() {
-        let p = 53;
-        let ctx = Context::<mode::HalfEven>::new(p);
-        let eps = FBig::<mode::HalfEven>::ONE >> 10;
-        // both operands must carry the context precision: at precision 1 the subtraction
-        // 0.5 − 2^-10 rounds back onto the exact pole
-        let half: FBig<mode::HalfEven> = FBig::ONE.with_precision(p).value() / 2u8;
-        let eps: FBig<mode::HalfEven> = eps.with_precision(p).value();
-        let below = ctx
-            .tan_pi::<2>((half.clone() - &eps).repr(), None)
-            .unwrap()
-            .value();
-        let above = ctx
-            .tan_pi::<2>((half.clone() + &eps).repr(), None)
-            .unwrap()
-            .value();
-        assert_eq!(below.sign(), Sign::Positive, "tan_pi just below 1/2");
-        assert_eq!(above.sign(), Sign::Negative, "tan_pi just above 1/2");
+        for &p in &[20usize, 50, 100, 500] {
+            let ctx = Context::<mode::HalfEven>::new(p);
+            let eps = FBig::<mode::HalfEven>::ONE >> 10;
+            // both operands must carry the context precision: at precision 1 the subtraction
+            // 0.5 − 2^-10 rounds back onto the exact pole
+            let half: FBig<mode::HalfEven> = FBig::ONE.with_precision(p).value() / 2u8;
+            let eps: FBig<mode::HalfEven> = eps.with_precision(p).value();
+            let below = ctx
+                .tan_pi::<2>((half.clone() - &eps).repr(), None)
+                .unwrap()
+                .value();
+            let above = ctx
+                .tan_pi::<2>((half.clone() + &eps).repr(), None)
+                .unwrap()
+                .value();
+            assert_eq!(below.sign(), Sign::Positive, "tan_pi just below 1/2 at p={p}");
+            assert_eq!(above.sign(), Sign::Negative, "tan_pi just above 1/2 at p={p}");
+        }
     }
 
     /// The ×u forward family's exact-value tables, in degrees (u = 360 — quarters, sixths and
@@ -2486,7 +2496,7 @@ mod tests {
             "0.1", "0.25", "0.3", "0.5", "1.2", "2.5", "-0.75", "10.1", "1e50",
         ] {
             let x = DBig::from_str(input).unwrap();
-            for &p in &[20usize, 100] {
+            for &p in &[20usize, 50, 100, 500] {
                 let ctx = Context::<mode::HalfEven>::new(p);
                 assert_eq!(
                     ctx.sin_pi::<10>(x.repr(), None).unwrap().value(),
