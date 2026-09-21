@@ -14,6 +14,7 @@
 
 use dashu::base::Sign;
 use dashu::integer::IBig;
+use dashu::float::FBig;
 use fuzz::cmplx::*;
 use proptest::prelude::*;
 use rug::ops::Pow;
@@ -69,16 +70,43 @@ proptest! {
         }
     }
 
-    /// sqrt(z) ≈ MPC sqrt(z).
+    /// sqrt(z): **directed, bit-exact vs MPC** — dashu's mode-`R` result must equal the Up- or
+    /// Down-rounding of the high-precision nearest MPC reference, per component (the straddle
+    /// contract of `directed_eq`). An `FpError` fails (a correctly-rounded sqrt that errors
+    /// where MPC returns a value is a bug, not a domain mismatch); finite `f64_part` inputs
+    /// keep both sides finite.
     #[test]
     #[ignore]
     fn cbig_sqrt_fuzz(zre in f64_part(), zim in f64_part()) {
+        use dashu::complex::CBig;
+        use dashu::float::round::{mode::{Down, HalfEven, Up, Zero}};
         for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
-            let (z, rz) = pair(zre, zim, prec as usize);
-            let d = cmplx_ok!(z.context().sqrt(&z));
-            let r = rz.sqrt();
-            if !complex_finite(&d, &r) { continue; }
-            prop_assert!(close_at(&d, &r, prec as usize), "sqrt zre={zre} zim={zim} prec={prec}");
+            let zh = rug::Complex::with_val(ref_bits(prec), (zre, zim));
+            let hi = zh.sqrt();
+            macro_rules! check {
+                ($mode:ty, $name:literal) => {{
+                    // the input is the *exact* f64 pair (its 53-bit value is exact in both
+                    // systems); the mode only rounds the result, at the context precision
+                    let z = CBig::<$mode, 2>::from_parts(
+                        FBig::<$mode, 2>::try_from(zre).unwrap(),
+                        FBig::<$mode, 2>::try_from(zim).unwrap(),
+                    );
+                    let d = dashu::complex::Context::<$mode>::new(prec as usize)
+                        .sqrt(&z)
+                        .unwrap()
+                        .value()
+                        .clone();
+                    assert!(
+                        directed_eq(&d, &hi, prec),
+                        "sqrt[{name}] zre={zre} zim={zim} prec={prec} d={d:?}",
+                        name = $name
+                    );
+                }};
+            }
+            check!(Up, "up");
+            check!(Down, "down");
+            check!(Zero, "zero");
+            check!(HalfEven, "half");
         }
     }
 

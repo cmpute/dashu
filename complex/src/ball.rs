@@ -22,7 +22,7 @@ use dashu_float::{ulp_mag, Ball, ConstCache, Context as FloatCtxt, FBig, FpError
 use dashu_int::{IBig, Word};
 
 use crate::repr::reborrow_cache;
-use crate::round::{ErrorBounds, Round};
+use crate::round::{mode, ErrorBounds, Round};
 
 /// A complex ball: midpoints plus radii per component, `|component − true| ≤ rad`.
 // The transcendental closures adopt these ops family by family (sqrt first); the attribute
@@ -50,8 +50,9 @@ impl<const B: Word> CBall<B> {
 
     /// Seed from an input's parts: the parts are re-rooted to the working precision (an input
     /// carrying more digits than the working precision rounds here, and that rounding joins the
-    /// radius like any other).
-    pub(crate) fn from_parts<R: Round>(re: &FBig<R, B>, im: &FBig<R, B>, prec: usize) -> Self {
+    /// radius like any other). The re-round runs under [`mode::HalfEven`] regardless of the
+    /// caller's mode — one work-ulp covers any direction's rounding error.
+    pub(crate) fn from_parts(re: &Repr<B>, im: &Repr<B>, prec: usize) -> Self {
         Self {
             re: seed_ball(re, prec),
             im: seed_ball(im, prec),
@@ -297,6 +298,17 @@ impl<const B: Word> CBall<B> {
     }
 }
 
+/// Re-root one input part to the working precision (an over-precise input rounds here, and the
+/// rounding joins the radius like any other).
+fn seed_ball<const B: Word>(re: &Repr<B>, prec: usize) -> Ball<B> {
+    // build the part as an exact (unlimited) value, then round to the working precision — an
+    // over-precise significand genuinely rounds here (same-precision `with_precision` is a no-op)
+    let rooted =
+        FBig::<mode::HalfEven, B>::from_repr(re.clone(), FloatCtxt::<mode::HalfEven>::new(0))
+            .with_precision(prec);
+    Ball::from_rounded(rooted.map(FBig::into_repr), prec)
+}
+
 /// `num / d` by a real ball, with the exact-zero numerator shortcut: a precisely-zero numerator
 /// divides to a precisely-zero quotient no matter how uncertain the denominator is — the generic
 /// `Ball::div` rule would price the touching-zero denominator as an infinite radius, which no
@@ -306,12 +318,6 @@ fn div_real<const B: Word>(num: &Ball<B>, d: &Ball<B>, prec: usize) -> Result<Ba
         return Ok(Ball::exact(num.mid.clone()));
     }
     num.div(d, prec)
-}
-
-/// Re-root one input part to the working precision (an over-precise input rounds here, and the
-/// rounding joins the radius like any other).
-fn seed_ball<R: Round, const B: Word>(f: &FBig<R, B>, prec: usize) -> Ball<B> {
-    Ball::from_rounded(f.clone().with_precision(prec).map(FBig::into_repr), prec)
 }
 
 /// The tracked real `√`: the float kernel on the midpoint, then `rad_arg/(2·LB(|mid|))` —
@@ -535,8 +541,12 @@ mod tests {
 
     #[test]
     fn from_parts_of_fitting_parts_is_exact() {
-        let f = F::from(3).with_precision(10).value();
-        let z = CBall::from_parts(&f, &f, 20);
+        let z = CBall::from_parts(&repr(3, 0), &repr(4, 0), 20);
         assert!(z.re.rad.is_zero() && z.im.rad.is_zero());
+        // an over-precise part rounds down at the seed precision, and the rounding joins the
+        // radius
+        let wide = Repr::new(IBig::from(1025), -10); // 21 bits at seed precision 10
+        let z = CBall::from_parts(&wide, &Repr::<2>::zero(), 10);
+        assert!(!z.re.rad.is_zero());
     }
 }

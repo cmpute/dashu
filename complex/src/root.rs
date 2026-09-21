@@ -1,10 +1,10 @@
 //! Complex square root (principal branch; cut on `]−∞, 0]`).
 
+use crate::ball::CBall;
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, exact, CfpResult, Context};
-use dashu_base::Sign;
 use dashu_float::round::{ErrorBounds, Round};
-use dashu_float::{Context as FloatCtxt, FBig, Repr};
+use dashu_float::{Context as FloatCtxt, FBig};
 use dashu_int::Word;
 
 /// Guard digits (base-B) for `sqrt`. Composes `hypot` + two real `sqrt`s + adds; a modest fixed
@@ -22,44 +22,19 @@ impl<R: ErrorBounds> Context<R> {
             return special;
         }
 
-        // Principal sqrt via the cancellation-free form: for x ≥ 0, `a = sqrt((r+x)/2)`,
-        // `b = y/(2a)`; for x < 0, `b = sign(y)·sqrt((r-x)/2)`, `a = y/(2b)` — this avoids the
-        // near-cancellation in `r−x` when `|y| ≪ |x|`. The float `hypot`/`sqrt` are correctly-rounded
-        // at the working precision, and the adds/divs/mul each round at a few working-ULPs, so a
-        // small constant radius certifies both parts. The Ziv driver asserts a limited context (the
-        // special-value shortcut above is exact).
+        // Principal sqrt through the cancellation-free form (`CBall::sqrt`: for x ≥ 0,
+        // `a = sqrt((r+x)/2)`, `b = y/(2a)`; for x < 0 mirrored with `b` carrying the sign of
+        // `y`), which avoids the near-cancellation in `r−x` when `|y| ≪ |x|`. Every composition
+        // step is a tracked ball op, so the radius is mechanical: an exactly-representable
+        // result (√4 = 2, √(3+4i) = 2+i, …) carries a zero radius — the only thing the directed
+        // rounding modes can certify against their one-sided preimages. The Ziv driver asserts a
+        // limited context (the special-value shortcut above is exact).
         let p = self.precision();
         let [re, im] = self.ziv(SQRT_GUARD, |guard| {
-            let gctx = FloatCtxt::<R>::new(p + guard);
-            let two = FBig::from_repr(Repr::new(2.into(), 0), gctx);
-            let x = z.re();
-            let y = z.im();
-            let r = gctx.hypot(x, y)?.value();
-            let (a, b) = if x.sign() != Sign::Negative {
-                // x ≥ 0
-                let rpx = gctx.add(r.repr(), x)?.value();
-                let half_rpx = gctx.div(rpx.repr(), two.repr())?.value();
-                let a = gctx.sqrt(half_rpx.repr())?.value();
-                let two_a = gctx.mul(two.repr(), a.repr())?.value();
-                let b = gctx.div(y, two_a.repr())?.value();
-                (a, b)
-            } else {
-                // x < 0: b carries the sign of y
-                let rmx = gctx.sub(r.repr(), x)?.value(); // r − x = r + |x|
-                let half_rmx = gctx.div(rmx.repr(), two.repr())?.value();
-                let b_mag = gctx.sqrt(half_rmx.repr())?.value();
-                let b = if y.sign() == Sign::Negative {
-                    -b_mag
-                } else {
-                    b_mag
-                };
-                let two_b = gctx.mul(two.repr(), b.repr())?.value();
-                let a = gctx.div(y, two_b.repr())?.value();
-                (a, b)
-            };
-            let a_rad = a.ulp() * 10;
-            let b_rad = b.ulp() * 10;
-            Ok([(a, a_rad), (b, b_rad)])
+            let pw = p + guard;
+            let gctx = FloatCtxt::<R>::new(pw);
+            let out = CBall::from_parts(z.re(), z.im(), pw).sqrt(&gctx, pw)?;
+            Ok(out.to_parts_radius(&gctx))
         })?;
         Ok(combine_parts(re, im))
     }
@@ -99,6 +74,7 @@ fn sqrt_special<R: Round, const B: Word>(
 mod tests {
     use super::*;
     use dashu_float::round::mode;
+    use dashu_float::Repr;
 
     type C = CBig<mode::HalfAway, 10>;
     type F = FBig<mode::HalfAway, 10>;
@@ -173,5 +149,71 @@ mod tests {
     #[should_panic(expected = "precision cannot be 0")]
     fn complex_sqrt_unlimited_panics() {
         let _ = C::I.sqrt();
+    }
+
+    // The mechanically tracked radius must certify at the target precision across the width
+    // sweep: each result equals the same op computed at `p + 60` and re-rounded to `p` (both
+    // sides are correctly rounded, so they must agree bit for bit).
+    #[test]
+    fn sqrt_matches_oracle_across_precisions() {
+        type C2 = CBig<mode::HalfEven, 2>;
+        type F2 = FBig<mode::HalfEven, 2>;
+        let inputs = [
+            (3i64, 4i64),
+            (5, -12),
+            (7, 1),
+            (1, 1),
+            (-3, 4),
+            (9, 0),
+            (121, 0),
+        ];
+        for p in [20usize, 50, 100, 500] {
+            for (re, im) in inputs {
+                let mk = |v: i64| F2::from(v).with_precision(p).value();
+                let z = C2::from_parts(mk(re), mk(im));
+                let mk_hi = |v: i64| F2::from(v).with_precision(p + 60).value();
+                let (hre, him) = C2::from_parts(mk_hi(re), mk_hi(im)).sqrt().into_parts();
+                let expect_re = hre.with_precision(p).value();
+                let expect_im = him.with_precision(p).value();
+                let got = z.sqrt();
+                assert_eq!(got.re(), expect_re.repr(), "re p={p} z=({re},{im})");
+                assert_eq!(got.im(), expect_im.repr(), "im p={p} z=({re},{im})");
+            }
+        }
+    }
+
+    // An exactly-representable result certifies under the outward modes through its zero
+    // radius — the hand-written `ulp·10` radius could never fit a one-sided preimage (it
+    // exhausted the Ziv retry budget instead).
+    #[test]
+    fn sqrt_exact_results_certify_directed() {
+        macro_rules! check {
+            ($mode:ty) => {{
+                type C = CBig<$mode, 10>;
+                type F = FBig<$mode, 10>;
+                let mk = |v: i32| F::from(v).with_precision(30).value();
+                let ctx = Context::<$mode>::new(30);
+                // √4 = 2
+                let got = ctx
+                    .sqrt(&C::from_parts(mk(4), mk(0)))
+                    .unwrap()
+                    .value()
+                    .clone();
+                assert_eq!(got.re(), mk(2).repr());
+                assert!(got.im().significand().is_zero());
+                // √(−4) = 2i
+                let got = ctx
+                    .sqrt(&C::from_parts(mk(-4), mk(0)))
+                    .unwrap()
+                    .value()
+                    .clone();
+                assert!(got.re().significand().is_zero());
+                assert_eq!(got.im(), mk(2).repr());
+            }};
+        }
+        check!(mode::Up);
+        check!(mode::Down);
+        check!(mode::Zero);
+        check!(mode::HalfEven);
     }
 }

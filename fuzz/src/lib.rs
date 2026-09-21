@@ -199,6 +199,7 @@ pub mod cmplx {
     use dashu::complex::CBig;
     use dashu::float::FBig;
     use dashu::float::round::mode::HalfEven;
+    use dashu::float::round::Round;
     use proptest::prelude::*;
     use rug::ops::Pow;
 
@@ -238,7 +239,7 @@ pub mod cmplx {
     /// `significand × 2^exponent`, so build the significand (IBig → decimal string → `rug::Integer`,
     /// sign preserved) and scale by `2^exp`. Exact because `cmp_bits` exceeds the significand's
     /// bit length (which is ≤ the working precision + 1 guard).
-    fn fbig2_to_rug(f: &F, cmp_bits: u32) -> rug::Float {
+    fn fbig2_to_rug<R: Round>(f: &FBig<R, 2>, cmp_bits: u32) -> rug::Float {
         let repr = f.repr();
         let sig = repr.significand();
         let exp = repr.exponent();
@@ -293,4 +294,44 @@ pub mod cmplx {
         let im_err = (dim_r - &rim).abs();
         re_err <= allowed.clone() && im_err <= allowed
     }
+
+    // ========================================================================
+    // Directed rounding — bit-exact per component (the float directed contract)
+    // ========================================================================
+
+    /// The reference precision for the directed tests: the MPC reference runs **nearest** at
+    /// `2·prec + 512` bits, so its own error (~`2^-(2prec+512)`) sits ~`2^(prec+512)` below the
+    /// target-precision rounding boundaries (~`2^-prec`) — re-rounding the reference can only
+    /// mis-decide a true value within `2^-(prec+512)` of a boundary. The same margin argument
+    /// backs the float directed harness.
+    pub fn ref_bits(prec: u32) -> u32 {
+        2 * prec + 512
+    }
+
+    /// A mode-`R` base-2 `FBig` part from an `f64` at `prec` bits.
+    pub fn part<R: Round>(v: f64, prec: u32) -> FBig<R, 2> {
+        FBig::<R, 2>::try_from(v).unwrap().with_precision(prec as usize).value()
+    }
+
+    /// Directed per-component check: dashu's mode-`R` result must equal the **Up- or the
+    /// Down-rounding** of the high-precision nearest reference (when the two agree, the true
+    /// value was representable and every mode must return it — the same straddle contract as
+    /// the float directed tests). Both sides convert exactly to `rug::Float`
+    /// ([`fbig2_to_rug`]), so the comparison is bit-exact. Value equality reads ±0 as equal —
+    /// sign-of-zero is covered by the signed-zero tables instead.
+    pub fn directed_eq_part<R: Round>(d: &FBig<R, 2>, hi: &rug::Float, prec: u32) -> bool {
+        let cmp = (2 * prec + 64) as u32;
+        let d_r = fbig2_to_rug(d, cmp);
+        let (up, _) = rug::Float::with_val_round(prec, hi, rug::float::Round::Up);
+        let (down, _) = rug::Float::with_val_round(prec, hi, rug::float::Round::Down);
+        d_r == up || (up != down && d_r == down)
+    }
+
+    /// Directed check for a whole complex result — both components independently (dashu's
+    /// `CBig` rounds each part with the single mode `R`, so the reference must too).
+    pub fn directed_eq<R: Round>(d: &CBig<R, 2>, hi: &rug::Complex, prec: u32) -> bool {
+        let (dre, dim) = d.clone().into_parts();
+        directed_eq_part(&dre, hi.real(), prec) && directed_eq_part(&dim, hi.imag(), prec)
+    }
+
 }

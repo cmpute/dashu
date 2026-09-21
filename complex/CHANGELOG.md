@@ -3,6 +3,13 @@
 ## Unreleased
 
 ### Change
+- **`sqrt` computes through the mechanical ball propagation** (`CBall` over float's `Ball`/`Mag`,
+  the first transcendental off the hand-written `ulp·k` radii): the radius now grows exactly
+  where the composition amplifies (the `y/(2a)` division, `‖z‖` near the cut), an
+  exactly-representable result certifies through a zero radius (fixing `ZivRetryLimitExceeded`
+  on inputs like `√4`/`√(3+4i)` under the outward rounding modes), and the directed-rounding
+  fuzz differential asserts **bit-exact** per-component agreement with MPC across
+  `Up`/`Down`/`Zero`/`HalfEven`.
 - **A `-0` component of a complex value renders with its sign**, following `dashu-float`: the
   components are formatted by `FBig`, whose `Display`/`LowerExp` now print `-0` rather than `0`
   (and `FromStr` parses it back as negative zero). Nothing numeric changes.
