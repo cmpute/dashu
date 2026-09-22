@@ -11,7 +11,7 @@
 //! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test float_transcendental -- --ignored --nocapture`
 
 use core::str::FromStr;
-use fuzz::CLOSE_K;
+use fuzz::{CLOSE_K, within_k_ulps};
 use dashu::float::ops::Abs;
 use dashu::float::round::Round;
 use dashu::float::round::mode::{Down, HalfAway, HalfEven, Up, Zero};
@@ -27,17 +27,6 @@ fn rug_bits(x: &Repr<10>, prec: usize) -> u32 {
     let x_bits = (x_mag * 3.322).ceil() as u32 + 500;
     let p_bits = ((prec.max(100) as f64) * 3.322).ceil() as u32;
     p_bits + x_bits
-}
-
-/// |dashu - rug| ≤ `k` ulps at dashu's precision.
-fn within_k_ulps(d: &DBig, r: &DBig, k: i32) -> bool {
-    let diff = (d.clone() - r).abs();
-    // Exact agreement → no need to inspect ulps (also avoids .ulp() on
-    // unlimited-precision constants like `FBig::ONE` from powi(x,0)=1).
-    if diff.repr().significand().is_zero() {
-        return true;
-    }
-    diff <= d.ulp() * k
 }
 
 /// Unwrap a `FpResult<FBig>` to its `FBig` value, or skip the whole case (`return Ok(())`) on error.

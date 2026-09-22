@@ -12,8 +12,9 @@
 //! into a single thread. [`fuzz_config`] documents the `FUZZ_CASES` / `FUZZ_SHARDS` / `FUZZ_SEED`
 //! knobs and [`sampled_precisions`] the per-width subsampling.
 
+use dashu::float::ops::Abs;
 use dashu::float::round::mode::HalfAway;
-use dashu::float::{Context, FBig, Repr};
+use dashu::float::{Context, DBig, FBig, Repr};
 use dashu::integer::{IBig, UBig, Word};
 use proptest::prelude::*;
 use proptest::test_runner::RngSeed;
@@ -25,6 +26,17 @@ use proptest::test_runner::RngSeed;
 /// (The directed, bit-exact suites don't use this constant — they assert the straddle contract
 /// with no tolerance at all.)
 pub const CLOSE_K: i32 = 2;
+
+/// |dashu − rug| ≤ `k` ulps at dashu's precision (pass [`CLOSE_K`] for `k` in the differentials).
+/// Exact agreement short-circuits before the ulp comparison — that also avoids `.ulp()` on
+/// unlimited-precision results (e.g. `powi(x, 0) = 1`).
+pub fn within_k_ulps(d: &DBig, r: &DBig, k: i32) -> bool {
+    let diff = (d.clone() - r).abs();
+    if diff.repr().significand().is_zero() {
+        return true;
+    }
+    diff <= d.ulp() * k
+}
 
 /// Read an integer env var, ignoring unset/unparseable values.
 fn env_usize(name: &str) -> Option<usize> {
