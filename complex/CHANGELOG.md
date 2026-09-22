@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Change
+### Change
+- **`CBig`'s `Debug` renders its parts through `FBig`'s `Debug`** (the base-agnostic
+  `significand * base ^ exponent` form) instead of `FBig`'s `Display`: a base-2 part's
+  `Display` is native binary positional (`0.1` = one half), which reads as garbage when
+  glanced at as decimal (`re:0.001011…` for one half). Base-10 output is unchanged in
+  appearance apart from the `significand * base ^ exponent` split.
 - **The transcendental radius estimates are now mechanically propagated** instead of
   hand-written `ulp·k` constants: `exp`, `log`, `sqrt`, `sin`/`cos`, `tan`, `sin_pi`/`cos_pi`,
   `tan_pi`, `powi` and `powf` compose through a complex ball (`CBall` over float's `Ball`/`Mag`,

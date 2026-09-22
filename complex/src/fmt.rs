@@ -57,9 +57,11 @@ impl<R: Round, const B: Word> Display for CBig<R, B> {
 }
 
 impl<R: Round, const B: Word> Debug for CBig<R, B> {
-    /// Structured form `"re:<re> im:<im> (prec: <p>)"` — e.g. `"re:1.5 im:-2.0 (prec: 53)"` — for
-    /// quick inspection (mirrors `FBig`'s `Debug` style). The alternate `#` form exposes the raw
-    /// significands and exponent scaling.
+    /// Structured form `"re:<re> im:<im> (prec: <p>)"` — e.g.
+    /// `"re:3 * 10 ^ 0 im:4 * 10 ^ 0 (prec: 53)"` — for quick inspection. The parts render through [`FBig`]'s `Debug` (the base-agnostic
+    /// `significand * base ^ exponent` form), *not* its `Display`: a base-2 part's `Display`
+    /// is native binary positional (`0.1` = one half), which reads as garbage when glanced at
+    /// as decimal. The alternate `#` form exposes the raw significands and exponent scaling.
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let fctx = self.context.float();
         let re = FBig::from_repr(self.re.clone(), fctx);
@@ -71,11 +73,7 @@ impl<R: Round, const B: Word> Debug for CBig<R, B> {
                 .field("precision", &self.context.precision())
                 .finish()
         } else {
-            f.write_str("re:")?;
-            Display::fmt(&re, f)?;
-            f.write_str(" im:")?;
-            Display::fmt(&im, f)?;
-            f.write_fmt(format_args!(" (prec: {})", self.context.precision()))
+            f.write_fmt(format_args!("re:{re:?} im:{im:?} (prec: {})", self.context.precision()))
         }
     }
 }
@@ -118,7 +116,23 @@ mod tests {
     fn debug_structured() {
         let z = C::from_parts(FBig::from(3), FBig::from(4));
         let s = format!("{:?}", z);
-        assert!(s.starts_with("re:3 im:4 (prec:"));
+        assert!(s.starts_with("re:3 * 10 ^ 0 (prec: 1) im:4 * 10 ^ 0 (prec: 1) (prec:"), "{s}");
+    }
+
+    #[test]
+    fn debug_parts_are_base_agnostic() {
+        // A base-2 part's `Display` is native binary positional (`0.1` = one half), which
+        // reads as garbage when glanced at as decimal — `CBig`'s `Debug` must render its
+        // parts through `FBig`'s `Debug` (`significand * base ^ exponent`) instead.
+        let z = CBig::<mode::HalfEven, 2>::from_parts(
+            FBig::<mode::HalfEven, 2>::try_from(0.5).unwrap(),
+            FBig::<mode::HalfEven, 2>::try_from(0.25).unwrap(),
+        );
+        let s = format!("{z:?}");
+        assert!(
+            s.starts_with("re:1 * 2 ^ -1 (prec: 53) im:1 * 2 ^ -2 (prec: 53) (prec:"),
+            "binary positional leaked into Debug: {s}"
+        );
     }
 
     #[test]
@@ -143,8 +157,9 @@ mod tests {
         assert_eq!(format!("{:+}", mk(n0(), p0())), "-0");
         assert_eq!(format!("{:+}", mk(n0(), n0())), "-0");
 
-        // Debug renders both components via FBig Display, so -0 keeps its sign there too
+        // Debug renders both components via FBig Debug (sig×base^exp), which carries no sign
+        // on a zero significand — the -0 sign is only visible through Display
         let s = format!("{:?}", mk(n0(), n0()));
-        assert!(s.starts_with("re:-0 im:-0 (prec:"), "got {s}");
+        assert!(s.starts_with("re:0 * 10 ^"), "got {s}");
     }
 }
