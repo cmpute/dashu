@@ -1170,6 +1170,41 @@ mod tests {
         );
     }
 
+    // A result in `10^(2.8e18)..10^(9.2e18)` is representable as a `Repr` but lies past the
+    // old `Mag` ceiling (`2^isize::MAX ≈ 10^2.8e18`): the exported radius saturated to `+∞`,
+    // which no Ziv attempt can certify, and the loop spun through its exponential guard growth
+    // for hours before erroring. The `Mag` exponent field is now `i128` — wide enough to bound
+    // any representable value — so the ×π hyperbolic family certifies here in one retry.
+    #[test]
+    fn sinh_pi_huge_magnitude_certifies() {
+        let ctx = Context::<mode::HalfEven>::new(20);
+        // sinh/cosh(π·3.5457e18) ≈ 10^4.8e18 — past the old `Mag` ceiling, short of the
+        // `Repr` exponent range (`10^isize::MAX`).
+        let x = Repr::<10>::new(35457.into(), 14);
+        let past_old_ceiling = |r: &Repr<10>| r.exponent() > isize::MAX / 2;
+
+        crate::ziv_retries_reset();
+        let sh = ctx.sinh_pi::<10>(&x, None).unwrap().value();
+        assert_eq!(
+            crate::ziv_retries(),
+            1,
+            "sinh_pi(3.5457e18) @20 should certify on the second attempt"
+        );
+        assert!(!sh.repr().is_infinite() && past_old_ceiling(sh.repr()));
+
+        crate::ziv_retries_reset();
+        let ch = ctx.cosh_pi::<10>(&x, None).unwrap().value();
+        assert_eq!(crate::ziv_retries(), 1);
+        assert!(!ch.repr().is_infinite() && past_old_ceiling(ch.repr()));
+
+        // the pair shares one evaluation and certifies both parts together
+        crate::ziv_retries_reset();
+        let (sh2, ch2) = ctx.sinh_cosh_pi::<10>(&x, None);
+        assert_eq!(crate::ziv_retries(), 1);
+        assert_eq!(sh2.unwrap().value(), sh);
+        assert_eq!(ch2.unwrap().value(), ch);
+    }
+
     /// `acosh`/`atanh` compare their `±1` boundaries *exactly*: an argument that merely rounds
     /// onto the endpoint is not the endpoint, and both have a vertical tangent there — the true
     /// value is `√(2δ)` (acosh) / `ln(2/δ)/2` (atanh), not the endpoint's `0` / `∞`.
