@@ -220,10 +220,23 @@ impl<const B: Word> CBall<B> {
         } else {
             r.rad.mul_pow2(1).div(&lo)
         };
+        // The argument fold is the *componentwise* gradient bound, not the joint 1-Lipschitz
+        // `(rad_x + rad_y)/lo`: `∇arg = (−y, x)/‖z‖²`, so along the input segment
+        // `|Δarg| ≤ (|y|·rad_x + |x|·rad_y)/lo²` (`lo²` a proven lower bound of `‖z‖²` —
+        // rounded *down*, a round-up denominator would under-price the fold). On the axes this
+        // vanishes exactly (`y ≡ 0` ⇒ the angle is invariant along the real error direction),
+        // so `log` of a real/imaginary ball carries a *zero* argument radius — the structural
+        // zero the strict zero-candidate certification needs (e.g. `asin(±i)`'s real part).
+        // Away from the axes it is also tighter than the joint bound by the component ratio.
         let arg_fold = if lo.is_zero() {
             Mag::INFINITY
         } else {
-            self.re.rad.add(&self.im.rad).div(&lo)
+            let lo2 = lo.mul_down(&lo);
+            self.im
+                .mag()
+                .mul(&self.re.rad)
+                .add(&self.re.mag().mul(&self.im.rad))
+                .div(&lo2)
         };
 
         let mut ln_r = Ball::from_rounded(

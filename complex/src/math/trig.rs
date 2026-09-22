@@ -626,6 +626,7 @@ impl<R: ErrorBounds, const B: Word> CBig<R, B> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dashu_base::Sign;
     use dashu_float::round::mode;
 
     type C = CBig<mode::HalfAway, 10>;
@@ -1228,5 +1229,36 @@ mod tests {
         check!(mode::Down);
         check!(mode::Zero);
         check!(mode::HalfEven);
+    }
+
+    // `asin(±i) = ±i·asinh(1)` — the real part is *exactly* zero (the imaginary axis maps to
+    // the imaginary axis), which the argument fold now certifies with a zero radius: the
+    // componentwise gradient bound `(|y|·rad_x + |x|·rad_y)/‖z‖²` vanishes on the axis, where
+    // the old joint 1-Lipschitz bound `(rad_x + rad_y)/‖z‖` kept a kernel-error radius on the
+    // angle and dead-locked under the strict zero-candidate certification.
+    #[test]
+    fn asin_pure_imaginary_real_part_is_exact() {
+        type C2 = CBig<mode::HalfEven, 2>;
+        type F2 = FBig<mode::HalfEven, 2>;
+        for p in [20usize, 50, 500] {
+            let ctx = Context::<mode::HalfEven>::new(p);
+            for sign in [1i64, -1] {
+                let z = C2::from_parts(
+                    F2::from_parts(IBig::ZERO, 0),
+                    F2::from_parts(IBig::from(sign), 0),
+                );
+                let r = ctx.asin(&z, None).unwrap().value();
+                assert!(
+                    r.re().significand().is_zero(),
+                    "asin({sign}i) @p={p}: real part must be exactly zero"
+                );
+                let want = if sign == 1 {
+                    Sign::Positive
+                } else {
+                    Sign::Negative
+                };
+                assert_eq!(r.im().sign(), want, "asin({sign}i) @p={p}: imaginary sign");
+            }
+        }
     }
 }

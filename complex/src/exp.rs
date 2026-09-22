@@ -13,6 +13,7 @@ use crate::repr::{combine_parts, exact, reborrow_cache, riemann, CfpResult, Cont
 use dashu_base::Approximation::*;
 use dashu_base::{BitTest, Sign};
 use dashu_float::round::ErrorBounds;
+use dashu_float::{Ball, Repr};
 use dashu_float::{ConstCache, Context as FloatCtxt, FBig, FpError};
 use dashu_int::{IBig, Word};
 
@@ -49,6 +50,74 @@ impl<R: ErrorBounds> Context<R> {
 
         let p = self.precision();
         let nlen = n.bit_len();
+
+        // Diagonal shortcut: z = t·(1+i) with *identical exact parts* ⇒ `zⁿ = tⁿ·(1+i)ⁿ`, where
+        // `(1+i)ⁿ` sits on the exact half-power-of-two lattice (magnitude `2^(n/2)` in steps of
+        // √2, arguments in multiples of π/4), so both components are the one certified real
+        // power `tⁿ` scaled by an exact power of two — and the zero component of an even power
+        // is *exactly* zero. The generic squaring chain cannot certify that zero: its `a² − b²`
+        // cancels onto exact 0 at every working precision (the parts are the same value), but
+        // the tracked radius stays a division-rounding ε > 0, which the strict zero-candidate
+        // certification (no nonzero real rounds to 0) correctly refuses — an endless retry. The
+        // near-diagonal z (parts *rounding* together at low precision but distinct) deliberately
+        // does not enter here: their true zero component is nonzero, and the retry that
+        // separates the squares is the certification working.
+        if z.re() == z.im() && !z.re().significand().is_zero() {
+            let [re, im] = self.ziv(nlen + 6, |guard| {
+                let pw = p + guard;
+                let fctx = FloatCtxt::<R>::new(pw);
+                let exp: IBig = if negative {
+                    -IBig::from(n.clone())
+                } else {
+                    IBig::from(n.clone())
+                };
+                // `tⁿ`, certified by the real Ziv loop under this mode (negative `n` included)
+                let tp =
+                    Ball::from_rounded(fctx.powi(z.re(), exp.clone())?.map(FBig::into_repr), pw);
+                // `(1+i)ⁿ = 2^((n−r)/2)·(±1, ±1)` on the exact lattice: `r = n mod 2`, and the
+                // signs follow the angle `n·π/4` — `q = n mod 8` (floor) indexes the table.
+                let eight = IBig::from(8);
+                let q = ((&exp % &eight) + &eight) % &eight;
+                let r = &q % 2u32;
+                let k = (exp.clone() - r) / 2u32;
+                let lattice: [(i32, i32); 8] = [
+                    (1, 0),
+                    (1, 1),
+                    (0, 1),
+                    (-1, 1),
+                    (-1, 0),
+                    (-1, -1),
+                    (0, -1),
+                    (1, -1),
+                ];
+                let (a, b) = lattice[usize::try_from(q).unwrap()];
+                let k: isize = match isize::try_from(k) {
+                    Ok(k) => k,
+                    // a lattice exponent past the representable range only occurs when `tⁿ`
+                    // itself cannot produce a finite certified value
+                    Err(_) => return Err(FpError::Overflow(Sign::Positive)),
+                };
+                let part = |v: i32, k: isize| -> Result<Ball<B>, FpError> {
+                    if v == 0 {
+                        return Ok(Ball::exact(Repr::<B>::zero()));
+                    }
+                    // the lattice factor is exact: its product with `tⁿ` costs one rounding
+                    let s = Ball::exact(
+                        FBig::<R, B>::from_parts(IBig::from(v), k)
+                            .with_precision(pw)
+                            .value()
+                            .into_repr(),
+                    );
+                    s.mul(&tp, pw)
+                };
+                Ok([
+                    part(a, k)?.to_value_radius::<R>(&fctx),
+                    part(b, k)?.to_value_radius::<R>(&fctx),
+                ])
+            })?;
+            return Ok(combine_parts(re, im));
+        }
+
         // Initial guard scales with `nlen` (each squaring roughly doubles the relative error,
         // which the ball product rule tracks); sized so the first attempt certifies a non-tie
         // result.
@@ -352,6 +421,49 @@ mod tests {
         check!(mode::Down);
         check!(mode::Zero);
         check!(mode::HalfEven);
+    }
+
+    // A z whose parts round onto the diagonal at the work precision (`a² − b²` collapses onto
+    // exact 0 there) used to certify `re = 0` through the wide ±ulp preimage of ±0 — while the
+    // true value (`7.6e-22` here) rounds to a *nonzero* 20-bit float, ~2⁶⁹ ulps from zero. The
+    // strict zero-candidate guard forces the retry that separates the squares, and the result
+    // then matches the high-precision oracle. (Found by the directed `cbig_powi_fuzz`; its
+    // proptest shrink loop was also the mysterious multi-hour `cbig_powi` shard "tail".)
+    #[test]
+    fn powi_diagonal_collapse_certifies_nonzero() {
+        type C = CBig<mode::Zero, 2>;
+        let mk = |v: f64| FBig::<mode::Zero, 2>::try_from(v).unwrap();
+        let z = C::from_parts(mk(-2.826), mk(-2.8259999999999996));
+        let ctx = Context::<mode::Zero>::new(20);
+        let got = ctx.powi(&z, (-10).into()).unwrap().value().clone();
+
+        // oracle: the same op nearest at p + 60, both sides re-rounded to p (the rung under
+        // `mode::Zero` so the comparison rounding matches the mode under test)
+        let z_hi = CBig::<mode::HalfEven, 2>::from_parts(
+            FBig::<mode::HalfEven, 2>::try_from(-2.826).unwrap(),
+            FBig::<mode::HalfEven, 2>::try_from(-2.8259999999999996).unwrap(),
+        );
+        let (hi_re, hi_im) = Context::<mode::HalfEven>::new(80)
+            .powi(&z_hi, (-10).into())
+            .unwrap()
+            .value()
+            .clone()
+            .into_parts();
+        let want_re = hi_re
+            .with_rounding::<mode::Zero>()
+            .with_precision(20)
+            .value();
+        let want_im = hi_im
+            .with_rounding::<mode::Zero>()
+            .with_precision(20)
+            .value();
+
+        assert!(
+            !got.re().significand().is_zero(),
+            "diagonal-collapse re certified as exact zero; true value is ~7.6e-22"
+        );
+        assert_eq!(got.re(), want_re.repr(), "re mismatch vs oracle");
+        assert_eq!(got.im(), want_im.repr(), "im mismatch vs oracle");
     }
 
     // The ball-tracked radius must certify at the target precision across the width sweep.

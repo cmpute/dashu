@@ -31,6 +31,21 @@
   reports `Err(Indeterminate)` at the real-axis poles (`y = 0`, x an odd multiple of `1/2`).
 
 ### Fix
+- **`powi` of a base whose parts round onto the diagonal at the working precision certified a
+  wrong real part**: `powi((−2.826, −2.826'), −10)` at 20 bits returned `re = 0` where the true
+  value is `7.6·10⁻²²` (~2⁶⁹ ulps off). The `a² − b²` cancellation collapsed onto exact zero and
+  the driver's ±ulp preimage of ±0 — an f64-style artifact (subnormals bound the exponent range
+  there; at unbounded exponents no nonzero real rounds to zero) — admitted the honest-but-nonzero
+  radius. The Ziv driver now carries `dashu-float`'s zero-candidate guard: a zero candidate is
+  certifiable only by a zero radius, and the structural zeros the closures own are exact —
+  `powi` of a base with *identical* parts `t·(1+i)` computes through the exact
+  `(1+i)ⁿ` lattice (a certified real `tⁿ` scaled by a power of two, the zero component of an
+  even power exactly zero), and the axis arguments of `log` through the fold below.
+- **`log`'s argument fold is the componentwise gradient bound**
+  `(|y|·rad_x + |x|·rad_y)/‖z‖²` (was the joint 1-Lipschitz `(rad_x + rad_y)/‖z‖`): it vanishes
+  exactly on the axes — the angle is invariant along the real error direction when `y ≡ 0`,
+  which is what makes `asin(±i)`'s exactly-zero real part certifiable — and is tighter than the
+  joint bound off-axis by the component ratio.
 - **`tan`/`tan_pi` near the real-axis poles no longer error or panic on finite,
   correctly-roundable inputs.** The double-angle denominator `cos(2x) + cosh(2y)` cancels
   into its addends' rounding noise near the poles: the composed ball division previously
