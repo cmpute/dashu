@@ -58,22 +58,26 @@ impl<R: Round, const B: Word> Display for CBig<R, B> {
 
 impl<R: Round, const B: Word> Debug for CBig<R, B> {
     /// Structured form `"re:<re> im:<im> (prec: <p>)"` — e.g.
-    /// `"re:3 * 10 ^ 0 im:4 * 10 ^ 0 (prec: 53)"` — for quick inspection. The parts render through [`FBig`]'s `Debug` (the base-agnostic
-    /// `significand * base ^ exponent` form), *not* its `Display`: a base-2 part's `Display`
-    /// is native binary positional (`0.1` = one half), which reads as garbage when glanced at
-    /// as decimal. The alternate `#` form exposes the raw significands and exponent scaling.
+    /// `"re:1 * 2 ^ -1 im:1 * 2 ^ -2 (prec: 53)"` — for quick inspection. The parts render
+    /// through their raw [`Repr`] `Debug` (`significand * base ^ exponent`, no per-part
+    /// context), *not* through `FBig`'s `Display`: a base-2 part's `Display` is native binary
+    /// positional (`0.1` = one half), which reads as garbage when glanced at as decimal — and
+    /// a per-part context suffix would triple the `prec` noise. The alternate `#` form exposes
+    /// the same fields structurally.
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let fctx = self.context.float();
-        let re = FBig::from_repr(self.re.clone(), fctx);
-        let im = FBig::from_repr(self.im.clone(), fctx);
         if f.alternate() {
             f.debug_struct("CBig")
-                .field("re", &re)
-                .field("im", &im)
+                .field("re", &self.re)
+                .field("im", &self.im)
                 .field("precision", &self.context.precision())
                 .finish()
         } else {
-            f.write_fmt(format_args!("re:{re:?} im:{im:?} (prec: {})", self.context.precision()))
+            f.write_fmt(format_args!(
+                "re:{:?} im:{:?} (prec: {})",
+                self.re,
+                self.im,
+                self.context.precision()
+            ))
         }
     }
 }
@@ -116,7 +120,7 @@ mod tests {
     fn debug_structured() {
         let z = C::from_parts(FBig::from(3), FBig::from(4));
         let s = format!("{:?}", z);
-        assert!(s.starts_with("re:3 * 10 ^ 0 (prec: 1) im:4 * 10 ^ 0 (prec: 1) (prec:"), "{s}");
+        assert!(s.starts_with("re:3 * 10 ^ 0 im:4 * 10 ^ 0 (prec:"), "{s}");
     }
 
     #[test]
@@ -130,7 +134,7 @@ mod tests {
         );
         let s = format!("{z:?}");
         assert!(
-            s.starts_with("re:1 * 2 ^ -1 (prec: 53) im:1 * 2 ^ -2 (prec: 53) (prec:"),
+            s.starts_with("re:1 * 2 ^ -1 im:1 * 2 ^ -2 (prec:"),
             "binary positional leaked into Debug: {s}"
         );
     }

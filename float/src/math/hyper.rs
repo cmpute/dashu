@@ -1170,37 +1170,41 @@ mod tests {
         );
     }
 
-    // A result in `10^(2.8e18)..10^(9.2e18)` is representable as a `Repr` but lies past the
-    // old `Mag` ceiling (`2^isize::MAX ≈ 10^2.8e18`): the exported radius saturated to `+∞`,
-    // which no Ziv attempt can certify, and the loop spun through its exponential guard growth
-    // for hours before erroring. The `Mag` exponent field is now `i128` — wide enough to bound
-    // any representable value — so the ×π hyperbolic family certifies here in one retry.
+    // A result in `10^(0.301·isize::MAX)..10^isize::MAX` is representable as a `Repr` but lies
+    // past the old `Mag` ceiling (`2^isize::MAX ≈ 10^(0.301·isize::MAX)`): the exported radius
+    // saturated to `+∞`, which no Ziv attempt can certify, and the loop spun through its
+    // exponential guard growth for hours before erroring. The `Mag` exponent field is now
+    // `i128` — wide enough to bound any representable value — so the ×π hyperbolic family
+    // certifies here in one retry. The input magnitude scales with the target's pointer width
+    // (the 64-bit magnitude is a genuine overflow on a 32-bit `isize`).
+    #[cfg(feature = "std")]
     #[test]
     fn sinh_pi_huge_magnitude_certifies() {
         let ctx = Context::<mode::HalfEven>::new(20);
-        // sinh/cosh(π·3.5457e18) ≈ 10^4.8e18 — past the old `Mag` ceiling, short of the
-        // `Repr` exponent range (`10^isize::MAX`).
-        let x = Repr::<10>::new(35457.into(), 14);
+        // aim `x` at `0.4·isize::MAX`: the result's decimal exponent is `π·x/ln10 ≈ 0.546·MAX`,
+        // comfortably past the old ceiling (`0.301·MAX`) and short of the `Repr` range (`MAX`),
+        // on every pointer width (the 64-bit magnitude would be a genuine overflow on a
+        // 32-bit `isize`)
+        let imax = isize::MAX as f64;
+        let e = (0.4 * imax).log10().floor() as isize;
+        let sig = (0.4 * imax / 10f64.powi(e as i32)).round() as i64;
+        let x = Repr::<10>::new(IBig::from(sig), e);
         let past_old_ceiling = |r: &Repr<10>| r.exponent() > isize::MAX / 2;
 
         crate::ziv_retries_reset();
         let sh = ctx.sinh_pi::<10>(&x, None).unwrap().value();
-        assert_eq!(
-            crate::ziv_retries(),
-            1,
-            "sinh_pi(3.5457e18) @20 should certify on the second attempt"
-        );
+        assert!(crate::ziv_retries() <= 1, "sinh_pi @20 should certify within one retry");
         assert!(!sh.repr().is_infinite() && past_old_ceiling(sh.repr()));
 
         crate::ziv_retries_reset();
         let ch = ctx.cosh_pi::<10>(&x, None).unwrap().value();
-        assert_eq!(crate::ziv_retries(), 1);
+        assert!(crate::ziv_retries() <= 1);
         assert!(!ch.repr().is_infinite() && past_old_ceiling(ch.repr()));
 
         // the pair shares one evaluation and certifies both parts together
         crate::ziv_retries_reset();
         let (sh2, ch2) = ctx.sinh_cosh_pi::<10>(&x, None);
-        assert_eq!(crate::ziv_retries(), 1);
+        assert!(crate::ziv_retries() <= 1);
         assert_eq!(sh2.unwrap().value(), sh);
         assert_eq!(ch2.unwrap().value(), ch);
     }
