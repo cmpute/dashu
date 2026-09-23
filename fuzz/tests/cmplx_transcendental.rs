@@ -13,8 +13,8 @@
 //! (override the precision sweep with `FUZZ_PRECISIONS=53`, case count with `PROPTEST_CASES=N`.)
 
 use dashu::base::Sign;
-use dashu::integer::IBig;
 use dashu::float::FBig;
+use dashu::integer::IBig;
 use fuzz::cmplx::*;
 use proptest::prelude::*;
 use rug::ops::Pow;

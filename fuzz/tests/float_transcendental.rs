@@ -11,12 +11,11 @@
 //! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test float_transcendental -- --ignored --nocapture`
 
 use core::str::FromStr;
-use fuzz::{CLOSE_K, within_k_ulps};
-use dashu::float::ops::Abs;
 use dashu::float::round::Round;
 use dashu::float::round::mode::{Down, HalfAway, HalfEven, Up, Zero};
 use dashu::float::{Context, DBig, FBig, Repr};
 use dashu::integer::IBig;
+use fuzz::{CLOSE_K, within_k_ulps};
 use proptest::prelude::*;
 use rug::Float;
 use rug::ops::Pow;

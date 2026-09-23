@@ -239,12 +239,12 @@ pub fn unit_dbig() -> impl Strategy<Value = FBig<HalfAway, 10>> {
 /// Shared helpers for the `CBig` vs `rug::Complex` (MPC) differentials, run across the
 /// [`fuzz_precisions_bits`](crate::fuzz_precisions_bits) sweep.
 pub mod cmplx {
-    use core::convert::TryFrom;
     use crate::CLOSE_K;
+    use core::convert::TryFrom;
     use dashu::complex::CBig;
     use dashu::float::FBig;
-    use dashu::float::round::mode::HalfEven;
     use dashu::float::round::Round;
+    use dashu::float::round::mode::HalfEven;
     use proptest::prelude::*;
     use rug::ops::Pow;
 
@@ -353,7 +353,10 @@ pub mod cmplx {
 
     /// A mode-`R` base-2 `FBig` part from an `f64` at `prec` bits.
     pub fn part<R: Round>(v: f64, prec: u32) -> FBig<R, 2> {
-        FBig::<R, 2>::try_from(v).unwrap().with_precision(prec as usize).value()
+        FBig::<R, 2>::try_from(v)
+            .unwrap()
+            .with_precision(prec as usize)
+            .value()
     }
 
     /// Directed per-component check: dashu's mode-`R` result must equal the **Up- or the
@@ -376,5 +379,4 @@ pub mod cmplx {
         let (dre, dim) = d.clone().into_parts();
         directed_eq_part(&dre, hi.real(), prec) && directed_eq_part(&dim, hi.imag(), prec)
     }
-
 }
