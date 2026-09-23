@@ -111,6 +111,15 @@ pub use ziv::{ziv_retries, ziv_retries_reset};
 #[doc(hidden)]
 pub use ziv::{ziv_set_trace_hook, ZivTraceFn};
 
+// The error-propagation substrate (`Ball` over a `Mag` radius), shared in lockstep with
+// `dashu-cmplx`: its `CBall` composes complex balls on top of these real ones. Deliberately
+// `#[doc(hidden)]` — excluded from the semver and stability guarantees, consumed only by the
+// crates of this repository, which are released together.
+#[doc(hidden)]
+pub use ball::{ulp_mag, Ball};
+#[doc(hidden)]
+pub use mag::Mag;
+
 // All the public items from third_party will be exposed
 #[allow(unused_imports)]
 pub use third_party::*;

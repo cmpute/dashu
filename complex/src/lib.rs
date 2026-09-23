@@ -70,6 +70,7 @@ extern crate alloc;
 extern crate rkyv_v07 as rkyv;
 
 mod add;
+mod ball;
 mod cbig;
 mod cbig_cached;
 mod cbig_cached_ops;

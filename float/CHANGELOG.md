@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Add
+- `#[doc(hidden)]` lockstep-shared re-exports of the internal error-propagation substrate
+  (`Ball`, `Mag`, `ulp_mag`) at the crate root, consumed by `dashu-cmplx`'s complex ball
+  (`CBall`) for its transcendental radius migration. Deliberately hidden: excluded from the
+  semver and stability guarantees, consumed only by this repository's crates (released
+  together). No documented API changes.
 - ×u trigonometric functions `sin_unit`/`cos_unit`/`sin_cos_unit`/`tan_unit` (of `2π·x/u`, the
   argument in units of the full turn divided by `u` — e.g. `u = 360` gives degrees) and their
   inverses `asin_unit`/`acos_unit`/`atan_unit`/`atan2_unit` (of `u·θ/(2π)`), on `Context`,
@@ -57,6 +62,14 @@
   moved to `utils.rs`, next to the digit helpers that share their role.
 
 ### Fix
+- **the internal radius type `Mag` widens its exponent field to `i128`** (was `isize`): a
+  result in `10^(2.8e18)..10^(9.2e18)` — e.g. `sinh_pi(3.5e18)`, finite and representable as
+  an `FBig` — used to saturate its *radius* bookkeeping to `+∞` (`Mag`'s ceiling was
+  `2^isize::MAX ≈ 10^2.8e18`, below the value range), which no Ziv attempt can certify; the
+  retry loop then ran its exponential guard growth for hours before erroring. The exponent
+  field now covers every representable value, so such results certify in one retry.
+  `fuzz/tests/float_trig_random.rs`'s `fbig_sinh_cosh_pi_fuzz` shards (×π hyperbolic at high
+  precision) were the visible symptom: they hung for hours at the 500/1000-bit sweep widths.
 - **`asin` of an argument that merely *rounds* onto `±1` returned the endpoint** — `asin(1 − 10⁻¹⁵⁵)`
   at 100 digits gave exactly `π/2` where the true value is `π/2 − 1.4·10⁻⁷⁸` (~10⁹ ulps off), and
   the Ziv loop certified it because the endpoint branch reports only a few ulps of radius. The

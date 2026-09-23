@@ -12,6 +12,7 @@ use dashu::float::ops::Abs;
 use dashu::float::round::mode::HalfAway;
 use dashu::float::{Context, DBig, FpError, Repr};
 use dashu::integer::IBig;
+use fuzz::{CLOSE_K, within_k_ulps};
 use proptest::prelude::*;
 use rug::Float;
 
@@ -22,12 +23,6 @@ fn rug_bits(x: &Repr<10>, prec: usize) -> u32 {
     let x_bits = (x_mag * 3.322).ceil() as u32 + 500;
     let p_bits = ((prec.max(100) as f64) * 3.322).ceil() as u32;
     p_bits + x_bits
-}
-
-/// Tolerance of `100 · 10^{-prec}` (~100 ulp at `prec` decimal digits) — both libraries are
-/// near-/correctly-rounded, so a few-ulp divergence is expected; this catches real bugs.
-fn tol(prec: usize) -> DBig {
-    DBig::from_parts(100.into(), -(prec as isize))
 }
 
 proptest! {
@@ -49,7 +44,7 @@ proptest! {
             let sin_r = x_rug.sin();
             let s_r: DBig = DBig::from_str(&sin_r.to_string_radix(10, Some(prec))).unwrap();
             prop_assert!(
-                (sin_d.clone() - s_r).abs() <= tol(prec),
+                within_k_ulps(&sin_d, &s_r, CLOSE_K),
                 "sin mismatch x={x_str} prec={prec}: dashu={sin_d} rug={sin_r}"
             );
         }
@@ -71,7 +66,7 @@ proptest! {
             let cos_r = x_rug.cos();
             let c_r: DBig = DBig::from_str(&cos_r.to_string_radix(10, Some(prec))).unwrap();
             prop_assert!(
-                (cos_d.clone() - c_r).abs() <= tol(prec),
+                within_k_ulps(&cos_d, &c_r, CLOSE_K),
                 "cos mismatch x={x_str} prec={prec}: dashu={cos_d} rug={cos_r}"
             );
         }
@@ -97,7 +92,7 @@ proptest! {
             let tan_r = x_rug.tan();
             let t_r: DBig = DBig::from_str(&tan_r.to_string_radix(10, Some(prec))).unwrap();
             prop_assert!(
-                (tan_d.clone() - t_r).abs() <= tol(prec),
+                within_k_ulps(&tan_d, &t_r, CLOSE_K),
                 "tan mismatch x={x_str} prec={prec}: dashu={tan_d} rug={tan_r}"
             );
         }
@@ -126,7 +121,7 @@ proptest! {
             let atan2_r = y_rug.atan2(&x_rug);
             let a_r: DBig = DBig::from_str(&atan2_r.to_string_radix(10, Some(prec))).unwrap();
             prop_assert!(
-                (atan2_d.clone() - a_r).abs() <= tol(prec),
+                within_k_ulps(&atan2_d, &a_r, CLOSE_K),
                 "atan2 mismatch y={y_str} x={x_str} prec={prec}: dashu={atan2_d} rug={atan2_r}"
             );
         }
@@ -146,7 +141,7 @@ proptest! {
             let asin_r = x_rug.clone().asin();
             let a_r: DBig = DBig::from_str(&asin_r.to_string_radix(10, Some(prec))).unwrap();
             prop_assert!(
-                (asin_d.clone() - a_r).abs() <= tol(prec),
+                within_k_ulps(&asin_d, &a_r, CLOSE_K),
                 "asin mismatch x={x_str} prec={prec}: dashu={asin_d} rug={asin_r}"
             );
 
@@ -154,7 +149,7 @@ proptest! {
             let acos_r = x_rug.acos();
             let a_r: DBig = DBig::from_str(&acos_r.to_string_radix(10, Some(prec))).unwrap();
             prop_assert!(
-                (acos_d.clone() - a_r).abs() <= tol(prec),
+                within_k_ulps(&acos_d, &a_r, CLOSE_K),
                 "acos mismatch x={x_str} prec={prec}: dashu={acos_d} rug={acos_r}"
             );
         }
@@ -176,7 +171,7 @@ proptest! {
             let sin_r = x_rug.sin_pi();
             let s_r: DBig = DBig::from_str(&sin_r.to_string_radix(10, Some(prec))).unwrap();
             prop_assert!(
-                (sin_d.clone() - s_r).abs() <= tol(prec),
+                within_k_ulps(&sin_d, &s_r, CLOSE_K),
                 "sin_pi mismatch x={x_str} prec={prec}: dashu={sin_d} rug={sin_r}"
             );
         }
@@ -198,7 +193,7 @@ proptest! {
             let cos_r = x_rug.cos_pi();
             let c_r: DBig = DBig::from_str(&cos_r.to_string_radix(10, Some(prec))).unwrap();
             prop_assert!(
-                (cos_d.clone() - c_r).abs() <= tol(prec),
+                within_k_ulps(&cos_d, &c_r, CLOSE_K),
                 "cos_pi mismatch x={x_str} prec={prec}: dashu={cos_d} rug={cos_r}"
             );
         }
@@ -229,7 +224,7 @@ proptest! {
             let tan_r = x_rug.tan_pi();
             let t_r: DBig = DBig::from_str(&tan_r.to_string_radix(10, Some(prec))).unwrap();
             prop_assert!(
-                (tan_d.clone() - t_r).abs() <= tol(prec),
+                within_k_ulps(&tan_d, &t_r, CLOSE_K),
                 "tan_pi mismatch x={x_str} prec={prec}: dashu={tan_d} rug={tan_r}"
             );
         }
@@ -271,7 +266,7 @@ proptest! {
             let r = x_rug.clone().sin_u(u);
             let r_d: DBig = DBig::from_str(&r.to_string_radix(10, Some(prec))).unwrap();
             prop_assert!(
-                (d.clone() - r_d).abs() <= tol(prec),
+                within_k_ulps(&d, &r_d, CLOSE_K),
                 "sin_unit u={u} x={x_str} prec={prec}: dashu={d} rug={r}"
             );
 
@@ -279,7 +274,7 @@ proptest! {
             let r = x_rug.cos_u(u);
             let r_d: DBig = DBig::from_str(&r.to_string_radix(10, Some(prec))).unwrap();
             prop_assert!(
-                (d.clone() - r_d).abs() <= tol(prec),
+                within_k_ulps(&d, &r_d, CLOSE_K),
                 "cos_unit u={u} x={x_str} prec={prec}: dashu={d} rug={r}"
             );
 
@@ -294,7 +289,7 @@ proptest! {
                 let r = Float::parse(&x_str).map(|p| Float::with_val(bits, p)).unwrap().tan_u(u);
                 let r_d: DBig = DBig::from_str(&r.to_string_radix(10, Some(prec))).unwrap();
                 prop_assert!(
-                    (d.clone() - r_d).abs() <= tol(prec),
+                    within_k_ulps(&d, &r_d, CLOSE_K),
                     "tan_unit u={u} x={x_str} prec={prec}: dashu={d} rug={r}"
                 );
             }
@@ -326,7 +321,7 @@ proptest! {
             let r = x_rug.clone().asin_u(u);
             let r_d: DBig = DBig::from_str(&r.to_string_radix(10, Some(prec))).unwrap();
             prop_assert!(
-                (d.clone() - r_d).abs() <= tol(prec),
+                within_k_ulps(&d, &r_d, CLOSE_K),
                 "asin_unit u={u} x={x_str} prec={prec}: dashu={d} rug={r}"
             );
 
@@ -334,7 +329,7 @@ proptest! {
             let r = x_rug.acos_u(u);
             let r_d: DBig = DBig::from_str(&r.to_string_radix(10, Some(prec))).unwrap();
             prop_assert!(
-                (d.clone() - r_d).abs() <= tol(prec),
+                within_k_ulps(&d, &r_d, CLOSE_K),
                 "acos_unit u={u} x={x_str} prec={prec}: dashu={d} rug={r}"
             );
         }
@@ -358,7 +353,7 @@ proptest! {
             let r = x_rug.clone().atan_u(u);
             let r_d: DBig = DBig::from_str(&r.to_string_radix(10, Some(prec))).unwrap();
             prop_assert!(
-                (d.clone() - r_d).abs() <= tol(prec),
+                within_k_ulps(&d, &r_d, CLOSE_K),
                 "atan_unit u={u} x={x_str} prec={prec}: dashu={d} rug={r}"
             );
 
@@ -376,7 +371,7 @@ proptest! {
             let r = y_rug.atan2_u(&x_rug, u);
             let r_d: DBig = DBig::from_str(&r.to_string_radix(10, Some(prec))).unwrap();
             prop_assert!(
-                (d.clone() - r_d).abs() <= tol(prec),
+                within_k_ulps(&d, &r_d, CLOSE_K),
                 "atan2_unit u={u} y={y_str} x={x_str} prec={prec}: dashu={d} rug={r}"
             );
         }
@@ -411,7 +406,7 @@ proptest! {
                 Err(_) => continue,
             };
             prop_assert!(
-                (sinh_d.clone() - s_r).abs() <= tol(prec),
+                within_k_ulps(&sinh_d, &s_r, CLOSE_K),
                 "sinh_pi mismatch x={x_str} prec={prec}: dashu={sinh_d} rug={sinh_r}"
             );
 
@@ -424,7 +419,7 @@ proptest! {
                 Err(_) => continue,
             };
             prop_assert!(
-                (cosh_d.clone() - c_r).abs() <= tol(prec),
+                within_k_ulps(&cosh_d, &c_r, CLOSE_K),
                 "cosh_pi mismatch x={x_str} prec={prec}: dashu={cosh_d} rug={cosh_r}"
             );
         }
@@ -474,7 +469,7 @@ fn fbig_pi_lattice_fuzz() {
                     ] {
                         let r_d: DBig = DBig::from_str(&r.to_string_radix(10, Some(prec))).unwrap();
                         assert!(
-                            (d.clone() - r_d).abs() <= tol(prec),
+                            within_k_ulps(&d, &r_d, CLOSE_K),
                             "lattice {name}_unit u={u} v={v}e{exp} prec={prec}: dashu={d} rug={r}"
                         );
                     }
@@ -495,7 +490,7 @@ fn fbig_pi_lattice_fuzz() {
                                 DBig::from_str(&t_rug.to_string_radix(10, Some(prec))).unwrap();
                             let t = t.value();
                             assert!(
-                                (t.clone() - t_r).abs() <= tol(prec),
+                                within_k_ulps(&t, &t_r, CLOSE_K),
                                 "lattice tan_unit u={u} v={v}e{exp} prec={prec}: dashu={t} rug={t_rug}"
                             );
                         }
@@ -539,7 +534,7 @@ fn fbig_asin_near_one_fuzz() {
             let asin_r = x_rug.asin();
             let a_r: DBig = DBig::from_str(&asin_r.to_string_radix(10, Some(prec))).unwrap();
             assert!(
-                (asin_d.clone() - a_r).abs() <= tol(prec),
+                within_k_ulps(&asin_d, &a_r, CLOSE_K),
                 "asin-near-1 mismatch k={k} prec={prec}: dashu={asin_d} rug={asin_r}"
             );
         }
@@ -560,7 +555,7 @@ fn fbig_tan_large_exponent_regression() {
         let tan_r = x_rug.tan();
         let t_r: DBig = DBig::from_str(&tan_r.to_string_radix(10, Some(prec))).unwrap();
         assert!(
-            (tan_d.clone() - t_r).abs() <= tol(prec),
+            within_k_ulps(&tan_d, &t_r, CLOSE_K),
             "large-exponent tan regression failed at prec={prec}: dashu={tan_d}, rug={tan_r}"
         );
     }

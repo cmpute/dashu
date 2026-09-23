@@ -7,11 +7,13 @@
 //!
 //! Mirroring `dashu-float`, the power family lives alongside `exp` in a single module.
 
+use crate::ball::CBall;
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, exact, reborrow_cache, riemann, CfpResult, Context};
 use dashu_base::Approximation::*;
-use dashu_base::{Abs, BitTest, Sign};
+use dashu_base::{BitTest, Sign};
 use dashu_float::round::ErrorBounds;
+use dashu_float::{Ball, Repr};
 use dashu_float::{ConstCache, Context as FloatCtxt, FBig, FpError};
 use dashu_int::{IBig, Word};
 
@@ -27,24 +29,19 @@ impl<R: ErrorBounds> Context<R> {
     /// rounded via a Ziv loop over the binary-exponentiation (repeated-squaring) chain. No cache.
     ///
     /// `powi(z, 0) = 1`; a negative exponent computes `(1/z)^|n|` directly, so the
-    /// sign-dependent overflow/underflow propagates from the closure with `?`. Repeated squaring
-    /// compounds the relative error (it roughly doubles per step), so after `bit_len(n)` squarings
-    /// the per-part error is bounded by about `2^nlen · ulp`, which the radius reflects; complex
-    /// `sqr`/`mul` are near-correct (a few ulp, not 0.5), so the bound carries an extra margin.
+    /// sign-dependent overflow/underflow propagates from the closure with `?`. The chain runs on
+    /// a `CBall`, so each squaring's compounding relative error joins the radius mechanically
+    /// — and an all-exact chain keeps `rad == 0`, which is what certifies an
+    /// exactly-representable `zⁿ` under the directed modes. A base with identical parts takes
+    /// the exact `t·(1+i)` lattice shortcut instead (see the branch below).
     pub fn powi<const B: Word>(&self, z: &CBig<R, B>, exp: IBig) -> CfpResult<R, B> {
         let (sign, n) = exp.into_parts();
         if n.is_zero() {
+            // z⁰ = 1 is exact at every precision, so the unlimited-precision constant is the
+            // correctly rounded result under every mode
             return Ok(Exact(CBig::ONE));
         }
         let negative = sign == Sign::Negative;
-        if n.is_one() {
-            // |n| == 1: z (positive) or 1/z (negative), a single op.
-            return if negative {
-                self.inv(z)
-            } else {
-                Ok(Exact(z.clone()))
-            };
-        }
         if z.is_infinite() {
             // |n| >= 2: an infinite base can't be raised to a higher power (the terminal-infinity
             // model rejects infinite operands); report Indeterminate like the other complex
@@ -54,45 +51,104 @@ impl<R: ErrorBounds> Context<R> {
 
         let p = self.precision();
         let nlen = n.bit_len();
-        // Initial guard scales with `nlen` (the squaring-compounding loss) plus a margin for the
-        // near-correct complex `sqr`/`mul`; sized so the first attempt certifies a non-tie result.
+
+        // Diagonal shortcut: z = t·(1+i) with *identical exact parts* ⇒ `zⁿ = tⁿ·(1+i)ⁿ`, where
+        // `(1+i)ⁿ` sits on the exact half-power-of-two lattice (magnitude `2^(n/2)` in steps of
+        // √2, arguments in multiples of π/4), so both components are the one certified real
+        // power `tⁿ` scaled by a power of two — and the zero component of an even power
+        // is *exactly* zero. The generic squaring chain cannot certify that zero: its `a² − b²`
+        // cancels onto exact 0 at every working precision (the parts are the same value), but
+        // the tracked radius stays a division-rounding ε > 0, which the strict zero-candidate
+        // certification (no nonzero real rounds to 0) correctly refuses — an endless retry. The
+        // near-diagonal z (parts *rounding* together at low precision but distinct) deliberately
+        // does not enter here: their true zero component is nonzero, and the retry that
+        // separates the squares is the certification working.
+        if z.re() == z.im() && !z.re().significand().is_zero() {
+            let [re, im] = self.ziv(nlen + 6, |guard| {
+                let pw = p + guard;
+                let fctx = FloatCtxt::<R>::new(pw);
+                let exp: IBig = if negative {
+                    -IBig::from(n.clone())
+                } else {
+                    IBig::from(n.clone())
+                };
+                // `tⁿ`, certified by the real Ziv loop under this mode (negative `n` included)
+                let tp =
+                    Ball::from_rounded(fctx.powi(z.re(), exp.clone())?.map(FBig::into_repr), pw);
+                // `(1+i)ⁿ = 2^((n−r)/2)·(±1, ±1)` on the exact lattice: `r = n mod 2`, and the
+                // signs follow the angle `n·π/4` — `q = n mod 8` (floor) indexes the table.
+                let eight = IBig::from(8);
+                let q = ((&exp % &eight) + &eight) % &eight;
+                let r = &q % 2u32;
+                let k = (exp.clone() - r) / 2u32;
+                let lattice: [(i32, i32); 8] = [
+                    (1, 0),
+                    (1, 1),
+                    (0, 1),
+                    (-1, 1),
+                    (-1, 0),
+                    (-1, -1),
+                    (0, -1),
+                    (1, -1),
+                ];
+                let (a, b) = lattice[usize::try_from(q).unwrap()];
+                // The lattice magnitude `2^k`, evaluated by the float `powi` in *this* base and
+                // certified by its own Ziv loop. For the binary base it is a bare exponent shift
+                // (exact at every precision); above it, it is exact whenever `2^k` fits the
+                // working precision — the common small-|k| case, and what keeps an
+                // exactly-representable `zⁿ` certifiable under the directed modes.
+                //
+                // The magnitude must be built in *base 2*: `2^k = B^(k·log_B 2)` has no exact
+                // `Repr<B>` form for a non-binary `B`, so reading the exponent against the base
+                // (`FBig::from_parts(v, k)`, the natural-looking spelling) yields `v·B^k` — exact
+                // only for `B = 2` and silently wrong everywhere else (base-10 `(1+i)⁴` came out
+                // as `−100`). Here the ratio `log_B 2` is *computed*, so the conversion's own
+                // rounding joins the radius like any other.
+                let pow2 = Ball::from_rounded(
+                    fctx.powi(&Repr::<B>::new(IBig::from(2u8), 0), k)?
+                        .map(FBig::into_repr),
+                    pw,
+                );
+                let part = |v: i32| -> Result<Ball<B>, FpError> {
+                    if v == 0 {
+                        return Ok(Ball::exact(Repr::<B>::zero()));
+                    }
+                    // the lattice factor is exact (or carries its conversion rounding): its
+                    // product with `tⁿ` costs one rounding
+                    let s = if v < 0 { -pow2.clone() } else { pow2.clone() };
+                    s.mul(&tp, pw)
+                };
+                Ok([
+                    part(a)?.to_value_radius::<R>(&fctx),
+                    part(b)?.to_value_radius::<R>(&fctx),
+                ])
+            })?;
+            return Ok(combine_parts(re, im));
+        }
+
+        // Initial guard scales with `nlen` (each squaring roughly doubles the relative error,
+        // which the ball product rule tracks); sized so the first attempt certifies a non-tie
+        // result.
         let initial_guard = nlen + 6;
         let [re, im] = self.ziv(initial_guard, |guard| {
             let pw = p + guard;
-            let gctx = Context::new(pw);
-            // start from z (positive exponent, always exact) or its working-precision reciprocal
-            // (negative exponent, exact only when 1/z is exactly representable).
-            let (start, mut exact) = if negative {
-                let inv = gctx.inv(z)?;
-                let ex = matches!(inv, Exact(_));
-                (inv.value(), ex)
-            } else {
-                (z.clone(), true)
-            };
-            // left-to-right binary exponentiation, tracking whether every step rounded Exact.
+            let fctx = FloatCtxt::<R>::new(pw);
+            // start from z (positive exponent, always exact) or its ball reciprocal (negative
+            // exponent, exact only when 1/z is exactly representable — `rad == 0` knows).
+            let entry = CBall::from_parts(z.re(), z.im(), pw);
+            let start = if negative { entry.inv(pw)? } else { entry };
+            // left-to-right binary exponentiation; every product's compounding rounding is
+            // tracked, and an all-exact chain keeps `rad == 0` on both components — which is
+            // what lets the directed rounding modes certify the exactly-representable zⁿ (the
+            // hand-written radius carried the same special case as an `Exact`-flag counter).
             let mut acc = start.clone();
             for i in (0..nlen - 1).rev() {
-                let s = gctx.sqr(&acc)?;
-                exact = exact && matches!(s, Exact(_));
-                acc = s.value();
+                acc = acc.sqr(pw)?;
                 if n.bit(i) {
-                    let m = gctx.mul(&acc, &start)?;
-                    exact = exact && matches!(m, Exact(_));
-                    acc = m.value();
+                    acc = acc.mul(&start, pw)?;
                 }
             }
-            let (re, im) = acc.into_parts();
-            // re-root to the working precision (parts may be exact constants).
-            let re = re.with_precision(pw).value();
-            let im = im.with_precision(pw).value();
-            let shift = (nlen + 3) as isize;
-            // When the whole chain is exact the result is the mathematically exact zⁿ: report a zero
-            // radius. This is required under the directed rounding modes (the `CBig` default), where
-            // an exactly-representable result lies on a one-sided rounding boundary that no nonzero
-            // radius can fit inside. (See `dashu-float`'s `powi` for the same reasoning.)
-            let re_r = if exact { FBig::ZERO } else { re.ulp() << shift };
-            let im_r = if exact { FBig::ZERO } else { im.ulp() << shift };
-            Ok([(re.clone(), re_r), (im.clone(), im_r)])
+            Ok(acc.to_parts_radius(&fctx))
         })?;
         Ok(combine_parts(re, im))
     }
@@ -123,21 +179,19 @@ impl<R: ErrorBounds> Context<R> {
             };
         }
 
-        // `e^x·(cos y + i·sin y)`. The float `exp`/`sin_cos` are correctly-rounded at the working
-        // precision, so each contributes ~0 to the composition radius; only the two products round,
-        // at a few working-ULPs. The Ziv driver asserts a limited context (the special-value
-        // shortcuts above are exact and need no precision); overflow from a large real part
-        // propagates from the closure with `?`.
+        // `e^x·(cos y + i·sin y)` through the ball composition (`CBall::exp`): the float
+        // `exp`/`sin_cos` kernels run on the midpoints and the input radii (zero here — the
+        // entry is exact) propagate mechanically through the two tracked products. The Ziv
+        // driver asserts a limited context (the special-value shortcuts above are exact and
+        // need no precision); overflow from a large real part propagates from the closure
+        // with `?`.
         let p = self.precision();
         let [re, im] = self.ziv(EXP_GUARD, |guard| {
-            let gctx = FloatCtxt::<R>::new(p + guard);
-            let ex = gctx.exp(z.re(), reborrow_cache(&mut cache))?.value();
-            let (sin_y, cos_y) = gctx.sin_cos(z.im(), reborrow_cache(&mut cache));
-            let cos_y = cos_y?.value();
-            let sin_y = sin_y?.value();
-            let re = gctx.mul(ex.repr(), cos_y.repr())?.value();
-            let im = gctx.mul(ex.repr(), sin_y.repr())?.value();
-            Ok([(re.clone(), re.ulp() * 6), (im.clone(), im.ulp() * 6)])
+            let pw = p + guard;
+            let gctx = FloatCtxt::<R>::new(pw);
+            let out =
+                CBall::from_parts(z.re(), z.im(), pw).exp(&gctx, pw, reborrow_cache(&mut cache))?;
+            Ok(out.to_parts_radius(&gctx))
         })?;
         Ok(combine_parts(re, im))
     }
@@ -158,25 +212,23 @@ impl<R: ErrorBounds> Context<R> {
         if w.is_zero() {
             return Ok(Exact(CBig::ONE)); // powf(z, 0) = 1, incl. powf(0, 0)
         }
+        // Through the ball compositions: `log` folds its kernels' input radii, the complex
+        // product is tracked by the ball rule, and `exp`'s fold amplifies the radius of
+        // `w·log base` by the result magnitude — the old hand-written `(|w·log z|₁+1)·16`
+        // L1 factor, paid unconditionally on both parts, is replaced by the per-component,
+        // relative-condition-correct mechanical fold.
         let p = self.precision();
         let [re, im] = self.ziv(POWF_GUARD, |guard| {
             let pw = p + guard;
-            let gctx = Context::new(pw);
-            let log_z = gctx.log(base, reborrow_cache(&mut cache))?.value();
-            let wlogz = gctx.mul(w, &log_z)?.value();
-            let hi = gctx.exp(&wlogz, reborrow_cache(&mut cache))?.value();
-            // The outer `exp` amplifies the error in `w·log base` by the result magnitude, so the
-            // radius scales with `‖w·log base‖`. `re()`/`im()` are raw `Repr`s — wrap to take the
-            // absolute value; the L1 norm `|re|+|im|` upper-bounds the magnitude.
-            let fctx = gctx.float();
-            let l1 = FBig::<R, B>::from_repr(wlogz.re().clone(), fctx).abs()
-                + FBig::<R, B>::from_repr(wlogz.im().clone(), fctx).abs();
-            let amp = (l1 + FBig::<R, B>::ONE) * 16i32;
-            let (re, im) = hi.into_parts();
-            // re-root to the working precision (`exp`/`log` may return exact constants).
-            let re = re.with_precision(pw).value();
-            let im = im.with_precision(pw).value();
-            Ok([(re.clone(), re.ulp() * &amp), (im.clone(), im.ulp() * &amp)])
+            let fctx = FloatCtxt::<R>::new(pw);
+            let lz = CBall::from_parts(base.re(), base.im(), pw).log(
+                &fctx,
+                pw,
+                reborrow_cache(&mut cache),
+            )?;
+            let wlogz = CBall::from_parts(w.re(), w.im(), pw).mul(&lz, pw)?;
+            let hi = wlogz.exp(&fctx, pw, reborrow_cache(&mut cache))?;
+            Ok(hi.to_parts_radius(&fctx))
         })?;
         Ok(combine_parts(re, im))
     }
@@ -218,6 +270,7 @@ impl<R: ErrorBounds, const B: Word> CBig<R, B> {
 mod tests {
     use super::*;
     use dashu_float::round::mode;
+    use dashu_float::FBig;
 
     type C = CBig<mode::HalfAway, 10>;
     type F = FBig<mode::HalfAway, 10>;
@@ -325,6 +378,187 @@ mod tests {
     fn powf_one_exponent_is_self() {
         let z = c(2, 1);
         assert!(z.powf(&C::ONE) == z);
+    }
+
+    // The mechanically tracked radius must certify at the target precision across the width
+    // sweep: each result equals the same op computed at `p + 60` and re-rounded to `p` (both
+    // sides are correctly rounded on the same exact integer input, so they agree bit for bit).
+    #[test]
+    fn exp_matches_oracle_across_precisions() {
+        // Rungs: bit precisions at base 2, digit precisions at base 10, picked to span the
+        // same significand widths (7 ≈ 20 bits, …) so both bases cover the same paths.
+        macro_rules! sweep {
+            ($base:literal, $name:literal, $precs:expr) => {{
+                type C2 = CBig<mode::HalfEven, $base>;
+                type F2 = FBig<mode::HalfEven, $base>;
+                let inputs = [(1i64, 0i64), (0, 2), (-2, 1), (3, -4), (0, -5), (-4, 0)];
+                for p in $precs {
+                    for (re, im) in inputs {
+                        let mk = |v: i64| F2::from(v).with_precision(p).value();
+                        let mk_hi = |v: i64| F2::from(v).with_precision(p + 60).value();
+                        let (hre, him) = C2::from_parts(mk_hi(re), mk_hi(im)).exp().into_parts();
+                        let expect_re = hre.with_precision(p).value();
+                        let expect_im = him.with_precision(p).value();
+                        let got = C2::from_parts(mk(re), mk(im)).exp();
+                        assert_eq!(got.re(), expect_re.repr(), "[$name] re p={p} z=({re},{im})");
+                        assert_eq!(got.im(), expect_im.repr(), "[$name] im p={p} z=({re},{im})");
+                    }
+                }
+            }};
+        }
+        sweep!(2, "base 2", [20, 50, 100, 500]);
+        sweep!(10, "base 10", [7, 17, 34, 160]);
+    }
+
+    // An exactly-representable zⁿ certifies under the outward modes through the chain's zero
+    // radius — (3+4i)² = −7+24i and (3+4i)⁻² = (−7−24i)/625 are exact rationals, and the
+    // one-sided preimages of exact results admit no nonzero radius.
+    #[test]
+    fn powi_exact_chain_certifies_directed() {
+        macro_rules! check {
+            ($mode:ty) => {{
+                type C = CBig<$mode, 10>;
+                type F = FBig<$mode, 10>;
+                let mk = |v: i32| F::from(v).with_precision(30).value();
+                let ctx = Context::<$mode>::new(30);
+                let z = C::from_parts(mk(3), mk(4));
+                let got = ctx.powi(&z, 2.into()).unwrap().value().clone();
+                assert_eq!(got.re(), mk(-7).repr());
+                assert_eq!(got.im(), mk(24).repr());
+                let got = ctx.powi(&z, (-2).into()).unwrap().value().clone();
+                // (3+4i)⁻² = (−7 − 24i)/625 = −0.0112 − 0.0384i: the reciprocal stays exact
+                // because 25 divides 10², so the whole chain is exact at this precision
+                let q = |v: i32| F::from_parts(IBig::from(v), -4).with_precision(30).value();
+                assert_eq!(got.re(), q(-112).repr()); // −7/625 = −0.0112
+                assert_eq!(got.im(), q(-384).repr()); // −24/625 = −0.0384
+            }};
+        }
+        check!(mode::Up);
+        check!(mode::Down);
+        check!(mode::Zero);
+        check!(mode::HalfEven);
+    }
+
+    // The diagonal shortcut's lattice magnitude is `2^((n−r)/2)` — a power of *two*, which is a
+    // bare exponent shift only in the binary base. Sizing it against the float base instead
+    // (`FBig::from_parts(v, k)`, whose value is `v·B^k`) silently mis-scaled every other base:
+    // base-10 `(1+i)⁴` came out as `−100`, and the base-2-only sweeps beside it never noticed.
+    // The exact lattice values are hand-written per base, and every mode is checked — the whole
+    // point of the shortcut is that an exactly-representable `zⁿ` certifies under the outward
+    // modes through its zero radius.
+    #[test]
+    fn powi_diagonal_lattice_scales_by_a_power_of_two() {
+        macro_rules! check {
+            ($mode:ty, $base:literal, $half:literal) => {{
+                type C = CBig<$mode, $base>;
+                type F = FBig<$mode, $base>;
+                let mk =
+                    |s: i32, e: isize| F::from_parts(IBig::from(s), e).with_precision(30).value();
+                for (n, want_re, want_im) in [
+                    (4i32, mk(-4, 0), mk(0, 0)),         // (1+i)⁴ = −4
+                    (3, mk(-2, 0), mk(2, 0)),            // (1+i)³ = −2 + 2i
+                    (1, mk(1, 0), mk(1, 0)),             // (1+i)¹ = 1 + i
+                    (-1, mk($half, -1), mk(-$half, -1)), // (1+i)⁻¹ = 1/2 − i/2
+                    (-2, mk(0, 0), mk(-$half, -1)),      // (1+i)⁻² = −i/2
+                ] {
+                    let got = C::from_parts(mk(1, 0), mk(1, 0)).powi(IBig::from(n));
+                    assert_eq!(got.re(), want_re.repr(), "(1+i)^{n} re, base $base");
+                    assert_eq!(got.im(), want_im.repr(), "(1+i)^{n} im, base $base");
+                }
+            }};
+        }
+        // `1/2` is `5·10⁻¹` in base 10 and `8·16⁻¹` in base 16
+        check!(mode::Up, 10, 5);
+        check!(mode::Down, 10, 5);
+        check!(mode::Zero, 10, 5);
+        check!(mode::HalfEven, 10, 5);
+        check!(mode::Up, 16, 8);
+        check!(mode::Down, 16, 8);
+        check!(mode::HalfEven, 16, 8);
+    }
+
+    // A z whose parts round onto the diagonal at the work precision (`a² − b²` collapses onto
+    // exact 0 there) used to certify `re = 0` through the wide ±ulp preimage of ±0 — while the
+    // true value (`7.6e-22` here) rounds to a *nonzero* 20-bit float, ~2⁶⁹ ulps from zero. The
+    // strict zero-candidate guard forces the retry that separates the squares, and the result
+    // then matches the high-precision oracle. (Found by the directed `cbig_powi_fuzz`; its
+    // proptest shrink loop was also the mysterious multi-hour `cbig_powi` shard "tail".)
+    #[test]
+    fn powi_diagonal_collapse_certifies_nonzero() {
+        type C = CBig<mode::Zero, 2>;
+        let mk = |v: f64| FBig::<mode::Zero, 2>::try_from(v).unwrap();
+        let z = C::from_parts(mk(-2.826), mk(-2.8259999999999996));
+        let ctx = Context::<mode::Zero>::new(20);
+        let got = ctx.powi(&z, (-10).into()).unwrap().value().clone();
+
+        // oracle: the same op nearest at p + 60, both sides re-rounded to p (the rung under
+        // `mode::Zero` so the comparison rounding matches the mode under test)
+        let z_hi = CBig::<mode::HalfEven, 2>::from_parts(
+            FBig::<mode::HalfEven, 2>::try_from(-2.826).unwrap(),
+            FBig::<mode::HalfEven, 2>::try_from(-2.8259999999999996).unwrap(),
+        );
+        let (hi_re, hi_im) = Context::<mode::HalfEven>::new(80)
+            .powi(&z_hi, (-10).into())
+            .unwrap()
+            .value()
+            .clone()
+            .into_parts();
+        let want_re = hi_re
+            .with_rounding::<mode::Zero>()
+            .with_precision(20)
+            .value();
+        let want_im = hi_im
+            .with_rounding::<mode::Zero>()
+            .with_precision(20)
+            .value();
+
+        assert!(
+            !got.re().significand().is_zero(),
+            "diagonal-collapse re certified as exact zero; true value is ~7.6e-22"
+        );
+        assert_eq!(got.re(), want_re.repr(), "re mismatch vs oracle");
+        assert_eq!(got.im(), want_im.repr(), "im mismatch vs oracle");
+    }
+
+    // The ball-tracked radius must certify at the target precision across the width sweep, on
+    // both float bases — the binary-only version of this sweep is where the `2^k`-vs-`B^k`
+    // lattice mistake hid. The case list includes a diagonal input so the shortcut above is
+    // actually entered. (The oracle is the *same operation* at `p + 60`, re-rounded, so it
+    // bounds precision handling — a systematic value error is invisible to it and needs an
+    // exact expectation, as `powi_diagonal_lattice_scales_by_a_power_of_two` carries.)
+    #[test]
+    fn powi_matches_oracle_across_precisions() {
+        // Rungs: bit precisions at base 2, digit precisions at base 10, picked to span the
+        // same significand widths (7 ≈ 20 bits, …) so both bases cover the same paths.
+        macro_rules! sweep {
+            ($base:literal, $name:literal, $precs:expr) => {{
+                type C2 = CBig<mode::HalfEven, $base>;
+                type F2 = FBig<mode::HalfEven, $base>;
+                let cases = [
+                    (3i64, 4i64, 5i32),
+                    (1, -1, 13),
+                    (2, 1, -7),
+                    (3, 2, 11),
+                    (2, 2, 5),
+                ];
+                for p in $precs {
+                    for (re, im, n) in cases {
+                        let mk = |v: i64| F2::from(v).with_precision(p).value();
+                        let mk_hi = |v: i64| F2::from(v).with_precision(p + 60).value();
+                        let (hre, him) = C2::from_parts(mk_hi(re), mk_hi(im))
+                            .powi(n.into())
+                            .into_parts();
+                        let expect_re = hre.with_precision(p).value();
+                        let expect_im = him.with_precision(p).value();
+                        let got = C2::from_parts(mk(re), mk(im)).powi(n.into());
+                        assert_eq!(got.re(), expect_re.repr(), "[$name] re p={p} n={n}");
+                        assert_eq!(got.im(), expect_im.repr(), "[$name] im p={p} n={n}");
+                    }
+                }
+            }};
+        }
+        sweep!(2, "base 2", [20, 50, 100, 500]);
+        sweep!(10, "base 10", [7, 17, 34, 160]);
     }
 
     // exp/powf on an unlimited-precision CBig must panic, not silently compute at the fixed guard

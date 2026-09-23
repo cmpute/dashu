@@ -120,6 +120,28 @@ impl<R: ErrorBounds> Context<R> {
         radius: &FBig<R, B>,
         target: &FBig<R, B>,
     ) -> bool {
+        // The zero-candidate guard, same as `dashu-float`'s driver: no nonzero real rounds to
+        // exactly zero (significant-digit rounding with unbounded exponents keeps every nonzero
+        // magnitude), so a zero candidate can only be certified by a zero radius. The documented
+        // ±ulp `error_bounds` preimage of ±0 is an f64-style artifact (where subnormals bound the
+        // exponent range) and would otherwise certify a cancellation that collapsed onto exact 0
+        // while its radius still covers nonzero neighbors — `powi(z, −10)` of a z whose parts
+        // round onto the diagonal at the work precision returned `re = 0` for a true value of
+        // `7.6e-22` (2⁶⁹ ulps off, caught by the directed fuzz): the honest ball `(0 ± 2⁻⁴²)`
+        // fit the wide preimage although the true value rounds to a *nonzero* 20-bit float.
+        // The structural zeros of the axis/cancellation identities are the closures' duty —
+        // they must carry a zero radius (exact chains do; the axis shortcuts pin their exact
+        // components), which this guard then certifies on the first attempt.
+        // An unbounded radius — the `Mag::INFINITY` "unknown, retry at a higher guard" signal
+        // that a collapsed denominator exports (see `ball::div_real`) — can never fit a finite
+        // preimage, so it is answered here rather than by the arithmetic below (which asserts
+        // its operands finite, as `Repr` ops do).
+        if target.repr().significand().is_zero() && !radius.repr().significand().is_zero() {
+            return false;
+        }
+        if radius.repr().is_infinite() {
+            return false;
+        }
         let (lb, rb, incl_l, incl_r) = R::error_bounds::<B>(target);
         let x = FloatCtxt::<R>::new(0);
         let left = x

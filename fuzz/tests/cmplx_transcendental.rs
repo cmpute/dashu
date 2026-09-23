@@ -13,6 +13,7 @@
 //! (override the precision sweep with `FUZZ_PRECISIONS=53`, case count with `PROPTEST_CASES=N`.)
 
 use dashu::base::Sign;
+use dashu::float::FBig;
 use dashu::integer::IBig;
 use fuzz::cmplx::*;
 use proptest::prelude::*;
@@ -43,86 +44,227 @@ fn zero_pair() -> impl Strategy<Value = (f64, f64)> {
 proptest! {
     #![proptest_config(fuzz::fuzz_config())]
 
-    /// exp(z) ≈ MPC exp(z).
+    /// exp(z): **directed, bit-exact vs MPC** (the `directed_eq` straddle contract; see
+    /// `cbig_sqrt_fuzz` for the exact-input / mode-rounds-result setup). Only genuinely
+    /// non-finite results skip (overflow saturates to the Riemann point on both sides).
     #[test]
     #[ignore]
     fn cbig_exp_fuzz(zre in f64_part(), zim in f64_part()) {
+        use dashu::complex::CBig;
+        use dashu::float::round::{mode::{Down, HalfEven, Up, Zero}};
         for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
-            let (z, rz) = pair(zre, zim, prec as usize);
-            let d = cmplx_ok!(z.context().exp(&z, None));
-            let r = rz.exp();
-            if !complex_finite(&d, &r) { continue; }
-            prop_assert!(close_at(&d, &r, prec as usize), "exp zre={zre} zim={zim} prec={prec}");
+            let zh = rug::Complex::with_val(ref_bits(prec), (zre, zim));
+            let hi = zh.exp();
+            macro_rules! check {
+                ($mode:ty, $name:literal) => {{
+                    let z = CBig::<$mode, 2>::from_parts(
+                        FBig::<$mode, 2>::try_from(zre).unwrap(),
+                        FBig::<$mode, 2>::try_from(zim).unwrap(),
+                    );
+                    let d = dashu::complex::Context::<$mode>::new(prec as usize)
+                        .exp(&z, None)
+                        .unwrap()
+                        .value()
+                        .clone();
+                    if !d.is_finite() && !hi.real().is_finite() { continue; }
+                    assert!(
+                        directed_eq(&d, &hi, prec),
+                        "exp[{name}] zre={zre} zim={zim} prec={prec} d={d:?}",
+                        name = $name
+                    );
+                }};
+            }
+            check!(Up, "up");
+            check!(Down, "down");
+            check!(Zero, "zero");
+            check!(HalfEven, "half");
         }
     }
 
-    /// log(z) ≈ MPC ln(z).
+    /// log(z): **directed, bit-exact vs MPC** (the `directed_eq` straddle contract; see
+    /// `cbig_sqrt_fuzz` for the exact-input / mode-rounds-result setup).
     #[test]
     #[ignore]
     fn cbig_log_fuzz(zre in f64_part(), zim in f64_part()) {
+        use dashu::complex::CBig;
+        use dashu::float::round::{mode::{Down, HalfEven, Up, Zero}};
         for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
-            let (z, rz) = pair(zre, zim, prec as usize);
-            let d = cmplx_ok!(z.context().log(&z, None));
-            let r = rz.ln();
-            if !complex_finite(&d, &r) { continue; }
-            prop_assert!(close_at(&d, &r, prec as usize), "log zre={zre} zim={zim} prec={prec}");
+            let zh = rug::Complex::with_val(ref_bits(prec), (zre, zim));
+            let hi = zh.ln();
+            macro_rules! check {
+                ($mode:ty, $name:literal) => {{
+                    let z = CBig::<$mode, 2>::from_parts(
+                        FBig::<$mode, 2>::try_from(zre).unwrap(),
+                        FBig::<$mode, 2>::try_from(zim).unwrap(),
+                    );
+                    let d = dashu::complex::Context::<$mode>::new(prec as usize)
+                        .log(&z, None)
+                        .unwrap()
+                        .value()
+                        .clone();
+                    assert!(
+                        directed_eq(&d, &hi, prec),
+                        "log[{name}] zre={zre} zim={zim} prec={prec} d={d:?}",
+                        name = $name
+                    );
+                }};
+            }
+            check!(Up, "up");
+            check!(Down, "down");
+            check!(Zero, "zero");
+            check!(HalfEven, "half");
         }
     }
 
-    /// sqrt(z) ≈ MPC sqrt(z).
+    /// sqrt(z): **directed, bit-exact vs MPC** — dashu's mode-`R` result must equal the Up- or
+    /// Down-rounding of the high-precision nearest MPC reference, per component (the straddle
+    /// contract of `directed_eq`). An `FpError` fails (a correctly-rounded sqrt that errors
+    /// where MPC returns a value is a bug, not a domain mismatch); finite `f64_part` inputs
+    /// keep both sides finite.
     #[test]
     #[ignore]
     fn cbig_sqrt_fuzz(zre in f64_part(), zim in f64_part()) {
+        use dashu::complex::CBig;
+        use dashu::float::round::{mode::{Down, HalfEven, Up, Zero}};
         for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
-            let (z, rz) = pair(zre, zim, prec as usize);
-            let d = cmplx_ok!(z.context().sqrt(&z));
-            let r = rz.sqrt();
-            if !complex_finite(&d, &r) { continue; }
-            prop_assert!(close_at(&d, &r, prec as usize), "sqrt zre={zre} zim={zim} prec={prec}");
+            let zh = rug::Complex::with_val(ref_bits(prec), (zre, zim));
+            let hi = zh.sqrt();
+            macro_rules! check {
+                ($mode:ty, $name:literal) => {{
+                    // the input is the *exact* f64 pair (its 53-bit value is exact in both
+                    // systems); the mode only rounds the result, at the context precision
+                    let z = CBig::<$mode, 2>::from_parts(
+                        FBig::<$mode, 2>::try_from(zre).unwrap(),
+                        FBig::<$mode, 2>::try_from(zim).unwrap(),
+                    );
+                    let d = dashu::complex::Context::<$mode>::new(prec as usize)
+                        .sqrt(&z)
+                        .unwrap()
+                        .value()
+                        .clone();
+                    assert!(
+                        directed_eq(&d, &hi, prec),
+                        "sqrt[{name}] zre={zre} zim={zim} prec={prec} d={d:?}",
+                        name = $name
+                    );
+                }};
+            }
+            check!(Up, "up");
+            check!(Down, "down");
+            check!(Zero, "zero");
+            check!(HalfEven, "half");
         }
     }
 
-    /// sin(z) ≈ MPC sin(z).
+    /// sin(z): **directed, bit-exact vs MPC** (the `directed_eq` straddle contract; see
+    /// `cbig_sqrt_fuzz` for the exact-input / mode-rounds-result setup).
     #[test]
     #[ignore]
     fn cbig_sin_fuzz(zre in f64_part(), zim in f64_part()) {
+        use dashu::complex::CBig;
+        use dashu::float::round::{mode::{Down, HalfEven, Up, Zero}};
         for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
-            let (z, rz) = pair(zre, zim, prec as usize);
-            let d = cmplx_ok!(z.context().sin(&z, None));
-            let r = rz.sin();
-            if !complex_finite(&d, &r) { continue; }
-            prop_assert!(close_at(&d, &r, prec as usize), "sin zre={zre} zim={zim} prec={prec}");
+            let zh = rug::Complex::with_val(ref_bits(prec), (zre, zim));
+            let hi = zh.sin();
+            macro_rules! check {
+                ($mode:ty, $name:literal) => {{
+                    let z = CBig::<$mode, 2>::from_parts(
+                        FBig::<$mode, 2>::try_from(zre).unwrap(),
+                        FBig::<$mode, 2>::try_from(zim).unwrap(),
+                    );
+                    let d = dashu::complex::Context::<$mode>::new(prec as usize)
+                        .sin(&z, None)
+                        .unwrap()
+                        .value()
+                        .clone();
+                    assert!(
+                        directed_eq(&d, &hi, prec),
+                        "sin[{name}] zre={zre} zim={zim} prec={prec} d={d:?}",
+                        name = $name
+                    );
+                }};
+            }
+            check!(Up, "up");
+            check!(Down, "down");
+            check!(Zero, "zero");
+            check!(HalfEven, "half");
         }
     }
 
-    /// cos(z) ≈ MPC cos(z).
+    /// cos(z): **directed, bit-exact vs MPC** (shares the sin_cos closure; see `cbig_sin_fuzz`).
     #[test]
     #[ignore]
     fn cbig_cos_fuzz(zre in f64_part(), zim in f64_part()) {
+        use dashu::complex::CBig;
+        use dashu::float::round::{mode::{Down, HalfEven, Up, Zero}};
         for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
-            let (z, rz) = pair(zre, zim, prec as usize);
-            let d = cmplx_ok!(z.context().cos(&z, None));
-            let r = rz.cos();
-            if !complex_finite(&d, &r) { continue; }
-            prop_assert!(close_at(&d, &r, prec as usize), "cos zre={zre} zim={zim} prec={prec}");
+            let zh = rug::Complex::with_val(ref_bits(prec), (zre, zim));
+            let hi = zh.cos();
+            macro_rules! check {
+                ($mode:ty, $name:literal) => {{
+                    let z = CBig::<$mode, 2>::from_parts(
+                        FBig::<$mode, 2>::try_from(zre).unwrap(),
+                        FBig::<$mode, 2>::try_from(zim).unwrap(),
+                    );
+                    let d = dashu::complex::Context::<$mode>::new(prec as usize)
+                        .cos(&z, None)
+                        .unwrap()
+                        .value()
+                        .clone();
+                    assert!(
+                        directed_eq(&d, &hi, prec),
+                        "cos[{name}] zre={zre} zim={zim} prec={prec} d={d:?}",
+                        name = $name
+                    );
+                }};
+            }
+            check!(Up, "up");
+            check!(Down, "down");
+            check!(Zero, "zero");
+            check!(HalfEven, "half");
         }
     }
 
-    /// tan(z) ≈ MPC tan(z) (skips zeros of cos / errored precisions, where tan is singular).
+    /// tan(z): **directed, bit-exact vs MPC** (the `directed_eq` straddle contract; see
+    /// `cbig_sqrt_fuzz` for the exact-input / mode-rounds-result setup).
     #[test]
     #[ignore]
     fn cbig_tan_fuzz(zre in f64_part(), zim in f64_part()) {
+        use dashu::complex::CBig;
+        use dashu::float::round::{mode::{Down, HalfEven, Up, Zero}};
         for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
-            let (z, rz) = pair(zre, zim, prec as usize);
-            let d = cmplx_ok!(z.context().tan(&z, None));
-            let r = rz.tan();
-            if !complex_finite(&d, &r) { continue; }
-            prop_assert!(close_at(&d, &r, prec as usize), "tan zre={zre} zim={zim} prec={prec}");
+            let zh = rug::Complex::with_val(ref_bits(prec), (zre, zim));
+            let hi = zh.tan();
+            macro_rules! check {
+                ($mode:ty, $name:literal) => {{
+                    let z = CBig::<$mode, 2>::from_parts(
+                        FBig::<$mode, 2>::try_from(zre).unwrap(),
+                        FBig::<$mode, 2>::try_from(zim).unwrap(),
+                    );
+                    let d = dashu::complex::Context::<$mode>::new(prec as usize)
+                        .tan(&z, None)
+                        .unwrap()
+                        .value()
+                        .clone();
+                    assert!(
+                        directed_eq(&d, &hi, prec),
+                        "tan[{name}] zre={zre} zim={zim} prec={prec} d={d:?}",
+                        name = $name
+                    );
+                }};
+            }
+            check!(Up, "up");
+            check!(Down, "down");
+            check!(Zero, "zero");
+            check!(HalfEven, "half");
         }
     }
 
-    /// sin_pi(z) ≈ MPC sin(z·π) — MPC has no ×π entry points, so the reference pre-multiplies
-    /// a full-precision π (see the precision note inside for why it needs the +512 bits).
+    /// sin_pi(z) stays on the `close_at` tolerance (NOT directed): MPC has no ×π entry points,
+    /// so the reference pre-multiplies a full-precision π — which changes the *function* under
+    /// test (the premultiplication's rounding error is amplified by the hyperbolic derivative),
+    /// so a straddle oracle of that modified function does not license bit-exact assertions on
+    /// `z·π`.
     #[test]
     #[ignore]
     fn cbig_sin_pi_fuzz(zre in f64_part(), zim in f64_part()) {
@@ -195,42 +337,108 @@ proptest! {
         }
     }
 
-    /// asin(z) ≈ MPC asin(z).
+    /// asin(z): **directed, bit-exact vs MPC** (the `directed_eq` straddle contract; see
+    /// `cbig_sqrt_fuzz` for the exact-input / mode-rounds-result setup).
     #[test]
     #[ignore]
     fn cbig_asin_fuzz(zre in f64_part(), zim in f64_part()) {
+        use dashu::complex::CBig;
+        use dashu::float::round::{mode::{Down, HalfEven, Up, Zero}};
         for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
-            let (z, rz) = pair(zre, zim, prec as usize);
-            let d = cmplx_ok!(z.context().asin(&z, None));
-            let r = rz.asin();
-            if !complex_finite(&d, &r) { continue; }
-            prop_assert!(close_at(&d, &r, prec as usize), "asin zre={zre} zim={zim} prec={prec}");
+            let zh = rug::Complex::with_val(ref_bits(prec), (zre, zim));
+            let hi = zh.asin();
+            macro_rules! check {
+                ($mode:ty, $name:literal) => {{
+                    let z = CBig::<$mode, 2>::from_parts(
+                        FBig::<$mode, 2>::try_from(zre).unwrap(),
+                        FBig::<$mode, 2>::try_from(zim).unwrap(),
+                    );
+                    let d = dashu::complex::Context::<$mode>::new(prec as usize)
+                        .asin(&z, None)
+                        .unwrap()
+                        .value()
+                        .clone();
+                    assert!(
+                        directed_eq(&d, &hi, prec),
+                        "asin[{name}] zre={zre} zim={zim} prec={prec} d={d:?}",
+                        name = $name
+                    );
+                }};
+            }
+            check!(Up, "up");
+            check!(Down, "down");
+            check!(Zero, "zero");
+            check!(HalfEven, "half");
         }
     }
 
-    /// acos(z) ≈ MPC acos(z).
+    /// acos(z): **directed, bit-exact vs MPC** (the `directed_eq` straddle contract; see
+    /// `cbig_sqrt_fuzz` for the exact-input / mode-rounds-result setup).
     #[test]
     #[ignore]
     fn cbig_acos_fuzz(zre in f64_part(), zim in f64_part()) {
+        use dashu::complex::CBig;
+        use dashu::float::round::{mode::{Down, HalfEven, Up, Zero}};
         for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
-            let (z, rz) = pair(zre, zim, prec as usize);
-            let d = cmplx_ok!(z.context().acos(&z, None));
-            let r = rz.acos();
-            if !complex_finite(&d, &r) { continue; }
-            prop_assert!(close_at(&d, &r, prec as usize), "acos zre={zre} zim={zim} prec={prec}");
+            let zh = rug::Complex::with_val(ref_bits(prec), (zre, zim));
+            let hi = zh.acos();
+            macro_rules! check {
+                ($mode:ty, $name:literal) => {{
+                    let z = CBig::<$mode, 2>::from_parts(
+                        FBig::<$mode, 2>::try_from(zre).unwrap(),
+                        FBig::<$mode, 2>::try_from(zim).unwrap(),
+                    );
+                    let d = dashu::complex::Context::<$mode>::new(prec as usize)
+                        .acos(&z, None)
+                        .unwrap()
+                        .value()
+                        .clone();
+                    assert!(
+                        directed_eq(&d, &hi, prec),
+                        "acos[{name}] zre={zre} zim={zim} prec={prec} d={d:?}",
+                        name = $name
+                    );
+                }};
+            }
+            check!(Up, "up");
+            check!(Down, "down");
+            check!(Zero, "zero");
+            check!(HalfEven, "half");
         }
     }
 
-    /// atan(z) ≈ MPC atan(z).
+    /// atan(z): **directed, bit-exact vs MPC** (the `directed_eq` straddle contract; see
+    /// `cbig_sqrt_fuzz` for the exact-input / mode-rounds-result setup).
     #[test]
     #[ignore]
     fn cbig_atan_fuzz(zre in f64_part(), zim in f64_part()) {
+        use dashu::complex::CBig;
+        use dashu::float::round::{mode::{Down, HalfEven, Up, Zero}};
         for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim])) {
-            let (z, rz) = pair(zre, zim, prec as usize);
-            let d = cmplx_ok!(z.context().atan(&z, None));
-            let r = rz.atan();
-            if !complex_finite(&d, &r) { continue; }
-            prop_assert!(close_at(&d, &r, prec as usize), "atan zre={zre} zim={zim} prec={prec}");
+            let zh = rug::Complex::with_val(ref_bits(prec), (zre, zim));
+            let hi = zh.atan();
+            macro_rules! check {
+                ($mode:ty, $name:literal) => {{
+                    let z = CBig::<$mode, 2>::from_parts(
+                        FBig::<$mode, 2>::try_from(zre).unwrap(),
+                        FBig::<$mode, 2>::try_from(zim).unwrap(),
+                    );
+                    let d = dashu::complex::Context::<$mode>::new(prec as usize)
+                        .atan(&z, None)
+                        .unwrap()
+                        .value()
+                        .clone();
+                    assert!(
+                        directed_eq(&d, &hi, prec),
+                        "atan[{name}] zre={zre} zim={zim} prec={prec} d={d:?}",
+                        name = $name
+                    );
+                }};
+            }
+            check!(Up, "up");
+            check!(Down, "down");
+            check!(Zero, "zero");
+            check!(HalfEven, "half");
         }
     }
 
@@ -330,7 +538,9 @@ proptest! {
         }
     }
 
-    /// base^w ≈ MPC pow(base, w).
+    /// base^w stays on the `close_at` tolerance (NOT directed): MPC documents `mpc_pow` as not
+    /// guaranteed correctly rounded, so even a high-precision reference is a tolerance oracle,
+    /// not a straddle oracle — a bit-exact assertion here would test MPC's internals, not us.
     #[test]
     #[ignore]
     fn cbig_powf_fuzz(
@@ -347,18 +557,42 @@ proptest! {
         }
     }
 
-    /// z^n ≈ MPC z^n for integer exponents (incl. negative, via dashu's reciprocal path and the
-    /// Ziv squaring chain) — `mpc_pow` is single-valued for integer exponents, so it agrees with
-    /// `z^n` even across the branch cut.
+    /// z^n: **directed, bit-exact vs MPC** for integer exponents (incl. negative, via dashu's
+    /// reciprocal path and the tracked squaring chain) — `mpc_pow` is single-valued for integer
+    /// exponents, so it agrees with `z^n` even across the branch cut (the `directed_eq`
+    /// straddle contract; see `cbig_sqrt_fuzz` for the exact-input / mode-rounds-result setup).
+    /// The reference exponent is set exactly (`with_val(…, n)` — an integer, no rounding), so
+    /// both sides exponentiate by the same exact n.
     #[test]
     #[ignore]
     fn cbig_powi_fuzz(zre in f64_part(), zim in f64_part(), n in -12i32..=12) {
+        use dashu::complex::CBig;
+        use dashu::float::round::{mode::{Down, HalfEven, Up, Zero}};
         for prec in fuzz::sampled_precisions_bits(fuzz::case_key(&[&zre, &zim, &n])) {
-            let (z, rz) = pair(zre, zim, prec as usize);
-            let d = cmplx_ok!(z.context().powi(&z, IBig::from(n)));
-            let r = rz.pow(&rug::Complex::with_val(prec, (n as f64, 0.0)));
-            if !complex_finite(&d, &r) { continue; }
-            prop_assert!(close_at(&d, &r, prec as usize), "powi zre={zre} zim={zim} n={n} prec={prec}");
+            let zh = rug::Complex::with_val(ref_bits(prec), (zre, zim));
+            let hi = zh.pow(&rug::Complex::with_val(ref_bits(prec), n));
+            macro_rules! check {
+                ($mode:ty, $name:literal) => {{
+                    let z = CBig::<$mode, 2>::from_parts(
+                        FBig::<$mode, 2>::try_from(zre).unwrap(),
+                        FBig::<$mode, 2>::try_from(zim).unwrap(),
+                    );
+                    let d = dashu::complex::Context::<$mode>::new(prec as usize)
+                        .powi(&z, IBig::from(n))
+                        .unwrap()
+                        .value()
+                        .clone();
+                    assert!(
+                        directed_eq(&d, &hi, prec),
+                        "powi[{name}] zre={zre} zim={zim} n={n} prec={prec} d={d:?}",
+                        name = $name
+                    );
+                }};
+            }
+            check!(Up, "up");
+            check!(Down, "down");
+            check!(Zero, "zero");
+            check!(HalfEven, "half");
         }
     }
 

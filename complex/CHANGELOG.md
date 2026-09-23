@@ -3,6 +3,26 @@
 ## Unreleased
 
 ### Change
+- **`CBig`'s `Debug` renders its parts as raw `Repr`s** (`significand * base ^ exponent`,
+  one trailing context `prec`) instead of `FBig`'s `Display`: a base-2 part's `Display` is
+  native binary positional (`0.1` = one half), which reads as garbage when glanced at as
+  decimal (`re:0.001011…` for one half).
+- **The transcendental radius estimates are now mechanically propagated** instead of
+  hand-written `ulp·k` constants: `exp`, `log`, `sqrt`, `sin`/`cos`, `tan`, `sin_pi`/`cos_pi`,
+  `tan_pi`, `powi` and `powf` compose through a complex ball (`CBall` over float's `Ball`/`Mag`,
+  shared `#[doc(hidden)]` in lockstep), whose radius tracks every rounding of the composition
+  and grows exactly where it is amplified (`y/(2a)` in `sqrt`, `‖z‖` near 1 in `log`, the
+  kernel input folds for over-precise inputs, `‖w·log z‖` in `powf`). An exactly-representable
+  result certifies through a zero radius, fixing `ZivRetryLimitExceeded` on inputs like
+  `√4`/`√(3+4i)`/`acos(1)` under the outward rounding modes. The directed-rounding fuzz
+  differentials assert **bit-exact** per-component agreement with MPC across
+  `Up`/`Down`/`Zero`/`HalfEven` for every family except the ×π family (no MPC entry — a
+  premultiplied-π reference tests a different function) and `powf` (MPC's `pow` is not
+  guaranteed correctly rounded).
+- **(breaking) `powi(z, ±1)` now respects the context precision** — it rounds the (exact)
+  result to the context like every other precision-taking op, instead of returning the input
+  at its own precision; `powi` on an unlimited-precision input with `|n| = 1` therefore
+  panics like the rest of the family (a call that previously returned `Ok`).
 - **A `-0` component of a complex value renders with its sign**, following `dashu-float`: the
   components are formatted by `FBig`, whose `Display`/`LowerExp` now print `-0` rather than `0`
   (and `FromStr` parses it back as negative zero). Nothing numeric changes.
@@ -10,30 +30,50 @@
 ### Add
 - ×π trigonometric functions `sin_pi`/`cos_pi`/`sin_cos_pi`/`tan_pi` (of `z·π`), on `Context`,
   `CBig` and `CachedCBig`. Pure-real arguments reduce exactly through the real ×π kernels
-  (quarter-integer exact cases included — and `tan_pi` of a pure-real argument is now
-  *delegated* to the real kernel, poles and near-pole huge values alike); the imaginary part
-  composes the real `sinh_cosh_pi`. `tan_pi` uses the same cancellation-free double-angle
-  identity as `tan`, and reports `Err(Indeterminate)` at the real-axis poles (`y = 0`,
-  x an odd multiple of `1/2`).
+  (quarter-integer exact cases included); the imaginary part composes the real
+  `sinh_cosh_pi`. `tan_pi` uses the same cancellation-free double-angle identity as `tan`, and
+  reports `Err(Indeterminate)` at the real-axis poles (`y = 0`, x an odd multiple of `1/2`).
 
 ### Fix
+- **`powi` of a base whose parts round onto the diagonal at the working precision certified a
+  wrong real part**: `powi((−2.826, −2.826'), −10)` at 20 bits returned `re = 0` where the true
+  value is `7.6·10⁻²²` (~2⁶⁹ ulps off). The `a² − b²` cancellation collapsed onto exact zero and
+  the driver's ±ulp preimage of ±0 — an f64-style artifact (subnormals bound the exponent range
+  there; at unbounded exponents no nonzero real rounds to zero) — admitted the honest-but-nonzero
+  radius. The Ziv driver now carries `dashu-float`'s zero-candidate guard: a zero candidate is
+  certifiable only by a zero radius, and the structural zeros the closures own are exact —
+  `powi` of a base with *identical* parts `t·(1+i)` computes through the exact
+  `(1+i)ⁿ` lattice (a certified real `tⁿ` scaled by the power of *two* `2^((n−r)/2)`, which is
+  a bare exponent shift only in the binary base — the zero component of an even power is
+  exactly zero), and the axis arguments of `log` through the fold below.
+- **`atan` dispatches on the axes**, so its exactly-zero component certifies under the directed
+  modes: `atan(x ± i·0) = atan(x) ± i·0` through the real `atan` kernel, and
+  `atan(±0 + i·y) = ±0 + i·atanh(y)` for `|y| < 1` through the real `atanh`. Both are
+  correctly rounded and exact in the zero component, which the two-log composition can never
+  certify (its cancel-to-zero midpoint keeps a nonzero seed-rounding radius, and no interval
+  fits inside the one-sided preimage of `+0`). The `±i` branch points, where `atan` diverges in
+  every direction, stay with the general path (`Err(OutOfDomain)`, as before the dispatch).
+- **`log`'s argument fold is the componentwise gradient bound**
+  `(|y|·rad_x + |x|·rad_y)/‖z‖²` (was the joint 1-Lipschitz `(rad_x + rad_y)/‖z‖`): it vanishes
+  exactly on the axes — the angle is invariant along the real error direction when `y ≡ 0`,
+  which is what makes `asin(±i)`'s exactly-zero real part certifiable — and is tighter than the
+  joint bound off-axis by the component ratio.
 - **`tan`/`tan_pi` near the real-axis poles no longer error or panic on finite,
   correctly-roundable inputs.** The double-angle denominator `cos(2x) + cosh(2y)` cancels
-  into its addends' rounding noise near the poles: it could round onto an exact zero and the
-  division then surfaced as a terminal `Err(Indeterminate)` (`0/0`) or as an infinity that
-  panicked the part arithmetic (`x/0`) — e.g. `tan_pi(0.5 + 1e-40·i)` (true value ≈
-  `3.18e39·i`) errored, and `tan_pi((0.5 + 1e-60) + 1e-40·i)` panicked. A collapsed — or
-  deeply cancelled — denominator now retries at higher guard (the true value is strictly
-  positive for `y ≠ 0`, so the surviving-digits threshold `lead(D) + guard ≥ 8` separates the
-  trustworthy quotients), and pure-real arguments bypass the composition entirely through
-  the real kernel.
-- **A part that is exactly zero now carries a zero error radius** in the trig compositions:
-  the blanket `8·ulp` radius around an exactly-zero part never fits the one-sided directed
-  preimage of `+0` (`[0, ulp)` under `Down`), so e.g. `sin_pi(0.5 + 1e-8·i)` under a
-  directed mode retried to the Ziv cap without certifying (its exact-zero imaginary part).
-  A zero-significand part is the exactly-zero result of its product/quotient (a nonzero one
-  never rounds to a zero significand), so radius `0` is sound — the same exemption the
-  float layer's exact chains already carry.
+  into its addends' rounding noise near the poles: the composed ball division previously
+  surfaced a terminal `Err(Indeterminate)` (`0/0`) or an infinity that panicked the part
+  arithmetic (`x/0`) — e.g. `tan_pi(0.5 + 1e-40·i)` (true value ≈ `3.18e39·i`) errored, and
+  `tan_pi((0.5 + 1e-60) + 1e-40·i)` panicked. A collapsed — or deeply cancelled — denominator
+  now exports the whole-line ball (an unbounded radius that no Ziv attempt can certify), so
+  the loop retries at a higher guard, where the strictly positive true denominator
+  (`D = cos 2x + cosh 2y > 0` for `y ≠ 0`) re-emerges above its addends' rounding noise; the
+  genuine 0/0 at an exact pole still reports `Err(Indeterminate)`.
+- **An exactly-zero result part carries a zero error radius**, so it certifies under the
+  directed modes: the one-sided rounding preimage of `+0` (`[0, ulp)` under `Down`) fits no
+  nonzero symmetric interval. In the ball composition the property is mechanical — an exact
+  factor times anything is an exact product, and the kernel's exact values (e.g.
+  `cos_pi(0.5) = 0`) seed radius-0 balls — verified by the directed ×π sweep on
+  `sin_pi(0.5 + 1e-8·i)`, which previously could not certify under directed modes.
 
 ## 0.6.0
 

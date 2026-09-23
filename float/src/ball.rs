@@ -26,14 +26,16 @@ use crate::{
 /// `mid` is a bare [`Repr`] (precision is a property of operations, not of the ball);
 /// `rad` is a [`Mag`] upper bound. `rad == 0` ⟺ the chain so far is exact.
 #[derive(Clone, Debug)]
-pub(crate) struct Ball<const B: Word> {
-    pub(crate) mid: Repr<B>,
-    pub(crate) rad: Mag,
+pub struct Ball<const B: Word> {
+    /// The midpoint — a bare [`Repr`], exact as a value; operations take the working precision.
+    pub mid: Repr<B>,
+    /// The radius: a rigorous upper bound on `|mid − true|`, `Mag::ZERO` iff the chain is exact.
+    pub rad: Mag,
 }
 
 impl<const B: Word> Ball<B> {
     /// Wrap an exact midpoint (no error).
-    pub(crate) fn exact(mid: Repr<B>) -> Self {
+    pub fn exact(mid: Repr<B>) -> Self {
         Self {
             mid,
             rad: Mag::ZERO,
@@ -41,7 +43,7 @@ impl<const B: Word> Ball<B> {
     }
 
     /// Wrap a correctly-rounded kernel result: exact → `rad = 0`, inexact → fold one work-ulp.
-    pub(crate) fn from_rounded(rounded: Rounded<Repr<B>>, prec: usize) -> Self {
+    pub fn from_rounded(rounded: Rounded<Repr<B>>, prec: usize) -> Self {
         match rounded {
             Approximation::Exact(mid) => Self::exact(mid),
             Approximation::Inexact(mid, _) => Self {
@@ -58,7 +60,7 @@ impl<const B: Word> Ball<B> {
     }
 
     /// Wrap a value with a known error (cached constants' bounds land here).
-    pub(crate) fn with_error(mid: Repr<B>, rad: Mag) -> Self {
+    pub fn with_error(mid: Repr<B>, rad: Mag) -> Self {
         Self { mid, rad }
     }
 
@@ -67,7 +69,7 @@ impl<const B: Word> Ball<B> {
     // ========================================================================
 
     /// `self + rhs`: `rad_a + rad_b + ε`.
-    pub(crate) fn add(&self, rhs: &Self, prec: usize) -> Result<Self, FpError> {
+    pub fn add(&self, rhs: &Self, prec: usize) -> Result<Self, FpError> {
         let ctx = Context::<mode::HalfEven>::new(prec);
         let (mid, eps) = finish_mid(ctx.add(&self.mid, &rhs.mid)?, prec);
         let rad = self.rad.add(&rhs.rad).add(&eps);
@@ -75,7 +77,7 @@ impl<const B: Word> Ball<B> {
     }
 
     /// `self − rhs`: same radius rule as `add`.
-    pub(crate) fn sub(&self, rhs: &Self, prec: usize) -> Result<Self, FpError> {
+    pub fn sub(&self, rhs: &Self, prec: usize) -> Result<Self, FpError> {
         let ctx = Context::<mode::HalfEven>::new(prec);
         let (mid, eps) = finish_mid(ctx.sub(&self.mid, &rhs.mid)?, prec);
         let rad = self.rad.add(&rhs.rad).add(&eps);
@@ -83,7 +85,7 @@ impl<const B: Word> Ball<B> {
     }
 
     /// `self · rhs`: `‖a.mid‖·rad_b + ‖b.mid‖·rad_a + rad_a·rad_b + ε`.
-    pub(crate) fn mul(&self, rhs: &Self, prec: usize) -> Result<Self, FpError> {
+    pub fn mul(&self, rhs: &Self, prec: usize) -> Result<Self, FpError> {
         let ctx = Context::<mode::HalfEven>::new(prec);
         let (mid, eps) = finish_mid(ctx.mul(&self.mid, &rhs.mid)?, prec);
         let rad = Mag::from_repr(&self.mid)
@@ -98,7 +100,7 @@ impl<const B: Word> Ball<B> {
     /// correctly-rounded [`Context::sqr`] kernel, cheaper than a general product). The cross
     /// term's factor 2 is load-bearing: `(m ± r)² = m² ± 2mr + r²`, so folding a single
     /// `‖m‖·r` under-bounds the upper corner by exactly `‖m‖·r`.
-    pub(crate) fn sqr(&self, prec: usize) -> Result<Self, FpError> {
+    pub fn sqr(&self, prec: usize) -> Result<Self, FpError> {
         let ctx = Context::<mode::HalfEven>::new(prec);
         let (mid, eps) = finish_mid(ctx.sqr(&self.mid)?, prec);
         let two_a = Mag::from_repr(&self.mid).mul_pow2(1); // 2·‖a.mid‖, exact
@@ -111,7 +113,7 @@ impl<const B: Word> Ball<B> {
     /// A degenerate denominator (either lower bound `0`) yields the whole-line radius
     /// `Mag::INFINITY` — sound, and a Ziv retry; the public layer's guards keep it
     /// unreachable in practice. Subsumes the old zero-numerator special case.
-    pub(crate) fn div(&self, rhs: &Self, prec: usize) -> Result<Self, FpError> {
+    pub fn div(&self, rhs: &Self, prec: usize) -> Result<Self, FpError> {
         let ctx = Context::<mode::HalfEven>::new(prec);
         let (mid, eps) = finish_mid(ctx.div(&self.mid, &rhs.mid)?, prec);
         let b_mid_lo = Mag::from_repr_lower(&rhs.mid);
@@ -159,7 +161,7 @@ impl<const B: Word> Ball<B> {
     /// derivative at the origin is infinite). It gets the whole-line radius instead, which forces
     /// a Ziv retry at a higher guard, where the caller's argument stops rounding onto zero and the
     /// ordinary rule below applies.
-    pub(crate) fn sqrt(&self, prec: usize) -> Result<Self, FpError> {
+    pub fn sqrt(&self, prec: usize) -> Result<Self, FpError> {
         let ctx = Context::<mode::HalfEven>::new(prec);
         let (mid, eps) = finish_mid(ctx.sqrt(&self.mid)?, prec);
         if mid.significand().is_zero() {
@@ -209,14 +211,6 @@ impl<const B: Word> Ball<B> {
     // Exact operations — no prec, no error
     // ========================================================================
 
-    /// Negation; the radius is unchanged.
-    pub(crate) fn neg(self) -> Self {
-        Self {
-            mid: -self.mid,
-            rad: self.rad,
-        }
-    }
-
     /// Exact shift by a power of the base (`·B^s`): the midpoint's exponent moves and the
     /// **absolute** radius scales with it (`rad·B^s` — exact for B = 2; the old ulp-count ball
     /// kept `n` unchanged because its ulp scaled with the value, which is *not* how a Mag
@@ -242,13 +236,13 @@ impl<const B: Word> Ball<B> {
     // ========================================================================
 
     /// Fold a hand-derived error bound into the radius (series tails land here).
-    pub(crate) fn add_error(&mut self, err: Mag) {
+    pub fn add_error(&mut self, err: Mag) {
         self.rad = self.rad.add(&err);
     }
 
     /// An upper bound on `|self|` (the ball's magnitude). Used by the exp input-error fold
     /// ([`Ball`]'s `exp_ball`), which scales the input radius by the result's own magnitude.
-    pub(crate) fn mag(&self) -> Mag {
+    pub fn mag(&self) -> Mag {
         Mag::from_repr(&self.mid).add(&self.rad)
     }
 
@@ -267,7 +261,7 @@ impl<const B: Word> Ball<B> {
     /// `Repr` (base 2) / outward power of ten (base 10) — `(value, radius)` with
     /// `|value − true| ≤ radius`, as `ziv.rs` expects. The radius carries an unlimited
     /// context, exactly as the old export did; the containment test only reads raw `Repr`s.
-    pub(crate) fn to_value_radius<R: Round>(&self, ctx: &Context<R>) -> (FBig<R, B>, FBig<R, B>) {
+    pub fn to_value_radius<R: Round>(&self, ctx: &Context<R>) -> (FBig<R, B>, FBig<R, B>) {
         let value = FBig::new(self.mid.clone(), *ctx);
         let radius = FBig::new(self.rad.to_repr::<B>(), Context::<R>::new(0));
         (value, radius)
@@ -285,6 +279,19 @@ impl<const B: Word> Ball<B> {
             .saturating_sub(1);
         let threshold = Repr::<B>::new(IBig::ONE, e);
         crate::cmp::repr_cmp_same_base::<B, true>(&self.mid, &threshold, None).is_le()
+    }
+}
+
+impl<const B: Word> core::ops::Neg for Ball<B> {
+    type Output = Self;
+
+    /// Negation; the radius is unchanged.
+    #[inline]
+    fn neg(self) -> Self {
+        Self {
+            mid: -self.mid,
+            rad: self.rad,
+        }
     }
 }
 
@@ -306,7 +313,7 @@ fn finish_mid<const B: Word>(
 
 /// One ulp of a midpoint at `prec`, as a `Mag`: `B^(lead_ub(mid) − prec)`
 /// (`lead_ub = exponent + digits_ub` — an over-estimate only loosens).
-pub(crate) fn ulp_mag<const B: Word>(mid: &Repr<B>, prec: usize) -> Mag {
+pub fn ulp_mag<const B: Word>(mid: &Repr<B>, prec: usize) -> Mag {
     let lead_ub = mid.exponent().saturating_add(mid.digits_ub() as isize);
     Mag::from_base_pow::<B>(lead_ub.saturating_sub(prec as isize))
 }

@@ -1,11 +1,12 @@
 //! Complex natural logarithm `log(z) = ln|z| + i·arg(z)` (principal branch; cut on `]−∞, 0]`).
 
+use crate::ball::CBall;
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, exact, reborrow_cache, CfpResult, Context};
 use dashu_base::{Approximation, Sign};
 use dashu_float::round::{ErrorBounds, Rounding};
 use dashu_float::{ConstCache, Context as FloatCtxt, FBig, Repr};
-use dashu_int::{IBig, Word};
+use dashu_int::Word;
 
 /// Guard digits (base-B) for `log`. Composes `hypot` (for `|z|`), `ln`, and `atan2`.
 const LOG_GUARD: usize = 14;
@@ -65,33 +66,19 @@ impl<R: ErrorBounds> Context<R> {
         // shortcut above is exact and needs no precision) — it falls through and the float `hypot`
         // rejects it, panicking at the convenience layer.
 
-        // `ln|z| + i·arg(z)`. The float `hypot`/`ln`/`atan2` are correctly-rounded at the working
-        // precision. The imaginary part (`atan2` of the exact parts) carries only `atan2`'s own
-        // rounding; the real part `ln|z|` additionally propagates `hypot`'s relative error through
-        // `ln`, which dominates near `|z| = 1` (where `ln|z| → 0`) — so its radius carries an extra
-        // absolute `B^{1-pw}` term. The Ziv driver asserts a limited context.
+        // `ln|z| + i·arg(z)` through the ball composition (`CBall::log`): the float
+        // `hypot`/`ln`/`atan2` kernels run on the midpoints, and the input radii propagate
+        // through the exact inequalities `|Δln r| ≤ (hi−lo)/lo` and `|Δarg| ≤ ‖δz‖/lo` — the
+        // old hand-written `B^{1-pw}` term, which priced `hypot`'s propagation near `|z| = 1`
+        // unconditionally, falls out of the fold at the same order there and far tighter
+        // everywhere else. The Ziv driver asserts a limited context.
         let p = self.precision();
         let [re, im] = self.ziv(LOG_GUARD, |guard| {
             let pw = p + guard;
             let gctx = FloatCtxt::<R>::new(pw);
-            // ln|z|
-            let r = gctx.hypot(z.re(), z.im())?.value();
-            let ln_r = gctx.ln(r.repr(), reborrow_cache(&mut cache))?.value();
-            // arg(z) = atan2(im, re)
-            let arg = gctx
-                .atan2(z.im(), z.re(), reborrow_cache(&mut cache))?
-                .value();
-            // The float transcendentals return unlimited-precision exact constants for exact cases
-            // (e.g. `ln 1 = 0`, `atan2(0,1) = 0`); re-root to the working precision so `.ulp()`
-            // (which rejects unlimited) is well-defined.
-            let ln_r = ln_r.with_precision(pw).value();
-            let arg = arg.with_precision(pw).value();
-            // `B^{1-pw}` upper-bounds `hypot`'s propagated error `ulp(r)/|r| ≤ B^{1-pw}`, which
-            // dominates `ulp(ln_r)` when `|ln_r| < 1` (`|z| ≈ 1`).
-            let propagated = FBig::<R, B>::from_parts(IBig::from(1), 1 - pw as isize);
-            let re_rad = ln_r.ulp() * 4 + propagated * 4;
-            let im_rad = arg.ulp() * 4;
-            Ok([(ln_r, re_rad), (arg, im_rad)])
+            let out =
+                CBall::from_parts(z.re(), z.im(), pw).log(&gctx, pw, reborrow_cache(&mut cache))?;
+            Ok(out.to_parts_radius(&gctx))
         })?;
         Ok(combine_parts(re, im))
     }
@@ -112,8 +99,10 @@ impl<R: ErrorBounds, const B: Word> CBig<R, B> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cbig::CBig as CBigGeneric;
     use dashu_base::{Abs, AbsOrd, Sign};
     use dashu_float::round::mode;
+    use dashu_float::FBig;
 
     type C = CBig<mode::HalfAway, 10>;
     type F = FBig<mode::HalfAway, 10>;
@@ -154,6 +143,38 @@ mod tests {
         let l = C::ZERO.ln();
         assert!(l.re().is_infinite());
         assert_eq!(l.re().sign(), Sign::Negative);
+    }
+
+    // The mechanically tracked radius must certify at the target precision across the width
+    // sweep: each result equals the same op computed at `p + 60` and re-rounded to `p` (both
+    // sides are correctly rounded on the same exact integer input, so they agree bit for bit).
+    #[test]
+    fn log_matches_oracle_across_precisions() {
+        // Both bases: `CBall::log`'s folds rest on the base-power brackets
+        // (`Mag::from_repr_lower`, `log₂B`), which tighten below base 2's exact `B^e`.
+        // Rungs: bit precisions at base 2, digit precisions at base 10, picked to span the
+        // same significand widths (7 ≈ 20 bits, …) so both bases cover the same paths.
+        macro_rules! sweep {
+            ($base:literal, $name:literal, $precs:expr) => {{
+                type C2 = CBigGeneric<mode::HalfEven, $base>;
+                type F2 = FBig<mode::HalfEven, $base>;
+                let inputs = [(1i64, 1i64), (3, 4), (-2, 1), (5, -12), (0, 1), (-7, 0)];
+                for p in $precs {
+                    for (re, im) in inputs {
+                        let mk = |v: i64| F2::from(v).with_precision(p).value();
+                        let mk_hi = |v: i64| F2::from(v).with_precision(p + 60).value();
+                        let (hre, him) = C2::from_parts(mk_hi(re), mk_hi(im)).ln().into_parts();
+                        let expect_re = hre.with_precision(p).value();
+                        let expect_im = him.with_precision(p).value();
+                        let got = C2::from_parts(mk(re), mk(im)).ln();
+                        assert_eq!(got.re(), expect_re.repr(), "[$name] re p={p} z=({re},{im})");
+                        assert_eq!(got.im(), expect_im.repr(), "[$name] im p={p} z=({re},{im})");
+                    }
+                }
+            }};
+        }
+        sweep!(2, "base 2", [20, 50, 100, 500]);
+        sweep!(10, "base 10", [7, 17, 34, 160]);
     }
 
     // log on an unlimited-precision CBig must panic, not silently compute at LOG_GUARD digits

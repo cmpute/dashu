@@ -16,7 +16,6 @@
 //! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test float_random -- --ignored --nocapture`
 
 use dashu::base::Sign;
-use dashu::float::ops::Abs;
 use dashu::float::round::Round;
 use dashu::float::round::mode::*;
 use dashu::float::{Context, FBig, Repr, Word};

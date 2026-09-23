@@ -12,11 +12,31 @@
 //! into a single thread. [`fuzz_config`] documents the `FUZZ_CASES` / `FUZZ_SHARDS` / `FUZZ_SEED`
 //! knobs and [`sampled_precisions`] the per-width subsampling.
 
+use dashu::float::ops::Abs;
 use dashu::float::round::mode::HalfAway;
-use dashu::float::{Context, FBig, Repr};
+use dashu::float::{Context, DBig, FBig, Repr};
 use dashu::integer::{IBig, UBig, Word};
 use proptest::prelude::*;
 use proptest::test_runner::RngSeed;
+
+/// The shared ulp tolerance of the nearest-mode differentials — float and complex suites alike,
+/// so their strictness stays comparable. Both sides of a differential are (near-)correctly
+/// rounded, so each lands within ~1 ulp of the true value and the two results must agree to
+/// within [`CLOSE_K`] ulps; a larger divergence is a bug in one of the two implementations.
+/// (The directed, bit-exact suites don't use this constant — they assert the straddle contract
+/// with no tolerance at all.)
+pub const CLOSE_K: i32 = 2;
+
+/// |dashu − rug| ≤ `k` ulps at dashu's precision (pass [`CLOSE_K`] for `k` in the differentials).
+/// Exact agreement short-circuits before the ulp comparison — that also avoids `.ulp()` on
+/// unlimited-precision results (e.g. `powi(x, 0) = 1`).
+pub fn within_k_ulps(d: &DBig, r: &DBig, k: i32) -> bool {
+    let diff = (d.clone() - r).abs();
+    if diff.repr().significand().is_zero() {
+        return true;
+    }
+    diff <= d.ulp() * k
+}
 
 /// Read an integer env var, ignoring unset/unparseable values.
 fn env_usize(name: &str) -> Option<usize> {
@@ -219,21 +239,17 @@ pub fn unit_dbig() -> impl Strategy<Value = FBig<HalfAway, 10>> {
 /// Shared helpers for the `CBig` vs `rug::Complex` (MPC) differentials, run across the
 /// [`fuzz_precisions_bits`](crate::fuzz_precisions_bits) sweep.
 pub mod cmplx {
+    use crate::CLOSE_K;
     use core::convert::TryFrom;
     use dashu::complex::CBig;
     use dashu::float::FBig;
+    use dashu::float::round::Round;
     use dashu::float::round::mode::HalfEven;
     use proptest::prelude::*;
     use rug::ops::Pow;
 
     pub type C = CBig<HalfEven, 2>;
     pub type F = FBig<HalfEven, 2>;
-
-    /// Per-component ulp tolerance for the differential: results must agree to within `CLOSE_K`
-    /// ulps at the working precision. Near-correctly-rounded results (both dashu and MPC) pass
-    /// comfortably; a gross error fails. (~500× tighter than the previous f64 `1e-12` check at
-    /// 53 bits, and meaningful at any precision since it scales as `2^-prec`.)
-    const CLOSE_K: u32 = 16;
 
     /// A modest-magnitude finite `f64` (`±(1..=8) · [1,2) · 2^(-2..=2)`), shrinking toward small values.
     pub fn f64_part() -> impl Strategy<Value = f64> {
@@ -262,7 +278,7 @@ pub mod cmplx {
     /// `significand × 2^exponent`, so build the significand (IBig → decimal string → `rug::Integer`,
     /// sign preserved) and scale by `2^exp`. Exact because `cmp_bits` exceeds the significand's
     /// bit length (which is ≤ the working precision + 1 guard).
-    fn fbig2_to_rug(f: &F, cmp_bits: u32) -> rug::Float {
+    fn fbig2_to_rug<R: Round>(f: &FBig<R, 2>, cmp_bits: u32) -> rug::Float {
         let repr = f.repr();
         let sig = repr.significand();
         let exp = repr.exponent();
@@ -288,6 +304,10 @@ pub mod cmplx {
     /// Precision-aware agreement: convert `d` to rug at `2·prec + 64` bits and check each component
     /// is within `CLOSE_K × 2^-prec × scale` of the reference, where `scale` is the largest component
     /// magnitude of either side. Returns `false` if either side is non-finite (caller skips).
+    ///
+    /// With [`CLOSE_K`] = 2 the budget is one ulp per side, so the caller must evaluate the
+    /// reference **above** `prec` (see [`ref_bits`]) on the same input — otherwise MPC's own
+    /// prec-bit rounding eats the budget and a mismatch indicts MPC, not us.
     pub fn close_at(d: &C, r: &rug::Complex, prec: usize) -> bool {
         let cmp = (2 * prec + 64) as u32;
         let (dre, dim) = d.clone().into_parts();
@@ -316,5 +336,47 @@ pub mod cmplx {
         let re_err = (dre_r - &rre).abs();
         let im_err = (dim_r - &rim).abs();
         re_err <= allowed.clone() && im_err <= allowed
+    }
+
+    // ========================================================================
+    // Directed rounding — bit-exact per component (the float directed contract)
+    // ========================================================================
+
+    /// The reference precision for the directed tests: the MPC reference runs **nearest** at
+    /// `2·prec + 512` bits, so its own error (~`2^-(2prec+512)`) sits ~`2^(prec+512)` below the
+    /// target-precision rounding boundaries (~`2^-prec`) — re-rounding the reference can only
+    /// mis-decide a true value within `2^-(prec+512)` of a boundary. The same margin argument
+    /// backs the float directed harness.
+    pub fn ref_bits(prec: u32) -> u32 {
+        2 * prec + 512
+    }
+
+    /// A mode-`R` base-2 `FBig` part from an `f64` at `prec` bits.
+    pub fn part<R: Round>(v: f64, prec: u32) -> FBig<R, 2> {
+        FBig::<R, 2>::try_from(v)
+            .unwrap()
+            .with_precision(prec as usize)
+            .value()
+    }
+
+    /// Directed per-component check: dashu's mode-`R` result must equal the **Up- or the
+    /// Down-rounding** of the high-precision nearest reference (when the two agree, the true
+    /// value was representable and every mode must return it — the same straddle contract as
+    /// the float directed tests). Both sides convert exactly to `rug::Float`
+    /// ([`fbig2_to_rug`]), so the comparison is bit-exact. Value equality reads ±0 as equal —
+    /// sign-of-zero is covered by the signed-zero tables instead.
+    pub fn directed_eq_part<R: Round>(d: &FBig<R, 2>, hi: &rug::Float, prec: u32) -> bool {
+        let cmp = 2 * prec + 64;
+        let d_r = fbig2_to_rug(d, cmp);
+        let (up, _) = rug::Float::with_val_round(prec, hi, rug::float::Round::Up);
+        let (down, _) = rug::Float::with_val_round(prec, hi, rug::float::Round::Down);
+        d_r == up || (up != down && d_r == down)
+    }
+
+    /// Directed check for a whole complex result — both components independently (dashu's
+    /// `CBig` rounds each part with the single mode `R`, so the reference must too).
+    pub fn directed_eq<R: Round>(d: &CBig<R, 2>, hi: &rug::Complex, prec: u32) -> bool {
+        let (dre, dim) = d.clone().into_parts();
+        directed_eq_part(&dre, hi.real(), prec) && directed_eq_part(&dim, hi.imag(), prec)
     }
 }

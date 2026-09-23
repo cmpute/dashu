@@ -64,7 +64,12 @@ dashu-float (and dashu-cmplx) guarantee that every operation returns the
 **correctly rounded** result: the unique representable value closest to the
 infinitely-precise real result under the current rounding mode — never a loose
 tolerance, never 1-ulp-wrong. This is enforced by fuzz differentials against
-MPFR/MPC that assert bit-exact agreement under every rounding mode.
+MPFR/MPC: the float directed tests assert bit-exact agreement under every
+rounding mode, and the complex tests assert bit-exact per-component agreement
+for the families covered by directed checks (families without a bit-exact
+oracle — the ×π family, where MPC has no entry point, and `powf`, where MPC's
+own `pow` is not guaranteed correctly rounded — keep a documented ulp
+tolerance instead).
 
 The rounding modes that support this guarantee are those implementing
 `ErrorBounds` — a bound on how far the true result can be from a computed
