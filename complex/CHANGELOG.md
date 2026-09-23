@@ -3,7 +3,6 @@
 ## Unreleased
 
 ### Change
-### Change
 - **`CBig`'s `Debug` renders its parts as raw `Repr`s** (`significand * base ^ exponent`,
   one trailing context `prec`) instead of `FBig`'s `Display`: a base-2 part's `Display` is
   native binary positional (`0.1` = one half), which reads as garbage when glanced at as
@@ -20,10 +19,10 @@
   `Up`/`Down`/`Zero`/`HalfEven` for every family except the ×π family (no MPC entry — a
   premultiplied-π reference tests a different function) and `powf` (MPC's `pow` is not
   guaranteed correctly rounded).
-- **`powi(z, ±1)` now respects the context precision** — it rounds the (exact) result to the
-  context like every other precision-taking op, instead of returning the input at its own
-  precision; `powi` on an unlimited-precision input with `|n| = 1` therefore panics like the
-  rest of the family.
+- **(breaking) `powi(z, ±1)` now respects the context precision** — it rounds the (exact)
+  result to the context like every other precision-taking op, instead of returning the input
+  at its own precision; `powi` on an unlimited-precision input with `|n| = 1` therefore
+  panics like the rest of the family (a call that previously returned `Ok`).
 - **A `-0` component of a complex value renders with its sign**, following `dashu-float`: the
   components are formatted by `FBig`, whose `Display`/`LowerExp` now print `-0` rather than `0`
   (and `FromStr` parses it back as negative zero). Nothing numeric changes.
@@ -44,8 +43,16 @@
   radius. The Ziv driver now carries `dashu-float`'s zero-candidate guard: a zero candidate is
   certifiable only by a zero radius, and the structural zeros the closures own are exact —
   `powi` of a base with *identical* parts `t·(1+i)` computes through the exact
-  `(1+i)ⁿ` lattice (a certified real `tⁿ` scaled by a power of two, the zero component of an
-  even power exactly zero), and the axis arguments of `log` through the fold below.
+  `(1+i)ⁿ` lattice (a certified real `tⁿ` scaled by the power of *two* `2^((n−r)/2)`, which is
+  a bare exponent shift only in the binary base — the zero component of an even power is
+  exactly zero), and the axis arguments of `log` through the fold below.
+- **`atan` dispatches on the axes**, so its exactly-zero component certifies under the directed
+  modes: `atan(x ± i·0) = atan(x) ± i·0` through the real `atan` kernel, and
+  `atan(±0 + i·y) = ±0 + i·atanh(y)` for `|y| < 1` through the real `atanh`. Both are
+  correctly rounded and exact in the zero component, which the two-log composition can never
+  certify (its cancel-to-zero midpoint keeps a nonzero seed-rounding radius, and no interval
+  fits inside the one-sided preimage of `+0`). The `±i` branch points, where `atan` diverges in
+  every direction, stay with the general path (`Err(OutOfDomain)`, as before the dispatch).
 - **`log`'s argument fold is the componentwise gradient bound**
   `(|y|·rad_x + |x|·rad_y)/‖z‖²` (was the joint 1-Lipschitz `(rad_x + rad_y)/‖z‖`): it vanishes
   exactly on the axes — the angle is invariant along the real error direction when `y ≡ 0`,

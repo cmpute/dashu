@@ -29,10 +29,11 @@ impl<R: ErrorBounds> Context<R> {
     /// rounded via a Ziv loop over the binary-exponentiation (repeated-squaring) chain. No cache.
     ///
     /// `powi(z, 0) = 1`; a negative exponent computes `(1/z)^|n|` directly, so the
-    /// sign-dependent overflow/underflow propagates from the closure with `?`. Repeated squaring
-    /// compounds the relative error (it roughly doubles per step), so after `bit_len(n)` squarings
-    /// the per-part error is bounded by about `2^nlen · ulp`, which the radius reflects; complex
-    /// `sqr`/`mul` are near-correct (a few ulp, not 0.5), so the bound carries an extra margin.
+    /// sign-dependent overflow/underflow propagates from the closure with `?`. The chain runs on
+    /// a `CBall`, so each squaring's compounding relative error joins the radius mechanically
+    /// — and an all-exact chain keeps `rad == 0`, which is what certifies an
+    /// exactly-representable `zⁿ` under the directed modes. A base with identical parts takes
+    /// the exact `t·(1+i)` lattice shortcut instead (see the branch below).
     pub fn powi<const B: Word>(&self, z: &CBig<R, B>, exp: IBig) -> CfpResult<R, B> {
         let (sign, n) = exp.into_parts();
         if n.is_zero() {
@@ -54,7 +55,7 @@ impl<R: ErrorBounds> Context<R> {
         // Diagonal shortcut: z = t·(1+i) with *identical exact parts* ⇒ `zⁿ = tⁿ·(1+i)ⁿ`, where
         // `(1+i)ⁿ` sits on the exact half-power-of-two lattice (magnitude `2^(n/2)` in steps of
         // √2, arguments in multiples of π/4), so both components are the one certified real
-        // power `tⁿ` scaled by an exact power of two — and the zero component of an even power
+        // power `tⁿ` scaled by a power of two — and the zero component of an even power
         // is *exactly* zero. The generic squaring chain cannot certify that zero: its `a² − b²`
         // cancels onto exact 0 at every working precision (the parts are the same value), but
         // the tracked radius stays a division-rounding ε > 0, which the strict zero-candidate
@@ -91,28 +92,35 @@ impl<R: ErrorBounds> Context<R> {
                     (1, -1),
                 ];
                 let (a, b) = lattice[usize::try_from(q).unwrap()];
-                let k: isize = match isize::try_from(k) {
-                    Ok(k) => k,
-                    // a lattice exponent past the representable range only occurs when `tⁿ`
-                    // itself cannot produce a finite certified value
-                    Err(_) => return Err(FpError::Overflow(Sign::Positive)),
-                };
-                let part = |v: i32, k: isize| -> Result<Ball<B>, FpError> {
+                // The lattice magnitude `2^k`, evaluated by the float `powi` in *this* base and
+                // certified by its own Ziv loop. For the binary base it is a bare exponent shift
+                // (exact at every precision); above it, it is exact whenever `2^k` fits the
+                // working precision — the common small-|k| case, and what keeps an
+                // exactly-representable `zⁿ` certifiable under the directed modes.
+                //
+                // The magnitude must be built in *base 2*: `2^k = B^(k·log_B 2)` has no exact
+                // `Repr<B>` form for a non-binary `B`, so reading the exponent against the base
+                // (`FBig::from_parts(v, k)`, the natural-looking spelling) yields `v·B^k` — exact
+                // only for `B = 2` and silently wrong everywhere else (base-10 `(1+i)⁴` came out
+                // as `−100`). Here the ratio `log_B 2` is *computed*, so the conversion's own
+                // rounding joins the radius like any other.
+                let pow2 = Ball::from_rounded(
+                    fctx.powi(&Repr::<B>::new(IBig::from(2u8), 0), k)?
+                        .map(FBig::into_repr),
+                    pw,
+                );
+                let part = |v: i32| -> Result<Ball<B>, FpError> {
                     if v == 0 {
                         return Ok(Ball::exact(Repr::<B>::zero()));
                     }
-                    // the lattice factor is exact: its product with `tⁿ` costs one rounding
-                    let s = Ball::exact(
-                        FBig::<R, B>::from_parts(IBig::from(v), k)
-                            .with_precision(pw)
-                            .value()
-                            .into_repr(),
-                    );
+                    // the lattice factor is exact (or carries its conversion rounding): its
+                    // product with `tⁿ` costs one rounding
+                    let s = if v < 0 { -pow2.clone() } else { pow2.clone() };
                     s.mul(&tp, pw)
                 };
                 Ok([
-                    part(a, k)?.to_value_radius::<R>(&fctx),
-                    part(b, k)?.to_value_radius::<R>(&fctx),
+                    part(a)?.to_value_radius::<R>(&fctx),
+                    part(b)?.to_value_radius::<R>(&fctx),
                 ])
             })?;
             return Ok(combine_parts(re, im));
@@ -423,6 +431,44 @@ mod tests {
         check!(mode::HalfEven);
     }
 
+    // The diagonal shortcut's lattice magnitude is `2^((n−r)/2)` — a power of *two*, which is a
+    // bare exponent shift only in the binary base. Sizing it against the float base instead
+    // (`FBig::from_parts(v, k)`, whose value is `v·B^k`) silently mis-scaled every other base:
+    // base-10 `(1+i)⁴` came out as `−100`, and the base-2-only sweeps beside it never noticed.
+    // The exact lattice values are hand-written per base, and every mode is checked — the whole
+    // point of the shortcut is that an exactly-representable `zⁿ` certifies under the outward
+    // modes through its zero radius.
+    #[test]
+    fn powi_diagonal_lattice_scales_by_a_power_of_two() {
+        macro_rules! check {
+            ($mode:ty, $base:literal, $half:literal) => {{
+                type C = CBig<$mode, $base>;
+                type F = FBig<$mode, $base>;
+                let mk =
+                    |s: i32, e: isize| F::from_parts(IBig::from(s), e).with_precision(30).value();
+                for (n, want_re, want_im) in [
+                    (4i32, mk(-4, 0), mk(0, 0)),         // (1+i)⁴ = −4
+                    (3, mk(-2, 0), mk(2, 0)),            // (1+i)³ = −2 + 2i
+                    (1, mk(1, 0), mk(1, 0)),             // (1+i)¹ = 1 + i
+                    (-1, mk($half, -1), mk(-$half, -1)), // (1+i)⁻¹ = 1/2 − i/2
+                    (-2, mk(0, 0), mk(-$half, -1)),      // (1+i)⁻² = −i/2
+                ] {
+                    let got = C::from_parts(mk(1, 0), mk(1, 0)).powi(IBig::from(n));
+                    assert_eq!(got.re(), want_re.repr(), "(1+i)^{n} re, base $base");
+                    assert_eq!(got.im(), want_im.repr(), "(1+i)^{n} im, base $base");
+                }
+            }};
+        }
+        // `1/2` is `5·10⁻¹` in base 10 and `8·16⁻¹` in base 16
+        check!(mode::Up, 10, 5);
+        check!(mode::Down, 10, 5);
+        check!(mode::Zero, 10, 5);
+        check!(mode::HalfEven, 10, 5);
+        check!(mode::Up, 16, 8);
+        check!(mode::Down, 16, 8);
+        check!(mode::HalfEven, 16, 8);
+    }
+
     // A z whose parts round onto the diagonal at the work precision (`a² − b²` collapses onto
     // exact 0 there) used to certify `re = 0` through the wide ±ulp preimage of ±0 — while the
     // true value (`7.6e-22` here) rounds to a *nonzero* 20-bit float, ~2⁶⁹ ulps from zero. The
@@ -466,26 +512,34 @@ mod tests {
         assert_eq!(got.im(), want_im.repr(), "im mismatch vs oracle");
     }
 
-    // The ball-tracked radius must certify at the target precision across the width sweep.
+    // The ball-tracked radius must certify at the target precision across the width sweep — on
+    // both float bases: the lattice scaling above is base-generic, and a binary-only sweep is
+    // exactly what hid the `2^k`-vs-`B^k` mistake.
     #[test]
     fn powi_matches_oracle_across_precisions() {
-        type C2 = CBig<mode::HalfEven, 2>;
-        type F2 = FBig<mode::HalfEven, 2>;
-        let cases = [(3i64, 4i64, 5i32), (1, -1, 13), (2, 1, -7), (3, 2, 11)];
-        for p in [20usize, 50, 100, 500] {
-            for (re, im, n) in cases {
-                let mk = |v: i64| F2::from(v).with_precision(p).value();
-                let mk_hi = |v: i64| F2::from(v).with_precision(p + 60).value();
-                let (hre, him) = C2::from_parts(mk_hi(re), mk_hi(im))
-                    .powi(n.into())
-                    .into_parts();
-                let expect_re = hre.with_precision(p).value();
-                let expect_im = him.with_precision(p).value();
-                let got = C2::from_parts(mk(re), mk(im)).powi(n.into());
-                assert_eq!(got.re(), expect_re.repr(), "re p={p} z=({re},{im})^{n}");
-                assert_eq!(got.im(), expect_im.repr(), "im p={p} z=({re},{im})^{n}");
-            }
+        macro_rules! sweep {
+            ($base:literal, $name:literal) => {{
+                type C2 = CBig<mode::HalfEven, $base>;
+                type F2 = FBig<mode::HalfEven, $base>;
+                let cases = [(3i64, 4i64, 5i32), (1, -1, 13), (2, 1, -7), (3, 2, 11)];
+                for p in [20usize, 50, 100, 500] {
+                    for (re, im, n) in cases {
+                        let mk = |v: i64| F2::from(v).with_precision(p).value();
+                        let mk_hi = |v: i64| F2::from(v).with_precision(p + 60).value();
+                        let (hre, him) = C2::from_parts(mk_hi(re), mk_hi(im))
+                            .powi(n.into())
+                            .into_parts();
+                        let expect_re = hre.with_precision(p).value();
+                        let expect_im = him.with_precision(p).value();
+                        let got = C2::from_parts(mk(re), mk(im)).powi(n.into());
+                        assert_eq!(got.re(), expect_re.repr(), "[$name] re p={p} n={n}");
+                        assert_eq!(got.im(), expect_im.repr(), "[$name] im p={p} n={n}");
+                    }
+                }
+            }};
         }
+        sweep!(2, "base 2");
+        sweep!(10, "base 10");
     }
 
     // exp/powf on an unlimited-precision CBig must panic, not silently compute at the fixed guard

@@ -446,8 +446,8 @@ impl<R: ErrorBounds> Context<R> {
         // seed-rounding radius stays nonzero while the mids cancel to an exact 0, and no
         // containment can ever fit a nonzero radius around an exact zero). The real kernels
         // are correctly rounded and the zeros are exact, so these paths certify under every
-        // mode; off-axis inputs, and `|y| ≥ 1` on the imaginary axis (where the real part is
-        // the inexact `±π/2`), take the general path.
+        // mode; off-axis inputs, and `|y| ≥ 1` on the imaginary axis (the inexact `±π/2` real
+        // part above it, the `±i` poles on it), take the general path.
         let (re_in, im_in) = (z.re(), z.im());
         let f = self.float();
         if im_in.significand().is_zero() {
@@ -458,12 +458,18 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(combine_parts(at, im_zero));
         }
         if re_in.significand().is_zero() {
-            // atan(±0 + i·y) = ±0 + i·atanh(y) for |y| < 1; `atanh` rejects |y| ≥ 1 (where the
-            // general path's divergence — `atan(±i)` is indeterminate — is the honest answer)
+            // atan(±0 + i·y) = ±0 + i·atanh(y) for |y| < 1. Only `|y| > 1` is an `atanh` error
+            // — the `|y| = 1` branch points come back as `±∞`, which must *not* take this path:
+            // `atan(±i)` has no limit (the two-log form diverges), so the pole stays with the
+            // general path's `Err(OutOfDomain)` rather than surfacing an infinite result.
             if let Ok(ath) = f.atanh(im_in, reborrow_cache(&mut cache)) {
-                let re_zero =
-                    Approximation::Exact(FBig::from_repr(Repr::zero_with_sign(re_in.sign()), f));
-                return Ok(combine_parts(re_zero, ath));
+                if !ath.value_ref().repr().is_infinite() {
+                    let re_zero = Approximation::Exact(FBig::from_repr(
+                        Repr::zero_with_sign(re_in.sign()),
+                        f,
+                    ));
+                    return Ok(combine_parts(re_zero, ath));
+                }
             }
         }
         let p = self.precision();
@@ -1168,7 +1174,7 @@ mod tests {
             (1i64, 1i64),
             (3, 4),
             (-2, 1),
-            (0, 1), // ±i: branch point (atan reports Indeterminate — skipped below)
+            (0, 1), // ±i: branch point (atan errors there — skipped below)
             (5, -12),
         ];
         for p in [20usize, 50, 100, 500] {
@@ -1223,6 +1229,50 @@ mod tests {
                     .value();
                 assert_eq!(got.re(), expect.repr());
                 assert!(got.im().significand().is_zero());
+            }};
+        }
+        check!(mode::Up);
+        check!(mode::Down);
+        check!(mode::Zero);
+        check!(mode::HalfEven);
+    }
+
+    // The imaginary axis is the dispatch's other exact-zero branch: `atan(±0 + i·y) = ±0 +
+    // i·atanh(y)` for `|y| < 1` keeps a zero real part under every mode — and `y = ±1` are the
+    // branch points, where `atan` diverges in every direction, so the axis path must hand back
+    // to the general form (which errors, as it did before the dispatch existed). `atanh` reports
+    // the pole as `±∞` rather than as an error (only `|y| > 1` errors), so the `Err` arm alone
+    // is not a sufficient pole check.
+    #[test]
+    fn atan_imaginary_axis_and_branch_points() {
+        macro_rules! check {
+            ($mode:ty) => {{
+                type C = CBig<$mode, 10>;
+                type F = FBig<$mode, 10>;
+                let ctx = Context::<$mode>::new(30);
+                let mk = |v: i32| F::from(v).with_precision(30).value();
+                let half = F::from_parts(IBig::from(5), -1).with_precision(30).value();
+                for sign in [1i32, -1] {
+                    let im = if sign < 0 { -half.clone() } else { half.clone() };
+                    // the reference is the *signed* real kernel under this mode — negating a
+                    // round-up result is not the round-up of the negated argument
+                    let want = ctx.float().atanh(im.repr(), None).unwrap().value();
+                    let got =
+                        ctx.atan(&C::from_parts(mk(0), im), None).unwrap().value().clone();
+                    assert!(
+                        got.re().significand().is_zero(),
+                        "atan({sign}i/2): real part must be exactly zero"
+                    );
+                    assert_eq!(got.im(), want.repr(), "atan({sign}i/2) im");
+                    // The branch points carry no value: the general form's `log(0)` operand is
+                    // `−∞`, which the terminal-infinity model rejects — `OutOfDomain`, the same
+                    // error the pre-dispatch composition produced.
+                    let bp = C::from_parts(mk(0), mk(sign));
+                    assert!(
+                        matches!(ctx.atan(&bp, None), Err(FpError::OutOfDomain)),
+                        "atan({sign}i) must not carry a value"
+                    );
+                }
             }};
         }
         check!(mode::Up);
