@@ -156,30 +156,40 @@ mod tests {
     // sides are correctly rounded, so they must agree bit for bit).
     #[test]
     fn sqrt_matches_oracle_across_precisions() {
-        type C2 = CBig<mode::HalfEven, 2>;
-        type F2 = FBig<mode::HalfEven, 2>;
-        let inputs = [
-            (3i64, 4i64),
-            (5, -12),
-            (7, 1),
-            (1, 1),
-            (-3, 4),
-            (9, 0),
-            (121, 0),
-        ];
-        for p in [20usize, 50, 100, 500] {
-            for (re, im) in inputs {
-                let mk = |v: i64| F2::from(v).with_precision(p).value();
-                let z = C2::from_parts(mk(re), mk(im));
-                let mk_hi = |v: i64| F2::from(v).with_precision(p + 60).value();
-                let (hre, him) = C2::from_parts(mk_hi(re), mk_hi(im)).sqrt().into_parts();
-                let expect_re = hre.with_precision(p).value();
-                let expect_im = him.with_precision(p).value();
-                let got = z.sqrt();
-                assert_eq!(got.re(), expect_re.repr(), "re p={p} z=({re},{im})");
-                assert_eq!(got.im(), expect_im.repr(), "im p={p} z=({re},{im})");
-            }
+        // Both bases: the `sqrt` fold divides by a lower bound of `2·√mid` taken from the
+        // base-power bracket, so a non-binary base exercises a looser bound.
+        // Rungs: bit precisions at base 2, digit precisions at base 10, picked to span the
+        // same significand widths (7 ≈ 20 bits, …) so both bases cover the same paths.
+        macro_rules! sweep {
+            ($base:literal, $name:literal, $precs:expr) => {{
+                type C2 = CBig<mode::HalfEven, $base>;
+                type F2 = FBig<mode::HalfEven, $base>;
+                let inputs = [
+                    (3i64, 4i64),
+                    (5, -12),
+                    (7, 1),
+                    (1, 1),
+                    (-3, 4),
+                    (9, 0),
+                    (121, 0),
+                ];
+                for p in $precs {
+                    for (re, im) in inputs {
+                        let mk = |v: i64| F2::from(v).with_precision(p).value();
+                        let z = C2::from_parts(mk(re), mk(im));
+                        let mk_hi = |v: i64| F2::from(v).with_precision(p + 60).value();
+                        let (hre, him) = C2::from_parts(mk_hi(re), mk_hi(im)).sqrt().into_parts();
+                        let expect_re = hre.with_precision(p).value();
+                        let expect_im = him.with_precision(p).value();
+                        let got = z.sqrt();
+                        assert_eq!(got.re(), expect_re.repr(), "[$name] re p={p} z=({re},{im})");
+                        assert_eq!(got.im(), expect_im.repr(), "[$name] im p={p} z=({re},{im})");
+                    }
+                }
+            }};
         }
+        sweep!(2, "base 2", [20, 50, 100, 500]);
+        sweep!(10, "base 10", [7, 17, 34, 160]);
     }
 
     // An exactly-representable result certifies under the outward modes through its zero

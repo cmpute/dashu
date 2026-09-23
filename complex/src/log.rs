@@ -150,21 +150,31 @@ mod tests {
     // sides are correctly rounded on the same exact integer input, so they agree bit for bit).
     #[test]
     fn log_matches_oracle_across_precisions() {
-        type C2 = CBigGeneric<mode::HalfEven, 2>;
-        type F2 = FBig<mode::HalfEven, 2>;
-        let inputs = [(1i64, 1i64), (3, 4), (-2, 1), (5, -12), (0, 1), (-7, 0)];
-        for p in [20usize, 50, 100, 500] {
-            for (re, im) in inputs {
-                let mk = |v: i64| F2::from(v).with_precision(p).value();
-                let mk_hi = |v: i64| F2::from(v).with_precision(p + 60).value();
-                let (hre, him) = C2::from_parts(mk_hi(re), mk_hi(im)).ln().into_parts();
-                let expect_re = hre.with_precision(p).value();
-                let expect_im = him.with_precision(p).value();
-                let got = C2::from_parts(mk(re), mk(im)).ln();
-                assert_eq!(got.re(), expect_re.repr(), "re p={p} z=({re},{im})");
-                assert_eq!(got.im(), expect_im.repr(), "im p={p} z=({re},{im})");
-            }
+        // Both bases: `CBall::log`'s folds rest on the base-power brackets
+        // (`Mag::from_repr_lower`, `log₂B`), which tighten below base 2's exact `B^e`.
+        // Rungs: bit precisions at base 2, digit precisions at base 10, picked to span the
+        // same significand widths (7 ≈ 20 bits, …) so both bases cover the same paths.
+        macro_rules! sweep {
+            ($base:literal, $name:literal, $precs:expr) => {{
+                type C2 = CBigGeneric<mode::HalfEven, $base>;
+                type F2 = FBig<mode::HalfEven, $base>;
+                let inputs = [(1i64, 1i64), (3, 4), (-2, 1), (5, -12), (0, 1), (-7, 0)];
+                for p in $precs {
+                    for (re, im) in inputs {
+                        let mk = |v: i64| F2::from(v).with_precision(p).value();
+                        let mk_hi = |v: i64| F2::from(v).with_precision(p + 60).value();
+                        let (hre, him) = C2::from_parts(mk_hi(re), mk_hi(im)).ln().into_parts();
+                        let expect_re = hre.with_precision(p).value();
+                        let expect_im = him.with_precision(p).value();
+                        let got = C2::from_parts(mk(re), mk(im)).ln();
+                        assert_eq!(got.re(), expect_re.repr(), "[$name] re p={p} z=({re},{im})");
+                        assert_eq!(got.im(), expect_im.repr(), "[$name] im p={p} z=({re},{im})");
+                    }
+                }
+            }};
         }
+        sweep!(2, "base 2", [20, 50, 100, 500]);
+        sweep!(10, "base 10", [7, 17, 34, 160]);
     }
 
     // log on an unlimited-precision CBig must panic, not silently compute at LOG_GUARD digits

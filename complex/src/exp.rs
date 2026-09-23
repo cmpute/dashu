@@ -385,21 +385,29 @@ mod tests {
     // sides are correctly rounded on the same exact integer input, so they agree bit for bit).
     #[test]
     fn exp_matches_oracle_across_precisions() {
-        type C2 = CBig<mode::HalfEven, 2>;
-        type F2 = FBig<mode::HalfEven, 2>;
-        let inputs = [(1i64, 0i64), (0, 2), (-2, 1), (3, -4), (0, -5), (-4, 0)];
-        for p in [20usize, 50, 100, 500] {
-            for (re, im) in inputs {
-                let mk = |v: i64| F2::from(v).with_precision(p).value();
-                let mk_hi = |v: i64| F2::from(v).with_precision(p + 60).value();
-                let (hre, him) = C2::from_parts(mk_hi(re), mk_hi(im)).exp().into_parts();
-                let expect_re = hre.with_precision(p).value();
-                let expect_im = him.with_precision(p).value();
-                let got = C2::from_parts(mk(re), mk(im)).exp();
-                assert_eq!(got.re(), expect_re.repr(), "re p={p} z=({re},{im})");
-                assert_eq!(got.im(), expect_im.repr(), "im p={p} z=({re},{im})");
-            }
+        // Rungs: bit precisions at base 2, digit precisions at base 10, picked to span the
+        // same significand widths (7 ≈ 20 bits, …) so both bases cover the same paths.
+        macro_rules! sweep {
+            ($base:literal, $name:literal, $precs:expr) => {{
+                type C2 = CBig<mode::HalfEven, $base>;
+                type F2 = FBig<mode::HalfEven, $base>;
+                let inputs = [(1i64, 0i64), (0, 2), (-2, 1), (3, -4), (0, -5), (-4, 0)];
+                for p in $precs {
+                    for (re, im) in inputs {
+                        let mk = |v: i64| F2::from(v).with_precision(p).value();
+                        let mk_hi = |v: i64| F2::from(v).with_precision(p + 60).value();
+                        let (hre, him) = C2::from_parts(mk_hi(re), mk_hi(im)).exp().into_parts();
+                        let expect_re = hre.with_precision(p).value();
+                        let expect_im = him.with_precision(p).value();
+                        let got = C2::from_parts(mk(re), mk(im)).exp();
+                        assert_eq!(got.re(), expect_re.repr(), "[$name] re p={p} z=({re},{im})");
+                        assert_eq!(got.im(), expect_im.repr(), "[$name] im p={p} z=({re},{im})");
+                    }
+                }
+            }};
         }
+        sweep!(2, "base 2", [20, 50, 100, 500]);
+        sweep!(10, "base 10", [7, 17, 34, 160]);
     }
 
     // An exactly-representable zⁿ certifies under the outward modes through the chain's zero
@@ -512,17 +520,28 @@ mod tests {
         assert_eq!(got.im(), want_im.repr(), "im mismatch vs oracle");
     }
 
-    // The ball-tracked radius must certify at the target precision across the width sweep — on
-    // both float bases: the lattice scaling above is base-generic, and a binary-only sweep is
-    // exactly what hid the `2^k`-vs-`B^k` mistake.
+    // The ball-tracked radius must certify at the target precision across the width sweep, on
+    // both float bases — the binary-only version of this sweep is where the `2^k`-vs-`B^k`
+    // lattice mistake hid. The case list includes a diagonal input so the shortcut above is
+    // actually entered. (The oracle is the *same operation* at `p + 60`, re-rounded, so it
+    // bounds precision handling — a systematic value error is invisible to it and needs an
+    // exact expectation, as `powi_diagonal_lattice_scales_by_a_power_of_two` carries.)
     #[test]
     fn powi_matches_oracle_across_precisions() {
+        // Rungs: bit precisions at base 2, digit precisions at base 10, picked to span the
+        // same significand widths (7 ≈ 20 bits, …) so both bases cover the same paths.
         macro_rules! sweep {
-            ($base:literal, $name:literal) => {{
+            ($base:literal, $name:literal, $precs:expr) => {{
                 type C2 = CBig<mode::HalfEven, $base>;
                 type F2 = FBig<mode::HalfEven, $base>;
-                let cases = [(3i64, 4i64, 5i32), (1, -1, 13), (2, 1, -7), (3, 2, 11)];
-                for p in [20usize, 50, 100, 500] {
+                let cases = [
+                    (3i64, 4i64, 5i32),
+                    (1, -1, 13),
+                    (2, 1, -7),
+                    (3, 2, 11),
+                    (2, 2, 5),
+                ];
+                for p in $precs {
                     for (re, im, n) in cases {
                         let mk = |v: i64| F2::from(v).with_precision(p).value();
                         let mk_hi = |v: i64| F2::from(v).with_precision(p + 60).value();
@@ -538,8 +557,8 @@ mod tests {
                 }
             }};
         }
-        sweep!(2, "base 2");
-        sweep!(10, "base 10");
+        sweep!(2, "base 2", [20, 50, 100, 500]);
+        sweep!(10, "base 10", [7, 17, 34, 160]);
     }
 
     // exp/powf on an unlimited-precision CBig must panic, not silently compute at the fixed guard

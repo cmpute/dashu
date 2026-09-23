@@ -1132,83 +1132,123 @@ mod tests {
     // sweep: each result equals the same op computed at `p + 60` and re-rounded to `p`.
     #[test]
     fn pi_family_matches_oracle_across_precisions() {
-        type C2 = CBig<mode::HalfEven, 2>;
-        type F2 = FBig<mode::HalfEven, 2>;
-        let inputs = [
-            (1i64, 1i64),
-            (3, 4),
-            (-2, 1),
-            (1, 0),
-            (0, 3),
-            (-5, 2),
-            (3, 0), // half-integer real part after doubling: sin_pi(3/2·π)... exact cases
-            (7, 0),
-        ];
-        for p in [20usize, 50, 100, 500] {
-            for (re, im) in inputs {
-                let mk = |v: i64| F2::from(v).with_precision(p).value();
-                let mk_hi = |v: i64| F2::from(v).with_precision(p + 60).value();
-                let zh = C2::from_parts(mk_hi(re), mk_hi(im));
-                for (name, got, expect) in [
-                    ("sin_pi", C2::from_parts(mk(re), mk(im)).sin_pi(), zh.sin_pi()),
-                    ("tan_pi", C2::from_parts(mk(re), mk(im)).tan_pi(), zh.tan_pi()),
-                ] {
-                    let (ge, gi) = got.into_parts();
-                    let (ee, ei) = expect.into_parts();
-                    let expect_re = ee.with_precision(p).value();
-                    let expect_im = ei.with_precision(p).value();
-                    assert_eq!(ge.repr(), expect_re.repr(), "{name} re p={p} z=({re},{im})");
-                    assert_eq!(gi.repr(), expect_im.repr(), "{name} im p={p} z=({re},{im})");
+        // Rungs: bit precisions at base 2, digit precisions at base 10, picked to span the
+        // same significand widths (7 ≈ 20 bits, …) so both bases cover the same paths.
+        macro_rules! sweep {
+            ($base:literal, $base_name:literal, $precs:expr) => {{
+                type C2 = CBig<mode::HalfEven, $base>;
+                type F2 = FBig<mode::HalfEven, $base>;
+                let inputs = [
+                    (1i64, 1i64),
+                    (3, 4),
+                    (-2, 1),
+                    (1, 0),
+                    (0, 3),
+                    (-5, 2),
+                    (3, 0), // half-integer real part after doubling: sin_pi(3/2·π)... exact cases
+                    (7, 0),
+                ];
+                for p in $precs {
+                    for (re, im) in inputs {
+                        let mk = |v: i64| F2::from(v).with_precision(p).value();
+                        let mk_hi = |v: i64| F2::from(v).with_precision(p + 60).value();
+                        let zh = C2::from_parts(mk_hi(re), mk_hi(im));
+                        for (name, got, expect) in [
+                            ("sin_pi", C2::from_parts(mk(re), mk(im)).sin_pi(), zh.sin_pi()),
+                            ("tan_pi", C2::from_parts(mk(re), mk(im)).tan_pi(), zh.tan_pi()),
+                        ] {
+                            let (ge, gi) = got.into_parts();
+                            let (ee, ei) = expect.into_parts();
+                            let expect_re = ee.with_precision(p).value();
+                            let expect_im = ei.with_precision(p).value();
+                            assert_eq!(
+                                ge.repr(),
+                                expect_re.repr(),
+                                "[$base_name] {name} re p={p} z=({re},{im})"
+                            );
+                            assert_eq!(
+                                gi.repr(),
+                                expect_im.repr(),
+                                "[$base_name] {name} im p={p} z=({re},{im})"
+                            );
+                        }
+                    }
                 }
-            }
+            }};
         }
+        sweep!(2, "base 2", [20, 50, 100, 500]);
+        sweep!(10, "base 10", [7, 17, 34, 160]);
     }
 
     // The ball-tracked radius must certify at the target precision across the width sweep,
     // including the near-singularity inputs where the old flat `ulp·20` radius never inflated.
     #[test]
     fn inverse_trig_matches_oracle_across_precisions() {
-        type C2 = CBig<mode::HalfEven, 2>;
-        type F2 = FBig<mode::HalfEven, 2>;
-        let inputs = [
-            (1i64, 1i64),
-            (3, 4),
-            (-2, 1),
-            (0, 1), // ±i: branch point (atan errors there — skipped below)
-            (5, -12),
-        ];
-        for p in [20usize, 50, 100, 500] {
-            for (re, im) in inputs {
-                let mk = |v: i64| F2::from(v).with_precision(p).value();
-                let mk_hi = |v: i64| F2::from(v).with_precision(p + 60).value();
-                let zh = C2::from_parts(mk_hi(re), mk_hi(im));
-                let z = C2::from_parts(mk(re), mk(im));
-                for (name, got, expect) in
-                    [("asin", zh.asin(), z.asin()), ("acos", zh.acos(), z.acos())]
-                {
-                    // both sides re-rounded to p (got comes out at p + 60)
-                    let (gre, gim) = got.into_parts();
-                    let (ere, eim) = expect.into_parts();
-                    let got_re = gre.with_precision(p).value();
-                    let got_im = gim.with_precision(p).value();
-                    let expect_re = ere.with_precision(p).value();
-                    let expect_im = eim.with_precision(p).value();
-                    assert_eq!(got_re.repr(), expect_re.repr(), "{name} re p={p} z=({re},{im})");
-                    assert_eq!(got_im.repr(), expect_im.repr(), "{name} im p={p} z=({re},{im})");
+        // Rungs: bit precisions at base 2, digit precisions at base 10, picked to span the
+        // same significand widths (7 ≈ 20 bits, …) so both bases cover the same paths.
+        macro_rules! sweep {
+            ($base:literal, $base_name:literal, $precs:expr) => {{
+                type C2 = CBig<mode::HalfEven, $base>;
+                type F2 = FBig<mode::HalfEven, $base>;
+                let inputs = [
+                    (1i64, 1i64),
+                    (3, 4),
+                    (-2, 1),
+                    (0, 1), // ±i: branch point (atan errors there — skipped below)
+                    (5, -12),
+                ];
+                for p in $precs {
+                    for (re, im) in inputs {
+                        let mk = |v: i64| F2::from(v).with_precision(p).value();
+                        let mk_hi = |v: i64| F2::from(v).with_precision(p + 60).value();
+                        let zh = C2::from_parts(mk_hi(re), mk_hi(im));
+                        let z = C2::from_parts(mk(re), mk(im));
+                        for (name, got, expect) in
+                            [("asin", zh.asin(), z.asin()), ("acos", zh.acos(), z.acos())]
+                        {
+                            // both sides re-rounded to p (got comes out at p + 60)
+                            let (gre, gim) = got.into_parts();
+                            let (ere, eim) = expect.into_parts();
+                            let got_re = gre.with_precision(p).value();
+                            let got_im = gim.with_precision(p).value();
+                            let expect_re = ere.with_precision(p).value();
+                            let expect_im = eim.with_precision(p).value();
+                            assert_eq!(
+                                got_re.repr(),
+                                expect_re.repr(),
+                                "[$base_name] {name} re p={p} z=({re},{im})"
+                            );
+                            assert_eq!(
+                                got_im.repr(),
+                                expect_im.repr(),
+                                "[$base_name] {name} im p={p} z=({re},{im})"
+                            );
+                        }
+                        if im != 1 {
+                            // the general path; `atan(±i)` is indeterminate on both sides
+                            let (gre, gim) = zh.atan().into_parts();
+                            let (ere, eim) = z.atan().into_parts();
+                            let got_re = gre.with_precision(p).value();
+                            let got_im = gim.with_precision(p).value();
+                            let expect_re = ere.with_precision(p).value();
+                            let expect_im = eim.with_precision(p).value();
+                            assert_eq!(
+                                got_re.repr(),
+                                expect_re.repr(),
+                                "[$base_name] atan re p={p} z=({re},{im})"
+                            );
+                            assert_eq!(
+                                got_im.repr(),
+                                expect_im.repr(),
+                                "[$base_name] atan im p={p} z=({re},{im})"
+                            );
+                        }
+                    }
                 }
-                if im != 1 {
-                    // the general path; `atan(±i)` is indeterminate on both sides
-                    let (gre, gim) = zh.atan().into_parts();
-                    let (ere, eim) = z.atan().into_parts();
-                    let got_re = gre.with_precision(p).value();
-                    let got_im = gim.with_precision(p).value();
-                    let expect_re = ere.with_precision(p).value();
-                    let expect_im = eim.with_precision(p).value();
-                    assert_eq!(got_re.repr(), expect_re.repr(), "atan re p={p} z=({re},{im})");
-                    assert_eq!(got_im.repr(), expect_im.repr(), "atan im p={p} z=({re},{im})");
-                }
-            }
+            }};
         }
+        sweep!(2, "base 2", [20, 50, 100, 500]);
+        sweep!(10, "base 10", [7, 17, 34, 160]);
     }
 
     // The axis dispatch certifies under the outward modes: `atan(1 ± i·0) = π/4 ± i·0` — the
@@ -1288,27 +1328,39 @@ mod tests {
     // angle and dead-locked under the strict zero-candidate certification.
     #[test]
     fn asin_pure_imaginary_real_part_is_exact() {
-        type C2 = CBig<mode::HalfEven, 2>;
-        type F2 = FBig<mode::HalfEven, 2>;
-        for p in [20usize, 50, 500] {
-            let ctx = Context::<mode::HalfEven>::new(p);
-            for sign in [1i64, -1] {
-                let z = C2::from_parts(
-                    F2::from_parts(IBig::ZERO, 0),
-                    F2::from_parts(IBig::from(sign), 0),
-                );
-                let r = ctx.asin(&z, None).unwrap().value();
-                assert!(
-                    r.re().significand().is_zero(),
-                    "asin({sign}i) @p={p}: real part must be exactly zero"
-                );
-                let want = if sign == 1 {
-                    Sign::Positive
-                } else {
-                    Sign::Negative
-                };
-                assert_eq!(r.im().sign(), want, "asin({sign}i) @p={p}: imaginary sign");
-            }
+        // Rungs: bit precisions at base 2, digit precisions at base 10, picked to span the
+        // same significand widths (7 ≈ 20 bits, …) so both bases cover the same paths.
+        macro_rules! sweep {
+            ($base:literal, $name:literal, $precs:expr) => {{
+                type C2 = CBig<mode::HalfEven, $base>;
+                type F2 = FBig<mode::HalfEven, $base>;
+                for p in $precs {
+                    let ctx = Context::<mode::HalfEven>::new(p);
+                    for sign in [1i64, -1] {
+                        let z = C2::from_parts(
+                            F2::from_parts(IBig::ZERO, 0),
+                            F2::from_parts(IBig::from(sign), 0),
+                        );
+                        let r = ctx.asin(&z, None).unwrap().value();
+                        assert!(
+                            r.re().significand().is_zero(),
+                            "[$name] asin({sign}i) @p={p}: real part must be exactly zero"
+                        );
+                        let want = if sign == 1 {
+                            Sign::Positive
+                        } else {
+                            Sign::Negative
+                        };
+                        assert_eq!(
+                            r.im().sign(),
+                            want,
+                            "[$name] asin({sign}i) @p={p}: imaginary sign"
+                        );
+                    }
+                }
+            }};
         }
+        sweep!(2, "base 2", [20, 50, 500]);
+        sweep!(10, "base 10", [7, 17, 160]);
     }
 }
