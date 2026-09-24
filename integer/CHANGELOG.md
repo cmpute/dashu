@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Change
+- Equality on `UBig`/`IBig` compares inline values as a single double-word and
+  short-circuits on sign or inline/heap scale mismatch, instead of
+  materializing slices. `Repr::ones` now routes through `from_buffer`, so a
+  128-bit ones value takes the canonical inline form (it previously produced a
+  non-canonical two-word heap representation that the scale check would treat
+  as a larger magnitude).
+
 ## 0.6.0
 
 ### Add
