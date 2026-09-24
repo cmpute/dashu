@@ -3,10 +3,12 @@
 ## Unreleased
 
 ### Change
-- `Repr::clone` copies inline values directly (union + signed capacity) and
-  splits the heap path into a dedicated `clone_heap` that allocates directly;
-  `clone_from` shares the inline fast path. Roughly 4–5× faster clone+drop for
-  small (inline) integers in microbenchmarks; heap clones unchanged.
+- `Repr::clone` copies inline (single/double word) values directly (union +
+  signed capacity) instead of round-tripping through `sign_capacity` +
+  `with_sign`; the heap path is split into a `#[inline(never)]` `clone_heap`
+  that keeps allocating through `Buffer` and applies the capacity sign in
+  place. `clone_from` is unchanged. Clone of small integers is roughly
+  4–5× faster in microbenchmarks; heap clones unchanged.
 
 ## 0.6.0
 

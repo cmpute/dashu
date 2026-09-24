@@ -442,52 +442,37 @@ impl Repr {
 
     /// Slow path for `Clone::clone`: heap-resident values only (|capacity| > 2).
     ///
-    /// Allocates directly instead of going through `Buffer::allocate` +
-    /// `push_slice` + `mem::transmute`, skipping the redundant capacity/length
-    /// bound checks and the sign-flip dance. Kept `#[inline(never)]` so the
-    /// inline fast path in `clone` stays small.
+    /// Same allocation path as the original heap clone (`Buffer::allocate` +
+    /// `push_slice` + transmute), split out so the inline fast path in `clone`
+    /// stays small. The only difference from the original is that the sign of
+    /// the capacity is applied in place instead of going through `with_sign`,
+    /// which would re-check `is_zero` needlessly (a heap value is never zero).
     #[inline(never)]
     fn clone_heap(&self) -> Self {
         debug_assert!(self.capacity.get().unsigned_abs() > 2);
-        // SAFETY: abs(capacity) > 2 ⇒ the `heap` variant of the union
-        // is the live one, and `len >= 3`.
-        unsafe {
-            let (src_ptr, len) = self.data.heap;
-            debug_assert!(len >= 3);
+        // SAFETY: abs(capacity) > 2 ⇒ the `heap` variant of the union is the
+        //         live one. See the documentation for the `capacity` field for
+        //         invariants.
+        let (ptr, len) = unsafe { self.data.heap };
+        debug_assert!(len >= 3);
 
-            // Mirrors `Buffer::default_capacity(len)`. `len <=
-            // Buffer::MAX_CAPACITY` is invariant for any heap Repr, and
-            // `default_capacity` is monotone, so `new_cap` is bounded
-            // and the bound check inside `Buffer::allocate_raw` would
-            // never fire.
-            let new_cap = len + len / 8 + 2;
-            debug_assert!((3..=Buffer::MAX_CAPACITY).contains(&new_cap));
+        let mut buffer = Buffer::allocate(len);
+        // SAFETY: `ptr` points to `len` initialized words and cannot alias
+        //         `buffer`, which owns a freshly allocated buffer.
+        buffer.push_slice(unsafe { slice::from_raw_parts(ptr, len) });
 
-            let layout = core::alloc::Layout::from_size_align_unchecked(
-                new_cap * mem::size_of::<Word>(),
-                mem::align_of::<Word>(),
-            );
-            let new_ptr = alloc::alloc::alloc(layout) as *mut Word;
-            if new_ptr.is_null() {
-                crate::error::panic_out_of_memory();
-            }
+        // SAFETY: abs(self.capacity) >= 3 => self.data.len >= 3
+        //         so the capacity and len of buffer will be both >= 3
+        let mut new = unsafe { mem::transmute::<Buffer, Repr>(buffer) };
 
-            ptr::copy_nonoverlapping(src_ptr, new_ptr, len);
-
-            // Set the result's signed capacity in one shot so we never
-            // build a positive Repr only to negate it back.
-            let signed_cap = if self.capacity.get() < 0 {
-                -(new_cap as isize)
-            } else {
-                new_cap as isize
-            };
-            Repr {
-                data: ReprData {
-                    heap: (new_ptr, len),
-                },
-                capacity: NonZeroIsize::new_unchecked(signed_cap),
-            }
+        // `Buffer::allocate` always creates a positive capacity, flip it if
+        // the source value is negative. Heap values are never zero, so this
+        // doesn't need the `is_zero` check made by `with_sign`.
+        if self.capacity.get() < 0 {
+            // SAFETY: the capacity is not allowed to be zero
+            new.capacity = unsafe { NonZeroIsize::new_unchecked(-new.capacity.get()) }
         }
+        new
     }
 
     /// Returns a number representing sign of self.
@@ -526,16 +511,14 @@ impl Clone for Repr {
         self.clone_heap()
     }
 
-    #[inline]
     fn clone_from(&mut self, src: &Self) {
-        let src_cap_raw = src.capacity.get();
-        let cap = self.capacity.get().unsigned_abs();
+        let (src_cap, src_sign) = src.sign_capacity();
+        let (cap, _) = self.sign_capacity();
 
         // SAFETY: see the comments inside the block
         unsafe {
-            // Fast path: src is inline. Copy union + signed capacity, with a
-            // rare dealloc when self was previously heap-resident.
-            if src_cap_raw.unsigned_abs() <= 2 {
+            // shortcut for inlined data
+            if src_cap <= 2 {
                 if cap > 2 {
                     // release the old buffer if necessary
                     // SAFETY: self.data.heap.0 must be valid pointer if cap > 2
@@ -545,11 +528,6 @@ impl Clone for Repr {
                 self.capacity = src.capacity;
                 return;
             }
-            let src_sign = if src_cap_raw > 0 {
-                Sign::Positive
-            } else {
-                Sign::Negative
-            };
 
             // SAFETY: we checked that abs(src.capacity) > 2
             let (src_ptr, src_len) = src.data.heap;
