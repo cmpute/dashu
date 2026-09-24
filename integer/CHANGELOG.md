@@ -3,12 +3,12 @@
 ## Unreleased
 
 ### Change
-- Equality on `UBig`/`IBig` compares inline values as a single double-word and
-  short-circuits on sign or inline/heap scale mismatch, instead of
-  materializing slices. `Repr::ones` now routes through `from_buffer`, so a
-  128-bit ones value takes the canonical inline form (it previously produced a
-  non-canonical two-word heap representation that the scale check would treat
-  as a larger magnitude).
+- Equality on `UBig`/`IBig` dispatches on the capacity scale: inline values are
+  compared as a single word or a single double-word, heap values as word slices,
+  with sign and scale mismatches short-circuiting to unequal — instead of
+  materializing slices through `as_sign_slice`. `Repr::ones` now returns the
+  canonical inline form directly for 128-bit values (it previously produced a
+  non-canonical two-word heap representation).
 
 ## 0.6.0
 

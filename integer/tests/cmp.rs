@@ -62,8 +62,9 @@ fn test_abs_ord() {
 
 #[test]
 fn test_eq_across_representations() {
-    // Regression for Repr::eq's inline-DoubleWord path and its sign/scale
-    // short-circuits, plus the canonical-encoding requirement it relies on.
+    // Regression for Repr::eq's capacity-scaled arms (single word / double word
+    // / slices) and its sign/scale short-circuits, plus the canonical-encoding
+    // requirement they rely on.
     // inline equal / unequal (capacity 1 and capacity 2)
     assert_eq!(ubig!(5), ubig!(5));
     assert_ne!(ubig!(5), ubig!(7));
@@ -76,8 +77,9 @@ fn test_eq_across_representations() {
     assert_eq!(ubig!(1) << 200, ubig!(1) << 200);
     assert_ne!((ubig!(1) << 200) + ubig!(1), (ubig!(1) << 200) + ubig!(2));
     assert_ne!(ubig!(1) << 200, ubig!(1) << 201);
-    // cross-representation canonical equality: `ones` must compare equal to the
-    // inline form of the same value (the from_buffer canonicalisation).
+    // cross-representation canonical equality: `ones` at the 128-bit boundary
+    // takes the inline double-word form and must compare equal to the equivalent
+    // inline value
     assert_eq!(UBig::ones(128), UBig::from(u128::MAX));
     assert_eq!(UBig::ones(256), (ubig!(1) << 256) - ubig!(1));
     // IBig: zero is canonically positive, so sign disagreement is never equal

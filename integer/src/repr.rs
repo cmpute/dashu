@@ -412,9 +412,12 @@ impl Repr {
 
     /// Create a `Repr` with n one bits
     pub fn ones(n: usize) -> Self {
-        if n < WORD_BITS_USIZE {
+        // The boundaries are inclusive: `ones_word`/`ones_dword` yield all ones
+        // when n equals the word width. Keeping the 128-bit case inline also
+        // preserves the invariant that a heap value has at least 3 words.
+        if n <= WORD_BITS_USIZE {
             Self::from_word(ones_word(n as _))
-        } else if n < DWORD_BITS_USIZE {
+        } else if n <= DWORD_BITS_USIZE {
             Self::from_dword(ones_dword(n as _))
         } else {
             let lo_words = n / WORD_BITS_USIZE;
@@ -425,10 +428,9 @@ impl Repr {
                 buffer.push(ones_word(hi_bits as _));
             }
 
-            // Route through `from_buffer` to canonicalise: a 128-bit ones value
-            // has length 2 here and must become the inline form, otherwise the
-            // (now scale-sensitive) PartialEq wouldn't see it as equal.
-            Self::from_buffer(buffer)
+            // SAFETY: the bit length has been checked and capacity >= length,
+            //         so capacity is nonzero and larger than 2
+            unsafe { mem::transmute::<Buffer, Repr>(buffer) }
         }
     }
 
@@ -552,42 +554,47 @@ impl Drop for Repr {
 impl PartialEq for Repr {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        // The encoding is canonical, so a sign or scale (inline vs heap)
-        // mismatch is immediately unequal; otherwise compare the words directly
-        // instead of materialising slices via `as_sign_slice`.
-        let cap_a = self.capacity.get();
-        let cap_b = other.capacity.get();
-        // Sign mismatch: zero is canonically positive (no negative zero), so
-        // a sign disagreement always means unequal values.
-        if (cap_a > 0) != (cap_b > 0) {
+        // The encoding is canonical: the capacity magnitude is the word length
+        // for inline values (1 or 2) and the allocation capacity for heap values
+        // (>= 3, where the length is `data.heap.1`), and zero is canonically
+        // positive. Values of different signs or different inline scales are
+        // therefore never equal, and the capacity pair selects the union variant
+        // to compare.
+        let (cap_a, sign_a) = self.sign_capacity();
+        let (cap_b, sign_b) = other.sign_capacity();
+        if sign_a != sign_b {
             return false;
         }
-        let abs_a = cap_a.unsigned_abs();
-        let abs_b = cap_b.unsigned_abs();
-        let inline_a = abs_a <= 2;
-        let inline_b = abs_b <= 2;
-        // Mixed scales can never be equal: heap representation requires
-        // length ≥ 3, which is a strictly larger magnitude than anything
-        // inline.
-        if inline_a != inline_b {
-            return false;
-        }
-        // SAFETY: capacity tells us which union variant is live.
-        unsafe {
-            if inline_a {
-                // Compare as one DoubleWord (tighter codegen than [Word; 2]).
-                let dw_a = double_word(self.data.inline[0], self.data.inline[1]);
-                let dw_b = double_word(other.data.inline[0], other.data.inline[1]);
-                dw_a == dw_b
-            } else {
-                let len_a = self.data.heap.1;
-                let len_b = other.data.heap.1;
-                if len_a != len_b {
+        match (cap_a, cap_b) {
+            // single words
+            (1, 1) => {
+                // SAFETY: capacity == 1 means the inline variant is live
+                unsafe { self.data.inline[0] == other.data.inline[0] }
+            }
+            // double words
+            (2, 2) => {
+                // SAFETY: capacity == 2 means the inline variant is live
+                unsafe {
+                    // compare as one DoubleWord (tighter codegen than [Word; 2])
+                    double_word(self.data.inline[0], self.data.inline[1])
+                        == double_word(other.data.inline[0], other.data.inline[1])
+                }
+            }
+            _ => {
+                // mixed inline/heap scales can never be equal: a heap value has
+                // at least 3 words, which is a strictly larger magnitude than
+                // anything inline
+                if cap_a <= 2 || cap_b <= 2 {
                     return false;
                 }
-                let slice_a = slice::from_raw_parts(self.data.heap.0, len_a);
-                let slice_b = slice::from_raw_parts(other.data.heap.0, len_b);
-                slice_a == slice_b
+                // SAFETY: capacity >= 3 means the heap variant is live and the
+                //         word length is stored next to the pointer
+                unsafe {
+                    let len_a = self.data.heap.1;
+                    len_a == other.data.heap.1
+                        && slice::from_raw_parts(self.data.heap.0, len_a)
+                            == slice::from_raw_parts(other.data.heap.0, len_a)
+                }
             }
         }
     }
