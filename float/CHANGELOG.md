@@ -91,7 +91,7 @@
   retry: the exported radius is a `Repr` infinity, and the test's `a ± e` arithmetic asserts its
   operands finite. It now short-circuits to "not contained", which is what the degenerate-denominator
   (`Ball::div`), pole and rounded-root paths documented as their retry signal.
-- **32-bit `Word` targets returned a wrong `log₂ BASE` from the fixed-point walk** (the returned a wrong `log₂ BASE` from the fixed-point walk** (the
+- **32-bit `Word` targets returned a wrong `log₂ BASE` from the fixed-point walk** (the
   compile-time bracket behind the generic-base radius rules): the normalization shifted with
   `Word::leading_zeros`, so on `Word = u32` (e.g. the `i686` CI target) `log2(10)` came out
   ≈ 35 instead of ≈ 3.32 — radii then inflated by orders of magnitude, saturated to infinity
