@@ -8,6 +8,7 @@ use crate::{
     Sign,
 };
 use core::{
+    cmp::Ordering,
     fmt::{self, Write},
     hash::{Hash, Hasher},
     hint::unreachable_unchecked,
@@ -412,9 +413,12 @@ impl Repr {
 
     /// Create a `Repr` with n one bits
     pub fn ones(n: usize) -> Self {
-        if n < WORD_BITS_USIZE {
+        // The boundaries are inclusive: `ones_word`/`ones_dword` yield all ones
+        // when n equals the word width. Keeping the 128-bit case inline also
+        // preserves the invariant that a heap value has at least 3 words.
+        if n <= WORD_BITS_USIZE {
             Self::from_word(ones_word(n as _))
-        } else if n < DWORD_BITS_USIZE {
+        } else if n <= DWORD_BITS_USIZE {
             Self::from_dword(ones_dword(n as _))
         } else {
             let lo_words = n / WORD_BITS_USIZE;
@@ -551,10 +555,108 @@ impl Drop for Repr {
 impl PartialEq for Repr {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.as_sign_slice() == other.as_sign_slice()
+        // The encoding is canonical: the capacity magnitude is the word length
+        // for inline values (1 or 2) and the allocation capacity for heap values
+        // (>= 3, where the length is `data.heap.1`), and zero is canonically
+        // positive. Values of different signs or different inline scales are
+        // therefore never equal, and the capacity pair selects the union variant
+        // to compare.
+        let (cap_a, sign_a) = self.sign_capacity();
+        let (cap_b, sign_b) = other.sign_capacity();
+        if sign_a != sign_b {
+            return false;
+        }
+        match (cap_a, cap_b) {
+            // single words
+            (1, 1) => {
+                // SAFETY: capacity == 1 means the inline variant is live
+                unsafe { self.data.inline[0] == other.data.inline[0] }
+            }
+            // double words
+            (2, 2) => {
+                // SAFETY: capacity == 2 means the inline variant is live
+                unsafe {
+                    // compare as one DoubleWord (tighter codegen than [Word; 2])
+                    double_word(self.data.inline[0], self.data.inline[1])
+                        == double_word(other.data.inline[0], other.data.inline[1])
+                }
+            }
+            _ => {
+                // mixed inline/heap scales can never be equal: a heap value has
+                // at least 3 words, which is a strictly larger magnitude than
+                // anything inline
+                if cap_a <= 2 || cap_b <= 2 {
+                    return false;
+                }
+                // SAFETY: capacity >= 3 means the heap variant is live and the
+                //         word length is stored next to the pointer
+                unsafe {
+                    let len_a = self.data.heap.1;
+                    len_a == other.data.heap.1
+                        && slice::from_raw_parts(self.data.heap.0, len_a)
+                            == slice::from_raw_parts(other.data.heap.0, len_a)
+                }
+            }
+        }
     }
 }
 impl Eq for Repr {}
+
+impl Repr {
+    /// Compare magnitudes (absolute values) of two `Repr`s, ignoring sign.
+    ///
+    /// This bypasses the `as_sign_typed` → `TypedReprRef::cmp` chain for the
+    /// inline case: when both sides are inline we read both words from each
+    /// union and compare a single `DoubleWord`. Same-scale heap comparison
+    /// falls through to the existing length-then-words logic.
+    #[inline]
+    pub fn magnitude_cmp(&self, other: &Repr) -> Ordering {
+        let abs_a = self.capacity.get().unsigned_abs();
+        let abs_b = other.capacity.get().unsigned_abs();
+        // SAFETY: capacity discriminates inline vs heap; for either branch we
+        // touch only the live union field.
+        unsafe {
+            if abs_a <= 2 && abs_b <= 2 {
+                let dw_a = double_word(self.data.inline[0], self.data.inline[1]);
+                let dw_b = double_word(other.data.inline[0], other.data.inline[1]);
+                dw_a.cmp(&dw_b)
+            } else if abs_a <= 2 {
+                Ordering::Less
+            } else if abs_b <= 2 {
+                Ordering::Greater
+            } else {
+                let slice_a = slice::from_raw_parts(self.data.heap.0, self.data.heap.1);
+                let slice_b = slice::from_raw_parts(other.data.heap.0, other.data.heap.1);
+                let len_cmp = slice_a.len().cmp(&slice_b.len());
+                if len_cmp != Ordering::Equal {
+                    return len_cmp;
+                }
+                slice_a.iter().rev().cmp(slice_b.iter().rev())
+            }
+        }
+    }
+
+    /// Compare two signed (`IBig`-shaped) `Repr`s.
+    ///
+    /// Uses the canonical-positive-zero invariant: zero always has positive
+    /// capacity, so a sign disagreement is a strict ordering and never a tie.
+    #[inline]
+    pub fn signed_cmp(&self, other: &Repr) -> Ordering {
+        let pos_a = self.capacity.get() > 0;
+        let pos_b = other.capacity.get() > 0;
+        match (pos_a, pos_b) {
+            (true, false) => return Ordering::Greater,
+            (false, true) => return Ordering::Less,
+            _ => {}
+        }
+        let mag = self.magnitude_cmp(other);
+        if pos_a {
+            mag
+        } else {
+            mag.reverse()
+        }
+    }
+}
 
 impl fmt::Debug for Repr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
