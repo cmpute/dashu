@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fix
+- `num_integer::Integer::mod_floor` for `UBig` incorrectly performed a bitwise
+  AND instead of computing the remainder.
+
 ## 0.6.1
 
 ### Change

@@ -15,7 +15,7 @@ impl num_integer::Integer for UBig {
     }
     #[inline]
     fn mod_floor(&self, other: &Self) -> Self {
-        self & other
+        self % other
     }
     #[inline]
     fn divides(&self, other: &Self) -> bool {
@@ -145,5 +145,27 @@ impl num_integer::Roots for IBig {
     #[inline]
     fn nth_root(&self, n: u32) -> Self {
         self.nth_root(n as usize)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use num_integer::Integer;
+
+    #[test]
+    fn ubig_floor_division() {
+        assert_eq!(UBig::from(5u8).div_floor(&UBig::from(3u8)), UBig::from(1u8));
+        // mod_floor must be the remainder (2), not a bitwise operation (5 & 3 = 1)
+        assert_eq!(UBig::from(5u8).mod_floor(&UBig::from(3u8)), UBig::from(2u8));
+        assert_eq!(UBig::from(9u8).div_mod_floor(&UBig::from(3u8)), (UBig::from(3u8), UBig::ZERO));
+    }
+
+    #[test]
+    fn ibig_floor_division() {
+        assert_eq!(IBig::from(-5).div_floor(&IBig::from(3)), IBig::from(-2));
+        assert_eq!(IBig::from(-5).mod_floor(&IBig::from(3)), IBig::from(1));
+        assert_eq!(IBig::from(5).mod_floor(&IBig::from(-3)), IBig::from(-1));
+        assert_eq!(IBig::from(-5).mod_floor(&IBig::from(-3)), IBig::from(-2));
     }
 }
