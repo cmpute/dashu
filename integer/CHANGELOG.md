@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Change
+- `Repr::clone` copies inline (single/double word) values directly (union +
+  signed capacity) instead of round-tripping through `sign_capacity` +
+  `with_sign`; the heap path is split into a `#[inline(never)]` `clone_heap`
+  that keeps allocating through `Buffer` and applies the capacity sign in
+  place. `clone_from` is unchanged. Clone of small integers is roughly
+  4–5× faster in microbenchmarks; heap clones unchanged.
 - Equality on `UBig`/`IBig` dispatches on the capacity scale: inline values are
   compared as a single word or a single double-word, heap values as word slices,
   with sign and scale mismatches short-circuiting to unequal — instead of
