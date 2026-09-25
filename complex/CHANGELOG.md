@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.1
+
 ### Change
 - **`CBig`'s `Debug` renders its parts as raw `Repr`s** (`significand * base ^ exponent`,
   one trailing context `prec`) instead of `FBig`'s `Display`: a base-2 part's `Display` is

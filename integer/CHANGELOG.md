@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.1
+
 ### Change
 - `Repr::clone` copies inline (single/double word) values directly (union +
   signed capacity) instead of round-tripping through `sign_capacity` +

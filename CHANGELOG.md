@@ -8,19 +8,55 @@ full detail.
 
 ## Unreleased
 
+## 0.6.1 — coordinated release
+
 ### Add
 - **dashu-float**: the ×u and ×π trig families — `sin_unit`/`cos_unit`/`tan_unit`/
   `sin_cos_unit` and inverses of `2π·x/u` (`u = 360` gives degrees), the `u = 2` wrappers
   `sin_pi`/`cos_pi`/`tan_pi`/`sin_cos_pi`, and `sinh_pi`/`cosh_pi`/`sinh_cosh_pi`; on
   `Context`, `FBig` and `CachedFBig`.
-- **dashu-cmplx**: the complex ×π circular family — `sin_pi`/`cos_pi`/`tan_pi`/`sin_cos_pi`.
+- **dashu-cmplx**: the complex ×π circular family — `sin_pi`/`cos_pi`/`tan_pi`/`sin_cos_pi`,
+  on `Context`, `CBig` and `CachedCBig`.
+- **dashu-float** (`tuning`): `ziv_set_trace_hook` — the per-attempt Ziv radius trace is a
+  settable `#[doc(hidden)]` hook instead of an unconditional `eprintln!` (the print cost
+  ~3–4 µs per attempt and silently poisoned timing runs).
 
 ### Change
-- **dashu-macros**: **(breaking)** `cbig!` / `static_cbig!` coefficients are now decimal by
-  default (was binary); use the `0x` / `0b` / `0o` prefixes for other bases.
+- **dashu-int**: fast paths for `Clone` and for equality/ordering of small operands —
+  inline values move or compare as a word/double-word, heap values by length then words
+  (cloning a small integer is ~4–5× faster; comparisons ~20–30%); 128-bit `ones()` now
+  builds the canonical inline representation.
 - **dashu-float**: **(rendering)** `-0` now prints as `-0` (all format paths) and parses back
   as negative zero, matching `f64`; `(-0) + (-0)` is `-0` and a mixed-sign zero sum is `+0`
   (or `-0` under roundTowardNegative), per IEEE 754 §6.3 — the same for summation (`Sum`).
+- **dashu-float**: (internal) the Ziv error radius is now a value-space magnitude with
+  precision-aware propagation through every transcendental; the operand error of the
+  *input* is folded into the certified radius mechanically instead of per-function hand
+  estimates; the ×u reduction's modular exponentiation delegates to `dashu-int`; digit
+  bookkeeping in division no longer builds a base power.
+- **dashu-cmplx**: **(breaking)** `powi(z, ±1)` now respects the context precision — it
+  rounds like every other precision-taking op, and on an unlimited-precision input it
+  panics like the rest of the family (previously returned the input and `Ok`).
+- **dashu-cmplx**: transcendental error radii are now propagated mechanically through a
+  complex ball over `dashu-float`'s `#[doc(hidden)]` radius substrate (crates released in
+  lockstep), so exactly-representable results certify under the directed modes;
+  `CBig`'s `Debug` renders its parts as raw `Repr`s (a base-2 part printed as decimal
+  garbage before); a `-0` component renders with its sign and parses back.
+
+### Fix
+- **dashu-float**: directed rounding and exact flags of `sqrt`/`div`/`nth_root`/`with_base`
+  (#99, #100); `asin` of an argument that merely rounds onto `±1`; `ln`/`log2`/`log10` of
+  huge-exponent arguments (#103, previously unbounded memory); hyperbolic input-error
+  folding at cancellation points (#102); IEEE 754 §6.3 zero-sign conformance for
+  `x + (-0)`, zero sums and `Sum`; OOM on astronomically large exponent gaps; the radius
+  type's exponent widened to `i128` so huge finite results no longer stall the Ziv loop;
+  wrong `log₂ BASE` on 32-bit `Word` targets; MSRV and no-std build fixes.
+- **dashu-float**: performance — `nth_root` 10–45% faster, division bookkeeping cheaper,
+  and the radius-migration regressions eliminated (`ln` of exact powers of two, `exp`
+  powering chains, the base-10 radius export).
+- **dashu-cmplx**: `tan`/`tan_pi` near the real-axis poles no longer error or panic;
+  exactly-zero result parts and the axis cases of `atan` certify under the directed modes;
+  the zero candidate of `powi`'s diagonal lattice is strictly certified.
 
 ## 0.6.0-rc.3 — coordinated release
 

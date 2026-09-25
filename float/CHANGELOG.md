@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.1
+
 ### Add
 - `#[doc(hidden)]` lockstep-shared re-exports of the internal error-propagation substrate
   (`Ball`, `Mag`, `ulp_mag`) at the crate root, consumed by `dashu-cmplx`'s complex ball
