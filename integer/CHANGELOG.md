@@ -9,6 +9,10 @@
   materializing slices through `as_sign_slice`. `Repr::ones` now returns the
   canonical inline form directly for 128-bit values (it previously produced a
   non-canonical two-word heap representation).
+- Order comparisons on `UBig`/`IBig` (`cmp`, and `min`/`max` built on it) bypass
+  the typed-representation dispatch chain: inline values compare as a single
+  word or double-word, heap values by length then words in reverse order.
+  Roughly 20–30% faster on small operands.
 
 ## 0.6.0
 
