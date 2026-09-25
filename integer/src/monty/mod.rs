@@ -47,4 +47,5 @@ mod div;
 mod fmt;
 mod mul;
 mod pow;
+mod reducer;
 pub(crate) mod repr;

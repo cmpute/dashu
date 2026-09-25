@@ -86,6 +86,52 @@ impl num_traits::Pow<usize> for &IBig {
     }
 }
 
+impl num_traits::Pow<u32> for UBig {
+    type Output = UBig;
+
+    #[inline]
+    fn pow(self, rhs: u32) -> UBig {
+        UBig::pow(&self, rhs as usize)
+    }
+}
+
+impl num_traits::Pow<u32> for &UBig {
+    type Output = UBig;
+
+    #[inline]
+    fn pow(self, rhs: u32) -> UBig {
+        UBig::pow(self, rhs as usize)
+    }
+}
+
+// UBig is arbitrary precision, so addition never overflows. The impl exists
+// so that generic code bound on num_traits::CheckedAdd (e.g. num-prime's
+// next_prime wheel walk) accepts UBig and UBig-based wrapper types.
+impl num_traits::CheckedAdd for UBig {
+    #[inline]
+    fn checked_add(&self, rhs: &Self) -> Option<Self> {
+        Some(self + rhs)
+    }
+}
+
+impl num_traits::Pow<u32> for IBig {
+    type Output = IBig;
+
+    #[inline]
+    fn pow(self, rhs: u32) -> IBig {
+        IBig::pow(&self, rhs as usize)
+    }
+}
+
+impl num_traits::Pow<u32> for &IBig {
+    type Output = IBig;
+
+    #[inline]
+    fn pow(self, rhs: u32) -> IBig {
+        IBig::pow(self, rhs as usize)
+    }
+}
+
 impl num_traits::Unsigned for UBig {}
 
 impl num_traits::Signed for IBig {

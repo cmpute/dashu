@@ -3,6 +3,8 @@
 #[cfg(feature = "num-integer_v01")]
 mod num_integer;
 
+mod num_modular;
+
 #[cfg(feature = "num-order")]
 mod num_order;
 

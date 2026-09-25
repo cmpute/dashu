@@ -33,8 +33,10 @@ use num_modular::{Montgomery as NumMontgomery, Reducer};
 /// let y = ring.reduce(67890);
 /// assert_eq!((x * y).residue(), UBig::from(12345u32 * 67890u32 % 10001));
 /// ```
+#[derive(Clone, Debug)]
 pub struct MontgomeryRepr(pub(crate) MontgomeryReprData);
 
+#[derive(Clone, Debug)]
 pub(crate) enum MontgomeryReprData {
     Single(MontgomerySingleRepr),
     Double(MontgomeryDoubleRepr),
@@ -50,7 +52,7 @@ pub(crate) struct MontgomerySingleRepr(pub(crate) NumMontgomery<Word>);
 pub(crate) struct MontgomeryDoubleRepr(pub(crate) NumMontgomery<DoubleWord>);
 
 /// Montgomery context for a multi-word modulus.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct MontgomeryLargeRepr {
     /// The odd modulus as little-endian words (no normalization shift).
     pub(crate) modulus: Box<[Word]>,

@@ -124,6 +124,39 @@ impl UBig {
         Self(Repr::from_dword(dword))
     }
 
+    /// Extract a single [Word][crate::Word] from the value.
+    ///
+    /// This is the narrowing counterpart of [`from_word`](UBig::from_word) for call sites that
+    /// have already established (e.g. by a preceding comparison with a word-sized bound) that
+    /// the value fits.
+    ///
+    /// # Panics
+    /// Panics if the value does not fit in a single word.
+    #[inline]
+    pub(crate) fn to_word(&self) -> crate::Word {
+        match self.repr() {
+            TypedReprRef::RefSmall(d) => {
+                crate::primitive::shrink_dword(d).expect("value fits in a single word")
+            }
+            TypedReprRef::RefLarge(_) => unreachable!("value fits in a single word"),
+        }
+    }
+
+    /// Extract a [DoubleWord][crate::DoubleWord] from the value.
+    ///
+    /// This is the narrowing counterpart of [`from_dword`](UBig::from_dword) for call sites that
+    /// have already established that the value fits.
+    ///
+    /// # Panics
+    /// Panics if the value does not fit in a double word.
+    #[inline]
+    pub(crate) fn to_dword(&self) -> crate::DoubleWord {
+        match self.repr() {
+            TypedReprRef::RefSmall(d) => d,
+            TypedReprRef::RefLarge(_) => unreachable!("value fits in a double word"),
+        }
+    }
+
     /// Create a UBig from a u64.
     ///
     /// This function is const on 32-bit and 64-bit targets.

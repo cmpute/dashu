@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Add
+- Implement `num_modular::Reducer<UBig>` for `MontgomeryRepr` (always available;
+  the `num-modular` dependency is unconditional). Odd moduli get Montgomery
+  multiplication (with the multi-word REDC kernel), which is the fastest
+  reduction for repeated modular multiplication workloads in the 256–4096-bit
+  range. Together with the existing `Reducer<UBig>` for `ConstDivisor` and the
+  `ModularSymbols` implementation below, `UBig` can now serve as the base
+  integer for carried-modulus types in the `num-modular` ecosystem (e.g.
+  num-prime's `Mint`).
+- Implement `num_modular::ModularSymbols` (Jacobi/Legendre/Kronecker symbols)
+  for `UBig` (always available, like the rest of the `num-modular`
+  integrations).
+- Implement `num_traits::Pow<u32>` for `UBig` and `IBig` (previously only
+  `Pow<usize>` was available).
+- `ConstDivisor`, `MontgomeryRepr` and `Montgomery` now implement `Clone`; `MontgomeryRepr` also implements `Debug`.
+
 ### Fix
 - `num_integer::Integer::mod_floor` for `UBig` incorrectly performed a bitwise
   AND instead of computing the remainder.
