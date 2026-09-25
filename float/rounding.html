@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Interoperability - Dashu user guide</title>
+        <title>Rounding - Dashu user guide</title>
 
 
         <!-- Custom HTML head -->
@@ -146,7 +146,7 @@
                         <a href="https://github.com/cmpute/dashu" title="Git repository" aria-label="Git repository">
                             <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
                         </a>
-                        <a href="https://github.com/cmpute/dashu/edit/master/guide/src/src/io/interop.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                        <a href="https://github.com/cmpute/dashu/edit/master/guide/src/src/float/rounding.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
                             <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
                         </a>
 
@@ -181,41 +181,104 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
-<p>Besides the standard formatting and parsing traits, <code>dashu-int</code> exposes lower-level access to a <code>UBig</code>’s raw representation, for interoperating with other libraries or building custom (de)serialization.</p>
-<h2 id="digit-access"><a class="header" href="#digit-access">Digit access</a></h2>
-<p><code>UBig::to_digits(base)</code> returns the number’s digits in any base <code>2..=Word::MAX</code> (most-significant first, stored as <code>Word</code>), and <code>UBig::from_digits(base, &amp;digits)</code> reconstructs it. This generalizes <code>in_radix</code> (which is limited to base 2–36 for string output) to arbitrary bases and word-sized digits.</p>
+<h2 id="why-rounding"><a class="header" href="#why-rounding">Why rounding</a></h2>
+<p>Precision caps how many significant digits a significand may keep. When an
+operation produces more digits than fit — the rule rather than the exception:
+<code>1/3</code>, <code>sqrt(2)</code>, <code>exp(1)</code>, or simply adding numbers with different exponents
+— the excess digits must be discarded, and <em>how</em> they are discarded is the
+rounding mode.</p>
+<h2 id="the-rounding-mode-is-a-type-parameter"><a class="header" href="#the-rounding-mode-is-a-type-parameter">The rounding mode is a type parameter</a></h2>
+<p><code>FBig&lt;R, B&gt;</code> carries its rounding mode as a type parameter <code>R: Round</code>. <code>R</code> is
+a zero-sized marker type, so it costs nothing at runtime — but it is part of
+the type, so two <code>FBig</code>s with different rounding modes are different types and
+cannot be mixed in one operation (a compile error by design).</p>
+<p>dashu provides six modes in <code>dashu_float::round::mode</code>:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Mode</th><th>Behavior</th><th>Notes</th></tr>
+</thead>
+<tbody>
+<tr><td><code>Zero</code></td><td>toward zero (truncate)</td><td>default for <code>Real</code> (<code>FBig</code>)</td></tr>
+<tr><td><code>HalfEven</code></td><td>nearest, ties to even</td><td></td></tr>
+<tr><td><code>HalfAway</code></td><td>nearest, ties away from zero</td><td>default for <code>Decimal</code> (<code>DBig</code>)</td></tr>
+<tr><td><code>Down</code></td><td>toward −∞</td><td>directed</td></tr>
+<tr><td><code>Up</code></td><td>toward +∞</td><td>directed</td></tr>
+<tr><td><code>Away</code></td><td>away from zero</td><td></td></tr>
+</tbody>
+</table>
+</div>
+<p>So <code>dashu::Real</code> is <code>FBig&lt;Zero, 2&gt;</code> and <code>dashu::Decimal</code> is
+<code>FBig&lt;HalfAway, 10&gt;</code> (a.k.a. <code>DBig</code>).</p>
+<h2 id="switching-modes"><a class="header" href="#switching-modes">Switching modes</a></h2>
+<p><code>with_rounding::&lt;NewR&gt;()</code> changes the type parameter; the value is unchanged
+and the precision stays the same:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>use dashu::integer::UBig;
+</span>use dashu_float::{DBig, FBig};
+use dashu_float::round::mode::Zero;
 
-let n = UBig::from(0x1234u16);
-let digits = n.to_digits(16); // [1, 2, 3, 4], most-significant first
-assert_eq!(UBig::from_digits(16, &amp;digits)?, n);
+let a = DBig::from_parts(1234.into(), -2); // FBig&lt;HalfAway, 10&gt;
+let b = a.with_rounding::&lt;Zero&gt;();         // FBig&lt;Zero, 10&gt;, same value
+assert_eq!(a, b);
 <span class="boring">}</span></code></pre>
-<h2 id="byte-access"><a class="header" href="#byte-access">Byte access</a></h2>
-<p><code>to_le_bytes</code> / <code>to_be_bytes</code> and <code>from_le_bytes</code> / <code>from_be_bytes</code> give a portable, explicit-endianness byte representation — see <a href="./serialize.html">Serialization</a>.</p>
-<h2 id="word-access"><a class="header" href="#word-access">Word access</a></h2>
-<p><code>UBig::from_words(&amp;[w0, w1, …])</code> builds a value from little-endian words, and <code>.as_words()</code> borrows the underlying word slice without copying. This is the closest to the raw in-memory form.</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use dashu::integer::{UBig, Word};
-
-let n = UBig::from_words(&amp;[3, 2, 1]); // 3 + 2·Word + 1·Word²
-let words: &amp;[Word] = n.as_words();
-<span class="boring">}</span></code></pre>
-<blockquote>
-<p>The exact in-memory layout of a <code>UBig</code> is not yet stabilized — don’t rely on the word layout across versions.</p>
-</blockquote>
+<h2 id="reporting-the-rounding-direction"><a class="header" href="#reporting-the-rounding-direction">Reporting the rounding direction</a></h2>
+<p>At the context layer, an inexact operation returns a <code>Rounded&lt;T&gt;</code> wrapper — an
+<code>Approximation</code> carrying a <code>Rounding</code> flag. <code>Rounding</code> has three variants,
+<code>NoOp</code> / <code>AddOne</code> / <code>SubOne</code>, describing the adjustment applied to the
+truncated significand (not the direction of the error). The convenience layer
+(operators, <code>.exp()</code>, …) unwraps this and returns a plain value, so you only
+observe the direction when you call the context layer yourself.</p>
+<h2 id="precision-and-rounding-are-coupled"><a class="header" href="#precision-and-rounding-are-coupled">Precision and rounding are coupled</a></h2>
+<p>Both settings live in the same <code>Context&lt;R&gt;</code>: <code>Context::new(p)</code> fixes the
+precision, and the <code>R</code> type parameter fixes the rounding. <code>with_precision(p)</code>
+re-rounds using the <em>current</em> rounding mode; <code>with_rounding</code> changes the mode
+without touching the value. To control both, chain the two methods or
+construct a new context.</p>
+<h2 id="every-operation-is-correctly-rounded"><a class="header" href="#every-operation-is-correctly-rounded">Every operation is correctly rounded</a></h2>
+<p>dashu-float (and dashu-cmplx) guarantee that every operation returns the
+<strong>correctly rounded</strong> result: the unique representable value closest to the
+infinitely-precise real result under the current rounding mode — never a loose
+tolerance, never 1-ulp-wrong. This is enforced by fuzz differentials against
+MPFR/MPC: the float directed tests assert bit-exact agreement under every
+rounding mode, and the complex tests assert bit-exact per-component agreement
+for the families covered by directed checks (families without a bit-exact
+oracle — the ×π family, where MPC has no entry point, and <code>powf</code>, where MPC’s
+own <code>pow</code> is not guaranteed correctly rounded — keep a documented ulp
+tolerance instead).</p>
+<p>The rounding modes that support this guarantee are those implementing
+<code>ErrorBounds</code> — a bound on how far the true result can be from a computed
+approximation. The float Ziv layer requires <code>R: ErrorBounds</code> for the
+transcendentals, and all six modes implement it.</p>
+<h2 id="how-correct-rounding-is-achieved-the-ziv-retry-loop"><a class="header" href="#how-correct-rounding-is-achieved-the-ziv-retry-loop">How correct rounding is achieved: the Ziv retry loop</a></h2>
+<p>Transcendentals (<code>exp</code>, <code>ln</code>, <code>sin</code>, <code>cos</code>, <code>sqrt</code>, …) cannot be computed
+exactly in finite time, so dashu uses a <strong>Ziv retry loop</strong>:</p>
+<ol>
+<li>Evaluate the operation at <code>precision + guard</code> digits.</li>
+<li>Compute a rigorous error bound around the result (via Ball arithmetic).</li>
+<li>Round the interval to <code>precision</code> digits. If the rounded value is
+unambiguous — the error interval does not straddle a rounding boundary —
+certify it and return.</li>
+<li>Otherwise double the guard and retry.</li>
+</ol>
+<p>The loop almost always converges on the first retry; hitting the retry cap
+indicates a bug in the radius-bound estimate, and the context layer reports
+<code>FpError::ZivRetryLimitExceeded</code> explicitly instead of returning a value that
+might be 1-ulp wrong.</p>
+<p>The float Ziv driver (<code>float/src/ziv.rs</code>) certifies the real transcendentals;
+the complex Ziv driver (<code>complex/src/ziv.rs</code>) wraps it to certify both parts
+of a <code>CBig</code> result against the same preimage, so the complex transcendentals
+are correctly rounded per component.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../io/serialize.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../float/precision.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../ops/index.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../float/cached.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -225,11 +288,11 @@ let words: &amp;[Word] = n.as_words();
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../io/serialize.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../float/precision.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../ops/index.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../float/cached.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

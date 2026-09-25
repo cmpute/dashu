@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-49f906c7.js";
+            window.path_to_searchindex_js = "searchindex-910b7436.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-c6c800fd.js"></script>
+        <script src="toc-f3bea113.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -189,7 +189,7 @@
 <p>The book is a companion to <a href="https://docs.rs/dashu/latest/dashu/"><code>dashu</code>’s API docs</a>. It contains a more concise overview of all the functionalities equipped with <code>dashu</code> and some examples.</p>
 <p>Please choose from the chapters on the left to jump to individual topics.</p>
 <blockquote>
-<p>Built from commit <code>v0.6.0</code> — dashu v0.6.0.</p>
+<p>Built from commit <code>v0.6.1</code> — dashu v0.6.1.</p>
 </blockquote>
 <h2 id="philosophy-and-features"><a class="header" href="#philosophy-and-features">Philosophy and Features</a></h2>
 <p><code>dashu</code> is intended to be your go-to library for crafting some algorithms that involves arbitrary precision numbers, or build a rusty tool that relies on arbitrary precision numbers. It’s built from scratch with rust, and provides user-friendly and rust-idiomatic APIs. It might not be the fastest library for your high-precision calculation loads, but it’s designed to be fast enough so that you seldomly feel dragged back by it.</p>
@@ -246,7 +246,7 @@
 <p>Currently the memory layout of an <code>UBig</code> instance is not finalized, so don’t rely on this by now. Besides, there will be no compatibility guarantee for the memory layout between different versions. The memory layout will probably be stabilized in a <code>v1.0.0</code> release.</p>
 </blockquote>
 <h3 id="layout-of-fbig"><a class="header" href="#layout-of-fbig">Layout of <code>FBig</code></a></h3>
-<p>The layout of <code>FBig</code> (and <code>DBig</code>) is a little different from other types. An <code>FBig</code> instance contains a number representation <code>dashu::float::Repr</code> and a context <code>dashu::float::Context</code>. The context will be copied every time a new <code>FBig</code> is created based on it. The context currently contains the rounding information and the precision associated with this number. The context is kept deliberately lightweight (<code>Copy</code> + <code>Send</code> + <code>Sync</code>): the shared cache for math constants (such as π, ln2, ln10) lives <em>outside</em> the context, in the separate <a href="#cached-arithmetic-for-fbigcbig"><code>CachedFBig</code></a> wrapper, so that a plain <code>FBig</code> stays cheap to copy and usable in <code>const</code>/<code>static</code> contexts. Therefore, if you don’t want to store the additional context information, you can just store the <code>Repr</code> part of the <code>FBig</code>. The later operations on the <code>Repr</code> can be called with the associated methods of the <code>Context</code>, which all takes the reference to a <code>Repr</code> instance. However, this could lead to a little overhead in some cases.</p>
+<p>The layout of <code>FBig</code> (and <code>DBig</code>) is a little different from other types. An <code>FBig</code> instance contains a number representation <code>dashu::float::Repr</code> and a context <code>dashu::float::Context</code>. The context will be copied every time a new <code>FBig</code> is created based on it. The context currently contains the rounding information and the precision associated with this number. The context is kept deliberately lightweight (<code>Copy</code> + <code>Send</code> + <code>Sync</code>): the shared cache for math constants (such as π, ln2, ln10) lives <em>outside</em> the context, in the separate <a href="#cached-arithmetic"><code>CachedFBig</code></a> wrapper, so that a plain <code>FBig</code> stays cheap to copy and usable in <code>const</code>/<code>static</code> contexts. Therefore, if you don’t want to store the additional context information, you can just store the <code>Repr</code> part of the <code>FBig</code>. The later operations on the <code>Repr</code> can be called with the associated methods of the <code>Context</code>, which all takes the reference to a <code>Repr</code> instance. However, this could lead to a little overhead in some cases.</p>
 <h3 id="layout-of-cbig"><a class="header" href="#layout-of-cbig">Layout of <code>CBig</code></a></h3>
 <p><code>CBig</code> (in the <code>dashu-cmplx</code> crate) mirrors <code>FBig</code>’s <code>Repr</code>+<code>Context</code> layout, generalized to two parts: a <code>CBig&lt;R, B&gt;</code> instance holds two <code>Repr&lt;B&gt;</code> parts — the real part <code>re</code> and the imaginary part <code>im</code> — over a <strong>single shared</strong> <code>Context&lt;R&gt;</code>. Storing one context (rather than wrapping two <code>FBig</code>s, each carrying its own) makes the uniform-precision invariant <em>physical</em>: there is exactly one precision slot, so <code>re</code> and <code>im</code> structurally cannot disagree. Each part keeps its own significand length; the shared context holds only the precision cap and the single rounding mode, applied independently to each component. As with <code>FBig</code>, the context is <code>Copy</code> while the significands are heap-allocated, so <code>CBig</code> is <code>Clone</code> but not <code>Copy</code>.</p>
 <p>Because both parts are <code>Repr</code>, <code>CBig</code> reuses <code>dashu-float</code>’s signed-zero / signed-infinity / branch-cut machinery unchanged. It follows the C99 Annex G / Kahan model (see <a href="#standards-compliance">Standards Compliance</a>) and, like <code>FBig</code>, has <strong>no NaN</strong> — C99 cases that would produce a complex NaN are reported as <code>FpError</code> at the context layer. <code>CBig::from_parts(re, im)</code> takes the larger of the two operand contexts. Construction, arithmetic, transcendentals, and I/O are covered in <a href="#construction-and-destruction">Construction and Destruction</a>, <a href="#conversion-1">Conversion</a>, and <a href="#operations-1">Operations</a>.</p>
@@ -283,7 +283,7 @@ imaginary part), per C99 Annex G §G.5.3. <code>0/0</code> is <code>FpError::Ind
 <p>The enum <code>Approximation</code> is another commonly used type in <code>dashu</code>. It’s used when an operation can return inexact values (such as rounding and number conversion). The enum has two variants: <code>Exact</code> and <code>Inexact</code>, the latter one contains a error term for representing the sign or magnitude of the error caused by inexact operations.</p>
 <p>When you have an <code>Approximation</code> instance, call <code>.value()</code>, <code>.value_ref()</code> or <code>unwrap()</code> to get the operation result, and call <code>.error()</code> to get the error term. This struct also support method to work in functional programming style, such as <code>.map()</code> and <code>.and_then()</code>.</p>
 <h3 id="constcache"><a class="header" href="#constcache">ConstCache</a></h3>
-<p><code>dashu::float::ConstCache</code> holds the exact binary-splitting state for the mathematical constants π, ln2, and ln10, so repeated transcendental calls at increasing precision <em>extend</em> prior work instead of recomputing from scratch. It is a plain struct of big integers — base-free, <code>Send</code> + <code>Sync</code> — and a single cache serves any base. <code>FBig</code> and <code>Context</code> themselves stay <code>Copy</code> and carry no cache; the state lives in the separate <a href="#cached-arithmetic-for-fbigcbig"><code>CachedFBig</code></a> wrapper (as <code>Rc&lt;RefCell&lt;ConstCache&gt;&gt;</code>), or you can drive a bare <code>ConstCache</code> directly.</p>
+<p><code>dashu::float::ConstCache</code> holds the exact binary-splitting state for the mathematical constants π, ln2, and ln10, so repeated transcendental calls at increasing precision <em>extend</em> prior work instead of recomputing from scratch. It is a plain struct of big integers — base-free, <code>Send</code> + <code>Sync</code> — and a single cache serves any base. <code>FBig</code> and <code>Context</code> themselves stay <code>Copy</code> and carry no cache; the state lives in the separate <a href="#cached-arithmetic"><code>CachedFBig</code></a> wrapper (as <code>Rc&lt;RefCell&lt;ConstCache&gt;&gt;</code>), or you can drive a bare <code>ConstCache</code> directly.</p>
 <h3 id="fpresult-and-cfpresult"><a class="header" href="#fpresult-and-cfpresult">FpResult and CfpResult</a></h3>
 <p>Inexact operations at the context layer return a result type rather than a bare value: <code>dashu::float::FpResult&lt;T&gt; = Result&lt;Rounded&lt;T&gt;, FpError&gt;</code>, where <code>Rounded&lt;T&gt;</code> is the <a href="#approximation"><code>Approximation</code></a> carrying a <code>Rounding</code> flag. The complex analog is <code>dashu::complex::CfpResult</code> (<code>Result&lt;CRounded&lt;CBig&gt;, FpError&gt;</code>), whose <code>CRounded</code> carries one <code>Rounding</code> flag per axis. <code>FpError</code> reports why an operation could not produce a finite correctly-rounded value: <code>Overflow</code>/<code>Underflow</code>, <code>Indeterminate</code> (e.g. <code>0/0</code>), <code>OutOfDomain</code>, <code>InfiniteInput</code>, and <code>ZivRetryLimitExceeded</code> (a transcendental failed to certify its rounding — only reachable if a radius-bound estimate is wrong).</p>
 <h2 id="two-layer-api"><a class="header" href="#two-layer-api">Two-layer API</a></h2>
@@ -346,7 +346,293 @@ denominator (<code>IBig</code>), so the sign can live on either component.</p>
 <p>When the number doesn’t have a high precision, these macros can be used in a <code>const</code> environment, however this ability depends on the precision and the machine word size. To create large constants, you can use the <code>static_*</code> macros (such as <code>static_ubig!</code>) in the crate. They have the same syntax as the normal macros, but the different is that the outputs of the macros are references to a static instance, rather than directly generating an instance. There are also other limitations about these macros for static creation.</p>
 <p>Please refer to <a href="https://docs.rs/dashu-macros/latest/dashu_macros/">the docs of <code>dashu-macros</code></a> for detailed usage of these macros.</p>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="cached-arithmetic-for-fbigcbig"><a href="#cached-arithmetic-for-fbigcbig" class="header">Cached Arithmetic for FBig/CBig</a></h1>
+<h1 id="floating-point-numbers"><a href="#floating-point-numbers" class="header">Floating Point Numbers</a></h1>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
+<p><code>FBig</code> and <code>DBig</code> are arbitrary-precision floats: a value is a significand
+times the base raised to an exponent, with a <strong>precision</strong> cap on how many
+significant digits the significand may keep and a <strong>rounding mode</strong> that
+decides what happens when a result does not fit. This chapter explains how
+those two knobs are defined and how they propagate through your computations:</p>
+<ul>
+<li><a href="#precision-1">Precision</a> — where a float’s precision comes from at
+construction, how operators combine operand precisions, unlimited precision,
+and the complex case.</li>
+<li><a href="#rounding">Rounding</a> — the rounding-mode type parameter, the
+correctly-rounded guarantee, and the Ziv retry loop that certifies
+transcendentals.</li>
+<li><a href="#cached-arithmetic">Cached Arithmetic</a> — <code>CachedFBig</code> / <code>CachedCBig</code>, which reuse
+mathematical constants across a computation chain.</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="precision-1"><a href="#precision-1" class="header">Precision</a></h1>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
+<h2 id="what-precision-is"><a class="header" href="#what-precision-is">What precision is</a></h2>
+<p>An <code>FBig&lt;R, B&gt;</code> value is stored as <code>significand × B^exponent</code>, together with a
+<code>Context&lt;R&gt;</code> that carries two settings:</p>
+<ul>
+<li><strong>precision</strong> — the maximum number of significant base-<code>B</code> digits the
+significand may keep;</li>
+<li><strong>rounding mode</strong> — what happens to the digits that do not fit (see
+<a href="#rounding">Rounding</a>).</li>
+</ul>
+<p><code>Context::new(p)</code> creates a context with precision <code>p</code>; <code>p == 0</code> means
+<strong>unlimited precision</strong> (no cap at all). Read the current cap with
+<code>FBig::precision()</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use dashu_float::{Context, DBig, Repr};
+use dashu_float::round::mode::HalfAway;
+
+let context = Context::&lt;HalfAway&gt;::new(20);
+let a = DBig::from_repr(Repr::new(1234.into(), -2), context);
+assert_eq!(a.precision(), 20);
+<span class="boring">}</span></code></pre>
+<h2 id="where-the-precision-comes-from-at-construction"><a class="header" href="#where-the-precision-comes-from-at-construction">Where the precision comes from at construction</a></h2>
+<p>Most constructors pick the precision for you, inferred from the input; only
+the context-based ones let you set it explicitly:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Constructor</th><th>Result precision</th></tr>
+</thead>
+<tbody>
+<tr><td><code>from_parts(significand, exponent)</code></td><td>Inferred — the exact number of significant base-<code>B</code> digits in <code>significand</code> (at least 1)</td></tr>
+<tr><td><code>from_parts_const(sign, significand, exponent, min_precision)</code></td><td>Inferred, or <code>max(inferred, min_precision)</code> when <code>min_precision</code> is <code>Some</code></td></tr>
+<tr><td><code>from_repr(repr, context)</code></td><td>Taken directly from the given <code>Context</code></td></tr>
+<tr><td><code>From&lt;integer&gt;</code> / <code>FromStr</code></td><td>Inferred from the significant digits of the input</td></tr>
+<tr><td>Constants (<code>ONE</code>, <code>ZERO</code>, …) / <code>from_repr_const</code></td><td>Unlimited (<code>Context::new(0)</code>)</td></tr>
+<tr><td><code>Context::new(p)</code> + <code>Context::max(lhs, rhs)</code></td><td>The explicit knobs; <code>max</code> picks the higher precision of two contexts</td></tr>
+</tbody>
+</table>
+</div>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use core::str::FromStr;
+use dashu_base::Sign;
+use dashu_float::{Context, DBig};
+use dashu_float::round::mode::Zero;
+
+// from_parts: precision inferred from the significand
+let a = DBig::from_parts(1234.into(), -2);   // 12.34
+assert_eq!(a.precision(), 4);                // "1234" has 4 digits
+
+// from_parts_const: max(inferred, min_precision)
+let b = DBig::from_parts_const(Sign::Negative, 1234, -2, Some(6));
+assert_eq!(b.precision(), 6);
+
+// parsing infers the precision from the significant digits
+assert_eq!(DBig::from_str("2.3450")?.precision(), 5);
+
+// constants are unlimited
+assert_eq!(DBig::ONE.precision(), 0);
+
+// Context::max picks the higher precision
+let c1 = Context::&lt;Zero&gt;::new(10);
+let c2 = Context::&lt;Zero&gt;::new(50);
+assert_eq!(Context::max(c1, c2).precision(), 50);
+<span class="boring">Ok::&lt;(), dashu_base::ParseError&gt;(())
+</span><span class="boring">}</span></code></pre>
+<h2 id="how-operators-propagate-precision"><a class="header" href="#how-operators-propagate-precision">How operators propagate precision</a></h2>
+<p>Binary arithmetic (<code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>) computes the result context as
+<code>Context::max(lhs.context, rhs.context)</code> — the <strong>higher</strong> precision wins, and
+the result is rounded to it. Mixing a 2-digit and a 30-digit value yields a
+30-digit result:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span><span class="boring">use core::str::FromStr;
+</span><span class="boring">use dashu_float::DBig;
+</span>let lo = DBig::from_str("2.0")?;
+let hi = DBig::from_str("1.23456789012345678901234567890")?; // 30 digits
+assert_eq!(lo.precision(), 2);
+assert_eq!(hi.precision(), 30);
+
+let sum = lo + hi;
+assert_eq!(sum.precision(), 30); // the higher precision wins
+<span class="boring">Ok::&lt;(), dashu_base::ParseError&gt;(())
+</span><span class="boring">}</span></code></pre>
+<p>Other rules worth knowing:</p>
+<ul>
+<li><code>Sum</code> over an iterator is <strong>correctly rounded</strong>: the addends are accumulated
+exactly and rounded once, at the <code>max</code> precision over the addends, instead
+of folding with <code>+</code> (which rounds at every step and can drop small
+addends). <code>Product</code> is a plain fold.</li>
+<li>An inexact addition or subtraction may carry a single <strong>guard digit</strong>: the
+result significand can briefly hold up to <code>precision + 1</code> digits before the
+next operation rounds it back. This is an internal detail; you normally
+don’t observe it.</li>
+<li><code>with_precision(p)</code> explicitly re-rounds to <code>p</code> digits. Widening is always
+exact; shrinking rounds per the context’s rounding mode and returns a
+<code>Rounded</code> wrapper reporting whether the rounding was <code>Exact</code> or <code>Inexact</code>
+(with the direction):</li>
+</ul>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span><span class="boring">use core::str::FromStr;
+</span><span class="boring">use dashu_base::Approximation::*;
+</span><span class="boring">use dashu_float::DBig;
+</span>use dashu_float::round::Rounding::*;
+
+let a = DBig::from_str("2.345")?;
+assert_eq!(a.precision(), 4);
+assert_eq!(a.clone().with_precision(3), Inexact(DBig::from_str("2.35")?, AddOne));
+assert_eq!(a.clone().with_precision(5), Exact(DBig::from_str("2.345")?));
+<span class="boring">Ok::&lt;(), dashu_base::ParseError&gt;(())
+</span><span class="boring">}</span></code></pre>
+<h2 id="unlimited-precision"><a class="header" href="#unlimited-precision">Unlimited precision</a></h2>
+<p><code>Context::new(0)</code> (equivalently <code>with_precision(0)</code>) sets <strong>unlimited</strong>
+precision: no cap on the significand, so <code>+</code>, <code>-</code>, and <code>*</code> are exact whenever
+the true result is finitely representable in the base — e.g. <code>0.1 + 0.2</code> in
+base 10 keeps full precision, and a product never loses a digit:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span><span class="boring">use core::str::FromStr;
+</span><span class="boring">use dashu_float::DBig;
+</span>let a = DBig::from_str("0.1")?;
+let b = DBig::from_str("0.2")?;
+let c = a + b;                   // exact: 0.3
+assert_eq!(c, DBig::from_str("0.3")?);
+assert_eq!(c.precision(), 0);    // still unlimited
+<span class="boring">Ok::&lt;(), dashu_base::ParseError&gt;(())
+</span><span class="boring">}</span></code></pre>
+<p>Caveats:</p>
+<ul>
+<li><strong>Not every operation works at unlimited precision.</strong> Division (<code>/</code>,
+<code>inv</code>) and the transcendentals (<code>exp</code>, <code>ln</code>, <code>sin</code>, …, roots) need a finite
+target to round to, and <strong>panic</strong> on an unlimited-precision operand — there
+is no rounding mode that can produce an infinite significand. <code>ulp()</code> /
+<code>ulp_lb()</code> likewise panic (there is no fixed unit to report).</li>
+<li>The common pattern is to hold a value at unlimited precision (e.g. a parsed
+constant) and call <code>with_precision(p)</code> before a lossy operation:</li>
+</ul>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span><span class="boring">use core::str::FromStr;
+</span><span class="boring">use dashu_float::DBig;
+</span>let x = DBig::from_str("3.1415926535897932384626433832795028841971")?; // unlimited
+let r = x.with_precision(20).unwrap();   // round to 20 significant digits
+let y = r / DBig::from(2u8);             // division is now allowed
+<span class="boring">Ok::&lt;(), dashu_base::ParseError&gt;(())
+</span><span class="boring">}</span></code></pre>
+<h2 id="complex-numbers-shared-precision"><a class="header" href="#complex-numbers-shared-precision">Complex numbers: shared precision</a></h2>
+<p><code>CBig</code> mirrors <code>FBig</code> but stores the real and imaginary parts over a <strong>single
+shared <code>Context</code></strong> — so there is exactly one precision and one rounding mode,
+and the two parts structurally cannot disagree (the uniform-precision
+invariant).</p>
+<ul>
+<li><code>CBig::from_parts(re, im)</code> takes the <strong>higher</strong> of the two parts’ contexts:</li>
+</ul>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span><span class="boring">use core::str::FromStr;
+</span><span class="boring">use dashu::complex::CBig;
+</span><span class="boring">use dashu::float::DBig;
+</span>let re = DBig::from_str("1.234567890123456789")?; // 19 digits
+let im = DBig::from_str("2.0")?;                  // 2 digits
+let z = CBig::from_parts(re, im);
+assert_eq!(z.precision(), 19);                    // the larger context wins
+<span class="boring">Ok::&lt;(), dashu_base::ParseError&gt;(())
+</span><span class="boring">}</span></code></pre>
+<ul>
+<li><code>CBig::from_parts_const(...)</code> takes an explicit <code>precision</code> argument instead
+of inferring.</li>
+<li>Arithmetic between <code>CBig</code> values keeps the shared context; operations
+against plain <code>FBig</code> parts follow the same “higher wins” rule, and a
+<code>CBig</code> result is correctly rounded per component (see
+<a href="#rounding">Rounding</a>).</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="rounding"><a href="#rounding" class="header">Rounding</a></h1>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
+<h2 id="why-rounding"><a class="header" href="#why-rounding">Why rounding</a></h2>
+<p>Precision caps how many significant digits a significand may keep. When an
+operation produces more digits than fit — the rule rather than the exception:
+<code>1/3</code>, <code>sqrt(2)</code>, <code>exp(1)</code>, or simply adding numbers with different exponents
+— the excess digits must be discarded, and <em>how</em> they are discarded is the
+rounding mode.</p>
+<h2 id="the-rounding-mode-is-a-type-parameter"><a class="header" href="#the-rounding-mode-is-a-type-parameter">The rounding mode is a type parameter</a></h2>
+<p><code>FBig&lt;R, B&gt;</code> carries its rounding mode as a type parameter <code>R: Round</code>. <code>R</code> is
+a zero-sized marker type, so it costs nothing at runtime — but it is part of
+the type, so two <code>FBig</code>s with different rounding modes are different types and
+cannot be mixed in one operation (a compile error by design).</p>
+<p>dashu provides six modes in <code>dashu_float::round::mode</code>:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Mode</th><th>Behavior</th><th>Notes</th></tr>
+</thead>
+<tbody>
+<tr><td><code>Zero</code></td><td>toward zero (truncate)</td><td>default for <code>Real</code> (<code>FBig</code>)</td></tr>
+<tr><td><code>HalfEven</code></td><td>nearest, ties to even</td><td></td></tr>
+<tr><td><code>HalfAway</code></td><td>nearest, ties away from zero</td><td>default for <code>Decimal</code> (<code>DBig</code>)</td></tr>
+<tr><td><code>Down</code></td><td>toward −∞</td><td>directed</td></tr>
+<tr><td><code>Up</code></td><td>toward +∞</td><td>directed</td></tr>
+<tr><td><code>Away</code></td><td>away from zero</td><td></td></tr>
+</tbody>
+</table>
+</div>
+<p>So <code>dashu::Real</code> is <code>FBig&lt;Zero, 2&gt;</code> and <code>dashu::Decimal</code> is
+<code>FBig&lt;HalfAway, 10&gt;</code> (a.k.a. <code>DBig</code>).</p>
+<h2 id="switching-modes"><a class="header" href="#switching-modes">Switching modes</a></h2>
+<p><code>with_rounding::&lt;NewR&gt;()</code> changes the type parameter; the value is unchanged
+and the precision stays the same:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use dashu_float::{DBig, FBig};
+use dashu_float::round::mode::Zero;
+
+let a = DBig::from_parts(1234.into(), -2); // FBig&lt;HalfAway, 10&gt;
+let b = a.with_rounding::&lt;Zero&gt;();         // FBig&lt;Zero, 10&gt;, same value
+assert_eq!(a, b);
+<span class="boring">}</span></code></pre>
+<h2 id="reporting-the-rounding-direction"><a class="header" href="#reporting-the-rounding-direction">Reporting the rounding direction</a></h2>
+<p>At the context layer, an inexact operation returns a <code>Rounded&lt;T&gt;</code> wrapper — an
+<code>Approximation</code> carrying a <code>Rounding</code> flag. <code>Rounding</code> has three variants,
+<code>NoOp</code> / <code>AddOne</code> / <code>SubOne</code>, describing the adjustment applied to the
+truncated significand (not the direction of the error). The convenience layer
+(operators, <code>.exp()</code>, …) unwraps this and returns a plain value, so you only
+observe the direction when you call the context layer yourself.</p>
+<h2 id="precision-and-rounding-are-coupled"><a class="header" href="#precision-and-rounding-are-coupled">Precision and rounding are coupled</a></h2>
+<p>Both settings live in the same <code>Context&lt;R&gt;</code>: <code>Context::new(p)</code> fixes the
+precision, and the <code>R</code> type parameter fixes the rounding. <code>with_precision(p)</code>
+re-rounds using the <em>current</em> rounding mode; <code>with_rounding</code> changes the mode
+without touching the value. To control both, chain the two methods or
+construct a new context.</p>
+<h2 id="every-operation-is-correctly-rounded"><a class="header" href="#every-operation-is-correctly-rounded">Every operation is correctly rounded</a></h2>
+<p>dashu-float (and dashu-cmplx) guarantee that every operation returns the
+<strong>correctly rounded</strong> result: the unique representable value closest to the
+infinitely-precise real result under the current rounding mode — never a loose
+tolerance, never 1-ulp-wrong. This is enforced by fuzz differentials against
+MPFR/MPC: the float directed tests assert bit-exact agreement under every
+rounding mode, and the complex tests assert bit-exact per-component agreement
+for the families covered by directed checks (families without a bit-exact
+oracle — the ×π family, where MPC has no entry point, and <code>powf</code>, where MPC’s
+own <code>pow</code> is not guaranteed correctly rounded — keep a documented ulp
+tolerance instead).</p>
+<p>The rounding modes that support this guarantee are those implementing
+<code>ErrorBounds</code> — a bound on how far the true result can be from a computed
+approximation. The float Ziv layer requires <code>R: ErrorBounds</code> for the
+transcendentals, and all six modes implement it.</p>
+<h2 id="how-correct-rounding-is-achieved-the-ziv-retry-loop"><a class="header" href="#how-correct-rounding-is-achieved-the-ziv-retry-loop">How correct rounding is achieved: the Ziv retry loop</a></h2>
+<p>Transcendentals (<code>exp</code>, <code>ln</code>, <code>sin</code>, <code>cos</code>, <code>sqrt</code>, …) cannot be computed
+exactly in finite time, so dashu uses a <strong>Ziv retry loop</strong>:</p>
+<ol>
+<li>Evaluate the operation at <code>precision + guard</code> digits.</li>
+<li>Compute a rigorous error bound around the result (via Ball arithmetic).</li>
+<li>Round the interval to <code>precision</code> digits. If the rounded value is
+unambiguous — the error interval does not straddle a rounding boundary —
+certify it and return.</li>
+<li>Otherwise double the guard and retry.</li>
+</ol>
+<p>The loop almost always converges on the first retry; hitting the retry cap
+indicates a bug in the radius-bound estimate, and the context layer reports
+<code>FpError::ZivRetryLimitExceeded</code> explicitly instead of returning a value that
+might be 1-ulp wrong.</p>
+<p>The float Ziv driver (<code>float/src/ziv.rs</code>) certifies the real transcendentals;
+the complex Ziv driver (<code>complex/src/ziv.rs</code>) wraps it to certify both parts
+of a <code>CBig</code> result against the same preimage, so the complex transcendentals
+are correctly rounded per component.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="cached-arithmetic"><a href="#cached-arithmetic" class="header">Cached Arithmetic</a></h1>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
 <p>The [<code>CachedFBig</code>] type is an [<code>FBig</code>] that carries a shared handle to a
 <code>Rc&lt;RefCell&lt;ConstCache&gt;&gt;</code>. The cache stores exact binary-splitting state for
@@ -1132,7 +1418,7 @@ assert_eq!(UBig::from(27u8).cbrt(), UBig::from(3u8));
 <li>Exponential: <code>exp</code>, <code>exp_m1</code> (<span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7477em;vertical-align:-0.0833em;"></span><span class="mord"><span class="mord mathnormal">e</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6644em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">x</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span>, accurate near zero).</li>
 <li>Logarithm: <code>ln</code>, <code>ln_1p</code> (<span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop">ln</span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span></span></span></span>, accurate near zero), plus the base-2 and base-10 logarithms <code>log2</code> and <code>log10</code> (correctly rounded; exact for exact powers of the base).</li>
 <li>Powers and roots: <code>powi(IBig)</code>, <code>powf(&amp;FBig)</code>, <code>sqr</code>, <code>cubic</code>, <code>sqrt</code>, <code>cbrt</code>, <code>nth_root(&amp;n)</code>, and <code>hypot(&amp;other)</code> (<span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.24em;vertical-align:-0.2822em;"></span><span class="mord sqrt"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.9578em;"><span class="svg-align" style="top:-3.2em;"><span class="pstrut" style="height:3.2em;"></span><span class="mord" style="padding-left:1em;"><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7401em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7401em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span></span></span><span style="top:-2.9178em;"><span class="pstrut" style="height:3.2em;"></span><span class="hide-tail" style="min-width:1.02em;height:1.28em;"><svg xmlns="http://www.w3.org/2000/svg" width="400em" height="1.28em" viewbox="0 0 400000 1296" preserveaspectratio="xMinYMin slice"><path d="M263,681c0.7,0,18,39.7,52,119 c34,79.3,68.167,158.7,102.5,238c34.3,79.3,51.8,119.3,52.5,120 c340,-704.7,510.7,-1060.3,512,-1067 l0 -0 c4.7,-7.3,11,-11,19,-11 H40000v40H1012.3 s-271.3,567,-271.3,567c-38.7,80.7,-84,175,-136,283c-52,108,-89.167,185.3,-111.5,232 c-22.3,46.7,-33.8,70.3,-34.5,71c-4.7,4.7,-12.3,7,-23,7s-12,-1,-12,-1 s-109,-253,-109,-253c-72.7,-168,-109.3,-252,-110,-252c-10.7,8,-22,16.7,-34,26 c-22,17.3,-33.3,26,-34,26s-26,-26,-26,-26s76,-59,76,-59s76,-60,76,-60z M1001 80h400000v40h-400000z" /></svg></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2822em;"><span></span></span></span></span></span></span></span></span>, overflow-safe).</li>
-<li>Constants: <code>FBig::pi(precision)</code> for π and <code>FBig::e(precision)</code> for <em>e</em>. π benefits from reuse across calls via <a href="#cached-arithmetic-for-fbigcbig"><code>CachedFBig</code></a>; <em>e</em> is self-contained (it depends on no other constant) and is computed directly by binary splitting on <code>Σ 1/k!</code>, so it is not cached.</li>
+<li>Constants: <code>FBig::pi(precision)</code> for π and <code>FBig::e(precision)</code> for <em>e</em>. π benefits from reuse across calls via <a href="#cached-arithmetic"><code>CachedFBig</code></a>; <em>e</em> is self-contained (it depends on no other constant) and is computed directly by binary splitting on <code>Σ 1/k!</code>, so it is not cached.</li>
 </ul>
 <p>(<code>exp2</code>/<code>exp10</code> are deferred to a later release.)</p>
 <h2 id="complex-functions"><a class="header" href="#complex-functions">Complex functions</a></h2>
@@ -1146,13 +1432,15 @@ assert_eq!(UBig::from(27u8).cbrt(), UBig::from(3u8));
 <h2 id="real-functions-1"><a class="header" href="#real-functions-1">Real functions</a></h2>
 <ul>
 <li>Circular: <code>sin</code>, <code>cos</code>, <code>tan</code>, and <code>sin_cos</code> (both at once); inverses <code>asin</code>, <code>acos</code>, <code>atan</code>, and the four-quadrant <code>atan2(y, x)</code>.</li>
-<li>Hyperbolic: <code>sinh</code>, <code>cosh</code>, <code>tanh</code>, <code>sinh_cosh</code>; inverses <code>asinh</code>, <code>acosh</code>, <code>atanh</code>.</li>
+<li>×u variants: <code>sin_unit(u)</code>, <code>cos_unit(u)</code>, <code>tan_unit(u)</code>, and <code>sin_cos_unit(u)</code> — of <code>2π·x/u</code>, the argument in units of the full turn divided by <code>u</code>, with the inverses <code>asin_unit(u)</code>, <code>acos_unit(u)</code>, <code>atan_unit(u)</code>, and the four-quadrant <code>atan2_unit</code>, called as <code>y.atan2_unit(x, u)</code> (the receiver is the y-coordinate, the first argument the x-coordinate). <code>u = 2</code> gives the ×π functions (<code>sin_pi</code>, …); <code>u = 360</code> gives degrees.</li>
+<li>Hyperbolic: <code>sinh</code>, <code>cosh</code>, <code>tanh</code>, <code>sinh_cosh</code>; inverses <code>asinh</code>, <code>acosh</code>, <code>atanh</code>. The ×π variants <code>sinh_pi</code>, <code>cosh_pi</code>, and <code>sinh_cosh_pi</code> use the shared cached π.</li>
 </ul>
 <p>Angles are in radians. <code>atan2</code> follows the C99 signed-zero model, which matters for correct branch-cut behavior on the axes.</p>
+<p>The ×u circular functions reduce the argument <em>exactly</em> mod u in integer arithmetic, so — unlike the radian functions — their accuracy does not degrade as the input grows (<code>sin_unit(10^100, 4)</code> is exactly <code>0</code>: <code>10^100</code> is a multiple of <code>4</code>). Arguments where <code>12x/u</code> (resp. <code>8x/u</code> for the tangent) is an integer resolve exactly: quarters and eighths to <code>0</code>/<code>±1</code> (<code>sin_unit(90, 360) == 1</code>), the sixths to <code>±1/2</code> (<code>sin_unit(30, 360) == 0.5</code>). At the odd multiples of <code>u/4</code> the tangent hits its poles, where the one-sided limits are <code>+∞</code> and <code>−∞</code>: the case is indeterminate and reported as an error. The inverse family returns exact <code>k·u/8</code> values on the axes and diagonals (<code>(1).atan2_unit(&amp;(1), 360) == 45</code>), and the <code>u → 0</code> limit of every inverse (in domain) is the signed zero.</p>
 <h2 id="complex-functions-1"><a class="header" href="#complex-functions-1">Complex functions</a></h2>
-<p><code>CBig</code> provides the circular family <code>sin</code>, <code>cos</code>, <code>tan</code>, <code>sin_cos</code>, <code>asin</code>, <code>acos</code>, and <code>atan</code>, and the hyperbolic family <code>sinh</code>, <code>cosh</code>, <code>tanh</code>, <code>sinh_cosh</code>, <code>asinh</code>, <code>acosh</code>, and <code>atanh</code>. The circular functions are evaluated from the real <code>sin</code>/<code>cos</code> and <code>sinh</code>/<code>cosh</code> via the identities</p>
+<p><code>CBig</code> provides the circular family <code>sin</code>, <code>cos</code>, <code>tan</code>, <code>sin_cos</code>, <code>asin</code>, <code>acos</code>, and <code>atan</code>, the hyperbolic family <code>sinh</code>, <code>cosh</code>, <code>tanh</code>, <code>sinh_cosh</code>, <code>asinh</code>, <code>acosh</code>, and <code>atanh</code>, and the ×π circular family <code>sin_pi</code>, <code>cos_pi</code>, <code>tan_pi</code>, and <code>sin_cos_pi</code>. The circular functions are evaluated from the real <code>sin</code>/<code>cos</code> and <code>sinh</code>/<code>cosh</code> via the identities</p>
 <p><span class="katex-display"><span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop">sin</span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">i</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mop">sin</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">cosh</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">i</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">cos</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">sinh</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mpunct">,</span><span class="mspace" style="margin-right:2em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">cos</span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">i</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mop">cos</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">cosh</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">i</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">sin</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">sinh</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mord">.</span></span></span></span></span></p>
-<p>The hyperbolic functions reuse the circular ones through the rotation identities <code>sinh z = -i\sin(iz)</code>, <code>cosh z = \cos(iz)</code>, and <code>tanh z = -i\tan(iz)</code> — an exact swap of the real and imaginary parts, so the two families share their rounding certification. The inverse functions (circular and hyperbolic) follow the Kahan signed-zero branch-cut formulation. See <a href="#standards-compliance">Standards Compliance</a> for the Annex G special-value and branch-cut tables.</p>
+<p>The ×π family composes the real <code>sin_cos_pi</code> with the hyperbolic <code>sinh_cosh_pi</code> of the scaled argument. The hyperbolic functions reuse the circular ones through the rotation identities <code>sinh z = -i\sin(iz)</code>, <code>cosh z = \cos(iz)</code>, and <code>tanh z = -i\tan(iz)</code> — an exact swap of the real and imaginary parts, so the two families share their rounding certification. The inverse functions (circular and hyperbolic) follow the Kahan signed-zero branch-cut formulation. See <a href="#standards-compliance">Standards Compliance</a> for the Annex G special-value and branch-cut tables.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="bit-manipulation"><a href="#bit-manipulation" class="header">Bit Manipulation</a></h1>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
@@ -1660,6 +1948,8 @@ when you control the build.</p>
 <tbody>
 <tr><td><code>.exp()</code> / <code>.ln()</code> / <code>.sqrt()</code></td><td><code>FBig</code>, <code>CBig</code></td><td>same type</td></tr>
 <tr><td><code>.sin()</code> / <code>.cos()</code> / <code>.tan()</code> / <code>.sin_cos()</code></td><td><code>FBig</code>, <code>CBig</code></td><td>same type</td></tr>
+<tr><td><code>.sin_pi()</code> / <code>.cos_pi()</code> / <code>.tan_pi()</code> / <code>.sin_cos_pi()</code></td><td><code>FBig</code>, <code>CBig</code></td><td>same type</td></tr>
+<tr><td><code>.sin_unit(u)</code> / <code>.cos_unit(u)</code> / … / <code>.atan2_unit(x, u)</code></td><td><code>FBig</code></td><td>same type</td></tr>
 <tr><td><code>.powi(IBig)</code> / <code>.powf(&amp;Self)</code></td><td><code>FBig</code>, <code>CBig</code></td><td>same type</td></tr>
 <tr><td><code>.with_precision(p)</code></td><td><code>FBig</code></td><td><code>Rounded&lt;FBig&gt;</code></td></tr>
 <tr><td><code>.to_decimal()</code> / <code>.to_binary()</code></td><td><code>FBig</code></td><td><code>Rounded&lt;DBig&gt;</code> / <code>Rounded&lt;FBig&gt;</code></td></tr>
@@ -1738,7 +2028,7 @@ arbitrary-precision / no-NaN model, the deviation is noted.</p>
 </thead>
 <tbody>
 <tr><td>Rounding modes: roundTiesToEven, roundTiesToAway, roundTowardPositive, roundTowardNegative, roundTowardZero</td><td>✅</td><td>All five modes implemented as <code>HalfEven</code>, <code>HalfAway</code>, <code>Up</code>, <code>Down</code>, <code>Zero</code>.</td></tr>
-<tr><td>Correct rounding to within 1 ulp</td><td>✅</td><td>All operations guarantee <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.02778em;">error</span><span class="mord">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">&lt;</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord">1</span><span class="mord text"><span class="mord"> ulp</span></span></span></span></span>. Arithmetic, roots, and the real transcendentals (<code>exp</code>, <code>exp_m1</code>, <code>ln</code>, <code>ln_1p</code>, the trigonometric and hyperbolic families, <code>hypot</code>, <code>powi</code>, and <code>powf</code>) are guaranteed-correctly rounded via a Ziv loop; and <code>dashu-cmplx</code>’s complex transcendentals (<code>exp</code>, <code>log</code>, <code>powf</code>, <code>powi</code>, <code>sin</code>/<code>cos</code>/<code>tan</code>/<code>sin_cos</code>, <code>asin</code>/<code>acos</code>/<code>atan</code>, the hyperbolic <code>sinh</code>/<code>cosh</code>/<code>tanh</code>/<code>sinh_cosh</code> and <code>asinh</code>/<code>acosh</code>/<code>atanh</code>, <code>sqrt</code>) are correctly rounded via their own Ziv loop that certifies both parts (<code>asin</code>/<code>acos</code> use the factored <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="mclose">)</span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="mclose">)</span></span></span></span> so they stay accurate right up to the singularities <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">±</span><span class="mord">1</span></span></span></span>; the hyperbolic family reuses the circular one through the exact rotation identities <code>sinh z = -i\sin(iz)</code> etc., inheriting its certification). The <code>Rounded</code> type distinguishes exact from inexact results.</td></tr>
+<tr><td>Correct rounding to within 1 ulp</td><td>✅</td><td>All operations guarantee <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.02778em;">error</span><span class="mord">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">&lt;</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord">1</span><span class="mord text"><span class="mord"> ulp</span></span></span></span></span>. Arithmetic, roots, and the real transcendentals (<code>exp</code>, <code>exp_m1</code>, <code>ln</code>, <code>ln_1p</code>, the trigonometric and hyperbolic families including the ×u/×π variants, <code>hypot</code>, <code>powi</code>, and <code>powf</code>) are guaranteed-correctly rounded via a Ziv loop; and <code>dashu-cmplx</code>’s complex transcendentals (<code>exp</code>, <code>log</code>, <code>powf</code>, <code>powi</code>, <code>sin</code>/<code>cos</code>/<code>tan</code>/<code>sin_cos</code> including the ×π variants, <code>asin</code>/<code>acos</code>/<code>atan</code>, the hyperbolic <code>sinh</code>/<code>cosh</code>/<code>tanh</code>/<code>sinh_cosh</code> and <code>asinh</code>/<code>acosh</code>/<code>atanh</code>, <code>sqrt</code>) are correctly rounded via their own Ziv loop that certifies both parts (<code>asin</code>/<code>acos</code> use the factored <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="mclose">)</span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="mclose">)</span></span></span></span>, which keeps the cancellation out of the formula itself; the hyperbolic family reuses the circular one through the exact rotation identities <code>sinh z = -i\sin(iz)</code> etc., inheriting its certification). The <code>Rounded</code> type distinguishes exact from inexact results.</td></tr>
 <tr><td>Round-to-nearest preserves sign of zero</td><td>✅</td><td><code>rounded_to_repr</code> preserves input sign when rounding collapses a non-zero to zero.</td></tr>
 </tbody>
 </table>
