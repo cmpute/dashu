@@ -8,10 +8,11 @@
 use crate::ball::CBall;
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, reborrow_cache, CfpResult, Context};
-use dashu_base::Approximation;
-use dashu_float::round::ErrorBounds;
+use core::cmp::Ordering;
+use dashu_base::{Approximation, EstimatedLog2, Sign};
+use dashu_float::round::{ErrorBounds, Rounding};
 use dashu_float::{Ball, ConstCache, Context as FloatCtxt, FBig, FpError, Repr};
-use dashu_int::{IBig, Word};
+use dashu_int::{IBig, UBig, Word};
 
 /// Guard digits (base-B) for the forward trig. Composes real `sin_cos` + `sinh_cosh` + two
 /// products; the cancellation near the trig zeros is absorbed by the re-round.
@@ -154,6 +155,47 @@ impl<R: ErrorBounds> Context<R> {
         // the radius (including the genuine amplification near the real-axis poles, where the
         // denominator touches zero) is mechanical. The Ziv driver asserts a limited context.
         let p = self.precision();
+
+        // For a large enough |Im z| the imaginary part saturates: im = sinh 2y / D lies within
+        // (1+e^{−2y})/(cosh 2y − 1) ≤ 4·e^{−2y} of sign(y) (for |y| ≥ 1), which is below half an
+        // ulp of ±1 once 2|y| > p·ln B + ln 8 — its rounding is then fully determined, but the
+        // componentwise division's working-precision mid collapses onto exactly ±1, the boundary
+        // of a one-sided directed preimage, which the Ziv containment cannot certify (it would
+        // climb toward ~2|y|/ln B working digits — an effective hang for a plain input like
+        // tan(i·10⁵), and `tanh = −i·tan(i·z)` of a large real part lands here too). Pin the
+        // mode-aware endpoint directly, mirroring dashu-float's `tanh` gate; the real part
+        // sin 2x / D stays a genuine tiny value (no underflow — e^{2y} is a huge exponent over a
+        // small significand, cheap at any working precision), so it keeps flowing through a
+        // single-part Ziv loop on the same composition. Compare the lower bound of log2|y|
+        // against an upper bound of log2(threshold) so a borderline input still falls through.
+        let thresh =
+            p as f32 * B.log2_est() * core::f32::consts::LN_2 / 2.0 + 1.5 * core::f32::consts::LN_2;
+        if z.im().log2_bounds().0 > thresh.log2_bounds().1 {
+            let im_sign = z.im().sign();
+            let [re] = self.ziv::<B, 1>(TRIG_GUARD, |guard| {
+                // re = sin 2x / (cos 2x + cosh 2y): the tan composition minus the saturated
+                // imaginary part.
+                let pw = p + guard;
+                let gctx = FloatCtxt::<R>::new(pw);
+                let cb = CBall::from_parts(z.re(), z.im(), pw);
+                let x2 = cb.re.add(&cb.re, pw)?;
+                let y2 = cb.im.add(&cb.im, pw)?;
+                let (sin2x, cos2x) = gctx.sin_cos(&x2.mid, reborrow_cache(&mut cache));
+                let mut sx2 = Ball::from_rounded(sin2x?.map(FBig::into_repr), pw);
+                let mut cx2 = Ball::from_rounded(cos2x?.map(FBig::into_repr), pw);
+                sx2.add_error(x2.rad);
+                cx2.add_error(x2.rad);
+                let cosh2y = gctx.cosh(&y2.mid, reborrow_cache(&mut cache));
+                let mut chy2 = Ball::from_rounded(cosh2y?.map(FBig::into_repr), pw);
+                let y2_fold = chy2.mag().mul(&y2.rad.exp_upper()).mul(&y2.rad).mul_pow2(1);
+                chy2.add_error(y2_fold);
+                let denom = cx2.add(&chy2, pw)?;
+                let re = sx2.div(&denom, pw)?;
+                Ok([re.to_value_radius(&gctx)])
+            })?;
+            return Ok(combine_parts(re, self.tan_im_endpoint::<B>(im_sign)));
+        }
+
         let [re, im] = self.ziv(TRIG_GUARD, |guard| {
             let pw = p + guard;
             let gctx = FloatCtxt::<R>::new(pw);
@@ -178,6 +220,48 @@ impl<R: ErrorBounds> Context<R> {
             Ok(out.to_parts_radius(&gctx))
         })?;
         Ok(combine_parts(re, im))
+    }
+
+    /// The saturation endpoint for a value equal to `sign·(1 − δ)` with `0 < δ` below half an ulp
+    /// of `±1` — the same mode-aware endpoint dashu-float builds for its `tanh`/`exp_m1` gates
+    /// (`Context::near_one_endpoint`, private to that crate): nearest and the outward-directed
+    /// mode keep `±1`, while the modes rounding toward zero step one ulp in, to
+    /// `sign·(B^p − 1) × B^{−p}`.
+    fn tan_im_endpoint<const B: Word>(&self, sign: Sign) -> Approximation<FBig<R, B>, Rounding> {
+        // The value sits just *inside* sign·1: the residual pulls it toward zero, so it carries
+        // the opposite sign. Only the directional verdict of `round_low_part` is used (fed the
+        // integer `sign·1` with a sub-half-ulp residual of the opposite sign).
+        let res_sign = if sign == Sign::Positive {
+            Sign::Negative
+        } else {
+            Sign::Positive
+        };
+        let one = IBig::from_parts(sign, UBig::from(1u8));
+        match R::round_low_part(&one, res_sign, || Ordering::Less) {
+            Rounding::AddOne | Rounding::SubOne => {
+                // One ulp toward zero: the largest p-digit significand at exponent −p, with
+                // `sign` (e.g. p=1, B=2 → ±0.5). `AddOne` steps above −1, `SubOne` below +1.
+                let p = self.precision();
+                let next = Repr::new(
+                    IBig::from_parts(sign, Repr::<B>::BASE.pow(p) - UBig::from(1u8)),
+                    -(p as isize),
+                );
+                let adj = if sign == Sign::Positive {
+                    Rounding::SubOne
+                } else {
+                    Rounding::AddOne
+                };
+                Approximation::Inexact(FBig::from_repr(next, self.float()), adj)
+            }
+            _ => {
+                let one_repr = if sign == Sign::Positive {
+                    Repr::one()
+                } else {
+                    Repr::neg_one()
+                };
+                Approximation::Inexact(FBig::from_repr(one_repr, self.float()), Rounding::NoOp)
+            }
+        }
     }
 
     /// Simultaneously compute `sin(z·π)` and `cos(z·π)` (context layer), correctly rounded via
@@ -1362,5 +1446,175 @@ mod tests {
         }
         sweep!(2, "base 2", [20, 50, 500]);
         sweep!(10, "base 10", [7, 17, 160]);
+    }
+
+    /// The expected saturation endpoint: `±1` when the mode stays, else the largest p-bit
+    /// significand just inside it (`±(2^p − 1) × 2^{−p}`).
+    fn near_one_repr(sign: Sign, p: usize, stays: bool) -> Repr<2> {
+        if stays {
+            if sign == Sign::Positive {
+                Repr::one()
+            } else {
+                Repr::neg_one()
+            }
+        } else {
+            let next_mag = (UBig::from(1u8) << p) - UBig::from(1u8);
+            Repr::new(IBig::from_parts(sign, next_mag), -(p as isize))
+        }
+    }
+
+    // tan's imaginary part saturates at sign(Im z)·(1 − δ), δ < 4·e^{−2|y|} below half an ulp,
+    // for a large |Im z| — and `tanh = −i·tan(i·z)` of a large real part lands on the same path.
+    // The componentwise division's working-precision mid collapses onto exactly ±1 (the boundary
+    // of a one-sided directed preimage), so the Ziv loop used to climb toward ~2|y|/ln 2 working
+    // digits — an effective hang under directed modes at |y| = 10⁵ (and minutes at ±1755648).
+    // Such inputs now pin the mode-aware endpoint, while the tiny other component stays exact.
+    #[test]
+    fn tan_tanh_large_imaginary_saturation() {
+        let mags = [1755648i64, 100000i64]; // the reported repro magnitude + a decade probe
+        for &p in &[20usize, 50, 100, 500] {
+            for &mag in &mags {
+                for &sign in &[Sign::Positive, Sign::Negative] {
+                    let y = Repr::<2>::new(
+                        if sign == Sign::Positive {
+                            IBig::from(mag)
+                        } else {
+                            -IBig::from(mag)
+                        },
+                        0,
+                    );
+                    // `stays` per mode for a value sign·(1 − δ): nearest and the outward-directed
+                    // mode keep ±1; toward-zero modes step one ulp in.
+                    macro_rules! check {
+                        ($mode:ty, $stays:expr) => {{
+                            let ctx = Context::<$mode>::new(p);
+                            let name = stringify!($mode);
+                            let expected_adj = if $stays {
+                                Rounding::NoOp
+                            } else if sign == Sign::Positive {
+                                Rounding::SubOne
+                            } else {
+                                Rounding::AddOne
+                            };
+                            // `combine_parts` collapses an all-NoOp pair to `Exact` (the flag
+                            // channel carries the per-component ulp *adjustment*, not exactness),
+                            // so the endpoint's Inexact-NoOp case surfaces as `Exact` here.
+                            let expected_flag = if expected_adj == Rounding::NoOp {
+                                None
+                            } else {
+                                Some((Rounding::NoOp, expected_adj))
+                            };
+                            let want = near_one_repr(sign, p, $stays);
+
+                            // tan(0 + iy): im saturates to the endpoint, re = +0 exactly.
+                            let z = CBig::new(Repr::<2>::zero(), y.clone(), ctx);
+                            let t = ctx
+                                .tan::<2>(&z, None)
+                                .unwrap_or_else(|e| panic!("tan failed: {e:?}"));
+                            let t_flag = match &t {
+                                Approximation::Inexact(_, f) => Some(*f),
+                                Approximation::Exact(_) => None,
+                            };
+                            let t = t.value();
+                            assert!(
+                                t.re().is_pos_zero(),
+                                "{name} tan(i·±{mag}) p={p}: real part must be an exact +0"
+                            );
+                            assert_eq!(
+                                t.im(),
+                                &want,
+                                "{name} tan(i·±{mag}) p={p}: imaginary endpoint"
+                            );
+                            assert_eq!(
+                                t_flag, expected_flag,
+                                "{name} tan(i·±{mag}) p={p}: flags"
+                            );
+
+                            // tanh(x + 0i) = −i·tan(ix): re saturates to the endpoint (same
+                            // table — the rotation preserves the component values), im = +0.
+                            let z = CBig::new(y.clone(), Repr::<2>::zero(), ctx);
+                            let h = ctx
+                                .tanh::<2>(&z, None)
+                                .unwrap_or_else(|e| panic!("tanh failed: {e:?}"));
+                            let h_flag = match &h {
+                                Approximation::Inexact(_, f) => Some(*f),
+                                Approximation::Exact(_) => None,
+                            };
+                            let h = h.value();
+                            assert_eq!(
+                                h.re(),
+                                &want,
+                                "{name} tanh(±{mag}) p={p}: real endpoint"
+                            );
+                            assert!(
+                                h.im().is_pos_zero(),
+                                "{name} tanh(±{mag}) p={p}: imaginary part must be an exact +0"
+                            );
+                            assert_eq!(
+                                h_flag,
+                                expected_flag.map(|(_, adj)| (adj, Rounding::NoOp)),
+                                "{name} tanh(±{mag}) p={p}: flags"
+                            );
+                        }};
+                    }
+                    check!(mode::HalfEven, true);
+                    check!(mode::HalfAway, true);
+                    check!(mode::Away, true);
+                    check!(mode::Up, sign == Sign::Positive);
+                    check!(mode::Down, sign == Sign::Negative);
+                    check!(mode::Zero, false);
+                }
+            }
+        }
+    }
+
+    // On the saturated path the *other* component is a genuine tiny value (dashu has no
+    // underflow — sin 2x / (cos 2x + cosh 2y) ≈ sin 2x·2e^{−2y} is representable), not a
+    // saturated zero: cross-check it against a p+60 HalfEven oracle re-rounded under the mode
+    // under test. (The saturated im part cannot use that oracle — the oracle's own value is
+    // exactly 1, whose Down re-round is 1, while the true value's is 1 − ulp; the endpoint table
+    // above is its ground truth.)
+    #[test]
+    fn tan_large_imaginary_real_part_matches_oracle() {
+        let x = Repr::<2>::new(IBig::from(3), 0);
+        let y = Repr::<2>::new(IBig::from(100000), 0);
+        for &p in &[20usize, 50, 100, 500] {
+            let hi = Context::<mode::HalfEven>::new(p + 60);
+            let oracle = hi
+                .tan::<2>(&CBig::new(x.clone(), y.clone(), hi), None)
+                .unwrap()
+                .value();
+            // the oracle's tiny real part must itself be nonzero (a sanity check on the oracle)
+            assert!(
+                !oracle.re().significand().is_zero(),
+                "oracle tan(3 + i·10⁵) real part collapsed to zero at p={p}"
+            );
+            macro_rules! check {
+                ($mode:ty) => {{
+                    let ctx = Context::<$mode>::new(p);
+                    let t = ctx
+                        .tan::<2>(&CBig::new(x.clone(), y.clone(), ctx), None)
+                        .unwrap()
+                        .value();
+                    let want = FBig::<$mode, 2>::from_repr(
+                        oracle.re().clone(),
+                        FloatCtxt::<$mode>::new(0),
+                    )
+                    .with_precision(p)
+                    .value()
+                    .into_repr();
+                    assert_eq!(
+                        t.re(),
+                        &want,
+                        "{} tan(3 + i·10⁵) p={p}: tiny real part vs oracle",
+                        stringify!($mode)
+                    );
+                }};
+            }
+            check!(mode::HalfEven);
+            check!(mode::Down);
+            check!(mode::Up);
+            check!(mode::Zero);
+        }
     }
 }

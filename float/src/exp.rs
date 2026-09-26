@@ -290,7 +290,8 @@ impl<R: Round> Context<R> {
     /// representable magnitude (its exponent would fall below `isize::MIN`). Outward modes round
     /// the magnitude up to the smallest `B^{isize::MIN}` of the result's sign; toward-zero, the
     /// opposite direction, and nearest round to signed zero. This mirrors the f32/f64 directed
-    /// underflow and is the shared endpoint used by `exp_extreme_negative`, `powi`, and `powf`, so
+    /// underflow and is the shared endpoint used by `near_one_endpoint` (via `exp_m1`), `powi`, and
+    /// `powf`, so
     /// a directed `pow` (e.g. `pow(10, y)` ≈ `exp(y·ln 10)`) saturates to the same value `exp` does
     /// — keeping `Up ≥ Down` consistent across them. The endpoint carries the input context, so a
     /// downstream op keeps a limited precision.
@@ -808,7 +809,7 @@ impl<R: ErrorBounds> Context<R> {
             let thresh = self.precision as f32 * B.log2_est() * core::f32::consts::LN_2
                 + core::f32::consts::LN_2;
             if x.log2_bounds().0 > thresh.log2_bounds().1 {
-                return Ok(self.exp_extreme_negative::<B>());
+                return Ok(self.near_one_endpoint::<B>(Sign::Negative));
             }
         }
 
@@ -841,7 +842,7 @@ impl<R: ErrorBounds> Context<R> {
                 return if input_sign == Sign::Positive {
                     Err(FpError::Overflow(Sign::Positive))
                 } else if minus_one {
-                    Ok(self.exp_extreme_negative::<B>())
+                    Ok(self.near_one_endpoint::<B>(Sign::Negative))
                 } else {
                     Err(FpError::Underflow(Sign::Positive))
                 };
@@ -868,34 +869,59 @@ impl<R: ErrorBounds> Context<R> {
         })
     }
 
-    /// Directed-rounded `exp_m1(x)` when `x` is so large and negative that `exp(x)` has underflowed
-    /// below the smallest representable FBig (the reduction quotient `s = floor(x/ln B)` overflows
-    /// `isize`). `exp_m1(x) = exp(x) − 1` then lies in `(−1, −1 + B^{isize::MIN})` — pinned only up
-    /// to a sub-representable residual, so the directed rounding mode picks the endpoint of the bin
-    /// it falls in: a value just above `−1` rounds to `−1` under `Down`/`Away`/nearest, and to the
-    /// next representable above `−1` under `Up`/`Zero` (both round the magnitude down toward 0).
+    /// Directed-rounded endpoint for a value that equals `sign·(1 − δ)` with `0 < δ` below half an
+    /// ulp of `±1`: the rounding is fully determined by the mode — the result is `±1` itself, or the
+    /// next representable *inside* it (`sign·(B^p − 1) × B^(−p)`), the latter under the modes that
+    /// round the magnitude down toward zero (`Up`/`Zero` just above `−1`, `Down`/`Zero` just below
+    /// `+1`).
     ///
-    /// (`exp` itself of such an `x` is handled earlier — it returns `Err(Underflow)`, whose directed
-    /// endpoint is the same `+0` / smallest-positive this used to produce inline.)
+    /// Shared by `exp_m1` (whose value is `−1` plus a sub-representable positive residual once
+    /// `exp(x)` has underflowed below the smallest representable FBig — the reduction quotient
+    /// `s = floor(x/ln B)` overflows `isize`) and `tanh` (whose value saturates at
+    /// `sign(x)·(1 − 2e^{−2|x|})` for large `|x|`). In both cases the Ziv loop cannot certify the
+    /// candidate: the working-precision mid collapses onto exactly `±1`, which sits on the boundary
+    /// of a directed rounding preimage (one-sided), so the containment test never resolves and the
+    /// loop would run its retry cap at an astronomically large working precision.
     ///
-    /// `Round::round_low_part` decides the endpoint: fed `−1` with a positive sub-ulp residual, its
-    /// `AddOne`/`NoOp` verdict is exactly the "round up to the next representable / stay" decision.
-    /// (The literal significand arithmetic `round_low_part` would do is irrelevant here — only its
-    /// directional verdict is used.)
-    fn exp_extreme_negative<const B: Word>(&self) -> Rounded<FBig<R, B>> {
-        // exp_m1(huge −): −1 + (sub-representable positive) ⇒ just above −1.
-        match R::round_low_part(&IBig::NEG_ONE, Sign::Positive, || Ordering::Less) {
-            AddOne => {
-                // Next representable above −1 at this precision: −(B^p − 1) × B^(−p)
-                // (the largest p-digit significand at exponent −p, e.g. p=1,B=2 → −0.5).
+    /// `Round::round_low_part` decides the endpoint: fed the integer `sign·1` with a residual of the
+    /// opposite sign (below half an ulp), its `AddOne`/`SubOne`/`NoOp` verdict is exactly the
+    /// "step one ulp toward zero / stay" decision. (The literal significand arithmetic
+    /// `round_low_part` would do is irrelevant here — only its directional verdict is used.)
+    pub(crate) fn near_one_endpoint<const B: Word>(&self, sign: Sign) -> Rounded<FBig<R, B>> {
+        // The value sits just *inside* sign·1: the residual pulls it toward zero, so it carries
+        // the opposite sign.
+        let res_sign = if sign == Sign::Positive {
+            Sign::Negative
+        } else {
+            Sign::Positive
+        };
+        match R::round_low_part(&IBig::from_parts(sign, UBig::ONE), res_sign, || Ordering::Less) {
+            AddOne | SubOne => {
+                // One ulp toward zero: the largest p-digit significand at exponent −p, with `sign`
+                // (e.g. p=1, B=2 → ±0.5). `AddOne` steps above −1, `SubOne` below +1.
                 let p = self.precision;
                 let next_mag = Repr::<B>::BASE.pow(p) - UBig::ONE;
-                let next = Repr::new(IBig::from_parts(Sign::Negative, next_mag), -(p as isize));
-                Inexact(FBig::new(next, *self), AddOne)
+                let next = Repr::new(IBig::from_parts(sign, next_mag), -(p as isize));
+                let adj = if sign == Sign::Positive {
+                    SubOne
+                } else {
+                    AddOne
+                };
+                Inexact(FBig::new(next, *self), adj)
             }
-            // Carry the input context: `−FBig::ONE` is precision 0, which would make a downstream op
+            // Carry the input context: `±FBig::ONE` is precision 0, which would make a downstream op
             // on the result panic via `assert_limited_precision(0)`.
-            _ => Inexact(FBig::new(Repr::<B>::neg_one(), *self), NoOp),
+            _ => Inexact(
+                FBig::new(
+                    if sign == Sign::Positive {
+                        Repr::<B>::one()
+                    } else {
+                        Repr::<B>::neg_one()
+                    },
+                    *self,
+                ),
+                NoOp,
+            ),
         }
     }
 }

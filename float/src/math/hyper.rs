@@ -25,7 +25,7 @@ use crate::{
     repr::{Context, Repr, Word},
     round::{mode, ErrorBounds},
 };
-use dashu_base::{Abs, Approximation::Exact, BitTest, Sign};
+use dashu_base::{Abs, Approximation::Exact, BitTest, EstimatedLog2, Sign};
 use dashu_int::IBig;
 
 impl<R: ErrorBounds> Context<R> {
@@ -388,11 +388,30 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
         }
 
+        // For sufficiently large |x|, tanh(x) = sign(x)·(1 − δ) with 0 < δ = 2/(e^{2|x|}+1) below
+        // half an ulp of ±1, so its rounding is fully determined (Up/Zero just above −1 and
+        // Down/Zero just below +1 step one ulp toward zero; the other modes stay at ±1) —
+        // short-circuit to the mode-aware endpoint, mirroring `exp_m1`'s extreme-negative case.
+        // The Ziv loop cannot certify that result: the working-precision mid collapses onto
+        // exactly ±1, which sits on the boundary of a directed rounding preimage (one-sided), so
+        // the containment test never resolves and the loop climbs to a working precision of
+        // ~2|x|/ln 2 — millions of digits for a plain input like tanh(10⁵) — before the residual
+        // becomes representable. The cutoff is δ < half-ulp(±1): ±1 sits on a power-of-B
+        // boundary, so the spacing just inside it is B^-p, i.e. 2·e^{−2|x|} < B^{−p}/2 ⟺
+        // |x| > (p·ln B + ln 4)/2. Compare the lower bound of log2|x| against an upper bound of
+        // log2(threshold) so a borderline input still falls through to Ziv (which converges there
+        // on the first attempt — its initial working precision already exceeds 2|x|/ln 2 < p + 2).
+        let thresh = self.precision as f32 * B.log2_est() * core::f32::consts::LN_2 / 2.0
+            + core::f32::consts::LN_2;
+        if x.log2_bounds().0 > thresh.log2_bounds().1 {
+            return Ok(self.near_one_endpoint::<B>(x.sign()));
+        }
+
         // tanh(x) = exp_m1(2x) / (exp_m1(2x) + 2). `exp_m1(2x)` comes from the Ball-based
         // `exp_compute` on the *exact* `2x = x + x` (so `exp_compute` folds the input's own
-        // rounding into the radius); the division's rounding is tracked mechanically. For large
-        // positive x it overflows → tanh = +1 (returned inline as an exact value); for large
-        // negative x, exp_m1(2x) → -1 (finite), so tanh → -1 naturally.
+        // rounding into the radius); the division's rounding is tracked mechanically. Inputs
+        // saturating at ±1 were short-circuited above, so `exp_compute`'s reduction quotient can
+        // no longer overflow `isize` on this path either.
         // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
         // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
         // the growing work precision, as before). Sized once, outside the loop.
@@ -405,7 +424,6 @@ impl<R: ErrorBounds> Context<R> {
             let two_x = x + x;
             match work.exp_compute::<B>(&two_x, work.precision, true, n, reborrow_cache(&mut cache))
             {
-                Err(FpError::Overflow(_)) => Ok((FBig::<R, B>::ONE, FBig::<R, B>::ZERO)), // exact +1
                 Ok(e) => {
                     let wp = work.precision;
                     let two = Ball::exact_int(IBig::from(2), wp);
@@ -1278,6 +1296,122 @@ mod tests {
                 .repr()
                 .significand()
                 .is_zero());
+        }
+    }
+
+    /// The expected tanh saturation endpoint: `±1` when the mode stays, otherwise the largest
+    /// p-bit significand just inside it (`±(2^p − 1) × 2^{−p}`).
+    fn tanh_endpoint_repr(sign: Sign, p: usize, stays: bool) -> Repr<2> {
+        if stays {
+            if sign == Sign::Positive {
+                Repr::<2>::one()
+            } else {
+                Repr::<2>::neg_one()
+            }
+        } else {
+            let next_mag = (dashu_int::UBig::from(1u8) << p) - dashu_int::UBig::from(1u8);
+            Repr::new(IBig::from_parts(sign, next_mag), -(p as isize))
+        }
+    }
+
+    // tanh saturates at ±1 for large |x|: the value is sign(x)·(1 − δ) with δ = 2/(e^{2|x|}+1)
+    // below half an ulp, so the rounding is fully determined — but the Ziv working-precision mid
+    // collapses onto exactly ±1 (the boundary of a one-sided directed preimage), which the loop
+    // can never certify: it used to climb toward a working precision of ~2|x|/ln 2 — an
+    // effective hang for plain inputs like tanh(±1755648) (minutes at |x| = 10⁵, and the
+    // positive-side "overflow → exact +1" shortcut was unreachable). Such inputs now
+    // short-circuit to the mode-aware endpoint before the loop, mirroring exp_m1's gate.
+    #[test]
+    fn test_tanh_large_argument_saturation() {
+        // deterministic magnitudes: the reported repro value (±1755648 — both signs used to
+        // hang), plus decade probes whose loops used to reach ~30k/~300k-bit working precisions.
+        let mags = [
+            dashu_int::UBig::from(1755648u64),
+            dashu_int::UBig::from(10000u64),
+            dashu_int::UBig::from(100000u64),
+        ];
+        for &p in &[20usize, 50, 100, 500] {
+            for mag in &mags {
+                for &sign in &[Sign::Positive, Sign::Negative] {
+                    let x = Repr::<2>::new(IBig::from_parts(sign, mag.clone()), 0);
+                    // `stays` per mode: nearest and the outward-directed mode keep ±1; the modes
+                    // rounding toward zero (Down/Zero below +1, Up/Zero above −1) step one ulp in.
+                    macro_rules! check {
+                        ($mode:ty, $stays:expr) => {{
+                            use crate::round::Rounding;
+                            let r = Context::<$mode>::new(p)
+                                .tanh::<2>(&x, None)
+                                .unwrap_or_else(|e| panic!("tanh failed: {e:?}"));
+                            let name = stringify!($mode);
+                            let want = tanh_endpoint_repr(sign, p, $stays);
+                            let got_adj = match &r {
+                                dashu_base::Approximation::Inexact(_, adj) => *adj,
+                                _ => panic!("{name} tanh(±{mag}) p={p} must be inexact"),
+                            };
+                            let got = r.value();
+                            assert_eq!(got.repr(), &want, "{name} tanh(±{mag}) p={p}");
+                            let expected_adj = if $stays {
+                                Rounding::NoOp
+                            } else if sign == Sign::Positive {
+                                Rounding::SubOne
+                            } else {
+                                Rounding::AddOne
+                            };
+                            assert_eq!(got_adj, expected_adj, "{name} flag tanh(±{mag}) p={p}");
+                            assert_eq!(
+                                got.precision(),
+                                p,
+                                "{name} endpoint lost the input precision"
+                            );
+                        }};
+                    }
+                    check!(mode::HalfEven, true);
+                    check!(mode::HalfAway, true);
+                    check!(mode::Away, true);
+                    check!(mode::Up, sign == Sign::Positive);
+                    check!(mode::Down, sign == Sign::Negative);
+                    check!(mode::Zero, false);
+                }
+            }
+        }
+    }
+
+    // Below the saturation threshold the value goes through the normal Ziv path — the gate must
+    // not over-fire. Cross-check directed and nearest modes against a p+60 HalfEven oracle
+    // (re-rounded under the mode under test), on inputs just under and comfortably under the
+    // threshold for their precision (p = 20 → threshold ≈ 7.6; p = 50 → ≈ 18.0).
+    #[test]
+    fn test_tanh_below_threshold_matches_oracle() {
+        for &(mag, p) in &[(2i64, 20usize), (7, 20), (10, 50), (17, 50)] {
+            for &sign in &[Sign::Positive, Sign::Negative] {
+                let mag_i = IBig::from(mag);
+                let x = Repr::<2>::new(
+                    if sign == Sign::Positive {
+                        mag_i
+                    } else {
+                        -mag_i
+                    },
+                    0,
+                );
+                let hi = Context::<mode::HalfEven>::new(p + 60)
+                    .tanh::<2>(&x, None)
+                    .unwrap()
+                    .value();
+                macro_rules! check {
+                    ($mode:ty) => {{
+                        let want = reround::<$mode, 2>(&hi, p);
+                        let got = Context::<$mode>::new(p)
+                            .tanh::<2>(&x, None)
+                            .unwrap()
+                            .value();
+                        assert_eq!(got, want, "{} tanh(±{mag}) p={p}", stringify!($mode));
+                    }};
+                }
+                check!(mode::HalfEven);
+                check!(mode::Down);
+                check!(mode::Up);
+                check!(mode::Zero);
+            }
         }
     }
 }
