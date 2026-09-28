@@ -37,7 +37,7 @@ const MAG_ONE_HALF: Word = 1 << (Word::BITS - 1);
 /// their radius bookkeeping to `+∞` and dead-locked the Ziv loop.
 ///
 /// `Copy` and allocation-free — radii flow through tight series loops by value.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Mag {
     man: Word,
     exp: i128,
@@ -83,7 +83,7 @@ impl Mag {
 
     /// The exact power of two `2^exp`; an exponent beyond the finite range saturates to
     /// `+∞` (a sound over-bound).
-    pub(crate) const fn from_pow2(exp: isize) -> Mag {
+    const fn from_pow2(exp: isize) -> Mag {
         // value = 2^exp  ⇔  man = MAG_ONE_HALF, stored exp = exp + 1
         Mag::from_pow2_stored(exp.saturating_add(1) as i128)
     }
@@ -207,7 +207,7 @@ impl Mag {
 
     /// [`mul_pow2`](Self::mul_pow2) at the internal `i128` exponent width — the fold helpers
     /// (`from_repr`'s base scaling, `ulp_mag`) work at exponent scales past `isize`.
-    pub(crate) fn mul_pow2_i128(&self, e: i128) -> Mag {
+    fn mul_pow2_i128(&self, e: i128) -> Mag {
         if self.is_special() {
             *self
         } else {
@@ -215,48 +215,19 @@ impl Mag {
         }
     }
 
-    /// `self^n`, rounded up (left-to-right binary exponentiation). `∞^n = ∞` for all `n`
-    /// (including 0); `x^0 = 1` otherwise. Private: only [`Mag::exp_upper`] chains powers.
-    fn pow(&self, n: usize) -> Mag {
-        if self.is_infinite() {
-            return Mag::INFINITY;
+    /// `self^(2^j)`, rounded up (j squarings) — sentinels pass through `mul` unchanged.
+    /// Private: only [`Mag::exp_upper`] chains powers, always via a power-of-two exponent.
+    fn pow_pow2(&self, j: usize) -> Mag {
+        let mut y = *self;
+        for _ in 0..j {
+            y = y.mul(&y);
         }
-        match n {
-            0 => Mag::ONE,
-            1 => *self,
-            2 => self.mul(self),
-            _ => {
-                let mut y = *self;
-                for i in (0..usize_bits(n) as usize - 1).rev() {
-                    y = y.mul(&y);
-                    if (n >> i) & 1 == 1 {
-                        y = y.mul(self);
-                    }
-                }
-                y
-            }
-        }
+        y
     }
 
     // ========================================================================
     // Round-DOWN twins (lower bounds; used by radius-propagation denominators)
     // ========================================================================
-
-    /// An upper bound on `max(0, self − other)`, rounded up and floored at `0` — the round-up
-    /// twin of [`Mag::sub_down`], used where an upper bound of a difference feeds a fold
-    /// (e.g. the complex log's `ln(hi/lo)` bracket).
-    pub fn sub(&self, other: &Mag) -> Mag {
-        if self.is_infinite() {
-            return Mag::INFINITY;
-        }
-        if other.is_infinite() {
-            return Mag::ZERO;
-        }
-        if self.is_zero() || other.is_zero() {
-            return *self; // 0 − y = 0 ;  x − 0 = x
-        }
-        sub_impl(self.man, self.exp, other.man, other.exp, true)
-    }
 
     /// A lower bound on `max(0, self − other)`, floored at `0`.
     pub fn sub_down(&self, other: &Mag) -> Mag {
@@ -269,7 +240,7 @@ impl Mag {
         if self.is_infinite() {
             return Mag::INFINITY;
         }
-        sub_impl(self.man, self.exp, other.man, other.exp, false)
+        sub_impl(self.man, self.exp, other.man, other.exp)
     }
 
     /// A lower bound on `self · other`.
@@ -292,7 +263,7 @@ impl Mag {
     /// An upper bound on `e^self` (`self ≥ 0`), by halve-then-pow: for `v = self · 2⁻ʲ ∈ (0, 1)`,
     /// `e^t ≤ 1 + 2t` on `[0, 1]` (the difference `1 + 2t − e^t` is nonnegative there — it is `0`
     /// at `t = 0` and peaks at `2·ln 2 − 1 > 0` in between), so
-    /// `e^self ≤ (1 + 2v)^(2ʲ)`, evaluated with the round-up `Mag::pow`. `j` is the top-bit
+    /// `e^self ≤ (1 + 2v)^(2ʲ)`, evaluated with `j` round-up squarings. `j` is the top-bit
     /// position, capped so `2ʲ` fits a `usize`; beyond the cap any finite radius is dwarfed, so
     /// `+∞` (always sound) is returned. Integer-only — no libm, `core`-clean.
     pub fn exp_upper(&self) -> Mag {
@@ -308,7 +279,7 @@ impl Mag {
         }
         let j = self.exp.max(0) as usize;
         let v = self.mul_pow2(-(j as isize));
-        (Mag::ONE.add(&v.mul_pow2(1))).pow(1usize << j)
+        Mag::ONE.add(&v.mul_pow2(1)).pow_pow2(j)
     }
 
     // ========================================================================
@@ -453,9 +424,9 @@ fn add_up(mx: Word, ex: i128, my: Word, ey: i128) -> Mag {
     }
 }
 
-/// Shared core of `sub`/`sub_down`. Assumes both inputs finite & nonzero; a minuend below the
+/// Core of [`Mag::sub_down`]. Assumes both inputs finite & nonzero; a minuend below the
 /// subtrahend's exponent floors at `0`.
-fn sub_impl(mx: Word, ex: i128, my: Word, ey: i128, round_up: bool) -> Mag {
+fn sub_impl(mx: Word, ex: i128, my: Word, ey: i128) -> Mag {
     let bits = Word::BITS as i128;
     if ex < ey {
         return Mag::ZERO;
@@ -465,44 +436,31 @@ fn sub_impl(mx: Word, ex: i128, my: Word, ey: i128, round_up: bool) -> Mag {
         if mx <= my {
             return Mag::ZERO;
         }
-        from_double_rounded((mx - my) as DoubleWord, round_up)
-            .mul_pow2_i128(ex.saturating_sub(bits))
+        from_double_truncated((mx - my) as DoubleWord).mul_pow2_i128(ex.saturating_sub(bits))
     } else if shift >= bits {
-        if round_up {
-            // `other` is below one ulp: the tightest round-up is `self` itself
-            Mag { man: mx, exp: ex }
-        } else {
-            from_double_rounded((mx - 1) as DoubleWord, false)
-                .mul_pow2_i128(ex.saturating_sub(bits))
-        }
+        // `other` is below one ulp of `self` (ex > ey, so `self` strictly dominates): a lower
+        // bound is `self` with its last significand bit cleared.
+        from_double_truncated((mx - 1) as DoubleWord).mul_pow2_i128(ex.saturating_sub(bits))
     } else {
         // shift ∈ [1, BITS); the exact difference fits in a DoubleWord
         let d = ((mx as DoubleWord) << shift as u32) - (my as DoubleWord);
-        from_double_rounded(d, round_up).mul_pow2_i128(ey.saturating_sub(bits))
+        from_double_truncated(d).mul_pow2_i128(ey.saturating_sub(bits))
     }
 }
 
-/// Encode a double-word magnitude into a normalized `Mag`, rounding the significand up (or
-/// down) on any bit dropped below the `Word::BITS` width.
-fn from_double_rounded(x: DoubleWord, round_up: bool) -> Mag {
+/// Encode a double-word magnitude into a normalized `Mag`, truncating any bits dropped
+/// below the `Word::BITS` width (a lower bound of the input).
+fn from_double_truncated(x: DoubleWord) -> Mag {
     if x == 0 {
         return Mag::ZERO;
     }
     if (x >> Word::BITS) == 0 {
         return Mag::from_word(x as Word);
     }
-    // x ∈ [2^BITS, 2^(2·BITS)): n significant bits in [BITS+1, 2·BITS]
+    // x ∈ [2^BITS, 2^(2·BITS)): keep the top `Word::BITS` significant bits
     let n = 2 * Word::BITS - x.leading_zeros();
     let shift = n - Word::BITS;
-    let hi = (x >> shift) as Word;
-    let has_low = x & (((1 as DoubleWord) << shift) - 1) != 0;
-    let mm = (hi as DoubleWord) + ((has_low && round_up) as DoubleWord);
-    if (mm >> Word::BITS) != 0 {
-        // +1 carried into the top bit: collapse to ONE_HALF, exponent up one more
-        build(MAG_ONE_HALF, n as i128 + 1)
-    } else {
-        build(mm as Word, n as i128)
-    }
+    build((x >> shift) as Word, n as i128)
 }
 
 /// The O(1) significand magnitude bound: take the top `Word::BITS` bits directly from the
@@ -536,12 +494,6 @@ fn significand_bound(sig: &IBig, round_up: bool) -> Mag {
     } else {
         build(mm as Word, bit_len as i128)
     }
-}
-
-/// The number of significant bits of `n > 0`.
-#[inline]
-fn usize_bits(n: usize) -> u32 {
-    usize::BITS - n.leading_zeros()
 }
 
 /// `⌈a·ratio/2^frac_bits⌉` (`up`) or `⌊a·ratio/2^frac_bits⌋`, with `ratio` a `2^-frac_bits`
@@ -691,12 +643,15 @@ mod tests {
         assert!(dycmp(dy(&a.add(&b)), dyi(8.into())) != Less);
         assert!(dycmp(dy(&a.mul(&b)), dyi(15.into())) != Less);
         assert!(dycmp(dy(&a.mul_down(&b)), dyi(15.into())) != Greater);
-        // sub: 5 − 3 = 2
-        let d = b.sub(&a);
-        assert!(dycmp(dy(&d), dyi(2.into())) != Less);
-        // sub floors at zero: 3 − 5 = 0, and any − tiny = any
-        assert!(a.sub(&b).is_zero());
-        assert_eq!(a.sub(&tiny), a);
+        // sub_down: a lower bound of 5 − 3 = 2
+        let d = b.sub_down(&a);
+        assert!(dycmp(dy(&d), dyi(2.into())) != Greater);
+        // sub floors at zero: 3 − 5 = 0
+        assert!(a.sub_down(&b).is_zero());
+        // a − tiny (tiny far below one ulp): the lower bound stays in (1, a]
+        let s = a.sub_down(&tiny);
+        assert!(dycmp(dy(&s), dy(&a)) != Greater);
+        assert!(dycmp(dy(&s), dyi(1.into())) != Less);
         // 0 · ∞ = 0 and ÷0 → ∞
         assert!(Mag::ZERO.mul(&Mag::INFINITY).is_zero());
         assert!(a.div(&Mag::ZERO).is_infinite());

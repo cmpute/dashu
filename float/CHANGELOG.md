@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Change
+- Pruned the internal `Mag` radius type down to the subset the float/complex error
+  propagation actually uses: removed the round-up `Mag::sub` (dead since the complex log
+  bracket switched to `sub_down`; its helper `from_double_rounded` collapsed to a
+  truncating `from_double_truncated`), replaced the generic binary-exponentiation
+  `Mag::pow` with a plain squaring helper (`exp_upper` only ever raises to `2^j`), dropped
+  the unused `Hash` derive, and made `from_pow2`/`mul_pow2_i128` module-private.
+  Bit-identical results on every live path (`Mag` stays `#[doc(hidden)]`, so no public API
+  changes).
+
 ## 0.6.1
 
 ### Add

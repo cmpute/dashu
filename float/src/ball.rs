@@ -411,7 +411,7 @@ mod tests {
         // zero numerator: |r| ≤ rad_a/LB(|b|) — a finite, sound radius (old special case)
         let z = Ball {
             mid: Repr::zero(),
-            rad: crate::mag::Mag::from_pow2(-20),
+            rad: crate::mag::Mag::ONE.mul_pow2(-20),
         };
         let q = z.div(&b, p).unwrap();
         assert!(!q.rad.is_infinite());
@@ -425,7 +425,7 @@ mod tests {
         // is what a single |m|·rad fold (the factor-2 bug) fails to cover.
         let ball = Ball {
             mid: Repr::new(IBig::ONE, 0),
-            rad: crate::mag::Mag::from_pow2(-10),
+            rad: crate::mag::Mag::ONE.mul_pow2(-10),
         };
         let sq = ball.sqr(p).unwrap();
         let hi_corner = Repr::new((IBig::ONE << 20) + (IBig::ONE << 11) + IBig::ONE, -20);
