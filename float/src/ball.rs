@@ -103,7 +103,7 @@ impl<const B: Word> Ball<B> {
     pub fn sqr(&self, prec: usize) -> Result<Self, FpError> {
         let ctx = Context::<mode::HalfEven>::new(prec);
         let (mid, eps) = finish_mid(ctx.sqr(&self.mid)?, prec);
-        let two_a = Mag::from_repr(&self.mid).mul_pow2(1); // 2·‖a.mid‖, exact
+        let two_a = Mag::from_repr(&self.mid).mul2(); // 2·‖a.mid‖, exact
         let rad = two_a.mul(&self.rad).add(&self.rad.mul(&self.rad)).add(&eps);
         Ok(Self { mid, rad })
     }
@@ -180,7 +180,7 @@ impl<const B: Word> Ball<B> {
             self.rad,
             self.mid,
         );
-        let denom = Mag::from_repr_lower(&mid).mul_pow2(1); // 2·LB(|mid_r|)
+        let denom = Mag::from_repr_lower(&mid).mul2(); // 2·LB(|mid_r|)
         let rad = self.rad.div(&denom).add(&eps);
         Ok(Self { mid, rad })
     }
@@ -224,7 +224,7 @@ impl<const B: Word> Ball<B> {
         let rad = if s == 0 || self.rad.is_zero() {
             self.rad
         } else if B == 2 {
-            self.rad.mul_pow2(s) // exact
+            self.rad.mul_pow2(s as i128) // exact
         } else {
             Mag::from_base_pow::<B>(s).mul(&self.rad) // rounds up
         };

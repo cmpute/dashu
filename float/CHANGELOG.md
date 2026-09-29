@@ -3,12 +3,24 @@
 ## Unreleased
 
 ### Change
+- Specialized the ×2 pattern out of `Mag`'s power-of-two scaling: the propagation folds'
+  `mul_pow2(1)` cross-terms now call a dedicated `const #[inline] mul2()` (a normalized
+  significand never renormalizes on a single doubling, so it is a bare exponent bump,
+  inlinable cross-crate), and every other caller migrated to the general scaling at the
+  internal `i128` exponent width — now the one `mul_pow2` (the `isize`-width wrapper and
+  the `_i128` suffix are gone). The single-user kernels `add_up`/`sub_impl` are inlined
+  into `add`/`sub_down`, and `exp_upper` keeps its halving exponent in `i128` end to end
+  (no `usize` round-trip). The raw-parts assembler became an idiomatic private
+  `Mag::new(man, exp)` associated constructor (absorbing `from_pow2_stored`'s duplicate
+  saturation check), and the too-large-significand round-up normalizer likewise became
+  `Mag::new_round_up(raw, exp)`; `new` debug-asserts the normalization contract, so the
+  test suite validates it at every construction path. No observable behavior change.
 - Pruned the internal `Mag` radius type down to the subset the float/complex error
   propagation actually uses: removed the round-up `Mag::sub` (dead since the complex log
   bracket switched to `sub_down`; its helper `from_double_rounded` collapsed to a
   truncating `from_double_truncated`), replaced the generic binary-exponentiation
   `Mag::pow` with a plain squaring helper (`exp_upper` only ever raises to `2^j`), dropped
-  the unused `Hash` derive, and made `from_pow2`/`mul_pow2_i128` module-private.
+  the unused `Hash` derive, and made `from_pow2` module-private.
   Bit-identical results on every live path (`Mag` stays `#[doc(hidden)]`, so no public API
   changes).
 

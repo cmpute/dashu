@@ -69,11 +69,7 @@ impl<R: ErrorBounds> Context<R> {
             let (sinhy, coshy) = gctx.sinh_cosh(&cb.im.mid, reborrow_cache(&mut cache));
             let mut shy = Ball::from_rounded(sinhy?.map(FBig::into_repr), pw);
             let mut chy = Ball::from_rounded(coshy?.map(FBig::into_repr), pw);
-            let y_fold = chy
-                .mag()
-                .mul(&cb.im.rad.exp_upper())
-                .mul(&cb.im.rad)
-                .mul_pow2(1);
+            let y_fold = chy.mag().mul(&cb.im.rad.exp_upper()).mul(&cb.im.rad).mul2();
             shy.add_error(y_fold);
             chy.add_error(y_fold);
             let sin_re = sx.mul(&chy, pw)?;
@@ -169,7 +165,7 @@ impl<R: ErrorBounds> Context<R> {
             let (sinh2y, cosh2y) = gctx.sinh_cosh(&y2.mid, reborrow_cache(&mut cache));
             let mut shy2 = Ball::from_rounded(sinh2y?.map(FBig::into_repr), pw);
             let mut chy2 = Ball::from_rounded(cosh2y?.map(FBig::into_repr), pw);
-            let y2_fold = chy2.mag().mul(&y2.rad.exp_upper()).mul(&y2.rad).mul_pow2(1);
+            let y2_fold = chy2.mag().mul(&y2.rad.exp_upper()).mul(&y2.rad).mul2();
             shy2.add_error(y2_fold);
             chy2.add_error(y2_fold);
             // D = cos 2x + cosh 2y  (a benign sum: a bounded term plus one ≥ 1)
@@ -237,11 +233,7 @@ impl<R: ErrorBounds> Context<R> {
             let (sinhy, coshy) = gctx.sinh_cosh_pi(&cb.im.mid, reborrow_cache(&mut cache));
             let mut shy = Ball::from_rounded(sinhy?.map(FBig::into_repr), pw);
             let mut chy = Ball::from_rounded(coshy?.map(FBig::into_repr), pw);
-            let y_fold = chy
-                .mag()
-                .mul(&cb.im.rad.exp_upper())
-                .mul(&cb.im.rad)
-                .mul_pow2(1);
+            let y_fold = chy.mag().mul(&cb.im.rad.exp_upper()).mul(&cb.im.rad).mul2();
             shy.add_error(y_fold);
             chy.add_error(y_fold);
             let sin_re = sx.mul(&chy, pw)?;
@@ -349,7 +341,7 @@ impl<R: ErrorBounds> Context<R> {
             let (sinh2y, cosh2y) = gctx.sinh_cosh_pi(&y2.mid, reborrow_cache(&mut cache));
             let mut shy2 = Ball::from_rounded(sinh2y?.map(FBig::into_repr), pw);
             let mut chy2 = Ball::from_rounded(cosh2y?.map(FBig::into_repr), pw);
-            let y2_fold = chy2.mag().mul(&y2.rad.exp_upper()).mul(&y2.rad).mul_pow2(1);
+            let y2_fold = chy2.mag().mul(&y2.rad.exp_upper()).mul(&y2.rad).mul2();
             shy2.add_error(y2_fold);
             chy2.add_error(y2_fold);
             // D = cos_pi(2x) + cosh(2πy)  (a benign sum: a bounded term plus one ≥ 1)
