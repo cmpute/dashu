@@ -354,22 +354,21 @@ fn align_as_int<R: Round, const B: Word>(lhs: FBig<R, B>, rhs: FBig<R, B>) -> (I
 // This is `R::round_low_part` applied to the quotient `k + f`, where `k` is the truncated
 // quotient, `f = ±r1/|rhs|` carries the quotient's sign, and the half test is `r1_vs_r2`.
 // The shipped modes never inspect the integer beyond its sign (and, on an exact tie, its
-// parity via `bit(0)`), so a small stand-in carrying those bits is passed instead of `k`,
-// which is never materialized. `tie_quotient_odd` is only evaluated on an exact tie
-// (`r1_vs_r2 == Equal`) to compute that parity.
-fn rem_rounds_away<R: Round, F: FnOnce() -> bool>(
+// parity via `bit(0)`), so a small stand-in carrying those bits is passed instead of `k` —
+// the Greater branch never has the quotient, and the other branches get its parity for
+// free from the division that produces the remainder.
+fn rem_rounds_away<R: Round>(
     quotient_sign: Sign,
     r1_zero: bool,
     r1_vs_r2: Ordering,
-    tie_quotient_odd: F,
+    quotient_odd: bool,
 ) -> bool {
     if r1_zero {
         return false;
     }
     let quotient_hint = if r1_vs_r2 == Ordering::Equal {
         // exact half-integer quotient: only HalfEven consults the parity
-        let odd = tie_quotient_odd();
-        match (quotient_sign, odd) {
+        match (quotient_sign, quotient_odd) {
             (Sign::Positive, false) => IBig::from(2),
             (Sign::Positive, true) => IBig::from(1),
             (Sign::Negative, false) => IBig::from(-2),
@@ -644,12 +643,11 @@ impl<R: Round> Context<R> {
         use core::cmp::Ordering;
         let significand = match lhs.exponent.cmp(&rhs.exponent) {
             Ordering::Equal => {
-                let r1 = &lhs_signif % &rhs_signif;
-                let r2 = &rhs_signif - &r1;
-                if rem_rounds_away::<R, _>(quotient_sign, r1.is_zero(), r1.cmp(&r2), || {
-                    // truncated quotient = (|lhs| − r1) / |rhs|
-                    ((&lhs_signif - &r1) / &rhs_signif).bit(0)
-                }) {
+                // one division yields both the truncated quotient and remainder;
+                // the quotient's parity breaks exact ties under HalfEven
+                let (quotient, r1) = lhs_signif.div_rem(&rhs_signif);
+                let r2 = rhs_signif - &r1;
+                if rem_rounds_away::<R>(quotient_sign, r1.is_zero(), r1.cmp(&r2), quotient.bit(0)) {
                     IBig::from_parts(-lhs_sign, r2)
                 } else {
                     IBig::from_parts(lhs_sign, r1)
@@ -672,14 +670,12 @@ impl<R: Round> Context<R> {
                 let r_full = (lhs_signif.into_ring(&modulo) * scaling).residue(); // |lhs| mod 2|rhs|
                 let quotient_odd = r_full >= rhs_signif;
                 let r1 = if quotient_odd {
-                    &r_full - &rhs_signif
+                    r_full - &rhs_signif
                 } else {
                     r_full
                 };
-                let r2 = &rhs_signif - &r1;
-                if rem_rounds_away::<R, _>(quotient_sign, r1.is_zero(), r1.cmp(&r2), || {
-                    quotient_odd
-                }) {
+                let r2 = rhs_signif - &r1;
+                if rem_rounds_away::<R>(quotient_sign, r1.is_zero(), r1.cmp(&r2), quotient_odd) {
                     IBig::from_parts(-lhs_sign, r2)
                 } else {
                     IBig::from_parts(lhs_sign, r1)
@@ -690,8 +686,10 @@ impl<R: Round> Context<R> {
                 let shift = (rhs.exponent - lhs.exponent) as usize;
                 let (hi, lo) = split_digits::<B>(lhs_signif.into(), shift);
 
-                let mut r1 = &hi % &rhs_signif;
-                let mut r2 = &rhs_signif - &r1;
+                // the truncated quotient is hi div |rhs| and the high part of the
+                // truncated remainder is hi mod |rhs| — both from one division
+                let (quotient, mut r1) = hi.div_rem(&rhs_signif);
+                let mut r2 = rhs_signif - &r1;
 
                 shl_digits_in_place::<B>(&mut r1, shift);
                 r1 += &lo;
@@ -699,10 +697,7 @@ impl<R: Round> Context<R> {
                 shl_digits_in_place::<B>(&mut r2, shift);
                 r2 -= lo;
 
-                if rem_rounds_away::<R, _>(quotient_sign, r1.is_zero(), r1.cmp(&r2), || {
-                    // the truncated quotient is hi / |rhs| (see the split above)
-                    (&hi / &rhs_signif).bit(0)
-                }) {
+                if rem_rounds_away::<R>(quotient_sign, r1.is_zero(), r1.cmp(&r2), quotient.bit(0)) {
                     (-lhs_sign) * r2
                 } else {
                     lhs_sign * r1
