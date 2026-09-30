@@ -171,22 +171,23 @@ fn test_div_by_unlimited_precision() {
 #[test]
 #[rustfmt::skip::macros(fbig)]
 fn test_rem_binary() {
-    // test cases: n, d, remainder
+    // test cases: n, d, remainder. The binary default type is FBig<Zero, 2>, so the
+    // quotient is truncated (fmod-style, remainder keeps the dividend's sign).
     let test_cases = [
         (fbig!(0), fbig!(1), fbig!(0)),
         (fbig!(1), fbig!(1), fbig!(0)),
         (fbig!(0x1000), fbig!(0x1000), fbig!(0)),
         (fbig!(0x1000), fbig!(0x10), fbig!(0)),
         (fbig!(0x1000), fbig!(-0x10), fbig!(0)),
-        (fbig!(0x3), fbig!(0x2), fbig!(-0x1)),
-        (fbig!(0x3), fbig!(-0x2), fbig!(-0x1)),
-        (fbig!(-0x3), fbig!(0x2), fbig!(0x1)),
+        (fbig!(0x3), fbig!(0x2), fbig!(1)),
+        (fbig!(0x3), fbig!(-0x2), fbig!(1)),
+        (fbig!(-0x3), fbig!(0x2), fbig!(-1)),
         (fbig!(0x43), fbig!(0x21), fbig!(0x1)),
-        (fbig!(0x43), fbig!(0x23), fbig!(-0x3)),
+        (fbig!(0x43), fbig!(0x23), fbig!(0x20)),
         (fbig!(0x654), fbig!(-0x321), fbig!(0x12)),
         (fbig!(-0x98765), fbig!(-0x43210), fbig!(-0x12345)),
         (fbig!(0x1), fbig!(0x9), fbig!(0x1)),
-        (fbig!(0x1), fbig!(0x9p-4), fbig!(-0x1p-3)),
+        (fbig!(0x1), fbig!(0x9p-4), fbig!(0x7p-4)),
         (fbig!(0x1), fbig!(0x9p-8), fbig!(0x4p-8)),
         (fbig!(0x13), fbig!(-0x9), fbig!(0x1)),
         (fbig!(0x169), fbig!(-0x9), fbig!(0x1)),
@@ -225,6 +226,110 @@ fn test_rem_decimal() {
     for (n, d, r) in &test_cases {
         test_rem(n, d, r);
     }
+}
+
+// The remainder is `n − k·d` with the quotient `k` rounded to an integer under the
+// rounding mode attached to the type. Each pair below is chosen to hit a distinct
+// rule: exact multiple, fractional part below/above one half, exact tie with even
+// and odd truncated quotient, and a negative quotient.
+#[test]
+fn test_rem_rounding_modes() {
+    use core::str::FromStr;
+    use dashu_float::{round::mode, FBig};
+
+    macro_rules! rem_case {
+        ($mode:ty, $n:literal, $d:literal, $r:literal) => {
+            assert_eq!(
+                FBig::<$mode, 10>::from_str($n).unwrap() % FBig::<$mode, 10>::from_str($d).unwrap(),
+                FBig::<$mode, 10>::from_str($r).unwrap(),
+                "{} % {} under {}",
+                $n,
+                $d,
+                stringify!($mode)
+            );
+        };
+    }
+
+    type Zero = mode::Zero;
+    type Away = mode::Away;
+    type Down = mode::Down;
+    type Up = mode::Up;
+    type HalfEven = mode::HalfEven;
+    type HalfAway = mode::HalfAway;
+
+    // exact multiple: every mode keeps the quotient
+    rem_case!(Zero, "20", "10", "0");
+    rem_case!(Away, "20", "10", "0");
+    rem_case!(Down, "20", "10", "0");
+    rem_case!(Up, "20", "10", "0");
+    rem_case!(HalfEven, "20", "10", "0");
+    rem_case!(HalfAway, "20", "10", "0");
+
+    // quotient 1.4: truncation keeps it (Zero/Down/nearest), away/ceil step to 2
+    rem_case!(Zero, "14", "10", "4");
+    rem_case!(Away, "14", "10", "-6");
+    rem_case!(Down, "14", "10", "4");
+    rem_case!(Up, "14", "10", "-6");
+    rem_case!(HalfEven, "14", "10", "4");
+    rem_case!(HalfAway, "14", "10", "4");
+
+    // quotient 1.6: every non-truncating mode steps to 2
+    rem_case!(Zero, "16", "10", "6");
+    rem_case!(Away, "16", "10", "-4");
+    rem_case!(Down, "16", "10", "6");
+    rem_case!(Up, "16", "10", "-4");
+    rem_case!(HalfEven, "16", "10", "-4");
+    rem_case!(HalfAway, "16", "10", "-4");
+
+    // tie, truncated quotient 1 (odd): HalfEven steps away with HalfAway
+    rem_case!(Zero, "15", "10", "5");
+    rem_case!(Away, "15", "10", "-5");
+    rem_case!(Down, "15", "10", "5");
+    rem_case!(Up, "15", "10", "-5");
+    rem_case!(HalfEven, "15", "10", "-5");
+    rem_case!(HalfAway, "15", "10", "-5");
+
+    // tie, truncated quotient 2 (even): only HalfEven keeps it
+    rem_case!(Zero, "25", "10", "5");
+    rem_case!(Away, "25", "10", "-5");
+    rem_case!(Down, "25", "10", "5");
+    rem_case!(Up, "25", "10", "-5");
+    rem_case!(HalfEven, "25", "10", "5");
+    rem_case!(HalfAway, "25", "10", "-5");
+
+    // negative quotient −1.5: sign conventions flip per mode
+    rem_case!(Zero, "-15", "10", "-5");
+    rem_case!(Away, "-15", "10", "5");
+    rem_case!(Down, "-15", "10", "5");
+    rem_case!(Up, "-15", "10", "-5");
+    rem_case!(HalfEven, "-15", "10", "5");
+    rem_case!(HalfAway, "-15", "10", "5");
+}
+
+// Binary ties pinning the quotient-parity bookkeeping in all three exponent branches
+// of the remainder kernel (exponents equal / lhs above / lhs below).
+#[test]
+#[rustfmt::skip::macros(fbig)]
+fn test_rem_binary_ties() {
+    use core::str::FromStr;
+    use dashu_float::{round::mode, FBig};
+
+    type HE = FBig<mode::HalfEven, 2>;
+    let s = |x: &str| HE::from_str(x).unwrap();
+
+    // equal exponents: 3 % 2 has quotient 1.5 (odd truncated quotient)
+    assert_eq!(s("0x3") % s("0x2"), s("-0x1"));
+    assert_eq!(fbig!(0x3) % fbig!(0x2), fbig!(0x1)); // Zero: truncated
+
+    // lhs exponent below: 3 % (1·2^1) has quotient 1.5
+    assert_eq!(s("0x3") % s("0x1p1"), s("-0x1"));
+    assert_eq!(fbig!(0x3) % fbig!(0x1p1), fbig!(0x1)); // Zero: truncated
+
+    // lhs exponent above: 0x18p3 % 0x80 has quotient 1.5 (odd truncated
+    // quotient), and % 0x180 has quotient 0.5 (even truncated quotient 0)
+    assert_eq!(s("0x18p3") % s("0x80"), s("-0x40"));
+    assert_eq!(s("0x18p3") % s("0x180"), s("0xc0"));
+    assert_eq!(fbig!(0x18p3) % fbig!(0x80), fbig!(0x40)); // Zero: truncated
 }
 
 #[test]

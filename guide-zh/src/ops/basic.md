@@ -18,6 +18,8 @@ assert_eq!(e, IBig::from(-0x21ff));
 
 除了四种域运算之外，浮点数还可以用 `trunc()`、`ceil()`、`floor()`、`round()`（最近舍入，平局时远离零）和 `fract()`（小数部分）来分解和舍入；`split_at_point()` 一次返回 `(整数部分, 小数部分)` 两半，`quantize(exp)` 则舍入到 `BASE^exp` 的最近倍数（dashu 对 Python `Decimal.quantize` 的对应实现，返回舍入方向）。这些方法都会将结果精度调整为剩余的数位，因此对存储的数位而言结果精确。最后一位的单位是 `ulp()`，其廉价下界 `ulp_lb()` 可作为迭代算法中的可忽略性阈值。
 
+取余运算符 `%` 会按类型的舍入模式舍入商：`Zero`（二进制默认）给出截断、符号随被除数的余数（与 Rust 原生 `%` 一致），`HalfEven`/`HalfAway` 将余数限制在除数的一半以内，`Down`/`Up` 则按向下/向上取整舍入商。`RemEuclid` 是与舍入模式无关、恒非负的变体。
+
 ```rust
 use core::str::FromStr;
 use dashu::float::DBig;

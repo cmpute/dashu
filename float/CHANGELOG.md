@@ -3,6 +3,21 @@
 ## Unreleased
 
 ### Change
+- **Breaking**: the remainder operator (`%` / `RemAssign` / `Context::rem`) now rounds the
+  quotient with the rounding mode attached to the type, instead of a fixed
+  nearest-ties-away rule (issues #110, #111). `DBig`/`FBig<HalfAway>` results are
+  unchanged; `FBig<Zero>` (the binary default) now returns the truncated,
+  dividend-signed remainder — fmod semantics, so `fbig!(0xF) % fbig!(0xA)` is `+5`;
+  `FBig<HalfEven>` now implements the IEEE 754 `remainder` rule (ties to even); `Down`/
+  `Up` round the quotient floor/ceil-style (Python-style `%` and its mirror). The mode
+  also continues to round the remainder value to the context precision as before, and
+  `RemEuclid` is unchanged. The kernel reduces modulo `2·|rhs|` on its fast path, so the
+  `HalfEven` tie parity falls out of the same residue with no extra pass.
+- Clarified the docstrings around rounding-to-integer (issue #110): `FBig::round` now
+  states that it always rounds half away from zero like `f64::round()`, regardless of the
+  rounding mode attached to the type, and points to the mode-aware alternatives
+  (`to_int()`, `quantize(0)`, `with_precision()`); `to_int()` and `quantize()` cross-link
+  back.
 - Specialized the ×2 pattern out of `Mag`'s power-of-two scaling: the propagation folds'
   `mul_pow2(1)` cross-terms now call a dedicated `const #[inline] mul2()` (a normalized
   significand never renormalizes on a single doubling, so it is a bare exponent bump,
