@@ -48,11 +48,11 @@ pub mod mode {
     #[derive(Clone, Copy)]
     pub struct Down;
 
-    /// Round to the nearest value, ties are rounded to an even value. (default mode for decimal float)
+    /// Round to the nearest value, ties are rounded to an even value.
     #[derive(Clone, Copy)]
     pub struct HalfEven;
 
-    /// Round to the nearest value, ties away from zero
+    /// Round to the nearest value, ties away from zero (default mode for decimal float)
     #[derive(Clone, Copy)]
     pub struct HalfAway;
 }
@@ -94,6 +94,11 @@ pub trait Round: Copy {
 
     /// Calculate the rounding of the number (integer + rem), assuming rem != 0 and |rem| < 1.
     /// `low_half_test` should tell |rem|.cmp(0.5)
+    ///
+    /// Implementations must decide from the sign of `integer` alone (plus, when
+    /// `low_half_test` returns `Equal`, its parity via `bit(0)`) — some callers
+    /// (e.g. the remainder kernel) pass a small stand-in carrying only those bits
+    /// of a much larger integer.
     fn round_low_part<F: FnOnce() -> Ordering>(
         integer: &IBig,
         low_sign: Sign,

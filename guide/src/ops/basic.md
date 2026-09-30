@@ -25,6 +25,12 @@ precision to the digits that remain, so the value is exact for its stored digits
 the last place is `ulp()`, with a cheaper lower bound `ulp_lb()` that is useful as a
 negligibility threshold in iterative algorithms.
 
+The remainder operator `%` rounds the quotient under the type's rounding mode:
+`Zero` (the binary default) gives the truncated, dividend-signed remainder like Rust's
+primitive `%`, `HalfEven`/`HalfAway` bound the remainder by half the divisor, and
+`Down`/`Up` round the quotient floor/ceil-style. `RemEuclid` is the mode-independent,
+always non-negative variant.
+
 ```rust
 use core::str::FromStr;
 use dashu::float::DBig;

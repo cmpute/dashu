@@ -9,8 +9,8 @@ use crate::{
 use core::cmp::Ordering;
 use core::ops::{Div, DivAssign, Rem, RemAssign};
 use dashu_base::{
-    AbsOrd, Approximation, DivEuclid, DivRem, DivRemEuclid, Inverse, RemEuclid, Sign, Signed,
-    UnsignedAbs,
+    AbsOrd, Approximation, BitTest, DivEuclid, DivRem, DivRemEuclid, Inverse, RemEuclid, Sign,
+    Signed, UnsignedAbs,
 };
 use dashu_int::{fast_div::ConstDivisor, modular::IntoRing, IBig, UBig};
 
@@ -87,6 +87,43 @@ macro_rules! impl_rem_for_fbig {
     (impl $op:ident, $method:ident, $repr_method:ident) => {
         impl<R: Round, const B: Word> $op<FBig<R, B>> for FBig<R, B> {
             type Output = FBig<R, B>;
+            /// Calculates the remainder of division: if `n` is the quotient `self / rhs`
+            /// rounded to an integer under the rounding mode attached to the type, then
+            /// the result is `self - n * rhs`.
+            ///
+            /// The attached mode therefore selects the remainder's convention: with
+            /// [Zero](crate::round::mode::Zero) (the `FBig` default) the quotient is
+            /// truncated and the remainder keeps the dividend's sign, like `%` on Rust's
+            /// primitives; with `Down`/`Up` the quotient rounds floor/ceil-style (Python's
+            /// `%` is the `Down` convention); with `HalfEven`/`HalfAway` the remainder is
+            /// bounded by `|rhs|/2`, with ties to even or away from zero as in
+            /// [`FBig::round`]. Independently of the quotient rule, the mode also rounds
+            /// the remainder value itself down to the context precision. For a
+            /// non-negative (Euclidean) remainder regardless of the mode, use
+            /// [`RemEuclid`].
+            ///
+            /// # Examples
+            ///
+            /// ```
+            /// # use core::str::FromStr;
+            /// # use dashu_base::ParseError;
+            /// # use dashu_float::{FBig, DBig, round::mode};
+            /// // the binary default type truncates the quotient: 15 = 1×10 + 5
+            /// let a = FBig::<mode::Zero, 10>::from_str("15")?;
+            /// let b = FBig::<mode::Zero, 10>::from_str("10")?;
+            /// assert_eq!(a % b, FBig::<mode::Zero, 10>::from_str("5")?);
+            ///
+            /// // the decimal type rounds the quotient half away from zero: 15 = 2×10 − 5
+            /// assert_eq!(
+            ///     DBig::from_str("15")? % DBig::from_str("10")?,
+            ///     DBig::from_str("-5")?
+            /// );
+            /// # Ok::<(), ParseError>(())
+            /// ```
+            ///
+            /// # Panics
+            ///
+            /// Panics if either operand is infinite.
             fn $method(self, rhs: FBig<R, B>) -> Self::Output {
                 let context = Context::max(self.context, rhs.context);
                 FBig::new(context.$repr_method(self.repr, rhs.repr).value(), context)
@@ -95,6 +132,9 @@ macro_rules! impl_rem_for_fbig {
 
         impl<'l, R: Round, const B: Word> $op<FBig<R, B>> for &'l FBig<R, B> {
             type Output = FBig<R, B>;
+            /// Calculates the remainder of division, rounding the quotient to an integer
+            /// under the rounding mode attached to the type. See the [`Rem`] implementation
+            /// on [`FBig`] for details.
             fn $method(self, rhs: FBig<R, B>) -> Self::Output {
                 let context = Context::max(self.context, rhs.context);
                 FBig::new(context.$repr_method(self.repr.clone(), rhs.repr).value(), context)
@@ -103,6 +143,9 @@ macro_rules! impl_rem_for_fbig {
 
         impl<'r, R: Round, const B: Word> $op<&'r FBig<R, B>> for FBig<R, B> {
             type Output = FBig<R, B>;
+            /// Calculates the remainder of division, rounding the quotient to an integer
+            /// under the rounding mode attached to the type. See the [`Rem`] implementation
+            /// on [`FBig`] for details.
             fn $method(self, rhs: &FBig<R, B>) -> Self::Output {
                 let context = Context::max(self.context, rhs.context);
                 FBig::new(context.$repr_method(self.repr, rhs.repr.clone()).value(), context)
@@ -111,6 +154,9 @@ macro_rules! impl_rem_for_fbig {
 
         impl<'l, 'r, R: Round, const B: Word> $op<&'r FBig<R, B>> for &'l FBig<R, B> {
             type Output = FBig<R, B>;
+            /// Calculates the remainder of division, rounding the quotient to an integer
+            /// under the rounding mode attached to the type. See the [`Rem`] implementation
+            /// on [`FBig`] for details.
             fn $method(self, rhs: &FBig<R, B>) -> Self::Output {
                 let context = Context::max(self.context, rhs.context);
                 FBig::new(
@@ -296,6 +342,50 @@ fn align_as_int<R: Round, const B: Word>(lhs: FBig<R, B>, rhs: FBig<R, B>) -> (I
         shl_digits_in_place::<B>(&mut den, (-ediff) as _);
     }
     (num, den)
+}
+
+// Decide, under the rounding mode `R`, which of the two exact remainder candidates a
+// division leaves: `r1` — the magnitude of `lhs mod rhs`, carrying the dividend's sign,
+// meaning the truncated quotient is kept — or its complement `r2 = |rhs| − r1`, carrying
+// the opposite sign, meaning the quotient is stepped away from zero. Returns true for
+// the complement; `r1_zero` marks an exact multiple (every mode then keeps the quotient,
+// regardless of `r1_vs_r2` being `Less`).
+//
+// This is `R::round_low_part` applied to the quotient `k + f`, where `k` is the truncated
+// quotient, `f = ±r1/|rhs|` carries the quotient's sign, and the half test is `r1_vs_r2`.
+// The shipped modes never inspect the integer beyond its sign (and, on an exact tie, its
+// parity via `bit(0)`), so a small stand-in carrying those bits is passed instead of `k`,
+// which is never materialized. `tie_quotient_odd` is only evaluated on an exact tie
+// (`r1_vs_r2 == Equal`) to compute that parity.
+fn rem_rounds_away<R: Round, F: FnOnce() -> bool>(
+    quotient_sign: Sign,
+    r1_zero: bool,
+    r1_vs_r2: Ordering,
+    tie_quotient_odd: F,
+) -> bool {
+    if r1_zero {
+        return false;
+    }
+    let quotient_hint = if r1_vs_r2 == Ordering::Equal {
+        // exact half-integer quotient: only HalfEven consults the parity
+        let odd = tie_quotient_odd();
+        match (quotient_sign, odd) {
+            (Sign::Positive, false) => IBig::from(2),
+            (Sign::Positive, true) => IBig::from(1),
+            (Sign::Negative, false) => IBig::from(-2),
+            (Sign::Negative, true) => IBig::from(-1),
+        }
+    } else {
+        // off-tie: only the sign of the quotient can influence the rounding
+        match quotient_sign {
+            Sign::Positive => IBig::from(1),
+            Sign::Negative => IBig::from(-1),
+        }
+    };
+    !matches!(
+        R::round_low_part::<_>(&quotient_hint, quotient_sign, || r1_vs_r2),
+        Rounding::NoOp
+    )
 }
 
 impl<R: Round> Context<R> {
@@ -548,36 +638,51 @@ impl<R: Round> Context<R> {
 
         let lhs_is_neg_zero = lhs.is_neg_zero();
         let (lhs_sign, lhs_signif) = lhs.significand.into_parts();
-        let (_, rhs_signif) = rhs.significand.into_parts();
+        let (rhs_sign, rhs_signif) = rhs.significand.into_parts();
+        let quotient_sign = lhs_sign * rhs_sign;
 
         use core::cmp::Ordering;
         let significand = match lhs.exponent.cmp(&rhs.exponent) {
             Ordering::Equal => {
-                let r1 = lhs_signif % &rhs_signif;
-                let r2 = rhs_signif - &r1;
-                if r1 < r2 {
-                    IBig::from_parts(lhs_sign, r1)
-                } else {
+                let r1 = &lhs_signif % &rhs_signif;
+                let r2 = &rhs_signif - &r1;
+                if rem_rounds_away::<R, _>(quotient_sign, r1.is_zero(), r1.cmp(&r2), || {
+                    // truncated quotient = (|lhs| − r1) / |rhs|
+                    ((&lhs_signif - &r1) / &rhs_signif).bit(0)
+                }) {
                     IBig::from_parts(-lhs_sign, r2)
+                } else {
+                    IBig::from_parts(lhs_sign, r1)
                 }
             }
             Ordering::Greater => {
                 // if the least significant digit of lhs is higher than rhs, then we can
-                // align lhs to rhs and do simple modulo operations
-                let modulo = ConstDivisor::new(rhs_signif);
+                // align lhs to rhs and do simple modulo operations. Reduce modulo
+                // 2|rhs| rather than |rhs|: a single residue then yields the remainder
+                // candidates *and* the parity of the truncated quotient, without
+                // materializing the B^shift-aligned dividend (the exponent gap can be
+                // too large for that).
+                let modulo = ConstDivisor::new(&rhs_signif << 1);
                 let shift = (lhs.exponent - rhs.exponent) as usize;
                 let scaling = if B == 2 {
                     (UBig::ONE << shift).into_ring(&modulo)
                 } else {
                     UBig::from_word(B).into_ring(&modulo).pow(&shift.into())
                 };
-                let r = lhs_signif.into_ring(&modulo) * scaling;
-                let r1 = r.residue();
-                let r2 = (-r).residue();
-                if r1 < r2 {
-                    IBig::from_parts(lhs_sign, r1)
+                let r_full = (lhs_signif.into_ring(&modulo) * scaling).residue(); // |lhs| mod 2|rhs|
+                let quotient_odd = r_full >= rhs_signif;
+                let r1 = if quotient_odd {
+                    &r_full - &rhs_signif
                 } else {
+                    r_full
+                };
+                let r2 = &rhs_signif - &r1;
+                if rem_rounds_away::<R, _>(quotient_sign, r1.is_zero(), r1.cmp(&r2), || {
+                    quotient_odd
+                }) {
                     IBig::from_parts(-lhs_sign, r2)
+                } else {
+                    IBig::from_parts(lhs_sign, r1)
                 }
             }
             Ordering::Less => {
@@ -585,8 +690,8 @@ impl<R: Round> Context<R> {
                 let shift = (rhs.exponent - lhs.exponent) as usize;
                 let (hi, lo) = split_digits::<B>(lhs_signif.into(), shift);
 
-                let mut r1 = hi % &rhs_signif;
-                let mut r2 = rhs_signif - &r1;
+                let mut r1 = &hi % &rhs_signif;
+                let mut r2 = &rhs_signif - &r1;
 
                 shl_digits_in_place::<B>(&mut r1, shift);
                 r1 += &lo;
@@ -594,10 +699,13 @@ impl<R: Round> Context<R> {
                 shl_digits_in_place::<B>(&mut r2, shift);
                 r2 -= lo;
 
-                if r1 < r2 {
-                    lhs_sign * r1
-                } else {
+                if rem_rounds_away::<R, _>(quotient_sign, r1.is_zero(), r1.cmp(&r2), || {
+                    // the truncated quotient is hi / |rhs| (see the split above)
+                    (&hi / &rhs_signif).bit(0)
+                }) {
                     (-lhs_sign) * r2
+                } else {
+                    lhs_sign * r1
                 }
             }
         };
@@ -668,24 +776,36 @@ impl<R: Round> Context<R> {
             .map(|v| FBig::new(v, *self)))
     }
 
-    /// Calculate the remainder of `⌈lhs / rhs⌋`.
+    /// Calculate the remainder of `lhs / rhs`, with the quotient rounded to an integer
+    /// by this context's rounding mode.
     ///
-    /// The remainder is calculated as `r = lhs - ⌈lhs / rhs⌋ * rhs`, the division rounds to the nearest and ties to away.
-    /// So if `n = (lhs / rhs).round()`, then `lhs == n * rhs + r` (given enough precision).
+    /// The remainder is `r = lhs - n * rhs`, where `n` is the quotient rounded under
+    /// the mode (e.g. `Zero` truncates `n`, so `r` keeps the dividend's sign; the half
+    /// modes bound `|r|` by `|rhs|/2`). The remainder value is exact; the returned flag
+    /// only reports whether it had to be rounded down to the context precision.
     ///
     /// # Examples
     ///
     /// ```
     /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
-    /// # use dashu_float::DBig;
+    /// # use dashu_float::{DBig, FBig};
     /// use dashu_base::Approximation::*;
-    /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
+    /// use dashu_float::{Context, round::{mode::{HalfAway, Zero}, Rounding::*}};
     ///
-    /// let context = Context::<HalfAway>::new(3);
     /// let a = DBig::from_str("6.789")?;
     /// let b = DBig::from_str("-1.234")?;
+    ///
+    /// // the quotient −5.503… rounds to −6 half away from zero
+    /// let context = Context::<HalfAway>::new(3);
     /// assert_eq!(context.rem(&a.repr(), &b.repr()), Ok(Exact(DBig::from_str("-0.615")?)));
+    ///
+    /// // truncating the quotient instead: 6.789 = (−5)·(−1.234) + 0.619
+    /// let context = Context::<Zero>::new(3);
+    /// assert_eq!(
+    ///     context.rem(&a.repr(), &b.repr()),
+    ///     Ok(Exact(FBig::<Zero, 10>::from_str("0.619")?))
+    /// );
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn rem<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> FpResult<FBig<R, B>> {
