@@ -1,5 +1,6 @@
 //! The [`Reducer`] bridge between the Montgomery ring and the generic
-//! modular-arithmetic layer, paralleling the [`ConstDivisor`] reducer in
+//! modular-arithmetic layer, paralleling the
+//! [`ConstDivisor`][crate::div_const::ConstDivisor] reducer in
 //! [modular](crate::modular). It supports odd moduli via Montgomery
 //! multiplication — the fastest choice for primality testing style workloads
 //! (repeated modular multiplications) in the 256–4096-bit range.
@@ -218,8 +219,8 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "Montgomery modulus must be odd and greater than 1")]
     fn reducer_montgomery_rejects_even_modulus() {
-        let result = std::panic::catch_unwind(|| MontgomeryRepr::new(UBig::from(100u32)));
-        assert!(result.is_err());
+        MontgomeryRepr::new(UBig::from(100u32));
     }
 }
