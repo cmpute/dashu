@@ -172,9 +172,11 @@ impl<R: ErrorBounds> Context<R> {
     ///
     /// Shared by `exp_m1` (whose value is `−1` plus a sub-representable positive residual once
     /// `exp(x)` has underflowed below the smallest representable FBig — the reduction quotient
-    /// `s = floor(x/ln B)` overflows `isize`) and `tanh` (whose value saturates at
-    /// `sign(x)·(1 − 2e^{−2|x|})` for large `|x|`). In both cases the Ziv loop cannot certify the
-    /// candidate: the working-precision mid collapses onto exactly `±1`, which sits on the boundary
+    /// `s = floor(x/ln B)` overflows `isize`), `tanh` (whose value saturates at
+    /// `sign(x)·(1 − 2e^{−2|x|})` for large `|x|`), and dashu-cmplx's complex `tan` (whose imaginary
+    /// part saturates the same way for a large `|Im z|`; its `tanh` reaches it through
+    /// `−i·tan(i·z)`). In all cases the Ziv loop cannot certify the candidate: the
+    /// working-precision mid collapses onto exactly `±1`, which sits on the boundary
     /// of a directed rounding preimage (one-sided), so the containment test never resolves and the
     /// loop would run its retry cap at an astronomically large working precision.
     ///
@@ -182,7 +184,11 @@ impl<R: ErrorBounds> Context<R> {
     /// opposite sign (below half an ulp), its `AddOne`/`SubOne`/`NoOp` verdict is exactly the
     /// "step one ulp toward zero / stay" decision. (The literal significand arithmetic
     /// `round_low_part` would do is irrelevant here — only its directional verdict is used.)
-    pub(crate) fn near_one_endpoint<const B: Word>(&self, sign: Sign) -> Rounded<FBig<R, B>> {
+    ///
+    /// Not part of the stable API surface (`#[doc(hidden)]`) — shared with dashu-cmplx's `tan`
+    /// saturation gate so the endpoint logic lives in one place, not a typed-in-stone contract.
+    #[doc(hidden)]
+    pub fn near_one_endpoint<const B: Word>(&self, sign: Sign) -> Rounded<FBig<R, B>> {
         // The value sits just *inside* sign·1: the residual pulls it toward zero, so it carries
         // the opposite sign.
         let res_sign = if sign == Sign::Positive {

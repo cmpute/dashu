@@ -290,11 +290,11 @@ impl<R: Round> Context<R> {
     /// representable magnitude (its exponent would fall below `isize::MIN`). Outward modes round
     /// the magnitude up to the smallest `B^{isize::MIN}` of the result's sign; toward-zero, the
     /// opposite direction, and nearest round to signed zero. This mirrors the f32/f64 directed
-    /// underflow and is the shared endpoint used by `near_one_endpoint` (via `exp_m1`), `powi`, and
-    /// `powf`, so
-    /// a directed `pow` (e.g. `pow(10, y)` ≈ `exp(y·ln 10)`) saturates to the same value `exp` does
-    /// — keeping `Up ≥ Down` consistent across them. The endpoint carries the input context, so a
-    /// downstream op keeps a limited precision.
+    /// underflow and is the shared endpoint that resolves [`FpError::Underflow`] in
+    /// [`Context::unwrap_fp`] — which `powi`/`powf` saturate through (their `exp` core reports the
+    /// underflow) — so a directed `pow` (e.g. `pow(10, y)` ≈ `exp(y·ln 10)`) saturates to the same
+    /// value `exp` does, keeping `Up ≥ Down` consistent across them. The endpoint carries the input
+    /// context, so a downstream op keeps a limited precision.
     pub(crate) fn underflow_repr_endpoint<const B: Word>(&self, sign: Sign) -> Rounded<FBig<R, B>> {
         let adj = if sign == Sign::Positive {
             R::round_low_part(&IBig::ZERO, Sign::Positive, || Ordering::Less)

@@ -8,11 +8,10 @@
 use crate::ball::CBall;
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, reborrow_cache, CfpResult, Context};
-use core::cmp::Ordering;
-use dashu_base::{Approximation, EstimatedLog2, Sign};
-use dashu_float::round::{ErrorBounds, Rounding};
+use dashu_base::{Approximation, EstimatedLog2};
+use dashu_float::round::ErrorBounds;
 use dashu_float::{Ball, ConstCache, Context as FloatCtxt, FBig, FpError, Repr};
-use dashu_int::{IBig, UBig, Word};
+use dashu_int::{IBig, Word};
 
 /// Guard digits (base-B) for the forward trig. Composes real `sin_cos` + `sinh_cosh` + two
 /// products; the cancellation near the trig zeros is absorbed by the re-round.
@@ -149,6 +148,13 @@ impl<R: ErrorBounds> Context<R> {
             ));
         }
 
+        // The saturation gate and the Ziv recipe below are limited-precision techniques — reject
+        // an unlimited context before either runs, like the float layer's `tanh` and this crate's
+        // `exp`. (The Ziv driver would also reject — the saturated path still enters it for the
+        // real part — but the contract belongs to the caller, not to the driver being reached
+        // through a pre-driver shortcut like the gate.)
+        self.assert_limited();
+
         // Through the tracked composition: exact doublings, the real `sin_cos`/`sinh_cosh`
         // kernels on the doubled midpoints (folded to one work-ulp each), the shared
         // denominator `cos 2x + cosh 2y` as a real ball, and one componentwise ball division —
@@ -163,7 +169,8 @@ impl<R: ErrorBounds> Context<R> {
         // of a one-sided directed preimage, which the Ziv containment cannot certify (it would
         // climb toward ~2|y|/ln B working digits — an effective hang for a plain input like
         // tan(i·10⁵), and `tanh = −i·tan(i·z)` of a large real part lands here too). Pin the
-        // mode-aware endpoint directly, mirroring dashu-float's `tanh` gate; the real part
+        // mode-aware endpoint directly via dashu-float's `Context::near_one_endpoint`, mirroring
+        // that crate's `tanh` gate; the real part
         // sin 2x / D stays a genuine tiny value (no underflow — e^{2y} is a huge exponent over a
         // small significand, cheap at any working precision), so it keeps flowing through a
         // single-part Ziv loop on the same composition. Compare the lower bound of log2|y|
@@ -173,95 +180,55 @@ impl<R: ErrorBounds> Context<R> {
         if z.im().log2_bounds().0 > thresh.log2_bounds().1 {
             let im_sign = z.im().sign();
             let [re] = self.ziv::<B, 1>(TRIG_GUARD, |guard| {
-                // re = sin 2x / (cos 2x + cosh 2y): the tan composition minus the saturated
-                // imaginary part.
+                // re = sin 2x / D: the tan composition minus the saturated imaginary part.
                 let pw = p + guard;
-                let gctx = FloatCtxt::<R>::new(pw);
-                let cb = CBall::from_parts(z.re(), z.im(), pw);
-                let x2 = cb.re.add(&cb.re, pw)?;
-                let y2 = cb.im.add(&cb.im, pw)?;
-                let (sin2x, cos2x) = gctx.sin_cos(&x2.mid, reborrow_cache(&mut cache));
-                let mut sx2 = Ball::from_rounded(sin2x?.map(FBig::into_repr), pw);
-                let mut cx2 = Ball::from_rounded(cos2x?.map(FBig::into_repr), pw);
-                sx2.add_error(x2.rad);
-                cx2.add_error(x2.rad);
-                let cosh2y = gctx.cosh(&y2.mid, reborrow_cache(&mut cache));
-                let mut chy2 = Ball::from_rounded(cosh2y?.map(FBig::into_repr), pw);
-                let y2_fold = chy2.mag().mul(&y2.rad.exp_upper()).mul(&y2.rad).mul_pow2(1);
-                chy2.add_error(y2_fold);
-                let denom = cx2.add(&chy2, pw)?;
+                let (sx2, _shy2, denom) = Self::tan_kernel_balls::<B>(z, pw, &mut cache)?;
                 let re = sx2.div(&denom, pw)?;
-                Ok([re.to_value_radius(&gctx)])
+                Ok([re.to_value_radius(&FloatCtxt::<R>::new(pw))])
             })?;
-            return Ok(combine_parts(re, self.tan_im_endpoint::<B>(im_sign)));
+            return Ok(combine_parts(re, self.float().near_one_endpoint::<B>(im_sign)));
         }
 
         let [re, im] = self.ziv(TRIG_GUARD, |guard| {
             let pw = p + guard;
-            let gctx = FloatCtxt::<R>::new(pw);
-            let cb = CBall::from_parts(z.re(), z.im(), pw);
-            // 2x, 2y (exact doublings — same significand, exponent +1; the entry is exact)
-            let x2 = cb.re.add(&cb.re, pw)?;
-            let y2 = cb.im.add(&cb.im, pw)?;
-            let (sin2x, cos2x) = gctx.sin_cos(&x2.mid, reborrow_cache(&mut cache));
-            let mut sx2 = Ball::from_rounded(sin2x?.map(FBig::into_repr), pw);
-            let mut cx2 = Ball::from_rounded(cos2x?.map(FBig::into_repr), pw);
-            sx2.add_error(x2.rad);
-            cx2.add_error(x2.rad);
-            let (sinh2y, cosh2y) = gctx.sinh_cosh(&y2.mid, reborrow_cache(&mut cache));
-            let mut shy2 = Ball::from_rounded(sinh2y?.map(FBig::into_repr), pw);
-            let mut chy2 = Ball::from_rounded(cosh2y?.map(FBig::into_repr), pw);
-            let y2_fold = chy2.mag().mul(&y2.rad.exp_upper()).mul(&y2.rad).mul_pow2(1);
-            shy2.add_error(y2_fold);
-            chy2.add_error(y2_fold);
-            // D = cos 2x + cosh 2y  (a benign sum: a bounded term plus one ≥ 1)
-            let denom = cx2.add(&chy2, pw)?;
+            let (sx2, shy2, denom) = Self::tan_kernel_balls::<B>(z, pw, &mut cache)?;
             let out = CBall { re: sx2, im: shy2 }.div_by_real(&denom, pw)?;
-            Ok(out.to_parts_radius(&gctx))
+            Ok(out.to_parts_radius(&FloatCtxt::<R>::new(pw)))
         })?;
         Ok(combine_parts(re, im))
     }
 
-    /// The saturation endpoint for a value equal to `sign·(1 − δ)` with `0 < δ` below half an ulp
-    /// of `±1` — the same mode-aware endpoint dashu-float builds for its `tanh`/`exp_m1` gates
-    /// (`Context::near_one_endpoint`, private to that crate): nearest and the outward-directed
-    /// mode keep `±1`, while the modes rounding toward zero step one ulp in, to
-    /// `sign·(B^p − 1) × B^{−p}`.
-    fn tan_im_endpoint<const B: Word>(&self, sign: Sign) -> Approximation<FBig<R, B>, Rounding> {
-        // The value sits just *inside* sign·1: the residual pulls it toward zero, so it carries
-        // the opposite sign. Only the directional verdict of `round_low_part` is used (fed the
-        // integer `sign·1` with a sub-half-ulp residual of the opposite sign).
-        let res_sign = if sign == Sign::Positive {
-            Sign::Negative
-        } else {
-            Sign::Positive
-        };
-        let one = IBig::from_parts(sign, UBig::from(1u8));
-        match R::round_low_part(&one, res_sign, || Ordering::Less) {
-            Rounding::AddOne | Rounding::SubOne => {
-                // One ulp toward zero: the largest p-digit significand at exponent −p, with
-                // `sign` (e.g. p=1, B=2 → ±0.5). `AddOne` steps above −1, `SubOne` below +1.
-                let p = self.precision();
-                let next = Repr::new(
-                    IBig::from_parts(sign, Repr::<B>::BASE.pow(p) - UBig::from(1u8)),
-                    -(p as isize),
-                );
-                let adj = if sign == Sign::Positive {
-                    Rounding::SubOne
-                } else {
-                    Rounding::AddOne
-                };
-                Approximation::Inexact(FBig::from_repr(next, self.float()), adj)
-            }
-            _ => {
-                let one_repr = if sign == Sign::Positive {
-                    Repr::one()
-                } else {
-                    Repr::neg_one()
-                };
-                Approximation::Inexact(FBig::from_repr(one_repr, self.float()), Rounding::NoOp)
-            }
-        }
+    /// The shared kernel evaluation of the `tan` composition at working precision `pw`: the exact
+    /// doubled arguments, the real `sin_cos`/`sinh_cosh` kernels on the doubled midpoints (each
+    /// folded to one work-ulp, with the input-radius folds propagated), and the shared denominator
+    /// `D = cos 2x + cosh 2y` (a benign sum: a bounded term plus one ≥ 1). Returns
+    /// `(sin 2x, sinh 2y, D)` as balls at `pw` — the general `tan` divides both numerator balls by
+    /// `D` componentwise; the saturated path (a large `|Im z|`) divides only the real part.
+    fn tan_kernel_balls<const B: Word>(
+        z: &CBig<R, B>,
+        pw: usize,
+        cache: &mut Option<&mut ConstCache>,
+    ) -> Result<(Ball<B>, Ball<B>, Ball<B>), FpError> {
+        let gctx = FloatCtxt::<R>::new(pw);
+        let cb = CBall::from_parts(z.re(), z.im(), pw);
+        // 2x, 2y (exact doublings — same significand, exponent +1; the entry is exact)
+        let x2 = cb.re.add(&cb.re, pw)?;
+        let y2 = cb.im.add(&cb.im, pw)?;
+        let (sin2x, cos2x) = gctx.sin_cos(&x2.mid, reborrow_cache(cache));
+        let mut sx2 = Ball::from_rounded(sin2x?.map(FBig::into_repr), pw);
+        let mut cx2 = Ball::from_rounded(cos2x?.map(FBig::into_repr), pw);
+        // the kernels run on the midpoints: the seed rounding of an over-precise input propagates
+        // (|Δsin|, |Δcos| ≤ |δx|; |Δsinh|, |Δcosh| ≤ 2·‖cosh ball‖·e^{δy}·|δy|)
+        sx2.add_error(x2.rad);
+        cx2.add_error(x2.rad);
+        let (sinh2y, cosh2y) = gctx.sinh_cosh(&y2.mid, reborrow_cache(cache));
+        let mut shy2 = Ball::from_rounded(sinh2y?.map(FBig::into_repr), pw);
+        let mut chy2 = Ball::from_rounded(cosh2y?.map(FBig::into_repr), pw);
+        let y2_fold = chy2.mag().mul(&y2.rad.exp_upper()).mul(&y2.rad).mul_pow2(1);
+        shy2.add_error(y2_fold);
+        chy2.add_error(y2_fold);
+        let denom = cx2.add(&chy2, pw)?;
+        Ok((sx2, shy2, denom))
     }
 
     /// Simultaneously compute `sin(z·π)` and `cos(z·π)` (context layer), correctly rounded via
@@ -717,7 +684,8 @@ impl<R: ErrorBounds, const B: Word> CBig<R, B> {
 mod tests {
     use super::*;
     use dashu_base::Sign;
-    use dashu_float::round::mode;
+    use dashu_float::round::{mode, Rounding};
+    use dashu_int::UBig;
 
     type C = CBig<mode::HalfAway, 10>;
     type F = FBig<mode::HalfAway, 10>;
@@ -1520,10 +1488,16 @@ mod tests {
                                 t.re().is_pos_zero(),
                                 "{name} tan(i·±{mag}) p={p}: real part must be an exact +0"
                             );
-                            assert_eq!(
+                                            assert_eq!(
                                 t.im(),
                                 &want,
                                 "{name} tan(i·±{mag}) p={p}: imaginary endpoint"
+                            );
+                            // the endpoint part carries the input context through `combine_parts`
+                            assert_eq!(
+                                t.precision(),
+                                p,
+                                "{name} tan(i·±{mag}) p={p}: endpoint lost the input precision"
                             );
                             assert_eq!(
                                 t_flag, expected_flag,
@@ -1545,6 +1519,12 @@ mod tests {
                                 h.re(),
                                 &want,
                                 "{name} tanh(±{mag}) p={p}: real endpoint"
+                            );
+                            // the endpoint part carries the input context through the rotation
+                            assert_eq!(
+                                h.precision(),
+                                p,
+                                "{name} tanh(±{mag}) p={p}: endpoint lost the input precision"
                             );
                             assert!(
                                 h.im().is_pos_zero(),
@@ -1616,5 +1596,15 @@ mod tests {
             check!(mode::Up);
             check!(mode::Zero);
         }
+    }
+
+    // `tan` rejects an unlimited context up front, like every other transcendental — the contract
+    // must not depend on the saturation gate path still reaching the Ziv driver's own rejection.
+    #[test]
+    #[should_panic(expected = "precision cannot be 0")]
+    fn tan_unlimited_precision_panics_even_on_the_saturated_path() {
+        let ctx = Context::<mode::HalfEven>::new(0);
+        let z = CBig::new(Repr::<2>::zero(), Repr::<2>::new(IBig::from(100000), 0), ctx);
+        let _result = ctx.tan::<2>(&z, None);
     }
 }
