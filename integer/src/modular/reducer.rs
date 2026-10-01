@@ -52,12 +52,8 @@ impl ConstDivisor {
 
     fn convert_from_normalized(&self, target: &UBig) -> Reduced<'_> {
         match &self.0 {
-            ConstDivisorRepr::Single(d) => {
-                Reduced::from_single(ReducedWord(target.try_into().unwrap()), d)
-            }
-            ConstDivisorRepr::Double(d) => {
-                Reduced::from_double(ReducedDword(target.try_into().unwrap()), d)
-            }
+            ConstDivisorRepr::Single(d) => Reduced::from_single(ReducedWord(target.to_word()), d),
+            ConstDivisorRepr::Double(d) => Reduced::from_double(ReducedDword(target.to_dword()), d),
             ConstDivisorRepr::Large(d) => {
                 let mut buf = Buffer::allocate_exact(d.normalized_divisor.len());
                 let words = target.as_words();
