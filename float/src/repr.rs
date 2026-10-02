@@ -120,7 +120,7 @@ const fn negate_special_exponent(exp: isize) -> isize {
 
 /// Build a `Repr` from a rounded significand, preserving the input sign when rounding
 /// produces zero (`significand * B^exponent` where the significand collapsed to `+0`).
-fn rounded_to_repr<const B: Word>(
+pub(crate) fn rounded_to_repr<const B: Word>(
     significand: IBig,
     exponent: isize,
     input_negative: bool,

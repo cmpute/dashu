@@ -1,16 +1,167 @@
-use dashu_base::Sign::{self, *};
-use dashu_int::{IBig, UBig};
+use dashu_base::{
+    EstimatedLog2,
+    Sign::{self, *},
+};
+use dashu_int::{high, IBig, UBig};
 
 use crate::{
     add::cancel_zero,
     error::{FpError, FpResult},
     fbig::FBig,
     helper_macros,
-    repr::{Context, Repr, Word},
-    round::Round,
+    repr::{rounded_to_repr, Context, Repr, Word},
+    round::{Round, Rounded, Rounding},
+    utils::{ceil_usize, digit_len, split_digits_ref},
 };
 use core::cmp::Ordering;
 use core::ops::{Mul, MulAssign};
+
+// ---------------------------------------------------------------------------
+// Short-product fast paths
+//
+// When both operands carry many more digits than the target precision, the
+// exact product computes a long tail that rounding immediately discards — for
+// equal-precision operands, about half of the multiplication work. Instead,
+// compute only a certified high window of the product (the `high` kernels of
+// dashu-int) and decide the rounding from the window directly.
+//
+// The window arrives with a one-sided error bound (the true product is at most
+// `err` above the window value) and a sticky flag (false means the window is
+// exact). That is exactly enough to reproduce the exact path's value, rounding
+// flag and exactness wrapper: whenever the error band provably stays on one
+// side of every rounding boundary, the classification is decided from the
+// window; otherwise the fast path declines and the caller falls back to the
+// exact product. The fallback window is narrow — the error is a few ulps of
+// the window's last word, which the window sizing keeps far below the
+// rounding midpoint.
+// ---------------------------------------------------------------------------
+
+/// Word size of [`Word`] on this target, used by the short-product sizing math.
+const WORD_BITS: usize = core::mem::size_of::<Word>() * 8;
+
+/// Number of words up to and including the last nonzero word.
+fn trim_word_len(words: &[Word]) -> usize {
+    words.iter().rposition(|&w| w != 0).map_or(0, |i| i + 1)
+}
+
+/// Window size (in words) for a short product that must certify rounding to
+/// `precision` base-`B` digits when the product window undershoots the truth by
+/// up to `err_ulps` units of its own least significant word.
+///
+/// The window needs (1) enough spare digits that the error stays well below
+/// the rounding midpoint and cannot carry into the kept digits, and (2) one
+/// further spare digit so the rounding split never degenerates (the window
+/// always carries strictly more digits than the target precision). Two spare
+/// words absorb the digit-count slack of the (unnormalized) window value.
+fn short_window_words<const B: Word>(precision: usize, err_ulps: usize) -> usize {
+    let (_, b_ub) = B.log2_bounds();
+    // ceil(log2(err_ulps + 1)) as an exact bit length, avoiding `f32` methods
+    // that are std-only on this crate's MSRV.
+    let err_bits = usize::BITS - err_ulps.leading_zeros();
+    let need_bits = precision as f32 * b_ub + err_bits as f32 + b_ub + 11.0;
+    ceil_usize(need_bits / WORD_BITS as f32) + 2
+}
+
+/// Heuristic gate: is a short product worthwhile for these operand and window
+/// sizes? Costs are expressed in word-multiplication units.
+fn short_path_worthwhile(wa: usize, wb: usize, n: usize) -> bool {
+    // The windowed kernel does ~3/4 of a window-sized multiplication plus
+    // linear passes over the operands; the fixed term covers the allocations,
+    // the word-level conversions and the classification comparisons.
+    const SWEEP_NUM: u128 = 3; // over 4
+    const LINEAR: u128 = 2;
+    const FIXED: u128 = 150;
+    let full = wa as u128 * wb as u128;
+    let short = n as u128 * n as u128 * SWEEP_NUM / 4 + (wa as u128 + wb as u128) * LINEAR + FIXED;
+    full > short
+}
+
+/// Decide the correctly-rounded result from a certified high-product window.
+///
+/// `sig` is the positive window significand — already scaled up by the dropped
+/// words for bases that cannot absorb them into the exponent — `err_abs`
+/// bounds the one-sided shortfall (`0 <= true - sig < err_abs`), and `sticky`
+/// tells whether the shortfall is known to be nonzero (a `false` flag makes
+/// `sig` exact). Returns `None` when the error band straddles a rounding
+/// boundary; the caller then falls back to the exact product.
+fn round_high_product<R: Round, const B: Word>(
+    context: &Context<R>,
+    sig: IBig,
+    sign: Sign,
+    exponent: isize,
+    sticky: bool,
+    err_abs: &IBig,
+) -> Option<Rounded<Repr<B>>> {
+    let precision = context.precision();
+
+    let digits = digit_len::<B>(&sig);
+    if digits <= precision {
+        // The window sizing guarantees a spare digit; bail out defensively.
+        return None;
+    }
+    let shift = digits - precision;
+    let exponent = exponent.checked_add(shift as isize)?;
+
+    let (hi, lo) = split_digits_ref::<B>(&sig, shift);
+    let adjust = if !lo.is_zero() || sticky {
+        let bshift: IBig = if B.is_power_of_two() {
+            IBig::ONE << (shift * B.trailing_zeros() as usize)
+        } else {
+            UBig::from_word(B).pow(shift).into()
+        };
+        let twice = &lo << 1;
+        let ordering = if !sticky {
+            // The window is exact: classify lo alone — exactly the comparison
+            // `round_fract` makes for the exact value.
+            twice.cmp(&bshift)
+        } else {
+            // The discarded digits of the true value are lo + delta with
+            // 0 < delta < err_abs. Compare the doubled values against the
+            // base power to classify against the rounding midpoint (and
+            // against a carry into the kept digits) without constructing the
+            // midpoint itself.
+            let tail = &lo + err_abs;
+            if (&tail << 1) <= bshift {
+                // Below the midpoint even at the worst shortfall.
+                Ordering::Less
+            } else if twice > bshift {
+                if tail >= bshift {
+                    // The shortfall may carry into the kept digits.
+                    return None;
+                }
+                Ordering::Greater
+            } else if twice == bshift {
+                if tail >= bshift {
+                    return None;
+                }
+                // Exactly on the midpoint: the nonzero shortfall breaks the
+                // tie upwards.
+                Ordering::Greater
+            } else {
+                // Within the error band of the midpoint.
+                return None;
+            }
+        };
+
+        let hi_signed = if sign == Sign::Negative {
+            -hi.clone()
+        } else {
+            hi.clone()
+        };
+        R::round_low_part(&hi_signed, sign, || ordering)
+    } else {
+        // Zero shortfall and zero discarded digits: the value is exact at this
+        // split — the same shortcut `round_fract` takes for a zero fraction.
+        Rounding::NoOp
+    };
+
+    let hi_signed = if sign == Sign::Negative { -hi } else { hi };
+    let sig = hi_signed + adjust;
+    Some(dashu_base::Approximation::Inexact(
+        rounded_to_repr(sig, exponent, sign == Sign::Negative),
+        adjust,
+    ))
+}
 
 /// Shared `FBig * FBig` body: route through `Context::mul` + `unwrap_fp` so that an exponent
 /// overflow/underflow saturates to the directed endpoint (not the mode-blind `±∞`/signed zero the
@@ -132,6 +283,154 @@ impl<R: Round, const B: Word> FBig<R, B> {
 }
 
 impl<R: Round> Context<R> {
+    /// Certified high-product fast path for multiplication. Returns `None` to
+    /// decline (unlimited precision, tiny operands, or an undecided rounding);
+    /// the caller then computes the exact product.
+    pub(crate) fn mul_short<const B: Word>(
+        &self,
+        lhs: &Repr<B>,
+        rhs: &Repr<B>,
+    ) -> Option<Rounded<Repr<B>>> {
+        if self.precision() == 0 {
+            return None; // unlimited precision: every digit is significant
+        }
+        if lhs.significand.is_zero() || rhs.significand.is_zero() {
+            return None; // let the exact path produce the signed zeros
+        }
+        let (ls, lw) = lhs.significand.as_sign_words();
+        let (rs, rw) = rhs.significand.as_sign_words();
+        let wa = trim_word_len(lw);
+        let wb = trim_word_len(rw);
+
+        // Size the window, then once more with the actual error bound
+        // (n + 2 ulps) that this window implies.
+        let n = short_window_words::<B>(self.precision(), 1 << 12);
+        let n = short_window_words::<B>(self.precision(), n + 2);
+        if n > wa.min(wb) || !short_path_worthwhile(wa, wb, n) {
+            return None;
+        }
+
+        let dropped = wa + wb - n;
+        // Power-of-two bases absorb the dropped words into the exponent; any
+        // other base keeps them as (zero) low words of the significand, with
+        // the error bound scaled accordingly.
+        let lb = B.trailing_zeros() as usize;
+        let pad_bits = if B.is_power_of_two() {
+            0
+        } else {
+            WORD_BITS * dropped
+        };
+        let exponent = lhs.exponent.checked_add(rhs.exponent)?;
+        let exponent = if pad_bits == 0 {
+            exponent.checked_add(((WORD_BITS * dropped) / lb) as isize)?
+        } else {
+            exponent
+        };
+
+        let a = UBig::from_words(&lw[..wa]);
+        let b = UBig::from_words(&rw[..wb]);
+        let (window, sticky) = high::mul_high(&a, &b, n);
+
+        let sig = if pad_bits == 0 {
+            IBig::from(window)
+        } else {
+            IBig::from(window << pad_bits)
+        };
+        let err_abs = IBig::from(n as u64 + 2) << pad_bits;
+        round_high_product::<R, B>(self, sig, ls * rs, exponent, sticky, &err_abs)
+    }
+
+    /// Certified high-product fast path for squaring. See [`Self::mul_short`].
+    pub(crate) fn sqr_short<const B: Word>(&self, f: &Repr<B>) -> Option<Rounded<Repr<B>>> {
+        if self.precision() == 0 || f.significand.is_zero() {
+            return None;
+        }
+        let (_, fw) = f.significand.as_sign_words();
+        let wa = trim_word_len(fw);
+
+        let n = short_window_words::<B>(self.precision(), 1 << 12);
+        let n = short_window_words::<B>(self.precision(), n + 2);
+        if n > wa || !short_path_worthwhile(wa, wa, n) {
+            return None;
+        }
+
+        let dropped = 2 * wa - n;
+        let lb = B.trailing_zeros() as usize;
+        let pad_bits = if B.is_power_of_two() {
+            0
+        } else {
+            WORD_BITS * dropped
+        };
+        let exponent = f.exponent.checked_mul(2)?;
+        let exponent = if pad_bits == 0 {
+            exponent.checked_add(((WORD_BITS * dropped) / lb) as isize)?
+        } else {
+            exponent
+        };
+
+        let a = UBig::from_words(&fw[..wa]);
+        let (window, sticky) = high::sqr_high(&a, n);
+
+        let sig = if pad_bits == 0 {
+            IBig::from(window)
+        } else {
+            IBig::from(window << pad_bits)
+        };
+        let err_abs = IBig::from(n as u64 + 2) << pad_bits;
+        round_high_product::<R, B>(self, sig, Sign::Positive, exponent, sticky, &err_abs)
+    }
+
+    /// Certified high-product fast path for the cubic power: a short square
+    /// followed by a short multiply, with the composed error bound. See
+    /// [`Self::mul_short`].
+    pub(crate) fn cubic_short<const B: Word>(&self, f: &Repr<B>) -> Option<Rounded<Repr<B>>> {
+        if self.precision() == 0 || f.significand.is_zero() {
+            return None; // the exact path keeps the -0 sign handling
+        }
+        let (fs, fw) = f.significand.as_sign_words();
+        let wa = trim_word_len(fw);
+
+        // The composed bound is (n1 + 2) + (n2 + 2) + 2 ulps of the final
+        // window; size both windows against it.
+        let n0 = short_window_words::<B>(self.precision(), 1 << 13);
+        let n = short_window_words::<B>(self.precision(), 2 * n0 + 8);
+        if n > wa || !short_path_worthwhile(wa, wa, n) {
+            return None;
+        }
+
+        let a = UBig::from_words(&fw[..wa]);
+        let (square, sticky1) = high::sqr_high(&a, n);
+        // The square's window may carry one leading zero word; the second
+        // window clamps to it, which only shrinks the composed error bound.
+        let square_words = trim_word_len(square.as_words());
+        let n2 = n.min(square_words);
+        let (window, sticky2) = high::mul_high(&square, &a, n2);
+
+        let dropped = (2 * wa - n) + (square_words + wa - n2);
+        let lb = B.trailing_zeros() as usize;
+        let pad_bits = if B.is_power_of_two() {
+            0
+        } else {
+            WORD_BITS * dropped
+        };
+        let exponent = f.exponent.checked_mul(3)?;
+        let exponent = if pad_bits == 0 {
+            exponent.checked_add(((WORD_BITS * dropped) / lb) as isize)?
+        } else {
+            exponent
+        };
+
+        let sig = if pad_bits == 0 {
+            IBig::from(window)
+        } else {
+            IBig::from(window << pad_bits)
+        };
+        let err_abs = IBig::from(n as u64 + n2 as u64 + 6) << pad_bits;
+        round_high_product::<R, B>(self, sig, fs, exponent, sticky1 || sticky2, &err_abs)
+    }
+}
+
+impl<R: Round> Context<R> {
     /// Multiply two floating point numbers under this context.
     ///
     /// # Examples
@@ -155,6 +454,13 @@ impl<R: Round> Context<R> {
     pub fn mul<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> FpResult<FBig<R, B>> {
         if lhs.is_infinite() || rhs.is_infinite() {
             return Err(FpError::InfiniteInput);
+        }
+
+        // Fast path: when the operands carry far more digits than the target
+        // precision, decide the rounding from a certified high window of the
+        // product instead of the full exact product.
+        if let Some(rounded) = self.mul_short(lhs, rhs) {
+            return Ok(rounded.map(|v| FBig::new(v, *self)));
         }
 
         // Exact product of the full operands, then round. (An earlier version shrank each operand
@@ -199,6 +505,11 @@ impl<R: Round> Context<R> {
             return Err(FpError::InfiniteInput);
         }
 
+        // Fast path: certified high window of the square (see `Context::mul`).
+        if let Some(rounded) = self.sqr_short(f) {
+            return Ok(rounded.map(|v| FBig::new(v, *self)));
+        }
+
         // Exact square of the full significand, then round. (An earlier version shrank the operand
         // to 2*precision before squaring, but that pre-rounding perturbs the square and could leave
         // the result 1 ulp off the correctly-rounded value near a rounding boundary — same issue
@@ -235,6 +546,12 @@ impl<R: Round> Context<R> {
     pub fn cubic<const B: Word>(&self, f: &Repr<B>) -> FpResult<FBig<R, B>> {
         if f.is_infinite() {
             return Err(FpError::InfiniteInput);
+        }
+
+        // Fast path: two chained certified high products (square, then
+        // multiply) with a composed error bound (see `Context::mul`).
+        if let Some(rounded) = self.cubic_short(f) {
+            return Ok(rounded.map(|v| FBig::new(v, *self)));
         }
 
         // Exact cube of the full significand, then round. (An earlier version shrank the operand
@@ -481,5 +798,363 @@ mod tests {
         assert_eq!(up.repr().exponent(), isize::MIN);
         assert!(down.repr().is_pos_zero());
         assert!(up > down);
+    }
+
+    // ---- short-product fast paths ----
+
+    use dashu_base::Approximation::*;
+
+    /// Deterministic pseudo-random words (top word forced nonzero).
+    fn lcg_words(seed: u64, len: usize) -> Vec<Word> {
+        // The generator state is u64 so the helper works for every word size;
+        // each word folds both halves of the state into it.
+        let mut s = seed | 1;
+        (0..len)
+            .map(|i| {
+                s = s
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                let w = ((s >> 32) ^ s) as Word;
+                if i + 1 == len && w == 0 {
+                    1
+                } else {
+                    w
+                }
+            })
+            .collect()
+    }
+
+    fn sig(words: &[Word]) -> IBig {
+        IBig::from(UBig::from_words(words))
+    }
+
+    /// Scale a word count tuned for 64-bit words to the current word size, so
+    /// the fixed operands always carry enough bits for the largest tested
+    /// precision (500 decimal digits) on every target.
+    fn scale(n: usize) -> usize {
+        n * (64 / WORD_BITS).max(1)
+    }
+
+    /// Assert the short path matches the unlimited-precision oracle re-rounded
+    /// to the same precision, in value, rounding flag and exactness wrapper.
+    fn assert_short_equals_oracle<R: Round, const B: Word>(
+        got: &Rounded<Repr<B>>,
+        oracle: Rounded<FBig<R, B>>,
+        what: &str,
+    ) {
+        let Inexact(wv, wr) = oracle else {
+            panic!("{what}: oracle unexpectedly exact");
+        };
+        let Inexact(gv, gr) = got else {
+            panic!("{what}: short path returned Exact");
+        };
+        assert_eq!(gv, wv.repr(), "{what}: value mismatch");
+        assert_eq!(*gr, wr, "{what}: rounding flag mismatch");
+    }
+
+    fn check_mul_short<R: Round, const B: Word>(p: usize, a: &Repr<B>, b: &Repr<B>) {
+        let ctx = Context::<R>::new(p);
+        let oracle = Context::<R>::new(0)
+            .mul(a, b)
+            .unwrap()
+            .value()
+            .with_precision(p);
+        let got = match ctx.mul_short(a, b) {
+            Some(g) => g,
+            None => panic!("mul short declined: p={p} a={a:?} b={b:?}"),
+        };
+        assert_short_equals_oracle(&got, oracle, "mul");
+        // End-to-end through the public method.
+        assert_eq!(ctx.mul(a, b).unwrap().value().repr(), &got.value());
+    }
+
+    fn check_sqr_short<R: Round, const B: Word>(p: usize, f: &Repr<B>) {
+        let ctx = Context::<R>::new(p);
+        let oracle = Context::<R>::new(0)
+            .sqr(f)
+            .unwrap()
+            .value()
+            .with_precision(p);
+        let got = ctx.sqr_short(f).expect("short path declined");
+        assert_short_equals_oracle(&got, oracle, "sqr");
+        assert_eq!(ctx.sqr(f).unwrap().value().repr(), &got.value());
+    }
+
+    fn check_cubic_short<R: Round, const B: Word>(p: usize, f: &Repr<B>) {
+        let ctx = Context::<R>::new(p);
+        let oracle = Context::<R>::new(0)
+            .cubic(f)
+            .unwrap()
+            .value()
+            .with_precision(p);
+        let got = ctx.cubic_short(f).expect("short path declined");
+        assert_short_equals_oracle(&got, oracle, "cubic");
+        assert_eq!(ctx.cubic(f).unwrap().value().repr(), &got.value());
+    }
+
+    /// Correctness check through the public API only: the short path may or
+    /// may not engage (structured operands can collapse the certified margin,
+    /// in which case declining to the exact product is the correct outcome).
+    fn check_public_matches_oracle<R: Round, const B: Word>(
+        p: usize,
+        a: &Repr<B>,
+        b: &Repr<B>,
+        f: &Repr<B>,
+    ) {
+        let ctx = Context::<R>::new(p);
+        let oracle = Context::<R>::new(0);
+        assert_eq!(
+            ctx.mul(a, b).unwrap().value().repr(),
+            oracle
+                .mul(a, b)
+                .unwrap()
+                .value()
+                .with_precision(p)
+                .value()
+                .repr()
+        );
+        assert_eq!(
+            ctx.sqr(f).unwrap().value().repr(),
+            oracle
+                .sqr(f)
+                .unwrap()
+                .value()
+                .with_precision(p)
+                .value()
+                .repr()
+        );
+        assert_eq!(
+            ctx.cubic(f).unwrap().value().repr(),
+            oracle
+                .cubic(f)
+                .unwrap()
+                .value()
+                .with_precision(p)
+                .value()
+                .repr()
+        );
+    }
+
+    /// All six modes and both standard bases over the same (a, b) pair.
+    fn check_all_modes<const B: Word>(p: usize, a: &Repr<B>, b: &Repr<B>, f: &Repr<B>) {
+        check_mul_short::<mode::Zero, B>(p, a, b);
+        check_mul_short::<mode::Away, B>(p, a, b);
+        check_mul_short::<mode::Up, B>(p, a, b);
+        check_mul_short::<mode::Down, B>(p, a, b);
+        check_mul_short::<mode::HalfEven, B>(p, a, b);
+        check_mul_short::<mode::HalfAway, B>(p, a, b);
+        check_sqr_short::<mode::Zero, B>(p, f);
+        check_sqr_short::<mode::HalfEven, B>(p, f);
+        check_sqr_short::<mode::HalfAway, B>(p, f);
+        check_cubic_short::<mode::Zero, B>(p, f);
+        check_cubic_short::<mode::HalfEven, B>(p, f);
+        check_cubic_short::<mode::HalfAway, B>(p, f);
+    }
+
+    /// Fixed LCG operand sweep across the mandated precision set, both bases,
+    /// all six modes (mul) and the nearest/directed representatives (sqr/cubic).
+    #[test]
+    fn test_short_products_match_oracle() {
+        let cases: &[(u64, usize, u64, usize)] = &[
+            (1, 64, 2, 64),
+            (3, 64, 4, 90),
+            (5, 90, 6, 64),
+            (7, 64, 8, 260),
+        ];
+        for &(sa, wa, sb, wb) in cases {
+            let (aw, bw) = (lcg_words(sa, scale(wa)), lcg_words(sb, scale(wb)));
+            for &p in &[2usize, 5, 20, 50, 100, 500] {
+                for &(ea, eb) in &[(0isize, 0isize), (-500, 333)] {
+                    check_all_modes::<2>(
+                        p,
+                        &Repr::<2>::new(sig(&aw), ea),
+                        &Repr::<2>::new(sig(&bw), eb),
+                        &Repr::<2>::new(sig(&aw), ea),
+                    );
+                    check_all_modes::<10>(
+                        p,
+                        &Repr::<10>::new(sig(&aw), ea),
+                        &Repr::<10>::new(sig(&bw), eb),
+                        &Repr::<10>::new(sig(&aw), ea),
+                    );
+                }
+            }
+        }
+    }
+
+    /// Negative operands: the classification runs on the magnitude, so every
+    /// sign combination must mirror the positive result.
+    #[test]
+    fn test_short_products_negative_operands() {
+        let aw = lcg_words(11, scale(64));
+        let bw = lcg_words(22, scale(72));
+        for &p in &[20usize, 100] {
+            let b2 = Repr::<2>::new(sig(&bw), -7);
+            let na2 = Repr::<2>::new(-sig(&aw), 3);
+            check_mul_short::<mode::HalfEven, 2>(p, &na2, &b2);
+            check_mul_short::<mode::Down, 2>(p, &na2, &b2);
+            check_mul_short::<mode::Up, 2>(p, &na2, &b2);
+            check_sqr_short::<mode::HalfEven, 2>(p, &na2);
+            check_cubic_short::<mode::HalfEven, 2>(p, &na2);
+            check_cubic_short::<mode::Down, 2>(p, &na2);
+            let b10 = Repr::<10>::new(sig(&bw), -7);
+            let na10 = Repr::<10>::new(-sig(&aw), 3);
+            check_mul_short::<mode::HalfAway, 10>(p, &na10, &b10);
+            check_sqr_short::<mode::HalfAway, 10>(p, &na10);
+            check_cubic_short::<mode::HalfAway, 10>(p, &na10);
+        }
+    }
+
+    /// Sparse power-of-two patterns give products with long zero runs around
+    /// the rounding split. The chained cubic window can collapse its certified
+    /// margin on such operands — declining to the exact product is then the
+    /// correct outcome — so only mul/sqr assert engagement; all three
+    /// operations assert correctness through the public API.
+    #[test]
+    fn test_short_mul_sparse_patterns() {
+        let len = scale(64);
+        for &k in &[1usize, 31, 62] {
+            let mid = if k == 62 { len - 2 } else { scale(k) };
+            let mut aw = vec![0 as Word; len];
+            aw[0] = 1;
+            aw[len - 1] = 1;
+            let mut bw = vec![0 as Word; len];
+            bw[0] = 1; // odd low word: keep normalization from shrinking the significand
+            bw[mid] = 3;
+            bw[len - 1] = 5;
+            let (a2, b2) = (Repr::<2>::new(sig(&aw), 0), Repr::<2>::new(sig(&bw), 0));
+            for &p in &[2usize, 20, 50, 100, 500] {
+                check_mul_short::<mode::HalfEven, 2>(p, &a2, &b2);
+                check_mul_short::<mode::Down, 2>(p, &a2, &b2);
+                check_sqr_short::<mode::HalfEven, 2>(p, &b2);
+                check_sqr_short::<mode::HalfAway, 2>(p, &a2);
+                check_public_matches_oracle::<mode::HalfEven, 2>(p, &a2, &b2, &b2);
+                check_public_matches_oracle::<mode::Down, 2>(p, &a2, &b2, &a2);
+            }
+        }
+    }
+
+    /// Base-10 significands with trailing zero words: the dropped part of the
+    /// product is exactly zero. Such operands collapse the chained cubic
+    /// window's certified margin (and with it the engagement), so only mul
+    /// asserts engagement; correctness of all three operations goes through
+    /// the public API.
+    #[test]
+    fn test_short_mul_exact_windows() {
+        let len = scale(64);
+        let mut aw = vec![0 as Word; len];
+        aw[len - 1] = 7;
+        let mut bw = vec![0 as Word; len];
+        bw[len - 1] = 9;
+        let (a10, b10) = (Repr::<10>::new(sig(&aw), 0), Repr::<10>::new(sig(&bw), 0));
+        for &p in &[2usize, 50, 500] {
+            check_mul_short::<mode::HalfEven, 10>(p, &a10, &b10);
+            check_mul_short::<mode::HalfAway, 10>(p, &a10, &b10);
+            check_public_matches_oracle::<mode::HalfEven, 10>(p, &a10, &b10, &a10);
+            check_public_matches_oracle::<mode::Zero, 10>(p, &a10, &b10, &b10);
+        }
+    }
+
+    /// Direct classifier checks on the tie and carry-guard branches.
+    #[test]
+    fn test_round_high_product_boundaries() {
+        // Exact tie: value = hi·2^shift + 2^(shift-1) with no shortfall. The
+        // shortfall of 1 keeps the tie decided for shift >= 2 (the error band
+        // cannot reach the kept digits).
+        for &(hi_val, shift) in &[(7u32, 3usize), (10, 2), (123, 8)] {
+            let hi = IBig::from(hi_val);
+            let p = digit_len::<2>(&hi);
+            let tie = (&hi << shift) + (IBig::ONE << (shift - 1));
+            let ctx = Context::<mode::HalfEven>::new(p);
+            let got = round_high_product::<mode::HalfEven, 2>(
+                &ctx,
+                tie.clone(),
+                Positive,
+                0,
+                false,
+                &IBig::ONE,
+            )
+            .expect("exact tie should be decided");
+            let want = ctx.repr_round_ref(&Repr::<2>::new(tie.clone(), 0));
+            let Inexact(gv, gr) = got else {
+                panic!("short path returned Exact")
+            };
+            let Inexact(wv, wr) = want else {
+                panic!("oracle exact")
+            };
+            assert_eq!(&gv, &wv, "tie value mismatch");
+            assert_eq!(gr, wr, "tie flag mismatch");
+
+            // A nonzero shortfall breaks the same tie upwards; the oracle is
+            // the rounding of tie + epsilon (any value in (tie, tie+1) rounds
+            // identically, so tie + 1 stands in).
+            let above = round_high_product::<mode::HalfEven, 2>(
+                &ctx,
+                tie.clone(),
+                Positive,
+                0,
+                true,
+                &IBig::ONE,
+            )
+            .expect("broken tie should be decided");
+            let want_above = ctx.repr_round_ref(&Repr::<2>::new(tie + 1, 0));
+            let Inexact(gv2, gr2) = above else { panic!() };
+            let Inexact(wv2, wr2) = want_above else {
+                panic!("oracle exact")
+            };
+            assert_eq!(&gv2, &wv2, "broken tie value mismatch");
+            assert_eq!(gr2, wr2, "broken tie flag mismatch");
+        }
+
+        // Carry guard: lo = 2^shift − 1 with a shortfall of 2 must decline
+        // (the truth may carry into the kept digits).
+        let ctx = Context::<mode::HalfEven>::new(4);
+        let val = IBig::from(79u8); // = 9·8 + 7, shift 3, lo = 7 = 2^3 − 1
+        assert!(round_high_product::<mode::HalfEven, 2>(
+            &ctx,
+            val.clone(),
+            Positive,
+            0,
+            true,
+            &IBig::from(2u8)
+        )
+        .is_none());
+        // The same value without a shortfall is decided (rounds up).
+        assert!(
+            round_high_product::<mode::HalfEven, 2>(&ctx, val, Positive, 0, false, &IBig::ONE)
+                .is_some()
+        );
+
+        // Midpoint band: lo within the shortfall of the midpoint must decline
+        // (at shift = 1 the midpoint is 1 and a shortfall of 1 reaches the
+        // kept digits — the same carry guard in miniature).
+        let val = IBig::from(5u8); // p=2, shift 1, lo = 1 = the midpoint itself
+        let ctx = Context::<mode::HalfEven>::new(2);
+        assert!(round_high_product::<mode::HalfEven, 2>(
+            &ctx,
+            val,
+            Positive,
+            0,
+            true,
+            &IBig::from(2u8)
+        )
+        .is_none());
+    }
+
+    /// Exponent saturation must keep flowing through the exact path's error
+    /// semantics: the short path declines on exponent overflow.
+    #[test]
+    fn test_short_mul_exponent_overflow_declines() {
+        let aw = lcg_words(33, scale(64));
+        let a = Repr::<2>::new(sig(&aw), isize::MAX - 5);
+        let b = Repr::<2>::new(sig(&aw), 10);
+        let ctx = Context::<mode::HalfEven>::new(50);
+        assert!(ctx.mul_short(&a, &b).is_none());
+        assert_eq!(ctx.mul(&a, &b), Err(FpError::Overflow(Positive)));
+
+        let c = Repr::<2>::new(sig(&aw), isize::MIN + 5);
+        let d = Repr::<2>::new(sig(&aw), -10);
+        assert!(ctx.mul_short(&c, &d).is_none());
+        assert_eq!(ctx.mul(&c, &d), Err(FpError::Underflow(Positive)));
     }
 }

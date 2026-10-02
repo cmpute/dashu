@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Change
+- `Context::mul`, `Context::sqr` and `Context::cubic` now decide the rounding from a
+  certified high window of the product (the new `dashu-int::high` kernels) when the
+  operands carry far more digits than the target precision, instead of computing the
+  full exact product first. Results, rounding flags and exactness indicators are
+  unchanged — whenever the window's one-sided error bound cannot certify the rounding
+  (a measure-ε neighborhood of a rounding boundary), the operation falls back to the
+  exact product. For equal-precision operands roughly half of the multiplication work
+  is skipped at medium and large precisions; unbalanced operands (one much wider than
+  the target precision) gain much more. Transcendental functions and `CachedFBig`
+  benefit automatically through these kernels. No public API change.
+
 ## 0.6.2
 
 ### Change

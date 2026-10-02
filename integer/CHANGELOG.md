@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Add
+- Add `high::mul_high` and `high::sqr_high`: high-part (truncated) products with a
+  certified one-sided error bound and a sticky flag. Given `out_words`, they compute
+  the top words of the product such that the returned value `v` satisfies
+  `v <= (a * b) >> s < v + (out_words + 2)` (ulps of `v`'s last word), never
+  over-estimating, and report whether anything was dropped (a `false` flag means the
+  value is exact). Roughly half the work of a full product for the sizes where
+  floating-point arithmetic only needs the leading words. The windowed base case
+  reuses the double-word multiplier sweeps; larger windows compose an exact high
+  block (through the regular multiplication dispatch, so Karatsuba/Toom/NTT apply)
+  with two recursive cross windows.
+
 ## 0.6.2
 
 ### Add
