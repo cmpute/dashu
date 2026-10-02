@@ -514,7 +514,10 @@ impl<R: Round> Context<R> {
         } else {
             repr
         };
-        Ok(self.repr_round(repr).map(|v| FBig::new(v, *self)))
+        // The rounded form can still leave the finite exponent range when the
+        // product's significand is much wider than the precision (the split
+        // exponent `exponent + shift` saturates); report that as overflow too.
+        self.finish_rounded(self.repr_round(repr))
     }
 
     /// Calculate the square of the floating point number under this context.
@@ -557,7 +560,7 @@ impl<R: Round> Context<R> {
         })?;
         let repr = Repr::new(f.significand.sqr().into(), exponent);
         let repr = repr.check_finite_exponent()?;
-        Ok(self.repr_round(repr).map(|v| FBig::new(v, *self)))
+        self.finish_rounded(self.repr_round(repr))
     }
 
     /// Calculate the cubic of the floating point number under this context.
@@ -610,7 +613,7 @@ impl<R: Round> Context<R> {
             let repr = Repr::new(f.significand.cubic(), exponent);
             repr.check_finite_exponent()?
         };
-        Ok(self.repr_round(repr).map(|v| FBig::new(v, *self)))
+        self.finish_rounded(self.repr_round(repr))
     }
 
     /// Fused multiply–add under this context: `c + sign·(a·b)`, rounded once.
@@ -1226,5 +1229,40 @@ mod tests {
         let d = Repr::<2>::new(sig(&aw), -10);
         assert!(ctx.mul_short(&c, &d).is_none());
         assert_eq!(ctx.mul(&c, &d), Err(FpError::Underflow(Positive)));
+    }
+
+    /// Rounding can push the *result* out of the finite exponent range even
+    /// when the exact intermediate is finite: a wide significand rounded to a
+    /// small precision needs `exponent + shift` beyond `isize::MAX`. This
+    /// used to panic in debug builds and wrap the exponent in release builds.
+    #[test]
+    fn test_round_exponent_saturation() {
+        let aw = lcg_words(55, scale(64));
+        let p = 50usize;
+        let ctx = Context::<mode::HalfEven>::new(p);
+
+        // Multiplication: the exact product is finite (exponent well below
+        // the sentinel), but rounding 128 words down to 50 digits overflows.
+        let a = Repr::<2>::new(sig(&aw), isize::MAX - 7000);
+        let b = Repr::<2>::new(sig(&aw), 10);
+        assert_eq!(ctx.mul(&a, &b), Err(FpError::Overflow(Positive)));
+        let na = Repr::<2>::new(-sig(&aw), isize::MAX - 7000);
+        assert_eq!(ctx.mul(&na, &b), Err(FpError::Overflow(Negative)));
+
+        // Square and cubic reach the same state through their exact paths.
+        assert_eq!(ctx.sqr(&a), Err(FpError::Overflow(Positive)));
+        assert_eq!(ctx.cubic(&na), Err(FpError::Overflow(Negative)));
+
+        // Addition: the aligned sum keeps the huge exponent and its wide
+        // significand rounds past the range.
+        let hi = Repr::<2>::new(sig(&aw), isize::MAX - 1000);
+        assert_eq!(ctx.add(&hi, &b), Err(FpError::Overflow(Positive)));
+        assert_eq!(ctx.sub(&hi, &b), Err(FpError::Overflow(Positive)));
+
+        // `with_precision` has no error channel: the value saturates to the
+        // infinity sentinel instead of panicking.
+        let exact = FBig::<mode::HalfEven, 2>::from_parts(sig(&aw), isize::MAX - 1000);
+        let rounded = exact.with_precision(p);
+        assert!(rounded.value().repr().is_infinite());
     }
 }

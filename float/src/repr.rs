@@ -1,5 +1,6 @@
 use crate::{
-    error::{assert_finite, FpError},
+    error::{assert_finite, FpError, FpResult},
+    fbig::FBig,
     round::{Round, Rounded},
     utils::{ceil_usize, digit_len, split_digits, split_digits_ref},
 };
@@ -732,7 +733,8 @@ impl<R: Round> Context<R> {
             let (signif_hi, signif_lo) = split_digits::<B>(repr.significand, shift);
             let adjust = R::round_fract::<B>(&signif_hi, signif_lo, shift);
             let sig = signif_hi + adjust;
-            let result = rounded_to_repr(sig, repr.exponent + shift as isize, input_neg);
+            let exponent = repr.exponent.saturating_add(shift as isize);
+            let result = saturate_sentinel(rounded_to_repr(sig, exponent, input_neg));
             Inexact(result, adjust)
         } else {
             Exact(repr)
@@ -753,10 +755,45 @@ impl<R: Round> Context<R> {
             let (signif_hi, signif_lo) = split_digits_ref::<B>(&repr.significand, shift);
             let adjust = R::round_fract::<B>(&signif_hi, signif_lo, shift);
             let sig = signif_hi + adjust;
-            let result = rounded_to_repr(sig, repr.exponent + shift as isize, input_neg);
+            let exponent = repr.exponent.saturating_add(shift as isize);
+            let result = saturate_sentinel(rounded_to_repr(sig, exponent, input_neg));
             Inexact(result, adjust)
         } else {
             Exact(repr.clone())
+        }
+    }
+}
+
+/// Canonicalize a rounding result whose exponent reached the `+inf` sentinel.
+///
+/// The split exponent `input.exponent + shift` saturates (or a carry out of
+/// the kept digits folds, in `normalize`) to `isize::MAX` when the rounded
+/// form leaves the finite exponent range. Such a value carries a nonzero
+/// significand at the sentinel exponent, which is not a valid finite result
+/// (`check_finite_exponent` rejects it); turn it into the proper infinity so
+/// that callers with an `FpResult` contract can map it to
+/// [`FpError::Overflow`](crate::FpError::Overflow).
+pub(crate) fn saturate_sentinel<const B: Word>(repr: Repr<B>) -> Repr<B> {
+    if repr.exponent == isize::MAX && !repr.significand.is_zero() {
+        Repr::infinity_with_sign(repr.sign())
+    } else {
+        repr
+    }
+}
+
+impl<R: Round> Context<R> {
+    /// Finish a rounding result into an operation result: attach the context,
+    /// mapping an exponent-range saturation ([`Self::repr_round`]) to
+    /// [`FpError::Overflow`] the same way the pre-rounding saturation is
+    /// mapped.
+    pub(crate) fn finish_rounded<const B: Word>(
+        &self,
+        rounded: Rounded<Repr<B>>,
+    ) -> FpResult<FBig<R, B>> {
+        if rounded.value_ref().is_infinite() {
+            Err(FpError::Overflow(rounded.value_ref().sign()))
+        } else {
+            Ok(rounded.map(|v| FBig::new(v, *self)))
         }
     }
 }

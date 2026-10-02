@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Fix
+- Fix an exponent overflow in the shared rounding step: rounding a value whose wide
+  significand shrinks to the target precision needs `exponent + shift` beyond
+  `isize::MAX`, which previously panicked in debug builds and silently wrapped the
+  exponent in release builds (reachable e.g. from `Context::mul/sqr/cubic/add/sub` or
+  `FBig::with_precision` on values with extreme exponents). Such results now saturate
+  to the infinity sentinel — the operations above report `FpError::Overflow`, and
+  `with_precision` returns the infinity.
+
 ### Change
 - `Context::mul`, `Context::sqr` and `Context::cubic` now decide the rounding from a
   certified high window of the product (the new `dashu-int::high` kernels) when the
