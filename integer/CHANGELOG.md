@@ -29,6 +29,14 @@
 - The `high` kernels dispatch on `TypedReprRef` like the other multiplication kernels:
   small (inline) operands take an exact double-word product path (zero certified
   error, exact sticky flag), mixed and large operands run on normalized word slices.
+- Add `high::div_high`: short (truncated) division with a certified two-sided error
+  bound. Given `out_words = n` and a numerator/denominator pair whose quotient is
+  sized for the window, it computes the high `n + 1` words of the quotient such that
+  `q - (2n + 2) <= (numer/denom) * 2^sigma < q + (2n + 2)` (ulps of `q`'s last word,
+  `sigma` a small documented scale). Small windows are divided exactly; larger ones
+  compose an exact high block (through the regular division dispatch) with a
+  short-product cross window and a recursive short division — following Harvey &
+  Zimmermann, "Short Division of Long Integers" (ARITH-20).
 
 ## 0.6.2
 

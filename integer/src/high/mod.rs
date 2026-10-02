@@ -1,13 +1,13 @@
-//! High-part (truncated) products with certified error bounds.
+//! High-part (truncated) products and quotients with certified error bounds.
 //!
-//! These functions compute only the most significant words of a product — the
-//! part that arbitrary-precision floating-point arithmetic actually needs —
-//! together with a flag telling whether anything was dropped below the window.
-//! They trade a certified, one-sided error bound for roughly half the work of a
-//! full product, and are the building blocks for correctly-rounded
-//! floating-point multiplication in `dashu-float`.
+//! These functions compute only the most significant words of a product or
+//! quotient — the part that arbitrary-precision floating-point arithmetic
+//! actually needs. They trade a certified error bound for roughly half the
+//! work of the full operation, and are the building blocks for
+//! correctly-rounded floating-point multiplication and division in
+//! `dashu-float`.
 //!
-//! # Error contract
+//! # Product error contract
 //!
 //! With `n = out_words` (after the clamping described on each function),
 //! `wa = words(a)`, `wb = words(b)` and `s = WORD_BITS * (wa + wb - n)`, the
@@ -23,20 +23,29 @@
 //! exactly when some dropped contribution is nonzero, so a `false` flag
 //! guarantees `v == (a * b) >> s` exactly.
 //!
+//! # Quotient error contract
+//!
+//! [`div_high`] approximates the high `n + 1` words of a quotient with a
+//! **two-sided** bound (`E = 2n + 2` ulps, no exactness flag) — see the
+//! function documentation for the precise scale. A caller that must round
+//! exactly declines whenever the error band straddles a rounding boundary.
+//!
 //! # Algorithm
 //!
-//! Small windows use a windowed column sweep: each multiplier word (consumed
-//! two at a time by the shared double-word kernel) only visits the suffix of
-//! the other operand whose products reach the window; everything below is
-//! provably unable to influence it except through the bounded error. Larger
-//! windows split into a large high part and a small low part: an exact product
-//! of the two high blocks, two recursive high-part cross products, and a
-//! dropped low-low block that lies entirely below the window. The error
-//! analysis follows Harvey & Zimmermann, "Short Division of Long Integers",
-//! ARITH-20 (2011).
+//! Small windows use a windowed column sweep (products) or an exact division
+//! (quotients): each multiplier word (consumed two at a time by the shared
+//! double-word kernel) only visits the suffix of the other operand whose
+//! products reach the window; everything below is provably unable to
+//! influence it except through the bounded error. Larger windows split into a
+//! large high part and a small low part: an exact operation on the two high
+//! blocks, high-part cross terms between the halves, and a dropped low-low
+//! block that lies entirely below the window. The error analyses follow
+//! Harvey & Zimmermann, "Short Division of Long Integers", ARITH-20 (2011).
 
+mod div;
 mod mul;
 mod sqr;
 
+pub use div::div_high;
 pub use mul::mul_high;
 pub use sqr::sqr_high;
