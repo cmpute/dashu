@@ -397,7 +397,7 @@ impl<R: ErrorBounds> Context<R> {
                 return self.div(&Repr::one(), base);
             }
             let repr = self.repr_round_ref(base);
-            return Ok(repr.map(|v| FBig::new(v, *self)));
+            return self.finish_rounded(repr);
         }
 
         // Zero base (±0): a positive exponent gives ±0, a negative one ±inf; the sign follows |n|'s
@@ -574,7 +574,7 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(Exact(FBig::ONE));
         } else if exp.is_one() {
             let repr = self.repr_round_ref(base);
-            return Ok(repr.map(|v| FBig::new(v, *self)));
+            return self.finish_rounded(repr);
         } else if base.significand.is_zero() {
             // With a *float* exponent the result on a zero base is the positive one — this
             // matches the common float-pow convention (e.g. CPython: `(-0.0) ** y == 0.0`),

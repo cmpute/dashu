@@ -1,5 +1,6 @@
 use crate::{
-    error::{assert_finite, FpError},
+    error::{assert_finite, FpError, FpResult},
+    fbig::FBig,
     round::{Round, Rounded},
     utils::{ceil_usize, digit_len, split_digits, split_digits_ref},
 };
@@ -120,7 +121,7 @@ const fn negate_special_exponent(exp: isize) -> isize {
 
 /// Build a `Repr` from a rounded significand, preserving the input sign when rounding
 /// produces zero (`significand * B^exponent` where the significand collapsed to `+0`).
-fn rounded_to_repr<const B: Word>(
+pub(crate) fn rounded_to_repr<const B: Word>(
     significand: IBig,
     exponent: isize,
     input_negative: bool,
@@ -732,7 +733,8 @@ impl<R: Round> Context<R> {
             let (signif_hi, signif_lo) = split_digits::<B>(repr.significand, shift);
             let adjust = R::round_fract::<B>(&signif_hi, signif_lo, shift);
             let sig = signif_hi + adjust;
-            let result = rounded_to_repr(sig, repr.exponent + shift as isize, input_neg);
+            let exponent = repr.exponent.saturating_add(shift as isize);
+            let result = saturate_sentinel(rounded_to_repr(sig, exponent, input_neg));
             Inexact(result, adjust)
         } else {
             Exact(repr)
@@ -753,10 +755,65 @@ impl<R: Round> Context<R> {
             let (signif_hi, signif_lo) = split_digits_ref::<B>(&repr.significand, shift);
             let adjust = R::round_fract::<B>(&signif_hi, signif_lo, shift);
             let sig = signif_hi + adjust;
-            let result = rounded_to_repr(sig, repr.exponent + shift as isize, input_neg);
+            let exponent = repr.exponent.saturating_add(shift as isize);
+            let result = saturate_sentinel(rounded_to_repr(sig, exponent, input_neg));
             Inexact(result, adjust)
         } else {
             Exact(repr.clone())
+        }
+    }
+}
+
+/// Canonicalize a rounding result whose exponent reached the `+inf` sentinel.
+///
+/// The split exponent `input.exponent + shift` saturates (or a carry out of
+/// the kept digits folds, in `normalize`) to `isize::MAX` when the rounded
+/// form leaves the finite exponent range. Such a value carries a nonzero
+/// significand at the sentinel exponent, which is not a valid finite result
+/// (`check_finite_exponent` rejects it); turn it into the proper infinity so
+/// that callers with an `FpResult` contract can map it to
+/// [`FpError::Overflow`](crate::FpError::Overflow).
+pub(crate) fn saturate_sentinel<const B: Word>(repr: Repr<B>) -> Repr<B> {
+    if repr.exponent == isize::MAX && !repr.significand.is_zero() {
+        Repr::infinity_with_sign(repr.sign())
+    } else {
+        repr
+    }
+}
+
+impl<R: Round> Context<R> {
+    /// Finish a rounding result into an operation result: attach the context,
+    /// mapping an exponent-range saturation ([`Self::repr_round`]) to
+    /// [`FpError::Overflow`] the same way the pre-rounding saturation is
+    /// mapped.
+    ///
+    /// Both the canonical infinity (produced by [`saturate_sentinel`]) and a
+    /// non-canonical result carrying a nonzero significand at one of the
+    /// sentinel exponents (the fast paths' rounding helpers and the add/sub
+    /// alignment can leave one behind: `normalize` folds trailing digits
+    /// with a saturating exponent shift, and the alignment padding uses a
+    /// saturating shift down) are mapped exactly like
+    /// [`Context::check_finite_exponent`](Self::check_finite_exponent) maps
+    /// the pre-rounding forms: `+inf`/`isize::MAX` to
+    /// [`FpError::Overflow`](crate::FpError::Overflow), `-inf`/`isize::MIN`
+    /// to [`FpError::Underflow`](crate::FpError::Underflow).
+    pub(crate) fn finish_rounded<const B: Word>(
+        &self,
+        rounded: Rounded<Repr<B>>,
+    ) -> FpResult<FBig<R, B>> {
+        let value = rounded.value_ref();
+        if !value.significand.is_zero() {
+            if value.exponent == isize::MAX {
+                Err(FpError::Overflow(value.sign()))
+            } else if value.exponent == isize::MIN {
+                Err(FpError::Underflow(value.sign()))
+            } else {
+                Ok(rounded.map(|v| FBig::new(v, *self)))
+            }
+        } else if value.is_infinite() {
+            Err(FpError::Overflow(value.sign()))
+        } else {
+            Ok(rounded.map(|v| FBig::new(v, *self)))
         }
     }
 }

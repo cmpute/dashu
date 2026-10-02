@@ -2,7 +2,7 @@ use crate::{
     error::{assert_finite_operands, FpError, FpResult},
     fbig::FBig,
     helper_macros,
-    repr::{Context, Repr, Word},
+    repr::{saturate_sentinel, Context, Repr, Word},
     round::{Round, Rounded},
     utils::{digit_len, shl_digits, shl_digits_in_place, split_digits, split_digits_ref},
 };
@@ -164,7 +164,7 @@ impl<R: Round> Context<R> {
             if sig.is_zero() && neg_cancel {
                 Repr::neg_zero()
             } else {
-                Repr::new(sig, exp)
+                saturate_sentinel(Repr::new(sig, exp))
             }
         };
 
@@ -216,7 +216,10 @@ impl<R: Round> Context<R> {
                 let shift = digits - rnd_precision;
                 let (signif_hi, mut signif_lo) = split_digits::<B>(significand, shift);
                 significand = signif_hi;
-                exponent += shift as isize;
+                // The split exponent can leave the finite range for inputs
+                // with extreme exponents; saturate — the rounding layer
+                // canonicalizes the sentinel result.
+                exponent = exponent.saturating_add(shift as isize);
                 shl_digits_in_place::<B>(&mut signif_lo, low.1);
                 low.0 += signif_lo;
                 low.1 += shift;
@@ -237,7 +240,7 @@ impl<R: Round> Context<R> {
                     let shift = low_prec.min(rnd_precision - digits);
                     let (pad, low_val) = split_digits::<B>(low_val, low_prec - shift);
                     shl_digits_in_place::<B>(&mut significand, shift);
-                    exponent -= shift as isize;
+                    exponent = exponent.saturating_sub(shift as isize);
                     significand += pad;
                     low = (low_val, low_prec - shift);
                 }
@@ -654,9 +657,7 @@ impl<R: Round> Context<R> {
         if lhs.is_infinite() || rhs.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        Ok(self
-            .addsub_rr(lhs, rhs, Positive)
-            .map(|v| FBig::new(v, *self)))
+        self.finish_rounded(self.addsub_rr(lhs, rhs, Positive))
     }
 
     /// Subtract two floating point numbers under this context.
@@ -684,9 +685,7 @@ impl<R: Round> Context<R> {
         if lhs.is_infinite() || rhs.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        Ok(self
-            .addsub_rr(lhs, rhs, Negative)
-            .map(|v| FBig::new(v, *self)))
+        self.finish_rounded(self.addsub_rr(lhs, rhs, Negative))
     }
 }
 
@@ -1027,5 +1026,19 @@ mod tests {
         let neg = ctx.sub(&tiny, &big).unwrap().value();
         assert_eq!(neg.repr().sign(), dashu_base::Sign::Negative);
         assert_eq!(neg.repr().exponent(), big.exponent);
+    }
+
+    // Padding a short significand up to the context precision shifts the
+    // aligned exponent down; when the sum lands exactly on the underflow
+    // sentinel exponent with a nonzero significand, the operation must
+    // report `Underflow` instead of returning a repr that collides with the
+    // `-inf` sentinel encoding.
+    #[test]
+    fn addsub_exponent_underflow_saturation() {
+        let ctx = Context::<HalfEven>::new(500);
+        let tiny = r::<2>(0x1234_5678_9abc_def0u64 as i128, isize::MIN + 1);
+        let tinier = r::<2>(3, isize::MIN);
+        assert_eq!(ctx.add(&tiny, &tinier), Err(FpError::Underflow(Positive)));
+        assert_eq!(ctx.sub(&tiny, &tinier), Err(FpError::Underflow(Positive)));
     }
 }
