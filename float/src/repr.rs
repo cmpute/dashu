@@ -782,19 +782,28 @@ pub(crate) fn saturate_sentinel<const B: Word>(repr: Repr<B>) -> Repr<B> {
 }
 
 impl<R: Round> Context<R> {
-    /// Finish a rounding result into an operation result: attach the context,
-    /// mapping an exponent-range saturation ([`Self::repr_round`]) to
-    /// [`FpError::Overflow`] the same way the pre-rounding saturation is
-    /// mapped.
+    /// Finish a rounding result at the `Repr` level: map an exponent-range
+    /// saturation ([`Self::repr_round`]) to [`FpError::Overflow`] the same way
+    /// the pre-rounding saturation is mapped, and pass everything else through.
+    pub(crate) fn finish_rounded_repr<const B: Word>(
+        &self,
+        rounded: Rounded<Repr<B>>,
+    ) -> FpResult<Repr<B>> {
+        if rounded.value_ref().is_infinite() {
+            Err(FpError::Overflow(rounded.value_ref().sign()))
+        } else {
+            Ok(rounded)
+        }
+    }
+
+    /// Finish a rounding result into an operation result: attach the context to
+    /// [`Self::finish_rounded_repr`]'s output.
     pub(crate) fn finish_rounded<const B: Word>(
         &self,
         rounded: Rounded<Repr<B>>,
     ) -> FpResult<FBig<R, B>> {
-        if rounded.value_ref().is_infinite() {
-            Err(FpError::Overflow(rounded.value_ref().sign()))
-        } else {
-            Ok(rounded.map(|v| FBig::new(v, *self)))
-        }
+        self.finish_rounded_repr(rounded)
+            .map(|r| r.map(|v| FBig::new(v, *self)))
     }
 }
 
