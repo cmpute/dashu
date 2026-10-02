@@ -1,11 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.6.2
 
 ### Change
-- **Breaking**: the remainder operator (`%` / `RemAssign` / `Context::rem`) now rounds the
-  quotient with the rounding mode attached to the type, instead of a fixed
-  nearest-ties-away rule (issues #110, #111). `DBig`/`FBig<HalfAway>` results are
+- **Behavior change** (released as a patch: no API surface changes — the fixed
+  nearest-ties-away rule was the reported defect): the remainder operator (`%` / `RemAssign` /
+  `Context::rem`) now rounds the quotient with the rounding mode attached to the type
+  (issues #110, #111). `DBig`/`FBig<HalfAway>` results are
   unchanged; `FBig<Zero>` (the binary default) now returns the truncated,
   dividend-signed remainder — fmod semantics, so `fbig!(0xF) % fbig!(0xA)` is `+5`;
   `FBig<HalfEven>` now implements the IEEE 754 `remainder` rule (ties to even); `Down`/

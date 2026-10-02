@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.2
 
 ### Change
 - Rename `IBig.to_words`/`IBig.from_words` to `to_sign_words`/`from_sign_words` so that the

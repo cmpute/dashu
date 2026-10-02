@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.2
 
 ### Change
 - Migrated the ×2 radius folds (`sqrt`/`log`'s `2·rad/(m−rad)` brackets, the `sin`/`cos`

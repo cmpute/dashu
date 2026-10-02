@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.2
 
 ### Add
 - Add `IBig::from_sign_words(sign, words)`, the inverse of `IBig::as_sign_words`: it builds an

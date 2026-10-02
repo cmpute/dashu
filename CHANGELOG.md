@@ -6,7 +6,38 @@ This changelog aggregates the releases of every dashu crate — `dashu`, `dashu-
 to; see the per-crate `CHANGELOG.md` in each subdirectory (`base/`, `integer/`, …) for
 full detail.
 
-## Unreleased
+## 0.6.2 — dashu-int / dashu-float / dashu-cmplx / dashu / dashu-python
+
+### Add
+- **dashu-int**: `IBig::from_sign_words(sign, words)` — the sign-preserving inverse of
+  `as_sign_words`, also adopted by the rkyv v0.7/v0.8 deserializers; `num_modular::Reducer<UBig>`
+  for `MontgomeryRepr` (odd moduli via Montgomery multiplication) and `num_modular::ModularSymbols`
+  (Jacobi/Legendre/Kronecker) for `UBig`, making `UBig` usable as the base integer of
+  carried-modulus types in the `num-modular` ecosystem; `Pow<u32>` for `UBig`/`IBig`;
+  `Clone` for `ConstDivisor`/`MontgomeryRepr`/`Montgomery` and `Debug` for `MontgomeryRepr`.
+
+### Change
+- **dashu-float**: **(behavior change, patch-level)** the remainder operator (`%` / `RemAssign` /
+  `Context::rem`) now rounds the quotient with the rounding mode attached to the type instead of
+  a fixed nearest-ties-away rule (issues #110, #111) — no API signature changes;
+  `DBig`/`FBig<HalfAway>` results are unchanged, while the default `FBig<Zero>` returns the
+  truncated dividend-signed remainder (fmod semantics), `FBig<HalfEven>` follows the IEEE 754
+  `remainder` rule, and `Down`/`Up` round the quotient floor/ceil-style; `RemEuclid` is unchanged.
+- **dashu-python**: `IBig.to_words`/`from_words` are renamed to `to_sign_words`/`from_sign_words`
+  so the sign survives the roundtrip; the `dashu.pyi` stub now matches the runtime (`PySign`)
+  and parses again (malformed `zeroize()` declaration repaired).
+- **dashu-float** / **dashu-cmplx**: (internal) the shared `Mag` error-radius type is specialized
+  (dedicated ×2 scaling, idiomatic constructors) and pruned to the live subset; bit-identical
+  results on every path.
+
+### Fix
+- **dashu-int**: `num_integer::Integer::mod_floor` for `UBig` computed a bitwise AND instead of
+  the remainder.
+- **dashu-float**: `tanh` no longer stalls on large `|x|` (the Ziv working precision could climb
+  toward `~2|x|/ln 2`); inputs past the saturation threshold short-circuit to the mode-aware
+  `±1` endpoint.
+- **dashu-cmplx**: `tan` (and `tanh` through `−i·tan(i·z)`) no longer stalls on a large
+  `|Im z|`; the saturated component is pinned to the mode-aware `±1` endpoint.
 
 ## 0.6.1 — coordinated release
 
