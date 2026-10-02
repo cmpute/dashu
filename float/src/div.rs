@@ -583,12 +583,14 @@ impl<R: Round> Context<R> {
         debug_assert!((-2..=2).contains(&sigma));
         // The window approximates (numer/denom)·2^sigma; rescale it by
         // 2^-sigma so the value keeps the exponent `lhs.exp − rhs.exp − t`.
-        // A right shift (sigma > 0) truncates by at most one ulp, folded into
-        // the error bound.
+        // The kernel's ulp error is rescaled by the same shift: a left shift
+        // (sigma < 0) amplifies it to `(2n + 2)·2^|sigma|`, and a right shift
+        // (sigma > 0) truncates the window by at most one ulp, which the
+        // constant `+2` slack covers.
         let (sig, err_up) = if sigma <= 0 {
-            (IBig::from(&q << (-sigma) as usize), 0)
+            (IBig::from(&q << (-sigma) as usize), (-sigma) as usize)
         } else {
-            (IBig::from(&q >> sigma as usize), sigma as usize)
+            (IBig::from(&q >> sigma as usize), 0)
         };
         let err_abs = IBig::from(2 * n as u64 + 4) << err_up;
 

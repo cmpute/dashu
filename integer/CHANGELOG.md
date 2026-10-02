@@ -10,6 +10,14 @@
   documented contract ("a `false` flag means the value is exact"). Sparse operands with
   word counts above the base-case threshold could trigger it; the guard columns are now
   checked like every other dropped contribution.
+- Fix the `DASHU_THRESHOLD_DIVHIGH_SIMPLE` tuning clamp: the minimum window length for
+  the recursive split is 15 (the split constraint `k >= (n+4)/2` fails for n = 13, 14),
+  not 12 — a runtime-tuned value of 12–14 could run the recursion with a broken split.
+- Fix the differential-test bound of `high::div_high`: the exact-integer comparison
+  applied its band shifts to the wrong terms (passing only because every generated
+  input sat on the `sigma = 0` band center). The tests now cover every band edge
+  (`sigma ∈ [-2, 2]`), including the numerator down-shift normalization path that was
+  never exercised before.
 
 ### Add
 - Add `high::mul_high` and `high::sqr_high`: high-part (truncated) products with a
