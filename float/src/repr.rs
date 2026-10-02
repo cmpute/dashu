@@ -785,12 +785,32 @@ impl<R: Round> Context<R> {
     /// Finish a rounding result at the `Repr` level: map an exponent-range
     /// saturation ([`Self::repr_round`]) to [`FpError::Overflow`] the same way
     /// the pre-rounding saturation is mapped, and pass everything else through.
+    ///
+    /// Both the canonical infinity (produced by [`saturate_sentinel`]) and a
+    /// non-canonical result carrying a nonzero significand at one of the
+    /// sentinel exponents (the fast paths' rounding helpers and the add/sub
+    /// alignment can leave one behind: `normalize` folds trailing digits
+    /// with a saturating exponent shift, and the alignment padding uses a
+    /// saturating shift down) are mapped exactly like
+    /// [`Context::check_finite_exponent`](Self::check_finite_exponent) maps
+    /// the pre-rounding forms: `+inf`/`isize::MAX` to
+    /// [`FpError::Overflow`](crate::FpError::Overflow), `-inf`/`isize::MIN`
+    /// to [`FpError::Underflow`](crate::FpError::Underflow).
     pub(crate) fn finish_rounded_repr<const B: Word>(
         &self,
         rounded: Rounded<Repr<B>>,
     ) -> FpResult<Repr<B>> {
-        if rounded.value_ref().is_infinite() {
-            Err(FpError::Overflow(rounded.value_ref().sign()))
+        let value = rounded.value_ref();
+        if !value.significand.is_zero() {
+            if value.exponent == isize::MAX {
+                Err(FpError::Overflow(value.sign()))
+            } else if value.exponent == isize::MIN {
+                Err(FpError::Underflow(value.sign()))
+            } else {
+                Ok(rounded)
+            }
+        } else if value.is_infinite() {
+            Err(FpError::Overflow(value.sign()))
         } else {
             Ok(rounded)
         }

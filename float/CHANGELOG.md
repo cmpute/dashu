@@ -3,13 +3,25 @@
 ## Unreleased
 
 ### Fix
+- Fix the short-product fast paths for power-of-two bases whose per-digit bit count
+  does not divide a word size (e.g. base 8, 32, 64, 128 on 64-bit words): folding the
+  dropped words into the exponent used floor division, silently mis-scaling the result
+  whenever the dropped bit count was not a multiple of the base's bit width. The
+  remainder bits now stay on the significand as zero padding (like for base 10).
 - Fix an exponent overflow in the shared rounding step: rounding a value whose wide
   significand shrinks to the target precision needs `exponent + shift` beyond
   `isize::MAX`, which previously panicked in debug builds and silently wrapped the
   exponent in release builds (reachable e.g. from `Context::mul/sqr/cubic/add/sub` or
   `FBig::with_precision` on values with extreme exponents). Such results now saturate
   to the infinity sentinel — the operations above report `FpError::Overflow`, and
-  `with_precision` returns the infinity.
+  `with_precision` returns the infinity. The result-finisher now also maps results
+  that land directly on a sentinel exponent (through `normalize`'s trailing-digit
+  fold, or the add/sub alignment padding) to `FpError::Overflow`/`FpError::Underflow`
+  instead of returning a non-canonical representation; this covers the fast paths of
+  `mul/sqr/cubic` and the shortcuts of `pow`/`powf`/`nth_root`/`hypot`/`fma`.
+- Tighten the composed error bound of the `cubic` fast path: when the second window
+  extends past the square's word length, the square's shortfall is rescaled onto a
+  finer final window than the plain `(n + 2) + (n2 + 2)` sum accounted for.
 
 ### Fix
 - The short-product fast paths of `Context::mul/sqr/cubic` now pass their result through

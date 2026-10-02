@@ -1027,4 +1027,18 @@ mod tests {
         assert_eq!(neg.repr().sign(), dashu_base::Sign::Negative);
         assert_eq!(neg.repr().exponent(), big.exponent);
     }
+
+    // Padding a short significand up to the context precision shifts the
+    // aligned exponent down; when the sum lands exactly on the underflow
+    // sentinel exponent with a nonzero significand, the operation must
+    // report `Underflow` instead of returning a repr that collides with the
+    // `-inf` sentinel encoding.
+    #[test]
+    fn addsub_exponent_underflow_saturation() {
+        let ctx = Context::<HalfEven>::new(500);
+        let tiny = r::<2>(0x1234_5678_9abc_def0u64 as i128, isize::MIN + 1);
+        let tinier = r::<2>(3, isize::MIN);
+        assert_eq!(ctx.add(&tiny, &tinier), Err(FpError::Underflow(Positive)));
+        assert_eq!(ctx.sub(&tiny, &tinier), Err(FpError::Underflow(Positive)));
+    }
 }

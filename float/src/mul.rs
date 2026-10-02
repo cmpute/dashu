@@ -335,18 +335,21 @@ impl<R: Round> Context<R> {
         }
 
         let dropped = wa + wb - n;
-        // Power-of-two bases absorb the dropped words into the exponent; any
-        // other base keeps them as (zero) low words of the significand, with
-        // the error bound scaled accordingly.
+        // Power-of-two bases fold the dropped words into the exponent; any
+        // remainder bits that do not make up whole base digits stay as (zero)
+        // low words of the significand, with the error bound scaled
+        // accordingly — same as for bases that are not powers of two, which
+        // always keep the full dropped words as padding.
         let lb = B.trailing_zeros() as usize;
+        let fold_bits = WORD_BITS * dropped;
         let pad_bits = if B.is_power_of_two() {
-            0
+            fold_bits % lb
         } else {
-            WORD_BITS * dropped
+            fold_bits
         };
         let exponent = lhs.exponent.checked_add(rhs.exponent)?;
-        let exponent = if pad_bits == 0 {
-            exponent.checked_add(((WORD_BITS * dropped) / lb) as isize)?
+        let exponent = if B.is_power_of_two() {
+            exponent.checked_add((fold_bits / lb) as isize)?
         } else {
             exponent
         };
@@ -387,14 +390,15 @@ impl<R: Round> Context<R> {
 
         let dropped = 2 * wa - n;
         let lb = B.trailing_zeros() as usize;
+        let fold_bits = WORD_BITS * dropped;
         let pad_bits = if B.is_power_of_two() {
-            0
+            fold_bits % lb
         } else {
-            WORD_BITS * dropped
+            fold_bits
         };
         let exponent = f.exponent.checked_mul(2)?;
-        let exponent = if pad_bits == 0 {
-            exponent.checked_add(((WORD_BITS * dropped) / lb) as isize)?
+        let exponent = if B.is_power_of_two() {
+            exponent.checked_add((fold_bits / lb) as isize)?
         } else {
             exponent
         };
@@ -433,22 +437,24 @@ impl<R: Round> Context<R> {
         let a = UBig::from_words(&fw[..wa]);
         let (square, sticky1) = high::sqr_high(&a, n);
         // The square's window may carry a leading zero word; the second
-        // window clamps to it (plus the two-word extension), which only
-        // shrinks the composed error bound.
+        // window clamps to it (plus the two-word extension). The extension
+        // rescales the square's shortfall onto a finer final window, which
+        // the composed bound below accounts for explicitly.
         let square_words = trim_word_len(square.as_words());
         let n2 = clamp_window(n, square_words.min(wa))?;
         let (window, sticky2) = high::mul_high(&square, &a, n2);
 
         let dropped = (2 * wa - n) + (square_words + wa - n2);
         let lb = B.trailing_zeros() as usize;
+        let fold_bits = WORD_BITS * dropped;
         let pad_bits = if B.is_power_of_two() {
-            0
+            fold_bits % lb
         } else {
-            WORD_BITS * dropped
+            fold_bits
         };
         let exponent = f.exponent.checked_mul(3)?;
-        let exponent = if pad_bits == 0 {
-            exponent.checked_add(((WORD_BITS * dropped) / lb) as isize)?
+        let exponent = if B.is_power_of_two() {
+            exponent.checked_add((fold_bits / lb) as isize)?
         } else {
             exponent
         };
@@ -458,7 +464,13 @@ impl<R: Round> Context<R> {
         } else {
             IBig::from(window << pad_bits)
         };
-        let err_abs = IBig::from(n as u64 + n2 as u64 + 6) << pad_bits;
+        // Composed bound: (n + 2) ulps from the square, amplified by
+        // `a / 2^(square_words + wa - n2)·W < 2^((n2 - square_words)·W)` when
+        // the second window extends past the square's word length, plus
+        // (n2 + 2) ulps from the short product.
+        let square_err_shift = n2.saturating_sub(square_words) * WORD_BITS;
+        let err_abs = ((IBig::from(n as u64 + 2) << square_err_shift) + IBig::from(n2 as u64 + 2))
+            << pad_bits;
         round_high_product::<R, B>(self, sig, fs, exponent, sticky1 || sticky2, &err_abs)
     }
 }
@@ -696,7 +708,7 @@ impl<R: Round> Context<R> {
                 }
             }
         };
-        Ok(sum.map(|v| FBig::new(v, *self)))
+        self.finish_rounded(sum)
     }
 }
 
@@ -1229,6 +1241,72 @@ mod tests {
         let d = Repr::<2>::new(sig(&aw), -10);
         assert!(ctx.mul_short(&c, &d).is_none());
         assert_eq!(ctx.mul(&c, &d), Err(FpError::Underflow(Positive)));
+    }
+
+    /// A power-of-two base whose per-digit bit count does not divide the
+    /// dropped bit count (base 8 on 64-bit words: 64·dropped mod 3 ≠ 0) must
+    /// pad the remainder bits onto the significand instead of folding them
+    /// into the exponent by floor division (which mis-scales the value).
+    #[test]
+    fn test_short_mul_power_of_two_base_exponent_folding() {
+        let aw = lcg_words(71, scale(64));
+        let bw = lcg_words(72, scale(64));
+        let p = 100; // octal digits; the window drops 121 words ≡ 1 mod 3
+        let a8 = Repr::<8>::new(sig(&aw), 3);
+        let b8 = Repr::<8>::new(sig(&bw), -2);
+        let ctx = Context::<mode::HalfEven>::new(p);
+        assert!(ctx.mul_short(&a8, &b8).is_some(), "base-8 short path declined");
+        check_mul_short::<mode::HalfEven, 8>(p, &a8, &b8);
+        check_sqr_short::<mode::HalfEven, 8>(p, &a8);
+        check_cubic_short::<mode::HalfEven, 8>(p, &a8);
+    }
+
+    /// Sweeping the exponent sum across the finite-range boundary: whenever
+    /// the unlimited-precision oracle saturates to the infinity, the public
+    /// operation must report the corresponding error — including the case
+    /// where the fast path's `normalize` bumps a checked exponent exactly
+    /// onto the sentinel (which the fast path's own `checked_add` cannot
+    /// see).
+    #[test]
+    fn test_short_mul_exponent_saturation_parity() {
+        let aw = lcg_words(77, scale(64));
+        let p = 50usize;
+        let ctx = Context::<mode::HalfEven>::new(p);
+        let oracle_ctx = Context::<mode::HalfEven>::new(0);
+        let b = Repr::<2>::new(sig(&aw), 0);
+        for delta in 0..(scale(8192) as isize) {
+            let a = Repr::<2>::new(sig(&aw), isize::MAX - delta);
+            let got = ctx.mul(&a, &b);
+            match oracle_ctx.mul(&a, &b) {
+                // The unlimited product itself can saturate in `normalize`
+                // (its trailing-zero fold crosses the sentinel): both paths
+                // must report overflow.
+                Err(FpError::Overflow(_)) => {
+                    assert!(
+                        matches!(got, Err(FpError::Overflow(_))),
+                        "delta={delta}: expected overflow, got {:?}",
+                        got.map(|v| v.value().repr().clone())
+                    );
+                }
+                Err(e) => panic!("delta={delta}: unexpected oracle error {e:?}"),
+                Ok(want) => {
+                    let want = want.value().with_precision(p);
+                    let want_repr = match &want {
+                        Exact(v) | Inexact(v, _) => v.repr(),
+                    };
+                    if want_repr.is_infinite() {
+                        assert!(
+                            matches!(got, Err(FpError::Overflow(_))),
+                            "delta={delta}: expected overflow, got {:?}",
+                            got.map(|v| v.value().repr().clone())
+                        );
+                    } else {
+                        let got = got.expect("finite oracle but the public op errored");
+                        assert_eq!(got.value().repr(), want_repr, "delta={delta}");
+                    }
+                }
+            }
+        }
     }
 
     /// Rounding can push the *result* out of the finite exponent range even
