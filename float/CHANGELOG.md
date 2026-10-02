@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+### Change
+- **Breaking**: the remainder operator (`%` / `RemAssign` / `Context::rem`) now rounds the
+  quotient with the rounding mode attached to the type, instead of a fixed
+  nearest-ties-away rule (issues #110, #111). `DBig`/`FBig<HalfAway>` results are
+  unchanged; `FBig<Zero>` (the binary default) now returns the truncated,
+  dividend-signed remainder — fmod semantics, so `fbig!(0xF) % fbig!(0xA)` is `+5`;
+  `FBig<HalfEven>` now implements the IEEE 754 `remainder` rule (ties to even); `Down`/
+  `Up` round the quotient floor/ceil-style (Python-style `%` and its mirror). The mode
+  also continues to round the remainder value to the context precision as before, and
+  `RemEuclid` is unchanged. The kernel reduces modulo `2·|rhs|` on its fast path, so the
+  `HalfEven` tie parity falls out of the same residue with no extra pass.
+- Clarified the docstrings around rounding-to-integer (issue #110): `FBig::round` now
+  states that it always rounds half away from zero like `f64::round()`, regardless of the
+  rounding mode attached to the type, and points to the mode-aware alternatives
+  (`to_int()`, `quantize(0)`, `with_precision()`); `to_int()` and `quantize()` cross-link
+  back.
+- Specialized the ×2 pattern out of `Mag`'s power-of-two scaling: the propagation folds'
+  `mul_pow2(1)` cross-terms now call a dedicated `const #[inline] mul2()` (a normalized
+  significand never renormalizes on a single doubling, so it is a bare exponent bump,
+  inlinable cross-crate), and every other caller migrated to the general scaling at the
+  internal `i128` exponent width — now the one `mul_pow2` (the `isize`-width wrapper and
+  the `_i128` suffix are gone). The single-user kernels `add_up`/`sub_impl` are inlined
+  into `add`/`sub_down`, and `exp_upper` keeps its halving exponent in `i128` end to end
+  (no `usize` round-trip). The raw-parts assembler became an idiomatic private
+  `Mag::new(man, exp)` associated constructor (absorbing `from_pow2_stored`'s duplicate
+  saturation check), and the too-large-significand round-up normalizer likewise became
+  `Mag::new_round_up(raw, exp)`; `new` debug-asserts the normalization contract, so the
+  test suite validates it at every construction path. No observable behavior change.
+- Pruned the internal `Mag` radius type down to the subset the float/complex error
+  propagation actually uses: removed the round-up `Mag::sub` (dead since the complex log
+  bracket switched to `sub_down`; its helper `from_double_rounded` collapsed to a
+  truncating `from_double_truncated`), replaced the generic binary-exponentiation
+  `Mag::pow` with a plain squaring helper (`exp_upper` only ever raises to `2^j`), dropped
+  the unused `Hash` derive, and made `from_pow2` module-private.
+  Bit-identical results on every live path (`Mag` stays `#[doc(hidden)]`, so no public API
+  changes).
+
 ### Fix
 - `tanh` no longer stalls on large `|x|`: the value saturates at `sign(x)·(1 − 2e^{−2|x|})`,
   whose sub-half-ulp residual makes the Ziv working-precision mid collapse onto exactly `±1`

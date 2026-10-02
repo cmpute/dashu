@@ -239,18 +239,31 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ///
     /// If there are two integers equally close, then the one farther from zero is chosen.
     ///
+    /// **Note**: like [rounding on the primitive floats](f64::round), this method always
+    /// applies that "nearest, ties away from zero" rule — the rounding mode attached to
+    /// the type does not participate. To round to an integer with the type's own rounding
+    /// mode, use [`to_int()`](Self::to_int) (yields an [IBig]) or [`quantize(0)`](Self::quantize)
+    /// (yields an integer-valued float); more generally, [`with_precision()`](Self::with_precision)
+    /// re-rounds to any precision with the type's rounding mode.
+    ///
     /// # Examples
     ///
     /// ```
     /// # use core::str::FromStr;
     /// # use dashu_base::ParseError;
-    /// # use dashu_float::DBig;
+    /// # use dashu_float::{DBig, FBig, round::mode};
     /// let a = DBig::from_str("1.234")?;
     /// assert_eq!(a.round(), DBig::from_str("1")?);
     ///
     /// // works for very large exponent
     /// let b = DBig::from_str("1.234e10000")?;
     /// assert_eq!(b.round(), b);
+    ///
+    /// // the rounding mode attached to the type is ignored: 1.5 still rounds
+    /// // away from zero on a type that otherwise rounds toward zero
+    /// let c = FBig::<mode::Zero, 10>::from_str("1.5")?;
+    /// assert_eq!(c.round(), FBig::<mode::Zero, 10>::from_str("2")?);
+    /// assert_eq!(c.to_int().value(), 1.into());
     /// # Ok::<(), ParseError>(())
     /// ```
     ///
@@ -290,6 +303,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// normalized, trailing zeros are not preserved in storage (the stored
     /// exponent may be coarser than `exp`), but the value and ULP are exact. The
     /// result keeps `self`'s rounding mode.
+    ///
+    /// The rounding itself is applied with the rounding mode attached to the type;
+    /// in particular, `quantize(0)` is the mode-aware counterpart of
+    /// [`round()`](Self::round), which always rounds half away from zero regardless
+    /// of the type's rounding mode.
     ///
     /// # Examples
     ///

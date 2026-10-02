@@ -1,15 +1,6 @@
 //! Conversion between Montgomery form, UBig and IBig.
 
-use crate::{
-    arch::word::{DoubleWord, Word},
-    buffer::Buffer,
-    ibig::IBig,
-    memory::MemoryAllocation,
-    primitive::shrink_dword,
-    repr::{Repr, TypedReprRef},
-    ubig::UBig,
-    Sign,
-};
+use crate::{buffer::Buffer, ibig::IBig, memory::MemoryAllocation, repr::Repr, ubig::UBig, Sign};
 use dashu_base::UnsignedAbs;
 use num_modular::Reducer;
 
@@ -74,12 +65,12 @@ impl<'a> IntoMontgomeryRing<'a, MontgomeryRepr> for UBig {
             MontgomeryReprData::Single(r) => {
                 let modulus = r.0.modulus();
                 let residue = &self % &UBig::from_word(modulus);
-                Montgomery::from_single(r.0.transform(ubig_to_word(&residue)), r)
+                Montgomery::from_single(r.0.transform(residue.to_word()), r)
             }
             MontgomeryReprData::Double(r) => {
                 let modulus = r.0.modulus();
                 let residue = &self % &UBig::from_dword(modulus);
-                Montgomery::from_double(r.0.transform(ubig_to_dword(&residue)), r)
+                Montgomery::from_double(r.0.transform(residue.to_dword()), r)
             }
             MontgomeryReprData::Large(r) => {
                 let s = r.modulus.len();
@@ -170,21 +161,5 @@ impl MontgomeryRepr {
         x: T,
     ) -> Montgomery<'a> {
         x.into_monty(self)
-    }
-}
-
-/// Extract a `Word` from a `UBig` known to fit in a single word.
-fn ubig_to_word(u: &UBig) -> Word {
-    match u.repr() {
-        TypedReprRef::RefSmall(d) => shrink_dword(d).expect("value fits in a word"),
-        TypedReprRef::RefLarge(_) => unreachable!("value is less than a single-word modulus"),
-    }
-}
-
-/// Extract a `DoubleWord` from a `UBig` known to fit in a double word.
-fn ubig_to_dword(u: &UBig) -> DoubleWord {
-    match u.repr() {
-        TypedReprRef::RefSmall(d) => d,
-        TypedReprRef::RefLarge(_) => unreachable!("value is less than a double-word modulus"),
     }
 }

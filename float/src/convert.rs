@@ -370,7 +370,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
             .map(|repr| FBig::new(repr, context))
     }
 
-    /// Convert the float number to integer with the given rounding mode.
+    /// Convert the float number to integer, rounding with the mode attached to the type.
+    ///
+    /// Unlike [`FBig::round`], which always rounds half away from zero regardless of
+    /// the type's rounding mode, this method rounds the fractional part with the type's
+    /// own mode. The result is exact if and only if the float is an integer itself.
     ///
     /// # Warning
     ///
@@ -386,6 +390,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # use dashu_base::ParseError;
     /// # use dashu_float::{FBig, DBig};
     /// use dashu_base::Approximation::*;
+    /// use dashu_float::round::mode::HalfEven;
     /// use dashu_float::round::Rounding::*;
     ///
     /// assert_eq!(
@@ -400,6 +405,12 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ///     DBig::from_str("1.234")?.to_int(),
     ///     Inexact(1.into(), NoOp)
     /// );
+    ///
+    /// // the mode attached to the type is honored: on a HalfEven type, the tie 2.5
+    /// // rounds to its even neighbor — whereas round() would return 3
+    /// let b = FBig::<HalfEven, 10>::from_str("2.5")?;
+    /// assert_eq!(b.to_int(), Inexact(2.into(), NoOp));
+    /// assert_eq!(b.round(), FBig::<HalfEven, 10>::from_str("3")?);
     /// # Ok::<(), ParseError>(())
     /// ```
     ///

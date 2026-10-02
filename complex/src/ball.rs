@@ -218,7 +218,7 @@ impl<const B: Word> CBall<B> {
         let ln_fold = if lo.is_zero() {
             Mag::INFINITY
         } else {
-            r.rad.mul_pow2(1).div(&lo)
+            r.rad.mul2().div(&lo)
         };
         // The argument fold is the *componentwise* gradient bound, not the joint 1-Lipschitz
         // `(rad_x + rad_y)/lo`: `∇arg = (−y, x)/‖z‖²`, so along the input segment
@@ -378,7 +378,7 @@ fn sqrt_real<R: ErrorBounds, const B: Word>(
     let mut rad = if lo.is_zero() {
         Mag::ONE.add(&Mag::from_repr(&mid)).add(&arg.rad)
     } else {
-        arg.rad.div(&Mag::from_repr_lower(&mid).mul_pow2(1))
+        arg.rad.div(&Mag::from_repr_lower(&mid).mul2())
     };
     rad = rad.add(&eps);
     Ok(Ball { mid, rad })

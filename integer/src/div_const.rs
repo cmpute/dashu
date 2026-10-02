@@ -25,13 +25,13 @@ use crate::{
 };
 use alloc::boxed::Box;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ConstSingleDivisor(pub(crate) PreMulInv2by1<Word>);
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ConstDoubleDivisor(pub(crate) PreMulInv3by2<Word, DoubleWord>);
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ConstLargeDivisor {
     pub(crate) normalized_divisor: Box<[Word]>,
     pub(crate) shift: u32,
@@ -204,7 +204,7 @@ impl ConstLargeDivisor {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ConstDivisorRepr {
     Single(ConstSingleDivisor),
     Double(ConstDoubleDivisor),
@@ -212,7 +212,7 @@ pub(crate) enum ConstDivisorRepr {
 }
 
 /// An [UBig] with some pre-computed fields to support faster division.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConstDivisor(pub(crate) ConstDivisorRepr);
 
 impl ConstDivisor {

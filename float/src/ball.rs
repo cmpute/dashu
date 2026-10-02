@@ -103,7 +103,7 @@ impl<const B: Word> Ball<B> {
     pub fn sqr(&self, prec: usize) -> Result<Self, FpError> {
         let ctx = Context::<mode::HalfEven>::new(prec);
         let (mid, eps) = finish_mid(ctx.sqr(&self.mid)?, prec);
-        let two_a = Mag::from_repr(&self.mid).mul_pow2(1); // 2·‖a.mid‖, exact
+        let two_a = Mag::from_repr(&self.mid).mul2(); // 2·‖a.mid‖, exact
         let rad = two_a.mul(&self.rad).add(&self.rad.mul(&self.rad)).add(&eps);
         Ok(Self { mid, rad })
     }
@@ -180,7 +180,7 @@ impl<const B: Word> Ball<B> {
             self.rad,
             self.mid,
         );
-        let denom = Mag::from_repr_lower(&mid).mul_pow2(1); // 2·LB(|mid_r|)
+        let denom = Mag::from_repr_lower(&mid).mul2(); // 2·LB(|mid_r|)
         let rad = self.rad.div(&denom).add(&eps);
         Ok(Self { mid, rad })
     }
@@ -224,7 +224,7 @@ impl<const B: Word> Ball<B> {
         let rad = if s == 0 || self.rad.is_zero() {
             self.rad
         } else if B == 2 {
-            self.rad.mul_pow2(s) // exact
+            self.rad.mul_pow2(s as i128) // exact
         } else {
             Mag::from_base_pow::<B>(s).mul(&self.rad) // rounds up
         };
@@ -411,7 +411,7 @@ mod tests {
         // zero numerator: |r| ≤ rad_a/LB(|b|) — a finite, sound radius (old special case)
         let z = Ball {
             mid: Repr::zero(),
-            rad: crate::mag::Mag::from_pow2(-20),
+            rad: crate::mag::Mag::ONE.mul_pow2(-20),
         };
         let q = z.div(&b, p).unwrap();
         assert!(!q.rad.is_infinite());
@@ -425,7 +425,7 @@ mod tests {
         // is what a single |m|·rad fold (the factor-2 bug) fails to cover.
         let ball = Ball {
             mid: Repr::new(IBig::ONE, 0),
-            rad: crate::mag::Mag::from_pow2(-10),
+            rad: crate::mag::Mag::ONE.mul_pow2(-10),
         };
         let sq = ball.sqr(p).unwrap();
         let hi_corner = Repr::new((IBig::ONE << 20) + (IBig::ONE << 11) + IBig::ONE, -20);

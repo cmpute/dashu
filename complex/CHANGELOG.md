@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Change
+- Migrated the ×2 radius folds (`sqrt`/`log`'s `2·rad/(m−rad)` brackets, the `sin`/`cos`
+  `cosh·e^r·r` folds) from `Mag::mul_pow2(1)` to the new specialized `Mag::mul2()`. Pure
+  call-site migration against float's shared internal type; no observable behavior change.
+
 ### Fix
 - `tan` (and `tanh` through `−i·tan(i·z)`) no longer stalls on a large `|Im z|` (resp. large
   real part for `tanh`): the imaginary part `sinh 2y/(cos 2x + cosh 2y)` saturates at
