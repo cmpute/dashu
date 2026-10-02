@@ -29,9 +29,11 @@ use static_assertions::const_assert;
 const THRESHOLD_SIMPLE_DEFAULT: usize = 15;
 const_assert!(THRESHOLD_SIMPLE_DEFAULT >= MIN_SPLIT_LEN);
 
-/// Smallest window length for which the recursive split satisfies its
-/// constraints, for any `n % 3`. Used to clamp runtime tuning values.
-const MIN_SPLIT_LEN: usize = 12;
+/// Smallest window length such that the recursive split satisfies its
+/// constraints for every length at or above it (the split needs
+/// `k >= (n+4)/2` with `k = n - (n - 2·⌊n/3⌋)`, which fails for n = 13, 14).
+/// Used to clamp runtime tuning values.
+const MIN_SPLIT_LEN: usize = 15;
 
 /// Environment-variable override for the base-case threshold.
 ///
@@ -312,8 +314,9 @@ mod tests {
     }
 
     /// Check the full public contract with an exact integer comparison:
-    /// `|q·denom·2^up − numer·2^down| <= E·denom·2^down` is precisely the
-    /// documented band scaled to integers, with `up = max(sigma, 0)` and
+    /// `|q·denom·2^down − numer·2^up| <= E·denom·2^down` is precisely the
+    /// documented band `|q − (numer/denom)·2^sigma| <= E` scaled to integers
+    /// (multiplying by `denom·2^down`), with `up = max(sigma, 0)` and
     /// `down = max(−sigma, 0)`.
     fn check_case(numer: &[Word], denom: &[Word], n: usize) -> (IBig, IBig) {
         let (numer, denom) = (UBig::from_words(numer), UBig::from_words(denom));
@@ -323,9 +326,22 @@ mod tests {
             - numer.bit_len() as isize;
         let (up, down) = (sigma.max(0) as usize, (-sigma).max(0) as usize);
         let bound = IBig::from(2 * n as u64 + 2) * IBig::from(&denom << down);
-        let diff = (IBig::from((&q * &denom) << up) - IBig::from(&numer << down)).abs();
+        let diff = (IBig::from((&q * &denom) << down) - IBig::from(&numer << up)).abs();
         assert!(diff <= bound, "error bound violated: |diff|={diff:?} n={n} sigma={sigma}");
         (diff, bound)
+    }
+
+    /// A numerator pinned to a band edge: [`in_band_numer`] shifted so that
+    /// its bit-length offset from the denominator is exactly
+    /// `n·WORD_BITS − sigma`, i.e. `sigma ∈ [-2, 2]` covers the whole band.
+    fn band_edge_numer(seed: u64, denom: &[Word], n: usize, sigma: isize) -> Vec<Word> {
+        let base = UBig::from_words(&in_band_numer(seed, denom, n));
+        let numer = if sigma >= 0 {
+            &base >> sigma as usize
+        } else {
+            &base << (-sigma) as usize
+        };
+        numer.as_words().to_vec()
     }
 
     /// A numerator whose bit length exceeds the denominator's by exactly
@@ -343,11 +359,14 @@ mod tests {
 
     #[test]
     fn test_div_high_exact_band() {
-        // The base-case band (n <= threshold) and the first recursion levels.
+        // The base-case band (n <= threshold) and the first recursion levels,
+        // with the numerator pinned to every band edge (sigma ∈ [-2, 2]).
         for &n in &[2, 3, 5, 8, 12, 15, 16, 17, 20, 24, 30, 45, 60, 90, 130, 200] {
             for seed in 1..=3u64 {
                 let denom = lcg_words(seed * 101 + 7, (n / 2 + 2).min(n));
-                check_case(&in_band_numer(seed * 61 + 3, &denom, n), &denom, n);
+                for sigma in -2..=2isize {
+                    check_case(&band_edge_numer(seed * 61 + 3, &denom, n, sigma), &denom, n);
+                }
             }
         }
     }
@@ -355,12 +374,15 @@ mod tests {
     #[test]
     fn test_div_high_full_width_denominators() {
         // Denominators with a full top word exercise the normalization shifts
-        // in the kernel (and the `s_np < wn·WORD_BITS` copy path).
+        // in the kernel (and the `s_np < wn·WORD_BITS` copy path — reached on
+        // the negative band edges, where the numerator grows past 2n words).
         for &n in &[6, 16, 24, 40, 70] {
             let mut denom = lcg_words(0x5eed + n as u64, n / 2 + 2);
             let last = denom.len() - 1;
             denom[last] |= 1 << (WORD_BITS - 1);
-            check_case(&in_band_numer(0x7000 + n as u64, &denom, n), &denom, n);
+            for sigma in -2..=2isize {
+                check_case(&band_edge_numer(0x7000 + n as u64, &denom, n, sigma), &denom, n);
+            }
         }
     }
 

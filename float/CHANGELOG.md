@@ -3,6 +3,13 @@
 ## Unreleased
 
 ### Fix
+- Fix the short-division fast path of `Context::div`/`Context::inv`: the kernel's ulp
+  error was not rescaled onto the value's scale when the window is shifted up
+  (`sigma < 0`), understating the classifier's error band by up to 4× — a value past
+  the rounding midpoint but inside the true band could be classified to the wrong
+  side. The error bound is now amplified by the same shift as the window; the
+  previous over-estimate for a right shift (`sigma > 0`) is tightened at the same
+  time.
 - Fix the short-product fast paths for power-of-two bases whose per-digit bit count
   does not divide a word size (e.g. base 8, 32, 64, 128 on 64-bit words): folding the
   dropped words into the exponent used floor division, silently mis-scaling the result
@@ -11,8 +18,8 @@
 - Fix an exponent overflow in the shared rounding step: rounding a value whose wide
   significand shrinks to the target precision needs `exponent + shift` beyond
   `isize::MAX`, which previously panicked in debug builds and silently wrapped the
-  exponent in release builds (reachable e.g. from `Context::mul/sqr/cubic/add/sub` or
-  `FBig::with_precision` on values with extreme exponents). Such results now saturate
+  exponent in release builds (reachable e.g. from `Context::mul/sqr/cubic/div/inv/add/sub`
+  or `FBig::with_precision` on values with extreme exponents). Such results now saturate
   to the infinity sentinel — the operations above report `FpError::Overflow`, and
   `with_precision` returns the infinity. A trailing-digit fold in `normalize` that
   crosses the sentinel (possible when the rounded significand ends in zero digits and
@@ -22,7 +29,7 @@
   that land directly on a sentinel exponent (through `normalize`'s trailing-digit
   fold, or the add/sub alignment padding) to `FpError::Overflow`/`FpError::Underflow`
   instead of returning a non-canonical representation; this covers the fast paths of
-  `mul/sqr/cubic` and the shortcuts of `pow`/`powf`/`nth_root`/`hypot`/`fma`.
+  `mul/sqr/cubic/div/inv` and the shortcuts of `pow`/`powf`/`nth_root`/`hypot`/`fma`.
 - Tighten the composed error bound of the `cubic` fast path: when the second window
   extends past the square's word length, the square's shortfall is rescaled onto a
   finer final window than the plain `(n + 2) + (n2 + 2)` sum accounted for.
