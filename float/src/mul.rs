@@ -37,10 +37,10 @@ use core::ops::{Mul, MulAssign};
 // ---------------------------------------------------------------------------
 
 /// Word size of [`Word`] on this target, used by the short-product sizing math.
-const WORD_BITS: usize = core::mem::size_of::<Word>() * 8;
+pub(crate) const WORD_BITS: usize = core::mem::size_of::<Word>() * 8;
 
 /// Number of words up to and including the last nonzero word.
-fn trim_word_len(words: &[Word]) -> usize {
+pub(crate) fn trim_word_len(words: &[Word]) -> usize {
     words.iter().rposition(|&w| w != 0).map_or(0, |i| i + 1)
 }
 
@@ -52,7 +52,7 @@ fn trim_word_len(words: &[Word]) -> usize {
 /// the rounding midpoint and cannot carry into the kept digits, and (2) one
 /// further spare digit so the rounding split never degenerates (the window
 /// always carries strictly more digits than the target precision).
-fn short_window_words<const B: Word>(precision: usize, err_ulps: usize) -> usize {
+pub(crate) fn short_window_words<const B: Word>(precision: usize, err_ulps: usize) -> usize {
     let (_, b_ub) = B.log2_bounds();
     // ceil(log2(err_ulps + 1)) as an exact bit length, avoiding `f32` methods
     // that are std-only on this crate's MSRV.
@@ -493,7 +493,7 @@ impl<R: Round> Context<R> {
         // precision, decide the rounding from a certified high window of the
         // product instead of the full exact product.
         if let Some(rounded) = self.mul_short(lhs, rhs) {
-            return Ok(rounded.map(|v| FBig::new(v, *self)));
+            return self.finish_rounded(rounded);
         }
 
         // Exact product of the full operands, then round. (An earlier version shrank each operand
@@ -543,7 +543,7 @@ impl<R: Round> Context<R> {
 
         // Fast path: certified high window of the square (see `Context::mul`).
         if let Some(rounded) = self.sqr_short(f) {
-            return Ok(rounded.map(|v| FBig::new(v, *self)));
+            return self.finish_rounded(rounded);
         }
 
         // Exact square of the full significand, then round. (An earlier version shrank the operand
@@ -587,7 +587,7 @@ impl<R: Round> Context<R> {
         // Fast path: two chained certified high products (square, then
         // multiply) with a composed error bound (see `Context::mul`).
         if let Some(rounded) = self.cubic_short(f) {
-            return Ok(rounded.map(|v| FBig::new(v, *self)));
+            return self.finish_rounded(rounded);
         }
 
         // Exact cube of the full significand, then round. (An earlier version shrank the operand

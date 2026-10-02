@@ -11,7 +11,22 @@
   to the infinity sentinel — the operations above report `FpError::Overflow`, and
   `with_precision` returns the infinity.
 
+### Fix
+- The short-product fast paths of `Context::mul/sqr/cubic` now pass their result through
+  the shared exponent-saturation check (`finish_rounded`): a fast-path result landing
+  exactly on the edge of the exponent range previously returned the raw infinity
+  sentinel as a value instead of reporting `FpError::Overflow`.
+
 ### Change
+- `Context::div` and `Context::inv` decide the rounding from a certified high window of
+  the quotient (the new `dashu-int::high::div_high` kernel) when the operands are large
+  relative to the target precision, instead of forming the full exact quotient. The
+  quotient window carries a two-sided error bound, so unlike the product fast paths
+  every boundary case — an exact division, a midpoint tie — falls back to the exact
+  path, keeping results, rounding flags and exactness indicators identical. Division
+  and reciprocal at medium and large precisions do roughly half to two thirds of the
+  exact division's work; series-based transcendental evaluations that divide benefit
+  automatically. No public API change.
 - `Context::mul`, `Context::sqr` and `Context::cubic` now decide the rounding from a
   certified high window of the product (the new `dashu-int::high` kernels) when the
   operands carry far more digits than the target precision, instead of computing the
