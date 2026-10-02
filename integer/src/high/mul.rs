@@ -201,6 +201,12 @@ pub(super) fn mul_high_into(t: &mut [Word], ap: &[Word], bp: &[Word], memory: &m
 
     // Dropped low-low block.
     sticky |= ap[..l].iter().any(|&w| w != 0) && bp[..l].iter().any(|&w| w != 0);
+    // The two accumulator words below the window hold real product columns
+    // (the exact block's boundary words, the cross windows' guard words and
+    // the carries into them); they are dropped from the returned value, so
+    // any content there is a dropped contribution.
+    sticky |= t[0] != 0;
+    sticky |= t[1] != 0;
     sticky
 }
 
@@ -387,6 +393,28 @@ mod tests {
             check_case(&a, &b, n + 2);
             check_case(&a, &b, (n + 5).min(n + 2));
         }
+    }
+
+    #[test]
+    fn test_mul_high_recursive_guard_sticky() {
+        // Sparse operands that deposit the exact high block's boundary word on
+        // the guard column just below the window (column n - 2): the dropped
+        // content is nonzero, so the sticky flag must be set even though
+        // every explicitly checked drop site (block prefix, crosses, low-low
+        // block, operand truncation) is zero. n = 100 > threshold: l = 25,
+        // k = 75.
+        let mut a = vec![0 as Word; 100];
+        a[73] = 1; // k - 2: pairs with b[l] at column n - 2
+        a[99] = 1;
+        let mut b = vec![0 as Word; 100];
+        b[25] = 1; // l
+        b[99] = 1;
+        let (a_u, b_u) = (UBig::from_words(&a), UBig::from_words(&b));
+        let (v, sticky) = mul_high(&a_u, &b_u, 100);
+        let full = &a_u * &b_u;
+        let s = WORD_BITS_USIZE * (100 + 100 - 100);
+        assert_eq!(v, &full >> s, "window value mismatch");
+        assert!(sticky, "content dropped below the window must set sticky");
     }
 
     #[test]

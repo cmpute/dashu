@@ -107,8 +107,13 @@ pub(super) fn sqr_high_into(t: &mut [Word], ap: &[Word], memory: &mut Memory) ->
     }
 
     // Dropped low square (and the below-window cross parts): all of them are
-    // nonzero only through the low block ap[..l].
+    // nonzero only through the low block ap[..l] — except the exact block's
+    // boundary words and the carries onto the two guard columns below the
+    // window, which are dropped from the returned value like any other
+    // contribution below it.
     sticky |= ap[..l].iter().any(|&w| w != 0);
+    sticky |= t[0] != 0;
+    sticky |= t[1] != 0;
     sticky
 }
 
@@ -253,6 +258,24 @@ mod tests {
                 check_case(&lcg_words(seed * 73, n), n + 2);
             }
         }
+    }
+
+    #[test]
+    fn test_sqr_high_recursive_guard_sticky() {
+        // As in the multiplication kernel's guard-sticky test: sparse
+        // operands depositing the exact high block's boundary word on the
+        // guard column below the window. n = 100: l = 25; the word at
+        // 2l - 1 = 49 squares onto column n - 2 and every other drop site
+        // stays zero, so only the guard content proves the drop.
+        let mut a = vec![0 as Word; 100];
+        a[49] = 1; // 2l - 1
+        a[99] = 1;
+        let a_u = UBig::from_words(&a);
+        let (v, sticky) = sqr_high(&a_u, 100);
+        let full = &a_u * &a_u;
+        let s = WORD_BITS_USIZE * (2 * 100 - 100);
+        assert_eq!(v, &full >> s, "window value mismatch");
+        assert!(sticky, "content dropped below the window must set sticky");
     }
 
     #[test]

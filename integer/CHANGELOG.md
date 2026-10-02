@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Fix
+- Fix the sticky flag of `high::mul_high` / `high::sqr_high` on the recursive path: the
+  exact high block's boundary words and the cross windows' guard words land on the two
+  accumulator columns just below the window, and content there was dropped without
+  setting the flag — a `false` flag could accompany a non-exact window, violating the
+  documented contract ("a `false` flag means the value is exact"). Sparse operands with
+  word counts above the base-case threshold could trigger it; the guard columns are now
+  checked like every other dropped contribution.
+
 ### Add
 - Add `high::mul_high` and `high::sqr_high`: high-part (truncated) products with a
   certified one-sided error bound and a sticky flag. Given `out_words`, they compute
