@@ -38,7 +38,7 @@ const ERRMSG_UBIG_WRONG_SRC_TYPE: &str =
 const ERRMSG_IBIG_WRONG_SRC_TYPE: &str =
     "only integers or strings can be used to construct an IBig instance";
 const ERRMSG_FROM_WORDS_WRONG_TYPE: &str =
-    "only list of integers or Words instance can be used in UBig.from_words()";
+    "only list of integers or Words instance can be used to construct an integer from words";
 const ERRMSG_WRONG_ENDIANNESS: &str = "byteorder must be either 'little' or 'big'";
 const ERRMSG_NEGATIVE_TO_UNSIGNED: &str = "can't convert negative int to unsigned";
 const ERRMSG_INT_WITH_RADIX: &str = "can't convert non-string with explicit base";
@@ -1024,17 +1024,18 @@ impl IPy {
         convert_from_ibig(&self.0, py)?.into_py_any(py)
     }
     /// Get the underlying (sign, words) representing this integer
-    fn to_words(&self) -> PyWords {
-        let (_, words) = self.0.as_sign_words();
-        PyWords(words.to_vec())
+    fn to_sign_words(&self) -> (PySign, PyWords) {
+        let (sign, words) = self.0.as_sign_words();
+        (PySign::from(sign), PyWords(words.to_vec()))
     }
-    /// Create an integer from a list of words (interpreted as non-negative magnitude)
+    /// Create an integer from a sign and a list of words (interpreted as the magnitude in
+    /// little-endian order). This is the inverse of to_sign_words().
     #[staticmethod]
-    fn from_words(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn from_sign_words(sign: PySign, ob: &Bound<'_, PyAny>) -> PyResult<Self> {
         if let Ok(vec) = ob.extract::<Vec<Word>>() {
-            Ok(IPy(IBig::from(UBig::from_words(&vec))))
+            Ok(IPy(IBig::from_sign_words(sign.into(), &vec)))
         } else if let Ok(words) = ob.extract::<PyRef<PyWords>>() {
-            Ok(IPy(IBig::from(UBig::from_words(&words.0))))
+            Ok(IPy(IBig::from_sign_words(sign.into(), &words.0)))
         } else {
             Err(PyTypeError::new_err(ERRMSG_FROM_WORDS_WRONG_TYPE))
         }

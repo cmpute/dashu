@@ -83,12 +83,12 @@ impl<D: rkyv::Fallible + ?Sized> rkyv::Deserialize<IBig, D>
     #[inline]
     fn deserialize(&self, _: &mut D) -> Result<IBig, D::Error> {
         // `self.1.as_slice()` reads the words straight out of the archive
-        let mag = UBig::from_words(self.1.as_slice());
-        Ok(if self.0 {
-            -IBig::from(mag)
+        let sign = if self.0 {
+            Sign::Negative
         } else {
-            IBig::from(mag)
-        })
+            Sign::Positive
+        };
+        Ok(IBig::from_sign_words(sign, self.1.as_slice()))
     }
 }
 

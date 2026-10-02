@@ -79,7 +79,24 @@ def test_words_del():
         del words[sl]; del words_list[sl]
         assert list(words) == words_list, "{} => {}, {}".format(sl, words, words_list)
 
+def test_words_sign_roundtrip():
+    values = [IBig(0), IBig(1), IBig(-1), IBig(3 ** 300), IBig(-(3 ** 300))]
+    for n in values:
+        sign, words = n.to_sign_words()
+        assert IBig.from_sign_words(sign, words) == n
+        assert IBig.from_sign_words(sign, list(words)) == n
+
+    # zero has a positive sign, and the sign of zero is normalized on construction
+    sign, words = IBig(0).to_sign_words()
+    assert sign == PySign.Positive and len(words) == 0
+    assert IBig.from_sign_words(PySign.Negative, words) == IBig(0)
+    assert IBig.from_sign_words(PySign.Positive, [0, 0]) == IBig(0)
+
+    # leading zero words in the magnitude are trimmed
+    assert IBig.from_sign_words(PySign.Negative, [1, 0]) == IBig(-1)
+
 if __name__ == "__main__":
     test_words_get()
     test_words_set()
     test_words_del()
+    test_words_sign_roundtrip()

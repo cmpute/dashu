@@ -44,7 +44,7 @@ divmod(UBig(17), 5) == (UBig(3), UBig(2))
 
 - **整数**：`+ - * / // % **`、比较、原地运算、位操作
   （`& | ^ << >>`）、求根（`sqrt`/`cbrt`/`nth_root`）、`gcd`/`gcd_ext`、`ilog`、
-  位谓词，以及 `to_words`/`to_chunks`/`to_bytes`。
+  位谓词，以及 `to_words`/`to_sign_words`/`to_chunks`/`to_bytes`。
 - **浮点数 / Decimal**：算术、比较、舍入（`trunc`/`floor`/`ceil`/
   `round`/`fract`）、精度（`precision`/`with_precision`）、超越函数，
   以及转换 `to_decimal`/`to_binary`/`to_rational`/`to_int`。

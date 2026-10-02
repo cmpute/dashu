@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Add
+- Add `IBig::from_sign_words(sign, words)`, the inverse of `IBig::as_sign_words`: it builds an
+  `IBig` directly from a sign and a little-endian sequence of magnitude words. Leading zero
+  words are trimmed, and the sign of zero is normalized to positive (consistent with
+  `IBig::sign`). The rkyv deserializers now use it to reconstruct `IBig` in one step.
 - Implement `num_modular::Reducer<UBig>` for `MontgomeryRepr` (always available;
   the `num-modular` dependency is unconditional). Odd moduli get Montgomery
   multiplication (with the multi-word REDC kernel), which is the fastest

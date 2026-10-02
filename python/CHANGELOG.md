@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Change
+- Rename `IBig.to_words`/`IBig.from_words` to `to_sign_words`/`from_sign_words` so that the
+  sign survives the roundtrip: `to_sign_words()` returns a `(Sign, Words)` pair, and
+  `from_sign_words(sign, words)` takes the sign explicitly (the sign of zero is normalized to
+  positive, leading zero words in the magnitude are trimmed). `UBig.to_words`/`from_words`
+  are unchanged.
+
+### Fix
+- The type stub `dashu.pyi` was syntactically invalid: it declared the sign class as `Sign`
+  while the runtime module exposes it as `PySign` (the stub now matches the runtime:
+  `PySign.Positive` / `PySign.Negative`), and a `zeroize()` declaration had six dots instead
+  of an ellipsis.
+
 ## 0.6.0
 
 ### Add

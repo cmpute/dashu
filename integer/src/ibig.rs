@@ -83,6 +83,33 @@ impl IBig {
         self.0.as_sign_slice()
     }
 
+    /// Create an [IBig] from the [Sign] and a sequence of [Word][crate::Word]s (interpreted
+    /// as the magnitude in little-endian order). This is the inverse of
+    /// [as_sign_words][IBig::as_sign_words].
+    ///
+    /// Leading zero words in the input are trimmed. If the value is zero, the sign will be
+    /// normalized to [Sign::Positive] (consistent with [sign][IBig::sign]).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_int::{IBig, Sign};
+    /// assert_eq!(IBig::from_sign_words(Sign::Positive, &[] as &[_]), IBig::ZERO);
+    /// assert_eq!(IBig::from_sign_words(Sign::Negative, &[1]), IBig::NEG_ONE);
+    ///
+    /// // the sign of zero is normalized to positive
+    /// assert_eq!(IBig::from_sign_words(Sign::Negative, &[] as &[_]), IBig::ZERO);
+    ///
+    /// // roundtrip with as_sign_words
+    /// let x = IBig::from(-0x1234_5678_9abc_def0i64);
+    /// let (sign, words) = x.as_sign_words();
+    /// assert_eq!(IBig::from_sign_words(sign, words), x);
+    /// ```
+    #[inline]
+    pub fn from_sign_words(sign: Sign, words: &[crate::Word]) -> Self {
+        Self(Repr::from_buffer(words.into()).with_sign(sign))
+    }
+
     /// Get the sign of the number. Zero value has a positive sign.
     ///
     /// # Examples
@@ -237,5 +264,39 @@ impl Clone for IBig {
     #[inline]
     fn clone_from(&mut self, source: &IBig) {
         self.0.clone_from(&source.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{IBig, Sign};
+
+    #[test]
+    fn from_sign_words_normalize() {
+        assert_eq!(IBig::from_sign_words(Sign::Positive, &[]), IBig::ZERO);
+        assert_eq!(IBig::from_sign_words(Sign::Negative, &[]), IBig::ZERO);
+        assert_eq!(IBig::from_sign_words(Sign::Negative, &[0]), IBig::ZERO);
+        assert_eq!(IBig::from_sign_words(Sign::Negative, &[1, 0]), IBig::NEG_ONE);
+        assert_eq!(IBig::from_sign_words(Sign::Negative, &[1]), IBig::NEG_ONE);
+        assert_eq!(IBig::from_sign_words(Sign::Positive, &[1]), IBig::ONE);
+        assert_eq!(IBig::from_sign_words(Sign::Negative, &[1, 2]).sign(), Sign::Negative);
+    }
+
+    #[test]
+    fn sign_words_roundtrip() {
+        // values covering the repr boundaries: zero, small, double word, multi-word
+        let values = [
+            IBig::ZERO,
+            IBig::ONE,
+            IBig::NEG_ONE,
+            IBig::from(u128::MAX),
+            -IBig::from(u128::MAX),
+            IBig::from(u128::MAX) * IBig::from(0xdead_beef_cafe_babe_u128),
+            -(IBig::from(u128::MAX) * IBig::from(0xdead_beef_cafe_babe_u128)),
+        ];
+        for v in values {
+            let (sign, words) = v.as_sign_words();
+            assert_eq!(IBig::from_sign_words(sign, words), v, "value: {v:?}");
+        }
     }
 }

@@ -15,7 +15,7 @@
 use dashu::float::ops::Abs;
 use dashu::float::round::mode::HalfAway;
 use dashu::float::{Context, DBig, FBig, Repr};
-use dashu::integer::{IBig, UBig, Word};
+use dashu::integer::{IBig, Sign, UBig, Word};
 use proptest::prelude::*;
 use proptest::test_runner::RngSeed;
 
@@ -166,24 +166,18 @@ pub fn sampled_precisions_bits(key: u64) -> impl Iterator<Item = u32> {
     sampled_precisions(key, fuzz_precisions_bits())
 }
 
-/// A random `IBig` of bounded magnitude (up to `max_words · 64` bits) with a random sign. Trailing
-/// zero words are trimmed so that proptest shrinking can reduce the magnitude to a minimal failing
-/// case rather than getting stuck on a large zero-padded significand.
+/// A random `IBig` of bounded magnitude (up to `max_words · 64` bits) with a random sign. Zero-padded
+/// words are normalized by [`IBig::from_sign_words`] so that proptest shrinking can reduce the
+/// magnitude to a minimal failing case rather than getting stuck on a large zero-padded significand.
 pub fn ibig_strategy(max_words: usize) -> impl Strategy<Value = IBig> {
-    (any::<bool>(), prop::collection::vec(any::<Word>(), 0..max_words)).prop_map(
-        |(neg, mut words)| {
-            while words.last() == Some(&0) {
-                words.pop();
-            }
-            let mag = if words.is_empty() {
-                UBig::ZERO
-            } else {
-                UBig::from_words(&words)
-            };
-            let v = IBig::from(mag);
-            if neg && !v.is_zero() { -v } else { v }
-        },
-    )
+    (any::<bool>(), prop::collection::vec(any::<Word>(), 0..max_words)).prop_map(|(neg, words)| {
+        let sign = if neg {
+            Sign::Negative
+        } else {
+            Sign::Positive
+        };
+        IBig::from_sign_words(sign, &words)
+    })
 }
 
 /// A random `UBig` of bounded magnitude (no sign) — for unsigned integer oracles (sqrt / root /

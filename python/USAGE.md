@@ -46,7 +46,7 @@ divmod(UBig(17), 5) == (UBig(3), UBig(2))
 
 - **Integers**: `+ - * / // % **`, comparisons, in-place ops, bit operations
   (`& | ^ << >>`), roots (`sqrt`/`cbrt`/`nth_root`), `gcd`/`gcd_ext`, `ilog`, bit
-  predicates, and `to_words`/`to_chunks`/`to_bytes`.
+  predicates, and `to_words`/`to_sign_words`/`to_chunks`/`to_bytes`.
 - **Floats / Decimal**: arithmetic, comparisons, rounding (`trunc`/`floor`/`ceil`/
   `round`/`fract`), precision (`precision`/`with_precision`), transcendentals, and
   conversions `to_decimal`/`to_binary`/`to_rational`/`to_int`.
