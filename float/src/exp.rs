@@ -290,10 +290,11 @@ impl<R: Round> Context<R> {
     /// representable magnitude (its exponent would fall below `isize::MIN`). Outward modes round
     /// the magnitude up to the smallest `B^{isize::MIN}` of the result's sign; toward-zero, the
     /// opposite direction, and nearest round to signed zero. This mirrors the f32/f64 directed
-    /// underflow and is the shared endpoint used by `exp_extreme_negative`, `powi`, and `powf`, so
-    /// a directed `pow` (e.g. `pow(10, y)` ≈ `exp(y·ln 10)`) saturates to the same value `exp` does
-    /// — keeping `Up ≥ Down` consistent across them. The endpoint carries the input context, so a
-    /// downstream op keeps a limited precision.
+    /// underflow and is the shared endpoint that resolves [`FpError::Underflow`] in
+    /// [`Context::unwrap_fp`] — which `powi`/`powf` saturate through (their `exp` core reports the
+    /// underflow) — so a directed `pow` (e.g. `pow(10, y)` ≈ `exp(y·ln 10)`) saturates to the same
+    /// value `exp` does, keeping `Up ≥ Down` consistent across them. The endpoint carries the input
+    /// context, so a downstream op keeps a limited precision.
     pub(crate) fn underflow_repr_endpoint<const B: Word>(&self, sign: Sign) -> Rounded<FBig<R, B>> {
         let adj = if sign == Sign::Positive {
             R::round_low_part(&IBig::ZERO, Sign::Positive, || Ordering::Less)
@@ -808,7 +809,7 @@ impl<R: ErrorBounds> Context<R> {
             let thresh = self.precision as f32 * B.log2_est() * core::f32::consts::LN_2
                 + core::f32::consts::LN_2;
             if x.log2_bounds().0 > thresh.log2_bounds().1 {
-                return Ok(self.exp_extreme_negative::<B>());
+                return Ok(self.near_one_endpoint::<B>(Sign::Negative));
             }
         }
 
@@ -841,7 +842,7 @@ impl<R: ErrorBounds> Context<R> {
                 return if input_sign == Sign::Positive {
                     Err(FpError::Overflow(Sign::Positive))
                 } else if minus_one {
-                    Ok(self.exp_extreme_negative::<B>())
+                    Ok(self.near_one_endpoint::<B>(Sign::Negative))
                 } else {
                     Err(FpError::Underflow(Sign::Positive))
                 };
@@ -866,37 +867,6 @@ impl<R: ErrorBounds> Context<R> {
                 )?
                 .to_value_radius::<R>(&Context::<R>::new(self.precision + guard)))
         })
-    }
-
-    /// Directed-rounded `exp_m1(x)` when `x` is so large and negative that `exp(x)` has underflowed
-    /// below the smallest representable FBig (the reduction quotient `s = floor(x/ln B)` overflows
-    /// `isize`). `exp_m1(x) = exp(x) − 1` then lies in `(−1, −1 + B^{isize::MIN})` — pinned only up
-    /// to a sub-representable residual, so the directed rounding mode picks the endpoint of the bin
-    /// it falls in: a value just above `−1` rounds to `−1` under `Down`/`Away`/nearest, and to the
-    /// next representable above `−1` under `Up`/`Zero` (both round the magnitude down toward 0).
-    ///
-    /// (`exp` itself of such an `x` is handled earlier — it returns `Err(Underflow)`, whose directed
-    /// endpoint is the same `+0` / smallest-positive this used to produce inline.)
-    ///
-    /// `Round::round_low_part` decides the endpoint: fed `−1` with a positive sub-ulp residual, its
-    /// `AddOne`/`NoOp` verdict is exactly the "round up to the next representable / stay" decision.
-    /// (The literal significand arithmetic `round_low_part` would do is irrelevant here — only its
-    /// directional verdict is used.)
-    fn exp_extreme_negative<const B: Word>(&self) -> Rounded<FBig<R, B>> {
-        // exp_m1(huge −): −1 + (sub-representable positive) ⇒ just above −1.
-        match R::round_low_part(&IBig::NEG_ONE, Sign::Positive, || Ordering::Less) {
-            AddOne => {
-                // Next representable above −1 at this precision: −(B^p − 1) × B^(−p)
-                // (the largest p-digit significand at exponent −p, e.g. p=1,B=2 → −0.5).
-                let p = self.precision;
-                let next_mag = Repr::<B>::BASE.pow(p) - UBig::ONE;
-                let next = Repr::new(IBig::from_parts(Sign::Negative, next_mag), -(p as isize));
-                Inexact(FBig::new(next, *self), AddOne)
-            }
-            // Carry the input context: `−FBig::ONE` is precision 0, which would make a downstream op
-            // on the result panic via `assert_limited_precision(0)`.
-            _ => Inexact(FBig::new(Repr::<B>::neg_one(), *self), NoOp),
-        }
     }
 }
 

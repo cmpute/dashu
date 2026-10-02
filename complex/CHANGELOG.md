@@ -7,6 +7,18 @@
   `cosh·e^r·r` folds) from `Mag::mul_pow2(1)` to the new specialized `Mag::mul2()`. Pure
   call-site migration against float's shared internal type; no observable behavior change.
 
+### Fix
+- `tan` (and `tanh` through `−i·tan(i·z)`) no longer stalls on a large `|Im z|` (resp. large
+  real part for `tanh`): the imaginary part `sinh 2y/(cos 2x + cosh 2y)` saturates at
+  `sign(y)·(1 − δ)` with a sub-half-ulp residual, so the componentwise division's mid collapses
+  onto exactly `±1` — the boundary of a one-sided directed-rounding preimage — which the Ziv
+  containment can never certify (it climbed toward `~2|y|/ln B` working digits: an effective
+  hang under directed modes at `|y| = 10⁵`, e.g. `CBig::tanh(±1755648)`). Beyond
+  `|Im z| > (p·ln B)/2 + 1.5·ln 2` the saturated component is pinned to the mode-aware `±1`
+  endpoint (nearest/outward keep `±1`; toward-zero modes step one ulp in) while the tiny other
+  component — a genuine representable value, dashu has no underflow — keeps its own
+  single-part Ziv loop on the same composition.
+
 ## 0.6.1
 
 ### Change

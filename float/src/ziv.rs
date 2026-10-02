@@ -16,15 +16,15 @@
 
 use core::cmp::Ordering;
 
-use dashu_base::Approximation::*;
+use dashu_base::{Approximation::*, Sign};
 
 use crate::{
     error::{FpError, FpResult},
     fbig::FBig,
     repr::{Context, Repr},
-    round::ErrorBounds,
+    round::{ErrorBounds, Rounded, Rounding::*},
 };
-use dashu_int::Word;
+use dashu_int::{IBig, UBig, Word};
 
 /// Maximum number of Ziv retries before falling back to the best-effort rounded value.
 ///
@@ -162,6 +162,68 @@ impl<R: ErrorBounds> Context<R> {
         // Unreachable in practice: a radius-bound bug would otherwise loop forever. Report it
         // instead of silently returning a possibly-1-ULP-wrong best-effort candidate.
         Err(FpError::ZivRetryLimitExceeded)
+    }
+
+    /// Directed-rounded endpoint for a value that equals `sign·(1 − δ)` with `0 < δ` below half an
+    /// ulp of `±1`: the rounding is fully determined by the mode — the result is `±1` itself, or the
+    /// next representable *inside* it (`sign·(B^p − 1) × B^(−p)`), the latter under the modes that
+    /// round the magnitude down toward zero (`Up`/`Zero` just above `−1`, `Down`/`Zero` just below
+    /// `+1`).
+    ///
+    /// Shared by `exp_m1` (whose value is `−1` plus a sub-representable positive residual once
+    /// `exp(x)` has underflowed below the smallest representable FBig — the reduction quotient
+    /// `s = floor(x/ln B)` overflows `isize`), `tanh` (whose value saturates at
+    /// `sign(x)·(1 − 2e^{−2|x|})` for large `|x|`), and dashu-cmplx's complex `tan` (whose imaginary
+    /// part saturates the same way for a large `|Im z|`; its `tanh` reaches it through
+    /// `−i·tan(i·z)`). In all cases the Ziv loop cannot certify the candidate: the
+    /// working-precision mid collapses onto exactly `±1`, which sits on the boundary
+    /// of a directed rounding preimage (one-sided), so the containment test never resolves and the
+    /// loop would run its retry cap at an astronomically large working precision.
+    ///
+    /// `Round::round_low_part` decides the endpoint: fed the integer `sign·1` with a residual of the
+    /// opposite sign (below half an ulp), its `AddOne`/`SubOne`/`NoOp` verdict is exactly the
+    /// "step one ulp toward zero / stay" decision. (The literal significand arithmetic
+    /// `round_low_part` would do is irrelevant here — only its directional verdict is used.)
+    ///
+    /// Not part of the stable API surface (`#[doc(hidden)]`) — shared with dashu-cmplx's `tan`
+    /// saturation gate so the endpoint logic lives in one place, not a typed-in-stone contract.
+    #[doc(hidden)]
+    pub fn near_one_endpoint<const B: Word>(&self, sign: Sign) -> Rounded<FBig<R, B>> {
+        // The value sits just *inside* sign·1: the residual pulls it toward zero, so it carries
+        // the opposite sign.
+        let res_sign = if sign == Sign::Positive {
+            Sign::Negative
+        } else {
+            Sign::Positive
+        };
+        match R::round_low_part(&IBig::from_parts(sign, UBig::ONE), res_sign, || Ordering::Less) {
+            AddOne | SubOne => {
+                // One ulp toward zero: the largest p-digit significand at exponent −p, with `sign`
+                // (e.g. p=1, B=2 → ±0.5). `AddOne` steps above −1, `SubOne` below +1.
+                let p = self.precision;
+                let next_mag = Repr::<B>::BASE.pow(p) - UBig::ONE;
+                let next = Repr::new(IBig::from_parts(sign, next_mag), -(p as isize));
+                let adj = if sign == Sign::Positive {
+                    SubOne
+                } else {
+                    AddOne
+                };
+                Inexact(FBig::new(next, *self), adj)
+            }
+            // Carry the input context: `±FBig::ONE` is precision 0, which would make a downstream op
+            // on the result panic via `assert_limited_precision(0)`.
+            _ => Inexact(
+                FBig::new(
+                    if sign == Sign::Positive {
+                        Repr::<B>::one()
+                    } else {
+                        Repr::<B>::neg_one()
+                    },
+                    *self,
+                ),
+                NoOp,
+            ),
+        }
     }
 
     /// Pair variant of [`ziv`](Self::ziv) for functions that return two values (e.g. `sin_cos`,

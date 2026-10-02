@@ -39,6 +39,19 @@
   Bit-identical results on every live path (`Mag` stays `#[doc(hidden)]`, so no public API
   changes).
 
+### Fix
+- `tanh` no longer stalls on large `|x|`: the value saturates at `sign(x)·(1 − 2e^{−2|x|})`,
+  whose sub-half-ulp residual makes the Ziv working-precision mid collapse onto exactly `±1`
+  — the boundary of a one-sided directed-rounding preimage — so the containment test could
+  never certify and the loop climbed toward a working precision of `~2|x|/ln 2` (an effective
+  hang at `|x| = 10⁵`, minutes at `|x| ≈ 1.7·10⁶`; the positive side's overflow shortcut was
+  unreachable for the same reason). Inputs beyond `|x| > (p·ln B + ln 4)/2` (where the residual
+  is provably below half an ulp) now short-circuit to the mode-aware `±1` endpoint before the
+  loop — the same gate `exp_m1` already had for its extreme-negative case (`exp_extreme_negative`,
+  generalized to both signs as the shared `near_one_endpoint`). Directed modes return the
+  ulp-inside neighbor (`Up`/`Zero` just above `−1`, `Down`/`Zero` just below `+1`) instead of
+  the mode-blind `+1`.
+
 ## 0.6.1
 
 ### Add
