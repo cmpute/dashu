@@ -176,6 +176,13 @@ fn precision_strategy() -> impl Strategy<Value = usize> {
     prop_oneof![Just(1usize), Just(2), Just(3), 1usize..200,]
 }
 
+/// Precision strategy for the wide-operand suite: spans the band where the
+/// certified high-product fast path engages (from far below the operands'
+/// digit count up to their full width).
+fn wide_precision_strategy() -> impl Strategy<Value = usize> {
+    prop_oneof![2usize..10, 20usize..500, 500usize..2000]
+}
+
 proptest! {
     #![proptest_config(fuzz::fuzz_config())]
 
@@ -201,6 +208,21 @@ proptest! {
         let a = Repr::<10>::new(a_sig, a_exp);
         let b = Repr::<10>::new(b_sig, b_exp);
         check_all_modes::<10>(&a, &b, precision);
+    }
+
+    /// Wide operands (up to ~300 words) with a target precision far below their
+    /// width: this is the regime where mul/sqr/cubic take the certified
+    /// high-product fast path (windowed sweep and recursive composition), so
+    /// this suite differential-tests that path against the exact oracle.
+    #[test]
+    #[ignore]
+    fn fbig_short_product_fuzz(
+        a_sig in fuzz::ibig_strategy(300), a_exp in -1500isize..1500,
+        b_sig in fuzz::ibig_strategy(300), b_exp in -1500isize..1500,
+        precision in wide_precision_strategy(),
+    ) {
+        check_all_modes::<2>(&Repr::<2>::new(a_sig.clone(), a_exp), &Repr::<2>::new(b_sig.clone(), b_exp), precision);
+        check_all_modes::<10>(&Repr::<10>::new(a_sig, a_exp), &Repr::<10>::new(b_sig, b_exp), precision);
     }
 
     /// fma (fused multiply-add, `c + sign·(a·b)`) under all modes and both signs, in bases 2 and 10.
