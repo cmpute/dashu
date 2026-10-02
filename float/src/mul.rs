@@ -53,7 +53,7 @@ use core::ops::{Mul, MulAssign};
 ///   word may hold as little as one bit, so the window value can start a
 ///   full word lower than its word count suggests — and the final `+1` word
 ///   keeps all these margins intact when the count is rounded down.
-fn short_window_words<const B: Word>(precision: usize, err_ulps: usize) -> usize {
+pub(crate) fn short_window_words<const B: Word>(precision: usize, err_ulps: usize) -> usize {
     // ceil(log2 B) as an exact bit length: enough bits for one base-B digit.
     let b_ub = usize::BITS - (B as usize - 1).leading_zeros();
     // Bit length of the shortfall bound: the error spans at most that many

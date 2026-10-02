@@ -31,6 +31,15 @@
 - Share short-product scaling and rounding-result validation, reuse the common
   signed-zero/overflow constructor in addition, and avoid cloning the retained
   significand during short-product rounding.
+- `Context::div` and `Context::inv` decide the rounding from a certified high window of
+  the quotient (the new `dashu-int::high::div_high` kernel) when the operands are large
+  relative to the target precision, instead of forming the full exact quotient. The
+  quotient window carries a two-sided error bound, so unlike the product fast paths
+  every boundary case — an exact division, a midpoint tie — falls back to the exact
+  path, keeping results, rounding flags and exactness indicators identical. Division
+  and reciprocal at medium and large precisions do roughly half to two thirds of the
+  exact division's work; series-based transcendental evaluations that divide benefit
+  automatically. No public API change.
 - `Context::mul`, `Context::sqr` and `Context::cubic` now decide the rounding from a
   certified high window of the product (the new `dashu-int::high` kernels) when the
   operands carry far more digits than the target precision, instead of computing the
