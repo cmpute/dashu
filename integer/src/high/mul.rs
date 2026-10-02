@@ -71,48 +71,64 @@ pub(crate) fn memory_requirement_up_to(n: usize) -> Layout {
 }
 
 /// Windowed column sweep: accumulate into `t` every product term that reaches
-/// column `n-2` or above, where `t` holds the product columns `n-2 ..= 2n` of
-/// `ap * bp` (both `n` words, `t.len() == n + 3`).
+/// the window's boundary column or above. The window is the top `window` words
+/// of the `ap * bp` product (`na = ap.len() >= nb = bp.len()`, `window >= na`),
+/// and `t` (`window + 3` words) holds the product columns from two below the
+/// window up through its top.
 ///
 /// The multiplier words of `bp` are consumed two at a time by the shared
-/// double-word kernel; the pair `(bp[j], bp[j+1])` sweeps only the suffix of
-/// `ap` whose products reach column `n-2`, aligned so that `bp[j]`'s lowest
-/// kept product lands exactly at `t[0]`. Every neglected slice is a prefix of
-/// `ap` times one multiplier word, which is worth less than one unit of column
-/// `n-2`; summed over all sweeps the neglected value stays below `n/2 + 2`
-/// units of the window's least significant word — within the certified
-/// `n + 2` bound.
+/// double-word kernel; each pair sweeps only the suffix of `ap` whose products
+/// reach the accumulator, aligned at the pair's lowest kept product. Every
+/// neglected slice is a prefix of `ap` times one multiplier word, worth less
+/// than one unit of the accumulator's bottom column; summed over all sweeps
+/// the neglected value stays below `nb/2 + 2` units of the window's least
+/// significant word — within the certified `window + 2` bound.
 ///
-/// Returns whether any contribution below the window (columns `< n`) is nonzero.
-pub(super) fn mul_high_basecase(t: &mut [Word], ap: &[Word], bp: &[Word]) -> bool {
-    let n = ap.len();
-    debug_assert!(bp.len() == n && t.len() == n + 3);
+/// Returns whether any contribution below the window is nonzero.
+pub(super) fn mul_high_basecase(t: &mut [Word], ap: &[Word], bp: &[Word], window: usize) -> bool {
+    let (na, nb) = (ap.len(), bp.len());
+    debug_assert!(nb <= na && na <= window && window < na + nb && t.len() == window + 3);
+
+    // Product column held by t[0]: the window starts at column base_col, and
+    // the accumulator reaches two columns further down.
+    let base_col = na + nb - window;
 
     // Index of the first nonzero word of ap: a neglected prefix ap[..i0] is
     // nonzero exactly when i0 exceeds it.
-    let first_nonzero = ap.iter().position(|&w| w != 0).unwrap_or(n);
+    let first_nonzero = ap.iter().position(|&w| w != 0).unwrap_or(na);
 
     let mut sticky = false;
 
     let mut j = 0;
     let mut pairs = bp.chunks_exact(2);
     for pair in &mut pairs {
-        // For every full pair j <= n-2, so the suffix start never underflows.
-        let i0 = n - j - 2;
-        let len = j + 2;
-        let (carry_lo, carry_hi) =
-            mul::add_mul_dword_same_len_in_place(&mut t[..len], &ap[i0..], pair[0], pair[1]);
-        let overflow = add::add_dword_in_place(&mut t[len..], double_word(carry_lo, carry_hi));
+        // Products a_i·b_j reach t[0]'s column when i+j >= base_col - 2; sweep
+        // from the first such i. The sweep lands at t[off..off+len].
+        let i0 = base_col.saturating_sub(2).saturating_sub(j).min(na);
+        let len = na - i0;
+        let off = i0 + j + 2 - base_col;
+        let (carry_lo, carry_hi) = mul::add_mul_dword_same_len_in_place(
+            &mut t[off..off + len],
+            &ap[i0..],
+            pair[0],
+            pair[1],
+        );
+        let overflow =
+            add::add_dword_in_place(&mut t[off + len..], double_word(carry_lo, carry_hi));
         debug_assert!(!overflow);
         sticky |= i0 > first_nonzero && (pair[0] != 0 || pair[1] != 0);
         j += 2;
     }
-    // The leftover odd multiplier word (j = n-1) sweeps all of ap, landing at
-    // column n-1 and above: t[1..n+1], with its carry at t[n+1].
+    // The leftover odd multiplier word (j = nb-1) sweeps the same way.
     if let &[m] = pairs.remainder() {
-        let carry = mul::add_mul_word_same_len_in_place(&mut t[1..n + 1], m, ap);
-        let overflow = add::add_word_in_place(&mut t[n + 1..], carry);
+        let jj = nb - 1;
+        let i0 = base_col.saturating_sub(2).saturating_sub(jj).min(na);
+        let len = na - i0;
+        let off = i0 + jj + 2 - base_col;
+        let carry = mul::add_mul_word_same_len_in_place(&mut t[off..off + len], m, &ap[i0..]);
+        let overflow = add::add_word_in_place(&mut t[off + len..], carry);
         debug_assert!(!overflow);
+        sticky |= i0 > first_nonzero && m != 0;
     }
 
     // The two accumulator words below the window are dropped from the value;
@@ -135,7 +151,7 @@ pub(super) fn mul_high_into(t: &mut [Word], ap: &[Word], bp: &[Word], memory: &m
     debug_assert!(bp.len() == n && t.len() == n + 3);
 
     if n <= threshold::simple() {
-        return mul_high_basecase(t, ap, bp);
+        return mul_high_basecase(t, ap, bp, n);
     }
 
     // Split with a large high part: l = n/4, k = n - l. Then
@@ -197,6 +213,12 @@ pub(super) fn trim_words(words: &[Word]) -> usize {
 /// one-sided error bound. See the [module documentation](super) for the exact
 /// contract.
 ///
+/// `out_words` is clamped to `min(words(a), words(b)) + 2`: a window wider
+/// than the smaller operand by one or two words keeps the smaller operand
+/// whole (the sweep then runs on the (nearly) full operands), and anything
+/// wider falls back to that boundary. A window covering the entire product
+/// returns it exactly with a `false` sticky flag.
+///
 /// # Examples
 ///
 /// ```
@@ -237,19 +259,49 @@ pub fn mul_high(a: &UBig, b: &UBig, out_words: usize) -> (UBig, bool) {
     if out_words == 0 {
         return (UBig::ZERO, true);
     }
-    let n = out_words.min(wa).min(wb);
+    // The window may extend up to two words beyond the smaller operand: the
+    // windowed sweep then runs directly on (nearly) full operands. Beyond
+    // that, clamp to the smaller operand so the recursive path keeps its
+    // square shape.
+    let n = out_words.min(wa.min(wb) + 2);
+    debug_assert!(n >= 1 && n < wa + wb);
 
-    // Truncating either operand to its top n words drops a value worth less
-    // than one unit of the window's least significant word (the window spans
-    // the whole smaller operand), absorbed by the certified bound.
-    let sticky = (wa > n && aw[..wa - n].iter().any(|&w| w != 0))
-        || (wb > n && bw[..wb - n].iter().any(|&w| w != 0));
+    let (ap, bp, sticky, square_frame);
+    if n <= wa.min(wb) {
+        // Square frame: truncate both operands to their top n words. Each
+        // truncation drops a value worth less than one unit of the window's
+        // least significant word, absorbed by the certified bound.
+        square_frame = true;
+        ap = &aw[wa - n..];
+        bp = &bw[wb - n..];
+        sticky = (wa > n && aw[..wa - n].iter().any(|&w| w != 0))
+            || (wb > n && bw[..wb - n].iter().any(|&w| w != 0));
+    } else {
+        // Extended window: keep the smaller operand whole and take as many
+        // words of the larger one as the window allows. Only the larger
+        // operand is truncated (again below one unit of the window's last
+        // word); the extended window itself adds no further error.
+        square_frame = false;
+        let (lo_full, hi_full) = if wa >= wb { (bw, aw) } else { (aw, bw) };
+        let hi_len = hi_full.len().min(n);
+        let (hi_words, lo_words) = (&hi_full[hi_full.len() - hi_len..], lo_full);
+        ap = hi_words;
+        bp = lo_words;
+        sticky =
+            hi_len < hi_full.len() && hi_full[..hi_full.len() - hi_len].iter().any(|&w| w != 0);
+    }
 
     let mut buffer = Buffer::allocate(n + 3);
     buffer.push_zeros(n + 3);
-    let mut allocation = MemoryAllocation::new(memory_requirement_up_to(n));
-    let sticky_core =
-        mul_high_into(&mut buffer, &aw[wa - n..], &bw[wb - n..], &mut allocation.memory());
+    // The recursive path needs scratch memory; the windowed sweep needs none.
+    let sticky_core = if square_frame {
+        let mut allocation = MemoryAllocation::new(memory_requirement_up_to(n));
+        mul_high_into(&mut buffer, ap, bp, &mut allocation.memory())
+    } else {
+        // Extended window: run the sweep directly (correct at any size; the
+        // cost is the caller's choice).
+        mul_high_basecase(&mut buffer, ap, bp, n)
+    };
 
     // The window may carry zero high words when the product is short; UBig
     // words are little-endian, so trim from the top.
@@ -285,6 +337,8 @@ mod tests {
 
     /// Check the full public contract against a schoolbook full product.
     fn check_case(a: &[Word], b: &[Word], n: usize) {
+        // Apply the same clamping as the public contract.
+        let n = n.min(a.len().min(b.len()) + 2).min(a.len() + b.len());
         let (a_u, b_u) = (UBig::from_words(a), UBig::from_words(b));
         let (v, sticky) = mul_high(&a_u, &b_u, n);
         let full = &a_u * &b_u;
@@ -310,6 +364,28 @@ mod tests {
                 let b = lcg_words(seed * 47 + 5, n);
                 check_case(&a, &b, n);
             }
+        }
+    }
+
+    #[test]
+    fn test_mul_high_extended_windows() {
+        // Windows reaching one and two words beyond the smaller operand: the
+        // sweep then covers (nearly) full operands. This is the shape the
+        // floating-point layer uses for equal-precision multiplication.
+        for n in 1..=40usize {
+            for seed in 1..=2u64 {
+                let a = lcg_words(seed * 59, n);
+                let b = lcg_words(seed * 61 + 3, n);
+                check_case(&a, &b, n + 1);
+                check_case(&a, &b, n + 2);
+                check_case(&b, &a, n + 1);
+                check_case(&b, &a, n + 2);
+            }
+            // Rectangular operands (smaller by a few words).
+            let a = lcg_words(0x0dd, n + 5);
+            let b = lcg_words(0x0ee, n);
+            check_case(&a, &b, n + 2);
+            check_case(&a, &b, (n + 5).min(n + 2));
         }
     }
 
@@ -415,7 +491,7 @@ mod tests {
                     if recursive {
                         let _ = mul_high_into(&mut t, &a, &b, &mut allocation.memory());
                     } else {
-                        let _ = mul_high_basecase(&mut t, &a, &b);
+                        let _ = mul_high_basecase(&mut t, &a, &b, n);
                     }
                 }
                 for _ in 0..iters {
@@ -426,7 +502,7 @@ mod tests {
                     if recursive {
                         let _ = mul_high_into(&mut t, &a, &b, &mut allocation.memory());
                     } else {
-                        let _ = mul_high_basecase(&mut t, &a, &b);
+                        let _ = mul_high_basecase(&mut t, &a, &b, n);
                     }
                     best = best.min(start.elapsed().as_secs_f64() * 1e6);
                 }

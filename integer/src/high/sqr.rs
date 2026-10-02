@@ -71,7 +71,7 @@ pub(super) fn sqr_high_into(t: &mut [Word], ap: &[Word], memory: &mut Memory) ->
     debug_assert!(t.len() == n + 3);
 
     if n <= threshold::simple() {
-        return super::mul::mul_high_basecase(t, ap, ap);
+        return super::mul::mul_high_basecase(t, ap, ap, n);
     }
 
     // Square split with a large high part: l = n/4, k = n - l. Then
@@ -116,6 +116,10 @@ pub(super) fn sqr_high_into(t: &mut [Word], ap: &[Word], memory: &mut Memory) ->
 /// one-sided error bound. See the [module documentation](super) for the exact
 /// contract.
 ///
+/// `out_words` is clamped to `words(a) + 2` (as on [`super::mul_high`], a
+/// window up to two words beyond the operand keeps it whole); a window
+/// covering the entire square returns it exactly with a `false` sticky flag.
+///
 /// # Examples
 ///
 /// ```
@@ -146,16 +150,30 @@ pub fn sqr_high(a: &UBig, out_words: usize) -> (UBig, bool) {
     if out_words == 0 {
         return (UBig::ZERO, true);
     }
-    let n = out_words.min(wa);
+    let n = out_words.min(wa + 2);
 
-    // Truncating the operand to its top n words drops a value worth less than
-    // one unit of the window's least significant word.
-    let sticky = wa > n && aw[..wa - n].iter().any(|&w| w != 0);
+    let (ap, sticky, square_frame);
+    if n <= wa {
+        // Truncating the operand to its top n words drops a value worth less
+        // than one unit of the window's least significant word.
+        square_frame = true;
+        ap = &aw[wa - n..];
+        sticky = wa > n && aw[..wa - n].iter().any(|&w| w != 0);
+    } else {
+        // Extended window: the operand stays whole.
+        square_frame = false;
+        ap = &aw[..wa];
+        sticky = false;
+    }
 
     let mut buffer = Buffer::allocate(n + 3);
     buffer.push_zeros(n + 3);
-    let mut allocation = MemoryAllocation::new(memory_requirement_up_to(n));
-    let sticky_core = sqr_high_into(&mut buffer, &aw[wa - n..], &mut allocation.memory());
+    let sticky_core = if square_frame {
+        let mut allocation = MemoryAllocation::new(memory_requirement_up_to(n));
+        sqr_high_into(&mut buffer, ap, &mut allocation.memory())
+    } else {
+        super::mul::mul_high_basecase(&mut buffer, ap, ap, n)
+    };
 
     let hi = &buffer[2..n + 2];
     let hi_len = super::mul::trim_words(hi);
@@ -188,6 +206,8 @@ mod tests {
 
     /// Check the full public contract against a schoolbook full square.
     fn check_case(a: &[Word], n: usize) {
+        // Apply the same clamping as the public contract.
+        let n = n.min(a.len() + 2).min(2 * a.len());
         let a_u = UBig::from_words(a);
         let (v, sticky) = sqr_high(&a_u, n);
         let full = &a_u * &a_u;
@@ -219,6 +239,18 @@ mod tests {
             for seed in 1..=2u64 {
                 check_case(&lcg_words(seed * 71, n), n);
                 check_case(&lcg_words(seed * 97, n), n / 2 + 1);
+            }
+        }
+    }
+
+    #[test]
+    fn test_sqr_high_extended_windows() {
+        // Windows reaching one and two words beyond the operand (the
+        // equal-precision floating-point shape).
+        for n in 1..=40usize {
+            for seed in 1..=2u64 {
+                check_case(&lcg_words(seed * 67, n), n + 1);
+                check_case(&lcg_words(seed * 73, n), n + 2);
             }
         }
     }

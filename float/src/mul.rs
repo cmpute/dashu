@@ -51,28 +51,50 @@ fn trim_word_len(words: &[Word]) -> usize {
 /// The window needs (1) enough spare digits that the error stays well below
 /// the rounding midpoint and cannot carry into the kept digits, and (2) one
 /// further spare digit so the rounding split never degenerates (the window
-/// always carries strictly more digits than the target precision). Two spare
-/// words absorb the digit-count slack of the (unnormalized) window value.
+/// always carries strictly more digits than the target precision).
 fn short_window_words<const B: Word>(precision: usize, err_ulps: usize) -> usize {
     let (_, b_ub) = B.log2_bounds();
     // ceil(log2(err_ulps + 1)) as an exact bit length, avoiding `f32` methods
     // that are std-only on this crate's MSRV.
     let err_bits = usize::BITS - err_ulps.leading_zeros();
     let need_bits = precision as f32 * b_ub + err_bits as f32 + b_ub + 11.0;
+    // Two spare words: one keeps the margin over the error bound even when
+    // the product's top word is zero (the window then loses up to one word of
+    // fill), and one keeps the split non-degenerate.
     ceil_usize(need_bits / WORD_BITS as f32) + 2
+}
+
+/// Largest extended window (beyond the smaller operand) offered to the kernel,
+/// in bits (96 words on a 64-bit target). Extended windows always run the
+/// windowed sweep directly, so they stay in the kernel's base-case band.
+const EXT_WINDOW_LIMIT_BITS: usize = 96 * 64;
+
+/// Clamp the wanted window to what the kernel accepts: at most two words
+/// beyond the smaller operand. Clamping down is safe — the classifier's
+/// defensive checks catch the rare case where the narrower window cannot
+/// certify the rounding. Extended windows beyond the sweep's size band are
+/// declined (they would always run the quadratic sweep).
+fn clamp_window(want: usize, min_words: usize) -> Option<usize> {
+    let n = want.min(min_words + 2);
+    if n > min_words && n * WORD_BITS > EXT_WINDOW_LIMIT_BITS {
+        None
+    } else {
+        Some(n)
+    }
 }
 
 /// Heuristic gate: is a short product worthwhile for these operand and window
 /// sizes? Costs are expressed in word-multiplication units.
 fn short_path_worthwhile(wa: usize, wb: usize, n: usize) -> bool {
-    // The windowed kernel does ~3/4 of a window-sized multiplication plus
-    // linear passes over the operands; the fixed term covers the allocations,
-    // the word-level conversions and the classification comparisons.
-    const SWEEP_NUM: u128 = 3; // over 4
+    // The windowed sweep does roughly half a window-sized multiplication (the
+    // upper triangle) plus linear passes over the operands; the fixed term
+    // covers the allocations, the word-level conversions and the
+    // classification comparisons.
+    const SWEEP_NUM: u128 = 11; // over 20
     const LINEAR: u128 = 2;
-    const FIXED: u128 = 150;
+    const FIXED: u128 = 120;
     let full = wa as u128 * wb as u128;
-    let short = n as u128 * n as u128 * SWEEP_NUM / 4 + (wa as u128 + wb as u128) * LINEAR + FIXED;
+    let short = n as u128 * n as u128 * SWEEP_NUM / 20 + (wa as u128 + wb as u128) * LINEAR + FIXED;
     full > short
 }
 
@@ -303,10 +325,12 @@ impl<R: Round> Context<R> {
         let wb = trim_word_len(rw);
 
         // Size the window, then once more with the actual error bound
-        // (n + 2 ulps) that this window implies.
-        let n = short_window_words::<B>(self.precision(), 1 << 12);
-        let n = short_window_words::<B>(self.precision(), n + 2);
-        if n > wa.min(wb) || !short_path_worthwhile(wa, wb, n) {
+        // (n + 2 ulps) that this window implies. The window may extend up to
+        // two words beyond the smaller operand (the equal-precision case).
+        let n_want = short_window_words::<B>(self.precision(), 1 << 12);
+        let n_want = short_window_words::<B>(self.precision(), n_want + 2);
+        let n = clamp_window(n_want, wa.min(wb))?;
+        if !short_path_worthwhile(wa, wb, n) {
             return None;
         }
 
@@ -341,6 +365,12 @@ impl<R: Round> Context<R> {
     }
 
     /// Certified high-product fast path for squaring. See [`Self::mul_short`].
+    ///
+    /// Unlike multiplication, squaring never extends the window past the
+    /// operand: the dedicated squaring kernels already exploit the symmetric
+    /// product, so an extended windowed sweep cannot beat them. (Squaring
+    /// still benefits when the operand carries many more digits than the
+    /// target precision.)
     pub(crate) fn sqr_short<const B: Word>(&self, f: &Repr<B>) -> Option<Rounded<Repr<B>>> {
         if self.precision() == 0 || f.significand.is_zero() {
             return None;
@@ -348,9 +378,10 @@ impl<R: Round> Context<R> {
         let (_, fw) = f.significand.as_sign_words();
         let wa = trim_word_len(fw);
 
-        let n = short_window_words::<B>(self.precision(), 1 << 12);
-        let n = short_window_words::<B>(self.precision(), n + 2);
-        if n > wa || !short_path_worthwhile(wa, wa, n) {
+        let n_want = short_window_words::<B>(self.precision(), 1 << 12);
+        let n_want = short_window_words::<B>(self.precision(), n_want + 2);
+        let n = n_want.min(wa);
+        if n_want > wa || !short_path_worthwhile(wa, wa, n) {
             return None;
         }
 
@@ -393,17 +424,19 @@ impl<R: Round> Context<R> {
         // The composed bound is (n1 + 2) + (n2 + 2) + 2 ulps of the final
         // window; size both windows against it.
         let n0 = short_window_words::<B>(self.precision(), 1 << 13);
-        let n = short_window_words::<B>(self.precision(), 2 * n0 + 8);
-        if n > wa || !short_path_worthwhile(wa, wa, n) {
+        let n_want = short_window_words::<B>(self.precision(), 2 * n0 + 8);
+        let n = clamp_window(n_want, wa)?;
+        if !short_path_worthwhile(wa, wa, n) {
             return None;
         }
 
         let a = UBig::from_words(&fw[..wa]);
         let (square, sticky1) = high::sqr_high(&a, n);
-        // The square's window may carry one leading zero word; the second
-        // window clamps to it, which only shrinks the composed error bound.
+        // The square's window may carry a leading zero word; the second
+        // window clamps to it (plus the two-word extension), which only
+        // shrinks the composed error bound.
         let square_words = trim_word_len(square.as_words());
-        let n2 = n.min(square_words);
+        let n2 = clamp_window(n, square_words.min(wa))?;
         let (window, sticky2) = high::mul_high(&square, &a, n2);
 
         let dropped = (2 * wa - n) + (square_words + wa - n2);
@@ -980,6 +1013,43 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Equal-precision operands — the common `FBig` shape where each
+    /// significand sits exactly at the context precision — engage the short
+    /// path through the extended window (up to two words beyond the
+    /// operands). Squaring declines here: its dedicated kernels already
+    /// exploit the symmetric product. Engagement is asserted only when the
+    /// extended window has a comfortable spare over the precision; on narrow
+    /// words the spare can shrink enough that an individual input may
+    /// legitimately fall inside the certified error band and decline.
+    #[test]
+    fn test_short_mul_equal_precision_engages() {
+        // (precision in bits, operand words for that precision on a 64-bit
+        // target; `scale` keeps the bit count constant on narrower words)
+        for &(p, wa) in &[(2048usize, 32usize), (4096, 64)] {
+            let wa = scale(wa);
+            let aw = lcg_words(91, wa);
+            let a2 = Repr::<2>::new(sig(&aw), 0);
+            let ctx = Context::<mode::HalfEven>::new(p);
+            if (wa + 2) * WORD_BITS - p >= 100 {
+                assert!(
+                    ctx.mul_short(&a2, &a2).is_some(),
+                    "equal-precision mul short path declined (p={p})"
+                );
+                check_mul_short::<mode::HalfEven, 2>(p, &a2, &a2);
+                check_cubic_short::<mode::HalfEven, 2>(p, &a2);
+            } else {
+                check_public_matches_oracle::<mode::HalfEven, 2>(p, &a2, &a2, &a2);
+            }
+        }
+        // Decimal equivalent: 2000 digits ≈ 6644 bits.
+        let p10 = 2000;
+        let w10 = 310; // > p·log2(10)/64 ≈ 104 words, scaled below
+        let w10 = w10 * (64 / WORD_BITS);
+        let aw = lcg_words(93, w10);
+        let a10 = Repr::<10>::new(sig(&aw), 0);
+        check_mul_short::<mode::HalfAway, 10>(p10, &a10, &a10);
     }
 
     /// Negative operands: the classification runs on the magnitude, so every
