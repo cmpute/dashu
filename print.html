@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-910b7436.js";
+            window.path_to_searchindex_js = "searchindex-d44e27a9.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-f3bea113.js"></script>
@@ -189,7 +189,7 @@
 <p>The book is a companion to <a href="https://docs.rs/dashu/latest/dashu/"><code>dashu</code>’s API docs</a>. It contains a more concise overview of all the functionalities equipped with <code>dashu</code> and some examples.</p>
 <p>Please choose from the chapters on the left to jump to individual topics.</p>
 <blockquote>
-<p>Built from commit <code>v0.6.1</code> — dashu v0.6.1.</p>
+<p>Built from commit <code>v0.6.2</code> — dashu v0.6.2.</p>
 </blockquote>
 <h2 id="philosophy-and-features"><a class="header" href="#philosophy-and-features">Philosophy and Features</a></h2>
 <p><code>dashu</code> is intended to be your go-to library for crafting some algorithms that involves arbitrary precision numbers, or build a rusty tool that relies on arbitrary precision numbers. It’s built from scratch with rust, and provides user-friendly and rust-idiomatic APIs. It might not be the fastest library for your high-precision calculation loads, but it’s designed to be fast enough so that you seldomly feel dragged back by it.</p>
@@ -1347,6 +1347,11 @@ part); <code>split_at_point()</code> returns both halves as <code>(integral, fra
 precision to the digits that remain, so the value is exact for its stored digits. The unit in
 the last place is <code>ulp()</code>, with a cheaper lower bound <code>ulp_lb()</code> that is useful as a
 negligibility threshold in iterative algorithms.</p>
+<p>The remainder operator <code>%</code> rounds the quotient under the type’s rounding mode:
+<code>Zero</code> (the binary default) gives the truncated, dividend-signed remainder like Rust’s
+primitive <code>%</code>, <code>HalfEven</code>/<code>HalfAway</code> bound the remainder by half the divisor, and
+<code>Down</code>/<code>Up</code> round the quotient floor/ceil-style. <code>RemEuclid</code> is the mode-independent,
+always non-negative variant.</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use core::str::FromStr;
@@ -1619,7 +1624,7 @@ divmod(UBig(17), 5) == (UBig(3), UBig(2))
 <ul>
 <li><strong>Integers</strong>: <code>+ - * / // % **</code>, comparisons, in-place ops, bit operations
 (<code>&amp; | ^ &lt;&lt; &gt;&gt;</code>), roots (<code>sqrt</code>/<code>cbrt</code>/<code>nth_root</code>), <code>gcd</code>/<code>gcd_ext</code>, <code>ilog</code>, bit
-predicates, and <code>to_words</code>/<code>to_chunks</code>/<code>to_bytes</code>.</li>
+predicates, and <code>to_words</code>/<code>to_sign_words</code>/<code>to_chunks</code>/<code>to_bytes</code>.</li>
 <li><strong>Floats / Decimal</strong>: arithmetic, comparisons, rounding (<code>trunc</code>/<code>floor</code>/<code>ceil</code>/
 <code>round</code>/<code>fract</code>), precision (<code>precision</code>/<code>with_precision</code>), transcendentals, and
 conversions <code>to_decimal</code>/<code>to_binary</code>/<code>to_rational</code>/<code>to_int</code>.</li>

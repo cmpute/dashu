@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-910b7436.js";
+            window.path_to_searchindex_js = "../searchindex-d44e27a9.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-f3bea113.js"></script>
@@ -202,6 +202,11 @@ part); <code>split_at_point()</code> returns both halves as <code>(integral, fra
 precision to the digits that remain, so the value is exact for its stored digits. The unit in
 the last place is <code>ulp()</code>, with a cheaper lower bound <code>ulp_lb()</code> that is useful as a
 negligibility threshold in iterative algorithms.</p>
+<p>The remainder operator <code>%</code> rounds the quotient under the type’s rounding mode:
+<code>Zero</code> (the binary default) gives the truncated, dividend-signed remainder like Rust’s
+primitive <code>%</code>, <code>HalfEven</code>/<code>HalfAway</code> bound the remainder by half the divisor, and
+<code>Down</code>/<code>Up</code> round the quotient floor/ceil-style. <code>RemEuclid</code> is the mode-independent,
+always non-negative variant.</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use core::str::FromStr;
