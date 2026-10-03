@@ -53,6 +53,12 @@
   compose an exact high block (through the regular division dispatch) with a
   short-product cross window and a recursive short division — following Harvey &
   Zimmermann, "Short Division of Long Integers" (ARITH-20).
+- Toom-Cook-4 balanced multiplication (`toom44`, 7 evaluation points at
+  0, ±1, ±2, 1/2 and infinity) for operands of 1000..4000 words, replacing
+  Toom-3 at the top of the pre-NTT ladder. Toom-4 squaring is added as well
+  with the same evaluation structure.
+- New tuning knobs `DASHU_THRESHOLD_TOOM4_MUL` / `DASHU_THRESHOLD_TOOM4_SQR`
+  (behind the `tuning` feature) for the Toom-3/Toom-4 crossovers.
 
 ## 0.6.2
 
