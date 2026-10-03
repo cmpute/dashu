@@ -23,6 +23,11 @@ const_assert!(THRESHOLD_SIMPLE_DEFAULT + 1 >= karatsuba::MIN_LEN);
 const THRESHOLD_KARATSUBA_DEFAULT: usize = 96;
 const_assert!(THRESHOLD_KARATSUBA_DEFAULT + 1 >= toom_3::MIN_LEN);
 
+/// Smaller operand length at or above which moderately unbalanced products
+/// (1.5:1 up to 2.5:1) use the Toom-4x2 kernel.
+const THRESHOLD_TOOM42_MIN_DEFAULT: usize = 96;
+const_assert!(THRESHOLD_TOOM42_MIN_DEFAULT >= toom_4_2::MIN_LEN);
+
 /// If smaller operand length <= this, Toom-3 multiplication will be used.
 const THRESHOLD_TOOM4_MUL_DEFAULT: usize = 1000;
 const_assert!(THRESHOLD_TOOM4_MUL_DEFAULT + 1 >= toom_4::MIN_LEN);
@@ -41,8 +46,9 @@ const_assert!(THRESHOLD_NTT_DEFAULT > THRESHOLD_TOOM4_MUL_DEFAULT);
 /// Environment-variable overrides for multiplication thresholds.
 ///
 /// When the `tuning` feature is active the user may set `DASHU_THRESHOLD_SIMPLE_MUL`,
-/// `DASHU_THRESHOLD_KARATSUBA_MUL`, `DASHU_THRESHOLD_TOOM4_MUL` or
-/// `DASHU_THRESHOLD_NTT_MUL` to override the compile-time defaults.
+/// `DASHU_THRESHOLD_KARATSUBA_MUL`, `DASHU_THRESHOLD_TOOM42_MIN`,
+/// `DASHU_THRESHOLD_TOOM4_MUL` or `DASHU_THRESHOLD_NTT_MUL` to override the
+/// compile-time defaults.
 mod threshold {
     #[inline]
     pub fn simple() -> usize {
@@ -67,6 +73,18 @@ mod threshold {
             }
         }
         super::THRESHOLD_KARATSUBA_DEFAULT
+    }
+    #[inline]
+    pub fn toom42_min() -> usize {
+        #[cfg(feature = "tuning")]
+        {
+            if let Ok(s) = std::env::var("DASHU_THRESHOLD_TOOM42_MIN") {
+                if let Ok(v) = s.parse() {
+                    return v;
+                }
+            }
+        }
+        super::THRESHOLD_TOOM42_MIN_DEFAULT
     }
     #[inline]
     pub fn toom4() -> usize {
@@ -101,6 +119,7 @@ pub(crate) mod ntt;
 mod simple;
 pub(crate) mod toom_3;
 mod toom_4;
+mod toom_4_2;
 
 pub use simple::{
     add_mul_dword_same_len_in_place, add_mul_word_in_place, add_mul_word_same_len_in_place,
@@ -170,6 +189,12 @@ pub fn mul_word_in_place_with_carry(words: &mut [Word], rhs: Word, mut carry: Wo
 
 /// Temporary scratch space required for multiplication.
 pub fn memory_requirement_up_to(total_len: usize, smaller_len: usize) -> Layout {
+    if smaller_len >= threshold::toom42_min()
+        && smaller_len <= threshold::ntt()
+        && toom_4_2::in_band(total_len - smaller_len, smaller_len)
+    {
+        return toom_4_2::memory_requirement_up_to(smaller_len);
+    }
     if smaller_len <= threshold::simple() {
         memory::zero_layout()
     } else if smaller_len <= threshold::karatsuba() {
@@ -222,7 +247,12 @@ pub fn add_signed_mul<'a>(
         mem::swap(&mut a, &mut b);
     }
 
-    if b.len() <= threshold::simple() {
+    if b.len() >= threshold::toom42_min()
+        && b.len() <= threshold::ntt()
+        && toom_4_2::in_band(a.len(), b.len())
+    {
+        toom_4_2::add_signed_mul(c, sign, a, b, memory)
+    } else if b.len() <= threshold::simple() {
         simple::add_signed_mul(c, sign, a, b, memory)
     } else if b.len() <= threshold::karatsuba() {
         karatsuba::add_signed_mul(c, sign, a, b, memory)

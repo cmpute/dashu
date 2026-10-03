@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Add
+- Toom-Cook 4x2 unbalanced multiplication for operand pairs between 1.5:1 and
+  2.5:1 (5 evaluation points at -1, 0, 1, 2 and infinity), dispatched from the
+  ratio-aware pre-check in the multiplication dispatcher when the smaller
+  operand is at least 96 words. Division and modular-arithmetic inner products
+  of these shapes benefit directly. New tuning knob
+  `DASHU_THRESHOLD_TOOM42_MIN` (behind the `tuning` feature).
 - Toom-Cook-4 balanced multiplication (`toom44`, 7 evaluation points at
   0, ±1, ±2, 1/2 and infinity) for operands of 1000..4000 words, replacing
   Toom-3 at the top of the pre-NTT ladder. Toom-4 squaring is added as well
