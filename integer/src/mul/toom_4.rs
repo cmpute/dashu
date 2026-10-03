@@ -137,26 +137,24 @@ pub fn add_signed_mul_same_len(
 
     // Buffers that stay alive until the placement (main allocation chain).
     // Evaluate at 0: V(0) = a0 * b0 (z0).
-    let (mut v0, mut memory) = memory.allocate_slice_fill(2 * n4, 0);
-    debug_assert_zero!(mul::add_signed_mul_same_len(&mut v0, Positive, a0, b0, &mut memory));
+    let (v0, mut memory) = memory.allocate_slice_fill(2 * n4, 0);
+    debug_assert_zero!(mul::add_signed_mul_same_len(&mut v0[..], Positive, a0, b0, &mut memory));
 
     // Evaluate at inf: V(inf) = a3 * b3 (z6).
-    let (mut vinf, mut memory) = memory.allocate_slice_fill(2 * s, 0);
-    debug_assert_zero!(mul::add_signed_mul_same_len(&mut vinf, Positive, a3, b3, &mut memory));
+    let (vinf, mut memory) = memory.allocate_slice_fill(2 * s, 0);
+    debug_assert_zero!(mul::add_signed_mul_same_len(&mut vinf[..], Positive, a3, b3, &mut memory));
 
-    let (mut pv2, mut memory) = memory.allocate_slice_fill(2 * n4 + 2, 0); // -> e2, then z4
-    let (mut pv1, mut memory) = memory.allocate_slice_fill(2 * n4 + 2, 0); // -> e1, then z2
-    let (mut pvh, mut memory) = memory.allocate_slice_fill(2 * n4 + 2, 0); // -> r
-    let (mut o1, mut memory) = memory.allocate_slice_fill(2 * n4 + 2, 0); // -> o1, then z1
-    let (mut o2, mut memory) = memory.allocate_slice_fill(2 * n4 + 2, 0); // -> o2, then t3, z3
-    let (mut z5, mut memory) = memory.allocate_slice_fill(2 * n4 + 2, 0);
-
-    let mut sigma1 = Positive;
-    let mut sigma2 = Positive;
+    let (pv2, mut memory) = memory.allocate_slice_fill(2 * n4 + 2, 0); // -> e2, then z4
+    let (pv1, mut memory) = memory.allocate_slice_fill(2 * n4 + 2, 0); // -> e1, then z2
+    let (pvh, mut memory) = memory.allocate_slice_fill(2 * n4 + 2, 0); // -> r
+    let (o1, mut memory) = memory.allocate_slice_fill(2 * n4 + 2, 0); // -> o1, then z1
+    let (o2, mut memory) = memory.allocate_slice_fill(2 * n4 + 2, 0); // -> o2, then t3, z3
+    let (z5, mut memory) = memory.allocate_slice_fill(2 * n4 + 2, 0);
 
     // Evaluate at 2 and -2 via u = x0 + 4*x2, v = x1 + 4*x3:
     // X(2) = u + 2*v, X(-2) = u - 2*v. Products into pv2 (V(2)) and the
     // scoped pvm2 (|V(-2)|), whose sign is tracked in sigma2.
+    let sigma2;
     {
         let (ua, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, a0, 0);
         let (va, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, a1, 0);
@@ -166,52 +164,53 @@ pub fn add_signed_mul_same_len(
         let (vb, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, b1, 0);
         ub[n4] = mul::add_mul_word_same_len_in_place(&mut ub[..n4], 4, b2);
         vb[n4] = mul::add_mul_word_in_place(&mut vb[..n4], 4, b3);
-        let (mut x2a, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, &ua, 0);
-        let (mut x2b, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, &ub, 0);
-        debug_assert_zero!(mul::add_mul_word_same_len_in_place(&mut x2a, 2, &va));
-        debug_assert_zero!(mul::add_mul_word_same_len_in_place(&mut x2b, 2, &vb));
-        let (mut t2a, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, &va, 0);
-        debug_assert_zero!(mul::mul_word_in_place(&mut t2a, 2));
-        let (mut t2b, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, &vb, 0);
-        debug_assert_zero!(mul::mul_word_in_place(&mut t2b, 2));
-        let (mut xm2a, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, &ua, 0);
-        let (mut xm2b, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, &ub, 0);
-        let sx = add::sub_in_place_with_sign(&mut xm2a, &t2a);
-        let sy = add::sub_in_place_with_sign(&mut xm2b, &t2b);
+        let (x2a, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, ua, 0);
+        let (x2b, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, ub, 0);
+        debug_assert_zero!(mul::add_mul_word_same_len_in_place(&mut x2a[..], 2, va));
+        debug_assert_zero!(mul::add_mul_word_same_len_in_place(&mut x2b[..], 2, vb));
+        let (t2a, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, va, 0);
+        debug_assert_zero!(mul::mul_word_in_place(&mut t2a[..], 2));
+        let (t2b, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, vb, 0);
+        debug_assert_zero!(mul::mul_word_in_place(&mut t2b[..], 2));
+        let (xm2a, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, ua, 0);
+        let (xm2b, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, ub, 0);
+        let sx = add::sub_in_place_with_sign(&mut xm2a[..], t2a);
+        let sy = add::sub_in_place_with_sign(&mut xm2b[..], t2b);
         sigma2 = sx * sy;
         debug_assert_zero!(mul::add_signed_mul_same_len(
-            &mut pv2,
+            &mut pv2[..],
             Positive,
-            &x2a,
-            &x2b,
+            x2a,
+            x2b,
             &mut memory
         ));
-        let (mut pvm2, mut memory) = memory.allocate_slice_fill(2 * n4 + 2, 0);
+        let (pvm2, mut memory) = memory.allocate_slice_fill(2 * n4 + 2, 0);
         debug_assert_zero!(mul::add_signed_mul_same_len(
-            &mut pvm2,
+            &mut pvm2[..],
             Positive,
-            &xm2a,
-            &xm2b,
+            xm2a,
+            xm2b,
             &mut memory
         ));
         // o2 = ((V(2) - sigma2*|V(-2)|)/2)/2, pv2 -> e2.
-        o2.copy_from_slice(&pv2);
-        debug_assert_zero!(add::add_signed_in_place(&mut o2, -sigma2, &pvm2));
-        debug_assert_zero!(shift::shr_in_place(&mut o2, 2));
-        debug_assert_zero!(add::add_signed_in_place(&mut pv2, sigma2, &pvm2));
-        debug_assert_zero!(shift::shr_in_place(&mut pv2, 1));
-        debug_assert_zero!(add::sub_in_place(&mut pv2, &v0));
+        o2.copy_from_slice(pv2);
+        debug_assert_zero!(add::add_signed_in_place(&mut o2[..], -sigma2, pvm2));
+        debug_assert_zero!(shift::shr_in_place(&mut o2[..], 2));
+        debug_assert_zero!(add::add_signed_in_place(&mut pv2[..], sigma2, pvm2));
+        debug_assert_zero!(shift::shr_in_place(&mut pv2[..], 1));
+        debug_assert_zero!(add::sub_in_place(&mut pv2[..], v0));
         {
-            let (mut tmp, _) = memory.allocate_slice_copy_fill(2 * n4 + 2, &vinf, 0);
-            debug_assert_zero!(mul::mul_word_in_place(&mut tmp, 64));
-            debug_assert_zero!(add::sub_in_place(&mut pv2, &tmp[..2 * s + 1]));
+            let (tmp, _) = memory.allocate_slice_copy_fill(2 * n4 + 2, vinf, 0);
+            debug_assert_zero!(mul::mul_word_in_place(&mut tmp[..], 64));
+            debug_assert_zero!(add::sub_in_place(&mut pv2[..], &tmp[..2 * s + 1]));
         }
-        debug_assert_zero!(shift::shr_in_place(&mut pv2, 2));
+        debug_assert_zero!(shift::shr_in_place(&mut pv2[..], 2));
     }
 
     // Evaluate at 1 and -1 via a02 = x0 + x2, a13 = x1 + x3:
     // X(1) = a02 + a13, X(-1) = a02 - a13. Products into pv1 (V(1)) and the
     // scoped pvm1 (|V(-1)|), sign tracked in sigma1.
+    let sigma1;
     {
         let (a02, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, a0, 0);
         a02[n4] = Word::from(add::add_in_place(&mut a02[..n4], a2));
@@ -221,37 +220,37 @@ pub fn add_signed_mul_same_len(
         b02[n4] = Word::from(add::add_in_place(&mut b02[..n4], b2));
         let (b13, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, b1, 0);
         b13[n4] = Word::from(add::add_in_place(&mut b13[..n4], b3));
-        let (mut x1a, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, &a02, 0);
-        let (mut x1b, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, &b02, 0);
-        debug_assert_zero!(add::add_same_len_in_place(&mut x1a, &a13));
-        debug_assert_zero!(add::add_same_len_in_place(&mut x1b, &b13));
-        let (mut xm1a, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, &a02, 0);
-        let (mut xm1b, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, &b02, 0);
-        let sx = add::sub_in_place_with_sign(&mut xm1a, &a13);
-        let sy = add::sub_in_place_with_sign(&mut xm1b, &b13);
+        let (x1a, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, a02, 0);
+        let (x1b, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, b02, 0);
+        debug_assert_zero!(add::add_same_len_in_place(&mut x1a[..], a13));
+        debug_assert_zero!(add::add_same_len_in_place(&mut x1b[..], b13));
+        let (xm1a, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, a02, 0);
+        let (xm1b, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, b02, 0);
+        let sx = add::sub_in_place_with_sign(&mut xm1a[..], a13);
+        let sy = add::sub_in_place_with_sign(&mut xm1b[..], b13);
         sigma1 = sx * sy;
         debug_assert_zero!(mul::add_signed_mul_same_len(
-            &mut pv1,
+            &mut pv1[..],
             Positive,
-            &x1a,
-            &x1b,
+            x1a,
+            x1b,
             &mut memory
         ));
-        let (mut pvm1, mut memory) = memory.allocate_slice_fill(2 * n4 + 2, 0);
+        let (pvm1, mut memory) = memory.allocate_slice_fill(2 * n4 + 2, 0);
         debug_assert_zero!(mul::add_signed_mul_same_len(
-            &mut pvm1,
+            &mut pvm1[..],
             Positive,
-            &xm1a,
-            &xm1b,
+            xm1a,
+            xm1b,
             &mut memory
         ));
         // o1 = (V(1) - sigma1*|V(-1)|)/2, pv1 -> e1 = (V(1) + V(-1))/2 - z0 - z6.
-        o1.copy_from_slice(&pv1);
-        debug_assert_zero!(add::add_signed_in_place(&mut o1, -sigma1, &pvm1));
-        debug_assert_zero!(shift::shr_in_place(&mut o1, 1));
-        debug_assert_zero!(add::sub_in_place(&mut pv1, &o1));
-        debug_assert_zero!(add::sub_in_place(&mut pv1, &v0));
-        debug_assert_zero!(add::sub_in_place(&mut pv1, &vinf));
+        o1.copy_from_slice(pv1);
+        debug_assert_zero!(add::add_signed_in_place(&mut o1[..], -sigma1, pvm1));
+        debug_assert_zero!(shift::shr_in_place(&mut o1[..], 1));
+        debug_assert_zero!(add::sub_in_place(&mut pv1[..], o1));
+        debug_assert_zero!(add::sub_in_place(&mut pv1[..], v0));
+        debug_assert_zero!(add::sub_in_place(&mut pv1[..], vinf));
     }
 
     // Evaluate at 1/2: Xh = 8*x0 + 4*x1 + 2*x2 + x3 = 64 * X(1/2).
@@ -267,68 +266,74 @@ pub fn add_signed_mul_same_len(
         yh[n4] += mul::add_mul_word_same_len_in_place(&mut yh[..n4], 4, b1);
         yh[n4] += mul::add_mul_word_in_place(&mut yh[..n4], 2, b2);
         yh[n4] += mul::add_mul_word_in_place(&mut yh[..n4], 1, b3);
-        debug_assert_zero!(mul::add_signed_mul_same_len(&mut pvh, Positive, &xh, &yh, &mut memory));
+        debug_assert_zero!(mul::add_signed_mul_same_len(
+            &mut pvh[..],
+            Positive,
+            xh,
+            yh,
+            &mut memory
+        ));
     }
 
     // z4 = (e2 - e1)/3 (in pv2), z2 = e1 - z4 (in pv1).
-    debug_assert_zero!(add::sub_in_place(&mut pv2, &pv1));
-    debug_assert_zero!(div::div_by_word_in_place(&mut pv2, 3));
-    debug_assert_zero!(add::sub_in_place(&mut pv1, &pv2));
+    debug_assert_zero!(add::sub_in_place(&mut pv2[..], pv1));
+    debug_assert_zero!(div::div_by_word_in_place(&mut pv2[..], 3));
+    debug_assert_zero!(add::sub_in_place(&mut pv1[..], pv2));
 
     // r = (Vh - 64*z0 - z6 - 16*z2 - 4*z4)/2 = 16*z1 + 4*z3 + z5, in pvh.
     {
-        let (mut tmp, _) = memory.allocate_slice_copy_fill(2 * n4 + 2, &v0, 0);
-        debug_assert_zero!(mul::mul_word_in_place(&mut tmp, 64));
-        debug_assert_zero!(add::sub_in_place(&mut pvh, &tmp[..2 * n4 + 1]));
+        let (tmp, _) = memory.allocate_slice_copy_fill(2 * n4 + 2, v0, 0);
+        debug_assert_zero!(mul::mul_word_in_place(&mut tmp[..], 64));
+        debug_assert_zero!(add::sub_in_place(&mut pvh[..], &tmp[..2 * n4 + 1]));
     }
-    debug_assert_zero!(add::sub_in_place(&mut pvh, &vinf));
+    debug_assert_zero!(add::sub_in_place(&mut pvh[..], vinf));
     {
-        let (mut tmp, _) = memory.allocate_slice_copy_fill(2 * n4 + 2, &pv1, 0);
-        debug_assert_zero!(mul::mul_word_in_place(&mut tmp, 16));
-        debug_assert_zero!(add::sub_in_place(&mut pvh, &tmp[..2 * n4 + 1]));
+        let (tmp, _) = memory.allocate_slice_copy_fill(2 * n4 + 2, pv1, 0);
+        debug_assert_zero!(mul::mul_word_in_place(&mut tmp[..], 16));
+        debug_assert_zero!(add::sub_in_place(&mut pvh[..], &tmp[..2 * n4 + 1]));
     }
     {
-        let (mut tmp, _) = memory.allocate_slice_copy_fill(2 * n4 + 2, &pv2, 0);
-        debug_assert_zero!(mul::mul_word_in_place(&mut tmp, 4));
-        debug_assert_zero!(add::sub_in_place(&mut pvh, &tmp[..2 * n4 + 1]));
+        let (tmp, _) = memory.allocate_slice_copy_fill(2 * n4 + 2, pv2, 0);
+        debug_assert_zero!(mul::mul_word_in_place(&mut tmp[..], 4));
+        debug_assert_zero!(add::sub_in_place(&mut pvh[..], &tmp[..2 * n4 + 1]));
     }
-    debug_assert_zero!(shift::shr_in_place(&mut pvh, 1));
+    debug_assert_zero!(shift::shr_in_place(&mut pvh[..], 1));
 
     // t3 = (o2 - o1)/3 = z3 + 5*z5 (in o2).
-    debug_assert_zero!(add::sub_in_place(&mut o2, &o1));
-    debug_assert_zero!(div::div_by_word_in_place(&mut o2, 3));
+    debug_assert_zero!(add::sub_in_place(&mut o2[..], o1));
+    debug_assert_zero!(div::div_by_word_in_place(&mut o2[..], 3));
 
     // z5 = (r + 12*t3 - 16*o1)/45. r + 12*t3 - 16*o1 = 45*z5 >= 0.
-    z5.copy_from_slice(&o2);
-    debug_assert_zero!(mul::mul_word_in_place(&mut z5, 12));
-    debug_assert_zero!(add::add_signed_in_place(&mut z5, Positive, &pvh));
+    z5.copy_from_slice(o2);
+    debug_assert_zero!(mul::mul_word_in_place(&mut z5[..], 12));
+    debug_assert_zero!(add::add_signed_in_place(&mut z5[..], Positive, pvh));
     {
-        let (mut tmp, _) = memory.allocate_slice_copy_fill(2 * n4 + 2, &o1, 0);
-        debug_assert_zero!(mul::mul_word_in_place(&mut tmp, 16));
-        debug_assert_zero!(add::sub_in_place(&mut z5, &tmp[..2 * n4 + 1]));
+        let (tmp, _) = memory.allocate_slice_copy_fill(2 * n4 + 2, o1, 0);
+        debug_assert_zero!(mul::mul_word_in_place(&mut tmp[..], 16));
+        debug_assert_zero!(add::sub_in_place(&mut z5[..], &tmp[..2 * n4 + 1]));
     }
-    debug_assert_zero!(div::div_by_word_in_place(&mut z5, 45));
+    debug_assert_zero!(div::div_by_word_in_place(&mut z5[..], 45));
 
     // z3 = t3 - 5*z5 (in o2), z1 = o1 - z3 - z5 (in o1).
     {
-        let (mut tmp, _) = memory.allocate_slice_copy_fill(2 * n4 + 2, &z5, 0);
-        debug_assert_zero!(mul::mul_word_in_place(&mut tmp, 5));
-        debug_assert_zero!(add::sub_in_place(&mut o2, &tmp[..2 * n4 + 1]));
+        let (tmp, _) = memory.allocate_slice_copy_fill(2 * n4 + 2, z5, 0);
+        debug_assert_zero!(mul::mul_word_in_place(&mut tmp[..], 5));
+        debug_assert_zero!(add::sub_in_place(&mut o2[..], &tmp[..2 * n4 + 1]));
     }
-    debug_assert_zero!(add::sub_in_place(&mut o1, &o2));
-    debug_assert_zero!(add::sub_in_place(&mut o1, &z5));
+    debug_assert_zero!(add::sub_in_place(&mut o1[..], o2));
+    debug_assert_zero!(add::sub_in_place(&mut o1[..], z5));
 
     // ---- Placement into c ----
     // z_i are added at word offset i*n4; overlapping windows accumulate, and
     // the carries between windows are chained through the carry_cN words.
     // z0 = v0, z1 = o1, z2 = pv1, z3 = o2, z4 = pv2, z5 = z5, z6 = vinf.
-    carry_c0 += add::add_signed_same_len_in_place(&mut c[..2 * n4], sign, &v0);
-    carry_c1 += add::add_signed_same_len_in_place(&mut c[n4..3 * n4 + 2], sign, &o1);
-    carry_c2 += add::add_signed_same_len_in_place(&mut c[2 * n4..4 * n4 + 2], sign, &pv1);
-    carry_c3 += add::add_signed_same_len_in_place(&mut c[3 * n4..5 * n4 + 2], sign, &o2);
-    carry_c4 += add::add_signed_same_len_in_place(&mut c[4 * n4..6 * n4 + 2], sign, &pv2);
+    carry_c0 += add::add_signed_same_len_in_place(&mut c[..2 * n4], sign, v0);
+    carry_c1 += add::add_signed_same_len_in_place(&mut c[n4..3 * n4 + 2], sign, o1);
+    carry_c2 += add::add_signed_same_len_in_place(&mut c[2 * n4..4 * n4 + 2], sign, pv1);
+    carry_c3 += add::add_signed_same_len_in_place(&mut c[3 * n4..5 * n4 + 2], sign, o2);
+    carry_c4 += add::add_signed_same_len_in_place(&mut c[4 * n4..6 * n4 + 2], sign, pv2);
     carry_c5 += add::add_signed_in_place(&mut c[5 * n4..], sign, &z5[..n4 + s + 1]);
-    carry += add::add_signed_in_place(&mut c[6 * n4..], sign, &vinf);
+    carry += add::add_signed_in_place(&mut c[6 * n4..], sign, vinf);
 
     // Apply carries.
     carry_c1 += add::add_signed_word_in_place(&mut c[2 * n4..3 * n4 + 2], carry_c0);
@@ -472,10 +477,10 @@ mod tests {
         let layout = memory_requirement_up_to(100);
         let mut alloc = crate::memory::MemoryAllocation::new(layout);
         let mut memory1 = alloc.memory();
-        add_signed_mul_same_len(&mut c, Positive, &a, &b, &mut memory1);
+        let _c = add_signed_mul_same_len(&mut c, Positive, &a, &b, &mut memory1);
         let mut alloc2 = crate::memory::MemoryAllocation::new(layout);
         let mut memory2 = alloc2.memory();
-        add_signed_mul_same_len(&mut c, Negative, &a, &b, &mut memory2);
+        let _c = add_signed_mul_same_len(&mut c, Negative, &a, &b, &mut memory2);
         assert!(c.iter().all(|&w| w == 0));
     }
 

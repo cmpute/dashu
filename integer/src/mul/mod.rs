@@ -557,7 +557,7 @@ mod threshold_tests {
         {
             let mut alloc = crate::memory::MemoryAllocation::new(layout);
             let mut mem = alloc.memory();
-            add_signed_mul(&mut c_ntt, Positive, &a, &b, &mut mem);
+            let _c = add_signed_mul(&mut c_ntt, Positive, &a, &b, &mut mem);
         }
         {
             let mut alloc = crate::memory::MemoryAllocation::new(layout);
