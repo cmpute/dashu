@@ -3,6 +3,17 @@
 ## Unreleased
 
 ### Add
+- Heavily unbalanced products (operand ratio 6:1 or more, smaller operand at
+  least 2500 words) now use the chunked NTT path, where the smaller operand
+  is transformed once and its spectrum reused across chunks of the larger
+  operand — previously this only kicked in above the balanced NTT threshold,
+  so such shapes went through per-chunk Toom-3/Toom-4 with the smaller
+  operand re-transformed every time. The chunked NTT entry inside the NTT
+  module also moved from `a > 2b` to `a >= 3b`: with a single chunk plus a
+  short tail the per-call setup was not amortized and a single full-length
+  convolution measured ~10% faster on the (2b, 3b) interval. New tuning
+  knobs `DASHU_THRESHOLD_NTT_ASYM_MIN` / `DASHU_THRESHOLD_NTT_ASYM_RATIO`
+  (behind the `tuning` feature).
 - Toom-Cook 4x2 unbalanced multiplication for operand pairs between 1.5:1 and
   2.5:1 (5 evaluation points at -1, 0, 1, 2 and infinity), dispatched from the
   ratio-aware pre-check in the multiplication dispatcher when the smaller
