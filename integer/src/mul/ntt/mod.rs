@@ -84,7 +84,7 @@ pub(crate) fn select_params_from(
         // Candidates whose width crosses word boundaries pay a packing cost
         // the score does not model — require a clear win to displace the
         // current best.
-        let crosses_words = b_pack % word_bits as u32 != 0;
+        let crosses_words = b_pack % word_bits != 0;
         let takes = match best {
             None => true,
             Some((_, _, _, best_score)) => {
