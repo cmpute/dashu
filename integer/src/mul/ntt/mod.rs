@@ -148,7 +148,10 @@ pub fn add_signed_mul(
     memory: &mut Memory,
 ) -> SignedWord {
     debug_assert!(a.len() >= b.len() && c.len() == a.len() + b.len());
-    if a.len() > 2 * b.len() {
+    // Chunk only when at least two full 2*b chunks exist: with a single chunk
+    // plus a short tail the per-call b-hat/twiddle setup is not amortized and
+    // a single full-length convolution is faster.
+    if a.len() >= 3 * b.len() {
         return add_signed_mul_chunked(c, sign, a, b, memory);
     }
     add_signed_mul_conv(c, sign, a, b, memory)

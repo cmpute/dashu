@@ -28,6 +28,21 @@ const_assert!(THRESHOLD_KARATSUBA_DEFAULT + 1 >= toom_3::MIN_LEN);
 const THRESHOLD_TOOM42_MIN_DEFAULT: usize = 96;
 const_assert!(THRESHOLD_TOOM42_MIN_DEFAULT >= toom_4_2::MIN_LEN);
 
+/// Smaller operand length at or above which heavily unbalanced products use
+/// the chunked NTT path (smaller operand transformed once) even below the
+/// NTT threshold.
+#[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
+const THRESHOLD_NTT_ASYM_MIN_DEFAULT: usize = 2500;
+#[cfg(any(force_bits = "16", target_pointer_width = "16"))]
+const THRESHOLD_NTT_ASYM_MIN_DEFAULT: usize = usize::MAX;
+/// Minimum ratio between the operand lengths for the chunked NTT path. At
+/// least three full 2*b chunks are needed to amortize the b-hat transform;
+/// below that the chunked Toom-3/Toom-4 path measured faster head-to-head.
+#[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
+const THRESHOLD_NTT_ASYM_RATIO_DEFAULT: usize = 6;
+#[cfg(any(force_bits = "16", target_pointer_width = "16"))]
+const THRESHOLD_NTT_ASYM_RATIO_DEFAULT: usize = usize::MAX;
+
 /// If smaller operand length <= this, Toom-3 multiplication will be used.
 const THRESHOLD_TOOM4_MUL_DEFAULT: usize = 1000;
 const_assert!(THRESHOLD_TOOM4_MUL_DEFAULT + 1 >= toom_4::MIN_LEN);
@@ -85,6 +100,30 @@ mod threshold {
             }
         }
         super::THRESHOLD_TOOM42_MIN_DEFAULT
+    }
+    #[inline]
+    pub fn ntt_asym_min() -> usize {
+        #[cfg(feature = "tuning")]
+        {
+            if let Ok(s) = std::env::var("DASHU_THRESHOLD_NTT_ASYM_MIN") {
+                if let Ok(v) = s.parse() {
+                    return v;
+                }
+            }
+        }
+        super::THRESHOLD_NTT_ASYM_MIN_DEFAULT
+    }
+    #[inline]
+    pub fn ntt_asym_ratio() -> usize {
+        #[cfg(feature = "tuning")]
+        {
+            if let Ok(s) = std::env::var("DASHU_THRESHOLD_NTT_ASYM_RATIO") {
+                if let Ok(v) = s.parse() {
+                    return v;
+                }
+            }
+        }
+        super::THRESHOLD_NTT_ASYM_RATIO_DEFAULT
     }
     #[inline]
     pub fn toom4() -> usize {
@@ -189,6 +228,14 @@ pub fn mul_word_in_place_with_carry(words: &mut [Word], rhs: Word, mut carry: Wo
 
 /// Temporary scratch space required for multiplication.
 pub fn memory_requirement_up_to(total_len: usize, smaller_len: usize) -> Layout {
+    #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
+    if smaller_len >= threshold::ntt_asym_min()
+        && total_len - smaller_len >= threshold::ntt_asym_ratio() * smaller_len
+    {
+        return ntt::memory_requirement_up_to(total_len, smaller_len);
+    }
+    #[cfg(any(force_bits = "16", target_pointer_width = "16"))]
+    let _ = (total_len, smaller_len);
     if smaller_len >= threshold::toom42_min()
         && smaller_len <= threshold::ntt()
         && toom_4_2::in_band(total_len - smaller_len, smaller_len)
@@ -246,6 +293,15 @@ pub fn add_signed_mul<'a>(
     if a.len() < b.len() {
         mem::swap(&mut a, &mut b);
     }
+
+    // Heavily unbalanced: transform the smaller operand once and reuse its
+    // spectrum across chunks of the larger one.
+    #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
+    if b.len() >= threshold::ntt_asym_min() && a.len() >= threshold::ntt_asym_ratio() * b.len() {
+        return ntt::add_signed_mul(c, sign, a, b, memory);
+    }
+    #[cfg(any(force_bits = "16", target_pointer_width = "16"))]
+    let _ = (&a, &b);
 
     if b.len() >= threshold::toom42_min()
         && b.len() <= threshold::ntt()
@@ -470,6 +526,149 @@ mod threshold_tests {
 
             assert_eq!(&c_toom3[..], &c_toom4[..], "mismatch at n={n}");
             println!("{:>8} {:>14.1} {:>14.1} {:>9.2}x", n, t_toom3, t_toom4, t_toom4 / t_toom3);
+        }
+    }
+
+    /// The chunked-NTT asymmetric entry must agree with the chunked Toom-4
+    /// path it replaces, at a shape that exercises the new dispatch gate.
+    #[test]
+    #[cfg(all(
+        feature = "std",
+        not(any(force_bits = "16", target_pointer_width = "16"))
+    ))]
+    fn ntt_asym_entry_matches_toom4_chunks() {
+        let ys = threshold::ntt_asym_min();
+        let xs = threshold::ntt_asym_ratio() * ys;
+        let a: Vec<Word> = (0..xs)
+            .map(|i| (i as Word + 1).wrapping_mul(0x9E3779B97F4A7C15u64 as Word))
+            .collect();
+        let b: Vec<Word> = (0..ys)
+            .map(|i| (i as Word + 1).wrapping_mul(0xC6A4A7935BD1E995u64 as Word))
+            .collect();
+        let mut c_ntt = vec![0 as Word; xs + ys];
+        let mut c_toom = vec![0 as Word; xs + ys];
+        let l_ntt = ntt::memory_requirement_up_to(xs + ys, ys);
+        let l_toom = toom_4::memory_requirement_up_to(ys);
+        let layout = if l_ntt.size() > l_toom.size() {
+            l_ntt
+        } else {
+            l_toom
+        };
+        {
+            let mut alloc = crate::memory::MemoryAllocation::new(layout);
+            let mut mem = alloc.memory();
+            add_signed_mul(&mut c_ntt, Positive, &a, &b, &mut mem);
+        }
+        {
+            let mut alloc = crate::memory::MemoryAllocation::new(layout);
+            let mut mem = alloc.memory();
+            helpers::add_signed_mul_split_into_chunks(
+                &mut c_toom,
+                Positive,
+                &a,
+                &b,
+                ys,
+                &mut mem,
+                toom_4::add_signed_mul_same_len,
+            );
+        }
+        assert_eq!(&c_ntt[..], &c_toom[..]);
+    }
+
+    /// Compare the chunked NTT path against chunked Toom-4 for heavily
+    /// unbalanced operands, to tune [`THRESHOLD_NTT_ASYM_MIN`]. Run with:
+    ///   cargo test -p dashu-int --features tuning --release \
+    ///     -- mul::threshold_tests::crossover_ntt_asym --ignored --nocapture
+    #[test]
+    #[ignore]
+    #[allow(clippy::let_underscore_must_use)]
+    #[cfg(all(
+        feature = "std",
+        not(any(
+            force_bits = "16",
+            force_bits = "32",
+            target_pointer_width = "16",
+            target_pointer_width = "32"
+        ))
+    ))]
+    fn crossover_ntt_asym() {
+        use std::time::Instant;
+
+        let sizes: &[(usize, usize)] = &[
+            (12288, 2048),
+            (12288, 3072),
+            (16384, 4096),
+            (24576, 4096),
+            (32768, 4096),
+            (65536, 4096),
+        ];
+
+        println!(
+            "{:>11} {:>16} {:>14} {:>10}",
+            "xs_x_ys", "chunked-toom4(µs)", "ntt-chunked(µs)", "ratio"
+        );
+        println!("{}", "-".repeat(56));
+
+        for &(xs, ys) in sizes {
+            let a: Vec<Word> = (0..xs)
+                .map(|i| (i as Word + 1).wrapping_mul(0x9E3779B97F4A7C15u64 as Word))
+                .collect();
+            let b: Vec<Word> = (0..ys)
+                .map(|i| (i as Word + 1).wrapping_mul(0xC6A4A7935BD1E995u64 as Word))
+                .collect();
+            let mut c0 = vec![0 as Word; xs + ys];
+            let mut c1 = vec![0 as Word; xs + ys];
+            let l_t = toom_4::memory_requirement_up_to(ys);
+            let l_n = ntt::memory_requirement_up_to(xs + ys, ys);
+            let layout = if l_t.size() > l_n.size() { l_t } else { l_n };
+            let warmup = 3;
+            let iters = 10;
+
+            let time = |f: &mut dyn FnMut(&mut Memory)| {
+                let mut best = f64::MAX;
+                for _ in 0..warmup {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    f(&mut mem);
+                }
+                for _ in 0..iters {
+                    let mut alloc = crate::memory::MemoryAllocation::new(layout);
+                    let mut mem = alloc.memory();
+                    let start = Instant::now();
+                    f(&mut mem);
+                    let elapsed = start.elapsed().as_secs_f64() * 1_000_000.0;
+                    if elapsed < best {
+                        best = elapsed;
+                    }
+                }
+                best
+            };
+
+            let t_toom = time(&mut |mem| {
+                c0.fill(0);
+                let _c = helpers::add_signed_mul_split_into_chunks(
+                    &mut c0,
+                    Positive,
+                    &a,
+                    &b,
+                    ys,
+                    mem,
+                    toom_4::add_signed_mul_same_len,
+                );
+            });
+            let t_ntt = time(&mut |mem| {
+                c1.fill(0);
+                let _c = ntt::add_signed_mul(&mut c1, Positive, &a, &b, mem);
+            });
+
+            assert_eq!(&c0[..], &c1[..], "mismatch at {xs}x{ys}");
+            println!(
+                "{:>11} {:>16.1} {:>14.1} {:>9.2}x",
+                format!("{}x{}", xs, ys),
+                t_toom,
+                t_ntt,
+                t_ntt / t_toom
+            );
         }
     }
 
