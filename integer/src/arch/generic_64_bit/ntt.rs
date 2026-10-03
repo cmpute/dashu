@@ -17,7 +17,12 @@ pub const P2: Rp2 = FixedProth64::<57, 75>;
 pub const K: usize = 3;
 pub const MAX_LOG_N: u32 = 57;
 pub const B_PACK_MIN: u32 = 16;
-pub const B_PACK_CANDIDATES: &[u32] = &[64, 32, 16];
+/// Packing widths (bits per NTT coefficient). 64 keeps one word-aligned
+/// coefficient per word (fast pack path); 56 and 48 cross word boundaries
+/// but allow a two-prime transform (smaller coefficient squares still fit
+/// the two-prime product), which wins when the power-of-two transform size
+/// does not grow; 32 and 16 stay for very large transforms.
+pub const B_PACK_CANDIDATES: &[u32] = &[64, 56, 48, 32, 16];
 
 pub type Lane = u64;
 
