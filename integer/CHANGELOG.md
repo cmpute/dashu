@@ -3,6 +3,15 @@
 ## Unreleased
 
 ### Add
+- NTT packing-width selection is now volume-based: the candidate list on
+  64-bit targets gains 56- and 48-bit packing widths (which cross word
+  boundaries but allow a two-prime transform, roughly a third less transform
+  work), and the selector estimates per-candidate transform/pointwise/CRT
+  cost and picks the cheapest, with a 5% hysteresis margin so the
+  word-aligned fast pack path is only displaced when the win is real. On
+  most sizes the aligned 64-bit width remains optimal (the power-of-two
+  transform granularity absorbs the gain), but sizes landing just above a
+  power-of-two boundary now select two-prime 56/48-bit transforms.
 - Heavily unbalanced products (operand ratio 6:1 or more, smaller operand at
   least 2500 words) now use the chunked NTT path, where the smaller operand
   is transformed once and its spectrum reused across chunks of the larger
