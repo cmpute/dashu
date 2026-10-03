@@ -644,7 +644,15 @@ mod tests {
         }
     }
 
+    // Word-crossing candidates (56/48 bits) only exist on 64-bit targets;
+    // the 32-bit candidate list is entirely word-aligned, so the two-prime
+    // path is never selected there.
     #[test]
+    #[cfg(all(
+        not(force_bits = "16"),
+        not(force_bits = "32"),
+        target_pointer_width = "64"
+    ))]
     fn test_select_params_exercises_two_primes() {
         // Somewhere in the practical size range the volume-based selection
         // must pick a word-crossing width with k_eff = 2, so the two-prime

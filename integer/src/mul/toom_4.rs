@@ -456,8 +456,8 @@ mod tests {
         let mut a = vec![0 as Word; 100];
         let mut b = vec![0 as Word; 100];
         for i in 17..83 {
-            a[i] = (i as Word + 1).wrapping_mul(0xDEAD_BEEF);
-            b[i] = (i as Word + 1).wrapping_mul(0xCAFE_BABE);
+            a[i] = ((i as u64 + 1).wrapping_mul(0xDEAD_BEEF)) as Word;
+            b[i] = ((i as u64 + 1).wrapping_mul(0xCAFE_BABE)) as Word;
         }
         let expected = schoolbook_mul(&a, &b);
         let mut c = vec![0 as Word; 200];
