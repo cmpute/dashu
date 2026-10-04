@@ -16,8 +16,16 @@ pub const P2: Rp2 = FixedProth32::<27, 17>;
 
 pub const K: usize = 3;
 pub const MAX_LOG_N: u32 = 26;
-pub const B_PACK_MIN: u32 = 8;
-pub const B_PACK_CANDIDATES: &[u32] = &[32, 16, 8];
+pub const B_PACK_MIN: u32 = 32;
+/// Packing widths (bits per NTT coefficient). 32 is the only word-aligned
+/// width and always forces a three-prime transform (a coefficient product
+/// ≈ 2^64 exceeds the two-prime product ≈ 2^59.7). Smaller word-aligned
+/// widths (16, 8) are provably useless: the coefficient count exactly
+/// doubles or quadruples and the transform size with it, while the
+/// prime-count saving is only 3→2 (score ratio ≥ 4/3). A word-crossing
+/// 20-bit width would enable two-prime transforms here (headroom holds for
+/// every size below MAX_LOG_N) — a possible future addition.
+pub const B_PACK_CANDIDATES: &[u32] = &[32];
 
 pub type Lane = u32;
 
