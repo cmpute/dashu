@@ -4,7 +4,7 @@ dashu is a library set of arbitrary precision numbers implemented in pure Rust, 
 
 **MSRV is a hard constraint for core crates only.** Core crates are the `dashu` meta-crate and its direct dependencies: `dashu-base`, `dashu-int`, `dashu-float`, `dashu-ratio`, `dashu-macros`, `dashu-cmplx`. The current MSRV is maintained in each crate's `Cargo.toml` and the top-level `README.md`. When modifying code in core crates, ensure it remains MSRV-compatible.
 
-Secondary crates (`dashu-python`, `benchmark/`, fuzz tests) are **not** bounded by the workspace MSRV policy. They may use newer Rust versions and dependency versions as needed.
+Secondary crates (`dashu-python`, `benchmark/`, `dashu-lints`, fuzz tests) are **not** bounded by the workspace MSRV policy. They may use newer Rust versions and dependency versions as needed. `dashu-lints` additionally builds with its own pinned nightly toolchain (see `dashu-lints/rust-toolchain`).
 
 ## Workspace structure
 
@@ -18,6 +18,7 @@ Secondary crates (`dashu-python`, `benchmark/`, fuzz tests) are **not** bounded 
 | `dashu-cmplx` | `complex/` | Arbitrary precision complex numbers (`CBig`) |
 | `dashu-python` | `python/` | PyO3 Python bindings (not in default members) |
 | *(benchmark)* | `benchmark/` | Profiling scratchpad, not a comprehensive benchmark suite |
+| *(lints)* | `dashu-lints/` | Dylint lints enforcing house conventions; not a workspace member, builds with its own pinned nightly |
 
 The `dashu` crate at the root is a meta-crate that re-exports all types from the sub-crates as nested modules (`dashu::base`, `dashu::integer`, etc.).
 
@@ -35,6 +36,10 @@ cargo clippy --all-features --all-targets --workspace --exclude dashu-python -- 
 
 # Format check
 cargo fmt --all -- --check
+
+# House lints (Dylint; the `+toolchain` must match dashu-lints/rust-toolchain and the
+# clippy_utils rev pinned in dashu-lints/Cargo.toml — bump them together)
+cargo +nightly-2026-04-16 dylint --all -- --all-targets
 ```
 
 Note: always `--exclude dashu-python` when running workspace-wide commands, since `dashu-python` is in early development.

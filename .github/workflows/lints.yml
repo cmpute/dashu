@@ -1,0 +1,27 @@
+name: Lints
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+  pull_request:
+    branches:
+      - master
+      - develop
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  dylint:
+    name: Dylint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned nightly (must match dashu-lints/rust-toolchain)
+        run: rustup toolchain install nightly-2026-04-16 --profile minimal --component rustc-dev llvm-tools-preview
+      - name: Install dylint
+        run: cargo install cargo-dylint dylint-link
+      - name: Run house lints
+        run: cargo +nightly-2026-04-16 dylint --all -- --all-targets
