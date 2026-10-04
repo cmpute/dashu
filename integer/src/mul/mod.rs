@@ -228,40 +228,68 @@ pub fn mul_word_in_place_with_carry(words: &mut [Word], rhs: Word, mut carry: Wo
 
 /// Temporary scratch space required for multiplication.
 pub fn memory_requirement_up_to(total_len: usize, smaller_len: usize) -> Layout {
+    memory_chain_budget(total_len - smaller_len, smaller_len)
+}
+
+/// Memory budget for `c += a * b` (a >= b), faithfully modeling the
+/// dispatcher's behavior including the chunk-loop tails: every chunked
+/// wrapper (karatsuba, toom-3, toom-4, chunked NTT) processes full chunks
+/// through its own kernel and re-dispatches the tail through
+/// [`add_signed_mul`], which can reach a different algorithm with a larger
+/// scratch appetite than the top-level claim (e.g. a Toom-3 chunk tail
+/// landing in the Toom-4x2 band). The chain's second argument strictly
+/// decreases at every step, so the recursion terminates.
+fn memory_chain_budget(a: usize, b: usize) -> Layout {
+    debug_assert!(a >= b);
     #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
-    if smaller_len >= threshold::ntt_asym_min()
-        && total_len - smaller_len >= threshold::ntt_asym_ratio() * smaller_len
-    {
-        return ntt::memory_requirement_up_to(total_len, smaller_len);
+    if b >= threshold::ntt_asym_min() && a >= threshold::ntt_asym_ratio() * b {
+        // The chunked NTT budget is expressed over the full product and
+        // covers its internal chunk pipelines and their tails.
+        return ntt::memory_requirement_up_to(a + b, b);
     }
     #[cfg(any(force_bits = "16", target_pointer_width = "16"))]
-    let _ = (total_len, smaller_len);
-    if smaller_len >= threshold::toom42_min()
-        && smaller_len <= threshold::ntt()
-        && toom_4_2::in_band(total_len - smaller_len, smaller_len)
-    {
-        return toom_4_2::memory_requirement_up_to(smaller_len);
+    let _ = (a, b);
+    if b >= threshold::toom42_min() && b <= threshold::ntt() && toom_4_2::in_band(a, b) {
+        return toom_4_2::memory_chain_budget(a, b);
     }
-    if smaller_len <= threshold::simple() {
+    let ladder = if b <= threshold::simple() {
         memory::zero_layout()
-    } else if smaller_len <= threshold::karatsuba() {
-        karatsuba::memory_requirement_up_to(smaller_len)
-    } else if smaller_len <= threshold::toom4() {
-        toom_3::memory_requirement_up_to(smaller_len)
-    } else if smaller_len <= threshold::ntt() {
-        toom_4::memory_requirement_up_to(smaller_len)
+    } else if b <= threshold::karatsuba() {
+        karatsuba::memory_requirement_up_to(b)
+    } else if b <= threshold::toom4() {
+        toom_3::memory_requirement_up_to(b)
+    } else if b <= threshold::ntt() {
+        toom_4::memory_requirement_up_to(b)
     } else {
-        // NTT path — only available on 64-bit word targets.
+        // NTT path — only available on 64-bit word targets; its budget
+        // covers the chunk pipelines and their tails.
         #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
         {
-            ntt::memory_requirement_up_to(total_len, smaller_len)
+            ntt::memory_requirement_up_to(a + b, b)
         }
         #[cfg(any(force_bits = "16", target_pointer_width = "16"))]
         {
-            let _ = (total_len, smaller_len);
             unreachable!("NTT unavailable on 16-bit targets");
         }
+    };
+    chunk_tail_budget(a, b, ladder)
+}
+
+/// Maximum of three layouts (word counts).
+pub(crate) fn max_layout3(l0: Layout, l1: Layout, l2: Layout) -> Layout {
+    memory::max_layout(memory::max_layout(l0, l1), l2)
+}
+
+/// Budget for the tail re-dispatch of a chunk loop over `a` in chunks of
+/// `b`: the tail has length `a % b` and re-enters the dispatcher swapped
+/// as `(b, a % b)`.
+fn chunk_tail_budget(a: usize, b: usize, own: Layout) -> Layout {
+    let tail = a % b;
+    if tail == 0 {
+        return own;
     }
+    let tail_layout = memory_chain_budget(b, tail);
+    memory::add_layout(own, tail_layout)
 }
 
 /// Temporary scratch space required for multiplication.
