@@ -5,7 +5,6 @@ use crate::{
     arch::word::{SignedWord, Word},
     div,
     helper_macros::debug_assert_zero,
-    math,
     memory::{self, Memory},
     mul::{self},
     shift,
@@ -26,19 +25,26 @@ use alloc::alloc::Layout;
 /// Minimum supported length of the smaller factor.
 pub const MIN_LEN: usize = 32;
 
-/// Temporary memory required for multiplication.
-///
-/// n bounds the length of the smaller factor in words.
-pub fn memory_requirement_up_to(n: usize) -> Layout {
-    /* Level peak (main-chain buffers plus the largest scoped phase):
-     *   v0(2n) + vinf(s+t) + 4*(2n+3) [pv1, pvm1, pv2, o1] + tmp(2n+3)
-     *   + evals <= 8*(n+2)
-     *   <= 22n + 40
-     * The recursive products have smaller factor n+1, so by induction
-     * f(n) <= 22n + 40 + f(n+1) <= 30n + 24*ceil(log2 n) + 256.
-     */
-    let num_words = 30 * n + 24 * (math::ceil_log2(n) as usize) + 256;
-    memory::array_layout::<Word>(num_words)
+/// Exact budget for one Toom-4x2 invocation at (a, b), including the
+/// recursive products' own dispatcher chains. The level peak is 24n + 40
+/// (main-chain buffers plus the largest scoped phase); the recursive
+/// products are balanced and dispatch to the Toom-3/Toom-4 ladders, so the
+/// children are accounted through the dispatcher's chain model rather than
+/// a per-word formula.
+pub(crate) fn memory_chain_budget(a: usize, b: usize) -> Layout {
+    let (n, s, t) = split_params(a, b).expect("operands not in the Toom-4x2 band");
+    // Level peak: main-chain buffers (v0 2n, vinf s+t, pv1/pv2/o1 2n+3 each)
+    // plus the largest scoped phase (6 eval buffers of n+2 and one 2n+3
+    // product): <= 16n + 24; rounded up with margin.
+    let level = memory::array_layout::<Word>(18 * n + 64);
+    // The recursive products run sequentially and share the remaining
+    // memory, so the child budget is the max, not the sum.
+    let child = crate::mul::max_layout3(
+        crate::mul::memory_chain_budget(n, n),
+        crate::mul::memory_chain_budget(n + 2, n + 1),
+        crate::mul::memory_chain_budget(s, t),
+    );
+    memory::add_layout(level, child)
 }
 
 /// Split parameters for the 4x2 decomposition, if the operands are in band.
@@ -209,6 +215,7 @@ pub fn add_signed_mul(
 mod tests {
     use super::*;
     use crate::mul::helpers;
+    use crate::UBig;
     #[cfg(not(feature = "std"))]
     use alloc::vec;
     #[cfg(not(feature = "std"))]
@@ -258,7 +265,7 @@ mod tests {
         let expected = schoolbook_mul(&a, &b);
 
         let mut c = vec![0 as Word; xs + ys];
-        let layout = memory_requirement_up_to(ys);
+        let layout = memory_chain_budget(xs, ys);
         let mut alloc = crate::memory::MemoryAllocation::new(layout);
         let mut memory = alloc.memory();
         let carry = add_signed_mul(&mut c, Positive, &a, &b, &mut memory);
@@ -293,7 +300,7 @@ mod tests {
         let b = vec![Word::MAX; 128];
         let expected = schoolbook_mul(&a, &b);
         let mut c = vec![0 as Word; 384];
-        let layout = memory_requirement_up_to(128);
+        let layout = memory_chain_budget(256, 128);
         let mut alloc = crate::memory::MemoryAllocation::new(layout);
         let mut memory = alloc.memory();
         let carry = add_signed_mul(&mut c, Positive, &a, &b, &mut memory);
@@ -306,7 +313,7 @@ mod tests {
         let a = lcg_words(0x9999, 400);
         let b = lcg_words(0x7777, 200);
         let mut c = vec![0 as Word; 600];
-        let layout = memory_requirement_up_to(200);
+        let layout = memory_chain_budget(400, 200);
         let mut alloc = crate::memory::MemoryAllocation::new(layout);
         let mut memory1 = alloc.memory();
         let _c = add_signed_mul(&mut c, Positive, &a, &b, &mut memory1);
@@ -314,6 +321,34 @@ mod tests {
         let mut memory2 = alloc2.memory();
         let _c = add_signed_mul(&mut c, Negative, &a, &b, &mut memory2);
         assert!(c.iter().all(|&w| w == 0));
+    }
+
+    /// Dispatch-path regression: every ratio/size combination in and around
+    /// the band must multiply correctly through the public dispatcher with
+    /// the exact budget `mul::memory_requirement_up_to` grants (this caught
+    /// a budget under-allocation where a Toom-3 chunk tail re-dispatched
+    /// into this kernel). Uses the identity a*b == a*(b-1) + a.
+    #[test]
+    fn toom42_dispatch_budget_sweep() {
+        for &ys in &[
+            96usize, 128, 144, 170, 200, 256, 342, 400, 512, 683, 1024, 1500, 2560, 4000,
+        ] {
+            for &ratio in &[1.5f64, 2.0, 2.4, 2.6, 3.0, 4.0, 6.0] {
+                let xs = ((ys as f64) * ratio).round() as usize;
+                if xs < ys {
+                    continue;
+                }
+                let a = lcg_words(0x5150 + xs as u64, xs);
+                let b = lcg_words(0xC0DE + ys as u64, ys);
+                let ua = UBig::from_words(&a);
+                let ub = UBig::from_words(&b);
+                let ub1 = &ub - 1u8;
+                // a*b == a*(b-1) + a  (any allocation bug corrupts one side)
+                let full = &ua * &ub;
+                let part = &ua * &ub1;
+                assert_eq!(full - &part, ua, "identity failed at {xs}x{ys}");
+            }
+        }
     }
 
     /// Compare toom-4x2 against the chunked Toom-3 path it replaces, to tune
@@ -349,7 +384,7 @@ mod tests {
             let mut c0 = vec![0 as Word; xs + ys];
             let mut c1 = vec![0 as Word; xs + ys];
             let l_t = crate::mul::toom_3::memory_requirement_up_to(ys);
-            let l_42 = memory_requirement_up_to(ys);
+            let l_42 = memory_chain_budget(xs, ys);
             let layout = if l_t.size() > l_42.size() { l_t } else { l_42 };
             let warmup = 5;
             let iters = 20;
