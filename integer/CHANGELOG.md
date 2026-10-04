@@ -18,8 +18,10 @@
   of ≥ 4/3 that no size can overcome; the same holds for 16/8 on 32-bit
   targets. The candidate lists shrink to 64/56/48 (64-bit) and 32 (32-bit),
   `B_PACK_MIN` rises accordingly, and the NTT scratch budget formula now
-  accounts for the b-hat/twiddle caches explicitly — the worst-case
-  allocation drops ~3x per NTT multiplication.
+  accounts for the b-hat/twiddle caches explicitly instead of relying on
+  the implicit slack of the tiny `B_PACK_MIN` — the worst-case scratch
+  allocation per NTT multiplication drops up to ~2x (e.g. 24.5 MB → 12.5 MB
+  for a 65536×4096-word product) and is never larger.
 - Heavily unbalanced products (operand ratio 6:1 or more, smaller operand at
   least 2500 words) now use the chunked NTT path, where the smaller operand
   is transformed once and its spectrum reused across chunks of the larger
