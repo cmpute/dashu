@@ -30,14 +30,31 @@ pub const THRESHOLD_NTT: usize = 4_000;
 
 /// Select NTT parameters for operands with the given word lengths.
 ///
+/// Candidates are scored by estimated transform + pointwise + CRT work
+/// (`k·n·log n` plus `k²·coeffs`), and the cheapest wins — except that a
+/// candidate whose coefficients cross word boundaries (56/48 bits on 64-bit
+/// targets, which pack through the bit-shift path and enable a two-prime
+/// transform) must beat the widest feasible candidate by a 5% margin,
+/// because the score does not capture its higher packing cost.
+///
 /// Returns `(b_pack, N, K_eff)`.
 pub fn select_params(la_words: usize, lb_words: usize) -> (u32, usize, usize) {
+    select_params_from(B_PACK_CANDIDATES, la_words, lb_words)
+}
+
+/// [`select_params`] over an explicit candidate list (test hook).
+pub(crate) fn select_params_from(
+    candidates: &[u32],
+    la_words: usize,
+    lb_words: usize,
+) -> (u32, usize, usize) {
     let word_bits = Word::BITS;
     let la_bits = la_words as u64 * word_bits as u64;
     let lb_bits = lb_words as u64 * word_bits as u64;
     let prod_2 = (MODULI[0] as u128) * (MODULI[1] as u128);
 
-    for &b_pack in B_PACK_CANDIDATES {
+    let mut best: Option<(u32, usize, usize, f64)> = None;
+    for &b_pack in candidates {
         let coeffs_a = (la_bits + b_pack as u64 - 1) / b_pack as u64;
         let coeffs_b = (lb_bits + b_pack as u64 - 1) / b_pack as u64;
         let total_coeffs = (coeffs_a + coeffs_b - 1) as usize;
@@ -58,13 +75,36 @@ pub fn select_params(la_words: usize, lb_words: usize) -> (u32, usize, usize) {
             Some(mc) if mc < prod_2 => 2,
             _ => K,
         };
-        return (b_pack, n, k_eff);
+
+        // Estimated work: k forward/inverse passes plus pointwise products
+        // scale with k·n·log n; the CRT reconstruction with k²·coeffs.
+        let log_n = n.trailing_zeros() as f64 + 8.0;
+        let score = k_eff as f64 * n as f64 * log_n + (k_eff * k_eff) as f64 * total_coeffs as f64;
+
+        // Candidates whose width crosses word boundaries pay a packing cost
+        // the score does not model — require a clear win to displace the
+        // current best.
+        let crosses_words = b_pack % word_bits != 0;
+        let takes = match best {
+            None => true,
+            Some((_, _, _, best_score)) => {
+                score
+                    < if crosses_words {
+                        best_score * 0.95
+                    } else {
+                        best_score
+                    }
+            }
+        };
+        if takes {
+            best = Some((b_pack, n, k_eff, score));
+        }
     }
 
-    unreachable!(
-        "b_pack = {} always passes the headroom check",
-        B_PACK_CANDIDATES.last().unwrap()
-    )
+    let (b_pack, n, k_eff, _) = best.unwrap_or_else(|| {
+        unreachable!("b_pack = {} always passes the headroom check", candidates.last().unwrap())
+    });
+    (b_pack, n, k_eff)
 }
 
 /// Estimate bit length from a word slice (excludes leading zeros).
@@ -93,18 +133,27 @@ pub fn memory_requirement_up_to(total_len: usize, _smaller_len: usize) -> Layout
         (total_len as u64 * word_bits as u64 + B_PACK_MIN as u64 - 1) / B_PACK_MIN as u64;
     let n_max = ((max_coeffs + 1) as usize).next_power_of_two().max(2);
 
+    // Components at the widest selectable view (per prime: forward-transformed
+    // b-hat, pointwise lanes, residues; plus the twiddle tables and the
+    // product itself). With `n_max` bounded below by the transform size of
+    // every selectable width, 12 * n_max covers the transform-side peak and
+    // the +64 margin absorbs rounding.
+    let b_hat = K * n_max;
     let lanes = 2 * n_max;
     let residues = K * n_max;
-    let twiddles = n_max;
+    // b-hat forward+inverse tables (2 * K/2 * n_max) and the pipeline's own
+    // forward+inverse tables (2 * n_max/2).
+    let twiddles = 4 * n_max;
     let product = total_len;
 
     let lane_bytes = mem::size_of::<Lane>();
     let word_bytes = mem::size_of::<Word>();
 
+    let b_hat_words = b_hat * lane_bytes / word_bytes;
     let lanes_words = lanes * lane_bytes / word_bytes;
     let residues_words = residues * lane_bytes / word_bytes;
     let twiddles_words = twiddles * lane_bytes / word_bytes;
-    let total_words = product + lanes_words + residues_words + twiddles_words;
+    let total_words = product + b_hat_words + lanes_words + residues_words + twiddles_words + 64;
 
     memory::array_layout::<Word>(total_words)
 }
@@ -148,7 +197,10 @@ pub fn add_signed_mul(
     memory: &mut Memory,
 ) -> SignedWord {
     debug_assert!(a.len() >= b.len() && c.len() == a.len() + b.len());
-    if a.len() > 2 * b.len() {
+    // Chunk only when at least two full 2*b chunks exist: with a single chunk
+    // plus a short tail the per-call b-hat/twiddle setup is not amortized and
+    // a single full-length convolution is faster.
+    if a.len() >= 3 * b.len() {
         return add_signed_mul_chunked(c, sign, a, b, memory);
     }
     add_signed_mul_conv(c, sign, a, b, memory)
@@ -569,6 +621,70 @@ mod tests {
         let coeffs_b = coeffs_a;
         let min_n = (coeffs_a + coeffs_b).next_power_of_two().max(2);
         assert!(n >= min_n, "n={n} < min_n={min_n}");
+    }
+
+    #[test]
+    fn test_select_params_true_headroom() {
+        // For two-prime selections, verify the tighter true bound (min
+        // coefficient count per output) fits the two-prime product. Three-
+        // prime selections are statically safe: the bound is bounded by
+        // 2^(MAX_LOG_N + 2*Word::BITS) < p0*p1*p2.
+        for la in [1000, 4096, 10000, 16384, 40000] {
+            for lb in [la, la / 2, la / 8] {
+                let (b_pack, n, k_eff) = select_params(la, lb);
+                assert!(n.is_power_of_two());
+                assert!((2..=K).contains(&k_eff));
+                if k_eff == 2 {
+                    let prod_2: u128 = MODULI[0] as u128 * MODULI[1] as u128;
+                    let bits_a = la as u64 * Word::BITS as u64;
+                    let bits_b = lb as u64 * Word::BITS as u64;
+                    let ca = (bits_a + b_pack as u64 - 1) / b_pack as u64;
+                    let cb = (bits_b + b_pack as u64 - 1) / b_pack as u64;
+                    let coeff_max_sq = ((1u128 << b_pack) - 1).pow(2);
+                    let min_count = ca.min(cb) as u128;
+                    assert!(
+                        min_count.saturating_mul(coeff_max_sq) < prod_2,
+                        "headroom violated: la={la} lb={lb} b_pack={b_pack}"
+                    );
+                } else {
+                    assert!(n.trailing_zeros() <= MAX_LOG_N);
+                }
+            }
+        }
+    }
+
+    // Word-crossing candidates (56/48 bits) only exist on 64-bit targets;
+    // the 32-bit candidate list is entirely word-aligned, so the two-prime
+    // path is never selected there.
+    #[test]
+    #[cfg(all(
+        not(force_bits = "16"),
+        not(force_bits = "32"),
+        target_pointer_width = "64"
+    ))]
+    fn test_select_params_exercises_two_primes() {
+        // Somewhere in the practical size range the volume-based selection
+        // must pick a word-crossing width with k_eff = 2, so the two-prime
+        // CRT path stays exercised by the regular differential tests.
+        let mut found = false;
+        for la in [64, 128, 256, 512, 1000, 2000, 3000, 4000, 6000, 8000] {
+            let (_, _, k_eff) = select_params(la, la);
+            if k_eff == 2 {
+                found = true;
+            }
+        }
+        assert!(found, "no two-prime selection found in the size sweep");
+    }
+
+    #[test]
+    fn test_select_params_forced_widths() {
+        // Each candidate width must yield valid parameters on its own.
+        for &b_pack in B_PACK_CANDIDATES {
+            let (b, n, k) = select_params_from(&[b_pack], 4096, 4096);
+            assert_eq!(b, b_pack);
+            assert!(n.is_power_of_two() && n >= 2);
+            assert!((2..=K).contains(&k));
+        }
     }
 
     #[test]
