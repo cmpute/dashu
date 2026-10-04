@@ -12,6 +12,14 @@
   most sizes the aligned 64-bit width remains optimal (the power-of-two
   transform granularity absorbs the gain), but sizes landing just above a
   power-of-two boundary now select two-prime 56/48-bit transforms.
+- Remove the provably dead packing widths: on 64-bit targets the 32- and
+  16-bit widths exactly double or quadruple the coefficient count (hence the
+  transform size), while the prime-count saving is only 3→2 — a score ratio
+  of ≥ 4/3 that no size can overcome; the same holds for 16/8 on 32-bit
+  targets. The candidate lists shrink to 64/56/48 (64-bit) and 32 (32-bit),
+  `B_PACK_MIN` rises accordingly, and the NTT scratch budget formula now
+  accounts for the b-hat/twiddle caches explicitly — the worst-case
+  allocation drops ~3x per NTT multiplication.
 - Heavily unbalanced products (operand ratio 6:1 or more, smaller operand at
   least 2500 words) now use the chunked NTT path, where the smaller operand
   is transformed once and its spectrum reused across chunks of the larger

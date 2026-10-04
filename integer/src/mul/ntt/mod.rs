@@ -133,18 +133,27 @@ pub fn memory_requirement_up_to(total_len: usize, _smaller_len: usize) -> Layout
         (total_len as u64 * word_bits as u64 + B_PACK_MIN as u64 - 1) / B_PACK_MIN as u64;
     let n_max = ((max_coeffs + 1) as usize).next_power_of_two().max(2);
 
+    // Components at the widest selectable view (per prime: forward-transformed
+    // b-hat, pointwise lanes, residues; plus the twiddle tables and the
+    // product itself). With `n_max` bounded below by the transform size of
+    // every selectable width, 12 * n_max covers the transform-side peak and
+    // the +64 margin absorbs rounding.
+    let b_hat = K * n_max;
     let lanes = 2 * n_max;
     let residues = K * n_max;
-    let twiddles = n_max;
+    // b-hat forward+inverse tables (2 * K/2 * n_max) and the pipeline's own
+    // forward+inverse tables (2 * n_max/2).
+    let twiddles = 4 * n_max;
     let product = total_len;
 
     let lane_bytes = mem::size_of::<Lane>();
     let word_bytes = mem::size_of::<Word>();
 
+    let b_hat_words = b_hat * lane_bytes / word_bytes;
     let lanes_words = lanes * lane_bytes / word_bytes;
     let residues_words = residues * lane_bytes / word_bytes;
     let twiddles_words = twiddles * lane_bytes / word_bytes;
-    let total_words = product + lanes_words + residues_words + twiddles_words;
+    let total_words = product + b_hat_words + lanes_words + residues_words + twiddles_words + 64;
 
     memory::array_layout::<Word>(total_words)
 }
