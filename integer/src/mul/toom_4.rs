@@ -168,14 +168,13 @@ pub fn add_signed_mul_same_len(
         let (x2b, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, ub, 0);
         debug_assert_zero!(mul::add_mul_word_same_len_in_place(&mut x2a[..], 2, va));
         debug_assert_zero!(mul::add_mul_word_same_len_in_place(&mut x2b[..], 2, vb));
-        let (t2a, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, va, 0);
-        debug_assert_zero!(mul::mul_word_in_place(&mut t2a[..], 2));
-        let (t2b, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, vb, 0);
-        debug_assert_zero!(mul::mul_word_in_place(&mut t2b[..], 2));
+        // X(-2) = u - 2v = 2u - X(2): reuse X(2) instead of materializing 2*v.
         let (xm2a, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, ua, 0);
         let (xm2b, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, ub, 0);
-        let sx = add::sub_in_place_with_sign(&mut xm2a[..], t2a);
-        let sy = add::sub_in_place_with_sign(&mut xm2b[..], t2b);
+        debug_assert_zero!(mul::mul_word_in_place(&mut xm2a[..], 2));
+        debug_assert_zero!(mul::mul_word_in_place(&mut xm2b[..], 2));
+        let sx = add::sub_in_place_with_sign(&mut xm2a[..], x2a);
+        let sy = add::sub_in_place_with_sign(&mut xm2b[..], x2b);
         sigma2 = sx * sy;
         debug_assert_zero!(mul::add_signed_mul_same_len(
             &mut pv2[..],
@@ -200,9 +199,13 @@ pub fn add_signed_mul_same_len(
         debug_assert_zero!(shift::shr_in_place(&mut pv2[..], 1));
         debug_assert_zero!(add::sub_in_place(&mut pv2[..], v0));
         {
-            let (tmp, _) = memory.allocate_slice_copy_fill(2 * n4 + 2, vinf, 0);
-            debug_assert_zero!(mul::mul_word_in_place(&mut tmp[..], 64));
-            debug_assert_zero!(add::sub_in_place(&mut pv2[..], &tmp[..2 * s + 1]));
+            // pv2 -= 64 * vinf; the borrow lands at word 2*s.
+            let borrow = mul::sub_mul_word_same_len_in_place(&mut pv2[..2 * s], 64, vinf);
+            debug_assert!(borrow < Word::MAX);
+            debug_assert_zero!(add::add_signed_word_in_place(
+                &mut pv2[2 * s..],
+                -(borrow as SignedWord)
+            ));
         }
         debug_assert_zero!(shift::shr_in_place(&mut pv2[..], 2));
     }
@@ -282,21 +285,16 @@ pub fn add_signed_mul_same_len(
 
     // r = (Vh - 64*z0 - z6 - 16*z2 - 4*z4)/2 = 16*z1 + 4*z3 + z5, in pvh.
     {
-        let (tmp, _) = memory.allocate_slice_copy_fill(2 * n4 + 2, v0, 0);
-        debug_assert_zero!(mul::mul_word_in_place(&mut tmp[..], 64));
-        debug_assert_zero!(add::sub_in_place(&mut pvh[..], &tmp[..2 * n4 + 1]));
+        let borrow = mul::sub_mul_word_same_len_in_place(&mut pvh[..2 * n4], 64, v0);
+        debug_assert!(borrow < Word::MAX);
+        debug_assert_zero!(add::add_signed_word_in_place(
+            &mut pvh[2 * n4..],
+            -(borrow as SignedWord)
+        ));
     }
     debug_assert_zero!(add::sub_in_place(&mut pvh[..], vinf));
-    {
-        let (tmp, _) = memory.allocate_slice_copy_fill(2 * n4 + 2, pv1, 0);
-        debug_assert_zero!(mul::mul_word_in_place(&mut tmp[..], 16));
-        debug_assert_zero!(add::sub_in_place(&mut pvh[..], &tmp[..2 * n4 + 1]));
-    }
-    {
-        let (tmp, _) = memory.allocate_slice_copy_fill(2 * n4 + 2, pv2, 0);
-        debug_assert_zero!(mul::mul_word_in_place(&mut tmp[..], 4));
-        debug_assert_zero!(add::sub_in_place(&mut pvh[..], &tmp[..2 * n4 + 1]));
-    }
+    debug_assert_zero!(mul::sub_mul_word_same_len_in_place(&mut pvh[..], 16, pv1));
+    debug_assert_zero!(mul::sub_mul_word_same_len_in_place(&mut pvh[..], 4, pv2));
     debug_assert_zero!(shift::shr_in_place(&mut pvh[..], 1));
 
     // t3 = (o2 - o1)/3 = z3 + 5*z5 (in o2).
@@ -307,19 +305,11 @@ pub fn add_signed_mul_same_len(
     z5.copy_from_slice(o2);
     debug_assert_zero!(mul::mul_word_in_place(&mut z5[..], 12));
     debug_assert_zero!(add::add_signed_in_place(&mut z5[..], Positive, pvh));
-    {
-        let (tmp, _) = memory.allocate_slice_copy_fill(2 * n4 + 2, o1, 0);
-        debug_assert_zero!(mul::mul_word_in_place(&mut tmp[..], 16));
-        debug_assert_zero!(add::sub_in_place(&mut z5[..], &tmp[..2 * n4 + 1]));
-    }
+    debug_assert_zero!(mul::sub_mul_word_same_len_in_place(&mut z5[..], 16, o1));
     debug_assert_zero!(div::div_by_word_in_place(&mut z5[..], 45));
 
     // z3 = t3 - 5*z5 (in o2), z1 = o1 - z3 - z5 (in o1).
-    {
-        let (tmp, _) = memory.allocate_slice_copy_fill(2 * n4 + 2, z5, 0);
-        debug_assert_zero!(mul::mul_word_in_place(&mut tmp[..], 5));
-        debug_assert_zero!(add::sub_in_place(&mut o2[..], &tmp[..2 * n4 + 1]));
-    }
+    debug_assert_zero!(mul::sub_mul_word_same_len_in_place(&mut o2[..], 5, z5));
     debug_assert_zero!(add::sub_in_place(&mut o1[..], o2));
     debug_assert_zero!(add::sub_in_place(&mut o1[..], z5));
 

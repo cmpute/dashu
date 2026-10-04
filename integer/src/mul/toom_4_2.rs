@@ -42,7 +42,9 @@ pub(crate) fn memory_chain_budget(a: usize, b: usize) -> Layout {
     let child = crate::mul::max_layout3(
         crate::mul::memory_chain_budget(n, n),
         crate::mul::memory_chain_budget(n + 2, n + 1),
-        crate::mul::memory_chain_budget(s, t),
+        // The vinf product's operands may have s < t; the budget is for the
+        // swapped (dispatcher) order.
+        crate::mul::memory_chain_budget(s.max(t), s.min(t)),
     );
     memory::add_layout(level, child)
 }
