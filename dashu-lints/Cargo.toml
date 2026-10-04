@@ -1,0 +1,23 @@
+[package]
+name = "dashu-lints"
+version = "0.1.0"
+description = "Dylint lints enforcing dashu house conventions"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+clippy_utils = { git = "https://github.com/rust-lang/rust-clippy", rev = "f6d310692116e9a527ce6d0b3526c965d9c5d7b9" }
+dylint_linting = "6.0.1"
+
+[dev-dependencies]
+dylint_testing = "6.0.1"
+dashu-base = { path = "../base" }
+dashu-int = { path = "../integer" }
+
+[package.metadata.rust-analyzer]
+rustc_private = true
