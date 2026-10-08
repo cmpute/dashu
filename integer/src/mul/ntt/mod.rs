@@ -33,28 +33,20 @@ pub const THRESHOLD_NTT: usize = 4_000;
 /// Candidates are scored by estimated transform + pointwise + CRT work
 /// (`k·n·log n` plus `k²·coeffs`), and the cheapest wins — except that a
 /// candidate whose coefficients cross word boundaries (56/48 bits on 64-bit
-/// targets, which pack through the bit-shift path and enable a two-prime
-/// transform) must beat the widest feasible candidate by a 5% margin,
-/// because the score does not capture its higher packing cost.
+/// targets, 20 bits on 32-bit targets, which pack through the bit-shift
+/// path and can enable a two-prime transform) must beat the widest
+/// feasible candidate by a 5% margin, because the score does not capture
+/// its higher packing cost.
 ///
 /// Returns `(b_pack, N, K_eff)`.
 pub fn select_params(la_words: usize, lb_words: usize) -> (u32, usize, usize) {
-    select_params_from(B_PACK_CANDIDATES, la_words, lb_words)
-}
-
-/// [`select_params`] over an explicit candidate list (test hook).
-pub(crate) fn select_params_from(
-    candidates: &[u32],
-    la_words: usize,
-    lb_words: usize,
-) -> (u32, usize, usize) {
     let word_bits = Word::BITS;
     let la_bits = la_words as u64 * word_bits as u64;
     let lb_bits = lb_words as u64 * word_bits as u64;
     let prod_2 = (MODULI[0] as u128) * (MODULI[1] as u128);
 
     let mut best: Option<(u32, usize, usize, f64)> = None;
-    for &b_pack in candidates {
+    for &b_pack in B_PACK_CANDIDATES {
         let coeffs_a = (la_bits + b_pack as u64 - 1) / b_pack as u64;
         let coeffs_b = (lb_bits + b_pack as u64 - 1) / b_pack as u64;
         let total_coeffs = (coeffs_a + coeffs_b - 1) as usize;
@@ -102,7 +94,10 @@ pub(crate) fn select_params_from(
     }
 
     let (b_pack, n, k_eff, _) = best.unwrap_or_else(|| {
-        unreachable!("b_pack = {} always passes the headroom check", candidates.last().unwrap())
+        unreachable!(
+            "b_pack = {} always passes the headroom check",
+            B_PACK_CANDIDATES.last().unwrap()
+        )
     });
     (b_pack, n, k_eff)
 }
@@ -606,9 +601,7 @@ mod tests {
     #[test]
     fn test_select_params_small() {
         let (b_pack, n, k_eff) = select_params(10, 10);
-        // On 64-bit: B_PACK_CANDIDATES[0] = 64, needs K_eff = 3.
-        // On 32-bit: B_PACK_CANDIDATES[0] = 32, likely K_eff = 2.
-        assert!(b_pack >= 32);
+        assert!(b_pack >= B_PACK_MIN);
         assert!(n >= 2 && n.is_power_of_two());
         assert!((2..=K).contains(&k_eff));
     }
@@ -616,7 +609,7 @@ mod tests {
     #[test]
     fn test_select_params_large() {
         let (b_pack, n, _k_eff) = select_params(THRESHOLD_NTT, THRESHOLD_NTT);
-        assert!(b_pack >= 32);
+        assert!(b_pack >= B_PACK_MIN);
         assert!(n.is_power_of_two());
         let coeffs_a =
             (THRESHOLD_NTT * Word::BITS as usize + b_pack as usize - 1) / b_pack as usize;
@@ -655,21 +648,20 @@ mod tests {
         }
     }
 
-    // Word-crossing candidates (56/48 bits) only exist on 64-bit targets;
-    // the 32-bit candidate list is entirely word-aligned, so the two-prime
-    // path is never selected there.
+    // Word-crossing candidates (56/48 bits on 64-bit, 20 bits on 32-bit
+    // targets) are the only widths that can select a two-prime transform.
     #[test]
-    #[cfg(all(
-        not(force_bits = "16"),
-        not(force_bits = "32"),
-        target_pointer_width = "64"
-    ))]
+    #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
     fn test_select_params_exercises_two_primes() {
         // Somewhere in the practical size range the volume-based selection
         // must pick a word-crossing width with k_eff = 2, so the two-prime
-        // CRT path stays exercised by the regular differential tests.
+        // CRT path stays exercised by the regular differential tests. The
+        // 4608/5000/8600 points land in the buckets where the crossing
+        // width keeps the power-of-two transform size (the winning case).
         let mut found = false;
-        for la in [64, 128, 256, 512, 1000, 2000, 3000, 4000, 6000, 8000] {
+        for la in [
+            64, 128, 256, 512, 1000, 2000, 3000, 4000, 4608, 5000, 6000, 8000, 8600,
+        ] {
             let (_, _, k_eff) = select_params(la, la);
             if k_eff == 2 {
                 found = true;
@@ -679,14 +671,23 @@ mod tests {
     }
 
     #[test]
-    fn test_select_params_forced_widths() {
-        // Each candidate width must yield valid parameters on its own.
-        for &b_pack in B_PACK_CANDIDATES {
-            let (b, n, k) = select_params_from(&[b_pack], 4096, 4096);
-            assert_eq!(b, b_pack);
+    fn test_select_params_covers_all_widths() {
+        // Every candidate width must be the winner somewhere in the sweep
+        // (the aligned width wins where a crossing width would need a
+        // larger transform, and vice versa), and every selection must be
+        // structurally valid.
+        let mut seen = vec![false; B_PACK_CANDIDATES.len()];
+        for la in (64..16384).step_by(64) {
+            let (b_pack, n, k_eff) = select_params(la, la);
+            let pos = B_PACK_CANDIDATES
+                .iter()
+                .position(|&w| w == b_pack)
+                .expect("selected width must be a candidate");
             assert!(n.is_power_of_two() && n >= 2);
-            assert!((2..=K).contains(&k));
+            assert!((2..=K).contains(&k_eff));
+            seen[pos] = true;
         }
+        assert!(seen.iter().all(|&s| s), "some packing width is never selected");
     }
 
     #[test]
