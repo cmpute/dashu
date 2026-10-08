@@ -29,6 +29,15 @@
   fails loudly in release builds too.
 
 ### Add
+- 32-bit targets now have a word-crossing 20-bit packing width alongside
+  the word-aligned 32-bit one, enabling two-prime NTT transforms there
+  (coefficient squares ≈ 2^40 fit the two-prime product up to ~860k
+  coefficients per side). On the size buckets where the power-of-two
+  transform size does not grow (about 38% of each bucket), the two-prime
+  transform saves ~1/3 of the transform work — measured −32% per
+  multiplication at 4352–5120 words (32-bit words). Beyond the headroom
+  or where the transform would grow, the selector falls back to the
+  32-bit three-prime width automatically.
 - NTT packing-width selection is now volume-based: the candidate list on
   64-bit targets gains 56- and 48-bit packing widths (which cross word
   boundaries but allow a two-prime transform, roughly a third less transform
