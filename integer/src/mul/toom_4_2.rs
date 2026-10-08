@@ -192,19 +192,29 @@ pub fn add_signed_mul(
 
     // ---- Placement into c ----
     // z0 = v0, z1 = o1, z2 = pv1, z3 = pv2, z4 = vinf, at word offsets k*n.
+    // z3 is bounded by max(n+s, n+t) + 1 <= n + s + t words (its cross
+    // terms pair an n- or s-word piece with a t- or n-word piece), so when
+    // s + t < n + 1 the nominal 2n+1-word window is clamped to the product
+    // end — the dropped words are provably zero.
+    let c_len = c.len();
+    let z3_len = (2 * n + 1).min(c_len - 3 * n);
     carry_c0 += add::add_signed_same_len_in_place(&mut c[..2 * n], sign, v0);
     carry_c1 += add::add_signed_same_len_in_place(&mut c[n..3 * n + 1], sign, &o1[..2 * n + 1]);
     carry_c2 +=
         add::add_signed_same_len_in_place(&mut c[2 * n..4 * n + 2], sign, &pv1[..2 * n + 2]);
     carry_c3 +=
-        add::add_signed_same_len_in_place(&mut c[3 * n..5 * n + 1], sign, &pv2[..2 * n + 1]);
+        add::add_signed_same_len_in_place(&mut c[3 * n..3 * n + z3_len], sign, &pv2[..z3_len]);
     carry += add::add_signed_in_place(&mut c[4 * n..], sign, vinf);
 
     // Apply carries.
     carry_c1 += add::add_signed_word_in_place(&mut c[2 * n..3 * n + 1], carry_c0);
     carry_c2 += add::add_signed_word_in_place(&mut c[3 * n + 1..4 * n + 2], carry_c1);
-    carry_c3 += add::add_signed_word_in_place(&mut c[4 * n + 2..5 * n + 1], carry_c2);
-    carry += add::add_signed_word_in_place(&mut c[5 * n + 1..], carry_c3);
+    carry_c3 += add::add_signed_word_in_place(&mut c[4 * n + 2..(5 * n + 1).min(c_len)], carry_c2);
+    if 5 * n + 1 < c_len {
+        carry += add::add_signed_word_in_place(&mut c[5 * n + 1..], carry_c3);
+    } else {
+        carry += carry_c3;
+    }
 
     debug_assert!(carry.abs() <= 1);
     carry
@@ -283,6 +293,13 @@ mod tests {
             if hi > lo {
                 run_toom42_vs_schoolbook(hi, ys);
             }
+        }
+        // Structural edge xs = 3*ceil(ys/2) + 1 with ys odd: the remainder
+        // pieces are (s, t) = (1, n-1), i.e. s + t == n, where the nominal
+        // z3 placement window would run past the product end.
+        for &ys in &[95usize, 191, 351, 617] {
+            let xs = 3 * ((ys + 1) / 2) + 1;
+            run_toom42_vs_schoolbook(xs, ys);
         }
     }
 

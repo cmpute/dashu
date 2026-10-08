@@ -233,13 +233,13 @@ pub fn memory_requirement_up_to(lhs_len: usize, rhs_len: usize) -> Layout {
     // bounds a *single* division with the given lengths, so it under-reserves here.
     //
     // Reserve the worst case reachable in the loop instead: every in-loop division has a
-    // divisor R ≤ rhs_len and a quotient split min(R/2, L-R) ≤ rhs_len/2, and
-    // mul::memory_requirement_up_to is non-decreasing in both arguments, so
-    // mul::memory_requirement_up_to(rhs_len, rhs_len/2) bounds them all (independent of
-    // lhs_len). It returns zero_layout for small operands automatically, since mul's own
-    // schoolbook threshold gates it.
+    // divisor R ≤ rhs_len and a quotient split min(R/2, L-R) ≤ rhs_len/2. The
+    // per-shape multiplication budget is not monotone in the split (the Toom-4x2
+    // band), so the split-range envelope at total rhs_len bounds them all
+    // (independent of lhs_len). It returns zero_layout for small operands
+    // automatically, since mul's own schoolbook threshold gates it.
     let _ = lhs_len;
-    mul::memory_requirement_up_to(rhs_len, rhs_len / 2)
+    mul::memory_chain_budget_envelope(rhs_len, rhs_len / 2)
 }
 
 pub(crate) fn gcd_in_place(
@@ -351,8 +351,11 @@ pub fn memory_requirement_ext_up_to(lhs_len: usize, rhs_len: usize) -> Layout {
     memory::add_layout(
         memory::array_layout::<Word>(t_words),
         memory::max_layout(
-            mul::memory_requirement_up_to(rhs_len, rhs_len / 2), // worst-case in-loop division
-            mul::memory_requirement_up_to(lhs_len, lhs_len / 2), // for coeff update
+            // Worst-case in-loop division / coeff update. The envelope (not a
+            // single sampled split) is required because the Toom-4x2 band
+            // makes the budget non-monotone in the split.
+            mul::memory_chain_budget_envelope(rhs_len, rhs_len / 2),
+            mul::memory_chain_budget_envelope(lhs_len, lhs_len / 2),
         ),
     )
 }
