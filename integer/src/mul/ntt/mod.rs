@@ -197,9 +197,11 @@ pub fn add_signed_mul(
     memory: &mut Memory,
 ) -> SignedWord {
     debug_assert!(a.len() >= b.len() && c.len() == a.len() + b.len());
-    // Chunk only when at least two full 2*b chunks exist: with a single chunk
-    // plus a short tail the per-call b-hat/twiddle setup is not amortized and
-    // a single full-length convolution is faster.
+    // Chunk only from 3b: up to a ratio of ~3.1 a single full-length
+    // convolution measures faster (the chunked path would pay the b-hat and
+    // twiddle setup twice — once here, once in the tail's own convolution),
+    // while from ~3.1 upward reusing b-hat across chunks wins and the gap
+    // widens with the ratio.
     if a.len() >= 3 * b.len() {
         return add_signed_mul_chunked(c, sign, a, b, memory);
     }

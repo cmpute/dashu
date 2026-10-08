@@ -263,12 +263,12 @@ pub fn add_signed_mul_same_len(
         xh[n4] = mul::mul_word_in_place(&mut xh[..n4], 8);
         xh[n4] += mul::add_mul_word_same_len_in_place(&mut xh[..n4], 4, a1);
         xh[n4] += mul::add_mul_word_in_place(&mut xh[..n4], 2, a2);
-        xh[n4] += mul::add_mul_word_in_place(&mut xh[..n4], 1, a3);
+        xh[n4] += Word::from(add::add_in_place(&mut xh[..n4], a3));
         let (yh, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, b0, 0);
         yh[n4] = mul::mul_word_in_place(&mut yh[..n4], 8);
         yh[n4] += mul::add_mul_word_same_len_in_place(&mut yh[..n4], 4, b1);
         yh[n4] += mul::add_mul_word_in_place(&mut yh[..n4], 2, b2);
-        yh[n4] += mul::add_mul_word_in_place(&mut yh[..n4], 1, b3);
+        yh[n4] += Word::from(add::add_in_place(&mut yh[..n4], b3));
         debug_assert_zero!(mul::add_signed_mul_same_len(
             &mut pvh[..],
             Positive,
@@ -280,7 +280,7 @@ pub fn add_signed_mul_same_len(
 
     // z4 = (e2 - e1)/3 (in pv2), z2 = e1 - z4 (in pv1).
     debug_assert_zero!(add::sub_in_place(&mut pv2[..], pv1));
-    debug_assert_zero!(div::div_by_word_in_place(&mut pv2[..], 3));
+    assert_eq!(div::div_by_word_in_place(&mut pv2[..], 3), 0);
     debug_assert_zero!(add::sub_in_place(&mut pv1[..], pv2));
 
     // r = (Vh - 64*z0 - z6 - 16*z2 - 4*z4)/2 = 16*z1 + 4*z3 + z5, in pvh.
@@ -299,14 +299,14 @@ pub fn add_signed_mul_same_len(
 
     // t3 = (o2 - o1)/3 = z3 + 5*z5 (in o2).
     debug_assert_zero!(add::sub_in_place(&mut o2[..], o1));
-    debug_assert_zero!(div::div_by_word_in_place(&mut o2[..], 3));
+    assert_eq!(div::div_by_word_in_place(&mut o2[..], 3), 0);
 
     // z5 = (r + 12*t3 - 16*o1)/45. r + 12*t3 - 16*o1 = 45*z5 >= 0.
     z5.copy_from_slice(o2);
     debug_assert_zero!(mul::mul_word_in_place(&mut z5[..], 12));
     debug_assert_zero!(add::add_signed_in_place(&mut z5[..], Positive, pvh));
     debug_assert_zero!(mul::sub_mul_word_same_len_in_place(&mut z5[..], 16, o1));
-    debug_assert_zero!(div::div_by_word_in_place(&mut z5[..], 45));
+    assert_eq!(div::div_by_word_in_place(&mut z5[..], 45), 0);
 
     // z3 = t3 - 5*z5 (in o2), z1 = o1 - z3 - z5 (in o1).
     debug_assert_zero!(mul::sub_mul_word_same_len_in_place(&mut o2[..], 5, z5));
