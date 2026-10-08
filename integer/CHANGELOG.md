@@ -9,6 +9,10 @@
 - Reuse the short-division result buffer and remove redundant normalization checks.
 - Reuse the high-product result buffer and the exact squaring kernel, and share
   deterministic word fixtures across the integer kernel tests.
+- The exact-division guards in the Toom-4/4x2 interpolation (the /3, /6,
+  /45 divisions) are now always-on `assert_eq!` checks like Toom-3's,
+  instead of debug-only assertions, so a wrong interpolation constant
+  fails loudly in release builds too.
 
 ### Fix
 - Fix exact division and divisibility checks for zero with multi-word divisors,
@@ -30,6 +34,24 @@
   input sat on the `sigma = 0` band center). The tests now cover every band edge
   (`sigma ∈ [-2, 2]`), including the numerator down-shift normalization path that was
   never exercised before.
+- Toom-4x2 placement could panic ("range end index out of range") on the
+  structural split edge `xs = 3*ceil(ys/2) + 1` with an odd smaller operand,
+  where the remainder pieces satisfy `s + t == n`: the nominal z3 window
+  `c[3n..5n+1]` extends past the product end there. The window is now
+  clamped (z3 provably fits in `n + s + t` words), with regression tests
+  for the edge family.
+- The multiplication scratch budget is not monotone in the operand split
+  (the Toom-4x2 band pays ~11 words per smaller-side word where a slightly
+  more balanced split of the same total pays ~4), and the division/GCD
+  memory models sampled one split and assumed monotonicity — under 16-bit
+  words this under-allocated and panicked ("not enough memory allocated")
+  on randomized division tests. The models now use a split-range envelope
+  that bounds every recursive product shape, guarded by a property test
+  sweeping all splits below each cap.
+- The chunk-tail term of the scratch budget summed the tail re-dispatch
+  with the chunk kernels' own budget; the chunk kernels and the tail run
+  sequentially over the same scratch, so the requirement is the maximum.
+  Scratch for moderately unbalanced Toom-band products drops by 1.2-2x.
 
 ### Add
 - NTT packing-width selection is now volume-based: the candidate list on
@@ -74,7 +96,6 @@
   with the same evaluation structure.
 - New tuning knobs `DASHU_THRESHOLD_TOOM4_MUL` / `DASHU_THRESHOLD_TOOM4_SQR`
   (behind the `tuning` feature) for the Toom-3/Toom-4 crossovers.
-
 - Add `high::mul_high` and `high::sqr_high`: high-part (truncated) products with a
   certified one-sided error bound and a sticky flag. Given `out_words`, they compute
   the top words of the product such that the returned value `v` satisfies
