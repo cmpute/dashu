@@ -33,9 +33,9 @@ pub const MIN_LEN: usize = 32;
 /// a per-word formula.
 pub(crate) fn memory_chain_budget(a: usize, b: usize) -> Layout {
     let (n, s, t) = split_params(a, b).expect("operands not in the Toom-4x2 band");
-    // Level peak: main-chain buffers (v0 2n, vinf s+t, pv1/pv2/o1 2n+3 each)
-    // plus the largest scoped phase (6 eval buffers of n+2 and one 2n+3
-    // product): <= 16n + 24; rounded up with margin.
+    // Level peak: main-chain buffers (v0 2n, vinf s+t, pv1/pvm1/pv2/o1
+    // 2n+3 each) plus the largest scoped phase (6 evaluation buffers of
+    // n+2 at the ±1 points): <= 16n + s + t + 24; rounded up with margin.
     let level = memory::array_layout::<Word>(18 * n + 64);
     // The recursive products run sequentially and share the remaining
     // memory, so the child budget is the max, not the sum.
@@ -173,21 +173,18 @@ pub fn add_signed_mul(
         debug_assert_zero!(mul::add_signed_mul(&mut pv2[..], Positive, as2, bs2, &mut memory));
         debug_assert_zero!(add::sub_in_place(&mut pv2[..], v0));
         {
-            let (tmp, _) = memory.allocate_slice_copy_fill(2 * n + 3, vinf, 0);
-            debug_assert_zero!(mul::mul_word_in_place(&mut tmp[..], 16));
-            debug_assert_zero!(add::sub_in_place(&mut pv2[..], tmp));
+            // pv2 -= 16 * vinf; 16 * vinf may span s + t + 1 words, so the
+            // borrow propagates into the higher words.
+            let borrow = mul::sub_mul_word_same_len_in_place(&mut pv2[..s + t], 16, vinf);
+            debug_assert!(borrow < Word::MAX);
+            debug_assert_zero!(add::add_signed_word_in_place(
+                &mut pv2[s + t..],
+                -(borrow as SignedWord)
+            ));
         }
-        {
-            let (tmp, _) = memory.allocate_slice_copy_fill(2 * n + 3, pv1, 0);
-            debug_assert_zero!(mul::mul_word_in_place(&mut tmp[..], 4));
-            debug_assert_zero!(add::sub_in_place(&mut pv2[..], tmp));
-        }
-        {
-            let (tmp, _) = memory.allocate_slice_copy_fill(2 * n + 3, o1, 0);
-            debug_assert_zero!(mul::mul_word_in_place(&mut tmp[..], 2));
-            debug_assert_zero!(add::sub_in_place(&mut pv2[..], tmp));
-        }
-        debug_assert_zero!(div::div_by_word_in_place(&mut pv2[..], 6));
+        debug_assert_zero!(mul::sub_mul_word_same_len_in_place(&mut pv2[..], 4, pv1));
+        debug_assert_zero!(mul::sub_mul_word_same_len_in_place(&mut pv2[..], 2, o1));
+        assert_eq!(div::div_by_word_in_place(&mut pv2[..], 6), 0);
     }
 
     // z1 = o1 - z3 (in o1).
