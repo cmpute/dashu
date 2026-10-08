@@ -1,5 +1,86 @@
 # Changelog
 
+## Unreleased
+
+### Fix
+- Toom-4x2 placement could panic ("range end index out of range") on the
+  structural split edge `xs = 3*ceil(ys/2) + 1` with an odd smaller operand,
+  where the remainder pieces satisfy `s + t == n`: the nominal z3 window
+  `c[3n..5n+1]` extends past the product end there. The window is now
+  clamped (z3 provably fits in `n + s + t` words), with regression tests
+  for the edge family.
+- The multiplication scratch budget is not monotone in the operand split
+  (the Toom-4x2 band pays ~11 words per smaller-side word where a slightly
+  more balanced split of the same total pays ~4), and the division/GCD
+  memory models sampled one split and assumed monotonicity — under 16-bit
+  words this under-allocated and panicked ("not enough memory allocated")
+  on randomized division tests. The models now use a split-range envelope
+  that bounds every recursive product shape, guarded by a property test
+  sweeping all splits below each cap.
+- The chunk-tail term of the scratch budget summed the tail re-dispatch
+  with the chunk kernels' own budget; the chunk kernels and the tail run
+  sequentially over the same scratch, so the requirement is the maximum.
+  Scratch for moderately unbalanced Toom-band products drops by 1.2-2x.
+
+### Change
+- The exact-division guards in the Toom-4/4x2 interpolation (the /3, /6,
+  /45 divisions) are now always-on `assert_eq!` checks like Toom-3's,
+  instead of debug-only assertions, so a wrong interpolation constant
+  fails loudly in release builds too.
+
+### Add
+- 32-bit targets now have a word-crossing 20-bit packing width alongside
+  the word-aligned 32-bit one, enabling two-prime NTT transforms there
+  (coefficient squares ≈ 2^40 fit the two-prime product up to ~860k
+  coefficients per side). On the size buckets where the power-of-two
+  transform size does not grow (about 38% of each bucket), the two-prime
+  transform saves ~1/3 of the transform work — measured −32% per
+  multiplication at 4352–5120 words (32-bit words). Beyond the headroom
+  or where the transform would grow, the selector falls back to the
+  32-bit three-prime width automatically.
+- NTT packing-width selection is now volume-based: the candidate list on
+  64-bit targets gains 56- and 48-bit packing widths (which cross word
+  boundaries but allow a two-prime transform, roughly a third less transform
+  work), and the selector estimates per-candidate transform/pointwise/CRT
+  cost and picks the cheapest, with a 5% hysteresis margin so the
+  word-aligned fast pack path is only displaced when the win is real. On
+  most sizes the aligned 64-bit width remains optimal (the power-of-two
+  transform granularity absorbs the gain), but sizes landing just above a
+  power-of-two boundary now select two-prime 56/48-bit transforms.
+- Remove the provably dead packing widths: on 64-bit targets the 32- and
+  16-bit widths exactly double or quadruple the coefficient count (hence the
+  transform size), while the prime-count saving is only 3→2 — a score ratio
+  of ≥ 4/3 that no size can overcome; the same holds for 16/8 on 32-bit
+  targets. The candidate lists shrink to 64/56/48 (64-bit) and 32 (32-bit),
+  `B_PACK_MIN` rises accordingly, and the NTT scratch budget formula now
+  accounts for the b-hat/twiddle caches explicitly instead of relying on
+  the implicit slack of the tiny `B_PACK_MIN` — the worst-case scratch
+  allocation per NTT multiplication drops up to ~2x (e.g. 24.5 MB → 12.5 MB
+  for a 65536×4096-word product) and is never larger.
+- Heavily unbalanced products (operand ratio 6:1 or more, smaller operand at
+  least 2500 words) now use the chunked NTT path, where the smaller operand
+  is transformed once and its spectrum reused across chunks of the larger
+  operand — previously this only kicked in above the balanced NTT threshold,
+  so such shapes went through per-chunk Toom-3/Toom-4 with the smaller
+  operand re-transformed every time. The chunked NTT entry inside the NTT
+  module also moved from `a > 2b` to `a >= 3b`: with a single chunk plus a
+  short tail the per-call setup was not amortized and a single full-length
+  convolution measured ~10% faster on the (2b, 3b) interval. New tuning
+  knobs `DASHU_THRESHOLD_NTT_ASYM_MIN` / `DASHU_THRESHOLD_NTT_ASYM_RATIO`
+  (behind the `tuning` feature).
+- Toom-Cook 4x2 unbalanced multiplication for operand pairs between 1.5:1 and
+  2.5:1 (5 evaluation points at -1, 0, 1, 2 and infinity), dispatched from the
+  ratio-aware pre-check in the multiplication dispatcher when the smaller
+  operand is at least 96 words. Division and modular-arithmetic inner products
+  of these shapes benefit directly. New tuning knob
+  `DASHU_THRESHOLD_TOOM42_MIN` (behind the `tuning` feature).
+- Toom-Cook-4 balanced multiplication (`toom44`, 7 evaluation points at
+  0, ±1, ±2, 1/2 and infinity) for operands of 1000..4000 words, replacing
+  Toom-3 at the top of the pre-NTT ladder. Toom-4 squaring is added as well
+  with the same evaluation structure.
+- New tuning knobs `DASHU_THRESHOLD_TOOM4_MUL` / `DASHU_THRESHOLD_TOOM4_SQR`
+  (behind the `tuning` feature) for the Toom-3/Toom-4 crossovers.
+
 ## 0.6.2
 
 ### Add

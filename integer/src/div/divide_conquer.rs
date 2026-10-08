@@ -19,8 +19,13 @@ pub fn memory_requirement_exact(lhs_len: usize, rhs_len: usize) -> Layout {
     // and at most lhs_len - rhs_len long.
     // One of the factors will be at most floor(rhs.len()/2),
     // and one of the factors will be at most lhs_len - rhs_len long.
+    //
+    // The recursion performs these products at several splits of the local
+    // divisor length, and the per-shape multiplication budget is not
+    // monotone in the split (the Toom-4x2 band), so budget the worst case
+    // over the whole split range instead of one sampled shape.
     let smaller_len = (rhs_len / 2).min(lhs_len - rhs_len);
-    mul::memory_requirement_up_to(rhs_len, smaller_len)
+    mul::memory_chain_budget_envelope(rhs_len, smaller_len)
 }
 
 /// Division in place using divide and conquer.
