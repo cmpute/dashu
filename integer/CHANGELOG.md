@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+### Fix
+- Fix the sticky flag of `high::mul_high` / `high::sqr_high` on the recursive path: the
+  exact high block's boundary words and the cross windows' guard words land on the two
+  accumulator columns just below the window, and content there was dropped without
+  setting the flag — a `false` flag could accompany a non-exact window, violating the
+  documented contract ("a `false` flag means the value is exact"). Sparse operands with
+  word counts above the base-case threshold could trigger it; the guard columns are now
+  checked like every other dropped contribution.
+
+### Add
+- Add `high::mul_high` and `high::sqr_high`: high-part (truncated) products with a
+  certified one-sided error bound and a sticky flag. Given `out_words`, they compute
+  the top words of the product such that the returned value `v` satisfies
+  `v <= (a * b) >> s < v + (out_words + 2)` (ulps of `v`'s last word), never
+  over-estimating, and report whether anything was dropped (a `false` flag means the
+  value is exact). Roughly half the work of a full product for the sizes where
+  floating-point arithmetic only needs the leading words. The windowed base case
+  reuses the double-word multiplier sweeps; larger windows compose an exact high
+  block (through the regular multiplication dispatch, so Karatsuba/Toom/NTT apply)
+  with two recursive cross windows.
+- The `high` kernels dispatch on `TypedReprRef` like the other multiplication kernels:
+  small (inline) operands take an exact double-word product path (zero certified
+  error, exact sticky flag), mixed and large operands run on normalized word slices.
+
 ## 0.6.2
 
 ### Add

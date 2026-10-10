@@ -111,6 +111,8 @@ pub mod fmt;
 mod gcd;
 mod gcd_ops;
 mod helper_macros;
+/// High-part (truncated) products with certified error bounds
+pub mod high;
 mod ibig;
 mod iter;
 mod log;

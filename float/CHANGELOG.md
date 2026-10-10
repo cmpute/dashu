@@ -1,5 +1,44 @@
 # Changelog
 
+## Unreleased
+
+### Fix
+- Fix the short-product fast paths for power-of-two bases whose per-digit bit count
+  does not divide a word size (e.g. base 8, 32, 64, 128 on 64-bit words): folding the
+  dropped words into the exponent used floor division, silently mis-scaling the result
+  whenever the dropped bit count was not a multiple of the base's bit width. The
+  remainder bits now stay on the significand as zero padding (like for base 10).
+- Fix an exponent overflow in the shared rounding step: rounding a value whose wide
+  significand shrinks to the target precision needs `exponent + shift` beyond
+  `isize::MAX`, which previously panicked in debug builds and silently wrapped the
+  exponent in release builds (reachable e.g. from `Context::mul/sqr/cubic/add/sub` or
+  `FBig::with_precision` on values with extreme exponents). Such results now saturate
+  to the infinity sentinel — the operations above report `FpError::Overflow`, and
+  `with_precision` returns the infinity. A trailing-digit fold in `normalize` that
+  crosses the sentinel (possible when the rounded significand ends in zero digits and
+  the split exponent sits just below it) is canonicalized the same way, so
+  `with_precision` can no longer return a non-canonical representation at the
+  overflow boundary. The result-finisher now also maps results
+  that land directly on a sentinel exponent (through `normalize`'s trailing-digit
+  fold, or the add/sub alignment padding) to `FpError::Overflow`/`FpError::Underflow`
+  instead of returning a non-canonical representation; this covers the fast paths of
+  `mul/sqr/cubic` and the shortcuts of `pow`/`powf`/`nth_root`/`hypot`/`fma`.
+- Tighten the composed error bound of the `cubic` fast path: when the second window
+  extends past the square's word length, the square's shortfall is rescaled onto a
+  finer final window than the plain `(n + 2) + (n2 + 2)` sum accounted for.
+
+### Change
+- `Context::mul`, `Context::sqr` and `Context::cubic` now decide the rounding from a
+  certified high window of the product (the new `dashu-int::high` kernels) when the
+  operands carry far more digits than the target precision, instead of computing the
+  full exact product first. Results, rounding flags and exactness indicators are
+  unchanged — whenever the window's one-sided error bound cannot certify the rounding
+  (a measure-ε neighborhood of a rounding boundary), the operation falls back to the
+  exact product. For equal-precision operands roughly half of the multiplication work
+  is skipped at medium and large precisions; unbalanced operands (one much wider than
+  the target precision) gain much more. Transcendental functions and `CachedFBig`
+  benefit automatically through these kernels. No public API change.
+
 ## 0.6.2
 
 ### Change
