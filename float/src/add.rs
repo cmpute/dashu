@@ -2,7 +2,7 @@ use crate::{
     error::{assert_finite_operands, FpError, FpResult},
     fbig::FBig,
     helper_macros,
-    repr::{saturate_sentinel, Context, Repr, Word},
+    repr::{Context, Repr, Word},
     round::{Round, Rounded},
     utils::{digit_len, shl_digits, shl_digits_in_place, split_digits, split_digits_ref},
 };
@@ -158,13 +158,25 @@ impl<R: Round> Context<R> {
         is_sub: bool,
     ) -> Rounded<Repr<B>> {
         // A zero produced by exact cancellation is -0 only under roundTowardNegative (Down),
-        // +0 otherwise (IEEE 754 §6.3).
+        // +0 otherwise (IEEE 754 §6.3). A result whose exponent leaves the finite range —
+        // the split exponent saturating, or the rounded significand's trailing digits
+        // folding across the sentinel in `normalize` — is canonicalized to the infinity
+        // (see `rounded_to_repr` for the error-mapping story).
         let neg_cancel = is_sub && R::IS_ROUND_TOWARD_NEGATIVE;
         let make_repr = |sig: IBig, exp: isize| -> Repr<B> {
-            if sig.is_zero() && neg_cancel {
-                Repr::neg_zero()
+            if sig.is_zero() {
+                if neg_cancel {
+                    Repr::neg_zero()
+                } else {
+                    Repr::zero()
+                }
             } else {
-                saturate_sentinel(Repr::new(sig, exp))
+                let repr = Repr::new(sig, exp);
+                if repr.exponent == isize::MAX {
+                    Repr::infinity_with_sign(repr.sign())
+                } else {
+                    repr
+                }
             }
         };
 

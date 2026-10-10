@@ -1,7 +1,5 @@
-use dashu_base::{
-    EstimatedLog2,
-    Sign::{self, *},
-};
+use dashu_base::Sign::{self, *};
+
 use dashu_int::{high, IBig, UBig};
 
 use crate::{
@@ -11,7 +9,7 @@ use crate::{
     helper_macros,
     repr::{rounded_to_repr, Context, Repr, Word},
     round::{Round, Rounded, Rounding},
-    utils::{ceil_usize, digit_len, split_digits_ref},
+    utils::{digit_len, shl_digits, split_digits_ref},
 };
 use core::cmp::Ordering;
 use core::ops::{Mul, MulAssign};
@@ -36,9 +34,6 @@ use core::ops::{Mul, MulAssign};
 // rounding midpoint.
 // ---------------------------------------------------------------------------
 
-/// Word size of [`Word`] on this target, used by the short-product sizing math.
-const WORD_BITS: usize = core::mem::size_of::<Word>() * 8;
-
 /// Number of words up to and including the last nonzero word.
 fn trim_word_len(words: &[Word]) -> usize {
     words.iter().rposition(|&w| w != 0).map_or(0, |i| i + 1)
@@ -48,35 +43,49 @@ fn trim_word_len(words: &[Word]) -> usize {
 /// `precision` base-`B` digits when the product window undershoots the truth by
 /// up to `err_ulps` units of its own least significant word.
 ///
-/// The window needs (1) enough spare digits that the error stays well below
-/// the rounding midpoint and cannot carry into the kept digits, and (2) one
-/// further spare digit so the rounding split never degenerates (the window
-/// always carries strictly more digits than the target precision).
+/// The sizing only decides how often the fast path engages — the classifier
+/// re-checks every decision against the certified error band and declines when
+/// the band straddles a rounding boundary — so each term below just keeps the
+/// error band negligible against the rounding midpoint:
+///
+/// * `precision · b_ub` bits hold the kept digits (`B^p <= 2^(p·b_ub)` with
+///   `b_ub = ceil(log2 B)`);
+/// * one spare digit (`b_ub` bits) keeps the window strictly wider than the
+///   precision, so the rounding split and its midpoint exist;
+/// * `err_bits + 1` more bits, plus one further digit of margin, keep the
+///   doubled error safely below the midpoint;
+/// * two spare words absorb the fill the window can lose — the product's top
+///   word may hold as little as one bit, so the window value can start a
+///   full word lower than its word count suggests — and the final `+1` word
+///   keeps all these margins intact when the count is rounded down.
 fn short_window_words<const B: Word>(precision: usize, err_ulps: usize) -> usize {
-    let (_, b_ub) = B.log2_bounds();
-    // ceil(log2(err_ulps + 1)) as an exact bit length, avoiding `f32` methods
-    // that are std-only on this crate's MSRV.
+    // ceil(log2 B) as an exact bit length: enough bits for one base-B digit.
+    let b_ub = usize::BITS - (B as usize - 1).leading_zeros();
+    // Bit length of the shortfall bound: the error spans at most that many
+    // bits above the window's bottom.
     let err_bits = usize::BITS - err_ulps.leading_zeros();
-    let need_bits = precision as f32 * b_ub + err_bits as f32 + b_ub + 11.0;
-    // Two spare words: one keeps the margin over the error bound even when
-    // the product's top word is zero (the window then loses up to one word of
-    // fill), and one keeps the split non-degenerate.
-    ceil_usize(need_bits / WORD_BITS as f32) + 2
+    let word_bits = Word::BITS as usize;
+    // All saturating: the precision is caller-supplied and must not panic.
+    let need_bits = precision
+        .saturating_mul(b_ub as usize)
+        .saturating_add((2 * b_ub + err_bits + 1) as usize + 2 * word_bits);
+    need_bits / word_bits + 1
 }
 
 /// Largest extended window (beyond the smaller operand) offered to the kernel,
-/// in bits (96 words on a 64-bit target). Extended windows always run the
-/// windowed sweep directly, so they stay in the kernel's base-case band.
-const EXT_WINDOW_LIMIT_BITS: usize = 96 * 64;
+/// in words (independent of the target word size). Extended windows always run
+/// the windowed base case directly, so they stay in the kernel's base-case
+/// size band.
+const EXT_WINDOW_LIMIT_WORDS: usize = 96;
 
 /// Clamp the wanted window to what the kernel accepts: at most two words
 /// beyond the smaller operand. Clamping down is safe — the classifier's
 /// defensive checks catch the rare case where the narrower window cannot
-/// certify the rounding. Extended windows beyond the sweep's size band are
-/// declined (they would always run the quadratic sweep).
+/// certify the rounding. Extended windows beyond the base-case size band are
+/// declined (they would always run the quadratic windowed base case).
 fn clamp_window(want: usize, min_words: usize) -> Option<usize> {
     let n = want.min(min_words + 2);
-    if n > min_words && n * WORD_BITS > EXT_WINDOW_LIMIT_BITS {
+    if n > min_words && n > EXT_WINDOW_LIMIT_WORDS {
         None
     } else {
         Some(n)
@@ -86,15 +95,18 @@ fn clamp_window(want: usize, min_words: usize) -> Option<usize> {
 /// Heuristic gate: is a short product worthwhile for these operand and window
 /// sizes? Costs are expressed in word-multiplication units.
 fn short_path_worthwhile(wa: usize, wb: usize, n: usize) -> bool {
-    // The windowed sweep does roughly half a window-sized multiplication (the
-    // upper triangle) plus linear passes over the operands; the fixed term
-    // covers the allocations, the word-level conversions and the
-    // classification comparisons.
-    const SWEEP_NUM: u128 = 11; // over 20
+    // The `high` kernels cost roughly half a window-sized multiplication — the
+    // windowed base case visits only the product columns that reach the
+    // window, the recursive path an exact high block plus two cross windows —
+    // plus linear passes over the operands; the fixed term covers the
+    // allocations, the word-level conversions and the classification
+    // comparisons.
+    const WINDOW_NUM: u128 = 11; // over 20
     const LINEAR: u128 = 2;
     const FIXED: u128 = 120;
     let full = wa as u128 * wb as u128;
-    let short = n as u128 * n as u128 * SWEEP_NUM / 20 + (wa as u128 + wb as u128) * LINEAR + FIXED;
+    let short =
+        n as u128 * n as u128 * WINDOW_NUM / 20 + (wa as u128 + wb as u128) * LINEAR + FIXED;
     full > short
 }
 
@@ -126,16 +138,13 @@ fn round_high_product<R: Round, const B: Word>(
 
     let (hi, lo) = split_digits_ref::<B>(&sig, shift);
     let adjust = if !lo.is_zero() || sticky {
-        let bshift: IBig = if B.is_power_of_two() {
-            IBig::ONE << (shift * B.trailing_zeros() as usize)
-        } else {
-            UBig::from_word(B).pow(shift).into()
-        };
+        // The radix power at the split, B^shift.
+        let base_pow = shl_digits::<B>(&IBig::ONE, shift);
         let twice = &lo << 1;
         let ordering = if !sticky {
             // The window is exact: classify lo alone — exactly the comparison
             // `round_fract` makes for the exact value.
-            twice.cmp(&bshift)
+            twice.cmp(&base_pow)
         } else {
             // The discarded digits of the true value are lo + delta with
             // 0 < delta < err_abs. Compare the doubled values against the
@@ -143,17 +152,17 @@ fn round_high_product<R: Round, const B: Word>(
             // against a carry into the kept digits) without constructing the
             // midpoint itself.
             let tail = &lo + err_abs;
-            if (&tail << 1) <= bshift {
+            if (&tail << 1) <= base_pow {
                 // Below the midpoint even at the worst shortfall.
                 Ordering::Less
-            } else if twice > bshift {
-                if tail >= bshift {
+            } else if twice > base_pow {
+                if tail >= base_pow {
                     // The shortfall may carry into the kept digits.
                     return None;
                 }
                 Ordering::Greater
-            } else if twice == bshift {
-                if tail >= bshift {
+            } else if twice == base_pow {
+                if tail >= base_pow {
                     return None;
                 }
                 // Exactly on the midpoint: the nonzero shortfall breaks the
@@ -341,7 +350,7 @@ impl<R: Round> Context<R> {
         // accordingly — same as for bases that are not powers of two, which
         // always keep the full dropped words as padding.
         let lb = B.trailing_zeros() as usize;
-        let fold_bits = WORD_BITS * dropped;
+        let fold_bits = Word::BITS as usize * dropped;
         let pad_bits = if B.is_power_of_two() {
             fold_bits % lb
         } else {
@@ -371,7 +380,7 @@ impl<R: Round> Context<R> {
     ///
     /// Unlike multiplication, squaring never extends the window past the
     /// operand: the dedicated squaring kernels already exploit the symmetric
-    /// product, so an extended windowed sweep cannot beat them. (Squaring
+    /// product, so an extended windowed base case cannot beat them. (Squaring
     /// still benefits when the operand carries many more digits than the
     /// target precision.)
     pub(crate) fn sqr_short<const B: Word>(&self, f: &Repr<B>) -> Option<Rounded<Repr<B>>> {
@@ -390,7 +399,7 @@ impl<R: Round> Context<R> {
 
         let dropped = 2 * wa - n;
         let lb = B.trailing_zeros() as usize;
-        let fold_bits = WORD_BITS * dropped;
+        let fold_bits = Word::BITS as usize * dropped;
         let pad_bits = if B.is_power_of_two() {
             fold_bits % lb
         } else {
@@ -446,7 +455,7 @@ impl<R: Round> Context<R> {
 
         let dropped = (2 * wa - n) + (square_words + wa - n2);
         let lb = B.trailing_zeros() as usize;
-        let fold_bits = WORD_BITS * dropped;
+        let fold_bits = Word::BITS as usize * dropped;
         let pad_bits = if B.is_power_of_two() {
             fold_bits % lb
         } else {
@@ -468,7 +477,7 @@ impl<R: Round> Context<R> {
         // `a / 2^(square_words + wa - n2)·W < 2^((n2 - square_words)·W)` when
         // the second window extends past the square's word length, plus
         // (n2 + 2) ulps from the short product.
-        let square_err_shift = n2.saturating_sub(square_words) * WORD_BITS;
+        let square_err_shift = n2.saturating_sub(square_words) * Word::BITS as usize;
         let err_abs = ((IBig::from(n as u64 + 2) << square_err_shift) + IBig::from(n2 as u64 + 2))
             << pad_bits;
         round_high_product::<R, B>(self, sig, fs, exponent, sticky1 || sticky2, &err_abs)
@@ -716,6 +725,8 @@ impl<R: Round> Context<R> {
 mod tests {
     use super::*;
     use crate::round::mode;
+    use alloc::vec;
+    use alloc::vec::Vec;
     use dashu_int::IBig;
 
     /// Reference: `c + sign·(a·b)` computed exactly at `4p+32` digits then rounded
@@ -852,17 +863,15 @@ mod tests {
 
     use dashu_base::Approximation::*;
 
-    /// Deterministic pseudo-random words (top word forced nonzero).
-    fn lcg_words(seed: u64, len: usize) -> Vec<Word> {
-        // The generator state is u64 so the helper works for every word size;
-        // each word folds both halves of the state into it.
-        let mut s = seed | 1;
+    /// Fixed dense operand pattern (no generator state): the i-th word is
+    /// `(i+1)·step + i`, wrapping — distinct, carry-rich words, identical on
+    /// every run (and sharing their low bits across word sizes, since the
+    /// arithmetic is modular). The top word is kept nonzero so the operand
+    /// really spans `len` words.
+    fn pattern_words(len: usize, step: u64) -> Vec<Word> {
         (0..len)
             .map(|i| {
-                s = s
-                    .wrapping_mul(6364136223846793005)
-                    .wrapping_add(1442695040888963407);
-                let w = ((s >> 32) ^ s) as Word;
+                let w = (i as u64 + 1).wrapping_mul(step).wrapping_add(i as u64) as Word;
                 if i + 1 == len && w == 0 {
                     1
                 } else {
@@ -880,7 +889,7 @@ mod tests {
     /// the fixed operands always carry enough bits for the largest tested
     /// precision (500 decimal digits) on every target.
     fn scale(n: usize) -> usize {
-        n * (64 / WORD_BITS).max(1)
+        n * (64 / Word::BITS as usize).max(1)
     }
 
     /// Assert the short path matches the unlimited-precision oracle re-rounded
@@ -999,18 +1008,19 @@ mod tests {
         check_cubic_short::<mode::HalfAway, B>(p, f);
     }
 
-    /// Fixed LCG operand sweep across the mandated precision set, both bases,
+    /// Fixed operand patterns across the mandated precision set, both bases,
     /// all six modes (mul) and the nearest/directed representatives (sqr/cubic).
     #[test]
     fn test_short_products_match_oracle() {
+        // (a step, a words, b step, b words), all steps fixed odd constants
         let cases: &[(u64, usize, u64, usize)] = &[
-            (1, 64, 2, 64),
-            (3, 64, 4, 90),
-            (5, 90, 6, 64),
-            (7, 64, 8, 260),
+            (0x0123_4567_89ab_cdef, 64, 0xfedc_ba98_7654_3211, 64),
+            (0x1357_9bdf_2468_ace1, 64, 0x0f0f_0f0f_0f0f_0f0f, 90),
+            (0x77aa_55cc_33ee_11dd, 90, 0x2492_4924_9249_2493, 64),
+            (0x6c2f_f2c6_0c8f_51df, 64, 0xa5a5_5a5a_a5a5_5a5b, 260),
         ];
-        for &(sa, wa, sb, wb) in cases {
-            let (aw, bw) = (lcg_words(sa, scale(wa)), lcg_words(sb, scale(wb)));
+        for &(ta, wa, tb, wb) in cases {
+            let (aw, bw) = (pattern_words(scale(wa), ta), pattern_words(scale(wb), tb));
             for &p in &[2usize, 5, 20, 50, 100, 500] {
                 for &(ea, eb) in &[(0isize, 0isize), (-500, 333)] {
                     check_all_modes::<2>(
@@ -1044,10 +1054,10 @@ mod tests {
         // target; `scale` keeps the bit count constant on narrower words)
         for &(p, wa) in &[(2048usize, 32usize), (4096, 64)] {
             let wa = scale(wa);
-            let aw = lcg_words(91, wa);
+            let aw = pattern_words(wa, 0x0bad_c0de_fee1_deaf);
             let a2 = Repr::<2>::new(sig(&aw), 0);
             let ctx = Context::<mode::HalfEven>::new(p);
-            if (wa + 2) * WORD_BITS - p >= 100 {
+            if (wa + 2) * Word::BITS as usize - p >= 100 {
                 assert!(
                     ctx.mul_short(&a2, &a2).is_some(),
                     "equal-precision mul short path declined (p={p})"
@@ -1061,8 +1071,8 @@ mod tests {
         // Decimal equivalent: 2000 digits ≈ 6644 bits.
         let p10 = 2000;
         let w10 = 310; // > p·log2(10)/64 ≈ 104 words, scaled below
-        let w10 = w10 * (64 / WORD_BITS);
-        let aw = lcg_words(93, w10);
+        let w10 = w10 * (64 / Word::BITS as usize);
+        let aw = pattern_words(w10, 0x1e1e_1e1e_1e1e_1e1f);
         let a10 = Repr::<10>::new(sig(&aw), 0);
         check_mul_short::<mode::HalfAway, 10>(p10, &a10, &a10);
     }
@@ -1071,8 +1081,8 @@ mod tests {
     /// sign combination must mirror the positive result.
     #[test]
     fn test_short_products_negative_operands() {
-        let aw = lcg_words(11, scale(64));
-        let bw = lcg_words(22, scale(72));
+        let aw = pattern_words(scale(64), 0x3333_3333_3333_3335);
+        let bw = pattern_words(scale(72), 0x6666_6666_6666_6667);
         for &p in &[20usize, 100] {
             let b2 = Repr::<2>::new(sig(&bw), -7);
             let na2 = Repr::<2>::new(-sig(&aw), 3);
@@ -1230,7 +1240,7 @@ mod tests {
     /// semantics: the short path declines on exponent overflow.
     #[test]
     fn test_short_mul_exponent_overflow_declines() {
-        let aw = lcg_words(33, scale(64));
+        let aw = pattern_words(scale(64), 0x9999_9999_9999_999b);
         let a = Repr::<2>::new(sig(&aw), isize::MAX - 5);
         let b = Repr::<2>::new(sig(&aw), 10);
         let ctx = Context::<mode::HalfEven>::new(50);
@@ -1249,8 +1259,8 @@ mod tests {
     /// into the exponent by floor division (which mis-scales the value).
     #[test]
     fn test_short_mul_power_of_two_base_exponent_folding() {
-        let aw = lcg_words(71, scale(64));
-        let bw = lcg_words(72, scale(64));
+        let aw = pattern_words(scale(64), 0x0cab_ba6e_5032_51f9);
+        let bw = pattern_words(scale(64), 0x5eed_5eed_5eed_5eed);
         let p = 100; // octal digits; the window drops 121 words ≡ 1 mod 3
         let a8 = Repr::<8>::new(sig(&aw), 3);
         let b8 = Repr::<8>::new(sig(&bw), -2);
@@ -1269,7 +1279,7 @@ mod tests {
     /// see).
     #[test]
     fn test_short_mul_exponent_saturation_parity() {
-        let aw = lcg_words(77, scale(64));
+        let aw = pattern_words(scale(64), 0x7b1f_2e3d_4c5b_6a79);
         let p = 50usize;
         let ctx = Context::<mode::HalfEven>::new(p);
         let oracle_ctx = Context::<mode::HalfEven>::new(0);
@@ -1315,7 +1325,7 @@ mod tests {
     /// used to panic in debug builds and wrap the exponent in release builds.
     #[test]
     fn test_round_exponent_saturation() {
-        let aw = lcg_words(55, scale(64));
+        let aw = pattern_words(scale(64), 0x5a5a_5a5a_5a5a_5a5b);
         let p = 50usize;
         let ctx = Context::<mode::HalfEven>::new(p);
 

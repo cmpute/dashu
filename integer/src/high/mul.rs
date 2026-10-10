@@ -4,12 +4,14 @@
 use crate::primitive::WORD_BITS_USIZE;
 use crate::{
     add,
-    arch::word::Word,
+    arch::word::{DoubleWord, Word},
     buffer::Buffer,
     helper_macros::debug_assert_zero,
+    math,
     memory::{self, Memory, MemoryAllocation},
     mul,
-    primitive::double_word,
+    primitive::{double_word, locate_top_word_plus_one, split_dword},
+    repr::TypedReprRef::{RefLarge, RefSmall},
     ubig::UBig,
     Sign::Positive,
 };
@@ -90,12 +92,9 @@ pub(super) fn mul_high_basecase(t: &mut [Word], ap: &[Word], bp: &[Word], window
     debug_assert!(nb <= na && na <= window && window < na + nb && t.len() == window + 3);
 
     // Product column held by t[0]: the window starts at column base_col, and
-    // the accumulator reaches two columns further down.
+    // the accumulator reaches two columns further down. The preconditions
+    // above keep base_col within [1, nb], hence at most na.
     let base_col = na + nb - window;
-
-    // Index of the first nonzero word of ap: a neglected prefix ap[..i0] is
-    // nonzero exactly when i0 exceeds it.
-    let first_nonzero = ap.iter().position(|&w| w != 0).unwrap_or(na);
 
     let mut sticky = false;
 
@@ -103,8 +102,11 @@ pub(super) fn mul_high_basecase(t: &mut [Word], ap: &[Word], bp: &[Word], window
     let mut pairs = bp.chunks_exact(2);
     for pair in &mut pairs {
         // Products a_i·b_j reach t[0]'s column when i+j >= base_col - 2; sweep
-        // from the first such i. The sweep lands at t[off..off+len].
-        let i0 = base_col.saturating_sub(2).saturating_sub(j).min(na);
+        // from the first such i. Pairs whose columns start at or above the
+        // boundary (j+2 >= base_col, which the last pairs of a wide window
+        // always hit) saturate to the bottom of ap: they must sweep all of it.
+        // The sweep lands at t[off..off+len].
+        let i0 = base_col.saturating_sub(j + 2);
         let len = na - i0;
         let off = i0 + j + 2 - base_col;
         let (carry_lo, carry_hi) = mul::add_mul_dword_same_len_in_place(
@@ -115,20 +117,22 @@ pub(super) fn mul_high_basecase(t: &mut [Word], ap: &[Word], bp: &[Word], window
         );
         let overflow =
             add::add_dword_in_place(&mut t[off + len..], double_word(carry_lo, carry_hi));
-        debug_assert!(!overflow);
-        sticky |= i0 > first_nonzero && (pair[0] != 0 || pair[1] != 0);
+        debug_assert_zero!(overflow);
+        // The neglected prefix ap[..i0] is dropped content when it and the
+        // multiplier pair are both nonzero.
+        sticky |= i0 > 0 && (pair[0] != 0 || pair[1] != 0) && ap[..i0].iter().any(|&w| w != 0);
         j += 2;
     }
     // The leftover odd multiplier word (j = nb-1) sweeps the same way.
     if let &[m] = pairs.remainder() {
         let jj = nb - 1;
-        let i0 = base_col.saturating_sub(2).saturating_sub(jj).min(na);
+        let i0 = base_col.saturating_sub(jj + 2);
         let len = na - i0;
         let off = i0 + jj + 2 - base_col;
         let carry = mul::add_mul_word_same_len_in_place(&mut t[off..off + len], m, &ap[i0..]);
         let overflow = add::add_word_in_place(&mut t[off + len..], carry);
-        debug_assert!(!overflow);
-        sticky |= i0 > first_nonzero && m != 0;
+        debug_assert_zero!(overflow);
+        sticky |= i0 > 0 && m != 0 && ap[..i0].iter().any(|&w| w != 0);
     }
 
     // The two accumulator words below the window are dropped from the value;
@@ -181,7 +185,7 @@ pub(super) fn mul_high_into(t: &mut [Word], ap: &[Word], bp: &[Word], memory: &m
         ));
         let off = n - 2 - 2 * l;
         let overflow = add::add_in_place(&mut t[..n + 2], &block[off..]);
-        debug_assert!(!overflow);
+        debug_assert_zero!(overflow);
         sticky |= block[..off].iter().any(|&w| w != 0);
     }
     {
@@ -193,7 +197,7 @@ pub(super) fn mul_high_into(t: &mut [Word], ap: &[Word], bp: &[Word], memory: &m
         for (u, v) in crosses {
             sticky |= mul_high_into(x, u, v, &mut cross_memory);
             if add::add_same_len_in_place(&mut t[..l + 3], x) {
-                debug_assert!(!add::add_word_in_place(&mut t[l + 3..], 1));
+                debug_assert_zero!(add::add_word_in_place(&mut t[l + 3..], 1));
             }
             x.fill(0);
         }
@@ -210,9 +214,101 @@ pub(super) fn mul_high_into(t: &mut [Word], ap: &[Word], bp: &[Word], memory: &m
     sticky
 }
 
-/// Number of words up to and including the last nonzero word.
-pub(super) fn trim_words(words: &[Word]) -> usize {
-    words.iter().rposition(|&w| w != 0).map_or(0, |i| i + 1)
+/// The words of a small (inline) value, with its normalized length: the high
+/// word is live only when the value spills past a single word.
+fn small_words(dword: DoubleWord) -> ([Word; 2], usize) {
+    let (lo, hi) = split_dword(dword);
+    ([lo, hi], (dword != 0) as usize + (hi != 0) as usize)
+}
+
+/// Small×small fast path: both operands fit in a double word, so the exact
+/// product fits in four words — the window and the sticky flag are read off it
+/// exactly (the certified error is zero). The caller has already handled the
+/// zero operands and windows covering the entire product. Also serves as the
+/// squaring fast path (a small operand squared is still a small product).
+pub(super) fn mul_high_dword(da: DoubleWord, db: DoubleWord, out_words: usize) -> (UBig, bool) {
+    debug_assert!(da != 0 && db != 0 && out_words >= 1);
+    let fits_word = |d: DoubleWord| d <= Word::MAX as DoubleWord;
+    let (wa, wb) = (1 + !fits_word(da) as usize, 1 + !fits_word(db) as usize);
+    debug_assert!(out_words < wa + wb);
+
+    // The window may extend up to two words beyond the smaller operand (the
+    // contract's clamping); anything wider falls back to that boundary.
+    let n = out_words.min(wa.min(wb) + 2);
+    debug_assert!(n >= 1 && n < wa + wb);
+    let dropped = wa + wb - n;
+
+    // Exact product as four little-endian words.
+    let (lo, hi) = math::mul_add_carry_dword(da, db, 0);
+    let (lo0, lo1) = split_dword(lo);
+    let (hi0, hi1) = split_dword(hi);
+    let words = [lo0, lo1, hi0, hi1];
+
+    let sticky = words[..dropped].iter().any(|&w| w != 0);
+    let window = &words[dropped..];
+    let window_len = locate_top_word_plus_one(window);
+    (UBig::from_words(&window[..window_len]), sticky)
+}
+
+/// Word-level core of [`mul_high`]. Both slices are normalized (no trailing
+/// zero words): small operands by construction, large ones by the `Repr`
+/// invariant. The caller has already handled the zero operands, the empty
+/// window and windows covering the entire product.
+fn mul_high_words(aw: &[Word], bw: &[Word], out_words: usize) -> (UBig, bool) {
+    let (wa, wb) = (aw.len(), bw.len());
+    debug_assert_eq!(wa, locate_top_word_plus_one(aw));
+    debug_assert_eq!(wb, locate_top_word_plus_one(bw));
+    debug_assert!(out_words >= 1 && out_words < wa + wb);
+
+    // The window may extend up to two words beyond the smaller operand: the
+    // windowed base case then runs directly on (nearly) full operands. Beyond
+    // that, clamp to the smaller operand so the recursive path keeps its
+    // square shape.
+    let n = out_words.min(wa.min(wb) + 2);
+    debug_assert!(n >= 1 && n < wa + wb);
+
+    let (ap, bp, sticky, square_frame);
+    if n <= wa.min(wb) {
+        // Square frame: truncate both operands to their top n words. Each
+        // truncation drops a value worth less than one unit of the window's
+        // least significant word, absorbed by the certified bound.
+        square_frame = true;
+        ap = &aw[wa - n..];
+        bp = &bw[wb - n..];
+        sticky = (wa > n && aw[..wa - n].iter().any(|&w| w != 0))
+            || (wb > n && bw[..wb - n].iter().any(|&w| w != 0));
+    } else {
+        // Extended window: keep the smaller operand whole and take as many
+        // words of the larger one as the window allows. Only the larger
+        // operand is truncated (again below one unit of the window's last
+        // word); the extended window itself adds no further error.
+        square_frame = false;
+        let (lo_full, hi_full) = if wa >= wb { (bw, aw) } else { (aw, bw) };
+        let hi_len = hi_full.len().min(n);
+        let (hi_words, lo_words) = (&hi_full[hi_full.len() - hi_len..], lo_full);
+        ap = hi_words;
+        bp = lo_words;
+        sticky =
+            hi_len < hi_full.len() && hi_full[..hi_full.len() - hi_len].iter().any(|&w| w != 0);
+    }
+
+    let mut buffer = Buffer::allocate(n + 3);
+    buffer.push_zeros(n + 3);
+    // The recursive path needs scratch memory; the windowed base case needs none.
+    let sticky_core = if square_frame {
+        let mut allocation = MemoryAllocation::new(memory_requirement_up_to(n));
+        mul_high_into(&mut buffer, ap, bp, &mut allocation.memory())
+    } else {
+        // Extended window: run the base case directly (correct at any size; the
+        // cost is the caller's choice).
+        mul_high_basecase(&mut buffer, ap, bp, n)
+    };
+
+    // The window may carry zero high words when the product is short; UBig
+    // words are little-endian, so trim from the top.
+    let hi = &buffer[2..n + 2];
+    let hi_len = locate_top_word_plus_one(hi);
+    (UBig::from_words(&hi[..hi_len]), sticky || sticky_core)
 }
 
 /// Compute the high `out_words` words of the product `a * b`, with a certified
@@ -247,12 +343,7 @@ pub(super) fn trim_words(words: &[Word]) -> usize {
 /// ```
 #[must_use]
 pub fn mul_high(a: &UBig, b: &UBig, out_words: usize) -> (UBig, bool) {
-    let aw = a.as_words();
-    let bw = b.as_words();
-    // Normalized values never carry empty words, but trim defensively so the
-    // word counts below always describe real content.
-    let wa = trim_words(aw);
-    let wb = trim_words(bw);
+    let (wa, wb) = (a.repr().len(), b.repr().len());
 
     if wa == 0 || wb == 0 {
         // A zero operand: the product and every window of it are zero.
@@ -265,73 +356,40 @@ pub fn mul_high(a: &UBig, b: &UBig, out_words: usize) -> (UBig, bool) {
     if out_words == 0 {
         return (UBig::ZERO, true);
     }
-    // The window may extend up to two words beyond the smaller operand: the
-    // windowed sweep then runs directly on (nearly) full operands. Beyond
-    // that, clamp to the smaller operand so the recursive path keeps its
-    // square shape.
-    let n = out_words.min(wa.min(wb) + 2);
-    debug_assert!(n >= 1 && n < wa + wb);
 
-    let (ap, bp, sticky, square_frame);
-    if n <= wa.min(wb) {
-        // Square frame: truncate both operands to their top n words. Each
-        // truncation drops a value worth less than one unit of the window's
-        // least significant word, absorbed by the certified bound.
-        square_frame = true;
-        ap = &aw[wa - n..];
-        bp = &bw[wb - n..];
-        sticky = (wa > n && aw[..wa - n].iter().any(|&w| w != 0))
-            || (wb > n && bw[..wb - n].iter().any(|&w| w != 0));
-    } else {
-        // Extended window: keep the smaller operand whole and take as many
-        // words of the larger one as the window allows. Only the larger
-        // operand is truncated (again below one unit of the window's last
-        // word); the extended window itself adds no further error.
-        square_frame = false;
-        let (lo_full, hi_full) = if wa >= wb { (bw, aw) } else { (aw, bw) };
-        let hi_len = hi_full.len().min(n);
-        let (hi_words, lo_words) = (&hi_full[hi_full.len() - hi_len..], lo_full);
-        ap = hi_words;
-        bp = lo_words;
-        sticky =
-            hi_len < hi_full.len() && hi_full[..hi_full.len() - hi_len].iter().any(|&w| w != 0);
+    // Dispatch on the representations like the other kernels: small (inline)
+    // operands get an exact double-word product, mixed and large operands run
+    // on the word slices.
+    match (a.repr(), b.repr()) {
+        (RefSmall(da), RefSmall(db)) => mul_high_dword(da, db, out_words),
+        (RefSmall(da), RefLarge(bw)) => {
+            let (aw, wa) = small_words(da);
+            mul_high_words(&aw[..wa], bw, out_words)
+        }
+        (RefLarge(aw), RefSmall(db)) => {
+            let (bw, wb) = small_words(db);
+            mul_high_words(aw, &bw[..wb], out_words)
+        }
+        (RefLarge(aw), RefLarge(bw)) => mul_high_words(aw, bw, out_words),
     }
-
-    let mut buffer = Buffer::allocate(n + 3);
-    buffer.push_zeros(n + 3);
-    // The recursive path needs scratch memory; the windowed sweep needs none.
-    let sticky_core = if square_frame {
-        let mut allocation = MemoryAllocation::new(memory_requirement_up_to(n));
-        mul_high_into(&mut buffer, ap, bp, &mut allocation.memory())
-    } else {
-        // Extended window: run the sweep directly (correct at any size; the
-        // cost is the caller's choice).
-        mul_high_basecase(&mut buffer, ap, bp, n)
-    };
-
-    // The window may carry zero high words when the product is short; UBig
-    // words are little-endian, so trim from the top.
-    let hi = &buffer[2..n + 2];
-    let hi_len = trim_words(hi);
-    (UBig::from_words(&hi[..hi_len]), sticky || sticky_core)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{memory::MemoryAllocation, UBig};
+    use alloc::vec;
+    use alloc::vec::Vec;
 
-    fn lcg_words(seed: u64, len: usize) -> Vec<Word> {
-        // The generator state is u64 so the helper works for every word size;
-        // each word folds both halves of the state into it.
-        let mut s = seed | 1;
+    /// Fixed dense operand pattern (no generator state): the i-th word is
+    /// `(i+1)·step + i`, wrapping — distinct, carry-rich words, identical on
+    /// every run (and sharing their low bits across word sizes, since the
+    /// arithmetic is modular). The top word is kept nonzero so the operand
+    /// really spans `len` words.
+    fn pattern_words(len: usize, step: u64) -> Vec<Word> {
         (0..len)
             .map(|i| {
-                s = s
-                    .wrapping_mul(6364136223846793005)
-                    .wrapping_add(1442695040888963407);
-                let w = ((s >> 32) ^ s) as Word;
-                // Keep every word (in particular the top one) nonzero.
+                let w = (i as u64 + 1).wrapping_mul(step).wrapping_add(i as u64) as Word;
                 if i + 1 == len && w == 0 {
                     1
                 } else {
@@ -340,6 +398,13 @@ mod tests {
             })
             .collect()
     }
+
+    /// Two fixed operand-shape pairs: dense steps with mixed bit runs, and
+    /// complementary patterns so the two operands of a case never align.
+    const CASES: [(u64, u64); 2] = [
+        (0x0123_4567_89ab_cdef, 0xfedc_ba98_7654_3211),
+        (0x1357_9bdf_2468_ace1, 0x0f0f_0f0f_0f0f_0f0f),
+    ];
 
     /// Check the full public contract against a schoolbook full product.
     fn check_case(a: &[Word], b: &[Word], n: usize) {
@@ -365,9 +430,9 @@ mod tests {
     #[test]
     fn test_mul_high_basecase_range() {
         for n in 1..=THRESHOLD_SIMPLE_DEFAULT {
-            for seed in 1..=2u64 {
-                let a = lcg_words(seed * 31, n);
-                let b = lcg_words(seed * 47 + 5, n);
+            for &(ta, tb) in &CASES {
+                let a = pattern_words(n, ta);
+                let b = pattern_words(n, tb);
                 check_case(&a, &b, n);
             }
         }
@@ -376,20 +441,20 @@ mod tests {
     #[test]
     fn test_mul_high_extended_windows() {
         // Windows reaching one and two words beyond the smaller operand: the
-        // sweep then covers (nearly) full operands. This is the shape the
+        // base case then covers (nearly) full operands. This is the shape the
         // floating-point layer uses for equal-precision multiplication.
         for n in 1..=40usize {
-            for seed in 1..=2u64 {
-                let a = lcg_words(seed * 59, n);
-                let b = lcg_words(seed * 61 + 3, n);
+            for &(ta, tb) in &CASES {
+                let a = pattern_words(n, ta);
+                let b = pattern_words(n, tb);
                 check_case(&a, &b, n + 1);
                 check_case(&a, &b, n + 2);
                 check_case(&b, &a, n + 1);
                 check_case(&b, &a, n + 2);
             }
             // Rectangular operands (smaller by a few words).
-            let a = lcg_words(0x0dd, n + 5);
-            let b = lcg_words(0x0ee, n);
+            let a = pattern_words(n + 5, 0x0dd1_f00d_5eed_1e55);
+            let b = pattern_words(n, 0x0ee5_c0de_cafe_ba5e);
             check_case(&a, &b, n + 2);
             check_case(&a, &b, (n + 5).min(n + 2));
         }
@@ -421,9 +486,9 @@ mod tests {
     fn test_mul_high_recursive_range() {
         // Sizes spanning the first and second recursion levels.
         for &n in &[97usize, 100, 120, 160, 200, 260, 300, 385, 400] {
-            for seed in 1..=2u64 {
-                let a = lcg_words(seed * 101, n);
-                let b = lcg_words(seed * 137 + 11, n);
+            for &(ta, tb) in &CASES {
+                let a = pattern_words(n, ta);
+                let b = pattern_words(n, tb);
                 check_case(&a, &b, n);
             }
         }
@@ -432,8 +497,8 @@ mod tests {
     #[test]
     fn test_mul_high_unbalanced() {
         for &(wa, wb) in &[(128usize, 40usize), (300, 100), (120, 120), (500, 130)] {
-            let a = lcg_words(0x1234_5678, wa);
-            let b = lcg_words(0x9abc_def0, wb);
+            let a = pattern_words(wa, 0x1234_5678_9abc_def1);
+            let b = pattern_words(wb, 0x9abc_def0_1234_5679);
             let n = wb.min(wa).min(100);
             check_case(&a, &b, n);
             check_case(&b, &a, n);
@@ -452,7 +517,7 @@ mod tests {
         let mut sparse = vec![0 as Word; 33];
         sparse[32] = 1;
         check_case(&sparse, &sparse.clone(), 17);
-        check_case(&sparse, &lcg_words(7, 33), 20);
+        check_case(&sparse, &pattern_words(33, 0x3333_3333_3333_3335), 20);
 
         // Trailing zero words: the dropped part is exactly zero, so the window
         // must be exact with a false sticky flag.
@@ -476,14 +541,39 @@ mod tests {
         let (v, sticky) = mul_high(&UBig::ZERO, &small, 2);
         assert_eq!(v, UBig::ZERO);
         assert!(!sticky);
+
+        // Small (inline) operands: the exact double-word fast path, plus the
+        // mixed small/large dispatch.
+        for &(ta, tb) in &CASES {
+            for len_a in 1..=2usize {
+                for len_b in 1..=2usize {
+                    let a = pattern_words(len_a, ta);
+                    let b = pattern_words(len_b, tb);
+                    for n in 1..(len_a + len_b) {
+                        check_case(&a, &b, n);
+                    }
+                    // A window covering the whole product is exact.
+                    let (a_u, b_u) = (UBig::from_words(&a), UBig::from_words(&b));
+                    let (v, sticky) = mul_high(&a_u, &b_u, len_a + len_b);
+                    assert_eq!(v, &a_u * &b_u);
+                    assert!(!sticky);
+                }
+            }
+            let small_words = pattern_words(2, ta);
+            let large_words = pattern_words(10, tb);
+            for n in 1..=4 {
+                check_case(&small_words, &large_words, n);
+                check_case(&large_words, &small_words, n);
+            }
+        }
     }
 
     #[test]
     fn test_mul_high_memory_layout_sound() {
         // Every allocation the recursion makes must fit the advertised layout.
         for &n in &[97usize, 120, 200, 400] {
-            let a = lcg_words(0x0f0f, n);
-            let b = lcg_words(0xf0f0, n);
+            let a = pattern_words(n, 0x0f0f_0f0f_0f0f_0f0f);
+            let b = pattern_words(n, 0xf0f0_f0f0_f0f0_f0f1);
             let mut buffer = Buffer::allocate(n + 3);
             buffer.push_zeros(n + 3);
             let mut allocation = MemoryAllocation::new(memory_requirement_up_to(n));
@@ -496,6 +586,7 @@ mod tests {
     ///   cargo test -p dashu-int --release -- high::mul::tests::crossover_mulhigh --ignored --nocapture
     #[test]
     #[ignore]
+    #[cfg(feature = "std")] // std::time::Instant; a manual tuning aid, not a CI test
     fn crossover_mulhigh() {
         use std::time::Instant;
 
@@ -504,8 +595,8 @@ mod tests {
         println!("{}", "-".repeat(52));
 
         for &n in sizes {
-            let a = lcg_words(0x51ed, n);
-            let b = lcg_words(0x270d, n);
+            let a = pattern_words(n, 0x51ed_51ed_51ed_51ed);
+            let b = pattern_words(n, 0x270d_270d_270d_270f);
             let layout = memory_requirement_up_to(n);
             let warmup = 5;
             let iters = 100;

@@ -22,6 +22,9 @@
   reuses the double-word multiplier sweeps; larger windows compose an exact high
   block (through the regular multiplication dispatch, so Karatsuba/Toom/NTT apply)
   with two recursive cross windows.
+- The `high` kernels dispatch on `TypedReprRef` like the other multiplication kernels:
+  small (inline) operands take an exact double-word product path (zero certified
+  error, exact sticky flag), mixed and large operands run on normalized word slices.
 
 ## 0.6.2
 

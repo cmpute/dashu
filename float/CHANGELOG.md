@@ -14,7 +14,11 @@
   exponent in release builds (reachable e.g. from `Context::mul/sqr/cubic/add/sub` or
   `FBig::with_precision` on values with extreme exponents). Such results now saturate
   to the infinity sentinel — the operations above report `FpError::Overflow`, and
-  `with_precision` returns the infinity. The result-finisher now also maps results
+  `with_precision` returns the infinity. A trailing-digit fold in `normalize` that
+  crosses the sentinel (possible when the rounded significand ends in zero digits and
+  the split exponent sits just below it) is canonicalized the same way, so
+  `with_precision` can no longer return a non-canonical representation at the
+  overflow boundary. The result-finisher now also maps results
   that land directly on a sentinel exponent (through `normalize`'s trailing-digit
   fold, or the add/sub alignment padding) to `FpError::Overflow`/`FpError::Underflow`
   instead of returning a non-canonical representation; this covers the fast paths of

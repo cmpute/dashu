@@ -6,7 +6,10 @@ use crate::{
     add,
     arch::word::Word,
     buffer::Buffer,
+    helper_macros::debug_assert_zero,
     memory::{self, Memory, MemoryAllocation},
+    primitive::locate_top_word_plus_one,
+    repr::TypedReprRef::{RefLarge, RefSmall},
     sqr,
     ubig::UBig,
 };
@@ -92,7 +95,7 @@ pub(super) fn sqr_high_into(t: &mut [Word], ap: &[Word], memory: &mut Memory) ->
         sqr::sqr(block, &ap[l..], &mut block_memory);
         let off = n - 2 - 2 * l;
         let overflow = add::add_in_place(&mut t[..n + 2], &block[off..]);
-        debug_assert!(!overflow);
+        debug_assert_zero!(overflow);
         sticky |= block[..off].iter().any(|&w| w != 0);
     }
     {
@@ -101,7 +104,7 @@ pub(super) fn sqr_high_into(t: &mut [Word], ap: &[Word], memory: &mut Memory) ->
         sticky |= super::mul::mul_high_into(x, &ap[k..], &ap[..l], &mut cross_memory);
         for _ in 0..2 {
             if add::add_same_len_in_place(&mut t[..l + 3], x) {
-                debug_assert!(!add::add_word_in_place(&mut t[l + 3..], 1));
+                debug_assert_zero!(add::add_word_in_place(&mut t[l + 3..], 1));
             }
         }
     }
@@ -143,8 +146,7 @@ pub(super) fn sqr_high_into(t: &mut [Word], ap: &[Word], memory: &mut Memory) ->
 /// ```
 #[must_use]
 pub fn sqr_high(a: &UBig, out_words: usize) -> (UBig, bool) {
-    let aw = a.as_words();
-    let wa = super::mul::trim_words(aw);
+    let wa = a.repr().len();
 
     if wa == 0 {
         return (UBig::ZERO, false);
@@ -155,6 +157,24 @@ pub fn sqr_high(a: &UBig, out_words: usize) -> (UBig, bool) {
     if out_words == 0 {
         return (UBig::ZERO, true);
     }
+
+    // Dispatch on the representation like the other kernels: a small (inline)
+    // operand squares inside a double word exactly; a large one runs on the
+    // word slice.
+    match a.repr() {
+        RefSmall(dword) => super::mul::mul_high_dword(dword, dword, out_words),
+        RefLarge(words) => sqr_high_words(words, out_words),
+    }
+}
+
+/// Word-level core of [`sqr_high`]. The slice is normalized (no trailing zero
+/// words, by the `Repr` invariant). The caller has already handled the zero
+/// operand, the empty window and windows covering the entire square.
+fn sqr_high_words(aw: &[Word], out_words: usize) -> (UBig, bool) {
+    let wa = aw.len();
+    debug_assert_eq!(wa, locate_top_word_plus_one(aw));
+    debug_assert!(out_words >= 1 && out_words < 2 * wa);
+
     let n = out_words.min(wa + 2);
 
     let (ap, sticky, square_frame);
@@ -180,8 +200,10 @@ pub fn sqr_high(a: &UBig, out_words: usize) -> (UBig, bool) {
         super::mul::mul_high_basecase(&mut buffer, ap, ap, n)
     };
 
+    // The window may carry zero high words when the square is short; UBig
+    // words are little-endian, so trim from the top.
     let hi = &buffer[2..n + 2];
-    let hi_len = super::mul::trim_words(hi);
+    let hi_len = locate_top_word_plus_one(hi);
     (UBig::from_words(&hi[..hi_len]), sticky || sticky_core)
 }
 
@@ -189,17 +211,18 @@ pub fn sqr_high(a: &UBig, out_words: usize) -> (UBig, bool) {
 mod tests {
     use super::*;
     use crate::{memory::MemoryAllocation, UBig};
+    use alloc::vec;
+    use alloc::vec::Vec;
 
-    fn lcg_words(seed: u64, len: usize) -> Vec<Word> {
-        let mut s = seed | 1;
+    /// Fixed dense operand pattern (no generator state): the i-th word is
+    /// `(i+1)·step + i`, wrapping — distinct, carry-rich words, identical on
+    /// every run (and sharing their low bits across word sizes, since the
+    /// arithmetic is modular). The top word is kept nonzero so the operand
+    /// really spans `len` words.
+    fn pattern_words(len: usize, step: u64) -> Vec<Word> {
         (0..len)
             .map(|i| {
-                s = s
-                    .wrapping_mul(6364136223846793005)
-                    .wrapping_add(1442695040888963407);
-                // Fold both halves of the u64 state so the helper works for
-                // every word size.
-                let w = ((s >> 32) ^ s) as Word;
+                let w = (i as u64 + 1).wrapping_mul(step).wrapping_add(i as u64) as Word;
                 if i + 1 == len && w == 0 {
                     1
                 } else {
@@ -208,6 +231,9 @@ mod tests {
             })
             .collect()
     }
+
+    /// Two fixed dense steps with mixed bit runs (see [`pattern_words`]).
+    const CASES: [u64; 2] = [0x0123_4567_89ab_cdef, 0x1357_9bdf_2468_ace1];
 
     /// Check the full public contract against a schoolbook full square.
     fn check_case(a: &[Word], n: usize) {
@@ -232,8 +258,8 @@ mod tests {
     #[test]
     fn test_sqr_high_basecase_range() {
         for n in 1..=THRESHOLD_SIMPLE_DEFAULT {
-            for seed in 1..=2u64 {
-                check_case(&lcg_words(seed * 53, n), n);
+            for &step in &CASES {
+                check_case(&pattern_words(n, step), n);
             }
         }
     }
@@ -241,9 +267,9 @@ mod tests {
     #[test]
     fn test_sqr_high_recursive_range() {
         for &n in &[97usize, 100, 130, 200, 300, 400] {
-            for seed in 1..=2u64 {
-                check_case(&lcg_words(seed * 71, n), n);
-                check_case(&lcg_words(seed * 97, n), n / 2 + 1);
+            for &step in &CASES {
+                check_case(&pattern_words(n, step), n);
+                check_case(&pattern_words(n, step), n / 2 + 1);
             }
         }
     }
@@ -253,9 +279,9 @@ mod tests {
         // Windows reaching one and two words beyond the operand (the
         // equal-precision floating-point shape).
         for n in 1..=40usize {
-            for seed in 1..=2u64 {
-                check_case(&lcg_words(seed * 67, n), n + 1);
-                check_case(&lcg_words(seed * 73, n), n + 2);
+            for &step in &CASES {
+                check_case(&pattern_words(n, step), n + 1);
+                check_case(&pattern_words(n, step), n + 2);
             }
         }
     }
@@ -299,12 +325,27 @@ mod tests {
         let (v, sticky) = sqr_high(&small, 8);
         assert_eq!(v, &small * &small);
         assert!(!sticky);
+
+        // Small (inline) operands: the exact double-word fast path.
+        for &step in &CASES {
+            for len in 1..=2usize {
+                let a = pattern_words(len, step);
+                for n in 1..(2 * len) {
+                    check_case(&a, n);
+                }
+                // A window covering the whole square is exact.
+                let a_u = UBig::from_words(&a);
+                let (v, sticky) = sqr_high(&a_u, 2 * len);
+                assert_eq!(v, &a_u * &a_u);
+                assert!(!sticky);
+            }
+        }
     }
 
     #[test]
     fn test_sqr_high_memory_layout_sound() {
         for &n in &[97usize, 130, 200, 400] {
-            let a = lcg_words(0x7e57, n);
+            let a = pattern_words(n, 0x7e57_7e57_7e57_7e57);
             let mut buffer = Buffer::allocate(n + 3);
             buffer.push_zeros(n + 3);
             let mut allocation = MemoryAllocation::new(memory_requirement_up_to(n));

@@ -121,15 +121,32 @@ const fn negate_special_exponent(exp: isize) -> isize {
 
 /// Build a `Repr` from a rounded significand, preserving the input sign when rounding
 /// produces zero (`significand * B^exponent` where the significand collapsed to `+0`).
+///
+/// A result that leaves the finite exponent range is canonicalized to the
+/// infinity: that happens when the split exponent `exponent + shift` saturates,
+/// or when the rounded significand's trailing zero digits fold (in `normalize`)
+/// across the sentinel. Such a value is not a valid finite result
+/// ([`Repr::check_finite_exponent`] rejects it), so callers with an error
+/// channel can map it to [`FpError::Overflow`],
+/// and callers without one (`with_precision`) return the proper infinity.
 pub(crate) fn rounded_to_repr<const B: Word>(
     significand: IBig,
     exponent: isize,
     input_negative: bool,
 ) -> Repr<B> {
-    if significand.is_zero() && input_negative {
-        Repr::neg_zero()
+    if significand.is_zero() {
+        if input_negative {
+            Repr::neg_zero()
+        } else {
+            Repr::zero()
+        }
     } else {
-        Repr::new(significand, exponent)
+        let repr = Repr::new(significand, exponent);
+        if repr.exponent == isize::MAX {
+            Repr::infinity_with_sign(repr.sign())
+        } else {
+            repr
+        }
     }
 }
 
@@ -734,7 +751,7 @@ impl<R: Round> Context<R> {
             let adjust = R::round_fract::<B>(&signif_hi, signif_lo, shift);
             let sig = signif_hi + adjust;
             let exponent = repr.exponent.saturating_add(shift as isize);
-            let result = saturate_sentinel(rounded_to_repr(sig, exponent, input_neg));
+            let result = rounded_to_repr(sig, exponent, input_neg);
             Inexact(result, adjust)
         } else {
             Exact(repr)
@@ -756,28 +773,11 @@ impl<R: Round> Context<R> {
             let adjust = R::round_fract::<B>(&signif_hi, signif_lo, shift);
             let sig = signif_hi + adjust;
             let exponent = repr.exponent.saturating_add(shift as isize);
-            let result = saturate_sentinel(rounded_to_repr(sig, exponent, input_neg));
+            let result = rounded_to_repr(sig, exponent, input_neg);
             Inexact(result, adjust)
         } else {
             Exact(repr.clone())
         }
-    }
-}
-
-/// Canonicalize a rounding result whose exponent reached the `+inf` sentinel.
-///
-/// The split exponent `input.exponent + shift` saturates (or a carry out of
-/// the kept digits folds, in `normalize`) to `isize::MAX` when the rounded
-/// form leaves the finite exponent range. Such a value carries a nonzero
-/// significand at the sentinel exponent, which is not a valid finite result
-/// (`check_finite_exponent` rejects it); turn it into the proper infinity so
-/// that callers with an `FpResult` contract can map it to
-/// [`FpError::Overflow`](crate::FpError::Overflow).
-pub(crate) fn saturate_sentinel<const B: Word>(repr: Repr<B>) -> Repr<B> {
-    if repr.exponent == isize::MAX && !repr.significand.is_zero() {
-        Repr::infinity_with_sign(repr.sign())
-    } else {
-        repr
     }
 }
 
@@ -787,16 +787,16 @@ impl<R: Round> Context<R> {
     /// [`FpError::Overflow`] the same way the pre-rounding saturation is
     /// mapped.
     ///
-    /// Both the canonical infinity (produced by [`saturate_sentinel`]) and a
+    /// Both the canonical infinity (produced by [`rounded_to_repr`]) and a
     /// non-canonical result carrying a nonzero significand at one of the
     /// sentinel exponents (the fast paths' rounding helpers and the add/sub
     /// alignment can leave one behind: `normalize` folds trailing digits
     /// with a saturating exponent shift, and the alignment padding uses a
     /// saturating shift down) are mapped exactly like
-    /// [`Context::check_finite_exponent`](Self::check_finite_exponent) maps
+    /// [`Repr::check_finite_exponent`] maps
     /// the pre-rounding forms: `+inf`/`isize::MAX` to
-    /// [`FpError::Overflow`](crate::FpError::Overflow), `-inf`/`isize::MIN`
-    /// to [`FpError::Underflow`](crate::FpError::Underflow).
+    /// [`FpError::Overflow`], `-inf`/`isize::MIN`
+    /// to [`FpError::Underflow`].
     pub(crate) fn finish_rounded<const B: Word>(
         &self,
         rounded: Rounded<Repr<B>>,
