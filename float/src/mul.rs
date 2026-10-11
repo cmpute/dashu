@@ -107,23 +107,23 @@ fn short_path_worthwhile(wa: usize, wb: usize, n: usize) -> bool {
 
 /// Decide the correctly-rounded result from a certified high-product window.
 ///
-/// `sig` is the positive window significand — already scaled up by the dropped
-/// words for bases that cannot absorb them into the exponent — `err_abs`
-/// bounds the one-sided shortfall (`0 <= true - sig < err_abs`), and `sticky`
-/// tells whether the shortfall is known to be nonzero (a `false` flag makes
-/// `sig` exact). Returns `None` when the error band straddles a rounding
-/// boundary; the caller then falls back to the exact product.
+/// `signif` is the positive window significand — already scaled up by the
+/// dropped words for bases that cannot absorb them into the exponent —
+/// `err_abs` bounds the one-sided shortfall (`0 <= true - signif < err_abs`),
+/// and `sticky` tells whether the shortfall is known to be nonzero (a `false`
+/// flag makes `signif` exact). Returns `None` when the error band straddles a
+/// rounding boundary; the caller then falls back to the exact product.
 fn round_high_product<R: Round, const B: Word>(
     context: &Context<R>,
-    sig: IBig,
+    signif: IBig,
     sign: Sign,
     exponent: isize,
     sticky: bool,
-    err_abs: &IBig,
+    err_abs: &UBig,
 ) -> Option<Rounded<Repr<B>>> {
     let precision = context.precision();
 
-    let digits = digit_len::<B>(&sig);
+    let digits = digit_len::<B>(&signif);
     if digits <= precision {
         // The window sizing guarantees a spare digit; bail out defensively.
         return None;
@@ -131,8 +131,8 @@ fn round_high_product<R: Round, const B: Word>(
     let shift = digits - precision;
     let exponent = exponent.checked_add(shift as isize)?;
 
-    let (hi, lo) = split_digits_ref::<B>(&sig, shift);
-    let hi_signed = if sign == Sign::Negative { -hi } else { hi };
+    let (hi, lo) = split_digits_ref::<B>(&signif, shift);
+    let hi_signed = sign * hi;
     let adjust = if !lo.is_zero() || sticky {
         // The radix power at the split, B^shift.
         let base_pow = shl_digits::<B>(&IBig::ONE, shift);
@@ -147,7 +147,7 @@ fn round_high_product<R: Round, const B: Word>(
             // base power to classify against the rounding midpoint (and
             // against a carry into the kept digits) without constructing the
             // midpoint itself.
-            let tail = &lo + err_abs;
+            let tail = &lo + IBig::from(err_abs.clone());
             if (&tail << 1) <= base_pow {
                 // Below the midpoint even at the worst shortfall.
                 Ordering::Less
@@ -171,9 +171,9 @@ fn round_high_product<R: Round, const B: Word>(
         Rounding::NoOp
     };
 
-    let sig = hi_signed + adjust;
+    let signif = hi_signed + adjust;
     Some(dashu_base::Approximation::Inexact(
-        rounded_to_repr(sig, exponent, sign == Sign::Negative),
+        rounded_to_repr(signif, exponent, sign == Sign::Negative),
         adjust,
     ))
 }
@@ -308,7 +308,7 @@ impl<R: Round> Context<R> {
         exponent: isize,
         dropped: usize,
         sticky: bool,
-        err_ulps: IBig,
+        err_ulps: UBig,
     ) -> Option<Rounded<Repr<B>>> {
         let fold_bits = Word::BITS as usize * dropped;
         let (exponent, pad_bits) = if B.is_power_of_two() {
@@ -317,9 +317,9 @@ impl<R: Round> Context<R> {
         } else {
             (exponent, fold_bits)
         };
-        let sig = IBig::from(window << pad_bits);
+        let signif = IBig::from(window << pad_bits);
         let err_abs = err_ulps << pad_bits;
-        round_high_product::<R, B>(self, sig, sign, exponent, sticky, &err_abs)
+        round_high_product::<R, B>(self, signif, sign, exponent, sticky, &err_abs)
     }
 
     /// Certified high-product fast path for multiplication. Returns `None` to
@@ -356,7 +356,7 @@ impl<R: Round> Context<R> {
         let b = UBig::from_words(rw);
         let (window, sticky) = high::mul_high(&a, &b, n);
 
-        self.round_short_product(window, ls * rs, exponent, dropped, sticky, IBig::from(n + 2))
+        self.round_short_product(window, ls * rs, exponent, dropped, sticky, UBig::from(n + 2))
     }
 
     /// Certified high-product fast path for squaring. See [`Self::mul_short`].
@@ -387,7 +387,7 @@ impl<R: Round> Context<R> {
         let a = UBig::from_words(fw);
         let (window, sticky) = high::sqr_high(&a, n);
 
-        self.round_short_product(window, Positive, exponent, dropped, sticky, IBig::from(n + 2))
+        self.round_short_product(window, Positive, exponent, dropped, sticky, UBig::from(n + 2))
     }
 
     /// Certified high-product fast path for the cubic power: a short square
@@ -427,7 +427,7 @@ impl<R: Round> Context<R> {
         // the second window extends past the square's word length, plus
         // (n2 + 2) ulps from the short product.
         let square_err_shift = n2.saturating_sub(square_words) * Word::BITS as usize;
-        let err_ulps = (IBig::from(n + 2) << square_err_shift) + IBig::from(n2 + 2);
+        let err_ulps = (UBig::from(n + 2) << square_err_shift) + UBig::from(n2 + 2);
         self.round_short_product(window, fs, exponent, dropped, sticky1 || sticky2, err_ulps)
     }
 }
@@ -1116,7 +1116,7 @@ mod tests {
                 Positive,
                 0,
                 false,
-                &IBig::ONE,
+                &UBig::ONE,
             )
             .expect("exact tie should be decided");
             let want = ctx.repr_round_ref(&Repr::<2>::new(tie.clone(), 0));
@@ -1138,7 +1138,7 @@ mod tests {
                 Positive,
                 0,
                 true,
-                &IBig::ONE,
+                &UBig::ONE,
             )
             .expect("broken tie should be decided");
             let want_above = ctx.repr_round_ref(&Repr::<2>::new(tie + 1, 0));
@@ -1160,12 +1160,12 @@ mod tests {
             Positive,
             0,
             true,
-            &IBig::from(2u8)
+            &UBig::from(2u8)
         )
         .is_none());
         // The same value without a shortfall is decided (rounds up).
         assert!(
-            round_high_product::<mode::HalfEven, 2>(&ctx, val, Positive, 0, false, &IBig::ONE)
+            round_high_product::<mode::HalfEven, 2>(&ctx, val, Positive, 0, false, &UBig::ONE)
                 .is_some()
         );
 
@@ -1180,7 +1180,7 @@ mod tests {
             Positive,
             0,
             true,
-            &IBig::from(2u8)
+            &UBig::from(2u8)
         )
         .is_none());
     }

@@ -688,7 +688,9 @@ impl<R: Round> Context<R> {
         &self,
         rounded: Rounded<Repr<B>>,
     ) -> FpResult<FBig<R, B>> {
-        Ok(self.finish_rounded_repr(rounded)?.map(|v| FBig::new(v, *self)))
+        Ok(self
+            .finish_rounded_repr(rounded)?
+            .map(|v| FBig::new(v, *self)))
     }
 
     /// Create a float operation context with the given precision limit.

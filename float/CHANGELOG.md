@@ -35,6 +35,8 @@
   finer final window than the plain `(n + 2) + (n2 + 2)` sum accounted for.
 
 ### Change
+- Share the exponent-saturation checks between the short-quotient and short-product
+  paths through the borrowed representation validator.
 - Share short-product scaling and rounding-result validation, reuse the common
   signed-zero/overflow constructor in addition, and avoid cloning the retained
   significand during short-product rounding.

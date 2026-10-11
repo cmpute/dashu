@@ -2,6 +2,7 @@
 
 use crate::{
     arch::word::Word,
+    helper_macros::debug_assert_zero,
     math::shr_word,
     primitive::{extend_word, split_dword, WORD_BITS},
 };
@@ -20,6 +21,19 @@ pub fn shl_in_place(words: &mut [Word], shift: u32) -> Word {
         carry = new_carry;
     }
     carry
+}
+
+/// Write `value << shift` into `words` (assumed longer than the result), which
+/// is fully overwritten. The bit part of the shift must not push anything out
+/// of the top of `words`.
+pub(crate) fn shl_words_into(words: &mut [Word], value: &[Word], shift: usize) {
+    let (word_shift, bit_shift) = (shift / WORD_BITS as usize, shift % WORD_BITS as usize);
+    debug_assert!(words.len() >= value.len() + word_shift);
+    words.fill(0);
+    words[word_shift..word_shift + value.len()].copy_from_slice(value);
+    if bit_shift > 0 {
+        debug_assert_zero!(shl_in_place(words, bit_shift as u32));
+    }
 }
 
 /// Shift right by at most WORD_BITS in place.

@@ -25,10 +25,11 @@
 //!
 //! # Quotient error contract
 //!
-//! [`div_high`] approximates the high `n + 1` words of a quotient with a
-//! **two-sided** bound (`E = 2n + 2` ulps, no exactness flag) — see the
-//! function documentation for the precise scale. A caller that must round
-//! exactly declines whenever the error band straddles a rounding boundary.
+//! [`div_high`](crate::high::div_high) approximates the high `n + 1` words of
+//! a quotient with a **two-sided** bound (`E = 2n + 2` ulps, no exactness
+//! flag) — see the function documentation for the precise scale. A caller
+//! that must round exactly declines whenever the error band straddles a
+//! rounding boundary.
 //!
 //! # Algorithm
 //!

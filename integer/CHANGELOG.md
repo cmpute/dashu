@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Change
+- Reuse the shared deterministic word fixtures for short-division tests.
 - Reuse the high-product result buffer and the exact squaring kernel, and share
   deterministic word fixtures across the integer kernel tests.
 

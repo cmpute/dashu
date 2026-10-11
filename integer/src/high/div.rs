@@ -8,10 +8,9 @@ use crate::{
     arch::word::Word,
     buffer::Buffer,
     div,
-    helper_macros::debug_assert_zero,
     math::FastDivideNormalized2,
     memory::{self, Memory, MemoryAllocation},
-    primitive::{highest_dword, WORD_BITS},
+    primitive::{highest_dword, locate_top_word_plus_one, WORD_BITS},
     shift,
     ubig::UBig,
 };
@@ -78,97 +77,89 @@ pub(crate) fn memory_requirement_up_to(n: usize) -> Layout {
     }
 }
 
-/// Core short division: `q` (n words) := high part of the quotient of `np`
-/// (2n words, clobbered) by `dp` (n words, most significant bit set), returning
-/// the quotient's carry word (0 or 1).
+/// Core short division: `out` (n words) := high part of the quotient of
+/// `words` (2n words, clobbered) by `d` (n words, most significant bit set),
+/// returning the quotient's carry word (0 or 1).
 ///
-/// The value `carry·B^n + {q, n}` approximates `np/dp` with the two-sided
+/// The value `carry·B^n + {out, n}` approximates `words/d` with the two-sided
 /// error bound stated on [`div_high`]: the exact base case is off by less than
 /// one ulp, and each recursive level adds the slack of one short product
 /// window plus the block-quotient correction — under the split constraint
 /// `k >= (n+4)/2` that is at most a couple of ulps per level, summing
 /// geometrically (over `l = n/3`) to well under `2n` overall.
-fn div_high_core(q: &mut [Word], np: &mut [Word], dp: &[Word], memory: &mut Memory) -> bool {
-    let n = dp.len();
-    debug_assert!(q.len() == n && np.len() == 2 * n && n >= 2);
-    debug_assert!(dp[n - 1] >> (WORD_BITS - 1) != 0);
+fn div_high_core(out: &mut [Word], words: &mut [Word], d: &[Word], memory: &mut Memory) -> bool {
+    let n = d.len();
+    debug_assert!(out.len() == n && words.len() == 2 * n && n >= 2);
+    debug_assert!(d[n - 1] >> (WORD_BITS - 1) != 0);
 
     if n <= threshold::simple() {
         // Exact division of the full window: the truncated quotient is the
         // best possible approximation (error below one ulp, one-sided).
-        let fast_top = FastDivideNormalized2::new(highest_dword(dp));
-        let carry = div::div_rem_in_place(np, dp, fast_top, memory);
-        q.copy_from_slice(&np[n..]);
+        let fast_top = FastDivideNormalized2::new(highest_dword(d));
+        let carry = div::div_rem_in_place(words, d, fast_top, memory);
+        out.copy_from_slice(&words[n..]);
         return carry;
     }
 
     // Split with a large high part: k = 2n/3, l = n/3. The high k words of
-    // the quotient come from an exact division of the top 2k words of np by
-    // the top k words of dp; their interaction with dp's low l words is
-    // removed through the high window of an l×l short product; the low l
-    // words come from a recursive short division of the remaining region by
-    // dp's low l words.
+    // the quotient come from an exact division of the top 2k words of the
+    // dividend by the top k words of `d`; their interaction with d's low l
+    // words is removed through the high window of an l×l short product; the
+    // low l words come from a recursive short division of the remaining
+    // region by d's low l words.
     let l = n - 2 * (n / 3);
     let k = n - l;
     debug_assert!(l >= 2 && k >= (n + 4) / 2);
 
     // Exact high block: the division writes its quotient into the top of the
-    // np slice (copied out to q[l..n]) and the remainder just below, so that
-    // afterwards the region np[..n+l] holds np minus the block quotient times
-    // dp's high part.
+    // dividend slice (copied out to out[l..n]) and the remainder just below,
+    // so that afterwards the region words[..n+l] holds the dividend minus the
+    // block quotient times d's high part.
     let mut qh: Word = {
-        let fast_top = FastDivideNormalized2::new(highest_dword(&dp[l..]));
-        let carry = div::div_rem_in_place(&mut np[2 * l..], &dp[l..], fast_top, memory);
-        q[l..].copy_from_slice(&np[n + l..]);
+        let fast_top = FastDivideNormalized2::new(highest_dword(&d[l..]));
+        let carry = div::div_rem_in_place(&mut words[2 * l..], &d[l..], fast_top, memory);
+        out[l..].copy_from_slice(&words[n + l..]);
         carry as Word
     };
 
-    // Cross block: the low l words of the block quotient interact with dp's
+    // Cross block: the low l words of the block quotient interact with d's
     // low l words at the region's top. Subtract the certified lower bound of
     // that product (a short-product window) plus the block carry's copy of
     // the low divisor words; everything neglected stays inside the error
     // band. A borrow past the region means the block quotient was too large:
-    // step it down and add dp back until the region is restored (at most a
+    // step it down and add `d` back until the region is restored (at most a
     // couple of rounds — the split constraint bounds the overshoot).
     {
         let (tp, mut cross_memory) = memory.allocate_slice_fill::<Word>(l + 3, 0);
-        let _neglected = mul::mul_high_into(tp, &q[k..], &dp[..l], &mut cross_memory);
+        // The short product's sticky flag (content dropped below its window)
+        // needs no action: any neglected contribution leaves the region too
+        // large, which the certified two-sided band of the final quotient
+        // already covers — unlike a `debug_assert_zero!` case, `true` is an
+        // expected, benign outcome on this path.
+        mul::mul_high_into(tp, &out[k..], &d[..l], &mut cross_memory);
 
-        let mut cy: u32 = add::sub_same_len_in_place(&mut np[n..n + l], &tp[2..l + 2]) as u32;
+        let mut cy: u32 = add::sub_same_len_in_place(&mut words[n..n + l], &tp[2..l + 2]) as u32;
         if qh != 0 {
-            cy += add::sub_same_len_in_place(&mut np[n..n + l], &dp[..l]) as u32;
+            cy += add::sub_same_len_in_place(&mut words[n..n + l], &d[..l]) as u32;
         }
         while cy > 0 {
-            if add::sub_one_in_place(&mut q[l..]) {
+            if add::sub_one_in_place(&mut out[l..]) {
                 // a borrow out of the k block words can only come from qh
                 debug_assert!(qh > 0);
                 qh -= 1;
             }
-            cy -= add::add_same_len_in_place(&mut np[l..n + l], dp) as u32;
+            cy -= add::add_same_len_in_place(&mut words[l..n + l], d) as u32;
         }
     }
 
-    // Recursive short division of the region's top 2l words by dp's low l
+    // Recursive short division of the region's top 2l words by d's low l
     // words; its carry joins the block quotient.
-    let carry = div_high_core(&mut q[..l], &mut np[k..k + 2 * l], &dp[k..], memory);
-    if carry && add::add_word_in_place(&mut q[l..], 1) {
+    let carry = div_high_core(&mut out[..l], &mut words[k..k + 2 * l], &d[k..], memory);
+    if carry && add::add_word_in_place(&mut out[l..], 1) {
         qh += 1;
     }
     debug_assert!(qh <= 1);
     qh != 0
-}
-
-/// Write `value << shift` into `words` (assumed longer than the result), which
-/// is fully overwritten. The bit part of the shift must not push anything out
-/// of the top of `words`.
-fn shift_words_into(words: &mut [Word], value: &[Word], shift: usize) {
-    let (word_shift, bit_shift) = (shift / WORD_BITS as usize, shift % WORD_BITS as usize);
-    debug_assert!(words.len() >= value.len() + word_shift);
-    words.fill(0);
-    words[word_shift..word_shift + value.len()].copy_from_slice(value);
-    if bit_shift > 0 {
-        debug_assert_zero!(shift::shl_in_place(words, bit_shift as u32));
-    }
 }
 
 /// Short (truncated) division: computes the high `out_words + 1` words of the
@@ -200,8 +191,10 @@ fn shift_words_into(words: &mut [Word], value: &[Word], shift: usize) {
 /// use dashu_int::{high, IBig, UBig, Word};
 ///
 /// let denom = UBig::from_str_radix("53210fed89abcdef13579bdf00d2c4a6", 16).unwrap();
-/// let numer = (&denom << (4 * Word::BITS as usize)) + UBig::from(7u32);
-/// let n = 4;
+/// // a window exactly as wide as the denominator (which satisfies the sizing
+/// // precondition at any word size), with the numerator scaled to it
+/// let n = denom.as_words().len();
+/// let numer = (&denom << (n * Word::BITS as usize)) + UBig::from(7u32);
 /// let q = high::div_high(&numer, &denom, n).unwrap();
 ///
 /// // |q·2^(-sigma) − numer/denom| <= 2n + 2, checked here in exact integers
@@ -216,10 +209,9 @@ fn shift_words_into(words: &mut [Word], value: &[Word], shift: usize) {
 pub fn div_high(numer: &UBig, denom: &UBig, out_words: usize) -> Option<UBig> {
     let nw = numer.as_words();
     let dw = denom.as_words();
-    // Normalized values never carry empty words, but trim defensively so the
-    // word counts below always describe real content.
-    let wn = mul::trim_words(nw);
-    let wd = mul::trim_words(dw);
+    // The word slices of a UBig are normalized (no trailing zero words, by
+    // dashu-int's representation invariant), so the counts are the lengths.
+    let (wn, wd) = (nw.len(), dw.len());
 
     let n = out_words;
     if n < 2 || wn == 0 || wd < 2 || wd > n {
@@ -242,76 +234,67 @@ pub fn div_high(numer: &UBig, denom: &UBig, out_words: usize) -> Option<UBig> {
     // the dropped bits stay inside the certified band.
     let word_bits = WORD_BITS as usize;
     // band and `bd <= n·WORD_BITS` keep this in `[-2, 2n·WORD_BITS]`
-    let s_np = (2 * n) as isize * word_bits as isize - bn as isize;
-    let s_dp = n * word_bits - bd; // nonnegative by the checks above
+    let numer_shift = (2 * n) as isize * word_bits as isize - bn as isize;
+    let denom_shift = n * word_bits - bd; // nonnegative by the checks above
 
     let mut buffer = Buffer::allocate(3 * n);
     buffer.push_zeros(3 * n);
-    let (q, np) = buffer[..].split_at_mut(n);
+    let (out, words) = buffer[..].split_at_mut(n);
 
-    if s_np >= 0 {
-        shift_words_into(np, &nw[..wn], s_np as usize);
+    if numer_shift >= 0 {
+        shift::shl_words_into(words, &nw[..wn], numer_shift as usize);
     } else {
         // The numerator's value overflows the window by at most two bits (the
         // band and `bd <= n·WORD_BITS` bound it). Shift those bits off
         // word-wise, so a numerator one word longer than the window still
         // feeds the loop; any bits leaving at the bottom are worth far less
         // than one ulp of the quotient.
-        let j = (-s_np) as u32; // 1 or 2
-        for i in 0..np.len().min(wn) {
-            np[i] = nw[i] >> j;
+        let j = (-numer_shift) as u32; // 1 or 2
+        for i in 0..words.len().min(wn) {
+            words[i] = nw[i] >> j;
             if i + 1 < wn {
-                np[i] |= nw[i + 1] << (WORD_BITS - j);
+                words[i] |= nw[i + 1] << (WORD_BITS - j);
             }
         }
     }
 
     let mut denom_buffer = Buffer::allocate(n);
     denom_buffer.push_zeros(n);
-    shift_words_into(&mut denom_buffer, &dw[..wd], s_dp);
+    shift::shl_words_into(&mut denom_buffer, &dw[..wd], denom_shift);
 
     let mut allocation = MemoryAllocation::new(memory_requirement_up_to(n));
-    let carry = div_high_core(q, np, &denom_buffer, &mut allocation.memory());
+    let carry = div_high_core(out, words, &denom_buffer, &mut allocation.memory());
 
     if carry {
-        // the carry word sits on top of the full n-word window; trim only after
-        let mut words = Buffer::allocate(n + 1);
-        words.push_zeros(n + 1);
-        words[..n].copy_from_slice(q);
-        words[n] = 1;
-        let len = mul::trim_words(&words);
-        Some(UBig::from_words(&words[..len]))
+        // the carry word sits on top of the full n-word window (it is nonzero,
+        // so the buffer is already normalized)
+        let mut buffer = Buffer::allocate(n + 1);
+        buffer.push_zeros(n + 1);
+        buffer[..n].copy_from_slice(out);
+        buffer[n] = 1;
+        Some(UBig::from_words(&buffer))
     } else {
-        let qlen = mul::trim_words(q);
-        Some(UBig::from_words(&q[..qlen]))
+        // the quotient's top word can be zero when the window over-covers it
+        let qlen = locate_top_word_plus_one(out);
+        Some(UBig::from_words(&out[..qlen]))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{IBig, UBig};
+    use crate::{test_utils::pattern_words, IBig, UBig};
+    use alloc::vec;
+    use alloc::vec::Vec;
     use dashu_base::Abs;
 
-    fn lcg_words(seed: u64, len: usize) -> Vec<Word> {
-        // The generator state is u64 so the helper works for every word size;
-        // each word folds both halves of the state into it.
-        let mut s = seed | 1;
-        (0..len)
-            .map(|i| {
-                s = s
-                    .wrapping_mul(6364136223846793005)
-                    .wrapping_add(1442695040888963407);
-                let w = ((s >> 32) ^ s) as Word;
-                // Keep every word (in particular the top one) nonzero.
-                if i + 1 == len && w == 0 {
-                    1
-                } else {
-                    w
-                }
-            })
-            .collect()
-    }
+    /// Fixed (denominator, numerator) step pairs: complementary patterns, so
+    /// the two operands of a case never align.
+    const CASES: [(u64, u64); 3] = [
+        (0x0123_4567_89ab_cdef, 0x3333_3333_3333_3335),
+        (0xfedc_ba98_7654_3211, 0x5eed_5eed_5eed_5eed),
+        (0x1357_9bdf_2468_ace1, 0x0f0f_0f0f_0f0f_0f0f),
+    ];
 
     /// Check the full public contract with an exact integer comparison:
     /// `|q·denom·2^down − numer·2^up| <= E·denom·2^down` is precisely the
@@ -334,8 +317,8 @@ mod tests {
     /// A numerator pinned to a band edge: [`in_band_numer`] shifted so that
     /// its bit-length offset from the denominator is exactly
     /// `n·WORD_BITS − sigma`, i.e. `sigma ∈ [-2, 2]` covers the whole band.
-    fn band_edge_numer(seed: u64, denom: &[Word], n: usize, sigma: isize) -> Vec<Word> {
-        let base = UBig::from_words(&in_band_numer(seed, denom, n));
+    fn band_edge_numer(step: u64, denom: &[Word], n: usize, sigma: isize) -> Vec<Word> {
+        let base = UBig::from_words(&in_band_numer(step, denom, n));
         let numer = if sigma >= 0 {
             &base >> sigma as usize
         } else {
@@ -345,13 +328,13 @@ mod tests {
     }
 
     /// A numerator whose bit length exceeds the denominator's by exactly
-    /// `n·WORD_BITS`: `n` random words on top of the divisor words, with the
+    /// `n·WORD_BITS`: `n` pattern words on top of the divisor words, with the
     /// top word adjusted to carry the same bit length as the divisor's top
     /// word (so the band holds for any word size).
-    fn in_band_numer(seed: u64, denom: &[Word], n: usize) -> Vec<Word> {
+    fn in_band_numer(step: u64, denom: &[Word], n: usize) -> Vec<Word> {
         let d_top = *denom.last().unwrap();
         let d_bits = WORD_BITS - d_top.leading_zeros();
-        let mut numer = lcg_words(seed, n);
+        let mut numer = pattern_words(n, step);
         numer[n - 1] = (d_top >> 1) | (1 << (d_bits - 1));
         numer.extend_from_slice(denom);
         numer
@@ -362,10 +345,10 @@ mod tests {
         // The base-case band (n <= threshold) and the first recursion levels,
         // with the numerator pinned to every band edge (sigma ∈ [-2, 2]).
         for &n in &[2, 3, 5, 8, 12, 15, 16, 17, 20, 24, 30, 45, 60, 90, 130, 200] {
-            for seed in 1..=3u64 {
-                let denom = lcg_words(seed * 101 + 7, (n / 2 + 2).min(n));
+            for &(dstep, nstep) in &CASES {
+                let denom = pattern_words((n / 2 + 2).min(n), dstep);
                 for sigma in -2..=2isize {
-                    check_case(&band_edge_numer(seed * 61 + 3, &denom, n, sigma), &denom, n);
+                    check_case(&band_edge_numer(nstep, &denom, n, sigma), &denom, n);
                 }
             }
         }
@@ -374,10 +357,11 @@ mod tests {
     #[test]
     fn test_div_high_full_width_denominators() {
         // Denominators with a full top word exercise the normalization shifts
-        // in the kernel (and the `s_np < wn·WORD_BITS` copy path — reached on
-        // the negative band edges, where the numerator grows past 2n words).
+        // in the kernel (and the `numer_shift < wn·WORD_BITS` copy path —
+        // reached on the negative band edges, where the numerator grows past
+        // 2n words).
         for &n in &[6, 16, 24, 40, 70] {
-            let mut denom = lcg_words(0x5eed + n as u64, n / 2 + 2);
+            let mut denom = pattern_words(n / 2 + 2, 0x5eed + n as u64);
             let last = denom.len() - 1;
             denom[last] |= 1 << (WORD_BITS - 1);
             for sigma in -2..=2isize {
@@ -392,7 +376,7 @@ mod tests {
         // block sees the top of its dividend at least as large as the top of
         // the divisor.
         for &n in &[4, 15, 16, 24, 40, 70] {
-            let mut denom = lcg_words(0x5eed, n / 2 + 2);
+            let mut denom = pattern_words(n / 2 + 2, 0x5eed);
             let last = denom.len() - 1;
             denom[last] |= 1 << (WORD_BITS - 1);
 
@@ -442,11 +426,22 @@ mod tests {
     /// of it at most.
     #[test]
     fn test_div_high_empirical_error_headroom() {
+        // Eight complementary step pairs, all distinct from `CASES`.
+        const HEADROOM_STEPS: [(u64, u64); 8] = [
+            (0x0fed_cba9_8765_4321, 0x7777_7777_7777_7777),
+            (0x5eed_5eed_5eed_5eed, 0x1357_9bdf_2468_ace1),
+            (0x3333_3333_3333_3335, 0x0123_4567_89ab_cdef),
+            (0x0f0f_0f0f_0f0f_0f0f, 0xfedc_ba98_7654_3211),
+            (0x7777_7777_7777_7777, 0x0fed_cba9_8765_4321),
+            (0x1357_9bdf_2468_ace1, 0x5eed_5eed_5eed_5eed),
+            (0x0123_4567_89ab_cdef, 0x3333_3333_3333_3335),
+            (0x2468_ace0_2468_ace1, 0x9999_9999_9999_9999),
+        ];
         let mut worst = IBig::ZERO;
         for &n in &[16, 24, 33, 48, 64, 96] {
-            for seed in 1..=8u64 {
-                let denom = lcg_words(seed * 7919, n / 2 + 2);
-                let (diff, bound) = check_case(&in_band_numer(seed * 104729, &denom, n), &denom, n);
+            for &(dstep, nstep) in &HEADROOM_STEPS {
+                let denom = pattern_words(n / 2 + 2, dstep);
+                let (diff, bound) = check_case(&in_band_numer(nstep, &denom, n), &denom, n);
                 // fixed-point ratio in thousandths, for a readable maximum
                 let ratio = (&diff * 1000) / &bound;
                 if ratio > worst {
