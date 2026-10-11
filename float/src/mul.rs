@@ -34,11 +34,6 @@ use core::ops::{Mul, MulAssign};
 // rounding midpoint.
 // ---------------------------------------------------------------------------
 
-/// Number of words up to and including the last nonzero word.
-fn trim_word_len(words: &[Word]) -> usize {
-    words.iter().rposition(|&w| w != 0).map_or(0, |i| i + 1)
-}
-
 /// Window size (in words) for a short product that must certify rounding to
 /// `precision` base-`B` digits when the product window undershoots the truth by
 /// up to `err_ulps` units of its own least significant word.
@@ -330,8 +325,10 @@ impl<R: Round> Context<R> {
         }
         let (ls, lw) = lhs.significand.as_sign_words();
         let (rs, rw) = rhs.significand.as_sign_words();
-        let wa = trim_word_len(lw);
-        let wb = trim_word_len(rw);
+        // The word slices of an IBig are normalized (no trailing zero words,
+        // by dashu-int's representation invariant), so the word counts are the
+        // slice lengths themselves.
+        let (wa, wb) = (lw.len(), rw.len());
 
         // Size the window, then once more with the actual error bound
         // (n + 2 ulps) that this window implies. The window may extend up to
@@ -363,8 +360,8 @@ impl<R: Round> Context<R> {
             exponent
         };
 
-        let a = UBig::from_words(&lw[..wa]);
-        let b = UBig::from_words(&rw[..wb]);
+        let a = UBig::from_words(lw);
+        let b = UBig::from_words(rw);
         let (window, sticky) = high::mul_high(&a, &b, n);
 
         let sig = if pad_bits == 0 {
@@ -388,7 +385,8 @@ impl<R: Round> Context<R> {
             return None;
         }
         let (_, fw) = f.significand.as_sign_words();
-        let wa = trim_word_len(fw);
+        // The word slice of an IBig is normalized (see `mul_short`).
+        let wa = fw.len();
 
         let n_want = short_window_words::<B>(self.precision(), 1 << 12);
         let n_want = short_window_words::<B>(self.precision(), n_want + 2);
@@ -412,7 +410,7 @@ impl<R: Round> Context<R> {
             exponent
         };
 
-        let a = UBig::from_words(&fw[..wa]);
+        let a = UBig::from_words(fw);
         let (window, sticky) = high::sqr_high(&a, n);
 
         let sig = if pad_bits == 0 {
@@ -432,7 +430,8 @@ impl<R: Round> Context<R> {
             return None; // the exact path keeps the -0 sign handling
         }
         let (fs, fw) = f.significand.as_sign_words();
-        let wa = trim_word_len(fw);
+        // The word slice of an IBig is normalized (see `mul_short`).
+        let wa = fw.len();
 
         // The composed bound is (n1 + 2) + (n2 + 2) + 2 ulps of the final
         // window; size both windows against it.
@@ -443,13 +442,13 @@ impl<R: Round> Context<R> {
             return None;
         }
 
-        let a = UBig::from_words(&fw[..wa]);
+        let a = UBig::from_words(fw);
         let (square, sticky1) = high::sqr_high(&a, n);
         // The square's window may carry a leading zero word; the second
         // window clamps to it (plus the two-word extension). The extension
         // rescales the square's shortfall onto a finer final window, which
         // the composed bound below accounts for explicitly.
-        let square_words = trim_word_len(square.as_words());
+        let square_words = square.as_words().len();
         let n2 = clamp_window(n, square_words.min(wa))?;
         let (window, sticky2) = high::mul_high(&square, &a, n2);
 

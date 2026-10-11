@@ -111,28 +111,43 @@ mod tests {
     use alloc::vec;
     use alloc::vec::Vec;
 
-    fn lcg_words(seed: u64, words: usize) -> UBig {
-        let mut limbs: Vec<Word> = Vec::with_capacity(words);
-        let mut s = seed.wrapping_add(words as u64);
-        for _ in 0..words {
-            s = s
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(1442695040888963407);
-            limbs.push(s as Word);
-        }
-        if let Some(top) = limbs.last_mut() {
-            *top |= 1; // ensure full width (no leading-zero stripping)
-        }
+    /// Fixed dense operand pattern (no generator state): the i-th word is
+    /// `(i+1)·step + i`, wrapping — distinct, carry-rich words, identical on
+    /// every run (and sharing their low bits across word sizes, since the
+    /// arithmetic is modular). The top word is kept nonzero so the operand
+    /// really spans `words` words.
+    fn pattern_words(step: u64, words: usize) -> UBig {
+        let limbs: Vec<Word> = (0..words)
+            .map(|i| {
+                let w = (i as u64 + 1).wrapping_mul(step).wrapping_add(i as u64) as Word;
+                if i + 1 == words && w == 0 {
+                    1
+                } else {
+                    w
+                }
+            })
+            .collect();
         UBig::from_words(&limbs)
     }
+
+    /// Fixed step constants (odd, mixed bit runs) — one operand flavor per
+    /// former random seed.
+    const STEPS: [u64; 6] = [
+        0x0123_4567_89ab_cdef,
+        0xfedc_ba98_7654_3211,
+        0x1357_9bdf_2468_ace1,
+        0x0f0f_0f0f_0f0f_0f0f,
+        0x3333_3333_3333_3335,
+        0x5eed_5eed_5eed_5eed,
+    ];
 
     #[test]
     fn sqr_matches_mul_simple_range() {
         // sizes 2..=128 span simple directly (<=30) and as the basecase of karatsuba/toom
         for words in 2..=128 {
-            for seed in 0..6u64 {
-                let a = lcg_words(seed, words);
-                assert_eq!(a.sqr(), &a * &a, "sqr != mul at words={words} seed={seed}");
+            for &step in &STEPS {
+                let a = pattern_words(step, words);
+                assert_eq!(a.sqr(), &a * &a, "sqr != mul at words={words} step={step:#x}");
             }
         }
     }
