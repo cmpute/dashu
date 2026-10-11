@@ -513,7 +513,7 @@ impl<R: Round> Context<R> {
         // precision, decide the rounding from a certified high window of the
         // product instead of the full exact product.
         if let Some(rounded) = self.mul_short(lhs, rhs) {
-            return self.finish_rounded(rounded);
+            return FBig::finish_rounded(self, rounded);
         }
 
         // Exact product of the full operands, then round. (An earlier version shrank each operand
@@ -537,7 +537,7 @@ impl<R: Round> Context<R> {
         // The rounded form can still leave the finite exponent range when the
         // product's significand is much wider than the precision (the split
         // exponent `exponent + shift` saturates); report that as overflow too.
-        self.finish_rounded(self.repr_round(repr))
+        FBig::finish_rounded(self, self.repr_round(repr))
     }
 
     /// Calculate the square of the floating point number under this context.
@@ -563,7 +563,7 @@ impl<R: Round> Context<R> {
 
         // Fast path: certified high window of the square (see `Context::mul`).
         if let Some(rounded) = self.sqr_short(f) {
-            return self.finish_rounded(rounded);
+            return FBig::finish_rounded(self, rounded);
         }
 
         // Exact square of the full significand, then round. (An earlier version shrank the operand
@@ -580,7 +580,7 @@ impl<R: Round> Context<R> {
         })?;
         let repr = Repr::new(f.significand.sqr().into(), exponent);
         let repr = repr.check_finite_exponent()?;
-        self.finish_rounded(self.repr_round(repr))
+        FBig::finish_rounded(self, self.repr_round(repr))
     }
 
     /// Calculate the cubic of the floating point number under this context.
@@ -607,7 +607,7 @@ impl<R: Round> Context<R> {
         // Fast path: two chained certified high products (square, then
         // multiply) with a composed error bound (see `Context::mul`).
         if let Some(rounded) = self.cubic_short(f) {
-            return self.finish_rounded(rounded);
+            return FBig::finish_rounded(self, rounded);
         }
 
         // Exact cube of the full significand, then round. (An earlier version shrank the operand
@@ -633,7 +633,7 @@ impl<R: Round> Context<R> {
             let repr = Repr::new(f.significand.cubic(), exponent);
             repr.check_finite_exponent()?
         };
-        self.finish_rounded(self.repr_round(repr))
+        FBig::finish_rounded(self, self.repr_round(repr))
     }
 
     /// Fused multiply–add under this context: `c + sign·(a·b)`, rounded once.
@@ -716,7 +716,7 @@ impl<R: Round> Context<R> {
                 }
             }
         };
-        self.finish_rounded(sum)
+        FBig::finish_rounded(self, sum)
     }
 }
 

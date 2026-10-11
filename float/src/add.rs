@@ -669,7 +669,7 @@ impl<R: Round> Context<R> {
         if lhs.is_infinite() || rhs.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        self.finish_rounded(self.addsub_rr(lhs, rhs, Positive))
+        FBig::finish_rounded(self, self.addsub_rr(lhs, rhs, Positive))
     }
 
     /// Subtract two floating point numbers under this context.
@@ -697,7 +697,7 @@ impl<R: Round> Context<R> {
         if lhs.is_infinite() || rhs.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        self.finish_rounded(self.addsub_rr(lhs, rhs, Negative))
+        FBig::finish_rounded(self, self.addsub_rr(lhs, rhs, Negative))
     }
 }
 

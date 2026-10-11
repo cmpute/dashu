@@ -214,13 +214,6 @@ pub(super) fn mul_high_into(t: &mut [Word], ap: &[Word], bp: &[Word], memory: &m
     sticky
 }
 
-/// The words of a small (inline) value, with its normalized length: the high
-/// word is live only when the value spills past a single word.
-fn small_words(dword: DoubleWord) -> ([Word; 2], usize) {
-    let (lo, hi) = split_dword(dword);
-    ([lo, hi], (dword != 0) as usize + (hi != 0) as usize)
-}
-
 /// Small×small fast path: both operands fit in a double word, so the exact
 /// product fits in four words — the window and the sticky flag are read off it
 /// exactly (the certified error is zero). The caller has already handled the
@@ -359,16 +352,20 @@ pub fn mul_high(a: &UBig, b: &UBig, out_words: usize) -> (UBig, bool) {
 
     // Dispatch on the representations like the other kernels: small (inline)
     // operands get an exact double-word product, mixed and large operands run
-    // on the word slices.
+    // on the word slices. Zero operands never reach the match (handled above),
+    // so a small operand here spans one word, or two when its high word is
+    // nonzero.
     match (a.repr(), b.repr()) {
         (RefSmall(da), RefSmall(db)) => mul_high_dword(da, db, out_words),
         (RefSmall(da), RefLarge(bw)) => {
-            let (aw, wa) = small_words(da);
-            mul_high_words(&aw[..wa], bw, out_words)
+            let (lo, hi) = split_dword(da);
+            let aw = [lo, hi];
+            mul_high_words(&aw[..1 + (hi != 0) as usize], bw, out_words)
         }
         (RefLarge(aw), RefSmall(db)) => {
-            let (bw, wb) = small_words(db);
-            mul_high_words(aw, &bw[..wb], out_words)
+            let (lo, hi) = split_dword(db);
+            let bw = [lo, hi];
+            mul_high_words(aw, &bw[..1 + (hi != 0) as usize], out_words)
         }
         (RefLarge(aw), RefLarge(bw)) => mul_high_words(aw, bw, out_words),
     }

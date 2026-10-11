@@ -1,6 +1,5 @@
 use crate::{
-    error::{assert_finite, FpError, FpResult},
-    fbig::FBig,
+    error::{assert_finite, FpError},
     round::{Round, Rounded},
     utils::{ceil_usize, digit_len, split_digits, split_digits_ref},
 };
@@ -777,43 +776,6 @@ impl<R: Round> Context<R> {
             Inexact(result, adjust)
         } else {
             Exact(repr.clone())
-        }
-    }
-}
-
-impl<R: Round> Context<R> {
-    /// Finish a rounding result into an operation result: attach the context,
-    /// mapping an exponent-range saturation ([`Self::repr_round`]) to
-    /// [`FpError::Overflow`] the same way the pre-rounding saturation is
-    /// mapped.
-    ///
-    /// Both the canonical infinity (produced by [`rounded_to_repr`]) and a
-    /// non-canonical result carrying a nonzero significand at one of the
-    /// sentinel exponents (the fast paths' rounding helpers and the add/sub
-    /// alignment can leave one behind: `normalize` folds trailing digits
-    /// with a saturating exponent shift, and the alignment padding uses a
-    /// saturating shift down) are mapped exactly like
-    /// [`Repr::check_finite_exponent`] maps
-    /// the pre-rounding forms: `+inf`/`isize::MAX` to
-    /// [`FpError::Overflow`], `-inf`/`isize::MIN`
-    /// to [`FpError::Underflow`].
-    pub(crate) fn finish_rounded<const B: Word>(
-        &self,
-        rounded: Rounded<Repr<B>>,
-    ) -> FpResult<FBig<R, B>> {
-        let value = rounded.value_ref();
-        if !value.significand.is_zero() {
-            if value.exponent == isize::MAX {
-                Err(FpError::Overflow(value.sign()))
-            } else if value.exponent == isize::MIN {
-                Err(FpError::Underflow(value.sign()))
-            } else {
-                Ok(rounded.map(|v| FBig::new(v, *self)))
-            }
-        } else if value.is_infinite() {
-            Err(FpError::Overflow(value.sign()))
-        } else {
-            Ok(rounded.map(|v| FBig::new(v, *self)))
         }
     }
 }
