@@ -124,7 +124,8 @@ proptest! {
     #[ignore]
     fn ubig_div_exact_fuzz(
         a in fuzz::ubig_strategy(4),
-        b in fuzz::ubig_strategy(2).prop_filter("nonzero", |b| !b.is_zero()),
+        // The strategy's upper bound is exclusive; include divisors with 3+ words.
+        b in fuzz::ubig_strategy(5).prop_filter("nonzero", |b| !b.is_zero()),
     ) {
         let is_multiple = a.is_multiple_of(&b);
         let d = a.clone().div_exact(b.clone(), &());
