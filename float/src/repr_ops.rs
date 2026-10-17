@@ -203,8 +203,9 @@ impl<const B: Word> Mul<&Repr<B>> for &Repr<B> {
                 };
             }
         };
-        match Repr::new(significand, exponent).check_finite_exponent() {
-            Ok(r) => r,
+        let repr = Repr::new(significand, exponent);
+        match repr.check_finite_exponent() {
+            Ok(()) => repr,
             Err(FpError::Overflow(s)) => Repr::infinity_with_sign(s),
             Err(FpError::Underflow(s)) => Repr::zero_with_sign(s),
             Err(_) => unreachable!(),

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Change
+- Reuse the high-product result buffer and the exact squaring kernel, and share
+  deterministic word fixtures across the integer kernel tests.
+
 ### Fix
 - Fix the sticky flag of `high::mul_high` / `high::sqr_high` on the recursive path: the
   exact high block's boundary words and the cross windows' guard words land on the two

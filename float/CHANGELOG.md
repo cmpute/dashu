@@ -28,6 +28,9 @@
   finer final window than the plain `(n + 2) + (n2 + 2)` sum accounted for.
 
 ### Change
+- Share short-product scaling and rounding-result validation, reuse the common
+  signed-zero/overflow constructor in addition, and avoid cloning the retained
+  significand during short-product rounding.
 - `Context::mul`, `Context::sqr` and `Context::cubic` now decide the rounding from a
   certified high window of the product (the new `dashu-int::high` kernels) when the
   operands carry far more digits than the target precision, instead of computing the

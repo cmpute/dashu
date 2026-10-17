@@ -512,9 +512,9 @@ impl<R: Round> Context<R> {
         // Exact division with the quotient already within the precision: nothing to scale and
         // nothing to round (the `lo` sticky part is empty exactly when k == 0).
         if r.is_zero() && k == 0 && qdigits <= self.precision {
-            return Ok(Approximation::Exact(
-                make_div_repr(sign_negative, q, e).check_finite_exponent()?,
-            ));
+            let repr = make_div_repr(sign_negative, q, e);
+            repr.check_finite_exponent()?;
+            return Ok(Approximation::Exact(repr));
         }
 
         if q.is_zero() {
@@ -623,12 +623,7 @@ impl<R: Round> Context<R> {
             let adjust = R::round_ratio(&q, num_f, &den_f);
             Approximation::Inexact(make_div_repr(sign_negative, q + adjust, e), adjust)
         };
-        let repr = match repr {
-            Approximation::Exact(v) => Approximation::Exact(v.check_finite_exponent()?),
-            Approximation::Inexact(v, flag) => {
-                Approximation::Inexact(v.check_finite_exponent()?, flag)
-            }
-        };
+        repr.value_ref().check_finite_exponent()?;
         Ok(repr)
     }
 
@@ -714,8 +709,9 @@ impl<R: Round> Context<R> {
                 Repr::zero()
             })
         } else {
-            match Repr::new(significand, exponent).check_finite_exponent() {
-                Ok(repr) => self.repr_round(repr),
+            let repr = Repr::new(significand, exponent);
+            match repr.check_finite_exponent() {
+                Ok(()) => self.repr_round(repr),
                 Err(e) => match e {
                     FpError::Overflow(sign) => {
                         Approximation::Inexact(Repr::infinity_with_sign(sign), Rounding::NoOp)

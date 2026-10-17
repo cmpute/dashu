@@ -2,7 +2,7 @@ use crate::{
     error::{assert_finite_operands, FpError, FpResult},
     fbig::FBig,
     helper_macros,
-    repr::{Context, Repr, Word},
+    repr::{rounded_to_repr, Context, Repr, Word},
     round::{Round, Rounded},
     utils::{digit_len, shl_digits, shl_digits_in_place, split_digits, split_digits_ref},
 };
@@ -163,22 +163,7 @@ impl<R: Round> Context<R> {
         // folding across the sentinel in `normalize` — is canonicalized to the infinity
         // (see `rounded_to_repr` for the error-mapping story).
         let neg_cancel = is_sub && R::IS_ROUND_TOWARD_NEGATIVE;
-        let make_repr = |sig: IBig, exp: isize| -> Repr<B> {
-            if sig.is_zero() {
-                if neg_cancel {
-                    Repr::neg_zero()
-                } else {
-                    Repr::zero()
-                }
-            } else {
-                let repr = Repr::new(sig, exp);
-                if repr.exponent == isize::MAX {
-                    Repr::infinity_with_sign(repr.sign())
-                } else {
-                    repr
-                }
-            }
-        };
+        let make_repr = |sig, exp| rounded_to_repr(sig, exp, neg_cancel);
 
         if !self.is_limited() {
             // short cut for unlimited precision
@@ -669,7 +654,7 @@ impl<R: Round> Context<R> {
         if lhs.is_infinite() || rhs.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        FBig::finish_rounded(self, self.addsub_rr(lhs, rhs, Positive))
+        self.finish_rounded(self.addsub_rr(lhs, rhs, Positive))
     }
 
     /// Subtract two floating point numbers under this context.
@@ -697,7 +682,7 @@ impl<R: Round> Context<R> {
         if lhs.is_infinite() || rhs.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        FBig::finish_rounded(self, self.addsub_rr(lhs, rhs, Negative))
+        self.finish_rounded(self.addsub_rr(lhs, rhs, Negative))
     }
 }
 

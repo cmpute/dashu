@@ -132,6 +132,7 @@ fn round_high_product<R: Round, const B: Word>(
     let exponent = exponent.checked_add(shift as isize)?;
 
     let (hi, lo) = split_digits_ref::<B>(&sig, shift);
+    let hi_signed = if sign == Sign::Negative { -hi } else { hi };
     let adjust = if !lo.is_zero() || sticky {
         // The radix power at the split, B^shift.
         let base_pow = shl_digits::<B>(&IBig::ONE, shift);
@@ -150,18 +151,12 @@ fn round_high_product<R: Round, const B: Word>(
             if (&tail << 1) <= base_pow {
                 // Below the midpoint even at the worst shortfall.
                 Ordering::Less
-            } else if twice > base_pow {
+            } else if twice >= base_pow {
                 if tail >= base_pow {
                     // The shortfall may carry into the kept digits.
                     return None;
                 }
-                Ordering::Greater
-            } else if twice == base_pow {
-                if tail >= base_pow {
-                    return None;
-                }
-                // Exactly on the midpoint: the nonzero shortfall breaks the
-                // tie upwards.
+                // A nonzero shortfall also breaks an exact midpoint tie upwards.
                 Ordering::Greater
             } else {
                 // Within the error band of the midpoint.
@@ -169,11 +164,6 @@ fn round_high_product<R: Round, const B: Word>(
             }
         };
 
-        let hi_signed = if sign == Sign::Negative {
-            -hi.clone()
-        } else {
-            hi.clone()
-        };
         R::round_low_part(&hi_signed, sign, || ordering)
     } else {
         // Zero shortfall and zero discarded digits: the value is exact at this
@@ -181,7 +171,6 @@ fn round_high_product<R: Round, const B: Word>(
         Rounding::NoOp
     };
 
-    let hi_signed = if sign == Sign::Negative { -hi } else { hi };
     let sig = hi_signed + adjust;
     Some(dashu_base::Approximation::Inexact(
         rounded_to_repr(sig, exponent, sign == Sign::Negative),
@@ -309,14 +298,34 @@ impl<R: Round, const B: Word> FBig<R, B> {
 }
 
 impl<R: Round> Context<R> {
+    /// Scale a high window and its error bound into base-B digits, then round.
+    /// Power-of-two bases absorb whole digits into the exponent; any remainder
+    /// bits stay on the significand. Other bases keep all dropped bits as padding.
+    fn round_short_product<const B: Word>(
+        &self,
+        window: UBig,
+        sign: Sign,
+        exponent: isize,
+        dropped: usize,
+        sticky: bool,
+        err_ulps: IBig,
+    ) -> Option<Rounded<Repr<B>>> {
+        let fold_bits = Word::BITS as usize * dropped;
+        let (exponent, pad_bits) = if B.is_power_of_two() {
+            let lb = B.trailing_zeros() as usize;
+            (exponent.checked_add((fold_bits / lb) as isize)?, fold_bits % lb)
+        } else {
+            (exponent, fold_bits)
+        };
+        let sig = IBig::from(window << pad_bits);
+        let err_abs = err_ulps << pad_bits;
+        round_high_product::<R, B>(self, sig, sign, exponent, sticky, &err_abs)
+    }
+
     /// Certified high-product fast path for multiplication. Returns `None` to
     /// decline (unlimited precision, tiny operands, or an undecided rounding);
     /// the caller then computes the exact product.
-    pub(crate) fn mul_short<const B: Word>(
-        &self,
-        lhs: &Repr<B>,
-        rhs: &Repr<B>,
-    ) -> Option<Rounded<Repr<B>>> {
+    fn mul_short<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Option<Rounded<Repr<B>>> {
         if self.precision() == 0 {
             return None; // unlimited precision: every digit is significant
         }
@@ -341,36 +350,13 @@ impl<R: Round> Context<R> {
         }
 
         let dropped = wa + wb - n;
-        // Power-of-two bases fold the dropped words into the exponent; any
-        // remainder bits that do not make up whole base digits stay as (zero)
-        // low words of the significand, with the error bound scaled
-        // accordingly — same as for bases that are not powers of two, which
-        // always keep the full dropped words as padding.
-        let lb = B.trailing_zeros() as usize;
-        let fold_bits = Word::BITS as usize * dropped;
-        let pad_bits = if B.is_power_of_two() {
-            fold_bits % lb
-        } else {
-            fold_bits
-        };
         let exponent = lhs.exponent.checked_add(rhs.exponent)?;
-        let exponent = if B.is_power_of_two() {
-            exponent.checked_add((fold_bits / lb) as isize)?
-        } else {
-            exponent
-        };
 
         let a = UBig::from_words(lw);
         let b = UBig::from_words(rw);
         let (window, sticky) = high::mul_high(&a, &b, n);
 
-        let sig = if pad_bits == 0 {
-            IBig::from(window)
-        } else {
-            IBig::from(window << pad_bits)
-        };
-        let err_abs = IBig::from(n as u64 + 2) << pad_bits;
-        round_high_product::<R, B>(self, sig, ls * rs, exponent, sticky, &err_abs)
+        self.round_short_product(window, ls * rs, exponent, dropped, sticky, IBig::from(n + 2))
     }
 
     /// Certified high-product fast path for squaring. See [`Self::mul_short`].
@@ -380,7 +366,7 @@ impl<R: Round> Context<R> {
     /// product, so an extended windowed base case cannot beat them. (Squaring
     /// still benefits when the operand carries many more digits than the
     /// target precision.)
-    pub(crate) fn sqr_short<const B: Word>(&self, f: &Repr<B>) -> Option<Rounded<Repr<B>>> {
+    fn sqr_short<const B: Word>(&self, f: &Repr<B>) -> Option<Rounded<Repr<B>>> {
         if self.precision() == 0 || f.significand.is_zero() {
             return None;
         }
@@ -396,36 +382,18 @@ impl<R: Round> Context<R> {
         }
 
         let dropped = 2 * wa - n;
-        let lb = B.trailing_zeros() as usize;
-        let fold_bits = Word::BITS as usize * dropped;
-        let pad_bits = if B.is_power_of_two() {
-            fold_bits % lb
-        } else {
-            fold_bits
-        };
         let exponent = f.exponent.checked_mul(2)?;
-        let exponent = if B.is_power_of_two() {
-            exponent.checked_add((fold_bits / lb) as isize)?
-        } else {
-            exponent
-        };
 
         let a = UBig::from_words(fw);
         let (window, sticky) = high::sqr_high(&a, n);
 
-        let sig = if pad_bits == 0 {
-            IBig::from(window)
-        } else {
-            IBig::from(window << pad_bits)
-        };
-        let err_abs = IBig::from(n as u64 + 2) << pad_bits;
-        round_high_product::<R, B>(self, sig, Sign::Positive, exponent, sticky, &err_abs)
+        self.round_short_product(window, Positive, exponent, dropped, sticky, IBig::from(n + 2))
     }
 
     /// Certified high-product fast path for the cubic power: a short square
     /// followed by a short multiply, with the composed error bound. See
     /// [`Self::mul_short`].
-    pub(crate) fn cubic_short<const B: Word>(&self, f: &Repr<B>) -> Option<Rounded<Repr<B>>> {
+    fn cubic_short<const B: Word>(&self, f: &Repr<B>) -> Option<Rounded<Repr<B>>> {
         if self.precision() == 0 || f.significand.is_zero() {
             return None; // the exact path keeps the -0 sign handling
         }
@@ -453,33 +421,14 @@ impl<R: Round> Context<R> {
         let (window, sticky2) = high::mul_high(&square, &a, n2);
 
         let dropped = (2 * wa - n) + (square_words + wa - n2);
-        let lb = B.trailing_zeros() as usize;
-        let fold_bits = Word::BITS as usize * dropped;
-        let pad_bits = if B.is_power_of_two() {
-            fold_bits % lb
-        } else {
-            fold_bits
-        };
         let exponent = f.exponent.checked_mul(3)?;
-        let exponent = if B.is_power_of_two() {
-            exponent.checked_add((fold_bits / lb) as isize)?
-        } else {
-            exponent
-        };
-
-        let sig = if pad_bits == 0 {
-            IBig::from(window)
-        } else {
-            IBig::from(window << pad_bits)
-        };
         // Composed bound: (n + 2) ulps from the square, amplified by
         // `a / 2^(square_words + wa - n2)·W < 2^((n2 - square_words)·W)` when
         // the second window extends past the square's word length, plus
         // (n2 + 2) ulps from the short product.
         let square_err_shift = n2.saturating_sub(square_words) * Word::BITS as usize;
-        let err_abs = ((IBig::from(n as u64 + 2) << square_err_shift) + IBig::from(n2 as u64 + 2))
-            << pad_bits;
-        round_high_product::<R, B>(self, sig, fs, exponent, sticky1 || sticky2, &err_abs)
+        let err_ulps = (IBig::from(n + 2) << square_err_shift) + IBig::from(n2 + 2);
+        self.round_short_product(window, fs, exponent, dropped, sticky1 || sticky2, err_ulps)
     }
 }
 
@@ -513,7 +462,7 @@ impl<R: Round> Context<R> {
         // precision, decide the rounding from a certified high window of the
         // product instead of the full exact product.
         if let Some(rounded) = self.mul_short(lhs, rhs) {
-            return FBig::finish_rounded(self, rounded);
+            return self.finish_rounded(rounded);
         }
 
         // Exact product of the full operands, then round. (An earlier version shrank each operand
@@ -537,7 +486,7 @@ impl<R: Round> Context<R> {
         // The rounded form can still leave the finite exponent range when the
         // product's significand is much wider than the precision (the split
         // exponent `exponent + shift` saturates); report that as overflow too.
-        FBig::finish_rounded(self, self.repr_round(repr))
+        self.finish_rounded(self.repr_round(repr))
     }
 
     /// Calculate the square of the floating point number under this context.
@@ -563,7 +512,7 @@ impl<R: Round> Context<R> {
 
         // Fast path: certified high window of the square (see `Context::mul`).
         if let Some(rounded) = self.sqr_short(f) {
-            return FBig::finish_rounded(self, rounded);
+            return self.finish_rounded(rounded);
         }
 
         // Exact square of the full significand, then round. (An earlier version shrank the operand
@@ -579,8 +528,8 @@ impl<R: Round> Context<R> {
             }
         })?;
         let repr = Repr::new(f.significand.sqr().into(), exponent);
-        let repr = repr.check_finite_exponent()?;
-        FBig::finish_rounded(self, self.repr_round(repr))
+        repr.check_finite_exponent()?;
+        self.finish_rounded(self.repr_round(repr))
     }
 
     /// Calculate the cubic of the floating point number under this context.
@@ -607,7 +556,7 @@ impl<R: Round> Context<R> {
         // Fast path: two chained certified high products (square, then
         // multiply) with a composed error bound (see `Context::mul`).
         if let Some(rounded) = self.cubic_short(f) {
-            return FBig::finish_rounded(self, rounded);
+            return self.finish_rounded(rounded);
         }
 
         // Exact cube of the full significand, then round. (An earlier version shrank the operand
@@ -631,9 +580,10 @@ impl<R: Round> Context<R> {
                 }
             })?;
             let repr = Repr::new(f.significand.cubic(), exponent);
-            repr.check_finite_exponent()?
+            repr.check_finite_exponent()?;
+            repr
         };
-        FBig::finish_rounded(self, self.repr_round(repr))
+        self.finish_rounded(self.repr_round(repr))
     }
 
     /// Fused multiply–add under this context: `c + sign·(a·b)`, rounded once.
@@ -716,7 +666,7 @@ impl<R: Round> Context<R> {
                 }
             }
         };
-        FBig::finish_rounded(self, sum)
+        self.finish_rounded(sum)
     }
 }
 

@@ -9,7 +9,10 @@ use crate::{
     helper_macros::debug_assert_zero,
     memory::{self, Memory, MemoryAllocation},
     primitive::locate_top_word_plus_one,
-    repr::TypedReprRef::{RefLarge, RefSmall},
+    repr::{
+        Repr,
+        TypedReprRef::{RefLarge, RefSmall},
+    },
     sqr,
     ubig::UBig,
 };
@@ -44,7 +47,7 @@ mod threshold {
 }
 
 /// Temporary memory required by [`sqr_high`] for a window of `n` words.
-pub(crate) fn memory_requirement_up_to(n: usize) -> Layout {
+fn memory_requirement_up_to(n: usize) -> Layout {
     // Same layout as the multiplication kernel, except the exact high block is
     // squared (sqr scratch) and the two cross products collapse into one
     // doubled cross (multiplication scratch at the smaller size).
@@ -69,7 +72,7 @@ pub(crate) fn memory_requirement_up_to(n: usize) -> Layout {
 /// holding the product columns `n-2 ..= 2n`). Returns whether any contribution
 /// below the window (columns `< n`) is nonzero. See [`super::mul`] for the
 /// shared layout and error story.
-pub(super) fn sqr_high_into(t: &mut [Word], ap: &[Word], memory: &mut Memory) -> bool {
+fn sqr_high_into(t: &mut [Word], ap: &[Word], memory: &mut Memory) -> bool {
     let n = ap.len();
     debug_assert!(t.len() == n + 3);
 
@@ -152,7 +155,7 @@ pub fn sqr_high(a: &UBig, out_words: usize) -> (UBig, bool) {
         return (UBig::ZERO, false);
     }
     if out_words >= 2 * wa {
-        return (a * a, false);
+        return (a.sqr(), false);
     }
     if out_words == 0 {
         return (UBig::ZERO, true);
@@ -200,37 +203,16 @@ fn sqr_high_words(aw: &[Word], out_words: usize) -> (UBig, bool) {
         super::mul::mul_high_basecase(&mut buffer, ap, ap, n)
     };
 
-    // The window may carry zero high words when the square is short; UBig
-    // words are little-endian, so trim from the top.
-    let hi = &buffer[2..n + 2];
-    let hi_len = locate_top_word_plus_one(hi);
-    (UBig::from_words(&hi[..hi_len]), sticky || sticky_core)
+    buffer.truncate(n + 2);
+    buffer.erase_front(2);
+    (UBig(Repr::from_buffer(buffer)), sticky || sticky_core)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{memory::MemoryAllocation, UBig};
+    use crate::{memory::MemoryAllocation, test_utils::pattern_words, UBig};
     use alloc::vec;
-    use alloc::vec::Vec;
-
-    /// Fixed dense operand pattern (no generator state): the i-th word is
-    /// `(i+1)·step + i`, wrapping — distinct, carry-rich words, identical on
-    /// every run (and sharing their low bits across word sizes, since the
-    /// arithmetic is modular). The top word is kept nonzero so the operand
-    /// really spans `len` words.
-    fn pattern_words(len: usize, step: u64) -> Vec<Word> {
-        (0..len)
-            .map(|i| {
-                let w = (i as u64 + 1).wrapping_mul(step).wrapping_add(i as u64) as Word;
-                if i + 1 == len && w == 0 {
-                    1
-                } else {
-                    w
-                }
-            })
-            .collect()
-    }
 
     /// Two fixed dense steps with mixed bit runs (see [`pattern_words`]).
     const CASES: [u64; 2] = [0x0123_4567_89ab_cdef, 0x1357_9bdf_2468_ace1];

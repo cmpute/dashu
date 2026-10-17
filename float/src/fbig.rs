@@ -1,7 +1,7 @@
 use crate::{
-    error::{panic_unlimited_precision, FpError, FpResult},
+    error::panic_unlimited_precision,
     repr::{Context, Repr, Word},
-    round::{mode, Round, Rounded},
+    round::{mode, Round},
     utils::digit_len,
 };
 use dashu_base::Sign;
@@ -79,41 +79,6 @@ impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     pub(crate) const fn new(repr: Repr<B>, context: Context<R>) -> Self {
         Self { repr, context }
-    }
-
-    /// Finish a rounding result into an operation result: attach the context,
-    /// mapping an exponent-range saturation ([`Context::repr_round`]) to
-    /// [`FpError::Overflow`] the same way the pre-rounding saturation is
-    /// mapped.
-    ///
-    /// Both the canonical infinity (produced by
-    /// [`rounded_to_repr`](crate::repr::rounded_to_repr)) and a
-    /// non-canonical result carrying a nonzero significand at one of the
-    /// sentinel exponents (the fast paths' rounding helpers and the add/sub
-    /// alignment can leave one behind: `normalize` folds trailing digits
-    /// with a saturating exponent shift, and the alignment padding uses a
-    /// saturating shift down) are mapped exactly like
-    /// [`Repr::check_finite_exponent`] maps the pre-rounding forms:
-    /// `+inf`/`isize::MAX` to [`FpError::Overflow`], `-inf`/`isize::MIN` to
-    /// [`FpError::Underflow`].
-    pub(crate) fn finish_rounded(
-        context: &Context<R>,
-        rounded: Rounded<Repr<B>>,
-    ) -> FpResult<Self> {
-        let value = rounded.value_ref();
-        if !value.significand.is_zero() {
-            if value.exponent == isize::MAX {
-                Err(FpError::Overflow(value.sign()))
-            } else if value.exponent == isize::MIN {
-                Err(FpError::Underflow(value.sign()))
-            } else {
-                Ok(rounded.map(|v| Self::new(v, *context)))
-            }
-        } else if value.is_infinite() {
-            Err(FpError::Overflow(value.sign()))
-        } else {
-            Ok(rounded.map(|v| Self::new(v, *context)))
-        }
     }
 
     /// Create a [FBig] instance from [Repr] and [Context].

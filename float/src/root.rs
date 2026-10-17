@@ -120,7 +120,7 @@ impl<R: Round> Context<R> {
             return Err(FpError::OutOfDomain);
         }
         if n == 1 {
-            return FBig::finish_rounded(self, self.repr_round_ref(x));
+            return self.finish_rounded(self.repr_round_ref(x));
         }
         if x.significand.is_zero() {
             // UBig::ZERO.nth_root(n) erroneously returns ONE, so short-circuit here.
@@ -366,7 +366,7 @@ impl<R: ErrorBounds> Context<R> {
 
         if small.significand.is_zero() {
             // hypot(x, 0) = |x|; `large` is already a magnitude.
-            return FBig::finish_rounded(self, self.repr_round_ref(&large));
+            return self.finish_rounded(self.repr_round_ref(&large));
         }
 
         // The result is `sqrt(large² + small²)`, i.e. ∈ [large, large·√2]. It overflows only when

@@ -11,7 +11,10 @@ use crate::{
     memory::{self, Memory, MemoryAllocation},
     mul,
     primitive::{double_word, locate_top_word_plus_one, split_dword},
-    repr::TypedReprRef::{RefLarge, RefSmall},
+    repr::{
+        Repr,
+        TypedReprRef::{RefLarge, RefSmall},
+    },
     ubig::UBig,
     Sign::Positive,
 };
@@ -50,7 +53,7 @@ mod threshold {
 }
 
 /// Temporary memory required by [`mul_high`] for a window of `n` words.
-pub(crate) fn memory_requirement_up_to(n: usize) -> Layout {
+pub(super) fn memory_requirement_up_to(n: usize) -> Layout {
     // Recursion layout (l = n/4, k = n - l); the bump allocator reuses the same
     // region across the sequential scopes, so only the larger scope matters:
     //   exact high block:  2k words + mul::memory_requirement_up_to(2k, k)
@@ -297,11 +300,9 @@ fn mul_high_words(aw: &[Word], bw: &[Word], out_words: usize) -> (UBig, bool) {
         mul_high_basecase(&mut buffer, ap, bp, n)
     };
 
-    // The window may carry zero high words when the product is short; UBig
-    // words are little-endian, so trim from the top.
-    let hi = &buffer[2..n + 2];
-    let hi_len = locate_top_word_plus_one(hi);
-    (UBig::from_words(&hi[..hi_len]), sticky || sticky_core)
+    buffer.truncate(n + 2);
+    buffer.erase_front(2);
+    (UBig(Repr::from_buffer(buffer)), sticky || sticky_core)
 }
 
 /// Compute the high `out_words` words of the product `a * b`, with a certified
@@ -374,27 +375,8 @@ pub fn mul_high(a: &UBig, b: &UBig, out_words: usize) -> (UBig, bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{memory::MemoryAllocation, UBig};
+    use crate::{memory::MemoryAllocation, test_utils::pattern_words, UBig};
     use alloc::vec;
-    use alloc::vec::Vec;
-
-    /// Fixed dense operand pattern (no generator state): the i-th word is
-    /// `(i+1)·step + i`, wrapping — distinct, carry-rich words, identical on
-    /// every run (and sharing their low bits across word sizes, since the
-    /// arithmetic is modular). The top word is kept nonzero so the operand
-    /// really spans `len` words.
-    fn pattern_words(len: usize, step: u64) -> Vec<Word> {
-        (0..len)
-            .map(|i| {
-                let w = (i as u64 + 1).wrapping_mul(step).wrapping_add(i as u64) as Word;
-                if i + 1 == len && w == 0 {
-                    1
-                } else {
-                    w
-                }
-            })
-            .collect()
-    }
 
     /// Two fixed operand-shape pairs: dense steps with mixed bit runs, and
     /// complementary patterns so the two operands of a case never align.

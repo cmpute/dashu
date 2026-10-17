@@ -135,6 +135,8 @@ mod shift;
 mod shift_ops;
 mod sign;
 mod sqr;
+#[cfg(test)]
+mod test_utils;
 mod third_party;
 mod ubig;
 

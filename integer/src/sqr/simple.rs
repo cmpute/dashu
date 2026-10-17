@@ -107,28 +107,9 @@ pub fn square(b: &mut [Word], a: &[Word]) {
 #[cfg(test)]
 mod tests {
     use crate::arch::word::Word;
-    use crate::UBig;
+    use crate::{test_utils::pattern_words, UBig};
     use alloc::vec;
     use alloc::vec::Vec;
-
-    /// Fixed dense operand pattern (no generator state): the i-th word is
-    /// `(i+1)·step + i`, wrapping — distinct, carry-rich words, identical on
-    /// every run (and sharing their low bits across word sizes, since the
-    /// arithmetic is modular). The top word is kept nonzero so the operand
-    /// really spans `words` words.
-    fn pattern_words(step: u64, words: usize) -> UBig {
-        let limbs: Vec<Word> = (0..words)
-            .map(|i| {
-                let w = (i as u64 + 1).wrapping_mul(step).wrapping_add(i as u64) as Word;
-                if i + 1 == words && w == 0 {
-                    1
-                } else {
-                    w
-                }
-            })
-            .collect();
-        UBig::from_words(&limbs)
-    }
 
     /// Fixed step constants (odd, mixed bit runs) — one operand flavor per
     /// former random seed.
@@ -146,7 +127,7 @@ mod tests {
         // sizes 2..=128 span simple directly (<=30) and as the basecase of karatsuba/toom
         for words in 2..=128 {
             for &step in &STEPS {
-                let a = pattern_words(step, words);
+                let a = UBig::from_words(&pattern_words(words, step));
                 assert_eq!(a.sqr(), &a * &a, "sqr != mul at words={words} step={step:#x}");
             }
         }
