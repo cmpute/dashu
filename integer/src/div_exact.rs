@@ -143,7 +143,10 @@ pub(crate) mod repr {
                 (TypedRepr::Small(dword0), TypedRepr::Small(dword1)) => {
                     div_exact_dword(dword0, dword1)
                 }
-                (TypedRepr::Small(_), TypedRepr::Large(_)) => None, // small < large, cannot divide
+                (TypedRepr::Small(dword0), TypedRepr::Large(_)) => {
+                    // A smaller dividend is divisible only when it is zero.
+                    (dword0 == 0).then(Repr::zero)
+                }
                 (TypedRepr::Large(buffer0), TypedRepr::Small(dword1)) => {
                     if let Some(word) = shrink_dword(dword1) {
                         div_exact_large_word(buffer0, word)
@@ -167,7 +170,9 @@ pub(crate) mod repr {
                 (TypedReprRef::RefSmall(dword0), TypedRepr::Small(dword1)) => {
                     div_exact_dword(dword0, dword1)
                 }
-                (TypedReprRef::RefSmall(_), TypedRepr::Large(_)) => None,
+                (TypedReprRef::RefSmall(dword0), TypedRepr::Large(_)) => {
+                    (dword0 == 0).then(Repr::zero)
+                }
                 (TypedReprRef::RefLarge(words0), TypedRepr::Small(dword1)) => {
                     if let Some(word) = shrink_dword(dword1) {
                         div_exact_large_word(words0.into(), word)
@@ -191,7 +196,9 @@ pub(crate) mod repr {
                 (TypedRepr::Small(dword0), TypedReprRef::RefSmall(dword1)) => {
                     div_exact_dword(dword0, dword1)
                 }
-                (TypedRepr::Small(_), TypedReprRef::RefLarge(_)) => None,
+                (TypedRepr::Small(dword0), TypedReprRef::RefLarge(_)) => {
+                    (dword0 == 0).then(Repr::zero)
+                }
                 (TypedRepr::Large(buffer0), TypedReprRef::RefSmall(dword1)) => {
                     if let Some(word) = shrink_dword(dword1) {
                         div_exact_large_word(buffer0, word)
@@ -215,7 +222,9 @@ pub(crate) mod repr {
                 (TypedReprRef::RefSmall(dword0), TypedReprRef::RefSmall(dword1)) => {
                     div_exact_dword(dword0, dword1)
                 }
-                (TypedReprRef::RefSmall(_), TypedReprRef::RefLarge(_)) => None,
+                (TypedReprRef::RefSmall(dword0), TypedReprRef::RefLarge(_)) => {
+                    (dword0 == 0).then(Repr::zero)
+                }
                 (TypedReprRef::RefLarge(words0), TypedReprRef::RefSmall(dword1)) => {
                     if let Some(word) = shrink_dword(dword1) {
                         div_exact_large_word(words0.into(), word)
@@ -388,7 +397,7 @@ pub(crate) mod repr {
                 (TypedReprRef::RefSmall(dword0), TypedReprRef::RefSmall(dword1)) => {
                     dword1 != 0 && dword0 % dword1 == 0
                 }
-                (TypedReprRef::RefSmall(_), TypedReprRef::RefLarge(_)) => false,
+                (TypedReprRef::RefSmall(dword0), TypedReprRef::RefLarge(_)) => *dword0 == 0,
                 (TypedReprRef::RefLarge(words0), TypedReprRef::RefSmall(dword1)) => {
                     is_multiple_of_dword(words0, dword1)
                 }
@@ -860,6 +869,90 @@ mod tests {
         arch::word::Word,
         primitive::{extend_word, WORD_BITS_USIZE},
     };
+
+    /// Small dividends cover zero and both inline widths; divisors straddle the large boundary.
+    #[test]
+    fn test_div_exact_small_repr() {
+        for divisor in [
+            UBig::ZERO,
+            UBig::from(5u8),
+            UBig::from_words(&[0, 1]),
+            UBig::from_words(&[Word::MAX, Word::MAX]),
+            UBig::from_words(&[0, 0, 1]),
+            UBig::from_words(&[Word::MAX, Word::MAX, 1]),
+            UBig::from_words(&[2, 0, 1, 1]),
+        ] {
+            for dividend in [UBig::ZERO, UBig::ONE, UBig::from(DoubleWord::MAX)] {
+                let expected = if divisor.is_zero() {
+                    None
+                } else {
+                    let (q, r) = (&dividend).div_rem(&divisor);
+                    if r.is_zero() {
+                        Some(q)
+                    } else {
+                        None
+                    }
+                };
+                // Exercise all four representation-level ownership combinations directly.
+                assert_eq!(
+                    dividend
+                        .clone()
+                        .into_repr()
+                        .div_exact(divisor.clone().into_repr(), &())
+                        .map(UBig),
+                    expected
+                );
+                assert_eq!(
+                    dividend
+                        .repr()
+                        .div_exact(divisor.clone().into_repr(), &())
+                        .map(UBig),
+                    expected
+                );
+                assert_eq!(
+                    dividend
+                        .clone()
+                        .into_repr()
+                        .div_exact(divisor.repr(), &())
+                        .map(UBig),
+                    expected
+                );
+                assert_eq!(dividend.repr().div_exact(divisor.repr(), &()).map(UBig), expected);
+                assert_eq!(dividend.repr().is_multiple_of(divisor.repr()), expected.is_some());
+            }
+        }
+    }
+
+    #[test]
+    fn test_div_exact_zero_large_divisor() {
+        for divisor in [
+            UBig::from_words(&[0, 0, 1]),
+            UBig::from_words(&[Word::MAX, Word::MAX, 1]),
+            UBig::from_words(&[2, 0, 1, 1]),
+        ] {
+            assert_eq!(UBig::ZERO.div_exact(divisor.clone(), &()), Some(UBig::ZERO));
+            assert_eq!((&UBig::ZERO).div_exact(divisor.clone(), &()), Some(UBig::ZERO));
+            assert!(UBig::ZERO.is_multiple_of(&divisor));
+            let mut zero = UBig::ZERO;
+            assert!(zero.div_exact_assign(divisor.clone(), &()));
+            assert_eq!(zero, UBig::ZERO);
+            let mut one = UBig::ONE;
+            assert!(!one.div_exact_assign(divisor.clone(), &()));
+            assert_eq!(one, UBig::ONE);
+            assert!(!one.is_multiple_of(&divisor));
+
+            for sign in [Sign::Positive, Sign::Negative] {
+                let divisor = IBig::from_parts(sign, divisor.clone());
+                assert_eq!(IBig::ZERO.div_exact(divisor.clone(), &()), Some(IBig::ZERO));
+                assert_eq!((&IBig::ZERO).div_exact(divisor.clone(), &()), Some(IBig::ZERO));
+                assert!(IBig::ZERO.is_multiple_of(&divisor));
+                let mut zero = IBig::ZERO;
+                assert!(zero.div_exact_assign(divisor, &()));
+                assert_eq!(zero, IBig::ZERO);
+                assert_eq!(zero.sign(), Sign::Positive);
+            }
+        }
+    }
 
     /// `div_exact_assign` with a single-word divisor must agree with the general division: exact
     /// (with the quotient in `n`) when `d | n` (here `n = d^i·rest` with `i ≥ 1`), leaving `n`
