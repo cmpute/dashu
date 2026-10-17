@@ -225,6 +225,22 @@ proptest! {
         check_all_modes::<10>(&Repr::<10>::new(a_sig, a_exp), &Repr::<10>::new(b_sig, b_exp), precision);
     }
 
+    /// Wide operands with a precision in the band where the certified
+    /// short-quotient fast path engages (divisor of at least 32 words, i.e.
+    /// ~2048 bits, with the window near the divisor's width): differential
+    /// tests `Context::div`/`inv` on that path against the high-precision
+    /// oracle under every rounding mode.
+    #[test]
+    #[ignore]
+    fn fbig_short_quotient_fuzz(
+        a_sig in fuzz::ibig_strategy(60), a_exp in -1500isize..1500,
+        b_sig in fuzz::ibig_strategy(60), b_exp in -1500isize..1500,
+        precision in 2100usize..4200,
+    ) {
+        check_all_modes::<2>(&Repr::<2>::new(a_sig.clone(), a_exp), &Repr::<2>::new(b_sig.clone(), b_exp), precision);
+        check_all_modes::<10>(&Repr::<10>::new(a_sig, a_exp), &Repr::<10>::new(b_sig, b_exp), precision);
+    }
+
     /// fma (fused multiply-add, `c + sign·(a·b)`) under all modes and both signs, in bases 2 and 10.
     #[test]
     #[ignore]

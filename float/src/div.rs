@@ -2,17 +2,20 @@ use crate::{
     error::{assert_finite_operands, assert_limited_precision, FpError, FpResult},
     fbig::FBig,
     helper_macros::{self, impl_binop_assign_by_taking},
-    repr::{Context, Repr, Word},
+    repr::{rounded_to_repr, Context, Repr, Word},
     round::{Round, Rounded, Rounding},
-    utils::{digit_len, shl_digits, shl_digits_in_place, split_digits},
+    utils::{
+        ceil_usize, digit_len, shl_digits, shl_digits_in_place, short_window_words, split_digits,
+        split_digits_ref,
+    },
 };
 use core::cmp::Ordering;
 use core::ops::{Div, DivAssign, Rem, RemAssign};
 use dashu_base::{
-    AbsOrd, Approximation, BitTest, DivEuclid, DivRem, DivRemEuclid, Inverse, RemEuclid, Sign,
-    Signed, UnsignedAbs,
+    AbsOrd, Approximation, BitTest, DivEuclid, DivRem, DivRemEuclid, EstimatedLog2, Inverse,
+    RemEuclid, Sign, Signed, UnsignedAbs,
 };
-use dashu_int::{fast_div::ConstDivisor, modular::IntoRing, IBig, UBig};
+use dashu_int::{fast_div::ConstDivisor, high, modular::IntoRing, IBig, UBig};
 
 /// Attach the dividend/divisor XOR sign to a zero quotient: the raw quotient significand is
 /// `+0`, so the sign of a zero result (`0/finite`, or a finite/finite that rounds to zero) is
@@ -387,6 +390,96 @@ fn rem_rounds_away<R: Round>(
     )
 }
 
+// ---------------------------------------------------------------------------
+// Short-quotient fast path
+//
+// When the quotient needs far fewer digits than a full division would compute,
+// decide the rounding from a certified high window of the quotient (the `high`
+// kernels of dashu-int) instead. The window arrives with a TWO-SIDED error
+// bound and — unlike a product window — no exactness flag, so every boundary
+// case is declined: an exact division, a midpoint tie, a possible carry into
+// the kept digits all fall back to the exact path, which resolves them with
+// full information. The declined band is narrow (the error is a few ulps of
+// the window's last word, kept far below the rounding midpoint by the sizing).
+// ---------------------------------------------------------------------------
+
+/// Engagement floors for the short-quotient path, in words.
+///
+/// * the divisor must reach the divide-and-conquer band (`MIN_DIVISOR_WORDS`,
+///   matching the integer division's simple-case threshold) — a narrow divisor
+///   has a schoolbook exact path that is linear in the dividend and always
+///   cheaper;
+/// * the window must be large enough for the short division's recursion to
+///   pay for its rescaling overhead (`MIN_WINDOW_WORDS`);
+/// * the window must not exceed twice the divisor (checked at the call) — the
+///   exact division's cost grows with the quotient length, so a window much
+///   wider than the divisor means the exact path's per-chunk work is already
+///   smaller than one short division.
+const MIN_DIVISOR_WORDS: usize = 32;
+const MIN_WINDOW_WORDS: usize = 28;
+
+/// Decide the correctly-rounded result from a certified high window of a
+/// quotient: the true significand lies in `signif ± err_abs` (and is known to
+/// be inexact). Returns `None` when the error band straddles a rounding
+/// boundary; the caller then falls back to the exact quotient.
+fn round_short_quotient<R: Round, const B: Word>(
+    context: &Context<R>,
+    signif: IBig,
+    sign: Sign,
+    exponent: isize,
+    err_abs: &UBig,
+) -> Option<Rounded<Repr<B>>> {
+    let precision = context.precision();
+
+    let digits = digit_len::<B>(&signif);
+    if digits <= precision {
+        // The window sizing guarantees a spare digit; bail out defensively.
+        return None;
+    }
+    let shift = digits - precision;
+    let exponent = exponent.checked_add(shift as isize)?;
+
+    let (hi, lo) = split_digits_ref::<B>(&signif, shift);
+    if lo.is_zero() {
+        // The window's dropped digits are zero, so the error band reaches the
+        // exact value (and a carry into the kept digits from below).
+        return None;
+    }
+    // The radix power at the split, B^shift.
+    let base_pow = shl_digits::<B>(&IBig::ONE, shift);
+
+    // The true fraction is `lo + delta` with `delta ∈ [−err_abs, err_abs]`.
+    // Decide only when the whole band lies strictly inside (0, B^shift) — no
+    // carry into the kept digits, no exact zero — and strictly on one side of
+    // the rounding midpoint.
+    let err = IBig::from(err_abs.clone());
+    let band_hi = &lo + &err;
+    if band_hi >= base_pow {
+        return None;
+    }
+    let band_lo = &lo - &err;
+    if !band_lo.is_positive() {
+        return None;
+    }
+    let ordering = if (&band_hi << 1) < base_pow {
+        Ordering::Less
+    } else if (&band_lo << 1) > base_pow {
+        Ordering::Greater
+    } else {
+        // The band straddles the midpoint (an exact tie lies inside it).
+        return None;
+    };
+
+    let hi_signed = sign * hi;
+    let adjust = R::round_low_part(&hi_signed, sign, || ordering);
+    let signif = hi_signed + adjust;
+    // The fraction is certified strictly positive: the result is inexact.
+    Some(Approximation::Inexact(
+        rounded_to_repr(signif, exponent, sign == Sign::Negative),
+        adjust,
+    ))
+}
+
 impl<R: Round> Context<R> {
     /// Division kernel for an already-bounded dividend: `lhs` must carry at most
     /// `rhs.digits() + precision` digits (the `FBig` operators' operands always do — a
@@ -397,7 +490,104 @@ impl<R: Round> Context<R> {
         debug_assert!(
             digit_len::<B>(&lhs.significand) <= digit_len::<B>(&rhs.significand) + self.precision
         );
+        // Fast path: decide the rounding from a certified high window of the
+        // quotient (see `div_short`); the exact quotient is the fallback.
+        if let Some(rounded) = self.div_short(&lhs, &rhs) {
+            return self.finish_rounded_repr(rounded);
+        }
         self.repr_div_split(lhs, rhs, IBig::ZERO, 0)
+    }
+
+    /// Certified short-quotient fast path for division (and `inv`). Returns
+    /// `None` to decline — unlimited precision, operands too small for the
+    /// kernel, a divisor wider than the window, an over-wide dividend, or an
+    /// undecided rounding — in which case the caller computes the exact
+    /// quotient.
+    fn div_short<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Option<Rounded<Repr<B>>> {
+        if self.precision() == 0 {
+            return None; // unlimited precision: every digit is significant
+        }
+        if lhs.significand.is_zero() || rhs.significand.is_zero() {
+            return None; // signed zeros and /0 belong to the exact path
+        }
+        let ls = lhs.significand.sign();
+        let (rs, rw) = rhs.significand.as_sign_words();
+        // The word slices of an IBig are normalized (no trailing zero words,
+        // by dashu-int's representation invariant).
+        let wb = rw.len();
+
+        // Window for the composed two-sided bound: 2n + 2 kernel ulps plus
+        // slack for the <=2-bit significand rescale below. The window is never
+        // clamped to the divisor: the kernel normalizes the denominator up to
+        // the window with an exact power-of-two shift, so a narrower divisor
+        // only means a wider shift. A divisor wider than the window (its
+        // precision far exceeds the target's) is declined.
+        let n0 = short_window_words::<B>(self.precision(), 1 << 12);
+        let n = short_window_words::<B>(self.precision(), 2 * n0 + 8);
+        if wb > n || wb < MIN_DIVISOR_WORDS || n < MIN_WINDOW_WORDS || n > 2 * wb {
+            return None;
+        }
+
+        // An over-wide dividend (its precision far exceeds the divisor's plus
+        // the target's) is declined before any operand is materialized: the
+        // exact path splits it exactly.
+        let (bl_a, bl_d) = (lhs.significand.bit_len(), rhs.significand.bit_len());
+        if bl_a > bl_d + n * Word::BITS as usize + 2 {
+            return None;
+        }
+
+        let b = UBig::from_words(rw);
+
+        // Pad the dividend with base-B digits so the quotient is sized for the
+        // window (bit length of numer − bit length of denom ≈ n·WORD_BITS);
+        // the kernel verifies the exact band. One digit of adjustment absorbs
+        // the float slack of the estimate; a second round should never be
+        // needed but keeps the loop total.
+        let (_, lb_ub) = B.log2_bounds();
+        let target = (n * Word::BITS as usize) as f32 + (bl_d as f32 - bl_a as f32);
+        // ceil of a possibly negative ratio (ceil_usize clamps negatives to 0)
+        let mut t = ceil_usize(target / lb_ub);
+        let mut numer = None;
+        for _ in 0..3 {
+            let mut candidate = lhs.significand.clone();
+            shl_digits_in_place::<B>(&mut candidate, t);
+            let mag = candidate.unsigned_abs();
+            let gap = mag.bit_len() as isize - bl_d as isize;
+            if gap > (n * Word::BITS as usize + 2) as isize {
+                if t == 0 {
+                    break; // over-wide dividend: declined
+                }
+                t -= 1;
+            } else if gap < (n * Word::BITS as usize - 2) as isize {
+                t += 1;
+            } else {
+                numer = Some(mag);
+                break;
+            }
+        }
+        let numer = numer?;
+
+        let q = high::div_high(&numer, &b, n)?;
+        let sigma = (n * Word::BITS as usize + bl_d) as isize - numer.bit_len() as isize;
+        debug_assert!((-2..=2).contains(&sigma));
+        // The window approximates (numer/denom)·2^sigma; rescale it by
+        // 2^-sigma so the value keeps the exponent `lhs.exp − rhs.exp − t`.
+        // The kernel's ulp error is rescaled by the same shift: a left shift
+        // (sigma < 0) amplifies it to `(2n + 2)·2^|sigma|`, and a right shift
+        // (sigma > 0) truncates the window by at most one ulp, which the
+        // constant `+2` slack covers.
+        let (signif, err_up) = if sigma <= 0 {
+            (IBig::from(&q << (-sigma) as usize), (-sigma) as usize)
+        } else {
+            (IBig::from(&q >> sigma as usize), 0)
+        };
+        let err_abs = UBig::from(2 * n as u64 + 4) << err_up;
+
+        let exponent = lhs
+            .exponent
+            .checked_sub(rhs.exponent)?
+            .checked_sub(t as isize)?;
+        round_short_quotient::<R, B>(self, signif, ls * rs, exponent, &err_abs)
     }
 
     /// [`Self::repr_div`] for an arbitrary-width dividend: the excess low digits below the
@@ -837,7 +1027,10 @@ impl<R: Round> Context<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::round::mode;
+    use crate::{
+        round::mode,
+        test_utils::{pattern_words, significand},
+    };
     use dashu_base::Approximation::*;
 
     fn r2(sig: i32, exp: isize) -> Repr<2> {
@@ -1069,6 +1262,209 @@ mod tests {
         // 0 / 0 is indeterminate; the FBig layer panics.
         let zero = FBig::<mode::HalfEven>::try_from(0.0f64).unwrap();
         let _ = zero.clone() / zero;
+    }
+
+    // ---- short-quotient fast path ----
+
+    /// Fixed (dividend, divisor) step pairs: complementary patterns, so the
+    /// two operands of a case never align.
+    const CASES: [(u64, u64); 2] = [
+        (0x0123_4567_89ab_cdef, 0xfedc_ba98_7654_3211),
+        (0x1357_9bdf_2468_ace1, 0x0f0f_0f0f_0f0f_0f0f),
+    ];
+
+    /// Words a p-digit significand occupies in base B (one spare word for the
+    /// guard digit a previous rounding may have left).
+    fn words_for_precision(p: usize, base: Word) -> usize {
+        let (_, lb) = base.log2_bounds();
+        let bits = p as f32 * lb + Word::BITS as f32;
+        (bits as usize) / (Word::BITS as usize) + 2
+    }
+
+    /// Compare the short path against the p+60-digit oracle re-rounded to p,
+    /// in value, rounding flag and exactness wrapper (the fuzz convention for
+    /// division: a quotient has no finite exact form to compare against).
+    fn check_div_short<R: Round, const B: Word>(p: usize, a: &Repr<B>, b: &Repr<B>) {
+        let ctx = Context::<R>::new(p);
+        let oracle = Context::<R>::new(p + 60)
+            .div(a, b)
+            .unwrap()
+            .value()
+            .with_precision(p);
+        let got = ctx
+            .div_short(a, b)
+            .unwrap_or_else(|| panic!("div short declined: p={p} a={a:?} b={b:?}"));
+        let Inexact(wv, wr) = oracle else {
+            panic!("oracle unexpectedly exact: p={p} a={a:?} b={b:?}")
+        };
+        let Inexact(ref gv, ref gr) = got else {
+            panic!("short path returned Exact")
+        };
+        assert_eq!(gv, wv.repr(), "value mismatch: p={p} a={a:?} b={b:?}",);
+        assert_eq!(*gr, wr, "rounding flag mismatch: p={p} a={a:?} b={b:?}");
+        // End-to-end through the public method.
+        assert_eq!(ctx.div(a, b).unwrap().value().repr(), &got.value());
+    }
+
+    /// Fixed operand sweep across precisions, bases and rounding modes.
+    #[test]
+    fn test_short_div_matches_oracle() {
+        // (dividend words, divisor words) relative to the precision-sized word
+        // count: equal precision (the primary target), a wider dividend (the
+        // kernel drops its low words into the error bound), and a narrower
+        // divisor (the window extends past it by a couple of words).
+        // Sizes comfortably past the engagement floors (a divisor of at least
+        // 32 words, i.e. 2048 bits, and a window of at least 28 words).
+        for &(d_lead, b_lead) in &[(0isize, 0isize), (6, 0), (0, -2)] {
+            let &(astep, bstep) = &CASES[0];
+            for &p in &[2200usize, 3500] {
+                let w = words_for_precision(p, 2) as isize;
+                let a =
+                    Repr::<2>::new(significand(&pattern_words((w + d_lead) as usize, astep)), 3);
+                let b =
+                    Repr::<2>::new(significand(&pattern_words((w + b_lead) as usize, bstep)), -7);
+                check_div_short::<mode::Zero, 2>(p, &a, &b);
+                check_div_short::<mode::Down, 2>(p, &a, &b);
+                check_div_short::<mode::HalfEven, 2>(p, &a, &b);
+            }
+            let &(astep, bstep) = &CASES[1];
+            for &p in &[700usize, 1200] {
+                let w = words_for_precision(p, 10) as isize;
+                let a =
+                    Repr::<10>::new(significand(&pattern_words((w + d_lead) as usize, astep)), 11);
+                let b =
+                    Repr::<10>::new(significand(&pattern_words((w + b_lead) as usize, bstep)), -3);
+                check_div_short::<mode::Away, 10>(p, &a, &b);
+                check_div_short::<mode::Up, 10>(p, &a, &b);
+                check_div_short::<mode::HalfAway, 10>(p, &a, &b);
+            }
+        }
+    }
+
+    /// All six modes agree with the oracle on one fixed pair.
+    #[test]
+    fn test_short_div_all_modes() {
+        let (p, w) = (2400usize, words_for_precision(2400, 2));
+        let a = Repr::<2>::new(significand(&pattern_words(w, 0xbeef)), 5);
+        let b = Repr::<2>::new(significand(&pattern_words(w - 1, 0xf00d)), -2);
+        check_div_short::<mode::Zero, 2>(p, &a, &b);
+        check_div_short::<mode::Away, 2>(p, &a, &b);
+        check_div_short::<mode::Up, 2>(p, &a, &b);
+        check_div_short::<mode::Down, 2>(p, &a, &b);
+        check_div_short::<mode::HalfEven, 2>(p, &a, &b);
+        check_div_short::<mode::HalfAway, 2>(p, &a, &b);
+    }
+
+    /// The inverse goes through the same fast path (`repr_div`), with a
+    /// single-word dividend padded up to the window.
+    #[test]
+    fn test_short_inv_matches_oracle() {
+        let p = 2600;
+        let w = words_for_precision(p, 2);
+        let f = Repr::<2>::new(significand(&pattern_words(w, 0x5eed)), 0);
+        let ctx = Context::<mode::HalfEven>::new(p);
+        let oracle = Context::<mode::HalfEven>::new(p + 60)
+            .inv(&f)
+            .unwrap()
+            .value()
+            .with_precision(p);
+        let got = ctx.div_short(&Repr::one(), &f).expect("inv short declined");
+        let Inexact(wv, _) = oracle else {
+            panic!("oracle unexpectedly exact")
+        };
+        let Inexact(ref gv, _) = got else {
+            panic!("short path returned Exact")
+        };
+        assert_eq!(gv, wv.repr());
+        assert_eq!(ctx.inv(&f).unwrap().value().repr(), &got.value());
+    }
+
+    /// Exact results and midpoint ties must be resolved by the exact path.
+    fn check_short_div_boundaries<R: Round>() {
+        let p = 2400;
+        let ctx = Context::<R>::new(p);
+        let divisor = significand(&pattern_words(words_for_precision(p, 2), 0xfeed));
+        let b = Repr::<2>::new(divisor.clone(), 0);
+        let half = Repr::<2>::new(divisor.clone(), -1);
+        for (a, expected) in [(&b, Repr::<2>::one()), (&half, r2(1, -1))] {
+            assert!(ctx.div_short(a, &b).is_none());
+            assert_eq!(ctx.div(a, &b).unwrap().map(FBig::into_repr), Exact(expected));
+        }
+
+        // 1 + 2^-p is exactly halfway between adjacent p-bit values.
+        let midpoint = Repr::<2>::new((IBig::ONE << p) + 1, -(p as isize));
+        let a = Repr::<2>::new(&divisor * &midpoint.significand, midpoint.exponent);
+        assert!(ctx.div_short(&a, &b).is_none());
+        assert_eq!(ctx.div(&a, &b).unwrap().map(FBig::into_repr), ctx.repr_round_ref(&midpoint));
+    }
+
+    #[test]
+    fn test_short_div_boundaries_decline() {
+        check_short_div_boundaries::<mode::Zero>();
+        check_short_div_boundaries::<mode::Away>();
+        check_short_div_boundaries::<mode::Up>();
+        check_short_div_boundaries::<mode::Down>();
+        check_short_div_boundaries::<mode::HalfEven>();
+        check_short_div_boundaries::<mode::HalfAway>();
+    }
+
+    /// Compare public division with a high-precision nearest-mode oracle,
+    /// including rounding direction and exactness.
+    fn check_public_div<R: Round>(p: usize, a: &Repr<2>, b: &Repr<2>) {
+        let ctx = Context::<R>::new(p);
+        let oracle = Context::<mode::HalfEven>::new(p + 60)
+            .div(a, b)
+            .unwrap()
+            .value();
+        assert_eq!(
+            ctx.div(a, b).unwrap().map(FBig::into_repr),
+            ctx.repr_round_ref(oracle.repr()),
+            "p={p} a={a:?} b={b:?}"
+        );
+    }
+
+    #[test]
+    fn test_short_div_public_matches_oracle() {
+        for &p in &[20, 50, 100, 500, 2400] {
+            let w = words_for_precision(p, 2);
+            let a = significand(&pattern_words(w, 0xfeed));
+            let b = significand(&pattern_words(w - 2, 0xd00d));
+            for &a_sign in &[Sign::Positive, Sign::Negative] {
+                for &b_sign in &[Sign::Positive, Sign::Negative] {
+                    let a = Repr::<2>::new(a_sign * a.clone(), 4);
+                    let b = Repr::<2>::new(b_sign * b.clone(), -1);
+                    if b.significand.as_sign_words().1.len() < MIN_DIVISOR_WORDS {
+                        assert!(Context::<mode::HalfEven>::new(p)
+                            .div_short(&a, &b)
+                            .is_none());
+                    }
+                    check_public_div::<mode::Zero>(p, &a, &b);
+                    check_public_div::<mode::Away>(p, &a, &b);
+                    check_public_div::<mode::Up>(p, &a, &b);
+                    check_public_div::<mode::Down>(p, &a, &b);
+                    check_public_div::<mode::HalfEven>(p, &a, &b);
+                    check_public_div::<mode::HalfAway>(p, &a, &b);
+                }
+            }
+        }
+    }
+
+    /// Exponent saturation must keep flowing through the exact path's error
+    /// semantics: the short path declines on exponent overflow.
+    #[test]
+    fn test_short_div_exponent_overflow_declines() {
+        let aw = pattern_words(words_for_precision(2400, 2), 33);
+        // a huge exponent difference: (MAX − 5) − (−10) overflows on subtraction
+        let a = Repr::<2>::new(significand(&aw), isize::MAX - 5);
+        let b = Repr::<2>::new(significand(&pattern_words(words_for_precision(2400, 2), 45)), -10);
+        let ctx = Context::<mode::HalfEven>::new(2400);
+        assert!(ctx.div_short(&a, &b).is_none());
+        assert_eq!(ctx.div(&a, &b), Err(FpError::Overflow(Sign::Positive)));
+
+        let c = Repr::<2>::new(significand(&aw), isize::MIN + 5);
+        let d = Repr::<2>::new(significand(&pattern_words(words_for_precision(2400, 2), 55)), 10);
+        assert!(ctx.div_short(&c, &d).is_none());
+        assert_eq!(ctx.div(&c, &d), Err(FpError::Underflow(Sign::Positive)));
     }
 
     // The `FBig / FBig` operator routes through `unwrap_fp`, so an exponent underflow saturates to

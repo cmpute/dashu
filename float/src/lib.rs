@@ -98,6 +98,8 @@ pub mod round;
 mod round_ops;
 mod shift;
 mod sign;
+#[cfg(test)]
+mod test_utils;
 mod third_party;
 mod utils;
 mod ziv;
