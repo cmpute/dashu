@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Fix
+- Keep Rust 1.85 CI compatible with the PostgreSQL integration dependencies by
+  pinning `sha2` to 0.11.0; 0.11.1 requires Rust 1.88.
 - Fix the short-division fast path of `Context::div`/`Context::inv`: the kernel's ulp
   error was not rescaled onto the value's scale when the window is shifted up
   (`sigma < 0`), understating the classifier's error band by up to 4× — a value past
