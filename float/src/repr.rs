@@ -1,5 +1,6 @@
 use crate::{
-    error::{assert_finite, FpError},
+    error::{assert_finite, FpError, FpResult},
+    fbig::FBig,
     round::{Round, Rounded},
     utils::{ceil_usize, digit_len, split_digits, split_digits_ref},
 };
@@ -120,15 +121,32 @@ const fn negate_special_exponent(exp: isize) -> isize {
 
 /// Build a `Repr` from a rounded significand, preserving the input sign when rounding
 /// produces zero (`significand * B^exponent` where the significand collapsed to `+0`).
-fn rounded_to_repr<const B: Word>(
+///
+/// A result that leaves the finite exponent range is canonicalized to the
+/// infinity: that happens when the split exponent `exponent + shift` saturates,
+/// or when the rounded significand's trailing zero digits fold (in `normalize`)
+/// across the sentinel. Such a value is not a valid finite result
+/// ([`Repr::check_finite_exponent`] rejects it), so callers with an error
+/// channel can map it to [`FpError::Overflow`],
+/// and callers without one (`with_precision`) return the proper infinity.
+pub(crate) fn rounded_to_repr<const B: Word>(
     significand: IBig,
     exponent: isize,
     input_negative: bool,
 ) -> Repr<B> {
-    if significand.is_zero() && input_negative {
-        Repr::neg_zero()
+    if significand.is_zero() {
+        if input_negative {
+            Repr::neg_zero()
+        } else {
+            Repr::zero()
+        }
     } else {
-        Repr::new(significand, exponent)
+        let repr = Repr::new(significand, exponent);
+        if repr.exponent == isize::MAX {
+            Repr::infinity_with_sign(repr.sign())
+        } else {
+            repr
+        }
     }
 }
 
@@ -375,17 +393,17 @@ impl<const B: Word> Repr<B> {
     /// Returns [`FpError::Overflow`] or [`FpError::Underflow`] when the exponent collides with
     /// the `+inf`/`-inf` sentinels (`isize::MAX` / `isize::MIN`). Zero-significand reprs
     /// (canonical special values) always pass.
-    pub(crate) fn check_finite_exponent(self) -> Result<Self, FpError> {
+    pub(crate) fn check_finite_exponent(&self) -> Result<(), FpError> {
         if !self.significand.is_zero() {
             if self.exponent == isize::MAX {
                 Err(FpError::Overflow(self.sign()))
             } else if self.exponent == isize::MIN {
                 Err(FpError::Underflow(self.sign()))
             } else {
-                Ok(self)
+                Ok(())
             }
         } else {
-            Ok(self)
+            Ok(())
         }
     }
 
@@ -663,6 +681,21 @@ impl<const B: Word> Clone for Repr<B> {
 }
 
 impl<R: Round> Context<R> {
+    /// Attach this context to a rounded result, rejecting exponent saturation.
+    /// Canonical infinities represent overflow; nonzero significands at the
+    /// sentinel exponents are checked by `Repr::check_finite_exponent`.
+    pub(crate) fn finish_rounded<const B: Word>(
+        &self,
+        rounded: Rounded<Repr<B>>,
+    ) -> FpResult<FBig<R, B>> {
+        let value = rounded.value_ref();
+        value.check_finite_exponent()?;
+        if value.is_infinite() {
+            return Err(FpError::Overflow(value.sign()));
+        }
+        Ok(rounded.map(|v| FBig::new(v, *self)))
+    }
+
     /// Create a float operation context with the given precision limit.
     #[inline]
     pub const fn new(precision: usize) -> Self {
@@ -732,7 +765,8 @@ impl<R: Round> Context<R> {
             let (signif_hi, signif_lo) = split_digits::<B>(repr.significand, shift);
             let adjust = R::round_fract::<B>(&signif_hi, signif_lo, shift);
             let sig = signif_hi + adjust;
-            let result = rounded_to_repr(sig, repr.exponent + shift as isize, input_neg);
+            let exponent = repr.exponent.saturating_add(shift as isize);
+            let result = rounded_to_repr(sig, exponent, input_neg);
             Inexact(result, adjust)
         } else {
             Exact(repr)
@@ -753,7 +787,8 @@ impl<R: Round> Context<R> {
             let (signif_hi, signif_lo) = split_digits_ref::<B>(&repr.significand, shift);
             let adjust = R::round_fract::<B>(&signif_hi, signif_lo, shift);
             let sig = signif_hi + adjust;
-            let result = rounded_to_repr(sig, repr.exponent + shift as isize, input_neg);
+            let exponent = repr.exponent.saturating_add(shift as isize);
+            let result = rounded_to_repr(sig, exponent, input_neg);
             Inexact(result, adjust)
         } else {
             Exact(repr.clone())
