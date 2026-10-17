@@ -10,7 +10,8 @@ use crate::{
     div,
     math::FastDivideNormalized2,
     memory::{self, Memory, MemoryAllocation},
-    primitive::{highest_dword, locate_top_word_plus_one, WORD_BITS},
+    primitive::{highest_dword, WORD_BITS},
+    repr::Repr,
     shift,
     ubig::UBig,
 };
@@ -106,7 +107,7 @@ fn div_high_core(out: &mut [Word], words: &mut [Word], d: &[Word], memory: &mut 
     // dividend by the top k words of `d`; their interaction with d's low l
     // words is removed through the high window of an l×l short product; the
     // low l words come from a recursive short division of the remaining
-    // region by d's low l words.
+    // region by d's high l words.
     let l = n - 2 * (n / 3);
     let k = n - l;
     debug_assert!(l >= 2 && k >= (n + 4) / 2);
@@ -152,7 +153,7 @@ fn div_high_core(out: &mut [Word], words: &mut [Word], d: &[Word], memory: &mut 
         }
     }
 
-    // Recursive short division of the region's top 2l words by d's low l
+    // Recursive short division of the region's top 2l words by d's high l
     // words; its carry joins the block quotient.
     let carry = div_high_core(&mut out[..l], &mut words[k..k + 2 * l], &d[k..], memory);
     if carry && add::add_word_in_place(&mut out[l..], 1) {
@@ -185,23 +186,21 @@ fn div_high_core(out: &mut [Word], words: &mut [Word], d: &[Word], memory: &mut 
 /// # Examples
 ///
 /// ```
-/// use core::str::FromStr;
-/// use dashu_base::BitTest;
-/// use dashu_base::Abs;
+/// use dashu_base::{Abs, BitTest};
 /// use dashu_int::{high, IBig, UBig, Word};
 ///
 /// let denom = UBig::from_str_radix("53210fed89abcdef13579bdf00d2c4a6", 16).unwrap();
 /// // a window exactly as wide as the denominator (which satisfies the sizing
 /// // precondition at any word size), with the numerator scaled to it
 /// let n = denom.as_words().len();
-/// let numer = (&denom << (n * Word::BITS as usize)) + UBig::from(7u32);
+/// let numer = (&denom << (n * Word::BITS as usize - 1)) + UBig::from(7u32);
 /// let q = high::div_high(&numer, &denom, n).unwrap();
 ///
-/// // |q·2^(-sigma) − numer/denom| <= 2n + 2, checked here in exact integers
+/// // |q − (numer/denom)·2^sigma| <= 2n + 2, checked in exact integers
 /// let sigma = n as isize * Word::BITS as isize + denom.bit_len() as isize
 ///     - numer.bit_len() as isize;
 /// let (up, down) = (sigma.max(0) as usize, (-sigma).max(0) as usize);
-/// let diff = IBig::from((&q * &denom) << up) - IBig::from(&numer << down);
+/// let diff = IBig::from((&q * &denom) << down) - IBig::from(&numer << up);
 /// let bound = IBig::from(2 * n as u32 + 2) * IBig::from(&denom << down);
 /// assert!(diff.abs() <= bound);
 /// ```
@@ -218,9 +217,6 @@ pub fn div_high(numer: &UBig, denom: &UBig, out_words: usize) -> Option<UBig> {
         return None;
     }
     let (bn, bd) = (numer.bit_len(), denom.bit_len());
-    if bd > n * WORD_BITS as usize {
-        return None;
-    }
     let band = bn.checked_sub(bd)?;
     if !((n * WORD_BITS as usize - 2)..=(n * WORD_BITS as usize + 2)).contains(&band) {
         return None;
@@ -242,7 +238,7 @@ pub fn div_high(numer: &UBig, denom: &UBig, out_words: usize) -> Option<UBig> {
     let (out, words) = buffer[..].split_at_mut(n);
 
     if numer_shift >= 0 {
-        shift::shl_words_into(words, &nw[..wn], numer_shift as usize);
+        shift::shl_words_into(words, nw, numer_shift as usize);
     } else {
         // The numerator's value overflows the window by at most two bits (the
         // band and `bd <= n·WORD_BITS` bound it). Shift those bits off
@@ -260,24 +256,16 @@ pub fn div_high(numer: &UBig, denom: &UBig, out_words: usize) -> Option<UBig> {
 
     let mut denom_buffer = Buffer::allocate(n);
     denom_buffer.push_zeros(n);
-    shift::shl_words_into(&mut denom_buffer, &dw[..wd], denom_shift);
+    shift::shl_words_into(&mut denom_buffer, dw, denom_shift);
 
     let mut allocation = MemoryAllocation::new(memory_requirement_up_to(n));
     let carry = div_high_core(out, words, &denom_buffer, &mut allocation.memory());
 
+    buffer.truncate(n);
     if carry {
-        // the carry word sits on top of the full n-word window (it is nonzero,
-        // so the buffer is already normalized)
-        let mut buffer = Buffer::allocate(n + 1);
-        buffer.push_zeros(n + 1);
-        buffer[..n].copy_from_slice(out);
-        buffer[n] = 1;
-        Some(UBig::from_words(&buffer))
-    } else {
-        // the quotient's top word can be zero when the window over-covers it
-        let qlen = locate_top_word_plus_one(out);
-        Some(UBig::from_words(&out[..qlen]))
+        buffer.push(1);
     }
+    Some(UBig(Repr::from_buffer(buffer)))
 }
 
 #[cfg(test)]
@@ -451,7 +439,7 @@ mod tests {
         }
         assert!(
             worst <= IBig::from(700),
-            "empirical error crept above 70% of the bound: {worst} thousandths"
+            "empirical error crept above 70% of the bound: {worst:?} thousandths"
         );
     }
 }

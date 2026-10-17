@@ -2,11 +2,11 @@ use crate::{
     error::{assert_finite_operands, assert_limited_precision, FpError, FpResult},
     fbig::FBig,
     helper_macros::{self, impl_binop_assign_by_taking},
-    mul::short_window_words,
     repr::{rounded_to_repr, Context, Repr, Word},
     round::{Round, Rounded, Rounding},
     utils::{
-        ceil_usize, digit_len, shl_digits, shl_digits_in_place, split_digits, split_digits_ref,
+        ceil_usize, digit_len, shl_digits, shl_digits_in_place, short_window_words, split_digits,
+        split_digits_ref,
     },
 };
 use core::cmp::Ordering;
@@ -491,7 +491,7 @@ impl<R: Round> Context<R> {
             digit_len::<B>(&lhs.significand) <= digit_len::<B>(&rhs.significand) + self.precision
         );
         // Fast path: decide the rounding from a certified high window of the
-        // quotient (see `mul_short`); the exact quotient is the fallback.
+        // quotient (see `div_short`); the exact quotient is the fallback.
         if let Some(rounded) = self.div_short(&lhs, &rhs) {
             return self.finish_rounded_repr(rounded);
         }
@@ -503,22 +503,18 @@ impl<R: Round> Context<R> {
     /// kernel, a divisor wider than the window, an over-wide dividend, or an
     /// undecided rounding — in which case the caller computes the exact
     /// quotient.
-    pub(crate) fn div_short<const B: Word>(
-        &self,
-        lhs: &Repr<B>,
-        rhs: &Repr<B>,
-    ) -> Option<Rounded<Repr<B>>> {
+    fn div_short<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> Option<Rounded<Repr<B>>> {
         if self.precision() == 0 {
             return None; // unlimited precision: every digit is significant
         }
         if lhs.significand.is_zero() || rhs.significand.is_zero() {
             return None; // signed zeros and /0 belong to the exact path
         }
-        let (ls, lw) = lhs.significand.as_sign_words();
+        let ls = lhs.significand.sign();
         let (rs, rw) = rhs.significand.as_sign_words();
         // The word slices of an IBig are normalized (no trailing zero words,
         // by dashu-int's representation invariant).
-        let (wa, wb) = (lw.len(), rw.len());
+        let wb = rw.len();
 
         // Window for the composed two-sided bound: 2n + 2 kernel ulps plus
         // slack for the <=2-bit significand rescale below. The window is never
@@ -540,8 +536,7 @@ impl<R: Round> Context<R> {
             return None;
         }
 
-        let a = UBig::from_words(&lw[..wa]);
-        let b = UBig::from_words(&rw[..wb]);
+        let b = UBig::from_words(rw);
 
         // Pad the dividend with base-B digits so the quotient is sized for the
         // window (bit length of numer − bit length of denom ≈ n·WORD_BITS);
@@ -554,7 +549,7 @@ impl<R: Round> Context<R> {
         let mut t = ceil_usize(target / lb_ub);
         let mut numer = None;
         for _ in 0..3 {
-            let mut candidate = IBig::from(a.clone());
+            let mut candidate = lhs.significand.clone();
             shl_digits_in_place::<B>(&mut candidate, t);
             let mag = candidate.unsigned_abs();
             let gap = mag.bit_len() as isize - bl_d as isize;
@@ -1032,8 +1027,10 @@ impl<R: Round> Context<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::round::mode;
-    use alloc::vec::Vec;
+    use crate::{
+        round::mode,
+        test_utils::{pattern_words, significand},
+    };
     use dashu_base::Approximation::*;
 
     fn r2(sig: i32, exp: isize) -> Repr<2> {
@@ -1267,26 +1264,7 @@ mod tests {
         let _ = zero.clone() / zero;
     }
 
-    // The `FBig / FBig` operator routes through `unwrap_fp`, so an exponent underflow saturates to
-    // the directed endpoint (not a mode-blind signed zero): 2^isize::MIN / 3 ≈ 2^(isize::MIN − 2)
-    // underflows; Up → smallest positive, Down → +0.
     // ---- short-quotient fast path ----
-
-    /// Fixed test pattern of `len` words (top word forced nonzero): word `i`
-    /// is `(i+1)·step + i` with wrapping, so the words of an operand carry
-    /// mixed bit runs that never align with another step's.
-    fn pattern_words(len: usize, step: u64) -> Vec<Word> {
-        (0..len)
-            .map(|i| {
-                let w = (i as u64 + 1).wrapping_mul(step).wrapping_add(i as u64) as Word;
-                if i + 1 == len && w == 0 {
-                    1
-                } else {
-                    w
-                }
-            })
-            .collect()
-    }
 
     /// Fixed (dividend, divisor) step pairs: complementary patterns, so the
     /// two operands of a case never align.
@@ -1294,10 +1272,6 @@ mod tests {
         (0x0123_4567_89ab_cdef, 0xfedc_ba98_7654_3211),
         (0x1357_9bdf_2468_ace1, 0x0f0f_0f0f_0f0f_0f0f),
     ];
-
-    fn sig_of(words: &[Word]) -> IBig {
-        IBig::from(UBig::from_words(words))
-    }
 
     /// Words a p-digit significand occupies in base B (one spare word for the
     /// guard digit a previous rounding may have left).
@@ -1345,8 +1319,10 @@ mod tests {
             let &(astep, bstep) = &CASES[0];
             for &p in &[2200usize, 3500] {
                 let w = words_for_precision(p, 2) as isize;
-                let a = Repr::<2>::new(sig_of(&pattern_words((w + d_lead) as usize, astep)), 3);
-                let b = Repr::<2>::new(sig_of(&pattern_words((w + b_lead) as usize, bstep)), -7);
+                let a =
+                    Repr::<2>::new(significand(&pattern_words((w + d_lead) as usize, astep)), 3);
+                let b =
+                    Repr::<2>::new(significand(&pattern_words((w + b_lead) as usize, bstep)), -7);
                 check_div_short::<mode::Zero, 2>(p, &a, &b);
                 check_div_short::<mode::Down, 2>(p, &a, &b);
                 check_div_short::<mode::HalfEven, 2>(p, &a, &b);
@@ -1354,8 +1330,10 @@ mod tests {
             let &(astep, bstep) = &CASES[1];
             for &p in &[700usize, 1200] {
                 let w = words_for_precision(p, 10) as isize;
-                let a = Repr::<10>::new(sig_of(&pattern_words((w + d_lead) as usize, astep)), 11);
-                let b = Repr::<10>::new(sig_of(&pattern_words((w + b_lead) as usize, bstep)), -3);
+                let a =
+                    Repr::<10>::new(significand(&pattern_words((w + d_lead) as usize, astep)), 11);
+                let b =
+                    Repr::<10>::new(significand(&pattern_words((w + b_lead) as usize, bstep)), -3);
                 check_div_short::<mode::Away, 10>(p, &a, &b);
                 check_div_short::<mode::Up, 10>(p, &a, &b);
                 check_div_short::<mode::HalfAway, 10>(p, &a, &b);
@@ -1367,8 +1345,8 @@ mod tests {
     #[test]
     fn test_short_div_all_modes() {
         let (p, w) = (2400usize, words_for_precision(2400, 2));
-        let a = Repr::<2>::new(sig_of(&pattern_words(w, 0xbeef)), 5);
-        let b = Repr::<2>::new(sig_of(&pattern_words(w - 1, 0xf00d)), -2);
+        let a = Repr::<2>::new(significand(&pattern_words(w, 0xbeef)), 5);
+        let b = Repr::<2>::new(significand(&pattern_words(w - 1, 0xf00d)), -2);
         check_div_short::<mode::Zero, 2>(p, &a, &b);
         check_div_short::<mode::Away, 2>(p, &a, &b);
         check_div_short::<mode::Up, 2>(p, &a, &b);
@@ -1383,7 +1361,7 @@ mod tests {
     fn test_short_inv_matches_oracle() {
         let p = 2600;
         let w = words_for_precision(p, 2);
-        let f = Repr::<2>::new(sig_of(&pattern_words(w, 0x5eed)), 0);
+        let f = Repr::<2>::new(significand(&pattern_words(w, 0x5eed)), 0);
         let ctx = Context::<mode::HalfEven>::new(p);
         let oracle = Context::<mode::HalfEven>::new(p + 60)
             .inv(&f)
@@ -1401,48 +1379,74 @@ mod tests {
         assert_eq!(ctx.inv(&f).unwrap().value().repr(), &got.value());
     }
 
-    /// Boundary-leaning shapes where the short path must decline and the
-    /// public API must reproduce the exact path bit for bit: an exact
-    /// quotient, a near-midpoint quotient, negative operands.
+    /// Exact results and midpoint ties must be resolved by the exact path.
+    fn check_short_div_boundaries<R: Round>() {
+        let p = 2400;
+        let ctx = Context::<R>::new(p);
+        let divisor = significand(&pattern_words(words_for_precision(p, 2), 0xfeed));
+        let b = Repr::<2>::new(divisor.clone(), 0);
+        let half = Repr::<2>::new(divisor.clone(), -1);
+        for (a, expected) in [(&b, Repr::<2>::one()), (&half, r2(1, -1))] {
+            assert!(ctx.div_short(a, &b).is_none());
+            assert_eq!(ctx.div(a, &b).unwrap().map(FBig::into_repr), Exact(expected));
+        }
+
+        // 1 + 2^-p is exactly halfway between adjacent p-bit values.
+        let midpoint = Repr::<2>::new((IBig::ONE << p) + 1, -(p as isize));
+        let a = Repr::<2>::new(&divisor * &midpoint.significand, midpoint.exponent);
+        assert!(ctx.div_short(&a, &b).is_none());
+        assert_eq!(ctx.div(&a, &b).unwrap().map(FBig::into_repr), ctx.repr_round_ref(&midpoint));
+    }
+
     #[test]
-    fn test_short_div_public_matches_oracle_tolerant() {
-        let (p, w) = (2400usize, words_for_precision(2400, 2));
-        let ctx_oracle = |a: &Repr<2>, b: &Repr<2>| {
-            Context::<mode::HalfEven>::new(p + 60)
-                .div(a, b)
-                .unwrap()
-                .value()
-                .with_precision(p)
-                .value()
-                .repr()
-                .clone()
-        };
-        let ctx = Context::<mode::HalfEven>::new(p);
+    fn test_short_div_boundaries_decline() {
+        check_short_div_boundaries::<mode::Zero>();
+        check_short_div_boundaries::<mode::Away>();
+        check_short_div_boundaries::<mode::Up>();
+        check_short_div_boundaries::<mode::Down>();
+        check_short_div_boundaries::<mode::HalfEven>();
+        check_short_div_boundaries::<mode::HalfAway>();
+    }
 
-        // Exact division: numerator == denominator -> quotient 1, Exact.
-        let words = pattern_words(w, 0xfeed);
-        let a = Repr::<2>::new(sig_of(&words), 0);
-        assert_eq!(ctx.div(&a, &a).unwrap().value().repr(), &ctx_oracle(&a, &a));
-
-        // Half the divisor: exact quotient 0.5.
-        let mut half = words.clone();
-        half[0] &= !1; // even significand, halved
-        let b = Repr::<2>::new(sig_of(&half) >> 1, 0);
-        assert_eq!(ctx.div(&a, &b).unwrap().value().repr(), &ctx_oracle(&a, &b));
-
-        // Negative signs on both operands.
-        let (na, nb) = (
-            Repr::<2>::new(-sig_of(&words), 4),
-            Repr::<2>::new(-sig_of(&pattern_words(w - 2, 0xd00d)), -1),
-        );
-        assert_eq!(ctx.div(&na, &nb).unwrap().value().repr(), &ctx_oracle(&na, &nb));
-
-        // Small operands: far below the engagement floor.
-        let (small_a, small_b) = (r2(12345, 0), r2(6789, 0));
+    /// Compare public division with a high-precision nearest-mode oracle,
+    /// including rounding direction and exactness.
+    fn check_public_div<R: Round>(p: usize, a: &Repr<2>, b: &Repr<2>) {
+        let ctx = Context::<R>::new(p);
+        let oracle = Context::<mode::HalfEven>::new(p + 60)
+            .div(a, b)
+            .unwrap()
+            .value();
         assert_eq!(
-            ctx.div(&small_a, &small_b).unwrap().value().repr(),
-            &ctx_oracle(&small_a, &small_b)
+            ctx.div(a, b).unwrap().map(FBig::into_repr),
+            ctx.repr_round_ref(oracle.repr()),
+            "p={p} a={a:?} b={b:?}"
         );
+    }
+
+    #[test]
+    fn test_short_div_public_matches_oracle() {
+        for &p in &[20, 50, 100, 500, 2400] {
+            let w = words_for_precision(p, 2);
+            let a = significand(&pattern_words(w, 0xfeed));
+            let b = significand(&pattern_words(w - 2, 0xd00d));
+            for &a_sign in &[Sign::Positive, Sign::Negative] {
+                for &b_sign in &[Sign::Positive, Sign::Negative] {
+                    let a = Repr::<2>::new(a_sign * a.clone(), 4);
+                    let b = Repr::<2>::new(b_sign * b.clone(), -1);
+                    if b.significand.as_sign_words().1.len() < MIN_DIVISOR_WORDS {
+                        assert!(Context::<mode::HalfEven>::new(p)
+                            .div_short(&a, &b)
+                            .is_none());
+                    }
+                    check_public_div::<mode::Zero>(p, &a, &b);
+                    check_public_div::<mode::Away>(p, &a, &b);
+                    check_public_div::<mode::Up>(p, &a, &b);
+                    check_public_div::<mode::Down>(p, &a, &b);
+                    check_public_div::<mode::HalfEven>(p, &a, &b);
+                    check_public_div::<mode::HalfAway>(p, &a, &b);
+                }
+            }
+        }
     }
 
     /// Exponent saturation must keep flowing through the exact path's error
@@ -1451,18 +1455,21 @@ mod tests {
     fn test_short_div_exponent_overflow_declines() {
         let aw = pattern_words(words_for_precision(2400, 2), 33);
         // a huge exponent difference: (MAX − 5) − (−10) overflows on subtraction
-        let a = Repr::<2>::new(sig_of(&aw), isize::MAX - 5);
-        let b = Repr::<2>::new(sig_of(&pattern_words(words_for_precision(2400, 2), 45)), -10);
+        let a = Repr::<2>::new(significand(&aw), isize::MAX - 5);
+        let b = Repr::<2>::new(significand(&pattern_words(words_for_precision(2400, 2), 45)), -10);
         let ctx = Context::<mode::HalfEven>::new(2400);
         assert!(ctx.div_short(&a, &b).is_none());
         assert_eq!(ctx.div(&a, &b), Err(FpError::Overflow(Sign::Positive)));
 
-        let c = Repr::<2>::new(sig_of(&aw), isize::MIN + 5);
-        let d = Repr::<2>::new(sig_of(&pattern_words(words_for_precision(2400, 2), 55)), 10);
+        let c = Repr::<2>::new(significand(&aw), isize::MIN + 5);
+        let d = Repr::<2>::new(significand(&pattern_words(words_for_precision(2400, 2), 55)), 10);
         assert!(ctx.div_short(&c, &d).is_none());
         assert_eq!(ctx.div(&c, &d), Err(FpError::Underflow(Sign::Positive)));
     }
 
+    // The `FBig / FBig` operator routes through `unwrap_fp`, so an exponent underflow saturates to
+    // the directed endpoint (not a mode-blind signed zero): 2^isize::MIN / 3 ≈ 2^(isize::MIN − 2)
+    // underflows; Up → smallest positive, Down → +0.
     #[test]
     fn test_div_directed_underflow() {
         use dashu_int::IBig;

@@ -3,11 +3,13 @@
 ## Unreleased
 
 ### Change
+- Reuse the short-division result buffer and remove redundant normalization checks.
 - Reuse the shared deterministic word fixtures for short-division tests.
 - Reuse the high-product result buffer and the exact squaring kernel, and share
   deterministic word fixtures across the integer kernel tests.
 
 ### Fix
+- Correct the short-division example's error-bound scaling and recursive divisor comments.
 - Fix the sticky flag of `high::mul_high` / `high::sqr_high` on the recursive path: the
   exact high block's boundary words and the cross windows' guard words land on the two
   accumulator columns just below the window, and content there was dropped without
