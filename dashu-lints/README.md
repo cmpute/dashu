@@ -6,10 +6,10 @@ keep their existing MSRV. Bump `rust-toolchain` and the `clippy_utils` git revis
 CI pins `cargo-dylint` and `dylint-link` to the version in this crate's lockfile.
 The `Lints` workflow builds and loads the lint library against `examples/` through the UI
 tests, checks diagnostic snapshots, and checks the implementation's formatting and Clippy
-warnings. The separate `House lints` workflow scans all workspace features and targets
-(excluding dashu-python), treating warnings as errors. It runs when a non-draft PR is
-opened, reopened, or marked ready for review, and supports manual dispatch. Additional
-commits do not trigger it; use manual dispatch on the PR's head branch to check a later revision.
+warnings. A separate `House lints` job in the same workflow scans all workspace features
+and targets (excluding dashu-python), treating warnings as errors. Both jobs run when a PR
+targeting `master` or `develop` is opened, reopened, or updated with additional commits.
+The workflow also supports manual dispatch and does not run on push events.
 
 ## Rules
 

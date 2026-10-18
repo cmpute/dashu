@@ -3,9 +3,9 @@
 ## Unreleased
 
 ### Add
-- Add a separate house-lint CI workflow that rejects warnings across all workspace features
-  and targets (excluding dashu-python). Trigger it on PR opening, reopening, or readiness,
-  plus manual dispatch, rather than on each commit.
+- Add a house-lint job to the Lints CI workflow that rejects warnings across all workspace
+  features and targets (excluding dashu-python). Run both lint jobs on PR opening,
+  reopening, and commit updates, plus manual dispatch; remove push triggers.
 - Add `manual_sign_from_bool`, `manual_sign_arithmetic`, `manual_is_multiple_of`,
   `manual_bit_test`, `manual_div_rem`, `redundant_abs`, and `prefer_sqr_cubic`.
 - Add opt-in `unfused_mul_add` advice, explicitly documenting its changed rounding semantics.
@@ -18,8 +18,8 @@
   and suggests `v * sign`.
 
 ### Fix
-- Limit lint CI to the example UI tests and lint implementation checks; defer full-workspace
-  linting while verifying that the library builds, loads, and emits the expected diagnostics.
+- Keep example UI tests and lint implementation checks in their own CI job, separately
+  verifying that the library builds, loads, and emits the expected diagnostics.
 - Fix CI toolchain installation by passing a separate `--component` for each component.
 - Install Dylint 6.1.0 with the pinned nightly and its lockfile to avoid tool/dependency drift.
 - Preserve clones in `if_sign_mul` suggestions, use right-hand sign multiplication for
