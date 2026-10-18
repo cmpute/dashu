@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 330" font-family="system-ui, sans-serif" font-size="12" fill="#1f2937">
+<rect width="760" height="330" fill="#ffffff"/>
+<rect x="76" y="12" width="10" height="10" rx="2" fill="#2563eb"/>
+<text x="91" y="21">dashu</text>
+<rect x="148" y="12" width="10" height="10" rx="2" fill="#9333ea"/>
+<text x="163" y="21">malachite</text>
+<rect x="248" y="12" width="10" height="10" rx="2" fill="#db2777"/>
+<text x="263" y="21">num</text>
+<line x1="76" x2="736" y1="277.7" y2="277.7" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="281.7" text-anchor="end" fill="#6b7280">0.01</text>
+<line x1="76" x2="736" y1="225.7" y2="225.7" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="229.7" text-anchor="end" fill="#6b7280">0.1</text>
+<line x1="76" x2="736" y1="173.6" y2="173.6" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="177.6" text-anchor="end" fill="#6b7280">1</text>
+<line x1="76" x2="736" y1="121.5" y2="121.5" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="125.5" text-anchor="end" fill="#6b7280">10</text>
+<line x1="76" x2="736" y1="69.4" y2="69.4" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="73.4" text-anchor="end" fill="#6b7280">100</text>
+<text x="186.0" y="292" text-anchor="middle">1M</text>
+<rect x="135.0" width="32.0" y="233.0" height="39.0" rx="2" fill="#2563eb"/>
+<rect x="169.0" width="32.0" y="258.7" height="13.3" rx="2" fill="#9333ea"/>
+<rect x="203.0" width="32.0" y="194.7" height="77.3" rx="2" fill="#db2777"/>
+<text x="406.0" y="292" text-anchor="middle">4M</text>
+<rect x="355.0" width="32.0" y="193.4" height="78.6" rx="2" fill="#2563eb"/>
+<rect x="389.0" width="32.0" y="226.4" height="45.6" rx="2" fill="#9333ea"/>
+<rect x="423.0" width="32.0" y="132.2" height="139.8" rx="2" fill="#db2777"/>
+<text x="626.0" y="292" text-anchor="middle">20M</text>
+<rect x="575.0" width="32.0" y="146.5" height="125.5" rx="2" fill="#2563eb"/>
+<rect x="609.0" width="32.0" y="186.3" height="85.7" rx="2" fill="#9333ea"/>
+<rect x="643.0" width="32.0" y="59.3" height="212.7" rx="2" fill="#db2777"/>
+<text x="406.0" y="318" text-anchor="middle" fill="#6b7280">decimal digits</text>
+<text transform="rotate(-90 16 159.0)" x="16" y="159.0" text-anchor="middle" fill="#6b7280">time per iteration (s)</text>
+</svg>

@@ -2,7 +2,8 @@
 """Run the library comparison sweep and plot the results.
 
 Times one cell per (task, n, library) by timing `benchmark ... print`
-processes, then writes `results.json` and `chart.html` next to this script.
+processes, then writes REPORT.md next to this script and the raw/plotted
+artifacts (results.json, chart.html, chart_<task>.svg) under `report/`.
 
     cargo build --release --features gmp   # rug/rust-gmp need system GMP
     python3 run.py                         # full sweep (sequential, ~10 min)
@@ -270,7 +271,7 @@ def task_svg(task, entry, out_path):
     out_path.write_text("\n".join(parts), encoding="utf-8")
 
 
-def generate_report(data, out_dir):
+def generate_report(data, out_dir, report_dir):
     from datetime import datetime
 
     lines = ["# Library comparison report", "",
@@ -294,14 +295,14 @@ def generate_report(data, out_dir):
             best = min(vals)
             cells = [f"**{fmt_secs(v)}**" if v == best else fmt_secs(v) for v in vals]
             lines.append(f"| {size} | " + " | ".join(cells) + " |")
-        svg_path = out_dir / f"chart_{task}.svg"
+        svg_path = report_dir / f"chart_{task}.svg"
         task_svg(task, entry, svg_path)
-        lines += ["", f"![{task}](chart_{task}.svg)"]
+        lines += ["", f"![{task}](report/chart_{task}.svg)"]
 
     lines += ["", "## Interactive chart", "",
               "The interactive version of the above (task switching, library toggles, "
-              "tooltips) is in [chart.html](chart.html); raw timings are in "
-              "[results.json](results.json).", ""]
+              "tooltips) is in [chart.html](report/chart.html); raw timings are in "
+              "[results.json](report/results.json) (git-ignored).", ""]
     (out_dir / "REPORT.md").write_text("\n".join(lines), encoding="utf-8")
     print(f"report written to {out_dir / 'REPORT.md'}")
 
@@ -531,8 +532,9 @@ def main():
     args = ap.parse_args()
 
     out_dir = Path(args.out_dir) if args.out_dir else SCRIPT_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    results_path = Path(args.results) if args.results else out_dir / "results.json"
+    report_dir = out_dir / "report"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    results_path = Path(args.results) if args.results else report_dir / "results.json"
 
     if args.results:
         results = load_results(results_path)
@@ -550,8 +552,8 @@ def main():
             results = {}
         sweep(results, tasks, results_path)
 
-    data = generate_chart(results, out_dir / "chart.html")
-    generate_report(data, out_dir)
+    data = generate_chart(results, report_dir / "chart.html")
+    generate_report(data, out_dir, report_dir)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 330" font-family="system-ui, sans-serif" font-size="12" fill="#1f2937">
+<rect width="760" height="330" fill="#ffffff"/>
+<rect x="76" y="12" width="10" height="10" rx="2" fill="#2563eb"/>
+<text x="91" y="21">dashu</text>
+<rect x="148" y="12" width="10" height="10" rx="2" fill="#16a34a"/>
+<text x="163" y="21">rug</text>
+<rect x="206" y="12" width="10" height="10" rx="2" fill="#ea580c"/>
+<text x="221" y="21">rust-gmp</text>
+<rect x="299" y="12" width="10" height="10" rx="2" fill="#9333ea"/>
+<text x="314" y="21">malachite</text>
+<rect x="399" y="12" width="10" height="10" rx="2" fill="#0d9488"/>
+<text x="414" y="21">ibig</text>
+<rect x="464" y="12" width="10" height="10" rx="2" fill="#db2777"/>
+<text x="479" y="21">num</text>
+<line x1="76" x2="736" y1="333.1" y2="333.1" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="337.1" text-anchor="end" fill="#6b7280">0.001</text>
+<line x1="76" x2="736" y1="259.6" y2="259.6" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="263.6" text-anchor="end" fill="#6b7280">0.01</text>
+<line x1="76" x2="736" y1="186.1" y2="186.1" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="190.1" text-anchor="end" fill="#6b7280">0.1</text>
+<line x1="76" x2="736" y1="112.6" y2="112.6" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="116.6" text-anchor="end" fill="#6b7280">1</text>
+<text x="186.0" y="292" text-anchor="middle">1M</text>
+<rect x="109.0" width="23.7" y="227.1" height="44.9" rx="2" fill="#2563eb"/>
+<rect x="134.7" width="23.7" y="253.2" height="18.8" rx="2" fill="#16a34a"/>
+<rect x="160.3" width="23.7" y="252.0" height="20.0" rx="2" fill="#ea580c"/>
+<rect x="186.0" width="23.7" y="253.2" height="18.8" rx="2" fill="#9333ea"/>
+<rect x="211.7" width="23.7" y="225.7" height="46.3" rx="2" fill="#0d9488"/>
+<rect x="237.3" width="23.7" y="224.7" height="47.3" rx="2" fill="#db2777"/>
+<text x="406.0" y="292" text-anchor="middle">4M</text>
+<rect x="329.0" width="23.7" y="164.6" height="107.4" rx="2" fill="#2563eb"/>
+<rect x="354.7" width="23.7" y="202.8" height="69.2" rx="2" fill="#16a34a"/>
+<rect x="380.3" width="23.7" y="202.4" height="69.6" rx="2" fill="#ea580c"/>
+<rect x="406.0" width="23.7" y="204.7" height="67.3" rx="2" fill="#9333ea"/>
+<rect x="431.7" width="23.7" y="161.1" height="110.9" rx="2" fill="#0d9488"/>
+<rect x="457.3" width="23.7" y="161.4" height="110.6" rx="2" fill="#db2777"/>
+<text x="626.0" y="292" text-anchor="middle">30M</text>
+<rect x="549.0" width="23.7" y="74.6" height="197.4" rx="2" fill="#2563eb"/>
+<rect x="574.7" width="23.7" y="125.4" height="146.6" rx="2" fill="#16a34a"/>
+<rect x="600.3" width="23.7" y="125.8" height="146.2" rx="2" fill="#ea580c"/>
+<rect x="626.0" width="23.7" y="135.6" height="136.4" rx="2" fill="#9333ea"/>
+<rect x="651.7" width="23.7" y="64.8" height="207.2" rx="2" fill="#0d9488"/>
+<rect x="677.3" width="23.7" y="66.0" height="206.0" rx="2" fill="#db2777"/>
+<text x="406.0" y="318" text-anchor="middle" fill="#6b7280">Fibonacci index</text>
+<text transform="rotate(-90 16 159.0)" x="16" y="159.0" text-anchor="middle" fill="#6b7280">time per iteration (s)</text>
+</svg>
