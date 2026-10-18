@@ -33,33 +33,14 @@ where
     /// Whether the value is odd.
     fn is_odd(&self) -> bool;
 
-    /// Whether the value is zero.
-    fn is_zero(&self) -> bool {
-        *self == Self::from(0u32)
-    }
-
     /// (self * rhs) mod m. Operands must already be reduced modulo m.
     fn mul_mod(&self, rhs: &Self, m: &Self) -> Self {
         self.mul_ref(rhs) % m
     }
 
-    /// self^exp mod m. The base must already be reduced modulo m.
-    fn pow_mod(&self, exp: &Self, m: &Self) -> Self {
-        let two = Self::from(2u32);
-        let mut result = Self::from(1u32);
-        let mut base = self.clone();
-        let mut exp = exp.clone();
-        while !exp.is_zero() {
-            if exp.is_odd() {
-                result = result.mul_mod(&base, m);
-            }
-            exp = exp / &two;
-            if !exp.is_zero() {
-                base = base.mul_mod(&base, m);
-            }
-        }
-        result
-    }
+    /// self^exp mod m, bound to the library's native modular exponentiation.
+    /// The base must already be reduced modulo m.
+    fn pow_mod(&self, exp: &Self, m: &Self) -> Self;
 }
 
 mod natural {
@@ -86,8 +67,13 @@ mod natural {
             dashu::base::BitTest::bit(self, 0)
         }
 
-        fn is_zero(&self) -> bool {
-            self.is_zero()
+        fn pow_mod(&self, exp: &Self, m: &Self) -> Self {
+            // The Barrett reducer wins over Montgomery below ~256-bit moduli,
+            // which covers every size this benchmark factors.
+            dashu::integer::fast_div::ConstDivisor::new(m.clone())
+                .reduce(self.clone())
+                .pow(exp)
+                .residue()
         }
     }
 
@@ -195,6 +181,11 @@ mod natural {
 
         fn is_odd(&self) -> bool {
             self.is_odd()
+        }
+
+        fn pow_mod(&self, exp: &Self, m: &Self) -> Self {
+            // Only fails on a negative exponent with a non-invertible base.
+            self.clone().pow_mod(exp, m).unwrap()
         }
     }
 
