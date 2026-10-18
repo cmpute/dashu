@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Change
+- Bound routine randomized arithmetic tests to 10,000 bits, give GCD its own
+  size-controlled test budget, and check fixed power/log identities once per size.
+  Move the 100,000- and 1,000,000-bit campaigns to the opt-in fuzz stress suite,
+  and reuse products across arithmetic assertions.
 - Reuse the absolute difference in Toom-4 squaring and replace the Toom-4
   and Toom-4x2 tests' LCG inputs with shared fixed word patterns.
 - Move short-division error-bound validation into integration tests, add bounded

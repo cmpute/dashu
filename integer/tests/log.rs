@@ -129,3 +129,12 @@ fn test_log_base_1() {
 fn test_log_0() {
     let _ = ubig!(0).ilog(&ubig!(1234));
 }
+
+#[test]
+fn test_log_near_power() {
+    // This identity depends only on the exponent, so check it once per size.
+    // Larger exponents are covered by fuzz/tests/integer_stress.rs.
+    for exponent in [100, 1_000, 10_000] {
+        assert_eq!((ubig!(5).pow(exponent) + 1u8).ilog(&ubig!(25)), exponent / 2);
+    }
+}

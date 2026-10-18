@@ -194,3 +194,30 @@ fn test_gcd_large_lopsided_reduction() {
     // gcd(L+R, L) = gcd(L, R) = gcd(Q*R+1, R) = gcd(1, R) = 1.
     assert_eq!((&a).gcd(&b), ubig!(1));
 }
+
+#[test]
+fn test_gcd_random_bounded() {
+    use dashu_int::UBig;
+    use rand_v08::{rngs::StdRng, RngCore, SeedableRng};
+
+    let mut rng = StdRng::seed_from_u64(3);
+    // Each width has its own budget, independent of the arithmetic tests. Bytes
+    // keep the inputs identical across Word widths; the top bit fixes their size.
+    for bits in [16, 32, 64, 128, 512, 2_048, 8_192] {
+        let mut bytes = vec![0u8; bits / 8];
+        for _ in 0..16 {
+            rng.fill_bytes(&mut bytes);
+            *bytes.last_mut().unwrap() |= 0x80;
+            let a = UBig::from_le_bytes(&bytes);
+            rng.fill_bytes(&mut bytes);
+            *bytes.last_mut().unwrap() |= 0x80;
+            let b = UBig::from_le_bytes(&bytes);
+
+            let (g, ca, cb) = (&a).gcd_ext(&b);
+            assert_eq!(g, (&a).gcd(&b));
+            assert_eq!(&a % &g, UBig::ZERO);
+            assert_eq!(&b % &g, UBig::ZERO);
+            assert_eq!(a * ca + b * cb, g.into());
+        }
+    }
+}
