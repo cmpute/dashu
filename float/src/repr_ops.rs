@@ -15,8 +15,6 @@
 use core::cmp::Ordering;
 use core::ops::{Add, Mul, Neg, Sub};
 
-use dashu_base::Sign;
-
 use crate::error::FpError;
 use crate::repr::{Repr, Word};
 use crate::utils::shl_digits;
@@ -181,11 +179,7 @@ impl<const B: Word> Mul<&Repr<B>> for &Repr<B> {
                 Repr::zero()
             };
         }
-        let sign = if self.sign() != rhs.sign() {
-            Sign::Negative
-        } else {
-            Sign::Positive
-        };
+        let sign = self.sign() * rhs.sign();
         // Exponent = lhs + rhs; saturate an `isize` overflow to the signed infinity/zero sentinel
         // so the operator stays infallible (unreachable for real inputs — it needs operands with
         // exponents ~±2^62). `Context::mul` re-derives the `FpError` from this saturated result.

@@ -141,7 +141,7 @@ impl MontgomeryLargeRepr {
 
         // R^2 mod m, computed once via UBig arithmetic.
         let r = UBig::ONE << (s * WORD_BITS_USIZE);
-        let r2_mod_m = (&r * &r) % &m;
+        let r2_mod_m = r.sqr() % &m;
 
         Self {
             modulus,

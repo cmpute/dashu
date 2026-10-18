@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Change
+- Use sign multiplication for the signed-zero square case and compare magnitudes without
+  constructing redundant absolute-value temporaries in tests.
+
 ## 0.6.2
 
 ### Change

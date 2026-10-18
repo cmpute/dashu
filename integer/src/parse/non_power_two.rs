@@ -87,7 +87,7 @@ fn parse_large(bytes: &[u8], radix: Digit) -> Result<UBig, ParseError> {
     // To avoid overflow:
     while chunk_bytes <= (bytes.len() - 1) >> radix_powers.len() {
         let prev = radix_powers.last().unwrap();
-        let new = prev * prev;
+        let new = prev.sqr();
         radix_powers.push(new);
     }
 

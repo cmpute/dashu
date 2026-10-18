@@ -376,11 +376,7 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             // tanh(±inf) = ±1
             let one = FBig::new(Repr::one(), *self);
-            return Ok(Exact(if x.sign() == Sign::Negative {
-                -one
-            } else {
-                one
-            }));
+            return Ok(Exact(one * x.sign()));
         }
         assert_limited_precision(self.precision);
         if x.significand.is_zero() {
@@ -1385,14 +1381,7 @@ mod tests {
         for &(mag, p) in &[(2i64, 20usize), (7, 20), (10, 50), (17, 50)] {
             for &sign in &[Sign::Positive, Sign::Negative] {
                 let mag_i = IBig::from(mag);
-                let x = Repr::<2>::new(
-                    if sign == Sign::Positive {
-                        mag_i
-                    } else {
-                        -mag_i
-                    },
-                    0,
-                );
+                let x = Repr::<2>::new(mag_i * sign, 0);
                 let hi = Context::<mode::HalfEven>::new(p + 60)
                     .tanh::<2>(&x, None)
                     .unwrap()

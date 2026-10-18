@@ -4,10 +4,12 @@ Development-only [Dylint](https://github.com/trailofbits/dylint) lints for Dashu
 This standalone crate has its own workspace and pinned nightly; the published core crates
 keep their existing MSRV. Bump `rust-toolchain` and the `clippy_utils` git revision together.
 CI pins `cargo-dylint` and `dylint-link` to the version in this crate's lockfile.
-For now, CI builds and loads the lint library against `examples/` through the UI tests,
-checks the expected diagnostic snapshots, and checks the lint implementation's formatting
-and Clippy warnings. Full-workspace linting is deferred to a later CI change; the commands
-below remain available for manual scans.
+The `Lints` workflow builds and loads the lint library against `examples/` through the UI
+tests, checks diagnostic snapshots, and checks the implementation's formatting and Clippy
+warnings. A separate `House lints` job in the same workflow scans all workspace features
+and targets (excluding dashu-python), treating warnings as errors. Both jobs run when a PR
+targeting `master` or `develop` is opened, reopened, or updated with additional commits.
+The workflow also supports manual dispatch and does not run on push events.
 
 ## Rules
 
@@ -55,7 +57,7 @@ Existing Clippy rules such as `redundant_clone` remain separate from the house l
 
 ```sh
 cargo +nightly-2026-04-16 install cargo-dylint dylint-link --version 6.1.0 --locked
-cargo +nightly-2026-04-16 dylint --all -- --workspace --exclude dashu-python --all-features --all-targets
+DYLINT_RUSTFLAGS="-D warnings" cargo +nightly-2026-04-16 dylint --all -- --workspace --exclude dashu-python --all-features --all-targets
 ```
 
 To enable optional FMA advice:

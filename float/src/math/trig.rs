@@ -93,10 +93,10 @@ fn unit_residue<const B: Word>(x: &Repr<B>, u: usize, k: usize) -> Option<i8> {
         let n = IBig::from(km.rem_euclid(modulus.clone()))
             * digits_powmod::<B>(e.unsigned_abs(), &modulus);
         let n = IBig::from(n.rem_euclid(modulus));
-        if &n % &u_ibig != IBig::ZERO {
+        let (j, rem) = n.div_rem(&u_ibig); // j is in [0, 2k) when rem == 0
+        if !rem.is_zero() {
             return None;
         }
-        let j = n / &u_ibig; // in [0, 2k)
         Some(i8::try_from(j).expect("j < 2k ≤ 24 fits in i8"))
     } else {
         // x = m/B^s: k·x/u = k·m/(u·B^s) is an integer iff u·B^s divides k·m — possible only
@@ -1348,11 +1348,7 @@ impl<R: ErrorBounds> Context<R> {
             // atan(±inf) = ±π/2 — preserved (a well-defined finite result for an infinite input)
             let pi = self.pi::<B>(reborrow_cache(&mut cache)).value();
             let half_pi: FBig<R, B> = pi / 2;
-            let res: FBig<R, B> = if x.sign() == Sign::Positive {
-                half_pi
-            } else {
-                -half_pi
-            };
+            let res: FBig<R, B> = half_pi * x.sign();
             return Ok(res.with_precision(self.precision));
         }
 
@@ -1478,11 +1474,7 @@ impl<R: ErrorBounds> Context<R> {
         // x == 0, y finite nonzero: atan2 = ±π/2.
         if x.significand.is_zero() {
             let half_pi = self.pi::<B>(reborrow_cache(&mut cache)).value() / 2u8;
-            let res = if y.sign() == Sign::Positive {
-                half_pi
-            } else {
-                -half_pi
-            };
+            let res = half_pi * y.sign();
             return Ok(res.with_precision(self.precision));
         }
 
@@ -2765,7 +2757,7 @@ mod tests {
             let s = ctx.sin_unit::<10>(x.repr(), 360, None).unwrap().value();
             let back = ctx.asin_unit::<10>(s.repr(), 360, None).unwrap().value();
             assert!(
-                (x.clone() - back).abs().abs_cmp(&tol).is_le(),
+                (x.clone() - back).abs_cmp(&tol).is_le(),
                 "asin_unit(sin_unit({deg}°)) roundtrip"
             );
         }

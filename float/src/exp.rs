@@ -407,11 +407,7 @@ impl<R: ErrorBounds> Context<R> {
         if base.significand.is_zero() {
             let neg_sign = base.sign() == Sign::Negative && odd;
             if negative {
-                let sign = if neg_sign {
-                    Sign::Negative
-                } else {
-                    Sign::Positive
-                };
+                let sign = Sign::from(neg_sign);
                 return Ok(Exact(FBig::new(Repr::<B>::infinity_with_sign(sign), *self)));
             }
             let repr = if neg_sign {
@@ -456,11 +452,7 @@ impl<R: ErrorBounds> Context<R> {
             // |base|>1 (lb_side): positive exp → overflow, negative exp → underflow.
             // |base|<1 (ub_side): positive exp → underflow, negative exp → overflow.
             let overflow = (lb_side && !negative) || (ub_side && negative);
-            let sign = if base.sign() == Sign::Negative && odd {
-                Sign::Negative
-            } else {
-                Sign::Positive
-            };
+            let sign = Sign::from(base.sign() == Sign::Negative && odd);
             return Err(if overflow {
                 FpError::Overflow(sign)
             } else {
@@ -494,11 +486,7 @@ impl<R: ErrorBounds> Context<R> {
         // The chain runs on the magnitude `start` (base, or its reciprocal for a negative
         // exponent), whose range-error sign is the *intermediate* sign; remap any overflow/underflow
         // to the true result sign (base sign × exponent parity) so the directed endpoint is correct.
-        let result_sign = if base.sign() == Sign::Negative && odd {
-            Sign::Negative
-        } else {
-            Sign::Positive
-        };
+        let result_sign = Sign::from(base.sign() == Sign::Negative && odd);
         let initial_guard = nlen + self.base_guard_digits::<B>() + 2;
         self.ziv(initial_guard, |guard| {
             let pw = self.precision + guard;
@@ -673,11 +661,7 @@ impl<R: ErrorBounds> Context<R> {
         // depends on parity. `pow_exp_log` returns the positive magnitude; flip it (and the
         // overflow/underflow sign) when the base is negative and the exponent is odd.
         let odd = signed_exp.clone().into_parts().1.bit(0);
-        let result_sign = if neg_base && odd {
-            Sign::Negative
-        } else {
-            Sign::Positive
-        };
+        let result_sign = Sign::from(neg_base && odd);
         let base_mag = if neg_base {
             let (_, mag) = base.significand().clone().into_parts();
             Repr::<B>::new(IBig::from_parts(Sign::Positive, mag), base.exponent())
@@ -686,7 +670,7 @@ impl<R: ErrorBounds> Context<R> {
         };
         let exp_repr = Repr::new(signed_exp.clone(), 0);
         match self.pow_exp_log(&base_mag, &exp_repr, None) {
-            Ok(rounded) => Ok(rounded.map(|v| if result_sign == Sign::Negative { -v } else { v })),
+            Ok(rounded) => Ok(rounded.map(|v| v * result_sign)),
             Err(FpError::Overflow(_)) => Err(FpError::Overflow(result_sign)),
             Err(FpError::Underflow(_)) => Err(FpError::Underflow(result_sign)),
             Err(e) => Err(e),

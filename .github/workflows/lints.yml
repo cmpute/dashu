@@ -1,17 +1,24 @@
 name: Lints
 
 on:
-  push:
-    branches:
-      - master
-      - develop
   pull_request:
     branches:
       - master
       - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lints-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+  CARGO_INCREMENTAL: "0"
 
 jobs:
   dylint:
@@ -37,3 +44,21 @@ jobs:
       - name: Check lint implementation
         working-directory: dashu-lints
         run: cargo clippy --lib --locked -- -D warnings
+
+  house-lints:
+    name: House lints (warnings are errors)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned nightly (must match dashu-lints/rust-toolchain)
+        run: |
+          rustup toolchain install nightly-2026-04-16 --profile minimal \
+            --component rustc-dev \
+            --component llvm-tools-preview \
+            --component rustfmt
+      - name: Install Dylint
+        run: cargo +nightly-2026-04-16 install cargo-dylint dylint-link --version 6.1.0 --locked
+      - name: Check the workspace with house lints
+        env:
+          DYLINT_RUSTFLAGS: -D warnings
+        run: cargo +nightly-2026-04-16 dylint --all -- --workspace --exclude dashu-python --all-features --all-targets

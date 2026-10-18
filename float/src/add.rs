@@ -11,8 +11,8 @@ use core::{
     ops::{Add, AddAssign, Sub, SubAssign},
 };
 
+use dashu_base::EstimatedLog2;
 use dashu_base::Sign::{self, *};
-use dashu_base::{Abs, EstimatedLog2};
 use dashu_int::{IBig, UBig};
 
 /// Build a `Repr` from a cancellation result, producing `-0` (instead of `+0`) when the
@@ -192,7 +192,7 @@ impl<R: Round> Context<R> {
             let (b_lb, _) = B.log2_bounds();
             let margin = (low.1 >> 21) + 64;
             let gap = (low.1 - window).saturating_sub(margin);
-            if low.0.clone().abs().log2_bounds().1 < gap as f32 * b_lb {
+            if low.0.log2_bounds().1 < gap as f32 * b_lb {
                 low = (low.0.signum(), window);
             }
         }

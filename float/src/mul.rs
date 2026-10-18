@@ -654,7 +654,7 @@ mod tests {
     ) -> FBig<R, B> {
         let hi = Context::<R>::new(p * 4 + 32);
         let prod = hi.mul(a, b).unwrap().value();
-        let signed = if sign == Negative { -prod } else { prod };
+        let signed = prod * sign;
         let sum = hi.add(c, signed.repr()).unwrap().value();
         sum.with_precision(p).value()
     }

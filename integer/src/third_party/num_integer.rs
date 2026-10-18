@@ -19,7 +19,7 @@ impl num_integer::Integer for UBig {
     }
     #[inline]
     fn divides(&self, other: &Self) -> bool {
-        (self % other).is_zero()
+        Self::is_multiple_of(self, other)
     }
     #[inline]
     fn is_multiple_of(&self, other: &Self) -> bool {
@@ -96,7 +96,7 @@ impl num_integer::Integer for IBig {
     }
     #[inline]
     fn divides(&self, other: &Self) -> bool {
-        (self % other).is_zero()
+        Self::is_multiple_of(self, other)
     }
     #[inline]
     fn is_multiple_of(&self, other: &Self) -> bool {
@@ -104,11 +104,11 @@ impl num_integer::Integer for IBig {
     }
     #[inline]
     fn is_even(&self) -> bool {
-        (self & IBig::ONE).is_zero()
+        !self.bit(0)
     }
     #[inline]
     fn is_odd(&self) -> bool {
-        (self & IBig::ONE).is_one()
+        self.bit(0)
     }
     #[inline]
     fn gcd(&self, other: &Self) -> Self {

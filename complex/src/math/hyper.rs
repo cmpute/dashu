@@ -364,7 +364,6 @@ mod tests {
         let diff = &co.sqr() - &s.sqr();
         let (re, im) = diff.into_parts();
         assert!((re.clone() - F::ONE)
-            .abs()
             .abs_cmp(&F::from_parts(1.into(), -12))
             .is_le());
         assert!(im.abs_cmp(&F::from_parts(1.into(), -12)).is_le());
