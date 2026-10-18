@@ -3,10 +3,15 @@
 ## Unreleased
 
 ### Change
+- Move short-division error-bound validation into integration tests, add bounded
+  proptest coverage of every normalization band edge, and keep a small internal
+  carry test beside the kernel.
+- Reuse the short-division result buffer and remove redundant normalization checks.
 - Reuse the high-product result buffer and the exact squaring kernel, and share
   deterministic word fixtures across the integer kernel tests.
 
 ### Fix
+- Correct the short-division example's error-bound scaling and recursive divisor comments.
 - Fix the sticky flag of `high::mul_high` / `high::sqr_high` on the recursive path: the
   exact high block's boundary words and the cross windows' guard words land on the two
   accumulator columns just below the window, and content there was dropped without
@@ -14,6 +19,14 @@
   documented contract ("a `false` flag means the value is exact"). Sparse operands with
   word counts above the base-case threshold could trigger it; the guard columns are now
   checked like every other dropped contribution.
+- Fix the `DASHU_THRESHOLD_DIVHIGH_SIMPLE` tuning clamp: the minimum window length for
+  the recursive split is 15 (the split constraint `k >= (n+4)/2` fails for n = 13, 14),
+  not 12 — a runtime-tuned value of 12–14 could run the recursion with a broken split.
+- Fix the differential-test bound of `high::div_high`: the exact-integer comparison
+  applied its band shifts to the wrong terms (passing only because every generated
+  input sat on the `sigma = 0` band center). The tests now cover every band edge
+  (`sigma ∈ [-2, 2]`), including the numerator down-shift normalization path that was
+  never exercised before.
 
 ### Add
 - Add `high::mul_high` and `high::sqr_high`: high-part (truncated) products with a
@@ -29,6 +42,14 @@
 - The `high` kernels dispatch on `TypedReprRef` like the other multiplication kernels:
   small (inline) operands take an exact double-word product path (zero certified
   error, exact sticky flag), mixed and large operands run on normalized word slices.
+- Add `high::div_high`: short (truncated) division with a certified two-sided error
+  bound. Given `out_words = n` and a numerator/denominator pair whose quotient is
+  sized for the window, it computes the high `n + 1` words of the quotient such that
+  `q - (2n + 2) <= (numer/denom) * 2^sigma < q + (2n + 2)` (ulps of `q`'s last word,
+  `sigma` a small documented scale). Small windows are divided exactly; larger ones
+  compose an exact high block (through the regular division dispatch) with a
+  short-product cross window and a recursive short division — following Harvey &
+  Zimmermann, "Short Division of Long Integers" (ARITH-20).
 
 ## 0.6.2
 
