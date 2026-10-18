@@ -419,7 +419,7 @@ pub(crate) fn chudnovsky_bs(a: usize, b: usize) -> (UBig, UBig, IBig) {
 
         let k = a as u64;
         let p = UBig::from(6 * k - 5) * (2 * k - 1) * (6 * k - 1);
-        let q = UBig::from(k).pow(3) * 10_939_058_860_032_000u64;
+        let q = UBig::from(k).cubic() * 10_939_058_860_032_000u64;
         let t_val = COEFF1 + COEFF2 * k;
         let t_abs = &p * t_val.unsigned_abs();
         let t = IBig::from(t_abs) * Sign::from(a % 2 == 1);
@@ -467,7 +467,7 @@ pub(crate) fn iacoth_bs(n: u32, a: usize, b: usize) -> (UBig, UBig, IBig) {
     if b - a == 1 {
         // leaf at k = a (a >= 1): (p_a, q_a, p_a), p_a = 2a-1, q_a = (2a+1)·n²
         let pa = UBig::from(2 * a - 1);
-        let n2 = UBig::from(n).pow(2);
+        let n2 = UBig::from(n).sqr();
         let qa = UBig::from(2 * a + 1) * n2;
         let ta = IBig::from(pa.clone());
         return (pa, qa, ta);
@@ -654,7 +654,7 @@ mod tests {
             let mut acc = (UBig::ONE, UBig::ONE, IBig::ZERO);
             for kk in 1..=k {
                 let pa = UBig::from(2 * kk as u64 - 1);
-                let qa = UBig::from(2 * kk as u64 + 1) * UBig::from(n).pow(2);
+                let qa = UBig::from(2 * kk as u64 + 1) * UBig::from(n).sqr();
                 let ta = IBig::from(pa.clone());
                 let (p, q, t) = merge(&acc.0, &acc.1, &acc.2, &pa, &qa, &ta);
                 acc = (p, q, t);

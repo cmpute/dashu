@@ -651,11 +651,7 @@ impl<R: Round> Context<R> {
         assert_limited_precision(self.precision);
 
         let sign_negative = lhs.sign() != rhs.sign();
-        let sign = if sign_negative {
-            Sign::Negative
-        } else {
-            Sign::Positive
-        };
+        let sign = Sign::from(sign_negative);
 
         if rhs.significand.is_zero() {
             if lhs.significand.is_zero() {

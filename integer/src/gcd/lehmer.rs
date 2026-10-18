@@ -474,11 +474,7 @@ pub fn gcd_ext_in_place(
             rhs[..x_len].copy_from_slice(&lhs[..x_len]);
         }
         lhs[..t0_len].copy_from_slice(&t0[..t0_len]);
-        let sign = if swapped {
-            Sign::Positive
-        } else {
-            Sign::Negative
-        };
+        let sign = Sign::from(!swapped);
         return (x_len, t0_len, sign);
     }
 
@@ -511,10 +507,6 @@ pub fn gcd_ext_in_place(
     let (cx, cy) = (cx.unsigned_abs(), cy.unsigned_abs());
     debug_assert_zero!(mul::add_mul_word_in_place(lhs, cx, &t0[..t0_len]));
     debug_assert_zero!(mul::add_mul_word_in_place(lhs, cy, &t1[..t1_len]));
-    let sign = if swapped {
-        Sign::Positive
-    } else {
-        Sign::Negative
-    };
+    let sign = Sign::from(!swapped);
     (1, locate_top_word_plus_one(lhs), sign)
 }

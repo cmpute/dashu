@@ -93,11 +93,7 @@ impl<D: rkyv::rancor::Fallible + ?Sized> rkyv::Deserialize<IBig, D>
     #[inline]
     fn deserialize(&self, _: &mut D) -> Result<IBig, D::Error> {
         let words: Vec<Word> = self.1.as_slice().iter().map(|w| w.to_native()).collect();
-        let sign = if self.0 {
-            Sign::Negative
-        } else {
-            Sign::Positive
-        };
+        let sign = Sign::from(self.0);
         Ok(IBig::from_sign_words(sign, &words))
     }
 }

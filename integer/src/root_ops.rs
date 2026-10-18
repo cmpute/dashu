@@ -59,7 +59,7 @@ impl CubicRootRem for UBig {
     #[inline]
     fn cbrt_rem(&self) -> (Self::Output, Self) {
         let c = self.nth_root(3);
-        let r = self - c.pow(3);
+        let r = self - c.cubic();
         (c, r)
     }
 }

@@ -16,6 +16,31 @@ fn ctx() -> Context<HalfEven> {
     Context::new(53)
 }
 
+#[test]
+fn square_signed_zeros_across_precisions() {
+    for precision in [20, 50, 100, 500] {
+        let float_context = dashu_float::Context::<HalfEven>::new(precision);
+        for re_negative in [false, true] {
+            for im_negative in [false, true] {
+                let zero = |negative| {
+                    F::from_repr(
+                        dashu_float::Repr::zero_with_sign(Sign::from(negative)),
+                        float_context,
+                    )
+                };
+                let z = C::from_parts(zero(re_negative), zero(im_negative));
+                let squared = Context::new(precision).sqr(&z).unwrap().value();
+                assert!(squared.re().is_pos_zero(), "p={precision}, {squared:?}");
+                assert_eq!(
+                    squared.im().is_neg_zero(),
+                    re_negative != im_negative,
+                    "p={precision}, {squared:?}"
+                );
+            }
+        }
+    }
+}
+
 fn real(v: i64) -> C {
     CBig::from(F::from(v))
 }

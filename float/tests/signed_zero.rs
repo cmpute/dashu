@@ -10,6 +10,41 @@ mod helper_macros;
 /// The default binary FBig (Zero rounding mode).
 type F = FBig;
 
+#[test]
+fn test_sign_shortcuts_across_precisions() {
+    fn check<R: dashu_float::round::ErrorBounds>() {
+        for precision in [20, 50, 100, 500] {
+            let context = Context::<R>::new(precision);
+            let exact = |n: i32| FBig::<R>::from_repr(Repr::new(n.into(), 0), context);
+            let negative = exact(-2);
+            for (exponent, expected) in [(2, 4), (3, -8)] {
+                assert_eq!(negative.powi(exponent.into()), exact(expected));
+                assert_eq!(negative.powf(&exact(exponent)), exact(expected));
+            }
+            assert_eq!(exact(-8).nth_root(3), exact(-2));
+            assert_eq!(exact(-1).nth_root(5), exact(-1));
+            assert_eq!(
+                negative.powi((-3).into()),
+                FBig::<R>::from_repr(Repr::new((-1).into(), -3), context)
+            );
+            for sign in [Sign::Positive, Sign::Negative] {
+                let zero = FBig::<R>::from_repr(Repr::zero_with_sign(sign), context);
+                for result in [zero.powi(3.into()), zero.nth_root(3)] {
+                    assert!(result.repr().significand().is_zero());
+                    assert_eq!(result.sign(), sign, "p={precision}, result={result:?}");
+                    assert_eq!(result.precision(), precision);
+                }
+            }
+        }
+    }
+    check::<mode::Zero>();
+    check::<mode::Away>();
+    check::<mode::Up>();
+    check::<mode::Down>();
+    check::<mode::HalfEven>();
+    check::<mode::HalfAway>();
+}
+
 fn r2(significand: i32, exponent: isize) -> Repr<2> {
     Repr::new(significand.into(), exponent)
 }

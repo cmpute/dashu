@@ -38,7 +38,7 @@ cargo clippy --all-features --all-targets --workspace --exclude dashu-python -- 
 cargo fmt --all -- --check
 
 # House lints (nightly must match dashu-lints/rust-toolchain and its clippy_utils revision)
-cargo +nightly-2026-04-16 dylint --all -- --workspace --exclude dashu-python --all-features --all-targets
+DYLINT_RUSTFLAGS="-D warnings" cargo +nightly-2026-04-16 dylint --all -- --workspace --exclude dashu-python --all-features --all-targets
 
 # Lint UI tests (run in dashu-lints so its toolchain/config are selected)
 cd dashu-lints && cargo test --lib --locked

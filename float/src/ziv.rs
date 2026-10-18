@@ -191,11 +191,7 @@ impl<R: ErrorBounds> Context<R> {
     pub fn near_one_endpoint<const B: Word>(&self, sign: Sign) -> Rounded<FBig<R, B>> {
         // The value sits just *inside* sign·1: the residual pulls it toward zero, so it carries
         // the opposite sign.
-        let res_sign = if sign == Sign::Positive {
-            Sign::Negative
-        } else {
-            Sign::Positive
-        };
+        let res_sign = -sign;
         match R::round_low_part(&IBig::from_parts(sign, UBig::ONE), res_sign, || Ordering::Less) {
             AddOne | SubOne => {
                 // One ulp toward zero: the largest p-digit significand at exponent −p, with `sign`

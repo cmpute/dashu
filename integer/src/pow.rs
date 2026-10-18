@@ -2,7 +2,11 @@
 
 use core::ops::{Shl, Shr};
 
-use crate::{ibig::IBig, ubig::UBig, Sign::*};
+use crate::{
+    ibig::IBig,
+    ubig::UBig,
+    Sign::{self, *},
+};
 
 impl UBig {
     /// Raises self to the power of `exp`.
@@ -43,11 +47,7 @@ impl IBig {
     #[inline]
     pub fn pow(&self, exp: usize) -> IBig {
         let (sign, mag) = self.as_sign_repr();
-        let sign = if sign == Negative && exp % 2 == 1 {
-            Negative
-        } else {
-            Positive
-        };
+        let sign = Sign::from(sign == Negative && exp % 2 == 1);
 
         // remove factor 2 before actual powering
         let shift = mag.trailing_zeros().unwrap_or(0);

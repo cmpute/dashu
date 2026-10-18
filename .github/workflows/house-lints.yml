@@ -1,0 +1,41 @@
+name: House lints
+
+on:
+  pull_request:
+    branches: [master, develop]
+    # Run per PR lifecycle, not on every additional commit (`synchronize`).
+    types: [opened, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: house-lints-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  house-lints:
+    name: House lints (warnings are errors)
+    if: github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned nightly
+        run: |
+          rustup toolchain install nightly-2026-04-16 --profile minimal \
+            --component rustc-dev \
+            --component llvm-tools-preview \
+            --component rustfmt
+      - name: Install Dylint
+        run: cargo +nightly-2026-04-16 install cargo-dylint dylint-link --version 6.1.0 --locked
+      - name: Check the workspace with house lints
+        env:
+          DYLINT_RUSTFLAGS: -D warnings
+        run: cargo +nightly-2026-04-16 dylint --all -- --workspace --exclude dashu-python --all-features --all-targets

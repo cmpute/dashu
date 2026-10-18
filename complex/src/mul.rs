@@ -20,11 +20,7 @@ impl<R: Round> Context<R> {
             // (x+iy)² = (x²−y²) + i·2xy: the real part is always `+0` (both squares are `+0`); the
             // imaginary part carries the signed product `2·x·y` — `−0` iff the two parts are
             // opposite-signed zeros (IEEE: `(−0)(+0) = −0`).
-            let im_sign = if z.re().sign() == z.im().sign() {
-                Sign::Positive
-            } else {
-                Sign::Negative
-            };
+            let im_sign = z.re().sign() * z.im().sign();
             return Ok(exact(
                 FBig::from_repr(Repr::zero(), self.float()),
                 FBig::from_repr(Repr::zero_with_sign(im_sign), self.float()),

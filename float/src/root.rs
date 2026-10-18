@@ -131,11 +131,7 @@ impl<R: Round> Context<R> {
 
         // operate on the magnitude so that shifting/splitting keep a clean sign;
         // the original sign is re-applied to the result at the end.
-        let xmag: IBig = if sign == Sign::Negative {
-            -&x.significand
-        } else {
-            x.significand.clone()
-        };
+        let xmag: IBig = x.significand.clone() * sign;
 
         // Adjust the significand so that the exponent is divisible by n and the root of the
         // aligned significand carries exactly `precision` digits. The alignment allows two
@@ -163,12 +159,7 @@ impl<R: Round> Context<R> {
         let rem: UBig = &mag - root.clone().pow(n);
         let exp = (x.exponent - shift) / n as isize;
 
-        let result_sign = if sign == Sign::Negative {
-            Sign::Negative
-        } else {
-            Sign::Positive
-        };
-        let signed_root: IBig = result_sign * root.clone();
+        let signed_root: IBig = sign * root.clone();
         debug_assert!(digit_len::<B>(root.as_ibig()) <= self.precision);
 
         let res = if rem.is_zero() && low.is_zero() {
@@ -180,7 +171,7 @@ impl<R: Round> Context<R> {
             //   2·(root + frac) vs 2·root + 1
             //   ⟺ 2^n·full vs (2·root + 1)^n·BASE^low_digits
             // where full = mag·BASE^low_digits + low is the full aligned significand.
-            let adjust = R::round_low_part(&signed_root, result_sign, || {
+            let adjust = R::round_low_part(&signed_root, sign, || {
                 let base_pow = Repr::<B>::BASE.pow(low_digits);
                 let full = &mag * &base_pow + low.unsigned_abs();
                 let lhs = full << n;

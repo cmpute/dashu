@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Add
+- Add a separate house-lint CI workflow that rejects warnings across all workspace features
+  and targets (excluding dashu-python). Trigger it on PR opening, reopening, or readiness,
+  plus manual dispatch, rather than on each commit.
 - Add `manual_sign_from_bool`, `manual_sign_arithmetic`, `manual_is_multiple_of`,
   `manual_bit_test`, `manual_div_rem`, `redundant_abs`, and `prefer_sqr_cubic`.
 - Add opt-in `unfused_mul_add` advice, explicitly documenting its changed rounding semantics.

@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Change
+- Use sign conversions, dedicated square/cube operations, divisibility checks, and bit tests
+  consistently with the house lints, preserving integer arithmetic behavior.
 - Bound routine randomized arithmetic tests to 10,000 bits, give GCD its own
   size-controlled test budget, and check fixed power/log identities once per size.
   Move the 100,000- and 1,000,000-bit campaigns to the opt-in fuzz stress suite,

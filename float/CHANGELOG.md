@@ -37,6 +37,8 @@
   finer final window than the plain `(n + 2) + (n2 + 2)` sum accounted for.
 
 ### Change
+- Apply signs directly, avoid redundant absolute-value temporaries, and share quotient/remainder
+  work during trigonometric argument reduction; preserve the existing rounding boundaries.
 - Organize short-product and short-quotient checks into fixed regressions in
   `tests/high.rs` and bounded property tests in `tests/high_prop.rs`, sharing exact
   oracles and assertions through `tests/helpers.rs`. Explicitly cover precision

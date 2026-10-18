@@ -1050,9 +1050,8 @@ mod tests {
         let sum = &s.sqr() + &co.sqr();
         // purely real ≈ 1, imaginary ≈ 0
         let (re, im) = sum.into_parts();
-        use dashu_base::{Abs, AbsOrd};
+        use dashu_base::AbsOrd;
         assert!((re.clone() - F::ONE)
-            .abs()
             .abs_cmp(&F::from_parts(1.into(), -12))
             .is_le());
         assert!(im.abs_cmp(&F::from_parts(1.into(), -12)).is_le());
@@ -1060,14 +1059,14 @@ mod tests {
 
     #[test]
     fn tan_large_imaginary_is_near_i() {
-        use dashu_base::{Abs, AbsOrd};
+        use dashu_base::AbsOrd;
         // tan(x + i·100) ≈ i: real part → 0, imaginary → tanh(100) ≈ 1. The cancellation-free
         // double-angle form computes this accurately; the naive `sin/cos` division would cancel the
         // real part to noise for such a large `|Im z|` (the motivating case for the new formula).
         let (re, im) = c(1, 100).tan().into_parts();
         let tol = F::from_parts(1.into(), -40);
-        assert!(re.abs().abs_cmp(&tol).is_le());
-        assert!((im - F::from(1)).abs().abs_cmp(&tol).is_le());
+        assert!(re.abs_cmp(&tol).is_le());
+        assert!((im - F::from(1)).abs_cmp(&tol).is_le());
     }
 
     #[test]
@@ -1087,14 +1086,13 @@ mod tests {
 
     #[test]
     fn asin_one_is_half_pi() {
-        use dashu_base::{Abs, AbsOrd};
+        use dashu_base::AbsOrd;
         // asin(1) = π/2 (limited-precision input — asin rejects unlimited precision)
         let (re, im) = c(1, 0).asin().into_parts();
         let half_pi = F::from_parts(15707963267948966i64.into(), -16)
             .with_precision(60)
             .value();
         assert!((re.clone() - half_pi)
-            .abs()
             .abs_cmp(&F::from_parts(1.into(), -12))
             .is_le());
         assert!(im.abs_cmp(&F::from_parts(1.into(), -12)).is_le());
@@ -1102,28 +1100,26 @@ mod tests {
 
     #[test]
     fn acos_zero_is_half_pi() {
-        use dashu_base::{Abs, AbsOrd};
+        use dashu_base::AbsOrd;
         // limited-precision input (acos rejects unlimited precision)
         let (re, _im) = c(0, 0).acos().into_parts();
         let half_pi = F::from_parts(15707963267948966i64.into(), -16)
             .with_precision(60)
             .value();
         assert!((re - half_pi)
-            .abs()
             .abs_cmp(&F::from_parts(1.into(), -12))
             .is_le());
     }
 
     #[test]
     fn atan_one_is_quarter_pi() {
-        use dashu_base::{Abs, AbsOrd};
+        use dashu_base::AbsOrd;
         // atan(1) = π/4 (limited-precision input — atan rejects unlimited precision)
         let (re, _im) = c(1, 0).atan().into_parts();
         let quarter_pi = F::from_parts(7853981633974483i64.into(), -16)
             .with_precision(60)
             .value();
         assert!((re - quarter_pi)
-            .abs()
             .abs_cmp(&F::from_parts(1.into(), -12))
             .is_le());
     }
