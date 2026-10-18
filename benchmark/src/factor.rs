@@ -45,12 +45,10 @@ const RHO_BATCH: u64 = 128;
 /// Everything is seeded deterministically, so the output `p * q` (with
 /// p <= q) is identical across libraries.
 ///
-/// Recommended sizes, chosen so the per-iteration cost matches the other
-/// tasks in this folder (e at 1M digits and fib at 10M run in well under a
-/// second; e at 10M digits and fib at 100M take ~15 s each): `n` = 2048
-/// (~0.6 s/iteration), 8192 (~8 s) and 16384 (~25 s). The one-time prime
-/// search before the first iteration costs ~0.1 s, ~1 min and ~10 min
-/// respectively, and is absorbed by the median-of-5 sampling in `exec`.
+/// The recommended ladder is `n` = 200 / 1000 / 5000 (~0.04 / 0.2 / 2.7 s
+/// per iteration, matching the other tasks in this folder); the one-time
+/// prime search before the first iteration costs well under a second at
+/// these sizes and is absorbed by the median-of-5 sampling in `exec`.
 pub(crate) fn calculate<T: Natural>(n: u32) -> String
 where
     <T as FromStr>::Err: Debug,
