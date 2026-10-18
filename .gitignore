@@ -6,7 +6,6 @@
 .zcode/
 benchmark/Cargo.lock
 benchmark/target
-benchmark/report/results.json
 fuzz/target
 fuzz/Cargo.lock
 
