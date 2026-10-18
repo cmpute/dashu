@@ -43,8 +43,14 @@ const RHO_BATCH: u64 = 128;
 /// Miller-Rabin verification of both factors.
 ///
 /// Everything is seeded deterministically, so the output `p * q` (with
-/// p <= q) is identical across libraries. Useful values of `n` span from
-/// 16 up to tens of thousands of bits.
+/// p <= q) is identical across libraries.
+///
+/// Recommended sizes, chosen so the per-iteration cost matches the other
+/// tasks in this folder (e at 1M digits and fib at 10M run in well under a
+/// second; e at 10M digits and fib at 100M take ~15 s each): `n` = 2048
+/// (~0.6 s/iteration), 8192 (~8 s) and 16384 (~25 s). The one-time prime
+/// search before the first iteration costs ~0.1 s, ~1 min and ~10 min
+/// respectively, and is absorbed by the median-of-5 sampling in `exec`.
 pub(crate) fn calculate<T: Natural>(n: u32) -> String
 where
     <T as FromStr>::Err: Debug,

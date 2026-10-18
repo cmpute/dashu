@@ -30,7 +30,7 @@ Benchmarks for arbitrary precision numbers with Rust implementations. The code i
 
 - Print results:
     - Integer: `cargo run -- --lib dashu --lib num --lib malachite --lib ibig --task e -n 100 print`
-    - Integer factorization (n = bits of the large prime factor): `cargo run --release -- --lib dashu --lib num --lib malachite --lib ibig --task factor -n 256 print`
+    - Integer factorization (n = bits of the large prime factor; recommended 2048 / 8192 / 16384): `cargo run --release -- --lib dashu --lib num --lib malachite --lib ibig --task factor -n 2048 print`
     - Rational: `cargo run -- --lib dashu --lib num --lib malachite --task fib_ratio -n 100 print`
     - Decimal Float: `cargo run -- --lib dashu --lib bigdecimal --task e_decimal -n 100 print`
     - Binary Float (π): `cargo run -- --lib dashu --lib astro_float --task pi -n 100 print`
