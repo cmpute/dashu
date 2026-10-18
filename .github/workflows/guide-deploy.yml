@@ -1,26 +1,39 @@
-# Publish the compiled mdBook user guides to GitHub Pages on every version tag.
+# Publish the compiled mdBook user guides.
 #
 # This is the *release* counterpart of `guide.yml` (which only build-checks the
-# guides on push/PR). When a version tag (`v0.6.0-rc.3`, `v0.5.2`, …) is pushed
-# (or the workflow is run manually), it:
-#   * builds both guides via `guide/build.sh` — which stamps each book with the
-#     dashu version + git commit (see the script), and
-#   * publishes the compiled HTML to GitHub Pages:
+# guides on push/PR). It builds both guides via `guide/build.sh` — which stamps
+# each book with the dashu version + git commit — and publishes them:
+#
+#   * Cloudflare Pages project `dashu-docs` (primary, serves zyxin.xyz/dashu
+#     and /dashu-zh via proxy rules in the main zyxin site). Requires the
+#     repository secrets `CLOUDFLARE_API_TOKEN` (Pages:Edit) and
+#     `CLOUDFLARE_ACCOUNT_ID`.
+#   * GitHub Pages gh-pages branches (kept during the migration transition
+#     while zyxin.xyz still resolves to GitHub Pages):
 #       - `guide/book`    → the `gh-pages` branch of THIS repo (cmpute/dashu)
 #       - `guide-zh/book` → the `gh-pages` branch of cmpute/dashu-zh
+#     The Chinese book lives in a *separate* repository, so the `GITHUB_TOKEN`
+#     (scoped to this repo) cannot push there. A Personal Access Token with
+#     `contents: write` on cmpute/dashu-zh must be stored as the repository
+#     secret `DASHU_ZH_PUSH_TOKEN`. Until that secret exists the dashu-zh
+#     step will fail — loudly, so a missing credential is never silently
+#     skipped.
 #
-# The Chinese book lives in a *separate* repository, so the `GITHUB_TOKEN`
-# (scoped to this repo) cannot push there. A Personal Access Token with
-# `contents: write` on cmpute/dashu-zh must be stored as the repository secret
-# `DASHU_ZH_PUSH_TOKEN` (alternatively, pass `deploy_key` and set an SSH deploy
-# key with write access on dashu-zh). Until that secret exists the dashu-zh
-# step will fail — loudly, so a missing credential is never silently skipped.
-name: Publish guide to GitHub Pages
+# Triggers: version tags (`v0.6.0-rc.3`, `v0.5.2`, …), manual runs, and pushes
+# to master that touch the guides (or the workspace version in Cargo.toml).
+# Push events are short-circuited with an in-job diff instead of a trigger
+# `paths` filter, because `paths` skips tag pushes whose commit has no diff
+# against the default branch. The Cloudflare step runs last so a missing
+# Cloudflare secret cannot block the gh-pages publishes that the live site
+# still depends on during the transition.
+name: Publish guide
 
 on:
   push:
     tags:
       - 'v[0-9]*'
+    branches:
+      - master
   workflow_dispatch:
 
 permissions:
@@ -38,25 +51,57 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # full history so `git describe` stamps the tag-based version
+      - name: Skip master pushes that don't touch the guides
+        if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
+        run: |
+          BEFORE="${{ github.event.before }}"
+          if [ "$BEFORE" != "0000000000000000000000000000000000000000" ] \
+             && git cat-file -e "$BEFORE^{commit}" 2>/dev/null \
+             && ! git diff --name-only "$BEFORE" "$GITHUB_SHA" -- guide guide-zh Cargo.toml | grep -q .; then
+            echo "No changes under guide/, guide-zh/ or Cargo.toml — skipping publish."
+            echo "skip=true" >> "$GITHUB_ENV"
+          fi
       - uses: dtolnay/rust-toolchain@master
+        if: env.skip != 'true'
         with:
           toolchain: stable
       - name: Install mdBook
+        if: env.skip != 'true'
         run: cargo install mdbook --locked --version 0.5.3
       - name: Install mdbook-katex (mdbook 0.5 build)
+        if: env.skip != 'true'
         run: cargo install --locked --git https://github.com/lzanini/mdbook-katex --rev 1f63ab8605cea8e975be4b001dd7e39dd5367834
       - name: Build guides (stamped with version & commit)
+        if: env.skip != 'true'
         run: bash guide/build.sh
       - name: Publish English guide to this repo's gh-pages
+        if: env.skip != 'true'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages
           publish_dir: ./guide/book
       - name: Publish Chinese guide to cmpute/dashu-zh
+        if: env.skip != 'true'
         uses: peaceiris/actions-gh-pages@v4
         with:
           personal_token: ${{ secrets.DASHU_ZH_PUSH_TOKEN }}
           external_repository: cmpute/dashu-zh
           publish_branch: gh-pages
           publish_dir: ./guide-zh/book
+      - name: Assemble Cloudflare Pages site (books under path prefixes)
+        if: env.skip != 'true'
+        run: |
+          mkdir -p site
+          cp -a guide/book site/dashu
+          cp -a guide-zh/book site/dashu-zh
+      - name: Publish guides to Cloudflare Pages (dashu-docs)
+        if: env.skip != 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # --branch is pinned so tag-triggered runs still deploy to production
+          # (the checkout is a detached tag ref, which wrangler would otherwise
+          # treat as a preview branch).
+          command: pages deploy site --project-name=dashu-docs --branch=main --commit-hash=${{ github.sha }}
