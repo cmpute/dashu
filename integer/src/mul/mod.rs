@@ -33,15 +33,11 @@ const_assert!(THRESHOLD_TOOM42_MIN_DEFAULT >= toom_4_2::MIN_LEN);
 /// NTT threshold.
 #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
 const THRESHOLD_NTT_ASYM_MIN_DEFAULT: usize = 2500;
-#[cfg(any(force_bits = "16", target_pointer_width = "16"))]
-const THRESHOLD_NTT_ASYM_MIN_DEFAULT: usize = usize::MAX;
 /// Minimum ratio between the operand lengths for the chunked NTT path. At
 /// least three full 2*b chunks are needed to amortize the b-hat transform;
 /// below that the chunked Toom-3/Toom-4 path measured faster head-to-head.
 #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
 const THRESHOLD_NTT_ASYM_RATIO_DEFAULT: usize = 6;
-#[cfg(any(force_bits = "16", target_pointer_width = "16"))]
-const THRESHOLD_NTT_ASYM_RATIO_DEFAULT: usize = usize::MAX;
 
 /// If smaller operand length <= this, Toom-3 multiplication will be used.
 const THRESHOLD_TOOM4_MUL_DEFAULT: usize = 1000;
@@ -101,6 +97,7 @@ mod threshold {
         }
         super::THRESHOLD_TOOM42_MIN_DEFAULT
     }
+    #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
     #[inline]
     pub fn ntt_asym_min() -> usize {
         #[cfg(feature = "tuning")]
@@ -113,6 +110,7 @@ mod threshold {
         }
         super::THRESHOLD_NTT_ASYM_MIN_DEFAULT
     }
+    #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
     #[inline]
     pub fn ntt_asym_ratio() -> usize {
         #[cfg(feature = "tuning")]
@@ -301,13 +299,13 @@ pub(crate) fn max_layout3(l0: Layout, l1: Layout, l2: Layout) -> Layout {
 /// `5.01 * total` plus logarithmic terms), and the NTT branches pay a
 /// total-driven budget that is evaluated exactly here.
 fn memory_chain_budget_closed_form(total: usize) -> Layout {
-    let mut words = 6 * total + 24 * (math::ceil_log2(total.max(2)) as usize) + 256;
+    let words = 6 * total + 24 * (math::ceil_log2(total.max(2)) as usize) + 256;
     #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
-    {
+    let words = {
         let ntt_words =
             ntt::memory_requirement_up_to(total, total / 2).size() / mem::size_of::<Word>();
-        words = words.max(ntt_words);
-    }
+        words.max(ntt_words)
+    };
     memory::array_layout::<Word>(words)
 }
 
@@ -395,6 +393,7 @@ pub(crate) fn memory_chain_budget_envelope(total_cap: usize, smaller_cap: usize)
 /// Budget for the tail re-dispatch of the chunked NTT over `a` in chunks
 /// of `2*b`: the tail re-enters the dispatcher while the persistent
 /// pipeline is still allocated, so its budget adds to the pipeline's.
+#[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
 fn chunk_tail_budget(a: usize, b: usize, own: Layout) -> Layout {
     let tail = a % b;
     if tail == 0 {

@@ -17,6 +17,8 @@
   fails loudly in release builds too.
 
 ### Fix
+- Exclude NTT-only thresholds and scratch helpers on 16-bit word targets,
+  and avoid an unused mutable binding so tests compile with `-D warnings`.
 - Apply the Toom-4x2 dispatch length gates to the division/GCD scratch
   envelope, avoiding reservations for inactive kernels at small sizes.
 - Gate the Toom-4x2 crossover benchmark on `std` so no-std unit tests compile.
