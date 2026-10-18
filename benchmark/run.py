@@ -302,7 +302,7 @@ def generate_report(data, out_dir, report_dir):
     lines += ["", "## Interactive chart", "",
               "The interactive version of the above (task switching, library toggles, "
               "tooltips) is in [chart.html](report/chart.html); raw timings are in "
-              "[results.json](report/results.json).", ""]
+              "[results.json](report/results.json) (git-ignored).", ""]
     (out_dir / "REPORT.md").write_text("\n".join(lines), encoding="utf-8")
     print(f"report written to {out_dir / 'REPORT.md'}")
 

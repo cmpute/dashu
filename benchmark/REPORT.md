@@ -1,6 +1,6 @@
 # Library comparison report
 
-Generated 2026-10-19 00:08:52 by `benchmark/run.py`. Times are seconds for one task iteration (lower is better); cells under 1 s are the minimum of 3 process runs, and the factor task excludes its one-time prime generation. The fastest library per size is in bold.
+Generated 2026-10-18 23:55:14 by `benchmark/run.py`. Times are seconds for one task iteration (lower is better); cells under 1 s are the minimum of 3 process runs, and the factor task excludes its one-time prime generation. The fastest library per size is in bold.
 
 ## Environment
 
@@ -122,4 +122,4 @@ Input size unit: bits of π.
 
 ## Interactive chart
 
-The interactive version of the above (task switching, library toggles, tooltips) is in [chart.html](report/chart.html); raw timings are in [results.json](report/results.json).
+The interactive version of the above (task switching, library toggles, tooltips) is in [chart.html](report/chart.html); raw timings are in [results.json](report/results.json) (git-ignored).
