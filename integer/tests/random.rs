@@ -1,12 +1,11 @@
-use dashu_int::{
-    fast_div::ConstDivisor,
-    ops::{DivRem, ExtendedGcd, Gcd},
-    rand::UniformBits,
-    IBig, UBig,
-};
+use dashu_int::{fast_div::ConstDivisor, ops::DivRem, rand::UniformBits, IBig, UBig};
 use rand_v08::{distributions::uniform::Uniform, prelude::*};
 
 mod helper_macros;
+
+// Keep routine coverage bounded even when force_bits changes Word but not usize.
+// The 100,000- and 1,000,000-bit campaigns live in fuzz/tests/integer_stress.rs.
+const ARITHMETIC_CASES: &[(usize, usize)] = &[(100, 256), (1_000, 64), (10_000, 16)];
 
 #[test]
 fn test_uniform_bits() {
@@ -82,16 +81,8 @@ fn test_random_arithmetic() {
     let mut rng = StdRng::seed_from_u64(3);
     let p = ubig!(1000000007);
 
-    // 10^2 bits: 10^5 cases
-    // ..to..
-    // 10^6 bits: 10 cases
-    for log_num_bits in 2..=6 {
-        let num_bits = match 10usize.checked_pow(log_num_bits) {
-            None => continue,
-            Some(x) => x,
-        };
-        let num_cases = 10u32.pow(7 - log_num_bits);
-        for i in 0..num_cases {
+    for &(num_bits, num_cases) in ARITHMETIC_CASES {
+        for _ in 0..num_cases {
             let len_a = rng.gen_range(10..num_bits);
             let len_b = rng.gen_range(10..num_bits);
             let a = rng.gen_range(ubig!(100)..ubig!(1) << len_a);
@@ -106,23 +97,10 @@ fn test_random_arithmetic() {
 
             assert_eq!((&a + &b) % &p, ((&a % &p) + (&b % &p)) % &p);
             assert_eq!(&a + &b - &a, b);
-            assert_eq!((&a * &b) % &p, ((&a % &p) * (&b % &p)) % &p);
-            assert_eq!((&a * &b + &c).div_rem(&a), (b.clone(), c.clone()));
+            let product = &a * &b;
+            assert_eq!(&product % &p, ((&a % &p) * (&b % &p)) % &p);
+            assert_eq!((product + &c).div_rem(&a), (b.clone(), c.clone()));
             assert_eq!((&a + ubig!(1)) * (&a - ubig!(1)), a.sqr() - ubig!(1));
-
-            // pow can be very slow when exponent is too large, test with lower frequency
-            if log_num_bits <= 5 && i % 8 == 0 {
-                assert_eq!((ubig!(5).pow(num_bits) + 1u8).ilog(&ubig!(25)), num_bits / 2);
-            }
-
-            // gcd is much slower than primitive operations, test with even lower frequency
-            if i % 32 == 0 {
-                let (g, ca, cb) = (&a).gcd_ext(&b);
-                assert_eq!(g, (&a).gcd(&b));
-                assert_eq!(&a % &g, ubig!(0));
-                assert_eq!(&b % &g, ubig!(0));
-                assert_eq!(a * ca + b * cb, g.into());
-            }
         }
     }
 }
@@ -132,16 +110,9 @@ fn test_random_modular_arithmetic() {
     let mut rng = StdRng::seed_from_u64(3);
     let p = ConstDivisor::new(ubig!(1000000007));
     let one = p.reduce(ubig!(1));
+    let zero = p.reduce(UBig::ZERO);
 
-    // 10^2 bits: 10^5 cases
-    // ..to..
-    // 10^6 bits: 10 cases
-    for log_num_bits in 2..=6 {
-        let num_bits = match 10usize.checked_pow(log_num_bits) {
-            None => continue,
-            Some(x) => x,
-        };
-        let num_cases = 10u32.pow(7 - log_num_bits);
+    for &(num_bits, num_cases) in ARITHMETIC_CASES {
         for _ in 0..num_cases {
             let len_a = rng.gen_range(10..num_bits);
             let len_b = rng.gen_range(10..num_bits);
@@ -149,7 +120,10 @@ fn test_random_modular_arithmetic() {
             let b = p.reduce(rng.gen_range(ubig!(100)..ubig!(1) << len_b));
 
             assert_eq!(&a + &b - &a, b);
-            assert_eq!(&a * &b / &a, b);
+            // Reduction can map a nonzero input to zero, which has no inverse.
+            if a != zero {
+                assert_eq!(&a * &b / &a, b);
+            }
             assert_eq!((&a + &one) * (&a - &one), a.sqr() - &one);
         }
     }

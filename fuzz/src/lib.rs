@@ -1,10 +1,10 @@
 //! Shared strategies and helpers for the `fuzz` differential tests.
 //!
 //! The test binaries under `fuzz/tests/` are proptest-driven differentials against `rug` (GMP/MPFR/
-//! MPC) or an internal exact-then-round oracle. They live in a workspace-excluded crate and are run
-//! manually before a release; they are **not** part of CI's per-PR test job (CI only `cargo check`s
-//! this crate — see the `fuzz-check` workflow). Proptest gives shrinking: a failing differential
-//! reduces to a minimal counterexample.
+//! MPC), internal exact-then-round oracles, or large integer algebraic stress campaigns. They live
+//! in a workspace-excluded crate and are run manually before a release; they are **not** part of
+//! CI's per-PR test job (CI only `cargo check`s this crate — see the `fuzz-check` workflow).
+//! Proptest gives shrinking: a failing differential reduces to a minimal counterexample.
 //!
 //! Run them with [`run.sh`](../run.sh) (`fuzz/run.sh`, `-h` for options), which gives every test —
 //! and every requested *shard* of a test — its own process and keeps all cores busy; the plain
@@ -203,6 +203,19 @@ pub fn dbig_strategy(
     (ibig_strategy(5), exp_range).prop_map(|(sig, exp)| {
         FBig::from_repr(Repr::<10>::new(sig, exp), Context::<HalfAway>::new(0))
     })
+}
+
+/// Sample an integer with exactly `bits` bits from bytes, independently of Word width.
+/// Used by the large integer stress campaigns so every width gets the same inputs.
+pub fn random_ubig_bits(rng: &mut impl rand::Rng, bits: usize) -> UBig {
+    assert!(bits > 0);
+    let mut bytes = vec![0u8; bits.div_ceil(8)];
+    rng.fill_bytes(&mut bytes);
+    let top_bits = (bits - 1) % 8 + 1;
+    let top = bytes.last_mut().unwrap();
+    *top &= u8::MAX >> (8 - top_bits);
+    *top |= 1 << (top_bits - 1);
+    UBig::from_le_bytes(&bytes)
 }
 
 /// A positive base-10 `DBig` at unlimited precision (significand ≥ 1), for the ln/sqrt/powf domains.
