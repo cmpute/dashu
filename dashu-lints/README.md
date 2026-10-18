@@ -1,95 +1,81 @@
 # dashu-lints
 
-Custom [Dylint](https://github.com/trailofbits/dylint) lints enforcing dashu house conventions.
+Development-only [Dylint](https://github.com/trailofbits/dylint) lints for Dashu.
+This standalone crate has its own workspace and pinned nightly; the published core crates
+keep their existing MSRV. Bump `rust-toolchain` and the `clippy_utils` git revision together.
+CI pins `cargo-dylint` and `dylint-link` to the version in this crate's lockfile.
+For now, CI builds and loads the lint library against `examples/` through the UI tests,
+checks the expected diagnostic snapshots, and checks the lint implementation's formatting
+and Clippy warnings. Full-workspace linting is deferred to a later CI change; the commands
+below remain available for manual scans.
 
-This crate is not a member of the main workspace: it builds against a pinned nightly toolchain
-(see `rust-toolchain`) because lints link against rustc internals, exactly like Clippy. The main
-dashu crates remain stable-Rust; nightly is needed only to build and run these lints.
+## Rules
 
-Currently all lints are **warn-by-default** so the existing hits can be cleaned up incrementally;
-they will be flipped to deny once the tree is clean.
-
-## Lints
-
-| Lint | Default | Description |
+| Lint | Default | Pattern / advice |
 |---|---|---|
-| `if_sign_mul` | warn | Flags `if sign == Sign::Negative { -v } else { v }` selections (including the `Sign::Positive` and `!=` mirrors), which can be written as `sign * v` |
+| `if_sign_mul` | warn | `if sign == Negative { -v } else { v }` → `v * sign`; preserve clones |
+| `manual_sign_from_bool` | warn | `if condition { Negative } else { Positive }` → `Sign::from(condition)`; invert the condition for the mirror |
+| `manual_sign_arithmetic` | warn | Branches implementing sign multiplication, negation, or identity |
+| `manual_is_multiple_of` | warn | `(a % b).is_zero()` or a remainder compared with zero → `a.is_multiple_of(&b)` |
+| `manual_bit_test` | warn | `(a & ONE).is_zero()` / `.is_one()` → `!a.bit(0)` / `a.bit(0)` |
+| `manual_div_rem` | warn | Adjacent quotient/remainder calculations, including a nonzero-remainder early-return guard → `DivRem` or checked `DivExact` |
+| `redundant_abs` | warn | Absolute-value temporaries before `abs_cmp`, integer `log2_bounds`, or comparisons of two absolute values |
+| `prefer_sqr_cubic` | warn | Repeated products or integer `pow(2)` / `pow(3)` → dedicated `sqr` / `cubic` methods |
+| `unfused_mul_add` | allow | Optional advice for floating `(a * b) + c` when a single rounding via `fma` is intended |
 
-## Running
+The new rules emit help rather than automatic edits. `if_sign_mul` suggestions are marked
+`MaybeIncorrect` and retain the positive branch's clone. It only diagnoses known types with
+right-hand `Mul<Sign>`, avoiding unsupported internal interval types.
 
-One-time setup:
+## Semantic boundaries
+
+- Type identity is checked through rustc, including types defined in the crate being linted;
+  similarly named user types and primitive arithmetic are excluded from the numerical rules.
+- Sign construction and arithmetic rewrites are skipped in const contexts: the suggested
+  trait calls are not const. Numeric performance rules also skip const contexts.
+- Quotient/remainder and repeated-product matching uses the same local bindings or fields.
+  Calls and indexing are not treated as equivalent expressions. Quotient/remainder matching
+  does not cross intervening statements or shadowed operand bindings.
+- Integer performance rules, powers, and FMA advice skip `#[test]` functions and `#[cfg(test)]`
+  modules so independent arithmetic references and owned/ref operator coverage are preserved.
+  Use a local `#[allow(lint_name)]` for reference helpers outside those scopes.
+- `IBig::sqr()` returns `UBig`; its diagnostic explicitly asks the caller to preserve the
+  required signed result type. Complex multiplication/squaring is not diagnosed.
+- Floating `x * x * x` rounds twice; `cubic()` rounds the exact cube once. Similarly, `fma`
+  differs from a separately rounded multiplication followed by addition, even with the same
+  rounding-mode type. These diagnostics explain the changed rounding semantics and never
+  supply an automatic replacement.
+- `abs(x) < y` is not a magnitude comparison when `y` might be negative. Only comparisons
+  with absolute values on both sides, or an existing magnitude-only operation, are diagnosed.
+
+The library does not enable broad Clippy groups or alter the arithmetic implementations.
+Existing Clippy rules such as `redundant_clone` remain separate from the house lints.
+
+## Run
 
 ```sh
 cargo +nightly-2026-04-16 install cargo-dylint dylint-link --version 6.1.0 --locked
+cargo +nightly-2026-04-16 dylint --all -- --workspace --exclude dashu-python --all-features --all-targets
 ```
 
-Then, from the repository root (the library is registered in the root `Cargo.toml` under
-`[workspace.metadata.dylint]`):
+To enable optional FMA advice:
 
 ```sh
-cargo +nightly-2026-04-16 dylint --all -- --all-targets
+DYLINT_RUSTFLAGS="-W unfused_mul_add" cargo +nightly-2026-04-16 dylint --all -- -p dashu-float --lib
 ```
 
-or scoped to one crate while iterating:
+## Test
+
+Run from this directory so Cargo selects the pinned toolchain and linker configuration:
 
 ```sh
-cargo +nightly-2026-04-16 dylint --all -- -p dashu-float --all-targets
+cargo fmt --all -- --check
+cargo test --lib --locked
+cargo clippy --lib --locked -- -D warnings
 ```
 
-The `+nightly-2026-04-16` on the command is what makes the *target* crates build under the pinned
-nightly; the driver itself picks the same toolchain up from `rust-toolchain`. The pinned channel
-and the `clippy_utils` revision in `Cargo.toml` must be bumped together (see
-[malachite-lints](https://github.com/mhogrefe/malachite/tree/master/malachite-lints), which uses
-the same scheme).
-
-## Note on network-restricted machines
-
-Building the `dylint_driver` executable, which `cargo-dylint` does on the fly, runs a build script
-that clones rust-clippy from GitHub. On machines where that clone times out, redirect it to a
-local mirror of the commit that matters (the one whose `rust-toolchain.toml` channel equals the
-pinned nightly):
-
-```sh
-git clone --depth 1 --filter=blob:none --no-checkout https://github.com/rust-lang/rust-clippy /tmp/rust-clippy
-git -C /tmp/rust-clippy fetch --depth 1 origin f6d310692116e9a527ce6d0b3526c965d9c5d7b9
-git -C /tmp/rust-clippy checkout f6d310692116e9a527ce6d0b3526c965d9c5d7b9
-git init ~/path/to/clippy-mini
-echo "f6d310692116e9a527ce6d0b3526c965d9c5d7b9" | git -C /tmp/rust-clippy pack-objects --revs --stdout | git -C ~/path/to/clippy-mini unpack-objects -q
-```
-
-then rewrite the URL for the build script only (never commit this):
-
-```sh
-GIT_CONFIG_COUNT=1 \
-GIT_CONFIG_KEY_0='url.file://$HOME/path/to/clippy-mini.insteadOf' \
-GIT_CONFIG_VALUE_0='https://github.com/rust-lang/rust-clippy' \
-cargo +nightly-2026-04-16 dylint --all -- --all-targets
-```
-
-Running on this repository currently reports a dozen hits in the `float` crate. Cleaning those up
-goes together with adding `Mul<Sign>` for `Ball` and by-reference `IBig`/`FBig` impls, after which
-the lint can be flipped to deny.
-
-## Testing
-
-For now, CI runs the example UI tests below. They build and load the lint library,
-lint `examples/`, and compare the diagnostics against the `.stderr` snapshots.
-Full-workspace linting is deferred to a later CI change; the commands above remain
-available for manual scans.
-
-Each lint has an example under `examples/` together with a `.stderr` snapshot:
-
-```sh
-cd dashu-lints && cargo test
-```
-
-## Using these lints in your own project
-
-The crate is not published to crates.io (a compiler-plugin dylib pinned to a specific nightly has
-no use for dependency resolution); point Dylint at this repository from your own workspace's
-`Cargo.toml` instead:
-
-```toml
-[workspace.metadata.dylint]
-libraries = [{ git = "https://github.com/cmpute/dashu", pattern = "dashu-lints" }]
-```
+Each example has a normalized `.stderr` snapshot when warnings are expected. Negative cases
+cover const contexts, unrelated types, effects, shadowing, test exemptions, and rounding-aware
+help. To update a snapshot after an intentional diagnostic change, run the relevant UI test,
+review the output, and copy the file reported as `Actual stderr saved to ...` to its matching
+`examples/<name>.stderr`.

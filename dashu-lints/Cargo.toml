@@ -18,6 +18,16 @@ dylint_linting = "6.0.1"
 dylint_testing = "6.0.1"
 dashu-base = { path = "../base" }
 dashu-int = { path = "../integer" }
+dashu-float = { path = "../float" }
+dashu-ratio = { path = "../rational", default-features = false }
+
+[profile.dev]
+debug = 0
+incremental = false
+
+[profile.test]
+debug = 0
+incremental = false
 
 [package.metadata.rust-analyzer]
 rustc_private = true

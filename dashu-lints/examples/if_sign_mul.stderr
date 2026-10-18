@@ -1,5 +1,5 @@
 warning: this `if`/`else` selects between a value and its negation based on a `Sign`
-  --> $DIR/if_sign_mul.rs:13:21
+  --> $DIR/if_sign_mul.rs:12:21
    |
 LL |       let hi_signed = if sign == Sign::Negative {
    |  _____________________^
@@ -7,12 +7,12 @@ LL | |         -hi.clone()
 LL | |     } else {
 LL | |         hi.clone()
 LL | |     };
-   | |_____^ help: try: `sign * hi`
+   | |_____^ help: consider: `(hi.clone()) * (sign)`
    |
    = note: `#[warn(if_sign_mul)]` on by default
 
 warning: this `if`/`else` selects between a value and its negation based on a `Sign`
-  --> $DIR/if_sign_mul.rs:20:13
+  --> $DIR/if_sign_mul.rs:19:13
    |
 LL |       let _ = if sign != Sign::Positive {
    |  _____________^
@@ -20,10 +20,10 @@ LL | |         -hi.clone()
 LL | |     } else {
 LL | |         hi.clone()
 LL | |     };
-   | |_____^ help: try: `sign * hi`
+   | |_____^ help: consider: `(hi.clone()) * (sign)`
 
 warning: this `if`/`else` selects between a value and its negation based on a `Sign`
-  --> $DIR/if_sign_mul.rs:27:13
+  --> $DIR/if_sign_mul.rs:26:13
    |
 LL |       let _ = if sign == Sign::Positive {
    |  _____________^
@@ -31,7 +31,62 @@ LL | |         hi.clone()
 LL | |     } else {
 LL | |         -hi.clone()
 LL | |     };
-   | |_____^ help: try: `sign * hi`
+   | |_____^ help: consider: `(hi.clone()) * (sign)`
 
-warning: 3 warnings emitted
+warning: this `if`/`else` selects between a value and its negation based on a `Sign`
+  --> $DIR/if_sign_mul.rs:54:13
+   |
+LL |       let _ = if Sign::Negative == sign {
+   |  _____________^
+LL | |         -ratio.clone()
+LL | |     } else {
+LL | |         ratio.clone()
+LL | |     };
+   | |_____^ help: consider: `(ratio.clone()) * (sign)`
+
+warning: this `if`/`else` selects between a value and its negation based on a `Sign`
+  --> $DIR/if_sign_mul.rs:59:13
+   |
+LL |       let _ = if Sign::Positive != sign {
+   |  _____________^
+LL | |         -ratio.clone()
+LL | |     } else {
+LL | |         ratio.clone()
+LL | |     };
+   | |_____^ help: consider: `(ratio.clone()) * (sign)`
+
+warning: this `if`/`else` selects between a value and its negation based on a `Sign`
+  --> $DIR/if_sign_mul.rs:64:13
+   |
+LL |       let _ = if Sign::Positive == sign {
+   |  _____________^
+LL | |         ratio.clone()
+LL | |     } else {
+LL | |         -ratio.clone()
+LL | |     };
+   | |_____^ help: consider: `(ratio.clone()) * (sign)`
+
+warning: this `if`/`else` selects between a value and its negation based on a `Sign`
+  --> $DIR/if_sign_mul.rs:69:13
+   |
+LL |       let _ = if Sign::Negative != sign {
+   |  _____________^
+LL | |         ratio.clone()
+LL | |     } else {
+LL | |         -ratio.clone()
+LL | |     };
+   | |_____^ help: consider: `(ratio.clone()) * (sign)`
+
+warning: this `if`/`else` selects between a value and its negation based on a `Sign`
+  --> $DIR/if_sign_mul.rs:74:13
+   |
+LL |       let _ = if sign == Sign::Negative {
+   |  _____________^
+LL | |         -ratio
+LL | |     } else {
+LL | |         ratio
+LL | |     };
+   | |_____^ help: consider: `(ratio) * (sign)`
+
+warning: 8 warnings emitted
 

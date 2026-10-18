@@ -1,0 +1,84 @@
+warning: this branch converts a boolean to a sign
+  --> $DIR/sign_ops.rs:13:13
+   |
+LL |     let _ = if flag { Negative } else { Positive };
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `Sign::from(condition)`
+   = note: `#[warn(manual_sign_from_bool)]` on by default
+
+warning: this branch converts a boolean to a sign
+  --> $DIR/sign_ops.rs:14:13
+   |
+LL |     let _ = if flag { Positive } else { Negative };
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `Sign::from(!condition)`
+
+warning: this branch manually computes a sign operation
+  --> $DIR/sign_ops.rs:15:13
+   |
+LL |     let _ = if a == b { Positive } else { Negative };
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use the product of the two signs
+   = note: `#[warn(manual_sign_arithmetic)]` on by default
+
+warning: this branch manually computes a sign operation
+  --> $DIR/sign_ops.rs:16:13
+   |
+LL |     let _ = if a != b { Negative } else { Positive };
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use the product of the two signs
+
+warning: this branch manually computes a sign operation
+  --> $DIR/sign_ops.rs:17:13
+   |
+LL |     let _ = if a == b { Negative } else { Positive };
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use the negated product of the two signs
+
+warning: this branch manually computes a sign operation
+  --> $DIR/sign_ops.rs:18:13
+   |
+LL |     let _ = if a != b { Positive } else { Negative };
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use the negated product of the two signs
+
+warning: this branch manually computes a sign operation
+  --> $DIR/sign_ops.rs:19:13
+   |
+LL |     let _ = if a == Negative { Negative } else { Positive };
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use the original sign directly
+
+warning: this branch manually computes a sign operation
+  --> $DIR/sign_ops.rs:20:13
+   |
+LL |     let _ = if Negative != a { Positive } else { Negative };
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use the original sign directly
+
+warning: this branch manually computes a sign operation
+  --> $DIR/sign_ops.rs:21:13
+   |
+LL |     let _ = if a == Positive { Negative } else { Positive };
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use unary `-` on the original sign
+
+warning: this branch manually computes a sign operation
+  --> $DIR/sign_ops.rs:22:13
+   |
+LL |     let _ = if Positive != a { Negative } else { Positive };
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use the original sign directly
+
+warning: 10 warnings emitted
+

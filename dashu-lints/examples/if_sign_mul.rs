@@ -1,29 +1,28 @@
-//! Examples for the `if_sign_mul` lint: each `flagged` block should produce a warning whose
-//! suggestion is `sign * hi`.
+//! Suggestions retain clones and use right-hand sign multiplication.
 
 use dashu_base::Sign;
 use dashu_int::IBig;
+use dashu_ratio::RBig;
 
 fn main() {
     let sign = std::hint::black_box(Sign::Negative);
     let hi = std::hint::black_box(IBig::from(-5));
 
-    // flagged: the issue's pattern; the suggestion is `sign * hi`, marked `MaybeIncorrect`
-    // because it drops the clones.
+    // Flagged: preserve the clone, including when hi is used after the branch.
     let hi_signed = if sign == Sign::Negative {
         -hi.clone()
     } else {
         hi.clone()
     };
 
-    // flagged: `!=` with `Sign::Positive`, `MachineApplicable`.
+    // Flagged: `!=` with `Sign::Positive`.
     let _ = if sign != Sign::Positive {
         -hi.clone()
     } else {
         hi.clone()
     };
 
-    // flagged: the `Sign::Positive` mirror, `MachineApplicable`.
+    // Flagged: the `Sign::Positive` mirror.
     let _ = if sign == Sign::Positive {
         hi.clone()
     } else {
@@ -49,4 +48,56 @@ fn main() {
     let _ = sign * hi;
 
     std::hint::black_box((hi_signed, sign));
+
+    // RBig implements RBig * Sign, so the suggestion's operand order matters.
+    let ratio = RBig::from(-7);
+    let _ = if Sign::Negative == sign {
+        -ratio.clone()
+    } else {
+        ratio.clone()
+    };
+    let _ = if Sign::Positive != sign {
+        -ratio.clone()
+    } else {
+        ratio.clone()
+    };
+    let _ = if Sign::Positive == sign {
+        ratio.clone()
+    } else {
+        -ratio.clone()
+    };
+    let _ = if Sign::Negative != sign {
+        ratio.clone()
+    } else {
+        -ratio.clone()
+    };
+    let _ = if sign == Sign::Negative {
+        -ratio
+    } else {
+        ratio
+    };
+
+    // Not flagged: arbitrary Neg types need not implement multiplication by Sign.
+    struct Other;
+    impl std::ops::Neg for Other {
+        type Output = Self;
+        fn neg(self) -> Self {
+            self
+        }
+    }
+    let other = Other;
+    let _ = if sign == Sign::Negative {
+        -other
+    } else {
+        other
+    };
+
+    // Not flagged: the branch includes a side effect.
+    let value = IBig::ONE;
+    let _ = if sign == Sign::Negative {
+        std::hint::black_box(());
+        -value.clone()
+    } else {
+        value
+    };
 }

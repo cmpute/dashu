@@ -1,0 +1,88 @@
+warning: this number has a dedicated square or cubic operation
+  --> $DIR/powers.rs:12:13
+   |
+LL |     let _ = &n * &n;
+   |             ^^^^^^^
+   |
+   = help: use the dedicated `sqr()` method
+   = note: `#[warn(prefer_sqr_cubic)]` on by default
+
+warning: this number has a dedicated square or cubic operation
+  --> $DIR/powers.rs:13:13
+   |
+LL |     let _ = n.clone() * n.clone() * n.clone();
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use the dedicated `cubic()` method
+
+warning: this number has a dedicated square or cubic operation
+  --> $DIR/powers.rs:14:13
+   |
+LL |     let _ = n.pow(2);
+   |             ^^^^^^^^
+   |
+   = help: use the dedicated `sqr()` method
+
+warning: this number has a dedicated square or cubic operation
+  --> $DIR/powers.rs:15:13
+   |
+LL |     let _ = n.pow(3);
+   |             ^^^^^^^^
+   |
+   = help: use the dedicated `cubic()` method
+
+warning: this number has a dedicated square or cubic operation
+  --> $DIR/powers.rs:17:13
+   |
+LL |     let _ = &a * &a; // Suggestion must mention the unsigned result type of sqr.
+   |             ^^^^^^^
+   |
+   = help: consider `sqr()`; its result is UBig, so convert back to IBig when required
+
+warning: this number has a dedicated square or cubic operation
+  --> $DIR/powers.rs:18:13
+   |
+LL |     let _ = a.pow(2);
+   |             ^^^^^^^^
+   |
+   = help: consider `sqr()`; its result is UBig, so convert back to IBig when required
+
+warning: this number has a dedicated square or cubic operation
+  --> $DIR/powers.rs:20:13
+   |
+LL |     let _ = &r * &r;
+   |             ^^^^^^^
+   |
+   = help: use the dedicated `sqr()` method
+
+warning: this number has a dedicated square or cubic operation
+  --> $DIR/powers.rs:24:13
+   |
+LL |     let _ = &x * &x;
+   |             ^^^^^^^
+   |
+   = help: use the dedicated `sqr()` method
+
+warning: this number has a dedicated square or cubic operation
+  --> $DIR/powers.rs:25:13
+   |
+LL |     let _ = (&x * &x) * &x; // Help only: one rounding is different from two.
+   |             ^^^^^^^^^^^^^^
+   |
+   = help: consider `cubic()` if single rounding of the exact cube is intended; it can differ from two rounded multiplications
+
+warning: this floating-point expression rounds the multiplication before the addition
+  --> $DIR/powers.rs:28:13
+   |
+LL |     let _ = (&x * &y) + &z; // Opt-in FMA advice, never a replacement.
+   |             ^^^^^^^^^^^^^^
+   |
+   = help: consider `a.fma(&b, &c, Sign::Positive)` if single rounding is intended; this can change the result
+note: the lint level is defined here
+  --> $DIR/powers.rs:1:9
+   |
+LL | #![warn(unfused_mul_add)]
+   |         ^^^^^^^^^^^^^^^
+
+warning: 10 warnings emitted
+
