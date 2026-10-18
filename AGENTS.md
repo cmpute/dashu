@@ -18,7 +18,7 @@ Secondary crates (`dashu-python`, `benchmark/`, `dashu-lints`, fuzz tests) are *
 | `dashu-cmplx` | `complex/` | Arbitrary precision complex numbers (`CBig`) |
 | `dashu-python` | `python/` | PyO3 Python bindings (not in default members) |
 | *(benchmark)* | `benchmark/` | Profiling scratchpad, not a comprehensive benchmark suite |
-| *(lints)* | `dashu-lints/` | Standalone Dylint house lints, using a pinned nightly |
+| *(lints)* | `lint/` | Standalone Dylint house lints (crate `dashu-lints`), using a pinned nightly |
 
 The `dashu` crate at the root is a meta-crate that re-exports all types from the sub-crates as nested modules (`dashu::base`, `dashu::integer`, etc.).
 
@@ -37,11 +37,11 @@ cargo clippy --all-features --all-targets --workspace --exclude dashu-python -- 
 # Format check
 cargo fmt --all -- --check
 
-# House lints (nightly must match dashu-lints/rust-toolchain and its clippy_utils revision)
+# House lints (nightly must match lint/rust-toolchain and its clippy_utils revision)
 DYLINT_RUSTFLAGS="-D warnings" cargo +nightly-2026-04-16 dylint --all -- --workspace --exclude dashu-python --all-features --all-targets
 
-# Lint UI tests (run in dashu-lints so its toolchain/config are selected)
-cd dashu-lints && cargo test --lib --locked
+# Lint UI tests (run in lint/ so its toolchain/config are selected)
+cd lint && cargo test --lib --locked
 ```
 
 Note: always `--exclude dashu-python` when running workspace-wide commands, since `dashu-python` is in early development.

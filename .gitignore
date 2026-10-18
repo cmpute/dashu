@@ -1,6 +1,6 @@
 .idea/
 /target
-/dashu-lints/target
+/lint/target
 /Cargo.lock
 /.vscode/settings.json
 .claude/worktrees/

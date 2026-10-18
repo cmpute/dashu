@@ -34,7 +34,7 @@ exclude = ["benchmark", "fuzz"]
 default-members = [".", "base", "integer", "float", "rational", "complex", "macros"]
 
 [workspace.metadata.dylint]
-libraries = [{ path = "dashu-lints" }]
+libraries = [{ path = "lint" }]
 
 [features]
 default = ["std", "num-order"]

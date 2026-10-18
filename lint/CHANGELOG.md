@@ -12,10 +12,14 @@
 - Add UI snapshots and negative cases for type matching, const contexts, side effects,
   shadowing, and independent arithmetic tests; run UI tests in CI.
 - Initial `dashu-lints` crate (not a workspace member; builds against a pinned nightly, see
-  `dashu-lints/README.md`) with the `if_sign_mul` lint: flags `if`/`else` expressions that select
+  `lint/README.md`) with the `if_sign_mul` lint: flags `if`/`else` expressions that select
   between a value and its negation based on a `dashu_base::Sign` (e.g.
   `if sign == Sign::Negative { -v } else { v }`, including the `Sign::Positive` and `!=` mirrors)
   and suggests `v * sign`.
+
+### Change
+- Rename the crate directory from `dashu-lints/` to `lint/` (package name unchanged); update
+  the workspace Dylint library path, CI working directories, and documentation links.
 
 ### Fix
 - Keep example UI tests and lint implementation checks in their own CI job, separately
