@@ -1,0 +1,43 @@
+warning: this magnitude-only operation does not need an absolute-value temporary
+  --> $DIR/abs_ops.rs:8:13
+   |
+LL |     let _ = a.clone().abs().abs_cmp(&b);
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: call `abs_cmp` directly on the original value
+   = note: `#[warn(redundant_abs)]` on by default
+
+warning: this magnitude-only operation does not need an absolute-value temporary
+  --> $DIR/abs_ops.rs:9:13
+   |
+LL |     let _ = a.clone().abs().log2_bounds();
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: call `log2_bounds` directly on the original integer without cloning or taking its absolute value
+
+warning: this magnitude-only operation does not need an absolute-value temporary
+  --> $DIR/abs_ops.rs:10:13
+   |
+LL |     let _ = a.clone().abs().cmp(&b.clone().abs());
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: compare the original values with `dashu_base::AbsOrd::abs_cmp`
+
+warning: this magnitude-only operation does not need an absolute-value temporary
+  --> $DIR/abs_ops.rs:11:13
+   |
+LL |     let _ = a.clone().abs() < b.clone().abs();
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: compare the original values with `dashu_base::AbsOrd::abs_cmp`
+
+warning: this magnitude-only operation does not need an absolute-value temporary
+  --> $DIR/abs_ops.rs:14:13
+   |
+LL |     let _ = x.clone().abs().abs_cmp(&y);
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: call `abs_cmp` directly on the original value
+
+warning: 5 warnings emitted
+

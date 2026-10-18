@@ -1,0 +1,77 @@
+warning: these integer operands are divided separately for quotient and remainder
+  --> $DIR/integer_ops.rs:11:13
+   |
+LL |     let r = n % d;
+   |             ^^^^^
+   |
+   = help: compute both with `dashu_base::DivRem::div_rem`; for a checked exact quotient, consider `DivExact`
+   = note: `#[warn(manual_div_rem)]` on by default
+
+warning: these integer operands are divided separately for quotient and remainder
+  --> $DIR/integer_ops.rs:14:13
+   |
+LL |     let q = n / d;
+   |             ^^^^^
+   |
+   = help: compute both with `dashu_base::DivRem::div_rem`; for a checked exact quotient, consider `DivExact`
+
+warning: these integer operands are divided separately for quotient and remainder
+  --> $DIR/integer_ops.rs:20:13
+   |
+LL |     let q = n / d;
+   |             ^^^^^
+   |
+   = help: compute both with `dashu_base::DivRem::div_rem`; for a checked exact quotient, consider `DivExact`
+
+warning: this remainder is only used to test divisibility
+  --> $DIR/integer_ops.rs:4:13
+   |
+LL |     let _ = (n % d).is_zero();
+   |             ^^^^^^^^^^^^^^^^^
+   |
+   = help: use `dividend.is_multiple_of(&divisor)` (or its negation)
+   = note: `#[warn(manual_is_multiple_of)]` on by default
+
+warning: this remainder is only used to test divisibility
+  --> $DIR/integer_ops.rs:5:13
+   |
+LL |     let _ = UBig::ZERO == n % d;
+   |             ^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `dividend.is_multiple_of(&divisor)` (or its negation)
+
+warning: this remainder is only used to test divisibility
+  --> $DIR/integer_ops.rs:6:13
+   |
+LL |     let _ = a % b != IBig::ZERO;
+   |             ^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `dividend.is_multiple_of(&divisor)` (or its negation)
+
+warning: this integer mask only tests the least significant bit
+  --> $DIR/integer_ops.rs:7:13
+   |
+LL |     let _ = (a & IBig::ONE).is_zero();
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `value.bit(0)` (or its negation) with `dashu_base::BitTest`
+   = note: `#[warn(manual_bit_test)]` on by default
+
+warning: this integer mask only tests the least significant bit
+  --> $DIR/integer_ops.rs:8:13
+   |
+LL |     let _ = (a & IBig::ONE).is_one();
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `value.bit(0)` (or its negation) with `dashu_base::BitTest`
+
+warning: this integer mask only tests the least significant bit
+  --> $DIR/integer_ops.rs:9:13
+   |
+LL |     let _ = (UBig::ONE & n) != UBig::ZERO;
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `value.bit(0)` (or its negation) with `dashu_base::BitTest`
+
+warning: 9 warnings emitted
+

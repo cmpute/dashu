@@ -23,9 +23,17 @@ jobs:
         run: |
           rustup toolchain install nightly-2026-04-16 --profile minimal \
             --component rustc-dev \
-            --component llvm-tools-preview
+            --component llvm-tools-preview \
+            --component rustfmt \
+            --component clippy
       - name: Install dylint
         run: cargo +nightly-2026-04-16 install cargo-dylint dylint-link --version 6.1.0 --locked
+      - name: Check lint formatting
+        working-directory: dashu-lints
+        run: cargo fmt --all -- --check
       - name: Lint examples and check diagnostic snapshots
         working-directory: dashu-lints
         run: cargo test --lib --locked -- --nocapture
+      - name: Check lint implementation
+        working-directory: dashu-lints
+        run: cargo clippy --lib --locked -- -D warnings

@@ -183,6 +183,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "dashu-float"
+version = "0.6.2"
+dependencies = [
+ "dashu-base",
+ "dashu-int",
+ "num-modular",
+ "num-order",
+ "static_assertions",
+]
+
+[[package]]
 name = "dashu-int"
 version = "0.6.2"
 dependencies = [
@@ -199,9 +210,19 @@ version = "0.1.0"
 dependencies = [
  "clippy_utils",
  "dashu-base",
+ "dashu-float",
  "dashu-int",
+ "dashu-ratio",
  "dylint_linting",
  "dylint_testing",
+]
+
+[[package]]
+name = "dashu-ratio"
+version = "0.6.1"
+dependencies = [
+ "dashu-base",
+ "dashu-int",
 ]
 
 [[package]]

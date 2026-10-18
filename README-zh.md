@@ -28,7 +28,7 @@
 
 `dashu` 是一个元 crate（meta crate），重新导出上述所有子 crate 中的类型。各子目录下的 README.md 中有针对单个 crate 的专门介绍。
 
-[`dashu-lints`](./dashu-lints) 目录存放用于约束 dashu 代码规范的 Dylint lint。它是仅限开发的 crate，使用自己固定的 nightly 工具链构建，不属于发布套件。
+[`dashu-lints`](./dashu-lints) 目录包含仅供开发使用的 Dylint 代码规范检查，使用单独固定的 nightly 工具链构建。
 
 ## 示例
 
