@@ -17,6 +17,7 @@ Methodology:
 """
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -140,6 +141,169 @@ def generate_chart(results, out_path):
     html = HTML_TEMPLATE.replace("__PAYLOAD__", payload).replace("__SERIES__", series)
     out_path.write_text(html)
     print(f"chart written to {out_path}")
+    return data
+
+
+# Light-theme palette of the interactive chart, keyed by series index.
+SVG_PALETTE = {1: "#2563eb", 2: "#16a34a", 3: "#ea580c",
+               4: "#9333ea", 5: "#0d9488", 6: "#db2777"}
+
+
+def fmt_secs(v):
+    return f"{v:.0f}" if v >= 100 else f"{v:.1f}" if v >= 10 \
+        else f"{v:.2f}" if v >= 1 else f"{v:.3f}"
+
+
+def collect_environment():
+    """(label, value) rows describing the machine the sweep ran on."""
+    import platform
+    rows = []
+
+    def cmd(*args):
+        try:
+            return subprocess.run(args, capture_output=True, text=True,
+                                  timeout=10).stdout.strip()
+        except Exception:
+            return ""
+
+    pretty = ""
+    try:
+        for line in open("/etc/os-release"):
+            if line.startswith("PRETTY_NAME="):
+                pretty = line.split("=", 1)[1].strip().strip('"')
+                break
+    except OSError:
+        pass
+    kernel = f"{platform.system()} {platform.release()} {platform.machine()}".strip()
+    rows.append(("OS", " · ".join(x for x in (pretty, kernel) if x) or platform.platform()))
+
+    cpu = ""
+    try:
+        for line in open("/proc/cpuinfo"):
+            if line.startswith("model name"):
+                cpu = line.split(":", 1)[1].strip()
+                break
+    except OSError:
+        pass
+    cores = os.cpu_count() or "?"
+    rows.append(("CPU", f"{cpu or platform.processor() or 'unknown'} ({cores} threads)"))
+
+    mem = ""
+    try:
+        for line in open("/proc/meminfo"):
+            if line.startswith("MemTotal:"):
+                mib = int(line.split()[1]) / 1024
+                mem = f"{mib / 1024:.1f} GiB"
+                break
+    except (OSError, ValueError):
+        pass
+    if mem:
+        rows.append(("Memory", mem))
+
+    rustc = cmd("rustc", "--version")
+    if rustc:
+        rows.append(("Rust", rustc))
+    gmp = cmd("pkg-config", "--modversion", "gmp")
+    if gmp:
+        rows.append(("GMP", f"{gmp} (rug / rust-gmp backends)"))
+    return rows
+
+
+def task_svg(task, entry, out_path):
+    """Static grouped-bar chart for one task; embedded into REPORT.md."""
+    import math
+
+    sizes, libs, times = entry["sizes"], entry["libs"], entry["times"]
+    w, h = 760, 330
+    m = {"l": 76, "r": 24, "t": 46, "b": 58}
+    pw, ph = w - m["l"] - m["r"], h - m["t"] - m["b"]
+    values = [v for row in times.values() for v in row]
+    lo, hi = min(values) / 1.8, max(values) * 1.8
+
+    def y(v):
+        frac = (math.log10(v) - math.log10(lo)) / (math.log10(hi) - math.log10(lo))
+        return m["t"] + ph - frac * ph
+
+    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" '
+             f'font-family="system-ui, sans-serif" font-size="12" fill="#1f2937">',
+             f'<rect width="{w}" height="{h}" fill="#ffffff"/>']
+
+    # legend
+    lx = m["l"]
+    for lib in libs:
+        color = SVG_PALETTE[LIB_SERIES[lib]]
+        parts.append(f'<rect x="{lx}" y="12" width="10" height="10" rx="2" fill="{color}"/>')
+        parts.append(f'<text x="{lx + 15}" y="21">{lib}</text>')
+        lx += 15 + 7 * len(lib) + 22
+
+    # y gridlines at decades
+    step = 2 if math.log10(hi) - math.log10(lo) > 6 else 1
+    e = math.floor(math.log10(lo))
+    while 10 ** e <= hi:
+        v = 10 ** e
+        gy = y(v)
+        parts.append(f'<line x1="{m["l"]}" x2="{w - m["r"]}" y1="{gy:.1f}" y2="{gy:.1f}" '
+                     f'stroke="#d1d5db" stroke-width="1"/>')
+        parts.append(f'<text x="{m["l"] - 8}" y="{gy + 4:.1f}" text-anchor="end" fill="#6b7280">'
+                     f'{v:g}</text>')
+        e += step
+
+    group_w = pw / len(sizes)
+    bar_w = min(group_w * 0.7 / len(libs), 34)
+    for gi, size in enumerate(sizes):
+        cx = m["l"] + group_w * (gi + 0.5)
+        parts.append(f'<text x="{cx:.1f}" y="{m["t"] + ph + 20}" text-anchor="middle">{size}</text>')
+        for li, lib in enumerate(libs):
+            v = times[lib][gi]
+            bx = cx - len(libs) * bar_w / 2 + li * bar_w
+            top = y(v)
+            parts.append(f'<rect x="{bx:.1f}" width="{bar_w - 2:.1f}" y="{top:.1f}" '
+                         f'height="{m["t"] + ph - top:.1f}" rx="2" '
+                         f'fill="{SVG_PALETTE[LIB_SERIES[lib]]}"/>')
+
+    parts.append(f'<text x="{m["l"] + pw / 2:.1f}" y="{h - 12}" text-anchor="middle" '
+                 f'fill="#6b7280">{entry["unit"]}</text>')
+    parts.append(f'<text transform="rotate(-90 16 {m["t"] + ph / 2:.1f})" x="16" '
+                 f'y="{m["t"] + ph / 2:.1f}" text-anchor="middle" fill="#6b7280">'
+                 f'time per iteration (s)</text>')
+    parts.append("</svg>")
+    out_path.write_text("\n".join(parts), encoding="utf-8")
+
+
+def generate_report(data, out_dir):
+    from datetime import datetime
+
+    lines = ["# Library comparison report", "",
+             f"Generated {datetime.now():%Y-%m-%d %H:%M:%S} by `benchmark/run.py`. "
+             "Times are seconds for one task iteration (lower is better); cells under 1 s "
+             "are the minimum of 3 process runs, and the factor task excludes its one-time "
+             "prime generation. The fastest library per size is in bold.", "",
+             "## Environment", ""]
+    rows = collect_environment()
+    lines.append("| | |")
+    lines.append("| --- | --- |")
+    lines += [f"| {k} | {v} |" for k, v in rows]
+
+    for task, entry in data.items():
+        lines += ["", f"## {task}", "", f"Input size unit: {entry['unit']}.", ""]
+        header = "| n | " + " | ".join(entry["libs"]) + " |"
+        lines.append(header)
+        lines.append("|" + " --- |" * (len(entry["libs"]) + 1))
+        for gi, size in enumerate(entry["sizes"]):
+            vals = [entry["times"][lib][gi] for lib in entry["libs"]]
+            best = min(vals)
+            cells = [f"**{fmt_secs(v)}**" if v == best else fmt_secs(v) for v in vals]
+            lines.append(f"| {size} | " + " | ".join(cells) + " |")
+        svg_path = out_dir / f"chart_{task}.svg"
+        task_svg(task, entry, svg_path)
+        lines += ["", f"![{task}](chart_{task}.svg)"]
+
+    lines += ["", "## Interactive chart", "",
+              "The interactive version of the above (task switching, library toggles, "
+              "tooltips) is in [chart.html](chart.html); raw timings are in "
+              "[results.json](results.json).", ""]
+    (out_dir / "REPORT.md").write_text("\n".join(lines), encoding="utf-8")
+    print(f"report written to {out_dir / 'REPORT.md'}")
 
 
 HTML_TEMPLATE = """<!doctype html>
@@ -386,7 +550,8 @@ def main():
             results = {}
         sweep(results, tasks, results_path)
 
-    generate_chart(results, out_dir / "chart.html")
+    data = generate_chart(results, out_dir / "chart.html")
+    generate_report(data, out_dir)
 
 
 if __name__ == "__main__":
