@@ -340,25 +340,11 @@ pub fn add_signed_mul_same_len(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::pattern_words;
     #[cfg(not(feature = "std"))]
     use alloc::vec;
     #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
-
-    fn lcg_words(seed: u64, len: usize) -> Vec<Word> {
-        let mut st = seed | 1;
-        let mut v = Vec::with_capacity(len);
-        for _ in 0..len {
-            st = st
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(1442695040888963407);
-            v.push(st as Word);
-        }
-        if let Some(top) = v.last_mut() {
-            *top |= 1 << (Word::BITS - 1);
-        }
-        v
-    }
 
     /// Naive schoolbook multiplication for comparison.
     fn schoolbook_mul(a: &[Word], b: &[Word]) -> Vec<Word> {
@@ -383,8 +369,8 @@ mod tests {
     }
 
     fn run_toom4_vs_schoolbook(n: usize) {
-        let a = lcg_words(0xDEAD + n as u64, n);
-        let b = lcg_words(0xBEEF + n as u64, n);
+        let a = pattern_words(n, 0xdead_beef_1234_5679);
+        let b = pattern_words(n, 0xbeef_dead_9abc_def1);
         let expected = schoolbook_mul(&a, &b);
 
         let mut c = vec![0 as Word; 2 * n];
@@ -461,8 +447,8 @@ mod tests {
 
     #[test]
     fn toom4_sign_cancel() {
-        let a = lcg_words(0x1234, 100);
-        let b = lcg_words(0x5678, 100);
+        let a = pattern_words(100, 0x1234_5678_9abc_def1);
+        let b = pattern_words(100, 0x5678_9abc_def0_1235);
         let mut c = vec![0 as Word; 200];
         let layout = memory_requirement_up_to(100);
         let mut alloc = crate::memory::MemoryAllocation::new(layout);

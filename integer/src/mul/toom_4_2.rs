@@ -223,27 +223,14 @@ pub fn add_signed_mul(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "std")]
     use crate::mul::helpers;
+    use crate::test_utils::pattern_words;
     use crate::UBig;
     #[cfg(not(feature = "std"))]
     use alloc::vec;
     #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
-
-    fn lcg_words(seed: u64, len: usize) -> Vec<Word> {
-        let mut st = seed | 1;
-        let mut v = Vec::with_capacity(len);
-        for _ in 0..len {
-            st = st
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(1442695040888963407);
-            v.push(st as Word);
-        }
-        if let Some(top) = v.last_mut() {
-            *top |= 1 << (Word::BITS - 1);
-        }
-        v
-    }
 
     /// Naive schoolbook multiplication for comparison.
     fn schoolbook_mul(a: &[Word], b: &[Word]) -> Vec<Word> {
@@ -269,8 +256,8 @@ mod tests {
 
     fn run_toom42_vs_schoolbook(xs: usize, ys: usize) {
         assert!(in_band(xs, ys), "test operands must be in band");
-        let a = lcg_words(0xF00D + xs as u64, xs);
-        let b = lcg_words(0xBEAD + ys as u64, ys);
+        let a = pattern_words(xs, 0xf00d_beef_1234_5679);
+        let b = pattern_words(ys, 0xbead_cafe_9abc_def1);
         let expected = schoolbook_mul(&a, &b);
 
         let mut c = vec![0 as Word; xs + ys];
@@ -326,8 +313,8 @@ mod tests {
 
     #[test]
     fn toom42_sign_cancel() {
-        let a = lcg_words(0x9999, 400);
-        let b = lcg_words(0x7777, 200);
+        let a = pattern_words(400, 0x9999_9999_9999_999b);
+        let b = pattern_words(200, 0x7777_7777_7777_7779);
         let mut c = vec![0 as Word; 600];
         let layout = memory_chain_budget(400, 200);
         let mut alloc = crate::memory::MemoryAllocation::new(layout);
@@ -354,8 +341,8 @@ mod tests {
                 if xs < ys {
                     continue;
                 }
-                let a = lcg_words(0x5150 + xs as u64, xs);
-                let b = lcg_words(0xC0DE + ys as u64, ys);
+                let a = pattern_words(xs, 0x5150_5150_5150_5151);
+                let b = pattern_words(ys, 0xc0de_c0de_c0de_c0df);
                 let ua = UBig::from_words(&a);
                 let ub = UBig::from_words(&b);
                 let ub1 = &ub - 1u8;
@@ -372,6 +359,7 @@ mod tests {
     ///   cargo test -p dashu-int --release -- mul::toom_4_2::tests::crossover_toom42 --nocapture --ignored
     #[test]
     #[ignore]
+    #[cfg(feature = "std")]
     fn crossover_toom42() {
         use std::time::Instant;
 
@@ -395,8 +383,8 @@ mod tests {
         println!("{}", "-".repeat(54));
 
         for &(xs, ys) in sizes {
-            let a = lcg_words(0xABCD + xs as u64, xs);
-            let b = lcg_words(0xDCBA + ys as u64, ys);
+            let a = pattern_words(xs, 0xabcd_abcd_abcd_abcf);
+            let b = pattern_words(ys, 0xdcba_dcba_dcba_dcbb);
             let mut c0 = vec![0 as Word; xs + ys];
             let mut c1 = vec![0 as Word; xs + ys];
             let l_t = crate::mul::toom_3::memory_requirement_up_to(ys);

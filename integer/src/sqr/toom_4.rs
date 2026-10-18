@@ -113,10 +113,7 @@ pub fn square(b: &mut [Word], a: &[Word], memory: &mut Memory) {
         let (a1p, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, a02, 0);
         debug_assert_zero!(add::add_same_len_in_place(&mut a1p[..], a13));
         let (a1m, mut memory) = memory.allocate_slice_copy_fill(n4 + 1, a02, 0);
-        if add::sub_in_place_with_sign(&mut a1m[..], a13) == Negative {
-            a1m.copy_from_slice(a13);
-            debug_assert_zero!(add::sub_in_place(&mut a1m[..], a02));
-        }
+        let _sign = add::sub_in_place_with_sign(&mut a1m[..], a13);
         sqr::sqr(&mut pv1[..], a1p, &mut memory);
         {
             let (pvm1, mut mem) = memory.allocate_slice_fill(2 * n4 + 2, 0);
@@ -199,4 +196,26 @@ pub fn square(b: &mut [Word], a: &[Word], memory: &mut Memory) {
     carry += carry_c5;
 
     debug_assert!(carry.abs() <= 1);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{memory::MemoryAllocation, UBig};
+
+    #[test]
+    fn square_negative_evaluation_at_minus_one() {
+        // A(-1) = a0 - a1 + a2 - a3 is negative; its magnitude is
+        // produced directly by sub_in_place_with_sign before squaring.
+        let mut a = [0; 64];
+        a[0] = 1;
+        a[16..32].fill(Word::MAX);
+        a[48..].fill(Word::MAX);
+        let value = UBig::from_words(&a);
+        let expected = &value * &value;
+        let mut b = [0; 128];
+        let mut allocation = MemoryAllocation::new(memory_requirement_up_to(a.len()));
+        square(&mut b, &a, &mut allocation.memory());
+        assert_eq!(UBig::from_words(&b), expected);
+    }
 }

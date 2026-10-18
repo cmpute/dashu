@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Change
+- Reuse the absolute difference in Toom-4 squaring and replace the Toom-4
+  and Toom-4x2 tests' LCG inputs with shared fixed word patterns.
 - Move short-division error-bound validation into integration tests, add bounded
   proptest coverage of every normalization band edge, and keep a small internal
   carry test beside the kernel.
@@ -15,6 +17,9 @@
   fails loudly in release builds too.
 
 ### Fix
+- Apply the Toom-4x2 dispatch length gates to the division/GCD scratch
+  envelope, avoiding reservations for inactive kernels at small sizes.
+- Gate the Toom-4x2 crossover benchmark on `std` so no-std unit tests compile.
 - Fix exact division and divisibility checks for zero with multi-word divisors,
   including borrowed receivers, assignment, and signed integers. Add deterministic
   boundary regressions and extend the exact-division fuzz test to multi-word divisors.

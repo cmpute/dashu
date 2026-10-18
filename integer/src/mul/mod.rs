@@ -330,7 +330,10 @@ fn memory_chain_budget_closed_form(total: usize) -> Layout {
 /// extremal at an edge), with the children's band recursions bounded by
 /// the closed form above.
 pub(crate) fn memory_chain_budget_envelope(total_cap: usize, smaller_cap: usize) -> Layout {
-    let b_hi = (total_cap / 2).min(smaller_cap).max(1);
+    let b_hi = (total_cap / 2).min(smaller_cap);
+    if b_hi == 0 {
+        return memory::zero_layout();
+    }
     let mut best = memory_chain_budget(total_cap - b_hi, b_hi);
 
     // Snap a split of `total` into the Toom-4x2 band, walking `step` words
@@ -366,6 +369,11 @@ pub(crate) fn memory_chain_budget_envelope(total_cap: usize, smaller_cap: usize)
             let Some(b) = snap_into_band_at(total, b0, step, smaller_cap) else {
                 continue;
             };
+            // Structural validity alone does not select Toom-4x2: keep
+            // the same length gates as the multiplication dispatcher.
+            if b < threshold::toom42_min() || b > threshold::ntt() {
+                continue;
+            }
             if let Some((n, s, t)) = toom_4_2::split_params(total - b, b) {
                 // Exact level budget, children either exact (the near-balanced
                 // products) or closed-form-bounded (the band-shaped remainder).
@@ -929,6 +937,18 @@ mod threshold_tests {
                 t_toom,
                 t_ntt,
                 t_ntt / t_toom
+            );
+        }
+    }
+
+    #[test]
+    fn test_memory_envelope_below_toom42() {
+        for total in [0, 1, 2, 32, 64, 128] {
+            let cap = total / 2;
+            assert_eq!(
+                memory_chain_budget_envelope(total, cap),
+                memory_chain_budget(total - cap, cap),
+                "unexpected scratch for total={total} cap={cap}"
             );
         }
     }
