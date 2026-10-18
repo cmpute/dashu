@@ -1,6 +1,40 @@
 use dashu_base::{BitTest, DivRem, Sign};
 use dashu_int::{DoubleWord, IBig, UBig, Word};
 
+/// Window size (in words) for a short product or quotient rounded to
+/// `precision` base-`B` digits. `err_ulps` bounds the approximation error in
+/// units of the window's least significant word; the bound may be one-sided
+/// or two-sided.
+///
+/// The sizing only decides how often the fast path engages — the classifier
+/// re-checks every decision against the certified error band and declines when
+/// the band straddles a rounding boundary — so each term below just keeps the
+/// error band negligible against the rounding midpoint:
+///
+/// * `precision · b_ub` bits hold the kept digits (`B^p <= 2^(p·b_ub)` with
+///   `b_ub = ceil(log2 B)`);
+/// * one spare digit (`b_ub` bits) keeps the window strictly wider than the
+///   precision, so the rounding split and its midpoint exist;
+/// * `err_bits + 1` more bits, plus one further digit of margin, keep the
+///   doubled error safely below the midpoint;
+/// * two spare words absorb the fill the window can lose — the window's top
+///   word may hold as little as one bit, so the window value can start a
+///   full word lower than its word count suggests — and the final `+1` word
+///   keeps all these margins intact when the count is rounded down.
+pub(crate) fn short_window_words<const B: Word>(precision: usize, err_ulps: usize) -> usize {
+    // ceil(log2 B) as an exact bit length: enough bits for one base-B digit.
+    let b_ub = usize::BITS - (B as usize - 1).leading_zeros();
+    // Bit length of the error bound: the error spans at most that many
+    // bits above the window's bottom.
+    let err_bits = usize::BITS - err_ulps.leading_zeros();
+    let word_bits = Word::BITS as usize;
+    // All saturating: the precision is caller-supplied and must not panic.
+    let need_bits = precision
+        .saturating_mul(b_ub as usize)
+        .saturating_add((2 * b_ub + err_bits + 1) as usize + 2 * word_bits);
+    need_bits / word_bits + 1
+}
+
 #[inline]
 pub const fn base_as_ibig<const B: Word>() -> IBig {
     IBig::from_parts_const(Sign::Positive, B as DoubleWord)

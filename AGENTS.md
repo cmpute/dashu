@@ -48,9 +48,28 @@ Note: always `--exclude dashu-python` when running workspace-wide commands, sinc
 - Modules are organized by operation (add, div, mul, cmp, convert, etc.)
 - Third-party trait implementations go in a `third_party/` module per crate, feature-gated
 - When borrowing an algorithm idea from GMP (or any other library), do **not** reference its function names in our docstrings or comments. Describe the algorithm in our own terms and use our own function names (e.g. write `add_mul_dword_same_len_in_place`, never `addmul_2` / `mpn_addmul_2`). External function names must not appear anywhere in the repo.
-- Tests for a specific algorithm/kernel belong in the same source file as the implementation, as a `#[cfg(test)] mod tests` block at the bottom — not in a separate integration test file under `tests/`. Reserve `tests/` for cross-cutting or public-API tests.
+- Organize tests by validation scope and cost as described in [Test organization](#test-organization).
 - When debugging or writing test assertions, use `{:?}` (or `{:#?}` for the verbose form with digit/bit counts) to inspect arbitrary precision values. The [`Debug`] format prints a compact head‥tail representation (most significant digits `..` least significant digits) instead of dumping the entire number, making it readable even for thousand-digit integers.
-- In-crate tests (`#[cfg(test)] mod tests` and `tests/`) must use **fixed, deterministic inputs** — never pseudo-random generators, fuzzing harnesses, or property-test styles that draw random data. Tests must fail or pass identically on every run. The only exception is code that tests the `rand` integration itself. For randomized / exploratory input, use the fuzz targets under `fuzz/` (the proper home for that work), not unit tests.
+
+## Test organization
+
+- **Implementation-local unit tests** (`#[cfg(test)] mod tests` at the bottom of the source file): keep tests small and focused, using fixed, explicit inputs to verify private helpers, boundary conditions, carry/borrow behavior, and internal algorithm selection or fallback. Avoid elaborate input generators, oracle construction, and large parameter sweeps here. Random input generation in these tests is reserved for testing the `rand` integration itself.
+- **Each crate's `tests/` directory**: put complex algorithm validation, error-bound checks, exact or high-precision oracle comparisons, parameter sweeps, and public-API tests here. Use fixed regression cases alongside bounded `proptest` strategies. These tests form the routine per-PR correctness checks and must remain practical to run locally and in CI.
+- **Root `fuzz/` crate**: reserve this workspace-excluded crate for independent-reference differentials (GMP/MPFR/MPC), expensive cases, and large randomized campaigns. Ordinary crate tests must not depend on the fuzz crate or its native reference dependencies. The distinction is validation scope, dependencies, and cost — both `tests/` and `fuzz/` may use proptest and oracles.
+
+### Integration-test structure
+
+- Organize files by operation or public behavior, such as `div.rs` and `convert.rs`. Split substantial property-test suites into `<operation>_prop.rs`; small suites can stay in the operation's existing test file.
+- Put helpers shared by multiple integration-test files in **`tests/helpers.rs`**, imported with `mod helpers;`. Do not create a separate helpers directory. Keep helpers used by only one test file local, and share only reusable construction, strategies, or assertions.
+- Do not expose private implementation details solely for integration tests. Retain small implementation-local tests that directly verify fast-path selection and fallback: public-result comparisons alone can pass even when a fast path never engages.
+- Keep fuzz-specific reference conversions, strategies, and run configuration in `fuzz/src/lib.rs`; do not make ordinary integration tests depend on them.
+
+### Property tests, oracles, and execution
+
+- Construct valid inputs directly; bound cases, operand sizes, and shrinking. Explicitly cover required precisions and critical boundaries.
+- Fix failures promptly; do not commit generated failure-regression files. Add important counterexamples as fixed tests alongside the fix, under `fuzz/` if they require external references.
+- Higher-precision self-comparisons check consistency, not independent correctness. Use exact or certified references near rounding boundaries; never weaken tolerances to hide failures.
+- Run crate tests per PR and relevant fuzz suites for algorithm changes; reserve larger campaigns for release or periodic runs. Record failure seeds and configuration for reproduction.
 
 ## Feature flags
 
@@ -94,7 +113,9 @@ When modifying an `FBig` or `CBig` implementation (arithmetic, conversion, trans
 - **100 bits** — significand fits in a `u128` (exercises the double-word / multi-word-but-small fast paths).
 - **500 bits** — well into the arbitrary-precision `bigint` range (exercises the general multi-word kernels and large-significand edge cases).
 
-Prefer a high-precision oracle (e.g. the same op computed at `p + 60` under `HalfEven`, then re-rounded to `p` under the mode under test) for directed-rounding checks — remember that in-crate tests must use fixed, deterministic inputs (see [Code style](#code-style)); sweep these four precisions with a hand-chosen input set rather than a random generator.
+Prefer an exact oracle when practical; otherwise use a higher-precision result (e.g. compute at `p + 60` under `HalfEven`, then re-round to `p` under the mode under test). Extra precision alone does not guarantee that the rounding decision is resolved: use exact constructions or certified bounds for midpoint and other ambiguous boundary cases.
+
+Keep oracle comparisons and multi-parameter sweeps in `tests/`, using fixed regression cases and bounded proptest strategies as appropriate (see [Test organization](#test-organization)). Explicitly cover all four precision settings above. When a fast path requires larger operands or precision, also test its engagement range and retain small implementation-local tests that directly verify selection and fallback.
 
 ## Cached wrappers (`CachedFBig`, `CachedCBig`)
 

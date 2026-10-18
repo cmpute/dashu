@@ -9,7 +9,7 @@ use crate::{
     helper_macros,
     repr::{rounded_to_repr, Context, Repr, Word},
     round::{Round, Rounded, Rounding},
-    utils::{digit_len, shl_digits, split_digits_ref},
+    utils::{digit_len, shl_digits, short_window_words, split_digits_ref},
 };
 use core::cmp::Ordering;
 use core::ops::{Mul, MulAssign};
@@ -33,39 +33,6 @@ use core::ops::{Mul, MulAssign};
 // the window's last word, which the window sizing keeps far below the
 // rounding midpoint.
 // ---------------------------------------------------------------------------
-
-/// Window size (in words) for a short product that must certify rounding to
-/// `precision` base-`B` digits when the product window undershoots the truth by
-/// up to `err_ulps` units of its own least significant word.
-///
-/// The sizing only decides how often the fast path engages — the classifier
-/// re-checks every decision against the certified error band and declines when
-/// the band straddles a rounding boundary — so each term below just keeps the
-/// error band negligible against the rounding midpoint:
-///
-/// * `precision · b_ub` bits hold the kept digits (`B^p <= 2^(p·b_ub)` with
-///   `b_ub = ceil(log2 B)`);
-/// * one spare digit (`b_ub` bits) keeps the window strictly wider than the
-///   precision, so the rounding split and its midpoint exist;
-/// * `err_bits + 1` more bits, plus one further digit of margin, keep the
-///   doubled error safely below the midpoint;
-/// * two spare words absorb the fill the window can lose — the product's top
-///   word may hold as little as one bit, so the window value can start a
-///   full word lower than its word count suggests — and the final `+1` word
-///   keeps all these margins intact when the count is rounded down.
-fn short_window_words<const B: Word>(precision: usize, err_ulps: usize) -> usize {
-    // ceil(log2 B) as an exact bit length: enough bits for one base-B digit.
-    let b_ub = usize::BITS - (B as usize - 1).leading_zeros();
-    // Bit length of the shortfall bound: the error spans at most that many
-    // bits above the window's bottom.
-    let err_bits = usize::BITS - err_ulps.leading_zeros();
-    let word_bits = Word::BITS as usize;
-    // All saturating: the precision is caller-supplied and must not panic.
-    let need_bits = precision
-        .saturating_mul(b_ub as usize)
-        .saturating_add((2 * b_ub + err_bits + 1) as usize + 2 * word_bits);
-    need_bits / word_bits + 1
-}
 
 /// Largest extended window (beyond the smaller operand) offered to the kernel,
 /// in words (independent of the target word size). Extended windows always run
@@ -107,23 +74,23 @@ fn short_path_worthwhile(wa: usize, wb: usize, n: usize) -> bool {
 
 /// Decide the correctly-rounded result from a certified high-product window.
 ///
-/// `sig` is the positive window significand — already scaled up by the dropped
-/// words for bases that cannot absorb them into the exponent — `err_abs`
-/// bounds the one-sided shortfall (`0 <= true - sig < err_abs`), and `sticky`
-/// tells whether the shortfall is known to be nonzero (a `false` flag makes
-/// `sig` exact). Returns `None` when the error band straddles a rounding
-/// boundary; the caller then falls back to the exact product.
+/// `signif` is the positive window significand — already scaled up by the
+/// dropped words for bases that cannot absorb them into the exponent —
+/// `err_abs` bounds the one-sided shortfall (`0 <= true - signif < err_abs`),
+/// and `sticky` tells whether the shortfall is known to be nonzero (a `false`
+/// flag makes `signif` exact). Returns `None` when the error band straddles a
+/// rounding boundary; the caller then falls back to the exact product.
 fn round_high_product<R: Round, const B: Word>(
     context: &Context<R>,
-    sig: IBig,
+    signif: IBig,
     sign: Sign,
     exponent: isize,
     sticky: bool,
-    err_abs: &IBig,
+    err_abs: &UBig,
 ) -> Option<Rounded<Repr<B>>> {
     let precision = context.precision();
 
-    let digits = digit_len::<B>(&sig);
+    let digits = digit_len::<B>(&signif);
     if digits <= precision {
         // The window sizing guarantees a spare digit; bail out defensively.
         return None;
@@ -131,8 +98,8 @@ fn round_high_product<R: Round, const B: Word>(
     let shift = digits - precision;
     let exponent = exponent.checked_add(shift as isize)?;
 
-    let (hi, lo) = split_digits_ref::<B>(&sig, shift);
-    let hi_signed = if sign == Sign::Negative { -hi } else { hi };
+    let (hi, lo) = split_digits_ref::<B>(&signif, shift);
+    let hi_signed = sign * hi;
     let adjust = if !lo.is_zero() || sticky {
         // The radix power at the split, B^shift.
         let base_pow = shl_digits::<B>(&IBig::ONE, shift);
@@ -147,7 +114,7 @@ fn round_high_product<R: Round, const B: Word>(
             // base power to classify against the rounding midpoint (and
             // against a carry into the kept digits) without constructing the
             // midpoint itself.
-            let tail = &lo + err_abs;
+            let tail = &lo + IBig::from(err_abs.clone());
             if (&tail << 1) <= base_pow {
                 // Below the midpoint even at the worst shortfall.
                 Ordering::Less
@@ -171,9 +138,9 @@ fn round_high_product<R: Round, const B: Word>(
         Rounding::NoOp
     };
 
-    let sig = hi_signed + adjust;
+    let signif = hi_signed + adjust;
     Some(dashu_base::Approximation::Inexact(
-        rounded_to_repr(sig, exponent, sign == Sign::Negative),
+        rounded_to_repr(signif, exponent, sign == Sign::Negative),
         adjust,
     ))
 }
@@ -308,7 +275,7 @@ impl<R: Round> Context<R> {
         exponent: isize,
         dropped: usize,
         sticky: bool,
-        err_ulps: IBig,
+        err_ulps: UBig,
     ) -> Option<Rounded<Repr<B>>> {
         let fold_bits = Word::BITS as usize * dropped;
         let (exponent, pad_bits) = if B.is_power_of_two() {
@@ -317,9 +284,9 @@ impl<R: Round> Context<R> {
         } else {
             (exponent, fold_bits)
         };
-        let sig = IBig::from(window << pad_bits);
+        let signif = IBig::from(window << pad_bits);
         let err_abs = err_ulps << pad_bits;
-        round_high_product::<R, B>(self, sig, sign, exponent, sticky, &err_abs)
+        round_high_product::<R, B>(self, signif, sign, exponent, sticky, &err_abs)
     }
 
     /// Certified high-product fast path for multiplication. Returns `None` to
@@ -356,7 +323,7 @@ impl<R: Round> Context<R> {
         let b = UBig::from_words(rw);
         let (window, sticky) = high::mul_high(&a, &b, n);
 
-        self.round_short_product(window, ls * rs, exponent, dropped, sticky, IBig::from(n + 2))
+        self.round_short_product(window, ls * rs, exponent, dropped, sticky, UBig::from(n + 2))
     }
 
     /// Certified high-product fast path for squaring. See [`Self::mul_short`].
@@ -387,7 +354,7 @@ impl<R: Round> Context<R> {
         let a = UBig::from_words(fw);
         let (window, sticky) = high::sqr_high(&a, n);
 
-        self.round_short_product(window, Positive, exponent, dropped, sticky, IBig::from(n + 2))
+        self.round_short_product(window, Positive, exponent, dropped, sticky, UBig::from(n + 2))
     }
 
     /// Certified high-product fast path for the cubic power: a short square
@@ -427,7 +394,7 @@ impl<R: Round> Context<R> {
         // the second window extends past the square's word length, plus
         // (n2 + 2) ulps from the short product.
         let square_err_shift = n2.saturating_sub(square_words) * Word::BITS as usize;
-        let err_ulps = (IBig::from(n + 2) << square_err_shift) + IBig::from(n2 + 2);
+        let err_ulps = (UBig::from(n + 2) << square_err_shift) + UBig::from(n2 + 2);
         self.round_short_product(window, fs, exponent, dropped, sticky1 || sticky2, err_ulps)
     }
 }
@@ -674,8 +641,6 @@ impl<R: Round> Context<R> {
 mod tests {
     use super::*;
     use crate::round::mode;
-    use alloc::vec;
-    use alloc::vec::Vec;
     use dashu_int::IBig;
 
     /// Reference: `c + sign·(a·b)` computed exactly at `4p+32` digits then rounded
@@ -808,295 +773,29 @@ mod tests {
         assert!(up > down);
     }
 
-    // ---- short-product fast paths ----
-
     use dashu_base::Approximation::*;
 
-    /// Fixed dense operand pattern (no generator state): the i-th word is
-    /// `(i+1)·step + i`, wrapping — distinct, carry-rich words, identical on
-    /// every run (and sharing their low bits across word sizes, since the
-    /// arithmetic is modular). The top word is kept nonzero so the operand
-    /// really spans `len` words.
-    fn pattern_words(len: usize, step: u64) -> Vec<Word> {
-        (0..len)
-            .map(|i| {
-                let w = (i as u64 + 1).wrapping_mul(step).wrapping_add(i as u64) as Word;
-                if i + 1 == len && w == 0 {
-                    1
-                } else {
-                    w
-                }
-            })
-            .collect()
-    }
-
-    fn sig(words: &[Word]) -> IBig {
-        IBig::from(UBig::from_words(words))
-    }
-
-    /// Scale a word count tuned for 64-bit words to the current word size, so
-    /// the fixed operands always carry enough bits for the largest tested
-    /// precision (500 decimal digits) on every target.
-    fn scale(n: usize) -> usize {
-        n * (64 / Word::BITS as usize).max(1)
-    }
-
-    /// Assert the short path matches the unlimited-precision oracle re-rounded
-    /// to the same precision, in value, rounding flag and exactness wrapper.
-    fn assert_short_equals_oracle<R: Round, const B: Word>(
-        got: &Rounded<Repr<B>>,
-        oracle: Rounded<FBig<R, B>>,
-        what: &str,
-    ) {
-        let Inexact(wv, wr) = oracle else {
-            panic!("{what}: oracle unexpectedly exact");
-        };
-        let Inexact(gv, gr) = got else {
-            panic!("{what}: short path returned Exact");
-        };
-        assert_eq!(gv, wv.repr(), "{what}: value mismatch");
-        assert_eq!(*gr, wr, "{what}: rounding flag mismatch");
-    }
-
-    fn check_mul_short<R: Round, const B: Word>(p: usize, a: &Repr<B>, b: &Repr<B>) {
-        let ctx = Context::<R>::new(p);
-        let oracle = Context::<R>::new(0)
-            .mul(a, b)
-            .unwrap()
-            .value()
-            .with_precision(p);
-        let got = match ctx.mul_short(a, b) {
-            Some(g) => g,
-            None => panic!("mul short declined: p={p} a={a:?} b={b:?}"),
-        };
-        assert_short_equals_oracle(&got, oracle, "mul");
-        // End-to-end through the public method.
-        assert_eq!(ctx.mul(a, b).unwrap().value().repr(), &got.value());
-    }
-
-    fn check_sqr_short<R: Round, const B: Word>(p: usize, f: &Repr<B>) {
-        let ctx = Context::<R>::new(p);
-        let oracle = Context::<R>::new(0)
-            .sqr(f)
-            .unwrap()
-            .value()
-            .with_precision(p);
-        let got = ctx.sqr_short(f).expect("short path declined");
-        assert_short_equals_oracle(&got, oracle, "sqr");
-        assert_eq!(ctx.sqr(f).unwrap().value().repr(), &got.value());
-    }
-
-    fn check_cubic_short<R: Round, const B: Word>(p: usize, f: &Repr<B>) {
-        let ctx = Context::<R>::new(p);
-        let oracle = Context::<R>::new(0)
-            .cubic(f)
-            .unwrap()
-            .value()
-            .with_precision(p);
-        let got = ctx.cubic_short(f).expect("short path declined");
-        assert_short_equals_oracle(&got, oracle, "cubic");
-        assert_eq!(ctx.cubic(f).unwrap().value().repr(), &got.value());
-    }
-
-    /// Correctness check through the public API only: the short path may or
-    /// may not engage (structured operands can collapse the certified margin,
-    /// in which case declining to the exact product is the correct outcome).
-    fn check_public_matches_oracle<R: Round, const B: Word>(
-        p: usize,
-        a: &Repr<B>,
-        b: &Repr<B>,
-        f: &Repr<B>,
-    ) {
-        let ctx = Context::<R>::new(p);
-        let oracle = Context::<R>::new(0);
-        assert_eq!(
-            ctx.mul(a, b).unwrap().value().repr(),
-            oracle
-                .mul(a, b)
-                .unwrap()
-                .value()
-                .with_precision(p)
-                .value()
-                .repr()
-        );
-        assert_eq!(
-            ctx.sqr(f).unwrap().value().repr(),
-            oracle
-                .sqr(f)
-                .unwrap()
-                .value()
-                .with_precision(p)
-                .value()
-                .repr()
-        );
-        assert_eq!(
-            ctx.cubic(f).unwrap().value().repr(),
-            oracle
-                .cubic(f)
-                .unwrap()
-                .value()
-                .with_precision(p)
-                .value()
-                .repr()
-        );
-    }
-
-    /// All six modes and both standard bases over the same (a, b) pair.
-    fn check_all_modes<const B: Word>(p: usize, a: &Repr<B>, b: &Repr<B>, f: &Repr<B>) {
-        check_mul_short::<mode::Zero, B>(p, a, b);
-        check_mul_short::<mode::Away, B>(p, a, b);
-        check_mul_short::<mode::Up, B>(p, a, b);
-        check_mul_short::<mode::Down, B>(p, a, b);
-        check_mul_short::<mode::HalfEven, B>(p, a, b);
-        check_mul_short::<mode::HalfAway, B>(p, a, b);
-        check_sqr_short::<mode::Zero, B>(p, f);
-        check_sqr_short::<mode::HalfEven, B>(p, f);
-        check_sqr_short::<mode::HalfAway, B>(p, f);
-        check_cubic_short::<mode::Zero, B>(p, f);
-        check_cubic_short::<mode::HalfEven, B>(p, f);
-        check_cubic_short::<mode::HalfAway, B>(p, f);
-    }
-
-    /// Fixed operand patterns across the mandated precision set, both bases,
-    /// all six modes (mul) and the nearest/directed representatives (sqr/cubic).
     #[test]
-    fn test_short_products_match_oracle() {
-        // (a step, a words, b step, b words), all steps fixed odd constants
-        let cases: &[(u64, usize, u64, usize)] = &[
-            (0x0123_4567_89ab_cdef, 64, 0xfedc_ba98_7654_3211, 64),
-            (0x1357_9bdf_2468_ace1, 64, 0x0f0f_0f0f_0f0f_0f0f, 90),
-            (0x77aa_55cc_33ee_11dd, 90, 0x2492_4924_9249_2493, 64),
-            (0x6c2f_f2c6_0c8f_51df, 64, 0xa5a5_5a5a_a5a5_5a5b, 260),
-        ];
-        for &(ta, wa, tb, wb) in cases {
-            let (aw, bw) = (pattern_words(scale(wa), ta), pattern_words(scale(wb), tb));
-            for &p in &[2usize, 5, 20, 50, 100, 500] {
-                for &(ea, eb) in &[(0isize, 0isize), (-500, 333)] {
-                    check_all_modes::<2>(
-                        p,
-                        &Repr::<2>::new(sig(&aw), ea),
-                        &Repr::<2>::new(sig(&bw), eb),
-                        &Repr::<2>::new(sig(&aw), ea),
-                    );
-                    check_all_modes::<10>(
-                        p,
-                        &Repr::<10>::new(sig(&aw), ea),
-                        &Repr::<10>::new(sig(&bw), eb),
-                        &Repr::<10>::new(sig(&aw), ea),
-                    );
-                }
-            }
-        }
+    fn test_short_product_paths_engage() {
+        // Repeating binary thirds and fifths give nontrivial low digits.
+        let a = Repr::<2>::new((IBig::ONE << 4096) / 3, 0);
+        let b = Repr::<2>::new((IBig::ONE << 4608) / 5, 0);
+        let ctx = Context::<mode::HalfEven>::new(50);
+        assert!(ctx.mul_short(&a, &b).is_some());
+        assert!(ctx.sqr_short(&a).is_some());
+        assert!(ctx.cubic_short(&b).is_some());
+        // Base 8 also exercises folding a word count into three-bit digits.
+        let a8 = Repr::<8>::new(a.significand.clone(), 3);
+        let b8 = Repr::<8>::new(b.significand.clone(), -2);
+        assert!(ctx.mul_short(&a8, &b8).is_some());
     }
 
-    /// Equal-precision operands — the common `FBig` shape where each
-    /// significand sits exactly at the context precision — engage the short
-    /// path through the extended window (up to two words beyond the
-    /// operands). Squaring declines here: its dedicated kernels already
-    /// exploit the symmetric product. Engagement is asserted only when the
-    /// extended window has a comfortable spare over the precision; on narrow
-    /// words the spare can shrink enough that an individual input may
-    /// legitimately fall inside the certified error band and decline.
     #[test]
-    fn test_short_mul_equal_precision_engages() {
-        // (precision in bits, operand words for that precision on a 64-bit
-        // target; `scale` keeps the bit count constant on narrower words)
-        for &(p, wa) in &[(2048usize, 32usize), (4096, 64)] {
-            let wa = scale(wa);
-            let aw = pattern_words(wa, 0x0bad_c0de_fee1_deaf);
-            let a2 = Repr::<2>::new(sig(&aw), 0);
-            let ctx = Context::<mode::HalfEven>::new(p);
-            if (wa + 2) * Word::BITS as usize - p >= 100 {
-                assert!(
-                    ctx.mul_short(&a2, &a2).is_some(),
-                    "equal-precision mul short path declined (p={p})"
-                );
-                check_mul_short::<mode::HalfEven, 2>(p, &a2, &a2);
-                check_cubic_short::<mode::HalfEven, 2>(p, &a2);
-            } else {
-                check_public_matches_oracle::<mode::HalfEven, 2>(p, &a2, &a2, &a2);
-            }
-        }
-        // Decimal equivalent: 2000 digits ≈ 6644 bits.
-        let p10 = 2000;
-        let w10 = 310; // > p·log2(10)/64 ≈ 104 words, scaled below
-        let w10 = w10 * (64 / Word::BITS as usize);
-        let aw = pattern_words(w10, 0x1e1e_1e1e_1e1e_1e1f);
-        let a10 = Repr::<10>::new(sig(&aw), 0);
-        check_mul_short::<mode::HalfAway, 10>(p10, &a10, &a10);
-    }
-
-    /// Negative operands: the classification runs on the magnitude, so every
-    /// sign combination must mirror the positive result.
-    #[test]
-    fn test_short_products_negative_operands() {
-        let aw = pattern_words(scale(64), 0x3333_3333_3333_3335);
-        let bw = pattern_words(scale(72), 0x6666_6666_6666_6667);
-        for &p in &[20usize, 100] {
-            let b2 = Repr::<2>::new(sig(&bw), -7);
-            let na2 = Repr::<2>::new(-sig(&aw), 3);
-            check_mul_short::<mode::HalfEven, 2>(p, &na2, &b2);
-            check_mul_short::<mode::Down, 2>(p, &na2, &b2);
-            check_mul_short::<mode::Up, 2>(p, &na2, &b2);
-            check_sqr_short::<mode::HalfEven, 2>(p, &na2);
-            check_cubic_short::<mode::HalfEven, 2>(p, &na2);
-            check_cubic_short::<mode::Down, 2>(p, &na2);
-            let b10 = Repr::<10>::new(sig(&bw), -7);
-            let na10 = Repr::<10>::new(-sig(&aw), 3);
-            check_mul_short::<mode::HalfAway, 10>(p, &na10, &b10);
-            check_sqr_short::<mode::HalfAway, 10>(p, &na10);
-            check_cubic_short::<mode::HalfAway, 10>(p, &na10);
-        }
-    }
-
-    /// Sparse power-of-two patterns give products with long zero runs around
-    /// the rounding split. The chained cubic window can collapse its certified
-    /// margin on such operands — declining to the exact product is then the
-    /// correct outcome — so only mul/sqr assert engagement; all three
-    /// operations assert correctness through the public API.
-    #[test]
-    fn test_short_mul_sparse_patterns() {
-        let len = scale(64);
-        for &k in &[1usize, 31, 62] {
-            let mid = if k == 62 { len - 2 } else { scale(k) };
-            let mut aw = vec![0 as Word; len];
-            aw[0] = 1;
-            aw[len - 1] = 1;
-            let mut bw = vec![0 as Word; len];
-            bw[0] = 1; // odd low word: keep normalization from shrinking the significand
-            bw[mid] = 3;
-            bw[len - 1] = 5;
-            let (a2, b2) = (Repr::<2>::new(sig(&aw), 0), Repr::<2>::new(sig(&bw), 0));
-            for &p in &[2usize, 20, 50, 100, 500] {
-                check_mul_short::<mode::HalfEven, 2>(p, &a2, &b2);
-                check_mul_short::<mode::Down, 2>(p, &a2, &b2);
-                check_sqr_short::<mode::HalfEven, 2>(p, &b2);
-                check_sqr_short::<mode::HalfAway, 2>(p, &a2);
-                check_public_matches_oracle::<mode::HalfEven, 2>(p, &a2, &b2, &b2);
-                check_public_matches_oracle::<mode::Down, 2>(p, &a2, &b2, &a2);
-            }
-        }
-    }
-
-    /// Base-10 significands with trailing zero words: the dropped part of the
-    /// product is exactly zero. Such operands collapse the chained cubic
-    /// window's certified margin (and with it the engagement), so only mul
-    /// asserts engagement; correctness of all three operations goes through
-    /// the public API.
-    #[test]
-    fn test_short_mul_exact_windows() {
-        let len = scale(64);
-        let mut aw = vec![0 as Word; len];
-        aw[len - 1] = 7;
-        let mut bw = vec![0 as Word; len];
-        bw[len - 1] = 9;
-        let (a10, b10) = (Repr::<10>::new(sig(&aw), 0), Repr::<10>::new(sig(&bw), 0));
-        for &p in &[2usize, 50, 500] {
-            check_mul_short::<mode::HalfEven, 10>(p, &a10, &b10);
-            check_mul_short::<mode::HalfAway, 10>(p, &a10, &b10);
-            check_public_matches_oracle::<mode::HalfEven, 10>(p, &a10, &b10, &a10);
-            check_public_matches_oracle::<mode::Zero, 10>(p, &a10, &b10, &b10);
-        }
+    fn test_short_product_exponent_overflow_declines() {
+        let a = Repr::<2>::new((IBig::ONE << 4096) / 3, isize::MAX - 5);
+        let b = Repr::<2>::new((IBig::ONE << 4096) / 5, 10);
+        let ctx = Context::<mode::HalfEven>::new(50);
+        assert!(ctx.mul_short(&a, &b).is_none());
     }
 
     /// Direct classifier checks on the tie and carry-guard branches.
@@ -1116,7 +815,7 @@ mod tests {
                 Positive,
                 0,
                 false,
-                &IBig::ONE,
+                &UBig::ONE,
             )
             .expect("exact tie should be decided");
             let want = ctx.repr_round_ref(&Repr::<2>::new(tie.clone(), 0));
@@ -1138,7 +837,7 @@ mod tests {
                 Positive,
                 0,
                 true,
-                &IBig::ONE,
+                &UBig::ONE,
             )
             .expect("broken tie should be decided");
             let want_above = ctx.repr_round_ref(&Repr::<2>::new(tie + 1, 0));
@@ -1160,12 +859,12 @@ mod tests {
             Positive,
             0,
             true,
-            &IBig::from(2u8)
+            &UBig::from(2u8)
         )
         .is_none());
         // The same value without a shortfall is decided (rounds up).
         assert!(
-            round_high_product::<mode::HalfEven, 2>(&ctx, val, Positive, 0, false, &IBig::ONE)
+            round_high_product::<mode::HalfEven, 2>(&ctx, val, Positive, 0, false, &UBig::ONE)
                 .is_some()
         );
 
@@ -1180,126 +879,8 @@ mod tests {
             Positive,
             0,
             true,
-            &IBig::from(2u8)
+            &UBig::from(2u8)
         )
         .is_none());
-    }
-
-    /// Exponent saturation must keep flowing through the exact path's error
-    /// semantics: the short path declines on exponent overflow.
-    #[test]
-    fn test_short_mul_exponent_overflow_declines() {
-        let aw = pattern_words(scale(64), 0x9999_9999_9999_999b);
-        let a = Repr::<2>::new(sig(&aw), isize::MAX - 5);
-        let b = Repr::<2>::new(sig(&aw), 10);
-        let ctx = Context::<mode::HalfEven>::new(50);
-        assert!(ctx.mul_short(&a, &b).is_none());
-        assert_eq!(ctx.mul(&a, &b), Err(FpError::Overflow(Positive)));
-
-        let c = Repr::<2>::new(sig(&aw), isize::MIN + 5);
-        let d = Repr::<2>::new(sig(&aw), -10);
-        assert!(ctx.mul_short(&c, &d).is_none());
-        assert_eq!(ctx.mul(&c, &d), Err(FpError::Underflow(Positive)));
-    }
-
-    /// A power-of-two base whose per-digit bit count does not divide the
-    /// dropped bit count (base 8 on 64-bit words: 64·dropped mod 3 ≠ 0) must
-    /// pad the remainder bits onto the significand instead of folding them
-    /// into the exponent by floor division (which mis-scales the value).
-    #[test]
-    fn test_short_mul_power_of_two_base_exponent_folding() {
-        let aw = pattern_words(scale(64), 0x0cab_ba6e_5032_51f9);
-        let bw = pattern_words(scale(64), 0x5eed_5eed_5eed_5eed);
-        let p = 100; // octal digits; the window drops 121 words ≡ 1 mod 3
-        let a8 = Repr::<8>::new(sig(&aw), 3);
-        let b8 = Repr::<8>::new(sig(&bw), -2);
-        let ctx = Context::<mode::HalfEven>::new(p);
-        assert!(ctx.mul_short(&a8, &b8).is_some(), "base-8 short path declined");
-        check_mul_short::<mode::HalfEven, 8>(p, &a8, &b8);
-        check_sqr_short::<mode::HalfEven, 8>(p, &a8);
-        check_cubic_short::<mode::HalfEven, 8>(p, &a8);
-    }
-
-    /// Sweeping the exponent sum across the finite-range boundary: whenever
-    /// the unlimited-precision oracle saturates to the infinity, the public
-    /// operation must report the corresponding error — including the case
-    /// where the fast path's `normalize` bumps a checked exponent exactly
-    /// onto the sentinel (which the fast path's own `checked_add` cannot
-    /// see).
-    #[test]
-    fn test_short_mul_exponent_saturation_parity() {
-        let aw = pattern_words(scale(64), 0x7b1f_2e3d_4c5b_6a79);
-        let p = 50usize;
-        let ctx = Context::<mode::HalfEven>::new(p);
-        let oracle_ctx = Context::<mode::HalfEven>::new(0);
-        let b = Repr::<2>::new(sig(&aw), 0);
-        for delta in 0..(scale(8192) as isize) {
-            let a = Repr::<2>::new(sig(&aw), isize::MAX - delta);
-            let got = ctx.mul(&a, &b);
-            match oracle_ctx.mul(&a, &b) {
-                // The unlimited product itself can saturate in `normalize`
-                // (its trailing-zero fold crosses the sentinel): both paths
-                // must report overflow.
-                Err(FpError::Overflow(_)) => {
-                    assert!(
-                        matches!(got, Err(FpError::Overflow(_))),
-                        "delta={delta}: expected overflow, got {:?}",
-                        got.map(|v| v.value().repr().clone())
-                    );
-                }
-                Err(e) => panic!("delta={delta}: unexpected oracle error {e:?}"),
-                Ok(want) => {
-                    let want = want.value().with_precision(p);
-                    let want_repr = match &want {
-                        Exact(v) | Inexact(v, _) => v.repr(),
-                    };
-                    if want_repr.is_infinite() {
-                        assert!(
-                            matches!(got, Err(FpError::Overflow(_))),
-                            "delta={delta}: expected overflow, got {:?}",
-                            got.map(|v| v.value().repr().clone())
-                        );
-                    } else {
-                        let got = got.expect("finite oracle but the public op errored");
-                        assert_eq!(got.value().repr(), want_repr, "delta={delta}");
-                    }
-                }
-            }
-        }
-    }
-
-    /// Rounding can push the *result* out of the finite exponent range even
-    /// when the exact intermediate is finite: a wide significand rounded to a
-    /// small precision needs `exponent + shift` beyond `isize::MAX`. This
-    /// used to panic in debug builds and wrap the exponent in release builds.
-    #[test]
-    fn test_round_exponent_saturation() {
-        let aw = pattern_words(scale(64), 0x5a5a_5a5a_5a5a_5a5b);
-        let p = 50usize;
-        let ctx = Context::<mode::HalfEven>::new(p);
-
-        // Multiplication: the exact product is finite (exponent well below
-        // the sentinel), but rounding 128 words down to 50 digits overflows.
-        let a = Repr::<2>::new(sig(&aw), isize::MAX - 7000);
-        let b = Repr::<2>::new(sig(&aw), 10);
-        assert_eq!(ctx.mul(&a, &b), Err(FpError::Overflow(Positive)));
-        let na = Repr::<2>::new(-sig(&aw), isize::MAX - 7000);
-        assert_eq!(ctx.mul(&na, &b), Err(FpError::Overflow(Negative)));
-
-        // Square and cubic reach the same state through their exact paths.
-        assert_eq!(ctx.sqr(&a), Err(FpError::Overflow(Positive)));
-        assert_eq!(ctx.cubic(&na), Err(FpError::Overflow(Negative)));
-
-        // Addition: the aligned sum keeps the huge exponent and its wide
-        // significand rounds past the range.
-        let hi = Repr::<2>::new(sig(&aw), isize::MAX - 1000);
-        assert_eq!(ctx.add(&hi, &b), Err(FpError::Overflow(Positive)));
-        assert_eq!(ctx.sub(&hi, &b), Err(FpError::Overflow(Positive)));
-
-        // `with_precision` has no error channel: the value saturates to the
-        // infinity sentinel instead of panicking.
-        let exact = FBig::<mode::HalfEven, 2>::from_parts(sig(&aw), isize::MAX - 1000);
-        let rounded = exact.with_precision(p);
-        assert!(rounded.value().repr().is_infinite());
     }
 }

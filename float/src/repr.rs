@@ -688,12 +688,23 @@ impl<R: Round> Context<R> {
         &self,
         rounded: Rounded<Repr<B>>,
     ) -> FpResult<FBig<R, B>> {
+        Ok(self
+            .finish_rounded_repr(rounded)?
+            .map(|v| FBig::new(v, *self)))
+    }
+
+    /// Reject exponent saturation without attaching a context, for kernels
+    /// such as [`Self::repr_div`] that return a rounded representation.
+    pub(crate) fn finish_rounded_repr<const B: Word>(
+        &self,
+        rounded: Rounded<Repr<B>>,
+    ) -> FpResult<Repr<B>> {
         let value = rounded.value_ref();
         value.check_finite_exponent()?;
         if value.is_infinite() {
             return Err(FpError::Overflow(value.sign()));
         }
-        Ok(rounded.map(|v| FBig::new(v, *self)))
+        Ok(rounded)
     }
 
     /// Create a float operation context with the given precision limit.
