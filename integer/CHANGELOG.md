@@ -11,6 +11,9 @@
   deterministic word fixtures across the integer kernel tests.
 
 ### Fix
+- Fix exact division and divisibility checks for zero with multi-word divisors,
+  including borrowed receivers, assignment, and signed integers. Add deterministic
+  boundary regressions and extend the exact-division fuzz test to multi-word divisors.
 - Correct the short-division example's error-bound scaling and recursive divisor comments.
 - Fix the sticky flag of `high::mul_high` / `high::sqr_high` on the recursive path: the
   exact high block's boundary words and the cross windows' guard words land on the two
