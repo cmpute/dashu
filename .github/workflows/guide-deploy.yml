@@ -95,6 +95,18 @@ jobs:
           mkdir -p site
           cp -a guide/book site/dashu
           cp -a guide-zh/book site/dashu-zh
+      - name: Ensure dashu-docs Pages project exists
+        if: env.skip != 'true'
+        run: |
+          # Idempotent: an "already exists" error is fine; anything else gets
+          # reported by the deploy step right after.
+          curl -sS -X POST \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects" \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"name":"dashu-docs","production_branch":"main"}' \
+            | grep -q '"success":true' \
+            || echo "project create returned non-success (usually: already exists)"
       - name: Publish guides to Cloudflare Pages (dashu-docs)
         if: env.skip != 'true'
         uses: cloudflare/wrangler-action@v3
