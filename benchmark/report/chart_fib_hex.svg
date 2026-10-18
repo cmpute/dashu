@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 330" font-family="system-ui, sans-serif" font-size="12" fill="#1f2937">
+<rect width="760" height="330" fill="#ffffff"/>
+<rect x="76" y="12" width="10" height="10" rx="2" fill="#2563eb"/>
+<text x="91" y="21">dashu</text>
+<rect x="148" y="12" width="10" height="10" rx="2" fill="#16a34a"/>
+<text x="163" y="21">rug</text>
+<rect x="206" y="12" width="10" height="10" rx="2" fill="#ea580c"/>
+<text x="221" y="21">rust-gmp</text>
+<rect x="299" y="12" width="10" height="10" rx="2" fill="#9333ea"/>
+<text x="314" y="21">malachite</text>
+<rect x="399" y="12" width="10" height="10" rx="2" fill="#0d9488"/>
+<text x="414" y="21">ibig</text>
+<rect x="464" y="12" width="10" height="10" rx="2" fill="#db2777"/>
+<text x="479" y="21">num</text>
+<line x1="76" x2="736" y1="291.7" y2="291.7" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="295.7" text-anchor="end" fill="#6b7280">0.001</text>
+<line x1="76" x2="736" y1="230.9" y2="230.9" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="234.9" text-anchor="end" fill="#6b7280">0.01</text>
+<line x1="76" x2="736" y1="170.1" y2="170.1" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="174.1" text-anchor="end" fill="#6b7280">0.1</text>
+<line x1="76" x2="736" y1="109.3" y2="109.3" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="113.3" text-anchor="end" fill="#6b7280">1</text>
+<line x1="76" x2="736" y1="48.5" y2="48.5" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="52.5" text-anchor="end" fill="#6b7280">10</text>
+<text x="186.0" y="292" text-anchor="middle">1M</text>
+<rect x="109.0" width="23.7" y="230.9" height="41.1" rx="2" fill="#2563eb"/>
+<rect x="134.7" width="23.7" y="252.0" height="20.0" rx="2" fill="#16a34a"/>
+<rect x="160.3" width="23.7" y="253.8" height="18.2" rx="2" fill="#ea580c"/>
+<rect x="186.0" width="23.7" y="256.5" height="15.5" rx="2" fill="#9333ea"/>
+<rect x="211.7" width="23.7" y="229.6" height="42.4" rx="2" fill="#0d9488"/>
+<rect x="237.3" width="23.7" y="227.7" height="44.3" rx="2" fill="#db2777"/>
+<text x="406.0" y="292" text-anchor="middle">10M</text>
+<rect x="329.0" width="23.7" y="164.6" height="107.4" rx="2" fill="#2563eb"/>
+<rect x="354.7" width="23.7" y="196.3" height="75.7" rx="2" fill="#16a34a"/>
+<rect x="380.3" width="23.7" y="196.7" height="75.3" rx="2" fill="#ea580c"/>
+<rect x="406.0" width="23.7" y="202.5" height="69.5" rx="2" fill="#9333ea"/>
+<rect x="431.7" width="23.7" y="151.2" height="120.8" rx="2" fill="#0d9488"/>
+<rect x="457.3" width="23.7" y="150.3" height="121.7" rx="2" fill="#db2777"/>
+<text x="626.0" y="292" text-anchor="middle">100M</text>
+<rect x="549.0" width="23.7" y="76.7" height="195.3" rx="2" fill="#2563eb"/>
+<rect x="574.7" width="23.7" y="126.3" height="145.7" rx="2" fill="#16a34a"/>
+<rect x="600.3" width="23.7" y="127.1" height="144.9" rx="2" fill="#ea580c"/>
+<rect x="626.0" width="23.7" y="142.2" height="129.8" rx="2" fill="#9333ea"/>
+<rect x="651.7" width="23.7" y="62.7" height="209.3" rx="2" fill="#0d9488"/>
+<rect x="677.3" width="23.7" y="61.5" height="210.5" rx="2" fill="#db2777"/>
+<text x="406.0" y="318" text-anchor="middle" fill="#6b7280">Fibonacci index</text>
+<text transform="rotate(-90 16 159.0)" x="16" y="159.0" text-anchor="middle" fill="#6b7280">time per iteration (s)</text>
+</svg>

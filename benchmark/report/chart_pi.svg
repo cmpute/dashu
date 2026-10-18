@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 330" font-family="system-ui, sans-serif" font-size="12" fill="#1f2937">
+<rect width="760" height="330" fill="#ffffff"/>
+<rect x="76" y="12" width="10" height="10" rx="2" fill="#2563eb"/>
+<text x="91" y="21">dashu</text>
+<rect x="148" y="12" width="10" height="10" rx="2" fill="#16a34a"/>
+<text x="163" y="21">rug</text>
+<rect x="206" y="12" width="10" height="10" rx="2" fill="#9333ea"/>
+<text x="221" y="21">astro_float</text>
+<line x1="76" x2="736" y1="276.1" y2="276.1" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="280.1" text-anchor="end" fill="#6b7280">0.001</text>
+<line x1="76" x2="736" y1="214.7" y2="214.7" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="218.7" text-anchor="end" fill="#6b7280">0.01</text>
+<line x1="76" x2="736" y1="153.3" y2="153.3" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="157.3" text-anchor="end" fill="#6b7280">0.1</text>
+<line x1="76" x2="736" y1="92.0" y2="92.0" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="96.0" text-anchor="end" fill="#6b7280">1</text>
+<text x="186.0" y="292" text-anchor="middle">10k</text>
+<rect x="135.0" width="32.0" y="164.4" height="107.6" rx="2" fill="#2563eb"/>
+<rect x="169.0" width="32.0" y="256.3" height="15.7" rx="2" fill="#16a34a"/>
+<rect x="203.0" width="32.0" y="224.6" height="47.4" rx="2" fill="#9333ea"/>
+<text x="406.0" y="292" text-anchor="middle">20k</text>
+<rect x="355.0" width="32.0" y="120.3" height="151.7" rx="2" fill="#2563eb"/>
+<rect x="389.0" width="32.0" y="239.8" height="32.2" rx="2" fill="#16a34a"/>
+<rect x="423.0" width="32.0" y="192.4" height="79.6" rx="2" fill="#9333ea"/>
+<text x="626.0" y="292" text-anchor="middle">50k</text>
+<rect x="575.0" width="32.0" y="61.7" height="210.3" rx="2" fill="#2563eb"/>
+<rect x="609.0" width="32.0" y="213.4" height="58.6" rx="2" fill="#16a34a"/>
+<rect x="643.0" width="32.0" y="155.2" height="116.8" rx="2" fill="#9333ea"/>
+<text x="406.0" y="318" text-anchor="middle" fill="#6b7280">bits of π</text>
+<text transform="rotate(-90 16 159.0)" x="16" y="159.0" text-anchor="middle" fill="#6b7280">time per iteration (s)</text>
+</svg>

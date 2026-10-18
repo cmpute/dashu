@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 330" font-family="system-ui, sans-serif" font-size="12" fill="#1f2937">
+<rect width="760" height="330" fill="#ffffff"/>
+<rect x="76" y="12" width="10" height="10" rx="2" fill="#2563eb"/>
+<text x="91" y="21">dashu</text>
+<rect x="148" y="12" width="10" height="10" rx="2" fill="#9333ea"/>
+<text x="163" y="21">malachite</text>
+<rect x="248" y="12" width="10" height="10" rx="2" fill="#db2777"/>
+<text x="263" y="21">num</text>
+<line x1="76" x2="736" y1="329.4" y2="329.4" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="333.4" text-anchor="end" fill="#6b7280">0.001</text>
+<line x1="76" x2="736" y1="256.0" y2="256.0" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="260.0" text-anchor="end" fill="#6b7280">0.01</text>
+<line x1="76" x2="736" y1="182.6" y2="182.6" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="186.6" text-anchor="end" fill="#6b7280">0.1</text>
+<line x1="76" x2="736" y1="109.1" y2="109.1" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="113.1" text-anchor="end" fill="#6b7280">1</text>
+<text x="186.0" y="292" text-anchor="middle">2k</text>
+<rect x="135.0" width="32.0" y="242.0" height="30.0" rx="2" fill="#2563eb"/>
+<rect x="169.0" width="32.0" y="253.3" height="18.7" rx="2" fill="#9333ea"/>
+<rect x="203.0" width="32.0" y="226.7" height="45.3" rx="2" fill="#db2777"/>
+<text x="406.0" y="292" text-anchor="middle">6k</text>
+<rect x="355.0" width="32.0" y="168.4" height="103.6" rx="2" fill="#2563eb"/>
+<rect x="389.0" width="32.0" y="187.6" height="84.4" rx="2" fill="#9333ea"/>
+<rect x="423.0" width="32.0" y="155.0" height="117.0" rx="2" fill="#db2777"/>
+<text x="626.0" y="292" text-anchor="middle">20k</text>
+<rect x="575.0" width="32.0" y="70.4" height="201.6" rx="2" fill="#2563eb"/>
+<rect x="609.0" width="32.0" y="97.0" height="175.0" rx="2" fill="#9333ea"/>
+<rect x="643.0" width="32.0" y="64.7" height="207.3" rx="2" fill="#db2777"/>
+<text x="406.0" y="318" text-anchor="middle" fill="#6b7280">iterations</text>
+<text transform="rotate(-90 16 159.0)" x="16" y="159.0" text-anchor="middle" fill="#6b7280">time per iteration (s)</text>
+</svg>

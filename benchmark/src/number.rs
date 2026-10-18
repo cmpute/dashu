@@ -1,14 +1,17 @@
 use std::{
     fmt::Display,
-    ops::{Add, Div, Mul, Sub},
+    ops::{Add, Div, Mul, Rem, Sub},
     str::FromStr,
 };
 
 pub(crate) trait Natural
 where
     Self: Sized,
+    Self: Clone,
     Self: From<u32>,
     Self: Display,
+    Self: PartialEq,
+    Self: PartialOrd,
     Self: Add<Self, Output = Self>,
     Self: for<'a> Add<&'a Self, Output = Self>,
     Self: Sub<Self, Output = Self>,
@@ -17,11 +20,28 @@ where
     Self: for<'a> Mul<&'a Self, Output = Self>,
     Self: Div<Self, Output = Self>,
     Self: for<'a> Div<&'a Self, Output = Self>,
+    Self: for<'a> Rem<&'a Self, Output = Self>,
     Self: FromStr,
 {
     fn pow(&self, exp: u32) -> Self;
     fn to_hex(&self) -> String;
     fn mul_ref(&self, rhs: &Self) -> Self;
+    fn from_u64(v: u64) -> Self;
+
+    /// Greatest common divisor of two non-negative values.
+    fn gcd(&self, rhs: &Self) -> Self;
+
+    /// Whether the value is odd.
+    fn is_odd(&self) -> bool;
+
+    /// (self * rhs) mod m. Operands must already be reduced modulo m.
+    fn mul_mod(&self, rhs: &Self, m: &Self) -> Self {
+        self.mul_ref(rhs) % m
+    }
+
+    /// self^exp mod m, bound to the library's native modular exponentiation.
+    /// The base must already be reduced modulo m.
+    fn pow_mod(&self, exp: &Self, m: &Self) -> Self;
 }
 
 mod natural {
@@ -39,6 +59,27 @@ mod natural {
         fn mul_ref(&self, rhs: &Self) -> Self {
             self * rhs
         }
+
+        fn from_u64(v: u64) -> Self {
+            Self::from(v)
+        }
+
+        fn gcd(&self, rhs: &Self) -> Self {
+            dashu::base::ring::Gcd::gcd(self, rhs)
+        }
+
+        fn is_odd(&self) -> bool {
+            dashu::base::BitTest::bit(self, 0)
+        }
+
+        fn pow_mod(&self, exp: &Self, m: &Self) -> Self {
+            // Montgomery: this benchmark folder targets large bit sizes
+            // (thousands of bits), where the REDC beats Barrett reduction.
+            dashu::integer::monty::MontgomeryRepr::new(m.clone())
+                .reduce(self.clone())
+                .pow(exp)
+                .residue()
+        }
     }
 
     impl Natural for ibig::UBig {
@@ -53,6 +94,25 @@ mod natural {
         fn mul_ref(&self, rhs: &Self) -> Self {
             self * rhs
         }
+
+        fn from_u64(v: u64) -> Self {
+            Self::from(v)
+        }
+
+        fn gcd(&self, rhs: &Self) -> Self {
+            self.gcd(rhs)
+        }
+
+        fn is_odd(&self) -> bool {
+            self.bit(0)
+        }
+
+        fn pow_mod(&self, exp: &Self, m: &Self) -> Self {
+            ibig::modular::ModuloRing::new(m)
+                .from(self)
+                .pow(exp)
+                .residue()
+        }
     }
 
     impl Natural for num::BigUint {
@@ -66,6 +126,24 @@ mod natural {
 
         fn mul_ref(&self, rhs: &Self) -> Self {
             self * rhs
+        }
+
+        fn from_u64(v: u64) -> Self {
+            Self::from(v)
+        }
+
+        fn gcd(&self, rhs: &Self) -> Self {
+            num::integer::Integer::gcd(self, rhs)
+        }
+
+        fn is_odd(&self) -> bool {
+            self.iter_u64_digits()
+                .next()
+                .is_some_and(|word| word & 1 == 1)
+        }
+
+        fn pow_mod(&self, exp: &Self, m: &Self) -> Self {
+            self.modpow(exp, m)
         }
     }
 
@@ -82,6 +160,22 @@ mod natural {
         fn mul_ref(&self, rhs: &Self) -> Self {
             self * rhs
         }
+
+        fn from_u64(v: u64) -> Self {
+            Self::from(v)
+        }
+
+        fn gcd(&self, rhs: &Self) -> Self {
+            self.gcd(rhs)
+        }
+
+        fn is_odd(&self) -> bool {
+            self.bit(0)
+        }
+
+        fn pow_mod(&self, exp: &Self, m: &Self) -> Self {
+            self.pow_mod(exp, m)
+        }
     }
 
     #[cfg(feature = "gmp")]
@@ -96,6 +190,23 @@ mod natural {
 
         fn mul_ref(&self, rhs: &Self) -> Self {
             (self * rhs).into()
+        }
+
+        fn from_u64(v: u64) -> Self {
+            Self::from(v)
+        }
+
+        fn gcd(&self, rhs: &Self) -> Self {
+            self.clone().gcd(rhs)
+        }
+
+        fn is_odd(&self) -> bool {
+            self.is_odd()
+        }
+
+        fn pow_mod(&self, exp: &Self, m: &Self) -> Self {
+            // Only fails on a negative exponent with a non-invertible base.
+            self.clone().pow_mod(exp, m).unwrap()
         }
     }
 
@@ -112,6 +223,22 @@ mod natural {
         fn mul_ref(&self, rhs: &Self) -> Self {
             self * rhs
         }
+
+        fn from_u64(v: u64) -> Self {
+            Self::from(v)
+        }
+
+        fn gcd(&self, rhs: &Self) -> Self {
+            self.gcd(rhs)
+        }
+
+        fn is_odd(&self) -> bool {
+            self.tstbit(0)
+        }
+
+        fn pow_mod(&self, exp: &Self, m: &Self) -> Self {
+            self.powm(exp, m)
+        }
     }
 
     impl Natural for malachite::Natural {
@@ -125,6 +252,34 @@ mod natural {
 
         fn mul_ref(&self, rhs: &Self) -> Self {
             self * rhs
+        }
+
+        fn from_u64(v: u64) -> Self {
+            Self::from(v)
+        }
+
+        fn gcd(&self, rhs: &Self) -> Self {
+            malachite::base::num::arithmetic::traits::Gcd::gcd(self.clone(), rhs.clone())
+        }
+
+        fn is_odd(&self) -> bool {
+            malachite::base::num::arithmetic::traits::Parity::odd(self)
+        }
+
+        fn mul_mod(&self, rhs: &Self, m: &Self) -> Self {
+            malachite::base::num::arithmetic::traits::ModMul::mod_mul(
+                self.clone(),
+                rhs.clone(),
+                m.clone(),
+            )
+        }
+
+        fn pow_mod(&self, exp: &Self, m: &Self) -> Self {
+            malachite::base::num::arithmetic::traits::ModPow::mod_pow(
+                self.clone(),
+                exp.clone(),
+                m.clone(),
+            )
         }
     }
 }
@@ -294,6 +449,23 @@ mod float {
             let p = self.0.precision().unwrap_or(64);
             let mut cc = astro_float::Consts::new().expect("astro consts cache");
             AstroFloat(self.0.atan(p, astro_float::RoundingMode::ToEven, &mut cc))
+        }
+    }
+
+    impl Float for malachite::Float {
+        fn e(precision: u32) -> Self {
+            Self::exp_prec_ref(&Self::from_int(1, precision), precision as u64).0
+        }
+        fn from_int(value: u32, precision: u32) -> Self {
+            malachite::Float::from_unsigned_prec(value, precision as u64).0
+        }
+        fn sqrt(&self) -> Self {
+            let prec = self.get_prec().unwrap_or(64);
+            malachite::Float::sqrt_prec_ref(self, prec).0
+        }
+        fn atan(&self) -> Self {
+            let prec = self.get_prec().unwrap_or(64);
+            malachite::Float::atan_prec_ref(self, prec).0
         }
     }
 

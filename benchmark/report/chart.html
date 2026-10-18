@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Library comparison by benchmark task</title>
+<style>
+:root {
+  --fg: #1f2937; --muted: #6b7280; --border: #d1d5db;
+  --s1: #2563eb; --s2: #16a34a; --s3: #ea580c; --s4: #9333ea; --s5: #0d9488; --s6: #db2777;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #e5e7eb; --muted: #9ca3af; --border: #4b5563;
+    --s1: #60a5fa; --s2: #4ade80; --s3: #fb923c; --s4: #c084fc; --s5: #2dd4bf; --s6: #f472b6;
+  }
+}
+body { margin: 0 auto; padding: 16px; max-width: 960px;
+  font: 400 14px/1.5 system-ui, sans-serif; color: var(--fg); }
+h3 { margin: 0 0 4px; font-size: 16px; font-weight: 500; }
+.sub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; }
+button { font: inherit; color: inherit; }
+.btn { background: transparent; border: 1px solid var(--border);
+  border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+.btn[aria-pressed="true"] { background: var(--s1); border-color: var(--s1); color: #fff; }
+.legend-btn { background: transparent; border: none; padding: 2px 6px; cursor: pointer; }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+  margin-right: 6px; vertical-align: baseline; }
+#tip { position: fixed; pointer-events: none; background: var(--fg); color: #fff;
+  border-radius: 4px; padding: 3px 8px; font-size: 12px; display: none; white-space: nowrap; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; }
+svg text { fill: var(--fg); font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="bench-lib-comparison">
+  <h3>Library comparison by benchmark task</h3>
+  <div class="sub">Time for one task iteration, log scale — lower is better. Min of 3 process runs for sub-second cells; the factor task excludes its one-time prime generation.</div>
+  <div class="row" id="blc-tasks" role="group" aria-label="Benchmark task"></div>
+  <div class="row" id="blc-legend" role="group" aria-label="Libraries"></div>
+  <div class="sr-only" aria-live="polite" id="blc-status"></div>
+  <div id="blc-chart"></div>
+  <div id="tip" role="tooltip"></div>
+</div>
+<noscript>This chart requires JavaScript and loads D3 from a CDN.</noscript>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script>
+(function () {
+  const root = document.getElementById("bench-lib-comparison");
+  if (!root) return;
+  const DATA = {"e":{"unit":"digits of e","sizes":["100k","500k","4M"],"libs":["dashu","rug","rust-gmp","malachite","ibig","num"],"times":{"dashu":[0.0348,0.2143,3.709],"rug":[0.0106,0.0686,0.8455],"rust-gmp":[0.0113,0.0739,0.8684],"malachite":[0.0181,0.0879,0.6012],"ibig":[0.0359,0.2438,5.3813],"num":[0.0364,0.2403,5.2107]}},"fib":{"unit":"Fibonacci index","sizes":["1M","4M","30M"],"libs":["dashu","rug","rust-gmp","malachite","ibig","num"],"times":{"dashu":[0.0277,0.1962,3.2885],"rug":[0.0122,0.0592,0.6689],"rust-gmp":[0.0127,0.0599,0.6603],"malachite":[0.0122,0.0558,0.4855],"ibig":[0.0289,0.2184,4.4683],"num":[0.0298,0.2168,4.3046]}},"fib_hex":{"unit":"Fibonacci index","sizes":["1M","10M","100M"],"libs":["dashu","rug","rust-gmp","malachite","ibig","num"],"times":{"dashu":[0.01,0.123,3.4394],"rug":[0.0045,0.0371,0.5252],"rust-gmp":[0.0042,0.0366,0.5104],"malachite":[0.0038,0.0293,0.2882],"ibig":[0.0105,0.205,5.831],"num":[0.0113,0.2118,6.1065]}},"io_int":{"unit":"decimal digits","sizes":["100k","1M","5M"],"libs":["dashu","rug","rust-gmp","malachite","ibig","num"],"times":{"dashu":[0.0115,0.2786,2.5964],"rug":[0.0061,0.0859,0.5929],"rust-gmp":[0.0058,0.0831,0.5816],"malachite":[0.0062,0.0726,0.4436],"ibig":[0.0129,0.3309,4.0699],"num":[0.0169,0.9834,22.183]}},"factor":{"unit":"bits per prime factor","sizes":["200","1k","5k"],"libs":["dashu","rug","rust-gmp","malachite","ibig","num"],"times":{"dashu":[0.0442,0.198,2.6758],"rug":[0.0329,0.144,1.7415],"rust-gmp":[0.0351,0.1483,1.7436],"malachite":[0.0699,0.2516,3.8006],"ibig":[0.0424,0.2444,3.5619],"num":[0.058,0.2952,4.1882]}},"fib_ratio":{"unit":"iterations","sizes":["2k","6k","20k"],"libs":["dashu","malachite","num"],"times":{"dashu":[0.0155,0.1559,3.3659],"malachite":[0.0109,0.0854,1.4622],"num":[0.0251,0.2374,4.022]}},"io_ratio":{"unit":"decimal digits","sizes":["1M","4M","20M"],"libs":["dashu","malachite","num"],"times":{"dashu":[0.0724,0.416,3.3195],"malachite":[0.0232,0.0969,0.5692],"num":[0.3934,6.2218,156.605]}},"io_decimal":{"unit":"decimal digits","sizes":["100k","1M","5M"],"libs":["dashu","bigdecimal"],"times":{"dashu":[0.0111,0.2681,2.4004],"bigdecimal":[0.0144,0.8136,17.8366]}},"pi":{"unit":"bits of \u03c0","sizes":["10k","20k","50k"],"libs":["dashu","rug","astro_float"],"times":{"dashu":[0.0661,0.3453,3.1141],"rug":[0.0021,0.0039,0.0105],"astro_float":[0.0069,0.0231,0.0934]}}};
+  const SERIES = {"dashu": 1, "rug": 2, "rust-gmp": 3, "malachite": 4, "ibig": 5, "num": 6, "astro_float": 4, "bigdecimal": 3, "malachite_float": 5};
+  const TASKS = Object.keys(DATA);
+  const tip = root.querySelector("#blc-tip");
+  let state = { task: TASKS[0], hidden: [] };
+
+  function fmt(v) {
+    return v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1)
+      : v >= 1 ? v.toFixed(2) : v.toFixed(3);
+  }
+
+  const taskBox = root.querySelector("#blc-tasks");
+  TASKS.forEach((task) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn";
+    b.textContent = task;
+    b.setAttribute("aria-pressed", String(task === state.task));
+    b.addEventListener("click", () => {
+      state.task = task;
+      taskBox.querySelectorAll("button").forEach((x) =>
+        x.setAttribute("aria-pressed", String(x === b)));
+      buildLegend();
+      draw();
+      const st = root.querySelector("#blc-status");
+      if (st) st.textContent =
+        `showing ${task}: ${DATA[task].libs.length} libraries, sizes ${DATA[task].sizes.join(", ")}`;
+    });
+    taskBox.appendChild(b);
+  });
+
+  function buildLegend() {
+    const box = root.querySelector("#blc-legend");
+    box.textContent = "";
+    DATA[state.task].libs.forEach((lib) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "legend-btn";
+      const swatch = document.createElement("span");
+      swatch.className = "swatch";
+      swatch.style.background = `var(--s${SERIES[lib]})`;
+      if (state.hidden.includes(lib)) swatch.style.opacity = "0.25";
+      b.appendChild(swatch);
+      b.appendChild(document.createTextNode(lib));
+      b.setAttribute("aria-pressed", String(!state.hidden.includes(lib)));
+      b.addEventListener("click", () => {
+        state.hidden = state.hidden.includes(lib)
+          ? state.hidden.filter((x) => x !== lib)
+          : state.hidden.concat([lib]);
+        buildLegend();
+        draw();
+      });
+      box.appendChild(b);
+    });
+  }
+
+  function showTip(ev, text) {
+    tip.textContent = text;
+    tip.style.display = "block";
+    const pad = 12;
+    let x = ev.clientX + pad, y = ev.clientY + pad;
+    if (x + tip.offsetWidth > innerWidth) x = ev.clientX - tip.offsetWidth - pad;
+    if (y + tip.offsetHeight > innerHeight) y = ev.clientY - tip.offsetHeight - pad;
+    tip.style.left = x + "px";
+    tip.style.top = y + "px";
+  }
+  function hideTip() { tip.style.display = "none"; }
+
+  function draw() {
+    const host = root.querySelector("#blc-chart");
+    host.textContent = "";
+    hideTip();
+    const t = DATA[state.task];
+    const libs = t.libs.filter((l) => !state.hidden.includes(l));
+    const w = Math.max(host.clientWidth || host.parentElement.clientWidth, 320);
+    const h = 380;
+    const m = { top: 18, right: 18, bottom: 64, left: 64 };
+
+    const svg = d3.create("svg")
+      .attr("viewBox", `0 0 ${w} ${h}`)
+      .attr("width", "100%")
+      .attr("role", "img")
+      .attr("aria-label", `Bar chart of single-iteration time for the ${state.task} task, grouped by input size, one bar per library, logarithmic time axis`);
+    const g = svg.append("g");
+
+    const values = libs.flatMap((l) => t.times[l]);
+    if (!values.length) { host.appendChild(svg.node()); return; }
+    const lo = Math.min(...values), hi = Math.max(...values);
+    const y = d3.scaleLog()
+      .domain([lo / 1.6, hi * 1.9])
+      .range([h - m.bottom, m.top]);
+    const x0 = d3.scaleBand()
+      .domain(t.sizes)
+      .range([m.left, w - m.right])
+      .paddingOuter(0.18)
+      .paddingInner(0.28);
+    const x1 = d3.scaleBand()
+      .domain(libs)
+      .range([0, x0.bandwidth()])
+      .padding(0.08);
+
+    g.selectAll("line.grid").data(y.ticks(5)).join("line")
+      .attr("x1", m.left).attr("x2", w - m.right)
+      .attr("y1", (d) => y(d)).attr("y2", (d) => y(d))
+      .attr("stroke", "var(--border)")
+      .attr("stroke-width", 1)
+      .attr("opacity", 0.55);
+
+    g.append("g").attr("transform", `translate(${m.left},0)`)
+      .call(d3.axisLeft(y).ticks(5, (d) => d3.format("~g")(d)))
+      .call((ax) => ax.select(".domain").remove())
+      .selectAll("text").classed("tabular", true);
+    g.append("text")
+      .attr("transform", "rotate(-90)")
+      .attr("x", -(m.top + (h - m.bottom - m.top) / 2)).attr("y", 16)
+      .attr("text-anchor", "middle").attr("fill", "var(--muted)")
+      .text("time per iteration (s)");
+
+    g.append("g").attr("transform", `translate(0,${h - m.bottom})`)
+      .call(d3.axisBottom(x0))
+      .selectAll("text");
+    g.append("text")
+      .attr("x", m.left + (w - m.left - m.right) / 2)
+      .attr("y", h - 12)
+      .attr("text-anchor", "middle").attr("fill", "var(--muted)")
+      .text(t.unit);
+
+    t.sizes.forEach((size, i) => {
+      libs.forEach((lib) => {
+        const v = t.times[lib][i];
+        const top = y(Math.max(v, y.domain()[0]));
+        g.append("rect")
+          .attr("x", x0(size) + x1(lib))
+          .attr("width", Math.max(x1.bandwidth(), 3))
+          .attr("y", top)
+          .attr("height", Math.max(y(y.domain()[0]) - top, 1))
+          .attr("fill", `var(--s${SERIES[lib]})`)
+          .on("pointerenter pointermove", (ev) =>
+            showTip(ev, `${lib} · ${state.task} n=${size}: ${fmt(v)} s`))
+          .on("pointerleave", hideTip);
+      });
+    });
+
+    host.appendChild(svg.node());
+  }
+
+  buildLegend();
+  draw();
+  if (window.ResizeObserver) {
+    new ResizeObserver(() => draw()).observe(root.querySelector("#blc-chart"));
+  }
+})();
+</script>
+</body>
+</html>

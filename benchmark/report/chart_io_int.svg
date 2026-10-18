@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 330" font-family="system-ui, sans-serif" font-size="12" fill="#1f2937">
+<rect width="760" height="330" fill="#ffffff"/>
+<rect x="76" y="12" width="10" height="10" rx="2" fill="#2563eb"/>
+<text x="91" y="21">dashu</text>
+<rect x="148" y="12" width="10" height="10" rx="2" fill="#16a34a"/>
+<text x="163" y="21">rug</text>
+<rect x="206" y="12" width="10" height="10" rx="2" fill="#ea580c"/>
+<text x="221" y="21">rust-gmp</text>
+<rect x="299" y="12" width="10" height="10" rx="2" fill="#9333ea"/>
+<text x="314" y="21">malachite</text>
+<rect x="399" y="12" width="10" height="10" rx="2" fill="#0d9488"/>
+<text x="414" y="21">ibig</text>
+<rect x="464" y="12" width="10" height="10" rx="2" fill="#db2777"/>
+<text x="479" y="21">num</text>
+<line x1="76" x2="736" y1="300.1" y2="300.1" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="304.1" text-anchor="end" fill="#6b7280">0.001</text>
+<line x1="76" x2="736" y1="244.8" y2="244.8" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="248.8" text-anchor="end" fill="#6b7280">0.01</text>
+<line x1="76" x2="736" y1="189.6" y2="189.6" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="193.6" text-anchor="end" fill="#6b7280">0.1</text>
+<line x1="76" x2="736" y1="134.4" y2="134.4" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="138.4" text-anchor="end" fill="#6b7280">1</text>
+<line x1="76" x2="736" y1="79.2" y2="79.2" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="83.2" text-anchor="end" fill="#6b7280">10</text>
+<text x="186.0" y="292" text-anchor="middle">100k</text>
+<rect x="109.0" width="23.7" y="241.5" height="30.5" rx="2" fill="#2563eb"/>
+<rect x="134.7" width="23.7" y="256.7" height="15.3" rx="2" fill="#16a34a"/>
+<rect x="160.3" width="23.7" y="257.9" height="14.1" rx="2" fill="#ea580c"/>
+<rect x="186.0" width="23.7" y="256.3" height="15.7" rx="2" fill="#9333ea"/>
+<rect x="211.7" width="23.7" y="238.7" height="33.3" rx="2" fill="#0d9488"/>
+<rect x="237.3" width="23.7" y="232.3" height="39.7" rx="2" fill="#db2777"/>
+<text x="406.0" y="292" text-anchor="middle">1M</text>
+<rect x="329.0" width="23.7" y="165.1" height="106.9" rx="2" fill="#2563eb"/>
+<rect x="354.7" width="23.7" y="193.3" height="78.7" rx="2" fill="#16a34a"/>
+<rect x="380.3" width="23.7" y="194.1" height="77.9" rx="2" fill="#ea580c"/>
+<rect x="406.0" width="23.7" y="197.3" height="74.7" rx="2" fill="#9333ea"/>
+<rect x="431.7" width="23.7" y="160.9" height="111.1" rx="2" fill="#0d9488"/>
+<rect x="457.3" width="23.7" y="134.8" height="137.2" rx="2" fill="#db2777"/>
+<text x="626.0" y="292" text-anchor="middle">5M</text>
+<rect x="549.0" width="23.7" y="111.5" height="160.5" rx="2" fill="#2563eb"/>
+<rect x="574.7" width="23.7" y="146.9" height="125.1" rx="2" fill="#16a34a"/>
+<rect x="600.3" width="23.7" y="147.4" height="124.6" rx="2" fill="#ea580c"/>
+<rect x="626.0" width="23.7" y="153.9" height="118.1" rx="2" fill="#9333ea"/>
+<rect x="651.7" width="23.7" y="100.8" height="171.2" rx="2" fill="#0d9488"/>
+<rect x="677.3" width="23.7" y="60.1" height="211.9" rx="2" fill="#db2777"/>
+<text x="406.0" y="318" text-anchor="middle" fill="#6b7280">decimal digits</text>
+<text transform="rotate(-90 16 159.0)" x="16" y="159.0" text-anchor="middle" fill="#6b7280">time per iteration (s)</text>
+</svg>

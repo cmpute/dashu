@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 330" font-family="system-ui, sans-serif" font-size="12" fill="#1f2937">
+<rect width="760" height="330" fill="#ffffff"/>
+<rect x="76" y="12" width="10" height="10" rx="2" fill="#2563eb"/>
+<text x="91" y="21">dashu</text>
+<rect x="148" y="12" width="10" height="10" rx="2" fill="#ea580c"/>
+<text x="163" y="21">bigdecimal</text>
+<line x1="76" x2="736" y1="320.0" y2="320.0" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="324.0" text-anchor="end" fill="#6b7280">0.001</text>
+<line x1="76" x2="736" y1="259.2" y2="259.2" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="263.2" text-anchor="end" fill="#6b7280">0.01</text>
+<line x1="76" x2="736" y1="198.4" y2="198.4" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="202.4" text-anchor="end" fill="#6b7280">0.1</text>
+<line x1="76" x2="736" y1="137.6" y2="137.6" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="141.6" text-anchor="end" fill="#6b7280">1</text>
+<line x1="76" x2="736" y1="76.8" y2="76.8" stroke="#d1d5db" stroke-width="1"/>
+<text x="68" y="80.8" text-anchor="end" fill="#6b7280">10</text>
+<text x="186.0" y="292" text-anchor="middle">100k</text>
+<rect x="152.0" width="32.0" y="256.5" height="15.5" rx="2" fill="#2563eb"/>
+<rect x="186.0" width="32.0" y="249.6" height="22.4" rx="2" fill="#ea580c"/>
+<text x="406.0" y="292" text-anchor="middle">1M</text>
+<rect x="372.0" width="32.0" y="172.4" height="99.6" rx="2" fill="#2563eb"/>
+<rect x="406.0" width="32.0" y="143.1" height="128.9" rx="2" fill="#ea580c"/>
+<text x="626.0" y="292" text-anchor="middle">5M</text>
+<rect x="592.0" width="32.0" y="114.5" height="157.5" rx="2" fill="#2563eb"/>
+<rect x="626.0" width="32.0" y="61.5" height="210.5" rx="2" fill="#ea580c"/>
+<text x="406.0" y="318" text-anchor="middle" fill="#6b7280">decimal digits</text>
+<text transform="rotate(-90 16 159.0)" x="16" y="159.0" text-anchor="middle" fill="#6b7280">time per iteration (s)</text>
+</svg>
