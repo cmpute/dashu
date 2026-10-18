@@ -47,6 +47,8 @@ enum Lib {
     RustGmp,
     #[value(name = "malachite")]
     Malachite,
+    #[value(name = "malachite_float")]
+    MalachiteFloat,
     #[value(name = "bigdecimal")]
     BigDecimal,
     #[value(name = "astro_float")]
@@ -203,6 +205,10 @@ fn run_task(lib: Lib, task: Task, n: u32, iter: u32) -> (String, Duration) {
         Lib::AstroFloat => match task {
             Task::Pi => run_float_task_using::<AstroFloat>(n, iter),
             _ => panic!("astro_float only participates in the pi task"),
+        },
+        Lib::MalachiteFloat => match task {
+            Task::Pi => run_float_task_using::<malachite::Float>(n, iter),
+            _ => panic!("malachite_float only participates in the pi task"),
         },
     }
 }

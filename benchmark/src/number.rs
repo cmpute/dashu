@@ -452,6 +452,23 @@ mod float {
         }
     }
 
+    impl Float for malachite::Float {
+        fn e(precision: u32) -> Self {
+            Self::exp_prec_ref(&Self::from_int(1, precision), precision as u64).0
+        }
+        fn from_int(value: u32, precision: u32) -> Self {
+            malachite::Float::from_unsigned_prec(value, precision as u64).0
+        }
+        fn sqrt(&self) -> Self {
+            let prec = self.get_prec().unwrap_or(64);
+            malachite::Float::sqrt_prec_ref(self, prec).0
+        }
+        fn atan(&self) -> Self {
+            let prec = self.get_prec().unwrap_or(64);
+            malachite::Float::atan_prec_ref(self, prec).0
+        }
+    }
+
     #[cfg(feature = "rug")]
     impl Float for rug::Float {
         fn e(precision: u32) -> Self {

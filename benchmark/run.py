@@ -29,7 +29,7 @@ BIN = SCRIPT_DIR / "target" / "release" / "benchmark"
 # the libraries that implement each task's number type.
 LIBS_INT = ["dashu", "ibig", "num", "malachite", "rug", "rust-gmp"]
 LIBS_RATIO = ["dashu", "num", "malachite"]
-LIBS_PI = ["dashu", "astro_float", "rug"]
+LIBS_PI = ["dashu", "astro_float", "rug", "malachite_float"]
 LIBS_DEC = ["dashu", "bigdecimal"]
 
 CELLS = {
@@ -59,7 +59,7 @@ TASK_UNITS = {
 # Stable per-panel series colors; pairs sharing an index never meet in a task.
 LIB_SERIES = {
     "dashu": 1, "rug": 2, "rust-gmp": 3, "malachite": 4,
-    "ibig": 5, "num": 6, "astro_float": 4, "bigdecimal": 3,
+    "ibig": 5, "num": 6, "astro_float": 4, "bigdecimal": 3, "malachite_float": 5,
 }
 LIB_ORDER = ["dashu", "rug", "rust-gmp", "malachite", "ibig", "num",
              "astro_float", "bigdecimal"]
