@@ -1,0 +1,37 @@
+warning: this `if`/`else` selects between a value and its negation based on a `Sign`
+  --> $DIR/if_sign_mul.rs:13:21
+   |
+LL |       let hi_signed = if sign == Sign::Negative {
+   |  _____________________^
+LL | |         -hi.clone()
+LL | |     } else {
+LL | |         hi.clone()
+LL | |     };
+   | |_____^ help: try: `sign * hi`
+   |
+   = note: `#[warn(if_sign_mul)]` on by default
+
+warning: this `if`/`else` selects between a value and its negation based on a `Sign`
+  --> $DIR/if_sign_mul.rs:20:13
+   |
+LL |       let _ = if sign != Sign::Positive {
+   |  _____________^
+LL | |         -hi.clone()
+LL | |     } else {
+LL | |         hi.clone()
+LL | |     };
+   | |_____^ help: try: `sign * hi`
+
+warning: this `if`/`else` selects between a value and its negation based on a `Sign`
+  --> $DIR/if_sign_mul.rs:27:13
+   |
+LL |       let _ = if sign == Sign::Positive {
+   |  _____________^
+LL | |         hi.clone()
+LL | |     } else {
+LL | |         -hi.clone()
+LL | |     };
+   | |_____^ help: try: `sign * hi`
+
+warning: 3 warnings emitted
+

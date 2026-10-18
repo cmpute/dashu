@@ -29,6 +29,8 @@ A library set of arbitrary precision numbers (aka. big numbers) for mathematics 
 
 `dashu` is a meta crate that re-exports all the types from these sub-crates. Please see the README.md in each subdirectory for crate-specific introduction.
 
+The [`dashu-lints`](./dashu-lints) directory holds Dylint lints enforcing dashu house conventions. It is a development-only crate with its own pinned nightly toolchain and is not part of the published suite.
+
 ## Examples
 
 ### Construction & literal macros

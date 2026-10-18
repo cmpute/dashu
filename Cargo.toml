@@ -33,6 +33,9 @@ members = [
 exclude = ["benchmark", "fuzz"]
 default-members = [".", "base", "integer", "float", "rational", "complex", "macros"]
 
+[workspace.metadata.dylint]
+libraries = [{ path = "dashu-lints" }]
+
 [features]
 default = ["std", "num-order"]
 std = ["dashu-base/std", "dashu-int/std", "dashu-float/std", "dashu-ratio/std", "dashu-cmplx/std"]
