@@ -3,8 +3,10 @@
 ## Unreleased
 
 ### Change
+- Move short-division error-bound validation into integration tests, add bounded
+  proptest coverage of every normalization band edge, and keep a small internal
+  carry test beside the kernel.
 - Reuse the short-division result buffer and remove redundant normalization checks.
-- Reuse the shared deterministic word fixtures for short-division tests.
 - Reuse the high-product result buffer and the exact squaring kernel, and share
   deterministic word fixtures across the integer kernel tests.
 

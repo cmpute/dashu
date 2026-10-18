@@ -15,10 +15,11 @@
 //!
 //! Run with: `cargo test --manifest-path fuzz/Cargo.toml --test float_random -- --ignored --nocapture`
 
-use dashu::base::Sign;
+use dashu::base::{EstimatedLog2, Sign};
 use dashu::float::round::Round;
 use dashu::float::round::mode::*;
 use dashu::float::{Context, FBig, Repr, Word};
+use dashu::integer::{IBig, UBig};
 use proptest::prelude::*;
 
 /// Round the exact result to `precision` and `precision + 1` digits, returning both.
@@ -183,6 +184,48 @@ fn wide_precision_strategy() -> impl Strategy<Value = usize> {
     prop_oneof![2usize..10, 20usize..500, 500usize..2000]
 }
 
+/// Pair the target precision with full-width operands for the chosen radix.
+/// Fixed-width strategies preserve the short-quotient sizing band while shrinking.
+fn short_quotient_case<const B: Word>() -> impl Strategy<Value = (IBig, IBig, usize)> {
+    (2200usize..4600).prop_flat_map(|bits| {
+        let (_, log2_base) = B.log2_bounds();
+        let precision = (bits as f32 / log2_base) as usize;
+        let words = bits / Word::BITS as usize + 1;
+        let operand = move || {
+            (prop::collection::vec(any::<Word>(), words), any::<bool>()).prop_map(
+                |(mut words, negative)| {
+                    words[0] |= 1;
+                    *words.last_mut().unwrap() |= 1 << (Word::BITS - 1);
+                    let value = IBig::from(UBig::from_words(&words));
+                    if negative { -value } else { value }
+                },
+            )
+        };
+        (operand(), operand(), Just(precision))
+    })
+}
+
+fn check_inverse<R: Round, const B: Word>(b: &Repr<B>, precision: usize) {
+    let actual = Context::<R>::new(precision).inv(b).unwrap().value();
+    let expected = Context::<R>::new(precision + 60)
+        .inv(b)
+        .unwrap()
+        .value()
+        .with_precision(precision)
+        .value();
+    assert_eq!(actual.repr(), expected.repr(), "inv: p={precision} b={b:?}");
+}
+
+fn check_short_quotient<const B: Word>(a: &Repr<B>, b: &Repr<B>, precision: usize) {
+    check_all_modes(a, b, precision);
+    check_inverse::<Zero, B>(b, precision);
+    check_inverse::<Away, B>(b, precision);
+    check_inverse::<Up, B>(b, precision);
+    check_inverse::<Down, B>(b, precision);
+    check_inverse::<HalfEven, B>(b, precision);
+    check_inverse::<HalfAway, B>(b, precision);
+}
+
 proptest! {
     #![proptest_config(fuzz::fuzz_config())]
 
@@ -225,20 +268,24 @@ proptest! {
         check_all_modes::<10>(&Repr::<10>::new(a_sig, a_exp), &Repr::<10>::new(b_sig, b_exp), precision);
     }
 
-    /// Wide operands with a precision in the band where the certified
-    /// short-quotient fast path engages (divisor of at least 32 words, i.e.
-    /// ~2048 bits, with the window near the divisor's width): differential
-    /// tests `Context::div`/`inv` on that path against the high-precision
-    /// oracle under every rounding mode.
+    /// Long-running self-consistency checks in the short-quotient engagement
+    /// band. Crate integration tests separately validate exact rational rounding.
     #[test]
     #[ignore]
-    fn fbig_short_quotient_fuzz(
-        a_sig in fuzz::ibig_strategy(60), a_exp in -1500isize..1500,
-        b_sig in fuzz::ibig_strategy(60), b_exp in -1500isize..1500,
-        precision in 2100usize..4200,
+    fn fbig_short_quotient_binary_fuzz(
+        (a, b, precision) in short_quotient_case::<2>(),
+        a_exp in -1500isize..1500, b_exp in -1500isize..1500,
     ) {
-        check_all_modes::<2>(&Repr::<2>::new(a_sig.clone(), a_exp), &Repr::<2>::new(b_sig.clone(), b_exp), precision);
-        check_all_modes::<10>(&Repr::<10>::new(a_sig, a_exp), &Repr::<10>::new(b_sig, b_exp), precision);
+        check_short_quotient(&Repr::<2>::new(a, a_exp), &Repr::<2>::new(b, b_exp), precision);
+    }
+
+    #[test]
+    #[ignore]
+    fn fbig_short_quotient_decimal_fuzz(
+        (a, b, precision) in short_quotient_case::<10>(),
+        a_exp in -1500isize..1500, b_exp in -1500isize..1500,
+    ) {
+        check_short_quotient(&Repr::<10>::new(a, a_exp), &Repr::<10>::new(b, b_exp), precision);
     }
 
     /// fma (fused multiply-add, `c + sign·(a·b)`) under all modes and both signs, in bases 2 and 10.

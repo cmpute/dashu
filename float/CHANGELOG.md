@@ -37,6 +37,13 @@
   finer final window than the plain `(n + 2) + (n2 + 2)` sum accounted for.
 
 ### Change
+- Organize short-product and short-quotient checks into fixed regressions in
+  `tests/high.rs` and bounded property tests in `tests/high_prop.rs`, sharing exact
+  oracles and assertions through `tests/helpers.rs`. Explicitly cover precision
+  and operand-shape combinations, replacing duplicate ordinary-input sweeps. Check
+  division and reciprocal against exact integer quotient/remainder rounding, and
+  retain small internal path-selection tests. Size short-quotient fuzz inputs for
+  each radix.
 - Share short-window sizing and deterministic arithmetic fixtures, simplify short-division
   operand preparation, and keep rounding-result helpers together. Clarify and strengthen
   exact-boundary fallback tests, including low-precision and signed operands.
