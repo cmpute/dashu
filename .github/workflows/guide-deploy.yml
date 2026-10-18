@@ -41,7 +41,7 @@ jobs:
       - name: Skip master pushes that don't touch the guides
         if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
         run: |
-          BEFORE="${{ github.event_before }}"
+          BEFORE="${{ github.event.before }}"
           if [ "$BEFORE" != "0000000000000000000000000000000000000000" ] \
              && git cat-file -e "$BEFORE^{commit}" 2>/dev/null \
              && ! git diff --name-only "$BEFORE" "$GITHUB_SHA" -- guide guide-zh Cargo.toml | grep -q .; then
