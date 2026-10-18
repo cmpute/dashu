@@ -1,36 +1,53 @@
 use crate::number::Natural;
-use std::{fmt::Debug, str::FromStr};
+use std::{collections::BTreeMap, fmt::Debug, str::FromStr, sync::Mutex, sync::OnceLock};
 
 /// Bases for the Miller-Rabin primality test. The first 12 primes jointly
-/// give a deterministic answer below 3.18e24 (~81 bits), far above the factor
-/// sizes this task can handle.
+/// give a deterministic answer below 3.18e24 (~81 bits), which covers the
+/// small factor; for the large factor they are a fixed, reproducible basis.
 const MILLER_RABIN_BASES: [u32; 12] = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37];
+
+/// Primes for the trial-division pre-filter in [`is_probable_prime`]. Every
+/// value this task tests is larger than the whole table, so a hit always
+/// means composite.
+const SMALL_PRIMES: [u32; 50] = [
+    2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97,
+    101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193,
+    197, 199, 211, 223, 227, 229,
+];
+
+/// Seed for the small prime factor. Its ~31-bit magnitude keeps the rho
+/// walk at ~2^16 steps regardless of `n`, so the per-iteration cost scales
+/// with the operand width instead of the factor size.
+const SMALL_FACTOR_SEED: u32 = 1357913579;
 
 /// Steps of the rho walk accumulated between GCD evaluations. Batching keeps
 /// the GCD count (and its cost) from dominating the modular multiplications.
 const RHO_BATCH: u64 = 128;
 
-/// Factor a semiprime built as the product of two primes of at least `n`
-/// bits.
+/// Factor a semiprime with one `n`-bit prime factor and one ~31-bit prime
+/// factor, exercising GCD, division and modular arithmetic at width `n`.
 ///
-/// The workload first grows two prime factors from a fixed numeric seed
-/// (Miller-Rabin), then recovers them from their product alone using
-/// Pollard's rho with Brent's cycle detection. Both steps are dominated by
-/// modular multiplication and exponentiation, and the rho descent
-/// additionally exercises GCD and division.
+/// The large factor is grown from the fixed seed by a Miller-Rabin prime
+/// search and cached per process (a search at thousands of bits is
+/// expensive; the median-of-5 sampling in `exec` absorbs the one-time
+/// cost). Each iteration then re-derives the small factor (a small
+/// Miller-Rabin search), multiplies both into the semiprime, and recovers
+/// them from the product alone using Pollard's rho with Brent's cycle
+/// detection: ~2^16 modular multiplications and GCDs at width `n` (the
+/// birthday bound is set by the small factor), one exact division, and the
+/// Miller-Rabin verification of both factors.
 ///
-/// `n` is the bit size of each prime factor; the rho descent costs on the
-/// order of 2^(n/2) modular multiplications, so useful values are roughly
-/// 16..=48 (larger values get very slow). Seeds and bases are fixed, so the
-/// output `p * q` (with p <= q) is identical across libraries.
+/// Everything is seeded deterministically, so the output `p * q` (with
+/// p <= q) is identical across libraries. Useful values of `n` span from
+/// 16 up to tens of thousands of bits.
 pub(crate) fn calculate<T: Natural>(n: u32) -> String
 where
     <T as FromStr>::Err: Debug,
 {
-    assert!(n >= 16, "each prime factor needs at least 16 bits");
+    assert!(n >= 16, "the large prime factor needs at least 16 bits");
 
-    let p = next_probable_prime::<T>(&seed::<T>(n));
-    let q = next_probable_prime::<T>(&(p.clone() + T::from(2u32)));
+    let p = T::from_str(&large_prime_str(n)).unwrap();
+    let q = next_probable_prime::<T>(&T::from(SMALL_FACTOR_SEED));
     let semiprime = p.mul_ref(&q);
 
     let f = pollard_rho(&semiprime);
@@ -43,6 +60,22 @@ where
     } else {
         format!("{} * {}", g, f)
     }
+}
+
+/// Decimal representation of the `n`-bit prime factor, generated once with
+/// [`dashu::Natural`] and shared as a plain string, so every library factors
+/// the exact same number regardless of which one runs first.
+fn large_prime_str(bits: u32) -> String {
+    static PRIMES: OnceLock<Mutex<BTreeMap<u32, String>>> = OnceLock::new();
+    PRIMES
+        .get_or_init(|| Mutex::new(BTreeMap::new()))
+        .lock()
+        .unwrap()
+        .entry(bits)
+        .or_insert_with(|| {
+            next_probable_prime::<dashu::Natural>(&seed::<dashu::Natural>(bits)).to_string()
+        })
+        .clone()
 }
 
 /// An odd number of at least `bits` bits, built from a fixed digit pattern.
@@ -74,8 +107,9 @@ fn next_probable_prime<T: Natural>(start: &T) -> T {
     candidate
 }
 
-/// Miller-Rabin probable prime test with the fixed bases above. Every input
-/// used here exceeds the largest base (n >= 2^16).
+/// Miller-Rabin probable prime test with the fixed bases above, preceded by
+/// trial division over [`SMALL_PRIMES`]. Every input used here exceeds the
+/// largest base and the whole trial-division table.
 fn is_probable_prime<T: Natural>(n: &T) -> bool {
     let one = T::from(1u32);
     let two = T::from(2u32);
@@ -84,6 +118,15 @@ fn is_probable_prime<T: Natural>(n: &T) -> bool {
     }
     if !n.is_odd() {
         return n == &two;
+    }
+
+    // Trial division costs a remainder per prime and rejects most candidates
+    // scanned during a prime search before any modular exponentiation runs.
+    let zero = T::from(0u32);
+    for &p in SMALL_PRIMES.iter() {
+        if n.clone() % &T::from(p) == zero {
+            return false;
+        }
     }
 
     // Factor n - 1 as d * 2^s with d odd.

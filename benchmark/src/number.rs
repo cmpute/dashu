@@ -68,9 +68,9 @@ mod natural {
         }
 
         fn pow_mod(&self, exp: &Self, m: &Self) -> Self {
-            // The Barrett reducer wins over Montgomery below ~256-bit moduli,
-            // which covers every size this benchmark factors.
-            dashu::integer::fast_div::ConstDivisor::new(m.clone())
+            // Montgomery: this benchmark folder targets large bit sizes
+            // (thousands of bits), where the REDC beats Barrett reduction.
+            dashu::integer::monty::MontgomeryRepr::new(m.clone())
                 .reduce(self.clone())
                 .pow(exp)
                 .residue()
