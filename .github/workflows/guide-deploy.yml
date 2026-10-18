@@ -1,31 +1,21 @@
-# Publish the compiled mdBook user guides.
+# Publish the compiled mdBook user guides to Cloudflare Pages.
 #
 # This is the *release* counterpart of `guide.yml` (which only build-checks the
 # guides on push/PR). It builds both guides via `guide/build.sh` — which stamps
-# each book with the dashu version + git commit — and publishes them:
-#
-#   * Cloudflare Pages project `dashu-docs` (primary, serves zyxin.xyz/dashu
-#     and /dashu-zh via proxy rules in the main zyxin site). Requires the
-#     repository secrets `CLOUDFLARE_API_TOKEN` (Pages:Edit) and
-#     `CLOUDFLARE_ACCOUNT_ID`.
-#   * GitHub Pages gh-pages branches (kept during the migration transition
-#     while zyxin.xyz still resolves to GitHub Pages):
-#       - `guide/book`    → the `gh-pages` branch of THIS repo (cmpute/dashu)
-#       - `guide-zh/book` → the `gh-pages` branch of cmpute/dashu-zh
-#     The Chinese book lives in a *separate* repository, so the `GITHUB_TOKEN`
-#     (scoped to this repo) cannot push there. A Personal Access Token with
-#     `contents: write` on cmpute/dashu-zh must be stored as the repository
-#     secret `DASHU_ZH_PUSH_TOKEN`. Until that secret exists the dashu-zh
-#     step will fail — loudly, so a missing credential is never silently
-#     skipped.
+# each book with the dashu version + git commit — and publishes them to the
+# Cloudflare Pages project `dashu-docs`, which serves zyxin.xyz/dashu and
+# /dashu-zh (proxied by the main site's Worker). Requires the repository
+# secrets `CLOUDFLARE_API_TOKEN` (Pages:Edit) and `CLOUDFLARE_ACCOUNT_ID`.
 #
 # Triggers: version tags (`v0.6.0-rc.3`, `v0.5.2`, …), manual runs, and pushes
 # to master that touch the guides (or the workspace version in Cargo.toml).
 # Push events are short-circuited with an in-job diff instead of a trigger
 # `paths` filter, because `paths` skips tag pushes whose commit has no diff
-# against the default branch. The Cloudflare step runs last so a missing
-# Cloudflare secret cannot block the gh-pages publishes that the live site
-# still depends on during the transition.
+# against the default branch.
+#
+# Historical note: guides used to be published to the gh-pages branches of
+# cmpute/dashu and cmpute/dashu-zh (GitHub Pages). Those branches are kept in
+# the repositories as a rollback backup but are no longer updated.
 name: Publish guide
 
 on:
@@ -35,9 +25,6 @@ on:
     branches:
       - master
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 concurrency:
   group: dashu-guide-publish-${{ github.ref }}
@@ -54,7 +41,7 @@ jobs:
       - name: Skip master pushes that don't touch the guides
         if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
         run: |
-          BEFORE="${{ github.event.before }}"
+          BEFORE="${{ github.event_before }}"
           if [ "$BEFORE" != "0000000000000000000000000000000000000000" ] \
              && git cat-file -e "$BEFORE^{commit}" 2>/dev/null \
              && ! git diff --name-only "$BEFORE" "$GITHUB_SHA" -- guide guide-zh Cargo.toml | grep -q .; then
@@ -74,22 +61,7 @@ jobs:
       - name: Build guides (stamped with version & commit)
         if: env.skip != 'true'
         run: bash guide/build.sh
-      - name: Publish English guide to this repo's gh-pages
-        if: env.skip != 'true'
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_branch: gh-pages
-          publish_dir: ./guide/book
-      - name: Publish Chinese guide to cmpute/dashu-zh
-        if: env.skip != 'true'
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          personal_token: ${{ secrets.DASHU_ZH_PUSH_TOKEN }}
-          external_repository: cmpute/dashu-zh
-          publish_branch: gh-pages
-          publish_dir: ./guide-zh/book
-      - name: Assemble Cloudflare Pages site (books under path prefixes)
+      - name: Assemble Pages site (books under path prefixes)
         if: env.skip != 'true'
         run: |
           mkdir -p site
