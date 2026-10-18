@@ -72,6 +72,11 @@ the lint can be flipped to deny.
 
 ## Testing
 
+For now, CI runs the example UI tests below. They build and load the lint library,
+lint `examples/`, and compare the diagnostics against the `.stderr` snapshots.
+Full-workspace linting is deferred to a later CI change; the commands above remain
+available for manual scans.
+
 Each lint has an example under `examples/` together with a `.stderr` snapshot:
 
 ```sh

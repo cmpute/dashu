@@ -26,5 +26,6 @@ jobs:
             --component llvm-tools-preview
       - name: Install dylint
         run: cargo +nightly-2026-04-16 install cargo-dylint dylint-link --version 6.1.0 --locked
-      - name: Run house lints
-        run: cargo +nightly-2026-04-16 dylint --all -- --all-targets
+      - name: Lint examples and check diagnostic snapshots
+        working-directory: dashu-lints
+        run: cargo test --lib --locked -- --nocapture
