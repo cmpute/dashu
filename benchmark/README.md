@@ -24,11 +24,13 @@ Benchmarks for arbitrary precision numbers with Rust implementations. The code i
 | `fib`     | n-th Fibonnaci number         | Integer     | Medium     | Matrix exponentiation | addition, multiplication, base conversion |
 | `fib_hex` | n-th Fibonnaci number in hex  | Integer     | Easy       | Matrix exponentiation | addition, multiplication |
 | `fib_ratio` | n-th modified Fibonnaci number | Rational | -          | -                     | -          |
+| `factor`   | factor a semiprime with two ~n-bit prime factors | Integer     | Medium     | Pollard's rho (Brent) + Miller-Rabin | modular multiplication/exponentiation, gcd, division |
 
 ## Usage examples
 
 - Print results:
     - Integer: `cargo run -- --lib dashu --lib num --lib malachite --lib ibig --task e -n 100 print`
+    - Integer factorization (n = bits per prime factor): `cargo run --release -- --lib dashu --lib num --lib malachite --lib ibig --task factor -n 32 print`
     - Rational: `cargo run -- --lib dashu --lib num --lib malachite --task fib_ratio -n 100 print`
     - Decimal Float: `cargo run -- --lib dashu --lib bigdecimal --task e_decimal -n 100 print`
     - Binary Float (π): `cargo run -- --lib dashu --lib astro_float --task pi -n 100 print`

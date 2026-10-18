@@ -1,14 +1,17 @@
 use std::{
     fmt::Display,
-    ops::{Add, Div, Mul, Sub},
+    ops::{Add, Div, Mul, Rem, Sub},
     str::FromStr,
 };
 
 pub(crate) trait Natural
 where
     Self: Sized,
+    Self: Clone,
     Self: From<u32>,
     Self: Display,
+    Self: PartialEq,
+    Self: PartialOrd,
     Self: Add<Self, Output = Self>,
     Self: for<'a> Add<&'a Self, Output = Self>,
     Self: Sub<Self, Output = Self>,
@@ -17,11 +20,46 @@ where
     Self: for<'a> Mul<&'a Self, Output = Self>,
     Self: Div<Self, Output = Self>,
     Self: for<'a> Div<&'a Self, Output = Self>,
+    Self: for<'a> Rem<&'a Self, Output = Self>,
     Self: FromStr,
 {
     fn pow(&self, exp: u32) -> Self;
     fn to_hex(&self) -> String;
     fn mul_ref(&self, rhs: &Self) -> Self;
+
+    /// Greatest common divisor of two non-negative values.
+    fn gcd(&self, rhs: &Self) -> Self;
+
+    /// Whether the value is odd.
+    fn is_odd(&self) -> bool;
+
+    /// Whether the value is zero.
+    fn is_zero(&self) -> bool {
+        *self == Self::from(0u32)
+    }
+
+    /// (self * rhs) mod m. Operands must already be reduced modulo m.
+    fn mul_mod(&self, rhs: &Self, m: &Self) -> Self {
+        self.mul_ref(rhs) % m
+    }
+
+    /// self^exp mod m. The base must already be reduced modulo m.
+    fn pow_mod(&self, exp: &Self, m: &Self) -> Self {
+        let two = Self::from(2u32);
+        let mut result = Self::from(1u32);
+        let mut base = self.clone();
+        let mut exp = exp.clone();
+        while !exp.is_zero() {
+            if exp.is_odd() {
+                result = result.mul_mod(&base, m);
+            }
+            exp = exp / &two;
+            if !exp.is_zero() {
+                base = base.mul_mod(&base, m);
+            }
+        }
+        result
+    }
 }
 
 mod natural {
@@ -39,6 +77,18 @@ mod natural {
         fn mul_ref(&self, rhs: &Self) -> Self {
             self * rhs
         }
+
+        fn gcd(&self, rhs: &Self) -> Self {
+            dashu::base::ring::Gcd::gcd(self, rhs)
+        }
+
+        fn is_odd(&self) -> bool {
+            dashu::base::BitTest::bit(self, 0)
+        }
+
+        fn is_zero(&self) -> bool {
+            self.is_zero()
+        }
     }
 
     impl Natural for ibig::UBig {
@@ -53,6 +103,21 @@ mod natural {
         fn mul_ref(&self, rhs: &Self) -> Self {
             self * rhs
         }
+
+        fn gcd(&self, rhs: &Self) -> Self {
+            self.gcd(rhs)
+        }
+
+        fn is_odd(&self) -> bool {
+            self.bit(0)
+        }
+
+        fn pow_mod(&self, exp: &Self, m: &Self) -> Self {
+            ibig::modular::ModuloRing::new(m)
+                .from(self)
+                .pow(exp)
+                .residue()
+        }
     }
 
     impl Natural for num::BigUint {
@@ -66,6 +131,20 @@ mod natural {
 
         fn mul_ref(&self, rhs: &Self) -> Self {
             self * rhs
+        }
+
+        fn gcd(&self, rhs: &Self) -> Self {
+            num::integer::Integer::gcd(self, rhs)
+        }
+
+        fn is_odd(&self) -> bool {
+            self.iter_u64_digits()
+                .next()
+                .is_some_and(|word| word & 1 == 1)
+        }
+
+        fn pow_mod(&self, exp: &Self, m: &Self) -> Self {
+            self.modpow(exp, m)
         }
     }
 
@@ -82,6 +161,18 @@ mod natural {
         fn mul_ref(&self, rhs: &Self) -> Self {
             self * rhs
         }
+
+        fn gcd(&self, rhs: &Self) -> Self {
+            self.gcd(rhs)
+        }
+
+        fn is_odd(&self) -> bool {
+            self.bit(0)
+        }
+
+        fn pow_mod(&self, exp: &Self, m: &Self) -> Self {
+            self.pow_mod(exp, m)
+        }
     }
 
     #[cfg(feature = "gmp")]
@@ -96,6 +187,14 @@ mod natural {
 
         fn mul_ref(&self, rhs: &Self) -> Self {
             (self * rhs).into()
+        }
+
+        fn gcd(&self, rhs: &Self) -> Self {
+            self.clone().gcd(rhs)
+        }
+
+        fn is_odd(&self) -> bool {
+            self.is_odd()
         }
     }
 
@@ -112,6 +211,18 @@ mod natural {
         fn mul_ref(&self, rhs: &Self) -> Self {
             self * rhs
         }
+
+        fn gcd(&self, rhs: &Self) -> Self {
+            self.gcd(rhs)
+        }
+
+        fn is_odd(&self) -> bool {
+            self.tstbit(0)
+        }
+
+        fn pow_mod(&self, exp: &Self, m: &Self) -> Self {
+            self.powm(exp, m)
+        }
     }
 
     impl Natural for malachite::Natural {
@@ -125,6 +236,30 @@ mod natural {
 
         fn mul_ref(&self, rhs: &Self) -> Self {
             self * rhs
+        }
+
+        fn gcd(&self, rhs: &Self) -> Self {
+            malachite::base::num::arithmetic::traits::Gcd::gcd(self.clone(), rhs.clone())
+        }
+
+        fn is_odd(&self) -> bool {
+            malachite::base::num::arithmetic::traits::Parity::odd(self)
+        }
+
+        fn mul_mod(&self, rhs: &Self, m: &Self) -> Self {
+            malachite::base::num::arithmetic::traits::ModMul::mod_mul(
+                self.clone(),
+                rhs.clone(),
+                m.clone(),
+            )
+        }
+
+        fn pow_mod(&self, exp: &Self, m: &Self) -> Self {
+            malachite::base::num::arithmetic::traits::ModPow::mod_pow(
+                self.clone(),
+                exp.clone(),
+                m.clone(),
+            )
         }
     }
 }

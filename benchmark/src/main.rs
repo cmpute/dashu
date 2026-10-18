@@ -8,6 +8,7 @@ use clap::ValueEnum as _;
 use number::{AstroFloat, Float, Natural, Rational};
 
 mod e;
+mod factor;
 mod fib;
 mod io;
 mod number;
@@ -64,6 +65,8 @@ enum Task {
     FibHex,
     #[value(name = "fib_ratio")]
     FibRational,
+    #[value(name = "factor")]
+    Factor,
     #[value(name = "io_int")]
     IntegerIO,
     #[value(name = "io_ratio")]
@@ -154,7 +157,7 @@ fn run_task(lib: Lib, task: Task, n: u32, iter: u32) -> (String, Duration) {
     match lib {
         Lib::IBig => run_int_task_using::<ibig::UBig>(task, n, iter),
         Lib::Dashu => match task {
-            Task::E | Task::Fib | Task::FibHex | Task::IntegerIO => {
+            Task::E | Task::Fib | Task::FibHex | Task::Factor | Task::IntegerIO => {
                 run_int_task_using::<dashu::Natural>(task, n, iter)
             }
             Task::FibRational | Task::RationalIO => {
@@ -166,7 +169,7 @@ fn run_task(lib: Lib, task: Task, n: u32, iter: u32) -> (String, Duration) {
             Task::Pi => run_float_task_using::<dashu::Real>(n, iter),
         },
         Lib::Num => match task {
-            Task::E | Task::Fib | Task::FibHex | Task::IntegerIO => {
+            Task::E | Task::Fib | Task::FibHex | Task::Factor | Task::IntegerIO => {
                 run_int_task_using::<num::BigUint>(task, n, iter)
             }
             Task::FibRational | Task::RationalIO => {
@@ -186,7 +189,7 @@ fn run_task(lib: Lib, task: Task, n: u32, iter: u32) -> (String, Duration) {
         #[cfg(feature = "rust-gmp")]
         Lib::RustGmp => run_int_task_using::<gmp::mpz::Mpz>(task, n, iter),
         Lib::Malachite => match task {
-            Task::E | Task::Fib | Task::FibHex | Task::IntegerIO => {
+            Task::E | Task::Fib | Task::FibHex | Task::Factor | Task::IntegerIO => {
                 run_int_task_using::<malachite::Natural>(task, n, iter)
             }
             Task::FibRational | Task::RationalIO => {
@@ -215,6 +218,7 @@ where
             Task::E => e::calculate::<T>(n),
             Task::Fib => fib::calculate_decimal::<T>(n),
             Task::FibHex => fib::calculate_hex::<T>(n),
+            Task::Factor => factor::calculate::<T>(n),
             Task::IntegerIO => io::calculate_natural::<T>(n),
             _ => panic!("One of the libraries is not adapted to integer benchmarks!"),
         };
