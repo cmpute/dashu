@@ -20,8 +20,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install pinned nightly (must match dashu-lints/rust-toolchain)
-        run: rustup toolchain install nightly-2026-04-16 --profile minimal --component rustc-dev llvm-tools-preview
+        run: |
+          rustup toolchain install nightly-2026-04-16 --profile minimal \
+            --component rustc-dev \
+            --component llvm-tools-preview
       - name: Install dylint
-        run: cargo install cargo-dylint dylint-link
+        run: cargo +nightly-2026-04-16 install cargo-dylint dylint-link --version 6.1.0 --locked
       - name: Run house lints
         run: cargo +nightly-2026-04-16 dylint --all -- --all-targets

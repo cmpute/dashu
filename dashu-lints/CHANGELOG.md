@@ -8,3 +8,7 @@
   between a value and its negation based on a `dashu_base::Sign` (e.g.
   `if sign == Sign::Negative { -v } else { v }`, including the `Sign::Positive` and `!=` mirrors)
   and suggests `sign * v`.
+
+### Fix
+- Fix CI toolchain installation by passing a separate `--component` for each component.
+- Install Dylint 6.1.0 with the pinned nightly and its lockfile to avoid tool/dependency drift.

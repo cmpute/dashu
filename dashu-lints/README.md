@@ -20,7 +20,7 @@ they will be flipped to deny once the tree is clean.
 One-time setup:
 
 ```sh
-cargo install cargo-dylint dylint-link
+cargo +nightly-2026-04-16 install cargo-dylint dylint-link --version 6.1.0 --locked
 ```
 
 Then, from the repository root (the library is registered in the root `Cargo.toml` under
