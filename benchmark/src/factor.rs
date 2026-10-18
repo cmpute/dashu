@@ -6,13 +6,18 @@ use std::{collections::BTreeMap, fmt::Debug, str::FromStr, sync::Mutex, sync::On
 /// small factor; for the large factor they are a fixed, reproducible basis.
 const MILLER_RABIN_BASES: [u32; 12] = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37];
 
-/// Primes for the trial-division pre-filter in [`is_probable_prime`]. Every
-/// value this task tests is larger than the whole table, so a hit always
-/// means composite.
-const SMALL_PRIMES: [u32; 50] = [
-    2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97,
-    101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193,
-    197, 199, 211, 223, 227, 229,
+/// Runs of consecutive small primes, each run combined into a single u64
+/// product. One gcd between the (huge) candidate and each run replaces a
+/// division per prime: a gcd above 1 means some prime in the run divides
+/// the candidate, so the Miller-Rabin scan doubles as a stress test of gcd
+/// between big numbers and small ones. Every value this task tests is
+/// larger than any prime in the runs, so a hit always means composite.
+const SMALL_PRIME_RUNS: [u64; 5] = [
+    2 * 3 * 5 * 7 * 11 * 13 * 17 * 19 * 23 * 29 * 31 * 37 * 41 * 43 * 47,
+    53 * 59 * 61 * 67 * 71 * 73 * 79 * 83 * 89 * 97,
+    101 * 103 * 107 * 109 * 113 * 127 * 131 * 137 * 139,
+    149 * 151 * 157 * 163 * 167 * 173 * 179 * 181,
+    191 * 193 * 197 * 199 * 211 * 223 * 227 * 229,
 ];
 
 /// Seed for the small prime factor. Its ~31-bit magnitude keeps the rho
@@ -108,8 +113,8 @@ fn next_probable_prime<T: Natural>(start: &T) -> T {
 }
 
 /// Miller-Rabin probable prime test with the fixed bases above, preceded by
-/// trial division over [`SMALL_PRIMES`]. Every input used here exceeds the
-/// largest base and the whole trial-division table.
+/// a gcd filter against [`SMALL_PRIME_RUNS`]. Every input used here exceeds
+/// the largest base and every prime in the runs.
 fn is_probable_prime<T: Natural>(n: &T) -> bool {
     let one = T::from(1u32);
     let two = T::from(2u32);
@@ -120,11 +125,10 @@ fn is_probable_prime<T: Natural>(n: &T) -> bool {
         return n == &two;
     }
 
-    // Trial division costs a remainder per prime and rejects most candidates
+    // One gcd per run of packed primes rejects most of the candidates
     // scanned during a prime search before any modular exponentiation runs.
-    let zero = T::from(0u32);
-    for &p in SMALL_PRIMES.iter() {
-        if n.clone() % &T::from(p) == zero {
+    for &run in SMALL_PRIME_RUNS.iter() {
+        if n.gcd(&T::from_u64(run)) != one {
             return false;
         }
     }

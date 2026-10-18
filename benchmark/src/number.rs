@@ -26,6 +26,7 @@ where
     fn pow(&self, exp: u32) -> Self;
     fn to_hex(&self) -> String;
     fn mul_ref(&self, rhs: &Self) -> Self;
+    fn from_u64(v: u64) -> Self;
 
     /// Greatest common divisor of two non-negative values.
     fn gcd(&self, rhs: &Self) -> Self;
@@ -59,6 +60,10 @@ mod natural {
             self * rhs
         }
 
+        fn from_u64(v: u64) -> Self {
+            Self::from(v)
+        }
+
         fn gcd(&self, rhs: &Self) -> Self {
             dashu::base::ring::Gcd::gcd(self, rhs)
         }
@@ -90,6 +95,10 @@ mod natural {
             self * rhs
         }
 
+        fn from_u64(v: u64) -> Self {
+            Self::from(v)
+        }
+
         fn gcd(&self, rhs: &Self) -> Self {
             self.gcd(rhs)
         }
@@ -117,6 +126,10 @@ mod natural {
 
         fn mul_ref(&self, rhs: &Self) -> Self {
             self * rhs
+        }
+
+        fn from_u64(v: u64) -> Self {
+            Self::from(v)
         }
 
         fn gcd(&self, rhs: &Self) -> Self {
@@ -148,6 +161,10 @@ mod natural {
             self * rhs
         }
 
+        fn from_u64(v: u64) -> Self {
+            Self::from(v)
+        }
+
         fn gcd(&self, rhs: &Self) -> Self {
             self.gcd(rhs)
         }
@@ -173,6 +190,10 @@ mod natural {
 
         fn mul_ref(&self, rhs: &Self) -> Self {
             (self * rhs).into()
+        }
+
+        fn from_u64(v: u64) -> Self {
+            Self::from(v)
         }
 
         fn gcd(&self, rhs: &Self) -> Self {
@@ -203,6 +224,10 @@ mod natural {
             self * rhs
         }
 
+        fn from_u64(v: u64) -> Self {
+            Self::from(v)
+        }
+
         fn gcd(&self, rhs: &Self) -> Self {
             self.gcd(rhs)
         }
@@ -227,6 +252,10 @@ mod natural {
 
         fn mul_ref(&self, rhs: &Self) -> Self {
             self * rhs
+        }
+
+        fn from_u64(v: u64) -> Self {
+            Self::from(v)
         }
 
         fn gcd(&self, rhs: &Self) -> Self {
