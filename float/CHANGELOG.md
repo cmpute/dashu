@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Fix
+- Fix `atan2_unit` on the lower diagonals: for `|y| == |x|` with `y < 0`, the exact
+  shortcut returned the two results swapped (`(-a, a)` gave -3/8 of a turn and
+  `(-a, -a)` gave -1/8). The upper diagonals, the axes and all other inputs were
+  unaffected, as was the radian `atan2`.
 - Keep Rust 1.85 CI compatible with the PostgreSQL integration dependencies by
   pinning `sha2` to 0.11.0; 0.11.1 requires Rust 1.88.
 - Fix the short-division fast path of `Context::div`/`Context::inv`: the kernel's ulp

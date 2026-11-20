@@ -1195,12 +1195,11 @@ impl<R: ErrorBounds> Context<R> {
         let x_abs =
             FBig::<R, B>::new(Repr::new(x.significand.clone().abs(), x.exponent), Context::new(0));
         if y_abs.abs_cmp(&x_abs).is_eq() {
-            let same_half = (y.sign() == Sign::Positive) == (x.sign() == Sign::Positive);
-            return u8th(match (y.sign() == Sign::Positive, same_half) {
-                (true, true) => 1,   // (+y, +x): π/4
-                (true, false) => 3,  // (+y, −x): 3π/4
-                (false, true) => -1, // (−y, +x): −π/4
-                (false, false) => -3,
+            return u8th(match (y.sign() == Sign::Positive, x.sign() == Sign::Positive) {
+                (true, true) => 1,    // (+y, +x): π/4
+                (true, false) => 3,   // (+y, −x): 3π/4
+                (false, true) => -1,  // (−y, +x): −π/4
+                (false, false) => -3, // (−y, −x): −3π/4
             });
         }
 
@@ -2609,6 +2608,8 @@ mod tests {
             };
             assert_eq!(quarter("1.0", "1.0"), DBig::from_str("45").unwrap());
             assert_eq!(quarter("1.0", "-1.0"), DBig::from_str("135").unwrap());
+            assert_eq!(quarter("-1.0", "1.0"), DBig::from_str("-45").unwrap());
+            assert_eq!(quarter("-1.0", "-1.0"), DBig::from_str("-135").unwrap());
             assert_eq!(quarter("0", "1"), DBig::ZERO);
             assert_eq!(quarter("1", "0"), DBig::from_str("90").unwrap());
             assert_eq!(quarter("0", "-1"), DBig::from_str("180").unwrap());
