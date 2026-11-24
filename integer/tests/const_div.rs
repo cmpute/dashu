@@ -24,6 +24,15 @@ fn test_const_div() {
         (ubig!(1) << 64) - ubig!(1),
         (ubig!(1) << 128) - ubig!(1),
         (ubig!(1) << 256) - ubig!(1),
+        // single-word divisors with the top bit set (for 16, 32 and 64-bit words)
+        ubig!(1) << 15,
+        ubig!(54321),
+        ubig!(1) << 31,
+        (ubig!(1) << 32) - ubig!(5),
+        ubig!(1) << 63,
+        ubig!(10).pow(19),
+        ubig!(12230851401180803962),
+        (ubig!(1) << 64) - ubig!(59),
     ];
 
     let numbers = [
@@ -38,6 +47,16 @@ fn test_const_div() {
         ubig!(3).pow(80),
         ubig!(3).pow(120),
         ubig!(3).pow(160),
+        // double-word values whose high word is not below a single-word divisor
+        (ubig!(1) << 32) - ubig!(1),
+        ubig!(54321) << 16,
+        ubig!(1) << 63,
+        (ubig!(1) << 64) - ubig!(1),
+        ubig!(10).pow(19) << 64,
+        (ubig!(10).pow(19) << 64) - ubig!(1),
+        ubig!(310294617813053814596035627585005097510),
+        ubig!(1) << 127,
+        (ubig!(1) << 128) - ubig!(1),
     ];
 
     for d in &divisors {
@@ -49,6 +68,7 @@ fn test_const_div() {
             assert_eq!(n % d, n.clone() % const_d);
             assert_eq!(n.div_rem(d), n.div_rem(const_d));
             assert_eq!(n.div_rem(d), n.clone().div_rem(const_d));
+            assert_eq!(n % d, const_d.reduce(n.clone()).residue());
 
             let mut x = n.clone();
             x /= const_d;
