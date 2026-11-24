@@ -511,7 +511,14 @@ impl ErrorBounds for mode::HalfEven {
             (false, false)
         } else {
             let incl = B % 2 == 1 || f.repr.digits() < f.precision() || !f.repr.significand.bit(0);
-            (incl, incl)
+            // The side of a power of the base that faces zero lies in the finer binade below,
+            // where the tie is decided in that binade's units: there the power of the base is
+            // `B^p`, which is even in an even base, so it owns that tie whatever its own parity.
+            let is_power = f.repr.significand.abs_cmp(&IBig::ONE).is_eq();
+            match f.repr.sign() {
+                Sign::Positive => (incl || is_power, incl),
+                Sign::Negative => (incl, incl || is_power),
+            }
         };
         nearest_bounds(f, half_ulp, incl_l, incl_r)
     }

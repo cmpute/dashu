@@ -699,3 +699,79 @@ fn test_error_bounds_round_back() {
             .value()
     }
 }
+
+/// `ErrorBounds::error_bounds` describes the rounding preimage of a value: the bounds themselves
+/// round to it exactly when flagged inclusive, points just inside always do, and points just
+/// outside never do.
+///
+/// Regression: at a power of the base the neighbour toward zero lies in the finer binade below,
+/// but the bound on that side was a full ulp (so e.g. at 3 decimal digits `[0.995, 1.005)` was
+/// claimed for `1.00` instead of `[0.9995, 1.005)`), and the ties-to-even inclusion flags read
+/// the parity of the normalized significand instead of the significand at the precision.
+#[test]
+fn test_error_bounds_are_the_rounding_preimage() {
+    use dashu_float::{
+        round::{mode, ErrorBounds},
+        Context, FBig, Repr,
+    };
+    use dashu_int::{IBig, Word};
+
+    fn check<R: ErrorBounds, const B: Word>(p: usize, y: &Repr<B>) {
+        let exact = |r: Repr<B>| FBig::<R, B>::from_repr(r, Context::new(0));
+        let rounds_to_y = |v: &FBig<R, B>| v.clone().with_precision(p).value().repr() == y;
+        let (l, r, incl_l, incl_r) =
+            R::error_bounds(&FBig::<R, B>::from_repr(y.clone(), Context::new(p)));
+        let y_exact = exact(y.clone());
+        assert!(rounds_to_y(&y_exact));
+        for (bound, incl, left) in [(l, incl_l, true), (r, incl_r, false)] {
+            let bound = exact(bound.into_repr());
+            let step = |v: &FBig<R, B>, eps: &FBig<R, B>, outward: bool| {
+                if left == outward {
+                    v - eps
+                } else {
+                    v + eps
+                }
+            };
+            if bound.repr().significand().is_zero() {
+                // one-sided preimage: the value itself is the (inclusive) edge
+                assert!(incl, "{y:?} at {p} digits: a zero bound must be inclusive");
+                let eps = exact(Repr::new(IBig::ONE, y.exponent() - p as isize - 5));
+                assert!(!rounds_to_y(&step(&y_exact, &eps, true)), "{y:?} at {p} digits");
+            } else {
+                let eps = exact(Repr::new(
+                    bound.repr().significand().clone(),
+                    bound.repr().exponent() - 3,
+                ));
+                let edge = step(&y_exact, &bound, true);
+                assert_eq!(rounds_to_y(&edge), incl, "{y:?} at {p} digits, edge {edge:?}");
+                assert!(rounds_to_y(&step(&edge, &eps, false)), "{y:?} at {p} digits: inside");
+                assert!(!rounds_to_y(&step(&edge, &eps, true)), "{y:?} at {p} digits: outside");
+            }
+        }
+    }
+
+    fn sweep<const B: Word>() {
+        for p in 1..=3usize {
+            let hi = IBig::from(B).pow(p);
+            let mut sig = IBig::ONE;
+            while sig < hi {
+                for exp in -2..=2 {
+                    for s in [sig.clone(), -sig.clone()] {
+                        let y = Repr::<B>::new(s, exp);
+                        check::<mode::Zero, B>(p, &y);
+                        check::<mode::Away, B>(p, &y);
+                        check::<mode::Down, B>(p, &y);
+                        check::<mode::Up, B>(p, &y);
+                        check::<mode::HalfEven, B>(p, &y);
+                        check::<mode::HalfAway, B>(p, &y);
+                    }
+                }
+                sig += IBig::ONE;
+            }
+        }
+    }
+    // (even bases only: an odd base has no representable half-ulp)
+    sweep::<2>();
+    sweep::<4>();
+    sweep::<10>();
+}

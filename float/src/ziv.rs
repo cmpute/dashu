@@ -119,8 +119,11 @@ impl<R: ErrorBounds> Context<R> {
     /// scope; the driver calls it once per attempt and grows `guard` when the result cannot be
     /// certified.
     ///
-    /// The loop preserves the [`Exact`]/[`Inexact`] flag from rounding the approximation to the
-    /// target precision.
+    /// The returned [`Exact`]/[`Inexact`] flag is that of rounding the approximation to the target
+    /// precision; the containment test only accepts an attempt for which that flag is also the
+    /// flag of rounding the *true* value (see [`contained`](Self::contained)). A function whose
+    /// true result can be exactly representable (or an exact tie) must therefore report a zero
+    /// radius for it, or resolve it before entering the loop — a positive radius cannot.
     pub(crate) fn ziv<const B: Word>(
         &self,
         initial_guard: usize,
@@ -287,7 +290,20 @@ impl<R: ErrorBounds> Context<R> {
     /// arithmetic, and it reads as a single shared inequality per endpoint:
     ///   `a − e ≥ y − lb  ⟺  a + lb ≥ y + e`
     ///   `a + e ≤ y + rb  ⟺  y + rb ≥ a + e`
+    ///
+    /// Two refinements make the verdict safe to return *together with its `Exact`/`Inexact` flag*:
+    ///
+    /// - A zero radius means `a` is the true value, so rounding it is correct by definition —
+    ///   including a true value that is itself representable or an exact tie, which sits on the
+    ///   boundary of the preimage and which no positive radius could ever certify.
+    /// - With a positive radius the candidate must lie strictly outside the error interval
+    ///   (`|a − y| > e`). Otherwise the true value may be on either side of `y` (or equal to it),
+    ///   so neither the `Exact` flag (when `a` happens to round to itself) nor the direction of
+    ///   the `Inexact` flag is known yet; a retry at a higher guard separates them.
     fn contained<const B: Word>(a: &Repr<B>, e: &Repr<B>, y: &FBig<R, B>) -> bool {
+        if e.significand.is_zero() && !e.is_infinite() {
+            return true;
+        }
         // No nonzero real rounds to exactly zero (significant-digit rounding with unbounded
         // exponents keeps every nonzero magnitude), so a zero midpoint can only be certified
         // with a zero radius — the documented `error_bounds` interval for ±0 (±ulp) would
@@ -301,6 +317,15 @@ impl<R: ErrorBounds> Context<R> {
         // exports — can never fit a finite preimage, so it is answered here rather than by the
         // arithmetic below (which asserts its operands finite, as `Repr` ops do).
         if e.is_infinite() {
+            return false;
+        }
+        let gap = a - &y.repr;
+        let gap = if gap.sign() == Sign::Negative {
+            -gap
+        } else {
+            gap
+        };
+        if gap.cmp(e) != Ordering::Greater {
             return false;
         }
         let (lb, rb, incl_l, incl_r) = R::error_bounds::<B>(y);
@@ -373,8 +398,8 @@ mod tests {
     fn ziv_retries_until_contained() {
         let ctx: Context<mode::HalfEven> = Context::new(4);
         let r = ctx.ziv(2, |guard| {
-            // value 1.0, radius 2^(-guard): large on the first attempt, tiny later.
-            Ok((F::ONE, F::ONE >> guard as isize))
+            // value 1 + 2^-6, radius 2^(-guard): large on the first attempt, tiny later.
+            Ok((F::ONE + (F::ONE >> 6), F::ONE >> guard as isize))
         });
         let _ = r.unwrap().value();
         assert!(LAST_ZIV_RETRIES.with(|c| c.get()) >= 1);
@@ -431,7 +456,7 @@ mod tests {
         let ctx: Context<mode::HalfEven> = Context::new(4);
         let (r1, r2) = ctx.ziv_pair(2, |guard| {
             let radius = F::ONE >> guard as isize;
-            Ok(((F::ONE, F::ZERO), (F::ONE, radius)))
+            Ok(((F::ONE, F::ZERO), (F::ONE + (F::ONE >> 6), radius)))
         });
         let _ = (r1.unwrap().value(), r2.unwrap().value());
         assert!(LAST_ZIV_RETRIES.with(|c| c.get()) >= 1);

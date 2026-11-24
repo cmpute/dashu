@@ -479,3 +479,149 @@ fn test_pow_with_rounding() {
         test_powf_with_error::<_, HalfEven, 2>(&base, &exp, &target, &target.ulp());
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Regressions from the correct-rounding certification (the Ziv containment test).
+// ---------------------------------------------------------------------------------------------
+
+/// A result just below a power of the base was certified against a preimage one binade too
+/// wide: `exp`/`powi` of a value a hair below `0.9995` returned `1` at 3 digits, where the
+/// correctly rounded value is `0.999`.
+#[test]
+fn test_exp_powi_round_just_below_power_of_base() {
+    use core::str::FromStr;
+    use dashu_float::{round::mode::HalfEven, Context};
+    type D = FBig<HalfEven, 10>;
+
+    let hi = Context::<HalfEven>::new(100);
+    let ctx = Context::<HalfEven>::new(3);
+    for (t, expected) in [
+        ("0.99949999999999999999999999999999999999999", "0.999"),
+        ("0.99950000000000000000000000000000000000001", "1"),
+    ] {
+        let t = D::from_str(t).unwrap();
+        let expected = D::from_str(expected).unwrap();
+
+        // x with x² ≈ t: the exact square (unlimited precision) is the oracle
+        let x = hi.sqrt(t.repr()).unwrap().value();
+        let x_exact = D::from_repr(x.repr().clone(), Context::new(0));
+        assert_eq!((&x_exact * &x_exact).with_precision(3).value(), expected);
+        assert_eq!(ctx.powi(x.repr(), 2.into()).unwrap().value(), expected);
+
+        let l = hi.ln(t.repr(), None).unwrap().value();
+        assert_eq!(ctx.exp(l.repr(), None).unwrap().value(), expected);
+    }
+}
+
+/// An exact power that is a rounding tie (`5² = 25` at one digit) was rejected by the
+/// certification and surfaced as `ZivRetryLimitExceeded` (a panic through `FBig::powi`).
+#[test]
+fn test_powi_exact_tie() {
+    use core::str::FromStr;
+    use dashu_float::{
+        round::mode::{HalfAway, HalfEven},
+        Context,
+    };
+    type D = FBig<HalfEven, 10>;
+
+    for (x, p, even, away) in [
+        ("5", 1usize, "20", "30"),
+        ("1.5", 2, "2.2", "2.3"),
+        ("3.5", 3, "12.2", "12.3"),
+        ("5", 2, "25", "25"),
+        ("1.4", 2, "2", "2"),
+    ] {
+        let a = D::from_str(x).unwrap();
+        let got = Context::<HalfEven>::new(p).powi(a.repr(), 2.into());
+        assert_eq!(got.unwrap().value(), D::from_str(even).unwrap(), "{x}^2 at {p} digits");
+        let got = Context::<HalfAway>::new(p).powi(a.repr(), 2.into());
+        assert_eq!(got.unwrap().value(), DBig::from_str(away).unwrap(), "{x}^2 at {p} digits");
+    }
+    // through the convenience API (this panicked)
+    let five = D::from_str("5").unwrap().with_precision(1).value();
+    assert_eq!(five.powi(2.into()), D::from_str("20").unwrap());
+}
+
+/// `powi` with a negative exponent agrees with the correctly rounded division `1 / baseⁿ`, flag
+/// included. It used to report `Exact` whenever the working-precision value happened to round to
+/// itself (`183⁻⁸` at 53 bits), and misround next to a power of two (`15⁻¹⁶` at 1 bit gave
+/// `2⁻⁶²` for `0.70·2⁻⁶²`).
+#[test]
+fn test_powi_negative_exponent_matches_division() {
+    use dashu_float::{
+        round::{mode, ErrorBounds},
+        Context, Repr,
+    };
+    use dashu_int::IBig;
+
+    fn check<R: ErrorBounds, const B: Word>(p: usize, base: i64, n: usize) {
+        let ctx = Context::<R>::new(p);
+        let power = Repr::<B>::new(IBig::from(base).pow(n), 0);
+        let want = ctx.div(&Repr::one(), &power);
+        let got = ctx.powi(&Repr::<B>::new(base.into(), 0), -IBig::from(n));
+        assert_eq!(got, want, "{base}^-{n} at {p} digits in base {B}");
+    }
+    fn check_all_modes<const B: Word>(p: usize, base: i64, n: usize) {
+        check::<mode::Zero, B>(p, base, n);
+        check::<mode::Away, B>(p, base, n);
+        check::<mode::Down, B>(p, base, n);
+        check::<mode::Up, B>(p, base, n);
+        check::<mode::HalfEven, B>(p, base, n);
+        check::<mode::HalfAway, B>(p, base, n);
+    }
+
+    // the reported inputs
+    check::<mode::HalfEven, 2>(1, 15, 16);
+    check::<mode::Away, 2>(3, 1187, 15);
+    check::<mode::HalfEven, 2>(1, 13, 7);
+    check::<mode::HalfEven, 2>(52, 30879, 6);
+    check::<mode::HalfEven, 2>(53, 183, 8);
+
+    for base in [-7i64, 2, 3, 5, 10, 15, 183, 1187, 30879] {
+        for n in [2usize, 3, 7, 8, 15, 16] {
+            for p in [1usize, 2, 3, 20, 50, 100, 500] {
+                check_all_modes::<2>(p, base, n);
+            }
+            for p in [1usize, 2, 3, 6, 15, 30, 150] {
+                check_all_modes::<10>(p, base, n);
+            }
+        }
+    }
+}
+
+/// `powf(x, 0.5)` agrees with the correctly rounded `sqrt(x)` for a non-square `x`. At one bit of
+/// precision every result is a power of two, and a value just below one (`√15.994 ≈ 3.9993`)
+/// was certified as the next power up (`8` under `Away`/`Up`).
+#[test]
+fn test_powf_half_matches_sqrt() {
+    use dashu_float::{
+        round::{mode, ErrorBounds},
+        Context, Repr,
+    };
+    use dashu_int::IBig;
+
+    fn check<R: ErrorBounds>(p: usize, sig: i64, exp: isize) {
+        let half = Repr::<2>::new(IBig::ONE, -1);
+        let x = Repr::<2>::new(sig.into(), exp);
+        let ctx = Context::<R>::new(p);
+        let want = ctx.sqrt(&x);
+        assert_eq!(ctx.powf(&x, &half, None), want, "({sig}·2^{exp})^0.5 at {p} bits");
+    }
+    for (sig, exp) in [
+        (8189i64, -9isize),
+        (8191, -9),
+        (8187, -9),
+        (16263, 80),
+        (5, 0),
+        (3, 1),
+    ] {
+        for p in [1usize, 2, 20, 50, 100, 500] {
+            check::<mode::Zero>(p, sig, exp);
+            check::<mode::Away>(p, sig, exp);
+            check::<mode::Down>(p, sig, exp);
+            check::<mode::Up>(p, sig, exp);
+            check::<mode::HalfEven>(p, sig, exp);
+            check::<mode::HalfAway>(p, sig, exp);
+        }
+    }
+}

@@ -365,3 +365,59 @@ fn test_ln_odd_base_nearest() {
     sweep::<HalfAway, 5>();
     sweep::<HalfEven, 7>();
 }
+
+/// The `Exact`/`Inexact` flag of a logarithm describes the *true* value, not the working
+/// approximation: an irrational logarithm is never `Exact`, and the rounding direction matches
+/// the side of the result the true value is on (checked against a much higher precision).
+///
+/// Regression: `ln(55)` and `log10(31)` at 2 bits came back `Exact`, and `ln(2764)` at 24 bits
+/// was rounded up but flagged `NoOp`.
+#[test]
+fn test_log_rounding_flag() {
+    use dashu_float::{
+        round::{mode::HalfEven, Rounded},
+        Context, Repr,
+    };
+    type F = FBig<HalfEven, 2>;
+
+    fn check(name: &str, n: u32, p: usize, got: Rounded<F>, truth: F) {
+        let value = got.value_ref().clone().with_precision(0).value();
+        let truth = truth.with_precision(0).value();
+        match got {
+            Exact(_) => panic!("{name}({n}) at {p} bits is flagged Exact"),
+            Inexact(_, NoOp) => assert!(value < truth, "{name}({n}) at {p} bits: NoOp"),
+            Inexact(_, AddOne) => assert!(value > truth, "{name}({n}) at {p} bits: AddOne"),
+            Inexact(_, SubOne) => panic!("{name}({n}) at {p} bits: SubOne for a positive value"),
+        }
+    }
+
+    // the reported cases
+    let ctx = Context::<HalfEven>::new(2);
+    let r = ctx.ln(&Repr::<2>::new(55.into(), 0), None).unwrap();
+    assert_eq!(r, Inexact(F::from(4u8), NoOp));
+    let r = ctx.log10(&Repr::<2>::new(31.into(), 0), None).unwrap();
+    assert_eq!(r, Inexact(F::from_parts(3.into(), -1), AddOne));
+    let r = Context::<HalfEven>::new(24).ln(&Repr::<2>::new(2764.into(), 0), None);
+    assert!(matches!(r, Ok(Inexact(_, AddOne))));
+
+    for p in [2usize, 20, 24, 50, 100, 500] {
+        let ctx = Context::<HalfEven>::new(p);
+        let hi = Context::<HalfEven>::new(p + 200);
+        let ns: &[u32] = if p == 500 {
+            &[3, 55, 2764]
+        } else {
+            &[3, 5, 6, 7, 30, 31, 54, 55, 99, 1000, 2764, 65535, 65537]
+        };
+        for &n in ns {
+            let x = Repr::<2>::new(n.into(), 0);
+            let (got, truth) = (ctx.ln(&x, None).unwrap(), hi.ln(&x, None).unwrap());
+            check("ln", n, p, got, truth.value());
+            let (got, truth) = (ctx.log2(&x, None).unwrap(), hi.log2(&x, None).unwrap());
+            check("log2", n, p, got, truth.value());
+            if n != 1000 {
+                let (got, truth) = (ctx.log10(&x, None).unwrap(), hi.log10(&x, None).unwrap());
+                check("log10", n, p, got, truth.value());
+            }
+        }
+    }
+}

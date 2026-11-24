@@ -590,3 +590,122 @@ fn test_sqrt_extreme_exponents() {
         assert_eq!(got.repr(), &Repr::<10>::new(316.into(), (e - 1) / 2 - 2), "sqrt(1e{e})");
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// hypot, against the same exact oracle (the exact sum of squares is the radicand)
+// ---------------------------------------------------------------------------------------------
+
+fn assert_hypot_correct<R: ErrorBounds, const B: Word>(p: usize, a: &Repr<B>, b: &Repr<B>) {
+    let got = Context::<R>::new(p)
+        .hypot(a, b)
+        .unwrap_or_else(|e| panic!("hypot({a:?}, {b:?}) at {p} digits: {e:?}"))
+        .map(|v| v.into_repr());
+    let sum = exact_sqr(a) + exact_sqr(b);
+    let want = sqrt_oracle::<R, B>(p, &sum, got.value_ref());
+    assert_eq!(got, want, "hypot({a:?}, {b:?}) at {p} digits");
+}
+
+fn assert_hypot_correct_all_modes<const B: Word>(p: usize, a: &Repr<B>, b: &Repr<B>) {
+    assert_hypot_correct::<mode::Zero, B>(p, a, b);
+    assert_hypot_correct::<mode::Away, B>(p, a, b);
+    assert_hypot_correct::<mode::Down, B>(p, a, b);
+    assert_hypot_correct::<mode::Up, B>(p, a, b);
+    assert_hypot_correct::<mode::HalfEven, B>(p, a, b);
+    assert_hypot_correct::<mode::HalfAway, B>(p, a, b);
+}
+
+fn sweep_hypot<const B: Word>() {
+    for p in 1..=3 {
+        for a in 1..=40 {
+            for b in 1..=a {
+                for exp in [-2isize, 0, 3] {
+                    let (a, b) = (Repr::new(a.into(), 0), Repr::new(b.into(), exp));
+                    assert_hypot_correct_all_modes::<B>(p, &a, &b);
+                }
+            }
+        }
+    }
+}
+
+/// `hypot` is correctly rounded with the right `Exact`/`Inexact` flag in every mode: over small
+/// operands at tiny precisions (Pythagorean triples, exact ties and near-representable results
+/// are dense there), and at the standard precisions.
+#[test]
+fn test_hypot_exact_oracle_sweep() {
+    sweep_hypot::<2>();
+    sweep_hypot::<3>();
+    sweep_hypot::<10>();
+}
+
+#[test]
+fn test_hypot_exact_oracle_standard_precisions() {
+    let big = (IBig::ONE << 40) - IBig::ONE;
+    for (a, b) in [
+        (1i64, 1i64),
+        (3, 4),
+        (-5, 12),
+        (1, 32),
+        (1, 4095),
+        (7, -4),
+        (1, 1 << 40),
+    ] {
+        for exp in [-45isize, -20, 0, 7] {
+            for p in [1usize, 20, 50, 53, 100, 500] {
+                let (a, b) = (Repr::<2>::new(a.into(), 0), Repr::<2>::new(b.into(), exp));
+                assert_hypot_correct_all_modes::<2>(p, &a, &b);
+                assert_hypot_correct_all_modes::<2>(p, &a, &Repr::new(big.clone(), exp));
+            }
+            for p in [1usize, 6, 15, 30, 150] {
+                let (a, b) = (Repr::<10>::new(a.into(), 0), Repr::<10>::new(b.into(), exp));
+                assert_hypot_correct_all_modes::<10>(p, &a, &b);
+            }
+        }
+    }
+}
+
+/// Regression: a result that merely rounds to a short value was flagged `Exact`
+/// (`hypot(1, 2^40)` at 53 bits, `hypot(1, 32)` at 1 bit).
+#[test]
+fn test_hypot_inexact_result_is_not_exact() {
+    let r2 = |v: u64| Repr::<2>::new(v.into(), 0);
+    let ctx = Context::<mode::HalfEven>::new(53);
+    let got = ctx.hypot(&r2(1 << 40), &r2(1)).unwrap();
+    assert_eq!(got, Inexact(FBig::from_parts(1.into(), 40), NoOp));
+    let got = Context::<mode::HalfAway>::new(53).hypot(&r2(1 << 40), &r2(1));
+    assert!(matches!(got, Ok(Inexact(_, NoOp))));
+
+    let ctx1 = Context::<mode::HalfEven>::new(1);
+    assert_eq!(
+        ctx1.hypot(&r2(1), &r2(32)).unwrap(),
+        Inexact(FBig::from_parts(1.into(), 5), NoOp)
+    );
+    assert_eq!(
+        ctx1.hypot(&r2(1), &r2(31)).unwrap(),
+        Inexact(FBig::from_parts(1.into(), 5), AddOne)
+    );
+    assert_eq!(
+        ctx1.hypot(&r2(1), &r2(4095)).unwrap(),
+        Inexact(FBig::from_parts(1.into(), 12), AddOne)
+    );
+    // still exact where the root is exact
+    assert_eq!(ctx.hypot(&r2(3), &r2(4)).unwrap(), Exact(FBig::from(5u8)));
+}
+
+/// Regression: `hypot(1, 2·3^-17)` at 35 base-3 digits under `Zero` returned `1 + 2 ulp`, above
+/// the true value `√(1 + 4·3^-34) < 1 + 2·3^-34` (and likewise in base 10).
+#[test]
+fn test_hypot_toward_zero_does_not_round_up() {
+    type F3 = FBig<mode::Zero, 3>;
+    let a = F3::from_parts(1.into(), 0).with_precision(1).value();
+    let b = F3::from_parts(2.into(), -17).with_precision(35).value();
+    let expected = F3::from_parts(IBig::from(3u8).pow(34) + IBig::ONE, -34);
+    assert_eq!(a.hypot(&b).repr(), expected.repr());
+    let b = F3::from_parts(1.into(), -17).with_precision(35).value();
+    assert_eq!(a.hypot(&b).repr(), &Repr::one());
+
+    type F10 = FBig<mode::Zero, 10>;
+    let a = F10::from_parts(1.into(), 0).with_precision(1).value();
+    let b = F10::from_parts(2.into(), -18).with_precision(37).value();
+    let expected = F10::from_parts(IBig::from(10u8).pow(36) + IBig::ONE, -36);
+    assert_eq!(a.hypot(&b).repr(), expected.repr());
+}
