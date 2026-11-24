@@ -58,8 +58,15 @@ impl<R: Round, const B: Word> UniformSampler for UniformFBig<R, B> {
         B1: SampleBorrow<Self::X> + Sized,
         B2: SampleBorrow<Self::X> + Sized,
     {
-        let precision = low.borrow().precision().max(high.borrow().precision());
-        Ok(UniformFBig::new(low.borrow(), high.borrow(), precision))
+        let (low, high) = (low.borrow(), high.borrow());
+        if low.repr().is_infinite() || high.repr().is_infinite() {
+            return Err(Error::NonFinite);
+        }
+        if low >= high {
+            return Err(Error::EmptyRange);
+        }
+        let precision = low.precision().max(high.precision());
+        Ok(UniformFBig::new(low, high, precision))
     }
 
     #[inline]
@@ -68,8 +75,15 @@ impl<R: Round, const B: Word> UniformSampler for UniformFBig<R, B> {
         B1: SampleBorrow<Self::X> + Sized,
         B2: SampleBorrow<Self::X> + Sized,
     {
-        let precision = low.borrow().precision().max(high.borrow().precision());
-        Ok(UniformFBig::new_inclusive(low.borrow(), high.borrow(), precision))
+        let (low, high) = (low.borrow(), high.borrow());
+        if low.repr().is_infinite() || high.repr().is_infinite() {
+            return Err(Error::NonFinite);
+        }
+        if low > high {
+            return Err(Error::EmptyRange);
+        }
+        let precision = low.precision().max(high.precision());
+        Ok(UniformFBig::new_inclusive(low, high, precision))
     }
 
     #[inline]

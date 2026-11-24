@@ -17,14 +17,19 @@
 //! * [Uniform01] generates floats with the precision decided by the constructor.
 //! * The builtin rand distributions (`Standard` / `StandardUniform`, `Open01`, `OpenClosed01`)
 //!   generate floats with the max precision such that the significand fits in a [DoubleWord].
-//! * [UniformFBig] (and therefore rand's `Uniform`) generates floats with the precision being the
-//!   maximum between the interval boundaries.
+//! * [UniformFBig] generates floats with the precision given to its constructor, and rand's
+//!   `Uniform` (which is backed by it) uses the maximum of the precisions of the two interval
+//!   boundaries. In both cases the precision is raised to the number of digits of the
+//!   boundaries if it is smaller than that, and when it is unlimited (as it is for
+//!   `FBig::ZERO..FBig::ONE`) the same default precision as the builtin distributions is used.
+//!   The samples always lie in the requested interval.
 //!
 //! The rounding of the [FBig] type doesn't affect the number generation process.
 
 use core::marker::PhantomData;
 
 use crate::{
+    error::assert_limited_precision,
     fbig::FBig,
     repr::{Context, Repr, Word},
     round::{mode, Round},
@@ -48,24 +53,59 @@ pub struct UniformFBig<R: Round, const B: Word> {
 
 impl<R: Round, const B: Word> UniformFBig<R, B> {
     /// Create a sampler over `[low, high)` at a given precision.
+    ///
+    /// The samples have `precision` digits, or as many digits as the wider of the two bounds
+    /// if that is more (so that both bounds are representable, and every sample lies in the
+    /// interval). If `precision` is 0 (unlimited), the default precision of the builtin
+    /// distributions is used in its place.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the interval is empty (`low >= high`) or if a bound is infinite.
     #[inline]
     pub fn new(low: &FBig<R, B>, high: &FBig<R, B>, precision: usize) -> Self {
-        assert!(low <= high);
-        Self {
-            sampler: Uniform01::new(precision),
-            scale: (high - low).into_repr(),
-            offset: low.repr().clone(),
-            _marker: PhantomData,
-        }
+        assert!(low < high, "empty range for random generation");
+        Self::with_sampler(low, high, precision, Uniform01::new)
     }
 
     /// Create a sampler over `[low, high]` at a given precision.
+    ///
+    /// See [`new`](Self::new) for how the precision is used.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the interval is empty (`low > high`) or if a bound is infinite.
     #[inline]
     pub fn new_inclusive(low: &FBig<R, B>, high: &FBig<R, B>, precision: usize) -> Self {
-        assert!(low <= high);
+        assert!(low <= high, "empty range for random generation");
+        Self::with_sampler(low, high, precision, Uniform01::new_closed)
+    }
+
+    fn with_sampler(
+        low: &FBig<R, B>,
+        high: &FBig<R, B>,
+        precision: usize,
+        sampler: fn(usize) -> Uniform01<B>,
+    ) -> Self {
+        assert!(
+            low.repr().is_finite() && high.repr().is_finite(),
+            "the bounds for random generation must be finite"
+        );
+        // A sample is `low + unit * (high - low)` rounded down to the precision. It stays at or
+        // above `low` only if `low` is itself representable at that precision, so the
+        // precision covers the digits of the bounds.
+        let precision = if precision == 0 {
+            get_inline_precision::<B>()
+        } else {
+            precision
+        };
+        let precision = precision.max(low.repr().digits()).max(high.repr().digits());
+        // the exact width: rounding it could push the samples past `high`
+        let exact = Context::<mode::Down>::new(0);
+        let scale = exact.unwrap_fp(exact.sub(high.repr(), low.repr()));
         Self {
-            sampler: Uniform01::new_closed(precision),
-            scale: (high - low).into_repr(),
+            sampler: sampler(precision),
+            scale: scale.into_repr(),
             offset: low.repr().clone(),
             _marker: PhantomData,
         }
@@ -73,20 +113,26 @@ impl<R: Round, const B: Word> UniformFBig<R, B> {
 
     /// Draw a random [FBig] from this sampler's range.
     pub fn sample_fbig<BR: BitRng + ?Sized>(&self, rng: &mut BR) -> FBig<R, B> {
-        // After we have a sample in [0, 1), all the following operations are rounded down
-        // so that we can ensure we don't reach the right bound.
+        // `low + unit * (high - low)` is evaluated exactly and rounded down once. With `unit`
+        // in [0, 1) the exact value lies in [low, high), and rounding it down keeps it there:
+        // not below `low`, which is representable at this precision, and not above itself.
         let unit: FBig<mode::Down, B> = self.sampler.sample01::<mode::Down, _>(rng);
         let context = unit.context();
-        let scaled = context.unwrap_fp(context.mul(unit.repr(), &self.scale));
-        context
-            .unwrap_fp(context.add(scaled.repr(), &self.offset))
-            .with_rounding()
+        let exact = Context::<mode::Down>::new(0);
+        let scaled = exact.unwrap_fp(exact.mul(unit.repr(), &self.scale));
+        let sample = exact.unwrap_fp(exact.add(scaled.repr(), &self.offset));
+        let rounded = context.repr_round(sample.into_repr()).value();
+        FBig::new(rounded, context).with_rounding()
     }
 }
 
 /// A uniform distribution between 0 and 1. It can be used to replace the `Standard`,
 /// `Open01`, `OpenClosed01` distributions from the `rand` crate when you want to customize the
 /// precision of the generated float number.
+///
+/// The precision is the number of digits of the generated numbers, so it should be positive:
+/// with a precision of 0 there are no digits to draw, and the only possible samples are the
+/// endpoints that the distribution includes.
 pub struct Uniform01<const BASE: Word> {
     pub(crate) precision: usize,
     pub(crate) range: Option<UBig>, // BASE ^ precision (±1 if necessary)
@@ -123,8 +169,14 @@ impl<const B: Word> Uniform01<B> {
     }
 
     /// Create a uniform distribution in `(0, 1)` with a given precision.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is 0: there is no number with zero digits strictly between 0
+    /// and 1.
     #[inline]
     pub fn new_open(precision: usize) -> Self {
+        assert_limited_precision(precision);
         let range = match B {
             2 => None,
             _ => Some(UBig::from_word(B).pow(precision) - UBig::ONE),
